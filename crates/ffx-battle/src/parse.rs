@@ -68,7 +68,7 @@ pub mod bridge {
     /// and the effect's file (file 0 when [`NO_MAGIC_FILE`]) set and loaded
     /// (`MagicFile_SetMagicId`, `MagicFile_Load`); effect 0x84 by model
     /// 0x108f in scene 0x1e70000 marks [`EFFECT_SPECIAL_SCENE`]. A load
-    /// to wait for (positive, without `AEON_PLAIN2`) has the actor play
+    /// to wait for (positive, without `NO_MAGIC_EFFECT`) has the actor play
     /// (`+0xdfd`) either the asynchronous file (state 0x10) or the overlay
     /// effect meanwhile ([`EFFECT_OVERLAY_DEFAULT`], `op_ovl_effect_init`);
     /// a preloaded effect file 0x15e completes at once
@@ -109,7 +109,7 @@ pub mod bridge {
                 EFFECT_SPECIAL_SCENE.set(mem, 1);
             }
         }
-        if crate::action::bridge::AEON_PLAIN2.get(mem) != 0 || load <= 0 {
+        if crate::action::bridge::NO_MAGIC_EFFECT.get(mem) != 0 || load <= 0 {
             mem.write(a.wrapping_add(0xdfd), 0u8);
             mem.write(a.wrapping_add(0xf8c), 0u32);
             return 0;

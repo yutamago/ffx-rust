@@ -377,7 +377,11 @@ pub mod bridge {
     /// Flags that make an aeon's first command fall back to its plain one
     /// (`MsInsertChrCommand` kind 0).
     pub const AEON_PLAIN: Global<u8> = Global::new(0x0112_a904);
-    pub const AEON_PLAIN2: Global<u8> = Global::new(0x0112_a900);
+    /// The debug flag "no magic effects" (`MsSetDebugMagic`; Fahrenheit's
+    /// `Btl.debug.no_magic_effects`): `MsEffectRead` loads no effect, the
+    /// battle's end plays no closing event effect, and `MsInsertChrCommand`
+    /// falls back as with [`AEON_PLAIN`].
+    pub const NO_MAGIC_EFFECT: Global<u8> = Global::new(0x0112_a900);
     /// The frame `MsInsertChrCommand` builds its cue in.
     pub const CHR_COMMAND_FRAME: u32 = 0xff10_0000;
 
@@ -411,7 +415,7 @@ pub mod bridge {
     /// `MsInsertChrCommand(i, target, kind)` (`0x007ae1a0`): aeon `i`'s
     /// command 0x3100 on `target` next: its value
     /// ([`crate::exec::bridge::ms_get_aeon_command`] for `kind`, kind 0
-    /// with [`AEON_PLAIN`] or [`AEON_PLAIN2`] or none: 0 with `+0x1e` set)
+    /// with [`AEON_PLAIN`] or [`NO_MAGIC_EFFECT`] or none: 0 with `+0x1e` set)
     /// written into the kernel's command 0x3100 (`+0x10`, `+0x12`; `+0x1a`
     /// bit 6, `+0x1c` bit 27 and bit 30 from the pair's byte), its kind
     /// (`+0x15`: 0x11 for kind 0, after the party's exchange
@@ -424,7 +428,7 @@ pub mod bridge {
         let (cue, mode_at, val_at) = (f.at(0), f.at(0x48), f.at(0x4c));
         let mut v =
             crate::exec::bridge::ms_get_aeon_command(&mut f, i, 0x3100, kind, mode_at, val_at);
-        if kind == 0 && (AEON_PLAIN.get(&f) != 0 || AEON_PLAIN2.get(&f) != 0 || v == 0) {
+        if kind == 0 && (AEON_PLAIN.get(&f) != 0 || NO_MAGIC_EFFECT.get(&f) != 0 || v == 0) {
             v = 0;
             f.write(a.wrapping_add(0x1e), 1u8);
         }

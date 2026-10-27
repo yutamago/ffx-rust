@@ -36,7 +36,7 @@ pub mod bridge {
     pub const PARTY_SAVED: Global<[u8; 7]> = Global::new(0x0112_c89c);
     pub const PARTY_EXTRA: Global<[u8; 17]> = Global::new(0x0112_c8a3);
     pub const PARTY_EXTRA_SAVED: Global<[u8; 17]> = Global::new(0x0112_c8b4);
-    /// `g_BtlStealRule`: 2 (nothing to steal) also keeps the battle records
+    /// `g_BtlBattleType` (Fahrenheit's `battle_type`): 2 (nothing to steal) also keeps the battle records
     /// from counting (`MsSaveAddInfoData`).
     pub const RECORDS_OFF: Global<u8> = Global::new(0x0112_c9e5);
 

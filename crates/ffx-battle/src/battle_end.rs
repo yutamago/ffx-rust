@@ -920,7 +920,7 @@ pub mod bridge {
         END_FADE_OUT.set(mem, fade_out);
         END_FADE_FRAMES.set(mem, frames);
         ms_limit_type_win_check(mem);
-        if END_GAME_OVER.get(mem) != 0 && crate::action::bridge::AEON_PLAIN2.get(mem) == 0 {
+        if END_GAME_OVER.get(mem) != 0 && crate::action::bridge::NO_MAGIC_EFFECT.get(mem) == 0 {
             END_EVENT_EFFECT.set(mem, 1);
             PAD_OLD.set(mem, u32::MAX);
         }

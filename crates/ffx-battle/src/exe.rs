@@ -159,8 +159,9 @@ pub mod bridge {
     /// The battle file's name (`<map>_<nn>`, 8 bytes from the field record
     /// then the formation number).
     pub const SCENE_NAME: Global<[u8; 9]> = Global::new(0x0112_c25a);
-    /// The formation's battle music (`MsBattleExe`: its group's bytes 1, 2).
-    pub const BATTLE_MUSIC: Global<u16> = Global::new(0x0112_c254);
+    /// The formation's battle map (`MsBattleExe`: its group's bytes 1, 2; map `& 0x3ff`,
+    /// `0x400` a battle map). Fahrenheit's `battlefield_id`.
+    pub const BATTLE_MAP: Global<u16> = Global::new(0x0112_c254);
     /// The file's size (low half) and buffer (`g_BtlScriptRecord1`'s
     /// `+2`, `+4`).
     pub const FILE_SIZE: Global<u16> = Global::new(0x0112_a9a6);
@@ -247,10 +248,10 @@ pub mod bridge {
             let slot: u32 = mem.read(sp);
             let f = field.cast_signed();
             let g = crate::flow::bridge::ms_btl_list_group(mem, f, group.cast_signed());
-            let music = u16::from(mem.read::<u8>(g.wrapping_add(2)))
+            let map = u16::from(mem.read::<u8>(g.wrapping_add(2)))
                 .wrapping_mul(0x100)
                 .wrapping_add(u16::from(mem.read::<u8>(g.wrapping_add(1))));
-            BATTLE_MUSIC.set(mem, music);
+            BATTLE_MAP.set(mem, map);
             let buffer = if mode != 0 {
                 let rec0 = crate::atel::bridge::SCRIPT_RECORDS.ptr(mem).addr + 4;
                 let p: u32 = mem.read(rec0);
@@ -342,8 +343,8 @@ pub mod bridge {
                 let se: u32 = mem.read(op);
                 gm::ms_et_effect_encount(mem, &mut *s.call, k, se);
             }
-            let music = i32::from(BATTLE_MUSIC.get(mem).cast_signed()).cast_unsigned();
-            game(mem, s, ATEL_EVENT_SET_UP_FOR_BATTLE_MUSIC, &[music]);
+            let map = i32::from(BATTLE_MAP.get(mem).cast_signed()).cast_unsigned();
+            game(mem, s, ATEL_EVENT_SET_UP_FOR_BATTLE_MUSIC, &[map]);
             status.set(mem, 4);
             game(mem, s, MS_BTL_READ_MANAGE, &[])
         })

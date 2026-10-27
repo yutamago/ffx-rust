@@ -108,6 +108,254 @@ Each monster in a slot gets its file `battle/mon/_mNNN` read
 (`Mon_LoadAll`, `0x00784070`). In battle, the monster's id is at
 `+0x0e` of its actor.
 
+## The battle actor (`chr`, 0xf90 bytes)
+
+`MsGetChr(i)` (`0x00794020`) addresses actors 0-0x1e at `*0x011334d4`
+(`crates/ffx-battle/src/actor.rs`); party members are 0-0x11, monsters
+0x14-0x1b. The battle scripts' properties (`MsGetChrStatInfo` `0x007b2dc0`,
+jump table `0x007b4504`; `MsSetChrStatInfo` `0x007b4b70`, jump table
+`0x007b66dc`) read and write most fields one by one, so a property's case
+fixes its field's offset and width; `crates/ffx-battle/src/stat.rs` and
+`stat_set.rs` port both switches with parity tests. The property names
+(`STAT_*`, `ABILITY_*`) are the PS2 header's, from Fahrenheit's
+`ids/chr_stat.cs` (`btlhead.src`); the field names are Fahrenheit's
+(`battle/chr.cs`, their `Chr` and `ChrRam`, used with permission). The
+evidence column gives the property whose case reads the field, or
+functions that use the offset (widths from the disassembly of the battle
+code, `0x00780000`-`0x007d0000`). `+0x540` to `+0x72c` is the 0x1ec-byte
+block `MsSetRamChr` clears and fills (`ChrRam`: Fahrenheit's offsets plus
+0x540). Bold notes are where FFX.exe disagrees with Fahrenheit
+(2026-10-27, Fahrenheit 4ec1919).
+
+Bit fields, from the properties' cases:
+- `+0x590`: bits 0-2 male, female, aeon (properties 0x16-0x18);
+- `+0x5b8` (`u16`): bits 0-4 hard, ratio damage, zombie one-hit,
+  see-through, Libra; 5-7 physical, magic, all immunity; 9 Zanmato-proof;
+  10 bribe (properties 0x20-0x24, 0x107-0x109, 0x10b, 0x122);
+- `+0x5da`-`+0x5dd` (absorb, nullify, halve, weak): bits 0-4 fire, ice,
+  thunder, water, holy;
+- `+0x606` (`u16`): bit 1 zombie, 3 poison (`MsGetChrStatZombie`,
+  `MsGetChrStatPoison`); 0 KO and 2 petrify (Fahrenheit, not checked; the
+  actor's KO and stone states are the bytes `+0xdcc` and `+0xdce`); 4-7
+  power, magic, armor, mental break; 8-11 confusion, berserk, provoke,
+  threaten;
+- `+0x608`-`+0x614`, 13 counters (`0xff` forever): sleep, silence,
+  darkness, shell, protect, reflect, NulTide, NulBlaze, NulShock,
+  NulFrost, regen, haste, slow;
+- `+0x616` (`u16`): bits 0-14 Libra, the five memories (strength, magic,
+  agility, move, ability), dodge, guard, blown away, auto-life, curse,
+  defend, cover, sentinel, doom;
+- `+0x641`-`+0x659`, the resistance bytes: KO, zombie, petrify, poison,
+  then the `+0x606` bits and the 13 counters in their order; `+0x65a`
+  the `+0x616` bits (properties 0xaf-0xd6).
+
+| Offset | Type | Fahrenheit | Evidence |
+|---|---|---|---|
+| `+0x000` | `ptr` | `actor` | `MsBattleEncountExe`, `MsBattleReadDataNB` |
+| `+0x004` | `u32` | `model_id` | `TexAnim_StartOld` |
+| `+0x00c` | `u16` | `id` | Fahrenheit, not checked |
+| `+0x00e` | `u16` | `chr_id` | `MsBtlReadManage`, `MsBtlReadMonster`, `MsBtlReadMonsterProcess` |
+| `+0x016` | `u8` | `stat_visible` | property `0x54` `STAT_VISIBLE`; `MsSetSaveParam`, `MsCalcDamage`, `DmgCalc_Defend` |
+| `+0x017` | `u8` | `stat_hide` | `MsCalcCommand`, `DmgCalc_ShatterFail`, `DmgCalc_MagicBooster` |
+| `+0x018` | `i8` | `stat_visible_eff` | property `0xed` `STAT_VISIBLE_EFF`; `Mon_AttachData` |
+| `+0x019` | `u8` | `stat_visible_cam` | property `0xd8` `STAT_VISIBLE_CAM`; `MsSetSaveParam`, `MsSetChrVisibleAppear`, `msSetChrVisibleReq` |
+| `+0x01b` | `u8` | `stat_visible_out` | property `0xd9` `STAT_VISIBLE_OUT`; `MsBtlBridgeBtl2Event`, `MsSetSaveParam`, `MsDamageSetMotion` |
+| `+0x01c` | `i8` | `stat_visible_out_on` | property `0x150` `STAT_VISIBLE_OUT_ON`; `MsBtlBridgeBtl2Event` |
+| `+0x021` | `u8 (bool)` | `stat_motion_dispose_flag` | property `0xee` `STAT_MOTION_DISPOSE_FLAG`; `MsBtlBridgeBtl2Event`, `MsSetSaveData`, `MsSetSaveParam` |
+| `+0x022` | `u8 (bool)` | `stat_model_dispose_flag` | property `0xef` `STAT_MODEL_DISPOSE_FLAG`; `MsBtlBridgeBtl2Event`, `MsSetSaveParam`, `MsBtlChrFreeAll` |
+| `+0x023` | `u8 (bool)` | `stat_fast_model_flag` | property `0xde` `STAT_FAST_MODEL_FLAG`; `MsSetSaveParam`, `MsCalcDamageCTB`, `MsCalcDamageCommand` |
+| `+0x024` | `u8` | `stat_model` | property `0x58` `STAT_MODEL`; `MsBtlReadManage`, `MsBtlReadMonsterProcess`, `MsSaveAddHP` |
+| `+0x026` | `i8` | `stat_shadow` | property `0xf1` `STAT_SHADOW`; `MsSetSaveParam`, `MsCalcMagic`, `Battle_Steal` |
+| `+0x02d` | `u8 (bool)` | `stat_bodyhit_flag` | property `0x7f` `STAT_BODYHIT_FLAG`; property `0x14c` `STAT_BODYHIT_DIRECT`; `MsSetSaveParam`, `MsGetComInfo`, `DmgCalc` |
+| `+0x03b` | `u8 (bool)` | `eternal_autolife` | property `0x14e` `STAT_ETERNAL_RELIFE`; `getBtlchrParam`, `MsSetEternalRelife`, `MsGetChrStatInfo` |
+| `+0x048` | `ptr` | `ptr_mon_wep_bin` | `MsBtlReadMonster`, `Mon_AttachData`, `MsAttachWeaponData_00784000` |
+| `+0x182` | `-` | `grav_mode` | **not a battle actor field**: `+0x182` of the field character `+0x0` points to (`Ch_GetGravMode` `0x0082abc0`); no battle code reads the actor there |
+| `+0x185` | `-` | `field_mode` | **not a battle actor field**: the field character's `+0x185` (`Ch_GetFieldMode` `0x0082ab90`) |
+| `+0x186` | `-` | `motion_type` | `MsSetRamChr`; **not a battle actor field**: the field character's motion type; `MsSetRamChr`'s word stores go to `+0x540 + 0x186` = `+0x6c6` |
+| `+0x3f4` | `u8` | `death_level` | `MsDeathTerminate`, `MsRelife`, `MsGetChrByte3f4_00795a60` |
+| `+0x3f5` | `u8` | `death_pattern` | property `0x4f` `STAT_DEATH_PATTERN`; `MsDamageCheckDeath`, `MsRelife`, `MsSetDeath` |
+| `+0x3f8` | `u8 (bool)` | `stat_center_chr_flag` | property `0x129` `STAT_CENTER_CHR_FLAG`; `msCheckSameTarget`, `MsSetRamChrData`, `MsExchangeChr` |
+| `+0x3f9` | `u8` | `stat_death_return` | property `0x14a` `STAT_DEATH_RETURN`; `MsCheckDeathMotion`, `MsSetRamChrData`, `Native_7117_BtlQueueCommand` |
+| `+0x400` | `u16` | `motion_speed_normal` | property `0xfb` `STAT_MOTION_SPEED_NORMAL`; `MsBtlReadPlayerProcess`; **`u16`**, not `u8`: every access is a word (`MsGetChrMotionSpeed` `0x007956b0`, `MsCalcMotionSpeed`) |
+| `+0x402` | `u16` | `motion_speed_effect` | `MsEffectSetSpeed`, `MsCalcMotionSpeed`, `Battle_ScriptPlayMotion` |
+| `+0x404` | `u8` | `motion_speed_effect_nonzero` | `MsEffectSetMotion`, `MsEffectSetSpeed`; 1 while `+0x402` is in force (`MsEffectSetSpeed` sets it, `MsMotionSpeedSetNormal` clears it); `MsTerminateMotion` clears `+0x404` and `+0x405` with one word store |
+| `+0x405` | `u8` | `motion_speed_normal_init` | property `0xfc` `STAT_MOTION_SPEED_NORMAL_START`; `MsEffectMagicMotion`, `MsEffectStart`, `MsEffectEnd_00788f90` |
+| `+0x408` | `u8` | `stat_attack_motion_type` | property `0xe5` `STAT_ATTACK_MOTION_TYPE`; `MsSetRamChrData`, `ms_motion_trans`, `MsParseCommand` |
+| `+0x409` | `u8` | `stat_return_motion_type` | property `0x10d` `STAT_RETURN_MOTION_TYPE`; `ms_motion_trans`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x40a` | `u8 (bool)` | `stat_attack_return_flag` | property `0x7b` `STAT_ATTACK_RETURN_FLAG`; `MsEffectSetMotion`, `MsCountChrReady`, `Battle_ScriptPlayMotion` |
+| `+0x40c` | `u8` | `stat_attack_normal_frame` | property `0x7c` `STAT_ATTACK_NORMAL_FRAME`; `MsGetMoveTargetPos` |
+| `+0x40d` | `u8` | `stat_attack_near_frame` | property `0x116` `STAT_ATTACK_NEAR_FRAME`; `MsCheckTargetsNear`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x40e` | `u8` | `stat_attack_motion_frame` | property `0x123` `STAT_ATTACK_MOTION_FRAME`; `Native_70b0_ChrGetMoveSteps`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x412` | `u8 (bool)` | `stat_move_flag` | property `0x5d` `STAT_MOVE_FLAG`; `MsSetChrMoveFlagAll`, `MsBattleProcess_DebugStatus_00792f20`, `MsSetChrMoveFlag` |
+| `+0x416` | `u8` | `stat_move_target` | property `0x5a` `STAT_MOVE_TARGET`; `Atel_BtlMoveTargetDist`, `MsGetDirMode`, `MsGetMoveTargetPos` |
+| `+0x41b` | `u8 (bool)` | `stat_direction_fix_flag` | property `0xa4` `STAT_DIRECTION_FIX_FLAG`; `MsEffectMagicMotion`, `MsSetChrDirTarget`, `Native_702c_ChrMoveToTarget` |
+| `+0x41c` | `u8 (bool)` | `stat_direction_change_flag` | property `0xa2` `STAT_DIRECTION_CHANGE_FLAG`; `MsBtlReadPlayerProcess` |
+| `+0x41d` | `u8` | `stat_direction_change_effect` | property `0xa3` `STAT_DIRECTION_CHANGE_EFFECT`; `MsCheckRestMotion`, `MsBattleProcess_Status_007917d0`, `MsSetRamChrData` |
+| `+0x41e` | `u8 (bool)` | `stat_disable_move_flag` | property `0x7d` `STAT_DISABLE_MOVE_FLAG`; `MsChrGroundFlag_00794db0`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x41f` | `u8 (bool)` | `stat_disable_jump_flag` | property `0x7e` `STAT_DISABLE_JUMP_FLAG`; `MsGetChrByte41f_00794d70`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x420` | `u8` | `stat_motionlv` | property `0x5b` `STAT_MOTIONLV`; `MsAttachWeapon` |
+| `+0x422` | `u8` | `stat_damage_chr` | property `0x59` `STAT_DAMAGE_CHR`; `MsDamageSetMotion`, `MsSetTargetsMotion`, `MsSetRamChrData` |
+| `+0x423` | `u8 (bool)` | `stat_appear_invisible_flag` | property `0xa9` `STAT_APPEAR_INVISIBLE_FLAG`; `MsBtlReadMonsterProcess`, `MsBtlChrRegist`, `MsSetChrTransparentVisible` |
+| `+0x424` | `u8` | `stat_appear_count` | property `0xe9` `STAT_APPEAR_COUNT`; `MsMonShuffleVariants_007842f0`, `MsGetChrStatInfo` |
+| `+0x425` | `u8 (bool)` | `stat_avoid_flag` | property `0xab` `STAT_AVOID_FLAG`; `MsResetAvoidFlag`, `MsCommandReturnChrStatusAll`, `Native_709d_WaitActorField425` |
+| `+0x426` | `u8 (bool)` | `stat_adjust_pos_flag` | property `0x76` `STAT_ADJUST_POS_FLAG`; `MsResetChrPos`, `MsMoveCheckFlag`, `MsGetChrStatInfo` |
+| `+0x433` | `u8 (bool)` | `stat_hit_terminate_flag` | property `0xa5` `STAT_HIT_TERMINATE_FLAG`; `MsBtlReadMonsterProcess`, `MsGetRamChrCTBbasic`, `MsDamageSetMotion` |
+| `+0x437` | `u8 (bool)` | `stat_neck_target_flag` | property `0x14f` `STAT_NECK_TARGET_FLAG`; `MsSetRamChrData`, `MsSetHeadTarget`, `MsGetChrStatInfo` |
+| `+0x438` | `u8` | `neck_target_id` | `MsSetDeath` |
+| `+0x43b` | `u8` | `stat_win_pose` | property `0xdc` `STAT_WIN_POSE`; `MsBattleProcess_Status_007917d0`, `MsSetRamChrData`, `MsGetChrStatInfo` |
+| `+0x43c` | `i8` | `stat_win_se` | property `0xf5` `STAT_WIN_SE`; `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x43d` | `u8 (bool)` | `stat_appear_motion_flag` | property `0x86` `STAT_APPEAR_MOTION_FLAG`; `MsBtlReadMonsterProcess`, `MsBtlChrRegist`, `MsSetRamChrData` |
+| `+0x43e` | `u8` | `stat_live_motion` | property `0x5e` `STAT_LIVE_MOTION`; `MsDamageSetMotion`, `MsRelife`, `MsSetChrVisibleBtl2Event` |
+| `+0x442` | `u8` | `stat_num_print_element` | property `0x152` `STAT_NUM_PRINT_ELEMENT`; `MsSetRamChrData`, `MsCalcCursorPos`, `MsGetChrStatInfo` |
+| `+0x446` | `u8` | `stat_command_type` | property `0xe0` `STAT_COMMAND_TYPE`; `MsAutoRelifeProcess`, `MsParseCommand`, `MsDeleteCommandCue` |
+| `+0x447` | `u8` | `stat_inv_motion` | property `0x77` `STAT_INV_PHYSIC_MOTION`; `DmgCalc_ResultType`, `MsSetRamChrData`, `MsGetChrStatInfo` |
+| `+0x448` | `u8 (bool)` | `stat_wait_motion_flag` | property `0x7a` `STAT_WAIT_MOTION_FLAG`; `MsEffectSetMotion`, `MsSetMotion`, `MsGetChrStatInfo` |
+| `+0x44a` | `i8` | `stat_near_motion` | property `0xf7` `STAT_NEAR_MOTION`; `MsParseCommand`, `MsCheckChrNear`, `MsGetChrStatInfo` |
+| `+0x44b` | `i8` | `stat_near_motion_set` | property `0xfa` `STAT_NEAR_MOTION_SET`; `MsCheckChrNear`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x44e` | `u8` | `stat_dmg_dir` | property `0xa1` `STAT_DMG_DIR`; `MsDamageSetMotion`, `Native_700d_ActorMoveTowardTarget`, `MsGetChrStatInfo` |
+| `+0x44f` | `u8` | `stat_weak_motion` | property `0x121` `STAT_WEAK_MOTION`; `MsBtlReadPlayerProcess`, `MsEffectEndMotion`, `MsEffectSetMotion` |
+| `+0x451` | `u8` | `stat_magiclv` | property `0x85` `STAT_MAGICLV`; `MsParseCommand`, `MsSetLimitParty`, `MsGetChrStatInfo` |
+| `+0x4b4` | `u8` | `stat_own_attack_near` | property `0xfd` `STAT_OWN_ATTACK_NEAR`; `MsCheckTargetsNear`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x4b8` | `u8` | `stat_idle2_prob` | property `0xe4` `STAT_IDLE2_PROB`; `MsSetRamChrData` |
+| `+0x4b9` | `u8` | `stat_attack_inc_speed` | property `0xe6` `STAT_ATTACK_INC_SPEED`; `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x4ba` | `u8` | `stat_attack_dec_speed` | property `0xe7` `STAT_ATTACK_DEC_SPEED`; `MsSetRamChrData`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x4bb` | `u8` | `stat_motion_num` | property `0xea` `STAT_MOTION_NUM`; `MsBtlChrRegist`, `MsBtlWeaponRegist`, `MsGetChrStatInfo` |
+| `+0x4fc` | `i8` | `area` | property `0x1c` `STAT_AREA`; `MsBtlWeaponRegist`, `MsGetChrSbyte4fc_00794280`; **`i8`**, not `u16`: the property and `MsGetChrBtlPos` read single bytes; `+0x4fd` is a byte of its own (`MsGetChrBtlPos`; `MsPushBtlPos` copies `+0x4fc`-`+0x4fe` to `+0x509`-`+0x50b`) |
+| `+0x4fe` | `u8` | `pos` | property `0x1d` `STAT_POS`; `MsBtlWeaponRegist`, `MsGetChrBtlPos`, `MsGetChrEscapePos` |
+| `+0x4ff` | `u8` | `stat_far` | property `0x1e` `STAT_FAR`; `MsSetTargetsMotion`, `MsGetChrDist`, `MsExchangeChr` |
+| `+0x504` | `u8` | `stat_group` | property `0x1f` `STAT_GROUP`; `MsGetChrGroup` |
+| `+0x505` | `u8 (bool)` | `flying` | property `0x1a` `STAT_FLY`; `MsGetChrBottomPos`, `MsGetChrCameraPos`, `MsGetChrCenterPos` |
+| `+0x508` | `u8` | `stat_adjust_pos` | property `0x5f` `STAT_ADJUST_POS`; `MsBtlReadPlayerProcess`; not 0: no motion may be set (`MsCheckSetMotion`) |
+| `+0x509` | `u8` | `stat_move_area` | property `0x55` `STAT_MOVE_AREA`; `MsSetChrSpeedBytes_00795d40`, `MsPopBtlPos`, `MsPushBtlPos` |
+| `+0x50b` | `u8` | `stat_move_pos` | property `0x56` `STAT_MOVE_POS`; `MsPopBtlPos`, `MsPushBtlPos`, `MsExchangeChr` |
+| `+0x50d` | `u8` | `stat_height_on` | property `0x60` `STAT_HEIGHT_ON`; `MsEffectSetMotion`, `MsResetChrPos`, `MsGetChrBtlPos` |
+| `+0x50e` | `u8 (bool)` | `stat_sleep_recover_flag` | property `0x61` `STAT_SLEEP_RECOVER_FLAG`; `MsDamageSetMotion`, `MsSetDeathProcess`, `MsCommandCueProcess` |
+| `+0x540` | `ChrName` | `name` | `MsSetSaveData`, `MsSetRamChr`, `Native_7091_ChrCopyName` |
+| `+0x590` | `u8` | `gender` | properties `0x16`-`0x18` (`STAT_MAN` ... `STAT_SUMMON`); `MsGetRamChrFemale`, `MsGetRamChrMan` |
+| `+0x592` | `u8` | `wpn_inv_idx` | `MsCDreadWeapon`, `MsSetSaveData`, `MsSetRamChrParam` |
+| `+0x593` | `u8` | `arm_inv_idx` | `MsSetRamChrParam` |
+| `+0x594` | `i32` | `max_hp` | `MsCheatPlayerPowerup`, `MsDebugFullSummon`, `MsCalcDamageCommand` |
+| `+0x598` | `i32` | `max_mp` | `MsCheatPlayerPowerup`, `MsCalcDamageCommand` |
+| `+0x59c` | `i32` | `base_max_hp` | `MsLimitStatusProcess`, `MsSetRamChrParam` |
+| `+0x5a0` | `i32` | `base_max_mp` | `MsLimitStatusProcess` |
+| `+0x5a4` | `i32` | `overkill_threshold` | `MsCalcCommand` |
+| `+0x5a8` | `u8` | `strength` | property `0x9` `STAT_STR`; `getBtlchrParam`, `setBtlchrParam` |
+| `+0x5a9` | `u8` | `defense` | property `0xa` `STAT_VIT`; `getBtlchrParam`, `setBtlchrParam` |
+| `+0x5aa` | `u8` | `magic` | property `0xb` `STAT_MAG`; `getBtlchrParam`, `setBtlchrParam`, `MsCalcDamageCommand` |
+| `+0x5ab` | `u8` | `magic_defense` | property `0xc` `STAT_SPIRIT`; `getBtlchrParam`, `setBtlchrParam`, `MsCalcDamageCommand` |
+| `+0x5ac` | `u8` | `agility` | property `0xd` `STAT_DEX`; `getBtlchrParam`, `setBtlchrParam` |
+| `+0x5ad` | `u8` | `luck` | property `0xe` `STAT_LUCK`; `getBtlchrParam`, `setBtlchrParam`, `DmgCalc_Crit` |
+| `+0x5ae` | `u8` | `evasion` | property `0xf` `STAT_AVOID`; `getBtlchrParam`, `setBtlchrParam`, `DmgCalc_CheckHit` |
+| `+0x5af` | `u8` | `accuracy` | property `0x10` `STAT_HIT`; `getBtlchrParam`, `setBtlchrParam`, `DmgCalc_CheckHit` |
+| `+0x5b0` | `u8` | `strength_up` | property `0x12e` `STAT_STR_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo` |
+| `+0x5b1` | `u8` | `defense_up` | property `0x12f` `STAT_VIT_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b2` | `u8` | `magic_up` | property `0x130` `STAT_MAG_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b3` | `u8` | `magic_defense_up` | property `0x131` `STAT_SPIRIT_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b4` | `u8` | `agility_up` | property `0x132` `STAT_DEX_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo` |
+| `+0x5b5` | `u8` | `luck_up` | property `0x133` `STAT_LUCK_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b6` | `u8` | `evasion_up` | property `0x134` `STAT_AVOID_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b7` | `u8` | `accuracy_up` | property `0x135` `STAT_HIT_UP`; `MsSetRamChrParam`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5b8` | `ChrResistFlags` | `special_resistances` | properties `0x20`-`0x122` (`STAT_SP_HARD` ... `STAT_SP_WAIRO`); `DmgCalc_Armored`, `DmgCalc_DmgImmunity` |
+| `+0x5ba` | `u8` | `poison_dmg` | property `0x11` `STAT_POISON_PER`; `MsPoisonProcess`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x5bb` | `u8` | `limit_mode_selected` | property `0x12` `STAT_LIMIT_TYPE`; `MsGetChrLimitType`, `MsLimitTypeDamageCheck`, `MsLimitTypeDeathCheck` |
+| `+0x5bc` | `u8` | `limit_charge` | property `0x13` `STAT_LIMIT_GAUGE`; property `0x118` `STAT_LIMIT_GAUGE_ADD`; `MsCheatPlayerPowerup`, `MsCalcMagic`, `MsCheckUseCommand` |
+| `+0x5bd` | `u8` | `limit_charge_max` | property `0x14` `STAT_LIMIT_GAUGE_MAX`; `MsCheatPlayerPowerup`, `MsCheckUseCommand`, `MsUseChrMpLimit` |
+| `+0x5c1` | `u8` | `wpn_dmg_formula` | `MsCalcDamageCTB`, `MsGetComInfo`, `DmgCalc` |
+| `+0x5c3` | `u8` | `stat_icon_number` | property `0x103` `STAT_ICON_NUMBER`; `MsBtlReadMonsterProcess`, `MsGetRamChrIconNumber`, `MsSetChrVisibleBtl2Event` |
+| `+0x5c4` | `u8` | `provoked_by_id` | property `0x101` `STAT_PROV_CHR`; `DmgCalc_InflictStatus`, `MsProvOff`, `MsSetProvokingCommand` |
+| `+0x5c5` | `u8` | `threatened_by_id` | `DmgCalc_InflictStatus`, `MsThreatProcess` |
+| `+0x5c7` | `u8` | `wpn_power` | `MsCalcDamageCTB`, `DmgCalc`, `MsSetRamChrParam` |
+| `+0x5c8` | `u8` | `doom_counter` | property `0xa0` `STAT_DEATH_SENTENCE_COUNT`; `DmgCalc_InflictStatus_Extra`, `MsSetDeathSentence`, `MsNumberDrawProcess` |
+| `+0x5c9` | `u8` | `doom_counter_init` | property `0x9f` `STAT_DEATH_SENTENCE_START`; `DmgCalc_InflictStatus_Extra`, `MsNumberDrawProcess`, `MsGetChrStatInfo` |
+| `+0x5cb` | `u8 (bool)` | `stat_prov_command_flag` | property `0x100` `STAT_PROV_COMMAND_FLAG`; `MsSetProvokingCommand`, `Native_BtlUseCommand`, `MsGetChrStatInfo` |
+| `+0x5d0` | `i32` | `hp` | `MsCheatPlayerPowerup`, `MsDebugFullSummon` |
+| `+0x5d4` | `i32` | `mp` | `MsCheatPlayerPowerup`, `getBtlchrParam`, `setBtlchrParam` |
+| `+0x5d8` | `u8` | `wpn_crit_bonus` | `DmgCalc_Crit`, `MsSetRamChrParam` |
+| `+0x5d9` | `ElementFlags` | `elem_wpn` | `MsGetComInfo`, `DmgCalc`, `MsSetRamChrParam` |
+| `+0x5da` | `ElementFlags` | `elem_absorb` | properties `0x62`-`0x66` (`STAT_ABS_FIRE` ... `STAT_ABS_HOLY`); `DmgCalc_Elem`, `MsMenuAbsElement_0078f910`, `MsSetRamChrParam` |
+| `+0x5db` | `ElementFlags` | `elem_ignore` | properties `0x67`-`0x6b` (`STAT_INV_FIRE` ... `STAT_INV_HOLY`); `DmgCalc_Elem`, `MsMenuInvElement`, `MsSetRamChrParam` |
+| `+0x5dc` | `ElementFlags` | `elem_resist` | properties `0x6c`-`0x70` (`STAT_HALF_FIRE` ... `STAT_HALF_HOLY`); `DmgCalc_Elem`, `MsMenuHalfElement`, `MsSetRamChrParam` |
+| `+0x5dd` | `ElementFlags` | `elem_weak` | properties `0x71`-`0x75` (`STAT_WEAK_FIRE` ... `STAT_WEAK_HOLY`); `DmgCalc_Elem`, `MsMenuWeakElement_00790240`, `MsSetRamChrParam` |
+| `+0x5de` | `StatusMap` | `status_inflict` | `DmgCalc_InflictStatus`, `MsSetRamChrParam` |
+| `+0x5f7` | `StatusDurationMap` | `status_duration_inflict` | `MsSetRamChrParam` |
+| `+0x604` | `StatusExtraFlags` | `status_inflict_extra` | `DmgCalc`, `MsSetRamChrParam` |
+| `+0x606` | `StatusPermanentFlags` | `status_suffer` | properties `0x25`-`0x2c` (`STAT_POWER_BREAK` ... `STAT_THREAT`); `MsCheatPlayerPowerup`, `MsAliveProcess`, `DmgCalc_PowerMagicBreak` |
+| `+0x608` | `StatusDurationMap` | `status_suffer_turns_left` | property `0x2d` `STAT_SLEEP`; `MsCalcDrainResult`, `MsSetChrWeak`, `MsBattleProcess_Status_007917d0` |
+| `+0x616` | `StatusExtraFlags` | `status_suffer_extra` | properties `0x8f`-`0x9d` (`STAT_LIVE` ... `STAT_DEATH_SENTENCE`); `DmgCalc_InflictStatus_Extra`, `DmgCalc_ShieldBoost`, `MsCheckUseCommand` |
+| `+0x62a` | `StatusPermanentFlags` | `status_auto_full_permanent` | `DmgCalc_InflictStatus`, `MsResetAutoStatus`, `MsSetAutoStatus` |
+| `+0x62c` | `StatusTemporalFlags` | `status_auto_full_temporal` | `MsCalcCommandTarget`, `MsResetAutoStatus`, `MsSetAutoStatus` |
+| `+0x62e` | `StatusExtraFlags` | `status_auto_full_extra` | `DmgCalc_InflictStatus_Extra`, `MsResetAutoStatus`, `MsSetAutoStatus` |
+| `+0x630` | `StatusPermanentFlags` | `status_auto_innate_permanent` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x632` | `StatusTemporalFlags` | `status_auto_innate_temporal` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x634` | `StatusExtraFlags` | `status_auto_innate_extra` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x636` | `StatusPermanentFlags` | `status_auto_sos_permanent` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x638` | `StatusTemporalFlags` | `status_auto_sos_temporal` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x63a` | `StatusExtraFlags` | `status_auto_sos_extra` | `MsSetAutoStatus`, `MsSetRamChrParam` |
+| `+0x63d` | `u8` | `weak_level_full` | `MsSetChrWeak`, `MsGetChrStatWeak`, `MsSetChrStatInfo`; the pose `MsSetChrWeak` picks (0 with `+0x450`; 3 while KO'd), read by `MsGetChrStatWeak` |
+| `+0x63e` | `u8` | `weak_level_hp` | `MsSetChrWeak`, `MsSetAutoStatus`, `MsCheckAutoStatus`; `MsCalcWeakLevel` of HP and maximum HP (`MsSetChrWeak`); 1 and 2 (below a half) add the SOS auto-statuses (`MsSetAutoStatus`), `+0x63f` the level last applied |
+| `+0x641` | `StatusMap` | `status_resist` | property `0xaf` `STAT_DEF_DEATH`; `MsSetRamChrParam`, `MsGetChrStatInfo` |
+| `+0x65a` | `StatusExtraFlags` | `status_resist_extra` | properties `0xc8`-`0xd6` (`STAT_DEF_LIVE` ... `STAT_DEF_DEATH_SENTENCE`); `DmgCalc_InflictStatus_Extra`, `MsGetChrLibraWord_0078fac0`, `MsSetRamChrParam` |
+| `+0x65c` | `u8` | `ctb` | property `0xe8` `STAT_CTB`; `MsCalcDamage`, `MsCalcDamageCTB`, `DmgCalc_InflictStatus` |
+| `+0x65d` | `u8` | `default_turn_delay` | `MsCalcDamageCommand`, `MsRelife`, `MsSetFirstCTB` |
+| `+0x65e` | `u8` | `cheer_stacks` | `MsCalcDamageCommand`, `MsClearStatus` |
+| `+0x65f` | `u8` | `aim_stacks` | `DmgCalc_CheckHit` |
+| `+0x660` | `u8` | `focus_stacks` | `MsCalcDamageCommand` |
+| `+0x661` | `u8` | `reflex_stacks` | `DmgCalc_CheckHit` |
+| `+0x662` | `u8` | `luck_stacks` | `DmgCalc_Crit`, `DmgCalc_CheckHit`, `MsClearStatus` |
+| `+0x663` | `u8` | `jinx_stacks` | `DmgCalc_Crit`, `DmgCalc_CheckHit` |
+| `+0x664` | `AbilityMap` | `abilities` | `MsSetRamChrAbility` |
+| `+0x670` | `LimitAbilityMap` | `limits` | Fahrenheit, not checked |
+| `+0x6bc` | `AutoAbilityEffectsMap` | `auto_ability_effects` | properties `0x3a`-`0x4a` (`ABILITY_SEE` ... `ABILITY_PIERCE`); `DmgCalc_Armored`, `DmgCalc_CheckCounter`, `DmgCalc_MagicBooster` |
+| `+0x6ce` | `u8` | `stat_use_mp0` | property `0x102` `STAT_USE_MP0`; `MsGetCommandMP`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x6d1` | `u8` | `summoned_by_id` | property `0x106` `STAT_SUMMONER`; `MsGetSummonerNum`, `Native_70d5_SelSetField6d1`, `MsExchangeSummon` |
+| `+0x6d2` | `u8` | `regen_strength` | `AfterDamageProcess`, `MsBattleProcess_Order_00790fb0`, `MsSetAutoStatus`; cleared when the regen counter `+0x612` starts (`MsSetAutoStatus`) |
+| `+0x6db` | `u8` | `stat_attack_num` | property `0xf6` `STAT_ATTACK_NUM`; `MsCalcCommand`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x6df` | `u8` | `stat_command_exe_count` | property `0x114` `STAT_COMMAND_EXE_COUNT`; `MsSetChrPosAfterSummon`, `MsParseCommand`, `MsGetChrStatInfo` |
+| `+0x6e0` | `u8` | `stat_consent` | property `0x115` `STAT_CONSENT`; `MsCommandCueProcess`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x6e1` | `u8` | `stat_energy` | property `0x117` `STAT_ENERGY`; `MsAddChrGain`, `MsGetSummonEnergy`, `MsGetChrStatInfo` |
+| `+0x6e4` | `i32` | `current_hp` | `MsCalcDamage`, `MsCalcDamageCTB`, `MsCalcDamageCommand` |
+| `+0x6e8` | `i32` | `current_mp` | `MsCalcDamage`, `MsCalcDamageCTB`, `MsCalcDamageCommand` |
+| `+0x6ec` | `i32` | `current_ctb` | `MsCalcDamage`, `MsCalcDamageCTB`, `MsCalcDamageCommand` |
+| `+0x700` | `i8` | `stat_death_status` | property `0x126` `STAT_DEATH_STATUS`; `MsDamageCheckDeath`, `MsRelife`, `MsGetChrStatInfo` |
+| `+0x704` | `u32` | `bribe_gil_spent` | `DmgCalc_Bribe` |
+| `+0x718` | `u8 (bool)` | `stat_limit_bar_flag` | property `0x89` `STAT_LIMIT_BAR_FLAG`; `MsGetChrLimitBarFlag`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0x719` | `u8` | `stat_limit_bar_flag_cam` | property `0x88` `STAT_LIMIT_BAR_FLAG_CAM`; `MsCommandReturnChrStatusAll`, `MsGetChrLimitBarFlag`, `MsGetChrStatInfo` |
+| `+0xd34` | `i32` | `damage_hp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xd38` | `i32` | `damage_mp` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xd3c` | `i32` | `damage_ctb` | `MsCalcDamage`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xdc8` | `u8` | `in_battle` | property `0x15` `STAT_INBATTLE`; `MsBtlReadManage`, `MsBtlReadWeapon`, `MsGetSaveWindow`; the actor takes part: commands, lists and auto commands need it (`MsAutoCommandStatusCheck`) |
+| `+0xdca` | `u8` | `stat_target_list` | property `0x127` `STAT_TARGET_LIST`; `MsGetSaveWindow`, `MsChangeMonsterDir`, `MsGetChrStatInfo` |
+| `+0xdcc` | `u8` | `stat_death` | `MsDamageCheckDeath`, `MsRelife`, `MsSetChrWeak`; `MsGetChrStatDeath`; 2 KO'd (`g_BtlCameraKoHeight`) |
+| `+0xdcd` | `u8 (bool)` | `stat_escape_flag` | property `0xad` `STAT_ESCAPE_FLAG`; `MsGetSaveWindow`, `MsDamageCheckDeath`, `MsSetDeath` |
+| `+0xdce` | `u8` | `stat_stone` | `MsBtlReadPlayerProcess`, `MsEffectSetMotion`, `MsCalcCommand`; petrified: `MsGetChrStatStone` (`0x00795800`) returns it signed; it blocks auto commands (`MsAutoCommandStatusCheck`) |
+| `+0xdd0` | `u8 (bool)` | `should_try_capture` | `MsCalcCommand`, `MsDamageCheckDeath`, `MsRelife` |
+| `+0xdd1` | `u8 (bool)` | `captured` | property `0x156` `?`; `MsDamageCheckDeath`, `MsGetChrStatInfo` |
+| `+0xdd2` | `u8 (bool)` | `stat_exist_flag` | property `0x8e` `STAT_EXIST_FLAG`; `MsBattleProcess_Status_007917d0`, `MsGetBattleEndStatus`, `MsSetRamChrData` |
+| `+0xdd3` | `i8` | (`stat_blow_exist_flag`) | property `0xac` `STAT_BLOW_EXIST_FLAG` (case `0x007b392a`: `movsx [edi+0xdd3]`); `MsGetBattleEndStatus` |
+| `+0xdd6` | `u8` | `stat_action` | property `0x51` `STAT_ACTION`; `MsBattleProcess_Order_00790fb0`, `MsSetRamChrData`, `MsLimitTypeTurnCheck` |
+| `+0xdd7` | `u8 (bool)` | `in_ctb_list` | property `0x53` `STAT_CTB_LIST`; `MsBtlReadMonsterProcess`, `MsGetCTBlist`, `MsGetChrStatInfo` |
+| `+0xdd8` | `u8 (bool)` | `in_hp_list` | property `0xd7` `STAT_HP_LIST`; `MsGetSaveWindow`, `MsSetRamChrData`, `MsGetChrStatInfo` |
+| `+0xdd9` | `u8` | `stat_cursor` | property `0x52` `STAT_CURSOR`; `MsGetChrCursorFlag`, `MsCheckTargetsGone`, `MsSetRamChrData` |
+| `+0xdda` | `u8 (bool)` | `stat_effect_target_flag` | property `0xe1` `STAT_EFFECT_TARGET_FLAG`; `MsEffectCheckTarget`, `MsEffectGetTargetFlag`, `MsGetChrStatInfo` |
+| `+0xddb` | `u8 (bool)` | `stat_regen_damage_flag` | property `0x151` `STAT_REGEN_DAMAGE_FLAG`; `MsCheckStatusBeforeAction`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xddd` | `u8` | `stat_event_chr` | property `0x50` `STAT_EVENT_CHR`; `MsGetChrEventFlag`, `Native_704f_SelSetFieldDdd`, `MsGetChrStatInfo` |
+| `+0xdde` | `u16` | `stat_blow_exist_flag` | `MsGetChrEventFlag`, `MsSetRamChrData`, `MsGetChrStatInfo`; **a `u16`, not the blow-away flag**: an id (`0xff` none) that `MsGetChrEventFlag(i, id)` (`0x00794f20`) compares: with `+0xddd` set and `+0xdde` neither `0xff` nor `id` it returns 2; property `0x159` reads the word. The blow-away flag (property `0xac`) is `+0xdd3` |
+| `+0xdeb` | `u8` | `steal_count` | property `0x79` `STAT_STEAL_COUNT`; `Battle_Steal`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xdec` | `u8` | `stat_will_die` | `MsCalcDamage`, `MsRelife`, `MsGetChrStatInfo`; property `0x1b` `STAT_WILL_DIE` counts it (clear instead of set while `g_BtlStatInvert1B`) |
+| `+0xdf9` | `u8` | `stat_cursor_element` | property `0x87` `STAT_CURSOR_ELEMENT`; `MesSetChrTargetPosToLimitSparePosy`, `MsSetRamChrData`, `MsCalAndGetChrTargetPos` |
+| `+0xe0c` | `u8` | `stat_effvar` | property `0x80` `STAT_EFFVAR`; `MsGetChrEffectVariable`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xe0e` | `u8` | `stat_effect_hit_num` | property `0xaa` `STAT_EFFECT_HIT_NUM`; `MsSetRamChrData`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xe10` | `u8` | `stat_magic_effect_ground` | property `0xe2` `STAT_MAGIC_EFFECT_GROUND`; `MsMagicEffectSet`, `MsMagicEffectStart`, `MsGetChrStatInfo` |
+| `+0xe11` | `u8` | `stat_magic_effect_water` | property `0xe3` `STAT_MAGIC_EFFECT_WATER`; `MsMagicEffectStart`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xe1a` | `i16` | `stat_sound_hit_num` | property `0x104` `STAT_SOUND_HIT_NUM`; `MsBattleProcess_ChrDamage_007911e0`, `MsParseCommand`, `MsGetChrStatInfo` |
+| `+0xf74` | `u8` | `stat_info_mes_id` | property `0xeb` `STAT_INFO_MES_ID`; `MsGetMenuChrInfo`, `MsSetRamChrData`, `MsGetChrStatInfo` |
+| `+0xf75` | `u8` | `stat_live_mes_id` | property `0xec` `STAT_LIVE_MES_ID`; `MsGetMenuChrInfo`, `MsGetChrStatInfo`, `MsSetChrStatInfo` |
+| `+0xf78` | `ptr` | `ptr_script_chunks` | `Mon_AttachData`, `Mon_LoadAll` |
+| `+0xf7c` | `ptr` | `ptr_script_data` | `Mon_AttachData`, `MsAtelRequestExe`, `MsAtelGetHandler` |
+| `+0xf80` | `ptr` | `ptr_base_stats` | `Mon_AttachData`, `MsSetRamChr` |
+| `+0xf84` | `ptr` | `ptr_base_en_stats` | `Mon_AttachData` |
+| `+0xf88` | `ptr` | `loot` | `MsCalcCommand`, `MsDamageCheckDeath`, `AfterDamageProcess` |
+
 ## Known original bug: more than 16 hits overrun a target's results
 
 Each actor has two action buffers of 0x2d8 bytes, at `+0x774` and `+0xa4c`
@@ -668,7 +916,7 @@ its index bytes at `0x00783660`):
 | 4 | waits for the script callbacks (`AtelIsCallbackQue`) |
 | 5 → 6 | index, name (copied to `g_BtlFileName`), async task `0x00784500`, `g_BtlFileKind` (0 for files 0x102-0x104), the file read into the buffer (CD `+0`, completion `0x00782fe0`), the font path, the special texture unless `TkGetLang` |
 | 7 | `FlushCache(0)`, `MsBtlReadSetScene` (0xa skips the map) |
-| 8 → 9 | `g_BtlMapRead`, battle map (`g_BtlBattleMusic` bit 0x400) or field map, number its low ten bits; `g_BtlMapStarted` |
+| 8 → 9 | `g_BtlMapRead`, battle map (`g_BtlBattleMap` bit 0x400) or field map, number its low ten bits; `g_BtlMapStarted` |
 | 9 → 0x22 | waits for the renderer (bits 0x20 and 0x40), `loadPhyreFieldMap` |
 | 0x22 → 0xa | waits for `g_BtlMapRead` |
 | 0xa → 0xb | directions, first strike (`MsGetFirstAttack(0x20)`, a script's `g_BtlFirstAttackSet` over it), the two scripts in manager 0 and set up, the reverb (formation byte 1), the battle count (below 0x0fffffff unless the steal rule is 2), camera 0x18, the party shown (none: motion 0x3f), the monsters placed once the map started |
@@ -800,7 +1048,7 @@ font is kept and handed to `TOFTCTransfer`. `0x023112bc` is 1 unless the
 file's name is `system_01`. With `MsBattleExe`'s mode set the status
 becomes 0 and it returns 0; else `MsActionInit`, `MsSetRamChrData`,
 `MsPushBtlPosAll`, `MsBtlBridgeEvent2Btl`, `AtelEventRemoveForBattle`
-(the battle map `g_BtlBattleMusic`, sign-extended), `Sg_SetPlayer(0)`,
+(the battle map `g_BtlBattleMap`, sign-extended), `Sg_SetPlayer(0)`,
 `Sg_IdSetEffectTableIndex(1)`, and the status (returned) is 10 when
 `TkGetNowEventJumpMapNo` is that map, else 8. The original also calls
 `MsGetSaveConfigEnglish` and `FFXIsDebug` with mode 0 and drops both
