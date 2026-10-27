@@ -7,6 +7,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::h3b_glue1::bridge as b1;
 use ffx_prender::h3b_glue2::bridge as b2;
+use ffx_prender::h3b_glue3::bridge as b3;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -21,5 +22,14 @@ ported! {
     PostProcessManager_renderUSM @ 0x0069_7670 => extern "thiscall" fn render_usm(this: u32, _renderer: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0x2e>::new();
         b2::render_usm(&mut mem(), f.at() + 0xb8, slots, this)
+    }
+
+    // ---- batch 2 (ffx_prender::h3b_glue3) ----
+    /// `PostProcessManager_onAllShaderBinFilesLoaded(this)`: the manager's
+    /// targets, meshes, effects and presets; 0, 0x13, 0xd or a callee's
+    /// error.
+    PostProcessManager_onAllShaderBinFilesLoaded @ 0x0069_3d70 => extern "thiscall" fn on_all_shader_bin_files_loaded(this: u32) -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        b3::on_all_shader_bin_files_loaded(&mut mem(), f.at() + 0x44, this)
     }
 }

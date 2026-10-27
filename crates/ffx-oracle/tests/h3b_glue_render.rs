@@ -1101,3 +1101,185 @@ fn batch1_render_usm_matches_the_original() {
         run_cases(t, CASES_USM, n, &mut Rng(0xb3b1_0002));
     });
 }
+
+// ---- batch 2: PostProcessManager_onAllShaderBinFilesLoaded (ffx_prender::h3b_glue3) ----
+
+use ffx_prender::h3b_glue3::{self as h3, bridge as b3};
+
+impl Twins {
+    /// A recording stub at `sym` for a method taking two pointers: logs
+    /// `tag`, `ecx` and the words they point at (what the callee reads
+    /// through them at the call), pops 2 words, returns `ret`.
+    fn stub_deref2(&mut self, sym: u32, ret: u32) {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        for k in 0..2u8 {
+            c.extend([0x8b, 0x54, 0x24, 4 + 4 * k]); // mov edx, [esp+4+4k]
+            c.extend([0x8b, 0x12]); // mov edx, [edx]
+            c.extend([0x89, 0x50, 8 + 4 * k]); // mov [eax+8+4k], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        c.extend([0xc2, 0x08, 0x00]); // ret 8
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// `n` results: 0, with one error now and then.
+fn errors_n(rng: &mut Rng, n: usize) -> Vec<u32> {
+    let mut v = vec![0; n];
+    let k = rng.below(2 * n as u32) as usize;
+    if k < n {
+        v[k] = rng.next() | 1;
+    }
+    v
+}
+
+/// A preset file's contents at `at`: a count, then records of a
+/// length-prefixed name and 13 words.
+fn presets(t: &mut Twins, at: u32, rng: &mut Rng) {
+    let count = pick(rng, &[0, 0xffff_ffff, 1, 2, 3]);
+    let mut b = count.to_le_bytes().to_vec();
+    for _ in 0..count.min(3) {
+        let len = pick(rng, &[0, 3, 8, 15]) as u8;
+        b.push(len);
+        b.extend((0..len).map(|_| b'a' + rng.below(26) as u8));
+        for _ in 0..13 {
+            b.extend(rng.next().to_le_bytes());
+        }
+    }
+    t.write(at, &b);
+}
+
+/// The manager (settings or none, its size and flags), the variants (one
+/// missing now and then), the MSAA mode, created textures and arrays
+/// (each array's head: inline, empty, owned or borrowed storage), the
+/// targets (one missing now and then), the calls failing now and then,
+/// the preset files (open or not, by `al` only).
+#[allow(clippy::too_many_lines)] // the callees
+fn prep_loaded(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let pm = t.zeros(0x1_2410);
+    *this = pm;
+    let settings = if rng.chance(6) { 0 } else { obj + 0x40 };
+    t.w32(pm, settings);
+    for k in 0..0x28 {
+        let v = rng.float().to_bits();
+        t.w32(obj + 0x40 + 4 * k, v);
+    }
+    // the preset table and the flag bytes hold old values
+    let old = rng.bytes(0x44 * 10);
+    t.write(pm + 0x126c, &old);
+    let flags = rng.bytes(8);
+    t.write(pm + 0x123d0, &flags);
+    for at in [0x123f8, 0x12400, 0x12404, 0x122e8, 0x1230c] {
+        let v = rng.next();
+        t.w32(pm + at, v);
+    }
+    let index = rng.below(6);
+    t.w32(pm + 0x1268, index);
+    let variants: Vec<u32> = (0..11)
+        .map(|_| if rng.chance(14) { 0 } else { rng.next() | 1 })
+        .collect();
+    t.stub_seq(h3::POST_LOOKUP, true, 1, 1, &variants);
+    let app = obj + 0x800;
+    t.stub_ret(h3::GET_APPLICATION, false, 0, 0, app);
+    let mode = pick(rng, &[0, 0, 2, 4, 8, 0x10, 1, 3, 0x20]);
+    t.w32(app + 0x284, mode);
+    // textures and arrays from one pool (an array's head and storage)
+    let pool = obj + 0x1000;
+    let mut created = vec![];
+    for k in 0..40 {
+        let at = pool + 0x40 * k;
+        let bytes = rng.bytes(0x40);
+        t.write(at, &bytes);
+        let head = pick(rng, &[1, 0, 2, 3, 0x8000_0002, 0x8000_0001, 0x8000_0000]);
+        t.w32(at, head);
+        let data = pick(rng, &[at + 4, obj + 0x3000, 0]);
+        t.w32(at + 4, data);
+        created.push(at);
+    }
+    if rng.chance(10) {
+        created[0] = 0;
+    }
+    t.stub_seq(h3::CLUSTER_CREATE, true, 3, 3, &created);
+    let targets: Vec<u32> = (0..12)
+        .map(|k| {
+            if rng.chance(60) {
+                0
+            } else {
+                obj + 0x2000 + 0x20 * k
+            }
+        })
+        .collect();
+    t.stub_seq(h3::MAKE_TARGET, true, 1, 1, &targets);
+    let dims = errors_n(rng, 12);
+    t.stub_seq(h3::SET_DIMENSIONS, true, 4, 4, &dims);
+    let blur2 = errors_n(rng, 2);
+    t.stub_seq(h3::BLUR2_INITIALIZE, true, 3, 3, &blur2);
+    for mesh in [h3::MESH_TRIANGLE, h3::MESH_QUAD, h3::MESH_HDAO] {
+        let meshes: Vec<u32> = (0..8)
+            .map(|k| obj + 0x2400 + 0x20 * k + (mesh & 0xf00))
+            .collect();
+        t.stub_seq(mesh, false, 1, 0, &meshes);
+    }
+    // the preset files: open by al only
+    let open: Vec<u32> = (0..2).map(|_| pick(rng, &[0, 1, 0x100, 0xff01])).collect();
+    t.stub_seq(h3::READER_IS_OPEN, true, 0, 0, &open);
+    let size = rng.next();
+    t.stub_ret(h3::STREAM_SIZE, true, 0, 0, size);
+    let buf = obj + 0x4000;
+    presets(t, buf, rng);
+    t.stub_ret(h3::NEW, false, 1, 0, buf);
+    t.stub_deref2(h3::MAP_INSERT, 0);
+    FRAME_IGNORE.with(|f| f.borrow_mut().push((0x28, 0x18)));
+}
+
+const LOADED_STUBS: &[(u32, K)] = &[
+    (h3::REGISTER, K::This(0)),
+    (h3::UPDATE_MAX_LEVEL, K::This(0)),
+    (h3::CREATE_MATERIAL, K::This(3)),
+    (h3::FREE, K::Cdecl(1)),
+    (h3::SET_WORD, K::This(2)),
+    (h3::GLOW_INITIALIZE, K::This(3)),
+    (h3::GLOW_SHADERS, K::This(2)),
+    (h3::BLUR_INITIALIZE, K::This(3)),
+    (h3::BLUR_SHADERS, K::This(2)),
+    (h3::BLUR2_SHADERS, K::This(2)),
+    (h3::SCREEN_FADE_MESH, K::This(0)),
+    (h3::SETTING_TABLE, K::This(1)),
+    (h3::SAMPLER_FILTER, K::This(1)),
+    (h3::SAMPLER_ADDRESS_U, K::This(1)),
+    (h3::SAMPLER_ADDRESS_V, K::This(1)),
+    (h3::SAMPLER_ADDRESS_W, K::This(1)),
+    (h3::READER_CTOR, K::This(1)),
+    (h3::READER_CLOSE, K::This(0)),
+    (h3::READER_DTOR, K::This(0)),
+    (h3::STREAM_READ, K::This(2)),
+    (h3::DELETE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES_LOADED: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_loaded), ..method("on_all_shader_bin_files_loaded", 0x0069_3d70, This::Object, 0, LOADED_STUBS, |m, this, _| u(b3::on_all_shader_bin_files_loaded(m, frame_ebp(), this))) }), 0x44, 0),
+];
+
+#[test]
+fn batch2_on_all_shader_bin_files_loaded_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 100 } else { 600 };
+        run_cases(t, CASES_LOADED, n, &mut Rng(0xb3b2_0003));
+    });
+}
