@@ -79,6 +79,7 @@ use ffx_prender::h3_glue53::{self as h53, bridge as gh53};
 use ffx_prender::h3_glue54::{self as h54, bridge as gh54};
 use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
 use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
+use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -12584,5 +12585,182 @@ fn batch58_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 30 } else { 100 };
         run_cases(t, CASES58, n, &mut Rng(0x5858_b058));
+    });
+}
+
+// ---- round 17 batch 59 (ffx_prender::h3_glue57) ----
+
+impl Twins {
+    /// A recording stub at `sym` (as [`Twins::stub`]) that first stores
+    /// each `(k, value)`'s word through its stack argument `k`.
+    fn stub_writes(
+        &mut self,
+        sym: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+        writes: &[(u8, u32)],
+    ) {
+        let log = self.stub(None, sym, this, n, pops, Some(ret));
+        let mut c = vec![];
+        for &(k, v) in writes {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp+4+4k]
+            c.extend([0xc7, 0x00]); // mov dword [eax], v
+            c.extend(v.to_le_bytes());
+        }
+        let at = self.cave_next;
+        c.push(0xe9); // jmp log
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A float, mostly a moderate one (hundredths in -20..20), so that one
+/// NaN or infinity does not swamp a whole matrix.
+fn mild(rng: &mut Rng) -> u32 {
+    if rng.chance(16) {
+        rng.float().to_bits()
+    } else {
+        ((rng.below(4000) as f32 - 2000.0) / 100.0).to_bits()
+    }
+}
+
+/// An `al` answer (0 or not) with stray high bits.
+fn answer(rng: &mut Rng) -> u32 {
+    let al = pick(rng, &[0, 1, 0x80]);
+    (rng.next() & !0xff) | al
+}
+
+/// An extent around the 30 the original compares with.
+fn extent30(rng: &mut Rng) -> u32 {
+    pick(
+        rng,
+        &[
+            10.0_f32.to_bits(),
+            30.0_f32.to_bits(),
+            0x41f0_0001, // just above 30
+            50.0_f32.to_bits(),
+            0x7fc0_0000,
+            (-40.0_f32).to_bits(),
+        ],
+    )
+}
+
+/// The manager (cells used or shared), the instance (none, or one whose
+/// first word is 0 but for its top bit), its mesh's bounds and 3x4
+/// matrix, the atlas size (0, negative, not a multiple of 8, the game's),
+/// the cell lookup's and insertions' answers and cells, the bounding box
+/// and casters' extents, the radius (0, -0, NaN, any), the outputs (apart
+/// or one word).
+fn prep_update_shadow(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let manager = t.zeros(0x2c00);
+    let fill = rng.bytes(0x2c00);
+    t.write(manager, &fill);
+    for cell in 0..64 {
+        if rng.chance(2) {
+            t.w32(manager + 0x29e8 + 4 * cell, 1);
+        }
+    }
+    *this = manager;
+    let inst = t.zeros(0x200);
+    let fill = rng.bytes(0x200);
+    t.write(inst, &fill);
+    let any = rng.next() | 1;
+    let first = pick(rng, &[0, 0x8000_0000, 1, any]);
+    t.w32(inst, first);
+    t.w32(inst + 4, inst + 0x20);
+    t.w32(inst + 0x20, inst + 0x40);
+    t.w32(inst + 0x40 + 0x1c, inst + 0x80);
+    t.w32(inst + 0x40 + 4, inst + 0x100);
+    for k in 0..8 {
+        let v = mild(rng);
+        t.w32(inst + 0x80 + 4 * k, v);
+    }
+    for k in 0..12 {
+        let v = mild(rng);
+        t.w32(inst + 0x100 + 4 * k, v);
+    }
+    let any = rng.next();
+    let size = pick(rng, &[0, 2048, 4096, 1024, 13, (-9_i32) as u32, any]);
+    t.global(h57::SHADOW_SIZE, size);
+    let (col, row) = (rng.below(8), rng.below(8));
+    let found = answer(rng);
+    t.stub_writes(
+        h57::ALREADY_IN_MAP,
+        true,
+        3,
+        3,
+        found,
+        &[(1, col), (2, row)],
+    );
+    let (wide, deep) = (extent30(rng), extent30(rng));
+    let up = rng.float().to_bits();
+    let ret = rng.next();
+    t.stub_writes(
+        h57::MAX_BOUNDING_BOX,
+        false,
+        4,
+        0,
+        ret,
+        &[(1, wide), (2, deep), (3, up)],
+    );
+    for sym in [h57::INSERT, h57::INSERT_DOUBLE] {
+        let (col, row) = (rng.below(8), rng.below(8));
+        let done = answer(rng);
+        t.stub_writes(sym, true, 6, 6, done, &[(2, col), (3, row)]);
+    }
+    let ex = [mild(rng), mild(rng), mild(rng)];
+    let ret = rng.next();
+    t.stub_writes(
+        h57::CASTERS_EXTENT,
+        false,
+        5,
+        0,
+        ret,
+        &[(1, ex[0]), (2, ex[1]), (3, ex[2])],
+    );
+    let outs = t.zeros(0x40);
+    args[0] = outs;
+    args[1] = if rng.chance(8) { 0 } else { inst };
+    if rng.chance(4) {
+        for k in [3, 5, 6, 7] {
+            args[k] = outs + 0x20;
+        }
+    } else {
+        args[3] = outs + 0x10;
+        args[5] = outs + 0x14;
+        args[6] = outs + 0x18;
+        args[7] = outs + 0x1c;
+    }
+    let any = mild(rng);
+    args[4] = pick(
+        rng,
+        &[
+            (-0.2_f32).to_bits(),
+            (-1.0_f32).to_bits(),
+            5.0_f32.to_bits(),
+            any,
+        ],
+    );
+    let any = mild(rng);
+    args[8] = pick(rng, &[0, 0x8000_0000, 0x7fc0_0000, any, 2.5_f32.to_bits()]);
+    args[9] = rng.float().to_bits();
+}
+
+#[rustfmt::skip]
+const CASES59: &[Case] = &[
+    framed(Case { prep: Some(prep_update_shadow), ..method("update_shadow_map", 0x006d_3000, This::Object, 12, &[], |m, this, a| { let slots = slots_at(m, a); u(gh57::update_shadow_map(m, frame_ebp(), slots, this)) }) }, 0x2b0, 0x30),
+];
+
+#[test]
+fn batch59_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES59, n, &mut Rng(0x5959_b059));
     });
 }

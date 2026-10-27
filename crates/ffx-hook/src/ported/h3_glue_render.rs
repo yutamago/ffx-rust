@@ -62,6 +62,7 @@ use ffx_prender::h3_glue53::bridge as g53;
 use ffx_prender::h3_glue54::bridge as g54;
 use ffx_prender::h3_glue55::bridge as g55;
 use ffx_prender::h3_glue56::bridge as g56;
+use ffx_prender::h3_glue57::bridge as g57;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2122,6 +2123,17 @@ ported! {
     /// (the original tail-jumps to it): the scene's boot-time set-up.
     PhyreScene_bootInit @ 0x0065_7a50 => extern "thiscall" fn scene_boot_init(this: u32) -> u32 {
         g56::boot_init(&mut mem(), this)
+    }
+
+    // ---- round 17 batch 59 (ffx_prender::h3_glue57) ----
+    /// `ShadowManager_updateShadowMap(manager; out, instance, a, &-x, floor,
+    /// &z, &x, &y, radius, spread, c, d)` -> `out`: the instance's cell in
+    /// the shadow atlas, its light matrix and rectangle (frame `ebp -
+    /// 0x2b0`; the original reads its arguments from their slots, which it
+    /// reuses as scratch).
+    ShadowManager_updateShadowMap @ 0x006d_3000 => extern "thiscall" fn shadow_update_map(this: u32, _out: u32, _instance: u32, _a: u32, _neg_x: u32, _floor: u32, _z: u32, _x: u32, _y: u32, _radius: u32, _spread: u32, _c: u32, _d: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xac>::new();
+        g57::update_shadow_map(&mut mem(), f.at() + 0x2b0, slots, this)
     }
 }
 
