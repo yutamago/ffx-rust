@@ -8,11 +8,11 @@
 //! frac`, the fraction of a 32.32 fixed-point position starting at 0); its
 //! left and right gains move to a new value by a linear ramp over the
 //! block's first [`RAMP`] frames (from 0 at the start), added after each
-//! frame. Stereo waves: the pan scales one side (`1 + pan` right for a
-//! negative pan, `1 - pan` left for a positive one). Mono waves play on the
-//! left only, and take a new gain only every second block of their life.
-//! All measured against FMOD's own mix; what is still off is listed in
-//! `audio-platform.md`.
+//! frame, and only for a change of at least [`CHANGE`]; below [`SILENT`] a
+//! voice falls silent at once. The pan is ignored; mono waves play on the
+//! left only. Loops run on whole IMA blocks. All measured against FMOD's
+//! own mix and with `examples/fmod-probe.rs`; what is still off (float
+//! rounding) is listed in `audio-platform.md`.
 
 use std::sync::Arc;
 
@@ -25,10 +25,10 @@ pub const BLOCK: usize = 1600;
 pub const RAMP: u32 = 64;
 /// The smallest change of a voice's levels (left plus right) that FMOD
 /// applies: 0.00064 (one ramp step of 1e-5).
-const CHANGE: f32 = 0.000_64;
+pub const CHANGE: f32 = 0.000_64;
 /// Below this volume FMOD mixes a voice silent (between the measured
 /// 1.704e-5, silent, and 2.32e-5, not).
-const SILENT: f32 = 2.0e-5;
+pub const SILENT: f32 = 2.0e-5;
 /// 16-bit PCM to float.
 const SCALE: f32 = 1.0 / 32768.0;
 
