@@ -20,7 +20,7 @@ use ffx_glue_other::{
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
     h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
     h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6,
-    h4_m7 as m7, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_m7 as m7, h4_m8 as m8, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2697,6 +2697,15 @@ ported! {
     ClassDynamicGeometry_updateRenderData @ 0x006a_4a50 => extern "thiscall" fn class_dynamic_geometry_update_render_data(this: u32, _unused: u32) -> u32 {
         let mut frame = StackFrame::<{ (m7::RENDER_FRAME / 4) as usize }>::new();
         m7::update_render_data(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 11, batch 3 (ffx_glue_other::h4_m8)
+    /// `createVFXRenderDataBuffer(lo, hi, effect, data, flags)` -> 1 or 0
+    /// (a 0x23d8-byte frame, as the original's: the counts, names and
+    /// flags it hands the data buffers; zeroed, so the kinds of segments
+    /// that never set theirs read 0).
+    createVFXRenderDataBuffer @ 0x0071_3790 => extern "C" fn create_vfx_render_data_buffer(lo: u32, hi: u32, effect: u32, data: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m8::BUFFER_FRAME / 4) as usize }>::new();
+        m8::create_render_data_buffer(&mut mem(), frame.at(), lo, hi, effect, data, flags)
     }
 }
 

@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6, h4_m7 as m7,
+    h4_m8 as m8,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -595,7 +596,15 @@ impl Twins {
             let mut y = vec![0; len];
             self.a.read_bytes(frame + off, &mut x);
             self.b.read_bytes(frame + off, &mut y);
-            assert_eq!(x, y, "{what}: frame +{off:#x}");
+            if let Some(k) = (0..len).find(|&k| x[k] != y[k]) {
+                let end = (k + 16).min(len);
+                panic!(
+                    "{what}: frame +{:#x} differs: original {:x?}, port {:x?}",
+                    off as usize + k,
+                    &x[k..end],
+                    &y[k..end]
+                );
+            }
         }
         eax
     }
@@ -1921,5 +1930,161 @@ fn m7_update_render_data() {
         }
         eprintln!("{name}: {seen:?}");
         assert!(seen[..3].iter().all(|&k| k > 2), "{name}: {seen:?}");
+    }
+}
+
+/// `createVFXRenderDataBuffer`: models of 1..6 segments of every kind
+/// (and unknown kinds), counts 0, negative and large (several index
+/// groups), the texture numbers' special cases (the frame buffers,
+/// monsters with and without an instance or a name, magic 0x122's
+/// remaps, the flag numbers), textures missing, 30 segments, the magic
+/// and map cases of the flags, one, several or no instances, render data
+/// missing.
+#[test]
+fn m8_create_render_data_buffer() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_7137);
+        for (sym, n) in [
+            (m8::MEMSET, 3),
+            (m8::LEVEL_HASH, 0),
+            (m8::MAGIC_ID, 0),
+            (m8::PTR32, 1),
+            (m8::IS_TEXTURE_BP_LOADED, 7),
+            (m8::IS_TEXTURE_LOADED, 6),
+            (m8::CHR_INSTANCE, 1),
+            (m8::MONSTER_TEXTURE_NAME, 2),
+            (m8::BATTLE_SCENE, 0),
+            (m8::DBG_PRINTF, 2),
+            (m8::VFX_CREATE, 3),
+            (m8::USE_MULTIPLE, 2),
+            (m8::CREATE_DATA_BUFFER, 7),
+            (m8::RENDER_DATA, 2),
+            (m8::ALLOCATE_BUFFER, 1),
+        ] {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        stub_import(&mut t, m8::SPRINTF.sym, 2);
+        stub_import(&mut t, m8::STRSTR.sym, 2);
+        let tags = [
+            m8::MEMSET,
+            m8::IS_TEXTURE_LOADED,
+            m8::DBG_PRINTF,
+            m8::VFX_CREATE,
+            m8::CREATE_DATA_BUFFER,
+            m8::ALLOCATE_BUFFER,
+            m8::SPRINTF.sym,
+        ];
+        let monster_name = string(&mut t, b"m_tex_012");
+        let numbers = [
+            0x3680u32, 0x3420, 0x3400, 0x3600, 0xd00, 0x1a00, 0x3f10, 0x3f00, 0x100, 0x3b00,
+            0x3800, 0, 0x3a00, 0x3b40, 0x3b41,
+        ];
+        let mut seen = [0u32; 4];
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let level = rng.pick(&[0x25ca, 0x25b0, 0x1234, 0x25ca]);
+            t.ret(m8::LEVEL_HASH, level);
+            let magic = rng.pick(&[
+                0x122, 0x12a, 0x111, 0xc9, 0xcb, 0x203, 0x150, 0x29b, 0x66, 0x67, 0x1ba, 0x18d,
+                0x207, 0xbc, 0x15f, 0x241, 0x241, 0x241,
+            ]);
+            t.ret(m8::MAGIC_ID, magic);
+            t.g32(m8::MAGIC_CASES, rng.pick(&[0, 1]));
+            t.g32(m8::MAP_188_WORD, rng.pick(&[0xffff_ffff, 3]));
+            t.g32(m8::CURRENT_MAP, rng.pick(&[0x188, 0x46, 0x71, 0x46]));
+            t.ret(m8::BATTLE_SCENE, rng.pick(&[0x0259_0069, 0x0259_0069, 7]));
+            t.ret(
+                m8::CHR_INSTANCE,
+                rng.pick(&[0, 0xffff_ffff, 0x1234, 0x1234]),
+            );
+            t.ret(
+                m8::MONSTER_TEXTURE_NAME,
+                rng.pick(&[0, monster_name, monster_name]),
+            );
+            t.ret(m8::IS_TEXTURE_BP_LOADED, rng.pick(&[0, 1, 1, 1, 1, 1, 1]));
+            t.ret(m8::IS_TEXTURE_LOADED, rng.pick(&[0, 1, 1]));
+            t.ret(m8::STRSTR.sym, rng.pick(&[0, 1, 1, 1]));
+            t.ret(m8::USE_MULTIPLE, rng.pick(&[0, 1, 2, 2]));
+            // the model: segments, then a terminator that ends the count
+            let segments = rng.pick(&[1, 2, 3, 4, 6, 31]);
+            let mut bytes = Vec::new();
+            let mut total = 0i32;
+            for s in 0..segments {
+                let kind: u8 = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 7, 2, 3, 6, 7, 0xff, 8]);
+                let kind = if rng.below(8) == 0 { kind } else { kind & 7 };
+                let last = s + 1 == segments;
+                let n: i16 = if last && rng.below(4) == 0 {
+                    rng.pick(&[1000, 1500, 2000, 3001, 4500])
+                } else {
+                    rng.pick(&[0, 1, 2, 3, 1, 2, -1])
+                };
+                total += i32::from(n);
+                let number = numbers[rng.below(numbers.len() as u32) as usize];
+                let d = u64::from(number)
+                    | u64::from(rng.below(0x40)) << 20
+                    | u64::from(rng.below(16)) << 26
+                    | u64::from(rng.below(16)) << 30
+                    | u64::from(rng.next() & 0xffff_fffc) << 34;
+                let mut rec = vec![0u8; 0x10];
+                rec[0] = rng.next() as u8;
+                rec[1] = kind;
+                rec[2..4].copy_from_slice(&n.to_le_bytes());
+                rec[8..16].copy_from_slice(&d.to_le_bytes());
+                let stride = [20, 28, 32, 40, 24, 32, 40, 48][usize::from(kind & 7)];
+                rec.extend(vec![0u8; stride * usize::from(n.max(0).cast_unsigned())]);
+                bytes.extend(rec);
+            }
+            // a terminator whose count ends any remaining count (its data is
+            // never read)
+            let mut rec = vec![0u8; 0x10];
+            rec[1] = 1;
+            rec[2..4].copy_from_slice(&0x200i16.to_le_bytes());
+            bytes.extend(rec);
+            let total = if total <= 0 { 0 } else { total };
+            let model = t.zeros(0x20);
+            t.w32(model, rng.pick(&[0, 4, 0x44]));
+            let records = t.alloc(&bytes);
+            t.w32(model + 4, records.wrapping_sub(model));
+            t.w16(model + 0x10, rng.pick(&[total as u16, total as u16, 0x96]));
+            t.ret(m8::PTR32, model);
+            let effect = random_block(&mut t, &mut rng, 0x20);
+            let data = random_block(&mut t, &mut rng, 0x40);
+            t.w8(data, rng.pick(&[0, 0x40]));
+            t.w8(data + 8, rng.pick(&[0x44, 0x42, 0x10]));
+            let x = rng.next();
+            t.w32(data + 0x38, rng.pick(&[0, x]));
+            let rd = random_block(&mut t, &mut rng, 0xc8);
+            let segs = t.zeros(31 * 0x6c);
+            t.w32(rd + 0x94, segs);
+            t.ret(m8::RENDER_DATA, rng.pick(&[rd, rd, rd, 0]));
+            let flags = rng.pick(&[0, 1, 0x2000, 0x1000_0001, 0x8000_0000, 0x2001]);
+            let (lo, hi) = (rng.next(), rng.pick(&[0, 7, 0xffff_ffff]));
+            let ebp = t.ebp_for(5);
+            let frame = ebp - 0x23dc;
+            let r = t.check_framed(
+                &format!("{w} magic {magic:#x} level {level:#x} segments {segments}"),
+                0x0071_3790,
+                &[lo, hi, effect, data, flags],
+                frame,
+                // up to ebp - 8: _alloca_probe keeps ecx there (names[29], never used)
+                &[(0x38, m8::BUFFER_FRAME as usize - 0x3c)],
+                |g| {
+                    u(m8::create_render_data_buffer(
+                        g, frame, lo, hi, effect, data, flags,
+                    ))
+                },
+            );
+            let calls = t.log_entries();
+            seen[if r == 0 {
+                0
+            } else if calls > 12 {
+                1
+            } else {
+                2
+            }] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen[..3].iter().all(|&k| k > 10), "{name}: {seen:?}");
     }
 }
