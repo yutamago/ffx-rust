@@ -1,5 +1,5 @@
 //! The render-side glue, fifty-fourth batch (M4 port round 16, list
-//! `h3-glue-render`): a VFX texture list loaded into the scene's texture
+//! `h3-glue-render`): VFX texture lists loaded into the scene's texture
 //! table. The exception frame and cookie are left out, as in
 //! [`crate::glue10`].
 
@@ -68,6 +68,12 @@ pub const READER_CTOR: u32 = 0x0057_66d0;
 pub const READER_IS_OPEN: u32 = 0x0057_6980;
 pub const READER_CLOSE: u32 = 0x0057_6930;
 pub const READER_DTOR: u32 = 0x0057_67c0;
+/// The MSVC string's destructor (`std_string_dtor`, thiscall), the
+/// in-image `memset` thunk (cdecl) and `PArray_pushBack20_006562f0(array;
+/// &element)` (`ret 4`, a 20-byte element).
+pub const STRING_TIDY: u32 = 0x0040_2da0;
+pub const MEMSET: u32 = 0x0094_964c;
+pub const PUSH_BACK20: u32 = 0x0065_62f0;
 /// `report_rangecheckfailure()` (cdecl, never returns).
 pub const RANGECHECK_FAILURE: u32 = 0x0094_9b02;
 /// The import slots of `strstr`, `strncpy` and `sprintf` (cdecl).
@@ -87,27 +93,6 @@ pub mod bridge {
     use super::*;
     use crate::h3_glue49::bridge::{clear_string, text};
     use ffx_graphic::host::{Conv, Host};
-
-    /// The frame (below `ebp`): the list's text as a string, the scene,
-    /// the line list (count, capacity, data), the list's directory, the
-    /// file path, one line, the reader object.
-    const TEXT: u32 = 0x328;
-    const SCENE: u32 = 0x32c;
-    const LINES: u32 = 0x344;
-    const DIR: u32 = 0x310;
-    const PATH: u32 = 0x210;
-    const LINE: u32 = 0x110;
-    const READER: u32 = 0x37c;
-    /// Words used for several things in turn: the stream, then the
-    /// tail's line pointer, then the path's copy (`- 0x330`); the name's
-    /// `PString`, then the request list (`- 0x338`); the text's
-    /// `PString`, then the line index (`- 0x334`); the line's copy
-    /// (`- 0x348`); the cluster (`- 0x34c`).
-    const W330: u32 = 0x330;
-    const W334: u32 = 0x334;
-    const W338: u32 = 0x338;
-    const LINE_COPY: u32 = 0x348;
-    const CLUSTER: u32 = 0x34c;
 
     /// The C string's length.
     pub(crate) fn strlen(h: &impl Host, s: u32) -> u32 {
@@ -179,15 +164,113 @@ pub mod bridge {
             .wrapping_sub(size)
     }
 
+    /// Where a loader keeps its things below `ebp` (offsets): the list's
+    /// text as a string, the scene, the line list (count, capacity,
+    /// data), the tail line's pointer (later the path's copy), the
+    /// request list, the line index, the line's copy, the cluster, the
+    /// reader object. Both share the directory (`- 0x310`), the path
+    /// (`- 0x210`) and the line (`- 0x110`).
+    struct Frame {
+        ebp: u32,
+        text: u32,
+        scene: u32,
+        lines: u32,
+        tail: u32,
+        list: u32,
+        index: u32,
+        line_copy: u32,
+        cluster: u32,
+        reader: u32,
+        /// `loadMagicFileVFXTexture`: the `_` directory's fallback, the
+        /// layout pushed through `PArray_pushBack20`, the string freed
+        /// with its destructor when a file is missing.
+        magic: bool,
+    }
+
+    const DIR: u32 = 0x310;
+    const PATH: u32 = 0x210;
+    const LINE: u32 = 0x110;
+    /// `loadMagicFileVFXTexture`'s fallback directory (0x100 bytes), its
+    /// second reader and the layout it pushes (20 bytes inside the second
+    /// reader's room).
+    const ALT_DIR: u32 = 0x410;
+    const READER2: u32 = 0x884;
+    const LAYOUT: u32 = 0x87c;
+    /// `loadMagicFileVFXTexture`'s read buffer (0x400 bytes).
+    const CHUNK: u32 = 0x810;
+
+    impl Frame {
+        fn at(&self, off: u32) -> u32 {
+            self.ebp - off
+        }
+    }
+
     /// The early ends: the line list's data freed (user heap), the text's
-    /// buffer freed; `code`.
-    fn finish(h: &mut impl Host, ebp: u32, code: u32) -> u32 {
-        let data: u32 = h.read(ebp - LINES + 8);
+    /// buffer freed (with the string's destructor when `tidy`); `code`.
+    fn finish(h: &mut impl Host, f: &Frame, code: u32, tidy: bool) -> u32 {
+        let data: u32 = h.read(f.at(f.lines) + 8);
         if data != 0 {
             h.call_sym(USER_FREE, Conv::Cdecl, &[data]);
         }
-        free_buffer(h, ebp - TEXT);
+        if tidy {
+            h.call_sym(STRING_TIDY, Conv::Thiscall(f.at(f.text)), &[]);
+        } else {
+            free_buffer(h, f.at(f.text));
+        }
         code
+    }
+
+    /// The name's directory into `ebp - 0x310`: the name copied, cut after
+    /// its last `/` (searched from its end without a lower bound, as in
+    /// the original). The cut's index, or `None` after
+    /// `report_rangecheckfailure` (past 0xff).
+    fn directory(h: &mut impl Host, ebp: u32, name: u32) -> Option<u32> {
+        let dir = ebp - DIR;
+        let mut end = strlen(h, name);
+        strcpy(h, dir, name);
+        while h.read::<u8>(dir.wrapping_add(end)) != b'/' {
+            end = end.wrapping_sub(1);
+        }
+        end = end.wrapping_add(1);
+        if end >= 0x100 {
+            h.call_sym(RANGECHECK_FAILURE, Conv::Cdecl, &[]);
+            return None;
+        }
+        h.write(dir + end, 0u8);
+        Some(end)
+    }
+
+    /// The lines loaded: the request list (with `async`), each line, the
+    /// list's data and the text freed; 0 or the first failure's code.
+    /// The magic loader marks the scene's `+0x24` byte after the last.
+    fn load_lines(h: &mut impl Host, f: &Frame, kind: u32, async_load: u32) -> u32 {
+        let count = split_lines(h, f);
+        h.write(f.at(f.list), 0u32);
+        if async_load & 0xff != 0 {
+            let manager = h.call_sym(ASYNC_INSTANCE, Conv::Cdecl, &[]);
+            let list = h.call_sym(CHILDREN_REQUEST_LIST, Conv::Thiscall(manager), &[count]);
+            h.write(f.at(f.list), list);
+        }
+        let mut i = 0u32;
+        h.write(f.at(f.index), i);
+        while i < count {
+            match load_line(h, f, kind, async_load, i, count) {
+                Line::Skipped | Line::Loaded => {}
+                Line::Missing => return finish(h, f, 5, f.magic),
+                Line::Failed(code) => return finish(h, f, code, false),
+                Line::Aborted => return 0,
+            }
+            i = h.read::<u32>(f.at(f.index)).wrapping_add(1);
+            h.write(f.at(f.index), i);
+        }
+        if f.magic {
+            let this: u32 = h.read(f.at(f.scene));
+            h.write(this.wrapping_add(0x24), 1u8);
+        }
+        if count.cast_signed() < 0 && h.read::<u32>(f.at(f.lines) + 4).cast_signed() < 0 {
+            h.call_sym(RESERVE_WORDS, Conv::Thiscall(f.at(f.lines)), &[0]);
+        }
+        finish(h, f, 0, false)
     }
 
     /// `PhyreScene_loadVFXTexture(this; kind, name, async)` (thiscall,
@@ -211,7 +294,6 @@ pub mod bridge {
     /// path, kind); else it loads and is fixed up at once (its error
     /// returned), and the slot gets flag 1, the name, the path and its
     /// layout.
-    #[allow(clippy::too_many_lines)] // one original, kept in its order
     pub fn load_vfx_texture(
         h: &mut impl Host,
         ebp: u32,
@@ -220,8 +302,21 @@ pub mod bridge {
         name: u32,
         async_load: u32,
     ) -> u32 {
-        h.write(ebp - SCENE, this);
-        let s = ebp - TEXT;
+        let f = Frame {
+            ebp,
+            text: 0x328,
+            scene: 0x32c,
+            lines: 0x344,
+            tail: 0x330,
+            list: 0x338,
+            index: 0x334,
+            line_copy: 0x348,
+            cluster: 0x34c,
+            reader: 0x37c,
+            magic: false,
+        };
+        h.write(f.at(f.scene), this);
+        let s = f.at(f.text);
         clear_string(h, s);
         h.call_sym(STRING_ASSIGN, Conv::Thiscall(s), &[h.rebase(EMPTY), 0]);
         let found = h.call_sym(FIND_NAMED, Conv::Thiscall(this), &[name]);
@@ -230,8 +325,9 @@ pub mod bridge {
                 free_buffer(h, s);
                 return 5;
             }
+            // the stream is kept where the tail line goes later
             let stream = h.call_sym(FIOS_OPEN, Conv::Cdecl, &[name, 1]);
-            h.write(ebp - W330, stream);
+            h.write(f.at(f.tail), stream);
             if stream == 0 {
                 free_buffer(h, s);
                 return 5;
@@ -239,72 +335,126 @@ pub mod bridge {
             let size = h.call_sym(FIOS_FILE_SIZE, Conv::Cdecl, &[stream]);
             let buf = h.call_sym(OPERATOR_NEW_ARRAY, Conv::Cdecl, &[size.wrapping_add(1)]);
             h.write(buf.wrapping_add(size), 0u8);
-            let stream: u32 = h.read(ebp - W330);
+            let stream: u32 = h.read(f.at(f.tail));
             h.call_sym(FIOS_READ, Conv::Cdecl, &[stream, buf, size]);
             let n = strlen(h, buf);
             h.call_sym(STRING_APPEND, Conv::Thiscall(s), &[buf, n]);
             h.call_sym(OPERATOR_DELETE_ARRAY, Conv::Cdecl, &[buf]);
             h.call_sym(FIOS_CLOSE, Conv::Cdecl, &[stream]);
-            h.call_sym(PSTRING, Conv::Thiscall(ebp - W338), &[name]);
+            // the two `PString`s sit where the list and the index go later
+            h.call_sym(PSTRING, Conv::Thiscall(f.at(f.list)), &[name]);
             let t = text(h, s);
-            h.call_sym(PSTRING, Conv::Thiscall(ebp - W334), &[t]);
-            let this: u32 = h.read(ebp - SCENE);
+            h.call_sym(PSTRING, Conv::Thiscall(f.at(f.index)), &[t]);
+            let this: u32 = h.read(f.at(f.scene));
             h.call_sym(
                 INSERT_PAIR,
                 Conv::Thiscall(this.wrapping_add(NAMED_TREE)),
-                &[ebp - W338, ebp - W334],
+                &[f.at(f.list), f.at(f.index)],
             );
-            free_pstring(h, ebp - W334);
-            free_pstring(h, ebp - W338);
+            free_pstring(h, f.at(f.index));
+            free_pstring(h, f.at(f.list));
         } else {
             let n = strlen(h, found);
             h.call_sym(STRING_APPEND, Conv::Thiscall(s), &[found, n]);
         }
-        // the name's directory, up to its last '/' (searched from its end
-        // without a lower bound, as in the original)
-        let dir = ebp - DIR;
-        let mut end = strlen(h, name);
-        strcpy(h, dir, name);
-        while h.read::<u8>(dir.wrapping_add(end)) != b'/' {
-            end = end.wrapping_sub(1);
-        }
-        end = end.wrapping_add(1);
-        if end >= 0x100 {
-            h.call_sym(RANGECHECK_FAILURE, Conv::Cdecl, &[]);
+        if directory(h, ebp, name).is_none() {
             return 0;
         }
-        h.write(dir + end, 0u8);
-        let count = split_lines(h, ebp);
-        h.write(ebp - W338, 0u32);
-        if async_load & 0xff != 0 {
-            let manager = h.call_sym(ASYNC_INSTANCE, Conv::Cdecl, &[]);
-            let list = h.call_sym(CHILDREN_REQUEST_LIST, Conv::Thiscall(manager), &[count]);
-            h.write(ebp - W338, list);
+        load_lines(h, &f, kind, async_load)
+    }
+
+    /// `PhyreScene_loadMagicFileVFXTexture(this; kind, name, async)`
+    /// (thiscall, `ret 0xc`; frame from `ebp - 0x884`) -> 0, 5 when the
+    /// list or one of its files is missing, or the cluster fix-up's
+    /// error.
+    ///
+    /// As [`load_vfx_texture`], with these differences: the list is
+    /// always the file (read in chunks of up to 0x3ff bytes into `ebp -
+    /// 0x810`; a missing or unopened list marks the scene's `+0x24` byte),
+    /// never entered into the named-texture tree. When the list's
+    /// directory ends in `_` and two more bytes before its `/` (`x_ab/`),
+    /// a line's file that does not open is looked for in the directory
+    /// without them (`x/`, `ebp - 0x410`; 5 when it has no such
+    /// directory or the file doesn't open there either). A new slot's
+    /// layout is pushed with `PArray_pushBack20` from `ebp - 0x87c`
+    /// (inside the second reader's room: its bytes when that reader ran,
+    /// else never written; 0 in the port's frame). A missing line file
+    /// frees the text with the string's destructor. After the last line
+    /// the scene's `+0x24` byte is set.
+    pub fn load_magic_file_vfx_texture(
+        h: &mut impl Host,
+        ebp: u32,
+        this: u32,
+        kind: u32,
+        name: u32,
+        async_load: u32,
+    ) -> u32 {
+        let f = Frame {
+            ebp,
+            text: 0x828,
+            scene: 0x82c,
+            lines: 0x838,
+            tail: 0x83c,
+            list: 0x84c,
+            index: 0x840,
+            line_copy: 0x844,
+            cluster: 0x848,
+            reader: 0x868,
+            magic: true,
+        };
+        h.write(f.at(f.scene), this);
+        if h.call_sym(FIOS_IS_FILE_EXIST, Conv::Cdecl, &[name]) == 0 {
+            h.write(this.wrapping_add(0x24), 1u8);
+            return 5;
         }
-        let mut i = 0u32;
-        h.write(ebp - W334, i);
-        while i < count {
-            match load_line(h, ebp, kind, async_load, i, count) {
-                Line::Skipped | Line::Loaded => {}
-                Line::Failed(code) => return finish(h, ebp, code),
-                Line::Aborted => return 0,
+        let stream = h.call_sym(FIOS_OPEN, Conv::Cdecl, &[name, 1]);
+        if stream == 0 {
+            h.write(this.wrapping_add(0x24), 1u8);
+            return 5;
+        }
+        let s = f.at(f.text);
+        clear_string(h, s);
+        h.call_sym(STRING_ASSIGN, Conv::Thiscall(s), &[h.rebase(EMPTY), 0]);
+        let chunk = ebp - CHUNK;
+        loop {
+            let n = h.call_sym(FIOS_READ, Conv::Cdecl, &[stream, chunk, 0x3ff]);
+            if n.cast_signed() <= 0 {
+                break;
             }
-            i = h.read::<u32>(ebp - W334).wrapping_add(1);
-            h.write(ebp - W334, i);
+            if n >= 0x400 {
+                h.call_sym(RANGECHECK_FAILURE, Conv::Cdecl, &[]);
+                return 0;
+            }
+            h.write(chunk + n, 0u8);
+            let len = strlen(h, chunk);
+            h.call_sym(STRING_APPEND, Conv::Thiscall(s), &[chunk, len]);
         }
-        if count.cast_signed() < 0 && h.read::<u32>(ebp - LINES + 4).cast_signed() < 0 {
-            h.call_sym(RESERVE_WORDS, Conv::Thiscall(ebp - LINES), &[0]);
+        h.call_sym(FIOS_CLOSE, Conv::Cdecl, &[stream]);
+        let Some(end) = directory(h, ebp, name) else {
+            return 0;
+        };
+        // the fallback directory: "x_ab/" -> "x/"
+        let alt = ebp - ALT_DIR;
+        h.write(alt, 0u8);
+        let memset = h.rebase(MEMSET);
+        h.call(memset, Conv::Cdecl, &[alt + 1, 0, 0xff]);
+        let slash = end.wrapping_sub(1);
+        let dir = ebp - DIR;
+        if h.read::<u8>(dir.wrapping_add(slash).wrapping_sub(3)) == b'_' {
+            let n = slash.wrapping_sub(3);
+            import(h, STRNCPY, &[alt, dir, n]);
+            h.write(alt.wrapping_add(n), b'/');
         }
-        finish(h, ebp, 0)
+        load_lines(h, &f, kind, async_load)
     }
 
     /// The text cut into the frame's line list: `find("\n", from, 1)` from
     /// 1 on, each hit ending a line that starts after the last one, up to
     /// no hit or an empty line; then the rest when it is inside the
     /// text and not empty. The list's count.
-    fn split_lines(h: &mut impl Host, ebp: u32) -> u32 {
-        let s = ebp - TEXT;
-        let lines = ebp - LINES;
+    fn split_lines(h: &mut impl Host, f: &Frame) -> u32 {
+        let s = f.at(f.text);
+        let lines = f.at(f.lines);
         h.write(lines + 4, 0u32);
         h.write(lines + 8, 0u32);
         h.write(lines, 0u32);
@@ -330,8 +480,8 @@ pub mod bridge {
         if start < size {
             let line = text(h, s).wrapping_add(start);
             if h.read::<u8>(line) != 0 {
-                h.write(ebp - W330, line);
-                h.call_sym(PUSH_BACK, Conv::Thiscall(lines), &[ebp - W330]);
+                h.write(f.at(f.tail), line);
+                h.call_sym(PUSH_BACK, Conv::Thiscall(lines), &[f.at(f.tail)]);
             }
         }
         h.read(lines)
@@ -343,24 +493,40 @@ pub mod bridge {
         Skipped,
         /// Loaded (or its load started).
         Loaded,
-        /// The file did not open (5), or the fix-up failed (its code).
+        /// The file did not open (5).
+        Missing,
+        /// The fix-up failed (its code).
         Failed(u32),
         /// `report_rangecheckfailure` (which does not return).
         Aborted,
     }
 
+    /// The reader at `reader` made for the path; whether it opened (then
+    /// closed).
+    fn opens(h: &mut impl Host, reader: u32, path: u32) -> bool {
+        h.call_sym(READER_CTOR, Conv::Thiscall(reader), &[path]);
+        let open = h.call_sym(READER_IS_OPEN, Conv::Thiscall(reader), &[]);
+        if open as u8 == 0 {
+            return false;
+        }
+        h.call_sym(READER_CLOSE, Conv::Thiscall(reader), &[]);
+        true
+    }
+
     /// Line `i` of `count`: its file name into `ebp - 0x110`, its path
     /// into `ebp - 0x210`, the file opened, the scene's slot taken, the
     /// cluster loaded.
+    #[allow(clippy::too_many_lines)] // one original's loop body, kept in its order
     fn load_line(
         h: &mut impl Host,
-        ebp: u32,
+        f: &Frame,
         kind: u32,
         async_load: u32,
         i: u32,
         count: u32,
     ) -> Line {
-        let data: u32 = h.read(ebp - LINES + 8);
+        let ebp = f.ebp;
+        let data: u32 = h.read(f.at(f.lines) + 8);
         let p: u32 = h.read(data.wrapping_add(i.wrapping_mul(4)));
         let newline = h.rebase(NEWLINE);
         let hit = import(h, STRSTR, &[p, newline]);
@@ -391,27 +557,33 @@ pub mod bridge {
         let format = h.rebase(PATH_FORMAT);
         let d3d11 = h.rebase(D3D11);
         import(h, SPRINTF, &[path, format, ebp - DIR, d3d11, line]);
-        let reader = ebp - READER;
-        h.call_sym(READER_CTOR, Conv::Thiscall(reader), &[path]);
-        let open = h.call_sym(READER_IS_OPEN, Conv::Thiscall(reader), &[]);
-        if open as u8 == 0 {
-            h.call_sym(READER_DTOR, Conv::Thiscall(reader), &[]);
-            return Line::Failed(5);
+        let reader = f.at(f.reader);
+        if !opens(h, reader, path) {
+            let found = f.magic && h.read::<u8>(ebp - ALT_DIR) != 0 && {
+                import(h, SPRINTF, &[path, format, ebp - ALT_DIR, d3d11, line]);
+                let reader2 = ebp - READER2;
+                let found = opens(h, reader2, path);
+                h.call_sym(READER_DTOR, Conv::Thiscall(reader2), &[]);
+                found
+            };
+            if !found {
+                h.call_sym(READER_DTOR, Conv::Thiscall(reader), &[]);
+                return Line::Missing;
+            }
         }
-        h.call_sym(READER_CLOSE, Conv::Thiscall(reader), &[]);
         let n = strlen(h, line);
         let copy = h.call_sym(OPERATOR_NEW_ARRAY, Conv::Cdecl, &[n.wrapping_add(1)]);
-        h.write(ebp - LINE_COPY, copy);
+        h.write(f.at(f.line_copy), copy);
         strcpy(h, copy, line);
         let n = strlen(h, path);
         let path_copy = h.call_sym(OPERATOR_NEW_ARRAY, Conv::Cdecl, &[n.wrapping_add(1)]);
-        h.write(ebp - W330, path_copy);
+        h.write(f.at(f.tail), path_copy);
         strcpy(h, path_copy, path);
-        let slot = take_slot(h, ebp);
+        let slot = take_slot(h, f);
         if async_load & 0xff != 0 {
-            let list: u32 = h.read(ebp - W338);
-            let copy: u32 = h.read(ebp - LINE_COPY);
-            let path_copy: u32 = h.read(ebp - W330);
+            let list: u32 = h.read(f.at(f.list));
+            let copy: u32 = h.read(f.at(f.line_copy));
+            let path_copy: u32 = h.read(f.at(f.tail));
             let sign = |v: u32| (v.cast_signed() >> 31).cast_unsigned();
             let manager = h.call_sym(ASYNC_INSTANCE, Conv::Cdecl, &[]);
             let callback = h.rebase(ON_LOADED);
@@ -434,19 +606,19 @@ pub mod bridge {
                 ],
             );
         } else {
-            h.write(ebp - CLUSTER, 0u32);
+            h.write(f.at(f.cluster), 0u32);
             let manager = h.call_sym(CLUSTER_MANAGER, Conv::Cdecl, &[]);
             let cluster = h.call_sym(LOAD_PCLUSTER, Conv::Thiscall(manager), &[path]);
-            h.write(ebp - CLUSTER, cluster);
+            h.write(f.at(f.cluster), cluster);
             h.call_sym(GET_APPLICATION, Conv::Cdecl, &[]);
-            let failed = h.call_sym(FIXUP_CLUSTERS, Conv::Cdecl, &[ebp - CLUSTER, 1]);
+            let failed = h.call_sym(FIXUP_CLUSTERS, Conv::Cdecl, &[f.at(f.cluster), 1]);
             if failed != 0 {
                 h.call_sym(READER_DTOR, Conv::Thiscall(reader), &[]);
                 return Line::Failed(failed);
             }
-            let this: u32 = h.read(ebp - SCENE);
-            let copy: u32 = h.read(ebp - LINE_COPY);
-            let path_copy: u32 = h.read(ebp - W330);
+            let this: u32 = h.read(f.at(f.scene));
+            let copy: u32 = h.read(f.at(f.line_copy));
+            let path_copy: u32 = h.read(f.at(f.tail));
             let at = slot.wrapping_mul(4);
             let flags: u32 = h.read(this.wrapping_add(0x60));
             h.write(flags.wrapping_add(at), 1u32);
@@ -464,8 +636,8 @@ pub mod bridge {
     /// name and path set to `""`, its flag to 0), or a new slot at the
     /// end of the four arrays (names `+0x34`, paths `+0x4c`, flags
     /// `+0x58`, 20-byte layouts `+0x40`).
-    fn take_slot(h: &mut impl Host, ebp: u32) -> u32 {
-        let this: u32 = h.read(ebp - SCENE);
+    fn take_slot(h: &mut impl Host, f: &Frame) -> u32 {
+        let this: u32 = h.read(f.at(f.scene));
         let empty = h.rebase(EMPTY);
         let n: u32 = h.read(this.wrapping_add(0x34));
         let names: u32 = h.read(this.wrapping_add(0x3c));
@@ -489,21 +661,32 @@ pub mod bridge {
         if at != 0 {
             h.write(at, empty);
         }
-        let this: u32 = h.read(ebp - SCENE);
+        let this: u32 = h.read(f.at(f.scene));
         let at = push(h, this.wrapping_add(0x4c), RESERVE_WORDS, 4);
         if at != 0 {
             h.write(at, empty);
         }
-        let this: u32 = h.read(ebp - SCENE);
+        let this: u32 = h.read(f.at(f.scene));
         let at = push(h, this.wrapping_add(0x58), RESERVE_FLAGS, 4);
         if at != 0 {
             h.write(at, 0u32);
         }
-        let at = push(h, this.wrapping_add(0x40), RESERVE_LAYOUTS, 20);
-        if at != 0 {
-            // junk read: [ebp-0x360..-0x350] never written; 0 (brief 2026-10-24)
-            for w in 0..5u32 {
-                h.write(at + 4 * w, 0u32);
+        if f.magic {
+            // the layout from ebp - 0x87c: the second reader's bytes when
+            // it ran; else never written, 0 in the port's frame
+            // junk read: [ebp-0x87c..-0x86c] never written; 0 (brief 2026-10-24)
+            h.call_sym(
+                PUSH_BACK20,
+                Conv::Thiscall(this.wrapping_add(0x40)),
+                &[f.ebp - LAYOUT],
+            );
+        } else {
+            let at = push(h, this.wrapping_add(0x40), RESERVE_LAYOUTS, 20);
+            if at != 0 {
+                // junk read: [ebp-0x360..-0x350] never written; 0 (brief 2026-10-24)
+                for w in 0..5u32 {
+                    h.write(at + 4 * w, 0u32);
+                }
             }
         }
         h.read::<u32>(names).wrapping_sub(1)

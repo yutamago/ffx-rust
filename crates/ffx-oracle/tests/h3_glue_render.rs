@@ -12071,7 +12071,7 @@ fn prep_load_vfx55(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: 
         rng.word() | 1
     };
     args.copy_from_slice(&[rng.word(), name_at, async_load]);
-    let heap = t.zeros(0x200 * 40);
+    let heap = t.zeros(0x200 * 80);
     let mut nul = text.clone();
     nul.push(0);
     // the file's block: the text without its 0 (the original adds it)
@@ -12096,11 +12096,11 @@ fn prep_load_vfx55(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: 
     let stream = if rng.chance(6) { 0 } else { rng.word() | 1 };
     t.stub_ret(h54::FIOS_OPEN, false, 2, 0, stream);
     t.stub_ret(h54::FIOS_FILE_SIZE, false, 1, 0, text.len() as u32);
-    let news: Vec<u32> = (0..14).map(|k| heap + 0x200 * k).collect();
+    let news: Vec<u32> = (0..40).map(|k| heap + 0x200 * k).collect();
     t.stub_seq(h54::OPERATOR_NEW_ARRAY, false, 1, 0, &news);
-    let news: Vec<u32> = (14..27).map(|k| heap + 0x200 * k).collect();
+    let news: Vec<u32> = (40..60).map(|k| heap + 0x200 * k).collect();
     t.stub_seq(h48::OPERATOR_NEW, false, 1, 0, &news);
-    let news: Vec<u32> = (27..40).map(|k| heap + 0x200 * k).collect();
+    let news: Vec<u32> = (60..80).map(|k| heap + 0x200 * k).collect();
     t.stub_seq(USER_MALLOC55, false, 1, 0, &news);
     // the scene's arrays: names +0x34, layouts +0x40, paths +0x4c, flags +0x58
     let n = rng.below(5);
@@ -12129,7 +12129,7 @@ fn prep_load_vfx55(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: 
         opens[0] = 0x100;
     }
     t.stub_seq(h54::READER_IS_OPEN, true, 0, 0, &opens);
-    let fixups: Vec<u32> = (0..8)
+    let fixups: Vec<u32> = (0..20)
         .map(|_| if rng.chance(8) { 1 + rng.below(9) } else { 0 })
         .collect();
     t.stub_seq(h54::FIXUP_CLUSTERS, false, 2, 0, &fixups);
@@ -12168,5 +12168,106 @@ fn batch55_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES55, n, &mut Rng(0x5555_b055));
+    });
+}
+
+// ---- round 16 batch 56 (ffx_prender::h3_glue54) ----
+
+/// A magic file's VFX texture list: its name (some with an `x_ab/`
+/// directory, which gives the `x/` fallback; `x/` with its byte 3 below
+/// the directory from the frame), `kind`, `async` and its text in the
+/// frame's read buffer (`ebp - 0x810`, followed by non-0 bytes), read in
+/// one or two chunks of its length or less, then 0 or -1. The list file
+/// is missing or does not open now and then. The readers open or not in
+/// turn (the fallback's included); the rest as for batch 55.
+fn prep_load_magic56(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    prep_load_vfx55(t, obj, this, args, rng);
+    let names: [&[u8]; 5] = [
+        b"magic/m_01/list.txt",
+        b"vfx/list.txt",
+        b"x/",
+        b"bt/ab_cd/e_fg/l.txt",
+        b"a_bc/x",
+    ];
+    let mut name = names[rng.below(5) as usize].to_vec();
+    name.push(0);
+    t.write(args[1], &name);
+    let lines = rng.below(6);
+    let mut text = vec![];
+    for k in 0..lines {
+        let len = 1 + rng.below(20);
+        text.extend((0..len).map(|_| b"abcdefgh._"[rng.below(10) as usize]));
+        if rng.chance(3) {
+            text.push(b'\r');
+        }
+        if k + 1 < lines || rng.chance(2) {
+            text.push(b'\n');
+        }
+    }
+    let len = text.len() as u32;
+    text.extend([b'z'; 8]);
+    let mut reads = vec![];
+    if len > 0 {
+        reads.push(if rng.chance(4) {
+            rng.below(len) + 1
+        } else {
+            len
+        });
+        if rng.chance(3) {
+            reads.push(len);
+        }
+    }
+    reads.push(if rng.chance(3) { u32::MAX } else { 0 });
+    t.stub_seq(h54::FIOS_READ, false, 3, 0, &reads);
+    t.stub_ret(
+        h54::FIOS_IS_FILE_EXIST,
+        false,
+        1,
+        0,
+        u32::from(!rng.chance(8)),
+    );
+    let stream = if rng.chance(8) { 0 } else { rng.word() | 1 };
+    t.stub_ret(h54::FIOS_OPEN, false, 2, 0, stream);
+    let opens: Vec<u32> = (0..32)
+        .map(|_| if rng.chance(3) { 0x100 } else { rng.word() | 1 })
+        .collect();
+    t.stub_seq(h54::READER_IS_OPEN, true, 0, 0, &opens);
+    // junk read: the layout's never-written words, 0 in both; the bytes
+    // below the directory not '_' (for "x/" the original reads one of
+    // them, and a '_' there makes its strncpy run off the frame)
+    FRAME_WRITES.with(|z| {
+        z.replace(vec![
+            (0x87c, vec![0; 0x14]),
+            (0x810, text),
+            (0x314, b"qqqq".to_vec()),
+        ])
+    });
+}
+
+const LOAD_MAGIC56_STUBS: &[(u32, K)] = &[
+    (h54::FIOS_CLOSE, K::Cdecl(1)),
+    (h54::OPERATOR_DELETE, K::Cdecl(1)),
+    (h54::USER_FREE, K::Cdecl(1)),
+    (h54::ASYNC_INSTANCE, K::Getter),
+    (h54::CHILDREN_REQUEST_LIST, K::This(1)),
+    (h54::LOAD_CLUSTER, K::Cdecl(13)),
+    (h54::READER_CTOR, K::This(1)),
+    (h54::READER_CLOSE, K::This(0)),
+    (h54::READER_DTOR, K::This(0)),
+    (h54::CLUSTER_MANAGER, K::Getter),
+    (h54::LOAD_PCLUSTER, K::This(1)),
+    (h54::GET_APPLICATION, K::Getter),
+];
+
+#[rustfmt::skip]
+const CASES56: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_load_magic56), ..method("load_magic_file_vfx_texture", 0x0066_4550, This::Object, 3, LOAD_MAGIC56_STUBS, |m, this, a| u(gh54::load_magic_file_vfx_texture(m, frame_ebp(), this, a[0], a[1], a[2]))) }), 0x884, 0),
+];
+
+#[test]
+fn batch56_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES56, n, &mut Rng(0x5656_b056));
     });
 }
