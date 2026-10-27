@@ -3696,7 +3696,7 @@
 0x006403b0 function graphicFieldMapShutdown   # fh v3:bsim1.00 0x00640560
 0x006403c0 function graphicFieldMapUnload     # fh v3:exact 0x00640570
 0x006403e0 function graphicFinalize              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'SKS: graphicFinalize begin!\\n'; Switch 0x71001cb540 graphicFinalize (symbols from Fahrenheit's server export)
-0x00640660 function graphicFontDraw           # fh v3:exact 0x00640810
+0x00640660 function graphicFontDraw           # fh v3:exact 0x00640810; cdecl(rec, name, x f32, y f32, slot): one glyph quad (positions snapped to 1920x1080 pixels, colours = rec ints/255 x the +0x90/+0x94 tints, uvs, 6 u16 indices at f32(count)*1.5) into MenuManager_GetMenuVertexInfo(name)+0x94, or AbmapManager_GetVertexInfo(name, 0xe/0xd)+0x94 record slot (0x6c bytes) when g_GraphicAbmap+4 < 2; kind 0x7d1 moves the bottom edge 5 down; ported h3c (ffx_prender::h3c_font)
 0x00640d70 function graphicFontGetEdgeRatio   # fh v3:exact 0x00640f20
 0x00640db0 function graphicFontGetScreenWH    # fh v3:exact 0x00640f60
 0x00640dd0 function graphicFontSetUiShadowType # fh v3:cg15 0x640f80
