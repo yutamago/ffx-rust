@@ -2749,6 +2749,16 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_glue_other::h4y_dtt::FRAME / 4) as usize }>::new();
         ffx_glue_other::h4y_dtt::draw_mdl_dtt(&mut mem(), frame.at(), part)
     }
+    // ---- agent h4z: the model parts' fill job (ffx_glue_other::h4z_*)
+    /// `JobSchedule_pppPart_fillBuffer_drawMdl(part)` -> the last callee's
+    /// `eax`: a job-worker routine (an 83 KB frame like the original's
+    /// alloca: the transformed positions and depths, the job its position
+    /// callees read, the vectors its `FFXVu0*` callees see; zeroed, so the
+    /// unwritten band depths of modes other than 1 read 0).
+    JobSchedule_pppPart_fillBuffer_drawMdl @ 0x0071_f320 => extern "C" fn fill_buffer_draw_mdl(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4z_mdl::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4z_mdl::draw_mdl(&mut mem(), frame.at(), part)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
