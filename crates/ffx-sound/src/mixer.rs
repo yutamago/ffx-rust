@@ -23,6 +23,9 @@ pub const BLOCK: usize = 1600;
 /// Frames of the gain ramp at a voice's start (measured: frame k of a new
 /// voice has gain k/64 of its volume).
 pub const RAMP: u32 = 64;
+/// The smallest change of a voice's levels (left plus right) that FMOD
+/// applies: 0.00064 (one ramp step of 1e-5).
+const CHANGE: f32 = 0.000_64;
 /// 16-bit PCM to float.
 const SCALE: f32 = 1.0 / 32768.0;
 
@@ -102,16 +105,13 @@ impl Voice {
 
     /// Left and right gains for the pan.
     fn pan_gains(&self) -> (f32, f32) {
+        // measured with fmod-probe (audio-platform.md): the event system
+        // ignores `Channel::setPan` (pans -1..1 change nothing); a mono wave
+        // plays on the left only, a stereo wave on both sides at full gain
         if self.wave.channels == 1 {
-            // measured: left only, whatever the pan the game sets (pans seen
-            // -0.13..1); the laws tried for both sides left 4 to 12 times
-            // the residue (audio-platform.md)
-            return (1.0, 0.0);
-        }
-        if self.pan < 0.0 {
-            (1.0, 1.0 + self.pan)
+            (1.0, 0.0)
         } else {
-            (1.0 - self.pan, 1.0)
+            (1.0, 1.0)
         }
     }
 
@@ -123,9 +123,13 @@ impl Voice {
         }
         let (pl, pr) = self.pan_gains();
         let mut target = [self.volume * pl, self.volume * pr];
-        // measured on the looping SFX: a mono voice takes the new gain in
-        // the blocks 0, 2, 4, ... of its life and keeps it in between
-        if self.wave.channels == 1 && !self.blocks.is_multiple_of(2) {
+        // measured with fmod-probe: a new gain is taken only when the
+        // changes of the voice's levels (left plus right) come to at least
+        // CHANGE; otherwise the old gain stays and the next block compares
+        // again (mono 0.00063 a tick skips every other block, 0.00064 does
+        // not; stereo 0.000315 and 0.00032 a side)
+        let change = (target[0] - self.gain[0]).abs() + (target[1] - self.gain[1]).abs();
+        if change < CHANGE {
             target = self.gain;
         }
         self.blocks = self.blocks.wrapping_add(1);
