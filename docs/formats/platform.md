@@ -620,9 +620,10 @@ compares (`vorbis`, `vp8`, `demux` modes).
   (per-frame MD5 of the visible I420 planes) to libvpx's (ffmpeg's libvpx
   1.16 decoder; ffmpeg's own VP8 decoder and oximedia-codec 0.2.1, Apache-2.0,
   gave the same on the 74 movies measured with them). Against FFX.exe's
-  libvpx 1.4.0 itself, in the oracle (1 to 3 s a frame): 908 frames, all of
-  `4_480` and `3_480` and the first 90 of `sin_us`, `bbb_jp`, `end_us`,
-  `ill_jp`, `dat_us` and `fin_jp`, identical to both. The original was not
+  libvpx 1.4.0 itself, in the oracle (1 to 4 s a frame): 3,805 frames, every
+  frame of the six texture videos and of `bsc_jp`, `bgr_jp` and `tht_us`,
+  and the first 90 of `sin_us`, `bbb_jp`, `end_us`, `ill_jp`, `dat_us` and
+  `fin_jp`, identical to both. The original was not
   run on every frame: the emulator would take days; VP8 decoding is exactly
   specified and libvpx's output has not changed between versions.
   oximedia-codec was not taken: it pulls tokio, serde and rayon in.
