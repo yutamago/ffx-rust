@@ -10,21 +10,23 @@
 # each): keep them in ~/ffx-work/m4/captures, never in git. Compare two
 # runs with tools/scene-gate.sh bsil0000|bsil0300 <run A> <run B>.
 #
-# `pin` (docs/harness.md, "Pinned state") once the map's event runs (count
-# 64), not right after `lockstep on`: the load took a varying number of
-# frames, and the game time the shaders get (`scene.GlobalTime`) carries
-# their f32 rounding (2-47 ulp between original runs pinned before the
-# load; docs/drawdiff.md, "Scene gates"). Since 2026-10-27 the load itself
-# runs in lockstep (`load direct ... lockstep`) and sound keeps the update
-# count (docs/harness.md, "Sound in lockstep"); references dg-<replay>-q1/q2. Each
+# `pin` (docs/harness.md, "Pinned state") right after `lockstep on`, as
+# field-walk and draw-field do. Until 2026-10-27 the load ran free and the
+# pin waited for the map's event (count 64); since then the load runs in
+# lockstep (`load direct ... lockstep`) and sound keeps the update count
+# (docs/harness.md, "Sound in lockstep"), so the pin falls on the same
+# update of the load in every run. Pinned at count 64, five original
+# kami0100 runs still differed in `scene.GlobalTime`, the cloth ring and
+# the eye-blink texture: the 64 updates before it ran on the time the free
+# boot left (those captures: dg-<replay>-pin64-q*). References dg-<replay>-q1/q2. Each
 # capture is `gfxcapture ... now async` at a boundary the script reached
 # in lockstep: it holds the next three updates exactly (the harness checks
 # the updates the frames show and fails the reply otherwise), and the
 # `wait 3` that lets them run shifts the later waits by 3.
 load direct 3 bsil0000 lockstep
 lockstep on
-waitfor 0x01325d94:4 40000000 c0ffffff 1500
 pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 read 0x01325d94 4
 readp 0x00ccb9d8 0xfaf4 4

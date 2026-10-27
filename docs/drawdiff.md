@@ -282,6 +282,28 @@ into `~/ffx-work/m4/captures/<name>-{a,b}`. Captures stay out of git.
 
 drawdiff reads a pair in 0.28 s and compares it in under 10 ms.
 
+### draw-field references ref2-a, ref2-b, ref2-c (2026-10-27)
+
+Since replay-flakes3, `draw-field.txt` loads in lockstep (`load direct 1
+cdsp0000 lockstep`) and pins after `lockstep on`, and sound keeps the update
+count (`docs/harness.md`, "Sound in lockstep"). The captures of the older
+script (ref-a/b/c below) fell on whatever update the free-running load
+left, and the blink seeds with them: the BC1/BC3 draw 113 and the
+captures 1-2 frames late. `~/ffx-work/m4/captures/ref2-{a,b,c}` are three
+original-code captures of the new script, run three at a time: each held
+event count 101 (`0x65`) and 459 (`0x1cb`) and the beach's 101, and the
+three pairs pass `draw-field-gate.sh` (fw-101 and fw-459 0 differences,
+3 allowed each; besaid-101 0 differences, the chocobo icon and its
+neighbours allowed). `~/ffx-work/m4/draw-field-gate.sh <run>` gates against
+its default reference (`default_ref` in the script, `DRAW_FIELD_REF`);
+`draw-field-gate.sh <reference> <run>` against any. A capture only matches
+references of the same script: gate new captures against ref2-*.
+
+The scene gates' replays load in lockstep too since then; their references
+are `dg-<replay>-q1/q2` (original code, run side by side), which pass
+`scene-gate.sh` against each other on all five scenes (battle: both loads
+77 updates). The p1..p6 folders belong to the old scripts.
+
 ### draw-field references (ref-a, ref-b, ref-c)
 
 `~/ffx-work/m4/captures/ref-{a,b,c}` hold the original-code captures of
