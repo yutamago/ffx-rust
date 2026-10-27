@@ -16,10 +16,9 @@ pub mod bridge {
     use crate::h3e_scene::bridge::scene_stage;
     use crate::h3e_util::bridge::{
         Step, al, begin, camera_arg, clear_color, clear_scene, copied, copy_buffer, copy_color,
-        degrade, drop_surface, end, global, helper_call, instance_call, ok, post, post_call,
-        post_word, renderer, renderer_call, scene_call, scene_clear_color, scene_test, screen_fade,
-        set_color, set_depth, slot_rect, special_magic, surface, viewport, viewport_to,
-        window_rect,
+        degrade, drop_surface, end, global, instance, ok, post, post_word, renderer,
+        scene_clear_color, screen_fade, set_color, set_depth, slot_rect, special_magic, surface,
+        viewport, viewport_to, window_rect,
     };
     #[allow(clippy::wildcard_imports)] // the addresses
     use crate::h3e_util::*;
@@ -85,14 +84,17 @@ pub mod bridge {
     /// matrices (`+0xdc`, `+0x394`, `+0x238` with `+0x10d8c` 1, `+0x654`;
     /// their `+0xb4` pointed at the scene's matrices), [`free_camera`].
     pub fn prologue(h: &mut impl Host, scene: u32) {
-        scene_call(h, scene, REBUILD_MAP_OBJECTS);
+        h.call_sym(REBUILD_MAP_OBJECTS, Conv::Thiscall(scene), &[]);
         if h.read::<u8>(scene + 0xf9c8) == 0 {
-            scene_call(h, scene, PRE_RENDER);
+            h.call_sym(PRE_RENDER, Conv::Thiscall(scene), &[]);
             h.write(scene + 0xf9c8, 1_u8);
         }
-        scene_call(h, scene, SET_SHADOW_SCALE_BIAS);
-        instance_call(h, BROKEN_SCREEN_INSTANCE, BROKEN_SCREEN_CAPTURE, &[]);
-        post_call(h, scene, RESET_CROSS_FADE, &[]);
+        h.call_sym(SET_SHADOW_SCALE_BIAS, Conv::Thiscall(scene), &[]);
+        {
+            let obj = instance(h, BROKEN_SCREEN_INSTANCE);
+            h.call_sym(BROKEN_SCREEN_CAPTURE, Conv::Thiscall(obj), &[])
+        };
+        h.call_sym(RESET_CROSS_FADE, Conv::Thiscall(post(h, scene)), &[]);
         set_color(h, scene, 0, 0);
         let rect = window_rect(h);
         viewport(h, scene, rect);
@@ -187,9 +189,9 @@ pub mod bridge {
         ok(end(h, scene, 1))?;
         let abmap = global(h, GRAPHIC_ABMAP);
         if h.read::<i32>(abmap.wrapping_add(4)) < 2 {
-            scene_call(h, scene, RENDER_ABMAP);
+            h.call_sym(RENDER_ABMAP, Conv::Thiscall(scene), &[]);
         }
-        scene_call(h, scene, CLEAR_ARRAYS);
+        h.call_sym(CLEAR_ARRAYS, Conv::Thiscall(scene), &[]);
         Ok(())
     }
 
@@ -232,7 +234,10 @@ pub mod bridge {
             (h.read::<u32>(app.wrapping_add(0x270)) <= 0x2d0).then_some(1)
         };
         if let Some(v) = small {
-            instance_call(h, POST_INSTANCE, SET_BYTE_123B1, &[v]);
+            {
+                let obj = instance(h, POST_INSTANCE);
+                h.call_sym(SET_BYTE_123B1, Conv::Thiscall(obj), &[v])
+            };
         }
         let shown = (h.call_sym(FMV_HAS_STATE, Conv::Thiscall(fmv), &[1]) != 0
             && h.read::<u8>(fmv.wrapping_add(0x6d2)) != 0)
@@ -250,11 +255,11 @@ pub mod bridge {
         }
         if global(h, PAUSE_WORD_134082C) != 0 {
             h.call_sym(PPP_FILL_WAIT, Conv::Cdecl, &[]);
-            scene_call(h, scene, RENDER_CLOUD_UI);
+            h.call_sym(RENDER_CLOUD_UI, Conv::Thiscall(scene), &[]);
             return Ok(Frame::Done);
         }
         ok(scene_clear_color(h, scene))?;
-        if !scene_test(h, scene, CHECK_1195) {
+        if !al(h.call_sym(CHECK_1195, Conv::Thiscall(scene), &[])) {
             h.call_sym(PPP_FILL_WAIT, Conv::Cdecl, &[]);
             late(h, ebp, scene)?;
         } else if global(h, MOVIE_FADING) != 0 {
@@ -273,9 +278,14 @@ pub mod bridge {
     /// capture (state 1 -> 2) into pp `+0x9c` while a movie is up.
     pub fn video_frame(h: &mut impl Host, scene: u32) {
         h.call_sym(PPP_FILL_WAIT, Conv::Cdecl, &[]);
-        scene_call(h, scene, RENDER_VIDEO_AND_UI);
-        let vibration =
-            u32::from(instance_call(h, INPUT_INSTANCE, INPUT_VIBRATION, &[]).to_le_bytes()[0]);
+        h.call_sym(RENDER_VIDEO_AND_UI, Conv::Thiscall(scene), &[]);
+        let vibration = u32::from(
+            {
+                let obj = instance(h, INPUT_INSTANCE);
+                h.call_sym(INPUT_VIBRATION, Conv::Thiscall(obj), &[])
+            }
+            .to_le_bytes()[0],
+        );
         let prompt: u32 = h.read(scene + 0x1_0de0);
         let r = renderer(h, scene);
         h.call_sym(SKIP_PROMPT_RENDER, Conv::Thiscall(prompt), &[r, vibration]);
@@ -313,16 +323,20 @@ pub mod bridge {
         let rect = slot_rect(h, slot);
         viewport(h, scene, rect);
         degrade(h, scene);
-        let battle_or_field =
-            h.read::<u8>(scene + 0x1195) == 0 || scene_test(h, scene, IS_ANY_BATTLE_MAP);
+        let battle_or_field = h.read::<u8>(scene + 0x1195) == 0
+            || al(h.call_sym(IS_ANY_BATTLE_MAP, Conv::Thiscall(scene), &[]));
         if battle_or_field && h.read::<u8>(scene + 0x93d) != 0 {
-            helper_call(h, RUN_FLAG_400, &[]);
-            scene_call(h, scene, RESTORE_DEFAULT_TARGETS);
-            scene_call(h, scene, DRAW_UI_PRERENDER);
+            h.call_sym(
+                RUN_FLAG_400,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[],
+            );
+            h.call_sym(RESTORE_DEFAULT_TARGETS, Conv::Thiscall(scene), &[]);
+            h.call_sym(DRAW_UI_PRERENDER, Conv::Thiscall(scene), &[]);
         }
         if global(h, MAP_163_OR_164) != 0 {
-            scene_call(h, scene, RESTORE_DEFAULT_TARGETS);
-            scene_call(h, scene, DRAW_UI_2D_VFX);
+            h.call_sym(RESTORE_DEFAULT_TARGETS, Conv::Thiscall(scene), &[]);
+            h.call_sym(DRAW_UI_2D_VFX, Conv::Thiscall(scene), &[]);
         }
         let maps = global(h, MAP_163_OR_164);
         if h.read::<u8>(scene + 0xf9c5) != 0
@@ -330,7 +344,11 @@ pub mod bridge {
             && !special_magic(h)
             && global(h, YN_TEST20_SEEN) == 0
         {
-            let drawn = helper_call(h, RUN_FLAG_1000, &[0]);
+            let drawn = h.call_sym(
+                RUN_FLAG_1000,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[0],
+            );
             let at = h.rebase(SCREEN_FADE_DELEGATED);
             h.write(at, drawn as u8);
             let pp = post(h, scene);
@@ -339,7 +357,7 @@ pub mod bridge {
             }
         }
         if h.read::<i32>(scene + 0x388c) > 0 {
-            scene_call(h, scene, RESTORE_DEFAULT_TARGETS);
+            h.call_sym(RESTORE_DEFAULT_TARGETS, Conv::Thiscall(scene), &[]);
             copy_color(h, scene, 0xac);
             let color = post_word(h, scene, 0x8c);
             let depth = post_word(h, scene, 0x90);
@@ -351,7 +369,7 @@ pub mod bridge {
             })();
             if r.is_ok() {
                 viewport_to(h, scene, ebp - AFTER_COLOR);
-                scene_call(h, scene, RENDER_VFX_AFTER_POST);
+                h.call_sym(RENDER_VFX_AFTER_POST, Conv::Thiscall(scene), &[]);
             }
             drop_surface(h, ebp - AFTER_DEPTH);
             drop_surface(h, ebp - AFTER_COLOR);
@@ -396,13 +414,13 @@ pub mod bridge {
         if !wants_ui(h, scene) {
             return Ok(());
         }
-        renderer_call(h, scene, SET_CLEAR_STENCIL, &[0]);
+        h.call_sym(SET_CLEAR_STENCIL, Conv::Thiscall(renderer(h, scene)), &[0]);
         if global(h, MAP_163_OR_164) == 0 {
-            scene_call(h, scene, RESTORE_DEFAULT_TARGETS);
-            scene_call(h, scene, DRAW_UI_2D_VFX);
+            h.call_sym(RESTORE_DEFAULT_TARGETS, Conv::Thiscall(scene), &[]);
+            h.call_sym(DRAW_UI_2D_VFX, Conv::Thiscall(scene), &[]);
         }
         if global(h, MOVIE_FADING) == 0 {
-            scene_call(h, scene, RESTORE_DEFAULT_TARGETS);
+            h.call_sym(RESTORE_DEFAULT_TARGETS, Conv::Thiscall(scene), &[]);
         } else {
             let target = post_word(h, scene, 0x9c);
             surface(h, ebp - FADE_COLOR, target);
@@ -416,26 +434,30 @@ pub mod bridge {
         }
         let slot = post_word(h, scene, 0x8c);
         let rect = slot_rect(h, slot);
-        renderer_call(h, scene, SET_SCISSOR, &rect);
+        h.call_sym(SET_SCISSOR, Conv::Thiscall(renderer(h, scene)), &rect);
         let flags = u32::from(global(h, MOVIE_FADING) != 0);
         ok(begin(h, scene, flags))?;
         if h.read::<u8>(scene + 0x78) != 0 {
             let rect: [u32; 4] = [0, 4, 8, 0xc].map(|k| h.read(scene + 0x1_0d40 + k));
             viewport(h, scene, rect);
-            renderer_call(h, scene, SET_SCISSOR, &rect);
+            h.call_sym(SET_SCISSOR, Conv::Thiscall(renderer(h, scene)), &rect);
             let slot = post_word(h, scene, 0x8c);
             let rect = slot_rect(h, slot);
             viewport(h, scene, rect);
-            scene_call(h, scene, MINIMAP_STENCIL);
+            h.call_sym(MINIMAP_STENCIL, Conv::Thiscall(scene), &[]);
         }
-        scene_call(h, scene, DRAW_NORMAL_UI);
+        h.call_sym(DRAW_NORMAL_UI, Conv::Thiscall(scene), &[]);
         ok(end(h, scene, 1))
     }
 
     /// Whether the flag-0x1000 delegations leave the screen fade to the
     /// scene (they answer 0) and pp `+0x123a0` asks for it.
     fn fade_wanted(h: &mut impl Host, scene: u32) -> bool {
-        if al(helper_call(h, RUN_FLAG_1000, &[0])) {
+        if al(h.call_sym(
+            RUN_FLAG_1000,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[0],
+        )) {
             return false;
         }
         let pp = post(h, scene);
@@ -468,10 +490,18 @@ pub mod bridge {
         }
         if global(h, WORD_1136FC0) == 1 {
             let r = renderer(h, scene);
-            post_call(h, scene, RENDER_DEBUG_4BY3, &[r]);
+            h.call_sym(RENDER_DEBUG_4BY3, Conv::Thiscall(post(h, scene)), &[r]);
         }
-        renderer_call(h, scene, QUEUE_COMMAND_1E, &[1, 1]);
-        helper_call(h, RUN_FLAG_800, &[]);
+        h.call_sym(
+            QUEUE_COMMAND_1E,
+            Conv::Thiscall(renderer(h, scene)),
+            &[1, 1],
+        );
+        h.call_sym(
+            RUN_FLAG_800,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         let source = post_word(h, scene, if captured { 0x9c } else { 0x8c });
         copy_buffer(h, scene, source, 0, [1, 0, 1]);
         let mut captured = false;
@@ -482,12 +512,15 @@ pub mod bridge {
         set_color(h, scene, 0, 0);
         set_depth(h, scene, 0);
         let r = renderer(h, scene);
-        instance_call(h, POST_INSTANCE, SET_NON_16BY9_VIEWPORT, &[r, 0]);
+        {
+            let obj = instance(h, POST_INSTANCE);
+            h.call_sym(SET_NON_16BY9_VIEWPORT, Conv::Thiscall(obj), &[r, 0])
+        };
         if global(h, MENU_CAPTURE_STATE) == 2 && !captured {
             begin(h, scene, 0);
             let rect = window_rect(h);
-            renderer_call(h, scene, SET_SCISSOR, &rect);
-            scene_call(h, scene, DRAW_NORMAL_UI);
+            h.call_sym(SET_SCISSOR, Conv::Thiscall(renderer(h, scene)), &rect);
+            h.call_sym(DRAW_NORMAL_UI, Conv::Thiscall(scene), &[]);
             end(h, scene, 1);
         }
         tweak_utils(h, scene);
@@ -498,7 +531,10 @@ pub mod bridge {
             Conv::Thiscall(text.wrapping_add(0x110)),
             &[r],
         );
-        let mode = instance_call(h, FREE_CAMERA_INSTANCE, GET_MODE_OR_2, &[]);
+        let mode = {
+            let obj = instance(h, FREE_CAMERA_INSTANCE);
+            h.call_sym(GET_MODE_OR_2, Conv::Thiscall(obj), &[])
+        };
         if (mode as i32) > 0 {
             let fc = h.call_sym(FREE_CAMERA_INSTANCE, Conv::Cdecl, &[]);
             let camera: u32 = h.read(scene + 0xdc);
@@ -522,23 +558,28 @@ pub mod bridge {
         let camera = camera_arg(h, scene);
         let f = app_float(h);
         let r = renderer(h, scene);
-        instance_call(
-            h,
-            CHARACTER_LIGHTING_INSTANCE,
-            CHARACTER_LIGHTING_RENDER,
-            &[r, camera, f],
-        );
+        {
+            let obj = instance(h, CHARACTER_LIGHTING_INSTANCE);
+            h.call_sym(
+                CHARACTER_LIGHTING_RENDER,
+                Conv::Thiscall(obj),
+                &[r, camera, f],
+            )
+        };
         for (getter, render) in TWEAK_UTILS {
             let f = app_float(h);
             let r = renderer(h, scene);
-            instance_call(h, getter, render, &[r, f]);
+            {
+                let obj = instance(h, getter);
+                h.call_sym(render, Conv::Thiscall(obj), &[r, f])
+            };
         }
     }
 
     /// `0x0066b0dd`: the cluster objects released, byte `+0xf9c7`
     /// cleared, the loading screen drawn (10 ms sleep in its state 3).
     pub fn tail(h: &mut impl Host, scene: u32) {
-        scene_call(h, scene, RELEASE_CLUSTER_OBJECTS);
+        h.call_sym(RELEASE_CLUSTER_OBJECTS, Conv::Thiscall(scene), &[]);
         h.write(scene + 0xf9c7, 0_u8);
         let screen = global(h, LOADING_SCREEN);
         let r = renderer(h, scene);

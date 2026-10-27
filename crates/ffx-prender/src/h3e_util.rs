@@ -252,46 +252,25 @@ pub mod bridge {
         }
     }
 
-    /// A method of the scene without arguments.
-    pub fn scene_call(h: &mut impl Host, scene: u32, sym: u32) -> u32 {
-        h.call_sym(sym, Conv::Thiscall(scene), &[])
-    }
-
-    /// A predicate of the scene: its `al`.
-    pub fn scene_test(h: &mut impl Host, scene: u32, sym: u32) -> bool {
-        al(scene_call(h, scene, sym))
-    }
-
-    /// A delegation run on `g_RenderDelegationHelper`.
-    pub fn helper_call(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
-        let helper = global(h, DELEGATION_HELPER);
-        h.call_sym(sym, Conv::Thiscall(helper), args)
-    }
-
-    /// A method of a singleton, its getter called first.
-    pub fn instance_call(h: &mut impl Host, getter: u32, sym: u32, args: &[u32]) -> u32 {
-        let obj = h.call_sym(getter, Conv::Cdecl, &[]);
-        h.call_sym(sym, Conv::Thiscall(obj), args)
-    }
-
-    /// A method of the post-process manager (scene `+0x10cc`).
-    pub fn post_call(h: &mut impl Host, scene: u32, sym: u32, args: &[u32]) -> u32 {
-        let pp = post(h, scene);
-        h.call_sym(sym, Conv::Thiscall(pp), args)
-    }
-
-    /// A method of the renderer.
-    pub fn renderer_call(h: &mut impl Host, scene: u32, sym: u32, args: &[u32]) -> u32 {
-        let r = renderer(h, scene);
-        h.call_sym(sym, Conv::Thiscall(r), args)
+    /// A singleton (its cdecl getter).
+    pub fn instance(h: &mut impl Host, getter: u32) -> u32 {
+        h.call_sym(getter, Conv::Cdecl, &[])
     }
 
     pub fn set_color(h: &mut impl Host, scene: u32, surface: u32, index: u32) -> u32 {
-        renderer_call(h, scene, SET_COLOR_TARGET, &[surface, index])
+        h.call_sym(
+            SET_COLOR_TARGET,
+            Conv::Thiscall(renderer(h, scene)),
+            &[surface, index],
+        )
     }
 
     pub fn set_depth(h: &mut impl Host, scene: u32, surface: u32) -> u32 {
-        renderer_call(h, scene, SET_DEPTH_STENCIL_TARGET, &[surface])
+        h.call_sym(
+            SET_DEPTH_STENCIL_TARGET,
+            Conv::Thiscall(renderer(h, scene)),
+            &[surface],
+        )
     }
 
     /// The colour surface at `color` and the depth surface at `depth` set
@@ -302,19 +281,19 @@ pub mod bridge {
     }
 
     pub fn begin(h: &mut impl Host, scene: u32, flags: u32) -> u32 {
-        renderer_call(h, scene, BEGIN_SCENE, &[flags])
+        h.call_sym(BEGIN_SCENE, Conv::Thiscall(renderer(h, scene)), &[flags])
     }
 
     pub fn end(h: &mut impl Host, scene: u32, flags: u32) -> u32 {
-        renderer_call(h, scene, END_SCENE, &[flags])
+        h.call_sym(END_SCENE, Conv::Thiscall(renderer(h, scene)), &[flags])
     }
 
     pub fn clear_scene(h: &mut impl Host, scene: u32, flags: u32) {
-        renderer_call(h, scene, CLEAR_SCENE, &[flags]);
+        h.call_sym(CLEAR_SCENE, Conv::Thiscall(renderer(h, scene)), &[flags]);
     }
 
     pub fn clear_color(h: &mut impl Host, scene: u32, rgba: [u32; 4]) -> u32 {
-        renderer_call(h, scene, SET_CLEAR_COLOR, &rgba)
+        h.call_sym(SET_CLEAR_COLOR, Conv::Thiscall(renderer(h, scene)), &rgba)
     }
 
     /// The clear colour the scene context (`+0xcc`) holds at `+0x30..0x38`
@@ -326,11 +305,11 @@ pub mod bridge {
     }
 
     pub fn viewport(h: &mut impl Host, scene: u32, rect: [u32; 4]) {
-        renderer_call(h, scene, SET_VIEWPORT, &rect);
+        h.call_sym(SET_VIEWPORT, Conv::Thiscall(renderer(h, scene)), &rect);
     }
 
     pub fn scissor(h: &mut impl Host, scene: u32, rect: [u32; 4]) {
-        renderer_call(h, scene, SET_SCISSOR, &rect);
+        h.call_sym(SET_SCISSOR, Conv::Thiscall(renderer(h, scene)), &rect);
     }
 
     /// `(0, 0, width, height)` of the slot's texture (`+0x1c`, `+0x20`).
@@ -362,7 +341,7 @@ pub mod bridge {
     /// `PostProcessManager_degradeResolution(post; renderer)`.
     pub fn degrade(h: &mut impl Host, scene: u32) {
         let r = renderer(h, scene);
-        post_call(h, scene, DEGRADE_RESOLUTION, &[r]);
+        h.call_sym(DEGRADE_RESOLUTION, Conv::Thiscall(post(h, scene)), &[r]);
     }
 
     /// [`viewport_to`] and [`degrade`], which every pass on the colour
@@ -384,7 +363,11 @@ pub mod bridge {
     pub fn copy_buffer(h: &mut impl Host, scene: u32, slot: u32, dst: u32, abc: [u32; 3]) {
         let t = texture(h, slot);
         let r = renderer(h, scene);
-        post_call(h, scene, COPY_BUFFER, &[r, t, dst, abc[0], abc[1], abc[2]]);
+        h.call_sym(
+            COPY_BUFFER,
+            Conv::Thiscall(post(h, scene)),
+            &[r, t, dst, abc[0], abc[1], abc[2]],
+        );
     }
 
     /// The colour (pp `+0x8c`) copied into the target at pp `+dst`, flag 1.
@@ -417,7 +400,11 @@ pub mod bridge {
     pub fn screen_fade(h: &mut impl Host, scene: u32, surface: u32) {
         let camera = camera_arg(h, scene);
         let r = renderer(h, scene);
-        post_call(h, scene, RENDER_SCREEN_FADE, &[r, camera, surface, 0]);
+        h.call_sym(
+            RENDER_SCREEN_FADE,
+            Conv::Thiscall(post(h, scene)),
+            &[r, camera, surface, 0],
+        );
     }
 
     /// `MagicFile_GetMagicId()`.
@@ -432,7 +419,10 @@ pub mod bridge {
 
     /// `FreeCamera_CreateInstance` then `FFXApplication_getModeOr2` on it.
     pub fn free_camera_mode(h: &mut impl Host) -> u32 {
-        instance_call(h, FREE_CAMERA_INSTANCE, GET_MODE_OR_2, &[])
+        {
+            let obj = instance(h, FREE_CAMERA_INSTANCE);
+            h.call_sym(GET_MODE_OR_2, Conv::Thiscall(obj), &[])
+        }
     }
 
     /// The motion blur singleton.

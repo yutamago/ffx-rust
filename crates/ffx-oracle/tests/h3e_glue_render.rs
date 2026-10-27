@@ -1309,6 +1309,7 @@ fn render_stubs(t: &mut Twins, focus: Focus, rng: &mut Rng) {
         (RENDER_HDAO_PASS, 4),
         (POST_RENDER, 3),
         (RENDER_SCREEN_FADE, 4),
+        (RENDER_FOCUS_FRAME, 2),
         (RENDER_USM, 1),
         (RENDER_BRIGHT, 2),
         (RENDER_DEBUG_4BY3, 1),
@@ -1349,8 +1350,6 @@ fn render_stubs(t: &mut Twins, focus: Focus, rng: &mut Rng) {
         let ret = rng.next();
         stub_this(t, sym, n, ret);
     }
-    let ret = rng.next();
-    stub_focus_frame(t, ret);
     for (sym, n) in [(PPP_FILL_WAIT, 0), (SLEEP_MS, 1)] {
         let ret = rng.next();
         stub_cdecl(t, sym, n, ret);
@@ -1411,31 +1410,6 @@ fn render_stubs(t: &mut Twins, focus: Focus, rng: &mut Rng) {
         })
         .collect();
     t.stub_seq(MAGIC_ID, false, 0, 0, &v);
-}
-
-/// `PostProcessManager_renderFocusFrame` (`ret 0xc`, three words) as a
-/// stub logging two: `PhyreScene_render` pushes only two (at
-/// `0x00669bbd`), so the stub pops two when called from there (the
-/// original's `ret 0xc` would leave its esp 4 bytes high and its
-/// callee-saved registers wrong, which the oracle refuses) and three for
-/// the port, which passes a third word (0).
-fn stub_focus_frame(t: &mut Twins, ret: u32) {
-    let sym = u3::RENDER_FOCUS_FRAME;
-    let two = t.stub(None, sym, true, 2, 2, Some(ret));
-    let three = t.stub(None, sym, true, 2, 3, Some(ret));
-    let from = t.rebase(0x0066_9bd4);
-    let at = t.cave_next;
-    let mut c = vec![0x81, 0x3c, 0x24]; // cmp dword [esp], from
-    c.extend(from.to_le_bytes());
-    c.extend([0x0f, 0x84]); // je two
-    c.extend(two.wrapping_sub(at + 13).to_le_bytes());
-    c.push(0xe9); // jmp three
-    c.extend(three.wrapping_sub(at + 18).to_le_bytes());
-    let code = t.code(&c);
-    let site = t.rebase(sym);
-    let mut j = vec![0xe9];
-    j.extend(code.wrapping_sub(site + 5).to_le_bytes());
-    t.patch(site, &j);
 }
 
 /// `PhyreScene_render`'s world for the test's [`Focus`]: the scene

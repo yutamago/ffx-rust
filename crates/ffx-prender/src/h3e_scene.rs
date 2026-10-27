@@ -16,11 +16,10 @@ pub mod bridge {
 
     use crate::h3e_util::bridge::{
         Step, al, begin, camera_arg, clear_color, clear_scene, copied, copy_buffer, copy_color,
-        drop_surface, end, free_camera_mode, global, helper_call, instance_call, magic_id,
-        motion_blur, ok, post, post_call, post_word, render_world, renderer, renderer_call,
-        scene_call, scene_clear_color, scene_test, screen_fade, set_camera_matrix, set_color,
-        set_depth, set_pass, set_targets, special_magic, surface, texture, viewport_degraded,
-        viewport_to,
+        drop_surface, end, free_camera_mode, global, instance, magic_id, motion_blur, ok, post,
+        post_word, render_world, renderer, scene_clear_color, screen_fade, set_camera_matrix,
+        set_color, set_depth, set_pass, set_targets, special_magic, surface, texture,
+        viewport_degraded, viewport_to,
     };
     #[allow(clippy::wildcard_imports)] // the addresses
     use crate::h3e_util::*;
@@ -46,10 +45,14 @@ pub mod bridge {
     /// `PhyreScene_render` returns.
     pub fn scene_stage(h: &mut impl Host, ebp: u32, scene: u32) -> Step {
         if h.read::<u8>(scene + 0x93e) == 0 {
-            scene_call(h, scene, RENDER_SHADOW);
+            h.call_sym(RENDER_SHADOW, Conv::Thiscall(scene), &[]);
         }
-        scene_call(h, scene, RENDER_HDAO);
-        helper_call(h, BEFORE_SCENE, &[]);
+        h.call_sym(RENDER_HDAO, Conv::Thiscall(scene), &[]);
+        h.call_sym(
+            BEFORE_SCENE,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         let color = post_word(h, scene, 0x8c);
         let normal = post_word(h, scene, 0x94);
         let depth = post_word(h, scene, 0x90);
@@ -70,7 +73,10 @@ pub mod bridge {
     pub fn scene_body(h: &mut impl Host, ebp: u32, scene: u32) -> Step {
         draw_scene(h, ebp, scene)?;
         if global(h, MENU_CAPTURE_STATE) != 2 {
-            let broken = instance_call(h, BROKEN_SCREEN_INSTANCE, BROKEN_SCREEN_ACTIVE, &[]);
+            let broken = {
+                let obj = instance(h, BROKEN_SCREEN_INSTANCE);
+                h.call_sym(BROKEN_SCREEN_ACTIVE, Conv::Thiscall(obj), &[])
+            };
             if !al(broken) {
                 hdao_pass(h, ebp, scene)?;
             }
@@ -79,7 +85,7 @@ pub mod bridge {
             }
         }
         post_transparent(h, ebp, scene)?;
-        if !scene_test(h, scene, IS_GLOW_AFTER_VFX) {
+        if !al(h.call_sym(IS_GLOW_AFTER_VFX, Conv::Thiscall(scene), &[])) {
             glow(h, ebp, scene)?;
         }
         effects(h, ebp, scene)?;
@@ -135,7 +141,7 @@ pub mod bridge {
         ok(set_color(h, scene, 0, 1))?;
         ok(set_depth(h, scene, depth))?;
         viewport_to(h, scene, color);
-        renderer_call(h, scene, SET_CLEAR_STENCIL, &[0]);
+        h.call_sym(SET_CLEAR_STENCIL, Conv::Thiscall(renderer(h, scene)), &[0]);
         lift_camera(h, ebp, scene);
         ok(begin(h, scene, 0))?;
         viewport_degraded(h, scene, color);
@@ -158,24 +164,40 @@ pub mod bridge {
         ok(begin(h, scene, 0))?;
         let flag = |h: &H, off| h3e_byte(h, scene, off);
         if flag(h, 0xd4) && flag(h, 0x93c) && !flag(h, 0x93d) {
-            helper_call(h, RUN_FLAG_10, &[]);
-            scene_call(h, scene, DRAW_NON_UI_PRERENDER);
+            h.call_sym(
+                RUN_FLAG_10,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[],
+            );
+            h.call_sym(DRAW_NON_UI_PRERENDER, Conv::Thiscall(scene), &[]);
         }
-        helper_call(h, RUN_FLAG_20, &[]);
+        h.call_sym(
+            RUN_FLAG_20,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         h.call_sym(DRAW_3D_WORLD, Conv::Thiscall(scene), &[1]);
         if !flag(h, 0xd4) {
             viewport_degraded(h, scene, color);
             if flag(h, 0x93c) && !flag(h, 0x93d) {
-                helper_call(h, RUN_FLAG_10, &[]);
-                scene_call(h, scene, DRAW_NON_UI_PRERENDER);
+                h.call_sym(
+                    RUN_FLAG_10,
+                    Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                    &[],
+                );
+                h.call_sym(DRAW_NON_UI_PRERENDER, Conv::Thiscall(scene), &[]);
                 if h.read::<u32>(scene + 0xf9cc) == 0 {
-                    scene_call(h, scene, FUN_0065A590);
+                    h.call_sym(FUN_0065A590, Conv::Thiscall(scene), &[]);
                     set_pass(h, scene, TRANSPARENT_NAME);
                     render_world(h, scene, 0xbc, u32::MAX);
                 }
             }
         }
-        helper_call(h, RUN_FLAG_4000, &[]);
+        h.call_sym(
+            RUN_FLAG_4000,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         ok(end(h, scene, 1))?;
         ok(set_color(h, scene, 0, 1))
     }
@@ -202,7 +224,11 @@ pub mod bridge {
             let color = post_word(h, scene, 0x8c);
             let normal = post_word(h, scene, 0x94);
             let r = renderer(h, scene);
-            post_call(h, scene, RENDER_HDAO_PASS, &[r, camera, color, normal]);
+            h.call_sym(
+                RENDER_HDAO_PASS,
+                Conv::Thiscall(post(h, scene)),
+                &[r, camera, color, normal],
+            );
         }
         drop_surface(h, ebp - HDAO);
         cleared
@@ -213,7 +239,11 @@ pub mod bridge {
     /// cleared to 0, and unless `+0x93e` the `postOpaque` pass of worlds
     /// `+0xac` and `+0x7c`.
     pub fn post_opaque(h: &mut impl Host, ebp: u32, scene: u32) -> Step {
-        helper_call(h, RUN_FLAG_40, &[]);
+        h.call_sym(
+            RUN_FLAG_40,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         let target = post_word(h, scene, 0x9c);
         surface(h, ebp - POST_OPAQUE, target);
         let r = (|| {
@@ -260,12 +290,24 @@ pub mod bridge {
     /// the colour and depth targets again.
     pub fn glow(h: &mut impl Host, ebp: u32, scene: u32) -> Step {
         if global(h, MENU_CAPTURE_STATE) != 2 {
-            helper_call(h, RUN_FLAG_100, &[]);
+            h.call_sym(
+                RUN_FLAG_100,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[],
+            );
             let camera = camera_arg(h, scene);
             let color = post_word(h, scene, 0x8c);
             let r = renderer(h, scene);
-            post_call(h, scene, POST_RENDER, &[r, camera, color]);
-            helper_call(h, RUN_FLAG_200, &[]);
+            h.call_sym(
+                POST_RENDER,
+                Conv::Thiscall(post(h, scene)),
+                &[r, camera, color],
+            );
+            h.call_sym(
+                RUN_FLAG_200,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[],
+            );
         }
         set_targets(h, scene, ebp - COLOR, ebp - DEPTH)
     }
@@ -276,7 +318,9 @@ pub mod bridge {
     fn begin_world_9c(h: &mut impl Host, ebp: u32, scene: u32) -> Step {
         let color = ebp - COLOR;
         let flags = if h3e_byte(h, scene, 0xfb45) {
-            if free_camera_mode(h) == 0 && !scene_test(h, scene, IS_MOTION_BLUR_ON) {
+            if free_camera_mode(h) == 0
+                && !al(h.call_sym(IS_MOTION_BLUR_ON, Conv::Thiscall(scene), &[]))
+            {
                 copy_color(h, scene, 0xa8);
             }
             h.write(scene + 0xfb45, 0_u8);
@@ -321,22 +365,29 @@ pub mod bridge {
             if al(h.call_sym(FUN_006589E0, Conv::Thiscall(scene), &[0])) {
                 world_9c(h, scene, true);
             }
-            scene_call(h, scene, FUN_0066C770);
+            h.call_sym(FUN_0066C770, Conv::Thiscall(scene), &[]);
         }
         ok(end(h, scene, 1))?;
         if global(h, CURRENT_MAP_NO).wrapping_sub(0x189) <= 5 {
-            // The original pushes two words, but the callee takes three
-            // (`ret 0xc`, it reads [ebp+0x10]): the third is the word below
-            // the pushes, the frame's security cookie, and the `ret`
-            // leaves esp 4 bytes high. junk read: the word under the pushed
-            // arguments; 0 (brief 2026-10-24)
             let r = renderer(h, scene);
             let target = post_word(h, scene, 0xa4);
-            post_call(h, scene, RENDER_FOCUS_FRAME, &[r, target, 0]);
+            h.call_sym(
+                RENDER_FOCUS_FRAME,
+                Conv::Thiscall(post(h, scene)),
+                &[r, target],
+            );
         }
-        helper_call(h, BEFORE_VFX, &[]);
+        h.call_sym(
+            BEFORE_VFX,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         if h3e_byte(h, scene, 0xf9c5) {
-            let drawn = helper_call(h, FUN_006AE0C0, &[color]);
+            let drawn = h.call_sym(
+                FUN_006AE0C0,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[color],
+            );
             let at = h.rebase(SCREEN_FADE_DELEGATED);
             h.write(at, drawn as u8);
             if !al(drawn) {
@@ -345,7 +396,10 @@ pub mod bridge {
         }
         if !h3e_byte(h, scene, 0xfb44) && magic_id(h) == 0x14 {
             viewport_degraded(h, scene, color);
-            instance_call(h, BLUR_EX_INSTANCE, BLUR_EX_RENDER, &[]);
+            {
+                let obj = instance(h, BLUR_EX_INSTANCE);
+                h.call_sym(BLUR_EX_RENDER, Conv::Thiscall(obj), &[])
+            };
             set_targets(h, scene, color, depth)?;
             viewport_degraded(h, scene, color);
             ok(begin(h, scene, 0))?;
@@ -354,7 +408,7 @@ pub mod bridge {
         }
         viewport_degraded(h, scene, color);
         h.call_sym(PPP_FILL_WAIT, Conv::Cdecl, &[]);
-        scene_call(h, scene, MERGE_VFX_ARRAYS);
+        h.call_sym(MERGE_VFX_ARRAYS, Conv::Thiscall(scene), &[]);
         if magic_id(h) == 0x110 || magic_id(h) == 0x111 {
             copy_color(h, scene, 0x9c);
         }
@@ -363,14 +417,18 @@ pub mod bridge {
         }
         set_targets(h, scene, color, depth)?;
         ok(begin(h, scene, 0))?;
-        scene_call(h, scene, DRAW_MOST_VFX);
+        h.call_sym(DRAW_MOST_VFX, Conv::Thiscall(scene), &[]);
         ok(end(h, scene, 1))?;
-        if scene_test(h, scene, IS_GLOW_AFTER_VFX) {
+        if al(h.call_sym(IS_GLOW_AFTER_VFX, Conv::Thiscall(scene), &[])) {
             glow(h, ebp, scene)?;
         }
-        scene_call(h, scene, MOVE_CLUSTER);
-        scene_call(h, scene, CLEAR_ARRAYS);
-        helper_call(h, BEFORE_EFFECTS, &[]);
+        h.call_sym(MOVE_CLUSTER, Conv::Thiscall(scene), &[]);
+        h.call_sym(CLEAR_ARRAYS, Conv::Thiscall(scene), &[]);
+        h.call_sym(
+            BEFORE_EFFECTS,
+            Conv::Thiscall(global(h, DELEGATION_HELPER)),
+            &[],
+        );
         Ok(())
     }
 
@@ -381,7 +439,7 @@ pub mod bridge {
     /// colour when `+0x3854` is set.
     fn dtt<H: Host>(h: &mut H, ebp: u32, scene: u32) -> Step {
         let pending = |h: &H| h3e_word(h, scene, 0x3854) != 0;
-        let draw = if scene_test(h, scene, IS_MOTION_BLUR_ON) {
+        let draw = if al(h.call_sym(IS_MOTION_BLUR_ON, Conv::Thiscall(scene), &[])) {
             true
         } else if pending(h) {
             if h.read::<u8>(scene + 2) == 0 {
@@ -411,7 +469,7 @@ pub mod bridge {
         if draw && pending(h) {
             set_targets(h, scene, ebp - COLOR, ebp - DEPTH)?;
             viewport_degraded(h, scene, ebp - COLOR);
-            scene_call(h, scene, RENDER_DTT_VFX);
+            h.call_sym(RENDER_DTT_VFX, Conv::Thiscall(scene), &[]);
         }
         Ok(())
     }
@@ -430,16 +488,25 @@ pub mod bridge {
     pub fn post_chain<H: Host>(h: &mut H, ebp: u32, scene: u32) -> Step {
         let color = ebp - COLOR;
         dtt(h, ebp, scene)?;
-        let needs = instance_call(h, SPECULAR_INSTANCE, NEED_SPECULAR_PASS, &[]);
+        let needs = {
+            let obj = instance(h, SPECULAR_INSTANCE);
+            h.call_sym(NEED_SPECULAR_PASS, Conv::Thiscall(obj), &[])
+        };
         if al(needs) {
             set_targets(h, scene, color, ebp - DEPTH)?;
             viewport_degraded(h, scene, color);
             ok(begin(h, scene, 0))?;
             let r = renderer(h, scene);
-            instance_call(h, SPECULAR_INSTANCE, RENDER_SPECULAR_PASS, &[r]);
+            {
+                let obj = instance(h, SPECULAR_INSTANCE);
+                h.call_sym(RENDER_SPECULAR_PASS, Conv::Thiscall(obj), &[r])
+            };
             ok(end(h, scene, 1))?;
         } else {
-            instance_call(h, SPECULAR_INSTANCE, RESET_SPECULAR_MAPS, &[]);
+            {
+                let obj = instance(h, SPECULAR_INSTANCE);
+                h.call_sym(RESET_SPECULAR_MAPS, Conv::Thiscall(obj), &[])
+            };
         }
         let capture = |h: &H| {
             let pp = post(h, scene);
@@ -450,39 +517,53 @@ pub mod bridge {
         }
         if h3e_byte(h, scene, 0xf9c5)
             && special_magic(h)
-            && !al(helper_call(h, RUN_FLAG_1000, &[color]))
+            && !al(h.call_sym(
+                RUN_FLAG_1000,
+                Conv::Thiscall(global(h, DELEGATION_HELPER)),
+                &[color],
+            ))
         {
             let pp = post(h, scene);
             if h.read::<u8>(pp.wrapping_add(0x123a0)) != 0 {
                 screen_fade(h, scene, color);
             }
         }
-        if scene_test(h, scene, COPY_PREVIOUS_FRAME_FOR_DTT)
+        if al(h.call_sym(COPY_PREVIOUS_FRAME_FOR_DTT, Conv::Thiscall(scene), &[]))
             && free_camera_mode(h) != 1
-            && !scene_test(h, scene, IS_MOTION_BLUR_ON)
+            && !al(h.call_sym(IS_MOTION_BLUR_ON, Conv::Thiscall(scene), &[]))
         {
             copy_color(h, scene, 0xa8);
         }
         let pending = h3e_word(h, scene, 0x3854) != 0;
         h.write(scene + 2, u8::from(pending));
         set_camera_matrix(h, scene, ebp - SAVED);
-        let broken = al(instance_call(
-            h,
-            BROKEN_SCREEN_INSTANCE,
-            BROKEN_SCREEN_ACTIVE,
-            &[],
-        ));
-        instance_call(h, BROKEN_SCREEN_INSTANCE, BROKEN_SCREEN_RENDER, &[]);
+        let broken = al({
+            let obj = instance(h, BROKEN_SCREEN_INSTANCE);
+            h.call_sym(BROKEN_SCREEN_ACTIVE, Conv::Thiscall(obj), &[])
+        });
+        {
+            let obj = instance(h, BROKEN_SCREEN_INSTANCE);
+            h.call_sym(BROKEN_SCREEN_RENDER, Conv::Thiscall(obj), &[])
+        };
         motion_blur_render(h, scene);
         if capture(h) && blurring(h) {
             cross_fade_capture(h, scene, 0xa8);
         }
-        instance_call(h, BLUR_INSTANCE, BLUR_RENDER, &[]);
+        {
+            let obj = instance(h, BLUR_INSTANCE);
+            h.call_sym(BLUR_RENDER, Conv::Thiscall(obj), &[])
+        };
         if magic_id(h) != 0x14 || h3e_byte(h, scene, 0xfb44) {
-            instance_call(h, BLUR_EX_INSTANCE, BLUR_EX_RENDER, &[]);
+            {
+                let obj = instance(h, BLUR_EX_INSTANCE);
+                h.call_sym(BLUR_EX_RENDER, Conv::Thiscall(obj), &[])
+            };
         }
         if !broken {
-            instance_call(h, DISTORTION_INSTANCE, DISTORTION_RENDER, &[]);
+            {
+                let obj = instance(h, DISTORTION_INSTANCE);
+                h.call_sym(DISTORTION_RENDER, Conv::Thiscall(obj), &[])
+            };
         }
         if blurring(h) {
             let pp = post(h, scene);
@@ -508,15 +589,19 @@ pub mod bridge {
             let pp = post(h, scene);
             h.write(pp.wrapping_add(0x123c4), 0_u8);
         }
-        scene_call(h, scene, RENDER_MF152);
+        h.call_sym(RENDER_MF152, Conv::Thiscall(scene), &[]);
         let r = renderer(h, scene);
         if !broken {
-            post_call(h, scene, RENDER_USM, &[r]);
+            h.call_sym(RENDER_USM, Conv::Thiscall(post(h, scene)), &[r]);
         }
         let mode: u32 = h.read(scene + 0x10dd8);
         h.call_sym(RENDER_POST_AA, Conv::Thiscall(scene), &[mode]);
         let color_slot = post_word(h, scene, 0x8c);
-        post_call(h, scene, RENDER_BRIGHT, &[r, color_slot]);
+        h.call_sym(
+            RENDER_BRIGHT,
+            Conv::Thiscall(post(h, scene)),
+            &[r, color_slot],
+        );
         Ok(())
     }
 
@@ -530,7 +615,7 @@ pub mod bridge {
     /// the capture switched off, pp `+0x12408` = that target.
     fn cross_fade_capture(h: &mut impl Host, scene: u32, dst: u32) {
         copy_color(h, scene, dst);
-        post_call(h, scene, SET_CROSS_FADE_CAPTURE, &[0]);
+        h.call_sym(SET_CROSS_FADE_CAPTURE, Conv::Thiscall(post(h, scene)), &[0]);
         let pp = post(h, scene);
         let target: u32 = h.read(pp.wrapping_add(dst));
         h.write(pp.wrapping_add(0x1_2408), target);
@@ -589,7 +674,7 @@ pub mod bridge {
         let pp = post(h, scene);
         let count: u32 = h.read(pp.wrapping_add(0x123c0));
         if h.read::<u16>(count) == 0 {
-            post_call(h, scene, SET_BYTE_123BB, &[0]);
+            h.call_sym(SET_BYTE_123BB, Conv::Thiscall(post(h, scene)), &[0]);
         }
     }
 }
