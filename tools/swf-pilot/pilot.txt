@@ -1,0 +1,147 @@
+# M5 SWF pilot (crates/ffx-swf, docs/formats/pc-ui.md "Iggy calls"): the
+# Iggy screens in several states each, for the Iggy-against-Ruffle
+# comparison. Not on run-all.sh's lists (no recorded reference): it runs on
+# the original code with the Iggy call log on, from
+# tools/swf-pilot/record.sh. Inputs as iggy-menus.txt (DirectInput keys:
+# 01 Esc, 1c Enter, 0e Backspace, c8 up, d0 down); nothing is changed,
+# saved or loaded.
+#
+# Shots (pilot-<name>.bmp): the field before the menu (scene-esc), the PC
+# menu opening (esc-open-<n>, n frames after Esc,
+# every other frame: the animated comparison), idle (esc-idle), the cursor moving (esc-move-<n>), System
+# setting sliding in (sys-<n>) and idle, Audio, Video, Key bindings; then
+# the title after a game over, the load list opening (load-<n>), idle, the
+# cursor moving (load-move-<n>), the "load this game?" pop-up and back.
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00ce72e8:0x18
+# the field under the menu (the comparison's background)
+shot $OUT\pilot-scene-esc.bmp
+# the PC menu opening
+key 01 4 0
+shot $OUT\pilot-esc-open-01.bmp
+wait 2
+shot $OUT\pilot-esc-open-03.bmp
+wait 2
+shot $OUT\pilot-esc-open-05.bmp
+wait 2
+shot $OUT\pilot-esc-open-07.bmp
+wait 2
+shot $OUT\pilot-esc-open-09.bmp
+wait 2
+shot $OUT\pilot-esc-open-11.bmp
+wait 2
+shot $OUT\pilot-esc-open-13.bmp
+wait 2
+shot $OUT\pilot-esc-open-15.bmp
+wait 2
+shot $OUT\pilot-esc-open-17.bmp
+wait 2
+shot $OUT\pilot-esc-open-19.bmp
+wait 2
+shot $OUT\pilot-esc-open-21.bmp
+wait 2
+shot $OUT\pilot-esc-open-23.bmp
+wait 2
+shot $OUT\pilot-esc-open-25.bmp
+wait 2
+shot $OUT\pilot-esc-open-27.bmp
+wait 2
+shot $OUT\pilot-esc-open-29.bmp
+wait 211
+shot $OUT\pilot-esc-idle.bmp
+# the cursor to System setting
+key d0 4 0
+shot $OUT\pilot-esc-move-1.bmp
+wait 3
+shot $OUT\pilot-esc-move-4.bmp
+wait 6
+shot $OUT\pilot-esc-move-10.bmp
+wait 50
+shot $OUT\pilot-esc-move-60.bmp
+# System setting sliding in
+key 1c 4 0
+shot $OUT\pilot-sys-1.bmp
+wait 3
+shot $OUT\pilot-sys-4.bmp
+wait 4
+shot $OUT\pilot-sys-8.bmp
+wait 8
+shot $OUT\pilot-sys-16.bmp
+wait 224
+shot $OUT\pilot-sys-idle.bmp
+# Audio
+key 1c 4 240
+shot $OUT\pilot-audio.bmp
+key 0e 4 240
+# Video
+key d0 4 60
+key 1c 4 240
+shot $OUT\pilot-video.bmp
+key d0 4 0
+wait 4
+shot $OUT\pilot-video-move-4.bmp
+wait 56
+shot $OUT\pilot-video-move-60.bmp
+key 0e 4 240
+# Key bindings, Keyboard
+key d0 4 60
+key d0 4 60
+key 1c 4 240
+shot $OUT\pilot-keys.bmp
+key 1c 4 240
+shot $OUT\pilot-keyboard.bmp
+key 0e 4 240
+key 0e 4 240
+key 0e 4 240
+# the menu closing
+key 01 4 0
+wait 3
+shot $OUT\pilot-esc-close-4.bmp
+wait 240
+shot $OUT\pilot-field.bmp
+# the title, as after a game over, and the load list
+call 0x0086da10
+waitfor 0x0112ca90:2 5d01 ffff 1500
+wait 60
+press start 3 20
+waitfor 0x0112ca90:2 1700 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 600
+waitfor 0x01325d94:4 40000000 c0ffffff 600
+wait 37
+shot $OUT\pilot-title.bmp
+key 1c 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+shot $OUT\pilot-load-0.bmp
+wait 4
+shot $OUT\pilot-load-4.bmp
+wait 6
+shot $OUT\pilot-load-10.bmp
+wait 50
+shot $OUT\pilot-load-idle.bmp
+key d0 3 0
+wait 1
+shot $OUT\pilot-load-move-4.bmp
+wait 6
+shot $OUT\pilot-load-move-10.bmp
+wait 50
+shot $OUT\pilot-load-move-60.bmp
+key d0 3 60
+shot $OUT\pilot-load-move2-60.bmp
+key 1c 3 3
+waitfor 0x00ce72e8:4 0d000000 ffffffff 600
+wait 2
+shot $OUT\pilot-popup-2.bmp
+wait 58
+shot $OUT\pilot-popup.bmp
+key 0e 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+wait 60
+shot $OUT\pilot-load-back.bmp
+key 0e 3 3
+waitfor 0x00ce72e8:4 0a000000 ffffffff 600
+wait 240
+shot $OUT\pilot-title-after.bmp

@@ -1610,6 +1610,9 @@ unsafe fn run_render_jobs(label: u32, swap_chain: *mut c_void) {
             }
             // SAFETY: the swap chain is live inside its own Present.
             let r = unsafe { screenshot(swap_chain, &path) };
+            if r.is_ok() {
+                crate::iggy_log::note_shot(&path, (label != NO_LABEL).then_some(label));
+            }
             let _ = reply.send(r.map_or_else(
                 |e| format!("err {e}"),
                 |(w, h)| {
@@ -1697,6 +1700,16 @@ pub fn present_label() -> Option<u32> {
     let l = PRESENT_LABEL.load(Ordering::Acquire);
     (l != NO_LABEL).then_some(l)
 }
+/// The update whose flip the render thread runs next (the image its
+/// current commands draw into), when the main thread has queued it; for
+/// the Iggy call log ([`crate::iggy_log`]).
+pub fn render_label() -> Option<u32> {
+    let run = FLIPS_RUN.load(Ordering::Acquire);
+    (run < FLIPS.load(Ordering::Acquire))
+        .then(|| FLIP_LABELS[run as usize % FLIP_LABELS.len()].load(Ordering::Acquire))
+        .filter(|&l| l != NO_LABEL)
+}
+
 /// A present without a known label was seen after the main loop started.
 static UNLABELLED: AtomicBool = AtomicBool::new(false);
 /// The virtual vsync handler runs on one thread at a time.

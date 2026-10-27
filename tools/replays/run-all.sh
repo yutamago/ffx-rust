@@ -41,6 +41,12 @@
 # symbols/hook-hits.txt (tools/hook-hits.py) and writes the report to
 # FFX_HITS_REPORT (default ~/ffx-work/agents/coverage/hook-hits-report.txt).
 # The exit code is the comparison's; the session is not a parity replay.
+# Iggy call log (crates/ffx-hook/src/iggy_log.rs, docs/formats/pc-ui.md
+# "Iggy calls"):
+#   tools/replays/run-all.sh [--extra] --iggy-log [replay...]
+# runs and compares the replays as usual with FFX_IGGY_LOG set: every Iggy
+# call, AS3 callback and screenshot of a replay goes to the run folder's
+# iggy/<replay>-rust.iggy (the M5 SWF pilot replays them into Ruffle).
 # Rust map mode (docs/draw.md, "The map path"):
 #   tools/replays/run-all.sh --rust-map [--hits]
 # runs and compares the replays as usual with the map world drawn through
@@ -115,6 +121,7 @@ run() { # replay, tag, [original]
     mkdir -p "$dir"
     ${audio:+env FFX_AUDIO_WAV="$dir/$1-$2.wav"} \
     ${hits:+env FFX_HOOK_HITS="$hits/$1-$2.hits"} \
+    ${iggy:+env FFX_IGGY_LOG="$iggy/$1-$2.iggy"} \
         timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
         > "$dir/$1.out" 2>&1
     echo "$1 $2: exit $?" >> "$dir/$1.out"
@@ -134,6 +141,7 @@ each() {
 }
 start=$SECONDS
 hits=""
+iggy=""
 rust_map=""
 audio=""
 if [ "${1:-}" = --audio ]; then
@@ -187,9 +195,10 @@ if [ "${1:-}" = --audio ]; then
     done
     exit $bad
 fi
-while [ "${1:-}" = --hits ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
+while [ "${1:-}" = --hits ] || [ "${1:-}" = --iggy-log ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
     case $1 in
         --hits) hits="$runs/hits"; mkdir -p "$hits" ;;
+        --iggy-log) iggy="$runs/iggy"; mkdir -p "$iggy" ;;
         --rust-map) rust_map=1; export FFX_RUST_MAP=1 ;;
         --rust-map=build) rust_map=1; export FFX_RUST_MAP=build ;;
     esac
