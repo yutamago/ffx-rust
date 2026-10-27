@@ -616,6 +616,24 @@ load ends 2 frames after the magic ID in original, Rust and Rust with no
 slowing alike, and battle-overdrive's entry takes 281 frames and Energy
 Blast 259 in every run.
 
+The 100 ms rule is the one place left where the loader runs beside an
+update, so what it gets done before the update looks at it follows real
+time. Each time it frees the loader the hook log says `harness: loader
+freed in update N` (since 2026-10-27). On an idle machine that happens
+once a run, in the map load's update, with the main thread in
+`CdReadSync` (`0x0076c490`, its wait `0x0076e660` drawing the loading
+screen between 1 ms sleeps) waiting for the CD read thread. Keeping the
+loader out of that wait does not work: tried on 2026-10-27 (the main
+thread's stack sampled at the stall), one battle-magic run of three hung
+there until the 30 s guard freed the loader, so that read needs the
+loader. battle-magic's battle once came 89 updates after `lockstep on`
+instead of 87 (replay-flakes-2, three games at once), which a battle-load
+update crossing 100 ms would explain (FMOD, which ran on real time until
+"Sound in lockstep" below, is the other candidate). Since then the battle
+took 77 updates from its request in every run measured (replay-flakes3:
+the recordings and the proof runs). If it comes back, the log line tells
+whether a stall fell inside the battle's load.
+
 ### Pinned state
 
 `lockstep on` makes the frames after it repeat, but not what the frames
@@ -717,10 +735,12 @@ the replay steps one frame at a time until the save's event script opens.
 The whole map load then runs in lockstep, and the script's `lockstep on`
 (still there, a no-op now) and `pin` come at the same update of the load
 in every run. The frames before it (boot, title, the taps of Start) still
-run free, and `pin` takes care of what they leave. The draw and extra
-replays (`draw-*`, `settings-*`, `iggy-menus`, `battle-ifrit`) still use
-the old form: their references (draw captures, the extra recordings) would
-have to be taken again.
+run free, and `pin` takes care of what they leave. Since 2026-10-27
+(replay-flakes3) draw-field, the scene gates' replays (`draw-gate-*`) and
+the extra list (`settings-*`, `iggy-menus`, `battle-ifrit`) use it too,
+and draw-field pins; their references were taken again (draw-field
+`ref2-{a,b,c}`, the gates `dg-<replay>-q1/q2`, the extra recordings). The
+older `draw-<map>` capture scripts keep the old form.
 
 Measured: menu-grid, three original runs side by side, gave identical
 traces frame for frame (aligned at their first line) and identical shots,
