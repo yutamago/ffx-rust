@@ -35,6 +35,16 @@ pub trait Source {
     fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), Error>;
 }
 
+impl<S: Source + ?Sized> Source for Box<S> {
+    fn len(&self) -> u64 {
+        (**self).len()
+    }
+
+    fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), Error> {
+        (**self).read_at(pos, buf)
+    }
+}
+
 impl Source for &[u8] {
     fn len(&self) -> u64 {
         <[u8]>::len(self) as u64
@@ -507,6 +517,25 @@ impl<S: Source> Movie<S> {
             pending: std::collections::VecDeque::new(),
             movie: self,
         }
+    }
+
+    /// The first cluster's offset (`Segment::GetFirst`), `None` without
+    /// clusters.
+    #[must_use]
+    pub fn first_cluster(&self) -> Option<u64> {
+        self.first_cluster
+    }
+
+    /// The packets of the element at `pos` (none unless it is a cluster)
+    /// and the next element's offset, `None` at the segment's end
+    /// (`Segment::GetNext`).
+    ///
+    /// # Errors
+    /// Read errors and malformed elements.
+    pub fn read_cluster(&mut self, pos: u64) -> Result<(Vec<Packet>, Option<u64>), Error> {
+        let mut out = Vec::new();
+        let next = self.cluster(pos, &mut out)?;
+        Ok((out, (next < self.segment.1).then_some(next)))
     }
 
     /// The packets of the cluster at `pos`, and the next element's offset.

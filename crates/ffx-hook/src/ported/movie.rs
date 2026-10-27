@@ -4,10 +4,88 @@
 //! 1.3.5 on `ffx-movie`'s decoders (`ffx_movie::api`), so the libraries'
 //! own code is no longer reached (`docs/formats/platform.md`, "Movies").
 
+use ffx_bridge::Mem;
 use ffx_movie::api;
+use ffx_movie::mkv;
+use ffx_movie::webm::{Error as WebmError, Source};
 use ffx_movie::{ViewScreen, bridge as mv};
 
-use super::{mem, ported};
+use super::{call_thiscall, mem, ported};
+
+/// The game's `IMkvReader` (`VbfMkvReader` over Phyre's `PStreamFile`),
+/// read through its vtable: `Read(pos, len, buf)` (slot 0) and
+/// `Length(&total, &available)` (slot 1), both thiscall.
+struct GameReader {
+    reader: u32,
+    len: u64,
+}
+
+impl GameReader {
+    fn new(reader: u32) -> Self {
+        let m = mem();
+        let vtable = m.read::<u32>(reader);
+        let length = m.read::<u32>(vtable + 4);
+        let mut out = super::StackFrame::<4>::new();
+        let at = out.at();
+        let r = call_thiscall(length, reader, &[at, at + 8]);
+        let total = m.read::<u64>(at);
+        Self {
+            reader,
+            len: if r == 0 { total } else { 0 },
+        }
+    }
+}
+
+impl Source for GameReader {
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), WebmError> {
+        if buf.is_empty() {
+            return Ok(());
+        }
+        let m = mem();
+        let read = m.read::<u32>(m.read::<u32>(self.reader));
+        #[allow(clippy::cast_possible_truncation)] // 32-bit process; halves of the i64
+        let (lo, hi, at) = (
+            pos as u32,
+            (pos >> 32) as u32,
+            buf.as_mut_ptr() as usize as u32,
+        );
+        let len = u32::try_from(buf.len()).map_err(|_| WebmError::Truncated)?;
+        match call_thiscall(read, self.reader, &[lo, hi, len, at]) {
+            0 => Ok(()),
+            r => Err(WebmError::Io(format!("IMkvReader::Read {r}"))),
+        }
+    }
+}
+
+/// The player's `CDataFrameQueue`s and its done event, through the
+/// original functions.
+struct PlayerQueues;
+
+impl mkv::Queues for PlayerQueues {
+    fn reserve(&mut self, queue: u32, len: u32) -> u32 {
+        call_thiscall(rebased(0x00a3_dec0), queue, &[len])
+    }
+
+    fn commit(&mut self, queue: u32) {
+        call_thiscall(rebased(0x00a3_df00), queue, &[]);
+    }
+
+    fn close(&mut self, queue: u32) {
+        call_thiscall(rebased(0x00a3_dea0), queue, &[]);
+    }
+
+    fn signal(&mut self, event: u32) {
+        call_thiscall(rebased(0x0043_0200), event, &[]);
+    }
+}
+
+fn rebased(sym: u32) -> u32 {
+    u32::try_from(crate::rebase(sym)).unwrap_or(0)
+}
 
 ported! {
     /// `FFXSamp0UnitMatrix(m)`: returns the 4 its loop leaves in `eax`.
@@ -88,6 +166,82 @@ ported! {
     /// `vpx_codec_destroy(ctx)`.
     vpx_codec_destroy @ 0x0040_9370 => extern "C" fn vpx_codec_destroy(ctx: u32) -> u32 {
         api::vpx_destroy(&mut mem(), ctx)
+    }
+
+    // ---- libwebm's mkvparser (PVideoPlaybackWin32_open, _AudioInit,
+    // _close) and the demux loop; Segment::GetTracks (0x004251b0) and
+    // Track::GetType (0x00427b10) are four bytes, too short to hook: they
+    // run on mkv's objects, laid out for them ----
+    /// `mkvparser::SetAllocator(malloc, free)`; `eax` is `free`, as the
+    /// original leaves it.
+    mkvparser_SetAllocator @ 0x0041_e5b0 => extern "C" fn mkvparser_set_allocator(malloc: u32, free: u32) -> u32 {
+        mkv::set_allocator(&mut mem(), malloc, free);
+        free
+    }
+    /// `mkvparser::ResetAllocator()`; `eax` is the CRT's `free`, as the
+    /// original leaves it.
+    mkvparser_ResetAllocator @ 0x0041_e5d0 => extern "C" fn mkvparser_reset_allocator() -> u32 {
+        let mut m = mem();
+        mkv::reset_allocator(&mut m);
+        m.read::<u32>(m.rebase(mkv::MKV_FREE))
+    }
+    /// `Segment::CreateInstance(reader, pos, &segment)`: over the game's
+    /// reader.
+    mkvparser_Segment_CreateInstance @ 0x0041_fd50 => extern "C" fn mkvparser_segment_create_instance(
+        reader: u32, pos_lo: u32, pos_hi: u32, out: u32
+    ) -> u64 {
+        let pos = (u64::from(pos_hi) << 32 | u64::from(pos_lo)).cast_signed();
+        mkv::create_instance(&mut mem(), Box::new(GameReader::new(reader)), pos, out).cast_unsigned()
+    }
+    /// `Segment::Load()`.
+    mkvparser_Segment_Load @ 0x0042_1450 => extern "thiscall" fn mkvparser_segment_load(seg: u32) -> u64 {
+        mkv::load(seg).cast_unsigned()
+    }
+    /// `delete segment`.
+    mkvparser_Segment_delete @ 0x0041_fd10 => extern "C" fn mkvparser_segment_delete(seg: u32) {
+        mkv::delete(seg);
+    }
+    /// `Segment::GetDuration()`.
+    mkvparser_Segment_GetDuration @ 0x0042_5200 => extern "thiscall" fn mkvparser_segment_get_duration(seg: u32) -> u64 {
+        mkv::duration(&mem(), seg).cast_unsigned()
+    }
+    /// `Tracks::GetTracksCount()`.
+    mkvparser_Tracks_GetTracksCount @ 0x0042_94c0 => extern "thiscall" fn mkvparser_tracks_count(tracks: u32) -> u32 {
+        mkv::tracks_count(&mem(), tracks)
+    }
+    /// `Tracks::GetTrackByIndex(i)`.
+    mkvparser_Tracks_GetTrackByIndex @ 0x0042_9de0 => extern "thiscall" fn mkvparser_track_by_index(tracks: u32, i: u32) -> u32 {
+        mkv::track_by_index(&mem(), tracks, i)
+    }
+    /// `Track::GetCodecPrivate(size&)`.
+    mkvparser_Track_GetCodecPrivate @ 0x0042_7b80 => extern "thiscall" fn mkvparser_codec_private(track: u32, size: u32) -> u32 {
+        mkv::codec_private(&mut mem(), track, size)
+    }
+    /// `VideoTrack::GetWidth()`.
+    mkvparser_VideoTrack_GetWidth @ 0x0042_8db0 => extern "thiscall" fn mkvparser_width(track: u32) -> u64 {
+        mkv::field_i64(&mem(), track, 0x90).cast_unsigned()
+    }
+    /// `VideoTrack::GetHeight()`.
+    mkvparser_VideoTrack_GetHeight @ 0x0042_8dc0 => extern "thiscall" fn mkvparser_height(track: u32) -> u64 {
+        mkv::field_i64(&mem(), track, 0x98).cast_unsigned()
+    }
+    /// `VideoTrack::GetFrameRate()` (`ST0`).
+    mkvparser_VideoTrack_GetFrameRate @ 0x0042_8dd0 => extern "thiscall" fn mkvparser_frame_rate(track: u32) -> f64 {
+        mkv::field_f64(&mem(), track, 0xa0)
+    }
+    /// `AudioTrack::GetSamplingRate()` (`ST0`).
+    mkvparser_AudioTrack_GetSamplingRate @ 0x0042_9170 => extern "thiscall" fn mkvparser_sampling_rate(track: u32) -> f64 {
+        mkv::field_f64(&mem(), track, 0x90)
+    }
+    /// `AudioTrack::GetChannels()`.
+    mkvparser_AudioTrack_GetChannels @ 0x0042_9180 => extern "thiscall" fn mkvparser_channels(track: u32) -> u64 {
+        mkv::field_i64(&mem(), track, 0x98).cast_unsigned()
+    }
+    /// `PVideoPlaybackWin32_DemuxLoop(this)` (the reading thread): the
+    /// cluster and block walk on `ffx_movie::webm`, into the original
+    /// queues.
+    PVideoPlaybackWin32_DemuxLoop @ 0x00a2_7650 => extern "thiscall" fn pvideo_demux_loop(player: u32) {
+        mkv::demux_loop(&mut mem(), player, &mut PlayerQueues);
     }
 
     // ---- libVorbis 1.3.5 (PVideoPlaybackWin32_AudioInit, _AudioRead,

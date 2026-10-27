@@ -6,15 +6,20 @@
 //! ```text
 //! moviecmp vorbis <movie.webm> <ref.f32> [<ref.s16>]
 //! moviecmp vp8 <movie.webm> <ref.txt>
+//! moviecmp demux <movie.webm> <ref.txt>
 //! ```
 //!
 //! `vorbis` feeds the packets as `PVideoPlaybackWin32_AudioRead` does and
 //! compares every interleaved f32 sample bit for bit (and the s16 the FMOD
 //! stream gets). `vp8` compares the per-frame MD5 of the visible I420
-//! planes with the reference's lines (as many frames as it has). Prints
+//! planes with the reference's lines (as many frames as it has). `demux`
+//! compares the packets (track index, size, MD5 of the data) with
+//! `ffmpeg -c copy -f framemd5`'s (fields 0, 4 and 5), an independent
+//! demuxer. Prints
 //! one line, `OK` or `DIFF`, and exits 1 on a difference.
 
 #![allow(
+    clippy::cast_possible_wrap,
     clippy::chunks_exact_to_as_chunks,
     clippy::format_collect,
     clippy::many_single_char_names,
@@ -40,6 +45,7 @@ fn main() -> ExitCode {
     let ok = match a[1].as_str() {
         "vorbis" => vorbis(&name, &a[2], &a[3], a.get(4).map(String::as_str)),
         "vp8" => vp8(&name, &a[2], &a[3]),
+        "demux" => demux(&name, &a[2], &a[3]),
         _ => {
             eprintln!("unknown mode");
             return ExitCode::from(2);
@@ -170,4 +176,43 @@ fn md5_hex(f: &ffx_movie::vp8::Frame) -> String {
         h.update(p);
     }
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn demux(name: &str, path: &str, reference: &str) -> bool {
+    use md5::{Digest, Md5};
+    let mut movie = Movie::open(webm::FileSource::open(path).expect("open")).expect("webm");
+    let numbers: Vec<u64> = movie.tracks.iter().map(|t| t.number).collect();
+    let want: Vec<String> = std::fs::read_to_string(reference)
+        .expect("reference")
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
+        .map(|l| {
+            let f: Vec<&str> = l.split(',').map(str::trim).collect();
+            format!("{},{},{}", f[0], f[4], f[5])
+        })
+        .collect();
+    let mut got = Vec::new();
+    for p in movie.packets() {
+        let p = p.expect("packet");
+        let index = numbers
+            .iter()
+            .position(|&n| n == p.track)
+            .map_or(-1, |i| i as i64);
+        let md5: String = Md5::digest(&p.data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        got.push(format!("{index},{},{md5}", p.data.len()));
+    }
+    let n = got.len().min(want.len());
+    let diff = (0..n).filter(|&i| got[i] != want[i]).count();
+    let first = (0..n).find(|&i| got[i] != want[i]);
+    let ok = diff == 0 && got.len() == want.len();
+    println!(
+        "{}\tdemux\t{name}\tpackets={} ref={}\tdiff={diff}\tfirst={first:?}",
+        if ok { "OK" } else { "DIFF" },
+        got.len(),
+        want.len()
+    );
+    ok
 }

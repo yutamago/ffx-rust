@@ -63,6 +63,7 @@ pub fn view_screen(v: &ViewScreen) -> ([f32; 16], [f32; 16]) {
 }
 
 pub mod api;
+pub mod mkv;
 pub mod vorbis;
 pub mod vp8;
 pub mod webm;
