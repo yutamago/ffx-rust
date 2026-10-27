@@ -167,6 +167,8 @@ pub mod m4r_meshlist;
 pub mod m4r_modnet;
 pub mod m4r_nodecapture;
 pub mod m4r_rendercmds;
+pub mod m5r_a;
+pub mod m5r_b;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;
