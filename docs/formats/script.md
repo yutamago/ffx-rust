@@ -289,20 +289,20 @@ caller's); `AtelGetSphereMonitor` (`0x0086c4b0`) does too, so its `EAX`
 keeps the upper half of `&g_SaveData`.
 
 Others read `g_SaveData` (`0x0112ca90`, through `MsGetSaveEventAddress`'s
-thunk at `0x0088c830`):
+thunk at `0x0088c830`; the whole block is in `docs/formats/save.md`):
 
 | Offset | Type | Accessors |
 |---|---|---|
 | `0x10` | `u8` | `AtelGet`/`SetBattleSceneGroup` |
 | `0x11`, `0x12` | `u8` | `AtelSetMapFadeType`, `AtelSetMapFadeFrames` (`0x008700c0`, `0x008700d0`) |
 | `0x13` | `u8` | battle status: bit 1 `AtelGetBattleStatusSys`, bit 2 `AtelGetBattleStatusDummyEnc` |
-| `0x20` | `u8` | `AtelGetSave20` |
+| `0x20` | `u8` | `AtelGetSave20`: 1 while `AtelPushMember` holds a party in `0x21`-`0x24` |
 | `0xb4`, `0xb6` | `u16` | the map marker (`AtelGetMapMarkerX`/`Y`, `0x00873ae0`/`0x00873af0`) |
 | `0xd1` | `u8` | `AtelGetAlbhedRikku` |
 | `0xd6` | `u8` | `AtelClearForcePlaceId` |
 | `0xd7` | `u8` | `AtelGetWaterBattleEffect` |
-| `0xd8`, `0xdc` | `u32` | read by `0x008807b0` |
-| `0xe0` | `u32` | `AtelGetOnMemoryMovieFileNo`, `AtelSetOnMemoryMovie` |
+| `0xd8`, `0xdc` | `u32` | the on-memory movie and its flags (`AtelSetOnMemoryMovieFileWait`); read by `0x008807b0` |
+| `0xe0` | `u32` | the on-memory movie's state: `AtelGetOnMemoryMovieFileNo`, `AtelSetOnMemoryMovie` (Fahrenheit's layout has the file number at `0xd8`, so the BSim name may belong to `AtelGetSaveD8`) |
 | `0xe4` | `u32` | `AtelGetRandomEncountStatus` |
 | `0xe8`, `0xea` | `u16` | `AtelGetBattleEndTagAlways`, `AtelGetSphereMonitor` |
 | `0xbec` | `u16` | `AtelGetScenarioFlag` |

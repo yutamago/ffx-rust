@@ -12342,8 +12342,8 @@
 0x00873ae0 function AtelGetMapMarkerX         # g_SaveData +0xb4 (u16, Native_SetMapMarkerPos); the menu at 0x008e2b60
 0x00873af0 function AtelGetMapMarkerY         # g_SaveData +0xb6 (u16)
 0x00873b00 function AtelGetMusicNumber        # fh v3:bsim1.00 0x00873aa0
-0x00873b10 function AtelGetOnMemoryMovieFileNo# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe0, what AtelSetOnMemoryMovie writes
-0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00)
+0x00873b10 function AtelGetOnMemoryMovieFileNo # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe0, what AtelSetOnMemoryMovie writes; Fahrenheit's layout (SaveData.on_memory_movie_file_no at +0xd8, on_memory_movie at +0xe0) puts the file number at +0xd8, which AtelGetSaveD8 (0x00873b20) reads; this one reads the state +0xe0, so the BSim name may belong to 0x00873b20
+0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00); +0xd8 is Fahrenheit's SaveData.on_memory_movie_file_no (AtelSetOnMemoryMovieFileWait stores the movie there), +0xdc on_memory_movie_mode (AtelGetSaveDC)
 0x00873b30 function AtelGetSaveDC             # g_SaveData +0xdc; read by 0x008807b0
 0x00873b40 function AtelGetRandomEncountStatus# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe4
 0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export; ported in helpers (script round 19)
@@ -19973,7 +19973,10 @@
 0x0112ca80 label g_BtlRead                 # u32; Reset by MsBtlReadInit.
 0x0112ca84 label g_BtlMonsterSlots         # 3 u32 counters handed out to monsters' +0x5c3; MsBtlReadManage's status 0xe clears them
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
+0x0112cab0 label g_SavePushMember          # u8 save +0x20: 1 while AtelPushMember (0x0086e310) holds a saved party in +0x21..+0x23 (3 x u8) and its join bits in +0x24; AtelPopMember restores and clears it; AtelGetSave20 reads it; fh: SaveData.atel_is_push_member, atel_push_frontline, atel_push_party
 0x0112cabc label g_SaveLove                  # save +0x2c: u32 affection by character; MsAddLoveParam (0x007845e0) adds for 1-7 unless the sum passes 0x0ffffffe
+0x0112cb44 label g_SaveMapMarker           # 2 x u16 save +0xb4/+0xb6: the world map marker (Native_SetMapMarkerPos 0x016e, AtelGetMapMarkerX/Y; drawn by MenuWorldMap_Draw_008e2b60); fh: SaveData.item_map_x/item_map_y ("meaning unknown" there)
+0x0112cb4c label g_SavePlayTime            # u32 save +0xbc: play time, capped at 3599999 (Atel_PlayTimeUpdate_0086ca20; getPlayTime 0x00787350 reads, 0x00787610 writes; TkMenuGetTime); fh: SaveData.time
 0x0112d67c label g_SaveScenario              # save +0xbec: u16 story progress (getScenerioFlag 0x00787360)
 0x0112d719 label g_SaveInterValefor          # save +0xc89: u8 (getInterValefor 0x00787340)
 0x0112ec7c label g_SaveAbilityMap            # save +0x21ec: the sphere grid block (MsGetSaveAbilityMap 0x00784f40)
