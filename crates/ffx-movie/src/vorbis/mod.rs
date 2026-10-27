@@ -446,7 +446,7 @@ impl Mdct {
     /// is computed in float (`(M_PI / n) * (4 * i)`), then `cos`/`sin` in
     /// double, stored as float (`0x00a9d680`). The game calls MSVCR110's
     /// `cos`/`sin`; `libm`'s give the same floats (checked against the
-    /// tables the original builds, oracle test `vorbis_mdct_tables`).
+    /// samples the original decodes: `moviecmp`, oracle test `movie_codecs`).
     fn new(n: usize) -> Self {
         const PI: f32 = 3.141_592_653_6;
         let n2 = n >> 1;

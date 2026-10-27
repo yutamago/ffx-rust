@@ -56,39 +56,39 @@
 0x00406000 function zlib_inflateInit_         # called first by zlib_uncompress; stream ptr in ECX
 0x00406230 function zlib_inflate              # called with Z_FINISH by zlib_uncompress
 0x004078b0 function zlib_inflateEnd
-0x00409370 function vpx_codec_destroy # libvpx 1.4.0 vpx_codec.c: iface->destroy(+0x10), clears ctx; called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00409370 function vpx_codec_destroy # libvpx 1.4.0 vpx_codec.c: iface->destroy(+0x10), clears ctx; called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00409460 function vpx_internal_error # _vsnprintf into info+8 (0x4f), longjmp when info+0x58 set (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x004094c0 function vpx_codec_dec_init_ver # (ctx, iface, cfg, flags, ver 9); 0x00a27fcd passes (ctx+0x130, vp8_dx, NULL, 0, 9) (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00409680 function vpx_codec_decode # (ctx, data, size, user_priv, deadline); decode thread 0x00a279f0 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x004096e0 function vpx_codec_get_frame # (ctx, &iter) -> vpx_image_t* (planes +0x24, strides +0x34) (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0040a430 function vpx_codec_vp8_dx # returns &vpx_codec_vp8_dx_algo 0x00b7f728 ("WebM Project VP8 Decoder v1.4.0") (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0040a5d0 function vpx_mem_set_functions # 7 hooks (Phyre malloc/calloc/realloc/free + 0x00a26fb0/fd0/fc0) (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0040a630 function vpx_mem_unset_functions # called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004094c0 function vpx_codec_dec_init_ver # (ctx, iface, cfg, flags, ver 9); 0x00a27fcd passes (ctx+0x130, vp8_dx, NULL, 0, 9) (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00409680 function vpx_codec_decode # (ctx, data, size, user_priv, deadline); decode thread 0x00a279f0 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x004096e0 function vpx_codec_get_frame # (ctx, &iter) -> vpx_image_t* (planes +0x24, strides +0x34) (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0040a430 function vpx_codec_vp8_dx # returns &vpx_codec_vp8_dx_algo 0x00b7f728 ("WebM Project VP8 Decoder v1.4.0") (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0040a5d0 function vpx_mem_set_functions # 7 hooks (Phyre malloc/calloc/realloc/free + 0x00a26fb0/fd0/fc0) (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0040a630 function vpx_mem_unset_functions # called by 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x0040c350 function vp8mt_decoder_create # strings "pbi->h_decoding_thread", _beginthreadex, CreateSemaphoreW (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0040c8a0 function vp8mt_alloc_temp_buffers # strings "pbi->mt_yabove_row" ... (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0040d2c0 function vpx_setup_rtcd_0040d2c0      # libvpx run-time CPU detection: SIMD caps from the VPX_SIMD_CAPS / VPX_SIMD_CAPS_MASK environment variables or CPUID (MMX, SSE, SSE2, SSE3, SSSE3, SSE4.1, AVX), then stores the matching DSP routine (0x00a7c920..0x00a8d87a and C wrappers near 0x00417830) in each function pointer; own name
 0x0040db70 function vpx_once_0040db70 # guess: vpx_ports/vpx_once.h Windows once() (CS + Interlocked) (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0041b0b0 function vpx_once_0041b0b0 # guess: second copy of once() (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0041b2b0 function get_cpu_count_0041b2b0 # guess: GetNativeSystemInfo via GetProcAddress, else GetSystemInfo (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0041e5b0 function mkvparser_SetAllocator # Phyre addition: globals 0x022fb510/14 = (malloc, free); from 0x00a27ff2 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0041e5d0 function mkvparser_ResetAllocator # back to CRT malloc/free; from 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0041fd10 function mkvparser_Segment_delete # guess: ~Segment (0x0041fa80) + custom free (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x0041fd50 function mkvparser_Segment_CreateInstance # asserts pReader/pos >= 0; open 0x00a28017 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00421450 function mkvparser_Segment_Load # asserts m_clusters == NULL, m_pInfo, m_pTracks (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0041e5b0 function mkvparser_SetAllocator # Phyre addition: globals 0x022fb510/14 = (malloc, free); from 0x00a27ff2 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0041e5d0 function mkvparser_ResetAllocator # back to CRT malloc/free; from 0x00a28350 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0041fd10 function mkvparser_Segment_delete # guess: ~Segment (0x0041fa80) + custom free (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x0041fd50 function mkvparser_Segment_CreateInstance # asserts pReader/pos >= 0; open 0x00a28017 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00421450 function mkvparser_Segment_Load # asserts m_clusters == NULL, m_pInfo, m_pTracks (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00423840 function mkvparser_Segment_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x004238d0 function mkvparser_Segment_GetNext # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x004251b0 function mkvparser_Segment_GetTracks # returns +0x74 (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00425200 function mkvparser_Segment_GetDuration # asserts m_pInfo (+0x70), ns (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00427b10 function mkvparser_Track_GetType # +0x20: 1 video, 2 audio (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00427b80 function mkvparser_Track_GetCodecPrivate # (&size) -> data (Vorbis headers) (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00428db0 function mkvparser_VideoTrack_GetWidth # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00428dc0 function mkvparser_VideoTrack_GetHeight # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00428dd0 function mkvparser_VideoTrack_GetFrameRate # double +0xa0 (0 in the shipped files) (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00429170 function mkvparser_AudioTrack_GetSamplingRate # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00429180 function mkvparser_AudioTrack_GetChannels # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x004294c0 function mkvparser_Tracks_GetTracksCount # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x004251b0 function mkvparser_Segment_GetTracks # returns +0x74 (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: 4 bytes, too short to hook: runs on ffx_movie::mkv's Segment layout (+0x74 Tracks)
+0x00425200 function mkvparser_Segment_GetDuration # asserts m_pInfo (+0x70), ns (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00427b10 function mkvparser_Track_GetType # +0x20: 1 video, 2 audio (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: 4 bytes, too short to hook: runs on ffx_movie::mkv's Track layout (+0x20 type)
+0x00427b80 function mkvparser_Track_GetCodecPrivate # (&size) -> data (Vorbis headers) (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00428db0 function mkvparser_VideoTrack_GetWidth # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00428dc0 function mkvparser_VideoTrack_GetHeight # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00428dd0 function mkvparser_VideoTrack_GetFrameRate # double +0xa0 (0 in the shipped files) (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00429170 function mkvparser_AudioTrack_GetSamplingRate # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00429180 function mkvparser_AudioTrack_GetChannels # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x004294c0 function mkvparser_Tracks_GetTracksCount # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00429da0 function mkvparser_Tracks_GetTrackByNumber # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00429de0 function mkvparser_Tracks_GetTrackByIndex # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00429de0 function mkvparser_Tracks_GetTrackByIndex # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x0042b7c0 function Phyre_PObjectTable_deleteAll_0042b7c0 # thiscall: each of +0x38 (signed > 0) objects at +0x30: vslot 0 (1), or the CRT assert import 0x00b0c5c0 (msg 0x00b90514, file 0x00b902f0, line 0x1aff) for a null one; then *0x022fb514(data) when data; ported (ffx-pload); name ours
 0x0042b830 function Phyre_PSerialization_PBinary_PInternal_PNamespacePacked_needsEndianSwap # thiscall: eax = (first word == 0); ported (ffx-pload); Ghidra dump name
 0x0042c880 function mkvparser_Cluster_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -16459,7 +16459,7 @@
 0x00a26fe0 function PVideoPlaybackWin32_CopyPlane_00a26fe0 # cdecl(dst, dst stride, src, src stride, row bytes, rows): one memcpy when the strides agree, else row by row; called by 0x00a284a0 (video frames); library; name ours
 0x00a27170 function PVideoPlaybackWin32_AudioRead_00a27170 # thiscall(player, s16 out, unused), ret 8: +0x2a8 set: al 0; else while +0x2a4 samples are wanted and +0xd8 != 1: vorbis_synthesis_pcmout (+0x1b0) blocks to interleaved s16 over +0x184 channels (f32(x * 32767 + 0.5), floor, ftol, clamped -0x8000..0x7fff; 'Clipping in frame %ld' with +0x1f0 to stderr), vorbis_synthesis_read; none decoded: queue +0x80 packets (+0x178 u64 count, +0x160/+0x164 ogg_packet) to vorbis_synthesis (+0x220) / blockin; returns 1 when done (or +0xf0 clear); called by the FMOD read callback 0x00a27ee0, which drops it; name ours; ported (ffx_pcui::video, pc round 3)
 0x00a273b0 function PVideoPlaybackWin32_AudioInit_00a273b0 # fastcall(player) -> al: the Vorbis headers, then an FMOD stream (System::createSound, playSound, Channel::setPriority); called by PVideoPlaybackWin32__ReadingThread; library; name ours
-0x00a27650 function PVideoPlaybackWin32_DemuxLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a27650 function PVideoPlaybackWin32_DemuxLoop # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00a27880 function PVideoPlaybackWin32__ReadingThread # the reading thread's proc (created by PVideoPlaybackWin32_initialize 0x00a27cf0): waits event +0x2ac, runs PVideoPlaybackWin32_DemuxLoop 0x00a27650 while state 1/2; the name moved here from 0x00a27cf0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a278f0 function PVideoPlaybackWin32_AudioShutdown # thiscall(player): wakes the packet ring, Channel::stop, spins (Sleep 1) on Sound::getOpenState until READY, Sound::release, clears +0x29c/+0x2a0, the Vorbis state and the ring; from the close 0x00a28350; name ours (movie audio, pc-audio; name from the platform census)
 0x00a279b0 function PVideoPlaybackWin32_DecodeLoop # (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -17258,19 +17258,23 @@
 0x00a7c880 function TkMenuStartScene          # fh v3:exact 0x00a7c880
 0x00a7c8a0 function TkMenuStopScene           # fh v3:exact 0x00a7c8a0
 0x00a8d87a function crt_abs_thunk             # g_MagicImports slot 392: jmp [0x00b0c5b4] (MSVCR110 abs); hidden from the dump
-0x00a8f650 function vorbis_synthesis_headerin # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a8fd80 function vorbis_info_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a8ffd0 function vorbis_info_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a90030 function vorbis_comment_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a90420 function vorbis_comment_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a909e0 function vorbis_synthesis_read # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a90a10 function vorbis_synthesis_pcmout # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a90a70 function vorbis_synthesis_blockin # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a910e0 function vorbis_synthesis_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a917a0 function vorbis_dsp_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a92040 function vorbis_block_clear # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a921b0 function vorbis_block_init # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a92460 function vorbis_synthesis # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a8f650 function vorbis_synthesis_headerin # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a8f7f0 function vorbis_unpack_books # libVorbis info.c _vorbis_unpack_books (books, times, floors, residues, maps, modes); PhyreEngine's build has no top-level framing-bit check; 0 or OV_EBADHEADER (0x00a8fa9e) (m5-movie, docs/formats/platform.md Movies; movie)
+0x00a8fac0 function vorbis_unpack_comment # libVorbis info.c _vorbis_unpack_comment as PhyreEngine changed it: returns vendor length + 12 + sum(4 + comment length) (the header's size - 4, 0x00a8fc4d); PVideoPlaybackWin32_AudioInit adds 4 to step to the setup header (m5-movie; movie)
+0x00a8fc80 function vorbis_unpack_info # libVorbis info.c _vorbis_unpack_info as PhyreEngine changed it: returns 23 (0x00a8fd5b; vorbis_synthesis_headerin adds 7: 30), no framing-bit check (m5-movie; movie)
+0x00a8fd80 function vorbis_info_clear # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a8ffd0 function vorbis_info_init # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a90030 function vorbis_comment_clear # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a90420 function vorbis_comment_init # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a909e0 function vorbis_synthesis_read # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a90a10 function vorbis_synthesis_pcmout # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a90a70 function vorbis_synthesis_blockin # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a910e0 function vorbis_synthesis_init # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a917a0 function vorbis_dsp_clear # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a92040 function vorbis_block_clear # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a921b0 function vorbis_block_init # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a92460 function vorbis_synthesis # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
+0x00a9d680 function mdct_init # libVorbis mdct.c, fastcall(lookup, n): M_PI is os.h's float 3.1415926536f, so each angle is a float product (M_PI/n)*(4i), then cos/sin in double, stored as float (0x00a9d754..0x00a9d8af) (m5-movie; movie)
 0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b072b0 label ShadowManager_tileRects_atexit_00b072b0 # the atexit handler ShadowManager_renderCharacterTiles_006caee0 registers for its static rectangle list 0x00cdec88 (guard bit 0 of 0x00cdec90); name ours
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
@@ -19301,6 +19305,7 @@
 0x00b7cb2c label std_basic_stringbuf_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringbuf<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cb6c label std_basic_stringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b7cba8 label g_SettingsPresets # [24 keys][LOW, MEDIUM, HIGH, CUSTOM] int32 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00b7f728 label vpx_codec_vp8_dx_algo # libvpx's VP8 decoder interface; vpx_codec_vp8_dx returns it (0x0040a430) (m5-movie; movie)
 0x00b8f4b8 label    libogg_mask              # u32[33]: (1 << n) - 1, libogg's bitwise.c mask table (libogg_oggpack_*)
 0x00b8f790 label std_basic_istringstream_char_std_char_traits_char_std_allocator_char__vftable # fh v4:imported std::basic_istringstream<char,std::char_traits<char>,std::allocator<char>_>::vftable
 0x00b9208c label mkvparser_VideoTrack_vftable # fh v4:imported mkvparser::VideoTrack::vftable
@@ -20830,6 +20835,7 @@
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
 0x01984c6c label    g_IggyMenuManager # IggyMenuManager_createInstance (0x00a26240) stores the new 0x34-byte manager here, 0x00a26270 deletes it and clears it; SpdCtrl_Tick needs it set; name ours
+0x01984c80 label g_PVideoDemuxScratch # PVideoPlaybackWin32_DemuxLoop reads an audio frame here when the player has no audio track (0x00a277a0) (m5-movie; movie)
 0x01a84d20 label    g_BitmapFontClass_01a84d20 # TextUtil_doOnAllTextUtilAssetsLoaded's scene cursor class (the bitmap font); name ours
 0x01a85420 label    g_POccluderGeometryInstance_ClassDescriptor # PhyreEngine class descriptor (object size 8); 0x009f23f0's class (M4 round 2)
 0x01a85ba4 label    g_Use200ThunderFile          # SetGlobal_01a85ba4 (BasicDebugTweakUtil_handleInput) sets it; PcFileName_00a42c00 then puts 200thunder_ before kami0400.ebp; name ours
@@ -20870,6 +20876,9 @@
 0x022fb4fc label    g_TkMenuSceneOffsetX       # i32: the running scene record's i16 +8 (TkMenuExecScene), added to the key x by the scene draws in 0x00a70000; name ours
 0x022fb500 label    g_TkMenuSceneOffsetY       # i32: the running scene record's i16 +0xa (TkMenuExecScene); name ours
 0x022fb504 label    g_Settings
+0x022fb508 label g_vpx_mem_functions # libvpx vpx_mem.c's allocator table (0x1c bytes: malloc, calloc, realloc, free, memcpy, memset, memmove), set by vpx_mem_set_functions, freed by vpx_mem_unset_functions (m5-movie; movie)
+0x022fb510 label g_mkvparser_malloc # mkvparser's allocator (PhyreEngine's SetAllocator 0x0041e5b0; ResetAllocator puts the CRT's back) (m5-movie; movie)
+0x022fb514 label g_mkvparser_free # mkvparser's free (SetAllocator 0x0041e5b0) (m5-movie; movie)
 0x022fb540 label    g_Magic275Matrices         # 3 matrices (0x40 each) for g_MagicMatrixSwap
 0x022fb6c0 label g_CdChannelNames # CD channel names, 0x80 bytes each, cleared by cd_channel_clear 0x0076d530; name ours
 0x023056e8 label    g_GsRegisterSink          # the one word every PS2 GS register write of the texture-animation code lands in (loadImage and the TexAnim_* tag helpers)

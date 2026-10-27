@@ -4,10 +4,15 @@
 //! becomes a core (portable, on its own types) and a [`bridge`] function
 //! over game memory (`docs/porting.md`).
 //!
-//! The movie player itself (`PhyFMVPlayerManager`, the `WebM` demuxer and
-//! the Vorbis decoder feeding FMOD) is glue and library code and stays
-//! original; what the module holds besides is a part of the PS2 sample
-//! library the classification files here (`FFXSamp0*`).
+//! The movie player itself (`PhyFMVPlayerManager`, `PVideoPlaybackWin32`)
+//! is glue and stays original; the libraries it calls are replaced here
+//! (M5 stage 2, `docs/formats/platform.md` "The libraries in Rust"): the
+//! `WebM` demuxer ([`webm`], with `mkvparser`'s objects and the player's
+//! demux loop in [`mkv`]), the VP8 decoder ([`vp8`], the vendored
+//! zvidlib-vp8) and a port of the libVorbis 1.3.5 decoder ([`vorbis`],
+//! BSD-3-Clause, `NOTICE`), with the libvpx and libVorbis entry points
+//! over game memory in [`api`]. Besides, the module holds a part of the
+//! PS2 sample library the classification files here (`FFXSamp0*`).
 
 /// The 4x4 identity, row-major (`FFXSamp0UnitMatrix`).
 #[must_use]

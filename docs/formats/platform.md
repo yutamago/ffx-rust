@@ -578,6 +578,99 @@ scene and effects are drawn over it when the movie has a camera
 (`movie_have_camera`, `g_MoviePictureOn`); the UI and the screen fade
 follow. Texture videos use `vfxtexturevideo.fx` with the same constants.
 
+### The libraries in Rust (M5 stage 2)
+
+Since m5-movie the three libraries linked into FFX.exe are no longer
+called: their entry points are hooked onto `crates/ffx-movie`
+(`ported/movie.rs`), and the player around them (`PhyFMVPlayerManager`,
+`PVideoPlaybackWin32` but its demux loop, `CDataFrameQueue`,
+`VbfMkvReader`, FMOD) stays original for now.
+
+#### What the player calls
+
+| Library | Calls (caller) | What goes in and out |
+|---|---|---|
+| mkvparser | `SetAllocator(malloc, free)` `0x0041e5b0` (`open`), `ResetAllocator()` `0x0041e5d0` (`close`) | PhyreEngine's addition: `g_mkvparser_malloc`/`_free` `0x022fb510`/`14` |
+| | `Segment::CreateInstance(reader, 0, &seg)` `0x0041fd50`, `Load()` `0x00421450`, `GetTracks()` `0x004251b0` (`open`) | the reader is the player's `VbfMkvReader` (`+0x118`): `Read(pos, len, buf)` slot 0, `Length(&total, &avail)` slot 1; the segment at `+0x110` |
+| | `Tracks::GetTracksCount()` `0x004294c0`, `GetTrackByIndex(i)` `0x00429de0`, `Track::GetType()` `0x00427b10` (`open`) | type 1 video (kept at `+0x290`), 2 audio (`+0x294`) |
+| | `VideoTrack::GetWidth/GetHeight()` `0x00428db0`/`dc0` (i64), `GetFrameRate()` `0x00428dd0` (f64 in `ST0`; 0 means 29.97002997), `Segment::GetDuration()` `0x00425200` (ns, i64; `open` and `AudioInit`) | `+0x14c`/`+0x150` the size, `+0x108` 1000 / fps, `+0xf8` the end time |
+| | `Track::GetCodecPrivate(&size)` `0x00427b80`, `AudioTrack::GetSamplingRate()` `0x00429170` (f64), `GetChannels()` `0x00429180` (i64) (`AudioInit`) | the three Vorbis headers; the FMOD stream's format |
+| | `DemuxLoop` `0x00a27650`: `Segment::GetFirst/GetNext`, `Cluster::EOS/GetFirst/GetNext`, `BlockEntry::EOS`, `GetBlock` (vtable slot 1), `Block::GetTrackNumber/GetFrameCount/GetFrame(i)`, `Tracks::GetTrackByNumber` | each frame `(pos, len)` is read with the reader into `CDataFrameQueue_Reserve(len)` + 4 of the video queue (player) or the audio queue (`+0x80`), then `Commit`; `delete seg` `0x0041fd10` at `close` |
+| libvpx 1.4.0 | `vpx_mem_set_functions` `0x0040a5d0` (Phyre's heap and three copy callbacks), `vpx_codec_vp8_dx()`, `vpx_codec_dec_init_ver(ctx, iface, NULL, 0, 9)` (`open`; ctx at `+0x130`) | |
+| | `vpx_codec_decode(ctx, data, size, NULL, 0)` then one `vpx_codec_get_frame(ctx, &iter)` per packet (`DecodeLoop` `0x00a279b0`) | a `vpx_image_t` (I420; planes `+0x24`, strides `+0x34`) for a shown frame, none for a hidden one; the loop copies the visible Y (w x h), U and V (w/2 x h/2) into one 1.5 w h slot of the 30-frame queue |
+| | `vpx_codec_destroy`, `vpx_mem_unset_functions` (`close`) | |
+| libVorbis 1.3.5 | `vorbis_info_init`, `vorbis_comment_init`, `vorbis_synthesis_headerin` x3, `vorbis_synthesis_init`, `vorbis_block_init` (`AudioInit`) | the headers walked as `CodecPrivate + 3`, then `+ r1`, then `+ r2 + 4` with PhyreEngine's return values (30; the comment header's size - 4; 0); `vorbis_info.channels` (`+4`) is read back by `AudioRead` |
+| | per packet `vorbis_synthesis` + `vorbis_synthesis_blockin` (packet `+0x160`: `b_o_s` 1, `e_o_s` 0, granule position 0, packet numbers 1, 2, ...; headers 0), `vorbis_synthesis_pcmout`, `vorbis_synthesis_read` (`AudioRead` `0x00a27170`) | planar float, converted to interleaved s16 by `AudioRead` (`ffx_movie::vorbis_to_s16`) |
+| | `vorbis_block_clear`, `vorbis_dsp_clear`, `vorbis_comment_clear`, `vorbis_info_clear` (`AudioShutdown` `0x00a278f0`) | |
+| libogg | `SetGlobals_0042e1d0`, `SeveralStoresCopyIntoGlobal_0042e200` (its allocator set and reset) | already ported (auto) |
+
+#### The choice per library, measured
+
+All movies of `FFX_Data.vbf` (95 WebM files: 89 with sound, six texture
+videos without), decoded by the candidate and compared with the original.
+The original's output comes from FFX.exe's own code run in the oracle
+(`cargo run --release -p ffx-oracle --example movie_ref`), set up and fed
+as the player does; `cargo run --release -p ffx-movie --example moviecmp`
+compares (`vorbis`, `vp8`, `demux` modes).
+
+- **VP8: an existing crate**, zvidlib-vp8 0.5.0 (MIT), vendored in
+  `third_party/zvidlib-vp8` because the published crate hands out only RGBA
+  (`PATCHES.md`: `pub` on its decoder and picture, the hardware backends
+  off). Every frame of every movie, 179,118 frames, is bit-identical
+  (per-frame MD5 of the visible I420 planes) to libvpx's (ffmpeg's libvpx
+  1.16 decoder; ffmpeg's own VP8 decoder and oximedia-codec 0.2.1, Apache-2.0,
+  gave the same on the 74 movies measured with them). Against FFX.exe's
+  libvpx 1.4.0 itself, in the oracle (1 to 3 s a frame): 908 frames, all of
+  `4_480` and `3_480` and the first 90 of `sin_us`, `bbb_jp`, `end_us`,
+  `ill_jp`, `dat_us` and `fin_jp`, identical to both. The original was not
+  run on every frame: the emulator would take days; VP8 decoding is exactly
+  specified and libvpx's output has not changed between versions.
+  oximedia-codec was not taken: it pulls tokio, serde and rayon in.
+- **Vorbis: our own port** of the libVorbis 1.3.5 decoder and libogg's
+  bit reader (`ffx_movie::vorbis`, BSD-3-Clause, `crates/ffx-movie/NOTICE`).
+  The crates are not exact: lewton 0.10.2 (MIT OR Apache-2.0) differs from
+  the original in 331 of `bgr_jp`'s 862,848 s16 samples (and in 70 % of
+  the float samples, by at most 1.8e-7), rusty_vorbis 0.1.2 (Apache-2.0) in
+  810; symphonia's decoder is MPL-2.0 and was not measured. The port gives
+  the original's float samples bit for bit on all 89 movies with sound:
+  565,386,368 interleaved samples, f32 and the s16 FMOD gets. Float facts
+  of the game's build (MSVC, SSE2 scalar): each float operation rounds to
+  float; `_book_unquantize` computes `fabs(q) * delta + mindel + last` in
+  double (`0x00a92823..0x00a92871`); libVorbis' `os.h` defines `M_PI` as
+  the float `3.1415926536f`, so `mdct_init` (`0x00a9d680`) computes each
+  angle as a float product and only `cos`/`sin` in double. Rust's `libm`
+  gives the same table floats as MSVCR110's `cos`/`sin` on every block
+  size the movies use. Floor type 0 is not ported (no movie uses it; a
+  setup with it is refused).
+- **WebM: our own demuxer** (`ffx_movie::webm`), reading through the
+  game's `IMkvReader` a cluster at a time (the largest movie is 618 MiB).
+  Every packet of every movie, 495,903, has the track, size and bytes
+  ffmpeg's demuxer gives. matroska-demuxer (Zlib/MIT/Apache) would also
+  do; its API reads frames, not `mkvparser`'s objects, so it saves nothing.
+
+#### What is hooked
+
+35 hooks (`ported/movie.rs`, on `ffx_movie::api` and `ffx_movie::mkv`):
+the seven libvpx entry points (the allocator table kept as the original
+keeps it, so `vpx_mem_set_functions`/`unset` are byte-exact: oracle test
+`movie_codecs`), the thirteen libVorbis ones (the decoders keyed by their
+`vorbis_info`/`vorbis_dsp_state`/`vorbis_block` addresses), and for
+mkvparser `SetAllocator`, `ResetAllocator`, `CreateInstance`, `Load`,
+`delete`, `GetDuration`, `GetTracksCount`, `GetTrackByIndex`,
+`GetCodecPrivate`, `GetWidth`, `GetHeight`, `GetFrameRate`,
+`GetSamplingRate`, `GetChannels` and the player's `DemuxLoop` itself
+(PhyreEngine code that is nothing but mkvparser calls). `Segment::GetTracks`
+and `Track::GetType` are four bytes, too short for a hook: they run on the
+objects `ffx_movie::mkv` lays out like `mkvparser`'s (`+0x74` and `+0x20`),
+the other accessors are hooked onto the same fields. The demux loop skips
+the frames the original reads into a scratch buffer (`0x01984c80`, audio
+without an audio track) and does not print the original's two error lines.
+
+In game: `tools/replays/run-all.sh --extra --hits movie-fmv` (Wakka's kick,
+`IWK_us.webm`) runs all 35 hooks (none of the libraries' code), the traces
+have the same events and the four shots are identical to the original's.
+The other replays play no FMV.
+
 ## What the Rust side must reproduce
 
 - **Window**: the class, styles and sizes above, the three screen modes by
