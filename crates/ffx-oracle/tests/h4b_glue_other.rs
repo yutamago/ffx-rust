@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh, h4b_i as bi,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4090,6 +4090,688 @@ fn bi_frame_shape() {
                 0xa5,
                 &|_| vec![(ebp + 8, ebp + 0x1c)],
                 |g| bi::frame_shape(g, args[0], args[1], args[2], args[3], kind, Some(ebp + 8)),
+            );
+        }
+    }
+}
+
+// ---- round 3, batch 1 (ffx_glue_other::h4b_j)
+
+/// The image constants the wait windows read: `f32`s, then `f64`s.
+const WAIT_F32: [u32; 52] = [
+    0x00b5_f43c,
+    0x00b5_f324,
+    0x00b4_a1ac,
+    0x00b5_f34c,
+    0x00b1_f2c8,
+    0x00b5_f344,
+    0x00b5_f468,
+    0x00b5_f3c0,
+    0x00b5_f3c8,
+    0x00b5_f44c,
+    0x00b5_f438,
+    0x00b5_f300,
+    0x00b5_f370,
+    0x00b4_3db4,
+    0x00b3_eb94,
+    0x00b5_ef1c,
+    0x00b5_f3ac,
+    0x00b3_eb44,
+    0x00b9_2194,
+    0x00b5_ef64,
+    0x00b5_f35c,
+    0x00b5_f32c,
+    0x00b5_f31c,
+    0x00b5_f450,
+    0x00b5_f444,
+    0x00b5_8cd8,
+    0x00b5_f410,
+    0x00b5_eec0,
+    0x00b5_eea0,
+    0x00b5_eee4,
+    0x00b5_ef00,
+    0x00b4_f5e4,
+    0x00b5_f418,
+    0x00b5_eea4,
+    0x00b5_f038,
+    0x00b5_f03c,
+    0x00b5_eecc,
+    0x00b5_ee14,
+    0x00b5_edb8,
+    0x00b5_ee04,
+    0x00b5_eefc,
+    0x00b5_ef80,
+    0x00b5_f40c,
+    0x00b5_f108,
+    0x00b5_ede0,
+    0x00b4_1cac,
+    0x00b5_f0c0,
+    0x00b5_4f90,
+    0x00b5_f358,
+    0x00b5_f420,
+    0x00b5_f0c8,
+    0x00b5_f0d4,
+];
+const WAIT_F32B: [u32; 6] = [
+    0x00b5_f0c4,
+    0x00b5_f0b4,
+    0x00b5_ee74,
+    0x00b5_ef24,
+    0x00b5_f3f8,
+    0x00b5_f344,
+];
+const WAIT_F64: [u32; 32] = [
+    0x00b4_1d20,
+    0x00b4_12f8,
+    0x00b5_ee40,
+    0x00b5_f2b8,
+    0x00b5_f2c0,
+    0x00b5_f2d0,
+    0x00b5_f2a8,
+    0x00b5_f2b0,
+    0x00b5_f2c8,
+    0x00b5_f290,
+    0x00b9_21f0,
+    0x00b5_f280,
+    0x00b5_f460,
+    0x00b9_22c8,
+    0x00b5_f1f0,
+    0x00b5_f278,
+    0x00b5_f260,
+    0x00b4_9968,
+    0x00b4_9970,
+    0x00b1_f2c0,
+    0x00b5_f240,
+    0x00b3_eb60,
+    0x00b5_f1f8,
+    0x00b5_f1d0,
+    0x00b5_f2d8,
+    0x00b9_22e8,
+    0x00b4_8308,
+    0x00b4_c170,
+    0x00b5_f218,
+    0x00b5_f1e8,
+    0x00b5_f1b0,
+    0x00b5_f270,
+];
+const WAIT_F64B: [u32; 1] = [0x00b5_f288];
+
+/// The wait windows' stubs: the remaps scaled by their arguments, the
+/// clock, the draws; their tags.
+fn wait_stubs(t: &mut Twins) -> (Vec<u32>, [u32; 2]) {
+    let kx = scaled_stub(t, e1::REMAP_X2);
+    let ky = scaled_stub(t, e1::REMAP_Y2);
+    t.stub(e1::GET_TIME, 0, true);
+    let mut tags = vec![e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME];
+    for (sym, n) in [
+        (e1::SHAPE_UV_C2, 11),
+        (e1::SHAPE_UV, 9),
+        (bj::WATER, 12),
+        (bj::ROTATE_SHAPE, 12),
+        (bj::SCISSOR_XYWH, 4),
+        (bj::SUMMON_PRIM, 3),
+        (0x0089_f370, 1),
+        (0x0089_99f0, 3),
+    ] {
+        t.stub(sym, n, false);
+        tags.push(sym);
+    }
+    (tags, [kx, ky])
+}
+
+/// The image's values of the wait windows' constants.
+fn wait_constants(t: &mut Twins) -> Vec<(u32, Vec<u8>)> {
+    let mut out = Vec::new();
+    for &c in WAIT_F32.iter().chain(&WAIT_F32B) {
+        let at = t.rebase(c);
+        out.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+    }
+    for &c in WAIT_F64.iter().chain(&WAIT_F64B) {
+        let at = t.rebase(c);
+        out.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+    }
+    out
+}
+
+/// One case's state: the image's constants (or random ones), the remap
+/// scales, the clock and a window `w` with its summon list `list`: the
+/// open time spread over the opening, the slides and the ripples.
+fn wait_case(
+    t: &mut Twins,
+    rng: &mut Rng,
+    real: &[(u32, Vec<u8>)],
+    scales: [u32; 2],
+    w: u32,
+    list: u32,
+) {
+    if rng.below(3) == 0 {
+        t.constants(rng, &WAIT_F32, &WAIT_F64);
+        t.constants(rng, &WAIT_F32B, &WAIT_F64B);
+    } else {
+        for (at, v) in real {
+            t.write(*at, v);
+        }
+    }
+    for k in scales {
+        let v = rng.pick(&[1.0, 1.5, 0.75, 2.0 / 3.0, -1.25]);
+        let v = if rng.below(4) == 0 { rng.double() } else { v };
+        let v = if v.abs() > 1e100 { 1.5 } else { v };
+        t.write(k, &f64::to_le_bytes(v));
+    }
+    let time = f64::from(rng.below(100_000)) / 7.0;
+    t.ret_f64(e1::GET_TIME, time);
+    let open = rng.pick(&[0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.5, 1.0, 2.0]);
+    let open = open + f64::from(rng.below(1000)) / 20_000.0;
+    let start = match rng.below(8) {
+        0 => rng.float(),
+        1 => 0,
+        _ => ((time - open) as f32).to_bits(),
+    };
+    let block: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+    t.write(w, &block);
+    t.w32(w + 0xdc, start);
+    t.w32(w + 0x20, list);
+    let start = f64::from(f32::from_bits(start));
+    if start > 0.0 && rng.below(6) == 0 {
+        // the opening's end exactly at the open time
+        let open = f64::from((time - start) as f32);
+        let at = t.rebase(0x00b3_eb60);
+        t.write(at, &open.to_le_bytes());
+    }
+    if rng.below(10) == 0 {
+        // a slide of -0 against a right edge of +0
+        for (c, v) in [
+            (0x00b5_f290, -0.0f64),
+            (0x00b5_f280, 0.0),
+            (0x00b5_f460, -1.0),
+        ] {
+            let at = t.rebase(c);
+            t.write(at, &v.to_le_bytes());
+        }
+        let at = t.rebase(0x00b5_f344);
+        t.write(at, &0u32.to_le_bytes());
+    }
+    let cols = rng.pick(&[1, 2, 2, 3, 0xffff, 5]);
+    let rows = rng.pick(&[1, 2, 3, 4, 0xfffe]);
+    let first = rng.pick(&[0, 1, 2, 3, 0xffff]);
+    let cursor = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 7, 0xffff]);
+    t.w16(w + 0x38, cols);
+    t.w16(w + 0x3a, rows);
+    t.w16(w + 0x40, first);
+    t.w16(w + 0x42, cursor);
+    let f = [rng.float(), rng.float()];
+    t.w32(w + 0x78, f[0]);
+    t.w32(w + 0x7c, f[1]);
+    for k in 0..16u32 {
+        let id = rng.pick(&[0x30ff, 0x30ff, 0, 1, 7, 0x8000, 0x30fe]);
+        t.w16(list + 2 * k, id);
+    }
+}
+
+/// `TODrawWaitBtlWinSummon`: the panel at every stage of its slides,
+/// the ripples on and off, the "all summons" entry and single summons;
+/// image and random constants, the remaps' results following their
+/// arguments.
+#[test]
+fn bj_wait_win_summon() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f401);
+        let (tags, scales) = wait_stubs(&mut t);
+        let real = wait_constants(&mut t);
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        for i in 0..500 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            t.check(&what, 0x008a_75f0, &[w], |g| u(bj::wait_win_summon(g, w)));
+        }
+    }
+}
+
+/// `TODrawWaitBtlWinRight`: the opening (the argument slot compared), the
+/// panel, rings and fades at every stage, the cursor in and out of the
+/// visible rows; image and random constants.
+#[test]
+fn bj_wait_win_right() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f402);
+        let (tags, scales) = wait_stubs(&mut t);
+        let real = wait_constants(&mut t);
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let ebp = t.ebp_for(1);
+        for i in 0..500 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            t.b.write(ebp + 8, &w.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_6a60, &[w], |g| {
+                u(bj::wait_win_right(g, w, Some(ebp + 8)))
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 4).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 4).unwrap();
+            assert_eq!(x, y, "{what}: argument slot");
+        }
+    }
+}
+
+// ---- round 3, batch 2 (ffx_glue_other::h4b_k)
+
+/// The left window's own constants: the flipped plates, the badge and
+/// the sparkles, the third fading shape.
+const LEFT_F32: [u32; 18] = [
+    0x00b5_f408,
+    0x00b5_f33c,
+    0x00b4_1d90,
+    0x00b5_eea0,
+    0x00b5_eee8,
+    0x00b5_f308,
+    0x00b5_f414,
+    0x00b5_f334,
+    0x00b5_f360,
+    0x00b5_eea4,
+    0x00b5_f37c,
+    0x00b5_f338,
+    0x00b5_ee60,
+    0x00b5_ee70,
+    0x00b3_eb48,
+    0x00b4_3d28,
+    0x00b5_f188,
+    0x00b5_f11c,
+];
+const LEFT_F32B: [u32; 1] = [0x00b5_f0dc];
+const LEFT_F64: [u32; 13] = [
+    0x00b9_2270,
+    0x00b4_b390,
+    0x00b4_8328,
+    0x00b5_f1b8,
+    0x00b9_2220,
+    0x00b4_8348,
+    0x00b5_f1a8,
+    0x00b5_f1c0,
+    0x00b3_eb68,
+    0x00b4_8320,
+    0x00b5_f2e0,
+    0x00b5_f230,
+    0x00b5_f250,
+];
+
+/// `TODrawWaitBtlWinLeft`: the opening (the argument slot compared), the
+/// panel with plain and flipped plates, the badge and every sparkle's
+/// window of the cycle, the fading shapes, the cursor in and out of the
+/// visible rows; image and random constants.
+#[test]
+fn bk_wait_win_left() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f501);
+        let (mut tags, scales) = wait_stubs(&mut t);
+        t.stub(bk::CHECK_LEFT, 1, false);
+        tags.push(bk::CHECK_LEFT);
+        let mut real = wait_constants(&mut t);
+        for &c in LEFT_F32.iter().chain(&LEFT_F32B) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in &LEFT_F64 {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let ebp = t.ebp_for(1);
+        for i in 0..800 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            if rng.below(4) == 0 {
+                t.constants(&mut rng, &LEFT_F32, &LEFT_F64);
+                t.constants(&mut rng, &LEFT_F32B, &[]);
+            }
+            let usable = rng.pick(&[0, 1, 2, 2, 2, 3, 0xffff_ffff]);
+            t.ret(bk::CHECK_LEFT, usable);
+            // the sparkles' cycle: the open time past the badge's start
+            if rng.below(2) == 0 {
+                let start: u32 = Mem::read(&t.b, w + 0xdc);
+                let start = f64::from(f32::from_bits(start));
+                let time = f64::from(rng.below(100_000)) / 7.0;
+                let open = rng.pick(&[0.6, 0.7, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0]);
+                let open = open + f64::from(rng.below(1000)) / 1000.0;
+                let start = if start > 0.0 { start } else { 1.0 };
+                t.ret_f64(e1::GET_TIME, time.max(start + open));
+            }
+            if rng.below(2) == 0 {
+                sparkle_edge(&mut t, &mut rng, w);
+            }
+            t.b.write(ebp + 8, &w.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_3680, &[w], |g| {
+                u(bk::wait_win_left(g, w, Some(ebp + 8)))
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 4).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 4).unwrap();
+            assert_eq!(x, y, "{what}: argument slot");
+        }
+    }
+}
+
+/// Sets one of the sparkles' window edges (or the pulsing size's
+/// limits) to exactly the cycle time `m` (or size `g`) this case gives,
+/// computed as the x87 does at 53 bits.
+fn sparkle_edge(t: &mut Twins, rng: &mut Rng, w: u32) {
+    let k = |t: &Twins, c: u32| -> f64 { Mem::read(&t.b, t.rebase(c)) };
+    let time: f64 = Mem::read(&t.b, t.fcells[&e1::GET_TIME]);
+    let start: u32 = Mem::read(&t.b, w + 0xdc);
+    let start = f64::from(f32::from_bits(start));
+    let open = if start > 0.0 {
+        f64::from((time - start) as f32)
+    } else {
+        0.0
+    };
+    let s = f64::from((open - k(t, 0x00b9_2220)) as f32);
+    let cycle = k(t, 0x00b4_8348);
+    let q = s / cycle;
+    if !q.is_finite() || q.abs() > 1e9 {
+        return;
+    }
+    let m = f64::from(((q - f64::from(q.trunc() as i32 as f32)) * cycle) as f32);
+    let r = m / k(t, 0x00b4_8308);
+    let g = if r.is_finite() && r.abs() < 1e9 {
+        let frac = r - f64::from(r.trunc() as i32 as f32);
+        f64::from((frac * k(t, 0x00b5_f1a8) + k(t, 0x00b5_f1c0)) as f32)
+    } else {
+        m
+    };
+    let (sym, v, wide) = match rng.below(9) {
+        8 => (0x00b9_2194, open, false),
+        0 => (0x00b4_8328, m, true),
+        1 => (0x00b3_eb44, m, false),
+        2 => (0x00b3_eb68, m, true),
+        3 => (0x00b3_eb48, m, false),
+        4 => (0x00b4_3d28, m, false),
+        5 => (0x00b5_f188, m, false),
+        6 => (0x00b5_ee60, g, false),
+        _ => (0x00b4_b390, g, true),
+    };
+    let at = t.rebase(sym);
+    if wide {
+        t.write(at, &v.to_le_bytes());
+    } else {
+        t.write(at, &(v as f32).to_le_bytes());
+    }
+}
+
+// ---- round 3, batch 3 (ffx_glue_other::h4b_l)
+
+/// The main window's own constants: the opening, the badges, the scroll
+/// bar, the third fading shape.
+const MAIN_F32: [u32; 42] = [
+    0x00b5_f038,
+    0x00b5_f03c,
+    0x00b5_eecc,
+    0x00b5_f340,
+    0x00b5_efd4,
+    0x00b4_1318,
+    0x00b5_f378,
+    0x00b5_f2f0,
+    0x00b5_f3b0,
+    0x00b5_f3f0,
+    0x00b5_f3f4,
+    0x00b5_f0f8,
+    0x00b5_f0e0,
+    0x00b5_f0f0,
+    0x00b5_f0a8,
+    0x00b5_f390,
+    0x00b5_f3f8,
+    0x00b5_f320,
+    0x00b5_f3dc,
+    0x00b5_f30c,
+    0x00b5_f380,
+    0x00b4_1d84,
+    0x00b5_f394,
+    0x00b5_f0e4,
+    0x00b5_f0bc,
+    0x00b5_f0d0,
+    0x00b5_8354,
+    0x00b5_f364,
+    0x00b5_f3e4,
+    0x00b5_f3e8,
+    0x00b5_f3ec,
+    0x00b5_f310,
+    0x00b5_f458,
+    0x00b5_f454,
+    0x00b5_ee6c,
+    0x00b9_2314,
+    0x00b4_ae1c,
+    0x00b4_9990,
+    0x00b5_f0b0,
+    0x00b5_ee10,
+    0x00b5_f300,
+    0x00b5_f408,
+];
+const MAIN_F64: [u32; 5] = [
+    0x00b5_f220,
+    0x00b5_f238,
+    0x00b5_f268,
+    0x00b4_1308,
+    0x00b9_2220,
+];
+
+/// `TODrawWaitBtlWinMain`: the wait windows off and on, the opening, the
+/// panel with plain and flipped plates, every badge (one, two, three
+/// usable commands), ripples on and off (the names' alpha word left by
+/// each path), the scroll bar, sparkles, fades, the command names (hidden,
+/// unusable and usable commands, empty slots) and the cursor; image and
+/// random constants. The callees' words (`ebp - 0x30`, `- 0x2c`) are
+/// compared too.
+#[test]
+fn bl_wait_win_main() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f601);
+        let (mut tags, scales) = wait_stubs(&mut t);
+        let (width, strings) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bl::COM_DATA, false, 2, 0, &[wr(1, strings)]);
+        t.stub_at(bl::FONT_WIDTH, false, 5, 0, &[wr(1, width)]);
+        for (sym, n) in [
+            (bk::CHECK_LEFT, 1),
+            (bl::SCROLL_PARTS, 7),
+            (bl::PKT_SCISSOR, 4),
+            (bl::CHECK_USE, 2),
+            (bl::EDGE_FONT, 6),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        tags.extend([bl::COM_DATA, bl::FONT_WIDTH]);
+        let step = t.stub_code(0x0bad_f601, false, 1, 0, false, &[]);
+        tags.push(0x0bad_f601);
+        let mut real = wait_constants(&mut t);
+        for &c in LEFT_F32.iter().chain(&LEFT_F32B).chain(&MAIN_F32) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in LEFT_F64.iter().chain(&MAIN_F64) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let record = t.zeros(4);
+        let ebp = t.ebp_for(1);
+        let frame = ebp - 0x30;
+        for i in 0..800 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            if rng.below(4) == 0 {
+                t.constants(&mut rng, &LEFT_F32, &LEFT_F64);
+                t.constants(&mut rng, &MAIN_F32, &MAIN_F64);
+            }
+            let skip = rng.pick(&[0, 0, 0, 0, 0, 0, 0, 0, 1, 2]);
+            t.g32(0x0133_d6e0, skip);
+            let usable = rng.pick(&[0, 1, 2, 3, 3, 4, 0xffff_ffff]);
+            t.ret(bk::CHECK_LEFT, usable);
+            let use_ = rng.pick(&[0, 1, 0xffff_ffff, 0xffff_fffc, 0xfe]);
+            t.ret(bl::CHECK_USE, use_);
+            t.ret(bl::COM_DATA, record);
+            let off = rng.below(0x40) as u16;
+            t.w16(record, off);
+            let base = rng.next();
+            t.w32(strings, base);
+            let wd = rng.float();
+            t.w32(width, wd);
+            let count = rng.pick(&[0, 1, 2, 3, 5, 8, 12, 0xffff_ffff]);
+            t.w32(w + 0x24, count);
+            t.w32(w + 0x88, step);
+            for k in 0..16u32 {
+                let id = rng.pick(&[0xff, 0x3001, 0x2005, 0x1003, 0xff, 0x4010, 0x8001]);
+                t.w16(list + 2 * k, id);
+            }
+            // keep the counts and rows inside the list
+            let rows = rng.pick(&[1u16, 2, 3, 4]);
+            t.w16(w + 0x3a, rows);
+            let first = rng.pick(&[0u16, 1, 2, 0xffff]);
+            t.w16(w + 0x40, first);
+            if rng.below(2) == 0 {
+                sparkle_edge(&mut t, &mut rng, w);
+            }
+            t.write(frame, &[0xa5; 8]);
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_49b0, &[w], |g| {
+                opt(bl::wait_win_main(g, w, frame), 0)
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, frame, 8).unwrap();
+            let y = Oracle::read(&mut t.b, frame, 8).unwrap();
+            assert_eq!(x, y, "{what}: frame");
+        }
+    }
+}
+
+// ---- round 3, batch 4 (ffx_glue_other::h4b_m)
+
+/// `AbmapPadDrawListBar_00a462f0`: every thumb kind in both layouts and
+/// some without a thumb, bars of every height around the 3-, 5-row and
+/// 0x3c limits, the track from each row; image and random constants.
+/// The record each draw sees is captured, the record, the zeroed words
+/// and the name buffer compared after.
+#[test]
+fn bm_list_bar() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f701);
+        capture_stub_n(&mut t, bm::DRAW_ABMAP_ELEMENT, 3, 0, 0x80, 128);
+        let tags = [bm::DRAW_ABMAP_ELEMENT];
+        let f32s = [
+            0x00b5_f330,
+            0x00b6_56dc,
+            0x00b5_83d8,
+            0x00b6_6dc8,
+            0x00b7_b6d0,
+            0x00b7_b6ec,
+            0x00b5_1b9c,
+            0x00b7_b5f4,
+            0x00b4_936c,
+            0x00b5_ed88,
+            0x00b7_b5f0,
+            0x00b7_b5dc,
+            0x00b7_b5e0,
+            0x00b7_b614,
+            0x00b6_5610,
+            0x00b7_b5f8,
+            0x00b7_b620,
+            0x00b7_b600,
+            0x00b6_6c20,
+            0x00b6_6bf0,
+        ];
+        let f64s = [
+            0x00b7_b680,
+            0x00b9_2220,
+            0x00b9_2248,
+            0x00b3_4f90,
+            0x00b5_ee40,
+            0x00b4_1308,
+            0x00b2_c5c8,
+            0x00b4_1d00,
+            0x00b7_b6b0,
+            0x00b6_5658,
+        ];
+        let mut real = Vec::new();
+        for &c in &f32s {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in &f64s {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let ebp = t.ebp_for(5);
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            if rng.below(3) == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+            } else {
+                for (at, v) in &real {
+                    t.write(*at, v);
+                }
+            }
+            let cjk = rng.pick(&[0, 1, 2]);
+            t.g32(bm::ABMAP_CJK.sym, cjk);
+            let kind = rng.pick(&[0x40, 0x48, 0x5f, 0x60, 0x88, 0xa0, 0x10, 0x50]);
+            let top = rng.below(300) as i32 - 50;
+            let height = rng.pick(&[
+                0,
+                20,
+                39,
+                40,
+                59,
+                60,
+                61,
+                80,
+                99,
+                100,
+                120,
+                200,
+                0xffff_ffec_u32,
+            ]);
+            let height = if rng.below(4) == 0 {
+                rng.below(300) as i32
+            } else {
+                height.cast_signed()
+            };
+            let pos = rng.below(400) as i32 - 100;
+            let at = rng.pick(&[0, 0, 0, 1, 2, 3, 4, 0xffff_ffff, 0xffff_fffe]);
+            let args = [
+                kind,
+                top as u32,
+                pos as u32,
+                top.wrapping_add(height) as u32,
+                at,
+            ];
+            let frame = ebp - 0x19c;
+            run_parts(
+                &mut t,
+                &w,
+                0x00a4_62f0,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x1ac, ebp - 4),
+                0xa5,
+                &|_| vec![(frame, ebp - 4)],
+                |g| {
+                    bm::list_bar(
+                        g,
+                        frame,
+                        kind as i32,
+                        top,
+                        pos,
+                        top.wrapping_add(height),
+                        at,
+                    )
+                },
             );
         }
     }

@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh, h4b_i as bi,
+    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
 };
 
 use super::{StackFrame, mem, ported};
@@ -284,5 +284,46 @@ ported! {
     /// and `kind` slots.
     TODrawFrameShape_008f9c20 @ 0x008f_9c20 => extern "C" fn frame_shape(x: u32, y: u32, w: u32, h: u32, kind: u32; slots: u32) -> u32 {
         bi::frame_shape(&mut mem(), x, y, w, h, kind, Some(slots))
+    }
+
+    // ---- round 3, batch 1 (ffx_glue_other::h4b_j)
+
+    /// `TODrawWaitBtlWinSummon(w)`: the summon list's wait window.
+    TODrawWaitBtlWinSummon @ 0x008a_75f0 => extern "C" fn wait_win_summon(w: u32) -> u32 {
+        bj::wait_win_summon(&mut mem(), w)
+    }
+    /// `TODrawWaitBtlWinRight(w)`: the right command list's wait window;
+    /// the opening plate's x left in the window's slot.
+    TODrawWaitBtlWinRight @ 0x008a_6a60 => extern "C" fn wait_win_right(w: u32; slots: u32) -> u32 {
+        bj::wait_win_right(&mut mem(), w, Some(slots))
+    }
+
+    // ---- round 3, batch 2 (ffx_glue_other::h4b_k)
+
+    /// `TODrawWaitBtlWinLeft(w)`: the left command list's wait window;
+    /// the opening plate's x left in the window's slot.
+    TODrawWaitBtlWinLeft @ 0x008a_3680 => extern "C" fn wait_win_left(w: u32; slots: u32) -> u32 {
+        bk::wait_win_left(&mut mem(), w, Some(slots))
+    }
+
+    // ---- round 3, batch 3 (ffx_glue_other::h4b_l)
+
+    /// `TODrawWaitBtlWinMain(w)`: the main command list's wait window;
+    /// the width and the strings pointer its callees write in a frame
+    /// (`ebp - 0x30` .. `ebp - 0x28`, 2 words). Skipped, it leaves the
+    /// caller's `eax` (0 here; the window callers drop it).
+    TODrawWaitBtlWinMain @ 0x008a_49b0 => extern "C" fn wait_win_main(w: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        bl::wait_win_main(&mut mem(), w, f.at()).unwrap_or(0)
+    }
+
+    // ---- round 3, batch 4 (ffx_glue_other::h4b_m)
+
+    /// `AbmapPadDrawListBar_00a462f0(kind, top, pos, bottom, at)`: the
+    /// quad record and the name buffer in a frame (`ebp - 0x19c` ..
+    /// `ebp - 4`, 102 words).
+    AbmapPadDrawListBar_00a462f0 @ 0x00a4_62f0 => extern "C" fn pad_list_bar(kind: u32, top: u32, pos: u32, bottom: u32, at: u32) -> u32 {
+        let mut f = StackFrame::<0x66>::new();
+        bm::list_bar(&mut mem(), f.at(), kind.cast_signed(), top.cast_signed(), pos.cast_signed(), bottom.cast_signed(), at)
     }
 }
