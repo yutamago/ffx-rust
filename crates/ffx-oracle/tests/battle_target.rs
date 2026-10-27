@@ -10081,12 +10081,7 @@ fn read_manage(
         };
         set(a, b, ffx_battle::misc::bridge::MAP_READ, map_read);
         set(a, b, rd::MAP_STARTED, u8::from(rng.below(2) == 0));
-        set(
-            a,
-            b,
-            ffx_battle::exe::bridge::BATTLE_MAP,
-            rng.next() as u16,
-        );
+        set(a, b, ffx_battle::exe::bridge::BATTLE_MAP, rng.next() as u16);
         set(
             a,
             b,
