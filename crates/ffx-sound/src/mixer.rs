@@ -158,7 +158,15 @@ impl Voice {
         let end = u64::from(w.frames);
         let loop_points = if self.looping {
             w.looped
-                .map(|(s, e)| (u64::from(s), u64::from(e) + 1))
+                // measured with fmod-probe: FMOD loops between the loop
+                // points rounded up to whole IMA blocks (64 frames):
+                // 50027_0's 119648..=737699 plays as 119680..737728
+                .map(|(s, e)| {
+                    let block = crate::ima::BLOCK_SAMPLES as u64;
+                    let s = u64::from(s).div_ceil(block) * block;
+                    let e = (u64::from(e) + 1).div_ceil(block) * block;
+                    (s, e.min(end))
+                })
                 .or(Some((0, end)))
         } else {
             None
