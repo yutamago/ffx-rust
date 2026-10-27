@@ -117,8 +117,10 @@ pub fn parse(text: &str) -> Vec<Entry> {
             result: hex(w[8]),
             ..Call::default()
         };
-        let rest = w.get(9).copied().unwrap_or("");
-        let mut r = rest;
+        // each value follows a space (the first one too)
+        let rest = format!(" {}", w.get(9).copied().unwrap_or(""));
+        let mut r = rest.as_str();
+
         while let Some(at) = r.find(' ') {
             r = &r[at + 1..];
             if let Some(o) = r.strip_prefix('o') {
@@ -191,6 +193,13 @@ pub struct Engine<F: Files> {
     /// Playing voices by start order (the mix order).
     voices: BTreeMap<u64, Voice>,
     next_voice: u64,
+    /// FMOD channel index per voice, and the free ones.
+    slots: HashMap<u64, u16>,
+    free: std::collections::BTreeSet<u16>,
+    /// `getChannel` handles whose index matched the allocator, and didn't.
+    pub channel_checks: (u32, u32),
+    /// Channels of ended voices, free from the update after the first word.
+    pending_free: Vec<(u64, u16)>,
     /// The mixed output, interleaved stereo.
     pub out: Vec<f32>,
     /// Updates mixed.
@@ -220,6 +229,10 @@ impl<F: Files> Engine<F> {
             banks: HashMap::new(),
             voices: BTreeMap::new(),
             next_voice: 0,
+            slots: HashMap::new(),
+            free: (0..128).collect(),
+            channel_checks: (0, 0),
+            pending_free: Vec::new(),
             out: Vec::new(),
             updates: 0,
             ignored: HashMap::new(),
@@ -296,7 +309,19 @@ impl<F: Files> Engine<F> {
         let id = self.next_voice;
         self.next_voice += 1;
         self.voices.insert(id, voice);
+        // FMOD's channel: the highest free index (checked against the
+        // handles `getChannel` hands out, `channel_checks`)
+        if let Some(i) = self.free.pop_last() {
+            self.slots.insert(id, i);
+        }
         id
+    }
+
+    fn remove_voice(&mut self, id: u64) {
+        self.voices.remove(&id);
+        if let Some(i) = self.slots.remove(&id) {
+            self.free.insert(i);
+        }
     }
 
     fn apply_instance(&mut self, handle: u32) {
@@ -371,7 +396,7 @@ impl<F: Files> Engine<F> {
                     return;
                 };
                 if let Some(old) = i.voice {
-                    self.voices.remove(&old);
+                    self.remove_voice(old);
                 }
                 let v = self.add_voice(Voice::new(i.wave.clone(), !i.oneshot));
                 if let Some(e) = self.events.get_mut(&h) {
@@ -383,7 +408,7 @@ impl<F: Files> Engine<F> {
                 if let Some(e) = self.events.get_mut(&c.arg(0))
                     && let Some(v) = e.voice.take()
                 {
-                    self.voices.remove(&v);
+                    self.remove_voice(v);
                 }
             }
             "Event::setVolume" => {
@@ -406,6 +431,26 @@ impl<F: Files> Engine<F> {
             "ChannelGroup::getChannel" => {
                 if let (Some(&e), Some(ch)) = (self.channel_groups.get(&c.arg(0)), c.out(2)) {
                     self.channels.insert(ch, Target::Event(e));
+                    let slot = self
+                        .events
+                        .get(&e)
+                        .and_then(|i| i.voice)
+                        .and_then(|v| self.slots.get(&v).copied());
+                    let logged = u16::try_from(ch >> 16).ok();
+                    if slot == logged {
+                        self.channel_checks.0 += 1;
+                    } else {
+                        self.channel_checks.1 += 1;
+                        if std::env::var("FFX_MIX_DEBUG").is_ok() {
+                            eprintln!(
+                                "chan update {} frame {} event {e:x}: mine {slot:?} logged {logged:?} free top {:?} voices {}",
+                                self.updates,
+                                c.frame,
+                                self.free.iter().rev().take(4).collect::<Vec<_>>(),
+                                self.voices.len()
+                            );
+                        }
+                    }
                 }
             }
             "Channel::setPan" => match self.channels.get(&c.arg(0)).copied() {
@@ -442,7 +487,7 @@ impl<F: Files> Engine<F> {
                     return;
                 };
                 if let Some(Target::Shout(Some(old))) = self.channels.get(&ch).copied() {
-                    self.voices.remove(&old);
+                    self.remove_voice(old);
                 }
                 let Some(wave) = self.wave(&path, index) else {
                     return;
@@ -480,11 +525,43 @@ impl<F: Files> Engine<F> {
         let at = self.out.len();
         self.out.resize(at + 2 * BLOCK, 0.0);
         let block = &mut self.out[at..];
-        for v in self.voices.values_mut() {
-            v.mix(block);
+        let mut order: Vec<(u64, u16)> = self
+            .voices
+            .keys()
+            .map(|&id| (id, self.slots.get(&id).copied().unwrap_or(0)))
+            .collect();
+        match std::env::var("FFX_MIX_ORDER").unwrap_or_default().as_str() {
+            "asc" => order.sort_by_key(|&(_, s)| s),
+            "desc" => order.sort_by_key(|&(_, s)| std::cmp::Reverse(s)),
+            _ => {}
         }
-        self.voices.retain(|_, v| !v.ended);
+        for (id, _) in order {
+            if let Some(v) = self.voices.get_mut(&id) {
+                v.mix(block);
+            }
+        }
+        let ended: Vec<u64> = self
+            .voices
+            .iter()
+            .filter(|(_, v)| v.ended)
+            .map(|(&id, _)| id)
+            .collect();
+        let delay: u64 = std::env::var("FFX_MIX_FREE_DELAY")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        for id in ended {
+            self.voices.remove(&id);
+            if let Some(i) = self.slots.remove(&id) {
+                self.pending_free.push((self.updates + delay, i));
+            }
+        }
         self.updates += 1;
+        let now = self.updates;
+        let (due, wait): (Vec<_>, Vec<_>) =
+            self.pending_free.drain(..).partition(|&(d, _)| d < now);
+        self.pending_free = wait;
+        self.free.extend(due.into_iter().map(|(_, i)| i));
     }
 
     /// Replays a whole log.

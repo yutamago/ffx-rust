@@ -66,9 +66,7 @@ mod probe {
                 [a, b, c, d] => std::mem::transmute::<usize, F4>(f)(a, b, c, d),
                 [a, b, c, d, e] => std::mem::transmute::<usize, F5>(f)(a, b, c, d, e),
                 [a, b, c, d, e, g] => std::mem::transmute::<usize, F6>(f)(a, b, c, d, e, g),
-                [a, b, c, d, e, g, h] => {
-                    std::mem::transmute::<usize, F7>(f)(a, b, c, d, e, g, h)
-                }
+                [a, b, c, d, e, g, h] => std::mem::transmute::<usize, F7>(f)(a, b, c, d, e, g, h),
                 _ => panic!("arity"),
             }
         }
@@ -76,7 +74,13 @@ mod probe {
 
     static UPDATE: AtomicU32 = AtomicU32::new(0);
 
-    extern "system" fn callback(_event: usize, kind: u32, _p1: usize, _p2: usize, user: usize) -> u32 {
+    extern "system" fn callback(
+        _event: usize,
+        kind: u32,
+        _p1: usize,
+        _p2: usize,
+        user: usize,
+    ) -> u32 {
         println!("callback {} {kind} {user}", UPDATE.load(Ordering::Relaxed));
         0
     }
@@ -145,8 +149,16 @@ mod probe {
             &[es, a(&raw mut sys)],
         );
         // the game's and the capture's set-up (audio_wav.rs), in their order
-        fm.x(EX, "?setStreamBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@II@Z", &[sys, 0x10000, 8]);
-        fm.x(EX, "?setOutput@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_OUTPUTTYPE@@@Z", &[sys, 5]);
+        fm.x(
+            EX,
+            "?setStreamBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@II@Z",
+            &[sys, 0x10000, 8],
+        );
+        fm.x(
+            EX,
+            "?setOutput@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_OUTPUTTYPE@@@Z",
+            &[sys, 5],
+        );
         let mut f = [0usize; 6];
         fm.x(
             EX,
@@ -159,7 +171,11 @@ mod probe {
             "?setSoftwareFormat@System@FMOD@@QAG?AW4FMOD_RESULT@@HW4FMOD_SOUND_FORMAT@@HHW4FMOD_DSP_RESAMPLER@@@Z",
             &[sys, f[0], 5, f[2], f[3], f[4]],
         );
-        fm.x(EX, "?setDSPBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@IH@Z", &[sys, f[0] / 30, 4]);
+        fm.x(
+            EX,
+            "?setDSPBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@IH@Z",
+            &[sys, f[0] / 30, 4],
+        );
         let path = CString::new(out.as_str()).expect("out");
         fm.x(
             EV,
@@ -171,7 +187,11 @@ mod probe {
             m.push('\\');
         }
         let mc = CString::new(m).expect("media");
-        fm.x(EV, "?setMediaPath@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@PBD@Z", &[es, mc.as_ptr() as usize]);
+        fm.x(
+            EV,
+            "?setMediaPath@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@PBD@Z",
+            &[es, mc.as_ptr() as usize],
+        );
 
         let mut h: HashMap<String, usize> = HashMap::new();
         let mut users: HashMap<String, usize> = HashMap::new();
@@ -183,7 +203,9 @@ mod probe {
             if w.is_empty() || w[0].starts_with('#') {
                 continue;
             }
-            let get = |h: &HashMap<String, usize>, k: &str| *h.get(k).unwrap_or_else(|| panic!("unknown {k}"));
+            let get = |h: &HashMap<String, usize>, k: &str| {
+                *h.get(k).unwrap_or_else(|| panic!("unknown {k}"))
+            };
             match w[0] {
                 "load" => {
                     let c = CString::new(w[2]).expect("name");
@@ -207,7 +229,11 @@ mod probe {
                 "event" => {
                     let mut e = 0usize;
                     // EventGroup::getEventByIndex (+0x24)
-                    vcall(get(&h, w[2]), 0x24, &[w[3].parse().expect("index"), 0, a(&raw mut e)]);
+                    vcall(
+                        get(&h, w[2]),
+                        0x24,
+                        &[w[3].parse().expect("index"), 0, a(&raw mut e)],
+                    );
                     let user = users.len() + 1;
                     users.insert(w[1].into(), user);
                     fm.x(
@@ -219,27 +245,59 @@ mod probe {
                     h.insert(w[1].into(), e);
                 }
                 "start" => {
-                    fm.x(EV, "?start@Event@FMOD@@QAG?AW4FMOD_RESULT@@XZ", &[get(&h, w[1])]);
+                    fm.x(
+                        EV,
+                        "?start@Event@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
+                        &[get(&h, w[1])],
+                    );
                 }
                 "stop" => {
-                    fm.x(EV, "?stop@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z", &[get(&h, w[1]), w[2].parse().expect("bool")]);
+                    fm.x(
+                        EV,
+                        "?stop@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
+                        &[get(&h, w[1]), w[2].parse().expect("bool")],
+                    );
                 }
                 "pause" => {
-                    fm.x(EV, "?setPaused@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z", &[get(&h, w[1]), w[2].parse().expect("bool")]);
+                    fm.x(
+                        EV,
+                        "?setPaused@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
+                        &[get(&h, w[1]), w[2].parse().expect("bool")],
+                    );
                 }
                 "vol" => {
-                    fm.x(EV, "?setVolume@Event@FMOD@@QAG?AW4FMOD_RESULT@@M@Z", &[get(&h, w[1]), f32w(w[2])]);
+                    fm.x(
+                        EV,
+                        "?setVolume@Event@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
+                        &[get(&h, w[1]), f32w(w[2])],
+                    );
                 }
                 "pan" => {
                     let e = get(&h, w[1]);
                     let mut cg = 0usize;
-                    fm.x(EV, "?getChannelGroup@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z", &[e, a(&raw mut cg)]);
+                    fm.x(
+                        EV,
+                        "?getChannelGroup@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z",
+                        &[e, a(&raw mut cg)],
+                    );
                     let mut n = 0usize;
-                    fm.x(EX, "?getNumChannels@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z", &[cg, a(&raw mut n)]);
+                    fm.x(
+                        EX,
+                        "?getNumChannels@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z",
+                        &[cg, a(&raw mut n)],
+                    );
                     for i in 0..n {
                         let mut ch = 0usize;
-                        fm.x(EX, "?getChannel@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAVChannel@2@@Z", &[cg, i, a(&raw mut ch)]);
-                        fm.x(EX, "?setPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z", &[ch, f32w(w[2])]);
+                        fm.x(
+                            EX,
+                            "?getChannel@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAVChannel@2@@Z",
+                            &[cg, i, a(&raw mut ch)],
+                        );
+                        fm.x(
+                            EX,
+                            "?setPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
+                            &[ch, f32w(w[2])],
+                        );
                     }
                     if n != 1 {
                         println!("pan {}: {n} channels", w[1]);
@@ -258,7 +316,11 @@ mod probe {
                 }
                 "sub" => {
                     let mut s = 0usize;
-                    fm.x(EX, "?getSubSound@Sound@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAV12@@Z", &[get(&h, w[2]), w[3].parse().expect("index"), a(&raw mut s)]);
+                    fm.x(
+                        EX,
+                        "?getSubSound@Sound@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAV12@@Z",
+                        &[get(&h, w[2]), w[3].parse().expect("index"), a(&raw mut s)],
+                    );
                     h.insert(w[1].into(), s);
                 }
                 "play" => {
@@ -271,30 +333,58 @@ mod probe {
                     h.insert(w[1].into(), ch);
                 }
                 "cvol" => {
-                    fm.x(EX, "?setVolume@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z", &[get(&h, w[1]), f32w(w[2])]);
+                    fm.x(
+                        EX,
+                        "?setVolume@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
+                        &[get(&h, w[1]), f32w(w[2])],
+                    );
                 }
                 "cpan" => {
-                    fm.x(EX, "?setPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z", &[get(&h, w[1]), f32w(w[2])]);
+                    fm.x(
+                        EX,
+                        "?setPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
+                        &[get(&h, w[1]), f32w(w[2])],
+                    );
                 }
                 "cpause" => {
-                    fm.x(EX, "?setPaused@Channel@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z", &[get(&h, w[1]), w[2].parse().expect("bool")]);
+                    fm.x(
+                        EX,
+                        "?setPaused@Channel@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
+                        &[get(&h, w[1]), w[2].parse().expect("bool")],
+                    );
                 }
                 "cstop" => {
-                    fm.x(EX, "?stop@Channel@FMOD@@QAG?AW4FMOD_RESULT@@XZ", &[get(&h, w[1])]);
+                    fm.x(
+                        EX,
+                        "?stop@Channel@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
+                        &[get(&h, w[1])],
+                    );
                 }
                 "update" => {
                     let n: u32 = w.get(1).map_or(1, |n| n.parse().expect("count"));
                     for _ in 0..n {
                         let u = UPDATE.fetch_add(1, Ordering::Relaxed) + 1;
-                        fm.x(EV, "?update@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ", &[es]);
+                        fm.x(
+                            EV,
+                            "?update@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
+                            &[es],
+                        );
                         let (mut hi, mut lo) = (0usize, 0usize);
-                        fm.x(EX, "?getDSPClock@System@FMOD@@QAG?AW4FMOD_RESULT@@PAI0@Z", &[sys, a(&raw mut hi), a(&raw mut lo)]);
+                        fm.x(
+                            EX,
+                            "?getDSPClock@System@FMOD@@QAG?AW4FMOD_RESULT@@PAI0@Z",
+                            &[sys, a(&raw mut hi), a(&raw mut lo)],
+                        );
                         println!("update {u} clock {}", ((hi as u64) << 32) | lo as u64);
                         for (k, &user) in &users {
                             let mut st = 0usize;
                             let e = h[k];
                             let r = call_state(&fm, e, &mut st);
-                            let st = if r == 0 { u32::try_from(st).unwrap_or(0) } else { 0xdead_0000 | r };
+                            let st = if r == 0 {
+                                u32::try_from(st).unwrap_or(0)
+                            } else {
+                                0xdead_0000 | r
+                            };
                             if states.get(k) != Some(&st) {
                                 println!("state {u} {user} {st:#x}");
                                 states.insert(k.clone(), st);
@@ -305,7 +395,11 @@ mod probe {
                 other => panic!("unknown command {other}"),
             }
         }
-        fm.x(EV, "?release@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ", &[es]);
+        fm.x(
+            EV,
+            "?release@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
+            &[es],
+        );
     }
 
     fn call_state(fm: &Fmod, e: usize, st: &mut usize) -> u32 {
@@ -323,5 +417,7 @@ fn main() {
 
 #[cfg(not(all(windows, target_arch = "x86")))]
 fn main() {
-    eprintln!("fmod-probe runs as a 32-bit Windows program only (cargo xwin, i686-pc-windows-msvc)");
+    eprintln!(
+        "fmod-probe runs as a 32-bit Windows program only (cargo xwin, i686-pc-windows-msvc)"
+    );
 }

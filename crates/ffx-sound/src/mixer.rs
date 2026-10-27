@@ -26,6 +26,9 @@ pub const RAMP: u32 = 64;
 /// The smallest change of a voice's levels (left plus right) that FMOD
 /// applies: 0.00064 (one ramp step of 1e-5).
 const CHANGE: f32 = 0.000_64;
+/// Below this volume FMOD mixes a voice silent (between the measured
+/// 1.704e-5, silent, and 2.32e-5, not).
+const SILENT: f32 = 2.0e-5;
 /// 16-bit PCM to float.
 const SCALE: f32 = 1.0 / 32768.0;
 
@@ -130,6 +133,12 @@ impl Voice {
         // not; stereo 0.000315 and 0.00032 a side)
         let change = (target[0] - self.gain[0]).abs() + (target[1] - self.gain[1]).abs();
         if change < CHANGE {
+            target = self.gain;
+        }
+        // measured with fmod-probe: below SILENT the voice is silent at once
+        // (no ramp; 1.704e-5 silent, 2.32e-5 not), and keeps its place
+        if self.volume < SILENT {
+            self.gain = [0.0; 2];
             target = self.gain;
         }
         self.blocks = self.blocks.wrapping_add(1);
