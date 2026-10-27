@@ -6,6 +6,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_prender::h3c_font::bridge as font;
+use ffx_prender::h3c_vfxname::bridge as vfxname;
 use ffx_prender::h3c_vfxtex::bridge as vfxtex;
 
 ported! {
@@ -24,5 +25,14 @@ ported! {
     PhyreScene_isVFXTextureLoaded @ 0x0066_04d0 => extern "thiscall" fn is_vfx_texture_loaded(this: u32, p2: u32, p3: u32, p4: u32, p5: u32, p6: u32, p7: u32, out: u32) -> u32 {
         let mut f = StackFrame::<5>::new();
         vfxtex::is_vfx_texture_loaded(&mut mem(), f.at() + 0x14, this, p2, p3, p4, p5, p6, p7, out)
+    }
+
+    // ---- batch 3 (ffx_prender::h3c_vfxname) ----
+    /// `PhyreScene_isVFXTextureLoaded_00661c80(scene; name, out, 4 unused
+    /// words)`: the effect texture's file by name into `out`; 1 (a special
+    /// case), 2 ("RWTT", a list hit) or 0.
+    PhyreScene_isVFXTextureLoaded_00661c80 @ 0x0066_1c80 => extern "thiscall" fn is_vfx_texture_loaded_by_name(this: u32, name: u32, out: u32, _a3: u32, _a4: u32, _a5: u32, _a6: u32) -> u32 {
+        let mut f = StackFrame::<0x49>::new();
+        vfxname::is_vfx_texture_loaded(&mut mem(), f.at() + 0x124, this, name, out)
     }
 }

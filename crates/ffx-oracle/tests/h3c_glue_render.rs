@@ -1174,18 +1174,19 @@ fn prep_vfx(t: &mut Twins, _obj: u32, this: &mut u32, args: &mut [u32], rng: &mu
         // the address 0x3600 read as 0x3601
         (map, pass, magic, p2) = (0x1bfe, 1, 0x21b, 0x3600);
     } else if scenario < 25 {
-        let s = hv::SPECIALS[rng.below(hv::SPECIALS.len() as u32) as usize];
-        p2 = u32::from(s.addr);
+        let (kind, v, addr, w, h) =
+            VFX_SPECIAL_INPUTS[rng.below(VFX_SPECIAL_INPUTS.len() as u32) as usize];
+        p2 = addr;
         p3 = 0x13;
-        if let Some((w, h)) = s.size {
-            (p6, p7) = (u32::from(w), u32::from(h));
+        if w != 0 {
+            (p6, p7) = (w, h);
         }
-        match s.gate {
-            hv::Gate::Map(m) => map = m,
-            hv::Gate::MapYiq(m) => (map, yiq) = (m, 8),
-            hv::Gate::PassMap(m) => (map, pass) = (m, 1),
-            hv::Gate::Magic(m) | hv::Gate::HandleMagic(m) => (magic, handle) = (m, 0),
-            hv::Gate::Abmap => abmap = 0x40,
+        match kind {
+            0 => map = v,
+            1 => (map, pass) = (v, 1),
+            2 => (map, yiq) = (v, 8),
+            3 => (magic, handle) = (v, 0),
+            _ => abmap = 0x40,
         }
         match rng.below(12) {
             0 => p3 = 0x12,
@@ -1195,6 +1196,7 @@ fn prep_vfx(t: &mut Twins, _obj: u32, this: &mut u32, args: &mut [u32], rng: &mu
             4 => yiq = 7,
             5 => pass = 0,
             6 => map ^= 1,
+            7 => abmap = 0,
             _ => {}
         }
     }
@@ -1374,3 +1376,324 @@ fn batch2_is_vfx_texture_loaded_matches_the_original() {
         run_cases(t, CASES_VFX, 8000, &mut rng);
     });
 }
+
+// ---- batch 3: PhyreScene_isVFXTextureLoaded_00661c80 (ffx_prender::h3c_vfxname) ----
+
+use ffx_prender::h3c_vfxname::{self as hn, bridge as bn};
+
+thread_local! {
+    /// [`prep_vfx_name`]'s scene: whether on a snapshot, its address.
+    static VFXN_SCENE: Cell<Option<(bool, u32)>> = const { Cell::new(None) };
+}
+
+impl Twins {
+    /// The C string at `at` (an image address, rebased).
+    fn image_str(&self, at: u32) -> Vec<u8> {
+        let at = self.rebase(at);
+        let mut v = Vec::new();
+        loop {
+            let c: u8 = Mem::read(&self.b, at + v.len() as u32);
+            if c == 0 {
+                return v;
+            }
+            v.push(c);
+        }
+    }
+
+    /// A stub at `sym` that runs `code` (which must not touch the
+    /// arguments' stack) and then logs and returns as [`Twins::stub`].
+    fn stub_then(&mut self, sym: u32, code: &[u8], n: u32, ret: u32) {
+        let log = self.stub(None, sym, false, n, 0, Some(ret));
+        let mut c = code.to_vec();
+        let at = self.cave_next;
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// `strncpy(dst, src, n)`: copies up to `n` bytes, pads with zeros;
+/// returns `dst`.
+const STRNCPY_CODE: [u8; 34] = [
+    0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0x8b, 0x4c, 0x24,
+    0x14, // loads
+    0x85, 0xc9, 0x74, 0x09, 0xac, 0xaa, 0x49, 0x84, 0xc0, 0x75, 0xf5, 0xf3, 0xaa, // copy, pad
+    0x8b, 0x44, 0x24, 0x0c, 0x5f, 0x5e, 0xc3, // eax = dst; pop edi; pop esi; ret
+];
+
+/// The data root `fiosUnifyFilename` writes in the tests: "dat/".
+const ROOT_DIR: &[u8] = b"dat/";
+
+#[allow(clippy::too_many_lines)] // one scene
+fn prep_vfx_name(t: &mut Twins, _obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = match VFXN_SCENE.get() {
+        Some((snap, at)) if snap == t.snapshot => at,
+        _ => {
+            let at = t.zeros(0x1_0000);
+            VFXN_SCENE.set(Some((t.snapshot, at)));
+            at
+        }
+    };
+    t.write(scene, &[0; 0x80]);
+    t.write(scene + 0xfaf0, &[0; 0x200]);
+    *this = scene;
+
+    // the state and the name: from the pools, a special case's or a rule
+    // key's
+    let mut map = pick(rng, &[0x1b68, 0x18bd, 0x1346, 0x633, 0x125c, 0x199, 0]);
+    let mut magic = pick(rng, VFX_MAGIC);
+    let mut handle = if rng.chance(5) {
+        0xffff_ffff
+    } else {
+        rng.below(4)
+    };
+    let mut pass = u32::from(rng.chance(2));
+    let mut lang = if rng.chance(2) { 0xb } else { 1 };
+    let mut abmap = if rng.chance(2) { 0 } else { 0x40 };
+    let mut phase = pick(rng, VFX_PHASES);
+    let tails: &[&[u8]] = &[
+        b"",
+        b"_0_0_128_64.dds.phyre",
+        b"_0_0_512_256.dds.phyre",
+        b"x",
+    ];
+    let mut name: Vec<u8> = match rng.below(5) {
+        0 => b"trxtex01_19".to_vec(),
+        4 => vec![],
+        1 => b"13312_19_0_0_512_256.dds.phyre".to_vec(),
+        2 => b"1234".to_vec(),
+        _ => b"14528_19_0_0_128_64.dds.phyre".to_vec(),
+    };
+    let scenario = rng.below(32);
+    if scenario < 14 {
+        let (magics, addrs) = VFX_RULES[rng.below(VFX_RULES.len() as u32) as usize];
+        magic = pick(rng, magics);
+        let p = pick(rng, addrs) as u16;
+        handle = 0;
+        phase = pick(rng, &[0, 1, 2, 2, 3, 4, 4, 8, 8, 0x10, 0x20, 0x40, 0x7f]);
+        if let Some(&(at, _)) = hn::KEYS.iter().find(|&&(_, k)| k == p) {
+            name = t.image_str(at);
+            name.extend_from_slice(pick_bytes(rng, tails));
+        }
+    } else if scenario < 26 {
+        let (kind, v, string, starts) =
+            VFXN_SPECIALS[rng.below(VFXN_SPECIALS.len() as u32) as usize];
+        match kind {
+            0 => map = v,
+            1 => (map, pass) = (v, 1),
+            2 => (map, lang) = (v, 0xb),
+            3 => (magic, handle) = (v, 0),
+            _ => abmap = 0x40,
+        }
+        name = t.image_str(string);
+        if starts {
+            name.extend_from_slice(pick_bytes(rng, tails));
+        }
+        match rng.below(10) {
+            0 => name.push(b'z'),
+            1 => handle = 0xffff_ffff,
+            2 => lang = 3,
+            3 => pass = 0,
+            4 => map ^= 1,
+            5 => abmap = 0,
+            _ => {}
+        }
+    }
+    name.push(0);
+    let name_at = t.alloc(&name);
+    let out = t.zeros(0x100);
+    args[0] = name_at;
+    args[1] = out;
+    for a in &mut args[2..] {
+        *a = rng.word();
+    }
+    t.w32(scene + 0xfaf4, map);
+    if rng.chance(5) {
+        t.write(scene + 0xfc00, &[1]);
+        let n = name.len() - 1;
+        let rt: Vec<u8> = match rng.below(4) {
+            0 => vec![],
+            1 => name[..n.min(5)].to_vec(),
+            2 => name[..n].to_vec(),
+            _ => b"RTT0".to_vec(),
+        };
+        t.write(scene + 0xfc68, &rt);
+    }
+
+    // the list: entries whose first eight characters are the name's
+    let n = if scenario < 14 {
+        2 + rng.below(5)
+    } else {
+        rng.below(7)
+    };
+    t.w32(scene + 0x34, n);
+    let names = t.zeros(4 * 8);
+    let paths = t.zeros(4 * 8);
+    t.w32(scene + 0x3c, names);
+    t.w32(scene + 0x54, paths);
+    let empty = t.alloc(&[0]);
+    for i in 0..n {
+        let entry = match rng.below(12) {
+            0 => 0,
+            1 => empty,
+            2 => t.alloc(b"other_19_0_0.dds\0"),
+            _ => {
+                let mut e = name[..(name.len() - 1).min(8)].to_vec();
+                if rng.chance(2) {
+                    e.extend_from_slice(&name[e.len()..name.len() - 1]);
+                } else {
+                    e.extend_from_slice(b"_9_9.dds");
+                }
+                e.push(0);
+                t.alloc(&e)
+            }
+        };
+        t.w32(names + 4 * i, entry);
+        let dir = pick_bytes(
+            rng,
+            &[b"magic/", b"map/", b"btl/", b"yo/", b"chr/", b"ma", b""],
+        );
+        let mut p = ROOT_DIR.to_vec();
+        p.extend_from_slice(dir);
+        p.extend_from_slice(format!("t{i}.dds\0").as_bytes());
+        let path = t.alloc(&p);
+        t.w32(paths + 4 * i, path);
+    }
+
+    t.global(hn::VFX_PASS, pass);
+    t.global(hn::ET_CHR_HIDDEN, u32::from(rng.chance(3)));
+    t.global(hn::VFX_PHASE, phase);
+    t.global(hn::GRAPHIC_ABMAP, abmap);
+
+    // the callees
+    t.stub_ret(hn::GET_MAGIC_ID, false, 0, 0, magic);
+    t.stub_ret(hn::GET_HANDLE, false, 0, 0, handle);
+    let deleting = if rng.chance(3) {
+        rng.below(4)
+    } else {
+        0xffff_ffff
+    };
+    t.stub_ret(hn::GET_TO_BE_DELETE, false, 0, 0, deleting);
+    t.stub_ret(hn::GET_LANG, false, 0, 0, lang);
+    // fiosUnifyFilename writes the root ("dat/") into its output
+    let mut unify = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    unify.extend([0xc7, 0x00]);
+    unify.extend(u32::from_le_bytes(*b"dat/").to_le_bytes()); // mov [eax], "dat/"
+    unify.extend([0xc6, 0x40, 0x04, 0x00]); // mov byte [eax+4], 0
+    t.stub_then(hn::UNIFY_FILENAME, &unify, 3, rng.next());
+    let strncpy = t.code(&STRNCPY_CODE);
+    let site = t.rebase(hn::STRNCPY);
+    t.patch(site, &strncpy.to_le_bytes());
+    let strstr_ret = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    for (slot, n, ret) in [(hn::SPRINTF, 3, rng.below(12)), (hn::STRSTR, 2, strstr_ret)] {
+        let s = t.stub(None, slot, false, n, 0, Some(ret));
+        let at = t.rebase(slot);
+        t.patch(at, &s.to_le_bytes());
+    }
+}
+
+fn pick_bytes<'a>(rng: &mut Rng, vs: &[&'a [u8]]) -> &'a [u8] {
+    vs[rng.below(vs.len() as u32) as usize]
+}
+
+const CASES_VFX_NAME: &[Case] = &[with_cookie(framed(
+    Case {
+        prep: Some(prep_vfx_name),
+        ..method(
+            "PhyreScene_isVFXTextureLoaded_00661c80",
+            0x0066_1c80,
+            This::Object,
+            6,
+            &[],
+            |m, this, a| u(bn::is_vfx_texture_loaded(m, frame_ebp(), this, a[0], a[1])),
+        )
+    },
+    hn::ROOT,
+    0,
+))];
+
+#[test]
+fn batch3_is_vfx_texture_loaded_by_name_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xb3c3_0001);
+        run_cases(t, CASES_VFX_NAME, 8000, &mut rng);
+    });
+}
+
+/// The special cases' inputs (gate kind: 0 map, 1 pass and map, 2 map
+/// with YIQ mode 8, 3 magic, 4 sphere grid; its value; the address; the
+/// size, 0 when not tested), from the original's code at
+/// 0x006605aa-0x006611d7, kept apart from the port's table.
+const VFX_SPECIAL_INPUTS: &[(u8, u32, u32, u32, u32)] = &[
+    (0, 0x1b8a, 0x3f00, 0, 0),
+    (0, 0x2416, 0x3ac0, 0, 0),
+    (0, 0x1b68, 0x37c0, 0x80, 0x20),
+    (0, 0x1f7, 0x3ac0, 0x80, 0x80),
+    (0, 0x1b68, 0x37c0, 0x80, 0x40),
+    (3, 0x1e7, 0x3980, 0, 0),
+    (3, 0x1e7, 0x3ac0, 0, 0),
+    (3, 0x2c6, 0x3900, 0, 0),
+    (0, 0x18bd, 0x3ac0, 0, 0),
+    (3, 0x281, 0x3600, 0x200, 0x100),
+    (0, 0x18cd, 0x3340, 0x80, 0x40),
+    (0, 0x18cd, 0x3360, 0x80, 0x40),
+    (2, 0x11d3, 0x3700, 0x80, 0x80),
+    (3, 0x157, 0x3400, 0x100, 0x200),
+    (3, 0x174, 0x3ac0, 0, 0),
+    (3, 0x281, 0x3820, 0x200, 0x100),
+    (0, 0x25b0, 0x3ac0, 0x80, 0x80),
+    (3, 0x231, 0x3800, 0, 0),
+    (3, 0x231, 0x3800, 0x80, 0x40),
+    (3, 0x1f9, 0x3800, 0, 0),
+    (1, 0x633, 0x3ac0, 0x80, 0x80),
+    (0, 0x125c, 0x3640, 0x80, 4),
+    (3, 0xa5, 0x3400, 0x80, 4),
+    (3, 0xa5, 0x3420, 0x80, 4),
+    (4, 0, 0x3960, 0x80, 0x80),
+    (4, 0, 0x39a0, 0x80, 4),
+    (4, 0, 0x39c0, 0x80, 4),
+    (3, 0x1f1, 0x3ac0, 0x80, 0x100),
+    (3, 0x1f9, 0x3980, 0x80, 0x40),
+    (3, 0x1b0, 0x3ac0, 0, 0),
+    (3, 0x1b6, 0x3ac0, 0x80, 4),
+    (3, 0x1b5, 0x3ac0, 0x80, 4),
+    (3, 0x171, 0x3480, 0x80, 4),
+    (3, 0x171, 0x3480, 0x200, 0x100),
+    (3, 0xbc, 0x3ac0, 0, 0),
+];
+
+/// The by-name special cases' inputs (gate kind: 0 map, 1 pass and map,
+/// 2 language and map, 3 magic, 4 sphere grid; its value; the string;
+/// whether the name only starts with it), from the original's code at
+/// 0x00661cd2-0x0066267d, kept apart from the port's table.
+const VFXN_SPECIALS: &[(u8, u32, u32, bool)] = &[
+    (0, 0x1b68, 0x00b4_36d0, false),
+    (0, 0x1b68, 0x00b4_36f0, false),
+    (3, 0x1e7, 0x00b4_3710, true),
+    (3, 0x1e7, 0x00b4_371c, true),
+    (0, 0x18bd, 0x00b4_371c, true),
+    (3, 0x281, 0x00b4_3728, false),
+    (3, 0x281, 0x00b4_3748, false),
+    (0, 0x1346, 0x00b4_3768, false),
+    (3, 0x231, 0x00b4_3788, true),
+    (3, 0x231, 0x00b4_3794, false),
+    (3, 0x1f9, 0x00b4_3788, true),
+    (1, 0x633, 0x00b4_3768, false),
+    (0, 0x125c, 0x00b4_37b4, false),
+    (2, 0x199, 0x00b4_37d4, false),
+    (3, 0xa5, 0x00b4_3844, false),
+    (3, 0xa5, 0x00b4_3864, false),
+    (4, 0, 0x00b4_3884, false),
+    (4, 0, 0x00b4_38a4, false),
+    (4, 0, 0x00b4_38c4, false),
+    (3, 0x1f1, 0x00b4_38e4, false),
+    (3, 0x1f9, 0x00b4_3904, false),
+    (3, 0x1b0, 0x00b4_371c, true),
+    (3, 0x1b6, 0x00b4_3924, false),
+    (3, 0x1b5, 0x00b4_3924, false),
+    (3, 0xbc, 0x00b4_371c, true),
+];
