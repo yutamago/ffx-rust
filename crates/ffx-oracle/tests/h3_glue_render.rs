@@ -86,6 +86,7 @@ use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
 use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
 use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
 use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
+use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13361,5 +13362,80 @@ fn batch65_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES65, n, &mut Rng(0x6565_b065));
+    });
+}
+
+// ---- round 18 batch 66 (ffx_prender::h3_glue64) ----
+
+/// The asset array (count, capacity: room or not, signed; data, or none
+/// where the slot address comes out 0), the asset (or none), the model
+/// answer with stray high bits, the scene's symbol (set or not), the
+/// `scaled` byte (with high bits), and the model cluster's instances
+/// through two cursor scripts: each instance a 3x4 matrix, an owner and a
+/// vector. The matrix math is the original's; the new instance list
+/// holds a buffer for the 3x4.
+fn prep_asset66(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x200);
+    *this = scene;
+    t.w32(scene + 0xd8, if rng.chance(5) { rng.word() | 1 } else { 0 });
+    args[0] = if rng.chance(6) { 0 } else { rng.word() };
+    let model = t.zeros(4);
+    args[2] = model;
+    let assets = t.zeros(0x10);
+    let count = pick(rng, &[0, 1, 3, 8]);
+    let room = pick(rng, &[count + 1, count, 0, u32::MAX, 0x7fff_ffff]);
+    let data = if count == 0 && rng.chance(4) {
+        0
+    } else {
+        t.zeros(0x40)
+    };
+    t.w32(assets, count);
+    t.w32(assets + 4, room);
+    t.w32(assets + 8, data);
+    args[3] = assets;
+    args[4] = obj + 0x40;
+    args[6] = pick(rng, &[0, 1, 0x100, 0xff01]);
+    let model_answer = [answer(rng)];
+    t.stub_seq(h64::IS_MODEL, true, 1, 1, &model_answer);
+    let list = t.zeros(0x40);
+    let placed = t.zeros(0x40);
+    t.w32(list + 0x34, placed);
+    t.stub_ret(h64::ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    let area = t.zeros(0x800);
+    for k in 0..8 {
+        let object = area + 0x100 * k + 4;
+        let matrix = t.zeros(0x40);
+        let words: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+        t.write(matrix, &words);
+        t.w32(object + 4, matrix);
+        let owner = t.zeros(0x20);
+        t.w32(object + 0x1c, owner);
+        let vector = t.zeros(0x40);
+        let words: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+        t.write(vector, &words);
+        t.w32(object + 0xb0, vector);
+    }
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script_args(h64::CURSOR_CTOR, 1, h64::CURSOR_NEXT, &steps);
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script_args(h64::CURSOR_CTOR_SEEK2, 1, h64::CURSOR_NEXT3, &steps);
+}
+
+const ASSET66_STUBS: &[(u32, K)] = &[
+    (h64::ARRAY_RESERVE, K::This(1)),
+    (h64::GET_SYMBOL_BY_ID, K::This(1)),
+    (h64::MATRIX4X3_TYPE, K::Cdecl(0)),
+];
+
+#[rustfmt::skip]
+const CASES66: &[Case] = &[
+    framed(Case { prep: Some(prep_asset66), ..method("do_on_field_map_asset_loaded", 0x0065_af60, This::Object, 7, ASSET66_STUBS, |m, this, a| u(gh64::do_on_field_map_asset_loaded(m, frame_ebp(), this, a[0], a[2], a[3], a[4], a[5], a[6]))) }, 0x1c0, 0),
+];
+
+#[test]
+fn batch66_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES66, n, &mut Rng(0x6666_b066));
     });
 }
