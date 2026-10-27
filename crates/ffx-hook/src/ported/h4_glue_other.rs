@@ -19,7 +19,8 @@ use ffx_glue_other::{
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
     h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
-    h4_l5 as l5, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2645,6 +2646,36 @@ ported! {
     FFEscMenu_update @ 0x0068_ffb0 => extern "thiscall" fn ff_esc_menu_update(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (l5::ESC_FRAME / 4) as usize }>::new();
         l5::esc_update(&mut mem(), frame.at(), this).unwrap_or(0)
+    }
+    // ---- continuation round 11, batch 1 (ffx_glue_other::h4_m1)
+    /// `MenuDynamicGeometry_setShaderClusterAndMaterial(this; cluster,
+    /// name, load)` -> 0, 1, 3, 0x13 or the texture binding's error (a
+    /// 0x60-byte frame: the original's locals and argument words).
+    MenuDynamicGeometry_setShaderClusterAndMaterial @ 0x006a_3100 => extern "thiscall" fn menu_dynamic_geometry_set_shader_cluster_and_material(this: u32, cluster: u32, name: u32, load: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m1::MATERIAL_FRAME / 4) as usize }>::new();
+        m1::set_shader_cluster_and_material(&mut mem(), frame.at(), this, cluster, name, load)
+    }
+    /// `SkipPrompt_buildQuad_006e7940(x, y, w, h, &mesh, &instance,
+    /// &materials, material)` (the floats as bits) -> the second unmap's
+    /// result (a 0x10-byte frame: the two mapped data pointers).
+    SkipPrompt_buildQuad_006e7940 @ 0x006e_7940 => extern "stdcall" fn skip_prompt_build_quad(x: u32, y: u32, w: u32, h: u32, mesh: u32, instance: u32, materials: u32, material: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m2::QUAD_FRAME / 4) as usize }>::new();
+        m2::build_quad(&mut mem(), frame.at(), [x, y, w, h], mesh, instance, materials, material)
+    }
+    /// `PhyFMVPlayerManager_initialize(this; id, wide, flag)` -> 0 or the
+    /// texture register's error (a 0x100-byte frame: the shader cluster's
+    /// path; the main thread).
+    PhyFMVPlayerManager_initialize @ 0x006d_9c80 => extern "thiscall" fn phy_fmv_player_manager_initialize(this: u32, id: u32, wide: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m3::INIT_FRAME / 4) as usize }>::new();
+        m3::initialize(&mut mem(), frame.at(), this, id, wide, flag)
+    }
+    /// `LoadingScreen_prepareMesh(this)` (`ecx`, plain ret) -> the last
+    /// `SetValue`'s result (0 where the original leaves its frame's
+    /// address; a 0x40-byte frame: the texture records, the colour and the
+    /// two mapped data pointers).
+    LoadingScreen_prepareMesh @ 0x006e_4920 => extern "thiscall" fn loading_screen_prepare_mesh(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m4::MESH_FRAME / 4) as usize }>::new();
+        m4::prepare_mesh(&mut mem(), frame.at(), this).unwrap_or(0)
     }
 }
 
