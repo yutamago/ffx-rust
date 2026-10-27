@@ -2202,3 +2202,282 @@ fn r2_batch2_render_character_tiles_matches_the_original() {
         run_cases(t, CASES_TILES, n, &mut Rng(0xb3b2_0002));
     });
 }
+
+// ---- round 2 batch 3: ShadowManager_renderCascades_006c9e50 (ffx_prender::h3b_glue8) ----
+
+use ffx_prender::h3b_glue8::{self as h8, bridge as b8};
+
+impl Twins {
+    /// The edge test: each call's twenty stack words appended to a record
+    /// area (compared with the rest of memory), `ecx` logged, the results
+    /// `values` in turn, twenty words popped.
+    fn stub_crosses(&mut self, values: &[u32]) {
+        let area = self.zeros(20 * 4 * 16);
+        let cursor = self.alloc(&area.to_le_bytes());
+        let words: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        let log = self.stub(None, h8::CROSSES_EDGE, true, 0, 20, None);
+        let base = self.cave_next;
+        let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+        c.extend([0x8d, 0x74, 0x24, 0x10]); // lea esi, [esp+0x10]
+        c.extend([0x8b, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+        c.extend([0xb9, 20, 0, 0, 0]); // mov ecx, 20
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x89, 0x3d]);
+        c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.extend([0x8b, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov edx, [ptr]
+        c.extend([0x8b, 0x02]); // mov eax, [edx]
+        c.extend([0x83, 0xc2, 0x04]); // add edx, 4
+        c.extend([0x89, 0x15]);
+        c.extend(ptr.to_le_bytes()); // mov [ptr], edx
+        Self::jmp_to(&mut c, base, log);
+        let code = self.code(&c);
+        self.divert(h8::CROSSES_EDGE, code);
+    }
+
+    /// The grad-mesh set-up (`this; i, meshes, extras, scale, unused,
+    /// depth`, six words popped): the first four of `meshes` set to
+    /// `values`, then logged.
+    fn stub_grad(&mut self, sym: u32, values: [u32; 4]) {
+        let log = self.stub(None, sym, true, 6, 6, Some(sym));
+        let base = self.cave_next;
+        let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp+8]
+        for (k, v) in (0u8..).zip(values) {
+            c.extend([0xc7, 0x42, 4 * k]); // mov dword [edx+4k], v
+            c.extend(v.to_le_bytes());
+        }
+        Self::jmp_to(&mut c, base, log);
+        let code = self.code(&c);
+        self.divert(sym, code);
+    }
+}
+
+/// The shadow manager for the cascades (the clear flag now and then, the
+/// edge flag, matrices, maps and blur targets, cascade bytes, last
+/// frame's and this frame's rectangles, the blur mesh), the renderer, the
+/// atlas size, the edge test's answers and the grad meshes; renderer
+/// calls fail now and then.
+#[allow(clippy::too_many_lines)] // the whole set-up
+fn prep_cascades(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x4100);
+    t.write(sm, &junk);
+    t.w32(sm + 0x4060, u32::from(!rng.chance(10)));
+    t.write(sm + 0x400c, &[u8::from(rng.chance(8))]);
+    t.write(sm + 0x404c, &[u8::from(rng.chance(3))]);
+    for w in 0..0x148 {
+        let f = rng.float().to_bits();
+        t.w32(sm + 0x90 + 4 * w, f);
+    }
+    let density = rng.below(6);
+    for k in 0..64 {
+        let list = if density != 0 && rng.below(density) == 0 {
+            tiles_list(t, rng)
+        } else {
+            0
+        };
+        t.w32(sm + 0xde8 + 4 * k, list);
+        let alt = if rng.chance(3) { tiles_list(t, rng) } else { 0 };
+        t.w32(sm + 0xee8 + 4 * k, alt);
+        for at in [0xfe8, 0x10e8] {
+            let v = if rng.chance(6) { rng.word() } else { 1 };
+            t.w32(sm + at + 4 * k, v);
+        }
+        for c in 0..2 {
+            let b = u8::from(!rng.chance(3));
+            t.write(sm + 0x2b28 + 0x40 * c + k, &[b]);
+        }
+    }
+    for at in [0x5c, 0x60, 0x64, 0x6c, 0x70] {
+        let surface = t.zeros(8);
+        let (w, flag) = (rng.next(), u8::from(rng.chance(3)));
+        t.w32(surface, w);
+        t.write(surface + 4, &[flag]);
+        t.w32(sm + at, surface);
+    }
+    // the rectangles: last frame's (+0x37b0) and this frame's (+0x2fa8)
+    for c in 0..2 {
+        for (rects, count) in [(0x37b0, 0x3fb0), (0x2fa8, 0x37a8)] {
+            let n = pick(rng, &[0, 1, 2, 3, 0xffff_ffff]);
+            t.w32(sm + count + 4 * c, n);
+            for w in 0..12 {
+                let v = rng.below(0x400);
+                t.w32(sm + rects + 0x400 * c + 4 * w, v);
+            }
+        }
+    }
+    // the blur mesh: its first material's shader and parameter buffer
+    let mesh = t.zeros(0x20);
+    let materials = t.zeros(0x10);
+    let material = t.zeros(0x10);
+    let buffer = t.zeros(0x100);
+    t.w32(sm + 0x8b8, mesh);
+    t.w32(mesh + 0x10, materials);
+    let n = pick(rng, &[1, 2, 0x8000_0001]);
+    t.w32(materials, n);
+    t.w32(
+        materials + 4,
+        if n & 3 == 1 { material } else { materials + 8 },
+    );
+    t.w32(materials + 8, material);
+    let shader = rng.next();
+    t.w32(material, shader);
+    t.w32(material + 4, buffer);
+    let any = rng.below(0x100);
+    let room = pick(rng, &[0x40, 0x80, 0x10, any]);
+    t.w32(buffer, room);
+    // the grad meshes the set-up stores: its own, the default or another
+    let grads: Vec<u32> = (0..4)
+        .map(|_| match rng.below(3) {
+            0 => mesh,
+            _ => {
+                let g = t.zeros(0x20);
+                let w = rng.next();
+                t.w32(g + 0x10, w);
+                g
+            }
+        })
+        .collect();
+    let grads = [grads[0], grads[1], grads[2], grads[3]];
+    t.stub_grad(h8::GRAD_MESHES_A, grads);
+    t.stub_grad(h8::GRAD_MESHES_B, grads);
+    let answers: Vec<u32> = (0..4)
+        .map(|_| {
+            if rng.chance(4) {
+                rng.next() | 1
+            } else {
+                rng.next() & 0xffff_ff00
+            }
+        })
+        .collect();
+    t.stub_crosses(&answers);
+    // the renderer, the globals
+    let renderer = t.zeros(0x200);
+    let pass = rng.next();
+    t.w32(renderer + 0x13c, pass);
+    let size = pick(
+        rng,
+        &[1024, 1024, 512, 1000, 0xffff_fc00, 7, 0, 0x7fff_ffff],
+    );
+    t.global(h8::SHADOW_SIZE, size);
+    for g in [h8::RATIO_A, h8::RATIO_C] {
+        let f = rng.float().to_bits();
+        t.global(g, f);
+    }
+    let set = rng.word();
+    t.global(h8::GRAD_MESH_SET, set);
+    // the parameters: none, or offset/size records (in two cases of
+    // three all fitting the buffer, which has room for 0x40 bytes)
+    let records = t.zeros(0x100);
+    let fit = !rng.chance(3);
+    if fit {
+        t.w32(buffer, 0x40);
+    }
+    for k in 0..0x10 {
+        let off = if fit {
+            pick(rng, &[4, 8, 0x10, 0x20])
+        } else {
+            pick(rng, &[0, 2, 4, 8, 0x10, 0x30, 0xf0])
+        } as u16;
+        let size = if fit {
+            pick(rng, &[0, 4, 8, 0x10, 0x2010])
+        } else {
+            pick(rng, &[0, 4, 8, 0x10, 0x10, 0x2010])
+        } as u16;
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..8)
+        .map(|_| {
+            if rng.chance(4) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x10)
+            }
+        })
+        .collect();
+    t.stub_seq(h8::FIND_PARAM, true, 1, 1, &values);
+    for (sym, n) in [
+        (h8::SET_COLOR_TARGET, 2),
+        (h8::SET_DEPTH_TARGET, 1),
+        (h8::BEGIN_SCENE, 1),
+        (h8::END_SCENE, 1),
+        (h8::SET_VIEWPORT, 4),
+        (h8::SET_SCISSOR, 4),
+        (h8::WRITE_PARAM, 2),
+    ] {
+        // the parameter writes and scene ends (a few calls) fail more often
+        let v = errors_n(
+            rng,
+            if sym == h8::WRITE_PARAM || sym == h8::END_SCENE {
+                10
+            } else {
+                300
+            },
+        );
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    let post = t.zeros(0x100);
+    let target = t.zeros(8);
+    let texture = t.zeros(0x40);
+    let (w, hgt) = (rng.next(), rng.next());
+    t.w32(texture + 0x1c, w);
+    t.w32(texture + 0x20, hgt);
+    // the target must be there: the original reads through it unchecked
+    t.w32(target, texture);
+    t.w32(post + 0x8c, target);
+    t.stub_ret(h8::POST_PROCESS, false, 0, 0, post);
+    let any = rng.next();
+    let solution = pick(rng, &[2, 3, 4, 4, any]);
+    let any = rng.next();
+    let keep = pick(rng, &[0, 0, 1, 0x100, any]);
+    args.copy_from_slice(&[renderer, solution, keep]);
+}
+
+const CASCADES_STUBS: &[(u32, K)] = &[
+    (h8::SET_CLEAR_COLOR, K::This(4)),
+    (h8::SET_CLEAR_DEPTH, K::This(1)),
+    (h8::CLEAR_SCENE, K::This(1)),
+    (h8::SET_CAMERA, K::This(1)),
+    (h8::RENDER_INSTANCE, K::This(4)),
+    (h8::SYNC_CASCADES, K::This(0)),
+    (h8::BUILD_RECTS, K::This(3)),
+    (h8::FREE, K::Cdecl(1)),
+];
+
+/// The port, its edge test calling the original (the stub) in the oracle.
+fn port_cascades(m: &mut G, this: u32, a: &[u32]) -> Out {
+    slots_at(m, a);
+    let mut crosses = |g: &mut G, this: u32, w: &[u32; 20]| -> u32 {
+        g.0.call(g.1, Conv::Cdecl, &[]).unwrap();
+        let at = g.0.rebase(h8::CROSSES_EDGE);
+        g.0.call(at, Conv::Thiscall(this), w).unwrap().eax
+    };
+    u(b8::render_cascades(
+        m,
+        frame_ebp(),
+        this,
+        a[0],
+        a[1],
+        a[2] as u8,
+        &mut crosses,
+    ))
+}
+
+#[rustfmt::skip]
+const CASES_CASCADES: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_cascades), ..method("render_cascades", 0x006c_9e50, This::Object, 3, CASCADES_STUBS, port_cascades) }), h8::FRAME, 0xc),
+];
+
+#[test]
+fn r2_batch3_render_cascades_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_CASCADES, n, &mut Rng(0xb3b2_0003));
+    });
+}

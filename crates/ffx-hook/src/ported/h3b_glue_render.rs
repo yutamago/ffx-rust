@@ -5,6 +5,7 @@
 //! shims keep no state.
 
 use super::{StackFrame, mem, ported};
+use ffx_bridge::Mem;
 use ffx_prender::h3b_glue1::bridge as b1;
 use ffx_prender::h3b_glue2::bridge as b2;
 use ffx_prender::h3b_glue3::bridge as b3;
@@ -12,6 +13,7 @@ use ffx_prender::h3b_glue4::bridge as b4;
 use ffx_prender::h3b_glue5::bridge as b5;
 use ffx_prender::h3b_glue6::bridge as b6;
 use ffx_prender::h3b_glue7::bridge as b7;
+use ffx_prender::h3b_glue8::bridge as b8;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -72,5 +74,37 @@ ported! {
     ShadowManager_renderCharacterTiles_006caee0 @ 0x006c_aee0 => extern "thiscall" fn render_character_tiles(this: u32, renderer: u32, solution: u32, keep: u32) -> u32 {
         let mut f = StackFrame::<0x62>::new();
         b7::render_character_tiles(&mut mem(), f.at() + 0x188, this, renderer, solution, keep as u8 != 0)
+    }
+
+    // ---- round 2, batch 3 (ffx_prender::h3b_glue8) ----
+    /// `ShadowManager_renderCascades_006c9e50(this; renderer, solution,
+    /// keep)`: the cascaded shadow maps; the first renderer error, 3, or
+    /// the final scissor's result. The original writes its `renderer`
+    /// slot; its callers don't read it after.
+    ShadowManager_renderCascades_006c9e50 @ 0x006c_9e50 => extern "thiscall" fn render_cascades(this: u32, renderer: u32, solution: u32, keep: u32) -> u32 {
+        let mut f = StackFrame::<0xa8>::new();
+        let ebp = f.at() + 0x290;
+        b8::render_cascades(&mut mem(), ebp, this, renderer, solution, keep as u8, &mut |_, this, w| caster_crosses_edge(this, w))
+    }
+}
+
+/// `ShadowManager_casterCrossesEdge_006c8f50(this; view 4x4 by value, flag,
+/// ratio, scale_x, scale_y)` (`ret 0x50`): twenty stack words, more than
+/// `call_thiscall` takes; `eax` (its `al` is the answer).
+fn caster_crosses_edge(this: u32, w: &[u32; 20]) -> u32 {
+    #[rustfmt::skip]
+    type F = unsafe extern "thiscall" fn(
+        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+    ) -> u32;
+    let f = mem().rebase(ffx_prender::h3b_glue8::CROSSES_EDGE);
+    // SAFETY: the function of this build at that address is a thiscall
+    // taking exactly twenty stack words, which it pops (`ret 0x50`).
+    unsafe {
+        let g = std::mem::transmute::<usize, F>(f as usize);
+        g(
+            this, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12],
+            w[13], w[14], w[15], w[16], w[17], w[18], w[19],
+        )
     }
 }
