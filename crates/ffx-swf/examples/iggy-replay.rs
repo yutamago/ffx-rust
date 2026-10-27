@@ -3,7 +3,7 @@
 //! screenshots:
 //!
 //! ```text
-//! iggy-replay <log> <out dir> [--vbf <FFX_Data.vbf>] [--no-pace]
+//! iggy-replay <log> <out dir> [--vbf <FFX_Data.vbf>] [--no-pace] [--smooth]
 //! ```
 //!
 //! Each Iggy player of the log becomes a Ruffle player of the same movie
@@ -18,8 +18,11 @@
 //! Ruffle did not know, and the external calls Ruffle made against the
 //! recorded ones.
 //!
+//! `--smooth` marks every bitmap fill smoothed before Ruffle loads the movie
+//! (`ffx_swf::patch`), as Iggy draws them.
+//!
 //! Ruffle's `getTimer` reads the wall clock, so the replay is paced to the
-//! game's time (the update count at 60 a second) unless `--no-pace`.
+//! game's time (the update count at 30 a second, the game's update rate) unless `--no-pace`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
@@ -50,10 +53,12 @@ fn main() -> Result<()> {
     let mut vbf =
         std::env::var_os("FFX_GAME_DIR").map(|d| PathBuf::from(d).join("data/FFX_Data.vbf"));
     let mut pace = true;
+    let mut smooth = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--vbf" => vbf = args.next().map(PathBuf::from),
             "--no-pace" => pace = false,
+            "--smooth" => smooth = true,
             _ => bail!("unknown argument {a}"),
         }
     }
@@ -119,6 +124,15 @@ fn main() -> Result<()> {
                     );
                     continue;
                 }
+                let patched;
+                let data = if smooth {
+                    let (d, n) = ffx_swf::patch::smooth_bitmap_fills(data)?;
+                    let _ = writeln!(report, "{name}: {n} bitmap fills marked smoothed");
+                    patched = d;
+                    &patched
+                } else {
+                    data
+                };
                 let stage = Stage::new(
                     &gpu,
                     data,
@@ -145,7 +159,7 @@ fn main() -> Result<()> {
             Event::Tick { player, update, .. } => {
                 if pace && let Some(u) = update {
                     let first = *first_update.get_or_insert(*u);
-                    let due = start + Duration::from_secs_f64(f64::from(u - first.min(*u)) / 60.0);
+                    let due = start + Duration::from_secs_f64(f64::from(u - first.min(*u)) / 30.0);
                     if let Some(wait) = due.checked_duration_since(Instant::now()) {
                         std::thread::sleep(wait);
                     }

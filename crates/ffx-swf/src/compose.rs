@@ -48,11 +48,15 @@ pub fn difference(a: &RgbImage, b: &RgbImage) -> (RgbImage, Diff) {
     let mut out = RgbImage::new(a.width(), a.height());
     let mut d = Diff::default();
     let mut sum = 0u64;
+    let mut signed = [0i64; 3];
     for ((pa, pb), o) in a.pixels().zip(b.pixels()).zip(out.pixels_mut()) {
         let m = (0..3).map(|c| pa[c].abs_diff(pb[c])).max().unwrap_or(0);
         sum += (0..3)
             .map(|c| u64::from(pa[c].abs_diff(pb[c])))
             .sum::<u64>();
+        for (c, acc) in signed.iter_mut().enumerate() {
+            *acc += i64::from(pb[c]) - i64::from(pa[c]);
+        }
         if m > 8 {
             d.over8 += 1;
         }
@@ -69,6 +73,8 @@ pub fn difference(a: &RgbImage, b: &RgbImage) -> (RgbImage, Diff) {
     } else {
         sum * 1000 / (3 * d.pixels)
     };
+    let n = i64::try_from(d.pixels.max(1)).unwrap_or(i64::MAX);
+    d.bias_milli = signed.map(|v| v * 1000 / n);
     (out, d)
 }
 
@@ -80,6 +86,9 @@ pub struct Diff {
     pub over32: u64,
     /// Mean absolute channel difference, in thousandths.
     pub mean_milli: u64,
+    /// Mean of `b - a` per channel (R, G, B), in thousandths: a colour or
+    /// brightness shift.
+    pub bias_milli: [i64; 3],
 }
 
 #[cfg(test)]

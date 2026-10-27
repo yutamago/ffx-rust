@@ -11,6 +11,7 @@ publish = false
 anyhow.workspace = true
 ffx-vbf.workspace = true
 futures = "0.3"
+png = "0.18"
 serde_json.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
 # Ruffle, pinned (MIT OR Apache-2.0). A dependency only; no Ruffle code is copied.

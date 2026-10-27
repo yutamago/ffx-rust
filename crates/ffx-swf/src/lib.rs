@@ -4,6 +4,7 @@
 
 pub mod compose;
 pub mod log;
+pub mod patch;
 pub mod stage;
 
 /// The `.swf` files under `ffx_data/gamedata/ps3data/flash/` of the

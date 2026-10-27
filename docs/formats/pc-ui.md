@@ -445,6 +445,160 @@ and `vorbis_synthesis_blockin`, counting them in the `u64` at `+0x178`.
 It stops early when `+0xd8` is 1 and does nothing when `+0x2a8` is set.
 Port: `ffx_pcui::video`.
 
+## Iggy calls
+
+What `FFX.exe` asks of `iggy_w32.dll` for the PC screens (M5 pilot,
+2026-10-27). Static: `tools/iggy-names.py` (every name the game hands its
+Iggy wrappers, by call site). Run time: the hook's Iggy call log
+(`FFX_IGGY_LOG=<file>`, `crates/ffx-hook/src/iggy_log.rs`,
+`tools/replays/run-all.sh --iggy-log`), which wraps 40 of the 41 imports
+(not the varargs `IggyGDrawSendWarning`) and the AS3 callback, and notes
+the harness's screenshots in the same sequence.
+
+**Movies.** `IggyMenu_ctor_00a288f0(path, x, y, w, h, flags)` reads the
+`.swf` from the archive and creates the player from memory
+(`Iggy_createPlayer_00a3e4f0`: `IggyPlayerCreateFromMemory` at
+`0x00a3d91d`, `InitializeAndTickRS`, `Play`, `Properties`). The pilot's
+screens:
+
+| Screen | Movie | Opened by |
+|---|---|---|
+| PC menu (Esc) and its pages | `escmenu.swf` (1280x720, 30 fps, 1 frame, AS3) | `PhyreScene_initScene` `0x0065f450` |
+| pause | `pausemenu.swf` | `PhyreScene_initScene` |
+| save and load lists | `saveload_jp.swf` for every language but Korean (9: `_kr`) and Chinese (10: `_ch`), English included; then `SetLanguage("JPN")` | `SaveLoadMenu_open_00702a80` |
+| tips; the only font | `box.swf` (`BOX%s.swf`), `TBUDGothic Std B` | `0x006e85f0` |
+| start-up logos | `OpeningScreen.swf` (1920x1080), callback `Finish` | `PhyreScene_beginRenderOpeningScreen` |
+
+The title menu (New Game / Load) is not Flash: it is the PS2 menu code;
+no Iggy player draws on the title.
+
+**AS3 functions the game calls** (`IggyMenu_callIggyAS3External`
+`0x00a28ba0`: `IggyPlayerCreateFastNameUTF8` at `0x00a28bcc`, then
+`IggyPlayerCallFunctionRS` at `0x00a28be7`, on the main thread; arguments
+are `IggyDataValue`s, see above; the result is never read). These are the
+names the movies register with `ExternalInterface.addCallback`.
+
+- `escmenu.swf`, at start-up: `SetLanguage(s)` ("INT" for English;
+  `FFEscMenu_setLanguage_0068f400`), `setHomePage(5 s)`,
+  `setSysSettingPage(3 s)`, `setAudioPage(s)`, `setVideoPage(s)`,
+  `setKeyBindingPage(2 s)`, `setKeyboardPage(3 s)`,
+  `setControllerPage(2 s)`, `setControlBar(3 s)`, `setSubTitle(4 s)`,
+  `setMouseVisible(b)` (`FFEscMenu_initializeMainSettingPage`);
+  `addVideoPageItem(n index, s kind, s label, s value, ref options, n)`
+  (12 rows; the options are a string array: `IggyValueRefCreateArray`,
+  `IggyValuePathFromRef`, `IggyValuePathMakeArrayRef` / `SetArrayIndex`,
+  `IggyValueSetStringUTF8RS` per entry; `IggyStringArray_ctor_006fcbc0`),
+  `videoSettingMSAAHDAOPopUpMessageInit(b, s, s)`,
+  `addAudioPageItem(n, s, s, s, n max, s callback)`,
+  `addControllerPageItem(n, s, s, s, s, s)`,
+  `addKeyboardPageItem(n, s, s, s, s, s, s, s)`,
+  `addSpecialFeaturePageItem(n, s, s, s, s)`,
+  `addChangeParaPageItem(n, s, s, s)`.
+- `escmenu.swf`, while open: `setEnableChangePara(b)`,
+  `setEnableSpecialFeature(b)`, `setEnableKeyBindings(b)`, `showEscMenu()`,
+  `onEscClose()`; the keys as calls: `keyUp()`, `nextItem()`,
+  `prevItem()`, `confirmSelect()`, `onCancelKey()`, `onConfirmKey()`,
+  `onDefaultKey()` (`FFEscMenu_update` `0x0068ffb0`); and `setHelpText(s)`,
+  `setKeyBinding(..)`, `showPopUpWithBtn(..)`, `showPopUpStd(s)`,
+  `changeSelectedBtn()`, `hidePopUpStd()`, `hidePopUpWithBtn()`.
+- `saveload_jp.swf`: `setMouseVisible(b)`, `showSaveLoad()`,
+  `SetLanguage(s)`, `clearSaveLoad()`, `showPopUpStd(s)`,
+  `addSaveLoadItem(n index, s slot, s place, s date, s name, s play time,
+  s, s, s party "_<n>", s thumbnail "m<n>", s label, s)`,
+  `setSaveLoadHelpText(s, s count)`, `setSaveLoadFocus(s index)`,
+  `hidePopUpStd()`, `showPopUpWithBtn(s, s yes, s no, b)`,
+  `changeSelectedBtn()`, `hidePopUpWithBtn()` (`SaveLoadMenu_open_00702a80`
+  and the `SaveDataMachine_*` helpers from `0x00702cd0`).
+- Others: `TipSystem` `OnPlay(n)`, `SpdCtrl` `OnEnable()` / `OnDisable()`,
+  pause `showPause(b)` / `hidePause()`.
+
+**AS3 calls into the game.** One callback for all players
+(`IggySetAS3ExternalFunctionCallbackUTF8` at `0x00a26466`, in
+`IggyMenuManager_init_00a262e0`): `IggyMenuManager_callback_00a260f0`
+(stdcall(user, player, call); the call is the name pointer and length, the
+argument count at +8, `IggyDataValue`s from +0x10) hashes the name (DJB)
+and runs every handler registered for that name and player
+(`IggyMenu_addCallback_00a28e90`, `IggyCallbackTable_add_00a266b0`); it
+returns 1. Names: `EscMenuResume`, `EscMenuQuit`, `EscMenuOnConfirmKey`,
+`EscMenuVideoSettingRefresh`, `EscMenuAudioSettingRefresh`,
+`EscMenuKeyboardSettingRefresh`, `EscMenuControllerSettingRefresh`,
+`EscMenuStartKeyEditing`, `EscMenuStartControllerEditing`,
+`EscMenuHelpTextRefresh` (an array of two numbers, page id and index, read
+with `IggyValueRefFromTempRef` and `IggyMenu_getArrayS32_00a28b20`; the
+game answers by calling `setHelpText`), `EscMenuButtonClick`,
+`EscMenuPopUpConfirmed`, `EscMenuKeyboardSettingIncomplete`,
+`EscMenuControllerSettingIncomplete`, `EscMenuOnDefaultKey`,
+`playEscSound(s)` ("change", "click", "cancel": the game plays the sound)
+(`FFEscMenu_registerCallbacks` `0x0068fd40`); `ExitAudioMenu(n)` and the
+four volume callbacks (`FFEscMenu_registerAudioPreviewCallbacks`);
+`getLocByStr`, `getLocById`, `getFontBitmapSuffix` (players opened by
+`IggyPlayerOpen_006e93f0` / `IggyPlayerOpenScaled_006e9250`: the answer is
+a string put into `IggyPlayerCallbackResultPath` with
+`IggyValueSetStringUTF8RS`); `Finish` (opening); `Hide` (button icons).
+`saveload_jp.swf` makes no external calls: the save/load machine reads the
+keys itself and drives the list by calls.
+
+**Input.** Keys reach the movies only as the AS3 calls above. The mouse:
+each frame `IggyMenuManager_dispatchMouse_00a26ce0` builds
+`IggyMakeEventNone` + `IggyMakeEventMouseMove(x, y)` (and `MouseButton`
+1-6 / `MouseWheel` from `IggyMouseQueue_update_00a25ab0`), and
+`IggyMenu_handleMouseEvent_00a28c10` dispatches it
+(`IggyPlayerDispatchEventRS`) to each enabled menu; event type 7 is a
+move. Harness games keep the cursor far off screen (-32108, -32131).
+
+**Display, viewport, ticking.** The movies are 1280x720 at 30 fps
+(`IggyPlayerProperties`: width, height, the frame rate twice as `f32`).
+`IggyMenuManager_SetViewport_00a26a20` fits the menus to the window
+against `g_IggyTargetAspect` (above); each draw sets
+`IggyPlayerSetDisplaySize` (1280x720 in the harness) on the render thread.
+A queued draw (`IggyMenu_Draw_00a28eb0`, `IggyPlayer_QueueDraw_00a3d9b0`,
+command `0x00a3d6d0`) runs `while IggyPlayerReadyToTick: IggyPlayerTickRS`
+(`0x00a3da30`, `0x00a3da3c`), `SetDisplaySize` (`0x00a3dab2`),
+`GetBackgroundColor` (`0x00a3dac4`) and `IggyPlayerDraw` (`0x00a3dafe`).
+The game updates 30 times a second, so a visible menu ticks once per
+update (3,001 ticks over 3,000 updates of the PC menu in the pilot);
+hidden menus are not drawn and do not tick. `GotoFrameRS` is never called
+on these screens.
+
+## Ruffle (M5 pilot)
+
+`crates/ffx-swf` plays the same movies with Ruffle (a pinned dependency,
+MIT OR Apache-2.0; no Ruffle code copied). `iggy-replay` replays a call
+log; `swf-compare` builds the comparison page
+(`~/ffx-work/m5/swf-pilot/index.html`). The mapping:
+
+| Iggy | Ruffle |
+|---|---|
+| `IggyPlayerCreateFromMemory` | `SwfMovieData::from_data`, `PlayerBuilder` with a wgpu `TextureTarget`, transparent window mode |
+| `IggyPlayerCallFunctionRS(name, args)` | `Player::call_internal_interface` (the `addCallback` names); string arrays (type 9 refs) become `Value::List` |
+| AS3 callback | an `ExternalInterfaceProvider` answering the recorded result strings |
+| `IggyPlayerTickRS` | `Player::tick(1/fps)` (one frame, timers by the same time) |
+| `IggyPlayerSetDisplaySize` | `set_viewport_dimensions` |
+| `DispatchEventRS` mouse move | `PlayerEvent::MouseMove` |
+| `IggyPlayerDraw` | `render` + `capture_frame` |
+
+Mismatches found:
+
+- Fonts: the movies' text formats name `$NormalFont` and `$TitleFont`
+  (`FontSetting`, `GetFontType`). Iggy resolves both to the font the game
+  loaded (`box.swf`'s DefineFont3); Ruffle needs it registered as a device
+  font under those names (`stage::GameFont`). With that, glyphs, metrics
+  and line breaks match.
+- Bitmap smoothing: Iggy smooths every bitmap; Ruffle follows the fill
+  flags and AS3 `Bitmap.smoothing` (default false), so portraits and
+  thumbnails are crisper. `patch::smooth_bitmap_fills` fixes the fills
+  (3 in `escmenu.swf`, none in `saveload_jp.swf`); AS3 bitmaps would need
+  a Ruffle option.
+- Text: Iggy's glyphs are softer (glyph cache, bilinear); Ruffle draws the
+  outlines with MSAA. Same positions.
+- `getTimer` in Ruffle reads the wall clock (`Instant::now`). The pilot
+  screens' tweens are frame-based (the same images paced or unpaced), but
+  a time-based tween would need a clock hook in Ruffle for lockstep.
+- The first frame after `showEscMenu`: Iggy already draws the page,
+  Ruffle one tick later.
+- Ruffle needs `ExternalInterface` available (a provider set), or the
+  movies' `addCallback` calls do nothing.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

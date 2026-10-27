@@ -1293,6 +1293,7 @@ dependencies = [
  "ffx-vbf",
  "futures",
  "image",
+ "png",
  "ruffle_core",
  "ruffle_render_wgpu",
  "serde_json",
