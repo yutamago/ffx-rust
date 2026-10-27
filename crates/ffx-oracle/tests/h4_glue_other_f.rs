@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
-use ffx_glue_other::h4_k1 as k1;
+use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1032,4 +1032,337 @@ fn k1_update() {
         }
         assert!(ran > 0, "{name}");
     }
+}
+
+// ---- batch 2 (ffx_glue_other::h4_k2)
+
+/// A bump allocator at the original `sym` (cdecl, logging `n` words):
+/// 0x40 bytes from `heap` per call, or 0 while the cell `fail` is set.
+/// Returns `fail`.
+fn stub_bump(t: &mut Twins, sym: u32, n: u32, heap: u32) -> u32 {
+    let next = t.zeros(4);
+    t.w32(next, heap);
+    let fail = t.zeros(4);
+    let rest = t.stub_code(sym, false, n, 0, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x31, 0xc0, 0x83, 0x3d]; // xor eax, eax; cmp dword [fail], 0
+    c.extend(fail.to_le_bytes());
+    c.extend([0x00, 0x75, 0x0c]); // jne +12 (store 0)
+    c.push(0xa1);
+    c.extend(next.to_le_bytes()); // mov eax, [next]
+    c.extend([0x83, 0x05]);
+    c.extend(next.to_le_bytes());
+    c.push(0x40); // add dword [next], 0x40
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+    let f = t.code(&c);
+    t.jump(sym, f);
+    fail
+}
+
+/// A string in fresh memory; its address.
+fn string(t: &mut Twins, s: &[u8]) -> u32 {
+    let mut b = s.to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+/// `TextUtil_appendLine`: lines with an empty slot (the empty string
+/// itself, another empty string, owned or not) or none, null slots, no
+/// text, failed allocations, the bitmap text there or not.
+#[test]
+fn k2_append_line() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_5e30);
+        let heap = t.zeros(0x4_0000);
+        let fail = stub_bump(&mut t, k2::MALLOC, 2, heap);
+        let stubs = [
+            (k2::FREE, false, 1, 0),
+            (k2::PUSH_INTO, true, 2, 2),
+            (k2::BUILDER_APPEND, true, 1, 1),
+            (k2::SET_TEXT, true, 1, 1),
+            (k2::SCROLL_TO_VISIBLE, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // pushInto counts the new line, as the array's own does
+        let rest = t.stub_code(k2::PUSH_INTO, true, 2, 2, false, &[]);
+        let mut c = vec![0xff, 0x01, 0xe9]; // inc dword [ecx]; jmp rest
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(k2::PUSH_INTO, f);
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let slot = t.ebp_for(1) + 8;
+        let empty = t.rebase(k2::EMPTY);
+        let mut found = 0;
+        for i in 0..600 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(fail, rng.pick(&[0, 0, 0, 1]));
+            let n = rng.pick(&[0, 1, 2, 4]);
+            let slots = t.zeros(4 * n as usize + 8);
+            let mut has_empty = false;
+            for k in 0..n {
+                let s = match rng.below(7) {
+                    0 => empty,
+                    1 => empty | 1,
+                    2 => string(&mut t, b""),
+                    3 => 0,
+                    4 => 1,
+                    _ => {
+                        let len = rng.below(6) as usize;
+                        let text: Vec<u8> = (0..len).map(|_| b'a' + rng.below(3) as u8).collect();
+                        string(&mut t, &text)
+                    }
+                };
+                let s = if rng.below(4) == 0 { s | 1 } else { s };
+                let line = s & !1;
+                has_empty |= line == empty || (line > 1 && Mem::read::<u8>(&t.a, line) == 0);
+                t.w32(slots + 4 * k, s);
+            }
+            // the pushed line's slot
+            let pushed = string(&mut t, b"new");
+            t.w32(slots + 4 * n, pushed);
+            let this = random_block(&mut t, &mut rng, 0x80);
+            let top = rng.pick(&[0, 0x8000_0000]);
+            t.w32(this + 0x74, n | top);
+            t.w32(this + 0x78, slots);
+            let r = rng.next();
+            t.w32(this + 0x10, rng.pick(&[0, r]));
+            t.w32(this + 0x1c, rng.pick(&[0, 1, 5, 0x8000_0000]));
+            let len = rng.below(8) as usize;
+            let text: Vec<u8> = (0..len).map(|_| b'A' + rng.below(26) as u8).collect();
+            let s = string(&mut t, &text);
+            let text = rng.pick(&[s, s, s, 0]);
+            found += u32::from(has_empty);
+            t.check_framed_conv(
+                &w,
+                0x006f_5e30,
+                Conv::Thiscall(this),
+                &[text],
+                slot,
+                &[(0, 4)],
+                |g| u(k2::append_line(g, slot, this, text)),
+            );
+        }
+        assert!(found > 0, "{name}");
+    }
+}
+
+/// `RemapButtonIcon_remapIconPosition`: every button with kind 6 and
+/// others, the countdown 0..4, the machine 0..4, quads with signed zeros,
+/// NaNs and infinities, the shifts random or the image's.
+#[test]
+fn k2_remap_icon_position() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_6a50);
+        let shifts = [
+            k2::SHIFT_3,
+            k2::SHIFT_5,
+            k2::SHIFT_19,
+            k2::SHIFT_3_9,
+            k2::SHIFT_13,
+            k2::SHIFT_6_5,
+            k2::SHIFT_4,
+            k2::SHIFT_2_5,
+            k2::SHIFT_2,
+            k2::SHIFT_0_5,
+            k2::SHIFT_MINUS_7,
+            k2::SHIFT_MINUS_5,
+        ];
+        let real: Vec<u64> = shifts
+            .iter()
+            .map(|&c| Mem::read::<u64>(&t.a, t.rebase(c)))
+            .collect();
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            if rng.below(2) == 0 {
+                t.constants(&mut rng, &[], &shifts);
+            } else {
+                for (k, &c) in shifts.iter().enumerate() {
+                    let at = t.rebase(c);
+                    t.write(at, &real[k].to_le_bytes());
+                }
+            }
+            t.g32(k2::REMAP_COUNTDOWN, rng.below(5));
+            let this = random_block(&mut t, &mut rng, 0x154);
+            t.w32(this + 0x150, rng.below(5));
+            let quad = t.zeros(0x80);
+            for k in 0..0x20 {
+                let f = rng.float();
+                t.w32(quad + 4 * k, rng.pick(&[f, f, f, 0, 0x8000_0000]));
+            }
+            let kind = rng.pick(&[6, 6, 0, 5, 7]);
+            let button = rng.pick(&[
+                0x20, 0x38, 0x39, 0x40, 0x40, 0x41, 0x42, 0x43, 0x44, 0x46, 0x48, 0x49, 0x4c, 0x45,
+                0x50, 0,
+            ]);
+            t.check_conv(
+                &w,
+                0x006e_6a50,
+                Conv::Thiscall(this),
+                &[kind, quad, button],
+                |g| u(k2::remap_icon_position(g, this, kind, quad, button)),
+            );
+        }
+    }
+}
+
+/// `LoadingScreen_update_006e50a0`: no frames, mesh or shader; every
+/// state with and without show flags; times around the hold time and
+/// the fades around their ends (equal operands, NaN); frame clocks over
+/// several frame times; the constants random or the image's.
+#[test]
+fn k2_loading_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_50a0);
+        let stubs = [
+            (k2::GET_APPLICATION, false, 0, 0),
+            (k2::SLEEP_MS, false, 1, 0),
+            (k2::LINEAR_SAMPLER, true, 1, 1),
+            (k2::FIND_BY_NAME, true, 1, 1),
+            (k2::SET_TEXTURE_CHECKED, true, 2, 2),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        // SetValue records its value's fourth word in sequence
+        let seq = t.zeros(4);
+        let rest = t.stub_code(k2::SET_VALUE, true, 2, 2, false, &[]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x40, 0x0c, 0x8b, 0x15];
+        c.extend(seq.to_le_bytes()); // eax = [[esp+8]+0xc]; edx = [seq]
+        c.extend([0x89, 0x02, 0x83, 0x05]); // mov [edx], eax; add dword [seq], 4
+        c.extend(seq.to_le_bytes());
+        c.extend([0x04, 0xe9]);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes()); // jmp rest
+        let f = t.code(&c);
+        t.jump(k2::SET_VALUE, f);
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.push(k2::SET_VALUE);
+        // the frame times stay positive (the clock loop subtracts one
+        // until the clock is below the other, as long as that takes)
+        let f32s = [k2::HOLD, k2::FADE_FULL];
+        let f64s = [k2::STEP_LIMIT, k2::FADE_RATE, k2::SCALE_DIVISOR];
+        let real32: Vec<u32> = f32s.iter().map(|&c| Mem::read(&t.a, t.rebase(c))).collect();
+        let real64: Vec<u64> = f64s.iter().map(|&c| Mem::read(&t.a, t.rebase(c))).collect();
+        let ebp = t.ebp_for(1);
+        let frame = ebp - 0x14;
+        let mut sleeps = 0;
+        for i in 0..2000 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let records = t.zeros(0x10);
+            t.w32(seq, records);
+            if rng.below(4) == 0 {
+                t.constants(&mut rng, &f32s, &f64s);
+            } else {
+                for (k, &c) in f32s.iter().enumerate() {
+                    t.g32(c, real32[k]);
+                }
+                for (k, &c) in f64s.iter().enumerate() {
+                    let at = t.rebase(c);
+                    t.write(at, &real64[k].to_le_bytes());
+                }
+            }
+            let frame_time = rng.pick(&[0.04f32, 0.04, 0.03, 0.05]);
+            t.g32(k2::FRAME_TIME, frame_time.to_bits());
+            let ft64 = rng.pick(&[0.04f64, 0.04, 0.03, 0.05]);
+            let at = t.rebase(k2::FRAME_TIME_F64);
+            t.write(at, &ft64.to_le_bytes());
+            let app = t.zeros(0x3a4);
+            t.w8(app + 0x3a0, 1);
+            t.ret(k2::GET_APPLICATION, app);
+            let hold: u32 = Mem::read(&t.a, t.rebase(k2::HOLD));
+            let rate: f64 = f64::from_bits(Mem::read(&t.a, t.rebase(k2::FADE_RATE)));
+            let this = random_block(&mut t, &mut rng, 0x48);
+            t.w8(this, rng.pick(&[0, 0, 1]));
+            t.w8(this + 1, rng.pick(&[0, 0, 2]));
+            let step_max = rng.pick(&[0.05f32, 0.05, 0.1, -0.5]);
+            t.g32(k2::STEP_MAX, step_max.to_bits());
+            // bounded steps (the clock loop runs once per frame time)
+            let f = rng.float();
+            let dt = match rng.below(6) {
+                0 if f32::from_bits(f).abs() < 10.0 || f32::from_bits(f).is_nan() => f,
+                1 => 0,
+                2 => (-(rng.below(500) as f32) / 1000.0).to_bits(),
+                _ => (rng.below(120) as f32 / 1000.0).to_bits(),
+            };
+            // finite clocks only (an infinite one never leaves the loop)
+            let f = rng.float();
+            let clock = match rng.below(5) {
+                0 if f32::from_bits(f).abs() < 10.0 || f32::from_bits(f).is_nan() => f,
+                1 => frame_time.to_bits(),
+                _ => (rng.below(200) as f32 / 1000.0).to_bits(),
+            };
+            t.w32(this + 4, clock);
+            let time = match rng.below(5) {
+                0 => rng.float(),
+                1 => hold,
+                _ => (1.3 + rng.below(400) as f32 / 1000.0).to_bits(),
+            };
+            t.w32(this + 8, time);
+            let count = rng.pick(&[0, 1, 3, 7]);
+            t.w32(this + 0xc, rng.below(count.max(1)));
+            t.w32(this + 0x10, rng.pick(&[0, 0, 1, 1, 2, 3, 3, 4]));
+            let fade = match rng.below(5) {
+                0 => rng.float(),
+                1 => store_f32(rate),
+                2 => 0,
+                _ => (rng.below(1000) as f32 / 1000.0).to_bits(),
+            };
+            t.w32(this + 0x14, fade);
+            t.w32(this + 0x20, count | rng.pick(&[0, 0x8000_0000]));
+            let textures = random_block(&mut t, &mut rng, 0x20);
+            t.w32(this + 0x24, textures);
+            let r = rng.next();
+            t.w32(this + 0x2c, rng.pick(&[r, r, r, 0]));
+            let r = rng.next();
+            t.w32(this + 0x30, rng.pick(&[r, r, r, 0]));
+            for off in [0x38, 0x40] {
+                let material = random_block(&mut t, &mut rng, 8);
+                let materials = t.zeros(0x10);
+                let n = rng.pick(&[1, 2]);
+                t.w32(materials, n);
+                if n == 1 {
+                    t.w32(materials + 4, material);
+                } else {
+                    let list = t.zeros(8);
+                    t.w32(list, material);
+                    t.w32(materials + 4, list);
+                }
+                let instance = random_block(&mut t, &mut rng, 0x20);
+                t.w32(instance + 0x10, materials);
+                t.w32(this + off, instance);
+            }
+            t.check_framed_conv(
+                &w,
+                0x006e_50a0,
+                Conv::Thiscall(this),
+                &[dt],
+                frame,
+                &[(0, 0x10), (0x1c, 4)],
+                |g| {
+                    k2::loading_update(g, frame, this, dt);
+                    Out::None
+                },
+            );
+            let log = t.log_entries();
+            for k in 0..log {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                sleeps += u32::from(tag == k2::SLEEP_MS);
+            }
+        }
+        assert!(sleeps > 0, "{name}");
+    }
+}
+
+/// An `f64` as `fstp dword` stores it.
+fn store_f32(x: f64) -> u32 {
+    x87::store(x)
 }

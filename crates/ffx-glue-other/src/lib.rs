@@ -109,7 +109,9 @@
 //! - [`h4_j5`]: its fifth batch: the text utility's asset hook-up and the
 //!   character shader's render data;
 //! - [`h4_j6`]: its sixth batch: the guild map's dynamic geometry update;
-//! - [`h4_k1`]: continuation round 9, batch 1: the VFX line render data.
+//! - [`h4_k1`]: continuation round 9, batch 1: the VFX line render data,
+//!   the blur effect's render and update, the extended blur's pass;
+//! - [`h4_k2`]: its second batch: the text utility's line append.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -176,6 +178,7 @@ pub mod h4_j4;
 pub mod h4_j5;
 pub mod h4_j6;
 pub mod h4_k1;
+pub mod h4_k2;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;

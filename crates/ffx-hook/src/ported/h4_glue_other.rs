@@ -18,7 +18,7 @@ use ffx_glue_other::{
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
-    menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_k2 as k2, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2552,6 +2552,21 @@ ported! {
     /// `BlurEffect_update_006c3d40(this; dt)` (`dt` is never read).
     BlurEffect_update_006c3d40 @ 0x006c_3d40 => extern "thiscall" fn blur_effect_update(this: u32, _dt: u32) -> u32 {
         k1::update(&mut mem(), this, &mut |_, a, b| ci_fmod(a, b))
+    }
+    // ---- continuation round 9, batch 2 (ffx_glue_other::h4_k2)
+    /// `TextUtil_appendLine(this; text)`.
+    TextUtil_appendLine @ 0x006f_5e30 => extern "thiscall" fn text_util_append_line(this: u32, text: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k2::APPEND_FRAME / 4) as usize }>::new();
+        k2::append_line(&mut mem(), frame.at(), this, text)
+    }
+    /// `RemapButtonIcon_remapIconPosition(this; kind, quad, button)`.
+    RemapButtonIcon_remapIconPosition @ 0x006e_6a50 => extern "thiscall" fn remap_icon_position(this: u32, kind: u32, quad: u32, button: u32) -> u32 {
+        k2::remap_icon_position(&mut mem(), this, kind, quad, button)
+    }
+    /// `LoadingScreen_update_006e50a0(this; dt)` (callers read no result).
+    LoadingScreen_update_006e50a0 @ 0x006e_50a0 => extern "thiscall" fn loading_screen_update(this: u32, dt: u32) {
+        let mut frame = StackFrame::<{ (k2::LOADING_FRAME / 4) as usize }>::new();
+        k2::loading_update(&mut mem(), frame.at(), this, dt);
     }
 }
 
