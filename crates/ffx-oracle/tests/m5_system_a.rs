@@ -1456,6 +1456,543 @@ fn platform_achievements_match_the_original() {
     });
 }
 
+/// `fiosOpen(name, mode)` with its callees stubbed: `operator new`
+/// failing or not, `isOpen` 0, 1 and 0x100 (only `al`), the error path
+/// with and without the string resource and with the `CString`'s
+/// reference count reaching 0 or not (a fake string manager: its vtable
+/// slot 3 gives a nil string block whose owner's slot 1 frees it). The
+/// `CString` lives in the `mode` argument slot in both oracles.
+#[test]
+fn platform_fios_open_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0679_0009);
+        let manager = t.rebase(pf::STRING_MANAGER);
+        for case in 0..80 {
+            t.reset();
+            let owner = t.object(&[(0, 0), (1, 0x5252_0001)]);
+            let refs = [1u32, 2, 0, 0xffff_fffb][rng.below(4) as usize];
+            let nil = t.words(&[owner, 0, 0, refs, 0, 0]);
+            let fake = t.object(&[(0, 0), (0, 0), (0, 0), (0, nil)]);
+            let vt = t.r32(fake);
+            t.patch(manager, &vt.to_le_bytes());
+            let file = if rng.chance(5) { 0 } else { t.zeros(8) };
+            let open = [0u32, 1, 0x100, 0x7f01][rng.below(4) as usize];
+            let info = if rng.chance(2) { 0 } else { 0x5252_0002 };
+            t.stubs(&[
+                (pf::OPERATOR_NEW, false, 1, 0, file),
+                (pf::STREAM_FILE_CTOR, true, 5, 5, 0x5252_0003),
+                (pf::STREAM_FILE_IS_OPEN, true, 0, 0, open),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x5252_0004),
+                (pf::FIND_STRING_RESOURCE, false, 2, 0, info),
+                (pf::LOAD_STRING_RESOURCE, true, 2, 2, 0x5252_0005),
+                (pf::RESET_TO_LAUNCHER, false, 0, 0, 0x5252_0006),
+            ]);
+            t.stub_import(pf::SHOW_CURSOR_IAT, false, 1, 1, 0x5252_0007);
+            t.stub_import(pf::MESSAGE_BOX_IAT, false, 4, 4, 0x5252_0008);
+            let name = rng.next();
+            let mode = rng.word();
+            let what = format!(
+                "fiosOpen #{case} file {file:#x} open {open:#x} info {info:#x} refs {refs:#x}"
+            );
+            t.check_framed(
+                &what,
+                0x0067_9730,
+                Conv::Cdecl,
+                &[name, mode],
+                0,
+                |m, ebp| Out::U32(pf::fios_open(m, name, mode, ebp + 0xc)),
+            );
+        }
+    });
+}
+
+/// `sceOpen(name, mode)` with `memset`, `memcpy`, `fiosUnifyFilename`,
+/// `fiosIsFileExist` and `fiosOpen` stubbed: names of 0..40 bytes after
+/// the 7-byte device, the file there or not, `fiosOpen` failing or not.
+/// The frame (two 0x400-byte paths) is compared but for the cookie.
+#[test]
+fn platform_sce_open_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x062f_000a);
+        t.skip = 4;
+        for case in 0..40 {
+            t.reset();
+            let mut name = b"cdrom0:".to_vec();
+            for _ in 0..rng.below(40) {
+                name.push(b'a' + rng.below(26) as u8);
+            }
+            name.push(0);
+            let name = t.alloc(&name);
+            let exists = u32::from(!rng.chance(3));
+            let file = if rng.chance(3) { 0 } else { 0x5353_0001 };
+            t.stubs(&[
+                (pf::MEMSET, false, 3, 0, 0x5353_0002),
+                (pf::MEMCPY, false, 3, 0, 0x5353_0003),
+                (pf::UNIFY_FILENAME, false, 3, 0, 0x5353_0004),
+                (pf::FILE_EXISTS, false, 1, 0, exists),
+                (pf::FIOS_OPEN, false, 2, 0, file),
+            ]);
+            let mode = rng.word();
+            let what = format!("sceOpen #{case} exists {exists} file {file:#x}");
+            // a random frame: the stubs write nothing, so every byte the
+            // two write shows (the prefix's terminator stays the frame's)
+            let init: Vec<u8> = (0..pf::SCE_OPEN_FRAME).map(|_| rng.next() as u8).collect();
+            t.check_framed_init(
+                &what,
+                0x0062_fa30,
+                Conv::Cdecl,
+                &[name, mode],
+                pf::SCE_OPEN_FRAME,
+                &init,
+                |m, ebp| Out::U32(pf::sce_open(m, ebp, name, mode)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// `TOSetEnvMovieMessage`, `TOGetFFXLangJmp` and
+/// `ToDrawEternalCalmCopyRight` with `Sg_GetDispMode`, `TOGetFFXLang` and
+/// `graphicDrawUIElement` stubbed: the emulated GS register page mapped in
+/// both oracles, the fade at every edge (`frame` negative, 0x1f, 0x20,
+/// 0x10f, 0x110 and up; the fade's word from -8 to 0x90). The copyright
+/// quad's frame is compared (zero where the original never writes: the
+/// junk-read words) but for the cookie.
+#[test]
+fn platform_title_glue_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x08af_000b);
+        t.a.map_zeroed(pf::GS_PMODE, 0x1000).unwrap();
+        t.b.map_zeroed(pf::GS_PMODE, 0x1000).unwrap();
+        for case in 0..60 {
+            t.reset();
+            let mode = [0u32, 1, 5, 0x100][rng.below(4) as usize];
+            let lang = [0u32, 1, 2, 9][rng.below(4) as usize];
+            t.stubs(&[
+                (pf::GET_DISP_MODE, false, 0, 0, mode),
+                (pf::GET_FFX_LANG, false, 0, 0, lang),
+                (pf::DRAW_UI_ELEMENT, false, 5, 0, 0x5454_0001),
+            ]);
+            t.w32(pf::GS_PMODE, rng.next());
+            t.w32(pf::GS_PMODE + 4, rng.next());
+            let what = format!("TOSetEnvMovieMessage #{case} mode {mode:#x}");
+            t.check(&what, 0x008a_f590, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::set_env_movie_message(m))
+            });
+            let what = format!("TOGetFFXLangJmp #{case}");
+            t.check(&what, 0x008a_c2f0, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::get_ffx_lang_jmp(m))
+            });
+            let alpha =
+                [0xffff_fff8u32, 0, 3, 4, 0x7c, 0x7d, 0x80, 0x84, 0x90][rng.below(9) as usize];
+            t.g32(pf::COPYRIGHT_ALPHA, alpha);
+            let frame = [0xffff_fff0u32, 0, 0x1f, 0x20, 0x10f, 0x110, 0x400][rng.below(7) as usize];
+            t.skip = 4;
+            let what = format!(
+                "ToDrawEternalCalmCopyRight #{case} frame {frame:#x} alpha {alpha:#x} lang {lang}"
+            );
+            t.check_framed(
+                &what,
+                0x0090_4a70,
+                Conv::Cdecl,
+                &[frame],
+                pf::COPYRIGHT_FRAME,
+                |m, ebp| Out::U32(pf::draw_copyright(m, ebp, frame)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `JobSchedule_JobScheduler_waitForComplete(this; queue)` and
+/// `JobScheduleWait_Ch_Cloth_PerCharacter` with the semaphore imports
+/// stubbed (stdcall): queues 0..2, counts below, at and above 8 and
+/// negative.
+#[test]
+fn platform_job_waits_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06db_000c);
+        for case in 0..40 {
+            t.reset();
+            t.stub_import(pf::WAIT_FOR_SINGLE_OBJECT_IAT, false, 2, 2, 0);
+            t.stub_import(pf::RELEASE_SEMAPHORE_IAT, false, 3, 3, 1);
+            let this = t.alloc(
+                &(0..0x1e8 * 3 + 0x300)
+                    .map(|_| rng.next() as u8)
+                    .collect::<Vec<_>>(),
+            );
+            for q in 0..3 {
+                let count = [0u32, 7, 8, 9, 0xffff_ffff][rng.below(5) as usize];
+                t.w32(this + q * 0x1e8 + 0x1f8, count);
+            }
+            let queue = rng.below(3);
+            let what = format!("waitForComplete #{case} queue {queue}");
+            t.check(&what, 0x006d_bf50, Conv::Thiscall(this), &[queue], |m| {
+                pf::wait_for_complete(m, this, queue);
+                Out::None
+            });
+            t.g32(pf::CLOTH_SCHEDULER, this);
+            let what = format!("JobScheduleWait_Ch_Cloth_PerCharacter #{case}");
+            t.check(&what, 0x00a4_4b30, Conv::Cdecl, &[], |m| {
+                pf::wait_cloth(m);
+                Out::None
+            });
+        }
+    });
+}
+
+/// The loading screen's `unloadTextures`, `terminate` and destructor
+/// (`0x00634790`), `CDataFrameQueue_dtor` and `VbfMkvReader_dtor`, with
+/// the cluster manager, `PCluster`'s destructor, `PhyreFree` and
+/// `operator delete` stubbed: the clusters at `+0x28` and `+0x34` set or
+/// not, the arrays' counts negative or not, the reader's file set or not.
+#[test]
+fn platform_dtors_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06e5_000d);
+        for case in 0..40 {
+            t.reset();
+            t.stubs(&[
+                (pf::CLUSTER_MANAGER, false, 0, 0, 0x5555_0001),
+                (pf::RELEASE_CLUSTER, true, 1, 1, 0x5555_0002),
+                (pf::CLUSTER_DTOR, true, 0, 0, 0x5555_0003),
+                (pf::PHYRE_FREE, false, 1, 0, 0x5555_0004),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x5555_0005),
+            ]);
+            let clusters: Vec<u32> = (0..20).map(|_| rng.next()).collect();
+            let clusters = t.words(&clusters);
+            let mut words: Vec<u32> = (0..16).map(|_| rng.next()).collect();
+            words[0x1c / 4] = clusters;
+            words[0x28 / 4] = if rng.chance(2) { 0 } else { rng.next() };
+            words[0x34 / 4] = if rng.chance(2) { 0 } else { rng.next() };
+            words[0x18 / 4] = [0u32, 3, 0x8000_0000, 0xffff_ffff][rng.below(4) as usize];
+            words[0x20 / 4] = [0u32, 3, 0x8000_0000, 0xffff_ffff][rng.below(4) as usize];
+            for (sym, name) in [
+                (0x006e_5050u32, "unloadTextures"),
+                (0x006e_5020, "terminate"),
+                (0x0063_4790, "dtor"),
+            ] {
+                let this = t.words(&words);
+                let what = format!("LoadingScreen {name} #{case}");
+                t.check(&what, sym, Conv::Thiscall(this), &[], |m| match sym {
+                    0x006e_5050 => Out::U32(pf::unload_textures(m, this)),
+                    0x006e_5020 => Out::U32(pf::terminate(m, this)),
+                    _ => {
+                        pf::loading_screen_dtor(m, this);
+                        Out::None
+                    }
+                });
+            }
+            let this = t.words(&[
+                rng.next(),
+                0,
+                0,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            ]);
+            let what = format!("CDataFrameQueue_dtor #{case}");
+            t.check(&what, 0x00a3_dd50, Conv::Thiscall(this), &[], |m| {
+                pf::data_frame_queue_dtor(m, this);
+                Out::None
+            });
+            let what = format!("VbfMkvReader_dtor #{case}");
+            t.check(&what, 0x00a3_e040, Conv::Thiscall(this), &[], |m| {
+                pf::vbf_mkv_reader_dtor(m, this);
+                Out::None
+            });
+        }
+    });
+}
+
+/// `0x00633fe0`, `0x00634220`, `0x006e3f10`, `0x00691b00`, `0x0069a0e0`
+/// and `code_00686fe0` with their callees stubbed. The tree's remove stub
+/// unlinks nothing, so the first node is moved by hand: a stub that
+/// writes the next node into `+0xc` (a chain of 0..4 nodes ending at the
+/// tree itself or at null; buffers set or not). The list: 0..4 nodes; the
+/// vector's block set or not. The managers: present or not.
+#[test]
+fn platform_teardown_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0633_000e);
+        for case in 0..60 {
+            t.reset();
+            // the tree: nodes chained through +0 (the remove stub follows it)
+            let n = rng.below(5) as usize;
+            let tree = t.zeros(0x40);
+            let mut nodes = Vec::new();
+            for _ in 0..n {
+                let buf = if rng.chance(3) { 0 } else { rng.next() };
+                let mut w = vec![0u32; 8];
+                w[6] = buf;
+                nodes.push(t.words(&w));
+            }
+            let end = if rng.chance(2) { tree } else { 0 };
+            for i in 0..n {
+                let next = if i + 1 < n { nodes[i + 1] } else { end };
+                t.w32(nodes[i], next);
+            }
+            t.w32(tree + 0xc, nodes.first().copied().unwrap_or(end));
+            // remove(this; node): this+0xc = [node], then the logging
+            // stub (ret 4)
+            let log = t.stub_code(pf::TREE_REMOVE, true, 1, 1, 0);
+            let mut c = vec![0x60]; // pushad
+            c.extend([0x8b, 0x44, 0x24, 0x24]); // mov eax, [esp+0x24]
+            c.extend([0x8b, 0x00]); // mov eax, [eax]
+            c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+            c.push(0x61); // popad
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log (ret 4)
+            let remove = t.cave_code(&c);
+            t.jump(pf::TREE_REMOVE, remove);
+            t.stubs(&[
+                (pf::USER_FREE_THUNK, false, 1, 0, 0x5656_0001),
+                (pf::FREE_LIST_RESET, true, 0, 0, 0x5656_0002),
+                (pf::FREE_LIST_DTOR, true, 0, 0, 0x5656_0003),
+                (pf::TREE_CLEAR, true, 0, 0, 0x5656_0004),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x5656_0005),
+                (pf::FOG_RESET, true, 0, 0, 0x5656_0006),
+                (pf::SIGNAL_SEMA, false, 1, 0, 1),
+                (pf::SLEEP_THREAD, false, 0, 0, 0),
+                (pf::CLUSTER_MANAGER_DTOR, true, 0, 0, 0x5656_0007),
+                (pf::USER_ALIGNED_FREE, false, 1, 0, 0x5656_0008),
+            ]);
+            let what = format!("0x00633fe0 #{case} nodes {n} end {end:#x}");
+            t.check(&what, 0x0063_3fe0, Conv::Thiscall(tree), &[], |m| {
+                pf::buffer_tree_dtor(m, tree);
+                Out::None
+            });
+            // the list and the vector
+            let this = t.zeros(0x20);
+            let head = t.zeros(8);
+            let k = rng.below(5) as usize;
+            let list: Vec<u32> = (0..k).map(|_| t.zeros(0x10)).collect();
+            for i in 0..k {
+                let next = if i + 1 < k { list[i + 1] } else { head };
+                t.w32(list[i], next);
+            }
+            t.w32(head, list.first().copied().unwrap_or(head));
+            t.w32(this, head);
+            t.w32(this + 4, k as u32);
+            if !rng.chance(3) {
+                t.w32(this + 8, rng.next());
+                t.w32(this + 0xc, rng.next());
+                t.w32(this + 0x10, rng.next());
+            }
+            let what = format!("0x00634220 #{case} nodes {k}");
+            t.check(&what, 0x0063_4220, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::list_vector_dtor(m, this))
+            });
+            let fog = t.alloc(&(0..0xb0).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("0x006e3f10 #{case}");
+            t.check(&what, 0x006e_3f10, Conv::Thiscall(fog), &[], |m| {
+                Out::U32(pf::fog_reset_all(m, fog))
+            });
+            let loader = if rng.chance(3) {
+                0
+            } else {
+                let o = t.object(&[(1, 0x5656_0009)]);
+                let vt = t.r32(o);
+                let mut w: Vec<u32> = (0..8).map(|_| rng.next() | 1).collect();
+                w[0] = vt;
+                t.words(&w)
+            };
+            t.g32(pf::ASYNC_LOAD_MANAGER, loader);
+            let what = format!("0x00691b00 #{case} {loader:#x}");
+            t.check(&what, 0x0069_1b00, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::async_load_shutdown(m))
+            });
+            let clusters = if rng.chance(3) { 0 } else { t.zeros(0x20) };
+            t.g32(pf::CLUSTER_MANAGER_CELL, clusters);
+            let what = format!("0x0069a0e0 #{case} {clusters:#x}");
+            t.check(&what, 0x0069_a0e0, Conv::Cdecl, &[], |m| {
+                pf::cluster_manager_shutdown(m);
+                Out::None
+            });
+            let p = rng.next();
+            let what = format!("code_00686fe0 #{case}");
+            t.check(&what, 0x0068_6fe0, Conv::Cdecl, &[p], |m| {
+                Out::U32(pf::aligned_free_thunk(m, p))
+            });
+        }
+    });
+}
+
+/// `SaveDataTtyWrite2(fd, fmt, ...)` with `memset`, `vsprintf`,
+/// `__iob_func` and `fprintf` stubbed: the logged `va_list` is the
+/// original's argument slots (`ebp + 0x10`) in both oracles; the line's
+/// frame is compared but for the cookie.
+#[test]
+fn platform_tty_write_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0648_000f);
+        t.skip = 4;
+        for case in 0..16 {
+            t.reset();
+            t.stubs(&[(pf::MEMSET, false, 3, 0, 0x5757_0001)]);
+            t.stub_import(pf::VSPRINTF_IAT, false, 3, 0, 0x5757_0002);
+            t.stub_import(pf::IOB_FUNC_IAT, false, 0, 0, 0x0123_4000);
+            t.stub_import(pf::FPRINTF_IAT, false, 3, 0, 0x5757_0003);
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            let what = format!("SaveDataTtyWrite2 #{case}");
+            t.check_framed(
+                &what,
+                0x0064_8850,
+                Conv::Cdecl,
+                &args,
+                pf::TTY_FRAME,
+                |m, ebp| Out::U32(pf::tty_write2(m, ebp, args[1], ebp + 0x10)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+/// A synthetic MSVC `_Tree` (head plus `keys.len()` nodes, a valid
+/// red-black-free binary search tree built by insertion; each node's
+/// value block `[id, count]`): left `+0`, parent `+4`, right `+8`, nil
+/// byte `+0xd`, value pointer `+0x14`. Returns the head.
+fn msvc_tree(t: &mut Twins, values: &[(u32, u32)], order: &[u32]) -> u32 {
+    let head = t.zeros(0x18);
+    t.write(head + 0xd, &[1]);
+    let nodes: Vec<u32> = values
+        .iter()
+        .map(|&(id, count)| {
+            let v = t.words(&[id, count]);
+            let n = t.zeros(0x18);
+            t.w32(n, head);
+            t.w32(n + 4, head);
+            t.w32(n + 8, head);
+            t.w32(n + 0x14, v);
+            n
+        })
+        .collect();
+    let mut root = head;
+    for (i, &n) in nodes.iter().enumerate() {
+        let key = order[i];
+        if root == head {
+            root = n;
+            continue;
+        }
+        let mut at = root;
+        loop {
+            let at_key = order[nodes.iter().position(|&x| x == at).unwrap()];
+            let side = if key < at_key { 0 } else { 8 };
+            let next = t.r32(at + side);
+            if next == head {
+                t.w32(at + side, n);
+                t.w32(n + 4, at);
+                break;
+            }
+            at = next;
+        }
+    }
+    t.w32(head + 4, root);
+    // the head's left is the leftmost node, its right the rightmost
+    let mut lo = root;
+    let mut hi = root;
+    if root != head {
+        while t.r32(lo) != head {
+            lo = t.r32(lo);
+        }
+        while t.r32(hi + 8) != head {
+            hi = t.r32(hi + 8);
+        }
+    }
+    t.w32(head, if root == head { head } else { lo });
+    t.w32(head + 8, if root == head { head } else { hi });
+    head
+}
+
+/// `0x0069b890(this; id)` with the mutex imports stubbed (stdcall;
+/// `ReleaseMutex` answering with upper bytes set): trees of 0..12 nodes
+/// in random shapes, the id present with a count of 1 or more, present
+/// with 0 or a negative one, absent.
+#[test]
+fn platform_map_has_active_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x069b_0010);
+        for case in 0..120 {
+            t.reset();
+            t.stub_import(pf::WAIT_FOR_SINGLE_OBJECT_IAT, false, 2, 2, 0);
+            t.stub_import(pf::RELEASE_MUTEX_IAT, false, 1, 1, 0x1234_5601);
+            let n = rng.below(13) as usize;
+            let values: Vec<(u32, u32)> = (0..n)
+                .map(|_| {
+                    (
+                        rng.below(8),
+                        [0u32, 1, 2, 0xffff_ffff][rng.below(4) as usize],
+                    )
+                })
+                .collect();
+            let order: Vec<u32> = (0..n).map(|_| rng.below(100)).collect();
+            let head = msvc_tree(t, &values, &order);
+            let handle = t.words(&[rng.next()]);
+            let this = t.zeros(0x20);
+            t.w32(this + 0x10, head);
+            t.w32(this + 0x18, handle);
+            let id = rng.below(9);
+            let what = format!("0x0069b890 #{case} nodes {n} id {id}");
+            t.check(&what, 0x0069_b890, Conv::Thiscall(this), &[id], |m| {
+                Out::U32(pf::map_has_active(m, this, id))
+            });
+        }
+    });
+}
+
+/// `0x00703070`, `0x006db040`, `fiosFinalize`, `0x0067a900`,
+/// `0x0067ac40` and `0x006f5450` with their callees stubbed; the globals
+/// set and not.
+#[test]
+fn platform_shutdowns_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0703_0011);
+        for case in 0..24 {
+            t.reset();
+            t.stubs(&[
+                (pf::SAMPLER_STATE_DTOR, true, 0, 0, 0x5858_0001),
+                (pf::LOCALIZATION_DTOR, true, 0, 0, 0x5858_0002),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x5858_0003),
+                (pf::FIOS_RESOURCES_TERM, false, 0, 0, 0x5858_0004),
+                (pf::SYNC_MANAGER_DTOR, true, 0, 0, 0x5858_0005),
+                (pf::SAMPLER_RELEASE, true, 0, 0, 0x5858_0006),
+            ]);
+            let this = t.alloc(&(0..0x80).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("0x00703070 #{case}");
+            t.check(&what, 0x0070_3070, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::clear_sampler_holder(m, this))
+            });
+            for cell in [pf::LOCALIZATION_MANAGER, pf::SYNC_MANAGER, pf::BLOCK_CCC7CC] {
+                let v = if rng.chance(2) { 0 } else { t.zeros(0x10) };
+                t.g32(cell, v);
+            }
+            let what = format!("0x006db040 #{case}");
+            t.check(&what, 0x006d_b040, Conv::Cdecl, &[], |m| {
+                pf::localization_shutdown(m);
+                Out::None
+            });
+            let v = if rng.chance(2) { 0 } else { t.zeros(0x10) };
+            t.g32(pf::LOCALIZATION_MANAGER, v);
+            let what = format!("fiosFinalize #{case}");
+            t.check(&what, 0x0067_9590, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::fios_finalize(m))
+            });
+            let what = format!("0x0067a900 #{case}");
+            t.check(&what, 0x0067_a900, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::sync_manager_shutdown(m))
+            });
+            let what = format!("0x0067ac40 #{case}");
+            t.check(&what, 0x0067_ac40, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::free_block_ccc7cc(m))
+            });
+            let what = format!("0x006f5450 #{case}");
+            t.check(&what, 0x006f_5450, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::release_samplers(m))
+            });
+        }
+    });
+}
+
 // ---- the save/load screen ----
 
 /// Random machine globals: state, timer, list position, counts, choice,

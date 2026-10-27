@@ -395,6 +395,116 @@ ported! {
     SaveDataUnlockAchievement @ 0x0064_88c0 => extern "C" fn unlock_achievement(id: u32) {
         pf::unlock_achievement(&mut mem(), id);
     }
+    /// `fiosOpen(name, mode)`: the error path's `CString` lives in the
+    /// caller's `mode` slot (`slots + 4`), as in the original.
+    fiosOpen @ 0x0067_9730 => extern "C" fn fios_open(name: u32, mode: u32; slots: u32) -> u32 {
+        pf::fios_open(&mut mem(), name, mode, slots + 4)
+    }
+    /// `sceOpen(name, mode)`: frame `ebp - 0x804`.
+    sceOpen @ 0x0062_fa30 => extern "C" fn sce_open(name: u32, mode: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::SCE_OPEN_FRAME / 4) as usize }>::new();
+        pf::sce_open(&mut mem(), f.at() + pf::SCE_OPEN_FRAME, name, mode)
+    }
+    /// `TOSetEnvMovieMessage()`.
+    TOSetEnvMovieMessage @ 0x008a_f590 => extern "C" fn set_env_movie_message() -> u32 {
+        pf::set_env_movie_message(&mut mem())
+    }
+    /// `TOGetFFXLangJmp()`: the jump to `TOGetFFXLang`.
+    TOGetFFXLangJmp @ 0x008a_c2f0 => extern "C" fn get_ffx_lang_jmp() -> u32 {
+        pf::get_ffx_lang_jmp(&mut mem())
+    }
+    /// `ToDrawEternalCalmCopyRight(frame)`: the quad at `ebp - 0x9c`.
+    ToDrawEternalCalmCopyRight @ 0x0090_4a70 => extern "C" fn draw_copyright(frame: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::COPYRIGHT_FRAME / 4) as usize }>::new();
+        pf::draw_copyright(&mut mem(), f.at() + pf::COPYRIGHT_FRAME, frame)
+    }
+    /// `(this; queue)`: `eax` junk to the callers.
+    JobSchedule_JobScheduler_waitForComplete @ 0x006d_bf50 => extern "thiscall" fn wait_for_complete(this: u32, queue: u32) {
+        pf::wait_for_complete(&mut mem(), this, queue);
+    }
+    /// `()`: queue 0 of the cloth scheduler.
+    JobScheduleWait_Ch_Cloth_PerCharacter @ 0x00a4_4b30 => extern "C" fn wait_cloth() {
+        pf::wait_cloth(&mut mem());
+    }
+    /// `(this)`.
+    LoadingScreen_unloadTextures @ 0x006e_5050 => extern "thiscall" fn unload_textures(this: u32) -> u32 {
+        pf::unload_textures(&mut mem(), this)
+    }
+    /// `(this)`.
+    LoadingScreen_terminate @ 0x006e_5020 => extern "thiscall" fn terminate(this: u32) -> u32 {
+        pf::terminate(&mut mem(), this)
+    }
+    /// `(this)`: `eax` junk to the callers.
+    LoadingScreen_dtor_00634790 @ 0x0063_4790 => extern "thiscall" fn loading_screen_dtor(this: u32) {
+        pf::loading_screen_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    CDataFrameQueue_dtor @ 0x00a3_dd50 => extern "thiscall" fn data_frame_queue_dtor(this: u32) {
+        pf::data_frame_queue_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    VbfMkvReader_dtor @ 0x00a3_e040 => extern "thiscall" fn vbf_mkv_reader_dtor(this: u32) {
+        pf::vbf_mkv_reader_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BufferTree_dtor_00633fe0 @ 0x0063_3fe0 => extern "thiscall" fn buffer_tree_dtor(this: u32) {
+        pf::buffer_tree_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    ListVector_dtor_00634220 @ 0x0063_4220 => extern "thiscall" fn list_vector_dtor(this: u32) -> u32 {
+        pf::list_vector_dtor(&mut mem(), this)
+    }
+    /// `(fd, fmt, ...)`: the variable arguments where the caller pushed
+    /// them (`slots + 8`); frame `ebp - 0x404`.
+    SaveDataTtyWrite2 @ 0x0064_8850 => extern "C" fn tty_write2(fd: u32, fmt: u32; slots: u32) -> u32 {
+        let _ = fd;
+        let mut f = StackFrame::<{ (pf::TTY_FRAME / 4) as usize }>::new();
+        pf::tty_write2(&mut mem(), f.at() + pf::TTY_FRAME, fmt, slots + 8)
+    }
+    /// `(this)`.
+    FogEffectManager_resetAll_006e3f10 @ 0x006e_3f10 => extern "thiscall" fn fog_reset_all(this: u32) -> u32 {
+        pf::fog_reset_all(&mut mem(), this)
+    }
+    /// `()`.
+    AsyncLoadManager_shutdown_00691b00 @ 0x0069_1b00 => extern "C" fn async_load_shutdown() -> u32 {
+        pf::async_load_shutdown(&mut mem())
+    }
+    /// `()`: `eax` junk to the callers.
+    ClusterManager_shutdown_0069a0e0 @ 0x0069_a0e0 => extern "C" fn cluster_manager_shutdown() {
+        pf::cluster_manager_shutdown(&mut mem());
+    }
+    /// `(p)`: the 5-byte `jmp user_aligned_free`.
+    code_00686fe0 @ 0x0068_6fe0 => extern "C" fn aligned_free_thunk(p: u32) -> u32 {
+        pf::aligned_free_thunk(&mut mem(), p)
+    }
+    /// `(this; id)`: `al` the answer, the upper bytes `ReleaseMutex`'s.
+    MapHasActive_0069b890 @ 0x0069_b890 => extern "thiscall" fn map_has_active(this: u32, id: u32) -> u32 {
+        pf::map_has_active(&mut mem(), this, id)
+    }
+    /// `(this)`.
+    SamplerHolder_clear_00703070 @ 0x0070_3070 => extern "thiscall" fn clear_sampler_holder(this: u32) -> u32 {
+        pf::clear_sampler_holder(&mut mem(), this)
+    }
+    /// `()`: `eax` junk to the callers.
+    LocalizationManager_shutdown_006db040 @ 0x006d_b040 => extern "C" fn localization_shutdown() {
+        pf::localization_shutdown(&mut mem());
+    }
+    /// `fiosFinalize()`.
+    fiosFinalize @ 0x0067_9590 => extern "C" fn fios_finalize() -> u32 {
+        pf::fios_finalize(&mut mem())
+    }
+    /// `()`.
+    SyncManager_shutdown_0067a900 @ 0x0067_a900 => extern "C" fn sync_manager_shutdown() -> u32 {
+        pf::sync_manager_shutdown(&mut mem())
+    }
+    /// `()`.
+    FreeBlock_0067ac40 @ 0x0067_ac40 => extern "C" fn free_block_ccc7cc() -> u32 {
+        pf::free_block_ccc7cc(&mut mem())
+    }
+    /// `()`.
+    SamplerStates_release_006f5450 @ 0x006f_5450 => extern "C" fn release_samplers() -> u32 {
+        pf::release_samplers(&mut mem())
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)
