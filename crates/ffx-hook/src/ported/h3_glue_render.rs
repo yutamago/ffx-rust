@@ -67,6 +67,9 @@ use ffx_prender::h3_glue58::bridge as g58;
 use ffx_prender::h3_glue59::bridge as g59;
 use ffx_prender::h3_glue60::bridge as g60;
 use ffx_prender::h3_glue61::bridge as g61;
+use ffx_prender::h3_glue62::bridge as g62;
+use ffx_prender::h3_glue63::bridge as g63;
+use ffx_prender::h3_glue64::bridge as g64;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2173,6 +2176,33 @@ ported! {
     VFXDynamicGeometry_updateRenderDataWithoutAddingToArray @ 0x006a_53e0 => extern "thiscall" fn vfx_geometry_update_render_data(this: u32, a: u32) -> u32 {
         let mut f = StackFrame::<0x17>::new();
         g61::update_render_data(&mut mem(), f.at() + 0x5c, this, a)
+    }
+
+    // ---- round 18 batch 64 (ffx_prender::h3_glue62) ----
+    /// `PhyreScene_RenderVideoAndItsUI(scene)` -> the movie render's answer
+    /// or the first failing renderer call's code: the movie pass, the UI
+    /// over it, the screen fade and the video text (frame `ebp - 0xa0`).
+    PhyreScene_RenderVideoAndItsUI @ 0x0065_3960 => extern "thiscall" fn scene_render_video_and_its_ui(this: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        g62::render_video_and_its_ui(&mut mem(), f.at() + 0xa0, this)
+    }
+
+    // ---- round 18 batch 65 (ffx_prender::h3_glue63) ----
+    /// `PostProcessManager_renderHDAO(scene)` -> 0: the HDAO depth pass
+    /// from an orthographic camera built in the frame, the map materials'
+    /// colour scale set to 1s around it (frame `ebp - 0x2e8`).
+    PostProcessManager_renderHDAO @ 0x0066_b560 => extern "thiscall" fn post_render_hdao(this: u32) -> u32 {
+        let mut f = StackFrame::<0xba>::new();
+        g63::render_hdao(&mut mem(), f.at() + 0x2e8, this)
+    }
+
+    // ---- round 18 batch 66 (ffx_prender::h3_glue64) ----
+    /// `PhyreScene_doOnFieldMapAssetLoaded(scene; asset, unused, &model,
+    /// &assets, reader, id, scaled)` -> 0: the asset kept, and the first
+    /// map model's instances placed (frame `ebp - 0x1c0`).
+    PhyreScene_doOnFieldMapAssetLoaded @ 0x0065_af60 => extern "thiscall" fn scene_do_on_field_map_asset_loaded(this: u32, asset: u32, _unused: u32, model: u32, assets: u32, reader: u32, id: u32, scaled: u32) -> u32 {
+        let mut f = StackFrame::<0x70>::new();
+        g64::do_on_field_map_asset_loaded(&mut mem(), f.at() + 0x1c0, this, asset, model, assets, reader, id, scaled)
     }
 }
 

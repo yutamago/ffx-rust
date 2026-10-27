@@ -84,6 +84,9 @@ use ffx_prender::h3_glue58::bridge as gh58;
 use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
 use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
 use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
+use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
+use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
+use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13128,5 +13131,311 @@ fn batch63_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES63, n, &mut Rng(0x6363_b063));
+    });
+}
+
+// ---- round 18 batch 64 (ffx_prender::h3_glue62) ----
+
+/// A scene for the video pass: `g_MovieFading` and the fade byte (each
+/// set or not), the movie camera, picture and done flags, a camera (or
+/// none when nothing reads its matrix), the post targets `+0x8c` and
+/// `+0x90` (their textures there or not), the bytes `+0x93e`, `+0x78`,
+/// `+0xf9c5`, `+0xf9c7`, `g_PhyreScene3D`, the word `+0x3860`, the UI
+/// (none, or menus counted signed), the flag-0x1000 delegations' answer
+/// with stray high bits, and the renderer calls failing now and then at
+/// any step. Surfaces are the original's.
+fn prep_video64(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let flag = |rng: &mut Rng| if rng.chance(2) { 0 } else { rng.word() | 1 };
+    let fading = if rng.chance(3) { rng.word() | 1 } else { 0 };
+    t.global(h62::MOVIE_FADING, fading);
+    let fade = u8::from(rng.chance(2));
+    t.write(scene + 0x10dcc, &[fade]);
+    let picture = flag(rng);
+    t.global(h62::MOVIE_PICTURE_ON, picture);
+    let done = flag(rng);
+    t.global(h62::MOVIE_DONE, done);
+    let have = t.rebase(h62::MOVIE_HAVE_CAMERA);
+    let camera_answer = pick(rng, &[0, 0, 1, 0x100]);
+    t.stub(
+        Some(have),
+        h62::MOVIE_HAVE_CAMERA,
+        false,
+        0,
+        0,
+        Some(camera_answer),
+    );
+    let post = t.zeros(0x1_2400);
+    let at = t.rebase(h62::POST_INSTANCE);
+    t.stub(Some(at), h62::POST_INSTANCE, false, 0, 0, Some(post));
+    let fill = rng.bytes(0x200);
+    t.write(post + 0x1_2300, &fill);
+    let camera = obj + 0x500;
+    let matrix: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+    t.write(camera + 0x34, &matrix);
+    let none = done == 0 && rng.chance(4);
+    t.w32(scene + 0xdc, if none { 0 } else { camera });
+    let targets = t.zeros(0x200);
+    t.w32(scene + 0x10cc, targets);
+    for (k, off) in [0x8cu32, 0x90].into_iter().enumerate() {
+        let slot = obj + 0x100 + 0x10 * k as u32;
+        let texture = obj + 0x200 + 0x40 * k as u32;
+        t.w32(targets + off, slot);
+        t.w32(slot, texture);
+        // the colour target always has its texture (the viewport reads it)
+        let gone = if k != 0 && rng.chance(4) {
+            pick(rng, &[1, 2, 0x80]) as u8
+        } else {
+            0
+        };
+        t.write(slot + 4, &[gone]);
+        t.w32(texture + 0x1c, rng.word());
+        t.w32(texture + 0x20, rng.word());
+    }
+    t.w32(scene + 0xd0, obj + 0x400);
+    for off in [0x93e, 0x78, 0xf9c5, 0xf9c7] {
+        let b = pick(rng, &[0, 0, 1, 0x80]) as u8;
+        t.write(scene + off, &[b]);
+    }
+    let b = pick(rng, &[0, 0, 1]);
+    t.global(h62::SCENE_3D, b | (rng.word() & !0xff));
+    let pending = pick(rng, &[0, 0, 0, 1, 0x8000_0000]);
+    t.w32(scene + 0x3860, pending);
+    let ui = if rng.chance(4) { 0 } else { obj + 0x900 };
+    t.global(h62::GRAPHIC_UI, ui);
+    let counts: Vec<u32> = (0..2)
+        .map(|_| pick(rng, &[0, 1, 3, u32::MAX, 0x8000_0000]))
+        .collect();
+    t.stub_seq(h62::MENU_COUNT, true, 0, 0, &counts);
+    t.global(h62::DELEGATION_HELPER, obj + 0x780);
+    let drawn = [answer(rng)];
+    t.stub_seq(h62::RUN_FLAG_1000, true, 1, 1, &drawn);
+    // now and then the movie render starts a fade (read again after it)
+    if rng.chance(3) {
+        let at = t.rebase(h62::MOVIE_FADING);
+        let (ret, value) = (rng.word(), rng.word() | 1);
+        t.stub_store(h62::FMV_RENDER, 1, ret, at, value);
+    }
+    let r = results54(rng, 6);
+    t.stub_seq(h62::SET_COLOR_TARGET, true, 2, 2, &r);
+    let r = results54(rng, 6);
+    t.stub_seq(h62::SET_DEPTH_STENCIL_TARGET, true, 1, 1, &r);
+    let r = results54(rng, 5);
+    t.stub_seq(h62::BEGIN_SCENE, true, 1, 1, &r);
+    let r = results54(rng, 5);
+    t.stub_seq(h62::END_SCENE, true, 1, 1, &r);
+}
+
+const VIDEO64_STUBS: &[(u32, K)] = &[
+    (h62::FMV_INSTANCE, K::Getter),
+    (h62::FMV_RENDER, K::This(1)),
+    (h62::PRE_RENDER, K::This(0)),
+    (h62::RENDER_SHADOW, K::This(0)),
+    (h62::DRAW_MOST_VFX, K::This(0)),
+    (h62::MINIMAP_STENCIL, K::This(0)),
+    (h62::DRAW_UI_2D_VFX, K::This(0)),
+    (h62::DRAW_NORMAL_UI, K::This(0)),
+    (h62::DRAW_3D_WORLD, K::This(1)),
+    (h62::SET_CLEAR_COLOR, K::This(4)),
+    (h62::SET_CLEAR_STENCIL, K::This(1)),
+    (h62::SET_VIEWPORT, K::This(4)),
+    (h62::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h62::RENDER_SCREEN_FADE, K::This(4)),
+    (h62::INSTANCE_6DC800, K::Getter),
+    (h62::VIDEO_TEXT_RENDER, K::This(1)),
+];
+
+#[rustfmt::skip]
+const CASES64: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_video64), ..method("render_video_and_its_ui", 0x0065_3960, This::Object, 0, VIDEO64_STUBS, |m, this, _| u(gh62::render_video_and_its_ui(m, frame_ebp(), this))) }), 0xa0, 0),
+];
+
+#[test]
+fn batch64_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES64, n, &mut Rng(0x6464_b064));
+    });
+}
+
+// ---- round 18 batch 65 (ffx_prender::h3_glue63) ----
+
+/// A scene for the HDAO pass: its two enable bytes (now and then
+/// clear), the colour target (now and then none) and the depth target
+/// (their textures there or not), the matrix `+0xfc04` and the extents
+/// `+0xfc34..+0xfc5c` (mild floats), the swap code `+0xfaf4`, a map
+/// cluster or none with the map tree of [`map_tree`] (walked twice: the
+/// successors run on to the head for each walk; `memcpy` is the
+/// original's), the world kind `+0xf9cc`, the scene's camera or none.
+/// The camera's construction (but its projection update, which logs the
+/// vtable it finds) and its matrices are the original's.
+fn prep_hdao65(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    for off in [0xfc00, 0xfc01] {
+        let b = if rng.chance(8) {
+            0
+        } else {
+            pick(rng, &[1, 0x80]) as u8
+        };
+        t.write(scene + off, &[b]);
+    }
+    let targets = t.zeros(0x200);
+    for (k, off) in [0xfc70u32, 0xfc74].into_iter().enumerate() {
+        let slot = targets + 0x10 * k as u32;
+        let texture = targets + 0x80 + 0x40 * k as u32;
+        let none = k == 0 && rng.chance(8);
+        t.w32(scene + off, if none { 0 } else { slot });
+        t.w32(slot, texture);
+        let gone = u8::from(k != 0 && rng.chance(4));
+        // the byte after the flag set, so a port reading it shows
+        t.write(slot + 4, &[gone, 0x80]);
+        t.w32(texture + 0x1c, rng.word());
+        t.w32(texture + 0x20, rng.word());
+    }
+    for k in 0..16 {
+        let v = mild(rng);
+        t.w32(scene + 0xfc04 + 4 * k, v);
+    }
+    for at in (0xfc34..0xfc60).step_by(4) {
+        let v = mild(rng);
+        t.w32(scene + at, v);
+    }
+    let code = pick(rng, &[0xc04, 0xb48, 0, 0xc05]);
+    t.w32(scene + 0xfaf4, code);
+    let renderer = t.zeros(0x100);
+    t.w32(scene + 0xd0, renderer);
+    t.w32(scene + 0xdc, if rng.chance(4) { 0 } else { obj + 0x1f00 });
+    let kind = pick(rng, &[0, 1, 2, 3]);
+    t.w32(scene + 0xf9cc, kind);
+    t.w32(scene + 0x10d4, if rng.chance(4) { 0 } else { obj });
+    for k in 0..4 {
+        let v = mild(rng);
+        t.w32(scene + 0xfc78 + 4 * k, v);
+    }
+    map_tree(t, obj, scene, rng);
+    // two walks: each runs its successors on to the head
+    let head = scene + 0x1198;
+    let mut order = vec![];
+    for _ in 0..2 {
+        for _ in 0..rng.below(4) {
+            order.push(obj + 0x100 + 0x40 * rng.below(3));
+        }
+        order.push(head);
+    }
+    order.extend([head; 4]);
+    t.stub_seq(h63::TREE_SUCCESSOR, true, 1, 1, &order);
+    // buffer sizes some parameters fill exactly (offset + size)
+    for m in 0..3 {
+        let size = pick(rng, &[0x10, 0x2c, 0x30, 0x4c, 0x50, 0x80]);
+        t.w32(obj + 0x1000 + 0x100 * m, size);
+    }
+    // the walks' counters and the x87 temporaries
+    FRAME_IGNORE.with(|z| z.replace(vec![(0x20, 0x10), (0xb0, 4)]));
+}
+
+const HDAO65_STUBS: &[(u32, K)] = &[
+    // logs the vtable it finds (the orthographic camera's)
+    (h63::ORTHO_UPDATE, K::KeepDeref(0)),
+    (h63::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h63::PHYRE_FREE, K::Cdecl(1)),
+    (h63::SET_CLEAR_DEPTH, K::This(1)),
+    (h63::SET_CAMERA, K::This(1)),
+    (h63::SET_VIEWPORT, K::This(4)),
+    (h63::SET_COLOR_TARGET, K::This(2)),
+    (h63::SET_DEPTH_STENCIL_TARGET, K::This(1)),
+    (h63::SET_CLEAR_COLOR, K::This(4)),
+    (h63::BEGIN_SCENE, K::This(1)),
+    (h63::END_SCENE, K::This(1)),
+    (h63::GET_APPLICATION, K::Getter),
+    (h63::RENDER_WORLD, K::This(3)),
+];
+
+#[rustfmt::skip]
+const CASES65: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_hdao65), ..method("render_hdao", 0x0066_b560, This::Object, 0, HDAO65_STUBS, |m, this, _| u(gh63::render_hdao(m, frame_ebp(), this))) }), 0x2e8, 0),
+];
+
+#[test]
+fn batch65_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES65, n, &mut Rng(0x6565_b065));
+    });
+}
+
+// ---- round 18 batch 66 (ffx_prender::h3_glue64) ----
+
+/// The asset array (count, capacity: room or not, signed; data, or none
+/// where the slot address comes out 0), the asset (or none), the model
+/// answer with stray high bits, the scene's symbol (set or not), the
+/// `scaled` byte (with high bits), and the model cluster's instances
+/// through two cursor scripts: each instance a 3x4 matrix, an owner and a
+/// vector. The matrix math is the original's; the new instance list
+/// holds a buffer for the 3x4.
+fn prep_asset66(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x200);
+    *this = scene;
+    t.w32(scene + 0xd8, if rng.chance(5) { rng.word() | 1 } else { 0 });
+    args[0] = if rng.chance(6) { 0 } else { rng.word() };
+    let model = t.zeros(4);
+    args[2] = model;
+    let assets = t.zeros(0x10);
+    let count = pick(rng, &[0, 1, 3, 8]);
+    let room = pick(rng, &[count + 1, count, 0, u32::MAX, 0x7fff_ffff]);
+    let data = if count == 0 && rng.chance(4) {
+        0
+    } else {
+        t.zeros(0x40)
+    };
+    t.w32(assets, count);
+    t.w32(assets + 4, room);
+    t.w32(assets + 8, data);
+    args[3] = assets;
+    args[4] = obj + 0x40;
+    args[6] = pick(rng, &[0, 1, 0x100, 0xff01]);
+    let model_answer = [answer(rng)];
+    t.stub_seq(h64::IS_MODEL, true, 1, 1, &model_answer);
+    let list = t.zeros(0x40);
+    let placed = t.zeros(0x40);
+    t.w32(list + 0x34, placed);
+    t.stub_ret(h64::ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    let area = t.zeros(0x800);
+    for k in 0..8 {
+        let object = area + 0x100 * k + 4;
+        let matrix = t.zeros(0x40);
+        let words: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+        t.write(matrix, &words);
+        t.w32(object + 4, matrix);
+        let owner = t.zeros(0x20);
+        t.w32(object + 0x1c, owner);
+        let vector = t.zeros(0x40);
+        let words: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+        t.write(vector, &words);
+        t.w32(object + 0xb0, vector);
+    }
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script_args(h64::CURSOR_CTOR, 1, h64::CURSOR_NEXT, &steps);
+    let steps = cursor_steps(t, area, false, rng);
+    t.stub_cursor_script_args(h64::CURSOR_CTOR_SEEK2, 1, h64::CURSOR_NEXT3, &steps);
+}
+
+const ASSET66_STUBS: &[(u32, K)] = &[
+    (h64::ARRAY_RESERVE, K::This(1)),
+    (h64::GET_SYMBOL_BY_ID, K::This(1)),
+    (h64::MATRIX4X3_TYPE, K::Cdecl(0)),
+];
+
+#[rustfmt::skip]
+const CASES66: &[Case] = &[
+    framed(Case { prep: Some(prep_asset66), ..method("do_on_field_map_asset_loaded", 0x0065_af60, This::Object, 7, ASSET66_STUBS, |m, this, a| u(gh64::do_on_field_map_asset_loaded(m, frame_ebp(), this, a[0], a[2], a[3], a[4], a[5], a[6]))) }, 0x1c0, 0),
+];
+
+#[test]
+fn batch66_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES66, n, &mut Rng(0x6666_b066));
     });
 }
