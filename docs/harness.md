@@ -1378,7 +1378,15 @@ the other).
 
 A test stopped mid-run leaves its game running; the next `Game::launch` in
 that slot ends it with the harness's `quit` (only games that answer on the
-slot's port: a game the user plays is never touched). A detached game
+slot's port: a game the user plays is never touched). A game that does not
+answer (its main thread stuck, say in a `waitfor` that never matched before
+its replay was killed) still held the instance folder, and every later
+launch in that slot failed with "a game from this folder is running" (three
+of the h3 agent's original-code launches on 2026-10-27, behind two stuck
+probes of replay-flakes3). Since then `tools/run-game.sh`, when the slot is
+held and a game from the instance folder is still there after its minute of
+waiting, ends that game by its path (only the slot's holder starts games
+from the folder) and goes on. A detached game
 (`Game::detach`) outlives its slot. Run long game tests as background
 commands: they wait for their turn and finish later.
 
