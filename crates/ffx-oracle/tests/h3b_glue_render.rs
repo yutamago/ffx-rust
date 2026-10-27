@@ -2481,3 +2481,78 @@ fn r2_batch3_render_cascades_matches_the_original() {
         run_cases(t, CASES_CASCADES, n, &mut Rng(0xb3b2_0003));
     });
 }
+
+// ---- round 2 batch 4: ShadowManager_fitBattleCascade_006d00d0 (ffx_prender::h3b_glue9) ----
+
+use ffx_prender::h3b_glue9::{self as h9, bridge as b9};
+
+/// A float for the battle light: a plain one (small, with a fraction) in
+/// three cases of four, else anything [`Rng::float`] gives.
+fn light_float(rng: &mut Rng) -> u32 {
+    if rng.chance(4) {
+        rng.float().to_bits()
+    } else {
+        ((rng.below(4000) as f32 - 2000.0) / 16.0).to_bits()
+    }
+}
+
+/// The manager (angles, the world matrix object), the light (its 3x4,
+/// `+0x30`/`+0x44` scales, 0 now and then, its range), the far distance and
+/// the focus stub's two floats.
+fn prep_battle(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let sm = t.zeros(0x4100);
+    *this = sm;
+    let junk = rng.bytes(0x400);
+    t.write(sm, &junk);
+    for at in [0x4018, 0x401c] {
+        let v = light_float(rng);
+        t.w32(sm + at, v);
+    }
+    let world = t.zeros(0x40);
+    t.w32(sm + 0x8c, world);
+    let light = t.zeros(0x100);
+    for w in 0..0x30 {
+        let v = light_float(rng);
+        t.w32(light + 4 * w, v);
+    }
+    for at in [0x30, 0x44] {
+        if rng.chance(4) {
+            t.w32(light + at, 0);
+        }
+    }
+    let far = light_float(rng);
+    t.global(h9::FAR_DISTANCE, far);
+    // the focus: two floats through the pointers
+    let (fx, fy) = (light_float(rng), light_float(rng));
+    let log = t.stub(None, h9::FOCUS, true, 2, 2, None);
+    let base = t.cave_next;
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+    c.extend([0xc7, 0x00]);
+    c.extend(fx.to_le_bytes()); // mov dword [eax], fx
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+    c.extend([0xc7, 0x00]);
+    c.extend(fy.to_le_bytes()); // mov dword [eax], fy
+    Twins::jmp_to(&mut c, base, log);
+    let code = t.code(&c);
+    t.divert(h9::FOCUS, code);
+    let any = rng.next();
+    let focus = pick(rng, &[0, 1, 0x100, any]);
+    args.copy_from_slice(&[light, focus]);
+}
+
+#[rustfmt::skip]
+const CASES_BATTLE: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_battle), ..method("fit_battle_cascade", 0x006d_00d0, This::Object, 2, &[], |m, this, a| {
+        slots_at(m, a);
+        b9::fit_battle_cascade(m, frame_ebp(), this, a[0], a[1] as u8);
+        Out::None
+    }) }), h9::FRAME, 8),
+];
+
+#[test]
+fn r2_batch4_fit_battle_cascade_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_BATTLE, n, &mut Rng(0xb3b2_0004));
+    });
+}

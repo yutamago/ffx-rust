@@ -14,6 +14,7 @@ use ffx_prender::h3b_glue5::bridge as b5;
 use ffx_prender::h3b_glue6::bridge as b6;
 use ffx_prender::h3b_glue7::bridge as b7;
 use ffx_prender::h3b_glue8::bridge as b8;
+use ffx_prender::h3b_glue9::bridge as b9;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -74,6 +75,14 @@ ported! {
     ShadowManager_renderCharacterTiles_006caee0 @ 0x006c_aee0 => extern "thiscall" fn render_character_tiles(this: u32, renderer: u32, solution: u32, keep: u32) -> u32 {
         let mut f = StackFrame::<0x62>::new();
         b7::render_character_tiles(&mut mem(), f.at() + 0x188, this, renderer, solution, keep as u8 != 0)
+    }
+
+    // ---- round 2, batch 4 (ffx_prender::h3b_glue9) ----
+    /// `ShadowManager_fitBattleCascade_006d00d0(this; light, focus)`: the
+    /// battle shadow's light camera, box and bias.
+    ShadowManager_fitBattleCascade_006d00d0 @ 0x006d_00d0 => extern "thiscall" fn fit_battle_cascade(this: u32, light: u32, focus: u32) {
+        let mut f = StackFrame::<0x88>::new();
+        b9::fit_battle_cascade(&mut mem(), f.at() + 0x21c, this, light, focus as u8);
     }
 
     // ---- round 2, batch 3 (ffx_prender::h3b_glue8) ----
