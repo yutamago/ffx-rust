@@ -6,7 +6,10 @@
 //! drawers, the GS layer's frame code). Frames the originals hand callees
 //! are `StackFrame`s; nothing is kept between calls.
 
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be};
+use ffx_glue_other::{
+    h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
+    h4b_h as bh, h4b_i as bi,
+};
 
 use super::{StackFrame, mem, ported};
 
@@ -177,5 +180,109 @@ ported! {
     /// slots.
     MenuConfig_DrawRowFrame_008cb530 @ 0x008c_b530 => extern "C" fn row_frame(x: u32, y: u32; slots: u32) -> u32 {
         be::row_frame(&mut mem(), x, y, Some(slots))
+    }
+
+    // ---- round 2, batch 1 (ffx_glue_other::h4b_f)
+
+    /// `AbmapDrawGridTexture_00a4c460(level, size)`: the record and the
+    /// name buffer in a frame (`ebp - 0x19c` .. `ebp - 4`, 102 words;
+    /// zeroed, so another grid type's never-written name is empty).
+    AbmapDrawGridTexture_00a4c460 @ 0x00a4_c460 => extern "C" fn grid_texture(level: u32, size: u32) -> u32 {
+        let mut f = StackFrame::<0x66>::new();
+        bf::grid_texture(&mut mem(), f.at(), level, size)
+    }
+    /// `AbmapDrawLangTitle_00a45ab0(_, x)`: the record and the name buffer
+    /// in a frame (`ebp - 0x1ac` .. `ebp - 4`, 106 words).
+    AbmapDrawLangTitle_00a45ab0 @ 0x00a4_5ab0 => extern "C" fn lang_title(_a: u32, x: u32) -> u32 {
+        let mut f = StackFrame::<0x6a>::new();
+        bf::lang_title(&mut mem(), f.at(), x)
+    }
+    /// `AbmapDrawPadArrow_00a4f290(item, top, x)`: the record and the name
+    /// buffer in a frame (`ebp - 0x1ac` .. `ebp - 4`, 106 words; zeroed).
+    AbmapDrawPadArrow_00a4f290 @ 0x00a4_f290 => extern "C" fn pad_arrow(item: u32, top: u32, x: u32) -> u32 {
+        let mut f = StackFrame::<0x6a>::new();
+        bf::pad_arrow(&mut mem(), f.at(), item, top, x)
+    }
+    /// `gdraw_textureDrawBufferBegin_00a3ac90(rect, _, format, keep,
+    /// stats)`: the clear quad's rectangle in a frame.
+    gdraw_textureDrawBufferBegin_00a3ac90 @ 0x00a3_ac90 => extern "stdcall" fn texture_draw_begin(rect: u32, _b: u32, format: u32, keep: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        bf::texture_draw_begin(&mut mem(), f.at(), rect, format, keep, stats)
+    }
+    /// `gdraw_filterPass_00a374e0(filter, rect, colour, stats)`: the
+    /// rectangle, the null resource and the buffer word in a frame
+    /// (`ebp - 0x24` .. `ebp - 4`, 9 words).
+    gdraw_filterPass_00a374e0 @ 0x00a3_74e0 => extern "C" fn filter_pass(filter: u32, rect: u32, colour: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        bf::filter_pass(&mut mem(), f.at(), filter, rect, colour, stats)
+    }
+    /// `TOAdpCrossEasyStrFontSClutRGBA(text, x, y, a, r, g, b, alpha,
+    /// scale, space)`: the converted text in a frame (`ebp - 0x118` up; 1
+    /// KB, room for a long text's two-byte codes); `y` less the remap in
+    /// its slot.
+    TOAdpCrossEasyStrFontSClutRGBA @ 0x008e_c2f0 => extern "C" fn cross_str(text: u32, x: u32, y: u32, a: u32, r: u32, g: u32, b: u32, alpha: u32, scale: u32, space: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x100>::new();
+        bf::cross_str(&mut mem(), f.at(), text, x, y, a, [r, g, b, alpha], scale, space, Some(slots))
+    }
+
+    // ---- round 2, batch 2 (ffx_glue_other::h4b_g)
+
+    /// `TOMakePktShapeCursor(kind, x, y)`: the record and the image size in
+    /// a frame (`ebp - 0xb8` .. `ebp - 4`, 45 words; zeroed, so another
+    /// kind's never-written layout number is 0).
+    TOMakePktShapeCursor @ 0x008f_eb00 => extern "C" fn shape_cursor(kind: u32, x: u32, y: u32) -> u32 {
+        let mut f = StackFrame::<0x2d>::new();
+        bg::shape_cursor(&mut mem(), f.at(), kind, x, y)
+    }
+    /// `yiAssert(abort, part, format, ...)`: the message buffer in a frame
+    /// (`ebp - 0x101c` .. `ebp - 4`); the varargs after `format` in the
+    /// caller's argument words.
+    yiAssert @ 0x0090_ae50 => extern "C" fn yi_assert(abort: u32, part: u32, format: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x406>::new();
+        bg::yi_assert(&mut mem(), f.at(), abort, part, format, slots.wrapping_add(12))
+    }
+    /// `gdraw_filterPass3_00a38c40(filter, rect, colour, kind, stats)`: the
+    /// rectangle, the buffer word and the null views in a frame (`ebp -
+    /// 0x2c` .. `ebp - 4`, 11 words).
+    gdraw_filterPass3_00a38c40 @ 0x00a3_8c40 => extern "C" fn filter_pass3(filter: u32, rect: u32, colour: u32, kind: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        bg::filter_pass3(&mut mem(), f.at(), filter, rect, colour, kind, stats)
+    }
+    /// `gdraw_setRenderState_00a3c6c0(format, r, _, colour)`: the mapped
+    /// results, the null view and the scissors in a frame (`ebp - 0x64` ..
+    /// `ebp - 4`, 24 words).
+    gdraw_setRenderState_00a3c6c0 @ 0x00a3_c6c0 => extern "C" fn set_render_state(format: u32, r: u32, _c: u32, colour: u32) -> u32 {
+        let mut f = StackFrame::<0x18>::new();
+        bg::set_render_state(&mut mem(), f.at(), format, r, colour)
+    }
+
+    // ---- round 2, batch 3 (ffx_glue_other::h4b_h)
+
+    /// `TODrawMessageWaitNamesp(window)`: the temporaries and the Al Bhed
+    /// text in a frame (`ebp - 0x14` .. `ebp - 1`, 5 words); the
+    /// window's slot holds the original's temporaries.
+    TODrawMessageWaitNamesp @ 0x008d_ee00 => extern "C" fn message_wait_namesp(window: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        bh::message_wait_namesp(&mut mem(), f.at(), window, Some(slots))
+    }
+    /// `AbmapDrawGridCells_00a497b0()`: the record and the name buffer in
+    /// a frame (`ebp - 0x1a4` .. `ebp - 4`, 104 words).
+    AbmapDrawGridCells_00a497b0 @ 0x00a4_97b0 => extern "C" fn grid_cells() -> u32 {
+        let mut f = StackFrame::<0x68>::new();
+        bh::grid_cells(&mut mem(), f.at())
+    }
+    /// `TODrawFrameShape9_008f9280(a, x, y, alpha)`: the contents' x and y
+    /// and the last bar's x left in the argument slots.
+    TODrawFrameShape9_008f9280 @ 0x008f_9280 => extern "C" fn frame_shape9(a: u32, x: u32, y: u32, alpha: u32; slots: u32) -> u32 {
+        bh::frame_shape9(&mut mem(), a, x, y, alpha, Some(slots))
+    }
+
+    // ---- round 2, batch 4 (ffx_glue_other::h4b_i)
+
+    /// `TODrawFrameShape_008f9c20(x, y, w, h, kind)`: the last piece's x,
+    /// the bottom middle's and the bottom left's y left in the `x`, `w`
+    /// and `kind` slots.
+    TODrawFrameShape_008f9c20 @ 0x008f_9c20 => extern "C" fn frame_shape(x: u32, y: u32, w: u32, h: u32, kind: u32; slots: u32) -> u32 {
+        bi::frame_shape(&mut mem(), x, y, w, h, kind, Some(slots))
     }
 }
