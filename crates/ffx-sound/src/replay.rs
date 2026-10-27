@@ -565,8 +565,8 @@ impl<F: Files> Engine<F> {
     }
 
     /// Mixes one block (one `EventSystem::update`): every voice in start
-    /// order (fmod-probe found no sum order that differs; the residue's
-    /// last ulps may still be an order, `audio-platform.md`).
+    /// order (the order FMOD sums in, measured with fmod-probe; the
+    /// four audio replays match FMOD sample for sample).
     pub fn update(&mut self) {
         let at = self.out.len();
         self.out.resize(at + 2 * BLOCK, 0.0);

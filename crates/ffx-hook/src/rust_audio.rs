@@ -12,7 +12,7 @@
 //! (`System::setFileSystem`), so the VBF archive and mods work as with FMOD.
 //!
 //! Each `EventSystem::update` mixes one 1,600-frame block and raises the
-//! end callbacks at the updates FMOD does (SOUNDDEF_END one update after
+//! end callbacks at the updates FMOD does (`SOUNDDEF_END` one update after
 //! the block with the wave's last frame, EVENTFINISHED one later; `stop`
 //! calls EVENTFINISHED at once), and `Event::getState` answers as FMOD does
 //! (0x18 playing, 0x08 ending, 1 ready). With `FFX_AUDIO_WAV` the blocks go
@@ -230,7 +230,7 @@ static mut GROUP_VT: [usize; 18] = [0; 18];
 
 fn object(vtable: *const usize, project: u32) -> u32 {
     let o = Box::leak(Box::new(Object { vtable, project }));
-    addr((o as *const Object).cast())
+    addr(std::ptr::from_ref::<Object>(o).cast())
 }
 
 unsafe extern "system" fn unhandled0(_this: usize) -> u32 {
@@ -257,15 +257,15 @@ unsafe extern "system" fn project_get_group(
     let Some(name) = cstr(name) else {
         return ERR_PARAM;
     };
-    // SAFETY: GROUP_VT is filled once at install, before the game runs.
-    let g = object(unsafe { (&raw const GROUP_VT).cast() }, this as u32);
+    // GROUP_VT is filled once at install, before the game runs.
+    let g = object((&raw const GROUP_VT).cast(), this as u32);
     with(|s| {
         s.call(
             "EventProjectI::getGroup",
             &[this as u32],
             &[(3, g)],
             &[(1, name)],
-        )
+        );
     });
     put(out, g);
     OK
@@ -400,8 +400,8 @@ unsafe extern "system" fn event_system_load(
     let Some(name) = cstr(name) else {
         return ERR_PARAM;
     };
-    // SAFETY: PROJECT_VT is filled once at install.
-    let p = object(unsafe { (&raw const PROJECT_VT).cast() }, 0);
+    // PROJECT_VT is filled once at install.
+    let p = object((&raw const PROJECT_VT).cast(), 0);
     let loaded = with(|s| {
         s.call("EventSystem::load", &[0], &[(3, p)], &[(1, name.clone())]);
         s.engine.has_project(p)
@@ -545,7 +545,7 @@ unsafe extern "system" fn system_create_sound(
 ) -> u32 {
     let r = with(|s| {
         let h = s.handle();
-        if name == 0 && mode & 0x8 != 0 || exinfo != 0 && name == 0 {
+        if name == 0 && (mode & 0x8 != 0 || exinfo != 0) {
             // the movie's user stream (FMOD_OPENUSER, CREATESTREAM)
             // SAFETY: FMOD_CREATESOUNDEXINFO as the movie player fills it.
             let (channels, rate, read) = unsafe {
@@ -658,7 +658,7 @@ unsafe extern "system" fn sound_get_name(sound: usize, buf: usize, len: i32) -> 
     .flatten()
     .unwrap_or_default();
     if buf != 0 && len > 0 {
-        let n = name.len().min(len as usize - 1);
+        let n = name.len().min(usize::try_from(len).unwrap_or(1) - 1);
         // SAFETY: the game's buffer of `len` bytes.
         unsafe {
             std::ptr::copy_nonoverlapping(name.as_ptr(), buf as *mut u8, n);
@@ -760,7 +760,7 @@ unsafe extern "system" fn channel_group_get_channel(g: usize, index: i32, out: u
             &[g as u32, u32::try_from(index).unwrap_or(0)],
             &[(2, ch)],
             &[],
-        )
+        );
     });
     put(out, ch);
     OK
@@ -821,6 +821,7 @@ fn mix_movie(m: &mut Movie, block: &mut [f32]) {
 /// # Safety
 /// `base` must be the main module; called before other threads run game
 /// code, before the other FMOD patches (`fmod_log`, `audio_wav`).
+#[allow(clippy::too_many_lines)] // the table of the 40 imports
 pub unsafe fn install(base: usize) {
     if std::env::var("FFX_RUST_AUDIO").as_deref() != Ok("1") {
         return;
@@ -829,9 +830,9 @@ pub unsafe fn install(base: usize) {
     unsafe {
         let p = &raw mut PROJECT_VT;
         for (i, f) in [
-            project_release as usize,
-            project_get_info as usize,
-            project_get_group as usize,
+            project_release as *const () as usize,
+            project_get_info as *const () as usize,
+            project_get_group as *const () as usize,
         ]
         .into_iter()
         .enumerate()
@@ -839,18 +840,18 @@ pub unsafe fn install(base: usize) {
             (*p)[i] = f;
         }
         for i in 3..14 {
-            (*p)[i] = unhandled0 as usize;
+            (*p)[i] = unhandled0 as *const () as usize;
         }
-        (*p)[0x24 / 4] = project_stop_all as usize;
-        (*p)[0x28 / 4] = project_cancel as usize;
+        (*p)[0x24 / 4] = project_stop_all as *const () as usize;
+        (*p)[0x28 / 4] = project_cancel as *const () as usize;
         let g = &raw mut GROUP_VT;
         for i in 0..18 {
-            (*g)[i] = unhandled0 as usize;
+            (*g)[i] = unhandled0 as *const () as usize;
         }
-        (*g)[1] = group_load_data as usize;
-        (*g)[2] = group_free_data as usize;
-        (*g)[0x20 / 4] = group_get_event as usize;
-        (*g)[0x24 / 4] = group_get_event_by_index as usize;
+        (*g)[1] = group_load_data as *const () as usize;
+        (*g)[2] = group_free_data as *const () as usize;
+        (*g)[0x20 / 4] = group_get_event as *const () as usize;
+        (*g)[0x24 / 4] = group_get_event_by_index as *const () as usize;
     }
     let files = Arc::new(Mutex::new(GameFiles::default()));
     let wav = std::env::var("FFX_AUDIO_WAV")
@@ -894,190 +895,202 @@ pub unsafe fn install(base: usize) {
         (
             ev,
             "?getChannelGroup@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVChannelGroup@2@@Z",
-            event_get_channel_group as usize,
+            event_get_channel_group as *const () as usize,
         ),
         (
             ev,
             "?getInfo@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAHPAPADPAUFMOD_EVENT_INFO@@@Z",
-            event_get_info as usize,
+            event_get_info as *const () as usize,
         ),
         (
             ev,
             "?getPaused@Event@FMOD@@QAG?AW4FMOD_RESULT@@PA_N@Z",
-            event_get_paused as usize,
+            event_get_paused as *const () as usize,
         ),
         (
             ev,
             "?setPaused@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
-            event_set_paused as usize,
+            event_set_paused as *const () as usize,
         ),
         (
             ev,
             "?getVolume@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAM@Z",
-            event_get_volume as usize,
+            event_get_volume as *const () as usize,
         ),
         (
             ev,
             "?setVolume@Event@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
-            event_set_volume as usize,
+            event_set_volume as *const () as usize,
         ),
         (
             ev,
             "?setCallback@Event@FMOD@@QAG?AW4FMOD_RESULT@@P6G?AW43@PAUFMOD_EVENT@@W4FMOD_EVENT_CALLBACKTYPE@@PAX22@Z2@Z",
-            event_set_callback as usize,
+            event_set_callback as *const () as usize,
         ),
         (
             ev,
             "?getState@Event@FMOD@@QAG?AW4FMOD_RESULT@@PAI@Z",
-            event_get_state as usize,
+            event_get_state as *const () as usize,
         ),
         (
             ev,
             "?stop@Event@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
-            event_stop as usize,
+            event_stop as *const () as usize,
         ),
         (
             ev,
             "?start@Event@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            event_start as usize,
+            event_start as *const () as usize,
         ),
         (
             ev,
             "?load@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@PBDPAUFMOD_EVENT_LOADINFO@@PAPAVEventProject@2@@Z",
-            event_system_load as usize,
+            event_system_load as *const () as usize,
         ),
         (
             ev,
             "?unload@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            event_system_unload as usize,
+            event_system_unload as *const () as usize,
         ),
         (
             ev,
             "?getSystemObject@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@PAPAVSystem@2@@Z",
-            event_system_get_system as usize,
+            event_system_get_system as *const () as usize,
         ),
         (
             ev,
             "?update@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            event_system_update as usize,
+            event_system_update as *const () as usize,
         ),
         (
             ev,
             "?release@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            event_system_release as usize,
+            event_system_release as *const () as usize,
         ),
         (
             ev,
             "?init@EventSystem@FMOD@@QAG?AW4FMOD_RESULT@@HIPAXI@Z",
-            event_system_init as usize,
+            event_system_init as *const () as usize,
         ),
-        (ev, "FMOD_EventSystem_Create", event_system_create as usize),
+        (
+            ev,
+            "FMOD_EventSystem_Create",
+            event_system_create as *const () as usize,
+        ),
         (
             ex,
             "?setPriority@Channel@FMOD@@QAG?AW4FMOD_RESULT@@H@Z",
-            channel_set_priority as usize,
+            channel_set_priority as *const () as usize,
         ),
         (
             ex,
             "?setPaused@Channel@FMOD@@QAG?AW4FMOD_RESULT@@_N@Z",
-            channel_set_paused as usize,
+            channel_set_paused as *const () as usize,
         ),
         (
             ex,
             "?stop@Channel@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            channel_stop as usize,
+            channel_stop as *const () as usize,
         ),
         (
             ex,
             "?getUserData@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAPAX@Z",
-            sound_get_user_data as usize,
+            sound_get_user_data as *const () as usize,
         ),
         (
             ex,
             "?setUserData@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAX@Z",
-            sound_set_user_data as usize,
+            sound_set_user_data as *const () as usize,
         ),
         (
             ex,
             "?getOpenState@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAW4FMOD_OPENSTATE@@PAIPA_N2@Z",
-            sound_get_open_state as usize,
+            sound_get_open_state as *const () as usize,
         ),
-        (ex, "FMOD_Memory_GetStats", memory_get_stats as usize),
+        (
+            ex,
+            "FMOD_Memory_GetStats",
+            memory_get_stats as *const () as usize,
+        ),
         (
             ex,
             "?setFileSystem@System@FMOD@@QAG?AW4FMOD_RESULT@@P6G?AW43@PBDHPAIPAPAX2@ZP6G?AW43@PAX4@ZP6G?AW43@44I14@ZP6G?AW43@4I4@ZP6G?AW43@PAUFMOD_ASYNCREADINFO@@4@Z5H@Z",
-            system_set_file_system as usize,
+            system_set_file_system as *const () as usize,
         ),
         (
             ex,
             "?setStreamBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@II@Z",
-            system_set_stream_buffer_size as usize,
+            system_set_stream_buffer_size as *const () as usize,
         ),
         (
             ex,
             "?createSound@System@FMOD@@QAG?AW4FMOD_RESULT@@PBDIPAUFMOD_CREATESOUNDEXINFO@@PAPAVSound@2@@Z",
-            system_create_sound as usize,
+            system_create_sound as *const () as usize,
         ),
         (
             ex,
             "?playSound@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_CHANNELINDEX@@PAVSound@2@_NPAPAVChannel@2@@Z",
-            system_play_sound as usize,
+            system_play_sound as *const () as usize,
         ),
         (
             ex,
             "?release@Sound@FMOD@@QAG?AW4FMOD_RESULT@@XZ",
-            sound_release as usize,
+            sound_release as *const () as usize,
         ),
         (
             ex,
             "?getSubSound@Sound@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAV12@@Z",
-            sound_get_sub_sound as usize,
+            sound_get_sub_sound as *const () as usize,
         ),
         (
             ex,
             "?getName@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PADH@Z",
-            sound_get_name as usize,
+            sound_get_name as *const () as usize,
         ),
         (
             ex,
             "?getNumSubSounds@Sound@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z",
-            sound_get_num_sub_sounds as usize,
+            sound_get_num_sub_sounds as *const () as usize,
         ),
         (
             ex,
             "?setVolume@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
-            channel_set_volume as usize,
+            channel_set_volume as *const () as usize,
         ),
         (
             ex,
             "?getVolume@Channel@FMOD@@QAG?AW4FMOD_RESULT@@PAM@Z",
-            channel_get_volume as usize,
+            channel_get_volume as *const () as usize,
         ),
         (
             ex,
             "?setPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@M@Z",
-            channel_set_pan as usize,
+            channel_set_pan as *const () as usize,
         ),
         (
             ex,
             "?getPan@Channel@FMOD@@QAG?AW4FMOD_RESULT@@PAM@Z",
-            channel_get_pan as usize,
+            channel_get_pan as *const () as usize,
         ),
-        (ex, "FMOD_Memory_Initialize", memory_initialize as usize),
+        (
+            ex,
+            "FMOD_Memory_Initialize",
+            memory_initialize as *const () as usize,
+        ),
         (
             ex,
             "?getLoopCount@Channel@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z",
-            channel_get_loop_count as usize,
+            channel_get_loop_count as *const () as usize,
         ),
         (
             ex,
             "?getChannel@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@HPAPAVChannel@2@@Z",
-            channel_group_get_channel as usize,
+            channel_group_get_channel as *const () as usize,
         ),
         (
             ex,
             "?getNumChannels@ChannelGroup@FMOD@@QAG?AW4FMOD_RESULT@@PAH@Z",
-            channel_group_get_num_channels as usize,
+            channel_group_get_num_channels as *const () as usize,
         ),
     ];
     let mut done = 0;
