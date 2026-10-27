@@ -87,6 +87,7 @@ use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
 use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
 use ffx_prender::h3_glue63::{self as h63, bridge as gh63};
 use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
+use ffx_prender::h3_glue65::{self as h65, bridge as gh65};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13437,5 +13438,202 @@ fn batch66_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES66, n, &mut Rng(0x6666_b066));
+    });
+}
+
+// ---- round 19 batch 67 (ffx_prender::h3_glue65) ----
+
+impl Twins {
+    /// `InterlockedExchangeAdd` through `slot`, not logged: the original
+    /// does its `lock xadd` inline.
+    fn stub_xadd(&mut self, slot: u32) {
+        // mov ecx, [esp+4]; mov eax, [esp+8]; lock xadd [ecx], eax; ret 8
+        let c = [
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x44, 0x24, 0x08, 0xf0, 0x0f, 0xc1, 0x01, 0xc2, 0x08,
+            0x00,
+        ];
+        let code = self.code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &code.to_le_bytes());
+    }
+}
+
+/// The texture video file: its effect count (signed; none, some or
+/// negative), then each effect's `n` positions and `m` of the other four
+/// arrays (`m` vec3s, vec4s, vec2s and halves). The last effect's counts
+/// are now and then large enough for the sizes' `mul` to overflow
+/// (negative `n` skips the bounds' loop).
+fn video_data67(rng: &mut Rng) -> Vec<u8> {
+    let count = pick(rng, &[0, 1, 1, 2, 3, 0x8000_0002]);
+    let mut d = count.to_le_bytes().to_vec();
+    let real = if (count as i32) > 0 { count } else { 0 };
+    for k in 0..real {
+        let last = k + 1 == real;
+        let n = if last && rng.chance(6) {
+            pick(rng, &[0x8000_0001, 0xc000_0000])
+        } else {
+            rng.below(6)
+        };
+        let m = if last && rng.chance(6) {
+            pick(rng, &[0x4000_0001, 0x8000_0001, 0x2000_0001])
+        } else {
+            rng.below(4)
+        };
+        d.extend(n.to_le_bytes());
+        d.extend(m.to_le_bytes());
+        let positions = if (n as i32) >= 0 { 3 * n } else { 3 };
+        for _ in 0..positions {
+            // now and then a quiet NaN or a zero of either sign (no signalling
+            // NaNs: the oracle's fld keeps them, the hardware quiets them)
+            let v = if rng.chance(4) {
+                pick(rng, &[0x7fc0_0000, 0xffc0_0000, 0, 0x8000_0000])
+            } else {
+                mild(rng)
+            };
+            d.extend(v.to_le_bytes());
+        }
+        let rest = if m < 8 {
+            9 * m as usize * 4 + 2 * m as usize
+        } else {
+            16
+        };
+        d.extend(rng.bytes(rest));
+    }
+    d.extend(rng.bytes(16));
+    d
+}
+
+/// A scene for the texture video load: the scenario flag (0x194 with
+/// stray high bits or not) and event jump (0x15d or not), the video
+/// (none, 0x6b, 200 or another) and its loop flag, loaded or not, its
+/// name found or not; the map in the path (the `strstr`s' answers in
+/// turn), the file read in chunks (then 0 or negative), the three
+/// textures (their buffer counts 3, with the top bit, or not; bound or
+/// not; the count change failing or not), the movie's open answering -3
+/// (the error message: a resource or none, the conversion inline or
+/// not, the string's last reference or not) or not, and the file's
+/// effects with their render data. `memcpy` only records; the file's
+/// contents are the buffer's from the start.
+fn prep_video67(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1200);
+    *this = scene;
+    args[0] = obj + 0x40;
+    let r = rng.word();
+    let flag = pick(rng, &[0x194, 0x194, 0x1_0194, 0x195, r]);
+    t.stub_ret(h65::GET_SCENARIO_FLAG, false, 0, 0, flag);
+    let jump = pick(rng, &[0x15d, 0x15d, 0x1_015d, 3]);
+    t.stub_ret(h65::EVENT_JUMP_ID, false, 0, 0, jump);
+    let video = pick(rng, &[u32::MAX, 5, 200, 0x6b, 7, 7]);
+    t.w32(scene + 0x10c4, video);
+    let records = rng.bytes(0x68);
+    t.write(scene + 0xd60, &records);
+    let bytes = rng.bytes(8);
+    t.write(scene + 0x10c8, &bytes);
+    t.write(scene + 0xdd0, &[u8::from(rng.chance(8))]);
+    t.write(scene + 0xdd1, &[0xa5]);
+    let r = rng.word();
+    let found = pick(rng, &[1, 0x100, r | 1, r | 1]);
+    t.stub_here(h65::GET_VIDEO_NAME, true, 2, 2, found);
+    let hits: Vec<u32> = (0..3)
+        .map(|_| if rng.chance(3) { rng.word() | 1 } else { 0 })
+        .collect();
+    t.stub_import_seq(h65::STRSTR_IAT, 2, &hits);
+    t.stub_here(h65::FIOS_OPEN, false, 2, 0, rng.word());
+    let mut reads: Vec<u32> = (0..rng.below(4)).map(|_| 1 + rng.below(0x3ff)).collect();
+    reads.push(pick(rng, &[0, u32::MAX, 0x8000_0000]));
+    t.stub_seq(h65::FIOS_READ, false, 3, 0, &reads);
+    let data = video_data67(rng);
+    let buffer = t.alloc(&data);
+    let mut news = vec![buffer];
+    news.extend((0..20).map(|_| rng.word()));
+    t.stub_seq(h65::ARRAY_NEW, false, 1, 0, &news);
+    let mut mallocs = vec![];
+    for _ in 0..3 {
+        let texture = t.zeros(0x80);
+        let count = pick(rng, &[3, 3, 0x8000_0003, 0, 1, 0x8000_0000]);
+        t.w32(texture + 0x24, count);
+        t.w32(texture + 0x14, rng.word());
+        t.w32(texture + 8, rng.word());
+        mallocs.push(texture);
+    }
+    t.stub_seq(h65::PHYRE_MALLOC, false, 1, 0, &mallocs);
+    let bound: Vec<u32> = (0..3).map(|_| answer(rng)).collect();
+    t.stub_seq(h65::TEXTURE_IS_BOUND, true, 0, 0, &bound);
+    let set: Vec<u32> = (0..3).map(|_| pick(rng, &[0, 0, 1, 0x100])).collect();
+    t.stub_seq(h65::SET_BUFFER_COUNT, true, 1, 1, &set);
+    let r = rng.word();
+    let opened = pick(rng, &[0xffff_fffd, 0xffff_fffd, 0, 1, r]);
+    t.stub_here(h65::VIDEO_OPEN, true, 2, 2, opened);
+    // the open error's strings
+    let module = if rng.chance(3) { 0 } else { rng.word() | 1 };
+    t.stub_here(h65::FIND_RESOURCE, false, 2, 0, module);
+    let other = obj + 0x700;
+    let stores: &[(u8, u32)] = if rng.chance(2) { &[(0, other)] } else { &[] };
+    t.stub_set_this(h65::A2W, 2, rng.word(), stores);
+    let header = t.zeros(0x20);
+    let owner = t.zeros(0x10);
+    let owner_vtable = t.zeros(0x10);
+    let free = t.stub(None, 0xf4ee, true, 1, 1, Some(0));
+    t.w32(owner_vtable + 4, free);
+    t.w32(owner, owner_vtable);
+    t.w32(header, owner);
+    t.w32(header + 0xc, pick(rng, &[0, 1, 2, 5]));
+    let nil = t.stub(None, 0x0011_0000, true, 0, 0, Some(header));
+    let strings_vtable = t.zeros(0x20);
+    t.w32(strings_vtable + 0xc, nil);
+    t.global(h65::STRING_MANAGER, strings_vtable);
+    t.stub_xadd(h65::INTERLOCKED_ADD_IAT);
+    // the effects' render data
+    let renders: Vec<u32> = (0..4)
+        .map(|_| {
+            let render = t.zeros(0xc0);
+            let sub = t.zeros(0x40);
+            t.w32(render + 0x94, sub);
+            render
+        })
+        .collect();
+    t.stub_seq(h65::VFX_RENDER_DATA, false, 2, 0, &renders);
+    // the larger callees' stubs over their own bodies (the cave is small)
+    for (sym, this, n) in [
+        (h65::FIOS_UNIFY, false, 3),
+        (h65::SET_DIMENSIONS, true, 4),
+        (h65::TEXTURE_CTOR, true, 0),
+        (h65::VFX_CREATE, false, 3),
+        (h65::VFX_CREATE_DATA_BUFFER, false, 7),
+        (h65::VFX_SETUP, false, 2),
+        (h65::LOAD_STRING, true, 2),
+        (h65::STRING_REPLACE, true, 2),
+    ] {
+        let pops = if this { n } else { 0 };
+        t.stub_here(sym, this, n, pops, rng.word());
+    }
+}
+
+const VIDEO67_STUBS: &[(u32, K)] = &[
+    (h65::FMV_INSTANCE, K::Getter),
+    (h65::PHYRE_PRINTF, K::Cdecl(2)),
+    (h65::FIOS_CLOSE, K::Cdecl(1)),
+    (h65::MEMCPY, K::Cdecl(3)),
+    (h65::ARRAY_DELETE, K::Cdecl(1)),
+    (h65::UPDATE_MAX_LEVEL, K::This(0)),
+    (h65::ON_TEXTURE_VIDEO_PLAY, K::This(0)),
+    (h65::VFX_SET_TYPE, K::Cdecl(1)),
+    (h65::VFX_SET_VISIBLE, K::Cdecl(3)),
+    (h65::RESET_TO_LAUNCHER, K::Cdecl(0)),
+    (h65::FREE_IAT, K::ImportC(1)),
+    (h65::SHOW_CURSOR_IAT, K::Import(1)),
+    (h65::MESSAGE_BOX_IAT, K::Import(4)),
+];
+
+#[rustfmt::skip]
+const CASES67: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_video67), ..method("texture_video_load", 0x0066_fb70, This::Object, 1, VIDEO67_STUBS, |m, this, a| { gh65::texture_video_load(m, frame_ebp(), this, a[0]); Out::None }) }), 0xb60, 0),
+];
+
+#[test]
+fn batch67_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES67, n, &mut Rng(0x6767_b067));
     });
 }

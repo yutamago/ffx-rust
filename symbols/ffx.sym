@@ -2470,6 +2470,7 @@
 0x00599460 function PSharray16_resize_00599460 # thiscall(array; n): PSharray of 16-byte elements resized (0x42fb80 alloc, 0x49f450 copy, 0x58af90 init, old freed); 0xd on alloc failure, else 0 (asm; h2-render-b r4)
 0x005998f0 function PRendererD3D11_setBlendFactors_005998f0 # thiscall(this; mode, src, dst) ret 0xc: +0x5d4 = 0, +0x5d8 = mode byte, +0x5dc/+0x5e0 = 0x0058a8f0(src/dst) (cdecl), +0x5e8 = 5, +0x5ec = 6 (SRC_ALPHA, INV_SRC_ALPHA); returns 0; name ours
 0x00599a80 function PConstantBufferD3D11_resizeSlots_00599a80 # thiscall(this; n), ret 4: 0x16 while +0x38 set; else resizes the 16-byte slot PSharray +0xc by 0x00599460 and resets each slot (word 0, word 1 freed, word 3); 0
+0x00599b70 function PTexture2DD3D11_setBufferCount_00599b70 # thiscall(texture; count) ret 4 -> 0 on success: unbinds a bound texture (+0x70), resizes the buffer array at +0x24 to count, (re)creates its first buffer when it has none, marks +0x70; PhyreScene_textureVideoLoad calls it after the "Altering buffer count of PTexture2D whilst bound" warning and clears +8 on 0; name ours (M4 h3 r19)
 0x00599d50 function Phyre_PRendering_PRenderInterface_setClearColor_00599d50 # thiscall(this, r, g, b, a): +0x37c..+0x388 = the floats (fld/fstp); eax untouched; next to setClearDepth; name ours
 0x00599eb0 function Phyre_PRendering_PRenderInterfaceNVN_setClearDepth # name from the Ghidra dump (functions.tsv, the Switch-symbol import); behaviour checked in the asm (h2-render-b)
 0x00599ec0 function Phyre_PRendering_PRenderInterface_setClearStencil_00599ec0 # thiscall(this, v): +0x390 = v; returns v; next to setClearDepth; name ours
@@ -4300,7 +4301,7 @@
 0x0066fad0 function PhyreScene_softResetScene # fh switch:bsim0.94 0x710020bb90 PhyreScene::softResetScene
 0x0066fb30 function PhyreScene_startLoadingScreen # fh v3:bsim1.00 0x0066fcc0 PhyreScene::startLoadingScreen
 0x0066fb50 function PhyreScene_stopLoadingScreen # layout+callees: sorts between PhyreScene_startLoadingScreen and PhyreScene_textureVideoLoad, and its named callees match the Switch 0x710020bd80 PhyreScene_stopLoadingScreen's (similarity 1.00: Phyre_PFramework_PApplication_GetApplication); symbols from Fahrenheit's server export
-0x0066fb70 function PhyreScene_textureVideoLoad # fh v3:exact 0x0066fd10 PhyreScene::textureVideoLoad
+0x0066fb70 function PhyreScene_textureVideoLoad # fh v3:exact 0x0066fd10 PhyreScene::textureVideoLoad; thiscall(scene; path) ret 4, void; frame ebp-0xb60: the video name at -0x51c, the unified path at -0x11c, the read buffer at -0x91c, the effect name "VideoTexture" at -0xb24; the loop flag passed to PVideoPlaybackWin32_open as the low byte of the frame word -0xb38 (upper bytes: the last texture malloc's); builds a never-read quad template at -0xa24..-0x920 and the positions' bounds (its y-max compare stores into the x-max word); ported M4 h3 r19 (ffx_prender::h3_glue65)
 0x00670750 function PhyreScene_textureVideoPlay # fh v3:bsim1.00 0x006708f0 PhyreScene::textureVideoPlay
 0x00670760 function PhyreScene_textureVideoUnload # fh v3:exact 0x00670900 PhyreScene::textureVideoUnload
 0x00670b00 function PhyreScene_unloadAtelVFXTexture_00670b00 # fh v3:bsim1.00 0x00670ca0 PhyreScene::unloadAtelVFXTexture
