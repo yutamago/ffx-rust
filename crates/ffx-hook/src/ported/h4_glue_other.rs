@@ -19,7 +19,8 @@ use ffx_glue_other::{
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
     h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
-    h4_l5 as l5, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6,
+    h4_m7 as m7, h4_m8 as m8, h4_m9 as m9, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2645,6 +2646,74 @@ ported! {
     FFEscMenu_update @ 0x0068_ffb0 => extern "thiscall" fn ff_esc_menu_update(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (l5::ESC_FRAME / 4) as usize }>::new();
         l5::esc_update(&mut mem(), frame.at(), this).unwrap_or(0)
+    }
+    // ---- continuation round 11, batch 1 (ffx_glue_other::h4_m1)
+    /// `MenuDynamicGeometry_setShaderClusterAndMaterial(this; cluster,
+    /// name, load)` -> 0, 1, 3, 0x13 or the texture binding's error (a
+    /// 0x60-byte frame: the original's locals and argument words).
+    MenuDynamicGeometry_setShaderClusterAndMaterial @ 0x006a_3100 => extern "thiscall" fn menu_dynamic_geometry_set_shader_cluster_and_material(this: u32, cluster: u32, name: u32, load: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m1::MATERIAL_FRAME / 4) as usize }>::new();
+        m1::set_shader_cluster_and_material(&mut mem(), frame.at(), this, cluster, name, load)
+    }
+    /// `SkipPrompt_buildQuad_006e7940(x, y, w, h, &mesh, &instance,
+    /// &materials, material)` (the floats as bits) -> the second unmap's
+    /// result (a 0x10-byte frame: the two mapped data pointers).
+    SkipPrompt_buildQuad_006e7940 @ 0x006e_7940 => extern "stdcall" fn skip_prompt_build_quad(x: u32, y: u32, w: u32, h: u32, mesh: u32, instance: u32, materials: u32, material: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m2::QUAD_FRAME / 4) as usize }>::new();
+        m2::build_quad(&mut mem(), frame.at(), [x, y, w, h], mesh, instance, materials, material)
+    }
+    /// `PhyFMVPlayerManager_initialize(this; id, wide, flag)` -> 0 or the
+    /// texture register's error (a 0x100-byte frame: the shader cluster's
+    /// path; the main thread).
+    PhyFMVPlayerManager_initialize @ 0x006d_9c80 => extern "thiscall" fn phy_fmv_player_manager_initialize(this: u32, id: u32, wide: u32, flag: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m3::INIT_FRAME / 4) as usize }>::new();
+        m3::initialize(&mut mem(), frame.at(), this, id, wide, flag)
+    }
+    /// `LoadingScreen_prepareMesh(this)` (`ecx`, plain ret) -> the last
+    /// `SetValue`'s result (0 where the original leaves its frame's
+    /// address; a 0x40-byte frame: the texture records, the colour and the
+    /// two mapped data pointers).
+    LoadingScreen_prepareMesh @ 0x006e_4920 => extern "thiscall" fn loading_screen_prepare_mesh(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m4::MESH_FRAME / 4) as usize }>::new();
+        m4::prepare_mesh(&mut mem(), frame.at(), this).unwrap_or(0)
+    }
+    // ---- continuation round 11, batch 2 (ffx_glue_other::h4_m5, h4_m6, h4_m7)
+    /// `GraphicAbmap_update_00685840(this)` (`ecx`, plain ret;
+    /// `graphicAbmapUpdate` tail-jumps to it) -> the original's `eax` (the
+    /// state, its negation, or the last geometry destructor's result).
+    GraphicAbmap_update_00685840 @ 0x0068_5840 => extern "thiscall" fn graphic_abmap_update(this: u32) -> u32 {
+        m5::abmap_update(&mut mem(), this)
+    }
+    /// `ClassDynamicGeometry_setupMaterial(this; n, names, clusters)` -> 0,
+    /// 0xa, 3, 0x13 or a callee's error (a 0xf0-byte frame: the texture
+    /// records, the cursor, the material handles and fade values).
+    ClassDynamicGeometry_setupMaterial @ 0x006a_3b50 => extern "thiscall" fn class_dynamic_geometry_setup_material(this: u32, n: u32, names: u32, clusters: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m6::MATERIAL_FRAME / 4) as usize }>::new();
+        m6::setup_material(&mut mem(), frame.at(), this, n, names, clusters)
+    }
+    /// `ClassDynamicGeometry_updateRenderData(this; unused)` -> 0, 1 or a
+    /// binding's error (the word is never read; a 0x100-byte frame: the
+    /// segment record's copy, the z matrix, the fade values, the bounds).
+    ClassDynamicGeometry_updateRenderData @ 0x006a_4a50 => extern "thiscall" fn class_dynamic_geometry_update_render_data(this: u32, _unused: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m7::RENDER_FRAME / 4) as usize }>::new();
+        m7::update_render_data(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 11, batch 3 (ffx_glue_other::h4_m8)
+    /// `createVFXRenderDataBuffer(lo, hi, effect, data, flags)` -> 1 or 0
+    /// (a 0x23d8-byte frame, as the original's: the counts, names and
+    /// flags it hands the data buffers; zeroed, so the kinds of segments
+    /// that never set theirs read 0).
+    createVFXRenderDataBuffer @ 0x0071_3790 => extern "C" fn create_vfx_render_data_buffer(lo: u32, hi: u32, effect: u32, data: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m8::BUFFER_FRAME / 4) as usize }>::new();
+        m8::create_render_data_buffer(&mut mem(), frame.at(), lo, hi, effect, data, flags)
+    }
+    // ---- continuation round 11, batch 4 (ffx_glue_other::h4_m9)
+    /// `updateVFXRenderDataAtelShp(lo, hi, shapes, obj, index)` -> 1 or 0
+    /// (the index is a u16; a 0x90-byte frame: the screen size the font
+    /// call fills, the bounds vectors the matrix transforms).
+    updateVFXRenderDataAtelShp @ 0x0071_96f0 => extern "C" fn update_vfx_render_data_atel_shp(lo: u32, hi: u32, shapes: u32, obj: u32, index: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m9::ATEL_FRAME / 4) as usize }>::new();
+        m9::update_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, obj, index)
     }
 }
 
