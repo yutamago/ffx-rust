@@ -522,6 +522,25 @@ impl<F: Files> Engine<F> {
 
     /// Mixes one block (one `EventSystem::update`).
     pub fn update(&mut self) {
+        if std::env::var("FFX_MIX_AT")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            == Some(self.updates)
+        {
+            for (id, v) in &self.voices {
+                eprintln!(
+                    "voice {id}: rate {} ch {} frames {} loop {:?} looping {} pos {} vol {} gain {:?}",
+                    v.wave.rate,
+                    v.wave.channels,
+                    v.wave.frames,
+                    v.wave.looped,
+                    v.looping,
+                    v.pos >> 32,
+                    v.volume,
+                    v.gain
+                );
+            }
+        }
         let at = self.out.len();
         self.out.resize(at + 2 * BLOCK, 0.0);
         let block = &mut self.out[at..];

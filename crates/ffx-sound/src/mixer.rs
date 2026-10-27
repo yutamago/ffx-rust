@@ -81,6 +81,8 @@ pub struct Voice {
     /// The left and right gain the last frame used (0 at the start: the
     /// first block ramps up from silence).
     pub gain: [f32; 2],
+    /// Past its first loop end (later passes are a whole number of blocks).
+    pub wrapped: bool,
     /// Blocks mixed.
     pub blocks: u32,
     /// Ended: past its last frame.
@@ -102,6 +104,7 @@ impl Voice {
             age: 0,
             gain: [0.0; 2],
             blocks: 0,
+            wrapped: false,
             ended: false,
         }
     }
@@ -133,12 +136,13 @@ impl Voice {
         // not; stereo 0.000315 and 0.00032 a side)
         let change = (target[0] - self.gain[0]).abs() + (target[1] - self.gain[1]).abs();
         if change < CHANGE {
-            target = self.gain;
-        }
-        // measured with fmod-probe: below SILENT the voice is silent at once
-        // (no ramp; 1.704e-5 silent, 2.32e-5 not), and keeps its place
-        if self.volume < SILENT {
-            self.gain = [0.0; 2];
+            // measured with fmod-probe: a change too small to take, to a
+            // volume below SILENT, silences the voice at once (no ramp;
+            // 1.704e-5 silent, 2.32e-5 not); it keeps its place. A larger
+            // change ramps as usual, to 0 too (battle-attack's music fade)
+            if self.volume < SILENT {
+                self.gain = [0.0; 2];
+            }
             target = self.gain;
         }
         self.blocks = self.blocks.wrapping_add(1);
@@ -156,18 +160,25 @@ impl Voice {
         }
         let w = &*self.wave;
         let end = u64::from(w.frames);
-        let loop_points = if self.looping {
+        let mut loop_points = if self.looping {
             w.looped
-                // measured with fmod-probe: FMOD loops between the loop
-                // points rounded up to whole IMA blocks (64 frames):
-                // 50027_0's 119648..=737699 plays as 119680..737728
+                // measured with fmod-probe: FMOD loops on whole IMA blocks
+                // (64 frames). The first pass ends at the end point rounded
+                // up; every pass after it starts at the start point rounded
+                // up and lasts the loop's length rounded up: 50027_0's
+                // 119648..=737699 plays 0..737728, then 119680..737792
                 .map(|(s, e)| {
                     let block = crate::ima::BLOCK_SAMPLES as u64;
-                    let s = u64::from(s).div_ceil(block) * block;
-                    let e = (u64::from(e) + 1).div_ceil(block) * block;
-                    (s, e.min(end))
+                    let (s, e) = (u64::from(s), u64::from(e) + 1);
+                    let start = s.div_ceil(block) * block;
+                    let later = (start + (e - s).div_ceil(block) * block).min(end);
+                    (start, e.div_ceil(block) * block, later)
                 })
-                .or(Some((0, end)))
+                .map(|(start, first, later)| (start, first.min(end), later))
+                .or(Some((0, end, end)))
+                .map(|(start, first, later)| {
+                    (start, if self.wrapped { later } else { first }, later)
+                })
         } else {
             None
         };
@@ -176,7 +187,7 @@ impl Voice {
             #[allow(clippy::cast_precision_loss)] // 32 fraction bits into f32, as measured
             let frac = (self.pos & 0xffff_ffff) as f32 / 4_294_967_296.0;
             let next = match loop_points {
-                Some((ls, le)) if i + 1 >= le => ls,
+                Some((ls, le, _)) if i + 1 >= le => ls,
                 _ => i + 1,
             };
             let (a, b) = (w.frame(i), w.frame(next));
@@ -196,7 +207,11 @@ impl Voice {
             self.pos += self.step;
             let i = self.pos >> 32;
             match loop_points {
-                Some((ls, le)) if i >= le => self.pos -= (le - ls) << 32,
+                Some((ls, le, later)) if i >= le => {
+                    self.pos -= (le - ls) << 32;
+                    self.wrapped = true;
+                    loop_points = Some((ls, later, later));
+                }
                 None if i >= end => {
                     self.ended = true;
                     break;
