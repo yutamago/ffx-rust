@@ -13,6 +13,8 @@ pub mod fmod;
 pub mod foot3d;
 pub mod fsb;
 pub mod ima;
+pub mod mixer;
+pub mod replay;
 pub mod snd;
 
 /// A WAV file of 16-bit PCM.
