@@ -6,7 +6,9 @@
 //! drawers, the GS layer's frame code). Frames the originals hand callees
 //! are `StackFrame`s; nothing is kept between calls.
 
-use ffx_glue_other::{h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be};
+use ffx_glue_other::{
+    h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
+};
 
 use super::{StackFrame, mem, ported};
 
@@ -177,5 +179,48 @@ ported! {
     /// slots.
     MenuConfig_DrawRowFrame_008cb530 @ 0x008c_b530 => extern "C" fn row_frame(x: u32, y: u32; slots: u32) -> u32 {
         be::row_frame(&mut mem(), x, y, Some(slots))
+    }
+
+    // ---- round 2, batch 1 (ffx_glue_other::h4b_f)
+
+    /// `AbmapDrawGridTexture_00a4c460(level, size)`: the record and the
+    /// name buffer in a frame (`ebp - 0x19c` .. `ebp - 4`, 102 words;
+    /// zeroed, so another grid type's never-written name is empty).
+    AbmapDrawGridTexture_00a4c460 @ 0x00a4_c460 => extern "C" fn grid_texture(level: u32, size: u32) -> u32 {
+        let mut f = StackFrame::<0x66>::new();
+        bf::grid_texture(&mut mem(), f.at(), level, size)
+    }
+    /// `AbmapDrawLangTitle_00a45ab0(_, x)`: the record and the name buffer
+    /// in a frame (`ebp - 0x1ac` .. `ebp - 4`, 106 words).
+    AbmapDrawLangTitle_00a45ab0 @ 0x00a4_5ab0 => extern "C" fn lang_title(_a: u32, x: u32) -> u32 {
+        let mut f = StackFrame::<0x6a>::new();
+        bf::lang_title(&mut mem(), f.at(), x)
+    }
+    /// `AbmapDrawPadArrow_00a4f290(item, top, x)`: the record and the name
+    /// buffer in a frame (`ebp - 0x1ac` .. `ebp - 4`, 106 words; zeroed).
+    AbmapDrawPadArrow_00a4f290 @ 0x00a4_f290 => extern "C" fn pad_arrow(item: u32, top: u32, x: u32) -> u32 {
+        let mut f = StackFrame::<0x6a>::new();
+        bf::pad_arrow(&mut mem(), f.at(), item, top, x)
+    }
+    /// `gdraw_textureDrawBufferBegin_00a3ac90(rect, _, format, keep,
+    /// stats)`: the clear quad's rectangle in a frame.
+    gdraw_textureDrawBufferBegin_00a3ac90 @ 0x00a3_ac90 => extern "stdcall" fn texture_draw_begin(rect: u32, _b: u32, format: u32, keep: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        bf::texture_draw_begin(&mut mem(), f.at(), rect, format, keep, stats)
+    }
+    /// `gdraw_filterPass_00a374e0(filter, rect, colour, stats)`: the
+    /// rectangle, the null resource and the buffer word in a frame
+    /// (`ebp - 0x24` .. `ebp - 4`, 9 words).
+    gdraw_filterPass_00a374e0 @ 0x00a3_74e0 => extern "C" fn filter_pass(filter: u32, rect: u32, colour: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        bf::filter_pass(&mut mem(), f.at(), filter, rect, colour, stats)
+    }
+    /// `TOAdpCrossEasyStrFontSClutRGBA(text, x, y, a, r, g, b, alpha,
+    /// scale, space)`: the converted text in a frame (`ebp - 0x118` up; 1
+    /// KB, room for a long text's two-byte codes); `y` less the remap in
+    /// its slot.
+    TOAdpCrossEasyStrFontSClutRGBA @ 0x008e_c2f0 => extern "C" fn cross_str(text: u32, x: u32, y: u32, a: u32, r: u32, g: u32, b: u32, alpha: u32, scale: u32, space: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x100>::new();
+        bf::cross_str(&mut mem(), f.at(), text, x, y, a, [r, g, b, alpha], scale, space, Some(slots))
     }
 }

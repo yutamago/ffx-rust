@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::{
-    h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be,
+    h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -2644,6 +2644,654 @@ fn be_row_frame() {
             let x = Oracle::read(&mut t.a, ebp + 8, 8).unwrap();
             let y = Oracle::read(&mut t.b, ebp + 8, 8).unwrap();
             assert_eq!(x, y, "{w}: argument slots");
+        }
+    }
+}
+
+// ---- round 2, batch 1 (ffx_glue_other::h4b_f)
+
+/// Runs an original (`conv`) and its port with the frame block
+/// `[lo, hi)` filled alike (`fill`), the port's calls below it; then the
+/// result, the diff and the frame bytes of `compare` (absolute ranges).
+#[allow(clippy::too_many_arguments)]
+fn run_parts(
+    t: &mut Twins,
+    w: &str,
+    sym: u32,
+    conv: Conv,
+    args: &[u32],
+    (lo, hi): (u32, u32),
+    fill: u8,
+    compare: &dyn Fn(u32) -> Vec<(u32, u32)>,
+    port: impl FnOnce(&mut G) -> u32,
+) -> u32 {
+    run_zeroed(t, w, sym, conv, args, (lo, hi), fill, None, compare, port)
+}
+
+/// [`run_parts`] with `zero` (absolute) zeroed after the fill: the
+/// never-written words the port takes as 0.
+#[allow(clippy::too_many_arguments)]
+fn run_zeroed(
+    t: &mut Twins,
+    w: &str,
+    sym: u32,
+    conv: Conv,
+    args: &[u32],
+    (lo, hi): (u32, u32),
+    fill: u8,
+    zero: Option<(u32, u32)>,
+    compare: &dyn Fn(u32) -> Vec<(u32, u32)>,
+    port: impl FnOnce(&mut G) -> u32,
+) -> u32 {
+    t.write(lo, &vec![fill; (hi - lo) as usize]);
+    if let Some((a, b)) = zero {
+        t.write(a, &vec![0; (b - a) as usize]);
+    }
+    t.b.set_call_top(Some(lo - 0x100));
+    let addr = t.rebase(sym);
+    let ra =
+        t.a.call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
+    let tramp = t.tramp;
+    let v = port(&mut G(&mut t.b, tramp));
+    t.b.set_call_top(None);
+    assert!(ra.st0_raw.is_none(), "{w}: ST0 left set");
+    assert_eq!(ra.eax, v, "{w}: eax");
+    t.diff(w);
+    for (a, b) in compare(v) {
+        let x = Oracle::read(&mut t.a, a, (b - a) as usize).unwrap();
+        let y = Oracle::read(&mut t.b, a, (b - a) as usize).unwrap();
+        assert_eq!(x, y, "{w}: frame {a:#x}..{b:#x}");
+    }
+    v
+}
+
+/// The `sprintf` import slot pointed at a recording stub (4 words).
+fn sprintf_stub(t: &mut Twins) -> u32 {
+    let f = t.stub_code(0x0bad_f001, false, 4, 0, false, &[]);
+    t.g32(bf::SPRINTF.sym, f);
+    0x0bad_f001
+}
+
+/// A sphere grid block with random words around the fields the quads
+/// read; the grid type one of 0..=3.
+fn abmap_block(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let abmap = t.zeros(0x116c0);
+    for off in (0x11680..0x116c0).step_by(4) {
+        let v = rng.next();
+        t.w32(abmap + off, v);
+    }
+    let kind = rng.pick(&[0, 0, 2, 2, 1, 3]);
+    t.w32(abmap + 0x116a4, kind);
+    t.g32(bf::ABMAP.sym, abmap);
+    abmap
+}
+
+/// `AbmapDrawGridTexture_00a4c460`: every grid type and language, the
+/// packet and the record; the name buffer zeroed alike (the junk read).
+#[test]
+fn bf_grid_texture() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f001);
+        let sp = sprintf_stub(&mut t);
+        t.stub(bf::GET_LANG, 0, false);
+        t.stub(bf::DRAW_UI_ELEMENT, 5, false);
+        let tags = [sp, bf::GET_LANG, bf::DRAW_UI_ELEMENT];
+        let ebp = t.ebp_for(2);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let lang = rng.pickr(&[0xb, 0, 1, 0xb]);
+            t.ret(bf::GET_LANG, lang);
+            abmap_block(&mut t, &mut rng);
+            let packet = random_block(&mut t, &mut rng, 0x70);
+            t.g32(bf::PACKET.sym, packet);
+            t.constants(
+                &mut rng,
+                &[
+                    0x00b7_b618,
+                    0x00b7_b5fc,
+                    0x00b4_1d9c,
+                    0x00b4_1d98,
+                    0x00b7_b640,
+                    0x00b7_b610,
+                ],
+                &[],
+            );
+            let level = rng.pickr(&[0, 1, 0x7f, 0x8000_0000, 0xffff_ff80]);
+            let size = rng.next();
+            run_zeroed(
+                &mut t,
+                &w,
+                0x00a4_c460,
+                Conv::Cdecl,
+                &[level, size],
+                (ebp - 0x19c, ebp - 4),
+                0xa5,
+                Some((ebp - 0x104, ebp - 4)),
+                &|_| vec![(ebp - 0x19c, ebp - 4)],
+                |g| bf::grid_texture(g, ebp - 0x19c, level, size),
+            );
+        }
+    }
+}
+
+/// `AbmapDrawLangTitle_00a45ab0`: the cells of every language, random
+/// constants.
+#[test]
+fn bf_lang_title() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f002);
+        t.stub(bf::GET_LANG, 0, false);
+        capture_stub(&mut t, bf::DRAW_ABMAP_ELEMENT, 3, 0, 0x80);
+        let tags = [bf::GET_LANG, bf::DRAW_ABMAP_ELEMENT];
+        let ebp = t.ebp_for(2);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let lang = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 0xb, 0x11, 0x12, 0x13, 0xffff_ffff]);
+            t.ret(bf::GET_LANG, lang);
+            t.constants(
+                &mut rng,
+                &[
+                    0x00b7_b6d4,
+                    0x00b7_b6e4,
+                    0x00b7_b5e4,
+                    0x00b5_ed84,
+                    0x00b7_b5ec,
+                    0x00b7_b6dc,
+                    0x00b7_b6e0,
+                    0x00b9_2268,
+                ],
+                &[
+                    0x00b7_b6a8,
+                    0x00b7_b690,
+                    0x00b7_b698,
+                    0x00b4_c170,
+                    0x00b5_8b50,
+                    0x00b7_b6a0,
+                ],
+            );
+            let (a, x) = (rng.next(), rng.float());
+            run_zeroed(
+                &mut t,
+                &w,
+                0x00a4_5ab0,
+                Conv::Cdecl,
+                &[a, x],
+                (ebp - 0x1ac, ebp - 4),
+                0xa5,
+                Some((ebp - 0x104, ebp - 4)),
+                &|_| vec![(ebp - 0x1ac, ebp - 4)],
+                |g| bf::lang_title(g, ebp - 0x1ac, x),
+            );
+        }
+    }
+}
+
+/// `AbmapDrawPadArrow_00a4f290`: the bob's step on both sides and at its
+/// turns, every grid type; `_CIsin` runs as the original.
+#[test]
+fn bf_pad_arrow() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f003);
+        let sp = sprintf_stub(&mut t);
+        t.stub(bf::GET_LANG, 0, false);
+        capture_stub(&mut t, bf::DRAW_ABMAP_ELEMENT, 3, 0, 0x80);
+        let tags = [sp, bf::GET_LANG, bf::DRAW_ABMAP_ELEMENT];
+        let ebp = t.ebp_for(3);
+        for i in 0..300 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let lang = rng.pickr(&[0xb, 0, 0xb]);
+            t.ret(bf::GET_LANG, lang);
+            let abmap = abmap_block(&mut t, &mut rng);
+            let bob = if rng.below(3) == 0 {
+                rng.float()
+            } else {
+                (rng.below(400) as f32 / 9.0 - 20.0).to_bits()
+            };
+            t.w32(abmap + 0x116b4, bob);
+            let step = rng.pickr(&[
+                0,
+                1,
+                5,
+                10,
+                0xb,
+                0xc,
+                0xffff_ffff,
+                0xffff_fffe,
+                0xffff_fff5,
+                0x8000_0000,
+            ]);
+            t.w32(abmap + 0x116b8, step);
+            t.constants(
+                &mut rng,
+                &[0x00b5_f13c, 0x00b5_ed60, 0x00b6_6b7c, 0x00b7_b630],
+                &[0x00b2_c5c8, 0x00b4_9968, 0x00b5_87d8, 0x00b9_2270],
+            );
+            // the sine's argument stays ordinary
+            for (c, v) in [
+                (0x00b4_b468u32, 10.0f64),
+                (0x00b7_b688, std::f64::consts::FRAC_PI_2),
+            ] {
+                let at = t.rebase(c);
+                t.write(at, &v.to_le_bytes());
+            }
+            let item = random_block(&mut t, &mut rng, 0x20);
+            let (top, x) = (rng.small(), rng.small());
+            run_zeroed(
+                &mut t,
+                &w,
+                0x00a4_f290,
+                Conv::Cdecl,
+                &[item, top, x],
+                (ebp - 0x1ac, ebp - 4),
+                0xa5,
+                Some((ebp - 0x104, ebp - 4)),
+                &|_| vec![(ebp - 0x1ac, ebp - 4)],
+                |g| bf::pad_arrow(g, ebp - 0x1ac, item, top, x),
+            );
+        }
+    }
+}
+
+/// A `GDraw` state for the begins: random words, the context, the target
+/// stack somewhere below `+0xaac` (sometimes full), the sizes small.
+fn gdraw_state(t: &mut Twins, rng: &mut Rng, state: u32, ctx: u32, warn: u32) {
+    t.g32(bb::GDRAW_WARNING.sym, warn);
+    t.g32(bb::GDRAW_STATE.sym, state);
+    for k in 0..0x2c0 {
+        let v = rng.next();
+        t.w32(state + 4 * k, v);
+    }
+    t.w32(state + 4, ctx);
+    let plain = rng.below(2) == 0;
+    for off in [0x6c0, 0x6c4, 0x6e0, 0x6e4, 0x6f0, 0x6f4] {
+        let v = if !plain {
+            rng.pick(&[0, 1, 2, 3, 100, 640, 1000, 0xffff_fffe, 0xffff_ff00])
+        } else if off >= 0x6f0 {
+            rng.below(8)
+        } else {
+            600 + rng.below(100)
+        };
+        t.w32(state + off, v);
+    }
+    for off in [0x6d8, 0x6dc] {
+        let v = rng.pick(&[1, 1, 1, 1, 1, 0]);
+        t.w32(state + off, v);
+    }
+    let flat = rng.pick(&[0, 1]);
+    t.w32(state + 0x6f8, flat);
+    let depth = rng.pick(&[1, 2, 5, 0x10, 0x11]);
+    let top = state + 0xaac - 0x1c * depth;
+    t.w32(state + 0xaac, top);
+}
+
+/// A target block for the allocation stub: inside the state (its slot
+/// row stays inside it too), its pool word the state's or not.
+fn gdraw_target(t: &mut Twins, rng: &mut Rng, state: u32) -> u32 {
+    let j = rng.below(6);
+    let target = state + 0x438 + 0x38 * j + rng.pick(&[0, 4, 0x34]);
+    let other = rng.next();
+    let pool = rng.pick(&[state + 0x290, other]);
+    t.w32(target + 0x18, pool);
+    target
+}
+
+/// Maps the page the slot row of target 0 lands on (`keep`).
+fn map_slot_row(t: &mut Twins, state: u32) {
+    let slot = (0u32.wrapping_sub(state).wrapping_sub(0x438) as i32 / 0x38) as u32;
+    let at = state
+        .wrapping_add(slot.wrapping_mul(16))
+        .wrapping_add(0x630)
+        & !0xfff;
+    let _ = t.a.map_zeroed(at, 0x2000);
+    let _ = t.b.map_zeroed(at, 0x2000);
+}
+
+fn gdraw_begin_stubs(t: &mut Twins) -> Vec<u32> {
+    let mut tags = vec![];
+    for (sym, n) in [
+        (bf::ALLOC_TARGET, 1),
+        (bf::BIND_TOP, 1),
+        (bf::DRAW_RECT_QUAD, 2),
+        (bf::REQUEUE_NODE, 1),
+        (bf::RELEASE_TARGET, 2),
+        (bf::TARGET_VIEWPORT, 0),
+        (bf::TARGET_PROJECTION, 0),
+        (bb::SET_VIEWPORT, 4),
+        (bb::SET_PROJECTION, 4),
+        (bf::MAP_BUFFER, 1),
+    ] {
+        t.stub(sym, n, false);
+        tags.push(sym);
+    }
+    let zero = t.zeros(4);
+    t.stub_at(bf::DRAW_QUAD, false, 6, 0, &[wr(0, zero)]);
+    tags.push(bf::DRAW_QUAD);
+    tags
+}
+
+/// A rectangle: small values, sometimes empty, reversed or negative.
+fn gdraw_rect(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let rect = t.zeros(16);
+    if rng.below(2) == 0 {
+        let (x, y) = (rng.below(300), rng.below(300));
+        let (w, h) = (rng.below(400), rng.below(400));
+        for (k, v) in [x, y, x + w, y + h].iter().enumerate() {
+            t.w32(rect + 4 * k as u32, *v);
+        }
+        return rect;
+    }
+    for k in 0..4 {
+        let v = rng.pick(&[
+            0,
+            1,
+            2,
+            3,
+            4,
+            50,
+            100,
+            639,
+            640,
+            1200,
+            0xffff_fffd,
+            0xffff_ff00,
+        ]);
+        t.w32(rect + 4 * k, v);
+    }
+    rect
+}
+
+/// `gdraw_textureDrawBufferBegin_00a3ac90`: kept and new targets, the
+/// allocation failing, empty and clipped rectangles, a full stack, a
+/// zero-sized screen.
+#[test]
+fn bf_texture_draw_begin() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f004);
+        let warn = t.stub_code(0x0bad_f004, false, 2, 0, false, &[]);
+        let ctx = com(&mut t, 0xf000, &[(0xc8, 3, &[])]);
+        let mut tags = gdraw_begin_stubs(&mut t);
+        tags.extend([0x0bad_f004, 0xf0c8]);
+        let state = t.zeros(0xb00);
+        map_slot_row(&mut t, state);
+        // a kept entry's target is 0: an empty rectangle reads its pool word
+        let _ = t.a.map_zeroed(0, 0x1000);
+        let _ = t.b.map_zeroed(0, 0x1000);
+        let ebp = t.ebp_for(5);
+        let mut ok = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            gdraw_state(&mut t, &mut rng, state, ctx, warn);
+            let target = gdraw_target(&mut t, &mut rng, state);
+            let made = rng.pick(&[target, target, target, 0]);
+            t.ret(bf::ALLOC_TARGET, made);
+            let rect = if rng.below(4) == 0 {
+                0
+            } else {
+                gdraw_rect(&mut t, &mut rng)
+            };
+            let keep = rng.pick(&[0, 0, 1, 0x100]);
+            let (b, format, counters) = (rng.next(), rng.next(), rng.next());
+            let args = [rect, b, format, keep, counters];
+            if keep != 0 && rect == 0 {
+                continue; // the original reads the null rectangle
+            }
+            let v = run_parts(
+                &mut t,
+                &w,
+                0x00a3_ac90,
+                Conv::Stdcall,
+                &args,
+                (ebp - 0x18, ebp),
+                0xa5,
+                &|_| {
+                    if rect == 0 {
+                        vec![]
+                    } else {
+                        vec![(ebp - 0x18, ebp - 8)]
+                    }
+                },
+                |g| bf::texture_draw_begin(g, ebp - 0x18, rect, format, keep, counters),
+            );
+            ok += v;
+        }
+        assert!(ok > 100, "{name}: {ok}");
+    }
+}
+
+/// `gdraw_filterPass_00a374e0`: as the texture begin, plus the filter's
+/// input or none, and the pop at the end with the stack valid or not.
+#[test]
+fn bf_filter_pass() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f005);
+        let warn = t.stub_code(0x0bad_f005, false, 2, 0, false, &[]);
+        let ctx = com(
+            &mut t,
+            0xf100,
+            &[
+                (0xc8, 3, &[]),
+                (0x20, 4, &[]),
+                (0x28, 4, &[]),
+                (0x24, 4, &[]),
+                (0x3c, 3, &[]),
+                (0x40, 4, &[]),
+            ],
+        );
+        let mut tags = gdraw_begin_stubs(&mut t);
+        tags.extend([0x0bad_f005, 0xf1c8, 0xf120, 0xf128, 0xf124, 0xf13c, 0xf140]);
+        let state = t.zeros(0xb00);
+        let ebp = t.ebp_for(4);
+        let mut full = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            gdraw_state(&mut t, &mut rng, state, ctx, warn);
+            let target = gdraw_target(&mut t, &mut rng, state);
+            let made = rng.pick(&[target, target, target, 0]);
+            t.ret(bf::ALLOC_TARGET, made);
+            let dst = t.zeros(0x50);
+            t.ret(bf::MAP_BUFFER, dst);
+            let rect = gdraw_rect(&mut t, &mut rng);
+            let filter = random_block(&mut t, &mut rng, 0xe0);
+            let block = random_block(&mut t, &mut rng, 0x30);
+            let input = rng.pick(&[0, block]);
+            t.w32(filter + 0x1c, input);
+            let (colour, counters) = (rng.next(), rng.next());
+            // the quad's stub clears the word `colour` points at: the
+            // screen's size sometimes, so the pop sees a zero-sized screen
+            let cell = t.zeros(16);
+            t.w32(cell, colour);
+            let colour = rng.pick(&[cell, cell, state + 0x6d8, state + 0x6dc]);
+            run_parts(
+                &mut t,
+                &w,
+                0x00a3_74e0,
+                Conv::Cdecl,
+                &[filter, rect, colour, counters],
+                (ebp - 0x24, ebp),
+                0xa5,
+                &|_| vec![(ebp - 0x24, ebp - 0x10)],
+                |g| bf::filter_pass(g, ebp - 0x24, filter, rect, colour, counters),
+            );
+            let n = t.log_entries();
+            for e in 0..n {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * e);
+                if tag == bf::DRAW_QUAD {
+                    full += 1;
+                    let x = Oracle::read(&mut t.a, ebp - 0x10, 8).unwrap();
+                    let y = Oracle::read(&mut t.b, ebp - 0x10, 8).unwrap();
+                    assert_eq!(x, y, "{w}: the buffer word and the float");
+                }
+            }
+        }
+        assert!(full > 100, "{name}: {full}");
+    }
+}
+
+/// A recording stub at `sym` (`n` words) that first copies `bytes` from
+/// its pointer argument `arg` into a capture area (four slots, by call
+/// count), so the diff sees what each call was handed.
+fn capture_stub(t: &mut Twins, sym: u32, n: u32, arg: u8, bytes: u32) {
+    let log = t.stub_code(sym, false, n, 0, false, &[]);
+    let count = t.zeros(4);
+    let area = t.zeros((4 * bytes) as usize);
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c + 4 * arg]; // push esi; push edi; mov esi, [esp+0xc+4i]
+    c.push(0xa1);
+    c.extend(count.to_le_bytes()); // mov eax, [count]
+    c.extend([0x83, 0xe0, 0x03, 0x69, 0xc0]); // and eax, 3; imul eax, eax, bytes
+    c.extend(bytes.to_le_bytes());
+    c.extend([0x8d, 0xb8]);
+    c.extend(area.to_le_bytes()); // lea edi, [eax+area]
+    c.push(0xb9);
+    c.extend((bytes / 4).to_le_bytes()); // mov ecx, bytes / 4
+    c.extend([0xf3, 0xa5, 0xff, 0x05]); // rep movsd; inc dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x5f, 0x5e, 0xe9]); // pop edi; pop esi; jmp log
+    let at = t.cave_next;
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// A stub that logs its one argument and returns `op` of it (`op` runs
+/// after `mov eax, [esp+4]`).
+fn arg_stub(t: &mut Twins, sym: u32, op: &[u8]) {
+    let log = t.stub_code(sym, false, 1, 0, false, &[]);
+    let at = t.cave_next;
+    let mut c = vec![0xff, 0x74, 0x24, 0x04, 0xe8]; // push [esp+4]; call log
+    c.extend(log.wrapping_sub(at + 9).to_le_bytes());
+    c.extend([0x83, 0xc4, 0x04, 0x8b, 0x44, 0x24, 0x04]); // add esp, 4; mov eax, [esp+4]
+    c.extend(op);
+    c.push(0xc3);
+    let f = t.code(&c);
+    t.jump(sym, f);
+}
+
+/// `TOAdpCrossEasyStrFontSClutRGBA`: texts of digits, letters, the
+/// mapped signs and others in every language that ends; line breaks and
+/// glyphs by the character's low bits; the `y` slot compared.
+#[test]
+fn bf_cross_str() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f006);
+        let wcell = t.zeros(4);
+        let hcell = t.zeros(4);
+        t.stub_at(
+            bf::FONT_SCREEN_WH,
+            false,
+            2,
+            0,
+            &[wr(0, wcell), wr(1, hcell)],
+        );
+        t.stub(e1::REMAP_Y2, 1, true);
+        t.stub(bf::GET_LANG, 0, false);
+        // the group from a table: glyphs mostly, some line breaks; J and I glyphs
+        let groups: Vec<u8> = (0..=255u32)
+            .map(|c| match c {
+                0x49 | 0x4a => 4,
+                _ => [4, 4, 4, 1, 0][(c % 5) as usize],
+            })
+            .collect();
+        let table = t.alloc(&groups);
+        let mut op = vec![0x0f, 0xb6, 0xc0, 0x0f, 0xb6, 0x80]; // movzx eax, al; movzx eax, [eax+table]
+        op.extend(table.to_le_bytes());
+        arg_stub(&mut t, bf::GET_GROUP, &op);
+        arg_stub(&mut t, bf::SKIP_CODE, &[0x40]); // inc eax
+        let mut tags = vec![bf::FONT_SCREEN_WH, e1::REMAP_Y2, bf::GET_LANG];
+        for (sym, n) in [
+            (bf::MEMSET, 3),
+            (bf::GET_FONT_INFO, 2),
+            (bf::SET_DRAW_TYPE, 1),
+            (bf::SET_SHADOW_TYPE, 1),
+            (bf::FONT_SHADOW, 3),
+            (bf::FONT, 3),
+            (bf::FONT_WIDTH_SPACE, 3),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(10);
+        let chars =
+            b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz --//::!.IJIJ\x80\xff";
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let r = rng.double();
+            t.ret_f64(e1::REMAP_Y2, r);
+            let lang = rng.pick(&[0, 1, 2, 5, 8, 9, 10, 11, 0x12, 0xffff_ffff]);
+            t.ret(bf::GET_LANG, lang);
+            let letters = lang <= 10;
+            let n = rng.below(24) as usize;
+            let mut text: Vec<u8> = (0..n)
+                .map(|_| chars[rng.below(chars.len() as u32) as usize])
+                .filter(|c| letters || !c.is_ascii_alphabetic())
+                .collect();
+            text.push(0);
+            let at = t.alloc(&text);
+            let (sw, sh) = (
+                rng.pickr(&[640, 1280, 1920, 0]),
+                rng.pickr(&[448, 720, 1080, 0]),
+            );
+            t.w32(wcell, sw);
+            t.w32(hcell, sh);
+            t.constants(
+                &mut rng,
+                &[0x00b5_5140],
+                &[
+                    0x00b4_3d60,
+                    0x00b3_13a0,
+                    0x00b9_22a8,
+                    0x00b9_2220,
+                    0x00b4_8328,
+                ],
+            );
+            let glyph = t.rebase(bf::GLYPH);
+            let gw = rng.float();
+            t.w32(glyph + 0x1c, gw);
+            let args = [
+                at,
+                rng.float(),
+                rng.float(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.float(),
+                rng.float(),
+            ];
+            for (k, v) in args.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            run_parts(
+                &mut t,
+                &w,
+                0x008e_c2f0,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x118, ebp - 4),
+                0,
+                &|_| vec![(ebp - 0x118, ebp - 4), (ebp + 8, ebp + 0x30)],
+                |g| {
+                    bf::cross_str(
+                        g,
+                        ebp - 0x118,
+                        args[0],
+                        args[1],
+                        args[2],
+                        args[3],
+                        [args[4], args[5], args[6], args[7]],
+                        args[8],
+                        args[9],
+                        Some(ebp + 8),
+                    )
+                },
+            );
         }
     }
 }
