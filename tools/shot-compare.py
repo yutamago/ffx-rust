@@ -2,7 +2,10 @@
 """Compares screenshots of a replay (docs/harness.md): two runs of the
 original and one with the Rust replacements.
 
-  tools/shot-compare.py ORIG_DIR ORIG2_DIR RUST_DIR [--coarse PREFIX...]
+  tools/shot-compare.py ORIG_DIR ORIG2_DIR RUST_DIR [--only REPLAY,...] [--coarse PREFIX...]
+
+`--only` compares only the named replays' shots (`<replay>-<n>.bmp`), for
+a run of some replays of a list (`run-all.sh <replay>...`).
 
 For each .bmp in ORIG_DIR, counts the pixels where the Rust run differs
 from the original although the two original runs agree there: animations
@@ -202,8 +205,18 @@ def pixels(path):
 
 a_dir, b_dir, r_dir = (pathlib.Path(p) for p in sys.argv[1:4])
 coarse = tuple(sys.argv[sys.argv.index("--coarse") + 1:]) if "--coarse" in sys.argv else ()
+only = set(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
+
+
+def wanted(name):
+    """Whether NAME (`<replay>-<n>.bmp`) belongs to a replay `--only` names."""
+    return only is None or name.rsplit("-", 1)[0] in only
+
+
 bad = 0
 for a_path in sorted(a_dir.glob("*.bmp")):
+    if not wanted(a_path.name):
+        continue
     if not (r_dir / a_path.name).exists():
         # the run stopped before this shot (a replay whose `waitfor` timed
         # out): report it and go on with the other replays' shots

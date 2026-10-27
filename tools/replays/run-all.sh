@@ -19,6 +19,8 @@
 # KEEP_RUNS run folders are kept; %TEMP%\ffx-snap is otherwise disposable.
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
+# `run-all.sh [--extra] [--hits] <replay>...` runs and compares only the
+# named replays.
 #
 # --extra (the first argument) runs the extra list instead (settings-*,
 # movie-fmv, iggy-menus, battle-ifrit; docs/harness.md, "Coverage
@@ -217,6 +219,16 @@ if [ "${1:-}" = --record ]; then
     echo "recorded in $((SECONDS - start)) s ($runs)"
     exit 0
 fi
+# Named replays (`run-all.sh [--extra] <replay>...`) run alone, and only
+# their traces and screenshots are compared.
+only=()
+if [ $# -gt 0 ]; then
+    for r in "$@"; do
+        [[ " ${replays[*]} " == *" $r "* ]] || { echo "run-all.sh: $r is not on this list (${replays[*]})" >&2; exit 2; }
+    done
+    replays=("$@")
+    only=(--only "$(IFS=,; echo "${replays[*]}")")
+fi
 each rust
 echo "replays took $((SECONDS - start)) s ($runs)${rust_map:+, rust map}"
 bad=0
@@ -252,9 +264,10 @@ done
 # The Thunder Plains' shots of event-agency (4-6) are compared coarsely, as
 # field-walk's: the rain differs between original runs (about 1,000 pixels
 # outside the masked chocobo icon in some pairs of five, 2026-10-24).
-python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" \
+python3 tools/shot-compare.py "$shots/orig" "$shots/orig2" "$runs/rust" "${only[@]}" \
     --coarse field-walk event-agency-4 event-agency-5 event-agency-6 || bad=1
 for r in "${eye[@]}"; do
+    [[ " ${replays[*]} " == *" $r "* ]] || continue
     echo "== $r screenshots, by eye: $runs/rust/$r-*.bmp against $shots/orig/eye and $shots/orig2/eye"
 done
 if [ -n "$hits" ]; then

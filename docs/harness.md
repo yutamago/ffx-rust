@@ -1337,6 +1337,53 @@ when the player started never enters an elapsed time). The hook log says
 wall clock. Reads of the raw clock outside the tick check (a player's
 elapsed real time at `+0x30`, Iggy's own profiling) are left as they are.
 
+### What still varies (replay-flakes5, 2026-10-27)
+
+Measurements on original code, two runs side by side each (probe scripts
+in `~/ffx-work/flakes5`); nothing here is fixed yet.
+
+- The map load (kami0100, `load direct 5 kami0100 lockstep`) is one
+  update: `MovieCdReadTaskLoop` (`0x0076e660`) loops inside it until the
+  read thread is done, a real-time number of passes (each runs
+  `graphicProcessPs2DataLoadingCallback` and, with the loading screen on,
+  `graphicRenderLoadingScreen`). The virtual clock does not move inside
+  it: the hook log now says `harness: the clock moved N s in update M`
+  for every lockstep update over which the clock moved more than 1.5
+  frames, and the only such line is the `pin`'s jump. The load update's
+  step (`app +0x24`) differed (`0x3d08abc4` against `0x3d08ab9f`), since
+  the game time before `pin` follows the boot's length. Right after `pin`
+  and at count 101 the 16 character records (`*0x023c44e4`, `0x8800`
+  bytes) were the same in both runs except heap pointers, and so was the
+  texture-animation table (`0x02310000`, `0xc00` bytes: the blinks). So
+  kami0100's blink is no longer among its differences (the q1..q5
+  references differ only in the cloth ring and `GlobalTime`); the cloth
+  state lives in buffers outside the records and was not traced.
+- `scene.GlobalTime` (`3.4367595` at count 101) is the pinned game time
+  less 64 s, with digits finer than the `f32` game time at `app +0x120`
+  (`67.43676`) holds, so the shaders' value is computed from the `f64`
+  clock elsewhere. Not found.
+- The title after a game over (menu-save-4, iggy-menus 11/12): a draw
+  capture of the title (`test20`) in two runs differs in one draw, its
+  `ps.srv0`, a 1024x256 BC3 texture that changes every frame (the band
+  at the top, y 0..280). Not Iggy's global generator (`iggy_w32.dll`
+  `0x100c601c`, Marsaglia's xorshift128, never reseeded: reset in `pin`
+  for a test, the band still differed), not the movie player (its frame
+  `+0x6d8` is 0), not when Start is pressed in the opening (pressed at
+  count `0x400` as boot does: still different). The boot's title, the
+  first visit, matches in every run; the replays visit the title once
+  before, running free (the taps of Start before `load direct`), so the
+  band's animation state probably carries from that visit. Next: find
+  the texture's owner and its counter, then pin it.
+- Movies on the virtual clock (movie-fmv): with `realtime` taken out
+  (`load direct 3 bsil0000 lockstep`, `pin`, the rest as the script) the
+  movie never advanced in 450 updates, with FMOD mixing in lockstep: the
+  manager plays (`+0x6d0` 1, `+0x6d2` 1), the player's decoder flag
+  (`+0x38 +0x154`) is set, and no decoded frame reaches
+  `Phyre_PVideo_PVideoPlaybackWin32_updateTexture` (`0x00a284a0`, which
+  counts `+0x100` up one per frame it takes). The demux and decoder
+  threads block on queues fed by the reading thread; what that thread
+  waits for in lockstep is not known yet, so movie-fmv stays `realtime`.
+
 ## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex
