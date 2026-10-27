@@ -2590,6 +2590,13 @@ ported! {
         let mut frame = StackFrame::<{ (k4::ATEL_FRAME / 4) as usize }>::new();
         k4::create_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, index)
     }
+    // ---- continuation round 9, batch 5 (ffx_glue_other::h4_k4)
+    /// `createVFXRenderDataBufferShapeField(lo, hi, shapes, scale, flags)`
+    /// (a 0x6f1c-byte frame, as the original's).
+    createVFXRenderDataBufferShapeField @ 0x0071_4d40 => extern "C" fn create_vfx_render_data_buffer_shape_field(lo: u32, hi: u32, shapes: u32, scale: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k4::SHAPE_FRAME / 4) as usize }>::new();
+        k4::create_shape_field(&mut mem(), frame.at(), lo, hi, shapes, scale, flags)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in

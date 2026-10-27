@@ -1699,3 +1699,97 @@ fn k4_create_atel_shp() {
         assert!(created > 0, "{name}");
     }
 }
+
+/// `createVFXRenderDataBufferShapeField`: 0..12 shapes over a few
+/// textures (repeats grow their group's counts or not), monster textures
+/// (missing, none, named or not), textures not loaded, YIQ on map 0x188,
+/// render data there or not.
+#[test]
+fn k4_create_shape_field() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_4d40);
+        let stubs = [
+            (k4::GET_PTR32, 1),
+            (k4::CHR_FROM_CONTENT, 1),
+            (k4::MONSTER_TEXTURE_NAME, 2),
+            (k4::IS_TEXTURE_WITH_BP_LOADED, 7),
+            (k4::DBG_PRINTF, 2),
+            (k4::VFX_CREATE, 3),
+            (k4::VFX_CREATE_DATA_BUFFER, 7),
+            (k4::GET_RENDER_DATA, 2),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let frame = t.ebp_for(5) - 0x6f20;
+        let mut created = 0;
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(k4::IS_TEXTURE_WITH_BP_LOADED, rng.pick(&[1, 1, 1, 1, 0]));
+            let r = rng.next();
+            t.ret(k4::CHR_FROM_CONTENT, rng.pick(&[0, r, r, r, 0xffff_ffff]));
+            let text = string(&mut t, b"monster/tex");
+            t.ret(k4::MONSTER_TEXTURE_NAME, rng.pick(&[0, text, text]));
+            t.g32(k4::YIQ_MODE, rng.pick(&[0xffff_ffff, 0, 3]));
+            t.g32(k4::CURRENT_MAP, rng.pick(&[0x188, 0x188, 0x41]));
+            // the render data: entries of 0x6c bytes
+            let entries = t.zeros(0x6c * 4);
+            let data = random_block(&mut t, &mut rng, 0x98);
+            t.w32(data + 0x90, rng.pick(&[0, 1, 3, 0xffff_ffff]));
+            t.w32(data + 0x94, entries);
+            t.ret(k4::GET_RENDER_DATA, rng.pick(&[data, data, data, 0]));
+            // the shapes: textures from a small set so groups repeat
+            let mut textures: Vec<(u32, u32)> = (0..3)
+                .map(|_| {
+                    let x = rng_texture(&mut rng);
+                    let number = rng.pick(&[x, x, 0x3f00, 0x3f05]);
+                    let lo = number | (rng.next() & 0xffff_c000);
+                    (lo, rng.next())
+                })
+                .collect();
+            // one that differs from the first in its height only
+            textures.push((textures[0].0, textures[0].1 ^ 1));
+            let shape = t.zeros(0x400);
+            let n = rng.pick(&[0u16, 1, 3, 6, 12, 0xffff]);
+            t.w16(shape + 6, n);
+            for k in 0..12u32 {
+                let sub = 0x80 + 0x20 * k;
+                t.w16(shape + 0x10 + 8 * k, sub as u16);
+                let (lo, hi) = rng.pick(&textures);
+                t.w32(shape + sub + 0x10, lo);
+                t.w32(shape + sub + 0x14, hi);
+                t.w16(shape + sub + 2, rng.pick(&[0u16, 1, 4, 9, 0xfffe]));
+            }
+            t.ret(k4::GET_PTR32, shape);
+            let shapes = random_block(&mut t, &mut rng, 4);
+            let scale = rng.pick(&[1, 2, 3, 0xffff_ffff]);
+            let flags = rng.next() & !0x8_0008;
+            let (lo, hi) = (rng.next(), rng.next());
+            t.check_framed(
+                &w,
+                0x0071_4d40,
+                &[lo, hi, shapes, scale, flags],
+                frame,
+                // up to ebp-8, where the original's __chkstk call leaves ecx
+                &[(0x2c, 0x6f18 - 0x2c)],
+                |g| {
+                    u(k4::create_shape_field(
+                        g, frame, lo, hi, shapes, scale, flags,
+                    ))
+                },
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                created += u32::from(tag == k4::VFX_CREATE_DATA_BUFFER);
+            }
+        }
+        assert!(created > 0, "{name}");
+    }
+}
+
+/// A texture number below the monsters' range.
+fn rng_texture(rng: &mut Rng) -> u32 {
+    rng.below(0x3f00)
+}
