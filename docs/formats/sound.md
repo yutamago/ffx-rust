@@ -47,7 +47,12 @@ then the zero-terminated names.
 ## IMA ADPCM, Xbox layout
 
 A mono block is 0x24 bytes: predictor (`i16`), step index (`u8`), one
-unused byte, then 32 bytes of 4-bit codes, low nibble first: 64 samples.
+unused byte, then 32 bytes of 4-bit codes, low nibble first: 64 samples,
+the predictor itself and then the first 63 codes (the 64th code is never
+output). Measured against FMOD's mix (`audio-platform.md`, "FMOD Ex's
+mixer"): decoding all 64 codes after the header shifts every sample by
+one and shows wherever a block's header differs from the previous block's
+last code (menu-browse, SFX 106, frame 448).
 A stereo block is 0x48 bytes: both channels' 4-byte headers, then their
 codes in alternating 4-byte words (left, right, left, ...). The step and
 index tables are the IMA standard's. Decoded with whole 0x24-byte blocks per
@@ -269,21 +274,64 @@ the function never wrote (its stack frame); the port uses 0 there (brief
 
 # FMOD Designer event projects (`*.fev`)
 
-Not decoded yet; this is what the game reads from them, through
-`fmod_event.dll`. A host without FMOD needs these facts; the samples
+Read by `ffx_sound::fev` (`Project::parse`). The layout below is derived
+from the data: every one of the 1,260 `.fev` files in `FFX_Data.vbf` (SFX,
+voice and music, US and JP: 33,362 events, one per FSB sample) parses to
+the exact end of its `LGCY` chunk, and the constants stated here hold in
+all of them (`tests/game_data.rs`, `every_fev_parses`). The samples
 themselves are in the FSB banks above.
 
-**Container.** RIFF, form `FEV `: `FMT ` (4 bytes, `00 00 45 00`: version
-4.45), then `LIST PROJ` with `OBCT` (0x10c bytes: 33 pairs `u32 type, u32
-count`), `PROP` (`u32 length`, the project name: `0303`, `ffx_music`),
-`LGCY` (the FMOD Designer 4 project body: bank names (`0303_bank00`), the
-category tree (`master`, `music`), event groups, events and sound
-definitions with their properties and wave paths (`0303/9003.wav`)),
-`EPRP` (4 bytes), `STRR` (`u32 count, u32 offset[count]`, zero-terminated
-strings: group and event names, sound definition paths
-`/__simpleevent_sounddef__/9003_0`), `LANG` (`default`). Every SFX project
-seen has two groups, `loop` and `nonloop`, and simple events named by
-their sequence number.
+**Container.** RIFF, form `FEV `; chunks are padded to an even size (the
+`PROP` of `0303` is 9 bytes and a pad byte). `FMT ` (4 bytes, `u32`
+0x00450000: version 4.45), then `LIST PROJ` with `OBCT` (0x10c bytes: 33
+pairs `u32 type, u32 count`), `PROP` (`u32 length`, the project name:
+`0303`, `ffx_music`), `LGCY` (below), `EPRP` (4 bytes), `STRR` (`u32
+count, u32 offset[count]` from the end of the offsets, zero-terminated
+strings; entry 0 is the empty string, then group names, event names and
+sound definition names `/__simpleevent_sounddef__/9003_0`), `LANG`
+(`default`).
+
+**`LGCY`**, all little-endian; a *string* is `u32 length` (with the NUL)
+and the bytes; a *name* is a `u32` index into `STRR`:
+
+| Field | |
+|---|---|
+| `u32`, `u32` | 24 and 32 times the number of events (sizes; not needed to read on) |
+| string | project name |
+| `u32` | 1 |
+| `u32` count, banks | per bank: `u32` mode (`FMOD_MODE` bits: 0x80 streamed for music and voice, 0x200 compressed sample in memory for SFX), `u32` max streams (10), 8 bytes (a hash), `u32` 0, string name (`<project>_bank00`) |
+| category tree | string name, `f32` volume (1), `f32` pitch (0), `u32`, `u32`, `u32` child count, the children: always `master` with one child `music` |
+| `u32` count, event groups | per group: name, `u32` user properties (0), `u32` subgroups (0), `u32` events, the subgroups, the events |
+| `u32` count, sound definition configs | one per project: 18 `u32` and a `u16`, the same in every file (words 3, 5 and 10 are 1, words 4, 6, 7 and 8 are `f32` 1.0, the rest 0) |
+| `u32` count, sound definitions | per definition: name, `u32` config (0), `u32` waves (1), per wave: `u32` type (0), `u32` weight (100), string file (`0303/9003.wav`), `u32` bank (0), `u32` sample index in the bank, `u32` length in ms |
+| `u32` | 0 |
+| `u32` 8, `comp` | the end (a size-8 record: its size word and its tag) |
+
+An **event** (every one is a simple event):
+
+| Offset | Field | Values in the data |
+|---|---|---|
+| +0x00 | `u32` type | 0x10 |
+| +0x04 | name | the sequence number (`9003`), `1_24_the_summoning`, `210101td` |
+| +0x08 | 16 bytes | GUID |
+| +0x18 | `f32` volume | 1.0 for every SFX; music and voice dB steps (0.5012 = -6 dB, 0.3548 = -9 dB; 15 values) |
+| +0x1c, +0x20, +0x24 | `f32` pitch, pitch and volume randomisation | 0 |
+| +0x28 | `u32` mode | 0x80 music and voice, 0x100 SFX group `loop`, 0x200 SFX group `nonloop` |
+| +0x2c | `u32` max playbacks | 5 for SFX `nonloop`, 30 for sequence 114, 1 for sequence 1 (the game's own instance limits: "5 instances a sequence, 30 for sequence 114, id 1 always"), 1 for every `loop` SFX, music and voice |
+| +0x30 | `u32` | 10000 |
+| +0x34 | `u32` flags | 0x0018_0008 |
+| +0x38, +0x3c | `f32` | 1.0, 10000.0 (min and max distance by the defaults' look; the game has no 3D) |
+| +0x40..+0xa4 | 26 words | constant over the data: `u32` 0, `f32` 1500, `u32` 0x80000, `f32` 1, `f32` 1, six 0, `f32` 360, `f32` 360, `f32` 1, `u32` 1, `f32` 1, five 0, `f32` 1, 0, `f32` 1, 0, 0. The fades and the steal behaviour are among them; since none of them varies, the mixer needs no names for them |
+| +0xa8 | `u32` layers | 1 |
+| per layer | `u16` sound definition, 14 `u32` | word 3: 1 the wave plays once, 0 it loops (every music event but the seven `*_oneshot` tracks loops, as do 947 of the 984 `loop` SFX of the US data; every `nonloop` SFX and voice plays once); word 4 -1; words 1 and 9 `f32` 1.0; the rest 0 |
+| | `u32` 1, string | the category (`master`) |
+
+So a looping event loops its wave between the FSB sample's loop points
+(the whole wave when the sample has none), and nothing else in the
+projects shapes the sound beyond the event volume: no fades, no pitch, no
+randomisation, no 3D. Every SFX project has the groups `loop` and
+`nonloop`; music is one group `music` of 89 events, voice one group
+`voice`.
 
 **Sound effects.** `FfxFmod::sfxLoad(n)` loads `SFX/US/%04d.fev` (`JP` by
 the voice language) as an `SfxBank` (`0x0070f760`), then two side files in

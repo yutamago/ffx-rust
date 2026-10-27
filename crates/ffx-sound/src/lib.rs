@@ -5,7 +5,10 @@
 //! logic, a core and a `bridge` per original (`docs/porting.md`): the PS2
 //! sound API ([`snd`]), the FMOD command queue's entry points ([`fmod`])
 //! and the FMOD thread's handlers and objects ([`ffxfmod`]); the
-//! positioned sounds' volume and pan ([`foot3d`]).
+//! positioned sounds' volume and pan ([`foot3d`]). M5's own sound engine:
+//! the FMOD Designer projects ([`fev`]), the mixer measured against FMOD's
+//! output ([`mixer`]) and the offline replay of an FMOD call log through
+//! it ([`replay`]).
 
 pub mod fev;
 pub mod ffxfmod;
