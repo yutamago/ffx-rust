@@ -1,4 +1,4 @@
-# ffx-decomp
+# ffx-rust
 
 A reimplementation of Final Fantasy X (the Steam HD Remaster) in Rust,
 recovered by reverse engineering `FFX.exe`.
