@@ -116,7 +116,10 @@
 //! - [`h4_k3`]: its third batch: the depth-bias hook, the post-process
 //!   manager's constructor, the broken-screen effect's render;
 //! - [`h4_k4`]: its fourth batch: the event shapes' VFX render data
-//!   buffers.
+//!   buffers;
+//! - [`h4_l1`]: continuation round 10, batch 1: the shapes' VFX render
+//!   data buffers, the menu vertex records, the character cache's delayed
+//!   release, the voice data change.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -186,6 +189,7 @@ pub mod h4_k1;
 pub mod h4_k2;
 pub mod h4_k3;
 pub mod h4_k4;
+pub mod h4_l1;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;
