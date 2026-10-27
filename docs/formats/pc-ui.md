@@ -445,6 +445,239 @@ and `vorbis_synthesis_blockin`, counting them in the `u64` at `+0x178`.
 It stops early when `+0xd8` is 1 and does nothing when `+0x2a8` is set.
 Port: `ffx_pcui::video`.
 
+## Iggy calls
+
+What `FFX.exe` asks of `iggy_w32.dll` for the PC screens (M5 pilot,
+2026-10-27). Static: `tools/iggy-names.py` (every name the game hands its
+Iggy wrappers, by call site). Run time: the hook's Iggy call log
+(`FFX_IGGY_LOG=<file>`, `crates/ffx-hook/src/iggy_log.rs`,
+`tools/replays/run-all.sh --iggy-log`), which wraps 40 of the 41 imports
+(not the varargs `IggyGDrawSendWarning`) and the AS3 callback, and notes
+the harness's screenshots in the same sequence.
+
+**Movies.** `IggyMenu_ctor_00a288f0(path, x, y, w, h, flags)` reads the
+`.swf` from the archive and creates the player from memory
+(`Iggy_createPlayer_00a3e4f0`: `IggyPlayerCreateFromMemory` at
+`0x00a3d91d`, `InitializeAndTickRS`, `Play`, `Properties`). The pilot's
+screens:
+
+| Screen | Movie | Opened by |
+|---|---|---|
+| PC menu (Esc) and its pages | `escmenu.swf` (1280x720, 30 fps, 1 frame, AS3) | `PhyreScene_initScene` `0x0065f450` |
+| pause | `pausemenu.swf` | `PhyreScene_initScene` |
+| save and load lists | `saveload_jp.swf` for every language but Korean (9: `_kr`) and Chinese (10: `_ch`), English included; then `SetLanguage("JPN")` | `SaveLoadMenu_open_00702a80` |
+| tips; the only font | `box.swf` (`BOX%s.swf`), `TBUDGothic Std B` | `0x006e85f0` |
+| start-up logos | `OpeningScreen.swf` (1920x1080), callback `Finish` | `PhyreScene_beginRenderOpeningScreen` |
+
+The title menu (New Game / Load) is not Flash: it is the PS2 menu code;
+no Iggy player draws on the title.
+
+**AS3 functions the game calls** (`IggyMenu_callIggyAS3External`
+`0x00a28ba0`: `IggyPlayerCreateFastNameUTF8` at `0x00a28bcc`, then
+`IggyPlayerCallFunctionRS` at `0x00a28be7`, on the main thread; arguments
+are `IggyDataValue`s, see above; the result is never read). These are the
+names the movies register with `ExternalInterface.addCallback`.
+
+- `escmenu.swf`, at start-up: `SetLanguage(s)` ("INT" for English;
+  `FFEscMenu_setLanguage_0068f400`), `setHomePage(5 s)`,
+  `setSysSettingPage(3 s)`, `setAudioPage(s)`, `setVideoPage(s)`,
+  `setKeyBindingPage(2 s)`, `setKeyboardPage(3 s)`,
+  `setControllerPage(2 s)`, `setControlBar(3 s)`, `setSubTitle(4 s)`,
+  `setMouseVisible(b)` (`FFEscMenu_initializeMainSettingPage`);
+  `addVideoPageItem(n index, s kind, s label, s value, ref options, n)`
+  (12 rows; the options are a string array: `IggyValueRefCreateArray`,
+  `IggyValuePathFromRef`, `IggyValuePathMakeArrayRef` / `SetArrayIndex`,
+  `IggyValueSetStringUTF8RS` per entry; `IggyStringArray_ctor_006fcbc0`),
+  `videoSettingMSAAHDAOPopUpMessageInit(b, s, s)`,
+  `addAudioPageItem(n, s, s, s, n max, s callback)`,
+  `addControllerPageItem(n, s, s, s, s, s)`,
+  `addKeyboardPageItem(n, s, s, s, s, s, s, s)`,
+  `addSpecialFeaturePageItem(n, s, s, s, s)`,
+  `addChangeParaPageItem(n, s, s, s)`.
+- `escmenu.swf`, while open: `setEnableChangePara(b)`,
+  `setEnableSpecialFeature(b)`, `setEnableKeyBindings(b)`, `showEscMenu()`,
+  `onEscClose()`; the keys as calls: `keyUp()`, `nextItem()`,
+  `prevItem()`, `confirmSelect()`, `onCancelKey()`, `onConfirmKey()`,
+  `onDefaultKey()` (`FFEscMenu_update` `0x0068ffb0`); and `setHelpText(s)`,
+  `setKeyBinding(..)`, `showPopUpWithBtn(..)`, `showPopUpStd(s)`,
+  `changeSelectedBtn()`, `hidePopUpStd()`, `hidePopUpWithBtn()`.
+- `saveload_jp.swf`: `setMouseVisible(b)`, `showSaveLoad()`,
+  `SetLanguage(s)`, `clearSaveLoad()`, `showPopUpStd(s)`,
+  `addSaveLoadItem(n index, s slot, s place, s date, s name, s play time,
+  s, s, s party "_<n>", s thumbnail "m<n>", s label, s)`,
+  `setSaveLoadHelpText(s, s count)`, `setSaveLoadFocus(s index)`,
+  `hidePopUpStd()`, `showPopUpWithBtn(s, s yes, s no, b)`,
+  `changeSelectedBtn()`, `hidePopUpWithBtn()` (`SaveLoadMenu_open_00702a80`
+  and the `SaveDataMachine_*` helpers from `0x00702cd0`).
+- Others: `TipSystem` `OnPlay(n)`, `SpdCtrl` `OnEnable()` / `OnDisable()`,
+  pause `showPause(b)` / `hidePause()`.
+
+**AS3 calls into the game.** One callback for all players
+(`IggySetAS3ExternalFunctionCallbackUTF8` at `0x00a26466`, in
+`IggyMenuManager_init_00a262e0`): `IggyMenuManager_callback_00a260f0`
+(stdcall(user, player, call); the call is the name pointer and length, the
+argument count at +8, `IggyDataValue`s from +0x10) hashes the name (DJB)
+and runs every handler registered for that name and player
+(`IggyMenu_addCallback_00a28e90`, `IggyCallbackTable_add_00a266b0`); it
+returns 1. Names: `EscMenuResume`, `EscMenuQuit`, `EscMenuOnConfirmKey`,
+`EscMenuVideoSettingRefresh`, `EscMenuAudioSettingRefresh`,
+`EscMenuKeyboardSettingRefresh`, `EscMenuControllerSettingRefresh`,
+`EscMenuStartKeyEditing`, `EscMenuStartControllerEditing`,
+`EscMenuHelpTextRefresh` (an array of two numbers, page id and index, read
+with `IggyValueRefFromTempRef` and `IggyMenu_getArrayS32_00a28b20`; the
+game answers by calling `setHelpText`), `EscMenuButtonClick`,
+`EscMenuPopUpConfirmed`, `EscMenuKeyboardSettingIncomplete`,
+`EscMenuControllerSettingIncomplete`, `EscMenuOnDefaultKey`,
+`playEscSound(s)` ("change", "click", "cancel": the game plays the sound)
+(`FFEscMenu_registerCallbacks` `0x0068fd40`); `ExitAudioMenu(n)` and the
+four volume callbacks (`FFEscMenu_registerAudioPreviewCallbacks`);
+`getLocByStr`, `getLocById`, `getFontBitmapSuffix` (players opened by
+`IggyPlayerOpen_006e93f0` / `IggyPlayerOpenScaled_006e9250`: the answer is
+a string put into `IggyPlayerCallbackResultPath` with
+`IggyValueSetStringUTF8RS`); `Finish` (opening); `Hide` (button icons).
+`saveload_jp.swf` makes no external calls: the save/load machine reads the
+keys itself and drives the list by calls.
+
+**Input.** Keys reach the movies only as the AS3 calls above. The mouse:
+each frame `IggyMenuManager_dispatchMouse_00a26ce0` builds
+`IggyMakeEventNone` + `IggyMakeEventMouseMove(x, y)` (and `MouseButton`
+1-6 / `MouseWheel` from `IggyMouseQueue_update_00a25ab0`), and
+`IggyMenu_handleMouseEvent_00a28c10` dispatches it
+(`IggyPlayerDispatchEventRS`) to each enabled menu; event type 7 is a
+move. Harness games keep the cursor far off screen (-32108, -32131).
+
+**Display, viewport, ticking.** The movies are 1280x720 at 30 fps
+(`IggyPlayerProperties`: width, height, the frame rate twice as `f32`).
+`IggyMenuManager_SetViewport_00a26a20` fits the menus to the window
+against `g_IggyTargetAspect` (above); each draw sets
+`IggyPlayerSetDisplaySize` (1280x720 in the harness) on the render thread.
+A queued draw (`IggyMenu_Draw_00a28eb0`, `IggyPlayer_QueueDraw_00a3d9b0`,
+command `0x00a3d6d0`) runs `while IggyPlayerReadyToTick: IggyPlayerTickRS`
+(`0x00a3da30`, `0x00a3da3c`), `SetDisplaySize` (`0x00a3dab2`),
+`GetBackgroundColor` (`0x00a3dac4`) and `IggyPlayerDraw` (`0x00a3dafe`).
+The game updates 30 times a second, so a visible menu ticks once per
+update (3,001 ticks over 3,000 updates of the PC menu in the pilot);
+hidden menus are not drawn and do not tick. `GotoFrameRS` is never called
+on these screens.
+
+## How Iggy draws
+
+GDraw, Iggy's D3D11 back end, is game code in `FFX.exe`
+(`gdraw_d3d1x_shared.inl` in its strings; ported in M4:
+`ffx_pcore::p5_gdraw_device`, `ffx_glue_other::h4b_*`). The facts below
+come from its machine code and shaders (`tools/swf-pilot/gdraw-facts.py`,
+`tools/swf-pilot/gdraw-shaders.sh`) and from a pilot run with the Iggy call
+log noting GDraw's calls (`FFX_SWF_PILOT_RUST=1 tools/swf-pilot/record.sh`:
+the AA ramp, textures, the first 4,000 draw states and 64 vertex buffers).
+
+- **Target.** The menus draw straight into the game's back buffer
+  (`IggyMenuManager_Render_00a267f0`, no depth), after the scene:
+  RGBA8, one sample in the harness. GDraw has two rasterizer states
+  (`+0x7ac`: solid, no culling, scissor; multisampling off and on) and
+  picks the second only when the bound target is multisampled (`+0x790`,
+  from the view's description in `gdraw_setRenderTargetView_00a38300`).
+  No internal resolution scale: the display size is the window's
+  (`IggyPlayerSetDisplaySize`, 1280x720 in the harness). Offscreen targets
+  for filters are RGBA8 at screen size (`gdraw_allocRenderTarget_00a3b610`),
+  masks use a D24S8 depth-stencil (`gdraw_createDepthBuffer_00a3b840`).
+- **Shape and outline edges: no MSAA, a 1-pixel fringe.** Shapes come in
+  vertex format 1 (`float2` position, `int16x4`: AA coordinate, offset
+  x, y). Every edge vertex is doubled: the outer copy has AA coordinate 8
+  and an offset of half a pixel outwards, the inner copy 24 and half a
+  pixel inwards; interior vertices have 32 and no offset. The vertex
+  shader (`vs_4_0`, hash `3ed98be438f1788c`) scales the offset (`/64`)
+  through `x_off` and the world matrix so it is half a screen pixel at any
+  scale, and passes `aa/32` on. Every pixel shader multiplies its colour by
+  texture 7 sampled there: a 2x1 RGBA texture (transparent, opaque white;
+  `gdraw_createRowTexture_00a3a9f0`, the texels Iggy hands over) with the
+  linear clamp sampler, so alpha runs linearly 0 to 1 across the band from
+  half a pixel outside to half a pixel inside the edge (0.25 and 0.75 are
+  the two texel centres). That is the coverage of a 1-pixel box filter.
+  Bitmap draws (formats 0 and 2: texgen or explicit UVs) pass AA 1: no
+  fringe.
+- **Bitmaps.** RGBA8 textures (`gdraw_makeTextureBegin_00a3a070`, format
+  0; format 1 would be R8) with a full mip chain (flag bit 0; each level
+  the 2x2 average of the one above, `op_texels_mip_00a384d0`). Samplers
+  (`GDraw_createDeviceObjects_00a34cc0`): filter `MIN_MAG_MIP_LINEAR`
+  (index 0) or `MIN_LINEAR_MAG_MIP_POINT` (1), address modes CLAMP, WRAP,
+  MIRROR, CLAMP (`0x00b7a894`), LOD bias 0, MinLOD 0, MaxLOD `FLT_MAX`,
+  anisotropy 1. Every one of the pilot's 4,000 logged draws used index 0,
+  CLAMP: the SWF's smoothing flags do not matter. The game's text is
+  bitmap glyphs (89 and 107 pixels high) drawn minified, hence trilinear
+  and soft.
+- **Blending.** Premultiplied alpha: blend state 1 (`ONE`,
+  `INV_SRC_ALPHA`) for every logged draw; the table `0x00c85ab0` also has
+  opaque, multiply (`DEST_COLOR`, `INV_SRC_ALPHA`) and add (`ONE`, `ONE`).
+- **Filters.** Blur (`0x00a36490`, passes `+0x14` of the filter; each
+  direction by `0x00a36590`): a box of the exact fractional width, its
+  taps sampled in bilinear pairs (weight `2/w`, the end taps fractional),
+  up to 9 per pass (shaders `0x00c842b8`, `tap[9]`), wider blurs first
+  downsampled; float sums written to RGBA8 targets. Glow and drop shadow
+  (the filter shaders `0x00c806d8`): `min(blur.a * strength, 1) * colour`,
+  composited with the source; the result goes back to the screen as a
+  textured quad (format 2).
+
+## Ruffle (M5 pilot)
+
+`crates/ffx-swf` plays the same movies with Ruffle (a pinned dependency,
+MIT OR Apache-2.0; no Ruffle code copied). `iggy-replay` replays a call
+log; `swf-compare` builds the comparison page
+(`~/ffx-work/m5/swf-pilot/index.html`). The mapping:
+
+| Iggy | Ruffle |
+|---|---|
+| `IggyPlayerCreateFromMemory` | `SwfMovieData::from_data`, `PlayerBuilder` with a wgpu `TextureTarget`, transparent window mode |
+| `IggyPlayerCallFunctionRS(name, args)` | `Player::call_internal_interface` (the `addCallback` names); string arrays (type 9 refs) become `Value::List` |
+| AS3 callback | an `ExternalInterfaceProvider` answering the recorded result strings |
+| `IggyPlayerTickRS` | `Player::tick(1/fps)` (one frame, timers by the same time) |
+| `IggyPlayerSetDisplaySize` | `set_viewport_dimensions` |
+| `DispatchEventRS` mouse move | `PlayerEvent::MouseMove` |
+| `IggyPlayerDraw` | `render` + `capture_frame` |
+
+Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
+
+- **Mipmaps** (the main one). The movies' text is not font text: the
+  AS3 code builds it from bitmap glyphs (`escmenu.swf` has 1,027 bitmaps
+  107 pixels high and 111 of 89; `saveload_jp.swf` 425 and 104), drawn at
+  about a quarter of that size. GDraw gives every bitmap a full mip chain
+  and samples it trilinear (below); Ruffle uploads one level and samples
+  bilinear, so the minified glyphs and portraits alias: the "too sharp,
+  with steps" look. Mipmapped bitmaps (Ruffle fork, `GDRAW_MIPMAPS`) bring
+  the PC menu from 3.2% to 0.9% of pixels off by more than 8 levels and
+  the save list from 12.8% to 0.75%.
+- Fonts: the movies name `$NormalFont` / `$TitleFont`, and the pilot
+  registers `box.swf`'s DefineFont3 under those names (`stage::GameFont`),
+  but the pilot screens draw the same with or without it (their text is
+  bitmap glyphs).
+- Bitmap smoothing: Iggy smooths every bitmap; Ruffle follows the fill
+  flags. Forcing it (fork, `FORCE_BITMAP_SMOOTHING`, or
+  `patch::smooth_bitmap_fills` on the SWF) changes little here (3 fills in
+  `escmenu.swf`, none in `saveload_jp.swf`).
+- Blur: Ruffle truncates each blur pass to 8 bits (`floor`, as Flash
+  Player does); GDraw sums its taps in floats and the RGBA8 target rounds.
+  The fork rounds; a small gain on the text outlines (glow, blur 3.5).
+- Edges: GDraw's analytic 1-pixel fringe (below) against Ruffle's 4x
+  MSAA. Stage quality (low to 16x16) and supersampling change the numbers
+  little once the bitmaps are mipmapped; supersampling makes them worse,
+  because the glyphs are then less minified and take finer mip levels.
+- `getTimer` reads the wall clock (`Instant::now`). The menus' tweens and
+  key handling use it: an unpaced replay that rendered slowly (4x
+  supersampling on llvmpipe) took another menu path (Special features
+  instead of System setting). The fork's `DETERMINISTIC_GET_TIMER` reads
+  the timers' clock (the sum of the `Player::tick` times), so a replay or
+  a lockstep game sees the same times at the same frames.
+- The first frame after `showEscMenu`: Iggy already draws the page,
+  Ruffle one tick later.
+- Ruffle needs `ExternalInterface` available (a provider set), or the
+  movies' `addCallback` calls do nothing.
+
+The Ruffle fork is the pinned rev plus a 168-line patch
+(`~/ffx-work/m5/ruffle-fork.patch`, outside the repo; built through the
+cargo `[patch]` package `~/ffx-work/m5/ffx-swf-fork`, `ffx-swf` feature
+`ruffle-fork`): three switches, all off by default, `FORCE_BITMAP_SMOOTHING`
+and `GDRAW_MIPMAPS` in `ruffle_render_wgpu`, `DETERMINISTIC_GET_TIMER` in
+`ruffle_core`, and the blur rounding.
+
 ## Left original
 
 PhyreEngine library code in the same address range (verdicts, not

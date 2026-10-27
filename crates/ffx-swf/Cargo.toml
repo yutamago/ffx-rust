@@ -1,0 +1,27 @@
+[package]
+name = "ffx-swf"
+description = "The PC screens' Flash movies played by Ruffle (M5 pilot): Iggy call logs replayed offline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+ffx-vbf.workspace = true
+futures = "0.3"
+png = "0.18"
+serde_json.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
+# Ruffle, pinned (MIT OR Apache-2.0). A dependency only; no Ruffle code is copied.
+ruffle_core = { git = "https://github.com/ruffle-rs/ruffle", rev = "07d3e430631333f80f754df01a968bdcd80d98c5" }
+ruffle_render_wgpu = { git = "https://github.com/ruffle-rs/ruffle", rev = "07d3e430631333f80f754df01a968bdcd80d98c5" }
+
+[features]
+# Built against the local Ruffle fork (~/ffx-work/m5/ffx-swf-fork, a cargo
+# patch outside the repo): enables the fork's switches (FORCE_BITMAP_SMOOTHING).
+ruffle-fork = []
+
+[lints]
+workspace = true

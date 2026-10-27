@@ -119,6 +119,8 @@ pub mod hook_hits;
 #[cfg(all(windows, target_arch = "x86"))]
 mod iat;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod iggy_log;
+#[cfg(all(windows, target_arch = "x86"))]
 pub mod loader_turn;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod loadsave;

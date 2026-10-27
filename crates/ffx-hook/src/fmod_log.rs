@@ -152,7 +152,7 @@ fn game_address(address: u32) -> u32 {
 
 /// The readable, committed bytes from `address` to the end of its region
 /// (0 when none).
-fn readable(address: u32) -> usize {
+pub(crate) fn readable(address: u32) -> usize {
     if address < 0x1_0000 {
         return 0;
     }

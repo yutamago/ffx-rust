@@ -1,0 +1,49 @@
+# The pilot's comparison page (swf-compare spec; shots of tools/swf-pilot/pilot.txt).
+# shot <name> <background shot | -> <caption>
+section The PC menu (escmenu.swf): its home page, the game's Flash "main menu"
+shot pilot-esc-idle pilot-scene-esc idle, 240 frames after Esc
+shot pilot-esc-open-01 pilot-scene-esc opening: 1 frame after Esc
+shot pilot-esc-open-05 pilot-scene-esc opening: 5 frames after Esc
+shot pilot-esc-open-09 pilot-scene-esc opening: 9 frames after Esc
+shot pilot-esc-open-15 pilot-scene-esc opening: 15 frames after Esc
+shot pilot-esc-move-1 pilot-scene-esc the cursor moving down: 1 frame after the key
+shot pilot-esc-move-4 pilot-scene-esc the cursor moving down: 4 frames
+shot pilot-esc-move-10 pilot-scene-esc the cursor moving down: 10 frames
+shot pilot-esc-move-60 pilot-scene-esc the cursor on System setting, idle
+shot pilot-esc-close-4 pilot-scene-esc closing: 4 frames after Esc
+anim anim-esc-open pilot-scene-esc pilot-esc-open-01,pilot-esc-open-03,pilot-esc-open-05,pilot-esc-open-07,pilot-esc-open-09,pilot-esc-open-11,pilot-esc-open-13,pilot-esc-open-15,pilot-esc-open-17,pilot-esc-open-19,pilot-esc-open-21,pilot-esc-open-23,pilot-esc-open-25,pilot-esc-open-27,pilot-esc-open-29,pilot-esc-idle
+section Settings (escmenu.swf)
+shot pilot-sys-1 pilot-scene-esc System setting: 1 frame after Enter
+shot pilot-sys-4 pilot-scene-esc System setting sliding in: 4 frames
+shot pilot-sys-8 pilot-scene-esc System setting sliding in: 8 frames
+shot pilot-sys-16 pilot-scene-esc System setting sliding in: 16 frames
+shot pilot-sys-idle pilot-scene-esc System setting, idle
+shot pilot-audio pilot-scene-esc Audio, idle
+shot pilot-video pilot-scene-esc Video, idle
+shot pilot-video-move-4 pilot-scene-esc Video, the cursor moving: 4 frames
+shot pilot-video-move-60 pilot-scene-esc Video, the cursor on Screen Mode
+shot pilot-keys pilot-scene-esc Key bindings
+shot pilot-keyboard pilot-scene-esc Keyboard bindings
+section Save and load (saveload_jp.swf, also the English and European screens)
+shot pilot-load-0 pilot-title the load list opening: the frame its state is 0xc
+shot pilot-load-4 pilot-title the load list opening: 4 frames
+shot pilot-load-10 pilot-title the load list opening: 10 frames
+shot pilot-load-idle pilot-title the load list, idle
+shot pilot-load-move-4 pilot-title the cursor moving down: 4 frames
+shot pilot-load-move-10 pilot-title the cursor moving down: 10 frames
+shot pilot-load-move-60 pilot-title the cursor on entry 1, idle
+shot pilot-load-move2-60 pilot-title the cursor on entry 2, idle
+shot pilot-popup-2 pilot-title "Load this file?" opening: 2 frames
+shot pilot-popup pilot-title "Load this file?", idle
+shot pilot-load-back pilot-title back to the list
+section Details, enlarged (fonts, antialiasing, bitmap smoothing)
+crop pilot-esc-idle pilot-scene-esc 120 196 220 48 4 a button: text and frame
+crop pilot-esc-idle pilot-scene-esc 96 50 220 40 4 the help line
+crop pilot-video pilot-scene-esc 600 140 400 60 3 a Video row
+crop pilot-load-idle pilot-title 105 145 150 75 4 the portraits (bitmaps)
+crop pilot-load-idle pilot-title 335 180 290 40 4 text on the save list
+crop pilot-load-idle pilot-title 970 115 180 105 3 the save thumbnail (bitmap)
+crop pilot-load-idle pilot-title 50 145 70 50 6 the cursor
+crop pilot-popup pilot-title 400 280 480 160 2 the pop-up
+crop pilot-load-idle pilot-title 0 300 100 100 4 the background texture
+crop pilot-esc-idle pilot-scene-esc 1000 420 200 200 2 the esc menu's background art

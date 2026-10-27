@@ -87,6 +87,12 @@ fi
 if [[ -n "${FFX_FMOD_LOG:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_FMOD_LOG/p"
 fi
+# Iggy call log (crates/ffx-hook/src/iggy_log.rs): FFX_IGGY_LOG names the
+# file every Iggy call and AS3 callback is written to (a WSL path, best on
+# /mnt/c).
+if [[ -n "${FFX_IGGY_LOG:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_IGGY_LOG/p"
+fi
 # FMOD's mixed output to a WAV file (crates/ffx-hook/src/audio_wav.rs,
 # docs/harness.md "Audio capture"): FFX_AUDIO_WAV names it (a WSL path, best
 # on /mnt/c); <file>.marks beside it says where the harness's audiomarks are.

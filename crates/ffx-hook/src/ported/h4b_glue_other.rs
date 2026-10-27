@@ -50,18 +50,24 @@ ported! {
     /// `gdraw_makeTextureBegin_00a3a070(owner, w, h, format, flags, info,
     /// stats)`.
     gdraw_makeTextureBegin_00a3a070 @ 0x00a3_a070 => extern "stdcall" fn make_texture_begin(owner: u32, w: u32, h: u32, format: u32, flags: u32, info: u32, stats: u32) -> u32 {
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_texture(owner, w, h, format, flags, info);
         bb::make_texture_begin(&mut mem(), owner, w, h, format, flags, info, stats)
     }
     /// `gdraw_makeVertexBufferEnd_00a3a5f0(info, stats)`: the buffer
     /// descriptions in a frame (`ebp - 0x4c` .. `ebp - 4`, 18 words).
     gdraw_makeVertexBufferEnd_00a3a5f0 @ 0x00a3_a5f0 => extern "stdcall" fn make_vertex_buffer_end(info: u32, _stats: u32) -> u32 {
         let mut f = StackFrame::<0x12>::new();
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_vertex_buffer(info);
         bb::make_vertex_buffer_end(&mut mem(), f.at(), info)
     }
     /// `gdraw_createRowTexture_00a3a9f0(w, texels)`: the description in a
     /// frame (`ebp - 0x3c`).
     gdraw_createRowTexture_00a3a9f0 @ 0x00a3_a9f0 => extern "stdcall" fn create_row_texture(w: u32, texels: u32) -> u32 {
         let mut f = StackFrame::<0xe>::new();
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_row_texture(w, texels);
         bb::create_row_texture(&mut mem(), f.at(), w, texels)
     }
     /// `gdraw_drawRectQuad_00a3bd40(rect, a)`: the mapping in a frame.
@@ -253,6 +259,8 @@ ported! {
     /// `ebp - 4`, 24 words).
     gdraw_setRenderState_00a3c6c0 @ 0x00a3_c6c0 => extern "C" fn set_render_state(format: u32, r: u32, _c: u32, colour: u32) -> u32 {
         let mut f = StackFrame::<0x18>::new();
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_render_state(format, r);
         bg::set_render_state(&mut mem(), f.at(), format, r, colour)
     }
 
