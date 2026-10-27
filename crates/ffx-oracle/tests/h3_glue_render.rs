@@ -79,6 +79,11 @@ use ffx_prender::h3_glue53::{self as h53, bridge as gh53};
 use ffx_prender::h3_glue54::{self as h54, bridge as gh54};
 use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
 use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
+use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
+use ffx_prender::h3_glue58::bridge as gh58;
+use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
+use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
+use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -93,9 +98,13 @@ const POISON: u32 = 0xdead_beef;
 /// `+16` `fstp st0; ret`, for [`Host::call_intrinsic`] (a CRT intrinsic
 /// with its argument in `ST0`; `graphicFontDraw` is 1806 bytes long).
 const TRAMPOLINE_AT: u32 = POISON_AT + 8;
-const TRAMPOLINE_CODE: [u8; 19] = [
+///
+/// At `+19`, for [`Host::call_intrinsic2`]: `fld qword [esp+4]; fld qword
+/// [esp+0xc]; call [esp+0x14]; ret` (`_CIpow`, operands in `ST1` and
+/// `ST0`).
+const TRAMPOLINE_CODE: [u8; 32] = [
     0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-    0xdd, 0xd8, 0xc3,
+    0xdd, 0xd8, 0xc3, 0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
 ];
 
 /// Deterministic xorshift stream.
@@ -209,6 +218,26 @@ impl Host for G<'_> {
         let r = self
             .0
             .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let at = self.1 + (TRAMPOLINE_AT - POISON_AT);
+        let (base, power) = (x.to_bits(), y.to_bits());
+        let words = [
+            base as u32,
+            (base >> 32) as u32,
+            power as u32,
+            (power >> 32) as u32,
+            addr,
+        ];
+        let r = self
+            .0
+            .call(at + 19, Conv::Cdecl, &words)
             .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
         let Some(v) = r.st0_f32() else {
             panic!("intrinsic {addr:#x}: no float in ST0");
@@ -12584,5 +12613,520 @@ fn batch58_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 30 } else { 100 };
         run_cases(t, CASES58, n, &mut Rng(0x5858_b058));
+    });
+}
+
+// ---- round 17 batch 59 (ffx_prender::h3_glue57) ----
+
+impl Twins {
+    /// A recording stub at `sym` (as [`Twins::stub`]) that first stores
+    /// each `(k, value)`'s word through its stack argument `k`.
+    fn stub_writes(
+        &mut self,
+        sym: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+        writes: &[(u8, u32)],
+    ) {
+        let log = self.stub(None, sym, this, n, pops, Some(ret));
+        let mut c = vec![];
+        for &(k, v) in writes {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp+4+4k]
+            c.extend([0xc7, 0x00]); // mov dword [eax], v
+            c.extend(v.to_le_bytes());
+        }
+        let at = self.cave_next;
+        c.push(0xe9); // jmp log
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.code(&c);
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+}
+
+/// A float, mostly a moderate one (hundredths in -20..20), so that one
+/// NaN or infinity does not swamp a whole matrix.
+fn mild(rng: &mut Rng) -> u32 {
+    if rng.chance(16) {
+        rng.float().to_bits()
+    } else {
+        ((rng.below(4000) as f32 - 2000.0) / 100.0).to_bits()
+    }
+}
+
+/// An `al` answer (0 or not) with stray high bits.
+fn answer(rng: &mut Rng) -> u32 {
+    let al = pick(rng, &[0, 1, 0x80]);
+    (rng.next() & !0xff) | al
+}
+
+/// An extent around the 30 the original compares with.
+fn extent30(rng: &mut Rng) -> u32 {
+    pick(
+        rng,
+        &[
+            10.0_f32.to_bits(),
+            30.0_f32.to_bits(),
+            0x41f0_0001, // just above 30
+            50.0_f32.to_bits(),
+            0x7fc0_0000,
+            (-40.0_f32).to_bits(),
+        ],
+    )
+}
+
+/// The manager (cells used or shared), the instance (none, or one whose
+/// first word is 0 but for its top bit), its mesh's bounds and 3x4
+/// matrix, the atlas size (0, negative, not a multiple of 8, the game's),
+/// the cell lookup's and insertions' answers and cells, the bounding box
+/// and casters' extents, the radius (0, -0, NaN, any), the outputs (apart
+/// or one word).
+fn prep_update_shadow(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let manager = t.zeros(0x2c00);
+    let fill = rng.bytes(0x2c00);
+    t.write(manager, &fill);
+    for cell in 0..64 {
+        if rng.chance(2) {
+            t.w32(manager + 0x29e8 + 4 * cell, 1);
+        }
+    }
+    *this = manager;
+    let inst = t.zeros(0x200);
+    let fill = rng.bytes(0x200);
+    t.write(inst, &fill);
+    let any = rng.next() | 1;
+    let first = pick(rng, &[0, 0x8000_0000, 1, any]);
+    t.w32(inst, first);
+    t.w32(inst + 4, inst + 0x20);
+    t.w32(inst + 0x20, inst + 0x40);
+    t.w32(inst + 0x40 + 0x1c, inst + 0x80);
+    t.w32(inst + 0x40 + 4, inst + 0x100);
+    for k in 0..8 {
+        let v = mild(rng);
+        t.w32(inst + 0x80 + 4 * k, v);
+    }
+    for k in 0..12 {
+        let v = mild(rng);
+        t.w32(inst + 0x100 + 4 * k, v);
+    }
+    let any = rng.next();
+    let size = pick(rng, &[0, 2048, 4096, 1024, 13, (-9_i32) as u32, any]);
+    t.global(h57::SHADOW_SIZE, size);
+    let (col, row) = (rng.below(8), rng.below(8));
+    let found = answer(rng);
+    t.stub_writes(
+        h57::ALREADY_IN_MAP,
+        true,
+        3,
+        3,
+        found,
+        &[(1, col), (2, row)],
+    );
+    let (wide, deep) = (extent30(rng), extent30(rng));
+    let up = rng.float().to_bits();
+    let ret = rng.next();
+    t.stub_writes(
+        h57::MAX_BOUNDING_BOX,
+        false,
+        4,
+        0,
+        ret,
+        &[(1, wide), (2, deep), (3, up)],
+    );
+    for sym in [h57::INSERT, h57::INSERT_DOUBLE] {
+        let (col, row) = (rng.below(8), rng.below(8));
+        let done = answer(rng);
+        t.stub_writes(sym, true, 6, 6, done, &[(2, col), (3, row)]);
+    }
+    let ex = [mild(rng), mild(rng), mild(rng)];
+    let ret = rng.next();
+    t.stub_writes(
+        h57::CASTERS_EXTENT,
+        false,
+        5,
+        0,
+        ret,
+        &[(1, ex[0]), (2, ex[1]), (3, ex[2])],
+    );
+    let outs = t.zeros(0x40);
+    args[0] = outs;
+    args[1] = if rng.chance(8) { 0 } else { inst };
+    if rng.chance(4) {
+        for k in [3, 5, 6, 7] {
+            args[k] = outs + 0x20;
+        }
+    } else {
+        args[3] = outs + 0x10;
+        args[5] = outs + 0x14;
+        args[6] = outs + 0x18;
+        args[7] = outs + 0x1c;
+    }
+    let any = mild(rng);
+    args[4] = pick(
+        rng,
+        &[
+            (-0.2_f32).to_bits(),
+            (-1.0_f32).to_bits(),
+            5.0_f32.to_bits(),
+            any,
+        ],
+    );
+    let any = mild(rng);
+    args[8] = pick(rng, &[0, 0x8000_0000, 0x7fc0_0000, any, 2.5_f32.to_bits()]);
+    args[9] = rng.float().to_bits();
+}
+
+#[rustfmt::skip]
+const CASES59: &[Case] = &[
+    framed(Case { prep: Some(prep_update_shadow), ..method("update_shadow_map", 0x006d_3000, This::Object, 12, &[], |m, this, a| { let slots = slots_at(m, a); u(gh57::update_shadow_map(m, frame_ebp(), slots, this)) }) }, 0x2b0, 0x30),
+];
+
+#[test]
+fn batch59_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES59, n, &mut Rng(0x5959_b059));
+    });
+}
+
+// ---- round 17 batch 60 (ffx_prender::h3_glue58) ----
+
+/// A float in -2..2 now and then exactly -1, 0 or 1 (the shard
+/// positions' screen test), or any float.
+fn near_one(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => pick(
+            rng,
+            &[(-1.0_f32).to_bits(), 0, 0x8000_0000, 1.0_f32.to_bits()],
+        ),
+        1 => rng.float().to_bits(),
+        _ => ((rng.below(400) as f32 - 200.0) / 100.0).to_bits(),
+    }
+}
+
+/// The mode (diffuse, specular, neither), the vertex count (0 to 5), the
+/// rotation, the positions, normals and colours, the light, colour and
+/// strength.
+fn prep_shards(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let mode = pick(rng, &[1, 2, 1, 2, 0, 3]);
+    t.w32(obj, mode);
+    let n = pick(rng, &[0, 1, 2, 3, 5]);
+    t.w32(obj + 8, n);
+    for k in 0..12 {
+        let v = if rng.chance(3) {
+            pick(rng, &[0, 1.0_f32.to_bits()])
+        } else {
+            mild(rng)
+        };
+        t.w32(obj + 0x60 + 4 * k, v);
+    }
+    let (positions, normals, colours) = (obj + 0x400, obj + 0x500, obj + 0x600);
+    t.w32(obj + 0x40, positions);
+    t.w32(obj + 0x44, normals);
+    t.w32(obj + 0x48, colours);
+    for k in 0..15 {
+        let p = near_one(rng);
+        t.w32(positions + 4 * k, p);
+        let v = mild(rng);
+        t.w32(normals + 4 * k, v);
+    }
+    if rng.chance(3) {
+        // the first column's sum at an f32 tie: (1+2^-12)^2 + 2^-53 +
+        // 2^-53 rounds down when added left to right, up otherwise
+        t.w32(obj + 0x60, 0x3f80_0800);
+        t.w32(obj + 0x70, 0x3280_0000);
+        t.w32(obj + 0x80, 0x3280_0000);
+        for v in 0..5 {
+            t.w32(normals + 12 * v, 0x3f80_0800);
+            t.w32(normals + 12 * v + 4, 0x3200_0000);
+            t.w32(normals + 12 * v + 8, 0x3200_0000);
+        }
+    }
+    for k in [0, 1, 2, 4, 5, 6] {
+        args[k] = mild(rng);
+    }
+    let any = mild(rng);
+    args[7] = pick(rng, &[1.0_f32.to_bits(), 0.25_f32.to_bits(), any]);
+}
+
+#[rustfmt::skip]
+const CASES60: &[Case] = &[
+    Case { prep: Some(prep_shards), ..method("shade_shards", 0x006d_3650, This::Object, 8, &[], |m, this, a| u(gh58::shade_shards(m, this, [a[0], a[1], a[2]], [a[4], a[5], a[6]], a[7]))) },
+];
+
+#[test]
+fn batch60_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 400 };
+        run_cases(t, CASES60, n, &mut Rng(0x6060_b060));
+    });
+}
+
+// ---- round 17 batch 61 (ffx_prender::h3_glue59) ----
+
+const INIT61_STUBS: &[(u32, K)] = &[
+    (h59::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h59::MATRIX4X3_CLASS, K::Cdecl(0)),
+    (h59::SAMPLER_STATES_INIT, K::Cdecl(0)),
+    (h59::COPY_TABLE, K::This(0)),
+    (h59::SETTINGS_SAVE, K::This(0)),
+    (h59::INPUT_MANAGER, K::Cdecl(0)),
+    (h59::BUILD_PAD_MAP, K::This(0)),
+    (h59::IGGY_MENU_CREATE, K::Cdecl(0)),
+    (h59::IGGY_MENU_INIT, K::This(3)),
+    (h59::FIOS_UNIFY, K::Cdecl(3)),
+    (h59::LOAD_PAUSE_MENU, K::Cdecl(1)),
+    (h59::LOAD_ESC_MENU, K::Cdecl(5)),
+    (h59::ICON_PANEL_CREATE, K::Cdecl(0)),
+    (h59::AFTER_MENUS, K::Cdecl(0)),
+];
+
+/// The scene (its settings' bit 7 set or not), its cameras (pointers and
+/// embedded ones, all with a vtable whose `+4` logs), the registration
+/// (failing now and then), the instance list and its 3x4 matrix, the two
+/// new matrices, the settings' pad-map byte, the application and the Iggy
+/// menu manager.
+fn prep_init61(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x11400);
+    *this = scene;
+    let fill = rng.bytes(0x40);
+    t.write(scene + 0x940, &fill);
+    let flags = rng.next();
+    t.w32(scene + 0x95c, flags);
+    let renderer = rng.next();
+    t.w32(scene + 0xd0, renderer);
+    t.w32(scene + 0x10ddc, rng.next());
+    let vcall = t.stub(None, 0x4444, true, 0, 0, Some(0x1234));
+    let vtable = obj + 0x1f00;
+    t.w32(vtable + 4, vcall);
+    for (k, slot) in [0xdc, 0x394, 0x238, 0x7e0, 0x654].into_iter().enumerate() {
+        let camera = obj + 0x200 * k as u32;
+        let fill = rng.bytes(0x200);
+        t.write(camera, &fill);
+        t.w32(camera, vtable);
+        t.w32(scene + slot, camera);
+    }
+    for at in [0xbdc, 0xa84, 0x4fc] {
+        t.w32(scene + at, vtable);
+    }
+    let main = t.r32(scene + 0xdc);
+    let far = mild(rng);
+    t.w32(main + 0xbc, far);
+    let aspect = mild(rng);
+    t.w32(main + 0x150, aspect);
+    let error = if rng.chance(6) { rng.next() | 1 } else { 0 };
+    t.stub_ret(h59::REGISTER, true, 0, 0, error);
+    let list = obj + 0xc00;
+    let matrix = obj + 0xc80;
+    t.w32(list + 0x34, matrix);
+    t.stub_ret(h59::ALLOCATE_INSTANCE_LIST, true, 3, 3, list);
+    let clusters = [obj + 0xd00, obj + 0xd40];
+    t.stub_seq(h59::CLUSTER_CREATE, true, 3, 3, &clusters);
+    let settings = obj + 0xe00;
+    t.write(settings + 0x638, &[u8::from(rng.chance(2))]);
+    t.global(h59::SETTINGS, settings);
+    let app = obj + 0x1000;
+    let words = rng.bytes(0x280);
+    t.write(app, &words);
+    t.stub_ret(h59::GET_APPLICATION, false, 0, 0, app);
+    let manager = rng.next();
+    t.global(h59::IGGY_MENU_MANAGER, manager);
+}
+
+#[rustfmt::skip]
+const CASES61: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_init61), ..method("init_scene", 0x0065_f450, This::Object, 0, INIT61_STUBS, |m, this, _| u(gh59::init_scene(m, frame_ebp(), this))) }), 0x1c8, 0),
+];
+
+#[test]
+fn batch61_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 20 } else { 60 };
+        run_cases(t, CASES61, n, &mut Rng(0x6161_b061));
+    });
+}
+
+// ---- round 17 batch 62 (ffx_prender::h3_glue60) ----
+
+const UI62_STUBS: &[(u32, K)] = &[
+    (h60::REMAP_INSTANCE, K::Cdecl(0)),
+    (h60::CHECK_WORD_VERTEX, K::This(3)),
+];
+
+/// A vertex buffer header at `at` (count, total, five arrays in `room`).
+fn buffer62(t: &mut Twins, at: u32, room: u32, rng: &mut Rng) {
+    let count = pick(rng, &[0, 4, 8, 12, 1, 7]);
+    t.w32(at + 4, count);
+    let total = rng.next();
+    t.w32(at + 8, total);
+    for k in 0..5 {
+        t.w32(at + 0xc + 4 * k, room + 0x200 * k);
+    }
+}
+
+/// The skipped frame, the remap (drawing, or replacing the name), the
+/// kind (named or not), the name (none now and then) and which of the
+/// six names `strstr` finds (or none), the vertex info's buffers (its
+/// own and the three shifted ones), the quad's corners and colours.
+fn prep_ui62(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let skip = if rng.chance(10) {
+        pick(rng, &[1, 2, 0x100])
+    } else {
+        0
+    };
+    t.global(h60::SKIP_FRAME, skip);
+    let renamed = obj + 0x1e00;
+    let drawn = if rng.chance(6) {
+        pick(rng, &[1, 0x100, 0x8000_0000])
+    } else {
+        0
+    };
+    let writes: &[(u8, u32)] = if rng.chance(4) { &[(3, renamed)] } else { &[] };
+    t.stub_writes(h60::REMAP_BUTTON_ICON, true, 5, 5, drawn, writes);
+    let info = obj + 0x40;
+    let own = obj + 0x800;
+    t.w32(info + 0x94, own);
+    for off in [0u32, 0x6c, 0xd8, 0x144] {
+        let room = t.zeros(0x1000);
+        buffer62(t, own + off, room, rng);
+    }
+    t.stub_ret(h60::VERTEX_INFO, true, 2, 2, info);
+    let hit = rng.below(7) as usize;
+    let mut found = [0u32; 6];
+    if hit < 6 {
+        found[hit] = obj + 0x1f00;
+    }
+    t.stub_import_seq(h60::STRSTR_SLOT, 2, &found);
+    let abmap = rng.next();
+    t.global(h60::ABMAP, abmap);
+    let quad = obj + 0x100;
+    for v in 0..4 {
+        let at = quad + 0x20 * v;
+        for k in 0..4 {
+            let x = mild(rng);
+            t.w32(at + 4 * k, x);
+        }
+        for k in 0..4 {
+            let c = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(256)
+            };
+            t.w32(at + 0x10 + 4 * k, c);
+        }
+    }
+    args[0] = quad;
+    args[1] = if rng.chance(5) { 0 } else { obj + 0x1c00 };
+    args[2] = pick(rng, &[6, 0xb, 6, 0xb, 0, 3]);
+}
+
+#[rustfmt::skip]
+const CASES62: &[Case] = &[
+    framed(Case { prep: Some(prep_ui62), ..cdecl("draw_ui_abmap_element", 0x0063_e930, 3, UI62_STUBS, |m, _, a| { let slots = slots_at(m, a); gh60::draw_ui_abmap_element(m, slots, a[0], a[2]); Out::None }) }, 0, 0xc),
+];
+
+#[test]
+fn batch62_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES62, n, &mut Rng(0x6262_b062));
+    });
+}
+
+// ---- round 17 batch 63 (ffx_prender::h3_glue61) ----
+
+const GEO63_STUBS: &[(u32, K)] = &[
+    (h61::UPDATE_RENDER_DATA, K::This(1)),
+    (h61::MEMCPY, K::Cdecl(3)),
+];
+
+/// The flags, the render elements (none, one inline, several, or no
+/// list), their parameter buffers (sizes around the offsets), what
+/// `FindByName` answers call by call (no parameter, or one of several
+/// offsets and sizes), the clamped `+0x4c` (NaN, the limits), the
+/// scene's YIQ values.
+fn prep_geo63(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let list = obj + 0x1000;
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+    t.w32(list, n);
+    let data = if n & 0x7fff_ffff == 1 {
+        list + 4
+    } else {
+        list + 0x40
+    };
+    if data != list + 4 {
+        t.w32(list + 4, data);
+    }
+    for k in 0..3 {
+        let element = obj + 0x1100 + 0x20 * k;
+        t.w32(data + 4 * k, element);
+        let buffer = obj + 0x1200 + 0x100 * k;
+        t.w32(element + 4, buffer);
+        let size = pick(rng, &[0x10, 0x14, 0x50, 0x2000, 0]);
+        t.w32(buffer, size);
+    }
+    t.w32(obj + 0x14, if rng.chance(8) { 0 } else { list });
+    let shader = rng.next();
+    t.w32(obj + 0x28, shader);
+    let lv = pick(
+        rng,
+        &[
+            0x7fc0_0000,
+            255.0_f32.to_bits(),
+            (-256.0_f32).to_bits(),
+            (-300.0_f32).to_bits(),
+            (-255.5_f32).to_bits(),
+            1e6_f32.to_bits(),
+            3.5_f32.to_bits(),
+        ],
+    );
+    t.w32(obj + 0x4c, lv);
+    let params = obj + 0x1600;
+    let shapes: [(u16, u16); 6] = [
+        (0, 16),
+        (3, 4),
+        (4, 16),
+        (8, 0x40),
+        (0x40, 0x2010),
+        (0x10, 4),
+    ];
+    for (k, (off, size)) in shapes.into_iter().enumerate() {
+        let p = params + 0x10 * k as u32;
+        t.write(p + 8, &off.to_le_bytes());
+        t.write(p + 0xa, &size.to_le_bytes());
+    }
+    let answers: Vec<u32> = (0..48)
+        .map(|_| {
+            if rng.chance(3) {
+                0
+            } else {
+                params + 0x10 * rng.below(6)
+            }
+        })
+        .collect();
+    t.stub_seq(h61::FIND_PARAMETER, true, 1, 1, &answers);
+    let yiq: Vec<(u8, u32)> = (0..6).map(|k| (k, mild(rng))).collect();
+    t.stub_writes(h61::GET_YIQ_PARAM, true, 6, 6, rng.next(), &yiq);
+    let scene = rng.next();
+    t.global(h61::SCENE, scene);
+    args[0] = rng.next();
+    // updateRenderData's result and the loop words
+    FRAME_IGNORE.with(|z| z.replace(vec![(0x38, 0x14)]));
+}
+
+#[rustfmt::skip]
+const CASES63: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_geo63), ..method("update_render_data_without_adding", 0x006a_53e0, This::Object, 1, GEO63_STUBS, |m, this, a| u(gh61::update_render_data(m, frame_ebp(), this, a[0]))) }), 0x5c, 0),
+];
+
+#[test]
+fn batch63_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES63, n, &mut Rng(0x6363_b063));
     });
 }

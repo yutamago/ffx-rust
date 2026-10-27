@@ -62,6 +62,11 @@ use ffx_prender::h3_glue53::bridge as g53;
 use ffx_prender::h3_glue54::bridge as g54;
 use ffx_prender::h3_glue55::bridge as g55;
 use ffx_prender::h3_glue56::bridge as g56;
+use ffx_prender::h3_glue57::bridge as g57;
+use ffx_prender::h3_glue58::bridge as g58;
+use ffx_prender::h3_glue59::bridge as g59;
+use ffx_prender::h3_glue60::bridge as g60;
+use ffx_prender::h3_glue61::bridge as g61;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2122,6 +2127,52 @@ ported! {
     /// (the original tail-jumps to it): the scene's boot-time set-up.
     PhyreScene_bootInit @ 0x0065_7a50 => extern "thiscall" fn scene_boot_init(this: u32) -> u32 {
         g56::boot_init(&mut mem(), this)
+    }
+
+    // ---- round 17 batch 59 (ffx_prender::h3_glue57) ----
+    /// `ShadowManager_updateShadowMap(manager; out, instance, a, &-x, floor,
+    /// &z, &x, &y, radius, spread, c, d)` -> `out`: the instance's cell in
+    /// the shadow atlas, its light matrix and rectangle (frame `ebp -
+    /// 0x2b0`; the original reads its arguments from their slots, which it
+    /// reuses as scratch).
+    ShadowManager_updateShadowMap @ 0x006d_3000 => extern "thiscall" fn shadow_update_map(this: u32, _out: u32, _instance: u32, _a: u32, _neg_x: u32, _floor: u32, _z: u32, _x: u32, _y: u32, _radius: u32, _spread: u32, _c: u32, _d: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0xac>::new();
+        g57::update_shadow_map(&mut mem(), f.at() + 0x2b0, slots, this)
+    }
+
+    // ---- round 17 batch 60 (ffx_prender::h3_glue58) ----
+    /// `BrokenScreen_shadeShards_006d3650(shards; light x, y, z, unused, r,
+    /// g, b, strength)` -> the vertex count done (or the mode): the
+    /// shards' vertex colours, diffuse (mode 1) or specular (mode 2).
+    BrokenScreen_shadeShards_006d3650 @ 0x006d_3650 => extern "thiscall" fn shade_shards(this: u32, x: u32, y: u32, z: u32, _unused: u32, r: u32, g: u32, b: u32, strength: u32) -> u32 {
+        g58::shade_shards(&mut mem(), this, [x, y, z], [r, g, b], strength)
+    }
+
+    // ---- round 17 batch 61 (ffx_prender::h3_glue59) ----
+    /// `PhyreScene_initScene(scene)` -> 0 or the texture registration's
+    /// error: the scene's cameras, light matrices and menus (frame `ebp -
+    /// 0x1c8`).
+    PhyreScene_initScene @ 0x0065_f450 => extern "thiscall" fn scene_init_scene(this: u32) -> u32 {
+        let mut f = StackFrame::<0x72>::new();
+        g59::init_scene(&mut mem(), f.at() + 0x1c8, this)
+    }
+
+    // ---- round 17 batch 62 (ffx_prender::h3_glue60) ----
+    /// `graphicDrawUIAbmapElement(quad, name, kind)`: a sphere-grid screen
+    /// quad appended to the ability map's vertex buffers (the button-icon
+    /// remap may replace `name` through its argument slot).
+    graphicDrawUIAbmapElement @ 0x0063_e930 => extern "C" fn draw_ui_abmap_element(quad: u32, _name: u32, kind: u32; slots: u32) {
+        g60::draw_ui_abmap_element(&mut mem(), slots, quad, kind);
+    }
+
+    // ---- round 17 batch 63 (ffx_prender::h3_glue61) ----
+    /// `VFXDynamicGeometry_updateRenderDataWithoutAddingToArray(geometry;
+    /// a)` -> `ClassDynamicGeometry_updateRenderData`'s result: the
+    /// geometry's colours, matrices, YIQ and UV parameters into each render
+    /// element's buffer (frame `ebp - 0x5c`).
+    VFXDynamicGeometry_updateRenderDataWithoutAddingToArray @ 0x006a_53e0 => extern "thiscall" fn vfx_geometry_update_render_data(this: u32, a: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        g61::update_render_data(&mut mem(), f.at() + 0x5c, this, a)
     }
 }
 
