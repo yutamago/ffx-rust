@@ -65,6 +65,7 @@ use ffx_prender::h3_glue56::bridge as g56;
 use ffx_prender::h3_glue57::bridge as g57;
 use ffx_prender::h3_glue58::bridge as g58;
 use ffx_prender::h3_glue59::bridge as g59;
+use ffx_prender::h3_glue60::bridge as g60;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2153,6 +2154,14 @@ ported! {
     PhyreScene_initScene @ 0x0065_f450 => extern "thiscall" fn scene_init_scene(this: u32) -> u32 {
         let mut f = StackFrame::<0x72>::new();
         g59::init_scene(&mut mem(), f.at() + 0x1c8, this)
+    }
+
+    // ---- round 17 batch 62 (ffx_prender::h3_glue60) ----
+    /// `graphicDrawUIAbmapElement(quad, name, kind)`: a sphere-grid screen
+    /// quad appended to the ability map's vertex buffers (the button-icon
+    /// remap may replace `name` through its argument slot).
+    graphicDrawUIAbmapElement @ 0x0063_e930 => extern "C" fn draw_ui_abmap_element(quad: u32, _name: u32, kind: u32; slots: u32) {
+        g60::draw_ui_abmap_element(&mut mem(), slots, quad, kind);
     }
 }
 

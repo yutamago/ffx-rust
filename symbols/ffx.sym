@@ -3657,7 +3657,7 @@
 0x0063df70 function graphicDrawDream          # fh v3:exact 0x0063e120
 0x0063e500 function graphicDrawDreamEternalCalm  # layout: alphabetical run between graphicDrawDream and graphicDrawMainMenuWaterEffect (1 unnamed in the gap); Switch 0x71001dc1a0 graphicDrawDreamEternalCalm is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0063e920 function graphicDrawMainMenuWaterEffect # fh v3:bsim1.00+call.cs 0x0063ead0 cdecl
-0x0063e930 function graphicDrawUIAbmapElement # fh v3:exact 0x0063eae0
+0x0063e930 function graphicDrawUIAbmapElement # fh v3:exact 0x0063eae0; cdecl(quad, name, kind), void (eax not read): nothing on g_GraphicSkipFrame or when RemapButtonIcon_remapButtonIcon(sGetInstance(); &g_ButtonData, +4, quad, &name slot, kind) draws it; vertex buffer [GetVertexInfo(name or NoTexture, kind)+0x94], for kinds 6/11 by strstr: face +0xd8, keyboard_icon +0x144, pad_icon own, icon +0x6c, stone (CheckWordVertex of three ftol screen coords; stone texcoords), mes (u+0.5341797, v-0.15625); appends 4 vertices (colours int/255 at +0x14, positions x*3.75-960, y*2.5961537-540, 1 at +0xc, normals 0,0,1 at +0x10, uv u, 1-v at +0x18) and 6 u16 indices at +0x1c [ftol(f32(count)*1.5)]; count +4 += 4, +8 += 6; ported M4 h3 r17 (ffx_prender::h3_glue60)
 0x0063eee0 function graphicDrawUIElement      # fh v3:cg26 0x63f090
 0x0063fc10 function graphicDttPageFlag           # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71008a8718 graphicDttPageFlag, 3 votes, round 1
 0x0063fc30 function FieldAddra4_0063fc30         # auto-port shape (return argument + offset, cdecl): return (a0 + 0xa4); callers: no direct caller; name ours

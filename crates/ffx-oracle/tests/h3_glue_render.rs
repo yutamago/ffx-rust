@@ -82,6 +82,7 @@ use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
 use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
 use ffx_prender::h3_glue58::bridge as gh58;
 use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
+use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -12945,5 +12946,92 @@ fn batch61_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 20 } else { 60 };
         run_cases(t, CASES61, n, &mut Rng(0x6161_b061));
+    });
+}
+
+// ---- round 17 batch 62 (ffx_prender::h3_glue60) ----
+
+const UI62_STUBS: &[(u32, K)] = &[
+    (h60::REMAP_INSTANCE, K::Cdecl(0)),
+    (h60::CHECK_WORD_VERTEX, K::This(3)),
+];
+
+/// A vertex buffer header at `at` (count, total, five arrays in `room`).
+fn buffer62(t: &mut Twins, at: u32, room: u32, rng: &mut Rng) {
+    let count = pick(rng, &[0, 4, 8, 12, 1, 7]);
+    t.w32(at + 4, count);
+    let total = rng.next();
+    t.w32(at + 8, total);
+    for k in 0..5 {
+        t.w32(at + 0xc + 4 * k, room + 0x200 * k);
+    }
+}
+
+/// The skipped frame, the remap (drawing, or replacing the name), the
+/// kind (named or not), the name (none now and then) and which of the
+/// six names `strstr` finds (or none), the vertex info's buffers (its
+/// own and the three shifted ones), the quad's corners and colours.
+fn prep_ui62(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let skip = if rng.chance(10) {
+        pick(rng, &[1, 2, 0x100])
+    } else {
+        0
+    };
+    t.global(h60::SKIP_FRAME, skip);
+    let renamed = obj + 0x1e00;
+    let drawn = if rng.chance(6) {
+        pick(rng, &[1, 0x100, 0x8000_0000])
+    } else {
+        0
+    };
+    let writes: &[(u8, u32)] = if rng.chance(4) { &[(3, renamed)] } else { &[] };
+    t.stub_writes(h60::REMAP_BUTTON_ICON, true, 5, 5, drawn, writes);
+    let info = obj + 0x40;
+    let own = obj + 0x800;
+    t.w32(info + 0x94, own);
+    for off in [0u32, 0x6c, 0xd8, 0x144] {
+        let room = t.zeros(0x1000);
+        buffer62(t, own + off, room, rng);
+    }
+    t.stub_ret(h60::VERTEX_INFO, true, 2, 2, info);
+    let hit = rng.below(7) as usize;
+    let mut found = [0u32; 6];
+    if hit < 6 {
+        found[hit] = obj + 0x1f00;
+    }
+    t.stub_import_seq(h60::STRSTR_SLOT, 2, &found);
+    let abmap = rng.next();
+    t.global(h60::ABMAP, abmap);
+    let quad = obj + 0x100;
+    for v in 0..4 {
+        let at = quad + 0x20 * v;
+        for k in 0..4 {
+            let x = mild(rng);
+            t.w32(at + 4 * k, x);
+        }
+        for k in 0..4 {
+            let c = if rng.chance(4) {
+                rng.next()
+            } else {
+                rng.below(256)
+            };
+            t.w32(at + 0x10 + 4 * k, c);
+        }
+    }
+    args[0] = quad;
+    args[1] = if rng.chance(5) { 0 } else { obj + 0x1c00 };
+    args[2] = pick(rng, &[6, 0xb, 6, 0xb, 0, 3]);
+}
+
+#[rustfmt::skip]
+const CASES62: &[Case] = &[
+    framed(Case { prep: Some(prep_ui62), ..cdecl("draw_ui_abmap_element", 0x0063_e930, 3, UI62_STUBS, |m, _, a| { let slots = slots_at(m, a); gh60::draw_ui_abmap_element(m, slots, a[0], a[2]); Out::None }) }, 0, 0xc),
+];
+
+#[test]
+fn batch62_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES62, n, &mut Rng(0x6262_b062));
     });
 }
