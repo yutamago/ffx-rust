@@ -1756,7 +1756,9 @@ menu), and 0 on 11 and 12.
 
 Proofs, with the fix: iggy-menus 15 of 15 with every hook (the whole
 script, three at once); `run-all.sh --extra` and the main list pass;
-the draw-field gate passes.
+the draw-field gate passes. Those ran with
+`PhyreScene_doOnFieldMapAssetLoaded` unhooked; after merging main, which
+hooks it again (fh-learn), iggy-menus passed 6 of 6 with it on.
 
 ## Parallel games
 
