@@ -8,6 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
+    h4b_h as bh,
 };
 
 use super::{StackFrame, mem, ported};
@@ -253,5 +254,26 @@ ported! {
     gdraw_setRenderState_00a3c6c0 @ 0x00a3_c6c0 => extern "C" fn set_render_state(format: u32, r: u32, _c: u32, colour: u32) -> u32 {
         let mut f = StackFrame::<0x18>::new();
         bg::set_render_state(&mut mem(), f.at(), format, r, colour)
+    }
+
+    // ---- round 2, batch 3 (ffx_glue_other::h4b_h)
+
+    /// `TODrawMessageWaitNamesp(window)`: the temporaries and the Al Bhed
+    /// text in a frame (`ebp - 0x14` .. `ebp - 1`, 5 words); the
+    /// window's slot holds the original's temporaries.
+    TODrawMessageWaitNamesp @ 0x008d_ee00 => extern "C" fn message_wait_namesp(window: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        bh::message_wait_namesp(&mut mem(), f.at(), window, Some(slots))
+    }
+    /// `AbmapDrawGridCells_00a497b0()`: the record and the name buffer in
+    /// a frame (`ebp - 0x1a4` .. `ebp - 4`, 104 words).
+    AbmapDrawGridCells_00a497b0 @ 0x00a4_97b0 => extern "C" fn grid_cells() -> u32 {
+        let mut f = StackFrame::<0x68>::new();
+        bh::grid_cells(&mut mem(), f.at())
+    }
+    /// `TODrawFrameShape9_008f9280(a, x, y, alpha)`: the contents' x and y
+    /// and the last bar's x left in the argument slots.
+    TODrawFrameShape9_008f9280 @ 0x008f_9280 => extern "C" fn frame_shape9(a: u32, x: u32, y: u32, alpha: u32; slots: u32) -> u32 {
+        bh::frame_shape9(&mut mem(), a, x, y, alpha, Some(slots))
     }
 }

@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg,
+    h4b_g as bg, h4b_h as bh,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -3138,13 +3138,18 @@ fn bf_filter_pass() {
 /// its pointer argument `arg` into a capture area (four slots, by call
 /// count), so the diff sees what each call was handed.
 fn capture_stub(t: &mut Twins, sym: u32, n: u32, arg: u8, bytes: u32) {
+    capture_stub_n(t, sym, n, arg, bytes, 4);
+}
+
+/// [`capture_stub`] with `slots` (a power of two up to 128) capture slots.
+fn capture_stub_n(t: &mut Twins, sym: u32, n: u32, arg: u8, bytes: u32, slots: u32) {
     let log = t.stub_code(sym, false, n, 0, false, &[]);
     let count = t.zeros(4);
-    let area = t.zeros((4 * bytes) as usize);
+    let area = t.zeros((slots * bytes) as usize);
     let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c + 4 * arg]; // push esi; push edi; mov esi, [esp+0xc+4i]
     c.push(0xa1);
     c.extend(count.to_le_bytes()); // mov eax, [count]
-    c.extend([0x83, 0xe0, 0x03, 0x69, 0xc0]); // and eax, 3; imul eax, eax, bytes
+    c.extend([0x83, 0xe0, (slots - 1) as u8, 0x69, 0xc0]); // and eax, slots - 1; imul eax, eax, bytes
     c.extend(bytes.to_le_bytes());
     c.extend([0x8d, 0xb8]);
     c.extend(area.to_le_bytes()); // lea edi, [eax+area]
@@ -3704,6 +3709,313 @@ fn bg_set_render_state() {
                     ]
                 },
                 |g| bg::set_render_state(g, ebp - 0x64, format, r, colour),
+            );
+        }
+    }
+}
+
+// ---- round 2, batch 3 (ffx_glue_other::h4b_h)
+
+/// `TODrawMessageWaitNamesp`: random code streams (groups from a table:
+/// line breaks, control codes with tabs, macros, glyphs) in every window
+/// kind, on the maps with their own layouts; the window word's slot and
+/// the frame compared.
+#[test]
+fn bh_message_wait_namesp() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f201);
+        let groups: Vec<u8> = (0..=255u32)
+            .map(|c| {
+                if c == 9 {
+                    2
+                } else {
+                    [4, 4, 4, 1, 2, 3, 4, 0, 4, 1][(c % 10) as usize]
+                }
+            })
+            .collect();
+        let table = t.alloc(&groups);
+        let mut op = vec![0x0f, 0xb6, 0xc0, 0x0f, 0xb6, 0x80]; // movzx eax, al; movzx eax, [eax+table]
+        op.extend(table.to_le_bytes());
+        arg_stub(&mut t, bh::GET_GROUP, &op);
+        arg_stub(&mut t, bh::SKIP_CODE, &[0x40]); // inc eax
+        let albhed = t.zeros(4);
+        t.stub_at(bh::CONV_ALBHED, false, 2, 0, &[wr(1, albhed)]);
+        t.stub(e1::REMAP_X2, 1, true);
+        t.stub(e1::REMAP_Y2, 1, true);
+        t.stub(bh::MACRO_WIDTH, 3, true);
+        let mut tags = vec![
+            bh::GET_GROUP,
+            bh::SKIP_CODE,
+            bh::CONV_ALBHED,
+            e1::REMAP_X2,
+            e1::REMAP_Y2,
+            bh::MACRO_WIDTH,
+        ];
+        for (sym, n) in [
+            (bh::PKT_SCISSOR, 4),
+            (bh::COLON_WIDTH, 2),
+            (bh::CHANGE_MACRO2, 3),
+            (bh::FIRST_INIT, 3),
+            (bh::SET_DRAW_INFO, 3),
+            (bh::MACRO_WORD_COUNT, 2),
+            (bh::GET_FONT_INFO, 2),
+            (bh::FONT1612, 2),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(1);
+        let mut lines7 = 0;
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for tag in [e1::REMAP_X2, e1::REMAP_Y2, bh::MACRO_WIDTH] {
+                let v = rng.double();
+                t.ret_f64(tag, v);
+            }
+            t.ret(bh::COLON_WIDTH, rng.below(40));
+            t.ret(bh::MACRO_WORD_COUNT, rng.below(3));
+            t.ret(bh::CONV_ALBHED, rng.below(4));
+            let a = rng.next();
+            t.w32(albhed, a);
+            t.constants(
+                &mut rng,
+                &[
+                    0x00c5_d784,
+                    0x00b5_4c7c,
+                    0x00b5_8cd8,
+                    0x00b6_67e4,
+                    0x00b6_58a4,
+                    0x00b3_eb9c,
+                    0x00b1_f2c8,
+                    0x00b6_67e0,
+                    0x00b6_67e8,
+                    0x00b4_3dd4,
+                ],
+                &[
+                    0x00b9_22c0,
+                    0x00b9_2270,
+                    0x00b3_13a0,
+                    0x00b6_67d8,
+                    0x00b4_1d20,
+                    0x00b9_22b0,
+                    0x00b2_c5c8,
+                    0x00b5_af30,
+                    0x00b4_9968,
+                    0x00b9_2220,
+                ],
+            );
+            let gmap = rng.pick(&[0xdf, 0x17e, 5]);
+            t.g32(bh::GRAPHIC_MAP_ID.sym, gmap);
+            let cmap = rng.pick(&[0xd4, 0x15b, 7]);
+            t.g32(bh::CURRENT_MAP_NO.sym, cmap);
+            let hide = rng.pick(&[0, 0, 0, 1]);
+            t.g32(bh::HIDE_17E.sym, hide);
+            let text: Vec<u8> = (0..600)
+                .map(|_| match rng.below(8) {
+                    0 => 9,
+                    1 => rng.pick(&[0xbf, 0xc0, 0xc1]) as u8,
+                    _ => rng.next() as u8,
+                })
+                .collect();
+            let text = t.alloc(&text);
+            let win = t.zeros(0x100);
+            for k in 0..0x40 {
+                let v = if (0x12..0x16).contains(&k) {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                t.w32(win + 4 * k, v);
+            }
+            t.w32(win + 0x94, text);
+            let (x, y) = rng.pick(&[(0x1fe, 0x185), (-200, 0xb4), (-30, 0xb4), (3, 4)]);
+            t.w16(win + 0x14, x as u16);
+            t.w16(win + 0x16, y as u16);
+            for (off, v) in [
+                (0x22, rng.pick(&[0, 1, 2])),
+                (0x24, rng.pick(&[0, 1, 0xffff])),
+                (0x10, rng.pick(&[0x4000, 0])),
+                (0xe, rng.pick(&[0, 1, 2])),
+                (0x1a, rng.pick(&[0, 1, 3])),
+                (4, rng.below(4)),
+            ] {
+                t.w16(win + off, v as u16);
+            }
+            for (off, v) in [
+                (0xa0, rng.pick(&[0, 1, 5, 20, 40])),
+                (0xa4, rng.below(12)),
+                (0xa8, rng.below(50)),
+                (0xac, rng.pick(&[0, 0, 1])),
+                (0xb4, rng.pick(&[0, 0, 1])),
+            ] {
+                t.w32(win + off, v);
+            }
+            t.b.write(ebp + 8, &win.to_le_bytes()).unwrap();
+            run_parts(
+                &mut t,
+                &w,
+                0x008d_ee00,
+                Conv::Cdecl,
+                &[win],
+                (ebp - 0x14, ebp),
+                0xa5,
+                &|_| vec![(ebp - 0x14, ebp), (ebp + 8, ebp + 0xc)],
+                |g| bh::message_wait_namesp(g, ebp - 0x14, win, Some(ebp + 8)),
+            );
+            let lines: u32 = Mem::read(&t.b, ebp - 4);
+            if lines >= 8 && cmap != 7 {
+                lines7 += 1;
+            }
+        }
+        assert!(lines7 > 10, "{name}: {lines7}");
+    }
+}
+
+/// `AbmapDrawGridCells_00a497b0`: random marks and corner records
+/// (ordinary floats, which serve as positions and sizes alike); each
+/// draw's record captured.
+#[test]
+fn bh_grid_cells() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f202);
+        t.stub(bh::SCREEN_QUAD, 0, false);
+        capture_stub_n(&mut t, bh::DRAW_ABMAP_ELEMENT, 3, 0, 0x80, 128);
+        let tags = [bh::SCREEN_QUAD, bh::DRAW_ABMAP_ELEMENT];
+        let ebp = t.ebp_for(0);
+        let abmap = t.zeros(0x13000);
+        for i in 0..60 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bh::ABMAP.sym, abmap);
+            for off in (0x11680..0x12e00).step_by(4) {
+                let v = if rng.below(4) == 0 {
+                    rng.float()
+                } else {
+                    rng.below(0x10000)
+                };
+                t.w32(abmap + off, v);
+            }
+            let density = rng.pick(&[2, 4, 10]);
+            for k in 0..340 {
+                let m = if rng.below(density) == 0 {
+                    rng.pick(&[1, 2, 0x80, 0xff])
+                } else {
+                    0
+                };
+                t.w8(abmap + 0x12e60 + k, m);
+            }
+            let packet = t.zeros(0xd0);
+            t.g32(bh::PACKET.sym, packet);
+            t.constants(
+                &mut rng,
+                &[],
+                &[0x00b9_21e0, 0x00b5_1bc0, 0x00b9_22f0, 0x00b5_4c70],
+            );
+            run_parts(
+                &mut t,
+                &w,
+                0x00a4_97b0,
+                Conv::Cdecl,
+                &[],
+                (ebp - 0x1a4, ebp - 4),
+                0xa5,
+                &|_| vec![(ebp - 0x19c, ebp - 4)],
+                |g| bh::grid_cells(g, ebp - 0x1a4),
+            );
+        }
+    }
+}
+
+/// A float stub at `sym` returning its `f32` argument times the `f64` in
+/// the returned cell (so each call's result depends on what it was
+/// handed); logs the argument.
+fn scaled_stub(t: &mut Twins, sym: u32) -> u32 {
+    let log = t.stub_code(sym, false, 1, 0, false, &[]);
+    let k = t.zeros(8);
+    let at = t.cave_next;
+    let mut c = vec![0xff, 0x74, 0x24, 0x04, 0xe8]; // push [esp+4]; call log
+    c.extend(log.wrapping_sub(at + 9).to_le_bytes());
+    c.extend([0x83, 0xc4, 0x04, 0xd9, 0x44, 0x24, 0x04, 0xdc, 0x0d]); // add esp, 4; fld dword [esp+4]; fmul qword [k]
+    c.extend(k.to_le_bytes());
+    c.push(0xc3);
+    let f = t.code(&c);
+    t.jump(sym, f);
+    k
+}
+
+/// `TODrawFrameShape9_008f9280`: random sizes, alphas (negative ones
+/// through the unsigned fix-up) and constants; the remaps' results
+/// follow their arguments; the three argument slots compared.
+#[test]
+fn bh_frame_shape9() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f203);
+        let kx = scaled_stub(&mut t, e1::REMAP_X2);
+        let ky = scaled_stub(&mut t, e1::REMAP_Y2);
+        let mut tags = vec![e1::REMAP_X2, e1::REMAP_Y2];
+        for (sym, n) in [
+            (bh::SHAPE_UV_C2, 11),
+            (bh::CROSS_BOX, 6),
+            (bh::FRAME_CONTENTS, 6),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(4);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            // ordinary scales: a product past the f64 range stays finite
+            // in the x87's registers but not in a port's f64
+            for k in [kx, ky] {
+                let v = rng.double();
+                let v = if v.abs() > 1e100 { 1.5 } else { v };
+                t.write(k, &v.to_le_bytes());
+            }
+            t.constants(
+                &mut rng,
+                &[
+                    0x00b5_eff4,
+                    0x00b5_83d8,
+                    0x00b4_1d8c,
+                    0x00b5_f384,
+                    0x00b9_2308,
+                    0x00b9_2268,
+                    0x00b3_eb94,
+                    0x00b5_f2f8,
+                    0x00b5_ef68,
+                    0x00b5_f348,
+                ],
+                &[
+                    0x00b4_1d58,
+                    0x00b4_1d30,
+                    0x00b4_1d68,
+                    0x00b4_1cc0,
+                    0x00b5_4d60,
+                    0x00b5_f1d8,
+                    0x00b5_8cd0,
+                    0x00b4_c170,
+                ],
+            );
+            let k128 = rng.pick(&[1.0 / 128.0, 1.0 / 128.0, 0.5, 1e10]);
+            let at = t.rebase(0x00b1_70b8);
+            t.write(at, &f64::to_le_bytes(k128));
+            let alpha = rng.pickr(&[0, 1, 0x40, 0x80, 0xff, 0x8000_0000, 0xffff_ffff]);
+            let args = [rng.next(), rng.float(), rng.float(), alpha];
+            for (k, v) in args.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            run_parts(
+                &mut t,
+                &w,
+                0x008f_9280,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x30, ebp),
+                0xa5,
+                &|_| vec![(ebp + 0xc, ebp + 0x18)],
+                |g| bh::frame_shape9(g, args[0], args[1], args[2], args[3], Some(ebp + 8)),
             );
         }
     }
