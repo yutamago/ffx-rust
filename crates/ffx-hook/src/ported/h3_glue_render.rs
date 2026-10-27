@@ -66,6 +66,7 @@ use ffx_prender::h3_glue57::bridge as g57;
 use ffx_prender::h3_glue58::bridge as g58;
 use ffx_prender::h3_glue59::bridge as g59;
 use ffx_prender::h3_glue60::bridge as g60;
+use ffx_prender::h3_glue61::bridge as g61;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2162,6 +2163,16 @@ ported! {
     /// remap may replace `name` through its argument slot).
     graphicDrawUIAbmapElement @ 0x0063_e930 => extern "C" fn draw_ui_abmap_element(quad: u32, _name: u32, kind: u32; slots: u32) {
         g60::draw_ui_abmap_element(&mut mem(), slots, quad, kind);
+    }
+
+    // ---- round 17 batch 63 (ffx_prender::h3_glue61) ----
+    /// `VFXDynamicGeometry_updateRenderDataWithoutAddingToArray(geometry;
+    /// a)` -> `ClassDynamicGeometry_updateRenderData`'s result: the
+    /// geometry's colours, matrices, YIQ and UV parameters into each render
+    /// element's buffer (frame `ebp - 0x5c`).
+    VFXDynamicGeometry_updateRenderDataWithoutAddingToArray @ 0x006a_53e0 => extern "thiscall" fn vfx_geometry_update_render_data(this: u32, a: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        g61::update_render_data(&mut mem(), f.at() + 0x5c, this, a)
     }
 }
 

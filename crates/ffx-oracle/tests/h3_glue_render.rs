@@ -83,6 +83,7 @@ use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
 use ffx_prender::h3_glue58::bridge as gh58;
 use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
 use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
+use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13033,5 +13034,99 @@ fn batch62_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES62, n, &mut Rng(0x6262_b062));
+    });
+}
+
+// ---- round 17 batch 63 (ffx_prender::h3_glue61) ----
+
+const GEO63_STUBS: &[(u32, K)] = &[
+    (h61::UPDATE_RENDER_DATA, K::This(1)),
+    (h61::MEMCPY, K::Cdecl(3)),
+];
+
+/// The flags, the render elements (none, one inline, several, or no
+/// list), their parameter buffers (sizes around the offsets), what
+/// `FindByName` answers call by call (no parameter, or one of several
+/// offsets and sizes), the clamped `+0x4c` (NaN, the limits), the
+/// scene's YIQ values.
+fn prep_geo63(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let list = obj + 0x1000;
+    let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+    t.w32(list, n);
+    let data = if n & 0x7fff_ffff == 1 {
+        list + 4
+    } else {
+        list + 0x40
+    };
+    if data != list + 4 {
+        t.w32(list + 4, data);
+    }
+    for k in 0..3 {
+        let element = obj + 0x1100 + 0x20 * k;
+        t.w32(data + 4 * k, element);
+        let buffer = obj + 0x1200 + 0x100 * k;
+        t.w32(element + 4, buffer);
+        let size = pick(rng, &[0x10, 0x14, 0x50, 0x2000, 0]);
+        t.w32(buffer, size);
+    }
+    t.w32(obj + 0x14, if rng.chance(8) { 0 } else { list });
+    let shader = rng.next();
+    t.w32(obj + 0x28, shader);
+    let lv = pick(
+        rng,
+        &[
+            0x7fc0_0000,
+            255.0_f32.to_bits(),
+            (-256.0_f32).to_bits(),
+            (-300.0_f32).to_bits(),
+            (-255.5_f32).to_bits(),
+            1e6_f32.to_bits(),
+            3.5_f32.to_bits(),
+        ],
+    );
+    t.w32(obj + 0x4c, lv);
+    let params = obj + 0x1600;
+    let shapes: [(u16, u16); 6] = [
+        (0, 16),
+        (3, 4),
+        (4, 16),
+        (8, 0x40),
+        (0x40, 0x2010),
+        (0x10, 4),
+    ];
+    for (k, (off, size)) in shapes.into_iter().enumerate() {
+        let p = params + 0x10 * k as u32;
+        t.write(p + 8, &off.to_le_bytes());
+        t.write(p + 0xa, &size.to_le_bytes());
+    }
+    let answers: Vec<u32> = (0..48)
+        .map(|_| {
+            if rng.chance(3) {
+                0
+            } else {
+                params + 0x10 * rng.below(6)
+            }
+        })
+        .collect();
+    t.stub_seq(h61::FIND_PARAMETER, true, 1, 1, &answers);
+    let yiq: Vec<(u8, u32)> = (0..6).map(|k| (k, mild(rng))).collect();
+    t.stub_writes(h61::GET_YIQ_PARAM, true, 6, 6, rng.next(), &yiq);
+    let scene = rng.next();
+    t.global(h61::SCENE, scene);
+    args[0] = rng.next();
+    // updateRenderData's result and the loop words
+    FRAME_IGNORE.with(|z| z.replace(vec![(0x38, 0x14)]));
+}
+
+#[rustfmt::skip]
+const CASES63: &[Case] = &[
+    framed(with_cookie(Case { prep: Some(prep_geo63), ..method("update_render_data_without_adding", 0x006a_53e0, This::Object, 1, GEO63_STUBS, |m, this, a| u(gh61::update_render_data(m, frame_ebp(), this, a[0]))) }), 0x5c, 0),
+];
+
+#[test]
+fn batch63_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES63, n, &mut Rng(0x6363_b063));
     });
 }
