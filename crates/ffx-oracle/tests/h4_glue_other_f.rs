@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
-use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2};
+use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2, h4_k3 as k3};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1365,4 +1365,219 @@ fn k2_loading_update() {
 /// An `f64` as `fstp dword` stores it.
 fn store_f32(x: f64) -> u32 {
     x87::store(x)
+}
+
+// ---- batch 3 (ffx_glue_other::h4_k3)
+
+/// `DepthBiasHooks_onCharacterInstantiated`: levels 0x189, 0x278 and
+/// others; names m121, m281 (the image's strings and copies) and others;
+/// keys found in the table or appended; owned and borrowed arrays.
+#[test]
+fn k3_depth_bias() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_4100);
+        let stubs = [
+            (k3::LEVEL_HASH, true, 0, 0),
+            (k3::SET_PAIR, true, 3, 3),
+            (k3::PHYRE_PRINTF, false, 7, 0),
+            (k3::FREE, false, 1, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let consts = [
+            k3::BIAS_800,
+            k3::BIAS_804,
+            k3::BIAS_808,
+            k3::BIAS_812,
+            k3::BIAS_20,
+            k3::BIAS_2,
+            k3::BIAS_4,
+        ];
+        let m121 = t.rebase(k3::M121);
+        let m281 = t.rebase(k3::M281);
+        let mut printed = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &consts, &[k3::BIAS_F64]);
+            let r = rng.next();
+            t.ret(
+                k3::LEVEL_HASH,
+                rng.pick(&[k3::LEVEL_ALL, k3::LEVEL_NAMED, k3::LEVEL_NAMED, r]),
+            );
+            let scene = rng.next();
+            t.g32(k3::PHYRE_SCENE, scene);
+            t.g32(k3::DIRTY, rng.pick(&[0, 0x100]));
+            // the table: some keys, the rest random
+            let n = rng.below(12);
+            t.g32(k3::TABLE, n);
+            let keys: Vec<u32> = (0..6).map(|_| rng.next()).collect();
+            let table = t.rebase(k3::TABLE);
+            for j in 0..14 {
+                let key = rng.pick(&keys);
+                t.w32(table + 4 + 12 * j, key);
+                let a = rng.float();
+                t.w32(table + 8 + 12 * j, a);
+            }
+            let count = rng.pick(&[0, 1, 2, 4, 5]);
+            let items = t.zeros(4 * 5);
+            for k in 0..5 {
+                let instance = random_block(&mut t, &mut rng, 0x20);
+                let r = rng.next();
+                t.w32(instance + 0x1c, rng.pick(&[rng_key(&keys, r), r]));
+                t.w32(items + 4 * k, instance);
+            }
+            let copy121 = string(&mut t, b"m121");
+            let copy281 = string(&mut t, b"m281");
+            let other = string(&mut t, b"m12");
+            let first = string(&mut t, b"x121");
+            let name_at = rng.pick(&[m121, m281, copy121, copy281, other, m121 + 1, first]);
+            let top = rng.pick(&[0, 0x8000_0000]);
+            t.check(&w, 0x006e_4100, &[name_at, count | top, items], |g| {
+                k3::on_character_instantiated(g, name_at, count | top, items);
+                Out::None
+            });
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                printed += u32::from(tag == k3::PHYRE_PRINTF);
+            }
+        }
+        assert!(printed > 0, "{name}");
+    }
+}
+
+/// `r` mapped onto one of `keys`.
+fn rng_key(keys: &[u32], r: u32) -> u32 {
+    keys[r as usize % keys.len()]
+}
+
+/// `PostProcessManager_ctor_00692020`: random memory under the object
+/// (every field it sets overwritten), random float defaults, the
+/// constructors and the memset stubbed (memset logs only, so the cleared
+/// words keep their random contents in both).
+#[test]
+fn k3_post_process_manager_ctor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_2020);
+        let stubs = [
+            (k3::CLUSTER_CTOR, true, 0, 0),
+            (k3::MLAA_CTOR, true, 0, 0),
+            (k3::DOF_CTOR, true, 0, 0),
+            (k3::DERIVED_CTOR, true, 0, 0),
+            (k3::FXAA_CTOR, true, 0, 0),
+            (k3::FREE_LIST_CTOR, true, 4, 4),
+            (k3::SAMPLER_CTOR, true, 0, 0),
+            (k3::MEMSET, false, 3, 0),
+            (k3::TREE_ORPHAN, true, 0, 0),
+            (k3::FREE_LIST_RESET, true, 0, 0),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut floats = k3::PPM_FLOATS.to_vec();
+        floats.push(k3::PPM_FLOAT_LAST);
+        for i in 0..40 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &floats, &[]);
+            let this = random_block(&mut t, &mut rng, 0x12410);
+            t.check_conv(&w, 0x0069_2020, Conv::Thiscall(this), &[], |g| {
+                u(k3::post_process_manager_ctor(g, this))
+            });
+        }
+    }
+}
+
+/// `BrokenScreenEffect_render`: inactive, with and without a render
+/// target, 0..3 pieces, the parameter found or not and fitting or not
+/// (offsets below 4, ends past the buffer, sizes up to the frame's
+/// 0x20), the scene texture there or not, one-shot or not.
+#[test]
+fn k3_broken_render() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_5680);
+        let stubs = [
+            (k3::BROKEN_CREATE_TARGET, true, 0, 0),
+            (k3::PIECE_UPDATE, true, 8, 8),
+            (k3::PIECE_SET_COLOUR, true, 1, 1),
+            (k3::PIECE_SET_COLOR_BUFFER, true, 2, 2),
+            (k3::PIECE_RENDER, true, 0, 0),
+            (k3::SET_DEPTH_TARGET, true, 1, 1),
+            (k1::SURFACE_CTOR, true, 2, 2),
+            (k1::SET_COLOR_TARGET, true, 2, 2),
+            (k1::BEGIN_SCENE, true, 1, 1),
+            (k1::RENDER_MESH_INSTANCE, true, 4, 4),
+            (k1::END_SCENE, true, 1, 1),
+            (k1::SURFACE_DTOR, true, 0, 0),
+            (k1::FIND_BY_NAME, true, 1, 1),
+        ];
+        for (sym, this, n, pops) in stubs {
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let frame = t.ebp_for(0) - 0x50;
+        let mut copies = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let param = random_block(&mut t, &mut rng, 0x10);
+            t.w16(param + 8, rng.pick(&[0, 3, 4, 8, 0x20, 0x30]));
+            let size = rng.pick(&[0, 4, 0x10, 0x10, 0x20]);
+            let r = rng.next() as u16;
+            t.w16(param + 0xa, size | (r & 0xe000));
+            t.ret(k1::FIND_BY_NAME, rng.pick(&[0, param, param]));
+            let this = random_block(&mut t, &mut rng, 0x78);
+            t.w8(this + 5, rng.pick(&[0, 1, 1, 1]));
+            t.w8(this + 6, rng.pick(&[0, 1, 2]));
+            t.w8(this + 0x74, rng.pick(&[0, 1]));
+            let f = rng.float();
+            t.w32(this + 8, f);
+            let scene = random_block(&mut t, &mut rng, 8);
+            t.w8(scene + 4, rng.pick(&[0, 0, 1]));
+            t.w32(this, scene);
+            let n = rng.pick(&[0, 1, 3, 0xffff_ffff]);
+            t.w32(this + 0x34, n);
+            let list = t.zeros(0x10);
+            for k in 0..3 {
+                let pair = random_block(&mut t, &mut rng, 8);
+                t.w32(list + 4 * k, pair);
+            }
+            t.w32(this + 0x38, list);
+            let renderer = random_block(&mut t, &mut rng, 0x140);
+            t.w32(this + 0x2c, renderer);
+            // the background mesh's material and its buffer
+            let buffer = t.zeros(0x60);
+            t.w32(buffer, rng.pick(&[0x10, 0x14, 0x24, 0x40, 0x60]));
+            let material = random_block(&mut t, &mut rng, 8);
+            t.w32(material + 4, buffer);
+            let materials = t.zeros(0x10);
+            let m = rng.pick(&[1, 2]);
+            t.w32(materials, m);
+            if m == 1 {
+                t.w32(materials + 4, material);
+            } else {
+                let l = t.zeros(8);
+                t.w32(l, material);
+                t.w32(materials + 4, l);
+            }
+            let mesh = random_block(&mut t, &mut rng, 0x20);
+            t.w32(mesh + 0x10, materials);
+            t.w32(this + 0x58, mesh);
+            t.check_framed_conv(
+                &w,
+                0x006d_5680,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0x20, 0x20)],
+                |g| u(k3::broken_render(g, frame, this)),
+            );
+            // the copied value's alpha word lands somewhere after the size
+            copies += u32::from((1..0x18).any(|k| Mem::read::<u32>(&t.b, buffer + 4 * k) != 0));
+        }
+        assert!(copies > 0, "{name}");
+    }
 }

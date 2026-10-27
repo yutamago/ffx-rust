@@ -18,7 +18,7 @@ use ffx_glue_other::{
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
-    h4_k2 as k2, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_k2 as k2, h4_k3 as k3, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2567,6 +2567,21 @@ ported! {
     LoadingScreen_update_006e50a0 @ 0x006e_50a0 => extern "thiscall" fn loading_screen_update(this: u32, dt: u32) {
         let mut frame = StackFrame::<{ (k2::LOADING_FRAME / 4) as usize }>::new();
         k2::loading_update(&mut mem(), frame.at(), this, dt);
+    }
+    // ---- continuation round 9, batch 3 (ffx_glue_other::h4_k3)
+    /// `DepthBiasHooks_onCharacterInstantiated(name, count, items)` (the
+    /// array by value; the caller reads no result).
+    DepthBiasHooks_onCharacterInstantiated @ 0x006e_4100 => extern "C" fn depth_bias_on_character_instantiated(name: u32, count: u32, items: u32) {
+        k3::on_character_instantiated(&mut mem(), name, count, items);
+    }
+    /// `PostProcessManager_ctor_00692020(this)` -> `this`.
+    PostProcessManager_ctor_00692020 @ 0x0069_2020 => extern "thiscall" fn post_process_manager_ctor(this: u32) -> u32 {
+        k3::post_process_manager_ctor(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_render(this)` -> 0.
+    BrokenScreenEffect_render @ 0x006d_5680 => extern "thiscall" fn broken_screen_effect_render(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k3::BROKEN_FRAME / 4) as usize }>::new();
+        k3::broken_render(&mut mem(), frame.at(), this)
     }
 }
 
