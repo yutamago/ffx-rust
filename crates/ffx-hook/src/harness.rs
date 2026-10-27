@@ -571,6 +571,14 @@ const PINNED_GAME_TIME: f64 = 64.0;
 /// update's step, whose last bits follow the boot's length.
 const APP_GLOBAL_TIME: usize = 0x3b0;
 const APP_GLOBAL_TIME_COPY: usize = 0x120;
+/// The title's water animation (the band at the top of the title,
+/// `Water_00..69.dds`, 1024x256 BC3): `PhyreScene_drawMainMenuWaveEffect`
+/// (`0x0065b5b0`, from `Sg_MainLoop` while `g_YnTest20Seen` is set) draws
+/// frame `g_TitleWaterFrame` (`u8`) and steps it, mod 70, and counts
+/// `g_TitleWaterDraws` (`u8`) up. Nothing else writes them, so a later
+/// title showed the frame the free-running first visit left.
+const TITLE_WATER_FRAME: u32 = 0x00cc_ba09;
+const TITLE_WATER_DRAWS: u32 = 0x00cc_ba0a;
 /// One frame of the limiter at two vsyncs a frame (`g_FrameVsyncs`), for
 /// the step of the update the pin happens in.
 const PINNED_FRAME: f64 = 2.0 * 0.016_683_333_333_333_335;
@@ -607,7 +615,10 @@ static APP: AtomicUsize = AtomicUsize::new(0);
 /// - `g_Vu0_R` (and its seeded flag): the effects' generator (`op_random`,
 ///   the ppp rand programs), which the field's effects draw from before;
 /// - the main thread's CRT `rand()` seed (`op_loop_ffx_after` draws from
-///   it every update): 1, as at start-up.
+///   it every update): 1, as at start-up;
+/// - the title's water frame and its draw count ([`TITLE_WATER_FRAME`]):
+///   0, as at start-up. The replays that go back to the title (a game
+///   over) visit it once before, running free.
 ///
 /// Returns what was pinned. The game's own generators (`0x00c42200`, the
 /// 68 at `0x01135ee0`) need nothing: loading a save seeds them (`--seed`).
@@ -615,7 +626,7 @@ static APP: AtomicUsize = AtomicUsize::new(0);
 /// # Safety
 /// On the main thread, between two updates (in `FFXApplication_animate`).
 unsafe fn pin_carried_state() -> String {
-    let mut pinned = vec!["frame sync", "vu0 R"];
+    let mut pinned = vec!["frame sync", "vu0 R", "title water"];
     // SAFETY: words of the image's data and of the application object,
     // which only the main thread writes; `_getptd` returns this thread's
     // CRT data.
@@ -624,6 +635,8 @@ unsafe fn pin_carried_state() -> String {
         *(crate::rebase(FRAME_SYNC_CARRY_30) as *mut f32) = 0.0;
         *(crate::rebase(VU0_R) as *mut u32) = VU0_R_PINNED;
         *(crate::rebase(VU0_R_SEEDED) as *mut u32) = 1;
+        *(crate::rebase(TITLE_WATER_FRAME) as *mut u8) = 0;
+        *(crate::rebase(TITLE_WATER_DRAWS) as *mut u8) = 0;
         let app = APP.load(Ordering::Acquire);
         if VIRTUAL.load(Ordering::Acquire) && app != 0 {
             // the paused time (summed while the game held its clock, which
@@ -983,6 +996,13 @@ enum Job {
     /// after (`shotwhen`): `(range, value, mask, limit frame, path, the
     /// first boundary it was checked at)`.
     ShotWhen(TraceRange, Vec<u8>, Vec<u8>, u32, String, Option<u32>),
+    /// In lockstep: hold the main thread at this boundary (no update runs)
+    /// until the bytes at the range equal the value (under the mask), or
+    /// the real-time deadline passes (`holdfor`): `(range, value, mask,
+    /// deadline)`. For state other threads make at their own speed (a
+    /// movie's prebuffer), so that the update it is reached at does not
+    /// follow real time.
+    HoldFor(TraceRange, Vec<u8>, Vec<u8>, std::time::Instant),
 }
 
 /// `shotwhen` jobs and their pinned shots not yet taken. While there are
@@ -993,6 +1013,29 @@ static PINNED: AtomicU32 = AtomicU32::new(0);
 
 /// The main thread's jobs, run at frame boundaries.
 static JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
+/// `callnext` calls, run by the main thread at the start of its next
+/// update ([`run_update_calls`]): `(address, args, reply)`.
+#[allow(clippy::type_complexity)] // one queue of plain tuples
+static UPDATE_CALLS: Mutex<VecDeque<(usize, Vec<u32>, Sender<String>)>> =
+    Mutex::new(VecDeque::new());
+
+/// Runs the `callnext` calls (main thread, in `animate` after the boundary
+/// is left and the FMOD turn is done, just before the update). A `call`
+/// job runs while the main thread is held at its boundary, where in
+/// lockstep the render thread holds the render lock in `Present` until the
+/// boundary is left: a called function that takes that lock (a movie's
+/// close unbinds its textures: `graphicDestroyFmv`) waited for it forever.
+fn run_update_calls() {
+    let due: Vec<_> = UPDATE_CALLS
+        .lock()
+        .map_or_else(|_| Vec::new(), |mut calls| calls.drain(..).collect());
+    for (address, args, reply) in due {
+        // SAFETY: the test asked for this call, on the main thread at the
+        // start of an update.
+        let eax = unsafe { call(address, &args) };
+        let _ = reply.send(format!("ok {eax:#x}"));
+    }
+}
 /// The render thread's jobs, run in `Present`.
 static RENDER_JOBS: Mutex<VecDeque<(Job, Sender<String>)>> = Mutex::new(VecDeque::new());
 
@@ -1356,6 +1399,9 @@ fn run_main_jobs(frame: u32) {
                         first.get_or_insert(frame);
                         frame >= limit || range_matches(r, value, mask)
                     }
+                    Job::HoldFor(ref r, ref value, ref mask, deadline) => {
+                        std::time::Instant::now() >= deadline || range_matches(r, value, mask)
+                    }
                 };
                 if ready {
                     due.push(job);
@@ -1427,6 +1473,13 @@ fn run_main_jobs(frame: u32) {
                 } else {
                     PINNED.fetch_sub(1, Ordering::AcqRel);
                 }
+            }
+            Job::HoldFor(r, value, mask, _) => {
+                let _ = reply.send(if range_matches(&r, &value, &mask) {
+                    format!("ok {frame}")
+                } else {
+                    format!("err timeout at {frame}")
+                });
             }
             Job::FpuControl => {
                 let _ = reply.send(format!("ok {:#06x}", crate::snapshot::fpu_control()));
@@ -1636,6 +1689,7 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     // FFX_AUDIO_WAV: the FmodManager thread's tick for this boundary, at
     // this frame's game time (crate::audio_wav).
     crate::audio_wav::boundary_turn();
+    run_update_calls();
     // SAFETY: the trampoline runs the original with the same `this`.
     let r = unsafe {
         let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
@@ -2489,6 +2543,32 @@ fn command(line: &str) -> Result<String, String> {
             ALLOWED.fetch_max(limit, Ordering::AcqRel);
             on_game_thread(Job::WaitFor(r, value, mask, limit))
         }
+        "holdfor" => {
+            // holdfor <range> <value hex> <mask hex> <ms>: in lockstep only,
+            // holds the game at the boundary it stands at until the bytes
+            // match (other threads' work: a movie's prebuffer), at most
+            // <ms> of real time; no update runs meanwhile
+            if !LOCKSTEP.load(Ordering::Acquire) {
+                return Err("holdfor needs lockstep".into());
+            }
+            let r = parse_trace_range(arg(1)?)?;
+            let hexbytes = |t: &str| -> Result<Vec<u8>, String> {
+                (0..t.len() / 2)
+                    .map(|i| {
+                        u8::from_str_radix(&t[2 * i..2 * i + 2], 16).map_err(|e| e.to_string())
+                    })
+                    .collect()
+            };
+            let value = hexbytes(arg(2)?)?;
+            let mask = hexbytes(arg(3)?)?;
+            let ms = parse_u32(arg(4)?)?;
+            if value.len() != r.len || mask.len() != r.len {
+                return Err("value and mask must be as long as the range".into());
+            }
+            let deadline =
+                std::time::Instant::now() + std::time::Duration::from_millis(u64::from(ms));
+            on_game_thread(Job::HoldFor(r, value, mask, deadline))
+        }
         "shotwhen" => {
             // shotwhen <range> <value hex> <mask hex> <frames> <path>: as
             // waitfor, then the image of the update the bytes first matched
@@ -2625,6 +2705,29 @@ fn command(line: &str) -> Result<String, String> {
                 return Err("at most 8 arguments".into());
             }
             on_game_thread(Job::Call(address, args))
+        }
+        "callnext" => {
+            // callnext <address> [args]: as `call`, but at the start of the
+            // next update (the main thread has left its boundary, the
+            // render thread its present hold), as the game's own code
+            // would call it; in lockstep that one update runs
+            let address = crate::rebase(parse_u32(arg(1)?)?);
+            let args = words[2..]
+                .iter()
+                .map(|w| parse_u32(w))
+                .collect::<Result<Vec<_>, _>>()?;
+            if args.len() > 8 {
+                return Err("at most 8 arguments".into());
+            }
+            if PRESENT.load(Ordering::Acquire) == 0 {
+                return Err("the game has not presented a frame yet".into());
+            }
+            let (tx, rx) = channel();
+            if let Ok(mut calls) = UPDATE_CALLS.lock() {
+                calls.push_back((address, args, tx));
+            }
+            ALLOWED.fetch_max(now() + 1, Ordering::AcqRel);
+            rx.recv().unwrap_or_else(|_| "err no reply".into())
         }
         // the image of the update the main thread stands after (in
         // lockstep: the boundary it is held at), or a later one

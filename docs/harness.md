@@ -54,7 +54,9 @@ then (harness-main-thread):
   wrapped. There every update before has finished, the next has not
   begun, and the previous frame's flip is queued. The trace samples there,
   and the main thread's jobs (`call`, `wait`, `press`'s release,
-  `waitfor`, `loadsave`, `snapshot`, `fpucw`, `pin`) run there.
+  `waitfor`, `holdfor`, `loadsave`, `snapshot`, `fpucw`, `pin`) run
+  there. `callnext` runs its call at the start of the next update
+  instead, once the boundary is left ("Movies in lockstep").
 - **Lockstep** holds the main thread at the boundary until the script
   allows more updates: one update per frame of `wait`, `press` or
   `waitfor`, as before, and now nothing of the next update runs while the
@@ -693,8 +695,10 @@ so that the game time is 64 s, the paused time 0, `g_FrameLimiterLast`,
 since replay-flakes6), the running update's step and the play-time stamp
 (`0x01325b84`) to match (the next frame is one interval on, every step
 one frame), the emulated vsyncs from the new time, both carries 0,
-`g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
-answers what it pinned. The game's own generators need nothing: loading
+`g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1, and the
+title's water frame and draw count (`g_TitleWaterFrame` `0x00ccba09`,
+`g_TitleWaterDraws` `0x00ccba0a`: 0, since replay-flakes7; "The title
+band" below). It answers what it pinned. The game's own generators need nothing: loading
 a save seeds them. A replay that needs it says `pin` right after
 `lockstep on`. battle-magic, battle-attack, menu-save and menu-shop do,
 and event-besaid since audio-check (2026-10-26; its FMOD capture differed
@@ -1099,7 +1103,9 @@ real-time movie.
   then Besaid beach (save 3, shadow solution 4) and the agency (save 5,
   solution 0) through `loadsave`, so the three shadow solutions the saves
   reach all draw their shadow maps.
-- `movie-fmv` (`realtime`, about 40 s): movie 2 (`IWK_us.webm`, Wakka's
+- `movie-fmv` (lockstep since replay-flakes7, about 20 s; `realtime`
+  and about 40 s before, as described here: "Movies in lockstep"
+  below): movie 2 (`IWK_us.webm`, Wakka's
   kick). No save reaches an FMV by itself; the script requests
   `bsil0000`'s worker 24 entry 5, which waits for effect flag 5 and calls
   `Native_b000_MovieStart(2, 0x500)`, with a `call` of
@@ -1108,10 +1114,11 @@ real-time movie.
   `Native_b009_MovieCameraWait`'s start does (`g_WaitFramesByTime`
   `0x0112a008` = 1, `graphicPlayVideo(0)` `0x006427c0`) and, after the
   shots, what `Native_b004`/`b001` do (`graphicDestroyFmv` `0x0063df30`,
-  `g_WaitFramesByTime` 0, the movie number `0x00c40e28` -1). The player
-  needs real time: in fast mode, lockstep or not, the movie never started
-  (`g_FMVPlayerManager` `+0x6d8`, the frame, stayed 0 and the screen
-  black), and calling `graphicInitFMVPlayer` with `call` while lockstep
+  `g_WaitFramesByTime` 0, the movie number `0x00c40e28` -1). Until
+  replay-flakes7 the player was thought to need real time: in fast mode,
+  lockstep or not, the movie never started (`g_FMVPlayerManager`
+  `+0x6d8`, the frame, stayed 0 and the screen black; the cause: it was
+  started before its prebuffer was full), and calling `graphicInitFMVPlayer` with `call` while lockstep
   held the main thread hung the game. At the game's rate the frame
   advances about one per update; the shots are pinned to it (`shotwhen`
   on `*0x00cded3c+0x6d8`, windows 4 frames wide: 64, 192, 320): the
@@ -1288,7 +1295,7 @@ without the file: output `FMOD_OUTPUTTYPE_NOSOUND_NRT` (4), the same
 software format, DSP blocks of one tick, streams decoded in `update`, and
 the `FmodManager_tick` turns at each frame boundary. Nothing reaches the
 speakers. `FFX_AUDIO_NRT=0` keeps the old real-time mixer; `realtime`
-replays (event-cliff, event-arrival, movie-fmv; boot until 2026-10-27) are not on the
+replays (event-cliff, event-arrival; boot and movie-fmv until 2026-10-27) are not on the
 virtual clock and keep it too.
 
 Before, the mixer ran on the sound card's clock, so a voice or a music
@@ -1473,6 +1480,86 @@ with each other and with the shared ones of replay-flakes5; then five
 - event-besaid-4 and -5 differ between any two original recordings (4,000
   to 10,000 pixels, the river walk after the voiced line), as before; the
   comparison leaves those pixels out.
+
+### Movies in lockstep (replay-flakes7, 2026-10-27)
+
+Probe scripts in `~/ffx-work/flakes7` (`movie-ls*.txt`, `player.py`
+decodes the player's queues from `readp 0x00cded3c 0x38 0x2d8`). The
+player is `PVideoPlaybackWin32` inline at `g_FMVPlayerManager +0x38`
+(`PhyFMVPlayerManager_fmvPlayer_initialize` `0x006d8f30` passes
+`esi+0x38`); its three `CDataFrameQueue`s are byte rings: `+0` the video
+packets (4 MB), `+0x40` the decoded frames (30 of them), `+0x80` the
+Vorbis packets (1 MB), each with `+8` read, `+0xc` write, `+0x2c` open,
+`+0x30` size, `+0x34` pops, `+0x38` pushes.
+
+- **Why the movie never played in lockstep, and stalled once in
+  `realtime`.** The reading thread (`0x00a27880`) waits on its event
+  (`+0x2ac`) and runs the demux (`PVideoPlaybackWin32_DemuxLoop`
+  `0x00a27650`) only while the demux state `+0xe8` is not 2; the demux
+  sets it to 1 when it starts and to 2 when it ends (the file read, or the
+  player closed), and only `PVideoPlaybackWin32_initialize` (`0x00a27cf0`)
+  sets it back to 0. `PhyFMVPlayerManager_PlayVideo` (`0x006d7430`) with
+  0 (start a preloaded movie: what movie-fmv calls, as
+  `Native_b009_MovieCameraWait` does) only resumes the preload when its
+  first frame has been taken (`+0x6e4`, set by `UpdateTexture` once
+  `updateTexture` takes a frame, which it does only after the 30-frame
+  prebuffer is full); before that it opens the movie again
+  (`0x006d8fc0` -> `0x00a27f20`, which closes the player first). The
+  close ends the running demux (`+0xe8` = 2), the new open signals the
+  reading thread, and the reading thread does not demux again: no packet,
+  no frame, the movie's frame (`+0x6d8`) stays 0 for good. Measured in
+  lockstep (original code): 60 updates after the manager was set up the
+  prebuffer held 27 frames, the replay's `graphicPlayVideo(0)` reopened
+  the movie, the queues were empty from then on (pops and pushes 0), the
+  reading thread sat in its wait (`0x004302aa` <- `0x00a278ab`) and the
+  decoder in its packet take (`0x00a3dfee` <- `0x00a279d7`). In `realtime`
+  the replay's 60 updates are 2 s, enough for 30 frames unless the
+  machine is loaded: the one stall in 9 Rust runs (replay-flakes6) was
+  this, inferred from the same symptom (manager playing, frame under 64 for
+  1,200 updates).
+- **`holdfor <range> <value> <mask> <ms>`** (lockstep only): holds the
+  game at the boundary it stands at until the bytes match, at most `<ms>`
+  of real time, with no update running meanwhile. movie-fmv holds for the
+  decoded-frame queue's push count (`*0x00cded3c+0xb0`) to reach 30, so
+  the movie starts in the same update in every run, whatever the decoder
+  threads' speed. From there the video takes one frame per update (a
+  take that blocks while the decoder is behind) and the stream decodes in
+  the FMOD turns, so both follow the update count.
+- **`callnext <address> [args]`**: `call`, but at the start of the next
+  update (after the boundary is left, the loader's turn and the FMOD
+  turn), and in lockstep that one update runs. `graphicDestroyFmv`
+  (`0x0063df30`) called with `call`, while lockstep held the main thread
+  at the boundary, never returned (two runs, 10 minutes each, until the
+  replay's read timed out), and with `callnext` it returns at once. Which
+  wait it was is not traced; the render thread holds the render lock
+  through `Present` until the boundary is left ("Load pacing"), and the
+  close unbinds the movie's textures, so a wait for that lock is the
+  likely one (the FMOD stream's shutdown spin in `0x00a278f0`, the other
+  candidate, never ran a second pass with `callnext`: a `System::update`
+  hook on its `Sleep` was tried and never called). The earlier note that
+  `graphicInitFMVPlayer` with `call` hung the game is the same thing.
+
+movie-fmv runs in lockstep since then (`load direct 3 bsil0000
+lockstep`, `pin`, `holdfor`, `callnext`; about 20 s). Three original
+runs gave the same trace and the same shots 1-3, and those equal the
+`realtime` recordings to the pixel; the field after the movie (shot 4)
+is a lockstep frame now and was re-recorded.
+
+### The title band (replay-flakes7, 2026-10-27)
+
+The band at the top of the title after a game over (menu-save-4,
+iggy-menus 11/12; draw 26 of `test20`'s capture, `menudefaultshader`, a
+1024x256 BC3 texture that changed every frame) is the title's water
+animation: `PhyreScene_drawMainMenuWaveEffect` (`0x0065b5b0`, through
+`graphicDrawMainMenuWaterEffect` `0x0063e920` from `Sg_MainLoop` while
+`g_YnTest20Seen` `0x025d5ebc` is set) draws
+`menu/titl/GCM/Water_%02d.dds.phyre` with frame `g_TitleWaterFrame`
+(`u8` `0x00ccba09`), then steps it modulo 70 and counts
+`g_TitleWaterDraws` (`0x00ccba0a`) up. Nothing else writes either, so a
+later title showed the frame that the free-running first visit (the taps
+of Start before `load direct`) had left. `pin` sets both to 0. Not the
+`TkMenuDrawAll` lead of replay-flakes6: the band is a UI element of the
+scene, not a menu draw.
 
 ## Parallel games
 

@@ -555,6 +555,19 @@ trunc((frames shown + 1) x 1000 / 29.97002997) ms; `+0x6d8` = ftol(f32(ms) x
 on. The end comes when the decoder is done, the stream is `READY` and the
 queue is empty, or (not looping) when the time reaches the WebM duration.
 
+Starting a preloaded movie early (replay-flakes7, `docs/harness.md`,
+"Movies in lockstep"): `PhyFMVPlayerManager_PlayVideo(0)` (`0x006d7430`)
+resumes the preload only once its first frame is taken (`+0x6e4`, set
+by `UpdateTexture` `0x006d7680` when `updateTexture` returns a frame,
+after the 30-frame prebuffer); before that it opens the movie again
+(`0x006d8fc0` -> `PVideoPlaybackWin32__VideoDecodingThread` `0x00a27f20`,
+which first closes the player, `0x00a28350`). The close ends the demux,
+which leaves the demux state (player `+0xe8`) at 2, and the reading
+thread (`0x00a27880`) runs the demux only while that state is not 2;
+only `PVideoPlaybackWin32_initialize` (`0x00a27cf0`) sets it back to 0.
+So the reopened movie gets no packets and never shows a frame. Whether
+the game's own scripts can start a movie that early is not checked.
+
 ### Drawing
 
 `Render` clears to black and draws one quad with `video.fx`

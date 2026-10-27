@@ -6,11 +6,11 @@
 # at count 64 on the beach and again on arrival here), 2026-10-26.
 [*]
 
-# 76 f32 ulp (1.1344677 | 1.1344587) in p1/p2, 47 in o1/o2: as bsil0000's
-# entry, and the walk waits on a voiced line that plays in real time, so
-# the frames run before this map vary too. The second `pin` on arrival
-# does not reset it.
-constant var=scene field=*.cb0.scene.GlobalTime cause: f32 time steps taken before pin and during the walk's real-time voice line (47-76 ulp between original runs)
+# GlobalTime (scene.GlobalTime, every draw's `scene` buffer) had an entry
+# here until 2026-10-27: 47-76 f32 ulp between original runs (the walk waits on a voiced line), from the steps taken before `pin`. Since replay-flakes6 `pin` sets it
+# (FFXApplication +0x3b0 and its copy +0x120) to 0, and the original pair
+# dg-besaid-r1/r2 (replay-flakes7, three games at once) agreed on it in
+# every draw, so the entry is gone (docs/drawdiff.md, "Scene gates").
 
 # Every pair: the minimap's NORMAL0 ring (vb1, CPU-built mesh, 567
 # indices) holds an animated per-vertex value whose phase is not pinned to
