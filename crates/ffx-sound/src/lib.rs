@@ -7,6 +7,7 @@
 //! and the FMOD thread's handlers and objects ([`ffxfmod`]); the
 //! positioned sounds' volume and pan ([`foot3d`]).
 
+pub mod fev;
 pub mod ffxfmod;
 pub mod fmod;
 pub mod foot3d;
