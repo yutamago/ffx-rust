@@ -4,6 +4,8 @@
 //!
 //! ```text
 //! iggy-replay <log> <out dir> [--vbf <FFX_Data.vbf>] [--no-pace] [--smooth]
+//!     [--quality <q>] [--ss <k>] [--force-smooth] [--mipmaps] [--virtual-clock]
+//!     [--no-font]
 //! ```
 //!
 //! Each Iggy player of the log becomes a Ruffle player of the same movie
@@ -18,7 +20,11 @@
 //! Ruffle did not know, and the external calls Ruffle made against the
 //! recorded ones.
 //!
-//! `--smooth` marks every bitmap fill smoothed before Ruffle loads the movie
+//! `--quality` sets Ruffle's stage quality; `--ss k` draws at k times the
+//! size and box-filters down (`ffx_swf::stage::Render`); `--force-smooth`
+//! draws every bitmap smoothed, `--mipmaps` mipmaps them and `--virtual-clock` puts `getTimer` on the
+//! player's clock (both need the Ruffle fork build; the latter replaces
+//! pacing). `--smooth` marks every bitmap fill smoothed before Ruffle loads the movie
 //! (`ffx_swf::patch`), as Iggy draws them.
 //!
 //! Ruffle's `getTimer` reads the wall clock, so the replay is paced to the
@@ -54,11 +60,22 @@ fn main() -> Result<()> {
         std::env::var_os("FFX_GAME_DIR").map(|d| PathBuf::from(d).join("data/FFX_Data.vbf"));
     let mut pace = true;
     let mut smooth = false;
+    let mut no_font = false;
+    let mut render = ffx_swf::stage::Render::default();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--vbf" => vbf = args.next().map(PathBuf::from),
             "--no-pace" => pace = false,
             "--smooth" => smooth = true,
+            "--force-smooth" => ffx_swf::stage::force_bitmap_smoothing(true)?,
+            "--no-font" => no_font = true,
+            "--mipmaps" => ffx_swf::stage::gdraw_mipmaps(true)?,
+            "--virtual-clock" => {
+                ffx_swf::stage::deterministic_get_timer(true)?;
+                pace = false;
+            }
+            "--quality" => render.quality = args.next(),
+            "--ss" => render.ss = args.next().and_then(|v| v.parse().ok()).unwrap_or(1),
             _ => bail!("unknown argument {a}"),
         }
     }
@@ -67,6 +84,7 @@ fn main() -> Result<()> {
     let movies = ffx_swf::flash_movies(&vbf)?;
     let font = movies
         .iter()
+        .filter(|_| !no_font)
         .find(|(n, _)| n == "box.swf")
         .map(|(_, d)| GameFont::from_swf(d))
         .transpose()?;
@@ -139,6 +157,7 @@ fn main() -> Result<()> {
                     &format!("file:///{name}"),
                     (1280, 720),
                     font.as_ref(),
+                    &render,
                 )?;
                 if let Some(a) = answers.remove(player) {
                     stage.answers.borrow_mut().queued = a;

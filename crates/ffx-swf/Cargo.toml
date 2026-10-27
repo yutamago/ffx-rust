@@ -18,5 +18,10 @@ image = { version = "0.25", default-features = false, features = ["png", "bmp"] 
 ruffle_core = { git = "https://github.com/ruffle-rs/ruffle", rev = "07d3e430631333f80f754df01a968bdcd80d98c5" }
 ruffle_render_wgpu = { git = "https://github.com/ruffle-rs/ruffle", rev = "07d3e430631333f80f754df01a968bdcd80d98c5" }
 
+[features]
+# Built against the local Ruffle fork (~/ffx-work/m5/ffx-swf-fork, a cargo
+# patch outside the repo): enables the fork's switches (FORCE_BITMAP_SMOOTHING).
+ruffle-fork = []
+
 [lints]
 workspace = true

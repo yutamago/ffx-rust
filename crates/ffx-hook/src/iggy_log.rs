@@ -482,6 +482,49 @@ pub fn note_row_texture(w: u32, texels: u32) {
     write_line(&line, true);
 }
 
+/// A texture Iggy asks `GDraw` for (`gdraw_makeTextureBegin_00a3a070`):
+/// size, format (0 RGBA, else R8), flags (bit 0 mipmaps); `info` is the
+/// staging block whose `+0x18` record the draws bind.
+pub fn note_texture(owner: u32, w: u32, h: u32, format: u32, flags: u32, info: u32) {
+    if !ON.load(Ordering::Acquire) {
+        return;
+    }
+    let seq = SEQ.fetch_add(1, Ordering::AcqRel);
+    let mut line = head(seq, "gdrawTexture");
+    let _ = write!(
+        line,
+        ",\"owner\":\"{owner:x}\",\"w\":{w},\"h\":{h},\"format\":{format},\"flags\":{flags},\"info\":\"{info:x}\"}}"
+    );
+    write_line(&line, false);
+}
+
+/// Draw states logged so far ([`note_render_state`] keeps the first ones).
+static RENDER_STATES: AtomicU64 = AtomicU64::new(0);
+
+/// One draw's state (`gdraw_setRenderState_00a3c6c0(format, r, _, colour)`):
+/// the vertex format and `r`'s first 0x20 bytes (`+8` .. `+0x11`: the
+/// shader, address mode, filter and blend bytes; `+0x1c` the texture); the
+/// first 4000 draws.
+pub fn note_render_state(format: u32, r: u32) {
+    if !ON.load(Ordering::Acquire) || RENDER_STATES.fetch_add(1, Ordering::AcqRel) >= 4000 {
+        return;
+    }
+    let seq = SEQ.fetch_add(1, Ordering::AcqRel);
+    let mut line = head(seq, "gdrawState");
+    let _ = write!(line, ",\"format\":{format}");
+    if let Some(w) = words_at(r, 8) {
+        push_words(&mut line, "r", &w);
+        // the bound texture's record: +0xc w, +0x10 h (gdraw_makeTextureBegin)
+        if w[7] != 0
+            && let Some(t) = words_at(w[7], 5)
+        {
+            push_words(&mut line, "tex", &t);
+        }
+    }
+    line.push('}');
+    write_line(&line, false);
+}
+
 /// Vertex buffers logged so far ([`note_vertex_buffer`] keeps the first
 /// few).
 static VERTEX_BUFFERS: AtomicU64 = AtomicU64::new(0);

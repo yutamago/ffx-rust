@@ -560,6 +560,63 @@ update (3,001 ticks over 3,000 updates of the PC menu in the pilot);
 hidden menus are not drawn and do not tick. `GotoFrameRS` is never called
 on these screens.
 
+## How Iggy draws
+
+GDraw, Iggy's D3D11 back end, is game code in `FFX.exe`
+(`gdraw_d3d1x_shared.inl` in its strings; ported in M4:
+`ffx_pcore::p5_gdraw_device`, `ffx_glue_other::h4b_*`). The facts below
+come from its machine code and shaders (`tools/swf-pilot/gdraw-facts.py`,
+`tools/swf-pilot/gdraw-shaders.sh`) and from a pilot run with the Iggy call
+log noting GDraw's calls (`FFX_SWF_PILOT_RUST=1 tools/swf-pilot/record.sh`:
+the AA ramp, textures, the first 4,000 draw states and 64 vertex buffers).
+
+- **Target.** The menus draw straight into the game's back buffer
+  (`IggyMenuManager_Render_00a267f0`, no depth), after the scene:
+  RGBA8, one sample in the harness. GDraw has two rasterizer states
+  (`+0x7ac`: solid, no culling, scissor; multisampling off and on) and
+  picks the second only when the bound target is multisampled (`+0x790`,
+  from the view's description in `gdraw_setRenderTargetView_00a38300`).
+  No internal resolution scale: the display size is the window's
+  (`IggyPlayerSetDisplaySize`, 1280x720 in the harness). Offscreen targets
+  for filters are RGBA8 at screen size (`gdraw_allocRenderTarget_00a3b610`),
+  masks use a D24S8 depth-stencil (`gdraw_createDepthBuffer_00a3b840`).
+- **Shape and outline edges: no MSAA, a 1-pixel fringe.** Shapes come in
+  vertex format 1 (`float2` position, `int16x4`: AA coordinate, offset
+  x, y). Every edge vertex is doubled: the outer copy has AA coordinate 8
+  and an offset of half a pixel outwards, the inner copy 24 and half a
+  pixel inwards; interior vertices have 32 and no offset. The vertex
+  shader (`vs_4_0`, hash `3ed98be438f1788c`) scales the offset (`/64`)
+  through `x_off` and the world matrix so it is half a screen pixel at any
+  scale, and passes `aa/32` on. Every pixel shader multiplies its colour by
+  texture 7 sampled there: a 2x1 RGBA texture (transparent, opaque white;
+  `gdraw_createRowTexture_00a3a9f0`, the texels Iggy hands over) with the
+  linear clamp sampler, so alpha runs linearly 0 to 1 across the band from
+  half a pixel outside to half a pixel inside the edge (0.25 and 0.75 are
+  the two texel centres). That is the coverage of a 1-pixel box filter.
+  Bitmap draws (formats 0 and 2: texgen or explicit UVs) pass AA 1: no
+  fringe.
+- **Bitmaps.** RGBA8 textures (`gdraw_makeTextureBegin_00a3a070`, format
+  0; format 1 would be R8) with a full mip chain (flag bit 0; each level
+  the 2x2 average of the one above, `op_texels_mip_00a384d0`). Samplers
+  (`GDraw_createDeviceObjects_00a34cc0`): filter `MIN_MAG_MIP_LINEAR`
+  (index 0) or `MIN_LINEAR_MAG_MIP_POINT` (1), address modes CLAMP, WRAP,
+  MIRROR, CLAMP (`0x00b7a894`), LOD bias 0, MinLOD 0, MaxLOD `FLT_MAX`,
+  anisotropy 1. Every one of the pilot's 4,000 logged draws used index 0,
+  CLAMP: the SWF's smoothing flags do not matter. The game's text is
+  bitmap glyphs (89 and 107 pixels high) drawn minified, hence trilinear
+  and soft.
+- **Blending.** Premultiplied alpha: blend state 1 (`ONE`,
+  `INV_SRC_ALPHA`) for every logged draw; the table `0x00c85ab0` also has
+  opaque, multiply (`DEST_COLOR`, `INV_SRC_ALPHA`) and add (`ONE`, `ONE`).
+- **Filters.** Blur (`0x00a36490`, passes `+0x14` of the filter; each
+  direction by `0x00a36590`): a box of the exact fractional width, its
+  taps sampled in bilinear pairs (weight `2/w`, the end taps fractional),
+  up to 9 per pass (shaders `0x00c842b8`, `tap[9]`), wider blurs first
+  downsampled; float sums written to RGBA8 targets. Glow and drop shadow
+  (the filter shaders `0x00c806d8`): `min(blur.a * strength, 1) * colour`,
+  composited with the source; the result goes back to the screen as a
+  textured quad (format 2).
+
 ## Ruffle (M5 pilot)
 
 `crates/ffx-swf` plays the same movies with Ruffle (a pinned dependency,
@@ -577,27 +634,49 @@ log; `swf-compare` builds the comparison page
 | `DispatchEventRS` mouse move | `PlayerEvent::MouseMove` |
 | `IggyPlayerDraw` | `render` + `capture_frame` |
 
-Mismatches found:
+Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
 
-- Fonts: the movies' text formats name `$NormalFont` and `$TitleFont`
-  (`FontSetting`, `GetFontType`). Iggy resolves both to the font the game
-  loaded (`box.swf`'s DefineFont3); Ruffle needs it registered as a device
-  font under those names (`stage::GameFont`). With that, glyphs, metrics
-  and line breaks match.
+- **Mipmaps** (the main one). The movies' text is not font text: the
+  AS3 code builds it from bitmap glyphs (`escmenu.swf` has 1,027 bitmaps
+  107 pixels high and 111 of 89; `saveload_jp.swf` 425 and 104), drawn at
+  about a quarter of that size. GDraw gives every bitmap a full mip chain
+  and samples it trilinear (below); Ruffle uploads one level and samples
+  bilinear, so the minified glyphs and portraits alias: the "too sharp,
+  with steps" look. Mipmapped bitmaps (Ruffle fork, `GDRAW_MIPMAPS`) bring
+  the PC menu from 3.2% to 0.9% of pixels off by more than 8 levels and
+  the save list from 12.8% to 0.75%.
+- Fonts: the movies name `$NormalFont` / `$TitleFont`, and the pilot
+  registers `box.swf`'s DefineFont3 under those names (`stage::GameFont`),
+  but the pilot screens draw the same with or without it (their text is
+  bitmap glyphs).
 - Bitmap smoothing: Iggy smooths every bitmap; Ruffle follows the fill
-  flags and AS3 `Bitmap.smoothing` (default false), so portraits and
-  thumbnails are crisper. `patch::smooth_bitmap_fills` fixes the fills
-  (3 in `escmenu.swf`, none in `saveload_jp.swf`); AS3 bitmaps would need
-  a Ruffle option.
-- Text: Iggy's glyphs are softer (glyph cache, bilinear); Ruffle draws the
-  outlines with MSAA. Same positions.
-- `getTimer` in Ruffle reads the wall clock (`Instant::now`). The pilot
-  screens' tweens are frame-based (the same images paced or unpaced), but
-  a time-based tween would need a clock hook in Ruffle for lockstep.
+  flags. Forcing it (fork, `FORCE_BITMAP_SMOOTHING`, or
+  `patch::smooth_bitmap_fills` on the SWF) changes little here (3 fills in
+  `escmenu.swf`, none in `saveload_jp.swf`).
+- Blur: Ruffle truncates each blur pass to 8 bits (`floor`, as Flash
+  Player does); GDraw sums its taps in floats and the RGBA8 target rounds.
+  The fork rounds; a small gain on the text outlines (glow, blur 3.5).
+- Edges: GDraw's analytic 1-pixel fringe (below) against Ruffle's 4x
+  MSAA. Stage quality (low to 16x16) and supersampling change the numbers
+  little once the bitmaps are mipmapped; supersampling makes them worse,
+  because the glyphs are then less minified and take finer mip levels.
+- `getTimer` reads the wall clock (`Instant::now`). The menus' tweens and
+  key handling use it: an unpaced replay that rendered slowly (4x
+  supersampling on llvmpipe) took another menu path (Special features
+  instead of System setting). The fork's `DETERMINISTIC_GET_TIMER` reads
+  the timers' clock (the sum of the `Player::tick` times), so a replay or
+  a lockstep game sees the same times at the same frames.
 - The first frame after `showEscMenu`: Iggy already draws the page,
   Ruffle one tick later.
 - Ruffle needs `ExternalInterface` available (a provider set), or the
   movies' `addCallback` calls do nothing.
+
+The Ruffle fork is the pinned rev plus a 168-line patch
+(`~/ffx-work/m5/ruffle-fork.patch`, outside the repo; built through the
+cargo `[patch]` package `~/ffx-work/m5/ffx-swf-fork`, `ffx-swf` feature
+`ruffle-fork`): three switches, all off by default, `FORCE_BITMAP_SMOOTHING`
+and `GDRAW_MIPMAPS` in `ruffle_render_wgpu`, `DETERMINISTIC_GET_TIMER` in
+`ruffle_core`, and the blur rounding.
 
 ## Left original
 

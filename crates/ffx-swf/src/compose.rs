@@ -25,6 +25,35 @@ pub fn over(base: &mut RgbaImage, top: &RgbaImage) {
     }
 }
 
+/// `img` (straight alpha) shrunk by `k` in both directions, each output
+/// pixel the mean of its `k` x `k` block (premultiplied): supersampling's
+/// resolve, the box filter a pixel's coverage is.
+#[must_use]
+#[allow(clippy::many_single_char_names)]
+pub fn box_down(img: &RgbaImage, k: u32) -> RgbaImage {
+    let (w, h) = (img.width() / k, img.height() / k);
+    let mut out = RgbaImage::new(w, h);
+    let n = k * k;
+    for (x, y, px) in out.enumerate_pixels_mut() {
+        let mut acc = [0u32; 4];
+        for dy in 0..k {
+            for dx in 0..k {
+                let p = img.get_pixel(x * k + dx, y * k + dy);
+                let a = u32::from(p[3]);
+                for c in 0..3 {
+                    acc[c] += u32::from(p[c]) * a;
+                }
+                acc[3] += a;
+            }
+        }
+        for c in 0..3 {
+            px[c] = u8_of((acc[c] + acc[3] / 2).checked_div(acc[3]).unwrap_or(0));
+        }
+        px[3] = u8_of((acc[3] + n / 2) / n);
+    }
+    out
+}
+
 /// `top` (straight alpha) over an opaque `base`.
 #[must_use]
 pub fn over_opaque(base: &RgbImage, top: &RgbaImage) -> RgbImage {

@@ -153,6 +153,88 @@ impl GameFont {
     }
 }
 
+/// How Ruffle draws (the pilot's round 2 measurements).
+#[derive(Debug, Clone, Default)]
+pub struct Render {
+    /// A Ruffle stage quality (`low`, `medium`, `high`, `best`, `8x8`,
+    /// `16x16`, ...); `None` leaves Ruffle's default (high: 4x MSAA).
+    pub quality: Option<String>,
+    /// Supersampling: Ruffle draws at `ss` times the display size and the
+    /// image is box-filtered down (`compose::box_down`); 0 or 1 for none.
+    pub ss: u32,
+}
+
+/// Draws every bitmap smoothed, as Iggy does (the Ruffle fork's
+/// `FORCE_BITMAP_SMOOTHING`, feature `ruffle-fork`).
+///
+/// # Errors
+/// Built against stock Ruffle.
+pub fn force_bitmap_smoothing(on: bool) -> Result<()> {
+    #[cfg(feature = "ruffle-fork")]
+    {
+        ruffle_render_wgpu::FORCE_BITMAP_SMOOTHING.store(on, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+    #[cfg(not(feature = "ruffle-fork"))]
+    {
+        if on {
+            Err(anyhow!(
+                "forced smoothing needs the Ruffle fork (feature ruffle-fork)"
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Gives every bitmap a full mip chain, sampled trilinear, as Iggy's `GDraw`
+/// does (the Ruffle fork's `GDRAW_MIPMAPS`, feature `ruffle-fork`).
+///
+/// # Errors
+/// Built against stock Ruffle.
+pub fn gdraw_mipmaps(on: bool) -> Result<()> {
+    #[cfg(feature = "ruffle-fork")]
+    {
+        ruffle_render_wgpu::GDRAW_MIPMAPS.store(on, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+    #[cfg(not(feature = "ruffle-fork"))]
+    {
+        if on {
+            Err(anyhow!(
+                "mipmaps need the Ruffle fork (feature ruffle-fork)"
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Makes `getTimer` read the player's own clock (the sum of the tick
+/// times) instead of the wall clock (the Ruffle fork's
+/// `DETERMINISTIC_GET_TIMER`, feature `ruffle-fork`): the replay no longer
+/// depends on how fast it runs.
+///
+/// # Errors
+/// Built against stock Ruffle.
+pub fn deterministic_get_timer(on: bool) -> Result<()> {
+    #[cfg(feature = "ruffle-fork")]
+    {
+        ruffle_core::DETERMINISTIC_GET_TIMER.store(on, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+    #[cfg(not(feature = "ruffle-fork"))]
+    {
+        if on {
+            Err(anyhow!(
+                "a deterministic getTimer needs the Ruffle fork (feature ruffle-fork)"
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// One movie in a Ruffle player.
 pub struct Stage {
     player: Arc<Mutex<Player>>,
@@ -160,6 +242,7 @@ pub struct Stage {
     frame: FloatDuration,
     pub ticks: u64,
     size: (u32, u32),
+    ss: u32,
 }
 
 impl Stage {
@@ -173,19 +256,22 @@ impl Stage {
         url: &str,
         size: (u32, u32),
         font: Option<&GameFont>,
+        render: &Render,
     ) -> Result<Self> {
+        let ss = render.ss.max(1);
+        let full = (size.0 * ss, size.1 * ss);
         let movie = SwfMovieData::from_data(data, url.to_owned(), None, None)
             .map_err(|e| anyhow!("{e}"))?;
         let fps = f64::from(movie.frame_rate().to_f32());
         let target =
-            TextureTarget::new(&gpu.descriptors.device, size).map_err(|e| anyhow!("{e}"))?;
+            TextureTarget::new(&gpu.descriptors.device, full).map_err(|e| anyhow!("{e}"))?;
         let renderer =
             WgpuRenderBackend::new(gpu.descriptors.clone(), target).map_err(|e| anyhow!("{e}"))?;
         let answers = Rc::new(RefCell::new(Answers::default()));
         let player = PlayerBuilder::new()
             .with_renderer(renderer)
             .with_movie(movie)
-            .with_viewport_dimensions(size.0, size.1, 1.0)
+            .with_viewport_dimensions(full.0, full.1, f64::from(ss))
             .with_external_interface(Box::new(Provider(answers.clone())))
             .with_autoplay(true)
             .build();
@@ -195,6 +281,10 @@ impl Stage {
                 font.register(&mut p)?;
             }
             p.set_window_mode("transparent");
+            if let Some(q) = &render.quality {
+                let q = q.parse().map_err(|_| anyhow!("unknown quality {q}"))?;
+                p.set_quality(q);
+            }
             p.set_is_playing(true);
         }
         Ok(Self {
@@ -203,6 +293,7 @@ impl Stage {
             frame: FloatDuration::from_millis(1000.0 / fps),
             ticks: 0,
             size,
+            ss,
         })
     }
 
@@ -217,10 +308,11 @@ impl Stage {
     pub fn set_size(&mut self, w: u32, h: u32) {
         if (w, h) != self.size && w > 0 && h > 0 {
             self.size = (w, h);
+            let ss = self.ss;
             self.lock().set_viewport_dimensions(ViewportDimensions {
-                width: w,
-                height: h,
-                scale_factor: 1.0,
+                width: w * ss,
+                height: h * ss,
+                scale_factor: f64::from(ss),
             });
         }
     }
@@ -229,8 +321,8 @@ impl Stage {
     pub fn mouse_move(&mut self, x: i32, y: i32) {
         self.lock()
             .handle_event(ruffle_core::PlayerEvent::MouseMove {
-                x: f64::from(x),
-                y: f64::from(y),
+                x: f64::from(x) * f64::from(self.ss),
+                y: f64::from(y) * f64::from(self.ss),
             });
     }
 
@@ -257,6 +349,13 @@ impl Stage {
         let renderer =
             <dyn std::any::Any>::downcast_mut::<WgpuRenderBackend<TextureTarget>>(p.renderer_mut())
                 .ok_or_else(|| anyhow!("not the wgpu texture renderer"))?;
-        renderer.capture_frame().ok_or_else(|| anyhow!("no frame"))
+        let img = renderer
+            .capture_frame()
+            .ok_or_else(|| anyhow!("no frame"))?;
+        Ok(if self.ss > 1 {
+            crate::compose::box_down(&img, self.ss)
+        } else {
+            img
+        })
     }
 }
