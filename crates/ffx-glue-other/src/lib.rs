@@ -183,6 +183,7 @@ pub mod h4b_f;
 pub mod h4b_g;
 pub mod h4b_h;
 pub mod h4b_i;
+pub mod h4b_j;
 pub mod menu;
 pub mod misc;
 pub mod movie;

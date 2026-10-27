@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh, h4b_i as bi,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4091,6 +4091,269 @@ fn bi_frame_shape() {
                 &|_| vec![(ebp + 8, ebp + 0x1c)],
                 |g| bi::frame_shape(g, args[0], args[1], args[2], args[3], kind, Some(ebp + 8)),
             );
+        }
+    }
+}
+
+// ---- round 3, batch 1 (ffx_glue_other::h4b_j)
+
+/// The image constants the wait windows read: `f32`s, then `f64`s.
+const WAIT_F32: [u32; 52] = [
+    0x00b5_f43c,
+    0x00b5_f324,
+    0x00b4_a1ac,
+    0x00b5_f34c,
+    0x00b1_f2c8,
+    0x00b5_f344,
+    0x00b5_f468,
+    0x00b5_f3c0,
+    0x00b5_f3c8,
+    0x00b5_f44c,
+    0x00b5_f438,
+    0x00b5_f300,
+    0x00b5_f370,
+    0x00b4_3db4,
+    0x00b3_eb94,
+    0x00b5_ef1c,
+    0x00b5_f3ac,
+    0x00b3_eb44,
+    0x00b9_2194,
+    0x00b5_ef64,
+    0x00b5_f35c,
+    0x00b5_f32c,
+    0x00b5_f31c,
+    0x00b5_f450,
+    0x00b5_f444,
+    0x00b5_8cd8,
+    0x00b5_f410,
+    0x00b5_eec0,
+    0x00b5_eea0,
+    0x00b5_eee4,
+    0x00b5_ef00,
+    0x00b4_f5e4,
+    0x00b5_f418,
+    0x00b5_eea4,
+    0x00b5_f038,
+    0x00b5_f03c,
+    0x00b5_eecc,
+    0x00b5_ee14,
+    0x00b5_edb8,
+    0x00b5_ee04,
+    0x00b5_eefc,
+    0x00b5_ef80,
+    0x00b5_f40c,
+    0x00b5_f108,
+    0x00b5_ede0,
+    0x00b4_1cac,
+    0x00b5_f0c0,
+    0x00b5_4f90,
+    0x00b5_f358,
+    0x00b5_f420,
+    0x00b5_f0c8,
+    0x00b5_f0d4,
+];
+const WAIT_F32B: [u32; 6] = [
+    0x00b5_f0c4,
+    0x00b5_f0b4,
+    0x00b5_ee74,
+    0x00b5_ef24,
+    0x00b5_f3f8,
+    0x00b5_f344,
+];
+const WAIT_F64: [u32; 32] = [
+    0x00b4_1d20,
+    0x00b4_12f8,
+    0x00b5_ee40,
+    0x00b5_f2b8,
+    0x00b5_f2c0,
+    0x00b5_f2d0,
+    0x00b5_f2a8,
+    0x00b5_f2b0,
+    0x00b5_f2c8,
+    0x00b5_f290,
+    0x00b9_21f0,
+    0x00b5_f280,
+    0x00b5_f460,
+    0x00b9_22c8,
+    0x00b5_f1f0,
+    0x00b5_f278,
+    0x00b5_f260,
+    0x00b4_9968,
+    0x00b4_9970,
+    0x00b1_f2c0,
+    0x00b5_f240,
+    0x00b3_eb60,
+    0x00b5_f1f8,
+    0x00b5_f1d0,
+    0x00b5_f2d8,
+    0x00b9_22e8,
+    0x00b4_8308,
+    0x00b4_c170,
+    0x00b5_f218,
+    0x00b5_f1e8,
+    0x00b5_f1b0,
+    0x00b5_f270,
+];
+const WAIT_F64B: [u32; 1] = [0x00b5_f288];
+
+/// The wait windows' stubs: the remaps scaled by their arguments, the
+/// clock, the draws; their tags.
+fn wait_stubs(t: &mut Twins) -> (Vec<u32>, [u32; 2]) {
+    let kx = scaled_stub(t, e1::REMAP_X2);
+    let ky = scaled_stub(t, e1::REMAP_Y2);
+    t.stub(e1::GET_TIME, 0, true);
+    let mut tags = vec![e1::REMAP_X2, e1::REMAP_Y2, e1::GET_TIME];
+    for (sym, n) in [
+        (e1::SHAPE_UV_C2, 11),
+        (e1::SHAPE_UV, 9),
+        (bj::WATER, 12),
+        (bj::ROTATE_SHAPE, 12),
+        (bj::SCISSOR_XYWH, 4),
+        (bj::SUMMON_PRIM, 3),
+        (0x0089_f370, 1),
+        (0x0089_99f0, 3),
+    ] {
+        t.stub(sym, n, false);
+        tags.push(sym);
+    }
+    (tags, [kx, ky])
+}
+
+/// The image's values of the wait windows' constants.
+fn wait_constants(t: &mut Twins) -> Vec<(u32, Vec<u8>)> {
+    let mut out = Vec::new();
+    for &c in WAIT_F32.iter().chain(&WAIT_F32B) {
+        let at = t.rebase(c);
+        out.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+    }
+    for &c in WAIT_F64.iter().chain(&WAIT_F64B) {
+        let at = t.rebase(c);
+        out.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+    }
+    out
+}
+
+/// One case's state: the image's constants (or random ones), the remap
+/// scales, the clock and a window `w` with its summon list `list`: the
+/// open time spread over the opening, the slides and the ripples.
+fn wait_case(
+    t: &mut Twins,
+    rng: &mut Rng,
+    real: &[(u32, Vec<u8>)],
+    scales: [u32; 2],
+    w: u32,
+    list: u32,
+) {
+    if rng.below(3) == 0 {
+        t.constants(rng, &WAIT_F32, &WAIT_F64);
+        t.constants(rng, &WAIT_F32B, &WAIT_F64B);
+    } else {
+        for (at, v) in real {
+            t.write(*at, v);
+        }
+    }
+    for k in scales {
+        let v = rng.pick(&[1.0, 1.5, 0.75, 2.0 / 3.0, -1.25]);
+        let v = if rng.below(4) == 0 { rng.double() } else { v };
+        let v = if v.abs() > 1e100 { 1.5 } else { v };
+        t.write(k, &f64::to_le_bytes(v));
+    }
+    let time = f64::from(rng.below(100_000)) / 7.0;
+    t.ret_f64(e1::GET_TIME, time);
+    let open = rng.pick(&[0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.5, 1.0, 2.0]);
+    let open = open + f64::from(rng.below(1000)) / 20_000.0;
+    let start = match rng.below(8) {
+        0 => rng.float(),
+        1 => 0,
+        _ => ((time - open) as f32).to_bits(),
+    };
+    let block: Vec<u8> = (0..0x100).map(|_| rng.next() as u8).collect();
+    t.write(w, &block);
+    t.w32(w + 0xdc, start);
+    t.w32(w + 0x20, list);
+    let start = f64::from(f32::from_bits(start));
+    if start > 0.0 && rng.below(6) == 0 {
+        // the opening's end exactly at the open time
+        let open = f64::from((time - start) as f32);
+        let at = t.rebase(0x00b3_eb60);
+        t.write(at, &open.to_le_bytes());
+    }
+    if rng.below(10) == 0 {
+        // a slide of -0 against a right edge of +0
+        for (c, v) in [
+            (0x00b5_f290, -0.0f64),
+            (0x00b5_f280, 0.0),
+            (0x00b5_f460, -1.0),
+        ] {
+            let at = t.rebase(c);
+            t.write(at, &v.to_le_bytes());
+        }
+        let at = t.rebase(0x00b5_f344);
+        t.write(at, &0u32.to_le_bytes());
+    }
+    let cols = rng.pick(&[1, 2, 2, 3, 0xffff, 5]);
+    let rows = rng.pick(&[1, 2, 3, 4, 0xfffe]);
+    let first = rng.pick(&[0, 1, 2, 3, 0xffff]);
+    let cursor = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 7, 0xffff]);
+    t.w16(w + 0x38, cols);
+    t.w16(w + 0x3a, rows);
+    t.w16(w + 0x40, first);
+    t.w16(w + 0x42, cursor);
+    let f = [rng.float(), rng.float()];
+    t.w32(w + 0x78, f[0]);
+    t.w32(w + 0x7c, f[1]);
+    for k in 0..16u32 {
+        let id = rng.pick(&[0x30ff, 0x30ff, 0, 1, 7, 0x8000, 0x30fe]);
+        t.w16(list + 2 * k, id);
+    }
+}
+
+/// `TODrawWaitBtlWinSummon`: the panel at every stage of its slides,
+/// the ripples on and off, the "all summons" entry and single summons;
+/// image and random constants, the remaps' results following their
+/// arguments.
+#[test]
+fn bj_wait_win_summon() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f401);
+        let (tags, scales) = wait_stubs(&mut t);
+        let real = wait_constants(&mut t);
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        for i in 0..500 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            t.check(&what, 0x008a_75f0, &[w], |g| u(bj::wait_win_summon(g, w)));
+        }
+    }
+}
+
+/// `TODrawWaitBtlWinRight`: the opening (the argument slot compared), the
+/// panel, rings and fades at every stage, the cursor in and out of the
+/// visible rows; image and random constants.
+#[test]
+fn bj_wait_win_right() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f402);
+        let (tags, scales) = wait_stubs(&mut t);
+        let real = wait_constants(&mut t);
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let ebp = t.ebp_for(1);
+        for i in 0..500 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            t.b.write(ebp + 8, &w.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_6a60, &[w], |g| {
+                u(bj::wait_win_right(g, w, Some(ebp + 8)))
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 4).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 4).unwrap();
+            assert_eq!(x, y, "{what}: argument slot");
         }
     }
 }
