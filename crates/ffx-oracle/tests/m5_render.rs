@@ -22,6 +22,7 @@
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
     clippy::too_many_lines,
     clippy::similar_names,
     clippy::many_single_char_names,
@@ -35,6 +36,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::m5r_a::{self as ma, bridge as a};
 use ffx_prender::m5r_b::{self as mb, bridge as b};
+use ffx_prender::m5r_c::{self as mc, bridge as c};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -2424,6 +2426,624 @@ fn enable_hsv_matches_the_original() {
                 let (x, y): (u32, u32) = (Mem::read(&t.a, slot), Mem::read(&t.b, slot));
                 assert_eq!(x, y, "graphicEnableHSV: the argument slot");
             }
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 3 (ffx_prender::m5r_c) ----
+
+/// The original's `ebp` for a function that starts `push ebp; mov ebp,
+/// esp`, called from the oracle's call top with `words` stack words.
+fn frame_ebp(o: &Oracle, words: u32) -> u32 {
+    call_top(o) - 4 * words - 8
+}
+
+/// A float word for the x87 forwarders: anything but a signalling NaN.
+fn float_word(rng: &mut Rng) -> u32 {
+    loop {
+        let x = match rng.below(4) {
+            0 => 0x7fc0_0000 | rng.below(16),
+            1 => (rng.below(2000) as f32 - 1000.0).to_bits(),
+            _ => rng.next(),
+        };
+        let snan = x & 0x7f80_0000 == 0x7f80_0000 && x & 0x007f_ffff != 0 && x & 0x0040_0000 == 0;
+        if !snan {
+            return x;
+        }
+    }
+}
+
+#[test]
+fn small_c_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0201);
+        for case in 0..30 {
+            // getCurrentControlMode
+            let im = t.zeros(4);
+            t.stub_sym(mc::INPUT_MANAGER, 1, false, 0, 0, Ret::Val(im));
+            let v = rng.next();
+            t.stub_sym(mc::INPUT_VIBRATION_FLAG, 2, true, 0, 0, Ret::Val(v));
+            t.check(
+                "getCurrentControlMode",
+                0x0063_8e30,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::current_control_mode(g)),
+            );
+            t.reset();
+
+            // graphicGetSkipTexturePath: no manager, languages 0..12
+            let mgr = t.words(&[0, case % 13]);
+            let r = t.seq(&[if case % 7 == 0 { 0 } else { mgr }, mgr]);
+            t.stub_sym(mc::LOCALIZATION_MANAGER, 3, false, 0, 0, r);
+            let iob = t.zeros(0x80);
+            t.import_sym(mc::IOB_FUNC, 4, 0, 0, Ret::Val(iob));
+            t.import_sym(mc::FPRINTF, 5, 2, 0, Ret::Val(9));
+            t.check(
+                "graphicGetSkipTexturePath_00638e90",
+                0x0063_8e90,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::skip_texture_path(g)),
+            );
+            t.reset();
+
+            // graphicActivateRadialBlur, graphicCharacterShaderRestore,
+            // graphicSegmentsAllReady, graphicDetachChrClusterFrom3DWorld
+            let blur = t.zeros(4);
+            t.stub_sym(mc::BLUR_EFFECT, 6, false, 0, 0, Ret::Val(blur));
+            t.stub_sym(mc::BLUR_ACTIVATE, 7, true, 0, 0, Ret::Val(0x77));
+            t.check(
+                "graphicActivateRadialBlur",
+                0x0063_9140,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::activate_radial_blur(g)),
+            );
+            t.stub_sym(mc::SHADER_RESET, 8, false, 0, 0, Ret::Val(0x78));
+            t.check(
+                "graphicCharacterShaderRestore",
+                0x0063_d870,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::shader_restore(g)),
+            );
+            let scene = rand_obj(t, &mut rng, 0x1_0000);
+            t.global(mc::SCENE.sym, scene);
+            t.stub_sym(mc::SEGMENTS_ALL_READY, 9, true, 0, 0, Ret::Val(0x79));
+            t.check(
+                "graphicSegmentsAllReady_006522b0",
+                0x0065_22b0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::segments_all_ready(g)),
+            );
+            t.stub_sym(mc::SCENE_DETACH_CHR_CLUSTER, 10, true, 0, 0, Ret::Val(0x7a));
+            t.check(
+                "graphicDetachChrClusterFrom3DWorld",
+                0x0063_df50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::graphic_detach_chr_cluster(g)),
+            );
+            t.stub_sym(mc::SCENE_MONSTER_ET_NAME, 11, true, 2, 2, Ret::Val(0x7b));
+            let (et, which) = (rng.next(), rng.next());
+            t.check(
+                "graphicGetMonsterEtTextureName",
+                0x0064_1330,
+                Conv::Cdecl,
+                &[et, which],
+                |g| Out::U32(c::graphic_monster_et_texture_name(g, et, which)),
+            );
+            t.reset();
+
+            // graphicAddScreenFadeTaskBeforeVFX
+            let mut args: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            args.push(rng.next());
+            t.stub_sym(mc::REGISTER_SCREEN_FADE, 12, false, 6, 0, Ret::Val(0x7c));
+            t.check(
+                "graphicAddScreenFadeTaskBeforeVFX",
+                0x0063_92c0,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    Out::U32(c::add_screen_fade_before_vfx(
+                        g,
+                        [args[0], args[1], args[2], args[3]],
+                        args[4],
+                    ))
+                },
+            );
+            t.reset();
+
+            // attach / detach the character cluster
+            let scene = rand_obj(t, &mut rng, 0x1_0000);
+            t.w8(scene + 0xfb44, (case % 2) as u8);
+            t.stub_sym(mc::WORLD_REMOVE_CLUSTER, 13, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mc::WORLD_ADD_CLUSTER, 14, true, 1, 1, Ret::Val(0));
+            t.check(
+                "PhyreScene_attachChrClusterTo3DWorld",
+                0x0065_78e0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    c::attach_chr_cluster(g, scene);
+                    Out::None
+                },
+            );
+            t.w8(scene + 0xfb44, (case / 2 % 2) as u8);
+            t.check(
+                "PhyreScene_detachChrClusterFrom3DWorld_0065a550",
+                0x0065_a550,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    c::detach_chr_cluster(g, scene);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the draw situation callback
+            let inst = if case % 3 == 0 {
+                0
+            } else {
+                rand_obj(t, &mut rng, 0x20)
+            };
+            let cb = rng.next();
+            t.check(
+                "graphicCharacterInstanceSetDrawSituationCallback",
+                0x0063_b7f0,
+                Conv::Cdecl,
+                &[inst, cb],
+                |g| {
+                    c::set_draw_situation_callback(g, inst, cb);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn monster_et_texture_name_matches_the_original() {
+    // records used or not, the id matching or not, either kind word.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0202);
+        for _ in 0..100 {
+            let scene = t.zeros(0x1_1000);
+            let id = rng.below(4);
+            for e in 0..8 {
+                let rec = scene + 0xfcd0 + 0x20c * e;
+                t.w32(rec - 4, u32::from(!rng.chance(3)));
+                t.w32(rec, rng.below(4));
+                let (k0, k1) = (rng.below(4) as u16, rng.below(4) as u16);
+                t.write(rec + 4, &k0.to_le_bytes());
+                t.write(rec + 6, &k1.to_le_bytes());
+            }
+            let et = t.zeros(0x20);
+            t.w32(et + 0x10, id);
+            let which = if rng.chance(6) {
+                0x1_0001
+            } else {
+                rng.below(4)
+            };
+            t.check(
+                "PhyreScene_getMonsterEtTextureName",
+                0x0065_e200,
+                Conv::Thiscall(scene),
+                &[et, which],
+                |g| Out::U32(c::monster_et_texture_name(g, scene, et, which)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn character_lighting_and_shaders_match_the_original() {
+    // lists of 0..3 instances, floats (no signalling NaN), no list;
+    // characters without an instance.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0203);
+        for case in 0..40 {
+            let n = rng.below(4);
+            let inst: Vec<u32> = (0..n).map(|_| rng.next()).collect();
+            let data = t.words(&inst);
+            let list = if case % 5 == 0 {
+                0
+            } else {
+                t.words(&[n, data])
+            };
+            let l = t.zeros(4);
+            t.stub_sym(mc::CHARACTER_LIGHTING, 1, false, 0, 0, Ret::Val(l));
+            t.stub_sym(mc::LIGHTING_SET_4, 2, true, 5, 5, Ret::Val(0));
+            t.stub_sym(mc::LIGHTING_SET_8, 3, true, 9, 9, Ret::Val(0));
+            let f: Vec<u32> = (0..8).map(|_| float_word(&mut rng)).collect();
+            let mut args = vec![list];
+            args.extend(&f[..4]);
+            t.check(
+                "graphicCharacterLightingSet4_0063c9e0",
+                0x0063_c9e0,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    c::lighting_set_4(g, list, [f[0], f[1], f[2], f[3]]);
+                    Out::None
+                },
+            );
+            let mut args = vec![list];
+            args.extend(&f);
+            t.check(
+                "graphicCharacterLightingSet8_0063ca50",
+                0x0063_ca50,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    let mut a = [0; 8];
+                    a.copy_from_slice(&f);
+                    c::lighting_set_8(g, list, a);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            let ri = if case % 4 == 0 {
+                0
+            } else {
+                t.words(&[n, data])
+            };
+            t.stub_sym(mc::CHR_RENDER_INSTANCE, 4, false, 1, 0, Ret::Val(ri));
+            t.stub_sym(mc::SHADER_SET_TYPE, 5, false, 2, 0, Ret::Val(1));
+            t.stub_sym(mc::SHADER_SET_PARAMETER, 6, false, 3, 0, Ret::Val(1));
+            t.stub_sym(
+                mc::SHADER_SET_PARAMETER_TEXTURE,
+                7,
+                false,
+                3,
+                0,
+                Ret::Val(1),
+            );
+            let (chr, x, y) = (rng.next(), rng.next(), rng.next());
+            t.check(
+                "graphicCharacterSetShaderType",
+                0x0063_d810,
+                Conv::Cdecl,
+                &[chr, x],
+                |g| Out::U32(c::set_shader_type(g, chr, x)),
+            );
+            t.check(
+                "graphicCharacterShaderSetParameter",
+                0x0063_d880,
+                Conv::Cdecl,
+                &[chr, x, y],
+                |g| Out::U32(c::shader_set_parameter(g, chr, x, y)),
+            );
+            t.check(
+                "graphicCharacterShaderSetParameterTexture",
+                0x0063_d8e0,
+                Conv::Cdecl,
+                &[chr, x, y],
+                |g| Out::U32(c::shader_set_parameter_texture(g, chr, x, y)),
+            );
+            t.reset();
+
+            // graphicSetFreeCameraMode: there, made, allocation failing
+            let cam = t.zeros(0x340);
+            let made = case % 3;
+            t.global(mc::FREE_CAMERA.sym, if made == 0 { cam } else { 0 });
+            t.stub_sym(
+                mc::OPERATOR_NEW,
+                8,
+                false,
+                1,
+                0,
+                Ret::Val(if made == 1 { cam } else { 0 }),
+            );
+            t.stub_sym(mc::FREE_CAMERA_CTOR, 9, true, 0, 0, Ret::Val(cam));
+            t.stub_sym(mc::FREE_CAMERA_SET_MODE, 10, true, 1, 1, Ret::Val(0x55));
+            let mode = rng.next();
+            t.check(
+                "graphicSetFreeCameraMode_00640e20",
+                0x0064_0e20,
+                Conv::Cdecl,
+                &[mode],
+                |g| Out::U32(c::set_free_camera_mode(g, mode)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn replace_summon_texture_matches_the_original() {
+    // magic ids around 0x276..0x27d, the summons' names, every load
+    // result, the cluster found or not, the skip list full or not. The
+    // port's frame sits where the original's is.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0204);
+        let names: [&[u8]; 5] = [b"m179\0", b"m180\0", b"m17\0", b"m1790\0", b"\0"];
+        for _ in 0..120 {
+            let ids: Vec<u32> = (0..4)
+                .map(|_| match rng.below(4) {
+                    0 => 0x27d,
+                    1 => 0x275 + rng.below(10),
+                    2 => 0x276,
+                    _ => rng.next(),
+                })
+                .collect();
+            let r = t.seq(&ids);
+            t.stub_sym(mc::MAGIC_ID, 1, false, 0, 0, r);
+            let inst = rng.next();
+            t.stub_sym(mc::CHR_RENDER_INSTANCE, 2, false, 1, 0, Ret::Val(inst));
+            let name = t.alloc(names[rng.below(5) as usize]);
+            t.stub_sym(mc::CHR_NAME, 3, false, 1, 0, Ret::Val(name));
+            let scene = t.zeros(4);
+            t.global(mc::SCENE.sym, scene);
+            t.stub_sym(
+                mc::SCENE_IS_VFX_TEXTURE_LOADED,
+                4,
+                true,
+                7,
+                7,
+                Ret::Val(rng.below(4)),
+            );
+            let m = t.zeros(4);
+            t.stub_sym(mc::CLUSTER_MANAGER, 5, false, 0, 0, Ret::Val(m));
+            t.stub_sym(mc::CLUSTER_BY_NAME, 6, true, 1, 1, Ret::Val(rng.below(2)));
+            t.stub_sym(mc::SUMMON_REPLACE, 7, false, 2, 0, Ret::Val(0));
+            t.stub_sym(mc::SUMMON_UPDATE, 8, false, 1, 0, Ret::Val(0));
+            let skip = t.rebase(mc::TEX_ANIM_SKIP.sym);
+            let count = (rng.below(8) as i32 - 1) as u32;
+            let mut w = vec![count];
+            w.extend((0..6).map(|_| rng.next()));
+            let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+            t.patch(skip, &bytes);
+            let chr = rng.next();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x140);
+            t.check(
+                "graphicCharacterReplaceSummonTexture",
+                0x0063_d400,
+                Conv::Cdecl,
+                &[chr],
+                |g| {
+                    c::replace_summon_texture(g, ebp, chr);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn unloads_with_frames_match_the_original() {
+    // the persistent VFX lists (the first unload succeeding or not); the
+    // default menu textures (0..3 names, short and long strings).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0205);
+        for case in 0..30 {
+            let scene = t.zeros(4);
+            t.stub_sym(mc::UNIFY_FILENAME, 1, false, 3, 0, Ret::Val(0));
+            let r = t.seq(&[if case % 2 == 0 { 0 } else { 5 }, 6]);
+            t.stub_sym(mc::SCENE_UNLOAD_VFX_TEXTURE, 2, true, 2, 2, r);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x240);
+            t.check(
+                "PhyreScene_unloadPersistentVFXTexture",
+                0x0067_1280,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(c::unload_persistent_vfx_texture(g, ebp, scene)),
+            );
+            t.b_top = None;
+            t.reset();
+
+            let head = t.zeros(0x20);
+            let nodes: Vec<u32> = (0..rng.below(4)).map(|_| t.zeros(0x20)).collect();
+            let mut prev = head;
+            for &n in &nodes {
+                t.w32(prev, n);
+                let cap = [0xf, 0x10, rng.next()][rng.below(3) as usize];
+                t.w32(n + 0x1c, cap);
+                let v = rng.next();
+                t.w32(n + 8, v);
+                prev = n;
+            }
+            t.w32(prev, head);
+            let list = t.rebase(mc::MENU_DEFAULT_TEXTURES);
+            t.patch(list, &head.to_le_bytes());
+            t.global(mc::SCENE.sym, scene);
+            t.stub_sym(mc::UNIFY_FILENAME, 3, false, 3, 0, Ret::Val(0));
+            t.stub_sym(mc::SCENE_UNLOAD_MENU_TEXTURE, 4, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mc::STRING_LIST_CLEAR, 5, true, 0, 0, Ret::Val(0x33));
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x140);
+            t.check(
+                "MenuTextureManager_unloadDefaultTextures_006857c0",
+                0x0068_57c0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::unload_default_menu_textures(g, ebp)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn material_params_match_the_original() {
+    // graphicSetHSVParam and graphicCharacterSetClipPlane: no model; the
+    // copy failing; 0..3 meshes of 0..3 materials; the parameter missing,
+    // fitting, past the buffer, below offset 4; no plane. The argument
+    // slot (the mesh index) is compared too.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0206);
+        for case in 0..80 {
+            let hsv = case % 2 == 0;
+            let n = rng.below(4);
+            let mut meshes = vec![];
+            let mut lists = vec![];
+            let mut params = vec![];
+            for _ in 0..n {
+                let k = rng.below(4);
+                let mut mats = vec![];
+                for _ in 0..k {
+                    let buf = t.words(&[rng.below(0x40), 0, 0, 0]);
+                    let m = t.words(&[rng.next(), buf]);
+                    mats.push(m);
+                    let p = if rng.chance(4) {
+                        0
+                    } else {
+                        let p = t.zeros(0x10);
+                        let off = [3, 4, 5, rng.below(0x20)][rng.below(4) as usize] as u16;
+                        let size = (rng.below(0x20) as u16) | ((rng.below(8) as u16) << 13);
+                        t.write(p + 8, &off.to_le_bytes());
+                        t.write(p + 0xa, &size.to_le_bytes());
+                        p
+                    };
+                    params.push(p);
+                }
+                let list = t.words(&mats);
+                let arr = t.words(&[k | if rng.chance(4) { 0x8000_0000 } else { 0 }, 0]);
+                let mesh = t.zeros(0x14);
+                t.w32(mesh + 0x10, arr);
+                meshes.push(mesh);
+                lists.push((list, k));
+            }
+            let copy = if rng.chance(5) { 0 } else { t.words(&meshes) };
+            let top = if rng.chance(4) { 0x8000_0000 } else { 0 };
+            let model = if rng.chance(6) {
+                0
+            } else {
+                t.words(&[n | top, rng.next()])
+            };
+            t.stub_sym(mc::COPY_ARRAY, 1, false, 2, 0, Ret::Val(copy));
+            let mut seq = vec![];
+            for &(l, k) in &lists {
+                for _ in 0..k {
+                    seq.push(l);
+                }
+            }
+            seq.push(0);
+            let r = t.seq(&seq);
+            t.stub_sym(mc::ARRAY_DATA, 2, true, 0, 0, r);
+            params.push(0);
+            let r = t.seq(&params);
+            t.stub_sym(mc::FIND_PARAM, 3, true, 1, 1, r);
+            t.stub_sym(mc::MEMCPY, 4, false, 3, 0, Ret::Val(0));
+            t.stub_sym(mc::PHYRE_FREE, 5, false, 1, 0, Ret::Val(0));
+            if hsv {
+                let f: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+                let slot = first_slot(&t.b, 5);
+                let ebp = frame_ebp(&t.a, 5);
+                t.b_top = Some(ebp - 0x60);
+                let mut args = vec![model];
+                args.extend(&f);
+                t.check("graphicSetHSVParam", 0x0064_3340, Conv::Cdecl, &args, |g| {
+                    c::set_hsv_param(g, ebp, slot, model, [f[0], f[1], f[2], f[3]]);
+                    Out::None
+                });
+                if model != 0 {
+                    let (x, y): (u32, u32) = (Mem::read(&t.a, slot), Mem::read(&t.b, slot));
+                    assert_eq!(x, y, "graphicSetHSVParam: the argument slot");
+                    // the floats the memcpy stub saw a pointer to
+                    for k in 0..4 {
+                        let (x, y): (u32, u32) = (
+                            Mem::read(&t.a, ebp - 0x20 + 4 * k),
+                            Mem::read(&t.b, ebp - 0x20 + 4 * k),
+                        );
+                        assert_eq!(x, y, "graphicSetHSVParam: the frame's float {k}");
+                    }
+                }
+            } else {
+                let plane = if rng.chance(4) { 0 } else { rng.next() };
+                let slot = first_slot(&t.b, 2);
+                t.b_top = Some(slot - 0x40);
+                t.check(
+                    "graphicCharacterSetClipPlane",
+                    0x0063_d710,
+                    Conv::Cdecl,
+                    &[model, plane],
+                    |g| {
+                        c::set_clip_plane(g, slot, model, plane);
+                        Out::None
+                    },
+                );
+                if model != 0 {
+                    let (x, y): (u32, u32) = (Mem::read(&t.a, slot), Mem::read(&t.b, slot));
+                    assert_eq!(x, y, "graphicCharacterSetClipPlane: the argument slot");
+                }
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn release_character_clusters_matches_the_original() {
+    // maps of 0..5 entries, each with 0..3 clusters, storage or none;
+    // the vector copy into the frame by a stub that copies the three words
+    // as 0x0064d620 does.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0207);
+        for _ in 0..40 {
+            let k = rng.below(6) as usize;
+            let mut entries = vec![];
+            for _ in 0..k {
+                let n = rng.below(4);
+                let cl: Vec<u32> = (0..n).map(|_| rng.next()).collect();
+                let v = if n == 0 && rng.chance(2) {
+                    0
+                } else {
+                    t.words(&cl)
+                };
+                let e = t.words(&[rng.next(), v, v + 4 * n, v + 4 * n]);
+                entries.push(e);
+            }
+            let head = build_tree(t, &mut rng, &entries);
+            let scene = t.zeros(0x1200);
+            t.w32(scene + 0x11dc, head);
+            t.w32(scene + 0x11e0, k as u32);
+            let tam = t.zeros(4);
+            t.stub_sym(mc::TEXANIM_MANAGER, 1, false, 0, 0, Ret::Val(tam));
+            t.stub_sym(mc::TEXANIM_UNREGISTER_ALL, 2, true, 0, 0, Ret::Val(0));
+            let m = t.zeros(4);
+            t.stub_sym(mc::CLUSTER_MANAGER, 3, false, 0, 0, Ret::Val(m));
+            t.stub_sym(mc::CLUSTER_RELEASE, 4, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mc::OPERATOR_DELETE, 5, false, 1, 0, Ret::Val(0));
+            t.stub_sym(mc::TREE_ERASE, 6, true, 1, 1, Ret::Val(0));
+            // the vector copy: [ecx..ecx+0xc] = [arg..arg+0xc], then a
+            // logging stub that pops the argument
+            let log = t.stub_code(7, true, 1, 1, Ret::Val(0), false);
+            let mut code = vec![
+                0x8b, 0x54, 0x24, 0x04, // mov edx, [esp+4]
+                0x8b, 0x02, 0x89, 0x01, // mov eax, [edx]; mov [ecx], eax
+                0x8b, 0x42, 0x04, 0x89, 0x41, 0x04, // +4
+                0x8b, 0x42, 0x08, 0x89, 0x41, 0x08, // +8
+                0x68, // push log
+            ];
+            code.extend(log.to_le_bytes());
+            code.push(0xc3); // ret (to the log stub, which returns to the caller)
+            let copy = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), copy);
+            t.jump(mc::VECTOR_COPY, copy);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x60);
+            t.check(
+                "PhyreScene_releaseCharacterClusters_00670960",
+                0x0067_0960,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(c::release_character_clusters(g, ebp, scene)),
+            );
+            t.b_top = None;
             t.reset();
         }
     });

@@ -5,9 +5,10 @@
 //! and the loader's `asyncFFXInitialize` job for the string loads; the
 //! shims keep no state.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::m5r_a::bridge as a;
 use ffx_prender::m5r_b::bridge as b;
+use ffx_prender::m5r_c::bridge as c;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -362,5 +363,114 @@ ported! {
     /// `LuaBind_pushObject_00441e70(L, p)` (stdcall).
     LuaBind_pushObject_00441e70 @ 0x0044_1e70 => extern "stdcall" fn lua_push_object(l: u32, p: u32) -> u32 {
         b::lua_push_object(&mut mem(), l, p)
+    }
+    // ---- batch 3 (ffx_prender::m5r_c) ----
+    /// `getCurrentControlMode()` (`al`, zero-extended).
+    getCurrentControlMode @ 0x0063_8e30 => extern "C" fn current_control_mode() -> u32 {
+        c::current_control_mode(&mut mem())
+    }
+    /// `graphicGetSkipTexturePath_00638e90()`.
+    graphicGetSkipTexturePath_00638e90 @ 0x0063_8e90 => extern "C" fn skip_texture_path() -> u32 {
+        c::skip_texture_path(&mut mem())
+    }
+    /// `graphicActivateRadialBlur()`.
+    graphicActivateRadialBlur @ 0x0063_9140 => extern "C" fn activate_radial_blur() -> u32 {
+        c::activate_radial_blur(&mut mem())
+    }
+    /// `graphicAddScreenFadeTaskBeforeVFX(r, g, b, a, frames)`.
+    graphicAddScreenFadeTaskBeforeVFX @ 0x0063_92c0 => extern "C" fn add_screen_fade_before_vfx(r: u32, g: u32, bl: u32, al: u32, frames: u32) -> u32 {
+        c::add_screen_fade_before_vfx(&mut mem(), [r, g, bl, al], frames)
+    }
+    /// `PhyreScene_attachChrClusterTo3DWorld(scene)`.
+    PhyreScene_attachChrClusterTo3DWorld @ 0x0065_78e0 => extern "thiscall" fn attach_chr_cluster(this: u32) {
+        c::attach_chr_cluster(&mut mem(), this);
+    }
+    /// `PhyreScene_detachChrClusterFrom3DWorld_0065a550(scene)`.
+    PhyreScene_detachChrClusterFrom3DWorld_0065a550 @ 0x0065_a550 => extern "thiscall" fn detach_chr_cluster(this: u32) {
+        c::detach_chr_cluster(&mut mem(), this);
+    }
+    /// `graphicDetachChrClusterFrom3DWorld()`.
+    graphicDetachChrClusterFrom3DWorld @ 0x0063_df50 => extern "C" fn graphic_detach_chr_cluster() -> u32 {
+        c::graphic_detach_chr_cluster(&mut mem())
+    }
+    /// `graphicCharacterInstanceSetDrawSituationCallback(inst, cb)`.
+    graphicCharacterInstanceSetDrawSituationCallback @ 0x0063_b7f0 => extern "C" fn set_draw_situation_callback(inst: u32, cb: u32) {
+        c::set_draw_situation_callback(&mut mem(), inst, cb);
+    }
+    /// `graphicCharacterLightingSet4_0063c9e0(list, a, b, c, d)`.
+    graphicCharacterLightingSet4_0063c9e0 @ 0x0063_c9e0 => extern "C" fn lighting_set_4(list: u32, f0: u32, f1: u32, f2: u32, f3: u32) {
+        c::lighting_set_4(&mut mem(), list, [f0, f1, f2, f3]);
+    }
+    /// `graphicCharacterLightingSet8_0063ca50(list, 8 floats)`.
+    graphicCharacterLightingSet8_0063ca50 @ 0x0063_ca50 => extern "C" fn lighting_set_8(list: u32, f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32, f6: u32, f7: u32) {
+        c::lighting_set_8(&mut mem(), list, [f0, f1, f2, f3, f4, f5, f6, f7]);
+    }
+    /// `graphicCharacterReplaceSummonTexture(chr)`: the cluster name in the
+    /// shim's frame (`ebp - 0x104`).
+    graphicCharacterReplaceSummonTexture @ 0x0063_d400 => extern "C" fn replace_summon_texture(chr: u32) {
+        let mut f = StackFrame::<0x41>::new();
+        c::replace_summon_texture(&mut mem(), f.at() + 0x104, chr);
+    }
+    /// `PhyreScene_unloadPersistentVFXTexture(scene)`: the names in the
+    /// shim's frame (`ebp - 0x204`).
+    PhyreScene_unloadPersistentVFXTexture @ 0x0067_1280 => extern "thiscall" fn unload_persistent_vfx_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        c::unload_persistent_vfx_texture(&mut mem(), f.at() + 0x204, this)
+    }
+    /// `MenuTextureManager_unloadDefaultTextures_006857c0()`: the name in
+    /// the shim's frame (`ebp - 0x104`).
+    MenuTextureManager_unloadDefaultTextures_006857c0 @ 0x0068_57c0 => extern "C" fn unload_default_menu_textures() -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        c::unload_default_menu_textures(&mut mem(), f.at() + 0x104)
+    }
+    /// `graphicSetHSVParam(model, h, s, v, a)`: the floats in the shim's
+    /// frame (`ebp - 0x20`); keeps the mesh index in its first argument
+    /// slot.
+    graphicSetHSVParam @ 0x0064_3340 => extern "C" fn set_hsv_param(model: u32, f0: u32, f1: u32, f2: u32, f3: u32; slots: u32) {
+        let mut f = StackFrame::<8>::new();
+        c::set_hsv_param(&mut mem(), f.at() + 0x20, slots, model, [f0, f1, f2, f3]);
+    }
+    /// `graphicCharacterSetClipPlane(model, plane)`: keeps the mesh index
+    /// in its first argument slot.
+    graphicCharacterSetClipPlane @ 0x0063_d710 => extern "C" fn set_clip_plane(model: u32, plane: u32; slots: u32) {
+        c::set_clip_plane(&mut mem(), slots, model, plane);
+    }
+    /// `graphicCharacterSetShaderType(chr, kind)` -> 0.
+    graphicCharacterSetShaderType @ 0x0063_d810 => extern "C" fn set_shader_type(chr: u32, kind: u32) -> u32 {
+        c::set_shader_type(&mut mem(), chr, kind)
+    }
+    /// `graphicCharacterShaderRestore()` -> 0.
+    graphicCharacterShaderRestore @ 0x0063_d870 => extern "C" fn shader_restore() -> u32 {
+        c::shader_restore(&mut mem())
+    }
+    /// `graphicCharacterShaderSetParameter(chr, name, value)` -> 0.
+    graphicCharacterShaderSetParameter @ 0x0063_d880 => extern "C" fn shader_set_parameter(chr: u32, name: u32, value: u32) -> u32 {
+        c::shader_set_parameter(&mut mem(), chr, name, value)
+    }
+    /// `graphicCharacterShaderSetParameterTexture(chr, name, texture)` -> 0.
+    graphicCharacterShaderSetParameterTexture @ 0x0063_d8e0 => extern "C" fn shader_set_parameter_texture(chr: u32, name: u32, tex: u32) -> u32 {
+        c::shader_set_parameter_texture(&mut mem(), chr, name, tex)
+    }
+    /// `graphicSetFreeCameraMode_00640e20(mode)`.
+    graphicSetFreeCameraMode_00640e20 @ 0x0064_0e20 => extern "C" fn set_free_camera_mode(mode: u32) -> u32 {
+        c::set_free_camera_mode(&mut mem(), mode)
+    }
+    /// `PhyreScene_getMonsterEtTextureName(scene; et, which)`.
+    PhyreScene_getMonsterEtTextureName @ 0x0065_e200 => extern "thiscall" fn monster_et_texture_name(this: u32, et: u32, which: u32) -> u32 {
+        c::monster_et_texture_name(&mut mem(), this, et, which)
+    }
+    /// `graphicGetMonsterEtTextureName(et, which)`.
+    graphicGetMonsterEtTextureName @ 0x0064_1330 => extern "C" fn graphic_monster_et_texture_name(et: u32, which: u32) -> u32 {
+        c::graphic_monster_et_texture_name(&mut mem(), et, which)
+    }
+    /// `graphicSegmentsAllReady_006522b0()`.
+    graphicSegmentsAllReady_006522b0 @ 0x0065_22b0 => extern "C" fn segments_all_ready() -> u32 {
+        c::segments_all_ready(&mut mem())
+    }
+    /// `PhyreScene_releaseCharacterClusters_00670960(scene)` -> 0: the
+    /// cluster vector copy in the shim's frame (`ebp - 0x20`).
+    PhyreScene_releaseCharacterClusters_00670960 @ 0x0067_0960 => extern "thiscall" fn release_character_clusters(this: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        c::release_character_clusters(&mut mem(), f.at() + 0x20, this)
     }
 }
