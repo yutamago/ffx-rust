@@ -150,6 +150,7 @@ pub mod h3b_glue5;
 pub mod h3c_font;
 pub mod h3c_vfxname;
 pub mod h3c_vfxtex;
+pub mod h3d_fmi;
 pub mod m4r_ctxcapture;
 pub mod m4r_fonttext;
 pub mod m4r_gauss;
