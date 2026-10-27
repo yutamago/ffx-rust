@@ -345,4 +345,20 @@ ported! {
         let mut f = StackFrame::<0x44>::new();
         bn::prim_draw_2d(&mut mem(), f.at(), verts, count.cast_signed(), colour)
     }
+    /// `MenuScene_KeyLerp_00a7bbc0(flags, from, to, t, mode)`: the
+    /// drawers' records in a frame (`ebp - 0x7c` .. `ebp - 4`, 30 words).
+    /// Returns the original's `eax` (kind 5: the record's address); `flags
+    /// & 0x8000` left in the flags slot past the early kinds.
+    MenuScene_KeyLerp_00a7bbc0 @ 0x00a7_bbc0 => extern "C" fn scene_key_lerp(flags: u32, from: u32, to: u32, t: u32, mode: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x1e>::new();
+        bn::scene_key_lerp(&mut mem(), f.at(), flags, from, to, t, mode, Some(slots))
+    }
+    /// `AbmapDrawLink_00a51720(work, points, count)`: the scale, the
+    /// temporaries and the quad record in a frame (`ebp - 0xa8` .. `ebp -
+    /// 4`, 41 words; zeroed, so the record's never-written words are 0);
+    /// the count's countdown in its argument slot. No caller reads `eax`.
+    AbmapDrawLink_00a51720 @ 0x00a5_1720 => extern "C" fn abmap_draw_link(work: u32, points: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<0x29>::new();
+        bn::abmap_draw_link(&mut mem(), f.at(), work, points, count, Some(slots));
+    }
 }

@@ -5095,3 +5095,197 @@ fn bn_prim_draw_2d() {
         }
     }
 }
+
+/// `FUN_00a7bbc0`: every kind 0..=12 (and a high one), with and without
+/// flag 0x8000, one record or two, equal and different fields, `t` in
+/// and out of 0..1 (and random floats), mode 1 and others. The drawers'
+/// records are captured; the records' part of the frame and the argument
+/// slots are compared, the original's dead temporaries below the records
+/// blanked in both first.
+#[test]
+fn bn_scene_key_lerp() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_bbc0);
+        let mut tags = vec![];
+        for sym in [
+            bn::SEQ_DRAW_RECT,
+            bn::SEQ_PRIM_LAYOUT,
+            bn::SEQ_PRIM_MES,
+            bn::SEQ_PRIM_FUNC,
+        ] {
+            capture_stub_n(&mut t, sym, 1, 0, 0x20, 8);
+            tags.push(sym);
+        }
+        let keys = t.zeros(0x40);
+        let ebp = t.ebp_for(5);
+        for i in 0..6000 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..0x10 {
+                let v = rng.next();
+                t.w32(keys + 4 * k, v);
+            }
+            // Most fields equal in both records, some near.
+            for off in (4..0x20).step_by(2) {
+                match rng.below(4) {
+                    0 => {
+                        let v: u16 = Mem::read(&t.a, keys + off);
+                        t.w16(keys + 0x20 + off, v);
+                    }
+                    1 => {
+                        let v = rng.below(600) as u16;
+                        t.w16(keys + off, v);
+                        let d = rng.below(64) as u16;
+                        t.w16(keys + 0x20 + off, v.wrapping_add(d));
+                    }
+                    _ => {}
+                }
+            }
+            for g in [bn::SCENE_OFFSET_X.sym, bn::SCENE_OFFSET_Y.sym] {
+                let v = rng.small();
+                t.g32(g, v);
+            }
+            let kind = rng.pick(&[0, 1, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 9, 10, 10, 11, 0x7ff]);
+            let flags = kind | rng.pick(&[0, 0x8000, 0x800, 0x1_8000, 0xffff_0000]);
+            let from = keys + rng.pick(&[0, 0x20]);
+            let to = keys + rng.pick(&[0, 0x20, 0x20]);
+            let tt = match rng.below(5) {
+                0 => rng.float(),
+                1 => rng.pick(&[0f32, 1.0, 0.5, -0.5, 2.0]).to_bits(),
+                _ => (rng.below(1000) as f32 / 999.0).to_bits(),
+            };
+            let mode = rng.pick(&[0, 1, 1, 2]);
+            let args = [flags, from, to, tt, mode];
+            let (lo, hi) = (ebp - 0xc0, ebp - 4);
+            t.write(lo, &vec![0xa5; (hi - lo) as usize]);
+            for (k, a) in args.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &a.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(ebp - 0x7c - 0x100));
+            let addr = t.rebase(0x00a7_bbc0);
+            let ra =
+                t.a.call(addr, Conv::Cdecl, &args)
+                    .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
+            let tramp = t.tramp;
+            let v = bn::scene_key_lerp(
+                &mut G(&mut t.b, tramp),
+                ebp - 0x7c,
+                flags,
+                from,
+                to,
+                tt,
+                mode,
+                Some(ebp + 8),
+            );
+            t.b.set_call_top(None);
+            assert!(ra.st0_raw.is_none(), "{w}: ST0 left set");
+            assert_eq!(ra.eax, v, "{w}: eax");
+            // The original's temporaries: dead.
+            let blank = vec![0; 0x44];
+            t.write(lo, &blank);
+            t.diff(&w);
+            let x = Oracle::read(&mut t.a, ebp + 8, 20).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 20).unwrap();
+            assert_eq!(x, y, "{w}: argument slots");
+            let x = Oracle::read(&mut t.a, ebp - 0x7c, 0x78).unwrap();
+            let y = Oracle::read(&mut t.b, ebp - 0x7c, 0x78).unwrap();
+            assert_eq!(x, y, "{w}: records");
+        }
+    }
+}
+
+/// `AbmapDrawLink_00a51720`: 2..=5 steps of points through random grid
+/// matrices (w above 0, at 0 and below, so the link stops at the first
+/// step, a later one or never), random scales and packet words; the
+/// matrix and divide routines run as the original. The work block, the
+/// packet, both drawn records, the frame (the record's never-written
+/// words zeroed alike) and the count's argument slot compared.
+#[test]
+fn bn_abmap_draw_link() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_1720);
+        capture_stub_n(&mut t, bn::DRAW_ABMAP_ELEMENT, 3, 0, 0x98, 16);
+        let tags = vec![bn::DRAW_ABMAP_ELEMENT];
+        let abmap = t.zeros(0x1_1600);
+        t.g32(bn::ABMAP.sym, abmap);
+        let packet = t.zeros(0x100);
+        t.g32(bn::ABMAP_LINK_PACKET.sym, packet);
+        t.g32(bn::GS_SINK.sym, 0x0000_00ff);
+        let work = t.zeros(0x200);
+        let points = t.zeros(0x10 + 0x18 * 8);
+        let ebp = t.ebp_for(3);
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let scale = match rng.below(4) {
+                0 => rng.float(),
+                _ => (rng.below(200) as f32 / 50.0 + 0.1).to_bits(),
+            };
+            t.w32(abmap + 0x1_1350, scale);
+            for m in [0x1_13e0, 0x1_14e0] {
+                for k in 0..16 {
+                    let v = (rng.below(2000) as f32 / 1000.0 - 0.6).to_bits();
+                    t.w32(abmap + m + 4 * k, v);
+                }
+                // w mostly positive.
+                if rng.below(4) != 0 {
+                    t.w32(abmap + m + 0x3c, (rng.below(100) as f32 + 1.0).to_bits());
+                }
+            }
+            // w exactly 0 or NaN for the first point's matrix.
+            let m = abmap + 0x1_13e0;
+            match rng.below(6) {
+                0 => {
+                    for k in [3, 7, 11, 12, 13, 14, 15] {
+                        t.w32(m + 4 * k, 0);
+                    }
+                }
+                1 => {
+                    for k in [3, 7, 11, 12, 13, 14] {
+                        t.w32(m + 4 * k, 0);
+                    }
+                    t.w32(m + 0x3c, 0x7fc0_0000);
+                }
+                _ => {}
+            }
+            for k in 0..(0x10 + 0x18 * 8) / 4 {
+                let v = (rng.below(4000) as f32 / 7.0 - 200.0).to_bits();
+                t.w32(points + 4 * k, v);
+            }
+            for k in 0..0x80 {
+                let v = rng.next();
+                t.w32(work + 4 * k, v);
+            }
+            let count = rng.pick(&[2, 2, 3, 4, 5]);
+            let args = [work, points, count];
+            let (lo, hi) = (ebp - 0xa8, ebp - 4);
+            t.write(lo, &vec![0xa5; (hi - lo) as usize]);
+            t.write(ebp - 0x1c, &[0; 0x10]);
+            for (k, a) in args.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &a.to_le_bytes()).unwrap();
+            }
+            t.b.set_call_top(Some(lo - 0x100));
+            let addr = t.rebase(0x00a5_1720);
+            let ra =
+                t.a.call(addr, Conv::Cdecl, &args)
+                    .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
+            let tramp = t.tramp;
+            bn::abmap_draw_link(
+                &mut G(&mut t.b, tramp),
+                lo,
+                work,
+                points,
+                count,
+                Some(ebp + 8),
+            );
+            t.b.set_call_top(None);
+            assert!(ra.st0_raw.is_none(), "{w}: ST0 left set");
+            t.diff(&w);
+            for (a, n) in [(lo, (hi - lo) as usize), (ebp + 8, 12)] {
+                let x = Oracle::read(&mut t.a, a, n).unwrap();
+                let y = Oracle::read(&mut t.b, a, n).unwrap();
+                assert_eq!(x, y, "{w}: {a:#x}");
+            }
+        }
+    }
+}
