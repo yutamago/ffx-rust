@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::{h4_j2 as j2, h4_j4 as j4, h4x_video as xv};
+use ffx_glue_other::{h4_j2 as j2, h4_j4 as j4, h4x_shape as xs, h4x_video as xv};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -960,5 +960,286 @@ fn x1_video_setting_page() {
             made > 0 && missing > 0 && listed > 0,
             "{name}: {made} {missing} {listed}"
         );
+    }
+}
+
+// ---- batch 2 (ffx_glue_other::h4x_shape)
+
+/// A recording stub at `sym` (`n` words) standing in for a transform: it
+/// copies `words` words from its stack argument `src` into a ring of
+/// 0x40-byte records (what it was handed), then `words` words from
+/// `results` through its first argument (what it computes) and flips the
+/// sign of `results`' first word. Returns the ring.
+fn transform_stub(t: &mut Twins, sym: u32, n: u32, src: u8, words: u8, results: u32) -> u32 {
+    let rest = t.stub_code(sym, false, n, 0, false, &[]);
+    let ring = t.zeros(4 + 16 * 0x40);
+    let mut c = vec![0x51, 0xa1]; // push ecx; mov eax, [ring]
+    c.extend(ring.to_le_bytes());
+    c.extend([0x83, 0xe0, 0x0f, 0xc1, 0xe0, 0x06, 0x05]); // and eax, 15; shl eax, 6; add eax,
+    c.extend((ring + 4).to_le_bytes()); // ring + 4
+    c.extend([0x8b, 0x54, 0x24, 8 + 4 * src]); // mov edx, [esp+8+4*src]
+    for k in 0..words {
+        c.extend([0x8b, 0x4a, 4 * k, 0x89, 0x48, 4 * k]); // mov ecx, [edx+4k]; mov [eax+4k], ecx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(ring.to_le_bytes()); // inc dword [ring]
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8] (the destination)
+    for k in 0..words {
+        c.extend([0x8b, 0x0d]);
+        c.extend((results + 4 * u32::from(k)).to_le_bytes()); // mov ecx, [results+4k]
+        c.extend([0x89, 0x48, 4 * k]); // mov [eax+4k], ecx
+    }
+    c.extend([0x81, 0x35]);
+    c.extend(results.to_le_bytes());
+    c.extend(0x8000_0000u32.to_le_bytes()); // xor dword [results], sign (no signalling NaN)
+    c.push(0x59); // pop ecx
+    jmp_to(t, &mut c, rest);
+    let f = t.code(&c);
+    t.jump(sym, f);
+    ring
+}
+
+/// `updateVFXRenderDataShapeField`: both layouts, empty and used buffers
+/// (the first quad's depths, junk-read words 0), drawn and clipped quads,
+/// tints and alphas of 0, the fade (below 0, between, above 128, NaN), the
+/// uv remap of level 0x672's record 0x32c0, the depth correction of level
+/// 0x1bbd's record 0x3980, the YIQ map, skipped frames and missing render
+/// data; random and real constants.
+#[test]
+fn x2_update_shape_field() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_4a02);
+        let (mul_out, apply_out, clip_out) = (t.zeros(64), t.zeros(64), t.zeros(64));
+        transform_stub(&mut t, xs::MUL_MATRIX, 3, 2, 16, mul_out);
+        transform_stub(&mut t, xs::APPLY_MATRIX, 3, 2, 4, apply_out);
+        transform_stub(&mut t, xs::ZCLIP, 6, 0, 16, clip_out);
+        let stubs = [
+            (xs::LEVEL_HASH, 0),
+            (xs::RENDER_DATA, 2),
+            (xs::CURRENT_BUFFER, 0),
+            (xs::ENABLE_YIQ, 2),
+            (xs::SET_Z_CORRECTION, 3),
+            (xs::SET_VISIBLE, 3),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let mut tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        tags.extend([xs::MUL_MATRIX, xs::APPLY_MATRIX, xs::ZCLIP]);
+        let f32s = [
+            xs::ALPHA_SCALE,
+            xs::F128,
+            xs::F_HALF,
+            xs::F_EIGHTH,
+            xs::F_THREE_EIGHTHS,
+            xs::F_FIVE_EIGHTHS,
+            xs::F_QUARTER,
+            xs::F_THREE_QUARTERS,
+            xs::F_MINUS_ONE,
+            xs::F_LOW,
+            xs::F_HIGH,
+        ];
+        let f64s = [
+            xs::INV_16,
+            xs::INV_256,
+            xs::INV_128,
+            xs::EIGHT,
+            xs::THIRTY_TWO,
+            xs::INV_4096,
+            xs::SEVEN_EIGHTHS,
+            xs::EIGHTH,
+            xs::QUARTER,
+            xs::TWO,
+        ];
+        let mut seen = [0u32; 6];
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let real = rng.below(2) == 0;
+            t.constants(&mut rng, &f32s, &f64s);
+            if real {
+                for (c, v) in [
+                    (xs::ALPHA_SCALE, 128.0f32),
+                    (xs::F128, 128.0),
+                    (xs::F_HALF, 0.5),
+                    (xs::F_EIGHTH, 0.125),
+                    (xs::F_THREE_EIGHTHS, 0.375),
+                    (xs::F_FIVE_EIGHTHS, 0.625),
+                    (xs::F_QUARTER, 0.25),
+                    (xs::F_THREE_QUARTERS, 0.75),
+                    (xs::F_MINUS_ONE, -1.0),
+                    (xs::F_LOW, -1e6),
+                    (xs::F_HIGH, 1e6),
+                ] {
+                    // each real now and then only: mixed constants too
+                    if rng.below(4) != 0 {
+                        t.g32(c, v.to_bits());
+                    }
+                }
+                for (c, v) in [
+                    (xs::INV_16, 0.0625f64),
+                    (xs::INV_256, 1.0 / 256.0),
+                    (xs::INV_128, 1.0 / 128.0),
+                    (xs::EIGHT, 8.0),
+                    (xs::THIRTY_TWO, 32.0),
+                    (xs::INV_4096, 1.0 / 4096.0),
+                    (xs::SEVEN_EIGHTHS, 0.875),
+                    (xs::EIGHTH, 0.125),
+                    (xs::QUARTER, 0.25),
+                    (xs::TWO, 2.0),
+                ] {
+                    if rng.below(4) != 0 {
+                        let at = t.rebase(c);
+                        t.write(at, &v.to_le_bytes());
+                    }
+                }
+            }
+            if rng.below(6) == 0 {
+                // texture coordinates whose 1 - v is not an f32
+                let at = t.rebase(xs::INV_4096);
+                t.write(at, &(1.0f64 / 3001.0).to_le_bytes());
+            }
+            let remap = real && rng.below(4) == 0;
+            if remap {
+                // the remap's f64 constants off their f32 twins (on its
+                // level and record)
+                for c in [xs::SEVEN_EIGHTHS, xs::EIGHTH, xs::QUARTER] {
+                    let v = rng.double();
+                    let at = t.rebase(c);
+                    t.write(at, &v.to_le_bytes());
+                }
+            }
+            // the transforms' results: w of 0 now and then, the fade's w
+            // around its limits
+            for out in [mul_out, clip_out] {
+                for k in 0..16 {
+                    let v = if k % 4 == 3 && rng.below(4) == 0 {
+                        rng.pick(&[0, 0x8000_0000])
+                    } else {
+                        rng.float()
+                    };
+                    t.w32(out + 4 * k, v);
+                }
+            }
+            for k in 0..4 {
+                let v = rng.float();
+                t.w32(apply_out + 4 * k, v);
+            }
+            let fade = rng.pick(&[3.0f32, 4.0, 4.5, 10.0, 20.0, 20.5, 100.0, f32::NAN]);
+            if rng.below(4) != 0 {
+                t.w32(apply_out + 12, fade.to_bits());
+            }
+            if rng.below(16) == 0 {
+                // w * 8 - 32 = -0: below zero for none of the tests
+                t.w32(apply_out + 12, 0x8000_0000);
+                let at = t.rebase(xs::THIRTY_TWO);
+                t.write(at, &0f64.to_le_bytes());
+            }
+            let level = if remap {
+                0x672
+            } else {
+                rng.pick(&[0x672, 0x1bbd, 0x1234])
+            };
+            t.ret(xs::LEVEL_HASH, level);
+            t.ret(xs::CURRENT_BUFFER, rng.below(3));
+            t.ret(xs::ZCLIP, rng.pick(&[0, 0, 0, 1, 2]));
+            t.g32(xs::SKIP_FRAME, u32::from(rng.below(16) == 0));
+            t.g32(xs::YIQ_MODE, rng.pick(&[u32::MAX, 0, 2]));
+            t.g32(xs::MAP_NO, rng.pick(&[0x188, 0x10]));
+            t.g32(xs::OPTIMIZED_SHADER, 1);
+            let fill = t.rebase(xs::FILL_MATRIX);
+            for k in 0..16 {
+                let v = rng.float();
+                t.w32(fill + 4 * k, v);
+            }
+            // the object
+            let obj = random_block(&mut t, &mut rng, 0x20);
+            let m = random_block(&mut t, &mut rng, 0x40);
+            t.w32(obj + 0x10, m);
+            let other = random_block(&mut t, &mut rng, 0x40);
+            t.w32(obj + 0x1c, rng.pick(&[0, m, other]));
+            t.w16(obj + 2, rng.pick(&[0, 0x400, 0x4ff, 0xfbff]));
+            if rng.below(6) == 0 {
+                t.w8(obj + 7, 0);
+            }
+            // the record
+            let wide = rng.below(2) == 0;
+            let stride = if wide { 0x18 } else { 0x10 };
+            let start = rng.pick(&[0u32, 0, 1, 3]);
+            let count = rng.pick(&[0i16, 1, 2, 3, 4, -1]);
+            let used = if count < 0 { 6 * start + 12 } else { 6 * start };
+            let used = used + rng.pick(&[0, 0, 5]);
+            let room = u32::from(count.max(0).cast_unsigned());
+            let shape = t.zeros((0x20 + stride * room) as usize);
+            t.w8(shape, rng.pick(&[0u8, 8, 0x88, 0x07]));
+            t.w8(shape + 1, rng.below(256) as u8);
+            t.w16(shape + 2, count.cast_unsigned());
+            for k in 0..stride * room / 2 {
+                let v = if k % (stride / 2) >= stride / 2 - 4 && real && rng.below(2) == 0 {
+                    // uvs on the remap's values
+                    rng.pick(&[512u32, 1536, 2560, 3584, 1024, 3072, 100])
+                } else {
+                    rng.small()
+                };
+                t.w16(shape + 0x20 + 2 * k, v as u16);
+            }
+            let colours = random_block(&mut t, &mut rng, 8 * room + 8);
+            for k in 0..room {
+                if rng.below(6) == 0 {
+                    t.w8(colours + 8 * k + 3, 0);
+                }
+                if rng.below(3) == 0 {
+                    // colours at most one half
+                    for c in 0..4 {
+                        let v = rng.below(0x40) as u8;
+                        t.w8(colours + 8 * k + c, v);
+                    }
+                }
+            }
+            t.w32(shape + 4, colours.wrapping_sub(shape));
+            let id = rng.next() & !0x3fff
+                | if remap {
+                    0x32c0
+                } else {
+                    rng.pick(&[0x32c0, 0x3980, 0x1111])
+                };
+            t.w32(shape + 0x10, id);
+            // the render data and its buffers
+            let rd = random_block(&mut t, &mut rng, 0xb8);
+            let seg = random_block(&mut t, &mut rng, 0x80);
+            let quads = start + room + 2;
+            for (off, size) in [(0xc, 0x30), (0x14, 0x40), (0x18, 0x20), (0x1c, 12)] {
+                let b = random_block(&mut t, &mut rng, size * quads);
+                t.w32(seg + off, b);
+            }
+            t.w32(seg + 8, used);
+            t.w32(rd + 0x94, seg);
+            let missing = rng.below(12) == 0;
+            t.ret(xs::RENDER_DATA, if missing { 0 } else { rd });
+            let (lo, hi) = (rng.next(), rng.pick(&[0, 3]));
+            let ebp = t.ebp_for(4);
+            let frame = ebp - xs::SHAPE_FRAME;
+            // the depth words the original may leave unwritten (junk read: 0)
+            for off in [0x130u32, 0x12c, 0x128, 0x124] {
+                t.w32(ebp - off, 0);
+            }
+            let r = t.check_framed(
+                &format!("{w} wide {wide} start {start} count {count}"),
+                0x0071_a4e0,
+                &[lo, hi, shape, obj],
+                frame,
+                &[(0, 0xd0)],
+                |g| u(xs::update_shape_field(g, frame, lo, hi, shape, obj)),
+            );
+            let cleared: u32 = Mem::read(&t.b, t.rebase(xs::OPTIMIZED_SHADER));
+            seen[0] += u32::from(r == 0);
+            seen[1] += u32::from(start == 0 && room > 0 && r == 1);
+            seen[2] += u32::from(start > 0 && room > 0 && r == 1);
+            seen[3] += u32::from(cleared == 0);
+            seen[4] += u32::from(wide && room > 0);
+            seen[5] += u32::from(!wide && room > 0);
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
     }
 }
