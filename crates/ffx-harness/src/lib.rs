@@ -331,6 +331,24 @@ pub fn user_documents() -> Result<PathBuf> {
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
+/// Copies a file with its modification and access times. The load and save
+/// lists sort the saves by their modification time to the second
+/// (`SaveDataMachine_ScanFiles` `0x006f0a70`, `SortSaveTable_006f0fb0`):
+/// copies made all in one second tied, and which one sorted first then
+/// varied from launch to launch (menu-save's list entry 1).
+fn copy_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::copy(from, to)?;
+    let meta = std::fs::metadata(from)?;
+    let mut times = std::fs::FileTimes::new().set_modified(meta.modified()?);
+    if let Ok(accessed) = meta.accessed() {
+        times = times.set_accessed(accessed);
+    }
+    std::fs::File::options()
+        .write(true)
+        .open(to)?
+        .set_times(times)
+}
+
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
@@ -339,7 +357,7 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         if entry.file_type()?.is_dir() {
             copy_tree(&entry.path(), &target)?;
         } else {
-            std::fs::copy(entry.path(), &target)?;
+            copy_file(&entry.path(), &target)?;
         }
     }
     Ok(())
@@ -456,7 +474,7 @@ fn prepare_home(
             return Err(Error::Launch(format!("bad save name {name:?}")));
         }
         std::fs::create_dir_all(&folder)?;
-        std::fs::copy(source, folder.join(name))
+        copy_file(source, &folder.join(name))
             .map_err(|e| Error::Launch(format!("save {name} from {}: {e}", source.display())))?;
     }
     test_display(&target)

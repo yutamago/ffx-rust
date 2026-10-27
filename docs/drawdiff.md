@@ -314,13 +314,40 @@ pin64 captures. What still differs between original kami0100 runs, all of
 it on the scene's allow list: `scene.GlobalTime` by 2 ulp (two clusters),
 the cloth ring (`vb5`) and the eye-blink bind of draw 91 (`vs db349612...`,
 32x32 or 128x128). draw-field's fw-101 shows the same 2 ulp in two of five
-Rust captures, while its three references agree. These come from the
-updates the load runs before `pin` (`load direct ... lockstep` steps until
-the event script opens, and `pin` follows): pinning at the load's boundary
-itself would be the next step. besaid-101 failed once in five Rust
-draw-field runs on the back buffer only: the chocobo icon (wall clock, its
-draws allowed) drew in none of the three frames (609 draws against
-780-784), so the back buffer hashes had no allowed draw before them.
+Rust captures, while its three references agree. These were thought to
+come from the updates the load runs before `pin` (`load direct ...
+lockstep` steps until the event script opens, and `pin` follows).
+Pinning at the load's boundary itself was tried on 2026-10-27
+(replay-flakes4: `pin` sent while lockstep held the main thread at the
+boundary the `loadsave` job ran at, no later `pin`) and made it worse:
+three original captures (`dg-kami-l1..l3`, side by side, the same 65
+updates from `lockstep on` to count 64 in each) gave `GlobalTime` 6 to 24
+ulp apart in one pair (equal in the other) and the cloth ring in both
+pairs. So the load's own updates do not run the same in every run: what
+the pin after the event's opening hides is variation made inside the load
+(the loader's turns and the read thread follow real time, "Load pacing" in
+`docs/harness.md`), not before it. The script keeps its pin after
+`lockstep on`, and the allow entries stay. Next step: find what the load
+updates carry (the cloth's first steps, the time the load holds).
+
+besaid-101 failed once in five Rust draw-field runs on the back buffer
+only: the chocobo icon (its draws allowed) drew in none of the three
+frames (609 draws against 780-784), so the back buffer hashes had no
+allowed draw before them. The icon is Iggy's autosave prompt
+(`chocobo.swf`), whose Flash frames followed the wall clock; since
+2026-10-27 Iggy's tick check runs on the virtual clock (`docs/harness.md`,
+"Flash on the virtual clock"). On game time the prompt has played out
+before besaid-101's count: it draws in none of the three frames in every
+run (three original and five Rust captures, 761 draws each; with the wall
+clock 122-128 icon draws in 1,009-1,011). The references were taken again
+(replay-flakes4): `ref3-a`, `ref3-b`, `ref3-c` (original code), and the
+gate's default should move to `ref3-a`. ref3-a and ref3-c agree; ref3-b
+differs from both on fw-459's draw 115 (`vs db349612...`, ps srv1: the
+eye-blink texture, as kami0100's draw 91 and fw-101's draw 113), which the
+draw-field allow list does not cover; left as it is (not loosened). The
+Rust captures pass against ref3-a. The scene gate's besaid references
+(`dg-besaid-q1/q2`) still pass: a new original capture with Iggy on the
+virtual clock (`dg-besaid-v1`) passed against q1 on bsil0000 and bsil0300.
 
 ### draw-field references (ref-a, ref-b, ref-c)
 

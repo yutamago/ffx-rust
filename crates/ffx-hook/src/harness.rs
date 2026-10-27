@@ -1647,9 +1647,112 @@ pub unsafe extern "thiscall" fn flip(renderer: *mut c_void) -> u32 {
         let n = FLIPS.load(Ordering::Acquire);
         FLIP_LABELS[n as usize % FLIP_LABELS.len()]
             .store(FRAME.load(Ordering::Acquire), Ordering::Release);
+        if VIRTUAL.load(Ordering::Acquire) {
+            // SAFETY: the wrapped clock, as the game reads it.
+            let now = unsafe { time_now() };
+            FLIP_TIMES[n as usize % FLIP_TIMES.len()].store(now.to_bits(), Ordering::Release);
+        }
         FLIPS.store(n + 1, Ordering::Release);
     }
     r
+}
+
+/// The virtual clock when each flip was queued (`f64` bits), by flip
+/// number as [`FLIP_LABELS`]: the game time of the update the flip shows.
+static FLIP_TIMES: [AtomicU64; 64] = [const { AtomicU64::new(0) }; 64];
+/// The original `IggyPlayerReadyToTick` (`iggy_w32.dll`, stdcall(player)).
+static IGGY_READY_TO_TICK: AtomicUsize = AtomicUsize::new(0);
+/// `IggyPlayerDebugSetTime` (`iggy_w32.dll`, stdcall(player, f64 seconds)).
+static IGGY_SET_TIME: AtomicUsize = AtomicUsize::new(0);
+/// A render-thread Iggy tick came before its flip was queued.
+static IGGY_UNTIMED: AtomicBool = AtomicBool::new(false);
+
+/// Iggy's player fields (`iggy_w32.dll` of 2015-02-04, the game's copy):
+/// the time `IggyPlayerDebugSetTime` sets (`f64`, 0: read the clock), and
+/// the time of the last tick check (`f64`), from which the next check adds
+/// the elapsed time to the tick accumulator (`+0x28`, compared with the
+/// period, `1 / fps` at `+0x21e0`).
+const IGGY_SET_TIME_FIELD: usize = 0x21d0;
+const IGGY_LAST_TIME_FIELD: usize = 0x21d8;
+
+/// The game's `IggyPlayerReadyToTick` import on the virtual clock (render
+/// thread, `0x00a3d9f0`: `while ReadyToTick: TickRS`). Iggy times its
+/// Flash frames by the wall clock (`QueryPerformanceCounter`, read in the
+/// tick check), so how many Flash frames a page's slide or fade had run at
+/// a given update followed real time: iggy-menus' Key bindings page slid
+/// one Flash frame less in some runs (98,378 pixels; docs/harness.md,
+/// "Coverage replays"). Here the player's time is the game time of the
+/// update this draw belongs to (the flip it precedes, [`FLIP_TIMES`]), set
+/// through Iggy's own `IggyPlayerDebugSetTime`, which the tick check's
+/// time reads honour. A player's first check takes that time as its last
+/// one too, so the real time Iggy read when the player started never
+/// enters an elapsed time.
+///
+/// # Safety
+/// Called by the game with an Iggy player (or null).
+unsafe extern "system" fn iggy_ready_to_tick(player: usize) -> i32 {
+    let set_time = IGGY_SET_TIME.load(Ordering::Acquire);
+    if player != 0 && set_time != 0 {
+        let run = FLIPS_RUN.load(Ordering::Acquire);
+        let now = if run < FLIPS.load(Ordering::Acquire) {
+            f64::from_bits(FLIP_TIMES[run as usize % FLIP_TIMES.len()].load(Ordering::Acquire))
+        } else {
+            if !IGGY_UNTIMED.swap(true, Ordering::AcqRel) {
+                log("  harness: an Iggy tick before its flip was queued (the clock now)");
+            }
+            // SAFETY: the wrapped clock.
+            unsafe { time_now() }
+        };
+        // SAFETY: the player Iggy made, with the fields above; this runs
+        // under the game's Iggy critical section (0x01a858cc).
+        unsafe {
+            let set = (player + IGGY_SET_TIME_FIELD) as *mut f64;
+            if set.read_unaligned() == 0.0 {
+                ((player + IGGY_LAST_TIME_FIELD) as *mut f64).write_unaligned(now);
+            }
+            let f: unsafe extern "system" fn(usize, f64) = std::mem::transmute(set_time);
+            f(player, now);
+        }
+    }
+    // SAFETY: the original import, as the game calls it.
+    unsafe {
+        let f: unsafe extern "system" fn(usize) -> i32 =
+            std::mem::transmute(IGGY_READY_TO_TICK.load(Ordering::Acquire));
+        f(player)
+    }
+}
+
+/// Puts Iggy's tick check on the virtual clock ([`iggy_ready_to_tick`]).
+///
+/// # Safety
+/// `module` is `FFX.exe`, at start-up (no Iggy player yet).
+unsafe fn patch_iggy_clock(module: usize) -> bool {
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    // SAFETY: plain lookups, and the import patched before the game's
+    // first Iggy player exists.
+    unsafe {
+        let iggy = GetModuleHandleA(c"iggy_w32.dll".as_ptr().cast());
+        if iggy.is_null() {
+            return false;
+        }
+        let Some(set_time) = GetProcAddress(iggy, c"_IggyPlayerDebugSetTime@12".as_ptr().cast())
+        else {
+            return false;
+        };
+        IGGY_SET_TIME.store(set_time as usize, Ordering::Release);
+        match crate::iat::patch(
+            module,
+            "iggy_w32.dll",
+            "_IggyPlayerReadyToTick@4",
+            iggy_ready_to_tick as *const () as usize,
+        ) {
+            Some(original) => {
+                IGGY_READY_TO_TICK.store(original, Ordering::Release);
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 /// Wraps `Renderer_PresentFlip` (`0x00593760`, `thiscall(renderer) ->
@@ -2329,10 +2432,15 @@ fn command(line: &str) -> Result<String, String> {
         }
         "lockstep" => {
             let on = arg(1)? == "on";
-            if on && !LOCKSTEP.load(Ordering::Acquire) && REACHED.load(Ordering::Acquire) > 0 {
+            if on && !LOCKSTEP.load(Ordering::Acquire) {
                 // the main thread takes hold at its next boundary
                 // (LOCKSTEP_REQUEST); a main loop that does not get there
-                // in time (stuck in one update) is held at once, as before
+                // in time (stuck in one update) is held at once, as before.
+                // Before the main loop's first update (the start-up loop:
+                // logos, the first loads) too: held at once there, every
+                // start-up present waited 5 s for a boundary the main
+                // thread had not reached (update 0), and a boot in
+                // lockstep never got to its first update (replay-flakes3).
                 LOCKSTEP_REQUEST.store(true, Ordering::Release);
                 let start = std::time::Instant::now();
                 while LOCKSTEP_REQUEST.load(Ordering::Acquire)
@@ -2652,6 +2760,12 @@ pub unsafe fn install(module: usize) {
             log(&format!(
                 "  harness: virtual clock from {VIRTUAL_START} s: synchronous reads, the vsync \
                  handler at the main thread's frame boundary {r:?}"
+            ));
+            // SAFETY: forwarded from the caller (start-up).
+            let iggy = unsafe { patch_iggy_clock(module) };
+            log(&format!(
+                "  harness: Iggy's tick check on the virtual clock: {}",
+                if iggy { "on" } else { "not available" }
             ));
         }
         // SAFETY: forwarded from the caller.
