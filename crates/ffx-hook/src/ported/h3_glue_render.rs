@@ -51,6 +51,9 @@ use ffx_prender::h3_glue42::bridge as g42;
 use ffx_prender::h3_glue43::bridge as g43;
 use ffx_prender::h3_glue44::bridge as g44;
 use ffx_prender::h3_glue45::bridge as g45;
+use ffx_prender::h3_glue46::bridge as g46;
+use ffx_prender::h3_glue47::bridge as g47;
+use ffx_prender::h3_glue48::bridge as g48;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -1993,14 +1996,42 @@ ported! {
     }
 
     // ---- round 12 batch 47 (ffx_prender::h3_glue46) ----
-    // PhyreScene_animate 0x00657140 (g46::animate) is NOT hooked: it
-    // passes its oracle test and mutants, but with it and
-    // TextureAnimation_updateTarget both hooked (h3 hooks only) the
-    // kami0100 scene gate binds another 16x8 texture-animation frame at
-    // the draw with vs f1de6dea8bd5f574 (ps.srv1, 2 of 2 runs), and
-    // event-agency's shots 2, 5, 6 and 7 differ; with either one alone,
-    // or with the diagnostic build that runs both the original and the
-    // port of updateTarget, the gate passes. Open problem (h3 r12).
+    /// `PhyreScene_animate(scene)` -> 0: the scene's per-frame update.
+    /// Hooked in r13: r12's kami0100 failures (one texture-animation
+    /// `srv` bind) are the gate's own flake. With the original code
+    /// alone the gate failed 2 of 3 runs on such a bind (draw 42); with
+    /// only TextureAnimation_updateTarget 1 of 5, with only this 0 of 5,
+    /// with both 1 of 8.
+    PhyreScene_animate @ 0x0065_7140 => extern "thiscall" fn phyre_scene_animate(this: u32) -> u32 {
+        g46::animate(&mut mem(), this)
+    }
+
+    // ---- round 13 batch 48 (ffx_prender::h3_glue47) ----
+    /// `VfxShaderManager_loadShader(this; dir, entry)` -> 0: one
+    /// `name:options` line of the VFX shader collection, loaded as a
+    /// cluster with its flags (frame `ebp - 0x5c0`).
+    VfxShaderManager_loadShader @ 0x006c_0a70 => extern "thiscall" fn vfx_load_shader(this: u32, dir: u32, entry: u32) -> u32 {
+        let mut f = StackFrame::<0x170>::new();
+        g47::load_shader(&mut mem(), f.at() + 0x5c0, this, dir, entry)
+    }
+    /// `VfxShaderManager_loadVfxShader(this)`: the VFX shader collection
+    /// file, line by line (frame `ebp - 0x31a8`, 12.7 KB; called once,
+    /// on the main thread at boot).
+    VfxShaderManager_loadVfxShader @ 0x006c_0fc0 => extern "thiscall" fn vfx_load_vfx_shader(this: u32) -> u32 {
+        let mut f = StackFrame::<0xc6a>::new();
+        g47::load_vfx_shader(&mut mem(), f.at() + 0x31a8, this)
+    }
+
+    // ---- round 13 batch 49 (ffx_prender::h3_glue48) ----
+    /// `PhyreScene_loadCharacter(this; name, request)` -> 0, or 5 when
+    /// the character's file is missing (frame `ebp - 0xa8`, and below it
+    /// the 0x18 bytes of the name string the original builds in its
+    /// argument area).
+    PhyreScene_loadCharacter @ 0x0066_3f20 => extern "thiscall" fn scene_load_character(this: u32, name: u32, request: u32) -> u32 {
+        let mut f = StackFrame::<0x30>::new();
+        let scratch = f.at();
+        g48::load_character(&mut mem(), scratch + 0xc0, scratch, this, name, request)
+    }
 }
 
 /// The scene's shader-bin loaders, with their frame (0x12c bytes below
