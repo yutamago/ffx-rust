@@ -39,6 +39,7 @@ use ffx_prender::m5r_b::{self as mb, bridge as b};
 use ffx_prender::m5r_c::{self as mc, bridge as c};
 use ffx_prender::m5r_d::{self as md, bridge as d};
 use ffx_prender::m5r_e::{self as me, bridge as e};
+use ffx_prender::m5r_f::{self as mf, bridge as f};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3757,6 +3758,385 @@ fn array_reserves_and_resize_b5_match_the_original() {
                 },
             );
             t.reset();
+        }
+    });
+}
+
+// ---- batch 6 (ffx_prender::m5r_f) ----
+
+/// The class descriptor and binding template functions: (name, address,
+/// family, the class's constant: vtable, accessor or class record).
+const TEMPLATES: [(&str, u32, u8, u32); 47] = [
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_Destruct_00673fc0",
+        0x0067_3fc0,
+        b'A',
+        mf::VT_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674020",
+        0x0067_4020,
+        b'B',
+        mf::VT_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674050",
+        0x0067_4050,
+        b'B',
+        mf::VT_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674080",
+        0x0067_4080,
+        b'B',
+        mf::VT_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_virtualStore_00674650",
+        0x0067_4650,
+        b'I',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_return0_00674680",
+        0x0067_4680,
+        b'Z',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_returnMinus1_00674690",
+        0x0067_4690,
+        b'M',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_accessorStore_006746a0",
+        0x0067_46a0,
+        b'D',
+        mf::GET_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_notSupported_006746c0",
+        0x0067_46c0,
+        b'E',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_pushPointer_006748a0",
+        0x0067_48a0,
+        b'F',
+        mf::CLASS_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_pushObject_006748e0",
+        0x0067_48e0,
+        b'G',
+        mf::CLASS_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMesh_registerFlagged_00674910",
+        0x0067_4910,
+        b'H',
+        mf::CLASS_DISTORTION_GRID,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_Destruct_00674c20",
+        0x0067_4c20,
+        b'A',
+        mf::VT_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c50",
+        0x0067_4c50,
+        b'B',
+        mf::VT_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c80",
+        0x0067_4c80,
+        b'B',
+        mf::VT_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674cb0",
+        0x0067_4cb0,
+        b'B',
+        mf::VT_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_returnMinus1_006750b0",
+        0x0067_50b0,
+        b'M',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_accessorStore_006750c0",
+        0x0067_50c0,
+        b'D',
+        mf::GET_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_notSupported_006750f0",
+        0x0067_50f0,
+        b'E',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushPointer_00675190",
+        0x0067_5190,
+        b'F',
+        mf::CLASS_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushObject_006751d0",
+        0x0067_51d0,
+        b'G',
+        mf::CLASS_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_DistortionGridDynamicMeshInstance_registerFlagged_00675200",
+        0x0067_5200,
+        b'H',
+        mf::CLASS_DISTORTION_GRID_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMeshInstance_Destruct_00675540",
+        0x0067_5540,
+        b'A',
+        mf::VT_RADIAL_LINE_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_00675570",
+        0x0067_5570,
+        b'B',
+        mf::VT_RADIAL_LINE_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755a0",
+        0x0067_55a0,
+        b'B',
+        mf::VT_RADIAL_LINE_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755d0",
+        0x0067_55d0,
+        b'B',
+        mf::VT_RADIAL_LINE_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fa0",
+        0x0067_5fa0,
+        b'B',
+        mf::VT_RADIAL_LINE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fd0",
+        0x0067_5fd0,
+        b'B',
+        mf::VT_RADIAL_LINE,
+    ),
+    (
+        "PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00676000",
+        0x0067_6000,
+        b'B',
+        mf::VT_RADIAL_LINE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784a0",
+        0x0067_84a0,
+        b'B',
+        mf::VT_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784d0",
+        0x0067_84d0,
+        b'B',
+        mf::VT_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_00678500",
+        0x0067_8500,
+        b'B',
+        mf::VT_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_virtualStore_00678b10",
+        0x0067_8b10,
+        b'I',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_accessorStore_00678b60",
+        0x0067_8b60,
+        b'D',
+        mf::GET_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_notSupported_00678b80",
+        0x0067_8b80,
+        b'E',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_pushPointer_00678d70",
+        0x0067_8d70,
+        b'F',
+        mf::CLASS_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_pushObject_00678db0",
+        0x0067_8db0,
+        b'G',
+        mf::CLASS_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMesh_registerFlagged_00678de0",
+        0x0067_8de0,
+        b'H',
+        mf::CLASS_SHADOW,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_Destruct_006f94c0",
+        0x006f_94c0,
+        b'A',
+        mf::VT_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f94f0",
+        0x006f_94f0,
+        b'B',
+        mf::VT_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9520",
+        0x006f_9520,
+        b'B',
+        mf::VT_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9550",
+        0x006f_9550,
+        b'B',
+        mf::VT_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_accessorStore_006f99a0",
+        0x006f_99a0,
+        b'D',
+        mf::GET_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_notSupported_006f99e0",
+        0x006f_99e0,
+        b'E',
+        0,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_pushPointer_006f9a80",
+        0x006f_9a80,
+        b'F',
+        mf::CLASS_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_pushObject_006f9ac0",
+        0x006f_9ac0,
+        b'G',
+        mf::CLASS_SHADOW_INSTANCE,
+    ),
+    (
+        "PClassDescriptorForType_ShadowDynamicMeshInstance_registerFlagged_006f9af0",
+        0x006f_9af0,
+        b'H',
+        mf::CLASS_SHADOW_INSTANCE,
+    ),
+];
+
+#[test]
+fn class_templates_match_the_original() {
+    // every member of every template: the flag bit both ways, null and
+    // set pointers, random words for what the constant returns ignore.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0501);
+        for _ in 0..12 {
+            for &(name, sym, fam, k) in &TEMPLATES {
+                t.stub_sym(mf::DESCRIPTOR_DESTRUCT, 1, true, 0, 0, Ret::Val(0x11));
+                t.stub_sym(mf::PHYRE_FREE, 2, false, 1, 0, Ret::Val(0));
+                t.stub_sym(mf::PHYRE_PRINTF, 3, false, 2, 0, Ret::Val(0x33));
+                t.stub_sym(mf::LUA_PUSH_CLASS_OBJECT, 4, false, 3, 0, Ret::Val(0x44));
+                t.stub_sym(mf::LUA_0094AC00, 5, false, 2, 0, Ret::Val(0x55));
+                t.stub_sym(mf::LUA_PUSHNIL, 6, false, 1, 0, Ret::Val(0x66));
+                let reg = rng.next();
+                t.stub_sym(mf::CLASS_REGISTER, 7, true, 2, 2, Ret::Val(reg));
+                let obj = rand_obj(t, &mut rng, 0x20);
+                let maybe = |rng: &mut Rng, p: u32| if rng.chance(3) { 0 } else { p };
+                match fam {
+                    b'A' => t.check(name, sym, Conv::Thiscall(obj), &[], |g| {
+                        Out::U32(f::descriptor_destruct(g, obj, k))
+                    }),
+                    b'B' => {
+                        let flags = rng.word();
+                        t.check(name, sym, Conv::Thiscall(obj), &[flags], |g| {
+                            Out::U32(f::descriptor_delete(g, obj, flags, k))
+                        });
+                    }
+                    b'I' => {
+                        let virt = t.stub_code(8, true, 4, 4, Ret::Val(0x88), false);
+                        let this = t.object(&[0, 0, 0, 0, 0, virt], 8);
+                        let dst = t.zeros(4);
+                        let out = t.words(&[dst, rng.next()]);
+                        let a: Vec<u32> = (0..4).map(|_| rng.next()).chain([out]).collect();
+                        t.check(name, sym, Conv::Thiscall(this), &a, |g| {
+                            Out::U32(f::virtual_store(g, this, [a[0], a[1], a[2], a[3]], out))
+                        });
+                    }
+                    b'Z' => {
+                        let x = rng.next();
+                        t.check(name, sym, Conv::Stdcall, &[x], |_| Out::U32(0));
+                    }
+                    b'M' => {
+                        let a: Vec<u32> = (0..3).map(|_| rng.next()).collect();
+                        t.check(name, sym, Conv::Stdcall, &a, |_| Out::U32(0xffff_ffff));
+                    }
+                    b'D' => {
+                        let v = rng.next();
+                        t.stub_sym(k, 9, false, 1, 0, Ret::Val(v));
+                        let l = rng.next();
+                        let out = t.zeros(4);
+                        t.check(name, sym, Conv::Stdcall, &[l, out], |g| {
+                            Out::U32(f::accessor_store(g, l, out, k))
+                        });
+                    }
+                    b'E' => {
+                        let a = [rng.next(), rng.next()];
+                        t.check(name, sym, Conv::Stdcall, &a, |g| {
+                            Out::U32(f::not_supported(g))
+                        });
+                    }
+                    b'F' => {
+                        let p = maybe(&mut rng, obj);
+                        let pp = t.words(&[p]);
+                        let l = rng.next();
+                        t.check(name, sym, Conv::Stdcall, &[l, pp], |g| {
+                            Out::U32(f::push_pointer(g, l, pp, k))
+                        });
+                    }
+                    b'G' => {
+                        let p = maybe(&mut rng, obj);
+                        let l = rng.next();
+                        t.check(name, sym, Conv::Stdcall, &[l, p], |g| {
+                            Out::U32(f::push_object(g, l, p, k))
+                        });
+                    }
+                    _ => {
+                        let p = maybe(&mut rng, obj);
+                        let flag = rng.word();
+                        t.check(name, sym, Conv::Stdcall, &[p, flag], |g| {
+                            Out::U32(f::register_flagged(g, p, flag, k))
+                        });
+                    }
+                }
+                t.reset();
+            }
         }
     });
 }

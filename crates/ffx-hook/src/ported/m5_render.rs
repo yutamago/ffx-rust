@@ -11,6 +11,7 @@ use ffx_prender::m5r_b::bridge as b;
 use ffx_prender::m5r_c::bridge as c;
 use ffx_prender::m5r_d::bridge as d;
 use ffx_prender::m5r_e::bridge as e;
+use ffx_prender::m5r_f::bridge as f;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -700,5 +701,194 @@ ported! {
     /// `Phyre_PArray_ptr_resize_0047efc0`.
     PArray_ptr_resize_0066c240 @ 0x0066_c240 => extern "thiscall" fn pointer_array_resize_0066c240(this: u32, n: u32) -> u32 {
         ffx_pload::descriptor::bridge::pointer_array_resize(&mut mem(), this, n)
+    }
+    // ---- batch 6 (ffx_prender::m5r_f): the dynamic meshes' class descriptors and script bindings ----
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_Destruct_00673fc0`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_Destruct_00673fc0 @ 0x0067_3fc0 => extern "thiscall" fn destruct_00673fc0(this: u32) -> u32 {
+        f::descriptor_destruct(&mut mem(), this, ffx_prender::m5r_f::VT_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674020`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674020 @ 0x0067_4020 => extern "thiscall" fn scalardeletingdtor_00674020(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674050`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674050 @ 0x0067_4050 => extern "thiscall" fn scalardeletingdtor_00674050(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674080`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_scalarDeletingDtor_00674080 @ 0x0067_4080 => extern "thiscall" fn scalardeletingdtor_00674080(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_virtualStore_00674650`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_virtualStore_00674650 @ 0x0067_4650 => extern "thiscall" fn virtualstore_00674650(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, out: u32) -> u32 {
+        f::virtual_store(&mut mem(), this, [a0, a1, a2, a3], out)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_return0_00674680`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_return0_00674680 @ 0x0067_4680 => extern "stdcall" fn return0_00674680(_x: u32) -> u32 {
+        0
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_returnMinus1_00674690`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_returnMinus1_00674690 @ 0x0067_4690 => extern "stdcall" fn returnminus1_00674690(_a: u32, _b: u32, _c: u32) -> u32 {
+        0xffff_ffff
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_accessorStore_006746a0`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_accessorStore_006746a0 @ 0x0067_46a0 => extern "stdcall" fn accessorstore_006746a0(l: u32, out: u32) -> u32 {
+        f::accessor_store(&mut mem(), l, out, ffx_prender::m5r_f::GET_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_notSupported_006746c0`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_notSupported_006746c0 @ 0x0067_46c0 => extern "stdcall" fn notsupported_006746c0(_a: u32, _b: u32) -> u32 {
+        f::not_supported(&mut mem())
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_pushPointer_006748a0`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_pushPointer_006748a0 @ 0x0067_48a0 => extern "stdcall" fn pushpointer_006748a0(l: u32, pp: u32) -> u32 {
+        f::push_pointer(&mut mem(), l, pp, ffx_prender::m5r_f::CLASS_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_pushObject_006748e0`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_pushObject_006748e0 @ 0x0067_48e0 => extern "stdcall" fn pushobject_006748e0(l: u32, p: u32) -> u32 {
+        f::push_object(&mut mem(), l, p, ffx_prender::m5r_f::CLASS_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMesh_registerFlagged_00674910`.
+    PClassDescriptorForType_DistortionGridDynamicMesh_registerFlagged_00674910 @ 0x0067_4910 => extern "stdcall" fn registerflagged_00674910(p: u32, flag: u32) -> u32 {
+        f::register_flagged(&mut mem(), p, flag, ffx_prender::m5r_f::CLASS_DISTORTION_GRID)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_Destruct_00674c20`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_Destruct_00674c20 @ 0x0067_4c20 => extern "thiscall" fn destruct_00674c20(this: u32) -> u32 {
+        f::descriptor_destruct(&mut mem(), this, ffx_prender::m5r_f::VT_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c50`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c50 @ 0x0067_4c50 => extern "thiscall" fn scalardeletingdtor_00674c50(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c80`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674c80 @ 0x0067_4c80 => extern "thiscall" fn scalardeletingdtor_00674c80(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674cb0`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_scalarDeletingDtor_00674cb0 @ 0x0067_4cb0 => extern "thiscall" fn scalardeletingdtor_00674cb0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_returnMinus1_006750b0`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_returnMinus1_006750b0 @ 0x0067_50b0 => extern "stdcall" fn returnminus1_006750b0(_a: u32, _b: u32, _c: u32) -> u32 {
+        0xffff_ffff
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_accessorStore_006750c0`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_accessorStore_006750c0 @ 0x0067_50c0 => extern "stdcall" fn accessorstore_006750c0(l: u32, out: u32) -> u32 {
+        f::accessor_store(&mut mem(), l, out, ffx_prender::m5r_f::GET_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_notSupported_006750f0`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_notSupported_006750f0 @ 0x0067_50f0 => extern "stdcall" fn notsupported_006750f0(_a: u32, _b: u32) -> u32 {
+        f::not_supported(&mut mem())
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushPointer_00675190`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushPointer_00675190 @ 0x0067_5190 => extern "stdcall" fn pushpointer_00675190(l: u32, pp: u32) -> u32 {
+        f::push_pointer(&mut mem(), l, pp, ffx_prender::m5r_f::CLASS_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushObject_006751d0`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_pushObject_006751d0 @ 0x0067_51d0 => extern "stdcall" fn pushobject_006751d0(l: u32, p: u32) -> u32 {
+        f::push_object(&mut mem(), l, p, ffx_prender::m5r_f::CLASS_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_DistortionGridDynamicMeshInstance_registerFlagged_00675200`.
+    PClassDescriptorForType_DistortionGridDynamicMeshInstance_registerFlagged_00675200 @ 0x0067_5200 => extern "stdcall" fn registerflagged_00675200(p: u32, flag: u32) -> u32 {
+        f::register_flagged(&mut mem(), p, flag, ffx_prender::m5r_f::CLASS_DISTORTION_GRID_INSTANCE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMeshInstance_Destruct_00675540`.
+    PClassDescriptorForType_RadialLineDynamicMeshInstance_Destruct_00675540 @ 0x0067_5540 => extern "thiscall" fn destruct_00675540(this: u32) -> u32 {
+        f::descriptor_destruct(&mut mem(), this, ffx_prender::m5r_f::VT_RADIAL_LINE_INSTANCE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_00675570`.
+    PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_00675570 @ 0x0067_5570 => extern "thiscall" fn scalardeletingdtor_00675570(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE_INSTANCE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755a0`.
+    PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755a0 @ 0x0067_55a0 => extern "thiscall" fn scalardeletingdtor_006755a0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE_INSTANCE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755d0`.
+    PClassDescriptorForType_RadialLineDynamicMeshInstance_scalarDeletingDtor_006755d0 @ 0x0067_55d0 => extern "thiscall" fn scalardeletingdtor_006755d0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE_INSTANCE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fa0`.
+    PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fa0 @ 0x0067_5fa0 => extern "thiscall" fn scalardeletingdtor_00675fa0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fd0`.
+    PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00675fd0 @ 0x0067_5fd0 => extern "thiscall" fn scalardeletingdtor_00675fd0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE)
+    }
+    /// `PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00676000`.
+    PClassDescriptorForType_RadialLineDynamicMesh_scalarDeletingDtor_00676000 @ 0x0067_6000 => extern "thiscall" fn scalardeletingdtor_00676000(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_RADIAL_LINE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784a0`.
+    PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784a0 @ 0x0067_84a0 => extern "thiscall" fn scalardeletingdtor_006784a0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784d0`.
+    PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_006784d0 @ 0x0067_84d0 => extern "thiscall" fn scalardeletingdtor_006784d0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_00678500`.
+    PClassDescriptorForType_ShadowDynamicMesh_scalarDeletingDtor_00678500 @ 0x0067_8500 => extern "thiscall" fn scalardeletingdtor_00678500(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_virtualStore_00678b10`.
+    PClassDescriptorForType_ShadowDynamicMesh_virtualStore_00678b10 @ 0x0067_8b10 => extern "thiscall" fn virtualstore_00678b10(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, out: u32) -> u32 {
+        f::virtual_store(&mut mem(), this, [a0, a1, a2, a3], out)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_accessorStore_00678b60`.
+    PClassDescriptorForType_ShadowDynamicMesh_accessorStore_00678b60 @ 0x0067_8b60 => extern "stdcall" fn accessorstore_00678b60(l: u32, out: u32) -> u32 {
+        f::accessor_store(&mut mem(), l, out, ffx_prender::m5r_f::GET_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_notSupported_00678b80`.
+    PClassDescriptorForType_ShadowDynamicMesh_notSupported_00678b80 @ 0x0067_8b80 => extern "stdcall" fn notsupported_00678b80(_a: u32, _b: u32) -> u32 {
+        f::not_supported(&mut mem())
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_pushPointer_00678d70`.
+    PClassDescriptorForType_ShadowDynamicMesh_pushPointer_00678d70 @ 0x0067_8d70 => extern "stdcall" fn pushpointer_00678d70(l: u32, pp: u32) -> u32 {
+        f::push_pointer(&mut mem(), l, pp, ffx_prender::m5r_f::CLASS_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_pushObject_00678db0`.
+    PClassDescriptorForType_ShadowDynamicMesh_pushObject_00678db0 @ 0x0067_8db0 => extern "stdcall" fn pushobject_00678db0(l: u32, p: u32) -> u32 {
+        f::push_object(&mut mem(), l, p, ffx_prender::m5r_f::CLASS_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMesh_registerFlagged_00678de0`.
+    PClassDescriptorForType_ShadowDynamicMesh_registerFlagged_00678de0 @ 0x0067_8de0 => extern "stdcall" fn registerflagged_00678de0(p: u32, flag: u32) -> u32 {
+        f::register_flagged(&mut mem(), p, flag, ffx_prender::m5r_f::CLASS_SHADOW)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_Destruct_006f94c0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_Destruct_006f94c0 @ 0x006f_94c0 => extern "thiscall" fn destruct_006f94c0(this: u32) -> u32 {
+        f::descriptor_destruct(&mut mem(), this, ffx_prender::m5r_f::VT_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f94f0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f94f0 @ 0x006f_94f0 => extern "thiscall" fn scalardeletingdtor_006f94f0(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9520`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9520 @ 0x006f_9520 => extern "thiscall" fn scalardeletingdtor_006f9520(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9550`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_scalarDeletingDtor_006f9550 @ 0x006f_9550 => extern "thiscall" fn scalardeletingdtor_006f9550(this: u32, flags: u32) -> u32 {
+        f::descriptor_delete(&mut mem(), this, flags, ffx_prender::m5r_f::VT_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_accessorStore_006f99a0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_accessorStore_006f99a0 @ 0x006f_99a0 => extern "stdcall" fn accessorstore_006f99a0(l: u32, out: u32) -> u32 {
+        f::accessor_store(&mut mem(), l, out, ffx_prender::m5r_f::GET_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_notSupported_006f99e0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_notSupported_006f99e0 @ 0x006f_99e0 => extern "stdcall" fn notsupported_006f99e0(_a: u32, _b: u32) -> u32 {
+        f::not_supported(&mut mem())
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_pushPointer_006f9a80`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_pushPointer_006f9a80 @ 0x006f_9a80 => extern "stdcall" fn pushpointer_006f9a80(l: u32, pp: u32) -> u32 {
+        f::push_pointer(&mut mem(), l, pp, ffx_prender::m5r_f::CLASS_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_pushObject_006f9ac0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_pushObject_006f9ac0 @ 0x006f_9ac0 => extern "stdcall" fn pushobject_006f9ac0(l: u32, p: u32) -> u32 {
+        f::push_object(&mut mem(), l, p, ffx_prender::m5r_f::CLASS_SHADOW_INSTANCE)
+    }
+    /// `PClassDescriptorForType_ShadowDynamicMeshInstance_registerFlagged_006f9af0`.
+    PClassDescriptorForType_ShadowDynamicMeshInstance_registerFlagged_006f9af0 @ 0x006f_9af0 => extern "stdcall" fn registerflagged_006f9af0(p: u32, flag: u32) -> u32 {
+        f::register_flagged(&mut mem(), p, flag, ffx_prender::m5r_f::CLASS_SHADOW_INSTANCE)
     }
 }
