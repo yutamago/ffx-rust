@@ -67,6 +67,7 @@ use ffx_prender::h3_glue58::bridge as g58;
 use ffx_prender::h3_glue59::bridge as g59;
 use ffx_prender::h3_glue60::bridge as g60;
 use ffx_prender::h3_glue61::bridge as g61;
+use ffx_prender::h3_glue62::bridge as g62;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2173,6 +2174,15 @@ ported! {
     VFXDynamicGeometry_updateRenderDataWithoutAddingToArray @ 0x006a_53e0 => extern "thiscall" fn vfx_geometry_update_render_data(this: u32, a: u32) -> u32 {
         let mut f = StackFrame::<0x17>::new();
         g61::update_render_data(&mut mem(), f.at() + 0x5c, this, a)
+    }
+
+    // ---- round 18 batch 64 (ffx_prender::h3_glue62) ----
+    /// `PhyreScene_RenderVideoAndItsUI(scene)` -> the movie render's answer
+    /// or the first failing renderer call's code: the movie pass, the UI
+    /// over it, the screen fade and the video text (frame `ebp - 0xa0`).
+    PhyreScene_RenderVideoAndItsUI @ 0x0065_3960 => extern "thiscall" fn scene_render_video_and_its_ui(this: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        g62::render_video_and_its_ui(&mut mem(), f.at() + 0xa0, this)
     }
 }
 

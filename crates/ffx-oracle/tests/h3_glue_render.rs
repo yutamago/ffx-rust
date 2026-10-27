@@ -84,6 +84,7 @@ use ffx_prender::h3_glue58::bridge as gh58;
 use ffx_prender::h3_glue59::{self as h59, bridge as gh59};
 use ffx_prender::h3_glue60::{self as h60, bridge as gh60};
 use ffx_prender::h3_glue61::{self as h61, bridge as gh61};
+use ffx_prender::h3_glue62::{self as h62, bridge as gh62};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -13128,5 +13129,130 @@ fn batch63_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES63, n, &mut Rng(0x6363_b063));
+    });
+}
+
+// ---- round 18 batch 64 (ffx_prender::h3_glue62) ----
+
+/// A scene for the video pass: `g_MovieFading` and the fade byte (each
+/// set or not), the movie camera, picture and done flags, a camera (or
+/// none when nothing reads its matrix), the post targets `+0x8c` and
+/// `+0x90` (their textures there or not), the bytes `+0x93e`, `+0x78`,
+/// `+0xf9c5`, `+0xf9c7`, `g_PhyreScene3D`, the word `+0x3860`, the UI
+/// (none, or menus counted signed), the flag-0x1000 delegations' answer
+/// with stray high bits, and the renderer calls failing now and then at
+/// any step. Surfaces are the original's.
+fn prep_video64(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let flag = |rng: &mut Rng| if rng.chance(2) { 0 } else { rng.word() | 1 };
+    let fading = if rng.chance(3) { rng.word() | 1 } else { 0 };
+    t.global(h62::MOVIE_FADING, fading);
+    let fade = u8::from(rng.chance(2));
+    t.write(scene + 0x10dcc, &[fade]);
+    let picture = flag(rng);
+    t.global(h62::MOVIE_PICTURE_ON, picture);
+    let done = flag(rng);
+    t.global(h62::MOVIE_DONE, done);
+    let have = t.rebase(h62::MOVIE_HAVE_CAMERA);
+    let camera_answer = pick(rng, &[0, 0, 1, 0x100]);
+    t.stub(
+        Some(have),
+        h62::MOVIE_HAVE_CAMERA,
+        false,
+        0,
+        0,
+        Some(camera_answer),
+    );
+    let post = t.zeros(0x1_2400);
+    let at = t.rebase(h62::POST_INSTANCE);
+    t.stub(Some(at), h62::POST_INSTANCE, false, 0, 0, Some(post));
+    let fill = rng.bytes(0x200);
+    t.write(post + 0x1_2300, &fill);
+    let camera = obj + 0x500;
+    let matrix: Vec<u8> = (0..16).flat_map(|_| mild(rng).to_le_bytes()).collect();
+    t.write(camera + 0x34, &matrix);
+    let none = done == 0 && rng.chance(4);
+    t.w32(scene + 0xdc, if none { 0 } else { camera });
+    let targets = t.zeros(0x200);
+    t.w32(scene + 0x10cc, targets);
+    for (k, off) in [0x8cu32, 0x90].into_iter().enumerate() {
+        let slot = obj + 0x100 + 0x10 * k as u32;
+        let texture = obj + 0x200 + 0x40 * k as u32;
+        t.w32(targets + off, slot);
+        t.w32(slot, texture);
+        // the colour target always has its texture (the viewport reads it)
+        let gone = if k != 0 && rng.chance(4) {
+            pick(rng, &[1, 2, 0x80]) as u8
+        } else {
+            0
+        };
+        t.write(slot + 4, &[gone]);
+        t.w32(texture + 0x1c, rng.word());
+        t.w32(texture + 0x20, rng.word());
+    }
+    t.w32(scene + 0xd0, obj + 0x400);
+    for off in [0x93e, 0x78, 0xf9c5, 0xf9c7] {
+        let b = pick(rng, &[0, 0, 1, 0x80]) as u8;
+        t.write(scene + off, &[b]);
+    }
+    let b = pick(rng, &[0, 0, 1]);
+    t.global(h62::SCENE_3D, b | (rng.word() & !0xff));
+    let pending = pick(rng, &[0, 0, 0, 1, 0x8000_0000]);
+    t.w32(scene + 0x3860, pending);
+    let ui = if rng.chance(4) { 0 } else { obj + 0x900 };
+    t.global(h62::GRAPHIC_UI, ui);
+    let counts: Vec<u32> = (0..2)
+        .map(|_| pick(rng, &[0, 1, 3, u32::MAX, 0x8000_0000]))
+        .collect();
+    t.stub_seq(h62::MENU_COUNT, true, 0, 0, &counts);
+    t.global(h62::DELEGATION_HELPER, obj + 0x780);
+    let drawn = [answer(rng)];
+    t.stub_seq(h62::RUN_FLAG_1000, true, 1, 1, &drawn);
+    // now and then the movie render starts a fade (read again after it)
+    if rng.chance(3) {
+        let at = t.rebase(h62::MOVIE_FADING);
+        let (ret, value) = (rng.word(), rng.word() | 1);
+        t.stub_store(h62::FMV_RENDER, 1, ret, at, value);
+    }
+    let r = results54(rng, 6);
+    t.stub_seq(h62::SET_COLOR_TARGET, true, 2, 2, &r);
+    let r = results54(rng, 6);
+    t.stub_seq(h62::SET_DEPTH_STENCIL_TARGET, true, 1, 1, &r);
+    let r = results54(rng, 5);
+    t.stub_seq(h62::BEGIN_SCENE, true, 1, 1, &r);
+    let r = results54(rng, 5);
+    t.stub_seq(h62::END_SCENE, true, 1, 1, &r);
+}
+
+const VIDEO64_STUBS: &[(u32, K)] = &[
+    (h62::FMV_INSTANCE, K::Getter),
+    (h62::FMV_RENDER, K::This(1)),
+    (h62::PRE_RENDER, K::This(0)),
+    (h62::RENDER_SHADOW, K::This(0)),
+    (h62::DRAW_MOST_VFX, K::This(0)),
+    (h62::MINIMAP_STENCIL, K::This(0)),
+    (h62::DRAW_UI_2D_VFX, K::This(0)),
+    (h62::DRAW_NORMAL_UI, K::This(0)),
+    (h62::DRAW_3D_WORLD, K::This(1)),
+    (h62::SET_CLEAR_COLOR, K::This(4)),
+    (h62::SET_CLEAR_STENCIL, K::This(1)),
+    (h62::SET_VIEWPORT, K::This(4)),
+    (h62::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h62::RENDER_SCREEN_FADE, K::This(4)),
+    (h62::INSTANCE_6DC800, K::Getter),
+    (h62::VIDEO_TEXT_RENDER, K::This(1)),
+];
+
+#[rustfmt::skip]
+const CASES64: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_video64), ..method("render_video_and_its_ui", 0x0065_3960, This::Object, 0, VIDEO64_STUBS, |m, this, _| u(gh62::render_video_and_its_ui(m, frame_ebp(), this))) }), 0xa0, 0),
+];
+
+#[test]
+fn batch64_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES64, n, &mut Rng(0x6464_b064));
     });
 }
