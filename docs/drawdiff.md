@@ -361,7 +361,7 @@ pair (`scene-gate.sh` against each other, the lists without
 |---|---|
 | bsil0000 | 1 difference: the eye-blink bind of draw 84 (`vs db349612...`, ps srv1, BC1 32x16 in r1, BC3 in r2, frame 0 only): the m4-tex113 flake under load; not on this list (not loosened). Gate against r2 |
 | bsil0300 | 0, nothing allowed was used either: `GlobalTime`, the minimap ring and the chocobo icon all agreed |
-| kami0100 | the cloth ring (allowed, 28-30 draws a frame) and the loader's 16x8 texture (`f1de6dea8bd5f574` srv1, frames 1-2; on bsil0000's list, not on this one): not loosened. Gate against r1 (r2 has the other texture). With every hook on that draw and a texture-animation bind (draw 45) fail more often, and not with `PhyreScene_doOnFieldMapAssetLoaded` disabled (`docs/harness.md`, "What still varies (replay-flakes7)") |
+| kami0100 | the cloth ring (allowed, 28-30 draws a frame) and the loader's 16x8 texture (`f1de6dea8bd5f574` srv1, frames 1-2; on bsil0000's list, not on this one): not loosened. Gate against r1 (r2 has the other texture). With every hook on that draw and a texture-animation bind (draw 45) failed more often in replay-flakes7; not `PhyreScene_doOnFieldMapAssetLoaded` (9 of 9 captures passed with its port, the original or neither: `docs/harness.md`, "Not the map-asset callback") |
 | menu | PASS |
 | battle | PASS (both loads 77 updates) |
 

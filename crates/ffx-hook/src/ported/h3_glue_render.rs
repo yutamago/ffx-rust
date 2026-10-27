@@ -2202,11 +2202,13 @@ ported! {
     // ---- round 18 batch 66 (ffx_prender::h3_glue64) ----
     // PhyreScene_doOnFieldMapAssetLoaded 0x0065af60
     // (ffx_prender::h3_glue64::bridge::do_on_field_map_asset_loaded) is NOT
-    // hooked: it passes its oracle test and mutants, but with it hooked the
-    // title's map after a game over sometimes never loads (iggy-menus, 3
-    // of 7 runs; 0 of 6 with it off, 0 of 5 on original code) and the
-    // kami0100 scene gate binds another texture-animation frame (5 of 9
-    // runs; 0 of 6 with it off). Open problem (replay-flakes7, 2026-10-27).
+    // hooked. It was unhooked for iggy-menus' title that never loads after
+    // the game over and a kami0100 gate flake (replay-flakes7); fix-dofmal
+    // found the port matches the original in the game (the same placed
+    // matrices on every map) and the title flake on main's build without
+    // any hook here (2 of 9) and with the original through a trampoline
+    // (2 of 8): docs/harness.md, "Not the map-asset callback". Hook it
+    // again once that flake is fixed and iggy-menus passes 6 of 6.
 
     // ---- round 19 batch 67 (ffx_prender::h3_glue65) ----
     /// `PhyreScene_textureVideoLoad(scene; path)`: the map's texture video
