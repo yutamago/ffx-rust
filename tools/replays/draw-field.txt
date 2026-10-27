@@ -19,8 +19,17 @@
 # frames' calls; `async` answers at once and `wait 3` runs those frames;
 # `gfxcapture result` gives the reply. The three frames shift the later
 # inputs by 3, so the walk's last wait is 117 where field-walk has 120.
-load direct 1 cdsp0000
+#
+# Since 2026-10-27 (replay-flakes3) the load runs in lockstep (`load direct
+# ... lockstep`, docs/harness.md "Lockstep from the load") and `pin` sets
+# what the free frames before it leave ("Pinned state"), as in field-walk.
+# Without them the update the captures fell on and the per-batch blink seeds
+# (fw-101's draw 113: BC3 or BC1, docs/drawdiff.md) followed the machine's
+# load. References: ~/ffx-work/m4/captures/ref2-{a,b,c}; the ref-{a,b,c}
+# set was taken with the old form.
+load direct 1 cdsp0000 lockstep
 lockstep on
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 read 0x01325d94 4

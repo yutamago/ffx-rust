@@ -10,7 +10,7 @@
 # half, the window bits, the summoner, the party's and the monsters' HP,
 # the battle phase. Shots (battle-ifrit-<n>.bmp): 1 Tidus's menu, 2 Yuna's
 # summon list, 3 and 4 Ifrit's entry.
-load direct 5 kami0100
+load direct 5 kami0100 lockstep
 lockstep on
 pin
 wait 10

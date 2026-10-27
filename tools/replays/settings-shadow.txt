@@ -11,7 +11,7 @@
 # Traced: the settings words (g_Settings +0x30..+0x4b), the map words, the
 # generators and the party records.
 settings shadow
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

@@ -418,6 +418,21 @@ count is still well below its window.
 `run-all.sh --record boot` records it alone (`--record NAME...` leaves the
 other replays' recordings alone). About 75 s, the longest replay.
 
+boot-2 still failed once by 346 pixels (replay-flakes-2): at the game's
+own rate a frame of jitter between the music and the updates is left, and
+two original recordings differ by 12,301 (boot-2) and 36,884 (boot-3)
+pixels. With sound in lockstep the opening's music would keep the update
+count, so a boot on the virtual clock could be pinned; tried on 2026-10-27
+(replay-flakes3: fast mode, `lockstep on` and `pin` once memochek's map is
+up, the same `shotwhen`s): the game never reached its first update (the
+hook log repeats "present of update 0: the main thread did not reach its
+boundary"), with `lockstep on` first and with a `waitfor` first alike
+(not tried with `FFX_AUDIO_NRT=0`), so
+the start-up screens before memochek would need a look of their own
+(`load direct` gets past them by tapping Start, which a boot replay must
+not). boot stays `realtime`; its comparison is not loosened, and a lone
+boot-2/3 failure of a few hundred pixels is this jitter (rerun it).
+
 `tools/replays/battle-magic.txt` (2026-10-24) plays the one spell
 overlay that calls `op_shape_draw` (`0x007ed0c0`): `magic_0481.dll`, its
 only caller (`g_MagicImports` slot 242). No command, item or monster
@@ -616,6 +631,24 @@ load ends 2 frames after the magic ID in original, Rust and Rust with no
 slowing alike, and battle-overdrive's entry takes 281 frames and Energy
 Blast 259 in every run.
 
+The 100 ms rule is the one place left where the loader runs beside an
+update, so what it gets done before the update looks at it follows real
+time. Each time it frees the loader the hook log says `harness: loader
+freed in update N` (since 2026-10-27). On an idle machine that happens
+once a run, in the map load's update, with the main thread in
+`CdReadSync` (`0x0076c490`, its wait `0x0076e660` drawing the loading
+screen between 1 ms sleeps) waiting for the CD read thread. Keeping the
+loader out of that wait does not work: tried on 2026-10-27 (the main
+thread's stack sampled at the stall), one battle-magic run of three hung
+there until the 30 s guard freed the loader, so that read needs the
+loader. battle-magic's battle once came 89 updates after `lockstep on`
+instead of 87 (replay-flakes-2, three games at once), which a battle-load
+update crossing 100 ms would explain (FMOD, which ran on real time until
+"Sound in lockstep" below, is the other candidate). Since then the battle
+took 77 updates from its request in every run measured (replay-flakes3:
+the recordings and the proof runs). If it comes back, the log line tells
+whether a stall fell inside the battle's load.
+
 ### Pinned state
 
 `lockstep on` makes the frames after it repeat, but not what the frames
@@ -717,10 +750,12 @@ the replay steps one frame at a time until the save's event script opens.
 The whole map load then runs in lockstep, and the script's `lockstep on`
 (still there, a no-op now) and `pin` come at the same update of the load
 in every run. The frames before it (boot, title, the taps of Start) still
-run free, and `pin` takes care of what they leave. The draw and extra
-replays (`draw-*`, `settings-*`, `iggy-menus`, `battle-ifrit`) still use
-the old form: their references (draw captures, the extra recordings) would
-have to be taken again.
+run free, and `pin` takes care of what they leave. Since 2026-10-27
+(replay-flakes3) draw-field, the scene gates' replays (`draw-gate-*`) and
+the extra list (`settings-*`, `iggy-menus`, `battle-ifrit`) use it too,
+and draw-field pins; their references were taken again (draw-field
+`ref2-{a,b,c}`, the gates `dg-<replay>-q1/q2`, the extra recordings). The
+older `draw-<map>` capture scripts keep the old form.
 
 Measured: menu-grid, three original runs side by side, gave identical
 traces frame for frame (aligned at their first line) and identical shots,
@@ -768,7 +803,9 @@ a script does after one lands on a different frame in every run, original
 code included (Wakka's run: 7,700 pixels between two original runs at the
 same count). event-besaid takes no shot then, and waits for the subtitle's
 window to close (`waitfor` state 0) before the next input, after which the
-script's frames are fixed again. Two more things vary between original
+script's frames are fixed again. (Since 2026-10-27 the voice keeps the
+update count in lockstep, "Sound in lockstep" below: the subtitle closes at
+count 0x6f in every run.) Two more things vary between original
 runs: a chocobo icon at the bottom right of maps `0x14` and `0x29` that
 animates by the wall clock (masked, `shot-compare.py` `MASKS`), and the
 player position range (`run-all.sh` passes `--ignore 2`). That was thought
@@ -1082,6 +1119,18 @@ real-time movie.
   from both recordings on page 6 (the background's fade, 21,746 pixels),
   so iggy-menus is on the extra list's `eye` list (traces compared). No
   shot of the load list (its dates are the files' times).
+  Re-recorded on 2026-10-27 with the load in lockstep (replay-flakes3; the
+  old recordings in `~/ffx-work/replay-shots-extra.pre-flakes3`): the two
+  recordings agree to 0 pixels on pages 1-3, 6 and 9, within a 24-pixel
+  column at x 1163..1195 on 4, 5, 7 and 8, and differ everywhere on the
+  title (11, 12). Page 6 (Key bindings) is bimodal with the Rust
+  replacements: in five original runs (the two recordings and three more)
+  it matched the reference within 18 pixels, in five Rust runs three times
+  within a pixel and twice 98,378 pixels off (x 62..1174, y 144..682: the
+  page slid about 11 pixels less; Rust runs on main before the re-recording
+  showed the same). Exactly one count, so a discrete step (a Flash tick
+  more or less during the slide), not wall-clock drift. Open; the traces
+  match.
 - `battle-ifrit` (about 20 s): the Thunder Plains (`battle 34 0 0`,
   `kami00_00`, battle map `0x412`) from save 5, set up as battle-overdrive
   (party, the monsters' HP 99999); Tidus attacks, Yuna summons Ifrit
@@ -1204,6 +1253,33 @@ near-silent from block 768 of 990 (the AP screen). Bisected with
 `MsMusicReadStart`): the original tail-jumps to `SndMusicRead` with its own
 argument (`g_BtlEndMusic`, the fanfare 0x8a), and the port passed none, so
 the fanfare never loaded. Fixed; all four now match.
+
+### Sound in lockstep
+
+Since 2026-10-27 (replay-flakes3) every game on the virtual clock (all
+lockstep replays, the draw captures) runs FMOD as the audio capture does,
+without the file: output `FMOD_OUTPUTTYPE_NOSOUND_NRT` (4), the same
+software format, DSP blocks of one tick, streams decoded in `update`, and
+the `FmodManager_tick` turns at each frame boundary. Nothing reaches the
+speakers. `FFX_AUDIO_NRT=0` keeps the old real-time mixer; `realtime`
+replays (boot, event-cliff, event-arrival, movie-fmv) are not on the
+virtual clock and keep it too.
+
+Before, the mixer ran on the sound card's clock, so a voice or a music
+file took as many updates as the machine managed in its real length. In
+event-besaid Wakka's "Hey! It's this way!" ends his auto talk
+(`Ch_Mouth` `0x008344f0` moves the mouth from `rand()` while chr `+0x4d4`
+is set, `Native_5076_ChrSetAutoTalk`) and closes the subtitle when the
+voice ends (`SndStatusUpdate` `0x00887700` ORs the stream's play state
+into `g_TkSndVoiceFlags` `0x0132ff10`). Six runs closed it at event count
+0x74 to 0x82 (originals 0x7a and 0x82 side by side, Rust 0x74 and 0x75 at
+55 s a run under load), and a slower run could end the line, and the
+mouth, before event-besaid-2 at count 0x5f. With the turns, two original
+and one Rust run closed it at 0x6f, and the three traces of the mouth
+words (`*0x023c44e4 + n x 0x880 + 0x4d4`, 16 bytes, eight records) and
+the voice flags agreed on every frame. What follows a voice (Wakka's
+run, the river) and every wait on a music file now lands on fixed frames
+too, so all lockstep references had to be recorded again with it.
 
 ## Parallel games
 
@@ -1329,7 +1405,15 @@ the other).
 
 A test stopped mid-run leaves its game running; the next `Game::launch` in
 that slot ends it with the harness's `quit` (only games that answer on the
-slot's port: a game the user plays is never touched). A detached game
+slot's port: a game the user plays is never touched). A game that does not
+answer (its main thread stuck, say in a `waitfor` that never matched before
+its replay was killed) still held the instance folder, and every later
+launch in that slot failed with "a game from this folder is running" (three
+of the h3 agent's original-code launches on 2026-10-27, behind two stuck
+probes of replay-flakes3). Since then `tools/run-game.sh`, when the slot is
+held and a game from the instance folder is still there after its minute of
+waiting, ends that game by its path (only the slot's holder starts games
+from the folder) and goes on. A detached game
 (`Game::detach`) outlives its slot. Run long game tests as background
 commands: they wait for their turn and finish later.
 

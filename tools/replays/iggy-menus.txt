@@ -26,7 +26,7 @@
 # 4 Video, 5 Video scrolled to its last row (UnSharp Mask), 6 Key bindings,
 # 7 Keyboard bindings, 8 Special features, 9 Change parameters, 10 the
 # field after Esc, 11 the title, 12 the title after leaving the load list.
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500

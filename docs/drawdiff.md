@@ -282,6 +282,46 @@ into `~/ffx-work/m4/captures/<name>-{a,b}`. Captures stay out of git.
 
 drawdiff reads a pair in 0.28 s and compares it in under 10 ms.
 
+### draw-field references ref2-a, ref2-b, ref2-c (2026-10-27)
+
+Since replay-flakes3, `draw-field.txt` loads in lockstep (`load direct 1
+cdsp0000 lockstep`) and pins after `lockstep on`, and sound keeps the update
+count (`docs/harness.md`, "Sound in lockstep"). The captures of the older
+script (ref-a/b/c below) fell on whatever update the free-running load
+left, and the blink seeds with them: the BC1/BC3 draw 113 and the
+captures 1-2 frames late. `~/ffx-work/m4/captures/ref2-{a,b,c}` are three
+original-code captures of the new script, run three at a time: each held
+event count 101 (`0x65`) and 459 (`0x1cb`) and the beach's 101, and the
+three pairs pass `draw-field-gate.sh` (fw-101 and fw-459 0 differences,
+3 allowed each; besaid-101 0 differences, the chocobo icon and its
+neighbours allowed). `~/ffx-work/m4/draw-field-gate.sh <run>` gates against
+its default reference (`default_ref` in the script, `DRAW_FIELD_REF`);
+`draw-field-gate.sh <reference> <run>` against any. A capture only matches
+references of the same script: gate new captures against ref2-*.
+
+The scene gates' replays load in lockstep too since then, and pin right
+after `lockstep on`; their references are `dg-<replay>-q1/q2` (original
+code, run side by side), which pass `scene-gate.sh` against each other on
+all five scenes (battle: both loads 77 updates). The p1..p6 folders belong
+to the old scripts; `dg-{besaid,kami}-pin64-q*` were taken with the load in
+lockstep but the pin still at count 64.
+
+kami0100 on original code (the h3 agent, 2026-10-27: 1 pass in 3 with the
+old script, failing on draw 42, a texture-animation bind, `vs 598aa...`):
+with the new script five original captures (q1..q5, three of them side by
+side) pass against q1, and draw 42 matched in all of them and in the five
+pin64 captures. What still differs between original kami0100 runs, all of
+it on the scene's allow list: `scene.GlobalTime` by 2 ulp (two clusters),
+the cloth ring (`vb5`) and the eye-blink bind of draw 91 (`vs db349612...`,
+32x32 or 128x128). draw-field's fw-101 shows the same 2 ulp in two of five
+Rust captures, while its three references agree. These come from the
+updates the load runs before `pin` (`load direct ... lockstep` steps until
+the event script opens, and `pin` follows): pinning at the load's boundary
+itself would be the next step. besaid-101 failed once in five Rust
+draw-field runs on the back buffer only: the chocobo icon (wall clock, its
+draws allowed) drew in none of the three frames (609 draws against
+780-784), so the back buffer hashes had no allowed draw before them.
+
 ### draw-field references (ref-a, ref-b, ref-c)
 
 `~/ffx-work/m4/captures/ref-{a,b,c}` hold the original-code captures of

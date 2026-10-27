@@ -93,6 +93,12 @@ fi
 if [[ -n "${FFX_AUDIO_WAV:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_WAV/p"
 fi
+# Without a file, games on the virtual clock run FMOD the same way with no
+# output (NOSOUND_NRT, docs/harness.md "Sound in lockstep");
+# FFX_AUDIO_NRT=0 keeps the sound card's real-time mixer instead.
+if [[ -n "${FFX_AUDIO_NRT:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_NRT"
+fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"
@@ -174,6 +180,32 @@ for _ in $(seq 30); do
     [[ "$clash" == "a game from this folder is running" && "${FFX_GAME_SLOT_HELD:-}" == 1 ]] || break
     sleep 2
 done
+# Still there after a minute with the slot ours: an orphan. Its holder let
+# the slot go without ending it (a replay stopped by a signal or a timeout:
+# the slot's lock goes with the process, FFX.exe stays), and a game whose
+# main thread is stuck (inside a `waitfor` that never matches, say) does not
+# answer the harness's `quit` (Game::end_orphan), so it would hold the
+# instance folder for good and every later launch in this slot would fail
+# here (2026-10-27, replay-flakes3: two such games failed another agent's
+# launches three times). Only the slot's holder starts games from this
+# folder, so end it by its path and go on.
+if [[ "$clash" == "a game from this folder is running" && "${FFX_GAME_SLOT_HELD:-}" == 1 ]]; then
+    echo "an orphaned game from this folder is still running; ending it" >&2
+    powershell.exe -NoProfile -Command \
+        "Get-Process FFX -ErrorAction SilentlyContinue | Where-Object { \$_.Path -ieq '${here//\'/\'\'}' } | Stop-Process -Force; exit 0" \
+        > /dev/null 2>&1
+    clash=""
+    for _ in $(seq 15); do
+        games="$(powershell.exe -NoProfile -Command \
+            'Get-Process FFX -ErrorAction SilentlyContinue | ForEach-Object { "path=" + $_.Path }; exit 0' | tr -d '\r')"
+        clash=""
+        while IFS= read -r line; do
+            [[ "${line,,}" == "path=${here,,}" ]] && clash="a game from this folder is running and did not end"
+        done <<< "$games"
+        [[ -z "$clash" ]] && break
+        sleep 1
+    done
+fi
 if [[ -n "$clash" ]]; then
     echo "$clash; not starting another" >&2
     exit 1

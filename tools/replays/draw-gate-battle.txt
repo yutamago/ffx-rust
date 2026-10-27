@@ -14,7 +14,7 @@
 # `gfxcapture ... now async` at a boundary the script reached in lockstep
 # holds the next three updates exactly (the harness checks the updates the
 # frames show and fails the reply otherwise).
-load direct 1 cdsp0000
+load direct 1 cdsp0000 lockstep
 lockstep on
 pin
 wait 10
