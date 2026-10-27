@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4355,5 +4355,151 @@ fn bj_wait_win_right() {
             let y = Oracle::read(&mut t.b, ebp + 8, 4).unwrap();
             assert_eq!(x, y, "{what}: argument slot");
         }
+    }
+}
+
+// ---- round 3, batch 2 (ffx_glue_other::h4b_k)
+
+/// The left window's own constants: the flipped plates, the badge and
+/// the sparkles, the third fading shape.
+const LEFT_F32: [u32; 18] = [
+    0x00b5_f408,
+    0x00b5_f33c,
+    0x00b4_1d90,
+    0x00b5_eea0,
+    0x00b5_eee8,
+    0x00b5_f308,
+    0x00b5_f414,
+    0x00b5_f334,
+    0x00b5_f360,
+    0x00b5_eea4,
+    0x00b5_f37c,
+    0x00b5_f338,
+    0x00b5_ee60,
+    0x00b5_ee70,
+    0x00b3_eb48,
+    0x00b4_3d28,
+    0x00b5_f188,
+    0x00b5_f11c,
+];
+const LEFT_F32B: [u32; 1] = [0x00b5_f0dc];
+const LEFT_F64: [u32; 13] = [
+    0x00b9_2270,
+    0x00b4_b390,
+    0x00b4_8328,
+    0x00b5_f1b8,
+    0x00b9_2220,
+    0x00b4_8348,
+    0x00b5_f1a8,
+    0x00b5_f1c0,
+    0x00b3_eb68,
+    0x00b4_8320,
+    0x00b5_f2e0,
+    0x00b5_f230,
+    0x00b5_f250,
+];
+
+/// `TODrawWaitBtlWinLeft`: the opening (the argument slot compared), the
+/// panel with plain and flipped plates, the badge and every sparkle's
+/// window of the cycle, the fading shapes, the cursor in and out of the
+/// visible rows; image and random constants.
+#[test]
+fn bk_wait_win_left() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f501);
+        let (mut tags, scales) = wait_stubs(&mut t);
+        t.stub(bk::CHECK_LEFT, 1, false);
+        tags.push(bk::CHECK_LEFT);
+        let mut real = wait_constants(&mut t);
+        for &c in LEFT_F32.iter().chain(&LEFT_F32B) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in &LEFT_F64 {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let ebp = t.ebp_for(1);
+        for i in 0..800 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            if rng.below(4) == 0 {
+                t.constants(&mut rng, &LEFT_F32, &LEFT_F64);
+                t.constants(&mut rng, &LEFT_F32B, &[]);
+            }
+            let usable = rng.pick(&[0, 1, 2, 2, 2, 3, 0xffff_ffff]);
+            t.ret(bk::CHECK_LEFT, usable);
+            // the sparkles' cycle: the open time past the badge's start
+            if rng.below(2) == 0 {
+                let start: u32 = Mem::read(&t.b, w + 0xdc);
+                let start = f64::from(f32::from_bits(start));
+                let time = f64::from(rng.below(100_000)) / 7.0;
+                let open = rng.pick(&[0.6, 0.7, 0.8, 1.0, 1.2, 1.5, 2.0, 3.0]);
+                let open = open + f64::from(rng.below(1000)) / 1000.0;
+                let start = if start > 0.0 { start } else { 1.0 };
+                t.ret_f64(e1::GET_TIME, time.max(start + open));
+            }
+            if rng.below(2) == 0 {
+                sparkle_edge(&mut t, &mut rng, w);
+            }
+            t.b.write(ebp + 8, &w.to_le_bytes()).unwrap();
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_3680, &[w], |g| {
+                u(bk::wait_win_left(g, w, Some(ebp + 8)))
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, ebp + 8, 4).unwrap();
+            let y = Oracle::read(&mut t.b, ebp + 8, 4).unwrap();
+            assert_eq!(x, y, "{what}: argument slot");
+        }
+    }
+}
+
+/// Sets one of the sparkles' window edges (or the pulsing size's
+/// limits) to exactly the cycle time `m` (or size `g`) this case gives,
+/// computed as the x87 does at 53 bits.
+fn sparkle_edge(t: &mut Twins, rng: &mut Rng, w: u32) {
+    let k = |t: &Twins, c: u32| -> f64 { Mem::read(&t.b, t.rebase(c)) };
+    let time: f64 = Mem::read(&t.b, t.fcells[&e1::GET_TIME]);
+    let start: u32 = Mem::read(&t.b, w + 0xdc);
+    let start = f64::from(f32::from_bits(start));
+    let open = if start > 0.0 {
+        f64::from((time - start) as f32)
+    } else {
+        0.0
+    };
+    let s = f64::from((open - k(t, 0x00b9_2220)) as f32);
+    let cycle = k(t, 0x00b4_8348);
+    let q = s / cycle;
+    if !q.is_finite() || q.abs() > 1e9 {
+        return;
+    }
+    let m = f64::from(((q - f64::from(q.trunc() as i32 as f32)) * cycle) as f32);
+    let r = m / k(t, 0x00b4_8308);
+    let g = if r.is_finite() && r.abs() < 1e9 {
+        let frac = r - f64::from(r.trunc() as i32 as f32);
+        f64::from((frac * k(t, 0x00b5_f1a8) + k(t, 0x00b5_f1c0)) as f32)
+    } else {
+        m
+    };
+    let (sym, v, wide) = match rng.below(9) {
+        8 => (0x00b9_2194, open, false),
+        0 => (0x00b4_8328, m, true),
+        1 => (0x00b3_eb44, m, false),
+        2 => (0x00b3_eb68, m, true),
+        3 => (0x00b3_eb48, m, false),
+        4 => (0x00b4_3d28, m, false),
+        5 => (0x00b5_f188, m, false),
+        6 => (0x00b5_ee60, g, false),
+        _ => (0x00b4_b390, g, true),
+    };
+    let at = t.rebase(sym);
+    if wide {
+        t.write(at, &v.to_le_bytes());
+    } else {
+        t.write(at, &(v as f32).to_le_bytes());
     }
 }

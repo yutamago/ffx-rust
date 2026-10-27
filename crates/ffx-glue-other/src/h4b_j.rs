@@ -28,68 +28,68 @@ pub const SUMMON_PRIM: u32 = 0x008a_0ba0;
 pub const ROTATE_SHAPE: u32 = 0x0090_2ef0;
 
 /// The sheet image, shape -1 of `TOMkpShapeXYWHUVC2`.
-const SHEET: u32 = u32::MAX;
+pub(crate) const SHEET: u32 = u32::MAX;
 /// The plate rows' grey (alpha 0x60), the gloss's (0x40).
-const PLATE_GREY: u32 = 0x6080_8080;
-const GLOSS_GREY: u32 = 0x4080_8080;
+pub(crate) const PLATE_GREY: u32 = 0x6080_8080;
+pub(crate) const GLOSS_GREY: u32 = 0x4080_8080;
 /// The ripples' fade ends: transparent grey, half grey.
-const CLEAR: u32 = 0x0080_8080;
+pub(crate) const CLEAR: u32 = 0x0080_8080;
 /// A row of the panel, 0x34 PS2 units.
-const ROW_PITCH: i32 = 0x34;
+pub(crate) const ROW_PITCH: i32 = 0x34;
 /// The summon list's entry for "every summon" (`TOBtlDrawSummonPrim`
 /// 0xf, 0x10 and 0x11).
 const ALL_SUMMONS: u16 = 0x30ff;
 
 /// The `f32` constant at image address `sym`, through `fld`/`fstp`.
-fn konst(h: &impl Host, sym: u32) -> u32 {
+pub(crate) fn konst(h: &impl Host, sym: u32) -> u32 {
     pass(h.read(h.rebase(sym)))
 }
 
 /// The `f64` constant at image address `sym`.
-fn konst64(h: &impl Host, sym: u32) -> f64 {
+pub(crate) fn konst64(h: &impl Host, sym: u32) -> f64 {
     h.read(h.rebase(sym))
 }
 
 /// `graphicUiRemapX2(v)` in `ST0`.
-fn remap_x(h: &mut impl Host, v: u32) -> f64 {
+pub(crate) fn remap_x(h: &mut impl Host, v: u32) -> f64 {
     h.call_sym_st0_f64(REMAP_X2, Conv::Cdecl, &[v])
 }
 
 /// `graphicUiRemapY2(v)` in `ST0`.
-fn remap_y(h: &mut impl Host, v: u32) -> f64 {
+pub(crate) fn remap_y(h: &mut impl Host, v: u32) -> f64 {
     h.call_sym_st0_f64(REMAP_Y2, Conv::Cdecl, &[v])
 }
 
 /// `graphicUiRemapX2(v)` stored as an argument word.
-fn rx(h: &mut impl Host, v: u32) -> u32 {
+pub(crate) fn rx(h: &mut impl Host, v: u32) -> u32 {
     store(remap_x(h, v))
 }
 
 /// `graphicUiRemapY2(v)` stored as an argument word.
-fn ry(h: &mut impl Host, v: u32) -> u32 {
+pub(crate) fn ry(h: &mut impl Host, v: u32) -> u32 {
     store(remap_y(h, v))
 }
 
 /// [`rx`] of the image constant at `sym`.
-fn rxk(h: &mut impl Host, sym: u32) -> u32 {
+pub(crate) fn rxk(h: &mut impl Host, sym: u32) -> u32 {
     let v = konst(h, sym);
     rx(h, v)
 }
 
 /// [`ry`] of the image constant at `sym`.
-fn ryk(h: &mut impl Host, sym: u32) -> u32 {
+pub(crate) fn ryk(h: &mut impl Host, sym: u32) -> u32 {
     let v = konst(h, sym);
     ry(h, v)
 }
 
 /// The window's `i16` at `+off`, sign-extended.
-fn half(h: &impl Host, w: u32, off: u32) -> i32 {
+pub(crate) fn half(h: &impl Host, w: u32, off: u32) -> i32 {
     i32::from(h.read::<i16>(w.wrapping_add(off)))
 }
 
 /// `idiv`: quotient and remainder (0, 0 for a zero divisor, where the
 /// original faults).
-fn idiv(a: i32, b: i32) -> (i32, i32) {
+pub(crate) fn idiv(a: i32, b: i32) -> (i32, i32) {
     if b == 0 {
         (0, 0)
     } else {
@@ -98,13 +98,13 @@ fn idiv(a: i32, b: i32) -> (i32, i32) {
 }
 
 /// `int` through `fild`, `fstp dword`, `fld dword`.
-fn int(n: i32) -> f64 {
+pub(crate) fn int(n: i32) -> f64 {
     load(int_f32(n))
 }
 
 /// `0 < x < 1` held: below 0 gives 0, above 1 gives 1, NaN passes (the
 /// two `fcom`s of the fades).
-fn unit(x: f64) -> f64 {
+pub(crate) fn unit(x: f64) -> f64 {
     // `clamp` keeps a NaN and -0, as the two compares do
     x.clamp(0.0, 1.0)
 }
@@ -189,8 +189,9 @@ pub fn cursor_plate(h: &mut impl Host, w: u32, p: Panel) {
 /// slide, each next one 0.1 s (`0x00b921f0`) behind: a plate at `x =
 /// a t / 0.1 - b` (`0x00b5f290`, `0x00b5f280`), held to `0x00b5f468`
 /// below `0x00b5f460` and to 154 above it, less `0x00b922c8`, and its
-/// gloss strip at `x`.
-pub fn slide_rows(h: &mut impl Host, t: u32, p: Panel) {
+/// gloss strip at `x`. The plate's `u` runs from 0 to `0x00b5f3c0`, or
+/// with `flipped` from there to `0x00b5f408`.
+pub fn slide_rows(h: &mut impl Host, t: u32, p: Panel, flipped: bool) {
     let mut t = t;
     for k in 0..3 {
         let tf = load(t);
@@ -210,7 +211,11 @@ pub fn slide_rows(h: &mut impl Host, t: u32, p: Panel) {
         t = store(sub(tf, konst64(h, 0x00b9_21f0)));
         let row = int(k * ROW_PITCH);
         // the plate
-        let u1 = konst(h, 0x00b5_f3c0);
+        let (u0, u1) = if flipped {
+            (konst(h, 0x00b5_f3c0), konst(h, 0x00b5_f408))
+        } else {
+            (0, konst(h, 0x00b5_f3c0))
+        };
         let v1 = konst(h, 0x00b1_f2c8);
         let hh = ry(h, v1);
         let ww = rxk(h, 0x00b5_f3c8);
@@ -221,7 +226,7 @@ pub fn slide_rows(h: &mut impl Host, t: u32, p: Panel) {
         h.call_sym(
             SHAPE_UV_C2,
             Conv::Cdecl,
-            &[SHEET, xx, y, ww, hh, 0, 0, u1, v1, PLATE_GREY, PLATE_GREY],
+            &[SHEET, xx, y, ww, hh, u0, 0, u1, v1, PLATE_GREY, PLATE_GREY],
         );
         // the gloss strip
         let band = mul(int(k), konst64(h, 0x00b5_f1f0));
@@ -368,7 +373,7 @@ fn summon_names(h: &mut impl Host, w: u32) {
 pub fn wait_win_summon(h: &mut impl Host, w: u32) -> u32 {
     let open = open_time(h, w);
     cursor_plate(h, w, SUMMON_PANEL);
-    slide_rows(h, pass(open), SUMMON_PANEL);
+    slide_rows(h, pass(open), SUMMON_PANEL, false);
     ripples(h, w, SUMMON_PANEL);
     h.call_sym(COMMAND_WINDOW, Conv::Cdecl, &[w]);
     h.call_sym(SCISSOR_XYWH, Conv::Cdecl, &[0, 0, 0x200, 0x1a0]);
@@ -388,7 +393,7 @@ fn to_slot(h: &mut impl Host, slot: Option<u32>, v: u32) {
 /// grows from the corner: `a = 0x00b5f1f8 × p` wide and high, at `(1 - p)
 /// × 0x00b5f1d0` plus `0x00b922e8`, `0x00b5f2d8`. The window slot holds
 /// `a`, the y, then the x.
-fn right_opening(h: &mut impl Host, p: f64, slot: Option<u32>) {
+fn opening_plate(h: &mut impl Host, p: f64, slot: Option<u32>) {
     let a = store(mul(konst64(h, 0x00b5_f1f8), p));
     to_slot(h, slot, a);
     let q = mul(sub(1.0, p), konst64(h, 0x00b5_f1d0));
@@ -410,12 +415,9 @@ fn right_opening(h: &mut impl Host, p: f64, slot: Option<u32>) {
     );
 }
 
-/// The right window's decorations: two rings turning with the time
-/// (`TOMkpRotateShapeXYWHUVC2`, the second backwards), then, fading in
-/// over `0x00b48308` seconds after the opening (`p`, held to 0..1),
-/// two shapes 0x190 sliding with `p × 0x00b5f218` and a third with `p ×
-/// 0x00b5f270` (`TOMkpShapeXYWHUV`).
-fn right_rings(h: &mut impl Host, w: u32) {
+/// Two rings turning with the time (`TOMkpRotateShapeXYWHUVC2`, the
+/// second backwards).
+pub fn rings(h: &mut impl Host) {
     let grey = 0x8080_8080;
     let one = 1f32.to_bits();
     let now = h.call_sym_st0_f64(GET_TIME, Conv::Cdecl, &[]);
@@ -458,6 +460,21 @@ fn right_rings(h: &mut impl Host, w: u32) {
             SHEET, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], grey, grey, angle,
         ],
     );
+}
+
+/// The fading shapes' third piece: the right window's
+/// (`TOMkpShapeXYWHUV`, at `0x00b5f288 - p × 0x00b5f270`) or the left
+/// window's (`TOMkpShapeXYWHUVC2`, at the slide plus `0x00b5f250`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Third {
+    Right,
+    Left,
+}
+
+/// Fading in over `0x00b48308` seconds after the opening (`p`, held to
+/// 0..1; alpha `p × 0x00b4c170`): two shapes 0x190 sliding with `p ×
+/// 0x00b5f218`, then the [`Third`].
+pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) {
     let open: u32 = h.read(w.wrapping_add(0xe0));
     let p = store(div(
         sub(load(open), konst64(h, 0x00b3_eb60)),
@@ -494,6 +511,23 @@ fn right_rings(h: &mut impl Host, w: u32) {
         Conv::Cdecl,
         &[0x190, x, y, ww, hh, u0, v0, u1, v1, colour, colour],
     );
+    if third == Third::Left {
+        let v1 = konst(h, 0x00b5_f0c8);
+        let u1 = konst(h, 0x00b5_f11c);
+        let v0 = konst(h, 0x00b5_f0c4);
+        let u0 = konst(h, 0x00b5_f0dc);
+        let hh = ryk(h, 0x00b5_ee74);
+        let ww = rxk(h, 0x00b5_ef24);
+        let y = ryk(h, 0x00b5_f420);
+        let x = store(add(slide, konst64(h, 0x00b5_f250)));
+        let x = rx(h, x);
+        h.call_sym(
+            SHAPE_UV_C2,
+            Conv::Cdecl,
+            &[0x190, x, y, ww, hh, u0, v0, u1, v1, colour, colour],
+        );
+        return;
+    }
     let v1 = konst(h, 0x00b5_f0c8);
     let u1 = konst(h, 0x00b5_f0d4);
     let v0 = konst(h, 0x00b5_f0c4);
@@ -513,6 +547,40 @@ fn right_rings(h: &mut impl Host, w: u32) {
     );
 }
 
+/// The side windows' start: the open time ([`open_time`]); while it is
+/// below `0x00b3eb60`, only the opening plate ([`opening_plate`], the
+/// fraction held to 0..1) and `None`; else the time since then (`f32`
+/// bits).
+pub fn opening(h: &mut impl Host, w: u32, slot: Option<u32>) -> Option<u32> {
+    let open = open_time(h, w);
+    let t = load(pass(open));
+    let end = konst64(h, 0x00b3_eb60);
+    // `fcom`; `test ah, 0x41; jne`: the opening while it is above t
+    if end > t {
+        let p = unit(load(store(div(t, end))));
+        opening_plate(h, p, slot);
+        return None;
+    }
+    Some(store(sub(t, end)))
+}
+
+/// The cursor ([`set_cursor`]) when it (`+0x42`) is in the visible rows
+/// (from `+0x40`, `+0x3a` rows of `+0x38` columns).
+pub fn cursor_if_shown(h: &mut impl Host, w: u32) {
+    let cursor = half(h, w, 0x42);
+    let first = half(h, w, 0x40);
+    if cursor < first {
+        return;
+    }
+    let shown = half(h, w, 0x38)
+        .wrapping_mul(half(h, w, 0x3a))
+        .wrapping_add(first);
+    if cursor >= shown {
+        return;
+    }
+    set_cursor(h, w);
+}
+
 /// `TODrawWaitBtlWinRight(w)` (`0x008a6a60`, cdecl): the right-hand
 /// command list's wait window. The open time ([`open_time`]); while it is
 /// below `0x00b3eb60` only the opening plate ([`right_opening`], the
@@ -525,32 +593,15 @@ fn right_rings(h: &mut impl Host, w: u32) {
 /// `slot` is the window argument's word: the opening leaves its plate's
 /// x there (after its size and y).
 pub fn wait_win_right(h: &mut impl Host, w: u32, slot: Option<u32>) -> u32 {
-    let open = open_time(h, w);
-    let t = load(pass(open));
-    let opening = konst64(h, 0x00b3_eb60);
-    // `fcom`; `test ah, 0x41; jne`: the opening while it is above t
-    if opening > t {
-        let p = unit(load(store(div(t, opening))));
-        right_opening(h, p, slot);
+    let Some(t) = opening(h, w, slot) else {
         return 0;
-    }
-    let t = store(sub(t, opening));
+    };
     cursor_plate(h, w, RIGHT_PANEL);
-    slide_rows(h, t, RIGHT_PANEL);
+    slide_rows(h, t, RIGHT_PANEL, false);
     ripples(h, w, RIGHT_PANEL);
-    right_rings(h, w);
+    rings(h);
+    fade_shapes(h, w, Third::Right);
     h.call_sym(COMMAND_WINDOW, Conv::Cdecl, &[w]);
-    let cursor = half(h, w, 0x42);
-    let first = half(h, w, 0x40);
-    if cursor < first {
-        return 0;
-    }
-    let shown = half(h, w, 0x38)
-        .wrapping_mul(half(h, w, 0x3a))
-        .wrapping_add(first);
-    if cursor >= shown {
-        return 0;
-    }
-    set_cursor(h, w);
+    cursor_if_shown(h, w);
     0
 }
