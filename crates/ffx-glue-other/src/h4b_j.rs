@@ -154,11 +154,9 @@ pub fn open_time(h: &mut impl Host, w: u32) -> u32 {
     t
 }
 
-/// The cursor plate: on the cursor's row of the panel (cursor `+0x42` less
-/// the first visible entry `+0x40`, over the columns `+0x38`), `+0x62`
-/// wide at the panel's left (remapped 154, `0x00b5f344`), grey with alpha
-/// `trunc(cos(5 t) × 32 + 96)` (`_CIcos`, `fistp qword` chopped).
-pub fn cursor_plate(h: &mut impl Host, w: u32, p: Panel) {
+/// The pulsing grey: alpha `trunc(cos(5 t) × 32 + 96)` (`_CIcos` of
+/// `graphicGetTime() × 0x00b41d20`, `fistp qword` chopped).
+pub fn pulse(h: &mut impl Host) -> u32 {
     let now = h.call_sym_st0_f64(GET_TIME, Conv::Cdecl, &[]);
     let angle = mul(now, konst64(h, 0x00b4_1d20));
     let cos = h.rebase(CI_COS);
@@ -167,7 +165,15 @@ pub fn cursor_plate(h: &mut impl Host, w: u32, p: Panel) {
         mul(load(c), konst64(h, 0x00b4_12f8)),
         konst64(h, 0x00b5_ee40),
     ));
-    let colour = (alpha << 24).wrapping_add(CLEAR);
+    (alpha << 24).wrapping_add(CLEAR)
+}
+
+/// The cursor plate: on the cursor's row of the panel (cursor `+0x42` less
+/// the first visible entry `+0x40`, over the columns `+0x38`), `+0x62`
+/// wide at the panel's left (remapped 154, `0x00b5f344`), grey with alpha
+/// `trunc(cos(5 t) × 32 + 96)` (`_CIcos`, `fistp qword` chopped).
+pub fn cursor_plate(h: &mut impl Host, w: u32, p: Panel) {
+    let colour = pulse(h);
     let uv = [0x00b5_f43c, 0x00b5_f324, 0x00b4_a1ac, 0x00b5_f34c].map(|c| konst(h, c));
     let hh = ryk(h, 0x00b1_f2c8);
     let pitch = int_f32(half(h, w, 0x62));
@@ -393,13 +399,13 @@ fn to_slot(h: &mut impl Host, slot: Option<u32>, v: u32) {
 /// grows from the corner: `a = 0x00b5f1f8 × p` wide and high, at `(1 - p)
 /// × 0x00b5f1d0` plus `0x00b922e8`, `0x00b5f2d8`. The window slot holds
 /// `a`, the y, then the x.
-fn opening_plate(h: &mut impl Host, p: f64, slot: Option<u32>) {
+fn opening_plate(h: &mut impl Host, p: f64, slot: Option<u32>, uv: OpeningUv) {
     let a = store(mul(konst64(h, 0x00b5_f1f8), p));
     to_slot(h, slot, a);
     let q = mul(sub(1.0, p), konst64(h, 0x00b5_f1d0));
-    let v1 = konst(h, 0x00b5_f31c);
-    let u1 = konst(h, 0x00b5_f450);
-    let u0 = konst(h, 0x00b5_f444);
+    let v1 = konst(h, uv.v1);
+    let u1 = konst(h, uv.u1);
+    let u0 = konst(h, uv.u0);
     let hh = ry(h, a);
     let ww = rx(h, a);
     let y = store(add(q, konst64(h, 0x00b5_f2d8)));
@@ -411,7 +417,19 @@ fn opening_plate(h: &mut impl Host, p: f64, slot: Option<u32>) {
     h.call_sym(
         SHAPE_UV_C2,
         Conv::Cdecl,
-        &[SHEET, x, y, ww, hh, u0, 0, u1, v1, 0x8080_8080, 0x8080_8080],
+        &[
+            SHEET,
+            x,
+            y,
+            ww,
+            hh,
+            u0,
+            uv.v0,
+            u1,
+            v1,
+            0x8080_8080,
+            0x8080_8080,
+        ],
     );
 }
 
@@ -469,12 +487,15 @@ pub fn rings(h: &mut impl Host) {
 pub enum Third {
     Right,
     Left,
+    /// The main window's: the left one's with `u` from 0 to `0x00b5f0b0`.
+    Main,
 }
 
 /// Fading in over `0x00b48308` seconds after the opening (`p`, held to
 /// 0..1; alpha `p × 0x00b4c170`): two shapes 0x190 sliding with `p ×
-/// 0x00b5f218`, then the [`Third`].
-pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) {
+/// 0x00b5f218`, then the [`Third`]. Returns the slide (`f64`, which the
+/// original keeps in its frame).
+pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) -> f64 {
     let open: u32 = h.read(w.wrapping_add(0xe0));
     let p = store(div(
         sub(load(open), konst64(h, 0x00b3_eb60)),
@@ -511,11 +532,14 @@ pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) {
         Conv::Cdecl,
         &[0x190, x, y, ww, hh, u0, v0, u1, v1, colour, colour],
     );
-    if third == Third::Left {
+    if third != Third::Right {
         let v1 = konst(h, 0x00b5_f0c8);
-        let u1 = konst(h, 0x00b5_f11c);
+        let (u0, u1) = if third == Third::Left {
+            (konst(h, 0x00b5_f0dc), konst(h, 0x00b5_f11c))
+        } else {
+            (0, konst(h, 0x00b5_f0b0))
+        };
         let v0 = konst(h, 0x00b5_f0c4);
-        let u0 = konst(h, 0x00b5_f0dc);
         let hh = ryk(h, 0x00b5_ee74);
         let ww = rxk(h, 0x00b5_ef24);
         let y = ryk(h, 0x00b5_f420);
@@ -526,7 +550,7 @@ pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) {
             Conv::Cdecl,
             &[0x190, x, y, ww, hh, u0, v0, u1, v1, colour, colour],
         );
-        return;
+        return slide;
     }
     let v1 = konst(h, 0x00b5_f0c8);
     let u1 = konst(h, 0x00b5_f0d4);
@@ -545,20 +569,47 @@ pub fn fade_shapes(h: &mut impl Host, w: u32, third: Third) {
         Conv::Cdecl,
         &[0x190, x, y, ww, hh, u0, v0, u1, v1],
     );
+    slide
 }
+
+/// The opening plate's UVs: `u0`, `u1`, `v1` image constants, `v0` the
+/// word itself.
+#[derive(Clone, Copy)]
+pub struct OpeningUv {
+    u0: u32,
+    v0: u32,
+    u1: u32,
+    v1: u32,
+}
+
+/// The side windows' opening plate.
+pub const SIDE_OPENING: OpeningUv = OpeningUv {
+    u0: 0x00b5_f444,
+    v0: 0,
+    u1: 0x00b5_f450,
+    v1: 0x00b5_f31c,
+};
+
+/// The main window's opening plate (`v0` 1.0).
+pub const MAIN_OPENING: OpeningUv = OpeningUv {
+    u0: 0x00b5_f038,
+    v0: 0x3f80_0000,
+    u1: 0x00b5_f03c,
+    v1: 0x00b5_eecc,
+};
 
 /// The side windows' start: the open time ([`open_time`]); while it is
 /// below `0x00b3eb60`, only the opening plate ([`opening_plate`], the
 /// fraction held to 0..1) and `None`; else the time since then (`f32`
 /// bits).
-pub fn opening(h: &mut impl Host, w: u32, slot: Option<u32>) -> Option<u32> {
+pub fn opening(h: &mut impl Host, w: u32, slot: Option<u32>, uv: OpeningUv) -> Option<u32> {
     let open = open_time(h, w);
     let t = load(pass(open));
     let end = konst64(h, 0x00b3_eb60);
     // `fcom`; `test ah, 0x41; jne`: the opening while it is above t
     if end > t {
         let p = unit(load(store(div(t, end))));
-        opening_plate(h, p, slot);
+        opening_plate(h, p, slot, uv);
         return None;
     }
     Some(store(sub(t, end)))
@@ -593,7 +644,7 @@ pub fn cursor_if_shown(h: &mut impl Host, w: u32) {
 /// `slot` is the window argument's word: the opening leaves its plate's
 /// x there (after its size and y).
 pub fn wait_win_right(h: &mut impl Host, w: u32, slot: Option<u32>) -> u32 {
-    let Some(t) = opening(h, w, slot) else {
+    let Some(t) = opening(h, w, slot, SIDE_OPENING) else {
         return 0;
     };
     cursor_plate(h, w, RIGHT_PANEL);

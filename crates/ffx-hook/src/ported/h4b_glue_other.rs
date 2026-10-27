@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk,
+    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl,
 };
 
 use super::{StackFrame, mem, ported};
@@ -304,5 +304,16 @@ ported! {
     /// the opening plate's x left in the window's slot.
     TODrawWaitBtlWinLeft @ 0x008a_3680 => extern "C" fn wait_win_left(w: u32; slots: u32) -> u32 {
         bk::wait_win_left(&mut mem(), w, Some(slots))
+    }
+
+    // ---- round 3, batch 3 (ffx_glue_other::h4b_l)
+
+    /// `TODrawWaitBtlWinMain(w)`: the main command list's wait window;
+    /// the width and the strings pointer its callees write in a frame
+    /// (`ebp - 0x30` .. `ebp - 0x28`, 2 words). Skipped, it leaves the
+    /// caller's `eax` (0 here; the window callers drop it).
+    TODrawWaitBtlWinMain @ 0x008a_49b0 => extern "C" fn wait_win_main(w: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        bl::wait_win_main(&mut mem(), w, f.at()).unwrap_or(0)
     }
 }

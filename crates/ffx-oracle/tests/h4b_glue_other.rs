@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4501,5 +4501,152 @@ fn sparkle_edge(t: &mut Twins, rng: &mut Rng, w: u32) {
         t.write(at, &v.to_le_bytes());
     } else {
         t.write(at, &(v as f32).to_le_bytes());
+    }
+}
+
+// ---- round 3, batch 3 (ffx_glue_other::h4b_l)
+
+/// The main window's own constants: the opening, the badges, the scroll
+/// bar, the third fading shape.
+const MAIN_F32: [u32; 42] = [
+    0x00b5_f038,
+    0x00b5_f03c,
+    0x00b5_eecc,
+    0x00b5_f340,
+    0x00b5_efd4,
+    0x00b4_1318,
+    0x00b5_f378,
+    0x00b5_f2f0,
+    0x00b5_f3b0,
+    0x00b5_f3f0,
+    0x00b5_f3f4,
+    0x00b5_f0f8,
+    0x00b5_f0e0,
+    0x00b5_f0f0,
+    0x00b5_f0a8,
+    0x00b5_f390,
+    0x00b5_f3f8,
+    0x00b5_f320,
+    0x00b5_f3dc,
+    0x00b5_f30c,
+    0x00b5_f380,
+    0x00b4_1d84,
+    0x00b5_f394,
+    0x00b5_f0e4,
+    0x00b5_f0bc,
+    0x00b5_f0d0,
+    0x00b5_8354,
+    0x00b5_f364,
+    0x00b5_f3e4,
+    0x00b5_f3e8,
+    0x00b5_f3ec,
+    0x00b5_f310,
+    0x00b5_f458,
+    0x00b5_f454,
+    0x00b5_ee6c,
+    0x00b9_2314,
+    0x00b4_ae1c,
+    0x00b4_9990,
+    0x00b5_f0b0,
+    0x00b5_ee10,
+    0x00b5_f300,
+    0x00b5_f408,
+];
+const MAIN_F64: [u32; 5] = [
+    0x00b5_f220,
+    0x00b5_f238,
+    0x00b5_f268,
+    0x00b4_1308,
+    0x00b9_2220,
+];
+
+/// `TODrawWaitBtlWinMain`: the wait windows off and on, the opening, the
+/// panel with plain and flipped plates, every badge (one, two, three
+/// usable commands), ripples on and off (the names' alpha word left by
+/// each path), the scroll bar, sparkles, fades, the command names (hidden,
+/// unusable and usable commands, empty slots) and the cursor; image and
+/// random constants. The callees' words (`ebp - 0x30`, `- 0x2c`) are
+/// compared too.
+#[test]
+fn bl_wait_win_main() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f601);
+        let (mut tags, scales) = wait_stubs(&mut t);
+        let (width, strings) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bl::COM_DATA, false, 2, 0, &[wr(1, strings)]);
+        t.stub_at(bl::FONT_WIDTH, false, 5, 0, &[wr(1, width)]);
+        for (sym, n) in [
+            (bk::CHECK_LEFT, 1),
+            (bl::SCROLL_PARTS, 7),
+            (bl::PKT_SCISSOR, 4),
+            (bl::CHECK_USE, 2),
+            (bl::EDGE_FONT, 6),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        tags.extend([bl::COM_DATA, bl::FONT_WIDTH]);
+        let step = t.stub_code(0x0bad_f601, false, 1, 0, false, &[]);
+        tags.push(0x0bad_f601);
+        let mut real = wait_constants(&mut t);
+        for &c in LEFT_F32.iter().chain(&LEFT_F32B).chain(&MAIN_F32) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 4).unwrap()));
+        }
+        for &c in LEFT_F64.iter().chain(&MAIN_F64) {
+            let at = t.rebase(c);
+            real.push((at, Oracle::read(&mut t.a, at, 8).unwrap()));
+        }
+        let w = t.zeros(0x100);
+        let list = t.zeros(0x40) + 2;
+        let record = t.zeros(4);
+        let ebp = t.ebp_for(1);
+        let frame = ebp - 0x30;
+        for i in 0..800 {
+            let what = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            wait_case(&mut t, &mut rng, &real, scales, w, list);
+            if rng.below(4) == 0 {
+                t.constants(&mut rng, &LEFT_F32, &LEFT_F64);
+                t.constants(&mut rng, &MAIN_F32, &MAIN_F64);
+            }
+            let skip = rng.pick(&[0, 0, 0, 0, 0, 0, 0, 0, 1, 2]);
+            t.g32(0x0133_d6e0, skip);
+            let usable = rng.pick(&[0, 1, 2, 3, 3, 4, 0xffff_ffff]);
+            t.ret(bk::CHECK_LEFT, usable);
+            let use_ = rng.pick(&[0, 1, 0xffff_ffff, 0xffff_fffc, 0xfe]);
+            t.ret(bl::CHECK_USE, use_);
+            t.ret(bl::COM_DATA, record);
+            let off = rng.below(0x40) as u16;
+            t.w16(record, off);
+            let base = rng.next();
+            t.w32(strings, base);
+            let wd = rng.float();
+            t.w32(width, wd);
+            let count = rng.pick(&[0, 1, 2, 3, 5, 8, 12, 0xffff_ffff]);
+            t.w32(w + 0x24, count);
+            t.w32(w + 0x88, step);
+            for k in 0..16u32 {
+                let id = rng.pick(&[0xff, 0x3001, 0x2005, 0x1003, 0xff, 0x4010, 0x8001]);
+                t.w16(list + 2 * k, id);
+            }
+            // keep the counts and rows inside the list
+            let rows = rng.pick(&[1u16, 2, 3, 4]);
+            t.w16(w + 0x3a, rows);
+            let first = rng.pick(&[0u16, 1, 2, 0xffff]);
+            t.w16(w + 0x40, first);
+            if rng.below(2) == 0 {
+                sparkle_edge(&mut t, &mut rng, w);
+            }
+            t.write(frame, &[0xa5; 8]);
+            t.b.set_call_top(Some(ebp - 0x100));
+            t.check(&what, 0x008a_49b0, &[w], |g| {
+                opt(bl::wait_win_main(g, w, frame), 0)
+            });
+            t.b.set_call_top(None);
+            let x = Oracle::read(&mut t.a, frame, 8).unwrap();
+            let y = Oracle::read(&mut t.b, frame, 8).unwrap();
+            assert_eq!(x, y, "{what}: frame");
+        }
     }
 }

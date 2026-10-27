@@ -12,8 +12,8 @@ use ffx_graphic::host::{Conv, Host};
 use crate::h4_e1::{SHAPE_UV, SHAPE_UV_C2, int_f32};
 use crate::h4_g1::COMMAND_WINDOW;
 use crate::h4b_j::{
-    CLEAR, RIGHT_PANEL, SHEET, Third, cursor_if_shown, cursor_plate, fade_shapes, half, konst,
-    konst64, opening, rings, ripples, rx, rxk, ry, ryk, slide_rows,
+    CLEAR, RIGHT_PANEL, SHEET, SIDE_OPENING, Third, cursor_if_shown, cursor_plate, fade_shapes,
+    half, konst, konst64, opening, rings, ripples, rx, rxk, ry, ryk, slide_rows,
 };
 
 /// `MsCheckLeftWindow(chr)` (cdecl): 0, 1 (a command without a cost) or
@@ -136,6 +136,17 @@ fn sparkles(h: &mut impl Host, w: u32) {
     }
 }
 
+/// The badge and its sparkles when `MsCheckLeftWindow(i16 +8)` is 2 or
+/// more and the window has been open (`open`) past `0x00b92194`.
+pub fn sparkle_window(h: &mut impl Host, w: u32, open: u32) {
+    let chr = half(h, w, 8).cast_unsigned();
+    let usable = h.call_sym(CHECK_LEFT, Conv::Cdecl, &[chr]).cast_signed();
+    // `fcomp`; `test ah, 5; jp`: on when 0x00b92194 < the open time
+    if usable >= 2 && load(konst(h, 0x00b9_2194)) < load(open) {
+        sparkles(h, w);
+    }
+}
+
 /// `TODrawWaitBtlWinLeft(w)` (`0x008a3680`, cdecl): the left-hand command
 /// list's wait window. The opening as the right window's
 /// ([`opening`]); then the panel ([`RIGHT_PANEL`], the plates' UVs
@@ -148,7 +159,7 @@ fn sparkles(h: &mut impl Host, w: u32) {
 /// `slot` is the window argument's word, as in
 /// [`crate::h4b_j::wait_win_right`].
 pub fn wait_win_left(h: &mut impl Host, w: u32, slot: Option<u32>) -> u32 {
-    let Some(t) = opening(h, w, slot) else {
+    let Some(t) = opening(h, w, slot, SIDE_OPENING) else {
         return 0;
     };
     let chr = half(h, w, 8).cast_unsigned();
@@ -158,12 +169,7 @@ pub fn wait_win_left(h: &mut impl Host, w: u32, slot: Option<u32>) -> u32 {
     let open: u32 = h.read(w.wrapping_add(0xe0));
     ripples(h, w, RIGHT_PANEL);
     rings(h);
-    let chr = half(h, w, 8).cast_unsigned();
-    let usable = h.call_sym(CHECK_LEFT, Conv::Cdecl, &[chr]).cast_signed();
-    // `fcomp`; `test ah, 5; jp`: on when 0x00b92194 < the open time
-    if usable >= 2 && load(konst(h, 0x00b9_2194)) < load(open) {
-        sparkles(h, w);
-    }
+    sparkle_window(h, w, open);
     fade_shapes(h, w, Third::Left);
     h.call_sym(COMMAND_WINDOW, Conv::Cdecl, &[w]);
     cursor_if_shown(h, w);
