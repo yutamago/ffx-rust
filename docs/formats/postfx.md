@@ -59,7 +59,8 @@ the UI (the minimap); 205, the back buffer's depth (the composite's
 
 ## Order
 
-`PhyreScene_render` (`0x00668930`), the field branch, with what ran on
+`PhyreScene_render` (`0x00668930`; ported in M4 as `ffx_prender::h3e_render`
+and `h3e_scene`, one helper per step), the field branch, with what ran on
 this frame:
 
 1. Back buffer: `setColorTarget(0)`, clear (0, 0, 0, 1). Item 0.
