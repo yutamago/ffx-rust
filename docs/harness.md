@@ -19,7 +19,7 @@ tools/harness.py quit
 | Buttons | `Input_KeyHeld` (`0x00629d50`), wrapped with a trampoline | `Virtuos_InputManager_updateInput` (`0x00632a30`) builds the PS2 pad word at `0x00ccb170` (previous frame at `+4`) by asking it about every binding. For each held button the first keyboard binding paired with it reads as held, so the game sees the same as a key press: exactly that button's bit |
 | Keys | `IDirectInput8::CreateDevice` → device `GetDeviceState` / `SetCooperativeLevel` | The PC menus (Esc) read keys directly. The keyboard is made a background device, and an unacquired one reads as all keys up |
 | Focus | `ShowWindow` | Background mode shows the window without activating it |
-| Isolation | `GetDeviceState`, `XInputGetState` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere |
+| Isolation | `GetDeviceState`, `XInputGetState`, `GetCursorPos`, `SetCursorPos`, `ClipCursor` | In background mode the real keyboard, mouse and pads are ignored: background devices would otherwise see what the user types elsewhere. The mouse pointer the game reads is far outside its window, or where a test puts it (`cursor <x> <y>`), and the game never moves or clips the user's pointer ("The mouse in background games") |
 | Dialogs | `MessageBoxA`, `MessageBoxW` | In background mode a game dialog is logged (`ffx-hook.log`, and an event `messagebox <text>`) and answered OK instead of appearing on the user's desktop |
 | Events | `Phyre_PSerialization_PStreamFileWin32_openFile` | Every file the game opens, and which came from a mod |
 | Randomness | `Rng_ClockSeed` (`0x00798950`), wrapped | `MsRandMize` (`0x00798890`) seeds the global generator (`0x00c42200`) and the 68 at `0x01135ee0` from the system time (`GetSystemTime` bytes XORed, plus 1). With `--seed N` it gets `N`; `ffx-harness` uses seed 1 unless a test says otherwise |
@@ -1654,6 +1654,52 @@ loader, which is where the loader's timing reaches the main thread. The
 first 16 of the 22 `TextureAnimationInfo`s (`*0x00cccaa8 +0x80`) held the
 same period, timer and frame (0) at count 101 in three original and three
 Rust runs, so the bound frame is not chosen by a timer that differs.
+
+### The mouse in background games (fix-gameover, 2026-10-27)
+
+The iggy-menus failure above (after `AtelJumpGameOver` the title's world
+never loads) was not `PhyreScene_doOnFieldMapAssetLoaded`, not a port
+and not the game over: it was the user's mouse. fix-dofmal (branch
+`fix-dofmal-c1015`) had already found it with the port off and with the
+original through a trampoline. Probe scripts and logs of this round in
+`~/ffx-work/gameover`.
+
+- The mouse device's update (`Phyre_PFramework_PInputDeviceMouse_update`,
+  `0x0062d6f0`, the game's only `GetCursorPos` caller) turns the desktop
+  pointer into a window position (`+0x10c`/`+0x110`, pixels times 255),
+  and the PC menu (Iggy) moves its cursor to the entry under it. The
+  harness dropped the DirectInput mouse state (buttons, deltas) in
+  background mode but not `GetCursorPos`, so the user's pointer, resting
+  where a background game's window lies (under the other windows), chose
+  PC-menu entries, and iggy-menus' keys walked other pages. In the
+  original-code recording run of 11:42 (`run-all.sh --extra --record`,
+  `%TEMP%\ffx-snap\runs\20261027-114250-201431\orig`, which failed the
+  same way) the pointer sat on System setting in shot 1, the script's
+  Enters opened Special features and Change parameters (and Get all
+  items' confirmation), and the last Esc left the PC menu open (shot 10).
+- With the PC menu up, `FFXApplication_animate` skips the whole update
+  (`graphicIsEscMenuActive`, `0x0063da80`), so the game over's jump waits
+  for ever: the map word is `0x17`, `g_TkEventJumpRequest` 1, the event
+  count (`0x01325d94`) and `g_SgFrame` stand still, and the loader is
+  idle with no request: the whole symptom ("test20 never requested").
+- So it struck original code as well as Rust, in bursts (when the
+  pointer rested over the games' part of the screen: the failures of
+  11:43 and 11:58), and in none of this round's 40 original and 66
+  all-hooks runs, made while it rested elsewhere.
+- On demand, with `cursor 300 220` (over System setting) before the PC
+  menu opens: 4 of 4 runs stalled, 2 original and 2 with every hook,
+  with the values above and `graphicIsEscMenuActive` 1.
+
+The harness now replaces `GetCursorPos` in background mode: the game
+sees a pointer far outside its window (`-32000, -32000`), or the test's,
+set in client pixels with `cursor <x> <y>` (`cursor off`: none again).
+`SetCursorPos` (the debug free camera) and `ClipCursor` (full screen) do
+nothing then, so a background game never moves or traps the user's
+pointer either. The game test `start_up_input_and_kernel_mod` checks
+both positions on the mouse device (`mouse_is_the_tests`). The Iggy pages
+draw their pointer where the game puts it, so the iggy-menus recordings,
+which showed wherever the user's pointer happened to be, were made
+again.
 
 ## Parallel games
 
