@@ -73,6 +73,7 @@ use ffx_prender::h3_glue47::{self as h47, bridge as gh47};
 use ffx_prender::h3_glue48::{self as h48, bridge as gh48};
 use ffx_prender::h3_glue49::{self as h49, bridge as gh49};
 use ffx_prender::h3_glue50::{self as h50, bridge as gh50};
+use ffx_prender::h3_glue51::{self as h51, bridge as gh51};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -11598,5 +11599,152 @@ fn batch51_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 200 };
         run_cases(t, CASES51, n, &mut Rng(0x5151_b051));
+    });
+}
+
+// ---- round 14 batch 52 (ffx_prender::h3_glue51) ----
+
+/// A scene with its post-process manager (texture slots `+0x8c`, `+0x90`,
+/// `+0xa8`, `+0x1232c`; the colour one's texture always there, the
+/// others' `+4` byte set now and then), renderer, camera (none now and
+/// then) and VFX characters of several layers; an event of every kind
+/// (and one past the switch) with its fields; the renderer calls
+/// failing now and then. The surfaces' constructor and destructor are
+/// the original's.
+fn prep_vfx_event52(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let post = t.zeros(0x1_2400);
+    t.w32(scene + 0x10cc, post);
+    for (k, off) in [0x8cu32, 0x90, 0xa8, 0x1_232c].into_iter().enumerate() {
+        let slot = obj + 0x100 + 0x10 * k as u32;
+        let texture = obj + 0x200 + 0x40 * k as u32;
+        t.w32(post + off, slot);
+        t.w32(slot, texture);
+        let none = k != 0 && rng.chance(4);
+        t.write(slot + 4, &[u8::from(none)]);
+        t.w32(texture + 0x1c, rng.word());
+        t.w32(texture + 0x20, rng.word());
+    }
+    t.write(post + 0x1_23a0, &[u8::from(rng.chance(2))]);
+    let renderer = obj + 0x400;
+    t.w32(scene + 0xd0, renderer);
+    let camera = obj + 0x500;
+    for k in 0..16 {
+        let f = rng.float().to_bits();
+        t.w32(camera + 0x34 + 4 * k, f);
+    }
+    let kind = rng.below(8);
+    t.w32(
+        scene + 0xdc,
+        if kind != 0 && rng.chance(4) {
+            0
+        } else {
+            camera
+        },
+    );
+    // the VFX characters: none, another layer, this one; shown or not
+    let layer = pick(rng, &[0, 3, 0xffff_ffff, 0x7f]);
+    let count = rng.below(6);
+    t.w32(scene + 0xfb48, count);
+    t.w32(scene + 0xfb50, obj + 0x600);
+    for k in 0..count {
+        let chr = obj + 0x700 + 0x20 * k;
+        t.w32(obj + 0x600 + 4 * k, if rng.chance(5) { 0 } else { chr });
+        let l = if rng.chance(2) {
+            layer as u8
+        } else {
+            rng.below(4) as u8
+        };
+        t.write(chr + 0x14, &[u8::from(!rng.chance(3)), l]);
+    }
+    // the event
+    let event = obj + 0x80;
+    args[0] = event;
+    t.w32(event, kind);
+    let words = [rng.word(), rng.word()];
+    t.w32(event + 8, words[0]);
+    t.w32(event + 0xc, words[1]);
+    match kind {
+        0 => t.w32(event + 8, layer),
+        1 => {
+            let b = [rng.below(4) as u8, rng.below(4) as u8, 0, 0];
+            t.write(event + 8, &b);
+            let depth = pick(rng, &[0, 0, 1, 0x100, 0xff00]) as u16;
+            t.write(event + 0xa, &depth.to_le_bytes());
+            if rng.chance(2) {
+                t.w32(event + 0xc, 0);
+            }
+        }
+        5 => {
+            t.w32(event + 8, obj + 0x700);
+            t.write(obj + 0x714, &[u8::from(rng.chance(2))]);
+            if rng.chance(2) {
+                t.write(event + 0xc, &[0]);
+            }
+        }
+        6 => {
+            let array = obj + 0x900;
+            t.w32(event + 8, array);
+            let n = rng.below(4) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+            t.w32(array, n);
+            t.w32(array + 4, obj + 0x980);
+            for k in 0..4 {
+                let inst = obj + 0xa00 + 0x20 * k;
+                t.w32(obj + 0x980 + 4 * k, inst);
+                t.w32(inst + 0x10, rng.word());
+            }
+        }
+        _ => {}
+    }
+    // renderer results: mostly 0
+    let result = |rng: &mut Rng| if rng.chance(6) { rng.word() | 1 } else { 0 };
+    let r = result(rng);
+    t.stub_ret(h51::END_SCENE, true, 1, 1, r);
+    let r = result(rng);
+    t.stub_ret(h51::SET_COLOR_TARGET, true, 2, 2, r);
+    let r = result(rng);
+    t.stub_ret(h51::SET_DEPTH_STENCIL_TARGET, true, 1, 1, r);
+    let blur = pick(rng, &[0, 1, 0x100, 0xffff_ff01]);
+    // drawing a character may switch the scene's camera (the matrix goes
+    // back into the one the scene has then)
+    let other = obj + 0xc00;
+    for k in 0..16 {
+        let f = rng.float().to_bits();
+        t.w32(other + 0x34 + 4 * k, f);
+    }
+    let after = if rng.chance(2) { camera } else { other };
+    t.stub_store(h51::DRAW_CHARACTER, 2, rng.word(), scene + 0xdc, after);
+    t.stub_ret(h51::IS_MOTION_BLUR_ON, true, 0, 0, blur);
+}
+
+const VFX_EVENT52_STUBS: &[(u32, K)] = &[
+    (h51::SET_CAMERA, K::This(1)),
+    (h51::UPDATE_VIEW_MATRICES, K::This(0)),
+    (h51::COPY_DEPTH_BUFFER, K::This(9)),
+    (h51::COPY_BUFFER, K::This(6)),
+    (h51::SET_COLOR4, K::This(1)),
+    (h51::RENDER_SCREEN_FADE, K::This(4)),
+    (h51::PS2_LIGHTING_APPLY, K::Cdecl(1)),
+    (h51::SPECULAR_INSTANCE, K::Getter),
+    (h51::RENDER_CORRESPOND_SPECULAR, K::This(2)),
+    (h51::SET_VISIBLE, K::Cdecl(2)),
+    (h51::SET_VIEWPORT, K::This(4)),
+    (h51::DEGRADE_RESOLUTION, K::This(1)),
+    (h51::SET_CLEAR_COLOR, K::This(4)),
+    (h51::BEGIN_SCENE, K::This(1)),
+    (h51::RENDER_MESH_INSTANCE, K::This(4)),
+];
+
+#[rustfmt::skip]
+const CASES52: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_vfx_event52), ..method("process_vfx_draw_event", 0x0066_6e40, This::Object, 1, VFX_EVENT52_STUBS, |m, this, a| u(gh51::process_vfx_draw_event(m, frame_ebp(), this, a[0]))) }), 0xa8, 0),
+];
+
+#[test]
+fn batch52_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES52, n, &mut Rng(0x5252_b052));
     });
 }

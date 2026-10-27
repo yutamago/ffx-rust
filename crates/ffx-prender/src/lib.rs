@@ -124,6 +124,7 @@ pub mod h3_glue47;
 pub mod h3_glue48;
 pub mod h3_glue49;
 pub mod h3_glue50;
+pub mod h3_glue51;
 pub mod m4r_ctxcapture;
 pub mod m4r_fonttext;
 pub mod m4r_gauss;

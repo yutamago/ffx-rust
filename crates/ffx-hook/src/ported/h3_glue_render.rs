@@ -56,6 +56,7 @@ use ffx_prender::h3_glue47::bridge as g47;
 use ffx_prender::h3_glue48::bridge as g48;
 use ffx_prender::h3_glue49::bridge as g49;
 use ffx_prender::h3_glue50::bridge as g50;
+use ffx_prender::h3_glue51::bridge as g51;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2051,6 +2052,15 @@ ported! {
     graphicCharacterInstantiate_0063c540 @ 0x0063_c540 => extern "C" fn character_instantiate(character: u32, key: u32) -> u32 {
         let mut f = StackFrame::<0x15>::new();
         g50::instantiate_character(&mut mem(), f.at() + 0x54, character, key)
+    }
+
+    // ---- round 14 batch 52 (ffx_prender::h3_glue51) ----
+    /// `PhyreScene_processVFXDrawEvent(this; event)` -> 0 or a renderer
+    /// error: one VFX draw event between the scene's passes (frame `ebp -
+    /// 0xa8`).
+    PhyreScene_processVFXDrawEvent @ 0x0066_6e40 => extern "thiscall" fn scene_process_vfx_draw_event(this: u32, event: u32) -> u32 {
+        let mut f = StackFrame::<0x2a>::new();
+        g51::process_vfx_draw_event(&mut mem(), f.at() + 0xa8, this, event)
     }
 }
 
