@@ -1345,6 +1345,33 @@ when the player started never enters an elapsed time). The hook log says
 wall clock. Reads of the raw clock outside the tick check (a player's
 elapsed real time at `+0x30`, Iggy's own profiling) are left as they are.
 
+### Accepted residue (M4 close, 2026-10-27)
+
+What the replays still show between runs when M4 closes. Each item also
+differs between two runs of the original, or is a few pixels of an
+animation phase that the pinned state doesn't reach. None changes a trace
+event. The sections below give the evidence.
+
+- **Eye blinks:** draw-field's draw 113/115, the scene gates' blink
+  entry, battle-ifrit-1 (Wakka, Yuna). The blink's wait comes from the CRT
+  `rand()` in `chr_texanim_main_sub_old` (`0x0077ff00`); what moves it
+  between original runs is not found ("What still varies (replay-flakes7)").
+- **Rin's eyes:** 4-5 px at x 661..676 on event-agency-1, menu-shop-8 and
+  menu-grid-9; seen between original recordings too.
+- **Cloth:** Tidus's hood on event-besaid-4/-5, Rikku's strap on boot-3,
+  kami0100's cloth ring. The cloth jobs run beside the main and render
+  threads; ordering them would need every reference recorded again.
+- **The loader's 16x8 texture and draw 45's texture-animation bind** on
+  kami0100, now and then with several games at once.
+- **event-besaid-1:** 3-4 px at varying spots in about one run in three,
+  where the originals differ by 1.
+
+Fixed on the way, so not residue: load pacing, `pin`, the lockstep hold
+point, lockstep from the load, FMOD in lockstep, the save copies' file
+times, Iggy on game time, `GlobalTime`, the title water counter, boot and
+movie-fmv in lockstep, and the user's mouse in background games ("The
+mouse in background games").
+
 ### What still varies (replay-flakes5, 2026-10-27)
 
 Measurements on original code, two runs side by side each (probe scripts

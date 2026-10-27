@@ -167,8 +167,8 @@ address per line in `<list>.list` (`h1-render-a`, `p6-render-c`, ...,
 finds reached platform functions that no list or `ported!` line holds yet.
 Each list's shims go into `crates/ffx-hook/src/ported/<list>*.rs`, which is
 what `scene-gate-capture.sh only-m4` installs. The functions that can't be
-hooked are in `not-portable.tsv` there (`docs/hooking.md`, "What can't be
-hooked").
+hooked are in `symbols/m4-not-portable.tsv` (`docs/hooking.md`, "What
+can't be hooked").
 
 ### Argument slots
 

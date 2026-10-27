@@ -151,8 +151,7 @@ The hook is a 5-byte `jmp`, so some functions keep their original bytes:
   `0x406d1388` inside its own SEH scope, which a Rust port can't install.
 
 The M4 lists of these, with the evidence, are in
-`~/ffx-work/m4/port/not-portable.tsv` until M4 is marked done
-(`docs/rewrite-plan.md`).
+`symbols/m4-not-portable.tsv`.
 
 ### Calling originals from a port
 

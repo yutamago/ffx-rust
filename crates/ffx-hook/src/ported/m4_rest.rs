@@ -1,6 +1,6 @@
 //! M4 leftovers (`m4-rest`): the functions eight earlier lists left
 //! behind. The rest of those lists that can't be hooked is in
-//! `~/ffx-work/m4/port/not-portable.tsv` with the reasons.
+//! `symbols/m4-not-portable.tsv` with the reasons.
 //!
 //! Threads: the dynamic meshes' draw tables are sized where the meshes
 //! update (the main thread); the radial lines are set up by

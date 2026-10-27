@@ -7,8 +7,8 @@ nothing of the game.
 
 ## Where we stand (2026-10-16)
 
-This is the baseline the plan started from. Since then M0 to M3 are done
-and M4 is under way (its status is under "M4" below). Tracked numbers per
+This is the baseline the plan started from. Since then M0 to M4 are done
+(M4's result is under "M4" below). Tracked numbers per
 module are in `tools/progress.py` and the status page (`tools/status.sh`).
 
 Ghidra finds 55,707 functions in 6.27 MB of code in `FFX.exe`. Sorting them
@@ -404,22 +404,32 @@ Each part replaces the original only when it passes:
 - for audio, FMOD's mixed output written with its WAV writer, compared
   sample for sample (sound may be on, on the main machine only).
 
-**Status (2026-10-26).**
+**Done 2026-10-27.**
 - **Ports.** The pilot's coverage run split the reached code into 10 lists of 4,183 functions. A second coverage round added 18 more, with replays for the graphics settings, a movie, the Iggy screens and a summon battle.
-  - 3,998 of the 4,201 are ported and hooked: 13,905 hooks in all with M1 to M3.
-  - 54 can't be hooked: 52 are under the hook's 5 bytes, plus a tail jump forwarding an unknown argument count and the SetThreadName exception. They are listed with their evidence in `~/ffx-work/m4/port/not-portable.tsv`, which moves into the repo when M4 is marked done.
-  - 149 are left: 45 render-side glue functions (`PhyreScene_render`, `fieldMapInitialize`, `bootInit`, ...), 103 other glue functions (the TO/Tk battle and menu drawers, the FFEscMenu pages, `Game_Main`, ...), and the AutoTest console thread, which loops forever and needs a test stub that ends the loop (ported 2026-10-27).
-  - Held for M5 on purpose, like M3's `Sg_MainLoop` and `updateFFX`: `Game_Main` (0x0062ee50), the Win32 message pump and the frame limiter the harness's lockstep hooks into. M5's inversion replaces it.
+  - 4,146 of the 4,201 are ported and hooked, each with a parity test against the original: 14,053 hooks in all with M1 to M3.
+  - 54 can't be hooked: 52 are under the hook's 5 bytes, plus a tail jump forwarding an unknown argument count and the SetThreadName exception.
+  - `Game_Main` (0x0062ee50) is held for M5 on purpose, like M3's `Sg_MainLoop` and `updateFFX`. It is the Win32 message pump and the frame limiter the harness's lockstep hooks into, and M5's inversion replaces it.
+  - All 55 are listed with their reason and evidence in `symbols/m4-not-portable.tsv`.
 - **Draw streams.** `tools/scene-gate.sh` gates six scenes with an allow file each (`crates/ffx-drawdiff/allow/gate/`): draw-field, bsil0000, bsil0300, kami0100, a menu and a battle. Each passes with only the M4 ports and with every hook on.
   - Every allow entry has a cause seen between two runs of the original, except one: `SgSpec_CameraVec[0].z`, a never-written stack read in `Ch_DrawMain`, which the junk-read policy sets to 0.
 - **Audio.** `run-all.sh --audio` compares FMOD's mix sample for sample on event-besaid, battle-attack, menu-browse and battle-ifrit; all four are identical with every port on. It found one port bug: `MsMusicReadStart` dropped the victory fanfare's id.
+- **Replays.** The main list (13 replays) and the extra list (9) give the original's trace events with every port on. What they still differ by is listed in `docs/harness.md`, "Accepted residue": eye blinks, cloth, and a few pixels of animation phase that also differ between two runs of the original.
+  - Most of the flakes on the way were real-time dependencies in the harness or the game, not ports: the loader racing the render lock, FMOD and Iggy on the wall clock, `GlobalTime`, the title water counter, the save copies' file times, and the user's mouse reaching background games. Each one now runs on game time or is pinned.
 - **Static checks.** Besides check-ported, check-clobber and check-callwidth:
   - check-thisarg: callees that read ecx;
   - check-argslots: argument slots an unhooked caller reads back;
   - check-callconv: `ret n` against the port's convention;
-  - check-tailargs: stack words an original only forwards.
+  - check-tailargs: stack words an original only forwards;
+  - check-privacy: no user paths in tracked files, no-reply commit e-mails only.
   `tools/verify-batch.py` runs them all.
-- **Left besides the ports.** Three replay flakes show up only when several games run at once (event-agency, battle-overdrive, a menu banner's animation phase). Then this section marks M4 done, with what stays for M5.
+
+What stays for M5:
+- the Direct3D 11 calls (still calls, through the device's vtables);
+- FMOD (`fmodex.dll`, `fmod_event.dll`) and Iggy (`iggy_w32.dll`);
+- libvpx, vorbis and mkvparser, linked into FFX.exe;
+- the CRT and the platform category;
+- `Game_Main` and M3's held main-loop functions;
+- the functions the coverage runs never reached.
 
 ### M5: inversion
 
