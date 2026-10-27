@@ -1232,7 +1232,7 @@ fn actions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u
     let target = rng.below(ACTORS);
     let kind = rng.below(4);
     set(a, b, ac::AEON_PLAIN, u8::from(rng.below(4) == 0));
-    set(a, b, ac::AEON_PLAIN2, u8::from(rng.below(4) == 0));
+    set(a, b, ac::NO_MAGIC_EFFECT, u8::from(rng.below(4) == 0));
     set(a, b, ffx_battle::save::bridge::MENU, rng.next());
     poke(a, b, w.actor(i) + 0x3f9, &[u8::from(rng.below(2) == 0)]);
     twin(
@@ -1544,7 +1544,12 @@ fn effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
     let stone = [i8::try_from(flag(rng, 6)).unwrap(), 0];
     set(a, b, ffx_battle::state::bridge::STONE_EFFECT, stone);
     set(a, b, p::NO_MAGIC_FILE, flag(rng, 4));
-    set(a, b, ffx_battle::action::bridge::AEON_PLAIN2, flag(rng, 6));
+    set(
+        a,
+        b,
+        ffx_battle::action::bridge::NO_MAGIC_EFFECT,
+        flag(rng, 6),
+    );
     set(a, b, p::EFFECT_PRELOADED, u32::from(flag(rng, 3)));
     set(a, b, p::EFFECT_READ_CHR, rng.below(ACTORS));
     // the effect file table, effect 0x15e at times
@@ -4689,7 +4694,12 @@ fn battle_end_status(
         be::PAD,
         [0, 0xf0, 0x10, rng.byte()][rng.below(4) as usize],
     );
-    set(a, b, ffx_battle::action::bridge::AEON_PLAIN2, flag(rng, 4));
+    set(
+        a,
+        b,
+        ffx_battle::action::bridge::NO_MAGIC_EFFECT,
+        flag(rng, 4),
+    );
     set(a, b, ffx_battle::parse::bridge::NO_MAGIC_FILE, flag(rng, 4));
     set(
         a,
@@ -10071,12 +10081,7 @@ fn read_manage(
         };
         set(a, b, ffx_battle::misc::bridge::MAP_READ, map_read);
         set(a, b, rd::MAP_STARTED, u8::from(rng.below(2) == 0));
-        set(
-            a,
-            b,
-            ffx_battle::exe::bridge::BATTLE_MUSIC,
-            rng.next() as u16,
-        );
+        set(a, b, ffx_battle::exe::bridge::BATTLE_MAP, rng.next() as u16);
         set(
             a,
             b,
@@ -11163,7 +11168,7 @@ fn read_set_scene(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, 
         0x8000,
         rng.word().to_le_bytes()[0].into(),
     ][rng.below(4) as usize];
-    set(a, b, ffx_battle::exe::bridge::BATTLE_MUSIC, music);
+    set(a, b, ffx_battle::exe::bridge::BATTLE_MAP, music);
     let jump = match rng.below(3) {
         0 => i32::from(music.cast_signed()).cast_unsigned(),
         1 => u32::from(music),

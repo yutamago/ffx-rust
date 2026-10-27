@@ -376,7 +376,7 @@ pub mod bridge {
 
     /// `MsLimitTypeExpGet(i, k, force)` (`0x007b10c0`): party member `i`'s
     /// (up to 6) progress towards overdrive type `k` (up to 0x10): unless
-    /// the battle keeps no records (`g_BtlStealRule`), it is KO'd or
+    /// the battle keeps no records (`g_BtlBattleType` 2), it is KO'd or
     /// petrified (without `force`), it already counted `k` this turn
     /// (`+0x6f0` bit `k`) or its counter (`ply_save +0x60[k]`) is 0xffff:
     /// counted (`+0x6f0`), the counter down by one (not below 0); at 0 with

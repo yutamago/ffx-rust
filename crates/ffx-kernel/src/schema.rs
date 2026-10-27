@@ -87,6 +87,24 @@ impl Schema {
 /// Battle commands and items share one record layout.
 const COMMAND_FIELDS: &[Field] = &[
     Field {
+        name: "icon",
+        offset: 0x14,
+        kind: Kind::U8,
+        doc: "the icon drawn before an item's name (MsGetRomItem's record byte +0x14, ffx_menu::tk); name from Fahrenheit",
+    },
+    Field {
+        name: "sub_menu_cat2",
+        offset: 0x17,
+        kind: Kind::U8,
+        doc: "the command group the inventory must allow when +0x16 & 0xf8 is 8: 5 an aeon, 6/0x11 an item, 7/0xf a weapon or armour, 0xa a battle-list kind (ffx_battle::ability); name from Fahrenheit",
+    },
+    Field {
+        name: "flags_target",
+        offset: 0x1a,
+        kind: Kind::U8,
+        doc: "bit 1 targets the other side, bits 2-3 0 for a one-target or self command, bit 6 the dead (ffx_battle::action, ffx_battle::actor); name and the other bits from Fahrenheit",
+    },
+    Field {
         name: "flags",
         offset: 0x1c,
         kind: Kind::U32,
@@ -97,6 +115,24 @@ const COMMAND_FIELDS: &[Field] = &[
         offset: 0x20,
         kind: Kind::U8,
         doc: "bit 0x4: can be a critical hit; bit 0x8: its crit bonus is the user's equipment's (actor +0x5d8) instead of crit_bonus (crit roll 0x00789690)",
+    },
+    Field {
+        name: "flags_damage_class",
+        offset: 0x23,
+        kind: Kind::U8,
+        doc: "what the command hits as DmgCalc keeps it (DmgCalc 0x0078e630 reads it at 0x0078e7e8); name from Fahrenheit",
+    },
+    Field {
+        name: "mp_cost",
+        offset: 0x25,
+        kind: Kind::U8,
+        doc: "MP cost (MsGetCommandMP 0x0078cf70 reads it at 0x0078cf9c, 0 with the user's STAT_USE_MP0 +0x6ce; the menus' MP column); name from Fahrenheit",
+    },
+    Field {
+        name: "limit_cost",
+        offset: 0x26,
+        kind: Kind::U8,
+        doc: "overdrive gauge cost (MsCalcMagic 0x0078abb7 and MsCheckUseCommand 0x0078c6ad read it; ignored with the debug no-cost flag 0x0112a90c); name from Fahrenheit",
     },
     Field {
         name: "crit_bonus",
@@ -111,10 +147,64 @@ const COMMAND_FIELDS: &[Field] = &[
         doc: "damage or healing formula; healing (Cmd_HealAmount 0x008c6920): 6 = power x 50, 7 = (stat + power) / 2 x power, 8 = max HP x power / 16",
     },
     Field {
+        name: "accuracy",
+        offset: 0x29,
+        kind: Kind::U8,
+        doc: "hit chance input (DmgCalc_CheckHit 0x0078a890 reads it at 0x0078a8db); name from Fahrenheit",
+    },
+    Field {
         name: "power",
         offset: 0x2a,
         kind: Kind::U8,
         doc: "formula input (Cmd_HealAmount 0x008c6920, damage setup 0x0078e630); Potion 4 = 200 HP",
+    },
+    Field {
+        name: "hit_count",
+        offset: 0x2b,
+        kind: Kind::U8,
+        doc: "hits (MsMenuLimitSet's hit counts, ffx_battle::limit); name from Fahrenheit",
+    },
+    Field {
+        name: "shatter_chance",
+        offset: 0x2c,
+        kind: Kind::U8,
+        doc: "a roll % 101 below it shatters a petrified target: KO and bit 0x100 (DmgCalc_InflictStatus_Extra 0x0078b4e0); name from Fahrenheit",
+    },
+    Field {
+        name: "element",
+        offset: 0x2d,
+        kind: Kind::U8,
+        doc: "element bits: 0x1 fire, 0x2 ice, 0x4 thunder, 0x8 water, 0x10 holy (MsGetComInfo 0x0078cd30 reads it); name from Fahrenheit",
+    },
+    Field {
+        name: "flags_status_extra",
+        offset: 0x54,
+        kind: Kind::U16,
+        doc: "the second status word it inflicts or removes (+0x616 bits; DmgCalc_InflictStatus_Extra 0x0078b4e0); the 25 status chances at +0x2e and 13 durations at +0x47 are exported as hex (DmgCalc_InflictStatus 0x0078ae00); name from Fahrenheit",
+    },
+    Field {
+        name: "flags_buffs_stat",
+        offset: 0x56,
+        kind: Kind::U16,
+        doc: "cheer, aim, focus, reflex, luck and jinx bits it raises (DmgCalc_ApplyStatUpBuffs 0x0078d730); name from Fahrenheit",
+    },
+    Field {
+        name: "overdrive_category",
+        offset: 0x58,
+        kind: Kind::U8,
+        doc: "the overdrive kind (MsMenuLimitSet 0x007afe00; 1: the menus draw the user's name, MenuDrawChrNameOrCommand); name from Fahrenheit",
+    },
+    Field {
+        name: "buff_amount",
+        offset: 0x59,
+        kind: Kind::U8,
+        doc: "how many levels +0x56 adds, at least 1, to 5 at most (DmgCalc_ApplyStatUpBuffs); name from Fahrenheit",
+    },
+    Field {
+        name: "ordering_idx",
+        offset: 0x5c,
+        kind: Kind::U8,
+        doc: "the battle menu's sort key (ffx_battle::ability); commands and items only (monmagic records end at 0x5c); name from Fahrenheit",
     },
 ];
 
@@ -122,6 +212,96 @@ const COMMAND_FIELDS: &[Field] = &[
 /// for none. Each one's `a_ability` record is applied to the wearer in
 /// battle (`MsSetRamChrParam`, `0x0079c5f0`).
 const ABILITY_DOC: &str = "auto-ability, 0x8000 + a_ability ID; 0x00ff empty";
+
+/// Auto-abilities (`a_ability`, 108 bytes): what an equipment ability
+/// gives its wearer (`MsSetRamChrParam`, `0x0079c5f0`; `MsSetSaveParam`,
+/// `0x007860f0`). Field names from Fahrenheit's `AutoAbility`.
+const A_ABILITY_FIELDS: &[Field] = &[
+    Field {
+        name: "is_sos",
+        offset: 0x10,
+        kind: Kind::U8,
+        doc: "bit 0: the auto-statuses at +0x58 apply only at HP weak levels 1 and 2 (SOS: actor +0x636 instead of +0x630; MsSetRamChrParam 0x0079c5f0 tests it at 0x0079c957); name from Fahrenheit",
+    },
+    Field {
+        name: "elem_strike",
+        offset: 0x11,
+        kind: Kind::U8,
+        doc: "element bits ORed into the wearer: weapon element (actor +0x5d9) (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "elem_absorb",
+        offset: 0x12,
+        kind: Kind::U8,
+        doc: "element bits ORed into the wearer: absorbed (actor +0x5da) (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "elem_ignore",
+        offset: 0x13,
+        kind: Kind::U8,
+        doc: "element bits ORed into the wearer: nullified (actor +0x5db) (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "elem_resist",
+        offset: 0x14,
+        kind: Kind::U8,
+        doc: "element bits ORed into the wearer: halved (actor +0x5dc) (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "elem_weak",
+        offset: 0x15,
+        kind: Kind::U8,
+        doc: "element bits ORed into the wearer: weak (actor +0x5dd) (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "stat_inc_amount",
+        offset: 0x55,
+        kind: Kind::U8,
+        doc: "percentage added to the values +0x56 names (MsSetSaveParam 0x007860f0); name from Fahrenheit",
+    },
+    Field {
+        name: "stat_inc_flags",
+        offset: 0x56,
+        kind: Kind::U16,
+        doc: "bits 0-7 strength, defence, magic, magic defence, agility, luck, evasion, accuracy; 8 HP, 9 MP; 10-13 four damage rates (MsSetSaveParam 0x007860f0); bit names from Fahrenheit",
+    },
+    Field {
+        name: "status_auto_permanent",
+        offset: 0x58,
+        kind: Kind::U16,
+        doc: "auto-statuses, actor +0x606 bits (MsSetRamChrParam 0x0079c5f0); the 25 inflict chances at +0x16, 13 durations at +0x2f and 25 resistances at +0x3c are exported as hex; name from Fahrenheit",
+    },
+    Field {
+        name: "status_auto_temporal",
+        offset: 0x5a,
+        kind: Kind::U16,
+        doc: "auto-statuses, the 13 counters' bits (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "status_auto_extra",
+        offset: 0x5c,
+        kind: Kind::U16,
+        doc: "auto-statuses, actor +0x616 bits (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "status_inflict_extra",
+        offset: 0x5e,
+        kind: Kind::U16,
+        doc: "+0x616 bits the wearer's attacks inflict (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "status_resist_extra",
+        offset: 0x60,
+        kind: Kind::U16,
+        doc: "+0x616 bits the wearer resists, actor +0x65a (MsSetRamChrParam 0x0079c5f0); name from Fahrenheit",
+    },
+    Field {
+        name: "auto_ability_effects",
+        offset: 0x62,
+        kind: Kind::U16,
+        doc: "the first word of the auto-ability effect bits, actor +0x6bc (MsSetRamChrParam 0x0079c5f0; MsSetSaveParam copies +0x62-+0x67 into ply_save +0x4a); name from Fahrenheit",
+    },
+];
 
 /// Equipment: the starting inventory (`weapon`, `wep_data`, copied into
 /// the 200 slots at `0x01130f2c` by `MsSetSaveStartGame`, `0x00786b00`) and the
@@ -431,7 +611,7 @@ pub const SCHEMAS: &[Schema] = &[
         file: "a_ability",
         record_size: 108,
         strings: NAME_HELP,
-        fields: &[],
+        fields: A_ABILITY_FIELDS,
     },
     Schema {
         file: "arms_txt",

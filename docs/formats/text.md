@@ -72,6 +72,46 @@ same bytes:
 | `{c:1a2}` | character index without a unique character (a duplicate in the table) |
 | `{raw:2c}` | a byte that does not start a valid sequence |
 
+## Control codes
+
+What the message windows do with each code, from FFX.exe: `TOGetGroup`
+(`0x008df610`) sorts codes into groups, `TOSkipCode` (`0x008dfd80`) steps
+over them, `TOSetDrawInfo` (`0x008df8f0`, `ffx_system::tolib::set_draw_info`)
+applies the group-2 codes to the pen and `TOGetChangeMacroAddress`
+(`0x008b6660`, `ffx_system::tolib::to_get_change_macro_address`) expands
+the group-3 ones. The names in the second column are Fahrenheit's
+(`FhEncoding` in their `core/encoding.cs`, used with permission).
+
+| Code | Fahrenheit | What the game does |
+|---|---|---|
+| `00` | `{END}` | end (group 1) |
+| `01` | `{BREAK}` | group 1; no argument |
+| `02`, `05` | - | no argument; `02` group 1, `05` group 4 |
+| `03` | `{LF}` | line break (group 1) |
+| `04` *c* | - | second character bank (`TOSkipCode`: 3 bytes when *c* ≤ `0x2f`, else 2) |
+| `06` *x* | - | group 4; one argument |
+| `07` *n* | `{SPACE:n-30}` | pen position: *n* `0xe0`-`0xef` moves right *n* − `0xe0` pixels; `'1'` (and `'8'` on a window whose `+0x24` is 0) restarts the line (`TOFirstInitMessageNormal`); `'2'` right-aligns what follows (x = window `+0x50` − its width, `TOGetMessageWH`); `0x40`-`0xbf` tabs to window `+0x48` + 4*n* − `0x100` |
+| `08` *x* | - | nothing in `TOSetDrawInfo` |
+| `09` *n* | `{TIME:n-30}` | `'0'` clears the window's wait (`+0xac`), *n* below `0xc0` sets it to *n* − `'0'`; *n* from `0xc0` sets `+0xb4` to *n* − `0xc0` (the scroll timer `TOTextScrollTick_008df570` counts down) |
+| `0a` *n* | `{COLOR:n}` | colour: a low nibble *l* ≠ 0 sets the pen colour byte's (`+0x1b`) low nibble to *l* − 1, a high nibble from 4 its high nibble to (*n* & `0xf0`) − `0x40` |
+| `0b` *n* | `{BTN:n}` | button icon *n* (`setButtonData(n, -1)`, drawn at 0.65 or 0.73 by the icon mode); the pen moves by its width |
+| `0c`, `0f`, `11` | - | group 4; **`TOSkipCode` steps over one byte**, while `Text_ToUtf8` and Fahrenheit skip an argument too |
+| `0d` *x* | - | nothing in `TOSetDrawInfo` |
+| `0e` *n* | - | icon mode: `'0'`-`'3'` set mode *n* − `'0'`, `'@'` mode 3, `'A'` mode 1 (with mode 3, the pen moves 5.0) |
+| `10` *n* | `{CHOICE:n-30}` | a choice option's mark (`'0'`, `'1'`, …; the message's flags give the count); *n* `0x50`-`0x57` instead writes the window's counter (`+0xc`) as *n* − `0x4f` digits (`TOIntToMes`) |
+| `12` *n* | `{VAR:n-30}` | text variable *n* − `'0'` of the window (`g_MsgVars`, set by script natives `0x009e`, `0x009f`, `0x00a0`): a number, an item, weapon, command or ability name (types `0x33`-`0x36`), the field pickup (`0x37`), a dictionary entry (`0x13`-`0x23`) or a number of `type − 0x2a` digits (`0x2b`-`0x32`); *n* from `0x50`: a window string |
+| `13` *n* | `{MACRO:00:n-30}` | the name of character *n* − `'0'` (`TOGetSaveChrName`) |
+| `14`, `15`, `18` | `{MACRO:…}` | expand to the code itself |
+| `16`, `17` *n* | `{MACRO:…}` | item *n* − `'0'`'s text (`MsGetRomItem`) |
+| `19`-`22` *n* | `{MACRO:06..0f:n-30}` | the text at `u16` slot window `+0x20` + 2(*n* − `'0'`) of macro dictionary section *code* − `0x13` (`g_MacroDic`, the English set when `MsGetSaveConfigEnglish`) |
+| `23` *n* | `{KEY:n}` | the name of key item *n* − `'0'` (`MsImportantName`) |
+| `24`-`2b` *x* | - | group 4; one argument |
+| `2c`-`2f` *t* | - | characters (see "Byte grammar") |
+
+Groups: 1 = `00`-`03`; 2 = `07`-`0b`, `0d`, `0e`, `10` (`TOSetDrawInfo`);
+3 = `12`-`23` (expanded, recursively, by `TODrawChangeMacro2`); 4 = the
+rest. Fahrenheit's `{MACRO:i:n}` writes the code as *i* = code − `0x13`.
+
 ## Message tables
 
 An event's dialogue and a battle's texts are message tables, one per
@@ -116,4 +156,7 @@ subtitle.
 
 ## Open questions
 
-- What each control code does (colors, inserted names, pauses, …).
+- Codes `02`, `05`, `06`, `08`, `0c`, `0d`, `0f`, `11`, `24`-`2b`: no
+  window code does anything with them. 16 events and a battle in English
+  and Japanese use none of `0c`, `0f`, `11` (which the two skippers read
+  differently), but `2a` with an argument 625 times.

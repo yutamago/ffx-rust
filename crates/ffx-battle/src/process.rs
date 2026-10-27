@@ -825,7 +825,7 @@ pub mod bridge {
     /// combination restarts the battle (with Triangle the whole module) and
     /// returns. Status 0x21 or end kind 5 or 6: the battle's end
     /// ([`END_STEPS`], the save unless [`NO_SAVE`], `MsBattleFree`,
-    /// `AtelBattleEndCallback(type, scene, music, kind)`, the encounter
+    /// `AtelBattleEndCallback(type, scene, map, kind)`, the encounter
     /// type cleared). Then the pad is kept for the next frame and the event
     /// effect runs.
     #[allow(clippy::too_many_lines)]
@@ -968,13 +968,13 @@ pub mod bridge {
             let group = u32::from(mem.read::<u8>(SCENE_GROUP.get(mem)));
             let scene = (field << 16).wrapping_add(group);
             let kind = u32::from(crate::state::bridge::ENCOUNT_TYPE.get(mem));
-            let music = i32::from(crate::exe::bridge::BATTLE_MUSIC.get(mem).cast_signed());
+            let map = i32::from(crate::exe::bridge::BATTLE_MAP.get(mem).cast_signed());
             let how = i32::from(end_kind.get(mem));
             game(
                 mem,
                 &mut *call,
                 ATEL_BATTLE_END_CALLBACK,
-                &[kind, scene, music.cast_unsigned(), how.cast_unsigned()],
+                &[kind, scene, map.cast_unsigned(), how.cast_unsigned()],
             );
             crate::state::bridge::ENCOUNT_TYPE.set(mem, 0);
         }

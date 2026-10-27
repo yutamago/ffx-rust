@@ -351,12 +351,12 @@ pub mod bridge {
     /// monsters (`MsSetRamChrData`), positions and the event's actors
     /// (`MsBtlBridgeEvent2Btl`) are set up, the event map's script actors
     /// removed, player 0 and effect table 1 selected, and the status is 10
-    /// when the event jumps to the battle's map (`g_BtlBattleMusic`, signed)
+    /// when the event jumps to the battle's map (`g_BtlBattleMap`, signed)
     /// or 8; it is returned. `MsGetSaveConfigEnglish` and `FFXIsDebug`,
     /// which the original calls with mode 0 and ignores, are not called
     /// (the first is `xor eax, eax`, the second reads a flag).
     pub fn ms_btl_read_set_scene<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
-        use crate::exe::bridge::{BATTLE_MUSIC, FILE_BUFFER, SG_SET_PLAYER};
+        use crate::exe::bridge::{BATTLE_MAP, FILE_BUFFER, SG_SET_PLAYER};
         use crate::state::bridge::{UNDERWATER, VOICE_EVENT};
         let file = FILE_BUFFER.get(mem);
         let section =
@@ -399,7 +399,7 @@ pub mod bridge {
         game(mem, &mut *call, MS_SET_RAM_CHR_DATA, &[]);
         crate::minor::bridge::ms_push_btl_pos_all(mem);
         game(mem, &mut *call, MS_BTL_BRIDGE_EVENT2BTL, &[]);
-        let map = i32::from(BATTLE_MUSIC.get(mem).cast_signed()).cast_unsigned();
+        let map = i32::from(BATTLE_MAP.get(mem).cast_signed()).cast_unsigned();
         game(mem, &mut *call, ATEL_EVENT_REMOVE_FOR_BATTLE, &[map]);
         game(mem, &mut *call, SG_SET_PLAYER, &[0]);
         game(
@@ -409,7 +409,7 @@ pub mod bridge {
             &[1],
         );
         let jump = game(mem, call, TK_GET_NOW_EVENT_JUMP_MAP_NO, &[]);
-        let map = i32::from(BATTLE_MUSIC.get(mem).cast_signed()).cast_unsigned();
+        let map = i32::from(BATTLE_MAP.get(mem).cast_signed()).cast_unsigned();
         let status: i8 = if jump == map { 10 } else { 8 };
         STATUS.set(mem, status);
         status.cast_unsigned().into()
@@ -512,7 +512,7 @@ pub mod bridge {
     ///   asynchronous read into the buffer (CD methods `+0x58`, `+0`), its
     ///   font path, the special texture (unless a language is set).
     /// - 7: the scene's sections (`MsBtlReadSetScene`; 0xa skips the map).
-    /// - 8 (to 9): the map's read, a battle map (`g_BtlBattleMusic` bit
+    /// - 8 (to 9): the map's read, a battle map (`g_BtlBattleMap` bit
     ///   0x400) or a field map, number its low ten bits.
     /// - 9 (to 0x22): waits for the renderer (bits 0x20, 0x40), loads it.
     /// - 0x22 (to 0xa): waits for the map (`g_BtlMapRead`).
@@ -606,7 +606,7 @@ pub mod bridge {
                 Step::Map => {
                     crate::misc::bridge::MAP_READ.set(mem, 1);
                     game(mem, &mut *s.call, GRAPHIC_SET_IS_BATTLE_MAP, &[1]);
-                    let map = crate::exe::bridge::BATTLE_MUSIC.get(mem);
+                    let map = crate::exe::bridge::BATTLE_MAP.get(mem);
                     STATUS.set(mem, 9);
                     MAP_STARTED.set(mem, 1);
                     let read = if map & 0x400 != 0 {

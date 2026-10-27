@@ -60,16 +60,62 @@ area as is, reuses an identical existing string, or appends.
 ## Known fields
 
 Battle commands (`command.bin`) and items (`item.bin`) share a 96-byte
-record:
+record; `monmagic1`/`2` records are its first 92 bytes. Field names after
+`crit_flags` and `flags` are Fahrenheit's (`Command` in their
+`core/ffx/command.cs`, used with permission); each named one is checked
+against FFX.exe:
 
 | Offset | Type | Field | Evidence |
 |---|---|---|---|
-| `0x00` | 4 × ref | name, ?, description, ? | names and help texts |
-| `0x1c` | `u32` | flags | bit `0x2` puts an item in the usable list, bit `0x400` in the second list (`0x007906a0`); bit `0x40000`: formula and power come from the user's weapon (`0x007898d0`, `0x0078e630`) |
-| `0x20` | `u8` | crit_flags | bit `0x4` can be critical; bit `0x8` takes the crit bonus from the equipment (actor `+0x5d8`) instead of `crit_bonus` (`DmgCalc_Crit`, `0x00789690`) |
+| `0x00` | 4 × ref | name, ?, description, ? | names and help texts; Fahrenheit has the second and fourth as the simplified (kana) versions (not checked) |
+| `0x10`, `0x12` | `u16` | anim_1, anim_2 | Fahrenheit, not checked |
+| `0x14` | `u8` | icon | the icon before an item's name (`MsGetRomItem`'s record `+0x14`, `ffx_menu::tk`) |
+| `0x15`, `0x16` | `u8` | caster_anim, flags_menu | Fahrenheit, not checked; `+0x16 & 0xf8` 8 makes `+0x17` an inventory group (`ffx_battle::ability`) |
+| `0x17` | `u8` | sub_menu_cat2 | the command group the inventory must allow: 5 an aeon, 6/`0x11` an item, 7/`0xf` a weapon or armour, `0xa` a battle-list kind |
+| `0x18`, `0x19` | `u8` | sub_menu_cat, user_id | Fahrenheit, not checked |
+| `0x1a` | `u8` | flags_target | bit 1 the other side, bits 2-3 one target or self, bit 6 the dead (`ffx_battle::action`) |
+| `0x1b` | `u8` | flags_usage | Fahrenheit, not checked |
+| `0x1c` | `u32` | flags | bit `0x2` puts an item in the usable list, bit `0x400` in the second list (`0x007906a0`); bit `0x40` darkness applies (`DmgCalc_CheckHit`); bit `0x40000`: formula and power come from the user's weapon (`0x007898d0`, `0x0078e630`); bits `0x800`/`0x1000` sort the menus (`ffx_battle::ability`; Fahrenheit: sub and trigger menu), 20/21 pick the motion mode (`0x007ae120`; Fahrenheit: tier 1 and 3 cast animations), 27 makes the user look ahead (`ffx_battle::atel`; Fahrenheit: escape and switch). Fahrenheit names all 32 bits (`flags_misc`) |
+| `0x20` | `u8` | crit_flags | bits 0/1 physical/magical (`DmgCalc`); bit `0x4` can be critical; bit `0x8` takes the crit bonus from the equipment (actor `+0x5d8`) instead of `crit_bonus` (`DmgCalc_Crit`, `0x00789690`); bit `0x80` lifts the damage cap to 99999 (`DmgCalc`). Fahrenheit's `flags_damage` |
+| `0x21`, `0x22` | `u8` | steals_gil, party_preview | Fahrenheit, not checked |
+| `0x23` | `u8` | flags_damage_class | what the command hits (`DmgCalc` reads it at `0x0078e7e8`) |
+| `0x24` | `u8` | ctb_rank | Fahrenheit, not checked |
+| `0x25` | `u8` | mp_cost | `MsGetCommandMP` (`0x0078cf70`; 0 with the user's `+0x6ce`) |
+| `0x26` | `u8` | limit_cost | overdrive gauge cost (`MsCalcMagic`, `MsCheckUseCommand`; ignored with debug flag `0x0112a90c`) |
 | `0x27` | `u8` | crit_bonus | added to the critical chance |
 | `0x28` | `u8` | formula | `Cmd_HealAmount` (`0x008c6920`): 6 = power × 50, 7 = (stat + power) / 2 × power, 8 = max HP × power / 16 |
+| `0x29` | `u8` | accuracy | `DmgCalc_CheckHit` (`0x0078a8db`) |
 | `0x2a` | `u8` | power | Potion 4 (200 HP), Hi-Potion 20 (1000 HP), X-Potion formula 8, power 16 (full) |
+| `0x2b` | `u8` | hit_count | `MsMenuLimitSet` (`ffx_battle::limit`) |
+| `0x2c` | `u8` | shatter_chance | a roll % 101 below it shatters a petrified target (`DmgCalc_InflictStatus_Extra`) |
+| `0x2d` | `u8` | element | fire, ice, thunder, water, holy bits (`MsGetComInfo` `0x0078cd6f`) |
+| `0x2e` | 25 × `u8` | (status chances) | `DmgCalc_InflictStatus` (`0x0078ae2e`); exported as hex |
+| `0x47` | 13 × `u8` | (status durations) | `DmgCalc_InflictStatus` (`0x0078ae22`); exported as hex |
+| `0x54` | `u16` | flags_status_extra | the `+0x616` statuses it inflicts or removes (`DmgCalc_InflictStatus_Extra`) |
+| `0x56` | `u16` | flags_buffs_stat | cheer, aim, focus, reflex, luck, jinx (`DmgCalc_ApplyStatUpBuffs` `0x0078d730`) |
+| `0x58` | `u8` | overdrive_category | the overdrive kind (`MsMenuLimitSet`); 1: the menus draw the user's name |
+| `0x59` | `u8` | buff_amount | levels `+0x56` adds, at least 1, up to 5 |
+| `0x5a` | `u16` | flags_buffs_mix | Fahrenheit, not checked |
+| `0x5c` | `u8` | ordering_idx | the battle menu's sort key (`ffx_battle::ability`); commands and items only |
+| `0x5d` | `u8` | sphere_grid_role | Fahrenheit, not checked |
+
+Auto-abilities (`a_ability.bin`, 108 bytes; names from Fahrenheit's
+`AutoAbility`), applied to the wearer by `MsSetRamChrParam`
+(`0x0079c5f0`) and `MsSetSaveParam` (`0x007860f0`):
+
+| Offset | Type | Field | Evidence |
+|---|---|---|---|
+| `0x00` | 4 × ref | name, ?, description, ? | |
+| `0x10` | `u8` | is_sos | bit 0: the auto-statuses go to the SOS set (actor `+0x636`, and `+0x63c` = 1) instead of `+0x630` (`0x0079c957`) |
+| `0x11`-`0x15` | `u8` | elem_strike, elem_absorb, elem_ignore, elem_resist, elem_weak | ORed into actor `+0x5d9`-`+0x5dd` |
+| `0x16`, `0x2f`, `0x3c` | 25, 13, 25 × `u8` | status_inflict, status_duration, status_resist | Fahrenheit, not checked; exported as hex |
+| `0x55` | `u8` | stat_inc_amount | the percentage (`MsSetSaveParam` `0x00786711`) |
+| `0x56` | `u16` | stat_inc_flags | what it raises: bits 0-7 the stats, 8 HP, 9 MP, 10-13 four damage rates (`MsSetSaveParam`) |
+| `0x58`-`0x5c` | 3 × `u16` | status_auto_permanent, _temporal, _extra | auto-statuses (`+0x606`, the counters, `+0x616` bits) |
+| `0x5e` | `u16` | status_inflict_extra | ORed into actor `+0x604` |
+| `0x60` | `u16` | status_resist_extra | the wearer's `+0x65a` |
+| `0x62` | 3 × `u16` | auto_ability_effects | actor `+0x6bc`; `MsSetSaveParam` reads the three words into `ply_save` `+0x4a` (only the first word is a named field) |
+| `0x68`-`0x6b` | `u8` | icon, group_idx, group_level, international_bonus_idx | Fahrenheit, not checked |
 
 All other bytes are exported as hex runs (`bytes_<offset>`) until they are
 identified.
@@ -159,5 +205,7 @@ power = 20
 ## Open questions
 
 - The second `u16` of each string reference.
-- Most record fields; `a_ability` (fed into dozens of actor fields), the
-  shop lists and `kaizou`.
+- Most record fields of the other tables; the shop lists and `kaizou`.
+  Fahrenheit has typed layouts for `ply_rom`, `important`, `panel`,
+  `sphere`, `shop`, `customize` (`kaizou`) and the monster stats, not
+  checked here yet.
