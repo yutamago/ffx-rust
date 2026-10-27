@@ -66,6 +66,39 @@ fn with_mods<T>(
     result.unwrap()
 }
 
+/// The mouse pointer a background game reads is the test's, never the
+/// user's (`docs/harness.md`, "The mouse in background games"): the mouse
+/// device's window position (`PInput_GetDevice(0, 0)` `+0x10c`/`+0x110`,
+/// pixels times 255, from `GetCursorPos` in
+/// `Phyre_PFramework_PInputDeviceMouse_update`) follows `cursor <x> <y>`
+/// (client pixels; the game subtracts its own frame and caption sizes, so
+/// a few pixels off), and without one it is far outside the window
+/// wherever the real pointer is.
+fn mouse_is_the_tests(game: &mut Game) {
+    let reply = game.command("call 0x00623c90 0 0").unwrap();
+    let mouse = u32::from_str_radix(reply.trim_start_matches("0x"), 16).unwrap();
+    assert_ne!(mouse, 0, "no mouse device");
+    let position = |game: &mut Game| {
+        let bytes = game.read_abs(mouse + 0x10c, 8).unwrap();
+        let word = |i: usize| i32::from_le_bytes(bytes[i..i + 4].try_into().unwrap()) / 255;
+        (word(0), word(4))
+    };
+    game.command("cursor 200 100").unwrap();
+    game.wait(3).unwrap();
+    let (x, y) = position(game);
+    assert!(
+        (x - 200).abs() <= 24 && (y - 100).abs() <= 24,
+        "the game's pointer is at {x}, {y}, not at the test's 200, 100"
+    );
+    game.command("cursor off").unwrap();
+    game.wait(3).unwrap();
+    let (x, y) = position(game);
+    assert!(
+        x < -10_000 && y < -10_000,
+        "the game's pointer is at {x}, {y}, not far outside its window"
+    );
+}
+
 fn u32_le(bytes: Vec<u8>) -> u32 {
     u32::from_le_bytes(bytes.try_into().unwrap())
 }
@@ -299,6 +332,7 @@ fn start_up_input_and_kernel_mod() {
                 polls > 60,
                 "the keyboard is not read in the background: {stats}"
             );
+            mouse_is_the_tests(&mut game);
 
             // g_KernelItem (0x0112a940) points at the mod's item table.
             game.wait_for_open(&format!("mod {ITEM}"), 30, 1200)

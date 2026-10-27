@@ -39,7 +39,10 @@
 //!   it, keeps it at the bottom of the window stack and makes the keyboard
 //!   a background device, so the game neither appears over other windows,
 //!   takes the focus nor stops reading input without it; the real devices
-//!   are then ignored, so typing in other windows does not reach the game.
+//!   are then ignored, so typing in other windows does not reach the game,
+//!   and the mouse pointer the game reads (`GetCursorPos`) is far outside
+//!   its window unless a test sets one (`cursor`), so the user's mouse
+//!   does not either (`SetCursorPos` and `ClipCursor` do nothing then).
 //!
 //! One command per line, one reply line per command (`ok …` or `err …`).
 //! Addresses are `FFX.exe` addresses (rebased like the hooks) unless noted.
@@ -76,6 +79,7 @@
 //! | `gfxreplay <capture.ffxgfx> [out dir]` | the capture's scene drawn by `ffx-draw` in place of the game's in the next frame, compared with the capture (`gfx::replay`, `docs/draw.md`) |
 //! | `rustmap [on\|off]` | the Rust map path's statistics (`gfx::scene`, needs `FFX_RUST_MAP=1`), or turns it on or off from the next map pass |
 //! | `gfxstats` | `ok frames <n> draws <n>`: draws in the last frame |
+//! | `cursor <x> <y>` / `cursor off` | background mode: the mouse pointer the game reads, in client pixels, or none (far outside the window, the default) |
 //! | `overlay` | shows or hides the live renderer's overlay (as F10): `ok <shown>` |
 //! | `overlayclick <x> <y>` | a left click in the overlay, in back buffer pixels |
 //! | `overlaymouse <x> <y> [down\|up]` | moves the overlay's pointer there, pressing or releasing the left button |
@@ -109,6 +113,16 @@ static MESSAGE_BOX_A: AtomicUsize = AtomicUsize::new(0);
 static MESSAGE_BOX_W: AtomicUsize = AtomicUsize::new(0);
 static SH_GET_FOLDER_PATH: AtomicUsize = AtomicUsize::new(0);
 static CREATE_MUTEX_W: AtomicUsize = AtomicUsize::new(0);
+static GET_CURSOR_POS: AtomicUsize = AtomicUsize::new(0);
+static SET_CURSOR_POS: AtomicUsize = AtomicUsize::new(0);
+static CLIP_CURSOR: AtomicUsize = AtomicUsize::new(0);
+/// The mouse pointer the game sees in background mode ([`get_cursor_pos`]):
+/// [`NO_CURSOR`], or client coordinates set by `cursor <x> <y>`, `x` in
+/// the high half.
+static CURSOR: AtomicU64 = AtomicU64::new(NO_CURSOR);
+const NO_CURSOR: u64 = u64::MAX;
+/// `g_hWnd`, the game's window.
+const G_HWND: u32 = 0x00cc_9ce8;
 /// The single-instance mutex's name for this game (NUL-terminated).
 static MUTEX_NAME: OnceLock<Vec<u16>> = OnceLock::new();
 /// The sandbox Documents folder, NUL-terminated UTF-16.
@@ -1138,6 +1152,58 @@ pub fn event(line: String) {
     {
         e.push(line);
     }
+}
+
+/// Replaces `GetCursorPos` in background mode. The game's only caller,
+/// the mouse device's update (`Phyre_PFramework_PInputDeviceMouse_update`,
+/// `0x0062d6f0`), turns the desktop position into a window position, and
+/// the PC menu (Iggy) moves its cursor to the entry under it: the user's
+/// own mouse, resting over a background game's window, chose menu entries
+/// and broke iggy-menus' key sequence (`docs/harness.md`, "The mouse in
+/// background games"). The game sees a pointer far outside its window, or
+/// the test's (`cursor <x> <y>`).
+unsafe extern "system" fn get_cursor_pos(point: *mut windows_sys::Win32::Foundation::POINT) -> i32 {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+    if point.is_null() {
+        return 0;
+    }
+    let cursor = CURSOR.load(Ordering::Acquire);
+    let mut at = POINT {
+        x: -32000,
+        y: -32000,
+    };
+    if cursor != NO_CURSOR {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // packed i32 halves
+        let client = POINT {
+            x: (cursor >> 32) as u32 as i32,
+            y: cursor as u32 as i32,
+        };
+        // SAFETY: g_hWnd is a word of the game's image; the window it
+        // names (or 0 before it exists) is only read.
+        unsafe {
+            let hwnd = *(crate::rebase(G_HWND) as *const *mut c_void);
+            let mut p = client;
+            if !hwnd.is_null() && ClientToScreen(hwnd, &raw mut p) != 0 {
+                at = p;
+            }
+        }
+    }
+    // SAFETY: the caller's POINT.
+    unsafe { *point = at };
+    1
+}
+
+/// Replaces `SetCursorPos` in background mode (the debug free camera
+/// centres the pointer): the user's mouse stays where it is.
+unsafe extern "system" fn set_cursor_pos(_x: i32, _y: i32) -> i32 {
+    1
+}
+
+/// Replaces `ClipCursor` in background mode (the mouse device clips the
+/// pointer to the window in full screen): the user's mouse stays free.
+unsafe extern "system" fn clip_cursor(_rect: *const c_void) -> i32 {
+    1
 }
 
 /// Replaces `XInputGetState` in background mode: no controller, so a real
@@ -2805,6 +2871,23 @@ fn command(line: &str) -> Result<String, String> {
             crate::gfx::live::mouse(x, y, button);
             "ok".into()
         }
+        "cursor" => {
+            // cursor <x> <y> | cursor off: the pointer the game sees in
+            // background mode ([`get_cursor_pos`]), in client pixels
+            if !BACKGROUND.load(Ordering::Relaxed) {
+                return Err("cursor: background mode only".into());
+            }
+            if arg(1)? == "off" {
+                CURSOR.store(NO_CURSOR, Ordering::Release);
+            } else {
+                let x: i32 = arg(1)?.parse().map_err(|e| format!("{e}"))?;
+                let y: i32 = arg(2)?.parse().map_err(|e| format!("{e}"))?;
+                #[allow(clippy::cast_sign_loss)] // packed i32 halves
+                let packed = (u64::from(x as u32) << 32) | u64::from(y as u32);
+                CURSOR.store(packed, Ordering::Release);
+            }
+            "ok".into()
+        }
         "overlayclick" => {
             let x: f32 = arg(1)?.parse().map_err(|e| format!("{e}"))?;
             let y: f32 = arg(2)?.parse().map_err(|e| format!("{e}"))?;
@@ -3136,6 +3219,24 @@ pub unsafe fn install(module: usize) {
             "XInputGetState",
             xinput_get_state as *const () as usize,
             &XINPUT_GET_STATE,
+        )))
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "USER32.dll",
+            "GetCursorPos",
+            get_cursor_pos as *const () as usize,
+            &GET_CURSOR_POS,
+        )))
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "USER32.dll",
+            "SetCursorPos",
+            set_cursor_pos as *const () as usize,
+            &SET_CURSOR_POS,
+        )))
+        .chain(BACKGROUND.load(Ordering::Relaxed).then_some((
+            "USER32.dll",
+            "ClipCursor",
+            clip_cursor as *const () as usize,
+            &CLIP_CURSOR,
         ))) {
             match crate::iat::patch(module, dll, function, replacement) {
                 Some(original) => {
