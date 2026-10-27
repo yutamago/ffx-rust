@@ -73,6 +73,7 @@ use ffx_prender::h3_glue64::bridge as g64;
 use ffx_prender::h3_glue65::bridge as g65;
 use ffx_prender::h3_glue66::bridge as g66;
 use ffx_prender::h3_glue67::bridge as g67;
+use ffx_prender::h3_glue68::bridge as g68;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2233,6 +2234,14 @@ ported! {
     graphicCharacterInstanceGetClothVertexBuffers @ 0x0063_a810 => extern "C" fn graphic_get_cloth_vertex_buffers(instance: u32, cpu: u32) -> u32 {
         let mut f = StackFrame::<0x2e>::new();
         g67::get_cloth_vertex_buffers(&mut mem(), f.at() + 0xb8, instance, cpu)
+    }
+
+    // ---- round 19 batch 70 (ffx_prender::h3_glue68) ----
+    /// `PhyreScene_PhyreScene(scene)` -> `scene`: the scene's constructor
+    /// (frame `ebp - 0x58`).
+    PhyreScene_PhyreScene @ 0x0064_dc00 => extern "thiscall" fn scene_phyre_scene(this: u32) -> u32 {
+        let mut f = StackFrame::<0x16>::new();
+        g68::phyre_scene(&mut mem(), f.at() + 0x58, this)
     }
 }
 

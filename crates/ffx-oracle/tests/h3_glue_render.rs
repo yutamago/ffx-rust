@@ -90,6 +90,7 @@ use ffx_prender::h3_glue64::{self as h64, bridge as gh64};
 use ffx_prender::h3_glue65::{self as h65, bridge as gh65};
 use ffx_prender::h3_glue66::{self as h66, bridge as gh66};
 use ffx_prender::h3_glue67::{self as h67, bridge as gh67};
+use ffx_prender::h3_glue68::{self as h68, bridge as gh68};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -14025,5 +14026,70 @@ fn batch69_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES69, n, &mut Rng(0x6969_b069));
+    });
+}
+
+// ---- round 19 batch 70 (ffx_prender::h3_glue68) ----
+
+/// A scene's memory (random, so every store shows), the buffers'
+/// allocations (failing now and then, their bytes random), the members'
+/// constructors, the mutex and the application.
+fn prep_scene70(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let fill = rng.bytes(0x1_0e00);
+    let scene = t.alloc(&fill);
+    *this = scene;
+    // the constructor clears the capacities and pointers itself first,
+    // so each buffer is always made (and a null old one "freed")
+    let buffers: Vec<u32> = (0..3)
+        .map(|_| {
+            if rng.chance(5) {
+                0
+            } else {
+                let fill = rng.bytes(0x1000);
+                t.alloc(&fill)
+            }
+        })
+        .collect();
+    t.stub_seq(h68::PHYRE_MALLOC_ALIGNED, false, 2, 0, &buffers);
+    t.stub_ret(h68::VECTOR_CTOR, false, 5, 5, rng.word());
+    let mutex = rng.word();
+    let s = t.stub(None, h68::CREATE_MUTEX_IAT, false, 3, 3, Some(mutex));
+    let at = t.rebase(h68::CREATE_MUTEX_IAT);
+    t.patch(at, &s.to_le_bytes());
+    t.w32(obj + 0x26c, rng.word());
+    t.w32(obj + 0x270, rng.word());
+    t.global(h68::SCENE_3D_FLAG, rng.word() | 1);
+}
+
+const SCENE70_STUBS: &[(u32, K)] = &[
+    (0x0064_cec0, K::This(2)),
+    (0x0044_29e0, K::This(0)),
+    (0x0045_6370, K::This(0)),
+    (0x0045_30a0, K::This(0)),
+    (0x0045_5fe0, K::This(0)),
+    (0x0045_1190, K::This(1)),
+    (0x0058_3b20, K::This(0)),
+    (0x00a2_6e70, K::This(0)),
+    (0x0069_04c0, K::This(0)),
+    (0x0049_c480, K::This(4)),
+    (0x0065_4ed0, K::This(0)),
+    (0x0057_6630, K::This(0)),
+    (0x0057_4970, K::This(0)),
+    (0x0049_cc10, K::This(0)),
+    (h68::MEMSET, K::Cdecl(3)),
+    (h68::PHYRE_FREE, K::Cdecl(1)),
+    (h68::GET_APPLICATION, K::Getter),
+];
+
+#[rustfmt::skip]
+const CASES70: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_scene70), ..method("phyre_scene", 0x0064_dc00, This::Object, 0, SCENE70_STUBS, |m, this, _| u(gh68::phyre_scene(m, frame_ebp(), this))) }), 0x58, 0),
+];
+
+#[test]
+fn batch70_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 30 } else { 120 };
+        run_cases(t, CASES70, n, &mut Rng(0x7070_b070));
     });
 }
