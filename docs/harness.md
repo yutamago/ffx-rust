@@ -1559,7 +1559,37 @@ animation: `PhyreScene_drawMainMenuWaveEffect` (`0x0065b5b0`, through
 later title showed the frame that the free-running first visit (the taps
 of Start before `load direct`) had left. `pin` sets both to 0. Not the
 `TkMenuDrawAll` lead of replay-flakes6: the band is a UI element of the
-scene, not a menu draw.
+scene, not a menu draw. With it, the two original recordings of
+menu-save (menu-save-4: 339,454 pixels apart before) and of iggy-menus
+(11 and 12) agree to the pixel, so the comparison now covers the band.
+
+### What still varies (replay-flakes7, 2026-10-27)
+
+Original code, measured this round (probe scripts and logs in
+`~/ffx-work/flakes7`):
+
+- **Eye blinks.** battle-ifrit-1: four more original runs against the two
+  recordings: three equal to `orig`; the fourth differs from it by 151
+  pixels on Wakka's face (x 900..923, y 454..476), and `orig2` differs
+  from `orig` by 165 on Yuna's face (x 399..425, y 413..437). By eye both
+  are the eyes, so the Rust runs' 3 and 9 pixels there (replay-flakes6)
+  are this residue, not a port. The same kind as draw-field's draw 113
+  and the scene gates' eye-blink entry: `chr_texanim_main_sub_old`
+  (`0x0077ff00`) draws a blink's wait from the CRT `rand()` (`% 90 + 60`)
+  when its state restarts; the middle-calc jobs that run it are seeded
+  ("How it gets in"), and the four runs took the same updates from the
+  load to the battle and to each `waitfor`, with the loader freed only in
+  the map load's update. What moves the blink is not found.
+- **kami0100's cloth ring** (gate entry): pinning at the load's boundary
+  too did not remove it (`docs/drawdiff.md`, "Scene gates").
+- **The eye-blink bind and the loader's 16x8 texture** in the scene
+  gates: bsil0000's r1 has the blink's BC1 frame where r2 and an all-hooks
+  capture have BC3; kami0100's r2 has the loader's texture
+  (`f1de6dea8bd5f574` srv1) another way than r1; one all-hooks kami0100
+  capture differed from both on draw 45's texture-animation bind
+  (`vs 598aad727f6ce184`, srv1 32x32), and the next one passed against
+  r1. All three were seen with three games at once; none is on the
+  scene's list where it was seen, and the lists were not loosened.
 
 ## Parallel games
 
