@@ -18,23 +18,40 @@
 # 0x00c40e28 -1). The field's minimap stays on (the arrival scene hides
 # it first).
 #
-# `realtime`: the player needs real time. In fast mode (lockstep or not)
-# the movie never starts: its frame (+0x6d8) stays 0 and the screen black.
-# At the game's rate the frame advances about one per update, by the
-# decoder and the clock (getCurrentTime), so the shots are pinned to the
-# movie's own frame (`shotwhen` on g_FMVPlayerManager +0x6d8, windows 4
-# frames wide): 64, 192 and 320, then the field after closing it.
-# The script starts the movie once the manager is set up (+0x6d0 playing,
-# +0x6d2 initialised) and 60 frames more. Traced: the map words, the movie
-# number and g_WaitFramesByTime, as distinct values.
-realtime
-load direct 3 bsil0000
+# Lockstep (since 2026-10-27, replay-flakes7; `realtime` before). The
+# player decodes on its own threads at their own speed, and shows nothing
+# until 30 frames are decoded (the prebuffer: the decoded-frame queue at
+# g_FMVPlayerManager +0x38 +0x40, its push count at +0xb0); then the
+# video advances one frame per update, a take that blocks while the
+# decoder is behind (docs/formats/platform.md, "Movies"). Starting the
+# movie (graphicPlayVideo(0)) before the prebuffer is complete reopens it
+# (PhyFMVPlayerManager_PlayVideo: the first frame +0x6e4 not taken yet),
+# and the reopened movie never plays: the reading thread runs its demux
+# only while the demux state (+0x38 +0xe8) is not 2 (done), and only
+# PVideoPlaybackWin32_initialize sets it back to 0. In lockstep 60
+# updates went by before 27 frames were decoded, and in `realtime` the
+# same happened once in 9 Rust runs under load (the movie frame stayed
+# under 64 for 1,200 updates). `holdfor` holds the game at that boundary
+# until the 30 frames are there, so the movie starts at the same update in
+# every run. graphicDestroyFmv is called with `callnext`, at the start of
+# an update: called with `call` while lockstep held the main thread at its
+# boundary, it never returned (docs/harness.md, "Movies in lockstep").
+# The shots are pinned to the movie's own frame (`shotwhen` on
+# g_FMVPlayerManager +0x6d8, windows 4 frames wide): 64, 192 and 320,
+# then the field after closing it. The script starts the movie once the
+# manager is set up (+0x6d0 playing, +0x6d2 initialised), the prebuffer
+# is full, and 60 frames more. Traced: the map words, the movie number and
+# g_WaitFramesByTime, as distinct values.
+load direct 3 bsil0000 lockstep
+lockstep on
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 1500
 wait 37
 trace 0x0112ca90:4 0x00c40e28:4 0x0112a008:4
 call 0x0086eba0 0xffff 24 0 1 5
 waitfor 0x00c40e28:4 02000000 ffffffff 600
 waitfor *0x00cded3c+0x6d0:4 01000100 ffffff00 600
+holdfor *0x00cded3c+0xb0:4 1e000000 ffffffff 60000
 wait 60
 write 0x0112a008 01000000
 call 0x006427c0 0
@@ -42,7 +59,7 @@ shotwhen *0x00cded3c+0x6d8:4 40000000 fcffffff 1200 $OUT\movie-fmv-1.bmp
 shotwhen *0x00cded3c+0x6d8:4 c0000000 fcffffff 1200 $OUT\movie-fmv-2.bmp
 shotwhen *0x00cded3c+0x6d8:4 40010000 fcffffff 1200 $OUT\movie-fmv-3.bmp
 readp 0x00cded3c 0x6d0 0x20
-call 0x0063df30
+callnext 0x0063df30
 write 0x0112a008 00000000
 write 0x00c40e28 ffffffff
 wait 60

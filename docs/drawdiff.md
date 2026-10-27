@@ -349,6 +349,45 @@ Rust captures pass against ref3-a. The scene gate's besaid references
 (`dg-besaid-q1/q2`) still pass: a new original capture with Iggy on the
 virtual clock (`dg-besaid-v1`) passed against q1 on bsil0000 and bsil0300.
 
+Since replay-flakes6 `pin` sets `GlobalTime` (`FFXApplication +0x3b0`
+and its copy) to 0, and the gates' references are `dg-<replay>-r1/r2`
+(replay-flakes7, 2026-10-27: original code, three games at once, taken
+with that pin). Each pair agreed on `GlobalTime` in every draw, so the
+`GlobalTime` entries of bsil0000, bsil0300 and kami0100 are gone. Pair by
+pair (`scene-gate.sh` against each other, the lists without
+`GlobalTime`):
+
+| Scene | r1 against r2 |
+|---|---|
+| bsil0000 | 1 difference: the eye-blink bind of draw 84 (`vs db349612...`, ps srv1, BC1 32x16 in r1, BC3 in r2, frame 0 only): the m4-tex113 flake under load; not on this list (not loosened). Gate against r2 |
+| bsil0300 | 0, nothing allowed was used either: `GlobalTime`, the minimap ring and the chocobo icon all agreed |
+| kami0100 | the cloth ring (allowed, 28-30 draws a frame) and the loader's 16x8 texture (`f1de6dea8bd5f574` srv1, frames 1-2; on bsil0000's list, not on this one): not loosened. Gate against r1 (r2 has the other texture). With every hook on that draw and a texture-animation bind (draw 45) fail more often, and not with `PhyreScene_doOnFieldMapAssetLoaded` disabled (`docs/harness.md`, "What still varies (replay-flakes7)") |
+| menu | PASS |
+| battle | PASS (both loads 77 updates) |
+
+The kami0100 cloth ring: pinning at the load's boundary as well
+(`loadsave <save> lockstep` with a `pin` in the same job, so that every
+update of the map's load steps on the pinned clock; tried with a harness
+change not kept) gave two original captures (`dg-kami-lp1/lp2`) whose
+cloth still differed in 29 draws a frame, with `GlobalTime` equal. So
+the load update's step does not carry it, as replay-flakes4 found for the
+pin sent at that boundary. Two leads, neither measured: the loader's
+100 ms rule in the map load's update (`docs/harness.md`, "Load
+pacing"), which frees the loader beside an update for a real-time
+stretch; and the cloth jobs' timing. `Ch_DrawMain` (`0x0082ed50`) queues
+one cloth job per character at its end (`JobSchedule_Ch_Cloth_PerCharacter`
+`0x00a44b40`, count 1), and `Sg_MainLoop` waits for them only at its own
+end (`JobScheduleWait_Ch_Cloth_PerCharacter`, after the rest of the
+draw, the swap and `MagicFile_Update`). Each job writes the cloth back
+into the model's vertices (`Sg_ClothStep` `0x00822de0`) while the main
+thread goes on with the update and, in lockstep, the render thread draws
+the previous update (released from its present hold when the main thread
+left the boundary). If anything of those reads the cloth vertices in
+that window (the `vb5` ring is filled from them), what it gets follows
+the threads' timing. boot-3 (the opening) showed the same thing once in
+a Rust run against two agreeing originals: Rikku's back strap, a few
+hundred pixels, with every `waitfor` and shot at the same update.
+
 ### draw-field references (ref-a, ref-b, ref-c)
 
 `~/ffx-work/m4/captures/ref-{a,b,c}` hold the original-code captures of
@@ -460,9 +499,9 @@ What the original runs showed, and so what the lists hold:
 
 | Scene | Original pairs | Entries |
 |---|---|---|
-| bsil0000 | o1/o2 (pin before the load), p1/p2 | `GlobalTime` (4-16 ulp), the `SgSpec_LightVec` junk read, the loader's 16x8 texture (`f1de6dea8bd5f574` srv1) |
-| bsil0300 | o1/o2, p1/p2 | `GlobalTime` (47-76 ulp: the walk waits on a real-time voice line), the minimap's NORMAL0 ring, the chocobo icon (o1/o2: 6 draws missing, 6 extra) |
-| kami0100 | o1/o2, p1/p2 | the cloth ring (`vb5`, 27 draws, in every pair: carried from the free-running frames before lockstep, inferred), `GlobalTime` (o1/o2, 2 ulp), the eye-blink texture (o1/o2), the `SgSpec_LightVec` junk read (not seen in kami0100's own pairs; the same read differs between original runs on bsil0000 and cdsp0000) |
+| bsil0000 | o1/o2 (pin before the load), p1/p2 | `GlobalTime` (4-16 ulp; gone since replay-flakes7, r1/r2 agree), the `SgSpec_LightVec` junk read, the loader's 16x8 texture (`f1de6dea8bd5f574` srv1) |
+| bsil0300 | o1/o2, p1/p2 | `GlobalTime` (47-76 ulp: the walk waits on a real-time voice line; gone since replay-flakes7, r1/r2 agree), the minimap's NORMAL0 ring, the chocobo icon (o1/o2: 6 draws missing, 6 extra) |
+| kami0100 | o1/o2, p1/p2 | the cloth ring (`vb5`, 27 draws, in every pair: carried from the free-running frames before lockstep, inferred), `GlobalTime` (o1/o2, 2 ulp; gone since replay-flakes7, r1/r2 agree), the eye-blink texture (o1/o2), the `SgSpec_LightVec` junk read (not seen in kami0100's own pairs; the same read differs between original runs on bsil0000 and cdsp0000) |
 | menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
 | battle | p3-p6 (p1/p2 with an older script) | `NoTexture` quads' UVs (`vb3`, p6 against p3; stale caller data, not sampled), the eye-blink texture (not in these pairs; as fw-101's draw 113 in original runs, seen once with a hook subset) |
 

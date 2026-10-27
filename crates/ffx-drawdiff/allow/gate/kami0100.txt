@@ -14,9 +14,11 @@
 # (inferred, not traced to a word).
 resource vs=bb9bf1c768e1480f field=vb5 cause: cloth state carried from the free-running frames before lockstep (differs between original runs)
 
-# o1/o2: 2 f32 ulp (3.4367595 | 3.436759), as bsil0000's entry; equal in
-# p1/p2.
-constant var=scene field=*.cb0.scene.GlobalTime cause: f32 time steps taken before pin, whose rounding follows the boot and load length (2 ulp between original runs)
+# GlobalTime (scene.GlobalTime, every draw's `scene` buffer) had an entry
+# here until 2026-10-27: 2 f32 ulp in o1/o2, from the steps taken before `pin`. Since replay-flakes6 `pin` sets it
+# (FFXApplication +0x3b0 and its copy +0x120) to 0, and the original pair
+# dg-kami-r1/r2 (replay-flakes7, three games at once) agreed on it in
+# every draw, so the entry is gone (docs/drawdiff.md, "Scene gates").
 
 # o1/o2: a character's texture-animation blink (ps srv1 of the draw with
 # vs db349612ecc598d8, BC3 or BC1 frame, chr_texanim_main's blink mode);

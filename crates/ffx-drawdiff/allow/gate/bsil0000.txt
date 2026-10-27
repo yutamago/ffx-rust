@@ -6,16 +6,11 @@
 # `[*]`: the file is for this scene only.
 [*]
 
-# 4 f32 ulp (3.4033988 | 3.4033997) in p1/p2, 16 ulp in o1/o2, in every
-# draw's vs and ps `scene` buffer. GlobalTime is not the pinned game time
-# (pin sets that to 64 s; GlobalTime reads 3.40 at count 101, about the
-# time since the event started). It carries the rounding of the f32 time
-# steps of the frames since the map started (Phyre_PFramework_PApplication_frame
-# 0x00627940 takes each step as the difference of two f32 game times, so
-# its last bits depend on how far the clock had got); the frames before
-# `pin` ran on a clock that depends on how long boot and load took. That
-# it sums those steps is inferred, not traced.
-constant var=scene field=*.cb0.scene.GlobalTime cause: f32 time steps taken before pin, whose rounding follows the boot and load length (4-16 ulp between original runs)
+# GlobalTime (scene.GlobalTime, every draw's `scene` buffer) had an entry
+# here until 2026-10-27: 4-16 f32 ulp between original runs, from the f32 steps taken before `pin`. Since replay-flakes6 `pin` sets it
+# (FFXApplication +0x3b0 and its copy +0x120) to 0, and the original pair
+# dg-besaid-r1/r2 (replay-flakes7, three games at once) agreed on it in
+# every draw, so the entry is gone (docs/drawdiff.md, "Scene gates").
 
 # Every pair: Ch_DrawMain (0x0082ed50) passes graphicSgSetSpecular
 # (0x00643cc0) a light vector whose third word, [ebp-0x3c], it never
