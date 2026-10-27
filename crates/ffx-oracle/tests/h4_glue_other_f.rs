@@ -25,7 +25,8 @@ use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
 use ffx_glue_other::{
-    h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2,
+    h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3,
+    h4_l4 as l4, h4_l5 as l5,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -2416,5 +2417,394 @@ fn l2_update_guild_map() {
             }
         }
         assert!(shown > 30, "{name}: {shown}");
+    }
+}
+
+// ---- continuation round 10, batch 3 (ffx_glue_other::h4_l3)
+
+/// A `fiosRead(file, buffer, size)` stub over the fake file at the cells
+/// `cursor` (next byte) and `left` (bytes left): copies up to `size` bytes
+/// and returns the count; logs 3 words.
+fn fios_read_stub(t: &mut Twins, cursor: u32, left: u32) {
+    let rest = t.stub_code(l3::FIOS_READ, false, 3, 0, false, &[]);
+    let cell = t.cells[&l3::FIOS_READ];
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(left.to_le_bytes()); // mov ecx, [left]
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+    c.extend([0x39, 0xc1, 0x76, 0x02, 0x89, 0xc1]); // cmp ecx, eax; jbe +2; mov ecx, eax
+    c.extend([0x89, 0x0d]);
+    c.extend(cell.to_le_bytes()); // mov [cell], ecx
+    c.extend([0x29, 0x0d]);
+    c.extend(left.to_le_bytes()); // sub [left], ecx
+    c.extend([0x56, 0x57, 0x8b, 0x35]);
+    c.extend(cursor.to_le_bytes()); // push esi; push edi; mov esi, [cursor]
+    c.extend([0x8b, 0x7c, 0x24, 0x10, 0xf3, 0xa4]); // mov edi, [esp+0x10]; rep movsb
+    c.extend([0x89, 0x35]);
+    c.extend(cursor.to_le_bytes()); // mov [cursor], esi
+    c.extend([0x5f, 0x5e, 0xe9]); // pop edi; pop esi; jmp rest
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(l3::FIOS_READ, f);
+}
+
+/// `PhyFMVPlayerManager_createVideoIndexMap`: each language (and an
+/// unknown one), the list missing, lists read in one or several chunks,
+/// lines with or without a final newline, without ':' or a second comma
+/// (the end), the second or third field as the name; the CRT string code
+/// runs as the original's in both oracles.
+#[test]
+fn l3_create_video_index_map() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_82f0);
+        let language = t.zeros(4);
+        let cursor = t.zeros(4);
+        let left = t.zeros(4);
+        let list_name = t.zeros(4);
+        t.w32(list_name, u32::from_le_bytes(*b"vl\0\0"));
+        t.stub_at(l3::LOCALIZATION, false, 0, 0, &[]);
+        t.stub_at(l3::UNIFY_FILENAME, false, 3, 0, &[wr(1, list_name)]);
+        t.stub_at(l3::PHYRE_PRINTF, false, 2, 0, &[]);
+        t.stub_at(k4::DBG_PRINTF, false, 1, 0, &[]);
+        t.stub_at(l3::FIOS_OPEN, false, 2, 0, &[]);
+        t.stub_at(l3::FIOS_CLOSE, false, 1, 0, &[]);
+        t.stub_at(l3::STREAM_PREFIX, false, 0, 0, &[]);
+        t.stub_at(l3::BUY_NODE, true, 1, 1, &[]);
+        t.stub_at(l3::INSERT_NODE, true, 4, 4, &[]);
+        fios_read_stub(&mut t, cursor, left);
+        let tags = [
+            l3::LOCALIZATION,
+            l3::UNIFY_FILENAME,
+            l3::PHYRE_PRINTF,
+            k4::DBG_PRINTF,
+            l3::FIOS_OPEN,
+            l3::FIOS_CLOSE,
+            l3::STREAM_PREFIX,
+            l3::BUY_NODE,
+            l3::INSERT_NODE,
+        ];
+        let prefix = string(&mut t, b"C:/game");
+        let frame = t.ebp_for(1) - 0x3364;
+        let mut inserted = 0;
+        for i in 0..120 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l3::LOCALIZATION, language);
+            t.w32(language, rng.pick(&[0, 1, 2, 3, 3, 4]));
+            t.ret(l3::STREAM_PREFIX, prefix);
+            let r = rng.next() | 1;
+            t.ret(l3::FIOS_OPEN, rng.pick(&[r, r, r, r, 0]));
+            // the list: lines "<id>:<a>,<b>,<c>", some broken
+            let mut text = Vec::new();
+            for k in 0..rng.below(40) {
+                let line = match rng.below(12) {
+                    0 => b"no colon here".to_vec(),
+                    1 => format!("{k}:one,field").into_bytes(),
+                    _ => format!(
+                        "{}:{},movie{:02},en_movie{:03}",
+                        rng.below(200),
+                        rng.below(9),
+                        rng.below(100),
+                        rng.below(1000)
+                    )
+                    .into_bytes(),
+                };
+                text.extend(line);
+                text.push(b'\n');
+            }
+            if rng.below(2) == 0 {
+                text.pop();
+            }
+            let file = t.alloc(&[text.as_slice(), &[0u8; 4]].concat());
+            t.w32(cursor, file);
+            t.w32(left, text.len() as u32);
+            let this = random_block(&mut t, &mut rng, 0x700);
+            let english = rng.pick(&[0, 1, 0x100]);
+            t.check_framed_conv(
+                &w,
+                0x006d_82f0,
+                Conv::Thiscall(this),
+                &[english],
+                frame,
+                // past the saved this (+0x10) and the last-line flag
+                // (+0x17); up to ebp-8, where __chkstk leaves ecx
+                &[(0, 0x10), (0x18, 0x335c - 0x18)],
+                |g| {
+                    l3::create_video_index_map(g, frame, this, english);
+                    Out::None
+                },
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                inserted += u32::from(tag == l3::INSERT_NODE);
+            }
+        }
+        assert!(inserted > 200, "{name}: {inserted}");
+    }
+}
+
+/// `menu_list_drawShape_00774cb0`: texture modes 5, 8, 0xb and another
+/// (whose never-written name and size words are 0 in both, brief
+/// 2026-10-24), groups none or set, the mode-0xb v nudge, kind 2's
+/// wobble (random time and constants, `_CIcos` run as the original's),
+/// random sizes (0, NaN, infinities) and offsets.
+#[test]
+fn l4_draw_shape() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_4cb0);
+        let (w_cell, h_cell) = (t.zeros(4), t.zeros(4));
+        t.stub_at(l4::SHAPE_TEXTURE_NAME, false, 1, 0, &[]);
+        t.stub_at(l4::IMAGE_WH, false, 3, 0, &[wr(1, w_cell), wr(2, h_cell)]);
+        t.stub(l4::GET_TIME, 0, true);
+        t.stub_at(l4::DRAW_UI_ELEMENT, false, 5, 0, &[]);
+        let tags = [
+            l4::SHAPE_TEXTURE_NAME,
+            l4::IMAGE_WH,
+            l4::GET_TIME,
+            l4::DRAW_UI_ELEMENT,
+        ];
+        let frame = t.ebp_for(4) - 0xb8;
+        let mut wobbles = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(&mut rng, &[], &[l4::V_NUDGE, l4::TIME_SCALE, l4::WOBBLE]);
+            let time = rng.double();
+            t.ret_f64(l4::GET_TIME, time);
+            let (a, b) = (rng.float(), rng.float());
+            t.w32(w_cell, rng.pick(&[a, 0x4300_0000, 0x4380_0000]));
+            t.w32(h_cell, rng.pick(&[b, 0x4300_0000, 0x4400_0000]));
+            t.g32(l4::TEXTURE_MODE, rng.pick(&[5, 8, 0xb, 0xb, 3]));
+            let groups = random_block(&mut t, &mut rng, 0x10);
+            for k in 0..4 {
+                let v = rng.below(4);
+                t.w32(groups + 4 * k, v);
+            }
+            t.g32(l4::SHAPE_GROUPS, groups);
+            // sprites: (d, e2, e4, e6, texture)
+            let sprites = t.zeros(12 * 12);
+            for k in 0..12 {
+                let r = sprites + 12 * k;
+                let nudge = rng.below(3) == 0;
+                let (d, e4) = if nudge {
+                    (rng.pick(&[0, 0, 5]), 0x1a0)
+                } else {
+                    (rng.small() as u16, rng.small() as u16)
+                };
+                t.w16(r, d);
+                t.w16(r + 4, e4);
+                let (e2, e6) = (rng.small() as u16, rng.next() as u16);
+                t.w16(r + 2, e2);
+                t.w16(r + 6, e6);
+                // texture indices are signed
+                t.w16(r + 8, rng.pick(&[0, 1, 2, 3, 0xffff]));
+            }
+            t.g32(l4::SHAPE_SPRITES, sprites);
+            let textures = t.rebase(l4::SHAPE_TEXTURES);
+            // texture -1's entry (a sign-extension slip would read 0xff's)
+            for (k, at) in [(0, textures - 16), (1, textures + 16 * 0xff)] {
+                let (hi, lo) = (rng.next(), rng.next());
+                t.w32(at, hi | k);
+                t.w32(at + 8, lo);
+            }
+            for k in 0..4 {
+                let (hi, lo) = rng.pick(&[(0x13, 0x2f00), (0x13, 0x2f01), (2, 0x2f00), (7, 9)]);
+                t.w32(textures + 16 * k, hi);
+                t.w32(textures + 16 * k + 8, lo);
+            }
+            let item = random_block(&mut t, &mut rng, 0x30);
+            t.w8(item, rng.pick(&[2, 2, 0, 1]));
+            let (dx, dy) = (rng.small() as u16, rng.small() as u16);
+            t.w16(item + 8, dx);
+            t.w16(item + 0xa, dy);
+            t.w16(item + 0x16, rng.below(6) as u16);
+            t.w16(item + 0x18, rng.pick(&[0xffff, 0, 1, 3]));
+            // the never-written name and size words: 0 in both
+            for off in [0, 8, 0x18] {
+                t.w32(frame + off, 0);
+            }
+            let (x, y) = (rng.small(), rng.small());
+            let unused = rng.next();
+            t.check_framed(
+                &w,
+                0x0077_4cb0,
+                &[unused, item, x, y],
+                frame,
+                &[(0x1c, 0x40), (0x1c + 0x88, 4), (0x1c + 0x90, 8)],
+                |g| u(l4::draw_shape(g, frame, item, x, y)),
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                wobbles += u32::from(tag == l4::GET_TIME);
+            }
+        }
+        assert!(wobbles > 100, "{name}: {wobbles}");
+    }
+}
+
+// ---- continuation round 10, batch 5 (ffx_glue_other::h4_l5)
+
+/// A one-word cdecl stub at `sym` whose result is `table[arg & 0xff]`;
+/// the table's address (0x100 words).
+fn table_stub(t: &mut Twins, sym: u32) -> u32 {
+    let table = t.zeros(0x400);
+    let rest = t.stub_code(sym, false, 1, 0, false, &[]);
+    let cell = t.cells[&sym];
+    let mut c = vec![0x0f, 0xb6, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+    c.extend(table.to_le_bytes()); // movzx eax, byte [esp+4]; mov eax, table[eax]
+    c.push(0xa3);
+    c.extend(cell.to_le_bytes()); // mov [cell], eax
+    c.push(0xe9);
+    let at = t.cave_next + c.len() as u32 + 4;
+    c.extend(rest.wrapping_sub(at).to_le_bytes());
+    let f = t.code(&c);
+    t.jump(sym, f);
+    table
+}
+
+/// `FFEscMenu_update`: not set up, the escape key watched or not, a fresh
+/// press or a held one closing an open menu (cursor clip and visibility)
+/// or opening a closed one, the open countdown, the six menu keys (press,
+/// release, flagged), the stick's directions (random values, NaN, the
+/// threshold), the cursor, the timers and the help-text countdown.
+#[test]
+fn l5_esc_update() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_ffb0);
+        for (sym, this, n) in [
+            (l5::GET_DEVICE, false, 2),
+            (l5::FREE_CAMERA_TYPE, false, 0),
+            (l5::UNPAUSE, true, 0),
+            (l5::PAUSE, true, 0),
+            (l5::CALL_AS3, true, 5),
+            (l5::SET_ENABLE, true, 1),
+            (l5::PLAY_CLICK, false, 1),
+            (l5::SETTINGS_SAVE, true, 0),
+            (l5::SAVE_BUSY, false, 1),
+            (l5::ENABLE_PARA, true, 1),
+            (l5::REFRESH, true, 0),
+            (l5::STICK_INFO, false, 0),
+            (l5::DATA_VALUE_SET, false, 2),
+            (l5::CALL_FLASH, false, 6),
+            (l5::FLUSH, true, 0),
+        ] {
+            let pops = if this { n } else { 0 };
+            t.stub_at(sym, this, n, pops, &[]);
+        }
+        t.stub_u64(l5::TIME_MICRO, false, 0, 0);
+        for slot in [
+            l5::GET_CLIP_CURSOR.sym,
+            l5::CLIP_CURSOR.sym,
+            l5::SHOW_CURSOR.sym,
+        ] {
+            let addr = t.stub_code(slot, false, 1, 1, false, &[]);
+            t.g32(slot, addr);
+        }
+        let releases = table_stub(&mut t, l5::IS_RELEASE);
+        let presses = table_stub(&mut t, l5::IS_PRESS);
+        let key_stub = t.stub_code(0xf000_000c, true, 1, 1, false, &[]);
+        let vtable = t.zeros(0x10);
+        t.w32(vtable + 0xc, key_stub);
+        let device = t.zeros(4);
+        t.w32(device, vtable);
+        let tags = [
+            l5::GET_DEVICE,
+            l5::FREE_CAMERA_TYPE,
+            l5::CALL_AS3,
+            l5::STICK_INFO,
+            l5::FLUSH,
+            l5::GET_CLIP_CURSOR.sym,
+            0xf000_000c,
+        ];
+        let frame = t.ebp_for(0) - 0x18;
+        let mut opened = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.ret(l5::GET_DEVICE, device);
+            t.ret(0xf000_000c, rng.pick(&[0, 1, 2, 0x100, 0xff01]));
+            t.ret(l5::GET_CLIP_CURSOR.sym, rng.pick(&[0, 1]));
+            t.ret(l5::FREE_CAMERA_TYPE, rng.pick(&[0, 0, 2]));
+            t.ret_u64(
+                l5::TIME_MICRO,
+                u64::from(rng.next()) << 20 | u64::from(rng.next()),
+            );
+            t.g32(l5::ESC_DOWN, rng.pick(&[0, 0, 1]));
+            t.g32(l5::SAVE_MACHINE_BUSY, rng.pick(&[0, 1, 2]));
+            let settings = random_block(&mut t, &mut rng, 0x10);
+            t.w32(settings + 8, rng.pick(&[1, 0, 2]));
+            t.g32(l5::SETTINGS, settings);
+            let menu = rng.next();
+            t.g32(l5::ESC_MENU, menu);
+            for k in 0..0x100 {
+                let (a, b) = (rng.below(5) == 0, rng.below(5) == 0);
+                t.w32(releases + 4 * k, u32::from(a));
+                t.w32(presses + 4 * k, u32::from(b));
+            }
+            let keys = t.rebase(l5::MENU_KEYS);
+            for k in 0..6 {
+                t.w8(keys + 12 * k, rng.pick(&[0, 0, 1]));
+                t.w32(keys + 12 * k + 4, rng.below(0x100));
+                let r = rng.next();
+                t.w32(keys + 12 * k + 8, r);
+            }
+            // the stick: four directions over one block
+            let block = t.zeros(0x40);
+            for k in 0..16 {
+                let f = rng.float();
+                let v = rng.pick(&[f, 0x3f00_0000, 0x3f40_0000, 0, 0xbf80_0000]);
+                t.w32(block + 4 * k, v);
+            }
+            t.ret(l5::STICK_INFO, 4 * rng.below(4));
+            let directions = t.rebase(l5::STICK_DIRECTIONS);
+            for d in 0..4 {
+                let at = directions + 16 * d;
+                t.w32(at, rng.pick(&[d + 1, 0x77]));
+                t.w32(at + 4, block + 4 * rng.below(4));
+                let s = rng.float();
+                t.w32(at + 8, rng.pick(&[0x3f80_0000, 0xbf80_0000, s]));
+                let r = rng.next();
+                t.w32(at + 0xc, r);
+            }
+            if rng.below(4) == 0 {
+                let f = rng.float();
+                t.g32(l5::STICK_THRESHOLD, f);
+            } else {
+                t.g32(l5::STICK_THRESHOLD, 0x3f00_0000);
+            }
+            let this = random_block(&mut t, &mut rng, 0x240);
+            for (off, v) in [
+                (0xa0, rng.pick(&[1, 1, 1, 0])),
+                (0xe0, rng.pick(&[1, 1, 0])),
+                (0x70, rng.pick(&[0, 1])),
+                (0x118, rng.pick(&[0, 1])),
+                (0x130, rng.pick(&[0, 1, 2])),
+                (0x117, rng.pick(&[0, 1])),
+                (0x94, rng.pick(&[0, 1])),
+                (0xe8, rng.pick(&[0, 1])),
+            ] {
+                t.w8(this + off, v);
+            }
+            t.w32(this + 0xe4, rng.pick(&[0, 1, 0xffff_ffff, 5]));
+            t.w32(this + 0x12c, rng.pick(&[0, 1, 2, 0x77]));
+            t.w32(this + 0x234, rng.pick(&[1, 1, 0, 2, 0xffff_ffff]));
+            t.check_framed_conv(
+                &w,
+                0x0068_ffb0,
+                Conv::Thiscall(this),
+                &[],
+                frame,
+                &[(0, 0x10)],
+                |g| match l5::esc_update(g, frame, this) {
+                    Some(v) => u(v),
+                    None => Out::None,
+                },
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                opened += u32::from(tag == l5::PAUSE);
+            }
+        }
+        assert!(opened > 30, "{name}: {opened}");
     }
 }

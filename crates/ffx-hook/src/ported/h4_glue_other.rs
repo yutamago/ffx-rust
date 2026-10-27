@@ -18,8 +18,8 @@ use ffx_glue_other::{
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
-    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, menu as mn, misc as m,
-    movie as mv, r3, sound as s,
+    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
+    h4_l5 as l5, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2626,6 +2626,25 @@ ported! {
     /// `updateGuildMapRenderData(lo, hi, map, tint)` -> 1 or 0.
     updateGuildMapRenderData @ 0x0071_7620 => extern "C" fn update_guild_map_render_data(lo: u32, hi: u32, map: u32, tint: u32) -> u32 {
         l2::update_guild_map(&mut mem(), lo, hi, map, tint)
+    }
+    // ---- continuation round 10, batch 3 (ffx_glue_other::h4_l3, h4_l4, h4_l5)
+    /// `PhyFMVPlayerManager_createVideoIndexMap(this; english)` (a
+    /// 0x3360-byte frame, as the original's; the main thread at boot).
+    PhyFMVPlayerManager_createVideoIndexMap @ 0x006d_82f0 => extern "thiscall" fn phy_fmv_player_manager_create_video_index_map(this: u32, english: u32) {
+        let mut frame = StackFrame::<{ (l3::VIDEO_FRAME / 4) as usize }>::new();
+        l3::create_video_index_map(&mut mem(), frame.at(), this, english);
+    }
+    /// `menu_list_drawShape_00774cb0(unused, item, x, y)` -> the draw's
+    /// result.
+    menu_list_drawShape_00774cb0 @ 0x0077_4cb0 => extern "C" fn menu_list_draw_shape(_unused: u32, item: u32, x: u32, y: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l4::SHAPE_ICON_FRAME / 4) as usize }>::new();
+        l4::draw_shape(&mut mem(), frame.at(), item, x, y)
+    }
+    /// `FFEscMenu_update(this)` (`ecx`, plain ret) -> the handlers'
+    /// flush result (0 where the original returns its caller's `eax`).
+    FFEscMenu_update @ 0x0068_ffb0 => extern "thiscall" fn ff_esc_menu_update(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (l5::ESC_FRAME / 4) as usize }>::new();
+        l5::esc_update(&mut mem(), frame.at(), this).unwrap_or(0)
     }
 }
 
