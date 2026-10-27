@@ -1,12 +1,20 @@
 # Movies (`ffx_movie`)
 
 The movie player is PC-port and PhyreEngine code that stays original
-(glue and library): `PhyFMVPlayerManager` (`0x006d6970..0x006daec0`) and
+(glue): `PhyFMVPlayerManager` (`0x006d6970..0x006daec0`) and
 `PVideoPlaybackWin32` (`0x00a26e70..0x00a28890`: WebM demuxing with
 libwebm's mkvparser, libvpx 1.4.0 VP8 video, libVorbis 1.3.5 audio played
 through an FMOD stream, `0x00a273b0` and its read callback `0x00a27170`).
 Its boundary, threads, timing and every import it calls are in
 `docs/formats/platform.md` ("Movies").
+
+The three libraries are replaced in Rust (M5 stage 2): `ffx_movie::webm`
+(the demuxer) and `ffx_movie::mkv` (mkvparser's objects and the player's
+demux loop), `ffx_movie::vp8` (zvidlib-vp8, vendored), `ffx_movie::vorbis`
+(a port of the libVorbis 1.3.5 decoder) and `ffx_movie::api` (the libvpx
+and libVorbis entry points over game memory). They decode every movie as
+the original does, bit for bit; the measurements and the hooks are in
+`docs/formats/platform.md` ("The libraries in Rust").
 
 ## `FFXSamp0UnitMatrix` (`0x0093d900`)
 

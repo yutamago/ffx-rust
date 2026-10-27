@@ -44,6 +44,7 @@ ffx-text.workspace = true
 ffx-vbf.workspace = true
 ffx-vfx.workspace = true
 flate2.workspace = true
+md-5.workspace = true
 
 [lints]
 workspace = true

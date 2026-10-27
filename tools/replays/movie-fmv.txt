@@ -54,10 +54,16 @@ waitfor *0x00cded3c+0x6d0:4 01000100 ffffff00 600
 holdfor *0x00cded3c+0xb0:4 1e000000 ffffffff 60000
 wait 60
 write 0x0112a008 01000000
+# FFX_AUDIO_WAV (run-all.sh --audio movie-fmv): the capture is compared
+# from the movie's start (its sound is an FMOD user stream that
+# PVideoPlaybackWin32_AudioRead fills with the decoded Vorbis samples) to
+# the third shot (docs/harness.md, "Audio capture").
+audiomark start
 call 0x006427c0 0
 shotwhen *0x00cded3c+0x6d8:4 40000000 fcffffff 1200 $OUT\movie-fmv-1.bmp
 shotwhen *0x00cded3c+0x6d8:4 c0000000 fcffffff 1200 $OUT\movie-fmv-2.bmp
 shotwhen *0x00cded3c+0x6d8:4 40010000 fcffffff 1200 $OUT\movie-fmv-3.bmp
+audiomark end
 readp 0x00cded3c 0x6d0 0x20
 callnext 0x0063df30
 write 0x0112a008 00000000

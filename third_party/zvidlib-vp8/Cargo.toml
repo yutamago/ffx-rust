@@ -1,0 +1,50 @@
+# Vendored from crates.io zvidlib-vp8 0.5.0 (MIT, https://github.com/lsegal/zvidlib)
+# for ffx-movie; changes: see PATCHES.md.
+[package]
+edition = "2024"
+rust-version = "1.85"
+name = "zvidlib-vp8"
+version = "0.5.0"
+build = "build.rs"
+exclude = [
+    "/tests",
+    "/benches",
+]
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "Pure-Rust VP8 decoder and encoder for zvidlib"
+readme = false
+keywords = [
+    "video",
+    "audio",
+    "webassembly",
+    "webgl",
+    "mp4",
+]
+categories = [
+    "multimedia",
+    "wasm",
+]
+license = "MIT"
+repository = "https://github.com/lsegal/zvidlib"
+
+[features]
+default = []
+hardware = []
+simd = []
+
+[lib]
+name = "zvidlib_vp8"
+path = "src/lib.rs"
+
+[dependencies.zvidlib-color]
+version = "=0.5.0"
+
+[dependencies.zvidlib-core]
+version = "=0.5.0"
+
+[build-dependencies.zvidlib-build]
+version = "=0.5.0"

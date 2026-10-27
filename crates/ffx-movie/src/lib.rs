@@ -4,10 +4,15 @@
 //! becomes a core (portable, on its own types) and a [`bridge`] function
 //! over game memory (`docs/porting.md`).
 //!
-//! The movie player itself (`PhyFMVPlayerManager`, the `WebM` demuxer and
-//! the Vorbis decoder feeding FMOD) is glue and library code and stays
-//! original; what the module holds besides is a part of the PS2 sample
-//! library the classification files here (`FFXSamp0*`).
+//! The movie player itself (`PhyFMVPlayerManager`, `PVideoPlaybackWin32`)
+//! is glue and stays original; the libraries it calls are replaced here
+//! (M5 stage 2, `docs/formats/platform.md` "The libraries in Rust"): the
+//! `WebM` demuxer ([`webm`], with `mkvparser`'s objects and the player's
+//! demux loop in [`mkv`]), the VP8 decoder ([`vp8`], the vendored
+//! zvidlib-vp8) and a port of the libVorbis 1.3.5 decoder ([`vorbis`],
+//! BSD-3-Clause, `NOTICE`), with the libvpx and libVorbis entry points
+//! over game memory in [`api`]. Besides, the module holds a part of the
+//! PS2 sample library the classification files here (`FFXSamp0*`).
 
 /// The 4x4 identity, row-major (`FFXSamp0UnitMatrix`).
 #[must_use]
@@ -60,6 +65,29 @@ pub fn view_screen(v: &ViewScreen) -> ([f32; 16], [f32; 16]) {
     screen[13] = round_trip(v.cy);
     screen[14] = ((farz * zmin - nearz * zmax) / depth).store();
     (proj, screen)
+}
+
+pub mod api;
+pub mod mkv;
+pub mod vorbis;
+pub mod vp8;
+pub mod webm;
+
+/// One Vorbis sample as the movie's FMOD stream gets it
+/// (`PVideoPlaybackWin32_AudioRead` `0x00a27170`, on the x87 at 53 bits):
+/// `fld f; fmul 32767.0; fadd 0.5; fstp dword`, `floor` of that (stored
+/// as f32 again), `ftol2_sse` (truncation; `cvttsd2si`, as the game always
+/// has SSE2) and a clamp to `-0x8000..=0x7fff`.
+#[must_use]
+pub fn vorbis_to_s16(f: f32) -> i16 {
+    #[allow(clippy::cast_possible_truncation)] // the fstp dword
+    let biased = (f64::from(f) * 32767.0 + 0.5) as f32;
+    #[allow(clippy::cast_possible_truncation)] // the second fstp dword
+    let floored = f64::from(biased).floor() as f32;
+    let v = ffx_bridge::x87::cvttsd2si(f64::from(floored)).cast_signed();
+    #[allow(clippy::cast_possible_truncation)] // clamped
+    let s = v.clamp(-0x8000, 0x7fff) as i16;
+    s
 }
 
 /// The originals, where the game keeps their state (`ffx_bridge::Mem`).
@@ -229,5 +257,27 @@ pub mod bridge {
     pub fn samp0_unit_matrix(mem: &mut impl Mem, m: u32) -> u32 {
         mem.write(m, super::unit_matrix());
         4
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::vorbis_to_s16;
+
+    /// `AudioRead`'s conversion: the bias, the f32 store before `floor`,
+    /// truncation and the clamp (`cvttsd2si`'s NaN gives -0x8000).
+    #[test]
+    fn s16_conversion() {
+        assert_eq!(vorbis_to_s16(0.0), 0);
+        assert_eq!(vorbis_to_s16(0.5 / 32767.0), 1);
+        assert_eq!(vorbis_to_s16(-0.5 / 32767.0), 0);
+        assert_eq!(vorbis_to_s16(1.0), 32767);
+        assert_eq!(vorbis_to_s16(-1.0), -32767);
+        assert_eq!(vorbis_to_s16(1.5), 32767);
+        assert_eq!(vorbis_to_s16(-2.0), -32768);
+        assert_eq!(vorbis_to_s16(f32::NAN), -32768);
+        // f * 32767 + 0.5 is 100.9999999064 in double and 101.0 once stored
+        // as f32, so the floor gives 101, not 100
+        assert_eq!(vorbis_to_s16(f32::from_bits(0x3b49_0192)), 101);
     }
 }
