@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use ffx_sound::mixer::{BLOCK, RATE};
-use ffx_sound::replay::{Engine, Files, parse};
+use ffx_sound::replay::{Call, Engine, Entry, Files, parse};
 
 struct Vbf {
     archive: ffx_vbf::Archive,
@@ -60,17 +60,92 @@ fn wav(frames: &[f32]) -> Vec<u8> {
     w
 }
 
+/// An `fmod-probe` script as log entries (`--script <dir below Sound_PC/>`):
+/// the same calls the probe makes, on made-up handles.
+fn script(text: &str, dir: &str) -> Vec<Entry> {
+    let mut handles: HashMap<String, u32> = HashMap::new();
+    let mut next = 0x100u32;
+    let mut out = Vec::new();
+    let mut h = |name: &str, handles: &mut HashMap<String, u32>| {
+        *handles.entry(name.to_owned()).or_insert_with(|| {
+            next += 0x100;
+            next
+        })
+    };
+    let f32w = |s: &str| s.parse::<f32>().map_or(0, f32::to_bits);
+    for line in text.lines() {
+        let w: Vec<&str> = line.split_whitespace().collect();
+        if w.is_empty() || w[0].starts_with('#') {
+            continue;
+        }
+        let mut c = Call::default();
+        match w[0] {
+            "load" => {
+                c.function = "EventSystem::load".into();
+                c.strings = vec![(1, format!("Sound_PC/{dir}/{}", w[2]))];
+                c.outs = vec![(3, h(w[1], &mut handles))];
+            }
+            "group" => {
+                c.function = "EventProjectI::getGroup".into();
+                c.args = vec![h(w[2], &mut handles)];
+                c.strings = vec![(1, w[3].to_owned())];
+                c.outs = vec![(3, h(w[1], &mut handles))];
+            }
+            "event" => {
+                c.function = "EventGroupI::getEventByIndex".into();
+                c.args = vec![h(w[2], &mut handles), w[3].parse().unwrap_or(0)];
+                c.outs = vec![(3, h(w[1], &mut handles))];
+            }
+            "start" => {
+                c.function = "Event::start".into();
+                c.args = vec![h(w[1], &mut handles)];
+            }
+            "stop" | "pause" => {
+                c.function = if w[0] == "stop" {
+                    "Event::stop"
+                } else {
+                    "Event::setPaused"
+                }
+                .into();
+                c.args = vec![h(w[1], &mut handles), w[2].parse().unwrap_or(0)];
+            }
+            "vol" => {
+                c.function = "Event::setVolume".into();
+                c.args = vec![h(w[1], &mut handles), f32w(w[2])];
+            }
+            "update" => {
+                let n: u64 = w.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
+                for _ in 0..n {
+                    out.push(Entry::Update { n: 0, clock: 0 });
+                }
+                continue;
+            }
+            _ => continue, // the pan has no effect (audio-platform.md)
+        }
+        out.push(Entry::Call(c));
+    }
+    out
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [log, out] = args.as_slice() else {
-        eprintln!("usage: fmod-mix <log> <out.wav>");
-        std::process::exit(2);
+    let (log, out, dir) = match args.as_slice() {
+        [log, out] => (log, out, None),
+        [flag, dir, log, out] if flag == "--script" => (log, out, Some(dir.clone())),
+        _ => {
+            eprintln!("usage: fmod-mix [--script <dir below Sound_PC>] <log> <out.wav>");
+            std::process::exit(2);
+        }
     };
-    let dir = std::env::var_os("FFX_GAME_DIR").expect("FFX_GAME_DIR");
-    let archive =
-        ffx_vbf::Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).expect("FFX_Data.vbf");
+    let dir_env = std::env::var_os("FFX_GAME_DIR").expect("FFX_GAME_DIR");
+    let archive = ffx_vbf::Archive::open(PathBuf::from(dir_env).join("data/FFX_Data.vbf"))
+        .expect("FFX_Data.vbf");
     let text = std::fs::read(log).expect("log");
-    let entries = parse(&String::from_utf8_lossy(&text));
+    let text = String::from_utf8_lossy(&text);
+    let entries = match &dir {
+        Some(d) => script(&text, d),
+        None => parse(&text),
+    };
     let mut engine = Engine::new(Vbf {
         archive,
         cache: HashMap::new(),

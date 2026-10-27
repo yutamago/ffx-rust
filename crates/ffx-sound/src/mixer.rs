@@ -197,8 +197,17 @@ impl Voice {
             let (a, b) = (w.frame(i), w.frame(next));
             let l = (a.0 * (1.0 - frac) + b.0 * frac) * SCALE;
             let r = (a.1 * (1.0 - frac) + b.1 * frac) * SCALE;
-            f[0] += l * self.gain[0];
-            f[1] += r * self.gain[1];
+            // measured (fmod-probe, three voices): while the gain ramps, the
+            // product is not rounded before it is added (the sum is rounded
+            // to f32 once); at a steady gain both are f32 operations
+            #[allow(clippy::cast_possible_truncation)] // the f32 mix buffer
+            if ramp_left > 0 {
+                f[0] = (f64::from(f[0]) + f64::from(l) * f64::from(self.gain[0])) as f32;
+                f[1] = (f64::from(f[1]) + f64::from(r) * f64::from(self.gain[1])) as f32;
+            } else {
+                f[0] += l * self.gain[0];
+                f[1] += r * self.gain[1];
+            }
             if ramp_left > 0 {
                 self.gain[0] += delta[0];
                 self.gain[1] += delta[1];
