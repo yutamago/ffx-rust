@@ -14,15 +14,15 @@
 # Each call writes into its own folder, %TEMP%\ffx-snap\runs\<id>\<tag>\
 # (traces, screenshots, the replay's output), kept for inspection; the
 # recorded originals stay where the comparisons find them:
-# ~/ffx-work/replay-shots/traces/<replay>-orig.trace, -orig2.trace and
-# ~/ffx-work/replay-shots/orig, orig2 (FFX_REPLAY_SHOTS). Only the newest
+# ~/ffx-work/replay-shots-nrt/traces/<replay>-orig.trace, -orig2.trace and
+# ~/ffx-work/replay-shots-nrt/orig, orig2 (FFX_REPLAY_SHOTS). Only the newest
 # KEEP_RUNS run folders are kept; %TEMP%\ffx-snap is otherwise disposable.
 #
 # FFX_REPLAY_SERIAL=1 runs the replays one after the other instead.
 #
 # --extra (the first argument) runs the extra list instead (settings-*,
 # movie-fmv, iggy-menus, battle-ifrit; docs/harness.md, "Coverage
-# replays"), whose recordings live in ~/ffx-work/replay-shots-extra
+# replays"), whose recordings live in ~/ffx-work/replay-shots-extra-nrt
 # (FFX_REPLAY_SHOTS_EXTRA): `run-all.sh --extra [--record [replay...]]`.
 #
 # The `eye` replays' screenshots are recorded into orig/eye and orig2/eye,
@@ -69,14 +69,14 @@ temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -
 temp_win="${temp_win%\\}"
 win="$temp_win\\ffx-snap"
 lin="$(wslpath "$win")"
-shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots}"  # outlives a WSL restart (/tmp does not)
+shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots-nrt}"  # outlives a WSL restart (/tmp does not)
 # --extra: the extra list instead (below), recorded apart, so that their
 # recordings never show up as missing shots in the main list's comparison
 extra=""
 if [ "${1:-}" = --extra ]; then
     extra=1
     shift
-    shots="${FFX_REPLAY_SHOTS_EXTRA:-$HOME/ffx-work/replay-shots-extra}"
+    shots="${FFX_REPLAY_SHOTS_EXTRA:-$HOME/ffx-work/replay-shots-extra-nrt}"
 fi
 id="$(date +%Y%m%d-%H%M%S)-$$"
 runs="$lin/runs/$id"

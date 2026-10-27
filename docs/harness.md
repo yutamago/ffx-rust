@@ -1422,8 +1422,8 @@ scripts say `shot $OUT\field-walk-1.bmp`). `run-all.sh` gives each call
 its own folder, `%TEMP%\ffx-snap\runs\<id>\<tag>\` (traces, screenshots,
 each replay's output with the hook's faults), and keeps the recorded
 originals where the comparisons read them, outside Temp (which Windows may
-clean): `~/ffx-work/replay-shots/traces/<replay>-orig.trace`, `-orig2.trace`
-and `~/ffx-work/replay-shots/orig`, `orig2` (`FFX_REPLAY_SHOTS`). It keeps
+clean): `~/ffx-work/replay-shots-nrt/traces/<replay>-orig.trace`, `-orig2.trace`
+and `~/ffx-work/replay-shots-nrt/orig`, `orig2` (`FFX_REPLAY_SHOTS`). It keeps
 only the newest `KEEP_RUNS` (20) run folders, so `%TEMP%\ffx-snap` can be
 deleted at any time.
 
