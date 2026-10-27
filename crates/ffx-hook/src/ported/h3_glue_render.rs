@@ -59,6 +59,9 @@ use ffx_prender::h3_glue50::bridge as g50;
 use ffx_prender::h3_glue51::bridge as g51;
 use ffx_prender::h3_glue52::bridge as g52;
 use ffx_prender::h3_glue53::bridge as g53;
+use ffx_prender::h3_glue54::bridge as g54;
+use ffx_prender::h3_glue55::bridge as g55;
+use ffx_prender::h3_glue56::bridge as g56;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2082,6 +2085,43 @@ ported! {
     PhyreScene_RenderABmap @ 0x0065_2a10 => extern "thiscall" fn scene_render_abmap(this: u32) -> u32 {
         let mut f = StackFrame::<0xe>::new();
         g53::render_abmap(&mut mem(), f.at() + 0x38, this)
+    }
+
+    // ---- round 16 batch 55 (ffx_prender::h3_glue54) ----
+    /// `PhyreScene_loadVFXTexture(scene; kind, name, async)` -> 0, 5 (a
+    /// file missing) or the cluster fix-up's error: a VFX texture list's
+    /// files entered into the scene's texture table and loaded (frame
+    /// `ebp - 0x37c`).
+    PhyreScene_loadVFXTexture @ 0x0066_5770 => extern "thiscall" fn scene_load_vfx_texture(this: u32, kind: u32, name: u32, async_load: u32) -> u32 {
+        let mut f = StackFrame::<0xdf>::new();
+        g54::load_vfx_texture(&mut mem(), f.at() + 0x37c, this, kind, name, async_load)
+    }
+
+    // ---- round 16 batch 56 (ffx_prender::h3_glue54) ----
+    /// `PhyreScene_loadMagicFileVFXTexture(scene; kind, name, async)` -> 0,
+    /// 5 (a file missing) or the cluster fix-up's error: a magic file's
+    /// VFX texture list loaded, with the `x_ab/` -> `x/` fallback (frame
+    /// `ebp - 0x884`, zeroed: the layout it pushes from `ebp - 0x87c` is
+    /// never written on most paths).
+    PhyreScene_loadMagicFileVFXTexture @ 0x0066_4550 => extern "thiscall" fn scene_load_magic_file_vfx_texture(this: u32, kind: u32, name: u32, async_load: u32) -> u32 {
+        let mut f = StackFrame::<0x221>::new();
+        g54::load_magic_file_vfx_texture(&mut mem(), f.at() + 0x884, this, kind, name, async_load)
+    }
+
+    // ---- round 16 batch 57 (ffx_prender::h3_glue55) ----
+    /// `PhyreScene_unloadVFXTexture(scene; name, mode)` -> 0, or 5 when the
+    /// list is missing: a VFX texture list's (or a layout kind's) slots
+    /// released from the scene's texture table (frame `ebp - 0x344`).
+    PhyreScene_unloadVFXTexture @ 0x0067_1300 => extern "thiscall" fn scene_unload_vfx_texture(this: u32, name: u32, mode: u32) -> u32 {
+        let mut f = StackFrame::<0xd1>::new();
+        g55::unload_vfx_texture(&mut mem(), f.at() + 0x344, this, name, mode)
+    }
+
+    // ---- round 16 batch 58 (ffx_prender::h3_glue56) ----
+    /// `PhyreScene_bootInit(scene)` -> the movie player's `close` result
+    /// (the original tail-jumps to it): the scene's boot-time set-up.
+    PhyreScene_bootInit @ 0x0065_7a50 => extern "thiscall" fn scene_boot_init(this: u32) -> u32 {
+        g56::boot_init(&mut mem(), this)
     }
 }
 
