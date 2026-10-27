@@ -114,7 +114,9 @@
 //! - [`h4_k2`]: its second batch: the text utility's line append, a
 //!   button icon's position remap, the loading screen's update;
 //! - [`h4_k3`]: its third batch: the depth-bias hook, the post-process
-//!   manager's constructor, the broken-screen effect's render.
+//!   manager's constructor, the broken-screen effect's render;
+//! - [`h4_k4`]: its fourth batch: the event shapes' VFX render data
+//!   buffers.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -183,6 +185,7 @@ pub mod h4_j6;
 pub mod h4_k1;
 pub mod h4_k2;
 pub mod h4_k3;
+pub mod h4_k4;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;

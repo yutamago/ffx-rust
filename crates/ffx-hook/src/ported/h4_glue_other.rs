@@ -18,7 +18,7 @@ use ffx_glue_other::{
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
-    h4_k2 as k2, h4_k3 as k3, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2582,6 +2582,13 @@ ported! {
     BrokenScreenEffect_render @ 0x006d_5680 => extern "thiscall" fn broken_screen_effect_render(this: u32) -> u32 {
         let mut frame = StackFrame::<{ (k3::BROKEN_FRAME / 4) as usize }>::new();
         k3::broken_render(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 9, batch 4 (ffx_glue_other::h4_k4)
+    /// `createVFXRenderDataBufferAtelShp(lo, hi, shapes, index)` (`index`
+    /// a u16 in its word).
+    createVFXRenderDataBufferAtelShp @ 0x0071_47b0 => extern "C" fn create_vfx_render_data_buffer_atel_shp(lo: u32, hi: u32, shapes: u32, index: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k4::ATEL_FRAME / 4) as usize }>::new();
+        k4::create_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, index)
     }
 }
 

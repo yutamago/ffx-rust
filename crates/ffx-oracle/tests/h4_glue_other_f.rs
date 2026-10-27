@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
-use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2, h4_k3 as k3};
+use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1579,5 +1579,123 @@ fn k3_broken_render() {
             copies += u32::from((1..0x18).any(|k| Mem::read::<u32>(&t.b, buffer + 4 * k) != 0));
         }
         assert!(copies > 0, "{name}");
+    }
+}
+
+// ---- batch 4 (ffx_glue_other::h4_k4)
+
+/// `createVFXRenderDataBufferAtelShp`: empty and negative primitive
+/// counts, texture loaded or not (its path longer or shorter than the
+/// name), primitives spread over the alpha buckets (and unknown modes),
+/// buckets past the capacity, instance ids that carry into `hi`.
+#[test]
+fn k4_create_atel_shp() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_47b0);
+        // the path's first byte: 0 makes it shorter than the name
+        let path_byte = t.zeros(4);
+        let loaded = t.stub_code(
+            k4::IS_TEXTURE_LOADED,
+            false,
+            6,
+            0,
+            false,
+            &[Write {
+                arg: 1,
+                cell: path_byte,
+                byte: true,
+            }],
+        );
+        t.jump(k4::IS_TEXTURE_LOADED, loaded);
+        for (sym, n) in [
+            (k4::DBG_PRINTF, 2),
+            (k4::VFX_CREATE, 3),
+            (k4::VFX_CREATE_DATA_BUFFER, 7),
+        ] {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        // the alpha function looks its mode up in a table
+        let table = t.zeros(0x400);
+        let rest = t.stub_code(k4::ALPHA_FUNCTION, false, 1, 0, false, &[]);
+        let cell = t.cells[&k4::ALPHA_FUNCTION];
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+        c.extend(table.to_le_bytes()); // eax = table[[esp+4]]
+        c.push(0xa3);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        c.push(0xe9);
+        let at = t.cave_next + c.len() as u32 + 4;
+        c.extend(rest.wrapping_sub(at).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(k4::ALPHA_FUNCTION, f);
+        let tags = [
+            k4::IS_TEXTURE_LOADED,
+            k4::DBG_PRINTF,
+            k4::VFX_CREATE,
+            k4::VFX_CREATE_DATA_BUFFER,
+        ];
+        let frame = t.ebp_for(4) - 0x268;
+        let mut created = 0;
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.w32(path_byte, rng.pick(&[0, 0x70, 0x70, 0x70]));
+            t.ret(k4::IS_TEXTURE_LOADED, rng.pick(&[0, 1, 1, 1, 7]));
+            for m in 0..0x100 {
+                let a = rng.pick(&[0, 2, 0x10, 0x20, 0x100, 0x200, 0x200, 5]);
+                t.w32(table + 4 * m, a);
+            }
+            t.g32(k4::SHAPE_MAX, rng.pick(&[0, 1, 2, 100]));
+            let base = rng.below(0x400);
+            t.g32(k4::TEXTURE_BASE, base);
+            let r = rng.next();
+            t.g32(k4::EVENT_EBP, rng.pick(&[0, r]));
+            // the shape sets: an index table at +0x10, then a set
+            // sets after the index table or before it (negative offsets)
+            let block = t.zeros(0x800);
+            let shapes = block + 0x400;
+            let index = rng.below(4);
+            let set_at = rng.pick(&[0x40i32, 0x140, 0x240, -0x300, -0x200]);
+            t.w16(shapes + 0x10 + 8 * index, set_at as u16);
+            let set = shapes.wrapping_add(set_at as u32);
+            let n = rng.pick(&[0u16, 1, 2, 5, 9, 0xffff]);
+            t.w16(set + 2, n);
+            t.w32(set + 4, 0x20);
+            let (a, b) = (rng.next(), rng.next());
+            t.w32(set + 0x10, a);
+            t.w32(set + 0x14, b);
+            for k in 0..9 {
+                let m = rng.below(0x100);
+                t.w8(set + 0x20 + 8 * k + 4, m as u8);
+            }
+            let r = rng.next();
+            let lo = rng.pick(&[r, 0xffff_ff00, 5]);
+            // the loaded path: as long as the name, one shorter or longer
+            let ebp_word: u32 = Mem::read(&t.a, t.rebase(k4::EVENT_EBP));
+            let bits = (u64::from(b) << 32).wrapping_add(i64::from(a as i32) as u64);
+            let texture = format!(
+                "{}_{}_{}.dds.phyre",
+                base.wrapping_sub(ebp_word) as i32,
+                1u32 << ((bits >> 26) as u32 & 0xf),
+                1u32 << ((bits >> 30) as u32 & 0xf)
+            );
+            let len = texture.len() as i32 + rng.pick(&[-1, 0, 0, 1]);
+            let path: Vec<u8> = (0..=len).map(|k| if k == len { 0 } else { b'p' }).collect();
+            t.write(frame + 0x64, &path);
+            let hi = rng.next();
+            let index_word = index | (rng.next() & 0xffff_0000);
+            t.check_framed(
+                &w,
+                0x0071_47b0,
+                &[lo, hi, shapes, index_word],
+                frame,
+                &[(0, 0x10), (0x1c, 0x48), (0x164, 0x100)],
+                |g| u(k4::create_atel_shp(g, frame, lo, hi, shapes, index_word)),
+            );
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                created += u32::from(tag == k4::VFX_CREATE);
+            }
+        }
+        assert!(created > 0, "{name}");
     }
 }
