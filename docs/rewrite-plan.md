@@ -90,8 +90,8 @@ In Rust so far:
     script component; drop whatever the game never uses.
   - FMOD Ex: our own mixer over the `.fsb` sound banks (1,260) and `.fev`
     event files (1,260). Both formats need decoding first.
-  - Iggy (19 `.swf` screens): a Rust player for the subset of SWF these
-    screens use, tried on three screens first; if its quality isn't good
+  - Iggy (19 `.swf` screens): played by Ruffle (pure Rust, MIT OR
+    Apache-2.0), tried on three screens first; if its quality isn't good
     enough, the screens are rebuilt natively (user, 2026-10-27).
   - `.webm` movies: an open VP8/VP9 decoder with Vorbis/Opus audio.
   - Steam: achievements through `steam_api64.dll`, shipped with the
@@ -467,10 +467,18 @@ byte-compatible, and the original stays untouched next to it.
   mixer, gated sample for sample against FMOD's WAV writer, as at M4.
   Where FMOD's resampler or reverb can't be matched exactly, the residue
   is documented and the user signs off on a tolerance.
-- **Iggy: a Rust SWF player first.** It covers only what the game's 19
-  `.swf` screens use. The title menu, the settings and save/load screens
-  come first, for the user to judge. If the quality isn't good enough,
-  all 19 screens are rebuilt natively instead.
+- **Iggy: Ruffle at runtime (user, 2026-10-27).** The game's 19 `.swf`
+  files (SWF 9, ActionScript 3: about 4,700 methods in `escmenu.swf`,
+  3,000 in each `saveload_*.swf`) are played as they are by Ruffle, a
+  pure-Rust Flash player under MIT OR Apache-2.0, used as a dependency.
+  We write the game's side: the 41 Iggy calls `FFX.exe` makes (players,
+  ticks, AS3 function calls, the AS3 callback, value paths, input events)
+  and drawing through our D3D11. Considered and rejected: our own player
+  (the AS3 VM is most of the work), converting to our own format or to
+  Lottie (the logic would need porting, the conversion loses detail),
+  Rive (C++ runtime, proprietary editor). The title menu, the settings
+  and save/load come first, for the user to judge; if the quality isn't
+  good enough, the screens are rebuilt natively.
 - **Pure Rust.** No C libraries: pure-Rust VP8/VP9, Vorbis and Matroska
   decoders (existing crates, or our own port where the game's use is
   small). The CRT and STL become Rust `std`.
@@ -504,9 +512,9 @@ gate still applies.
      movie.
    - Sound: the mixer replaces FMOD. Gate: `run-all.sh --audio`, sample
      for sample.
-   - Iggy: the SWF player pilot on the title, settings and save/load
-     screens, for the user to judge. Then the other 16 screens, either
-     on the player or rebuilt natively.
+   - Iggy: the Ruffle pilot on the title, settings and save/load
+     screens, for the user to judge. Then the other screens, either on
+     Ruffle or rebuilt natively.
    - Steam: our calls into `steam_api.dll`.
    - Gate: the in-process build runs no code from `FFX.exe` and loads none
      of the game's DLLs except `steam_api.dll`. Every replay, scene gate
