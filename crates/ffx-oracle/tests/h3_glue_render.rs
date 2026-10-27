@@ -78,6 +78,7 @@ use ffx_prender::h3_glue52::{self as h52, bridge as gh52};
 use ffx_prender::h3_glue53::{self as h53, bridge as gh53};
 use ffx_prender::h3_glue54::{self as h54, bridge as gh54};
 use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
+use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -12430,5 +12431,158 @@ fn batch57_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES57, n, &mut Rng(0x5757_b057));
+    });
+}
+
+// ---- round 16 batch 58 (ffx_prender::h3_glue56) ----
+
+/// The scene at boot: random bytes (the sampler words' bit 7 set or
+/// not, the texture-slot capacities around 200, the work arrays' counts
+/// and capacities negative or not, the free lists' around 3000, the flag
+/// array's around 4000 with or without data), the configuration's
+/// texture slots (their "none" byte set or not). Every callee is a
+/// recording stub but the plain singleton getters (`mov eax, [x]`: the
+/// original's, so the stubs fit the cave); the allocators hand out blocks, the free lists'
+/// `reserve` points their data at a block.
+fn prep_boot58(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let bytes = rng.bytes(0x1000);
+    t.write(scene + 0xf000, &bytes);
+    let config = t.zeros(0x1_2400);
+    t.w32(scene + 0x10cc, config);
+    for (k, off) in [0x8c, 0xac, 0x1_232c].into_iter().enumerate() {
+        let slot = obj + 0x100 + 0x10 * k as u32;
+        t.w32(config + off, slot);
+        t.w32(slot, rng.word());
+        t.write(slot + 4, &[u8::from(rng.chance(3))]);
+    }
+    for off in [0x90, 0xcc_u32] {
+        t.w32(config + off, rng.word());
+    }
+    for off in [0xcc, 0x10dd0, 0x10dd4] {
+        t.w32(scene + off, rng.word());
+    }
+    for off in [0x38, 0x50, 0x5c, 0x44] {
+        t.w32(scene + off, pick(rng, &[0, 199, 200, 0xffff_ff00]));
+    }
+    for off in [0xfb18, 0xfb30, 0xfb24, 0x28, 0xfb48, 0xfb54] {
+        t.w32(scene + off, pick(rng, &[0, 5, u32::MAX]));
+        t.w32(scene + off + 4, pick(rng, &[0, 5, u32::MAX]));
+    }
+    // the lists' and flags' blocks non-zero, so a byte left unzeroed shows
+    let blocks = t.zeros(0x1000 * 8);
+    let fill = vec![0x5a; 0x1000 * 8];
+    t.write(blocks, &fill);
+    for (k, off) in [0xfb80u32, 0xfb94, 0xfba8, 0xfbbc, 0xfbd8]
+        .into_iter()
+        .enumerate()
+    {
+        t.w32(scene + off, pick(rng, &[0, 2999, 3000, u32::MAX]));
+        t.w32(scene + off + 4, pick(rng, &[0, 2999, 3000]));
+        t.w32(scene + off + 8, blocks + 0x1000 * k as u32);
+    }
+    t.stub_set_this(
+        h56::RESERVE_FREE_LIST,
+        1,
+        rng.word(),
+        &[(8, blocks + 0x5000)],
+    );
+    let count = pick(rng, &[0, 10, 3999, 4000]);
+    let cap = pick(rng, &[0, 3999, 4000]);
+    t.w32(scene + 0xfbf0, count);
+    t.w32(scene + 0xfbf4, cap);
+    // no data only while the array still grows (else both fault)
+    let grows = count < 4000 && cap < 4000;
+    let old = if grows && rng.chance(3) {
+        0
+    } else {
+        blocks + 0x6000
+    };
+    t.w32(scene + 0xfbf8, old);
+    let heap = t.zeros(0x1000 * 8);
+    let fill = vec![0xa5; 0x1000 * 8];
+    t.write(heap, &fill);
+    let news: Vec<u32> = (0..8).map(|k| heap + 0x1000 * k).collect();
+    t.stub_seq(h56::USER_MALLOC, false, 1, 0, &news);
+    let aligned: Vec<u32> = (0..8).map(|_| rng.word()).collect();
+    t.stub_seq(h56::ALIGNED_MALLOC, false, 2, 0, &aligned);
+    let clusters: Vec<u32> = (0..4)
+        .map(|_| if rng.chance(4) { 0 } else { rng.word() })
+        .collect();
+    t.stub_seq(h56::CLUSTER_CREATE, true, 3, 3, &clusters);
+    // the large callees' stubs over their own bodies (the cave is too small)
+    t.stub_here(h56::WORLD_INITIALIZE, true, 0, 0, rng.word());
+    t.stub_here(h56::WORLD_ADD_CLUSTER, true, 1, 1, rng.word());
+    t.stub_here(h56::LIGHTING_INITIALIZE, true, 1, 1, rng.word());
+    t.stub_here(h56::BOOT_TEXT_CREATE, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[0].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[1].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[2].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[3].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[4].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[5].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[6].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[7].1, true, 0, 0, rng.word());
+    t.stub_here(h56::TWEAKS[8].1, true, 0, 0, rng.word());
+    t.stub_here(h56::SCREEN_EFFECTS[0].1, true, 5, 5, rng.word());
+    t.stub_here(h56::SCREEN_EFFECTS[1].1, true, 5, 5, rng.word());
+    t.stub_here(h56::SCREEN_EFFECTS[2].1, true, 5, 5, rng.word());
+    t.stub_here(h56::MOTION_BLUR_INITIALIZE, true, 3, 3, rng.word());
+    t.stub_here(h56::BROKEN_SCREEN_INITIALIZE, true, 7, 7, rng.word());
+    t.stub_here(h56::FOG_INITIALIZE, true, 3, 3, rng.word());
+    t.stub_here(h56::MORPH_INITIALIZE, true, 1, 1, rng.word());
+    t.stub_here(h56::SAMPLER_REGISTER, true, 0, 0, rng.word());
+    t.stub_here(h56::SETUP_SAMPLERS, true, 0, 0, rng.word());
+    t.stub_here(h56::CREATE_RWTT_TARGET, true, 0, 0, rng.word());
+    t.stub_here(h56::VIDEO_INITIALIZE, true, 3, 3, rng.word());
+    t.stub_here(h56::VIDEO_CLOSE, true, 0, 0, rng.word());
+}
+
+impl Twins {
+    /// A recording stub (as [`Twins::stub`]) written over the original's
+    /// own body at `sym` instead of the cave (the stub is position
+    /// independent; `sym`'s body must be longer than it, as the large
+    /// initializers here are).
+    fn stub_here(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
+        let start = self.cave_next;
+        let at = self.stub(None, sym, this, n, pops, Some(ret));
+        let mut code = vec![0; (self.cave_next - at) as usize];
+        Mem::read_bytes(&self.a, at, &mut code);
+        self.cave_next = start;
+        let site = self.rebase(sym);
+        self.patch(site, &code);
+    }
+}
+
+const BOOT58_STUBS: &[(u32, K)] = &[
+    (h56::SCREEN_EFFECTS[0].0, K::Getter),
+    (h56::SCREEN_EFFECTS[1].0, K::Getter),
+    (h56::SCREEN_EFFECTS[2].0, K::Getter),
+    (h56::MOTION_BLUR_INSTANCE, K::Getter),
+    (h56::BROKEN_SCREEN_INSTANCE, K::Getter),
+    (h56::FOG_INSTANCE, K::Getter),
+    (h56::MORPH_INSTANCE, K::Getter),
+    (h56::SPD_CTRL_INIT, K::Cdecl(0)),
+    (h56::RESERVE_WORDS, K::This(1)),
+    (h56::RESERVE_FLAGS, K::This(1)),
+    (h56::RESERVE_LAYOUTS, K::This(1)),
+    (h56::RESERVE_8080, K::This(1)),
+    (h56::RESERVE_8000, K::This(1)),
+    (h56::RESERVE_7F80, K::This(1)),
+    (h56::RESERVE_8280, K::This(1)),
+    (h56::USER_FREE, K::Cdecl(1)),
+];
+
+#[rustfmt::skip]
+const CASES58: &[Case] = &[
+    Case { prep: Some(prep_boot58), ..method("boot_init", 0x0065_7a50, This::Object, 0, BOOT58_STUBS, |m, this, _| u(gh56::boot_init(m, this))) },
+];
+
+#[test]
+fn batch58_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 30 } else { 100 };
+        run_cases(t, CASES58, n, &mut Rng(0x5858_b058));
     });
 }
