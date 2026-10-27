@@ -3798,7 +3798,7 @@
 0x00642300 function graphicMenuLoadSpecialTexture # fh v3:bsim1.00 0x006424b0
 0x00642320 function graphicMenuReset             # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b4fc8 graphicMenuReset, 2 votes, round 2
 0x00642340 function graphicMenuSetAbmap          # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d4b90 graphicMenuSetAbmap is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00642360 function graphicMenuSetTextureUnloadedInMaterial # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d6280 graphicMenuSetTextureUnloadedInMaterial is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00642360 function graphicMenuSetTextureUnloadedInMaterial # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d6280 graphicMenuSetTextureUnloadedInMaterial is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported M5 render b4 (ffx_prender::m5r_d)
 0x00642380 function graphicMenuUnloadExtraTexture # layout: alphabetical run between graphicMenuReset and graphicMenuUnloadSpecialTexture (3 unnamed in the gap); Switch 0x71001d6270 graphicMenuUnloadExtraTexture is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported M5 render b2 (ffx_prender::m5r_b)
 0x00642390 function graphicMenuUnloadSpecialTexture # fh v3:bsim1.00 0x00642540
 0x006423b0 function graphicMenuUpdate         # fh v3:bsim1.00 0x00642560
@@ -3822,15 +3822,19 @@
 0x00642910 function graphicPushTip               # layout: alphabetical run between graphicProject3DPointOntoScreenConsider2DScene and graphicPushTipByLocId (1 unnamed in the gap); Switch 0x71001dd960 graphicPushTip is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00642930 function graphicPushTipByLocId     # fh v3:cg4 0x642ae0
 0x00642950 function graphicRegistAsyncTask    # fh v3:bsim1.00 0x00642b00
+0x00642980 function graphicCharacterLoadingPush_00642980 # cdecl(x) -> 0: under the mutex 0x00ccb6d0 the queue 0x00ccb6e0 {count, capacity +4, data +8}: count += 1, past the capacity 0x00638240(queue; count + 2 + count/8 signed), data[count-1] = x unless that slot address is 0; caller 0x00a43740; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x006429f0 function graphicRegisterDelegation_006429f0 # cdecl(a, b, c, d) -> RenderDelegationHelper_registerDelegation(g_RenderDelegationHelper; a, b, c, d)'s eax; 0 direct callers (a pointer); name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x00642a10 function graphicRegisterResetHSV_00642a10 # cdecl(chr) -> registerDelegation(helper; &chr (its own argument slot), 4, 0x801, graphicResetHSV_00637c10)'s eax; caller Ch_ClutDispose; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00642b90 function Phyre_PAnimation_PAnimationChannelTargetBindScene_dtor_PAnimationChannelTargetBindScene # fh switch:bsim1.00 0x71001a8400 Phyre::PAnimation::PAnimationChannelTargetBindScene::~PAnimationChannelTargetBindScene
 0x00642bb0 function graphicRender             # fh v3:exact 0x00642d60
 0x00642be0 function graphicRenderCaptureAndIggy_00642be0 # cdecl() -> PhyreScene_renderCaptureTexture(g_PhyreScene)'s eax, after IggyMenuManager_Render_00a267f0(g_IggyMenuManager); caller FFXApplication_render; name ours; ported M5 render b2 (ffx_prender::m5r_b)
 0x00642c00 function graphicRenderLoadingScreen_00642c00 # cdecl(): mov ecx, [g_PhyreScene]; jmp PhyreScene_renderLoadingScreen; MovieCdReadTaskLoop calls it; name ours; ported M4 h3 (ffx_prender::glue)
 0x00642c30 function graphicRenderVideo           # layout+callees: sorts between graphicRender and graphicResetButtonIconScale, and its named callees match the Switch 0x71001cc390 graphicRenderVideo's (similarity 1.00: PhyFMVPlayerManager_GetInstance, PhyFMVPlayerManager_Render); symbols from Fahrenheit's server export
-0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10
+0x00642c60 function graphicResetButtonIconScale # fh v3:cg7 0x642e10; ported M5 render b4 (ffx_prender::m5r_d)
 0x00642c70 function graphicResetHasRunDrawFocusInThisFrame # fh v3:cg3 0x642e20
 0x00642c80 function graphicResetLoadingScreen # cdecl(): g_LoadingScreen state +0x10: 3 -> LoadingScreen_setParameterManually(0, &1, 0), 0 -> Reset_006e4fd0; alphabetical run between graphicResetHasRunDrawFocusInThisFrame and graphicResetYIQ; name ours
 0x00642cc0 function graphicResetYIQ           # fh v3:bsim1.00 0x00642e70
+0x00642cd0 function graphicResize_00642cd0 # cdecl(): jmp PhyreScene_resize on g_PhyreScene; caller FFXApplication_resize; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00642ce0 function graphicResizePostTarget_00642ce0 # cdecl(): jmp PhyreScene_resizePostTarget_0066c670 on g_PhyreScene; caller FFXApplication_animate; name ours; ported M5 render b1 (ffx_prender::m5r_a)
 0x00642cf0 function graphicScreenGetDttOffset # fh v3:exact 0x00642ea0
 0x00642d10 function graphicScreenGetOffset    # fh v3:exact 0x00642ec0
@@ -3839,50 +3843,59 @@
 0x00642d90 function graphicSet2DStartLayer    # fh v3:bsim1.00 0x00642f40
 0x00642da0 function graphicSetAbmap           # fh v3:exact 0x00642f50
 0x00642de0 function graphicSetAbmapLimit         # layout: alphabetical run between graphicSetAbmap and graphicSetBackgroundColour (3 unnamed in the gap); Switch 0x71001d4c80 graphicSetAbmapLimit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00642e00 function graphicSetAkazaNoLightSpecularPassParam # layout: alphabetical run between graphicSetAbmap and graphicSetBackgroundColour (3 unnamed in the gap); Switch 0x71001d80c0 graphicSetAkazaNoLightSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00642e40 function graphicSetAkazaSpecularPassParam # layout: alphabetical run between graphicSetAbmap and graphicSetBackgroundColour (3 unnamed in the gap); Switch 0x71001d8150 graphicSetAkazaSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00642e00 function graphicSetAkazaNoLightSpecularPassParam # layout: alphabetical run between graphicSetAbmap and graphicSetBackgroundColour (3 unnamed in the gap); Switch 0x71001d80c0 graphicSetAkazaNoLightSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported M5 render b4 (ffx_prender::m5r_d)
+0x00642e40 function graphicSetAkazaSpecularPassParam # layout: alphabetical run between graphicSetAbmap and graphicSetBackgroundColour (3 unnamed in the gap); Switch 0x71001d8150 graphicSetAkazaSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported M5 render b4 (ffx_prender::m5r_d)
 0x00642e90 function graphicSetBackgroundColour # fh v3:exact 0x00643040
-0x00642ec0 function graphicSetButtonIconScale # fh v3:cg4 0x643070
+0x00642ec0 function graphicSetButtonIconScale # fh v3:cg4 0x643070; ported M5 render b4 (ffx_prender::m5r_d)
 0x00642ef0 function graphicSetChadist         # fh switch:bsim1.00 0x71001d1c50
 0x00642f10 function graphicSetChrFogFade      # fh v3:exact 0x006430c0
 0x00642f30 function graphicSetDistortionBlur  # fh v3:bsim1.00 0x006430e0
 0x00642f50 function graphicSetDistortionEnable # fh v3:exact 0x00643100
 0x00642f80 function graphicSetDistortionSkipped # fh v3:exact 0x00643130
 0x00642fa0 function graphicSetSceneFlagFb45 # () -> g_PhyreScene, its byte +0xfb45 = 1; name ours
+0x00642fb0 function graphicSetShadowFloats_00642fb0 # cdecl(a, b) (floats via fld/fstp) -> ShadowManager_SetFloats401c(ShadowManager_getInstance(); a, b)'s eax; caller Ch_DrawSingleShadow; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00642fe0 function movie_disp2               # fh switch:bsim1.00 0x7100321f70; cdecl(on, m, v0, v1, e) -> PhyreScene_setEnableRenderWorldToTexture's eax: identity at ebp-0x60 (PMatrix4_Copy(frame; m) when m), the four floats at v0 and v1 (fld/fstp; 0 when null), thiscall(g_PhyreScene; on != 0, &m, v0[4], v1[4], e); ported (ffx_glue_other::h4_g1, m4 h4 g)
 0x006430e0 function graphicSetFlipVsnc        # fh v3:bsim1.00 0x00643290
 0x006430f0 function graphicSetFocusZ          # fh v3:exact 0x006432a0
-0x00643150 function graphicSetFogColour       # (r, g, b) floats -> Phyre_FogEffectManager_GetInstance()->0x006e36f0; alphabetical run graphicSetFocusZ..graphicSetForceNoVsync, counterpart of graphicGetFog*; yiSetFogColor's call; name ours
-0x006431a0 function graphicSetFogFar          # (x) -> fog manager 0x006e3a30; same run; yiSetFogParam's far; name ours
+0x00643150 function graphicSetFogColour       # (r, g, b) floats -> Phyre_FogEffectManager_GetInstance()->0x006e36f0; alphabetical run graphicSetFocusZ..graphicSetForceNoVsync, counterpart of graphicGetFog*; yiSetFogColor's call; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x00643180 function graphicSetFogParam_00643180 # cdecl(x) (a float; the push ecx only makes room) -> 0x006e3760(FogEffectManager; x)'s eax; callers yiSetFogParam, Native_FogSetParams; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x006431a0 function graphicSetFogFar          # (x) -> fog manager 0x006e3a30; same run; yiSetFogParam's far; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x006431c0 function graphicSetFogLimit        # (x) -> fog manager 0x006e3aa0; same run; yiSetFogParam's limit; name ours
-0x006431e0 function graphicSetFogNear         # (x) -> fog manager 0x006e3b10; same run; yiSetFogParam's near; name ours
+0x006431e0 function graphicSetFogNear         # (x) -> fog manager 0x006e3b10; same run; yiSetFogParam's near; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643200 function graphicSetForceNoVsync    # fh v3:exact 0x006433b0
 0x00643260 function graphicSetGameOverNotify  # fh v3:bsim1.00 0x00643410
 0x00643270 function graphicSetGlobalAmbientColor # fh switch:bsim1.00 0x71001d93d0
+0x006432c0 function graphicSetAppFloatD8_006432c0 # cdecl(x) -> app: GetApplication() +0xd8 = x (fld/fstp); 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x006432e0 function graphicSetAppFloatD4_006432e0 # cdecl(x) -> app: GetApplication() +0xd4 = x (fld/fstp); 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x00643300 function graphicSetAppFloatDC_00643300 # cdecl(x) -> app: GetApplication() +0xdc = x (fld/fstp); 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
+0x00643320 function graphicSetAppFloatD0_00643320 # cdecl(x) -> app: GetApplication() +0xd0 = x (fld/fstp); 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643340 function graphicSetHSVParam        # fh v3:exact 0x006434f0; ported M5 render b3 (ffx_prender::m5r_c)
 0x00643450 function graphicSetHas2dMap        # fh v3:cg5 0x643600
 0x00643470 function graphicSetHas3dMap        # fh v3:bsim1.00 0x00643620
 0x00643490 function graphicSetIsBattleMap     # fh v3:exact 0x00643640
 0x006435e0 function graphicSetMagicFileAsyncLoadEnable # fh v3:exact 0x00643790
 0x00643610 function graphicSetMapAlphaFast    # fh switch:bsim1.00 0x71001dd660
+0x00643630 function graphicSetSceneSix0_00643630 # cdecl(f0..f5) (floats) -> 0x0066d3b0(g_PhyreScene; f0..f5, 0)'s eax; 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643670 function graphicSetMaterialColourScale2 # fh v3:exact 0x00643820
+0x006436a0 function graphicSetSceneSix1_006436a0 # cdecl(f0..f5) (floats) -> 0x0066d3b0(g_PhyreScene; f0..f5, 1)'s eax; 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x006436e0 function graphicSetMaterialUV_006436e0 # (object, &x, &y): 0x006abf40(object, &x, &y) then 0x006abfc0 on the result (thiscall); yiKeyFrame_main kind 2 hands it the object's +0x88 pair; name ours, a guess: the layout sorts it between graphicSetMaterialColourScale2 and graphicSetMeshVertexColorMorphValue
-0x00643700 function graphicSetMeshVertexColorMorphValue # layout and calls: the Switch name yiSetMIMeParamDObj calls, sorting between graphicSetMaterialColourScale2 and graphicSetMiniMapType, as here; calls MorphManager_GetInstance; only caller yiSetMIMeParamDObj
+0x00643700 function graphicSetMeshVertexColorMorphValue # layout and calls: the Switch name yiSetMIMeParamDObj calls, sorting between graphicSetMaterialColourScale2 and graphicSetMiniMapType, as here; calls MorphManager_GetInstance; only caller yiSetMIMeParamDObj; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643720 function graphicSetMiniMapType     # fh v3:bsim1.00 0x006438d0
 0x00643730 function graphicSetMotionBlurEnable # fh v3:exact 0x006438e0
 0x00643750 function graphicSetMotionBlurWeight # fh v3:bsim1.00 0x00643900
-0x00643770 function graphicSetNoLightSpecularPassParam # layout: alphabetical run between graphicSetMotionBlurWeight and graphicSetNowUIType (1 unnamed in the gap); Switch 0x71001d7fc0 graphicSetNoLightSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00643770 function graphicSetNoLightSpecularPassParam # layout: alphabetical run between graphicSetMotionBlurWeight and graphicSetNowUIType (1 unnamed in the gap); Switch 0x71001d7fc0 graphicSetNoLightSpecularPassParam is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported M5 render b4 (ffx_prender::m5r_d)
 0x006437c0 function graphicSetNowUIType       # fh v3:bsim1.00 0x00643970
 0x006437e0 function SetGlobal00cec1a0_006437e0   # auto-port shape (store argument to global, cdecl): u32[&0x00cec1a0] = a0; return a0; callers: no direct caller; name ours
-0x006437f0 function graphicSetPauseVideoAtEndFrame # fh switch:bsim1.00 0x71001dd460
+0x006437f0 function graphicSetPauseVideoAtEndFrame # fh switch:bsim1.00 0x71001dd460; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643810 function graphicSetFlipVsnc_00643810 # fh switch:bsim1.00 0x71001cc430
 0x00643830 function graphicBlurEffectSetPositiveParams_00643830 # cdecl(4 floats): BlurEffectEx_SetPositiveParams on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue3)
 0x00643860 function graphicBlurEffectSetFloats74_00643860 # cdecl(4 floats): BlurEffect_SetFloats74 on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue3)
 0x00643890 function graphicBlurEffectSetFloats6c_00643890 # cdecl(f32 a, f32 b): BlurEffect_SetFloats6c(a, b) on [BlurEffectEx_GetInstance()] (returns the instance); name ours; ported M4 h3 (ffx_prender::glue2)
+0x006438c0 function graphicSetNumberText_006438c0 # cdecl(x) -> PhyreScene_SetNumberText(g_PhyreScene; x)'s eax; caller opp_draw_part_a74d30; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x006438e0 function graphicSetScreenFadeAlphaMode # fh v3:exact 0x00643a90
 0x00643900 function graphicSetScreenFadeColor # fh v3:exact 0x00643ab0
 0x00643940 function graphicSetScreenFadeLastReason # fh v3:bsim1.00 0x00643af0
-0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export
+0x00643980 function graphicSetSpecularMapParams  # layout+callees: sorts between graphicSetScreenFadeLastReason and graphicSetTextureVideoInfo, and its named callees match the Switch 0x71001d7ec0 graphicSetSpecularMapParams's (similarity 1.00: SpecularMapParamsManager_GetInstance, SpecularMapParamsManager_setShadeSpecularMapParams); symbols from Fahrenheit's server export; ported M5 render b4 (ffx_prender::m5r_d)
 0x006439b0 function graphicSetSpecularMapParamsEx # cdecl(id, a, 3 floats, b, 4 floats): SpecularMapParamsManager_SetParams on SpecularMapParamsManager_GetInstance; next to graphicSetSpecularMapParams; name ours
 0x00643a00 function graphicTextureAnimationSetPaused_00643a00 # cdecl(a, paused): TextureAnimationManager_SetPaused(a, paused != 0); name ours; ported M4 h3 (ffx_prender::glue2)
 0x00643a20 function graphicTextureAnimationSetFrame # structure: cdecl(i, frame): TextureAnimationManager_SetFrame(i, frame, 0) on TextureAnimationManager_GetInstance; name ours
@@ -3891,6 +3904,7 @@
 0x00643af0 function graphicSetUiDrawType      # fh v3:cg13 0x643ca0
 0x00643b10 function StoreComputedToDeref_00643b10 # auto-port shape (store computed to deref, cdecl): t0 = u32[&0x00ccb9d8]; u8[(t0 + 0xfc88)] = (a0 != 0x0); return t0; callers: no direct caller; name ours
 0x00643b30 function graphicSetColourPair_00643b30 # cdecl(r, g, b, r2, g2, b2, second): PhyreScene_SetColourPair on g_PhyreScene with second != 0 (eax that flag); name ours
+0x00643b80 function graphicSceneMatrixTranspose_00643b80 # cdecl() -> PMatrix4_Transpose_004f93f0(ebp-0x80, sce_Vectormath_Scalar_Aos_inverse(ebp-0x40, ([scene+0xdc] ? +4 : 0) + 0x70))'s eax, results dropped with the frame; 0 direct callers; name ours; ported M5 render b4 (ffx_prender::m5r_d)
 0x00643cc0 function graphicSgSetSpecular         # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'SgSpec_LightVec'; Switch 0x71001d8220 graphicSgSetSpecular (symbols from Fahrenheit's server export); cdecl(model, index, &colour, &light, &camera, &param): per material of mesh index (+4 list, +0x10 materials) ShaderParams_FindByName of SgSpec_* (0x00b41b94/ba4/bb4/bc8) then ShaderParamBuffer_SetValue2(+4); stores the material list in its first argument slot (Ch_DrawMain does not read it); ported M4 h3 r4 (ffx_prender::h3_glue12)
 0x00643db0 function graphicShaderGetVertexInfo # fh v3:bsim1.00 0x00643f60
 0x00643dc0 function graphicShadowStart_00643dc0 # (): mov ecx, [0x00ccca74]; jmp 0x0069fcb0; Ch_DrawMain calls it before graphicUpdateShadowVisibility and the shadow walk (name ours)

@@ -9,6 +9,7 @@ use super::{StackFrame, mem, ported};
 use ffx_prender::m5r_a::bridge as a;
 use ffx_prender::m5r_b::bridge as b;
 use ffx_prender::m5r_c::bridge as c;
+use ffx_prender::m5r_d::bridge as d;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -472,5 +473,113 @@ ported! {
     PhyreScene_releaseCharacterClusters_00670960 @ 0x0067_0960 => extern "thiscall" fn release_character_clusters(this: u32) -> u32 {
         let mut f = StackFrame::<8>::new();
         c::release_character_clusters(&mut mem(), f.at() + 0x20, this)
+    }
+    // ---- batch 4 (ffx_prender::m5r_d) ----
+    /// `graphicMenuSetTextureUnloadedInMaterial(x)`.
+    graphicMenuSetTextureUnloadedInMaterial @ 0x0064_2360 => extern "C" fn menu_set_texture_unloaded(x: u32) -> u32 {
+        d::menu_set_texture_unloaded(&mut mem(), x)
+    }
+    /// `graphicCharacterLoadingPush_00642980(x)` -> 0.
+    graphicCharacterLoadingPush_00642980 @ 0x0064_2980 => extern "C" fn loading_push(x: u32) -> u32 {
+        d::loading_push(&mut mem(), x)
+    }
+    /// `graphicRegisterDelegation_006429f0(a, b, c, d)`.
+    graphicRegisterDelegation_006429f0 @ 0x0064_29f0 => extern "C" fn register_delegation(a0: u32, a1: u32, a2: u32, a3: u32) -> u32 {
+        d::register_delegation(&mut mem(), [a0, a1, a2, a3])
+    }
+    /// `graphicRegisterResetHSV_00642a10(chr)`: its argument slot is the
+    /// delegation's data.
+    graphicRegisterResetHSV_00642a10 @ 0x0064_2a10 => extern "C" fn register_reset_hsv(_chr: u32; slots: u32) -> u32 {
+        d::register_reset_hsv(&mut mem(), slots)
+    }
+    /// `graphicResetButtonIconScale()`.
+    graphicResetButtonIconScale @ 0x0064_2c60 => extern "C" fn reset_button_icon_scale() -> u32 {
+        d::reset_button_icon_scale(&mut mem())
+    }
+    /// `graphicResize_00642cd0()`.
+    graphicResize_00642cd0 @ 0x0064_2cd0 => extern "C" fn resize() -> u32 {
+        d::resize(&mut mem())
+    }
+    /// `graphicSetAkazaNoLightSpecularPassParam(a0..a8)`.
+    graphicSetAkazaNoLightSpecularPassParam @ 0x0064_2e00 => extern "C" fn akaza_no_light_specular(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        d::akaza_no_light_specular(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8])
+    }
+    /// `graphicSetAkazaSpecularPassParam(a0..a11)`.
+    graphicSetAkazaSpecularPassParam @ 0x0064_2e40 => extern "C" fn akaza_specular(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) -> u32 {
+        d::akaza_specular(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11])
+    }
+    /// `graphicSetNoLightSpecularPassParam(a0..a9)`.
+    graphicSetNoLightSpecularPassParam @ 0x0064_3770 => extern "C" fn no_light_specular(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32) -> u32 {
+        d::no_light_specular(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8, a9])
+    }
+    /// `graphicSetSpecularMapParams(a0, a1, f2, f3, f4)`.
+    graphicSetSpecularMapParams @ 0x0064_3980 => extern "C" fn specular_map_params(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        d::specular_map_params(&mut mem(), [a0, a1, a2, a3, a4])
+    }
+    /// `graphicSetButtonIconScale(x, y)`.
+    graphicSetButtonIconScale @ 0x0064_2ec0 => extern "C" fn set_button_icon_scale(x: u32, y: u32) -> u32 {
+        d::set_button_icon_scale(&mut mem(), x, y)
+    }
+    /// `graphicSetShadowFloats_00642fb0(a, b)`.
+    graphicSetShadowFloats_00642fb0 @ 0x0064_2fb0 => extern "C" fn set_shadow_floats(a0: u32, a1: u32) -> u32 {
+        d::set_shadow_floats(&mut mem(), a0, a1)
+    }
+    /// `graphicSetFogColour(r, g, b)`.
+    graphicSetFogColour @ 0x0064_3150 => extern "C" fn set_fog_colour(r: u32, g: u32, bl: u32) -> u32 {
+        d::set_fog_colour(&mut mem(), [r, g, bl])
+    }
+    /// `graphicSetFogParam_00643180(x)`.
+    graphicSetFogParam_00643180 @ 0x0064_3180 => extern "C" fn set_fog_param(x: u32) -> u32 {
+        d::set_fog_float(&mut mem(), ffx_prender::m5r_d::FOG_SET_3760, x)
+    }
+    /// `graphicSetFogFar(x)`.
+    graphicSetFogFar @ 0x0064_31a0 => extern "C" fn set_fog_far(x: u32) -> u32 {
+        d::set_fog_float(&mut mem(), ffx_prender::m5r_d::FOG_SET_FAR, x)
+    }
+    /// `graphicSetFogNear(x)`.
+    graphicSetFogNear @ 0x0064_31e0 => extern "C" fn set_fog_near(x: u32) -> u32 {
+        d::set_fog_float(&mut mem(), ffx_prender::m5r_d::FOG_SET_NEAR, x)
+    }
+    /// `graphicSetAppFloatD8_006432c0(x)`.
+    graphicSetAppFloatD8_006432c0 @ 0x0064_32c0 => extern "C" fn set_app_float_d8(x: u32) -> u32 {
+        d::set_app_float(&mut mem(), 0xd8, x)
+    }
+    /// `graphicSetAppFloatD4_006432e0(x)`.
+    graphicSetAppFloatD4_006432e0 @ 0x0064_32e0 => extern "C" fn set_app_float_d4(x: u32) -> u32 {
+        d::set_app_float(&mut mem(), 0xd4, x)
+    }
+    /// `graphicSetAppFloatDC_00643300(x)`.
+    graphicSetAppFloatDC_00643300 @ 0x0064_3300 => extern "C" fn set_app_float_dc(x: u32) -> u32 {
+        d::set_app_float(&mut mem(), 0xdc, x)
+    }
+    /// `graphicSetAppFloatD0_00643320(x)`.
+    graphicSetAppFloatD0_00643320 @ 0x0064_3320 => extern "C" fn set_app_float_d0(x: u32) -> u32 {
+        d::set_app_float(&mut mem(), 0xd0, x)
+    }
+    /// `graphicSetSceneSix0_00643630(f0..f5)`.
+    graphicSetSceneSix0_00643630 @ 0x0064_3630 => extern "C" fn scene_set_six_0(f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32) -> u32 {
+        d::scene_set_six(&mut mem(), [f0, f1, f2, f3, f4, f5], 0)
+    }
+    /// `graphicSetSceneSix1_006436a0(f0..f5)`.
+    graphicSetSceneSix1_006436a0 @ 0x0064_36a0 => extern "C" fn scene_set_six_1(f0: u32, f1: u32, f2: u32, f3: u32, f4: u32, f5: u32) -> u32 {
+        d::scene_set_six(&mut mem(), [f0, f1, f2, f3, f4, f5], 1)
+    }
+    /// `graphicSetMeshVertexColorMorphValue(mesh, value)`.
+    graphicSetMeshVertexColorMorphValue @ 0x0064_3700 => extern "C" fn set_vertex_color_morph(mesh: u32, value: u32) -> u32 {
+        d::set_vertex_color_morph(&mut mem(), mesh, value)
+    }
+    /// `graphicSetPauseVideoAtEndFrame(on)`.
+    graphicSetPauseVideoAtEndFrame @ 0x0064_37f0 => extern "C" fn set_pause_video_at_end(on: u32) -> u32 {
+        d::set_pause_video_at_end(&mut mem(), on)
+    }
+    /// `graphicSetNumberText_006438c0(x)`.
+    graphicSetNumberText_006438c0 @ 0x0064_38c0 => extern "C" fn set_number_text(x: u32) -> u32 {
+        d::set_number_text(&mut mem(), x)
+    }
+    /// `graphicSceneMatrixTranspose_00643b80()`: the matrices in the shim's
+    /// frame (`ebp - 0x80`).
+    graphicSceneMatrixTranspose_00643b80 @ 0x0064_3b80 => extern "C" fn scene_matrix_transpose() -> u32 {
+        let mut f = StackFrame::<0x20>::new();
+        d::scene_matrix_transpose(&mut mem(), f.at() + 0x80)
     }
 }

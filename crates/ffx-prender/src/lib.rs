@@ -170,6 +170,7 @@ pub mod m4r_rendercmds;
 pub mod m5r_a;
 pub mod m5r_b;
 pub mod m5r_c;
+pub mod m5r_d;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;

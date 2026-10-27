@@ -37,6 +37,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::m5r_a::{self as ma, bridge as a};
 use ffx_prender::m5r_b::{self as mb, bridge as b};
 use ffx_prender::m5r_c::{self as mc, bridge as c};
+use ffx_prender::m5r_d::{self as md, bridge as d};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3042,6 +3043,316 @@ fn release_character_clusters_matches_the_original() {
                 Conv::Thiscall(scene),
                 &[],
                 |g| Out::U32(c::release_character_clusters(g, ebp, scene)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 4 (ffx_prender::m5r_d) ----
+
+/// A forwarder case: the original, its stack words, the callees to stub
+/// (`sym`, `this`, logged words, `pops`) and the port on the arguments.
+type Fwd = (
+    &'static str,
+    u32,
+    usize,
+    &'static [(u32, bool, u32, u32)],
+    fn(&mut G, &[u32]) -> u32,
+);
+
+const GETTERS: [u32; 6] = [
+    md::REMAP_ICONS,
+    md::SPECULAR_MANAGER,
+    md::SHADOW_MANAGER,
+    md::FOG_MANAGER,
+    md::MORPH_MANAGER,
+    md::GET_APPLICATION,
+];
+
+#[test]
+fn setters_match_the_original() {
+    // random words (floats included, no signalling NaN) in every argument;
+    // the managers' getters return a synthetic instance.
+    let cases: [Fwd; 22] = [
+        (
+            "graphicMenuSetTextureUnloadedInMaterial",
+            0x0064_2360,
+            1,
+            &[(md::MENU_SET_MATERIAL_UNLOADED, true, 1, 1)],
+            |g, a| d::menu_set_texture_unloaded(g, a[0]),
+        ),
+        (
+            "graphicRegisterDelegation_006429f0",
+            0x0064_29f0,
+            4,
+            &[(md::REGISTER_DELEGATION, true, 4, 4)],
+            |g, a| d::register_delegation(g, [a[0], a[1], a[2], a[3]]),
+        ),
+        (
+            "graphicResetButtonIconScale",
+            0x0064_2c60,
+            0,
+            &[(md::REMAP_RESET_SCALE, true, 0, 0)],
+            |g, _| d::reset_button_icon_scale(g),
+        ),
+        (
+            "graphicResize_00642cd0",
+            0x0064_2cd0,
+            0,
+            &[(md::SCENE_RESIZE, true, 0, 0)],
+            |g, _| d::resize(g),
+        ),
+        (
+            "graphicSetAkazaNoLightSpecularPassParam",
+            0x0064_2e00,
+            9,
+            &[(md::SPECULAR_AKAZA_NO_LIGHT, true, 9, 9)],
+            |g, a| {
+                let mut w = [0; 9];
+                w.copy_from_slice(a);
+                d::akaza_no_light_specular(g, w)
+            },
+        ),
+        (
+            "graphicSetAkazaSpecularPassParam",
+            0x0064_2e40,
+            12,
+            &[(md::SPECULAR_AKAZA, true, 12, 12)],
+            |g, a| {
+                let mut w = [0; 12];
+                w.copy_from_slice(a);
+                d::akaza_specular(g, w)
+            },
+        ),
+        (
+            "graphicSetNoLightSpecularPassParam",
+            0x0064_3770,
+            10,
+            &[(md::SPECULAR_NO_LIGHT, true, 10, 10)],
+            |g, a| {
+                let mut w = [0; 10];
+                w.copy_from_slice(a);
+                d::no_light_specular(g, w)
+            },
+        ),
+        (
+            "graphicSetSpecularMapParams",
+            0x0064_3980,
+            5,
+            &[(md::SPECULAR_SHADE, true, 5, 5)],
+            |g, a| d::specular_map_params(g, [a[0], a[1], a[2], a[3], a[4]]),
+        ),
+        (
+            "graphicSetButtonIconScale",
+            0x0064_2ec0,
+            2,
+            &[(md::REMAP_SET_SCALE, true, 2, 2)],
+            |g, a| d::set_button_icon_scale(g, a[0], a[1]),
+        ),
+        (
+            "graphicSetShadowFloats_00642fb0",
+            0x0064_2fb0,
+            2,
+            &[(md::SHADOW_SET_FLOATS, true, 2, 2)],
+            |g, a| d::set_shadow_floats(g, a[0], a[1]),
+        ),
+        (
+            "graphicSetFogColour",
+            0x0064_3150,
+            3,
+            &[(md::FOG_SET_COLOUR, true, 3, 3)],
+            |g, a| d::set_fog_colour(g, [a[0], a[1], a[2]]),
+        ),
+        (
+            "graphicSetFogParam_00643180",
+            0x0064_3180,
+            1,
+            &[(md::FOG_SET_3760, true, 1, 1)],
+            |g, a| d::set_fog_float(g, md::FOG_SET_3760, a[0]),
+        ),
+        (
+            "graphicSetFogFar",
+            0x0064_31a0,
+            1,
+            &[(md::FOG_SET_FAR, true, 1, 1)],
+            |g, a| d::set_fog_float(g, md::FOG_SET_FAR, a[0]),
+        ),
+        (
+            "graphicSetFogNear",
+            0x0064_31e0,
+            1,
+            &[(md::FOG_SET_NEAR, true, 1, 1)],
+            |g, a| d::set_fog_float(g, md::FOG_SET_NEAR, a[0]),
+        ),
+        (
+            "graphicSetAppFloatD8_006432c0",
+            0x0064_32c0,
+            1,
+            &[],
+            |g, a| d::set_app_float(g, 0xd8, a[0]),
+        ),
+        (
+            "graphicSetAppFloatD4_006432e0",
+            0x0064_32e0,
+            1,
+            &[],
+            |g, a| d::set_app_float(g, 0xd4, a[0]),
+        ),
+        (
+            "graphicSetAppFloatDC_00643300",
+            0x0064_3300,
+            1,
+            &[],
+            |g, a| d::set_app_float(g, 0xdc, a[0]),
+        ),
+        (
+            "graphicSetAppFloatD0_00643320",
+            0x0064_3320,
+            1,
+            &[],
+            |g, a| d::set_app_float(g, 0xd0, a[0]),
+        ),
+        (
+            "graphicSetSceneSix0_00643630",
+            0x0064_3630,
+            6,
+            &[(md::SCENE_SET_SIX, true, 7, 7)],
+            |g, a| d::scene_set_six(g, [a[0], a[1], a[2], a[3], a[4], a[5]], 0),
+        ),
+        (
+            "graphicSetSceneSix1_006436a0",
+            0x0064_36a0,
+            6,
+            &[(md::SCENE_SET_SIX, true, 7, 7)],
+            |g, a| d::scene_set_six(g, [a[0], a[1], a[2], a[3], a[4], a[5]], 1),
+        ),
+        (
+            "graphicSetMeshVertexColorMorphValue",
+            0x0064_3700,
+            2,
+            &[(md::MORPH_SET_VERTEX_COLOR, true, 2, 2)],
+            |g, a| d::set_vertex_color_morph(g, a[0], a[1]),
+        ),
+        (
+            "graphicSetNumberText_006438c0",
+            0x0064_38c0,
+            1,
+            &[(md::SCENE_SET_NUMBER_TEXT, true, 1, 1)],
+            |g, a| d::set_number_text(g, a[0]),
+        ),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0301);
+        for _ in 0..12 {
+            for &(name, sym, n, stubs, port) in &cases {
+                let inst = rand_obj(t, &mut rng, 0x100);
+                for (k, &gtr) in GETTERS.iter().enumerate() {
+                    t.stub_sym(gtr, 0x40 + k as u32, false, 0, 0, Ret::Val(inst));
+                }
+                let scene = rand_obj(t, &mut rng, 0x10);
+                t.global(md::SCENE.sym, scene);
+                t.global(md::GRAPHIC_UI.sym, inst);
+                t.global(md::DELEGATIONS.sym, inst);
+                for (k, &(s, this, words, pops)) in stubs.iter().enumerate() {
+                    t.stub_sym(
+                        s,
+                        1 + k as u32,
+                        this,
+                        words,
+                        pops,
+                        Ret::Val(0x900 + k as u32),
+                    );
+                }
+                let args: Vec<u32> = (0..n).map(|_| float_word(&mut rng)).collect();
+                t.check(name, sym, Conv::Cdecl, &args, |g| Out::U32(port(g, &args)));
+                t.reset();
+            }
+        }
+    });
+}
+
+#[test]
+fn loading_push_and_others_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0302);
+        for _ in 0..40 {
+            // the loading queue: below, at and past its capacity; data 0
+            // with count 1 (a null slot)
+            let q = t.rebase(md::LOADING_QUEUE);
+            let count = rng.below(6);
+            let cap = match rng.below(3) {
+                0 => count,
+                1 => count + 1,
+                _ => count + rng.below(4),
+            };
+            let data = if count == 0 && rng.chance(3) {
+                0
+            } else {
+                t.zeros(0x40)
+            };
+            let w = [count, cap, data];
+            let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+            t.patch(q, &bytes);
+            stub_mutex(t);
+            let mtx = rng.next();
+            t.global(md::LOADING_MUTEX.sym, mtx);
+            t.stub_sym(md::LOADING_QUEUE_RESERVE, 1, true, 1, 1, Ret::Val(0));
+            let x = rng.next();
+            t.check(
+                "graphicCharacterLoadingPush_00642980",
+                0x0064_2980,
+                Conv::Cdecl,
+                &[x],
+                |g| Out::U32(d::loading_push(g, x)),
+            );
+            t.reset();
+
+            // the HSV reset delegation: its argument slot as the data
+            let helper = t.zeros(4);
+            t.global(md::DELEGATIONS.sym, helper);
+            t.stub_sym(md::REGISTER_DELEGATION, 2, true, 4, 4, Ret::Val(0x31));
+            let chr = rng.next();
+            let slot = first_slot(&t.b, 1);
+            t.check(
+                "graphicRegisterResetHSV_00642a10",
+                0x0064_2a10,
+                Conv::Cdecl,
+                &[chr],
+                |g| Out::U32(d::register_reset_hsv(g, slot)),
+            );
+            t.reset();
+
+            // the FMV pause byte
+            let m = rand_obj(t, &mut rng, 0x800);
+            t.stub_sym(md::FMV_MANAGER, 3, false, 0, 0, Ret::Val(m));
+            let on = rng.word();
+            t.check(
+                "graphicSetPauseVideoAtEndFrame",
+                0x0064_37f0,
+                Conv::Cdecl,
+                &[on],
+                |g| Out::U32(d::set_pause_video_at_end(g, on)),
+            );
+            t.reset();
+
+            // the matrix transpose (frame)
+            let scene = rand_obj(t, &mut rng, 0x100);
+            if rng.chance(3) {
+                t.w32(scene + 0xdc, 0);
+            }
+            t.global(md::SCENE.sym, scene);
+            t.stub_sym(md::MATRIX_INVERSE, 4, false, 2, 0, Ret::Val(0x41));
+            t.stub_sym(md::MATRIX_TRANSPOSE, 5, false, 2, 0, Ret::Val(0x42));
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0xc0);
+            t.check(
+                "graphicSceneMatrixTranspose_00643b80",
+                0x0064_3b80,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(d::scene_matrix_transpose(g, ebp)),
             );
             t.b_top = None;
             t.reset();
