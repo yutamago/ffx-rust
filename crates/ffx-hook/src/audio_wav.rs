@@ -342,7 +342,11 @@ unsafe extern "system" fn event_system_update(this: usize) -> u32 {
             SAMPLE.store(u64::from(hi) << 32 | u64::from(lo), Ordering::Release);
         }
     }
-    UPDATES.fetch_add(1, Ordering::AcqRel);
+    let n = UPDATES.fetch_add(1, Ordering::AcqRel) + 1;
+    crate::fmod_log::note(&format!(
+        "update {n} {} {r:x}",
+        SAMPLE.load(Ordering::Acquire)
+    ));
     r
 }
 
