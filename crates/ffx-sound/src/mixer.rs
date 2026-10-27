@@ -185,15 +185,18 @@ impl Voice {
         };
         for f in out.as_chunks_mut::<2>().0 {
             let i = self.pos >> 32;
-            #[allow(clippy::cast_precision_loss)] // 32 fraction bits into f32, as measured
-            let frac = (self.pos & 0xffff_ffff) as f32 / 4_294_967_296.0;
+            // measured bit for bit (fmod-probe, a 44.1 kHz stream alone): the
+            // fraction is the top 31 bits converted to f32 (nearest, ties to
+            // even), and the taps are weighted a x (1 - f) + b x f
+            #[allow(clippy::cast_precision_loss)] // 31 fraction bits into f32, as measured
+            let frac = ((self.pos & 0xffff_ffff) >> 1) as f32 / 2_147_483_648.0;
             let next = match loop_points {
                 Some((ls, le, _)) if i + 1 >= le => ls,
                 _ => i + 1,
             };
             let (a, b) = (w.frame(i), w.frame(next));
-            let l = (a.0 + (b.0 - a.0) * frac) * SCALE;
-            let r = (a.1 + (b.1 - a.1) * frac) * SCALE;
+            let l = (a.0 * (1.0 - frac) + b.0 * frac) * SCALE;
+            let r = (a.1 * (1.0 - frac) + b.1 * frac) * SCALE;
             f[0] += l * self.gain[0];
             f[1] += r * self.gain[1];
             if ramp_left > 0 {
