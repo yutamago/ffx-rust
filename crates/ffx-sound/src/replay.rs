@@ -198,8 +198,6 @@ pub struct Engine<F: Files> {
     free: std::collections::BTreeSet<u16>,
     /// `getChannel` handles whose index matched the allocator, and didn't.
     pub channel_checks: (u32, u32),
-    /// Channels of ended voices, free from the update after the first word.
-    pending_free: Vec<(u64, u16)>,
     /// The mixed output, interleaved stereo.
     pub out: Vec<f32>,
     /// Updates mixed.
@@ -232,7 +230,6 @@ impl<F: Files> Engine<F> {
             slots: HashMap::new(),
             free: (0..128).collect(),
             channel_checks: (0, 0),
-            pending_free: Vec::new(),
             out: Vec::new(),
             updates: 0,
             ignored: HashMap::new(),
@@ -441,15 +438,6 @@ impl<F: Files> Engine<F> {
                         self.channel_checks.0 += 1;
                     } else {
                         self.channel_checks.1 += 1;
-                        if std::env::var("FFX_MIX_DEBUG").is_ok() {
-                            eprintln!(
-                                "chan update {} frame {} event {e:x}: mine {slot:?} logged {logged:?} free top {:?} voices {}",
-                                self.updates,
-                                c.frame,
-                                self.free.iter().rev().take(4).collect::<Vec<_>>(),
-                                self.voices.len()
-                            );
-                        }
                     }
                 }
             }
@@ -520,44 +508,15 @@ impl<F: Files> Engine<F> {
         }
     }
 
-    /// Mixes one block (one `EventSystem::update`).
+    /// Mixes one block (one `EventSystem::update`): every voice in start
+    /// order (fmod-probe found no sum order that differs; the residue's
+    /// last ulps may still be an order, `audio-platform.md`).
     pub fn update(&mut self) {
-        if std::env::var("FFX_MIX_AT")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            == Some(self.updates)
-        {
-            for (id, v) in &self.voices {
-                eprintln!(
-                    "voice {id}: rate {} ch {} frames {} loop {:?} looping {} pos {} vol {} gain {:?}",
-                    v.wave.rate,
-                    v.wave.channels,
-                    v.wave.frames,
-                    v.wave.looped,
-                    v.looping,
-                    v.pos >> 32,
-                    v.volume,
-                    v.gain
-                );
-            }
-        }
         let at = self.out.len();
         self.out.resize(at + 2 * BLOCK, 0.0);
         let block = &mut self.out[at..];
-        let mut order: Vec<(u64, u16)> = self
-            .voices
-            .keys()
-            .map(|&id| (id, self.slots.get(&id).copied().unwrap_or(0)))
-            .collect();
-        match std::env::var("FFX_MIX_ORDER").unwrap_or_default().as_str() {
-            "asc" => order.sort_by_key(|&(_, s)| s),
-            "desc" => order.sort_by_key(|&(_, s)| std::cmp::Reverse(s)),
-            _ => {}
-        }
-        for (id, _) in order {
-            if let Some(v) = self.voices.get_mut(&id) {
-                v.mix(block);
-            }
+        for v in self.voices.values_mut() {
+            v.mix(block);
         }
         let ended: Vec<u64> = self
             .voices
@@ -565,22 +524,10 @@ impl<F: Files> Engine<F> {
             .filter(|(_, v)| v.ended)
             .map(|(&id, _)| id)
             .collect();
-        let delay: u64 = std::env::var("FFX_MIX_FREE_DELAY")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
         for id in ended {
-            self.voices.remove(&id);
-            if let Some(i) = self.slots.remove(&id) {
-                self.pending_free.push((self.updates + delay, i));
-            }
+            self.remove_voice(id);
         }
         self.updates += 1;
-        let now = self.updates;
-        let (due, wait): (Vec<_>, Vec<_>) =
-            self.pending_free.drain(..).partition(|&(d, _)| d < now);
-        self.pending_free = wait;
-        self.free.extend(due.into_iter().map(|(_, i)| i));
     }
 
     /// Replays a whole log.

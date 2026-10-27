@@ -63,6 +63,7 @@ impl Wave {
 
 /// One playing wave.
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // four independent states of a voice
 pub struct Voice {
     pub wave: Arc<Wave>,
     /// Loops between the wave's loop points; false plays it once.
