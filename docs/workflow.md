@@ -140,7 +140,7 @@ stubs. A stub must behave like the callee where the port can tell:
   and the buffer is sized from the callee's code, not from Ghidra's type.
   `Sg_DrawSetEnvironmentInit`'s port gave `yiGetBackColor` a 3-word buffer;
   the callee writes 4 (RGBA), and the game crashed at boot. The stub wrote
-  nothing, so the parity test passed (fixed in `73c9d4de`).
+  nothing, so the parity test passed (fixed in `9a32de84`).
 
 ### Gates beyond the tests (M4)
 

@@ -3786,7 +3786,7 @@
 0x00642690 function graphicNeedResetMapParam  # () -> movzx g_PhyreScene +0x10d2d; name Fahrenheit's (Switch BSim)
 0x006426a0 function graphicObjectSetRotation  # fh v3:bsim1.00 0x00642850; cdecl(id, angles, order): PhyreScene_setObjectRotation(g_PhyreScene; id, angles, order), its eax; ported (ffx_graphic::state, pc round 2)
 0x006426c0 function graphicObjectSetTranslation # fh v3:bsim1.00 0x00642870
-0x006426e0 function ShaderParam_Write_006426e0   # (param, value, ...) writes a shader parameter into a material's parameter buffer (0x006e60d0); callers render set-up (0x006c5c90, 0x006e5a40); the render agent's finding (docs/formats/render.md on its branch, 91cdf20); own name; ported (ffx_glue_other::effect, m4 h4 r1): cdecl(params, a, b) -> 0: 0x006e60d0([[params+4]+4i], a, b) for i < [params] & 0x7fffffff (reread)
+0x006426e0 function ShaderParam_Write_006426e0   # (param, value, ...) writes a shader parameter into a material's parameter buffer (0x006e60d0); callers render set-up (0x006c5c90, 0x006e5a40); the render agent's finding (docs/formats/render.md on its branch, e3a05ab); own name; ported (ffx_glue_other::effect, m4 h4 r1): cdecl(params, a, b) -> 0: 0x006e60d0([[params+4]+4i], a, b) for i < [params] & 0x7fffffff (reread)
 0x00642750 function graphicPS2LightingSetupEffect # fh v3:exact 0x00642900
 0x006427c0 function graphicPlayVideo # guess: PlayVideo(arg != 0) (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006427e0 function graphicPreviousLevelGetNameHash # fh v3:bsim1.00 0x00642990

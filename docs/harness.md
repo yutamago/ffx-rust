@@ -672,7 +672,7 @@ on the p1 and p6 ports and on h3's `PhyreScene_setupSamplers`:
   It passed as a streak.
 - battle-attack-1's idle pose (fish, Tidus, Rikku): 100 to 960 px on
   model edges, which failed the compare.
-Unpinned, six original-code runs on main c28c3607 gave all of them: the
+Unpinned, six original-code runs on main bff2df29 gave all of them: the
 glow in 5 of 6 runs, a 165 px pose difference in 1. 25 Rust runs gave
 them at about the same rates, with or without other games in the slots.
 No port caused them. With `pin` in those three replays, three original and

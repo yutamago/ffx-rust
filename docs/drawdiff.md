@@ -287,7 +287,7 @@ drawdiff reads a pair in 0.28 s and compares it in under 10 ms.
 `~/ffx-work/m4/captures/ref-{a,b,c}` hold the original-code captures of
 `tools/replays/draw-field.txt`: fw-101, fw-459 and besaid-101, three
 frames each, hash mode. They were recorded on 2026-10-25 on main plus
-m4-pilot (merge 94442b2f, FFX.exe build check passed), with
+m4-pilot (merge f855ea8b, FFX.exe build check passed), with
 `FFX_GFX=1 target/release/examples/replay tools/replays/draw-field.txt
 '<win dir>\draw-field.trace' original`
 (`~/ffx-work/m4/pilot/capture.sh <worktree> <tag> original`). They
@@ -321,7 +321,7 @@ Known varying parts, beyond the allow list:
   code does it too (m4-tex113, 2026-10-26): with no replacements
   installed (`replay ... original`), 1 of 3 captures run three at a time
   bound BC1. Captures run one at a time gave BC3 every time: 9 of 9 with
-  every M4 hook (`FFX_HOOK_ONLY`, main 622489ad) and 3 of 3 more with all
+  every M4 hook (`FFX_HOOK_ONLY`, main 99de8d1f) and 3 of 3 more with all
   but p1-load. The BC1 runs on main (main-m4only-f/g) and in the pilot
   (only3-a/b) were all taken while other games ran. So it follows machine
   load, not the hooks. Each blink wait is drawn from the harness's
@@ -379,7 +379,7 @@ Every entry in a gate list has its cause in the file, and every one but
 one was seen between two runs of the original code. Ports never add
 entries. The exception is `SgSpec_CameraVec[0].z`, a junk read the policy
 of 2026-10-24 sets to 0 (below): it is allowed on bsil0000, kami0100 and
-battle as on draw-field (`71320fb2`).
+battle as on draw-field (`6ba788e7`).
 
 Captures are armed exactly: `gfxcapture ... now` in lockstep starts after
 the present of the update the main thread is held after and checks that
@@ -399,7 +399,7 @@ What the original runs showed, and so what the lists hold:
 | menu | p1/p2 | a `NoTexture` quad's UVs (`vb3`; not sampled, stale element words, `docs/formats/ui-draw.md`) |
 | battle | p3-p6 (p1/p2 with an older script) | `NoTexture` quads' UVs (`vb3`, p6 against p3; stale caller data, not sampled), the eye-blink texture (not in these pairs; as fw-101's draw 113 in original runs, seen once with a hook subset) |
 
-Results on main 1de4a2a0 plus the draw-gates branch (2026-10-26), against
+Results on main a3b34047 plus the draw-gates branch (2026-10-26), against
 p1 (bsil0000, bsil0300, kami0100, menu) or p3 (battle), before the
 `SgSpec_CameraVec` entry. With it, the three FAILs below pass: their only
 difference is that word (`docs/rewrite-plan.md`, M4 status: every scene
@@ -436,7 +436,7 @@ Two things the original runs do not pin and the replays avoid:
 integer). The port passes 0 (junk-read policy), and with only the M4
 hooks the original `Ch_DrawMain` reads what ported functions further up
 left there (`0x006c0000` on bsil0000, `0x005d0000` on kami0100). The
-draw-field list allowed it first; since `71320fb2` the bsil0000, kami0100
+draw-field list allowed it first; since `6ba788e7` the bsil0000, kami0100
 and battle lists do too, by the same policy. Bisected on
 kami0100 with only the M4 hooks (`FFX_HOOK_ONLY` halves of the 1,756
 hooks of the second half, 11 steps): `Sg_AccSetFrameChr` (`0x0082be20`,
