@@ -24,7 +24,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::{Mem, x87};
-use ffx_glue_other::{h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1};
+use ffx_glue_other::{
+    h4_k1 as k1, h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2,
+};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2291,5 +2293,128 @@ fn l1_voice_data_change() {
             }
         }
         assert!(loads > 10, "{name}: {loads}");
+    }
+}
+
+// ---- continuation round 10, batch 2 (ffx_glue_other::h4_l2)
+
+/// `updateGuildMapRenderData`: maps of 0..8 segments (type 0 with 0..5
+/// primitives, negative and high types skipped, types 1..7 failing),
+/// totals that end early or run past the 29 segment records, buffers
+/// missing, random colour and tint bytes, random scale and bound
+/// constants (NaN, infinities), render data missing.
+#[test]
+fn l2_update_guild_map() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_7620);
+        let stubs = [
+            (k4::GET_RENDER_DATA, 2),
+            (k1::GET_BUFFER, 4),
+            (ffx_glue_other::h4_i1::MUL_MATRIX, 3),
+            (k1::SET_VISIBLE, 3),
+        ];
+        for (sym, n) in stubs {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let tags: Vec<u32> = stubs.iter().map(|s| s.0).collect();
+        let mut shown = 0;
+        for i in 0..1500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.constants(
+                &mut rng,
+                &[l2::LOW_START, l2::HIGH_START],
+                &[l2::TINT_SCALE, l2::COLOUR_SCALE],
+            );
+            let case = rng.below(4);
+            match case {
+                0 => {
+                    t.g32(l2::LOW_START, f32::MAX.to_bits());
+                    t.g32(l2::HIGH_START, (-f32::MAX).to_bits());
+                }
+                // signed zeros: a point at 0 does not replace an equal
+                // zero of the other sign
+                1 => {
+                    let (a, b) = (rng.pick(&[0x8000_0000, 0]), rng.pick(&[0x8000_0000, 0]));
+                    t.g32(l2::LOW_START, a);
+                    t.g32(l2::HIGH_START, b);
+                }
+                _ => {}
+            }
+            // the render data and its 29 segment records' buffers
+            let data = random_block(&mut t, &mut rng, 0xd0);
+            let records = t.zeros(0x6c * 30);
+            t.w32(data + 0x94, records);
+            for r in 0..30u32 {
+                let end = records + 0x6c * (r + 1);
+                let positions = t.zeros(0x24 * 6);
+                let colours = t.zeros(0x30 * 6);
+                let indices = t.zeros(6 * 6);
+                t.w32(end - 0x60, positions);
+                t.w32(end - 0x58, colours);
+                t.w32(end - 0x50, indices);
+            }
+            t.ret(k4::GET_RENDER_DATA, rng.pick(&[data, data, data, data, 0]));
+            let r = rng.next() | 1;
+            t.ret(k1::GET_BUFFER, rng.pick(&[r, r, r, r, r, 0]));
+            // the map: segments at +0x40, points at +0x600
+            let map = t.zeros(0x800);
+            t.w32(map + 4, 0x40);
+            t.w32(map + 8, 0x600);
+            // 16 points of three i16s: small, zero (signed-zero bounds)
+            // or any
+            for k in 0..16 * 3 {
+                let (s, r) = (rng.small() as u16, rng.next() as u16);
+                let v = if case == 1 {
+                    0
+                } else {
+                    rng.pick(&[s, 0, 0, r])
+                };
+                t.w16(map + 0x600 + 2 * k, v);
+            }
+            let mut at = 0x40;
+            let mut total = 0i32;
+            for _ in 0..rng.below(9) {
+                let kind = rng.pick(&[0u8, 0, 0, 0, 0, 0x80, 0xff, 8, 7, 1]);
+                let n = rng.pick(&[0u16, 1, 2, 5, 5]);
+                t.w8(map + at + 1, kind);
+                t.w16(map + at + 2, n);
+                at += 0x10;
+                if kind == 0 {
+                    for _ in 0..n {
+                        for b in 0..12 {
+                            let r = rng.below(256);
+                            let v = rng.pick(&[0, 0xff, r]);
+                            t.w8(map + at + b, v as u8);
+                        }
+                        for v in 0..3 {
+                            let p = rng.below(16) as u16;
+                            t.w16(map + at + 0xc + 2 * v, p);
+                        }
+                        at += 0x14;
+                    }
+                }
+                total += i32::from(n);
+            }
+            let total = rng.pick(&[total, total, total + 3, total - 1, 0, -2]);
+            t.w16(map + 0x10, total as u16);
+            let tint = random_block(&mut t, &mut rng, 0x24);
+            let matrix = random_block(&mut t, &mut rng, 0x40);
+            t.w32(tint + 0x20, matrix);
+            for b in 0..4 {
+                let r = rng.below(256);
+                let v = rng.pick(&[0, 0x80, 0xff, r]);
+                t.w8(tint + 0x18 + b, v as u8);
+            }
+            let (lo, hi) = (rng.next(), rng.next());
+            t.check(&w, 0x0071_7620, &[lo, hi, map, tint], |g| {
+                u(l2::update_guild_map(g, lo, hi, map, tint))
+            });
+            for k in 0..t.log_entries() {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * k);
+                shown += u32::from(tag == k1::SET_VISIBLE);
+            }
+        }
+        assert!(shown > 30, "{name}: {shown}");
     }
 }

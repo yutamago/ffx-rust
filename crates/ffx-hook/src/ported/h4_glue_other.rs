@@ -18,8 +18,8 @@ use ffx_glue_other::{
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
-    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, menu as mn, misc as m, movie as mv, r3,
-    sound as s,
+    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, menu as mn, misc as m,
+    movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2621,6 +2621,11 @@ ported! {
     FmodVoice_dataChange @ 0x0070_a630 => extern "thiscall" fn fmod_voice_data_change(this: u32, id: u32, system: u32) -> u32 {
         let mut frame = StackFrame::<{ (l1::VOICE_FRAME / 4) as usize }>::new();
         l1::data_change(&mut mem(), frame.at(), this, id, system)
+    }
+    // ---- continuation round 10, batch 2 (ffx_glue_other::h4_l2)
+    /// `updateGuildMapRenderData(lo, hi, map, tint)` -> 1 or 0.
+    updateGuildMapRenderData @ 0x0071_7620 => extern "C" fn update_guild_map_render_data(lo: u32, hi: u32, map: u32, tint: u32) -> u32 {
+        l2::update_guild_map(&mut mem(), lo, hi, map, tint)
     }
 }
 

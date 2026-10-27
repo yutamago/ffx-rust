@@ -119,7 +119,8 @@
 //!   buffers;
 //! - [`h4_l1`]: continuation round 10, batch 1: the shapes' VFX render
 //!   data buffers, the menu vertex records, the character cache's delayed
-//!   release, the voice data change.
+//!   release, the voice data change;
+//! - [`h4_l2`]: its second batch: the guild map's VFX render data.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -190,6 +191,7 @@ pub mod h4_k2;
 pub mod h4_k3;
 pub mod h4_k4;
 pub mod h4_l1;
+pub mod h4_l2;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;
