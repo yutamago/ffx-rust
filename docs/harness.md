@@ -689,7 +689,8 @@ magic-determinism). Three things carried that count into battle-magic:
 The `pin` command (main thread, between two updates; on the virtual
 clock) sets them: the clock to 4096 s past its start, `g_AppStartTime`
 so that the game time is 64 s, the paused time 0, `g_FrameLimiterLast`,
-`+0x20`/`+0x120`, the running update's step and the play-time stamp
+`+0x20`, the shaders' `GlobalTime` (`+0x3b0` and its copy `+0x120`: 0,
+since replay-flakes6), the running update's step and the play-time stamp
 (`0x01325b84`) to match (the next frame is one interval on, every step
 one frame), the emulated vsyncs from the new time, both carries 0,
 `g_Vu0_R` `0x3fb5a5c3` (seeded), the main thread's CRT seed 1. It
@@ -1361,7 +1362,8 @@ in `~/ffx-work/flakes5`); nothing here is fixed yet.
 - `scene.GlobalTime` (`3.4367595` at count 101) is the pinned game time
   less 64 s, with digits finer than the `f32` game time at `app +0x120`
   (`67.43676`) holds, so the shaders' value is computed from the `f64`
-  clock elsewhere. Not found.
+  clock elsewhere. (Found and pinned: "GlobalTime and the title band"
+  below.)
 - The title after a game over (menu-save-4, iggy-menus 11/12): a draw
   capture of the title (`test20`) in two runs differs in one draw, its
   `ps.srv0`, a 1024x256 BC3 texture that changes every frame (the band
@@ -1383,6 +1385,94 @@ in `~/ffx-work/flakes5`); nothing here is fixed yet.
   counts `+0x100` up one per frame it takes). The demux and decoder
   threads block on queues fed by the reading thread; what that thread
   waits for in lockstep is not known yet, so movie-fmv stays `realtime`.
+
+### GlobalTime and the title band (replay-flakes6, 2026-10-27)
+
+Probe scripts in `~/ffx-work/flakes6` (`probe.sh`, `title-*.txt`); the
+harness's `readp` now follows a chain of offsets (`readp 0x0193bf80 0 8 8
+0 0x1200`: `*(*(*(*0x0193bf80) + 8) + 8)`, 0x1200 bytes), and
+`iggyplayers` lists the Iggy players the tick check has seen.
+
+- `scene.GlobalTime` is `FFXApplication +0x3b0`, an `f32` of its own,
+  not the game time. `FFXApplication_updateGlobalTime_0042fa00` (from
+  `FFXApplication_animate`) adds each update's step (`+0x24`) to it while
+  the game runs (not loading, not paused), wraps it to 0 at 2400 s, and
+  copies it to `+0x120` after `PApplication::frame` has put the game time
+  there; `PSceneWideParametersKey_initialize` (`0x004fe940`) takes the
+  shaders' value from the renderer's context (`app +0x50`) `+0xd0`, that
+  copy. Every map change sets it to 0 (`PhyreScene_fieldMapShutdown`
+  `0x0065d230`), so at count 101 it is about 101 frames: 3.4 s. Right
+  after `load direct 5 kami0100 lockstep` two original runs held
+  `0x3498c000` and `0x347cc000` (2.8e-7 and 2.4e-7 s: the load update's
+  step, taken from the free-running clock, less the reset), and the `f32`
+  sums of the later one-frame steps kept that difference in their last
+  bits (2-16 ulp in the gates, more with real-time waits). `pin` now
+  sets it (and its copy) to 0, as a map load does; it used to write the
+  game time into the copy, a value the shaders saw for the one frame
+  before the next update rewrote it.
+- The title band (menu-save-4, iggy-menus 11/12; `test20`, map `0x17`):
+  in a draw capture (`FFX_GFX=1`) it is draw 26 of 82, a quad (6 indices)
+  with `menudefaultshader.fx.phyre` for both stages (vs `1d1e29b68503e9b0`,
+  ps `08b62fe4f7b49bc5`) and a BC3 1024x256 texture in `ps.srv0` whose
+  content differs between runs and between frames. Its counter was not
+  found; ruled out at the title in two original runs: the
+  `TextureAnimationManager`'s 14 `TextureAnimationInfo`s (`+0x7c`,
+  `+0x80`: period 0.5, timer, frame and the playing byte all 0, the same
+  in both), the 14 map parts (`Yn_MapPartCount`; the parts' animation
+  words, frames `+0x96`, counts and rates the same, only heap pointers
+  differ), the texture video (`g_PhyreScene +0xdd0` 0: none loaded),
+  Iggy (the one player the tick check ever saw does not tick at the
+  title) and `GlobalTime` (the same in both). The two runs' captures came
+  7 updates apart (boundaries 874 and 881), from the free-running boot
+  and title before `load direct`. Lead: the menu system draws with
+  `menudefaultshader` (`TkMenuDrawAll`, the cached title texture
+  `0x025d16cc` that `MenuTextureManager_LoadSaMenuTexture` keeps). The
+  shots stay as they are: the two recordings differ over the band, so
+  `shot-compare.py` leaves it out, and the rest of the title matches.
+
+What else varies, with the evidence of this round (two original
+recordings of the main and the extra list made on this branch, compared
+with each other and with the shared ones of replay-flakes5; then five
+`run-all.sh` runs of each list, three games at once):
+
+- boot-3 and boot-4 (`realtime`): the shared recordings differ by 417
+  pixels (x 110..927, y 1..610) and 641 (x 842..886, y 428..457); this
+  round's two were the same, and the shared ones matched them elsewhere.
+  Between original runs only; the opening follows its music in real time
+  and `shotwhen` pins the shots to the event count, not to the stream.
+  Five Rust runs passed against this round's pair.
+- Rin's eyes (x 661..676 at the agency counter: event-agency-1,
+  menu-save-2 y 359..362 25 pixels, menu-shop-8 y 212..215 37 pixels,
+  menu-grid-9 y 345..347 4 pixels): between this round's two original
+  recordings in menu-save-2 and menu-shop-8, and in one of five Rust runs
+  in menu-grid-9 (4 pixels, under the streak limit). A blink a frame
+  apart; the middle-calc jobs that draw it are seeded from the event count
+  ("How it gets in"), so what still moves it is not known.
+- kami0100's cloth ring (the gates' `vb5`, 27 draws in every pair): not
+  measured again. Lead: like `GlobalTime`, the cloth steps the load
+  update with that update's step, which follows the boot's length
+  (`0x3d08abc4` against `0x3d08ab9f`, replay-flakes5), and `pin` comes
+  after it; its state lives in buffers outside the character records.
+- menu-shop's cursor boxes (x 210-266, y 167-191; 25-473 pixels in the
+  h4b3 merge verify): not seen in five runs.
+- movie-fmv's reading thread in lockstep: not looked at again
+  (replay-flakes5's finding stands: movie-fmv stays `realtime`). In one
+  of the five extra-list runs (Rust) the movie did not advance in
+  `realtime` either: movie 2 was requested and the manager played
+  (`+0x6d0`), but the frame `+0x6d8` stayed under 64 for 1,200 updates
+  and the first `shotwhen` timed out. Three more Rust runs and three
+  original runs side by side were fine (so 1 of 9 Rust runs, 0 of 5
+  original runs counting the two recordings); the same stall as
+  replay-flakes5's in lockstep, not explained.
+- battle-ifrit-1 and -2: 3 and 9 pixels on Wakka's head (x 905..918,
+  y 462..469; his idle pose) in two of five Rust runs, while the two
+  original recordings agree there. The 3 passed as a streak, the 9
+  failed extra run 3. Not measured on more original runs, so not known
+  whether the originals vary there too (the idle pose did in
+  battle-attack before `pin`).
+- event-besaid-4 and -5 differ between any two original recordings (4,000
+  to 10,000 pixels, the river walk after the voiced line), as before; the
+  comparison leaves those pixels out.
 
 ## Parallel games
 

@@ -2715,6 +2715,40 @@ ported! {
         let mut frame = StackFrame::<{ (m9::ATEL_FRAME / 4) as usize }>::new();
         m9::update_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, obj, index)
     }
+    // ---- round h4x, batch 1 (ffx_glue_other::h4x_video)
+    /// `FFEscMenu_initializeVideoSettingPage(this)` (a 0xac8-byte frame:
+    /// the Iggy values, the choices' `LocString`s and lists).
+    FFEscMenu_initializeVideoSettingPage @ 0x006f_cca0 => extern "thiscall" fn video_setting_page(this: u32) -> u32 {
+        use ffx_glue_other::h4x_video as xv;
+        let mut frame = StackFrame::<{ (xv::VIDEO_FRAME / 4) as usize }>::new();
+        xv::video_setting_page(&mut mem(), frame.at(), this)
+    }
+    // ---- round h4x, batch 2 (ffx_glue_other::h4x_shape)
+    /// `updateVFXRenderDataShapeField(lo, hi, shape, obj)` -> 1, or 0
+    /// without render data (a 0xd4-byte frame: the fade matrix, the quad's
+    /// vertices, the fade vector).
+    updateVFXRenderDataShapeField @ 0x0071_a4e0 => extern "C" fn update_vfx_render_data_shape_field(lo: u32, hi: u32, shape: u32, obj: u32) -> u32 {
+        use ffx_glue_other::h4x_shape as xs;
+        let mut frame = StackFrame::<{ (xs::SHAPE_FRAME / 4) as usize }>::new();
+        xs::update_shape_field(&mut mem(), frame.at(), lo, hi, shape, obj)
+    }
+    // ---- agent h4y: the particle fill-buffer jobs (ffx_glue_other::h4y_*)
+    /// `JobSchedule_pppPart_fillBuffer_drawShp_00727110(part)` -> 1: a
+    /// job-worker routine (a 0x1b4-byte frame: the matrices, quads and
+    /// colours its `FFXVu0*` callees see; zeroed, so the depth corner of a
+    /// part without an unclipped last primitive reads 0).
+    JobSchedule_pppPart_fillBuffer_drawShp_00727110 @ 0x0072_7110 => extern "C" fn fill_buffer_draw_shp_00727110(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_shp::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_shp::draw_shp(&mut mem(), frame.at(), part)
+    }
+    /// `JobSchedule_pppPart_fillBuffer_drawMdlDtt(part)` -> `part + 0xb0`:
+    /// a job-worker routine (an 80 KB frame like the original's: the
+    /// projected points and the vectors its `FFXVu0*` callees see; the
+    /// job workers commit 128 KB).
+    JobSchedule_pppPart_fillBuffer_drawMdlDtt @ 0x0072_56c0 => extern "C" fn fill_buffer_draw_mdl_dtt(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_dtt::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_dtt::draw_mdl_dtt(&mut mem(), frame.at(), part)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
