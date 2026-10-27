@@ -114,6 +114,17 @@ pub trait Host: Mem {
         f32::NAN
     }
 
+    /// Calls a two-operand CRT intrinsic (`_CIpow` through the game's
+    /// import thunk at `addr`) with `x` in `ST1` and `y` in `ST0` (each
+    /// loaded as `fld qword`); returns its `ST0` result as the caller's
+    /// `fstp m32` stores it.
+    ///
+    /// The default returns NaN, as [`Host::call_intrinsic`]'s does.
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let _ = (addr, x, y);
+        f32::NAN
+    }
+
     /// Calls the `cdecl` function at `addr` with up to [`WIDE_WORDS`]
     /// stack words, returning `eax`: for callees that take more than
     /// [`max_words`]' twelve, such as `AsyncLoadManager_loadCluster`'s
@@ -199,6 +210,26 @@ impl Host for ffx_bridge::RawMem {
                 "call {f}",
                 "fstp dword ptr [edi]",
                 x = in(reg) &raw const x,
+                f = in(reg) addr,
+                in("edi") &raw mut out,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let mut out = 0f32;
+        // SAFETY: as in `call_intrinsic`, with the operands in ST1 and ST0
+        // (the intrinsic pops both and leaves its result in ST0).
+        unsafe {
+            std::arch::asm!(
+                "fld qword ptr [{x}]",
+                "fld qword ptr [{y}]",
+                "call {f}",
+                "fstp dword ptr [edi]",
+                x = in(reg) &raw const x,
+                y = in(reg) &raw const y,
                 f = in(reg) addr,
                 in("edi") &raw mut out,
                 clobber_abi("C"),

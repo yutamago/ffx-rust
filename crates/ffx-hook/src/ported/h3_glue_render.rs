@@ -63,6 +63,7 @@ use ffx_prender::h3_glue54::bridge as g54;
 use ffx_prender::h3_glue55::bridge as g55;
 use ffx_prender::h3_glue56::bridge as g56;
 use ffx_prender::h3_glue57::bridge as g57;
+use ffx_prender::h3_glue58::bridge as g58;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2134,6 +2135,14 @@ ported! {
     ShadowManager_updateShadowMap @ 0x006d_3000 => extern "thiscall" fn shadow_update_map(this: u32, _out: u32, _instance: u32, _a: u32, _neg_x: u32, _floor: u32, _z: u32, _x: u32, _y: u32, _radius: u32, _spread: u32, _c: u32, _d: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0xac>::new();
         g57::update_shadow_map(&mut mem(), f.at() + 0x2b0, slots, this)
+    }
+
+    // ---- round 17 batch 60 (ffx_prender::h3_glue58) ----
+    /// `BrokenScreen_shadeShards_006d3650(shards; light x, y, z, unused, r,
+    /// g, b, strength)` -> the vertex count done (or the mode): the
+    /// shards' vertex colours, diffuse (mode 1) or specular (mode 2).
+    BrokenScreen_shadeShards_006d3650 @ 0x006d_3650 => extern "thiscall" fn shade_shards(this: u32, x: u32, y: u32, z: u32, _unused: u32, r: u32, g: u32, b: u32, strength: u32) -> u32 {
+        g58::shade_shards(&mut mem(), this, [x, y, z], [r, g, b], strength)
     }
 }
 

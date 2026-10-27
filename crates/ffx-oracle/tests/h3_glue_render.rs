@@ -80,6 +80,7 @@ use ffx_prender::h3_glue54::{self as h54, bridge as gh54};
 use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
 use ffx_prender::h3_glue56::{self as h56, bridge as gh56};
 use ffx_prender::h3_glue57::{self as h57, bridge as gh57};
+use ffx_prender::h3_glue58::bridge as gh58;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -94,9 +95,13 @@ const POISON: u32 = 0xdead_beef;
 /// `+16` `fstp st0; ret`, for [`Host::call_intrinsic`] (a CRT intrinsic
 /// with its argument in `ST0`; `graphicFontDraw` is 1806 bytes long).
 const TRAMPOLINE_AT: u32 = POISON_AT + 8;
-const TRAMPOLINE_CODE: [u8; 19] = [
+///
+/// At `+19`, for [`Host::call_intrinsic2`]: `fld qword [esp+4]; fld qword
+/// [esp+0xc]; call [esp+0x14]; ret` (`_CIpow`, operands in `ST1` and
+/// `ST0`).
+const TRAMPOLINE_CODE: [u8; 32] = [
     0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-    0xdd, 0xd8, 0xc3,
+    0xdd, 0xd8, 0xc3, 0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
 ];
 
 /// Deterministic xorshift stream.
@@ -210,6 +215,26 @@ impl Host for G<'_> {
         let r = self
             .0
             .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let at = self.1 + (TRAMPOLINE_AT - POISON_AT);
+        let (base, power) = (x.to_bits(), y.to_bits());
+        let words = [
+            base as u32,
+            (base >> 32) as u32,
+            power as u32,
+            (power >> 32) as u32,
+            addr,
+        ];
+        let r = self
+            .0
+            .call(at + 19, Conv::Cdecl, &words)
             .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
         let Some(v) = r.st0_f32() else {
             panic!("intrinsic {addr:#x}: no float in ST0");
@@ -12762,5 +12787,78 @@ fn batch59_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES59, n, &mut Rng(0x5959_b059));
+    });
+}
+
+// ---- round 17 batch 60 (ffx_prender::h3_glue58) ----
+
+/// A float in -2..2 now and then exactly -1, 0 or 1 (the shard
+/// positions' screen test), or any float.
+fn near_one(rng: &mut Rng) -> u32 {
+    match rng.below(8) {
+        0 => pick(
+            rng,
+            &[(-1.0_f32).to_bits(), 0, 0x8000_0000, 1.0_f32.to_bits()],
+        ),
+        1 => rng.float().to_bits(),
+        _ => ((rng.below(400) as f32 - 200.0) / 100.0).to_bits(),
+    }
+}
+
+/// The mode (diffuse, specular, neither), the vertex count (0 to 5), the
+/// rotation, the positions, normals and colours, the light, colour and
+/// strength.
+fn prep_shards(t: &mut Twins, obj: u32, _: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let mode = pick(rng, &[1, 2, 1, 2, 0, 3]);
+    t.w32(obj, mode);
+    let n = pick(rng, &[0, 1, 2, 3, 5]);
+    t.w32(obj + 8, n);
+    for k in 0..12 {
+        let v = if rng.chance(3) {
+            pick(rng, &[0, 1.0_f32.to_bits()])
+        } else {
+            mild(rng)
+        };
+        t.w32(obj + 0x60 + 4 * k, v);
+    }
+    let (positions, normals, colours) = (obj + 0x400, obj + 0x500, obj + 0x600);
+    t.w32(obj + 0x40, positions);
+    t.w32(obj + 0x44, normals);
+    t.w32(obj + 0x48, colours);
+    for k in 0..15 {
+        let p = near_one(rng);
+        t.w32(positions + 4 * k, p);
+        let v = mild(rng);
+        t.w32(normals + 4 * k, v);
+    }
+    if rng.chance(3) {
+        // the first column's sum at an f32 tie: (1+2^-12)^2 + 2^-53 +
+        // 2^-53 rounds down when added left to right, up otherwise
+        t.w32(obj + 0x60, 0x3f80_0800);
+        t.w32(obj + 0x70, 0x3280_0000);
+        t.w32(obj + 0x80, 0x3280_0000);
+        for v in 0..5 {
+            t.w32(normals + 12 * v, 0x3f80_0800);
+            t.w32(normals + 12 * v + 4, 0x3200_0000);
+            t.w32(normals + 12 * v + 8, 0x3200_0000);
+        }
+    }
+    for k in [0, 1, 2, 4, 5, 6] {
+        args[k] = mild(rng);
+    }
+    let any = mild(rng);
+    args[7] = pick(rng, &[1.0_f32.to_bits(), 0.25_f32.to_bits(), any]);
+}
+
+#[rustfmt::skip]
+const CASES60: &[Case] = &[
+    Case { prep: Some(prep_shards), ..method("shade_shards", 0x006d_3650, This::Object, 8, &[], |m, this, a| u(gh58::shade_shards(m, this, [a[0], a[1], a[2]], [a[4], a[5], a[6]], a[7]))) },
+];
+
+#[test]
+fn batch60_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 400 };
+        run_cases(t, CASES60, n, &mut Rng(0x6060_b060));
     });
 }
