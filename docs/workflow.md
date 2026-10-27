@@ -80,7 +80,9 @@ reported) and reports a name given to two addresses.
 ## Verifying a merge batch
 
 `tools/verify-batch.py [BASE]` (BASE: the last pushed state, `origin/main`)
-runs only what the batch can affect: unit tests of the changed crates and of
+first runs `tools/check-privacy.py`: no user paths (`C:\Users\<name>`,
+`/home/<name>`) in tracked files and only no-reply e-mails on the commits
+since BASE. Then it runs only what the batch can affect: unit tests of the changed crates and of
 every crate depending on them; the `ffx-oracle` tests of the changed crates,
 of the changed test files and of the modules whose hook shims changed, on the
 image alone and on both snapshots side by side (all of them when

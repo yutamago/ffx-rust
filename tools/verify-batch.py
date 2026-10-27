@@ -63,6 +63,9 @@ def main():
     base = args[0] if args else "origin/main"
     changed = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.split()
+    # nothing personal goes in: user paths, non-noreply commit e-mails
+    if subprocess.run(["python3", "-I", "tools/check-privacy.py", base], cwd=REPO).returncode:
+        sys.exit("failed: tools/check-privacy.py")
     # two branches porting one function: fail before the build
     dup = progress.duplicate_hooks(REPO)
     for line in dup:
