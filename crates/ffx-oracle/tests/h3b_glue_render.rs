@@ -434,10 +434,18 @@ impl Twins {
         bridge: impl FnOnce(&mut G) -> Out,
     ) {
         let addr = self.rebase(sym);
-        let ra = self
-            .a
-            .call(addr, conv, args)
-            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        let ra = self.a.call(addr, conv, args).unwrap_or_else(|e| {
+            if std::env::var_os("H3_LOG").is_some() {
+                let n: u32 = Mem::read(&self.a, self.log);
+                for k in 0..n.min(64) {
+                    let e: Vec<u32> = (0..6)
+                        .map(|w| Mem::read::<u32>(&self.a, self.log + 4 + 64 * k + 4 * w))
+                        .collect();
+                    eprintln!("a {k}: {e:x?}");
+                }
+            }
+            panic!("{what}: the original: {e}")
+        });
         let poison = self.rebase(POISON_AT);
         let out = bridge(&mut G(&mut self.b, poison));
         if let Out::F64(v) = out {
@@ -1107,10 +1115,11 @@ fn batch1_render_usm_matches_the_original() {
 use ffx_prender::h3b_glue3::{self as h3, bridge as b3};
 
 impl Twins {
-    /// A recording stub at `sym` for a method taking two pointers: logs
-    /// `tag`, `ecx` and the words they point at (what the callee reads
-    /// through them at the call), pops 2 words, returns `ret`.
-    fn stub_deref2(&mut self, sym: u32, ret: u32) {
+    /// A recording stub at `sym` for a method with two stack words: logs
+    /// `tag`, `ecx` and each word, or the word it points at where
+    /// `deref` (what the callee reads through it at the call); pops 2
+    /// words, returns `ret`.
+    fn stub_deref(&mut self, sym: u32, deref: [bool; 2], ret: u32) {
         let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -1120,9 +1129,11 @@ impl Twins {
         c.extend([0xc7, 0x00]);
         c.extend(sym.to_le_bytes()); // mov [eax], tag
         c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
-        for k in 0..2u8 {
+        for (k, d) in (0..2u8).zip(deref) {
             c.extend([0x8b, 0x54, 0x24, 4 + 4 * k]); // mov edx, [esp+4+4k]
-            c.extend([0x8b, 0x12]); // mov edx, [edx]
+            if d {
+                c.extend([0x8b, 0x12]); // mov edx, [edx]
+            }
             c.extend([0x89, 0x50, 8 + 4 * k]); // mov [eax+8+4k], edx
         }
         c.extend([0xff, 0x05]);
@@ -1243,7 +1254,7 @@ fn prep_loaded(t: &mut Twins, obj: u32, this: &mut u32, _: &mut [u32], rng: &mut
     let buf = obj + 0x4000;
     presets(t, buf, rng);
     t.stub_ret(h3::NEW, false, 1, 0, buf);
-    t.stub_deref2(h3::MAP_INSERT, 0);
+    t.stub_deref(h3::MAP_INSERT, [true, true], 0);
     FRAME_IGNORE.with(|f| f.borrow_mut().push((0x28, 0x18)));
 }
 
@@ -1281,5 +1292,141 @@ fn batch2_on_all_shader_bin_files_loaded_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 100 } else { 600 };
         run_cases(t, CASES_LOADED, n, &mut Rng(0xb3b2_0003));
+    });
+}
+
+// ---- batch 3: PostProcessManager_renderHDAOPass (ffx_prender::h3b_glue4) ----
+
+use ffx_prender::h3b_glue4::{self as h4, bridge as b4};
+
+/// The manager (on, the setting, MSAA, its targets, the HDAO mesh's
+/// material, the parameter floats, the blur count, the apply switch), the
+/// scene camera's projection, the parameters (found or not; their offset
+/// and size against the buffer), each call failing now and then.
+#[allow(clippy::too_many_lines)] // the callees
+fn prep_hdao(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let pm = t.zeros(0x1_2410);
+    *this = pm;
+    let on = if rng.chance(8) {
+        0
+    } else {
+        rng.next() as u8 | 1
+    };
+    t.write(pm + 0x123d0, &[on]);
+    let was = u8::from(rng.chance(2));
+    t.write(pm + 0x123d1, &[was]);
+    let setting = pick(rng, &[0, 1, 2, 3, 4, 2, 3]);
+    t.w32(pm + 0x1264, setting);
+    let msaa = u8::from(rng.chance(2));
+    t.write(pm + 0x122b4, &[msaa]);
+    for (k, at) in [0x8c, 0x90, 0x98, 0x9c, 0xa4].into_iter().enumerate() {
+        let record = obj + 0x100 + 0x10 * k as u32;
+        t.w32(pm + at, record);
+        target_usm(t, record, obj + 0x1000 + 0x40 * k as u32, at < 0x9c, rng);
+    }
+    // +0x8c's texture is read for its sizes
+    t.write(obj + 0x104, &[0]);
+    let mesh = obj + 0x300;
+    t.w32(pm + 0x121c, mesh);
+    let array = obj + 0x3a0;
+    t.w32(mesh + 0x10, array);
+    let element = obj + 0x380;
+    if rng.chance(2) {
+        t.w32(array, 1);
+        t.w32(array + 4, element);
+    } else {
+        t.w32(array, pick(rng, &[2, 0x8000_0004]));
+        t.w32(array + 4, obj + 0x3c0);
+        t.w32(obj + 0x3c0, element);
+    }
+    let shader = rng.next();
+    t.w32(element, shader);
+    let buffer = obj + 0x500;
+    t.w32(element + 4, buffer);
+    t.w32(buffer, pick(rng, &[0, 4, 0x14, 0x20, 0x80, 0x100]));
+    for k in 0..0x10 {
+        let v = rng.float().to_bits();
+        t.w32(pm + 0x1224 + 4 * k, v);
+    }
+    let count = pick(rng, &[0, 1, 1, 2, 3, 0xffff_ffff]);
+    t.w32(pm + 0x125c, count);
+    let apply = u8::from(rng.chance(2));
+    t.write(pm + 0x1260, &[apply]);
+    // the scene camera's projection
+    let scene = obj + 0x700;
+    t.global(h4::SCENE, scene);
+    t.w32(scene + 0xdc, obj + 0x800);
+    for k in 0..16 {
+        let v = if rng.chance(2) {
+            rng.float().to_bits()
+        } else {
+            (rng.below(2000) as f32 / 700.0 - 1.3).to_bits()
+        };
+        t.w32(obj + 0x800 + 0x34 + 4 * k, v);
+    }
+    let param = obj + 0x400;
+    let offset = pick(rng, &[0, 2, 3, 4, 5, 8, 0x10, 0x40, 0x70, 0xf0, 0xfff0]);
+    t.write(param + 8, &(offset as u16).to_le_bytes());
+    // the ring count is one word: sizes over 4 only where they don't fit
+    let size = if rng.chance(2) {
+        pick(rng, &[0, 1, 4])
+    } else {
+        pick(rng, &[0x200, 0x1f00])
+    } | (rng.below(8) << 13);
+    t.write(param + 0xa, &(size as u16).to_le_bytes());
+    // a second parameter at another offset, so copies to one don't hide
+    // copies to the other
+    let param2 = obj + 0x420;
+    let offset2 = pick(rng, &[4, 0x18, 0x30]);
+    t.write(param2 + 8, &(offset2 as u16).to_le_bytes());
+    t.write(param2 + 0xa, &4u16.to_le_bytes());
+    let found: Vec<u32> = (0..64)
+        .map(|_| pick(rng, &[0, param, param, param2, param2]))
+        .collect();
+    t.stub_seq(h4::FIND_PARAMETER, true, 1, 1, &found);
+    let value2 = if rng.chance(12) { rng.next() | 1 } else { 0 };
+    t.stub_deref(h4::SET_VALUE2, [false, true], value2);
+    for (sym, n) in [
+        (h4::SET_TEXTURE, 2),
+        (h4::SET_VALUE, 2),
+        (h4::COPY_TO_BUFFER, 2),
+        (h4::SET_COLOR_TARGET, 2),
+        (h4::SET_DEPTH_STENCIL_TARGET, 1),
+        (h4::SET_CLEAR_COLOR, 4),
+        (h4::BEGIN_SCENE, 1),
+        (h4::END_SCENE, 1),
+        (h4::RENDER_MESH_FOR_PASS, 1),
+    ] {
+        let v = errors_n(rng, 24);
+        t.stub_seq(sym, true, n, n, &v);
+    }
+    let renderer = obj + 0x600;
+    args[0] = renderer;
+    args[1] = rng.next();
+    args[2] = obj + 0x180;
+    target_usm(t, obj + 0x180, obj + 0x1200, false, rng);
+    args[3] = obj + 0x190;
+    target_usm(t, obj + 0x190, obj + 0x1240, true, rng);
+    FRAME_IGNORE.with(|f| f.borrow_mut().push((0x2c, 0x1c)));
+}
+
+const HDAO_STUBS: &[(u32, K)] = &[
+    (h4::RESOLVE_DEPTH, K::This(3)),
+    (h4::SURFACE_CTOR, K::This(2)),
+    (h4::SURFACE_DTOR, K::This(0)),
+    (h4::SET_VIEWPORT, K::This(4)),
+    (h4::COPY_BUFFER, K::This(6)),
+];
+
+#[rustfmt::skip]
+const CASES_HDAO: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_hdao), ..method("render_hdao_pass", 0x0069_5ba0, This::Object, 4, HDAO_STUBS, |m, this, a| { let slots = slots_at(m, a); u(b4::render_hdao_pass(m, frame_ebp(), slots, this)) }) }), 0x16c, 0x10),
+];
+
+#[test]
+fn batch3_render_hdao_pass_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 150 } else { 800 };
+        run_cases(t, CASES_HDAO, n, &mut Rng(0xb3b3_0004));
     });
 }

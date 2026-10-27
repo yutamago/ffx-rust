@@ -8,6 +8,7 @@ use super::{StackFrame, mem, ported};
 use ffx_prender::h3b_glue1::bridge as b1;
 use ffx_prender::h3b_glue2::bridge as b2;
 use ffx_prender::h3b_glue3::bridge as b3;
+use ffx_prender::h3b_glue4::bridge as b4;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -31,5 +32,14 @@ ported! {
     PostProcessManager_onAllShaderBinFilesLoaded @ 0x0069_3d70 => extern "thiscall" fn on_all_shader_bin_files_loaded(this: u32) -> u32 {
         let mut f = StackFrame::<0x11>::new();
         b3::on_all_shader_bin_files_loaded(&mut mem(), f.at() + 0x44, this)
+    }
+
+    // ---- batch 3 (ffx_prender::h3b_glue4) ----
+    /// `PostProcessManager_renderHDAOPass(this; renderer, unused, target,
+    /// normals)`: the HDAO pass; the renderer's and `normals`' slots are
+    /// written. 0, 1, 3 or the first error.
+    PostProcessManager_renderHDAOPass @ 0x0069_5ba0 => extern "thiscall" fn render_hdao_pass(this: u32, _renderer: u32, _unused: u32, _target: u32, _normals: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x5b>::new();
+        b4::render_hdao_pass(&mut mem(), f.at() + 0x16c, slots, this)
     }
 }
