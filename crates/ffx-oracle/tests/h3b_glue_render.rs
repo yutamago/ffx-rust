@@ -16,6 +16,7 @@
 )]
 
 use std::cell::{Cell, RefCell};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
@@ -1525,5 +1526,457 @@ fn batch4_shadow_create_resources_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES_SHADOW_RESOURCES, n, &mut Rng(0xb3b4_0005));
+    });
+}
+
+// ---- round 2 batch 1: TextureAnimationManager_addAnimatedMaterials (ffx_prender::h3b_glue6) ----
+
+use ffx_prender::h3b_glue6::{self as h6, bridge as b6};
+
+/// A cursor script word the stub leaves alone.
+const KEEP: u32 = 0x5e5e_5e5e;
+
+impl Twins {
+    /// A NUL-terminated string; its address.
+    fn cstr(&mut self, s: &str) -> u32 {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        self.alloc(&b)
+    }
+
+    /// `jmp target` appended to `c`, which will sit at `base`.
+    fn jmp_to(c: &mut Vec<u8>, base: u32, target: u32) {
+        c.push(0xe9);
+        let end = base + c.len() as u32 + 4;
+        c.extend(target.wrapping_sub(end).to_le_bytes());
+    }
+
+    /// Sends the calls of `sym` to `code` (in the cave).
+    fn divert(&mut self, sym: u32, code: u32) {
+        let site = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(site + 5).to_le_bytes());
+        self.patch(site, &j);
+    }
+
+    /// Bump allocators (cdecl, `(sym, words)`, the size first) over one
+    /// arena, logged as [`Twins::stub`]; the call that brings the shared
+    /// countdown to 0 returns 0 (a countdown of 0 never does). Only
+    /// `addAnimatedMaterials`' own calls count down (its callees crash on
+    /// a failed allocation, original and port alike).
+    fn stub_bump(&mut self, syms: &[(u32, u32)], arena: u32, fail_after: u32) {
+        let cell = self.alloc(&arena.to_le_bytes());
+        let count = self.alloc(&fail_after.to_le_bytes());
+        for &(sym, n) in syms {
+            let log = self.stub(None, sym, false, n, 0, None);
+            let base = self.cave_next;
+            let mut ok = vec![0xa1];
+            ok.extend(cell.to_le_bytes()); // mov eax, [cell]
+            ok.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
+            ok.extend([0x83, 0xc1, 0x13]); // add ecx, 0x13
+            ok.extend([0x83, 0xe1, 0xf0]); // and ecx, -16
+            ok.extend([0x01, 0x0d]);
+            ok.extend(cell.to_le_bytes()); // add [cell], ecx
+            // only calls from the original itself or from the port (whose
+            // return address is outside the image's code) may fail
+            let mut c = vec![0x8b, 0x14, 0x24]; // mov edx, [esp]
+            for (bound, jump) in [
+                (self.rebase(0x006b_05d0), 8u8), // jb outside
+                (self.rebase(0x006b_1a0d), 16),  // jb eligible
+                (self.rebase(0x0040_1000), 8),   // outside: jb eligible
+                (self.rebase(0x00b0_ba7b), 8),   // jb ok
+            ] {
+                c.extend([0x81, 0xfa]);
+                c.extend(bound.to_le_bytes()); // cmp edx, bound
+                c.extend([0x72, jump]);
+            }
+            c.extend([0xff, 0x0d]);
+            c.extend(count.to_le_bytes()); // eligible: dec dword [count]
+            c.extend([0x74, (ok.len() + 5) as u8]); // jz fail
+            c.extend(ok);
+            Self::jmp_to(&mut c, base, log);
+            c.extend([0x31, 0xc0]); // fail: xor eax, eax
+            Self::jmp_to(&mut c, base, log);
+            let code = self.code(&c);
+            self.divert(sym, code);
+        }
+    }
+
+    /// Cursor stubs at `syms` sharing one script: each call copies the next
+    /// five words of `steps` (base, block, stride, count, offset) into the
+    /// cursor (`ecx`), but for [`KEEP`] words, then logs as
+    /// [`Twins::stub`].
+    fn stub_cursor_run(&mut self, syms: &[u32], steps: &[[u32; 5]]) {
+        let words: Vec<u8> = steps
+            .iter()
+            .flatten()
+            .flat_map(|w| w.to_le_bytes())
+            .collect();
+        let table = self.alloc(&words);
+        let ptr = self.alloc(&table.to_le_bytes());
+        for &sym in syms {
+            let log = self.stub(None, sym, true, 0, 0, Some(sym));
+            let base = self.cave_next;
+            let mut c = vec![0xa1];
+            c.extend(ptr.to_le_bytes()); // mov eax, [ptr]
+            for i in 0..5u8 {
+                c.extend([0x8b, 0x50, 4 * i]); // mov edx, [eax+4i]
+                c.extend([0x81, 0xfa]);
+                c.extend(KEEP.to_le_bytes()); // cmp edx, KEEP
+                c.extend([0x74, 0x03]); // je +3
+                c.extend([0x89, 0x51, 4 * i]); // mov [ecx+4i], edx
+            }
+            c.extend([0x83, 0xc0, 0x14]); // add eax, 20
+            c.push(0xa3);
+            c.extend(ptr.to_le_bytes()); // mov [ptr], eax
+            Self::jmp_to(&mut c, base, log);
+            let code = self.code(&c);
+            self.divert(sym, code);
+        }
+    }
+}
+
+/// Cursor runs over the slots `area + 0x100 k` (the element at `+4`): one
+/// to three runs of 0..4, each with a block word that may be one of its
+/// slots (`[block]` the next block), then the end (nothing written).
+/// With `null`, now and then a lone element at address 0 (skipped by the
+/// materials' walk).
+fn aam_cursor_steps(t: &mut Twins, area: u32, null: bool, rng: &mut Rng) -> Vec<[u32; 5]> {
+    let mut steps = vec![];
+    for _ in 0..=rng.below(3) {
+        let base = area + 0x100 * rng.below(4);
+        let block = if rng.chance(2) {
+            base + 0x100 * (1 + rng.below(3))
+        } else {
+            rng.next() | 3
+        };
+        if block % 4 == 0 {
+            let next = if rng.chance(2) { block } else { rng.next() | 3 };
+            t.w32(block, next);
+        }
+        if null && rng.chance(4) {
+            steps.push([base, block, 0x100, 1, 0u32.wrapping_sub(base)]);
+        } else {
+            steps.push([base, block, 0x100, rng.below(5), 4]);
+        }
+    }
+    steps.push([KEEP; 5]);
+    steps
+}
+
+/// A tagged pointer now and then (bit 0: not owned).
+fn tagged(rng: &mut Rng, p: u32) -> u32 {
+    if p != 0 && rng.chance(3) { p + 1 } else { p }
+}
+
+/// A word array `{count, data}` at `at`: empty, or 1..3 words (top bit:
+/// not owned).
+fn aam_words(t: &mut Twins, at: u32, rng: &mut Rng) {
+    let n = rng.below(4);
+    let data = if n == 0 && rng.chance(2) {
+        0
+    } else {
+        let w: Vec<u8> = (0..4 * n.max(1)).map(|_| rng.next() as u8).collect();
+        t.alloc(&w)
+    };
+    t.w32(at, n | if rng.chance(4) { 0x8000_0000 } else { 0 });
+    t.w32(at + 4, data);
+}
+
+/// The scene's materials at the cursor slots of `area`: parameter arrays
+/// of 0..3 materials (names plain, empty, `Mat_CTA` ones with the ids),
+/// their shaders' key/value pairs and parameter buffers.
+fn aam_materials(t: &mut Twins, area: u32, ids: &[u32], rng: &mut Rng) {
+    let empty = t.rebase(h6::EMPTY);
+    let uv = t.rebase(h6::CHR_UV);
+    for slot in 0..16 {
+        let object = area + 0x100 * slot + 4;
+        let n = pick(rng, &[0, 1, 2, 3, 0x8000_0002]);
+        let params = t.zeros(0x20);
+        t.w32(object + 0x10, params);
+        t.w32(params, n);
+        let mut list = vec![];
+        for _ in 0..(n & 0x7fff_ffff).max(1) {
+            let mat = t.zeros(0x40);
+            let shader = t.zeros(0x10);
+            let buffer = t.zeros(0x100);
+            t.w32(mat, shader);
+            t.w32(mat + 4, buffer);
+            t.w32(buffer, rng.below(0x50));
+            let id = ids[rng.below(6) as usize];
+            let name = match rng.below(7) {
+                0 => empty,
+                1 => t.cstr(""),
+                2 => t.cstr("plain"),
+                3 => t.cstr(&format!("Mat_CTA_c{id}")),
+                4 => t.cstr(&format!("Mat_CTA_c{id}G")),
+                5 => t.cstr(&format!("Mat_CTA_c{id}x")),
+                _ => t.cstr(&format!("xMat_CTAc{id}")),
+            };
+            let name = tagged(rng, name);
+            t.w32(mat + 0x10, name);
+            let pairs = rng.below(4);
+            let table = t.zeros(8 * pairs as usize + 8);
+            t.w32(
+                shader + 4,
+                pairs | if rng.chance(5) { 0x8000_0000 } else { 0 },
+            );
+            t.w32(shader + 8, table);
+            for j in 0..pairs {
+                let key = match rng.below(4) {
+                    0 => uv,
+                    1 => t.cstr("CHR_TEXTURE_ANIMATION_UV"),
+                    2 => t.cstr("OTHER"),
+                    _ => 0,
+                };
+                let value = match rng.below(4) {
+                    0 => empty,
+                    1 => t.cstr(""),
+                    2 => t.cstr("1"),
+                    _ => 0,
+                };
+                let (key, value) = (tagged(rng, key), tagged(rng, value));
+                t.w32(table + 8 * j, key);
+                t.w32(table + 8 * j + 4, value);
+            }
+            list.push(mat);
+        }
+        if n & 0x7fff_ffff == 1 {
+            t.w32(params + 4, list[0]);
+        } else {
+            let words: Vec<u8> = list.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let data = t.alloc(&words);
+            t.w32(params + 4, data);
+        }
+    }
+}
+
+/// The manager: junk, word lists `+0x5c`/`+0x74`, old Info objects
+/// `+0x7c` (not owned), materials `+0x64`/`+0x68` empty or not.
+fn aam_manager(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let manager = t.zeros(0x100);
+    let junk = rng.bytes(0x100);
+    t.write(manager, &junk);
+    for at in [0x5c, 0x74] {
+        aam_words(t, manager + at, rng);
+    }
+    let info_vtable = t.rebase(h6::INFO_VTABLE);
+    if rng.chance(2) {
+        t.w32(manager + 0x7c, 0);
+        t.w32(manager + 0x80, 0);
+    } else {
+        let k = 1 + rng.below(2);
+        let infos = t.zeros(0x20 * k as usize);
+        for i in 0..k {
+            t.w32(infos + 0x20 * i, info_vtable);
+        }
+        t.w32(manager + 0x7c, k | 0x8000_0000);
+        t.w32(manager + 0x80, infos);
+    }
+    let k = rng.below(4);
+    let mats = t.zeros(0x20 * k as usize + 0x20);
+    for i in 0..k {
+        let e = mats + 0x20 * i;
+        match rng.below(4) {
+            0 => {}
+            1 => {
+                let w = t.alloc(&rng.next().to_le_bytes());
+                t.w32(e, 1);
+                t.w32(e + 4, w);
+            }
+            2 => {
+                let w = t.alloc(&rng.next().to_le_bytes());
+                t.w32(e + 0x10, 1);
+                t.w32(e + 0x14, w);
+            }
+            _ => {
+                let s = t.cstr("old");
+                let s = tagged(rng, s);
+                t.w32(e + 0x1c, s);
+            }
+        }
+    }
+    t.w32(
+        manager + 0x64,
+        k | if rng.chance(4) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(
+        manager + 0x68,
+        if k == 0 && rng.chance(2) { 0 } else { mats },
+    );
+    manager
+}
+
+/// The clusters (index -1 readable; each list empty or not, the last's
+/// object chain holding the Char class or not), the texture seeks and the
+/// last cluster's animation objects (word lists only with `words`: the
+/// Info copy constructor reads a list whose copy failed); returns
+/// (clusters, first, last).
+fn aam_clusters(t: &mut Twins, ids: &[u32], words: bool, rng: &mut Rng) -> (u32, u32, u32) {
+    let clusters = t.zeros(0x10);
+    let table = t.zeros(0x20);
+    t.w32(clusters + 8, table + 4);
+    let last = rng.below(5);
+    let first = pick(rng, &[0, 1, 2, 3, 0xffff_ffff, last, last]);
+    for i in 0..6 {
+        let cluster = t.zeros(0x40);
+        let anim = t.zeros(0x80);
+        t.w32(table + 4 * i, cluster);
+        let class = match rng.below(4) {
+            0 => 0,
+            1 => t.rebase(h6::CHAR_CLASS),
+            _ => {
+                let c = t.zeros(0x80);
+                let next = if rng.chance(2) {
+                    t.rebase(h6::CHAR_CLASS)
+                } else {
+                    0
+                };
+                t.w32(c + 0x40, next);
+                c
+            }
+        };
+        t.w32(anim + 0x2c, class);
+        let objects = cluster + 0x1c;
+        let at_last = i == last + 1;
+        t.w32(
+            objects,
+            if !at_last && rng.chance(3) {
+                objects
+            } else {
+                anim
+            },
+        );
+    }
+    let seeks: Vec<[u32; 5]> = (0..6)
+        .map(|_| [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()])
+        .collect();
+    t.stub_cursor_run(&[h6::ITER_SEEK], &seeks);
+    let area = t.zeros(0x1000);
+    for slot in 0..16 {
+        let rec = area + 0x100 * slot + 4;
+        let id = ids[rng.below(6) as usize];
+        let text = if rng.chance(4) {
+            0
+        } else {
+            t.cstr(&format!("t{id}"))
+        };
+        let path = t.cstr(&format!("c{id}"));
+        let n = if words { rng.below(3) } else { 0 };
+        let bytes: Vec<u8> = (0..4 * n).map(|_| rng.next() as u8).collect();
+        let words = if n == 0 { 0 } else { t.alloc(&bytes) };
+        let top = if rng.chance(3) { 0x8000_0000 } else { 0 };
+        let (text, path) = (tagged(rng, text), tagged(rng, path));
+        t.w32(rec, text);
+        t.w32(rec + 0xc, n | top);
+        t.w32(rec + 0x10, words);
+        t.w32(rec + 0x14, path);
+        for off in [8, 0x18, 0x1c, 0x20, 0x24] {
+            let f = rng.float().to_bits();
+            t.w32(rec + off, f);
+        }
+    }
+    let steps = aam_cursor_steps(t, area, false, rng);
+    t.stub_cursor_run(&[h6::ANIM_BEGIN, h6::ANIM_NEXT], &steps);
+    (clusters, first, last)
+}
+
+/// The manager, the scene's materials and the clusters (scripted
+/// cursors), the shader parameters, the shadow table text and the name;
+/// allocations fail now and then.
+fn prep_aam(t: &mut Twins, _: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let heap = t.zeros(0x8000);
+    let fail = if rng.chance(3) { 1 + rng.below(80) } else { 0 };
+    t.stub_bump(&[(h6::MALLOC, 2), (0x0042_fb40, 1)], heap, fail);
+    // the original writes through what `new` returns unchecked
+    let pool = t.zeros(0x2000);
+    t.stub_bump(&[(h6::NEW, 1), (h6::NEW_ARRAY, 1)], pool, 0);
+    *this = aam_manager(t, rng);
+    let ids: Vec<u32> = (0..6).map(|_| 1 + rng.below(6)).collect();
+    let scene = t.zeros(0x40);
+    let node = t.zeros(0x40);
+    t.w32(
+        scene + 0x1c,
+        if rng.chance(3) { scene + 0x1c } else { node },
+    );
+    let area = t.zeros(0x1000);
+    aam_materials(t, area, &ids, rng);
+    let steps = aam_cursor_steps(t, area, true, rng);
+    t.stub_cursor_run(&[h6::CURSOR_BEGIN, h6::CURSOR_NEXT], &steps);
+    let (clusters, first, last) = aam_clusters(t, &ids, fail == 0, rng);
+
+    // the shader parameters: none, or offset/size records
+    let records = t.zeros(0x400);
+    for k in 0..0x40 {
+        let off = pick(rng, &[0, 2, 4, 8, 0x10, 0x30]) as u16;
+        let size = (rng.below(9) as u16) | (rng.next() as u16 & 0xe000);
+        t.write(records + 0x10 * k + 8, &off.to_le_bytes());
+        t.write(records + 0x10 * k + 0xa, &size.to_le_bytes());
+    }
+    let values: Vec<u32> = (0..1200)
+        .map(|_| {
+            if rng.chance(2) {
+                0
+            } else {
+                records + 0x10 * rng.below(0x40)
+            }
+        })
+        .collect();
+    t.stub_seq(h6::FIND_PARAM, true, 1, 1, &values);
+    let shadows = t.zeros(0x10);
+    t.stub_ret(h6::SHADOW_INSTANCE, false, 0, 0, shadows);
+    let map = t.zeros(8);
+    let (tex, flag) = (rng.next(), rng.below(2) as u8);
+    t.w32(map, tex);
+    t.write(map + 4, &[flag]);
+    t.stub_ret(h6::DUMMY_SHADOW_MAP, true, 0, 0, map);
+
+    // the shadow table's text: rows `key:v!,v?,\r\n`
+    let mut text = String::new();
+    for _ in 0..16 {
+        let key = if rng.chance(4) {
+            9
+        } else {
+            ids[rng.below(6) as usize]
+        };
+        let _ = write!(text, "{key}:");
+        for _ in 0..rng.below(4) {
+            let v = pick(rng, &[0, 1, 2, 3, 0xffff_ffff, 7]) as i32;
+            let mark = if rng.chance(2) { '!' } else { '?' };
+            let _ = write!(text, "{v}{mark},");
+        }
+        text += "\r\n";
+    }
+    let table_text = if rng.chance(5) { 0 } else { t.cstr(&text) };
+    let id = ids[rng.below(6) as usize];
+    let name = if rng.chance(4) {
+        0
+    } else {
+        t.cstr(&format!("c{id}"))
+    };
+    let unused = rng.next();
+    args.copy_from_slice(&[scene, clusters, first, last, name, unused, table_text]);
+}
+
+const AAM_STUBS: &[(u32, K)] = &[
+    (h6::FREE, K::Cdecl(1)),
+    (h6::DELETE_ARRAY, K::Cdecl(1)),
+    (h6::WRITE_PARAM, K::This(2)),
+];
+
+#[rustfmt::skip]
+const CASES_AAM: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_aam), ..method("add_animated_materials", 0x006b_05d0, This::Object, 7, AAM_STUBS, |m, this, a| {
+        slots_at(m, a);
+        b6::add_animated_materials(m, frame_ebp(), this, a[0], a[1], a[2], a[3], a[4], a[6]);
+        Out::None
+    }) }), h6::FRAME, 0x1c),
+];
+
+#[test]
+fn r2_batch1_add_animated_materials_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES_AAM, n, &mut Rng(0xb3b2_0001));
     });
 }

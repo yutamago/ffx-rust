@@ -10,6 +10,7 @@ use ffx_prender::h3b_glue2::bridge as b2;
 use ffx_prender::h3b_glue3::bridge as b3;
 use ffx_prender::h3b_glue4::bridge as b4;
 use ffx_prender::h3b_glue5::bridge as b5;
+use ffx_prender::h3b_glue6::bridge as b6;
 
 ported! {
     // ---- batch 1 (ffx_prender::h3b_glue1) ----
@@ -50,5 +51,16 @@ ported! {
     ShadowManager_createResources_006d1b40 @ 0x006d_1b40 => extern "thiscall" fn shadow_create_resources(this: u32) -> u32 {
         let mut f = StackFrame::<0xa>::new();
         b5::create_resources(&mut mem(), f.at() + 0x28, this)
+    }
+
+    // ---- round 2, batch 1 (ffx_prender::h3b_glue6) ----
+    /// `TextureAnimationManager_addAnimatedMaterials(this; scene, clusters,
+    /// first, last, name, unused, table)`: the clusters' textures and
+    /// animation objects, the scene's materials and the shadow table into
+    /// the manager. The frame keeps 0x40 bytes above `ebp`, where an
+    /// over-long number in the table text would spill.
+    TextureAnimationManager_addAnimatedMaterials @ 0x006b_05d0 => extern "thiscall" fn add_animated_materials(this: u32, scene: u32, clusters: u32, first: u32, last: u32, name: u32, _unused: u32, table: u32) {
+        let mut f = StackFrame::<0x60>::new();
+        b6::add_animated_materials(&mut mem(), f.at() + 0x140, this, scene, clusters, first, last, name, table);
     }
 }
