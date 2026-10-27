@@ -82,6 +82,10 @@ fn main() {
         engine.updates,
         engine.out.len() / 2
     );
+    eprintln!(
+        "channel index checks: {} match, {} differ",
+        engine.channel_checks.0, engine.channel_checks.1
+    );
     let mut ignored: Vec<_> = engine.ignored.iter().collect();
     ignored.sort();
     for (f, n) in ignored {

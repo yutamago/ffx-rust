@@ -342,7 +342,7 @@ To give the original's output:
   `FFX.exe` (open question 2).
 - **Files** through the game's file layer (VBF, mods), as the callbacks do.
 
-## The offline engine (M5 stage 2, first round)
+## The offline engine (M5 stage 2)
 
 `crates/ffx-sound`: `fev` (the projects, `sound.md`), `mixer` (voices and
 the mix), `replay` (an FMOD call log driving the mixer) and the example
@@ -381,76 +381,122 @@ the exploration scripts are in `~/ffx-work/m5/mixer/`.
 
 FMOD Ex 4.44.32 as the capture runs it (`docs/harness.md`, "Audio
 capture"): software mixer, 48,000 Hz, stereo, `PCMFLOAT`, 1,600-frame
-blocks, one per `EventSystem::update`. Measured from the captures against
-the decoded samples, first on the start of `1_24_the_summoning` in
-menu-browse (its first non-zero samples: right of frame 1 and left of
-frame 5, both -1, at gain 0.05 x 0.35481339):
+blocks, one per `EventSystem::update`. Round 1 measured from the game's
+captures; round 2 (2026-10-27) with controlled tests through the game's
+own `fmod_event.dll`/`fmodex.dll`:
+
+```bash
+# 32-bit Windows console program: no game, no window, no device (WAV writer, NRT)
+PATH=tools/shims:$PATH XWIN_ARCH=x86,x86_64 cargo xwin build --release \
+  --target i686-pc-windows-msvc -p ffx-sound --example fmod-probe
+fmod-probe.exe <game dir> <media dir with the .fev/.fsb> <script> <out.wav>
+```
+
+`crates/ffx-sound/examples/fmod-probe.rs` sets FMOD up as the capture
+does (stream buffer, `setOutput(5)`, `PCMFLOAT`, 1,600-frame blocks,
+`init(128, STREAM_FROM_UPDATE, file)`), then runs a script: load projects,
+create events by index with the end callback, `start`, `stop`, `setPaused`,
+`setVolume`, the game's pan chain, the Shout calls, `update`. It prints
+each update's DSP clock, every callback with its update and every state
+change. The scripts and the analysis are in `~/ffx-work/m5/mixer/probe/`
+and `~/ffx-work/m5/mixer/ana_*.py`; the waves come from banks `1110`
+(mono and stereo 48 kHz one-shots, a mono loop), `2515` (the loops
+`50027_0..3`) and the PS2 music bank.
 
 - **Decoding.** IMA ADPCM, Xbox layout, 64 samples a block: the header's
   predictor first, then 63 codes (`sound.md`). PCM to float is x 1/32768.
 - **Resampler.** Linear interpolation `a + (b - a) x frac` in `f32`, the
   position a 32.32 fixed-point number from 0 stepping `(rate << 32) /
-  48000` (44,100 Hz: 0.91875 a frame). 48,000 Hz samples are copied.
+  48000` (44,100 Hz: 0.91875 a frame). 48,000 Hz waves are copied.
 - **Start.** A voice starts at the first frame of the block of the update
-  after its `start`, with its gain ramped from 0: frame k of the block
-  has gain k x delta, delta = target / 64, added after each frame
-  (accumulated in `f32`, not multiplied: k x (target / 64) misses frame
-  6 by one ulp), then the target from frame 64 on.
-- **Volume changes.** The same 64-frame ramp from the old gain to the new
-  at the start of the block after `setVolume`. A `stop` (with no fade-out
-  in any event) silences the voice at once from the next block.
-- **Pan, stereo waves.** A balance: pan < 0 scales the right by `1 + pan`,
-  pan > 0 the left by `1 - pan` (checked at -0.00787 on SFX 106).
-- **Pan, mono waves.** Measured: the left channel only, at the full gain;
-  the right stays 0 (the four `2515` loop sounds' mono `50027_1`, pan
-  -0.00787). The two-sided laws tried (linear `(1 -+ p)/2`, constant
-  power, sin/cos, the stereo balance) left 4 to 12 times the residue
-  in event-besaid and battle-attack. A mono voice also took its new gain
-  only in the blocks 0, 2, 4, ... of its life (gain ratios 1, 0.667, 1,
-  0.8, 1, 0.857 against a per-block ramp). Both are odd for a mixer and
-  are measured on few voices; they need the controlled test below.
-- **Mix order.** Voices are summed in start order; blocks that differ by
-  1e-9 or less (one `f32` ulp of the sum) suggest another order or
-  another rounding in places.
+  after its `start`, its gain ramped from 0: frame k of the block has gain
+  k x delta, delta = target / 64, added after each frame (accumulated in
+  `f32`), then exactly the target from frame 64 on (keeping the
+  accumulated value instead made every voice one ulp off).
+- **Volume changes.** The same 64-frame ramp from the old gain to the new,
+  in the block after `setVolume`, mono and stereo alike (steps 0.5, 0.25,
+  0.75, 0.125, 1 every tick: every block exact). **But** a change is taken
+  only when the voice's level changes (left plus right) come to at least
+  0.00064: below that the old gain stays and the next block compares
+  again. Mono 0.00063 a tick updates every other block, 0.00064 every
+  block; stereo 0.000315 a side every other, 0.00032 every block; the same
+  at a base volume of 0.5. This was round 1's "mono every second block":
+  the game's loop fade-in steps 0.000417 a tick.
+- **Silence.** A change too small to take, to a volume below about 2e-5
+  (1.704e-5 silent, 2.32e-5 not), silences the voice at once, without a
+  ramp; it keeps its place. A larger change ramps as usual, to 0 too
+  (battle-attack's music fade from 0.0042 to 0).
+- **Pan.** None: the event system ignores `Channel::setPan`. Pans -1,
+  -0.5, 0, 0.26, 1 on a mono wave and -1, -0.5, 0.5, 1 on a stereo wave
+  all gave gain exactly 1 on the same sides. **Mono waves play on the left
+  only**, the right stays 0; stereo waves on both sides.
+- **Stop, pause.** `stop(false)` and `stop(true)` alike: silent from the
+  next block's first frame, no ramp (no event has a fade-out). A pause is
+  silent from the next block and the voice resumes where it stopped, at
+  its old gain without a ramp.
+- **Loops.** On whole IMA blocks. The first pass ends at the end point
+  rounded up to a block; every later pass starts at the start point
+  rounded up and lasts the loop's length rounded up: `50027_0`, loop
+  119648..=737699, plays 0..737728, then 119680..737792 again and again.
+  Points on block boundaries (`35110_1`, 90176..=110143) play as they are.
+- **Streams.** The PS2 victory fanfare (streamed, 44.1 kHz) played alone
+  for 300 blocks equals the decoded wave resampled as above, from its
+  first frame: no start latency, no difference from a sample in memory.
+- **End callback.** For a once-only wave whose last frame falls in the
+  block of update n, the callback says SOUNDDEF_END (2) in update n + 1
+  and EVENTFINISHED (4) in update n + 2; `start` itself calls back types
+  9, 8 and 1 at once. The game clears its play word on 2 or 4, so on 2.
+  `getState` reads 0x18 while it plays, 0x8 after update n (the channel
+  done) and 1 (READY) after update n + 2.
+- **Sum order.** Voices summed in start order. fmod-probe found no case
+  where the order changes the sum (three voices at 0.3, 0.011 and 0.97,
+  both start orders, all six orders exact), and ordering by FMOD's channel
+  index or by the event instance changed nothing or made it worse on the
+  captures.
 
-## Residue (2026-10-27, first round)
+## Residue (2026-10-27, second round)
 
 The Rust engine against the original capture of the same run, between
 `audiomark start` and `end` (`tools/wav-compare.py`'s window):
 
 | Replay | First differing sample | Max error | RMS error (signal RMS) | Blocks exact / within 1e-5 of the peak / larger | Cause, as far as known |
 |---|---|---|---|---|---|
-| event-besaid | frame 456001 (start + 1, tick 0), off by 9.7e-8 | 0.00129 | 7.9e-5 (0.00201: 3.9 %) | 0 / 188 / 572 | the footsteps (`2013`/`2005` mono SFX, pan -0.024): the error is on both channels, so the mono law is not right for them; music (44.1 kHz stream) and Wakka's voice (stream) unchecked |
-| battle-attack | frame 254414 (start + 6414, tick 4), off by 3.6e-12 | 0.00326 | 1.07e-4 (0.00298: 3.6 %) | 4 / 442 / 543 | one-ulp sums from tick 4; from tick 16 (SFX `49`, block 171) larger; the worst at the victory fanfare (blocks 1132-1143) |
-| menu-browse | frame 435236 (start + 6436, tick 4), off by 2.3e-10 | 4.98e-5 | 2.0e-6 (0.00102: 0.2 %) | 295 / 67 / 49 | one-ulp sums; the larger blocks (from 280) under the loop `2515` and the menu SFX |
-| battle-ifrit | frame 499203 (start + 3, tick 0), off by 4.7e-10 | 6.68e-4 | 5.3e-5 (0.00678: 0.8 %) | 0 / 286 / 264 | one-ulp sums from the start; larger from block 578, when six `0000` loop events (`26_0..26_5`) start together |
+| event-besaid | frame 457600 (start + 1600, tick 1), off by 2.9e-11 | 1.86e-9 | 8.2e-11 (0.00201: 4.1e-8) | 40 / 720 / 0 | float rounding only: one ulp of the sum in places |
+| battle-attack | frame 254414 (start + 6414, tick 4), off by 3.6e-12 | 3.73e-9 | 1.15e-10 (0.00298: 3.9e-8) | 66 / 923 / 0 | float rounding only |
+| menu-browse | frame 435236 (start + 6436, tick 4), off by 2.3e-10 | 2.33e-10 | 4.2e-12 (0.00102: 4.1e-9) | 295 / 116 / 0 | float rounding only |
+| battle-ifrit | frame 499203 (start + 3, tick 0), off by 4.7e-10 | 7.45e-9 | 1.7e-10 (0.00678: 2.6e-8) | 0 / 550 / 0 | float rounding only; no block exact (nine voices from the start, two of them 44.1 kHz) |
 
-Nothing here is accepted as a tolerance; that is the user's decision once
-the residue is as small as it gets.
+Round 1's table, for comparison: max errors 0.00129, 0.00326, 4.98e-5 and
+6.68e-4, RMS 3.9 %, 3.6 %, 0.2 % and 0.8 % of the signal. Every
+structural difference is gone; what is left is at most a few ulps of a
+`f32` sum, about 160 dB under the signal. Nothing is accepted as a
+tolerance; that is the user's decision.
 
 What is left:
-- A controlled measurement through the game's FMOD: a small test program
-  (or the hook) that plays one wave at a known volume and pan into the WAV
-  writer: mono pan law over the whole pan range, when a mono voice takes a
-  new gain, positive pans on stereo waves, the stop, pause and loop-end
-  behaviour, and the sum order of several voices.
-- Streams: the music and voice banks are streamed (bank mode 0x80); the
-  engine plays them from memory like samples. The first music start in
-  menu-browse matched to the bit, so the stream start adds no latency
-  there; voice streams and stream loops are unchecked.
-- Event end: the engine ends a once-only voice after its last frame; the
-  game learns it from the end callback, whose tick is not in the log.
-- `maxplaybacks` stealing (never needed by the game's own limits so far),
-  the Shout channel (no Shout in the four logs) and the movie user stream.
+- The last ulps: where FMOD's float operations differ from the engine's
+  (the order or grouping of the sum, or the interpolation's or the gain's
+  rounding when many voices play). The probe cases so far always summed
+  exactly; a probe replaying one of the game's logs (battle-ifrit's
+  first blocks) against the engine would find the operation.
+- FMOD's channel indices: the engine's model (the highest free of 128)
+  matches every `getChannel` handle in menu-browse (19 of 19) but not
+  elsewhere (50 of 224, 389 of 852, 238 of 779): FMOD keeps channels
+  longer than the engine's voices. It doesn't change the mix.
+- Voice streams (32 and 48 kHz; none of the four logs plays a voice event:
+  event-besaid's log has no `getEvent`), the Shout channel (the probe has the calls; no log has a
+  Shout yet: record a battle with a voiced shout), `maxplaybacks`
+  stealing (the game's own limits never reach it in the logs) and the
+  movie user stream.
 
 ## Open questions
 
 1. *(Answered 2026-10-27.)* The FEV `LGCY` body: `sound.md`, "FMOD
    Designer event projects". Volume, max playbacks, loop or once, stream
    or sample per bank; no fades, pitch, randomisation or 3D in any event.
-2. *(Partly answered 2026-10-27.)* What "identical output" means for
-   audio: the capture (`docs/harness.md`, "Audio capture") gives FMOD's
-   own mix; the measurements and the residue are above.
+2. *(Answered 2026-10-27, second round.)* What "identical output" means
+   for audio: the capture (`docs/harness.md`, "Audio capture") gives
+   FMOD's own mix; the measurements and the residue (float rounding only)
+   are above.
 3. The boot without the graphics layer missed the title twice here
    (`memochek` -> `loopdemo`, with and without the call log, and once with
    it on): is that the sound being off (master 0 makes every event's

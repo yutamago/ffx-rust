@@ -8,11 +8,11 @@
 //! frac`, the fraction of a 32.32 fixed-point position starting at 0); its
 //! left and right gains move to a new value by a linear ramp over the
 //! block's first [`RAMP`] frames (from 0 at the start), added after each
-//! frame. Stereo waves: the pan scales one side (`1 + pan` right for a
-//! negative pan, `1 - pan` left for a positive one). Mono waves play on the
-//! left only, and take a new gain only every second block of their life.
-//! All measured against FMOD's own mix; what is still off is listed in
-//! `audio-platform.md`.
+//! frame, and only for a change of at least [`CHANGE`]; below [`SILENT`] a
+//! voice falls silent at once. The pan is ignored; mono waves play on the
+//! left only. Loops run on whole IMA blocks. All measured against FMOD's
+//! own mix and with `examples/fmod-probe.rs`; what is still off (float
+//! rounding) is listed in `audio-platform.md`.
 
 use std::sync::Arc;
 
@@ -23,6 +23,12 @@ pub const BLOCK: usize = 1600;
 /// Frames of the gain ramp at a voice's start (measured: frame k of a new
 /// voice has gain k/64 of its volume).
 pub const RAMP: u32 = 64;
+/// The smallest change of a voice's levels (left plus right) that FMOD
+/// applies: 0.00064 (one ramp step of 1e-5).
+pub const CHANGE: f32 = 0.000_64;
+/// Below this volume FMOD mixes a voice silent (between the measured
+/// 1.704e-5, silent, and 2.32e-5, not).
+pub const SILENT: f32 = 2.0e-5;
 /// 16-bit PCM to float.
 const SCALE: f32 = 1.0 / 32768.0;
 
@@ -57,6 +63,7 @@ impl Wave {
 
 /// One playing wave.
 #[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // four independent states of a voice
 pub struct Voice {
     pub wave: Arc<Wave>,
     /// Loops between the wave's loop points; false plays it once.
@@ -75,6 +82,8 @@ pub struct Voice {
     /// The left and right gain the last frame used (0 at the start: the
     /// first block ramps up from silence).
     pub gain: [f32; 2],
+    /// Past its first loop end (later passes are a whole number of blocks).
+    pub wrapped: bool,
     /// Blocks mixed.
     pub blocks: u32,
     /// Ended: past its last frame.
@@ -96,22 +105,20 @@ impl Voice {
             age: 0,
             gain: [0.0; 2],
             blocks: 0,
+            wrapped: false,
             ended: false,
         }
     }
 
     /// Left and right gains for the pan.
     fn pan_gains(&self) -> (f32, f32) {
+        // measured with fmod-probe (audio-platform.md): the event system
+        // ignores `Channel::setPan` (pans -1..1 change nothing); a mono wave
+        // plays on the left only, a stereo wave on both sides at full gain
         if self.wave.channels == 1 {
-            // measured: left only, whatever the pan the game sets (pans seen
-            // -0.13..1); the laws tried for both sides left 4 to 12 times
-            // the residue (audio-platform.md)
-            return (1.0, 0.0);
-        }
-        if self.pan < 0.0 {
-            (1.0, 1.0 + self.pan)
+            (1.0, 0.0)
         } else {
-            (1.0 - self.pan, 1.0)
+            (1.0, 1.0)
         }
     }
 
@@ -123,9 +130,20 @@ impl Voice {
         }
         let (pl, pr) = self.pan_gains();
         let mut target = [self.volume * pl, self.volume * pr];
-        // measured on the looping SFX: a mono voice takes the new gain in
-        // the blocks 0, 2, 4, ... of its life and keeps it in between
-        if self.wave.channels == 1 && !self.blocks.is_multiple_of(2) {
+        // measured with fmod-probe: a new gain is taken only when the
+        // changes of the voice's levels (left plus right) come to at least
+        // CHANGE; otherwise the old gain stays and the next block compares
+        // again (mono 0.00063 a tick skips every other block, 0.00064 does
+        // not; stereo 0.000315 and 0.00032 a side)
+        let change = (target[0] - self.gain[0]).abs() + (target[1] - self.gain[1]).abs();
+        if change < CHANGE {
+            // measured with fmod-probe: a change too small to take, to a
+            // volume below SILENT, silences the voice at once (no ramp;
+            // 1.704e-5 silent, 2.32e-5 not); it keeps its place. A larger
+            // change ramps as usual, to 0 too (battle-attack's music fade)
+            if self.volume < SILENT {
+                self.gain = [0.0; 2];
+            }
             target = self.gain;
         }
         self.blocks = self.blocks.wrapping_add(1);
@@ -143,10 +161,25 @@ impl Voice {
         }
         let w = &*self.wave;
         let end = u64::from(w.frames);
-        let loop_points = if self.looping {
+        let mut loop_points = if self.looping {
             w.looped
-                .map(|(s, e)| (u64::from(s), u64::from(e) + 1))
-                .or(Some((0, end)))
+                // measured with fmod-probe: FMOD loops on whole IMA blocks
+                // (64 frames). The first pass ends at the end point rounded
+                // up; every pass after it starts at the start point rounded
+                // up and lasts the loop's length rounded up: 50027_0's
+                // 119648..=737699 plays 0..737728, then 119680..737792
+                .map(|(s, e)| {
+                    let block = crate::ima::BLOCK_SAMPLES as u64;
+                    let (s, e) = (u64::from(s), u64::from(e) + 1);
+                    let start = s.div_ceil(block) * block;
+                    let later = (start + (e - s).div_ceil(block) * block).min(end);
+                    (start, e.div_ceil(block) * block, later)
+                })
+                .map(|(start, first, later)| (start, first.min(end), later))
+                .or(Some((0, end, end)))
+                .map(|(start, first, later)| {
+                    (start, if self.wrapped { later } else { first }, later)
+                })
         } else {
             None
         };
@@ -155,7 +188,7 @@ impl Voice {
             #[allow(clippy::cast_precision_loss)] // 32 fraction bits into f32, as measured
             let frac = (self.pos & 0xffff_ffff) as f32 / 4_294_967_296.0;
             let next = match loop_points {
-                Some((ls, le)) if i + 1 >= le => ls,
+                Some((ls, le, _)) if i + 1 >= le => ls,
                 _ => i + 1,
             };
             let (a, b) = (w.frame(i), w.frame(next));
@@ -175,7 +208,11 @@ impl Voice {
             self.pos += self.step;
             let i = self.pos >> 32;
             match loop_points {
-                Some((ls, le)) if i >= le => self.pos -= (le - ls) << 32,
+                Some((ls, le, later)) if i >= le => {
+                    self.pos -= (le - ls) << 32;
+                    self.wrapped = true;
+                    loop_points = Some((ls, later, later));
+                }
                 None if i >= end => {
                     self.ended = true;
                     break;
