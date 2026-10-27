@@ -56,12 +56,16 @@ ported! {
     /// descriptions in a frame (`ebp - 0x4c` .. `ebp - 4`, 18 words).
     gdraw_makeVertexBufferEnd_00a3a5f0 @ 0x00a3_a5f0 => extern "stdcall" fn make_vertex_buffer_end(info: u32, _stats: u32) -> u32 {
         let mut f = StackFrame::<0x12>::new();
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_vertex_buffer(info);
         bb::make_vertex_buffer_end(&mut mem(), f.at(), info)
     }
     /// `gdraw_createRowTexture_00a3a9f0(w, texels)`: the description in a
     /// frame (`ebp - 0x3c`).
     gdraw_createRowTexture_00a3a9f0 @ 0x00a3_a9f0 => extern "stdcall" fn create_row_texture(w: u32, texels: u32) -> u32 {
         let mut f = StackFrame::<0xe>::new();
+        // the Iggy call log only (FFX_IGGY_LOG; nothing otherwise)
+        crate::iggy_log::note_row_texture(w, texels);
         bb::create_row_texture(&mut mem(), f.at(), w, texels)
     }
     /// `gdraw_drawRectQuad_00a3bd40(rect, a)`: the mapping in a frame.

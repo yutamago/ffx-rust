@@ -466,6 +466,44 @@ unsafe extern "system" fn as3_callback(user: u32, player: u32, call: u32) -> u32
     r
 }
 
+/// `GDraw`'s antialiasing ramp texture (`gdraw_createRowTexture_00a3a9f0`,
+/// called by Iggy through `GDraw`'s table): `w` RGBA texels.
+pub fn note_row_texture(w: u32, texels: u32) {
+    if !ON.load(Ordering::Acquire) {
+        return;
+    }
+    let seq = SEQ.fetch_add(1, Ordering::AcqRel);
+    let mut line = head(seq, "gdrawRowTexture");
+    let _ = write!(line, ",\"w\":{w}");
+    if let Some(t) = words_at(texels, (w as usize).min(1024)) {
+        push_words(&mut line, "texels", &t);
+    }
+    line.push('}');
+    write_line(&line, true);
+}
+
+/// Vertex buffers logged so far ([`note_vertex_buffer`] keeps the first
+/// few).
+static VERTEX_BUFFERS: AtomicU64 = AtomicU64::new(0);
+
+/// A shape's vertices as Iggy hands them to `GDraw`
+/// (`gdraw_makeVertexBufferEnd_00a3a5f0`'s staging block `info + 0`, size
+/// `info + 8`): the first 64 buffers, up to 256 words each.
+pub fn note_vertex_buffer(info: u32) {
+    if !ON.load(Ordering::Acquire) || VERTEX_BUFFERS.fetch_add(1, Ordering::AcqRel) >= 64 {
+        return;
+    }
+    let Some(w) = words_at(info, 4) else { return };
+    let seq = SEQ.fetch_add(1, Ordering::AcqRel);
+    let mut line = head(seq, "gdrawVertexBuffer");
+    let _ = write!(line, ",\"bytes\":{},\"ibytes\":{}", w[2], w[3]);
+    if let Some(v) = words_at(w[0], (w[2] as usize / 4).min(256)) {
+        push_words(&mut line, "vertices", &v);
+    }
+    line.push('}');
+    write_line(&line, false);
+}
+
 /// A harness screenshot was saved (render thread, inside `Present`, after
 /// the Iggy draws of the image it shows).
 pub fn note_shot(path: &str, label: Option<u32>) {
