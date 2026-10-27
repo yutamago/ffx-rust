@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6, h4_m7 as m7,
-    h4_m8 as m8,
+    h4_m8 as m8, h4_m9 as m9,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -2086,5 +2086,187 @@ fn m8_create_render_data_buffer() {
         }
         eprintln!("{name}: {seen:?}");
         assert!(seen[..3].iter().all(|&k| k > 10), "{name}: {seen:?}");
+    }
+}
+
+/// `updateVFXRenderDataAtelShp`: flagged and unflagged shapes of 0..4
+/// primitives (and a negative count) spread over the six alpha buckets
+/// (and unknown alpha functions), render data and buffers missing,
+/// objects with and without a tint and a second matrix, screens below
+/// and from 720 high with unscaled or scaled matrices; random floats and
+/// constants.
+#[test]
+fn m9_update_atel_shp() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_7196);
+        let w_cell = t.zeros(4);
+        let h_cell = t.zeros(4);
+        t.stub_at(m9::SCREEN_WH, false, 2, 0, &[wr(0, w_cell), wr(1, h_cell)]);
+        // the alpha function by a table of the 256 modes
+        let table = t.zeros(0x400);
+        let rest = t.stub_code(m9::ALPHA_FUNCTION, false, 1, 0, false, &[]);
+        let cell = t.cells[&m9::ALPHA_FUNCTION];
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+        c.extend(table.to_le_bytes()); // eax = table[[esp+4]]
+        c.push(0xa3);
+        c.extend(cell.to_le_bytes()); // mov [cell], eax
+        jmp_to(&t, &mut c, rest);
+        let f = t.code(&c);
+        t.jump(m9::ALPHA_FUNCTION, f);
+        let lo = 0x1234_0000u32;
+        let cases: Vec<(u32, u32)> = (0..6)
+            .map(|k| (lo + 10000 * k, m9::RENDER_DATA + 1 + k))
+            .collect();
+        stub_by_arg(&mut t, m9::RENDER_DATA, false, 2, 0, 0, &cases);
+        stub_copying(&mut t, m9::APPLY_MATRIX, false, 3, 0, &[2], 4);
+        for (sym, n) in [
+            (m9::GET_BUFFER, 4),
+            (m9::MUL_MATRIX, 3),
+            (m9::SET_VISIBLE, 3),
+        ] {
+            t.stub_at(sym, false, n, 0, &[]);
+        }
+        let mut tags = vec![
+            m9::SCREEN_WH,
+            m9::MUL_MATRIX,
+            m9::SET_VISIBLE,
+            m9::APPLY_MATRIX,
+        ];
+        tags.extend(cases.iter().map(|c| c.1));
+        let mut seen = [0u32; 3];
+        for i in 0..500 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in 0..0x100 {
+                let a = rng.pick(&[0, 2, 0x10, 0x20, 0x100, 0x200, 0x40]);
+                t.w32(table + 4 * k, a);
+            }
+            t.constants(
+                &mut rng,
+                &[m9::MIN_START, m9::MAX_START, m9::ALPHA_SCALE],
+                &[
+                    m9::INV_512,
+                    m9::HEIGHT_416,
+                    m9::FIFTEEN,
+                    m9::INV_256,
+                    m9::INV_128,
+                    m9::INV_4096,
+                    m9::HALF,
+                    m9::MARGIN,
+                ],
+            );
+            if rng.below(2) == 0 {
+                for (c, v) in [
+                    (m9::MIN_START, f32::MAX),
+                    (m9::MAX_START, -f32::MAX),
+                    (m9::ALPHA_SCALE, 256.0),
+                ] {
+                    t.g32(c, v.to_bits());
+                }
+                for (c, v) in [
+                    (m9::INV_512, 1.0 / 512.0),
+                    (m9::HEIGHT_416, 416.0f64),
+                    (m9::FIFTEEN, 15.0),
+                    (m9::INV_256, 1.0 / 256.0),
+                    (m9::INV_128, 1.0 / 128.0),
+                    (m9::INV_4096, 1.0 / 4096.0),
+                    (m9::HALF, 0.5),
+                    (m9::MARGIN, 0.850_000_023_841_857_9),
+                ] {
+                    let at = t.rebase(c);
+                    t.write(at, &v.to_le_bytes());
+                }
+                if rng.below(3) == 0 {
+                    // texture coordinates whose 1 - v is not an f32
+                    let at = t.rebase(m9::INV_4096);
+                    t.write(at, &(1.0f64 / 3001.0).to_le_bytes());
+                }
+            }
+            // the object
+            let obj = if rng.below(4) == 0 {
+                0
+            } else {
+                let o = random_block(&mut t, &mut rng, 0x20);
+                let m = t.zeros(0x40);
+                for k in 0..16 {
+                    let f = rng.float();
+                    t.w32(m + 4 * k, f);
+                }
+                // unscaled (both 1), or only the first 1
+                if rng.below(2) == 0 {
+                    t.w32(m, 1f32.to_bits());
+                    if rng.below(4) != 0 {
+                        t.w32(m + 0x14, 1f32.to_bits());
+                    }
+                }
+                t.w32(o + 0x10, m);
+                let m2 = random_block(&mut t, &mut rng, 0x40);
+                t.w32(o + 0x1c, rng.pick(&[0, m2]));
+                o
+            };
+            let width = rng.pick(&[1920, 1280, 640, 0xffff_fc00]);
+            let height = if obj == 0 {
+                rng.pick(&[480, 719, 0])
+            } else {
+                rng.pick(&[1080, 720, 719, 480])
+            };
+            t.w32(w_cell, width);
+            t.w32(h_cell, height);
+            // the shapes
+            let n = rng.pick(&[0i16, 1, 2, 3, 4, -1]);
+            let room = u32::from(n.max(0).cast_unsigned());
+            let shapes = t.zeros(0x30);
+            let record = t.zeros(0x20 + 16 * room as usize);
+            for k in 0..room * 8 {
+                let v = rng.small() as u16;
+                t.w16(record + 0x20 + 2 * k, v);
+            }
+            let prims = random_block(&mut t, &mut rng, 8 * room + 4);
+            t.w8(record, rng.pick(&[0, 0, 0, 8, 0x80]));
+            t.w16(record + 2, n.cast_unsigned());
+            t.w32(record + 4, prims.wrapping_sub(record));
+            let index = rng.below(4);
+            t.w16(
+                shapes + 0x10 + 8 * index,
+                (record.wrapping_sub(shapes)) as u16,
+            );
+            // the instances
+            for k in 0..6 {
+                let rd = random_block(&mut t, &mut rng, 0xb0);
+                let seg = t.zeros(0x20);
+                for (off, size) in [(0xc, 48), (0x14, 64), (0x18, 32), (0x1c, 12)] {
+                    let b = t.zeros((size * room.max(1)) as usize);
+                    t.w32(seg + off, b);
+                }
+                t.w32(rd + 0x94, seg);
+                t.ret(m9::RENDER_DATA + 1 + k, rng.pick(&[rd, rd, rd, rd, 0]));
+            }
+            t.ret(m9::GET_BUFFER, rng.pick(&[1, 1, 1, 1, 0]));
+            let hi = rng.pick(&[0, 3]);
+            let ebp = t.ebp_for(5);
+            let frame = ebp - 0x94;
+            let index_word = index | rng.pick(&[0, 0x5_0000]);
+            let r = t.check_framed(
+                &format!("{w} n {n} obj {obj:#x} {width}x{height}"),
+                0x0071_96f0,
+                &[lo, hi, shapes, obj, index_word],
+                frame,
+                &[(0x14, 4), (0x20, 4), (0x70, 0x10), (0x80, 0x10)],
+                |g| {
+                    u(m9::update_atel_shp(
+                        g, frame, lo, hi, shapes, obj, index_word,
+                    ))
+                },
+            );
+            seen[if r == 0 {
+                0
+            } else if room > 0 {
+                1
+            } else {
+                2
+            }] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        assert!(seen.iter().all(|&k| k > 10), "{name}: {seen:?}");
     }
 }

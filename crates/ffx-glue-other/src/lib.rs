@@ -206,6 +206,7 @@ pub mod h4_m5;
 pub mod h4_m6;
 pub mod h4_m7;
 pub mod h4_m8;
+pub mod h4_m9;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;

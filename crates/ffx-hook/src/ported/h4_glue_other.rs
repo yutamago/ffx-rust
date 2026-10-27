@@ -20,7 +20,7 @@ use ffx_glue_other::{
     h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
     h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, h4_l1 as l1, h4_l2 as l2, h4_l3 as l3, h4_l4 as l4,
     h4_l5 as l5, h4_m1 as m1, h4_m2 as m2, h4_m3 as m3, h4_m4 as m4, h4_m5 as m5, h4_m6 as m6,
-    h4_m7 as m7, h4_m8 as m8, menu as mn, misc as m, movie as mv, r3, sound as s,
+    h4_m7 as m7, h4_m8 as m8, h4_m9 as m9, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2706,6 +2706,14 @@ ported! {
     createVFXRenderDataBuffer @ 0x0071_3790 => extern "C" fn create_vfx_render_data_buffer(lo: u32, hi: u32, effect: u32, data: u32, flags: u32) -> u32 {
         let mut frame = StackFrame::<{ (m8::BUFFER_FRAME / 4) as usize }>::new();
         m8::create_render_data_buffer(&mut mem(), frame.at(), lo, hi, effect, data, flags)
+    }
+    // ---- continuation round 11, batch 4 (ffx_glue_other::h4_m9)
+    /// `updateVFXRenderDataAtelShp(lo, hi, shapes, obj, index)` -> 1 or 0
+    /// (the index is a u16; a 0x90-byte frame: the screen size the font
+    /// call fills, the bounds vectors the matrix transforms).
+    updateVFXRenderDataAtelShp @ 0x0071_96f0 => extern "C" fn update_vfx_render_data_atel_shp(lo: u32, hi: u32, shapes: u32, obj: u32, index: u32) -> u32 {
+        let mut frame = StackFrame::<{ (m9::ATEL_FRAME / 4) as usize }>::new();
+        m9::update_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, obj, index)
     }
 }
 
