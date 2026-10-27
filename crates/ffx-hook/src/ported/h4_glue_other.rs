@@ -2715,6 +2715,15 @@ ported! {
         let mut frame = StackFrame::<{ (m9::ATEL_FRAME / 4) as usize }>::new();
         m9::update_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, obj, index)
     }
+    // ---- agent h4y: the particle fill-buffer jobs (ffx_glue_other::h4y_*)
+    /// `JobSchedule_pppPart_fillBuffer_drawShp_00727110(part)` -> 1: a
+    /// job-worker routine (a 0x1b4-byte frame: the matrices, quads and
+    /// colours its `FFXVu0*` callees see; zeroed, so the depth corner of a
+    /// part without an unclipped last primitive reads 0).
+    JobSchedule_pppPart_fillBuffer_drawShp_00727110 @ 0x0072_7110 => extern "C" fn fill_buffer_draw_shp_00727110(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_shp::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_shp::draw_shp(&mut mem(), frame.at(), part)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
