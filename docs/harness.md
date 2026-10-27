@@ -1696,10 +1696,22 @@ set in client pixels with `cursor <x> <y>` (`cursor off`: none again).
 `SetCursorPos` (the debug free camera) and `ClipCursor` (full screen) do
 nothing then, so a background game never moves or traps the user's
 pointer either. The game test `start_up_input_and_kernel_mod` checks
-both positions on the mouse device (`mouse_is_the_tests`). The Iggy pages
-draw their pointer where the game puts it, so the iggy-menus recordings,
-which showed wherever the user's pointer happened to be, were made
-again.
+both positions on the mouse device (`mouse_is_the_tests`; it fails with
+the patch left out, with the test's pointer ignored, or with a default
+inside the window). The Iggy pages draw their pointer where the game puts
+it, and the shared iggy-menus recording `orig` (11:43) is that stalled
+run itself (its trace ends at update 6981; shots 8-10 are the PC menu,
+11 and 12 missing), so iggy-menus was recorded again
+(`~/ffx-work/gameover/shots-extra`): the two new originals agree to 0
+pixels on shots 1-3, 6 and 9-12 and to at most 64 on 4, 5, 7 and 8 (the
+sliders' column), against 30,100 to 921,543 between the shared pair. A
+Rust run differs from them by 16-17 pixels on shots 1-9 and 9 on 10, all
+by one or a few levels at x 594..624, y 320..398 (the field behind the
+menu), and 0 on 11 and 12.
+
+Proofs, with the fix: iggy-menus 15 of 15 with every hook (the whole
+script, three at once); `run-all.sh --extra` and the main list pass;
+the draw-field gate passes.
 
 ## Parallel games
 
