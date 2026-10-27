@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
 
@@ -95,6 +96,12 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, conv(c), args).unwrap().eax
     }
+    fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width("Host::call_st0", addr, args.len(), host::max_words(c, true));
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f32().expect("the callee leaves ST0 set")
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -120,6 +127,9 @@ struct Twins {
     cave: u32,
     cave_next: u32,
     snapshot: bool,
+    /// Top bytes of a frame [`Twins::check_framed`] leaves out (the
+    /// original's security cookie at `ebp - 4`).
+    skip: u32,
     /// Bytes the stubs replaced, put back by [`Twins::reset`].
     patched: Vec<(u32, Vec<u8>)>,
 }
@@ -144,6 +154,7 @@ impl Twins {
             cave,
             cave_next: cave,
             snapshot,
+            skip: 0,
             patched: Vec::new(),
         };
         t.log = t.zeros(0x1_0000);
@@ -275,6 +286,71 @@ impl Twins {
         addr
     }
 
+    /// Code in the cave; returns its address.
+    fn cave_code(&mut self, c: &[u8]) -> u32 {
+        let addr = self.cave_next;
+        assert!(addr + c.len() as u32 <= self.cave + CAVE_LEN, "cave full");
+        self.write(addr, c);
+        self.cave_next = addr + c.len() as u32;
+        addr
+    }
+
+    /// A jump at `sym` to `to`.
+    fn jump(&mut self, sym: u32, to: u32) {
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        self.patch(at, &j);
+    }
+
+    /// A stub over `sym` that returns `value` in `ST0` (`fld dword`).
+    fn stub_float(&mut self, sym: u32, value: f32) {
+        let cell = self.words(&[value.to_bits()]);
+        let mut c = vec![0xd9, 0x05];
+        c.extend(cell.to_le_bytes());
+        c.push(0xc3);
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// An `fread(buf, 1, n, f)`-like recording stub (cdecl) bound to
+    /// import slot `slot`: copies `n` bytes (at most `max`) from `src`
+    /// to `buf`, logs its four words, returns `ret`.
+    fn stub_import_fill(&mut self, slot: u32, src: u32, max: u32, ret: u32) {
+        let log_stub = self.stub_code(slot, false, 4, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, 0x0c]); // mov edi, [esp+0xc] (buf)
+        c.extend([0x8b, 0x4c, 0x24, 0x14]); // mov ecx, [esp+0x14] (n)
+        c.push(0xb8);
+        c.extend(max.to_le_bytes()); // mov eax, max
+        c.extend([0x39, 0xc1]); // cmp ecx, eax
+        c.extend([0x76, 0x02]); // jbe +2
+        c.extend([0x89, 0xc1]); // mov ecx, eax
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// Recording stubs over the originals `(sym, this, words, pops, ret)`.
+    fn stubs(&mut self, list: &[(u32, bool, u32, u32, u32)]) {
+        for &(sym, this, n, pops, ret) in list {
+            self.stub(sym, this, n, pops, ret);
+        }
+    }
+
+    /// Writes the word at the `ffx.sym` address `sym`.
+    fn g32(&mut self, sym: u32, v: u32) {
+        let at = self.rebase(sym);
+        self.w32(at, v);
+    }
+
     /// [`Twins::stub_code`] written over the original at `sym`.
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
         let addr = self.stub_code(sym, this, n, pops, ret);
@@ -358,17 +434,44 @@ impl Twins {
         low: u32,
         bridge: impl FnOnce(&mut G, u32) -> Out,
     ) {
+        self.check_framed_init(what, sym, conv, args, low, &[], bridge);
+    }
+
+    /// [`Twins::check_framed`] with the frame's lowest bytes set to `init`
+    /// (the rest zero) in both oracles.
+    #[allow(clippy::too_many_arguments)]
+    fn check_framed_init(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        low: u32,
+        init: &[u8],
+        bridge: impl FnOnce(&mut G, u32) -> Out,
+    ) {
         let ebp = self.frame_ebp(args.len());
         let lo = ebp - low;
-        self.write(lo, &vec![0; low as usize]);
+        let mut frame = vec![0; low as usize];
+        frame[..init.len()].copy_from_slice(init);
+        self.write(lo, &frame);
         self.b.set_call_top(Some(lo - 0x100));
         self.check(what, sym, conv, args, |m| bridge(m, ebp));
         self.b.set_call_top(None);
-        let mut x = vec![0; low as usize];
-        let mut y = vec![0; low as usize];
+        let n = (low - self.skip) as usize;
+        let mut x = vec![0; n];
+        let mut y = vec![0; n];
         Mem::read_bytes(&self.a, lo, &mut x);
         Mem::read_bytes(&self.b, lo, &mut y);
-        assert_eq!(x, y, "{what}: frame at {lo:#x}");
+        if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+            let at = lo + i as u32;
+            panic!(
+                "{what}: frame byte ebp - {:#x} ({at:#x}): {} != {}",
+                ebp - at,
+                x[i],
+                y[i]
+            );
+        }
     }
 }
 
@@ -718,6 +821,519 @@ fn binding_slot_filters_match_the_original() {
                 let what = format!("filter {sym:#x} {slot:#x}");
                 t.check(&what, sym, Conv::Cdecl, &[slot], |_| Out::U32(f(slot)));
             }
+        }
+    });
+}
+
+// ---- the save/load screen ----
+
+/// Random machine globals: state, timer, list position, counts, choice,
+/// a save buffer of 0x4000 bytes, the file table and the menu.
+fn machine(t: &mut Twins, rng: &mut Rng) {
+    let small = |rng: &mut Rng| match rng.below(4) {
+        0 => 0,
+        1 => 1,
+        2 => rng.below(6),
+        _ => rng.word(),
+    };
+    for g in [
+        sv::STATE,
+        sv::TIMER,
+        sv::TOP,
+        sv::CURSOR,
+        sv::COUNT,
+        sv::LIST_LEN,
+        sv::FULL,
+        sv::CHOICE,
+    ] {
+        let v = small(rng);
+        t.g32(g, v);
+    }
+    let v = rng.below(5);
+    t.g32(sv::CURSOR, v);
+    let v = 0x100 + rng.below(0x3c00);
+    t.g32(sv::SIZE, v);
+    let fill: Vec<u32> = (0..0x1000).map(|_| rng.next()).collect();
+    let buf = t.words(&fill);
+    t.g32(sv::BUFFER, buf);
+    for g in [
+        sv::TICK_BASE,
+        sv::BUSY,
+        sv::RENAME,
+        sv::MERGED_FLAGS[0],
+        sv::MERGED_FLAGS[1],
+    ] {
+        let v = small(rng);
+        t.g32(g, v);
+    }
+    let at = t.rebase(sv::FILES);
+    for i in 0..600u32 {
+        let v = if i == 0 && rng.chance(2) {
+            0xffff_ffff
+        } else {
+            rng.below(300)
+        };
+        t.w32(at + 4 * i, v);
+    }
+    let at = t.rebase(sv::EXISTS);
+    let free = rng.below(250);
+    // existing (1), missing (-1) and 0 (which counts as existing: the
+    // free-number search wants a negative word); now and then number 0
+    for i in 0..200 {
+        let v = if i == free || rng.chance(40) || (i == 0 && rng.chance(3)) {
+            0xffff_ffff
+        } else {
+            u32::from(!rng.chance(8))
+        };
+        t.w32(at + 4 * i, v);
+    }
+    let menu = if rng.chance(5) { 0 } else { t.zeros(0x40) };
+    t.g32(sv::MENU, menu);
+    let dialog = t.zeros(0x20);
+    t.g32(sv::DIALOG_OBJ, dialog);
+}
+
+/// Recording stubs for every callee the machine's handlers make, but
+/// `except` (the handler under test).
+fn machine_stubs(t: &mut Twins, code: u32, except: u32, rng: &mut Rng) {
+    let list = [
+        (sv::MENU_INPUT, 0, code),
+        (sv::CLICK, 1, rng.word()),
+        (sv::YES_NO, 0, rng.word()),
+        (sv::ENABLE, 0, rng.word()),
+        (sv::DISABLE, 0, rng.word()),
+        (sv::CLEAR, 0, rng.word()),
+        (sv::SHOW_POPUP, 1, rng.word()),
+        (sv::SHOW_POPUP2, 2, rng.word()),
+        (sv::SHOW_POPUP4, 1, rng.word()),
+        (sv::SET_FOCUS, 1, rng.word()),
+        (sv::MOVE_CURSOR, 1, u32::from(rng.chance(3))),
+        (sv::CURSOR_DOWN, 0, rng.word()),
+        (
+            sv::SAVE_CHECK_CRC,
+            0,
+            if rng.chance(2) { 0 } else { rng.word() | 1 },
+        ),
+        (sv::MEMSET, 3, rng.word()),
+        (sv::MENU_DISABLE, 0, rng.word()),
+        (sv::MENU_RELEASE, 0, rng.word()),
+        (sv::MENU_OPEN, 0, rng.word()),
+        (sv::SAVE_LOAD_SUCCEED, 1, rng.word()),
+        (sv::SET_DIALOG_STATE, 1, rng.word()),
+        (sv::SET_SAVE_MODE, 1, rng.word()),
+        (sv::ENABLE_SAVE, 0, rng.word()),
+        (sv::OPERATOR_DELETE_ARRAY, 1, rng.word()),
+        (sv::OPERATOR_DELETE, 1, rng.word()),
+        (sv::SCAN_FILES, 0, rng.word()),
+        (sv::SORT_FILES, 0, rng.word()),
+        (sv::READ_HEADERS, 2, rng.word()),
+        (sv::SE_PLAY, 1, rng.word()),
+        (sv::NEED_RENAME, 1, rng.word()),
+        (sv::IGGY_SET_VALUE, 2, rng.word()),
+        (sv::IGGY_SET_STRING, 2, rng.word()),
+        (sv::GET_LOC, 2, rng.word()),
+    ];
+    for (sym, n, ret) in list {
+        if sym != except {
+            t.stub(sym, false, n, 0, ret);
+        }
+    }
+    let ret = rng.word();
+    t.stub(sv::IGGY_CALL, true, 5, 5, ret);
+    let ret = rng.word();
+    t.stub(sv::IGGY_DTOR, true, 0, 0, ret);
+}
+
+/// The handlers without arguments: `(original, port)`.
+type Handler = (u32, fn(&mut G) -> u32);
+
+fn handlers() -> Vec<Handler> {
+    vec![
+        (0x006e_fbd0, |m| sa::check_file(m)),
+        (0x006e_fc50, |m| sa::yes_no(m, sv::YES_NO_OVERWRITE)),
+        (0x006e_ffa0, |m| sa::yes_no(m, sv::YES_NO_LOAD)),
+        (0x006f_05b0, |m| sa::yes_no(m, sv::YES_NO_SAVE)),
+        (0x006e_fcd0, |m| sa::save_done(m, 1)),
+        (0x006e_fde0, |m| sa::save_done(m, 0)),
+        (0x006f_0020, |m| sa::load_done(m)),
+        (0x006f_0630, |m| sa::save_finished(m)),
+        (0x006f_0290, |m| sa::cursor_down(m)),
+        (0x006e_fe20, |m| sa::list_input(m, sv::LIST_OVERWRITE)),
+        (0x006f_0140, |m| sa::list_input(m, sv::LIST_LOAD)),
+        (0x006f_06e0, |m| sa::save_list_input(m)),
+        (0x006e_ff00, |m| sa::build_list(m, sv::BUILD_OVERWRITE)),
+        (0x006f_0220, |m| sa::build_list(m, sv::BUILD_LOAD)),
+        (0x006f_0800, |m| sa::build_list(m, sv::BUILD_SAVE)),
+        (0x006e_ff70, |m| sa::wait_then_enable(m)),
+        (0x006f_0050, |m| sa::confirm_popup(m)),
+        (0x006f_04c0, |m| sa::saved(m)),
+        (0x0070_2a30, |m| sa::as3_call(m, sv::AS3_ENABLE)),
+        (0x0070_2a50, |m| sa::as3_call(m, sv::AS3_DISABLE)),
+        (0x0070_2f80, |m| sa::as3_call(m, sv::AS3_CLEAR)),
+        (0x0070_2be0, |m| sa::new_file_row(m)),
+    ]
+}
+
+#[test]
+fn save_machine_handlers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0001);
+        for (sym, port) in handlers() {
+            for case in 0..120 {
+                t.reset();
+                machine(t, &mut rng);
+                let code = match case % 10 {
+                    0..=7 => case % 10 + 1,
+                    8 => 0,
+                    _ => rng.word(),
+                };
+                machine_stubs(t, code, sym, &mut rng);
+                let what = format!("handler {sym:#x} #{case} code {code}");
+                t.check(&what, sym, Conv::Cdecl, &[], |m| Out::U32(port(m)));
+            }
+        }
+    });
+}
+
+#[test]
+fn save_machine_cursor_and_rows_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0002);
+        for case in 0..80 {
+            t.reset();
+            machine(t, &mut rng);
+            machine_stubs(t, 0, sv::MOVE_CURSOR, &mut rng);
+            let code = rng.below(9);
+            let what = format!("move_cursor #{case} code {code}");
+            t.check(&what, 0x006e_f630, Conv::Cdecl, &[code], |m| {
+                Out::U32(sa::move_cursor(m, code))
+            });
+            let mut words = [0u32; 11];
+            for w in &mut words {
+                *w = rng.word();
+            }
+            words[10] = match rng.below(3) {
+                0 => 0,
+                1 => 0xffff_ffff,
+                _ => rng.word(),
+            };
+            let what = format!("file_row #{case}");
+            let mut strings = [0u32; 9];
+            strings.copy_from_slice(&words[1..10]);
+            t.check(&what, 0x0070_2d90, Conv::Cdecl, &words, |m| {
+                Out::U32(sa::file_row(m, words[0], strings, words[10]))
+            });
+        }
+    });
+}
+
+#[test]
+fn save_machine_update_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0003);
+        let targets = [
+            0x006f_0800u32,
+            0x006f_06e0,
+            0x006f_05b0,
+            0x006f_04c0,
+            0x006f_0630,
+            0x006f_0220,
+            0x006f_0140,
+            0x006e_ffa0,
+            0x006e_fbd0,
+            0x006f_0050,
+            0x006f_0020,
+            0x006e_ff00,
+            0x006e_fe20,
+            0x006e_fc50,
+            0x006e_ff70,
+            0x006e_fcd0,
+            0x006e_fde0,
+        ];
+        for state in 0..32u32 {
+            t.reset();
+            machine(t, &mut rng);
+            t.g32(sv::STATE, state);
+            for &f in &targets {
+                t.stub(f, false, 0, 0, f ^ 0x5555);
+            }
+            for f in [0x006f_0860u32, 0x006f_0070, 0x006e_fd10] {
+                t.stub(f, false, 1, 0, f ^ 0xaaaa);
+            }
+            let what = format!("SaveDataMachine_Update state {state}");
+            t.check(&what, 0x006f_0950, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::machine_update(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn save_files_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x5a7e_0004);
+        for case in 0..36 {
+            t.reset();
+            machine(t, &mut rng);
+            let opens = !rng.chance(4);
+            let file = if opens { 0x7700 + rng.below(0x100) } else { 0 };
+            let r = rng.word();
+            t.stub_import(sv::WSPRINTFW_IAT, false, 5, 0, r);
+            t.stub_import(sv::WFOPEN_IAT, false, 2, 0, file);
+            let r = rng.word();
+            t.stub_import(sv::FWRITE_IAT, false, 4, 0, r);
+            let r = rng.word();
+            t.stub_import(sv::FCLOSE_IAT, false, 1, 0, r);
+            let data: Vec<u32> = (0..0x1c00).map(|_| rng.next()).collect();
+            let src = t.words(&data);
+            // a short file now and then: the flag word past its end
+            let max = if rng.chance(3) {
+                rng.below(0x3d60)
+            } else {
+                0x7000
+            };
+            let r = rng.word();
+            t.stub_import_fill(sv::FREAD_IAT, src, max, r);
+            let r = rng.word();
+            t.stub(sv::NEED_RENAME, false, 1, 0, r);
+            let slot = rng.below(6);
+            let what = format!("ReadFile #{case}");
+            t.check_framed(
+                &what,
+                0x006f_0070,
+                Conv::Cdecl,
+                &[slot],
+                sv::bridge::READ_FRAME,
+                |m, ebp| Out::U32(sa::read_file(m, ebp, slot)),
+            );
+            let what = format!("MergeFileFlags #{case}");
+            // _chkstk leaves its own words at ebp - 8 (the cookie goes
+            // over ebp - 4): stack junk the port has no counterpart of
+            t.skip = 8;
+            t.check_framed(
+                &what,
+                0x006e_fd10,
+                Conv::Cdecl,
+                &[slot],
+                sv::bridge::MERGE_FRAME,
+                |m, ebp| Out::U32(sa::merge_file_flags(m, ebp, slot)),
+            );
+            t.skip = 4;
+            if opens {
+                // a file that doesn't open stores to address 0: both fault
+                let what = format!("WriteFile #{case}");
+                t.check_framed(
+                    &what,
+                    0x006f_0860,
+                    Conv::Cdecl,
+                    &[slot],
+                    sv::bridge::WRITE_FRAME,
+                    |m, ebp| Out::U32(sa::write_file(m, ebp, slot)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn save_glue_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0005);
+        for case in 0..24 {
+            t.reset();
+            machine(t, &mut rng);
+            let obj = t.zeros(0x400);
+            let byte = u8::from(rng.chance(2));
+            t.write(obj + 1, &[byte]);
+            let mgr = if case % 4 == 0 { 0 } else { obj };
+            let list = [
+                (sv::TROPHY_MANAGER, false, 0, 0, mgr),
+                (sv::SAVE_MANAGER, false, 0, 0, obj),
+                (sv::SAVE_TAKE_BYTE364, true, 0, 0, rng.next()),
+                (sv::SAVE_SET_MEMBER_C, true, 1, 1, rng.word()),
+                (sv::INPUT_MANAGER, false, 0, 0, obj + 0x100),
+                (sv::INPUT_STICK_INFO, true, 0, 0, rng.next()),
+                (sv::INPUT_IS_HOLD, true, 1, 1, rng.next()),
+                (sv::INPUT_IS_PRESS, true, 1, 1, rng.next()),
+                (sv::LOC_MANAGER, false, 0, 0, obj + 0x200),
+                (sv::LOC_TEXT, true, 3, 3, rng.word()),
+                (sv::USER_FREE, false, 1, 0, rng.word()),
+                (sv::VIDEO_INFO, false, 2, 0, rng.word()),
+                (sv::IGGY_DTOR, true, 0, 0, rng.word()),
+                (sv::OPERATOR_DELETE, false, 1, 0, rng.word()),
+            ];
+            t.stubs(&list);
+            let what = format!("glue #{case}");
+            t.check(&what, 0x0064_8ff0, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::trophy_get_error(m))
+            });
+            if byte == 0 {
+                // with the byte set the original returns the eax it was
+                // called with (its only caller passes eax = ecx), which a
+                // direct call doesn't set: TrophyGetError covers that path
+                t.check(&what, 0x0067_ac60, Conv::Thiscall(obj), &[], |m| {
+                    Out::U32(sa::trophy_flag(m, obj))
+                });
+            }
+            t.check(&what, 0x0064_8010, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::save_take_byte364(m))
+            });
+            t.check(&what, 0x0064_1680, Conv::Cdecl, &[], |m| {
+                sa::trophy_manager_update(m);
+                Out::None
+            });
+            t.check(&what, 0x0063_0c90, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::stick_info(m))
+            });
+            let b = rng.word();
+            t.check(&what, 0x0063_0cd0, Conv::Cdecl, &[b], |m| {
+                Out::U32(sa::input_button(m, sv::INPUT_IS_HOLD, b))
+            });
+            t.check(&what, 0x0063_0cf0, Conv::Cdecl, &[b], |m| {
+                Out::U32(sa::input_button(m, sv::INPUT_IS_PRESS, b))
+            });
+            t.check(&what, 0x0064_7d40, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::enable_save(m))
+            });
+            t.check(&what, 0x0064_7d50, Conv::Cdecl, &[b], |m| {
+                Out::U32(sa::set_save_mode(m, b))
+            });
+            let st = [1u32, 3, 5, 0, 2, 7][rng.below(6) as usize];
+            t.w32(obj + 8, st);
+            t.check(&what, 0x006f_1aa0, Conv::Thiscall(obj), &[b], |m| {
+                Out::U32(sa::set_result(m, obj, b))
+            });
+            let out = t.zeros(0x40);
+            t.check(&what, 0x0064_7f30, Conv::Cdecl, &[b, out], |m| {
+                Out::U32(sa::get_loc(m, b, out))
+            });
+            t.check(&what, 0x0070_2fa0, Conv::Cdecl, &[], |m| {
+                sa::release_menu(m);
+                Out::None
+            });
+            t.check(&what, 0x0068_7010, Conv::Cdecl, &[b], |m| {
+                Out::U32(sa::user_free_thunk(m, b))
+            });
+        }
+    });
+}
+
+#[test]
+fn save_load_succeed_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0006);
+        for case in 0..24 {
+            t.reset();
+            machine(t, &mut rng);
+            let obj = t.zeros(0x400);
+            let buf = t.zeros(0x100);
+            let flags = rng.next();
+            t.w32(buf + 0xe8, flags);
+            let v = [0u16, 1, 0x100, 0x8000, 0xffff][rng.below(5) as usize];
+            t.write(buf + 0xea, &v.to_le_bytes());
+            let list = [
+                (sv::SAVE_MANAGER, false, 0, 0, obj),
+                (sv::SAVE_SET_RESULT, true, 1, 1, rng.word()),
+                (sv::SAVE_REF_BUFFER, true, 0, 0, buf),
+                (sv::VIDEO_INFO, false, 2, 0, rng.word()),
+            ];
+            t.stubs(&list);
+            if rng.chance(2) {
+                // nothing merged yet: the load's flag and video words
+                t.g32(sv::MERGED_FLAGS[0], 0);
+            }
+            let kind = [3u32, 3, 1, 0][rng.below(4) as usize];
+            let what = format!("SaveDataSaveLoadSucceed #{case} kind {kind}");
+            t.check(&what, 0x0064_8540, Conv::Cdecl, &[kind], |m| {
+                Out::U32(sa::save_load_succeed(m, kind))
+            });
+        }
+    });
+}
+
+#[test]
+fn save_timers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a7e_0007);
+        for case in 0..40 {
+            t.reset();
+            let base = rng.next();
+            t.g32(sv::TICK_BASE, base);
+            let d = match rng.below(4) {
+                0 => rng.below(4000),
+                1 => 0x8000_0000 + rng.below(100),
+                2 => rng.next(),
+                _ => rng.below(100_000),
+            };
+            t.stub_import(sv::GET_TICK_COUNT_IAT, false, 0, 0, base.wrapping_add(d));
+            let what = format!("wait_fraction #{case}");
+            let addr = t.rebase(0x006f_0670);
+            let ra = t.a.call(addr, Conv::Cdecl, &[]).unwrap();
+            let poison = t.rebase(POISON_AT);
+            let port = sa::wait_fraction(&mut G(&mut t.b, poison));
+            assert_eq!(
+                ra.st0_f32().map(f32::to_bits),
+                Some(port.to_bits()),
+                "{what}"
+            );
+            t.diff(&what);
+            // SaveData_Update over it
+            let limit = Mem::read::<f32>(&t.a, t.rebase(sv::TROPHY_INTERVAL));
+            let f = [0.0f32, 1.0, limit, limit - 0.01, 0.5][rng.below(5) as usize];
+            t.reset();
+            t.stub_float(0x006f_0670, f);
+            let obj = t.zeros(0x40);
+            t.stubs(&[
+                (sv::TROPHY_MANAGER_UPDATE, false, 0, 0, 1),
+                (sv::PLAYER_POS, false, 1, 0, 2),
+                (sv::SAVE_MANAGER, false, 0, 0, obj),
+                (sv::MACHINE_UPDATE_THUNK, true, 0, 0, 3),
+                (sv::TROPHY_MANAGER, false, 0, 0, obj + 8),
+            ]);
+            let what = format!("SaveData_Update #{case} f {f}");
+            t.check(&what, 0x0064_8480, Conv::Cdecl, &[], |m| {
+                Out::U32(sa::save_data_update(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn set_input_info_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x5a7e_0008);
+        for case in 0..24 {
+            t.reset();
+            let obj = t.zeros(0x200);
+            t.stubs(&[
+                (sv::CONTROLLER_MANAGER, false, 0, 0, 0x1234),
+                (sv::CONTROLLER_INFO, true, 2, 2, 0),
+            ]);
+            let mut init = Vec::new();
+            init.extend(rng.next().to_le_bytes());
+            for _ in 0..4 {
+                let bits = match rng.below(4) {
+                    // a quiet NaN (the emulator keeps signalling ones signalling)
+                    0 => 0x7fc0_0001u32,
+                    1 => 0xff80_0000,
+                    _ => rng.next(),
+                };
+                init.extend(bits.to_le_bytes());
+            }
+            let old = rng.next();
+            t.w32(obj, old);
+            let what = format!("setInputInfo #{case}");
+            t.check_framed_init(
+                &what,
+                0x0063_1550,
+                Conv::Thiscall(obj),
+                &[],
+                0x18,
+                &init,
+                |m, ebp| Out::U32(sa::set_input_info(m, ebp, obj)),
+            );
         }
     });
 }

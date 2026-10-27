@@ -3463,10 +3463,10 @@
 0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
 0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
 0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
-0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40
+0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40; ported ffx_system::m5a_savedata: tail jump Virtuos_InputManager_getStickInfo(getInstance()) (m5 system-a b2)
 0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input)
-0x00630cd0 function inputIsHoldButton         # fh v3:cg3 0x630e80
-0x00630cf0 function inputIsPressButton        # fh v3:cg9 0x630ea0
+0x00630cd0 function inputIsHoldButton # fh v3:cg3 0x630e80; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isHoldButton(instance; b) (m5 system-a b2)
+0x00630cf0 function inputIsPressButton # fh v3:cg9 0x630ea0; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isPressButton(instance; b) (m5 system-a b2)
 0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1
 0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0
 0x00630d50 function inputODUpdate                # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export
@@ -3486,7 +3486,7 @@
 0x00631360 function Virtuos_InputManager_isPressButton # fh v3:exact 0x00631510 Virtuos::InputManager::isPressButton
 0x00631380 function Virtuos_InputManager_isReleaseButton # thiscall(this; mask), ret 4 -> bool: mask bits set in the previous word (+4) and none in the current (+0); the counterpart of isPressButton 0x00631360; name ours
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
-0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo
+0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo; thiscall(this) -> the info word: AsyncControllerTaskManager_GetControllerInfo(&word ebp-0x18, &floats ebp-0x14); +4 = old +0, +0 = word, +0x8c..+0x98 = the 4 floats (fld/fstp); ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
@@ -3758,6 +3758,7 @@
 0x00641510 function graphicGuildmapCreate     # fh v3:exact 0x006416c0
 0x00641660 function graphicHasRunDrawFilterInThisFrame # fh v3:cg2 0x641810
 0x00641670 function graphicHasRunDrawFocusInThisFrame # fh v3:cg3 0x641820
+0x00641680 function TrophyManager_Update # cdecl(): tail jump to the bare ret 0x0065f1e0 with ecx = [0x00ccb9d8]; eax untouched; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00641690 function graphicInitFMVPlayer      # fh v3:exact+call.cs 0x00641840 cdecl
 0x006416c0 function graphicInitScene          # fh v3:exact 0x00641870; cdecl() -> eax (initScene's, 9 when the worker status at ebp-4 is not 1, 0 on quit flag 0x00ccc7bc or a trophy error); frame 0xc: loading time -0xc, 0.0 at -8, status -4 (written by asyncFFXInitialize 0x00636410 on g_RecordState 0x00cdede4 through 0x00633670); argv[1] "_ECalm" (0x00b0da90) skips the opening (30 loading frames); ported M4 h3 r12 (ffx_prender::h3_glue44)
 0x006419d0 function graphicInitialize         # fh v3:exact 0x00641b80
@@ -3985,15 +3986,18 @@
 0x00647bb0 function SetMember8_00647bb0 # thiscall(this; v), ret 4: this[2] = v, returns v; name ours
 0x00647c90 function GetU32_01325ac4 # () -> u32 at 0x01325ac4; name ours
 0x00647cb0 function ReturnConst_00647cb0 # () -> 0x6900; name ours
+0x00647d40 function SaveDataEnableSave # cdecl(): tail jump SetByte364_006f1dc0(SaveDataManager_instance()), which leaves eax = the manager; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x00647d50 function SaveDataSetSaveMode_00647d50 # cdecl(v) -> SetMemberC_006f24f0(SaveDataManager_instance(); v); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
 0x00647e10 function AutoSave_DebugSave_00647e10 # cdecl(a) -> 0 / -1: SaveDataManager_instance(), then thiscall 0x006f1c40(a) on it (which only calls SaveDataManager_debugSave_Internal_6f0650); 0 when its al is nonzero, else -1; caller 0x00869e40 on gNeedAutoSave; name ours
 0x00647e40 function SaveDataManager_MarkAlbhedLoaded # (): manager +0 = 1 (SetWord0_006f1db0); HandleSaveDataScreen calls it when SaveDataIsAlbhedLoaded is -1 after a load (docs/formats/save.md); name ours
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
-0x00647f30 function SaveDataGetLoc_00647f30   # fh v3:bsim1.00 0x006480e0
+0x00647f30 function SaveDataGetLoc_00647f30 # fh v3:bsim1.00 0x006480e0; ported ffx_system::m5a_savedata: cdecl(index, out) -> LocalizationManager_getText(GetInstance(); index, out, 0) (m5 system-a b2)
 0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
 0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours
 0x00647fe0 function Game_InitSystems_00647fe0 # guess: 0x006f1c10, 0x006f0330, StatsAndAchievements_Create if g_SteamReady, ...; from FFXApplication_initApplication (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00648010 function SaveDataTakeLoadedFlag_00648010 # cdecl() -> SaveDataManager_takeByte364(SaveDataManager_instance()) zero-extended; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
 0x00648040 function SaveDataIsBusy            # fh v3:bsim1.00 0x006481f0
 0x00648060 function SaveDataIsDeletingFinished # fh v3:cg2 0x648210
@@ -4011,11 +4015,11 @@
 0x00648300 function SaveDataLocReplaceNum        # layout: alphabetical run between SaveDataLocRemoveNumTag and SaveDataManagerUpdate (5 unnamed in the gap); Switch 0x7100224d60 SaveDataLocReplaceNum is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648370 function SaveDataLocReplaceNum02      # layout: alphabetical run between SaveDataLocRemoveNumTag and SaveDataManagerUpdate (5 unnamed in the gap); Switch 0x7100224e00 SaveDataLocReplaceNum02 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006483e0 function SaveDataLocReplaceRemainTime # layout: alphabetical run between SaveDataLocRemoveNumTag and SaveDataManagerUpdate (5 unnamed in the gap); Switch 0x7100224ea0 SaveDataLocReplaceRemainTime is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00648480 function SaveData_Update # (): every frame from Sg_MainLoop: trophies, player position to 0x00ccb9a8, SaveDataMachine_Update (thunk); name ours
+0x00648480 function SaveData_Update # (): every frame from Sg_MainLoop: trophies, player position to 0x00ccb9a8, SaveDataMachine_Update (thunk); name ours; ported ffx_system::m5a_savedata: TrophyManager_Update once 0x006f0670 >= f32 0x00b921d8, Sg_GetPlayerPos(0x00ccb9a8), code_006f2740(manager), tail jump to the bare ret 0x0067ad00 (eax = TrophyManager_Instance) (m5 system-a b2)
 0x006484d0 function SaveDataPreDebugSave      # fh v3:bsim1.00 0x00648680
 0x006484f0 function SaveDataPushSlot             # layout: alphabetical run between SaveDataPreDebugSave and SaveDataResetToIdle (1 unnamed in the gap); Switch 0x7100225300 SaveDataPushSlot is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648530 function SaveDataResetToIdle       # fh v3:cg2 0x6486e0
-0x00648540 function SaveDataSaveLoadSucceed   # fh call.cs cdecl
+0x00648540 function SaveDataSaveLoadSucceed # fh call.cs cdecl; ported ffx_system::m5a_savedata: cdecl(kind): 0x006f1aa0(manager; kind); kind 3 with [0x01325ac4] 0: [0x00c526d0] = (i16) buf+0xe8, graphicSetTextureVideoInfo((u16 +0xea - 1) & 0xff, sar 8) (m5 system-a b2)
 0x006485e0 function SaveDataSetAlbhedFade     # fh switch:bsim1.00 0x71002207a0
 0x00648600 function SaveDataSetCbResult          # layout: alphabetical run between SaveDataSetAlbhedFade and SaveDataSetDialogState (1 unnamed in the gap); Switch 0x71002206b0 SaveDataSetCbResult is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648620 function SaveDataSetDialogState    # fh v3:bsim1.00 0x006487d0
@@ -4037,7 +4041,7 @@
 0x00648f20 function SaveDataWriteCrc          # fh v3:exact+call.cs 0x006490d0 cdecl
 0x00648fa0 function SetLocalDataSlotAndTime   # fh switch:bsim0.93 0x7100225490
 0x00648fd0 function SetToLoadDataNum             # layout: alphabetical run between SetLocalDataSlotAndTime and TrophyGetError (1 unnamed in the gap); Switch 0x71002253a0 SetToLoadDataNum is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00648ff0 function TrophyGetError            # fh switch:cg2 0x7100877d38
+0x00648ff0 function TrophyGetError # fh switch:cg2 0x7100877d38; ported ffx_system::m5a_savedata: () -> 0 without TrophyManager_Instance, else TrophyManager_errorFlag_0067ac60 of it (m5 system-a b2)
 0x00649040 function debugLoadForViewer           # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/savesforviewer/'; Switch 0x71002239c0 debugLoadForViewer (symbols from Fahrenheit's server export)
 0x00649180 function debugPrintString             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: %s: %s\\n'; Switch 0x7100224120 debugPrintString (symbols from Fahrenheit's server export)
 0x006491b0 function debugPrintStringToHex        # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: %s: 0x'; Switch 0x7100224000 debugPrintStringToHex (symbols from Fahrenheit's server export)
@@ -4521,6 +4525,7 @@
 0x0067aae0 function getEternalCalmSceneSize   # fh v3:bsim1.00 0x0067ac90
 0x0067ab30 function isEternalCalmMgrp         # fh v3:bsim1.00 0x0067ace0
 0x0067ab50 function isEternalCalmScene        # fh v3:bsim1.00 0x0067ad00
+0x0067ac60 function TrophyManager_errorFlag_0067ac60 # thiscall(this), 9 bytes: eax = 0 unless byte +1 is set (eax untouched then; its only caller TrophyGetError enters with eax = ecx = the manager); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x0067ac70 function SetFieldConst0_0067ac70      # auto-port shape (store constant to field, thiscall): u8[a0] = 0x1; return 0x0; callers: ; name ours
 0x0067ac90 function TrophyManager_Instance    # () -> [0x00ccc7cc] (set by 0x0067ac10); fh switch:bsim1.00 0x710023fce0 TrophyManager::Instance (BSim, getter-shaped)
 0x0067acc0 function TrophyManager_IsInstallCompleted # fh switch:cg2 0x710089f9a8 TrophyManager::IsInstallCompleted
@@ -4610,7 +4615,7 @@
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
 0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
-0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours
+0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours; bridge ffx_system::m5a_savedata::bridge::user_free_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
 0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
 0x00687030 function user_heap_destroy # (): jmp UserHeap_Destroy 0x006fb9a0; name ours
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
@@ -5465,17 +5470,34 @@
 0x006ee570 function sg_calcenvelope_asm       # fh v3:exact 0x006ee6b0
 0x006eee40 function sg_calcenvelope_asm_opt   # fh v3:exact 0x006eef80
 0x006ef2d0 function crossAssertIsValidFloat   # fh v3:exact 0x006ef410
+0x006ef630 function SaveDataMachine_moveCursor_006ef630 # cdecl(code) -> 1 for 1 up, 2 down (0x006f0290), 5 five up, 6 five down; else 0; up: cursor, else top, decremented when not 0, then focus; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006ef6f0 function fix_mappic                # fh call.cs cdecl; (map) -> save-list picture number (m%d, m%d_1 from 1000): 0 outside 1..=0x15c, map - 1 for 26 maps, fixed ones for 3/7/0x13/0x59/0x147..0x14f/0xaf..0xb1/0xe8/0xe9/0x100, map + 1000 on 0xd8/0x1f/0x101/0x11c/0x81/0x15c/0xf4..0xf7 when the player (0x00ccb9a8) is nearer the second picture's point (f32 squared distances); ported (system round 37)
-0x006efbd0 function SaveDataMachine_CheckFile # load state 0xf: after the 30-frame timer 0x00ce72e4, SaveDataCheckCrc; bad: buffer zeroed, message 0x208, state 0x10; good: 0x11 (docs/formats/save.md); name ours
-0x006efd10 function SaveDataMachine_MergeFileFlags_006efd10 # state 0x19: reads ffx_NNN, ORs its +0x3d50 word into the current save buffer's; state 0x19 -> timer 30; guess (platform census 2026-10-25, docs/formats/platform.md; window)
-0x006f0020 function SaveDataMachine_LoadDone # load state 0x11: closes the Flash screen, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), state 0xa, busy 0x00ce7310 = 0; name ours
-0x006f0070 function SaveDataMachine_ReadFile # load state 0xe (list entry): _wfopen/fread "%s%s%03d" (g_SaveFolder, "ffx_", g_SortedSaveTable slot) into 0x00ce7308, 0x00ce7304 bytes; timer 30, state 0xf; name ours
+0x006efbd0 function SaveDataMachine_CheckFile # load state 0xf: after the 30-frame timer 0x00ce72e4, SaveDataCheckCrc; bad: buffer zeroed, message 0x208, state 0x10; good: 0x11 (docs/formats/save.md); name ours; ported ffx_system::m5a_savedata: timer [0x00ce72e4] down; then 0x00702a30, SaveDataCheckCrc: 0 -> memset(buffer, 0, size), popup 0x208, state 0x10; rename flag 0x01133350 -> popup 0x209, state 0x10; else state 0x11 (m5 system-a b2)
+0x006efc50 function SaveDataMachine_overwriteYesNo_006efc50 # state 23: input 0x006ef320: 3/4 flip choice [0x00ce7300] (click 1, 0x00702a10), 7 on yes: click 1, state 0x18, popup 0x1fc, 0x00702a50; 8 or 7 on no: click 4, state 0x16, 0x00702a50; eax the last callee's or the code; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006efcd0 function SaveDataMachine_saveDone1_006efcd0 # state 26: 0x00702a70, 0x00702fa0, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), 0x00647d50(1), SaveDataEnableSave; state 0x14, [0x00ce7310] = 0; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006efd10 function SaveDataMachine_MergeFileFlags_006efd10 # state 0x19: reads ffx_NNN, ORs its +0x3d50 word into the current save buffer's; state 0x19 -> timer 30; guess (platform census 2026-10-25, docs/formats/platform.md; window); ported ffx_system::m5a_savedata (frame 0x6d04; junk read: [ebp-0x2fb4] never written when the file is short, 0 in the port's zeroed frame, brief 2026-10-24) (m5 system-a b2)
+0x006efde0 function SaveDataMachine_saveDone0_006efde0 # state 27: as SaveDataMachine_saveDone1_006efcd0 with 0x00647d50(0); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006efe20 function SaveDataMachine_overwriteListInput_006efe20 # state 22: input, 0x006ef630 -> click 1; 7: click 1, no files -> 0x00702a30, state 0x1b; else choice 1, state 0x17, popup4 0x38c, 0x00702a10; 8: click 4, state 0x1b; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006eff00 function SaveDataMachine_buildOverwriteList_006eff00 # state 21: ScanFiles, SortSaveTable, ReadHeaders(0, 200), popup2(count, 0x1fd), top = cursor = 0, focus 0, 0x00702a30, popup 0x20b without files; state 0x16; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006eff70 function SaveDataMachine_waitEnable_006eff70 # state 25: timer down; then 0x00702a30, state 0x1a; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006effa0 function SaveDataMachine_loadYesNo_006effa0 # state 13: as SaveDataMachine_overwriteYesNo_006efc50 with yes state 0xe, no state 0xc; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0020 function SaveDataMachine_LoadDone # load state 0x11: closes the Flash screen, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), state 0xa, busy 0x00ce7310 = 0; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0050 function SaveDataMachine_confirmPopup_006f0050 # state 16: input 7 -> 0x00702a30, state 0x11; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0070 function SaveDataMachine_ReadFile # load state 0xe (list entry): _wfopen/fread "%s%s%03d" (g_SaveFolder, "ffx_", g_SortedSaveTable slot) into 0x00ce7308, 0x00ce7304 bytes; timer 30, state 0xf; name ours; ported ffx_system::m5a_savedata (frame 0x408; junk read: [ebp-0x408]'s upper 3 bytes never written, passed to isNeedRenamePlayer; 0, brief 2026-10-24) (m5 system-a b2)
+0x006f0140 function SaveDataMachine_loadListInput_006f0140 # state 12: as SaveDataMachine_overwriteListInput_006efe20 with states 0x11 / 0xd / 0x11; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f01d0 function SaveDataMachine_StartLoad # (size, buffer): 0x00ce7304/0x00ce7308 = them, busy 0x00ce7310 = 1, state 0xb, SetUpDefaultSaveFolder, opens the Flash list; from SaveDataManager_doLoad; name ours
-0x006f0220 function SaveDataMachine_BuildList # load state 0xb: SaveDataMachine_ScanFiles, SortSaveTable_006f0fb0, fills the Flash list (message 0x1fd; 0x20b with no file); state 0xc; name ours
+0x006f0220 function SaveDataMachine_BuildList # load state 0xb: SaveDataMachine_ScanFiles, SortSaveTable_006f0fb0, fills the Flash list (message 0x1fd; 0x20b with no file); state 0xc; name ours; ported ffx_system::m5a_savedata (as 0x006eff00 with state 0xc) (m5 system-a b2)
+0x006f0290 function SaveDataMachine_cursorDown_006f0290 # cdecl(): cursor [0x00ce72f0] (or at 4 the top [0x00ce72ec]) one row down unless on the last row ([0x00ce72f8] - 1); then 0x00702cd0(top + cursor); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f0330 function SetUpDefaultSaveFolder    # Documents (SHGetFolderPathW CSIDL_PERSONAL) + Square Enix\FINAL FANTASY X&X-2 HD Remaster\FINAL FANTASY X\; was Save_InitFolder
+0x006f04c0 function SaveDataMachine_saved_006f04c0 # state 5: timer down; then SndSepPlaySimple(0x8000006a), 0x00702a30, 0x00702fa0, SaveLoadMenu_open_00702a80, 0x00702f80, state 1, popup 0x1fc; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f0510 function SaveDataManager_debugSave_Internal_6f0650 # fh call.cs cdecl
-0x006f0860 function SaveDataMachine_WriteFile # save state: slot = table entry or the first free of 1..199, `wb` fwrite 0x00ce7308 x 0x00ce7304; state 5; ours (platform census 2026-10-25, docs/formats/platform.md; window)
-0x006f0950 function SaveDataMachine_Update # (): the PC save/load state machine on g_SaveMachineState 0x00ce72e8 (jump of 20 states: 1-6 save, 0xb-0x11 load, 0x15-0x1b Al Bhed); called from SaveData_Update; name ours
+0x006f05b0 function SaveDataMachine_saveYesNo_006f05b0 # state 3: as SaveDataMachine_overwriteYesNo_006efc50 with yes state 4 (popup 0x1fb), no state 2; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0630 function SaveDataMachine_saveFinished_006f0630 # state 6: 0x00702a70, 0x00702fa0, operator delete[] of the buffer [0x00ce7308], SaveDataSaveLoadSucceed(1), SaveDataSetDialogState(0); state 0, [0x00ce7310] = 0; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0670 function SaveDataMachine_waitFraction_006f0670 # cdecl() -> ST0: (GetTickCount - [0x00ce730c]) as unsigned (fild, + f32 0x00b11f14 when negative) to f32, / f64 0x00b4b6e8 to f32, clamped 0..1; caller SaveData_Update; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f06e0 function SaveDataMachine_saveListInput_006f06e0 # state 2: input, 0x006ef630 -> click 1; 7: click 1, state 3, row 0 of a list with room: popup4 0x389, choice 1, 0x00702a10; else popup4 0x203, choice 0; 8: click 4, state 6; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0800 function SaveDataMachine_buildSaveList_006f0800 # state 1: as 0x006eff00 with popup 0x1fe, no empty popup, state 2; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f0860 function SaveDataMachine_WriteFile # save state: slot = table entry or the first free of 1..199, `wb` fwrite 0x00ce7308 x 0x00ce7304; state 5; ours (platform census 2026-10-25, docs/formats/platform.md; window); ported ffx_system::m5a_savedata (frame 0x404; a file that doesn't open stores to address 0, as the original) (m5 system-a b2)
+0x006f0950 function SaveDataMachine_Update # (): the PC save/load state machine on g_SaveMachineState 0x00ce72e8 (jump of 20 states: 1-6 save, 0xb-0x11 load, 0x15-0x1b Al Bhed); called from SaveData_Update; name ours; ported ffx_system::m5a_savedata: jump table 0x006f09f8 for states 1..27 (m5 system-a b2)
 0x006f0a70 function SaveDataMachine_ScanFiles # (): ffx_000..ffx_199 in g_SaveFolder: CreateFileW + GetFileTime per file into g_SortedSaveTable (slot, yymmdd, seconds), present flags 0x00ce7c78, counts 0x00ce72f4/0x00ce72f8; name ours
 0x006f0c60 function SaveDataMachine_ReadHeaders # (first, end): each listed save's 0x40-byte header -> list strings (slot, name, date, location + play time); ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x006f0fb0 function SortSaveTable_006f0fb0 # (): entries 1..199 of g_SortedSaveTable (3 words) selection-sorted by words 1, 2 descending (signed); callers 0x006eff00/0x006f0220/0x006f0800 (save-data area); name ours
@@ -5507,6 +5529,7 @@
 0x006f17d0 function StatsAndAchievements_RequestStats # if +0x4d and logged on: RequestCurrentStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours
+0x006f1aa0 function SaveDataManager_setResult_006f1aa0 # thiscall(this; v) ret 4 -> v: [[0x00ce81f4] + 8] = 4/2/6 for this+8 = 3/1/5; this+0x3a4 = v; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1db0 function SetWord0_006f1db0 # thiscall(this): this[0] = 1 (caller 0x00647e40); eax untouched; name ours
@@ -5532,6 +5555,7 @@
 0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
+0x006f2740 function code_006f2740 # cdecl(): jmp SaveDataMachine_Update (called with ecx = the save manager); bridge ffx_system::m5a_savedata::bridge::machine_update_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
 0x006f29f0 function crossThreadImpl_run_006f29f0 # thiscall(this): [this+0x10]([this+0x14]) cdecl when set; returns 0; slot 1 of crossThreadImpl_vftable (0x00b4bbd0); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006f2a40 function Thread_Sleep # cdecl(ms): Sleep(ms), its eax left; name ours
 0x006f2be0 function Event_Reset # cdecl(&event): ResetEvent(*event) through 0x00b0c0f0; name ours
@@ -5721,12 +5745,18 @@
 0x00702590 function String_replaceFirst_00702590 # cdecl(text, from, to) -> al: the first from (strstr) replaced in place by to (tail moved down, or up from the end for a longer to), memcpy; 1, 0 when absent; caller FFEscMenu_updateSpecialFeaturePage; name ours; ported (ffx_glue_other::h4_c4, m4 h4 c)
 0x00702660 function FFEscMenu_updateSpecialFeaturePage # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'addSpecialFeaturePageItem'; Switch 0x7100245b90 FFEscMenu::updateSpecialFeaturePage (symbols from Fahrenheit's server export); ported (ffx_glue_other::h4_j3, m4 h4 cont8): thiscall(this) -> the last call's eax; per row of 0x00c3a2c0 (5 x 0x18: binding, three message ids) four 0x100-byte texts (ebp-0x304/-0x204/-0x104/-0x404) cleared, messages 1 and 3 by graphicGetLocTextWithLength, 2 through ebp-0x504 and 0x006e96b0, the third split at "@el@" (strstr), "$key$" in the second replaced by KeyNames_getKeyboard_00405af0([g_Settings + 0x60 + 4 binding]), IggyMenu_callFlashFunction_5(this, "addSpecialFeaturePageItem", i, ...); junk reads: word 1 of each iggyDataValueSet value, passed on as 0
 0x007029e0 function IggyMenu_setEnableCeb248_007029e0 # cdecl(on): IggyMenu_setEnable(on != 0) on the Iggy menu at [0x00ceb248] when it is set; FFEscMenu_update calls it while g_SaveMachineBusy; name ours (h4 cont10)
+0x00702a30 function SaveDataMachine_as3Enable_00702a30 # cdecl(): IggyMenu_callIggyAS3External([0x00ceb248]; 0, 0x00b4ceec, 0, 0, 1)'s eax; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x00702a50 function SaveDataMachine_as3Disable_00702a50 # cdecl(): IggyMenu_callIggyAS3External([0x00ceb248]; 0, 0x00b4cefc, 0, 0, 1)'s eax; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00702a70 function SaveDataMachine_disableMenu_00702a70 # cdecl(): IggyMenu_setEnable([0x00ceb248]; 0)'s eax; callers SaveDataMachine_LoadDone and three neighbours; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00702a80 function SaveLoadMenu_open_00702a80 # cdecl(): once ([0x00ceb248] 0): saveload_{ch,kr,jp}.swf by TOGetFFXLang (10, 9, else) unified into 0x00ceb048, IggyMenu_ctor(new 0x9c; path, 0, 0, 1, 1, 0), setEnable(1), AS3 setMouseVisible(true), showSaveLoad(), SetLanguage(name); callers the save-data machine; ported (ffx_glue_other::h4_i3, m4 h4 i); name ours
+0x00702be0 function SaveDataMachine_newFileRow_00702be0 # cdecl(): iggyDataValueSet(0x00cebee0, 0), title 0x00b7c998, nine "" (0x00b8fbeb), text 0x201 into 0x00cebfa0 as the 12th; IggyMenu_callIggyAS3External(menu; 0, 0x00b4cedc, 0xc, 0x00cebee0, 1); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00702cd0 function SaveDataMachine_setSaveLoadFocus_00702cd0 # cdecl(i): sprintf(0x00cebcb0, "%d", i), iggyDataValueSet_00a28d70(0x00cebca0, 0x00cebcb0), IggyMenu_callIggyAS3External(g_SaveMenu; 0, "setSaveLoadFocus", 1, 0x00cebca0, 1)'s eax; callers SaveDataMachine_BuildList and FUN_006ef630/FUN_006eff00 (9 refs); name ours from the string; ported (ffx_glue_other::misc, m4 h4 r2)
 0x00702d20 function SaveDataMachine_showPopUp2_00702d20 # cdecl(n, id): SaveDataGetLoc_00647f30(id, 0x00cebcd8), iggyDataValueSet_00a28d70(0x00cebcb8, 0x00cebcd8), sprintf(0x00cebed8, 0x00b4ceac, n), iggyDataValueSet_00a28d70(0x00cebcc8, 0x00cebed8), IggyMenu_callIggyAS3External([0x00ceb248]; 0, 0x00b4ceb4, 2, 0x00cebcb8, 1)'s eax; callers 0x006eff00, SaveDataMachine_BuildList and one more; name ours; ported (ffx_glue_other::menu, m4 h4 r1)
+0x00702d90 function SaveDataMachine_fileRow_00702d90 # cdecl(n, s1..s10, picture) (12 words): iggyDataValueSet(0x00cec020, n), the strings, text 0x200 (0x00cec0e0) when picture > 0 else "", "", then the AS3 call with n == 0; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00702e90 function SaveDataMachine_showPopUp_00702e90 # cdecl(id): SaveDataGetLoc_00647f30(id, 0x00ceb460), 0x006e96b0(0x00ceb460, 0x00ceb260, 0x200), iggyDataValueSet_00a28d70(0x00ceb250, 0x00ceb260), IggyMenu_callIggyAS3External([0x00ceb248]; 0, "showPopUpStd", 1, 0x00ceb250, 1)'s eax; 12 callers (SaveDataMachine_CheckFile, ...); name ours; ported (ffx_glue_other::menu, m4 h4 r1)
 0x00702ef0 function SaveDataMachine_showPopUp4_00702ef0 # cdecl(id): SaveDataGetLoc_00647f30(id / 0x204 / 0x205, 0x00ceb6a0 / 0x00ceb8a0 / 0x00cebaa0) each into iggyDataValueSet_00a28d70(0x00ceb660 / 0x00ceb670 / 0x00ceb680), iggyDataValueSetBool 0x00a28db0(0x00ceb690, 0), IggyMenu_callIggyAS3External([0x00ceb248]; 0, 0x00b46cac, 4, 0x00ceb660, 1)'s eax; callers 0x006efe20, 0x006f0140 and three more; name ours; ported (ffx_glue_other::menu, m4 h4 r1)
+0x00702f80 function SaveDataMachine_as3Clear_00702f80 # cdecl(): IggyMenu_callIggyAS3External([0x00ceb248]; 0, 0x00b4ce88, 0, 0, 1)'s eax; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x00702fa0 function SaveDataMachine_releaseMenu_00702fa0 # cdecl(): the menu [0x00ceb248], when set, IggyMenu_dtor_IggyMenu + operator_delete, then 0; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00702fd0 function Add_00702fd0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x00702fe0 function AddU16_00702fe0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x00702ff0 function PostEffectParams_ctor_00702ff0 # thiscall -> this: byte +0 and +0x1c..+0x2c = 0, PSamplerStateD3D11_ctor(this + 0x30), +0x54..+0x6c = 0, +0x14/+0x18/+4/+8/+0xc = 1.0, +0x10 = [0x00b92194] (0.5, fld/fstp); caller 0x006c32d0; name ours; ported (ffx_glue_other::effect, m4 h4 r1)

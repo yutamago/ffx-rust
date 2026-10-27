@@ -18,6 +18,7 @@ pub mod fixup;
 pub mod heap;
 pub mod instance;
 pub mod intl;
+pub mod m5a_savedata;
 pub mod m5a_settings;
 pub mod m5a_std;
 pub mod magic;
