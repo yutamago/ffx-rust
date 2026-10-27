@@ -17,8 +17,8 @@ use ffx_glue_other::{
     h4_f5 as f5, h4_f6 as f6, h4_f7 as f7, h4_g1 as g1, h4_g2 as g2, h4_h1 as h1, h4_h2 as h2,
     h4_h3 as h3, h4_h4 as h4, h4_h5 as h5, h4_h6 as h6, h4_h7 as h7, h4_h8 as h8, h4_i1 as i1,
     h4_i2 as i2, h4_i3 as i3, h4_i4 as i4, h4_i5 as i5, h4_i6 as i6, h4_i7 as i7, h4_i8 as i8,
-    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, menu as mn,
-    misc as m, movie as mv, r3, sound as s,
+    h4_j1 as j1, h4_j2 as j2, h4_j3 as j3, h4_j4 as j4, h4_j5 as j5, h4_j6 as j6, h4_k1 as k1,
+    h4_k2 as k2, h4_k3 as k3, h4_k4 as k4, menu as mn, misc as m, movie as mv, r3, sound as s,
 };
 
 use super::{StackFrame, mem, ported};
@@ -2533,5 +2533,104 @@ ported! {
     GuildMapDynamicGeometry_updateRenderData @ 0x006a_5070 => extern "thiscall" fn guild_map_update_render_data(this: u32, _unused: u32) -> u32 {
         let mut frame = StackFrame::<{ (j6::GUILD_FRAME / 4) as usize }>::new();
         j6::update_render_data(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 9, batch 1 (ffx_glue_other::h4_k1)
+    /// `updateVFXRenderDataLine(a, b, lines)`.
+    updateVFXRenderDataLine @ 0x0071_a0c0 => extern "C" fn update_vfx_render_data_line(a: u32, b: u32, lines: u32) -> u32 {
+        k1::update_line(&mut mem(), a, b, lines)
+    }
+    /// `BlurEffectEx_blur_006c4290(this; texture, target)`.
+    BlurEffectEx_blur_006c4290 @ 0x006c_4290 => extern "thiscall" fn blur_effect_ex_blur(this: u32, texture: u32, target: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k1::BLUR_FRAME / 4) as usize }>::new();
+        k1::blur(&mut mem(), frame.at(), this, texture, target)
+    }
+    /// `BlurEffect_render_006c3970(this)`.
+    BlurEffect_render_006c3970 @ 0x006c_3970 => extern "thiscall" fn blur_effect_render(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k1::RENDER_FRAME / 4) as usize }>::new();
+        k1::render(&mut mem(), frame.at(), this)
+    }
+    /// `BlurEffect_update_006c3d40(this; dt)` (`dt` is never read).
+    BlurEffect_update_006c3d40 @ 0x006c_3d40 => extern "thiscall" fn blur_effect_update(this: u32, _dt: u32) -> u32 {
+        k1::update(&mut mem(), this, &mut |_, a, b| ci_fmod(a, b))
+    }
+    // ---- continuation round 9, batch 2 (ffx_glue_other::h4_k2)
+    /// `TextUtil_appendLine(this; text)`.
+    TextUtil_appendLine @ 0x006f_5e30 => extern "thiscall" fn text_util_append_line(this: u32, text: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k2::APPEND_FRAME / 4) as usize }>::new();
+        k2::append_line(&mut mem(), frame.at(), this, text)
+    }
+    /// `RemapButtonIcon_remapIconPosition(this; kind, quad, button)`.
+    RemapButtonIcon_remapIconPosition @ 0x006e_6a50 => extern "thiscall" fn remap_icon_position(this: u32, kind: u32, quad: u32, button: u32) -> u32 {
+        k2::remap_icon_position(&mut mem(), this, kind, quad, button)
+    }
+    /// `LoadingScreen_update_006e50a0(this; dt)` (callers read no result).
+    LoadingScreen_update_006e50a0 @ 0x006e_50a0 => extern "thiscall" fn loading_screen_update(this: u32, dt: u32) {
+        let mut frame = StackFrame::<{ (k2::LOADING_FRAME / 4) as usize }>::new();
+        k2::loading_update(&mut mem(), frame.at(), this, dt);
+    }
+    // ---- continuation round 9, batch 3 (ffx_glue_other::h4_k3)
+    /// `DepthBiasHooks_onCharacterInstantiated(name, count, items)` (the
+    /// array by value; the caller reads no result).
+    DepthBiasHooks_onCharacterInstantiated @ 0x006e_4100 => extern "C" fn depth_bias_on_character_instantiated(name: u32, count: u32, items: u32) {
+        k3::on_character_instantiated(&mut mem(), name, count, items);
+    }
+    /// `PostProcessManager_ctor_00692020(this)` -> `this`.
+    PostProcessManager_ctor_00692020 @ 0x0069_2020 => extern "thiscall" fn post_process_manager_ctor(this: u32) -> u32 {
+        k3::post_process_manager_ctor(&mut mem(), this)
+    }
+    /// `BrokenScreenEffect_render(this)` -> 0.
+    BrokenScreenEffect_render @ 0x006d_5680 => extern "thiscall" fn broken_screen_effect_render(this: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k3::BROKEN_FRAME / 4) as usize }>::new();
+        k3::broken_render(&mut mem(), frame.at(), this)
+    }
+    // ---- continuation round 9, batch 4 (ffx_glue_other::h4_k4)
+    /// `createVFXRenderDataBufferAtelShp(lo, hi, shapes, index)` (`index`
+    /// a u16 in its word).
+    createVFXRenderDataBufferAtelShp @ 0x0071_47b0 => extern "C" fn create_vfx_render_data_buffer_atel_shp(lo: u32, hi: u32, shapes: u32, index: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k4::ATEL_FRAME / 4) as usize }>::new();
+        k4::create_atel_shp(&mut mem(), frame.at(), lo, hi, shapes, index)
+    }
+    // ---- continuation round 9, batch 5 (ffx_glue_other::h4_k4)
+    /// `createVFXRenderDataBufferShapeField(lo, hi, shapes, scale, flags)`
+    /// (a 0x6f1c-byte frame, as the original's).
+    createVFXRenderDataBufferShapeField @ 0x0071_4d40 => extern "C" fn create_vfx_render_data_buffer_shape_field(lo: u32, hi: u32, shapes: u32, scale: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (k4::SHAPE_FRAME / 4) as usize }>::new();
+        k4::create_shape_field(&mut mem(), frame.at(), lo, hi, shapes, scale, flags)
+    }
+}
+
+/// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
+/// `ST1`, `b` in `ST0` (`fld qword` each), the result read back from
+/// `ST0` as `fstp qword` stores it (exact: the remainder of two `f64`s is
+/// one).
+fn ci_fmod(a: f64, b: f64) -> f64 {
+    let f = crate::rebase(k1::CI_FMOD);
+    #[cfg(target_arch = "x86")]
+    {
+        let pair = [a, b];
+        let mut out = 0f64;
+        // SAFETY: the thunk jumps to the CRT's `_CIfmod`, which takes its
+        // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
+        // ecx, edx, the x87 and SSE registers clobbered); the asm loads
+        // them, calls it and stores the result through edi (which the
+        // callee keeps), leaving the x87 stack empty.
+        unsafe {
+            std::arch::asm!(
+                "fld qword ptr [{p}]",
+                "fld qword ptr [{p} + 8]",
+                "call {f}",
+                "fstp qword ptr [edi]",
+                p = in(reg) &raw const pair,
+                in("edi") &raw mut out,
+                f = in(reg) f,
+                clobber_abi("C"),
+            );
+        }
+        out
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (f, a, b);
+        0.0
     }
 }
