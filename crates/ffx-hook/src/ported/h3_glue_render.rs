@@ -60,6 +60,7 @@ use ffx_prender::h3_glue51::bridge as g51;
 use ffx_prender::h3_glue52::bridge as g52;
 use ffx_prender::h3_glue53::bridge as g53;
 use ffx_prender::h3_glue54::bridge as g54;
+use ffx_prender::h3_glue55::bridge as g55;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2104,6 +2105,15 @@ ported! {
     PhyreScene_loadMagicFileVFXTexture @ 0x0066_4550 => extern "thiscall" fn scene_load_magic_file_vfx_texture(this: u32, kind: u32, name: u32, async_load: u32) -> u32 {
         let mut f = StackFrame::<0x221>::new();
         g54::load_magic_file_vfx_texture(&mut mem(), f.at() + 0x884, this, kind, name, async_load)
+    }
+
+    // ---- round 16 batch 57 (ffx_prender::h3_glue55) ----
+    /// `PhyreScene_unloadVFXTexture(scene; name, mode)` -> 0, or 5 when the
+    /// list is missing: a VFX texture list's (or a layout kind's) slots
+    /// released from the scene's texture table (frame `ebp - 0x344`).
+    PhyreScene_unloadVFXTexture @ 0x0067_1300 => extern "thiscall" fn scene_unload_vfx_texture(this: u32, name: u32, mode: u32) -> u32 {
+        let mut f = StackFrame::<0xd1>::new();
+        g55::unload_vfx_texture(&mut mem(), f.at() + 0x344, this, name, mode)
     }
 }
 

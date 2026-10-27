@@ -77,6 +77,7 @@ use ffx_prender::h3_glue51::{self as h51, bridge as gh51};
 use ffx_prender::h3_glue52::{self as h52, bridge as gh52};
 use ffx_prender::h3_glue53::{self as h53, bridge as gh53};
 use ffx_prender::h3_glue54::{self as h54, bridge as gh54};
+use ffx_prender::h3_glue55::{self as h55, bridge as gh55};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -12269,5 +12270,165 @@ fn batch56_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 60 } else { 300 };
         run_cases(t, CASES56, n, &mut Rng(0x5656_b056));
+    });
+}
+
+// ---- round 16 batch 57 (ffx_prender::h3_glue55) ----
+
+/// A VFX texture list unloaded: the mode (each range's edges, 0x400,
+/// 0x29e, others), the summon byte and the map number, the list's text
+/// (the scene's named text or the file: missing, not opening, read) of 0
+/// to 5 lines from a small vocabulary (the three summon textures among
+/// them; some ending in `\r`), the scene's 0 to 6 slots: their paths
+/// (none, a line's `vfx/D3D11/` path, a summon texture elsewhere), flags,
+/// layout kinds (1, 2 or another) and a layout count of all or fewer.
+/// The renderer's method 2 is a recording stub; the string, array and
+/// C runtime code is the original's, with `operator new` and the user
+/// heap's `malloc` handing out blocks in turn.
+#[allow(clippy::too_many_lines)] // one scene, its list and its slots
+fn prep_unload_vfx57(t: &mut Twins, obj: u32, this: &mut u32, args: &mut [u32], rng: &mut Rng) {
+    let scene = t.zeros(0x1_0000);
+    *this = scene;
+    let renderer = obj + 0x300;
+    let vtable = obj + 0x340;
+    let flush = t.stub(None, 0x00d0_0008, true, 0, 0, Some(rng.word()));
+    t.w32(vtable + 8, flush);
+    t.w32(renderer, vtable);
+    t.w32(scene + 0xd0, renderer);
+    t.write(scene + 0xfb04, &[u8::from(rng.chance(2))]);
+    let map = if rng.chance(2) {
+        0x146
+    } else {
+        rng.below(0x200)
+    };
+    let at = t.rebase(h55::CURRENT_MAP_NO);
+    t.w32(at, map);
+    let name_at = obj + 0x100;
+    t.write(name_at, b"vfx/list.txt\0");
+    let mode = pick(
+        rng,
+        &[
+            u32::MAX,
+            0x26e,
+            0x271,
+            0x275,
+            0x276,
+            0x27a,
+            0x27d,
+            0x27e,
+            0x26d,
+            0x400,
+            0x29e,
+            0x29f,
+            5,
+        ],
+    );
+    args.copy_from_slice(&[name_at, mode]);
+    let vocab: [&[u8]; 5] = [
+        b"abc",
+        b"00001_19_0_0_1_1.dds.phyre",
+        b"00002_19_0_0_1_1.dds.phyre",
+        b"00003_19_0_0_1_1.dds.phyre",
+        b"xy.dds",
+    ];
+    let lines = rng.below(6);
+    let mut text = vec![];
+    for k in 0..lines {
+        text.extend(vocab[rng.below(5) as usize]);
+        if rng.chance(3) {
+            text.push(b'\r');
+        }
+        text.push(b'\n');
+        if k + 1 == lines && rng.chance(2) {
+            text.pop();
+        }
+    }
+    let heap = t.zeros(0x200 * 40);
+    let mut block = text.clone();
+    block.extend([b'z'; 8]);
+    t.write(heap, &block);
+    let mut nul = text.clone();
+    nul.push(0);
+    let found = if rng.chance(3) {
+        let at = obj + 0x1000;
+        t.write(at, &nul);
+        at
+    } else {
+        0
+    };
+    t.stub_ret(h55::FIND_NAMED, true, 1, 1, found);
+    t.stub_ret(
+        h55::FIOS_IS_FILE_EXIST,
+        false,
+        1,
+        0,
+        u32::from(!rng.chance(8)),
+    );
+    let stream = if rng.chance(8) { 0 } else { rng.word() | 1 };
+    t.stub_ret(h55::FIOS_OPEN, false, 2, 0, stream);
+    t.stub_ret(h55::FIOS_FILE_SIZE, false, 1, 0, text.len() as u32);
+    let news: Vec<u32> = (0..10).map(|k| heap + 0x200 * k).collect();
+    t.stub_seq(h55::OPERATOR_NEW_ARRAY, false, 1, 0, &news);
+    let news: Vec<u32> = (10..25).map(|k| heap + 0x200 * k).collect();
+    t.stub_seq(h48::OPERATOR_NEW, false, 1, 0, &news);
+    let news: Vec<u32> = (25..40).map(|k| heap + 0x200 * k).collect();
+    t.stub_seq(USER_MALLOC55, false, 1, 0, &news);
+    // the slots: names +0x3c, paths +0x54, flags +0x60, layouts +0x48
+    let n = rng.below(7);
+    t.w32(scene + 0x4c, n);
+    t.w32(
+        scene + 0x40,
+        if rng.chance(3) {
+            n.saturating_sub(1)
+        } else {
+            n
+        },
+    );
+    let (names, paths, flags, layouts) = (obj + 0x1400, obj + 0x1440, obj + 0x1480, obj + 0x1500);
+    t.w32(scene + 0x3c, names);
+    t.w32(scene + 0x54, paths);
+    t.w32(scene + 0x60, flags);
+    t.w32(scene + 0x48, layouts);
+    for k in 0..n {
+        let text_at = obj + 0x1600 + 0x40 * k;
+        let path: Vec<u8> = match rng.below(4) {
+            0 => vec![],
+            1 => b"fx/00002_19_0_0_1_1.dds.phyre".to_vec(),
+            _ => [b"vfx/D3D11/".as_slice(), vocab[rng.below(5) as usize]].concat(),
+        };
+        if path.is_empty() {
+            t.w32(paths + 4 * k, 0);
+        } else {
+            t.write(text_at, &[path.as_slice(), b"\0"].concat());
+            t.w32(paths + 4 * k, text_at);
+        }
+        t.w32(names + 4 * k, rng.word());
+        t.w32(flags + 4 * k, u32::from(!rng.chance(4)));
+        t.w32(layouts + 0x14 * k, pick(rng, &[1, 2, 2, 3]));
+    }
+}
+
+const UNLOAD_VFX57_STUBS: &[(u32, K)] = &[
+    (h55::SYNC_RENDER, K::This(0)),
+    (h55::CLUSTER_MANAGER, K::Getter),
+    (h55::RELEASE_PCLUSTER, K::This(1)),
+    (h55::OPERATOR_DELETE, K::Cdecl(1)),
+    (h55::OPERATOR_DELETE_ARRAY, K::Cdecl(1)),
+    (h55::USER_FREE, K::Cdecl(1)),
+    (h55::FIOS_READ, K::Cdecl(3)),
+    (h55::FIOS_CLOSE, K::Cdecl(1)),
+    (h55::RESTORE_SUMMON_TEXTURE, K::Cdecl(0)),
+];
+
+#[rustfmt::skip]
+const CASES57: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_unload_vfx57), ..method("unload_vfx_texture", 0x0067_1300, This::Object, 2, UNLOAD_VFX57_STUBS, |m, this, a| u(gh55::unload_vfx_texture(m, frame_ebp(), this, a[0], a[1]))) }), 0x344, 0),
+];
+
+#[test]
+fn batch57_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 60 } else { 300 };
+        run_cases(t, CASES57, n, &mut Rng(0x5757_b057));
     });
 }
