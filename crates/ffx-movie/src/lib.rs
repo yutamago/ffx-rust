@@ -259,3 +259,25 @@ pub mod bridge {
         4
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::vorbis_to_s16;
+
+    /// `AudioRead`'s conversion: the bias, the f32 store before `floor`,
+    /// truncation and the clamp (`cvttsd2si`'s NaN gives -0x8000).
+    #[test]
+    fn s16_conversion() {
+        assert_eq!(vorbis_to_s16(0.0), 0);
+        assert_eq!(vorbis_to_s16(0.5 / 32767.0), 1);
+        assert_eq!(vorbis_to_s16(-0.5 / 32767.0), 0);
+        assert_eq!(vorbis_to_s16(1.0), 32767);
+        assert_eq!(vorbis_to_s16(-1.0), -32767);
+        assert_eq!(vorbis_to_s16(1.5), 32767);
+        assert_eq!(vorbis_to_s16(-2.0), -32768);
+        assert_eq!(vorbis_to_s16(f32::NAN), -32768);
+        // f * 32767 + 0.5 is 100.9999999064 in double and 101.0 once stored
+        // as f32, so the floor gives 101, not 100
+        assert_eq!(vorbis_to_s16(f32::from_bits(0x3b49_0192)), 101);
+    }
+}

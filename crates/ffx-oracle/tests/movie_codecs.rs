@@ -266,7 +266,7 @@ fn vorbis_matches_the_original() {
             continue;
         }
         packetno += 1;
-        if packetno > 60 {
+        if packetno > 100_000 {
             break;
         }
         set_packet(&mut o, &p.data, p.data.len(), packetno);
