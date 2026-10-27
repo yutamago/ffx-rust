@@ -4140,7 +4140,7 @@
 0x0065a6c0 function PhyreScene_doOnAllFieldMapAssetsLoaded # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71001edfe0 PhyreScene::doOnAllFieldMapAssetsLoaded, 3 votes, round 2; ported M4 h3 r3 (ffx_prender::glue9): thiscall(scene; a, b, list, reader), ret 0x10; b unused
 0x0065a760 function PhyreScene_doOnCharacterAllAssetsLoaded # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'textureAnimationChar'; Switch 0x71001fd570 PhyreScene::doOnCharacterAllAssetsLoaded (symbols from Fahrenheit's server export); thiscall(scene; out, reader, array {count, capacity, data}, request, name, extra) ret 0x18 (Ghidra's param_1 is ecx), eax 0 or PApplication_FixupClusters' nonzero code (reader, data, array freed, request+0x1c = 1); else name -> out into the loaded-character tree (+0x11dc: make_pair 0x0064bde0 at ebp-0x48c, _Buynode 0x00649b30, insert 0x0064a360), the name's stem (between its last '/' and '.') looked up in the reader and its asset rebound (ShaderTexture_rebindAlt(scene; &data[id], 0, 1)), with a textureAnimationChar symbol the name's directory + /textureAnimationChar.ovp read (fios, 0x3ff-byte chunks at ebp-0x410) and addAnimatedMaterials(*out, array, 0, symbol, stem, extra, text or 0); then the inputs freed, request+4 = *out, insertPrototype(name, request), buildSuffixes, request+0x1c = 1, delete[] name and extra, chrLoadCountdown; port ffx_prender::h3_glue52 (h3 r15)
 0x0065ae40 function PhyreScene_onCharacterAssetLoadedItem_0065ae40 # stdcall(out, reader, array, asset, id), ret 0x14, returns 0: appends asset to array (count, capacity, data; Array_Reserve_00668080 by an eighth + 2); a model (AssetListReader_isModel) becomes *out and its objects of class 0x00ca7228 get +0x1c = 0 (cursor at ebp-0x20); else 0x00667620(out + 4, &asset slot); PhyreScene_onCharacterAssetLoaded's per-asset step; name ours (M4 h3 r5)
-0x0065af60 function PhyreScene_doOnFieldMapAssetLoaded # fh v3:exact 0x0065b0f0 PhyreScene::doOnFieldMapAssetLoaded; thiscall(scene; asset, unused, &model, &assets, reader, id, scaled byte) ret 0x1c -> 0: asset appended to the word array assets (grown to n + n/8 + 2 when count > capacity, signed); for the first model asset (+0xd8 still 0) model = asset, +0xd8 = getSymbolById, each cluster instance's 3x4 (+4) times diag(-2.5,-2.5,1,1) then a move by (-256,-224) (or diag(10,10,10,1) with scaled) goes back through a new PMatrix4x3 instance (allocateInstanceList(1, type, 0); a null list reads address 0), its owner (+0x1c) +0xc pointing at it; with scaled a second cursor (0x0064cda0/Next3) multiplies each instance's +0xb0 vector +0x20..+0x28 by 10 (f64); frame ebp-0x1c0, cursor at ebp-0x20; ported M4 h3 r18 (ffx_prender::h3_glue64); NOT hooked since 2026-10-27: the title map after a game over sometimes never loads with it (iggy-menus), kami0100 texture-animation frame differs; bug not found yet
+0x0065af60 function PhyreScene_doOnFieldMapAssetLoaded # fh v3:exact 0x0065b0f0 PhyreScene::doOnFieldMapAssetLoaded; thiscall(scene; asset, unused, &model, &assets, reader, id, scaled byte) ret 0x1c -> 0: asset appended to the word array assets (grown to n + n/8 + 2 when count > capacity, signed); for the first model asset (+0xd8 still 0) model = asset, +0xd8 = getSymbolById, each cluster instance's 3x4 (+4) times diag(-2.5,-2.5,1,1) then a move by (-256,-224) (or diag(10,10,10,1) with scaled) goes back through a new PMatrix4x3 instance (allocateInstanceList(1, type, 0); a null list reads address 0), its owner (+0x1c) +0xc pointing at it; with scaled a second cursor (0x0064cda0/Next3) multiplies each instance's +0xb0 vector +0x20..+0x28 by 10 (f64); frame ebp-0x1c0, cursor at ebp-0x20; ported M4 h3 r18 (ffx_prender::h3_glue64); hooked again 2026-10-27: replay-flakes7 had blamed it for iggy-menus' title never loading after a game over, but fix-dofmal found its placed matrices match the original's on every map and the stall without it (2 of 9) or with the original through a trampoline (2 of 8); docs/harness.md "Not the map-asset callback"
 0x0065b5b0 function PhyreScene_drawMainMenuWaveEffect # fh v3:exact 0x0065b740 PhyreScene::drawMainMenuWaveEffect
 0x0065b750 function PhyreScene_deleteIggyMenu_0065b750 # thiscall(scene): IggyMenu_dtor + operator_delete of scene +0x10dc8 when set (the field is left as is); name ours; ported M4 h3 (ffx_prender::glue2)
 0x0065b8a0 function PhyreScene_fieldMapInitialize # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'scene%dlayer%dShape'; Switch 0x71001ef850 PhyreScene::fieldMapInitialize (symbols from Fahrenheit's server export); thiscall(scene; rebuild) ret 4 -> 0, or 0x15 when +0x10d4/+0x1128 are missing or +0x1195 refuses a rebuild; no float in ST0 (the packet's flag is wrong, oracle-checked); passes DepthBiasHooks_onSceneLoaded 41 words (two PArrays and two 0x44-byte asset lists by value); M4 h3d port ffx_prender::h3d_fmi
@@ -4783,7 +4783,7 @@
 0x0069e320 function MenuDynamicGeometry_MenuDynamicGeometry # fh v3:exact 0x0069e460 MenuDynamicGeometry::MenuDynamicGeometry
 0x0069e3e0 function VFXDynamicGeometry_VFXDynamicGeometry # fh v3:exact 0x0069e520 VFXDynamicGeometry::VFXDynamicGeometry; ported M4 h3 r3 (ffx_prender::glue10)
 0x0069ebd0 function TreeNext_0069ebd0           # ours: (ecx it) -> it: the MSVC tree iterator ++, the same code as opusTree_Next 0x00806a50 (left +0, parent +4, right +8, nil byte +0xd); callers 0x0069caf0, 0x0069eb70, 0x0069eb90, 0x0069ebc0, 0x006a1a70
-0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs cdecl; ported M4 h3 r4 (ffx_prender::h3_glue13): frame: key {a, b} at ebp-0x14 and MapFind's out at ebp-8; printf 0x00b48004, per map node (in order) with a key: cached or found geometry's vtable +0x10, InsertToDeletePool(a, b, 3, +0x18); then 0x006a0fe0 and +0x20/+0x24 = 0
+0x0069f000 function ClassVFXRenderDataTable_Clear # fh call.cs (declared cdecl there); thiscall: mov edi,ecx, no stack argument, plain ret; ported M4 h3 r4 (ffx_prender::h3_glue13): frame: key {a, b} at ebp-0x14 and MapFind's out at ebp-8; printf 0x00b48004, per map node (in order) with a key: cached or found geometry's vtable +0x10, InsertToDeletePool(a, b, 3, +0x18); then 0x006a0fe0 and +0x20/+0x24 = 0
 0x0069f110 function ClassVFXRenderDataTable_ClearByType # fh v3:exact 0x0069f250 ClassVFXRenderDataTable::ClearByType; thiscall(this, mask) ret 4; ported M4 h3 r6 (ffx_prender::h3_glue24), shim r7
 0x0069f2b0 function ClassVFXRenderDataTable_ClearVFXDrawData # fh v3:exact+call.cs 0x0069f3f0 thiscall ClassVFXRenderDataTable::ClearVFXDrawData; ported M4 h3 r3 (ffx_prender::glue10): per-buffer draw word +0x34 + 28 id of each 0x6c-byte segment, map walked in order
 0x0069f440 function VFXRenderMap_CreateInstance_0069f440 # cdecl(): without g_VFXRenderMap_00ccca70, operator_new(8) holding (0x006a0360's head node, 0); graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
@@ -7853,7 +7853,7 @@
 0x0078bd50 function DmgCalc_Threaten          # fh v3:exact 0x0078be10 +DmgCalc_Threaten
 0x0078bd90 function DmgCalc_ReelBonus         # damage x (time + 2 start) / (2 start) while actor +0xd26 is set; +0xd2c/+0xd30 are the floats MsSetReelResult stores for Wakka ("time", "start_time" in its debug text); ported
 0x0078bdd0 function DmgCalc_Bribe             # fh v3:exact 0x0078be90 +DmgCalc_Bribe
-0x0078bf00 function MsCalcWeakLevel           # fh v3:exact+call.cs 0x0078bfc0 stdcall
+0x0078bf00 function MsCalcWeakLevel           # fh v3:exact+call.cs 0x0078bfc0; cdecl, not the stdcall call.cs declares: reads [ebp+8], [ebp+0xc] and returns with a plain ret (0x0078bf25); oracle test crates/ffx-oracle/tests/battle.rs
 0x0078bf50 function DmgCalc_MarkDamaged       # DmgCalc's last step: user +0x715 = 1 when a damage value hurts (heals, for a healing command) or arg 5 is set; ported
 0x0078bfb0 function DmgCalc_CheckNuls         # fh v3:exact 0x0078c070 +DmgCalc_CheckNuls
 0x0078c0b0 function DmgCalc_Berserk           # fh v3:exact 0x0078c170 +DmgCalc_Berserk
@@ -8040,7 +8040,7 @@
 0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
 0x00794060 function MsGetChrInfoOne           # (i, kind, k, dir, out) -> 1/0: one actor's property kind 1-13 (position, direction, height, width, battle/bottom/camera position, move position 0x007a93e0, optional position k...) added to out; MsGetChrInfo's step; named here; ported
 0x00794240 function MsGetChrSbyte508_00794240 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x508 : 0; ported (ffx_battle::minor, battle round 29)
-0x00794280 function MsGetChrSbyte4fc_00794280 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x4fc : 0; ported (ffx_battle::minor, battle round 29)
+0x00794280 function MsGetChrSbyte4fc_00794280 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x4fc : 0; ported (ffx_battle::minor, battle round 29); the field is STAT_AREA (property 0x1c), fh: Chr.area (docs/formats/battle.md, "The battle actor")
 0x007942c0 function MsGetChrBetweenDist          # layout+callees: sorts between MsGetChr and MsGetChrBit, and its named callees match the Switch 0x710034cdb0 MsGetChrBetweenDist's (similarity 0.67: MsGetChrPos, MsPointLen2D); symbols from Fahrenheit's server export
 0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
@@ -8055,13 +8055,13 @@
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30; ours: msGetChrPos, y - height/2 unless +0x505 or underwater; ported (battle round 13)
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
-0x00794d70 function MsGetChrByte41f_00794d70 # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x41f : 0; ported (ffx_battle::minor, battle round 29)
-0x00794db0 function MsChrGroundFlag_00794db0 # ours: (i) -> MsBtlChrNumCheck && (+0x41e || +0xdce); caller FUN_008168c0; ported (ffx_battle::minor, battle round 29)
+0x00794d70 function MsGetChrByte41f_00794d70  # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x41f : 0; ported (ffx_battle::minor, battle round 29); the field is STAT_DISABLE_JUMP_FLAG (property 0x7e), fh: Chr.stat_disable_jump_flag
+0x00794db0 function MsChrGroundFlag_00794db0  # ours: (i) -> MsBtlChrNumCheck && (+0x41e || +0xdce); caller FUN_008168c0; ported (ffx_battle::minor, battle round 29); the fields are STAT_DISABLE_MOVE_FLAG (property 0x7d, fh: Chr.stat_disable_move_flag) and the petrified byte (fh: Chr.stat_stone)
 0x00794e00 function MsGetChrDist              # fh v3:cg8 0x794e10
 0x00794e40 function MsGetChrEffectLevel          # layout: alphabetical run between MsGetChrDist and MsGetChrEscapePos (2 unnamed in the gap); Switch 0x7100347a00 MsGetChrEffectLevel is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00794e80 function MsGetChrEffectVariable       # layout: alphabetical run between MsGetChrDist and MsGetChrEscapePos (2 unnamed in the gap); Switch 0x7100347a40 MsGetChrEffectVariable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i) -> MsBtlChrNumCheck(i) ? AL = MsGetChr((u8)i) + 0xe0c over the actor's address : 0; ported (ffx_battle::minor, battle round 29)
 0x00794ec0 function MsGetChrEscapePos         # fh v3:exact 0x00794ed0
-0x00794f20 function MsGetChrEventFlag         # fh v3:exact 0x00794f30
+0x00794f20 function MsGetChrEventFlag         # name from Fahrenheit (fh v3:exact 0x00794f30); ours: (i, id) -> 0 when i is no actor or its +0xddd (STAT_EVENT_CHR) is 0; 2 when the u16 +0xdde is neither 0xff nor id; else +0xddd (signed). +0xdde is not fh's stat_blow_exist_flag (that is +0xdd3, property 0xac)
 0x00794f70 function MsGetChrFly                  # layout: alphabetical run between MsGetChrEventFlag and MsGetChrGround (1 unnamed in the gap); Switch 0x71003475c0 MsGetChrFly is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x505 : 0; ported (ffx_battle::minor, battle round 29)
 0x00794fb0 function MsGetChrGround            # fh v3:exact 0x00794fc0
 0x00794ff0 function MsGetChrGroundPos         # fh v3:cg6 0x795000
@@ -8091,7 +8091,7 @@
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990; ours: msGetChrPos, y - height (half with +0x505 or underwater); ported (battle round 13)
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
-0x00795a60 function MsGetChrByte3f4_00795a60 # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x3f4 : 0; ported (ffx_battle::minor, battle round 29)
+0x00795a60 function MsGetChrByte3f4_00795a60  # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x3f4 : 0; ported (ffx_battle::minor, battle round 29); the field is fh's Chr.death_level (MsDeathTerminate, MsRelife)
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
 0x00795ac0 function MsGetTransChrPos             # (actor, vec): MsGetChrBtlPos when the actor rides on nothing (+0x43f == -1), else Ch_OptposGet of the carrier's model at point +0x441; Switch MsGetTransChrPos (0x7100349660) calls exactly Ch_OptposGet and MsGetChrBtlPos and sorts between MsGetMon and MsGetWeapon, as here; the battle porter's msGetChrPosNoChr
 0x00795b10 function MsGetWeapon               # fh v3:exact 0x00795b20
@@ -8101,7 +8101,7 @@
 0x00795c40 function MsResetNormalCalc         # fh v3:exact 0x00795c50
 0x00795c70 function MsReturnCameraVisible     # fh v3:exact 0x00795c80
 0x00795c90 function MsBindChrToChr_00795c90    # ours: (i, other, elem) Ch_BindToElem(chr(i), chr(other), elem) then MsSetChrPos(i, Ch_OptposGet(chr(other), elem)); other < 0 unbinds; callback table 0x00c657e0; ported (ffx_battle::body, battle round 33)
-0x00795d40 function MsSetChrSpeedBytes_00795d40 # ours: (i, v) -> actor: +0x4fc = +0x509 = (u8)v, -1; else 0; no direct caller; ported (ffx_battle::minor, battle round 29)
+0x00795d40 function MsSetChrSpeedBytes_00795d40 # ours: (i, v) -> actor: +0x4fc = +0x509 = (u8)v, -1; else 0; no direct caller; ported (ffx_battle::minor, battle round 29); the fields are STAT_AREA and STAT_MOVE_AREA (properties 0x1c, 0x55; fh: Chr.area, stat_move_area), so the name's "speed" is wrong
 0x00795da0 function MsSetAllBodyHit_00795da0 # ours: (on): msSetChrBodyHit(MsGetChr(i), 2, on) for the 31 actors; ported (ffx_battle::minor, battle round 29)
 0x00795dd0 function MsSetChrRot_00795dd0 # ours: (i, f) -> actor with a character: Ch_SetRot(chr, f), -1; else 0; no direct caller; ported (ffx_battle::minor, battle round 29)
 0x00795e20 function MsSetChrDirF              # fh v3:cg7 0x795e30; ours: (i, dir f32): Ch_SetDirF on actor i's character, -1; 0 without one; ported (battle round 12)
@@ -8423,7 +8423,7 @@
 0x007a2e60 function Native_70f2_ItemSlotAdd # 0x70f2: args (item int) -> 0: the item into the actor's first free u16 slot (0xff) in g_BtlItemMem2; ported in native_btl2 (script round 18); name ours; name from "the item into the actor's first free u16 slot (0xff) in g_BtlItemMem2"
 0x007a2eb0 function Native_709a_BtlIsTurnEndActor # 0x709a: () -> 0 when the worker's actor is the signed byte 0x0112c9e4, else 1; ported in native_btl2 (script round 18); name from 0 when the worker's actor is g_BtlTurnEndActor (0x0112c9e4), else 1
 0x007a2ee0 function Native_70b9_ChrGetInfoB # 0x70b9: args (selector int) -> float out of 0x00795170(0xb, MsGetChrBit(actor, selector, 0, 1), 0, &out); ported in native_btl2 (script round 18); name from float out of MsGetChrInfo (0xb, MsGetChrBit(actor, selector, 0, 1), 0, &out)
-0x007a2f40 function Native_70b5_ActorClearField400                # 0x70b5: actor +0x400 = 0xffff; 0; ported in native_btl/native_move (script round 9); name from actor +0x400 = 0xffff; 0
+0x007a2f40 function Native_70b5_ActorClearField400 # 0x70b5: actor +0x400 = 0xffff; 0; ported in native_btl/native_move (script round 9); name from actor +0x400 = 0xffff; 0; +0x400 is the u16 STAT_MOTION_SPEED_NORMAL (property 0xfb; fh: Chr.motion_speed_normal)
 0x007a2f80 function Native_70f5_CheckUseCommand # 0x70f5: args (command int, selector int) -> 0x0078c690(index, 0x0079a4b0(command, 0), 0); ported in native_btl2 (script round 18); name ours; name from "0x0078c690(index, 0x0079a4b0(command, 0), 0)" MsCheckUseCommand, MsGetComData
 0x007a2fe0 function Native_709e_ChrEffectSignal                # 0x709e: (selector, a, b): 0x007b74d0(picked, a, b); ported in native_btl/native_move (script round 9); name from "0x007b74d0(picked, a, b)" MsEffectSignal_007b74d0
 0x007a3040 function Native_70ba_ChrGetInfoA # 0x70ba: args (selector int) -> float out of 0x00795170(0xa, MsGetChrBit(actor, selector, 0, 1), 0, &out); ported in native_btl2 (script round 18); name from float out of MsGetChrInfo (0xa, MsGetChrBit(actor, selector, 0, 1), 0, &out)
@@ -8445,7 +8445,7 @@
 0x007a3560 function Native_70f7_BtlListAppend # 0x70f7: args (v int) -> v; appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most); ported in native_btl2 (script round 18); name ours; name from "appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most)"
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
 0x007a35c0 function Native_7002_BtlLabelExe_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id; (script r28) returns 1; ported in native_btl2; name from start "0x00781c90(a, 1, b)" MsBattleLabelExe; poll returns 1
-0x007a35d0 function Native_7102_ActorSetField438 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name from actor b's +0x438 = index of a (0xff none), +0x439 = 1
+0x007a35d0 function Native_7102_ActorSetField438 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name from actor b's +0x438 = index of a (0xff none), +0x439 = 1; +0x438 is fh's Chr.neck_target_id
 0x007a3650 function Native_70c3_ChrGetTargetDir                # 0x70c3 (float): args (selector int) -> float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be; ported in native_btl (script round 12); name from "MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees"
 0x007a36c0 function Native_706f_ActorPlayMotion                # 0x706f: 0x007a8fc0(worker, args, stack, 1); ported in native_btl/native_msg (script round 8); name from "0x007a8fc0(worker, args, stack, 1)" Battle_ScriptPlayMotion (core of 0x7007)
 0x007a36e0 function Native_70f8_BtlListNext # 0x70f8: the next u16 of the list at 0x011363f0 (read index 0x011363ed, count 0x011363ec, the index advanced), 0 past the end; ported in native_mods (script round 21); name ours; name from "the next u16 of the list at 0x011363f0 (read index advanced), 0 past the end"
@@ -8465,7 +8465,7 @@
 0x007a3a80 function Native_710b_WaitByteCa10_Poll # 0x710b: () -> 5 once the byte 0x0112ca10 is set, else 0; ported in native_btl2 (script round 18); name from poll: 5 once the byte 0x0112ca10 is set
 0x007a3aa0 function Native_7004_BtlSetCenterScale # 0x7004: args (v f) -> 0; the f32 0x0112bde4 = v; ported in native_btl2 (script round 18); name from g_BtlCenterScale (0x0112bde4) = v (f32); 0
 0x007a3ac0 function Atel_GetBattleCountF # 0x70f0: the i32 at 0x0112c900 as f32 (helpers::atel_get_battle_count_f, whose shim it is); ported in native_mods (script round 21)
-0x007a3ae0 function Native_709d_WaitActorField425                # 0x709d (poll): no args -> 5 when there is no actor or its +0x425 is clear, else 0; ported in native_btl (script round 12); name from poll: 5 when there is no actor or its +0x425 is clear, else 0
+0x007a3ae0 function Native_709d_WaitActorField425 # 0x709d (poll): no args -> 5 when there is no actor or its +0x425 is clear, else 0; ported in native_btl (script round 12); name from poll: 5 when there is no actor or its +0x425 is clear, else 0; +0x425 is STAT_AVOID_FLAG (property 0xab)
 0x007a3b20 function Native_7009_ChrSetGravMode                # 0x7009: (b): 0x00796070(actor, b & 1 == 0); 0; ported in native_btl/native_move (script round 9); name from "0x00796070(actor, b & 1 == 0)" MsSetChrGravMode_00796070
 0x007a3b80 function Native_70fe_ActorSetSlotQuad # 0x70fe: args (e, d, b, a) -> 0; actor +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e; ported in native_btl2 (script round 18); name from actor +0x714 = 1, +0x726 = a, +0x728 = b, +0x727 = d, +0x729 = e; 0
 0x007a3c00 function Native_710e_ReelFirstSetByte # 0x710e: the first set byte +0 of the four 0x007b19d0(k) records, 0 for none; ported in native_mods (script round 21); name from the first set byte +0 of the four 0x007b19d0 (MsGetReelEntry) records, 0 for none
@@ -8637,7 +8637,7 @@
 0x007a7010 function Native_7070_SetByte00c58ef4 # 0x7070: SetByte_00c58ef4(1) (0x0089bc60); 0; ported in native_mods (script round 21); name from 0x0089bc60 = SetByte_00c58ef4 (1); 0
 0x007a7020 function Native_706e_ChrSetVoice                # 0x706e (start): args (selector int, voice int) -> the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor; ported in native_btl (script round 12); name from start and poll: "MsSetVoice(i, voice, 1, worker, &out)"
 0x007a70b0 function Native_7071_ClearByte00c58ef4                # 0x7071: no args -> 0: 0x0089bc60(0); ported in native_btl (script round 12); name from 0x0089bc60 = SetByte_00c58ef4 (0); 0
-0x007a70c0 function Native_704f_SelSetFieldDdd # 0x704f: args (selector int, v int) -> 0; the selected actors' +0xddd = v; ported in native_btl2 (script round 18); name from the selected actors' +0xddd = v; 0
+0x007a70c0 function Native_704f_SelSetFieldDdd # 0x704f: args (selector int, v int) -> 0; the selected actors' +0xddd = v; ported in native_btl2 (script round 18); name from the selected actors' +0xddd = v; 0; +0xddd is STAT_EVENT_CHR (property 0x50)
 0x007a7130 function Native_70b4_WeaponSetTransparent # 0x70b4: for an actor, +0xf65 = 8, MsResetWeaponEffectAttribute(actor, record) (0x0079ea90), then 0x007ad5b0(actor, +0xf64, +0xf65); 0; ported in native_mods (script round 21); name ours; name from "MsResetWeaponEffectAttribute(actor, record), then 0x007ad5b0" MsWeaponSetTransparent_007ad5b0
 0x007a7180 function Native_7036_ChrSetTransparent                # 0x7036: args (a f, b f, n int) -> 0: MsSetChrTransparentVisible(actor, a, b, n, 1) (0x00796550); ported in native_btl (script round 12); name from "MsSetChrTransparentVisible(actor, a, b, n, 1)"
 0x007a71f0 function Native_706e_ChrSetVoice_Poll           # 0x706e (poll): args (selector int, voice int) -> the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor; ported in native_btl (script round 12); name from start and poll: "MsSetVoice(i, voice, 1, worker, &out)"
@@ -8696,7 +8696,7 @@
 0x007a7f60 function Native_7101_BtlGetDebugFull # 0x7101: the i8 at 0x0112a905; ported in native_mods (script round 21); name from i8 at 0x0112a905 (g_BtlDebugFull)
 0x007a7f70 function Native_70cf_BtlGetVoiceEvent # 0x70cf: the i8 at *0x0112a9c0 + 1; ported in native_mods (script round 21); name from i8 at *0x0112a9c0 + 1 (g_BtlVoiceEvent)
 0x007a7f80 function Native_70dd_BtlSetWordC8fc # 0x70dd: args (v int) -> v; the word 0x0112c8fc = v; ported in native_btl2 (script round 18); name from word 0x0112c8fc = v; v
-0x007a7fa0 function Native_70d5_SelSetField6d1                # 0x70d5: (selector): actor +0x6d1 = picked; picked; ported in native_btl/native_move (script round 9); name from selected actors' +0x6d1 = picked
+0x007a7fa0 function Native_70d5_SelSetField6d1 # 0x70d5: (selector): actor +0x6d1 = picked; picked; ported in native_btl/native_move (script round 9); name from selected actors' +0x6d1 = picked; +0x6d1 is STAT_SUMMONER (property 0x106; fh: Chr.summoned_by_id)
 0x007a7fe0 function Native_7054_ChrSetPosOptpos                # 0x7054: args (to int, from int, point int) -> 0: the from actor's model point (Ch_OptposGet 0x008354f0) through 0x0079e1b0(0, &v) into MsSetChrPosReset(to, &v) (0x00796220); ported in native_btl (script round 12); name from "from actor's model point (Ch_OptposGet) ... into MsSetChrPosReset(to, &v)"
 0x007a8090 function Native_7113_BtlSetStealRule # 0x7113: the byte 0x0112c9e5 = 1; 0; ported in native_mods (script round 21); name from g_BtlStealRule (0x0112c9e5) = 1; 0
 0x007a80a0 function Native_7114_BtlSetStealRule # 0x7114: the byte 0x0112c9e5 = 2; 0; ported in native_mods (script round 21); name from g_BtlStealRule (0x0112c9e5) = 2; 0
@@ -8779,7 +8779,7 @@
 0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl; ported (battle round 23): (first, second) -1 when either is 0xff; MsGetSaveWeapon slots trade 0x16 bytes; every ply_save +0x2d/+0x2e equal to an ID (12 bits; a 0x7000 ID whole) moves to the other and the slot it lies in gets the character as owner (+6); with a 0x7000 ID among the two both become 0xff; 0
 0x007abb70 function MsGetSaveChrArmorModel    # name from Fahrenheit (fh v3:cg2 0x7abb90); (chr) -> u16 +0xc of MsGetSaveWeapon(ply_save[chr] +0x2e, 0), 0 without; ported (ffx_battle::minor, battle round 29)
 0x007abba0 function MsGetSaveChrWeaponModel   # name from Fahrenheit (fh v3:cg2 0x7abbc0); (chr) -> u16 +0xc of MsGetSaveWeapon(ply_save[chr] +0x2d, 0), 0 without; ported (ffx_battle::minor, battle round 29)
-0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
+0x007abbd0 function MsGetSaveWeapon           # (id, name_out): an optional out-pointer second argument ([ebp+0xc]: when non-null it gets 0x007abdf0(id), the name); 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
 0x007abc60 function MsGetSaveWeaponAmount     # counts in-use slots without flag 0x02; out: free slots; was Equip_CountOwned
 0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e; (id) -> 0xff or not in use: -1; else slot +2 = 0 and (not 0x7000) every ply_save +0x2d/+0x2e equal to id & 0xfff = 0xff; 0; ported (ffx_battle::minor, battle round 29)
 0x007abd10 function MsGetSaveWeaponList       # fh v3:exact 0x007abd30
@@ -12342,8 +12342,8 @@
 0x00873ae0 function AtelGetMapMarkerX         # g_SaveData +0xb4 (u16, Native_SetMapMarkerPos); the menu at 0x008e2b60
 0x00873af0 function AtelGetMapMarkerY         # g_SaveData +0xb6 (u16)
 0x00873b00 function AtelGetMusicNumber        # fh v3:bsim1.00 0x00873aa0
-0x00873b10 function AtelGetOnMemoryMovieFileNo# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe0, what AtelSetOnMemoryMovie writes
-0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00)
+0x00873b10 function AtelGetOnMemoryMovieFileNo # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe0, what AtelSetOnMemoryMovie writes; Fahrenheit's layout (SaveData.on_memory_movie_file_no at +0xd8, on_memory_movie at +0xe0) puts the file number at +0xd8, which AtelGetSaveD8 (0x00873b20) reads; this one reads the state +0xe0, so the BSim name may belong to 0x00873b20
+0x00873b20 function AtelGetSaveD8             # g_SaveData +0xd8; read by 0x008807b0 (the Switch BSim name AtelGetBindPCFromID belongs to 0x0086ae00); +0xd8 is Fahrenheit's SaveData.on_memory_movie_file_no (AtelSetOnMemoryMovieFileWait stores the movie there), +0xdc on_memory_movie_mode (AtelGetSaveDC)
 0x00873b30 function AtelGetSaveDC             # g_SaveData +0xdc; read by 0x008807b0
 0x00873b40 function AtelGetRandomEncountStatus# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_SaveData +0xe4
 0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export; ported in helpers (script round 19)
@@ -19720,9 +19720,9 @@
 0x0112a8f9 label g_BtlDebugNoDamageParty      # u8, the party takes no damage (DebugCanTakeDamage); debug native case 1/2
 0x0112a8fa label g_BtlAutoOff              # u8 battle flag selector 3 (Native_707d_BtlSetFlag): automatic actors (+0xdf3) get their menu too (MsBattleProcess_InputCue)
 0x0112a8fb label g_BtlStatusShort          # u8: a waiting actor's wait (+0x65c) drops to 1 each idle round (MsBattleProcess_Order)
-0x0112a8fc label g_BtlDebugCameraSleepOn   # u8 MsBattleProcess passes to MsDebugCameraSleep each frame
+0x0112a8fc label g_BtlDebugCameraSleepOn   # u8 MsBattleProcess passes to MsDebugCameraSleep each frame; fh: Btl.debug.free_camera (Btl +0x2c)
 0x0112a8fe label g_BtlCameraLock           # u8, MsAtelRequestCamera / MsAtelRequestMagicCamera refuse (-1) while set
-0x0112a900 label g_BtlAeonPlain2           # u8; with 0x0112a904, MsInsertChrCommand kind 0 falls back to no value (+0x1e set)
+0x0112a900 label g_BtlDebugNoMagicEffect   # u8 debug flag (MsSetDebugMagic; battle config menu): MsEffectRead loads no effect, the battle's end (MsBattleProcess_Status_007917d0) plays no closing event effect, MsInsertChrCommand kind 0 falls back to no value (+0x1e set) as with g_BtlAeonPlain; fh: Btl.debug.no_magic_effects (Btl +0x30); was g_BtlAeonPlain2
 0x0112a901 label g_BtlDebugFreeMp             # u8, MsCheckUseCommand charges no MP (as for monsters); debug native case 4
 0x0112a902 label g_BtlNoMagicFile          # u8: set, MsEffectRead reads magic file 0
 0x0112a903 label g_BtlNoEventMagicFile     # u8 set: MsEventEffectRead reads file 0; name ours
@@ -19774,6 +19774,10 @@
 0x0112a95c label g_BtlEffectOwner          # u32, the owner op_et_eff gets in MsStatusEffect
 0x0112a960 label g_KernelSummonGrow            # kernel sum_grow.bin: directory 0x2f file 6 (MsBattleInit; size 0x280 = 636 rounded up to 64, 0x0112a97e); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
+0x0112a968 label g_KernelCommandSize       # u16 the size of command.bin (Kernel_LoadTables, with g_KernelCommand); fh: Btl.size_command_bin (Btl +0x98)
+0x0112a96a label g_KernelPlyRomSize        # u16 the size of ply_rom.bin (Kernel_LoadTables, with g_KernelPlyRom); fh: Btl.size_ply_rom_bin (Btl +0x9a)
+0x0112a96e label g_KernelItemSize          # u16 the size of item.bin (Kernel_LoadTables, with g_KernelItem); fh: Btl.size_item_bin (Btl +0x9e)
+0x0112a970 label g_KernelAAbilitySize      # u16 the size of a_ability.bin (Kernel_LoadTables, with g_KernelAAbility); fh: Btl.size_a_ability_bin (Btl +0xa0)
 0x0112a972 label g_KernelSumAssureSize     # u16 directory 0xd file 0xe's (sum_assure.bin) size (MsBattleInit; block 0x0112a948)
 0x0112a974 label g_KernelCtbBaseSize       # u16 directory 0xd file 0xb's size (MsBattleInit)
 0x0112a976 label g_BtlEffectFilesSize      # u16 directory 0xd file 0x1c's size (MsBattleInit)
@@ -19800,11 +19804,13 @@
 0x0112a9d5 label g_BtlEncountType2         # u8: MsBattleLabelExe's third argument, stored with g_BtlEncountType
 0x0112a9d6 label g_BtlEncountDanger        # u8: the danger (+3) of the encounter group of the last step (MsBattleEncountExe)
 0x0112a9d7 label g_BtlEncountOn            # u8: 0 when a joined character has g_PlySave +0x4e bit 1 (MsSaveEncountCheck)
-0x0112a9d8 label g_BtlEncountSteps         # 2 x f32 encounter counters, 0 after ResetEncountExe (which writes g_BtlEncountType as u16)
+0x0112a9d8 label g_BtlEncountSteps         # 2 x f32 encounter counters, 0 after ResetEncountExe (which writes g_BtlEncountType as u16); fh: Btl.walked_dist and walked_dist_total (+0x108, +0x10c): MsBattleEncountExe adds to both, Ms_Gui_BattleInfoProc shows the second
 0x0112a9e0 label g_BtlEncountRates         # 2 x f32, 1.0 after ResetEncountExe
 0x0112a9e8 label g_BtlWalkTimer # f32 seconds: MsWalkAbilityProcess adds the frame time; 0.0 from MsBattleInitAtEvent and past g_BtlWalkPeriod
 0x0112a9ec label g_BtlWalkPeriod # f32, 3.0 (0x00b3eb94) from MsBattleInitAtEvent: MsWalkAbilityProcess's period
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
+0x0112a9f4 label g_BtlSceneEncount         # pointer to the battle field's encounter block (MsBattleExe stores MsBtlListEncount's result); fh: Btl.ptr_btl_bin_cur_encounter (Btl +0x124)
+0x0112a9f8 label g_BtlSceneGroupRecord     # pointer to the encounter group record (MsBattleExe stores MsBtlListGroup's result; g_BtlSceneGroup is its formation entry, + 5 + 2 * slot); fh: Btl.ptr_btl_bin_cur_group (Btl +0x128)
 0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
 0x0112aa00 label g_BtlCtbList # 32 x (u8 actor (0xff past the end), u8, u16 CTB): the next turns (MsGetCTBlist)
 0x0112aa80 label g_BtlInputCue               # 0x48-byte entries, g_BtlInputCueCount of them (MsGetInputCue 0x007b22e0: null when empty)
@@ -19835,7 +19841,7 @@
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
 0x0112c22c label g_EffectCameraBuf         # 8 words cleared by MsEffectCameraBufInit
 0x0112c250 label g_BtlMessageLast # u32: the message MsShowBattleMessage_0079d090 was asked for
-0x0112c254 label g_BtlBattleMusic          # u16: the formation's group bytes 2 and 1 (MsBattleExe), AtelEventSetUpForBattleMusic's argument; name ours
+0x0112c254 label g_BtlBattleMap            # i16 the battle map: the encounter group's bytes 1-2 (MsBattleExe), map & 0x3ff, 0x400 a battle map (MsBtlReadManage); MsBtlReadSetScene compares it with the current map, MsBattleProcess passes it to AtelBattleEndCallback, MsBattleExe to AtelEventSetUpForBattleMusic; fh: Btl.battlefield_id (Btl +0x1984); was g_BtlBattleMusic
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c258 label g_BtlGroupIndex           # u8: the encounter's group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
 0x0112c259 label g_BtlSlotIndex            # u8: the formation's slot in its group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
@@ -19875,6 +19881,7 @@
 0x0112c944 label g_BtlMessageCueCount         # u8, messages queued (at most 4)
 0x0112c945 label g_BtlMessageCueStart         # u8, the ring's first entry
 0x0112c946 label g_BtlMessageTime          # u8 frames the shown battle message stays, then u8 the frames after which a button may close it (cue entry +2, +1); MsMessageCueProcess
+0x0112c947 label g_BtlMessageSkipTime      # u8 the frames after which a button may close the shown battle message: the cue entry's +1 (MsMessageCueProcess stores it at 0x0079cf29 and keeps it in bl while it counts); the second byte g_BtlMessageTime's comment names; fh: Btl +0x2077 (unnamed); name ours
 0x0112c948 label g_BtlUseItem                # u16 item being used (MsSetUseItem 0x00790790); MsGetSaveItemNum counts one less of it
 0x0112c94a label g_BtlLimitLearntId        # u16 the overdrive just learnt
 0x0112c94c label g_BtlEndMusic             # u16 0x8c game over, 0x8a victory fanfare (MsMusicReadStart's caller, MsMusicSync); name ours
@@ -19902,7 +19909,7 @@
 0x0112c9e2 label    g_BtlTurnActor               # ?actor index copied from 0x0112c9df when a turn starts; read by 0x708d
 0x0112c9e3 label g_BtlDying                # u8: the actor MsSetDeath took last
 0x0112c9e4 label g_BtlTurnEndActor         # u8, MsDeleteInputCue (last) sets the actor whose turn ended with +0x606 bit 3
-0x0112c9e5 label g_BtlStealRule               # u8, 2: nothing can be stolen or mugged in this battle (Battle_Steal, Battle_StealGil)
+0x0112c9e5 label g_BtlBattleType           # u8, 0 normal; natives 0x7113 / 0x7114 set 1 / 2. 0 only: a capture (MsCalcCommand); 2: nothing can be stolen or mugged (Battle_Steal, Battle_StealGil), no battle records (MsSaveAddInfoData), no Tidus overdrive learning (MsLimitTidusLearn), also MsBtlReadManage, MsSetRamChr, MsLimitTypeExpGet; fh: Btl.battle_type (Btl +0x2115); was g_BtlStealRule
 0x0112c9e6 label g_BtlMenuCommandSet          # u8; with the one before it (same function, ffx_battle::misc)
 0x0112c9e7 label g_BtlDirFree              # u8; set: MsSetDirThetaMode gives actors direction mode 1 (ffx_battle::minor)
 0x0112c9e8 label g_BtlSummoner             # i8, the summoner's actor index (MsGetMoveTargetPos kinds 4, 5, 18)
@@ -19966,7 +19973,10 @@
 0x0112ca80 label g_BtlRead                 # u32; Reset by MsBtlReadInit.
 0x0112ca84 label g_BtlMonsterSlots         # 3 u32 counters handed out to monsters' +0x5c3; MsBtlReadManage's status 0xe clears them
 0x0112ca90 label    g_SaveData                   # 0x68c0-byte block copied from/to the save (0x00870000.c:7810, 0x008d0000.c:6884); +0 current map
+0x0112cab0 label g_SavePushMember          # u8 save +0x20: 1 while AtelPushMember (0x0086e310) holds a saved party in +0x21..+0x23 (3 x u8) and its join bits in +0x24; AtelPopMember restores and clears it; AtelGetSave20 reads it; fh: SaveData.atel_is_push_member, atel_push_frontline, atel_push_party
 0x0112cabc label g_SaveLove                  # save +0x2c: u32 affection by character; MsAddLoveParam (0x007845e0) adds for 1-7 unless the sum passes 0x0ffffffe
+0x0112cb44 label g_SaveMapMarker           # 2 x u16 save +0xb4/+0xb6: the world map marker (Native_SetMapMarkerPos 0x016e, AtelGetMapMarkerX/Y; drawn by MenuWorldMap_Draw_008e2b60); fh: SaveData.item_map_x/item_map_y ("meaning unknown" there)
+0x0112cb4c label g_SavePlayTime            # u32 save +0xbc: play time, capped at 3599999 (Atel_PlayTimeUpdate_0086ca20; getPlayTime 0x00787350 reads, 0x00787610 writes; TkMenuGetTime); fh: SaveData.time
 0x0112d67c label g_SaveScenario              # save +0xbec: u16 story progress (getScenerioFlag 0x00787360)
 0x0112d719 label g_SaveInterValefor          # save +0xc89: u8 (getInterValefor 0x00787340)
 0x0112ec7c label g_SaveAbilityMap            # save +0x21ec: the sphere grid block (MsGetSaveAbilityMap 0x00784f40)

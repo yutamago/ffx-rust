@@ -8,27 +8,29 @@
 //!   actor (`MsGetWeapon`);
 //! - anything else gets a spare record at `0x011334d8`.
 //!
-//! Status fields of an actor that the functions here use:
+//! Fields of an actor that the functions here use (the whole layout, with
+//! Fahrenheit's names, is in `docs/formats/battle.md`, "The battle
+//! actor"):
 //!
 //! | Offset | Type | Field |
 //! |---|---|---|
-//! | `+0x3b` | `u8` | auto-life forever (`MsSetEternalRelife`) |
+//! | `+0x3b` | `u8` | auto-life forever (`MsSetEternalRelife`; `eternal_autolife`) |
 //! | `+0x3f0` | `u8` | motion; `0x28`/`0x29` let a new one start (`MsCheckSetMotion`) |
-//! | `+0x415`, `+0x417` | `u8`, `u16` | motion speed (`MsMotionSpeedReset`) |
-//! | `+0x404`, `+0x432`, `+0x43e` | `u16`, `u16`, `u8` | motion state (`MsTerminateMotion`) |
+//! | `+0x415`, `+0x417` | `u8`, `u16` | move kind and its state, cleared by `MsMotionSpeedReset` (not a motion speed) |
+//! | `+0x404`, `+0x432`, `+0x43e` | `u8` + `u8`, `u16`, `u8` | `MsTerminateMotion` clears `+0x404` (`+0x402` speed in force) and `+0x405` with one word, `+0x432`, and `+0x43e` (`stat_live_motion`) |
 //! | `+0x49c` | `f32` | end direction (`msSetEndDir`) |
-//! | `+0x4fc`-`+0x4fe` | 3 × `u8` | battle position, saved at `+0x509` (`MsPushBtlPos`) |
-//! | `+0x508` | `u8` | busy (`MsCheckSetMotion`) |
+//! | `+0x4fc`-`+0x4fe` | 3 × `i8` | battle position (`area`, `pos` at `+0x4fe`), saved at `+0x509`-`+0x50b` (`MsPushBtlPos`) |
+//! | `+0x508` | `u8` | `stat_adjust_pos`: no motion is set while it is not 0 (`MsCheckSetMotion`) |
 //! | `+0x511`, `+0x514` | `i8`, `f32` × n | direction index and directions (`msSetEndDir`) |
-//! | `+0x606` | `u16` | status bits; `0x300` (KO, petrify), `0x400`, `0x800` block auto commands |
-//! | `+0x608` | 13 × `u8` | status counters, `0xff` forever |
-//! | `+0x616` | `u16` | status bits 2; `0x100` blocks auto commands, `0x200` auto-life |
+//! | `+0x606` | `u16` | statuses; `0x300` (confusion, berserk), `0x400` (provoke), `0x800` (threaten) block auto commands |
+//! | `+0x608` | 13 × `u8` | status counters (sleep first), `0xff` forever |
+//! | `+0x616` | `u16` | statuses 2; `0x100` (blown away) blocks auto commands, `0x200` auto-life |
 //! | `+0x618`, `+0x61a`, `+0x628` | | the three saved while an auto-status overrides them |
 //! | `+0x62a` | 3 × `u16` | auto-statuses in force (bits of the three above) |
-//! | `+0x630`, `+0x636` | 3 × `u16` each | auto-statuses always, and in mode 1 and 2 |
-//! | `+0x63e`, `+0x63f` | `u8` | auto-status mode, the mode last applied |
-//! | `+0x6d2` | `u8` | cleared when the counter at `+0x612` starts (`MsSetAutoStatus`) |
-//! | `+0xdc8`, `+0xdce` | `u8` | auto commands: allowed, blocked |
+//! | `+0x630`, `+0x636` | 3 × `u16` each | auto-statuses always, and at HP weak level 1 and 2 (SOS) |
+//! | `+0x63e`, `+0x63f` | `u8` | HP weak level (`MsCalcWeakLevel`, `weak_level_hp`), the level last applied |
+//! | `+0x6d2` | `u8` | regen strength, cleared when the regen counter `+0x612` starts (`MsSetAutoStatus`) |
+//! | `+0xdc8`, `+0xdce` | `u8` | in battle (`STAT_INBATTLE`), petrified (`MsGetChrStatStone`) |
 //! | `+0xdfb` | `u8` | motion phase; 2 becomes 3 (`MsTerminateMotion`) |
 
 /// Actors of 0xf90 bytes.
@@ -114,13 +116,14 @@ pub struct AutoStatus {
     pub auto: [u16; 3],
     /// `+0x630`: always.
     pub auto_base: [u16; 3],
-    /// `+0x636`: added in modes 1 and 2.
+    /// `+0x636`: added at HP weak levels 1 and 2 (SOS).
     pub auto_extra: [u16; 3],
     /// `+0x63c`, kept as it is.
     pub pad63c: [u8; 2],
-    /// `+0x63e`.
+    /// `+0x63e`: the HP weak level (`MsCalcWeakLevel`, which `MsSetChrWeak`
+    /// stores; Fahrenheit's `weak_level_hp`).
     pub mode: u8,
-    /// `+0x63f`.
+    /// `+0x63f`: the level last applied.
     pub mode_applied: u8,
 }
 
@@ -255,27 +258,28 @@ fn restore(mask: u16, bits: u32, mut live: u16, saved: u16) -> u16 {
 /// What `MsAutoCommandStatusCheck` reads of an actor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommandStatus {
-    /// `+0xdce`.
-    pub blocked: u8,
-    /// `+0x606`.
+    /// `+0xdce`: petrified (`MsGetChrStatStone`).
+    pub stone: u8,
+    /// `+0x606`: `0x300` confusion and berserk, `0x400` provoke, `0x800`
+    /// threaten.
     pub status: u16,
-    /// `+0x608`, the first status counter.
+    /// `+0x608`, the first status counter (sleep).
     pub counter0: u8,
-    /// `+0x617`, the high byte of status bits 2.
+    /// `+0x617`, the high byte of status bits 2 (bit 0: blown away).
     pub status2_high: u8,
-    /// `+0xdc8`.
-    pub allowed: u8,
+    /// `+0xdc8`: in battle (`STAT_INBATTLE`).
+    pub in_battle: u8,
 }
 
-/// `MsAutoCommandStatusCheck(actor, need_allowed, no_400, no_800)`: whether
+/// `MsAutoCommandStatusCheck(actor, need_in_battle, no_400, no_800)`: whether
 /// an auto command may run (1) or not (0).
 #[must_use]
-pub fn auto_command_ok(s: CommandStatus, need_allowed: bool, no_400: bool, no_800: bool) -> u32 {
-    let ok = s.blocked == 0
+pub fn auto_command_ok(s: CommandStatus, need_in_battle: bool, no_400: bool, no_800: bool) -> u32 {
+    let ok = s.stone == 0
         && s.status & 0x300 == 0
         && s.counter0 == 0
         && s.status2_high & 1 == 0
-        && (!need_allowed || s.allowed != 0)
+        && (!need_in_battle || s.in_battle != 0)
         && (!no_400 || s.status & 0x400 == 0)
         && (!no_800 || s.status & 0x800 == 0);
     u32::from(ok)
@@ -386,24 +390,24 @@ pub mod bridge {
         Ptr::<u8>::new(actor).field::<u8>(offset).get(mem)
     }
 
-    /// `MsAutoCommandStatusCheck(actor, need_allowed, no_400, no_800)`
+    /// `MsAutoCommandStatusCheck(actor, need_in_battle, no_400, no_800)`
     /// (`0x007b24a0`).
     pub fn ms_auto_command_status_check(
         mem: &impl Mem,
         actor: u32,
-        need_allowed: i32,
+        need_in_battle: i32,
         no_400: i32,
         no_800: i32,
     ) -> u32 {
         let a = Ptr::<u8>::new(actor);
         let s = CommandStatus {
-            blocked: byte(mem, actor, 0xdce),
+            stone: byte(mem, actor, 0xdce),
             status: a.field::<u16>(0x606).get(mem),
             counter0: byte(mem, actor, 0x608),
             status2_high: byte(mem, actor, 0x617),
-            allowed: byte(mem, actor, 0xdc8),
+            in_battle: byte(mem, actor, 0xdc8),
         };
-        auto_command_ok(s, need_allowed != 0, no_400 != 0, no_800 != 0)
+        auto_command_ok(s, need_in_battle != 0, no_400 != 0, no_800 != 0)
     }
 
     /// `MsCheckSetMotion(actor, mode)` (`0x007af320`).

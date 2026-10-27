@@ -1655,13 +1655,58 @@ first 16 of the 22 `TextureAnimationInfo`s (`*0x00cccaa8 +0x80`) held the
 same period, timer and frame (0) at count 101 in three original and three
 Rust runs, so the bound frame is not chosen by a timer that differs.
 
+### Not the map-asset callback (fix-dofmal, 2026-10-27)
+
+The lead above was wrong: `PhyreScene_doOnFieldMapAssetLoaded`'s port
+does what the original does, and both failures happen without it.
+
+- The asm against the port, line by line: the same stores in the same
+  order (the count's increment before the reserve, the slot store, the
+  model word before `getSymbolById`, `+0xd8` after it), the same callee
+  arguments, the same frame matrices, `eax` 0 on every path; the
+  cursor walks step as the original's inlined loops do.
+- In the game, a diagnostic hook (not in the repo; kept in
+  `~/ffx-work/dofmal`) ran either the original through a trampoline
+  (`FFX_DOFMAL=orig`) or the port (`=port`) with every other hook on,
+  and logged each call: thread, time, the asset array before and after,
+  the model word, `+0xd8`, the reader's asset count, and after the model
+  call a hash of every placed 3x4 and its owner's `+0xc`. All calls come
+  from the AsyncLoadManager thread, one at a time; each takes 1-10 µs and
+  the model call under 1 ms, on both sides. The placed matrices hash the same
+  on both sides for every map seen (test20, memochek, kami0100,
+  cdsp0000 with `scaled` 1, loopdemo).
+- iggy-menus, the title after a game over (`call AtelJumpGameOver`,
+  map `0x17`, test20 never loaded): with the port, 1 of 13 runs failed;
+  with the **original** through the trampoline, 2 of 8; and on main's
+  build, where nothing hooks `0x0065af60`, 2 of 9 (`of4`, `of5`: the
+  map word still `0x17` 600, 1,500 and 3,000 updates after the call).
+  In every failure the last callbacks were cdsp0000's (all 161 assets
+  in, so `doOnAllFieldMapAssetsLoaded` ran) and none came for test20:
+  its load was never requested. At the stall the loader thread waits
+  idle in `AsyncLoadManager_threadMain` (`0x006914fc`) with both
+  request lists empty (`g_AsyncLoadManager +0x20`, `+0x2c` = 0), and
+  the main thread sits at its update boundary, so the game goes on
+  updating without asking for the map: the cause is on the main
+  thread's game-over path, not in the loader. replay-flakes7's
+  0 of 6 with the port off was luck (about one run in five fails either
+  way).
+- kami0100's gate against `dg-kami-r1`, every hook on: 5 of 5 passed
+  with the port (diagnostic), 1 of 1 with the original through the
+  trampoline, 3 of 3 on main's build. The draw 31 / draw 45 failures
+  did not come back in nine captures; the earlier 5 of 9 included the
+  h3b agent's seven captures from its own branch.
+
+The port stays unhooked until the game-over flake is found (its
+`ported!` entry is a comment in `ported/h3_glue_render.rs`); with that
+fixed, iggy-menus and the kami0100 gate can show 6 of 6 with it on.
+
 ### The mouse in background games (fix-gameover, 2026-10-27)
 
 The iggy-menus failure above (after `AtelJumpGameOver` the title's world
 never loads) was not `PhyreScene_doOnFieldMapAssetLoaded`, not a port
-and not the game over: it was the user's mouse. fix-dofmal (branch
-`fix-dofmal-c1015`) had already found it with the port off and with the
-original through a trampoline. Probe scripts and logs of this round in
+and not the game over: it was the user's mouse. fix-dofmal (above) had
+already seen it with the port off and with the original through a
+trampoline. Probe scripts and logs of this round in
 `~/ffx-work/gameover`.
 
 - The mouse device's update (`Phyre_PFramework_PInputDeviceMouse_update`,

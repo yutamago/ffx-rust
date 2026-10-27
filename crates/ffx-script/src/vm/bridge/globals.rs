@@ -401,9 +401,11 @@ pub mod save {
     pub const MAP_FADE_FRAMES: u32 = 0x12;
     /// `u8`: battle status bits (bit 1 `Sys`, bit 2 `DummyEnc`).
     pub const BATTLE_STATUS: u32 = 0x13;
-    /// `u8`: `AtelGetSave20` (the Switch name `TkGetLastEventJumpIndex` is the menu module's 0x0088d610).
+    /// `u8`: `AtelGetSave20` (the Switch name `TkGetLastEventJumpIndex` is the menu module's 0x0088d610):
+    /// 1 while `AtelPushMember` holds a saved party (Fahrenheit's `atel_is_push_member`).
     pub const SAVE_20: u32 = 0x20;
-    /// `u16`, `u16`: the map marker position (`Native_SetMapMarkerPos`).
+    /// `u16`, `u16`: the world map marker position (`Native_SetMapMarkerPos`;
+    /// Fahrenheit's `item_map_x`/`item_map_y`).
     pub const MAP_MARKER: u32 = 0xb4;
     /// `u8`: Rikku speaks Al Bhed.
     pub const ALBHED_RIKKU: u32 = 0xd1;
@@ -411,9 +413,10 @@ pub mod save {
     pub const FORCE_PLACE_ID: u32 = 0xd6;
     /// `u8`: `AtelGetWaterBattleEffect`.
     pub const WATER_BATTLE_EFFECT: u32 = 0xd7;
-    /// `u32`, `u32`: read by `0x008807b0`.
+    /// `u32`, `u32`: the on-memory movie and its flags (`AtelSetOnMemoryMovieFileWait`;
+    /// Fahrenheit's `on_memory_movie_file_no`, `on_memory_movie_mode`); read by `0x008807b0`.
     pub const WORD_D8: u32 = 0xd8;
-    /// `u32`: the on-memory movie file (`AtelSetOnMemoryMovie`).
+    /// `u32`: the on-memory movie state (`AtelSetOnMemoryMovie`; Fahrenheit's `on_memory_movie`).
     pub const ON_MEMORY_MOVIE: u32 = 0xe0;
     /// `u32`: the random encounter status.
     pub const RANDOM_ENCOUNT: u32 = 0xe4;
