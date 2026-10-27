@@ -2732,6 +2732,23 @@ ported! {
         let mut frame = StackFrame::<{ (xs::SHAPE_FRAME / 4) as usize }>::new();
         xs::update_shape_field(&mut mem(), frame.at(), lo, hi, shape, obj)
     }
+    // ---- agent h4y: the particle fill-buffer jobs (ffx_glue_other::h4y_*)
+    /// `JobSchedule_pppPart_fillBuffer_drawShp_00727110(part)` -> 1: a
+    /// job-worker routine (a 0x1b4-byte frame: the matrices, quads and
+    /// colours its `FFXVu0*` callees see; zeroed, so the depth corner of a
+    /// part without an unclipped last primitive reads 0).
+    JobSchedule_pppPart_fillBuffer_drawShp_00727110 @ 0x0072_7110 => extern "C" fn fill_buffer_draw_shp_00727110(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_shp::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_shp::draw_shp(&mut mem(), frame.at(), part)
+    }
+    /// `JobSchedule_pppPart_fillBuffer_drawMdlDtt(part)` -> `part + 0xb0`:
+    /// a job-worker routine (an 80 KB frame like the original's: the
+    /// projected points and the vectors its `FFXVu0*` callees see; the
+    /// job workers commit 128 KB).
+    JobSchedule_pppPart_fillBuffer_drawMdlDtt @ 0x0072_56c0 => extern "C" fn fill_buffer_draw_mdl_dtt(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_dtt::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_dtt::draw_mdl_dtt(&mut mem(), frame.at(), part)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in
