@@ -59,6 +59,7 @@ use ffx_prender::h3_glue50::bridge as g50;
 use ffx_prender::h3_glue51::bridge as g51;
 use ffx_prender::h3_glue52::bridge as g52;
 use ffx_prender::h3_glue53::bridge as g53;
+use ffx_prender::h3_glue54::bridge as g54;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2082,6 +2083,16 @@ ported! {
     PhyreScene_RenderABmap @ 0x0065_2a10 => extern "thiscall" fn scene_render_abmap(this: u32) -> u32 {
         let mut f = StackFrame::<0xe>::new();
         g53::render_abmap(&mut mem(), f.at() + 0x38, this)
+    }
+
+    // ---- round 16 batch 55 (ffx_prender::h3_glue54) ----
+    /// `PhyreScene_loadVFXTexture(scene; kind, name, async)` -> 0, 5 (a
+    /// file missing) or the cluster fix-up's error: a VFX texture list's
+    /// files entered into the scene's texture table and loaded (frame
+    /// `ebp - 0x37c`).
+    PhyreScene_loadVFXTexture @ 0x0066_5770 => extern "thiscall" fn scene_load_vfx_texture(this: u32, kind: u32, name: u32, async_load: u32) -> u32 {
+        let mut f = StackFrame::<0xdf>::new();
+        g54::load_vfx_texture(&mut mem(), f.at() + 0x37c, this, kind, name, async_load)
     }
 }
 
