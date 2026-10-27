@@ -479,11 +479,20 @@ Round 2's table, for comparison: max errors 1.9e-9, 3.7e-9, 2.3e-10 and
 7.5e-9 (float rounding only); round 1's 0.00129, 0.00326, 4.98e-5 and
 6.68e-4. There is no residue on the four replays: sample for sample.
 
+| movie-fmv (the movie's user stream) | not followed (no movie calls in the offline engine) | first difference at start + 6682 (tick 4, the movie's first block); max 0.0472, RMS 0.00335 against a signal RMS of 0.00342: the movie sound is not right | not run |
+
+With `FFX_RUST_AUDIO=1` the main list (12 replays) and the extra list (9,
+movie-fmv included) give the same trace events as their recordings, and
+the screenshots pass (menu-shop-8: 4 px of cursor glow, the known streak).
+
 What is left:
 - The movie user stream: `rust_audio` mixes the game's PCM callback at
-  the stream's rate with the measured interpolation and ramp, but FMOD's
-  decode buffer and its timing are not measured; movie-fmv (which has
-  audio marks and a reference) is not checked against it yet.
+  the stream's rate with the measured interpolation and ramp, and it is
+  wrong (the table): FMOD's user-stream reading (its decode buffer, when
+  it calls the callback, how much it keeps) is still to measure with
+  fmod-probe. The movie-fmv call log has the callback's 127 calls
+  (`Sound::getUserData` from `0x00a27ef7`) but no `createSound`, so the
+  movie's set-up runs where the log does not see it.
 - The Shout channel: the stubs and the engine follow it, but no recorded
   replay plays one (battle-overdrive, recorded with a log, has no
   `playSound`); a battle with a voiced shout is still to record.
