@@ -299,10 +299,28 @@ its default reference (`default_ref` in the script, `DRAW_FIELD_REF`);
 `draw-field-gate.sh <reference> <run>` against any. A capture only matches
 references of the same script: gate new captures against ref2-*.
 
-The scene gates' replays load in lockstep too since then; their references
-are `dg-<replay>-q1/q2` (original code, run side by side), which pass
-`scene-gate.sh` against each other on all five scenes (battle: both loads
-77 updates). The p1..p6 folders belong to the old scripts.
+The scene gates' replays load in lockstep too since then, and pin right
+after `lockstep on`; their references are `dg-<replay>-q1/q2` (original
+code, run side by side), which pass `scene-gate.sh` against each other on
+all five scenes (battle: both loads 77 updates). The p1..p6 folders belong
+to the old scripts; `dg-{besaid,kami}-pin64-q*` were taken with the load in
+lockstep but the pin still at count 64.
+
+kami0100 on original code (the h3 agent, 2026-10-27: 1 pass in 3 with the
+old script, failing on draw 42, a texture-animation bind, `vs 598aa...`):
+with the new script five original captures (q1..q5, three of them side by
+side) pass against q1, and draw 42 matched in all of them and in the five
+pin64 captures. What still differs between original kami0100 runs, all of
+it on the scene's allow list: `scene.GlobalTime` by 2 ulp (two clusters),
+the cloth ring (`vb5`) and the eye-blink bind of draw 91 (`vs db349612...`,
+32x32 or 128x128). draw-field's fw-101 shows the same 2 ulp in two of five
+Rust captures, while its three references agree. These come from the
+updates the load runs before `pin` (`load direct ... lockstep` steps until
+the event script opens, and `pin` follows): pinning at the load's boundary
+itself would be the next step. besaid-101 failed once in five Rust
+draw-field runs on the back buffer only: the chocobo icon (wall clock, its
+draws allowed) drew in none of the three frames (609 draws against
+780-784), so the back buffer hashes had no allowed draw before them.
 
 ### draw-field references (ref-a, ref-b, ref-c)
 

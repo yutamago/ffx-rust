@@ -418,6 +418,21 @@ count is still well below its window.
 `run-all.sh --record boot` records it alone (`--record NAME...` leaves the
 other replays' recordings alone). About 75 s, the longest replay.
 
+boot-2 still failed once by 346 pixels (replay-flakes-2): at the game's
+own rate a frame of jitter between the music and the updates is left, and
+two original recordings differ by 12,301 (boot-2) and 36,884 (boot-3)
+pixels. With sound in lockstep the opening's music would keep the update
+count, so a boot on the virtual clock could be pinned; tried on 2026-10-27
+(replay-flakes3: fast mode, `lockstep on` and `pin` once memochek's map is
+up, the same `shotwhen`s): the game never reached its first update (the
+hook log repeats "present of update 0: the main thread did not reach its
+boundary"), with `lockstep on` first and with a `waitfor` first alike
+(not tried with `FFX_AUDIO_NRT=0`), so
+the start-up screens before memochek would need a look of their own
+(`load direct` gets past them by tapping Start, which a boot replay must
+not). boot stays `realtime`; its comparison is not loosened, and a lone
+boot-2/3 failure of a few hundred pixels is this jitter (rerun it).
+
 `tools/replays/battle-magic.txt` (2026-10-24) plays the one spell
 overlay that calls `op_shape_draw` (`0x007ed0c0`): `magic_0481.dll`, its
 only caller (`g_MagicImports` slot 242). No command, item or monster
@@ -1104,6 +1119,18 @@ real-time movie.
   from both recordings on page 6 (the background's fade, 21,746 pixels),
   so iggy-menus is on the extra list's `eye` list (traces compared). No
   shot of the load list (its dates are the files' times).
+  Re-recorded on 2026-10-27 with the load in lockstep (replay-flakes3; the
+  old recordings in `~/ffx-work/replay-shots-extra.pre-flakes3`): the two
+  recordings agree to 0 pixels on pages 1-3, 6 and 9, within a 24-pixel
+  column at x 1163..1195 on 4, 5, 7 and 8, and differ everywhere on the
+  title (11, 12). Page 6 (Key bindings) is bimodal with the Rust
+  replacements: in five original runs (the two recordings and three more)
+  it matched the reference within 18 pixels, in five Rust runs three times
+  within a pixel and twice 98,378 pixels off (x 62..1174, y 144..682: the
+  page slid about 11 pixels less; Rust runs on main before the re-recording
+  showed the same). Exactly one count, so a discrete step (a Flash tick
+  more or less during the slide), not wall-clock drift. Open; the traces
+  match.
 - `battle-ifrit` (about 20 s): the Thunder Plains (`battle 34 0 0`,
   `kami00_00`, battle map `0x412`) from save 5, set up as battle-overdrive
   (party, the monsters' HP 99999); Tidus attacks, Yuna summons Ifrit
