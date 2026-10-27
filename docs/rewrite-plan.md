@@ -90,10 +90,12 @@ In Rust so far:
     script component; drop whatever the game never uses.
   - FMOD Ex: our own mixer over the `.fsb` sound banks (1,260) and `.fev`
     event files (1,260). Both formats need decoding first.
-  - Iggy (19 `.swf` screens): rebuild these screens natively. A Flash player
-    for 19 screens would cost more than the screens.
+  - Iggy (19 `.swf` screens): a Rust player for the subset of SWF these
+    screens use, tried on three screens first; if its quality isn't good
+    enough, the screens are rebuilt natively (user, 2026-10-27).
   - `.webm` movies: an open VP8/VP9 decoder with Vorbis/Opus audio.
-  - Steam: optional (achievements) behind a feature flag.
+  - Steam: achievements through `steam_api64.dll`, shipped with the
+    release package.
 
 ## What gets ported
 
@@ -389,9 +391,9 @@ What stays as it is in M4:
   mkvparser);
 - the CRT and the platform category.
 
-M5 replaces them: Rust `std`, open-source decoders, the PC screens
-rewritten in Rust, and for FMOD either a port of the subset the game uses
-or a 32-bit helper process that loads the player's DLLs (decided at M5).
+M5 replaces them: Rust `std`, pure-Rust decoders, our own mixer for
+FMOD and a Rust SWF player for the PC screens (decided 2026-10-27, M5
+below).
 
 Each part replaces the original only when it passes:
 
@@ -433,17 +435,118 @@ What stays for M5:
 
 ### M5: inversion
 
-The main loop (`Sg`, `FFXApplication`) and the system module (archives,
-saves, settings, language) move to Rust. A 64-bit Rust program runs the
-whole game from the Rust crates and no longer loads `FFX.exe`. Saves stay
-byte-compatible with the original's.
+A 64-bit Rust program, `ffx-rust.exe`, runs the whole game without
+loading `FFX.exe`. Output stays identical to the original's, saves stay
+byte-compatible, and the original stays untouched next to it.
 
-Alongside M4 and M5: the Luau stages L1 and L2 (Modding, below).
+**Decisions (user, 2026-10-27).**
+- **The 32-bit arena.** The 64-bit program reserves one 4 GB block and
+  keeps every game address as a `u32` offset into it, so the 14,053 ports
+  run unchanged through `Mem`. The game's heap allocates inside the arena,
+  and objects outside it (COM interfaces, OS handles) get `u32` handles.
+  At start-up the program maps `.data`, `.rdata` and the other data
+  sections from the player's own `FFX.exe`, read as data the way the
+  `.vbf` archives are (nothing of the game ships). Moving state into
+  Rust types is a separate project after the rewrite.
+- **One function table.** Every port registers under its original
+  address. `call_sym`, `call_virtual` and every function pointer stored
+  in game memory (vtables, callbacks, the script native tables) dispatch
+  through that table. Later this is the modding seam: a mod replaces a
+  function by its address, the way Fahrenheit mods do, without patching
+  code.
+- **Statically reachable code only.** A static call graph from the entry
+  point, the vtables, the native tables and every stored function
+  pointer decides what still has to be ported, with parity tests on
+  synthetic inputs where no replay reaches it. Unreachable code is
+  dropped and listed with the evidence (`symbols/m5-dropped.tsv`).
+- **D3D11 at M5.** The 64-bit program issues the game's D3D11 calls
+  itself, so the draw-stream gate still compares call for call. Proton
+  runs it on Linux and the Steam Deck. The choice between wgpu and Vulkan
+  is made at M6.
+- **Our own mixer for FMOD.** Rust decoders for `.fsb` and `.fev` and a
+  mixer, gated sample for sample against FMOD's WAV writer, as at M4.
+  Where FMOD's resampler or reverb can't be matched exactly, the residue
+  is documented and the user signs off on a tolerance.
+- **Iggy: a Rust SWF player first.** It covers only what the game's 19
+  `.swf` screens use. The title menu, the settings and save/load screens
+  come first, for the user to judge. If the quality isn't good enough,
+  all 19 screens are rebuilt natively instead.
+- **Pure Rust.** No C libraries: pure-Rust VP8/VP9, Vorbis and Matroska
+  decoders (existing crates, or our own port where the game's use is
+  small). The CRT and STL become Rust `std`.
+- **Steam.** Achievements through `steam_api64.dll`, shipped with the
+  release package (not in git).
+- **Delivery.** `ffx-rust.exe` sits next to `FFX.exe` in the game folder
+  and is started by `ffx-launch` or a Steam launch option. `FFX.exe`,
+  the saves and the data stay untouched.
+- **Luau after M5.** L1 and L2 start once the 64-bit program runs,
+  against the function table.
+
+**Stages.** Each one is merged and verified before the next depends on
+it. Stages 1 and 2 run in the current 32-bit process, so every existing
+gate still applies.
+
+1. **The rest of the game code, in-process.**
+   - Build the static call graph and list what is reachable but not yet
+     ported.
+   - Port it with the M3/M4 pipeline: `Game_Main`, `Sg_MainLoop`,
+     `updateFFX` and 0x822490 included (the lockstep hold point moves
+     into the Rust main loop).
+   - Port the CRT, STL and Lua functions the game reaches: memory, files,
+     strings, math and `rand`, onto Rust `std`, keeping each function's
+     observable results (`rand`'s sequence, `printf` formatting).
+   - Gate: a coverage run with a trap on every original `.text` byte
+     except the libraries still to replace in stage 2 shows no game code
+     running, across the main, extra and audio replay lists.
+2. **The libraries, in-process.**
+   - Movies: the pure-Rust decoders replace libvpx, vorbis and
+     mkvparser. Gate: identical decoded frames and samples for every
+     movie.
+   - Sound: the mixer replaces FMOD. Gate: `run-all.sh --audio`, sample
+     for sample.
+   - Iggy: the SWF player pilot on the title, settings and save/load
+     screens, for the user to judge. Then the other 16 screens, either
+     on the player or rebuilt natively.
+   - Steam: our calls into `steam_api.dll`.
+   - Gate: the in-process build runs no code from `FFX.exe` and loads none
+     of the game's DLLs except `steam_api.dll`. Every replay, scene gate
+     and audio check passes.
+3. **The arena host, still 32-bit.**
+   - A new crate, `ffx-host`, provides the arena `Mem`, the loader that
+     maps the player's `FFX.exe` data sections, the arena heap, the handle
+     table, the function table and the threads (render, loader, input and
+     the mixer's).
+   - `ffx-rust.exe` is built for i686 first. Floats, struct layouts and
+     the replays behave as in the hooked game, so any difference is the
+     host's.
+   - Gate: replays and scene gates against the original, now run in a
+     second process. The harness drives both with the same inputs and
+     compares trace events, draw streams, the mix and screenshots
+     (`docs/harness.md` gets a "two processes" section).
+4. **64-bit.**
+   - The same program built for x86_64: the arena's `u32` addresses, the
+     handle table for 64-bit COM pointers, and the D3D11 and Win32 calls
+     made from 64-bit.
+   - Gate: the same as stage 3, plus a check that no code path builds a
+     host pointer from an arena address without the arena base.
+5. **Saves, settings and delivery.**
+   - Gate: saves and settings written by `ffx-rust.exe` load in `FFX.exe`
+     and back, byte for byte (on copies, never the user's saves).
+   - `ffx-launch` starts either program. The release package holds
+     `ffx-rust.exe`, `steam_api64.dll` and the licences.
+   - Docs: what a player needs and what stays the original's.
+
+**Done when** `ffx-rust.exe` (64-bit) plays every replay with the
+original's trace events, passes the scene gates and the audio checks, and
+reads and writes the original's saves. Every function still in `FFX.exe`
+is either ported or listed as unreachable with its evidence.
 
 ### M6: ports
 
-Linux and the Steam Deck first (wgpu and our platform layer already cover
-them), then macOS, then whatever else. Controller mappings and the PC UI
+Linux and the Steam Deck first, then macOS, then whatever else. The
+native graphics backend (wgpu or Vulkan) is chosen at the start of M6;
+until then Proton runs the 64-bit Windows build. FMOD is already gone
+(M5's mixer). Controller mappings and the PC UI
 screens need a per-platform pass.
 
 ## Determinism
@@ -540,14 +643,13 @@ PhyreEngine, but never runs it and exposes nothing of the game to it:
 - **Getting started is part of the work.** A first-mod tutorial, small
   example mods to copy, the API reference with editor autocomplete, and
   errors that point at the mod's own line.
-- **L1, Luau beside Atel (after M3, once the natives are in Rust).** Mods
+- **L1, Luau beside Atel (after M5, user 2026-10-27).** Mods
   ship Luau (or TypeScript) scripts that hook game events (map entered,
   worker started, signal sent, battle started, command chosen) and call the
   natives through a typed API (`chr.move_to`, `msg.show`, `wait.frames`).
   The original scripts stay as they are; a mod adds behaviour or replaces
-  one worker's. Runs in the hook first and in the 64-bit program after M5
-  unchanged.
-- **L2, Atel to Luau (with M4/M5).** A decompiler turns every shipped event
+  one worker's. Runs in the 64-bit program, on its function table.
+- **L2, Atel to Luau (after M5).** A decompiler turns every shipped event
   and battle script into readable Luau (workers as coroutines, natives by
   name, variables by their descriptors), and the engine runs the Luau.
   Checked like everything else: a decompiled script must give the original's
