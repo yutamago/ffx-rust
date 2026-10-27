@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
-    h4b_g as bg, h4b_h as bh,
+    h4b_g as bg, h4b_h as bh, h4b_i as bi,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -4016,6 +4016,80 @@ fn bh_frame_shape9() {
                 0xa5,
                 &|_| vec![(ebp + 0xc, ebp + 0x18)],
                 |g| bh::frame_shape9(g, args[0], args[1], args[2], args[3], Some(ebp + 8)),
+            );
+        }
+    }
+}
+
+// ---- round 2, batch 4 (ffx_glue_other::h4b_i)
+
+/// `TODrawFrameShape_008f9c20`: every kind, random frames and constants;
+/// the remaps' results follow their arguments; the argument slots
+/// compared.
+#[test]
+fn bi_frame_shape() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f301);
+        let kx = scaled_stub(&mut t, e1::REMAP_X2);
+        let ky = scaled_stub(&mut t, e1::REMAP_Y2);
+        t.stub(bi::SHAPE_UV, 9, false);
+        let tags = [e1::REMAP_X2, e1::REMAP_Y2, bi::SHAPE_UV];
+        let ebp = t.ebp_for(5);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for k in [kx, ky] {
+                let v = rng.double();
+                let v = if v.abs() > 1e100 { 1.5 } else { v };
+                t.write(k, &v.to_le_bytes());
+            }
+            t.constants(
+                &mut rng,
+                &[
+                    0x00b3_eb94,
+                    0x00b9_2308,
+                    0x00b4_1d80,
+                    0x00b6_5818,
+                    0x00b6_5800,
+                    0x00b6_581c,
+                    0x00b6_5838,
+                    0x00b6_5610,
+                    0x00b5_f0d4,
+                    0x00b6_6bd4,
+                    0x00b6_5834,
+                    0x00b6_561c,
+                    0x00b6_6bdc,
+                    0x00b6_6be0,
+                    0x00b6_6e30,
+                    0x00b6_6e34,
+                    0x00b3_eb9c,
+                    0x00b6_6be4,
+                    0x00b6_5628,
+                    0x00b4_936c,
+                    0x00b6_580c,
+                    0x00b4_1ca0,
+                    0x00b6_5810,
+                    0x00b6_5828,
+                    0x00b6_6bd0,
+                    0x00b6_5814,
+                ],
+                &[],
+            );
+            let kind = rng.pick(&[0, 1, 2, 3, 4, 5, 6, 0xffff_ffff]);
+            let args = [rng.float(), rng.float(), rng.float(), rng.float(), kind];
+            for (k, v) in args.iter().enumerate() {
+                t.b.write(ebp + 8 + 4 * k as u32, &v.to_le_bytes()).unwrap();
+            }
+            run_parts(
+                &mut t,
+                &w,
+                0x008f_9c20,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x18, ebp),
+                0xa5,
+                &|_| vec![(ebp + 8, ebp + 0x1c)],
+                |g| bi::frame_shape(g, args[0], args[1], args[2], args[3], kind, Some(ebp + 8)),
             );
         }
     }

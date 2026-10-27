@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh,
+    h4b_h as bh, h4b_i as bi,
 };
 
 use super::{StackFrame, mem, ported};
@@ -275,5 +275,14 @@ ported! {
     /// and the last bar's x left in the argument slots.
     TODrawFrameShape9_008f9280 @ 0x008f_9280 => extern "C" fn frame_shape9(a: u32, x: u32, y: u32, alpha: u32; slots: u32) -> u32 {
         bh::frame_shape9(&mut mem(), a, x, y, alpha, Some(slots))
+    }
+
+    // ---- round 2, batch 4 (ffx_glue_other::h4b_i)
+
+    /// `TODrawFrameShape_008f9c20(x, y, w, h, kind)`: the last piece's x,
+    /// the bottom middle's and the bottom left's y left in the `x`, `w`
+    /// and `kind` slots.
+    TODrawFrameShape_008f9c20 @ 0x008f_9c20 => extern "C" fn frame_shape(x: u32, y: u32, w: u32, h: u32, kind: u32; slots: u32) -> u32 {
+        bi::frame_shape(&mut mem(), x, y, w, h, kind, Some(slots))
     }
 }
