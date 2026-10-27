@@ -221,6 +221,7 @@ pub mod h4b_k;
 pub mod h4b_l;
 pub mod h4b_m;
 pub mod h4b_n;
+pub mod h4y_dtt;
 pub mod h4y_shp;
 pub mod menu;
 pub mod misc;

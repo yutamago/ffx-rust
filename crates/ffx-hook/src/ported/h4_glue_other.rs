@@ -2724,6 +2724,14 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_glue_other::h4y_shp::FRAME / 4) as usize }>::new();
         ffx_glue_other::h4y_shp::draw_shp(&mut mem(), frame.at(), part)
     }
+    /// `JobSchedule_pppPart_fillBuffer_drawMdlDtt(part)` -> `part + 0xb0`:
+    /// a job-worker routine (an 80 KB frame like the original's: the
+    /// projected points and the vectors its `FFXVu0*` callees see; the
+    /// job workers commit 128 KB).
+    JobSchedule_pppPart_fillBuffer_drawMdlDtt @ 0x0072_56c0 => extern "C" fn fill_buffer_draw_mdl_dtt(part: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::h4y_dtt::FRAME / 4) as usize }>::new();
+        ffx_glue_other::h4y_dtt::draw_mdl_dtt(&mut mem(), frame.at(), part)
+    }
 }
 
 /// `_CIfmod(a, b)` through the game's import thunk (`0x009498e0`): `a` in

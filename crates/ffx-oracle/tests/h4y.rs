@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ffx_bridge::Mem;
-use ffx_glue_other::h4y_shp as shp;
+use ffx_glue_other::{h4y_dtt as dtt, h4y_shp as shp};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -927,6 +927,317 @@ fn shp_draw_shp() {
                 let w = format!("{name} buffer {b} part {k}");
                 t.check_framed(&w, 0x0072_7110, &[part], frame, &SHP_BLOCKS, |g| {
                     u(shp::draw_shp(g, frame, part))
+                });
+                live += 1;
+            }
+        }
+        eprintln!("{name}: {live} live parts");
+    }
+}
+
+// ---- JobSchedule_pppPart_fillBuffer_drawMdlDtt (ffx_glue_other::h4y_dtt)
+
+/// The real values of `drawMdlDtt`'s constants.
+fn dtt_real_constants(t: &mut Twins) {
+    for (c, v) in [
+        (dtt::QUARTER, 0.25f64),
+        (dtt::ZERO, 0.0),
+        (dtt::THREE, 3.0),
+        (dtt::FOUR, 4.0),
+        (dtt::THIRD, 0.333_330_005_407_333_4),
+        (dtt::INV_255, 0.003_921_568_859_368_563),
+        (dtt::MIN_LENGTH, 1e-6),
+        (dtt::CENTRE, 2048.5),
+        (dtt::HEIGHT, 448.0),
+        (dtt::HALF, 0.5),
+        (dtt::CUT_SCALE, 1.333_333_015_441_894_5),
+    ] {
+        let at = t.rebase(c);
+        t.write(at, &v.to_le_bytes());
+    }
+    for (c, v) in [
+        (dtt::MIN_START, 16_777_216f32),
+        (dtt::WIDTH_CUT, 512.0),
+        (dtt::WIDTH, 682.0),
+        (dtt::LIMIT, 4096.0),
+        (dtt::BOUND_LOW, -1e6),
+        (dtt::BOUND_HIGH, 1e6),
+        (dtt::MINUS_ONE, -1.0),
+    ] {
+        t.g32(c, v.to_bits());
+    }
+}
+
+/// A view matrix that puts points near the screen's middle (column-major,
+/// translation 2048, 2048), scaled by `s`, w near 1; or random floats.
+fn view_matrix(t: &mut Twins, rng: &mut Rng, at: u32) {
+    if rng.below(8) == 0 {
+        floats(t, rng, at, 16);
+        return;
+    }
+    let s = rng.pick(&[1.0f32, 2.5, 0.25, -1.0]);
+    let mut m = [0f32; 16];
+    m[0] = s;
+    m[5] = s;
+    m[10] = s;
+    m[12] = 2048.0;
+    m[13] = 2048.0;
+    m[14] = rng.below(200) as f32 - 100.0;
+    m[15] = 1.0;
+    if rng.below(2) == 0 {
+        for v in &mut m {
+            *v += (rng.below(201) as f32 - 100.0) / 1000.0;
+        }
+    }
+    for (k, v) in (0u32..).zip(m) {
+        t.w32(at + 4 * k, v.to_bits());
+    }
+}
+
+/// Small ordinary floats over `n` words.
+fn small_floats(t: &mut Twins, rng: &mut Rng, at: u32, n: u32, range: u32) {
+    for k in 0..n {
+        let v = (rng.below(2 * range + 1) as f32 - range as f32) / 7.0;
+        t.w32(at + 4 * k, v.to_bits());
+    }
+}
+
+/// `drawMdlDtt` on random parts: points from the shape or a model buffer
+/// (missing or there, with or without its colour buffer), one to three
+/// groups (a skipped first, an 0xff or other terminator), triangles in
+/// and out of the screen, one instance or four bands, the extra matrix,
+/// the table exchange both ways, the push with and without z, a
+/// 2D cut (and a fading movie), the magic special cases; and on a
+/// snapshot every live part of kind 3 in the six fill buffers.
+#[test]
+fn dtt_draw_mdl_dtt() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_56c0);
+        for (sym, n) in [
+            (dtt::IN_CUT_2D, 0),
+            (dtt::SINGLE_INSTANCE, 0),
+            (dtt::BUFFER_BY_INDEX, 1),
+            (dtt::MEMSET, 3),
+            (dtt::MAGIC_ID, 0),
+            (dtt::UPDATE_PARAMETER, 4),
+        ] {
+            t.stub(sym, n, false);
+        }
+        t.stub(dtt::CUT_2D_BIAS, 0, true);
+        let tags = [
+            dtt::IN_CUT_2D,
+            dtt::SINGLE_INSTANCE,
+            dtt::BUFFER_BY_INDEX,
+            dtt::MAGIC_ID,
+        ];
+        let ebp = t.ebp_for(1);
+        let frame = ebp - 0x1_4114;
+        // all but ebp-8, where __alloca_probe saved the caller's ecx (the
+        // direction's w until the first triangle's)
+        let blocks = [(0, dtt::FRAME as usize - 4)];
+        let mut seen = [0u32; 4];
+        for i in 0..400 {
+            t.fresh(&mut rng, &tags);
+            if rng.below(3) == 0 {
+                t.constants(
+                    &mut rng,
+                    &[
+                        dtt::MIN_START,
+                        dtt::WIDTH_CUT,
+                        dtt::WIDTH,
+                        dtt::LIMIT,
+                        dtt::BOUND_LOW,
+                        dtt::BOUND_HIGH,
+                        dtt::MINUS_ONE,
+                    ],
+                    &[
+                        dtt::QUARTER,
+                        dtt::ZERO,
+                        dtt::THREE,
+                        dtt::FOUR,
+                        dtt::THIRD,
+                        dtt::INV_255,
+                        dtt::MIN_LENGTH,
+                        dtt::CENTRE,
+                        dtt::HEIGHT,
+                        dtt::HALF,
+                        dtt::CUT_SCALE,
+                    ],
+                );
+            } else {
+                dtt_real_constants(&mut t);
+            }
+            t.ret(dtt::IN_CUT_2D, rng.below(2));
+            t.g32(dtt::MOVIE_FADING, rng.pick(&[0, 0, 1]));
+            let bias = f64::from(rng.below(100) as f32 / 9.0);
+            t.ret_f64(dtt::CUT_2D_BIAS, bias);
+            let single = rng.below(3) == 0;
+            t.ret(dtt::SINGLE_INSTANCE, u32::from(single));
+            t.ret(dtt::MAGIC_ID, rng.pick(&[0x46, 0x23a, 0x10, 0x46]));
+            // the shape: points and groups
+            let count = rng.pick(&[0u16, 1, 3, 8, 8]);
+            let pts = count.max(1);
+            let groups_n = rng.below(3) + 1;
+            let tris: Vec<u32> = (0..groups_n).map(|_| rng.pick(&[0, 1, 2, 4])).collect();
+            let total: u32 = tris.iter().sum();
+            let shape = t.zeros(0x20);
+            t.w16(shape + 0x12, count);
+            let points = t.zeros(6 * usize::from(pts));
+            for k in 0..3 * u32::from(pts) {
+                // sometimes on the screen's edges (scale 1: 0 or 4096)
+                let v = if rng.below(6) == 0 {
+                    rng.pick(&[2048i32, -2048, 0]) as u16
+                } else {
+                    (rng.below(1601) as i32 - 800) as u16
+                };
+                t.w16(points + 2 * k, v);
+            }
+            t.w32(shape + 8, points.wrapping_sub(shape));
+            let gsize: u32 = tris.iter().map(|n| 0x10 + 0x14 * n).sum::<u32>() + 0x10;
+            let groups = t.zeros(gsize as usize);
+            let mut at = groups;
+            for (g, &n) in tris.iter().enumerate() {
+                let skip = g == 0 && rng.below(10) == 0;
+                t.w8(at + 1, u8::from(skip));
+                t.w16(at + 2, n as u16);
+                for k in 0..n {
+                    let rec = at + 0x10 + 0x14 * k;
+                    for j in 0..12 {
+                        let b = rng.next() as u8;
+                        t.w8(rec + j, b);
+                    }
+                    for j in 0..3 {
+                        let idx = rng.below(u32::from(pts)) as u16;
+                        t.w16(rec + 0xc + 2 * j, idx);
+                    }
+                }
+                at += 0x10 + 0x14 * n;
+            }
+            t.w8(at + 1, rng.pick(&[0xff, 0xff, 1]));
+            t.w32(shape + 4, groups.wrapping_sub(shape));
+            // the part
+            let part = random_block(&mut t, &mut rng, 0x214);
+            t.w32(part + 0x150, shape);
+            matrix(&mut t, &mut rng, part + 0x30);
+            if rng.below(2) == 0 {
+                // the identity
+                t.write(part + 0x30, &[0; 0x40]);
+                for k in 0..4 {
+                    t.w32(part + 0x30 + 0x14 * k, 1f32.to_bits());
+                }
+            }
+            view_matrix(&mut t, &mut rng, part + 0x70);
+            matrix(&mut t, &mut rng, part + 0xb0);
+            view_matrix(&mut t, &mut rng, part + 0xf0);
+            small_floats(&mut t, &mut rng, part + 0x60, 4, 7000);
+            small_floats(&mut t, &mut rng, part + 0x130, 4, 2000);
+            small_floats(&mut t, &mut rng, part + 0x140, 2, 3000);
+            small_floats(&mut t, &mut rng, part + 0x164, 2, 20);
+            for off in [0x154, 0x158, 0x160, 0x16c] {
+                t.w32(part + off, rng.pick(&[0, 0, 1, 0x100]));
+            }
+            // float bits without signalling NaNs (the emulator keeps them)
+            let table = t.zeros((0x30 * (total + 1) + 0x10) as usize);
+            floats(&mut t, &mut rng, table, 0xc * (total + 1) + 4);
+            t.w32(part + 0x15c, table);
+            // the render data
+            let mut room = 0;
+            for k in 0..4 {
+                let rd = random_block(&mut t, &mut rng, 0xd0);
+                let seg = t.zeros(0x20);
+                let filled = rng.below(4) * 3;
+                t.w32(seg + 4, filled + rng.pick(&[0, 0, 3]));
+                t.w32(seg + 8, filled);
+                room = filled / 3 + total + 1;
+                for (off, size) in [(0xc, 0x24), (0x14, 0x30), (0x18, 0x18), (0x1c, 6)] {
+                    let b = random_block(&mut t, &mut rng, size * (room + 3));
+                    t.w32(seg + off, b);
+                }
+                t.w32(rd + 0x94, seg);
+                t.w32(part + 0x10 + 4 * k, rd);
+            }
+            let rd0: u32 = Mem::read(&t.a, part + 0x10);
+            let buffered = rng.below(2) == 0;
+            t.w16(rd0 + 0xc2, if buffered { 7 } else { 0xffff });
+            let mb = if buffered && rng.below(4) != 0 {
+                let mb = random_block(&mut t, &mut rng, 0xa0);
+                let v = t.zeros(16 * usize::from(pts));
+                small_floats(&mut t, &mut rng, v, 4 * u32::from(pts), 7000);
+                t.w32(mb + 0x14, v);
+                let colours = if rng.below(2) == 0 {
+                    0
+                } else {
+                    let c = t.zeros((0x30 * (total + 1)) as usize);
+                    small_floats(&mut t, &mut rng, c, 12 * (total + 1), 2000);
+                    c
+                };
+                t.w32(mb + 0x9c, colours);
+                mb
+            } else {
+                0
+            };
+            t.ret(dtt::BUFFER_BY_INDEX, mb);
+            let edge = tris[0] > 0 && rng.below(3) == 0;
+            if edge {
+                // exact cases on the first triangle: identity model, a view
+                // of scale 1 (x' = x + 2048), the screen's edges, the
+                // first corner exactly 5 from the model's origin (the limit 5)
+                t.write(part + 0x30, &[0; 0x40]);
+                t.write(part + 0x70, &[0; 0x40]);
+                for k in 0..4 {
+                    t.w32(part + 0x30 + 0x14 * k, 1f32.to_bits());
+                    t.w32(part + 0x70 + 0x14 * k, 1f32.to_bits());
+                }
+                t.w32(part + 0x70 + 0x30, 2048f32.to_bits());
+                t.w32(part + 0x70 + 0x34, 2048f32.to_bits());
+                t.w32(part + 0x16c, 0);
+                t.g32(dtt::LIMIT, 4096f32.to_bits());
+                t.w16(rd0 + 0xc2, 0xffff);
+                t.w8(groups + 1, 0);
+                for j in 0..3u32 {
+                    let idx = if pts >= 3 { j as u16 } else { 0 };
+                    t.w16(groups + 0x10 + 0xc + 2 * j, idx);
+                }
+                // the first point (3, 4, 0), 5 from the model's origin
+                // (the matrix's translation, +0x60), which puts it on the
+                // screen's edges or near them
+                t.w16(points, 3);
+                t.w16(points + 2, 4);
+                t.w16(points + 4, 0);
+                let ox = rng.pick(&[2045f32, 2044.0, -2051.0, 0.0, 2045.0]);
+                let oy = rng.pick(&[2044f32, -2052.0, 2043.0, 0.0, -2051.0]);
+                for (k, v) in [ox, oy, 0.0, 1.0].into_iter().enumerate() {
+                    t.w32(part + 0x60 + 4 * k as u32, v.to_bits());
+                }
+                let at = t.rebase(dtt::MIN_LENGTH);
+                t.write(at, &rng.pick(&[5.0f64, 1e-6]).to_le_bytes());
+            }
+            let w = format!(
+                "{name} {i}: points {count} tris {tris:?} single {single} buffer {mb:#x} room {room}"
+            );
+            t.check_framed(&w, 0x0072_56c0, &[part], frame, &blocks, |g| {
+                u(dtt::draw_mdl_dtt(g, frame, part))
+            });
+            seen[usize::from(single) * 2 + usize::from(mb != 0)] += 1;
+        }
+        eprintln!("{name}: {seen:?}");
+        // the snapshot's own parts
+        let mut live = 0;
+        for b in 0..6 {
+            let parts: u32 = Mem::read(&t.a, t.rebase(0x00ce_c1a8) + 4 * b);
+            let count: u32 = Mem::read(&t.a, t.rebase(0x00ce_c1c0) + 4 * b);
+            if parts == 0 {
+                continue;
+            }
+            for k in 0..count.min(0x200) {
+                let part = parts + 0x214 * k;
+                if Mem::read::<u8>(&t.a, part) != 3 {
+                    continue;
+                }
+                t.fresh(&mut rng, &tags);
+                let w = format!("{name} buffer {b} part {k}");
+                t.check_framed(&w, 0x0072_56c0, &[part], frame, &blocks, |g| {
+                    u(dtt::draw_mdl_dtt(g, frame, part))
                 });
                 live += 1;
             }
