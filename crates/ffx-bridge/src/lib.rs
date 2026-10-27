@@ -280,10 +280,22 @@ pub struct RawMem {
 #[cfg(target_pointer_width = "32")]
 impl Mem for RawMem {
     fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        let src = addr as usize as *const u8;
+        // Words read volatile: the ports' wait loops (`while sink & 0x100
+        // != 0 {}`, as the originals spin on a word another thread or the
+        // GS emulation writes) must load it on every pass, which a plain
+        // copy in an empty loop does not promise.
         // SAFETY: replacements only touch what the original would; the
-        // address is the game's own, valid in this process.
+        // address is the game's own, valid in this process. `[u8; N]` has
+        // alignment 1, so any address is fine for the volatile reads.
         unsafe {
-            std::ptr::copy_nonoverlapping(addr as usize as *const u8, out.as_mut_ptr(), out.len());
+            match out.len() {
+                1 => out[0] = src.read_volatile(),
+                2 => out.copy_from_slice(&src.cast::<[u8; 2]>().read_volatile()),
+                4 => out.copy_from_slice(&src.cast::<[u8; 4]>().read_volatile()),
+                8 => out.copy_from_slice(&src.cast::<[u8; 8]>().read_volatile()),
+                n => std::ptr::copy_nonoverlapping(src, out.as_mut_ptr(), n),
+            }
         }
     }
     fn write_bytes(&mut self, addr: u32, data: &[u8]) {

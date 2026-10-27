@@ -116,7 +116,14 @@
 //! - [`h4_k3`]: its third batch: the depth-bias hook, the post-process
 //!   manager's constructor, the broken-screen effect's render;
 //! - [`h4_k4`]: its fourth batch: the event shapes' VFX render data
-//!   buffers.
+//!   buffers;
+//! - [`h4_l1`]: continuation round 10, batch 1: the shapes' VFX render
+//!   data buffers, the menu vertex records, the character cache's delayed
+//!   release, the voice data change;
+//! - [`h4_l2`]: its second batch: the guild map's VFX render data;
+//! - [`h4_l3`], [`h4_l4`], [`h4_l5`]: its third batch: the movie player
+//!   manager's video index map, a menu list item's shape sprite, the
+//!   escape menu's update.
 //!
 //! Everything these call that is not ported here (the FMOD queue, the
 //! managers' big methods, `PhyreEngine`, imports) is called at its address
@@ -186,6 +193,11 @@ pub mod h4_k1;
 pub mod h4_k2;
 pub mod h4_k3;
 pub mod h4_k4;
+pub mod h4_l1;
+pub mod h4_l2;
+pub mod h4_l3;
+pub mod h4_l4;
+pub mod h4_l5;
 pub mod h4b_a;
 pub mod h4b_b;
 pub mod h4b_c;
@@ -199,6 +211,7 @@ pub mod h4b_j;
 pub mod h4b_k;
 pub mod h4b_l;
 pub mod h4b_m;
+pub mod h4b_n;
 pub mod menu;
 pub mod misc;
 pub mod movie;

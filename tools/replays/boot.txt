@@ -6,23 +6,30 @@
 # title menu (map 0x17, previous 0x15d). No trace ranges; the screenshots
 # (boot-<n>.bmp) are the check.
 #
-# realtime: the opening keeps time with the music stream, which plays in
-# real time. In fast mode (461 frames a second) the same event frame showed
-# a different camera cut, credit and pose in every run, original code
-# included, so this replay runs at the game's own frame rate, without
-# lockstep. Each shot is pinned to the event's clock, ctrl work 0's frame
-# count (0x01325d94, as in field-walk.txt): `shotwhen` takes the image of
-# the update after which the count first lies in a 4-aligned window (the
-# shot's count, or the next if a slow frame skipped it). A `wait` and a
-# `shot` after it, as before 2026-10-26, landed 3 or 4 updates past the
-# wait's end depending on the replies' round trip while the game ran on:
-# boot-2 then differed by 67,860 pixels (docs/harness.md, boot). Map words
+# Lockstep since 2026-10-27 (replay-flakes4). Until then `realtime`: the
+# opening keeps time with the music stream, which played in real time, so
+# in fast mode (461 frames a second) the same event frame showed a different
+# camera cut, credit and pose in every run, original code included; at the
+# game's own frame rate a frame of jitter was left (two original recordings
+# 12,301 and 36,884 pixels apart on boot-2/-3). Since sound runs in
+# lockstep (docs/harness.md, "Sound in lockstep") the music keeps the
+# update count, so the replay runs in fast mode on the virtual clock, in
+# lockstep from the first boundary after memochek's map is up, and pins
+# there (`pin`: what the start-up loop's free frames left). A `lockstep on`
+# sent before the main loop's first update used to hold every start-up
+# present for 5 s and the boot never got to its first update; the main
+# thread now takes the hold at its first boundary.
+#
+# Each shot is pinned to the event's clock, ctrl work 0's frame count
+# (0x01325d94, as in field-walk.txt): `shotwhen` takes the image of the
+# update after which the count first lies in a 4-aligned window. Map words
 # are 0x0112ca90 (current map, previous map). Each `shotwhen` starts while
 # the count is far below its window: one that matches on the first frame it
 # checks fails (its image may be gone).
-realtime
 # 1: the logo, memochek's count 108
 waitfor 0x0112ca90:4 5c011700 ffffffff 3000
+lockstep on
+pin
 waitfor 0x01325d94:4 40000000 c0ffffff 600
 shotwhen 0x01325d94:4 6c000000 fcffffff 600 $OUT\boot-1.bmp
 # the opening's event: wait for its count to start again (0..63)

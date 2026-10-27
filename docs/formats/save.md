@@ -47,9 +47,13 @@ menu goes through them (`load_trace`):
 | `0x11` | `SaveDataMachine_LoadDone` (`0x006f0020`) | closes the Flash screen, `SaveDataSaveLoadSucceed(3)` (`0x00648540`: manager state 3 -> 4, result 3; queues the save's music, block `+0xe8`, in `0x00c526d0` and sets the texture video mode from `+0xea`), `SaveDataSetDialogState(0)`; then `0xa` (idle) |
 
 So list entry 1 is the newest manual save, not `ffx_001`. The harness
-sandbox copies the saves with new modification times, all in about the
-same second, which makes the order of the copies (and the sort's ties)
-decide it: in the sandbox, entry 1 was `ffx_001` (2026-10-17). `loadsave` takes the slot (the file) instead.
+sandbox copied the saves with new modification times, all in about the
+same second, which made the order of the copies (and the sort's ties)
+decide it: in the sandbox, entry 1 was `ffx_001` (2026-10-17), or another
+save when the copies fell across a second (menu-save's trace of entry 1,
+2026-10-27). Since 2026-10-27 the sandbox keeps the source files' times
+(`ffx_harness` `copy_file`), so the list's order is the user's own.
+`loadsave` takes the slot (the file) instead.
 
 ## From the loaded buffer into the game
 

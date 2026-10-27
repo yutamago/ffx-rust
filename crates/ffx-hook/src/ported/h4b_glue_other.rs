@@ -8,7 +8,7 @@
 
 use ffx_glue_other::{
     h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
-    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm,
+    h4b_h as bh, h4b_i as bi, h4b_j as bj, h4b_k as bk, h4b_l as bl, h4b_m as bm, h4b_n as bn,
 };
 
 use super::{StackFrame, mem, ported};
@@ -325,5 +325,40 @@ ported! {
     AbmapPadDrawListBar_00a462f0 @ 0x00a4_62f0 => extern "C" fn pad_list_bar(kind: u32, top: u32, pos: u32, bottom: u32, at: u32) -> u32 {
         let mut f = StackFrame::<0x66>::new();
         bm::list_bar(&mut mem(), f.at(), kind.cast_signed(), top.cast_signed(), pos.cast_signed(), bottom.cast_signed(), at)
+    }
+
+    // ---- round 4, batch 1 (ffx_glue_other::h4b_n)
+
+    /// `TOAdpEasyShapeXYWHC2(ret, id, x, y, w, h, c0, c1)`: the edges,
+    /// UVs, temporaries and the quad record in a frame (`ebp - 0xe8` ..
+    /// `ebp - 4`, 57 words; zeroed, so the never-written record words and
+    /// an unknown id's layout are 0). Returns `ret`, as the original does.
+    TOAdpEasyShapeXYWHC2 @ 0x008e_d380 => extern "C" fn easy_shape_xywhc2(ret: u32, id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x39>::new();
+        bn::easy_shape_xywhc2(&mut mem(), f.at(), ret, id, x.cast_signed(), y.cast_signed(), w.cast_signed(), h.cast_signed(), c0, c1)
+    }
+    /// `rcPrimDraw2D(unused, verts, count, colour)`: the record, the
+    /// vertex colours and temporaries in a frame (`ebp - 0x114` .. `ebp -
+    /// 4`, 68 words). Returns `rcPacketDataDraw`'s `eax`, as the original
+    /// does.
+    rcPrimDraw2D @ 0x0092_5f80 => extern "C" fn prim_draw_2d(_unused: u32, verts: u32, count: u32, colour: u32) -> u32 {
+        let mut f = StackFrame::<0x44>::new();
+        bn::prim_draw_2d(&mut mem(), f.at(), verts, count.cast_signed(), colour)
+    }
+    /// `MenuScene_KeyLerp_00a7bbc0(flags, from, to, t, mode)`: the
+    /// drawers' records in a frame (`ebp - 0x7c` .. `ebp - 4`, 30 words).
+    /// Returns the original's `eax` (kind 5: the record's address); `flags
+    /// & 0x8000` left in the flags slot past the early kinds.
+    MenuScene_KeyLerp_00a7bbc0 @ 0x00a7_bbc0 => extern "C" fn scene_key_lerp(flags: u32, from: u32, to: u32, t: u32, mode: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x1e>::new();
+        bn::scene_key_lerp(&mut mem(), f.at(), flags, from, to, t, mode, Some(slots))
+    }
+    /// `AbmapDrawLink_00a51720(work, points, count)`: the scale, the
+    /// temporaries and the quad record in a frame (`ebp - 0xa8` .. `ebp -
+    /// 4`, 41 words; zeroed, so the record's never-written words are 0);
+    /// the count's countdown in its argument slot. No caller reads `eax`.
+    AbmapDrawLink_00a51720 @ 0x00a5_1720 => extern "C" fn abmap_draw_link(work: u32, points: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<0x29>::new();
+        bn::abmap_draw_link(&mut mem(), f.at(), work, points, count, Some(slots));
     }
 }
