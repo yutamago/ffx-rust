@@ -561,6 +561,16 @@ const ATEL_PLAY_TIME_LAST: u32 = 0x0132_5b84;
 /// past what boot, title and load take.
 const PINNED_CLOCK: f64 = 4096.0;
 const PINNED_GAME_TIME: f64 = 64.0;
+/// `FFXApplication`'s shader time (`f32`, `+0x3b0`): the scene-wide
+/// parameter `GlobalTime`. `FFXApplication_updateGlobalTime_0042fa00`
+/// (from `FFXApplication_animate`) adds each update's step to it, wraps it
+/// to 0 at 2400 s and copies it to `+0x120`, where
+/// `PSceneWideParametersKey_initialize` (`0x004fe940`, through the
+/// renderer's context `app +0x50`, its `+0xd0`) takes it for the shaders.
+/// A map load sets it to 0 (`0x0065d230`), so it carried the load
+/// update's step, whose last bits follow the boot's length.
+const APP_GLOBAL_TIME: usize = 0x3b0;
+const APP_GLOBAL_TIME_COPY: usize = 0x120;
 /// One frame of the limiter at two vsyncs a frame (`g_FrameVsyncs`), for
 /// the step of the update the pin happens in.
 const PINNED_FRAME: f64 = 2.0 * 0.016_683_333_333_333_335;
@@ -582,9 +592,11 @@ static APP: AtomicUsize = AtomicUsize::new(0);
 ///   steps up (below). The virtual clock moves to [`PINNED_CLOCK`],
 ///   `g_AppStartTime` so that the game time is [`PINNED_GAME_TIME`], and
 ///   the paused time to 0; `g_FrameLimiterLast` (relative to the start),
-///   `app +0x20`/`+0x120`, the running update's step (`+0x24`, one frame)
-///   and the play-time stamp follow, so every later step is one frame
-///   and the limiter's next frame is one interval on;
+///   `app +0x20`, the running update's step (`+0x24`, one frame) and the
+///   play-time stamp follow, so every later step is one frame and the
+///   limiter's next frame is one interval on;
+/// - the shaders' `GlobalTime` ([`APP_GLOBAL_TIME`]): 0, as a map load
+///   leaves it, so that it no longer carries the load update's step;
 /// - `Sg_FrameSync`'s carries. The virtual clock's frame is two NTSC
 ///   fields (2 / 59.94 s), a little over the 1/30 s logic tick, so the
 ///   30 Hz carry grows by about 0.1% of a tick each update and about one
@@ -631,7 +643,10 @@ unsafe fn pin_carried_state() -> String {
             #[allow(clippy::cast_possible_truncation)] // the game's f32s
             let game_time = (now - start - paused) as f32;
             *((app + 0x20) as *mut f32) = game_time;
-            *((app + 0x120) as *mut f32) = game_time;
+            // the shader time starts again from 0, as at a map load; its
+            // copy (which held it, not the game time, between updates) too
+            *((app + APP_GLOBAL_TIME) as *mut f32) = 0.0;
+            *((app + APP_GLOBAL_TIME_COPY) as *mut f32) = 0.0;
             // the running update's step was taken from the old clock: one
             // frame, as the next updates' (two f32 game times apart)
             #[allow(clippy::cast_possible_truncation)]
@@ -639,6 +654,7 @@ unsafe fn pin_carried_state() -> String {
             *((app + 0x24) as *mut f32) = next - game_time;
             *(crate::rebase(ATEL_PLAY_TIME_LAST) as *mut f32) = game_time;
             pinned.push("time");
+            pinned.push("global time");
         }
         let getptd = GETPTD.load(Ordering::Acquire);
         if getptd != 0 {
@@ -1719,6 +1735,7 @@ const IGGY_LAST_TIME_FIELD: usize = 0x21d8;
 /// # Safety
 /// Called by the game with an Iggy player (or null).
 unsafe extern "system" fn iggy_ready_to_tick(player: usize) -> i32 {
+    note_iggy_player(player);
     let set_time = IGGY_SET_TIME.load(Ordering::Acquire);
     if player != 0 && set_time != 0 {
         let run = FLIPS_RUN.load(Ordering::Acquire);
@@ -1748,6 +1765,50 @@ unsafe extern "system" fn iggy_ready_to_tick(player: usize) -> i32 {
             std::mem::transmute(IGGY_READY_TO_TICK.load(Ordering::Acquire));
         f(player)
     }
+}
+
+/// The Iggy players the tick check has seen, in order (0: free).
+static IGGY_PLAYERS: [AtomicUsize; 32] = [const { AtomicUsize::new(0) }; 32];
+
+fn note_iggy_player(player: usize) {
+    if player == 0 {
+        return;
+    }
+    for slot in &IGGY_PLAYERS {
+        match slot.compare_exchange(0, player, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => return,
+            Err(seen) if seen == player => return,
+            Err(_) => {}
+        }
+    }
+}
+
+/// `iggyplayers`: each player the tick check has seen, with its total
+/// time (`+0x20`), tick accumulator (`+0x28`) and last check (`+0x21d8`),
+/// `f64`s. A player Iggy has freed since reads as whatever is there now.
+fn iggy_players() -> String {
+    use std::fmt::Write as _;
+    let mut out = String::from("ok");
+    for slot in &IGGY_PLAYERS {
+        let p = slot.load(Ordering::Acquire);
+        if p == 0 {
+            break;
+        }
+        let f = |off: usize| {
+            read_memory(p + off, 8)
+                .ok()
+                .and_then(|b| b.try_into().ok())
+                .map_or(f64::NAN, f64::from_le_bytes)
+        };
+        let _ = write!(
+            out,
+            " {p:#x}: total {:e} acc {:e} last {:e};",
+            f(0x20),
+            f(0x28),
+            f(IGGY_LAST_TIME_FIELD)
+        );
+    }
+    out
 }
 
 /// Puts Iggy's tick check on the virtual clock ([`iggy_ready_to_tick`]).
@@ -2501,13 +2562,25 @@ fn command(line: &str) -> Result<String, String> {
             )
         }
         "readp" => {
-            let ptr = read_memory(crate::rebase(parse_u32(arg(1)?)?), 4)?;
-            let base = u32::from_le_bytes(ptr.try_into().expect("4 bytes")) as usize;
-            let at = base + parse_u32(arg(2)?)? as usize;
-            format!(
-                "ok {}",
-                hex(&read_memory(at, parse_u32(arg(3)?)? as usize)?)
-            )
+            // readp <addr> <off>... <len>: *addr + off; with more offsets
+            // each one before the last is followed too (*(*addr + off1) + off2)
+            if words.len() < 4 {
+                return Err("readp <addr> <off>... <len>".into());
+            }
+            let word = |at: usize| -> Result<usize, String> {
+                let p = read_memory(at, 4)?;
+                Ok(u32::from_le_bytes(p.try_into().expect("4 bytes")) as usize)
+            };
+            let mut at = word(crate::rebase(parse_u32(arg(1)?)?))?;
+            let offs = &words[2..words.len() - 1];
+            for (i, off) in offs.iter().enumerate() {
+                at += parse_u32(off)? as usize;
+                if i + 1 < offs.len() {
+                    at = word(at)?;
+                }
+            }
+            let len = parse_u32(words[words.len() - 1])? as usize;
+            format!("ok {}", hex(&read_memory(at, len)?))
         }
         "write" | "writep" => {
             // writep <addr> <offset> <hex>: at *addr + offset, like readp
@@ -2567,6 +2640,7 @@ fn command(line: &str) -> Result<String, String> {
             on_game_thread(Job::LoadSave(spec.join(" "), lockstep))
         }
         "threads" => list_threads(),
+        "iggyplayers" => iggy_players(),
         "stacks" => thread_stacks(),
         "calllog" => {
             // calllog off: flush and close
