@@ -54,6 +54,7 @@ use ffx_prender::h3_glue45::bridge as g45;
 use ffx_prender::h3_glue46::bridge as g46;
 use ffx_prender::h3_glue47::bridge as g47;
 use ffx_prender::h3_glue48::bridge as g48;
+use ffx_prender::h3_glue49::bridge as g49;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2000,7 +2001,7 @@ ported! {
     /// Hooked in r13: r12's kami0100 failures (one texture-animation
     /// `srv` bind) are the gate's own flake. With the original code
     /// alone the gate failed 2 of 3 runs on such a bind (draw 42); with
-    /// only TextureAnimation_updateTarget 1 of 5, with only this 0 of 5,
+    /// only `TextureAnimation_updateTarget` 1 of 5, with only this 0 of 5,
     /// with both 1 of 8.
     PhyreScene_animate @ 0x0065_7140 => extern "thiscall" fn phyre_scene_animate(this: u32) -> u32 {
         g46::animate(&mut mem(), this)
@@ -2031,6 +2032,15 @@ ported! {
         let mut f = StackFrame::<0x30>::new();
         let scratch = f.at();
         g48::load_character(&mut mem(), scratch + 0xc0, scratch, this, name, request)
+    }
+
+    // ---- round 14 batch 50 (ffx_prender::h3_glue49) ----
+    /// `PhyreScene_unloadCharacter_00670b20(this; character)` -> 0: the
+    /// character's tree node, name, texture animations and clusters
+    /// released, its unload slot cleared (frame `ebp - 0x54`).
+    PhyreScene_unloadCharacter_00670b20 @ 0x0067_0b20 => extern "thiscall" fn scene_unload_character(this: u32, character: u32) -> u32 {
+        let mut f = StackFrame::<0x15>::new();
+        g49::unload_character(&mut mem(), f.at() + 0x54, this, character)
     }
 }
 

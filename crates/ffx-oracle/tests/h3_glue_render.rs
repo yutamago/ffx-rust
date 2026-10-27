@@ -71,6 +71,7 @@ use ffx_prender::h3_glue45::{self as h45, bridge as gh45};
 use ffx_prender::h3_glue46::{self as h46, bridge as gh46};
 use ffx_prender::h3_glue47::{self as h47, bridge as gh47};
 use ffx_prender::h3_glue48::{self as h48, bridge as gh48};
+use ffx_prender::h3_glue49::{self as h49, bridge as gh49};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -11345,5 +11346,152 @@ fn batch49_glue_matches_the_original() {
     Twins::each(|t| {
         let n = if t.snapshot { 40 } else { 200 };
         run_cases(t, CASES49, n, &mut Rng(0x4949_b049));
+    });
+}
+
+// ---- round 14 batch 50 (ffx_prender::h3_glue49) ----
+
+/// A scene (`+0x11dc` its loaded-character tree, `+0xd0` a renderer with
+/// a recording virtual `+8`, eight unload slots at `+0xfccc`), the
+/// character (`args[0]`, its key 0 now and then). The tree's seven nodes
+/// (in order N0, N5, N6, N1, N3, N2, N4: a right subtree's leftmost and
+/// climbs of one and two steps back up) each have a value; one of them holds the key. Their names mix
+/// `a`, `/` and `.`, inline or in a buffer; the string code and
+/// `memmove` are the original's, `operator new` gives buffers in turn.
+/// The vector copy gives 0 to 3 clusters (or no buffer).
+fn prep_unload_character50(
+    t: &mut Twins,
+    obj: u32,
+    this: &mut u32,
+    args: &mut [u32],
+    rng: &mut Rng,
+) {
+    let scene = t.zeros(0x1_1000);
+    *this = scene;
+    let renderer = obj + 0x300;
+    let vtable = obj + 0x340;
+    let flush = t.stub(None, 0x00d0_0008, true, 0, 0, Some(rng.word()));
+    t.w32(vtable + 8, flush);
+    t.w32(renderer, vtable);
+    t.w32(scene + 0xd0, renderer);
+    let character = obj + 0x180;
+    args[0] = character;
+    let key = if rng.chance(6) { 0 } else { rng.word() | 1 };
+    t.w32(character + 4, key);
+    // the tree: head, N0..N3
+    let head = obj + 0x1400;
+    let n: Vec<u32> = (0..7).map(|k| obj + 0x1440 + 0x40 * k).collect();
+    t.w32(scene + 0x11dc, head);
+    t.write(head + 0xd, &[1]);
+    for (node, [left, parent, right]) in [
+        (head, [n[0], n[1], n[4]]),
+        (n[0], [head, n[1], n[5]]),
+        (n[5], [head, n[0], n[6]]),
+        (n[6], [head, n[5], head]),
+        (n[1], [n[0], head, n[2]]),
+        (n[2], [n[3], n[1], n[4]]),
+        (n[3], [head, n[2], head]),
+        (n[4], [head, n[2], head]),
+    ] {
+        t.w32(node, left);
+        t.w32(node + 4, parent);
+        t.w32(node + 8, right);
+        if node != head {
+            t.write(node + 0xd, &[0]);
+        }
+    }
+    let owner = rng.below(7) as usize;
+    for (k, &node) in n.iter().enumerate() {
+        let value = obj + 0x1600 + 0x40 * k as u32;
+        t.w32(node + 0x28, value);
+        let mine = if k == owner {
+            key
+        } else {
+            key ^ (1 + rng.below(9))
+        };
+        t.w32(value, mine);
+        let data = if rng.chance(4) { 0 } else { obj + 0x1900 };
+        t.w32(value + 4, data);
+        // the name
+        let mut name: Vec<u8> = if rng.chance(3) {
+            // a long part between the last '/' and the last '.'
+            let mut v = b"d/".to_vec();
+            v.extend((0..16 + rng.below(12)).map(|_| b'a' + rng.below(3) as u8));
+            v.extend(b".ext");
+            v
+        } else {
+            let len = pick(rng, &[0, 1, 4, 9, 15, 16, 27]) as usize;
+            (0..len).map(|_| b"aa/.b"[rng.below(5) as usize]).collect()
+        };
+        let len = name.len();
+        name.push(0);
+        let s = node + 0x10;
+        if len < 16 && rng.chance(4) {
+            t.write(s, &name);
+            t.w32(s + 0x14, 0xf);
+        } else {
+            let buf = obj + 0x1a00 + 0x40 * k as u32;
+            t.write(buf, &name);
+            t.w32(s, buf);
+            t.w32(s + 0x14, (len as u32).max(0x10) + rng.below(8));
+        }
+        t.w32(s + 0x10, len as u32);
+    }
+    t.stub_seq(
+        h48::OPERATOR_NEW,
+        false,
+        1,
+        0,
+        &[obj + 0x1c00, obj + 0x1c80, obj + 0x1d00],
+    );
+    // the copied vector
+    let count = rng.below(4);
+    let (begin, end) = if count == 0 && rng.chance(2) {
+        (0, 0)
+    } else {
+        (obj + 0x1e00, obj + 0x1e00 + 4 * count)
+    };
+    for i in 0..count {
+        let c = rng.word();
+        t.w32(obj + 0x1e00 + 4 * i, c);
+    }
+    t.stub_this_out(
+        h49::VECTOR_COPY,
+        1,
+        1,
+        Some(rng.word()),
+        &[(0, begin), (4, end), (8, end)],
+    );
+    // the unload slots: in use or not, this character or another
+    for k in 0..8 {
+        let slot = scene + 0xfccc + 0x20c * k;
+        let used = if rng.chance(3) { 0 } else { rng.word() | 1 };
+        let who = if rng.chance(3) { character } else { rng.word() };
+        t.w32(slot, used);
+        t.w32(slot + 4, who);
+        t.w32(slot + 8, rng.word());
+    }
+}
+
+const UNLOAD_CHARACTER50_STUBS: &[(u32, K)] = &[
+    (h49::SYNC_RENDER, K::This(0)),
+    (h49::OPERATOR_DELETE, K::Cdecl(1)),
+    (h49::TEXTURE_ANIMATION_INSTANCE, K::Getter),
+    (h49::UNREGISTER_BY_NAME, K::This(1)),
+    (h49::CLUSTER_MANAGER_INSTANCE, K::Getter),
+    (h49::RELEASE_PCLUSTER, K::This(1)),
+    (h49::TREE_ERASE, K::This(2)),
+];
+
+#[rustfmt::skip]
+const CASES50: &[Case] = &[
+    framed(with_seh(Case { prep: Some(prep_unload_character50), ..method("unload_character", 0x0067_0b20, This::Object, 1, UNLOAD_CHARACTER50_STUBS, |m, this, a| u(gh49::unload_character(m, frame_ebp(), this, a[0]))) }), 0x54, 0),
+];
+
+#[test]
+fn batch50_glue_matches_the_original() {
+    Twins::each(|t| {
+        let n = if t.snapshot { 40 } else { 200 };
+        run_cases(t, CASES50, n, &mut Rng(0x5050_b050));
     });
 }
