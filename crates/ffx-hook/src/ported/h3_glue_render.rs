@@ -54,6 +54,9 @@ use ffx_prender::h3_glue45::bridge as g45;
 use ffx_prender::h3_glue46::bridge as g46;
 use ffx_prender::h3_glue47::bridge as g47;
 use ffx_prender::h3_glue48::bridge as g48;
+use ffx_prender::h3_glue49::bridge as g49;
+use ffx_prender::h3_glue50::bridge as g50;
+use ffx_prender::h3_glue51::bridge as g51;
 
 ported! {
     // ---- g_PhyreScene one-liners ----
@@ -2000,7 +2003,7 @@ ported! {
     /// Hooked in r13: r12's kami0100 failures (one texture-animation
     /// `srv` bind) are the gate's own flake. With the original code
     /// alone the gate failed 2 of 3 runs on such a bind (draw 42); with
-    /// only TextureAnimation_updateTarget 1 of 5, with only this 0 of 5,
+    /// only `TextureAnimation_updateTarget` 1 of 5, with only this 0 of 5,
     /// with both 1 of 8.
     PhyreScene_animate @ 0x0065_7140 => extern "thiscall" fn phyre_scene_animate(this: u32) -> u32 {
         g46::animate(&mut mem(), this)
@@ -2031,6 +2034,33 @@ ported! {
         let mut f = StackFrame::<0x30>::new();
         let scratch = f.at();
         g48::load_character(&mut mem(), scratch + 0xc0, scratch, this, name, request)
+    }
+
+    // ---- round 14 batch 50 (ffx_prender::h3_glue49) ----
+    /// `PhyreScene_unloadCharacter_00670b20(this; character)` -> 0: the
+    /// character's tree node, name, texture animations and clusters
+    /// released, its unload slot cleared (frame `ebp - 0x54`).
+    PhyreScene_unloadCharacter_00670b20 @ 0x0067_0b20 => extern "thiscall" fn scene_unload_character(this: u32, character: u32) -> u32 {
+        let mut f = StackFrame::<0x15>::new();
+        g49::unload_character(&mut mem(), f.at() + 0x54, this, character)
+    }
+
+    // ---- round 14 batch 51 (ffx_prender::h3_glue50) ----
+    /// `graphicCharacterInstantiate_0063c540(character, key)` -> the new
+    /// instance list (0 without a character): its meshes instantiated,
+    /// its name registered (frame `ebp - 0x54`).
+    graphicCharacterInstantiate_0063c540 @ 0x0063_c540 => extern "C" fn character_instantiate(character: u32, key: u32) -> u32 {
+        let mut f = StackFrame::<0x15>::new();
+        g50::instantiate_character(&mut mem(), f.at() + 0x54, character, key)
+    }
+
+    // ---- round 14 batch 52 (ffx_prender::h3_glue51) ----
+    /// `PhyreScene_processVFXDrawEvent(this; event)` -> 0 or a renderer
+    /// error: one VFX draw event between the scene's passes (frame `ebp -
+    /// 0xa8`).
+    PhyreScene_processVFXDrawEvent @ 0x0066_6e40 => extern "thiscall" fn scene_process_vfx_draw_event(this: u32, event: u32) -> u32 {
+        let mut f = StackFrame::<0x2a>::new();
+        g51::process_vfx_draw_event(&mut mem(), f.at() + 0xa8, this, event)
     }
 }
 
