@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::{
     h4_e1 as e1, h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
+    h4b_g as bg,
 };
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
@@ -2665,7 +2666,7 @@ fn run_parts(
     compare: &dyn Fn(u32) -> Vec<(u32, u32)>,
     port: impl FnOnce(&mut G) -> u32,
 ) -> u32 {
-    run_zeroed(t, w, sym, conv, args, (lo, hi), fill, None, compare, port)
+    run_zeroed(t, w, sym, conv, args, (lo, hi), fill, &[], compare, port)
 }
 
 /// [`run_parts`] with `zero` (absolute) zeroed after the fill: the
@@ -2679,12 +2680,12 @@ fn run_zeroed(
     args: &[u32],
     (lo, hi): (u32, u32),
     fill: u8,
-    zero: Option<(u32, u32)>,
+    zero: &[(u32, u32)],
     compare: &dyn Fn(u32) -> Vec<(u32, u32)>,
     port: impl FnOnce(&mut G) -> u32,
 ) -> u32 {
     t.write(lo, &vec![fill; (hi - lo) as usize]);
-    if let Some((a, b)) = zero {
+    for &(a, b) in zero {
         t.write(a, &vec![0; (b - a) as usize]);
     }
     t.b.set_call_top(Some(lo - 0x100));
@@ -2768,7 +2769,7 @@ fn bf_grid_texture() {
                 &[level, size],
                 (ebp - 0x19c, ebp - 4),
                 0xa5,
-                Some((ebp - 0x104, ebp - 4)),
+                &[(ebp - 0x104, ebp - 4)],
                 &|_| vec![(ebp - 0x19c, ebp - 4)],
                 |g| bf::grid_texture(g, ebp - 0x19c, level, size),
             );
@@ -2821,7 +2822,7 @@ fn bf_lang_title() {
                 &[a, x],
                 (ebp - 0x1ac, ebp - 4),
                 0xa5,
-                Some((ebp - 0x104, ebp - 4)),
+                &[(ebp - 0x104, ebp - 4)],
                 &|_| vec![(ebp - 0x1ac, ebp - 4)],
                 |g| bf::lang_title(g, ebp - 0x1ac, x),
             );
@@ -2888,7 +2889,7 @@ fn bf_pad_arrow() {
                 &[item, top, x],
                 (ebp - 0x1ac, ebp - 4),
                 0xa5,
-                Some((ebp - 0x104, ebp - 4)),
+                &[(ebp - 0x104, ebp - 4)],
                 &|_| vec![(ebp - 0x1ac, ebp - 4)],
                 |g| bf::pad_arrow(g, ebp - 0x1ac, item, top, x),
             );
@@ -3291,6 +3292,418 @@ fn bf_cross_str() {
                         Some(ebp + 8),
                     )
                 },
+            );
+        }
+    }
+}
+
+// ---- round 2, batch 2 (ffx_glue_other::h4b_g)
+
+/// `TOMakePktShapeCursor`: the bobbing hand (`_CIcos` as the original)
+/// and layout cells of every size for kinds 4, 5 and others, with and
+/// without the select-cursor flag; the record each draw sees captured.
+/// The never-written words (another kind's layout number, the record's
+/// unwritten words, all of it for layouts of fewer than two entries) are
+/// zero in both frames.
+#[test]
+fn bg_shape_cursor() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f101);
+        t.stub(bg::GET_TIME, 0, true);
+        t.stub(e1::REMAP_X2, 1, true);
+        t.stub(e1::REMAP_Y2, 1, true);
+        let (iw, ih) = (t.zeros(4), t.zeros(4));
+        t.stub_at(bg::IMAGE_WH, false, 3, 0, &[wr(1, iw), wr(2, ih)]);
+        capture_stub(&mut t, bg::DRAW_UI_ELEMENT, 5, 0, 0x98);
+        let mut tags = vec![
+            bg::GET_TIME,
+            e1::REMAP_X2,
+            e1::REMAP_Y2,
+            bg::IMAGE_WH,
+            bg::DRAW_UI_ELEMENT,
+        ];
+        for (sym, n) in [
+            (bg::SHAPE_XYWHUV, 9),
+            (bg::COPY_LAYOUT, 1),
+            (bg::SHAPE_TEXTURE_NAME, 1),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(3);
+        for i in 0..400 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            for tag in [bg::GET_TIME, e1::REMAP_X2, e1::REMAP_Y2] {
+                let v = rng.double();
+                t.ret_f64(tag, v);
+            }
+            let time = f64::from(rng.below(100_000)) / 7.0;
+            t.ret_f64(bg::GET_TIME, time);
+            let (a, b) = (rng.float(), rng.float());
+            t.w32(iw, a);
+            t.w32(ih, b);
+            t.constants(
+                &mut rng,
+                &[
+                    0x00b5_1b9c,
+                    0x00b6_6c08,
+                    0x00b6_6b74,
+                    0x00b6_6c0c,
+                    0x00b5_ee90,
+                    0x00b5_eec0,
+                    0x00b3_eb98,
+                ],
+                &[0x00b2_c5c8],
+            );
+            let k = 0.001 * f64::from(rng.below(100));
+            let at = t.rebase(0x00b9_22a8);
+            t.write(at, &k.to_le_bytes());
+            let n = rng.pick(&[0, 1, 2, 3, 5]);
+            let layout = random_block(&mut t, &mut rng, 4 + 12 * 6);
+            t.w32(layout, n);
+            t.ret(bg::COPY_LAYOUT, layout);
+            let select = rng.pick(&[0, 1]);
+            t.g32(bg::SELECT_CURSOR.sym, select);
+            let kind = rng.pick(&[0, 0, 4, 5, 1, 7, 0xffff_ffff]);
+            let (x, y) = (rng.small(), rng.small());
+            let mut zero = vec![
+                (ebp - 0x5c, ebp - 0x1c),
+                (ebp - 0x18, ebp - 0x14),
+                (ebp - 0x10, ebp - 0xc),
+            ];
+            if !matches!(kind, 0 | 4 | 5) {
+                zero.push((ebp - 0xac, ebp - 0xa8));
+            }
+            if n < 2 {
+                zero.push((ebp - 0x9c, ebp - 4));
+            }
+            run_zeroed(
+                &mut t,
+                &w,
+                0x008f_eb00,
+                Conv::Cdecl,
+                &[kind, x, y],
+                (ebp - 0xb8, ebp - 4),
+                0xa5,
+                &zero,
+                &|_| vec![(ebp - 0xb8, ebp - 4)],
+                |g| bg::shape_cursor(g, ebp - 0xb8, kind, x, y),
+            );
+        }
+    }
+}
+
+/// `yiAssert`: with and without a draw context (either frame word), with
+/// and without the abort, part and message, parts shorter and longer
+/// than 46 characters. The never-written frame word holds `0xa5` bytes
+/// in both frames: the result must not depend on it.
+#[test]
+fn bg_yi_assert() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f102);
+        let flags = t.zeros(4);
+        t.stub_at(bg::GET_DBUFF_DC, false, 1, 0, &[wr(0, flags)]);
+        let vp = t.stub_code(0x0bad_f102, false, 2, 0, false, &[]);
+        t.g32(bg::VPRINTF.sym, vp);
+        let vs = t.stub_code(0x0bad_f103, false, 3, 0, false, &[]);
+        t.g32(bg::VSPRINTF.sym, vs);
+        let mut tags = vec![bg::GET_DBUFF_DC, 0x0bad_f102, 0x0bad_f103];
+        for (sym, n) in [
+            (bg::DBG_PRINTF, 1),
+            (bg::GS_SYNC_V, 1),
+            (bg::EXIT_TRACE, 1),
+            (bg::GS_SYNC_PATH, 2),
+            (bg::GS_RESET_PATH, 0),
+            (bg::FLUSH_CACHE, 1),
+            (bg::DMA_GET_CHAN, 3),
+            (bg::DMA_SYNC, 3),
+            (bg::DMA_SEND_N, 3),
+            (bg::PRINT_GS, 7),
+        ] {
+            t.stub(sym, n, false);
+            tags.push(sym);
+        }
+        let ebp = t.ebp_for(5);
+        for i in 0..200 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            let f = rng.next();
+            t.w32(flags, f);
+            let dc = random_block(&mut t, &mut rng, 0x40);
+            let dc = rng.pick(&[dc, dc, dc, 0]);
+            t.ret(bg::GET_DBUFF_DC, dc);
+            let abort = rng.pick(&[0, 1, 0x100]);
+            if dc == 0 && abort != 0 {
+                continue; // the original goes on to draw with no context
+            }
+            let n = rng.pick(&[0, 5, 46, 47, 80]);
+            let mut text: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26) as u8).collect();
+            text.push(0);
+            let part = t.alloc(&text);
+            let part = rng.pick(&[part, part, 0]);
+            let fmt = rng.next();
+            let format = rng.pick(&[0, fmt]);
+            let args = [abort, part, format, rng.next(), rng.next()];
+            run_parts(
+                &mut t,
+                &w,
+                0x0090_ae50,
+                Conv::Cdecl,
+                &args,
+                (ebp - 0x101c, ebp - 4),
+                0xa5,
+                // `[ebp-8]` holds `ecx` from `__alloca_probe`'s push
+                &|_| vec![(ebp - 0x101c, ebp - 8)],
+                |g| bg::yi_assert(g, ebp - 0x101c, abort, part, format, ebp + 0x14),
+            );
+        }
+    }
+}
+
+/// `gdraw_filterPass3_00a38c40`: as `bf_filter_pass`, with each of the
+/// three inputs present or not, random shader indices and constants.
+#[test]
+fn bg_filter_pass3() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f103);
+        let warn = t.stub_code(0x0bad_f106, false, 2, 0, false, &[]);
+        let ctx = com(
+            &mut t,
+            0xf200,
+            &[
+                (0xc8, 3, &[]),
+                (0x20, 4, &[]),
+                (0x28, 4, &[]),
+                (0x24, 4, &[]),
+                (0x3c, 3, &[]),
+                (0x40, 4, &[]),
+            ],
+        );
+        let mut tags = gdraw_begin_stubs(&mut t);
+        t.stub(bg::TEXTURE_TRANSFORM, 2, false);
+        tags.extend([
+            bg::TEXTURE_TRANSFORM,
+            0x0bad_f106,
+            0xf2c8,
+            0xf220,
+            0xf228,
+            0xf224,
+            0xf23c,
+            0xf240,
+        ]);
+        let state = t.zeros(0xb00);
+        let ebp = t.ebp_for(5);
+        let mut full = 0;
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            gdraw_state(&mut t, &mut rng, state, ctx, warn);
+            let target = gdraw_target(&mut t, &mut rng, state);
+            let made = rng.pick(&[target, target, target, 0]);
+            t.ret(bf::ALLOC_TARGET, made);
+            let dst = t.zeros(0x50);
+            t.ret(bf::MAP_BUFFER, dst);
+            let rect = gdraw_rect(&mut t, &mut rng);
+            let filter = t.zeros(0xc0);
+            for k in 0..0x30 {
+                let v = if (0x22..0x2e).contains(&k) {
+                    rng.float()
+                } else {
+                    rng.next()
+                };
+                t.w32(filter + 4 * k, v);
+            }
+            let ins: Vec<u32> = (0..3)
+                .map(|_| {
+                    let b = random_block(&mut t, &mut rng, 0x30);
+                    rng.pick(&[0, b])
+                })
+                .collect();
+            for (k, v) in ins.iter().enumerate() {
+                t.w32(filter + 0x1c + 4 * k as u32, *v);
+            }
+            let kind = rng.below(4);
+            let (colour, counters) = (rng.next(), rng.next());
+            let cell = t.zeros(16);
+            t.w32(cell, colour);
+            let colour = rng.pick(&[cell, cell, state + 0x6d8, state + 0x6dc]);
+            run_parts(
+                &mut t,
+                &w,
+                0x00a3_8c40,
+                Conv::Cdecl,
+                &[filter, rect, colour, kind, counters],
+                (ebp - 0x2c, ebp),
+                0xa5,
+                &|_| vec![(ebp - 0x2c, ebp - 0x1c)],
+                |g| bg::filter_pass3(g, ebp - 0x2c, filter, rect, colour, kind, counters),
+            );
+            let n = t.log_entries();
+            let drawn = (0..n).any(|e| {
+                let tag: u32 = Mem::read(&t.b, t.log + 4 + 64 * e);
+                tag == bf::DRAW_QUAD
+            });
+            if drawn {
+                full += 1;
+                let mut parts = vec![(ebp - 0x1c, ebp - 0x10), (ebp - 8, ebp)];
+                if ins[1] == 0 {
+                    parts.push((ebp - 0x10, ebp - 0xc));
+                }
+                if ins[2] == 0 {
+                    parts.push((ebp - 0xc, ebp - 8));
+                }
+                for (a, b) in parts {
+                    let x = Oracle::read(&mut t.a, a, (b - a) as usize).unwrap();
+                    let y = Oracle::read(&mut t.b, a, (b - a) as usize).unwrap();
+                    assert_eq!(x, y, "{w}: frame {a:#x}..{b:#x}");
+                }
+            }
+        }
+        assert!(full > 100, "{name}: {full}");
+    }
+}
+
+/// `gdraw_setRenderState_00a3c6c0`: both maps failing (out of memory or
+/// another error), null or written; every flag, blend, kind, texture and
+/// colour transform; the scissor on the screen's target or another and
+/// the pending reset; both depth-stencil paths. The depth-stencil
+/// helper's stub masks the two byte arguments (the original leaves stale
+/// upper bytes there).
+#[test]
+fn bg_set_render_state() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_f104);
+        // four words: the out-of-memory warning passes no fifth
+        let warn = t.stub_code(0x0bad_f107, false, 4, 0, false, &[]);
+        let data = t.zeros(4);
+        let (map, first) = alternating_stub(&mut t, 0xf338, false, 6, 6, &[wr(5, data)]);
+        let ctx = com(
+            &mut t,
+            0xf300,
+            &[
+                (0x2c, 4, &[]),
+                (0x3c, 3, &[]),
+                (0x1c, 4, &[]),
+                (0x8c, 4, &[]),
+                (0x24, 4, &[]),
+                (0x20, 4, &[]),
+                (0x28, 4, &[]),
+                (0x40, 4, &[]),
+                (0xb4, 3, &[]),
+                (0x90, 3, &[]),
+            ],
+        );
+        let vt: u32 = Mem::read(&t.b, ctx);
+        t.w32(vt + 0x38, map);
+        let log = t.stub_code(bg::DEPTH_STENCIL_STATE, false, 4, 0, false, &[]);
+        let mut c = vec![0x81, 0x64, 0x24, 0x0c, 0xff, 0, 0, 0]; // and dword [esp+0xc], 0xff
+        c.extend([0x81, 0x64, 0x24, 0x10, 0xff, 0, 0, 0]); // and dword [esp+0x10], 0xff
+        c.push(0xe9);
+        let at = t.cave_next;
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let f = t.code(&c);
+        t.jump(bg::DEPTH_STENCIL_STATE, f);
+        let tags = [
+            0x0bad_f107,
+            0xf338,
+            0xf32c,
+            0xf33c,
+            0xf31c,
+            0xf38c,
+            0xf324,
+            0xf320,
+            0xf328,
+            0xf340,
+            0xf3b4,
+            0xf390,
+            bg::DEPTH_STENCIL_STATE,
+        ];
+        let state = t.zeros(0xb00);
+        let ebp = t.ebp_for(4);
+        for i in 0..800 {
+            let w = format!("{name} {i}");
+            t.fresh(&mut rng, &tags);
+            t.g32(bb::GDRAW_WARNING.sym, warn);
+            t.g32(bb::GDRAW_STATE.sym, state);
+            for k in 0..0x2c0 {
+                let v = rng.next();
+                t.w32(state + 4 * k, v);
+            }
+            t.w32(state + 4, ctx);
+            let hrs = [0, 0, 0, 1, 0x8007_000e, 0x8000_4005];
+            let (h0, h1) = (rng.pick(&hrs), rng.pick(&hrs));
+            t.w32(first, h0);
+            t.ret(0xf338, h1);
+            let buf = t.zeros(0x80);
+            let d = rng.pick(&[buf, buf, buf, 0]);
+            t.w32(data, d);
+            for (off, v) in [
+                (0x9c8, rng.pick(&[0, 1, 5, 6])),
+                (0x77c, rng.pick(&[0, 1])),
+                (0x9c4, rng.pick(&[0, 1])),
+            ] {
+                t.w32(state + off, v);
+            }
+            let screen = rng.pick(&[state + 0x9cc, state + 0x9d0]);
+            t.w32(state + 0xaac, screen);
+            let r = random_block(&mut t, &mut rng, 0x80);
+            for k in [0x2c, 0x28] {
+                let m = t.zeros(0x20);
+                for j in 0..6 {
+                    let v = rng.float();
+                    t.w32(m + 4 * j, v);
+                }
+                t.w32(r + k, m);
+            }
+            for off in [0x7a4, 0x7a8] {
+                let v = rng.float();
+                t.w32(state + off, v);
+            }
+            let cx = t.zeros(8);
+            for j in 0..4 {
+                let v = rng.pick(&[0, 1, 255, 0x7fff, 0x8000, 0xff80]) as u16;
+                t.w16(cx + 2 * j, v);
+            }
+            let cx = rng.pick(&[0, cx, cx]);
+            t.w32(r + 0x18, cx);
+            let tb = random_block(&mut t, &mut rng, 0x10);
+            let tex = rng.pick(&[0, tb]);
+            t.w32(r + 0x1c, tex);
+            let flags = rng.next() & 0xf;
+            t.w32(r + 4, flags);
+            for (off, v) in [
+                (8, rng.pick(&[0, 1])),
+                (9, rng.pick(&[0, 1, 4, 5])),
+                (0xa, rng.below(4)),
+                (0xb, rng.below(4)),
+                (0xc, rng.pick(&[0, 1, 5, 6])),
+                (0xd, rng.below(8)),
+                (0x10, rng.pick(&[0, 0, 0xff])),
+                (0x11, rng.pick(&[0, 0, 0x7f])),
+            ] {
+                t.w8(r + off, v as u8);
+            }
+            let format = rng.below(4);
+            let colour = random_block(&mut t, &mut rng, 0x10);
+            let third = rng.next();
+            t.constants(&mut rng, &[], &[0x00b7_a960, 0x00b1_70c0]);
+            run_parts(
+                &mut t,
+                &w,
+                0x00a3_c6c0,
+                Conv::Cdecl,
+                &[format, r, third, colour],
+                (ebp - 0x64, ebp - 4),
+                0xa5,
+                &|_| {
+                    vec![
+                        (ebp - 0x64, ebp - 0x4c),
+                        (ebp - 0x3c, ebp - 0x38),
+                        (ebp - 0x34, ebp - 4),
+                    ]
+                },
+                |g| bg::set_render_state(g, ebp - 0x64, format, r, colour),
             );
         }
     }

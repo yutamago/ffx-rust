@@ -7,7 +7,7 @@
 //! are `StackFrame`s; nothing is kept between calls.
 
 use ffx_glue_other::{
-    h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf,
+    h4b_a as ba, h4b_b as bb, h4b_c as bc, h4b_d as bd, h4b_e as be, h4b_f as bf, h4b_g as bg,
 };
 
 use super::{StackFrame, mem, ported};
@@ -222,5 +222,36 @@ ported! {
     TOAdpCrossEasyStrFontSClutRGBA @ 0x008e_c2f0 => extern "C" fn cross_str(text: u32, x: u32, y: u32, a: u32, r: u32, g: u32, b: u32, alpha: u32, scale: u32, space: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<0x100>::new();
         bf::cross_str(&mut mem(), f.at(), text, x, y, a, [r, g, b, alpha], scale, space, Some(slots))
+    }
+
+    // ---- round 2, batch 2 (ffx_glue_other::h4b_g)
+
+    /// `TOMakePktShapeCursor(kind, x, y)`: the record and the image size in
+    /// a frame (`ebp - 0xb8` .. `ebp - 4`, 45 words; zeroed, so another
+    /// kind's never-written layout number is 0).
+    TOMakePktShapeCursor @ 0x008f_eb00 => extern "C" fn shape_cursor(kind: u32, x: u32, y: u32) -> u32 {
+        let mut f = StackFrame::<0x2d>::new();
+        bg::shape_cursor(&mut mem(), f.at(), kind, x, y)
+    }
+    /// `yiAssert(abort, part, format, ...)`: the message buffer in a frame
+    /// (`ebp - 0x101c` .. `ebp - 4`); the varargs after `format` in the
+    /// caller's argument words.
+    yiAssert @ 0x0090_ae50 => extern "C" fn yi_assert(abort: u32, part: u32, format: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x406>::new();
+        bg::yi_assert(&mut mem(), f.at(), abort, part, format, slots.wrapping_add(12))
+    }
+    /// `gdraw_filterPass3_00a38c40(filter, rect, colour, kind, stats)`: the
+    /// rectangle, the buffer word and the null views in a frame (`ebp -
+    /// 0x2c` .. `ebp - 4`, 11 words).
+    gdraw_filterPass3_00a38c40 @ 0x00a3_8c40 => extern "C" fn filter_pass3(filter: u32, rect: u32, colour: u32, kind: u32, stats: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        bg::filter_pass3(&mut mem(), f.at(), filter, rect, colour, kind, stats)
+    }
+    /// `gdraw_setRenderState_00a3c6c0(format, r, _, colour)`: the mapped
+    /// results, the null view and the scissors in a frame (`ebp - 0x64` ..
+    /// `ebp - 4`, 24 words).
+    gdraw_setRenderState_00a3c6c0 @ 0x00a3_c6c0 => extern "C" fn set_render_state(format: u32, r: u32, _c: u32, colour: u32) -> u32 {
+        let mut f = StackFrame::<0x18>::new();
+        bg::set_render_state(&mut mem(), f.at(), format, r, colour)
     }
 }

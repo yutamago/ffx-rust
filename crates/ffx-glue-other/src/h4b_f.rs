@@ -385,7 +385,7 @@ pub const DRAW_QUAD: u32 = crate::h4b_b::DRAW_QUAD;
 
 /// Where a begin keeps its rectangle words: the frame offsets (from
 /// `ebp`) of the four words `gdraw_drawRectQuad` reads.
-struct RectAt(u32);
+pub(crate) struct RectAt(pub(crate) u32);
 
 /// The part both begins share once the target is on the stack and bound:
 /// the target's slot (`(target - state - 0x438) / 0x38`, toward zero) gets
@@ -400,7 +400,7 @@ struct RectAt(u32);
 /// that call's `eax`. Then the viewport and projection: the target's own
 /// (`0x00a3cd30`, `0x00a3c350`) or with `+0x6f8` the full `+0x6e0` x
 /// `+0x6e4` (`0x00a3ce00`, `0x00a3c450`).
-fn place_target(
+pub(crate) fn place_target(
     h: &mut impl Host,
     at: &RectAt,
     rect: u32,
@@ -480,7 +480,7 @@ fn place_target(
 /// `+0x6dc`) or a full target stack (`+0xaac` + 0x1c past its own
 /// address, unsigned) warns (`IggyGDrawSendWarning(0, text)`) and gives
 /// `Err` with the warning's `eax`.
-fn begin_checks(h: &mut impl Host) -> Result<(), u32> {
+pub(crate) fn begin_checks(h: &mut impl Host) -> Result<(), u32> {
     let state = GDRAW_STATE.get(h);
     let stack = state + 0xaac;
     let next = h.read::<u32>(stack).wrapping_add(0x1c);
