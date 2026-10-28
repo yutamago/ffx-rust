@@ -3220,8 +3220,11 @@
 0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
 0x0061b3c0 function AtlStringResourceImage_0061b3c0 # cdecl(module, info, id) -> the string or 0: LoadResource/LockResource/SizeofResource, id & 0xf length-prefixed UTF-16 strings skipped, the string when before the end and not empty (ATL's AtlGetStringResourceImage helper; callers 0x0061b270, AtlGetStringResourceImage, 0x0064f970, 0x0064f9e0, 0x00652310); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b4a0 function BigFileStream_claimSlot_0061b4a0 # thiscall(this; timeout) ret 4: WaitForSingleObject([this], timeout) == 0, then the first of [this+4] 0x60-byte slots at [this+8] whose +0x58 InterlockedCompareExchange(1, 0) finds 0 -> that slot, else 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
 0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
+0x0061b620 function BigFileStream_term_0061b620 # thiscall(this): delete[] +0x40 (cleared), the 5 handles +0x10..+0x20 (BigFileHandle_dtor, delete, cleared), CryptReleaseContext([this], 0), DeleteCriticalSection(+0x24); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b690 function BigFileStream_shutdown_0061b690 # cdecl(): BigFileStream_sBigFileStreamInstacne: BigFileStream_term_0061b620, the slot array +0xc (0x60 bytes each, 0x0061b0c0 destructors, delete[]), CloseHandle([+4]), delete, the global cleared; caller fiosFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
 0x0061b8d0 function BigFileStream_fileTaskRead # freads the stored blocks; stored size 0 means 0x10000; was ReadRequest_ReadBlocks
 0x0061ba60 function Request_Wait # thiscall(_, request), ret 4: WaitForSingleObject(request+0x4c, INFINITE); name ours
@@ -3243,10 +3246,11 @@
 0x0061d120 function AddU8_0061d120 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
 0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
-0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct
+0x0061d5c0 function PRedBlackTree_dtor_0061d5c0 # thiscall(this): every front node (+0xc, until the tree or null) Phyre_PRedBlackTree_remove'd, the free list +0x18 reset and destroyed, Phyre_PRedBlackTree_clear twice (as BufferTree_dtor_00633fe0 without buffers); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct; thiscall(this): DeleteCriticalSection(+0x44), BigFileHandle_deinitialize, PRedBlackTree_dtor_0061d5c0(+4); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
 0x0061d730 function CompareI64Pairs_0061d730 # stdcall(a, b), ret 8: (i64 a[0], i64 a[8]) against b lexicographically: -1, 0, 1; callers 0x0061d870, 0x0061d890 (BigFileHandle); name ours
-0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize
+0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize; thiscall(this): delete[] +0x40, +0, +0x3c (cleared), the VFile array +0x5c (0x20 bytes each, eh_vector_destructor_iterator with VFile_dtor_VFile, delete[] of the count header); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
 0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
 0x0061dec0 function Vbf_Contains
@@ -5310,6 +5314,8 @@
 0x006db7a0 function Worker_ResetCounters # thiscall: wait on the semaphore at +0x2c, +0x28/+0x24/+0x20 = 0, release it; name ours
 0x006db870 function EighthAtLeastOne          # stdcall(n, unused), ret 8: n / 8 (signed) above 8, else 1; name ours
 0x006dba20 function SemaphoreQueue_start_006dba20 # thiscall(this), from graphicInitialize+0x40: two counting semaphores (8, 8) boxed at +0x234/+0x230, the eight 0x30-byte entries from +0x50 queued in the ring +0x1d0 (index +0x1f4 += 7 mod 8, count +0x1f8, lock +0x1fc), +0x220..+0x228 cleared under +0x22c, four threads started (FUN_00703a50(this + 0x14 k; 0, 0x20000)); ported (ffx_glue_other::h4_i2, m4 h4 i); name ours
+0x006dbd10 function JobScheduler_pushJob_006dbd10 # thiscall(this; job, queue) ret 8: queue q = this + queue * 0x1e8 (stored in the queue argument slot and read back): under the semaphore +0x234 and lock +0x1fc the free ring +0x1f0 steps back ((i + 7) % 8, signed), count +0x1f8 down, entry +0x1d0[i] gets job (+0x10 = 0); under the run lock +0x22c the run ring +0x224 steps back and stores the entry at +0x200[j], +0x228 up; run lock and semaphore +0x230 released -> the last ReleaseSemaphore's eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x006dbe80 function JobScheduler_shutdown_006dbe80 # thiscall(this): 4 exit jobs (0x006dbdf0) on queue 0, Thread_JoinClose on the 4 workers (+0, 0x14 apart), queue 0's rings reset under their locks (+0x1f8/+0x1f4/+0x1f0, +0x228/+0x224/+0x220); caller graphicFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006dbf30 function RecordStateIs8_006dbf30 # thiscall(this; i), ret 4: word +0x1f8 of 0x1e8-byte record i == 8; caller graphicInitScene; name ours
 0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete; thiscall(this; queue) ret 4: queue this + queue * 0x1e8 with its count +0x1f8 below 8 (signed): 8x WaitForSingleObject(+0x234, INFINITE), 8x ReleaseSemaphore(+0x234, 1, 0); eax junk; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006dc010 function std_map_cstr_find_006dc010 # thiscall(head; key*), ret 4: the node whose tagged string key (+0xc, bit 0 stripped) equals *key (strcmp order, address order when either is null), or 0; root head+0xc, children +0/+4; callers 0x006dc8d0/0x006dd230/0x006dd7b0; name ours

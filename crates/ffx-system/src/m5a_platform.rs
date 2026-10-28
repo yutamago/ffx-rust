@@ -889,4 +889,283 @@ pub mod bridge {
         let b = h.rebase(SAMPLER_B);
         h.call_sym(SAMPLER_RELEASE, Conv::Thiscall(b), &[])
     }
+
+    /// `i % 8` of the ring index after `i + 7` (signed: the original's
+    /// `and 0x80000007` / sign fix), the slot before `i`.
+    fn ring_prev(i: u32) -> u32 {
+        (i.wrapping_add(7).cast_signed() % 8).cast_unsigned()
+    }
+
+    /// `0x006dbd10(this; job, queue)` (thiscall, `ret 8`): a job moved
+    /// from queue `queue`'s free ring to its run ring. The queue (`this +
+    /// queue * 0x1e8`) is written into the `queue` argument slot
+    /// (`queue_slot`, when the caller has one: the original reuses it).
+    /// `WaitForSingleObject` on the semaphore `+0x234` and the lock
+    /// `+0x1fc`; the free ring's index `+0x1f0` stepped back
+    /// (`(i + 7) % 8`), its count `+0x1f8` down, the entry at
+    /// `+0x1d0 + 4 i` taken; the lock released
+    /// (`ReleaseSemaphore(.., 1, 0)`); the entry's job `+0` and `+0x10` =
+    /// 0; under the run lock `+0x22c`, the run ring's index `+0x224`
+    /// stepped back the same way and the entry stored at `+0x200 + 4 j`,
+    /// its count `+0x228` up; the run lock and the run semaphore `+0x230`
+    /// released. Returns the last release's `eax`.
+    pub fn push_job(
+        h: &mut impl Host,
+        this: u32,
+        job: u32,
+        queue: u32,
+        queue_slot: Option<u32>,
+    ) -> u32 {
+        let q = this.wrapping_add(queue.wrapping_mul(0x1e8));
+        let at = |off: u32| q.wrapping_add(off);
+        let sem: u32 = h.read(at(0x234));
+        if let Some(slot) = queue_slot {
+            h.write(slot, q);
+        }
+        import(
+            h,
+            WAIT_FOR_SINGLE_OBJECT_IAT,
+            Conv::Stdcall,
+            &[sem, u32::MAX],
+        );
+        let lock: u32 = h.read(at(0x1fc));
+        import(
+            h,
+            WAIT_FOR_SINGLE_OBJECT_IAT,
+            Conv::Stdcall,
+            &[lock, u32::MAX],
+        );
+        let free = ring_prev(h.read(at(0x1f0)));
+        let count: u32 = h.read(at(0x1f8));
+        h.write(at(0x1f8), count.wrapping_sub(1));
+        h.write(at(0x1f0), free);
+        let entry: u32 = h.read(at(0x1d0).wrapping_add(free.wrapping_mul(4)));
+        let lock: u32 = h.read(at(0x1fc));
+        import(h, RELEASE_SEMAPHORE_IAT, Conv::Stdcall, &[lock, 1, 0]);
+        h.write(entry, job);
+        // the queue read back from the argument slot
+        let q = queue_slot.map_or(q, |slot| h.read(slot));
+        let at = |off: u32| q.wrapping_add(off);
+        h.write(entry.wrapping_add(0x10), 0u32);
+        let run_lock: u32 = h.read(at(0x22c));
+        import(
+            h,
+            WAIT_FOR_SINGLE_OBJECT_IAT,
+            Conv::Stdcall,
+            &[run_lock, u32::MAX],
+        );
+        let run = ring_prev(h.read(at(0x224)));
+        h.write(at(0x224), run);
+        h.write(at(0x200).wrapping_add(run.wrapping_mul(4)), entry);
+        let queued: u32 = h.read(at(0x228));
+        h.write(at(0x228), queued.wrapping_add(1));
+        let run_lock: u32 = h.read(at(0x22c));
+        import(h, RELEASE_SEMAPHORE_IAT, Conv::Stdcall, &[run_lock, 1, 0]);
+        let run_sem: u32 = h.read(at(0x230));
+        import(h, RELEASE_SEMAPHORE_IAT, Conv::Stdcall, &[run_sem, 1, 0])
+    }
+
+    /// The scheduler's exit job (`0x006dbdf0`) and `Thread_JoinClose`
+    /// (thiscall).
+    pub const EXIT_JOB: u32 = 0x006d_bdf0;
+    pub const THREAD_JOIN_CLOSE: u32 = 0x0070_3a90;
+
+    /// `0x006dbe80(this)` (thiscall, from `graphicFinalize`): the job
+    /// scheduler stopped: four exit jobs on queue 0 ([`push_job`]), the
+    /// four worker threads (`+0`, 0x14 bytes apart) joined and closed;
+    /// queue 0's free ring (`+0x1f8`, `+0x1f4`, `+0x1f0`) and run ring
+    /// (`+0x228`, `+0x224`, `+0x220`) reset, each under its lock. Returns
+    /// the last release's `eax`.
+    pub fn scheduler_shutdown(h: &mut impl Host, this: u32) -> u32 {
+        let exit = h.rebase(EXIT_JOB);
+        for _ in 0..4 {
+            push_job(h, this, exit, 0, None);
+        }
+        for k in 0..4u32 {
+            h.call_sym(
+                THREAD_JOIN_CLOSE,
+                Conv::Thiscall(this.wrapping_add(0x14 * k)),
+                &[],
+            );
+        }
+        let at = |off: u32| this.wrapping_add(off);
+        let mut r = 0;
+        for (lock, words) in [
+            (0x1fcu32, [0x1f8u32, 0x1f4, 0x1f0]),
+            (0x22c, [0x228, 0x224, 0x220]),
+        ] {
+            let l: u32 = h.read(at(lock));
+            import(h, WAIT_FOR_SINGLE_OBJECT_IAT, Conv::Stdcall, &[l, u32::MAX]);
+            for w in words {
+                h.write(at(w), 0u32);
+            }
+            let l: u32 = h.read(at(lock));
+            r = import(h, RELEASE_SEMAPHORE_IAT, Conv::Stdcall, &[l, 1, 0]);
+        }
+        r
+    }
+
+    /// `KERNEL32!InterlockedCompareExchange` (stdcall).
+    pub const COMPARE_EXCHANGE_IAT: u32 = 0x00b0_c12c;
+
+    /// `0x0061b4a0(this; timeout)` (thiscall, `ret 4`): a free stream
+    /// slot claimed. `WaitForSingleObject([this], timeout)`; signalled (0):
+    /// for each of the `[this + 4]` slots of 0x60 bytes at `[this + 8]`,
+    /// `InterlockedCompareExchange(slot + 0x58, 1, 0)` (atomic, through the
+    /// import); the first that was 0 is returned. Else 0.
+    pub fn claim_slot(h: &mut impl Host, this: u32, timeout: u32) -> u32 {
+        let event: u32 = h.read(this);
+        if import(
+            h,
+            WAIT_FOR_SINGLE_OBJECT_IAT,
+            Conv::Stdcall,
+            &[event, timeout],
+        ) != 0
+        {
+            return 0;
+        }
+        let mut i = 0u32;
+        while i < h.read::<u32>(this.wrapping_add(4)) {
+            let base: u32 = h.read(this.wrapping_add(8));
+            let flag = base.wrapping_add(0x58).wrapping_add(i.wrapping_mul(0x60));
+            if import(h, COMPARE_EXCHANGE_IAT, Conv::Stdcall, &[flag, 1, 0]) == 0 {
+                let base: u32 = h.read(this.wrapping_add(8));
+                return base.wrapping_add(i.wrapping_mul(0x60));
+            }
+            i += 1;
+        }
+        0
+    }
+
+    /// `0x0061d5c0(this)` (thiscall): a `PRedBlackTree` destroyed: every
+    /// node removed from the front (`+0xc`, until the tree itself or
+    /// null), the node free list `+0x18` reset and destroyed, the tree
+    /// cleared twice. As [`buffer_tree_dtor`] without the buffers. `eax`
+    /// junk to the callers.
+    pub fn tree_dtor(h: &mut impl Host, this: u32) {
+        loop {
+            let node: u32 = h.read(this.wrapping_add(0xc));
+            if node == this || node == 0 {
+                break;
+            }
+            h.call_sym(TREE_REMOVE, Conv::Thiscall(this), &[node]);
+        }
+        let list = this.wrapping_add(0x18);
+        h.call_sym(FREE_LIST_RESET, Conv::Thiscall(list), &[]);
+        h.call_sym(FREE_LIST_DTOR, Conv::Thiscall(list), &[]);
+        h.call_sym(TREE_CLEAR, Conv::Thiscall(this), &[]);
+        h.call_sym(TREE_CLEAR, Conv::Thiscall(this), &[]);
+    }
+
+    /// `operator delete[]` (`0x00630540`, cdecl) and
+    /// `eh_vector_destructor_iterator(p, size, count, dtor)` (stdcall).
+    pub const OPERATOR_DELETE_ARRAY: u32 = 0x0063_0540;
+    pub const EH_VECTOR_DTOR: u32 = 0x0094_96d2;
+    /// `VFile_dtor_VFile` and the stream slot's destructor `0x0061b0c0`.
+    pub const VFILE_DTOR: u32 = 0x0061_a960;
+    pub const SLOT_DTOR: u32 = 0x0061_b0c0;
+
+    /// `delete[] p` of an array of `size`-byte objects with a count
+    /// header (`p - 4`) and destructor `dtor`: the CRT's vector
+    /// destructor, then `operator delete[](p - 4)`.
+    fn delete_vector(h: &mut impl Host, p: u32, size: u32, dtor: u32) {
+        let count: u32 = h.read(p.wrapping_sub(4));
+        let dtor = h.rebase(dtor);
+        h.call_sym(EH_VECTOR_DTOR, Conv::Stdcall, &[p, size, count, dtor]);
+        h.call_sym(OPERATOR_DELETE_ARRAY, Conv::Cdecl, &[p.wrapping_sub(4)]);
+    }
+
+    /// `BigFileHandle_deinitialize(this)` (thiscall): the blocks `+0x40`,
+    /// `+0` and `+0x3c` (`delete[]`, then cleared, when set), and the
+    /// `VFile` array `+0x5c` (0x20 bytes each, `delete[]` with its
+    /// destructors). `eax` junk to the callers.
+    pub fn big_file_deinitialize(h: &mut impl Host, this: u32) {
+        for off in [0x40u32, 0, 0x3c] {
+            let p: u32 = h.read(this.wrapping_add(off));
+            if p != 0 {
+                h.call_sym(OPERATOR_DELETE_ARRAY, Conv::Cdecl, &[p]);
+                h.write(this.wrapping_add(off), 0u32);
+            }
+        }
+        let files: u32 = h.read(this.wrapping_add(0x5c));
+        if files != 0 {
+            delete_vector(h, files, 0x20, VFILE_DTOR);
+            h.write(this.wrapping_add(0x5c), 0u32);
+        }
+    }
+
+    /// `KERNEL32` import slots: `DeleteCriticalSection`, `CloseHandle`;
+    /// `ADVAPI32!CryptReleaseContext` (stdcall).
+    pub const DELETE_CRITICAL_SECTION_IAT: u32 = 0x00b0_c15c;
+    pub const CLOSE_HANDLE_IAT: u32 = 0x00b0_c0dc;
+    pub const CRYPT_RELEASE_CONTEXT_IAT: u32 = 0x00b0_c014;
+
+    /// `BigFileHandle_dtor_BigFileHandle(this)` (thiscall): the critical
+    /// section `+0x44` deleted, [`big_file_deinitialize`], the tree at
+    /// `+4` destroyed ([`tree_dtor`]). `eax` junk to the callers.
+    pub fn big_file_handle_dtor(h: &mut impl Host, this: u32) {
+        import(
+            h,
+            DELETE_CRITICAL_SECTION_IAT,
+            Conv::Stdcall,
+            &[this.wrapping_add(0x44)],
+        );
+        big_file_deinitialize(h, this);
+        tree_dtor(h, this.wrapping_add(4));
+    }
+
+    /// `0x0061b620(this)` (thiscall): the big-file stream's teardown: the
+    /// block `+0x40` (`delete[]`, cleared), the five handles `+0x10..+0x20`
+    /// (destroyed, deleted, cleared when set), `CryptReleaseContext([this],
+    /// 0)`, the critical section `+0x24` deleted; its `eax`.
+    pub fn big_file_stream_term(h: &mut impl Host, this: u32) -> u32 {
+        let p: u32 = h.read(this.wrapping_add(0x40));
+        if p != 0 {
+            h.call_sym(OPERATOR_DELETE_ARRAY, Conv::Cdecl, &[p]);
+            h.write(this.wrapping_add(0x40), 0u32);
+        }
+        for k in 0..5u32 {
+            let slot = this.wrapping_add(0x10 + 4 * k);
+            let handle: u32 = h.read(slot);
+            if handle != 0 {
+                big_file_handle_dtor(h, handle);
+                h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[handle]);
+                h.write(slot, 0u32);
+            }
+        }
+        let provider: u32 = h.read(this);
+        import(h, CRYPT_RELEASE_CONTEXT_IAT, Conv::Stdcall, &[provider, 0]);
+        import(
+            h,
+            DELETE_CRITICAL_SECTION_IAT,
+            Conv::Stdcall,
+            &[this.wrapping_add(0x24)],
+        )
+    }
+
+    /// `BigFileStream_sBigFileStreamInstacne`.
+    pub const BIG_FILE_STREAM: u32 = 0x00cc_9c48;
+
+    /// `0x0061b690()` (cdecl, from `fiosFinalize`): the big-file stream,
+    /// when there is one: [`big_file_stream_term`], its slot array `+0xc`
+    /// (0x60 bytes each, `delete[]` with destructors, cleared),
+    /// `CloseHandle([+4])`, deleted, the global cleared. `eax` junk to the
+    /// caller (it returns 0 itself).
+    pub fn big_file_stream_shutdown(h: &mut impl Host) {
+        let cell = h.rebase(BIG_FILE_STREAM);
+        let s: u32 = h.read(cell);
+        if s == 0 {
+            return;
+        }
+        big_file_stream_term(h, s);
+        let slots: u32 = h.read(s.wrapping_add(0xc));
+        if slots != 0 {
+            delete_vector(h, slots, 0x60, SLOT_DTOR);
+            h.write(s.wrapping_add(0xc), 0u32);
+        }
+        let event: u32 = h.read(s.wrapping_add(4));
+        import(h, CLOSE_HANDLE_IAT, Conv::Stdcall, &[event]);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[s]);
+        h.write(cell, 0u32);
+    }
 }

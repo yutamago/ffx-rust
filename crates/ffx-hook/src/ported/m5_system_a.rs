@@ -505,6 +505,39 @@ ported! {
     SamplerStates_release_006f5450 @ 0x006f_5450 => extern "C" fn release_samplers() -> u32 {
         pf::release_samplers(&mut mem())
     }
+    /// `(this; job, queue)`: the queue's address goes into the caller's
+    /// `queue` slot (`slots + 4`), as in the original.
+    JobScheduler_pushJob_006dbd10 @ 0x006d_bd10 => extern "thiscall" fn push_job(this: u32, job: u32, queue: u32; slots: u32) -> u32 {
+        pf::push_job(&mut mem(), this, job, queue, Some(slots + 4))
+    }
+    /// `(this)`.
+    JobScheduler_shutdown_006dbe80 @ 0x006d_be80 => extern "thiscall" fn scheduler_shutdown(this: u32) -> u32 {
+        pf::scheduler_shutdown(&mut mem(), this)
+    }
+    /// `(this; timeout)`.
+    BigFileStream_claimSlot_0061b4a0 @ 0x0061_b4a0 => extern "thiscall" fn claim_slot(this: u32, timeout: u32) -> u32 {
+        pf::claim_slot(&mut mem(), this, timeout)
+    }
+    /// `(this)`: `eax` junk to the callers.
+    PRedBlackTree_dtor_0061d5c0 @ 0x0061_d5c0 => extern "thiscall" fn tree_dtor(this: u32) {
+        pf::tree_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BigFileHandle_deinitialize @ 0x0061_d910 => extern "thiscall" fn big_file_deinitialize(this: u32) {
+        pf::big_file_deinitialize(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BigFileHandle_dtor_BigFileHandle @ 0x0061_d670 => extern "thiscall" fn big_file_handle_dtor(this: u32) {
+        pf::big_file_handle_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    BigFileStream_term_0061b620 @ 0x0061_b620 => extern "thiscall" fn big_file_stream_term(this: u32) -> u32 {
+        pf::big_file_stream_term(&mut mem(), this)
+    }
+    /// `()`: `eax` junk to the caller.
+    BigFileStream_shutdown_0061b690 @ 0x0061_b690 => extern "C" fn big_file_stream_shutdown() {
+        pf::big_file_stream_shutdown(&mut mem());
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)

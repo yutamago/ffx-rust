@@ -288,9 +288,10 @@ impl Twins {
     }
 
     /// A recording cdecl stub bound to the import slot `slot` like
-    /// [`Twins::stub_import`] (tag `slot`, `n` words, no `ecx`), returning
-    /// `seq[k]` on its `k`-th call (`seq` must be long enough).
-    fn stub_import_seq(&mut self, slot: u32, n: u32, seq: &[u32]) {
+    /// [`Twins::stub_import`] (tag `slot`, `n` words, no `ecx`, `pops`
+    /// words popped), returning `seq[k]` on its `k`-th call (`seq` must be
+    /// long enough).
+    fn stub_import_seq(&mut self, slot: u32, n: u32, pops: u32, seq: &[u32]) {
         let ctr = self.words(&[0]);
         let tbl = self.words(seq);
         let log = self.log;
@@ -313,7 +314,12 @@ impl Twins {
         c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
         c.extend([0xff, 0x05]);
         c.extend(ctr.to_le_bytes()); // inc dword [ctr]
-        c.push(0xc3);
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
         let addr = self.cave_code(&c);
         let at = self.rebase(slot);
         self.patch(at, &addr.to_le_bytes());
@@ -1182,12 +1188,12 @@ fn custom_conv_set_value_matches_the_original() {
             let text: &[u8] = if k < texts.len() { texts[k] } else { &long };
             let value = by_value_string(t, text, rng.chance(3));
             let seq: Vec<u32> = (0..8).map(|_| u32::from(!rng.chance(3))).collect();
-            t.stub_import_seq(st::STRICMP_IAT, 2, &seq);
+            t.stub_import_seq(st::STRICMP_IAT, 2, 0, &seq);
             // printf: the Resolution message has one argument, the other two
             let printf_words = if key == 1 && count == 1 { 2 } else { 3 };
             t.stub_import(st::PRINTF_IAT, false, printf_words, 0, 0x2222_0001);
             let numbers = [rng.next(), rng.next()];
-            t.stub_import_seq(st::ATOI_IAT, 1, &numbers);
+            t.stub_import_seq(st::ATOI_IAT, 1, 0, &numbers);
             let pos = [u32::MAX, 0, 4, 0x10][rng.below(4) as usize];
             t.stubs(&[
                 (st::STRING_FIND, true, 3, 3, pos),
@@ -1988,6 +1994,206 @@ fn platform_shutdowns_match_the_original() {
             let what = format!("0x006f5450 #{case}");
             t.check(&what, 0x006f_5450, Conv::Cdecl, &[], |m| {
                 Out::U32(pf::release_samplers(m))
+            });
+        }
+    });
+}
+
+/// The job scheduler's push (`0x006dbd10`) and shutdown (`0x006dbe80`)
+/// with the semaphore imports and `Thread_JoinClose` stubbed: queues 0..2
+/// with ring indices 0..7 and beyond (negative too: the signed `% 8`),
+/// entries pointing at scratch blocks. The push's queue slot is the
+/// original's argument slot in both oracles.
+#[test]
+fn platform_job_queue_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06db_0012);
+        for case in 0..40 {
+            t.reset();
+            t.stub_import(pf::WAIT_FOR_SINGLE_OBJECT_IAT, false, 2, 2, 0);
+            t.stub_import(pf::RELEASE_SEMAPHORE_IAT, false, 3, 3, 0x5959_0001);
+            t.stubs(&[(pf::THREAD_JOIN_CLOSE, true, 0, 0, 0x5959_0002)]);
+            let this = t.alloc(
+                &(0..0x1e8 * 3 + 0x40)
+                    .map(|_| rng.next() as u8)
+                    .collect::<Vec<_>>(),
+            );
+            for q in 0..3u32 {
+                let base = this + q * 0x1e8;
+                // entries for ring indices -7..=7 (a negative index from
+                // the signed % 8 reads below the ring)
+                for k in 0..15 {
+                    let e = t.alloc(&(0..0x20).map(|_| rng.next() as u8).collect::<Vec<_>>());
+                    t.w32(base + 0x1d0 - 0x1c + 4 * k, e);
+                }
+                for off in [0x1f0u32, 0x224] {
+                    let i = [0u32, 1, 7, 8, 0xffff_fff9, 0x8000_0000][rng.below(6) as usize];
+                    t.w32(base + off, i);
+                }
+            }
+            let job = rng.next();
+            let queue = rng.below(3);
+            let what = format!("0x006dbd10 #{case} queue {queue}");
+            t.check_framed(
+                &what,
+                0x006d_bd10,
+                Conv::Thiscall(this),
+                &[job, queue],
+                0,
+                |m, ebp| Out::U32(pf::push_job(m, this, job, queue, Some(ebp + 0xc))),
+            );
+            // the shutdown pushes onto queue 0: its free ring indices in range
+            t.w32(this + 0x1f0, rng.below(8));
+            t.w32(this + 0x224, rng.below(8));
+            let what = format!("0x006dbe80 #{case}");
+            t.check(&what, 0x006d_be80, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::scheduler_shutdown(m, this))
+            });
+        }
+    });
+}
+
+/// `0x0061b4a0(this; timeout)` with `WaitForSingleObject` and
+/// `InterlockedCompareExchange` stubbed (a stub answering a random
+/// sequence: the first slot free, a later one, none): 0..5 slots, the wait
+/// timing out or not.
+#[test]
+fn platform_claim_slot_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061b_0013);
+        for case in 0..60 {
+            t.reset();
+            let waited = if rng.chance(4) { 0x102 } else { 0 };
+            t.stub_import(pf::WAIT_FOR_SINGLE_OBJECT_IAT, false, 2, 2, waited);
+            let seq: Vec<u32> = (0..8).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_import_seq(pf::COMPARE_EXCHANGE_IAT, 3, 3, &seq);
+            let n = rng.below(6);
+            let slots = t.zeros(0x60 * 6);
+            let this = t.words(&[rng.next(), n, slots]);
+            let timeout = rng.word();
+            let what = format!("0x0061b4a0 #{case} slots {n} waited {waited:#x}");
+            t.check(&what, 0x0061_b4a0, Conv::Thiscall(this), &[timeout], |m| {
+                Out::U32(pf::claim_slot(m, this, timeout))
+            });
+        }
+    });
+}
+
+/// The big-file teardown: `0x0061d5c0` (the tree's remove stub moves the
+/// front node like the one in `platform_teardown`), `BigFileHandle_deinitialize`,
+/// `BigFileHandle_dtor_BigFileHandle`, `0x0061b620` and `0x0061b690`
+/// with the CRT's `delete[]` and vector destructor, the tree and free
+/// list methods, `operator delete` and the Win32 imports stubbed: blocks
+/// set or not, 0..5 handles, the stream global set or not.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup, five functions
+fn platform_big_file_teardown_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061d_0014);
+        for case in 0..40 {
+            t.reset();
+            let log = t.stub_code(pf::TREE_REMOVE, true, 1, 1, 0);
+            let mut c = vec![0x60]; // pushad
+            c.extend([0x8b, 0x44, 0x24, 0x24]); // mov eax, [esp+0x24]
+            c.extend([0x8b, 0x00]); // mov eax, [eax]
+            c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+            c.push(0x61); // popad
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log (ret 4)
+            let remove = t.cave_code(&c);
+            t.jump(pf::TREE_REMOVE, remove);
+            t.stubs(&[
+                (pf::FREE_LIST_RESET, true, 0, 0, 0x6060_0001),
+                (pf::FREE_LIST_DTOR, true, 0, 0, 0x6060_0002),
+                (pf::TREE_CLEAR, true, 0, 0, 0x6060_0003),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x6060_0004),
+                (pf::OPERATOR_DELETE_ARRAY, false, 1, 0, 0x6060_0005),
+                (pf::EH_VECTOR_DTOR, false, 4, 4, 0x6060_0006),
+            ]);
+            for (slot, n) in [
+                (pf::DELETE_CRITICAL_SECTION_IAT, 1),
+                (pf::CLOSE_HANDLE_IAT, 1),
+                (pf::CRYPT_RELEASE_CONTEXT_IAT, 2),
+            ] {
+                t.stub_import(slot, false, n, n, 0x6060_0010 + n);
+            }
+            // a tree of 0..3 nodes chained through +0, ending at itself or null
+            let tree = |t: &mut Twins, rng: &mut Rng, at: u32| {
+                let n = rng.below(4);
+                let end = if rng.chance(2) { at } else { 0 };
+                let mut next = end;
+                for _ in 0..n {
+                    let node = t.words(&[next, 0, 0, 0]);
+                    next = node;
+                }
+                t.w32(at + 0xc, next);
+            };
+            let handle = |t: &mut Twins, rng: &mut Rng| {
+                let words: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+                let h = t.words(&words);
+                for off in [0x40u32, 0, 0x3c, 0x5c] {
+                    let v = if rng.chance(3) {
+                        0
+                    } else {
+                        t.words(&[3, 0, 0, 0]) + 4
+                    };
+                    t.w32(h + off, v);
+                }
+                tree(t, rng, h + 4);
+                h
+            };
+            let one = t.zeros(0x30);
+            tree(t, &mut rng, one);
+            let what = format!("0x0061d5c0 #{case}");
+            t.check(&what, 0x0061_d5c0, Conv::Thiscall(one), &[], |m| {
+                pf::tree_dtor(m, one);
+                Out::None
+            });
+            let h1 = handle(t, &mut rng);
+            let what = format!("BigFileHandle_deinitialize #{case}");
+            t.check(&what, 0x0061_d910, Conv::Thiscall(h1), &[], |m| {
+                pf::big_file_deinitialize(m, h1);
+                Out::None
+            });
+            let h2 = handle(t, &mut rng);
+            let what = format!("BigFileHandle_dtor_BigFileHandle #{case}");
+            t.check(&what, 0x0061_d670, Conv::Thiscall(h2), &[], |m| {
+                pf::big_file_handle_dtor(m, h2);
+                Out::None
+            });
+            let stream = |t: &mut Twins, rng: &mut Rng| {
+                let words: Vec<u32> = (0..0x12).map(|_| rng.next()).collect();
+                let s = t.words(&words);
+                let v = if rng.chance(3) { 0 } else { rng.next() };
+                t.w32(s + 0x40, v);
+                let v = if rng.chance(3) {
+                    0
+                } else {
+                    t.words(&[2, 0, 0, 0]) + 4
+                };
+                t.w32(s + 0xc, v);
+                for k in 0..5 {
+                    let v = if rng.chance(2) { 0 } else { handle(t, rng) };
+                    t.w32(s + 0x10 + 4 * k, v);
+                }
+                s
+            };
+            let s1 = stream(t, &mut rng);
+            let what = format!("0x0061b620 #{case}");
+            t.check(&what, 0x0061_b620, Conv::Thiscall(s1), &[], |m| {
+                Out::U32(pf::big_file_stream_term(m, s1))
+            });
+            let s2 = if rng.chance(4) {
+                0
+            } else {
+                stream(t, &mut rng)
+            };
+            t.g32(pf::BIG_FILE_STREAM, s2);
+            let what = format!("0x0061b690 #{case} {s2:#x}");
+            t.check(&what, 0x0061_b690, Conv::Cdecl, &[], |m| {
+                pf::big_file_stream_shutdown(m);
+                Out::None
             });
         }
     });
