@@ -42,6 +42,7 @@ use ffx_prender::m5r_e::{self as me, bridge as e};
 use ffx_prender::m5r_f::{self as mf, bridge as f};
 use ffx_prender::m5r_g::{self as mg, bridge as gb};
 use ffx_prender::m5r_h::{self as mh, bridge as h};
+use ffx_prender::m5r_i::{self as mi, bridge as i};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4927,6 +4928,287 @@ fn batch8_functions_match_the_original() {
                 Out::U32(h::cache_dump(g, slot, tag))
             });
             t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 9 (ffx_prender::m5r_i and twins) ----
+
+#[test]
+fn batch9_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0801);
+        for case in 0..40 {
+            // the unique add on +0x3878: found, appended, grown (no data,
+            // data, allocation failing)
+            let scene = t.zeros(0x3890);
+            let n = rng.below(5);
+            let vals: Vec<u32> = (0..n).map(|_| rng.below(6)).collect();
+            let data = if n == 0 && rng.chance(2) {
+                0
+            } else {
+                t.words(&[vals.clone(), vec![0; 4]].concat())
+            };
+            t.w32(scene + 0x3878, n);
+            t.w32(scene + 0x387c, [n, n + 1, n + 2, 0][rng.below(4) as usize]);
+            t.w32(scene + 0x3880, data);
+            // (a failed allocation writes through the null block in the
+            // original: only with old data, where the count stays small)
+            let block = if data != 0 && n == 0 && rng.chance(3) {
+                0
+            } else {
+                t.zeros(0x40)
+            };
+            t.stub_sym(mi::USER_MALLOC, 1, false, 1, 0, Ret::Val(block));
+            t.stub_sym(mi::MEMCPY, 2, false, 3, 0, Ret::Val(0));
+            t.stub_sym(mi::USER_FREE, 3, false, 1, 0, Ret::Val(0));
+            let v = rng.below(6);
+            t.check(
+                "PhyreScene_AddVFXToList3880",
+                0x0065_65e0,
+                Conv::Thiscall(scene),
+                &[v],
+                |g| Out::U32(i::add_unique(g, scene, 0x3878, v)),
+            );
+            t.reset();
+
+            // the DTT list: empty, found, appended, grown, null slot
+            let scene = t.zeros(0x3870);
+            let n = rng.below(5);
+            let vals: Vec<u32> = (0..n).map(|_| rng.below(6)).collect();
+            let data = if n == 0 && rng.chance(3) {
+                0
+            } else {
+                t.words(&[vals, vec![0; 4]].concat())
+            };
+            t.w32(scene + 0x3854, n);
+            t.w32(scene + 0x3858, [n, n + 1, n + 2][rng.below(3) as usize]);
+            t.w32(scene + 0x385c, data);
+            t.stub_sym(mi::RESERVE_4, 4, true, 1, 1, Ret::Val(0));
+            let v = rng.below(6);
+            t.check(
+                "PhyreScene_AddVFXToDTTList",
+                0x0065_6990,
+                Conv::Thiscall(scene),
+                &[v],
+                |g| Out::U32(i::add_vfx_to_dtt(g, scene, v)),
+            );
+            t.reset();
+
+            // the tree add twin
+            let tree = rand_obj(t, &mut rng, 0x30);
+            let node = if case % 4 == 0 {
+                0
+            } else {
+                rand_obj(t, &mut rng, 0x20)
+            };
+            t.w32(tree + 0x18, node);
+            let key = rand_obj(t, &mut rng, 4);
+            let value = rand_obj(t, &mut rng, 4);
+            t.stub_sym(ffx_glue_other::r3::POOL_REFILL, 5, true, 1, 1, Ret::Val(0));
+            t.stub_sym(
+                mi::TREE_INSERT_691E60,
+                6,
+                true,
+                1,
+                1,
+                Ret::Val(rng.below(2)),
+            );
+            t.stub_sym(ffx_glue_other::r3::POOL_GIVE, 7, true, 1, 1, Ret::Val(0));
+            t.stub_sym(ffx_glue_other::r3::TREE_FIXUP, 8, true, 1, 1, Ret::Val(0));
+            t.check(
+                "TaggedTree_add_00693c50",
+                0x0069_3c50,
+                Conv::Thiscall(tree),
+                &[key, value],
+                |g| {
+                    Out::U32(ffx_glue_other::r3::tree_add(
+                        g,
+                        mi::TREE_INSERT_691E60,
+                        tree,
+                        key,
+                        value,
+                    ))
+                },
+            );
+            t.reset();
+
+            // the string nodes: names (tagged or not), none, no memory
+            let mk = |t: &mut Twins, rng: &mut Rng| {
+                let s = t.alloc(b"name_of_a_texture\0\0\0");
+                let w = match rng.below(4) {
+                    0 => 0,
+                    1 => 1,
+                    2 => s | 1,
+                    _ => s,
+                };
+                t.words(&[w])
+            };
+            let (k, v) = (mk(t, &mut rng), mk(t, &mut rng));
+            let p = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            t.stub_sym(mi::PHYRE_MALLOC_ALIGNED, 9, false, 2, 0, Ret::Val(p));
+            t.stub_sym(mi::MEMCPY, 10, false, 3, 0, Ret::Val(0));
+            let node = t.zeros(0x14);
+            t.check(
+                "StringTreeNode_ctor_0064cba0",
+                0x0064_cba0,
+                Conv::Thiscall(node),
+                &[k],
+                |g| Out::U32(i::string_node_ctor(g, node, k)),
+            );
+            t.stub_sym(mi::STRING_NODE_CTOR, 11, true, 1, 1, Ret::Val(node));
+            t.check(
+                "StringPairTreeNode_ctor_0064cb00",
+                0x0064_cb00,
+                Conv::Thiscall(node),
+                &[k, v],
+                |g| Out::U32(i::string_pair_node_ctor(g, node, k, v)),
+            );
+            t.reset();
+
+            // the texture animation info dtor, the sampler pairs, the
+            // tree twins
+            let this = rand_obj(t, &mut rng, 0x10);
+            t.stub_sym(mi::PHYRE_FREE, 12, false, 1, 0, Ret::Val(0));
+            t.check(
+                "TextureAnimationInfo_dtor_006af760",
+                0x006a_f760,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    i::texanim_info_dtor(g, this);
+                    Out::None
+                },
+            );
+            t.stub_sym(mi::SAMPLER_DTOR, 13, true, 0, 0, Ret::Val(0x13));
+            for sym in [0x0069_2680, 0x0069_27a0] {
+                t.check(
+                    &format!("SamplerPair_dtor_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U32(i::sampler_pair_dtor(g, this)),
+                );
+            }
+            stub_all(
+                t,
+                20,
+                &[
+                    (mb::TREE_ORPHAN_ALL, true, 0, 0),
+                    (mb::TREE_CLEAR, true, 0, 0),
+                    (mb::FREE_LIST_RESET, true, 0, 0),
+                    (mb::FREE_LIST_DTOR, true, 0, 0),
+                ],
+            );
+            t.check(
+                "PRedBlackTreePair_dtor_006924e0",
+                0x0069_24e0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(b::tree_pair_dtor(g, this)),
+            );
+            for sym in [0x0069_2540, 0x0069_25c0] {
+                t.check(
+                    &format!("PRedBlackTreeFree_dtor_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U32(b::tree_free_dtor(g, this)),
+                );
+            }
+            t.reset();
+
+            // the specular textures (frame)
+            let this = rand_obj(t, &mut rng, 0x80);
+            let (ta, tb) = (
+                if rng.chance(3) { 0 } else { rng.next() },
+                if rng.chance(3) { 0 } else { rng.next() },
+            );
+            let found: Vec<u32> = (0..2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            let r = t.seq(&found);
+            t.stub_sym(mi::FIND_PARAM, 14, true, 1, 1, r);
+            let holder = rand_obj(t, &mut rng, 8);
+            t.w32(this + 0x60, holder);
+            t.stub_sym(mi::SET_TEXTURE_CHECKED, 15, true, 2, 2, Ret::Val(0));
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "SpecularMapParams_setTextures_006c5570",
+                0x006c_5570,
+                Conv::Thiscall(this),
+                &[ta, tb],
+                |g| {
+                    i::set_specular_textures(g, ebp, this, ta, tb);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            for k in 0..4 {
+                let (x, y): (u32, u32) = (
+                    Mem::read(&t.a, ebp - 0x10 + 4 * k),
+                    Mem::read(&t.b, ebp - 0x10 + 4 * k),
+                );
+                // compared when a texture went in (the callee read it)
+                let set = (0..t.calls()).any(|e| t.r32(t.log + 4 + 64 * e) == 15);
+                if set {
+                    assert_eq!(x, y, "setTextures: the record");
+                }
+            }
+            t.reset();
+
+            // the median of nine: below and above 40 floats
+            let n = [3, 40, 41, 100, 47][(case % 5) as usize];
+            let first = t.zeros(4 * n as usize + 4);
+            let (mid, last) = (first + 4 * (n / 2), first + 4 * n);
+            t.stub_sym(mi::MEDIAN3, 16, false, 4, 0, Ret::Val(0x16));
+            let pred = rng.next();
+            let slot = first_slot(&t.b, 4);
+            t.b_top = Some(slot - 0x40);
+            t.check(
+                "FloatSort_Median9_006c7560",
+                0x006c_7560,
+                Conv::Cdecl,
+                &[first, mid, last, pred],
+                |g| Out::U32(i::median9(g, slot, first, mid, last, pred)),
+            );
+            t.b_top = None;
+            if n > 0x28 {
+                let (x, y): (u32, u32) = (Mem::read(&t.a, slot), Mem::read(&t.b, slot));
+                assert_eq!(x, y, "Median9: the argument slot");
+            }
+            t.reset();
+
+            // the dyn-geo manager: there, made, no memory
+            let made = case % 3;
+            t.global(
+                mi::DYN_GEO_FILL.sym,
+                if made == 0 { rng.next() | 1 } else { 0 },
+            );
+            let m = if made == 1 {
+                rand_obj(t, &mut rng, 0x10)
+            } else {
+                0
+            };
+            t.stub_sym(mi::OPERATOR_NEW, 17, false, 1, 0, Ret::Val(m));
+            t.import_sym(mi::CREATE_MUTEX_W, 18, 3, 3, Ret::Val(0x77));
+            // the pool's creation writes +4 (mov dword [ecx+4], 0x1234; ret 4)
+            let code = [0xc7, 0x41, 0x04, 0x34, 0x12, 0, 0, 0xc2, 0x04, 0x00];
+            let pool = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), pool);
+            t.jump(mi::CREATE_POOL, pool);
+            t.check(
+                "DynGeoMemManager_createInstance_006deb90",
+                0x006d_eb90,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    i::dyn_geo_create(g);
+                    Out::None
+                },
+            );
             t.reset();
         }
     });

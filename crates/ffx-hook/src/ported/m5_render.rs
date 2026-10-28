@@ -14,6 +14,7 @@ use ffx_prender::m5r_e::bridge as e;
 use ffx_prender::m5r_f::bridge as f;
 use ffx_prender::m5r_g::bridge as g;
 use ffx_prender::m5r_h::bridge as h;
+use ffx_prender::m5r_i::bridge as i;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1124,5 +1125,66 @@ ported! {
     /// `Cache_Dump(tag)`: stores the tail message into its argument slot.
     Cache_Dump @ 0x0084_0510 => extern "C" fn cache_dump(tag: u32; slots: u32) -> u32 {
         h::cache_dump(&mut mem(), slots, tag)
+    }
+    // ---- batch 9 (ffx_prender::m5r_i, and twins of earlier ports) ----
+    /// `PhyreScene_AddVFXToList3880(scene; v)`: the unique add on `+0x3878`.
+    PhyreScene_AddVFXToList3880 @ 0x0065_65e0 => extern "thiscall" fn add_vfx_to_list3880(this: u32, v: u32) -> u32 {
+        i::add_unique(&mut mem(), this, 0x3878, v)
+    }
+    /// `PhyreScene_AddVFXToDTTList(scene; vfx)`.
+    PhyreScene_AddVFXToDTTList @ 0x0065_6990 => extern "thiscall" fn add_vfx_to_dtt(this: u32, vfx: u32) -> u32 {
+        i::add_vfx_to_dtt(&mut mem(), this, vfx)
+    }
+    /// `TaggedTree_add_00693c50(this; &key, &value)`: `TaggedTree_add`'s
+    /// code with the insert `0x00691e60`.
+    TaggedTree_add_00693c50 @ 0x0069_3c50 => extern "thiscall" fn tagged_tree_add_00693c50(this: u32, key: u32, value: u32) -> u32 {
+        ffx_glue_other::r3::tree_add(&mut mem(), ffx_prender::m5r_i::TREE_INSERT_691E60, this, key, value)
+    }
+    /// `StringTreeNode_ctor_0064cba0(this; name)`.
+    StringTreeNode_ctor_0064cba0 @ 0x0064_cba0 => extern "thiscall" fn string_node_ctor(this: u32, name: u32) -> u32 {
+        i::string_node_ctor(&mut mem(), this, name)
+    }
+    /// `StringPairTreeNode_ctor_0064cb00(this; key, value)`.
+    StringPairTreeNode_ctor_0064cb00 @ 0x0064_cb00 => extern "thiscall" fn string_pair_node_ctor(this: u32, key: u32, value: u32) -> u32 {
+        i::string_pair_node_ctor(&mut mem(), this, key, value)
+    }
+    /// `TextureAnimationInfo_dtor_006af760(this)`.
+    TextureAnimationInfo_dtor_006af760 @ 0x006a_f760 => extern "thiscall" fn texanim_info_dtor(this: u32) {
+        i::texanim_info_dtor(&mut mem(), this);
+    }
+    /// `SpecularMapParams_setTextures_006c5570(this; a, b)`: the texture
+    /// record in the shim's frame (`ebp - 0x10`).
+    SpecularMapParams_setTextures_006c5570 @ 0x006c_5570 => extern "thiscall" fn set_specular_textures(this: u32, a0: u32, a1: u32) {
+        let mut f = StackFrame::<4>::new();
+        i::set_specular_textures(&mut mem(), f.at() + 0x10, this, a0, a1);
+    }
+    /// `FloatSort_Median9_006c7560(first, mid, last, pred)`: stores the
+    /// step into its first argument slot.
+    FloatSort_Median9_006c7560 @ 0x006c_7560 => extern "C" fn median9(first: u32, mid: u32, last: u32, pred: u32; slots: u32) -> u32 {
+        i::median9(&mut mem(), slots, first, mid, last, pred)
+    }
+    /// `DynGeoMemManager_createInstance_006deb90()`.
+    DynGeoMemManager_createInstance_006deb90 @ 0x006d_eb90 => extern "C" fn dyn_geo_create() {
+        i::dyn_geo_create(&mut mem());
+    }
+    /// `SamplerPair_dtor_00692680(this)`.
+    SamplerPair_dtor_00692680 @ 0x0069_2680 => extern "thiscall" fn sampler_pair_dtor_00692680(this: u32) -> u32 {
+        i::sampler_pair_dtor(&mut mem(), this)
+    }
+    /// `SamplerPair_dtor_006927a0(this)`.
+    SamplerPair_dtor_006927a0 @ 0x0069_27a0 => extern "thiscall" fn sampler_pair_dtor_006927a0(this: u32) -> u32 {
+        i::sampler_pair_dtor(&mut mem(), this)
+    }
+    /// `PRedBlackTreePair_dtor_006924e0(this)`: `0x00633dc0`'s code.
+    PRedBlackTreePair_dtor_006924e0 @ 0x0069_24e0 => extern "thiscall" fn tree_pair_dtor_006924e0(this: u32) -> u32 {
+        b::tree_pair_dtor(&mut mem(), this)
+    }
+    /// `PRedBlackTreeFree_dtor_00692540(this)`: `0x00633ef0`'s code.
+    PRedBlackTreeFree_dtor_00692540 @ 0x0069_2540 => extern "thiscall" fn tree_free_dtor_00692540(this: u32) -> u32 {
+        b::tree_free_dtor(&mut mem(), this)
+    }
+    /// `PRedBlackTreeFree_dtor_006925c0(this)`: `0x00633ef0`'s code.
+    PRedBlackTreeFree_dtor_006925c0 @ 0x0069_25c0 => extern "thiscall" fn tree_free_dtor_006925c0(this: u32) -> u32 {
+        b::tree_free_dtor(&mut mem(), this)
     }
 }
