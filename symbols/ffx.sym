@@ -10540,9 +10540,11 @@
 0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here; REVIEWED field r13: xor eax,eax; ret (3 bytes), too small to hook and nothing to port
 0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960; ported (field round 39): command (5, a); returns a
 0x0081efd0 function SqsInitIop_0081efd0        # (mode) -> reply word 0, or 0 (name ours; from 0x008879d0 with (i8) 0x00b5ec4f): FFXSifBindRpc(0x012f4e20, 0x1000, 0) and (0x012f4e48, 0x1001, 0) until both clients' +0x24 are set (a negative bind returns 0); FlushCache(0); 0x012f4f44/4e78/4e74/4edc = 0, 0x012f4efc = 3, g_SqsWaveInfoDone and send[0] = mode, send[1] = &g_SqsIopStatus; Sqs_CallRpc(1); reply words 1, 2, 3, 0, 4 to 0x012f4f88, 0x012f4f8c, 0x012f4ec4, 0x012f4ec0, g_SqsShoutBuffer; 0x012f4ec8 = 0xc800, 0x012f4148 = 1; the 16 status words cleared; ported (field r14, ffx_field::nkz)
-0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export); REVIEWED field r13: dead on PC: its only caller is the jmp thunk 0x00885ed0, whose only caller SndDataSendStraightStream_sub 0x0077a8e0 is dead (classify credits the thunk to SndClearWave 0x00885ec0 by its code scan); PS2 IOP SIF-DMA streaming, not ported
-0x0081f550 function SqsStraightStreamingDigitalModeSet # (x); called by SndSetStraightStreamingDigitalMode
+0x0081f160 function SqsStraightStreamingNextHalf_0081f160 # cdecl() -> the half mask 0x012f4efc: [0x012f4ed4] = [0x012f4e90] (dbgPrintf with g_SqsDebugFlags bit 1), [0x012f4ef8] = 0, [0x012f4ee0] = that half; while [0x012f4edc]: [0x012f4ef8] = 1 when it differs from [0x012f4f40] with its bit (1 << (half & 1)) already in the mask; the bit set, [0x012f4f40] = half; returned without the bit while running; callers audioDma, 0x0077b340, 0x0077e670; name ours; ported ffx_prender::m5m_b (m5 map b2)
+0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export); REVIEWED field r13: dead on PC: its only caller is the jmp thunk 0x00885ed0, whose only caller SndDataSendStraightStream_sub 0x0077a8e0 is dead (classify credits the thunk to SndClearWave 0x00885ec0 by its code scan); PS2 IOP SIF-DMA streaming, not ported; ported ffx_prender::m5m_b (m5 map b2): cdecl(data, start, adpcm, arg) -> eax: first = start when g_SqsPlayMode 0; at a fresh start ([0x012f4edc] 0, mask 3) the stream state cleared, id bits (data, first, adpcm), else the destination moves by half the size for the other half; slot +4 = fresh 0/1, the half's mask bit cleared, FlushCache(0); adpcm -> Sqs_DecodeAdpcm(adpcm, 0x012f4fc0), slot +0 = that buffer (and *adpcm without fresh); play mode 2 averages left/right blocks (logical >> 1 of the i32 sum); SIF DMA records at 0x012f4e00 (first: [0x012f4ec0]+0x8000, length size/0x3000*0x700 or 0x1c00/0x2300 by arg % 6), sceSifSetDma until non-zero, sceSifDmaStat until negative (the original spins 0x10000 every other poll: a delay only); first -> RPC send (fresh, arg), Sqs_CallRpc(0x11, 0); data -> debug print, 0x012f4ee4..ef0; ++[0x012f4ed8]
+0x0081f550 function SqsStraightStreamingDigitalModeSet # (x); called by SndSetStraightStreamingDigitalMode; ported ffx_prender::m5m_b (m5 map b2): cdecl(x) -> 0: SqsIopCommandSend, SqsReportStandby; command (0x39, x, 0 x6) queued at g_SqsCmdNext (queue sent first when it would pass 0x012f4e00, with the debug message for flag bit 0); SqsIopCommandSend
 0x0081f6c0 function SqsStraightStreamingStart # SndStartStraightStream's slot (0x00887620) jumps here; ported (field round 39): command (0x38, *0x012f4e70), 0x012f4e90 = 0, 0x012f4edc = 1, 0x012f4ef8 = 0
+0x0081f760 function SqsStraightStreamingRecord_0081f760 # cdecl() -> 0x012f4ee0 (the stream record): [0x012f4ef4] = [0x012f4ea0]; 16 bytes, not in the dump (code at 0x0077e52e calls it); name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
 0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here; ported (field round 39): command (0x3e, v & 0x7f)
 0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
@@ -13293,7 +13295,7 @@
 0x00886d50 function SndSePitchTranslate       # (id, a, pitch, b): SqsSePitchTranslate; Switch name by alphabetical slot
 0x00886d80 function SndSepClear               # fh v3:exact 0x00886ce0
 0x00886db0 function SndSepClearAll            # fh v3:bsim1.00 0x00886d10
-0x00886dc0 function SqsSeSeparateMaskClear_thunk_00886dc0 # name ours; jmp SqsSeSeparateMaskClear 0x0081e750 (8 separate ids; Atel_LoadEventSeps_00866520 calls it)
+0x00886dc0 function SqsSeSeparateMaskClear_thunk_00886dc0 # name ours; jmp SqsSeSeparateMaskClear 0x0081e750 (8 separate ids; Atel_LoadEventSeps_00866520 calls it); ported ffx_prender::m5m_b (m5 map b2): the jmp, as a call with the 8 words
 0x00886dd0 function SndSepLock                # fh v3:bsim1.00 0x00886d30
 0x00886df0 function SndSepPanDirect           # fh v3:cg2 0x886d50
 0x00886e20 function SndSepPanTranslate # (id, pan, frames): SqsSePanTranslate; Switch name by alphabetical slot; layout: alphabetical run between SndSepPanDirect and SndSepPlay (1 unnamed in the gap); Switch 0x710048dc80 SndSepPanTranslate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -13308,14 +13310,14 @@
 0x00886fc0 function SndSepVolumeFadeOut2 # (id, volume): SqsSeVolumeTranslate(kind, id, volume, 0); Switch name by alphabetical slot; layout: alphabetical run between SndSepVolumeFadeOut and SndSepVolumeTranslate (1 unnamed in the gap); Switch 0x710048dc60 SndSepVolumeFadeOut2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00886ff0 function SndSepVolumeTranslate     # fh v3:bsim1.00 0x00886f50
 0x00887020 function SndSeqIopCommandSendMain  # (): SqsIopCommandSend; a first EIO error during a CD wait switches to the HDD error mode (TkCdReadSync, TkRefreshHDDMode, set_hdd_err); Switch name by alphabetical slot
-0x00887070 function SqsSetCycleMode_thunk      # jmp SqsSetCycleMode (0x0081e900), from TkInit; name ours
+0x00887070 function SqsSetCycleMode_thunk      # jmp SqsSetCycleMode (0x0081e900), from TkInit; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00887080 function SndSetEventStatus         # (party, on): g_SndEventMask bit; Switch name by alphabetical slot
 0x008870b0 function SndSetFoot3dStatus        # (party, on): g_SndFoot3dMask bit; Switch name by alphabetical slot
 0x008870e0 function SndSetFootSep             # fh v3:exact 0x00887050
 0x00887100 function SndSetFootStatus          # (party, on): g_SndFootMask bit; Switch name by alphabetical slot
 0x00887130 function SndSetKinuStatus          # (party, on): g_SndKinuMask bit; Switch name by alphabetical slot
 0x00887160 function SndSetMusicMute           # (): g_SndMusicMute = 0; Switch name by alphabetical slot
-0x00887170 function SqsSetReverbPlaySwitch_thunk # jmp SqsSetReverbPlaySwitch (0x0081ec20); MsBtlReadManage: formation byte 1 == 1
+0x00887170 function SqsSetReverbPlaySwitch_thunk # jmp SqsSetReverbPlaySwitch (0x0081ec20); MsBtlReadManage: formation byte 1 == 1; ported ffx_prender::m5m_b (m5 map b2)
 0x00887180 function SndSetSoundMode           # fh v3:exact 0x008870f0
 0x008871c0 function SndSetSoundType           # (t): g_SndSoundType = clamp(t, 0, 1); Switch name by alphabetical slot
 0x00887210 function SndSetStraightStreamingDigitalMode # (x): SqsStraightStreamingDigitalModeSet, status raised; Switch name by alphabetical slot
@@ -13323,7 +13325,7 @@
 0x00887280 function SndSortCommonWave         # (list or the default): jmp SqsSortCommonWave; Switch name by alphabetical slot
 0x008872a0 function SndSortCommonWaveWithSet # (list): SndSortCommonWave, SndSetWaveData; Switch name by alphabetical slot; cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008ba668 SndSortCommonWaveWithSet, 2 votes, round 1
 0x008872c0 function SndSpuMemorySortSwitch    # (x): u8 0x01330096 = x; jmp SqsSetStraightStreamAreaSize; Switch name by alphabetical slot
-0x008872e0 function SqsAllVoiceTerminate_thunk_008872e0 # name ours; jmp SqsAllVoiceTerminate 0x0081ce70 (AtelStopSoundAll calls it)
+0x008872e0 function SqsAllVoiceTerminate_thunk_008872e0 # name ours; jmp SqsAllVoiceTerminate 0x0081ce70 (AtelStopSoundAll calls it); ported ffx_prender::m5m_b (m5 map b2)
 0x00887310 function SndSqsIopFrame            # (): SndSeqIopCommandSendMain, then this frame's status/shout/VAG words to the previous ones; name ours (slot SndSqsEeSoundSystemStatus..SndSqsIopSoundErrorStatus)
 0x00887360 function SndSqsIopSoundErrorStatus # fh v3:exact 0x008872d0
 0x008873c0 function SndSqsReportIopSoundStatus # (i) -> g_SndIopStatus[i]; Switch name by alphabetical slot
@@ -13332,7 +13334,7 @@
 0x00887450 function SndStandbyBattleWave      # fh v3:exact 0x008873c0
 0x008874d0 function SndStandbyBattleWaveBlock # (data, size < 0x30000): SndStandbyBattleWave's send, then SndSyncWaveTrans(1); Switch name by alphabetical slot
 0x00887550 function SndStandbySepWave         # fh v3:exact 0x008874c0
-0x00887560 function SqsShoutStreamingDataSend_thunk # jmp SqsShoutStreamingDataSend (0x0081ed40), from TkInit; name ours
+0x00887560 function SqsShoutStreamingDataSend_thunk # jmp SqsShoutStreamingDataSend (0x0081ed40), from TkInit; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00887570 function SndStandbyStream          # (id): iVoiceRead(id) (FMOD cmd 0x10), status raised, g_TkSndStandbyVoice = 1; Switch name by alphabetical slot; was Voice_Prepare
 0x008875a0 function SndStartBattleStream      # fh v3:exact 0x00887510
 0x008875d0 function SndStartShoutStream       # (a, b, volume; 0 when voices are off): iShoutStart, SqsShoutStreamingStart, shout busy; Switch name by alphabetical slot
@@ -15258,39 +15260,46 @@
 0x00907060 function yiWindowDrawMenu          # (window): full scissor, TODrawMenuPlateXYWHType(x0 + 4, y0 [- 1 when 0x008ac2f0], x1 - x0 - 8, y1 - y0, 10), TODrawScissor(x0 - 5, y0, x1 - 6, y1) (kind 0 slot +0x78)
 0x00907160 function yiWindowPopInit           # (window): frames +0xc = 0, drawn rect +0x48.. = rect +0x28..; kinds 1, 2 slot +0x60
 0x00907190 function yiWindowPopOpen           # (window): state 2, handler = slot +0x68; returns 1
+0x009071b0 function YiWindowHandler_none_009071b0 # cdecl() -> 0, 3 bytes (xor eax,eax; ret): g_YiWindowHandlers +0x20/+0x38; not hookable (symbols/m5-not-portable.tsv); name ours
 0x009071c0 function yiWindowPopClose          # (window): frames +0xc -1; at 0 state 4, handler = slot +0x70
 0x009071f0 function yiWindowFinish_009071f0   # (window): +0 cleared, handler idle 0x00907e50, 1 (kinds 1, 2; same code as 0x00907370 0x009075b0 0x009077e0 0x00907a20)
 0x00907210 function yiWindowDrawPop           # (window): on map 0x15b with the window at (65, 290), TODrawScissor of the TO window at (38, 115); else TOMakePktScissor(0, 0, 512, 416) (kinds 1, 2)
 0x009072e0 function yiWindowSlideDownOpen     # (window): drawn y1 +0x54 += step +0x3c, frames +0xc -1; at 0: frames from +0xe, state 2, handler slot +0x68 (kind 3)
+0x00907320 function YiWindowHandler_none_00907320 # as YiWindowHandler_none_009071b0 (+0x50); name ours
 0x00907330 function yiWindowSlideDownClose    # (window): drawn y1 -= step; at 0 frames: state 4, handler slot +0x70 (kind 3)
 0x00907370 function yiWindowFinish_00907370   # (window): as yiWindowFinish_009071f0 (kind 3)
 0x00907390 function yiWindowDrawPlate         # (window): full scissor, plate 0x008f9a40(x0, y0, w, h) of the drawn rectangle, TODrawScissor(x0 + 12, y0 + 4, x1 - 12, y1 - 4) (kind 3; same code at 0x009075d0, 0x00907800, 0x00907a40)
 0x00907450 function yiWindowSlideDownInit     # (window): y1 = 416.0, y0 0, from (x0, 0, x1, 0), 6 frames (0x60006 at +0xc), step +0x3c = (416 - 0) / 6 (kind 3 slot +0x60)
 0x009074b0 function yiWindowSlideUpInitHere   # (window): y0 -= 416 - y1, from/drawn y 416, 6 frames, step (y1 - y0) / 6 (kind 4)
 0x00907520 function yiWindowSlideUpOpen       # (window): drawn y0 +0x4c -= step +0x3c; at 0 frames: reload, state 2 (kinds 4, 5)
+0x00907560 function YiWindowHandler_none_00907560 # as YiWindowHandler_none_009071b0 (+0x68/+0x80); name ours
 0x00907570 function yiWindowSlideUpClose      # (window): drawn y0 += step; at 0 frames: state 4 (kinds 4, 5)
 0x009075b0 function yiWindowFinish_009075b0   # (window): as yiWindowFinish_009071f0 (kinds 4, 5)
 0x009075d0 function yiWindowDrawPlate_009075d0 # (window): as yiWindowDrawPlate (kinds 4, 5)
 0x00907690 function yiWindowSlideUpInit       # (window): rect y 0..416, from/drawn y 416, 6 frames of 416 / 6 (kind 5)
 0x009076f0 function yiWindowSlideRightInitHere # (window): x1 += x0, from/drawn x 0, 6 frames, step +0x38 = (x1 - x0) / 6 (kind 6)
 0x00907750 function yiWindowSlideRightOpen    # (window): drawn x1 +0x50 += step +0x38; at 0 frames: reload, state 2 (kinds 6, 7)
+0x00907790 function YiWindowHandler_none_00907790 # as YiWindowHandler_none_009071b0 (+0x98/+0xb0); name ours
 0x009077a0 function yiWindowSlideRightClose   # (window): drawn x1 -= step; at 0 frames: state 4 (kinds 6, 7)
 0x009077e0 function yiWindowFinish_009077e0   # (window): as yiWindowFinish_009071f0 (kinds 6, 7)
 0x00907800 function yiWindowDrawPlate_00907800 # (window): as yiWindowDrawPlate (kinds 6, 7)
 0x009078c0 function yiWindowSlideRightInit    # (window): rect x 0..512, from/drawn x 0, 6 frames of 512 / 6 (kind 7)
 0x00907920 function yiWindowSlideLeftInitHere # (window): x0 -= 512 - x1, from/drawn x 512, 6 frames, step (x1 - x0) / 6 (kind 8)
 0x00907990 function yiWindowSlideLeftOpen     # (window): drawn x0 +0x48 -= step +0x38; at 0 frames: reload, state 2 (kinds 8, 9)
+0x009079d0 function YiWindowHandler_none_009079d0 # as YiWindowHandler_none_009071b0 (+0xc8/+0xe0); name ours
 0x009079e0 function yiWindowSlideLeftClose    # (window): drawn x0 += step; at 0 frames: state 4 (kinds 8, 9)
 0x00907a20 function yiWindowFinish_00907a20   # (window): as yiWindowFinish_009071f0 (kinds 8, 9)
 0x00907a40 function yiWindowDrawPlate_00907a40 # (window): as yiWindowDrawPlate (kinds 8, 9)
 0x00907b00 function yiWindowSlideLeftInit     # (window): rect x 0..512, from/drawn x 512, 6 frames of 512 / 6 (kind 9)
 0x00907b60 function yiWindowBarInit           # (window): drawn (0, 8, 512, 28), colour +0x58 0x80808080 (kind 10)
 0x00907ba0 function yiWindowBarOpen           # (window): state 2, handler 0x00907d70 (open, returns 0); 1 (kind 10)
+0x00907bc0 function YiWindowHandler_none_00907bc0 # as YiWindowHandler_none_009071b0 (+0xf8); name ours
 0x00907bd0 function yiWindowBarClose          # (window): state 4, handler yiWindowFinishAll; 1 (kind 10)
 0x00907bf0 function yiWindowFinishAll_00907bf0 # (window): the same code as yiWindowFinishAll (kind 10 slot +0x70)
 0x00907c10 function yiWindowDrawBar           # (window): the help bar: two sprites (0x008f5e90) and its text (TOMkpShapeXY 0x106) from the layout at 0x025d1618, scissor packet (0, 8, 512, 28) (kind 10)
 0x00907cc0 function yiWindowGrowInit         # (window): progress +6 = 0, drawn (x0, y0, x0, y1) (kind 0 slot +0x60; table g_YiWindowHandlers)
 0x00907cf0 function yiWindowGrowOpen         # (window): progress += 0x2aa (<= 0x1000), drawn x1 from it; at x1: state 2, handler 0x00907d70 (kind 0)
+0x00907d70 function YiWindowHandler_none_00907d70 # as YiWindowHandler_none_009071b0 (+0x8; yiWindowBarOpen, yiWindowGrowOpen store it); name ours
 0x00907d80 function yiWindowSetHandlers       # (window): +0x60..+0x70, +0x78 = the six handlers of kind +4 (i16) from the table 0x00c5d788 (6 words a kind)
 0x00907e60 function Native_9000_DebugPrint # 0x9000: an "atel_test_print!" line through the empty dbgPrintf; 0; ported in native_mods (script round 21); name from an "atel_test_print!" line through the empty dbgPrintf; 0
 0x00907e70 function yiGetMapName              # (out): sprintf "%s" of the current map's name (table 0x025d5888, count 0x01934ec8)
@@ -15308,6 +15317,7 @@
 0x009083e0 function yiCallFieldParticle       # fh v3:exact+call.cs 0x009083e0 cdecl
 0x00908400 function yiClutGreenRender_00908400 # (a, b) -> eax (name ours): yiClutGreen_00916130(&g_YiRender, a, b) (that one stays the original's: it reads stack junk); ported (field r14, ffx_field::yi)
 0x00908420 function yiDObjToOMD               # fh switch:bsim1.00 0x710052bcf0; (out, part) -> eax: yiPartChainToOMD(&g_YiRender 0x01876e00, out, part); ported (field r13, ffx_field::yi)
+0x00908440 function YiRenderStatus_clearBit8_00908440 # cdecl(): g_YiRenderStatus &= ~0x100; eax untouched; Native_8062_ClearGlobal018ded08Bit8 and opu_rgba_en's neighbour call it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00908450 function yiDisableHamonEff         # fh v3:exact 0x00908450
 0x00908480 function yiDisp                    # Fahrenheit's name (switch:bsim1.00 0x710052b0b0, kept as ours for the notes); () -> eax: yiSetLightMatrices(), yiRender_draw(&g_YiRender, 0); ported (field r14, ffx_field::yi)
 0x009084a0 function yiDisp2                      # layout: alphabetical run between yiDisp and yiDisposeAnimDObj (1 unnamed in the gap); Switch 0x710052b0d0 yiDisp2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); () -> yiRender_draw(&g_YiRender, 1)'s eax; ported (field r14, ffx_field::yi)
@@ -15342,9 +15352,10 @@
 0x00908f20 function yiGetViewAdjust              # (out): copies g_YiViewAdjust (16 words)
 0x00908f40 function GetGlobal018ded30_00908f40   # auto-port shape (return global u32, cdecl): t0 = u32[&0x018ded30]; return t0; callers: ; name ours
 0x00908f70 function yiGetVCount               # fh v3:bsim1.00 0x00908f70
-0x00908f90 function yiGui_setfogparam         # fh v3:cg4 0x908f90
+0x00908f90 function yiGui_setfogparam         # fh v3:cg4 0x908f90; ported ffx_prender::m5m_b (m5 map b2): cdecl() -> Gu_WindowCreate(5, 5, 0xa0, 0x60, 0xe, yiGui_setfogparam_proc)
 0x00909030 function yiInit                    # Fahrenheit's name (v3:exact 0x00909030, kept as ours for the notes); (): yiRender_create(&g_YiRender, 0, 0x3000, 0x2400), g_YiScaleFactor x y z = 32.0f (0x00b41d84), yiRender_resetall, then a tail jump to rcbgInit; ported (field r14, ffx_field::yi)
 0x00909070 function yiLibFilesize                # layout+callees: sorts between yiInit and yiLoadBattleFieldParticleNo, and its named callees match the Switch 0x7100529f60 yiLibFilesize's (similarity 1.00: sceClose, sceLseek, sceOpen); symbols from Fahrenheit's server export
+0x009090b0 function TkVibrateCurve_get_009090b0 # cdecl() -> 0x00b66ee4 (an address in the image); g_TkVibrateCurves + 0xc2c holds it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x009090c0 function yiLibReadmalloc              # layout+callees: sorts between yiInit and yiLoadBattleFieldParticleNo, and its named callees match the Switch 0x7100529ed0 yiLibReadmalloc's (similarity 1.00: sceClose, sceLseek, sceOpen, sceRead, yiMalloc); symbols from Fahrenheit's server export
 0x00909120 function yiLoadBattleFieldParticleNo  # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host0:/ffx/proj/map/f_particle/b%03d.bin'; Switch 0x710052ca50 yiLoadBattleFieldParticleNo (symbols from Fahrenheit's server export); (n) -> yiLoadFieldParticle's eax: sprintf b%03d.bin/.pdt (0x00b66f7c/0x00b66fa8) into two 256-byte locals; ported (field r14, ffx_field::yi)
 0x00909190 function yiLoadFieldParticle       # fh switch:bsim0.97 0x710052c850; (textures, effects) -> 0: g_YiMapRead set: pppFpFree, 0, buffer 0x019138a4 yiFree'd and 0; textures read whole (sceOpen mode 1, sceLseek end/start, yiMalloc, sceRead, sceClose), opened again only to seek to its end and close, pppSetFpTex(buf) and yiFree when read; effects read whole into 0x019138a4 and g_YiMapRead, then pppSetFpPdt; 0x01934ed4..0x01934ee0 (camera and map ids) -1; ported (field r13, ffx_field::yi)
@@ -15377,6 +15388,7 @@
 0x0090a2c0 function yiSetFogColor             # (c): low bytes of four ints to 0x018df140 (read by yiGetFogColor); map 0xe0: graphicSetFogColour(r/255, g/255, b/255); between yiSetDrawMask and yiSetIDPage alphabetically; name ours
 0x0090a350 function yiSetFogParam             # (near, far, limit): near/far over scale*units to 0x018df148/14c, limit to 0x018df144 (yiGetFogParam's inverse); map 0xe0: graphicSetFog{Near,Far,Limit}; name ours
 0x0090a400 function yiSetColor3                  # (r, g, b) -> 0: the low bytes to 0x01934ea4..a6; script native 0x00859000 (three ints)
+0x0090a420 function YiRender_initFogDefault_0090a420 # cdecl() -> 0: yiRender_initfog(&g_YiRender); Native_021e_RenderInitFog's callee; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0090a430 function yiSetFieldPair               # (on, a, b) -> 0: floats to 0x01934e7c, 0x01934e9c; flags 0x01934e78 |= on ? 3 : 1; script native 0x008591d0; ?meaning
 0x0090a470 function yiSetFieldVec3Int            # (a, b, c, n) -> 0: floats to 0x01934e90..98, n to 0x01934ea0; script native 0x00858c90; ?meaning
 0x0090a4a0 function yiSetIDPage               # fh v3:exact 0x0090a4a0; ported (field round 37): (page) -> 0: g_YiMapData's section page + 2 (an ID map) to Sg_IdFixupAndSet when present
@@ -15396,7 +15408,7 @@
 0x0090ae20 function yiPkAddGsAD                  # (q, reg, data): the A+D quadword (data, 0, reg, 0) of a GS register write
 0x0090ae50 function yiAssert                  # fh v3:exact 0x0090ae50; cdecl(abort, part, format, ...): the PS2 debug assert: dbgPrintf banner, part and vprintf message (twice, around 120 sceGsSyncV and Sg_GetDBuffDC kept at 0x019350e8); no context: return, or with abort "process abort." + debug_exit_trace(1) and on; a grey framed box as a GS packet at 0x019350f0 from the context's +0x10/+0x38 and +0x1c (DMA channel 2), yiPrintGs_0090aaa0 "*ASSERT*", the part (cut to 46 in place) and the vsprintf message, 120 syncs, without abort debug_exit_trace(1); junk read: [ebp-0x1018] never written, only its top 12 bits survive and every use masks them (port: 0, brief 2026-10-24); ported (h4b r2, ffx_glue_other::h4b_g)
 0x0090b4b0 function yiDumpMatrix                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%8.3f '; Switch 0x7100533fb0 yiDumpMatrix (symbols from Fahrenheit's server export)
-0x0090bbc0 function yiFree                    # (p): jmp user_free_thunk 0x00687010; the yi renderer's frees (yiRender_term, yiObjReadFinish, 0x00910a90); name ours (field r8)
+0x0090bbc0 function yiFree                    # (p): jmp user_free_thunk 0x00687010; the yi renderer's frees (yiRender_term, yiObjReadFinish, 0x00910a90); name ours (field r8); ported ffx_prender::m5m_b (m5 map b2): the jmp, as a call with p
 0x0090bbd0 function yiMalloc                  # fh v3:cg20 0x90bbd0
 0x0090bbe0 function yiMalloc64                # fh v3:cg4 0x90bbe0
 0x0090bc00 function yiMallocD                    # layout+callees: sorts between yiMalloc64 and yiRender_destroy, and its named callees match the Switch 0x7100534bd0 yiMallocD's (similarity 1.00: user_malloc); symbols from Fahrenheit's server export
@@ -15428,7 +15440,7 @@
 0x0090e5d0 function yiLoadVramImage           # (scene, entry, data): an image above GS 0x3c00 kept in the scene's copy from +0x276a4: format 0 w*h/8 quadwords, 0x14 w*h/32, 0x13 swizzled by 0x0090e0b0 (yiMapFileRead)
 0x0090e6d0 function TextUtilList_TextUtilList # fh switch:bsim1.00 0x71002190e0 TextUtilList::TextUtilList
 0x0090e6f0 function yiArcPrintSize            # fh switch:bsim1.00 0x7100532640
-0x0090ec94 function yiArc_GSmemwriteV110         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Closing File: %s\\n'; Switch 0x71005312f0 yiArc_GSmemwriteV110 (symbols from Fahrenheit's server export)
+0x0090ec94 function yiArc_GSmemwriteV110         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Closing File: %s\\n'; Switch 0x71005312f0 yiArc_GSmemwriteV110 (symbols from Fahrenheit's server export); NOT a function: a case label of yiArcPrintSize (symbols/m5-not-portable.tsv)
 0x0090ed10 function yiLoadMatrixChunk         # (scene, chunk): chunk +4 to +0x6823c, 64 floats from +0x40 to +0x68240 (map file reader 0x0090f900)
 0x0090edb0 function yiObjLoad                 # (obj, record): the inverse of yiObjSave (map file reader 0x0090f900, object records)
 0x0090ee60 function yiObjSave                 # (record, obj): obj +0x80..+0x96 and the floats +0x50..+0x6c to a 0x40-byte record (0x0090f190)
@@ -15453,7 +15465,7 @@
 0x00911fc0 function yiRectMakeTex_00911fc0     # (r, obj, a, b, scale, height, tbp, u, v) -> 0: body of yiRectToOMD_maketex/_old: an orthographic top-down matrix over the bounds (yiBoundsMinMax, or corners a/b ordered by x and z) onto the u/v region (or 256x256 for u 0, offsets from obj's first words), sync, yiTexTargetClear, op_md_x64_draw, yiPolyTexMapXZ(obj, min, max, scale, height, tbp, u, junk); junk = its saved edi (the 8th word it never pushes); both callers push 8 words so v is their stale stack; name ours; ported in ffx_field::yipoly (chara-main-map round 2; the shim passes 0 for the edi word)
 0x00912270 function yiRectToOMDBuild          # (r, inside, size_in, outside, size_out, m, a, b, unlimited) -> chains taken: yiRectToOMD/yiRectToOMD_old's body; links (+0x54) every map part's VIF chain node (parts r+0x6880e, 0xb4 each, not kind 1 / state 3; chain +0x26 via +0x4c) whose centre +- radius +0x2c (through m) reaches the x/z rectangle, then yiPolySplitRectXZ (or yiPolySelectRectXZ without outside) with caps size/4; empty heads and 0 when none; name ours; ported (field r9, ffx_field::yipoly)
 0x00912590 function yiSetDrawFrame            # () -> yiSendGsPacket's eax: from 0x00911fc0 (name ours): Sg_GetDBuffDC into a local, then a 4-qword A+D packet: GIF tag 0x8003/0x10000000/0xe, FRAME_1 (bit 0 of the state set: 0, else 0x34000 >> 11) | 0x1080000, SCISSOR_1 0x2000000, XYOFFSET_1 0x7000; yiSendGsPacket(packet, 4); ported (field r13, ffx_field::yipoly)
-0x00912690 function yiSendGsPacket           # (packet, qwc) -> sceGsSyncPath(0, 0): Sg_MFIFOSync, sceGsSyncPath, DMA channel 2 (sceDmaGetChan) synced, CHCR |= 0x41 &= ~0x8c, FlushCache, sceDmaSendN(chan, packet, qwc); name ours
+0x00912690 function yiSendGsPacket           # (packet, qwc) -> sceGsSyncPath(0, 0): Sg_MFIFOSync, sceGsSyncPath, DMA channel 2 (sceDmaGetChan) synced, CHCR |= 0x41 &= ~0x8c, FlushCache, sceDmaSendN(chan, packet, qwc); name ours; ported ffx_prender::m5m_b (m5 map b2): clears its two argument slots before the tail jump sceGsSyncPath(0, 0)
 0x009126f0 function yiTexTargetClear          # (frame, u, v, h) -> 0x00912690s eax: one GS packet (A+D, via 0x00912690): clear frame 0x108 to black over the screen, then an opaque black sprite on frame (0: 0x020800d0) centred at 0x800 (XYOFFSET y half 0): v x h for u 0, else the CLAMP-style ranges u/v (u also as SCISSOR_1); then TEXFLUSH; from 0x00911fc0 (which passes its width as v); name ours; ported (field r10, ffx_field::yipoly)
 0x00912b70 function yiPolyTexMapXZ            # (packet, min, max, _, height, tbp, u, v): a yiPolySplitRectXZ packet mapped onto a texture over the x/z rectangle min..max: every group tag gets TEX0 (tbp base/width/format, TW/TH from the width 64*tbp.16..21 and height; 0x221a00 for tbp 0) at +0x08/+0x10 and CLAMP (region, from u/v; 0x3fc00a and 256x256 for u 0) at +0x18; triangles get 0x80808080 colours, textured ones u16 UVs +0x14..+0x1e in 1/4096 from vertex x and -z (f32 steps, fistp chop); from 0x00911fc0; name ours; ported (field r10, ffx_field::yipoly)
 0x009130f0 function yiBoundsMinMax            # (obj, min, max): min/max from +-FLT_MAX (0x00b17504, 0x00b1f2d0) with w 1.0 over the i16 +0x12 vectors at obj + *(obj+8); returns the count or 0; name ours
@@ -15514,11 +15526,16 @@
 0x00919a20 function Yn_BattleBegin            # fh v3:bsim1.00 0x00919a20
 0x00919a40 function Yn_BattleEnd              # fh v3:bsim1.00 0x00919a40
 0x00919a60 function Yn_MapSystemFini          # (): rcbgFini when g_YnMapSystem is set (a guard jumping into it; returns the caller's eax without one); yiResetObj
+0x00919a70 function rcbgInit_thunk_00919a70 # jmp rcbgInit; yiResetObj calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00919a80 function Yn_FPm173Start_00919a80   # (a, b, c) -> eax (name ours): Yn_SceneGetObject(0x20008, 0) (map 0xad's part), when found rcbgFPm173Start(part, a, b, c), else eax 0; ported (field r14, ffx_field::model)
 0x00919ab0 function Yn_FPm173End              # () -> eax: rcbgFPm173End(Yn_SceneGetObject(0x20008, 0)) when there is one, else 0; name ours
 0x00919ad0 function Yn_Dummy                     # layout+callees: sorts between Yn_BattleEnd and Yn_FpTrxTexGet, and its named callees match the Switch 0x7100549130 Yn_Dummy's (similarity 0.75: rcBBoxInit, rcVec3fLength, rcVec3fNormalize, rcbgIDLoad, rcbgPSimInit); symbols from Fahrenheit's server export
+0x00919b70 function pppFpDispDebug_thunk_00919b70 # jmp pppFpDispDebug (no stack words); Native_8034_FpDispDebug calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
+0x00919b80 function Yn_FpMemWinOpen_thunk_00919b80 # jmp Yn_FpMemWinOpen; WMainProc calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
+0x00919b90 function Yn_PreBgSetData_thunk_00919b90 # jmp Yn_PreBgSetData (data); yiMapReadMaster calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00919ba0 function Yn_FpTrxTexGet            # fh switch:bsim1.00 0x7100548ce0
 0x00919bc0 function Yn_EmbeddedTrxGetCnt      # (obj): jumps to rcbgEmbeddedTrxGetCnt; called from 0x0073b5c0 and three more
+0x00919bd0 function rcbgTrxPairSetNo_thunk_00919bd0 # jmp rcbgTrxPairSetNo (p, n); pppDrawMdlSeaDraw's table holds it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00919be0 function Yn_FpTrxTexSetAddr        # (tex, image, clut): rcbgTrxTexSetAddr; pppDrawMdl* callers
 0x00919c00 function Yn_GuideMapClearFlags        # (bits): rcbgGuideClearFlags on g_YnMapSystem's guide, if any
 0x00919c30 function Yn_GuideMapSetFlags          # (bits): rcbgGuideSetFlags on g_YnMapSystem's guide, if any
@@ -15527,6 +15544,7 @@
 0x00919ca0 function Yn_GuideMapGetLimit          # () -> float: rcbgGuideGetLimit of the guide, 0.0 without one
 0x00919cd0 function Yn_GuideMapInit           # Fahrenheit's name (v3:bsim1.00 0x00919cd0, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00919d00 function Yn_GuideMapProcEx         # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner); was Guide_Frame; no system or guide: eax 0; ported (field r14, ffx_field::guide)
+0x00919d30 function Yn_PreBgSetData_thunk_00919d30 # jmp Yn_PreBgSetData (data); yiMapReadMaster calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x00919d40 function Yn_GuideMapSetFlag3          # (on): rcbgGuideSetFlag3 on the guide, if any
 0x00919d70 function Yn_GuideMapSetDispProg    # fh v3:bsim1.00 0x00919d70
 0x00919da0 function Yn_GuideMapSetMapNo       # fh v3:exact 0x00919da0
@@ -15546,6 +15564,8 @@
 0x0091a0d0 function Yn_PreBgChangeStage       # fh v3:exact 0x0091a0d0
 0x0091a0f0 function Yn_MapPartMoveTo             # (part, x, y, frames): move from the position (+0x64 = +0x4c, +0x6c = +0x50) to x, y (+0x68, +0x70) over frames (+0x7c), counter +0x80 = 0; native 0x8055 (0x0091c2d0)
 0x0091a150 function Yn_MapPartScaleTo            # (part, sx, sy, frames): scale from +0x44/+0x48 (into +0x54/+0x5c) to sx, sy (+0x58/+0x60; 0.0 keeps it) over frames (+0x74), counter +0x78; native 0x804f (0x0091c150, one value for both)
+0x0091a200 function YnMapChain_clearBit0_0091a200 # cdecl() -> eax: g_YnMapSystem->[0]->[+8] (each link 0 -> return 0), its first word &= ~1, tail jump 0x00638f50 (g_PhyreScene method 0x0065f0e0); Native_802d's callee; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
+0x0091a220 function YnMapChain_setBit0_0091a220 # as YnMapChain_clearBit0_0091a200 with |= 1 and 0x00638f80 (method 0x0066f380); Native_802c's callee; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0091a240 function Yn_DrawScene              # (): through 0x00921a10/0x009215e0, rcbgSceneDraw(map +8) when g_YnMapSystem and its map exist; name ours
 0x0091a250 function Yn_SetChadist             # (): through 0x00921a30/0x00921610, rcbgSceneSetChadist_thunk(map +8) when g_YnMapSystem and its map exist (as Yn_DrawScene); name ours
 0x0091a260 function Yn_SceneSet104               # (v): scene +0x104 (g_YnMapSystem map +8); script native 0x0091af80
@@ -15786,7 +15806,7 @@
 0x00920670 function rcbgSceneDelObject        # (scene, obj): the object's delete function, the table shifted and shrunk (rcRealloc rcbgScene.c 0xba)
 0x009206f0 function rcbgSceneDelObjects       # (scene, kind): rcbgSceneDelObject of the first of kind until none
 0x00920740 function rcbgSceneDraw             # fh v3:exact 0x00920740
-0x00920780 function rcbgSceneSetChadist_thunk # (scene): jmp rcbgSceneSetChadist (from 0x00921610); name ours
+0x00920780 function rcbgSceneSetChadist_thunk # (scene): jmp rcbgSceneSetChadist (from 0x00921610); name ours; ported ffx_prender::m5m_b (m5 map b2): the jmp, as a call with the scene
 0x00920790 function rcbgSceneSetChadist       # (scene): +0x104 = 1, +0x100 = player position through g_CameraMatrix, z * 0.1 (98.0 without Sg_GetPlayer); Yn map +0x10 = 0; graphicSetChadist(+0x100); name ours
 0x00920830 function rcbgSceneDrawLayer        # fh switch:bsim1.00 0x7100547250
 0x00920870 function rcbgSceneFini             # fh v3:exact 0x00920870
@@ -15926,7 +15946,7 @@
 0x00925870 function rcMat4fSetTranslateVec3f  # fh v3:bsim1.00 0x00925870
 0x009258a0 function rcAlloc                   # fh v3:bsim1.00 0x009258a0 _rcAlloc
 0x009258b0 function rcCalloc                  # fh v3:exact 0x009258b0 _rcCalloc
-0x009258e0 function rcFree                    # (p): jmp 0x00687010 (-> user_free); the rcbg*Fini/Delete functions free through it
+0x009258e0 function rcFree                    # (p): jmp 0x00687010 (-> user_free); the rcbg*Fini/Delete functions free through it; ported ffx_prender::m5m_b (m5 map b2): jmp user_free_thunk, as a call with p
 0x009258f0 function rcRealloc                 # fh v3:exact 0x009258f0 _rcRealloc
 0x00925950 function rcVec4fToFixed            # (out, v): four floats * 16.0 to 12.4 fixed point (ftol each), returns the last
 0x009259c0 function rcPrimBatu                # fh v3:exact 0x009259c0; (x, y, size, colour, ui): the cross mark, two quads at depth 256 through rcPrimDraw2D(0x44, verts, 4, colour) between cgraphicSetNowUIType(2 if ui)/(0): h = f32(size*0.5), a = f32(h*0.6666667), heights f32(v*1.1666666*416/448); (x-h,y-q),(x-a,y-p),(x+a,y+p),(x+h,y+q) then (x+a,y-p),(x+h,y-q),(x-h,y+q),(x-a,y+p); eax the setter's; ported (field r13, ffx_field::rcui)
@@ -16060,7 +16080,7 @@
 0x0092b830 function rcdtChunkGetSize             # (chunk) -> chunk +4
 0x0092b840 function rcdtChunkInit             # fh switch:bsim1.00 0x7100549250
 0x0092b860 function rcdtChunkIsEmpty             # (chunk) -> 1 when data or size is 0
-0x0092b880 function rcdtChunkLoadFromFile        # layout: alphabetical run between rcdtChunkIsEmpty and rcdtChunkNew (1 unnamed in the gap); Switch 0x71005492e0 rcdtChunkLoadFromFile is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0092b880 function rcdtChunkLoadFromFile        # layout: alphabetical run between rcdtChunkIsEmpty and rcdtChunkNew (1 unnamed in the gap); Switch 0x71005492e0 rcdtChunkLoadFromFile is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported ffx_prender::m5m_b (m5 map b2): cdecl(chunk, path) -> 1 when read: rcdtChunkFini(chunk), sceOpen(path, 1), size by sceLseek(f, 0, 2), sceLseek(f, 0, 0), rcAlloc(size, 0x00b67c8c, 0x55), sceRead, rcdtChunkSet(chunk, buf, size), sceClose; 0 when the open fails or the allocation fails (still closed)
 0x0092b900 function rcdtChunkNew              # (): rcAlloc 8 (rcdtChunk.c), rcdtChunkInit
 0x0092b920 function rcdtChunkSet                 # (chunk, data, size)
 0x0092b940 function rcdtChunkSetBin           # fh v3:exact 0x0092b940
@@ -16069,6 +16089,7 @@
 0x0092b990 function rcdtParseSeekChar         # (parse, c): cursor = rcdtParseFindChar(parse, c)
 0x0092b9b0 function rcdtParseAdvanceLine         # structure: (parse): skip to past the next '\n' (0x0092b970) then rcdtParseSkipSeparators; callers include rcuiGetStageName2 and rcuiGuideProcConvertAll, as the Switch's rcdtParseAdvanceLine (0x71005498d0, called by rcuiGetStageName2, rcuiGuideProcConvertAll, rcuiGetMapNo, rcdtRsd2Load)
 0x0092ba30 function rcdtParseNextToken        # (parse): cursor past the token (rcdtParseSkipToken) and the separators (rcdtParseSkipSeparators)
+0x0092ba50 function rcFree_thunk_0092ba50 # jmp rcFree (p); rcdtTm2Load's 0x009232a0 calls it; not in the dump; name ours; ported ffx_prender::m5m_b (m5 map b2)
 0x0092ba60 function rcdtParseFini             # Fahrenheit's name (v3:bsim1.00 0x0092ba60, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
@@ -16237,7 +16258,7 @@
 0x00930460 function rcEffectTaskChrWait_00930460 # (task) (name ours): rcefTaskRetSeqCont once 0x007aaac0(the current level's first argument) is 0 (that character's +0x415 byte clear); as rcEffectTaskMotionWait; ported (field r14, ffx_field::task)
 0x00930490 function rcEffectTaskParWait       # fh v3:bsim1.00 0x00930490
 0x009304b0 function rcEffectTaskPrayWait      # fh v3:exact 0x009304b0
-0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump
+0x009304d0 function rcefTaskRetSeqCont_thunk  # g_MagicImports slot 430 (39 overlays), between rcEffectTaskPrayWait and rcEffectTaskTaskWait: jmp rcefTaskRetSeqCont; hidden from the dump; ported ffx_prender::m5m_b (m5 map b2): the jmp, as a call with the task
 0x009304e0 function rcEffectTaskRequestWait   # sequence (task): rcefTaskRetSeqCont once g_RcefRequestPending is 0 (never cleared on PC); next to rcEffectTaskFlagWait; name ours
 0x00930500 function rcEffectTaskSoundCueWait  # sequence (task): rcefTaskRetSeqCont once op_oef2_sound_cue_check(0x800) is 0; name ours
 0x00930520 function rcEffectTaskTaskWait      # fh v3:exact 0x00930520
@@ -16264,9 +16285,9 @@
 0x009323b0 function rcuiCollectChrHandlesByGroup # (): MsGetChrHandle of characters 0x14..0x1b (count +0x828) then 0..0xe (+0x82c) into the rcui lists (+0x830 index, +0x870 handle, +0x824); name ours
 0x00932470 function rcuiChrMotionSetup        # (): the selected character (+0x870[+0x8b0]): Ch_GetNbElem to +0x8b8, buffer +0x8c8 freed and rcAlloc'd 16 per element ('rcuiPre.c' 0xd08), +0x8cc 0x16, Ch_SetMotionSpeed 0x100 (+0x8d4); name ours
 0x00932570 function rcuiCollectChrHandles        # (): every character's index and handle into the rcui work's lists (+0x830, +0x870; count +0x824)
-0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80
+0x00933c80 function Yn_FpMemWinOpen           # fh v3:exact 0x00933c80; ported ffx_prender::m5m_b (m5 map b2): rcuiWindowCreate(0x0193c0f8, 8, 8, 0x8c, 0x1e, 6, 0x00933aa0, 0x00b687c8, 0)
 0x00934250 function rcuiGuideProcConvertAll      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- Guide Map Data Convert START'; Switch 0x710055c640 rcuiGuideProcConvertAll (symbols from Fahrenheit's server export)
-0x00934390 function rcuiInit                  # fh switch:bsim0.92 0x7100558860
+0x00934390 function rcuiInit                  # fh switch:bsim0.92 0x7100558860; ported ffx_prender::m5m_b (m5 map b2): g_RcuiWork = rcCalloc(1, 0xc0c, 0x00b684a0, 0x3d9); rcuiWindowCreate(work, 8, 8, 0x4c, 0xb7, 6, 0x00935000, 0x00b5b28c, 0); defaults at +0xae4..+0xb08; returns g_RcuiWork
 0x00934470 function rcuiLayerProc                # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'Layer Z'; Switch 0x71005591d0 rcuiLayerProc (symbols from Fahrenheit's server export)
 0x00934af0 function rcuiClearSelect           # (): g_RcuiWork +0x28c mode 1 clears bit 0 of the selected layer's +0xb0, mode 2 bit 1 of every layer (0xc0 bytes each)
 0x00934b50 function rcuiSetSelect             # (): as rcuiClearSelect, setting the bits (mode 2: all but the selected layer +0x288)
@@ -16293,7 +16314,7 @@
 0x00937af0 function rcuiMakeBasePath             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/ffx/proj/map/%s/'; Switch 0x7100563850 rcuiMakeBasePath (symbols from Fahrenheit's server export)
 0x00937b20 function rcuiMakeFullPath          # fh switch:bsim1.00 0x7100563880
 0x00937b70 function rcuiResetChrPos           # fh switch:cg2 0x7100563b40
-0x00937ef0 function rcuiWindowCreate          # fh v3:exact 0x00937ef0
+0x00937ef0 function rcuiWindowCreate          # fh v3:exact 0x00937ef0; ported ffx_prender::m5m_b (m5 map b2): cdecl(holder, x, y, w, h, flags, proc, title, parent): *holder set -> Gu_WindowOpen(*holder); else *holder = Gu_WindowCreate(x..proc), Gu_WindowSetTitle(w, title), with parent Gu_WindowSetParent(*holder, parent) -> its eax, else 0
 0x00937f50 function rcuiCloseWindow           # (&w): Gu_WindowCloseTree on an open window, handle cleared
 0x00937f70 function rcuiSetNumber             # (n): two decimal digits over the last two characters of the work's strings +0x174 and +0x27c; rcbgGuideMapSaveSub
 0x00938080 function rcbgGuideMapConvSub          # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/master/%c%c%c%c/%s/guid/rsd/guid%02d.rsd'; Switch 0x71005629f0 rcbgGuideMapConvSub (symbols from Fahrenheit's server export)

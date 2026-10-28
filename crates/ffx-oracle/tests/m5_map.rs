@@ -32,6 +32,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
+use ffx_prender::m5m_b::{self as mb, bridge as b};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -1221,6 +1222,385 @@ fn guide_map_save_matches_the_original() {
             );
             t.b_top = None;
             assert_eq!(t.rd(true, slot + 4), t.rd(false, slot + 4), "the slot");
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 2: the Sqs straight stream, the debug GUI windows, thunks ----
+
+/// Every global word the stream functions read or write, from
+/// `0x012f4e00` to `0x012f4fc0`, randomised (half masks and halves kept
+/// small, so each branch is taken).
+fn stream_state(t: &mut Twins, rng: &mut Rng) {
+    for k in 0..0x70 {
+        let v = rng.next();
+        t.global(0x012f_4e00 + 4 * k, v);
+    }
+    for (g, v) in [
+        (mb::STREAM_HALF_MASK.sym, rng.below(4)),
+        (mb::STREAM_RUNNING.sym, rng.below(2)),
+        (mb::STREAM_HALF.sym, rng.below(3)),
+        (mb::STREAM_POS.sym, rng.below(3)),
+        (mb::STREAM_PREV_HALF.sym, rng.below(3)),
+        (
+            mb::STREAM_SIZE.sym,
+            [0x800, 0x3000, 0x3800, 0x6000, 0xfff][rng.below(5) as usize],
+        ),
+        (mb::PLAY_MODE.sym, rng.below(3)),
+        (mb::DEBUG_FLAGS.sym, rng.below(4)),
+    ] {
+        t.global(g, v);
+    }
+}
+
+#[test]
+fn stream_next_half_and_record_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a201);
+        for _ in 0..60 {
+            stream_state(t, &mut rng);
+            t.stub_sym(mb::DBG_PRINTF, 1, false, 3, 0, Ret::Val(rng.next()));
+            t.check(
+                "SqsStraightStreamingNextHalf_0081f160",
+                0x0081_f160,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::stream_next_half(g)),
+            );
+            t.check(
+                "SqsStraightStreamingRecord_0081f760",
+                0x0081_f760,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::stream_record(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn straight_data_send_matches_the_original() {
+    // fresh start or not, play modes 0..2 (mode 2 averages the blocks),
+    // data, ADPCM or neither, a start buffer or none, the length rules
+    // (size a multiple of 0x3000 or not, arg % 6), the DMA retries and the
+    // status polls, the debug print.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a202);
+        for case in 0..80 {
+            stream_state(t, &mut rng);
+            if case % 3 == 0 {
+                t.global(mb::STREAM_RUNNING.sym, 0);
+                t.global(mb::STREAM_HALF_MASK.sym, 3);
+            }
+            let size = match case % 9 {
+                0 => 0xffff_e801,
+                1 => 0x3000,
+                2 => 0x6000,
+                _ => 0x800 * (1 + rng.below(4)),
+            };
+            t.global(mb::STREAM_SIZE.sym, size);
+            let len = if size > 0x8000 { 0x400 } else { size + 0x400 };
+            let bytes: Vec<u8> = (0..len).map(|_| rng.next() as u8).collect();
+            let data = if rng.chance(3) { 0 } else { t.alloc(&bytes) };
+            let adpcm = if rng.chance(3) { t.zeros(16) } else { 0 };
+            let start = if rng.chance(3) { 0 } else { rng.next() | 1 };
+            let arg = [0, 6, 7, 12, rng.next()][rng.below(5) as usize];
+            let send = t.zeros(0x40);
+            t.global(mb::RPC_SEND.sym, send);
+            t.stub_sym(mb::DBG_PRINTF, 1, false, 6, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::FLUSH_CACHE, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::DECODE_ADPCM, 3, false, 2, 0, Ret::Val(rng.next()));
+            let ids = t.seq(&[0, 0, rng.next() | 1, 5]);
+            t.stub_sym(mb::SIF_SET_DMA, 4, false, 2, 0, ids);
+            let stats = t.seq(&[1, 0, 0x8000_0000, 0xffff_ffff]);
+            t.stub_sym(mb::SIF_DMA_STAT, 5, false, 1, 0, stats);
+            t.stub_sym(mb::CALL_RPC, 6, false, 2, 0, Ret::Val(rng.next()));
+            let slot = first_slot(&t.a, 4);
+            t.b_top = Some(slot - 0x40);
+            t.check(
+                "SqsStraightStreamingDataSend",
+                0x0081_f210,
+                Conv::Cdecl,
+                &[data, start, adpcm, arg],
+                |g| {
+                    // the caller's argument words, which the original reuses
+                    for (k, v) in [data, start, adpcm, arg].into_iter().enumerate() {
+                        g.write(slot + 4 * k as u32, v);
+                    }
+                    Out::U32(b::straight_data_send(g, slot, data, start, adpcm, arg))
+                },
+            );
+            t.b_top = None;
+            for k in 0..2 {
+                assert_eq!(
+                    t.rd(true, slot + 4 * k),
+                    t.rd(false, slot + 4 * k),
+                    "slot {k}"
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn digital_mode_set_matches_the_original() {
+    // room in the queue or not (the queue sent first), the debug message.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a203);
+        for case in 0..30 {
+            let end = t.rebase(mb::CMD_END);
+            let next = if case % 2 == 0 {
+                end - 0x20 * (1 + rng.below(3))
+            } else {
+                end - 0x20 + 4 * rng.below(8)
+            };
+            t.global(mb::CMD_NEXT.sym, next);
+            // the queue send moves g_SqsCmdNext back to a fresh top (as
+            // the original's send does) and leaves a mark in eax
+            t.global(mb::DEBUG_FLAGS.sym, rng.below(4));
+            let top = t.alloc(&[0xa5; 0x40]);
+            // each send sets g_SqsCmdNext to the next table word: first
+            // `next` (full or not), then the emptied queue's top
+            let table = t.words(&[next, top, top]);
+            let cell = t.words(&[table]);
+            let reset = {
+                let mut c = vec![0xa1];
+                c.extend(cell.to_le_bytes()); // mov eax, [cell]
+                c.extend([0x8b, 0x00]); // mov eax, [eax]
+                c.push(0xa3);
+                c.extend(t.rebase(mb::CMD_NEXT.sym).to_le_bytes()); // mov [next], eax
+                c.extend([0x83, 0x05]);
+                c.extend(cell.to_le_bytes());
+                c.push(0x04); // add dword [cell], 4
+                c.extend([0xb8, 0x11, 0x22, 0x33, 0x44, 0xc3]);
+                let x = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), x);
+                x
+            };
+            if case % 2 == 0 {
+                t.patch(next, &[0xa5; 0x20]);
+            }
+            t.jump(mb::IOP_COMMAND_SEND, reset);
+            t.stub_sym(mb::REPORT_STANDBY, 2, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::DBG_PRINTF, 3, false, 1, 0, Ret::Val(rng.next()));
+            let x = rng.next();
+            t.check(
+                "SqsStraightStreamingDigitalModeSet",
+                0x0081_f550,
+                Conv::Cdecl,
+                &[x],
+                |g| Out::U32(b::digital_mode_set(g, x)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn gui_windows_match_the_original() {
+    // rcuiWindowCreate with a window already there, a new one with and
+    // without a parent; the windows the init functions open.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a204);
+        for case in 0..30 {
+            t.stub_sym(mb::WINDOW_CREATE, 1, false, 6, 0, Ret::Val(rng.next() | 1));
+            t.stub_sym(mb::WINDOW_OPEN, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::WINDOW_SET_TITLE, 3, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::WINDOW_SET_PARENT, 4, false, 2, 0, Ret::Val(rng.next()));
+            let holder = t.words(&[if case % 3 == 0 { rng.next() | 1 } else { 0 }]);
+            let a: Vec<u32> = (0..6).map(|_| rng.next()).collect();
+            let title = rng.next();
+            let parent = if rng.chance(2) { 0 } else { rng.next() };
+            let mut args = vec![holder];
+            args.extend(&a);
+            args.extend([title, parent]);
+            t.check("rcuiWindowCreate", 0x0093_7ef0, Conv::Cdecl, &args, |g| {
+                Out::U32(b::window_create(
+                    g,
+                    holder,
+                    [a[0], a[1], a[2], a[3], a[4], a[5]],
+                    title,
+                    parent,
+                ))
+            });
+            t.check("yiGui_setfogparam", 0x0090_8f90, Conv::Cdecl, &[], |g| {
+                Out::U32(b::set_fog_param(g))
+            });
+            let holder = t.rebase(mb::FP_MEM_WINDOW);
+            let w = if case % 2 == 0 { 0 } else { rng.next() | 1 };
+            t.patch(holder, &w.to_le_bytes());
+            t.check("Yn_FpMemWinOpen", 0x0093_3c80, Conv::Cdecl, &[], |g| {
+                Out::U32(b::fp_mem_win_open(g))
+            });
+            let work = t.zeros(0xc0c);
+            if case % 2 == 1 {
+                t.w32(work, rng.next() | 1);
+            }
+            t.stub_sym(mb::RC_CALLOC, 5, false, 4, 0, Ret::Val(work));
+            t.global(mb::RCUI_WORK.sym, rng.next());
+            t.check("rcuiInit", 0x0093_4390, Conv::Cdecl, &[], |g| {
+                Out::U32(b::rcui_init(g))
+            });
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn small_field_helpers_match_the_original() {
+    // the status bit, the fog init, the curve address, the map chain's
+    // bit (each link missing in turn), the GS packet send, the chunk load
+    // (no file, no memory, read).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a205);
+        for case in 0..40 {
+            let v = rng.next();
+            t.global(mb::YI_RENDER_STATUS.sym, v);
+            t.check(
+                "YiRenderStatus_clearBit8_00908440",
+                0x0090_8440,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    b::yi_status_clear_bit8(g);
+                    Out::None
+                },
+            );
+            t.stub_sym(mb::YI_RENDER_INIT_FOG, 1, false, 1, 0, Ret::Val(rng.next()));
+            t.check(
+                "YiRender_initFogDefault_0090a420",
+                0x0090_a420,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::yi_init_fog(g)),
+            );
+            t.check(
+                "TkVibrateCurve_get_009090b0",
+                0x0090_90b0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::vibrate_curve(g)),
+            );
+
+            let list = t.words(&[rng.next()]);
+            let map = t.zeros(0x10);
+            t.w32(map + 8, if case % 4 == 1 { 0 } else { list });
+            let sys = t.words(&[if case % 4 == 2 { 0 } else { map }]);
+            t.global(mb::YN_MAP_SYSTEM.sym, if case % 4 == 3 { 0 } else { sys });
+            t.stub_sym(mb::SCENE_CALL_CLEAR, 2, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::SCENE_CALL_SET, 3, false, 0, 0, Ret::Val(rng.next()));
+            t.check(
+                "YnMapChain_clearBit0_0091a200",
+                0x0091_a200,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::chain_bit0(g, false)),
+            );
+            t.check(
+                "YnMapChain_setBit0_0091a220",
+                0x0091_a220,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(b::chain_bit0(g, true)),
+            );
+
+            let chan = t.words(&[rng.next()]);
+            t.stub_sym(mb::MFIFO_SYNC, 4, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::GS_SYNC_PATH, 5, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::DMA_GET_CHAN, 6, false, 1, 0, Ret::Val(chan));
+            t.stub_sym(mb::DMA_SYNC, 7, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::FLUSH_CACHE, 8, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::DMA_SEND_N, 9, false, 3, 0, Ret::Val(rng.next()));
+            let (packet, qwc) = (rng.next(), rng.next());
+            let slot = first_slot(&t.a, 2);
+            t.b_top = Some(slot - 0x40);
+            t.check(
+                "yiSendGsPacket",
+                0x0091_2690,
+                Conv::Cdecl,
+                &[packet, qwc],
+                |g| Out::U32(b::send_gs_packet(g, slot, packet, qwc)),
+            );
+            t.b_top = None;
+            for k in 0..2 {
+                assert_eq!(
+                    t.rd(true, slot + 4 * k),
+                    t.rd(false, slot + 4 * k),
+                    "slot {k}"
+                );
+            }
+
+            let chunk = rng.next();
+            let path = rng.next();
+            t.stub_sym(mb::CHUNK_FINI, 10, false, 1, 0, Ret::Val(rng.next()));
+            let f = if case % 5 == 0 { 0 } else { rng.next() | 1 };
+            t.stub_sym(mb::SCE_OPEN, 11, false, 2, 0, Ret::Val(f));
+            let sizes = t.seq(&[rng.below(0x1000), rng.next()]);
+            t.stub_sym(mb::SCE_LSEEK, 12, false, 3, 0, sizes);
+            let buf = if case % 5 == 1 { 0 } else { rng.next() | 1 };
+            t.stub_sym(mb::RC_ALLOC, 13, false, 3, 0, Ret::Val(buf));
+            t.stub_sym(mb::SCE_READ, 14, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::CHUNK_SET, 15, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mb::SCE_CLOSE, 16, false, 1, 0, Ret::Val(rng.next()));
+            t.check(
+                "rcdtChunkLoadFromFile",
+                0x0092_b880,
+                Conv::Cdecl,
+                &[chunk, path],
+                |g| Out::U32(b::chunk_load_from_file(g, chunk, path)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn jump_thunks_match_the_original() {
+    // each thunk with its target stubbed: the words passed on and the
+    // target's eax.
+    let thunks = [
+        mb::SE_SEPARATE_MASK_CLEAR_THUNK,
+        mb::SET_CYCLE_MODE_THUNK,
+        mb::SET_REVERB_PLAY_SWITCH_THUNK,
+        mb::ALL_VOICE_TERMINATE_THUNK,
+        mb::SHOUT_STREAMING_DATA_SEND_THUNK,
+        mb::YI_FREE,
+        mb::RCBG_INIT_THUNK,
+        mb::FP_DISP_DEBUG_THUNK,
+        mb::FP_MEM_WIN_OPEN_THUNK,
+        mb::PRE_BG_SET_DATA_THUNK_A,
+        mb::TRX_PAIR_SET_NO_THUNK,
+        mb::PRE_BG_SET_DATA_THUNK_B,
+        mb::SCENE_SET_CHADIST_THUNK,
+        mb::RC_FREE,
+        mb::RC_FREE_THUNK,
+        mb::TASK_RET_SEQ_CONT_THUNK,
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a206);
+        for (k, th) in thunks.iter().enumerate() {
+            let args: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            // a thunk whose target is itself a thunk: stub the final one
+            let target = if th.target == mb::RC_FREE.at {
+                mb::RC_FREE.target
+            } else {
+                th.target
+            };
+            t.stub_sym(
+                target,
+                k as u32 + 1,
+                false,
+                th.words as u32,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let words = &args[..th.words];
+            t.check("thunk", th.at, Conv::Cdecl, words, |g| {
+                Out::U32(b::thunk(g, *th, words))
+            });
             t.reset();
         }
     });

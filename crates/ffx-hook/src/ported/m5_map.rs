@@ -8,6 +8,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
+use ffx_prender::m5m_b::{self as mb, bridge as b};
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -149,5 +150,132 @@ ported! {
     /// `rcbgGuideMapSave(a, loc)`: writes its second argument slot.
     rcbgGuideMapSave @ 0x006e_9570 => extern "C" fn guide_map_save(x: u32, loc: u32; slots: u32) -> u32 {
         a::guide_map_save(&mut mem(), slots, x, loc)
+    }
+
+    // ---- batch 2 (ffx_prender::m5m_b) ----
+    /// `SqsStraightStreamingNextHalf_0081f160()`.
+    SqsStraightStreamingNextHalf_0081f160 @ 0x0081_f160 => extern "C" fn stream_next_half() -> u32 {
+        b::stream_next_half(&mut mem())
+    }
+    /// `SqsStraightStreamingRecord_0081f760()`.
+    SqsStraightStreamingRecord_0081f760 @ 0x0081_f760 => extern "C" fn stream_record() -> u32 {
+        b::stream_record(&mut mem())
+    }
+    /// `SqsStraightStreamingDataSend(data, start, adpcm, arg)`: reuses its
+    /// first two argument slots.
+    SqsStraightStreamingDataSend @ 0x0081_f210 => extern "C" fn straight_data_send(data: u32, start: u32, adpcm: u32, arg: u32; slots: u32) -> u32 {
+        b::straight_data_send(&mut mem(), slots, data, start, adpcm, arg)
+    }
+    /// `SqsStraightStreamingDigitalModeSet(x)`.
+    SqsStraightStreamingDigitalModeSet @ 0x0081_f550 => extern "C" fn digital_mode_set(x: u32) -> u32 {
+        b::digital_mode_set(&mut mem(), x)
+    }
+    /// `YiRenderStatus_clearBit8_00908440()`.
+    YiRenderStatus_clearBit8_00908440 @ 0x0090_8440 => extern "C" fn yi_status_clear_bit8() {
+        b::yi_status_clear_bit8(&mut mem());
+    }
+    /// `yiGui_setfogparam()`.
+    yiGui_setfogparam @ 0x0090_8f90 => extern "C" fn set_fog_param() -> u32 {
+        b::set_fog_param(&mut mem())
+    }
+    /// `TkVibrateCurve_get_009090b0()`.
+    TkVibrateCurve_get_009090b0 @ 0x0090_90b0 => extern "C" fn vibrate_curve() -> u32 {
+        b::vibrate_curve(&mut mem())
+    }
+    /// `YiRender_initFogDefault_0090a420()`.
+    YiRender_initFogDefault_0090a420 @ 0x0090_a420 => extern "C" fn yi_init_fog() -> u32 {
+        b::yi_init_fog(&mut mem())
+    }
+    /// `yiSendGsPacket(packet, qwc)`: clears its argument slots.
+    yiSendGsPacket @ 0x0091_2690 => extern "C" fn send_gs_packet(packet: u32, qwc: u32; slots: u32) -> u32 {
+        b::send_gs_packet(&mut mem(), slots, packet, qwc)
+    }
+    /// `YnMapChain_clearBit0_0091a200()`.
+    YnMapChain_clearBit0_0091a200 @ 0x0091_a200 => extern "C" fn chain_clear_bit0() -> u32 {
+        b::chain_bit0(&mut mem(), false)
+    }
+    /// `YnMapChain_setBit0_0091a220()`.
+    YnMapChain_setBit0_0091a220 @ 0x0091_a220 => extern "C" fn chain_set_bit0() -> u32 {
+        b::chain_bit0(&mut mem(), true)
+    }
+    /// `rcdtChunkLoadFromFile(chunk, path)`.
+    rcdtChunkLoadFromFile @ 0x0092_b880 => extern "C" fn chunk_load_from_file(chunk: u32, path: u32) -> u32 {
+        b::chunk_load_from_file(&mut mem(), chunk, path)
+    }
+    /// `Yn_FpMemWinOpen()`.
+    Yn_FpMemWinOpen @ 0x0093_3c80 => extern "C" fn fp_mem_win_open() -> u32 {
+        b::fp_mem_win_open(&mut mem())
+    }
+    /// `rcuiInit()`.
+    rcuiInit @ 0x0093_4390 => extern "C" fn rcui_init() -> u32 {
+        b::rcui_init(&mut mem())
+    }
+    /// `rcuiWindowCreate(holder, x, y, w, h, flags, proc, title, parent)`.
+    rcuiWindowCreate @ 0x0093_7ef0 => extern "C" fn window_create(holder: u32, x: u32, y: u32, w: u32, h: u32, flags: u32, proc: u32, title: u32, parent: u32) -> u32 {
+        b::window_create(&mut mem(), holder, [x, y, w, h, flags, proc], title, parent)
+    }
+    /// `SqsSeSeparateMaskClear_thunk_00886dc0(m0..m7)`.
+    SqsSeSeparateMaskClear_thunk_00886dc0 @ 0x0088_6dc0 => extern "C" fn se_separate_mask_clear_thunk(m0: u32, m1: u32, m2: u32, m3: u32, m4: u32, m5: u32, m6: u32, m7: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SE_SEPARATE_MASK_CLEAR_THUNK, &[m0, m1, m2, m3, m4, m5, m6, m7])
+    }
+    /// `SqsSetCycleMode_thunk(a)`.
+    SqsSetCycleMode_thunk @ 0x0088_7070 => extern "C" fn set_cycle_mode_thunk(x: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SET_CYCLE_MODE_THUNK, &[x])
+    }
+    /// `SqsSetReverbPlaySwitch_thunk(a)`.
+    SqsSetReverbPlaySwitch_thunk @ 0x0088_7170 => extern "C" fn set_reverb_play_switch_thunk(x: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SET_REVERB_PLAY_SWITCH_THUNK, &[x])
+    }
+    /// `SqsAllVoiceTerminate_thunk_008872e0()`.
+    SqsAllVoiceTerminate_thunk_008872e0 @ 0x0088_72e0 => extern "C" fn all_voice_terminate_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::ALL_VOICE_TERMINATE_THUNK, &[])
+    }
+    /// `SqsShoutStreamingDataSend_thunk(src, size)`.
+    SqsShoutStreamingDataSend_thunk @ 0x0088_7560 => extern "C" fn shout_streaming_data_send_thunk(src: u32, size: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SHOUT_STREAMING_DATA_SEND_THUNK, &[src, size])
+    }
+    /// `yiFree(p)`.
+    yiFree @ 0x0090_bbc0 => extern "C" fn yi_free(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::YI_FREE, &[p])
+    }
+    /// `rcbgInit_thunk_00919a70()`.
+    rcbgInit_thunk_00919a70 @ 0x0091_9a70 => extern "C" fn rcbg_init_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::RCBG_INIT_THUNK, &[])
+    }
+    /// `pppFpDispDebug_thunk_00919b70()`.
+    pppFpDispDebug_thunk_00919b70 @ 0x0091_9b70 => extern "C" fn fp_disp_debug_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::FP_DISP_DEBUG_THUNK, &[])
+    }
+    /// `Yn_FpMemWinOpen_thunk_00919b80()`.
+    Yn_FpMemWinOpen_thunk_00919b80 @ 0x0091_9b80 => extern "C" fn fp_mem_win_open_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::FP_MEM_WIN_OPEN_THUNK, &[])
+    }
+    /// `Yn_PreBgSetData_thunk_00919b90(data)`.
+    Yn_PreBgSetData_thunk_00919b90 @ 0x0091_9b90 => extern "C" fn pre_bg_set_data_thunk_a(data: u32) -> u32 {
+        b::thunk(&mut mem(), mb::PRE_BG_SET_DATA_THUNK_A, &[data])
+    }
+    /// `rcbgTrxPairSetNo_thunk_00919bd0(p, n)`.
+    rcbgTrxPairSetNo_thunk_00919bd0 @ 0x0091_9bd0 => extern "C" fn trx_pair_set_no_thunk(p: u32, n: u32) -> u32 {
+        b::thunk(&mut mem(), mb::TRX_PAIR_SET_NO_THUNK, &[p, n])
+    }
+    /// `Yn_PreBgSetData_thunk_00919d30(data)`.
+    Yn_PreBgSetData_thunk_00919d30 @ 0x0091_9d30 => extern "C" fn pre_bg_set_data_thunk_b(data: u32) -> u32 {
+        b::thunk(&mut mem(), mb::PRE_BG_SET_DATA_THUNK_B, &[data])
+    }
+    /// `rcbgSceneSetChadist_thunk(scene)`.
+    rcbgSceneSetChadist_thunk @ 0x0092_0780 => extern "C" fn scene_set_chadist_thunk(scene: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SCENE_SET_CHADIST_THUNK, &[scene])
+    }
+    /// `rcFree(p)`.
+    rcFree @ 0x0092_58e0 => extern "C" fn rc_free(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::RC_FREE, &[p])
+    }
+    /// `rcFree_thunk_0092ba50(p)`.
+    rcFree_thunk_0092ba50 @ 0x0092_ba50 => extern "C" fn rc_free_thunk(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::RC_FREE_THUNK, &[p])
+    }
+    /// `rcefTaskRetSeqCont_thunk(t)`.
+    rcefTaskRetSeqCont_thunk @ 0x0093_04d0 => extern "C" fn task_ret_seq_cont_thunk(t: u32) -> u32 {
+        b::thunk(&mut mem(), mb::TASK_RET_SEQ_CONT_THUNK, &[t])
     }
 }
