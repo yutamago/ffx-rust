@@ -11,6 +11,8 @@ use ffx_menu::m5m_b::bridge as b;
 use ffx_menu::m5m_c::bridge as c;
 use ffx_menu::m5m_d::bridge as d;
 use ffx_menu::m5m_e::bridge as e;
+use ffx_menu::m5m_f::bridge as f;
+use ffx_menu::m5m_g::bridge as g;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -420,5 +422,72 @@ ported! {
         let mut f = StackFrame::<129>::new();
         let ebp = f.at() + 0x204;
         e::make_file_list(&mut mem(), ebp, list, path)
+    }
+    // ---- batch 6 (ffx_menu::m5m_f) ----
+    /// `TkMenuDrawSp3R(x, y, flags)`.
+    TkMenuDrawSp3R @ 0x008d_ca60 => extern "C" fn tk_menu_draw_sp3r(x: u32, y: u32, flags: u32) -> u32 {
+        f::draw_sp3_r0(&mut mem(), x, y, flags)
+    }
+    /// `TkMenuDraw1612WidthHeight(text, flags)`.
+    TkMenuDraw1612WidthHeight @ 0x008d_c9f0 => extern "C" fn tk_menu_draw_1612_width_height(text: u32, flags: u32) -> u32 {
+        f::draw_1612_width_height(&mut mem(), text, flags)
+    }
+    /// `TkMenuDrawEasyMes1612(x, y, text)`.
+    TkMenuDrawEasyMes1612 @ 0x008d_cb80 => extern "C" fn tk_menu_draw_easy_mes_1612(x: u32, y: u32, text: u32) -> u32 {
+        f::draw_easy_mes_1612(&mut mem(), x, y, text)
+    }
+    /// `TkMenuDrawEasyMes1612WithMacro(x, y, text, macro)`.
+    TkMenuDrawEasyMes1612WithMacro @ 0x008d_cc70 => extern "C" fn tk_menu_draw_easy_mes_1612_with_macro(x: u32, y: u32, text: u32, m: u32) -> u32 {
+        f::draw_easy_mes_1612_with_macro(&mut mem(), x, y, text, m)
+    }
+    /// `TkMenuDrawWindow1612(x, y, w, h)` -> whether it clipped.
+    TkMenuDrawWindow1612 @ 0x008d_cf40 => extern "C" fn tk_menu_draw_window_1612(x: u32, y: u32, w: u32, h: u32) -> u32 {
+        f::draw_window_1612(&mut mem(), x, y, w, h)
+    }
+    /// `DrawCrossButtonIcon(id, x, y, w, h)` (`f32` words).
+    DrawCrossButtonIcon @ 0x008e_6030 => extern "C" fn draw_cross_button_icon(id: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        f::draw_cross_button_icon(&mut mem(), id, x, y, w, h)
+    }
+    /// `TkMn2DrawCrossRect(x, y, w, h, c0, c1)` (`f32` words): frame `ebp - 0x9c`.
+    TkMn2DrawCrossRect @ 0x008c_0930 => extern "C" fn tk_mn2_draw_cross_rect(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut fr = StackFrame::<40>::new();
+        let ebp = fr.at() + 0xa0;
+        f::draw_cross_rect(&mut mem(), ebp, x, y, w, h, c0, c1)
+    }
+    /// `TkMn2DrawRect(x, y, w, h, c0, c1)`: frame `ebp - 0xa0`.
+    TkMn2DrawRect @ 0x008c_1280 => extern "C" fn tk_mn2_draw_rect(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut fr = StackFrame::<40>::new();
+        let ebp = fr.at() + 0xa0;
+        f::draw_rect(&mut mem(), ebp, x, y, w, h, c0, c1)
+    }
+    /// `DrawBlackBackGround()`: frame `ebp - 0x9c` (zeroed: the junk reads).
+    DrawBlackBackGround @ 0x008d_b870 => extern "C" fn draw_black_background() -> u32 {
+        let mut fr = StackFrame::<40>::new();
+        let ebp = fr.at() + 0xa0;
+        f::draw_black_background(&mut mem(), ebp)
+    }
+    /// `gui_eve_Init()`.
+    gui_eve_Init @ 0x0085_4e60 => extern "C" fn gui_eve_init() -> u32 {
+        f::eve_init(&mut mem())
+    }
+    /// `gui_eve_GWM_SELECTOR(window, msg)`: `eax` as the caller had it for
+    /// other messages, so the shim returns nothing.
+    gui_eve_GWM_SELECTOR @ 0x0085_4df0 => extern "C" fn gui_eve_gwm_selector(window: u32, msg: u32) {
+        f::eve_gwm_selector(&mut mem(), window, msg);
+    }
+    /// `TkMn2DrawScreenStrips(a, b, y)`.
+    TkMn2DrawScreenStrips @ 0x008a_9510 => extern "C" fn tk_mn2_draw_screen_strips(a: u32, b: u32, y: u32) -> u32 {
+        f::draw_screen_strips(&mut mem(), a, b, y)
+    }
+    // ---- batch 7 (ffx_menu::m5m_g) ----
+    /// `TkPutDebugFontStringPEuc(color, flags, text)`: frame `ebp - 0x2c`.
+    TkPutDebugFontStringPEuc @ 0x0088_f4e0 => extern "C" fn tk_put_debug_font_string_p_euc(color: u32, flags: u32, text: u32) -> u32 {
+        let mut fr = StackFrame::<11>::new();
+        let ebp = fr.at() + 0x2c;
+        g::put_string_p_euc(&mut mem(), ebp, color, flags, text)
+    }
+    /// `gui_eve_GWM_BUTTONUP(window)`.
+    gui_eve_GWM_BUTTONUP @ 0x0085_4e80 => extern "C" fn gui_eve_gwm_buttonup(window: u32) -> u32 {
+        g::eve_gwm_buttonup(&mut mem(), window)
     }
 }

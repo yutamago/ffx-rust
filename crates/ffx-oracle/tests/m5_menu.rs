@@ -14,6 +14,7 @@
 
 #![allow(
     dead_code,
+    clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
@@ -29,6 +30,8 @@ use ffx_menu::m5m_b::bridge as mb;
 use ffx_menu::m5m_c::{self as mc_fields, bridge as mc};
 use ffx_menu::m5m_d::bridge as md;
 use ffx_menu::m5m_e::bridge as me;
+use ffx_menu::m5m_f::bridge as mf;
+use ffx_menu::m5m_g::bridge as mg;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -2017,14 +2020,16 @@ fn gu_selector_paint_and_sort_match_the_original() {
             let scroll = if rng.chance(8) { 0xffff } else { scroll };
             let sel = t.selector(&mut rng, n, rows, scroll);
             let w = t.window(&mut rng, 0);
-            if rng.chance(4) {
-                // the mouse exactly one list height below the window top
-                let wy = i32::from(Mem::read::<i16>(&t.a, w + 0xe));
-                let y = (wy + 9 * rows as i32) as u32;
-                t.g32(g::MOUSE_Y, y);
-            } else if rng.chance(4) {
-                let wy = i32::from(Mem::read::<i16>(&t.a, w + 0xe));
-                t.g32(g::MOUSE_Y, (wy + 1) as u32);
+            let wy = i32::from(Mem::read::<i16>(&t.a, w + 0xe));
+            // the mouse exactly one list height below the window top, or
+            // one pixel in
+            let my = match rng.below(16) {
+                0..=3 => Some(wy + 9 * rows as i32),
+                4..=6 => Some(wy + 1),
+                _ => None,
+            };
+            if let Some(my) = my {
+                t.g32(g::MOUSE_Y, my as u32);
             }
             t.check(
                 &format!("Gu_SelectorPaint #{i}"),
@@ -2173,7 +2178,7 @@ fn gu_make_file_list_matches_the_original() {
         for i in 0..20 {
             t.reset();
             let path: Vec<u8> = (0..rng.below(80))
-                .map(|_| [b'a', b'/', b'\\', b'x', b'.'][rng.below(5) as usize])
+                .map(|_| b"a/\\x."[rng.below(5) as usize])
                 .chain([0])
                 .collect();
             let path = t.alloc(&path);
@@ -2188,6 +2193,315 @@ fn gu_make_file_list_matches_the_original() {
                 &[list, path],
                 0x204,
                 |m, ebp| Out::U32(me::make_file_list(m, ebp, list, path)),
+            );
+        }
+    });
+}
+
+// ---- batch 6 (ffx_menu::m5m_f) ----
+
+/// A float word for the rectangle tests: ordinary values, no NaNs.
+fn ui_float(rng: &mut Rng) -> u32 {
+    match rng.below(3) {
+        0 => (rng.below(1000) as f32 / 3.0).to_bits(),
+        1 => (rng.next() & 0x3fff_ffff) | (rng.below(2) << 31),
+        _ => ((rng.below(4000) as f32) - 2000.0).to_bits(),
+    }
+}
+
+#[test]
+fn tk_menu_packet_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7a1e_0006);
+        for i in 0..12 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mf::PKT_SP3R_008EBBD0, false, 4, 0, ret),
+                (mf::TO_GET_WIDTH_EXT_MES_1612, false, 2, 0, ret ^ 1),
+                (mf::PKT_MES_008E9FD0, false, 4, 0, ret ^ 2),
+                (mf::PKT_MES_MACRO_008EA5C0, false, 5, 0, ret ^ 3),
+                (mf::PKT_WINDOW_008EADF0, false, 5, 0, ret ^ 4),
+                (mf::TK_MENU_DRAW_SCISSOR_RECT, false, 4, 0, 0x55),
+                (mf::DRAW_CROSS_BUTTON_ICON_RGBA, false, 7, 0, ret ^ 5),
+            ]);
+            let p = rng.word();
+            t.g32(0x0187_1530, p);
+            let (a, b, c, d) = (rng.word(), rng.word(), rng.word(), rng.word());
+            // around the clip limits 36 x 10
+            let (w, ht) = match i {
+                0 => (0x24, 0xb),
+                1 => (0x25, 0xa),
+                2 => (0x25, 0xb),
+                _ => (0x22 + rng.below(5), 8 + rng.below(5)),
+            };
+            t.check(
+                &format!("Sp3R0 #{i}"),
+                0x008d_ca60,
+                Conv::Cdecl,
+                &[a, b, c],
+                |m| Out::U32(mf::draw_sp3_r0(m, a, b, c)),
+            );
+            t.check(
+                &format!("WidthHeight #{i}"),
+                0x008d_c9f0,
+                Conv::Cdecl,
+                &[a, b],
+                |m| Out::U32(mf::draw_1612_width_height(m, a, b)),
+            );
+            t.check(
+                &format!("EasyMes #{i}"),
+                0x008d_cb80,
+                Conv::Cdecl,
+                &[a, b, c],
+                |m| Out::U32(mf::draw_easy_mes_1612(m, a, b, c)),
+            );
+            t.check(
+                &format!("EasyMesMacro #{i}"),
+                0x008d_cc70,
+                Conv::Cdecl,
+                &[a, b, c, d],
+                |m| Out::U32(mf::draw_easy_mes_1612_with_macro(m, a, b, c, d)),
+            );
+            t.check(
+                &format!("Window1612 #{i}"),
+                0x008d_cf40,
+                Conv::Cdecl,
+                &[a, b, w, ht],
+                |m| Out::U32(mf::draw_window_1612(m, a, b, w, ht)),
+            );
+            let (x, y, fw, fh) = (
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+            );
+            t.check(
+                &format!("DrawCrossButtonIcon #{i}"),
+                0x008e_6030,
+                Conv::Cdecl,
+                &[a, x, y, fw, fh],
+                |m| Out::U32(mf::draw_cross_button_icon(m, a, x, y, fw, fh)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_ui_rectangles_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x0e1e_0006);
+        for i in 0..30 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mf::GRAPHIC_DRAW_UI_ELEMENT, false, 5, 0, ret),
+                (mf::GRAPHIC_GET_ABMAP, false, 0, 0, rng.below(3)),
+            ]);
+            let (c0, c1) = (rng.word(), rng.word());
+            let (x, y, w, h) = (
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+                ui_float(&mut rng),
+            );
+            let args = [x, y, w, h, c0, c1];
+            t.check_framed(
+                &format!("TkMn2DrawCrossRect #{i}"),
+                0x008c_0930,
+                Conv::Cdecl,
+                &args,
+                0x9c,
+                |m, ebp| Out::U32(mf::draw_cross_rect(m, ebp, x, y, w, h, c0, c1)),
+            );
+            let (x, y, w, h) = (rng.word(), rng.word(), rng.word(), rng.word());
+            let args = [x, y, w, h, c0, c1];
+            t.check_framed(
+                &format!("TkMn2DrawRect #{i}"),
+                0x008c_1280,
+                Conv::Cdecl,
+                &args,
+                0xa0,
+                |m, ebp| Out::U32(mf::draw_rect(m, ebp, x, y, w, h, c0, c1)),
+            );
+            t.check_framed(
+                &format!("DrawBlackBackGround #{i}"),
+                0x008d_b870,
+                Conv::Cdecl,
+                &[],
+                0x9c,
+                |m, ebp| Out::U32(mf::draw_black_background(m, ebp)),
+            );
+        }
+    });
+}
+
+#[test]
+fn gui_eve_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x9e7e_0006);
+        for i in 0..8 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mf::DBG_PRINTF, false, 1, 0, 0x61),
+                (mf::SG_GET_RESOURCE, false, 2, 0, ret),
+                (mf::SG_SET_RESOURCE, false, 2, 0, 0x62),
+                (mf::SG_SET_RESOURCE_STR, false, 2, 0, 0x63),
+                (mf::GU_SELECTOR_GET_ITEM_VALUE, false, 1, 0, ret ^ 7),
+                (mf::GU_SELECTOR_GET_ITEM_NAME, false, 1, 0, ret ^ 8),
+                (mf::GU_WINDOW_CONTROL_SET_TEXT, false, 3, 0, 0x64),
+                (mf::ATEL_SET_EVENT_JUMP, false, 2, 0, ret ^ 9),
+            ]);
+            t.check(
+                &format!("gui_eve_Init #{i}"),
+                0x0085_4e60,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mf::eve_init(m)),
+            );
+            let sel = rng.word();
+            t.g32(0x0132_592c, sel);
+            let w = rng.word();
+            let msg = if rng.chance(2) { 0x2c } else { rng.below(0x40) };
+            t.check(
+                &format!("gui_eve_GWM_SELECTOR #{i}"),
+                0x0085_4df0,
+                Conv::Cdecl,
+                &[w, msg],
+                |m| match mf::eve_gwm_selector(m, w, msg) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_mn2_draw_screen_strips_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5c4e_0006);
+        for i in 0..4 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mf::TK_MENU_DRAW_KICK, false, 0, 0, 0x71),
+                (mf::TK_MN2_DRAW_INIT_PACKET, false, 0, 0, 0x73),
+                (mf::TK_MN2_DRAW_KICK_SYNC_PACKET, false, 0, 0, 0x74),
+                (mf::MENU_MN2_STEP_DRAW_Y80, false, 4, 0, 0x75),
+                (mf::SCE_GS_SYNC_PATH, false, 2, 0, ret),
+                (mf::SCE_GS_SET_DEF_LOAD_IMAGE, false, 8, 0, 0x76),
+                (mf::SCE_GS_EXEC_LOAD_IMAGE, false, 2, 0, 0x77),
+                (mf::FLUSH_CACHE, false, 1, 0, 0x78),
+            ]);
+            // the VU1 thunk is a bare jmp (not a function in the dump)
+            let vu1 = t.stub_code(mf::TK_VU1_SYNC_PATH_THUNK, false, 0, 0, 0x72);
+            t.jump(mf::TK_VU1_SYNC_PATH_THUNK, vu1);
+            let (a, b, y) = (rng.word(), rng.word(), rng.word());
+            let what = format!("TkMn2DrawScreenStrips #{i}");
+            t.check(&what, 0x008a_9510, Conv::Cdecl, &[a, b, y], |m| {
+                Out::U32(mf::draw_screen_strips(m, a, b, y))
+            });
+        }
+    });
+}
+
+// ---- batch 7 (ffx_menu::m5m_g) ----
+
+#[test]
+fn tk_put_debug_font_string_p_euc_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0xe0c0_0007);
+        for i in 0..60 {
+            t.reset();
+            let ret = rng.word();
+            // the core logs its words and copies each piece (32 bytes)
+            // into a list, so every piece is compared, not only the last
+            let log_stub = t.stub_code(mg::TK_PUT_DEBUG_FONT_CORE, false, 4, 0, ret);
+            let pieces = t.zeros(32 * 8);
+            let cursor = t.words(&[pieces]);
+            let mut c = vec![0x56, 0x57]; // push esi; push edi
+            c.extend([0x8b, 0x74, 0x24, 0x18]); // mov esi, [esp+0x18]
+            c.extend([0x8b, 0x3d]);
+            c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+            c.extend([0xb9, 32, 0, 0, 0]); // mov ecx, 32
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x89, 0x3d]);
+            c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+            c.extend([0x5f, 0x5e]); // pop edi; pop esi
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+            let f = t.cave_code(&c);
+            t.jump(mg::TK_PUT_DEBUG_FONT_CORE, f);
+            let len = rng.below(90);
+            let mut text: Vec<u8> = (0..len)
+                .map(|_| match rng.below(3) {
+                    0 => [b'a' + rng.below(26) as u8, 0x7f][rng.below(2) as usize],
+                    _ => 0x80 | rng.next() as u8,
+                })
+                .collect();
+            text.extend([0, 0]);
+            let text = if i % 10 == 9 { 0 } else { t.alloc(&text) };
+            let (c, f) = (rng.word(), rng.word());
+            let what = format!("TkPutDebugFontStringPEuc #{i}");
+            t.check_framed(
+                &what,
+                0x0088_f4e0,
+                Conv::Cdecl,
+                &[c, f, text],
+                0x2c,
+                |m, ebp| Out::U32(mg::put_string_p_euc(m, ebp, c, f, text)),
+            );
+        }
+    });
+}
+
+#[test]
+fn gui_eve_buttonup_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xb07a_0007);
+        for i in 0..20 {
+            t.reset();
+            let n = rng.below(6);
+            // a negative size (a broken file) rounds towards zero
+            let size = if i % 7 == 6 {
+                0u32.wrapping_sub(rng.below(20))
+            } else {
+                n * 8 + rng.below(8)
+            };
+            let mut file = vec![size.to_le_bytes()];
+            for k in 0..n {
+                file.push((0x40 + 8 * k).to_le_bytes());
+                file.push(0u32.to_le_bytes());
+            }
+            let file: Vec<u8> = file.concat();
+            let ids = if i % 5 == 4 { 0 } else { t.alloc(&file) };
+            let sel = rng.word();
+            let ret = rng.word();
+            t.stubs(&[
+                (mg::USER_FREE, false, 1, 0, 0x81),
+                (mg::SG_PC_READ, false, 1, 0, ids),
+                (mg::SG_GET_RESOURCE_STR, false, 1, 0, 0x82),
+                (mg::GU_SELECTOR_ALLOCATE, false, 0, 0, sel),
+                (mg::GU_SELECTOR_RESET_NB_ITEM, false, 2, 0, 0x83),
+                (mg::GU_SELECTOR_SET_ITEM, false, 4, 0, 0x84),
+                (mg::GU_SELECTOR_SET_SELECT_STR, false, 2, 0, 0x85),
+                (mg::GU_SELECTOR_SORT_ITEM, false, 1, 0, 0x86),
+                (mg::GU_SELECTOR_OPEN_XYWH, false, 7, 0, ret),
+            ]);
+            let old = if rng.chance(2) { 0 } else { rng.word() };
+            t.g32(0x0132_5924, old);
+            let w = rng.word();
+            t.check(
+                &format!("gui_eve_GWM_BUTTONUP #{i}"),
+                0x0085_4e80,
+                Conv::Cdecl,
+                &[w],
+                |m| Out::U32(mg::eve_gwm_buttonup(m, w)),
             );
         }
     });
