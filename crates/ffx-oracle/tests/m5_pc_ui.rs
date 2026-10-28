@@ -3047,3 +3047,103 @@ fn debug_gui_packet_args_match_the_original() {
         }
     });
 }
+
+// ---- batch 9 (ffx_pcui::m5u_g) ----
+
+#[test]
+fn debug_gui_printers_match_the_original() {
+    Twins::each(|t| {
+        for i in 0..4u32 {
+            t.reset();
+            t.stubs(&[
+                (gg::SET_PRINTF_FUNC, false, 1, 0, 0x00c1_0000 + i),
+                (gg::SG_VFPRINTF, false, 3, 0, 0x20 + i),
+                (gg::PRINT_SET_XY, false, 2, 0, 0xb1),
+                (gg::GU_PRINTF, false, 1, 0, 0xb2),
+            ]);
+            let buf = t.zeros(0x20);
+            t.g32(gg::BYTE_CURSOR, buf + i);
+            t.g32(gg::LOG_Y, 0x30 + i);
+            let fmt = t.cstr("v=%d s=%s");
+            let s = t.cstr(["abc", "", "longer text"][i as usize % 3]);
+            let args = [fmt, i.wrapping_mul(0x1234_5677), s];
+            // the port reads the arguments from the caller's slots
+            let ebp = t.frame_ebp(3);
+            for (k, w) in (0u32..).zip(args) {
+                Mem::write(&mut t.b, ebp + 8 + 4 * k, w);
+            }
+            t.skip = 4;
+            t.check_framed(
+                "line printf",
+                0x0085_33b0,
+                Conv::Cdecl,
+                &args,
+                4,
+                |g, ebp| Out::U32(gg::line_printf(g, fmt, ebp + 0xc)),
+            );
+            t.check_framed(
+                "log printf",
+                0x0085_3e40,
+                Conv::Cdecl,
+                &args,
+                0x404,
+                |g, ebp| Out::U32(gg::log_printf(g, fmt, ebp + 0xc, ebp - 0x404)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn debug_gui_light_file_and_chr_selector_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x119e_0009);
+        for i in 0..6u32 {
+            t.reset();
+            let pk = t.zeros(0x100);
+            let user = t.cstr("tidus");
+            t.stubs(&[
+                (gg::PACKET_GET_PTR, false, 0, 0, pk),
+                // one word logged: the first call passes only the format
+                (gg::LINE_PRINTF, false, 1, 0, 0xc1),
+                (gg::GET_USER_NAME, false, 0, 0, user),
+                (gg::PC_WRITE, false, 3, 0, 0xc2 + i),
+                (gg::CHR_NB_USE, false, 0, 0, [0, 1, 3][i as usize % 3]),
+                (gg::SELECTOR_RESET, false, 2, 0, 0xc3),
+                (gg::SELECTOR_SET_ITEM, false, 4, 0, 0xc4),
+            ]);
+            // Gui_SettingSaveLight prints k bytes (moves the cursor)
+            let cursor = t.rebase(gg::BYTE_CURSOR);
+            let mut code = vec![0x81, 0x05];
+            code.extend(cursor.to_le_bytes());
+            code.extend((i % 3).to_le_bytes()); // add dword [cursor], k
+            code.extend([0xb8, 0x55, 0, 0, 0, 0xc3]); // mov eax, 0x55; ret
+            let at = t.cave_code(&code);
+            t.jump(gg::SETTING_SAVE_LIGHT, at);
+            t.run(
+                "save light file",
+                0x0085_3310,
+                Conv::Cdecl,
+                &[],
+                true,
+                |g| gg::save_light_file(g),
+            );
+            // characters: 0..4 records, some used
+            let n = rng.below(5);
+            let mut recs = vec![0u8; (n as usize).max(1) * 0x880];
+            for k in 0..n as usize {
+                recs[k * 0x880 + 2] = u8::from(rng.chance(2));
+                // a used-looking byte mid-record (a wrong stride would see it)
+                recs[k * 0x880 + 0x442] = 1;
+                recs[k * 0x880 + 4..k * 0x880 + 8].copy_from_slice(&rng.next().to_le_bytes());
+            }
+            let arr = t.alloc(&recs);
+            t.g32(gg::CHR_ARRAY, arr);
+            t.g32(gg::CHR_COUNT, n);
+            t.g32(gg::CHR_SELECTOR, 0x00c5_0000 + i);
+            t.run("chr selector", 0x0085_3dc0, Conv::Cdecl, &[], true, |g| {
+                gg::chr_selector_fill(g)
+            });
+        }
+    });
+}

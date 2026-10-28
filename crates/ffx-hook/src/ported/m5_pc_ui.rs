@@ -592,4 +592,22 @@ ported! {
     Gu_SelectorFillFiles_0084d3a0 @ 0x0084_d3a0 => extern "C" fn selector_fill_files(list: u32, sel: u32, dir: u32) {
         gg::selector_fill_files(&mut mem(), list, sel, dir);
     }
+    // ---- batch 9 (ffx_pcui::m5u_g) ----
+    /// `Gu_LinePrintf_008533b0(fmt, ...)`: the arguments after `fmt` by address.
+    Gu_LinePrintf_008533b0 @ 0x0085_33b0 => extern "C" fn line_printf(fmt: u32; slots: u32) -> u32 {
+        gg::line_printf(&mut mem(), fmt, slots + 4)
+    }
+    /// `Gu_LogPrintf_00853e40(fmt, ...)`: buffer `ebp - 0x404`.
+    Gu_LogPrintf_00853e40 @ 0x0085_3e40 => extern "C" fn log_printf(fmt: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x101>::new();
+        gg::log_printf(&mut mem(), fmt, slots + 4, f.at())
+    }
+    /// `Gui_SettingSaveLightFile_00853310()`.
+    Gui_SettingSaveLightFile_00853310 @ 0x0085_3310 => extern "C" fn save_light_file() -> u32 {
+        gg::save_light_file(&mut mem())
+    }
+    /// `Gu_ChrSelectorFill_00853dc0()`.
+    Gu_ChrSelectorFill_00853dc0 @ 0x0085_3dc0 => extern "C" fn chr_selector_fill() -> u32 {
+        gg::chr_selector_fill(&mut mem())
+    }
 }

@@ -168,4 +168,110 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    // ---- the debug GUI's printers and character selector (batch 9) ----
+
+    pub const SET_PRINTF_FUNC: u32 = 0x0085_10c0;
+    pub const SG_VFPRINTF: u32 = 0x0085_11d0;
+    pub const PUT_BYTE: u32 = 0x0085_3400;
+    pub const LINE_PRINTF: u32 = 0x0085_33b0;
+    /// `MSVCR110!vsprintf`, `MSVCR110!sprintf` (cdecl).
+    pub const VSPRINTF_IAT: u32 = 0x00b0_c430;
+    pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+    pub const PRINT_SET_XY: u32 = 0x0084_8840;
+    pub const GU_PRINTF: u32 = 0x0084_8880;
+    /// `g_GuLogY` (name ours): the log window's next line (+7 a line).
+    pub const LOG_Y: u32 = 0x0132_5920;
+    pub const SETTING_SAVE_LIGHT: u32 = 0x0084_d8a0;
+    pub const GET_USER_NAME: u32 = 0x0082_0610;
+    pub const PC_WRITE: u32 = 0x0083_afe0;
+    pub const DEBUG_LINE: u32 = 0x023c_4000;
+    /// The light settings file's header lines and its path format.
+    pub const LIGHT_HEADER: u32 = 0x00b5_b61c;
+    pub const LIGHT_VERSION: u32 = 0x00b5_b62c;
+    pub const LIGHT_PATH: u32 = 0x00b5_b5e8;
+    pub const CHR_NB_USE: u32 = 0x0082_85e0;
+    /// `g_GuChrSelector` (name ours), `g_ChrCount`, `g_ChrArray`.
+    pub const CHR_SELECTOR: u32 = 0x0132_5918;
+    pub const CHR_COUNT: u32 = 0x023c_44e0;
+    pub const CHR_ARRAY: u32 = 0x023c_44e4;
+
+    /// `Gu_LinePrintf_008533b0(fmt, ...)` -> the length: `fmt` with the
+    /// caller's arguments (`va` = their address) printed byte by byte
+    /// through `Gu_PutByte_00853400` (the printer swapped in and back),
+    /// then `"\r\n"`.
+    pub fn line_printf(h: &mut impl Host, fmt: u32, va: u32) -> u32 {
+        let put = h.rebase(PUT_BYTE);
+        let old = h.call_sym(SET_PRINTF_FUNC, Conv::Cdecl, &[put]);
+        let n = h.call_sym(SG_VFPRINTF, Conv::Cdecl, &[0, fmt, va]);
+        h.call_sym(SET_PRINTF_FUNC, Conv::Cdecl, &[old]);
+        let p = g(h, BYTE_CURSOR);
+        h.write(p, 0x0a0du16);
+        set_g(h, BYTE_CURSOR, p.wrapping_add(2));
+        n
+    }
+
+    /// `Gu_LogPrintf_00853e40(fmt, ...)`: `vsprintf` into `buf` (1 KB, the
+    /// original's `ebp - 0x404`) printed at the log's next line.
+    pub fn log_printf(h: &mut impl Host, fmt: u32, va: u32, buf: u32) -> u32 {
+        let f: u32 = h.read(h.rebase(VSPRINTF_IAT));
+        h.call(f, Conv::Cdecl, &[buf, fmt, va]);
+        let y = g(h, LOG_Y);
+        h.call_sym(PRINT_SET_XY, Conv::Cdecl, &[0, y]);
+        let y = g(h, LOG_Y);
+        set_g(h, LOG_Y, y.wrapping_add(7));
+        h.call_sym(GU_PRINTF, Conv::Cdecl, &[buf])
+    }
+
+    /// `Gui_SettingSaveLightFile_00853310()`: the light settings printed
+    /// into the packet buffer (two header lines, `Gui_SettingSaveLight`)
+    /// and, when anything was printed, written to the PC as
+    /// `sprintf(g_DebugLine, path, user)`.
+    pub fn save_light_file(h: &mut impl Host) -> u32 {
+        let pk = h.call_sym(PACKET_GET_PTR, Conv::Cdecl, &[]);
+        set_g(h, BYTE_CURSOR, pk);
+        let a = h.rebase(LIGHT_HEADER);
+        h.call_sym(LINE_PRINTF, Conv::Cdecl, &[a]);
+        let b = h.rebase(LIGHT_VERSION);
+        h.call_sym(LINE_PRINTF, Conv::Cdecl, &[b, 0x197]);
+        let mut eax = h.call_sym(SETTING_SAVE_LIGHT, Conv::Cdecl, &[]);
+        let len = g(h, BYTE_CURSOR).wrapping_sub(pk);
+        if len != 0 {
+            let user = h.call_sym(GET_USER_NAME, Conv::Cdecl, &[]);
+            let line = h.rebase(DEBUG_LINE);
+            let path = h.rebase(LIGHT_PATH);
+            let f: u32 = h.read(h.rebase(SPRINTF_IAT));
+            h.call(f, Conv::Cdecl, &[line, path, user]);
+            eax = h.call_sym(PC_WRITE, Conv::Cdecl, &[pk, len, line]);
+        }
+        eax
+    }
+
+    /// `Gu_ChrSelectorFill_00853dc0()` -> 0, or -1 with no characters in
+    /// use: the selector reset to the count in use and given each used
+    /// character (`+2` set; its name `+4`), the array re-read each step.
+    pub fn chr_selector_fill(h: &mut impl Host) -> u32 {
+        let n = h.call_sym(CHR_NB_USE, Conv::Cdecl, &[]);
+        let sel = g(h, CHR_SELECTOR);
+        h.call_sym(SELECTOR_RESET, Conv::Cdecl, &[sel, n]);
+        if n == 0 {
+            return 0xffff_ffff;
+        }
+        let mut c = g(h, CHR_ARRAY);
+        let mut idx = 0u32;
+        loop {
+            let end = g(h, CHR_ARRAY).wrapping_add(g(h, CHR_COUNT).wrapping_mul(0x880));
+            if c == end {
+                break;
+            }
+            if h.read::<u8>(c + 2) != 0 {
+                let name: u32 = h.read(c + 4);
+                let sel = g(h, CHR_SELECTOR);
+                h.call_sym(SELECTOR_SET_ITEM, Conv::Cdecl, &[sel, idx, name, c]);
+                idx += 1;
+            }
+            c = c.wrapping_add(0x880);
+        }
+        0
+    }
 }

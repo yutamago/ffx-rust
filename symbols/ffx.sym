@@ -11557,10 +11557,14 @@
 0x00851ae0 function Sg_SetMouse               # fh v3:exact 0x00851ae0
 0x00853140 function Gu_PacketArg_00853140 # cdecl(i) -> Sg_PacketGetPtr()[i], "" (0x00b8fbeb) from i >= *0x01325910 (signed); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853170 function Gu_PacketArgInt_00853170 # cdecl(i): atoi(Gu_PacketArg_00853140(i)) as a tail jump with its argument slot replaced; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
+0x00853310 function Gui_SettingSaveLightFile_00853310 # cdecl(): the packet buffer as g_GuByteCursor, Gu_LinePrintf_008533b0 of 0x00b5b61c and (0x00b5b62c, 0x197), Gui_SettingSaveLight; when anything was printed sprintf(g_DebugLine, 0x00b5b5e8, Sg_GetUserName()) and Sg_PcWrite(buf, len, g_DebugLine); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
+0x008533b0 function Gu_LinePrintf_008533b0 # cdecl varargs(fmt, ...) -> length: SetPrintfFunc(Gu_PutByte_00853400), sg_vfprintf(0, fmt, &args), the printer restored, "\r\n" at g_GuByteCursor; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853400 function Gu_PutByte_00853400 # cdecl(c): byte at *g_GuByteCursor, which moves on; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853520 function SpriteFrameRegion_Load       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Filter'; Switch 0x7100847e80 SpriteFrameRegion::Load (symbols from Fahrenheit's server export)
 0x00853780 function Gui_SpriteWindowInit_00853780 # cdecl(): once (byte 0x01325916) Gu_WindowCreate(0x14, 0xa, 0x78, 0x46, 6, SpriteFrameRegion_Load); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(0x28, 4, 0x140, 0x60, 0xe, 0x008537d0)
+0x00853dc0 function Gu_ChrSelectorFill_00853dc0 # cdecl() -> 0 / -1 (none in use): Gu_SelectorResetNbItem(*0x01325918, Ch_SysGetNbUse()), Gu_SelectorSetItem(sel, k, chr +4, chr) for each g_ChrArray entry (0x880 bytes) with byte +2 set; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
+0x00853e40 function Gu_LogPrintf_00853e40 # cdecl varargs(fmt, ...): vsprintf into ebp-0x404, Gu_PrintSetXY(0, g_GuLogY), g_GuLogY += 7, Gu_Printf(buf); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(8, 0x9e, 0x64, 0x3c, 6, 0x00853ec0)
 0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0; cdecl(window, msg): msg 0x2c: 0x01325928 = Gu_SelectorGetItemValue(0x0132592c), Gu_WindowControlSetText(window, 0x2d, name), Sg_SetResource(4, value), Sg_SetResourceSTR(3, name), AtelSetEventJump(value, 0); other messages leave eax alone; ported M5 menu b6 (ffx_menu::m5m_f)
 0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60; cdecl() -> 0x01325928 = Sg_GetResource(4, 0) after dbgPrintf(0x00b5b410); ported M5 menu b6 (ffx_menu::m5m_f)
@@ -20807,6 +20811,8 @@
 0x01325244 label    g_GuMouseY                # mouse y (pairs with +0x0e and the height); was g_GuMouseX
 0x01325908 label g_GuByteCursor # Gu_PutByte_00853400's write pointer; name ours (m5 pc-ui b8)
 0x01325910 label g_GuPacketArgCount # i32: Gu_PacketArg_00853140's argument count; name ours (m5 pc-ui b8)
+0x01325918 label g_GuChrSelector # the character selector Gu_ChrSelectorFill_00853dc0 fills; name ours (m5 pc-ui b9)
+0x01325920 label g_GuLogY # the debug log's next line y (+7 a line, Gu_LogPrintf_00853e40); name ours (m5 pc-ui b9)
 0x01325954 label g_GuMemGraphOpen # Gui_MemGraph's once flag; name ours (m5 pc-ui b8)
 0x01325ac0 label    g_AtelLastSetMsg           # the message Native_MsgSetText (0x00857870) last put in a window; also written by 0x008607a0, 0x00860b00, read by 0x008e02f0
 0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
