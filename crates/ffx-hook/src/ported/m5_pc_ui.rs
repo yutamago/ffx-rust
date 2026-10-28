@@ -11,6 +11,7 @@ use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
+use ffx_pcui::m5u_e::bridge as e;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -441,5 +442,58 @@ ported! {
     FFEscMenu_readS32Array12_006fed60 @ 0x006f_ed60 => extern "thiscall" fn read_s32_array12(this: u32, out: u32, args: u32) -> u32 {
         let mut f = StackFrame::<0x0d>::new();
         d::read_s32_array12(&mut mem(), this, out, args, f.at())
+    }
+    // ---- batch 5 (ffx_pcui::m5u_e) ----
+    /// `IggyPlayerOpenScaled_006e9250(path, x, y, w, h)`: path at `ebp - 0x110`.
+    IggyPlayerOpenScaled_006e9250 @ 0x006e_9250 => extern "C" fn open_scaled(path: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        let mut f = StackFrame::<0x40>::new();
+        e::open_scaled(&mut mem(), path, [x, y, w, h], f.at())
+    }
+    /// `IggyPlayerOpen_006e93f0(path, x, y, w, h)`.
+    IggyPlayerOpen_006e93f0 @ 0x006e_93f0 => extern "C" fn open_at(path: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        let mut f = StackFrame::<0x40>::new();
+        e::open_at(&mut mem(), path, [x, y, w, h], f.at())
+    }
+    /// `FFEscMenu_onParameterButtonClicked(arg)`: frame `ebp - 0x364`.
+    FFEscMenu_onParameterButtonClicked @ 0x006f_c7b0 => extern "C" fn on_parameter_button_clicked(arg: u32) {
+        let mut f = StackFrame::<0xd9>::new();
+        e::on_parameter_button_clicked(&mut mem(), arg, f.at());
+    }
+    /// `FFEscMenu_confirmVideoSettings_006ff060(this; changed)`: frame `ebp - 0x364`.
+    FFEscMenu_confirmVideoSettings_006ff060 @ 0x006f_f060 => extern "thiscall" fn confirm_video_settings(this: u32, changed: u32) -> u32 {
+        let mut f = StackFrame::<0xd9>::new();
+        e::confirm_video_settings(&mut mem(), this, changed, f.at())
+    }
+    /// `FFEscMenu_onVideoApplied_006ff1b0(yes)`.
+    FFEscMenu_onVideoApplied_006ff1b0 @ 0x006f_f1b0 => extern "C" fn on_video_applied(yes: u32) -> u32 {
+        e::on_video_applied(&mut mem(), yes)
+    }
+    /// `FFEscMenu_onVideoSettingsChanged_006ff1e0(menu, args)`.
+    FFEscMenu_onVideoSettingsChanged_006ff1e0 @ 0x006f_f1e0 => extern "C" fn on_video_settings_changed(menu: u32, args: u32) -> u32 {
+        e::on_video_settings_changed(&mut mem(), menu, args)
+    }
+    /// `FFEscMenu_onVideoAnswer_006ff490(yes)`.
+    FFEscMenu_onVideoAnswer_006ff490 @ 0x006f_f490 => extern "C" fn on_video_answer(yes: u32) -> u32 {
+        e::on_video_answer(&mut mem(), yes)
+    }
+    /// `FFEscMenu_onVideoSettingRefresh(menu, args)`.
+    FFEscMenu_onVideoSettingRefresh @ 0x006f_f4b0 => extern "C" fn on_video_setting_refresh(menu: u32, args: u32) -> u32 {
+        e::on_video_setting_refresh(&mut mem(), menu, args)
+    }
+    /// `FFEscMenu_onVoiceVolumeChanged(menu, args)`.
+    FFEscMenu_onVoiceVolumeChanged @ 0x006f_f4f0 => extern "C" fn on_voice_volume(menu: u32, args: u32) -> u32 {
+        e::on_volume_changed(&mut mem(), menu, args, e::VOLUMES[0])
+    }
+    /// `FFEscMenu_onMusicVolumeChanged(menu, args)`.
+    FFEscMenu_onMusicVolumeChanged @ 0x006f_f530 => extern "C" fn on_music_volume(menu: u32, args: u32) -> u32 {
+        e::on_volume_changed(&mut mem(), menu, args, e::VOLUMES[1])
+    }
+    /// `FFEscMenu_onSfxVolumeChanged(menu, args)`.
+    FFEscMenu_onSfxVolumeChanged @ 0x006f_f570 => extern "C" fn on_sfx_volume(menu: u32, args: u32) -> u32 {
+        e::on_volume_changed(&mut mem(), menu, args, e::VOLUMES[2])
+    }
+    /// `FFEscMenu_onMasterVolumeChanged(menu, args)`.
+    FFEscMenu_onMasterVolumeChanged @ 0x006f_f5b0 => extern "C" fn on_master_volume(menu: u32, args: u32) -> u32 {
+        e::on_volume_changed(&mut mem(), menu, args, e::VOLUMES[3])
     }
 }

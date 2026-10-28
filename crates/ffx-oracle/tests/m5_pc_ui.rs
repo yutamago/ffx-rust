@@ -30,6 +30,7 @@ use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
+use ffx_pcui::m5u_e::bridge as e;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -2107,8 +2108,14 @@ impl Twins {
     /// four words of `value` with a running count, as `iggyDataValueSet`
     /// fills its value.
     fn stub_fill_value(&mut self, sym: u32) {
+        self.stub_fill_value_with(sym, false, 2, 0);
+    }
+
+    /// [`Twins::stub_fill_value`] for other conventions (`LocString_ToValue
+    /// (this; value)`: `this`, 1 word, 1 popped).
+    fn stub_fill_value_with(&mut self, sym: u32, this: bool, n: u32, pops: u32) {
         let ctr = self.words(&[0x0a00_0000]);
-        let rec = self.stub_code(sym, false, 2, 0, 0x5e7);
+        let rec = self.stub_code(sym, this, n, pops, 0x5e7);
         let mut c = vec![0x57]; // push edi
         c.extend([0x8b, 0x7c, 0x24, 0x08]); // mov edi, [esp+8]
         c.push(0xa1);
@@ -2545,6 +2552,183 @@ fn iggy_helpers_and_debug_fill_match_the_original() {
                 0x34,
                 |g, ebp| Out::U32(d::read_s32_array12(g, this, out, args, ebp - 0x34)),
             );
+        }
+    });
+}
+
+// ---- batch 5 (ffx_pcui::m5u_e) ----
+
+#[test]
+fn iggy_player_open_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0be5_0005);
+        for i in 0..10u32 {
+            t.reset();
+            // operator new logged (its size), 0 for a failure
+            let block = if i % 4 == 3 { 0 } else { t.zeros(0xa0) };
+            t.stubs(&[
+                (a::OPERATOR_NEW, false, 1, 0, block),
+                (a::UNIFY_FILENAME, false, 3, 0, 0x71),
+                (c::IGGY_MENU_CTOR, true, 6, 6, 0x00a5_0000 + i),
+                (e::IGGY_ADD_CALLBACK, true, 2, 2, 0x72),
+            ]);
+            let path = t.cstr("menu/escmenu.swf");
+            let ints = [
+                rng.word(),
+                rng.below(1920),
+                [0, 1080, 0x8000_0000, 7][i as usize % 4],
+                rng.next(),
+            ];
+            let floats = [
+                0x3f80_0000,
+                rng.next() & 0x7f7f_ffff,
+                if i == 0 { 0x7fc0_0000 } else { 0x8000_0000 },
+                0x4480_0000,
+            ];
+            // the original's frame beyond the path buffer holds its locals
+            t.skip = 0x10;
+            let args = [path, ints[0], ints[1], ints[2], ints[3]];
+            t.check_framed(
+                "open scaled",
+                0x006e_9250,
+                Conv::Cdecl,
+                &args,
+                0x110,
+                |g, ebp| Out::U32(e::open_scaled(g, path, ints, ebp - 0x110)),
+            );
+            let args = [path, floats[0], floats[1], floats[2], floats[3]];
+            t.check_framed("open", 0x006e_93f0, Conv::Cdecl, &args, 0x110, |g, ebp| {
+                Out::U32(e::open_at(g, path, floats, ebp - 0x110))
+            });
+            t.skip = 0;
+        }
+    });
+}
+
+/// The Esc menu's pop-up callees, recording.
+fn esc_stubs(t: &mut Twins, i: u32) -> u32 {
+    t.stubs(&[
+        (
+            e::SCENARIO_FLAG,
+            false,
+            0,
+            0,
+            [0, 1, 0x1_0000, 0xffff][i as usize % 4],
+        ),
+        (e::IS_ETERNAL_CALM, false, 1, 0, u32::from(i % 5 == 4)),
+        (c::CALL_FLASH_3, false, 14, 0, 0x75),
+        (e::SET_POPUP_CALLBACK, true, 2, 2, 0x76),
+        (e::CALL_FLASH_1, false, 6, 0, 0x77),
+        (e::PLAY_MENU_SOUND, true, 1, 1, 0x78),
+        (c::IGGY_CALL_AS3, true, 5, 5, 0x79),
+        (c::HANDLERS_ADD_CALL, true, 2, 2, 0x7a),
+        (e::HANDLERS_ADD, true, 4, 4, 0x7b),
+        (e::SET_WORD_AT, true, 2, 2, 0x7c),
+        (e::READ_S32_ARRAY12, true, 2, 2, 0x7d),
+    ]);
+    // LocString_Load(buf; id): logged, its string a constant
+    t.stub(e::LOC_STRING_LOAD, true, 1, 1, 0x5151);
+    t.stub_fill_value(c::DATA_VALUE_SET);
+    t.stub_fill_value_with(e::LOC_STRING_TO_VALUE, true, 1, 1);
+    let esc = t.alloc(&[0x44; 0x140]);
+    t.g32(c::ESC_MENU, esc);
+    t.g32(e::MOVIE_FADING, u32::from(i % 3 == 2));
+    t.g32(c::SETTINGS, 0x00e5_0000 + i);
+    esc
+}
+
+#[test]
+fn esc_menu_settings_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5e77_0005);
+        for i in 0..12u32 {
+            t.reset();
+            let esc = esc_stubs(t, i);
+            t.stub_alloc(e::OPERATOR_NEW_ARRAY, 10);
+            delete_stubs(t);
+            t.skip = 4;
+            let arg = rng.next();
+            t.check_framed(
+                "parameter clicked",
+                0x006f_c7b0,
+                Conv::Cdecl,
+                &[arg],
+                0x364,
+                |g, ebp| {
+                    e::on_parameter_button_clicked(g, arg, ebp - 0x364);
+                    Out::None
+                },
+            );
+            let changed = i & 1;
+            let tc = Conv::Thiscall(esc);
+            t.check_framed(
+                "confirm video",
+                0x006f_f060,
+                tc,
+                &[changed],
+                0x364,
+                |g, ebp| Out::U32(e::confirm_video_settings(g, esc, changed, ebp - 0x364)),
+            );
+            t.skip = 0;
+            let yes = [0, 1, 2][i as usize % 3];
+            t.run(
+                "video applied",
+                0x006f_f1b0,
+                Conv::Cdecl,
+                &[yes],
+                yes != 0,
+                |g| e::on_video_applied(g, yes),
+            );
+            t.run(
+                "video answer",
+                0x006f_f490,
+                Conv::Cdecl,
+                &[yes],
+                yes != 0,
+                |g| e::on_video_answer(g, yes),
+            );
+            // the 12 values: the stub leaves the new buffer as allocated
+            // (0xcd), so they differ from the menu's unless it holds 0xcd too
+            let menu = t.alloc(&[0x11; 0xe0]);
+            if i % 2 == 0 {
+                t.write(menu + 0xa4, &[0xcd; 0x30]);
+                if i % 4 == 2 {
+                    t.w32(menu + 0xa4 + 4 * (i % 12), 0);
+                }
+            }
+            let args = t.words(&[0, rng.next(), 0, 0]);
+            t.run(
+                "video changed",
+                0x006f_f1e0,
+                Conv::Cdecl,
+                &[menu, args],
+                true,
+                |g| e::on_video_settings_changed(g, menu, args),
+            );
+            t.run(
+                "video refresh",
+                0x006f_f4b0,
+                Conv::Cdecl,
+                &[menu, args],
+                true,
+                |g| e::on_video_setting_refresh(g, menu, args),
+            );
+            let x = [0.0f64, 55.7, -3.2, f64::NAN, 1e12, 100.0][i as usize % 6];
+            let sargs = t.words(&[0, 0, x.to_bits() as u32, (x.to_bits() >> 32) as u32]);
+            for (k, sym) in [0x006f_f4f0u32, 0x006f_f530, 0x006f_f570, 0x006f_f5b0]
+                .into_iter()
+                .enumerate()
+            {
+                let which = e::VOLUMES[k];
+                t.run(
+                    &format!("volume {sym:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[menu, sargs],
+                    true,
+                    |g| e::on_volume_changed(g, menu, sargs, which),
+                );
+            }
         }
     });
 }
