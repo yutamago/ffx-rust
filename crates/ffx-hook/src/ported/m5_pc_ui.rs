@@ -12,6 +12,7 @@ use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
+use ffx_pcui::m5u_f::bridge as ff;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -495,5 +496,43 @@ ported! {
     /// `FFEscMenu_onMasterVolumeChanged(menu, args)`.
     FFEscMenu_onMasterVolumeChanged @ 0x006f_f5b0 => extern "C" fn on_master_volume(menu: u32, args: u32) -> u32 {
         e::on_volume_changed(&mut mem(), menu, args, e::VOLUMES[3])
+    }
+    // ---- batch 6 (ffx_pcui::m5u_f) ----
+    /// `FFEscMenu_onAudioSettingRefresh(menu, args)`: frame `ebp - 0x5c`.
+    FFEscMenu_onAudioSettingRefresh @ 0x006f_f660 => extern "C" fn on_audio_setting_refresh(menu: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        ff::on_audio_setting_refresh(&mut mem(), menu, args, f.at())
+    }
+    /// `FFEscMenu_callMember1_006ffbb0(this, f, arg)`.
+    FFEscMenu_callMember1_006ffbb0 @ 0x006f_fbb0 => extern "C" fn call_member1(this: u32, f: u32, arg: u32) -> u32 {
+        let mut fr = StackFrame::<2>::new();
+        ff::call_member1(&mut mem(), this, f, arg, fr.at())
+    }
+    /// `FFEscMenu_callBoundMember_006ffc30(bound)`.
+    FFEscMenu_callBoundMember_006ffc30 @ 0x006f_fc30 => extern "C" fn call_bound_member(bound: u32) {
+        ff::call_bound_member(&mut mem(), bound);
+    }
+    /// `FFEscMenu_clearKeys_006ffc50()`.
+    FFEscMenu_clearKeys_006ffc50 @ 0x006f_fc50 => extern "C" fn clear_keys() {
+        ff::clear_keys(&mut mem());
+    }
+    /// `FFEscMenu_resetInputState_00701930(this)`: the state at `ebp - 0xc`.
+    FFEscMenu_resetInputState_00701930 @ 0x0070_1930 => extern "thiscall" fn reset_input_state(this: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        ff::reset_input_state(&mut mem(), this, f.at())
+    }
+    /// `FFEscMenu_onKeyIncomplete_00701660(menu)`.
+    FFEscMenu_onKeyIncomplete_00701660 @ 0x0070_1660 => extern "C" fn on_key_incomplete(menu: u32) -> u32 {
+        ff::on_key_incomplete(&mut mem(), menu)
+    }
+    /// `IggyValue_getStringUTF8_00a28b60(this; i, buf, size)`: the length
+    /// through its `i` slot; the path at `ebp - 0x18`.
+    IggyValue_getStringUTF8_00a28b60 @ 0x00a2_8b60 => extern "thiscall" fn get_string_utf8(this: u32, i: u32, buf: u32, size: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        ff::get_string_utf8(&mut mem(), this, i, buf, size, slots, f.at())
+    }
+    /// `IggyMenu_setEnableCeb248_007029e0(on)`.
+    IggyMenu_setEnableCeb248_007029e0 @ 0x0070_29e0 => extern "C" fn save_menu_set_enable(on: u32) -> u32 {
+        ff::save_menu_set_enable(&mut mem(), on)
     }
 }

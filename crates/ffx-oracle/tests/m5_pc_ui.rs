@@ -31,6 +31,7 @@ use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
+use ffx_pcui::m5u_f::bridge as ff;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -2729,6 +2730,151 @@ fn esc_menu_settings_match_the_original() {
                     |g| e::on_volume_changed(g, menu, sargs, which),
                 );
             }
+        }
+    });
+}
+
+// ---- batch 6 (ffx_pcui::m5u_f) ----
+
+#[test]
+fn esc_menu_audio_and_keys_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xa0d1_0006);
+        for i in 0..8u32 {
+            t.reset();
+            delete_stubs(t);
+            let cast = 0x00ca_0000 + i;
+            t.stubs(&[
+                (ff::RT_DYNAMIC_CAST, false, 5, 0, cast),
+                (c::GET_DEREF, true, 0, 0, 0x00d1_0000 + i),
+                (c::VALUE_REF_CREATE, true, 2, 2, 0x81),
+                (ff::SET_WORD_AT, true, 2, 2, 0x82),
+                (c::HANDLERS_ADD_CALL, true, 2, 2, 0x83),
+                (c::VALUE_REF_FREE, true, 0, 0, 0x84),
+                (ff::GET_APPLICATION, false, 0, 0, 0x00a9_0000),
+                (ff::INPUT_SET_KEY, true, 3, 3, 0x85),
+                (ff::SWAP_STATE, false, 4, 0, 0x86),
+                (c::IGGY_MENU_SET_ENABLE, true, 1, 1, 0x87),
+            ]);
+            let vals: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            t.stub_seq(ff::GET_ARRAY_S32, true, 1, 1, &vals);
+            t.g32(c::SETTINGS, 0x00e5_0000 + i);
+            let menu = rng.next();
+            let args = t.words(&[0, rng.next()]);
+            // the values by index and the value ref (the rest is SEH)
+            t.skip = 0x10;
+            t.check_framed(
+                "audio refresh",
+                0x006f_f660,
+                Conv::Cdecl,
+                &[menu, args],
+                0x5c,
+                |g, ebp| Out::U32(ff::on_audio_setting_refresh(g, menu, args, ebp - 0x5c)),
+            );
+            t.skip = 0;
+            // the member trampolines: recording member stubs
+            let m1 = t.stub_code(0xf1, true, 1, 1, 0x88 + i);
+            let this = rng.next();
+            let arg = rng.next();
+            t.check_framed_init(
+                "call member",
+                0x006f_fbb0,
+                Conv::Cdecl,
+                &[this, m1, arg],
+                8,
+                &[0x5a; 8],
+                |g, ebp| Out::U32(ff::call_member1(g, this, m1, arg, ebp - 8)),
+            );
+            let m0 = t.stub_code(0xf0, true, 0, 0, 0x89);
+            let bound = t.words(&[m0, rng.below(64), rng.next()]);
+            t.run(
+                "bound member",
+                0x006f_fc30,
+                Conv::Cdecl,
+                &[bound],
+                false,
+                |g| {
+                    ff::call_bound_member(g, bound);
+                    0
+                },
+            );
+            t.run("clear keys", 0x006f_fc50, Conv::Cdecl, &[], false, |g| {
+                ff::clear_keys(g);
+                0
+            });
+            let obj = t.alloc(&[0x33; 0x100]);
+            t.check_framed(
+                "reset input",
+                0x0070_1930,
+                Conv::Thiscall(obj),
+                &[],
+                0xc,
+                |g, ebp| Out::U32(ff::reset_input_state(g, obj, ebp - 0xc)),
+            );
+            t.run(
+                "key incomplete",
+                0x0070_1660,
+                Conv::Cdecl,
+                &[menu],
+                true,
+                |g| ff::on_key_incomplete(g, menu),
+            );
+            let m = if i % 3 == 0 { 0 } else { 0x00ab_0000 + i };
+            t.g32(ff::SAVE_LOAD_MENU, m);
+            let on = [0, 1, 7][i as usize % 3];
+            t.run(
+                "save menu enable",
+                0x0070_29e0,
+                Conv::Cdecl,
+                &[on],
+                m != 0,
+                |g| ff::save_menu_set_enable(g, on),
+            );
+        }
+    });
+}
+
+/// The string read: the stub writes a length through the pointer it gets
+/// (the original's own argument slot).
+#[test]
+fn iggy_get_string_utf8_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5718_0006);
+        for i in 0..6u32 {
+            t.reset();
+            t.stub_import(ff::PATH_ARRAY_IAT, false, 3, 3, 0x91);
+            // GetStringUTF8RS(.., &len): *len = 0x40 + i, logged
+            let rec = t.stub_code(ff::GET_STRING_UTF8_IAT, false, 6, 6, 0x92);
+            let mut code = vec![0x8b, 0x44, 0x24, 0x18]; // mov eax, [esp+0x18]
+            code.extend([0xc7, 0x00]);
+            code.extend((0x40 + i).to_le_bytes()); // mov dword [eax], len
+            code.push(0xe9);
+            let here = t.cave_next + code.len() as u32 + 4;
+            code.extend(rec.wrapping_sub(here).to_le_bytes()); // jmp rec
+            let stub = t.cave_code(&code);
+            let slot = t.rebase(ff::GET_STRING_UTF8_IAT);
+            t.patch(slot, &stub.to_le_bytes());
+            let this = rng.next() & 0x7fff_fff0;
+            let (k, buf, size) = (rng.below(9), rng.next(), rng.below(512));
+            let tc = Conv::Thiscall(this);
+            t.check_framed(
+                "get string",
+                0x00a2_8b60,
+                tc,
+                &[k, buf, size],
+                0x18,
+                |g, ebp2| {
+                    Out::U32(ff::get_string_utf8(
+                        g,
+                        this,
+                        k,
+                        buf,
+                        size,
+                        ebp2 + 8,
+                        ebp2 - 0x18,
+                    ))
+                },
+            );
         }
     });
 }
