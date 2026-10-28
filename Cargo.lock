@@ -1010,6 +1010,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-host"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-core",
+ "ffx-kernel",
+ "goblin",
+ "libc",
+ "thiserror",
+ "unicorn-engine",
+ "windows-sys",
+]
+
+[[package]]
 name = "ffx-kernel"
 version = "0.1.0"
 dependencies = [
