@@ -2896,4 +2896,114 @@ pub mod bridge {
             import(mem, &mut *call, SSCANF_SLOT, &[tok, fmt, out]);
         }
     }
+
+    pub const MS_GET_RAM_CHR_SUMMON: u32 = 0x0079_af60;
+    /// The party motion file's lines (`.rdata`; some are the tails of
+    /// others).
+    pub const FMT_PLY_HEAD: u32 = 0x00b5_79d4;
+    pub const FMT_PLY_SUMMON: u32 = 0x00b5_79f4;
+    pub const FMT_PLY_PLAYER: u32 = 0x00b5_7a18;
+    pub const TEXT_PLY_IF_WATER: u32 = 0x00b5_7a3c;
+    pub const FMT_PLY_PLAYER_WATER: u32 = 0x00b5_7a54;
+    pub const FMT_PLY_SUMMON_WATER: u32 = 0x00b5_7a78;
+    pub const TEXT_PLY_ELSE: u32 = 0x00b5_7a9c;
+    pub const FMT_PLY_SUMMON_W: u32 = 0x00b5_7aa8;
+    pub const FMT_PLY_PLAYER_W: u32 = 0x00b5_7ad4;
+    pub const TEXT_PLY_CLOSE: u32 = 0x00b5_7b00;
+
+    /// `MsPlySave(name)` (`0x007dd5e0`): the party motion macro file: a
+    /// writer as [`ms_mon_save`]'s (the frame's 5 words at the original's
+    /// `ebp - 0x418`, the text buffer, 0x400 bytes, after them), the
+    /// header, then per actor 0..0x11 and 0x1c..0x1e a macro (player or
+    /// summon by `MsGetRamChrSummon`), for 0, 4 and 6 with a water branch
+    /// (only those underwater, with the water macro names), its motions
+    /// (`0x007dcf70(actor, writer)`) and its end; then the rest written,
+    /// the buffer freed, the file closed: -1. A file that doesn't open: 0.
+    pub fn ms_ply_save<M: Mem>(mem: &mut M, call: Call<'_, M>, frame: u32, name: u32) -> u32 {
+        let writer = frame;
+        let text = frame.wrapping_add(0x14);
+        let fd = game(mem, &mut *call, SCE_OPEN, &[name, 0x602]);
+        mem.write(writer.wrapping_add(8), fd);
+        mem.write(writer.wrapping_add(4), 1u32);
+        mem.write(writer.wrapping_add(0x10), 0x1000u32);
+        let buf = import(mem, &mut *call, MALLOC_SLOT, &[0x1000]);
+        mem.write(writer, buf);
+        mem.write(writer.wrapping_add(0xc), 0u32);
+        if fd.cast_signed() < 0 {
+            return 0;
+        }
+        let line = |mem: &mut M, call: Call<'_, M>, fmt: u32, arg: Option<u32>| {
+            let fmt = mem.rebase(fmt);
+            match arg {
+                Some(a) => import(mem, &mut *call, SPRINTF_SLOT, &[text, fmt, a]),
+                None => import(mem, &mut *call, SPRINTF_SLOT, &[text, fmt]),
+            };
+            game(mem, call, ENV_WRITE_TEXT_3, &[writer, text]);
+        };
+        let scene = mem.rebase(BTL_SCENE_NAME);
+        line(mem, &mut *call, FMT_PLY_HEAD, Some(scene));
+        for i in 0..0x1fu32 {
+            if (0x12..0x1c).contains(&i) {
+                continue;
+            }
+            let water = matches!(i, 0 | 4 | 6);
+            let mut close = false;
+            if r8(mem, BTL_UNDERWATER) == 0 {
+                let summon = game(mem, &mut *call, MS_GET_RAM_CHR_SUMMON, &[i]) != 0;
+                if summon {
+                    line(mem, &mut *call, FMT_PLY_SUMMON, Some(i.wrapping_sub(8)));
+                } else {
+                    line(mem, &mut *call, FMT_PLY_PLAYER, Some(i));
+                }
+                if water {
+                    line(mem, &mut *call, TEXT_PLY_IF_WATER, None);
+                    if i < 8 {
+                        line(mem, &mut *call, FMT_PLY_PLAYER_WATER, Some(i));
+                    } else {
+                        line(
+                            mem,
+                            &mut *call,
+                            FMT_PLY_SUMMON_WATER,
+                            Some(i.wrapping_sub(8)),
+                        );
+                    }
+                    line(mem, &mut *call, TEXT_PLY_ELSE, None);
+                    close = true;
+                }
+            } else {
+                if !water {
+                    continue;
+                }
+                let summon = game(mem, &mut *call, MS_GET_RAM_CHR_SUMMON, &[i]) != 0;
+                if summon {
+                    line(mem, &mut *call, FMT_PLY_SUMMON_W, Some(i.wrapping_sub(8)));
+                } else {
+                    line(mem, &mut *call, FMT_PLY_PLAYER_W, Some(i));
+                }
+            }
+            game(mem, &mut *call, MS_MOTION_WRITE, &[i, writer]);
+            if close {
+                line(mem, &mut *call, TEXT_PLY_CLOSE, None);
+            }
+            line(mem, &mut *call, TEXT_MON_END, None);
+        }
+        let fill: i32 = mem.read(writer.wrapping_add(0xc));
+        let fd: i32 = mem.read(writer.wrapping_add(8));
+        let buf: u32 = mem.read(writer);
+        if fill > 0 && mem.read::<u32>(writer.wrapping_add(4)) != 0 {
+            game(
+                mem,
+                &mut *call,
+                SCE_WRITE,
+                &[fd.cast_unsigned(), buf, fill.cast_unsigned()],
+            );
+        }
+        if buf != 0 {
+            import(mem, &mut *call, FREE_SLOT, &[buf]);
+        }
+        if fd > 0 {
+            game(mem, call, SCE_CLOSE, &[fd.cast_unsigned()]);
+        }
+        u32::MAX
+    }
 }

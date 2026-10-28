@@ -395,4 +395,12 @@ ported! {
     MsDebugCameraKeep_007c8c50 @ 0x007c_8c50 => extern "C" fn ms_debug_camera_keep(step: u32; slots: u32) -> u32 {
         mb::ms_debug_camera_keep(&mut mem(), &mut call, slots, step)
     }
+
+    // ---- batch 7 ----
+    /// `MsPlySave(name)`: the writer and text in a frame (5 words, then
+    /// 0x400 bytes).
+    MsPlySave @ 0x007d_d5e0 => extern "C" fn ms_ply_save(name: u32) -> u32 {
+        let mut f = StackFrame::<0x105>::new();
+        mb::ms_ply_save(&mut mem(), &mut call, f.at(), name)
+    }
 }

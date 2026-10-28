@@ -9676,7 +9676,7 @@
 0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1; ported ffx_battle::m5_battle (m5 battle b3)
 0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b3)
 0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b4)
-0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export)
+0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b7)
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de700 function MsEnvWriteText_007de700 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsMonSave's); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0

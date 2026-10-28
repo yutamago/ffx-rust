@@ -1169,8 +1169,13 @@ fn cd_read_sectors_matches_the_original() {
 /// A cdecl stub over `sym` taking a string: logs `sym` and the
 /// string's first 16 bytes (its text, not its address).
 fn stub_text(t: &mut Twins, sym: u32) {
+    stub_text_at(t, sym, 4);
+}
+
+/// [`stub_text`] for a string in the stack word at `esp + off`.
+fn stub_text_at(t: &mut Twins, sym: u32, off: u8) {
     let mut c = t.log_code(sym, 0);
-    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x8b, 0x54, 0x24, off]); // mov edx, [esp+off]
     for k in 0..4u8 {
         c.extend([0x8b, 0x4a, 4 * k]); // mov ecx, [edx+4k]
         c.extend([0x89, 0x48, 4 + 4 * k]); // mov [eax+4+4k], ecx
@@ -2512,7 +2517,7 @@ fn mon_save_matches_the_original() {
             let buf = if i % 5 == 4 { 0 } else { rng.next() | 1 };
             t.stub_import(mb::MALLOC_SLOT, 1, buf);
             t.stub_import(mb::FREE_SLOT, 1, 0);
-            t.stub(mb::ENV_WRITE_TEXT_3, 2, 0);
+            stub_text_at(t, mb::ENV_WRITE_TEXT_3, 8);
             t.stub(mb::SCE_WRITE, 3, 0);
             t.stub(mb::SCE_CLOSE, 1, 0);
             // the motion writer leaves a fill and the flag
@@ -2709,5 +2714,56 @@ fn debug_camera_keep_matches_the_original() {
                 |m, ebp| Out::U32(mb::ms_debug_camera_keep(m, &mut oc, ebp + 8, step)),
             );
         }
+    });
+}
+
+// ---- batch 7 ----
+
+#[test]
+fn ply_save_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x91a5_0001);
+        t.skip = 4;
+        for i in 0..12 {
+            t.reset();
+            t.stub(mb::SCE_OPEN, 2, [0xffff_ffff, 0, 4, 0x8000_0000][i % 4]);
+            let buf = if i % 5 == 4 { 0 } else { rng.next() | 1 };
+            t.stub_import(mb::MALLOC_SLOT, 1, buf);
+            t.stub_import(mb::FREE_SLOT, 1, 0);
+            stub_text_at(t, mb::ENV_WRITE_TEXT_3, 8);
+            t.stub(mb::SCE_WRITE, 3, 0);
+            t.stub(mb::SCE_CLOSE, 1, 0);
+            let summons: Vec<u32> = (0..0x20).map(|_| u32::from(rng.chance(3))).collect();
+            t.stub_seq(mb::MS_GET_RAM_CHR_SUMMON, 1, &summons);
+            // the motion writer leaves a fill and the flag
+            let w = {
+                let fill = [0u32, 1, 0x80][i % 3];
+                let flag = u32::from(i % 2 == 0 || i % 4 == 1);
+                let mut c = t.log_code(mb::MS_MOTION_WRITE, 2);
+                c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+                c.extend([0xc7, 0x42, 0x0c]);
+                c.extend(fill.to_le_bytes()); // mov dword [edx+0xc], fill
+                c.extend([0xc7, 0x42, 0x04]);
+                c.extend(flag.to_le_bytes()); // mov dword [edx+4], flag
+                c.push(0xc3);
+                t.cave_code(&c)
+            };
+            t.jump(mb::MS_MOTION_WRITE, w);
+            let scene = t.rebase(mb::BTL_SCENE_NAME);
+            t.write(scene, b"bsil_00\0\0");
+            t.g8(
+                mb::BTL_UNDERWATER,
+                if i % 3 == 1 { rng.next() as u8 | 1 } else { 0 },
+            );
+            let name = rng.next();
+            t.check_framed(
+                &format!("MsPlySave #{i}"),
+                0x007d_d5e0,
+                &[name],
+                0x418,
+                |m, ebp| Out::U32(mb::ms_ply_save(m, &mut oc, ebp - 0x418, name)),
+            );
+        }
+        t.skip = 0;
     });
 }
