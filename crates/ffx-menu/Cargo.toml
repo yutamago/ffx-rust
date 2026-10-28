@@ -17,6 +17,7 @@ ffx-kernel.workspace = true
 ffx-system.workspace = true
 ffx-ps2.workspace = true
 ffx-text.workspace = true
+ffx-graphic.workspace = true
 
 [lints]
 workspace = true

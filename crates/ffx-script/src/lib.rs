@@ -14,6 +14,7 @@
 //! exactly. The format is described in `docs/formats/script.md`.
 
 mod container;
+pub mod m5_thunks;
 pub mod natives;
 pub mod opcode;
 mod script;

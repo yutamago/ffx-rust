@@ -15,6 +15,7 @@ pub mod native_btl;
 pub mod native_btl2;
 pub mod native_cam;
 pub mod native_chr;
+pub mod native_m5;
 pub mod native_map;
 pub mod native_mods;
 pub mod native_move;
