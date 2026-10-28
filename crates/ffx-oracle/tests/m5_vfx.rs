@@ -27,6 +27,7 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem;
 use ffx_glue_other::m5v_a::{self as ma, bridge as a};
+use ffx_glue_other::m5v_b::{self as mb, bridge as b};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -543,6 +544,17 @@ impl Twins {
         let z = vec![0; 0x400];
         self.a.write(top - 0x400, &z).unwrap();
         self.b.write(top - 0x400, &z).unwrap();
+    }
+
+    /// The argument slots of a call with `args` from the call top: `b`
+    /// gets the words the original's call puts there (the bridge makes no
+    /// call), and its own calls go below them.
+    fn arg_slots(&mut self, args: &[u32]) -> u32 {
+        let slots = first_slot(&self.a, args.len() as u32);
+        let bytes: Vec<u8> = args.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.b.write(slots, &bytes).unwrap();
+        self.b_top = Some(slots - 0x40);
+        slots
     }
 
     /// Asserts both oracles hold the same bytes at `at..at + n` (frames and
@@ -1143,7 +1155,7 @@ fn compare_depth_matches_the_original() {
                 t.w32(gb + 0xdc, d);
             }
             let (pa, pb) = (t.words(&[ga]), t.words(&[gb]));
-            let slots = first_slot(&t.a, 2);
+            let slots = t.arg_slots(&[pa, pb]);
             t.check(
                 "VFXGeometry_CompareDepth",
                 0x0065_9140,
@@ -1152,6 +1164,7 @@ fn compare_depth_matches_the_original() {
                 |g| Out::U32(a::compare_depth(g, slots, pa, pb) as u32),
             );
             t.same_stack("VFXGeometry_CompareDepth", slots, 8);
+            t.b_top = None;
             t.reset();
         }
     });
@@ -1362,6 +1375,520 @@ fn key64_less_matches_the_original() {
                 &[pa, pb],
                 |g| Out::U32(a::key64_less(g, pa, pb)),
             );
+        }
+    });
+}
+
+// ---- batch 2 (ffx_glue_other::m5v_b) ----
+
+#[test]
+fn chr_shader_create_instance_matches_the_original() {
+    // the global set; the renderer's allocation failing; the +8 object's
+    // failing; both made
+    Twins::each(|t| {
+        for case in 0..4_u32 {
+            t.global(
+                mb::CHR_SHADER_RENDER.sym,
+                if case == 0 { 0x7777 } else { 0 },
+            );
+            let r = t.zeros(0x20);
+            let p = t.zeros(0x40);
+            let news = match case {
+                1 => vec![0],
+                2 => vec![r, 0],
+                _ => vec![r, p],
+            };
+            let seq = t.seq(&news);
+            t.stub_sym(mb::OPERATOR_NEW, 1, false, 1, 0, seq);
+            t.stub_sym(mb::VERTEX_INSTANCE_SETUP, 2, true, 0, 0, Ret::Val(2));
+            t.stub_sym(mb::SET_FIELDS, 3, true, 0, 0, Ret::Val(p + 4));
+            t.stub_sym(mb::CREATE_MESH, 4, true, 0, 0, Ret::Val(4));
+            t.check(
+                "ChrShaderRender_CreateInstance_0069f3a0",
+                0x0069_f3a0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    b::chr_shader_create_instance(g);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn chr_shadow_end_matches_the_original() {
+    // no object; no mesh (the warning); the remake by both flags; the
+    // hide with and without the object's mesh
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0201);
+        for case in 0..40_u32 {
+            let scene = t.zeros(0xfaa0);
+            if rng.chance(2) {
+                t.w8(scene + 0xfa9b, 1);
+            }
+            t.global(mb::SCENE.sym, scene);
+            let r = t.zeros(0x20);
+            if case % 8 != 0 {
+                let m = t.method_stub(1, 1, Ret::Val(1));
+                let obj = t.object(&[0, 0, m], 0x30);
+                if rng.chance(2) {
+                    let mesh = rng.next() | 1;
+                    t.w32(obj + 0xc, mesh);
+                }
+                t.w32(r + 8, obj);
+            }
+            let index = rng.below(3);
+            t.w32(r + 0x10, index);
+            // r[2] is the +8 object itself
+            for k in 0..2 {
+                let mesh = if rng.chance(4) { 0 } else { rng.next() | 1 };
+                t.w32(r + 4 * k, mesh);
+            }
+            if rng.chance(2) {
+                t.w8(r + 0xc, 1);
+            }
+            t.stub_sym(mb::PRINTF, 2, false, 2, 0, Ret::Val(2));
+            t.stub_sym(mb::CREATE_MESH, 3, true, 0, 0, Ret::Val(3));
+            t.stub_sym(mb::SET_MESH_VISIBLE, 4, true, 2, 2, Ret::Val(4));
+            t.check(
+                "ChrShaderRender_ShadowEnd_0069fdc0",
+                0x0069_fdc0,
+                Conv::Thiscall(r),
+                &[],
+                |g| {
+                    b::chr_shadow_end(g, r);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+/// A dynamic geometry with a geometry list of `n` entries (none: no
+/// list), each with a `+4` buffer; the list's top bit random.
+fn dyn_geometry(t: &mut Twins, rng: &mut Rng, n: Option<u32>) -> u32 {
+    let g = t.zeros(0x100);
+    let shader = t.zeros(0x10);
+    t.w32(g + 0x28, shader);
+    if let Some(n) = n {
+        let geos: Vec<u32> = (0..n)
+            .map(|_| {
+                let geo = t.zeros(0x10);
+                let buffer = t.zeros(0x10);
+                t.w32(geo + 4, buffer);
+                geo
+            })
+            .collect();
+        let top = if rng.chance(2) { 0x8000_0000 } else { 0 };
+        let list = if n > 1 {
+            let data = t.words(&geos);
+            t.words(&[n | top, data])
+        } else {
+            let mut w = vec![n | top];
+            w.extend(&geos);
+            w.push(0);
+            t.words(&w)
+        };
+        t.w32(g + 0x14, list);
+    }
+    g
+}
+
+#[test]
+fn dynamic_geometry_setters_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0202);
+        for case in 0..24_u32 {
+            let n = match case % 4 {
+                0 => None,
+                1 => Some(0),
+                2 => Some(1),
+                _ => Some(2 + rng.below(2)),
+            };
+            let finds: Vec<u32> = (0..12)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() | 1 })
+                .collect();
+            // the point light
+            let g = dyn_geometry(t, &mut rng, n);
+            let m0: Vec<u32> = (0..16).map(|_| rng.next()).collect();
+            let m1: Vec<u32> = (0..16).map(|_| rng.next()).collect();
+            let (m0, m1) = (t.words(&m0), t.words(&m1));
+            let f = float_word(&mut rng);
+            let seq = t.seq(&finds);
+            t.stub_sym(mb::FIND_PARAM, 1, true, 1, 1, seq);
+            t.stub_sym(mb::SET_VALUE2, 2, true, 2, 2, Ret::Val(2));
+            let slots = t.arg_slots(&[m0, m1, f]);
+            t.check(
+                "VFXDynamicGeometry_setPointLightParameters",
+                0x006a_2fd0,
+                Conv::Thiscall(g),
+                &[m0, m1, f],
+                |o| {
+                    b::set_point_light_parameters(o, slots, g, m0, m1, f);
+                    Out::None
+                },
+            );
+            t.same_stack("VFXDynamicGeometry_setPointLightParameters", slots, 4);
+            t.b_top = None;
+            t.reset();
+            // YIQ on and off
+            let g = dyn_geometry(t, &mut rng, n);
+            let on = if case % 3 == 0 {
+                0
+            } else {
+                rng.next() as u8 | 1
+            };
+            let seq = t.seq(&finds);
+            t.stub_sym(mb::FIND_PARAM, 1, true, 1, 1, seq);
+            t.stub_sym(mb::SET_VALUE2, 2, true, 2, 2, Ret::Val(2));
+            t.stub_sym(mb::GET_YIQ_PARAM, 3, true, 6, 6, Ret::Val(3));
+            let scene = t.zeros(0x10);
+            t.global(mb::SCENE.sym, scene);
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x80);
+            let arg = u32::from(on) | (rng.next() & 0xffff_ff00);
+            t.check(
+                "VFXDynamicGeometry_setYIQEnable",
+                0x006a_3a20,
+                Conv::Thiscall(g),
+                &[arg],
+                |o| {
+                    b::set_yiq_enable(o, ebp, g, on);
+                    Out::None
+                },
+            );
+            t.same_stack("VFXDynamicGeometry_setYIQEnable", ebp - 0x28, 0x24);
+            t.b_top = None;
+            t.reset();
+            // RGBA and UV
+            let v: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            let src = t.words(&v);
+            let g = t.zeros(0x100);
+            t.check(
+                "VFXDynamicGeometry_setRGBAPower",
+                0x006a_30d0,
+                Conv::Thiscall(g),
+                &[src],
+                |o| {
+                    b::set_rgba_power(o, g, src);
+                    Out::None
+                },
+            );
+            t.check(
+                "VFXDynamicGeometry_setUVOffset",
+                0x006a_3a00,
+                Conv::Thiscall(g),
+                &[src],
+                |o| {
+                    b::set_uv_offset(o, g, src);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn shader_manager_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0203);
+        for case in 0..30_u32 {
+            // the string node copy: no name, a flag bit alone, names of 0..9
+            // characters with and without the flag; the allocation failing
+            let node = t.zeros(0x10);
+            let src = t.zeros(0x10);
+            let tagged = match case % 5 {
+                0 => 0,
+                1 => 1,
+                _ => {
+                    let len = rng.below(10) as usize;
+                    let mut s: Vec<u8> = (0..len).map(|_| b'a' + rng.below(26) as u8).collect();
+                    s.push(0);
+                    let at = t.alloc(&[s, vec![0; 4]].concat());
+                    // the allocation is 4-aligned: the flag bit is free
+                    at | u32::from(rng.chance(2))
+                }
+            };
+            t.w32(src + 0xc, tagged);
+            let block = if case % 7 == 3 { 0 } else { t.zeros(0x20) };
+            t.stub_sym(mb::PHYRE_MALLOC, 1, false, 2, 0, Ret::Val(block));
+            t.stub_sym(mb::MEMCPY, 2, false, 3, 0, Ret::Val(block));
+            let slots = t.arg_slots(&[src]);
+            t.check(
+                "VfxShaderNode_copy_006bf170",
+                0x006b_f170,
+                Conv::Thiscall(node),
+                &[src],
+                |o| Out::U32(b::shader_node_copy(o, slots, node, src)),
+            );
+            t.same_stack("VfxShaderNode_copy_006bf170", slots, 4);
+            t.b_top = None;
+            t.reset();
+
+            // the tree iterator: the first node the tree, 0, or a chain
+            let tree = t.zeros(0x20);
+            let first = match case % 3 {
+                0 => tree,
+                1 => 0,
+                _ => {
+                    let mut next = tree;
+                    for _ in 0..=rng.below(4) {
+                        let n = t.zeros(0x10);
+                        t.w32(n, next);
+                        next = n;
+                    }
+                    next
+                }
+            };
+            t.w32(tree + 0xc, first);
+            let it = t.zeros(0xc);
+            t.stub_sym(mb::TREE_SUCCESSOR, 1, true, 1, 1, Ret::Val(0x5151));
+            t.check(
+                "PTreeIterator_begin_006bf2a0",
+                0x006b_f2a0,
+                Conv::Thiscall(it),
+                &[tree],
+                |o| Out::U32(b::tree_iterator_begin(o, it, tree)),
+            );
+            t.reset();
+
+            // the texture parameter
+            let buffer = t.zeros(0x10);
+            let param = t.zeros(0x10);
+            t.w8(
+                param + 2,
+                if case % 4 == 0 {
+                    rng.next() as u8
+                } else {
+                    0x44
+                },
+            );
+            let value = if case % 5 == 0 {
+                0
+            } else {
+                let v = t.zeros(0x10);
+                for off in [8_u32, 0xc] {
+                    let w = if rng.chance(4) { 0 } else { rng.next() | 1 };
+                    t.w32(v + off, w);
+                }
+                v
+            };
+            let check = if rng.chance(2) { 0 } else { 0x77 };
+            t.stub_sym(mb::SAMPLER_CHECK, 1, true, 1, 1, Ret::Val(check));
+            t.stub_sym(mb::WRITE_PARAMETER, 2, true, 2, 2, Ret::Val(0x88));
+            t.check(
+                "VfxShader_writeTextureParameter_006c14d0",
+                0x006c_14d0,
+                Conv::Thiscall(buffer),
+                &[param, value],
+                |o| Out::U32(b::write_texture_parameter(o, buffer, param, value)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn shader_tree_destructors_match_the_original() {
+    Twins::each(|t| {
+        let tr = t.zeros(0x40);
+        for (k, sym) in [
+            mb::TREE_CLEAR,
+            mb::TREE_ORPHAN_ALL,
+            mb::FREE_LIST_RESET,
+            mb::FREE_LIST_DTOR,
+            mb::TREE_FREE_LIST_CLEAR_04E0,
+            mb::TREE_FREE_LIST_CLEAR_0520,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub_sym(sym, k as u32 + 1, true, 0, 0, Ret::Val(k as u32));
+        }
+        for sym in [0x006b_f590_u32, 0x006b_f5f0, 0x006b_f650] {
+            t.check("PRedBlackTree_dtor", sym, Conv::Thiscall(tr), &[], |o| {
+                b::tree_dtor(o, tr);
+                Out::None
+            });
+        }
+        t.check(
+            "PTreeFreeList_dtor_006bf6b0",
+            0x006b_f6b0,
+            Conv::Thiscall(tr),
+            &[],
+            |o| {
+                b::tree_free_list_dtor_orphan(o, tr);
+                Out::None
+            },
+        );
+        t.check(
+            "PTreeFreeList_dtor_006bf730",
+            0x006b_f730,
+            Conv::Thiscall(tr),
+            &[],
+            |o| {
+                b::tree_free_list_dtor(o, tr, false);
+                Out::None
+            },
+        );
+        t.check(
+            "PTreeFreeList_dtor_006bf7a0",
+            0x006b_f7a0,
+            Conv::Thiscall(tr),
+            &[],
+            |o| {
+                b::tree_free_list_dtor(o, tr, true);
+                Out::None
+            },
+        );
+        assert_eq!(t.calls(), 6 + 5 + 4 + 4);
+        t.reset();
+        // the copy of the tree + free list clear
+        let mut rng = Rng(0x5eed_0204);
+        for _ in 0..12 {
+            let tree = t.zeros(0x30);
+            let mut next = if rng.chance(2) { tree } else { 0 };
+            for _ in 0..rng.below(4) {
+                let node = t.zeros(0x20);
+                let w = rng.next();
+                t.w32(node + 0xc, w);
+                t.w32(node + 0x10, next);
+                next = node;
+            }
+            t.w32(tree + 0xc, next);
+            t.stub_sym_x(
+                ma::TREE_REMOVE,
+                1,
+                true,
+                1,
+                1,
+                Ret::Val(1),
+                &[0x8b, 0x54, 0x24, 0x04, 0x8b, 0x52, 0x10, 0x89, 0x51, 0x0c],
+            );
+            t.stub_sym(ma::PHYRE_FREE, 2, false, 1, 0, Ret::Val(2));
+            t.stub_sym(ma::FREE_LIST_RESET, 3, true, 0, 0, Ret::Val(0x33));
+            t.check(
+                "PTreeFreeList_clear_006c04e0",
+                0x006c_04e0,
+                Conv::Thiscall(tree),
+                &[],
+                |o| Out::U32(a::tree_free_list_clear(o, tree)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn broken_screen_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0205);
+        for _ in 0..30 {
+            let e = t.zeros(0x60);
+            for off in (0x20_u32..0x54).step_by(4) {
+                let v = if rng.chance(2) { 0 } else { rng.next() };
+                t.w32(e + off, v);
+            }
+            let cluster = t.zeros(0x10);
+            t.w32(e + 0x14, cluster);
+            t.stub_sym(mb::DELETE_OBJECT, 1, true, 1, 1, Ret::Val(1));
+            t.check(
+                "BrokenScreenEffect_releaseObjects_006d3e00",
+                0x006d_3e00,
+                Conv::Thiscall(e),
+                &[],
+                |o| {
+                    b::broken_screen_release_objects(o, e);
+                    Out::None
+                },
+            );
+            let kind = match rng.below(4) {
+                0 => 6,
+                1 => 8,
+                2 => rng.below(10),
+                _ => rng.next(),
+            };
+            t.w32(e + 8, kind);
+            t.check(
+                "BrokenScreen_vertexStride_006d3f50",
+                0x006d_3f50,
+                Conv::Thiscall(e),
+                &[],
+                |o| Out::U32(b::vertex_stride(o, e)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn cluster_textures_match_the_original() {
+    // the cluster's list empty (its head) or not; the cube form's
+    // parameter kind, sampler and texture 0 or not, the check's answer
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0206);
+        for case in 0..32_u32 {
+            let cube = case % 2 == 1;
+            let cluster = t.zeros(0x40);
+            let head = if rng.chance(2) {
+                cluster + 0x1c
+            } else {
+                rng.next()
+            };
+            t.w32(cluster + 0x1c, head);
+            let buffer = t.zeros(0x10);
+            let holder = t.words(&[0, buffer]);
+            let param = t.zeros(0x10);
+            t.w8(param + 2, if rng.chance(3) { 0x12 } else { 0x44 });
+            let kind = rng.below(4);
+            let args = t.words(&[kind, holder, param]);
+            let scene = t.zeros(0x10);
+            t.global(mb::SCENE.sym, scene);
+            let (cursor, base) = if rng.chance(4) {
+                (0, 0)
+            } else {
+                (rng.next(), rng.next())
+            };
+            // mov dword [ecx], cursor; mov dword [ecx+0x10], base
+            let mut seek = vec![0xc7, 0x01];
+            seek.extend(cursor.to_le_bytes());
+            seek.extend([0xc7, 0x41, 0x10]);
+            seek.extend(base.to_le_bytes());
+            let sym = if cube {
+                mb::ITER_SEEK_CUBE
+            } else {
+                mb::ITER_SEEK_2D
+            };
+            t.stub_sym(mb::ASYNC_LOAD_MANAGER, 1, false, 0, 0, Ret::Val(1));
+            t.stub_sym_x(sym, 2, true, 0, 0, Ret::Val(2), &seek);
+            let sampler = if rng.chance(3) { 0 } else { 0x5a5a };
+            t.stub_sym(mb::LINEAR_SAMPLER, 3, true, 1, 1, Ret::Val(sampler));
+            t.stub_sym(mb::WRITE_VECTOR_PARAMETER, 4, true, 2, 2, Ret::Val(4));
+            let check = if rng.chance(2) { 0 } else { 0x99 };
+            t.stub_sym(mb::SAMPLER_CHECK, 5, true, 1, 1, Ret::Val(check));
+            t.stub_sym(mb::WRITE_PARAMETER, 6, true, 2, 2, Ret::Val(6));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 2);
+            let slots = t.arg_slots(&[cluster, args]);
+            t.b_top = Some(ebp - 0x80);
+            let (what, at) = if cube {
+                ("VfxShader_setClusterCubeMap_006c1320", 0x006c_1320)
+            } else {
+                ("VfxShader_setClusterTexture_006c1280", 0x006c_1280)
+            };
+            t.check(what, at, Conv::Cdecl, &[cluster, args], |o| {
+                Out::U32(b::set_cluster_texture(o, ebp, slots, cluster, args, cube))
+            });
+            t.same_stack(what, ebp - 0x30, 0x30);
+            t.same_stack(what, slots, 8);
+            t.b_top = None;
+            t.reset();
         }
     });
 }
