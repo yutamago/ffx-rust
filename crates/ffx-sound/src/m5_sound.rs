@@ -22,7 +22,7 @@ pub use crate::fmod::{Conv, FmodHost as Host};
 
 /// The original functions, over game memory.
 pub mod bridge {
-    use ffx_bridge::Global;
+    use ffx_bridge::{Global, x87};
 
     use super::{Conv, Host};
     use crate::fmod::bridge::{MANAGER, push0, push1, push2, push3};
@@ -593,5 +593,539 @@ pub mod bridge {
             this_call(h, dtor, obj, &[]);
             cdecl(h, OPERATOR_DELETE, &[obj]);
         }
+    }
+
+    // ---- batch 2: the FmodManager, the FMOD objects' shutdown ----
+
+    /// `FmodManager`'s vtable.
+    pub const FMOD_MANAGER_VTABLE: u32 = 0x00b4_c2e4;
+    /// `"FmodManager"`, the thread's name.
+    pub const FMOD_THREAD_NAME: u32 = 0x00b4_c2e8;
+    /// `FmodManager_threadMain`, the thread's body.
+    pub const FMOD_THREAD_MAIN: u32 = 0x006f_a1b0;
+    /// `1000.0` (f64): microseconds to milliseconds.
+    pub const MSEC_DIVISOR: u32 = 0x00b0_dba0;
+    /// The FMOD thread's tick (f64, milliseconds).
+    pub const TICK_PERIOD: u32 = 0x00b4_c368;
+    /// `127.0` (f64): the game's volume scale.
+    pub const VOLUME_SCALE: u32 = 0x00b9_22e8;
+    /// `graphicGetTimeInMicroseconds()` -> `edx:eax`.
+    pub const GET_TIME_US: u32 = 0x0064_1420;
+    /// `FfxFmod`'s constructor (`ecx`, `0x00706490`).
+    pub const FFX_FMOD_CTOR: u32 = 0x0070_6490;
+    /// `FfxFmod`'s teardown (`ecx`).
+    pub const FFX_FMOD_DTOR: u32 = 0x0070_6590;
+    /// `FfxFmod_soundLoop` (`ecx`).
+    pub const FFX_FMOD_SOUND_LOOP: u32 = 0x0070_70d0;
+    /// The FMOD thread's queue drain (`ecx` = the manager, `0x006fa7e0`).
+    pub const MANAGER_DRAIN: u32 = 0x006f_a7e0;
+    /// `FmodManager`'s constructor (`ecx`, `0x006f9de0`).
+    pub const FMOD_MANAGER_CTOR: u32 = 0x006f_9de0;
+    /// `FmodManager`'s teardown (`ecx`, `0x006f9f70`).
+    pub const FMOD_MANAGER_DTOR: u32 = 0x006f_9f70;
+    /// `CreateThread_ps2(params, name)` (cdecl) -> the thread.
+    pub const CREATE_THREAD_PS2: u32 = 0x006f_2e10;
+    /// `StartThread_ps2(thread, arg)` (cdecl).
+    pub const START_THREAD_PS2: u32 = 0x006f_2d30;
+    /// `0x006f3050(thread, priority)` (cdecl): `SetThreadPriority`.
+    pub const SET_PRIORITY_PS2: u32 = 0x006f_3050;
+    /// `SleepThread()` (cdecl).
+    pub const SLEEP_THREAD: u32 = 0x006f_2d10;
+    /// `SleepThreadInMillisecond(ms)` (cdecl).
+    pub const SLEEP_MS: u32 = 0x006f_2d20;
+    /// `ERRCHECK(result, file, line)` (cdecl).
+    pub const ERRCHECK: u32 = 0x0070_79d0;
+    /// `FmodMusic_shutdown` (`ecx`).
+    pub const MUSIC_SHUTDOWN: u32 = 0x0070_9640;
+    /// `FmodVoice_shutdown` (`ecx`).
+    pub const VOICE_SHUTDOWN: u32 = 0x0070_b480;
+    /// The voice's stream release (`ecx`, `0x0070e450`).
+    pub const VOICE_STREAM_RELEASE: u32 = 0x0070_e450;
+    /// `FmodMusic_volumeDirect` (thiscall `(music; id, volume, frames)`
+    /// ret 0xc).
+    pub const MUSIC_VOLUME_DIRECT: u32 = 0x0070_9dd0;
+    /// `user_mem_size(p)` (cdecl).
+    pub const USER_MEM_SIZE: u32 = 0x0068_7050;
+    // FMOD's exports (stdcall, `this` first), through their thunks
+    /// `FMOD::Sound::release`.
+    pub const SOUND_RELEASE: u32 = 0x0094_8cfa;
+    /// `FMOD::EventSystem::unload`.
+    pub const EVENT_SYSTEM_UNLOAD: u32 = 0x0094_8c8e;
+    /// `FMOD::EventSystem::release`.
+    pub const EVENT_SYSTEM_RELEASE: u32 = 0x0094_8c7c;
+    /// `FMOD_Memory_GetStats(&current, &max, blocking)`.
+    pub const MEMORY_GET_STATS: u32 = 0x0094_8cdc;
+    /// `FMOD::Event::setPaused(event, paused)`.
+    pub const EVENT_SET_PAUSED: u32 = 0x0094_8cbe;
+    /// `FMOD::Event::setVolume(event, volume)`.
+    pub const EVENT_SET_VOLUME: u32 = 0x0094_8cb2;
+    /// The source-file names `ERRCHECK` reports.
+    pub const MUSIC_FILE: u32 = 0x00b4_f4a0;
+    pub const VOICE_FILE: u32 = 0x00b4_f8c0;
+    pub const SFX_EVENT_FILE: u32 = 0x00b4_fd34;
+    pub const FFX_FMOD_FILE: u32 = 0x00b4_d268;
+    /// `FMOD_ErrorString`'s jump table (96 entries) and its default case.
+    pub const ERROR_STRING_TABLE: u32 = 0x0070_7850;
+    pub const ERROR_STRING_DEFAULT: u32 = 0x0070_7846;
+    // imports
+    pub const CREATE_EVENT_IAT: u32 = 0x00b0_c078;
+    pub const WAIT_EX_IAT: u32 = 0x00b0_c080;
+    pub const RESET_EVENT_IAT: u32 = 0x00b0_c0f0;
+    pub const CREATE_MUTEX_IAT: u32 = 0x00b0_c198;
+    /// `MSVCR110!memcpy_s` (cdecl).
+    pub const MEMCPY_S_IAT: u32 = 0x00b0_c434;
+
+    fn f64_at(h: &mut impl Host, sym: u32) -> f64 {
+        let at = h.rebase(sym);
+        f64::from_bits(h.read::<u64>(at))
+    }
+
+    /// `graphicGetTimeInMicroseconds() / 1000.0`: the `u64` as a double
+    /// (the originals' two `fild qword`, which round once as the `u64`
+    /// conversion does), divided at 53 bits.
+    fn now_msec(h: &mut impl Host) -> f64 {
+        let us = h.call_sym_u64(GET_TIME_US, Conv::Cdecl, &[]);
+        #[allow(clippy::cast_precision_loss)] // the original's rounding
+        let us = us as f64;
+        let k = f64_at(h, MSEC_DIVISOR);
+        x87::div(us, k)
+    }
+
+    fn errcheck(h: &mut impl Host, result: u32, file: u32, line: u32) -> u32 {
+        let file = h.rebase(file);
+        cdecl(h, ERRCHECK, &[result, file, line])
+    }
+
+    /// An FMOD object's method at vtable byte `off` (stdcall, `this` on
+    /// the stack, no other words), then `ERRCHECK`.
+    fn fmod_method(h: &mut impl Host, obj: u32, off: u32, file: u32, line: u32) {
+        let vt: u32 = h.read(obj);
+        let f: u32 = h.read(vt + off);
+        let r = h.call(f, Conv::Stdcall, &[obj]);
+        errcheck(h, r, file, line);
+    }
+
+    fn sleep_ms(h: &mut impl Host, ms: u32) {
+        cdecl(h, SLEEP_MS, &[ms]);
+    }
+
+    /// `FmodManager`'s constructor (0x006f9de0, `ecx`) -> `this`: two
+    /// mutexes (`+0x10`, `+0x14`), two manual-reset events (`+0x18`,
+    /// `+0x1c`), the start time in ms (f64 `+0x20`), `+0x44` byte 1,
+    /// `+0x4c` u16 1, `g_FmodManager`, the `FfxFmod` (`+8`), commands
+    /// `0x2a` and `0x2b` queued, and the FMOD thread (`+0xc`, priority
+    /// 300) started from a parameter block in the original's frame
+    /// (`ebp - 0x48`: `+4` the body, `+0xc` the stack size `0x10000`,
+    /// `+0x20` 0; `frame` the original's `ebp`).
+    pub fn fmod_manager_ctor(h: &mut impl Host, frame: u32, this: u32) -> u32 {
+        let vt = h.rebase(FMOD_MANAGER_VTABLE);
+        h.write(this, vt);
+        h.write(this + 8, 0u32);
+        let m = import(h, CREATE_MUTEX_IAT, &[0, 0, 0]);
+        h.write(this + 0x10, m);
+        let m = import(h, CREATE_MUTEX_IAT, &[0, 0, 0]);
+        h.write(this + 0x14, m);
+        let e = import(h, CREATE_EVENT_IAT, &[0, 1, 0, 0]);
+        h.write(this + 0x18, e);
+        let e = import(h, CREATE_EVENT_IAT, &[0, 1, 0, 0]);
+        h.write(this + 0x1c, e);
+        let start = now_msec(h);
+        h.write(this + 0x28, 0u32);
+        h.write(this + 0x2c, 0u32);
+        h.write(this + 0x44, 1u8);
+        h.write(this + 0x48, 0u32);
+        h.write(this + 0x4c, 1u16);
+        h.write(this + 0x20, start.to_bits());
+        crate::fmod::bridge::MANAGER.set(h, this);
+        let p = cdecl(h, OPERATOR_NEW, &[0x28]);
+        let ffx = if p == 0 {
+            0
+        } else {
+            this_call(h, FFX_FMOD_CTOR, p, &[])
+        };
+        h.write(this + 8, ffx);
+        crate::fmod::bridge::push_command(h, this, 0x2a, [0; 4]);
+        crate::fmod::bridge::push_command(h, this, 0x2b, [0; 4]);
+        let params = frame - 0x48;
+        let body = h.rebase(FMOD_THREAD_MAIN);
+        h.write(params + 4, body);
+        h.write(params + 0xc, 0x1_0000u32);
+        h.write(params + 0x20, 0u32);
+        let name = h.rebase(FMOD_THREAD_NAME);
+        let thread = cdecl(h, CREATE_THREAD_PS2, &[params, name]);
+        h.write(this + 0xc, thread);
+        if thread != 0 {
+            cdecl(h, START_THREAD_PS2, &[thread, 0]);
+            let thread: u32 = h.read(this + 0xc);
+            cdecl(h, SET_PRIORITY_PS2, &[thread, 300]);
+        }
+        this
+    }
+
+    /// `FmodManager`'s teardown (0x006f9f70, `ecx`) -> the last
+    /// `CloseHandle`'s `eax`: `+0x4c` cleared (the thread's "run"), then
+    /// `SleepThread` until the thread sets `+0x4d`; the `FfxFmod` torn
+    /// down and deleted, the events and mutexes closed.
+    pub fn fmod_manager_dtor(h: &mut impl Host, this: u32) -> u32 {
+        let vt = h.rebase(FMOD_MANAGER_VTABLE);
+        h.write(this, vt);
+        h.write(this + 0x4c, 0u8);
+        while h.read::<u8>(this + 0x4d) == 0 {
+            cdecl(h, SLEEP_THREAD, &[]);
+        }
+        let ffx: u32 = h.read(this + 8);
+        delete_member(h, ffx, FFX_FMOD_DTOR);
+        h.write(this + 8, 0u32);
+        let mut r = 0;
+        for off in [0x1c, 0x18, 0x14, 0x10] {
+            let handle: u32 = h.read(this + off);
+            r = import(h, CLOSE_HANDLE_IAT, &[handle]);
+        }
+        r
+    }
+
+    /// `FmodManager`'s deleting destructor `(this; flags)` (0x006fa040)
+    /// -> `this`.
+    pub fn fmod_manager_deleting_dtor(h: &mut impl Host, this: u32, flags: u32) -> u32 {
+        this_call(h, FMOD_MANAGER_DTOR, this, &[]);
+        if flags & 1 != 0 {
+            cdecl(h, OPERATOR_DELETE, &[this]);
+        }
+        this
+    }
+
+    /// `FmodManager_create_006fa0b0()` (0x006fa0b0, `iFmodInitialize`'s
+    /// callee): a new manager (`0x50` bytes) into `g_FmodManager` unless
+    /// there is one. (The original's `eax` when there is one is its
+    /// cookie; no caller reads it.)
+    pub fn fmod_manager_create(h: &mut impl Host) {
+        if crate::fmod::bridge::MANAGER.get(h) != 0 {
+            return;
+        }
+        let p = cdecl(h, OPERATOR_NEW, &[0x50]);
+        let m = if p == 0 {
+            0
+        } else {
+            this_call(h, FMOD_MANAGER_CTOR, p, &[])
+        };
+        crate::fmod::bridge::MANAGER.set(h, m);
+    }
+
+    /// `FmodManager_tick(this)` (0x006fa700) -> the queue drain's `eax`:
+    /// once a tick period (f64 `0x00b4c368`) has passed since `+0x20`,
+    /// `FfxFmod_soundLoop` and `+0x20` advanced by whole periods;
+    /// otherwise a wait on the `+0x18` event for the rest of the period
+    /// (at least 1 ms, `WaitForSingleObjectEx(.., TRUE)` again while it
+    /// fails), then `ResetEvent`. The queue is drained either way.
+    pub fn fmod_manager_tick(h: &mut impl Host, this: u32) -> u32 {
+        let start = f64::from_bits(h.read::<u64>(this + 0x20));
+        let now = x87::sub(now_msec(h), start);
+        let period = f64_at(h, TICK_PERIOD);
+        if period > now || period.is_nan() || now.is_nan() {
+            let wait = x87::ftol(h, x87::sub(period, now)).cast_signed();
+            let wait = if wait > 0 { wait.cast_unsigned() } else { 1 };
+            loop {
+                let event: u32 = h.read(this + 0x18);
+                if import(h, WAIT_EX_IAT, &[event, wait, 1]) != 0xffff_ffff {
+                    break;
+                }
+            }
+            let event: u32 = h.read(this + 0x18);
+            import(h, RESET_EVENT_IAT, &[event]);
+        } else {
+            let ffx: u32 = h.read(this + 8);
+            this_call(h, FFX_FMOD_SOUND_LOOP, ffx, &[]);
+            let n = x87::ftol(h, x87::div(now, period)).cast_signed();
+            let start = f64::from_bits(h.read::<u64>(this + 0x20));
+            let next = x87::add(x87::mul(f64::from(n), period), start);
+            h.write(this + 0x20, next.to_bits());
+        }
+        this_call(h, MANAGER_DRAIN, this, &[])
+    }
+
+    /// `FmodManager_Destroy()` (0x006fa190): the manager's deleting
+    /// destructor (vtable slot 0, flags 1), `SleepThread`, the global
+    /// cleared.
+    pub fn fmod_manager_destroy(h: &mut impl Host) {
+        let m = crate::fmod::bridge::MANAGER.get(h);
+        if m != 0 {
+            h.call_virtual(m, 0, &[1]);
+            cdecl(h, SLEEP_THREAD, &[]);
+            crate::fmod::bridge::MANAGER.set(h, 0);
+        }
+    }
+
+    /// `FmodManager_getSystemTimeInMsec()` (0x006fa210): the clock in ms
+    /// (f64 in `ST0`).
+    pub fn get_system_time_in_msec(h: &mut impl Host) -> f64 {
+        now_msec(h)
+    }
+
+    /// `FmodMusic_shutdown(this)` (0x00709640): the two event groups
+    /// (`+8`, `+0xc`) each stopped (vtable `+0x28`), 100 ms later
+    /// released (`+0`) and cleared, every result through `ERRCHECK`.
+    pub fn music_shutdown(h: &mut impl Host, this: u32) {
+        for (off, lines) in [(8, [0xbb, 0xc2]), (0xc, [0xc8, 0xcf])] {
+            let g: u32 = h.read(this + off);
+            if g != 0 {
+                fmod_method(h, g, 0x28, MUSIC_FILE, lines[0]);
+            }
+            sleep_ms(h, 100);
+            let g: u32 = h.read(this + off);
+            if g != 0 {
+                fmod_method(h, g, 0, MUSIC_FILE, lines[1]);
+                h.write(this + off, 0u32);
+            }
+        }
+    }
+
+    /// The voice's stream release (0x0070e450, `ecx`) -> 0:
+    /// `FMOD::Sound::release(*this)` through `ERRCHECK`, when set.
+    pub fn voice_stream_release(h: &mut impl Host, this: u32) -> u32 {
+        let sound: u32 = h.read(this);
+        if sound != 0 {
+            let r = h.call_sym(SOUND_RELEASE, Conv::Stdcall, &[sound]);
+            errcheck(h, r, SFX_EVENT_FILE, 0x85);
+        }
+        0
+    }
+
+    /// `FmodVoice_shutdown(this)` (0x0070b480): the stream released
+    /// (`+0x84`), the 21 voice events (`+0x18`) stopped, then released and
+    /// cleared, the `+0x20` event likewise, 100 ms between the steps.
+    pub fn voice_shutdown(h: &mut impl Host, this: u32) {
+        let stream: u32 = h.read(this + 0x84);
+        this_call(h, VOICE_STREAM_RELEASE, stream, &[]);
+        sleep_ms(h, 100);
+        for i in 0..21 {
+            let arr: u32 = h.read(this + 0x18);
+            let e: u32 = h.read(arr + 4 * i);
+            if e != 0 {
+                fmod_method(h, e, 0x28, VOICE_FILE, 0x1b6);
+            }
+        }
+        sleep_ms(h, 100);
+        for i in 0..21 {
+            let arr: u32 = h.read(this + 0x18);
+            let e: u32 = h.read(arr + 4 * i);
+            if e != 0 {
+                fmod_method(h, e, 0, VOICE_FILE, 0x1be);
+                let arr: u32 = h.read(this + 0x18);
+                h.write(arr + 4 * i, 0u32);
+            }
+        }
+        sleep_ms(h, 100);
+        let e: u32 = h.read(this + 0x20);
+        if e != 0 {
+            fmod_method(h, e, 0x28, VOICE_FILE, 0x1c6);
+        }
+        sleep_ms(h, 100);
+        let e: u32 = h.read(this + 0x20);
+        if e != 0 {
+            fmod_method(h, e, 0, VOICE_FILE, 0x1cc);
+            h.write(this + 0x20, 0u32);
+        }
+    }
+
+    /// `FfxFmod_shutDown(this)` (0x00706ff0) -> `user_free`'s `eax` (0
+    /// without the `+0` buffer): the voice, music and sfx objects shut
+    /// down, the event system unloaded and released (through
+    /// `ERRCHECK`), 100 ms after each step; the `+0` buffer freed.
+    pub fn ffx_fmod_shutdown(h: &mut impl Host, this: u32) -> u32 {
+        for (off, f) in [
+            (0x10, VOICE_SHUTDOWN),
+            (0xc, MUSIC_SHUTDOWN),
+            (0x14, SFX_SHUTDOWN),
+        ] {
+            let obj: u32 = h.read(this + off);
+            this_call(h, f, obj, &[]);
+            sleep_ms(h, 100);
+        }
+        for (f, line) in [(EVENT_SYSTEM_UNLOAD, 0xc9), (EVENT_SYSTEM_RELEASE, 0xcd)] {
+            let es: u32 = h.read(this + 4);
+            let r = h.call_sym(f, Conv::Stdcall, &[es]);
+            errcheck(h, r, FFX_FMOD_FILE, line);
+            sleep_ms(h, 100);
+        }
+        let p: u32 = h.read(this);
+        if p == 0 { 0 } else { cdecl(h, USER_FREE, &[p]) }
+    }
+
+    /// `FmodMemory_getCurrent_007067f0()` (0x007067f0): FMOD's current
+    /// memory use (`FMOD_Memory_GetStats(&cur, &max, 0)` with both in the
+    /// original's frame, `frame` its `ebp`), 0 when the call fails.
+    pub fn fmod_memory_current(h: &mut impl Host, frame: u32) -> u32 {
+        let (cur, max) = (frame - 4, frame - 8);
+        h.write(cur, 0u32);
+        h.write(max, 0u32);
+        let r = h.call_sym(MEMORY_GET_STATS, Conv::Stdcall, &[cur, max, 0]);
+        if r == 0 { h.read(cur) } else { 0 }
+    }
+
+    /// `FmodMemory_realloc(ptr, size, type, source)` (0x00706730, FMOD's
+    /// realloc callback, stdcall) -> the new block: 16-aligned inside a
+    /// `user_malloc(size + 16)`, its offset in the byte before it; the old
+    /// block's bytes copied (`memcpy_s`, at most its usable size) and the
+    /// old allocation freed.
+    pub fn fmod_memory_realloc(h: &mut impl Host, ptr: u32, size: u32) -> u32 {
+        let mut block = 0;
+        if size != 0 {
+            let raw = cdecl(h, USER_MALLOC, &[size.wrapping_add(0x10)]);
+            block = raw.wrapping_sub(raw & 0xf).wrapping_add(0x10);
+            #[allow(clippy::cast_possible_truncation)] // the low bytes
+            let off = (block as u8).wrapping_sub(raw as u8);
+            h.write(block.wrapping_sub(1), off);
+        }
+        if ptr != 0 {
+            let off = u32::from(h.read::<u8>(ptr - 1));
+            let base = ptr.wrapping_sub(off);
+            if block != 0 {
+                let usable = cdecl(h, USER_MEM_SIZE, &[base]).wrapping_sub(off);
+                let n = if usable > size { size } else { usable };
+                let memcpy_s: u32 = h.read(h.rebase(MEMCPY_S_IAT));
+                h.call(memcpy_s, Conv::Cdecl, &[block, size, ptr, n]);
+            }
+            cdecl(h, USER_FREE, &[base]);
+        }
+        block
+    }
+
+    /// `FMOD_ErrorString(result)` (0x00707590): the message for an FMOD
+    /// result, as the original's jump table picks it (each case a `mov
+    /// eax, string`; read from the image), "Unknown error" past 0x5f.
+    pub fn fmod_error_string(h: &mut impl Host, result: u32) -> u32 {
+        let case = if result > 0x5f {
+            h.rebase(ERROR_STRING_DEFAULT)
+        } else {
+            let table = h.rebase(ERROR_STRING_TABLE);
+            h.read(table + 4 * result)
+        };
+        h.read(case + 1)
+    }
+
+    /// `FmodMusic_pauseAll(this; paused)` (0x00709000): every one of the
+    /// 182 music slots (`+0x10`, `0x3c` bytes each) with an event whose
+    /// `+8` is not 1 gets `Event::setPaused(paused != 0)` through
+    /// `ERRCHECK`.
+    pub fn music_pause_all(h: &mut impl Host, this: u32, paused: u32) {
+        for i in 0..MUSIC_SLOTS {
+            let slot = music_slot(h, this, i);
+            let event: u32 = h.read(slot);
+            if event != 0 && h.read::<u32>(slot + 8) != 1 {
+                let r = h.call_sym(
+                    EVENT_SET_PAUSED,
+                    Conv::Stdcall,
+                    &[event, u32::from(paused != 0)],
+                );
+                errcheck(h, r, MUSIC_FILE, 0x3b7);
+            }
+        }
+    }
+
+    /// The music slots (`FmodMusic +0x10`, `0x3c` bytes each).
+    pub const MUSIC_SLOTS: u32 = 182;
+
+    fn music_slot(h: &mut impl Host, this: u32, i: u32) -> u32 {
+        let arr: u32 = h.read(this + 0x10);
+        arr.wrapping_add(0x3c * i)
+    }
+
+    /// A slot's volume `v / 127.0` stored at `+0x38` (f32) and sent to
+    /// FMOD as `+0x38 * music volume (+0x30)` (`Event::setVolume`) through
+    /// `ERRCHECK`.
+    fn music_send_volume(h: &mut impl Host, this: u32, i: u32, v: f64, line: u32) {
+        let scale = f64_at(h, VOLUME_SCALE);
+        let vol = x87::store(x87::div(v, scale));
+        let slot = music_slot(h, this, i);
+        h.write(slot + 0x38, vol);
+        let slot = music_slot(h, this, i);
+        let master: u32 = h.read(this + 0x30);
+        let arg = x87::store(x87::mul(x87::load(h.read(slot + 0x38)), x87::load(master)));
+        let event: u32 = h.read(slot);
+        let r = h.call_sym(EVENT_SET_VOLUME, Conv::Stdcall, &[event, arg]);
+        errcheck(h, r, MUSIC_FILE, line);
+    }
+
+    /// `FmodMusic_setMute(this; mute)` (0x00709520): `+0x24` = mute. Muted
+    /// (1): each slot with an event that plays (`+0x20` = 1) loses a fade
+    /// (`+0xc` 1 -> 0, `+0x10` 0.0, `+0x14` 0) and gets volume 0; one that
+    /// does not is marked (`+0xc` 1, `+0x10` 0.0, `+0x14` 0). Otherwise
+    /// each slot's own volume (`+0x34`) goes back through
+    /// `FmodMusic_volumeDirect(i, volume, 0)`.
+    pub fn music_set_mute(h: &mut impl Host, this: u32, mute: u32) {
+        h.write(this + 0x24, mute);
+        if mute != 1 {
+            for i in 0..MUSIC_SLOTS {
+                let slot = music_slot(h, this, i);
+                // `fld dword`, then `fstp dword` into the argument word
+                let v = x87::store(x87::load(h.read(slot + 0x34)));
+                this_call(h, MUSIC_VOLUME_DIRECT, this, &[i, v, 0]);
+            }
+            return;
+        }
+        for i in 0..MUSIC_SLOTS {
+            let slot = music_slot(h, this, i);
+            if h.read::<u32>(slot) == 0 {
+                continue;
+            }
+            if h.read::<u32>(slot + 0x20) == 1 {
+                if h.read::<u32>(slot + 0xc) == 1 {
+                    h.write(slot + 0xc, 0u32);
+                    let slot = music_slot(h, this, i);
+                    h.write(slot + 0x10, 0u32);
+                    let slot = music_slot(h, this, i);
+                    h.write(slot + 0x14, 0u32);
+                }
+                music_send_volume(h, this, i, 0.0, 0x33a);
+            } else {
+                h.write(slot + 0xc, 1u32);
+                let slot = music_slot(h, this, i);
+                h.write(slot + 0x10, 0u32);
+                let slot = music_slot(h, this, i);
+                h.write(slot + 0x14, 0u32);
+            }
+        }
+    }
+
+    /// `FmodMusic_volumeReset(this; id, volume, keep)` (0x00709f20,
+    /// ret 0xc) -> 0: for a playing slot (`id` <= 0xb5, `+0xc`, `+0`
+    /// set, `+0x20` = 1): the volume (f32) kept at `+0x34` when `keep` is
+    /// 1, sent (0 while muted, `+0x24` = 1), the fade cleared (`+0xc` 0,
+    /// `+0x10` 0.0, `+0x14` 0).
+    pub fn music_volume_reset(
+        h: &mut impl Host,
+        this: u32,
+        id: u32,
+        volume: u32,
+        keep: u32,
+    ) -> u32 {
+        if id > 0xb5 {
+            return 0;
+        }
+        let slot = music_slot(h, this, id);
+        if h.read::<u32>(slot + 0xc) == 0
+            || h.read::<u32>(slot) == 0
+            || h.read::<u32>(slot + 0x20) != 1
+        {
+            return 0;
+        }
+        let v = x87::load(volume);
+        if keep == 1 {
+            h.write(slot + 0x34, x87::store(v));
+        }
+        // muted: 0.0, through an f32 store; else the argument as loaded
+        let v = if h.read::<u32>(this + 0x24) == 1 {
+            x87::load(x87::store(0.0))
+        } else {
+            v
+        };
+        music_send_volume(h, this, id, v, 0x31c);
+        let slot = music_slot(h, this, id);
+        h.write(slot + 0xc, 0u32);
+        let slot = music_slot(h, this, id);
+        h.write(slot + 0x10, 0u32);
+        let slot = music_slot(h, this, id);
+        h.write(slot + 0x14, 0u32);
+        0
     }
 }

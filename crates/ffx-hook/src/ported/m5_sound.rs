@@ -133,4 +133,77 @@ ported! {
     FfxFmod_dtor_00706590 @ 0x0070_6590 => extern "thiscall" fn ffx_fmod_dtor(this: u32) {
         b::ffx_fmod_dtor(&mut game(), this);
     }
+
+    // ---- the FmodManager, the FMOD objects' shutdown (b2) ----
+    /// `FmodManager`'s constructor (`ecx`): the thread's parameter block
+    /// in a frame at `ebp - 0x48`.
+    FmodManager_ctor_006f9de0 @ 0x006f_9de0 => extern "thiscall" fn fmod_manager_ctor(this: u32) -> u32 {
+        let mut f = StackFrame::<0x13>::new();
+        b::fmod_manager_ctor(&mut game(), f.at() + 0x48, this)
+    }
+    /// `FmodManager`'s teardown (`ecx`).
+    FmodManager_dtor_006f9f70 @ 0x006f_9f70 => extern "thiscall" fn fmod_manager_dtor(this: u32) -> u32 {
+        b::fmod_manager_dtor(&mut game(), this)
+    }
+    /// `FmodManager`'s deleting destructor `(this; flags)`.
+    FmodManager_deletingDtor_006fa040 @ 0x006f_a040 => extern "thiscall" fn fmod_manager_deleting_dtor(this: u32, flags: u32) -> u32 {
+        b::fmod_manager_deleting_dtor(&mut game(), this, flags)
+    }
+    /// `FmodManager_create_006fa0b0()`.
+    FmodManager_create_006fa0b0 @ 0x006f_a0b0 => extern "C" fn fmod_manager_create() {
+        b::fmod_manager_create(&mut game());
+    }
+    /// `FmodManager_tick(this)`.
+    FmodManager_tick @ 0x006f_a700 => extern "thiscall" fn fmod_manager_tick(this: u32) -> u32 {
+        b::fmod_manager_tick(&mut game(), this)
+    }
+    /// `FmodManager_Destroy()`.
+    FmodManager_Destroy @ 0x006f_a190 => extern "C" fn fmod_manager_destroy() {
+        b::fmod_manager_destroy(&mut game());
+    }
+    /// `FmodManager_getSystemTimeInMsec()`: a double in `ST0`.
+    FmodManager_getSystemTimeInMsec @ 0x006f_a210 => extern "C" fn get_system_time_in_msec() -> f64 {
+        b::get_system_time_in_msec(&mut game())
+    }
+    /// `FmodMusic_shutdown(this)`.
+    FmodMusic_shutdown @ 0x0070_9640 => extern "thiscall" fn music_shutdown(this: u32) {
+        b::music_shutdown(&mut game(), this);
+    }
+    /// The voice stream's release (`ecx`).
+    FmodVoice_releaseStream_0070e450 @ 0x0070_e450 => extern "thiscall" fn voice_stream_release(this: u32) -> u32 {
+        b::voice_stream_release(&mut game(), this)
+    }
+    /// `FmodVoice_shutdown(this)`.
+    FmodVoice_shutdown @ 0x0070_b480 => extern "thiscall" fn voice_shutdown(this: u32) {
+        b::voice_shutdown(&mut game(), this);
+    }
+    /// `FfxFmod_shutDown(this)`.
+    FfxFmod_shutDown @ 0x0070_6ff0 => extern "thiscall" fn ffx_fmod_shutdown(this: u32) -> u32 {
+        b::ffx_fmod_shutdown(&mut game(), this)
+    }
+    /// `FmodMemory_getCurrent_007067f0()`: two words of frame.
+    FmodMemory_getCurrent_007067f0 @ 0x0070_67f0 => extern "C" fn fmod_memory_current() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        b::fmod_memory_current(&mut game(), f.at() + 8)
+    }
+    /// `FmodMemory_realloc(ptr, size, type, source)` (FMOD's callback).
+    FmodMemory_realloc @ 0x0070_6730 => extern "stdcall" fn fmod_memory_realloc(ptr: u32, size: u32, _kind: u32, _source: u32) -> u32 {
+        b::fmod_memory_realloc(&mut game(), ptr, size)
+    }
+    /// `FMOD_ErrorString(result)`.
+    FMOD_ErrorString @ 0x0070_7590 => extern "C" fn fmod_error_string(result: u32) -> u32 {
+        b::fmod_error_string(&mut game(), result)
+    }
+    /// `FmodMusic_pauseAll(this; paused)`.
+    FmodMusic_pauseAll @ 0x0070_9000 => extern "thiscall" fn music_pause_all(this: u32, paused: u32) {
+        b::music_pause_all(&mut game(), this, paused);
+    }
+    /// `FmodMusic_setMute(this; mute)`.
+    FmodMusic_setMute @ 0x0070_9520 => extern "thiscall" fn music_set_mute(this: u32, mute: u32) {
+        b::music_set_mute(&mut game(), this, mute);
+    }
+    /// `FmodMusic_volumeReset(this; id, volume, keep)` (volume f32 bits).
+    FmodMusic_volumeReset @ 0x0070_9f20 => extern "thiscall" fn music_volume_reset(this: u32, id: u32, volume: u32, keep: u32) -> u32 {
+        b::music_volume_reset(&mut game(), this, id, volume, keep)
+    }
 }

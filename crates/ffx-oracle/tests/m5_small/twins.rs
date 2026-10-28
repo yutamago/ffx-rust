@@ -97,6 +97,12 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f64().expect("the callee leaves ST0 set")
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        ffx_oracle::check_width("Host::call_u64", addr, args.len(), 8);
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        u64::from(r.edx) << 32 | u64::from(r.eax)
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -111,6 +117,8 @@ pub enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// `ST0` (a `double` result), bit for bit.
+    F64(f64),
 }
 
 pub struct Twins {
@@ -403,6 +411,17 @@ impl Twins {
         self.patch(at, &j);
     }
 
+    /// A stub over `sym` that returns `value` in `edx:eax` (no log).
+    pub fn stub_u64(&mut self, sym: u32, value: u64) {
+        let mut c = vec![0xb8];
+        c.extend((value as u32).to_le_bytes()); // mov eax, low
+        c.push(0xba);
+        c.extend(((value >> 32) as u32).to_le_bytes()); // mov edx, high
+        c.push(0xc3);
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
     /// A stub over `sym` that returns `value` in `ST0` (`fld dword`).
     pub fn stub_float(&mut self, sym: u32, value: f32) {
         let cell = self.words(&[value.to_bits()]);
@@ -509,13 +528,17 @@ impl Twins {
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let poison = self.rebase(POISON_AT);
         let out = bridge(&mut G(&mut self.b, poison));
-        assert!(
-            ra.st0_raw.is_none(),
-            "{what}: the original leaves ST0 set ({:?})",
-            ra.st0
-        );
+        if let Out::F64(v) = out {
+            assert!(ra.st0_is(v), "{what}: ST0 {:?} != {v:?}", ra.st0);
+        } else {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original leaves ST0 set ({:?})",
+                ra.st0
+            );
+        }
         match out {
-            Out::None => {}
+            Out::None | Out::F64(_) => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
