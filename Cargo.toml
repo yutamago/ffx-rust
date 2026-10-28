@@ -43,6 +43,7 @@ ffx-ps2 = { path = "crates/ffx-ps2" }
 ffx-script = { path = "crates/ffx-script" }
 ffx-sg = { path = "crates/ffx-sg" }
 ffx-sound = { path = "crates/ffx-sound" }
+ffx-static-a = { path = "crates/ffx-static-a" }
 ffx-studio = { path = "crates/ffx-studio" }
 ffx-system = { path = "crates/ffx-system" }
 ffx-text = { path = "crates/ffx-text" }

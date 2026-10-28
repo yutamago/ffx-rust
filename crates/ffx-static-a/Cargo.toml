@@ -1,0 +1,14 @@
+[package]
+name = "ffx-static-a"
+description = "FFX.exe's static initialisers the game reaches (M5 stage 1, list static-init-a): constructors of globals and the atexit destructors they register"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-graphic.workspace = true
+
+[lints]
+workspace = true
