@@ -7,6 +7,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_menu::m5m_a::bridge as a;
+use ffx_menu::m5m_b::bridge as b;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -68,5 +69,62 @@ ported! {
     /// `Gu_Main(channel, buffer)`.
     Gu_Main @ 0x0084_9850 => extern "C" fn gu_main(channel: u32, buffer: u32) {
         a::gu_main(&mut mem(), channel, buffer);
+    }
+    // ---- batch 2 (ffx_menu::m5m_b) ----
+    /// `TkSetVsyncHandler(handler)` -> the thread start's `eax`, or -1.
+    TkSetVsyncHandler @ 0x0088_8680 => extern "C" fn tk_set_vsync_handler(handler: u32) -> u32 {
+        b::set_vsync_handler(&mut mem(), handler)
+    }
+    /// `TkClearVsyncHandler()`.
+    TkClearVsyncHandler @ 0x0088_8830 => extern "C" fn tk_clear_vsync_handler() -> u32 {
+        b::clear_vsync_handler(&mut mem())
+    }
+    /// `escMenuSetAudioByConfig(mode, timeout)`: `sceGsSyncPath`'s tail.
+    escMenuSetAudioByConfig @ 0x0088_ec70 => extern "C" fn esc_menu_set_audio_by_config(mode: u32, timeout: u32) -> u32 {
+        b::esc_menu_set_audio_by_config(&mut mem(), mode, timeout)
+    }
+    /// `TkSignalSemaBGThread()`.
+    TkSignalSemaBGThread @ 0x0088_8820 => extern "C" fn tk_signal_sema_bg_thread() -> u32 {
+        b::signal_sema_bg_thread(&mut mem())
+    }
+    /// `MenuRecord_InitMulti(record)` -> record (stdcall).
+    MenuRecord_InitMulti_0067c030 @ 0x0067_c030 => extern "stdcall" fn menu_record_init_multi(record: u32) -> u32 {
+        b::record_init_multi(&mut mem(), record)
+    }
+    /// `MenuRecord_InitSingle(record)` -> record (stdcall).
+    MenuRecord_InitSingle_0067c2d0 @ 0x0067_c2d0 => extern "stdcall" fn menu_record_init_single(record: u32) -> u32 {
+        b::record_init_single(&mut mem(), record)
+    }
+    /// `MenuTextures_ResetBuffers(this)` -> `memset`'s `eax`.
+    MenuTextures_ResetBuffers @ 0x0067_c440 => extern "thiscall" fn menu_textures_reset_buffers(this: u32) -> u32 {
+        b::reset_buffers(&mut mem(), this)
+    }
+    /// `Gu_WindowAddControl(window, id, text, x, y, w, h)` -> the control.
+    Gu_WindowAddControl @ 0x0084_bae0 => extern "C" fn gu_window_add_control(window: u32, id: u32, text: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        b::window_add_control(&mut mem(), window, id, text, x, y, w, h)
+    }
+    /// `Gu_WindowAddButton(window, id, text, x, y, w, h)` -> the control.
+    Gu_WindowAddButton @ 0x0084_a470 => extern "C" fn gu_window_add_button(window: u32, id: u32, text: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        b::window_add_button(&mut mem(), window, id, text, x, y, w, h)
+    }
+    /// `Gu_WindowAddStatic(window, id, text, x, y, w, h)` -> the control.
+    Gu_WindowAddStatic @ 0x0084_a4d0 => extern "C" fn gu_window_add_static(window: u32, id: u32, text: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        b::window_add_static(&mut mem(), window, id, text, x, y, w, h)
+    }
+    /// `Gu_WindowAddClient(window, id, x, y, w, h)` -> the control.
+    Gu_WindowAddClient @ 0x0084_a4a0 => extern "C" fn gu_window_add_client(window: u32, id: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        b::window_add_client(&mut mem(), window, id, x, y, w, h)
+    }
+    /// `Gu_VSyncMain()` -> the clock tick's `eax`.
+    Gu_VSyncMain @ 0x0084_a460 => extern "C" fn gu_vsync_main() -> u32 {
+        b::vsync_main(&mut mem())
+    }
+    /// `Gu_WindowSetLocalTrans(window, on, fade)` -> the fade.
+    Gu_WindowSetLocalTrans @ 0x0084_b620 => extern "C" fn gu_window_set_local_trans(window: u32, on: u32, fade: u32) -> u32 {
+        b::window_set_local_trans(&mut mem(), window, on, fade)
+    }
+    /// `Gu_WindowCreate(x, y, w, h, flags, callback)` -> the window.
+    Gu_WindowCreate @ 0x0084_a920 => extern "C" fn gu_window_create(x: u32, y: u32, w: u32, h: u32, flags: u32, callback: u32) -> u32 {
+        b::window_create(&mut mem(), x, y, w, h, flags, callback)
     }
 }

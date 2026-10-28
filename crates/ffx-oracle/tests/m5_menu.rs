@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_menu::m5m_a::bridge as ma;
+use ffx_menu::m5m_b::bridge as mb;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -1128,6 +1129,321 @@ fn gu_main_matches_the_original() {
                     Out::None
                 },
             );
+        }
+    });
+}
+
+// ---- batch 2 (ffx_menu::m5m_b) ----
+
+mod g3 {
+    pub const VSYNC_THREAD: u32 = 0x0133_0268;
+    pub const BG_THREAD_SEMA: u32 = 0x0133_0250;
+    pub const MENU_TEXTURE_MANAGER: u32 = 0x00cc_c820;
+}
+
+#[test]
+fn tk_set_vsync_handler_matches_the_original() {
+    Twins::each(|t| {
+        for (i, (thread, handler)) in [
+            (u32::MAX, 0),
+            (u32::MAX, 0x0040_1000),
+            (7, 0),
+            (7, 0x0040_1000),
+            (0, 0x1234),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for clear in [false, true] {
+                t.reset();
+                t.stubs(&[
+                    (mb::END_VSYNC_EMU_THREAD, false, 0, 0, 0x61),
+                    (mb::CREATE_VSYNC_EMU_THREAD, false, 1, 0, 0x62),
+                    (mb::THREAD_CREATE, false, 3, 0, 0x63),
+                    (mb::THREAD_STOP, false, 1, 0, 0x64),
+                    (mb::THREAD_START, false, 1, 0, 0x65),
+                    (mb::THREAD_DELETE, false, 2, 0, 0x66),
+                ]);
+                t.g32(g3::VSYNC_THREAD, thread);
+                if clear {
+                    let what = format!("TkClearVsyncHandler #{i}");
+                    t.check(&what, 0x0088_8830, Conv::Cdecl, &[], |m| {
+                        Out::U32(mb::clear_vsync_handler(m))
+                    });
+                } else {
+                    // the tail call's argument word is the caller's: compared
+                    // through the frame (ebp + 8)
+                    let what = format!("TkSetVsyncHandler #{i}");
+                    t.check(&what, 0x0088_8680, Conv::Cdecl, &[handler], |m| {
+                        let r = mb::set_vsync_handler(m, handler);
+                        if handler != 0 {
+                            let slot = m.0.stack_range().end - 0x100 - 4;
+                            m.0.write(slot, &2u32.to_le_bytes()).unwrap();
+                        }
+                        Out::U32(r)
+                    });
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn tk_small_forwarders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0002);
+        for i in 0..6 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mb::SCE_GS_SYNC_PATH, false, 2, 0, ret),
+                (mb::SIGNAL_SEMA, false, 1, 0, ret ^ 1),
+            ]);
+            let (a, b) = (rng.word(), rng.word());
+            let what = format!("escMenuSetAudioByConfig #{i}");
+            t.check(&what, 0x0088_ec70, Conv::Cdecl, &[a, b], |m| {
+                Out::U32(mb::esc_menu_set_audio_by_config(m, a, b))
+            });
+            let sema = rng.word();
+            t.g32(g3::BG_THREAD_SEMA, sema);
+            let what = format!("TkSignalSemaBGThread #{i}");
+            t.check(&what, 0x0088_8820, Conv::Cdecl, &[], |m| {
+                Out::U32(mb::signal_sema_bg_thread(m))
+            });
+            let lang = rng.next() as u8;
+            t.g32(0x0133_0830, u32::from(lang));
+            let what = format!("TkGetLang_thunk #{i}");
+            t.check(&what, 0x0088_7c30, Conv::Cdecl, &[], |m| {
+                Out::U32(ffx_menu::tk::bridge::tk_get_lang(m) as u32)
+            });
+        }
+    });
+}
+
+#[test]
+fn menu_record_inits_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0e0e_0e0e);
+        for i in 0..4 {
+            for multi in [false, true] {
+                t.reset();
+                let junk: Vec<u8> = (0..0xa00).map(|_| rng.next() as u8).collect();
+                let rec = t.alloc(&junk);
+                let what = format!("MenuRecord_Init multi {multi} #{i}");
+                let sym = if multi { 0x0067_c030 } else { 0x0067_c2d0 };
+                t.check(&what, sym, Conv::Stdcall, &[rec], |m| {
+                    Out::U32(if multi {
+                        mb::record_init_multi(m, rec)
+                    } else {
+                        mb::record_init_single(m, rec)
+                    })
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn menu_textures_reset_buffers_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xbeef_0101);
+        for i in 0..24 {
+            t.reset();
+            let fresh = if rng.chance(4) { 0 } else { t.zeros(0x10) };
+            t.stubs(&[
+                (mb::PHYRE_MALLOC, false, 2, 0, fresh),
+                (mb::PHYRE_FREE, false, 1, 0, 0x71),
+                (mb::MEMSET, false, 3, 0, 0x72),
+                (mb::MAP_PART_INIT_LANG_OVERRIDES, true, 0, 0, 0x73),
+                (mb::MENU_TEXTURES_LOAD_NAMES, true, 0, 0, 0x74),
+            ]);
+            let manager = rng.word();
+            t.g32(g3::MENU_TEXTURE_MANAGER, manager);
+            let this = t.zeros(0x5840);
+            for cap_at in [0x2bd0, 0x2bd8, 0x5828, 0x5830] {
+                let cap = match rng.below(4) {
+                    0 => 600,
+                    1 => 800,
+                    2 => 0x8000_0010,
+                    _ => rng.below(1000),
+                };
+                let data = match rng.below(3) {
+                    0 => 0,
+                    1 => fresh,
+                    _ => rng.word() | 1,
+                };
+                t.w32(this + cap_at, cap);
+                t.w32(this + cap_at + 4, data);
+            }
+            let what = format!("0x0067c440 #{i}");
+            t.check(&what, 0x0067_c440, Conv::Thiscall(this), &[], |m| {
+                Out::U32(mb::reset_buffers(m, this))
+            });
+        }
+    });
+}
+
+impl Twins {
+    /// Stubs for the window constructors' callees: `SgReallocD` returns
+    /// `grown`, `Gu_ControlSetText`, `Gu_WindowOpen`, `user_malloc`
+    /// returns `fresh`; `memclear` runs as it is.
+    fn create_stubs(&mut self, grown: u32, fresh: u32) {
+        self.stubs(&[
+            (mb::SG_REALLOC_D, false, 2, 0, grown),
+            (mb::GU_CONTROL_SET_TEXT, false, 2, 0, 0x81),
+            (mb::GU_WINDOW_OPEN, false, 1, 0, 0x82),
+            (mb::USER_MALLOC, false, 1, 0, fresh),
+        ]);
+    }
+}
+
+#[test]
+fn gu_window_add_controls_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xadd0_c0de);
+        for i in 0..40 {
+            t.reset();
+            let n = rng.below(4);
+            let w = t.window(&mut rng, n);
+            // the grown array: the old controls copied, the new slot junk
+            let old: u32 = Mem::read(&t.a, w + 0x94);
+            let mut bytes = vec![0u8; 0x44 * (n as usize + 1)];
+            Mem::read_bytes(&t.a, old, &mut bytes[..0x44 * n as usize]);
+            for (k, b) in bytes.iter_mut().enumerate().skip(0x44 * n as usize) {
+                *b = k as u8;
+            }
+            for c in bytes.chunks_mut(0x44) {
+                if rng.chance(2) {
+                    c[0x26] = 0;
+                    c[0x27] = 0;
+                }
+            }
+            let grown = t.alloc(&bytes);
+            t.create_stubs(grown, 0);
+            let args = [
+                w,
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+            ];
+            let [_, id, text, x, y, cw, ch] = args;
+            match i % 4 {
+                0 => t.check(
+                    &format!("Gu_WindowAddControl #{i}"),
+                    0x0084_bae0,
+                    Conv::Cdecl,
+                    &args,
+                    |m| Out::U32(mb::window_add_control(m, w, id, text, x, y, cw, ch)),
+                ),
+                1 => t.check(
+                    &format!("Gu_WindowAddButton #{i}"),
+                    0x0084_a470,
+                    Conv::Cdecl,
+                    &args,
+                    |m| Out::U32(mb::window_add_button(m, w, id, text, x, y, cw, ch)),
+                ),
+                2 => t.check(
+                    &format!("Gu_WindowAddStatic #{i}"),
+                    0x0084_a4d0,
+                    Conv::Cdecl,
+                    &args,
+                    |m| Out::U32(mb::window_add_static(m, w, id, text, x, y, cw, ch)),
+                ),
+                _ => t.check(
+                    &format!("Gu_WindowAddClient #{i}"),
+                    0x0084_a4a0,
+                    Conv::Cdecl,
+                    &args[..6],
+                    |m| Out::U32(mb::window_add_client(m, w, id, text, x, y, cw)),
+                ),
+            }
+        }
+    });
+}
+
+#[test]
+fn gu_vsync_main_and_local_trans_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1001_7001);
+        for i in 0..20 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mb::SG_MOUSE_MAIN, false, 0, 0, 0x91),
+                (mb::SG_CLOCK_TICK, false, 0, 0, ret),
+            ]);
+            t.check(
+                &format!("Gu_VSyncMain #{i}"),
+                0x0084_a460,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mb::vsync_main(m)),
+            );
+            let fade = rng.below(0x200);
+            t.g32(g::FADE, fade);
+            let w = t.window(&mut rng, 0);
+            let on = rng.word();
+            let v = if rng.chance(2) { u32::MAX } else { rng.word() };
+            let what = format!("Gu_WindowSetLocalTrans #{i}");
+            t.check(&what, 0x0084_b620, Conv::Cdecl, &[w, on, v], |m| {
+                Out::U32(mb::window_set_local_trans(m, w, on, v))
+            });
+        }
+    });
+}
+
+#[test]
+fn gu_window_create_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xc4ea_7e00);
+        for i in 0..80 {
+            t.reset();
+            let n = rng.below(5);
+            let ws = window_list(t, &mut rng, n);
+            // some windows on the cascade's grid
+            let (x0, y0) = (rng.below(3) * 16, rng.below(3) * 8);
+            let reverse = rng.chance(2);
+            for (k, &w) in ws.iter().enumerate() {
+                if rng.chance(2) {
+                    // front to back or back to front (the search restarts
+                    // from the front after each hit)
+                    let k = if reverse { n - 1 - k as u32 } else { k as u32 };
+                    t.write(w + 0xc, &((x0 + 16 * k) as u16).to_le_bytes());
+                    t.write(w + 0xe, &((y0 + 8 * k) as u16).to_le_bytes());
+                }
+            }
+            let fresh = t.zeros(0x9c);
+            let grown = t.zeros(0x44 * 4);
+            t.create_stubs(grown, fresh);
+            let cb = if rng.chance(3) {
+                0
+            } else {
+                t.stub_code(0x7c, false, 3, 0, 0)
+            };
+            let (w, h) = (rng.below(0x220), rng.below(0x1b0));
+            // the bottom edge sends the cascade to a new column at the top,
+            // onto a window that is there: more hits than windows
+            let (x0, y0, w, h) = if i < 8 && n >= 2 {
+                t.write(ws[0] + 0xc, &[0, 0, 0, 0]);
+                t.write(ws[1] + 0xc, &[0x20, 0, 0, 0]);
+                (0, 0, 0x40, 0x19c)
+            } else if i < 16 && n >= 1 {
+                // the new column wraps back onto the same window: only the
+                // hit count (one per window) ends the search
+                t.write(ws[0] + 0xc, &[0, 0, 0, 0]);
+                (0, 0, 0x1f0, 0x19c)
+            } else {
+                (x0, y0, w, h)
+            };
+            let flags = rng.below(16);
+            let args = [x0, y0, w, h, flags, cb];
+            let what = format!("Gu_WindowCreate #{i}");
+            t.check(&what, 0x0084_a920, Conv::Cdecl, &args, |m| {
+                Out::U32(mb::window_create(m, x0, y0, w, h, flags, cb))
+            });
         }
     });
 }

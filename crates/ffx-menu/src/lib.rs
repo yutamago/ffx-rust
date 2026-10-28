@@ -25,6 +25,7 @@ pub mod arms;
 pub mod gu;
 pub mod item;
 pub mod m5m_a;
+pub mod m5m_b;
 pub mod main_loop;
 pub mod math;
 pub mod msg;

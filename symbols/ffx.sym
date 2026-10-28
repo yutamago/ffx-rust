@@ -4658,10 +4658,11 @@
 0x0067b990 function MenuManager_GetMenuRecord_0067b990 # thiscall(this, i) -> the i-th menu record of the current chain (+0x5b7c: 0 the list at +0x15f0, else +0x4248; each entry a pointer to the record pointer), 0 unless +0x5b9d; PhyreScene_DrawNormalUI walks them (record +0xc the mesh instance, [+0x24]+0xb4 the type); name ours (pc-ui2d, docs/formats/ui-draw.md); ported (ffx_glue_other::menu, m4 h4 r1): thiscall(this; i) ret 4: byte +0x5b9d clear -> 0; else [[this + (+0x5b7c ? 0x4248 : 0x15f0) + 4i]]
 0x0067b9d0 function MenuManager_GetMenuMeshInstace # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RenderAfterVFX'; Switch 0x7100228750 MenuManager::GetMenuMeshInstace (symbols from Fahrenheit's server export)
 0x0067ba50 function MenuManager_GetMenuVertexInfo # fh v3:exact 0x0067bc00 MenuManager::GetMenuVertexInfo; ported (ffx_glue_other::h4_l1, m4 h4 cont10): thiscall(this; name, kind) ret 8 -> the vertex record; chain +0x5b7c (0/1, else 0); kinds 1, 2, 10: pending batch (+0x5844) gathered, +0x5b88 = 'Unitialized TextureName' (0x00b45ba0), chain 0 TakeSingleRecord(0), chain 1 inline from +0x423c[+0x5838] (pool +0x4238 & 0x7fffffff, used up: returns kind) into the draw list +0x2c58[+0x5840]; batch mode (+0x5b8c == 1): no names: multi-record + store name slot 0; < 6 names: findNameIndex, -1: multi-record + store at slot +0x5844; uses g_MenuVertexNameUses[k] < 12 (signed): records[used - n + k], uses + 1; else gather, multi-record, store slot 0, +0x5844 = 1; plain mode: pending batch gathered, else same name as +0x5b88 (strcmp): +0x5b74 == 1 moves the single record (MenuVertexInfo_move, stdcall(from list end, to records[used])) into a multi-record (singles - 1, +0x5b78 += 2, used + 1; pool used up: 0), else +0x5b78 < 12 (unsigned): records[used - 1], +0x5b78 + 1; otherwise TakeSingleRecord(chain), +0x5b74 = 1, +0x5b78 = 1; +0x5b88 = name. Chain 0: pool +0x15e8/+0x15ec, used +0x2bfc, singles +0x2bf8, list end this - 4 + 4 [+0x2c50]; chain 1: +0x4240/+0x4244, +0x583c, +0x5838, this + 0x2c54 + 4 [+0x5840]; chain 1's multi-record is inline (clears +0x5b74; used up: 0)
-0x0067c030 function MenuRecord_InitMulti_0067c030 # cdecl(record) -> record: the 12-quad menu record ("Multi_TextureName", +0xb0 = 1): render data header at +0xe0 (+0x94 points there) with arrays for 48 vertices / 72 indices: colours +0x14c (header +0x14), indices +0x44c (+0x1c), normals +0x4dc (+0x10), UVs +0x71c (+0x18), positions +0x89c (+0xc); +0x90 = 1 part; identity matrix +0..+0x3c, bounds -1000 / 2000 at +0x98..+0xac, +0xb8 = 2; caller the menu manager's pool set-up; name ours (pc-ui2d)
+0x0067c030 function MenuRecord_InitMulti_0067c030 # cdecl(record) -> record: the 12-quad menu record ("Multi_TextureName", +0xb0 = 1): render data header at +0xe0 (+0x94 points there) with arrays for 48 vertices / 72 indices: colours +0x14c (header +0x14), indices +0x44c (+0x1c), normals +0x4dc (+0x10), UVs +0x71c (+0x18), positions +0x89c (+0xc); +0x90 = 1 part; identity matrix +0..+0x3c, bounds -1000 / 2000 at +0x98..+0xac, +0xb8 = 2; caller the menu manager's pool set-up; name ours (pc-ui2d); stdcall (ret 4), not cdecl; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0067c170 function MenuManager_TakeMultiRecord_0067c170 # thiscall(this, chain) -> the next free 12-quad record of chain 0 (pool +0x15e8/+0x15ec, used +0x2bfc) or 1 (+0x4240/+0x4244, +0x583c), appended to the chain's draw list; 0 when the pool is used up; clears +0x5b74; MenuManager_GetMenuVertexInfo's second quad of a texture run and the draw-type-1 batches; name ours (pc-ui2d); ported (ffx_glue_other::r3, m4 h4 r3): byte +0x5b74 = 0; chain 1: pool +0x4240/+0x4244 used +0x583c into +0x2c58[+0x5840]
 0x0067c210 function MenuManager_TakeSingleRecord_0067c210 # thiscall(this, chain) -> the next free one-quad record of chain 0 (pool +0x15e0/+0x15e4, used +0x2bf8) or 1 (+0x4238/+0x423c, +0x5838), appended to the chain's draw list; returns chain when the pool is used up; MenuManager_GetMenuVertexInfo's first quad of a run and every quad of types 1, 2, 10; name ours (pc-ui2d); ported (ffx_glue_other::h4_c1, m4 h4 c): returns chain (not 0) when the pool is used up; the record is read again after the list store
-0x0067c2d0 function MenuRecord_InitSingle_0067c2d0 # cdecl(record) -> record: the one-quad menu record ("Single_TextureName", +0xb0 = 0), as MenuRecord_InitMulti_0067c030 with arrays for 4 vertices / 6 indices: colours +0x14c, indices +0x18c, normals +0x198, UVs +0x1c8, positions +0x1e8; name ours (pc-ui2d)
+0x0067c2d0 function MenuRecord_InitSingle_0067c2d0 # cdecl(record) -> record: the one-quad menu record ("Single_TextureName", +0xb0 = 0), as MenuRecord_InitMulti_0067c030 with arrays for 4 vertices / 6 indices: colours +0x14c, indices +0x18c, normals +0x198, UVs +0x1c8, positions +0x1e8; name ours (pc-ui2d); stdcall (ret 4), not cdecl; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0067c440 function MenuTextures_ResetBuffers # thiscall(this) -> memset's eax: buffers +0x2bd0/+0x2bd4 (600 x 16), +0x2bd8/+0x2bdc (800 x 16), +0x5828/+0x582c, +0x5830/+0x5834 reallocated by Phyre_PhyreMalloc(n*16, 8) unless at capacity (old freed when capacity >= 0 and different), cleared; 0x0067c7a0 on g_MenuTextureManager, MapPart_InitLangOverrides(this), +0x15f0 (0x15e0 bytes) cleared; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0067c620 function MapPart_InitLangOverrides    # (this): the map part override table at +0x2c00: two entries of 10 ints, map 0xcbc (titl00, title) parts by language 0,13,7,11,9,5 (+9/10: 13,3) and map 0x199f (titl02, logos) 2,0,6,8,7,5 (+9/10: 2,2); by game language id 0 jp, 1 en, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch
 0x0067c6f0 function MenuTextureManager_LoadBGWaterTexture # layout+callees: sorts between MenuManager_GetMenuVertexInfo and MenuTextureManager_LoadCloudSaveUITexture, and its named callees match the Switch 0x710022e3b0 MenuTextureManager_LoadBGWaterTexture's (similarity 1.00: PhyreScene_loadMenuTexture); symbols from Fahrenheit's server export
 0x0067c720 function MenuTextureManager_LoadCloudSaveUITexture # fh v3:bsim1.00 0x0067c8d0 MenuTextureManager::LoadCloudSaveUITexture
@@ -11351,10 +11352,10 @@
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
 0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260; cdecl(): hidden waits for Sg_MouseGetMove; drag and resize follow the mouse (resize lays out controls 0x8001/0x8000/0x8002/0x8003 by Gu_WindowControlSetRect); hit test: capture (Gu_WindowMouse), popup 0x01303740, else Gu_ListCopyNext + Gu_WindowListMouse, an unclaimed press captures for Sg_ControlMouseCamera (-1); no button down ends drags and the capture; ported M5 menu b1 (ffx_menu::m5m_a)
-0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470
-0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0
-0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0
+0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl() -> 0x0084ef10's eax: Sg_MouseMain, tail jump to the clock tick 0x0084ef10; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470; cdecl(window, id, text, x, y, w, h) -> control: Gu_WindowAddControl, kind 1; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0; cdecl(window, id, x, y, w, h) -> control: Gu_WindowAddControl without text, kind 3; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0; cdecl(window, id, text, x, y, w, h) -> control: Gu_WindowAddControl, kind 2; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084a500 function Gu_WindowAddVScroll       # fh switch:bsim1.00 0x710043f430
 0x0084a530 function Gu_WindowStartMove        # (window): +0x1c/+0x1e = mouse, +0x20 = 0, flag 0x10; recursively for open windows whose parent (+8) it is
 0x0084a580 function Gu_WindowStartDrag        # (window) flag 0x20, Gu_WindowStartMove itself and children, recursively; own name
@@ -11364,7 +11365,7 @@
 0x0084a6c0 function Gu_WindowControlSetLeftText# (window, id, on) control flag 0x10 = on; Switch name, the slot between Gu_WindowControlSetHide and Gu_WindowControlSetText
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
 0x0084a810 function Gu_WindowControlSetTextf  # (window, id, fmt, ...) vsprintf into a 1 KiB local, then the Gu_WindowControlSetText logic on the first control with id; Switch name, alphabetical slot Gu_WindowControlSetText..Gu_WindowCreate
-0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
+0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920; cdecl(x, y, w, h, flags, callback) -> window (user_malloc 0x9c): cascade 16/8 off windows exactly at (x, y), new column +32 off-screen (512x416); rect x3, idle colours, client origin (4, flags&2 ? 12 : 2), size w-8 / h-top-2, scale 0x200, Gu_WindowOpen, list front; title 0x8001 kind 6 (flag 2), close 0x8000 kind 8 (flags 2+4, label 0x00b5639c), grip 0x8002 kind 7 (flag 8); callback(window, 0x8001, 0); ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
 0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
 0x0084ac80 function Gu_DrawWindowTree         # cdecl(window): the list from window, back to front (recursing on +0 first); skips closing (flag 2), fade-out (0x10) to closed, growth (8) to targets +0x20/+0x22, Gu_SetHScale(+0x8e); minimised (1): 9-px strip, client controls; else Gu_DrawCursor(frame, 6, 3), frame unsmoothed, client scissor, controls, own fade (0x80); scissor back to 512x416; callers Gu_Main; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
@@ -11392,7 +11393,7 @@
 0x0084b5b0 function Gu_WindowSetHScale        # (window, scale) u16 +0x8e; Switch name
 0x0084b5d0 function Gu_WindowSetH             # (window, h): +0x12 and copies; client +0x86 = h - top border - 2 (half of Gu_WindowSetSize)
 0x0084b600 function Gu_WindowSetFlag2         # (window, on): flag bit 1 of +0x88 (the bit Gu_WindowOpen clears)
-0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
+0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68; cdecl(window, on, fade) -> fade: flag 0x80 = on bit 0, +0x8c (u16) = fade or (-1) GetGlobal01303730_00848f10; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
 0x0084b670 function Gu_SetPopupWindow         # (w) 0x01303740 = w, the selector popup window (Gu_SelectorOpen stores it; the mouse handler routes clicks to it); own name
 0x0084b680 function Gu_WindowSetFlag1         # (window, on): flag bit 0 of +0x88 from on's low bit
@@ -11406,6 +11407,7 @@
 0x0084b7e0 function Gu_WindowSetWord30        # (window, v) u16 +0x30; own name
 0x0084b7f0 function Gu_ControlMouse           # cdecl(window, control) -> 0: disabled (+0x40 bit 1) nothing; kind +0x2c (jump table 0x0084b934): 1 button (+0x1a 0xc0, +0x20 pressed), 3 static, both Gu_ControlMouseButtonHandle(id); 4 scroll bar capture (Gu_WindowControlSetRect 0x8003, g_GuMouseCapture, id 0x01303758); 6 Gu_ClientMouse; 7 resize grab (0x0130374c/50, 0x0130373c); 8 title: release -> Gu_WindowStartDrag; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle; cdecl(window, id) -> eax: one callback +0x7c(window, msg, id) per button event of 0x023cbc10 (0x8005..0x8010); eax = the last callback's result, else the buttons (or the null callback for the middle double click); ported M5 menu b1 (ffx_menu::m5m_a)
+0x0084bae0 function Gu_WindowAddControl       # cdecl(window, id, text, x, y, w, h) -> control: SgReallocD(+0x94, (n+1)*0x44), inline labels (+0x26 == 0) re-pointed +0x28 = +0x30, new control memclear-ed: id +0x2e, rect x3 moved by the client origin, idle colours 0x80, Gu_ControlSetText; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084bc00 function ChrViewMotionCtlProc         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[%s] Frame:%d.%02x(%x)/%d'; Switch 0x7100443c30 ChrViewMotionCtlProc (symbols from Fahrenheit's server export)
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
 0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
@@ -13064,7 +13066,7 @@
 0x00887ba0 function TkSndUpdate3              # fh switch:bsim1.00 0x710048c750
 0x00887bd0 function TkSndUpdateMain           # fh v3:exact 0x00887b40
 0x00887c20 function FFXGetAsiaMode            # fh v3:bsim1.00 0x00887b90
-0x00887c30 function TkGetLang_thunk           # g_MagicImports slot 279 (4 overlays): jmp TkGetLang; hidden from the dump
+0x00887c30 function TkGetLang_thunk           # g_MagicImports slot 279 (4 overlays): jmp TkGetLang; hidden from the dump; not hookable: not a function start in the dump (check-ported), M5 menu b2; its test checks it against TkGetLang's bridge
 0x00887c40 function FFXGetVideoMode           # () -> (i8) 0x01330831 sign-extended (between g_TkLang and g_FFXAsiaMode); fh switch:bsim1.00 0x7100487fe0
 0x00887c50 function FFXIsDebug                # fh v3:bsim1.00 0x00887bc0
 0x00887c60 function sceGsSetDefDrawEnv2       # () -> (i8) 0x00b5ec4f sign-extended (1 in the image), sets nothing; fh switch:bsim1.00 0x71001c2920
@@ -13113,11 +13115,12 @@
 0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
-0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none)
+0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none); -> 0x006f2bc0's eax (the tail call with its own argument word set to 2) or -1 without a handler; ported M5 menu b2 (ffx_menu::m5m_b)
 0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
-0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
+0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790; cdecl() -> SignalSema(g 0x01330250); ported M5 menu b2 (ffx_menu::m5m_b)
+0x00888830 function TkClearVsyncHandler       # cdecl() -> TkSetVsyncHandler(0) (-1); callers 1; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller MenuSave_McSync (1000000 per memory-card poll)
 0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
 0x00888910 function Pad_ResetSlots_00888910   # cdecl(works) -> 0: four 0x20-byte slot works: Pad_ResetWork(work), u16 +2 and +0x1e = 0; callers 0x00889050, 0x00889360; ported r34 (vfx); name ours
@@ -13293,6 +13296,7 @@
 0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
 0x0088ec20 function TkConfig_SetByteC         # (v) g_FFXConfig byte +0xc; own name
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ec70 function escMenuSetAudioByConfig   # cdecl(mode, timeout): tail jump to sceGsSyncPath with the caller's words; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
 0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
 0x0088ed10 function TkEucToSjisString         # (src, dst, n) TkEucToSjis per character for up to n bytes, terminated; returns the source end, 0 when the text ended first; own name
@@ -20737,8 +20741,10 @@
 0x01330230 label    g_TkMcPort                # u32 port, then the last one used (TkMc* wrappers copy it)
 0x01330238 label    g_TkMcDebugLock           # TkMcSetDebugLock
 0x0133023c label    g_TkMcLoadFilePos         # u32 per slot (TkMcGetLoadFilePos, TkMcSetLoadFilePos)
+0x01330250 label    g_TkBgThreadSema          # the background thread's semaphore word (TkSignalSemaBGThread); name ours
 0x01330254 label    g_TkBGThreadFunc          # TkRegistBGThreadFunc(f) sets it, returns the old one
 0x0133025c label    g_TkSyncVCallbackHandles  # 3 words (TkGetSyncVCallbackHandle, index clamped to 0..2)
+0x01330268 label    g_TkVsyncThread           # the vsync emulation thread (TkSetVsyncHandler; -1 none); name ours
 0x0133026c label    g_TkSyncVCallbackPtrs     # 3 words (TkSetSyncVCallbackPtr: index < 0 is 0, >= 3 ignored)
 0x01330280 label    g_TkControlerWork         # 2 words, zeroed by TkInitControlerWork
 0x01330488 label    g_PadButtonMap            # 16-byte rows: Pad_MapButtons(a, b, buttons) moves bit i of buttons to bit row[a + b][i]
