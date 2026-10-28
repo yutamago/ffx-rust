@@ -45,6 +45,7 @@ pub mod getmem;
 pub mod init;
 pub mod input;
 pub mod limit;
+pub mod m5_battle;
 pub mod menu;
 pub mod minor;
 pub mod misc;
