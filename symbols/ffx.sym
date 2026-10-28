@@ -9602,6 +9602,7 @@
 0x007c90f0 function MsDebugBattlePosInit      # fh switch:cg2 0x71003a8bd0
 0x007c9210 function MsBtlPosFree_007c9210 # cdecl() (the push ecx is a local): ms_free of every block of the position table 0x0113e278 (file records of 0x74 at +0x30, count +0x1c: +0x28/+0x2c/+0x4c/+0x50/+0x60/+0x64, sub-records of 0x14 at +0x70 (count +0x68) with blocks at +0x10, the array; then +0x2c, +0x30), cursors 0x0113e27c/0x0113e284; then MsBtlPosInit; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007c93d0 function MsBtlPosInit              # fh v3:exact 0x007c9300
+0x007c9bc0 function MsBtlPosWriteAll_007c9bc0 # cdecl(out) -> MsBtlPosWriteBin(0, *out)'s eax, *out = ms_malloc_007cf970 of the size the position table needs when null (per record: +0x68 sub-records, twice +0xc/+0x30/+0x54 and the sub-records' +8; ([table+0x24] + 4 units) * 4); name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007c9f10 function MsBtlPosPrintBin             # str-match switch: only user of 16 string(s) held once by both builds, e.g. 'in <%s>\\n'; Switch 0x71003bd8a0 MsBtlPosPrintBin (symbols from Fahrenheit's server export)
 0x007ca4a0 function MsBtlPosLoad_007ca4a0 # cdecl(name) -> 1/0: MsReadOpen_007cd5a0 into a frame reader, MsBtlPosParse_007cd0f0 with 0x0113e28c = name (restored) and line 0; sceWrite back when +4 is set and the position > 0; free, sceClose; 0 (error lines, error 2) when it doesn't open; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007ca580 function MsBtlPosWriteBin             # layout+callees: sorts between MsBtlPosPrintBin and MsBtlPosWriteScr, and its named callees match the Switch 0x71003bc4f0 MsBtlPosWriteBin's (similarity 0.67: MsStructClear, sceClose, sceOpen, sceWrite); symbols from Fahrenheit's server export
@@ -9639,6 +9640,7 @@
 0x007cfba0 function MsInfoWinSet_007cfba0 # cdecl(i, mark, pos): info window i of 0x0113e494 (i < 4, set): +0x21 = mark, +0..+8 = pos's 3 floats (fld/fstp), +0x22 = 2, colours +0x28..+0x30 by i's parity and 0x0113e4cc bit 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfca0 function MsInfoWinsInit_007cfca0 # cdecl(): the 4 info windows 0x0113e494 = MsDebugWinAlloc_007c8bb0(0), +0x21 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfcd0 function Ms_Gui_InfoProc           # fh v3:exact 0x007cfc00
+0x007d10c0 function MsDebugPrintRules_007d10c0 # cdecl(y) -> y + 60: six "------" lines (sprintf into a 0x100-byte frame buffer, Gu_Printf "%s\n") at x 0x5c, y + 10 each; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d1220 function MsDebugCameraCopy_007d1220 # cdecl(): in camera modes 8, 9 (MsDebugGetCameraMode(1)) the debug camera channel's data (+8 of 0x01137c4c + 0xda0 cam + 0x130 ch) copied, 0x18c words, to 0x0113ed7c; 0x007d7130 when the source end differs from 0x0113e660, which keeps it; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d12a0 function MsDebugPathAfterBase_007d12a0 # cdecl(path, base) -> past the prefix path shares with base, the rest after its next '/', or the prefix's end; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d1f50 function MsDebugBtlPrint              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'HEI %%'; Switch 0x71003afc50 MsDebugBtlPrint (symbols from Fahrenheit's server export)
@@ -9655,17 +9657,20 @@
 0x007d44a0 function Ms_Gui_CameraProc         # fh v3:exact 0x007d43d0
 0x007d5480 function Ms_Gui_MapDataProc           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003b07d0 Ms_Gui_MapDataProc, 2 votes, round 1
 0x007d70d0 function MsDebugScenePath_007d70d0 # cdecl(): sprintf 0x0113e4e8 = "%s" root 0x00c447a0, or "%s%s/" with the scene directory 0x0113f410 when set; cursor 0x0113e4e0 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d72e0 function MsDebugPosGroup_007d72e0 # cdecl() -> the position screen's ground group record (g_BtlPosFile + 0x20 * group, x3 without the flag) after wrapping the kind 0x00c449cc (0..0xb) and group 0x0112bdec, the kind's count 0x0113f700 (record +4..+6, +9) and pick 0x0113f6d0[kind]; 0 outside battle; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d73e0 function MsDebugPlaceAll_007d73e0 # cdecl(): every actor 0..0x1e with a model: MsGetChrBtlPos(i, frame) then Ch_SetPos3(model, x, y, z) (floats through fld/fstp); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d7450 function MsBtlPosEditFree_007d7450 # cdecl(): ms_free of the position editor's buffer 0x0113f510 (cleared), then jmp MsBtlPosFree_007c9210; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d79e0 function MsDebugIsTextMode_007d79e0 # cdecl(kind) -> -1 for 3..8 and 0xb, else 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d7a40 function MsDebugPosWindows_007d7a40 # cdecl(all, group, kind, start, r, g, b, mark) -> next slot: debug windows (MsDebugWinAlloc_007c8bb0 on 0x0113f528[slot], below 0x60) for the positions MsBtlGetPos(0, 0, group, kind, i, win) doesn't find (one with all), coloured r/g/b (halved for the picked one with 0x0113f708 set) and marked; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d80a0 function Ms_Gui_BattleProc         # fh v3:exact 0x007d7fc0
+0x007d92d0 function MsDebugPosNextKind_007d92d0 # cdecl(step): MsDebugPosGroup_007d72e0's update repeated with kind += step (at most 12) until the count is positive; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d9ab0 function MsDebugActorCount_007d9ab0 # cdecl(id, kind) -> 0x1f with kind 0 for a battle id (id & 0xf0000 == 0x50000), else max(AtelGetTotalActorNumber2(), 1) with kind 1; *kind when not null; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d9af0 function SetGlobal0113f864_007d9af0   # auto-port shape (store argument to global, cdecl): u32[&0x0113f864] = a0; return a0; callers: ; name ours
 0x007d9c20 function Ms_Gui_ReferencePos       # fh v3:exact 0x007d9b40
 0x007daed0 function Ms_Gui_BattleInfoProc     # fh v3:exact 0x007dadf0
 0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1; ported ffx_battle::m5_battle (m5 battle b3)
 0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b3)
-0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export)
+0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b4)
 0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export)
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
 0x007de700 function MsEnvWriteText_007de700 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsMonSave's); name ours; ported ffx_battle::m5_battle (m5 battle b3)

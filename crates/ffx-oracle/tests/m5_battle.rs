@@ -2343,3 +2343,226 @@ fn btl_pos_load_matches_the_original() {
         t.skip = 0;
     });
 }
+
+// ---- batch 4: the position screens, the monster motion file ----
+
+#[test]
+fn btl_pos_write_all_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x3b17_0001);
+        for i in 0..16 {
+            t.reset();
+            let n = [0, 1, 3, 0xffff_ffff][i % 4];
+            let mut recs = Vec::new();
+            for _ in 0..n.min(4) {
+                let mut r = vec![0u32; 0x74 / 4];
+                for o in [0xc, 0x30, 0x54] {
+                    r[o / 4] = rng.below(100);
+                }
+                let k = rng.below(6);
+                r[0x68 / 4] = k;
+                let subs: Vec<u32> = (0..k * 5).map(|_| rng.below(50)).collect();
+                r[0x70 / 4] = t.words(&[subs, vec![0]].concat());
+                recs.extend(r);
+            }
+            let arr = t.words(&[recs, vec![0]].concat());
+            let table = t.words(&[0, 0, 0, 0, 0, 0, 0, n, 0, rng.below(0x100), 0, 0, arr, 0]);
+            t.g32(mb::POS_TABLE, table);
+            t.stub(mb::MS_MALLOC, 1, 0x1234_5678);
+            t.stub(mb::MS_BTL_POS_WRITE_BIN, 2, rng.next());
+            let out = t.words(&[if i % 3 == 0 { rng.next() } else { 0 }]);
+            t.check(
+                &format!("MsBtlPosWriteAll #{i}"),
+                0x007c_9bc0,
+                &[out],
+                |m| Out::U32(mb::ms_btl_pos_write_all(m, &mut oc, out)),
+            );
+        }
+    });
+}
+
+/// The position screen's state: kind, group, picks, the position file.
+fn pos_screen(t: &mut Twins, rng: &mut Rng) {
+    let kinds = [0, 3, 4, 5, 6, 7, 8, 0xb, 0xc, 0xffff_ffff, 2, 9];
+    t.g32(mb::POS_KIND, kinds[rng.below(12) as usize]);
+    t.g8(mb::BTL_STATUS, u8::from(!rng.chance(5)));
+    t.g8(mb::POS_GROUP, [0, 1, 2, 0xff, 0x80][rng.below(5) as usize]);
+    let picks: Vec<u32> = (0..12)
+        .map(|_| [0, 1, 5, 0xffff_ffff][rng.below(4) as usize])
+        .collect();
+    let at = t.rebase(mb::POS_PICK);
+    let bytes: Vec<u8> = picks.iter().flat_map(|v| v.to_le_bytes()).collect();
+    t.write(at, &bytes);
+    let mut file = rng.bytes(0x20 * 13);
+    file[0] = u8::from(rng.chance(2));
+    file[1] = [0, 1, 3, 0x81][rng.below(4) as usize];
+    for k in 0..13 {
+        for o in [4, 5, 6, 9] {
+            file[0x20 * k + o] = [0, 1, 3, 0xff][rng.below(4) as usize];
+        }
+    }
+    let file = t.alloc(&file);
+    t.g32(mb::BTL_POS_FILE, file);
+}
+
+#[test]
+fn debug_pos_screen_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x905c_0001);
+        for i in 0..60 {
+            t.reset();
+            pos_screen(t, &mut rng);
+            t.check(&format!("MsDebugPosGroup #{i}"), 0x007d_72e0, &[], |m| {
+                Out::U32(mb::ms_debug_pos_group(m))
+            });
+            pos_screen(t, &mut rng);
+            let step = [1, 0xffff_ffff, 0, 3][rng.below(4) as usize];
+            t.check(
+                &format!("MsDebugPosNextKind #{i}"),
+                0x007d_92d0,
+                &[step],
+                |m| {
+                    mb::ms_debug_pos_next_kind(m, step);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn debug_pos_windows_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x3a1d_0001);
+        for i in 0..24 {
+            t.reset();
+            let wins: Vec<u32> = (0..0x60)
+                .map(|_| if rng.chance(4) { 0 } else { rng.next() & !3 })
+                .collect();
+            let at = t.rebase(mb::POS_WINS);
+            let bytes: Vec<u8> = wins.iter().flat_map(|v| v.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            // MsDebugWinAlloc: the slot gets a fresh record (some null)
+            let recs: Vec<u32> = (0..0x60)
+                .map(|_| {
+                    let b = rng.bytes(0x40);
+                    t.alloc(&b)
+                })
+                .collect();
+            let fill = {
+                let ctr = t.words(&[0]);
+                let mut s = recs.clone();
+                for (k, v) in s.iter_mut().enumerate() {
+                    if k % 7 == 3 {
+                        *v = 0;
+                    }
+                }
+                let tbl = t.words(&s);
+                let mut c = t.log_code(mb::DEBUG_WIN_ALLOC, 1);
+                c.push(0xa1);
+                c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+                c.extend([0x8b, 0x04, 0x85]);
+                c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+                c.extend([0xff, 0x05]);
+                c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+                c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+                c.extend([0x89, 0x02, 0xc3]); // mov [edx], eax; ret
+                t.cave_code(&c)
+            };
+            t.jump(mb::DEBUG_WIN_ALLOC, fill);
+            let found: Vec<u32> = (0..8)
+                .map(|k| u32::from(k > 2 + i % 4 || (k == 0 && i % 2 == 0)))
+                .collect();
+            t.stub_seq(mb::MS_BTL_GET_POS, 6, &found);
+            let kind = rng.below(4);
+            t.g32(mb::POS_KIND, if rng.chance(2) { kind } else { 9 });
+            let at = t.rebase(mb::POS_PICK) + 4 * kind;
+            t.w32(at, rng.below(4));
+            t.g32(mb::POS_HIGHLIGHT, u32::from(rng.chance(2)));
+            let all = u32::from(i % 3 == 0);
+            let start = [0, 5, 0x5e, 0x60, 0xffff_ffff][rng.below(5) as usize];
+            let args = [
+                all,
+                rng.below(3),
+                kind,
+                start,
+                rng.next() & 0x1ff,
+                0xffff_fff1,
+                rng.below(256),
+                rng.next(),
+            ];
+            t.check(
+                &format!("MsDebugPosWindows #{i}"),
+                0x007d_7a40,
+                &args,
+                |m| Out::U32(mb::ms_debug_pos_windows(m, &mut oc, args)),
+            );
+        }
+    });
+}
+
+#[test]
+fn mon_save_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x305a_0001);
+        t.skip = 4;
+        for i in 0..12 {
+            t.reset();
+            t.stub(mb::SCE_OPEN, 2, [0xffff_ffff, 0, 4, 0x8000_0000][i % 4]);
+            let buf = if i % 5 == 4 { 0 } else { rng.next() | 1 };
+            t.stub_import(mb::MALLOC_SLOT, 1, buf);
+            t.stub_import(mb::FREE_SLOT, 1, 0);
+            t.stub(mb::ENV_WRITE_TEXT_3, 2, 0);
+            t.stub(mb::SCE_WRITE, 3, 0);
+            t.stub(mb::SCE_CLOSE, 1, 0);
+            // the motion writer leaves a fill and the flag
+            let w = {
+                let fill = [0u32, 1, 0x80][i % 3];
+                let flag = u32::from(i % 2 == 0 || i % 4 == 1);
+                let mut c = t.log_code(mb::MS_MOTION_WRITE, 2);
+                c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+                c.extend([0xc7, 0x42, 0x0c]);
+                c.extend(fill.to_le_bytes()); // mov dword [edx+0xc], fill
+                c.extend([0xc7, 0x42, 0x04]);
+                c.extend(flag.to_le_bytes()); // mov dword [edx+4], flag
+                c.push(0xc3);
+                t.cave_code(&c)
+            };
+            t.jump(mb::MS_MOTION_WRITE, w);
+            let scene = t.rebase(mb::BTL_SCENE_NAME);
+            t.write(scene, b"bsil_00\0\0");
+            let args = [rng.next(), rng.next(), rng.next()];
+            t.check_framed(
+                &format!("MsMonSave #{i}"),
+                0x007d_d480,
+                &args,
+                0x118,
+                |m, ebp| Out::U32(mb::ms_mon_save(m, &mut oc, ebp - 0x118, args)),
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn debug_print_rules_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7a1e_0001);
+        t.skip = 4;
+        for i in 0..4 {
+            t.reset();
+            t.stub(mb::GU_PRINT_SET_X, 1, 0);
+            t.stub(mb::GU_PRINT_SET_Y, 1, 0);
+            t.stub(mb::GU_PRINTF, 2, 0);
+            let y = rng.next();
+            t.check_framed(
+                &format!("MsDebugPrintRules #{i}"),
+                0x007d_10c0,
+                &[y],
+                0x104,
+                |m, ebp| Out::U32(mb::ms_debug_print_rules(m, &mut oc, ebp - 0x104, y)),
+            );
+        }
+        t.skip = 0;
+    });
+}

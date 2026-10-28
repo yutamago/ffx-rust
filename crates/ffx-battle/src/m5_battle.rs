@@ -2309,4 +2309,320 @@ pub mod bridge {
         }
         1
     }
+
+    // ---- batch 4: the position screens, the monster motion file ----
+
+    pub const MS_BTL_POS_WRITE_BIN: u32 = 0x007c_a580;
+    pub const MS_BTL_GET_POS: u32 = 0x007a_bfe0;
+    pub const MS_MOTION_WRITE: u32 = 0x007d_cf70;
+    pub const ENV_WRITE_TEXT_3: u32 = 0x007d_e700;
+    pub const GU_PRINT_SET_X: u32 = 0x0084_8820;
+    pub const GU_PRINT_SET_Y: u32 = 0x0084_8860;
+    pub const GU_PRINTF: u32 = 0x0084_8880;
+    /// `"------"`, `"%s\n"` (`.rdata`).
+    pub const TEXT_RULE: u32 = 0x00b5_6750;
+    pub const FMT_LINE: u32 = 0x00b1_2ad0;
+    /// The monster motion file's lines (`.rdata`).
+    pub const FMT_MON_HEAD: u32 = 0x00b5_7b0c;
+    pub const TEXT_MON_MACRO: u32 = 0x00b5_7b34;
+    pub const TEXT_MON_END: u32 = 0x00b5_7b04;
+    /// The position screen: the picked kind (0..0xb), the count shown,
+    /// the picked index per kind (12 words), the windows (0x60 slots
+    /// from `0x0113f528`), the highlight flag.
+    pub const POS_KIND: u32 = 0x00c4_49cc;
+    pub const POS_COUNT: u32 = 0x0113_f700;
+    pub const POS_PICK: u32 = 0x0113_f6d0;
+    pub const POS_WINS: u32 = 0x0113_f528;
+    pub const POS_WINS_END: u32 = 0x0113_f6a8;
+    pub const POS_HIGHLIGHT: u32 = 0x0113_f708;
+    /// `g_BtlGround + 4`: the picked ground group.
+    pub const POS_GROUP: u32 = 0x0112_bdec;
+
+    /// `0x007c9bc0(out)` (`MsBtlPosWriteAll`, name ours): the position
+    /// table written out (`MsBtlPosWriteBin(0, *out)`, its `eax`), into a
+    /// buffer `ms_malloc`ed into `*out` when that is null, sized from the
+    /// table: per file record its sub-records (`+0x68`) and twice the
+    /// point counts `+0xc`, `+0x30`, `+0x54` and the sub-records' `+8`.
+    pub fn ms_btl_pos_write_all<M: Mem>(mem: &mut M, call: Call<'_, M>, out: u32) -> u32 {
+        let table = r32(mem, POS_TABLE);
+        let n: u32 = mem.read(table.wrapping_add(0x1c));
+        let mut subs_total = 0u32;
+        let mut words = 0u32;
+        if n.cast_signed() > 0 {
+            let mut rec = mem.read::<u32>(table.wrapping_add(0x30)).wrapping_add(0x30);
+            for _ in 0..n {
+                let k: u32 = mem.read(rec.wrapping_add(0x38));
+                subs_total = subs_total.wrapping_add(k);
+                let pts = mem
+                    .read::<u32>(rec.wrapping_sub(0x24))
+                    .wrapping_add(mem.read(rec.wrapping_add(0x24)))
+                    .wrapping_add(mem.read(rec));
+                words = words.wrapping_add(pts.wrapping_mul(2));
+                let (mut even, mut odd, mut idx) = (0u32, 0u32, 0u32);
+                let subs: u32 = mem.read(rec.wrapping_add(0x40));
+                if k.cast_signed() >= 2 {
+                    let pairs = (k.wrapping_sub(2) >> 1).wrapping_add(1);
+                    idx = pairs.wrapping_mul(2);
+                    let mut p = subs.wrapping_add(0x1c);
+                    for _ in 0..pairs {
+                        even = even.wrapping_add(mem.read(p.wrapping_sub(0x14)));
+                        odd = odd.wrapping_add(mem.read(p));
+                        p = p.wrapping_add(0x28);
+                    }
+                }
+                let k: u32 = mem.read(rec.wrapping_add(0x38));
+                if idx.cast_signed() < k.cast_signed() {
+                    let subs: u32 = mem.read(rec.wrapping_add(0x40));
+                    words = words.wrapping_add(
+                        mem.read(subs.wrapping_add(idx.wrapping_mul(0x14)).wrapping_add(8)),
+                    );
+                }
+                words = words.wrapping_add(odd.wrapping_add(even));
+                rec = rec.wrapping_add(0x74);
+            }
+        }
+        let table = r32(mem, POS_TABLE);
+        let mut buf: u32 = mem.read(out);
+        if buf == 0 {
+            let units = words
+                .wrapping_add(n.wrapping_mul(6))
+                .wrapping_add(subs_total);
+            let size = mem
+                .read::<u32>(table.wrapping_add(0x24))
+                .wrapping_add(units.wrapping_mul(4))
+                .wrapping_shl(2);
+            buf = game(mem, &mut *call, MS_MALLOC, &[size]);
+            mem.write(out, buf);
+        }
+        game(mem, call, MS_BTL_POS_WRITE_BIN, &[0, buf])
+    }
+
+    /// The position screen's kind wrapped into 0..0xb (negative: 0xb).
+    fn pos_kind_wrap(k: u32) -> u32 {
+        if k.cast_signed() < 0 {
+            0xb
+        } else if k.cast_signed() >= 0xc {
+            0
+        } else {
+            k
+        }
+    }
+
+    /// The position screen's ground group wrapped into the file's group
+    /// count, stored, and the group's record.
+    fn pos_group_record(mem: &mut impl Mem, group: u8) -> (u8, u32) {
+        let file = r32(mem, BTL_POS_FILE);
+        let groups: i8 = mem.read(file.wrapping_add(1));
+        let mut g = group.cast_signed();
+        if g < 0 {
+            g = groups.wrapping_sub(1);
+            w8(mem, POS_GROUP, g.cast_unsigned());
+        }
+        let groups: i8 = mem.read(file.wrapping_add(1));
+        let g = if g >= groups { 0 } else { g };
+        w8(mem, POS_GROUP, g.cast_unsigned());
+        let mut off = i32::from(g);
+        if mem.read::<u8>(file) == 0 {
+            off = off.wrapping_mul(3);
+        }
+        (
+            g.cast_unsigned(),
+            file.wrapping_add(off.cast_unsigned().wrapping_mul(0x20)),
+        )
+    }
+
+    /// The count of kind `kind` in a group record (`+4`..`+6`, `+9`), set
+    /// into `POS_COUNT`, and the kind's pick wrapped into it; the count.
+    fn pos_count_and_pick(mem: &mut impl Mem, kind: u32, rec: u32) -> i32 {
+        let off = match kind {
+            3 | 6 => Some(4),
+            4 | 7 => Some(5),
+            5 | 8 => Some(6),
+            0xb => Some(9),
+            _ => None,
+        };
+        let mut count = 1i32;
+        if let Some(o) = off {
+            count = i32::from(mem.read::<i8>(rec.wrapping_add(o)));
+            w32(mem, POS_COUNT, count.cast_unsigned());
+        }
+        let at = mem.rebase(POS_PICK).wrapping_add(kind.wrapping_mul(4));
+        if mem.read::<i32>(at) < 0 {
+            mem.write(at, count.wrapping_sub(1));
+        }
+        if mem.read::<i32>(at) >= count {
+            mem.write(at, 0u32);
+        }
+        count
+    }
+
+    /// `0x007d72e0()` (`MsDebugPosGroup`, name ours): the position
+    /// screen's kind and ground group wrapped, the kind's count and pick
+    /// updated; the group's record, or 0 outside a battle.
+    pub fn ms_debug_pos_group(mem: &mut impl Mem) -> u32 {
+        let kind = pos_kind_wrap(r32(mem, POS_KIND));
+        w32(mem, POS_KIND, kind);
+        w32(mem, POS_COUNT, 1);
+        if r8(mem, BTL_STATUS) == 0 {
+            return 0;
+        }
+        let (_, rec) = pos_group_record(mem, r8(mem, POS_GROUP));
+        pos_count_and_pick(mem, kind, rec);
+        rec
+    }
+
+    /// `0x007d92d0(step)` (`MsDebugPosNextKind`, name ours): the position
+    /// screen's kind stepped by `step` (at most 12 times) until one has a
+    /// positive count, each step as [`ms_debug_pos_group`] (the group
+    /// byte kept from the first read on).
+    pub fn ms_debug_pos_next_kind(mem: &mut impl Mem, step: u32) {
+        let mut kind = r32(mem, POS_KIND);
+        let battle = r8(mem, BTL_STATUS) != 0;
+        let mut group = r8(mem, POS_GROUP);
+        for _ in 0..12 {
+            kind = pos_kind_wrap(kind);
+            w32(mem, POS_KIND, kind);
+            w32(mem, POS_COUNT, 1);
+            if !battle {
+                return;
+            }
+            let (g, rec) = pos_group_record(mem, group);
+            group = g;
+            if pos_count_and_pick(mem, kind, rec) > 0 {
+                return;
+            }
+            kind = kind.wrapping_add(step);
+            w32(mem, POS_KIND, kind);
+        }
+    }
+
+    /// `0x007d7a40(all, group, kind, start, r, g, b, mark)`
+    /// (`MsDebugPosWindows`, name ours): from window slot `start` (below
+    /// 0x60), each position of `kind` in `group` that `MsBtlGetPos(0, 0,
+    /// group, kind, i, slot)` doesn't find (or every one with `all`, which
+    /// stops after one) gets a debug window (`MsDebugWinAlloc`) coloured
+    /// `r, g, b` (halved for the picked one with the highlight on) and
+    /// marked; returns the next slot.
+    pub fn ms_debug_pos_windows<M: Mem>(mem: &mut M, call: Call<'_, M>, args: [u32; 8]) -> u32 {
+        let [all, group, kind, start, r, g, b, mark] = args;
+        let mut slot_no = start;
+        if start.cast_signed() >= 0x60 {
+            return start;
+        }
+        let mut slot = mem.rebase(POS_WINS).wrapping_add(start.wrapping_mul(4));
+        let end = mem.rebase(POS_WINS_END);
+        let mut i = 0u32;
+        loop {
+            let win: u32 = mem.read(slot);
+            let found = game(
+                mem,
+                &mut *call,
+                MS_BTL_GET_POS,
+                &[0, 0, group, kind, i, win],
+            );
+            if found != 0 && all == 0 {
+                return slot_no;
+            }
+            game(mem, &mut *call, DEBUG_WIN_ALLOC, &[slot]);
+            if mem.read::<u32>(slot) != 0 {
+                for (o, v) in [(0x28u32, r), (0x2c, g), (0x30, b)] {
+                    let w: u32 = mem.read(slot);
+                    mem.write(w.wrapping_add(o), v);
+                }
+                let w: u32 = mem.read(slot);
+                #[allow(clippy::cast_possible_truncation)] // the byte argument
+                mem.write(w.wrapping_add(0x22), mark as u8);
+                let picked = r32(mem, POS_KIND);
+                let pick_at = mem.rebase(POS_PICK).wrapping_add(picked.wrapping_mul(4));
+                if picked == kind && i == mem.read::<u32>(pick_at) && r32(mem, POS_HIGHLIGHT) != 0 {
+                    for o in [0x28u32, 0x2c, 0x30] {
+                        let w: u32 = mem.read(slot);
+                        let v: i32 = mem.read(w.wrapping_add(o));
+                        mem.write(w.wrapping_add(o), v / 2);
+                    }
+                }
+            }
+            slot_no = slot_no.wrapping_add(1);
+            slot = slot.wrapping_add(4);
+            i = i.wrapping_add(1);
+            if all != 0 || slot >= end {
+                return slot_no;
+            }
+        }
+    }
+
+    /// `MsMonSave(name, monster, n)` (`0x007dd480`): monster `n`'s motion
+    /// macro file: a writer (the frame's 5 words at the original's
+    /// `ebp - 0x118`: a 0x1000-byte `malloc` buffer, the file opened for
+    /// writing) and the lines printed in the frame buffer (`ebp - 0x104`):
+    /// the header (with the scene name), the macro start,
+    /// `0x007dcf70(monster, writer)`, the macro end; then the rest
+    /// written, the buffer freed, the file closed: -1. A file that
+    /// doesn't open: 0.
+    pub fn ms_mon_save<M: Mem>(mem: &mut M, call: Call<'_, M>, frame: u32, args: [u32; 3]) -> u32 {
+        let [name, monster, n] = args;
+        let writer = frame;
+        let text = frame.wrapping_add(0x14);
+        let fd = game(mem, &mut *call, SCE_OPEN, &[name, 0x602]);
+        mem.write(writer.wrapping_add(8), fd);
+        mem.write(writer.wrapping_add(4), 1u32);
+        mem.write(writer.wrapping_add(0x10), 0x1000u32);
+        let buf = import(mem, &mut *call, MALLOC_SLOT, &[0x1000]);
+        mem.write(writer, buf);
+        mem.write(writer.wrapping_add(0xc), 0u32);
+        if fd.cast_signed() < 0 {
+            return 0;
+        }
+        let (fmt, scene) = (mem.rebase(FMT_MON_HEAD), mem.rebase(BTL_SCENE_NAME));
+        import(
+            mem,
+            &mut *call,
+            SPRINTF_SLOT,
+            &[text, fmt, n & 0x3ff, scene],
+        );
+        game(mem, &mut *call, ENV_WRITE_TEXT_3, &[writer, text]);
+        let fmt = mem.rebase(TEXT_MON_MACRO);
+        import(mem, &mut *call, SPRINTF_SLOT, &[text, fmt]);
+        game(mem, &mut *call, ENV_WRITE_TEXT_3, &[writer, text]);
+        game(mem, &mut *call, MS_MOTION_WRITE, &[monster, writer]);
+        let fmt = mem.rebase(TEXT_MON_END);
+        import(mem, &mut *call, SPRINTF_SLOT, &[text, fmt]);
+        game(mem, &mut *call, ENV_WRITE_TEXT_3, &[writer, text]);
+        let fill: i32 = mem.read(writer.wrapping_add(0xc));
+        let fd: i32 = mem.read(writer.wrapping_add(8));
+        let buf: u32 = mem.read(writer);
+        if fill > 0 && mem.read::<u32>(writer.wrapping_add(4)) != 0 {
+            game(
+                mem,
+                &mut *call,
+                SCE_WRITE,
+                &[fd.cast_unsigned(), buf, fill.cast_unsigned()],
+            );
+        }
+        if buf != 0 {
+            import(mem, &mut *call, FREE_SLOT, &[buf]);
+        }
+        if fd > 0 {
+            game(mem, call, SCE_CLOSE, &[fd.cast_unsigned()]);
+        }
+        u32::MAX
+    }
+
+    /// `0x007d10c0(y)` (`MsDebugPrintRules`, name ours): six rule lines
+    /// (`"------"`, printed into the frame buffer `buf`, 0x100 bytes at
+    /// the original's `ebp - 0x104`) at x 0x5c, 10 apart below `y`;
+    /// returns the last line's `y`.
+    pub fn ms_debug_print_rules<M: Mem>(mem: &mut M, call: Call<'_, M>, buf: u32, y: u32) -> u32 {
+        let mut y = y;
+        for _ in 0..6 {
+            game(mem, &mut *call, GU_PRINT_SET_X, &[0x5c]);
+            y = y.wrapping_add(10);
+            game(mem, &mut *call, GU_PRINT_SET_Y, &[y]);
+            let rule = mem.rebase(TEXT_RULE);
+            import(mem, &mut *call, SPRINTF_SLOT, &[buf, rule]);
+            let fmt = mem.rebase(FMT_LINE);
+            game(mem, &mut *call, GU_PRINTF, &[fmt, buf]);
+        }
+        y
+    }
 }

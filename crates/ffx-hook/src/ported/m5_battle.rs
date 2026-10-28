@@ -339,4 +339,34 @@ ported! {
         let mut f = StackFrame::<5>::new();
         mb::ms_btl_pos_load(&mut mem(), &mut call, f.at(), name)
     }
+
+    // ---- batch 4: the position screens, the monster motion file ----
+    /// `MsBtlPosWriteAll_007c9bc0(out)`: `MsBtlPosWriteBin`'s `eax`.
+    MsBtlPosWriteAll_007c9bc0 @ 0x007c_9bc0 => extern "C" fn ms_btl_pos_write_all(out: u32) -> u32 {
+        mb::ms_btl_pos_write_all(&mut mem(), &mut call, out)
+    }
+    /// `MsDebugPosGroup_007d72e0()`: the group record or 0.
+    MsDebugPosGroup_007d72e0 @ 0x007d_72e0 => extern "C" fn ms_debug_pos_group() -> u32 {
+        mb::ms_debug_pos_group(&mut mem())
+    }
+    /// `MsDebugPosNextKind_007d92d0(step)`.
+    MsDebugPosNextKind_007d92d0 @ 0x007d_92d0 => extern "C" fn ms_debug_pos_next_kind(step: u32) {
+        mb::ms_debug_pos_next_kind(&mut mem(), step);
+    }
+    /// `MsDebugPosWindows_007d7a40(all, group, kind, start, r, g, b, mark)`:
+    /// the next slot.
+    MsDebugPosWindows_007d7a40 @ 0x007d_7a40 => extern "C" fn ms_debug_pos_windows(all: u32, group: u32, kind: u32, start: u32, r: u32, g: u32, b: u32, mark: u32) -> u32 {
+        mb::ms_debug_pos_windows(&mut mem(), &mut call, [all, group, kind, start, r, g, b, mark])
+    }
+    /// `MsMonSave(name, monster, n)`: the writer and text in a frame
+    /// (5 words, then 0x100 bytes).
+    MsMonSave @ 0x007d_d480 => extern "C" fn ms_mon_save(name: u32, monster: u32, n: u32) -> u32 {
+        let mut f = StackFrame::<0x45>::new();
+        mb::ms_mon_save(&mut mem(), &mut call, f.at(), [name, monster, n])
+    }
+    /// `MsDebugPrintRules_007d10c0(y)`: a 0x100-byte frame buffer.
+    MsDebugPrintRules_007d10c0 @ 0x007d_10c0 => extern "C" fn ms_debug_print_rules(y: u32) -> u32 {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_debug_print_rules(&mut mem(), &mut call, f.at(), y)
+    }
 }
