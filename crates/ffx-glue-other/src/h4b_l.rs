@@ -228,11 +228,23 @@ fn scroll_bar(h: &mut impl Host, w: u32, lines: u16) {
 /// count at most) for `cols × rows` entries, within the count.
 fn visible(h: &impl Host, w: u32, count: i32) -> (i32, i32) {
     let first = half(h, w, 0x40);
-    let start = if first > count { count } else { first.max(0) };
+    let start = if first > count {
+        count
+    } else if first < 0 {
+        0
+    } else {
+        first
+    };
     let end = half(h, w, 0x38)
         .wrapping_mul(half(h, w, 0x3a))
         .wrapping_add(start);
-    let end = if end > count { count } else { end.max(0) };
+    let end = if end > count {
+        count
+    } else if end < 0 {
+        0
+    } else {
+        end
+    };
     (start, end)
 }
 

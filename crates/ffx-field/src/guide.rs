@@ -721,7 +721,13 @@ pub mod bridge {
                 #[allow(clippy::cast_possible_wrap)]
                 let v = v as i32;
                 #[allow(clippy::cast_sign_loss)]
-                if v < 0 { 0 } else { v.min(0x3f) as u32 }
+                if v < 0 {
+                    0
+                } else if v > 0x3f {
+                    0x3f
+                } else {
+                    v as u32
+                }
             };
             #[allow(clippy::cast_sign_loss)]
             let cx = clamp(ix.wrapping_add(i32::from(dx) as u32));

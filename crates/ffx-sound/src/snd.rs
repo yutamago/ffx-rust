@@ -748,10 +748,15 @@ pub mod bridge {
             } else {
                 FOOT_MASK.get(h)
             };
+            // an explicit chain, not `.min()` in the else arm: rustc 1.99's
+            // LLVM drops the bound of that shape (docs/porting.md, "Compiler bug")
+            let most = foot::max_variation(kind).cast_signed();
             let var = if variation < 0 {
                 0
+            } else if variation > most {
+                most
             } else {
-                variation.min(foot::max_variation(kind).cast_signed())
+                variation
             };
             let kind = if FOOT_KICK_STAY.get(h) == 0 {
                 kind

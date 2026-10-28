@@ -268,3 +268,27 @@ skipped.
   the oracle and later in the 64-bit host.
 - No Fahrenheit or PhyreEngine SDK code; no game data in the repo.
 - No replacement without its oracle test.
+
+## Compiler bug
+
+rustc 1.99.0 (LLVM 23.1.1) miscompiles this shape whenever optimization is
+on (`-O1` and up, so every release build, the hook and the oracle tests
+included):
+
+```rust
+if v > 0x80 { 0x80 } else { v.max(0) }   // 129 comes out as 129
+```
+
+The range LLVM infers for `v` inside the else arm (at most 0x80) stays on
+the operand of the `smax` it becomes, and once that `smax` is hoisted out
+of the branch the bound check is folded away. The mirrored form
+(`if v < k { k } else { v.min(h) }`) and `i64`/`u32` versions fail the
+same way; whether a given site fails depends on what the optimizer can see
+of its callers. rustc 1.100.0-beta.7 compiles all of them correctly. Found
+by the pc-ui parity test of `Gui_WindowSetGlobalTrans` (2026-10-28).
+
+Until the toolchain moves past 1.99:
+- write the explicit chain, `if v > hi { hi } else if v < lo { lo } else { v }`;
+- use `.clamp(lo, hi)` only with constant bounds (`clamp` panics when
+  `lo > hi`, and a panic in a hook ends the game);
+- `tools/check-ported.py` rejects the shape anywhere in `crates/`.

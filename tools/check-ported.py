@@ -203,6 +203,20 @@ for f in sorted(hook_side):
         print(line)
         bad += 1
 
+# rustc 1.99 (LLVM 23.1.1) miscompiles `if a > k { k } else { a.max(l) }`
+# (and the mirrored `<`/`.min`) with optimization on: the range LLVM infers
+# for the else arm's operand leaks out of the branch and the bound is
+# dropped (2026-10-28; fixed in 1.100 beta). Write the explicit chain
+# `if a > k { k } else if a < l { l } else { a }` instead (docs/porting.md,
+# "Compiler bug").
+CLAMP_BUG = re.compile(r"if\s+(\w+)\s*([<>]=?)\s*([\w:.\-]+)\s*\{\s*\3\s*\}\s*else\s*\{\s*\1\s*\.\s*(?:max|min)\s*\(", re.S)
+for f in sorted(progress.REPO.glob("crates/*/src/**/*.rs")):
+    text = f.read_text(encoding="utf-8")
+    for m in CLAMP_BUG.finditer(text):
+        n = text[: m.start()].count("\n") + 1
+        print(f"{f.relative_to(progress.REPO)}:{n}: clamp shape rustc 1.99 miscompiles (write the explicit else-if chain)")
+        bad += 1
+
 # Argument counts at the bridges' calls into original code (tools/callarity.py).
 if exe:
     import callarity  # noqa: E402
