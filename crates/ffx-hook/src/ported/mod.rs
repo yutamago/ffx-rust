@@ -36,6 +36,7 @@ mod kernel;
 mod m4_rest;
 mod m5_battle;
 mod m5_menu;
+mod m5_pc_ui;
 mod m5_render;
 mod m5_script;
 mod m5_system_a;
@@ -91,6 +92,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(kernel::hooks());
     all.extend(m4_rest::hooks());
     all.extend(m5_battle::hooks());
+    all.extend(m5_pc_ui::hooks());
     all.extend(m5_menu::hooks());
     all.extend(m5_render::hooks());
     all.extend(m5_script::hooks());

@@ -23,6 +23,8 @@
 //! - [`touch`]: the pointer (mouse and touch) zones of the PC screens;
 //! - [`video`]: the movie player's Vorbis audio to 16-bit samples;
 //! - [`worldmap`]: the menu's world map window.
+//! - [`m5u_a`]: M5 stage 1 batches (the controller queues, the menu
+//!   texture unloads, the Iggy manager teardown, debug GUI parsers).
 
 pub mod abmap;
 pub mod camera;
@@ -32,6 +34,13 @@ pub mod iggy;
 pub mod input;
 pub mod item;
 pub mod link;
+pub mod m5u_a;
+pub mod m5u_b;
+pub mod m5u_c;
+pub mod m5u_d;
+pub mod m5u_e;
+pub mod m5u_f;
+pub mod m5u_g;
 pub mod mapname;
 pub mod menus;
 pub mod panel;
