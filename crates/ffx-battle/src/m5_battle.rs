@@ -11,6 +11,7 @@
 //! CRT imports through their import table slots.
 
 /// The game's memory, through [`ffx_bridge::Mem`].
+#[allow(clippy::many_single_char_names)] // indices, bytes and the original's registers
 pub mod bridge {
     use ffx_bridge::Mem;
 
@@ -926,6 +927,997 @@ pub mod bridge {
             if mem.read::<u32>(table.wrapping_add(12 * i)) == 0 {
                 return 0;
             }
+        }
+    }
+
+    // ---- batch 2: the debug files, the position script reader ----
+
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const USER_FREE_THUNK: u32 = 0x0068_7010;
+    pub const DEBUG_EXIT_TRACE: u32 = 0x0062_f510;
+    pub const OP_FILE_PUTS: u32 = 0x007c_f860;
+    pub const MS_GET_BATTLE_NAME: u32 = 0x007c_5fc0;
+    pub const SG_GET_USER_NAME: u32 = 0x0082_0610;
+    pub const MS_BTL_POS_INIT: u32 = 0x007c_93d0;
+    pub const MS_FREE: u32 = 0x007c_f8f0;
+    pub const MS_MALLOC: u32 = 0x007c_f970;
+    pub const MS_STRUCT_CLEAR: u32 = 0x0079_f230;
+    pub const MS_STR_COPY: u32 = 0x007c_f6c0;
+    pub const MS_CAMERA_GET_NUM: u32 = 0x007b_d340;
+    pub const READ_SKIP_SPACE: u32 = 0x007c_f540;
+    pub const READ_TOKEN: u32 = 0x007c_f180;
+    pub const PATH_BASE_NAME: u32 = 0x007c_efb0;
+    pub const DEBUG_WIN_ALLOC: u32 = 0x007c_8bb0;
+    /// `sscanf`'s and `malloc`'s import table slots.
+    pub const SSCANF_SLOT: u32 = 0x00b0_c448;
+    pub const MALLOC_SLOT: u32 = 0x00b0_c468;
+    /// The debug memory trace: on when set, its file.
+    pub const MEM_TRACE: u32 = 0x0113_e490;
+    pub const MEM_TRACE_FILE: u32 = 0x0231_14e0;
+    /// The memory trace's messages (`.rdata`).
+    pub const MSG_MALLOC_FAILED: u32 = 0x00b5_5c4c;
+    pub const FMT_MALLOC: u32 = 0x00b5_5c6c;
+    pub const MSG_FREE_NULL: u32 = 0x00b5_5c7c;
+    pub const FMT_FREE: u32 = 0x00b5_5ca4;
+    /// The debug files' messages and the position file names (`.rdata`).
+    pub const MSG_FILE_ERROR: u32 = 0x00b5_54f8;
+    pub const MSG_FILE_READ: u32 = 0x00b5_550c;
+    pub const MSG_FILE_WRITE: u32 = 0x00b5_54e4;
+    pub const FMT_POS_NAME: u32 = 0x00b5_551c;
+    pub const FMT_POS_NAME_USER: u32 = 0x00b5_5544;
+    /// The position script parser's state: the file being read
+    /// (`0x0113e27c`, a record of 0x74 bytes), the position table
+    /// (`0x0113e278`), its sub-record cursor, the line and file name of
+    /// errors, the error code, the version.
+    pub const POS_TABLE: u32 = 0x0113_e278;
+    pub const POS_RECORD: u32 = 0x0113_e27c;
+    pub const POS_SUB: u32 = 0x0113_e284;
+    pub const POS_LINE: u32 = 0x0113_e288;
+    pub const POS_FILE_NAME: u32 = 0x0113_e28c;
+    pub const OP_LAST_ERROR: u32 = 0x0113_e238;
+    pub const POS_VERSION: u32 = 0x0113_e270;
+    pub const POS_VERSION_SUB: u32 = 0x0113_e274;
+    /// The parser's messages: the file name, the line, the version and
+    /// missing value errors; the int and float formats.
+    pub const MSG_POS_FILE: u32 = 0x00b5_5904;
+    pub const MSG_POS_LINE: u32 = 0x00b5_590c;
+    pub const MSG_POS_VERSION: u32 = 0x00b5_59f4;
+    pub const MSG_POS_VALUE: u32 = 0x00b5_59bc;
+    pub const FMT_FLOAT: u32 = 0x00b4_0274;
+    pub const FMT_INT: u32 = 0x00b0_f604;
+    /// The debug windows: 0x80 records of 0x34 bytes from `0x0113c800`
+    /// (in use when the byte at `+0x20` is set), and the four the info
+    /// screen keeps (`0x0113e494`) with their colour flag.
+    pub const DEBUG_WINS: u32 = 0x0113_c800;
+    pub const DEBUG_WINS_END: u32 = 0x0113_e220;
+    pub const INFO_WINS: u32 = 0x0113_e494;
+    pub const INFO_WIN_FLAGS: u32 = 0x0113_e4cc;
+    /// `g_DebugCamera`, `g_Cameras`.
+    pub const DEBUG_CAMERA: u32 = 0x0113_70c1;
+    pub const CAMERAS: u32 = 0x0113_7540;
+
+    /// `MsCheckFile(name)` (`0x007c8a80`): the file's size rounded up to
+    /// 4 (`sceOpen`, `sceLseek` to the end and back, `sceClose`); -1 when
+    /// it doesn't open.
+    pub fn ms_check_file<M: Mem>(mem: &mut M, call: Call<'_, M>, name: u32) -> u32 {
+        let fd = game(mem, &mut *call, SCE_OPEN, &[name, 1]);
+        if fd == u32::MAX {
+            return u32::MAX;
+        }
+        let size = game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 2]).cast_signed();
+        game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 0]);
+        let x = size.wrapping_add(3);
+        let rounded = x.wrapping_add((x >> 31) & 3) & !3;
+        game(mem, call, SCE_CLOSE, &[fd]);
+        rounded.cast_unsigned()
+    }
+
+    /// `MsFileIn(name, buf, n)` (`0x007c8b00`) and `MsFileOut(name, buf,
+    /// n)` (`0x007c8b50`, `out`): the file read into or written from
+    /// `buf`, with a debug line; a debug line when it doesn't open.
+    pub fn ms_file_io<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        out: bool,
+        name: u32,
+        buf: u32,
+        n: u32,
+    ) {
+        let mode = if out { 0x602 } else { 1 };
+        let fd = game(mem, &mut *call, SCE_OPEN, &[name, mode]);
+        if fd.cast_signed() < 0 {
+            let msg = mem.rebase(MSG_FILE_ERROR);
+            game(mem, &mut *call, DBG_PRINTF, &[msg, name]);
+            return;
+        }
+        let msg = mem.rebase(if out { MSG_FILE_WRITE } else { MSG_FILE_READ });
+        game(mem, &mut *call, DBG_PRINTF, &[msg, name]);
+        let f = if out { SCE_WRITE } else { SCE_READ };
+        game(mem, &mut *call, f, &[fd, buf, n]);
+        game(mem, call, SCE_CLOSE, &[fd]);
+    }
+
+    /// `0x007c8bb0(slot)` (`MsDebugWinAlloc`, name ours): `*slot` when
+    /// set; else the first free debug window record (marked in use:
+    /// `+0x20` = 0x101, `+0x22` = 6), or the end of the table when none is
+    /// free, stored into `*slot` (when `slot` isn't null) and returned.
+    pub fn ms_debug_win_alloc(mem: &mut impl Mem, slot: u32) -> u32 {
+        if slot != 0 {
+            let p: u32 = mem.read(slot);
+            if p != 0 {
+                return p;
+            }
+        }
+        let base = mem.rebase(DEBUG_WINS);
+        let end = mem.rebase(DEBUG_WINS_END);
+        let mut k = 0u32;
+        let mut at = base + 0x20;
+        let mut found = false;
+        while at < end {
+            if mem.read::<u8>(at) == 0 {
+                found = true;
+                break;
+            }
+            at += 0x34;
+            k += 1;
+        }
+        if found {
+            mem.write(base + 0x20 + k * 0x34, 0x101u16);
+            mem.write(base + 0x22 + k * 0x34, 6u8);
+        }
+        let rec = base + k * 0x34;
+        if slot != 0 {
+            mem.write(slot, rec);
+        }
+        rec
+    }
+
+    /// `0x007cf970(size)` (`ms_malloc`, name ours): `user_malloc(size)`;
+    /// a debug line and `debug_exit_trace(1)` when it fails; with the
+    /// memory trace on, a line for the block into its file (printed in the
+    /// frame buffer `buf`, 0x100 bytes at the original's `ebp - 0x104`).
+    /// Returns the block.
+    pub fn ms_malloc<M: Mem>(mem: &mut M, call: Call<'_, M>, buf: u32, size: u32) -> u32 {
+        let p = game(mem, &mut *call, USER_MALLOC, &[size]);
+        if p == 0 {
+            let msg = mem.rebase(MSG_MALLOC_FAILED);
+            game(mem, &mut *call, DBG_PRINTF, &[msg]);
+            game(mem, &mut *call, DEBUG_EXIT_TRACE, &[1]);
+        }
+        trace_line(mem, call, buf, FMT_MALLOC, p);
+        p
+    }
+
+    /// The memory trace's line for `p` (format `fmt`), when the trace is
+    /// on.
+    fn trace_line<M: Mem>(mem: &mut M, call: Call<'_, M>, buf: u32, fmt: u32, p: u32) {
+        if r32(mem, MEM_TRACE) == 0 {
+            return;
+        }
+        let fmt = mem.rebase(fmt);
+        import(mem, &mut *call, SPRINTF_SLOT, &[buf, fmt, p]);
+        let file = mem.rebase(MEM_TRACE_FILE);
+        game(mem, call, OP_FILE_PUTS, &[file, buf]);
+    }
+
+    /// `ms_free(p)` (`0x007cf8f0`): a debug line for null; else the trace
+    /// line and `user_free(p)`. `buf` as in [`ms_malloc`].
+    pub fn ms_free<M: Mem>(mem: &mut M, call: Call<'_, M>, buf: u32, p: u32) {
+        if p == 0 {
+            let msg = mem.rebase(MSG_FREE_NULL);
+            game(mem, &mut *call, DBG_PRINTF, &[msg]);
+            return;
+        }
+        trace_line(mem, &mut *call, buf, FMT_FREE, p);
+        game(mem, call, USER_FREE_THUNK, &[p]);
+    }
+
+    /// `MsDebugBattlePosInit(out, a, b)` (`0x007c90f0`): the position
+    /// file's name: the battle name (`MsGetBattleName(0, name)`, `name`
+    /// the frame buffer, 0x100 bytes at the original's `ebp - 0x104`)
+    /// printed into `out` with the country and `a`, `b`; in a debug build
+    /// with a user name, that name first.
+    pub fn ms_debug_battle_pos_init<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        name: u32,
+        args: [u32; 3],
+    ) {
+        let [out, a, b] = args;
+        game(mem, &mut *call, MS_GET_BATTLE_NAME, &[0, name]);
+        let country = mem.rebase(COUNTRY_NAME);
+        if game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 {
+            let user = game(mem, &mut *call, SG_GET_USER_NAME, &[]);
+            if user != 0 {
+                let fmt = mem.rebase(FMT_POS_NAME_USER);
+                import(
+                    mem,
+                    call,
+                    SPRINTF_SLOT,
+                    &[out, fmt, user, country, name, a, name, b],
+                );
+                return;
+            }
+        }
+        let fmt = mem.rebase(FMT_POS_NAME);
+        import(
+            mem,
+            call,
+            SPRINTF_SLOT,
+            &[out, fmt, country, name, a, name, b],
+        );
+    }
+
+    /// `0x007c9210()` (`MsBtlPosFree`, name ours): every block the
+    /// position table holds freed with `ms_free` (per file record of 0x74
+    /// bytes: `+0x28`, `+0x2c`, `+0x4c`, `+0x50`, `+0x60`, `+0x64`, the
+    /// `+0x68` sub-records' `+0x10` blocks and the sub-record array
+    /// `+0x70`; then the table's `+0x2c` and record array `+0x30`), the
+    /// cursors kept in `POS_RECORD`/`POS_SUB` as the original does; then
+    /// `MsBtlPosInit()`.
+    pub fn ms_btl_pos_free<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let table = r32(mem, POS_TABLE);
+        if table != 0 && mem.read::<u32>(table.wrapping_add(0x30)) != 0 {
+            let mut i = 0i32;
+            while i < mem.read::<i32>(r32(mem, POS_TABLE).wrapping_add(0x1c)) {
+                let recs: u32 = mem.read(r32(mem, POS_TABLE).wrapping_add(0x30));
+                let mut e = recs.wrapping_add(i.cast_unsigned().wrapping_mul(0x74));
+                w32(mem, POS_RECORD, e);
+                for off in [0x28, 0x2c, 0x4c, 0x50, 0x60, 0x64] {
+                    let p: u32 = mem.read(e.wrapping_add(off));
+                    if p != 0 {
+                        game(mem, &mut *call, MS_FREE, &[p]);
+                        e = r32(mem, POS_RECORD);
+                    }
+                }
+                if mem.read::<u32>(e.wrapping_add(0x70)) != 0 {
+                    let mut k = 0i32;
+                    while k < mem.read::<i32>(e.wrapping_add(0x68)) {
+                        let sub = mem
+                            .read::<u32>(e.wrapping_add(0x70))
+                            .wrapping_add(k.cast_unsigned().wrapping_mul(0x14));
+                        w32(mem, POS_SUB, sub);
+                        let p: u32 = mem.read(sub.wrapping_add(0x10));
+                        if p != 0 {
+                            game(mem, &mut *call, MS_FREE, &[p]);
+                            e = r32(mem, POS_RECORD);
+                        }
+                        k += 1;
+                    }
+                    let subs: u32 = mem.read(e.wrapping_add(0x70));
+                    game(mem, &mut *call, MS_FREE, &[subs]);
+                }
+                i += 1;
+            }
+            let p: u32 = mem.read(r32(mem, POS_TABLE).wrapping_add(0x2c));
+            if p != 0 {
+                game(mem, &mut *call, MS_FREE, &[p]);
+            }
+            let recs: u32 = mem.read(r32(mem, POS_TABLE).wrapping_add(0x30));
+            game(mem, &mut *call, MS_FREE, &[recs]);
+        }
+        game(mem, call, MS_BTL_POS_INIT, &[]);
+    }
+
+    /// The parser's error lines: the file name and line when set, then
+    /// `msg` with `arg`; the error code `code`.
+    fn pos_error<M: Mem>(mem: &mut M, call: Call<'_, M>, msg: u32, arg: u32, code: u32) {
+        let file = r32(mem, POS_FILE_NAME);
+        if file != 0 {
+            let m = mem.rebase(MSG_POS_FILE);
+            game(mem, &mut *call, DBG_PRINTF, &[m, file]);
+        }
+        let line = r32(mem, POS_LINE);
+        if line != 0 {
+            let m = mem.rebase(MSG_POS_LINE);
+            game(mem, &mut *call, DBG_PRINTF, &[m, line]);
+        }
+        let m = mem.rebase(msg);
+        game(mem, call, DBG_PRINTF, &[m, arg]);
+        w32(mem, OP_LAST_ERROR, code);
+    }
+
+    /// `0x007cc1f0(name, version)` (`MsBtlPosCheckVersion`, name ours):
+    /// 1 when the file's version is at least `version` (signed); else the
+    /// error lines, error 7, 0.
+    pub fn ms_btl_pos_check_version<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        name: u32,
+        version: u32,
+    ) -> u32 {
+        if r32(mem, POS_VERSION).cast_signed() >= version.cast_signed() {
+            return 1;
+        }
+        pos_error(mem, call, MSG_POS_VERSION, name, 7);
+        0
+    }
+
+    /// `0x007cc250(name, version, sub)` (`MsBtlPosCheckVersion2`, name
+    /// ours): 1 when the version is at least `version` and the
+    /// sub-version is `sub`; else as [`ms_btl_pos_check_version`].
+    pub fn ms_btl_pos_check_version2<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        name: u32,
+        version: u32,
+        sub: u32,
+    ) -> u32 {
+        if r32(mem, POS_VERSION).cast_signed() >= version.cast_signed()
+            && r32(mem, POS_VERSION_SUB) == sub
+        {
+            return 1;
+        }
+        pos_error(mem, call, MSG_POS_VERSION, name, 7);
+        0
+    }
+
+    /// `0x007cf540(reader)` (`MsReadSkipSpace`, name ours): a text
+    /// reader (`+0` buffer, `+0xc` position, `+0x10` length) past tabs
+    /// and spaces; the position ends on the first other byte (past the
+    /// end: one further, then back one). Returns how many it skipped.
+    pub fn ms_read_skip_space(mem: &mut impl Mem, reader: u32) -> u32 {
+        let pos_at = reader.wrapping_add(0xc);
+        let len: i32 = mem.read(reader.wrapping_add(0x10));
+        let mut n = 0u32;
+        let pos = loop {
+            let pos: i32 = mem.read(pos_at);
+            if pos >= len {
+                mem.write(pos_at, pos.wrapping_add(1));
+                break mem.read::<i32>(pos_at);
+            }
+            let buf: u32 = mem.read(reader);
+            let c: u8 = mem.read(buf.wrapping_add(pos.cast_unsigned()));
+            let pos = pos.wrapping_add(1);
+            mem.write(pos_at, pos);
+            if c == 9 || c == 0x20 {
+                n += 1;
+                continue;
+            }
+            break pos;
+        };
+        if pos > 0 {
+            mem.write(pos_at, pos - 1);
+        }
+        n
+    }
+
+    /// The next byte of a text reader, the position advanced (stored);
+    /// `Err(pos)` past the end (the position then one further, stored and
+    /// read back).
+    fn reader_next(mem: &mut impl Mem, reader: u32) -> Result<u8, i32> {
+        let pos_at = reader.wrapping_add(0xc);
+        let pos: i32 = mem.read(pos_at);
+        if pos >= mem.read::<i32>(reader.wrapping_add(0x10)) {
+            mem.write(pos_at, pos.wrapping_add(1));
+            return Err(mem.read(pos_at));
+        }
+        let buf: u32 = mem.read(reader);
+        let c: u8 = mem.read(buf.wrapping_add(pos.cast_unsigned()));
+        mem.write(pos_at, pos.wrapping_add(1));
+        Ok(c)
+    }
+
+    /// `0x007cf180(reader, out, size)` (`MsReadToken`, name ours): after
+    /// the reader's spaces (`0x007cf540`), a token into `out` (at most
+    /// `size - 1` bytes and a NUL): up to a space or tab outside double
+    /// quotes, a line end, a NUL or 0xff, the quotes and single quotes
+    /// left out, Shift-JIS pairs kept whole. The reader stops on the byte
+    /// that ended it. The original keeps the quote flag in its `reader`
+    /// argument slot (`slots`). Returns the token's length.
+    pub fn ms_read_token<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        slots: u32,
+        reader: u32,
+        out: u32,
+        size: u32,
+    ) -> u32 {
+        game(mem, &mut *call, READ_SKIP_SPACE, &[reader]);
+        let max = size.wrapping_sub(1).cast_signed();
+        let mut at = out;
+        let mut n = 0i32;
+        mem.write(slots, 0u32);
+        let pos_at = reader.wrapping_add(0xc);
+        let pos = loop {
+            let c = match reader_next(mem, reader) {
+                Ok(c) => c,
+                Err(pos) => break pos,
+            };
+            if c == 0xff || c == 0 {
+                break mem.read::<i32>(pos_at);
+            }
+            if c >= 0x80 {
+                if n < max {
+                    mem.write(at, c);
+                    at = at.wrapping_add(1);
+                    n += 1;
+                }
+                let c2 = match reader_next(mem, reader) {
+                    Ok(c) => c,
+                    Err(pos) => break pos,
+                };
+                if c2 == 0xff || c2 == 0 {
+                    break mem.read::<i32>(pos_at);
+                }
+                if n < max {
+                    mem.write(at, c2);
+                    at = at.wrapping_add(1);
+                    n += 1;
+                }
+                continue;
+            }
+            if c == b'"' {
+                let q: u32 = mem.read(slots);
+                mem.write(slots, 1u32.wrapping_sub(q));
+            } else if ((c == b' ' || c == b'\t') && mem.read::<u32>(slots) == 0)
+                || c == b'\r'
+                || c == b'\n'
+            {
+                break mem.read::<i32>(pos_at);
+            }
+            if n >= max || c == b'"' || c == b'\'' {
+                continue;
+            }
+            mem.write(at, c);
+            at = at.wrapping_add(1);
+            n += 1;
+        };
+        if pos > 0 {
+            mem.write(pos_at, pos - 1);
+        }
+        mem.write(at, 0u8);
+        n.cast_unsigned()
+    }
+
+    /// `0x007cd360(reader, name, out)` (`MsReadFloat`, name ours, `float`:
+    /// `"%f"`) and `0x007cd420` (`MsReadInt`, `"%d"`): the next token
+    /// (into the frame buffer `tok`, 0x100 bytes at the original's
+    /// `ebp - 0x104`) scanned into `out` with `sscanf`; an empty
+    /// token gives the error lines and error 5.
+    pub fn ms_read_value<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        tok: u32,
+        float: bool,
+        args: [u32; 3],
+    ) {
+        let [reader, name, out] = args;
+        game(mem, &mut *call, READ_TOKEN, &[reader, tok, 0x100]);
+        if mem.read::<u8>(tok) == 0 {
+            pos_error(mem, call, MSG_POS_VALUE, name, 5);
+            return;
+        }
+        let fmt = mem.rebase(if float { FMT_FLOAT } else { FMT_INT });
+        import(mem, call, SSCANF_SLOT, &[tok, fmt, out]);
+    }
+
+    /// `0x007cd4e0()` (`MsBtlPosAllocPoints`, name ours): the current
+    /// file record's two point arrays (`+0x60`, `+0x64`: `+0x54` entries
+    /// of 12 bytes) allocated with `ms_malloc` and cleared, its counts
+    /// `+0x58`, `+0x5c` zeroed.
+    pub fn ms_btl_pos_alloc_points<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let rec = r32(mem, POS_RECORD);
+        mem.write(rec.wrapping_add(0x58), 0u32);
+        mem.write(rec.wrapping_add(0x5c), 0u32);
+        for off in [0x60u32, 0x64] {
+            let rec = r32(mem, POS_RECORD);
+            let n = mem.read::<u32>(rec.wrapping_add(0x54)).wrapping_mul(12);
+            let p = game(mem, &mut *call, MS_MALLOC, &[n]);
+            let rec = r32(mem, POS_RECORD);
+            mem.write(rec.wrapping_add(off), p);
+            let n = mem.read::<u32>(rec.wrapping_add(0x54)).wrapping_mul(12);
+            game(mem, &mut *call, MS_STRUCT_CLEAR, &[p, n]);
+        }
+    }
+
+    /// A byte lower-cased (`A`..`Z` only).
+    fn lower(c: u8) -> u8 {
+        if c.wrapping_sub(0x41) <= 0x19 {
+            c.wrapping_add(0x20)
+        } else {
+            c
+        }
+    }
+
+    /// `0x007ceeb0(name, table)` (`MsKeywordLookup`, name ours): the
+    /// value (`+4`) of the 12-byte entry (`+0` name, `+8` hash; the table
+    /// ends at a null name) whose hash and name match `name` without
+    /// regard to case; 0 when none. The hash: the sum of each lower-cased
+    /// (sign-extended) byte xor `0x6f * index`.
+    pub fn ms_keyword_lookup(mem: &impl Mem, name: u32, table: u32) -> u32 {
+        let mut hash = 0u32;
+        let mut k = 0u32;
+        let mut p = name;
+        loop {
+            let c: u8 = mem.read(p);
+            if c == 0 {
+                break;
+            }
+            let v = i32::from(lower(c).cast_signed()).cast_unsigned();
+            hash = hash.wrapping_add(v ^ k);
+            k = k.wrapping_add(0x6f);
+            p = p.wrapping_add(1);
+        }
+        let mut i = 0u32;
+        loop {
+            let e = table.wrapping_add(12u32.wrapping_mul(i));
+            let key: u32 = mem.read(e);
+            if key == 0 {
+                return 0;
+            }
+            if hash == mem.read::<u32>(e.wrapping_add(8)) {
+                let (mut a, mut b) = (name, key);
+                loop {
+                    let x = lower(mem.read(a));
+                    let y = lower(mem.read(b));
+                    if x != y {
+                        break;
+                    }
+                    if x == 0 {
+                        return mem.read(e.wrapping_add(4));
+                    }
+                    a = a.wrapping_add(1);
+                    b = b.wrapping_add(1);
+                }
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `0x007cf380(reader, line)` (`MsReadSkipLine`, name ours): the
+    /// reader past the rest of the line (Shift-JIS pairs whole) and its
+    /// `\n`; `*line` counted up when `line` isn't null. Returns the bytes
+    /// skipped, or -1 at the end of the text (a NUL, 0xff or the end; the
+    /// reader then back on it).
+    pub fn ms_read_skip_line(mem: &mut impl Mem, reader: u32, line: u32) -> u32 {
+        let pos_at = reader.wrapping_add(0xc);
+        let len: i32 = mem.read(reader.wrapping_add(0x10));
+        let mut n = 0u32;
+        let end = loop {
+            let pos: i32 = mem.read(pos_at);
+            if pos >= len {
+                mem.write(pos_at, pos.wrapping_add(1));
+                break true;
+            }
+            let buf: u32 = mem.read(reader);
+            let c: u8 = mem.read(buf.wrapping_add(pos.cast_unsigned()));
+            let pos = pos.wrapping_add(1);
+            mem.write(pos_at, pos);
+            if c == 0xff || c == 0 {
+                break true;
+            }
+            if c < 0x80 {
+                if c == b'\n' {
+                    break false;
+                }
+                n = n.wrapping_add(1);
+                continue;
+            }
+            n = n.wrapping_add(1);
+            if pos >= len {
+                mem.write(pos_at, pos.wrapping_add(1));
+                break true;
+            }
+            let c2: u8 = mem.read(buf.wrapping_add(pos.cast_unsigned()));
+            mem.write(pos_at, pos.wrapping_add(1));
+            if c2 == 0xff || c2 == 0 {
+                break true;
+            }
+            n = n.wrapping_add(1);
+        };
+        if end {
+            n = u32::MAX;
+            let pos: i32 = mem.read(pos_at);
+            if pos > 0 {
+                mem.write(pos_at, pos - 1);
+            }
+        }
+        if line != 0 {
+            let v: u32 = mem.read(line);
+            mem.write(line, v.wrapping_add(1));
+        }
+        n
+    }
+
+    /// `0x007cd5a0(reader, name)` (`MsReadOpen`, name ours): the file
+    /// `name` read whole into a `malloc` buffer of its size rounded up to
+    /// 16 (cleared first): the reader's `+0` buffer, `+4` 0, `+8` the
+    /// file (negative when it doesn't open; 0 after the read), `+0xc`
+    /// position 0, `+0x10` length.
+    pub fn ms_read_open<M: Mem>(mem: &mut M, call: Call<'_, M>, reader: u32, name: u32) {
+        let fd = game(mem, &mut *call, SCE_OPEN, &[name, 1]);
+        mem.write(reader.wrapping_add(8), fd);
+        if fd.cast_signed() < 0 {
+            return;
+        }
+        mem.write(reader.wrapping_add(4), 0u32);
+        let size = game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 2]).cast_signed();
+        let fd: u32 = mem.read(reader.wrapping_add(8));
+        game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 0]);
+        let x = size.wrapping_add(0xf);
+        let len = x.wrapping_add((x >> 31) & 0xf) & !0xf;
+        mem.write(reader.wrapping_add(0x10), len);
+        mem.write(reader.wrapping_add(0xc), 0u32);
+        let buf = import(mem, &mut *call, MALLOC_SLOT, &[len.cast_unsigned()]);
+        mem.write(reader, buf);
+        let mut i = 0i32;
+        while i < mem.read::<i32>(reader.wrapping_add(0x10)) {
+            let b: u32 = mem.read(reader);
+            mem.write(b.wrapping_add(i.cast_unsigned()), 0u8);
+            i += 1;
+        }
+        let len: u32 = mem.read(reader.wrapping_add(0x10));
+        let buf: u32 = mem.read(reader);
+        let fd: u32 = mem.read(reader.wrapping_add(8));
+        game(mem, &mut *call, SCE_READ, &[fd, buf, len]);
+        let fd: u32 = mem.read(reader.wrapping_add(8));
+        game(mem, call, SCE_CLOSE, &[fd]);
+        mem.write(reader.wrapping_add(8), 0u32);
+    }
+
+    /// `0x007cefb0(path, ext)` (`MsPathBaseName`, name ours): the file
+    /// name after the last `\` or `/` (Shift-JIS pairs whole), and in
+    /// `*ext` (when `ext` isn't null) the index of its `.` (or of its
+    /// end).
+    pub fn ms_path_base_name(mem: &mut impl Mem, path: u32, ext: u32) -> u32 {
+        let mut p = path;
+        let mut base = path;
+        loop {
+            let mut c: u8 = mem.read(p);
+            p = p.wrapping_add(1);
+            if c >= 0x80 {
+                c = mem.read(p);
+                p = p.wrapping_add(1);
+            } else if c == b'\\' || c == b'/' {
+                base = p;
+            }
+            if c == 0 {
+                break;
+            }
+        }
+        let mut i = 0u32;
+        loop {
+            let mut c: u8 = mem.read(base.wrapping_add(i));
+            if c >= 0x80 {
+                c = mem.read(base.wrapping_add(i).wrapping_add(1));
+                i = i.wrapping_add(1);
+            } else if c == b'.' {
+                break;
+            }
+            if c == 0 {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+        if ext != 0 {
+            mem.write(ext, i);
+        }
+        base
+    }
+
+    /// `0x007cf330(a, b)` (`MsStrEqualNoCase`, name ours): 1 when the
+    /// strings are equal without regard to case (`A`..`Z`), else 0.
+    pub fn ms_str_equal_no_case(mem: &impl Mem, a: u32, b: u32) -> u32 {
+        let (mut a, mut b) = (a, b);
+        loop {
+            let x = lower(mem.read(a));
+            let y = lower(mem.read(b));
+            a = a.wrapping_add(1);
+            b = b.wrapping_add(1);
+            if x != y {
+                return 0;
+            }
+            if x == 0 {
+                return 1;
+            }
+        }
+    }
+
+    /// Bytes up to a NUL, `\r`, `\n` or 0xff.
+    fn line_len(mem: &impl Mem, p: u32) -> u32 {
+        let mut n = 0u32;
+        let mut c: u8 = mem.read(p);
+        while c != 0xff && c != 0 && c != b'\r' && c != b'\n' {
+            n = n.wrapping_add(1);
+            c = mem.read(p.wrapping_add(n));
+        }
+        n
+    }
+
+    /// `0x007cf590(path, src, n, force)` (`MsPathSetExt`, name ours): the
+    /// extension of `path`'s file name replaced by `src`
+    /// (`MsStrCopy(src, ext, n + ext_len - path_len)`, a `.` put in first
+    /// where the name has none; a `.` after a Shift-JIS lead byte doesn't
+    /// count), when it has none or `force` is 1: 1; else 0. The original
+    /// lets `0x007cefb0` store the extension's index into its own `path`
+    /// argument slot (`slots`).
+    pub fn ms_path_set_ext<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        slots: u32,
+        args: [u32; 4],
+    ) -> u32 {
+        let [path, src, n, force] = args;
+        let mut total = line_len(mem, path);
+        let base = game(mem, &mut *call, PATH_BASE_NAME, &[path, slots]);
+        let mut i: u32 = mem.read(slots);
+        if mem.read::<u8>(base.wrapping_add(i)) == b'.' {
+            i = i.wrapping_add(1);
+        }
+        let mut ext = base.wrapping_add(i);
+        let ext_len = line_len(mem, ext);
+        if force != 1 && ext_len != 0 {
+            return 0;
+        }
+        let keep = mem.read::<u8>(ext.wrapping_sub(1)) == b'.'
+            && (total.wrapping_sub(ext_len).cast_signed() <= 1
+                || mem.read::<i8>(ext.wrapping_sub(2)) >= 0);
+        if !keep {
+            mem.write(ext, b'.');
+            ext = ext.wrapping_add(1);
+            total = total.wrapping_add(1);
+        }
+        let count = ext_len.wrapping_sub(total).wrapping_add(n);
+        game(mem, call, MS_STR_COPY, &[src, ext, count]);
+        1
+    }
+
+    /// `0x007cfaa0(kind)` (`MsCameraKindChar`, name ours): the letter of
+    /// a camera kind (1 `M`, 3 `E`, 5 `B`, 7 `V`, 17 `m`, 19 `e`, 21 `b`,
+    /// 23 `v`, else `-`) in `al`, the rest of `eax` as the original leaves
+    /// it (0, or `kind - 1`'s upper bytes out of range). The letter is
+    /// found through the original's two jump tables.
+    pub fn ms_camera_kind_char(mem: &impl Mem, kind: u32) -> u32 {
+        let k = kind.wrapping_sub(1);
+        if k > 0x16 {
+            return (k & !0xff) | u32::from(b'-');
+        }
+        let idx = u32::from(mem.read::<u8>(mem.rebase(0x007c_fb04) + k));
+        let target: u32 = mem.read(mem.rebase(0x007c_fae0) + 4 * idx);
+        let first = mem.rebase(0x007c_faba);
+        let letters = *b"MEBVmebv-";
+        let at = (target.wrapping_sub(first) / 4) as usize;
+        u32::from(letters.get(at).copied().unwrap_or(b'-'))
+    }
+
+    /// `MsDebugSetCameraMode(side, mode)` (`0x007cfb60`): the debug
+    /// camera's channel (`MsCameraGetNum`) mode byte (`+0xf2`) on side
+    /// `side`.
+    pub fn ms_debug_set_camera_mode<M: Mem>(mem: &mut M, call: Call<'_, M>, side: u32, mode: u32) {
+        let cam = u32::from(r8(mem, DEBUG_CAMERA));
+        let ch = game(mem, call, MS_CAMERA_GET_NUM, &[cam]);
+        let at = mem
+            .rebase(CAMERAS + 0xf2)
+            .wrapping_add(cam.wrapping_mul(0xda0))
+            .wrapping_add(ch.wrapping_mul(0x130))
+            .wrapping_add(side.wrapping_mul(0x61c));
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        mem.write(at, mode as u8);
+    }
+
+    /// `0x007cfba0(i, mark, pos)` (`MsInfoWinSet`, name ours): info
+    /// window `i` (0..3, when set): mark `+0x21`, position `pos` (three
+    /// floats copied through the x87), `+0x22` = 2 and colours `+0x28`..
+    /// `+0x30` by `i`'s parity and the colour flag.
+    pub fn ms_info_win_set(mem: &mut impl Mem, i: u32, mark: u32, pos: u32) {
+        let slot = mem.rebase(INFO_WINS).wrapping_add(i.wrapping_mul(4));
+        let win: u32 = mem.read(slot);
+        if win == 0 || i.cast_signed() >= 4 {
+            return;
+        }
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        mem.write(win.wrapping_add(0x21), mark as u8);
+        for k in 0..3 {
+            let win: u32 = mem.read(slot);
+            let v = ffx_bridge::x87::round_trip(f32::from_bits(mem.read(pos.wrapping_add(4 * k))));
+            mem.write(win.wrapping_add(4 * k), v.to_bits());
+        }
+        let win: u32 = mem.read(slot);
+        mem.write(win.wrapping_add(0x22), 2u8);
+        let flag = r8(mem, INFO_WIN_FLAGS) & 1 != 0;
+        let colours: [u32; 3] = match (i & 1 != 0, flag) {
+            (true, true) => [0xff, 0, 0],
+            (true, false) => [0xd2, 0x20, 0],
+            (false, true) => [0, 0xff, 0],
+            (false, false) => [0, 0xd2, 0x20],
+        };
+        for (k, c) in (0u32..).zip(colours) {
+            let win: u32 = mem.read(slot);
+            mem.write(win.wrapping_add(0x28 + 4 * k), c);
+        }
+    }
+
+    pub const MS_GET_BATTLE_END_STATUS: u32 = 0x0079_28d0;
+    pub const TK_SND_REPORT_STATUS: u32 = 0x0088_7b30;
+    pub const MS_SEP_TRANS_CHECK_WAVE: u32 = 0x007a_04d0;
+    pub const GET_CD: u32 = 0x0076_d0d0;
+    pub const MS_BTL_READ_CUE_LEVEL: u32 = 0x007a_d180;
+    pub const TO_DAPS_SET_POS: u32 = 0x0089_de30;
+    pub const TO_DAPS_STRING: u32 = 0x0089_dec0;
+    pub const SND_SQS_IOP_SOUND_ERROR_STATUS: u32 = 0x0088_7360;
+    /// `0x008873b0`: a jump to `SqsIopSoundSystemStatus`.
+    pub const SQS_IOP_SOUND_SYSTEM_STATUS_JMP: u32 = 0x0088_73b0;
+    pub const MS_GET_SUMMON_ENERGY: u32 = 0x007b_2b00;
+    pub const MS_GET_YOUJINBOU_COM: u32 = 0x007b_2b20;
+    pub const MS_MENU_WEAK_ELEMENT: u32 = 0x007a_9a20;
+    pub const MS_CHECK_CHR_MOTION_ALL: u32 = 0x0079_1630;
+    pub const SND_GET_STREAM_STATE: u32 = 0x0088_64b0;
+    pub const SND_IS_READ_STATUS: u32 = 0x0088_6650;
+    pub const MS_CHECK_START_EFFECT: u32 = 0x007a_92c0;
+    /// The debug status lines' formats (`.rdata`).
+    pub const FMT_STATUS: [u32; 9] = [
+        0x00b5_4bac,
+        0x00b5_4bc8,
+        0x00b5_4bdc,
+        0x00b5_4be8,
+        0x00b5_4bfc,
+        0x00b5_4c10,
+        0x00b5_4c28,
+        0x00b5_4c34,
+        0x00b5_4c4c,
+    ];
+    pub const FMT_STATUS_COUNT: u32 = 0x00b5_4c6c;
+    /// The globals the status lines show.
+    pub const BTL_STATUS: u32 = 0x0112_a8e0;
+    pub const BTL_SCENE_NAME: u32 = 0x0112_c25a;
+    pub const BTL_END_HOLD: u32 = 0x0112_ca01;
+    pub const EFFECT_CAMERA_BUF_20: u32 = 0x0112_c24c;
+    pub const BTL_MESSAGE_LAST: u32 = 0x0112_c250;
+    pub const BTL_DIR_FREE: u32 = 0x0112_c9e7;
+    pub const BTL_PARSED_COMMAND2: u32 = 0x0112_c8dc;
+    pub const BTL_COMMAND_ACTOR: u32 = 0x0112_c9e0;
+    pub const BTL_CAMERA_STATE: u32 = 0x0112_a8e4;
+    pub const BTL_CAMERA_ONCE: u32 = 0x0112_a8e5;
+    pub const BTL_LAST_MAGIC: u32 = 0x0112_c8ec;
+    pub const BTL_RESET_WAIT2: u32 = 0x0112_c9d6;
+    pub const BTL_STATUS_COUNTER: u32 = 0x0112_c8fc;
+
+    fn sx8(mem: &impl Mem, at: u32) -> u32 {
+        i32::from(mem.read::<i8>(at)).cast_unsigned()
+    }
+
+    /// `0x00792f20()` (`MsBattleProcess_DebugStatus`): the battle's debug
+    /// status lines (`sprintf` into the frame buffer `buf`, 0x40 bytes at
+    /// the original's `ebp - 0x44`, then `TODapsSetPos` and
+    /// `TODapsString`): the battle and sound states, the scene name, the
+    /// sound errors, the effect camera and message, the summon energies
+    /// (with `g_BtlDirFree`), the command, the camera and effect waits,
+    /// the commanding actor's state (with a magic), and a frame counter
+    /// (when not negative, counted up).
+    #[allow(clippy::too_many_lines)] // one straight run of lines, as the original
+    pub fn ms_battle_debug_status<M: Mem>(mem: &mut M, call: Call<'_, M>, buf: u32) {
+        let fmt = |mem: &M, k: usize| mem.rebase(FMT_STATUS[k]);
+        let line = |mem: &mut M, call: Call<'_, M>, x: u32, y: u32, text: u32| {
+            game(mem, &mut *call, TO_DAPS_SET_POS, &[x, y]);
+            game(mem, call, TO_DAPS_STRING, &[text]);
+        };
+        let end = game(mem, &mut *call, MS_GET_BATTLE_END_STATUS, &[0]);
+        let snd = game(mem, &mut *call, TK_SND_REPORT_STATUS, &[end]);
+        let wave = game(mem, &mut *call, MS_SEP_TRANS_CHECK_WAVE, &[]);
+        let cd = game(mem, &mut *call, GET_CD, &[]);
+        let f: u32 = mem.read(cd.wrapping_add(8));
+        let level = call(mem, f, &[1]);
+        let cue = game(mem, &mut *call, MS_BTL_READ_CUE_LEVEL, &[level]);
+        let status = sx8(mem, mem.rebase(BTL_STATUS));
+        let f0 = fmt(mem, 0);
+        import(
+            mem,
+            &mut *call,
+            SPRINTF_SLOT,
+            &[buf, f0, status, cue, level, wave, snd, end],
+        );
+        line(mem, &mut *call, 0xbc, 8, buf);
+        let name = mem.rebase(BTL_SCENE_NAME);
+        line(mem, &mut *call, 0x188, 8, name);
+        let hold = sx8(mem, mem.rebase(BTL_END_HOLD));
+        let e1 = game(mem, &mut *call, SND_SQS_IOP_SOUND_ERROR_STATUS, &[hold]);
+        let e2 = game(mem, &mut *call, SQS_IOP_SOUND_SYSTEM_STATUS_JMP, &[e1]);
+        let f1 = fmt(mem, 1);
+        import(mem, &mut *call, SPRINTF_SLOT, &[buf, f1, e2, e1, hold]);
+        line(mem, &mut *call, 0xec, 0x15, buf);
+        let (cam, msg) = (r32(mem, EFFECT_CAMERA_BUF_20), r32(mem, BTL_MESSAGE_LAST));
+        let f2 = fmt(mem, 2);
+        import(mem, &mut *call, SPRINTF_SLOT, &[buf, f2, cam, msg]);
+        line(mem, &mut *call, 0x140, 0x22, buf);
+        let mut row = 3u32;
+        if r8(mem, BTL_DIR_FREE) != 0 {
+            let s17 = game(mem, &mut *call, MS_GET_SUMMON_ENERGY, &[0x11]);
+            let s16 = game(mem, &mut *call, MS_GET_SUMMON_ENERGY, &[0x10]);
+            let s15 = game(mem, &mut *call, MS_GET_SUMMON_ENERGY, &[0xf]);
+            let y = game(mem, &mut *call, MS_GET_YOUJINBOU_COM, &[]);
+            let f3 = fmt(mem, 3);
+            import(mem, &mut *call, SPRINTF_SLOT, &[buf, f3, y, s15, s16, s17]);
+            line(mem, &mut *call, 0x110, 0x2f, buf);
+            row = 4;
+        }
+        let ypos = |row: u32| row.wrapping_mul(0xd).wrapping_add(8);
+        if r32(mem, BTL_PARSED_COMMAND2) != 0xff {
+            let actor = u32::from(r8(mem, BTL_COMMAND_ACTOR));
+            let weak = game(mem, &mut *call, MS_MENU_WEAK_ELEMENT, &[actor]);
+            let command = r32(mem, BTL_PARSED_COMMAND2);
+            let actor = u32::from(r8(mem, BTL_COMMAND_ACTOR));
+            let f4 = fmt(mem, 4);
+            import(
+                mem,
+                &mut *call,
+                SPRINTF_SLOT,
+                &[buf, f4, actor, command, weak],
+            );
+            line(mem, &mut *call, 0xc8, ypos(row), buf);
+        }
+        let vals = [
+            sx8(mem, mem.rebase(BTL_CAMERA_STATE)),
+            sx8(mem, mem.rebase(BTL_CAMERA_ONCE)),
+            sx8(mem, mem.rebase(EFFECT_WAIT)),
+            u32::from(r8(mem, EFFECT_WAIT + 1)),
+        ];
+        let f5 = fmt(mem, 5);
+        import(
+            mem,
+            &mut *call,
+            SPRINTF_SLOT,
+            &[buf, f5, vals[0], vals[1], vals[2], vals[3]],
+        );
+        line(mem, &mut *call, 0x164, ypos(row), buf);
+        row += 1;
+        if r32(mem, BTL_LAST_MAGIC).cast_signed() >= 0 {
+            let idx = u32::from(r8(mem, BTL_COMMAND_ACTOR));
+            let a = game(mem, &mut *call, MS_GET_CHR, &[idx]);
+            let magic = r32(mem, BTL_LAST_MAGIC);
+            let f6 = fmt(mem, 6);
+            let v = sx8(mem, a.wrapping_add(0xdfb));
+            import(mem, &mut *call, SPRINTF_SLOT, &[buf, f6, v, magic]);
+            line(mem, &mut *call, 0x104, ypos(row), buf);
+            let b412 = u32::from(mem.read::<u8>(a.wrapping_add(0x412)));
+            let b432 = sx8(mem, a.wrapping_add(0x432));
+            let b436 = sx8(mem, a.wrapping_add(0x436));
+            let b508 = sx8(mem, a.wrapping_add(0x508));
+            let m = game(mem, &mut *call, MS_CHECK_CHR_MOTION_ALL, &[0]);
+            let f7 = fmt(mem, 7);
+            import(
+                mem,
+                &mut *call,
+                SPRINTF_SLOT,
+                &[buf, f7, m, b508, b436, b432, b412],
+            );
+            line(mem, &mut *call, 0x158, ypos(row), buf);
+            let st = game(mem, &mut *call, SND_GET_STREAM_STATE, &[]);
+            let rd = game(mem, &mut *call, SND_IS_READ_STATUS, &[st]);
+            let wait = sx8(mem, mem.rebase(BTL_RESET_WAIT2));
+            let set: u32 = mem.read(a.wrapping_add(0xdc0));
+            let chr = u32::from(mem.read::<u8>(a.wrapping_add(0xc)));
+            let start = game(mem, &mut *call, MS_CHECK_START_EFFECT, &[chr, set]);
+            let dfd = sx8(mem, a.wrapping_add(0xdfd));
+            let f8 = fmt(mem, 8);
+            import(
+                mem,
+                &mut *call,
+                SPRINTF_SLOT,
+                &[buf, f8, dfd, start, wait, rd, st],
+            );
+            line(mem, &mut *call, 0x110, ypos(row + 1), buf);
+            row += 2;
+        }
+        let n = r32(mem, BTL_STATUS_COUNTER);
+        if n.cast_signed() >= 0 {
+            let n = n.wrapping_add(1);
+            w32(mem, BTL_STATUS_COUNTER, n);
+            let f = mem.rebase(FMT_STATUS_COUNT);
+            import(mem, &mut *call, SPRINTF_SLOT, &[buf, f, n]);
+            line(mem, call, 0x1c4, ypos(row), buf);
+        }
+    }
+
+    /// `0x007cfca0()` (`MsInfoWinsInit`, name ours): the four info
+    /// windows allocated (`0x007c8bb0(0)`), their marks cleared.
+    pub fn ms_info_wins_init<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        for k in 0..4u32 {
+            let w = game(mem, &mut *call, DEBUG_WIN_ALLOC, &[0]);
+            let slot = mem.rebase(INFO_WINS) + 4 * k;
+            mem.write(slot, w);
+            mem.write(w.wrapping_add(0x21), 0u8);
         }
     }
 }

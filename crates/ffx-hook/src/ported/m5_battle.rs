@@ -147,4 +147,122 @@ ported! {
     PasswordFileRead_00790430 @ 0x0079_0430 => extern "C" fn password_file_read(name: u32, dst: u32) -> u32 {
         mb::password_file_read(&mut mem(), &mut call, name, dst)
     }
+
+    // ---- batch 2: the debug status, files, the position script reader ----
+    /// `MsBattleProcess_DebugStatus_00792f20()`: a 0x40-byte frame buffer.
+    MsBattleProcess_DebugStatus_00792f20 @ 0x0079_2f20 => extern "C" fn ms_battle_debug_status() {
+        let mut f = StackFrame::<0x10>::new();
+        mb::ms_battle_debug_status(&mut mem(), &mut call, f.at());
+    }
+    /// `MsCheckFile(name)`: the rounded size, -1.
+    MsCheckFile @ 0x007c_8a80 => extern "C" fn ms_check_file(name: u32) -> u32 {
+        mb::ms_check_file(&mut mem(), &mut call, name)
+    }
+    /// `MsFileIn(name, buf, n)`.
+    MsFileIn @ 0x007c_8b00 => extern "C" fn ms_file_in(name: u32, buf: u32, n: u32) {
+        mb::ms_file_io(&mut mem(), &mut call, false, name, buf, n);
+    }
+    /// `MsFileOut(name, buf, n)`.
+    MsFileOut @ 0x007c_8b50 => extern "C" fn ms_file_out(name: u32, buf: u32, n: u32) {
+        mb::ms_file_io(&mut mem(), &mut call, true, name, buf, n);
+    }
+    /// `MsDebugWinAlloc_007c8bb0(slot)`: the record.
+    MsDebugWinAlloc_007c8bb0 @ 0x007c_8bb0 => extern "C" fn ms_debug_win_alloc(slot: u32) -> u32 {
+        mb::ms_debug_win_alloc(&mut mem(), slot)
+    }
+    /// `ms_malloc_007cf970(size)`: a 0x100-byte frame buffer.
+    ms_malloc_007cf970 @ 0x007c_f970 => extern "C" fn ms_malloc(size: u32) -> u32 {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_malloc(&mut mem(), &mut call, f.at(), size)
+    }
+    /// `MsDebugBattlePosInit(out, a, b)`: a 0x100-byte frame buffer.
+    MsDebugBattlePosInit @ 0x007c_90f0 => extern "C" fn ms_debug_battle_pos_init(out: u32, a: u32, b: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_debug_battle_pos_init(&mut mem(), &mut call, f.at(), [out, a, b]);
+    }
+    /// `ms_free(p)`: a 0x100-byte frame buffer.
+    ms_free @ 0x007c_f8f0 => extern "C" fn ms_free(p: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_free(&mut mem(), &mut call, f.at(), p);
+    }
+    /// `MsBtlPosFree_007c9210()`.
+    MsBtlPosFree_007c9210 @ 0x007c_9210 => extern "C" fn ms_btl_pos_free() {
+        mb::ms_btl_pos_free(&mut mem(), &mut call);
+    }
+    /// `MsEnvWriteText_007cd680(writer, text)`: a copy of `0x007ce9f0`.
+    MsEnvWriteText_007cd680 @ 0x007c_d680 => extern "C" fn ms_env_write_text_2(writer: u32, text: u32; slots: u32) {
+        mb::ms_env_write_text(&mut mem(), &mut call, slots, writer, text);
+    }
+    /// `MsBtlPosCheckVersion_007cc1f0(name, version)`.
+    MsBtlPosCheckVersion_007cc1f0 @ 0x007c_c1f0 => extern "C" fn ms_btl_pos_check_version(name: u32, version: u32) -> u32 {
+        mb::ms_btl_pos_check_version(&mut mem(), &mut call, name, version)
+    }
+    /// `MsBtlPosCheckVersion2_007cc250(name, version, sub)`.
+    MsBtlPosCheckVersion2_007cc250 @ 0x007c_c250 => extern "C" fn ms_btl_pos_check_version2(name: u32, version: u32, sub: u32) -> u32 {
+        mb::ms_btl_pos_check_version2(&mut mem(), &mut call, name, version, sub)
+    }
+    /// `MsReadSkipSpace_007cf540(reader)`.
+    MsReadSkipSpace_007cf540 @ 0x007c_f540 => extern "C" fn ms_read_skip_space(reader: u32) -> u32 {
+        mb::ms_read_skip_space(&mut mem(), reader)
+    }
+    /// `MsReadToken_007cf180(reader, out, size)`: the quote flag in the
+    /// `reader` slot.
+    MsReadToken_007cf180 @ 0x007c_f180 => extern "C" fn ms_read_token(reader: u32, out: u32, size: u32; slots: u32) -> u32 {
+        mb::ms_read_token(&mut mem(), &mut call, slots, reader, out, size)
+    }
+    /// `MsReadFloat_007cd360(reader, name, out)`: a 0x100-byte frame buffer.
+    MsReadFloat_007cd360 @ 0x007c_d360 => extern "C" fn ms_read_float(reader: u32, name: u32, out: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_read_value(&mut mem(), &mut call, f.at(), true, [reader, name, out]);
+    }
+    /// `MsReadInt_007cd420(reader, name, out)`: a 0x100-byte frame buffer.
+    MsReadInt_007cd420 @ 0x007c_d420 => extern "C" fn ms_read_int(reader: u32, name: u32, out: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_read_value(&mut mem(), &mut call, f.at(), false, [reader, name, out]);
+    }
+    /// `MsBtlPosAllocPoints_007cd4e0()`.
+    MsBtlPosAllocPoints_007cd4e0 @ 0x007c_d4e0 => extern "C" fn ms_btl_pos_alloc_points() {
+        mb::ms_btl_pos_alloc_points(&mut mem(), &mut call);
+    }
+    /// `MsKeywordLookup_007ceeb0(name, table)`.
+    MsKeywordLookup_007ceeb0 @ 0x007c_eeb0 => extern "C" fn ms_keyword_lookup(name: u32, table: u32) -> u32 {
+        mb::ms_keyword_lookup(&mem(), name, table)
+    }
+    /// `MsReadSkipLine_007cf380(reader, line)`.
+    MsReadSkipLine_007cf380 @ 0x007c_f380 => extern "C" fn ms_read_skip_line(reader: u32, line: u32) -> u32 {
+        mb::ms_read_skip_line(&mut mem(), reader, line)
+    }
+    /// `MsReadOpen_007cd5a0(reader, name)`.
+    MsReadOpen_007cd5a0 @ 0x007c_d5a0 => extern "C" fn ms_read_open(reader: u32, name: u32) {
+        mb::ms_read_open(&mut mem(), &mut call, reader, name);
+    }
+    /// `MsPathBaseName_007cefb0(path, ext)`.
+    MsPathBaseName_007cefb0 @ 0x007c_efb0 => extern "C" fn ms_path_base_name(path: u32, ext: u32) -> u32 {
+        mb::ms_path_base_name(&mut mem(), path, ext)
+    }
+    /// `MsStrEqualNoCase_007cf330(a, b)`.
+    MsStrEqualNoCase_007cf330 @ 0x007c_f330 => extern "C" fn ms_str_equal_no_case(a: u32, b: u32) -> u32 {
+        mb::ms_str_equal_no_case(&mem(), a, b)
+    }
+    /// `MsPathSetExt_007cf590(path, src, n, force)`: the extension index
+    /// in the `path` slot.
+    MsPathSetExt_007cf590 @ 0x007c_f590 => extern "C" fn ms_path_set_ext(path: u32, src: u32, n: u32, force: u32; slots: u32) -> u32 {
+        mb::ms_path_set_ext(&mut mem(), &mut call, slots, [path, src, n, force])
+    }
+    /// `MsCameraKindChar_007cfaa0(kind)`: the letter in `al`.
+    MsCameraKindChar_007cfaa0 @ 0x007c_faa0 => extern "C" fn ms_camera_kind_char(kind: u32) -> u32 {
+        mb::ms_camera_kind_char(&mem(), kind)
+    }
+    /// `MsDebugSetCameraMode(side, mode)`.
+    MsDebugSetCameraMode @ 0x007c_fb60 => extern "C" fn ms_debug_set_camera_mode(side: u32, mode: u32) {
+        mb::ms_debug_set_camera_mode(&mut mem(), &mut call, side, mode);
+    }
+    /// `MsInfoWinSet_007cfba0(i, mark, pos)`.
+    MsInfoWinSet_007cfba0 @ 0x007c_fba0 => extern "C" fn ms_info_win_set(i: u32, mark: u32, pos: u32) {
+        mb::ms_info_win_set(&mut mem(), i, mark, pos);
+    }
+    /// `MsInfoWinsInit_007cfca0()`.
+    MsInfoWinsInit_007cfca0 @ 0x007c_fca0 => extern "C" fn ms_info_wins_init() {
+        mb::ms_info_wins_init(&mut mem(), &mut call);
+    }
 }
