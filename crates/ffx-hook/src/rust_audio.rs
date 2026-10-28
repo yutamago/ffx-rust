@@ -127,10 +127,17 @@ struct Movie {
     channels: u16,
     rate: u32,
     voice: Option<Voice>,
+    /// Frames from `base` on (the ones played are dropped).
     pcm: Vec<i16>,
+    base: u64,
+    fetched: u64,
     volume: f32,
     paused: bool,
 }
+
+/// `Sound::setUserData` of the movie's sound: (sound, data). Apart from the
+/// state's lock: the read callback asks for it while the lock is held.
+static USER_DATA: Mutex<(u32, usize)> = Mutex::new((0, 0));
 
 struct State {
     engine: Engine<SharedFiles>,
@@ -563,9 +570,15 @@ unsafe extern "system" fn system_create_sound(
                 rate: u32::try_from(rate).unwrap_or(48_000),
                 voice: None,
                 pcm: Vec::new(),
+                base: 0,
+                fetched: 0,
                 volume: 1.0,
                 paused: false,
             });
+            if let Some(m) = s.movie.as_mut() {
+                movie_read(m);
+                movie_read(m);
+            }
             return Some(h);
         }
         let name = cstr(name)?;
@@ -690,10 +703,19 @@ unsafe extern "system" fn sound_get_open_state(
     put(busy, 0u8);
     OK
 }
-unsafe extern "system" fn sound_set_user_data(_sound: usize, _data: usize) -> u32 {
+unsafe extern "system" fn sound_set_user_data(sound: usize, data: usize) -> u32 {
+    if let Ok(mut u) = USER_DATA.lock() {
+        *u = (sound as u32, data);
+    }
     OK
 }
-unsafe extern "system" fn sound_get_user_data(_sound: usize, _out: usize) -> u32 {
+unsafe extern "system" fn sound_get_user_data(sound: usize, out: usize) -> u32 {
+    let d = USER_DATA
+        .lock()
+        .ok()
+        .filter(|u| u.0 == sound as u32)
+        .map_or(0, |u| u.1);
+    put(out, d);
     OK
 }
 fn movie_channel(s: &mut State, ch: u32) -> Option<&mut Movie> {
@@ -766,52 +788,89 @@ unsafe extern "system" fn channel_group_get_channel(g: usize, index: i32, out: u
     OK
 }
 
-/// Mixes the movie stream into a block: PCM pulled from the game's read
-/// callback 0x1000 frames at a time (what it always writes), interpolated
-/// to 48 kHz and ramped like every voice.
-fn mix_movie(m: &mut Movie, block: &mut [f32]) {
-    if m.channel == 0 || m.paused || m.read == 0 {
+/// Frames the movie's read callback writes per call (`decodebuffersize`).
+const MOVIE_CHUNK: usize = 0x1000;
+
+/// One read-callback call: the next [`MOVIE_CHUNK`] frames (zeros where
+/// the callback writes nothing: no user data yet).
+fn movie_read(m: &mut Movie) {
+    if m.read == 0 {
         return;
     }
-    let need = (BLOCK as u64 * u64::from(m.rate)).div_ceil(48_000) as usize + 2;
     let ch = usize::from(m.channels.max(1));
-    let have = m.voice.as_ref().map_or(0, |v| {
-        let used = (v.pos >> 32) as usize;
-        m.pcm.len() / ch - used.min(m.pcm.len() / ch)
-    });
-    if have < need {
-        let mut buf = vec![0i16; 0x1000 * ch];
-        // SAFETY: the game's FMOD_SOUND_PCMREADCALLBACK (stdcall: sound,
-        // data, length in bytes), with a buffer of the 0x1000 frames it writes.
-        unsafe {
-            let f: unsafe extern "system" fn(u32, *mut c_void, u32) -> u32 =
-                std::mem::transmute(m.read);
-            f(
-                m.sound,
-                buf.as_mut_ptr().cast(),
-                u32::try_from(buf.len() * 2).unwrap_or(0),
-            );
-        }
-        m.pcm.extend_from_slice(&buf);
+    let mut buf = vec![0i16; MOVIE_CHUNK * ch];
+    // SAFETY: the game's FMOD_SOUND_PCMREADCALLBACK (stdcall: sound, data,
+    // length in bytes), with a buffer of the 0x1000 frames it writes.
+    unsafe {
+        let f: unsafe extern "system" fn(u32, *mut c_void, u32) -> u32 =
+            std::mem::transmute(m.read);
+        f(
+            m.sound,
+            buf.as_mut_ptr().cast(),
+            u32::try_from(buf.len() * 2).unwrap_or(0),
+        );
     }
-    let frames = u32::try_from(m.pcm.len() / ch).unwrap_or(0);
-    let wave = Arc::new(Wave {
-        pcm: m.pcm.clone(),
+    m.pcm.extend_from_slice(&buf);
+    m.fetched += MOVIE_CHUNK as u64;
+}
+
+/// Mixes the movie stream into a block, as FMOD does (measured on the
+/// movie-fmv call log): two chunks are read in `createSound`, before the
+/// game sets the user data (so silence); from then on one chunk each time
+/// the play position passes a multiple of 0x1000 frames, in that update.
+/// The samples play like every voice (interpolated, ramped).
+fn mix_movie(m: &mut Movie, block: &mut [f32]) {
+    if m.channel == 0 || m.paused {
+        return;
+    }
+    let ch = usize::from(m.channels.max(1));
+    let mut v = m.voice.take().unwrap_or_else(|| {
+        Voice::new(
+            Arc::new(Wave {
+                pcm: Vec::new(),
+                channels: m.channels,
+                rate: m.rate,
+                frames: 0,
+                looped: None,
+            }),
+            false,
+        )
+    });
+    let before = m.base + (v.pos >> 32);
+    // drop what is behind the play position (keep a frame for the taps)
+    let drop = ((v.pos >> 32).saturating_sub(1) as usize).min(m.pcm.len() / ch);
+    if drop > 0 {
+        m.pcm.drain(..drop * ch);
+        m.base += drop as u64;
+        v.pos -= (drop as u64) << 32;
+    }
+    v.wave = Arc::new(Wave {
+        frames: u32::try_from(m.pcm.len() / ch).unwrap_or(0),
+        pcm: std::mem::take(&mut m.pcm),
         channels: m.channels,
         rate: m.rate,
-        frames,
         looped: None,
     });
-    let mut v = match m.voice.take() {
-        Some(mut v) => {
-            v.wave = wave;
-            v
-        }
-        None => Voice::new(wave, false),
-    };
     v.volume = m.volume;
     v.mix(block);
     v.ended = false;
+    m.pcm = Arc::try_unwrap(std::mem::replace(
+        &mut v.wave,
+        Arc::new(Wave {
+            pcm: Vec::new(),
+            channels: m.channels,
+            rate: m.rate,
+            frames: 0,
+            looped: None,
+        }),
+    ))
+    .map(|w| w.pcm)
+    .unwrap_or_default();
+    let after = m.base + (v.pos >> 32);
+    let chunk = MOVIE_CHUNK as u64;
+    for _ in (before / chunk)..(after / chunk) {
+        movie_read(m);
+    }
     m.voice = Some(v);
 }
 

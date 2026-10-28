@@ -60,7 +60,7 @@
 #   tools/replays/run-all.sh --audio --record [replay...]
 # plays the audio list (event-besaid: voice, music and footsteps;
 # battle-attack: sound effects and the victory fanfare; menu-browse: menu
-# sounds; battle-ifrit: a summon) with FFX_AUDIO_WAV, FMOD's mix written
+# sounds; battle-ifrit: a summon; movie-fmv: a movie's user stream) with FFX_AUDIO_WAV, FMOD's mix written
 # to <run>/<tag>/<replay>-<tag>.wav (no sound reaches the speakers), and
 # compares the captures between the replays' `audiomark start` and
 # `audiomark end` with tools/wav-compare.py, sample for sample. --record
@@ -147,7 +147,7 @@ audio=""
 if [ "${1:-}" = --audio ]; then
     audio=1
     shift
-    replays=(event-besaid battle-attack menu-browse battle-ifrit)
+    replays=(event-besaid battle-attack menu-browse battle-ifrit movie-fmv)
     audio_dir="${FFX_REPLAY_AUDIO:-$HOME/ffx-work/replay-audio}"  # never in git
     mkdir -p "$audio_dir"
     wavcmp() { # label, a, b
