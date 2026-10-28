@@ -513,8 +513,8 @@ ported! {
         ff::call_bound_member(&mut mem(), bound);
     }
     /// `FFEscMenu_clearKeys_006ffc50()`.
-    FFEscMenu_clearKeys_006ffc50 @ 0x006f_fc50 => extern "C" fn clear_keys() {
-        ff::clear_keys(&mut mem());
+    FFEscMenu_clearKeys_006ffc50 @ 0x006f_fc50 => extern "C" fn clear_keys() -> u32 {
+        ff::clear_keys(&mut mem())
     }
     /// `FFEscMenu_resetInputState_00701930(this)`: the state at `ebp - 0xc`.
     FFEscMenu_resetInputState_00701930 @ 0x0070_1930 => extern "thiscall" fn reset_input_state(this: u32) -> u32 {
@@ -534,5 +534,20 @@ ported! {
     /// `IggyMenu_setEnableCeb248_007029e0(on)`.
     IggyMenu_setEnableCeb248_007029e0 @ 0x0070_29e0 => extern "C" fn save_menu_set_enable(on: u32) -> u32 {
         ff::save_menu_set_enable(&mut mem(), on)
+    }
+    // ---- batch 7 (ffx_pcui::m5u_f) ----
+    /// `FFEscMenu_onPadIncomplete_00701e40(menu)`.
+    FFEscMenu_onPadIncomplete_00701e40 @ 0x0070_1e40 => extern "C" fn on_pad_incomplete(menu: u32) -> u32 {
+        ff::on_pad_incomplete(&mut mem(), menu)
+    }
+    /// `FFEscMenu_beginPadCapture_00701be0(menu)`: the old state at `ebp - 0xc`.
+    FFEscMenu_beginPadCapture_00701be0 @ 0x0070_1be0 => extern "C" fn begin_pad_capture(menu: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        ff::begin_pad_capture(&mut mem(), menu, f.at())
+    }
+    /// `FFEscMenu_beginKeyCapture_007013e0(menu)`: the old state at `ebp - 0xc`.
+    FFEscMenu_beginKeyCapture_007013e0 @ 0x0070_13e0 => extern "C" fn begin_keyboard_capture(menu: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        ff::begin_keyboard_capture(&mut mem(), menu, f.at())
     }
 }

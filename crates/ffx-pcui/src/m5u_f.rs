@@ -99,11 +99,13 @@ pub mod bridge {
 
     /// `FFEscMenu_clearKeys_006ffc50()`: keys 0..=0x7b unbound
     /// (`PInputMapper_setKey(application; key, 0, 0)`).
-    pub fn clear_keys(h: &mut impl Host) {
+    pub fn clear_keys(h: &mut impl Host) -> u32 {
         let app = h.call_sym(GET_APPLICATION, Conv::Cdecl, &[]);
+        let mut eax = 0;
         for key in 0..=0x7b {
-            h.call_sym(INPUT_SET_KEY, Conv::Thiscall(app), &[key, 0, 0]);
+            eax = h.call_sym(INPUT_SET_KEY, Conv::Thiscall(app), &[key, 0, 0]);
         }
+        eax
     }
 
     /// `FFEscMenu_resetInputState_00701930(this)`: `+0xfc` = 0 and the
@@ -157,5 +159,55 @@ pub mod bridge {
             Conv::Thiscall(menu),
             &[u32::from(on != 0)],
         )
+    }
+
+    // ---- the key/pad setting pages' entries (batch 7) ----
+
+    pub const PAD_INCOMPLETE_POPUP: u32 = 0x0070_1c50;
+    pub const PAD_PAGE_INPUT: u32 = 0x0070_19b0;
+    pub const KEY_PAGE_INPUT: u32 = 0x0070_1190;
+    pub const CALL_MEMBER1: u32 = 0x006f_fbb0;
+    pub const CLEAR_KEYS: u32 = 0x006f_fc50;
+
+    /// `FFEscMenu_onPadIncomplete_00701e40(menu)`:
+    /// `FFEscMenu_ShowPadIncompletePopUp_00701c50(menu)` queued.
+    pub fn on_pad_incomplete(h: &mut impl Host, menu: u32) -> u32 {
+        let f = h.rebase(PAD_INCOMPLETE_POPUP);
+        h.call_sym(HANDLERS_ADD_CALL, Conv::Thiscall(menu), &[f, menu])
+    }
+
+    /// The setting pages' entry: the menu cast to its `FFEscMenu`, its
+    /// key being set `+0xf8` = -1, the input manager's state swapped for
+    /// `(menu, page input, FFEscMenu_callMember1_006ffbb0)` (the old one
+    /// kept at `+0x100..+0x108`; `frame` the original's `ebp - 0xc`).
+    fn begin_key_capture(h: &mut impl Host, menu: u32, page: u32, frame: u32) -> u32 {
+        let iggy = h.rebase(RTTI_IGGY_MENU);
+        let esc = h.rebase(RTTI_ESC_MENU);
+        let m = h.call_sym(RT_DYNAMIC_CAST, Conv::Cdecl, &[menu, 0, iggy, esc, 0]);
+        h.write(m + 0xf8, 0xffff_ffffu32);
+        let page = h.rebase(page);
+        let call = h.rebase(CALL_MEMBER1);
+        let old = h.call_sym(SWAP_STATE, Conv::Cdecl, &[frame, m, page, call]);
+        for k in 0..3 {
+            let w = rd(h, old + 4 * k);
+            h.write(m + 0x100 + 4 * k, w);
+        }
+        m
+    }
+
+    /// `FFEscMenu_beginPadCapture_00701be0(menu)`: [`begin_key_capture`]
+    /// with the pad page's input `0x007019b0`, then the keys cleared
+    /// (`0x006ffc50`).
+    pub fn begin_pad_capture(h: &mut impl Host, menu: u32, frame: u32) -> u32 {
+        begin_key_capture(h, menu, PAD_PAGE_INPUT, frame);
+        h.call_sym(CLEAR_KEYS, Conv::Cdecl, &[])
+    }
+
+    /// `FFEscMenu_beginKeyCapture_007013e0(menu)`: [`begin_key_capture`]
+    /// with the keyboard page's input `0x00701190`, then keys 0..=0x7b
+    /// unbound (inlined [`clear_keys`]).
+    pub fn begin_keyboard_capture(h: &mut impl Host, menu: u32, frame: u32) -> u32 {
+        begin_key_capture(h, menu, KEY_PAGE_INPUT, frame);
+        clear_keys(h)
     }
 }

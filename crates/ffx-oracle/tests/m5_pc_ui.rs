@@ -2798,9 +2798,8 @@ fn esc_menu_audio_and_keys_match_the_original() {
                     0
                 },
             );
-            t.run("clear keys", 0x006f_fc50, Conv::Cdecl, &[], false, |g| {
-                ff::clear_keys(g);
-                0
+            t.run("clear keys", 0x006f_fc50, Conv::Cdecl, &[], true, |g| {
+                ff::clear_keys(g)
             });
             let obj = t.alloc(&[0x33; 0x100]);
             t.check_framed(
@@ -2874,6 +2873,77 @@ fn iggy_get_string_utf8_matches_the_original() {
                         ebp2 - 0x18,
                     ))
                 },
+            );
+        }
+    });
+}
+
+// ---- batch 7 (ffx_pcui::m5u_f) ----
+
+impl Twins {
+    /// `inputSwapState_00630df0(out, a, b, c)` -> `out`: `out` gets three
+    /// words of a running count, `a`, `b`, `c` are kept in memory (the
+    /// diff sees them).
+    fn stub_swap_state(&mut self, sym: u32) {
+        let cell = self.words(&[0x0b00_0000, 0, 0, 0]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x0d]);
+        c.extend(cell.to_le_bytes()); // mov ecx, [cell]
+        for off in [0u8, 4, 8] {
+            c.extend([0x89, 0x48, off]); // mov [eax+off], ecx
+            c.push(0x41); // inc ecx
+        }
+        c.extend([0x89, 0x0d]);
+        c.extend(cell.to_le_bytes()); // mov [cell], ecx
+        for (k, sp) in [(1u32, 8u8), (2, 0xc), (3, 0x10)] {
+            c.extend([0x8b, 0x4c, 0x24, sp]); // mov ecx, [esp+sp]
+            c.extend([0x89, 0x0d]);
+            c.extend((cell + 4 * k).to_le_bytes()); // mov [cell+4k], ecx
+        }
+        c.push(0xc3);
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn key_capture_matches_the_original() {
+    Twins::each(|t| {
+        for i in 0..4u32 {
+            t.reset();
+            let obj = t.alloc(&[0x22; 0x110]);
+            t.stubs(&[
+                (ff::RT_DYNAMIC_CAST, false, 5, 0, obj),
+                (ff::GET_APPLICATION, false, 0, 0, 0x00a9_0000),
+                (ff::INPUT_SET_KEY, true, 3, 3, 0x91 + i),
+                (ff::CLEAR_KEYS, false, 0, 0, 0x92 + i),
+                (c::HANDLERS_ADD_CALL, true, 2, 2, 0x93),
+            ]);
+            t.stub_swap_state(ff::SWAP_STATE);
+            let menu = 0x00ee_0000 + i;
+            t.run(
+                "pad incomplete",
+                0x0070_1e40,
+                Conv::Cdecl,
+                &[menu],
+                true,
+                |g| ff::on_pad_incomplete(g, menu),
+            );
+            t.check_framed(
+                "pad capture",
+                0x0070_1be0,
+                Conv::Cdecl,
+                &[menu],
+                0xc,
+                |g, ebp| Out::U32(ff::begin_pad_capture(g, menu, ebp - 0xc)),
+            );
+            t.check_framed(
+                "key capture",
+                0x0070_13e0,
+                Conv::Cdecl,
+                &[menu],
+                0xc,
+                |g, ebp| Out::U32(ff::begin_keyboard_capture(g, menu, ebp - 0xc)),
             );
         }
     });
