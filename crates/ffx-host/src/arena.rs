@@ -325,6 +325,7 @@ mod sys {
 
     use crate::{Error, Result};
 
+    #[allow(clippy::unnecessary_wraps)] // the same signature on every target
     pub(super) fn reserve() -> Result<*mut u8> {
         Ok(std::ptr::null_mut())
     }
