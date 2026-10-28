@@ -26,6 +26,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_menu::m5m_a::bridge as ma;
 use ffx_menu::m5m_b::bridge as mb;
+use ffx_menu::m5m_c::{self as mc_fields, bridge as mc};
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -1444,6 +1445,214 @@ fn gu_window_create_matches_the_original() {
             t.check(&what, 0x0084_a920, Conv::Cdecl, &args, |m| {
                 Out::U32(mb::window_create(m, x0, y0, w, h, flags, cb))
             });
+        }
+    });
+}
+
+// ---- batch 3 (ffx_menu::m5m_c) ----
+
+mod g4 {
+    pub const FONT_COLOR: u32 = 0x0132_8a74;
+    pub const FONT_POS: u32 = 0x0133_c8d4;
+}
+
+impl Twins {
+    /// Stubs for the printers: `sprintf` (logging `n` words), the three
+    /// font entries, `AtelGetPosWorkAdrs` returning `pos`,
+    /// `Script_WorkerLevel` returning `level`, `Ch_GetFieldMode` returning
+    /// `mode`, and `Math_AngleToDegrees` as `x * 57.25` from its argument.
+    fn printer_stubs(&mut self, n: u32, pos: u32, level: u32, mode: u32) {
+        self.stub_import(mc::SPRINTF_SLOT, false, n, 0, 0xa1);
+        self.stubs(&[
+            (mc::TK_PUT_DEBUG_FONT_STRING, false, 3, 0, 0xa2),
+            (mc::TK_PUT_DEBUG_FONT_STRING_P, false, 3, 0, 0xa3),
+            (mc::TK_PUT_DEBUG_FONT_STRING_P_EUC, false, 3, 0, 0xa4),
+            (mc::ATEL_GET_POS_WORK_ADRS, false, 1, 0, pos),
+            (mc::SCRIPT_WORKER_LEVEL, false, 2, 0, level),
+            (mc::CH_GET_FIELD_MODE, false, 1, 0, mode),
+        ]);
+        let k = self.words(&[57.25f32.to_bits()]);
+        let mut c = vec![0xd9, 0x44, 0x24, 0x04, 0xd8, 0x0d]; // fld [esp+4]; fmul [k]
+        c.extend(k.to_le_bytes());
+        c.push(0xc3);
+        let f = self.cave_code(&c);
+        self.jump(mc::MATH_ANGLE_TO_DEGREES, f);
+    }
+
+    /// 0x60 bytes of floats (no signalling NaNs) and `i16`s.
+    fn float_block(&mut self, rng: &mut Rng) -> u32 {
+        let w: Vec<u32> = (0..24)
+            .map(|_| match rng.below(4) {
+                0 => (rng.below(2000) as f32 - 1000.0).to_bits(),
+                1 => rng.next() & 0x7fbf_ffff,
+                2 => rng.below(0x1_0000),
+                _ => rng.next(),
+            })
+            .map(|v| {
+                if v & 0x7fc0_0000 == 0x7f80_0000 && v & 0x003f_ffff != 0 {
+                    v | 0x0040_0000
+                } else {
+                    v
+                }
+            })
+            .collect();
+        self.words(&w)
+    }
+}
+
+#[test]
+fn tk_value_printers_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x9e1e_7e21);
+        for (addr, field) in mc_fields::PRINTERS {
+            for i in 0..4 {
+                t.reset();
+                let pos = t.float_block(&mut rng);
+                let b44 = t.float_block(&mut rng);
+                let b48 = t.float_block(&mut rng);
+                let level = t.words(
+                    &[0; 17]
+                        .iter()
+                        .chain(&[b44, b48])
+                        .copied()
+                        .collect::<Vec<u32>>(),
+                );
+                let n = if matches!(field, mc_fields::Field::LevelI16(..)) {
+                    3
+                } else {
+                    4
+                };
+                t.printer_stubs(n, pos, level, 0);
+                let color = rng.below(8);
+                t.g32(g4::FONT_COLOR, color);
+                let worker = t.zeros(0x100);
+                t.write(worker + 0x32, &[rng.next() as u8]);
+                let what = format!("printer {addr:#x} #{i}");
+                // the angle printers keep the degrees at ebp - 0x28
+                let low = if matches!(field, mc_fields::Field::PosAngle(_)) {
+                    0x28
+                } else {
+                    0x24
+                };
+                t.check_framed(&what, addr, Conv::Cdecl, &[worker], low, |m, ebp| {
+                    Out::U32(mc::print_field(m, ebp, field, worker))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn tk_worker_printers_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x0dd5_0001);
+        for i in 0..40 {
+            t.reset();
+            let b44 = t.float_block(&mut rng);
+            let level = t.words(
+                &[0; 17]
+                    .iter()
+                    .chain(&[b44, 0])
+                    .copied()
+                    .collect::<Vec<u32>>(),
+            );
+            let mode = rng.below(4);
+            t.printer_stubs(3, 0, level, mode);
+            let color = rng.below(8);
+            t.g32(g4::FONT_COLOR, color);
+            let mut w = vec![0u8; 0x100];
+            for b in &mut w {
+                *b = rng.next() as u8;
+            }
+            w[0xaa] = rng.below(4) as u8;
+            if rng.chance(3) {
+                w[0x9c..0xa0].copy_from_slice(&[0; 4]);
+            }
+            let head = t.alloc(&[rng.below(3) as u8, 0, 0, 0]);
+            w[0..4].copy_from_slice(&head.to_le_bytes());
+            // a string table: +0x50 the offset of the offsets
+            let mut tbl = vec![0u8; 0x200];
+            tbl[0x50..0x54].copy_from_slice(&0x60u32.to_le_bytes());
+            for k in 0..0x20usize {
+                tbl[0x60 + 4 * k..0x64 + 4 * k].copy_from_slice(&(0x100 + k as u32).to_le_bytes());
+            }
+            let tbl = t.alloc(&tbl);
+            w[8..12].copy_from_slice(&(if rng.chance(3) { 0 } else { tbl }).to_le_bytes());
+            w[0x2e..0x30].copy_from_slice(&(rng.below(0x20) as u16).to_le_bytes());
+            let worker = t.alloc(&w);
+            let what = format!("worker printers #{i}");
+            t.check_framed(
+                &format!("{what} kind"),
+                0x0087_ae60,
+                Conv::Cdecl,
+                &[worker],
+                0x24,
+                |m, ebp| Out::U32(mc::print_kind(m, ebp, worker)),
+            );
+            t.check_framed(
+                &format!("{what} model"),
+                0x0087_af50,
+                Conv::Cdecl,
+                &[worker],
+                0x24,
+                |m, ebp| Out::U32(mc::print_model(m, ebp, worker)),
+            );
+            t.check_framed(
+                &format!("{what} entry"),
+                0x0087_afa0,
+                Conv::Cdecl,
+                &[worker],
+                0x24,
+                |m, ebp| Out::U32(mc::print_entry(m, ebp, worker)),
+            );
+            t.check(
+                &format!("{what} motion"),
+                0x0087_b040,
+                Conv::Cdecl,
+                &[worker],
+                |m| Out::U32(mc::print_motion(m, worker)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_put_debug_font_entries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xf0f0_0303);
+        for i in 0..8 {
+            t.reset();
+            let width = rng.below(100);
+            t.stubs(&[
+                (mc::TK_PUT_DEBUG_FONT_CORE, false, 4, 0, rng.word()),
+                (mc::TK_GET_STR_WIDTH, false, 2, 0, width),
+            ]);
+            let x = rng.below(400);
+            t.g32(g4::FONT_POS, x);
+            let (c, f, s) = (rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("TkPutDebugFontString #{i}"),
+                0x0088_f140,
+                Conv::Cdecl,
+                &[c, f, s],
+                |m| Out::U32(mc::put_string(m, c, f, s)),
+            );
+            t.check(
+                &format!("TkPutDebugFontStringP #{i}"),
+                0x0088_f4c0,
+                Conv::Cdecl,
+                &[c, f, s],
+                |m| Out::U32(mc::put_string_p(m, c, f, s)),
+            );
+            t.check(
+                &format!("TkPutDebugFontStringPR #{i}"),
+                0x0088_f5c0,
+                Conv::Cdecl,
+                &[c, f, s],
+                |m| Out::U32(mc::put_string_pr(m, c, f, s)),
+            );
         }
     });
 }

@@ -8,6 +8,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_menu::m5m_a::bridge as a;
 use ffx_menu::m5m_b::bridge as b;
+use ffx_menu::m5m_c::bridge as c;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -126,5 +127,196 @@ ported! {
     /// `Gu_WindowCreate(x, y, w, h, flags, callback)` -> the window.
     Gu_WindowCreate @ 0x0084_a920 => extern "C" fn gu_window_create(x: u32, y: u32, w: u32, h: u32, flags: u32, callback: u32) -> u32 {
         b::window_create(&mut mem(), x, y, w, h, flags, callback)
+    }
+    // ---- batch 3 (ffx_menu::m5m_c) ----
+    /// `AtelDebug_PrintPosWork_00(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_00 @ 0x0087_a4a0 => extern "C" fn ateldebug_printposwork_00(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x0), worker)
+    }
+    /// `AtelDebug_PrintPosWork_04(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_04 @ 0x0087_a4f0 => extern "C" fn ateldebug_printposwork_04(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x4), worker)
+    }
+    /// `AtelDebug_PrintPosWork_08(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_08 @ 0x0087_a550 => extern "C" fn ateldebug_printposwork_08(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x8), worker)
+    }
+    /// `AtelDebug_PrintLevelF32_28(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevelF32_28 @ 0x0087_a5b0 => extern "C" fn ateldebug_printlevelf32_28(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Level(0x28), worker)
+    }
+    /// `AtelDebug_PrintLevelF32_2c(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevelF32_2c @ 0x0087_a610 => extern "C" fn ateldebug_printlevelf32_2c(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Level(0x2c), worker)
+    }
+    /// `AtelDebug_PrintLevelF32_30(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevelF32_30 @ 0x0087_a670 => extern "C" fn ateldebug_printlevelf32_30(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Level(0x30), worker)
+    }
+    /// `AtelDebug_PrintPosWork_0c(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_0c @ 0x0087_a6d0 => extern "C" fn ateldebug_printposwork_0c(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0xc), worker)
+    }
+    /// `AtelDebug_PrintLevelF32_10(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevelF32_10 @ 0x0087_a730 => extern "C" fn ateldebug_printlevelf32_10(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Level(0x10), worker)
+    }
+    /// `AtelDebug_PrintPosWork_1c(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_1c @ 0x0087_a790 => extern "C" fn ateldebug_printposwork_1c(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x1c), worker)
+    }
+    /// `AtelDebug_PrintLevelF32_38(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevelF32_38 @ 0x0087_a7f0 => extern "C" fn ateldebug_printlevelf32_38(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Level(0x38), worker)
+    }
+    /// `AtelDebug_PrintLevel44I16_06(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevel44I16_06 @ 0x0087_a850 => extern "C" fn ateldebug_printlevel44i16_06(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::LevelI16(0x44, 6), worker)
+    }
+    /// `AtelDebug_PrintLevel44I16_04(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevel44I16_04 @ 0x0087_a8b0 => extern "C" fn ateldebug_printlevel44i16_04(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::LevelI16(0x44, 4), worker)
+    }
+    /// `AtelDebug_PrintLevel48I16_06(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevel48I16_06 @ 0x0087_a910 => extern "C" fn ateldebug_printlevel48i16_06(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::LevelI16(0x48, 6), worker)
+    }
+    /// `AtelDebug_PrintLevel48I16_04(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintLevel48I16_04 @ 0x0087_a970 => extern "C" fn ateldebug_printlevel48i16_04(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::LevelI16(0x48, 4), worker)
+    }
+    /// `AtelDebug_PrintPosWork_20(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_20 @ 0x0087_a9d0 => extern "C" fn ateldebug_printposwork_20(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x20), worker)
+    }
+    /// `AtelDebug_PrintPosAngle_20(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosAngle_20 @ 0x0087_aa40 => extern "C" fn ateldebug_printposangle_20(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::PosAngle(0x20), worker)
+    }
+    /// `AtelDebug_PrintPosWork_24(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_24 @ 0x0087_aaa0 => extern "C" fn ateldebug_printposwork_24(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x24), worker)
+    }
+    /// `AtelDebug_PrintPosWork_34(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_34 @ 0x0087_ab00 => extern "C" fn ateldebug_printposwork_34(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x34), worker)
+    }
+    /// `AtelDebug_PrintPosAngle_34(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosAngle_34 @ 0x0087_ab60 => extern "C" fn ateldebug_printposangle_34(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::PosAngle(0x34), worker)
+    }
+    /// `AtelDebug_PrintPosWork_30(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_30 @ 0x0087_abc0 => extern "C" fn ateldebug_printposwork_30(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x30), worker)
+    }
+    /// `AtelDebug_PrintPosWork_38(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_38 @ 0x0087_ac20 => extern "C" fn ateldebug_printposwork_38(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x38), worker)
+    }
+    /// `AtelDebug_PrintPosWork_40(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_40 @ 0x0087_ac80 => extern "C" fn ateldebug_printposwork_40(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x40), worker)
+    }
+    /// `AtelDebug_PrintPosWork_48(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_48 @ 0x0087_ace0 => extern "C" fn ateldebug_printposwork_48(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x48), worker)
+    }
+    /// `AtelDebug_PrintPosWork_44(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_44 @ 0x0087_ad40 => extern "C" fn ateldebug_printposwork_44(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x44), worker)
+    }
+    /// `AtelDebug_PrintPosWork_3c(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_3c @ 0x0087_ada0 => extern "C" fn ateldebug_printposwork_3c(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x3c), worker)
+    }
+    /// `AtelDebug_PrintPosWork_4c(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintPosWork_4c @ 0x0087_ae00 => extern "C" fn ateldebug_printposwork_4c(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_field(&mut mem(), ebp, ffx_menu::m5m_c::Field::Pos(0x4c), worker)
+    }
+    /// `AtelDebug_PrintKind(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintKind @ 0x0087_ae60 => extern "C" fn print_kind(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_kind(&mut mem(), ebp, worker)
+    }
+    /// `AtelDebug_PrintModel(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintModel @ 0x0087_af50 => extern "C" fn print_model(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_model(&mut mem(), ebp, worker)
+    }
+    /// `AtelDebug_PrintEntry(worker)`: frame `ebp - 0x28`.
+    AtelDebug_PrintEntry @ 0x0087_afa0 => extern "C" fn print_entry(worker: u32) -> u32 {
+        let mut f = StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        c::print_entry(&mut mem(), ebp, worker)
+    }
+    /// `AtelDebug_PrintMotion(worker)`.
+    AtelDebug_PrintMotion @ 0x0087_b040 => extern "C" fn print_motion(worker: u32) -> u32 {
+        c::print_motion(&mut mem(), worker)
+    }
+    /// `TkPutDebugFontString(color, flags, s)`.
+    TkPutDebugFontString @ 0x0088_f140 => extern "C" fn tk_put_debug_font_string(color: u32, flags: u32, s: u32) -> u32 {
+        c::put_string(&mut mem(), color, flags, s)
+    }
+    /// `TkPutDebugFontStringP(color, flags, s)`.
+    TkPutDebugFontStringP @ 0x0088_f4c0 => extern "C" fn tk_put_debug_font_string_p(color: u32, flags: u32, s: u32) -> u32 {
+        c::put_string_p(&mut mem(), color, flags, s)
+    }
+    /// `TkPutDebugFontStringPR(color, flags, s)`.
+    TkPutDebugFontStringPR @ 0x0088_f5c0 => extern "C" fn tk_put_debug_font_string_pr(color: u32, flags: u32, s: u32) -> u32 {
+        c::put_string_pr(&mut mem(), color, flags, s)
     }
 }
