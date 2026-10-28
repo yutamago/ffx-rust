@@ -230,6 +230,7 @@ pub mod h4z_quad;
 pub mod m5v_a;
 pub mod m5v_b;
 pub mod m5v_c;
+pub mod m5v_d;
 pub mod menu;
 pub mod misc;
 pub mod movie;

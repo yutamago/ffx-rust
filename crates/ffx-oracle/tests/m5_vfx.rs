@@ -29,6 +29,7 @@ use ffx_bridge::Mem;
 use ffx_glue_other::m5v_a::{self as ma, bridge as a};
 use ffx_glue_other::m5v_b::{self as mb, bridge as b};
 use ffx_glue_other::m5v_c::{self as mc, bridge as c};
+use ffx_glue_other::m5v_d::{self as md, bridge as d};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2121,6 +2122,135 @@ fn shader_tree_insert_matches_the_original() {
                     &[node],
                     |o| Out::U32(c::tree_insert(o, tree, node)),
                 );
+            }
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 4 (ffx_glue_other::m5v_d) ----
+
+#[test]
+fn opd_operand_printers_match_the_original() {
+    // random opcodes: negative halfwords, bits 12-15 and 15 of the
+    // opcode word, op[2] 6 or not; op_num keeps eax (a bare `ret` in the
+    // game), so each printer's eax is compared
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0401);
+        for _ in 0..60 {
+            let mut w: Vec<u16> = (0..4).map(|_| rng.next() as u16).collect();
+            if rng.chance(3) {
+                w[0] &= 0x0fff;
+            }
+            if rng.chance(3) {
+                w[1] = 6;
+            }
+            let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let op = t.alloc(&bytes);
+            for (at, f) in [
+                (0x00a6_4c00_u32, 0x00b7_bf74_u32),
+                (0x00a6_4c20, 0x00b7_bf88),
+                (0x00a6_4e00, 0x00b7_c02c),
+                (0x00a6_4e70, 0x00b7_c058),
+                (0x00a6_4e90, 0x00b7_c070),
+                (0x00a6_4eb0, 0x00b7_c088),
+                (0x00a6_4ef0, 0x00b7_c0ac),
+            ] {
+                t.stub_sym(md::OP_NUM, 1, false, 3, 0, Ret::Keep);
+                t.check("opd_print (half)", at, Conv::Cdecl, &[op], |o| {
+                    Out::U32(d::print_half(o, f, op))
+                });
+            }
+            t.stub_sym(md::OP_NUM, 1, false, 4, 0, Ret::Keep);
+            t.check(
+                "opd_print_u_unit_00a64d60",
+                0x00a6_4d60,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_unit(o, 0x00b7_bfd8, op)),
+            );
+            t.stub_sym(md::OP_NUM, 1, false, 4, 0, Ret::Keep);
+            t.check(
+                "opd_print_u_task_00a64d90",
+                0x00a6_4d90,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_task(o, 0x00b7_bfec, 0x00b7_c004, op)),
+            );
+            t.stub_sym(md::OP_NUM, 1, false, 3, 0, Ret::Keep);
+            t.check(
+                "opd_print_u_task_off_00a64de0",
+                0x00a6_4de0,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_task_off(o, 0x00b7_c018, op)),
+            );
+            for (at, f) in [
+                (0x00a6_4e20_u32, 0x00b7_c03c_u32),
+                (0x00a6_4ed0, 0x00b7_c09c),
+            ] {
+                t.stub_sym(md::OP_NUM, 1, false, 2, 0, Ret::Keep);
+                t.check("opd_print (plain)", at, Conv::Cdecl, &[op], |o| {
+                    d::print_plain(o, f, op);
+                    Out::None
+                });
+            }
+            t.stub_sym(md::OP_NUM, 1, false, 3, 0, Ret::Keep);
+            t.check(
+                "opd_print_e_anmm_00a64e40",
+                0x00a6_4e40,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_anmm(o, 0x00b7_c048, op)),
+            );
+            t.stub_sym(md::OP_NUM, 1, false, 3, 0, Ret::Keep);
+            t.check(
+                "opd_print_e_gline_00a64f10",
+                0x00a6_4f10,
+                Conv::Cdecl,
+                &[op],
+                |o| match d::print_gline(o, 0x00b7_c0bc, op) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                },
+            );
+            t.stub_sym(md::OP_NUM, 1, false, 4, 0, Ret::Keep);
+            t.check(
+                "opd_print_u_part_init_00a64f40",
+                0x00a6_4f40,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_part_init(o, 0x00b7_c0d0, op)),
+            );
+            // the tail jump reads only the slot it wrote
+            t.stub_sym(md::OP_NUM, 2, false, 1, 0, Ret::Keep);
+            let slots = t.arg_slots(&[op]);
+            t.check(
+                "opd_print_e_weapon_shadow_00a64f60",
+                0x00a6_4f60,
+                Conv::Cdecl,
+                &[op],
+                |o| Out::U32(d::print_weapon_shadow(o, slots, 0x00b7_c0ec, op)),
+            );
+            t.same_stack("opd_print_e_weapon_shadow_00a64f60", slots, 4);
+            t.b_top = None;
+            // the sprintf printers
+            t.stub_sym(md::OP_NUM, 3, false, 1, 0, Ret::Keep);
+            let n = rng.below(12);
+            t.import_sym(md::SPRINTF_SLOT, 4, 3, 0, Ret::Val(n));
+            t.stub_sym(md::FLAGS_STR, 5, false, 2, 0, Ret::Val(5));
+            for (at, f) in [
+                (0x00a6_4c40_u32, 0x00b7_bfb4_u32),
+                (0x00a6_4ca0, 0x00b7_bfc0),
+                (0x00a6_4d00, 0x00b7_bfcc),
+            ] {
+                let ebp = frame_ebp(&t.a, 1);
+                t.b_top = Some(ebp - 0x140);
+                t.check("opd_print (flags)", at, Conv::Cdecl, &[op], |o| {
+                    d::print_flags(o, ebp, f, op);
+                    Out::None
+                });
+                t.b_top = None;
             }
             t.reset();
         }

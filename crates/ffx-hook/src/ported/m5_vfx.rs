@@ -10,6 +10,7 @@ use super::{StackFrame, mem, ported};
 use ffx_glue_other::m5v_a::bridge as a;
 use ffx_glue_other::m5v_b::bridge as b;
 use ffx_glue_other::m5v_c::bridge as c;
+use ffx_glue_other::m5v_d::bridge as d;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -295,5 +296,87 @@ ported! {
     /// `VfxShaderTree_insert_006be9e0(tree; node)` -> 0 or the existing node.
     VfxShaderTree_insert_006be9e0 @ 0x006b_e9e0 => extern "thiscall" fn tree_insert(this: u32, node: u32) -> u32 {
         c::tree_insert(&mut mem(), this, node)
+    }
+    // ---- batch 4 (ffx_glue_other::m5v_d): the effect dump's operand printers ----
+    /// `opd_print_u_unit_max_00a64c00(op)` -> `(i16)op[2]`.
+    opd_print_u_unit_max_00a64c00 @ 0x00a6_4c00 => extern "C" fn print_u_unit_max(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_bf74, op)
+    }
+    /// `opd_print_u_et_no_00a64c20(op)` -> `(i16)op[2]`.
+    opd_print_u_et_no_00a64c20 @ 0x00a6_4c20 => extern "C" fn print_u_et_no(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_bf88, op)
+    }
+    /// `opd_print_u_v_00a64c40(op)`: the line in the shim's frame.
+    opd_print_u_v_00a64c40 @ 0x00a6_4c40 => extern "C" fn print_u_v(op: u32) {
+        let mut f = StackFrame::<0x42>::new();
+        d::print_flags(&mut mem(), f.at() + 0x104, 0x00b7_bfb4, op);
+    }
+    /// `opd_print_u_s_00a64ca0(op)`: the line in the shim's frame.
+    opd_print_u_s_00a64ca0 @ 0x00a6_4ca0 => extern "C" fn print_u_s(op: u32) {
+        let mut f = StackFrame::<0x42>::new();
+        d::print_flags(&mut mem(), f.at() + 0x104, 0x00b7_bfc0, op);
+    }
+    /// `opd_print_u_sp_00a64d00(op)`: the line in the shim's frame.
+    opd_print_u_sp_00a64d00 @ 0x00a6_4d00 => extern "C" fn print_u_sp(op: u32) {
+        let mut f = StackFrame::<0x42>::new();
+        d::print_flags(&mut mem(), f.at() + 0x104, 0x00b7_bfcc, op);
+    }
+    /// `opd_print_u_unit_00a64d60(op)` -> the unit number.
+    opd_print_u_unit_00a64d60 @ 0x00a6_4d60 => extern "C" fn print_u_unit(op: u32) -> u32 {
+        d::print_unit(&mut mem(), 0x00b7_bfd8, op)
+    }
+    /// `opd_print_u_task_00a64d90(op)` -> the target.
+    opd_print_u_task_00a64d90 @ 0x00a6_4d90 => extern "C" fn print_u_task(op: u32) -> u32 {
+        d::print_task(&mut mem(), 0x00b7_bfec, 0x00b7_c004, op)
+    }
+    /// `opd_print_u_task_off_00a64de0(op)` -> the task number.
+    opd_print_u_task_off_00a64de0 @ 0x00a6_4de0 => extern "C" fn print_u_task_off(op: u32) -> u32 {
+        d::print_task_off(&mut mem(), 0x00b7_c018, op)
+    }
+    /// `opd_print_e_anm_00a64e00(op)` -> `(i16)op[2]`.
+    opd_print_e_anm_00a64e00 @ 0x00a6_4e00 => extern "C" fn print_e_anm(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_c02c, op)
+    }
+    /// `opd_print_e_flash_00a64e20(op)`.
+    opd_print_e_flash_00a64e20 @ 0x00a6_4e20 => extern "C" fn print_e_flash(op: u32) {
+        d::print_plain(&mut mem(), 0x00b7_c03c, op);
+    }
+    /// `opd_print_e_anmm_00a64e40(op)` -> `(i16)op[2]` or 0xf000.
+    opd_print_e_anmm_00a64e40 @ 0x00a6_4e40 => extern "C" fn print_e_anmm(op: u32) -> u32 {
+        d::print_anmm(&mut mem(), 0x00b7_c048, op)
+    }
+    /// `opd_print_u_texture_load_00a64e70(op)` -> `(i16)op[2]`.
+    opd_print_u_texture_load_00a64e70 @ 0x00a6_4e70 => extern "C" fn print_u_texture_load(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_c058, op)
+    }
+    /// `opd_print_u_clut_load_00a64e90(op)` -> `(i16)op[2]`.
+    opd_print_u_clut_load_00a64e90 @ 0x00a6_4e90 => extern "C" fn print_u_clut_load(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_c070, op)
+    }
+    /// `opd_print_u_tc_load_00a64eb0(op)` -> `(i16)op[2]`.
+    opd_print_u_tc_load_00a64eb0 @ 0x00a6_4eb0 => extern "C" fn print_u_tc_load(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_c088, op)
+    }
+    /// `opd_print_u_world_00a64ed0(op)`.
+    opd_print_u_world_00a64ed0 @ 0x00a6_4ed0 => extern "C" fn print_u_world(op: u32) {
+        d::print_plain(&mut mem(), 0x00b7_c09c, op);
+    }
+    /// `opd_print_e_md_00a64ef0(op)` -> `(i16)op[2]`.
+    opd_print_e_md_00a64ef0 @ 0x00a6_4ef0 => extern "C" fn print_e_md(op: u32) -> u32 {
+        d::print_half(&mut mem(), 0x00b7_c0ac, op)
+    }
+    /// `opd_print_e_gline_00a64f10(op)` (its `eax` after a print is
+    /// `(i16)op[4]`; the dispatcher drops it).
+    opd_print_e_gline_00a64f10 @ 0x00a6_4f10 => extern "C" fn print_e_gline(op: u32) {
+        let _ = d::print_gline(&mut mem(), 0x00b7_c0bc, op);
+    }
+    /// `opd_print_u_part_init_00a64f40(op)` -> `(i16)op[2]`.
+    opd_print_u_part_init_00a64f40 @ 0x00a6_4f40 => extern "C" fn print_u_part_init(op: u32) -> u32 {
+        d::print_part_init(&mut mem(), 0x00b7_c0d0, op)
+    }
+    /// `opd_print_e_weapon_shadow_00a64f60(op)` -> `op` (writes its
+    /// argument slot).
+    opd_print_e_weapon_shadow_00a64f60 @ 0x00a6_4f60 => extern "C" fn print_e_weapon_shadow(op: u32; slots: u32) -> u32 {
+        d::print_weapon_shadow(&mut mem(), slots, 0x00b7_c0ec, op)
     }
 }

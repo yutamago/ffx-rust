@@ -17405,6 +17405,25 @@
 0x00a64a00 function opd_heap_display_init     # fh v3:exact 0x00a64a00
 0x00a64b20 function opd_heap_display_set      # fh v3:exact 0x00a64b20
 0x00a64b60 function opd_heap_display_set_par  # fh v3:exact 0x00a64b60
+0x00a64c00 function opd_print_u_unit_max_00a64c00 # cdecl(op) -> (i16)op[2]: op_num("%7x u_unit_max(%3d)", op, (i16)op[2]); op_num 0x007e63a0 is a bare ret; the effect dump's operand printer table 0x00c88884; name ours (from the format); ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64c20 function opd_print_u_et_no_00a64c20 # cdecl(op) -> (i16)op[2]: op_num("%7x u_et_no(%3d)", op, (i16)op[2]); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64c40 function opd_print_u_v_00a64c40 # cdecl(op): sprintf(ebp-0x104, "%07x u_v(", op) via the import slot, opd_debug_flags_str_00a65570(line + n, op), op_num(line); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64ca0 function opd_print_u_s_00a64ca0 # cdecl(op): as opd_print_u_v_00a64c40 with "%07x u_s("; data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64d00 function opd_print_u_sp_00a64d00 # cdecl(op): as opd_print_u_v_00a64c40 with "%07x u_sp("; data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64d60 function opd_print_u_unit_00a64d60 # cdecl(op) -> k: op_num("%7x u_unit%1d(%7x)", op, k = ((i16)op[0] >> 12) & 3, op + (i16)op[2]); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64d90 function opd_print_u_task_00a64d90 # cdecl(op) -> target: op_num(op[0] bit 15 ? "%7x u_taskp_%1d(%7x)" : "%7x u_task_%1d(%7x)", op, ((i16)op[2] >> 12) & 3, target = op + (i16)op[2]); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64de0 function opd_print_u_task_off_00a64de0 # cdecl(op) -> k: op_num("%7x u_task_off_%1d", op, ((i16)op[0] >> 12) & 3); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64e00 function opd_print_e_anm_00a64e00 # cdecl(op) -> (i16)op[2]: op_num("%7x e_anm(%2d)", ..); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64e20 function opd_print_e_flash_00a64e20 # cdecl(op): op_num("%7x e_flash", op); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64e40 function opd_print_e_anmm_00a64e40 # cdecl(op): op[0] & 0xf000 -> 0xf000; else op_num("%7x e_anmm(%4d)", op, (i16)op[2]) -> that; data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64e70 function opd_print_u_texture_load_00a64e70 # cdecl(op) -> (i16)op[2]: op_num("%7x u_texture_load(%2d)", ..); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64e90 function opd_print_u_clut_load_00a64e90 # cdecl(op) -> (i16)op[2]: op_num("%7x u_clut_load(%2d)", ..); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64eb0 function opd_print_u_tc_load_00a64eb0 # cdecl(op) -> (i16)op[2]: op_num("%7x u_tc_load(%2d)", ..); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64ed0 function opd_print_u_world_00a64ed0 # cdecl(op): op_num("%7x u_world)", op); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64ef0 function opd_print_e_md_00a64ef0 # cdecl(op) -> (i16)op[2]: op_num("%7x e_md(%2d)", ..); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64f10 function opd_print_e_gline_00a64f10 # cdecl(op): op[2] == 6: op_num("%7x e_gline(%4x)", op, (i16)op[4]) (eax that; else eax left alone, the shim is void); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64f40 function opd_print_u_part_init_00a64f40 # cdecl(op) -> (i16)op[2]: op_num("%7x u_part_init(%2d,%2d)", op, (i16)op[2], (i16)op[4]); data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
+0x00a64f60 function opd_print_e_weapon_shadow_00a64f60 # cdecl(op) -> op: op[0] & 0xf000: slot 0 = "%7x e_weapon_shadow", jmp op_num; data-referenced; name ours; ported M5 vfx b4 (ffx_glue_other::m5v_d)
 0x00a65060 function opd_unit_osu                 # str-match switch: only user of 45 string(s) held once by both builds, e.g. '     (%3d)umax'; Switch 0x710086a720 opd_unit_osu (symbols from Fahrenheit's server export)
 0x00a65570 function opd_debug_flags_str_00a65570 # ours: (buf, flags) formats a flag word as letters ("x"/"y"/"z"/"t"/"u" or "." per bit) with the CRT's sprintf (0x00b0c3dc); called only by the op debug display 0x00a64c40/0x00a64ca0/0x00a64d00: debug
 0x00a65750 function op1_md_draw               # fh v3:exact 0x00a65750; (obj, init): tail-jumps by init[0] flags to op_md_persp (0x2000), op_md_x64(_fog) (bit 2), op_md_flag80(_fog) (bit 7), op_md_one8(_fog); fog = 0x300 (hi_draw::bridge::op1_md_draw)
