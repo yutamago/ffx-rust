@@ -153,6 +153,22 @@ def main():
         run(["python3", "-I", "tools/check-argslots.py"], env, dry)
         run(["python3", "-I", "tools/check-callconv.py"], env, dry)
         run(["python3", "-I", "tools/check-tailargs.py"], env, dry)
+        # clippy, host and 32-bit: each branch runs it, but a merge can put
+        # together changes that are clean apart (mixer r3's rust_audio broke
+        # the host build of ffx-hook unseen, 2026-10-28)
+        lint = sorted(affected)
+        if lint:
+            cmd = ["cargo", "clippy", "--all-targets"]
+            for c in lint:
+                cmd += ["-p", c]
+            run(cmd + ["--", "-D", "warnings"], None, dry)
+        hook = sorted(affected & {"ffx-hook", "ffx-dinput8"})
+        if hook:
+            cmd = ["cargo", "xwin", "clippy", "--release", "--target", "i686-pc-windows-msvc"]
+            for c in hook:
+                cmd += ["-p", c]
+            shims = f"{REPO / 'tools/shims'}:{os.environ.get('PATH', '')}"
+            run(cmd + ["--", "-D", "warnings"], {"PATH": shims, "XWIN_ARCH": "x86,x86_64"}, dry)
         run(["tools/build-hook.sh"], None, dry)
     # the replays also check their own scripts and comparison tools
     replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
