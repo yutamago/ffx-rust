@@ -40,6 +40,8 @@ ffx-text.workspace = true
 ffx-vfx.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# the Rust audio engine's output device (rust_audio_out.rs); MIT
+wasapi = "0.26"
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",

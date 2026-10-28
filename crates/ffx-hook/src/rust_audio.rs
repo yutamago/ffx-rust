@@ -151,6 +151,8 @@ struct State {
     subsounds: HashMap<u32, (u32, u32)>,
     movie: Option<Movie>,
     wav: Option<std::fs::File>,
+    last_update: Option<std::time::Instant>,
+    carry: f64,
 }
 
 /// The game's file callbacks, shared with the engine.
@@ -168,6 +170,24 @@ impl Files for SharedFiles {
 }
 
 impl State {
+    /// For the device: the frames of game time since the last update (the
+    /// wall clock, which is the game's off the harness's virtual clock), at
+    /// most four blocks (a long load does not mix seconds at once; the
+    /// output underruns instead).
+    fn realtime_frames(&mut self) -> usize {
+        let now = std::time::Instant::now();
+        let Some(last) = self.last_update.replace(now) else {
+            return BLOCK; // the first update
+        };
+        let due = (now - last).as_secs_f64() * 48_000.0 + self.carry;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // >= 0, small
+        let n = (due.floor() as usize).min(4 * BLOCK);
+        #[allow(clippy::cast_precision_loss)] // small
+        let carry = due - n as f64;
+        self.carry = carry.clamp(0.0, 1.0);
+        n
+    }
+
     fn handle(&mut self) -> u32 {
         self.next += 1;
         (self.next << 8) | 1
@@ -347,6 +367,10 @@ unsafe extern "system" fn event_system_init(
     _extra: usize,
     _ev: u32,
 ) -> u32 {
+    // the device output, unless the mix goes into the capture file
+    if with(|s| s.wav.is_none()).unwrap_or(false) {
+        crate::rust_audio_out::start();
+    }
     OK
 }
 unsafe extern "system" fn event_system_get_system(_this: usize, out: usize) -> u32 {
@@ -355,7 +379,12 @@ unsafe extern "system" fn event_system_get_system(_this: usize, out: usize) -> u
 }
 unsafe extern "system" fn event_system_update(_this: usize) -> u32 {
     let due = with(|s| {
-        s.engine.update();
+        let frames = if crate::rust_audio_out::on() {
+            s.realtime_frames()
+        } else {
+            BLOCK
+        };
+        s.engine.update_frames(frames);
         let mut block = std::mem::take(&mut s.engine.out);
         if let Some(m) = s.movie.as_mut() {
             mix_movie(m, &mut block);
@@ -363,8 +392,10 @@ unsafe extern "system" fn event_system_update(_this: usize) -> u32 {
         if let Some(f) = s.wav.as_mut() {
             let bytes: Vec<u8> = block.iter().flat_map(|x| x.to_le_bytes()).collect();
             let _ = f.write_all(&bytes);
+        } else {
+            crate::rust_audio_out::push(&block);
         }
-        CLOCK.fetch_add(BLOCK as u64, Ordering::AcqRel);
+        CLOCK.fetch_add(frames as u64, Ordering::AcqRel);
         s.engine
             .callbacks()
             .iter()
@@ -946,6 +977,8 @@ pub unsafe fn install(base: usize) {
             subsounds: HashMap::new(),
             movie: None,
             wav,
+            last_update: None,
+            carry: 0.0,
         });
     }
     let ev = "fmod_event.dll";
