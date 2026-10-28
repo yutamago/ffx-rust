@@ -4694,10 +4694,11 @@
 0x0067b990 function MenuManager_GetMenuRecord_0067b990 # thiscall(this, i) -> the i-th menu record of the current chain (+0x5b7c: 0 the list at +0x15f0, else +0x4248; each entry a pointer to the record pointer), 0 unless +0x5b9d; PhyreScene_DrawNormalUI walks them (record +0xc the mesh instance, [+0x24]+0xb4 the type); name ours (pc-ui2d, docs/formats/ui-draw.md); ported (ffx_glue_other::menu, m4 h4 r1): thiscall(this; i) ret 4: byte +0x5b9d clear -> 0; else [[this + (+0x5b7c ? 0x4248 : 0x15f0) + 4i]]
 0x0067b9d0 function MenuManager_GetMenuMeshInstace # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RenderAfterVFX'; Switch 0x7100228750 MenuManager::GetMenuMeshInstace (symbols from Fahrenheit's server export)
 0x0067ba50 function MenuManager_GetMenuVertexInfo # fh v3:exact 0x0067bc00 MenuManager::GetMenuVertexInfo; ported (ffx_glue_other::h4_l1, m4 h4 cont10): thiscall(this; name, kind) ret 8 -> the vertex record; chain +0x5b7c (0/1, else 0); kinds 1, 2, 10: pending batch (+0x5844) gathered, +0x5b88 = 'Unitialized TextureName' (0x00b45ba0), chain 0 TakeSingleRecord(0), chain 1 inline from +0x423c[+0x5838] (pool +0x4238 & 0x7fffffff, used up: returns kind) into the draw list +0x2c58[+0x5840]; batch mode (+0x5b8c == 1): no names: multi-record + store name slot 0; < 6 names: findNameIndex, -1: multi-record + store at slot +0x5844; uses g_MenuVertexNameUses[k] < 12 (signed): records[used - n + k], uses + 1; else gather, multi-record, store slot 0, +0x5844 = 1; plain mode: pending batch gathered, else same name as +0x5b88 (strcmp): +0x5b74 == 1 moves the single record (MenuVertexInfo_move, stdcall(from list end, to records[used])) into a multi-record (singles - 1, +0x5b78 += 2, used + 1; pool used up: 0), else +0x5b78 < 12 (unsigned): records[used - 1], +0x5b78 + 1; otherwise TakeSingleRecord(chain), +0x5b74 = 1, +0x5b78 = 1; +0x5b88 = name. Chain 0: pool +0x15e8/+0x15ec, used +0x2bfc, singles +0x2bf8, list end this - 4 + 4 [+0x2c50]; chain 1: +0x4240/+0x4244, +0x583c, +0x5838, this + 0x2c54 + 4 [+0x5840]; chain 1's multi-record is inline (clears +0x5b74; used up: 0)
-0x0067c030 function MenuRecord_InitMulti_0067c030 # cdecl(record) -> record: the 12-quad menu record ("Multi_TextureName", +0xb0 = 1): render data header at +0xe0 (+0x94 points there) with arrays for 48 vertices / 72 indices: colours +0x14c (header +0x14), indices +0x44c (+0x1c), normals +0x4dc (+0x10), UVs +0x71c (+0x18), positions +0x89c (+0xc); +0x90 = 1 part; identity matrix +0..+0x3c, bounds -1000 / 2000 at +0x98..+0xac, +0xb8 = 2; caller the menu manager's pool set-up; name ours (pc-ui2d)
+0x0067c030 function MenuRecord_InitMulti_0067c030 # cdecl(record) -> record: the 12-quad menu record ("Multi_TextureName", +0xb0 = 1): render data header at +0xe0 (+0x94 points there) with arrays for 48 vertices / 72 indices: colours +0x14c (header +0x14), indices +0x44c (+0x1c), normals +0x4dc (+0x10), UVs +0x71c (+0x18), positions +0x89c (+0xc); +0x90 = 1 part; identity matrix +0..+0x3c, bounds -1000 / 2000 at +0x98..+0xac, +0xb8 = 2; caller the menu manager's pool set-up; name ours (pc-ui2d); stdcall (ret 4), not cdecl; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0067c170 function MenuManager_TakeMultiRecord_0067c170 # thiscall(this, chain) -> the next free 12-quad record of chain 0 (pool +0x15e8/+0x15ec, used +0x2bfc) or 1 (+0x4240/+0x4244, +0x583c), appended to the chain's draw list; 0 when the pool is used up; clears +0x5b74; MenuManager_GetMenuVertexInfo's second quad of a texture run and the draw-type-1 batches; name ours (pc-ui2d); ported (ffx_glue_other::r3, m4 h4 r3): byte +0x5b74 = 0; chain 1: pool +0x4240/+0x4244 used +0x583c into +0x2c58[+0x5840]
 0x0067c210 function MenuManager_TakeSingleRecord_0067c210 # thiscall(this, chain) -> the next free one-quad record of chain 0 (pool +0x15e0/+0x15e4, used +0x2bf8) or 1 (+0x4238/+0x423c, +0x5838), appended to the chain's draw list; returns chain when the pool is used up; MenuManager_GetMenuVertexInfo's first quad of a run and every quad of types 1, 2, 10; name ours (pc-ui2d); ported (ffx_glue_other::h4_c1, m4 h4 c): returns chain (not 0) when the pool is used up; the record is read again after the list store
-0x0067c2d0 function MenuRecord_InitSingle_0067c2d0 # cdecl(record) -> record: the one-quad menu record ("Single_TextureName", +0xb0 = 0), as MenuRecord_InitMulti_0067c030 with arrays for 4 vertices / 6 indices: colours +0x14c, indices +0x18c, normals +0x198, UVs +0x1c8, positions +0x1e8; name ours (pc-ui2d)
+0x0067c2d0 function MenuRecord_InitSingle_0067c2d0 # cdecl(record) -> record: the one-quad menu record ("Single_TextureName", +0xb0 = 0), as MenuRecord_InitMulti_0067c030 with arrays for 4 vertices / 6 indices: colours +0x14c, indices +0x18c, normals +0x198, UVs +0x1c8, positions +0x1e8; name ours (pc-ui2d); stdcall (ret 4), not cdecl; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0067c440 function MenuTextures_ResetBuffers # thiscall(this) -> memset's eax: buffers +0x2bd0/+0x2bd4 (600 x 16), +0x2bd8/+0x2bdc (800 x 16), +0x5828/+0x582c, +0x5830/+0x5834 reallocated by Phyre_PhyreMalloc(n*16, 8) unless at capacity (old freed when capacity >= 0 and different), cleared; 0x0067c7a0 on g_MenuTextureManager, MapPart_InitLangOverrides(this), +0x15f0 (0x15e0 bytes) cleared; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0067c620 function MapPart_InitLangOverrides    # (this): the map part override table at +0x2c00: two entries of 10 ints, map 0xcbc (titl00, title) parts by language 0,13,7,11,9,5 (+9/10: 13,3) and map 0x199f (titl02, logos) 2,0,6,8,7,5 (+9/10: 2,2); by game language id 0 jp, 1 en, 2 fr, 3 es, 4 de, 5 it, 9 kr, 10 ch
 0x0067c6f0 function MenuTextureManager_LoadBGWaterTexture # layout+callees: sorts between MenuManager_GetMenuVertexInfo and MenuTextureManager_LoadCloudSaveUITexture, and its named callees match the Switch 0x710022e3b0 MenuTextureManager_LoadBGWaterTexture's (similarity 1.00: PhyreScene_loadMenuTexture); symbols from Fahrenheit's server export
 0x0067c720 function MenuTextureManager_LoadCloudSaveUITexture # fh v3:bsim1.00 0x0067c8d0 MenuTextureManager::LoadCloudSaveUITexture
@@ -7754,7 +7755,9 @@
 0x00776940 function MsgExpandCodes_00776940     # cdecl(out, text, arg, &jump, &flag) -> end past the NUL, or 0 at a 0xb 0xf7 jump: copies a script message evaluating 0xb 0xf0..0xfa (if/then/end if/else over a 64-byte condition stack, MenuTextCode, variable sets, jumps, calls through the 0x00c416d0/d4/dc tables); Ghidra's void is wrong; ported (system round 34, msg.rs); name ours
 0x00776f00 function SetFileTables_00776f00 # ours: (): d = [0x0112a03c] loaded: 0x0112a01c = d + [d+8], 0x0112a080 = [d+4], 0x0112a020 = d + [d+0xc], 0x0112a024 = e + [e+0x10] (e = [0x0112a040]), 0x0112a028 = d + [d+0x14]; caller FUN_00770430; ported (ffx_battle::minor, battle round 29)
 0x00776f50 function MsGetSavePlayerPtr_thunk  # (chr): jmp MsGetSavePlayerPtr
-0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export
+0x00776f60 function CdDiscWait_00776f60 # cdecl(ctx) -> 0/1: with ctx+0x5075d clear and sceCdStatus() == 1 (tray open) sets 0x0112a4ec, audioStop(ctx), then waits (read_err_disp_set(1), movie_wait, movie_csc) until sceCdDiskReady(1) == 2 and the status isn't 1: 0; another status: dbgPrintf, 1; callers CdReadSectors_00777080 and 0x00777440; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00777000 function CdOpenCheck_sub              # callees: its named callees match the Switch 0x71003227a0 CdOpenCheck_sub's (similarity 0.80: TkSyncV, movie_wait, read_err_disp_set, sceCdDiskReady); symbols from Fahrenheit's server export; ported ffx_battle::m5_battle (m5 battle b1)
+0x00777080 function CdReadSectors_00777080 # cdecl(sector, count, buf, mode, ctx): count 0x800-byte sectors into buf; the sector after the last read comes from its copy 0x0112a4f4 (the advanced sector stored into its own first argument slot); hard disk (ctx+0x5075d): hd_file_read_no_wait's eax; disc: sceCdRead retried with CdDiscWait/movie frames, sceCdRead reset 0x00a447a0 every 60 tries, 1; request/last-read state 0x0112a4dc..0x0112a4f8; name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours
 0x00777240 function movieOpenCd                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'movieOpenCd() hdd_mode=%d\\n'; Switch 0x7100322db0 movieOpenCd (symbols from Fahrenheit's server export)
 0x00777420 function hdd_state_clear           # (): zeroes the two words at 0x0112a4fc (before g_Hdd_Mounted); name ours
@@ -7959,9 +7962,9 @@
 0x007824e0 function MsBtlBridgeEvent2Btl      # fh v3:exact 0x007825a0; for each event actor (AtelGetEventActorTotal) bound to the battle (bind ID 1) with a character: link |= 2, the battle actor in the battle (+0x10) without a character (+0) of its character ID (+4) (its bound PC when <= 0x1b, else the first of 0..0x1f; none: link |= 0x31) gets it, and its weapon records the event's element characters (ID and handle both set: +0 handle, +4 ID, +0xd the position byte) where free (else link |= 0x10 / 0x20); AtelSetEventActorLinkWork for every one; ported (ffx_battle::atel, battle round 34)
 0x00782640 function MsBtlScriptRecordFree_00782640 # (i): Sg_FreeA(g_BtlScriptRecords[i] +4, 5) and the pointer cleared; MsBattleFree (i 1) and MsBattleAllFree (i 0) call it, where Switch's MsBattleFree/MsBattleAllFree inline a Sg_FreeA (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782670 function MsBtlScriptRecordShift_00782670 # (): g_BtlScriptRecords' second 0x20-byte record copied over the first (rep movs from 0x0112a9a4), g_BtlStatus 0, the second's +4 cleared; MsBattleInit's callee; name ours; ported (battle round 19)
-0x007826a0 function FFXGetAsiaMode_007826a0   # (english) MsBattleInit prints it ("ASIA %d:%d"); Ghidra's name
+0x007826a0 function FFXGetAsiaMode_007826a0   # (english) MsBattleInit prints it ("ASIA %d:%d"); Ghidra's name; ported ffx_battle::m5_battle (m5 battle b1)
 0x007826b0 function MsDebugInfoRead              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host0:/home/%s/%s'; Switch 0x7100337290 MsDebugInfoRead (symbols from Fahrenheit's server export)
-0x00782740 function MsEtEffectRead_00782740   # MsBattleProcess's debug restart, after MsBattleInit; Ghidra's name
+0x00782740 function MsEtEffectRead_00782740   # MsBattleProcess's debug restart, after MsBattleInit; Ghidra's name; ported ffx_battle::m5_battle (m5 battle b1)
 0x00782750 function MsEffectBufferFree_00782750 # (): user_free(g_BtlEffectBuffer), cleared; MsBattleFree's only call between Sg_IdSetEffectTableIndex and MsNumberFreeMem, inlined as a user_free in Switch's MsBattleFree (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
 0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
@@ -8017,7 +8020,14 @@
 0x007849d0 function MsDebugFullItem           # fh v3:exact 0x00784a90
 0x00784ac0 function MsDebugFullMember         # fh v3:exact 0x00784b80
 0x00784ae0 function MsDebugSetAllSP_00784ae0 # ours: (): every ply_save record's SP byte (+0x3b, TkMenuSetSP's) of the 18 = 0x62, eax one record past the last (0x01132aff); callers Native_707d_BtlSetFlag, Ms_Gui_BattleConfigProc (debug menu), FUN_006b8ce0; ported (ffx_battle::misc, battle round 29)
+0x00784b00 function MsDebugFullStats_00784b00 # cdecl(): the 18 g_PlySave records get 99999/9999 at +4/+8, +0x1c/+0x20, +0x24/+0x28 and -1 at +0xc/+0x10 (Ms_Gui_BattleConfigProc's debug item); name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x00784b60 function MsDebugFullSummon            # layout+callees: sorts between MsDebugFullMember and MsExchangeSaveParty, and its named callees match the Switch 0x7100370f30 MsDebugFullSummon's (similarity 1.00: MsSetSavePlyJoin); symbols from Fahrenheit's server export; () -> MsSetSavePlyJoin(chr, 1) for 8..17, the last one's eax; ported (ffx_battle::minor, battle round 30)
+0x00784b80 function MsDebugWeakAll_00784b80 # cdecl(): in battle every actor 0..0x1e gets +0x5d0 = 1 and MsSetChrWeak(i, -1) (Ms_Gui_BattleConfigProc); name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00784bc0 function MsDebugWeakMonsters_00784bc0 # cdecl(on): in battle actors 0x14..0x1b get +0x5d0 = on ? 1 : their +0x594, then MsSetChrWeak(i, -1); name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00784c20 function MsDebugAllItemsOne_00784c20 # cdecl(): inventory slot i = item 0x2000+i, count 1, for all 0x70; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00784c40 function MsDebugAbilityOne_00784c40 # cdecl(): the 0x14 u16 words from +0x78 of the first 7 g_PlySave records (0x011320bc, stride 0x94): every nonzero one becomes 1; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00784c80 function MsDebugWeakParty_00784c80 # cdecl(on): MsDebugWeakMonsters_00784bc0 for the party actors 0..0x11; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x00784cd0 function MsDebugClearItems_00784cd0 # cdecl(): every inventory slot item 0xff, count 0; name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x00784d00 function MsExchangeSaveParty       # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); was Party_SwapIn; the reserve's entries above 7 cleared first; chr's place: reserve, front, else (may join) the first empty reserve then front slot; neither fixed (MsGetSavePlyFix); -1 swapped, else 0; ported (battle round 22, ffx_battle::save)
 0x00784e40 function MsGetBattleMessageFlag       # layout: alphabetical run between MsExchangeSaveParty and MsGetCheckEnglish (1 unnamed in the gap); Switch 0x7100372350 MsGetBattleMessageFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); () -> -1 when MsGetCheckEnglish() != 0 and byte 0x0112ca17 == 0, else 0; ported (ffx_battle::minor, battle round 29)
 0x00784e60 function MsGetCheckEnglish         # fh v3:exact 0x00784f20
@@ -8289,6 +8299,7 @@
 0x007902d0 function PasswordGetTotalIndex        # layout+callees: sorts between MsTestCheckMotion and PasswordTextRead, and its named callees match the Switch 0x710035d750 PasswordGetTotalIndex's (similarity 1.00: TOGetFFXLang); symbols from Fahrenheit's server export; () -> 9 when TOGetFFXLang() == 9, else (asking again) 10 for 10, 0 for the rest; ported (ffx_battle::minor, battle round 29)
 0x007902f0 function PasswordTextDispose          # layout+callees: sorts between MsTestCheckMotion and PasswordTextRead, and its named callees match the Switch 0x710035d700 PasswordTextDispose's (similarity 1.00: is_ptr32_null, user_free); symbols from Fahrenheit's server export; (): [0x02311084] && get_ptr32_func(g_PasswordText): 0x00687010(it) (free), is_ptr32_null(g_PasswordText), [0x02311084] = 0; ported (ffx_battle::minor, battle round 29)
 0x00790340 function PasswordTextRead             # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/ffx_ps2/ffx/master/new_krpc/battle/kernel/albhed.bin'; Switch 0x710035d610 PasswordTextRead (symbols from Fahrenheit's server export); eax 0; ported (ffx_battle::minor, battle round 33): user_malloc 0x25800, albhed.bin for languages 9/10 (fiosUnifyFilename + 0x790430 -> g_PasswordTextOn = size), ptr32 block made when null, memcpy, 0x2311080 cleared, buffer freed
+0x00790430 function PasswordFileRead_00790430 # cdecl(name, dst) -> size: fiosOpen(name, 1), sceLseek to the end and back, TkMalloc, sceRead, sceClose, memcpy to dst, TkFree; 0 when the open fails (PasswordTextRead); name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x007904a0 function MsGetItemCheck            # fh v3:bsim1.00 0x007904f0
 0x007904b0 function MsGetSaveItemNum          # fh v3:exact+call.cs 0x00790500 cdecl
 0x00790500 function MsGetSaveItemUse          # fh v3:bsim1.00 0x00790550
@@ -8325,7 +8336,7 @@
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791190 function MsBattleCanProgress       # ours: -1 when no pause (0x0112c9d0), hit motion, turn end, message, camera state, overdrive learnt, stone effect or command hold holds the battle (MsBattleProcess)
 0x007911e0 function MsBattleProcess_ChrDamage_007911e0 # (): when no cue level / SE transfer is pending, per character MsSetDamage, MsPoisonProcess, MsEffectFree; caller MsBattleProcess; own name; ported (battle round 13, damage_end)
-0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
+0x007915f0 function MsCheckChrBtlPosAll          # layout+callees: sorts between MsBattleProcess and MsCheckChrMotionAll, and its named callees match the Switch 0x7100366ad0 MsCheckChrBtlPosAll's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export; ported ffx_battle::m5_battle (m5 battle b1)
 0x00791630 function MsCheckChrMotionAll       # fh v3:exact 0x00791680
 0x00791690 function MsCheckCommandEnd         # ours: (actor) -> 1 (+0xdf0 = 1) when the command may end; waits (+0xdf0 = 5) on kind-1 numbers, +0xe13, 0x0112c8f8; titled commands wait for the title window (0x3103: above 0x2d); ported (battle round 12)
 0x00791760 function MsSetDeathAll             # ours: MsSetDeath(i, 1) for every actor, each frame (MsBattleProcess)
@@ -8348,7 +8359,7 @@
 0x00792e50 function MsSetMenuCommand          # fh v3:exact 0x00792e60
 0x00792e80 function MsCheckSoftResetOk        # ours: -1 when a soft reset may end the battle (no read, sound transfer, voice, effect, waits; status 1) (MsBattleProcess)
 0x00792ee0 function MsCheckPartyDying         # ours: () -> -1 while a party member's death plays (+0x436), else 0; ported (battle round 12)
-0x00792f20 function MsBattleProcess_DebugStatus_00792f20 # (): the debug status line of MsBattleProcess (TODapsString of battle-end, sound, CD and cue-level states, "%2d:%2d:%1d W%1d S%1d E%1d"); own name
+0x00792f20 function MsBattleProcess_DebugStatus_00792f20 # (): the debug status line of MsBattleProcess (TODapsString of battle-end, sound, CD and cue-level states, "%2d:%2d:%1d W%1d S%1d E%1d"); own name; ported ffx_battle::m5_battle (m5 battle b2)
 0x00793260 function msSetEndDir               # fh v3:exact 0x00793270
 0x00793290 function MsSetEndDirAll            # name ours: msSetEndDir for actors 0..0x1e; called by MsBattleProcess_Status_007917d0 at state 0x1d; ported (battle round 14)
 0x007932b0 function MesSetChrTargetPosToLimitSparePosy # fh v3:exact 0x007932c0; ported (ffx_battle::minor, battle round 32): (i): actor with a character: MsGetChrGround(i) - y of Ch_OptposGet(chr, (i8) +0xdf9) (f32) into g_BtlChrExtra[MsSetChrExtraSlot_00796bb0(i)] +8; eax 0 / actor / g_BtlChrExtra
@@ -8706,7 +8717,7 @@
 0x007a0400 function MsSEPchrClear             # fh v3:exact 0x007a0420
 0x007a04b0 function MsSEPtransAmount          # fh v3:bsim1.00 0x007a04d0
 0x007a04c0 function MsSEPtransCheck           # fh v3:exact 0x007a04e0
-0x007a04d0 function MsSEPtransCheckWave          # layout: alphabetical run between MsSEPtransCheck and MsSEPtransInit (1 unnamed in the gap); Switch 0x7100376d20 MsSEPtransCheckWave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007a04d0 function MsSEPtransCheckWave          # layout: alphabetical run between MsSEPtransCheck and MsSEPtransInit (1 unnamed in the gap); Switch 0x7100376d20 MsSEPtransCheckWave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b1)
 0x007a0500 function MsSEPtransInit            # fh v3:exact 0x007a0520
 0x007a0540 function MsSEPtransProcess         # fh v3:exact 0x007a0560; ours: g_BtlSepTrans > 0: record 0x011360c8 + 12*g_SepTransState: state 0 sends (type 0 SndSepTransSepOnly, else SndStandbyBattleWave), state 1 after SndSyncWaveTrans(0) 0: type 1 SndStandbySepWave (state 2), else ends (actor +0xf2d down, +0xf2c at 0; 0xff: 0x0112c02a down, at 0 g_SepTransFlag 1 + MsBtlReadSceneFree), index +1 mod 16; -1, none 0; dbgPrintf reads the data's first byte; ported (battle round 14)
 0x007a06b0 function MsSEPtransRegist             # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100376d60 MsSEPtransRegist is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_battle::sound, battle round 32): cdecl (actor, data, size, kind): MsSEPtransProcess while g_BtlSepTrans >= 16, then record (state[0] + count) signed %16 of g_SepTransQueue = data, size, kind +8, actor +9, state 0; count up; eax = size with kind in the low byte
@@ -9121,6 +9132,7 @@
 0x007abdf0 function MsGetSaveWeaponName       # fh v3:exact+call.cs 0x007abe10 cdecl
 0x007abe30 function MsInitSaveWeaponEquipFlag # fh v3:exact 0x007abe50
 0x007abeb0 function MsCopyPointsOffset_007abeb0 # ours: (base, other, k): record k (32 bytes from base, k < (i8) base +1): for each of other's (i8) +1 records (0x60 bytes from +4): min((i8) rec +4, (i8) e +0) points from base + rec +0x10 into other + e +0xc, each + the vector at e +0x2c (f32 adds, 16 bytes apart); caller FUN_007abf40; ported (ffx_battle::minor, battle round 29)
+0x007abf40 function MsPickGroundGroup_007abf40 # cdecl(group) (the push ecx is a local): among the script records (0x0112a990: i8 count at +1, 0x20-byte records from +4, i8 group first) from the first of group to the last record of another group after it, a rnd() pick; 0x0112bdee = pick+1, MsCopyPointsOffset(records, g_BtlPosFile, pick); name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x007abfe0 function MsBtlGetPos               # fh call.cs cdecl
 0x007ac2b0 function MsGetSummonerPos          # fh v3:exact 0x007ac2d0
 0x007ac600 function MsPopBtlPos               # fh v3:bsim1.00+call.cs 0x007ac620 cdecl
@@ -9437,7 +9449,7 @@
 0x007ba460 function Atel_CamGetRefVars_007ba460 # name ours; cdecl: 0x007ba3c0's copy with Cam_GetRefPos_007bd4b0; callers Native_6085_CamGetEyeVars, Native_6086_CamGetRefVars; ported (ffx_script helpers, script round 24 d)
 0x007ba5b0 function MsAtelCameraMoveAcc_007ba5b0 # ours: camera native (worker, _, stack, side, mode): camera as MsAtelGetCamera_007baa50(w, 0, 0); ints a, b, c, d popped -> MsCameraMoveAcc(cam, side, mode, d, c, b, a), its eax; ported (ffx_battle::camera_native, battle round 29)
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
-0x007ba6d0 function MsAtelFreeCameraID           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100391fa0 MsAtelFreeCameraID, 2 votes, round 1
+0x007ba6d0 function MsAtelFreeCameraID           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100391fa0 MsAtelFreeCameraID, 2 votes, round 1; ported ffx_battle::m5_battle (m5 battle b1)
 0x007ba780 function MsAtelGetCameraID         # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110; was Cam_GetHandle; (owner, kind 0-3, cam 0-2) -> the g_AtelCamera ID of group 1/0/2/3, MsCameraGet(owner, cam, 3/1/5/7) the first time; ported (ffx_battle::camera, battle round 28)
 0x007ba860 function MsAtelResetMoveCameraID   # fh v3:exact 0x007ba7e0
 0x007ba950 function MsBattleCameraFree        # fh v3:exact 0x007ba8d0
@@ -9598,9 +9610,12 @@
 0x007c57b0 function MsScreenShake2               # structure: screen shake with brnd, caller Ms_Gui_ShakeProc as on the Switch (MsScreenShake2 0x71003a0700 calls brnd, called by Ms_Gui_ShakeProc); (i, which, kind, steps, length, speed f32, range, pull f32, fade): kind-9 springs at screen +0x16c; negative range flips the speed; a nonzero one scales speed and pull by (256 - brnd(9) % range)/256, carried to the next record; ported (ffx_battle::shake, battle round 25)
 0x007c58e0 function MsCamSetBtl                  # callees: its named callees match the Switch 0x71003981f0 MsCamSetBtl's (similarity 1.00: MsGetChrInfo, MsVectorPolar2Rect, MsVectorRect2Polar); symbols from Fahrenheit's server export; (id, mode, side, ch, other, other_ch) -> eax how many of ch's two actor sets answered: MsGetChrInfo kinds 9/10/7/11 (script actors unless id bits 16-19 are 5) averaged into side +0x50 (y less ch+0x5c x height); with a mode the yaw (Rect2Polar between the sets, or other->side, or ch+0x64), length ch+0x60 x width (modes 2, 4: 10.0 x ch+0x60 + width), then a polar offset (plain ch) or side +0x60..0x68 (polar ch); ch+0x30 the position, side+0x6c 0; its three MsVectorPolar2Rect calls push 5 words (the rest: its caller's edi, esi, ebx); ported (ffx_battle::camera, battle round 26)
 0x007c5c60 function MsCameraSetBtl               # callees: its named callees match the Switch 0x7100397ea0 MsCameraSetBtl's (similarity 0.80: MsCameraGetID, MsCameraIDcheck, MsGetChrBit, MsSetCheckChange); symbols from Fahrenheit's server export; (id, side, chr, mode, a, b, lift, turn, pitch, scale) -> eax: channel id>>8 of side side&1 gets polar byte (modes 3, 4), kind +2 (0xb, 0xc, 0xd, 0xf, 0x10), selectors +0x10/+0x12, sets +0x14/+0x18 (MsGetChrBit(chr, a|b, 1, 1) for level nibble 5, else the selectors), lift +0x5c, with a mode +0x40/+0x44/+0x60, the other side's +0x30 position, +6 = 1, +0x64 = 0.0; while id is current MsCamSetBtl(id, mode, side, ch, other side, its channel) and MsSetCheckChange(id, side, 0, 0) (eax its result; else MsCameraGetID's; 0 without the request); ported (ffx_battle::camera, battle round 26)
+0x007c5dd0 function MsDebugSceneWalk_007c5dd0 # cdecl(): the debug scene picker's field (0x00c44248) and encounter (0x01139e44) wrapped into range, MsBtlListField/MsBtlListEncount/MsBtlListGroup walked to the encounter's group (0x01139e48) and place in it (0x01139e4c); sets the scene's field and formation numbers 0x01139e50/54, the list pointers 0x01139e94..0x01139ea0; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x007c5f00 function MsDebugSceneGroupBase_007c5f00 # cdecl() -> the picked encounter's index: group sizes before 0x01139e48 plus 0x01139e4c, into 0x01139e44 (MsDebugSetScene's tail call); name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x007c5f50 function MsDebugGetFieldNum        # fh v3:bsim1.00 0x007c5ee0
 0x007c5f60 function MsDebugSetScene           # fh v3:exact 0x007c5ef0
 0x007c5fc0 function MsGetBattleName           # fh v3:exact 0x007c5f30
+0x007c60a0 function MsDebugNextMember_007c60a0 # cdecl(slot, step) -> u8: party slot's character stepped down (wrapping to 0x11) or up (0xff past 0x11) to the next joined one not in another party slot; 0xff for an empty slot; step 0 with an unjoined character loops forever (as the original); name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x007c6110 function Ms_Gui_BattleConsoleProc  # fh v3:exact 0x007c6080
 0x007c6d80 function enterBattle               # fh switch:bsim1.00 0x71003a8a40
 0x007c6da0 function GetGlobal01139e48_007c6da0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01139e48]; return t0; callers: ; name ours
@@ -9610,43 +9625,90 @@
 0x007c8930 function Ms_SetTableEntry_007c8930    # auto-port shape (store argument to table, cdecl): u32[((a0 * 0x4) + &0x01139f14)] = a1; return a0; callers: Ms_Gui_CameraProc, Ms_Gui_ReferencePos; name ours
 0x007c8950 function MsAutoRepeatCheck         # fh v3:exact 0x007c88c0
 0x007c89a0 function MsAutoRepeatInit          # fh v3:exact 0x007c8910
-0x007c8a80 function MsCheckFile                  # layout+callees: sorts between MsAutoRepeatInit and MsFileIn, and its named callees match the Switch 0x71003b6090 MsCheckFile's (similarity 1.00: sceClose, sceLseek, sceOpen); symbols from Fahrenheit's server export
+0x007c8a80 function MsCheckFile                  # layout+callees: sorts between MsAutoRepeatInit and MsFileIn, and its named callees match the Switch 0x71003b6090 MsCheckFile's (similarity 1.00: sceClose, sceLseek, sceOpen); symbols from Fahrenheit's server export; ported ffx_battle::m5_battle (m5 battle b2)
 0x007c8b00 function MsFileIn                  # fh switch:bsim1.00 0x71003b5f60
 0x007c8b50 function MsFileOut                 # fh switch:bsim1.00 0x71003b5ee0
+0x007c8bb0 function MsDebugWinAlloc_007c8bb0 # cdecl(slot) -> record: *slot when set, else the first free debug window record of 0x80 x 0x34 bytes at 0x0113c800 (free: byte +0x20 clear; marked +0x20 = 0x101, +0x22 = 6), the table's end when none, stored into *slot when slot isn't null; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007c8c50 function MsDebugCameraKeep_007c8c50 # cdecl(step) -> kept index 0..2: the debug camera's slot level (0x011381a8 + 0xda0 cam + 8 ch, unless +5 set) picks a kept camera (0x01139f20 + 0xda0 k, used flags 0x01139f14); with step the camera is stored there, the next used one step away restored (whole with 0x01139f0c, else the two sides' channel bytes and points via fld/fstp; never stored: cleared), MsCameraResetMove(slot, 8/9); then the camera's four slots' +5 and levels set by the kept index; stores cam*0xda0 into its own step argument slot; name ours; ported ffx_battle::m5_battle (m5 battle b6)
 0x007c90f0 function MsDebugBattlePosInit      # fh switch:cg2 0x71003a8bd0
+0x007c9210 function MsBtlPosFree_007c9210 # cdecl() (the push ecx is a local): ms_free of every block of the position table 0x0113e278 (file records of 0x74 at +0x30, count +0x1c: +0x28/+0x2c/+0x4c/+0x50/+0x60/+0x64, sub-records of 0x14 at +0x70 (count +0x68) with blocks at +0x10, the array; then +0x2c, +0x30), cursors 0x0113e27c/0x0113e284; then MsBtlPosInit; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007c93d0 function MsBtlPosInit              # fh v3:exact 0x007c9300
+0x007c9bc0 function MsBtlPosWriteAll_007c9bc0 # cdecl(out) -> MsBtlPosWriteBin(0, *out)'s eax, *out = ms_malloc_007cf970 of the size the position table needs when null (per record: +0x68 sub-records, twice +0xc/+0x30/+0x54 and the sub-records' +8; ([table+0x24] + 4 units) * 4); name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007c9f10 function MsBtlPosPrintBin             # str-match switch: only user of 16 string(s) held once by both builds, e.g. 'in <%s>\\n'; Switch 0x71003bd8a0 MsBtlPosPrintBin (symbols from Fahrenheit's server export)
+0x007ca4a0 function MsBtlPosLoad_007ca4a0 # cdecl(name) -> 1/0: MsReadOpen_007cd5a0 into a frame reader, MsBtlPosParse_007cd0f0 with 0x0113e28c = name (restored) and line 0; sceWrite back when +4 is set and the position > 0; free, sceClose; 0 (error lines, error 2) when it doesn't open; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007ca580 function MsBtlPosWriteBin             # layout+callees: sorts between MsBtlPosPrintBin and MsBtlPosWriteScr, and its named callees match the Switch 0x71003bc4f0 MsBtlPosWriteBin's (similarity 0.67: MsStructClear, sceClose, sceOpen, sceWrite); symbols from Fahrenheit's server export
 0x007cb640 function MsBtlPosWriteScr             # str-match switch: only user of 13 string(s) held once by both builds, e.g. '\\n\\t%s\\t%d\\n'; Switch 0x71003b90e0 MsBtlPosWriteScr (symbols from Fahrenheit's server export)
+0x007cc1f0 function MsBtlPosCheckVersion_007cc1f0 # cdecl(name, version) -> 1 when 0x0113e270 >= version (signed), else dbgPrintf of the file (0x0113e28c), line (0x0113e288) and name, g_OpLastError = 7, 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cc250 function MsBtlPosCheckVersion2_007cc250 # cdecl(name, version, sub) -> 1 when 0x0113e270 >= version and 0x0113e274 == sub, else the error lines, error 7, 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd0f0 function MsBtlPosParse_007cd0f0 # cdecl(reader): MsReadToken_007cf180 into a 0x100-byte frame buffer, each token to 0x007cc420(reader, token), empty ones MsReadSkipLine_007cf380(reader, 0x0113e288) until it returns -1; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007cd170 function MsReadVec3_007cd170 # cdecl(reader, name, x, y, z): three MsReadToken_007cf180 tokens (0x100-byte frame buffer) sscanf "%f" into x, y, z; an empty one: error lines, g_OpLastError = 5, stop; name ours; ported ffx_battle::m5_battle (m5 battle b6)
+0x007cd360 function MsReadFloat_007cd360 # cdecl(reader, name, out): MsReadToken_007cf180 into a 0x100-byte frame buffer, sscanf "%f" (0x00b40274) into out; empty: error lines, g_OpLastError = 5; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd420 function MsReadInt_007cd420 # cdecl(reader, name, out): as MsReadFloat_007cd360 with sscanf "%d" (0x00b0f604); name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd4e0 function MsBtlPosAllocPoints_007cd4e0 # cdecl(): the current position file record (0x0113e27c): +0x58/+0x5c = 0, +0x60 and +0x64 = ms_malloc_007cf970(+0x54 * 12) cleared with MsStructClear; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd5a0 function MsReadOpen_007cd5a0 # cdecl(reader, name): a text reader (+0 buffer, +4 0, +8 sceOpen file, +0xc position, +0x10 length = size rounded up to 16) filled with the file through malloc (cleared), sceRead, sceClose; +8 = 0 after; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd680 function MsEnvWriteText_007cd680 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsBtlPosWriteScr's); name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cd800 function MsDebugEnvSave            # fh v3:exact 0x007cd730
+0x007ce9f0 function MsEnvWriteText_007ce9f0 # cdecl(writer, text) (the push ecx is a local): appends text to the writer's buffer (+0 buffer, +8 file, +0xc fill, +0x10 size), sceWrite(file, buffer, size) at each fill; keeps the chunk length in its text argument slot; name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x007ceb30 function MsCheckMemory                # str-match switch: only user of 4 string(s) held once by both builds, e.g. '------------ ERROR MALLOC %d\\n'; Switch 0x71003b7260 MsCheckMemory (symbols from Fahrenheit's server export)
+0x007ceeb0 function MsKeywordLookup_007ceeb0 # cdecl(name, table) (the push ecx is a local) -> the +4 value of the 12-byte entry (+0 name, +8 hash; ends at a null name) matching name case-insensitively, hash = sum of (sign-extended lower-cased byte) ^ (0x6f * index); 0 when none; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cef60 function MsExecuteCommand             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[Command Execution "%s"]\\n'; Switch 0x71003b7dc0 MsExecuteCommand (symbols from Fahrenheit's server export)
+0x007cefb0 function MsPathBaseName_007cefb0 # cdecl(path, ext) -> the name after the last '\' or '/' (Shift-JIS pairs whole); *ext (when not null) = the index of its '.' or end; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cf000 function NameHash_007cf000 # ours: (s) -> sum over bytes of (i8)(A-Z lowered) ^ (0x6f * index), wrapping; no direct caller; exact copy FUN_007e1bf0 (dead); ported (ffx_battle::misc, battle round 29)
+0x007cf140 function MsEnvFindKey_007cf140 # cdecl(table, key): 12-byte entries ending at a 0 first word; the first word of the entry whose second word is key, else 0; name ours; ported ffx_battle::m5_battle (m5 battle b1)
+0x007cf180 function MsReadToken_007cf180 # cdecl(reader, out, size) -> length: after MsReadSkipSpace_007cf540 a token of at most size-1 bytes (ends at a space/tab outside double quotes, CR, LF, NUL, 0xff; quotes left out; Shift-JIS pairs whole), the reader back on the ending byte; keeps the quote flag in its reader argument slot; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cf330 function MsStrEqualNoCase_007cf330 # cdecl(a, b) -> 1 when equal ignoring A-Z case, else 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cf380 function MsReadSkipLine_007cf380 # cdecl(reader, line) -> bytes skipped to and past the next LF (Shift-JIS pairs whole), -1 at the text's end (NUL, 0xff, the length; the reader back one); ++*line when not null; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cf540 function MsReadSkipSpace_007cf540 # cdecl(reader) -> tabs and spaces skipped; the reader (+0 buffer, +0xc position, +0x10 length) back on the next byte; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cf590 function MsPathSetExt_007cf590 # cdecl(path, src, n, force) -> 1/0: path's extension (after MsPathBaseName_007cefb0, which writes the index into this function's own path argument slot) replaced by MsStrCopy(src, ext, n + ext_len - path_len) with a '.' added where missing, when it has none or force == 1; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cf640 function MsSetHashValue            # fh v3:exact 0x007cf570
 0x007cf6a0 function MsSmall                      # layout: alphabetical run between MsSetHashValue and MsStrCopy (1 unnamed in the gap); Switch 0x71003b61f0 MsSmall is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007cf6c0 function MsStrCopy                 # fh v3:exact 0x007cf5f0
 0x007cf860 function op_file_puts_007cf860 # ours: exact copy of op_file_puts_007e2fb0 (tools/dupes.py family 1925): (file, s) into the op file's write buffer, flushes through sceWrite; callers MsCheckMemory, ms_free, FUN_007cf970, FUN_007cf9f0; ported (ffx_vfx::op through battle.rs, battle round 29)
-0x007cf8f0 function ms_free                      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'free   %10d\\n'; Switch 0x71003b7110 ms_free (symbols from Fahrenheit's server export)
+0x007cf8f0 function ms_free                      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'free   %10d\\n'; Switch 0x71003b7110 ms_free (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b2)
+0x007cf970 function ms_malloc_007cf970 # cdecl(size) -> user_malloc(size); on failure dbgPrintf and debug_exit_trace(1); with the memory trace 0x0113e490 on, sprintf "malloc" line into a 0x100-byte frame buffer and op_file_puts_007cf860(0x023114e0, it); name ours (ms_free's twin); ported ffx_battle::m5_battle (m5 battle b2)
+0x007cfaa0 function MsCameraKindChar_007cfaa0 # cdecl(kind) -> al: 'M','E','B','V' for 1,3,5,7, 'm','e','b','v' for 17,19,21,23, else '-' (two jump tables 0x007cfb04/0x007cfae0; eax's upper bytes kind-1's when out of range); name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfb20 function MsDebugGetCameraMode      # fh switch:cg2 0x71008b03e8
-0x007cfb60 function MsDebugSetCameraMode         # layout+callees: sorts between MsDebugGetCameraMode and Ms_Gui_InfoProc, and its named callees match the Switch 0x71003b3960 MsDebugSetCameraMode's (similarity 1.00: MsCameraGetNum); symbols from Fahrenheit's server export
+0x007cfb60 function MsDebugSetCameraMode         # layout+callees: sorts between MsDebugGetCameraMode and Ms_Gui_InfoProc, and its named callees match the Switch 0x71003b3960 MsDebugSetCameraMode's (similarity 1.00: MsCameraGetNum); symbols from Fahrenheit's server export; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cfba0 function MsInfoWinSet_007cfba0 # cdecl(i, mark, pos): info window i of 0x0113e494 (i < 4, set): +0x21 = mark, +0..+8 = pos's 3 floats (fld/fstp), +0x22 = 2, colours +0x28..+0x30 by i's parity and 0x0113e4cc bit 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cfca0 function MsInfoWinsInit_007cfca0 # cdecl(): the 4 info windows 0x0113e494 = MsDebugWinAlloc_007c8bb0(0), +0x21 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfcd0 function Ms_Gui_InfoProc           # fh v3:exact 0x007cfc00
+0x007d10c0 function MsDebugPrintRules_007d10c0 # cdecl(y) -> y + 60: six "------" lines (sprintf into a 0x100-byte frame buffer, Gu_Printf "%s\n") at x 0x5c, y + 10 each; name ours; ported ffx_battle::m5_battle (m5 battle b4)
+0x007d1220 function MsDebugCameraCopy_007d1220 # cdecl(): in camera modes 8, 9 (MsDebugGetCameraMode(1)) the debug camera channel's data (+8 of 0x01137c4c + 0xda0 cam + 0x130 ch) copied, 0x18c words, to 0x0113ed7c; 0x007d7130 when the source end differs from 0x0113e660, which keeps it; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d12a0 function MsDebugPathAfterBase_007d12a0 # cdecl(path, base) -> past the prefix path shares with base, the rest after its next '/', or the prefix's end; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d1f50 function MsDebugBtlPrint              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'HEI %%'; Switch 0x71003afc50 MsDebugBtlPrint (symbols from Fahrenheit's server export)
+0x007d23d0 function MsDebugRefRound_007d23d0 # cdecl() (the push ecx is a local): 0x0113ed48 = (f32)(ftol2_sse(v / 0.1)) / 10.0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d2410 function Ms_AddrOfGlobal0113ed28_007d2410 # auto-port shape (return address of global, cdecl): return &0x0113ed28; callers: Ms_Gui_InfoProc; name ours
 0x007d2420 function Ms_AddrOfGlobal0113ed18_007d2420 # auto-port shape (return address of global, cdecl): return &0x0113ed18; callers: Ms_Gui_InfoProc; name ours
 0x007d2430 function MsDebugOutCamera             # str-match switch: only user of 18 string(s) held once by both builds, e.g. 'data\\n{\\ndata_address:\\n.int %d,%d,%d,%d'; Switch 0x71003b1930 MsDebugOutCamera (symbols from Fahrenheit's server export)
+0x007d2f10 function MsDebugFindName_007d2f10 # cdecl(name, list) -> index of name in a null-ended string list (MsStrEqualNoCase_007cf330), -1; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d2f50 function MsDebugRefAdd_007d2f50 # cdecl(delta) -> ST0: 0x0113ed48 += delta (x87, f32 store), clamped to 0..1; delta 0 returns it untouched; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d3420 function MsDebugRefSet_007d3420 # cdecl(value, px, py, pz, dx, dy, dz) -> ST0: value clamped to 0..1 by fcom (the clamped value stored into its own value argument slot) into 0x0113ed48, the point and direction set; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d36b0 function MsDebugRefFromCamera_007d36b0 # cdecl(cam): the reference point 0x0113ed28 and direction 0x0113f3d4 (3 floats each) from camera cam's record 0x01137b8c + 0xda0 cam (+0x30, +0x20); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d3700 function MsDebugSplinePrint           # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b0170 MsDebugSplinePrint, 6 votes, round 1
 0x007d42e0 function MsSaveUcID                # fh switch:cg2 0x71008b0588
 0x007d44a0 function Ms_Gui_CameraProc         # fh v3:exact 0x007d43d0
 0x007d5480 function Ms_Gui_MapDataProc           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003b07d0 Ms_Gui_MapDataProc, 2 votes, round 1
+0x007d70d0 function MsDebugScenePath_007d70d0 # cdecl(): sprintf 0x0113e4e8 = "%s" root 0x00c447a0, or "%s%s/" with the scene directory 0x0113f410 when set; cursor 0x0113e4e0 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d72e0 function MsDebugPosGroup_007d72e0 # cdecl() -> the position screen's ground group record (g_BtlPosFile + 0x20 * group, x3 without the flag) after wrapping the kind 0x00c449cc (0..0xb) and group 0x0112bdec, the kind's count 0x0113f700 (record +4..+6, +9) and pick 0x0113f6d0[kind]; 0 outside battle; name ours; ported ffx_battle::m5_battle (m5 battle b4)
+0x007d73e0 function MsDebugPlaceAll_007d73e0 # cdecl(): every actor 0..0x1e with a model: MsGetChrBtlPos(i, frame) then Ch_SetPos3(model, x, y, z) (floats through fld/fstp); name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d7450 function MsBtlPosEditFree_007d7450 # cdecl(): ms_free of the position editor's buffer 0x0113f510 (cleared), then jmp MsBtlPosFree_007c9210; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d79e0 function MsDebugIsTextMode_007d79e0 # cdecl(kind) -> -1 for 3..8 and 0xb, else 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d7a40 function MsDebugPosWindows_007d7a40 # cdecl(all, group, kind, start, r, g, b, mark) -> next slot: debug windows (MsDebugWinAlloc_007c8bb0 on 0x0113f528[slot], below 0x60) for the positions MsBtlGetPos(0, 0, group, kind, i, win) doesn't find (one with all), coloured r/g/b (halved for the picked one with 0x0113f708 set) and marked; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d80a0 function Ms_Gui_BattleProc         # fh v3:exact 0x007d7fc0
+0x007d92d0 function MsDebugPosNextKind_007d92d0 # cdecl(step): MsDebugPosGroup_007d72e0's update repeated with kind += step (at most 12) until the count is positive; name ours; ported ffx_battle::m5_battle (m5 battle b4)
+0x007d93f0 function MsDebugWidthAt_007d93f0 # cdecl(a, b, c, index) -> ST0: MsGetChrWidth of the first actor 0..0x1e at place (a, b, c) (+0x4fc..+0x4fe, signed) with +0xdc8 set, *index = it (-1 and 0.0 when none; index may be null); name ours; ported ffx_battle::m5_battle (m5 battle b5)
+0x007d9470 function MsDebugDirAt_007d9470 # cdecl(a, b, c) (the push ecx is a local) -> ST0: the first actor at place (a, b, c): MsNearRag(0, +0x514) * 180 / pi stored as f32; 0.0 when none; name ours; ported ffx_battle::m5_battle (m5 battle b5)
+0x007d9550 function MsDebugSetDirAt_007d9550 # cdecl(a, b, c, deg) (the push ecx is a local): every actor at place (a, b, c): +0x514 = MsNearRag(0, (f32)(deg * pi / 180)), Ch_SetDirF(model, it); name ours; ported ffx_battle::m5_battle (m5 battle b5)
+0x007d9ab0 function MsDebugActorCount_007d9ab0 # cdecl(id, kind) -> 0x1f with kind 0 for a battle id (id & 0xf0000 == 0x50000), else max(AtelGetTotalActorNumber2(), 1) with kind 1; *kind when not null; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d9af0 function SetGlobal0113f864_007d9af0   # auto-port shape (store argument to global, cdecl): u32[&0x0113f864] = a0; return a0; callers: ; name ours
 0x007d9c20 function Ms_Gui_ReferencePos       # fh v3:exact 0x007d9b40
 0x007daed0 function Ms_Gui_BattleInfoProc     # fh v3:exact 0x007dadf0
-0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1
-0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export)
-0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export)
-0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export)
+0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1; ported ffx_battle::m5_battle (m5 battle b3)
+0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b3)
+0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b4)
+0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b7)
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
+0x007de700 function MsEnvWriteText_007de700 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsMonSave's); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
 0x007e11a0 function op_symbol_find_007e11a0  # ours: (name, list) -> the first symbol of the op script symbol list (next +0x20) whose name [+0] matches (exact or, with i16 +0x12, A-Z folded; hashes sum(byte ^ 0x6f i) at +0x18/+0x1c) and whose alias [+4] is absent or differs; 0 when none (op::bridge::op_symbol_find)
@@ -11345,8 +11407,10 @@
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
 0x008467a0 function Sg_Dmy                    # fh v3:bsim1.00 0x008467a0
 0x008467b0 function Sg_Test                      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%d:SG:sync end\\n'; Switch 0x7100433f50 Sg_Test (symbols from Fahrenheit's server export); jump table 0x00846830: 0 Sg_MapSetName("sugimoto", 0), ("kaisou", 1), Sg_MapInit; 1 dbgPrintf("%d:SG:sync end\n", g_SgFrame); 2 user_malloc(64 KB) into 0x013036b8; 3 user_free it, Ch_MemMoveSetTrigger; returns n; ported (ffx_sg::state, main round 17)
-0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0
-0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40
+0x00847420 function Gu_DrawCursor             # cdecl(cursor, dx i32, dy i32) -> GIF tag address: rect +8..+0xe (i16) eased to +0x10..+0x16 by (d / min(|d|, +0x24 or 2)), colour bytes +0x1c..+0x1e by (t-c+2)/3 towards +0x18..; tag, Gu_SetTest(1,1,0..), alpha 0x80 - g 0x01303730/3, two XYZ corners centred in 4096 by g_GuScreenSize (y scaled by g_GuHScale >> 8); callers Gu_DrawWindowTree; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x00847720 function Gu_DrawControl            # cdecl(control, dx, dy, window): by kind +0x2c: 1 button (toggle shows value, 0x00846b10 frame, label +0x28 centred by Gu_PrintGetWidth), 2 static (9 px a char), 4/7/8 frame, 6 client (0x00847b50, title +0x5c bold); flag 2 grey (colour 0x20); callers Gu_DrawWindowTree; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0; cdecl(channel) -> sceGsSyncPath's eax: end-of-packet A+D quadword, DMA tag (count-1)|0x70000000 at the packet start, FlushCache(0), sceDmaSend(channel, packet), sceGsSyncPath(0, 0); ported M5 menu b1 (ffx_menu::m5m_a)
+0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40; cdecl() -> eax of 0x00846840(mouse x, y, 0x20, 0x10, 0, 0x30, 0x10, 0x10, 0): GIF tag, Gu_SetTest(1,7,0..,1), Sg_SetDebugTEX_0 on the entry packet's next quadword, a data quadword; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
 0x008482f0 function Gu_FontSetX               # g_GuPrintX = x; Switch name, alphabetical slot Gu_DrawStart..Gu_PacketEndTag
 0x00848300 function Gu_FontSetY               # g_GuPrintY = y; Switch name, alphabetical slot
@@ -11373,9 +11437,11 @@
 0x00848b40 function Gu_SetScissor             # fh v3:exact 0x00848b40
 0x00848c30 function Gu_SetScissor2               # layout: alphabetical run between Gu_SetScissor and Gu_SetTexFlush (1 unnamed in the gap); Switch 0x7100443b50 Gu_SetScissor2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00848d10 function Gu_SetTexFlush            # fh v3:exact 0x00848d10
+0x00848d60 function Gu_PrintGetWidth          # cdecl(text) -> strlen * 0x013036f0; '%~' codes (b bold, i italic, c hex colour via 0x00848f60, w dec size via 0x00848fe0, '.' end; their argument parsed into the original's own argument word) measured from after them, metrics reset from the entry size; text ending in the codes -> 0; callers Gu_DrawControl; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00848f00 function Gu_WindowSetHokanEnable   # (on) -> 0x00c4df60; Switch symbol name (BSim)
 0x00848f10 function GetGlobal01303730_00848f10   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01303730]; return t0; callers: Gu_WindowSetLocalTrans; name ours
 0x00848f20 function Gui_WindowSetGlobalTrans     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b60a8 Gui_WindowSetGlobalTrans, 2 votes, round 2
+0x00849170 function Gu_PrintBegin             # cdecl() -> eax = colour word 0x0130370c: GIF tag, Gu_SetTest(1,5,0x7f,0,0,0,0,1), Sg_SetDebugTEX_0 (TEX0 bits 5-6 cleared), A+D tag, RGBAQ from the three colour words sign-extended (alpha 0x80, Q 0xff); callers Gu_Printf; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00849270 function Gu_Approach               # (cur, target, step) target + (cur-target)/min(|cur-target|, step); own name
 0x008492b0 function Gu_RectSetH               # (rect, h): u16 +6 and its copies at +0xe, +0x16 (a three-copy rectangle like a window's from +0x0c)
 0x008492d0 function Gu_RectSetW               # (rect, w): u16 +4, +0xc, +0x14
@@ -11387,14 +11453,16 @@
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
 0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
+0x00849510 function Gu_ClientMouse            # cdecl(window): middle down: wheel x24 scrolls +0x8c (0..0x80, flag 0x80) or the fade (Gui_WindowSetGlobalTrans); left press grabs the drag (0x01303744/48, g_GuDragWindow); double click toggles flag bit 0; callers Gu_ControlMouse; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x008495e0 function Gu_ControlInit            # (control) memclear 0x44, +0x28 = +0x30 (empty text), +0x40 &= ~3, u16 +0x26 = 0; own name
 0x00849610 function Gu_ControlSetText         # (control, s) text into the control: null/short (< 15) inline at +0x30, longer in a user_malloc(len + 0x11) buffer (capacity len + 0x10 at +0x26, reused while big enough); own name (the core of Gu_WindowControlSetText)
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
-0x00849850 function Gu_Main                   # fh v3:exact 0x00849850
-0x008498e0 function Gu_MakeFileList              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host0:EXEC:cmd /c dir %s /b > \\\\%s'; Switch 0x71004404c0 Gu_MakeFileList (symbols from Fahrenheit's server export)
-0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
+0x00849850 function Gu_Main                   # fh v3:exact 0x00849850; cdecl(channel, buffer): g 0x023cbc10 = Sg_MouseButtonMain(), Gu_VSync; unless g_GuHidden: Send_DebugFont, Gu_DrawStart(buffer), Gu_SetTexFlush, scissor, Gu_DrawWindowTree(g_GuWindowList), cursor when g_GuMouseEnable, Gu_DrawEnd(channel), Gu_WindowFreeClosed, wheel 0x023cbc04 = 0; ported M5 menu b1 (ffx_menu::m5m_a)
+0x008498e0 function Gu_MakeFileList              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host0:EXEC:cmd /c dir %s /b > \\\\%s'; Switch 0x71004404c0 Gu_MakeFileList (symbols from Fahrenheit's server export); cdecl(list, path) -> sg_make_filelist's eax: path to ebp-0x104 with '/' -> '\', sprintf(ebp-0x204, 0x00b5aaec "host0:EXEC:cmd /c dir %s /b > \%s", path, "sugilist.tmp"), sg_make_filelist(list, cmd, 0); ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970; cdecl(text) -> the OK button: Gu_WindowCreate((512-w)/2, 82, w = max(Gu_PrintGetWidth+30, 60), 30, 0, Gu_MessageBoxProc), text control -1 kind 2 centred, OK 0x4d2 (0x00b51c04) kind 1; ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849a10 function Gu_MessageBoxProc         # cdecl(window, msg, arg) -> 0: 0x8001 rect +0x14.. = target +0x1c..; 0x8006 id 0x4d2 Gu_WindowStartDrag; 0x8011 Gu_WindowMouseIn -> Gu_ClientMouse, flag bit 0 cleared; name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
 0x00849ac0 function Gu_MouseGetWindowX        # fh switch:bsim1.00 0x710043fd20
 0x00849ae0 function Gu_MouseGetX              # () -> g_GuMouseX (renamed: was Gu_MouseGetY; x/y established by Gu_PacketBeginTag, Gu_MouseInRect, Gu_DrawRectStrip)
@@ -11405,11 +11473,13 @@
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
 0x00849bd0 function Gu_SelectorDispose        # (selector) user_free of +8 and +0xc (when +8 set), then of itself; Switch name, alphabetical slot Gu_SelectorAllocate..Gu_SelectorGetItemValue (frees itself)
+0x00849c00 function Gu_SelectorPaint          # cdecl(window, selector): mouse above/below scrolls +0 (i16 px, 9 a row) clamped to [0, (count-rows)*8], selection +2 = row under the mouse + scroll/8, rows printed (Gu_PrintSetColor(0,0,0,0xff), Gu_PrintSetX/Y, Gu_Printf; the selection again at x+1); its y counter lives in its own argument word; name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d50 function Gu_SelectorGetSelect      # (selector) -> i16 +2, the selected item
-0x00849d60 function Gu_SelectorOpen           # fh v3:exact 0x00849d60
-0x00849dc0 function Gu_SelectorOpenXYWH       # fh v3:exact 0x00849dc0
+0x00849d60 function Gu_SelectorOpen           # fh v3:exact 0x00849d60; cdecl(selector, owner, arg) -> Gu_SelectorFitWindow's eax: +0x24 arg, +0x20 owner, Gu_WindowCreate(190, 40, 120, 101, 0, Gu_SelectorProc), window +0x98 = selector, +0x18/+0x1c mouse, g_GuPopupWindow; ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849dc0 function Gu_SelectorOpenXYWH       # fh v3:exact 0x00849dc0; cdecl(selector, owner, arg, x, y, w, h) -> as Gu_SelectorOpen with the window at (x, y, w, h/9*9+2); ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849e30 function Gu_SelectorProc           # cdecl(window, msg, arg) -> 0: messages but 0x8001 first to selector +0x28 (unless flags 0x70); 0x8003 Sg_SetMouse(+0x18, +0x1c) when +0x14; 0x8006 id -1: popup cleared, owner +0x7c(owner, 0x8012, +0x24), Gu_WindowStartDrag; 0x800a flag 2, popup cleared, Gu_WindowCloseTree; 0x8011 Gu_SelectorPaint (jump table 0x00849f10/0x00849f24); name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849f40 function Gu_SelectorResetNbItem    # fh v3:exact 0x00849f40
 0x00849fc0 function Gu_SelectorSetCallback    # fh v3:bsim1.00 0x00849fc0
 0x00849fd0 function Gu_SelectorSetItem        # fh v3:exact 0x00849fd0
@@ -11417,12 +11487,12 @@
 0x0084a0d0 function Gu_SelectorSetMouseFukki  # fh v3:bsim1.00 0x0084a0d0
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
-0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260
-0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470
-0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0
-0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0
+0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(selector): selection sort of the items by strcmp of names +8, values +0xc swapped alike; ported M5 menu b5 (ffx_menu::m5m_e)
+0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260; cdecl(): hidden waits for Sg_MouseGetMove; drag and resize follow the mouse (resize lays out controls 0x8001/0x8000/0x8002/0x8003 by Gu_WindowControlSetRect); hit test: capture (Gu_WindowMouse), popup 0x01303740, else Gu_ListCopyNext + Gu_WindowListMouse, an unclaimed press captures for Sg_ControlMouseCamera (-1); no button down ends drags and the capture; ported M5 menu b1 (ffx_menu::m5m_a)
+0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl() -> 0x0084ef10's eax: Sg_MouseMain, tail jump to the clock tick 0x0084ef10; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470; cdecl(window, id, text, x, y, w, h) -> control: Gu_WindowAddControl, kind 1; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0; cdecl(window, id, x, y, w, h) -> control: Gu_WindowAddControl without text, kind 3; ported M5 menu b2 (ffx_menu::m5m_b)
+0x0084a4d0 function Gu_WindowAddStatic        # fh v3:cg3 0x84a4d0; cdecl(window, id, text, x, y, w, h) -> control: Gu_WindowAddControl, kind 2; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084a500 function Gu_WindowAddVScroll       # fh switch:bsim1.00 0x710043f430
 0x0084a530 function Gu_WindowStartMove        # (window): +0x1c/+0x1e = mouse, +0x20 = 0, flag 0x10; recursively for open windows whose parent (+8) it is
 0x0084a580 function Gu_WindowStartDrag        # (window) flag 0x20, Gu_WindowStartMove itself and children, recursively; own name
@@ -11432,9 +11502,10 @@
 0x0084a6c0 function Gu_WindowControlSetLeftText# (window, id, on) control flag 0x10 = on; Switch name, the slot between Gu_WindowControlSetHide and Gu_WindowControlSetText
 0x0084a710 function Gu_WindowControlSetText   # fh v3:exact 0x0084a710
 0x0084a810 function Gu_WindowControlSetTextf  # (window, id, fmt, ...) vsprintf into a 1 KiB local, then the Gu_WindowControlSetText logic on the first control with id; Switch name, alphabetical slot Gu_WindowControlSetText..Gu_WindowCreate
-0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
+0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920; cdecl(x, y, w, h, flags, callback) -> window (user_malloc 0x9c): cascade 16/8 off windows exactly at (x, y), new column +32 off-screen (512x416); rect x3, idle colours, client origin (4, flags&2 ? 12 : 2), size w-8 / h-top-2, scale 0x200, Gu_WindowOpen, list front; title 0x8001 kind 6 (flag 2), close 0x8000 kind 8 (flags 2+4, label 0x00b5639c), grip 0x8002 kind 7 (flag 8); callback(window, 0x8001, 0); ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
 0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
+0x0084ac80 function Gu_DrawWindowTree         # cdecl(window): the list from window, back to front (recursing on +0 first); skips closing (flag 2), fade-out (0x10) to closed, growth (8) to targets +0x20/+0x22, Gu_SetHScale(+0x8e); minimised (1): 9-px strip, client controls; else Gu_DrawCursor(frame, 6, 3), frame unsmoothed, client scissor, controls, own fade (0x80); scissor back to 512x416; callers Gu_Main; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084aec0 function Gu_WindowGetArg           # fh v3:bsim1.00 0x0084aec0
 0x0084aed0 function Gu_WindowGetClientH       # (window) -> i16 +0x86 (Gu_WindowSetClientH, Gu_WindowSetSize)
 0x0084aee0 function Gu_WindowGetClientW       # (window) -> i16 +0x84 (Gu_WindowSetSize: width - 2 * border +0x80)
@@ -11449,15 +11520,17 @@
 0x0084afa0 function Gu_WindowGetWidth         # fh v3:bsim1.00 0x0084afa0
 0x0084afb0 function Gu_WindowGetLeft          # (window) -> i16 +0x0c, the window's x (was Gu_WindowGetY; Fahrenheit's BSim Gu_WindowGetX at 0x0084afc0 reads +0x0e, the y)
 0x0084afc0 function Gu_WindowGetX             # fh v3:bsim1.00 0x0084afb0
+0x0084afd0 function Gu_WindowMouse            # cdecl(window) -> 0/1: skips flags 0x1a; Gu_SetHScale, inside (Gu_MouseInRect) + left press -> Gu_WindowToFront; desktop capture -> 1; capture id's control -> Gu_ControlMouse, 1; controls reset then hit-tested (modal flag 1: client only), wheel message 0x8017, none-hit Gu_ControlMouseButtonHandle(-1); returns inside (0 for a modal miss); callers Gu_VSync; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084b200 function Gu_WindowIsDrag           # fh switch:bsim1.00 0x710043fd70
 0x0084b220 function Gu_WindowSetPos           # (window, x, y): +0x0c/+0x0e and their copies at +0x14 and +0x1c (Gu_WindowSetX and Gu_WindowSetY in one)
 0x0084b250 function Gu_WindowOpen             # fh v3:exact 0x0084b250
+0x0084b2e0 function Gu_WindowListMouse        # cdecl() -> 0/1: Gu_WindowMouse's test down g_GuWindowList through +4 (inline rect test), 1 at the first window under the mouse, a captured control or the desktop capture; callers Gu_VSync; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084b560 function Gu_WindowSetArg           # fh v3:bsim1.00 0x0084b560
 0x0084b580 function Gu_WindowSetClientH       # fh v3:exact 0x0084b580
 0x0084b5b0 function Gu_WindowSetHScale        # (window, scale) u16 +0x8e; Switch name
 0x0084b5d0 function Gu_WindowSetH             # (window, h): +0x12 and copies; client +0x86 = h - top border - 2 (half of Gu_WindowSetSize)
 0x0084b600 function Gu_WindowSetFlag2         # (window, on): flag bit 1 of +0x88 (the bit Gu_WindowOpen clears)
-0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68
+0x0084b620 function Gu_WindowSetLocalTrans    # fh switch:cg4 0x71008b5e68; cdecl(window, on, fade) -> fade: flag 0x80 = on bit 0, +0x8c (u16) = fade or (-1) GetGlobal01303730_00848f10; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084b660 function Gu_WindowSetParent        # fh v3:bsim1.00 0x0084b660
 0x0084b670 function Gu_SetPopupWindow         # (w) 0x01303740 = w, the selector popup window (Gu_SelectorOpen stores it; the mouse handler routes clicks to it); own name
 0x0084b680 function Gu_WindowSetFlag1         # (window, on): flag bit 0 of +0x88 from on's low bit
@@ -11469,7 +11542,9 @@
 0x0084b770 function Gu_WindowToFront          # (window): to the front of g_GuWindowList (Gu_WindowOpen's tail)
 0x0084b7b0 function Gu_WindowToggleFlag1      # (window) -> flips flag bit 0, returns it as 0 or -1
 0x0084b7e0 function Gu_WindowSetWord30        # (window, v) u16 +0x30; own name
-0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle
+0x0084b7f0 function Gu_ControlMouse           # cdecl(window, control) -> 0: disabled (+0x40 bit 1) nothing; kind +0x2c (jump table 0x0084b934): 1 button (+0x1a 0xc0, +0x20 pressed), 3 static, both Gu_ControlMouseButtonHandle(id); 4 scroll bar capture (Gu_WindowControlSetRect 0x8003, g_GuMouseCapture, id 0x01303758); 6 Gu_ClientMouse; 7 resize grab (0x0130374c/50, 0x0130373c); 8 title: release -> Gu_WindowStartDrag; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle; cdecl(window, id) -> eax: one callback +0x7c(window, msg, id) per button event of 0x023cbc10 (0x8005..0x8010); eax = the last callback's result, else the buttons (or the null callback for the middle double click); ported M5 menu b1 (ffx_menu::m5m_a)
+0x0084bae0 function Gu_WindowAddControl       # cdecl(window, id, text, x, y, w, h) -> control: SgReallocD(+0x94, (n+1)*0x44), inline labels (+0x26 == 0) re-pointed +0x28 = +0x30, new control memclear-ed: id +0x2e, rect x3 moved by the client origin, idle colours 0x80, Gu_ControlSetText; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084bc00 function ChrViewMotionCtlProc         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[%s] Frame:%d.%02x(%x)/%d'; Switch 0x7100443c30 ChrViewMotionCtlProc (symbols from Fahrenheit's server export)
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
 0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
@@ -11509,9 +11584,9 @@
 0x00853520 function SpriteFrameRegion_Load       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Filter'; Switch 0x7100847e80 SpriteFrameRegion::Load (symbols from Fahrenheit's server export)
 0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0
 0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0
-0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0
-0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60
-0x00854e80 function gui_eve_GWM_BUTTONUP      # fh switch:cg2 0x7100448490
+0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0; cdecl(window, msg): msg 0x2c: 0x01325928 = Gu_SelectorGetItemValue(0x0132592c), Gu_WindowControlSetText(window, 0x2d, name), Sg_SetResource(4, value), Sg_SetResourceSTR(3, name), AtelSetEventJump(value, 0); other messages leave eax alone; ported M5 menu b6 (ffx_menu::m5m_f)
+0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60; cdecl() -> 0x01325928 = Sg_GetResource(4, 0) after dbgPrintf(0x00b5b410); ported M5 menu b6 (ffx_menu::m5m_f)
+0x00854e80 function gui_eve_GWM_BUTTONUP      # fh switch:cg2 0x7100448490; cdecl(window) -> Gu_SelectorOpenXYWH's eax or 0: 0x01325924 freed (user_free_thunk), = Sg_PcRead("/ffx/proj/event/header/eventid.bin"); [0]/8 entries of 8 bytes (+0 name offset): Gu_SelectorAllocate -> 0x0132592c, Gu_SelectorResetNbItem, Gu_SelectorSetItem(sel, i, file + off, i), Gu_SelectorSortItem, Gu_SelectorSetSelectSTR(sel, Sg_GetResourceSTR(3)), Gu_SelectorOpenXYWH(sel, window, 0x2c, 200, 40, 150, 120); ported M5 menu b7 (ffx_menu::m5m_g)
 0x00854f60 function Gu_DrawRectStrip          # fh switch:bsim1.00 0x710043d750
 0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0
 0x00855430 function Gui_ProgAvarage           # fh v3:exact 0x00855430
@@ -12650,7 +12725,7 @@
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872530 function Tk_SetScale               # (which, v) f32 0x01325b98[which != 0] = v; own name
-0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
+0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580; cdecl() -> graphicLockScreenFadeColor's eax: PostReset(1), graphicSetScreenFadeColor(0, 0, 0, 1.0f), graphicSetScreenFadeLastReason(3), tail jump graphicLockScreenFadeColor; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00872580 function Tk_ByteHighBit            # (b) b & 0x80; no caller; own name
 0x00872590 function Obj_GetFloat28            # (p) f32 +0x28; own name
 0x008725a0 function Ref_Deref                 # (ref) [[ref[0] + 0x20] + ref[1]]; own name
@@ -12952,6 +13027,36 @@
 0x00879e70 function AtelRemovePS2Debug           # layout+callees: sorts between AtelLoadSourceData and AtelUpdateFilePath, and its named callees match the Switch 0x7100486ff0 AtelRemovePS2Debug's (similarity 1.00: user_free); symbols from Fahrenheit's server export
 0x00879f00 function AtelUpdateFilePath # (r26) the event directory by AtelGetEventMode (jump table 0x0087a2b8: 0 map, 2 master pc, 3 sound, 4 motion, 5 light, else plain) and TkGetLang (byte tables 0x0087a2f0.. into word tables 0x0087a2d0..; 0 jp 1 us 2 fr 3 es 4 de 5 it 0x12 uk); stored by Atel_SetEventPathLang_00879430; returns the .rdata string; ported in helpers; fh v3:exact 0x00879e80
 0x0087a440 function TkMemDump                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '\\n%p:%08x '; Switch 0x7100487370 TkMemDump (symbols from Fahrenheit's server export)
+0x0087a4a0 function AtelDebug_PrintPosWork_00 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x0 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a4f0 function AtelDebug_PrintPosWork_04 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x4 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a550 function AtelDebug_PrintPosWork_08 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x8 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a5b0 function AtelDebug_PrintLevelF32_28 # cdecl(worker) -> TkPutDebugFontStringP's eax: Script_WorkerLevel(worker, +0x32) +0x44 block +0x28 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a610 function AtelDebug_PrintLevelF32_2c # cdecl(worker) -> TkPutDebugFontStringP's eax: Script_WorkerLevel(worker, +0x32) +0x44 block +0x2c f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a670 function AtelDebug_PrintLevelF32_30 # cdecl(worker) -> TkPutDebugFontStringP's eax: Script_WorkerLevel(worker, +0x32) +0x44 block +0x30 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a6d0 function AtelDebug_PrintPosWork_0c # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0xc f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a730 function AtelDebug_PrintLevelF32_10 # cdecl(worker) -> TkPutDebugFontStringP's eax: Script_WorkerLevel(worker, +0x32) +0x44 block +0x10 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a790 function AtelDebug_PrintPosWork_1c # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x1c f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a7f0 function AtelDebug_PrintLevelF32_38 # cdecl(worker) -> TkPutDebugFontStringP's eax: Script_WorkerLevel(worker, +0x32) +0x44 block +0x38 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a850 function AtelDebug_PrintLevel44I16_06 # cdecl(worker) -> TkPutDebugFontString's eax: Script_WorkerLevel(worker, +0x32) (block, offset) (0x44, 6) i16 '%d' via sprintf into ebp-0x24, TkPutDebugFontString(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a8b0 function AtelDebug_PrintLevel44I16_04 # cdecl(worker) -> TkPutDebugFontString's eax: Script_WorkerLevel(worker, +0x32) (block, offset) (0x44, 4) i16 '%d' via sprintf into ebp-0x24, TkPutDebugFontString(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a910 function AtelDebug_PrintLevel48I16_06 # cdecl(worker) -> TkPutDebugFontString's eax: Script_WorkerLevel(worker, +0x32) (block, offset) (0x48, 6) i16 '%d' via sprintf into ebp-0x24, TkPutDebugFontString(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a970 function AtelDebug_PrintLevel48I16_04 # cdecl(worker) -> TkPutDebugFontString's eax: Script_WorkerLevel(worker, +0x32) (block, offset) (0x48, 4) i16 '%d' via sprintf into ebp-0x24, TkPutDebugFontString(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087a9d0 function AtelDebug_PrintPosWork_20 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x20 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087aa40 function AtelDebug_PrintPosAngle_20 # cdecl(worker) -> TkPutDebugFontStringP's eax: Math_AngleToDegrees(AtelGetPosWorkAdrs(worker) +0x20) '%f' (f32 spilled at ebp-0x28) via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087aaa0 function AtelDebug_PrintPosWork_24 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x24 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ab00 function AtelDebug_PrintPosWork_34 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x34 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ab60 function AtelDebug_PrintPosAngle_34 # cdecl(worker) -> TkPutDebugFontStringP's eax: Math_AngleToDegrees(AtelGetPosWorkAdrs(worker) +0x34) '%f' (f32 spilled at ebp-0x28) via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087abc0 function AtelDebug_PrintPosWork_30 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x30 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ac20 function AtelDebug_PrintPosWork_38 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x38 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ac80 function AtelDebug_PrintPosWork_40 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x40 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ace0 function AtelDebug_PrintPosWork_48 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x48 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ad40 function AtelDebug_PrintPosWork_44 # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x44 f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ada0 function AtelDebug_PrintPosWork_3c # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x3c f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ae00 function AtelDebug_PrintPosWork_4c # cdecl(worker) -> TkPutDebugFontStringP's eax: AtelGetPosWorkAdrs(worker) +0x4c f32 '%f' via sprintf into ebp-0x24, TkPutDebugFontStringP(g_TkDebugFontColor, 0, buf); an event debugger display table entry (data refs in 0x00c54000..0x00c54600); name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087ae60 function AtelDebug_PrintKind       # cdecl(worker) -> eax: worker kind name +0xaa (0x00c535b4; kind 2 + flag 0x10 0x00b5ce98; colour 2 with flag 0x20), separator, +0xa8 '%d', character with model +0x9c: Ch_GetFieldMode name (0x00c535cc); eax: last print or kind-1; event debugger display table entry; name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087af50 function AtelDebug_PrintModel      # cdecl(worker) -> eax: +0x9c '%x', TkPutDebugFontString; event debugger display table entry; name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087afa0 function AtelDebug_PrintEntry      # cdecl(worker) -> eax: +0x2e '%d'; with table +8: name at table+[0x50] offsets, bracketed by TkPutDebugFontStringPEuc; event debugger display table entry; name ours; ported M5 menu b3 (ffx_menu::m5m_c)
+0x0087b040 function AtelDebug_PrintMotion     # cdecl(worker) -> eax: character (head byte 1): Script_WorkerLevel +0x44 block u16 +2 low 7 bits into 0x00c535fc (colour 7 with bit 15, restored), else 0x00b4865c; event debugger display table entry; name ours; ported M5 menu b3 (ffx_menu::m5m_c)
 0x0087bc90 function Atel_FindVarSlot_0087bc90 # (r25 d) finds a variable reference's entry and element in the worker's level variable table (kind, base, count; AtelGetValueIncValue size): rec+1 bit 0x80, +4 = entry << 16 | element; caller 0x00884cc0; own name
 0x0087bdcd function AtelDebugCtrl                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710047bae0 AtelDebugCtrl, 2 votes, round 2
 0x0087d6c0 function AtelDebugDraw_0087d6c0     # the script debugger's frame (byte 0x01328a78 toggle, AtelDebugDisplay pages 0x00883070, 0x0087f390); refs.py: 1 ref, the jmp thunk 0x00872c80 (0 refs); dead: only reached through 0x00872c80 (jmp AtelDebugDraw_0087d6c0, refs.py 0 refs); name ours
@@ -12987,9 +13092,10 @@
 0x008851b0 function TkGetDebugControlerHist   # (i) TkGetControlerHist(1, 0, i); Switch name, alphabetical slot after TkGetDebugControlerAnalog (Hist, ReptHist, TrigHist match the callees)
 0x008851d0 function TkGetDebugControlerReptHist# (i) TkGetControlerReptHist(1, 0, i); Switch name, alphabetical slot
 0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
-0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
+0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0; cdecl() -> socket: 0x0132f580/81 bytes, 0x0132f578 cleared, 0x0132f570 = sceDeci2Open(0xeffa, &0x0132f570, 0x008852a0), 0x0132d56c/0x0132f584/0x0132f588 cleared; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
 0x00885470 function TkDeci2Send               # (a, n) when idle: u16 0x0132f57e = (n - 0x81) truncated to 128s, 0x0132f578 = a | 0x20000000, 1; busy -1; own name
+0x008854c0 function TkDeci2Send               # cdecl(packet, len) -> sceDeci2ReqSend's eax: 0x0132f574 = packet | 0x20000000, 0x0132f57c = len (u16), 0x0132f580 = 1, FlushCache(0), sceDeci2ReqSend(0x0132f570, packet[7]); callers TkRemove; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
 0x008856b0 function AtelGetDebugSubCodeString    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '(0x%08x)'; Switch 0x71004879d0 AtelGetDebugSubCodeString (symbols from Fahrenheit's server export)
 0x008858c0 function Atel_GetBlockString        # (ctrl, i): string i of the ctrl work's +8 block's +0x44 table, the empty string without; name ours; ported in helpers (script round 14)
@@ -13143,7 +13249,7 @@
 0x00887ba0 function TkSndUpdate3              # fh switch:bsim1.00 0x710048c750
 0x00887bd0 function TkSndUpdateMain           # fh v3:exact 0x00887b40
 0x00887c20 function FFXGetAsiaMode            # fh v3:bsim1.00 0x00887b90
-0x00887c30 function TkGetLang_thunk           # g_MagicImports slot 279 (4 overlays): jmp TkGetLang; hidden from the dump
+0x00887c30 function TkGetLang_thunk           # g_MagicImports slot 279 (4 overlays): jmp TkGetLang; hidden from the dump; not hookable: not a function start in the dump (check-ported), M5 menu b2; its test checks it against TkGetLang's bridge
 0x00887c40 function FFXGetVideoMode           # () -> (i8) 0x01330831 sign-extended (between g_TkLang and g_FFXAsiaMode); fh switch:bsim1.00 0x7100487fe0
 0x00887c50 function FFXIsDebug                # fh v3:bsim1.00 0x00887bc0
 0x00887c60 function sceGsSetDefDrawEnv2       # () -> (i8) 0x00b5ec4f sign-extended (1 in the image), sets nothing; fh switch:bsim1.00 0x71001c2920
@@ -13171,6 +13277,7 @@
 0x00887f40 function TkSyncVEI                 # fh v3:exact 0x00887eb0
 0x00887fd0 function TkMcChdir                 # fh switch:bsim1.00 0x710048a4d0
 0x00888010 function TkMcClose                 # (): 0 via a stub; every sceMc* stub returns 0 on PC, so 0; Switch name, the plain wrapper among TkMcChdir..TkMcDelete (alphabetical slot)
+0x00888030 function TkMcMakePath              # cdecl(dst, name) -> eax (sprintf length + 1, low byte 0): dst = "/" + sprintf(ebp-0x400, name, 0), last two chars "??"; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888170 function TkMcDelete                # fh switch:bsim1.00 0x710048a440
 0x008881a0 function TkMcFlush                 # (): 0 via a stub; every sceMc* stub returns 0 on PC, so 0; Switch name, alphabetical slot TkMcDelete..TkMcFormat
 0x008881c0 function TkMcFormat                # fh switch:bsim1.00 0x710048a3b0
@@ -13189,14 +13296,16 @@
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888480 function TkMcSetLoadFilePos        # (slot, pos) 0x0133023c[slot] = pos; Switch name, pairs with TkMcGetLoadFilePos
 0x008884a0 function MenuSave_McSync # cdecl(mode, cmd, result): mode != 0 tail-jumps to the sceMcSync wrapper 0x008884e0(mode, cmd, result); mode 0 polls it with mode 1 until nonzero, op_counter_add_00888890(1000000) after each poll; callers TkMenuCtrlSaveLoad (3 sites); ported in menu round 22; name ours
+0x008884e0 function TkMcSync                  # cdecl(mode, &cmd, &result) -> sceMcSync's result (1 while TkGetTGS): sceMcSync(mode, ebp-0xc, ebp-8), cmd 1 with result < 0 resets TkMcSetLoadFilePos(0x01330234, -1) unless TkMcGetLoadFilePos < 0; outs written when given; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
-0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none)
-0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660
+0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none); -> 0x006f2bc0's eax (the tail call with its own argument word set to 2) or -1 without a handler; ported M5 menu b2 (ffx_menu::m5m_b)
+0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660; cdecl() -> TkSetVsyncHandler's eax: TkSyncVDI, g_TkVsyncThread = -1, 0x01330254 = 0, TkSyncVEI, TkSetVsyncHandler(VsyncHandler); ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
-0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
+0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790; cdecl() -> SignalSema(g 0x01330250); ported M5 menu b2 (ffx_menu::m5m_b)
+0x00888830 function TkClearVsyncHandler       # cdecl() -> TkSetVsyncHandler(0) (-1); callers 1; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller MenuSave_McSync (1000000 per memory-card poll)
 0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
 0x00888910 function Pad_ResetSlots_00888910   # cdecl(works) -> 0: four 0x20-byte slot works: Pad_ResetWork(work), u16 +2 and +0x1e = 0; callers 0x00889050, 0x00889360; ported r34 (vfx); name ours
@@ -13204,6 +13313,7 @@
 0x00888990 function Pad_PortClose_00888990 # cdecl(port, slot): port < 0 closes ports 0 and 1 first (then goes on with the negative port), then when bit slot of g_TkControlerWork[port] is set scePadPortClose(port, slot) and clears it; REVIEWED menu r22: dead, its only caller is itself and no pointer to it exists; name ours
 0x008889e0 function Compute_008889e0             # auto-port shape (arithmetic on arguments, cdecl): return (a1 & 0xff); callers: ; name ours
 0x008889f0 function Pad_ClearAnalogWork # cdecl(a, b) -> work+0xd0: TkGetControlerWork(a, b) u16 +0xa0..+0xae and f32 +0xb0..+0xcc zeroed; caller 0x00889360; ported in menu round 22; name ours
+0x00888a40 function TkPadInfoAct              # cdecl(port, slot, actuator) -> 0 for actuator 0xff, else scePadInfoAct(port, slot, actuator, 3) ? 8 : 1; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888a70 function Pad_ActuatorIds           # (port, slot) -> (large << 8) | small: 0xffff without scePadInfoAct(port, slot, -1, 0) or combinations; per combination c the actuators scePadInfoComb(port, slot, c, k) by kind scePadInfoAct(.., a, 2) 1 small / 2 large (from 0xff), the first combination with (large | small) != 0xff, else the last; caller 0x00889050; ported in menu round 23; name ours
 0x00888b60 function TkGetControlerFrame       # (work, i) -> work + ((byte +0x9c + i) & 3) * 0x20: a frame of a pad work's 4-entry input ring
 0x00888b80 function Pad_GetFrame              # (pad, port, i) TkGetControlerFrame(TkGetControlerWork(pad, port), i); own name
@@ -13293,7 +13403,7 @@
 0x0088c630 function Math_WrapAngleFloor       # (a) (a + pi) - floor((a + pi) / 2pi) * 2pi - pi, float steps; own name
 0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
-0x0088c740 function TkRemove                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710048fd90 TkRemove, 2 votes, round 1
+0x0088c740 function TkRemove                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710048fd90 TkRemove, 2 votes, round 1; cdecl(name) -> eax (0 or TkDeci2Send's result): under TkIsDebug, name copied to 0x0133070c, its length to 0x0133070a (u16), TkDeci2Send(0x01330700, 0x10c) up to 0x80 tries waiting on TkIsDeci2Send; ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088c7d0 function TkClearAlarm              # fh v3:cg2 0x88c740
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
@@ -13305,13 +13415,13 @@
 0x0088ccf0 function TKMallocAndReadMenuMessage   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491220 TKMallocAndReadMenuMessage, 6 votes, round 1; ported (ffx_glue_other::h4_f6, m4 h4 f): cdecl(name, out) -> 1, or 0 with dbgPrintf(0x00b41e3c, path) for a missing file; path "/ffx_ps2/ffx/master/new_" + language dir by TOGetFFXLang (jump table 0x0088ce50: 0 jppc, 2 frpc, 3, 4, 5, 9, 10 their own, the rest uspc) + "menu/<name>.bin" via sprintf, fiosUnifyFilename and sprintf_s(path, 0x7f, "%s", unified) in 0x40/0x80/0x100-byte locals; out[0] = 0, then fiosRead of the size rounded up to 16
 0x0088ce80 function TKMallocAndReadSPS2      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491390 TKMallocAndReadSPS2, 6 votes, round 1; (index, page) -> buffer or 0: path = /ffx_ps2/ffx/master/new_XXpc by TOGetFFXLang (jump table 0x0088d0f0: 0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch, else us) + entry index of 0x00c58e44 (page 0, .sps2) or 0x00c58e58 (page tables); fiosUnifyFilename(path, tmp, 0x100), sprintf_s(path, 0xff, "%s", tmp); missing: dbgPrintf, 0; else size rounded to 16, Sg_MemSetAlign(0x40), user_malloc(size rounded up to 0x800, signed), word 0 = 0, fiosRead, fiosClose; ported in menu round 27
 0x0088d120 function Math_RoundUp              # (n, step) -> n rounded up to a multiple of step (unsigned)
-0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90
-0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100
-0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130
-0x0088d1d0 function TkCdReadWithMalloc           # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x710048fdd0 TkCdReadWithMalloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90; cdecl(file, sector, buf) -> FlushCache's eax: GetCD table +0x10 open(file), +0x14 size(sector), FlushCache(0), +0 read(sector, buf, 0, 0), +8 sync(0), FlushCache(0); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100; cdecl(file, sector, buf) -> the read entry's eax: GetCD +0x10 open, FlushCache(0), +0 read(sector, buf, 0, 0); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130; cdecl(mode): tail jump to GetCD()+8 (sync) with the caller's word; ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d1d0 function TkCdReadWithMalloc           # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x710048fdd0 TkCdReadWithMalloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(file, sector) -> buffer: open, size rounded to 0x800 (signed), Sg_MemSetAlign(0x40), user_malloc, [buf] = 0, FlushCache, read, sync; ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088d240 function TkCdReadWithMalloc2          # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x71004900a0 TkCdReadWithMalloc2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (file, size_of, min): cd = GetCD(), cd+0x10(file), n = max(cd+0x14(size_of), min) signed, Sg_MemSetAlign(0x40), buf = user_malloc((n + 0x7ff) & ~0x7ff toward zero), [buf] = 0, FlushCache(0), cd+0(size_of, buf, 0, 0), cd+8(0), FlushCache(0); returns buf; ported in menu round 30
 0x0088d2c0 function TkCdReadWithMallocWithMessage # fh v3:exact 0x0088d230; cdecl(dir, file) -> buffer: GetCD() +0x10(dir), size +0x14(file) or getEternalCalmSceneSize(file / 18) for isEternalCalmScene(file / 18), Sg_MemSetAlign(0x40), user_malloc(size up to 0x800), word 0, FlushCache(0), +0(file, buf, 0, 0), +8(0), FlushCache(0), AtelPs2DebugString marks; ported in menu round 23
-0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160
+0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160; cdecl(file, sector) -> GetCD +0x10 open(file), +0x14 size(sector); ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088d3d0 function TkUpdateEventJump # cdecl() -> TkSndUpdate2's eax (tail jmp): every frame in Sg_MainLoop's loop: with g_TkEventJumpRequest set, g_TkFadeOut[0] > 0 drops by 1, else [1] > 0 becomes 0, else graphicActivateLoadingScreen (unless map 0x17, 0x15c, or 0x10c with getScenerioFlag ax 0x1a9) and TkInitScene(MsGetSaveEventAddress u16 +0, read again); then Atel_EventFrame, AtelCheckMemory with g_TkInitDone 0 (1 after), AtelMove(1); ported ffx_menu::start::tk_update_event_jump (pc r9); name ours
 0x0088d4e0 function TkDrawDebug               # fh v3:cg2 0x88d450
 0x0088d4f0 function TkDrawNoTrans             # fh v3:bsim1.00 0x0088d460; small round 1: AtelDrawNoTrans() then tail jmp TkSndUpdate2 (EAX its); ported in ffx_menu::tk
@@ -13347,8 +13457,8 @@
 0x0088e570 function TkInitWork                # (): 0x01330878/7c = 0, TkInitAlarm, TkInitControlerWork, TkInitSyncV, debug menu status 1, flags 0, g_SndStreamTable 0, save +0x2b = 0, save +0x13 = (b & ~4) | 2; returns MsGetSaveEventAddress(); TkInit calls it first; name ours
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
-0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0
-0x0088e6b0 function TkMemUnlock               # fh v3:bsim1.00 0x0088e620
+0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0; cdecl() -> Sg_MemCheck(0, 0x00b5e968, 0x1c5), Sg_MemCheck(1, .., 0x1c6); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088e6b0 function TkMemUnlock               # fh v3:bsim1.00 0x0088e620; cdecl() -> Sg_MemCheck(0, 0x00b5e968, 0x1d0), Sg_MemCheck(1, .., 0x1d1); ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088e730 function Math_SinLookup            # (x) u16 0x023cbee0[x/64] into ax (upper eax = index); own name
 0x0088e750 function Math_CosLookup            # (x) Math_SinLookup(0x1000 - x); own name
 0x0088e790 function TkMsImportantSet          # fh v3:exact+call.cs 0x0088e700 cdecl
@@ -13372,18 +13482,19 @@
 0x0088ec10 function TkSetTGS                  # (v): u8 g_TkTGS (TkGetTGS's byte)
 0x0088ec20 function TkConfig_SetByteC         # (v) g_FFXConfig byte +0xc; own name
 0x0088ec60 function TkVU1SyncPath             # fh v3:bsim1.00+call.cs 0x0088ebd0 cdecl
+0x0088ec70 function escMenuSetAudioByConfig   # cdecl(mode, timeout): tail jump to sceGsSyncPath with the caller's words; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0088ec90 function Tk_NoteEternalCalm        # (scene) isEternalCalmScene; first time: byte 0x018663d0 = 1, 0x018663d4 = 0; own name
 0x0088ecf0 function TkDebugPrint              # (fmt) dbgPrintf (a PC stub), returns 1; no caller; own name
 0x0088ed10 function TkEucToSjisString         # (src, dst, n) TkEucToSjis per character for up to n bytes, terminated; returns the source end, 0 when the text ended first; own name
 0x0088edc0 function TkGetDebugFontBuffer      # None
 0x0088edf0 function TkGetDebugFontStringWidth # (proportional, s) TkGetStrWidth >> 4; Switch name, the only slot TkGetDebugFontBuffer..TkGetStrWidth (picked by behaviour among its names)
 0x0088ee70 function TkGetStrWidth             # (proportional, s) -> width in 1/16: per character (lead byte >= 0x80: two bytes) g_FontWidths[c] + 2, or 9 / 13 for one / two bytes
-0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20
+0x0088f140 function TkPutDebugFontString      # fh switch:bsim1.00 0x7100492f20; cdecl(color, flags, s) -> 0x0088f240(0, color, flags, s); ported M5 menu b3 (ffx_menu::m5m_c)
 0x0088f160 function TkPutDebugFontStringEuc      # layout: the one Switch name between TkPutDebugFontString and TkPutDebugFontStringP (TkPutDebugFontStringEuc, 268 bytes; ours 212)
 0x0088f240 function TkPutDebugFontStringCore_0088f240 # structure: the worker every TkPutDebugFontString* variant calls: finds a free debug-font buffer slot (TkSetDebugFontBuffer, "TkSetDebugFontBuffer:no free buffer!!"), stores position, colour and text; name ours
-0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20
-0x0088f4e0 function TkPutDebugFontStringPEuc     # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100493060 TkPutDebugFontStringPEuc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0088f5c0 function TkPutDebugFontStringPR       # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100492fd0 TkPutDebugFontStringPR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0088f4c0 function TkPutDebugFontStringP     # fh switch:bsim1.00 0x7100492a20; cdecl(color, flags, s) -> 0x0088f240(1, color, flags, s); ported M5 menu b3 (ffx_menu::m5m_c)
+0x0088f4e0 function TkPutDebugFontStringPEuc     # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100493060 TkPutDebugFontStringPEuc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(color, flags, text) -> 0x0088f240's eax: EUC text to Shift JIS in pieces of <= 28 bytes at ebp-0x24 (lead ((a&0x7f)+1)/2 + 0x70 (a < 0x5f) or 0xb0, trail b&0x7f + 0x7e (even lead) / 0x1f / 0x20 (b > 0x5f)), each 0x0088f240(1, color, flags, piece); spills ebp-0x2c (lead), ebp-0x25 (trail); null text: junk read (buffer never written; 0 in the port, brief 2026-10-24); ported M5 menu b7 (ffx_menu::m5m_g)
+0x0088f5c0 function TkPutDebugFontStringPR       # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100492fd0 TkPutDebugFontStringPR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(color, flags, s): 0x0133c8d4 -= TkGetStrWidth(1, s), then 0x0088f240(1, ...); ported M5 menu b3 (ffx_menu::m5m_c)
 0x0088f5f0 function TkPutDebugFontStringPREuc    # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100493280 TkPutDebugFontStringPREuc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0088f690 function TkPutDebugFontStringR        # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x7100492f40 TkPutDebugFontStringR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0088f6c0 function TkPutDebugFontStringREuc     # layout: alphabetical run between TkPutDebugFontStringP and TkSetDebugFontBuffer (6 unnamed in the gap); Switch 0x71004933f0 TkPutDebugFontStringREuc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -13619,6 +13730,7 @@
 0x008a8f40 function TOPlayerListInit_008a8f40 # cdecl(flags): g_TkMenuPlayers from MsGetSaveInParty, MsGetSaveOutParty, then joined others (MsGetSavePlyJoined); 0xff and 7 skipped, nobody for flags>>16 == 1; masks 0x01841c2c/30/34; name ours
 0x008a9090 function TOSummonListInit_008a9090 # (): g_TkMenuSummons/Totals/ListMax/EnableMask from command list 5 of MsMenuStatusNum(0, 0); joined aeons (MsGetSavePlyJoin) shown; 0x64 = aeons 0xf/0x10/0x11; name ours
 0x008a9230 function TOMenuCloseMainWindows_008a9230 # cdecl(owner): each of the 16 main windows at 0x01840900 (0x98 bytes) with owner byte +0x3f: +0xc(w); free flag +0x41: unless +0x14(w) == 0, +0x18(w) or TkMenuMainFreeWindow(w); name ours
+0x008a9510 function TkMn2DrawScreenStrips     # cdecl(a, b, y) -> sceGsSyncPath's eax: TkMenuDrawKick x2, TkVU1SyncPath (0x008c1790 thunk), TkMn2DrawInitPacket, then 13 strips of 0x01410870 (0xc000 each) by sceGsSetDefLoadImage(0x01841cd0, 0x1a00, 8, 1, 0, 0, 0x200, 0x20) / FlushCache / sceGsExecLoadImage, MenuMn2_StepDrawY80(y, y + 512k, a, b), TkMn2DrawKickSyncPacket; name ours; ported M5 menu b6 (ffx_menu::m5m_f)
 0x008a9670 function TkMenuDrawShadeRatioDiff  # fh v3:bsim1.00 0x008a9630
 0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
 0x008a9690 function TkMenuDrawLayer           # (layer): nothing when 0x0134085c == 1 and layer >= 6 (signed); else TkVU1SyncPath, TOMenuOpenPktBuffTmp, TODrawScissorXYWH(0, 0, 512, 416), TOSeqDrawLayer(1, layer), TOMenuDrawKickTmp, TkVU1SyncPath, then +0x10(w) of each of the 16 g_TkMenuWindows with u8 +0x3e == layer; caller 0x008aa290; ported in menu round 23; name ours
@@ -14059,7 +14171,7 @@
 0x008c0250 function TkMn2DrawCrossCharFace       # layout: second of the three (see TkMn2DrawCommonWindowType); draws a character face shape (TOGetShapTextureName, TOGetImageWH, graphicDrawUIElement, the Albhed Rikku check); ported (ffx_glue_other::h4b_c, m4 h4b): cdecl(face, x, y, w, h): faces 0..6 image 0x2ed0 (4 a row, 6 -> 7 for Al Bhed Rikku), others 0x2ed4 (face-8, 5 a row), 100px cells over TOGetImageWH's size (ebp-0xa8 w, -0xac h); record ebp-0x9c (0x98 bytes, words -0x5c..-0x10 never written, last two 0), shades 0x023cc470/468/460/458 twice
 0x008c0580 function TkMn2DrawCrossCmdCursor      # layout: third of the three (see TkMn2DrawCommonWindowType); draws the blinking command cursor (TkMenuGetTimer blink bit, x offset 3*cos(time), TOMkpShapeXYWHUV); h4-glue-other e1: cdecl(x, y, blink); eax the timer when hidden
 0x008c0670 function TkMn2DrawCrossCursor      # fh v3:exact+call.cs 0x008c0640 cdecl; ported (ffx_glue_other::h4b_c, m4 h4b): kinds 0 (shape 200, cos wobble), 4 and 5 (shape 400 scaled from graphicFontGetScreenWH); keeps x, y and a third temporary (kind 0 the cosine, kind 4 the screen width it hands graphicFontGetScreenWH, kind 5 the shape's x) in its argument slots; another kind returns itself
-0x008c0930 function TkMn2DrawCrossRect           # layout+callees: sorts between TkMn2DrawCrossCursor and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c53e0 TkMn2DrawCrossRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
+0x008c0930 function TkMn2DrawCrossRect           # layout+callees: sorts between TkMn2DrawCrossCursor and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c53e0 TkMn2DrawCrossRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export; cdecl(x f32, y f32, w f32, h f32, c0, c1) -> graphicDrawUIElement's eax: record at ebp-0x9c: (x, y), (x+w, y+h) each one f32 rounding, colour bytes as i32 at +0x10 / +0x30, +0x80 1000, +0x88/+0x90/+0x94 0; graphicDrawUIElement(rec, 0, 1, 0, 0); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008c0a10 function MenuMn2_StepDrawY         # 0x0186a238 += 16; own name
 0x008c0a20 function TkMn2DrawGillPlate           # layout+callees: sorts between TkMn2DrawCrossRect and TkMn2DrawInitPacket, and its named callees match the Switch 0x71004c7fc0 TkMn2DrawGillPlate's (similarity 1.00: TOGetFFXLang, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyEdgeDigit2, graphicUiRemapX2); symbols from Fahrenheit's server export
 0x008c0be0 function TkMn2DrawInitPacket       # (): g_TkMn2DrawY from the menu packet buffer address (rewound by half of TOMenuGetPacketBuffSize when unchanged), font shade 0x80; the Switch's TkMn2DrawInitPacket calls TOMenuGetPacketBuffAdrs and TOMenuGetPacketBuffSize and sorts between TkMn2DrawCross* and TkMn2DrawKickPacket, as here; 15 callers (the menu draw roots)
@@ -14084,7 +14196,7 @@
 0x008c11b0 function MenuMn2_EmitPacket        # (a, b, kind): g_TkMn2DrawY += 16, then g_TkMn2DrawY = 0x008f1b50(g_TkMn2DrawY, a, b, kind) (the packet's end; returned); caller 0x008c7c30; name ours
 0x008c11e0 function MenuStatus_DrawLayoutRow # (x, y, chr): TkMn2DrawRect from the i16/u32 fields at 0x023cc13e..0x023cc148 when chr's bit is in TOMenuGetYesNoWindow(); g_TkMn2DrawY += 16, then = TOMenuDrawChrLayoutPlate(g_TkMn2DrawY, chr, x, y) (returned); MenuStatus_DrawPage page 2 (jump table 0x008d5134); ported in menu round 26; name ours
 0x008c1260 function MenuItem_DrawChrSmallPlate # (x, y, chr) -> TOMenuDrawChrSmallPlate_008f51e0(chr, x, y) (floats through fld/fstp); caller 0x008c9570; ported in menu round 24; name ours
-0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
+0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export; cdecl(x, y, w, h, c0, c1) -> as TkMn2DrawCrossRect from i32 (x+w, y+h summed as integers, fild; the sums pass through ebp-0xa0); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008c1370 function TkMn2DrawScissorClear     # fh switch:bsim1.00 0x71004c5480
 0x008c1390 function TkMn2DrawScissorRect      # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump; its target is hooked, so the thunk needs no hook: proposed glue, menu round 32); Switch name, after TkMn2DrawScissorClear
 0x008c13a0 function TkMn2DrawShape               # layout: alphabetical run between TkMn2DrawScissorClear and TkMn2DrawStatiCursor (1 unnamed in the gap); Switch 0x71004c66a0 TkMn2DrawShape is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -14500,7 +14612,7 @@
 0x008db7e0 function MenuTuto_RestoreNames     # (): 18 names (MsGetSaveChrName 0..17) copied back from the same offsets in *0x01871524 (the tutorial's save copy), and save +0xd1 into MsGetSaveEventAddress(); caller TkMenuCtrlTuto; name ours
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
 0x008db860 function MenuTuto_ChoiceIs5       # (): MenuTuto_GetChoice() == 5; ported in menu round 29; name ours
-0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
+0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850; cdecl() -> 1 when graphicGetAbmap() == 1, else graphicDrawUIElement's eax: (0, 0)-(f32 0x00b41d9c, f32 0x00b41d98) black alpha 0x80; junk reads: the record's ebp-0xc, -8, -0x1c, -0x14 never written (graphicDrawUIElement reads them); 0 in the port (brief 2026-10-24); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
 0x008dbd70 function MenuDraw_SpritePA         # (p, x, y, entry, alpha); own name
 0x008dbda0 function MenuDraw_SpriteP8A        # (p, x, y, entry, alpha) ox = 8; own name
@@ -14530,17 +14642,18 @@
 0x008dc970 function TkMenuConfigHelp         # (id) -> MsMenuGetHelp(7, ...), or table 14 when MsGetSaveConfigEnglish; right before TkMenuConfigMes; see TkMenuArmsHelp; ported in menu round 24 (MsGetSaveConfigEnglish is 0 here: always table 7)
 0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490; cdecl(id): MsMenuGetText(7, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl; cdecl(text): tail jump to TOGetTextWidth_008b8040(text); ported in menu round 22
-0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
+0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0; cdecl(text, flags) -> TOGetWidthExtMes1612(flags, text); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dca20 function TkMenuDrawSp30            # (x, y) TkMenuDrawSp3(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
+0x008dca60 function TkMenuDrawSp3R            # cdecl(x, y, flags) -> g_TkMenuPacket = 0x008ebbd0(g_TkMenuPacket + 0x10, x, y, flags); callers TkMenuDrawSp3R0, TkMenuDraw1612WidthHeight's neighbour; name ours (TkMenuDrawSp3R0 is its 0 wrapper); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dca90 function TkMenuDrawCursor2         # fh switch:bsim1.00 0x71004c0b40
 0x008dcb10 function TkMenuDrawEasyMes1208     # fh switch:bsim1.00 0x71004c19a0
 0x008dcb40 function TkMenuDrawEasyMes1208Right   # layout: alphabetical run between TkMenuDrawEasyMes1208 and TkMenuDrawEasyMes1612 (1 unnamed in the gap); Switch 0x71004c1a50 TkMenuDrawEasyMes1208Right is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008dcb80 function TkMenuDrawEasyMes1612     # fh switch:bsim1.00 0x71004c1660
+0x008dcb80 function TkMenuDrawEasyMes1612     # fh switch:bsim1.00 0x71004c1660; cdecl(x, y, text) -> g_TkMenuPacket = 0x008e9fd0(g_TkMenuPacket + 0x10, x, y, text); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dcbb0 function TkMenuDrawEasyMes1612Clut    # layout: alphabetical run between TkMenuDrawEasyMes1612 and TkMenuDrawEasyMes1612WithMacro (3 unnamed in the gap); Switch 0x71004c1700 TkMenuDrawEasyMes1612Clut is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dcc00 function TkMenuDrawEasyMes1612ClutA   # layout: alphabetical run between TkMenuDrawEasyMes1612 and TkMenuDrawEasyMes1612WithMacro (3 unnamed in the gap); Switch 0x71004c17d0 TkMenuDrawEasyMes1612ClutA is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008dcc30 function TkMenuDrawEasyMes1612ClutRight # layout: alphabetical run between TkMenuDrawEasyMes1612 and TkMenuDrawEasyMes1612WithMacro (3 unnamed in the gap); Switch 0x71004c1760 TkMenuDrawEasyMes1612ClutRight is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008dcc70 function TkMenuDrawEasyMes1612WithMacro # fh switch:bsim1.00 0x71004c16b0
+0x008dcc70 function TkMenuDrawEasyMes1612WithMacro # fh switch:bsim1.00 0x71004c16b0; cdecl(x, y, text, macro) -> g_TkMenuPacket = 0x008ea5c0(packet + 0x10, y, x, text, macro); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dcca0 function TkMenuDrawEnv             # fh v3:exact 0x008dcc80
 0x008dcd50 function TkMenuDrawFont1208ValueClut # fh switch:bsim1.00 0x71004c1880
 0x008dcd80 function TkMenuDrawFont1208ValueClutRight # fh switch:bsim1.00 0x71004c18e0
@@ -14550,6 +14663,7 @@
 0x008dce50 function TkMenuDrawKick            # fh v3:exact 0x008dce30
 0x008dcee0 function TkMn2DrawMenuAbility      # fh switch:bsim1.00 0x71004c62a0
 0x008dcf10 function TkMn2DrawMenuCommand      # fh switch:bsim1.00 0x71004c6240
+0x008dcf40 function TkMenuDrawWindow1612      # cdecl(x, y, w, h) -> 1 when clipped: g_TkMenuPacket = 0x008eadf0(packet + 0x10, x, y, w, h); w > 36 and h > 10: TkMenuDrawScissorRect(x+18, y+5, w-36, h-10); name ours; ported M5 menu b6 (ffx_menu::m5m_f)
 0x008dd0a0 function TkMenuDrawMenuInfoWindow  # fh switch:bsim1.00 0x71004c1e90
 0x008dd0d0 function TkMenuDrawMenuInfoWindow2 # fh switch:bsim1.00 0x71004c1ee0
 0x008dd100 function TkMenuDrawMenuItem           # layout: alphabetical run between TkMenuDrawMenuInfoWindow2 and TkMenuDrawMenuWeapon (4 unnamed in the gap); Switch 0x71004c1ab0 TkMenuDrawMenuItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -14726,7 +14840,7 @@
 0x008e5cf0 function TkMenuSceneHash           # (name) -> XOR of its bytes & 0xf: the bucket TkMenuGetParamHandle and TkMenuGetSceneHandle use
 0x008e5d20 function DrawBtlMenuWithTex           # layout+callees: sorts between CloseScissor and DrawCrossButtonIconRGBA, and its named callees match the Switch 0x71005038c0 DrawBtlMenuWithTex's (similarity 1.00: BeginScissor_XYUV, graphicDrawUIElement, graphicGetNowUIType); symbols from Fahrenheit's server export
 0x008e5e90 function DrawBtlMenuWithoutTex        # layout+callees: sorts between DrawBtlMenuWithTex and DrawCrossButtonIcon, and its named callees match the Switch 0x7100503740 DrawBtlMenuWithoutTex's (similarity 0.67: graphicDrawUIElement, graphicGetNowUIType); symbols from Fahrenheit's server export
-0x008e6030 function DrawCrossButtonIcon          # layout+callees: sorts between CloseScissor and DrawCrossButtonIconRGBA, and its named callees match the Switch 0x710051c770 DrawCrossButtonIcon's (similarity 1.00: DrawCrossButtonIconRGBA); symbols from Fahrenheit's server export
+0x008e6030 function DrawCrossButtonIcon          # layout+callees: sorts between CloseScissor and DrawCrossButtonIconRGBA, and its named callees match the Switch 0x710051c770 DrawCrossButtonIcon's (similarity 1.00: DrawCrossButtonIconRGBA); symbols from Fahrenheit's server export; cdecl(id, x, y, w, h f32) -> DrawCrossButtonIconRGBA(id, x, y, w, h, 0x80808080, 0x80808080) (the floats through fld/fstp: sNaN quieted); ported M5 menu b6 (ffx_menu::m5m_f)
 0x008e6070 function DrawCrossButtonIconRGBA   # fh v3:exact 0x008e6070; port facts: ids 600..0x269 by a jump table (others return id - 600, nothing drawn); TOMkpShapeXYWHUVC2(600, x, y, w, h, u0, v0, u1, v1, c0, c1) with each cell's f32 UV constants; 600/601 h*0.45, w*0.39, x += w*0.305; 0x25a/b h*0.39, w*0.45, y += h*0.305, x += w*0.55; 0x25c/d h*0.45, w*0.39, y += h*0.5, x += w*0.305; 0x25e/f h*0.39, w*0.45, y += h*0.305 (f64 factors at 0x00b43d50/0x00b66c58/0x00b66c50/0x00b5f1a0/0x00b92220, one f32 rounding each); the scratch values stay in id's slot (h then w) and y's (y then x); returns the draw's eax; ported M4 h3 r10 (ffx_prender::h3_glue40)
 0x008e6700 function DrawCrossMenuIconItemName    # layout+callees: sorts between DrawCrossButtonIconRGBA and DrawCrossMenuIconWeaponName2, and its named callees match the Switch 0x71005120b0 DrawCrossMenuIconItemName's (similarity 1.00: DrawCrossMenuIconXYWHRGBA, MsGetRomItem, ToMakeBtlEasyFont, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008e67f0 function DrawCrossMenuIconWeaponName  # layout+callees: sorts between DrawCrossButtonIconRGBA and DrawCrossMenuIconWeaponName2, and its named callees match the Switch 0x7100512250 DrawCrossMenuIconWeaponName's (similarity 1.00: DrawCrossMenuIconXYWHRGBA, MsGetSaveWeapon, MsGetSaveWeaponName, ToMakeBtlEasyFont, graphicUiRemapX2); symbols from Fahrenheit's server export
@@ -15931,12 +16045,12 @@
 0x0092e7e0 function rcefSetArmorVisible          # layout+callees: sorts between rcefResetMotion and rcefSetDamage, and its named callees match the Switch 0x7100556f70 rcefSetArmorVisible's (similarity 1.00: Ch_SetHideEffect, MsGetWeaponHandle); symbols from Fahrenheit's server export
 0x0092e830 function rcefSetChrBaseMatrix      # (i, m, out): m into out (or g_RcefChrBaseMatrix 0x0193c090) with rows scaled by Ch_GetScale x Ch_GetDataScale, then Ch_SetOrgMatrix; name: Switch rcefSetChrBaseMatrix by layout (between rcefSetArmorVisible 0x0092e7e0 and rcefSetChrDirTarget2 0x0092e960); ported (field r2 E)
 0x0092e960 function rcefSetChrDirTarget2      # (chr, a, b, c): MsSetChrDirTarget(chr, 2, 0, a, b, c); name ours
-0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
-0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
+0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump; ported ffx_battle::m5_battle (m5 battle b1)
+0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump; ported ffx_battle::m5_battle (m5 battle b1)
 0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0; (a, b) -> eax: MsSetDamage(g_RcefPrayEffect, a, b); ported (field r13, ffx_field::task)
 0x0092e9c0 function rcefColorSet              # (r, g, b, a, v): the bytes as floats, rcefWorkSetFromVf00(0x025d5a20, colour, v); g_MagicImports (0x00c6544c); name ours
 0x0092ea40 function rcefColorFade             # (r0, g0, b0, a0, r1, g1, b1, a1, v): both colours as floats, rcefWorkSet(0x025d5a20, c0, c1, v); name ours
-0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump
+0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump; ported ffx_battle::m5_battle (m5 battle b1)
 0x0092eb20 function rcefMsGetMoveTargetDist_0092eb20 # (a1..a11) -> eax: slot 0x00c65480 of the rcef function table (no direct callers; name ours): MsGetMoveTargetDist 0x007ab540 with the same words, a4 and a8..a11 copied through the x87 (f32); ported (field r14, ffx_field::task)
 0x0092eb70 function rcefWeaponSetHide         # (chr, show): Ch_SetHideEffect(MsGetWeaponHandle(chr, 0), show == 0) when the handle is non-zero; name ours
 0x0092eba0 function rcefPostRequest           # (a, f, b, c, d) -> d: g_RcefRequest = a, f (float), b, 0, c, d; g_RcefRequestPending = 1; g_MagicImports (0x00c65494); nothing in the PC build reads the request; name ours
@@ -20678,7 +20792,12 @@
 0x0130372c label    g_GuPrintCR               # Gu_PrintSetCR
 0x01303734 label    g_GuWindowList            # open Gu windows, linked through window +0, front first (Gu_WindowOpen moves a window to the front)
 0x01303738 label    g_GuDragWindow            # the window being dragged (Gu_WindowIsDrag)
+0x0130373c label    g_GuResizeWindow          # the window being resized (Gu_ControlMouse kind 7; Gu_VSync); name ours
+0x01303740 label    g_GuPopupWindow           # the selector's popup window (Gu_SetPopupWindow; Gu_VSync tests it first); name ours
+0x01303744 label    g_GuDragGrab              # i32 x, y: the drag's grab offset from the window position (Gu_ClientMouse); name ours
+0x0130374c label    g_GuResizeGrab            # i32 x, y: the resize's grab offset from the window size (Gu_ControlMouse kind 7); name ours
 0x01303754 label    g_GuMouseCapture          # 2 words (Gu_MouseSetCapture)
+0x01303758 label    g_GuCaptureId             # u32 id of the control holding the mouse capture (Gu_ControlMouse kind 4); name ours
 0x0130375c label    g_GuHidden                # Gu_Hide(on) sets it and returns the old value
 0x01303760 label    g_GuMouseEnable           # Gu_MouseSetEnable
 0x01325240 label    g_GuMouseX                # mouse x as the Gu layer reads it (Gu_MouseInRect pairs it with a rectangle's x and width; window +0x0c); was g_GuMouseY
@@ -20764,6 +20883,7 @@
 0x013285b4 label g_AtelEventPathChg # (r25 d) u32: the event path's set_read_chgname handle (Atel_SetEventPathLang_00879430)
 0x01328698 label g_AtelSourceBuffers # (r27 a) u32[slot*8+i]: the event source files' buffers (Atel_LoadSourceFile_00879b60)
 0x01328778 label g_AtelSourceSizes # (r27 a) u32[slot*8+i]: the loaded source files' sizes, zeroed per slot by AtelLoadSourceData (slot 7's would be the path buffer 0x01328858)
+0x01328a74 label    g_TkDebugFontColor        # the debug font's colour index (TkPutDebugFontString* callers pass it; AtelDebug_PrintKind sets 2, AtelDebug_PrintMotion 7); name ours
 0x0132f580 label    g_TkDeci2Send             # i8 (TkIsDeci2Send)
 0x0132f690 label    g_SndFootSepWork          # footstep sound tables 0x0132f690..0x0132ff10, by kind (SndGetFootSepWork): 0 f690, 1 f790, 5 f890, 8 fad0, 9 fbd0, 13 fcd0 are [16][4] u32; 2 f990, 3 f9d0, 6 fa10, 7 fa50, 4 fa90, 10 fdd0, 11 fe10, 14 fe50, 15 fe90, 12 fed0 are [16] u32
 0x0132ff10 label    g_TkSndVoiceFlags         # u32 voice read in progress; next words: shout busy (0x0132ff14), VAG stream busy (0x0132ff18), g_TkSndStandbyVoice (0x0132ff1c) (SndStartShoutStream sets ff14, SndStartStream ff18)
@@ -20811,8 +20931,10 @@
 0x01330230 label    g_TkMcPort                # u32 port, then the last one used (TkMc* wrappers copy it)
 0x01330238 label    g_TkMcDebugLock           # TkMcSetDebugLock
 0x0133023c label    g_TkMcLoadFilePos         # u32 per slot (TkMcGetLoadFilePos, TkMcSetLoadFilePos)
+0x01330250 label    g_TkBgThreadSema          # the background thread's semaphore word (TkSignalSemaBGThread); name ours
 0x01330254 label    g_TkBGThreadFunc          # TkRegistBGThreadFunc(f) sets it, returns the old one
 0x0133025c label    g_TkSyncVCallbackHandles  # 3 words (TkGetSyncVCallbackHandle, index clamped to 0..2)
+0x01330268 label    g_TkVsyncThread           # the vsync emulation thread (TkSetVsyncHandler; -1 none); name ours
 0x0133026c label    g_TkSyncVCallbackPtrs     # 3 words (TkSetSyncVCallbackPtr: index < 0 is 0, >= 3 ignored)
 0x01330280 label    g_TkControlerWork         # 2 words, zeroed by TkInitControlerWork
 0x01330488 label    g_PadButtonMap            # 16-byte rows: Pad_MapButtons(a, b, buttons) moves bit i of buttons to bit row[a + b][i]
@@ -21343,6 +21465,8 @@
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
+0x023cbc04 label    g_SgMouseWheel            # i32 wheel steps (Sg_MouseMain adds 0x01325294; Gu_Main clears it; Gu_ClientMouse scrolls 24 a step, Gu_WindowMouse sends 0x8017); name ours
+0x023cbc10 label    g_SgMouseButtons          # u32 per button down/pressed/released/double (left bits 0-3, right 8-11, middle 16-19), Sg_MouseButtonMain's result (Gu_Main stores it); name ours
 0x023cbc60 label g_EventName # char[]: the current event directory name ("bl/bltz0000"); getEventLocTexListPath, Yn_PreBgLayerDispOn (strstr te/test20)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
