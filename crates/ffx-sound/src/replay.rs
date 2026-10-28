@@ -21,7 +21,17 @@ use crate::mixer::{BLOCK, Voice, Wave};
 /// Reads a game file by its path below `Sound_PC/` (lower case, `/`).
 pub trait Files {
     fn read(&mut self, path: &str) -> Option<Arc<Vec<u8>>>;
+    /// `len` bytes of a file from `at` (the banks are read in parts: the
+    /// music bank alone is 554 MB, too big for the game's 32-bit process).
+    fn read_range(&mut self, path: &str, at: usize, len: usize) -> Option<Vec<u8>> {
+        self.read(path)
+            .and_then(|b| b.get(at..at + len).map(<[u8]>::to_vec))
+    }
 }
+
+/// Decoded waves kept for reuse, in bytes of PCM, beyond which the ones no
+/// voice plays are dropped.
+const WAVE_CACHE: usize = 192 << 20;
 
 /// One logged call.
 #[derive(Debug, Clone, Default)]
@@ -177,7 +187,21 @@ struct Instance {
     pan: f32,
     paused: bool,
     voice: Option<u64>,
+    /// The wave's length (FEV), for `Event::getInfo`.
+    length_ms: u32,
+    /// The project's handle.
+    project: u32,
 }
+
+/// What `Event::getState` answers (FMOD Ex's bits, measured with
+/// fmod-probe): ready, playing (0x08) with its channels playing (0x10).
+pub const STATE_READY: u32 = 1;
+pub const STATE_PLAYING: u32 = 0x18;
+/// The last block is mixed, the end callbacks are still to come.
+pub const STATE_ENDING: u32 = 0x08;
+/// `FMOD_EVENT_CALLBACKTYPE_SOUNDDEF_END`, `..._EVENTFINISHED`.
+pub const CALLBACK_SOUNDDEF_END: u32 = 2;
+pub const CALLBACK_EVENTFINISHED: u32 = 4;
 
 /// The engine: the log's FMOD state and the voices.
 pub struct Engine<F: Files> {
@@ -189,10 +213,15 @@ pub struct Engine<F: Files> {
     channels: HashMap<u32, Target>,
     sounds: HashMap<u32, (String, Option<u32>)>,
     waves: HashMap<(String, u32), Arc<Wave>>,
-    banks: HashMap<String, (Arc<Vec<u8>>, Bank)>,
+    banks: HashMap<String, Bank>,
     /// Playing voices by start order (the mix order).
     voices: BTreeMap<u64, Voice>,
     next_voice: u64,
+    /// The instance each voice plays.
+    owners: HashMap<u64, u32>,
+    /// Instances whose wave ended, with the update it ended in.
+    ending: Vec<(u32, u64)>,
+    callbacks: Vec<(u32, u32)>,
     /// FMOD channel index per voice, and the free ones.
     slots: HashMap<u64, u16>,
     free: std::collections::BTreeSet<u16>,
@@ -227,6 +256,9 @@ impl<F: Files> Engine<F> {
             banks: HashMap::new(),
             voices: BTreeMap::new(),
             next_voice: 0,
+            owners: HashMap::new(),
+            ending: Vec::new(),
+            callbacks: Vec::new(),
             slots: HashMap::new(),
             free: (0..128).collect(),
             channel_checks: (0, 0),
@@ -236,11 +268,12 @@ impl<F: Files> Engine<F> {
         }
     }
 
-    fn bank(&mut self, path: &str) -> Option<&(Arc<Vec<u8>>, Bank)> {
+    fn bank(&mut self, path: &str) -> Option<&Bank> {
         if !self.banks.contains_key(path) {
-            let bytes = self.files.read(path)?;
-            let bank = Bank::parse(&bytes).ok()?;
-            self.banks.insert(path.to_owned(), (bytes, bank));
+            let first = self.files.read_range(path, 0, 0x3c)?;
+            let head = self.files.read_range(path, 0, Bank::head_len(&first)?)?;
+            let bank = Bank::parse_head(&head).ok()?;
+            self.banks.insert(path.to_owned(), bank);
         }
         self.banks.get(path)
     }
@@ -250,9 +283,9 @@ impl<F: Files> Engine<F> {
         if let Some(w) = self.waves.get(&key) {
             return Some(w.clone());
         }
-        let (bytes, b) = self.bank(bank)?;
-        let s = b.samples.get(index as usize)?;
-        let pcm = crate::ima::decode(&bytes[s.data.clone()], s.channels, s.frames);
+        let s = self.bank(bank)?.samples.get(index as usize)?.clone();
+        let data = self.files.read_range(bank, s.data.start, s.data.len())?;
+        let pcm = crate::ima::decode(&data, s.channels, s.frames);
         let w = Arc::new(Wave {
             frames: u32::try_from(pcm.len() / usize::from(s.channels)).unwrap_or(0),
             pcm,
@@ -261,6 +294,10 @@ impl<F: Files> Engine<F> {
             looped: s.looped,
         });
         self.waves.insert(key, w.clone());
+        let bytes: usize = self.waves.values().map(|w| w.pcm.len() * 2).sum();
+        if bytes > WAVE_CACHE {
+            self.waves.retain(|_, w| Arc::strong_count(w) > 1);
+        }
         Some(w)
     }
 
@@ -278,7 +315,8 @@ impl<F: Files> Engine<F> {
         let Some((wave, oneshot)) = p.project.wave(ev) else {
             return;
         };
-        let (bank, sample, base) = (p.bank.clone(), wave.index, ev.volume);
+        let (bank, sample, base, length_ms) =
+            (p.bank.clone(), wave.index, ev.volume, wave.length_ms);
         let Some(wave) = self.wave(&bank, sample) else {
             return;
         };
@@ -294,6 +332,8 @@ impl<F: Files> Engine<F> {
                 pan: 0.0,
                 paused: false,
                 voice: self.events.get(&handle).and_then(|i| i.voice),
+                length_ms,
+                project,
             },
         );
     }
@@ -316,6 +356,7 @@ impl<F: Files> Engine<F> {
 
     fn remove_voice(&mut self, id: u64) {
         self.voices.remove(&id);
+        self.owners.remove(&id);
         if let Some(i) = self.slots.remove(&id) {
             self.free.insert(i);
         }
@@ -362,6 +403,19 @@ impl<F: Files> Engine<F> {
                 self.projects
                     .insert(handle, LoadedProject { project, bank });
             }
+            "EventProjectI::stopAllEvents" => {
+                let project = c.arg(0);
+                let voices: Vec<u64> = self
+                    .events
+                    .values_mut()
+                    .filter(|i| i.project == project)
+                    .filter_map(|i| i.voice.take())
+                    .collect();
+                for v in voices {
+                    self.remove_voice(v);
+                }
+            }
+            "EventProjectI::release" => {}
             "EventProjectI::getGroup" => {
                 if let (Some(name), Some(g)) = (c.string(1), c.out(3)) {
                     self.groups.insert(g, (c.arg(0), name.to_owned()));
@@ -396,6 +450,8 @@ impl<F: Files> Engine<F> {
                     self.remove_voice(old);
                 }
                 let v = self.add_voice(Voice::new(i.wave.clone(), !i.oneshot));
+                self.owners.insert(v, h);
+                self.ending.retain(|&(e, _)| e != h);
                 if let Some(e) = self.events.get_mut(&h) {
                     e.voice = Some(v);
                 }
@@ -509,8 +565,8 @@ impl<F: Files> Engine<F> {
     }
 
     /// Mixes one block (one `EventSystem::update`): every voice in start
-    /// order (fmod-probe found no sum order that differs; the residue's
-    /// last ulps may still be an order, `audio-platform.md`).
+    /// order (the order FMOD sums in, measured with fmod-probe; the
+    /// four audio replays match FMOD sample for sample).
     pub fn update(&mut self) {
         let at = self.out.len();
         self.out.resize(at + 2 * BLOCK, 0.0);
@@ -524,10 +580,107 @@ impl<F: Files> Engine<F> {
             .filter(|(_, v)| v.ended)
             .map(|(&id, _)| id)
             .collect();
+        // measured with fmod-probe: a wave whose last frame is mixed in
+        // update n calls back SOUNDDEF_END in update n + 1 and
+        // EVENTFINISHED in n + 2; `getState` reads 0x08 in between
+        let n = self.updates;
+        self.callbacks.clear();
+        let mut still = Vec::new();
+        for (h, at) in std::mem::take(&mut self.ending) {
+            if n == at + 1 {
+                self.callbacks.push((h, CALLBACK_SOUNDDEF_END));
+                still.push((h, at));
+            } else if n >= at + 2 {
+                self.callbacks.push((h, CALLBACK_EVENTFINISHED));
+            } else {
+                still.push((h, at));
+            }
+        }
+        self.ending = still;
         for id in ended {
+            if let Some(h) = self.owners.get(&id).copied() {
+                if let Some(e) = self.events.get_mut(&h) {
+                    e.voice = None;
+                }
+                self.ending.push((h, n));
+            }
             self.remove_voice(id);
         }
         self.updates += 1;
+    }
+
+    /// A project loaded under this handle.
+    #[must_use]
+    pub fn has_project(&self, handle: u32) -> bool {
+        self.projects.contains_key(&handle)
+    }
+
+    /// The callbacks the last [`Engine::update`] raised: `(event, type)`.
+    #[must_use]
+    pub fn callbacks(&self) -> &[(u32, u32)] {
+        &self.callbacks
+    }
+
+    /// `Event::getState` of an instance.
+    #[must_use]
+    pub fn state(&self, event: u32) -> u32 {
+        match self.events.get(&event) {
+            Some(i) if i.voice.is_some() => STATE_PLAYING,
+            Some(_) if self.ending.iter().any(|&(h, _)| h == event) => STATE_ENDING,
+            _ => STATE_READY,
+        }
+    }
+
+    /// The wave length (ms) and whether the instance plays, for
+    /// `Event::getInfo`.
+    #[must_use]
+    pub fn info(&self, event: u32) -> Option<(u32, bool)> {
+        self.events
+            .get(&event)
+            .map(|i| (i.length_ms, i.voice.is_some()))
+    }
+
+    /// The instance loops (`Channel::getLoopCount` -1) or plays once (0).
+    #[must_use]
+    pub fn looping(&self, event: u32) -> bool {
+        self.events.get(&event).is_some_and(|i| !i.oneshot)
+    }
+
+    /// Paused (`Event::getPaused`), and the game's volume (`getVolume`).
+    #[must_use]
+    pub fn paused_volume(&self, event: u32) -> (bool, f32) {
+        self.events
+            .get(&event)
+            .map_or((false, 0.0), |i| (i.paused, i.volume))
+    }
+
+    /// Instances of a project still playing or ending
+    /// (`EventProject::getInfo`'s `numplayingevents`).
+    #[must_use]
+    pub fn playing_events(&self, project: u32) -> u32 {
+        let n = self
+            .events
+            .iter()
+            .filter(|(h, i)| {
+                i.project == project
+                    && (i.voice.is_some() || self.ending.iter().any(|(e, _)| e == *h))
+            })
+            .count();
+        u32::try_from(n).unwrap_or(u32::MAX)
+    }
+
+    /// The names of a bank's samples (the Shout FSB's subsounds), loaded on
+    /// first use.
+    pub fn sample_names(&mut self, bank: &str) -> Vec<String> {
+        self.bank(bank)
+            .map(|b| b.samples.iter().map(|s| s.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// The bank path a `System::createSound` name maps to.
+    #[must_use]
+    pub fn bank_path(name: &str) -> String {
+        sound_path(name)
     }
 
     /// Replays a whole log.

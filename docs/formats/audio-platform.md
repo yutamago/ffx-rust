@@ -405,14 +405,24 @@ and `~/ffx-work/m5/mixer/ana_*.py`; the waves come from banks `1110`
 
 - **Decoding.** IMA ADPCM, Xbox layout, 64 samples a block: the header's
   predictor first, then 63 codes (`sound.md`). PCM to float is x 1/32768.
-- **Resampler.** Linear interpolation `a + (b - a) x frac` in `f32`, the
-  position a 32.32 fixed-point number from 0 stepping `(rate << 32) /
-  48000` (44,100 Hz: 0.91875 a frame). 48,000 Hz waves are copied.
+- **Resampler.** Linear interpolation `a x (1 - f) + b x f` in `f32`
+  (round 3, bit for bit on the PS2 fanfare alone: `a + (b - a) x f` was
+  off in 59,560 of 160,000 frames), the position a 32.32 fixed-point
+  number from 0 stepping `(rate << 32) / 48000` (44,100 Hz: 0.91875 a
+  frame), f = the fraction's top 31 bits converted to `f32` (nearest)
+  times 2^-31 (all 32 bits left 623 frames one ulp off: a tie in the 32nd
+  bit rounds the other way). 48,000 Hz waves are copied.
 - **Start.** A voice starts at the first frame of the block of the update
   after its `start`, its gain ramped from 0: frame k of the block has gain
   k x delta, delta = target / 64, added after each frame (accumulated in
   `f32`), then exactly the target from frame 64 on (keeping the
-  accumulated value instead made every voice one ulp off).
+  accumulated value instead made every voice one ulp off). **While the
+  gain ramps, the product sample x gain is added to the mix without being
+  rounded first** (the sum is rounded to `f32` once, as an x87 or fused
+  multiply-add does); at a steady gain both are `f32` operations. Found by
+  replaying probe B (the game's four `2515` loops starting together) in
+  the engine (`fmod-mix --script`): with three voices ramping, no sum
+  order matched, and this did, everywhere.
 - **Volume changes.** The same 64-frame ramp from the old gain to the new,
   in the block after `setVolume`, mono and stereo alike (steps 0.5, 0.25,
   0.75, 0.125, 1 every tick: every block exact). **But** a change is taken
@@ -448,45 +458,84 @@ and `~/ffx-work/m5/mixer/ana_*.py`; the waves come from banks `1110`
   9, 8 and 1 at once. The game clears its play word on 2 or 4, so on 2.
   `getState` reads 0x18 while it plays, 0x8 after update n (the channel
   done) and 1 (READY) after update n + 2.
-- **Sum order.** Voices summed in start order. fmod-probe found no case
-  where the order changes the sum (three voices at 0.3, 0.011 and 0.97,
-  both start orders, all six orders exact), and ordering by FMOD's channel
-  index or by the event instance changed nothing or made it worse on the
-  captures.
+- **Sum order.** Voices summed in start order (the other orders tried on
+  probe B and on the captures were worse).
 
-## Residue (2026-10-27, second round)
+## Residue (2026-10-27, third round)
 
-The Rust engine against the original capture of the same run, between
-`audiomark start` and `end` (`tools/wav-compare.py`'s window):
+The offline engine (`fmod-mix`) against the original capture of the same
+run, and the Rust engine inside the game (`FFX_RUST_AUDIO=1`, below)
+against the FMOD references in `~/ffx-work/replay-audio`, between
+`audiomark start` and `end`:
 
-| Replay | First differing sample | Max error | RMS error (signal RMS) | Blocks exact / within 1e-5 of the peak / larger | Cause, as far as known |
-|---|---|---|---|---|---|
-| event-besaid | frame 457600 (start + 1600, tick 1), off by 2.9e-11 | 1.86e-9 | 8.2e-11 (0.00201: 4.1e-8) | 40 / 720 / 0 | float rounding only: one ulp of the sum in places |
-| battle-attack | frame 254414 (start + 6414, tick 4), off by 3.6e-12 | 3.73e-9 | 1.15e-10 (0.00298: 3.9e-8) | 66 / 923 / 0 | float rounding only |
-| menu-browse | frame 435236 (start + 6436, tick 4), off by 2.3e-10 | 2.33e-10 | 4.2e-12 (0.00102: 4.1e-9) | 295 / 116 / 0 | float rounding only |
-| battle-ifrit | frame 499203 (start + 3, tick 0), off by 4.7e-10 | 7.45e-9 | 1.7e-10 (0.00678: 2.6e-8) | 0 / 550 / 0 | float rounding only; no block exact (nine voices from the start, two of them 44.1 kHz) |
+| Replay | Offline vs its capture | In the game, original code, vs both references | In the game, Rust ports (`run-all.sh --audio`) |
+|---|---|---|---|
+| event-besaid (music, Wakka's voice `030401wk`, a 48 kHz mono voice stream, footsteps) | identical | identical | identical (both) |
+| battle-attack | identical | identical | identical (both) |
+| menu-browse | identical | identical | identical (both) |
+| battle-ifrit | identical | identical | identical (both) |
 
-Round 1's table, for comparison: max errors 0.00129, 0.00326, 4.98e-5 and
-6.68e-4, RMS 3.9 %, 3.6 %, 0.2 % and 0.8 % of the signal. Every
-structural difference is gone; what is left is at most a few ulps of a
-`f32` sum, about 160 dB under the signal. Nothing is accepted as a
-tolerance; that is the user's decision.
+Round 2's table, for comparison: max errors 1.9e-9, 3.7e-9, 2.3e-10 and
+7.5e-9 (float rounding only); round 1's 0.00129, 0.00326, 4.98e-5 and
+6.68e-4. There is no residue on the four replays: sample for sample.
+
+| movie-fmv (the movie's user stream) | not followed (no movie calls in the offline engine) | first difference at start + 6682 (tick 4, the movie's first block); max 0.0472, RMS 0.00335 against a signal RMS of 0.00342: the movie sound is not right | not run |
+
+With `FFX_RUST_AUDIO=1` the main list (12 replays) and the extra list (9,
+movie-fmv included) give the same trace events as their recordings, and
+the screenshots pass (menu-shop-8: 4 px of cursor glow, the known streak).
 
 What is left:
-- The last ulps: where FMOD's float operations differ from the engine's
-  (the order or grouping of the sum, or the interpolation's or the gain's
-  rounding when many voices play). The probe cases so far always summed
-  exactly; a probe replaying one of the game's logs (battle-ifrit's
-  first blocks) against the engine would find the operation.
-- FMOD's channel indices: the engine's model (the highest free of 128)
-  matches every `getChannel` handle in menu-browse (19 of 19) but not
-  elsewhere (50 of 224, 389 of 852, 238 of 779): FMOD keeps channels
-  longer than the engine's voices. It doesn't change the mix.
-- Voice streams (32 and 48 kHz; none of the four logs plays a voice event:
-  event-besaid's log has no `getEvent`), the Shout channel (the probe has the calls; no log has a
-  Shout yet: record a battle with a voiced shout), `maxplaybacks`
-  stealing (the game's own limits never reach it in the logs) and the
-  movie user stream.
+- The movie user stream: `rust_audio` mixes the game's PCM callback at
+  the stream's rate with the measured interpolation and ramp, and it is
+  wrong (the table): FMOD's user-stream reading (its decode buffer, when
+  it calls the callback, how much it keeps) is still to measure with
+  fmod-probe. The movie-fmv call log has the callback's 127 calls
+  (`Sound::getUserData` from `0x00a27ef7`) but no `createSound`, so the
+  movie's set-up runs where the log does not see it.
+- The Shout channel: the stubs and the engine follow it, but no recorded
+  replay plays one (battle-overdrive, recorded with a log, has no
+  `playSound`); a battle with a voiced shout is still to record.
+- Voices at 32 kHz (100 voice samples; the replays' voice is 48 kHz).
+- `maxplaybacks` stealing: the game's own limits (5 a sequence, 30 for
+  sequence 114, `canStartNewEvent`) stop it before FMOD's in every log.
+- A real output device for normal play: with `FFX_RUST_AUDIO=1` and no
+  `FFX_AUDIO_WAV` the engine mixes and nothing is played yet.
+- FMOD's channel indices (the engine's model matches menu-browse only); it
+  doesn't change the mix.
+
+## The Rust engine in the game (`FFX_RUST_AUDIO=1`)
+
+`crates/ffx-hook/src/rust_audio.rs`, installed before the call log and
+the capture (`ffx-dinput8`), so both wrap it. All 40 import slots of
+`fmod_event.dll` and `fmodex.dll` point at Rust stubs; no FMOD function
+runs. `EventSystem::load` and `EventProject::getGroup` hand back our own
+objects with our vtables (`EventProjectI` +0 release, +4 getInfo, +8
+getGroup, +0x24 stopAllEvents, +0x28 cancelAllLoads; `EventGroupI` +4
+loadEventData, +8 freeEventData, +0x20 getEvent, +0x24 getEventByIndex;
+the other slots answer `FMOD_OK`); event, channel group, channel and
+sound handles are our numbers. The stubs make the same calls on
+`ffx_sound::replay::Engine` the offline gate makes from the logs. Files
+come through the game's own callbacks from `System::setFileSystem`
+(`FmodFile_open/read/seek/close`), so the VBF and mods work; banks are
+read in parts (their head, then each wave's data), as the music bank is
+too big for the 32-bit process, and decoded waves no voice plays are
+dropped past 192 MB.
+
+Each `EventSystem::update` mixes one block; with `FFX_AUDIO_WAV` it goes
+into the file in FMOD's WAV writer format (the same header), and
+`audio_wav.rs` keeps the marks (the engine's clock instead of
+`getDSPClock`) and the turns. The callbacks and states follow the
+measurements above: `SOUNDDEF_END` in the update after the block with the
+wave's last frame, `EVENTFINISHED` one later (and at once in `stop`),
+outside the engine's lock; `getState` 0x18 / 0x08 / 1;
+`EventProject::getInfo` +0x114 the instances still playing or ending;
+`Event::getInfo` +8 the wave's length in ms, +0x28 1 while it plays;
+`Channel::getLoopCount` -1 for a looping event. The gate:
+
+```bash
+FFX_RUST_AUDIO=1 tools/replays/run-all.sh --audio
+```
 
 ## Open questions
 

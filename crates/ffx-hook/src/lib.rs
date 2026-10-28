@@ -135,6 +135,7 @@ mod patch;
 pub mod ported;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod replacements;
+pub mod rust_audio;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod snapshot;
 #[cfg(all(windows, target_arch = "x86"))]
