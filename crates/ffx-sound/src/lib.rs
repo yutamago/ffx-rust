@@ -16,6 +16,7 @@ pub mod fmod;
 pub mod foot3d;
 pub mod fsb;
 pub mod ima;
+pub mod m5_sound;
 pub mod mixer;
 pub mod replay;
 pub mod snd;

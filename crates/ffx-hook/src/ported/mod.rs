@@ -39,6 +39,7 @@ mod m5_menu;
 mod m5_pc_ui;
 mod m5_render;
 mod m5_script;
+mod m5_sound;
 mod m5_system_a;
 mod m5_vfx;
 mod main;
@@ -99,6 +100,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_script::hooks());
     all.extend(m5_system_a::hooks());
     all.extend(m5_vfx::hooks());
+    all.extend(m5_sound::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());
