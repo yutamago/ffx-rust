@@ -9,6 +9,8 @@
 //!   (`TkMn2ArmsRefreshArms`);
 //! - [`gu`]: windows, controls, selectors, the text cursor, GS packets;
 //! - [`item`]: the item menu's control (`TkMenuCtrlItem`);
+//! - [`m5m_a`]..: M5 stage 1 (the `Gu_` debug GUI's frame and the rest the
+//!   static call graph reaches);
 //! - [`main_loop`]: the main menu's frame (`0x008a9ca0`);
 //! - [`math`]: float helpers (angle wrapping, radius tests);
 //! - [`msg`]: message tables and message-window choices;
@@ -22,6 +24,7 @@ pub mod ability_map;
 pub mod arms;
 pub mod gu;
 pub mod item;
+pub mod m5m_a;
 pub mod main_loop;
 pub mod math;
 pub mod msg;

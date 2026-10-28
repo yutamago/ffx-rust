@@ -1034,6 +1034,7 @@ dependencies = [
  "ffx-bridge",
  "ffx-chara",
  "ffx-field",
+ "ffx-graphic",
  "ffx-kernel",
  "ffx-ps2",
  "ffx-script",

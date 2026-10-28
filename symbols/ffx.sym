@@ -11272,8 +11272,10 @@
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
 0x008467a0 function Sg_Dmy                    # fh v3:bsim1.00 0x008467a0
 0x008467b0 function Sg_Test                      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%d:SG:sync end\\n'; Switch 0x7100433f50 Sg_Test (symbols from Fahrenheit's server export); jump table 0x00846830: 0 Sg_MapSetName("sugimoto", 0), ("kaisou", 1), Sg_MapInit; 1 dbgPrintf("%d:SG:sync end\n", g_SgFrame); 2 user_malloc(64 KB) into 0x013036b8; 3 user_free it, Ch_MemMoveSetTrigger; returns n; ported (ffx_sg::state, main round 17)
-0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0
-0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40
+0x00847420 function Gu_DrawCursor             # cdecl(cursor, dx i32, dy i32) -> GIF tag address: rect +8..+0xe (i16) eased to +0x10..+0x16 by (d / min(|d|, +0x24 or 2)), colour bytes +0x1c..+0x1e by (t-c+2)/3 towards +0x18..; tag, Gu_SetTest(1,1,0..), alpha 0x80 - g 0x01303730/3, two XYZ corners centred in 4096 by g_GuScreenSize (y scaled by g_GuHScale >> 8); callers Gu_DrawWindowTree; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x00847720 function Gu_DrawControl            # cdecl(control, dx, dy, window): by kind +0x2c: 1 button (toggle shows value, 0x00846b10 frame, label +0x28 centred by Gu_PrintGetWidth), 2 static (9 px a char), 4/7/8 frame, 6 client (0x00847b50, title +0x5c bold); flag 2 grey (colour 0x20); callers Gu_DrawWindowTree; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0; cdecl(channel) -> sceGsSyncPath's eax: end-of-packet A+D quadword, DMA tag (count-1)|0x70000000 at the packet start, FlushCache(0), sceDmaSend(channel, packet), sceGsSyncPath(0, 0); ported M5 menu b1 (ffx_menu::m5m_a)
+0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40; cdecl() -> eax of 0x00846840(mouse x, y, 0x20, 0x10, 0, 0x30, 0x10, 0x10, 0): GIF tag, Gu_SetTest(1,7,0..,1), Sg_SetDebugTEX_0 on the entry packet's next quadword, a data quadword; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
 0x008482f0 function Gu_FontSetX               # g_GuPrintX = x; Switch name, alphabetical slot Gu_DrawStart..Gu_PacketEndTag
 0x00848300 function Gu_FontSetY               # g_GuPrintY = y; Switch name, alphabetical slot
@@ -11300,9 +11302,11 @@
 0x00848b40 function Gu_SetScissor             # fh v3:exact 0x00848b40
 0x00848c30 function Gu_SetScissor2               # layout: alphabetical run between Gu_SetScissor and Gu_SetTexFlush (1 unnamed in the gap); Switch 0x7100443b50 Gu_SetScissor2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00848d10 function Gu_SetTexFlush            # fh v3:exact 0x00848d10
+0x00848d60 function Gu_PrintGetWidth          # cdecl(text) -> strlen * 0x013036f0; '%~' codes (b bold, i italic, c hex colour via 0x00848f60, w dec size via 0x00848fe0, '.' end; their argument parsed into the original's own argument word) measured from after them, metrics reset from the entry size; text ending in the codes -> 0; callers Gu_DrawControl; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00848f00 function Gu_WindowSetHokanEnable   # (on) -> 0x00c4df60; Switch symbol name (BSim)
 0x00848f10 function GetGlobal01303730_00848f10   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01303730]; return t0; callers: Gu_WindowSetLocalTrans; name ours
 0x00848f20 function Gui_WindowSetGlobalTrans     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b60a8 Gui_WindowSetGlobalTrans, 2 votes, round 2
+0x00849170 function Gu_PrintBegin             # cdecl() -> eax = colour word 0x0130370c: GIF tag, Gu_SetTest(1,5,0x7f,0,0,0,0,1), Sg_SetDebugTEX_0 (TEX0 bits 5-6 cleared), A+D tag, RGBAQ from the three colour words sign-extended (alpha 0x80, Q 0xff); callers Gu_Printf; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x00849270 function Gu_Approach               # (cur, target, step) target + (cur-target)/min(|cur-target|, step); own name
 0x008492b0 function Gu_RectSetH               # (rect, h): u16 +6 and its copies at +0xe, +0x16 (a three-copy rectangle like a window's from +0x0c)
 0x008492d0 function Gu_RectSetW               # (rect, w): u16 +4, +0xc, +0x14
@@ -11314,12 +11318,13 @@
 0x00849440 function Gu_MouseInRect            # (rect {i16 x, y, w, h}, dx, dy) -> 1 when g_GuMouseX/Y is strictly inside the moved rectangle
 0x00849490 function Gu_WindowMouseIn          # (window) Gu_SetHScale(+0x8e); mouse strictly inside the i16 rect +0xc; own name
 0x008494f0 function Gu_ControlFreeText        # (control) user_free(+0x28) when u16 +0x26 != 0; no direct caller; own name
+0x00849510 function Gu_ClientMouse            # cdecl(window): middle down: wheel x24 scrolls +0x8c (0..0x80, flag 0x80) or the fade (Gui_WindowSetGlobalTrans); left press grabs the drag (0x01303744/48, g_GuDragWindow); double click toggles flag bit 0; callers Gu_ControlMouse; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x008495e0 function Gu_ControlInit            # (control) memclear 0x44, +0x28 = +0x30 (empty text), +0x40 &= ~3, u16 +0x26 = 0; own name
 0x00849610 function Gu_ControlSetText         # (control, s) text into the control: null/short (< 15) inline at +0x30, longer in a user_malloc(len + 0x11) buffer (capacity len + 0x10 at +0x26, reused while big enough); own name (the core of Gu_WindowControlSetText)
 0x008496d0 function Gu_WindowControlSetRect   # (window, id, x, y, w, h) the control rects (x, y + client origin +0x80), -1 kept; own name
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
-0x00849850 function Gu_Main                   # fh v3:exact 0x00849850
+0x00849850 function Gu_Main                   # fh v3:exact 0x00849850; cdecl(channel, buffer): g 0x023cbc10 = Sg_MouseButtonMain(), Gu_VSync; unless g_GuHidden: Send_DebugFont, Gu_DrawStart(buffer), Gu_SetTexFlush, scissor, Gu_DrawWindowTree(g_GuWindowList), cursor when g_GuMouseEnable, Gu_DrawEnd(channel), Gu_WindowFreeClosed, wheel 0x023cbc04 = 0; ported M5 menu b1 (ffx_menu::m5m_a)
 0x008498e0 function Gu_MakeFileList              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host0:EXEC:cmd /c dir %s /b > \\\\%s'; Switch 0x71004404c0 Gu_MakeFileList (symbols from Fahrenheit's server export)
 0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
@@ -11345,7 +11350,7 @@
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
 0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260
+0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260; cdecl(): hidden waits for Sg_MouseGetMove; drag and resize follow the mouse (resize lays out controls 0x8001/0x8000/0x8002/0x8003 by Gu_WindowControlSetRect); hit test: capture (Gu_WindowMouse), popup 0x01303740, else Gu_ListCopyNext + Gu_WindowListMouse, an unclaimed press captures for Sg_ControlMouseCamera (-1); no button down ends drags and the capture; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470
 0x0084a4a0 function Gu_WindowAddClient        # fh switch:bsim1.00 0x710043f3f0
@@ -11362,6 +11367,7 @@
 0x0084a920 function Gu_WindowCreate           # fh v3:exact 0x0084a920
 0x0084ab80 function Gu_WindowCloseTree        # (window) handler +0x7c (window, 0x8003, 0), flag 4, children recursively; own name
 0x0084abd0 function Gu_WindowFreeClosed       # () windows flagged closed (+0x88 bit 2) unlinked from g_GuWindowList and user_free-d with their controls' heap texts, controls array and +0x5c buffer (when +0x5a); own name (the gap's Switch names DelControl/Dispose are unproven)
+0x0084ac80 function Gu_DrawWindowTree         # cdecl(window): the list from window, back to front (recursing on +0 first); skips closing (flag 2), fade-out (0x10) to closed, growth (8) to targets +0x20/+0x22, Gu_SetHScale(+0x8e); minimised (1): 9-px strip, client controls; else Gu_DrawCursor(frame, 6, 3), frame unsmoothed, client scissor, controls, own fade (0x80); scissor back to 512x416; callers Gu_Main; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084aec0 function Gu_WindowGetArg           # fh v3:bsim1.00 0x0084aec0
 0x0084aed0 function Gu_WindowGetClientH       # (window) -> i16 +0x86 (Gu_WindowSetClientH, Gu_WindowSetSize)
 0x0084aee0 function Gu_WindowGetClientW       # (window) -> i16 +0x84 (Gu_WindowSetSize: width - 2 * border +0x80)
@@ -11376,9 +11382,11 @@
 0x0084afa0 function Gu_WindowGetWidth         # fh v3:bsim1.00 0x0084afa0
 0x0084afb0 function Gu_WindowGetLeft          # (window) -> i16 +0x0c, the window's x (was Gu_WindowGetY; Fahrenheit's BSim Gu_WindowGetX at 0x0084afc0 reads +0x0e, the y)
 0x0084afc0 function Gu_WindowGetX             # fh v3:bsim1.00 0x0084afb0
+0x0084afd0 function Gu_WindowMouse            # cdecl(window) -> 0/1: skips flags 0x1a; Gu_SetHScale, inside (Gu_MouseInRect) + left press -> Gu_WindowToFront; desktop capture -> 1; capture id's control -> Gu_ControlMouse, 1; controls reset then hit-tested (modal flag 1: client only), wheel message 0x8017, none-hit Gu_ControlMouseButtonHandle(-1); returns inside (0 for a modal miss); callers Gu_VSync; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084b200 function Gu_WindowIsDrag           # fh switch:bsim1.00 0x710043fd70
 0x0084b220 function Gu_WindowSetPos           # (window, x, y): +0x0c/+0x0e and their copies at +0x14 and +0x1c (Gu_WindowSetX and Gu_WindowSetY in one)
 0x0084b250 function Gu_WindowOpen             # fh v3:exact 0x0084b250
+0x0084b2e0 function Gu_WindowListMouse        # cdecl() -> 0/1: Gu_WindowMouse's test down g_GuWindowList through +4 (inline rect test), 1 at the first window under the mouse, a captured control or the desktop capture; callers Gu_VSync; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084b560 function Gu_WindowSetArg           # fh v3:bsim1.00 0x0084b560
 0x0084b580 function Gu_WindowSetClientH       # fh v3:exact 0x0084b580
 0x0084b5b0 function Gu_WindowSetHScale        # (window, scale) u16 +0x8e; Switch name
@@ -11396,7 +11404,8 @@
 0x0084b770 function Gu_WindowToFront          # (window): to the front of g_GuWindowList (Gu_WindowOpen's tail)
 0x0084b7b0 function Gu_WindowToggleFlag1      # (window) -> flips flag bit 0, returns it as 0 or -1
 0x0084b7e0 function Gu_WindowSetWord30        # (window, v) u16 +0x30; own name
-0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle
+0x0084b7f0 function Gu_ControlMouse           # cdecl(window, control) -> 0: disabled (+0x40 bit 1) nothing; kind +0x2c (jump table 0x0084b934): 1 button (+0x1a 0xc0, +0x20 pressed), 3 static, both Gu_ControlMouseButtonHandle(id); 4 scroll bar capture (Gu_WindowControlSetRect 0x8003, g_GuMouseCapture, id 0x01303758); 6 Gu_ClientMouse; 7 resize grab (0x0130374c/50, 0x0130373c); 8 title: release -> Gu_WindowStartDrag; name ours; ported M5 menu b1 (ffx_menu::m5m_a)
+0x0084b960 function Gu_ControlMouseButtonHandle # fh v3:exact 0x0084b960 _Gu_ControlMouseButtonHandle; cdecl(window, id) -> eax: one callback +0x7c(window, msg, id) per button event of 0x023cbc10 (0x8005..0x8010); eax = the last callback's result, else the buttons (or the null callback for the middle double click); ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084bc00 function ChrViewMotionCtlProc         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[%s] Frame:%d.%02x(%x)/%d'; Switch 0x7100443c30 ChrViewMotionCtlProc (symbols from Fahrenheit's server export)
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
 0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
@@ -20590,7 +20599,12 @@
 0x0130372c label    g_GuPrintCR               # Gu_PrintSetCR
 0x01303734 label    g_GuWindowList            # open Gu windows, linked through window +0, front first (Gu_WindowOpen moves a window to the front)
 0x01303738 label    g_GuDragWindow            # the window being dragged (Gu_WindowIsDrag)
+0x0130373c label    g_GuResizeWindow          # the window being resized (Gu_ControlMouse kind 7; Gu_VSync); name ours
+0x01303740 label    g_GuPopupWindow           # the selector's popup window (Gu_SetPopupWindow; Gu_VSync tests it first); name ours
+0x01303744 label    g_GuDragGrab              # i32 x, y: the drag's grab offset from the window position (Gu_ClientMouse); name ours
+0x0130374c label    g_GuResizeGrab            # i32 x, y: the resize's grab offset from the window size (Gu_ControlMouse kind 7); name ours
 0x01303754 label    g_GuMouseCapture          # 2 words (Gu_MouseSetCapture)
+0x01303758 label    g_GuCaptureId             # u32 id of the control holding the mouse capture (Gu_ControlMouse kind 4); name ours
 0x0130375c label    g_GuHidden                # Gu_Hide(on) sets it and returns the old value
 0x01303760 label    g_GuMouseEnable           # Gu_MouseSetEnable
 0x01325240 label    g_GuMouseX                # mouse x as the Gu layer reads it (Gu_MouseInRect pairs it with a rectangle's x and width; window +0x0c); was g_GuMouseY
@@ -21255,6 +21269,8 @@
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
+0x023cbc04 label    g_SgMouseWheel            # i32 wheel steps (Sg_MouseMain adds 0x01325294; Gu_Main clears it; Gu_ClientMouse scrolls 24 a step, Gu_WindowMouse sends 0x8017); name ours
+0x023cbc10 label    g_SgMouseButtons          # u32 per button down/pressed/released/double (left bits 0-3, right 8-11, middle 16-19), Sg_MouseButtonMain's result (Gu_Main stores it); name ours
 0x023cbc60 label g_EventName # char[]: the current event directory name ("bl/bltz0000"); getEventLocTexListPath, Yn_PreBgLayerDispOn (strstr te/test20)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
