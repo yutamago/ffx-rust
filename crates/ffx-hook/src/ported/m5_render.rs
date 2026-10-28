@@ -12,6 +12,7 @@ use ffx_prender::m5r_c::bridge as c;
 use ffx_prender::m5r_d::bridge as d;
 use ffx_prender::m5r_e::bridge as e;
 use ffx_prender::m5r_f::bridge as f;
+use ffx_prender::m5r_g::bridge as g;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -890,5 +891,122 @@ ported! {
     /// `PClassDescriptorForType_ShadowDynamicMeshInstance_registerFlagged_006f9af0`.
     PClassDescriptorForType_ShadowDynamicMeshInstance_registerFlagged_006f9af0 @ 0x006f_9af0 => extern "stdcall" fn registerflagged_006f9af0(p: u32, flag: u32) -> u32 {
         f::register_flagged(&mut mem(), p, flag, ffx_prender::m5r_f::CLASS_SHADOW_INSTANCE)
+    }
+    // ---- batch 7 (ffx_prender::m5r_g) ----
+    /// `PostProcessTweakUtil_scalarDeletingDtor_00692a60(this; flags)`.
+    PostProcessTweakUtil_scalarDeletingDtor_00692a60 @ 0x0069_2a60 => extern "thiscall" fn post_tweak_delete(this: u32, flags: u32) -> u32 {
+        g::post_tweak_delete(&mut mem(), this, flags)
+    }
+    /// `PhyreScene_AddVFXToUI2DList(scene; vfx)`.
+    PhyreScene_AddVFXToUI2DList @ 0x006a_0d40 => extern "thiscall" fn add_vfx_to_ui2d(this: u32, vfx: u32) -> u32 {
+        g::add_vfx_to_ui2d(&mut mem(), this, vfx)
+    }
+    /// `VfxRenderData_pushPair_006a0f30(this)`.
+    VfxRenderData_pushPair_006a0f30 @ 0x006a_0f30 => extern "thiscall" fn push_pair_006a0f30(this: u32) -> u32 {
+        g::push_pair(&mut mem(), this)
+    }
+    /// `VfxRenderData_pushPair_006a0f50(this)`.
+    VfxRenderData_pushPair_006a0f50 @ 0x006a_0f50 => extern "thiscall" fn push_pair_006a0f50(this: u32) -> u32 {
+        g::push_pair(&mut mem(), this)
+    }
+    /// `VfxRenderDataTable_clearTree_006a0fe0(table)`.
+    VfxRenderDataTable_clearTree_006a0fe0 @ 0x006a_0fe0 => extern "thiscall" fn clear_tree(this: u32) -> u32 {
+        g::clear_tree(&mut mem(), this)
+    }
+    /// `PArray_Reset_006ad130(this)`.
+    PArray_Reset_006ad130 @ 0x006a_d130 => extern "thiscall" fn owned_reset_006ad130(this: u32) {
+        g::owned_reset(&mut mem(), this, false);
+    }
+    /// `PArray_Reset_006af4e0(this)`.
+    PArray_Reset_006af4e0 @ 0x006a_f4e0 => extern "thiscall" fn owned_reset_006af4e0(this: u32) {
+        g::owned_reset(&mut mem(), this, false);
+    }
+    /// `PArray_ResetChecked_006af570(this)`.
+    PArray_ResetChecked_006af570 @ 0x006a_f570 => extern "thiscall" fn owned_reset_006af570(this: u32) {
+        g::owned_reset(&mut mem(), this, true);
+    }
+    /// `PArray_Reset_006c7e60(this)`.
+    PArray_Reset_006c7e60 @ 0x006c_7e60 => extern "thiscall" fn owned_reset_006c7e60(this: u32) {
+        g::owned_reset(&mut mem(), this, false);
+    }
+    /// `PArray_Reset_006de370(this)`.
+    PArray_Reset_006de370 @ 0x006d_e370 => extern "thiscall" fn owned_reset_006de370(this: u32) {
+        g::owned_reset(&mut mem(), this, false);
+    }
+    /// `TextureAnimationInfoChar_scalarDeletingDtor_006afe00(this; flags)`.
+    TextureAnimationInfoChar_scalarDeletingDtor_006afe00 @ 0x006a_fe00 => extern "thiscall" fn texanim_info_char_delete(this: u32, flags: u32) -> u32 {
+        g::delete_with(&mut mem(), this, flags, ffx_prender::m5r_g::TEXANIM_INFO_DTOR)
+    }
+    /// `TextureAnimationInfo_scalarDeletingDtor_006afe30(this; flags)`.
+    TextureAnimationInfo_scalarDeletingDtor_006afe30 @ 0x006a_fe30 => extern "thiscall" fn texanim_info_delete(this: u32, flags: u32) -> u32 {
+        g::delete_with(&mut mem(), this, flags, ffx_prender::m5r_g::TEXANIM_INFO2_DTOR)
+    }
+    /// `DebugMenuManager_scalarDeletingDtor_006b4920(this; flags)`.
+    DebugMenuManager_scalarDeletingDtor_006b4920 @ 0x006b_4920 => extern "thiscall" fn debug_menu_delete(this: u32, flags: u32) -> u32 {
+        g::debug_menu_delete(&mut mem(), this, flags)
+    }
+    /// `DebugMenuManager_CreateInstance()`.
+    DebugMenuManager_CreateInstance @ 0x006b_4950 => extern "C" fn debug_menu_create() {
+        g::debug_menu_create(&mut mem());
+    }
+    /// `SpecularMapParamsManager_renderSpecularPass(this; x)`.
+    SpecularMapParamsManager_renderSpecularPass @ 0x006c_5b60 => extern "thiscall" fn render_specular_pass(this: u32, x: u32) -> u32 {
+        g::render_specular_pass(&mut mem(), this, x)
+    }
+    /// `FloatLess_006c94e0(a, b)` (`al`).
+    FloatLess_006c94e0 @ 0x006c_94e0 => extern "C" fn float_less(a: u32, b: u32) -> u8 {
+        g::float_less(a, b)
+    }
+    /// `ShadowSolution_is1Or202b_006cc8e0(x)` (`al`, the rest `x`'s).
+    ShadowSolution_is1Or202b_006cc8e0 @ 0x006c_c8e0 => extern "C" fn solution_is_1_or_202b(x: u32) -> u32 {
+        g::solution_in(x, &[1, 0x202b], true)
+    }
+    /// `ShadowSolution_not2144_006cc900(x)`.
+    ShadowSolution_not2144_006cc900 @ 0x006c_c900 => extern "C" fn solution_not_2144(x: u32) -> u32 {
+        g::solution_in(x, &[0x2144, 0x206e], false)
+    }
+    /// `ShadowSolution_not201a_006cc920(x)`.
+    ShadowSolution_not201a_006cc920 @ 0x006c_c920 => extern "C" fn solution_not_201a(x: u32) -> u32 {
+        g::solution_in(x, &[0x201a, 0x2021, 0x215d, 0x5009], false)
+    }
+    /// `ShadowSolution_not20dd_006cc950(x)`.
+    ShadowSolution_not20dd_006cc950 @ 0x006c_c950 => extern "C" fn solution_not_20dd(x: u32) -> u32 {
+        g::solution_in(x, &[0x20dd, 0x215d, 0x215a], false)
+    }
+    /// `TextUtil_dumpEntry_006dd200(entry, file)`.
+    TextUtil_dumpEntry_006dd200 @ 0x006d_d200 => extern "C" fn dump_entry(entry: u32, file: u32) -> u32 {
+        g::dump_entry(&mut mem(), entry, file)
+    }
+    /// `TextUtil_claimSlot_006f5de0(slots; v)`.
+    TextUtil_claimSlot_006f5de0 @ 0x006f_5de0 => extern "thiscall" fn claim_slot(this: u32, v: u32) -> u32 {
+        g::claim_slot(&mut mem(), this, v)
+    }
+    /// `BlurEffect_setFloats4_006f8b10(this; src)`.
+    BlurEffect_setFloats4_006f8b10 @ 0x006f_8b10 => extern "thiscall" fn set_floats4(this: u32, src: u32) -> u32 {
+        g::copy_floats(&mut mem(), this, src, 0x38, 4)
+    }
+    /// `BlurEffect_setFloats2_006f8ba0(this; src)`.
+    BlurEffect_setFloats2_006f8ba0 @ 0x006f_8ba0 => extern "thiscall" fn set_floats2(this: u32, src: u32) -> u32 {
+        g::copy_floats(&mut mem(), this, src, 0x48, 2)
+    }
+    /// `ShadowDynamicMesh_Bind()`.
+    ShadowDynamicMesh_Bind @ 0x0067_88c0 => extern "C" fn shadow_bind() -> u32 {
+        g::bind_class(&mut mem(), ffx_prender::m5r_g::CLASS_SHADOW)
+    }
+    /// `ShadowDynamicMeshInstance_Bind()`.
+    ShadowDynamicMeshInstance_Bind @ 0x006f_9870 => extern "C" fn shadow_instance_bind() -> u32 {
+        g::bind_class(&mut mem(), ffx_prender::m5r_g::CLASS_SHADOW_INSTANCE)
+    }
+    /// `PhyreFIOS_UnloadPrx(module)`.
+    PhyreFIOS_UnloadPrx @ 0x006f_9d20 => extern "C" fn unload_prx(module: u32) -> u32 {
+        g::unload_prx(&mut mem(), module)
+    }
+    /// `syncStrPcSelect_0077e880(a, b, stream)` (`a` is never read).
+    syncStrPcSelect_0077e880 @ 0x0077_e880 => extern "C" fn sync_str_select(_a: u32, b: u32, stream: u32) -> u32 {
+        g::sync_str_select(&mut mem(), b, stream)
+    }
+    /// `GsPackTag_0077ead0(out, a, b, c)`.
+    GsPackTag_0077ead0 @ 0x0077_ead0 => extern "C" fn gs_pack_tag(out: u32, a0: u32, a1: u32, a2: u32) -> u32 {
+        g::gs_pack_tag(&mut mem(), out, a0, a1, a2)
     }
 }

@@ -40,6 +40,7 @@ use ffx_prender::m5r_c::{self as mc, bridge as c};
 use ffx_prender::m5r_d::{self as md, bridge as d};
 use ffx_prender::m5r_e::{self as me, bridge as e};
 use ffx_prender::m5r_f::{self as mf, bridge as f};
+use ffx_prender::m5r_g::{self as mg, bridge as gb};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -174,6 +175,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `al`.
+    U8(u8),
 }
 
 struct Twins {
@@ -503,8 +506,10 @@ impl Twins {
             "{what}: the original leaves ST0 set ({:?})",
             ra.st0
         );
-        if let Out::U32(v) = out {
-            assert_eq!(ra.eax, v, "{what}: eax");
+        match out {
+            Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::None => {}
         }
         self.diff(what);
     }
@@ -4137,6 +4142,312 @@ fn class_templates_match_the_original() {
                 }
                 t.reset();
             }
+        }
+    });
+}
+
+// ---- batch 7 (ffx_prender::m5r_g) ----
+
+#[test]
+fn small_g_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0601);
+        for case in 0..40 {
+            // the scalar deleting destructors: flag bit both ways
+            let flags = rng.word();
+            for (name, sym, dtor) in [
+                (
+                    "PostProcessTweakUtil_scalarDeletingDtor_00692a60",
+                    0x0069_2a60,
+                    mg::TEXT_ENTRY_DTOR,
+                ),
+                (
+                    "TextureAnimationInfoChar_scalarDeletingDtor_006afe00",
+                    0x006a_fe00,
+                    mg::TEXANIM_INFO_DTOR,
+                ),
+                (
+                    "TextureAnimationInfo_scalarDeletingDtor_006afe30",
+                    0x006a_fe30,
+                    mg::TEXANIM_INFO2_DTOR,
+                ),
+                (
+                    "DebugMenuManager_scalarDeletingDtor_006b4920",
+                    0x006b_4920,
+                    0,
+                ),
+            ] {
+                let this = rand_obj(t, &mut rng, 0x20);
+                if dtor != 0 {
+                    t.stub_sym(dtor, 1, true, 0, 0, Ret::Val(0x11));
+                }
+                t.stub_sym(mg::OPERATOR_DELETE, 2, false, 1, 0, Ret::Val(0));
+                t.check(name, sym, Conv::Thiscall(this), &[flags], |g| {
+                    Out::U32(match sym {
+                        0x0069_2a60 => gb::post_tweak_delete(g, this, flags),
+                        0x006b_4920 => gb::debug_menu_delete(g, this, flags),
+                        _ => gb::delete_with(g, this, flags, dtor),
+                    })
+                });
+                t.reset();
+            }
+
+            // DebugMenuManager_CreateInstance: there, made, no memory
+            let made = case % 3;
+            t.global(
+                mg::DEBUG_MENU_MANAGER.sym,
+                if made == 0 { rng.next() | 1 } else { 0 },
+            );
+            let p = if made == 1 { t.zeros(8) } else { 0 };
+            t.stub_sym(mg::OPERATOR_NEW, 3, false, 1, 0, Ret::Val(p));
+            t.check(
+                "DebugMenuManager_CreateInstance",
+                0x006b_4950,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    gb::debug_menu_create(g);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // PhyreScene_AddVFXToUI2DList: below, at, past the capacity;
+            // data 0 with count 0 (a null slot)
+            let scene = t.zeros(0x3870);
+            let count = rng.below(6);
+            let cap = [count, count + 1, count + rng.below(3)][rng.below(3) as usize];
+            let data = if count == 0 && rng.chance(3) {
+                0
+            } else {
+                t.zeros(0x40)
+            };
+            t.w32(scene + 0x3860, count);
+            t.w32(scene + 0x3864, cap);
+            t.w32(scene + 0x3868, data);
+            t.stub_sym(mg::RESERVE_4, 4, true, 1, 1, Ret::Val(0));
+            let vfx = rng.next();
+            t.check(
+                "PhyreScene_AddVFXToUI2DList",
+                0x006a_0d40,
+                Conv::Thiscall(scene),
+                &[vfx],
+                |g| Out::U32(gb::add_vfx_to_ui2d(g, scene, vfx)),
+            );
+            t.reset();
+
+            // the pair pushes
+            let this = rand_obj(t, &mut rng, 0x30);
+            if case % 2 == 0 {
+                t.w32(this + 0xc, 0);
+            }
+            let s = t.zeros(4);
+            t.global(mg::SCENE.sym, s);
+            t.stub_sym(mg::PUSH_PAIR_3890, 5, true, 2, 2, Ret::Val(0x55));
+            for sym in [0x006a_0f30, 0x006a_0f50] {
+                t.check(
+                    &format!("VfxRenderData_pushPair_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    |g| Out::U32(gb::push_pair(g, this)),
+                );
+            }
+            t.reset();
+
+            // the tree clear: spines of 0..4
+            let head = t.zeros(0x10);
+            t.w8(head + 0xd, 1);
+            let mut node = head;
+            for _ in 0..rng.below(5) {
+                let n = rand_obj(t, &mut rng, 0x10);
+                t.w8(n + 0xd, 0);
+                t.w32(n, node);
+                node = n;
+            }
+            let table = t.words(&[head, rng.next()]);
+            t.w32(head + 4, node);
+            t.stub_sym(mg::ERASE_SUBTREE, 6, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mg::OPERATOR_DELETE, 7, false, 1, 0, Ret::Val(0));
+            t.check(
+                "VfxRenderDataTable_clearTree_006a0fe0",
+                0x006a_0fe0,
+                Conv::Thiscall(table),
+                &[],
+                |g| Out::U32(gb::clear_tree(g, table)),
+            );
+            t.reset();
+
+            // the owned resets
+            for (sym, checked) in [
+                (0x006a_d130, false),
+                (0x006a_f4e0, false),
+                (0x006a_f570, true),
+                (0x006c_7e60, false),
+                (0x006d_e370, false),
+            ] {
+                let n = rng.below(4) | if rng.chance(3) { 0x8000_0000 } else { 0 };
+                let d = if rng.chance(3) { 0 } else { rng.next() };
+                let arr = t.words(&[n, d]);
+                t.stub_sym(mg::PHYRE_FREE, 8, false, 1, 0, Ret::Val(0));
+                t.check(
+                    &format!("PArray_Reset_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[],
+                    |g| {
+                        gb::owned_reset(g, arr, checked);
+                        Out::None
+                    },
+                );
+                t.reset();
+            }
+
+            // the specular pass
+            let this = t.zeros(4);
+            t.stub_sym(mg::RENDER_CORRESPOND_SPECULAR, 9, true, 2, 2, Ret::Val(0));
+            t.stub_sym(mg::RESET_SPECULAR_MAPS, 10, true, 0, 0, Ret::Val(0x99));
+            let x = rng.next();
+            t.check(
+                "SpecularMapParamsManager_renderSpecularPass",
+                0x006c_5b60,
+                Conv::Thiscall(this),
+                &[x],
+                |g| Out::U32(gb::render_specular_pass(g, this, x)),
+            );
+            t.reset();
+
+            // the predicates
+            let (fa, fb) = (
+                float_word(&mut rng),
+                if rng.chance(4) {
+                    0x7fc0_0000
+                } else {
+                    float_word(&mut rng)
+                },
+            );
+            let fb = if case % 5 == 0 { fa } else { fb };
+            t.check(
+                "FloatLess_006c94e0",
+                0x006c_94e0,
+                Conv::Cdecl,
+                &[fa, fb],
+                |_| Out::U8(gb::float_less(fa, fb)),
+            );
+            for (sym, ids, is) in [
+                (0x006c_c8e0_u32, &[1_u32, 0x202b][..], true),
+                (0x006c_c900, &[0x2144, 0x206e][..], false),
+                (0x006c_c920, &[0x201a, 0x2021, 0x215d, 0x5009][..], false),
+                (0x006c_c950, &[0x20dd, 0x215d, 0x215a][..], false),
+            ] {
+                let x = if rng.chance(2) {
+                    ids[rng.below(ids.len() as u32) as usize]
+                } else {
+                    rng.next()
+                };
+                t.check(
+                    &format!("ShadowSolution_{sym:08x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[x],
+                    |_| Out::U32(gb::solution_in(x, ids, is)),
+                );
+            }
+
+            // the dump line, the slot claim
+            let entry = rand_obj(t, &mut rng, 0x110);
+            let file = rng.next();
+            t.import_sym(mg::FPRINTF, 11, 7, 0, Ret::Val(0x31));
+            t.check(
+                "TextUtil_dumpEntry_006dd200",
+                0x006d_d200,
+                Conv::Cdecl,
+                &[entry, file],
+                |g| Out::U32(gb::dump_entry(g, entry, file)),
+            );
+            t.reset();
+            let slots = t.zeros(0x40);
+            let free = rng.below(18);
+            let results: Vec<u32> = (0..16)
+                .map(|k| if k == free { 0 } else { rng.next() | 1 })
+                .collect();
+            let r = t.seq(&results);
+            t.import_sym(mg::INTERLOCKED_COMPARE_EXCHANGE, 12, 3, 3, r);
+            let iob = t.zeros(0x80);
+            t.import_sym(mg::IOB_FUNC, 13, 0, 0, Ret::Val(iob));
+            t.import_sym(mg::FPRINTF, 14, 3, 0, Ret::Val(0x32));
+            let v = rng.next();
+            t.check(
+                "TextUtil_claimSlot_006f5de0",
+                0x006f_5de0,
+                Conv::Thiscall(slots),
+                &[v],
+                |g| Out::U32(gb::claim_slot(g, slots, v)),
+            );
+            t.reset();
+
+            // the blur's float copies
+            let this = rand_obj(t, &mut rng, 0x50);
+            let w: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            let src = t.words(&w);
+            for (sym, off, n) in [(0x006f_8b10, 0x38, 4), (0x006f_8ba0, 0x48, 2)] {
+                t.check(
+                    &format!("BlurEffect_setFloats_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[src],
+                    |g| Out::U32(gb::copy_floats(g, this, src, off, n)),
+                );
+            }
+            t.reset();
+
+            // the shadow meshes' binds, the PRX unload
+            t.stub_sym(mg::REGISTER_TYPE, 15, false, 1, 0, Ret::Val(0));
+            t.stub_sym(mg::ADD_TO_NAMESPACE, 16, true, 0, 0, Ret::Val(0x77));
+            for (sym, class) in [
+                (0x0067_88c0, mg::CLASS_SHADOW),
+                (0x006f_9870, mg::CLASS_SHADOW_INSTANCE),
+            ] {
+                t.check(
+                    &format!("ShadowBind_{sym:08x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(gb::bind_class(g, class)),
+                );
+            }
+            t.import_sym(mg::FREE_LIBRARY, 17, 1, 1, Ret::Val(1));
+            t.global(mg::PRX_STATE.sym, 3);
+            let m = rng.next();
+            t.check("PhyreFIOS_UnloadPrx", 0x006f_9d20, Conv::Cdecl, &[m], |g| {
+                Out::U32(gb::unload_prx(g, m))
+            });
+            t.reset();
+
+            // the PS2 movie helpers
+            let stream = t.zeros(0x5_0760);
+            t.w8(stream + 0x5_075c, (case % 2) as u8);
+            t.stub_sym(mg::STR_PC_A, 18, false, 2, 0, Ret::Val(0xa));
+            t.stub_sym(mg::STR_PC_B, 19, false, 2, 0, Ret::Val(0xb));
+            let (x, y) = (rng.next(), rng.next());
+            t.check(
+                "syncStrPcSelect_0077e880",
+                0x0077_e880,
+                Conv::Cdecl,
+                &[x, y, stream],
+                |g| Out::U32(gb::sync_str_select(g, y, stream)),
+            );
+            t.reset();
+            let out = t.zeros(8);
+            let (a0, a1, a2) = (rng.next(), rng.next(), rng.next());
+            t.check(
+                "GsPackTag_0077ead0",
+                0x0077_ead0,
+                Conv::Cdecl,
+                &[out, a0, a1, a2],
+                |g| Out::U32(gb::gs_pack_tag(g, out, a0, a1, a2)),
+            );
+            t.reset();
         }
     });
 }
