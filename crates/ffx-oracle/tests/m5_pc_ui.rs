@@ -27,6 +27,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcui::m5u_a::bridge as a;
+use ffx_pcui::m5u_b::bridge as b;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -1298,6 +1299,418 @@ fn iggy_manager_teardown_matches_the_original() {
             let what = format!("iggy manager destroy #{i}");
             t.run(&what, 0x00a2_6270, Conv::Cdecl, &[], false, |g| {
                 a::iggy_manager_destroy(g);
+                0
+            });
+        }
+    });
+}
+
+// ---- batch 2 (ffx_pcui::m5u_b) ----
+
+impl Twins {
+    /// A stub over `sym` that copies `n` bytes from its first stack
+    /// argument into a log of its own (so the test sees the buffer as it
+    /// was at each call), pops `pops` words and returns 0.
+    fn stub_snapshot(&mut self, sym: u32, n: u32, pops: u32) {
+        let buf = self.zeros(0x2000);
+        let cur = self.words(&[buf]);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x74, 0x24, 0x0c]); // mov esi, [esp+0xc]
+        c.extend([0x8b, 0x3d]);
+        c.extend(cur.to_le_bytes()); // mov edi, [cur]
+        c.push(0xb9);
+        c.extend(n.to_le_bytes()); // mov ecx, n
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x89, 0x3d]);
+        c.extend(cur.to_le_bytes()); // mov [cur], edi
+        c.extend([0x5f, 0x5e, 0x31, 0xc0]); // pop edi; pop esi; xor eax, eax
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    fn cstr(&mut self, s: &str) -> u32 {
+        let mut b = s.as_bytes().to_vec();
+        b.push(0);
+        self.alloc(&b)
+    }
+}
+
+#[test]
+fn mouse_state_create_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..4u32 {
+            t.reset();
+            t.stub_alloc(a::OPERATOR_NEW, if case == 1 { 0 } else { 4 });
+            t.stub_import(b::GET_SYSTEM_METRICS_IAT, false, 1, 1, case & 2);
+            t.g32(b::MOUSE_STATE, if case == 0 { 0x0123_4560 } else { 0 });
+            let what = format!("mouse_state_create #{case}");
+            t.run(&what, 0x00a2_5990, Conv::Cdecl, &[], false, |g| {
+                b::mouse_state_create(g);
+                0
+            });
+        }
+    });
+}
+
+#[test]
+fn button_icon_scale_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1c0e_5ca1);
+        for i in 0..20 {
+            t.reset();
+            let this = t.zeros(0x168);
+            let (x, y) = match i {
+                0 => (0x7fc0_0000, 0xffc0_1234), // quiet NaNs
+                1 => (0x8000_0000, 0x0000_0001), // -0, a denormal
+                2 => (0x7f80_0000, 0xff80_0000), // infinities
+                _ => (rng.next() & 0x3fff_ffff, rng.next() | 0x8000_0000),
+            };
+            let tc = Conv::Thiscall(this);
+            t.run("reset scale", 0x006e_76b0, tc, &[], false, |g| {
+                b::reset_button_icon_scale(g, this);
+                0
+            });
+            t.run(
+                &format!("set scale #{i}"),
+                0x006e_7720,
+                tc,
+                &[x, y],
+                false,
+                |g| {
+                    b::set_button_icon_scale(g, this, x, y);
+                    0
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn shader_params_and_world_matrix_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5ade_0001);
+        for case in 0..6u32 {
+            t.reset();
+            t.stub(b::SHADER_PARAM_WRITE, false, 3, 0, 0x5a00 + case);
+            t.stub(b::SET_WORLD_MATRIX, false, 2, 0, 0x5b00 + case);
+            let words: Vec<u32> = (0..0x48).map(|_| rng.next()).collect();
+            let rec = t.words(&words);
+            let block = if case == 1 { 0 } else { 0x00b1_0c00 + case };
+            t.w32(rec, block);
+            let rec = if case == 0 { 0 } else { rec };
+            // without a record the original returns its caller's eax
+            let ret = case != 0;
+            let what = format!("shader params #{case}");
+            t.run(&what, 0x0063_7c80, Conv::Cdecl, &[rec], ret, |g| {
+                b::write_shader_params(g, rec)
+            });
+            t.skip = 4;
+            let what = format!("world matrix #{case}");
+            t.check_framed(&what, 0x0063_7d40, Conv::Cdecl, &[rec], 0x44, |g, ebp| {
+                b::set_world_matrix(g, rec, ebp - 0x44);
+                Out::None
+            });
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn menu_manager_small_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x3e5a_0002);
+        for i in 0..24u32 {
+            t.reset();
+            t.stubs(&[
+                (a::SET_TEXTURE_UNLOADED, true, 1, 1, 0x61),
+                (b::DYNGEO_BUFFER_ID, false, 0, 0, 0x62 + i),
+                (b::PSTRING_ASSIGN, true, 1, 1, 0x63),
+            ]);
+            let this = t.zeros(0x5ba0);
+            let geo = t.words(&[0x0060_0000 + i]);
+            t.w32(this + 0x2c50, 0x5555_5555);
+            t.w32(this + 0x2c54, 0x5555_5555);
+            t.w32(this + 0x2bd4, geo);
+            let tc = Conv::Thiscall(this);
+            let name = rng.next();
+            t.run(
+                "set material unloaded",
+                0x0067_e6a0,
+                tc,
+                &[name],
+                true,
+                |g| b::set_menu_ui_material_unloaded(g, this, name),
+            );
+            t.run("reset pause vertex", 0x0067_dfa0, tc, &[], true, |g| {
+                b::reset_pause_vertex_info(g, this)
+            });
+            // the mesh lookup: gate, table choice, missing entries, pass
+            t.write(this + 0x5b9d, &[u8::from(i % 6 != 0)]);
+            t.w32(this + 0x5b7c, u32::from(i % 3 == 1));
+            let k = rng.below(8);
+            for table in [0x15f0, 0x4248] {
+                if rng.chance(3) {
+                    continue;
+                }
+                let mat = t.zeros(0xb8);
+                t.write(mat + 0xb4, &(rng.below(3) as u16).to_le_bytes());
+                let inner = t.zeros(0x40);
+                let mesh = t.words(&[0, 0, 0, inner, 0, 0, 0, 0, 0, mat]);
+                let e = t.words(&[mesh]);
+                t.w32(this + table + 4 * k, e);
+            }
+            t.run(
+                &format!("mesh instance #{i}"),
+                0x0067_b9d0,
+                tc,
+                &[k],
+                true,
+                |g| b::get_menu_mesh_instance(g, this, k),
+            );
+        }
+    });
+}
+
+#[test]
+fn font_names_match_the_original() {
+    Twins::each(|t| {
+        for i in 0..6u32 {
+            t.reset();
+            let this = t.alloc(&[0x5a; 0x210]);
+            t.run(
+                "font names init",
+                0x0067_b180,
+                Conv::Thiscall(this),
+                &[],
+                true,
+                |g| b::font_names_init(g, this),
+            );
+            // the event font: four loads (each buffer seen by the stub)
+            t.stub_snapshot(b::SCENE_LOAD_MENU_TEXTURE, 40, 1);
+            let suffixes = ["_a", "", "_long_suffix", "x"];
+            for (k, sym) in b::FONT_SUFFIXES.into_iter().enumerate() {
+                let s = t.cstr(suffixes[(k + i as usize) % 4]);
+                t.g32(sym, s);
+            }
+            let name = t.cstr(["font", "", "scene_event_00", "a\u{1}b"][i as usize % 4]);
+            let what = format!("event font #{i}");
+            t.run(
+                &what,
+                0x0067_d370,
+                Conv::Thiscall(this),
+                &[name],
+                false,
+                |g| {
+                    b::load_scene_event_font(g, this, name);
+                    0
+                },
+            );
+        }
+    });
+}
+
+/// The load-side callees, recording.
+fn load_stubs(t: &mut Twins, lang: u32) {
+    t.stubs(&[
+        (b::SCENE_LOAD_MENU_TEXTURE, true, 1, 1, 0x81),
+        (b::LOAD_PCLUSTER_JUMP, true, 1, 1, 0x82),
+        (a::CLUSTER_MANAGER, false, 0, 0, 0x00c1_0000),
+        (b::LOAD_SA_MENU, true, 1, 1, 0x84),
+        (b::LOAD_TEXTURE_CLUSTERS, false, 0, 0, 0x85),
+        (b::LOAD_PCLUSTER, true, 1, 1, 0x00c1_5000),
+        (b::GET_APPLICATION, false, 0, 0, 0x00a9_0000),
+        (b::FIXUP_CLUSTERS, false, 2, 0, 0x87),
+        (a::MENU_UNLOAD_TEXTURE, true, 1, 1, 0x88),
+        (a::FFX_LANG_JMP, false, 0, 0, lang),
+    ]);
+    t.g32(a::PHYRE_SCENE, 0x5ce0_0000 + lang);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case runs every load
+fn menu_texture_loads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x10ad_0002);
+        for i in 0..24u32 {
+            t.reset();
+            let lang = i % 12;
+            load_stubs(t, lang);
+            let loc = t.words(&[0, lang]);
+            t.stub(a::LOCALIZATION_MANAGER, false, 0, 0, loc);
+            t.stub(b::MENU_LOAD_TEXTURE, true, 1, 1, 0x89);
+            let this = t.zeros(0x210);
+            let tc = Conv::Thiscall(this);
+            let cd = Conv::Cdecl;
+            t.run("load default", 0x0067_c7a0, tc, &[], true, |g| {
+                b::load_default_menu(g, this)
+            });
+            t.run("load bg water", 0x0067_c6f0, cd, &[], true, b_load_bg_water);
+            for (sym, g) in [
+                (0x0067_d650, 0x00c5_9d84),
+                (0x0067_d670, 0x00c5_9d74),
+                (0x0067_d690, 0x00c5_9d6c),
+            ] {
+                t.run(&format!("load one {sym:#x}"), sym, cd, &[], true, |m| {
+                    b::load_one(m, g)
+                });
+            }
+            t.run(
+                "load dream map",
+                0x0067_c8c0,
+                cd,
+                &[],
+                true,
+                b_load_dream_map,
+            );
+            t.run(
+                &format!("copyright {lang}"),
+                0x0067_c8f0,
+                cd,
+                &[],
+                true,
+                b_load_copyright,
+            );
+            t.run(
+                &format!("unload copyright {lang}"),
+                0x0067_ee40,
+                tc,
+                &[],
+                true,
+                |g| b::unload_copyright(g, this),
+            );
+            let kind = i % 5;
+            t.run(
+                &format!("game menu {kind}"),
+                0x0067_cb30,
+                Conv::Stdcall,
+                &[kind],
+                true,
+                |g| b::load_game_menu(g, kind),
+            );
+            let screen = 9 + i % 9;
+            t.run(
+                &format!("cloud load {screen}"),
+                0x0067_c720,
+                tc,
+                &[screen],
+                true,
+                |g| b::load_cloud_save_ui(g, this, screen),
+            );
+            t.run(
+                &format!("cloud unload {screen}"),
+                0x0067_edc0,
+                tc,
+                &[screen],
+                true,
+                |g| b::unload_cloud_save_ui(g, this, screen),
+            );
+            // MenuLoadTexture itself (the stub above is gone after reset)
+            t.reset();
+            load_stubs(t, lang);
+            let id = rng.next();
+            let what = format!("menu load texture #{i}");
+            t.check_framed(&what, 0x0067_dbb0, tc, &[id], 4, |g, ebp| {
+                Out::U32(b::menu_load_texture(g, id, ebp - 4))
+            });
+            // the save sub-menu: none, the same name, another name
+            let name = t.cstr("menu/sa_sub.dds");
+            let cur = match i % 3 {
+                0 => 0,
+                1 => t.cstr("menu/sa_sub.dds"),
+                _ => t.cstr(["menu/sa_sub.dd", "menu/sa_sub.ddsx", "x"][i as usize % 3]),
+            };
+            t.w32(this + 0x20c, cur);
+            let ebp = t.frame_ebp(1);
+            Mem::write(&mut t.b, ebp + 8, name);
+            let what = format!("sa sub menu #{i}");
+            // ebp - 4 is `push ecx` (this) unless the cluster goes there
+            let init = this.to_le_bytes();
+            t.check_framed_init(&what, 0x0067_d0b0, tc, &[name], 4, &init, |g, ebp| {
+                Out::U32(b::load_sa_sub_menu(g, this, name, ebp + 8, ebp - 4))
+            });
+            t.run(
+                &format!("unload sa sub #{i}"),
+                0x0067_f3c0,
+                tc,
+                &[],
+                false,
+                |g| {
+                    b::unload_sa_sub_menu(g, this);
+                    0
+                },
+            );
+        }
+    });
+}
+
+fn b_load_bg_water(g: &mut G) -> u32 {
+    b::load_bg_water(g)
+}
+
+fn b_load_dream_map(g: &mut G) -> u32 {
+    b::load_dream_map(g)
+}
+
+fn b_load_copyright(g: &mut G) -> u32 {
+    b::load_copyright(g)
+}
+
+#[test]
+fn menu_texture_unloads_b_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x0d1e_0002);
+        for _ in 0..12u32 {
+            t.reset();
+            texture_stubs(t, &mut rng);
+            let syms: Vec<u32> = (0..5).map(|k| b::DREAM_MAP_NAMES + 4 * k).collect();
+            names(t, &mut rng, &syms);
+            names(t, &mut rng, &[0x00c5_9d84, 0x00c5_9d74, 0x00c5_9d6c]);
+            t.check_framed(
+                "dream map unload",
+                0x0067_ebc0,
+                Conv::Cdecl,
+                &[],
+                0x104,
+                |g, ebp| {
+                    b::unload_dream_map(g, ebp - 0x104);
+                    Out::None
+                },
+            );
+            for (sym, g) in [
+                (0x0067_f920, 0x00c5_9d84),
+                (0x0067_f9a0, 0x00c5_9d74),
+                (0x0067_fa20, 0x00c5_9d6c),
+            ] {
+                t.check_framed(
+                    &format!("unload one {sym:#x}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    0x104,
+                    |m, ebp| {
+                        b::unload_one(m, g, ebp - 0x104);
+                        Out::None
+                    },
+                );
+            }
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn string_tidy_matches_the_original() {
+    Twins::each(|t| {
+        for cap in [0, 15, 16, 17, 0x100, 0xffff_ffff] {
+            t.reset();
+            delete_stubs(t);
+            let this = t.words(&[0x6161_6161, 0x62, 0x63, 0x64, 7, cap]);
+            let what = format!("string tidy cap {cap:#x}");
+            t.run(&what, 0x0068_1800, Conv::Thiscall(this), &[], false, |g| {
+                b::string_tidy(g, this);
                 0
             });
         }

@@ -413,7 +413,9 @@ pub mod bridge {
     /// `((to - from) sar 2) * 4`: the bytes between two word pointers as
     /// the original computes them.
     fn words_between(from: u32, to: u32) -> u32 {
-        (to.wrapping_sub(from).cast_signed() >> 2).cast_unsigned().wrapping_mul(4)
+        (to.wrapping_sub(from).cast_signed() >> 2)
+            .cast_unsigned()
+            .wrapping_mul(4)
     }
 
     /// `0x0068d9f0` (`std::deque<u32>::push_back(this; &v)`, `ret 4`).
@@ -686,7 +688,12 @@ pub mod bridge {
         } else {
             let iob = import(h, IOB_FUNC_IAT, Conv::Cdecl, &[]);
             let fmt = h.rebase(TEXT_UTIL_UNKNOWN);
-            import(h, FPRINTF_IAT, Conv::Cdecl, &[iob.wrapping_add(0x40), fmt, this]);
+            import(
+                h,
+                FPRINTF_IAT,
+                Conv::Cdecl,
+                &[iob.wrapping_add(0x40), fmt, this],
+            );
         }
         let asset = rd(h, this + 0xc);
         if asset != 0 {

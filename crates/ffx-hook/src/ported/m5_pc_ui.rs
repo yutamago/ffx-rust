@@ -8,6 +8,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_pcui::m5u_a::bridge as a;
+use ffx_pcui::m5u_b::bridge as b;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -168,5 +169,130 @@ ported! {
     /// `PArray16_sCreateInstance_0068ba20()`.
     PArray16_sCreateInstance_0068ba20 @ 0x0068_ba20 => extern "C" fn parray16_create() {
         a::parray16_create(&mut mem());
+    }
+    // ---- batch 2 (ffx_pcui::m5u_b) ----
+    /// `MouseState_createInstance_00a25990()`.
+    MouseState_createInstance_00a25990 @ 0x00a2_5990 => extern "C" fn mouse_state_create() {
+        b::mouse_state_create(&mut mem());
+    }
+    /// `ShaderParams_write_00637c80(rec)`.
+    ShaderParams_write_00637c80 @ 0x0063_7c80 => extern "C" fn write_shader_params(rec: u32) -> u32 {
+        b::write_shader_params(&mut mem(), rec)
+    }
+    /// `CharacterInstance_setWorldMatrix_00637d40(rec)`: matrix at `ebp - 0x44`.
+    CharacterInstance_setWorldMatrix_00637d40 @ 0x0063_7d40 => extern "C" fn set_world_matrix(rec: u32) {
+        let mut f = StackFrame::<0x11>::new();
+        b::set_world_matrix(&mut mem(), rec, f.at());
+    }
+    /// `MenuManager_SetMenuUiMaterialUnloaded(this; name)` (tail jump).
+    MenuManager_SetMenuUiMaterialUnloaded @ 0x0067_e6a0 => extern "thiscall" fn set_menu_ui_material_unloaded(this: u32, name: u32) -> u32 {
+        b::set_menu_ui_material_unloaded(&mut mem(), this, name)
+    }
+    /// `RemapButtonIcon_resetButtonIconScale(this)`.
+    RemapButtonIcon_resetButtonIconScale @ 0x006e_76b0 => extern "thiscall" fn reset_button_icon_scale(this: u32) {
+        b::reset_button_icon_scale(&mut mem(), this);
+    }
+    /// `RemapButtonIcon_setButtonIconScale(this; x, y)`.
+    RemapButtonIcon_setButtonIconScale @ 0x006e_7720 => extern "thiscall" fn set_button_icon_scale(this: u32, x: u32, y: u32) {
+        b::set_button_icon_scale(&mut mem(), this, x, y);
+    }
+    /// `MenuManager_GetMenuMeshInstace(this; i)`.
+    MenuManager_GetMenuMeshInstace @ 0x0067_b9d0 => extern "thiscall" fn get_menu_mesh_instance(this: u32, i: u32) -> u32 {
+        b::get_menu_mesh_instance(&mut mem(), this, i)
+    }
+    /// `MenuFontNames_ctor_0067b180(this)` -> `this`.
+    MenuFontNames_ctor_0067b180 @ 0x0067_b180 => extern "thiscall" fn font_names_init(this: u32) -> u32 {
+        b::font_names_init(&mut mem(), this)
+    }
+    /// `MenuTextureManager_LoadDefaultMenuTexture_0067c7a0(this)`.
+    MenuTextureManager_LoadDefaultMenuTexture_0067c7a0 @ 0x0067_c7a0 => extern "thiscall" fn load_default_menu(this: u32) -> u32 {
+        b::load_default_menu(&mut mem(), this)
+    }
+    /// `MenuTextureManager_LoadBGWaterTexture()`.
+    MenuTextureManager_LoadBGWaterTexture @ 0x0067_c6f0 => extern "C" fn load_bg_water() -> u32 {
+        b::load_bg_water(&mut mem())
+    }
+    /// `MenuTextureManager_MenuLoadTexture(this; id)`: the cluster at `ebp - 4`.
+    MenuTextureManager_MenuLoadTexture @ 0x0067_dbb0 => extern "thiscall" fn menu_load_texture(_this: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        b::menu_load_texture(&mut mem(), id, f.at())
+    }
+    /// `MenuTextureManager_LoadCloudSaveUITexture(screen)` (the caller's `ecx` on).
+    MenuTextureManager_LoadCloudSaveUITexture @ 0x0067_c720 => extern "thiscall" fn load_cloud_save_ui(this: u32, screen: u32) -> u32 {
+        b::load_cloud_save_ui(&mut mem(), this, screen)
+    }
+    /// `MenuTextureManager_LoadDreamMapTexture()`.
+    MenuTextureManager_LoadDreamMapTexture @ 0x0067_c8c0 => extern "C" fn load_dream_map() -> u32 {
+        b::load_dream_map(&mut mem())
+    }
+    /// `MenuTextureManager_LoadEternalCalmCopyRightTexture()`.
+    MenuTextureManager_LoadEternalCalmCopyRightTexture @ 0x0067_c8f0 => extern "C" fn load_copyright() -> u32 {
+        b::load_copyright(&mut mem())
+    }
+    /// `MenuTextureManager_LoadGameMenuTexture(kind)`.
+    MenuTextureManager_LoadGameMenuTexture @ 0x0067_cb30 => extern "stdcall" fn load_game_menu(kind: u32) -> u32 {
+        b::load_game_menu(&mut mem(), kind)
+    }
+    /// `MenuTextureManager_LoadSaSubMenuTexture(this; name)`: reuses its
+    /// argument slot; the cluster at `ebp - 4` without an old texture.
+    MenuTextureManager_LoadSaSubMenuTexture @ 0x0067_d0b0 => extern "thiscall" fn load_sa_sub_menu(this: u32, name: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        b::load_sa_sub_menu(&mut mem(), this, name, slots, f.at())
+    }
+    /// `MenuTextureManager_LoadSceneEventFontTexture(this; name)`.
+    MenuTextureManager_LoadSceneEventFontTexture @ 0x0067_d370 => extern "thiscall" fn load_scene_event_font(this: u32, name: u32) {
+        b::load_scene_event_font(&mut mem(), this, name);
+    }
+    /// `MenuTextureManager_LoadLanguageTexture_0067d650()`.
+    MenuTextureManager_LoadLanguageTexture_0067d650 @ 0x0067_d650 => extern "C" fn load_one_0067d650() -> u32 {
+        b::load_one(&mut mem(), 0x00c5_9d84)
+    }
+    /// `MenuTextureManager_LoadGameMenuTexture3_0067d670()`.
+    MenuTextureManager_LoadGameMenuTexture3_0067d670 @ 0x0067_d670 => extern "C" fn load_one_0067d670() -> u32 {
+        b::load_one(&mut mem(), 0x00c5_9d74)
+    }
+    /// `MenuTextureManager_LoadMenuTexture6c_0067d690()`.
+    MenuTextureManager_LoadMenuTexture6c_0067d690 @ 0x0067_d690 => extern "C" fn load_one_0067d690() -> u32 {
+        b::load_one(&mut mem(), 0x00c5_9d6c)
+    }
+    /// `MenuManager_ResetPauseVertexInfo(this)`.
+    MenuManager_ResetPauseVertexInfo @ 0x0067_dfa0 => extern "thiscall" fn reset_pause_vertex_info(this: u32) -> u32 {
+        b::reset_pause_vertex_info(&mut mem(), this)
+    }
+    /// `MenuTextureManager_UnLoadDreamMapTexture()`: name buffer `ebp - 0x104`.
+    MenuTextureManager_UnLoadDreamMapTexture @ 0x0067_ebc0 => extern "C" fn unload_dream_map() {
+        let mut f = StackFrame::<0x41>::new();
+        b::unload_dream_map(&mut mem(), f.at());
+    }
+    /// `MenuTextureManager_UnloadCloudSaveUITexture(screen)`.
+    MenuTextureManager_UnloadCloudSaveUITexture @ 0x0067_edc0 => extern "thiscall" fn unload_cloud_save_ui(this: u32, screen: u32) -> u32 {
+        b::unload_cloud_save_ui(&mut mem(), this, screen)
+    }
+    /// `MenuTextureManager_UnloadEternalCalmCopyRightTexture(this)`.
+    MenuTextureManager_UnloadEternalCalmCopyRightTexture @ 0x0067_ee40 => extern "thiscall" fn unload_copyright(this: u32) -> u32 {
+        b::unload_copyright(&mut mem(), this)
+    }
+    /// `MenuTextureManager_UnloadSaSubMenuTexture_0067f3c0(this)`.
+    MenuTextureManager_UnloadSaSubMenuTexture_0067f3c0 @ 0x0067_f3c0 => extern "thiscall" fn unload_sa_sub_menu(this: u32) {
+        b::unload_sa_sub_menu(&mut mem(), this);
+    }
+    /// `MenuTextureManager_UnloadLanguageTexture_0067f920()`.
+    MenuTextureManager_UnloadLanguageTexture_0067f920 @ 0x0067_f920 => extern "C" fn unload_one_0067f920() {
+        let mut f = StackFrame::<0x41>::new();
+        b::unload_one(&mut mem(), 0x00c5_9d84, f.at());
+    }
+    /// `MenuTextureManager_UnloadGameMenuTexture3_0067f9a0()`.
+    MenuTextureManager_UnloadGameMenuTexture3_0067f9a0 @ 0x0067_f9a0 => extern "C" fn unload_one_0067f9a0() {
+        let mut f = StackFrame::<0x41>::new();
+        b::unload_one(&mut mem(), 0x00c5_9d74, f.at());
+    }
+    /// `MenuTextureManager_UnloadMenuTexture6c_0067fa20()`.
+    MenuTextureManager_UnloadMenuTexture6c_0067fa20 @ 0x0067_fa20 => extern "C" fn unload_one_0067fa20() {
+        let mut f = StackFrame::<0x41>::new();
+        b::unload_one(&mut mem(), 0x00c5_9d6c, f.at());
+    }
+    /// `StdString_tidy_00681800(this)`.
+    StdString_tidy_00681800 @ 0x0068_1800 => extern "thiscall" fn string_tidy(this: u32) {
+        b::string_tidy(&mut mem(), this);
     }
 }
