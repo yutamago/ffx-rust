@@ -481,7 +481,8 @@ byte-compatible, and the original stays untouched next to it.
   good enough, the screens are rebuilt natively.
 - **Pure Rust.** No C libraries: pure-Rust VP8/VP9, Vorbis and Matroska
   decoders (existing crates, or our own port where the game's use is
-  small). The CRT and STL become Rust `std`.
+  small). The CRT and STL become Rust `std`. One exception: Unicorn runs
+  the original spell overlays until they are ported (stage 1, below).
 - **Steam.** Achievements through `steam_api64.dll`, shipped with the
   release package (not in git).
 - **Delivery.** `ffx-rust.exe` sits next to `FFX.exe` in the game folder
@@ -494,6 +495,18 @@ byte-compatible, and the original stays untouched next to it.
 it. Stages 1 and 2 run in the current 32-bit process, so every existing
 gate still applies.
 
+Stages 3 and 4 start alongside stage 1 (user, 2026-10-28): they are the
+critical path and mostly sequential, while stage 1 spreads over many
+agents. Until stage 1 is done, `ffx-host` runs any function without a
+port in Unicorn from `FFX.exe`'s `.text`, read as data, so the 64-bit
+program runs early and shows at run time what is still missing. That
+fallback is for development only and is gone before the stage 4 gate;
+the release runs no `FFX.exe` code.
+
+A second machine (PC2) builds and runs tests and replays only, driven
+over SSH; it has its own original recordings because its GPU renders
+slightly differently.
+
 1. **The rest of the game code, in-process.**
    - Build the static call graph and list what is reachable but not yet
      ported.
@@ -503,19 +516,24 @@ gate still applies.
    - Port the CRT, STL and Lua functions the game reaches: memory, files,
      strings, math and `rand`, onto Rust `std`, keeping each function's
      observable results (`rand`'s sequence, `printf` formatting).
-   - Port the spell and summon overlays (581 `magic_*.dll`, 10 MB of
-     code, at most 3.8 MB unique; above). A 64-bit program can't load
-     them, and `tools/reach.py` doesn't see them because they aren't in
-     `FFX.exe` (found 2026-10-28; user OK to add them). Each becomes a
-     Rust overlay behind the same two exports (`InitMagicPRX`,
-     `GetEffectOverlayTable`) and calls the game through
-     `g_MagicImports` as before; shared pieces are ported once. Parity
-     tests run the DLL's own code against the port, and `battle-magic`,
-     `battle-ifrit` and `battle-overdrive` gate them in the game.
+   - The spell and summon overlays (581 `magic_*.dll`, 10 MB of code, at
+     most 3.8 MB unique; above) are not on M5's path (user, 2026-10-28).
+     A 64-bit program can't load them, so from stage 3 on `ffx-host` runs
+     the player's own DLLs in Unicorn inside the arena: it maps them,
+     calls `InitMagicPRX` and `GetEffectOverlayTable`, and routes their
+     `g_MagicImports` calls to the function table. That makes them
+     identical by construction. Unicorn is C, the one exception to "pure
+     Rust" (user: "just this once"), and only for the overlays.
+   - Porting them continues as a background track with spare capacity:
+     each overlay becomes a Rust overlay behind the same two exports,
+     shared pieces are ported once, parity tests run the DLL's own code
+     against the port, and `battle-magic`, `battle-ifrit` and
+     `battle-overdrive` gate them in the game. A ported overlay replaces
+     its Unicorn run; when the last one is ported, Unicorn goes.
    - Gate: a coverage run with a trap on every original `.text` byte
      except the libraries still to replace in stage 2 shows no game code
-     running, across the main, extra and audio replay lists; no
-     `magic_*.dll` is loaded.
+     running, across the main, extra and audio replay lists (the
+     overlays' own code is outside `FFX.exe` and not part of the gate).
 2. **The libraries, in-process.**
    - Movies: the pure-Rust decoders replace libvpx, vorbis and
      mkvparser. Gate: identical decoded frames and samples for every
