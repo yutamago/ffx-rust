@@ -1232,7 +1232,9 @@ tools/replays/run-all.sh --audio --record [replay...]   # (re-)record the refere
 
 The audio list is event-besaid (music, Wakka's voice, footsteps),
 battle-attack (sound effects, the victory fanfare), menu-browse (menu
-sounds) and battle-ifrit (a summon). The references are two original-code
+sounds), battle-ifrit (a summon) and movie-fmv (a movie's user stream,
+since 2026-10-28). `FFX_RUST_AUDIO=1` runs the Rust sound engine in place
+of FMOD (`docs/formats/audio-platform.md`). The references are two original-code
 captures per replay in `~/ffx-work/replay-audio` (`FFX_REPLAY_AUDIO`;
 never in git, about 15 MB a capture). `--record` plays the original code
 twice and stores the pair only when the two agree sample for sample;
