@@ -32,6 +32,7 @@ use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
+use ffx_pcui::m5u_g::bridge as gg;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -2945,6 +2946,104 @@ fn key_capture_matches_the_original() {
                 0xc,
                 |g, ebp| Out::U32(ff::begin_keyboard_capture(g, menu, ebp - 0xc)),
             );
+        }
+    });
+}
+
+// ---- batch 8 (ffx_pcui::m5u_g) ----
+
+#[test]
+fn debug_gui_windows_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x6d1e_0008);
+        for i in 0..6u32 {
+            t.reset();
+            t.stubs(&[
+                (gg::WINDOW_CREATE, false, 6, 0, 0x00a1_0000 + i),
+                (gg::WINDOW_SET_LOCAL_TRANS, false, 3, 0, 0xa2),
+                (gg::SET_RESOURCE, false, 2, 0, 0xa3),
+                (gg::RCBG_INIT, false, 0, 0, 0xa4),
+                (gg::RCUI_INIT, false, 0, 0, 0xa5),
+                (gg::RCUI_CLOSE_WINDOW, false, 1, 0, 0xa6),
+                (
+                    gg::ENABLE_GET_TEXTURE,
+                    false,
+                    0,
+                    0,
+                    [0, 1, 2][i as usize % 3],
+                ),
+                (gg::BUTTON_SET_TOGGLE, false, 3, 0, 0xa7),
+                (gg::MAKE_FILE_LIST, false, 3, 0, 0xa8),
+                (gg::SELECTOR_RESET, false, 2, 0, 0xa9),
+                (gg::SELECTOR_SET_ITEM, false, 4, 0, 0xaa),
+            ]);
+            let cd = Conv::Cdecl;
+            let open = i % 2 == 1;
+            let flag = t.rebase(gg::SPRITE_WINDOW_OPEN);
+            t.write(flag, &[u8::from(open)]);
+            t.run("sprite window", 0x0085_3780, cd, &[], !open, |g| {
+                gg::sprite_window_init(g)
+            });
+            t.g32(gg::MEM_GRAPH_OPEN, u32::from(open));
+            t.run("mem graph", 0x0085_4fd0, cd, &[], !open, |g| {
+                gg::mem_graph(g)
+            });
+            t.run("chr info", 0x0085_37b0, cd, &[], true, |g| gg::chr_info(g));
+            t.run("clock", 0x0085_3ea0, cd, &[], true, |g| gg::clock_init(g));
+            t.g32(gg::RCUI_WORK, if i % 3 == 0 { 0x00b2_0000 } else { 0 });
+            t.g32(gg::YN_MAP_SYSTEM, u32::from(i % 2 == 0));
+            t.run("yanagi", 0x0093_0d80, cd, &[], true, |g| gg::yanagi_init(g));
+            let has = i % 4 != 0;
+            t.g32(gg::TEXTURE_BUTTON, if has { 0x00b3_0000 } else { 0 });
+            t.run("button texture", 0x0084_c9d0, cd, &[], has, |g| {
+                gg::button_set_texture(g)
+            });
+            // the byte writer
+            let buf = t.zeros(0x10);
+            t.g32(gg::BYTE_CURSOR, buf + i);
+            let c = rng.next();
+            t.run("put byte", 0x0085_3400, cd, &[c], false, |g| {
+                gg::put_byte(g, c);
+                0
+            });
+            // the selector fill: 0..3 names
+            let n = [0, 1, 3, 0xffff_ffff][i as usize % 4];
+            let names = t.words(&[rng.next(), rng.next(), rng.next()]);
+            let list = t.words(&[n, 0, names]);
+            let (sel, dir) = (rng.next(), rng.next());
+            t.run(
+                "selector files",
+                0x0084_d3a0,
+                cd,
+                &[list, sel, dir],
+                false,
+                |g| {
+                    gg::selector_fill_files(g, list, sel, dir);
+                    0
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn debug_gui_packet_args_match_the_original() {
+    Twins::each(|t| {
+        for i in 0..8u32 {
+            t.reset();
+            let strs = ["12", "-7", "x", "", "99999999999"];
+            let ptrs: Vec<u32> = strs.iter().map(|s| t.cstr(s)).collect();
+            let pk = t.words(&ptrs);
+            t.stub(gg::PACKET_GET_PTR, false, 0, 0, pk);
+            t.g32(gg::PACKET_ARG_COUNT, [5, 3, 0, 0x8000_0000][i as usize % 4]);
+            let k = [0, 1, 2, 4, 5, 0xffff_ffff, 3, 2][i as usize];
+            let cd = Conv::Cdecl;
+            t.run("packet arg", 0x0085_3140, cd, &[k], true, |g| {
+                gg::packet_arg(g, k)
+            });
+            t.run("packet arg int", 0x0085_3170, cd, &[k], true, |g| {
+                gg::packet_arg_int(g, k)
+            });
         }
     });
 }

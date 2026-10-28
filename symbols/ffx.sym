@@ -11520,10 +11520,11 @@
 0x0084bae0 function Gu_WindowAddControl       # cdecl(window, id, text, x, y, w, h) -> control: SgReallocD(+0x94, (n+1)*0x44), inline labels (+0x26 == 0) re-pointed +0x28 = +0x30, new control memclear-ed: id +0x2e, rect x3 moved by the client origin, idle colours 0x80, Gu_ControlSetText; name ours; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084bc00 function ChrViewMotionCtlProc         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[%s] Frame:%d.%02x(%x)/%d'; Switch 0x7100443c30 ChrViewMotionCtlProc (symbols from Fahrenheit's server export)
 0x0084c1e0 function ChrViewProc               # fh v3:exact 0x0084c1e0
-0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0
+0x0084c9d0 function Gui_ButtonSetTexture      # fh v3:exact 0x0084c9d0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_ButtonSetToggleValue(*0x01303768, 8, 1 - Ch_EnableGetTexture()) when the button exists
 0x0084ca30 function Gui_ChrMenuInit           # fh v3:exact 0x0084ca30
 0x0084cea0 function create_chrview               # layout+callees: sorts between Gui_ChrMenuInit and gui_chr_GWM_SELECTOR, and its named callees match the Switch 0x7100444a70 create_chrview's (similarity 1.00: Ch_GetClip, Gu_ButtonSetToggle, Gu_ButtonSetToggleValue, Gu_WindowCreate, Gu_WindowGetArg); symbols from Fahrenheit's server export
 0x0084d270 function gui_chr_GWM_SELECTOR      # fh v3:exact 0x0084d270
+0x0084d3a0 function Gu_SelectorFillFiles_0084d3a0 # cdecl(list, sel, dir): sg_make_filelist(list, dir, 0x00b5abcc), Gu_SelectorResetNbItem(sel, list[0]), Gu_SelectorSetItem(sel, i, list[2][i], i) each; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x0084d8a0 function Gui_SettingSaveLight         # str-match switch: only user of 3 string(s) held once by both builds, e.g. '%23LIGHT\\t%d'; Switch 0x710043ad70 Gui_SettingSaveLight (symbols from Fahrenheit's server export)
 0x0084e7c0 function SgGu_BgColor              # fh v3:exact 0x0084e7c0
 0x0084e870 function SgGu_LightDump            # fh v3:exact 0x0084e870
@@ -11554,14 +11555,18 @@
 0x00851910 function Sg_MouseGetMove           # fh v3:bsim1.00 0x00851910
 0x00851920 function Sg_MouseMain                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'USB mouse error.\\n'; Switch 0x71004493f0 Sg_MouseMain (symbols from Fahrenheit's server export)
 0x00851ae0 function Sg_SetMouse               # fh v3:exact 0x00851ae0
+0x00853140 function Gu_PacketArg_00853140 # cdecl(i) -> Sg_PacketGetPtr()[i], "" (0x00b8fbeb) from i >= *0x01325910 (signed); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
+0x00853170 function Gu_PacketArgInt_00853170 # cdecl(i): atoi(Gu_PacketArg_00853140(i)) as a tail jump with its argument slot replaced; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
+0x00853400 function Gu_PutByte_00853400 # cdecl(c): byte at *g_GuByteCursor, which moves on; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853520 function SpriteFrameRegion_Load       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Filter'; Switch 0x7100847e80 SpriteFrameRegion::Load (symbols from Fahrenheit's server export)
-0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0
-0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0
+0x00853780 function Gui_SpriteWindowInit_00853780 # cdecl(): once (byte 0x01325916) Gu_WindowCreate(0x14, 0xa, 0x78, 0x46, 6, SpriteFrameRegion_Load); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
+0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(0x28, 4, 0x140, 0x60, 0xe, 0x008537d0)
+0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(8, 0x9e, 0x64, 0x3c, 6, 0x00853ec0)
 0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0; cdecl(window, msg): msg 0x2c: 0x01325928 = Gu_SelectorGetItemValue(0x0132592c), Gu_WindowControlSetText(window, 0x2d, name), Sg_SetResource(4, value), Sg_SetResourceSTR(3, name), AtelSetEventJump(value, 0); other messages leave eax alone; ported M5 menu b6 (ffx_menu::m5m_f)
 0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60; cdecl() -> 0x01325928 = Sg_GetResource(4, 0) after dbgPrintf(0x00b5b410); ported M5 menu b6 (ffx_menu::m5m_f)
 0x00854e80 function gui_eve_GWM_BUTTONUP      # fh switch:cg2 0x7100448490; cdecl(window) -> Gu_SelectorOpenXYWH's eax or 0: 0x01325924 freed (user_free_thunk), = Sg_PcRead("/ffx/proj/event/header/eventid.bin"); [0]/8 entries of 8 bytes (+0 name offset): Gu_SelectorAllocate -> 0x0132592c, Gu_SelectorResetNbItem, Gu_SelectorSetItem(sel, i, file + off, i), Gu_SelectorSortItem, Gu_SelectorSetSelectSTR(sel, Sg_GetResourceSTR(3)), Gu_SelectorOpenXYWH(sel, window, 0x2c, 200, 40, 150, 120); ported M5 menu b7 (ffx_menu::m5m_g)
 0x00854f60 function Gu_DrawRectStrip          # fh switch:bsim1.00 0x710043d750
-0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0
+0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0; ported ffx_pcui::m5u_g (m5 pc-ui b8): once: Gu_WindowCreate(8, 0, 0x1e, 0xc1, 0xe, 0x00855020), Gu_WindowSetLocalTrans(w, 1, 0x10), Sg_SetResource(0x11, 0)
 0x00855430 function Gui_ProgAvarage           # fh v3:exact 0x00855430
 0x00855a30 function Native_DrawBarSegment_00855a30 # (r25 c) one bar segment: width table(seg[4]) * 0x013259f0 / 0x013259e8, Gu_SetRgbaq + two Gu_SetXyzf2 from the cursor 0x013259f4; returns the width; caller caseD_8011; own name
 0x00855b30 function FFXUsbMouseInit              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bind errr\\n'; Switch 0x71004499c0 FFXUsbMouseInit (symbols from Fahrenheit's server export)
@@ -16109,7 +16114,7 @@
 0x009308d0 function rcbgAnimeSetDataCnt       # fh v3:exact 0x009308d0
 0x00930920 function rcbgLayerAnimStep         # (anim) -> the current frame record (+0xc + 4 * +6): speed +0x14 into +0x18, whole 0x100 steps into the tick +4, frames advance (bit 1 backwards; mode +0 bits 8..11 wrap or hold) while the tick passes the record's byte +1; rcbgLayerProc; name ours
 0x00930c00 function rcuiSeaAddUvSpd          # (axis, step): first time g_RcuiWork+4 = 1 and the two f32 at +0x2c/+0x30 = 0; f32 [+0x2c + 4 axis] += step / 10.0 (x87, one store); Yn_SeaSetUvSpd(+0x2c, +0x30); no callers in the image (rcui debug screens); name ours; ported in ffx-pcui sea (pc-ui round 6)
-0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80
+0x00930d80 function Gui_YanagiInit            # fh v3:exact 0x00930d80; ported ffx_pcui::m5u_g (m5 pc-ui b8): g_RcuiWork set: rcuiCloseWindow(it); else rcbgInit when !g_YnMapSystem, tail jump rcuiInit
 0x00930db0 function RopeDebug                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'rope:%f,%f,%f'; Switch 0x710055ea10 RopeDebug (symbols from Fahrenheit's server export)
 0x00930e70 function RopeDebug2                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%d:%f,%f,%f'; Switch 0x710055eaf0 RopeDebug2 (symbols from Fahrenheit's server export)
 0x00930f30 function rcuiScaleVector           # (dst, v, s, a, b, c): inlined VFX_ScaleVec3 through vf31, s/a/b/c to 0x00c8f970
@@ -20800,6 +20805,9 @@
 0x01303760 label    g_GuMouseEnable           # Gu_MouseSetEnable
 0x01325240 label    g_GuMouseX                # mouse x as the Gu layer reads it (Gu_MouseInRect pairs it with a rectangle's x and width; window +0x0c); was g_GuMouseY
 0x01325244 label    g_GuMouseY                # mouse y (pairs with +0x0e and the height); was g_GuMouseX
+0x01325908 label g_GuByteCursor # Gu_PutByte_00853400's write pointer; name ours (m5 pc-ui b8)
+0x01325910 label g_GuPacketArgCount # i32: Gu_PacketArg_00853140's argument count; name ours (m5 pc-ui b8)
+0x01325954 label g_GuMemGraphOpen # Gui_MemGraph's once flag; name ours (m5 pc-ui b8)
 0x01325ac0 label    g_AtelLastSetMsg           # the message Native_MsgSetText (0x00857870) last put in a window; also written by 0x008607a0, 0x00860b00, read by 0x008e02f0
 0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
 0x01325af0 label    g_AtelVoiceId              # the voice Native_VoiceStandby (0x0085cd00) set; used by VoiceStart and its end

@@ -13,6 +13,7 @@ use ffx_pcui::m5u_c::bridge as c;
 use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
+use ffx_pcui::m5u_g::bridge as gg;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -549,5 +550,46 @@ ported! {
     FFEscMenu_beginKeyCapture_007013e0 @ 0x0070_13e0 => extern "C" fn begin_keyboard_capture(menu: u32) -> u32 {
         let mut f = StackFrame::<3>::new();
         ff::begin_keyboard_capture(&mut mem(), menu, f.at())
+    }
+    // ---- batch 8 (ffx_pcui::m5u_g) ----
+    /// `Gu_PutByte_00853400(c)`.
+    Gu_PutByte_00853400 @ 0x0085_3400 => extern "C" fn put_byte(c: u32) {
+        gg::put_byte(&mut mem(), c);
+    }
+    /// `Gui_SpriteWindowInit_00853780()`.
+    Gui_SpriteWindowInit_00853780 @ 0x0085_3780 => extern "C" fn sprite_window_init() -> u32 {
+        gg::sprite_window_init(&mut mem())
+    }
+    /// `Gui_ChrInfo()`.
+    Gui_ChrInfo @ 0x0085_37b0 => extern "C" fn chr_info() -> u32 {
+        gg::chr_info(&mut mem())
+    }
+    /// `Gui_ClockInit()`.
+    Gui_ClockInit @ 0x0085_3ea0 => extern "C" fn clock_init() -> u32 {
+        gg::clock_init(&mut mem())
+    }
+    /// `Gui_YanagiInit()`.
+    Gui_YanagiInit @ 0x0093_0d80 => extern "C" fn yanagi_init() -> u32 {
+        gg::yanagi_init(&mut mem())
+    }
+    /// `Gui_ButtonSetTexture()`.
+    Gui_ButtonSetTexture @ 0x0084_c9d0 => extern "C" fn button_set_texture() -> u32 {
+        gg::button_set_texture(&mut mem())
+    }
+    /// `Gu_PacketArg_00853140(i)`.
+    Gu_PacketArg_00853140 @ 0x0085_3140 => extern "C" fn packet_arg(i: u32) -> u32 {
+        gg::packet_arg(&mut mem(), i)
+    }
+    /// `Gu_PacketArgInt_00853170(i)`.
+    Gu_PacketArgInt_00853170 @ 0x0085_3170 => extern "C" fn packet_arg_int(i: u32) -> u32 {
+        gg::packet_arg_int(&mut mem(), i)
+    }
+    /// `Gui_MemGraph()`.
+    Gui_MemGraph @ 0x0085_4fd0 => extern "C" fn mem_graph() -> u32 {
+        gg::mem_graph(&mut mem())
+    }
+    /// `Gu_SelectorFillFiles_0084d3a0(list, sel, dir)`.
+    Gu_SelectorFillFiles_0084d3a0 @ 0x0084_d3a0 => extern "C" fn selector_fill_files(list: u32, sel: u32, dir: u32) {
+        gg::selector_fill_files(&mut mem(), list, sel, dir);
     }
 }
