@@ -5160,6 +5160,7 @@
 0x006b49c0 function DebugMenuManager_disableTweaks_006b49c0 # cdecl() (ecx not read): the tweak utilities' getters (0x006a6e40, PostProcessTweakUtil_GetInstance, 0x006b6330, 0x006b6360, 0x006b6340, 0x006b6320, 0x006b62f0, 0x006b6310, 0x006b6300, 0x006b6350) and setEnabled(false) on the first eight; caller PhyreScene_softResetScene; name ours; ported M5 render b5 (ffx_prender::m5r_e)
 0x006b4f80 function Vec3_UninitializedCopy    # structure: cdecl(first, last, dest): copies 12-byte elements, returns dest's end (std::uninitialized_copy); name ours
 0x006b5000 function Identity_006b5000            # auto-port shape (pass-through, cdecl): return a0; callers: no direct caller; name ours
+0x006b53b0 function DebugTextPanel_ctor_006b53b0 # thiscall(this) -> this: byte +0x1c = 0, TextUtil_TextUtil(+0x20), f32 +0x100 = [0x00b482d8] (0.02), +0xf4/+0xf8 = 0, byte +0xfc = 0, +0x104 = 1280, +0x108 = 720, f32 +0x10c..+0x114 = 0, +0x118 = 1, +0/+4 = 0, memset(+0xb0, 0, 0x44); caller 0x006b5d30; name ours; ported M5 render b11 (ffx_prender::m5r_k)
 0x006b55d0 function CharacterSwitchTweakUtil_CharacterSwitchTweakUtil # fh v3:exact 0x006b5720 CharacterSwitchTweakUtil::CharacterSwitchTweakUtil
 0x006b5eb0 function CharacterSwitchTweakUtil_CreateInstance # fh v3:cg2 0x6b6000 CharacterSwitchTweakUtil::CreateInstance
 0x006b6340 function CharacterTextureAnimationTweakUtil_GetInstance # fh v3:bsim1.00 0x006b6480 CharacterTextureAnimationTweakUtil::GetInstance
@@ -5191,6 +5192,7 @@
 0x006bc210 function ViewerManager_DrawTexAnimInfo_006bc210 # thiscall(this = g_ViewerManager, dt), ret 4: when this+0x30 contains "grid00" (strstr) and [0x00cccad4]+0x18 is set, that object's virtual 1(dt), its group id and ID strings (0x006b2050, 0x006b2060: PString text, sprintf_s "%s") and float pairs (0x006b1ce0, 0x006b1cc0) with 0x006b1f90's eax go to 0x00829c00 (forwards to the renderer, 10 words); only caller TextureAnimation_Animate_00672000, only under g_FFXIsDebug with debug menu type 5: debug (classify REVIEWED); name ours
 0x006bc960 function ReturnGlobalSx8_006bc960     # auto-port shape (return global sx8, cdecl): t0 = u8[&0x00cccab8]; return sx8(t0); callers: ; name ours
 0x006bca90 function AutoTestManager_ctor_006bca90 # thiscall(this) -> this: AutoTestManager_vftable, memset(+4, 0, 0xff) (+0x103 keeps its byte), +0x104..+0x120 and u16 +0x128 zeroed, CreateThread_ps2(&param at ebp-0x30, "Read command") -> +0x124 and StartThread_ps2; param +4 entry 0x006bd1e0, +8 0x00cccb10, +0xc 0x8000, +0x10 0, +0x14 1; its first word is never written but CreateThread_ps2 reads only +4 and +0xc (no junk read); caller graphicCreatePauseGame_006bcc40; name ours; ported M4 h3 r4 (ffx_prender::h3_glue12)
+0x006bcbd0 function AutoTestManager_scalarDeletingDtor_006bcbd0 # thiscall(this; flags) ret 4 -> this: [this] = AutoTestManager_vftable 0x00b48e30, nx_uninit_saveload([+0x124]), the string vector +0x118 destroyed (0x00635c40(vec; first, last)), freed and cleared when it has storage, operator_delete with flag bit 0; 0 direct callers (the vtable); name ours; ported M5 render b11 (ffx_prender::m5r_k)
 0x006bcc40 function graphicCreatePauseGame_006bcc40 # cdecl(): when g_GraphicPauseGame is 0, operator_new(0x12c) + ctor 0x006bca90 into it (0 when new fails); graphicInitialize calls it; name ours; ported M4 h3 (ffx_prender::glue3)
 0x006bcc70 function graphicPauseGameDestroy # (): virtual destructor (1) of g_GraphicPauseGame, then clears it; name ours
 0x006bcc90 function graphicCheckPauseGame     # () -> g_GraphicPauseGame; name Fahrenheit's (Switch BSim)
@@ -5822,7 +5824,7 @@
 0x006f9b70 function Compare_006f9b70             # auto-port shape (compare, cdecl): t0 = u32[&0x00ce83c4]; return (t0 == 0x3); callers: ; name ours
 0x006f9b80 function PhyreFIOS_LoadPrxIdle     # structure: 1 when the PRX state 0x00ce83c4 is 3 (Compare_006f9b70) and 0x00ce83c0 is 0; name ours
 0x006f9ba0 function PhyreFIOS_LoadPrxInProgress # fh v3:exact 0x006f9c80 PhyreFIOS::LoadPrxInProgress
-0x006f9bc0 function PhyreFIOS_LoadsPrx        # fh v3:exact 0x006f9ca0 PhyreFIOS::LoadsPrx
+0x006f9bc0 function PhyreFIOS_LoadsPrx        # fh v3:exact 0x006f9ca0 PhyreFIOS::LoadsPrx; ported M5 render b11 (ffx_prender::m5r_k)
 0x006f9cc0 function MagicDLLAsyncLoad         # fh v3:exact 0x006f9da0; ported M5 render b8 (ffx_prender::m5r_h)
 0x006f9d20 function PhyreFIOS_UnloadPrx       # fh v3:exact 0x006f9e00 PhyreFIOS::UnloadPrx; ported M5 render b7 (ffx_prender::m5r_g)
 0x006f9d50 function PhyreFIOSStreamFile_getFileSize # fh v3:exact 0x006f9e30 PhyreFIOSStreamFile::getFileSize

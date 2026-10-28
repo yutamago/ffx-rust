@@ -44,6 +44,7 @@ use ffx_prender::m5r_g::{self as mg, bridge as gb};
 use ffx_prender::m5r_h::{self as mh, bridge as h};
 use ffx_prender::m5r_i::{self as mi, bridge as i};
 use ffx_prender::m5r_j::{self as mj, bridge as j};
+use ffx_prender::m5r_k::{self as mk, bridge as k};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -5298,6 +5299,76 @@ fn batch10_functions_match_the_original() {
                 Conv::Thiscall(scene),
                 &[],
                 |g| Out::U32(j::render_vfx_after_post(g, scene)),
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 11 (ffx_prender::m5r_k) ----
+
+#[test]
+fn batch11_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a01);
+        for case in 0..24 {
+            // the PRX load: async (the file there or not), direct (loaded
+            // or not)
+            let path = t.alloc(b"magic.dll\0\0\0");
+            let avail = u32::from(case % 2 == 0);
+            t.stub_sym(mk::ASYNC_AVAILABLE, 1, false, 0, 0, Ret::Val(avail));
+            t.stub_sym(
+                mk::FILE_PROBE,
+                2,
+                false,
+                1,
+                0,
+                Ret::Val([0x100, 1, rng.next()][rng.below(3) as usize]),
+            );
+            t.stub_sym(mk::MEMSET, 3, false, 3, 0, Ret::Val(0));
+            t.import_sym(mk::SPRINTF_S, 4, 4, 0, Ret::Val(9));
+            t.stub_sym(mk::REGIST_ASYNC_TASK, 5, false, 2, 0, Ret::Val(0));
+            let m = if case % 4 == 1 { 0 } else { 0x1000_0000 };
+            t.import_sym(mk::LOAD_LIBRARY_A, 6, 1, 1, Ret::Val(m));
+            let cb = t.stub_code(7, false, 1, 0, Ret::Val(0x77), false);
+            let x = rng.next();
+            t.check(
+                "PhyreFIOS_LoadsPrx",
+                0x006f_9bc0,
+                Conv::Cdecl,
+                &[path, x, cb],
+                |g| Out::U32(k::loads_prx(g, path, cb)),
+            );
+            t.reset();
+
+            // the auto-test manager's deleting destructor
+            let this = rand_obj(t, &mut rng, 0x128);
+            if case % 3 == 0 {
+                t.w32(this + 0x118, 0);
+            }
+            t.stub_sym(mk::UNINIT_SAVELOAD, 8, false, 1, 0, Ret::Val(0));
+            t.stub_sym(mk::STRING_VECTOR_DESTROY, 9, true, 2, 2, Ret::Val(0));
+            t.stub_sym(mk::OPERATOR_DELETE, 10, false, 1, 0, Ret::Val(0));
+            let flags = rng.word();
+            t.check(
+                "AutoTestManager_scalarDeletingDtor_006bcbd0",
+                0x006b_cbd0,
+                Conv::Thiscall(this),
+                &[flags],
+                |g| Out::U32(k::auto_test_delete(g, this, flags)),
+            );
+            t.reset();
+
+            // the debug text panel's constructor
+            let this = rand_obj(t, &mut rng, 0x120);
+            t.stub_sym(mk::TEXT_UTIL_CTOR, 11, true, 0, 0, Ret::Val(0));
+            t.stub_sym(mk::MEMSET, 12, false, 3, 0, Ret::Val(0));
+            t.check(
+                "DebugTextPanel_ctor_006b53b0",
+                0x006b_53b0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(k::debug_text_panel_ctor(g, this)),
             );
             t.reset();
         }

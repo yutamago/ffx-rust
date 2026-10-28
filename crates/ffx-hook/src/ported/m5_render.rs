@@ -16,6 +16,7 @@ use ffx_prender::m5r_g::bridge as g;
 use ffx_prender::m5r_h::bridge as h;
 use ffx_prender::m5r_i::bridge as i;
 use ffx_prender::m5r_j::bridge as j;
+use ffx_prender::m5r_k::bridge as k;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1200,5 +1201,18 @@ ported! {
     /// `PhyreScene_RenderVFXAfterPostProcess(scene)`.
     PhyreScene_RenderVFXAfterPostProcess @ 0x0065_38d0 => extern "thiscall" fn render_vfx_after_post(this: u32) -> u32 {
         j::render_vfx_after_post(&mut mem(), this)
+    }
+    // ---- batch 11 (ffx_prender::m5r_k) ----
+    /// `PhyreFIOS_LoadsPrx(path, x, callback)` (`x` is never read).
+    PhyreFIOS_LoadsPrx @ 0x006f_9bc0 => extern "C" fn loads_prx(path: u32, _x: u32, callback: u32) -> u32 {
+        k::loads_prx(&mut mem(), path, callback)
+    }
+    /// `AutoTestManager_scalarDeletingDtor_006bcbd0(this; flags)`.
+    AutoTestManager_scalarDeletingDtor_006bcbd0 @ 0x006b_cbd0 => extern "thiscall" fn auto_test_delete(this: u32, flags: u32) -> u32 {
+        k::auto_test_delete(&mut mem(), this, flags)
+    }
+    /// `DebugTextPanel_ctor_006b53b0(this)`.
+    DebugTextPanel_ctor_006b53b0 @ 0x006b_53b0 => extern "thiscall" fn debug_text_panel_ctor(this: u32) -> u32 {
+        k::debug_text_panel_ctor(&mut mem(), this)
     }
 }
