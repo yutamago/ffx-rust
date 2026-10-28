@@ -34,6 +34,7 @@ mod h4_glue_other;
 mod h4b_glue_other;
 mod kernel;
 mod m4_rest;
+mod m5_menu;
 mod m5_render;
 mod m5_script;
 mod m5_system_a;
@@ -88,6 +89,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(h4b_glue_other::hooks());
     all.extend(kernel::hooks());
     all.extend(m4_rest::hooks());
+    all.extend(m5_menu::hooks());
     all.extend(m5_render::hooks());
     all.extend(m5_script::hooks());
     all.extend(m5_system_a::hooks());
