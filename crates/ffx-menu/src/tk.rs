@@ -5475,7 +5475,13 @@ pub mod bridge {
         let at = |o: u32| w.wrapping_add(o);
         let clamp = |mem: &mut M| {
             let (pos, end) = (mem.read::<i32>(at(0xa0)), mem.read::<i32>(at(0xa8)));
-            let v = if pos > end { end } else { pos.max(0) };
+            let v = if pos > end {
+                end
+            } else if pos < 0 {
+                0
+            } else {
+                pos
+            };
             mem.write(at(0xa0), v);
             (v, end)
         };

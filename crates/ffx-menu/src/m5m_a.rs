@@ -177,7 +177,7 @@ pub mod bridge {
             } else {
                 let step = MOUSE_WHEEL.get(h).wrapping_mul(24);
                 let v = i16_at(h, window, 0x8c).wrapping_sub(step);
-                let v = if v > 0x80 { 0x80 } else { v.max(0) };
+                let v = v.clamp(0, 0x80);
                 h.write(at(window, 0x8c), v as u16);
             }
             b = MOUSE_BUTTONS.get(h);

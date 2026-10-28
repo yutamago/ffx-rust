@@ -2526,7 +2526,13 @@ pub mod bridge {
             || (MESSAGE_UNCLAMPED.get(mem) != 0 && crate::window::bridge::window_type(mem, i) == 1);
         if !exempt {
             let lim = 0x200 - width;
-            x = if x > lim { lim } else { x.max(0) };
+            x = if x > lim {
+                lim
+            } else if x < 0 {
+                0
+            } else {
+                x
+            };
         }
         let rows = if crate::menu::bridge::message_window_mode(mem) == 1 {
             if s16(h) > 0x7f {
@@ -2580,12 +2586,24 @@ pub mod bridge {
             }
             _ => {}
         }
-        let w = if w > 0x200 { 0x200 } else { w.max(0) };
+        let w = w.clamp(0, 0x200);
         let h = h.clamp(4, 0x19c);
         let lim = 0x200 - w;
-        let x = if x > lim { lim } else { x.max(0) };
+        let x = if x > lim {
+            lim
+        } else if x < 0 {
+            0
+        } else {
+            x
+        };
         let lim = 0x19c - h;
-        let y = if y > lim { lim } else { y.max(4) };
+        let y = if y > lim {
+            lim
+        } else if y < 4 {
+            4
+        } else {
+            y
+        };
         place_message_window(mem, i, [x, y, w, h], screen_wh);
     }
 
@@ -11444,7 +11462,13 @@ pub mod bridge {
                 .wrapping_sub(i32::from(r16(mem, 0x3a)))
                 .wrapping_mul(i32::from(step));
             let top = i32::from(r16(mem, 0x40));
-            if top > last { last } else { top.max(0) }
+            if top > last {
+                last
+            } else if top < 0 {
+                0
+            } else {
+                top
+            }
         } else {
             0
         };
@@ -13803,7 +13827,13 @@ pub mod bridge {
     fn clamp_scroll_line(mem: &mut impl Mem, w: u32) -> i32 {
         let line: i32 = mem.read(w.wrapping_add(0xa0));
         let last: i32 = mem.read(w.wrapping_add(0xa8));
-        let line = if line > last { last } else { line.max(0) };
+        let line = if line > last {
+            last
+        } else if line < 0 {
+            0
+        } else {
+            line
+        };
         mem.write(w.wrapping_add(0xa0), line);
         line
     }

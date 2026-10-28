@@ -461,11 +461,23 @@ pub mod bridge {
     /// count at most) for `cols × rows` entries, within the count.
     fn visible(w: &Window, count: i32) -> (i32, i32) {
         let first = i32::from(w.first);
-        let start = if first > count { count } else { first.max(0) };
+        let start = if first > count {
+            count
+        } else if first < 0 {
+            0
+        } else {
+            first
+        };
         let end = i32::from(w.cols)
             .wrapping_mul(i32::from(w.rows))
             .wrapping_add(start);
-        let end = if end > count { count } else { end.max(0) };
+        let end = if end > count {
+            count
+        } else if end < 0 {
+            0
+        } else {
+            end
+        };
         (start, end)
     }
 
