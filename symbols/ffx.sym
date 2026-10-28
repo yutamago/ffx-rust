@@ -2524,6 +2524,7 @@
 0x0059d2e0 function Phyre_PRendering_PRenderInterfaceNVN_unbindFromCurrentThread # cdecl() -> 0x17 (mov eax, 0x17; ret); name from the Ghidra dump; port ffx_prender::misc (p6-render-c)
 0x0059d320 function Phyre_PRendering_PTextureArray_markSlot_0059d320 # thiscall(array; i, _), ret 8: count +0xc (bit 31 a flag), one 16-byte slot inline at +0x10 or the slots at [+0x10]; 3 out of range, 0x15 for an empty slot, else slot +8 = 1 and 0; name ours (M4 p6 batch 12)
 0x0059e520 function TrophyManager_Install     # thiscall(this, arg), ret 4: xor eax,eax (nothing to install on PC); fh switch:bsim1.00 0x710023fda0 TrophyManager::Install
+0x0059e530 function PClassLayoutInterface_static_0059e530 # cdecl() -> 0x00cbaa78: a function-local static (guard bit 0 of 0x00cbaa7c) holding Phyre_PClassLayoutInterface_vftable, atexit(0x00b03db0) on the first call; 8 refs; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0059e560 function GetField20_0059e560          # auto-port shape (return field u32, stdcall): t0 = u32[(a0 + 0x20)]; return t0; callers: no direct caller; name ours
 0x0059e570 function GetField1c_0059e570          # auto-port shape (return field u32, stdcall): t0 = u32[(a0 + 0x1c)]; return t0; callers: no direct caller; name ours
 0x0059e580 function SetFields_0059e580           # auto-port shape (several stores: set field (constants, arguments, addresses), stdcall): u32[a1] = 0x0; u32[a2] = 0x0; return a2; callers: no direct caller; name ours
@@ -3217,12 +3218,12 @@
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
 0x0061ac30 function VFile_fileSeek # thiscall(vfile; offset, whence), ret 8: the 64-bit position +0x10 from the start / current / end (size at *(this+0xc)+8); -1 for another whence, a negative offset or offset past the size (after moving); returns the position low word; callers 0x006080e0, 0x00608120 (PStreamFile seeks); name ours
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
-0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
+0x0061acc0 function VbfStream_Open # fopen(path, "rb") for one of 15 reader streams; thiscall(this; path, size) ret 8 -> size: +4 = fopen(path, "rb" 0x00b3f69c), +8 = size when not 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
 0x0061b3c0 function AtlStringResourceImage_0061b3c0 # cdecl(module, info, id) -> the string or 0: LoadResource/LockResource/SizeofResource, id & 0xf length-prefixed UTF-16 strings skipped, the string when before the end and not empty (ATL's AtlGetStringResourceImage helper; callers 0x0061b270, AtlGetStringResourceImage, 0x0064f970, 0x0064f9e0, 0x00652310); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b4a0 function BigFileStream_claimSlot_0061b4a0 # thiscall(this; timeout) ret 4: WaitForSingleObject([this], timeout) == 0, then the first of [this+4] 0x60-byte slots at [this+8] whose +0x58 InterlockedCompareExchange(1, 0) finds 0 -> that slot, else 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
-0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
+0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton; ported ffx_system::m5a_platform: cdecl() -> the ctor's eax or 0 (+4/+8/+0xc = 0 before BigFileStream_ctor; eax junk when the stream exists, the port returns 0) (m5 system-a c2)
 0x0061b620 function BigFileStream_term_0061b620 # thiscall(this): delete[] +0x40 (cleared), the 5 handles +0x10..+0x20 (BigFileHandle_dtor, delete, cleared), CryptReleaseContext([this], 0), DeleteCriticalSection(+0x24); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b690 function BigFileStream_shutdown_0061b690 # cdecl(): BigFileStream_sBigFileStreamInstacne: BigFileStream_term_0061b620, the slot array +0xc (0x60 bytes each, 0x0061b0c0 destructors, delete[]), CloseHandle([+4]), delete, the global cleared; caller fiosFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
@@ -3230,13 +3231,14 @@
 0x0061ba60 function Request_Wait # thiscall(_, request), ret 4: WaitForSingleObject(request+0x4c, INFINITE); name ours
 0x0061ba80 function BigFileStream_fileTaskUncompress # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836; was ReadRequest_Inflate
 0x0061bdb0 function BigFileStream_get         # returns g_FileSys; was FileSys_Get
-0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
+0x0061bdd0 function BigFileStream_ctor # fh v4:user_defined+call.cs thiscall; thiscall(this) -> InitializeCriticalSection's eax: +0x3c/+0x40 = 0, BigFileStream_initSlots_0061c2c0(+4; 0x1e), +0x10..+0x20 and +0 = 0, CryptAcquireContextA(this, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT), InitializeCriticalSection(+0x24); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
 0x0061bf10 function BigFileStream_openFile    # like FileSys_Exists but returns the entry; was FileSys_FindEntry
 0x0061bfe0 function BigFileStream_readVFile   # NewReadRequest + ReadBlocks + Inflate; was FileSys_ReadSync
 0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
 0x0061c220 function FileSys_SubmitRead          # cdecl(request): thread-pool work BigFileStream_fileTaskRead(request), and a wait on the request's event (+0x48) running BigFileStream_fileTaskUncompress; made synchronous by the harness on the virtual clock
 0x0061c270 function Parser_Reset_0061c270 # thiscall: byte +0 and *(+8), *(+0xc), *(+0x10) = 0, +0x14/+0x18 = 0, +0x1c set: operator delete(+0x20); +0x1c/+0x50/+0x24 = 0; name ours
+0x0061c2c0 function BigFileStream_initSlots_0061c2c0 # thiscall(this; n) ret 4 -> CreateSemaphoreA's eax: +4 = n, the old slot array +8 (0x60 bytes each, 0x0061b0c0 dtors) deleted, operator new[](n * 0x60 + 4, saturating) with the count and eh_vector_constructor_iterator (0x0061af20, 0x0061b0c0) -> +8 (0 when new fails), the old semaphore +0 closed, +0 = CreateSemaphoreA(0, n, n, 0); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061c400 function PRenderThread_setShaderPass_0061c400 # thiscall(this; pass) ret 4 -> bindAll's eax; render thread (PRenderThread_processRenderCommands, 3 calls): this+0 current pass, this+4 the device state; no current pass: program (pass+0x14) set + applied, all four stages; else stage k changes when the programs differ or the tables +0x20+4k differ: the old program's stages unbound (0x00598a20, unbindAll; stage 3 also 0x00598a70), a new program swapped in (0x00598a60, apply, releaseShaderPass, set); this+0xc = pass+0x10; changed stages bound (bindTables, bindTextures; stage 3 ForwardIfBound), bindAll, this+0 = pass; ported (ffx_glue_other::h4_f2, m4 h4 f); name ours
 0x0061c890 function Phyre_PRendering_PooledHandle_release_0061c890 # thiscall(handle): {owner, slot}: when owner is set, 0x004ba540(owner+0x14; &slot, owner) (thiscall, ret 8), then owner = 0; called by 0x00614300 and PRenderThread_processRenderCommands; name ours; port ffx_prender::misc (p6-render-c)
@@ -3245,15 +3247,17 @@
 0x0061d110 function Add_0061d110 # cdecl(a, b) -> a + b; name ours
 0x0061d120 function AddU8_0061d120 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
+0x0061d210 function VbfTree_link_0061d210 # thiscall(this; node) ret 4 -> 0 or the node with the same key: the VBF digest tree's BST link (keys (+0x14 signed, +0x10 unsigned) then (+0x1c, +0x18)); colour bit +8 set, children = the head, hung under the last node visited (side 1 when that node is less), +8 = parent + colour bit; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
 0x0061d5c0 function PRedBlackTree_dtor_0061d5c0 # thiscall(this): every front node (+0xc, until the tree or null) Phyre_PRedBlackTree_remove'd, the free list +0x18 reset and destroyed, Phyre_PRedBlackTree_clear twice (as BufferTree_dtor_00633fe0 without buffers); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct; thiscall(this): DeleteCriticalSection(+0x44), BigFileHandle_deinitialize, PRedBlackTree_dtor_0061d5c0(+4); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
 0x0061d730 function CompareI64Pairs_0061d730 # stdcall(a, b), ret 8: (i64 a[0], i64 a[8]) against b lexicographically: -1, 0, 1; callers 0x0061d870, 0x0061d890 (BigFileHandle); name ours
+0x0061d8e0 function PRedBlackTree_reset_0061d8e0 # thiscall(this): every front node Phyre_PRedBlackTree_remove'd, tail jump Phyre_PFreeList_reset(+0x18); caller BigFileHandle_initialize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize; thiscall(this): delete[] +0x40, +0, +0x3c (cleared), the VFile array +0x5c (0x20 bytes each, eh_vector_destructor_iterator with VFile_dtor_VFile, delete[] of the count header); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
-0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
-0x0061dec0 function Vbf_Contains
+0x0061de30 function Vbf_InsertEntry # inserts (name MD5 -> entry*) into the entry map; thiscall(this; &digest, &entry) ret 8 -> 0, 0xe (no node) or 0x12 (duplicate): a node from the free list +0x18 (Phyre_PFreeList_allocateNewBlock([+0x20]) when empty), self-linked, digest at +0x10, entry at +0x20, VbfTree_link_0061d210; duplicate -> Phyre_PFreeList_deallocate, else Phyre_PRedBlackTree_postInsertFinalize; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061dec0 function Vbf_Contains # thiscall(this; &digest) ret 4 -> eax (al the answer): the digest copied to ebp-0x10, Vbf_MapLookup(this + 4; &copy), al = node != 0 && node + 0x20 != 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry
 0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile
 0x0061e6e0 function Difference_0061e6e0 # cdecl(a, b) -> b - a; name ours
@@ -4529,7 +4533,7 @@
 0x0067a900 function SyncManager_shutdown_0067a900 # cdecl() -> 0: the SyncManager at 0x00ce9014 released (code_006fa8c0, jmp SyncManager_releaseData) and deleted when set, the global cleared; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncGetData(g_SyncManager; a, b, c)
 0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): tail jump to SyncManager_syncInit(g_SyncManager)
-0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
+0x0067a960 function iSyncInitialize # fh v3:exact 0x0067ab10; cdecl() -> 0: the SyncManager at 0x00ce9014 created once (new(0x44), SyncManager_SyncManager; 0 when new fails); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067a9f0 function EternalCalm_FileSize_0067a9f0 # (path) -> sceFileSize of the opened file, "failed to open EternalCalm data file: %s"; callers getEternalCalmMgrpSize, getEternalCalmSceneSize; own name
 0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
@@ -5306,6 +5310,7 @@
 0x006dac50 function PhyFMVPlayerManager_updateSubtitles # guess: timestamps +0x724.., unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006dad30 function PhyFMVPlayerManager_updatePauseMenuAlpha # "alphaScale" ping-pong, unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
+0x006dafc0 function LocalizationManager_create_006dafc0 # cdecl(): g_LocalizationManager created once (new(0x1c), ctor 0x006daee0; 0 when new fails) -> the ctor's eax or 0 (eax is the cookie's xor when it exists: junk to its caller, the port returns 0); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006db040 function LocalizationManager_shutdown_006db040 # cdecl(): g_LocalizationManager destroyed (0x006daf30), deleted, cleared when set; eax junk; caller fiosFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings; thiscall(this) -> 0: *g_Settings 1..5 -> (1, 1 us/2 fr/4 de/5 it/3 es, 1), 6 -> (3, 9, 0), 7 -> (3, 10, 0), else (0, 0, 0) into +0, +4, +8; ported (system round 32)
@@ -5534,7 +5539,7 @@
 0x006f1370 function StatsAndAchievements_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f13c0 function StatsAndAchievements_scalar_deleting_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1420 function StatsAndAchievements_ResetAll # SteamUserStats()->ResetAllStats(true) (+0x54); BasicDebugTweakUtil item 0xc (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); ported ffx_system::m5a_platform: cdecl() -> the ctor's eax (0 when new fails) (m5 system-a c2)
 0x006f14a0 function StatsAndAchievements_Destroy # no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours; ported ffx_system::m5a_platform: void (eax junk to callers) (m5 system-a c2)
 0x006f1550 function AchievementTryObtainPlat # fh v3:exact 0x006f1690 +AchievementTryObtainPlat; thiscall(this): record 0 not unlocked and records 1..=0x21 all are -> StatsAndAchievements_Unlock_006f1510(this; 0); ported ffx_system::m5a_platform (m5 system-a c2)
@@ -5551,6 +5556,7 @@
 0x006f17d0 function StatsAndAchievements_RequestStats # if +0x4d and logged on: RequestCurrentStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours; ported ffx_system::m5a_platform: void (eax junk to its caller) (m5 system-a c2)
+0x006f1980 function SaveDataManager_ctor_006f1980 # thiscall(this) -> this: +0 = 1, +4 = 0, +8/+0xc = -1, +0x358/+0x360/+0x368 = 0, +0x390 = -1, +0x398/+0x39c = 0, strncpy of the defaults 0x00b0dab8 (0x40 at +0x10), 0x00b4bb60 (0x80 at +0x50), 0x00b4bb78 (0x200 at +0xd0), 0x00b4bb94 (0x40 at +0x2d0), 0x00b4bba0 (0x40 at +0x310); +0x35c = AddrOfGlobal0159e468_008b3630(), TOClearBlock_008b3610, +0x3a8 = 0x101 (word), +0x3aa = 0, +0x3ac = 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1aa0 function SaveDataManager_setResult_006f1aa0 # thiscall(this; v) ret 4 -> v: [[0x00ce81f4] + 8] = 4/2/6 for this+8 = 3/1/5; this+0x3a4 = v; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006f1c10 function SaveDataManager_create_006f1c10 # cdecl() -> g_SaveDataManager = operator new(0x488) constructed by 0x006f1980 (0 when new fails); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad

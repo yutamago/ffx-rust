@@ -1435,4 +1435,403 @@ pub mod bridge {
         h.write(h.rebase(SAVE_MANAGER_CELL), m);
         m
     }
+
+    /// `StatsAndAchievements_ctor` (thiscall) and `g_StatsAndAchievements`.
+    pub const STATS_CTOR: u32 = 0x006f_11a0;
+    pub const STATS_CELL: u32 = 0x00ce_81a8;
+
+    /// `StatsAndAchievements_Create()` (cdecl): `g_StatsAndAchievements`
+    /// = a new 0x50-byte object built by its constructor (its `eax`), or
+    /// 0 when `operator new` fails. Returns the constructor's `eax`, or
+    /// `new`'s 0.
+    pub fn stats_create(h: &mut impl Host) -> u32 {
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x50]);
+        if p == 0 {
+            h.write(h.rebase(STATS_CELL), 0u32);
+            return 0;
+        }
+        let s = h.call_sym(STATS_CTOR, Conv::Thiscall(p), &[]);
+        h.write(h.rebase(STATS_CELL), s);
+        s
+    }
+
+    /// `MSVCR110!strncpy` (cdecl), the save manager's default strings,
+    /// `AddrOfGlobal0159e468_008b3630` and `TOClearBlock_008b3610` (cdecl).
+    pub const STRNCPY_IAT: u32 = 0x00b0_c368;
+    pub const SAVE_STRINGS: [(u32, u32, u32); 5] = [
+        (0x10, 0x00b0_dab8, 0x40),
+        (0x50, 0x00b4_bb60, 0x80),
+        (0xd0, 0x00b4_bb78, 0x200),
+        (0x2d0, 0x00b4_bb94, 0x40),
+        (0x310, 0x00b4_bba0, 0x40),
+    ];
+    pub const TO_BLOCK: u32 = 0x008b_3630;
+    pub const TO_CLEAR_BLOCK: u32 = 0x008b_3610;
+
+    /// `0x006f1980(this)` (thiscall, the save manager's constructor):
+    /// `+0` = 1, `+4` = 0, `+8`/`+0xc` = -1, `+0x358`/`+0x360`/`+0x368` =
+    /// 0, `+0x390` = -1, `+0x398`/`+0x39c` = 0; five default strings
+    /// (`strncpy` into `+0x10`, `+0x50`, `+0xd0`, `+0x2d0`, `+0x310`);
+    /// `+0x35c` = the TO block's address, `TOClearBlock`; `+0x3a8` =
+    /// 0x101 (word), `+0x3aa` = 0, `+0x3ac` = 0. Returns `this`.
+    pub fn save_manager_ctor(h: &mut impl Host, this: u32) -> u32 {
+        let at = |off: u32| this.wrapping_add(off);
+        for (off, v) in [
+            (0u32, 1u32),
+            (4, 0),
+            (8, u32::MAX),
+            (0xc, u32::MAX),
+            (0x358, 0),
+            (0x360, 0),
+            (0x368, 0),
+            (0x390, u32::MAX),
+            (0x398, 0),
+            (0x39c, 0),
+        ] {
+            h.write(at(off), v);
+        }
+        for (off, s, n) in SAVE_STRINGS {
+            let s = h.rebase(s);
+            import(h, STRNCPY_IAT, Conv::Cdecl, &[at(off), s, n]);
+        }
+        let block = h.call_sym(TO_BLOCK, Conv::Cdecl, &[]);
+        h.write(at(0x35c), block);
+        h.call_sym(TO_CLEAR_BLOCK, Conv::Cdecl, &[]);
+        h.write(at(0x3a8), 0x101u16);
+        h.write(at(0x3aa), 0u8);
+        h.write(at(0x3ac), 0u32);
+        this
+    }
+
+    /// `0x0061d8e0(this)` (thiscall, from `BigFileHandle_initialize`): a
+    /// `PRedBlackTree` emptied: every front node removed (as
+    /// [`tree_dtor`]), then (a tail jump) its free list `+0x18` reset; its
+    /// `eax`.
+    pub fn tree_reset(h: &mut impl Host, this: u32) -> u32 {
+        loop {
+            let node: u32 = h.read(this.wrapping_add(0xc));
+            if node == this || node == 0 {
+                break;
+            }
+            h.call_sym(TREE_REMOVE, Conv::Thiscall(this), &[node]);
+        }
+        h.call_sym(
+            FREE_LIST_RESET,
+            Conv::Thiscall(this.wrapping_add(0x18)),
+            &[],
+        )
+    }
+
+    /// `MSVCR110!fopen` (cdecl) and `"rb"`.
+    pub const FOPEN_IAT: u32 = 0x00b0_c3f0;
+    pub const MODE_RB_A: u32 = 0x00b3_f69c;
+
+    /// `VbfStream_Open(this; path, size)` (thiscall, `ret 8`): `+4` =
+    /// `fopen(path, "rb")`; `+8` = `size` when not 0. Returns `size`.
+    pub fn vbf_stream_open(h: &mut impl Host, this: u32, path: u32, size: u32) -> u32 {
+        let mode = h.rebase(MODE_RB_A);
+        let f = import(h, FOPEN_IAT, Conv::Cdecl, &[path, mode]);
+        h.write(this.wrapping_add(4), f);
+        if size != 0 {
+            h.write(this.wrapping_add(8), size);
+        }
+        size
+    }
+
+    /// `SyncManager_SyncManager` (thiscall).
+    pub const SYNC_MANAGER_CTOR: u32 = 0x006f_a8b0;
+
+    /// `iSyncInitialize()` (cdecl) -> 0: the `SyncManager` at `0x00ce9014`
+    /// created once (`operator new(0x44)`, its constructor; 0 when `new`
+    /// fails).
+    pub fn sync_initialize(h: &mut impl Host) -> u32 {
+        let cell = h.rebase(SYNC_MANAGER);
+        if h.read::<u32>(cell) != 0 {
+            return 0;
+        }
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x44]);
+        let m = if p == 0 {
+            0
+        } else {
+            h.call_sym(SYNC_MANAGER_CTOR, Conv::Thiscall(p), &[])
+        };
+        h.write(cell, m);
+        0
+    }
+
+    /// The localization manager's constructor `0x006daee0` (thiscall).
+    pub const LOCALIZATION_CTOR: u32 = 0x006d_aee0;
+
+    /// `0x006dafc0()` (cdecl): `g_LocalizationManager` created once
+    /// (`operator new(0x1c)`, its constructor; 0 when `new` fails).
+    /// Returns the constructor's `eax`, or 0 when `new` fails; 0 when the
+    /// manager already exists (the original's `eax` is the security
+    /// cookie's xor there, junk to its one caller).
+    pub fn localization_create(h: &mut impl Host) -> u32 {
+        let cell = h.rebase(LOCALIZATION_MANAGER);
+        if h.read::<u32>(cell) != 0 {
+            return 0;
+        }
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x1c]);
+        let m = if p == 0 {
+            0
+        } else {
+            h.call_sym(LOCALIZATION_CTOR, Conv::Thiscall(p), &[])
+        };
+        h.write(cell, m);
+        m
+    }
+
+    /// `Vbf_MapLookup(this; &digest)` (thiscall, `ret 4`).
+    pub const VBF_MAP_LOOKUP: u32 = 0x0061_d140;
+    /// `Vbf_Contains`' frame: the digest copy at `ebp - 0x10`.
+    pub const CONTAINS_FRAME: u32 = 0x10;
+
+    /// `Vbf_Contains(this; &digest)` (thiscall, `ret 4`): the 16-byte
+    /// digest copied to `ebp - 0x10`, `Vbf_MapLookup(this + 4; &copy)`;
+    /// `al` = whether a node came back and its entry (`node + 0x20`) is
+    /// not null (wrapping). Returns `eax`: the node (+ 0x20 when not 0),
+    /// `al` the answer.
+    pub fn vbf_contains(h: &mut impl Host, ebp: u32, this: u32, digest: u32) -> u32 {
+        let copy = ebp.wrapping_sub(CONTAINS_FRAME);
+        for k in 0..4u32 {
+            let w: u32 = h.read(digest.wrapping_add(4 * k));
+            h.write(copy.wrapping_add(4 * k), w);
+        }
+        let node = h.call_sym(
+            VBF_MAP_LOOKUP,
+            Conv::Thiscall(this.wrapping_add(4)),
+            &[copy],
+        );
+        if node == 0 {
+            return 0;
+        }
+        let entry = node.wrapping_add(0x20);
+        if entry == 0 { 0 } else { (entry & !0xff) | 1 }
+    }
+
+    /// A function-local static (`0x00cbaa78`, its guard bit 0 of
+    /// `0x00cbaa7c`) holding `Phyre_PClassLayoutInterface_vftable`, its
+    /// destructor registered with `atexit` (`0x00b03db0`).
+    pub const LAYOUT_STATIC: u32 = 0x00cb_aa78;
+    pub const LAYOUT_GUARD: u32 = 0x00cb_aa7c;
+    pub const LAYOUT_VTABLE: u32 = 0x00b1_3468;
+    pub const LAYOUT_DTOR: u32 = 0x00b0_3db0;
+    pub const ATEXIT: u32 = 0x0094_9207;
+
+    /// `0x0059e530()` (cdecl): the static layout interface, built on the
+    /// first call (guard bit set, the vtable stored, `atexit(dtor)`).
+    /// Returns its address.
+    pub fn layout_interface(h: &mut impl Host) -> u32 {
+        let guard = h.rebase(LAYOUT_GUARD);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let vt = h.rebase(LAYOUT_VTABLE);
+            h.write(h.rebase(LAYOUT_STATIC), vt);
+            let dtor = h.rebase(LAYOUT_DTOR);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        h.rebase(LAYOUT_STATIC)
+    }
+
+    /// `0x0061c2c0(this; n)` (thiscall, `ret 4`): the stream slots' setup.
+    pub const STREAM_SLOTS_INIT: u32 = 0x0061_c2c0;
+    /// `ADVAPI32!CryptAcquireContextA` and
+    /// `KERNEL32!InitializeCriticalSection` (stdcall).
+    pub const CRYPT_ACQUIRE_IAT: u32 = 0x00b0_c018;
+    pub const INIT_CRITICAL_SECTION_IAT: u32 = 0x00b0_c150;
+
+    /// `BigFileStream_ctor(this)` (thiscall): `+0x3c`/`+0x40` = 0,
+    /// `0x0061c2c0(this + 4; 0x1e)`, the five handles `+0x10..+0x20` and
+    /// `+0` = 0, `CryptAcquireContextA(this, 0, 0, PROV_RSA_FULL,
+    /// CRYPT_VERIFYCONTEXT)`, the critical section `+0x24` initialised;
+    /// its `eax`.
+    pub fn big_file_stream_ctor(h: &mut impl Host, this: u32) -> u32 {
+        let at = |off: u32| this.wrapping_add(off);
+        h.write(at(0x3c), 0u32);
+        h.write(at(0x40), 0u32);
+        h.call_sym(STREAM_SLOTS_INIT, Conv::Thiscall(at(4)), &[0x1e]);
+        for off in [0x10u32, 0x14, 0x18, 0x1c, 0x20, 0] {
+            h.write(at(off), 0u32);
+        }
+        import(
+            h,
+            CRYPT_ACQUIRE_IAT,
+            Conv::Stdcall,
+            &[this, 0, 0, 1, 0xf000_0000],
+        );
+        import(h, INIT_CRITICAL_SECTION_IAT, Conv::Stdcall, &[at(0x24)])
+    }
+
+    /// `operator new[]` (`0x006304c0`, cdecl),
+    /// `eh_vector_constructor_iterator(p, size, count, ctor, dtor)`
+    /// (stdcall), the stream slot's constructor `0x0061af20`,
+    /// `KERNEL32!CreateSemaphoreA` (stdcall).
+    pub const OPERATOR_NEW_ARRAY: u32 = 0x0063_04c0;
+    pub const EH_VECTOR_CTOR: u32 = 0x0094_966a;
+    pub const SLOT_CTOR: u32 = 0x0061_af20;
+    pub const CREATE_SEMAPHORE_IAT: u32 = 0x00b0_c11c;
+
+    /// `0x0061c2c0(this; n)` (thiscall, `ret 4`): the stream slots
+    /// rebuilt: `+4` = `n`; the old array `+8` (0x60-byte slots with a
+    /// count header) destroyed and freed when set; a new one of `n` slots
+    /// (`operator new[](n * 0x60 + 4)`, saturating to 0xffffffff on
+    /// overflow as the original's `seto`/`setb`; the count written, the
+    /// slots constructed; null when `new` fails) at `+8`; the old
+    /// semaphore `+0` closed and cleared when set, `+0` =
+    /// `CreateSemaphoreA(0, n, n, 0)`, its `eax` returned.
+    pub fn stream_slots_init(h: &mut impl Host, this: u32, n: u32) -> u32 {
+        h.write(this.wrapping_add(4), n);
+        let old: u32 = h.read(this.wrapping_add(8));
+        if old != 0 {
+            delete_vector(h, old, 0x60, SLOT_DTOR);
+        }
+        let n: u32 = h.read(this.wrapping_add(4));
+        let bytes = n
+            .checked_mul(0x60)
+            .and_then(|b| b.checked_add(4))
+            .unwrap_or(u32::MAX);
+        let block = h.call_sym(OPERATOR_NEW_ARRAY, Conv::Cdecl, &[bytes]);
+        let slots = if block == 0 {
+            0
+        } else {
+            h.write(block, n);
+            let ctor = h.rebase(SLOT_CTOR);
+            let dtor = h.rebase(SLOT_DTOR);
+            let first = block.wrapping_add(4);
+            h.call_sym(EH_VECTOR_CTOR, Conv::Stdcall, &[first, 0x60, n, ctor, dtor]);
+            first
+        };
+        h.write(this.wrapping_add(8), slots);
+        let sem: u32 = h.read(this);
+        if sem != 0 {
+            import(h, CLOSE_HANDLE_IAT, Conv::Stdcall, &[sem]);
+            h.write(this, 0u32);
+        }
+        let n: u32 = h.read(this.wrapping_add(4));
+        let s = import(h, CREATE_SEMAPHORE_IAT, Conv::Stdcall, &[0, n, n, 0]);
+        h.write(this, s);
+        s
+    }
+
+    /// `BigFileStream_createInstance()` (cdecl): the big-file stream
+    /// created once (`operator new(0x44)`, `+4`/`+8`/`+0xc` = 0,
+    /// `BigFileStream_ctor`; 0 when `new` fails) at
+    /// `BigFileStream_sBigFileStreamInstacne`. Returns the constructor's
+    /// `eax`, 0 when `new` fails, 0 when the stream exists (the
+    /// original's `eax` is the cookie's xor there, junk to its caller).
+    pub fn big_file_stream_create(h: &mut impl Host) -> u32 {
+        let cell = h.rebase(BIG_FILE_STREAM);
+        if h.read::<u32>(cell) != 0 {
+            return 0;
+        }
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x44]);
+        let r = if p == 0 {
+            0
+        } else {
+            for off in [4u32, 8, 0xc] {
+                h.write(p.wrapping_add(off), 0u32);
+            }
+            big_file_stream_ctor(h, p)
+        };
+        h.write(cell, p);
+        r
+    }
+
+    /// The key order of the VBF digest tree: `(+0x14 signed, +0x10
+    /// unsigned)`, then `(+0x1c signed, +0x18 unsigned)`.
+    fn digest_less(h: &impl Host, a: u32, b: u32) -> bool {
+        let key = |n: u32, off: u32| -> (i32, u32) {
+            (
+                h.read::<u32>(n.wrapping_add(off + 4)).cast_signed(),
+                h.read::<u32>(n.wrapping_add(off)),
+            )
+        };
+        (key(a, 0x10), key(a, 0x18)) < (key(b, 0x10), key(b, 0x18))
+    }
+
+    /// `0x0061d210(this; node)` (thiscall, `ret 4`): `node` linked into
+    /// the digest tree (`PRedBlackTree` layout: the head is the tree,
+    /// root `+0xc`; a node's children `+0`/`+4` (less/greater; the head
+    /// ends a branch), its parent and colour bit `+8`). The node's colour
+    /// bit is set first (`+8 += 1 - (+8 & 1)`) and both children point at
+    /// the head; walking from the root by [`digest_less`], an equal key
+    /// returns that node (the new one left half set up). Else the node is
+    /// hung under the last node visited (or as the root: parent `this +
+    /// 0xc`), `+8` = that parent plus the colour bit, and 0 is returned.
+    pub fn digest_tree_link(h: &mut impl Host, this: u32, node: u32) -> u32 {
+        let flags: u32 = h.read(node.wrapping_add(8));
+        let bit = u32::from(h.read::<u8>(node.wrapping_add(8)) & 1);
+        h.write(node.wrapping_add(8), flags.wrapping_add(1 - bit));
+        h.write(node, this);
+        h.write(node.wrapping_add(4), this);
+        let mut parent = this.wrapping_add(0xc);
+        let mut side = 0u32;
+        let mut cur: u32 = h.read(parent);
+        if cur != this {
+            loop {
+                parent = cur;
+                if digest_less(h, cur, node) {
+                    side = 1;
+                } else if digest_less(h, node, cur) {
+                    side = 0;
+                } else {
+                    return cur;
+                }
+                cur = h.read(cur.wrapping_add(4 * side));
+                if cur == this {
+                    break;
+                }
+            }
+        }
+        let bit = u32::from(h.read::<u8>(node.wrapping_add(8)) & 1);
+        h.write(node.wrapping_add(8), bit.wrapping_add(parent));
+        h.write(parent.wrapping_add(4 * side), node);
+        0
+    }
+
+    /// `Phyre_PFreeList_allocateNewBlock(this; size)`,
+    /// `Phyre_PFreeList_deallocate(this; p)` and
+    /// `Phyre_PRedBlackTree_postInsertFinalize(this; node)` (thiscall,
+    /// `ret 4`).
+    pub const FREE_LIST_NEW_BLOCK: u32 = 0x0049_c8d0;
+    pub const FREE_LIST_DEALLOCATE: u32 = 0x0049_c980;
+    pub const TREE_POST_INSERT: u32 = 0x0057_4980;
+
+    /// `Vbf_InsertEntry(this; &digest, &entry)` (thiscall, `ret 8`): a
+    /// node from the free list `+0x18` (a new block of `[+0x20]` when it
+    /// is empty; none: 0xe), self-linked, the 16-byte digest at `+0x10`,
+    /// the entry word at `+0x20`, linked ([`digest_tree_link`]); a
+    /// duplicate: the node back to the free list, 0x12; else the tree's
+    /// insert fix-up, 0.
+    pub fn vbf_insert_entry(h: &mut impl Host, this: u32, digest: u32, entry: u32) -> u32 {
+        let list = this.wrapping_add(0x18);
+        let mut node: u32 = h.read(list);
+        if node == 0 {
+            let size: u32 = h.read(this.wrapping_add(0x20));
+            h.call_sym(FREE_LIST_NEW_BLOCK, Conv::Thiscall(list), &[size]);
+            node = h.read(list);
+            if node == 0 {
+                return 0xe;
+            }
+        }
+        let next: u32 = h.read(node);
+        h.write(list, next);
+        for off in [0u32, 4, 8] {
+            h.write(node.wrapping_add(off), node);
+        }
+        for k in 0..4u32 {
+            let w: u32 = h.read(digest.wrapping_add(4 * k));
+            h.write(node.wrapping_add(0x10 + 4 * k), w);
+        }
+        let e: u32 = h.read(entry);
+        h.write(node.wrapping_add(0x20), e);
+        if digest_tree_link(h, this, node) != 0 {
+            h.call_sym(FREE_LIST_DEALLOCATE, Conv::Thiscall(list), &[node]);
+            return 0x12;
+        }
+        h.call_sym(TREE_POST_INSERT, Conv::Thiscall(this), &[node]);
+        0
+    }
 }

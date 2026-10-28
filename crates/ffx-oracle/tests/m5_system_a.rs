@@ -2419,6 +2419,256 @@ fn platform_arrays_and_init_match_the_original() {
     });
 }
 
+/// `StatsAndAchievements_Create`, the save manager's constructor
+/// `0x006f1980`, `0x0061d8e0`, `VbfStream_Open` and `iSyncInitialize`
+/// with their callees stubbed (`operator new` failing or not, the sync
+/// manager already there or not, the tree remove stub moving the front
+/// node, `size` 0 or not).
+#[test]
+fn platform_creation_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06f1_0018);
+        for case in 0..40 {
+            t.reset();
+            let object = if rng.chance(4) { 0 } else { t.zeros(0x40) };
+            t.stubs(&[
+                (pf::OPERATOR_NEW, false, 1, 0, object),
+                (pf::STATS_CTOR, true, 0, 0, 0x6464_0001),
+                (pf::TO_BLOCK, false, 0, 0, 0x6464_0002),
+                (pf::TO_CLEAR_BLOCK, false, 0, 0, 0x6464_0003),
+                (pf::FREE_LIST_RESET, true, 0, 0, 0x6464_0004),
+                (pf::SYNC_MANAGER_CTOR, true, 0, 0, 0x6464_0005),
+            ]);
+            t.stub_import(pf::STRNCPY_IAT, false, 3, 0, 0x6464_0006);
+            t.stub_import(pf::FOPEN_IAT, false, 2, 0, 0x6464_0007);
+            let what = format!("StatsAndAchievements_Create #{case} {object:#x}");
+            t.check(&what, 0x006f_1430, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::stats_create(m))
+            });
+            let this = t.alloc(&(0..0x400).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("0x006f1980 #{case}");
+            t.check(&what, 0x006f_1980, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::save_manager_ctor(m, this))
+            });
+            // the tree: remove(this; node) sets this+0xc = [node]
+            let log = t.stub_code(pf::TREE_REMOVE, true, 1, 1, 0);
+            let mut c = vec![
+                0x60, 0x8b, 0x44, 0x24, 0x24, 0x8b, 0x00, 0x89, 0x41, 0x0c, 0x61, 0xe9,
+            ];
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let remove = t.cave_code(&c);
+            t.jump(pf::TREE_REMOVE, remove);
+            let tree = t.zeros(0x30);
+            let end = if rng.chance(2) { tree } else { 0 };
+            let mut next = end;
+            for _ in 0..rng.below(4) {
+                next = t.words(&[next, 0, 0, 0]);
+            }
+            t.w32(tree + 0xc, next);
+            let what = format!("0x0061d8e0 #{case}");
+            t.check(&what, 0x0061_d8e0, Conv::Thiscall(tree), &[], |m| {
+                Out::U32(pf::tree_reset(m, tree))
+            });
+            let stream = t.alloc(&(0..0x10).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let (path, size) = (rng.next(), if rng.chance(2) { 0 } else { rng.next() });
+            let what = format!("VbfStream_Open #{case}");
+            t.check(
+                &what,
+                0x0061_acc0,
+                Conv::Thiscall(stream),
+                &[path, size],
+                |m| Out::U32(pf::vbf_stream_open(m, stream, path, size)),
+            );
+            let old = if rng.chance(3) { rng.next() } else { 0 };
+            t.g32(pf::SYNC_MANAGER, old);
+            let what = format!("iSyncInitialize #{case} old {old:#x}");
+            t.check(&what, 0x0067_a960, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::sync_initialize(m))
+            });
+        }
+    });
+}
+/// `0x006dafc0`, `Vbf_Contains` (a stubbed lookup: 0, a node, the node
+/// whose entry wraps to 0; the digest copy in the frame), `0x0059e530`
+/// (the guard set or not; `atexit` stubbed) and `BigFileStream_ctor`
+/// (its callees stubbed).
+#[test]
+fn platform_creation2_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06da_0019);
+        for case in 0..40 {
+            t.reset();
+            let object = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            let node = [0u32, 0x0012_3400, 0xffff_ffe0][rng.below(3) as usize];
+            t.stubs(&[
+                (pf::OPERATOR_NEW, false, 1, 0, object),
+                (pf::LOCALIZATION_CTOR, true, 0, 0, 0x6565_0001),
+                (pf::VBF_MAP_LOOKUP, true, 1, 1, node),
+                (pf::ATEXIT, false, 1, 0, 0x6565_0002),
+                (pf::STREAM_SLOTS_INIT, true, 1, 1, 0x6565_0003),
+            ]);
+            t.stub_import(pf::CRYPT_ACQUIRE_IAT, false, 5, 5, 1);
+            t.stub_import(pf::INIT_CRITICAL_SECTION_IAT, false, 1, 1, 0x6565_0004);
+            let old = if rng.chance(3) { rng.next() } else { 0 };
+            t.g32(pf::LOCALIZATION_MANAGER, old);
+            let what = format!("0x006dafc0 #{case} old {old:#x} new {object:#x}");
+            t.check(&what, 0x006d_afc0, Conv::Cdecl, &[], |m| {
+                let r = pf::localization_create(m);
+                // junk (the cookie's xor) when the manager exists
+                if old == 0 { Out::U32(r) } else { Out::None }
+            });
+            let digest = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let this = t.zeros(0x20);
+            let what = format!("Vbf_Contains #{case} node {node:#x}");
+            t.check_framed(
+                &what,
+                0x0061_dec0,
+                Conv::Thiscall(this),
+                &[digest],
+                pf::CONTAINS_FRAME,
+                |m, ebp| Out::U32(pf::vbf_contains(m, ebp, this, digest)),
+            );
+            t.g32(pf::LAYOUT_GUARD, rng.next());
+            let what = format!("0x0059e530 #{case}");
+            t.check(&what, 0x0059_e530, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::layout_interface(m))
+            });
+            let s = t.alloc(&(0..0x60).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("BigFileStream_ctor #{case}");
+            t.check(&what, 0x0061_bdd0, Conv::Thiscall(s), &[], |m| {
+                Out::U32(pf::big_file_stream_ctor(m, s))
+            });
+        }
+    });
+}
+/// `0x0061c2c0(this; n)` and `BigFileStream_createInstance` with their
+/// callees stubbed: an old slot array or none, an old semaphore or none,
+/// `operator new[]` failing or not, `n` 0, small and overflowing (the
+/// saturated size), the stream there already or not, `operator new`
+/// failing or not.
+#[test]
+fn platform_stream_slots_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061c_001a);
+        for case in 0..40 {
+            t.reset();
+            let block = if rng.chance(4) { 0 } else { t.zeros(0x40) };
+            let object = if rng.chance(4) {
+                0
+            } else {
+                t.alloc(&(0..0x60).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>())
+            };
+            t.stubs(&[
+                (pf::OPERATOR_DELETE_ARRAY, false, 1, 0, 0x6666_0001),
+                (pf::EH_VECTOR_DTOR, false, 4, 4, 0x6666_0002),
+                (pf::OPERATOR_NEW_ARRAY, false, 1, 0, block),
+                (pf::EH_VECTOR_CTOR, false, 5, 5, 0x6666_0003),
+                (pf::OPERATOR_NEW, false, 1, 0, object),
+            ]);
+            t.stub_import(pf::CLOSE_HANDLE_IAT, false, 1, 1, 1);
+            t.stub_import(pf::CREATE_SEMAPHORE_IAT, false, 4, 4, 0x6666_0005);
+            t.stub_import(pf::CRYPT_ACQUIRE_IAT, false, 5, 5, 1);
+            t.stub_import(pf::INIT_CRITICAL_SECTION_IAT, false, 1, 1, 0x6666_0006);
+            let old = if rng.chance(3) {
+                0
+            } else {
+                t.words(&[2, 0, 0]) + 4
+            };
+            let sem = if rng.chance(3) { 0 } else { rng.next() };
+            let this = t.words(&[sem, rng.next(), old]);
+            let n = [0u32, 1, 0x1e, 0x02aa_aaab, 0xffff_ffff][rng.below(5) as usize];
+            let what = format!("0x0061c2c0 #{case} n {n:#x} block {block:#x}");
+            t.check(&what, 0x0061_c2c0, Conv::Thiscall(this), &[n], |m| {
+                Out::U32(pf::stream_slots_init(m, this, n))
+            });
+            t.stubs(&[(pf::STREAM_SLOTS_INIT, true, 1, 1, 0x6666_0004)]);
+            let existing = if rng.chance(3) { rng.next() } else { 0 };
+            t.g32(pf::BIG_FILE_STREAM, existing);
+            let what = format!(
+                "BigFileStream_createInstance #{case} existing {existing:#x} new {object:#x}"
+            );
+            t.check(&what, 0x0061_b590, Conv::Cdecl, &[], |m| {
+                let r = pf::big_file_stream_create(m);
+                if existing == 0 {
+                    Out::U32(r)
+                } else {
+                    Out::None
+                }
+            });
+        }
+    });
+}
+/// The VBF digest tree: `0x0061d210` grows one tree in both oracles, a
+/// node at a time (each insert compared), keys drawn from small sets so
+/// that both halves compare signed and unsigned words, ties fall to the
+/// second half and duplicates come back. Then `Vbf_InsertEntry` with the
+/// free list's methods and the insert fix-up stubbed (a free node, an
+/// empty list refilled or not) on the same kind of tree.
+#[test]
+fn platform_digest_tree_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061d_001b);
+        let word =
+            |rng: &mut Rng| [0u32, 1, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff][rng.below(5) as usize];
+        for round in 0..16 {
+            t.reset();
+            let this = t.zeros(0x30);
+            t.w32(this + 0xc, this);
+            for k in 0..30 {
+                let mut w: Vec<u32> = (0..9).map(|_| rng.next()).collect();
+                for x in &mut w[4..8] {
+                    *x = word(&mut rng);
+                }
+                let node = t.words(&w);
+                let what = format!("0x0061d210 round {round} #{k}");
+                t.check(&what, 0x0061_d210, Conv::Thiscall(this), &[node], |m| {
+                    Out::U32(pf::digest_tree_link(m, this, node))
+                });
+            }
+            // Vbf_InsertEntry on the grown tree
+            let free = if rng.chance(3) {
+                0
+            } else {
+                t.alloc(&(0..0x30).map(|_| rng.next() as u8).collect::<Vec<_>>())
+            };
+            t.w32(this + 0x18, free);
+            t.w32(this + 0x20, 0x30);
+            let refill = if rng.chance(2) { 0 } else { t.zeros(0x30) };
+            // allocateNewBlock(this; size): [this] = refill, then the log
+            let log = t.stub_code(pf::FREE_LIST_NEW_BLOCK, true, 1, 1, 0);
+            let mut c = vec![0xc7, 0x01];
+            c.extend(refill.to_le_bytes()); // mov dword [ecx], refill
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let new_block = t.cave_code(&c);
+            t.jump(pf::FREE_LIST_NEW_BLOCK, new_block);
+            t.stubs(&[
+                (pf::FREE_LIST_DEALLOCATE, true, 1, 1, 0x6767_0001),
+                (pf::TREE_POST_INSERT, true, 1, 1, 0x6767_0002),
+            ]);
+            // half the time an existing node's key: the duplicate path
+            let root = t.r32(this + 0xc);
+            let key: Vec<u32> = if root != this && rng.chance(2) {
+                (0..4).map(|k| t.r32(root + 0x10 + 4 * k)).collect()
+            } else {
+                (0..4).map(|_| word(&mut rng)).collect()
+            };
+            let digest = t.words(&key);
+            let entry = t.words(&[rng.next()]);
+            let what = format!("Vbf_InsertEntry round {round} free {free:#x} refill {refill:#x}");
+            t.check(
+                &what,
+                0x0061_de30,
+                Conv::Thiscall(this),
+                &[digest, entry],
+                |m| Out::U32(pf::vbf_insert_entry(m, this, digest, entry)),
+            );
+        }
+    });
+}
+
 // ---- the save/load screen ----
 
 /// Random machine globals: state, timer, list position, counts, choice,

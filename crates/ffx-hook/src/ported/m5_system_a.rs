@@ -586,6 +586,59 @@ ported! {
     SaveDataManager_create_006f1c10 @ 0x006f_1c10 => extern "C" fn save_manager_create() -> u32 {
         pf::save_manager_create(&mut mem())
     }
+    /// `StatsAndAchievements_Create()`.
+    StatsAndAchievements_Create @ 0x006f_1430 => extern "C" fn stats_create() -> u32 {
+        pf::stats_create(&mut mem())
+    }
+    /// `(this)`: the save manager's constructor.
+    SaveDataManager_ctor_006f1980 @ 0x006f_1980 => extern "thiscall" fn save_manager_ctor(this: u32) -> u32 {
+        pf::save_manager_ctor(&mut mem(), this)
+    }
+    /// `(this)`.
+    PRedBlackTree_reset_0061d8e0 @ 0x0061_d8e0 => extern "thiscall" fn tree_reset(this: u32) -> u32 {
+        pf::tree_reset(&mut mem(), this)
+    }
+    /// `(this; path, size)`.
+    VbfStream_Open @ 0x0061_acc0 => extern "thiscall" fn vbf_stream_open(this: u32, path: u32, size: u32) -> u32 {
+        pf::vbf_stream_open(&mut mem(), this, path, size)
+    }
+    /// `iSyncInitialize()`.
+    iSyncInitialize @ 0x0067_a960 => extern "C" fn sync_initialize() -> u32 {
+        pf::sync_initialize(&mut mem())
+    }
+    /// `()`.
+    LocalizationManager_create_006dafc0 @ 0x006d_afc0 => extern "C" fn localization_create() -> u32 {
+        pf::localization_create(&mut mem())
+    }
+    /// `(this; &digest)`: the copy at `ebp - 0x10`.
+    Vbf_Contains @ 0x0061_dec0 => extern "thiscall" fn vbf_contains(this: u32, digest: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::CONTAINS_FRAME / 4) as usize }>::new();
+        pf::vbf_contains(&mut mem(), f.at() + pf::CONTAINS_FRAME, this, digest)
+    }
+    /// `()`.
+    PClassLayoutInterface_static_0059e530 @ 0x0059_e530 => extern "C" fn layout_interface() -> u32 {
+        pf::layout_interface(&mut mem())
+    }
+    /// `(this)`.
+    BigFileStream_ctor @ 0x0061_bdd0 => extern "thiscall" fn big_file_stream_ctor(this: u32) -> u32 {
+        pf::big_file_stream_ctor(&mut mem(), this)
+    }
+    /// `(this; n)`.
+    BigFileStream_initSlots_0061c2c0 @ 0x0061_c2c0 => extern "thiscall" fn stream_slots_init(this: u32, n: u32) -> u32 {
+        pf::stream_slots_init(&mut mem(), this, n)
+    }
+    /// `BigFileStream_createInstance()`.
+    BigFileStream_createInstance @ 0x0061_b590 => extern "C" fn big_file_stream_create() -> u32 {
+        pf::big_file_stream_create(&mut mem())
+    }
+    /// `(this; node)`.
+    VbfTree_link_0061d210 @ 0x0061_d210 => extern "thiscall" fn digest_tree_link(this: u32, node: u32) -> u32 {
+        pf::digest_tree_link(&mut mem(), this, node)
+    }
+    /// `(this; &digest, &entry)`.
+    Vbf_InsertEntry @ 0x0061_de30 => extern "thiscall" fn vbf_insert_entry(this: u32, digest: u32, entry: u32) -> u32 {
+        pf::vbf_insert_entry(&mut mem(), this, digest, entry)
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)
