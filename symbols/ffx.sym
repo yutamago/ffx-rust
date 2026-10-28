@@ -17859,6 +17859,51 @@
 0x00a921b0 function vorbis_block_init # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00a92460 function vorbis_synthesis # (platform census 2026-10-25, docs/formats/platform.md; movie); M5 movie: hooked onto ffx-movie (ffx_movie::api/mkv, ported/movie.rs)
 0x00a9d680 function mdct_init # libVorbis mdct.c, fastcall(lookup, n): M_PI is os.h's float 3.1415926536f, so each angle is a float product (M_PI/n)*(4i), then cos/sin in double, stored as float (0x00a9d754..0x00a9d8af) (m5-movie; movie)
+0x00aecc50 function StaticInit_PPhysicsCallbackData_00aecc50 # class descriptor "PPhysicsCallbackData" (cd_desc_set8): constructor, buffers, set8; atexit
+0x00aecd10 function StaticInit_PPhysicsCapsule_00aecd10 # class descriptor "PPhysicsCapsule" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aecdd0 function StaticInit_PPhysicsCapsuleBase_00aecdd0 # class descriptor "PPhysicsCapsuleBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aece90 function StaticInit_PPhysicsCapsuleBullet_00aece90 # class descriptor "PPhysicsCapsuleBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aecf50 function StaticInit_CtorVt_00aecf50 # no-argument constructor 0x005d_d540 on a global, flags &= ~2, its vtable, atexit
+0x00aecf80 function StaticInit_PPhysicsCharacterController_00aecf80 # class descriptor "PPhysicsCharacterController" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed040 function StaticInit_CtorVt_00aed040 # no-argument constructor 0x005d_d680 on a global, flags &= ~2, its vtable, atexit
+0x00aed070 function StaticInit_PPhysicsCharacterControllerBullet_00aed070 # class descriptor "PPhysicsCharacterControllerBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed130 function StaticInit_PPhysicsCylinder_00aed130 # class descriptor "PPhysicsCylinder" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed1f0 function StaticInit_PPhysicsCylinderBase_00aed1f0 # class descriptor "PPhysicsCylinderBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed2b0 function StaticInit_PPhysicsCylinderBullet_00aed2b0 # class descriptor "PPhysicsCylinderBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed370 function StaticInit_PPhysicsInterface_00aed370 # class descriptor "PPhysicsInterface" (cd_const_keep): constructor, buffers, keep; atexit
+0x00aed420 function StaticInit_PPhysicsInterfaceBase_00aed420 # class descriptor "PPhysicsInterfaceBase" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed4e0 function StaticInit_PPhysicsInterfaceBullet_00aed4e0 # class descriptor "PPhysicsInterfaceBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed5a0 function StaticInit_PPhysicsMaterial_00aed5a0 # class descriptor "PPhysicsMaterial" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed660 function StaticInit_PPhysicsMesh_00aed660 # class descriptor "PPhysicsMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed720 function StaticInit_PPhysicsMeshBase_00aed720 # class descriptor "PPhysicsMeshBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed7e0 function StaticInit_PPhysicsMeshBullet_00aed7e0 # class descriptor "PPhysicsMeshBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed8a0 function StaticInit_PPhysicsModel_00aed8a0 # class descriptor "PPhysicsModel" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed960 function StaticInit_PPhysicsPlane_00aed960 # class descriptor "PPhysicsPlane" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aeda20 function StaticInit_PPhysicsPlaneBase_00aeda20 # class descriptor "PPhysicsPlaneBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedae0 function StaticInit_PPhysicsPlaneBullet_00aedae0 # class descriptor "PPhysicsPlaneBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedba0 function StaticInit_PPhysicsRigidBody_00aedba0 # class descriptor "PPhysicsRigidBody" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedc60 function StaticInit_CtorVt_00aedc60 # no-argument constructor 0x005d_e070 on a global, flags &= ~2, its vtable, atexit
+0x00aedc90 function StaticInit_PPhysicsRigidBodyBullet_00aedc90 # class descriptor "PPhysicsRigidBodyBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedd50 function StaticInit_PPhysicsShape_00aedd50 # class descriptor "PPhysicsShape" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aede10 function StaticInit_PPhysicsShapeBase_00aede10 # class descriptor "PPhysicsShapeBase" (cd_desc_keep): constructor, buffers, keep; atexit
+0x00aedec0 function StaticInit_PPhysicsShapeBullet_00aedec0 # class descriptor "PPhysicsShapeBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedfa0 function StaticInit_PPhysicsSphere_00aedfa0 # class descriptor "PPhysicsSphere" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee060 function StaticInit_PPhysicsSphereBase_00aee060 # class descriptor "PPhysicsSphereBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee120 function StaticInit_PPhysicsSphereBullet_00aee120 # class descriptor "PPhysicsSphereBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee1e0 function StaticInit_PPhysicsTaperedCapsule_00aee1e0 # class descriptor "PPhysicsTaperedCapsule" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee2a0 function StaticInit_PPhysicsTaperedCylinder_00aee2a0 # class descriptor "PPhysicsTaperedCylinder" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee360 function StaticInit_PPhysicsWorld_00aee360 # class descriptor "PPhysicsWorld" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee420 function StaticInit_PPhysicsWorldBase_00aee420 # class descriptor "PPhysicsWorldBase" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee4e0 function StaticInit_PPhysicsWorldBullet_00aee4e0 # class descriptor "PPhysicsWorldBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee5a0 function StaticInit_PRaycastResult_00aee5a0 # class descriptor "PRaycastResult" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee6b0 function StaticInit_Atexit_00aee6b0 # only registers its destructor with atexit
+0x00aee6c0 function StaticInit_PAsyncProcessHeader_00aee6c0 # class descriptor "PAsyncProcessHeader" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee780 function StaticInit_PClassCallableMethodScript_00aee780 # class descriptor "PClassCallableMethodScript" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aee860 function StaticInit_Ctor_00aee860 # no-argument constructor 0x0061_f1d0 on a global, then atexit
+0x00aee880 function StaticInit_PApplicationViewport_00aee880 # class descriptor "PApplicationViewport" (cd_desc_set8): constructor, buffers, set8; atexit
+0x00aee940 function StaticInit_CtorVt_00aee940 # no-argument constructor 0x0061_f310 on a global, flags &= ~2, its vtable, atexit
+0x00aee970 function StaticInit_Atexit_00aee970 # only registers its destructor with atexit
+0x00aeea80 function StaticInit_Ctor_00aeea80 # no-argument constructor 0x0063_0f40 on a global, then atexit
 0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b072b0 label ShadowManager_tileRects_atexit_00b072b0 # the atexit handler ShadowManager_renderCharacterTiles_006caee0 registers for its static rectangle list 0x00cdec88 (guard bit 0 of 0x00cdec90); name ours
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
