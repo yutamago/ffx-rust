@@ -2669,6 +2669,125 @@ fn platform_digest_tree_matches_the_original() {
     });
 }
 
+/// Fourteen small glue functions (sort predicates, fixup record setters,
+/// deleting destructors, a string length helper, the enum lookup, the
+/// `VFile` close, the stream slot constructor, the BSTR free, a forwarder,
+/// a flag setter, the pad enumeration callback) with their callees
+/// stubbed: words equal, above and below; flags with and without the bit;
+/// lookups found or not; every device type around the three taken.
+#[test]
+#[allow(clippy::too_many_lines)] // fourteen functions, one case setup
+fn platform_small_glue_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x060a_001c);
+        for case in 0..60 {
+            t.reset();
+            t.stubs(&[
+                (pf::READ_LEB128, false, 1, 0, rng.next()),
+                (pf::READ_RECORD, true, 2, 2, 0x6868_0001),
+                (pf::DTOR_5A0270, true, 0, 0, 0x6868_0002),
+                (pf::PHYRE_FREE, false, 1, 0, 0x6868_0003),
+                (
+                    pf::TYPE_ENUM_FIND,
+                    false,
+                    1,
+                    0,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                ),
+                (pf::RELEASE_VFILE, true, 1, 1, 0x6868_0004),
+                (pf::SLOT_MEMBER_CTOR, true, 0, 0, 0x6868_0005),
+                (pf::CALL_61D030, true, 3, 3, 0x6868_0006),
+                (pf::ADD_PAD_DEVICE, false, 1, 0, 0x6868_0007),
+            ]);
+            t.stub_import(pf::OLEAUT_FREE_IAT, false, 1, 1, 0x6868_0008);
+            let small = |rng: &mut Rng| [0u32, 1, 2, 0xffff_ffff][rng.below(4) as usize];
+            let a = t.words(&[rng.next(), small(&mut rng)]);
+            let b = t.words(&[rng.next(), small(&mut rng)]);
+            for sym in [0x0060_add0u32, 0x0060_ae00] {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[a, b], |m| {
+                    Out::U32(pf::word4_greater(m, a, b))
+                });
+            }
+            let rec = t.zeros(0x10);
+            let (object, cursor, flags) = (rng.next(), rng.next(), rng.next());
+            let what = format!("Fixup_SetArrayObjectAndRead #{case} flags {flags:#x}");
+            t.check(
+                &what,
+                0x0060_ae50,
+                Conv::Cdecl,
+                &[rec, object, cursor, flags],
+                |m| Out::U32(pf::set_array_object_and_read(m, rec, object, cursor, flags)),
+            );
+            let rec = t.zeros(0x10);
+            let what = format!("Fixup_SetObjectAndRead #{case}");
+            t.check(
+                &what,
+                0x0060_ae90,
+                Conv::Cdecl,
+                &[rec, object, cursor, flags],
+                |m| Out::U32(pf::set_object_and_read(m, rec, object, cursor, flags)),
+            );
+            let this = t.zeros(0x60);
+            let f = rng.next();
+            let what = format!("0x0060e8a0 #{case}");
+            t.check(&what, 0x0060_e8a0, Conv::Thiscall(this), &[f], |m| {
+                Out::U32(pf::deleting_dtor_60e8a0(m, this, f))
+            });
+            let what = format!("0x0061a740 #{case}");
+            t.check(&what, 0x0061_a740, Conv::Thiscall(this), &[f], |m| {
+                Out::U32(pf::deleting_dtor_61a740(m, this, f))
+            });
+            let mut text: Vec<u8> = (0..rng.below(20))
+                .map(|_| 1 + rng.below(255) as u8)
+                .collect();
+            text.push(0);
+            let s = t.alloc(&text);
+            let sp = t.words(&[s]);
+            let (out, len) = (t.zeros(4), t.zeros(4));
+            let what = format!("0x0060e8e0 #{case}");
+            t.check(&what, 0x0060_e8e0, Conv::Cdecl, &[sp, out, len], |m| {
+                Out::U32(pf::string_with_length(m, sp, out, len))
+            });
+            let name = rng.next();
+            let what = format!("0x0060e9b0 #{case}");
+            t.check(&what, 0x0060_e9b0, Conv::Cdecl, &[out, name], |m| {
+                Out::U32(pf::find_enum(m, out, name))
+            });
+            let vfile = t.words(&[rng.next(), rng.next(), rng.next()]);
+            let what = format!("VFile_fileClose #{case}");
+            t.check(&what, 0x0061_aa50, Conv::Thiscall(vfile), &[], |m| {
+                Out::U32(pf::vfile_close(m, vfile))
+            });
+            let this = t.alloc(&(0..0x60).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>());
+            let what = format!("0x0061af20 #{case}");
+            t.check(&what, 0x0061_af20, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::slot_ctor(m, this))
+            });
+            let what = format!("0x0061b0b0 #{case}");
+            t.check(&what, 0x0061_b0b0, Conv::Thiscall(vfile), &[], |m| {
+                Out::U32(pf::free_bstr(m, vfile))
+            });
+            let (x, y, z, w) = (rng.next(), small(&mut rng), rng.next(), rng.next());
+            let what = format!("0x0061d0b0 #{case}");
+            t.check(&what, 0x0061_d0b0, Conv::Cdecl, &[x, y, z, w], |m| {
+                Out::U32(pf::forward_61d030(m, x, y, z, w))
+            });
+            let what = format!("0x00624d30 #{case}");
+            t.check(&what, 0x0062_4d30, Conv::Cdecl, &[this], |m| {
+                Out::U32(pf::set_flag39(m, this))
+            });
+            let kind = [0x13u8, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x94][rng.below(8) as usize];
+            t.write(this + 0x24, &[kind]);
+            let ctx = rng.next();
+            let what = format!("Input_EnumPadsCallback #{case} kind {kind:#x}");
+            t.check(&what, 0x0062_4d40, Conv::Stdcall, &[this, ctx], |m| {
+                Out::U32(pf::enum_pads_callback(m, this))
+            });
+        }
+    });
+}
+
 // ---- the save/load screen ----
 
 /// Random machine globals: state, timer, list position, counts, choice,

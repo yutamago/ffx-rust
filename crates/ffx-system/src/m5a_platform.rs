@@ -1834,4 +1834,167 @@ pub mod bridge {
         h.call_sym(TREE_POST_INSERT, Conv::Thiscall(this), &[node]);
         0
     }
+
+    /// `0x0060add0(a, b)` / `0x0060ae00(a, b)` (cdecl, two copies): a sort
+    /// predicate, 1 when `b + 4` is above `a + 4` (unsigned words), else 0.
+    pub fn word4_greater(h: &mut impl Host, first: u32, second: u32) -> u32 {
+        let x: u32 = h.read(first.wrapping_add(4));
+        let y: u32 = h.read(second.wrapping_add(4));
+        u32::from(y > x)
+    }
+
+    /// `Fixup_ReadLeb128(cursor)` (cdecl) and `Fixup_ReadRecord(record;
+    /// cursor, flags)` (thiscall, `ret 8`).
+    pub const READ_LEB128: u32 = 0x0060_ac00;
+    pub const READ_RECORD: u32 = 0x0060_e730;
+
+    /// `Fixup_SetArrayObjectAndRead(rec, object, cursor, flags)` (cdecl):
+    /// `+4` = `object`; unless `flags & 8`, `+8` = a LEB128 from `cursor`;
+    /// `+0xc` = the next one. Returns the last read.
+    pub fn set_array_object_and_read(
+        h: &mut impl Host,
+        rec: u32,
+        object: u32,
+        cursor: u32,
+        flags: u32,
+    ) -> u32 {
+        h.write(rec.wrapping_add(4), object);
+        if flags & 8 == 0 {
+            let v = h.call_sym(READ_LEB128, Conv::Cdecl, &[cursor]);
+            h.write(rec.wrapping_add(8), v);
+        }
+        let v = h.call_sym(READ_LEB128, Conv::Cdecl, &[cursor]);
+        h.write(rec.wrapping_add(0xc), v);
+        v
+    }
+
+    /// `Fixup_SetObjectAndRead(rec, object, cursor, flags)` (cdecl): `+4` =
+    /// `object`, then `Fixup_ReadRecord(rec; cursor, flags)`'s `eax`.
+    pub fn set_object_and_read(
+        h: &mut impl Host,
+        rec: u32,
+        object: u32,
+        cursor: u32,
+        flags: u32,
+    ) -> u32 {
+        h.write(rec.wrapping_add(4), object);
+        h.call_sym(READ_RECORD, Conv::Thiscall(rec), &[cursor, flags])
+    }
+
+    /// The destructor `0x005a0270` (thiscall) whose deleting form is
+    /// `0x0060e8a0`.
+    pub const DTOR_5A0270: u32 = 0x005a_0270;
+
+    /// `0x0060e8a0(this; flags)` (thiscall, `ret 4`): a deleting
+    /// destructor: `0x005a0270`, then `PhyreFree(this)` when `flags & 1`.
+    /// Returns `this`.
+    pub fn deleting_dtor_60e8a0(h: &mut impl Host, this: u32, flags: u32) -> u32 {
+        h.call_sym(DTOR_5A0270, Conv::Thiscall(this), &[]);
+        if flags & 1 != 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[this]);
+        }
+        this
+    }
+
+    /// `0x0060e8e0(&s, &out, &len)` (cdecl): `*out` = `*s`, `*len` =
+    /// `strlen(*s) + 1`. Returns 0.
+    pub fn string_with_length(h: &mut impl Host, sp: u32, out: u32, len: u32) -> u32 {
+        let s: u32 = h.read(sp);
+        let mut n = 0u32;
+        while h.read::<u8>(s.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        h.write(len, n.wrapping_add(1));
+        h.write(out, s);
+        0
+    }
+
+    /// `Phyre_PTypeEnum_find_005787d0(name)` (cdecl).
+    pub const TYPE_ENUM_FIND: u32 = 0x0057_87d0;
+
+    /// `0x0060e9b0(out, name)` (cdecl): `*out` = the enum type named
+    /// `name`; 0 when found, else 0x13.
+    pub fn find_enum(h: &mut impl Host, out: u32, name: u32) -> u32 {
+        let e = h.call_sym(TYPE_ENUM_FIND, Conv::Cdecl, &[name]);
+        h.write(out, e);
+        if e == 0 { 0x13 } else { 0 }
+    }
+
+    /// The vtable `0x0061a740` stores.
+    pub const VTABLE_B3F674: u32 = 0x00b3_f674;
+
+    /// `0x0061a740(this; flags)` (thiscall, `ret 4`): a deleting
+    /// destructor of a base without members: the vtable `0x00b3f674`,
+    /// then `PhyreFree(this)` when `flags & 1`. Returns `this`.
+    pub fn deleting_dtor_61a740(h: &mut impl Host, this: u32, flags: u32) -> u32 {
+        let vt = h.rebase(VTABLE_B3F674);
+        h.write(this, vt);
+        if flags & 1 != 0 {
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[this]);
+        }
+        this
+    }
+
+    /// `BigFileHandle_releaseVFile(this; vfile)` (thiscall, `ret 4`).
+    pub const RELEASE_VFILE: u32 = 0x0061_df70;
+
+    /// `VFile_fileClose(this)` (thiscall): `BigFileHandle_releaseVFile(
+    /// [this + 8]; this)`; its `eax`.
+    pub fn vfile_close(h: &mut impl Host, this: u32) -> u32 {
+        let handle: u32 = h.read(this.wrapping_add(8));
+        h.call_sym(RELEASE_VFILE, Conv::Thiscall(handle), &[this])
+    }
+
+    /// The stream slot's member constructor `0x0061add0` (thiscall).
+    pub const SLOT_MEMBER_CTOR: u32 = 0x0061_add0;
+
+    /// `0x0061af20(this)` (thiscall, the stream slot's constructor):
+    /// `0x0061add0`, then `+0x58` = 0. Returns `this`.
+    pub fn slot_ctor(h: &mut impl Host, this: u32) -> u32 {
+        h.call_sym(SLOT_MEMBER_CTOR, Conv::Thiscall(this), &[]);
+        h.write(this.wrapping_add(0x58), 0u32);
+        this
+    }
+
+    /// `OLEAUT32` ordinal import `0x00b0c61c` (stdcall, one word:
+    /// `SysFreeString`'s slot).
+    pub const OLEAUT_FREE_IAT: u32 = 0x00b0_c61c;
+
+    /// `0x0061b0b0(this)` (thiscall): the import at `0x00b0c61c` on
+    /// `[this]`; its `eax`.
+    pub fn free_bstr(h: &mut impl Host, this: u32) -> u32 {
+        let s: u32 = h.read(this);
+        import(h, OLEAUT_FREE_IAT, Conv::Stdcall, &[s])
+    }
+
+    /// `0x0061d030(this; a, b, c)` (thiscall, `ret 0xc`).
+    pub const CALL_61D030: u32 = 0x0061_d030;
+
+    /// `0x0061d0b0(this, a, b, c)` (cdecl): `0x0061d030(this; a, a ? b :
+    /// 0, c)`; its `eax`.
+    pub fn forward_61d030(h: &mut impl Host, this: u32, a: u32, b: u32, c: u32) -> u32 {
+        let sel = if a == 0 { 0 } else { b };
+        h.call_sym(CALL_61D030, Conv::Thiscall(this), &[a, sel, c])
+    }
+
+    /// `0x00624d30(p)` (cdecl): byte `+0x39` = 1; 0.
+    pub fn set_flag39(h: &mut impl Host, p: u32) -> u32 {
+        h.write(p.wrapping_add(0x39), 1u8);
+        0
+    }
+
+    /// `Input_AddPadDevice(instance)` (cdecl).
+    pub const ADD_PAD_DEVICE: u32 = 0x0062_40e0;
+
+    /// `Input_EnumPadsCallback(instance, ctx)` (stdcall, `ret 8`, a
+    /// `DirectInput` enumeration callback): devices of type byte `+0x24`
+    /// 0x14, 0x15 or 0x18 go to `Input_AddPadDevice`; returns 1
+    /// (`DIENUM_CONTINUE`).
+    pub fn enum_pads_callback(h: &mut impl Host, instance: u32) -> u32 {
+        let kind: u8 = h.read(instance.wrapping_add(0x24));
+        if matches!(kind, 0x14 | 0x15 | 0x18) {
+            h.call_sym(ADD_PAD_DEVICE, Conv::Cdecl, &[instance]);
+        }
+        1
+    }
 }

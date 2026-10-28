@@ -639,6 +639,63 @@ ported! {
     Vbf_InsertEntry @ 0x0061_de30 => extern "thiscall" fn vbf_insert_entry(this: u32, digest: u32, entry: u32) -> u32 {
         pf::vbf_insert_entry(&mut mem(), this, digest, entry)
     }
+    /// `(a, b)`.
+    Word4Greater_0060add0 @ 0x0060_add0 => extern "C" fn word4_greater_add0(a: u32, b: u32) -> u32 {
+        pf::word4_greater(&mut mem(), a, b)
+    }
+    /// `(a, b)`: a copy of `0x0060add0`.
+    Word4Greater_0060ae00 @ 0x0060_ae00 => extern "C" fn word4_greater_ae00(a: u32, b: u32) -> u32 {
+        pf::word4_greater(&mut mem(), a, b)
+    }
+    /// `(rec, object, cursor, flags)`.
+    Fixup_SetArrayObjectAndRead @ 0x0060_ae50 => extern "C" fn set_array_object_and_read(rec: u32, object: u32, cursor: u32, flags: u32) -> u32 {
+        pf::set_array_object_and_read(&mut mem(), rec, object, cursor, flags)
+    }
+    /// `(rec, object, cursor, flags)`.
+    Fixup_SetObjectAndRead @ 0x0060_ae90 => extern "C" fn set_object_and_read(rec: u32, object: u32, cursor: u32, flags: u32) -> u32 {
+        pf::set_object_and_read(&mut mem(), rec, object, cursor, flags)
+    }
+    /// `(this; flags)`.
+    DeletingDtor_0060e8a0 @ 0x0060_e8a0 => extern "thiscall" fn deleting_dtor_60e8a0(this: u32, flags: u32) -> u32 {
+        pf::deleting_dtor_60e8a0(&mut mem(), this, flags)
+    }
+    /// `(&s, &out, &len)`.
+    StringWithLength_0060e8e0 @ 0x0060_e8e0 => extern "C" fn string_with_length(sp: u32, out: u32, len: u32) -> u32 {
+        pf::string_with_length(&mut mem(), sp, out, len)
+    }
+    /// `(out, name)`.
+    FindEnum_0060e9b0 @ 0x0060_e9b0 => extern "C" fn find_enum(out: u32, name: u32) -> u32 {
+        pf::find_enum(&mut mem(), out, name)
+    }
+    /// `(this; flags)`.
+    DeletingDtor_0061a740 @ 0x0061_a740 => extern "thiscall" fn deleting_dtor_61a740(this: u32, flags: u32) -> u32 {
+        pf::deleting_dtor_61a740(&mut mem(), this, flags)
+    }
+    /// `(this)`.
+    VFile_fileClose @ 0x0061_aa50 => extern "thiscall" fn vfile_close(this: u32) -> u32 {
+        pf::vfile_close(&mut mem(), this)
+    }
+    /// `(this)`.
+    StreamSlot_ctor_0061af20 @ 0x0061_af20 => extern "thiscall" fn slot_ctor(this: u32) -> u32 {
+        pf::slot_ctor(&mut mem(), this)
+    }
+    /// `(this)`.
+    FreeBstr_0061b0b0 @ 0x0061_b0b0 => extern "thiscall" fn free_bstr(this: u32) -> u32 {
+        pf::free_bstr(&mut mem(), this)
+    }
+    /// `(this, a, b, c)`.
+    Forward_0061d0b0 @ 0x0061_d0b0 => extern "C" fn forward_61d030(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        pf::forward_61d030(&mut mem(), this, a, b, c)
+    }
+    /// `(p)`.
+    SetFlag39_00624d30 @ 0x0062_4d30 => extern "C" fn set_flag39(p: u32) -> u32 {
+        pf::set_flag39(&mut mem(), p)
+    }
+    /// `(instance, ctx)`.
+    Input_EnumPadsCallback @ 0x0062_4d40 => extern "stdcall" fn enum_pads_callback(instance: u32, ctx: u32) -> u32 {
+        let _ = ctx;
+        pf::enum_pads_callback(&mut mem(), instance)
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)
