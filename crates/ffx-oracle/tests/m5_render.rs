@@ -43,6 +43,7 @@ use ffx_prender::m5r_f::{self as mf, bridge as f};
 use ffx_prender::m5r_g::{self as mg, bridge as gb};
 use ffx_prender::m5r_h::{self as mh, bridge as h};
 use ffx_prender::m5r_i::{self as mi, bridge as i};
+use ffx_prender::m5r_j::{self as mj, bridge as j};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -5208,6 +5209,95 @@ fn batch9_functions_match_the_original() {
                     i::dyn_geo_create(g);
                     Out::None
                 },
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 10 (ffx_prender::m5r_j) ----
+
+#[test]
+fn batch10_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0901);
+        for _ in 0..40 {
+            for (sym, flag) in [(0x006a_e450_u32, 0x1000_u32), (0x006a_e0c0, 0x8000)] {
+                let cb = t.stub_code(1, false, 1, 0, Ret::Val(0), false);
+                let n = rng.below(5);
+                let ds: Vec<u32> = (0..n)
+                    .map(|_| {
+                        if rng.chance(6) {
+                            return 0;
+                        }
+                        let d = rand_obj(t, &mut rng, 0x14);
+                        let data = t.zeros(0x10);
+                        t.w32(d, data);
+                        let f = (rng.next() & !0x9001)
+                            | if rng.chance(2) { flag } else { 0 }
+                            | u32::from(rng.chance(2));
+                        t.w32(d + 0xc, f);
+                        t.w32(d + 0x10, cb);
+                        d
+                    })
+                    .collect();
+                let data = t.words(&ds);
+                let helper = t.words(&[n, data]);
+                stub_mutex(t);
+                let res: Vec<u32> = (0..8).map(|_| rng.word()).collect();
+                let r = t.seq(&res);
+                t.stub_sym(mj::SET_DATA_TO_FREE_LIST, 2, true, 1, 1, r);
+                t.stub_sym(mj::OPERATOR_DELETE, 3, false, 1, 0, Ret::Val(0));
+                // the original compaction runs (the loop re-reads the slot)
+                t.import_sym(mj::RELEASE_MUTEX, 4, 1, 1, Ret::Val(0x1234_5601));
+                let value = rng.next();
+                t.check(
+                    &format!("runFlag_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(helper),
+                    &[value],
+                    |g| Out::U32(j::run_with_value(g, helper, flag, value)),
+                );
+                t.reset();
+            }
+
+            // the after-post-process VFX pass
+            let scene = rand_obj(t, &mut rng, 0x3890);
+            let r = rand_obj(t, &mut rng, 0x140);
+            t.w32(scene + 0xd0, r);
+            if rng.chance(3) {
+                t.w32(scene + 0xdc, 0);
+            }
+            let n = [0, 1, 3, 0xffff_ffff][rng.below(4) as usize];
+            let insts: Vec<u32> = (0..n.min(3))
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        rand_obj(t, &mut rng, 0x20)
+                    }
+                })
+                .collect();
+            let list = t.words(&[insts, vec![0]].concat());
+            t.w32(scene + 0x3888, list);
+            t.w32(scene + 0x388c, n);
+            t.stub_sym(
+                mj::BEGIN_SCENE,
+                5,
+                true,
+                1,
+                1,
+                Ret::Val(if rng.chance(5) { 3 } else { 0 }),
+            );
+            t.stub_sym(mj::SET_CAMERA, 6, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mj::RENDER_MESH_INSTANCE, 7, true, 4, 4, Ret::Val(0));
+            t.stub_sym(mj::END_SCENE, 8, true, 1, 1, Ret::Val(0x88));
+            t.check(
+                "PhyreScene_RenderVFXAfterPostProcess",
+                0x0065_38d0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(j::render_vfx_after_post(g, scene)),
             );
             t.reset();
         }

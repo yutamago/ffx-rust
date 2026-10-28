@@ -15,6 +15,7 @@ use ffx_prender::m5r_f::bridge as f;
 use ffx_prender::m5r_g::bridge as g;
 use ffx_prender::m5r_h::bridge as h;
 use ffx_prender::m5r_i::bridge as i;
+use ffx_prender::m5r_j::bridge as j;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1186,5 +1187,18 @@ ported! {
     /// `PRedBlackTreeFree_dtor_006925c0(this)`: `0x00633ef0`'s code.
     PRedBlackTreeFree_dtor_006925c0 @ 0x0069_25c0 => extern "thiscall" fn tree_free_dtor_006925c0(this: u32) -> u32 {
         b::tree_free_dtor(&mut mem(), this)
+    }
+    // ---- batch 10 (ffx_prender::m5r_j) ----
+    /// `RenderDelegationHelper_runFlag1000(this; value)` (`al`).
+    RenderDelegationHelper_runFlag1000 @ 0x006a_e450 => extern "thiscall" fn run_flag1000(this: u32, value: u32) -> u32 {
+        j::run_with_value(&mut mem(), this, 0x1000, value)
+    }
+    /// `RenderDelegationHelper_runFlag8000_006ae0c0(this; value)` (`al`).
+    RenderDelegationHelper_runFlag8000_006ae0c0 @ 0x006a_e0c0 => extern "thiscall" fn run_flag8000(this: u32, value: u32) -> u32 {
+        j::run_with_value(&mut mem(), this, 0x8000, value)
+    }
+    /// `PhyreScene_RenderVFXAfterPostProcess(scene)`.
+    PhyreScene_RenderVFXAfterPostProcess @ 0x0065_38d0 => extern "thiscall" fn render_vfx_after_post(this: u32) -> u32 {
+        j::render_vfx_after_post(&mut mem(), this)
     }
 }
