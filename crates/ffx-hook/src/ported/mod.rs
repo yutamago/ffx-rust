@@ -218,13 +218,41 @@ saved! {
     i64 => false, false;
 }
 
+/// The pseudo-ABI of [`ported!`] for originals that take their first two
+/// arguments in `ecx` and `edx` like fastcall, the rest on the stack, and
+/// leave those stack words to the caller like cdecl (`ret`, the caller's
+/// `add esp`). MSVC's link-time code generation makes this custom
+/// convention for internal functions (`0x00401690` and
+/// `Settings_ValidateBindings` under `Settings_SetValue`). Rust has no such
+/// ABI: the shim is declared `extern "C"` with the two register arguments
+/// first, and its thunk pushes `edx`, then `ecx`, below the copied stack
+/// words.
+pub(crate) const FASTCALL_CALLER_POPS: &str = "fastcall-caller-pops";
+
+/// Whether `abi` is [`FASTCALL_CALLER_POPS`].
+const fn is_fastcall_caller_pops(abi: &str) -> bool {
+    let (a, b) = (abi.as_bytes(), FASTCALL_CALLER_POPS.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
 /// The stack words a shim's caller pushed: every argument for cdecl and
 /// stdcall, all but `this` for thiscall (`ecx`), all but the first two for
-/// fastcall (`ecx`, `edx`).
+/// fastcall and [`FASTCALL_CALLER_POPS`] (`ecx`, `edx`).
 pub(crate) const fn stack_words(abi: &str, sizes: &[usize]) -> usize {
     let skip = match abi.as_bytes() {
         b"thiscall" => 1,
         b"fastcall" => 2,
+        _ if is_fastcall_caller_pops(abi) => 2,
         _ => 0,
     };
     let mut words = 0;
@@ -245,10 +273,30 @@ pub(crate) const fn slots_abi(abi: &str) -> bool {
     matches!(abi.as_bytes(), b"C" | b"cdecl" | b"stdcall" | b"thiscall")
 }
 
-/// Whether the callee pops its stack arguments (everything but cdecl).
+/// Whether the callee pops its stack arguments (everything but cdecl and
+/// [`FASTCALL_CALLER_POPS`]).
 pub(crate) const fn callee_pops(abi: &str) -> bool {
-    !matches!(abi.as_bytes(), b"C" | b"cdecl")
+    !matches!(abi.as_bytes(), b"C" | b"cdecl") && !is_fastcall_caller_pops(abi)
 }
+
+// The conventions' arithmetic, checked at compile time (the thunks run only
+// in the 32-bit game, so this is their host-side test).
+const _: () = {
+    assert!(is_fastcall_caller_pops("fastcall-caller-pops"));
+    assert!(!is_fastcall_caller_pops("fastcall"));
+    assert!(!is_fastcall_caller_pops("fastcall-caller-popz"));
+    assert!(!callee_pops(FASTCALL_CALLER_POPS));
+    assert!(callee_pops("fastcall") && callee_pops("thiscall") && callee_pops("stdcall"));
+    assert!(!callee_pops("C") && !callee_pops("cdecl"));
+    assert!(!slots_abi(FASTCALL_CALLER_POPS));
+    // (ecx, edx; one stack word): Settings_ValidateBindings
+    assert!(stack_words(FASTCALL_CALLER_POPS, &[4, 4, 4]) == 1);
+    assert!(stack_words(FASTCALL_CALLER_POPS, &[4, 4]) == 0);
+    assert!(stack_words(FASTCALL_CALLER_POPS, &[4, 4, 8, 4]) == 3);
+    assert!(stack_words("fastcall", &[4, 4, 4]) == 1);
+    assert!(stack_words("thiscall", &[4, 4, 4]) == 2);
+    assert!(stack_words("C", &[4, 4, 4]) == 3);
+};
 
 /// Calls an original cdecl function by absolute address with 0 to 12 word
 /// arguments, returning `eax`. cdecl leaves the stack to the caller, so
@@ -403,11 +451,17 @@ pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
 /// through `slots` for callers that read the word after the call
 /// (`tools/check-argslots.py`). cdecl, stdcall and thiscall (there `slots`
 /// is the address of the first stack argument, the word after `this`).
+///
+/// `extern "fastcall-caller-pops" fn shim(ecx_arg, edx_arg, stack..)`
+/// ([`FASTCALL_CALLER_POPS`]): the original's custom convention, `ecx` and
+/// `edx` plus stack words the caller pops; the shim itself becomes
+/// `extern "C"` with the register arguments first. No `slots` there.
 macro_rules! ported {
-    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:literal fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
+    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:tt fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
         $(
-            $(#[$doc])*
-            unsafe extern $abi fn $shim($($arg: $ty,)* $($slots: $sty)?) $(-> $ret)? $body
+            $crate::ported::shim_fn! {
+                $abi, [$(#[$doc])*], $shim, ($($arg: $ty,)* $($slots: $sty)?), ($($ret)?), $body
+            }
         )*
 
         /// This module's replacements.
@@ -426,11 +480,73 @@ macro_rules! ported {
 }
 use ported;
 
+/// One shim of [`ported!`] in the ABI its thunk calls: the declared one, or
+/// `extern "C"` for [`FASTCALL_CALLER_POPS`].
+macro_rules! shim_fn {
+    ("fastcall-caller-pops", [$($doc:tt)*], $shim:ident, ($($p:tt)*), ($($ret:ty)?), $body:block) => {
+        $($doc)*
+        unsafe extern "C" fn $shim($($p)*) $(-> $ret)? $body
+    };
+    ($abi:tt, [$($doc:tt)*], $shim:ident, ($($p:tt)*), ($($ret:ty)?), $body:block) => {
+        $($doc)*
+        unsafe extern $abi fn $shim($($p)*) $(-> $ret)? $body
+    };
+}
+pub(crate) use shim_fn;
+
 /// The address of `$shim`'s thunk: saves the scratch registers its return
 /// type leaves alone, copies the caller's stack arguments, calls the shim
 /// and returns as the original did (`ret n` for the callee-pops ABIs).
 #[cfg(target_arch = "x86")]
 macro_rules! thunk {
+    // `ecx`, `edx` and stack words the caller pops (FASTCALL_CALLER_POPS):
+    // the cdecl shim gets the stack copy with `ecx` and `edx` pushed below
+    // it, and the thunk returns with a plain `ret`
+    ("fastcall-caller-pops", $shim:ident, ($($ty:ty),*), ($($ret:ty)?)) => {{
+        type Ret = $crate::ported::thunk!(@ret $($ret)?);
+        const WORDS: usize = $crate::ported::stack_words(
+            $crate::ported::FASTCALL_CALLER_POPS,
+            &[$(::core::mem::size_of::<$ty>()),*],
+        );
+        const EAX: usize = <Ret as $crate::ported::Saved>::EAX as usize;
+        const EDX: usize = <Ret as $crate::ported::Saved>::EDX as usize;
+        const SAVED: usize = 1 + EAX + EDX;
+        const _: () = {
+            let sizes = [$(::core::mem::size_of::<$ty>()),*];
+            let mut i = 0;
+            while i < sizes.len() && i < 2 {
+                assert!(sizes[i] == 4, "the ecx and edx arguments are words");
+                i += 1;
+            }
+        };
+        #[unsafe(naked)]
+        unsafe extern "C" fn thunk() {
+            ::core::arch::naked_asm!(
+                ".if {eax}", "push eax", ".endif",
+                "push ecx",
+                ".if {edx}", "push edx", ".endif",
+                ".rept {words}", "push dword ptr [esp + {from}]", ".endr",
+                "push edx",
+                "push ecx",
+                "call {shim}",
+                "add esp, {bytes} + 8",
+                ".if {edx}", "pop edx", ".endif",
+                "pop ecx",
+                ".if {eax}", "pop eax", ".endif",
+                "ret",
+                eax = const EAX,
+                edx = const EDX,
+                words = const WORDS,
+                from = const 4 * (SAVED + WORDS),
+                bytes = const 4 * WORDS,
+                shim = sym $shim,
+            )
+        }
+        thunk as *const () as usize
+    }};
+    ("fastcall-caller-pops", $shim:ident, ($($ty:ty),*), ($($ret:ty)?), $slots:ident) => {{
+        compile_error!("argument slots only for cdecl, stdcall and thiscall shims")
+    }};
     ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?)) => {{
         type Ret = $crate::ported::thunk!(@ret $($ret)?);
         const WORDS: usize = $crate::ported::stack_words($abi, &[$(::core::mem::size_of::<$ty>()),*]);

@@ -6,7 +6,16 @@ crates/ffx-hook/src (wrappers, mods, the harness), and named alike in symbols/ff
 (which must name it).
 With FFX_GAME_DIR set, also that the shim pops what the original's `ret`
 pops (cdecl nothing, stdcall every argument, thiscall all but `this`,
-fastcall all but the first two): a mismatch unbalances the caller's stack.
+fastcall all but the first two; "fastcall-caller-pops" nothing): a mismatch
+unbalances the caller's stack.
+
+Jump thunks: a few originals are a lone 5-byte `jmp rel32` that Ghidra
+folded into the caller or left as a label, so the dump has no function at
+them (user_free_thunk 0x00687010, code_006f2740). With FFX_GAME_DIR set, an
+address that isn't a dump function start is accepted when FFX.exe's bytes
+there are `e9 rel32` jumping to a dump function start, and the address is
+not inside a dump function's body: its "ret" is the target's (the shim pops
+what the target pops), and the five bytes are exactly the hook's patch.
 Exits 1 on problems."""
 import os
 import pathlib
@@ -34,7 +43,8 @@ def popped(abi, args):
     argument slots after `;`, which only the thunk passes)."""
     sizes = [8 if t.split(":", 1)[1].strip() in ("u64", "i64", "f64") else 4
              for t in args.split(";")[0].split(",") if ":" in t]
-    skip = {"C": len(sizes), "stdcall": 0, "thiscall": 1, "fastcall": 2}[abi]
+    skip = {"C": len(sizes), "stdcall": 0, "thiscall": 1, "fastcall": 2,
+            "fastcall-caller-pops": len(sizes)}[abi]
     return sum(sizes[skip:])
 
 
@@ -74,15 +84,18 @@ for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         a = int(addr.replace("_", ""), 16)
         where = f"{f.name}: {name} @ {a:#010x}"
         seen[a] = name
+        body = a
         if a not in rows:
-            print(f"{where}: not a function start in the dump")
-            bad += 1
-            continue
-        if rows[a][1] < 5:
+            body = progress.jmp_thunk(exe, a, rows) if exe else None
+            if body is None:
+                print(f"{where}: not a function start in the dump (nor a jmp thunk to one)")
+                bad += 1
+                continue
+        elif rows[a][1] < 5:
             print(f"{where}: only {rows[a][1]} bytes, too small for the jump")
             bad += 1
         if exe:
-            r = rets(a, rows[a][1])
+            r = rets(body, rows[body][1])
             if r and r != {popped(abi, args)}:
                 print(f"{where}: the shim pops {popped(abi, args)} bytes, the original's ret {sorted(r)}")
                 bad += 1

@@ -206,6 +206,51 @@ def functions():
     return [(a, n, fix.get(a, s)) for a, n, s in dump_functions()]
 
 
+_PE = {}
+
+
+def jmp_thunk(exe, a, rows):
+    """The target of the 5-byte `jmp rel32` at `a` in `exe`, when `a` is
+    no dump function start nor inside a dump function's body (`rows`:
+    address -> (name, size), from functions()) and the jump goes to a dump
+    function start; else None. Ghidra folds such lone jump thunks into
+    their callers or leaves them as labels (user_free_thunk 0x00687010,
+    code_006f2740), so the dump has no function at them; the machine code
+    confirms them, and a hook's 5-byte patch covers them exactly
+    (check-ported, check-clobber)."""
+    import struct
+    key = str(exe)
+    if key not in _PE:
+        d = pathlib.Path(exe).read_bytes()
+        pe = struct.unpack_from("<I", d, 0x3c)[0]
+        nsec, opt = struct.unpack_from("<H", d, pe + 6)[0], struct.unpack_from("<H", d, pe + 20)[0]
+        base = struct.unpack_from("<I", d, pe + 24 + 28)[0]
+        secs = []
+        for i in range(nsec):
+            o = pe + 24 + opt + 40 * i
+            vsize, rva, rsize, raw = struct.unpack_from("<IIII", d, o + 8)
+            chars = struct.unpack_from("<I", d, o + 36)[0]
+            secs.append((base + rva, base + rva + min(vsize, rsize), raw, chars))
+        _PE[key] = (d, secs, sorted(rows))
+    d, secs, starts = _PE[key]
+    if a in rows:
+        return None
+    # executable code only (IMAGE_SCN_MEM_EXECUTE)
+    sec = next((x for x in secs if x[0] <= a and a + 5 <= x[1] and x[3] & 0x20000000), None)
+    if sec is None:
+        return None
+    off = sec[2] + a - sec[0]
+    if d[off] != 0xE9:
+        return None
+    target = (a + 5 + struct.unpack_from("<i", d, off + 1)[0]) & 0xFFFFFFFF
+    if target not in rows:
+        return None
+    i = bisect.bisect_right(starts, a) - 1
+    if i >= 0 and starts[i] + rows[starts[i]][1] > a:
+        return None  # inside a function's body: not a thunk of its own
+    return target
+
+
 # a body the dump sizes under this many bytes is measured (a hook needs 5)
 MEASURE_BELOW = 5
 JUMP = re.compile(r"^(j[a-z]+|loop[a-z]*)\s+0x([0-9a-f]+)$")

@@ -115,6 +115,27 @@ for the integer types, `edx:eax` for `u64`/`i64`, `ST0` for `f32`/`f64`.
 caller's argument words, for originals that store into their own argument
 slots (`docs/workflow.md`, "Argument slots"; not for fastcall).
 
+`extern "fastcall-caller-pops"` is for originals in a custom convention
+that MSVC's link-time code generation made for some internal functions:
+the first two arguments in `ecx` and `edx` like fastcall, the rest on the
+stack, and the caller pops those (`ret`, then the caller's `add esp`).
+`Settings_ParseIntList_00401690` and `Settings_ValidateBindings` (their
+caller `Settings_SetValue`) are the first. Rust has no such ABI: the
+macro declares the shim `extern "C"` with the two register arguments
+first, and the thunk pushes `edx`, then `ecx`, below its copy of the stack
+words and returns with a plain `ret`. In the oracle the convention is
+`Conv::FastcallCallerPops`; `tools/check-callconv.py` and
+`tools/check-ported.py` know it.
+
+A few originals are a lone 5-byte `jmp rel32` that the Ghidra dump has
+no function for (it folded them into a caller or left a label):
+`user_free_thunk` (`0x00687010`) and `code_006f2740`. They are hooked like
+any function: `tools/check-ported.py` accepts an address the dump lacks
+when FFX.exe's bytes there are `e9 rel32` to a dump function start, outside
+every dump function's body (`progress.jmp_thunk`), and checks the shim
+against the target's `ret`; check-clobber reads the target's code for the
+thunk's callers. The patch covers exactly the thunk's five bytes.
+
 The hand-written hooks:
 
 | Function | Address | What |

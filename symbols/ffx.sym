@@ -33,11 +33,12 @@
 0x004015c0 function StdSystemErrorCategory_defaultErrorCondition_004015c0 # vtable 0x00b0da20 slot 3: (out, code) ret 8, ecx unused -> out: {code, &generic 0x00c8b43c} when _Syserror_map(code) is set, else {code, &system 0x00c8b438}; name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401600 function StdSystemErrorCategory_deletingDtor_00401600 # vtable 0x00b0da20 slot 0: as StdErrorCategory_deletingDtor_00401260; name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401660 function StdOstreamSentry_unlock_00401660 # ecx = the stream holder (no stack words; Unwind@00adfdc8): rdbuf ([stream + vbase + 0x38]), when set, tail-jumped vtable[2] (_Unlock); name ours; ported ffx_system::m5a_std (m5 system-a b1)
-0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00401690 function Settings_ParseIntList_00401690 # fastcall-caller-pops(text; out, max): ecx = the NUL-terminated decimal list, edx = the word array, one stack word (max, signed) the caller pops (LTCG custom convention; caller Settings_SetValue for lmKeyBinding, the FFX and FFX-2 tables inline the same loop) -> the count: a word per ',' or the end, other bytes skipped (signed byte compares); name ours; ported ffx_system::m5a_settings (m5 system-a c2)
+0x004016e0 function Settings_JoinBindings # guess: ints -> "a,b,c" std::string (used by Settings_Format) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); fastcall-caller-pops(out; list, n) -> out: ecx = the std::string to fill, edx = the words, n (signed) on the stack the caller pops; a std::stringstream at ebp-0xcc (0x00402f00 ctor, 0x00404a90 comma, operator<<(int), 0x00402ff0 str()), its destructor inlined (basic_ios vtable 0x00b7cb6c via the vbase offset, stringbuf vtable 0x00b7cb2c, buffer freed when ebp-0x78 bit 0, setg(0,0,0), three pointers cleared, ~basic_streambuf/~basic_iostream/~basic_ios); ported ffx_system::m5a_settings (m5 system-a c2)
 0x00401840 function StdStringstream_dtor_00401840 # ecx = a std::stringstream (Unwind): basic_ios at +0x68 gets vtable 0x00b7cb6c, the vbase word, 0x00403010(+0x18), MSVCP110 ~basic_iostream(+0x20), tail jump ~basic_ios(+0x68); name ours; ported ffx_system::m5a_std (m5 system-a b1)
 0x00401880 function Settings_Construct # GameSetting.ini path at +0x430; field 0 = language index; ported ffx_system::m5a_settings::bridge::construct: thiscall(this; path) ret 4 -> this; +0x638 = 0x101, +0x63a = 1, 24 words from 0x00b7cba8 stride 16, memset +0x60/+0x1a4/+0x2e8 0x144, wide path to +0x430 (m5 system-a b1)
 0x00401920 function Settings_dtor # empty; Game_Main calls it before delete g_Settings (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x00401930 function Settings_SetValue          # thiscall(settings, key, value string): looks the value up in key's table of 8 strings at 0x00c89f48 + key * 0x20 (stricmp) and stores its index at settings + 4 * key (Resolution, the key bindings and a few others parsed apart); called per key=value line by 0x00401e00 under Settings_Load; so Shadow (key 12) "0".."3" -> +0x30 = 0..3, TextureQuality (key 13) TQ_HIGH/TQ_MEDIUM/TQ_LOW -> +0x34 = 0/1/2 (docs/formats/scene-maps.md, Q1); name ours
+0x00401930 function Settings_SetValue # thiscall(settings, key, value string): looks the value up in key's table of 8 strings at 0x00c89f48 + key * 0x20 (stricmp) and stores its index at settings + 4 * key (Resolution, the key bindings and a few others parsed apart); called per key=value line by 0x00401e00 under Settings_Load; so Shadow (key 12) "0".."3" -> +0x30 = 0..3, TextureQuality (key 13) TQ_HIGH/TQ_MEDIUM/TQ_LOW -> +0x34 = 0/1/2 (docs/formats/scene-maps.md, Q1); name ours; thiscall(this; key, std::string value by value) ret 0x1c -> 0/1: key's row of 0x00c89f48 counted to its first null (at most 8); exactly one string = special key (1 Resolution "W*H" 0x00b7c798: find, substr x2, this[1] = W << 16 | H & 0xffff, no '*' -> printf 0x00b7ca30, 1; 0x15/0x16 the inline 0x00401690 loop into +0x60/+0x1a4, +0x42c count, Settings_ValidateBindings(0x00405cb0/0x00405d00) -> byte +0x638/+0x639; 0x17 Settings_ParseIntList_00401690 into +0x2e8, 0x00405d80 -> +0x63a; else this[key] = atoi); else _stricmp search, this[key] = index, none -> printf 0x00b7ca5c with g_SettingsKeyNames[key], 1; value deleted when its capacity >= 16; ported ffx_system::m5a_settings (m5 system-a c2)
 0x00401c80 function Settings_SetPath # copies the wide path to +0x430 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00401cb0 function Settings_Load             # reads Documents\Square Enix\...\GameSetting.ini (Language=jp|en|fr|de|it|es|kr|ch)
 0x00401d80 function Settings_Save # _wfopen(path, "wb"), Settings_Format, fwrite; callers Settings_Load (no file), PhyreScene_initScene, FFEscMenu_resume/_update/QuitConfirmed (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
@@ -67,7 +68,7 @@
 0x00405b60 function KeyNames_setController_00405b60 # cdecl(slot, name) -> al: the same for the controller key-name table 0x00c8a680; called 16 times by FFEscMenu_initControllerKeyNames_00702250; name ours (M4 h4 cont8); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405b90 function ReturnConst80_00405b90 # auto-port shape (return constant, cdecl): return 0x80; callers: ; name ours; ported by hand in ported/m5_system_a.rs (m5 system-a b1)
 0x00405ba0 function ReturnConst_00405ba0 # () -> 0x80; name ours
-0x00405bb0 function Settings_ValidateBindings # (list, n, slot filter): codes 0..0x7f with a key name, no duplicates (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x00405bb0 function Settings_ValidateBindings # (list, n, slot filter): codes 0..0x7f with a key name, no duplicates (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); fastcall-caller-pops(list; n, filter): ecx = the table, edx = its word count, the cdecl slot filter on the stack (caller pops) -> 1 or 0: a filtered slot's code outside 0..0x80 (signed) or without a name (slots 14..=27, 44, 45 the controller table 0x00c8a680, the rest the keyboard table 0x00c8abe0; zero slots from 0x31 skipped), or two filtered nonzero slots alike -> 0; ported ffx_system::m5a_settings (m5 system-a c2)
 0x00405cb0 function Settings_IsFfxBindingSlot # slot filter for ffxKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405d00 function Settings_IsFfx2BindingSlot # slot filter for ffx2KeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
 0x00405d80 function Settings_IsLmBindingSlot # slot filter for lmKeyBinding (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); cdecl(slot) -> eax (al the answer, upper bytes the slot's); ported ffx_system::m5a_settings (m5 system-a b1)
@@ -2526,6 +2527,7 @@
 0x0059d2e0 function Phyre_PRendering_PRenderInterfaceNVN_unbindFromCurrentThread # cdecl() -> 0x17 (mov eax, 0x17; ret); name from the Ghidra dump; port ffx_prender::misc (p6-render-c)
 0x0059d320 function Phyre_PRendering_PTextureArray_markSlot_0059d320 # thiscall(array; i, _), ret 8: count +0xc (bit 31 a flag), one 16-byte slot inline at +0x10 or the slots at [+0x10]; 3 out of range, 0x15 for an empty slot, else slot +8 = 1 and 0; name ours (M4 p6 batch 12)
 0x0059e520 function TrophyManager_Install     # thiscall(this, arg), ret 4: xor eax,eax (nothing to install on PC); fh switch:bsim1.00 0x710023fda0 TrophyManager::Install
+0x0059e530 function PClassLayoutInterface_static_0059e530 # cdecl() -> 0x00cbaa78: a function-local static (guard bit 0 of 0x00cbaa7c) holding Phyre_PClassLayoutInterface_vftable, atexit(0x00b03db0) on the first call; 8 refs; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0059e560 function GetField20_0059e560          # auto-port shape (return field u32, stdcall): t0 = u32[(a0 + 0x20)]; return t0; callers: no direct caller; name ours
 0x0059e570 function GetField1c_0059e570          # auto-port shape (return field u32, stdcall): t0 = u32[(a0 + 0x1c)]; return t0; callers: no direct caller; name ours
 0x0059e580 function SetFields_0059e580           # auto-port shape (several stores: set field (constants, arguments, addresses), stdcall): u32[a1] = 0x0; u32[a2] = 0x0; return a2; callers: no direct caller; name ours
@@ -3090,10 +3092,12 @@
 0x0060ab90 function AddU8_0060ab90 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0060aba0 function Fixup_WriteLeb128         # (value, cursor*): LEB128 at *cursor, low 7 bits first, 0x80 on all but the last, cursor advanced per byte; nothing for a null cursor; Fixup_ReadLeb128's inverse; name ours
 0x0060ac00 function Fixup_ReadLeb128          # (cursor*) -> u32, 7 bits per byte, high bit = more
+0x0060add0 function Word4Greater_0060add0 # cdecl(a, b) -> 1 when [b+4] > [a+4] (unsigned), else 0: a sort predicate (copy 0x0060ae00); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0060ae00 function Word4Greater_0060ae00 # cdecl(a, b): copy of Word4Greater_0060add0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0060ae30 function Fixup_SetArrayObject      # (record, index): record[1] = index
 0x0060ae40 function Fixup_SetObject           # (record, index): record[1] = index
-0x0060ae50 function Fixup_SetArrayObjectAndRead # (record, index, cursor*, flags): record[1] = index; record[2] unless 0x08; record[3]
-0x0060ae90 function Fixup_SetObjectAndRead    # (record, index, cursor*, flags): record[1] = index, then Fixup_ReadRecord
+0x0060ae50 function Fixup_SetArrayObjectAndRead # (record, index, cursor*, flags): record[1] = index; record[2] unless 0x08; record[3]; ported ffx_system::m5a_platform: cdecl(rec, object, cursor, flags) -> the last Fixup_ReadLeb128: +4 = object, +8 = LEB128 unless flags & 8, +0xc = LEB128 (m5 system-a c2)
+0x0060ae90 function Fixup_SetObjectAndRead # (record, index, cursor*, flags): record[1] = index, then Fixup_ReadRecord; ported ffx_system::m5a_platform: cdecl(rec, object, cursor, flags): +4 = object, Fixup_ReadRecord(rec; cursor, flags)'s eax (m5 system-a c2)
 0x0060aeb0 function StdAdjustHeap16 # cdecl std::_Adjust_heap(first, hole, bottom, &val, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
 0x0060afc0 function StdAdjustHeap28 # cdecl std::_Adjust_heap(first, hole, bottom, &val, less); 28-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
 0x0060b0f0 function StdInsertionSort16 # cdecl std::_Insertion_sort(first, last, less); 16-byte fixup records, comparator pointer last (MSVC 2012 <algorithm>); name ours
@@ -3147,6 +3151,9 @@
 0x0060dac0 function Cluster_UnpackArrayFixups # (out {_, records}, cursor*, lists, pointer_arrays): Fixup_UnpackArrayList per list with header +0x18 (arrays) or +0x20 (pointer arrays)
 0x0060db20 function Cluster_UnpackPointerFixups # (out {_, records}, cursor*, lists {count, headers}): 28-byte records; Fixup_UnpackList per list (header +0x1c fixups, +4 objects)
 0x0060e730 function Fixup_ReadRecord          # thiscall(record; cursor*, flags), ret 8: LEB128 words into record word 6 (v-1, -1 for 0; unless flag 0x10), and when that is 0 or skipped words 2, 3 (unless 0x20), 4 (unless 0x40); word 5 unless 0x08
+0x0060e8a0 function DeletingDtor_0060e8a0 # thiscall(this; flags) ret 4 -> this: 0x005a0270(this), Phyre_PhyreFree(this) when flags & 1; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0060e8e0 function StringWithLength_0060e8e0 # cdecl(&s, &out, &len) -> 0: *out = *s, *len = strlen(*s) + 1; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0060e9b0 function FindEnum_0060e9b0 # cdecl(out, name) -> 0 found / 0x13: *out = Phyre_PTypeEnum_find_005787d0(name); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0060ed40 function Phyre_PProfiling_PProcessorProfileTimelineCpu_initialize # fh v3:bsim1.00 0x0060ef30 Phyre::PProfiling::PProcessorProfileTimelineCpu::initialize
 0x0060ed70 function Phyre_PProfiling_PProcessorProfileTimelineCpu_initialize_0060ed70 # pops 2 words -> 0 (xor eax, eax; ret 8); name from the Ghidra dump; port ffx_prender::misc (p6-render-c)
 0x0060ede0 function Phyre_PProfiling_PProcessorProfileTimelineCollection_removeTimeline # fh v3:bsim1.00 0x0060efa0 Phyre::PProfiling::PProcessorProfileTimelineCollection::removeTimeline
@@ -3208,51 +3215,65 @@
 0x0061a110 function ReturnMinus1_0061a110 # stdcall(3 args), ret 0xc: returns -1 (vtable only); name ours
 0x0061a2a0 function Phyre_PScripting_PClassCallableMethodScript_PCallerScript_vcall # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Unable to copy argument %d from varargs list to context\\n'; Switch 0x71001a1f10 Phyre::PScripting::PClassCallableMethodScript::PCallerScript::vcall (symbols from Fahrenheit's server export)
 0x0061a730 function PWorldMatrixController_setVftable # thiscall(this): *this = Phyre_PWorldMatrixController_vftable (callers 0x005d6d10, 0x005d6d20); eax untouched; name ours
+0x0061a740 function DeletingDtor_0061a740 # thiscall(this; flags) ret 4 -> this: vtable 0x00b3f674, Phyre_PhyreFree(this) when flags & 1; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061a7f0 function Vec3At24_0061a7f0          # thiscall(out), ret 4 -> out: the three floats at this+0x24 to out (fld/fstp); no direct caller; ported (system round 33); name ours
 0x0061a810 function IdentityAt34_0061a810 # thiscall(this): the 4x4 at +0x34 set to the identity (fld1/fldz stores); no direct caller; name ours; ported (system round 32)
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
-0x0061a960 function VFile_dtor_VFile          # fh v3:exact 0x0061ab20 VFile::~VFile
+0x0061a960 function VFile_dtor_VFile # fh v3:exact 0x0061ab20 VFile::~VFile; ported ffx_system::m5a_platform: thiscall(this) -> fclose's eax or 0: the read record +0x18 (its block delete[]d, the record deleted, cleared), the file +4 fclose'd and cleared (m5 system-a c2)
 0x0061a9b0 function VFileReadedBuffer_dtor_VFileReadedBuffer # fh switch:bsim1.00 0x710007d7d0 VFileReadedBuffer::~VFileReadedBuffer
 0x0061aa10 function VFile_assign              # fh v3:exact 0x0061abd0 VFile::assign
-0x0061aa50 function VFile_fileClose              # layout+callees: sorts between VFile_assign and VFile_fileRead, and its named callees match the Switch 0x710007a6d0 VFile_fileClose's (similarity 1.00: BigFileHandle_releaseVFile); symbols from Fahrenheit's server export
+0x0061aa50 function VFile_fileClose # layout+callees: sorts between VFile_assign and VFile_fileRead, and its named callees match the Switch 0x710007a6d0 VFile_fileClose's (similarity 1.00: BigFileHandle_releaseVFile); symbols from Fahrenheit's server export; thiscall(this): BigFileHandle_releaseVFile([this+8]; this)'s eax; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061aa60 function VFile_fileRead            # fh v3:exact 0x0061ac20 VFile::fileRead
 0x0061aa90 function FileSys_Read              # wrapper that calls FileSys_ReadSync
 0x0061ac30 function VFile_fileSeek # thiscall(vfile; offset, whence), ret 8: the 64-bit position +0x10 from the start / current / end (size at *(this+0xc)+8); -1 for another whence, a negative offset or offset past the size (after moving); returns the position low word; callers 0x006080e0, 0x00608120 (PStreamFile seeks); name ours
 0x0061acb0 function PStreamFile_entrySize64 # thiscall(this) -> edx:eax = u64 at +8 of *(this+0xc) (called by Phyre_PSerialization_PStreamFile_getFileSize); name ours
-0x0061acc0 function VbfStream_Open            # fopen(path, "rb") for one of 15 reader streams
+0x0061acc0 function VbfStream_Open # fopen(path, "rb") for one of 15 reader streams; thiscall(this; path, size) ret 8 -> size: +4 = fopen(path, "rb" 0x00b3f69c), +8 = size when not 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
+0x0061af20 function StreamSlot_ctor_0061af20 # thiscall(this) -> this: 0x0061add0(this), +0x58 = 0 (the stream slots' constructor for eh_vector_constructor_iterator); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061af40 function StreamSlotPool_term_0061af40 # thiscall(this) -> CloseHandle's eax: the slot array +8 deleted (0x60 bytes, 0x0061b0c0 dtors) and cleared, CloseHandle([this]); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b0b0 function FreeBstr_0061b0b0 # thiscall(this): the OLEAUT32 ordinal import 0x00b0c61c (stdcall) on [this]; its eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b330 function ComBstr_loadString_0061b330 # thiscall(this; id) ret 4 -> eax (al = [this] set): the old BSTR freed (OLEAUT32 0x00b0c61c), [this] = 0, 0x0061b270(id) (length word + UTF-16) -> [this] = OLEAUT32 0x00b0c620(text, len); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b3c0 function AtlStringResourceImage_0061b3c0 # cdecl(module, info, id) -> the string or 0: LoadResource/LockResource/SizeofResource, id & 0xf length-prefixed UTF-16 strings skipped, the string when before the end and not empty (ATL's AtlGetStringResourceImage helper; callers 0x0061b270, AtlGetStringResourceImage, 0x0064f970, 0x0064f9e0, 0x00652310); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b4a0 function BigFileStream_claimSlot_0061b4a0 # thiscall(this; timeout) ret 4: WaitForSingleObject([this], timeout) == 0, then the first of [this+4] 0x60-byte slots at [this+8] whose +0x58 InterlockedCompareExchange(1, 0) finds 0 -> that slot, else 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
-0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton
+0x0061b590 function BigFileStream_createInstance # allocates the 0x44-byte FileSys into g_FileSys; was FileSys_CreateSingleton; ported ffx_system::m5a_platform: cdecl() -> the ctor's eax or 0 (+4/+8/+0xc = 0 before BigFileStream_ctor; eax junk when the stream exists, the port returns 0) (m5 system-a c2)
+0x0061b620 function BigFileStream_term_0061b620 # thiscall(this): delete[] +0x40 (cleared), the 5 handles +0x10..+0x20 (BigFileHandle_dtor, delete, cleared), CryptReleaseContext([this], 0), DeleteCriticalSection(+0x24); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b690 function BigFileStream_shutdown_0061b690 # cdecl(): BigFileStream_sBigFileStreamInstacne: BigFileStream_term_0061b620, the slot array +0xc (0x60 bytes each, 0x0061b0c0 destructors, delete[]), CloseHandle([+4]), delete, the global cleared; caller fiosFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b7e0 function FileSys_NewReadRequest    # finds the first block and its file offset for a read at a 64-bit position
 0x0061b8d0 function BigFileStream_fileTaskRead # freads the stored blocks; stored size 0 means 0x10000; was ReadRequest_ReadBlocks
 0x0061ba60 function Request_Wait # thiscall(_, request), ret 4: WaitForSingleObject(request+0x4c, INFINITE); name ours
 0x0061ba80 function BigFileStream_fileTaskUncompress # raw blocks are memcpy'd, others go through zlib_uncompress; error text id 0x7836; was ReadRequest_Inflate
 0x0061bdb0 function BigFileStream_get         # returns g_FileSys; was FileSys_Get
-0x0061bdd0 function BigFileStream_ctor        # fh v4:user_defined+call.cs thiscall
+0x0061bdd0 function BigFileStream_ctor # fh v4:user_defined+call.cs thiscall; thiscall(this) -> InitializeCriticalSection's eax: +0x3c/+0x40 = 0, BigFileStream_initSlots_0061c2c0(+4; 0x1e), +0x10..+0x20 and +0 = 0, CryptAcquireContextA(this, 0, 0, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT), InitializeCriticalSection(+0x24); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061be40 function FileSys_Exists            # MD5 of the path (root prefix skipped), asks each mounted archive
 0x0061bf10 function BigFileStream_openFile    # like FileSys_Exists but returns the entry; was FileSys_FindEntry
 0x0061bfe0 function BigFileStream_readVFile   # NewReadRequest + ReadBlocks + Inflate; was FileSys_ReadSync
 0x0061c150 function BigFileStream_registerBigFile # this=FileSys; mounts an archive into the first free of 5 slots at +0x10; was FileSys_MountVbf
 0x0061c220 function FileSys_SubmitRead          # cdecl(request): thread-pool work BigFileStream_fileTaskRead(request), and a wait on the request's event (+0x48) running BigFileStream_fileTaskUncompress; made synchronous by the harness on the virtual clock
 0x0061c270 function Parser_Reset_0061c270 # thiscall: byte +0 and *(+8), *(+0xc), *(+0x10) = 0, +0x14/+0x18 = 0, +0x1c set: operator delete(+0x20); +0x1c/+0x50/+0x24 = 0; name ours
+0x0061c2c0 function BigFileStream_initSlots_0061c2c0 # thiscall(this; n) ret 4 -> CreateSemaphoreA's eax: +4 = n, the old slot array +8 (0x60 bytes each, 0x0061b0c0 dtors) deleted, operator new[](n * 0x60 + 4, saturating) with the count and eh_vector_constructor_iterator (0x0061af20, 0x0061b0c0) -> +8 (0 when new fails), the old semaphore +0 closed, +0 = CreateSemaphoreA(0, n, n, 0); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061c3a0 function BigFileStream_setStreamPrefix # this=FileSys; copies path to +0x40, length to +0x3c; was FileSys_SetRootPath
 0x0061c400 function PRenderThread_setShaderPass_0061c400 # thiscall(this; pass) ret 4 -> bindAll's eax; render thread (PRenderThread_processRenderCommands, 3 calls): this+0 current pass, this+4 the device state; no current pass: program (pass+0x14) set + applied, all four stages; else stage k changes when the programs differ or the tables +0x20+4k differ: the old program's stages unbound (0x00598a20, unbindAll; stage 3 also 0x00598a70), a new program swapped in (0x00598a60, apply, releaseShaderPass, set); this+0xc = pass+0x10; changed stages bound (bindTables, bindTextures; stage 3 ForwardIfBound), bindAll, this+0 = pass; ported (ffx_glue_other::h4_f2, m4 h4 f); name ours
 0x0061c890 function Phyre_PRendering_PooledHandle_release_0061c890 # thiscall(handle): {owner, slot}: when owner is set, 0x004ba540(owner+0x14; &slot, owner) (thiscall, ret 8), then owner = 0; called by 0x00614300 and PRenderThread_processRenderCommands; name ours; port ffx_prender::misc (p6-render-c)
 0x0061cab0 function Phyre_PScripting_PScriptMemoryAllocationMap_dumpMap # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'Dumping memory allocation map (*=allocated, .=free)\\n'; Switch 0x71001a4b80 Phyre::PScripting::PScriptMemoryAllocationMap::dumpMap (symbols from Fahrenheit's server export)
 0x0061cf20 function Phyre_PScripting_PScriptMemoryRecorder_myRealloc # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Presized buffer was not enough (%d bytes at %p, needed %d by'; Switch 0x71001a50e0 Phyre::PScripting::PScriptMemoryRecorder::myRealloc (symbols from Fahrenheit's server export)
+0x0061d0b0 function Forward_0061d0b0 # cdecl(this, a, b, c): 0x0061d030(this; a, a ? b : 0, c) (thiscall ret 0xc)'s eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d110 function Add_0061d110 # cdecl(a, b) -> a + b; name ours
 0x0061d120 function AddU8_0061d120 # cdecl(a, b) -> a + (u8)b (no direct callers); name ours
 0x0061d140 function Vbf_MapLookup             # digest -> map node; entry pointer at node+0x20
+0x0061d210 function VbfTree_link_0061d210 # thiscall(this; node) ret 4 -> 0 or the node with the same key: the VBF digest tree's BST link (keys (+0x14 signed, +0x10 unsigned) then (+0x1c, +0x18)); colour bit +8 set, children = the head, hung under the last node visited (side 1 when that node is less), +8 = parent + colour bit; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d460 function BigFileHandle_BigFileHandle # this=Vbf (0x60 bytes); hash map of entries + critical section at +0x44; was Vbf_Construct
-0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct
+0x0061d5c0 function PRedBlackTree_dtor_0061d5c0 # thiscall(this): every front node (+0xc, until the tree or null) Phyre_PRedBlackTree_remove'd, the free list +0x18 reset and destroyed, Phyre_PRedBlackTree_clear twice (as BufferTree_dtor_00633fe0 without buffers); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061d670 function BigFileHandle_dtor_BigFileHandle # was Vbf_Destruct; thiscall(this): DeleteCriticalSection(+0x44), BigFileHandle_deinitialize, PRedBlackTree_dtor_0061d5c0(+4); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061d6e0 function Md5Digest_Less            # 128-bit compare used to verify the header digest
 0x0061d730 function CompareI64Pairs_0061d730 # stdcall(a, b), ret 8: (i64 a[0], i64 a[8]) against b lexicographically: -1, 0, 1; callers 0x0061d870, 0x0061d890 (BigFileHandle); name ours
-0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize
+0x0061d8e0 function PRedBlackTree_reset_0061d8e0 # thiscall(this): every front node Phyre_PRedBlackTree_remove'd, tail jump Phyre_PFreeList_reset(+0x18); caller BigFileHandle_initialize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061d910 function BigFileHandle_deinitialize # fh v3:exact 0x0061dad0 BigFileHandle::deinitialize; thiscall(this): delete[] +0x40, +0, +0x3c (cleared), the VFile array +0x5c (0x20 bytes each, eh_vector_destructor_iterator with VFile_dtor_VFile, delete[] of the count header); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
-0x0061de30 function Vbf_InsertEntry           # inserts (name MD5 -> entry*) into the entry map
-0x0061dec0 function Vbf_Contains
-0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry
-0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile
+0x0061de30 function Vbf_InsertEntry # inserts (name MD5 -> entry*) into the entry map; thiscall(this; &digest, &entry) ret 8 -> 0, 0xe (no node) or 0x12 (duplicate): a node from the free list +0x18 (Phyre_PFreeList_allocateNewBlock([+0x20]) when empty), self-linked, digest at +0x10, entry at +0x20, VbfTree_link_0061d210; duplicate -> Phyre_PFreeList_deallocate, else Phyre_PRedBlackTree_postInsertFinalize; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061dec0 function Vbf_Contains # thiscall(this; &digest) ret 4 -> eax (al the answer): the digest copied to ebp-0x10, Vbf_MapLookup(this + 4; &copy), al = node != 0 && node + 0x20 != 0; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry; ported ffx_system::m5a_platform: thiscall(this; &digest) ret 4: the digest copied to ebp-0x10, Vbf_MapLookup(this + 4), 0x0061d9c0(this; [node+0x20]) when node and node+0x20 are not 0, else 0 (m5 system-a c2)
+0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile; ported ffx_system::m5a_platform: thiscall(this; vfile) ret 4: one of the 15 inline files [this+0x5c] (0x20 each) -> VFile_reset's eax, else VFile_dtor + delete; null: eax untouched in the original, 0 in the port (its one caller VFile_fileClose) (m5 system-a c2)
 0x0061e6e0 function Difference_0061e6e0 # cdecl(a, b) -> b - a; name ours
 0x0061e6f0 function Difference_0061e6f0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x0061e700 function Difference_0061e700 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
@@ -3299,7 +3320,8 @@
 0x006243a0 function Input_InitDirectInput_copy_006243a0 # the same code as Input_InitDirectInput 0x00624350 (DirectInput8Create through the thunk 0x0094a914, EnumDevices with 0x00623330); tools/refs.py: 0 refs, a copy the compiler kept (platform census 2026-10-25, docs/formats/platform.md; input)
 0x006244f0 function Input_IsXInputDevice # WMI: CLSID_WbemLocator, root\cimv2, Win32_PNPEntity DeviceID with "IG_" and VID_/PID_ == the DirectInput product id; caller Input_AddPadDevice; ours (Microsoft sample's name); (&guidProduct.Data1): WMI Win32_PNPEntity DeviceID with "IG_", VID_/PID_ == Data1 (platform census 2026-10-25, docs/formats/platform.md; input, window)
 0x006249b0 function Input_RequestRescan # byte 0x00cc9cd0 = 1 (no refs; the WndProc sets it inline on DBT_DEVICEARRIVAL) (platform census 2026-10-25, docs/formats/platform.md; input)
-0x00624d40 function Input_EnumPadsCallback # rescan callback (PInput_Update): types 0x14/0x15/0x18 -> Input_AddPadDevice (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00624d30 function SetFlag39_00624d30 # cdecl(p) -> 0: byte p+0x39 = 1; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x00624d40 function Input_EnumPadsCallback # rescan callback (PInput_Update): types 0x14/0x15/0x18 -> Input_AddPadDevice (platform census 2026-10-25, docs/formats/platform.md; input); stdcall(instance, ctx) ret 8 -> 1: Input_AddPadDevice(instance) for device type byte +0x24 0x14, 0x15 or 0x18; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00625090 function Phyre_PFramework_PWindowWin32Base_SetFlipVSyncInterval # fh v3:exact+call.cs 0x00625250 cdecl Phyre::PFramework::PWindowWin32Base::SetFlipVSyncInterval; port ffx_prender::misc (p6-render-c)
 0x006250e0 function PWindowWin32_MouseHookProc # WH_MOUSE hook: WM_LBUTTONUP during a non-client drag -> PostMessageA(g_hWnd, WM_NCLBUTTONUP); CallNextHookEx; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00625130 function Phyre_PFramework_PWindowWin32Base_WndProc # lpfnWndProc of "PhyreFrameworkClass" (RegisterClassA in 0x00626cb0): WM_CREATE/DESTROY/SIZE/ACTIVATE/CLOSE(launcher)/ERASEBKGND/GETMINMAXINFO/NC button drag hook/Alt+F4 box/DEVICECHANGE, PHYREMSG_HOSTHWND; class per the "[PWindowWin32Base] has focus" string of 0x0062a460; name guess; guess name: WM_CREATE hwnd 0x00cc9ce8, WM_ACTIVATE 0x0062a460, WM_DEVICECHANGE arrival -> rescan, Alt+F4 confirm, WM_CLOSE relaunches FFX&X-2_LAUNCHER.exe (platform census 2026-10-25, docs/formats/platform.md; input, window); stdcall(hwnd, msg, wparam, lparam), ret 0x10 -> result: RegisterWindowMessageA(0x00b40d78) once into 0x00cca308; hwnd 0 -> 1; window = WM_CREATE ? [lparam] : GetWindowLongA(-21), none -> DefWindowProcA; the host message (first time): 0x00cc9cd2 = 1, 0x00cc9ce0 = wparam, 0x00cc9ce4 = lparam, 0x00623d50(wparam, hwnd); jump table 0x006254f4/0x0062551c: CREATE g_hWnd + 0x00b0c6e4(hwnd, 1), DESTROY PostQuitMessage, SIZE (not minimised) client size into g_PhyreApplication +0x26c/+0x270, byte +0x14 = 1, ACTIVATE setFocus(lo word 1 or 2), CLOSE 0x006270a0 + DestroyWindow + ShellExecuteA of the launcher (0x00b40d8c) beside the exe, ERASEBKGND/DEVICECHANGE: wparam 0x8000 sets 0x00cc9cd0 (ERASEBKGND only unhosted), GETMINMAXINFO max track 0x10000, NC button down/up: WH_MOUSE hook 0x006250e0 while dragging (0x00cc9cd3, 0x00cc9cf0); SYSKEY F4+Alt: string 0x78ac (0x0061b330), MessageBoxA(caption 0x00b40db8, 0x31) on keydown, LocalFree, IDOK -> DefWindowProcA else 1; F10/Alt 1; frame from ebp-0x43c; ported (ffx_prender::p6_tail, m4 p6 c4)
@@ -3371,7 +3393,7 @@
 0x0062bf00 function Phyre_PFramework_PWindowWin32Base_applyScreenMode # ScreenMode 0/1/2 from g_Settings: CDS_RESET or mode change, GWL_STYLE 0xca0000/WS_POPUP, SetWindowPos at 0,0, WM_SETICON; via thunk 0x0062bef0 from the settings apply 0x006ff290; name guess; guess: g_Settings ScreenMode/Resolution -> ChangeDisplaySettings / window style; from the video menu (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062c260 function Phyre_PFramework_PApplication_resize_0062c260 # thiscall(app) -> 0 or error; PApplication_vftable+0x24, FFXApplication_resize tail-jumps here: lock 0x00463d50/0x00463e90 on ebp-0x28, render state cache viewport 0x00594f40(&w ebp-0x10, &h ebp-0x14, &x ebp-0x2c), back buffer 0x00599210(app +0x26c, +0x270), renderer (+0x124) setViewport 0x005bc060(0, 0, w, h); views (+0x2bc count, +0x2c0) rescaled from the old size (0x0062cba0, integer muldiv) when it changed, then their virtual slot 4; name ours; port ffx_prender::p6_late (p6-render-c; a 0 old size divides to 0 instead of faulting)
 0x0062c6f0 function Phyre_PFramework_PApplication_scriptedFrame # layout+callees: sorts between Phyre_PFramework_PApplication_renderWorld and Phyre_PFramework_PInputDevicePad_setVibration, and its named callees match the Switch 0x71001af1a0 Phyre_PFramework_PApplication_scriptedFrame's (similarity 1.00: Phyre_PFramework_PApplicationScript_executeNextCommand); symbols from Fahrenheit's server export
-0x0062c990 function PInputMapper_setKey # thiscall(app, key, v, kbd): keyboard kbd latched[key-0x1c] = v (platform census 2026-10-25, docs/formats/platform.md; input)
+0x0062c990 function PInputMapper_setKey # thiscall(app, key, v, kbd): keyboard kbd latched[key-0x1c] = v (platform census 2026-10-25, docs/formats/platform.md; input); ret 0xc -> eax: the mapper [this+0x2b8], low byte v when stored (kbd < 7 unsigned, board set, key - 0x1c < 0x100); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062cad0 function Settings_SetThreadUILanguage # *g_Settings language 0..7 -> SetThreadUILanguage(0x411, 0x409, 0x40c, 0x407, 0x410, 0x40a, 0x412, 0x7c04); caller Game_Main; ours; SetThreadUILanguage from *g_Settings (0x411 jp ... 0x7c04 ch) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062cb70 function Phyre_PFramework_PInputDevicePad_setVibration # fh v3:exact 0x0062cd20 Phyre::PFramework::PInputDevicePad::setVibration
 0x0062cf50 function Phyre_PFramework_PApplication_setWindowIconID # structure: this +0x39c = id, its only caller FFXApplication_FFXApplication; Switch PApplication::setWindowIconID (8 bytes) is called by FFXApplication::FFXApplication; port ffx_prender::misc (p6-render-c)
@@ -3391,7 +3413,7 @@
 0x0062f500 function dbgPrintf                 # fh v3:bsim1.00+call.cs 0x0062f6b0 cdecl
 0x0062f510 function debug_exit_trace          # fh v3:bsim1.00 0x0062f6c0
 0x0062f550 function sceCdDiskReady            # fh v3:bsim1.00 0x0062f700
-0x0062f610 function sceClose                  # fh v3:bsim1.00+call.cs 0x0062f7c0 cdecl
+0x0062f610 function sceClose # fh v3:bsim1.00+call.cs 0x0062f7c0 cdecl; cdecl(fd) -> 0: fiosClose(fd); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062f680 function sceDeci2Open              # fh v3:bsim1.00 0x0062f830
 0x0062f690 function sceDeci2ReqSend           # fh v3:bsim1.00 0x0062f840
 0x0062f6e0 function sceDmaGetChan             # fh v3:bsim1.00 0x0062f890
@@ -3431,7 +3453,7 @@
 0x0062f9f0 function sceMcSync                 # fh switch:bsim1.00 0x71001c2790
 0x0062fa10 function sceMcWrite                   # layout: alphabetical run between sceMcSync and sceMount (1 unnamed in the gap); Switch 0x71001c27a0 sceMcWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062fa20 function sceMount                  # fh v3:bsim1.00 0x0062fbd0
-0x0062fa30 function sceOpen                   # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open
+0x0062fa30 function sceOpen # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open; cdecl(name, mode): "/ffx_ps2/" 0x00b41330 + name + 7 at ebp-0x404 (memset 0x3f6, memcpy), fiosUnifyFilename into ebp-0x804, fiosIsFileExist, fiosOpen(path, mode) -> the file or 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062fb10 function scePadEnterPressMode      # PS2 SDK stub (xor eax, eax; ret) between sceOpen and scePadG...; called by Pad_CheckPressMode after scePadInfoPressMode, as libpad's sequence
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
@@ -3454,7 +3476,7 @@
 0x0062fce0 function FFXVu0InnerProduct        # fh v3:bsim1.00 0x0062fe90
 0x0062fd10 function FFXVu0InterVector         # fh v3:exact 0x0062fec0
 0x0062fd70 function FFXVu0InterVectorXYZ      # fh v3:exact 0x0062ff20
-0x0062fdc0 function sceWrite                  # fh v3:exact 0x0062ff70
+0x0062fdc0 function sceWrite # fh v3:exact 0x0062ff70; cdecl(fd, buf, ..) -> 0: dbgPrintf("Virtuos sceWrite" 0x00b4133c, buf), nothing written; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062fdf0 function umount                    # fh v3:bsim1.00 0x0062ffa0
 0x0062fe50 function MapFindU32_0062fe50 # thiscall(head, &key), ret 4: binary-tree lookup from root head+0xc (left +0, right +4, key +0xc, leaves point back at head); returns the node or 0; name ours
 0x00630310 function operator_new              # fh v3:cg27 0x6304c0 operator.new
@@ -3464,7 +3486,7 @@
 0x00630a60 function AllocTracker_Release # cdecl(p): with *0x00ccb15c set, under its mutex (+0xa8, WaitForSingleObject/ReleaseMutex): user_free(record of p in the map 0x00c31e9c, +0x10), then the node removed (Phyre_PRedBlackTree_remove) and pushed on the free list 0x00c31eb4; called by operator_delete and delete[]; name ours
 0x00630c30 function inputClear                # fh v3:cg2 0x630de0
 0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
-0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
+0x00630c60 function inputGetCurTime # fh v3:exact 0x00630e10; cdecl() -> ST0: Phyre_PTimerWin32_GetTime() - g_AppStartTime (f64) rounded to f32; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
 0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40; ported ffx_system::m5a_savedata: tail jump Virtuos_InputManager_getStickInfo(getInstance()) (m5 system-a b2)
 0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input)
@@ -3472,15 +3494,16 @@
 0x00630cf0 function inputIsPressButton # fh v3:cg9 0x630ea0; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isPressButton(instance; b) (m5 system-a b2)
 0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1
 0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0
-0x00630d50 function inputODUpdate                # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export
+0x00630d50 function inputODUpdate # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export; cdecl(): with [0x0133c930], Virtuos_InputManager_updateInput(getInstance()), tail jump IggyMenuManager_dispatchMouse_00a26ce0([g_IggyMenuManager]); the port returns 0 on the other path (the original leaves eax; its caller, a tail jump from FFXApplication_pollInputAsync, returns nothing); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90
 0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
 0x00630e80 function Input_UpdateAll_00630e80  # cdecl() from FFXApplication_handleInputs, Pause_Update, Pause_Enter; name ours: unless [0x0133c930] is set: Virtuos_InputManager_updateInput(getInstance()), GuiTouch_update(TouchManager_GetInstance()), 0x00a25ab0(GetGlobal01984c68_00a25a30()) (thiscall each), tail jmp 0x00a26ce0 with ecx = g_IggyMenuManager (its eax); set: a bare ret; ported (ffx_pcui::input, pc round 2)
+0x00631110 function PairArray_assign_00631110 # thiscall(this; other) ret 4 -> this: unless other is this, count 0, PairArray_reserve_00631450(other's count), the pairs copied to non-null slots, the count copied; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00631170 function Index8At8_00631170 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x00631180 function Index8At8_00631180 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
-0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input); ported ffx_system::m5a_platform: thiscall, eax junk (m5 system-a c2)
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
 0x00631310 function Virtuos_InputManager_getStickInfo # fh v3:bsim1.00 0x006314c0 Virtuos::InputManager::getStickInfo
@@ -3489,12 +3512,13 @@
 0x00631360 function Virtuos_InputManager_isPressButton # fh v3:exact 0x00631510 Virtuos::InputManager::isPressButton
 0x00631380 function Virtuos_InputManager_isReleaseButton # thiscall(this; mask), ret 4 -> bool: mask bits set in the previous word (+4) and none in the current (+0); the counterpart of isPressButton 0x00631360; name ours
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
+0x00631450 function PairArray_reserve_00631450 # thiscall(this; n) ret 4: an array of 8-byte pairs (+0 count, +4 capacity, +8 data): no data -> user_malloc(8n), capacity n, returns it; else a new block (n > 0 signed) with the pairs memcpy'd, the old one user_free_thunk'd (its eax), capacity n, data the new block; 82 refs; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo; thiscall(this) -> the info word: AsyncControllerTaskManager_GetControllerInfo(&word ebp-0x18, &floats ebp-0x14); +4 = old +0, +0 = word, +0x8c..+0x98 = the 4 floats (fld/fstp); ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
-0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input); thiscall(this) -> eax 1 << 29: d = f32(now - +0x88); timer i (+8 + 4i, 29 of them) += d while bit i of the pad word +0 is set, else 0 (+4, the previous word, makes no difference); +0x88 = now; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006331a0 function Add_006331a0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006331b0 function AddU16_006331b0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006332d0 function Identity_006332d0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -3542,12 +3566,15 @@
 0x00633e20 function PRedBlackTreePair_dtor_00633e20 # thiscall(this): as 0x00633dc0 (another EH state table); name ours; ported M5 render b2 (ffx_prender::m5r_b)
 0x00633e80 function PRedBlackTreePair_dtor_00633e80 # thiscall(this): as 0x00633dc0 (another EH state table); name ours; ported M5 render b2 (ffx_prender::m5r_b)
 0x00633ef0 function PRedBlackTreeFree_dtor_00633ef0 # thiscall(this): orphanAllContents, free list +0x18 reset and destroyed, Phyre_PRedBlackTree_clear twice; unwind funclet target; name ours; ported M5 render b2 (ffx_prender::m5r_b)
+0x00633fe0 function BufferTree_dtor_00633fe0 # thiscall(this): while the first node (+0xc) is neither the tree nor null: Phyre_PRedBlackTree_remove(this; node), user_free_thunk(node+0x18) when set; Phyre_PFreeList_reset/_dtor on +0x18; Phyre_PRedBlackTree_clear twice; eax junk; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x00634220 function ListVector_dtor_00634220 # thiscall(this) -> operator delete's eax: std::vector at +8 (deleted, +8/+0xc/+0x10 cleared when set), std::list at +0 (sentinel relinked to itself, size +4 = 0, nodes then the sentinel deleted); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00634410 function StdString_Tidy_00634410 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
 0x00634440 function StdString_Tidy_00634440 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
 0x00634470 function StdVector_Tidy_00634470 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x006344a0 function StdVector_Tidy_006344a0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x006344d0 function StdVector_Tidy_006344d0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
+0x00634790 function LoadingScreen_dtor_00634790 # thiscall(this): LoadingScreen_terminate, then the arrays +0x20/+0x24 and +0x18/+0x1c (count, data): PhyreFree(data) unless the count is negative, both cleared; eax junk; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00634830 function MutexHandle_Close # thiscall: CloseHandle(*this) through 0x00b0c0dc; name ours
 0x006352b0 function std_Tree_const_iterator_inc_006352b0 # fastcall(it*) -> it: std::map iterator ++ (in-order successor; left +0, parent +4, right +8, _Isnil +0xd); same bytes at 0x00635300, 0x00635350, 0x00699ee0 (and in other modules)
 0x00635300 function std_Tree_const_iterator_inc_00635300 # same bytes as std_Tree_const_iterator_inc_006352b0
@@ -4035,7 +4062,7 @@
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
 0x00647f30 function SaveDataGetLoc_00647f30 # fh v3:bsim1.00 0x006480e0; ported ffx_system::m5a_savedata: cdecl(index, out) -> LocalizationManager_getText(GetInstance(); index, out, 0) (m5 system-a b2)
 0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
-0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours
+0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours; ported ffx_system::m5a_platform: tail jump SetFieldConst0_0067ac70(TrophyManager_Instance()) (m5 system-a c2)
 0x00647fe0 function Game_InitSystems_00647fe0 # guess: 0x006f1c10, 0x006f0330, StatsAndAchievements_Create if g_SteamReady, ...; from FFXApplication_initApplication (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00648010 function SaveDataTakeLoadedFlag_00648010 # cdecl() -> SaveDataManager_takeByte364(SaveDataManager_instance()) zero-extended; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
@@ -4046,7 +4073,7 @@
 0x006480a0 function SaveDataIsLoadingSuccessful # fh v3:cg2 0x648250
 0x006480c0 function SaveDataIsOperationCanceled # fh v3:cg2 0x648270
 0x006480d0 function SaveDataIsSave            # fh v3:bsim1.00 0x00648280
-0x006480e0 function SaveDataIsSaveEnabled     # fh v3:bsim1.00 0x00648290
+0x006480e0 function SaveDataIsSaveEnabled # fh v3:bsim1.00 0x00648290; cdecl(): tail jump SaveDataManager_isSaveEnabled(SaveDataManager_instance()); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006480f0 function SaveDataIsSavingFinished  # fh v3:cg3 0x6482a0
 0x00648100 function SaveDataIsScreenClosed    # fh v3:exact 0x006482b0
 0x00648150 function SaveDataLocRemoveNumTag   # fh v3:exact 0x00648300
@@ -4074,8 +4101,8 @@
 0x00648790 function SaveDataToLoadAllAlBhed      # layout: alphabetical run between SaveDataToLoad and SaveDataToSave (1 unnamed in the gap); Switch 0x7100224830 SaveDataToLoadAllAlBhed is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006487a0 function SaveDataToSave            # fh v4:imported+call.cs cdecl
 0x00648820 function SaveDataTtyWrite             # layout: alphabetical run between SaveDataToSave and SaveDataTtyWrite2 (1 unnamed in the gap); Switch 0x7100225110 SaveDataTtyWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00648850 function SaveDataTtyWrite2         # fh v3:exact 0x00648a00
-0x006488c0 function SaveDataUnlockAchievement # fh v3:exact 0x00648a70
+0x00648850 function SaveDataTtyWrite2 # fh v3:exact 0x00648a00; cdecl(fd, fmt, ...) -> 0: memset(ebp-0x404, 0, 0x400), vsprintf(line, fmt, &varargs), fprintf(__iob_func() + 0x20, "%s", line); ported ffx_system::m5a_platform (m5 system-a c2)
+0x006488c0 function SaveDataUnlockAchievement # fh v3:exact 0x00648a70; cdecl(id): with g_SteamReady, StatsAndAchievements_Unlock_006f1510(AchievementManager_GetInstance(); id); eax junk; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006488e0 function SaveDataUnlockTrophy         # layout: alphabetical run between SaveDataUnlockAchievement and SaveDataUpdateIcon (1 unnamed in the gap); Switch 0x71002251d0 SaveDataUnlockTrophy is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00648920 function SaveDataUpdateIcon        # fh v3:exact 0x00648ad0
 0x00648f20 function SaveDataWriteCrc          # fh v3:exact+call.cs 0x006490d0 cdecl
@@ -4554,14 +4581,14 @@
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
 0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx; ported (ffx_glue_other::misc, m4 h4 r1): jmp PhyreFIOS_UnloadPrx (cdecl, 1 word)
 0x00679500 function fiosClearOps              # fh v3:bsim1.00 0x006796b0
-0x00679510 function fiosClose                 # fh v3:exact 0x006796c0
+0x00679510 function fiosClose # fh v3:exact 0x006796c0; cdecl(f) -> 0 or 9: null 9; PStreamFile_closeFile (al 1 -> 0), the bare-ret 0x00607c10, operator delete; ported ffx_system::m5a_platform (0x00607c10 not called) (m5 system-a c2)
 0x00679560 function fiosDeleteCompletedOps    # fh v3:bsim1.00 0x00679710
 0x00679570 function fiosFileSize              # fh v3:exact 0x00679720
-0x00679590 function fiosFinalize              # fh switch:bsim1.00 0x71001cad60
+0x00679590 function fiosFinalize # fh switch:bsim1.00 0x71001cad60; cdecl() -> 0: 0x006db040, 0x0061b690, 0x006f9d10 (a bare ret, not called); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure
 0x006796f0 function fiosIsFileExist           # fh v3:exact 0x006798a0
 0x00679710 function fiosLseek                 # fh v3:exact 0x006798c0
-0x00679730 function fiosOpen                  # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; was PcFile_Open
+0x00679730 function fiosOpen # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; was PcFile_Open; cdecl(name, mode) -> the PStreamFile or 0: mode's low byte &= 1 in its argument slot, operator new(8), PStreamFile_ctor(name, mode, 0, 0, 1), isOpen (asked of a null file too); not open: delete, the CString (in the mode slot) of string 0x7836 (0x0064f970/0x00652310; the string manager 0x00c64bf0's nil string without the resource), ShowCursor(1), MessageBoxW(0, msg, L"error", 0x10), byte 0x00ccc7bc = 1, ResetToLauncher, the CString released; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00679800 function fiosRead                  # fh v3:exact 0x006799b0
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
 0x00679a00 function ReturnAddress_00679a00 # () -> 0x00b42a34 (an address in the image); name ours
@@ -4635,9 +4662,10 @@
 0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960
 0x0067a7d0 function iVoiceVolumeTranslate     # (frames, volume): FMOD cmd 0xd; SndVagStreamVolumeTranslate jumps here
 0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncDataChangeAsync(g_SyncManager 0x00ce9014; id)
+0x0067a900 function SyncManager_shutdown_0067a900 # cdecl() -> 0: the SyncManager at 0x00ce9014 released (code_006fa8c0, jmp SyncManager_releaseData) and deleted when set, the global cleared; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncGetData(g_SyncManager; a, b, c)
 0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): tail jump to SyncManager_syncInit(g_SyncManager)
-0x0067a960 function iSyncInitialize           # fh v3:exact 0x0067ab10
+0x0067a960 function iSyncInitialize # fh v3:exact 0x0067ab10; cdecl() -> 0: the SyncManager at 0x00ce9014 created once (new(0x44), SyncManager_SyncManager; 0 when new fails); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067a9f0 function EternalCalm_FileSize_0067a9f0 # (path) -> sceFileSize of the opened file, "failed to open EternalCalm data file: %s"; callers getEternalCalmMgrpSize, getEternalCalmSceneSize; own name
 0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
@@ -4645,6 +4673,8 @@
 0x0067aae0 function getEternalCalmSceneSize   # fh v3:bsim1.00 0x0067ac90
 0x0067ab30 function isEternalCalmMgrp         # fh v3:bsim1.00 0x0067ace0
 0x0067ab50 function isEternalCalmScene        # fh v3:bsim1.00 0x0067ad00
+0x0067ac10 function TrophyManager_create_0067ac10 # cdecl() -> the manager: operator new(3), zeroed (word, byte), at 0x00ccc7cc (0 when new fails); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0067ac40 function FreeBlock_0067ac40 # cdecl(): the block at 0x00ccc7cc deleted and cleared when set -> 0 or operator delete's eax; caller FFXApplication_exitApplication; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067ac60 function TrophyManager_errorFlag_0067ac60 # thiscall(this), 9 bytes: eax = 0 unless byte +1 is set (eax untouched then; its only caller TrophyGetError enters with eax = ecx = the manager); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x0067ac70 function SetFieldConst0_0067ac70      # auto-port shape (store constant to field, thiscall): u8[a0] = 0x1; return 0x0; callers: ; name ours
 0x0067ac90 function TrophyManager_Instance    # () -> [0x00ccc7cc] (set by 0x0067ac10); fh switch:bsim1.00 0x710023fce0 TrophyManager::Instance (BSim, getter-shaped)
@@ -4734,9 +4764,10 @@
 0x00686da0 function StdStringList_Clear # thiscall: std::list<std::string> clear: head emptied, size +4 = 0, each node: string at +8 tidied, operator delete(node); name ours
 0x00686e80 function CopyThisTo_00686e80 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
 0x00686f80 function Identity_00686f80 # cdecl(x) -> x (frame-pointer build); name ours
+0x00686fe0 function code_00686fe0 # cdecl(p): jmp user_aligned_free 0x006fb6c0 (a 5-byte thunk the dump lacks, confirmed from the machine code); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00686ff0 function user_aligned_malloc       # cdecl(size, align): jmp UserHeap_AlignedMalloc; fh v3:bsim1.00 0x00687190
 0x00687000 function user_calloc # cdecl(n, size): jmp UserHeap_Calloc 0x006fb820; name ours (after user_malloc)
-0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours; bridge ffx_system::m5a_savedata::bridge::user_free_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
+0x00687010 function user_free_thunk # cdecl(p): jmp user_free 0x006fb8b0 (Phyre_PhyreFree and operator delete call it); name ours; ported ffx_system::m5a_savedata (m5 system-a b2), hooked c2: a 5-byte jmp thunk the dump lacks, confirmed from the machine code (check-ported)
 0x00687020 function user_malloc               # cdecl(size): jmp UserHeap_Malloc; fh v3:bsim1.00 0x006871c0
 0x00687030 function user_heap_destroy # (): jmp UserHeap_Destroy 0x006fb9a0; name ours
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
@@ -4815,6 +4846,7 @@
 0x00691660 function AsyncLoadManager_loadCluster # fh v3:exact 0x00691790 AsyncLoadManager::loadCluster
 0x006918b0 function AsyncLoadManager_registAsyncLoadTask # fh v3:exact 0x006919e0 AsyncLoadManager::registAsyncLoadTask
 0x00691a80 function AsyncLoadManager_createInstance_00691a80 # (): unless g_AsyncLoadManager, operator_new(0x4c) + ctor 0x00690830 into it (SEH frame); name ours, from the global; ported (ffx_glue_other::menu::create_instance, m4 h4 r3)
+0x00691b00 function AsyncLoadManager_shutdown_00691b00 # cdecl(): g_AsyncLoadManager: +0x14 = 0, SignalSema(+8), SleepThread, vtable[0](1), the global cleared -> 0 without one, else the last call's eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00691b40 function AsyncLoadManager_sGetInstance # fh v3:bsim1.00 0x00691c70 AsyncLoadManager::sGetInstance
 0x00691b50 function SetGlobal_00ccc890 # cdecl(v): *0x00ccc890 = v, returns v; name ours
 0x00691b60 function SetGlobal_00ccc894 # cdecl(v): *0x00ccc894 = v, returns v; name ours
@@ -4892,6 +4924,7 @@
 0x00699b70 function NamedPair_copy_00699b70 # thiscall(this; &src) ret 4: the (word, name) pair's copy constructor PArrayNamedPair_appendInto_0069b6e0 runs on the appended slot; name ours
 0x00699ee0 function std_Tree_const_iterator_inc_00699ee0 # same bytes as std_Tree_const_iterator_inc_006352b0
 0x0069a060 function ClusterManager_CreateInstance_0069a060 # cdecl(): without g_ClusterManager, operator_new(0x6420) + 0x00699ab0; graphicInitialize; name ours; ported M4 h3 r2 (ffx_prender::glue6)
+0x0069a0e0 function ClusterManager_shutdown_0069a0e0 # cdecl(): g_ClusterManager destroyed (0x00699d60), deleted, cleared when set; eax junk; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0069a130 function FreeOwnedArray_0069a130 # cdecl(items, n): non-null items: each 8-byte entry +4 with low bit clear PhyreFree(d), then PhyreFree(items); name ours
 0x0069a1a0 function ClusterManager_GetInstance # fh v3:bsim1.00 0x0069a2e0 ClusterManager::GetInstance
 0x0069a1b0 function StdMap_NewHead_0069a1b0 # (): operator new(0x18), links +0/+4/+8 to itself, +0xc = 0x101 (colour, nil); null: jmp std::_Xbad_alloc; name ours
@@ -4917,6 +4950,7 @@
 0x0069b650 function PArray_PushInto_0069b650 # thiscall(this, dst, &value), ret 8: null dst -> 0xd; old count words copied to dst, *value appended, old buffer PhyreFree-d when owned and not dst; +4 = dst, +0 = count + 1; returns 0; name ours
 0x0069b6e0 function PArrayNamedPair_appendInto_0069b6e0 # thiscall(this; dst, &value) ret 8: dst 0 -> 0xd; CopyNamedPairs_006991f0(dst, +4, count), 0x00699b70(dst + 8n; value) (copy ctor, unless at 0), old storage FreeOwnedArray_0069a130'd unless dst or not owned; +0 = count + 1, +4 = dst; 0 (SEH frame dropped); callers ChrResourceCacheManager_onLoadPCluster, 0x0069a600; name ours; ported (ffx_glue_other::h4_c2, m4 h4 c)
 0x0069b7b0 function ChrResourceCacheManager_isChrDelayedRelease # fh v3:bsim1.00 0x0069b8f0 ChrResourceCacheManager::isChrDelayedRelease
+0x0069b890 function MapHasActive_0069b890 # thiscall(this; id) ret 4 -> eax (al the answer, upper bytes ReleaseMutex's): under the mutex [this+0x18], the std::map at +0x10 walked in order for a value [id, n >= 1]; 19 callers; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0069b940 function ClusterManager_loadPCluster # fh v4:user_defined+call.cs thiscall ClusterManager::loadPCluster ; thiscall(this; name), ret 4 -> the cluster ([record]), 0 for a failed load (Ghidra: void): name unified into ebp-0x104, DJB_hash; under the mutex [[this+0x18]] the hash map [this+0x10] (std::map: key +0x10, record +0x14) searched; found: record +4 += 1; else ClusterSlots_take_0069aba0 (+4 1, +8/+0xc 0, byte +0x14 = "/Shaders/" in path), onLoadPCluster, Phyre_PCluster_LoadAssetFile(record, path, hash); fail -> ClusterSlots_give_0069ae20, 0; ok -> map insert (0x00699300, 0x006995e0) under the mutex; ported (ffx_glue_other::h4_h3, m4 h4 h)
 0x0069bb00 function ClusterManager_loadPClusterJump_0069bb00 # thiscall(this; path) ret 4: bare jmp to ClusterManager_loadPCluster (push ebp; mov ebp, esp; pop ebp; jmp); callers MenuTextureManager_*; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x0069bb80 function ChrResourceCacheManager_onLoadPCluster # fh v3:exact 0x0069bcc0 ChrResourceCacheManager::onLoadPCluster ; thiscall(this; path, hash, record), ret 0xc -> this when record+8 set, else record+0x10: ".dae" and "chr" paths with a new hash appended to the (hash, PString) array +8 (PArrayNamedPair_appendInto_0069b6e0); record+8 = "/chr/" or PhyreChrLitShader or PhyreDefaultLitShader in path; record+0x10 = that and path != "" (0x00b8fbeb) and strstr(path, [0x00c3417c]); +0 set to 1 for a character path; ported (ffx_glue_other::h4_h3, m4 h4 h)
@@ -5470,6 +5504,8 @@
 0x006dac50 function PhyFMVPlayerManager_updateSubtitles # guess: timestamps +0x724.., unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006dad30 function PhyFMVPlayerManager_updatePauseMenuAlpha # "alphaScale" ping-pong, unreferenced (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
+0x006dafc0 function LocalizationManager_create_006dafc0 # cdecl(): g_LocalizationManager created once (new(0x1c), ctor 0x006daee0; 0 when new fails) -> the ctor's eax or 0 (eax is the cookie's xor when it exists: junk to its caller, the port returns 0); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x006db040 function LocalizationManager_shutdown_006db040 # cdecl(): g_LocalizationManager destroyed (0x006daf30), deleted, cleared when set; eax junk; caller fiosFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings; thiscall(this) -> 0: *g_Settings 1..5 -> (1, 1 us/2 fr/4 de/5 it/3 es, 1), 6 -> (3, 9, 0), 7 -> (3, 10, 0), else (0, 0, 0) into +0, +4, +8; ported (system round 32)
 0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText; thiscall(this, index, out, unused) ret 0xc -> eax = out (memcpy's): readLocalizationKit while [this+0x18] == 0, then line `index` of the kit text [this+0x14] (bytes 0..=[this+0x18], lines end at \n, \r dropped, past the last line the last one) into a 1024-byte frame buffer, copied to out with its NUL; a line of 1024+ bytes overruns the frame
@@ -5480,8 +5516,10 @@
 0x006db7a0 function Worker_ResetCounters # thiscall: wait on the semaphore at +0x2c, +0x28/+0x24/+0x20 = 0, release it; name ours
 0x006db870 function EighthAtLeastOne          # stdcall(n, unused), ret 8: n / 8 (signed) above 8, else 1; name ours
 0x006dba20 function SemaphoreQueue_start_006dba20 # thiscall(this), from graphicInitialize+0x40: two counting semaphores (8, 8) boxed at +0x234/+0x230, the eight 0x30-byte entries from +0x50 queued in the ring +0x1d0 (index +0x1f4 += 7 mod 8, count +0x1f8, lock +0x1fc), +0x220..+0x228 cleared under +0x22c, four threads started (FUN_00703a50(this + 0x14 k; 0, 0x20000)); ported (ffx_glue_other::h4_i2, m4 h4 i); name ours
+0x006dbd10 function JobScheduler_pushJob_006dbd10 # thiscall(this; job, queue) ret 8: queue q = this + queue * 0x1e8 (stored in the queue argument slot and read back): under the semaphore +0x234 and lock +0x1fc the free ring +0x1f0 steps back ((i + 7) % 8, signed), count +0x1f8 down, entry +0x1d0[i] gets job (+0x10 = 0); under the run lock +0x22c the run ring +0x224 steps back and stores the entry at +0x200[j], +0x228 up; run lock and semaphore +0x230 released -> the last ReleaseSemaphore's eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x006dbe80 function JobScheduler_shutdown_006dbe80 # thiscall(this): 4 exit jobs (0x006dbdf0) on queue 0, Thread_JoinClose on the 4 workers (+0, 0x14 apart), queue 0's rings reset under their locks (+0x1f8/+0x1f4/+0x1f0, +0x228/+0x224/+0x220); caller graphicFinalize; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006dbf30 function RecordStateIs8_006dbf30 # thiscall(this; i), ret 4: word +0x1f8 of 0x1e8-byte record i == 8; caller graphicInitScene; name ours
-0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete
+0x006dbf50 function JobSchedule_JobScheduler_waitForComplete # fh v3:exact 0x006dc080 JobSchedule::JobScheduler::waitForComplete; thiscall(this; queue) ret 4: queue this + queue * 0x1e8 with its count +0x1f8 below 8 (signed): 8x WaitForSingleObject(+0x234, INFINITE), 8x ReleaseSemaphore(+0x234, 1, 0); eax junk; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006dc010 function std_map_cstr_find_006dc010 # thiscall(head; key*), ret 4: the node whose tagged string key (+0xc, bit 0 stripped) equals *key (strcmp order, address order when either is null), or 0; root head+0xc, children +0/+4; callers 0x006dc8d0/0x006dd230/0x006dd7b0; name ours
 0x006dc8a0 function Instance_006dc800_Get     # () -> [0x00cdede8], the object 0x006dc800 creates (0x006dc870 clears it); Fahrenheit's BSim match says MorphManager::GetInstance, but MorphManager_GetInstance is 0x006abf40
 0x006dcd50 function Instance_006dc800_reportMapLoad_006dcd50 # thiscall(instance; name) ret 4: when the bytes +0 and +1 are set, 0x006dd5a0(name, "MapLoad", buffer, 0x100); PhyreScene_fieldMapInitialize's last call, with the map's name (+0xfaf0, tag bit cleared) (M4 h3d)
@@ -5557,6 +5595,7 @@
 0x006e37d0 function Phyre_FogEffectManager_setFogEffectForNoFogObj # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'IGNORE_FOG'; Switch 0x710025f660 Phyre::FogEffectManager::setFogEffectForNoFogObj (symbols from Fahrenheit's server export)
 0x006e3aa0 function FogEffectManager_setLimit_006e3aa0 # thiscall(fog, limit), ret 4: unless 0x006e3480(fog) (al), fld/fstp limit to [fog + 0xa0] + 0x2c, then the parameter copy of FogEffectManager_copyParameters_006e3b80; called by graphicSetFogLimit; ported (ffx-pother-b methods); name ours
 0x006e3b80 function FogEffectManager_copyParameters_006e3b80 # thiscall(fog) -> source: fld/fstp from [fog + 0xa0]: +0x30/34/38 -> +0/4/8, +0x10/14/18 -> same, +0x28 -> +0x2c, +0x24, +0x20, +0x2c -> +0x28; called by 0x0066ee70; ported (ffx-pother-b methods); name ours
+0x006e3f10 function FogEffectManager_resetAll_006e3f10 # thiscall(this) -> Phyre_FogEffectManager_reset's eax, then +0xa0, +0xa4, +0xa8 = 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006e3f40 function FogEffectManager_updateChrFogFade_006e3f40 # thiscall(fog, dt), ret 4: fade type +0xb4 0 (out) or 1 (in): time +0xb0 += dt (f32), +0xac = clamp(1 - t or t, 0, 1) (NaN kept) -> setChrFogEffect, type 2 once the time passes 1; another type zeroes the time; no result; only caller PhyreScene_animate; name ours; ported M4 h3 r4 (ffx_prender::h3_glue12)
 0x006e4020 function SetPairFloats_006e4020 # thiscall(this; key, a, b), ret 0xc: the 12-byte entry with key (from +4, count +0, appended when missing) gets floats a, b; returns 3 * index; caller 0x006e4100; name ours
 0x006e40b0 function DepthBiasHooks_clearDepthBias # fh v3:exact 0x006e41e0 DepthBiasHooks::clearDepthBias
@@ -5572,8 +5611,8 @@
 0x006e4ea0 function LoadingScreen_render      # fh v3:exact 0x006e4fd0 LoadingScreen::render ; thiscall(this; renderer), ret 4 (eax not read): when showing (byte +0/+1 or mode +0x10 >= 2) with +0x20 count, +0x2c, +0x30: setColorTarget(0, 0), setDepthStencilTarget(0), PostProcessManager_setNon16By9Viewport(renderer, 0), clear colour from PostProcessManager +0x1238c.. at ebp-0x10 (setClearColor(.., 1.0) and beginScene(1) for mode 0..2, else beginScene(0)), renderer+0x48 = 0x00ccc8dc, background +0x38 drawn when red, green, blue all <= 0.5 (f32 0x00b92194; jp on fcomp skips above or unordered), main +0x40 drawn, endScene(1); ported (ffx_glue_other::h4_h8, m4 h4 h)
 0x006e4fd0 function Reset_006e4fd0 # thiscall(this): +0x10 = 0, floats +4, +8, +0x14 = 0.0; caller 0x00642c80; name ours
 0x006e4ff0 function LoadingScreen_setParameterManually # fh switch:bsim1.00 0x7100228000 LoadingScreen::setParameterManually
-0x006e5020 function LoadingScreen_terminate      # layout+callees: sorts between LoadingScreen_setParameterManually and LoadingScreen_unloadTextures, and its named callees match the Switch 0x7100227e00 LoadingScreen_terminate's (similarity 1.00: LoadingScreen_unloadTextures, Phyre_PCluster_dtor_PCluster); symbols from Fahrenheit's server export
-0x006e5050 function LoadingScreen_unloadTextures # layout+callees: sorts between LoadingScreen_setParameterManually and RemapButtonIcon_sDestoryInstance, and its named callees match the Switch 0x7100227e80 LoadingScreen_unloadTextures's (similarity 1.00: ClusterManager_GetInstance, ClusterManager_releasePCluster); symbols from Fahrenheit's server export
+0x006e5020 function LoadingScreen_terminate # layout+callees: sorts between LoadingScreen_setParameterManually and LoadingScreen_unloadTextures, and its named callees match the Switch 0x7100227e00 LoadingScreen_terminate's (similarity 1.00: LoadingScreen_unloadTextures, Phyre_PCluster_dtor_PCluster); symbols from Fahrenheit's server export; thiscall(this): +0x34 cluster: PCluster_dtor + PhyreFree when set, +0x34 = 0, tail jump LoadingScreen_unloadTextures; ported ffx_system::m5a_platform (m5 system-a c2)
+0x006e5050 function LoadingScreen_unloadTextures # layout+callees: sorts between LoadingScreen_setParameterManually and RemapButtonIcon_sDestoryInstance, and its named callees match the Switch 0x7100227e80 LoadingScreen_unloadTextures's (similarity 1.00: ClusterManager_GetInstance, ClusterManager_releasePCluster); symbols from Fahrenheit's server export; thiscall(this): ClusterManager_releasePCluster(ClusterManager_GetInstance(); [+0x1c][i]) for 20 clusters, then +0x28 when set -> the last release's eax or 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006e50a0 function LoadingScreen_update_006e50a0 # thiscall(this; dt f32) ret 4, callers (PhyreScene_animate 0x0065753d, PhyreScene_renderLoadingScreen 0x0066b25d) read no eax; name ours: sorts between LoadingScreen_unloadTextures and the RemapButtonIcon methods, the loading screen's per-frame update; ported (ffx_glue_other::h4_k2, m4 h4 cont9): needs +0x20 & 0x7fffffff, +0x2c, +0x30; clock +4 += dt (< f64 0x00b412e8, else f32 0x00b47c5c); held = f32 0x00b3eb58 (1.5) >= old time +8 (fcom, ah & 1); +8 += dt; value block ebp-0x14 = (1, 1, 1, 0); state +0x10 0: +0x14 = 0, held and new time > hold: state 1; bytes +0/+1 both 0: stop (+4, +0x10, +8, +0x14 = 0; GetApplication()+0x3a0 = 0); held and new time <= hold: SleepThreadInMillisecond(0x8c); state 1: fade +0x14 = dt * f64 0x00b3eb68 + fade (spilled to its dt slot), >= rate: state 2, fade = f32 0x00b34254; no flags: 3; state 2 without flags: 3; state 3: fade -= rate * dt (spilled), < 0: stop; ColorScale (1, 1, 1, fade / f64 0x00b48320) on +0x38's first material, (1, 1, 1, fade) on +0x40's (SetValue, parameter unchecked); clock >= f32 0x00b47c58: repeat index +0xc = (index + 1) % count, clock -= f64 0x00b4b378 (spilled) while not below; ColorBuffer {0x42, 0, PhyreScene_getLinearSampler(g_PhyreScene; 2), +0x24[index]} via setTextureChecked on +0x40's
 0x006e5490 function graphicInitialize_allocOnce_006e5490 # cdecl(): [0x00ce5194] = operator_new(1) unless set; caller graphicInitialize (eax junk when set); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006e55d0 function GetGlobal00ce5194_006e55d0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x00ce5194]; return t0; callers: ; name ours
@@ -5703,10 +5742,10 @@
 0x006f1370 function StatsAndAchievements_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f13c0 function StatsAndAchievements_scalar_deleting_dtor # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1420 function StatsAndAchievements_ResetAll # SteamUserStats()->ResetAllStats(true) (+0x54); BasicDebugTweakUtil item 0xc (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
+0x006f1430 function StatsAndAchievements_Create # new(0x50) -> 0x00ce81a8 (platform census 2026-10-25, docs/formats/platform.md; settings/Steam); ported ffx_system::m5a_platform: cdecl() -> the ctor's eax (0 when new fails) (m5 system-a c2)
 0x006f14a0 function StatsAndAchievements_Destroy # no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours
-0x006f1550 function AchievementTryObtainPlat  # fh v3:exact 0x006f1690 +AchievementTryObtainPlat
+0x006f1510 function StatsAndAchievements_Unlock_006f1510 # thiscall(this, id), ret 4: with this+0x4d set (the constructor sets it and nothing clears it; +0x4c is "stats received", platform census 2026-10-25), id <= 0x21 and record id's achieved byte (g_AchievementRecords +0x184) clear: StatsAndAchievements_SetAchievement_006f1900(id), then AchievementTryObtainPlat (which, once records 1..33 are achieved and record 0, the platinum, is not, calls this with 0); callers SaveDataUnlockAchievement (0x006488d6) and AchievementTryObtainPlat (0x006f1573) only (tools/refs.py): platform, the Steam achievement layer (classify REVIEWED); class from Fahrenheit's CCallback<StatsAndAchievements,...> vtables; name ours; ported ffx_system::m5a_platform: void (eax junk to callers) (m5 system-a c2)
+0x006f1550 function AchievementTryObtainPlat # fh v3:exact 0x006f1690 +AchievementTryObtainPlat; thiscall(this): record 0 not unlocked and records 1..=0x21 all are -> StatsAndAchievements_Unlock_006f1510(this; 0); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1580 function ReturnConst_006f1580 # () -> 0x98; name ours
 0x006f1590 function ReturnConst_006f1590 # () -> 0x18; name ours
 0x006f15a0 function ReturnConst_006f15a0 # () -> 0x10; name ours
@@ -5719,8 +5758,10 @@
 0x006f1780 function CCallback_UserStatsStored_Register # (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f17d0 function StatsAndAchievements_RequestStats # if +0x4d and logged on: RequestCurrentStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
-0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours
+0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours; ported ffx_system::m5a_platform: void (eax junk to its caller) (m5 system-a c2)
+0x006f1980 function SaveDataManager_ctor_006f1980 # thiscall(this) -> this: +0 = 1, +4 = 0, +8/+0xc = -1, +0x358/+0x360/+0x368 = 0, +0x390 = -1, +0x398/+0x39c = 0, strncpy of the defaults 0x00b0dab8 (0x40 at +0x10), 0x00b4bb60 (0x80 at +0x50), 0x00b4bb78 (0x200 at +0xd0), 0x00b4bb94 (0x40 at +0x2d0), 0x00b4bba0 (0x40 at +0x310); +0x35c = AddrOfGlobal0159e468_008b3630(), TOClearBlock_008b3610, +0x3a8 = 0x101 (word), +0x3aa = 0, +0x3ac = 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1aa0 function SaveDataManager_setResult_006f1aa0 # thiscall(this; v) ret 4 -> v: [[0x00ce81f4] + 8] = 4/2/6 for this+8 = 3/1/5; this+0x3a4 = v; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f1c10 function SaveDataManager_create_006f1c10 # cdecl() -> g_SaveDataManager = operator new(0x488) constructed by 0x006f1980 (0 when new fails); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1db0 function SetWord0_006f1db0 # thiscall(this): this[0] = 1 (caller 0x00647e40); eax untouched; name ours
@@ -5746,7 +5787,7 @@
 0x006f2520 function SetMember394_006f2520 # thiscall(this; v), ret 4: this+0x394 = v, returns v; caller 0x00648f80 (save data); name ours
 0x006f2530 function SaveDataManager_setSaveDataIconString # fh v3:exact 0x006f2670 SaveDataManager::setSaveDataIconString
 0x006f2560 function SaveDataManager_setSaveDataInfo # fh v3:exact 0x006f26a0 SaveDataManager::setSaveDataInfo
-0x006f2740 function code_006f2740 # cdecl(): jmp SaveDataMachine_Update (called with ecx = the save manager); bridge ffx_system::m5a_savedata::bridge::machine_update_thunk, not hooked: no function in the dump (check-ported), m5 system-a b2
+0x006f2740 function code_006f2740 # cdecl(): jmp SaveDataMachine_Update (called with ecx = the save manager, never read); ported ffx_system::m5a_savedata::bridge::machine_update_thunk (m5 system-a b2), hooked c2: a 5-byte jmp thunk the dump lacks, confirmed from the machine code (check-ported)
 0x006f29f0 function crossThreadImpl_run_006f29f0 # thiscall(this): [this+0x10]([this+0x14]) cdecl when set; returns 0; slot 1 of crossThreadImpl_vftable (0x00b4bbd0); name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x006f2a40 function Thread_Sleep # cdecl(ms): Sleep(ms), its eax left; name ours
 0x006f2be0 function Event_Reset # cdecl(&event): ResetEvent(*event) through 0x00b0c0f0; name ours
@@ -5781,6 +5822,7 @@
 0x006f5370 function Add_006f5370 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006f5380 function AddU16_006f5380 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006f5420 function WaterDistortionEffectDelegations_captureFrame # layout+callees: sorts between AssetListReader_readListFile and WaterDistortionEffectDelegations_processWaterDistortion, and its named callees match the Switch 0x710029aea0 WaterDistortionEffectDelegations_captureFrame's (similarity 1.00: PostProcessManager_GetInstance, PostProcessManager_copyBuffer); symbols from Fahrenheit's server export
+0x006f5450 function SamplerStates_release_006f5450 # cdecl(): PSamplerStateD3D11_release_0059c770 on 0x00ce8208, then (tail jump) 0x00ce822c; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f5470 function PSamplerStates_init_006f5470 # cdecl() -> eax: the sampler descriptions 0x00ce8208 and 0x00ce822c get defaults unless their flag word +0x1c has bit 7 (address modes +2/+3 = 2; first: filters +0/+1 = 1, second: cleared), each created by 0x0058cf80 (thiscall; tail call); PhyreScene_initScene; name ours; ported M4 h3 r2 (ffx_prender::glue6)
 0x006f54f0 function WaterDistortionEffectDelegations_processWaterDistortion # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Water distortion materials hit: %d\\n'; Switch 0x710029aef0 WaterDistortionEffectDelegations::processWaterDistortion (symbols from Fahrenheit's server export); cdecl(task) delegation callback (pushed by PhyreScene_fieldMapInitialize): task {scene, w1, w2, target1, target2}; materials of class 0x00ca5268 (PhyreSceneCursor_Seek4/Next4 at ebp-0x64): "ColorBuffer" of kind 0x42/0xd9..0xdc/0x12 takes {0x42, 0, 0x00ce8208, target1's texture} (memcpy when it fits; a texture is checked by 0x0059e520, the folded TrophyManager_Install, 0), "DepthStencilBuffer" {0x42, 0, 0x00ce822c, target2's texture} through setTextureChecked_0056e670, counted; PhyrePrintf(2, hits); with hits a 12-byte copy of {w1, w2, target1} registered (RenderDelegationHelper_registerDelegation(copy, 0xc, 0x40, captureFrame)) and deleted; target1's texture over task's slot; ported M4 h3 r7 (ffx_prender::h3_glue29)
 0x006f5750 function AddU16_006f5750 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
@@ -5892,11 +5934,12 @@
 0x006fa6c0 function FmodManager_signalVoiceStart # layout+callees: sorts between FmodManager_signalMusicStart and SyncManager_SyncManager, and its named callees match the Switch 0x7100237500 FmodManager_signalVoiceStart's (similarity 1.00: FfxFmod_voiceSetStartSignal); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, FfxFmod_voiceSetStartSignal(mgr+8; 1)'s eax
 0x006fa700 function FmodManager_tick             # fastcall(mgr): graphicGetTimeInMicroseconds; before 33.333 ms since mgr+0x20 waits on mgr+0x18 (WaitForSingleObjectEx, alertable) for the rest; else FfxFmod_soundLoop and mgr+0x20 advances by whole periods; then runs the queue (0x006fa7e0). The FMOD clock is the game clock (virtual in the harness); name ours
 0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, SyncManager_initData(this), returns this
+0x006fa8c0 function code_006fa8c0 # thiscall(this): jmp SyncManager_releaseData (a 5-byte thunk the dump lacks, confirmed from the machine code); callers 0x0067a900 and two more; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData; ported (ffx_glue_other::h4_d4, m4 h4 d): zeroed user_malloc buffers (+0 0x100, +4 and +0x24..+0x3c 0x200, +0x40 0x190), sprintf(+0, "PS3"), +8..+0x1c 0, +0x20 1; returns 0
 0x006faa30 function SyncManager_initSyncFileList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncDataList.txt'; Switch 0x71002380d0 SyncManager::initSyncFileList (symbols from Fahrenheit's server export)
 0x006faba0 function SyncManager_initSyncVoiceList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncVoiceList.txt'; Switch 0x71002381f0 SyncManager::initSyncVoiceList (symbols from Fahrenheit's server export)
 0x006facf0 function SyncManager_readSyncFile  # fh v3:exact 0x006fadd0 SyncManager::readSyncFile; ported (ffx_glue_other::h4_d1, m4 h4 d): stdcall(path) -> 16-aligned block of the whole file, or 0 after dbgPrintf
-0x006fad90 function SyncManager_releaseData      # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100237dd0 SyncManager::releaseData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x006fad90 function SyncManager_releaseData # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100237dd0 SyncManager::releaseData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); thiscall(this) -> 0: user_free_thunk of +0, the 0x80 words of [+4], +4, +0x24..+0x40 (each cleared after its free, but +0x34 and +0x38 clear +0x30: they keep their freed pointers), +8..+0x1c = 0, +0x20 = 1; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006faee0 function SyncManager_releaseSyncData  # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100238380 SyncManager::releaseSyncData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006faf90 function SyncManager_syncDataChange # fh v3:exact 0x006fb070 SyncManager::syncDataChange
 0x006fb080 function SyncManager_syncDataChangeAsync # fh v3:exact 0x006fb160 SyncManager::syncDataChangeAsync; ported (ffx_glue_other::h4_c3, m4 h4 c): thiscall(this; id) ret 4 -> 0: id 1..=500, not the current +0xc: +0xc = id, +0x1c/+8 cleared; id in the list +0x40 (count +0x18, signed) -> +0x1c = 1, waits for +0x20 (5 ms sleeps), SyncManager_releaseSyncData, +0x20 = 0, AsyncLoadManager_registAsyncLoadTask(mgr, SyncManager_syncDataChangeAsyncTask, 2, this, sign, id, sign) (7 words)
@@ -5968,6 +6011,7 @@
 0x00702fd0 function Add_00702fd0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x00702fe0 function AddU16_00702fe0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x00702ff0 function PostEffectParams_ctor_00702ff0 # thiscall -> this: byte +0 and +0x1c..+0x2c = 0, PSamplerStateD3D11_ctor(this + 0x30), +0x54..+0x6c = 0, +0x14/+0x18/+4/+8/+0xc = 1.0, +0x10 = [0x00b92194] (0.5, fld/fstp); caller 0x006c32d0; name ours; ported (ffx_glue_other::effect, m4 h4 r1)
+0x00703070 function SamplerHolder_clear_00703070 # thiscall(this): byte +0, words +0x24/+0x2c/+0x64/+0x68/+0x6c/+0x20/+0x28/+0x54..+0x60 = 0, tail jump Phyre_PRendering_PSamplerStateD3D11_dtor(this + 0x30); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00703230 function RadialBlur_initialize        # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RadialBlur_capturedFrame'; Switch 0x710026c6b0 RadialBlur::initialize (symbols from Fahrenheit's server export) ; thiscall(this; cluster, a, scene, w, h), ret 0x14 -> 0, 5 (no cluster), 0x13, 0xd or a callee's non-zero result: variant +0x28, material +0x2c, parameters +0x54..+0x60, mesh +0x6c with a one-entry list, texture +0x64, target +0x68 (RadialBlur_capturedFrame), RadialBlur_setParam54(w, h, 0, 0), sampler +0x30 min filter 1 and registered, byte +0 1; ported (ffx_glue_other::h4_h4, m4 h4 h)
 0x007035f0 function RadialBlur_resize_007035f0 # thiscall(this; w, h) ret 8: 0x00a0e4b0([this+0x68], w, h, 1); 0 (as Distortion_resize); after RadialBlur_initialize, caller 0x006c3c40; name ours; ported (ffx_glue_other::effect, m4 h4 r1)
 0x007036f0 function RadialBlur_setParam54_007036f0 # as BlurEffectEx_setParam48_006c45c0 with +0x54 and the buffer at (+0x2c)+4; one caller RadialBlur_initialize; name ours; bridge ffx_glue_other::frames::post_set_param (tested), not hooked: a thiscall shim gets the thunk's copies of its arguments, and the memcpy can read past the four words into its caller's stack; needs the thunk's argument-slots form for thiscall (m4 h4 r2); hooked (m4 h4 r3): thiscall argument-slots shim
@@ -13651,7 +13695,7 @@
 0x008ac130 function TOFTCTransfer             # fh v3:exact 0x008ac0e0; (file): version u16 +4 >= 0xc8, slot u16 +8: 0x01841da0[slot] = image (+0x20/+0x24), size (+0x28/+0x2a); slots 0/4 copy the image to 0x0184b610/0x0185b610; slots 0..5 copy the CLUT (+0x30/+0x10); 0, or 1
 0x008ac2c0 function TOGetBtlMenuTexAdrs       # () -> [0x01841e04]; fh switch:bsim1.00 0x71004fa310
 0x008ac2d0 function TOGetWord_01841e08        # () -> [0x01841e08]; between TOGetBtlMenuTexAdrs and TOGetFFXLangStr; name ours
-0x008ac2f0 function TOGetFFXLangJmp           # jmp TOGetFFXLang (0x006410e0); pppDrawMdl3Draw/Semi3Draw divide a screen-space model's +0x30 by 1.8 when it returns 0xb; name ours
+0x008ac2f0 function TOGetFFXLangJmp # jmp TOGetFFXLang (0x006410e0); pppDrawMdl3Draw/Semi3Draw divide a screen-space model's +0x30 by 1.8 when it returns 0xb; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x008ac300 function TOGetFFXLangStr           # fh v3:exact 0x008ac2b0; TOGetFFXLang -> "us" 1, "fr" 2, "es" 3, "de" 4, "it" 5, "kr" 9, "ch" 10, "uk" 18, else "jp"
 0x008ac390 function TOGetFFXLangSwapFlag      # fh v3:bsim1.00 0x008ac340
 0x008ac3a0 function TOGetFFXVideoMode         # fh v3:bsim1.00 0x008ac350
@@ -13700,7 +13744,7 @@
 0x008af2a0 function TOSeqStartSceneNoErase       # layout: alphabetical run between TOSeqStartSceneDrawContinue and TOSeqStopExecScene (1 unnamed in the gap); Switch 0x71004fd0e0 TOSeqStartSceneNoErase is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008af380 function TOSeqStopExecScene        # fh v3:exact 0x008af330; cdecl(i) -> i << 8: each of scene i's 8 slots with +2 != 1 and state 2 or 3 gets state 4 and byte +8 = 0; ported (system round 32)
 0x008af4f0 function TOSeqStopScene            # fh v3:exact 0x008af4a0
-0x008af590 function TOSetEnvMovieMessage      # fh v3:exact 0x008af540
+0x008af590 function TOSetEnvMovieMessage # fh v3:exact 0x008af540; cdecl() -> 0 or 0x42: with Sg_GetDispMode, the emulated GS PMODE at the absolute 0x12000000 (no relocation) = 0x42 (64 bits); ported ffx_system::m5a_platform (m5 system-a c2)
 0x008af5c0 function TOSetExeMessageWindowArea # fh v3:exact 0x008af570; cdecl(bank): g_TOMessageWindowSlots[8] = 0x01865ce0/0x01865dc0 + 0x1c k, SetGlobal_01841e0c(bank), TOSetExeWindowArea(bank), TOSetExeMessageArea(bank)
 0x008af690 function SetGlobal_01841e0c # cdecl(v): *0x01841e0c = v, returns v; caller TOSetExeMessageWindowArea; name ours
 0x008af6a0 function TOCheckMapMessage         # cdecl(id): unless 0x00c59558 < 0 or (MsGetSaveMenu & 0x200 and 0x007851b0() == 1): 0x00c59558 = 1 if id is listed for g_CurrentMapNo in 0x00b5f730 (0x20-byte entries: map (first compiled as 0xa2), ids to -1; map 0 ends), else 0; returns 0; caller 0x0086...; name ours
@@ -14889,7 +14933,7 @@
 0x009048a0 function TOSetPolyG4A_XYWH         # fh switch:bsim1.00 0x71005094e0
 0x009048e0 function TOSetRegFont1612          # fh v3:bsim1.00 0x009048e0
 0x009048f0 function TOSetScreenWH # cdecl(w, h): u16 g_TOScreenW = w, g_TOScreenH = h (the setter of TOGetScreenWH); caller 0x008fae20; name ours
-0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70
+0x00904a70 function ToDrawEternalCalmCopyRight # fh v3:exact 0x00904a70; cdecl(frame) -> graphicDrawUIElement's eax: the fade 0x018716a4 (frame < 0x20 up 4 to 0x80, < 0x110 0x80, else down 4 to 0), the quad at ebp-0x9c (0x80 colour, the fade as alpha, size f32 0x00b41d9c/0x00b41d98, scale 1.0, +0x80 = 1000; +0x40..0x7f, +0x84..0x8f never written: junk read, 0 in the port, brief 2026-10-24), texture name 0x00c59ed0 (TOGetFFXLangJmp 0) or 0x00c59ed4; graphicDrawUIElement(quad, name, 1, 0, 0); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00904ba0 function QuickRecoverMenuDraw      # fh switch:cg2 0x71004beaa0; cdecl(text, x, y, w, alpha, scale, extra, align, scroll, slot): battle-font label fitted to w: align 1 centres, 0 left (else left unset); wider text marquees in slot min(slot,3) (scroll 1: 51-frame waits, -0.5/frame, drawn twice 10 apart in OpenFontScissor) or is cut glyph by glyph with an ellipsis HHH/> (a G at the cut narrowed by the G glyph width); callers TOBtlDrawCommandWindow; ported (system round 29)
 0x00905190 function ToGetBtlEasyDigitWidth    # fh v3:exact 0x00905190
 0x00905230 function ToGetBtlEasyDigitWidth2      # layout+callees: sorts between ToGetBtlEasyDigitWidth and ToGetBtlEasyFontWidth, and its named callees match the Switch 0x7100506420 ToGetBtlEasyDigitWidth2's (similarity 1.00: ToGetBtlEasyDigitWidth); symbols from Fahrenheit's server export
@@ -16883,7 +16927,7 @@
 0x00a3d9b0 function IggyPlayer_QueueDraw_00a3d9b0 # fastcall(player) -> 0 or error: allocates an 8-byte render-thread command (0x005b5940(0x00a3d6d0, 8, &cmd)) holding the player and 0x00a3d9f0 (IggyPlayerReadyToTick under the critical section 0x01a858cc, then the draw): Iggy draws on PhyreEngine's render thread, where every captured Direct3D call is made; name ours (pc-ui2d)
 0x00a3dd00 function SetFields_00a3dd00           # auto-port shape (several stores: set field (constants, arguments, addresses), thiscall): u32[(a0 + 0xc)] = a3; u32[(a0 + 0x10)] = a4; u32[(a0 + 0x14)] = a1; u32[(a0 + 0x18)] = a2; return a2; callers: ; name ours
 0x00a3dd20 function CDataFrameQueue_ctor # (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00a3dd50 function CDataFrameQueue_dtor # rename of StoreAddressToField_00a3dd50 (platform census 2026-10-25, docs/formats/platform.md; movie); was StoreAddressToField_00a3dd50
+0x00a3dd50 function CDataFrameQueue_dtor # rename of StoreAddressToField_00a3dd50 (platform census 2026-10-25, docs/formats/platform.md; movie); was StoreAddressToField_00a3dd50; thiscall(this): [this] = CDataFrameQueue_vftable 0x00b7a9e4; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00a3dd90 function CDataFrameQueue_Front # blocking (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3ddc0 function CDataFrameQueue_Pop # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3dde0 function CDataFrameQueue_Count # (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -16893,7 +16937,7 @@
 0x00a3df00 function CDataFrameQueue_Commit # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3df20 function CDataFrameQueue_Destroy # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e030 function VbfMkvReader_ctor # rename of SetFields_00a3e030 (platform census 2026-10-25, docs/formats/platform.md; movie); was SetFields_00a3e030
-0x00a3e040 function VbfMkvReader_dtor # (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e040 function VbfMkvReader_dtor # (platform census 2026-10-25, docs/formats/platform.md; movie); thiscall(this): VbfMkvReader_vftable, the file +0x10 deleted and cleared when set (its bare-ret dtor 0x00607c10 not called), base dtor 0x0041e6a0 inlined (vtable 0x00b7a9ec); eax junk; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00a3e150 function VbfMkvReader_Close # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e1b0 function VbfMkvReader_Length # vtable slot 1 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e1f0 function VbfMkvReader_Open # (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -16967,7 +17011,7 @@
 0x00a44820 function sceCdSync                 # fh v3:cg5 0xa44820
 0x00a44840 function MyProfilerAddMarker       # fh v3:cg6 0xa44840
 0x00a44a30 function WindowEventHandler_Register_00a44a30 # cdecl(): 0x00c85ec4 = 0, then 0x00625c70(&0x00c85ec0, the CWindowEventHandler vtable object); Sg_MainInit's tail call; name ours
-0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30
+0x00a44b30 function JobScheduleWait_Ch_Cloth_PerCharacter # fh v3:bsim1.00 0x00a44b30; cdecl(): waitForComplete([0x00cdede4]; 0); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00a44b40 function JobSchedule_Ch_Cloth_PerCharacter # (chars, &count): queues Ch_Cloth_PerCharacter (0x0082e390) through the scheduler's one-argument enqueue 0x00a44a50; Ch_DrawMain calls it
 0x00a44b80 function JobScheduleWait_Ch_CalcMiddle_Batch # JobSchedule_JobScheduler_waitForComplete(0) only; Ch_CalcMain (0x00832e10) and Ch_CalcMiddle (0x00833390) call it before and after queueing the batches (0x00a44b90)
 0x00a44b90 function JobSchedule_Ch_CalcMiddle_Batch # (chars, pass, count): queues Ch_CalcMiddle_Batch as a job (0x0071e720, worker threads); Ch_CalcMain (0x00832e10) and Ch_CalcMiddle (0x00833390) call it once per ~200 elements, so battles run several batches (Ch_Neck/Ch_CalcElement) at once

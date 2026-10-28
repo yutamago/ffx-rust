@@ -84,7 +84,10 @@ MsGetRomItem @ 0x0079_09f0 => extern "C" fn ms_get_rom_item(id: u32, strings: u3
 ```
 
 `extern "C"` is cdecl; use `"stdcall"`, `"thiscall"` (first argument
-`this`) or `"fastcall"` as the original needs. The name must be the one in
+`this`) or `"fastcall"` as the original needs, or `"fastcall-caller-pops"`
+for an original that takes `ecx` and `edx` plus stack words its caller
+pops (an LTCG custom convention; `docs/hooking.md`, "The hook table";
+`Conv::FastcallCallerPops` in the oracle). The name must be the one in
 `symbols/ffx.sym`; the function must be at least five bytes (the jump).
 `tools/check-ported.py` checks both, and with `FFX_GAME_DIR` set that the
 shim pops what the original's `ret` pops. Sizes come from

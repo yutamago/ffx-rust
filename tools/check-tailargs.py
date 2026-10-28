@@ -84,7 +84,9 @@ def _load(name, file):
 
 AS = _load("check_argslots", "check-argslots.py")  # Frame, accesses, the cache
 SHIM = re.compile(r'^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern "([\w-]+)" fn \w+\(([^)]*)\)', re.M)
-SKIP = {"C": 0, "cdecl": 0, "stdcall": 0, "thiscall": 1, "fastcall": 2}
+SKIP = {"C": 0, "cdecl": 0, "stdcall": 0, "thiscall": 1, "fastcall": 2,
+        # ecx, edx, then stack words the caller pops (ported!, check-callconv)
+        "fastcall-caller-pops": 2}
 TAIL = re.compile(r"jmp\s+0x([0-9a-f]+)$")
 BRANCH = re.compile(r"j\w*\s+0x([0-9a-f]+)$")
 STARTS = []

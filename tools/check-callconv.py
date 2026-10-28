@@ -51,6 +51,12 @@ Three halves:
 directly, through a helper function, through a closure handed to a bridge,
 and a stub that doesn't pop.
 
+`Conv::FastcallCallerPops` (the LTCG custom convention of 0x00401690 and
+Settings_ValidateBindings: `ecx`, `edx`, then stack words the caller pops)
+is checked like cdecl, with its first two words in registers; --self-test
+has a call of 0x00401690 made right, one made as fastcall and one of a
+popping import made with it.
+
 Problems: a cdecl helper against a callee that pops; a callee-pops helper
 (stdcall, thiscall, fastcall) against a plain `ret` or a cdecl import when
 it passes stack words; a word count that doesn't match `ret n`/4; a stub
@@ -385,6 +391,12 @@ class Binary:
 # --- 1. calls in the ports ---
 
 POPPING = {"stdcall", "thiscall", "fastcall"}
+# `ecx` and `edx` like fastcall, the stack words left to the caller like
+# cdecl: MSVC LTCG's custom convention (0x00401690, Settings_ValidateBindings;
+# the oracle's Conv::FastcallCallerPops, ported!'s "fastcall-caller-pops")
+CALLER_POPS = {"cdecl", "fastcall-caller-pops"}
+REG_WORDS = {"thiscall": 1, "fastcall": 2, "fastcall-caller-pops": 2}
+CONV_NAMES = {"FastcallCallerPops": "fastcall-caller-pops"}
 IMAGE_LO, IMAGE_HI = 0x00401000, 0x00b00000  # .text
 
 
@@ -585,9 +597,9 @@ class Ports:
     @staticmethod
     def conv(fn, text):
         """'cdecl'.. | ('param', index) | None."""
-        m = re.search(r"\bConv::(Cdecl|Stdcall|Fastcall|Thiscall)\b", text)
+        m = re.search(r"\bConv::(Cdecl|Stdcall|FastcallCallerPops|Fastcall|Thiscall)\b", text)
         if m:
-            return m.group(1).lower()
+            return CONV_NAMES.get(m.group(1), m.group(1).lower())
         t = text.strip()
         if fn is not None and re.fullmatch(r"[a-z_]\w*", t):
             for i, (p, ty) in enumerate(fn.params):
@@ -683,7 +695,7 @@ def raw_sites(ports):
             if isinstance(ci, int) and conv is None:
                 conv = None
             words = 0 if si is None else ports.words(f, fn, args[si], off)
-            if conv == "fastcall" and isinstance(words, int):
+            if conv in ("fastcall", "fastcall-caller-pops") and isinstance(words, int):
                 words = max(words - 2, 0)
             out.append(Site(f, off, how, target, conv, words, args[ti], args[si] if si is not None else None))
         # `let g: unsafe extern "ABI" fn(..) = transmute(EXPR);`
@@ -703,7 +715,7 @@ def raw_sites(ports):
                 continue
             conv = ABI.get(m.group(2))
             n = sum(2 if re.search(r"\b(u64|i64|f64)\b", t) else 1 for t in types if t)
-            n -= {"thiscall": 1, "fastcall": 2}.get(conv, 0)
+            n -= REG_WORDS.get(conv, 0)
             fn = f.enclosing(m.start())
             if in_host and fn is not None and (fn.name in METHODS or fn.name.startswith("call") or fn.params and fn.params[0][0] == "f"):
                 continue
@@ -911,11 +923,11 @@ def judge(site, callee):
     pops = callee.pops
     what = callee.what
     cls = callee.conv
-    if conv == "cdecl":
+    if conv in CALLER_POPS:
         if pops:
-            return f"{site.where}: {site.how} calls {what} as cdecl, but it pops {pops // 4} words itself ({pops:#x} bytes)"
+            return f"{site.where}: {site.how} calls {what} as {conv}, but it pops {pops // 4} words itself ({pops:#x} bytes)"
         if pops is None and cls in ("stdcall", "stdcall-this", "thiscall", "fastcall") and words:
-            return f"{site.where}: {site.how} calls {what} ({cls}, pops its arguments) as cdecl"
+            return f"{site.where}: {site.how} calls {what} ({cls}, pops its arguments) as {conv}"
         return None
     if conv in POPPING:
         if pops is None and cls == "cdecl" and words:
@@ -964,7 +976,7 @@ def stub_sites(ports, test_files):
                     pops = cw.eval_int(args[pi], {})
                     if ci is not None:
                         c = Ports.conv(None, args[ci])
-                        pops = None if c is None else 0 if c == "cdecl" else pops
+                        pops = None if c is None else 0 if c in CALLER_POPS else pops
                     out.append((f, caller, off, args[si], pops, fn.name))
     return out
 
@@ -1089,6 +1101,13 @@ fn imm(h: &mut impl Host, f: u32, a: &[u32]) -> u32 {
 fn imm_conv(h: &mut impl Host, f: u32, conv: Conv, a: &[u32]) -> u32 {
     h.call_sym(f, conv, a)
 }
+// 0x00401690: ecx, edx and one stack word, plain ret (caller pops)
+pub const PARSE_LIST: u32 = 0x0040_1690;
+pub fn custom(h: &mut impl Host, s: u32, out: u32, hwnd: u32) {
+    h.call_sym(PARSE_LIST, Conv::FastcallCallerPops, &[s, out, 0x51]);
+    h.call_sym(PARSE_LIST, Conv::Fastcall, &[s, out, 0x51]);
+    h.call_sym(IME_DISASSOCIATE, Conv::FastcallCallerPops, &[0, 0, hwnd, 0]);
+}
 pub fn through_helper(h: &mut impl Host, hwnd: u32) {
     imm(h, IME_DISASSOCIATE, &[hwnd, 0]);
     imm_conv(h, IME_DISASSOCIATE, Conv::Stdcall, &[hwnd, 0]);
@@ -1110,18 +1129,23 @@ fn shim() {
 const IME: u32 = 0x009d_a254;
 impl Twins {
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {}
+    fn stub_conv(&mut self, sym: u32, conv: Conv, n: u32) {}
 }
 fn t(t: &mut Twins) {
     t.stub(IME, false, 2, 0, 1);
     t.stub(IME, false, 2, 2, 1);
+    t.stub_conv(IME, Conv::FastcallCallerPops, 4);
 }
 """,
 }
 SELF_EXPECT = [
     ("lib.rs:6:", "as cdecl, but it pops 2 words"),
-    ("lib.rs:18:", "imm -> call_sym calls"),
-    ("lib.rs:20:", "passes 1 stack words (stdcall)"),
-    ("fixture.rs:7:", "pops 0 words; the original pops 2"),
+    ("lib.rs:21:", "as fastcall with 1 stack words, but it returns with a plain ret"),
+    ("lib.rs:22:", "as fastcall-caller-pops, but it pops 2 words"),
+    ("lib.rs:25:", "imm -> call_sym calls"),
+    ("lib.rs:27:", "passes 1 stack words (stdcall)"),
+    ("fixture.rs:8:", "stub of"),
+    ("fixture.rs:10:", "stub_conv of"),
     ("closure.rs:4:", "closure fixture.rs:3 -> call_cdecl calls"),
 ]
 

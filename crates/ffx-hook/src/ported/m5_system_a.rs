@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
@@ -318,4 +319,424 @@ ported! {
     SaveData_Update @ 0x0064_8480 => extern "C" fn save_data_update() -> u32 {
         sa::save_data_update(&mut mem())
     }
+
+    // ---- round 2: the custom convention and the jump thunks ----
+    /// `0x00401690(text; out, max)`: `ecx`, `edx` and a stack word the
+    /// caller pops.
+    Settings_ParseIntList_00401690 @ 0x0040_1690 => extern "fastcall-caller-pops" fn parse_int_list(text: u32, out: u32, max: u32) -> u32 {
+        st::parse_list(&mut mem(), text, out, max)
+    }
+    /// `Settings_ValidateBindings(list; n, filter)`: `ecx`, `edx` and a
+    /// stack word the caller pops.
+    Settings_ValidateBindings @ 0x0040_5bb0 => extern "fastcall-caller-pops" fn validate_bindings(list: u32, n: u32, filter: u32) -> u32 {
+        st::validate_bindings(&mut mem(), list, n, filter)
+    }
+    /// `Settings_JoinBindings(out; list, n)`: `ecx`, `edx` and a stack
+    /// word the caller pops; frame `ebp - 0xd0`.
+    Settings_JoinBindings @ 0x0040_16e0 => extern "fastcall-caller-pops" fn join_bindings(out: u32, list: u32, n: u32) -> u32 {
+        let mut f = StackFrame::<{ (st::JOIN_FRAME / 4) as usize }>::new();
+        st::join_bindings(&mut mem(), f.at() + st::JOIN_FRAME, out, list, n)
+    }
+    /// `Settings_SetValue(this; key, std::string value)`: the string's six
+    /// words read where the caller pushed them (`slots`), frame
+    /// `ebp - 0x50`.
+    Settings_SetValue @ 0x0040_1930 => extern "thiscall" fn set_value(this: u32, key: u32, s0: u32, s1: u32, s2: u32, s3: u32, s4: u32, s5: u32; slots: u32) -> u32 {
+        let _ = (s0, s1, s2, s3, s4, s5);
+        let mut f = StackFrame::<{ (st::SET_VALUE_FRAME / 4) as usize }>::new();
+        st::set_value(&mut mem(), f.at() + st::SET_VALUE_FRAME, this, key, slots + 4)
+    }
+    /// `Settings_Save(this)`: the original's `alloca` buffer is a zeroed
+    /// heap block here.
+    Settings_Save @ 0x0040_1d80 => extern "thiscall" fn settings_save(this: u32) -> u32 {
+        let mut store = Vec::new();
+        st::save(&mut mem(), this, |n| zeroed(&mut store, n))
+    }
+    /// `Settings_Load(this)`: the same for the file's bytes (and the 0x20
+    /// spare ones, junk in the original).
+    Settings_Load @ 0x0040_1cb0 => extern "thiscall" fn settings_load(this: u32) -> u32 {
+        let mut store = Vec::new();
+        st::load(&mut mem(), this, |n| zeroed(&mut store, n))
+    }
+    // ---- the platform glue (ffx_system::m5a_platform) ----
+    /// `fiosClose(f)`.
+    fiosClose @ 0x0067_9510 => extern "C" fn fios_close(f: u32) -> u32 {
+        pf::fios_close(&mut mem(), f)
+    }
+    /// `sceClose(fd)`.
+    sceClose @ 0x0062_f610 => extern "C" fn sce_close(fd: u32) -> u32 {
+        pf::sce_close(&mut mem(), fd)
+    }
+    /// `sceWrite(fd, buf, ..)`: only `buf` is read.
+    sceWrite @ 0x0062_fdc0 => extern "C" fn sce_write(fd: u32, buf: u32) -> u32 {
+        let _ = fd;
+        pf::sce_write(&mut mem(), buf)
+    }
+    /// `0x0061b3c0(module, info, id)`.
+    AtlStringResourceImage_0061b3c0 @ 0x0061_b3c0 => extern "C" fn string_resource_image(module: u32, info: u32, id: u32) -> u32 {
+        pf::string_resource_image(&mut mem(), module, info, id)
+    }
+    /// `SaveDataIsSaveEnabled()`.
+    SaveDataIsSaveEnabled @ 0x0064_80e0 => extern "C" fn is_save_enabled() -> u32 {
+        pf::is_save_enabled(&mut mem())
+    }
+    /// `(this; id)`: `eax` junk to the caller.
+    StatsAndAchievements_SetAchievement_006f1900 @ 0x006f_1900 => extern "thiscall" fn set_achievement(this: u32, id: u32) {
+        pf::set_achievement(&mut mem(), this, id);
+    }
+    /// `(this; id)`.
+    StatsAndAchievements_Unlock_006f1510 @ 0x006f_1510 => extern "thiscall" fn unlock(this: u32, id: u32) {
+        pf::unlock(&mut mem(), this, id);
+    }
+    /// `(this)`: `ecx` is passed on to the unlock.
+    AchievementTryObtainPlat @ 0x006f_1550 => extern "thiscall" fn try_obtain_platinum(this: u32) {
+        pf::try_obtain_platinum(&mut mem(), this);
+    }
+    /// `SaveDataUnlockAchievement(id)`.
+    SaveDataUnlockAchievement @ 0x0064_88c0 => extern "C" fn unlock_achievement(id: u32) {
+        pf::unlock_achievement(&mut mem(), id);
+    }
+    /// `fiosOpen(name, mode)`: the error path's `CString` lives in the
+    /// caller's `mode` slot (`slots + 4`), as in the original.
+    fiosOpen @ 0x0067_9730 => extern "C" fn fios_open(name: u32, mode: u32; slots: u32) -> u32 {
+        pf::fios_open(&mut mem(), name, mode, slots + 4)
+    }
+    /// `sceOpen(name, mode)`: frame `ebp - 0x804`.
+    sceOpen @ 0x0062_fa30 => extern "C" fn sce_open(name: u32, mode: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::SCE_OPEN_FRAME / 4) as usize }>::new();
+        pf::sce_open(&mut mem(), f.at() + pf::SCE_OPEN_FRAME, name, mode)
+    }
+    /// `TOSetEnvMovieMessage()`.
+    TOSetEnvMovieMessage @ 0x008a_f590 => extern "C" fn set_env_movie_message() -> u32 {
+        pf::set_env_movie_message(&mut mem())
+    }
+    /// `TOGetFFXLangJmp()`: the jump to `TOGetFFXLang`.
+    TOGetFFXLangJmp @ 0x008a_c2f0 => extern "C" fn get_ffx_lang_jmp() -> u32 {
+        pf::get_ffx_lang_jmp(&mut mem())
+    }
+    /// `ToDrawEternalCalmCopyRight(frame)`: the quad at `ebp - 0x9c`.
+    ToDrawEternalCalmCopyRight @ 0x0090_4a70 => extern "C" fn draw_copyright(frame: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::COPYRIGHT_FRAME / 4) as usize }>::new();
+        pf::draw_copyright(&mut mem(), f.at() + pf::COPYRIGHT_FRAME, frame)
+    }
+    /// `(this; queue)`: `eax` junk to the callers.
+    JobSchedule_JobScheduler_waitForComplete @ 0x006d_bf50 => extern "thiscall" fn wait_for_complete(this: u32, queue: u32) {
+        pf::wait_for_complete(&mut mem(), this, queue);
+    }
+    /// `()`: queue 0 of the cloth scheduler.
+    JobScheduleWait_Ch_Cloth_PerCharacter @ 0x00a4_4b30 => extern "C" fn wait_cloth() {
+        pf::wait_cloth(&mut mem());
+    }
+    /// `(this)`.
+    LoadingScreen_unloadTextures @ 0x006e_5050 => extern "thiscall" fn unload_textures(this: u32) -> u32 {
+        pf::unload_textures(&mut mem(), this)
+    }
+    /// `(this)`.
+    LoadingScreen_terminate @ 0x006e_5020 => extern "thiscall" fn terminate(this: u32) -> u32 {
+        pf::terminate(&mut mem(), this)
+    }
+    /// `(this)`: `eax` junk to the callers.
+    LoadingScreen_dtor_00634790 @ 0x0063_4790 => extern "thiscall" fn loading_screen_dtor(this: u32) {
+        pf::loading_screen_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    CDataFrameQueue_dtor @ 0x00a3_dd50 => extern "thiscall" fn data_frame_queue_dtor(this: u32) {
+        pf::data_frame_queue_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    VbfMkvReader_dtor @ 0x00a3_e040 => extern "thiscall" fn vbf_mkv_reader_dtor(this: u32) {
+        pf::vbf_mkv_reader_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BufferTree_dtor_00633fe0 @ 0x0063_3fe0 => extern "thiscall" fn buffer_tree_dtor(this: u32) {
+        pf::buffer_tree_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    ListVector_dtor_00634220 @ 0x0063_4220 => extern "thiscall" fn list_vector_dtor(this: u32) -> u32 {
+        pf::list_vector_dtor(&mut mem(), this)
+    }
+    /// `(fd, fmt, ...)`: the variable arguments where the caller pushed
+    /// them (`slots + 8`); frame `ebp - 0x404`.
+    SaveDataTtyWrite2 @ 0x0064_8850 => extern "C" fn tty_write2(fd: u32, fmt: u32; slots: u32) -> u32 {
+        let _ = fd;
+        let mut f = StackFrame::<{ (pf::TTY_FRAME / 4) as usize }>::new();
+        pf::tty_write2(&mut mem(), f.at() + pf::TTY_FRAME, fmt, slots + 8)
+    }
+    /// `(this)`.
+    FogEffectManager_resetAll_006e3f10 @ 0x006e_3f10 => extern "thiscall" fn fog_reset_all(this: u32) -> u32 {
+        pf::fog_reset_all(&mut mem(), this)
+    }
+    /// `()`.
+    AsyncLoadManager_shutdown_00691b00 @ 0x0069_1b00 => extern "C" fn async_load_shutdown() -> u32 {
+        pf::async_load_shutdown(&mut mem())
+    }
+    /// `()`: `eax` junk to the callers.
+    ClusterManager_shutdown_0069a0e0 @ 0x0069_a0e0 => extern "C" fn cluster_manager_shutdown() {
+        pf::cluster_manager_shutdown(&mut mem());
+    }
+    /// `(p)`: the 5-byte `jmp user_aligned_free`.
+    code_00686fe0 @ 0x0068_6fe0 => extern "C" fn aligned_free_thunk(p: u32) -> u32 {
+        pf::aligned_free_thunk(&mut mem(), p)
+    }
+    /// `(this; id)`: `al` the answer, the upper bytes `ReleaseMutex`'s.
+    MapHasActive_0069b890 @ 0x0069_b890 => extern "thiscall" fn map_has_active(this: u32, id: u32) -> u32 {
+        pf::map_has_active(&mut mem(), this, id)
+    }
+    /// `(this)`.
+    SamplerHolder_clear_00703070 @ 0x0070_3070 => extern "thiscall" fn clear_sampler_holder(this: u32) -> u32 {
+        pf::clear_sampler_holder(&mut mem(), this)
+    }
+    /// `()`: `eax` junk to the callers.
+    LocalizationManager_shutdown_006db040 @ 0x006d_b040 => extern "C" fn localization_shutdown() {
+        pf::localization_shutdown(&mut mem());
+    }
+    /// `fiosFinalize()`.
+    fiosFinalize @ 0x0067_9590 => extern "C" fn fios_finalize() -> u32 {
+        pf::fios_finalize(&mut mem())
+    }
+    /// `()`.
+    SyncManager_shutdown_0067a900 @ 0x0067_a900 => extern "C" fn sync_manager_shutdown() -> u32 {
+        pf::sync_manager_shutdown(&mut mem())
+    }
+    /// `()`.
+    FreeBlock_0067ac40 @ 0x0067_ac40 => extern "C" fn free_block_ccc7cc() -> u32 {
+        pf::free_block_ccc7cc(&mut mem())
+    }
+    /// `()`.
+    SamplerStates_release_006f5450 @ 0x006f_5450 => extern "C" fn release_samplers() -> u32 {
+        pf::release_samplers(&mut mem())
+    }
+    /// `(this; job, queue)`: the queue's address goes into the caller's
+    /// `queue` slot (`slots + 4`), as in the original.
+    JobScheduler_pushJob_006dbd10 @ 0x006d_bd10 => extern "thiscall" fn push_job(this: u32, job: u32, queue: u32; slots: u32) -> u32 {
+        pf::push_job(&mut mem(), this, job, queue, Some(slots + 4))
+    }
+    /// `(this)`.
+    JobScheduler_shutdown_006dbe80 @ 0x006d_be80 => extern "thiscall" fn scheduler_shutdown(this: u32) -> u32 {
+        pf::scheduler_shutdown(&mut mem(), this)
+    }
+    /// `(this; timeout)`.
+    BigFileStream_claimSlot_0061b4a0 @ 0x0061_b4a0 => extern "thiscall" fn claim_slot(this: u32, timeout: u32) -> u32 {
+        pf::claim_slot(&mut mem(), this, timeout)
+    }
+    /// `(this)`: `eax` junk to the callers.
+    PRedBlackTree_dtor_0061d5c0 @ 0x0061_d5c0 => extern "thiscall" fn tree_dtor(this: u32) {
+        pf::tree_dtor(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BigFileHandle_deinitialize @ 0x0061_d910 => extern "thiscall" fn big_file_deinitialize(this: u32) {
+        pf::big_file_deinitialize(&mut mem(), this);
+    }
+    /// `(this)`: `eax` junk to the callers.
+    BigFileHandle_dtor_BigFileHandle @ 0x0061_d670 => extern "thiscall" fn big_file_handle_dtor(this: u32) {
+        pf::big_file_handle_dtor(&mut mem(), this);
+    }
+    /// `(this)`.
+    BigFileStream_term_0061b620 @ 0x0061_b620 => extern "thiscall" fn big_file_stream_term(this: u32) -> u32 {
+        pf::big_file_stream_term(&mut mem(), this)
+    }
+    /// `()`: `eax` junk to the caller.
+    BigFileStream_shutdown_0061b690 @ 0x0061_b690 => extern "C" fn big_file_stream_shutdown() {
+        pf::big_file_stream_shutdown(&mut mem());
+    }
+    /// `(this)`.
+    SyncManager_releaseData @ 0x006f_ad90 => extern "thiscall" fn sync_release_data(this: u32) -> u32 {
+        pf::sync_release_data(&mut mem(), this)
+    }
+    /// `(this)`: the 5-byte `jmp SyncManager_releaseData`.
+    code_006fa8c0 @ 0x006f_a8c0 => extern "thiscall" fn sync_release_thunk(this: u32) -> u32 {
+        pf::sync_release_thunk(&mut mem(), this)
+    }
+    /// `(this; key, v, kbd)`.
+    PInputMapper_setKey @ 0x0062_c990 => extern "thiscall" fn set_key(this: u32, key: u32, v: u32, kbd: u32) -> u32 {
+        pf::set_key(&mut mem(), this, key, v, kbd)
+    }
+    /// `()` -> `ST0`.
+    inputGetCurTime @ 0x0063_0c60 => extern "C" fn cur_time() -> f32 {
+        pf::cur_time(&mut mem())
+    }
+    /// `(this)`: `eax` junk to the caller.
+    InputManager_ClearHoldTimers @ 0x0063_1270 => extern "thiscall" fn clear_hold_timers(this: u32) {
+        pf::clear_hold_timers(&mut mem(), this);
+    }
+    /// `(this)`.
+    InputManager_UpdateHoldTimers @ 0x0063_30e0 => extern "thiscall" fn update_hold_timers(this: u32) -> u32 {
+        pf::update_hold_timers(&mut mem(), this)
+    }
+    /// `()`.
+    inputODUpdate @ 0x0063_0d50 => extern "C" fn od_update() -> u32 {
+        pf::od_update(&mut mem())
+    }
+    /// `(this; n)`.
+    PairArray_reserve_00631450 @ 0x0063_1450 => extern "thiscall" fn pair_array_reserve(this: u32, n: u32) -> u32 {
+        pf::pair_array_reserve(&mut mem(), this, n)
+    }
+    /// `(this; other)`.
+    PairArray_assign_00631110 @ 0x0063_1110 => extern "thiscall" fn pair_array_assign(this: u32, other: u32) -> u32 {
+        pf::pair_array_assign(&mut mem(), this, other)
+    }
+    /// `SaveData_Init()`.
+    SaveData_Init @ 0x0064_7fb0 => extern "C" fn save_data_init() -> u32 {
+        pf::save_data_init(&mut mem())
+    }
+    /// `()`.
+    TrophyManager_create_0067ac10 @ 0x0067_ac10 => extern "C" fn trophy_manager_create() -> u32 {
+        pf::trophy_manager_create(&mut mem())
+    }
+    /// `()`.
+    SaveDataManager_create_006f1c10 @ 0x006f_1c10 => extern "C" fn save_manager_create() -> u32 {
+        pf::save_manager_create(&mut mem())
+    }
+    /// `StatsAndAchievements_Create()`.
+    StatsAndAchievements_Create @ 0x006f_1430 => extern "C" fn stats_create() -> u32 {
+        pf::stats_create(&mut mem())
+    }
+    /// `(this)`: the save manager's constructor.
+    SaveDataManager_ctor_006f1980 @ 0x006f_1980 => extern "thiscall" fn save_manager_ctor(this: u32) -> u32 {
+        pf::save_manager_ctor(&mut mem(), this)
+    }
+    /// `(this)`.
+    PRedBlackTree_reset_0061d8e0 @ 0x0061_d8e0 => extern "thiscall" fn tree_reset(this: u32) -> u32 {
+        pf::tree_reset(&mut mem(), this)
+    }
+    /// `(this; path, size)`.
+    VbfStream_Open @ 0x0061_acc0 => extern "thiscall" fn vbf_stream_open(this: u32, path: u32, size: u32) -> u32 {
+        pf::vbf_stream_open(&mut mem(), this, path, size)
+    }
+    /// `iSyncInitialize()`.
+    iSyncInitialize @ 0x0067_a960 => extern "C" fn sync_initialize() -> u32 {
+        pf::sync_initialize(&mut mem())
+    }
+    /// `()`.
+    LocalizationManager_create_006dafc0 @ 0x006d_afc0 => extern "C" fn localization_create() -> u32 {
+        pf::localization_create(&mut mem())
+    }
+    /// `(this; &digest)`: the copy at `ebp - 0x10`.
+    Vbf_Contains @ 0x0061_dec0 => extern "thiscall" fn vbf_contains(this: u32, digest: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::CONTAINS_FRAME / 4) as usize }>::new();
+        pf::vbf_contains(&mut mem(), f.at() + pf::CONTAINS_FRAME, this, digest)
+    }
+    /// `()`.
+    PClassLayoutInterface_static_0059e530 @ 0x0059_e530 => extern "C" fn layout_interface() -> u32 {
+        pf::layout_interface(&mut mem())
+    }
+    /// `(this)`.
+    BigFileStream_ctor @ 0x0061_bdd0 => extern "thiscall" fn big_file_stream_ctor(this: u32) -> u32 {
+        pf::big_file_stream_ctor(&mut mem(), this)
+    }
+    /// `(this; n)`.
+    BigFileStream_initSlots_0061c2c0 @ 0x0061_c2c0 => extern "thiscall" fn stream_slots_init(this: u32, n: u32) -> u32 {
+        pf::stream_slots_init(&mut mem(), this, n)
+    }
+    /// `BigFileStream_createInstance()`.
+    BigFileStream_createInstance @ 0x0061_b590 => extern "C" fn big_file_stream_create() -> u32 {
+        pf::big_file_stream_create(&mut mem())
+    }
+    /// `(this; node)`.
+    VbfTree_link_0061d210 @ 0x0061_d210 => extern "thiscall" fn digest_tree_link(this: u32, node: u32) -> u32 {
+        pf::digest_tree_link(&mut mem(), this, node)
+    }
+    /// `(this; &digest, &entry)`.
+    Vbf_InsertEntry @ 0x0061_de30 => extern "thiscall" fn vbf_insert_entry(this: u32, digest: u32, entry: u32) -> u32 {
+        pf::vbf_insert_entry(&mut mem(), this, digest, entry)
+    }
+    /// `(a, b)`.
+    Word4Greater_0060add0 @ 0x0060_add0 => extern "C" fn word4_greater_add0(a: u32, b: u32) -> u32 {
+        pf::word4_greater(&mut mem(), a, b)
+    }
+    /// `(a, b)`: a copy of `0x0060add0`.
+    Word4Greater_0060ae00 @ 0x0060_ae00 => extern "C" fn word4_greater_ae00(a: u32, b: u32) -> u32 {
+        pf::word4_greater(&mut mem(), a, b)
+    }
+    /// `(rec, object, cursor, flags)`.
+    Fixup_SetArrayObjectAndRead @ 0x0060_ae50 => extern "C" fn set_array_object_and_read(rec: u32, object: u32, cursor: u32, flags: u32) -> u32 {
+        pf::set_array_object_and_read(&mut mem(), rec, object, cursor, flags)
+    }
+    /// `(rec, object, cursor, flags)`.
+    Fixup_SetObjectAndRead @ 0x0060_ae90 => extern "C" fn set_object_and_read(rec: u32, object: u32, cursor: u32, flags: u32) -> u32 {
+        pf::set_object_and_read(&mut mem(), rec, object, cursor, flags)
+    }
+    /// `(this; flags)`.
+    DeletingDtor_0060e8a0 @ 0x0060_e8a0 => extern "thiscall" fn deleting_dtor_60e8a0(this: u32, flags: u32) -> u32 {
+        pf::deleting_dtor_60e8a0(&mut mem(), this, flags)
+    }
+    /// `(&s, &out, &len)`.
+    StringWithLength_0060e8e0 @ 0x0060_e8e0 => extern "C" fn string_with_length(sp: u32, out: u32, len: u32) -> u32 {
+        pf::string_with_length(&mut mem(), sp, out, len)
+    }
+    /// `(out, name)`.
+    FindEnum_0060e9b0 @ 0x0060_e9b0 => extern "C" fn find_enum(out: u32, name: u32) -> u32 {
+        pf::find_enum(&mut mem(), out, name)
+    }
+    /// `(this; flags)`.
+    DeletingDtor_0061a740 @ 0x0061_a740 => extern "thiscall" fn deleting_dtor_61a740(this: u32, flags: u32) -> u32 {
+        pf::deleting_dtor_61a740(&mut mem(), this, flags)
+    }
+    /// `(this)`.
+    VFile_fileClose @ 0x0061_aa50 => extern "thiscall" fn vfile_close(this: u32) -> u32 {
+        pf::vfile_close(&mut mem(), this)
+    }
+    /// `(this)`.
+    StreamSlot_ctor_0061af20 @ 0x0061_af20 => extern "thiscall" fn slot_ctor(this: u32) -> u32 {
+        pf::slot_ctor(&mut mem(), this)
+    }
+    /// `(this)`.
+    FreeBstr_0061b0b0 @ 0x0061_b0b0 => extern "thiscall" fn free_bstr(this: u32) -> u32 {
+        pf::free_bstr(&mut mem(), this)
+    }
+    /// `(this, a, b, c)`.
+    Forward_0061d0b0 @ 0x0061_d0b0 => extern "C" fn forward_61d030(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        pf::forward_61d030(&mut mem(), this, a, b, c)
+    }
+    /// `(p)`.
+    SetFlag39_00624d30 @ 0x0062_4d30 => extern "C" fn set_flag39(p: u32) -> u32 {
+        pf::set_flag39(&mut mem(), p)
+    }
+    /// `(instance, ctx)`.
+    Input_EnumPadsCallback @ 0x0062_4d40 => extern "stdcall" fn enum_pads_callback(instance: u32, ctx: u32) -> u32 {
+        let _ = ctx;
+        pf::enum_pads_callback(&mut mem(), instance)
+    }
+    /// `(this)`.
+    VFile_dtor_VFile @ 0x0061_a960 => extern "thiscall" fn vfile_dtor(this: u32) -> u32 {
+        pf::vfile_dtor(&mut mem(), this)
+    }
+    /// `(this; vfile)`.
+    BigFileHandle_releaseVFile @ 0x0061_df70 => extern "thiscall" fn release_vfile(this: u32, vfile: u32) -> u32 {
+        pf::release_vfile(&mut mem(), this, vfile)
+    }
+    /// `(this)`.
+    StreamSlotPool_term_0061af40 @ 0x0061_af40 => extern "thiscall" fn slot_pool_term(this: u32) -> u32 {
+        pf::slot_pool_term(&mut mem(), this)
+    }
+    /// `(this; &digest)`: the copy at `ebp - 0x10`.
+    BigFileHandle_getNewVFile @ 0x0061_df10 => extern "thiscall" fn get_new_vfile(this: u32, digest: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::GET_VFILE_FRAME / 4) as usize }>::new();
+        pf::get_new_vfile(&mut mem(), f.at() + pf::GET_VFILE_FRAME, this, digest)
+    }
+    /// `(this; id)`.
+    ComBstr_loadString_0061b330 @ 0x0061_b330 => extern "thiscall" fn load_bstr(this: u32, id: u32) -> u32 {
+        pf::load_bstr(&mut mem(), this, id)
+    }
+    /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
+    user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
+        sa::user_free_thunk(&mut mem(), p)
+    }
+    /// `code_006f2740()`: the 5-byte `jmp SaveDataMachine_Update`.
+    code_006f2740 @ 0x006f_2740 => extern "C" fn machine_update_thunk() -> u32 {
+        sa::machine_update_thunk(&mut mem())
+    }
+}
+
+/// `n` zero bytes in `store` (replacing what it held), for an original's
+/// `alloca` buffer; returns their address, or 0 when the allocation fails
+/// (no panic in the game: the original's `alloca` of that size fails too,
+/// at its stack guard).
+fn zeroed(store: &mut Vec<u8>, n: u32) -> u32 {
+    store.clear();
+    let n = n as usize;
+    if store.try_reserve_exact(n).is_err() {
+        return 0;
+    }
+    store.resize(n, 0);
+    u32::try_from(store.as_mut_ptr() as usize).unwrap_or(0)
 }
