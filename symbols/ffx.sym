@@ -12157,6 +12157,7 @@
 0x00860720 function Native_01d3_AlwaysTrue # 0x01d3: 1 (mov eax, 1; ret); ported in native_mods (script round 19); name ours; name from "1 (mov eax, 1; ret)"; FFX.exe bytes b8 01 00 00 00 c3; constant 1 with no effect, same shape as Native_AlwaysTrue019c
 0x00860730 function Native_01c9_DisposeAnimDobj              # 0x01c9: (b, a): 0x009084b0(b, a); 1; ported in native_move (script round 11); name from "0x009084b0(b, a)" = yiDisposeAnimDObj
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
+0x00860770 function AtelGetBuildDate_00860770 # mov eax, 0x00b5b9fc; ret: the build's __DATE__ __TIME__ string; entry of the table at 0x00c53654 (with 0x00878130, 0x00879420); 6 bytes, not in the dump; left to tools/autoport.py (M5 script list); name ours
 0x00860780 function AtelMenuSaveMes_00860780 # cdecl(id): MsMenuGetText(3, id, MsGetSaveConfigHiragana()), as TkMenuSaveMes; ported in menu round 22 (tk::menu_text_of); name ours
 0x008607a0 function Msg_ShowSetup              # (worker, args, stack, mode): pops (window, message, b, a, x, y, anchor), re-pushes them for Native_MsgSetPos, style 0, text, flags 0, choice bytes +0x1e/+0x1f, MsgOpen with mode|2, then Native_MsgSelect; mode 0 from Native_MsgShowWait, 8 from 0x00855d70; ported in native_msg
 0x00860990 function Msg_ChoicePoll             # (worker, args, handlers): as Native_MsgSelect_Poll, plus status 1: handlers[0x008b8010(window)](choice); ported in native_msg
@@ -12342,6 +12343,7 @@
 0x0086b020 function AtelGetFieldU161c_0086b020   # auto-port shape (return field u16, cdecl): t0 = u16[(a0 + 0x1c)]; return t0; callers: AtelBattleSetUp; name ours
 0x0086b030 function AtelGetEffectFlag         # fh v3:exact 0x0086afc0
 0x0086b050 function AtelGetEffectParam        # fh v3:bsim1.00 0x0086afe0
+0x0086b060 function AtelGetGlobal01326b58_0086b060 # mov eax, [0x01326b58]; ret (6 bytes, not in the dump); Native_0195_WaitGlobal01326b58_Poll's callee; left to tools/autoport.py (M5 script list); name ours
 0x0086b150 function AtelGetElemId # (chr, kind): MsGetSaveChrArmorModel(chr) for kind 1, else MsGetSaveChrWeaponModel(chr); callers Native_0119_ChrGetEquipModel, Native_01ba_ChrGetEquipModel; ported in helpers (script round 23 d); fh v3:exact 0x0086b0e0
 0x0086b170 function Msg_Text1                 # (i): entry i's text (+0) in the script context's second table (+0x38, .ebp section 5); offset 0 falls back to the .ebp's section 1 (0x023cbd60); = Msg_Get(i, 0, 1)
 0x0086b1b0 function AtelGetEventActorLinkWork # (i) -> the event worker i's link byte +0x33 (ctrl work 0 current meanwhile; mov al, EAX keeps the worker's upper bytes); ported in helpers (script round 23 d); fh v3:exact 0x0086b140
@@ -12369,14 +12371,19 @@
 0x0086ba40 function AtelGetHideStatusFromID # (i) -> +0xa0 of the current ctrl work's worker i; ported in helpers (script round 23 d); fh v3:bsim1.00 0x0086b9d0
 0x0086ba60 function Msg_TableTextAlt          # (table, i): entry i's alternate text (+4) in table; offset 0 falls back to entry i's text in the .ebp's section 1; no callers
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
+0x0086bad0 function MsGetSaveConfigHiragana_thunk_0086bad0 # jmp MsGetSaveConfigHiragana (0x007851f0); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086bae0 function AtelGetHyoukaMenuEnable # cdecl (): ctrl work 0 +1 bit 4, with g_ScriptContext = ctrl work 0 meanwhile; 0 when TkGetTGS, MsBattleCheck, isEternalCalmScene(save map), ctrl work 0 lacks +0 bits 0/1 or has +1 bit 2/+3 0x87/+2 bit 5, SndIsReadStatus, movie_run_check, or g_AtelOverlayStatus 1; ported (ffx_script helpers, script round 24 a); callees: its named callees match the Switch 0x71004728f0 AtelGetHyoukaMenuEnable's (similarity 1.00: MsBattleCheck, SndIsReadStatus, TkGetTGS, isEternalCalmScene, movie_run_check); symbols from Fahrenheit's server export
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
+0x0086bbc0 function MsGetSaveConfigEnglish_thunk_0086bbc0 # jmp MsGetSaveConfigEnglish (0x007851d0); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # (i) -> bit 8 of the current ctrl work's worker i's +0x38 (u16); ported in helpers (script round 23 d); fh v3:exact 0x0086bb80
 0x0086bc10 function AtelIsKeepPlayStatusClear12# !(g_AtelBattleEndStatus +4 bit 12); TkBtlEndCtrl
 0x0086bc20 function AtelIsKeepPlayStatusClear8# !(g_AtelBattleEndStatus +4 bit 8); TkBtlEndCtrl
 0x0086bc30 function AtelGetKeepPlayStatusWhiteInOut# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelBattleEndStatus +4 bit 17
 0x0086bc50 function AtelIsKeepPlayStatusClear11# !(g_AtelBattleEndStatus +4 bit 11): 0x008bdf60 stops the music (AtelRegistMusicNumber(-1)) when clear
 0x0086bc60 function AtelGetKeepPlayStatusNoStopFanfare# Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelBattleEndStatus +4 bit 13
+0x0086bc70 function TkGetLastEventJumpId_thunk_0086bc70 # jmp TkGetLastEventJumpId (0x0088d600); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
+0x0086bc80 function TkGetLastEventJumpIndex_thunk_0086bc80 # jmp TkGetLastEventJumpIndex (0x0088d610); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
+0x0086bca0 function TkGetLastEventJumpMapNo_thunk_0086bca0 # jmp TkGetLastEventJumpMapNo (0x0088d630); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086bcb0 function AtelGetFieldU1614_0086bcb0   # auto-port shape (return field u16, cdecl): t0 = u16[(a0 + 0x14)]; return t0; callers: AtelBattleSetUp; name ours
 0x0086bd40 function Get_g_AtelLoveParamDisable_0086bd40 # auto-port shape (return global u32, cdecl): t0 = u32[&0x01326b90]; return t0; callers: ; name ours
 0x0086bd90 function AtelGetMapIndex # (hdr, i): -1 without the entrance table (+4); else the sound table's (+0x2c) map record (+0x3c) language table (+0xc) word for the language (1 with MsGetSaveConfigEnglish, which is 0 on PC; else TkGetLang() in 0..16, else 0), else entrance i's map (i16 at table + 32i); dbgPrintf is empty on PC; ported in helpers (script round 23 i); fh v3:exact 0x0086bd20
@@ -12395,6 +12402,7 @@
 0x0086c160 function AtelGetMyWorkSize # (i) -> worker i's header +0x10 (work size) rounded up to 16, signed; ported in helpers (script round 23 d); fh v3:exact 0x0086c0f0
 0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
+0x0086c1c0 function TkGetNowEventJumpId_thunk_0086c1c0 # jmp TkGetNowEventJumpId (0x0088d660); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086c1f0 function TkGetNowEventJumpMapNo_0086c1f0 # MsBattleProcess calls it at a battle's end (result unused); Ghidra's name
 0x0086c200 function AtelGetOverlayStatus      # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelOverlayStatus (u8, AtelSetOverlayStatus)
 0x0086c280 function AtelIsBattleEndStatusClear8# !(g_AtelBattleEndStatus bit 8); 0x007917d0
@@ -12439,6 +12447,7 @@
 0x0086d510 function Atel_InitFreeSignals_0086d510 # name ours; cdecl (worker): the worker's own 24-byte signal nodes pushed onto its free list +0x88 (old first.prev = node, head = node, node.prev = head, node.next = old first): types 5/6 clear +0x2e4 and push the 8 from +0x1c4, others the 16 from +0x3d8; EAX head address (5/6) or the last node; caller AtelInitBasicWork (which zeroes +0x88 first); ported (ffx_script helpers, script round 24 b)
 0x0086d670 function AtelInitSourceCodeDebugWork # (i, src): with a source record, worker i's +0xc + 4k = src +4 + 12k for k from clamp([src] - 1, 0, 7) down to 0; ported in helpers (script round 23 g); fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal # (r26) callees and stores in order: scale pair 2, callback queue, shop ratio 100, in-water -1, pause, event mode 0xff, ..., native tables 0..15 empty then groups 1,0,12,6,9,5,4,11,7,8,13, game speed 1, ctrl works bit 0 / +0x48 cleared, ctrl work 0 current, Atel_ParseHex("0x0") returned; ported in helpers; registers the native function tables per group; was Script_InitNatives
+0x0086d940 function MsBattleCheck_thunk_0086d940 # jmp MsBattleCheck (0x00780c90); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086d950 function AtelIsBind # (i) -> 1 when worker i is bound to a character (+0xaa 1) with a model (+0x9c), else 0; ported in helpers (script round 23 f); fh v3:exact 0x0086d8e0
 0x0086d980 function AtelIsElemBind               # layout+callees: sorts between AtelIsBind and AtelJumpGameOver, and its named callees match the Switch 0x7100462940 AtelIsElemBind's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
@@ -12483,6 +12492,7 @@
 0x0086ec80 function AtelRegistSignalWithoutSameTag2# (request) -> 0 when a request for that entry is queued, else AtelRegistSignalMain
 0x0086ece0 function Atel_ResetTextLanguage_0086ece0 # (r25 b) MsSetSaveConfigEnglish(FFXGetAsiaMode != 0); on a change TOSwapInternationalEnvInit/Exec (TkSyncV + FileReadMain until done); caller AtelJumpGameOver; own name
 0x0086ed40 function AtelRemoveCtrlWork        # fh v3:exact 0x0086ecd0
+0x0086ed70 function FUN_00873d60_thunk_0086ed70 # jmp FUN_00873d60 (0x00873d60); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x0086ed80 function AtelRequestMapCamera # (set): with a camera worker (+0x18 u16 not 0xffff), the current entrance's record (TkGetNowEventJumpIndex, 32 bytes each in the table at +4, the end +8; 0x01325b50 without a table) camera +6 (i16); non-zero: AtelRegistSignalMain((0xffff, worker, 0, 1, camera), -1) and 1; else 0; ported in helpers (script round 23 i); fh v3:exact 0x0086ed10
 0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0; (i, block, a, b): sets ctrl work i up for a script block -> the ctrl work; ported in helpers (script round 15)
 0x0086f040 function Atel_SetCurLevel5ec        # (worker, v f): the current level's +0x5ec; name ours; ported in helpers (script round 14)
@@ -12546,6 +12556,7 @@
 0x00870520 function SetField_00870520            # auto-port shape (store argument to field, cdecl): u16[(((a1 * 0x4c) + a0) + 0x5bc)] = (a2 & 0xffff); return a0; callers: ; name ours
 0x00870540 function Atel_MoveStep_00870540 # (worker, level) one frame of the level's move (+0x44, mode u16 +2): bound character's speed (Ch_SetSp) after Ch_SetVelY (sin/cos of pos +0x24; jump table 0x00870830 on kind - 2 for field mode 0) or TkCh_SetPos; then by kind (byte table 0x00870860 into 0x00870850): 0 target position, 5/6 and 7/9 stop on time < length, else Atel_InRadiusXYZ/XZ (mode bit 10) stop; eax unused by the caller 0x008666e0; own name; ported in helpers (script round 26)
 0x00870870 function AtelSetMyWorkAdrs # (i, at): worker i's +0xb8 = at, then clears header +0x10 bytes at at, or (no at) at binary +4 + header +0x2c when that is set; ported in helpers (script round 23 d); fh v3:exact 0x00870810
+0x008708d0 function AtelSetGlobal01326b81_008708d0 # mov byte [0x01326b81], 1; ret (8 bytes, not in the dump); Native_01bf_SetGlobal01326b81's callee; left to tools/autoport.py (M5 script list); name ours
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
 0x00870900 function AtelSetOverlayStatus      # fh v3:bsim1.00 0x008708a0
 0x00870910 function AtelSetPC                    # layout+callees: sorts between AtelSetOverlayStatus and AtelSetPos3d, and its named callees match the Switch 0x71004689c0 AtelSetPC's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
@@ -12680,6 +12691,7 @@
 0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0; (script r28) draws the event sprites (g_EventSprites) as VFX type 8 when 0x01327144, 0x01327f4c and no movie: render record 0x700000/rgb*alpha/0x1030/matrix in its frame, id index + (sprite << 32), InitVFXRenderDataAtelShp or updateVFXRenderDataAtelShp + six graphicVFX2DUpdate; map 0x17e hides sprites 5/11/17/21; caller AtelDrawNoTrans
 0x008747b0 function Atel_GetSprite             # (i 0..127): sprite record i (0x01327148, 0x1c bytes); name ours; ported in helpers (script round 14)
 0x008747f0 function Atel_ClearSprite           # (i): sprite record i's first byte = 0; name ours; ported in helpers (script round 14)
+0x00874830 function AtelClearShape_thunk_00874830 # jmp AtelClearShape (0x008742b0); 0 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x008748a0 function Atel_ShowSprite_008748a0 # (r25 d) event sprite i (0..0x7f) on with texture tex (op_anm_tex0_set, set_ptr32 at +0x14), +0 0xff01, +3 1, colour 0x80808080; loads the event texture list when 0x023cbc5c is set; caller Native_SpriteShow; own name
 0x00874970 function Atel_SetSpriteFlag         # (i, on): sprite i +3 = on != 0; name ours; ported in helpers (script round 14)
 0x008749b0 function Atel_SetSprite13           # (i, v): sprite i +0x13 = v; name ours; ported in helpers (script round 14)
@@ -12708,6 +12720,7 @@
 0x00875940 function Sg_EventjumpDispose_thunk_00875940 # (script r28) jmp Sg_EventjumpDispose (0x0083b420); AtelEventRemove tail-jumps here; own name
 0x00875950 function AtelCharSetUp                # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f2d0 AtelCharSetUp's (similarity 1.00: AtelGetBinHdrExpandAddChr, AtelGetCtrlWork, AtelPs2DebugString, Sg_EventjumpInit); symbols from Fahrenheit's server export
 0x008759b0 function AtelCommonSetUp # (ctrl, a, block, x34, x8, debug): debug sources (count + 3 words each: AtelSetUpSourceDebug(e1, e2, x8, e0, 0x100000 for ctrl 0 else 0x20000)), AtelRequireCtrlWork(ctrl, block, a, -1) (+0x34 = x34), set up and current, then AtelInitBasicWork(record (active, i, ctrl, 0, i, AtelGetIndexWork(block, i), block, x8), clear) for the actors (active) and the other namespace entries, each with AtelInitSourceCodeDebugWork(i, debug); AtelInitActor's EAX; caller TOMenuAtelStart; ported in helpers (script round 27 c); layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f0b0 AtelCommonSetUp's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetActorNumber, AtelGetIndexWork, AtelGetNamespaceNumber, AtelInitActor); symbols from Fahrenheit's server export
+0x00875ad0 function AtelRemoveCtrlWork_thunk_00875ad0 # jmp AtelRemoveCtrlWork (0x0086ed40); 1 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
 0x00875b40 function Vibrate_UpdateVolume_00875b40 # name ours; cdecl (): unless g_TkVibrateOff, for each pad allowed by g_TkVibrateMask: state 1 with both channels 0x200 or state 2 with both 0xfffe ends (+0x22 = 0); Vibrate_EntryLevel(pad, 0/1) maxima into g_TkVibrateVolume; EAX the last allowed pad's second level or the mask (caller's EAX when off); callers 0x00872bd0, AtelExecVibrate; ported (ffx_script helpers, script round 24 d)
 0x00875c20 function Vibrate_EntryLevel        # (rec, e) entry e level for this frame into +0xa: 0 outside modes 1/2, start level for negative length, 0 for curve parts >= 0x200, else Vibrate_StepLevel; own name
@@ -12788,6 +12801,7 @@
 0x00878060 function Native_101b_Distance3D                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12); name from "the 3D distance"
 0x008780f0 function Native_101c_SetVarSlot                # 0x101c: no args -> 0x00878140(worker, args, stack)'s record +4 = 0; 0; ported in native_chr (script round 12); name from 0x00878140=Atel_SetVarSlot (ctrl work +0x1a4 slot = var address); "record +4 = 0"
 0x00878110 function Native_101d_SetVarSlot # 0x101d: 0x00878140's record +4 = 1; 0; ported in native_mods (script round 19); name ours; name from 0x00878140=Atel_SetVarSlot (ctrl work +0x1a4 slot = var address); "record +4 = 1"
+0x00878130 function AtelGetBuildDate_00878130 # as AtelGetBuildDate_00860770 (table 0x00c5365c); left to tools/autoport.py; name ours
 0x00878140 function Atel_SetVarSlot_00878140 # name ours; cdecl (worker, args, stack): pops a variable word and a slot (clamped 0..7); current ctrl work +0x1a4 + slot*8 = AtelGetRealVarAdrs(worker, word) (0 for word 0); EAX the record; core of Native_101c_SetVarSlot/Native_101d_SetVarSlot (which call the Rust one); ported (ffx_script helpers, script round 24 c)
 0x008781b0 function Native_c054_MemAlloc                # 0xc054: args (n) -> TkMalloc(n) (0x0088e650); ported in native_chr (script round 12); name from "TkMalloc(n)" (0x0088e650)
 0x008781d0 function Native_c055_MemFree                # 0xc055: args (p) -> TkFree(p) (0x0088d520); 1; ported in native_chr (script round 12); name from "TkFree(p)" (0x0088d520)
@@ -12883,6 +12897,7 @@
 0x008793b0 function Native_c051_SetTgs                # 0xc051: args (on) -> TkSetTGS(on != 0) (0x0088ec10); on != 0; ported in native_chr (script round 12); name from "TkSetTGS(on != 0)" (0x0088ec10)
 0x008793e0 function Native_c052_GetTGS                # 0xc052: no args -> jumps to 0x0088d6d0; ported in native_chr (script round 12); BSim review: returns u8 g_TkTGS (set by TkSetTGS/TkInitStartMap); TGS meaning unknown, name only; name from jumps to 0x0088d6d0 TkGetTGS
 0x008793f0 function Native_c053_DropFour                # 0xc053: no args -> four popped and dropped; 0; ported in native_chr (script round 12); name from pops four values and drops them; 0
+0x00879420 function AtelGetBuildDate_00879420 # as AtelGetBuildDate_00860770 (table 0x00c53664); left to tools/autoport.py; name ours
 0x00879430 function Atel_SetEventPathLang_00879430 # (r25 d) clear_read_chgname(g_AtelEventPathChg) then set_read_chgname("/ffx/proj/event/<lang>/", to) by TkGetLang (1 us, 2 fr, 3 es, 4 de, 5 it, 18 uk, else jp; jump table 0x00879508/0x00879524); caller AtelUpdateFilePath; own name
 0x008795b0 function AtelEventGetFilePath2 # (r26) (dirs, sub, alt, name, ext) -> 0x01328858: name/alt cut at '.', dirs: AtelUpdateFilePath + sub + /xy/<base>/, then the cut name and ext; three 256-byte locals; ported in helpers; fh v3:exact 0x00879530
 0x008796f0 function AtelEventGetMotionPath       # layout+callees: sorts between AtelEventGetFilePath2 and AtelGetEventName, and its named callees match the Switch 0x71004869d0 AtelEventGetMotionPath's (similarity 1.00: AtelEventGetFilePath2, AtelGetEventName); symbols from Fahrenheit's server export
