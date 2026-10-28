@@ -265,4 +265,78 @@ ported! {
     MsInfoWinsInit_007cfca0 @ 0x007c_fca0 => extern "C" fn ms_info_wins_init() {
         mb::ms_info_wins_init(&mut mem(), &mut call);
     }
+
+    // ---- batch 3: the camera and battle debug screens' helpers ----
+    /// `MsEnvWriteText_007de700(writer, text)`: a copy of `0x007ce9f0`.
+    MsEnvWriteText_007de700 @ 0x007d_e700 => extern "C" fn ms_env_write_text_3(writer: u32, text: u32; slots: u32) {
+        mb::ms_env_write_text(&mut mem(), &mut call, slots, writer, text);
+    }
+    /// `MsBtlPosEditFree_007d7450()`: then `MsBtlPosFree_007c9210`.
+    MsBtlPosEditFree_007d7450 @ 0x007d_7450 => extern "C" fn ms_btl_pos_edit_free() {
+        mb::ms_btl_pos_edit_free(&mut mem(), &mut call);
+    }
+    /// `MsDebugIsTextMode_007d79e0(kind)`.
+    MsDebugIsTextMode_007d79e0 @ 0x007d_79e0 => extern "C" fn ms_debug_is_text_mode(kind: u32) -> u32 {
+        mb::ms_debug_is_text_mode(kind)
+    }
+    /// `MsDebugScenePath_007d70d0()`.
+    MsDebugScenePath_007d70d0 @ 0x007d_70d0 => extern "C" fn ms_debug_scene_path() {
+        mb::ms_debug_scene_path(&mut mem(), &mut call);
+    }
+    /// `MsDebugPlaceAll_007d73e0()`: the position in a 3-float frame.
+    MsDebugPlaceAll_007d73e0 @ 0x007d_73e0 => extern "C" fn ms_debug_place_all() {
+        let mut f = StackFrame::<3>::new();
+        mb::ms_debug_place_all(&mut mem(), &mut call, f.at());
+    }
+    /// `MsDebugFindName_007d2f10(name, list)`.
+    MsDebugFindName_007d2f10 @ 0x007d_2f10 => extern "C" fn ms_debug_find_name(name: u32, list: u32) -> u32 {
+        mb::ms_debug_find_name(&mut mem(), &mut call, name, list)
+    }
+    /// `MsDebugRefFromCamera_007d36b0(cam)`.
+    MsDebugRefFromCamera_007d36b0 @ 0x007d_36b0 => extern "C" fn ms_debug_ref_from_camera(cam: u32) {
+        mb::ms_debug_ref_from_camera(&mut mem(), cam);
+    }
+    /// `MsDebugRefSet_007d3420(value, point[3], dir[3])`: the value in
+    /// ST0, the clamped value in the `value` slot.
+    MsDebugRefSet_007d3420 @ 0x007d_3420 => extern "C" fn ms_debug_ref_set(v: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32; slots: u32) -> f32 {
+        f32::from_bits(mb::ms_debug_ref_set(&mut mem(), slots, [v, a, b, c, d, e, f]))
+    }
+    /// `MsDebugRefAdd_007d2f50(delta)`: the value in ST0.
+    MsDebugRefAdd_007d2f50 @ 0x007d_2f50 => extern "C" fn ms_debug_ref_add(delta: u32) -> f32 {
+        f32::from_bits(mb::ms_debug_ref_add(&mut mem(), delta))
+    }
+    /// `MsDebugRefRound_007d23d0()`.
+    MsDebugRefRound_007d23d0 @ 0x007d_23d0 => extern "C" fn ms_debug_ref_round() {
+        mb::ms_debug_ref_round(&mut mem());
+    }
+    /// `MsSetFileName(out, n)`.
+    MsSetFileName @ 0x007d_ce80 => extern "C" fn ms_set_file_name(out: u32, n: u32) {
+        mb::ms_set_file_name(&mut mem(), &mut call, out, n);
+    }
+    /// `MsGetPlySaveName(out, name)`.
+    MsGetPlySaveName @ 0x007d_cec0 => extern "C" fn ms_get_ply_save_name(out: u32, name: u32) {
+        mb::ms_get_ply_save_name(&mut mem(), &mut call, out, name);
+    }
+    /// `MsDebugActorCount_007d9ab0(id, kind)`.
+    MsDebugActorCount_007d9ab0 @ 0x007d_9ab0 => extern "C" fn ms_debug_actor_count(id: u32, kind: u32) -> u32 {
+        mb::ms_debug_actor_count(&mut mem(), &mut call, id, kind)
+    }
+    /// `MsDebugPathAfterBase_007d12a0(path, base)`.
+    MsDebugPathAfterBase_007d12a0 @ 0x007d_12a0 => extern "C" fn ms_debug_path_after_base(path: u32, base: u32) -> u32 {
+        mb::ms_debug_path_after_base(&mem(), path, base)
+    }
+    /// `MsDebugCameraCopy_007d1220()`.
+    MsDebugCameraCopy_007d1220 @ 0x007d_1220 => extern "C" fn ms_debug_camera_copy() {
+        mb::ms_debug_camera_copy(&mut mem(), &mut call);
+    }
+    /// `MsBtlPosParse_007cd0f0(reader)`: a 0x100-byte frame buffer.
+    MsBtlPosParse_007cd0f0 @ 0x007c_d0f0 => extern "C" fn ms_btl_pos_parse(reader: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_btl_pos_parse(&mut mem(), &mut call, f.at(), reader);
+    }
+    /// `MsBtlPosLoad_007ca4a0(name)`: the reader in a 5-word frame.
+    MsBtlPosLoad_007ca4a0 @ 0x007c_a4a0 => extern "C" fn ms_btl_pos_load(name: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        mb::ms_btl_pos_load(&mut mem(), &mut call, f.at(), name)
+    }
 }

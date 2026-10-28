@@ -1920,4 +1920,393 @@ pub mod bridge {
             mem.write(w.wrapping_add(0x21), 0u8);
         }
     }
+
+    // ---- batch 3: the camera and battle debug screens' helpers ----
+
+    pub const MS_BTL_POS_FREE: u32 = 0x007c_9210;
+    pub const MS_GET_CHR_BTL_POS: u32 = 0x0079_48e0;
+    pub const CH_SET_POS3: u32 = 0x0082_b480;
+    pub const MS_STR_EQUAL_NO_CASE: u32 = 0x007c_f330;
+    pub const ATEL_GET_TOTAL_ACTOR_NUMBER2: u32 = 0x0086_c510;
+    pub const MS_CAMERA_GET_ID: u32 = 0x007b_d300;
+    pub const MS_DEBUG_GET_CAMERA_MODE: u32 = 0x007c_fb20;
+    pub const MS_DEBUG_CAMERA_SYNC: u32 = 0x007d_7130;
+    pub const MS_POS_PARSE_TOKEN: u32 = 0x007c_c420;
+    pub const READ_SKIP_LINE: u32 = 0x007c_f380;
+    pub const READ_OPEN: u32 = 0x007c_d5a0;
+    pub const MS_POS_PARSE: u32 = 0x007c_d0f0;
+    /// `free`'s import table slot.
+    pub const FREE_SLOT: u32 = 0x00b0_c370;
+    /// The position file editor's buffer (`ms_malloc`ed), freed with the
+    /// table.
+    pub const POS_EDIT_BUF: u32 = 0x0113_f510;
+    /// The debug screens' scene path: the scene's directory name and the
+    /// path built from it (`0x0113e4e8`), its cursor.
+    pub const DBG_SCENE_DIR: u32 = 0x0113_f410;
+    pub const DBG_SCENE_ROOT: u32 = 0x00c4_47a0;
+    pub const DBG_SCENE_PATH: u32 = 0x0113_e4e8;
+    pub const DBG_SCENE_PATH_POS: u32 = 0x0113_e4e0;
+    pub const FMT_PATH_DIR: u32 = 0x00b5_377c;
+    /// The reference point editor: its value in 0..1 (`0x0113ed48`), the
+    /// point and the direction it shows.
+    pub const REF_VALUE: u32 = 0x0113_ed48;
+    pub const REF_POINT: u32 = 0x0113_ed28;
+    pub const REF_DIR: u32 = 0x0113_f3d4;
+    /// The constants `0x007d23d0` scales by (`.rdata`, 0.1 and 10.0).
+    pub const REF_STEP: u32 = 0x00b5_51e0;
+    pub const REF_SCALE: u32 = 0x00b9_22b0;
+    /// The debug camera screen: the camera channel copied (0x18c words
+    /// at `0x0113ed7c`) and the channel it came from.
+    pub const DBG_CAMERA_COPY: u32 = 0x0113_ed7c;
+    pub const DBG_CAMERA_FROM: u32 = 0x0113_e660;
+    pub const DBG_CAMERA_SCREEN: u32 = 0x0113_9f10;
+    /// The debug save files' names (`.rdata`).
+    pub const FMT_MON_FILE: u32 = 0x00b5_7270;
+    pub const USER_MASAKI: u32 = 0x00b5_62f0;
+    pub const FMT_PLY_FILES: [u32; 4] = [0x00b5_71c0, 0x00b5_71e8, 0x00b5_7214, 0x00b5_7240];
+    pub const BTL_UNDERWATER: u32 = 0x0112_c9ce;
+    pub const MSG_POS_OPEN: u32 = 0x00b5_5938;
+
+    /// `0x007d7450()` (`MsBtlPosEditFree`, name ours): the position
+    /// editor's buffer freed (`ms_free`, cleared), then the tail call of
+    /// `MsBtlPosFree_007c9210`.
+    pub fn ms_btl_pos_edit_free<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let p = r32(mem, POS_EDIT_BUF);
+        if p != 0 {
+            game(mem, &mut *call, MS_FREE, &[p]);
+            w32(mem, POS_EDIT_BUF, 0);
+        }
+        game(mem, call, MS_BTL_POS_FREE, &[]);
+    }
+
+    /// `0x007d79e0(kind)` (`MsDebugIsTextMode`, name ours): -1 for 3..8
+    /// and 0xb, else 0.
+    #[must_use]
+    pub fn ms_debug_is_text_mode(kind: u32) -> u32 {
+        if matches!(kind, 3..=8 | 0xb) {
+            u32::MAX
+        } else {
+            0
+        }
+    }
+
+    /// `0x007d70d0()` (`MsDebugScenePath`, name ours): the scene path
+    /// `"<root><dir>/"` (or the root alone without a directory) and its
+    /// cursor 0.
+    pub fn ms_debug_scene_path<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let (path, root) = (mem.rebase(DBG_SCENE_PATH), mem.rebase(DBG_SCENE_ROOT));
+        if r8(mem, DBG_SCENE_DIR) == 0 {
+            let fmt = mem.rebase(FMT_S);
+            import(mem, call, SPRINTF_SLOT, &[path, fmt, root]);
+        } else {
+            let (fmt, dir) = (mem.rebase(FMT_PATH_DIR), mem.rebase(DBG_SCENE_DIR));
+            import(mem, call, SPRINTF_SLOT, &[path, fmt, root, dir]);
+        }
+        w32(mem, DBG_SCENE_PATH_POS, 0);
+    }
+
+    /// `0x007d73e0()` (`MsDebugPlaceAll`, name ours): every actor 0..0x1e
+    /// with a model goes to its battle position (`MsGetChrBtlPos(i, pos)`,
+    /// `pos` the frame's 3 floats at the original's `ebp - 0x14`, passed
+    /// to `Ch_SetPos3(model, x, y, z)` through the x87).
+    pub fn ms_debug_place_all<M: Mem>(mem: &mut M, call: Call<'_, M>, pos: u32) {
+        for i in 0..0x1f {
+            let actor = game(mem, &mut *call, MS_GET_CHR, &[i]);
+            let model: u32 = mem.read(actor);
+            if model == 0 {
+                continue;
+            }
+            game(mem, &mut *call, MS_GET_CHR_BTL_POS, &[i, pos]);
+            let v: [u32; 3] = mem.read(pos);
+            let w = v.map(|b| ffx_bridge::x87::round_trip(f32::from_bits(b)).to_bits());
+            let model: u32 = mem.read(actor);
+            game(mem, &mut *call, CH_SET_POS3, &[model, w[0], w[1], w[2]]);
+        }
+    }
+
+    /// `0x007d2f10(name, list)` (`MsDebugFindName`, name ours): the index
+    /// of `name` in a null-ended list of strings (`MsStrEqualNoCase`), or
+    /// -1.
+    pub fn ms_debug_find_name<M: Mem>(mem: &mut M, call: Call<'_, M>, name: u32, list: u32) -> u32 {
+        let mut i = 0u32;
+        loop {
+            let s: u32 = mem.read(list.wrapping_add(4 * i));
+            if s == 0 {
+                return u32::MAX;
+            }
+            if game(mem, &mut *call, MS_STR_EQUAL_NO_CASE, &[name, s]) != 0 {
+                return i;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// The reference point and direction (6 floats) set through the x87
+    /// from `src`.
+    fn set_ref_vectors(mem: &mut impl Mem, src: [u32; 6]) {
+        let dst = [
+            REF_POINT,
+            REF_POINT + 4,
+            REF_POINT + 8,
+            REF_DIR,
+            REF_DIR + 4,
+            REF_DIR + 8,
+        ];
+        for (to, v) in dst.into_iter().zip(src) {
+            let v = ffx_bridge::x87::round_trip(f32::from_bits(v));
+            w32(mem, to, v.to_bits());
+        }
+    }
+
+    /// `0x007d36b0(cam)` (`MsDebugRefFromCamera`, name ours): the
+    /// reference point and direction from camera `cam`'s side 1 (its look
+    /// point `+0x30`, its direction `+0x20` in the record at
+    /// `0x01137b8c + 0xda0 cam`).
+    pub fn ms_debug_ref_from_camera(mem: &mut impl Mem, cam: u32) {
+        let rec = mem
+            .rebase(0x0113_7b8c)
+            .wrapping_add(cam.wrapping_mul(0xda0));
+        let src =
+            [0x30u32, 0x34, 0x38, 0x20, 0x24, 0x28].map(|o| mem.read::<u32>(rec.wrapping_add(o)));
+        set_ref_vectors(mem, src);
+    }
+
+    /// A float clamped to 0..1 on the x87 (`fcom`): below 0 gives 0,
+    /// above 1 gives 1, else (NaN too) the value as loaded.
+    fn clamp01(bits: u32) -> (u32, bool) {
+        let x = ffx_bridge::x87::load(bits);
+        if x < 0.0 {
+            (0, true)
+        } else if 1.0 < x {
+            (1.0f32.to_bits(), true)
+        } else {
+            (ffx_bridge::x87::store(x), false)
+        }
+    }
+
+    /// `0x007d3420(value, point[3], dir[3])` (`MsDebugRefSet`, name ours):
+    /// the reference value (clamped to 0..1; the original stores the
+    /// clamped value into its own `value` argument slot, `slots`), point
+    /// and direction set. Returns the value (`ST0`), as `f32` bits.
+    pub fn ms_debug_ref_set(mem: &mut impl Mem, slots: u32, args: [u32; 7]) -> u32 {
+        let (v, clamped) = clamp01(args[0]);
+        if clamped {
+            mem.write(slots, v);
+        }
+        w32(mem, REF_VALUE, v);
+        let mut src = [0u32; 6];
+        src.copy_from_slice(&args[1..]);
+        set_ref_vectors(mem, src);
+        v
+    }
+
+    /// `0x007d2f50(delta)` (`MsDebugRefAdd`, name ours): the reference
+    /// value plus `delta` (x87, 53 bits), clamped to 0..1, stored and
+    /// returned (`f32` bits); a `delta` of 0 returns the value untouched.
+    pub fn ms_debug_ref_add(mem: &mut impl Mem, delta: u32) -> u32 {
+        let old = r32(mem, REF_VALUE);
+        let d = ffx_bridge::x87::load(delta);
+        if d == 0.0 {
+            return ffx_bridge::x87::round_trip(f32::from_bits(old)).to_bits();
+        }
+        let sum = ffx_bridge::x87::store(ffx_bridge::x87::add(d, ffx_bridge::x87::load(old)));
+        w32(mem, REF_VALUE, sum);
+        let (v, clamped) = clamp01(sum);
+        if clamped {
+            w32(mem, REF_VALUE, v);
+        }
+        v
+    }
+
+    /// `0x007d23d0()` (`MsDebugRefRound`, name ours): the reference value
+    /// rounded to a tenth toward zero (`/ 0.1`, `ftol2_sse`, `fild`, `/
+    /// 10.0`, each rounding as the x87 and the `f32` stores do).
+    pub fn ms_debug_ref_round(mem: &mut impl Mem) {
+        let step: f64 = mem.read(mem.rebase(REF_STEP));
+        let scale: f64 = mem.read(mem.rebase(REF_SCALE));
+        let x = ffx_bridge::x87::div(ffx_bridge::x87::load(r32(mem, REF_VALUE)), step);
+        let n = ffx_bridge::x87::ftol(mem, x).cast_signed();
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: the f32 rounding
+        let f = n as f32;
+        let v = ffx_bridge::x87::store(ffx_bridge::x87::div(f64::from(f), scale));
+        w32(mem, REF_VALUE, v);
+    }
+
+    /// `MsSetFileName(out, n)` (`0x007dce80`): a monster motion file's
+    /// name (`n & 0x3ff` twice, the user name in a debug build, else
+    /// null, and the country).
+    pub fn ms_set_file_name<M: Mem>(mem: &mut M, call: Call<'_, M>, out: u32, n: u32) {
+        let n = n & 0x3ff;
+        let user = if game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 {
+            game(mem, &mut *call, SG_GET_USER_NAME, &[])
+        } else {
+            0
+        };
+        let (fmt, country) = (mem.rebase(FMT_MON_FILE), mem.rebase(COUNTRY_NAME));
+        import(mem, call, SPRINTF_SLOT, &[out, fmt, user, country, n, n]);
+    }
+
+    /// `MsGetPlySaveName(out, name)` (`0x007dcec0`): a party motion
+    /// file's name: the user's (null outside a debug build) program
+    /// directory for user `masaki`, else the battle directory with the
+    /// country; the underwater set (`g_BtlUnderwater`) for underwater.
+    pub fn ms_get_ply_save_name<M: Mem>(mem: &mut M, call: Call<'_, M>, out: u32, name: u32) {
+        let user = if game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 {
+            game(mem, &mut *call, SG_GET_USER_NAME, &[])
+        } else {
+            0
+        };
+        let water = usize::from(r8(mem, BTL_UNDERWATER) != 0);
+        let masaki = mem.rebase(USER_MASAKI);
+        let program = game(mem, &mut *call, MS_STR_EQUAL_NO_CASE, &[user, masaki]) != 0;
+        if program {
+            let fmt = mem.rebase(FMT_PLY_FILES[2 * water]);
+            import(mem, call, SPRINTF_SLOT, &[out, fmt, user, name, name]);
+        } else {
+            let (fmt, country) = (
+                mem.rebase(FMT_PLY_FILES[2 * water + 1]),
+                mem.rebase(COUNTRY_NAME),
+            );
+            import(
+                mem,
+                call,
+                SPRINTF_SLOT,
+                &[out, fmt, user, country, name, name],
+            );
+        }
+    }
+
+    /// `0x007d9ab0(id, kind)` (`MsDebugActorCount`, name ours): for a
+    /// battle actor id (`id & 0xf0000 == 0x50000`) 0x1f actors and kind 0;
+    /// else the event's actor count (at least 1) and kind 1. `*kind` set
+    /// when `kind` isn't null.
+    pub fn ms_debug_actor_count<M: Mem>(mem: &mut M, call: Call<'_, M>, id: u32, kind: u32) -> u32 {
+        let (n, k) = if id & 0xf_0000 == 0x5_0000 {
+            (0x1f, 0)
+        } else {
+            let n = game(mem, call, ATEL_GET_TOTAL_ACTOR_NUMBER2, &[]);
+            (if n.cast_signed() > 0 { n } else { 1 }, 1)
+        };
+        if kind != 0 {
+            mem.write(kind, k);
+        }
+        n
+    }
+
+    /// `0x007d12a0(path, base)` (`MsDebugPathAfterBase`, name ours): past
+    /// the part of `path` it shares with `base`, the rest after its next
+    /// `/`; where there is none, the end of the shared part.
+    pub fn ms_debug_path_after_base(mem: &impl Mem, path: u32, base: u32) -> u32 {
+        let mut p = path;
+        let mut c: u8 = mem.read(p);
+        if c != 0 {
+            let off = base.wrapping_sub(path);
+            while c == mem.read::<u8>(p.wrapping_add(off)) {
+                p = p.wrapping_add(1);
+                c = mem.read(p);
+                if c == 0 {
+                    break;
+                }
+            }
+        }
+        let mut q = p;
+        let mut c: u8 = mem.read(q);
+        while c != 0 {
+            if c == b'/' {
+                return q.wrapping_add(1);
+            }
+            q = q.wrapping_add(1);
+            c = mem.read(q);
+        }
+        p
+    }
+
+    /// `0x007d1220()` (`MsDebugCameraCopy`, name ours): in the camera
+    /// modes 8 and 9, the debug camera channel's data (`+8` of its
+    /// `+0x70c` record: 0x18c words) copied for the camera screen, and
+    /// when it came from elsewhere than last time, `0x007d7130` run; the
+    /// source's end kept.
+    pub fn ms_debug_camera_copy<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let screen = r32(mem, DBG_CAMERA_SCREEN);
+        let cam_at = mem
+            .rebase(DEBUG_CAMERA)
+            .wrapping_add(screen.wrapping_mul(0x1c0));
+        let cam = u32::from(mem.read::<u8>(cam_at));
+        game(mem, &mut *call, MS_CAMERA_GET_ID, &[cam]);
+        let ch = game(mem, &mut *call, MS_CAMERA_GET_NUM, &[cam]);
+        let rec = mem
+            .rebase(0x0113_7c4c)
+            .wrapping_add(cam.wrapping_mul(0xda0))
+            .wrapping_add(ch.wrapping_mul(0x130));
+        let mode = game(mem, &mut *call, MS_DEBUG_GET_CAMERA_MODE, &[1]);
+        if mode.wrapping_sub(8) > 1 {
+            return;
+        }
+        let mut src: u32 = mem.read(rec.wrapping_add(8));
+        let dst = mem.rebase(DBG_CAMERA_COPY);
+        for k in 0..0x18c {
+            let v: u32 = mem.read(src);
+            mem.write(dst + 4 * k, v);
+            src = src.wrapping_add(4);
+        }
+        if src != r32(mem, DBG_CAMERA_FROM) {
+            game(mem, &mut *call, MS_DEBUG_CAMERA_SYNC, &[]);
+        }
+        w32(mem, DBG_CAMERA_FROM, src);
+    }
+
+    /// `0x007cd0f0(reader)` (`MsBtlPosParse`, name ours): every token of
+    /// the reader (into the frame buffer `tok`, 0x100 bytes at the
+    /// original's `ebp - 0x104`) handed to `0x007cc420(reader, tok)`, the
+    /// empty ones' lines skipped (counted in `POS_LINE`) until the end.
+    pub fn ms_btl_pos_parse<M: Mem>(mem: &mut M, call: Call<'_, M>, tok: u32, reader: u32) {
+        if reader == 0 {
+            return;
+        }
+        loop {
+            game(mem, &mut *call, READ_TOKEN, &[reader, tok, 0x100]);
+            if mem.read::<u8>(tok) != 0 {
+                game(mem, &mut *call, MS_POS_PARSE_TOKEN, &[reader, tok]);
+                continue;
+            }
+            let line = mem.rebase(POS_LINE);
+            if game(mem, &mut *call, READ_SKIP_LINE, &[reader, line]).cast_signed() < 0 {
+                return;
+            }
+        }
+    }
+
+    /// `0x007ca4a0(name)` (`MsBtlPosLoad`, name ours): the position script
+    /// `name` read (`0x007cd5a0` into the frame's reader at the
+    /// original's `ebp - 0x14`) and parsed (`0x007cd0f0`, with `name` as
+    /// the error file name and the line count from 0); a reader that kept
+    /// its file and a position past 0 writes the text back; the buffer
+    /// freed, the file closed: 1. A file that doesn't open: the error
+    /// lines, error 2, 0.
+    pub fn ms_btl_pos_load<M: Mem>(mem: &mut M, call: Call<'_, M>, reader: u32, name: u32) -> u32 {
+        game(mem, &mut *call, READ_OPEN, &[reader, name]);
+        if mem.read::<i32>(reader.wrapping_add(8)) < 0 {
+            pos_error(mem, call, MSG_POS_OPEN, name, 2);
+            return 0;
+        }
+        let file_name = r32(mem, POS_FILE_NAME);
+        w32(mem, POS_FILE_NAME, name);
+        w32(mem, POS_LINE, 0);
+        game(mem, &mut *call, MS_POS_PARSE, &[reader]);
+        let pos: i32 = mem.read(reader.wrapping_add(0xc));
+        w32(mem, POS_FILE_NAME, file_name);
+        if pos > 0 && mem.read::<u32>(reader.wrapping_add(4)) != 0 {
+            let (buf, fd): (u32, u32) = (mem.read(reader), mem.read(reader.wrapping_add(8)));
+            game(mem, &mut *call, SCE_WRITE, &[fd, buf, pos.cast_unsigned()]);
+        }
+        let buf: u32 = mem.read(reader);
+        if buf != 0 {
+            import(mem, &mut *call, FREE_SLOT, &[buf]);
+        }
+        let fd: i32 = mem.read(reader.wrapping_add(8));
+        if fd > 0 {
+            game(mem, call, SCE_CLOSE, &[fd.cast_unsigned()]);
+        }
+        1
+    }
 }

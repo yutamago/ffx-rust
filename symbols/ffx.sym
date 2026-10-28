@@ -9603,10 +9603,12 @@
 0x007c9210 function MsBtlPosFree_007c9210 # cdecl() (the push ecx is a local): ms_free of every block of the position table 0x0113e278 (file records of 0x74 at +0x30, count +0x1c: +0x28/+0x2c/+0x4c/+0x50/+0x60/+0x64, sub-records of 0x14 at +0x70 (count +0x68) with blocks at +0x10, the array; then +0x2c, +0x30), cursors 0x0113e27c/0x0113e284; then MsBtlPosInit; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007c93d0 function MsBtlPosInit              # fh v3:exact 0x007c9300
 0x007c9f10 function MsBtlPosPrintBin             # str-match switch: only user of 16 string(s) held once by both builds, e.g. 'in <%s>\\n'; Switch 0x71003bd8a0 MsBtlPosPrintBin (symbols from Fahrenheit's server export)
+0x007ca4a0 function MsBtlPosLoad_007ca4a0 # cdecl(name) -> 1/0: MsReadOpen_007cd5a0 into a frame reader, MsBtlPosParse_007cd0f0 with 0x0113e28c = name (restored) and line 0; sceWrite back when +4 is set and the position > 0; free, sceClose; 0 (error lines, error 2) when it doesn't open; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007ca580 function MsBtlPosWriteBin             # layout+callees: sorts between MsBtlPosPrintBin and MsBtlPosWriteScr, and its named callees match the Switch 0x71003bc4f0 MsBtlPosWriteBin's (similarity 0.67: MsStructClear, sceClose, sceOpen, sceWrite); symbols from Fahrenheit's server export
 0x007cb640 function MsBtlPosWriteScr             # str-match switch: only user of 13 string(s) held once by both builds, e.g. '\\n\\t%s\\t%d\\n'; Switch 0x71003b90e0 MsBtlPosWriteScr (symbols from Fahrenheit's server export)
 0x007cc1f0 function MsBtlPosCheckVersion_007cc1f0 # cdecl(name, version) -> 1 when 0x0113e270 >= version (signed), else dbgPrintf of the file (0x0113e28c), line (0x0113e288) and name, g_OpLastError = 7, 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cc250 function MsBtlPosCheckVersion2_007cc250 # cdecl(name, version, sub) -> 1 when 0x0113e270 >= version and 0x0113e274 == sub, else the error lines, error 7, 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
+0x007cd0f0 function MsBtlPosParse_007cd0f0 # cdecl(reader): MsReadToken_007cf180 into a 0x100-byte frame buffer, each token to 0x007cc420(reader, token), empty ones MsReadSkipLine_007cf380(reader, 0x0113e288) until it returns -1; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007cd360 function MsReadFloat_007cd360 # cdecl(reader, name, out): MsReadToken_007cf180 into a 0x100-byte frame buffer, sscanf "%f" (0x00b40274) into out; empty: error lines, g_OpLastError = 5; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cd420 function MsReadInt_007cd420 # cdecl(reader, name, out): as MsReadFloat_007cd360 with sscanf "%d" (0x00b0f604); name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cd4e0 function MsBtlPosAllocPoints_007cd4e0 # cdecl(): the current position file record (0x0113e27c): +0x58/+0x5c = 0, +0x60 and +0x64 = ms_malloc_007cf970(+0x54 * 12) cleared with MsStructClear; name ours; ported ffx_battle::m5_battle (m5 battle b2)
@@ -9637,23 +9639,36 @@
 0x007cfba0 function MsInfoWinSet_007cfba0 # cdecl(i, mark, pos): info window i of 0x0113e494 (i < 4, set): +0x21 = mark, +0..+8 = pos's 3 floats (fld/fstp), +0x22 = 2, colours +0x28..+0x30 by i's parity and 0x0113e4cc bit 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfca0 function MsInfoWinsInit_007cfca0 # cdecl(): the 4 info windows 0x0113e494 = MsDebugWinAlloc_007c8bb0(0), +0x21 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b2)
 0x007cfcd0 function Ms_Gui_InfoProc           # fh v3:exact 0x007cfc00
+0x007d1220 function MsDebugCameraCopy_007d1220 # cdecl(): in camera modes 8, 9 (MsDebugGetCameraMode(1)) the debug camera channel's data (+8 of 0x01137c4c + 0xda0 cam + 0x130 ch) copied, 0x18c words, to 0x0113ed7c; 0x007d7130 when the source end differs from 0x0113e660, which keeps it; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d12a0 function MsDebugPathAfterBase_007d12a0 # cdecl(path, base) -> past the prefix path shares with base, the rest after its next '/', or the prefix's end; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d1f50 function MsDebugBtlPrint              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'HEI %%'; Switch 0x71003afc50 MsDebugBtlPrint (symbols from Fahrenheit's server export)
+0x007d23d0 function MsDebugRefRound_007d23d0 # cdecl() (the push ecx is a local): 0x0113ed48 = (f32)(ftol2_sse(v / 0.1)) / 10.0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d2410 function Ms_AddrOfGlobal0113ed28_007d2410 # auto-port shape (return address of global, cdecl): return &0x0113ed28; callers: Ms_Gui_InfoProc; name ours
 0x007d2420 function Ms_AddrOfGlobal0113ed18_007d2420 # auto-port shape (return address of global, cdecl): return &0x0113ed18; callers: Ms_Gui_InfoProc; name ours
 0x007d2430 function MsDebugOutCamera             # str-match switch: only user of 18 string(s) held once by both builds, e.g. 'data\\n{\\ndata_address:\\n.int %d,%d,%d,%d'; Switch 0x71003b1930 MsDebugOutCamera (symbols from Fahrenheit's server export)
+0x007d2f10 function MsDebugFindName_007d2f10 # cdecl(name, list) -> index of name in a null-ended string list (MsStrEqualNoCase_007cf330), -1; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d2f50 function MsDebugRefAdd_007d2f50 # cdecl(delta) -> ST0: 0x0113ed48 += delta (x87, f32 store), clamped to 0..1; delta 0 returns it untouched; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d3420 function MsDebugRefSet_007d3420 # cdecl(value, px, py, pz, dx, dy, dz) -> ST0: value clamped to 0..1 by fcom (the clamped value stored into its own value argument slot) into 0x0113ed48, the point and direction set; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d36b0 function MsDebugRefFromCamera_007d36b0 # cdecl(cam): the reference point 0x0113ed28 and direction 0x0113f3d4 (3 floats each) from camera cam's record 0x01137b8c + 0xda0 cam (+0x30, +0x20); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d3700 function MsDebugSplinePrint           # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b0170 MsDebugSplinePrint, 6 votes, round 1
 0x007d42e0 function MsSaveUcID                # fh switch:cg2 0x71008b0588
 0x007d44a0 function Ms_Gui_CameraProc         # fh v3:exact 0x007d43d0
 0x007d5480 function Ms_Gui_MapDataProc           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003b07d0 Ms_Gui_MapDataProc, 2 votes, round 1
+0x007d70d0 function MsDebugScenePath_007d70d0 # cdecl(): sprintf 0x0113e4e8 = "%s" root 0x00c447a0, or "%s%s/" with the scene directory 0x0113f410 when set; cursor 0x0113e4e0 = 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d73e0 function MsDebugPlaceAll_007d73e0 # cdecl(): every actor 0..0x1e with a model: MsGetChrBtlPos(i, frame) then Ch_SetPos3(model, x, y, z) (floats through fld/fstp); name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d7450 function MsBtlPosEditFree_007d7450 # cdecl(): ms_free of the position editor's buffer 0x0113f510 (cleared), then jmp MsBtlPosFree_007c9210; name ours; ported ffx_battle::m5_battle (m5 battle b3)
+0x007d79e0 function MsDebugIsTextMode_007d79e0 # cdecl(kind) -> -1 for 3..8 and 0xb, else 0; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d80a0 function Ms_Gui_BattleProc         # fh v3:exact 0x007d7fc0
+0x007d9ab0 function MsDebugActorCount_007d9ab0 # cdecl(id, kind) -> 0x1f with kind 0 for a battle id (id & 0xf0000 == 0x50000), else max(AtelGetTotalActorNumber2(), 1) with kind 1; *kind when not null; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d9af0 function SetGlobal0113f864_007d9af0   # auto-port shape (store argument to global, cdecl): u32[&0x0113f864] = a0; return a0; callers: ; name ours
 0x007d9c20 function Ms_Gui_ReferencePos       # fh v3:exact 0x007d9b40
 0x007daed0 function Ms_Gui_BattleInfoProc     # fh v3:exact 0x007dadf0
-0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1
-0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export)
+0x007dce80 function MsSetFileName                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003b5fe0 MsSetFileName, 4 votes, round 1; ported ffx_battle::m5_battle (m5 battle b3)
+0x007dcec0 function MsGetPlySaveName             # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'host0:/home/%s/program/mk/%s/mot_%s.src'; Switch 0x71003c3200 MsGetPlySaveName (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b3)
 0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export)
 0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export)
 0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
+0x007de700 function MsEnvWriteText_007de700 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsMonSave's); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
 0x007e11a0 function op_symbol_find_007e11a0  # ours: (name, list) -> the first symbol of the op script symbol list (next +0x20) whose name [+0] matches (exact or, with i16 +0x12, A-Z folded; hashes sum(byte ^ 0x6f i) at +0x18/+0x1c) and whose alias [+4] is absent or differs; 0 when none (op::bridge::op_symbol_find)
