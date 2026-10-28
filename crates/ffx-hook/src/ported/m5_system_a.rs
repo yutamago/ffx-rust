@@ -538,6 +538,54 @@ ported! {
     BigFileStream_shutdown_0061b690 @ 0x0061_b690 => extern "C" fn big_file_stream_shutdown() {
         pf::big_file_stream_shutdown(&mut mem());
     }
+    /// `(this)`.
+    SyncManager_releaseData @ 0x006f_ad90 => extern "thiscall" fn sync_release_data(this: u32) -> u32 {
+        pf::sync_release_data(&mut mem(), this)
+    }
+    /// `(this)`: the 5-byte `jmp SyncManager_releaseData`.
+    code_006fa8c0 @ 0x006f_a8c0 => extern "thiscall" fn sync_release_thunk(this: u32) -> u32 {
+        pf::sync_release_thunk(&mut mem(), this)
+    }
+    /// `(this; key, v, kbd)`.
+    PInputMapper_setKey @ 0x0062_c990 => extern "thiscall" fn set_key(this: u32, key: u32, v: u32, kbd: u32) -> u32 {
+        pf::set_key(&mut mem(), this, key, v, kbd)
+    }
+    /// `()` -> `ST0`.
+    inputGetCurTime @ 0x0063_0c60 => extern "C" fn cur_time() -> f32 {
+        pf::cur_time(&mut mem())
+    }
+    /// `(this)`: `eax` junk to the caller.
+    InputManager_ClearHoldTimers @ 0x0063_1270 => extern "thiscall" fn clear_hold_timers(this: u32) {
+        pf::clear_hold_timers(&mut mem(), this);
+    }
+    /// `(this)`.
+    InputManager_UpdateHoldTimers @ 0x0063_30e0 => extern "thiscall" fn update_hold_timers(this: u32) -> u32 {
+        pf::update_hold_timers(&mut mem(), this)
+    }
+    /// `()`.
+    inputODUpdate @ 0x0063_0d50 => extern "C" fn od_update() -> u32 {
+        pf::od_update(&mut mem())
+    }
+    /// `(this; n)`.
+    PairArray_reserve_00631450 @ 0x0063_1450 => extern "thiscall" fn pair_array_reserve(this: u32, n: u32) -> u32 {
+        pf::pair_array_reserve(&mut mem(), this, n)
+    }
+    /// `(this; other)`.
+    PairArray_assign_00631110 @ 0x0063_1110 => extern "thiscall" fn pair_array_assign(this: u32, other: u32) -> u32 {
+        pf::pair_array_assign(&mut mem(), this, other)
+    }
+    /// `SaveData_Init()`.
+    SaveData_Init @ 0x0064_7fb0 => extern "C" fn save_data_init() -> u32 {
+        pf::save_data_init(&mut mem())
+    }
+    /// `()`.
+    TrophyManager_create_0067ac10 @ 0x0067_ac10 => extern "C" fn trophy_manager_create() -> u32 {
+        pf::trophy_manager_create(&mut mem())
+    }
+    /// `()`.
+    SaveDataManager_create_006f1c10 @ 0x006f_1c10 => extern "C" fn save_manager_create() -> u32 {
+        pf::save_manager_create(&mut mem())
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)

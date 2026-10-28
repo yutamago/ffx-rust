@@ -1168,4 +1168,271 @@ pub mod bridge {
         h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[s]);
         h.write(cell, 0u32);
     }
+
+    /// `user_free_thunk([p_cell])` when the word is set, then the word at
+    /// `clear` = 0.
+    fn free_word(h: &mut impl Host, p_cell: u32, clear: u32) {
+        let p: u32 = h.read(p_cell);
+        if p != 0 {
+            h.call_sym(USER_FREE_THUNK, Conv::Cdecl, &[p]);
+            h.write(clear, 0u32);
+        }
+    }
+
+    /// `SyncManager_releaseData(this)` (thiscall) -> 0: the buffer `+0`,
+    /// the 0x80 words of the table `[+4]`, the table `+4`, then `+0x24`,
+    /// `+0x28`, `+0x2c`, `+0x30`, `+0x34`, `+0x38`, `+0x3c`, `+0x40`
+    /// (`user_free_thunk` when set). Each is cleared after its free, but
+    /// `+0x34` and `+0x38` clear `+0x30` instead (the original's slip:
+    /// they keep their freed pointers). Then `+8..+0x1c` = 0, `+0x20` = 1.
+    pub fn sync_release_data(h: &mut impl Host, this: u32) -> u32 {
+        let at = |off: u32| this.wrapping_add(off);
+        free_word(h, this, this);
+        for i in 0..0x80u32 {
+            let table: u32 = h.read(at(4));
+            let cell = table.wrapping_add(4 * i);
+            let p: u32 = h.read(cell);
+            if p != 0 {
+                h.call_sym(USER_FREE_THUNK, Conv::Cdecl, &[p]);
+                // the table read again after the call
+                let table: u32 = h.read(at(4));
+                h.write(table.wrapping_add(4 * i), 0u32);
+            }
+        }
+        free_word(h, at(4), at(4));
+        for (p, clear) in [
+            (0x24u32, 0x24u32),
+            (0x28, 0x28),
+            (0x2c, 0x2c),
+            (0x30, 0x30),
+            (0x34, 0x30),
+            (0x38, 0x30),
+            (0x3c, 0x3c),
+            (0x40, 0x40),
+        ] {
+            free_word(h, at(p), at(clear));
+        }
+        for off in [8u32, 0xc, 0x10, 0x14, 0x18, 0x1c] {
+            h.write(at(off), 0u32);
+        }
+        h.write(at(0x20), 1u32);
+        0
+    }
+
+    /// `code_006fa8c0(this)` (thiscall, a 5-byte `jmp
+    /// SyncManager_releaseData`).
+    pub fn sync_release_thunk(h: &mut impl Host, this: u32) -> u32 {
+        sync_release_data(h, this)
+    }
+
+    /// `PInputMapper_setKey(this; key, v, kbd)` (thiscall, `ret 0xc`):
+    /// keyboard `kbd` (0..7, unsigned) of the mapper at `[this + 0x2b8]`
+    /// (its `+0x80` table), when set, gets byte `v` at `+0x18 + key -
+    /// 0x1c` for keys 0x1c..0x11c. Returns `eax`: the mapper, its low byte
+    /// `v` when stored.
+    pub fn set_key(h: &mut impl Host, this: u32, key: u32, v: u32, kbd: u32) -> u32 {
+        let mapper: u32 = h.read(this.wrapping_add(0x2b8));
+        if kbd >= 7 {
+            return mapper;
+        }
+        let board: u32 = h.read(mapper.wrapping_add(0x80).wrapping_add(4 * kbd));
+        let k = key.wrapping_sub(0x1c);
+        if board == 0 || k >= 0x100 {
+            return mapper;
+        }
+        h.write(board.wrapping_add(k).wrapping_add(0x18), v.to_le_bytes()[0]);
+        (mapper & !0xff) | (v & 0xff)
+    }
+
+    /// `Phyre_PTimerWin32_GetTime` (cdecl, `ST0` double) and
+    /// `g_AppStartTime` (f64).
+    pub const GET_TIME: u32 = 0x0042_fd80;
+    pub const APP_START_TIME: u32 = 0x00c9_0278;
+    /// `inputGetCurTime` (cdecl, `ST0` float).
+    pub const CUR_TIME: u32 = 0x0063_0c60;
+
+    /// `inputGetCurTime()` (cdecl) -> `ST0`: `GetTime() - g_AppStartTime`
+    /// (`fsub qword`) rounded to `f32` (`fstp dword` / `fld dword`).
+    pub fn cur_time(h: &mut impl Host) -> f32 {
+        let now = h.call_sym_st0_f64(GET_TIME, Conv::Cdecl, &[]);
+        let start: f64 = h.read(h.rebase(APP_START_TIME));
+        f32::from_bits(x87::store(x87::sub(now, start)))
+    }
+
+    /// `InputManager_ClearHoldTimers(this)` (thiscall): the 29 hold timers
+    /// `+8..+0x78` = 0, `+0x88` = `inputGetCurTime()`. `eax` junk to the
+    /// caller.
+    pub fn clear_hold_timers(h: &mut impl Host, this: u32) {
+        for i in 0..29u32 {
+            h.write(this.wrapping_add(8 + 4 * i), 0u32);
+        }
+        let now = h.call_sym_st0(CUR_TIME, Conv::Cdecl, &[]);
+        h.write(this.wrapping_add(0x88), now.to_bits());
+    }
+
+    /// `InputManager_UpdateHoldTimers(this)` (thiscall): `d = now - +0x88`
+    /// (rounded to `f32`); each of the 29 timers `+8..+0x78` grows by `d`
+    /// while its bit (1 << i) is held in the pad word `+0`, else is 0
+    /// (the previous word `+4` makes no difference); `+0x88` = now.
+    /// Returns `eax` = 1 << 29 (the rotated bit).
+    pub fn update_hold_timers(h: &mut impl Host, this: u32) -> u32 {
+        let now = h.call_sym_st0(CUR_TIME, Conv::Cdecl, &[]);
+        let now = x87::load(now.to_bits());
+        let last: u32 = h.read(this.wrapping_add(0x88));
+        let d = x87::load(x87::store(x87::sub(now, x87::load(last))));
+        let mut bit = 1u32;
+        for i in 0..29u32 {
+            let cell = this.wrapping_add(8 + 4 * i);
+            let held: u32 = h.read(this);
+            if held & bit != 0 {
+                let t: u32 = h.read(cell);
+                h.write(cell, x87::store(x87::add(x87::load(t), d)));
+            } else {
+                h.write(cell, 0u32);
+            }
+            bit = bit.rotate_left(1);
+        }
+        h.write(this.wrapping_add(0x88), x87::store(now));
+        bit
+    }
+
+    /// `Virtuos_InputManager_getInstance` (cdecl),
+    /// `Virtuos_InputManager_updateInput` (`ecx` = the manager, no stack
+    /// words), `IggyMenuManager_dispatchMouse_00a26ce0` (thiscall),
+    /// `g_IggyMenuManager` and the flag `0x0133c930`.
+    pub const INPUT_MANAGER: u32 = 0x0063_1300;
+    pub const UPDATE_INPUT: u32 = 0x0063_2a30;
+    pub const DISPATCH_MOUSE: u32 = 0x00a2_6ce0;
+    pub const IGGY_MENU_MANAGER: u32 = 0x0198_4c6c;
+    pub const INPUT_READY: u32 = 0x0133_c930;
+
+    /// `inputODUpdate()` (cdecl): while `0x0133c930` is set, the input
+    /// manager's `updateInput`, then (a tail jump) the Iggy menu
+    /// manager's mouse dispatch; its `eax`. Else 0 (the original leaves
+    /// its caller's `eax`; its one caller, a tail jump from
+    /// `FFXApplication_pollInputAsync`, returns nothing).
+    pub fn od_update(h: &mut impl Host) -> u32 {
+        if h.read::<u32>(h.rebase(INPUT_READY)) == 0 {
+            return 0;
+        }
+        let m = h.call_sym(INPUT_MANAGER, Conv::Cdecl, &[]);
+        h.call_sym(UPDATE_INPUT, Conv::Thiscall(m), &[]);
+        let menus: u32 = h.read(h.rebase(IGGY_MENU_MANAGER));
+        h.call_sym(DISPATCH_MOUSE, Conv::Thiscall(menus), &[])
+    }
+
+    /// `user_malloc` (cdecl).
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+
+    /// `0x00631450(this; n)` (thiscall, `ret 4`): the capacity of an array
+    /// of 8-byte pairs (`+0` count, `+4` capacity, `+8` data) set to `n`.
+    /// No data yet: `+8` = `user_malloc(8 n)`, `+4` = `n`; returns the
+    /// block. Else a new block when `n > 0` (signed; 0 otherwise or when
+    /// the allocation fails) with the `count` old pairs copied
+    /// (`memcpy`), the old block freed (`user_free_thunk`, its `eax`
+    /// returned), `+4` = `n`, `+8` = the new block.
+    pub fn pair_array_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
+        let data: u32 = h.read(this.wrapping_add(8));
+        if data == 0 {
+            let p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(8)]);
+            h.write(this.wrapping_add(4), n);
+            h.write(this.wrapping_add(8), p);
+            return p;
+        }
+        let mut p = 0;
+        if n.cast_signed() > 0 {
+            p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(8)]);
+            if p != 0 {
+                let count: u32 = h.read(this);
+                let old: u32 = h.read(this.wrapping_add(8));
+                h.call_sym(MEMCPY, Conv::Cdecl, &[p, old, count.wrapping_shl(3)]);
+            }
+        }
+        let old: u32 = h.read(this.wrapping_add(8));
+        let r = h.call_sym(USER_FREE_THUNK, Conv::Cdecl, &[old]);
+        h.write(this.wrapping_add(4), n);
+        h.write(this.wrapping_add(8), p);
+        r
+    }
+
+    /// `0x00631110(this; other)` (thiscall, `ret 4`): the pair array
+    /// assigned from `other` unless it is `this`: count 0, the capacity
+    /// set to `other`'s count ([`pair_array_reserve`]), each pair copied
+    /// (to a non-null slot; the count read again each step, signed), the
+    /// count copied. Returns `this`.
+    pub fn pair_array_assign(h: &mut impl Host, this: u32, other: u32) -> u32 {
+        if other == this {
+            return this;
+        }
+        h.write(this, 0u32);
+        let n: u32 = h.read(other);
+        pair_array_reserve(h, this, n);
+        let mut i = 0u32;
+        while i.cast_signed() < h.read::<u32>(other).cast_signed() {
+            let dst = h
+                .read::<u32>(this.wrapping_add(8))
+                .wrapping_add(i.wrapping_mul(8));
+            if dst != 0 {
+                let src: u32 = h.read(other.wrapping_add(8));
+                let first: u32 = h.read(src.wrapping_add(i.wrapping_mul(8)));
+                h.write(dst, first);
+                let second: u32 = h.read(src.wrapping_add(i.wrapping_mul(8)).wrapping_add(4));
+                h.write(dst.wrapping_add(4), second);
+            }
+            i = i.wrapping_add(1);
+        }
+        let n: u32 = h.read(other);
+        h.write(this, n);
+        this
+    }
+
+    /// `SaveDataManager_initSaveDataSys(this; buffer, size)` (thiscall,
+    /// `ret 8`), `g_SaveFileBuffer`, `TrophyManager_Instance` (cdecl) and
+    /// `SetFieldConst0_0067ac70` (thiscall).
+    pub const SAVE_INIT_SYS: u32 = 0x006f_1fa0;
+    pub const SAVE_FILE_BUFFER: u32 = 0x0159_7f70;
+    pub const TROPHY_MANAGER: u32 = 0x0067_ac90;
+    pub const TROPHY_CLEAR: u32 = 0x0067_ac70;
+
+    /// `SaveData_Init()` (cdecl): `initSaveDataSys(manager;
+    /// g_SaveFileBuffer, 0x6900)`, then (a tail jump)
+    /// `SetFieldConst0_0067ac70(TrophyManager_Instance())`; its `eax`.
+    pub fn save_data_init(h: &mut impl Host) -> u32 {
+        let m = h.call_sym(SAVE_MANAGER, Conv::Cdecl, &[]);
+        let buf = h.rebase(SAVE_FILE_BUFFER);
+        h.call_sym(SAVE_INIT_SYS, Conv::Thiscall(m), &[buf, 0x6900]);
+        let t = h.call_sym(TROPHY_MANAGER, Conv::Cdecl, &[]);
+        h.call_sym(TROPHY_CLEAR, Conv::Thiscall(t), &[])
+    }
+
+    /// `0x0067ac10()` (cdecl): the trophy manager (3 bytes, zeroed) at
+    /// `0x00ccc7cc` ([`BLOCK_CCC7CC`]), or 0 when `operator new` fails;
+    /// returns it.
+    pub fn trophy_manager_create(h: &mut impl Host) -> u32 {
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[3]);
+        if p != 0 {
+            h.write(p, 0u16);
+            h.write(p.wrapping_add(2), 0u8);
+        }
+        h.write(h.rebase(BLOCK_CCC7CC), p);
+        p
+    }
+
+    /// `g_SaveDataManager` and its constructor `0x006f1980` (thiscall).
+    pub const SAVE_MANAGER_CELL: u32 = 0x00ce_81f4;
+    pub const SAVE_MANAGER_CTOR: u32 = 0x006f_1980;
+
+    /// `0x006f1c10()` (cdecl): `g_SaveDataManager` = a new 0x488-byte
+    /// manager (`operator new`, the constructor's `eax`), or 0 when the
+    /// allocation fails; returns it.
+    pub fn save_manager_create(h: &mut impl Host) -> u32 {
+        let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x488]);
+        let m = if p == 0 {
+            0
+        } else {
+            h.call_sym(SAVE_MANAGER_CTOR, Conv::Thiscall(p), &[])
+        };
+        h.write(h.rebase(SAVE_MANAGER_CELL), m);
+        m
+    }
 }

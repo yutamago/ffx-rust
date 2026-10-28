@@ -103,6 +103,17 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f32().expect("the callee leaves ST0 set")
     }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f64().expect("the callee leaves ST0 set")
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -2194,6 +2205,215 @@ fn platform_big_file_teardown_matches_the_original() {
             t.check(&what, 0x0061_b690, Conv::Cdecl, &[], |m| {
                 pf::big_file_stream_shutdown(m);
                 Out::None
+            });
+        }
+    });
+}
+
+/// `SyncManager_releaseData` and its thunk `code_006fa8c0` with
+/// `user_free_thunk` stubbed: every pointer set or not (the table's 0x80
+/// words too).
+#[test]
+fn platform_sync_release_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x06fa_0015);
+        for case in 0..32 {
+            t.reset();
+            t.stubs(&[(pf::USER_FREE_THUNK, false, 1, 0, 0x6161_0001)]);
+            let table: Vec<u32> = (0..0x80)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            // never null: the original indexes it unchecked (a null table
+            // faults there, in the port alike)
+            let table = t.words(&table);
+            let mut w: Vec<u32> = (0..0x12)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            w[1] = table;
+            let this = t.words(&w);
+            let sym = if case % 2 == 0 {
+                0x006f_ad90
+            } else {
+                0x006f_a8c0
+            };
+            let what = format!("SyncManager_releaseData {sym:#x} #{case}");
+            t.check(&what, sym, Conv::Thiscall(this), &[], |m| {
+                Out::U32(pf::sync_release_data(m, this))
+            });
+        }
+    });
+}
+
+/// The input glue: `PInputMapper_setKey` (keyboards 0..8, null boards,
+/// keys around 0x1c and 0x11c), `inputGetCurTime` (a stubbed `GetTime`
+/// returning doubles; the start time random), `ClearHoldTimers` and
+/// `UpdateHoldTimers` (a stubbed `inputGetCurTime`; pad words and timers
+/// random, no NaNs) and `inputODUpdate` (its callees stubbed, the flag on
+/// and off).
+#[test]
+fn platform_input_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0630_0016);
+        let float = |rng: &mut Rng| -> f32 {
+            match rng.below(4) {
+                0 => 0.0,
+                1 => f32::from(rng.below(2000) as u16) / 16.0,
+                2 => -(f32::from(rng.below(100) as u16) / 3.0),
+                _ => f32::from_bits(rng.next() & 0x3fff_ffff),
+            }
+        };
+        for case in 0..60 {
+            t.reset();
+            // setKey
+            let boards: Vec<u32> = (0..7)
+                .map(|_| if rng.chance(4) { 0 } else { t.zeros(0x120) })
+                .collect();
+            let mut mw = vec![0u32; 0x40];
+            mw[0x20..0x27].copy_from_slice(&boards);
+            // a board past the seven: kbd 7 must not reach it
+            mw[0x27] = t.zeros(0x120);
+            let mapper = t.words(&mw);
+            let this = t.zeros(0x2c0);
+            t.w32(this + 0x2b8, mapper);
+            let key = [0x1b, 0x1c, 0x20, 0x11b, 0x11c, 0, rng.next()][rng.below(7) as usize];
+            let kbd = rng.below(9);
+            let v = rng.next();
+            let what = format!("PInputMapper_setKey #{case} key {key:#x} kbd {kbd}");
+            t.check(
+                &what,
+                0x0062_c990,
+                Conv::Thiscall(this),
+                &[key, v, kbd],
+                |m| Out::U32(pf::set_key(m, this, key, v, kbd)),
+            );
+            // inputGetCurTime over a stubbed GetTime
+            let now =
+                f64::from(rng.below(1 << 20)) + f64::from(rng.below(1000)) / 1024.0 + 1_048_576.0;
+            let cell = t.words(&[now.to_bits() as u32, (now.to_bits() >> 32) as u32]);
+            let mut c = vec![0xdd, 0x05];
+            c.extend(cell.to_le_bytes()); // fld qword [cell]
+            c.push(0xc3);
+            let get = t.cave_code(&c);
+            t.jump(pf::GET_TIME, get);
+            let start = 1_048_576.0 + f64::from(rng.below(1 << 16));
+            t.patch(t.rebase(pf::APP_START_TIME), &start.to_bits().to_le_bytes());
+            let what = format!("inputGetCurTime #{case}");
+            let addr = t.rebase(pf::CUR_TIME);
+            let ra = t.a.call(addr, Conv::Cdecl, &[]).unwrap();
+            let poison = t.rebase(POISON_AT);
+            let port = pf::cur_time(&mut G(&mut t.b, poison));
+            assert_eq!(
+                ra.st0_f32().map(f32::to_bits),
+                Some(port.to_bits()),
+                "{what}"
+            );
+            t.diff(&what);
+            // the hold timers over a stubbed inputGetCurTime
+            t.stub_float(pf::CUR_TIME, float(&mut rng));
+            let mut w: Vec<u32> = (0..0x24).map(|_| float(&mut rng).to_bits()).collect();
+            w[0] = rng.next();
+            w[1] = rng.next();
+            let input = t.words(&w);
+            let what = format!("InputManager_UpdateHoldTimers #{case}");
+            t.check(&what, 0x0063_30e0, Conv::Thiscall(input), &[], |m| {
+                Out::U32(pf::update_hold_timers(m, input))
+            });
+            let what = format!("InputManager_ClearHoldTimers #{case}");
+            t.check(&what, 0x0063_1270, Conv::Thiscall(input), &[], |m| {
+                pf::clear_hold_timers(m, input);
+                Out::None
+            });
+            // inputODUpdate
+            t.stubs(&[
+                (pf::INPUT_MANAGER, false, 0, 0, 0x6262_0001),
+                (pf::UPDATE_INPUT, true, 0, 0, 0x6262_0002),
+                (pf::DISPATCH_MOUSE, true, 0, 0, 0x6262_0003),
+            ]);
+            t.g32(pf::INPUT_READY, u32::from(!rng.chance(3)));
+            t.g32(pf::IGGY_MENU_MANAGER, rng.next());
+            let ready = t.r32(t.rebase(pf::INPUT_READY));
+            let what = format!("inputODUpdate #{case} ready {ready}");
+            t.check(&what, 0x0063_0d50, Conv::Cdecl, &[], |m| {
+                let r = pf::od_update(m);
+                // the original leaves the caller's eax when not ready
+                if ready == 0 { Out::None } else { Out::U32(r) }
+            });
+        }
+    });
+}
+
+/// The pair array's reserve (`0x00631450`) and assign (`0x00631110`) with
+/// `user_malloc` (a fresh block or 0), `memcpy` and `user_free_thunk`
+/// stubbed; counts 0..5 and negative, capacities 0..6 and negative, no
+/// data yet or some, self-assignment. Then `SaveData_Init`,
+/// `0x0067ac10` and `0x006f1c10` with their callees stubbed, `operator
+/// new` failing or not.
+#[test]
+fn platform_arrays_and_init_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0631_0017);
+        for case in 0..60 {
+            t.reset();
+            let block = if rng.chance(5) { 0 } else { t.zeros(0x80) };
+            t.stubs(&[
+                (pf::USER_MALLOC, false, 1, 0, block),
+                (pf::MEMCPY, false, 3, 0, 0x6363_0001),
+                (pf::USER_FREE_THUNK, false, 1, 0, 0x6363_0002),
+            ]);
+            let pairs = |t: &mut Twins, rng: &mut Rng| {
+                let count = [0u32, 1, 3, 5, 0xffff_ffff][rng.below(5) as usize];
+                let data = if rng.chance(3) {
+                    0
+                } else {
+                    t.alloc(&(0..0x30).map(|_| rng.next() as u8).collect::<Vec<_>>())
+                };
+                t.words(&[count, rng.below(8), data])
+            };
+            let a = pairs(t, &mut rng);
+            let n = [0u32, 1, 4, 6, 0xffff_fffe][rng.below(5) as usize];
+            let what = format!("0x00631450 #{case} n {n:#x} block {block:#x}");
+            t.check(&what, 0x0063_1450, Conv::Thiscall(a), &[n], |m| {
+                Out::U32(pf::pair_array_reserve(m, a, n))
+            });
+            let b = pairs(t, &mut rng);
+            let c = if rng.chance(6) { b } else { pairs(t, &mut rng) };
+            // the source's data must exist for its count
+            if t.r32(c + 8) == 0 {
+                let d = t.zeros(0x30);
+                t.w32(c + 8, d);
+            }
+            // a failing user_malloc makes the original write pairs at
+            // 8 i from 0 (it faults; the port alike): a block here
+            let fresh = t.zeros(0x80);
+            t.stubs(&[(pf::USER_MALLOC, false, 1, 0, fresh)]);
+            let what = format!("0x00631110 #{case}");
+            t.check(&what, 0x0063_1110, Conv::Thiscall(b), &[c], |m| {
+                Out::U32(pf::pair_array_assign(m, b, c))
+            });
+            let object = if rng.chance(4) {
+                0
+            } else {
+                t.words(&[rng.next() | 0x0101_0101, rng.next()])
+            };
+            t.stubs(&[
+                (pf::SAVE_MANAGER, false, 0, 0, 0x6363_0003),
+                (pf::SAVE_INIT_SYS, true, 2, 2, 0x6363_0004),
+                (pf::TROPHY_MANAGER, false, 0, 0, 0x6363_0005),
+                (pf::TROPHY_CLEAR, true, 0, 0, 0x6363_0006),
+                (pf::OPERATOR_NEW, false, 1, 0, object),
+                (pf::SAVE_MANAGER_CTOR, true, 0, 0, 0x6363_0007),
+            ]);
+            let what = format!("SaveData_Init #{case}");
+            t.check(&what, 0x0064_7fb0, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::save_data_init(m))
+            });
+            let what = format!("0x0067ac10 #{case} {object:#x}");
+            t.check(&what, 0x0067_ac10, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::trophy_manager_create(m))
+            });
+            let what = format!("0x006f1c10 #{case} {object:#x}");
+            t.check(&what, 0x006f_1c10, Conv::Cdecl, &[], |m| {
+                Out::U32(pf::save_manager_create(m))
             });
         }
     });

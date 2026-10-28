@@ -3374,7 +3374,7 @@
 0x0062bf00 function Phyre_PFramework_PWindowWin32Base_applyScreenMode # ScreenMode 0/1/2 from g_Settings: CDS_RESET or mode change, GWL_STYLE 0xca0000/WS_POPUP, SetWindowPos at 0,0, WM_SETICON; via thunk 0x0062bef0 from the settings apply 0x006ff290; name guess; guess: g_Settings ScreenMode/Resolution -> ChangeDisplaySettings / window style; from the video menu (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062c260 function Phyre_PFramework_PApplication_resize_0062c260 # thiscall(app) -> 0 or error; PApplication_vftable+0x24, FFXApplication_resize tail-jumps here: lock 0x00463d50/0x00463e90 on ebp-0x28, render state cache viewport 0x00594f40(&w ebp-0x10, &h ebp-0x14, &x ebp-0x2c), back buffer 0x00599210(app +0x26c, +0x270), renderer (+0x124) setViewport 0x005bc060(0, 0, w, h); views (+0x2bc count, +0x2c0) rescaled from the old size (0x0062cba0, integer muldiv) when it changed, then their virtual slot 4; name ours; port ffx_prender::p6_late (p6-render-c; a 0 old size divides to 0 instead of faulting)
 0x0062c6f0 function Phyre_PFramework_PApplication_scriptedFrame # layout+callees: sorts between Phyre_PFramework_PApplication_renderWorld and Phyre_PFramework_PInputDevicePad_setVibration, and its named callees match the Switch 0x71001af1a0 Phyre_PFramework_PApplication_scriptedFrame's (similarity 1.00: Phyre_PFramework_PApplicationScript_executeNextCommand); symbols from Fahrenheit's server export
-0x0062c990 function PInputMapper_setKey # thiscall(app, key, v, kbd): keyboard kbd latched[key-0x1c] = v (platform census 2026-10-25, docs/formats/platform.md; input)
+0x0062c990 function PInputMapper_setKey # thiscall(app, key, v, kbd): keyboard kbd latched[key-0x1c] = v (platform census 2026-10-25, docs/formats/platform.md; input); ret 0xc -> eax: the mapper [this+0x2b8], low byte v when stored (kbd < 7 unsigned, board set, key - 0x1c < 0x100); ported ffx_system::m5a_platform (m5 system-a c2)
 0x0062cad0 function Settings_SetThreadUILanguage # *g_Settings language 0..7 -> SetThreadUILanguage(0x411, 0x409, 0x40c, 0x407, 0x410, 0x40a, 0x412, 0x7c04); caller Game_Main; ours; SetThreadUILanguage from *g_Settings (0x411 jp ... 0x7c04 ch) (platform census 2026-10-25, docs/formats/platform.md; settings/Steam, window)
 0x0062cb70 function Phyre_PFramework_PInputDevicePad_setVibration # fh v3:exact 0x0062cd20 Phyre::PFramework::PInputDevicePad::setVibration
 0x0062cf50 function Phyre_PFramework_PApplication_setWindowIconID # structure: this +0x39c = id, its only caller FFXApplication_FFXApplication; Switch PApplication::setWindowIconID (8 bytes) is called by FFXApplication::FFXApplication; port ffx_prender::misc (p6-render-c)
@@ -3467,7 +3467,7 @@
 0x00630a60 function AllocTracker_Release # cdecl(p): with *0x00ccb15c set, under its mutex (+0xa8, WaitForSingleObject/ReleaseMutex): user_free(record of p in the map 0x00c31e9c, +0x10), then the node removed (Phyre_PRedBlackTree_remove) and pushed on the free list 0x00c31eb4; called by operator_delete and delete[]; name ours
 0x00630c30 function inputClear                # fh v3:cg2 0x630de0
 0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
-0x00630c60 function inputGetCurTime           # fh v3:exact 0x00630e10
+0x00630c60 function inputGetCurTime # fh v3:exact 0x00630e10; cdecl() -> ST0: Phyre_PTimerWin32_GetTime() - g_AppStartTime (f64) rounded to f32; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
 0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40; ported ffx_system::m5a_savedata: tail jump Virtuos_InputManager_getStickInfo(getInstance()) (m5 system-a b2)
 0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input)
@@ -3475,15 +3475,16 @@
 0x00630cf0 function inputIsPressButton # fh v3:cg9 0x630ea0; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isPressButton(instance; b) (m5 system-a b2)
 0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1
 0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0
-0x00630d50 function inputODUpdate                # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export
+0x00630d50 function inputODUpdate # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export; cdecl(): with [0x0133c930], Virtuos_InputManager_updateInput(getInstance()), tail jump IggyMenuManager_dispatchMouse_00a26ce0([g_IggyMenuManager]); the port returns 0 on the other path (the original leaves eax; its caller, a tail jump from FFXApplication_pollInputAsync, returns nothing); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90
 0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
 0x00630e80 function Input_UpdateAll_00630e80  # cdecl() from FFXApplication_handleInputs, Pause_Update, Pause_Enter; name ours: unless [0x0133c930] is set: Virtuos_InputManager_updateInput(getInstance()), GuiTouch_update(TouchManager_GetInstance()), 0x00a25ab0(GetGlobal01984c68_00a25a30()) (thiscall each), tail jmp 0x00a26ce0 with ecx = g_IggyMenuManager (its eax); set: a bare ret; ported (ffx_pcui::input, pc round 2)
+0x00631110 function PairArray_assign_00631110 # thiscall(this; other) ret 4 -> this: unless other is this, count 0, PairArray_reserve_00631450(other's count), the pairs copied to non-null slots, the count copied; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00631170 function Index8At8_00631170 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x00631180 function Index8At8_00631180 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
-0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input); ported ffx_system::m5a_platform: thiscall, eax junk (m5 system-a c2)
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
 0x00631310 function Virtuos_InputManager_getStickInfo # fh v3:bsim1.00 0x006314c0 Virtuos::InputManager::getStickInfo
@@ -3492,12 +3493,13 @@
 0x00631360 function Virtuos_InputManager_isPressButton # fh v3:exact 0x00631510 Virtuos::InputManager::isPressButton
 0x00631380 function Virtuos_InputManager_isReleaseButton # thiscall(this; mask), ret 4 -> bool: mask bits set in the previous word (+4) and none in the current (+0); the counterpart of isPressButton 0x00631360; name ours
 0x006313a0 function Virtuos_InputManager_isRepButton # fh v3:exact 0x00631550 Virtuos::InputManager::isRepButton
+0x00631450 function PairArray_reserve_00631450 # thiscall(this; n) ret 4: an array of 8-byte pairs (+0 count, +4 capacity, +8 data): no data -> user_malloc(8n), capacity n, returns it; else a new block (n > 0 signed) with the pairs memcpy'd, the old one user_free_thunk'd (its eax), capacity n, data the new block; 82 refs; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo; thiscall(this) -> the info word: AsyncControllerTaskManager_GetControllerInfo(&word ebp-0x18, &floats ebp-0x14); +4 = old +0, +0 = word, +0x8c..+0x98 = the 4 floats (fld/fstp); ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
 0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
-0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input)
+0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input); thiscall(this) -> eax 1 << 29: d = f32(now - +0x88); timer i (+8 + 4i, 29 of them) += d while bit i of the pad word +0 is set, else 0 (+4, the previous word, makes no difference); +0x88 = now; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006331a0 function Add_006331a0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
 0x006331b0 function AddU16_006331b0 # cdecl(a, b) -> a + (u16)b (no direct callers); name ours
 0x006332d0 function Identity_006332d0 # cdecl(x) -> x (frame-pointer build); name ours
@@ -4004,7 +4006,7 @@
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
 0x00647f30 function SaveDataGetLoc_00647f30 # fh v3:bsim1.00 0x006480e0; ported ffx_system::m5a_savedata: cdecl(index, out) -> LocalizationManager_getText(GetInstance(); index, out, 0) (m5 system-a b2)
 0x00647f70 function SaveDataGetScreenState    # fh v3:cg4 0x648120
-0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours
+0x00647fb0 function SaveData_Init # (): SaveDataManager_initSaveDataSys(g_SaveFileBuffer 0x01597f70, 0x6900), trophies; docs/formats/save.md; name ours; ported ffx_system::m5a_platform: tail jump SetFieldConst0_0067ac70(TrophyManager_Instance()) (m5 system-a c2)
 0x00647fe0 function Game_InitSystems_00647fe0 # guess: 0x006f1c10, 0x006f0330, StatsAndAchievements_Create if g_SteamReady, ...; from FFXApplication_initApplication (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x00648010 function SaveDataTakeLoadedFlag_00648010 # cdecl() -> SaveDataManager_takeByte364(SaveDataManager_instance()) zero-extended; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x00648020 function SaveDataIsAlbhedLoaded    # fh v3:bsim1.00 0x006481d0
@@ -4535,6 +4537,7 @@
 0x0067aae0 function getEternalCalmSceneSize   # fh v3:bsim1.00 0x0067ac90
 0x0067ab30 function isEternalCalmMgrp         # fh v3:bsim1.00 0x0067ace0
 0x0067ab50 function isEternalCalmScene        # fh v3:bsim1.00 0x0067ad00
+0x0067ac10 function TrophyManager_create_0067ac10 # cdecl() -> the manager: operator new(3), zeroed (word, byte), at 0x00ccc7cc (0 when new fails); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067ac40 function FreeBlock_0067ac40 # cdecl(): the block at 0x00ccc7cc deleted and cleared when set -> 0 or operator delete's eax; caller FFXApplication_exitApplication; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067ac60 function TrophyManager_errorFlag_0067ac60 # thiscall(this), 9 bytes: eax = 0 unless byte +1 is set (eax untouched then; its only caller TrophyGetError enters with eax = ecx = the manager); name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
 0x0067ac70 function SetFieldConst0_0067ac70      # auto-port shape (store constant to field, thiscall): u8[a0] = 0x1; return 0x0; callers: ; name ours
@@ -5549,6 +5552,7 @@
 0x006f18b0 function StatsAndAchievements_SetAchievementByName # (name): SetAchievement + StoreStats; no refs (platform census 2026-10-25, docs/formats/platform.md; settings/Steam)
 0x006f1900 function StatsAndAchievements_SetAchievement_006f1900 # thiscall(this, id), ret 4: with +0x4d set, record id's achieved byte = 1 and +0x188 = 0, then SteamUserStats()->SetAchievement(record +0 name) (vtable +0x1c) and ->StoreStats() (+0x28); only caller StatsAndAchievements_Unlock_006f1510; name ours; ported ffx_system::m5a_platform: void (eax junk to its caller) (m5 system-a c2)
 0x006f1aa0 function SaveDataManager_setResult_006f1aa0 # thiscall(this; v) ret 4 -> v: [[0x00ce81f4] + 8] = 4/2/6 for this+8 = 3/1/5; this+0x3a4 = v; name ours; ported ffx_system::m5a_savedata (m5 system-a b2)
+0x006f1c10 function SaveDataManager_create_006f1c10 # cdecl() -> g_SaveDataManager = operator new(0x488) constructed by 0x006f1980 (0 when new fails); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006f1ce0 function SaveDataManager_doLoad    # fh v3:exact 0x006f1e20 SaveDataManager::doLoad
 0x006f1d70 function SaveDataManager_doSave    # fh v3:exact 0x006f1eb0 SaveDataManager::doSave
 0x006f1db0 function SetWord0_006f1db0 # thiscall(this): this[0] = 1 (caller 0x00647e40); eax untouched; name ours
@@ -5704,11 +5708,12 @@
 0x006fa6c0 function FmodManager_signalVoiceStart # layout+callees: sorts between FmodManager_signalMusicStart and SyncManager_SyncManager, and its named callees match the Switch 0x7100237500 FmodManager_signalVoiceStart's (similarity 1.00: FfxFmod_voiceSetStartSignal); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, FfxFmod_voiceSetStartSignal(mgr+8; 1)'s eax
 0x006fa700 function FmodManager_tick             # fastcall(mgr): graphicGetTimeInMicroseconds; before 33.333 ms since mgr+0x20 waits on mgr+0x18 (WaitForSingleObjectEx, alertable) for the rest; else FfxFmod_soundLoop and mgr+0x20 advances by whole periods; then runs the queue (0x006fa7e0). The FMOD clock is the game clock (virtual in the harness); name ours
 0x006fa8b0 function SyncManager_SyncManager   # fh v3:cg2 0x6fa990 SyncManager::SyncManager; ported (ffx_glue_other::sound, m4 h4 r1): thiscall, SyncManager_initData(this), returns this
+0x006fa8c0 function code_006fa8c0 # thiscall(this): jmp SyncManager_releaseData (a 5-byte thunk the dump lacks, confirmed from the machine code); callers 0x0067a900 and two more; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006fa8d0 function SyncManager_initData      # fh v3:exact 0x006fa9b0 SyncManager::initData; ported (ffx_glue_other::h4_d4, m4 h4 d): zeroed user_malloc buffers (+0 0x100, +4 and +0x24..+0x3c 0x200, +0x40 0x190), sprintf(+0, "PS3"), +8..+0x1c 0, +0x20 1; returns 0
 0x006faa30 function SyncManager_initSyncFileList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncDataList.txt'; Switch 0x71002380d0 SyncManager::initSyncFileList (symbols from Fahrenheit's server export)
 0x006faba0 function SyncManager_initSyncVoiceList # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/FFX_Data/GameData/%sData/SyncData/SyncVoiceList.txt'; Switch 0x71002381f0 SyncManager::initSyncVoiceList (symbols from Fahrenheit's server export)
 0x006facf0 function SyncManager_readSyncFile  # fh v3:exact 0x006fadd0 SyncManager::readSyncFile; ported (ffx_glue_other::h4_d1, m4 h4 d): stdcall(path) -> 16-aligned block of the whole file, or 0 after dbgPrintf
-0x006fad90 function SyncManager_releaseData      # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100237dd0 SyncManager::releaseData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x006fad90 function SyncManager_releaseData # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100237dd0 SyncManager::releaseData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); thiscall(this) -> 0: user_free_thunk of +0, the 0x80 words of [+4], +4, +0x24..+0x40 (each cleared after its free, but +0x34 and +0x38 clear +0x30: they keep their freed pointers), +8..+0x1c = 0, +0x20 = 1; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006faee0 function SyncManager_releaseSyncData  # layout: alphabetical run between SyncManager_readSyncFile and SyncManager_syncDataChange (2 unnamed in the gap); Switch 0x7100238380 SyncManager::releaseSyncData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x006faf90 function SyncManager_syncDataChange # fh v3:exact 0x006fb070 SyncManager::syncDataChange
 0x006fb080 function SyncManager_syncDataChangeAsync # fh v3:exact 0x006fb160 SyncManager::syncDataChangeAsync; ported (ffx_glue_other::h4_c3, m4 h4 c): thiscall(this; id) ret 4 -> 0: id 1..=500, not the current +0xc: +0xc = id, +0x1c/+8 cleared; id in the list +0x40 (count +0x18, signed) -> +0x1c = 1, waits for +0x20 (5 ms sleeps), SyncManager_releaseSyncData, +0x20 = 0, AsyncLoadManager_registAsyncLoadTask(mgr, SyncManager_syncDataChangeAsyncTask, 2, this, sign, id, sign) (7 words)
