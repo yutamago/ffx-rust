@@ -9,6 +9,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
+use ffx_pcui::m5u_c::bridge as c;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -294,5 +295,86 @@ ported! {
     /// `StdString_tidy_00681800(this)`.
     StdString_tidy_00681800 @ 0x0068_1800 => extern "thiscall" fn string_tidy(this: u32) {
         b::string_tidy(&mut mem(), this);
+    }
+    // ---- batch 3 (ffx_pcui::m5u_c) ----
+    /// `TouchRecord_sDestroyInstance_00689830()`.
+    TouchRecord_sDestroyInstance_00689830 @ 0x0068_9830 => extern "C" fn touch_record_destroy() {
+        c::touch_record_destroy(&mut mem());
+    }
+    /// `PArray_free_0068b830(this)`.
+    PArray_free_0068b830 @ 0x0068_b830 => extern "thiscall" fn parray_free(this: u32) {
+        c::parray_free(&mut mem(), this);
+    }
+    /// `PArray16_clear_0068bae0(this)`.
+    PArray16_clear_0068bae0 @ 0x0068_bae0 => extern "thiscall" fn parray16_clear(this: u32) {
+        c::parray16_clear(&mut mem(), this);
+    }
+    /// `PArray16_sDestroyInstance_0068bba0()`.
+    PArray16_sDestroyInstance_0068bba0 @ 0x0068_bba0 => extern "C" fn parray16_destroy() {
+        c::parray16_destroy(&mut mem());
+    }
+    /// `AsyncControllerTaskManager_AsyncControllerTaskManager(this)` -> `this`:
+    /// the thread parameters at `ebp - 0x40`.
+    AsyncControllerTaskManager_AsyncControllerTaskManager @ 0x0068_c830 => extern "thiscall" fn controller_ctor(this: u32) -> u32 {
+        let mut f = StackFrame::<0x0c>::new();
+        c::controller_ctor(&mut mem(), this, f.at())
+    }
+    /// `StdDequeU32_dtor_0068ca50(this)`.
+    StdDequeU32_dtor_0068ca50 @ 0x0068_ca50 => extern "thiscall" fn deque_u32_dtor(this: u32) {
+        c::deque_u32_dtor(&mut mem(), this);
+    }
+    /// `AsyncControllerTaskManager_ThreadMain()` (the input thread's entry).
+    AsyncControllerTaskManager_ThreadMain @ 0x0068_d740 => extern "C" fn controller_thread() -> u32 {
+        c::controller_thread(&mut mem())
+    }
+    /// `AsyncControllerTaskManager_sCreateInstance()`.
+    AsyncControllerTaskManager_sCreateInstance @ 0x0068_db00 => extern "C" fn controller_create() {
+        c::controller_create(&mut mem());
+    }
+    /// `FFEscMenu_updateSpecialFeaturePage_jmp_00702560(this)`.
+    FFEscMenu_updateSpecialFeaturePage_jmp_00702560 @ 0x0070_2560 => extern "thiscall" fn esc_update_special_feature_jump(this: u32) -> u32 {
+        c::esc_update_special_feature_jump(&mut mem(), this)
+    }
+    /// `FFEscMenu_ctor_0068dfd0(this; path, x, y, w, h)` -> `this`.
+    FFEscMenu_ctor_0068dfd0 @ 0x0068_dfd0 => extern "thiscall" fn esc_menu_ctor(this: u32, path: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        c::esc_menu_ctor(&mut mem(), this, path, [x, y, w, h])
+    }
+    /// `LocText_ConvertLineBreaks_jmp_006e96b0(src, dst, len)`.
+    LocText_ConvertLineBreaks_jmp_006e96b0 @ 0x006e_96b0 => extern "C" fn convert_line_breaks_jump(src: u32, dst: u32, len: u32) -> u32 {
+        c::convert_line_breaks_jump(&mut mem(), src, dst, len)
+    }
+    /// `FFEscMenu_onParameterButton_0068f610(menu, args)`: value ref at `ebp - 0x48`.
+    FFEscMenu_onParameterButton_0068f610 @ 0x0068_f610 => extern "C" fn on_parameter_button(menu: u32, args: u32) {
+        let mut f = StackFrame::<0x0e>::new();
+        c::on_parameter_button(&mut mem(), menu, args, f.at());
+    }
+    /// `FFEscMenu_queueDefaultKey_0068f6b0(yes, menu)`.
+    FFEscMenu_queueDefaultKey_0068f6b0 @ 0x0068_f6b0 => extern "C" fn queue_default_key(yes: u32, menu: u32) -> u32 {
+        c::queue_default_key(&mut mem(), yes, menu)
+    }
+    /// `FFEscMenu_callOnDefaultKey_0068f6d0(menu)`.
+    FFEscMenu_callOnDefaultKey_0068f6d0 @ 0x0068_f6d0 => extern "C" fn call_on_default_key(menu: u32) -> u32 {
+        c::call_on_default_key(&mut mem(), menu)
+    }
+    /// `FFEscMenu_onSpecialFeatureHelpString(menu)`.
+    FFEscMenu_onSpecialFeatureHelpString @ 0x0068_f6f0 => extern "C" fn on_special_feature_help(menu: u32) -> u32 {
+        c::on_special_feature_help(&mut mem(), menu)
+    }
+    /// `FFEscMenu_showDefaultKeyPopUp_0068f710(menu)`: frame `ebp - 0x44c`.
+    FFEscMenu_showDefaultKeyPopUp_0068f710 @ 0x0068_f710 => extern "C" fn show_default_key_popup(menu: u32) {
+        let mut f = StackFrame::<0x113>::new();
+        c::show_default_key_popup(&mut mem(), menu, f.at());
+    }
+    /// `FFEscMenu_onPopUpButton_0068f8f0(menu, args)`.
+    FFEscMenu_onPopUpButton_0068f8f0 @ 0x0068_f8f0 => extern "C" fn on_popup_button(_menu: u32, args: u32) -> u32 {
+        c::on_popup_button(&mut mem(), args)
+    }
+    /// `FFEscMenu_onQuit_0068fb00(menu)`.
+    FFEscMenu_onQuit_0068fb00 @ 0x0068_fb00 => extern "C" fn on_quit(menu: u32) -> u32 {
+        c::on_quit(&mut mem(), menu)
+    }
+    /// `FFEscMenu_QuitConfirmed_0068fcf0(yes)`.
+    FFEscMenu_QuitConfirmed_0068fcf0 @ 0x0068_fcf0 => extern "C" fn quit_confirmed(yes: u32) -> u32 {
+        c::quit_confirmed(&mut mem(), yes)
     }
 }

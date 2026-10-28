@@ -28,6 +28,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
+use ffx_pcui::m5u_c::bridge as c;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -113,6 +114,11 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f64().expect("the callee leaves ST0 set")
+    }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
@@ -1713,6 +1719,515 @@ fn string_tidy_matches_the_original() {
                 b::string_tidy(g, this);
                 0
             });
+        }
+    });
+}
+
+// ---- batch 3 (ffx_pcui::m5u_c) ----
+
+impl Twins {
+    /// A stub over `sym` that returns `value` in `ST0` (`fld dword`).
+    fn stub_float(&mut self, sym: u32, value: f32) {
+        let cell = self.words(&[value.to_bits()]);
+        let mut code = vec![0xd9, 0x05];
+        code.extend(cell.to_le_bytes());
+        code.push(0xc3);
+        let addr = self.cave_code(&code);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (`n` words, `pops` popped) that also
+    /// stops the input thread: the manager's run flag `+4` cleared.
+    fn stub_stop(&mut self, sym: u32, n: u32, pops: u32) {
+        let rec = self.stub_code(sym, false, n, pops, 0);
+        let g = self.rebase(a::ASYNC_CONTROLLER);
+        let mut code = vec![0xa1];
+        code.extend(g.to_le_bytes()); // mov eax, [manager]
+        code.extend([0xc7, 0x40, 0x04, 0, 0, 0, 0]); // mov dword [eax+4], 0
+        code.push(0xe9);
+        let here = self.cave_next + code.len() as u32 + 4;
+        code.extend(rec.wrapping_sub(here).to_le_bytes()); // jmp rec
+        let addr = self.cave_code(&code);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn touch_and_parray_teardown_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7ea2_0003);
+        for i in 0..16u32 {
+            t.reset();
+            delete_stubs(t);
+            t.stub(c::RESET_ARRAYS, true, 0, 0, 1);
+            t.stub(c::PARRAY_RESET, true, 0, 0, 2);
+            let block = t.alloc(&[0xcd; 0x40]);
+            t.g32(
+                a::TOUCH_RECORD,
+                if i % 3 == 0 { 0 } else { 0x0071_0000 + i },
+            );
+            t.run("touch destroy", 0x0068_9830, Conv::Cdecl, &[], false, |g| {
+                c::touch_record_destroy(g);
+                0
+            });
+            // PArray_free and the 16-array: owned or not, 16 already or not
+            let cap = match i % 5 {
+                0 => 0x10,
+                1 => 3,
+                2 => 0x8000_0010,
+                3 => 0x4000_0003,
+                _ => 0x8000_0002,
+            };
+            let entries: Vec<u32> = (0..16)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() | 1 })
+                .collect();
+            let buf = t.words(&entries);
+            // PhyreMalloc(0x40, 4): a block, the array's own buffer, or 0
+            let got = match i % 3 {
+                0 => block,
+                1 => buf,
+                _ => 0,
+            };
+            t.stub(c::PHYRE_MALLOC, false, 2, 0, got);
+            // no buffer only where the original replaces it (else it reads
+            // entries of a null array)
+            let none = cap != 0x10 && got != 0 && rng.chance(3);
+            let this = t.words(&[cap, if none { 0 } else { buf }]);
+            let tc = Conv::Thiscall(this);
+            t.run(
+                &format!("parray16 clear #{i}"),
+                0x0068_bae0,
+                tc,
+                &[],
+                false,
+                |g| {
+                    c::parray16_clear(g, this);
+                    0
+                },
+            );
+            let x = t.words(&[cap, buf]);
+            t.run(
+                &format!("parray free #{i}"),
+                0x0068_b830,
+                Conv::Thiscall(x),
+                &[],
+                false,
+                |g| {
+                    c::parray_free(g, x);
+                    0
+                },
+            );
+            t.stub(c::PARRAY16_CLEAR, true, 0, 0, 3);
+            let p = t.words(&[cap, buf]);
+            t.g32(a::PARRAY16, if i % 5 == 0 { 0 } else { p });
+            t.run(
+                &format!("parray16 destroy #{i}"),
+                0x0068_bba0,
+                Conv::Cdecl,
+                &[],
+                false,
+                |g| {
+                    c::parray16_destroy(g);
+                    0
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn controller_ctor_and_create_match_the_original() {
+    Twins::each(|t| {
+        for i in 0..6u32 {
+            t.reset();
+            delete_stubs(t);
+            t.stub_alloc(a::OPERATOR_NEW, 10);
+            t.stub_import(c::CREATE_MUTEX_IAT, false, 3, 3, 0x4d00 + i);
+            t.stub_float(
+                c::INPUT_CUR_TIME,
+                [1.5, -0.0, 1e30, 7.25, f32::INFINITY, 3.0][i as usize],
+            );
+            let id = if i % 2 == 0 {
+                0x0003_0000 + i
+            } else {
+                0x8000_0000 + i
+            };
+            t.stub(c::CREATE_THREAD, false, 2, 0, id);
+            t.stub(c::START_THREAD, false, 2, 0, 5);
+            let this = t.alloc(&[0x33; 0x44]);
+            // the parameter block only (the rest is the SEH frame)
+            t.skip = 0x1c;
+            let what = format!("controller ctor #{i}");
+            t.check_framed(
+                &what,
+                0x0068_c830,
+                Conv::Thiscall(this),
+                &[],
+                0x40,
+                |g, ebp| Out::U32(c::controller_ctor(g, this, ebp - 0x40)),
+            );
+            t.skip = 0;
+            // sCreateInstance: set, new fails, new succeeds
+            t.reset();
+            t.stub_alloc(a::OPERATOR_NEW, u32::from(i % 3 != 1));
+            t.stub(c::CONTROLLER_CTOR, true, 0, 0, 0x00c7_0000 + i);
+            t.g32(
+                a::ASYNC_CONTROLLER,
+                if i % 3 == 0 { 0x0012_0000 } else { 0 },
+            );
+            t.run(
+                &format!("controller create #{i}"),
+                0x0068_db00,
+                Conv::Cdecl,
+                &[],
+                false,
+                |g| {
+                    c::controller_create(g);
+                    0
+                },
+            );
+            // the button deque's destructor
+            delete_stubs(t);
+            t.stub(a::CLEAR_U32, true, 0, 0, 1);
+            let d = t.words(&[0x0044_0000 + i, 0, 0, 0, 0]);
+            t.run(
+                "deque dtor",
+                0x0068_ca50,
+                Conv::Thiscall(d),
+                &[],
+                false,
+                |g| {
+                    c::deque_u32_dtor(g, d);
+                    0
+                },
+            );
+        }
+    });
+}
+
+/// One pass of the thread loop (the sleep and the poll stop the thread),
+/// then its exit: the queues off, not due, due with the free camera
+/// absent (made), idle, busy, `g_AsyncControllerOn` 2, NaN times.
+#[test]
+fn controller_thread_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7d1e_0003);
+        let interval = f32::from_bits(0x3c88_8f86);
+        // (now, prev): exactly the interval; far in the past (a long sleep);
+        // an elapsed time only the f32 rounding makes whole
+        let special = [(interval, 0.0), (0.0, 5.0), (0.75, 33_554_432.0)];
+        for i in 0..46u32 {
+            t.reset();
+            t.stub_alloc(a::OPERATOR_NEW, 4);
+            t.stub_stop(c::SLEEP_MS, 1, 0);
+            t.stub_stop(c::ASYNC_POLL, 0, 0);
+            t.stub(c::THREAD_EXIT, false, 1, 0, 0x7e00 + i);
+            let now = match i % 8 {
+                _ if i >= 40 => special[(i as usize - 40) % 3].0,
+                0 => f32::NAN,
+                1 => 0.0,
+                _ => f32::from(rng.below(1000) as u16) / 997.0,
+            };
+            t.stub_float(c::INPUT_CUR_TIME, now);
+            let cam = t.zeros(0x344);
+            t.stub(c::FREE_CAMERA_CTOR, true, 0, 0, cam);
+            let on = if i >= 40 {
+                1
+            } else {
+                [0, 1, 1, 1, 2][(i as usize / 2) % 5]
+            };
+            t.g32(a::ASYNC_CONTROLLER_ON, on);
+            let fc = match i % 5 {
+                _ if (40..43).contains(&i) => cam,
+                4 => {
+                    t.write(cam + 0x33c, &[1]);
+                    cam
+                }
+                0 => 0,
+                1 => cam,
+                2 => {
+                    t.write(cam + 0x338, &[1]);
+                    cam
+                }
+                _ => {
+                    t.w32(cam, 1);
+                    cam
+                }
+            };
+            t.g32(c::FREE_CAMERA, fc);
+            let prev = match i % 3 {
+                _ if i >= 40 => special[(i as usize - 40) % 3].1,
+                0 => now,
+                1 => now - 0.5,
+                _ => now - f32::from(rng.below(40) as u16) / 1000.0,
+            };
+            let m = t.words(&[
+                0x0005_0000 + i,
+                1,
+                prev.to_bits(),
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ]);
+            t.g32(a::ASYNC_CONTROLLER, m);
+            let what = format!("controller thread #{i} on {on} now {now} prev {prev}");
+            t.run(&what, 0x0068_d740, Conv::Cdecl, &[], true, |g| {
+                c::controller_thread(g)
+            });
+        }
+    });
+}
+
+#[test]
+fn jump_thunks_and_esc_menu_ctor_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xe5c0_0003);
+        for i in 0..8u32 {
+            t.reset();
+            t.stub(c::ESC_UPDATE_SPECIAL_FEATURE, true, 0, 0, 0x6600 + i);
+            t.stub(c::CONVERT_LINE_BREAKS, false, 3, 0, 0x6700 + i);
+            let this = rng.next();
+            t.run(
+                "special feature jump",
+                0x0070_2560,
+                Conv::Thiscall(this),
+                &[],
+                true,
+                |g| c::esc_update_special_feature_jump(g, this),
+            );
+            let w = [rng.next(), rng.next(), rng.next()];
+            t.run(
+                "line breaks jump",
+                0x006e_96b0,
+                Conv::Cdecl,
+                &w,
+                true,
+                |g| c::convert_line_breaks_jump(g, w[0], w[1], w[2]),
+            );
+            // the Esc menu (the jump thunk above is stubbed again here)
+            t.reset();
+            t.stub(c::IGGY_MENU_CTOR, true, 6, 6, 1);
+            for (k, f) in c::ESC_MENU_INIT.into_iter().enumerate() {
+                t.stub(f, true, 0, 0, 0x10 + k as u32);
+            }
+            t.stub(c::IGGY_MENU_SET_ENABLE, true, 1, 1, 2);
+            t.stub(c::WINDOW_EVENT_INSERT, false, 1, 0, 3);
+            let menu = t.alloc(&[0x77; 0x240]);
+            let rect = match i {
+                0 => [0x7fc0_0000, 0xffc1_0000, 0x8000_0000, 0x0000_0001],
+                _ => [
+                    rng.next() & 0x7f7f_ffff,
+                    rng.next() & 0x7f7f_ffff,
+                    rng.next() & 0xff7f_ffff,
+                    0x4400_0000,
+                ],
+            };
+            let path = rng.next();
+            let args = [path, rect[0], rect[1], rect[2], rect[3]];
+            t.run(
+                &format!("esc menu ctor #{i}"),
+                0x0068_dfd0,
+                Conv::Thiscall(menu),
+                &args,
+                true,
+                |g| c::esc_menu_ctor(g, menu, path, rect),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (`this`, `n` words, `pops`) returning
+    /// `seq[k]` on its `k`-th call.
+    fn stub_seq(&mut self, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+        let ctr = self.words(&[0]);
+        let tbl = self.words(seq);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xa1);
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        if pops == 0 {
+            c.push(0xc3);
+        } else {
+            c.push(0xc2);
+            c.extend(((pops * 4) as u16).to_le_bytes());
+        }
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (cdecl `(value, text)`) that fills the
+    /// four words of `value` with a running count, as `iggyDataValueSet`
+    /// fills its value.
+    fn stub_fill_value(&mut self, sym: u32) {
+        let ctr = self.words(&[0x0a00_0000]);
+        let rec = self.stub_code(sym, false, 2, 0, 0x5e7);
+        let mut c = vec![0x57]; // push edi
+        c.extend([0x8b, 0x7c, 0x24, 0x08]); // mov edi, [esp+8]
+        c.push(0xa1);
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        for off in [0u8, 4, 8, 0xc] {
+            c.extend([0x89, 0x47, off]); // mov [edi+off], eax
+            c.push(0x40); // inc eax
+        }
+        c.push(0xa3);
+        c.extend(ctr.to_le_bytes()); // mov [ctr], eax
+        c.push(0x5f); // pop edi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(rec.wrapping_sub(here).to_le_bytes()); // jmp rec
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn esc_menu_callbacks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xe5ca_0b03);
+        for i in 0..8u32 {
+            t.reset();
+            t.stubs(&[
+                (c::GET_DEREF, true, 0, 0, 0x00d0_0000 + i),
+                (c::VALUE_REF_CREATE, true, 2, 2, 0x11),
+                (c::HANDLERS_ADD_CALL, true, 2, 2, 0x12),
+                (c::VALUE_REF_FREE, true, 0, 0, 0x13),
+                (c::IGGY_CALL_AS3, true, 5, 5, 0x14),
+            ]);
+            let kind = [0xd, 0x1_000d, 0xc, 0xffff_000d][i as usize % 4];
+            t.stub_seq(c::GET_ARRAY_S32, true, 1, 1, &[kind, 0x5150 + i]);
+            let menu = rng.next();
+            let args = t.words(&[0, rng.next(), 0, 0]);
+            t.skip = 0xc;
+            let what = format!("parameter button #{i}");
+            t.check_framed(
+                &what,
+                0x0068_f610,
+                Conv::Cdecl,
+                &[menu, args],
+                0x48,
+                |g, ebp| {
+                    c::on_parameter_button(g, menu, args, ebp - 0x48);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            let yes = i & 1;
+            t.run(
+                "queue default key",
+                0x0068_f6b0,
+                Conv::Cdecl,
+                &[yes, menu],
+                // on no the original returns its caller's eax
+                yes != 0,
+                |g| c::queue_default_key(g, yes, menu),
+            );
+            t.run(
+                "on default key",
+                0x0068_f6d0,
+                Conv::Cdecl,
+                &[menu],
+                true,
+                |g| c::call_on_default_key(g, menu),
+            );
+            t.run(
+                "special help",
+                0x0068_f6f0,
+                Conv::Cdecl,
+                &[menu],
+                true,
+                |g| c::on_special_feature_help(g, menu),
+            );
+            t.run("on quit", 0x0068_fb00, Conv::Cdecl, &[menu], true, |g| {
+                c::on_quit(g, menu)
+            });
+        }
+    });
+}
+
+#[test]
+fn esc_menu_popups_match_the_original() {
+    Twins::each(|t| {
+        for i in 0..6u32 {
+            t.reset();
+            t.stubs(&[
+                (c::GET_LOC_TEXT, false, 3, 0, 0x21),
+                (c::LINE_BREAKS_JUMP, false, 3, 0, 0x22),
+                (c::CALL_FLASH_3, false, 14, 0, 0x23),
+                (c::IGGY_MENU_SET_ENABLE, true, 1, 1, 0x24),
+                (c::SETTINGS_SAVE, true, 0, 0, 0x25),
+                (c::RESET_TO_LAUNCHER, false, 0, 0, 0x26),
+            ]);
+            t.stub_fill_value(c::DATA_VALUE_SET);
+            t.stub_import(c::SHOW_CURSOR_IAT, false, 1, 1, 0x27);
+            let esc = t.alloc(&[0x44; 0x140]);
+            t.g32(c::ESC_MENU, esc);
+            t.g32(c::SETTINGS, 0x00e5_0000 + i);
+            let menu = 0x00a0_0000 + i;
+            t.skip = 4;
+            let what = format!("default key pop-up #{i}");
+            t.check_framed(&what, 0x0068_f710, Conv::Cdecl, &[menu], 0x44c, |g, ebp| {
+                c::show_default_key_popup(g, menu, ebp - 0x44c);
+                Out::None
+            });
+            t.skip = 0;
+            // the pop-up's button: the answer callback (a recording stub)
+            let cb = t.stub_code(0xcb, false, 2, 0, 0x28 + i);
+            t.w32(esc + 0x10c, if i % 3 == 0 { 0 } else { cb });
+            let x = [1.7f64, -2.5, f64::NAN, 3e9, 0.0, -0.99][i as usize];
+            let args = t.words(&[0, 0, x.to_bits() as u32, (x.to_bits() >> 32) as u32]);
+            // without a callback the original returns its caller's eax
+            let ret = i % 3 != 0;
+            t.run(
+                &format!("pop-up button #{i}"),
+                0x0068_f8f0,
+                Conv::Cdecl,
+                &[menu, args],
+                ret,
+                |g| c::on_popup_button(g, args),
+            );
+            // the quit answer: no, yes with the cursor shown or hidden
+            t.write(esc + 0x130, &[[0u8, 1, 2][(i as usize / 2) % 3]]);
+            let yes = u32::from(i % 3 != 2);
+            let ret = yes != 0;
+            t.run(
+                &format!("quit confirmed #{i}"),
+                0x0068_fcf0,
+                Conv::Cdecl,
+                &[yes],
+                ret,
+                |g| c::quit_confirmed(g, yes),
+            );
         }
     });
 }
