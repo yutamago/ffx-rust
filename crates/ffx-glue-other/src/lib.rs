@@ -227,6 +227,7 @@ pub mod h4y_dtt;
 pub mod h4y_shp;
 pub mod h4z_mdl;
 pub mod h4z_quad;
+pub mod m5v_a;
 pub mod menu;
 pub mod misc;
 pub mod movie;
