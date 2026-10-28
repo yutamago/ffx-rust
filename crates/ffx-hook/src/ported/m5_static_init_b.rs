@@ -189,4 +189,160 @@ ported! {
     StaticInit_Ctor_00aeea80 @ 0x00ae_ea80 => extern "C" fn s_00aeea80() -> u32 {
         si::ctor0_at_exit(&mut mem(), &si::CTOR0_AT_EXIT[1])
     }
+    /// `StaticInit_Atexit_00aeeb90`: only registers its destructor with atexit.
+    StaticInit_Atexit_00aeeb90 @ 0x00ae_eb90 => extern "C" fn s_00aeeb90() -> u32 {
+        si::at_exit_only(&mut mem(), &si::AT_EXIT_ONLY[2])
+    }
+    /// `StaticInit_CutBuffer_00aeec30`: render pass type "CutBuffer" built on its global (name, flag 0); atexit.
+    StaticInit_CutBuffer_00aeec30 @ 0x00ae_ec30 => extern "C" fn s_00aeec30() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[0])
+    }
+    /// `StaticInit_ScissorPass_00aeecf0`: render pass type "ScissorPass" built on its global (name, flag 0); atexit.
+    StaticInit_ScissorPass_00aeecf0 @ 0x00ae_ecf0 => extern "C" fn s_00aeecf0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[1])
+    }
+    /// `StaticInit_ClassDynamicMesh_00aeed60`: class descriptor "ClassDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit.
+    StaticInit_ClassDynamicMesh_00aeed60 @ 0x00ae_ed60 => extern "C" fn s_00aeed60() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[37])
+    }
+    /// `StaticInit_ClassDynamicMeshInstance_00aeee70`: class descriptor "ClassDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit.
+    StaticInit_ClassDynamicMeshInstance_00aeee70 @ 0x00ae_ee70 => extern "C" fn s_00aeee70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[38])
+    }
+    /// `StaticInit_DistortionGridDynamicMesh_00aeefa0`: class descriptor "DistortionGridDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit.
+    StaticInit_DistortionGridDynamicMesh_00aeefa0 @ 0x00ae_efa0 => extern "C" fn s_00aeefa0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[39])
+    }
+    /// `StaticInit_DistortionGridDynamicMeshInstance_00aef0b0`: class descriptor "DistortionGridDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit.
+    StaticInit_DistortionGridDynamicMeshInstance_00aef0b0 @ 0x00ae_f0b0 => extern "C" fn s_00aef0b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[40])
+    }
+    /// `StaticInit_RadialLineDynamicMeshInstance_00aef1c0`: class descriptor "RadialLineDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit.
+    StaticInit_RadialLineDynamicMeshInstance_00aef1c0 @ 0x00ae_f1c0 => extern "C" fn s_00aef1c0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[41])
+    }
+    /// `StaticInit_RadialLineDynamicMesh_00aef2d0`: class descriptor "RadialLineDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit.
+    StaticInit_RadialLineDynamicMesh_00aef2d0 @ 0x00ae_f2d0 => extern "C" fn s_00aef2d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[42])
+    }
+    /// `StaticInit_BrokenScreenPolygonDynamicMeshInstance_00aef3e0`: class descriptor "BrokenScreenPolygonDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit.
+    StaticInit_BrokenScreenPolygonDynamicMeshInstance_00aef3e0 @ 0x00ae_f3e0 => extern "C" fn s_00aef3e0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[43])
+    }
+    /// `StaticInit_BrokenScreenPolygonDynamicMesh_00aef4f0`: class descriptor "BrokenScreenPolygonDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit.
+    StaticInit_BrokenScreenPolygonDynamicMesh_00aef4f0 @ 0x00ae_f4f0 => extern "C" fn s_00aef4f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[44])
+    }
+    /// `StaticInit_ShadowDynamicMesh_00aef600`: class descriptor "ShadowDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit.
+    StaticInit_ShadowDynamicMesh_00aef600 @ 0x00ae_f600 => extern "C" fn s_00aef600() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[45])
+    }
+    /// `StaticInit_BlendingWeightCalculation_00aefab0`: render pass type "BlendingWeightCalculation" built on its global (name, flag 0); atexit.
+    StaticInit_BlendingWeightCalculation_00aefab0 @ 0x00ae_fab0 => extern "C" fn s_00aefab0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[2])
+    }
+    /// `StaticInit_BrightBlend_00aefad0`: render pass type "BrightBlend" built on its global (name, flag 0); atexit.
+    StaticInit_BrightBlend_00aefad0 @ 0x00ae_fad0 => extern "C" fn s_00aefad0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[3])
+    }
+    /// `StaticInit_ColorCorrection_00aefaf0`: render pass type "ColorCorrection" built on its global (name, flag 0); atexit.
+    StaticInit_ColorCorrection_00aefaf0 @ 0x00ae_faf0 => extern "C" fn s_00aefaf0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[4])
+    }
+    /// `StaticInit_ColorEdgeDetection_00aefb10`: render pass type "ColorEdgeDetection" built on its global (name, flag 0); atexit.
+    StaticInit_ColorEdgeDetection_00aefb10 @ 0x00ae_fb10 => extern "C" fn s_00aefb10() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[5])
+    }
+    /// `StaticInit_CopyBufferWithAdditive_00aefb30`: render pass type "CopyBufferWithAdditive" built on its global (name, flag 0); atexit.
+    StaticInit_CopyBufferWithAdditive_00aefb30 @ 0x00ae_fb30 => extern "C" fn s_00aefb30() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[6])
+    }
+    /// `StaticInit_CopyBufferWithAlphaBlend_00aefb50`: render pass type "CopyBufferWithAlphaBlend" built on its global (name, flag 0); atexit.
+    StaticInit_CopyBufferWithAlphaBlend_00aefb50 @ 0x00ae_fb50 => extern "C" fn s_00aefb50() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[7])
+    }
+    /// `StaticInit_CopyBuffer_00aefb70`: render pass type "CopyBuffer" built on its global (name, flag 0); atexit.
+    StaticInit_CopyBuffer_00aefb70 @ 0x00ae_fb70 => extern "C" fn s_00aefb70() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[8])
+    }
+    /// `StaticInit_CopyDepthBuffer_00aefb90`: render pass type "CopyDepthBuffer" built on its global (name, flag 0); atexit.
+    StaticInit_CopyDepthBuffer_00aefb90 @ 0x00ae_fb90 => extern "C" fn s_00aefb90() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[9])
+    }
+    /// `StaticInit_CopyRGBBufferWithAdditive_00aefbb0`: render pass type "CopyRGBBufferWithAdditive" built on its global (name, flag 0); atexit.
+    StaticInit_CopyRGBBufferWithAdditive_00aefbb0 @ 0x00ae_fbb0 => extern "C" fn s_00aefbb0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[10])
+    }
+    /// `StaticInit_CopyRGBBufferWithAlphaBlend_00aefbd0`: render pass type "CopyRGBBufferWithAlphaBlend" built on its global (name, flag 0); atexit.
+    StaticInit_CopyRGBBufferWithAlphaBlend_00aefbd0 @ 0x00ae_fbd0 => extern "C" fn s_00aefbd0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[11])
+    }
+    /// `StaticInit_GenerateGlowMap_00aefbf0`: render pass type "GenerateGlowMap" built on its global (name, flag 0); atexit.
+    StaticInit_GenerateGlowMap_00aefbf0 @ 0x00ae_fbf0 => extern "C" fn s_00aefbf0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[12])
+    }
+    /// `StaticInit_HDAO_Blur_USM_00aefc10`: render pass type "HDAO_Blur_USM" built on its global (name, flag 0); atexit.
+    StaticInit_HDAO_Blur_USM_00aefc10 @ 0x00ae_fc10 => extern "C" fn s_00aefc10() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[13])
+    }
+    /// `StaticInit_HDAO_Blur_00aefc30`: render pass type "HDAO_Blur" built on its global (name, flag 0); atexit.
+    StaticInit_HDAO_Blur_00aefc30 @ 0x00ae_fc30 => extern "C" fn s_00aefc30() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[14])
+    }
+    /// `StaticInit_HDAO_BufferGen_00aefc50`: render pass type "HDAO_BufferGen" built on its global (name, flag 0); atexit.
+    StaticInit_HDAO_BufferGen_00aefc50 @ 0x00ae_fc50 => extern "C" fn s_00aefc50() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[15])
+    }
+    /// `StaticInit_HDAO_BufferRender_00aefc70`: render pass type "HDAO_BufferRender" built on its global (name, flag 0); atexit.
+    StaticInit_HDAO_BufferRender_00aefc70 @ 0x00ae_fc70 => extern "C" fn s_00aefc70() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[16])
+    }
+    /// `StaticInit_HDAO_Combine_00aefc90`: render pass type "HDAO_Combine" built on its global (name, flag 0); atexit.
+    StaticInit_HDAO_Combine_00aefc90 @ 0x00ae_fc90 => extern "C" fn s_00aefc90() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[17])
+    }
+    /// `StaticInit_LumaEdgeDetection_00aefcb0`: render pass type "LumaEdgeDetection" built on its global (name, flag 0); atexit.
+    StaticInit_LumaEdgeDetection_00aefcb0 @ 0x00ae_fcb0 => extern "C" fn s_00aefcb0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[18])
+    }
+    /// `StaticInit_NeighborhoodBlending_00aefcd0`: render pass type "NeighborhoodBlending" built on its global (name, flag 0); atexit.
+    StaticInit_NeighborhoodBlending_00aefcd0 @ 0x00ae_fcd0 => extern "C" fn s_00aefcd0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[19])
+    }
+    /// `StaticInit_ResolveDepthBuffer2_00aefcf0`: render pass type "ResolveDepthBuffer2" built on its global (name, flag 0); atexit.
+    StaticInit_ResolveDepthBuffer2_00aefcf0 @ 0x00ae_fcf0 => extern "C" fn s_00aefcf0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[20])
+    }
+    /// `StaticInit_ResolveDepthBuffer4_00aefd10`: render pass type "ResolveDepthBuffer4" built on its global (name, flag 0); atexit.
+    StaticInit_ResolveDepthBuffer4_00aefd10 @ 0x00ae_fd10 => extern "C" fn s_00aefd10() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[21])
+    }
+    /// `StaticInit_ResolveDepthBuffer8_00aefd30`: render pass type "ResolveDepthBuffer8" built on its global (name, flag 0); atexit.
+    StaticInit_ResolveDepthBuffer8_00aefd30 @ 0x00ae_fd30 => extern "C" fn s_00aefd30() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[22])
+    }
+    /// `StaticInit_ScreenFadeAdditive_00aefd50`: render pass type "ScreenFadeAdditive" built on its global (name, flag 0); atexit.
+    StaticInit_ScreenFadeAdditive_00aefd50 @ 0x00ae_fd50 => extern "C" fn s_00aefd50() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[23])
+    }
+    /// `StaticInit_ScreenFadeSubtract_00aefd70`: render pass type "ScreenFadeSubtract" built on its global (name, flag 0); atexit.
+    StaticInit_ScreenFadeSubtract_00aefd70 @ 0x00ae_fd70 => extern "C" fn s_00aefd70() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[24])
+    }
+    /// `StaticInit_ScreenFade_00aefd90`: render pass type "ScreenFade" built on its global (name, flag 0); atexit.
+    StaticInit_ScreenFade_00aefd90 @ 0x00ae_fd90 => extern "C" fn s_00aefd90() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[25])
+    }
+    /// `StaticInit_USM_Apply_00aefdb0`: render pass type "USM_Apply" built on its global (name, flag 0); atexit.
+    StaticInit_USM_Apply_00aefdb0 @ 0x00ae_fdb0 => extern "C" fn s_00aefdb0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[26])
+    }
+    /// `StaticInit_USM_Blur_00aefdd0`: render pass type "USM_Blur" built on its global (name, flag 0); atexit.
+    StaticInit_USM_Blur_00aefdd0 @ 0x00ae_fdd0 => extern "C" fn s_00aefdd0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[27])
+    }
+    /// `StaticInit_DistortionCopyBuffer_00af0110`: render pass type "DistortionCopyBuffer" built on its global (name, flag 0); atexit.
+    StaticInit_DistortionCopyBuffer_00af0110 @ 0x00af_0110 => extern "C" fn s_00af0110() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[28])
+    }
 }

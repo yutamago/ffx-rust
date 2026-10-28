@@ -17904,6 +17904,45 @@
 0x00aee940 function StaticInit_CtorVt_00aee940 # no-argument constructor 0x0061_f310 on a global, flags &= ~2, its vtable, atexit
 0x00aee970 function StaticInit_Atexit_00aee970 # only registers its destructor with atexit
 0x00aeea80 function StaticInit_Ctor_00aeea80 # no-argument constructor 0x0063_0f40 on a global, then atexit
+0x00aeeb90 function StaticInit_Atexit_00aeeb90 # only registers its destructor with atexit
+0x00aeec30 function StaticInit_CutBuffer_00aeec30 # render pass type "CutBuffer" built on its global (name, flag 0); atexit
+0x00aeecf0 function StaticInit_ScissorPass_00aeecf0 # render pass type "ScissorPass" built on its global (name, flag 0); atexit
+0x00aeed60 function StaticInit_ClassDynamicMesh_00aeed60 # class descriptor "ClassDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aeee70 function StaticInit_ClassDynamicMeshInstance_00aeee70 # class descriptor "ClassDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aeefa0 function StaticInit_DistortionGridDynamicMesh_00aeefa0 # class descriptor "DistortionGridDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef0b0 function StaticInit_DistortionGridDynamicMeshInstance_00aef0b0 # class descriptor "DistortionGridDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef1c0 function StaticInit_RadialLineDynamicMeshInstance_00aef1c0 # class descriptor "RadialLineDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef2d0 function StaticInit_RadialLineDynamicMesh_00aef2d0 # class descriptor "RadialLineDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef3e0 function StaticInit_BrokenScreenPolygonDynamicMeshInstance_00aef3e0 # class descriptor "BrokenScreenPolygonDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef4f0 function StaticInit_BrokenScreenPolygonDynamicMesh_00aef4f0 # class descriptor "BrokenScreenPolygonDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef600 function StaticInit_ShadowDynamicMesh_00aef600 # class descriptor "ShadowDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aefab0 function StaticInit_BlendingWeightCalculation_00aefab0 # render pass type "BlendingWeightCalculation" built on its global (name, flag 0); atexit
+0x00aefad0 function StaticInit_BrightBlend_00aefad0 # render pass type "BrightBlend" built on its global (name, flag 0); atexit
+0x00aefaf0 function StaticInit_ColorCorrection_00aefaf0 # render pass type "ColorCorrection" built on its global (name, flag 0); atexit
+0x00aefb10 function StaticInit_ColorEdgeDetection_00aefb10 # render pass type "ColorEdgeDetection" built on its global (name, flag 0); atexit
+0x00aefb30 function StaticInit_CopyBufferWithAdditive_00aefb30 # render pass type "CopyBufferWithAdditive" built on its global (name, flag 0); atexit
+0x00aefb50 function StaticInit_CopyBufferWithAlphaBlend_00aefb50 # render pass type "CopyBufferWithAlphaBlend" built on its global (name, flag 0); atexit
+0x00aefb70 function StaticInit_CopyBuffer_00aefb70 # render pass type "CopyBuffer" built on its global (name, flag 0); atexit
+0x00aefb90 function StaticInit_CopyDepthBuffer_00aefb90 # render pass type "CopyDepthBuffer" built on its global (name, flag 0); atexit
+0x00aefbb0 function StaticInit_CopyRGBBufferWithAdditive_00aefbb0 # render pass type "CopyRGBBufferWithAdditive" built on its global (name, flag 0); atexit
+0x00aefbd0 function StaticInit_CopyRGBBufferWithAlphaBlend_00aefbd0 # render pass type "CopyRGBBufferWithAlphaBlend" built on its global (name, flag 0); atexit
+0x00aefbf0 function StaticInit_GenerateGlowMap_00aefbf0 # render pass type "GenerateGlowMap" built on its global (name, flag 0); atexit
+0x00aefc10 function StaticInit_HDAO_Blur_USM_00aefc10 # render pass type "HDAO_Blur_USM" built on its global (name, flag 0); atexit
+0x00aefc30 function StaticInit_HDAO_Blur_00aefc30 # render pass type "HDAO_Blur" built on its global (name, flag 0); atexit
+0x00aefc50 function StaticInit_HDAO_BufferGen_00aefc50 # render pass type "HDAO_BufferGen" built on its global (name, flag 0); atexit
+0x00aefc70 function StaticInit_HDAO_BufferRender_00aefc70 # render pass type "HDAO_BufferRender" built on its global (name, flag 0); atexit
+0x00aefc90 function StaticInit_HDAO_Combine_00aefc90 # render pass type "HDAO_Combine" built on its global (name, flag 0); atexit
+0x00aefcb0 function StaticInit_LumaEdgeDetection_00aefcb0 # render pass type "LumaEdgeDetection" built on its global (name, flag 0); atexit
+0x00aefcd0 function StaticInit_NeighborhoodBlending_00aefcd0 # render pass type "NeighborhoodBlending" built on its global (name, flag 0); atexit
+0x00aefcf0 function StaticInit_ResolveDepthBuffer2_00aefcf0 # render pass type "ResolveDepthBuffer2" built on its global (name, flag 0); atexit
+0x00aefd10 function StaticInit_ResolveDepthBuffer4_00aefd10 # render pass type "ResolveDepthBuffer4" built on its global (name, flag 0); atexit
+0x00aefd30 function StaticInit_ResolveDepthBuffer8_00aefd30 # render pass type "ResolveDepthBuffer8" built on its global (name, flag 0); atexit
+0x00aefd50 function StaticInit_ScreenFadeAdditive_00aefd50 # render pass type "ScreenFadeAdditive" built on its global (name, flag 0); atexit
+0x00aefd70 function StaticInit_ScreenFadeSubtract_00aefd70 # render pass type "ScreenFadeSubtract" built on its global (name, flag 0); atexit
+0x00aefd90 function StaticInit_ScreenFade_00aefd90 # render pass type "ScreenFade" built on its global (name, flag 0); atexit
+0x00aefdb0 function StaticInit_USM_Apply_00aefdb0 # render pass type "USM_Apply" built on its global (name, flag 0); atexit
+0x00aefdd0 function StaticInit_USM_Blur_00aefdd0 # render pass type "USM_Blur" built on its global (name, flag 0); atexit
+0x00af0110 function StaticInit_DistortionCopyBuffer_00af0110 # render pass type "DistortionCopyBuffer" built on its global (name, flag 0); atexit
 0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b072b0 label ShadowManager_tileRects_atexit_00b072b0 # the atexit handler ShadowManager_renderCharacterTiles_006caee0 registers for its static rectangle list 0x00cdec88 (guard bit 0 of 0x00cdec90); name ours
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
