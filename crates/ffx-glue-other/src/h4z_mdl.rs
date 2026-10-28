@@ -614,8 +614,8 @@ fn kind_textured(h: &mut impl Host, m: &Mdl, g: &Group, st: &mut State) -> u32 {
         k += 1;
     }
     if m.mode == 1 {
-        for j in 0..4 {
-            close_bands(h, g, m.rds[j], count(h, g), 3, 3, 0x24);
+        for rd in m.rds {
+            close_bands(h, g, rd, count(h, g), 3, 3, 0x24);
         }
     }
     rec

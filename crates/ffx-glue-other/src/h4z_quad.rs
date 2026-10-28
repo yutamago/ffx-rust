@@ -92,8 +92,8 @@ fn vertices(h: &impl Host, rd: u32, g: &Group, b: u32) -> u32 {
 /// The bands' close for quads (any mode but 0).
 fn close(h: &mut impl Host, m: &Mdl, g: &Group) {
     if m.mode != 0 {
-        for j in 0..4 {
-            close_bands(h, g, m.rds[j], count(h, g), 6, 4, 0x30);
+        for rd in m.rds {
+            close_bands(h, g, rd, count(h, g), 6, 4, 0x30);
         }
     }
 }
@@ -116,8 +116,7 @@ fn lights(h: &mut impl Host, m: &Mdl, g: &Group, st: &State) {
             &[st.cur, g.seg1, job, g.header, n],
         );
     } else {
-        for j in 0..4 {
-            let rd = m.rds[j];
+        for rd in m.rds {
             let n = h.read::<u32>(seg(h, rd, g).wrapping_add(4));
             h.call_sym(
                 crate::h4z_mdl::POINT_LIGHT_COLOURS,

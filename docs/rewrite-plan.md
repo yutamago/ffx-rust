@@ -503,9 +503,19 @@ gate still applies.
    - Port the CRT, STL and Lua functions the game reaches: memory, files,
      strings, math and `rand`, onto Rust `std`, keeping each function's
      observable results (`rand`'s sequence, `printf` formatting).
+   - Port the spell and summon overlays (581 `magic_*.dll`, 10 MB of
+     code, at most 3.8 MB unique; above). A 64-bit program can't load
+     them, and `tools/reach.py` doesn't see them because they aren't in
+     `FFX.exe` (found 2026-10-28; user OK to add them). Each becomes a
+     Rust overlay behind the same two exports (`InitMagicPRX`,
+     `GetEffectOverlayTable`) and calls the game through
+     `g_MagicImports` as before; shared pieces are ported once. Parity
+     tests run the DLL's own code against the port, and `battle-magic`,
+     `battle-ifrit` and `battle-overdrive` gate them in the game.
    - Gate: a coverage run with a trap on every original `.text` byte
      except the libraries still to replace in stage 2 shows no game code
-     running, across the main, extra and audio replay lists.
+     running, across the main, extra and audio replay lists; no
+     `magic_*.dll` is loaded.
 2. **The libraries, in-process.**
    - Movies: the pure-Rust decoders replace libvpx, vorbis and
      mkvparser. Gate: identical decoded frames and samples for every
