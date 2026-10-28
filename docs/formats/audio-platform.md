@@ -461,7 +461,7 @@ and `~/ffx-work/m5/mixer/ana_*.py`; the waves come from banks `1110`
 - **Sum order.** Voices summed in start order (the other orders tried on
   probe B and on the captures were worse).
 
-## Residue (2026-10-27, third round)
+## Residue (2026-10-28, fourth round)
 
 The offline engine (`fmod-mix`) against the original capture of the same
 run, and the Rust engine inside the game (`FFX_RUST_AUDIO=1`, below)
@@ -479,30 +479,67 @@ Round 2's table, for comparison: max errors 1.9e-9, 3.7e-9, 2.3e-10 and
 7.5e-9 (float rounding only); round 1's 0.00129, 0.00326, 4.98e-5 and
 6.68e-4. There is no residue on the four replays: sample for sample.
 
-| movie-fmv (the movie's user stream) | not followed (no movie calls in the offline engine) | first difference at start + 6682 (tick 4, the movie's first block); max 0.0472, RMS 0.00335 against a signal RMS of 0.00342: the movie sound is not right | not run |
+| movie-fmv (the movie's user stream; round 4) | not followed (the offline engine has no movie calls) | identical | identical (both) |
 
 With `FFX_RUST_AUDIO=1` the main list (12 replays) and the extra list (9,
 movie-fmv included) give the same trace events as their recordings, and
 the screenshots pass (menu-shop-8: 4 px of cursor glow, the known streak).
 
 What is left:
-- The movie user stream: `rust_audio` mixes the game's PCM callback at
-  the stream's rate with the measured interpolation and ramp, and it is
-  wrong (the table): FMOD's user-stream reading (its decode buffer, when
-  it calls the callback, how much it keeps) is still to measure with
-  fmod-probe. The movie-fmv call log has the callback's 127 calls
-  (`Sound::getUserData` from `0x00a27ef7`) but no `createSound`, so the
-  movie's set-up runs where the log does not see it.
+- The movie user stream (round 4): the movie-fmv log has its set-up
+  after all (`createSound` returns to `0x00a275fe`, `playSound` to
+  `0x00a27622`; round 3 searched for the call addresses). FMOD reads the
+  stream as follows, and `rust_audio` now does the same: `createSound`
+  itself calls the PCM callback (`0x00a27ee0`) twice, before the game's
+  `setUserData`, so the first two chunks of 0x1000 frames are silence
+  (the callback finds no player and writes nothing); afterwards one call
+  in each update in which the play position passes a multiple of 0x1000
+  frames (updates 352, 355, 357, 360, ... for a start in update 350). The
+  movie is 48 kHz stereo s16, so nothing is resampled; volume and ramp as
+  for every voice; the stream does not advance while paused (the game
+  pauses it right after `playSound` and unpauses it at volume 0.05).
+  Identical to both references; movie-fmv is in `run-all.sh --audio`.
+- 32 kHz voices: they are the 45 battle lines `2100xx..2108xx` (`td`,
+  `yn`, `wk`, `rr`, `km`, `an`, `rk`, `sm`) of `ffx_us_voice_btl` and the
+  same 45 in the Shout bank `ffx_us_voice_btl_iop`, plus ten in
+  `ffx_us_voice17` (`1718xxga`). No replay plays one: battle-ifrit's and
+  battle-overdrive's battle voice is Wakka's `230108wk` (48 kHz, matched
+  in battle-ifrit's window).
 - The Shout channel: the stubs and the engine follow it, but no recorded
   replay plays one (battle-overdrive, recorded with a log, has no
   `playSound`); a battle with a voiced shout is still to record.
 - Voices at 32 kHz (100 voice samples; the replays' voice is 48 kHz).
 - `maxplaybacks` stealing: the game's own limits (5 a sequence, 30 for
   sequence 114, `canStartNewEvent`) stop it before FMOD's in every log.
-- A real output device for normal play: with `FFX_RUST_AUDIO=1` and no
-  `FFX_AUDIO_WAV` the engine mixes and nothing is played yet.
 - FMOD's channel indices (the engine's model matches menu-browse only); it
   doesn't change the mix.
+
+## Output (`crates/ffx-hook/src/rust_audio_out.rs`)
+
+With `FFX_RUST_AUDIO=1` and no `FFX_AUDIO_WAV`, the mix plays on the
+default render device through WASAPI in shared mode (the `wasapi` crate
+0.26, MIT, on the `windows` crate; 48 kHz stereo float, converted by
+Windows to the device's format). Each `EventSystem::update` appends its
+block to a queue and never waits; an output thread feeds the device from
+the queue on the device's events. The device's clock never paces the
+game: an underrun (the device wants more than the game mixed, e.g. in a
+load) writes silence, counts it and waits for 4,800 frames again; an
+overrun (the game mixes faster than real time) keeps at most 0.5 s and
+drops the oldest frames. Off the harness's virtual clock an update mixes
+the game time elapsed since the last one (at most four blocks), so that
+the mix keeps pace with real time as FMOD's own mixer does; under the
+capture and in lockstep it is one block per update, as measured.
+`FFX_RUST_AUDIO_OUT=0` turns the output off; harness games on the virtual
+clock have it off unless `FFX_RUST_AUDIO_OUT=1`.
+
+Checked 2026-10-28 in a harness game in background mode (event-cliff,
+real time, `FFX_TEST_VOLUME=5`, the sandbox settings): the hook log says
+`rust audio out: device "Lautsprecher (3- USB Audio Device)" opened, 48000
+Hz stereo float ..., buffer 1056 frames`, then every 10 s about 480,000
+frames written (real time) with 6 underruns in all, during the map loads,
+and no frames dropped. Before the elapsed-time mixing (one block per
+update) it wrote 33,500 frames a second with 2.5 underruns a second: the
+game's real-time FMOD tick runs fewer than 30 updates a second.
 
 ## The Rust engine in the game (`FFX_RUST_AUDIO=1`)
 

@@ -102,6 +102,7 @@ fi
 # The Rust sound engine in place of FMOD (crates/ffx-hook/src/rust_audio.rs,
 # docs/formats/audio-platform.md "The Rust engine in the game").
 if [[ -n "${FFX_RUST_AUDIO:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_AUDIO_OUT"
     export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_AUDIO"
 fi
 # Without a file, games on the virtual clock run FMOD the same way with no

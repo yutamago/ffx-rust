@@ -568,8 +568,14 @@ impl<F: Files> Engine<F> {
     /// order (the order FMOD sums in, measured with fmod-probe; the
     /// four audio replays match FMOD sample for sample).
     pub fn update(&mut self) {
+        self.update_frames(BLOCK);
+    }
+
+    /// Mixes `frames` frames as one update: [`BLOCK`] under the capture (one
+    /// FMOD tick), the game time since the last update for a real device.
+    pub fn update_frames(&mut self, frames: usize) {
         let at = self.out.len();
-        self.out.resize(at + 2 * BLOCK, 0.0);
+        self.out.resize(at + 2 * frames, 0.0);
         let block = &mut self.out[at..];
         for v in self.voices.values_mut() {
             v.mix(block);
