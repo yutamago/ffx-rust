@@ -150,6 +150,7 @@ The hand-written hooks:
 | `MsScreenProcess` | `0x007bc110` | Its port (`ffx_battle::screen`), wrapped for the external renderer's free camera (`gfx::live::cam_update`) |
 | `rcbgGuideUpdateEx` | `0x0091da80` | Its port (`ffx_field::guide_update`), wrapped for the renderer's minimap (`minimap.rs`) |
 | `Phyre_PRendering_PRenderer_renderWorldCulledSorted` | `0x009f3c30` | Wrapped for captures (`world.rs`). The wrapper calls the port (`ported/phyre_render.rs` `culled_sorted`) instead of its trampoline, since two hooks can't share an address. Its name for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` is `Phyre_PRendering_PRenderer_renderWorldCulledSorted_port`; `replacements` turns it off too. It reads only a comma list from `FFX_HOOK_ONLY`, not `@<file>`, so with a file the port is off |
+| `AsyncLoadManager_threadMain_00691360` | `0x00691360` | Wrapped for the harness's loader turn (`loader_turn.rs`: notes the loader thread). The wrapper runs the port (`ported/m5_system_b.rs`, `ffx_system::m5b_async`) instead of its trampoline; its name for `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` is `AsyncLoadManager_threadMain_00691360_port`, and `replacements` turns it off too |
 
 Only functions whose callers can be satisfied through their signature are
 safe to replace. A function that the game expects to touch global state
