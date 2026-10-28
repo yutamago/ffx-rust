@@ -10,6 +10,7 @@ use ffx_menu::m5m_a::bridge as a;
 use ffx_menu::m5m_b::bridge as b;
 use ffx_menu::m5m_c::bridge as c;
 use ffx_menu::m5m_d::bridge as d;
+use ffx_menu::m5m_e::bridge as e;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -384,5 +385,40 @@ ported! {
     /// `TkRemove(name)`.
     TkRemove @ 0x0088_c740 => extern "C" fn tk_remove(name: u32) -> u32 {
         d::remove(&mut mem(), name)
+    }
+    // ---- batch 5 (ffx_menu::m5m_e) ----
+    /// `Gu_SelectorOpen(selector, owner, arg)`.
+    Gu_SelectorOpen @ 0x0084_9d60 => extern "C" fn gu_selector_open(selector: u32, owner: u32, arg: u32) -> u32 {
+        e::selector_open(&mut mem(), selector, owner, arg)
+    }
+    /// `Gu_SelectorOpenXYWH(selector, owner, arg, x, y, w, h)`.
+    Gu_SelectorOpenXYWH @ 0x0084_9dc0 => extern "C" fn gu_selector_open_xywh(selector: u32, owner: u32, arg: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        e::selector_open_xywh(&mut mem(), selector, owner, arg, x, y, w, h)
+    }
+    /// `Gu_MessageBox(text)` -> the OK button.
+    Gu_MessageBox @ 0x0084_9970 => extern "C" fn gu_message_box(text: u32) -> u32 {
+        e::message_box(&mut mem(), text)
+    }
+    /// `Gu_MessageBoxProc(window, msg, arg)` -> 0.
+    Gu_MessageBoxProc @ 0x0084_9a10 => extern "C" fn gu_message_box_proc(window: u32, msg: u32, arg: u32) -> u32 {
+        e::message_box_proc(&mut mem(), window, msg, arg)
+    }
+    /// `Gu_SelectorProc(window, msg, arg)` -> 0.
+    Gu_SelectorProc @ 0x0084_9e30 => extern "C" fn gu_selector_proc(window: u32, msg: u32, arg: u32) -> u32 {
+        e::selector_proc(&mut mem(), window, msg, arg)
+    }
+    /// `Gu_SelectorPaint(window, selector)`.
+    Gu_SelectorPaint @ 0x0084_9c00 => extern "C" fn gu_selector_paint(window: u32, selector: u32) {
+        e::selector_paint(&mut mem(), window, selector);
+    }
+    /// `Gu_SelectorSortItem(selector)`.
+    Gu_SelectorSortItem @ 0x0084_a180 => extern "C" fn gu_selector_sort_item(selector: u32) {
+        e::selector_sort_item(&mut mem(), selector);
+    }
+    /// `Gu_MakeFileList(list, path)`: frame `ebp - 0x204`.
+    Gu_MakeFileList @ 0x0084_98e0 => extern "C" fn gu_make_file_list(list: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<129>::new();
+        let ebp = f.at() + 0x204;
+        e::make_file_list(&mut mem(), ebp, list, path)
     }
 }

@@ -11326,8 +11326,9 @@
 0x00849780 function Gu_Hide                   # fh switch:bsim1.00 0x7100440810
 0x008497f0 function Gu_InitBox                # (box, x, y, w, h) three rect copies, tints 0x80808080/0x8080, +0x22 = 0; Switch name, alphabetical slot Gu_Hide..Gu_Main (Gu_HoseiClock, Gu_Init, Gu_InitBox)
 0x00849850 function Gu_Main                   # fh v3:exact 0x00849850; cdecl(channel, buffer): g 0x023cbc10 = Sg_MouseButtonMain(), Gu_VSync; unless g_GuHidden: Send_DebugFont, Gu_DrawStart(buffer), Gu_SetTexFlush, scissor, Gu_DrawWindowTree(g_GuWindowList), cursor when g_GuMouseEnable, Gu_DrawEnd(channel), Gu_WindowFreeClosed, wheel 0x023cbc04 = 0; ported M5 menu b1 (ffx_menu::m5m_a)
-0x008498e0 function Gu_MakeFileList              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host0:EXEC:cmd /c dir %s /b > \\\\%s'; Switch 0x71004404c0 Gu_MakeFileList (symbols from Fahrenheit's server export)
-0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970
+0x008498e0 function Gu_MakeFileList              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host0:EXEC:cmd /c dir %s /b > \\\\%s'; Switch 0x71004404c0 Gu_MakeFileList (symbols from Fahrenheit's server export); cdecl(list, path) -> sg_make_filelist's eax: path to ebp-0x104 with '/' -> '\', sprintf(ebp-0x204, 0x00b5aaec "host0:EXEC:cmd /c dir %s /b > \%s", path, "sugilist.tmp"), sg_make_filelist(list, cmd, 0); ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849970 function Gu_MessageBox             # fh v3:exact 0x00849970; cdecl(text) -> the OK button: Gu_WindowCreate((512-w)/2, 82, w = max(Gu_PrintGetWidth+30, 60), 30, 0, Gu_MessageBoxProc), text control -1 kind 2 centred, OK 0x4d2 (0x00b51c04) kind 1; ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849a10 function Gu_MessageBoxProc         # cdecl(window, msg, arg) -> 0: 0x8001 rect +0x14.. = target +0x1c..; 0x8006 id 0x4d2 Gu_WindowStartDrag; 0x8011 Gu_WindowMouseIn -> Gu_ClientMouse, flag bit 0 cleared; name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849aa0 function Gu_MouseGetWindowY        # fh switch:bsim1.00 0x710043fd40
 0x00849ac0 function Gu_MouseGetWindowX        # fh switch:bsim1.00 0x710043fd20
 0x00849ae0 function Gu_MouseGetX              # () -> g_GuMouseX (renamed: was Gu_MouseGetY; x/y established by Gu_PacketBeginTag, Gu_MouseInRect, Gu_DrawRectStrip)
@@ -11338,11 +11339,13 @@
 0x00849b90 function Gu_MouseSetWindow         # fh v3:exact 0x00849b90
 0x00849bb0 function Gu_SelectorAllocate       # fh v3:exact 0x00849bb0
 0x00849bd0 function Gu_SelectorDispose        # (selector) user_free of +8 and +0xc (when +8 set), then of itself; Switch name, alphabetical slot Gu_SelectorAllocate..Gu_SelectorGetItemValue (frees itself)
+0x00849c00 function Gu_SelectorPaint          # cdecl(window, selector): mouse above/below scrolls +0 (i16 px, 9 a row) clamped to [0, (count-rows)*8], selection +2 = row under the mouse + scroll/8, rows printed (Gu_PrintSetColor(0,0,0,0xff), Gu_PrintSetX/Y, Gu_Printf; the selection again at x+1); its y counter lives in its own argument word; name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849d10 function Gu_SelectorGetItemValue   # (selector): the selected item's value (+0xc array at +2), beside Gu_SelectorGetItemName
 0x00849d30 function Gu_SelectorGetItemName    # fh v3:bsim1.00 0x00849d30
 0x00849d50 function Gu_SelectorGetSelect      # (selector) -> i16 +2, the selected item
-0x00849d60 function Gu_SelectorOpen           # fh v3:exact 0x00849d60
-0x00849dc0 function Gu_SelectorOpenXYWH       # fh v3:exact 0x00849dc0
+0x00849d60 function Gu_SelectorOpen           # fh v3:exact 0x00849d60; cdecl(selector, owner, arg) -> Gu_SelectorFitWindow's eax: +0x24 arg, +0x20 owner, Gu_WindowCreate(190, 40, 120, 101, 0, Gu_SelectorProc), window +0x98 = selector, +0x18/+0x1c mouse, g_GuPopupWindow; ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849dc0 function Gu_SelectorOpenXYWH       # fh v3:exact 0x00849dc0; cdecl(selector, owner, arg, x, y, w, h) -> as Gu_SelectorOpen with the window at (x, y, w, h/9*9+2); ported M5 menu b5 (ffx_menu::m5m_e)
+0x00849e30 function Gu_SelectorProc           # cdecl(window, msg, arg) -> 0: messages but 0x8001 first to selector +0x28 (unless flags 0x70); 0x8003 Sg_SetMouse(+0x18, +0x1c) when +0x14; 0x8006 id -1: popup cleared, owner +0x7c(owner, 0x8012, +0x24), Gu_WindowStartDrag; 0x800a flag 2, popup cleared, Gu_WindowCloseTree; 0x8011 Gu_SelectorPaint (jump table 0x00849f10/0x00849f24); name ours; ported M5 menu b5 (ffx_menu::m5m_e)
 0x00849f40 function Gu_SelectorResetNbItem    # fh v3:exact 0x00849f40
 0x00849fc0 function Gu_SelectorSetCallback    # fh v3:bsim1.00 0x00849fc0
 0x00849fd0 function Gu_SelectorSetItem        # fh v3:exact 0x00849fd0
@@ -11350,7 +11353,7 @@
 0x0084a0d0 function Gu_SelectorSetMouseFukki  # fh v3:bsim1.00 0x0084a0d0
 0x0084a0e0 function Gu_SelectorSetSelect      # fh v3:exact 0x0084a0e0
 0x0084a110 function Gu_SelectorSetSelectSTR   # fh v3:exact 0x0084a110
-0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0084a180 function Gu_SelectorSortItem          # layout: alphabetical run between Gu_SelectorSetSelectSTR and Gu_VSync (1 unnamed in the gap); Switch 0x710043fff0 Gu_SelectorSortItem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(selector): selection sort of the items by strcmp of names +8, values +0xc swapped alike; ported M5 menu b5 (ffx_menu::m5m_e)
 0x0084a260 function Gu_VSync                  # fh v3:exact 0x0084a260; cdecl(): hidden waits for Sg_MouseGetMove; drag and resize follow the mouse (resize lays out controls 0x8001/0x8000/0x8002/0x8003 by Gu_WindowControlSetRect); hit test: capture (Gu_WindowMouse), popup 0x01303740, else Gu_ListCopyNext + Gu_WindowListMouse, an unclaimed press captures for Sg_ControlMouseCamera (-1); no button down ends drags and the capture; ported M5 menu b1 (ffx_menu::m5m_a)
 0x0084a460 function Gu_VSyncMain                 # layout: alphabetical run between Gu_VSync and Gu_WindowAddButton (1 unnamed in the gap); Switch 0x7100440f70 Gu_VSyncMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl() -> 0x0084ef10's eax: Sg_MouseMain, tail jump to the clock tick 0x0084ef10; ported M5 menu b2 (ffx_menu::m5m_b)
 0x0084a470 function Gu_WindowAddButton        # fh v3:cg16 0x84a470; cdecl(window, id, text, x, y, w, h) -> control: Gu_WindowAddControl, kind 1; ported M5 menu b2 (ffx_menu::m5m_b)

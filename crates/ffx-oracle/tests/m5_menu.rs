@@ -28,6 +28,7 @@ use ffx_menu::m5m_a::bridge as ma;
 use ffx_menu::m5m_b::bridge as mb;
 use ffx_menu::m5m_c::{self as mc_fields, bridge as mc};
 use ffx_menu::m5m_d::bridge as md;
+use ffx_menu::m5m_e::bridge as me;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -1960,6 +1961,233 @@ fn tk_deci2_matches_the_original() {
                 Conv::Cdecl,
                 &[name],
                 |m| Out::U32(md::remove(m, name)),
+            );
+        }
+    });
+}
+
+// ---- batch 5 (ffx_menu::m5m_e) ----
+
+impl Twins {
+    /// A selector of `n` items (names "item<k>" in a random order, values
+    /// k), `rows` visible, scrolled by `scroll`.
+    fn selector(&mut self, rng: &mut Rng, n: u32, rows: u32, scroll: u16) -> u32 {
+        // eight more names on both sides: rows a scroll past either end
+        // shows (more rows than items scroll to a negative offset)
+        let names: Vec<u32> = (0..n + 16)
+            .map(|_| {
+                let s = format!("item{}\0", rng.below(50));
+                self.alloc(s.as_bytes())
+            })
+            .collect();
+        let names = self.words(&names) + 32;
+        let values: Vec<u32> = (0..n.max(1)).collect();
+        let values = self.words(&values);
+        let mut s = vec![0u8; 0x30];
+        s[0..2].copy_from_slice(&scroll.to_le_bytes());
+        s[2..4].copy_from_slice(&(rng.below(8) as u16).to_le_bytes());
+        s[4..6].copy_from_slice(&(n as u16).to_le_bytes());
+        s[8..12].copy_from_slice(&names.to_le_bytes());
+        s[0xc..0x10].copy_from_slice(&values.to_le_bytes());
+        s[0x10..0x14].copy_from_slice(&rows.to_le_bytes());
+        s[0x14..0x18].copy_from_slice(&rng.below(2).to_le_bytes());
+        s[0x18..0x20].copy_from_slice(&[7, 0, 0, 0, 9, 0, 0, 0]);
+        self.alloc(&s)
+    }
+}
+
+#[test]
+fn gu_selector_paint_and_sort_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5e1e_c7ed);
+        for i in 0..80 {
+            t.reset();
+            t.stubs(&[
+                (me::GU_PRINT_SET_COLOR, false, 4, 0, 0xb1),
+                (me::GU_PRINT_SET_X, false, 1, 0, 0xb2),
+                (me::GU_PRINT_SET_Y, false, 1, 0, 0xb3),
+                (me::GU_PRINTF, false, 1, 0, 0xb4),
+            ]);
+            t.mouse(&mut rng);
+            let my = rng.below(200);
+            t.g32(g::MOUSE_Y, my.wrapping_sub(40));
+            let n = rng.below(12);
+            let rows = rng.below(n + 3);
+            let scroll = (rng.below(120) as u16).wrapping_sub(20);
+            let scroll = if rng.chance(8) { 0xffff } else { scroll };
+            let sel = t.selector(&mut rng, n, rows, scroll);
+            let w = t.window(&mut rng, 0);
+            if rng.chance(4) {
+                // the mouse exactly one list height below the window top
+                let wy = i32::from(Mem::read::<i16>(&t.a, w + 0xe));
+                let y = (wy + 9 * rows as i32) as u32;
+                t.g32(g::MOUSE_Y, y);
+            } else if rng.chance(4) {
+                let wy = i32::from(Mem::read::<i16>(&t.a, w + 0xe));
+                t.g32(g::MOUSE_Y, (wy + 1) as u32);
+            }
+            t.check(
+                &format!("Gu_SelectorPaint #{i}"),
+                0x0084_9c00,
+                Conv::Cdecl,
+                &[w, sel],
+                |m| {
+                    me::selector_paint(m, w, sel);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("Gu_SelectorSortItem #{i}"),
+                0x0084_a180,
+                Conv::Cdecl,
+                &[sel],
+                |m| {
+                    me::selector_sort_item(m, sel);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn gu_selector_procs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x9e0c_0005);
+        for i in 0..120 {
+            t.reset();
+            t.window_stubs();
+            t.stubs(&[
+                (me::GU_PRINT_SET_COLOR, false, 4, 0, 0xb1),
+                (me::GU_PRINT_SET_X, false, 1, 0, 0xb2),
+                (me::GU_PRINT_SET_Y, false, 1, 0, 0xb3),
+                (me::GU_PRINTF, false, 1, 0, 0xb4),
+                (me::SG_SET_MOUSE, false, 2, 0, 0xb5),
+                (me::GU_WINDOW_CLOSE_TREE, false, 1, 0, 0xb6),
+                (me::GU_WINDOW_MOUSE_IN, false, 1, 0, rng.below(2)),
+            ]);
+            t.mouse(&mut rng);
+            let n = 3 + rng.below(4);
+            let sel = t.selector(&mut rng, n, 3, 0);
+            let owner = t.window(&mut rng, 0);
+            t.w32(sel + 0x20, owner);
+            t.w32(sel + 0x24, rng.word());
+            if rng.chance(2) {
+                let cb = t.stub_code(0x28, false, 3, 0, 0);
+                t.w32(sel + 0x28, cb);
+            }
+            let w = t.window(&mut rng, 0);
+            t.w32(w + 0x98, sel);
+            let rect: Vec<u8> = (0..0x10).map(|_| rng.next() as u8).collect();
+            t.write(w + 0x14, &rect);
+            let popup = rng.word();
+            t.g32(g::POPUP_WINDOW, popup);
+            let msg = [
+                0x8001, 0x8003, 0x8006, 0x8006, 0x800a, 0x8011, 0x8004, 0x8007,
+            ][rng.below(8) as usize];
+            let arg = [u32::MAX, u32::MAX, 0x4d2, 3][rng.below(4) as usize];
+            t.check(
+                &format!("Gu_SelectorProc #{i}"),
+                0x0084_9e30,
+                Conv::Cdecl,
+                &[w, msg, arg],
+                |m| Out::U32(me::selector_proc(m, w, msg, arg)),
+            );
+            t.check(
+                &format!("Gu_MessageBoxProc #{i}"),
+                0x0084_9a10,
+                Conv::Cdecl,
+                &[w, msg, arg],
+                |m| Out::U32(me::message_box_proc(m, w, msg, arg)),
+            );
+        }
+    });
+}
+
+#[test]
+fn gu_selector_open_and_message_box_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0be7_0005);
+        for i in 0..24 {
+            t.reset();
+            let fresh = t.zeros(0x9c);
+            let grown = t.zeros(0x44 * 4);
+            t.create_stubs(grown, fresh);
+            let width = if rng.chance(4) {
+                0x7ff0 + rng.below(0x40)
+            } else {
+                rng.below(0x240)
+            };
+            t.stubs(&[
+                (me::GU_SELECTOR_FIT_WINDOW, false, 2, 0, rng.word()),
+                (me::GU_PRINT_GET_WIDTH, false, 1, 0, width),
+            ]);
+            t.mouse(&mut rng);
+            t.g32(g::WINDOW_LIST, 0);
+            let sel = t.selector(&mut rng, 3, 3, 0);
+            let (owner, arg) = (rng.word(), rng.word());
+            match i % 3 {
+                0 => t.check(
+                    &format!("Gu_SelectorOpen #{i}"),
+                    0x0084_9d60,
+                    Conv::Cdecl,
+                    &[sel, owner, arg],
+                    |m| Out::U32(me::selector_open(m, sel, owner, arg)),
+                ),
+                1 => {
+                    let (x, y, w, h) = (
+                        rng.below(300),
+                        rng.below(300),
+                        rng.below(200),
+                        rng.below(200),
+                    );
+                    let args = [sel, owner, arg, x, y, w, h];
+                    t.check(
+                        &format!("Gu_SelectorOpenXYWH #{i}"),
+                        0x0084_9dc0,
+                        Conv::Cdecl,
+                        &args,
+                        |m| Out::U32(me::selector_open_xywh(m, sel, owner, arg, x, y, w, h)),
+                    );
+                }
+                _ => {
+                    let text = rng.word();
+                    t.check(
+                        &format!("Gu_MessageBox #{i}"),
+                        0x0084_9970,
+                        Conv::Cdecl,
+                        &[text],
+                        |m| Out::U32(me::message_box(m, text)),
+                    );
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn gu_make_file_list_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0xf11e_0005);
+        for i in 0..20 {
+            t.reset();
+            let path: Vec<u8> = (0..rng.below(80))
+                .map(|_| [b'a', b'/', b'\\', b'x', b'.'][rng.below(5) as usize])
+                .chain([0])
+                .collect();
+            let path = t.alloc(&path);
+            t.stub_import(me::SPRINTF_SLOT, false, 4, 0, 0xc1);
+            t.stub(me::SG_MAKE_FILELIST, false, 3, 0, rng.word());
+            let list = rng.word();
+            let what = format!("Gu_MakeFileList #{i}");
+            t.check_framed(
+                &what,
+                0x0084_98e0,
+                Conv::Cdecl,
+                &[list, path],
+                0x204,
+                |m, ebp| Out::U32(me::make_file_list(m, ebp, list, path)),
             );
         }
     });
