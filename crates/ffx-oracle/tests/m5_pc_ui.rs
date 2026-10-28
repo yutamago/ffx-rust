@@ -29,6 +29,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
+use ffx_pcui::m5u_d::bridge as d;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -457,10 +458,26 @@ impl Twins {
     /// blocks from a fresh zeroed pool, the same addresses on both sides;
     /// returns 0 once `fail_after` blocks were handed out.
     fn stub_alloc(&mut self, sym: u32, fail_after: u32) {
+        self.stub_alloc_with(sym, fail_after, false);
+    }
+
+    /// [`Twins::stub_alloc`] for `PhyreMalloc(size, align)`: the last
+    /// alignment is kept in memory too, so the diff sees it.
+    fn stub_alloc2(&mut self, sym: u32, fail_after: u32) {
+        self.stub_alloc_with(sym, fail_after, true);
+    }
+
+    fn stub_alloc_with(&mut self, sym: u32, fail_after: u32, align: bool) {
         // filled, so the zeros the callers store show
         let pool = self.alloc(&vec![0xcd; 0x4_0000]);
-        let cur = self.words(&[pool, fail_after]);
-        let mut c = vec![0x83, 0x3d];
+        let cur = self.words(&[pool, fail_after, 0]);
+        let mut c = Vec::new();
+        if align {
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+            c.extend([0x89, 0x0d]);
+            c.extend((cur + 8).to_le_bytes()); // mov [cur+8], ecx
+        }
+        c.extend([0x83, 0x3d]);
         c.extend((cur + 4).to_le_bytes());
         c.push(0x00); // cmp dword [left], 0
         c.extend([0x75, 0x03]); // jne +3
@@ -2227,6 +2244,306 @@ fn esc_menu_popups_match_the_original() {
                 &[yes],
                 ret,
                 |g| c::quit_confirmed(g, yes),
+            );
+        }
+    });
+}
+
+// ---- batch 4 (ffx_pcui::m5u_d) ----
+
+/// The text on and off, glyph counts 0..big, screen sizes (0, odd, huge,
+/// past 2^31), scales and offsets including NaN and infinities. The
+/// matrix helpers run as the original's (they are library code).
+#[test]
+fn text_resize_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5e_0004);
+        for i in 0..40u32 {
+            t.reset();
+            t.stub(d::TEXT_SCROLL_TO_VISIBLE, true, 1, 1, 0x31);
+            let obj = t.zeros(0x200);
+            let counts = t.words(&[0, [0, 1, 7, 100, 0x3fff_ffff][i as usize % 5]]);
+            let asset = t.zeros(0x40);
+            t.w32(asset + 0x30, counts);
+            let this = t.alloc(&[0x66; 0x90]);
+            t.write(this + 0x80, &[u8::from(i % 7 != 0)]);
+            t.w32(this + 0x10, if i % 11 == 3 { 0 } else { obj });
+            t.w32(this + 0xc, if i % 13 == 5 { 0 } else { asset });
+            let f = |r: &mut Rng| match r.below(6) {
+                0 => 0x7fc0_0000,
+                1 => 0x7f80_0000,
+                2 => 0,
+                _ => (r.next() & 0x3fff_ffff) | 0x3000_0000,
+            };
+            for off in [0x84, 0x88, 0x8c] {
+                let v = f(&mut rng);
+                t.w32(this + off, v);
+            }
+            let top = rng.next();
+            t.w32(this + 0x74, top);
+            let w = [1280, 0, 1, 0xffff_ffff, 0x8000_0000, 1920][i as usize % 6];
+            let hh = [720, 0, 3, 1080, 0x9000_0000, 1][(i as usize / 6) % 6];
+            t.skip = 0;
+            let what = format!("text resize #{i} {w}x{hh}");
+            t.check_framed(
+                &what,
+                0x006f_6670,
+                Conv::Thiscall(this),
+                &[w, hh],
+                0xc8,
+                |g, ebp| {
+                    d::text_resize(g, this, w, hh, ebp - 0xc8);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn vec_push_back_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0ec7_0004);
+        for i in 0..30u32 {
+            t.reset();
+            t.stub_alloc(a::OPERATOR_NEW, 100);
+            delete_stubs(t);
+            let below = t.words(&[rng.next()]);
+            let n = rng.below(6);
+            let cap = n + rng.below(3);
+            let words: Vec<u32> = (0..cap.max(1)).map(|_| rng.next()).collect();
+            let buf = t.words(&words);
+            let (begin, end, last) = if i % 5 == 0 {
+                (0, 0, 0)
+            } else {
+                (buf, buf + 4 * n, buf + 4 * cap)
+            };
+            let vec = t.words(&[begin, end, last]);
+            // an element of its own, or a word elsewhere
+            let v = match i % 3 {
+                0 if n > 0 => buf + 4 * rng.below(n),
+                1 => below,
+                _ => t.words(&[rng.next()]),
+            };
+            let what = format!("vec push #{i} n {n} cap {cap}");
+            t.run(&what, 0x006a_2b20, Conv::Thiscall(vec), &[v], false, |g| {
+                d::vec_push_back(g, vec, v);
+                0
+            });
+        }
+    });
+}
+
+#[test]
+fn iggy_tokenizer_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x70ce_0004);
+        let texts = [
+            "",
+            "a",
+            " a b  c ",
+            ",,x,,y",
+            "one",
+            "  ",
+            "a,b c",
+            "\u{80}x y",
+            "trailing ",
+            "a\u{1}b c\u{1}d",
+        ];
+        for i in 0..36u32 {
+            t.reset();
+            t.stub_alloc2(c::PHYRE_MALLOC, if i % 9 == 4 { 1 } else { 100 });
+            delete_stubs(t);
+            t.stub(d::RELEASE_TAGGED_WORDS, false, 2, 0, 0x41);
+            let text = texts[i as usize % texts.len()];
+            let s = if i % 12 == 11 { 0 } else { t.cstr(text) };
+            let delims = match i % 4 {
+                0 => t.cstr(" "),
+                1 => t.cstr(" ,"),
+                2 => t.cstr(","),
+                _ => 0,
+            };
+            let cd = Conv::Cdecl;
+            t.run("skip delims", 0x00a2_9030, cd, &[s, delims], true, |g| {
+                d::skip_delims(g, s, delims)
+            });
+            t.run("count tokens", 0x00a2_90d0, cd, &[s, delims], true, |g| {
+                d::count_tokens(g, s, delims)
+            });
+            // an array of 0..4 slots, owned or not, with tagged pointers
+            // the token count (as the original counts) for half the arrays,
+            // so their old strings are freed; else a different count
+            let set: &[u8] = match i % 4 {
+                0 => b" ",
+                1 => b" ,",
+                2 => b",",
+                _ => b"",
+            };
+            let tokens = if s == 0 || set.is_empty() {
+                0
+            } else {
+                text.as_bytes()
+                    .split(|b| set.contains(b))
+                    .filter(|w| !w.is_empty())
+                    .count() as u32
+            };
+            let k = if i % 2 == 0 { tokens } else { rng.below(5) };
+            let slots: Vec<u32> = (0..k.max(1))
+                .map(|_| [0, 0x1234_5679, 0x00ab_0000][rng.below(3) as usize])
+                .collect();
+            let words = t.words(&slots);
+            let owned = [0, 0x8000_0000, 0x4000_0000][rng.below(3) as usize];
+            let arr = t.words(&[k | owned, if k == 0 { 0 } else { words }]);
+            let what = format!("tokenize #{i}");
+            t.run(&what, 0x00a2_9140, cd, &[s, delims, arr], true, |g| {
+                d::tokenize(g, s, delims, arr)
+            });
+        }
+    });
+}
+
+#[test]
+fn remap_icon_and_skip_prompt_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1c0b_0004);
+        for i in 0..6u32 {
+            t.reset();
+            t.stub_float(
+                d::GRAPHIC_GET_TIME,
+                [0.0, 1.5, -2.0, 1e20, 3.25, 7.0][i as usize],
+            );
+            t.stub(d::ICON_SLOT_SET, true, 5, 5, 0x51);
+            let this = t.alloc(&[0x66; 0x70]);
+            let tc = Conv::Thiscall(this);
+            t.run("icon ctor", 0x006e_77d0, tc, &[], true, |g| {
+                d::icon_state_init(g, this)
+            });
+            t.run("skip show", 0x006e_78a0, tc, &[], false, |g| {
+                d::skip_prompt_show(g, this);
+                0
+            });
+            t.run("skip hide", 0x006e_78c0, tc, &[], false, |g| {
+                d::skip_prompt_hide(g, this);
+                0
+            });
+            let b = [rng.next(), rng.next(), rng.next()];
+            t.run("icon buttons", 0x006e_78e0, tc, &b, false, |g| {
+                d::icon_set_buttons(g, this, b);
+                0
+            });
+        }
+    });
+}
+
+/// A small tree: head (nil) with root, and every node's predecessor,
+/// the head included.
+#[test]
+fn tree_dec_matches_the_original() {
+    Twins::each(|t| {
+        // nodes: [left, parent, right, (byte +0xd nil)]
+        let head = t.zeros(0x10);
+        let nodes: Vec<u32> = (0..8).map(|_| t.zeros(0x10)).collect();
+        t.write(head + 0xd, &[1]);
+        // shape: 3 is the root; 1 (0, 2) on the left, 5 (4, 6) on the right
+        let link = |t: &mut Twins, n: u32, l: u32, p: u32, r: u32| {
+            t.w32(n, l);
+            t.w32(n + 4, p);
+            t.w32(n + 8, r);
+        };
+        let nd = |k: usize| nodes[k];
+        link(t, head, nd(0), nd(3), nd(6));
+        link(t, nd(3), nd(1), head, nd(5));
+        link(t, nd(1), nd(0), nd(3), nd(2));
+        link(t, nd(5), nd(4), nd(3), nd(6));
+        for k in [0, 2, 4, 6] {
+            let p = if k < 3 { nd(1) } else { nd(5) };
+            link(t, nd(k), head, p, head);
+        }
+        // node 7 between 1 and 2: node 2's left child
+        link(t, nd(2), nd(7), nd(1), head);
+        link(t, nd(7), head, nd(2), head);
+        for start in std::iter::once(head).chain(nodes.iter().copied()) {
+            t.reset();
+            let it = t.words(&[start]);
+            t.run(
+                "tree dec",
+                0x006e_91f0,
+                Conv::Thiscall(it),
+                &[],
+                true,
+                |g| d::tree_dec(g, it),
+            );
+        }
+    });
+}
+
+#[test]
+fn iggy_helpers_and_debug_fill_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x1990_0004);
+        for i in 0..8u32 {
+            t.reset();
+            delete_stubs(t);
+            t.stubs(&[
+                (d::HELPER_FIND, true, 1, 1, 0x00f0_0000 + i),
+                (d::HELPER_INSERT, true, 4, 4, 0x61),
+                (d::UNLOCK_ACHIEVEMENT, false, 1, 0, 0x62),
+                (d::DEBUG_FULL_ITEM, false, 0, 0, 0x63),
+                (d::DEBUG_FULL_COMMAND, false, 0, 0, 0x64),
+                (d::DEBUG_FULL_GILL, false, 0, 0, 0x65),
+                (d::GET_DEREF, true, 0, 0, 0x00d1_0000 + i),
+            ]);
+            t.stub_import(d::VALUE_REF_FREE_IAT, false, 2, 2, 0x66);
+            t.stub_import(d::VALUE_REF_FROM_TEMP_IAT, false, 3, 3, 0x00d2_0000 + i);
+            t.stub_import(d::VALUE_PATH_FROM_REF_IAT, false, 3, 3, 0x67);
+            t.stub_import(d::VALUE_PATH_ARRAY_IAT, false, 3, 3, 0x68);
+            t.stub_import(d::VALUE_PATH_SET_INDEX_IAT, false, 2, 2, 0x69);
+            t.stub_import(d::VALUE_GET_S32_IAT, false, 4, 4, 0x6a);
+            t.skip = 0;
+            t.check_framed(
+                "init iggy helper",
+                0x006e_96c0,
+                Conv::Cdecl,
+                &[],
+                8,
+                |g, ebp| Out::U32(d::init_iggy_helper(g, ebp - 8)),
+            );
+            t.g32(d::CAMERA_DATA, if i % 3 == 0 { 0 } else { 0x00ca_0000 + i });
+            t.run("unload camera", 0x006f_6f80, Conv::Cdecl, &[], false, |g| {
+                d::unload_camera_data(g);
+                0
+            });
+            let yes = u32::from(i % 4 != 3);
+            let choice = t.words(&[[0, 1, 2, 3, 0xffff_ffff, 7, 1, 0][i as usize]]);
+            t.run(
+                "debug fill",
+                0x006f_c970,
+                Conv::Cdecl,
+                &[yes, choice],
+                yes != 0,
+                |g| d::on_debug_fill(g, yes, choice),
+            );
+            let r = t.words(&[rng.next(), rng.next()]);
+            t.run(
+                "value ref free",
+                0x006f_cc60,
+                Conv::Thiscall(r),
+                &[],
+                true,
+                |g| d::value_ref_free(g, r),
+            );
+            let this = rng.next();
+            let out = t.zeros(0x30);
+            let args = t.words(&[0, rng.next()]);
+            // ebp - 4 holds `this` (the original keeps it there)
+            t.skip = 4;
+            t.check_framed(
+                "read s32 x12",
+                0x006f_ed60,
+                Conv::Thiscall(this),
+                &[out, args],
+                0x34,
+                |g, ebp| Out::U32(d::read_s32_array12(g, this, out, args, ebp - 0x34)),
             );
         }
     });

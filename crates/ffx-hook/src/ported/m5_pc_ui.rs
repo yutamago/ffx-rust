@@ -10,6 +10,7 @@ use super::{StackFrame, mem, ported};
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
+use ffx_pcui::m5u_d::bridge as d;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -376,5 +377,69 @@ ported! {
     /// `FFEscMenu_QuitConfirmed_0068fcf0(yes)`.
     FFEscMenu_QuitConfirmed_0068fcf0 @ 0x0068_fcf0 => extern "C" fn quit_confirmed(yes: u32) -> u32 {
         c::quit_confirmed(&mut mem(), yes)
+    }
+    // ---- batch 4 (ffx_pcui::m5u_d) ----
+    /// `TextUtil_resize(this; w, h)`: frame `ebp - 0xc8`.
+    TextUtil_resize @ 0x006f_6670 => extern "thiscall" fn text_resize(this: u32, w: u32, h: u32) {
+        let mut f = StackFrame::<0x32>::new();
+        d::text_resize(&mut mem(), this, w, h, f.at());
+    }
+    /// `PtrVector_pushBack_006a2b20(this; &v)`.
+    PtrVector_pushBack_006a2b20 @ 0x006a_2b20 => extern "thiscall" fn vec_push_back(this: u32, v: u32) {
+        d::vec_push_back(&mut mem(), this, v);
+    }
+    /// `IggyString_skipDelims_00a29030(s, delims)`.
+    IggyString_skipDelims_00a29030 @ 0x00a2_9030 => extern "C" fn skip_delims(s: u32, delims: u32) -> u32 {
+        d::skip_delims(&mut mem(), s, delims)
+    }
+    /// `IggyString_countTokens_00a290d0(s, delims)`.
+    IggyString_countTokens_00a290d0 @ 0x00a2_90d0 => extern "C" fn count_tokens(s: u32, delims: u32) -> u32 {
+        d::count_tokens(&mut mem(), s, delims)
+    }
+    /// `IggyString_tokenize_00a29140(s, delims, arr)`.
+    IggyString_tokenize_00a29140 @ 0x00a2_9140 => extern "C" fn tokenize(s: u32, delims: u32, arr: u32) -> u32 {
+        d::tokenize(&mut mem(), s, delims, arr)
+    }
+    /// `RemapButtonIcon_ctor_006e77d0(this)` -> `this`.
+    RemapButtonIcon_ctor_006e77d0 @ 0x006e_77d0 => extern "thiscall" fn icon_state_init(this: u32) -> u32 {
+        d::icon_state_init(&mut mem(), this)
+    }
+    /// `SkipPrompt_show_006e78a0(this)`.
+    SkipPrompt_show_006e78a0 @ 0x006e_78a0 => extern "thiscall" fn skip_prompt_show(this: u32) {
+        d::skip_prompt_show(&mut mem(), this);
+    }
+    /// `SkipPrompt_hide_006e78c0(this)`.
+    SkipPrompt_hide_006e78c0 @ 0x006e_78c0 => extern "thiscall" fn skip_prompt_hide(this: u32) {
+        d::skip_prompt_hide(&mut mem(), this);
+    }
+    /// `RemapButtonIcon_setButtons_006e78e0(this; a, b, c)`.
+    RemapButtonIcon_setButtons_006e78e0 @ 0x006e_78e0 => extern "thiscall" fn icon_set_buttons(this: u32, x: u32, y: u32, z: u32) {
+        d::icon_set_buttons(&mut mem(), this, [x, y, z]);
+    }
+    /// `StdMapIterator_dec_006e91f0(it)` -> `it`.
+    StdMapIterator_dec_006e91f0 @ 0x006e_91f0 => extern "thiscall" fn tree_dec(it: u32) -> u32 {
+        d::tree_dec(&mut mem(), it)
+    }
+    /// `InitIggyHelper()`: the record at `ebp - 8`.
+    InitIggyHelper @ 0x006e_96c0 => extern "C" fn init_iggy_helper() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        d::init_iggy_helper(&mut mem(), f.at())
+    }
+    /// `UnloadCameraData()`.
+    UnloadCameraData @ 0x006f_6f80 => extern "C" fn unload_camera_data() {
+        d::unload_camera_data(&mut mem());
+    }
+    /// `FFEscMenu_onDebugFill_006fc970(yes, &choice)`.
+    FFEscMenu_onDebugFill_006fc970 @ 0x006f_c970 => extern "C" fn on_debug_fill(yes: u32, choice: u32) -> u32 {
+        d::on_debug_fill(&mut mem(), yes, choice)
+    }
+    /// `IggyValueRef_free_006fcc60(this)`.
+    IggyValueRef_free_006fcc60 @ 0x006f_cc60 => extern "thiscall" fn value_ref_free(this: u32) -> u32 {
+        d::value_ref_free(&mut mem(), this)
+    }
+    /// `FFEscMenu_readS32Array12_006fed60(this; out, args)`: the path at `ebp - 0x34`.
+    FFEscMenu_readS32Array12_006fed60 @ 0x006f_ed60 => extern "thiscall" fn read_s32_array12(this: u32, out: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x0d>::new();
+        d::read_s32_array12(&mut mem(), this, out, args, f.at())
     }
 }
