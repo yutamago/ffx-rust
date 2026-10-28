@@ -9,6 +9,7 @@ use super::{StackFrame, mem, ported};
 use ffx_menu::m5m_a::bridge as a;
 use ffx_menu::m5m_b::bridge as b;
 use ffx_menu::m5m_c::bridge as c;
+use ffx_menu::m5m_d::bridge as d;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -318,5 +319,70 @@ ported! {
     /// `TkPutDebugFontStringPR(color, flags, s)`.
     TkPutDebugFontStringPR @ 0x0088_f5c0 => extern "C" fn tk_put_debug_font_string_pr(color: u32, flags: u32, s: u32) -> u32 {
         c::put_string_pr(&mut mem(), color, flags, s)
+    }
+    // ---- batch 4 (ffx_menu::m5m_d) ----
+    /// `TkCdRead(file, sector, buf)`.
+    TkCdRead @ 0x0088_d140 => extern "C" fn tk_cd_read(file: u32, sector: u32, buf: u32) -> u32 {
+        d::cd_read(&mut mem(), file, sector, buf)
+    }
+    /// `TkCdReadSync(mode)`: the reader's sync entry with the caller's word.
+    TkCdReadSync @ 0x0088_d1c0 => extern "C" fn tk_cd_read_sync(mode: u32) -> u32 {
+        d::cd_read_sync(&mut mem(), mode)
+    }
+    /// `TkCdReadNB(file, sector, buf)`.
+    TkCdReadNB @ 0x0088_d190 => extern "C" fn tk_cd_read_nb(file: u32, sector: u32, buf: u32) -> u32 {
+        d::cd_read_nb(&mut mem(), file, sector, buf)
+    }
+    /// `TkCdSize(file, sector)`.
+    TkCdSize @ 0x0088_d390 => extern "C" fn tk_cd_size(file: u32, sector: u32) -> u32 {
+        d::cd_size(&mut mem(), file, sector)
+    }
+    /// `TkCdReadWithMalloc(file, sector)` -> the buffer.
+    TkCdReadWithMalloc @ 0x0088_d1d0 => extern "C" fn tk_cd_read_with_malloc(file: u32, sector: u32) -> u32 {
+        d::cd_read_with_malloc(&mut mem(), file, sector)
+    }
+    /// `TkMemLock()`.
+    TkMemLock @ 0x0088_e680 => extern "C" fn tk_mem_lock() -> u32 {
+        d::mem_check_pair(&mut mem(), 0x1c5)
+    }
+    /// `TkMemUnlock()`.
+    TkMemUnlock @ 0x0088_e6b0 => extern "C" fn tk_mem_unlock() -> u32 {
+        d::mem_check_pair(&mut mem(), 0x1d0)
+    }
+    /// `TkSoftWareReset()`.
+    TkSoftWareReset @ 0x0087_2550 => extern "C" fn tk_software_reset() -> u32 {
+        d::software_reset(&mut mem())
+    }
+    /// `TkInitAllSyncVCallback()`.
+    TkInitAllSyncVCallback @ 0x0088_86f0 => extern "C" fn tk_init_all_sync_v_callback() -> u32 {
+        d::init_all_sync_v_callback(&mut mem())
+    }
+    /// `TkPadInfoAct(port, slot, actuator)`.
+    TkPadInfoAct @ 0x0088_8a40 => extern "C" fn tk_pad_info_act(port: u32, slot: u32, act: u32) -> u32 {
+        d::pad_info_act(&mut mem(), port, slot, act)
+    }
+    /// `TkMcSync(mode, &cmd, &result)`: frame `ebp - 0xc`.
+    TkMcSync @ 0x0088_84e0 => extern "C" fn tk_mc_sync(mode: u32, cmd: u32, result: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        let ebp = f.at() + 0xc;
+        d::mc_sync(&mut mem(), ebp, mode, cmd, result)
+    }
+    /// `TkMcMakePath(dst, name)`: frame `ebp - 0x400`.
+    TkMcMakePath @ 0x0088_8030 => extern "C" fn tk_mc_make_path(dst: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<256>::new();
+        let ebp = f.at() + 0x400;
+        d::mc_make_path(&mut mem(), ebp, dst, name)
+    }
+    /// `TkInitDeci2()` -> the socket.
+    TkInitDeci2 @ 0x0088_5240 => extern "C" fn tk_init_deci2() -> u32 {
+        d::init_deci2(&mut mem())
+    }
+    /// `TkDeci2Send(packet, len)`.
+    TkDeci2Send @ 0x0088_54c0 => extern "C" fn tk_deci2_send(packet: u32, len: u32) -> u32 {
+        d::deci2_send(&mut mem(), packet, len)
+    }
+    /// `TkRemove(name)`.
+    TkRemove @ 0x0088_c740 => extern "C" fn tk_remove(name: u32) -> u32 {
+        d::remove(&mut mem(), name)
     }
 }

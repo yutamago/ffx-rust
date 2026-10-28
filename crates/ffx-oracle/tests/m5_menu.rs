@@ -27,6 +27,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_menu::m5m_a::bridge as ma;
 use ffx_menu::m5m_b::bridge as mb;
 use ffx_menu::m5m_c::{self as mc_fields, bridge as mc};
+use ffx_menu::m5m_d::bridge as md;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -1652,6 +1653,313 @@ fn tk_put_debug_font_entries_match_the_original() {
                 Conv::Cdecl,
                 &[c, f, s],
                 |m| Out::U32(mc::put_string_pr(m, c, f, s)),
+            );
+        }
+    });
+}
+
+// ---- batch 4 (ffx_menu::m5m_d) ----
+
+impl Twins {
+    /// A `sprintf`-like recording stub (cdecl, 3 words logged) bound to
+    /// import slot `slot`: copies `n` bytes from `src` to its first
+    /// argument, returns `ret`.
+    fn stub_import_copy(&mut self, slot: u32, src: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(slot, false, 3, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, 0x0c]); // mov edi, [esp+0xc]
+        c.push(0xb9);
+        c.extend(n.to_le_bytes()); // mov ecx, n
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// A fake CD reader table for `GetCD`: entries `+0x00` read (4
+    /// words), `+0x08` sync (1), `+0x10` open (1), `+0x14` size (1,
+    /// returns `size`).
+    fn cd_table(&mut self, size: u32) {
+        let read = self.stub_code(0xcd00, false, 4, 0, 0xc0);
+        let sync = self.stub_code(0xcd08, false, 1, 0, 0xc8);
+        let open = self.stub_code(0xcd10, false, 1, 0, 0xd0);
+        let sz = self.stub_code(0xcd14, false, 1, 0, size);
+        let table = self.words(&[read, 0, sync, 0, open, sz]);
+        self.stubs(&[
+            (md::GET_CD, false, 0, 0, table),
+            (md::FLUSH_CACHE, false, 1, 0, 0xf1),
+        ]);
+    }
+}
+
+#[test]
+fn tk_cd_entries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xcd00_cd00);
+        for i in 0..12 {
+            t.reset();
+            let size = match i % 4 {
+                0 => 0,
+                1 => 0x800,
+                2 => 0xffff_f000 | rng.below(0x1000),
+                _ => rng.below(0x10_0000),
+            };
+            t.cd_table(size);
+            let fresh = t.words(&[0xdead_0001, 2, 3, 4]);
+            t.stubs(&[
+                (md::SG_MEM_SET_ALIGN, false, 1, 0, 0xe1),
+                (md::USER_MALLOC, false, 1, 0, fresh),
+            ]);
+            let (f, s, b) = (rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("TkCdRead #{i}"),
+                0x0088_d140,
+                Conv::Cdecl,
+                &[f, s, b],
+                |m| Out::U32(md::cd_read(m, f, s, b)),
+            );
+            t.check(
+                &format!("TkCdReadSync #{i}"),
+                0x0088_d1c0,
+                Conv::Cdecl,
+                &[f],
+                |m| Out::U32(md::cd_read_sync(m, f)),
+            );
+            t.check(
+                &format!("TkCdReadNB #{i}"),
+                0x0088_d190,
+                Conv::Cdecl,
+                &[f, s, b],
+                |m| Out::U32(md::cd_read_nb(m, f, s, b)),
+            );
+            t.check(
+                &format!("TkCdSize #{i}"),
+                0x0088_d390,
+                Conv::Cdecl,
+                &[f, s],
+                |m| Out::U32(md::cd_size(m, f, s)),
+            );
+            t.check(
+                &format!("TkCdReadWithMalloc #{i}"),
+                0x0088_d1d0,
+                Conv::Cdecl,
+                &[f, s],
+                |m| Out::U32(md::cd_read_with_malloc(m, f, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_platform_glue_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e1e_0004);
+        for i in 0..8 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (md::SG_MEM_CHECK, false, 3, 0, ret),
+                (md::POST_RESET, false, 1, 0, 0x11),
+                (md::GRAPHIC_SET_SCREEN_FADE_COLOR, false, 4, 0, 0x12),
+                (md::GRAPHIC_SET_SCREEN_FADE_LAST_REASON, false, 1, 0, 0x13),
+                (md::GRAPHIC_LOCK_SCREEN_FADE_COLOR, false, 0, 0, ret ^ 2),
+                (md::TK_SYNC_V_DI, false, 0, 0, 0x14),
+                (md::TK_SYNC_V_EI, false, 0, 0, 0x15),
+                (md::TK_SET_VSYNC_HANDLER, false, 1, 0, ret ^ 3),
+                (md::SCE_PAD_INFO_ACT, false, 4, 0, rng.below(2)),
+            ]);
+            t.check(
+                &format!("TkMemLock #{i}"),
+                0x0088_e680,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(md::mem_check_pair(m, 0x1c5)),
+            );
+            t.check(
+                &format!("TkMemUnlock #{i}"),
+                0x0088_e6b0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(md::mem_check_pair(m, 0x1d0)),
+            );
+            t.check(
+                &format!("TkSoftWareReset #{i}"),
+                0x0087_2550,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(md::software_reset(m)),
+            );
+            let (thread, count) = (rng.word(), rng.word());
+            t.g32(0x0133_0268, thread);
+            t.g32(0x0133_0254, count);
+            t.check(
+                &format!("TkInitAllSyncVCallback #{i}"),
+                0x0088_86f0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(md::init_all_sync_v_callback(m)),
+            );
+            let act = if rng.chance(3) { 0xff } else { rng.word() };
+            let (p, s) = (rng.word(), rng.word());
+            t.check(
+                &format!("TkPadInfoAct #{i}"),
+                0x0088_8a40,
+                Conv::Cdecl,
+                &[p, s, act],
+                |m| Out::U32(md::pad_info_act(m, p, s, act)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_mc_sync_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 0;
+        let mut rng = Rng(0x3c5c_0001);
+        for i in 0..60 {
+            t.reset();
+            let r = if rng.chance(2) { 1 } else { rng.word() };
+            t.stubs(&[
+                (md::TK_GET_TGS, false, 0, 0, u32::from(rng.chance(5))),
+                (
+                    md::TK_MC_GET_LOAD_FILE_POS,
+                    false,
+                    1,
+                    0,
+                    [5, 0, 0xffff_fff0][rng.below(3) as usize],
+                ),
+                (md::TK_MC_SET_LOAD_FILE_POS, false, 2, 0, 0x16),
+            ]);
+            // sceMcSync writing its two out words: cmd 1 or other, result
+            let cmd = if rng.chance(2) { 1 } else { rng.below(4) };
+            let res = if rng.chance(2) {
+                0xffff_fffe
+            } else {
+                rng.below(4)
+            };
+            let log = t.stub_code(md::SCE_MC_SYNC, false, 3, 0, r);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            c.extend([0xc7, 0x00]);
+            c.extend(cmd.to_le_bytes()); // mov dword [eax], cmd
+            c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            c.extend([0xc7, 0x00]);
+            c.extend(res.to_le_bytes()); // mov dword [eax], res
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+            let f = t.cave_code(&c);
+            t.jump(md::SCE_MC_SYNC, f);
+            let slot = rng.below(2);
+            t.g32(0x0133_0234, slot);
+            let outs = t.zeros(8);
+            let (co, ro) = (
+                if rng.chance(3) { 0 } else { outs },
+                if rng.chance(3) { 0 } else { outs + 4 },
+            );
+            let mode = rng.word();
+            let what = format!("TkMcSync #{i}");
+            t.check_framed(
+                &what,
+                0x0088_84e0,
+                Conv::Cdecl,
+                &[mode, co, ro],
+                0xc,
+                |m, ebp| Out::U32(md::mc_sync(m, ebp, mode, co, ro)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_mc_make_path_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 0;
+        let mut rng = Rng(0x9a7b_0001);
+        for i in 0..20 {
+            t.reset();
+            // sprintf as a copy of the format into the buffer (logged)
+            let text: Vec<u8> = (0..rng.below(300))
+                .map(|_| b'a' + rng.below(26) as u8)
+                .collect();
+            let mut src = text.clone();
+            src.push(0);
+            let src = t.alloc(&src);
+            t.stub_import_copy(md::SPRINTF_SLOT, src, text.len() as u32 + 1, 0x99);
+            let dst = t.zeros(0x200);
+            let name = rng.word();
+            let what = format!("TkMcMakePath #{i}");
+            t.check_framed(
+                &what,
+                0x0088_8030,
+                Conv::Cdecl,
+                &[dst, name],
+                0x400,
+                |m, ebp| Out::U32(md::mc_make_path(m, ebp, dst, name)),
+            );
+        }
+    });
+}
+
+#[test]
+fn tk_deci2_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xdec1_0002);
+        for i in 0..24 {
+            t.reset();
+            let socket = rng.word();
+            t.stubs(&[
+                (md::SCE_DECI2_OPEN, false, 3, 0, socket),
+                (
+                    md::SCE_DECI2_REQ_SEND,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(2) { 0 } else { 0xffff_ffff },
+                ),
+                (md::FLUSH_CACHE, false, 1, 0, 0xf1),
+                (md::TK_IS_DEBUG, false, 0, 0, rng.below(2)),
+                (md::TK_IS_DECI2_SEND, false, 0, 0, 0),
+            ]);
+            for (k, sym) in [0x0132_f578u32, 0x0132_f584, 0x0132_f588, 0x0132_d56c]
+                .into_iter()
+                .enumerate()
+            {
+                t.g32(sym, 0x100 + k as u32);
+            }
+            t.check(
+                &format!("TkInitDeci2 #{i}"),
+                0x0088_5240,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(md::init_deci2(m)),
+            );
+            let packet = t.words(&[rng.word(), rng.word(), 0]);
+            let len = rng.word();
+            t.check(
+                &format!("TkDeci2Send #{i}"),
+                0x0088_54c0,
+                Conv::Cdecl,
+                &[packet, len],
+                |m| Out::U32(md::deci2_send(m, packet, len)),
+            );
+            let name: Vec<u8> = (0..rng.below(40))
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let name = t.alloc(&name);
+            t.check(
+                &format!("TkRemove #{i}"),
+                0x0088_c740,
+                Conv::Cdecl,
+                &[name],
+                |m| Out::U32(md::remove(m, name)),
             );
         }
     });

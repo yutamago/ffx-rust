@@ -27,6 +27,7 @@ pub mod item;
 pub mod m5m_a;
 pub mod m5m_b;
 pub mod m5m_c;
+pub mod m5m_d;
 pub mod main_loop;
 pub mod math;
 pub mod msg;

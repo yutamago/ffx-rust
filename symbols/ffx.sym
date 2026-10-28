@@ -12577,7 +12577,7 @@
 0x008724a0 function TkRefreshHdd              # fh v3:exact+call.cs 0x00872440 cdecl
 0x008724f0 function TkRefreshSoundMode        # fh v3:exact 0x00872490
 0x00872530 function Tk_SetScale               # (which, v) f32 0x01325b98[which != 0] = v; own name
-0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580
+0x00872550 function TkSoftWareReset           # fh switch:bsim1.00 0x7100471580; cdecl() -> graphicLockScreenFadeColor's eax: PostReset(1), graphicSetScreenFadeColor(0, 0, 0, 1.0f), graphicSetScreenFadeLastReason(3), tail jump graphicLockScreenFadeColor; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00872580 function Tk_ByteHighBit            # (b) b & 0x80; no caller; own name
 0x00872590 function Obj_GetFloat28            # (p) f32 +0x28; own name
 0x008725a0 function Ref_Deref                 # (ref) [[ref[0] + 0x20] + ref[1]]; own name
@@ -12940,9 +12940,10 @@
 0x008851b0 function TkGetDebugControlerHist   # (i) TkGetControlerHist(1, 0, i); Switch name, alphabetical slot after TkGetDebugControlerAnalog (Hist, ReptHist, TrigHist match the callees)
 0x008851d0 function TkGetDebugControlerReptHist# (i) TkGetControlerReptHist(1, 0, i); Switch name, alphabetical slot
 0x008851f0 function TkGetDebugControlerTrigHist# (i) TkGetControlerTrigHist(1, 0, i); Switch name, alphabetical slot
-0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0
+0x00885240 function TkInitDeci2               # fh v3:exact 0x008851a0; cdecl() -> socket: 0x0132f580/81 bytes, 0x0132f578 cleared, 0x0132f570 = sceDeci2Open(0xeffa, &0x0132f570, 0x008852a0), 0x0132d56c/0x0132f584/0x0132f588 cleared; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00885420 function TkIsDeci2Send             # () -> i8 0x0132f580, sign-extended; Switch symbol name (BSim), in the DECI2 code beside TkCreateDECI2Header
 0x00885470 function TkDeci2Send               # (a, n) when idle: u16 0x0132f57e = (n - 0x81) truncated to 128s, 0x0132f578 = a | 0x20000000, 1; busy -1; own name
+0x008854c0 function TkDeci2Send               # cdecl(packet, len) -> sceDeci2ReqSend's eax: 0x0132f574 = packet | 0x20000000, 0x0132f57c = len (u16), 0x0132f580 = 1, FlushCache(0), sceDeci2ReqSend(0x0132f570, packet[7]); callers TkRemove; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00885640 function Phyre_PRendering_PRenderInterfaceBase_GetClearMaskDescription # fh switch:bsim1.00 0x710004aa80 Phyre::PRendering::PRenderInterfaceBase::GetClearMaskDescription
 0x008856b0 function AtelGetDebugSubCodeString    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '(0x%08x)'; Switch 0x71004879d0 AtelGetDebugSubCodeString (symbols from Fahrenheit's server export)
 0x008858c0 function Atel_GetBlockString        # (ctrl, i): string i of the ctrl work's +8 block's +0x44 table, the empty string without; name ours; ported in helpers (script round 14)
@@ -13124,6 +13125,7 @@
 0x00887f40 function TkSyncVEI                 # fh v3:exact 0x00887eb0
 0x00887fd0 function TkMcChdir                 # fh switch:bsim1.00 0x710048a4d0
 0x00888010 function TkMcClose                 # (): 0 via a stub; every sceMc* stub returns 0 on PC, so 0; Switch name, the plain wrapper among TkMcChdir..TkMcDelete (alphabetical slot)
+0x00888030 function TkMcMakePath              # cdecl(dst, name) -> eax (sprintf length + 1, low byte 0): dst = "/" + sprintf(ebp-0x400, name, 0), last two chars "??"; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888170 function TkMcDelete                # fh switch:bsim1.00 0x710048a440
 0x008881a0 function TkMcFlush                 # (): 0 via a stub; every sceMc* stub returns 0 on PC, so 0; Switch name, alphabetical slot TkMcDelete..TkMcFormat
 0x008881c0 function TkMcFormat                # fh switch:bsim1.00 0x710048a3b0
@@ -13142,11 +13144,12 @@
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888480 function TkMcSetLoadFilePos        # (slot, pos) 0x0133023c[slot] = pos; Switch name, pairs with TkMcGetLoadFilePos
 0x008884a0 function MenuSave_McSync # cdecl(mode, cmd, result): mode != 0 tail-jumps to the sceMcSync wrapper 0x008884e0(mode, cmd, result); mode 0 polls it with mode 1 until nonzero, op_counter_add_00888890(1000000) after each poll; callers TkMenuCtrlSaveLoad (3 sites); ported in menu round 22; name ours
+0x008884e0 function TkMcSync                  # cdecl(mode, &cmd, &result) -> sceMcSync's result (1 while TkGetTGS): sceMcSync(mode, ebp-0xc, ebp-8), cmd 1 with result < 0 resets TkMcSetLoadFilePos(0x01330234, -1) unless TkMcGetLoadFilePos < 0; outs written when given; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
 0x00888680 function TkSetVsyncHandler         # cdecl(handler): ends the vsync thread, starts a new one with handler (0: none); -> 0x006f2bc0's eax (the tail call with its own argument word set to 2) or -1 without a handler; ported M5 menu b2 (ffx_menu::m5m_b)
-0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660
+0x008886f0 function TkInitAllSyncVCallback    # fh v3:exact 0x00888660; cdecl() -> TkSetVsyncHandler's eax: TkSyncVDI, g_TkVsyncThread = -1, 0x01330254 = 0, TkSyncVEI, TkSetVsyncHandler(VsyncHandler); ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
 0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790; cdecl() -> SignalSema(g 0x01330250); ported M5 menu b2 (ffx_menu::m5m_b)
@@ -13158,6 +13161,7 @@
 0x00888990 function Pad_PortClose_00888990 # cdecl(port, slot): port < 0 closes ports 0 and 1 first (then goes on with the negative port), then when bit slot of g_TkControlerWork[port] is set scePadPortClose(port, slot) and clears it; REVIEWED menu r22: dead, its only caller is itself and no pointer to it exists; name ours
 0x008889e0 function Compute_008889e0             # auto-port shape (arithmetic on arguments, cdecl): return (a1 & 0xff); callers: ; name ours
 0x008889f0 function Pad_ClearAnalogWork # cdecl(a, b) -> work+0xd0: TkGetControlerWork(a, b) u16 +0xa0..+0xae and f32 +0xb0..+0xcc zeroed; caller 0x00889360; ported in menu round 22; name ours
+0x00888a40 function TkPadInfoAct              # cdecl(port, slot, actuator) -> 0 for actuator 0xff, else scePadInfoAct(port, slot, actuator, 3) ? 8 : 1; name ours; ported M5 menu b4 (ffx_menu::m5m_d)
 0x00888a70 function Pad_ActuatorIds           # (port, slot) -> (large << 8) | small: 0xffff without scePadInfoAct(port, slot, -1, 0) or combinations; per combination c the actuators scePadInfoComb(port, slot, c, k) by kind scePadInfoAct(.., a, 2) 1 small / 2 large (from 0xff), the first combination with (large | small) != 0xff, else the last; caller 0x00889050; ported in menu round 23; name ours
 0x00888b60 function TkGetControlerFrame       # (work, i) -> work + ((byte +0x9c + i) & 3) * 0x20: a frame of a pad work's 4-entry input ring
 0x00888b80 function Pad_GetFrame              # (pad, port, i) TkGetControlerFrame(TkGetControlerWork(pad, port), i); own name
@@ -13247,7 +13251,7 @@
 0x0088c630 function Math_WrapAngleFloor       # (a) (a + pi) - floor((a + pi) / 2pi) * 2pi - pi, float steps; own name
 0x0088c690 function Math_SinTable             # (angle in 1/0x8000 turns) -> i32 from the quarter-wave u16 table g_SinQuarter
 0x0088c710 function TkResetClip               # fh v3:exact 0x0088c680
-0x0088c740 function TkRemove                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710048fd90 TkRemove, 2 votes, round 1
+0x0088c740 function TkRemove                     # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710048fd90 TkRemove, 2 votes, round 1; cdecl(name) -> eax (0 or TkDeci2Send's result): under TkIsDebug, name copied to 0x0133070c, its length to 0x0133070a (u16), TkDeci2Send(0x01330700, 0x10c) up to 0x80 tries waiting on TkIsDeci2Send; ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088c7d0 function TkClearAlarm              # fh v3:cg2 0x88c740
 0x0088c7f0 function TkRestartSyncH            # fh v3:bsim1.00 0x0088c790
 0x0088c800 function TkGetSyncH                # fh v3:bsim1.00 0x0088c770
@@ -13259,13 +13263,13 @@
 0x0088ccf0 function TKMallocAndReadMenuMessage   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491220 TKMallocAndReadMenuMessage, 6 votes, round 1; ported (ffx_glue_other::h4_f6, m4 h4 f): cdecl(name, out) -> 1, or 0 with dbgPrintf(0x00b41e3c, path) for a missing file; path "/ffx_ps2/ffx/master/new_" + language dir by TOGetFFXLang (jump table 0x0088ce50: 0 jppc, 2 frpc, 3, 4, 5, 9, 10 their own, the rest uspc) + "menu/<name>.bin" via sprintf, fiosUnifyFilename and sprintf_s(path, 0x7f, "%s", unified) in 0x40/0x80/0x100-byte locals; out[0] = 0, then fiosRead of the size rounded up to 16
 0x0088ce80 function TKMallocAndReadSPS2      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491390 TKMallocAndReadSPS2, 6 votes, round 1; (index, page) -> buffer or 0: path = /ffx_ps2/ffx/master/new_XXpc by TOGetFFXLang (jump table 0x0088d0f0: 0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch, else us) + entry index of 0x00c58e44 (page 0, .sps2) or 0x00c58e58 (page tables); fiosUnifyFilename(path, tmp, 0x100), sprintf_s(path, 0xff, "%s", tmp); missing: dbgPrintf, 0; else size rounded to 16, Sg_MemSetAlign(0x40), user_malloc(size rounded up to 0x800, signed), word 0 = 0, fiosRead, fiosClose; ported in menu round 27
 0x0088d120 function Math_RoundUp              # (n, step) -> n rounded up to a multiple of step (unsigned)
-0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90
-0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100
-0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130
-0x0088d1d0 function TkCdReadWithMalloc           # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x710048fdd0 TkCdReadWithMalloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90; cdecl(file, sector, buf) -> FlushCache's eax: GetCD table +0x10 open(file), +0x14 size(sector), FlushCache(0), +0 read(sector, buf, 0, 0), +8 sync(0), FlushCache(0); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100; cdecl(file, sector, buf) -> the read entry's eax: GetCD +0x10 open, FlushCache(0), +0 read(sector, buf, 0, 0); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d1c0 function TkCdReadSync              # fh v3:exact 0x0088d130; cdecl(mode): tail jump to GetCD()+8 (sync) with the caller's word; ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088d1d0 function TkCdReadWithMalloc           # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x710048fdd0 TkCdReadWithMalloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(file, sector) -> buffer: open, size rounded to 0x800 (signed), Sg_MemSetAlign(0x40), user_malloc, [buf] = 0, FlushCache, read, sync; ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088d240 function TkCdReadWithMalloc2          # layout: alphabetical run between TkCdReadSync and TkCdReadWithMallocWithMessage (2 unnamed in the gap); Switch 0x71004900a0 TkCdReadWithMalloc2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (file, size_of, min): cd = GetCD(), cd+0x10(file), n = max(cd+0x14(size_of), min) signed, Sg_MemSetAlign(0x40), buf = user_malloc((n + 0x7ff) & ~0x7ff toward zero), [buf] = 0, FlushCache(0), cd+0(size_of, buf, 0, 0), cd+8(0), FlushCache(0); returns buf; ported in menu round 30
 0x0088d2c0 function TkCdReadWithMallocWithMessage # fh v3:exact 0x0088d230; cdecl(dir, file) -> buffer: GetCD() +0x10(dir), size +0x14(file) or getEternalCalmSceneSize(file / 18) for isEternalCalmScene(file / 18), Sg_MemSetAlign(0x40), user_malloc(size up to 0x800), word 0, FlushCache(0), +0(file, buf, 0, 0), +8(0), FlushCache(0), AtelPs2DebugString marks; ported in menu round 23
-0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160
+0x0088d390 function TkCdSize                  # fh switch:bsim1.00 0x7100490160; cdecl(file, sector) -> GetCD +0x10 open(file), +0x14 size(sector); ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088d3d0 function TkUpdateEventJump # cdecl() -> TkSndUpdate2's eax (tail jmp): every frame in Sg_MainLoop's loop: with g_TkEventJumpRequest set, g_TkFadeOut[0] > 0 drops by 1, else [1] > 0 becomes 0, else graphicActivateLoadingScreen (unless map 0x17, 0x15c, or 0x10c with getScenerioFlag ax 0x1a9) and TkInitScene(MsGetSaveEventAddress u16 +0, read again); then Atel_EventFrame, AtelCheckMemory with g_TkInitDone 0 (1 after), AtelMove(1); ported ffx_menu::start::tk_update_event_jump (pc r9); name ours
 0x0088d4e0 function TkDrawDebug               # fh v3:cg2 0x88d450
 0x0088d4f0 function TkDrawNoTrans             # fh v3:bsim1.00 0x0088d460; small round 1: AtelDrawNoTrans() then tail jmp TkSndUpdate2 (EAX its); ported in ffx_menu::tk
@@ -13301,8 +13305,8 @@
 0x0088e570 function TkInitWork                # (): 0x01330878/7c = 0, TkInitAlarm, TkInitControlerWork, TkInitSyncV, debug menu status 1, flags 0, g_SndStreamTable 0, save +0x2b = 0, save +0x13 = (b & ~4) | 2; returns MsGetSaveEventAddress(); TkInit calls it first; name ours
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
-0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0
-0x0088e6b0 function TkMemUnlock               # fh v3:bsim1.00 0x0088e620
+0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0; cdecl() -> Sg_MemCheck(0, 0x00b5e968, 0x1c5), Sg_MemCheck(1, .., 0x1c6); ported M5 menu b4 (ffx_menu::m5m_d)
+0x0088e6b0 function TkMemUnlock               # fh v3:bsim1.00 0x0088e620; cdecl() -> Sg_MemCheck(0, 0x00b5e968, 0x1d0), Sg_MemCheck(1, .., 0x1d1); ported M5 menu b4 (ffx_menu::m5m_d)
 0x0088e730 function Math_SinLookup            # (x) u16 0x023cbee0[x/64] into ax (upper eax = index); own name
 0x0088e750 function Math_CosLookup            # (x) Math_SinLookup(0x1000 - x); own name
 0x0088e790 function TkMsImportantSet          # fh v3:exact+call.cs 0x0088e700 cdecl
