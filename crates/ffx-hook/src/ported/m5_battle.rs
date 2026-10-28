@@ -369,4 +369,18 @@ ported! {
         let mut f = StackFrame::<0x40>::new();
         mb::ms_debug_print_rules(&mut mem(), &mut call, f.at(), y)
     }
+
+    // ---- batch 5: actors by place ----
+    /// `MsDebugWidthAt_007d93f0(a, b, c, index)`: the width in ST0.
+    MsDebugWidthAt_007d93f0 @ 0x007d_93f0 => extern "C" fn ms_debug_width_at(a: u32, b: u32, c: u32, index: u32) -> f32 {
+        f32::from_bits(mb::ms_debug_width_at(&mut mem(), &mut call, [a, b, c, index]))
+    }
+    /// `MsDebugDirAt_007d9470(a, b, c)`: the direction in ST0.
+    MsDebugDirAt_007d9470 @ 0x007d_9470 => extern "C" fn ms_debug_dir_at(a: u32, b: u32, c: u32) -> f32 {
+        f32::from_bits(mb::ms_debug_dir_at(&mut mem(), &mut call, [a, b, c]))
+    }
+    /// `MsDebugSetDirAt_007d9550(a, b, c, deg)`.
+    MsDebugSetDirAt_007d9550 @ 0x007d_9550 => extern "C" fn ms_debug_set_dir_at(a: u32, b: u32, c: u32, deg: u32) {
+        mb::ms_debug_set_dir_at(&mut mem(), &mut call, [a, b, c, deg]);
+    }
 }

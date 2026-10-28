@@ -9664,6 +9664,9 @@
 0x007d7a40 function MsDebugPosWindows_007d7a40 # cdecl(all, group, kind, start, r, g, b, mark) -> next slot: debug windows (MsDebugWinAlloc_007c8bb0 on 0x0113f528[slot], below 0x60) for the positions MsBtlGetPos(0, 0, group, kind, i, win) doesn't find (one with all), coloured r/g/b (halved for the picked one with 0x0113f708 set) and marked; name ours; ported ffx_battle::m5_battle (m5 battle b4)
 0x007d80a0 function Ms_Gui_BattleProc         # fh v3:exact 0x007d7fc0
 0x007d92d0 function MsDebugPosNextKind_007d92d0 # cdecl(step): MsDebugPosGroup_007d72e0's update repeated with kind += step (at most 12) until the count is positive; name ours; ported ffx_battle::m5_battle (m5 battle b4)
+0x007d93f0 function MsDebugWidthAt_007d93f0 # cdecl(a, b, c, index) -> ST0: MsGetChrWidth of the first actor 0..0x1e at place (a, b, c) (+0x4fc..+0x4fe, signed) with +0xdc8 set, *index = it (-1 and 0.0 when none; index may be null); name ours; ported ffx_battle::m5_battle (m5 battle b5)
+0x007d9470 function MsDebugDirAt_007d9470 # cdecl(a, b, c) (the push ecx is a local) -> ST0: the first actor at place (a, b, c): MsNearRag(0, +0x514) * 180 / pi stored as f32; 0.0 when none; name ours; ported ffx_battle::m5_battle (m5 battle b5)
+0x007d9550 function MsDebugSetDirAt_007d9550 # cdecl(a, b, c, deg) (the push ecx is a local): every actor at place (a, b, c): +0x514 = MsNearRag(0, (f32)(deg * pi / 180)), Ch_SetDirF(model, it); name ours; ported ffx_battle::m5_battle (m5 battle b5)
 0x007d9ab0 function MsDebugActorCount_007d9ab0 # cdecl(id, kind) -> 0x1f with kind 0 for a battle id (id & 0xf0000 == 0x50000), else max(AtelGetTotalActorNumber2(), 1) with kind 1; *kind when not null; name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007d9af0 function SetGlobal0113f864_007d9af0   # auto-port shape (store argument to global, cdecl): u32[&0x0113f864] = a0; return a0; callers: ; name ours
 0x007d9c20 function Ms_Gui_ReferencePos       # fh v3:exact 0x007d9b40

@@ -2566,3 +2566,60 @@ fn debug_print_rules_matches_the_original() {
         t.skip = 0;
     });
 }
+
+// ---- batch 5: actors by place ----
+
+/// A synthetic actor table (`CHR_TOP`, 0x1f actors of 0xf90 bytes): the
+/// places `+0x4fc..+0x4fe` drawn from a few values, models, the `+0xdc8`
+/// flag, widths and directions as floats. The original `MsGetChr`,
+/// `MsGetChrWidth` and `MsNearRag` run in both oracles (the ports call
+/// the latter two's Rust directly).
+fn actor_table(t: &mut Twins, rng: &mut Rng) {
+    let mut b = vec![0u8; 0x1f * 0xf90];
+    for k in 0..0x1f {
+        let a = k * 0xf90;
+        let model = if rng.chance(4) { 0 } else { rng.next() | 1 };
+        b[a..a + 4].copy_from_slice(&model.to_le_bytes());
+        for o in [0x4fc, 0x4fd, 0x4fe] {
+            b[a + o] = [0, 1, 0xff][rng.below(3) as usize];
+        }
+        b[a + 0xdc8] = u8::from(rng.chance(2));
+        for o in [0x3a8, 0x4e4, 0x514] {
+            b[a + o..a + o + 4].copy_from_slice(&float_bits(rng).to_le_bytes());
+        }
+    }
+    let top = t.alloc(&b);
+    t.g32(0x0113_34d4, top); // CHR_TOP
+}
+
+#[test]
+fn debug_actor_place_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x091a_ce01);
+        for i in 0..60 {
+            t.reset();
+            actor_table(t, &mut rng);
+            let pick = |rng: &mut Rng| [0, 1, 0xffff_ffff, 2][rng.below(4) as usize];
+            let place = [pick(&mut rng), pick(&mut rng), pick(&mut rng)];
+            let index = if rng.chance(3) {
+                0
+            } else {
+                t.words(&[rng.next()])
+            };
+            let args = [place[0], place[1], place[2], index];
+            t.check(&format!("MsDebugWidthAt #{i}"), 0x007d_93f0, &args, |m| {
+                Out::F32(mb::ms_debug_width_at(m, &mut oc, args))
+            });
+            t.check(&format!("MsDebugDirAt #{i}"), 0x007d_9470, &place, |m| {
+                Out::F32(mb::ms_debug_dir_at(m, &mut oc, place))
+            });
+            t.stub(mb::CH_SET_DIR_F, 2, 0);
+            let deg = float_bits(&mut rng);
+            let args = [place[0], place[1], place[2], deg];
+            t.check(&format!("MsDebugSetDirAt #{i}"), 0x007d_9550, &args, |m| {
+                mb::ms_debug_set_dir_at(m, &mut oc, args);
+                Out::None
+            });
+        }
+    });
+}

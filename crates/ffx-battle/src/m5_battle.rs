@@ -2625,4 +2625,90 @@ pub mod bridge {
         }
         y
     }
+
+    // ---- batch 5: actors by place ----
+
+    /// `g_PiF64`, `g_180F64` (`.rdata`).
+    pub const PI_F64: u32 = 0x00b9_2288;
+    pub const HALF_TURN_DEG: u32 = 0x00b4_8378;
+
+    /// The first actor 0..0x1e (`MsGetChr`) at place `(a, b, c)`
+    /// (`+0x4fc`..`+0x4fe`, signed) for which `ok` holds.
+    fn actor_at<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        place: [u32; 3],
+        ok: impl Fn(&M, u32) -> bool,
+    ) -> Option<(u32, u32)> {
+        for i in 0..0x1f {
+            let a = game(mem, &mut *call, MS_GET_CHR, &[i]);
+            let at = [0x4fcu32, 0x4fd, 0x4fe].map(|o| sx8(mem, a.wrapping_add(o)));
+            if at == place && ok(mem, a) {
+                return Some((i, a));
+            }
+        }
+        None
+    }
+
+    /// `0x007d93f0(a, b, c, index)` (`MsDebugWidthAt`, name ours): the
+    /// width (`MsGetChrWidth`, `f32` bits) of the first actor at place
+    /// `(a, b, c)` with `+0xdc8` set, its index in `*index`; none: 0 and
+    /// -1.
+    pub fn ms_debug_width_at<M: Mem>(mem: &mut M, call: Call<'_, M>, args: [u32; 4]) -> u32 {
+        let [a, b, c, index] = args;
+        let found = actor_at(mem, call, [a, b, c], |m, p| {
+            m.read::<u8>(p.wrapping_add(0xdc8)) != 0
+        });
+        let Some((i, _)) = found else {
+            if index != 0 {
+                mem.write(index, u32::MAX);
+            }
+            return 0;
+        };
+        if index != 0 {
+            mem.write(index, i);
+        }
+        crate::actor::bridge::ms_get_chr_width(mem, i).to_bits()
+    }
+
+    /// `0x007d9470(a, b, c)` (`MsDebugDirAt`, name ours): the direction
+    /// (`+0x514`, wrapped by `MsNearRag(0, dir)`) of the first actor at
+    /// place `(a, b, c)` in degrees (x87: `* 180 / pi`, an `f32` store),
+    /// as `f32` bits; none: 0.
+    pub fn ms_debug_dir_at<M: Mem>(mem: &mut M, call: Call<'_, M>, args: [u32; 3]) -> u32 {
+        use ffx_bridge::x87::{div, mul, store};
+        let Some((_, a)) = actor_at(mem, call, args, |_, _| true) else {
+            return 0;
+        };
+        let dir: u32 = mem.read(a.wrapping_add(0x514));
+        let r = crate::vector::bridge::ms_near_rag(mem, 0, dir);
+        let deg: f64 = mem.read(mem.rebase(HALF_TURN_DEG));
+        let pi: f64 = mem.read(mem.rebase(PI_F64));
+        store(div(mul(f64::from(r), deg), pi))
+    }
+
+    /// `0x007d9550(a, b, c, deg)` (`MsDebugSetDirAt`, name ours): every
+    /// actor at place `(a, b, c)` turned to `deg` degrees (x87: `* pi /
+    /// 180`, an `f32` store, wrapped by `MsNearRag(0, x)`): its `+0x514`
+    /// and its model (`Ch_SetDirF(model, dir)`).
+    pub fn ms_debug_set_dir_at<M: Mem>(mem: &mut M, call: Call<'_, M>, args: [u32; 4]) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let [a, b, c, deg] = args;
+        for i in 0..0x1f {
+            let p = game(mem, &mut *call, MS_GET_CHR, &[i]);
+            let at = [0x4fcu32, 0x4fd, 0x4fe].map(|o| sx8(mem, p.wrapping_add(o)));
+            if at != [a, b, c] {
+                continue;
+            }
+            let half: f64 = mem.read(mem.rebase(HALF_TURN_DEG));
+            let pi: f64 = mem.read(mem.rebase(PI_F64));
+            let x = store(div(mul(load(deg), pi), half));
+            let r = crate::vector::bridge::ms_near_rag(mem, 0, x).to_bits();
+            mem.write(p.wrapping_add(0x514), r);
+            let model: u32 = mem.read(p);
+            game(mem, &mut *call, CH_SET_DIR_F, &[model, r]);
+        }
+    }
+
+    pub const CH_SET_DIR_F: u32 = 0x0082_b1b0;
 }
