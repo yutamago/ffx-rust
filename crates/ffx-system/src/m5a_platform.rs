@@ -1997,4 +1997,126 @@ pub mod bridge {
         }
         1
     }
+
+    /// `MSVCR110!fclose` (cdecl).
+    pub const FCLOSE_IAT: u32 = 0x00b0_c3ec;
+
+    /// `VFile_dtor_VFile(this)` (thiscall): the read buffer record `+0x18`
+    /// (its block `delete[]`d when set, the record deleted, cleared), the
+    /// file `+4` closed (`fclose`) and cleared. Returns `fclose`'s `eax`,
+    /// or 0 without a file.
+    pub fn vfile_dtor(h: &mut impl Host, this: u32) -> u32 {
+        let rec: u32 = h.read(this.wrapping_add(0x18));
+        if rec != 0 {
+            let block: u32 = h.read(rec);
+            if block != 0 {
+                h.call_sym(OPERATOR_DELETE_ARRAY, Conv::Cdecl, &[block]);
+                h.write(rec, 0u32);
+            }
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[rec]);
+            h.write(this.wrapping_add(0x18), 0u32);
+        }
+        let f: u32 = h.read(this.wrapping_add(4));
+        if f == 0 {
+            return 0;
+        }
+        let r = import(h, FCLOSE_IAT, Conv::Cdecl, &[f]);
+        h.write(this.wrapping_add(4), 0u32);
+        r
+    }
+
+    /// `VFile_reset(this)` (thiscall).
+    pub const VFILE_RESET: u32 = 0x0061_acf0;
+
+    /// `BigFileHandle_releaseVFile(this; vfile)` (thiscall, `ret 4`): one
+    /// of the handle's 15 inline files (`[this + 0x5c]`, 0x20 bytes each)
+    /// is reset (`VFile_reset`, its `eax`); any other is destroyed
+    /// ([`vfile_dtor`]) and deleted (its `eax`). A null `vfile`: nothing,
+    /// 0 (the original leaves the caller's `eax`; its one caller,
+    /// `VFile_fileClose`, is a port that returns it to callers that
+    /// ignore it).
+    pub fn release_vfile(h: &mut impl Host, this: u32, vfile: u32) -> u32 {
+        if vfile == 0 {
+            return 0;
+        }
+        let files: u32 = h.read(this.wrapping_add(0x5c));
+        if (0..15u32).any(|i| files.wrapping_add(0x20 * i) == vfile) {
+            return h.call_sym(VFILE_RESET, Conv::Thiscall(vfile), &[]);
+        }
+        vfile_dtor(h, vfile);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[vfile])
+    }
+
+    /// `0x0061af40(this)` (thiscall): the stream slot pool's teardown: the
+    /// slot array `+8` deleted (0x60-byte slots with destructors) and
+    /// cleared when set, then `CloseHandle([this])`; its `eax`.
+    pub fn slot_pool_term(h: &mut impl Host, this: u32) -> u32 {
+        let slots: u32 = h.read(this.wrapping_add(8));
+        if slots != 0 {
+            delete_vector(h, slots, 0x60, SLOT_DTOR);
+            h.write(this.wrapping_add(8), 0u32);
+        }
+        let sem: u32 = h.read(this);
+        import(h, CLOSE_HANDLE_IAT, Conv::Stdcall, &[sem])
+    }
+
+    /// `0x0061d9c0(this; entry)` (thiscall, `ret 4`): a `VFile` for an
+    /// archive entry.
+    pub const VFILE_FOR_ENTRY: u32 = 0x0061_d9c0;
+    /// `BigFileHandle_getNewVFile`'s frame: the digest copy at `ebp - 0x10`.
+    pub const GET_VFILE_FRAME: u32 = 0x10;
+
+    /// `BigFileHandle_getNewVFile(this; &digest)` (thiscall, `ret 4`): the
+    /// digest copied to `ebp - 0x10`, `Vbf_MapLookup(this + 4; &copy)`;
+    /// a node whose entry `node + 0x20` is not null (wrapping) gives
+    /// `0x0061d9c0(this; [node + 0x20])`'s `eax`, else 0.
+    pub fn get_new_vfile(h: &mut impl Host, ebp: u32, this: u32, digest: u32) -> u32 {
+        let copy = ebp.wrapping_sub(GET_VFILE_FRAME);
+        for k in 0..4u32 {
+            let w: u32 = h.read(digest.wrapping_add(4 * k));
+            h.write(copy.wrapping_add(4 * k), w);
+        }
+        let node = h.call_sym(
+            VBF_MAP_LOOKUP,
+            Conv::Thiscall(this.wrapping_add(4)),
+            &[copy],
+        );
+        if node == 0 || node.wrapping_add(0x20) == 0 {
+            return 0;
+        }
+        let entry: u32 = h.read(node.wrapping_add(0x20));
+        h.call_sym(VFILE_FOR_ENTRY, Conv::Thiscall(this), &[entry])
+    }
+
+    /// `0x0061b270(id)` (cdecl): ATL's string resource of `id`.
+    pub const STRING_RESOURCE: u32 = 0x0061_b270;
+    /// `OLEAUT32` ordinal import `0x00b0c620` (stdcall, two words:
+    /// `SysAllocStringLen`'s slot).
+    pub const OLEAUT_ALLOC_IAT: u32 = 0x00b0_c620;
+
+    /// `0x0061b330(this; id)` (thiscall, `ret 4`): a `CComBSTR`'s
+    /// `LoadString`: the old string freed (`0x00b0c61c`) and cleared, the
+    /// resource string `id` (`0x0061b270`: a length word, then UTF-16)
+    /// allocated (`0x00b0c620(text, len)`) into `[this]`. Returns `eax`:
+    /// `al` = whether `[this]` is set, the upper bytes the new string's
+    /// (0 without the resource).
+    pub fn load_bstr(h: &mut impl Host, this: u32, id: u32) -> u32 {
+        let old: u32 = h.read(this);
+        import(h, OLEAUT_FREE_IAT, Conv::Stdcall, &[old]);
+        h.write(this, 0u32);
+        let r = h.call_sym(STRING_RESOURCE, Conv::Cdecl, &[id]);
+        if r == 0 {
+            h.write(this, 0u32);
+            return 0;
+        }
+        let len: u16 = h.read(r);
+        let s = import(
+            h,
+            OLEAUT_ALLOC_IAT,
+            Conv::Stdcall,
+            &[r.wrapping_add(2), u32::from(len)],
+        );
+        h.write(this, s);
+        (s & !0xff) | u32::from(s != 0)
+    }
 }

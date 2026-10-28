@@ -3216,7 +3216,7 @@
 0x0061a7f0 function Vec3At24_0061a7f0          # thiscall(out), ret 4 -> out: the three floats at this+0x24 to out (fld/fstp); no direct caller; ported (system round 33); name ours
 0x0061a810 function IdentityAt34_0061a810 # thiscall(this): the 4x4 at +0x34 set to the identity (fld1/fldz stores); no direct caller; name ours; ported (system round 32)
 0x0061a860 function VFile_VFile               # fh v3:exact 0x0061aa20 VFile::VFile
-0x0061a960 function VFile_dtor_VFile          # fh v3:exact 0x0061ab20 VFile::~VFile
+0x0061a960 function VFile_dtor_VFile # fh v3:exact 0x0061ab20 VFile::~VFile; ported ffx_system::m5a_platform: thiscall(this) -> fclose's eax or 0: the read record +0x18 (its block delete[]d, the record deleted, cleared), the file +4 fclose'd and cleared (m5 system-a c2)
 0x0061a9b0 function VFileReadedBuffer_dtor_VFileReadedBuffer # fh switch:bsim1.00 0x710007d7d0 VFileReadedBuffer::~VFileReadedBuffer
 0x0061aa10 function VFile_assign              # fh v3:exact 0x0061abd0 VFile::assign
 0x0061aa50 function VFile_fileClose # layout+callees: sorts between VFile_assign and VFile_fileRead, and its named callees match the Switch 0x710007a6d0 VFile_fileClose's (similarity 1.00: BigFileHandle_releaseVFile); symbols from Fahrenheit's server export; thiscall(this): BigFileHandle_releaseVFile([this+8]; this)'s eax; ported ffx_system::m5a_platform (m5 system-a c2)
@@ -3227,7 +3227,9 @@
 0x0061acc0 function VbfStream_Open # fopen(path, "rb") for one of 15 reader streams; thiscall(this; path, size) ret 8 -> size: +4 = fopen(path, "rb" 0x00b3f69c), +8 = size when not 0; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061acf0 function VFile_reset # thiscall(this): +0xc, +0x10, +0x14 and byte +0 zeroed (the VFile released); caller BigFileHandle_releaseVFile; name ours
 0x0061af20 function StreamSlot_ctor_0061af20 # thiscall(this) -> this: 0x0061add0(this), +0x58 = 0 (the stream slots' constructor for eh_vector_constructor_iterator); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061af40 function StreamSlotPool_term_0061af40 # thiscall(this) -> CloseHandle's eax: the slot array +8 deleted (0x60 bytes, 0x0061b0c0 dtors) and cleared, CloseHandle([this]); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b0b0 function FreeBstr_0061b0b0 # thiscall(this): the OLEAUT32 ordinal import 0x00b0c61c (stdcall) on [this]; its eax; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0061b330 function ComBstr_loadString_0061b330 # thiscall(this; id) ret 4 -> eax (al = [this] set): the old BSTR freed (OLEAUT32 0x00b0c61c), [this] = 0, 0x0061b270(id) (length word + UTF-16) -> [this] = OLEAUT32 0x00b0c620(text, len); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b3c0 function AtlStringResourceImage_0061b3c0 # cdecl(module, info, id) -> the string or 0: LoadResource/LockResource/SizeofResource, id & 0xf length-prefixed UTF-16 strings skipped, the string when before the end and not empty (ATL's AtlGetStringResourceImage helper; callers 0x0061b270, AtlGetStringResourceImage, 0x0064f970, 0x0064f9e0, 0x00652310); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b4a0 function BigFileStream_claimSlot_0061b4a0 # thiscall(this; timeout) ret 4: WaitForSingleObject([this], timeout) == 0, then the first of [this+4] 0x60-byte slots at [this+8] whose +0x58 InterlockedCompareExchange(1, 0) finds 0 -> that slot, else 0; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061b500 function Queue_PostRequest # thiscall(queue, request), ret 4: request+0x58 = 0, ReleaseSemaphore(*queue, 1, 0); 0 for no request; name ours
@@ -3267,8 +3269,8 @@
 0x0061dac0 function BigFileHandle_initialize  # reads SRYK header, verifies MD5 trailer, builds block tables and entry map; was Vbf_Open
 0x0061de30 function Vbf_InsertEntry # inserts (name MD5 -> entry*) into the entry map; thiscall(this; &digest, &entry) ret 8 -> 0, 0xe (no node) or 0x12 (duplicate): a node from the free list +0x18 (Phyre_PFreeList_allocateNewBlock([+0x20]) when empty), self-linked, digest at +0x10, entry at +0x20, VbfTree_link_0061d210; duplicate -> Phyre_PFreeList_deallocate, else Phyre_PRedBlackTree_postInsertFinalize; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0061dec0 function Vbf_Contains # thiscall(this; &digest) ret 4 -> eax (al the answer): the digest copied to ebp-0x10, Vbf_MapLookup(this + 4; &copy), al = node != 0 && node + 0x20 != 0; ported ffx_system::m5a_platform (m5 system-a c2)
-0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry
-0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile
+0x0061df10 function BigFileHandle_getNewVFile # was Vbf_FindEntry; ported ffx_system::m5a_platform: thiscall(this; &digest) ret 4: the digest copied to ebp-0x10, Vbf_MapLookup(this + 4), 0x0061d9c0(this; [node+0x20]) when node and node+0x20 are not 0, else 0 (m5 system-a c2)
+0x0061df70 function BigFileHandle_releaseVFile # fh v3:exact 0x0061e130 BigFileHandle::releaseVFile; ported ffx_system::m5a_platform: thiscall(this; vfile) ret 4: one of the 15 inline files [this+0x5c] (0x20 each) -> VFile_reset's eax, else VFile_dtor + delete; null: eax untouched in the original, 0 in the port (its one caller VFile_fileClose) (m5 system-a c2)
 0x0061e6e0 function Difference_0061e6e0 # cdecl(a, b) -> b - a; name ours
 0x0061e6f0 function Difference_0061e6f0 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x0061e700 function Difference_0061e700 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours

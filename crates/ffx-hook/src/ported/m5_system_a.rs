@@ -696,6 +696,27 @@ ported! {
         let _ = ctx;
         pf::enum_pads_callback(&mut mem(), instance)
     }
+    /// `(this)`.
+    VFile_dtor_VFile @ 0x0061_a960 => extern "thiscall" fn vfile_dtor(this: u32) -> u32 {
+        pf::vfile_dtor(&mut mem(), this)
+    }
+    /// `(this; vfile)`.
+    BigFileHandle_releaseVFile @ 0x0061_df70 => extern "thiscall" fn release_vfile(this: u32, vfile: u32) -> u32 {
+        pf::release_vfile(&mut mem(), this, vfile)
+    }
+    /// `(this)`.
+    StreamSlotPool_term_0061af40 @ 0x0061_af40 => extern "thiscall" fn slot_pool_term(this: u32) -> u32 {
+        pf::slot_pool_term(&mut mem(), this)
+    }
+    /// `(this; &digest)`: the copy at `ebp - 0x10`.
+    BigFileHandle_getNewVFile @ 0x0061_df10 => extern "thiscall" fn get_new_vfile(this: u32, digest: u32) -> u32 {
+        let mut f = StackFrame::<{ (pf::GET_VFILE_FRAME / 4) as usize }>::new();
+        pf::get_new_vfile(&mut mem(), f.at() + pf::GET_VFILE_FRAME, this, digest)
+    }
+    /// `(this; id)`.
+    ComBstr_loadString_0061b330 @ 0x0061_b330 => extern "thiscall" fn load_bstr(this: u32, id: u32) -> u32 {
+        pf::load_bstr(&mut mem(), this, id)
+    }
     /// `user_free_thunk(p)`: the 5-byte `jmp user_free`.
     user_free_thunk @ 0x0068_7010 => extern "C" fn user_free_thunk(p: u32) -> u32 {
         sa::user_free_thunk(&mut mem(), p)

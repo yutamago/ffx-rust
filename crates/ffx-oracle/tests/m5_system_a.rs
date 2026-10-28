@@ -2788,6 +2788,99 @@ fn platform_small_glue_matches_the_original() {
     });
 }
 
+/// The `VFile` set: `VFile_dtor_VFile` (buffer record and file set or
+/// not), `BigFileHandle_releaseVFile` (null, one of the 15 inline files,
+/// a heap file), `0x0061af40`, `BigFileHandle_getNewVFile` (lookup 0, a
+/// node, a node whose entry wraps to 0) and `0x0061b330` (the resource
+/// there or not; the allocation failing or not), their callees stubbed.
+#[test]
+fn platform_vfiles_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x061a_001d);
+        for case in 0..60 {
+            t.reset();
+            let node = [0u32, 0, 0xffff_ffe0][rng.below(3) as usize];
+            let node = if node == 0 && rng.chance(2) {
+                t.words(&[0; 9])
+            } else {
+                node
+            };
+            let res = if rng.chance(3) {
+                0
+            } else {
+                t.alloc(&[3, 0, 0x41, 0, 0x42, 0, 0x43, 0])
+            };
+            let alloc = if rng.chance(4) { 0 } else { rng.next() };
+            t.stubs(&[
+                (pf::OPERATOR_DELETE_ARRAY, false, 1, 0, 0x6969_0001),
+                (pf::OPERATOR_DELETE, false, 1, 0, 0x6969_0002),
+                (pf::VFILE_RESET, true, 0, 0, 0x6969_0003),
+                (pf::EH_VECTOR_DTOR, false, 4, 4, 0x6969_0004),
+                (pf::VBF_MAP_LOOKUP, true, 1, 1, node),
+                (pf::VFILE_FOR_ENTRY, true, 1, 1, 0x6969_0005),
+                (pf::STRING_RESOURCE, false, 1, 0, res),
+            ]);
+            t.stub_import(pf::FCLOSE_IAT, false, 1, 0, 0x6969_0006);
+            t.stub_import(pf::CLOSE_HANDLE_IAT, false, 1, 1, 1);
+            t.stub_import(pf::OLEAUT_FREE_IAT, false, 1, 1, 0x6969_0007);
+            t.stub_import(pf::OLEAUT_ALLOC_IAT, false, 2, 2, alloc);
+            let vfile = |t: &mut Twins, rng: &mut Rng| {
+                let rec = if rng.chance(3) {
+                    0
+                } else {
+                    t.words(&[if rng.chance(2) { 0 } else { rng.next() }])
+                };
+                let f = if rng.chance(3) { 0 } else { rng.next() };
+                t.words(&[rng.next(), f, 0, 0, 0, 0, rec, 0])
+            };
+            let v = vfile(t, &mut rng);
+            let what = format!("VFile_dtor_VFile #{case}");
+            t.check(&what, 0x0061_a960, Conv::Thiscall(v), &[], |m| {
+                Out::U32(pf::vfile_dtor(m, v))
+            });
+            let inline = t.zeros(0x20 * 15);
+            let handle = t.zeros(0x60);
+            t.w32(handle + 0x5c, inline);
+            let which = match rng.below(3) {
+                0 => 0,
+                1 => inline + 0x20 * [0, 14, rng.below(15)][rng.below(3) as usize],
+                _ => vfile(t, &mut rng),
+            };
+            let what = format!("BigFileHandle_releaseVFile #{case} {which:#x}");
+            t.check(&what, 0x0061_df70, Conv::Thiscall(handle), &[which], |m| {
+                let r = pf::release_vfile(m, handle, which);
+                if which == 0 { Out::None } else { Out::U32(r) }
+            });
+            let slots = if rng.chance(3) {
+                0
+            } else {
+                t.words(&[2, 0, 0]) + 4
+            };
+            let pool = t.words(&[rng.next(), rng.next(), slots]);
+            let what = format!("0x0061af40 #{case}");
+            t.check(&what, 0x0061_af40, Conv::Thiscall(pool), &[], |m| {
+                Out::U32(pf::slot_pool_term(m, pool))
+            });
+            let digest = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let what = format!("BigFileHandle_getNewVFile #{case} node {node:#x}");
+            t.check_framed(
+                &what,
+                0x0061_df10,
+                Conv::Thiscall(handle),
+                &[digest],
+                pf::GET_VFILE_FRAME,
+                |m, ebp| Out::U32(pf::get_new_vfile(m, ebp, handle, digest)),
+            );
+            let bstr = t.words(&[rng.next()]);
+            let id = rng.next();
+            let what = format!("0x0061b330 #{case} res {res:#x} alloc {alloc:#x}");
+            t.check(&what, 0x0061_b330, Conv::Thiscall(bstr), &[id], |m| {
+                Out::U32(pf::load_bstr(m, bstr, id))
+            });
+        }
+    });
+}
+
 // ---- the save/load screen ----
 
 /// Random machine globals: state, timer, list position, counts, choice,
