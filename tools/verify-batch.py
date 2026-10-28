@@ -42,7 +42,9 @@ ORACLE = {
     "ffx-sg": ["main"], "ffx-kernel": ["kernel", "rng"], "ffx-core": ["parity"],
 }
 # changes here affect every oracle test
-EVERYTHING = ("crates/ffx-oracle/src/", "crates/ffx-bridge/", "Cargo.lock")
+# a change to these rebuilds everything: every crate, check, the hook and the replays
+# (the compiler itself: rust-toolchain.toml, 2026-10-28)
+EVERYTHING = ("crates/ffx-oracle/src/", "crates/ffx-bridge/", "Cargo.lock", "rust-toolchain.toml")
 # a wide run (every dependent crate's tests) every this many verifications
 FULL_EVERY = 4
 COUNT = pathlib.Path.home() / "ffx-work/verify-count"
@@ -85,6 +87,8 @@ def main():
             break
         affected |= more
     every = any(f.startswith(EVERYTHING) for f in changed)
+    if every:
+        affected = set(crates)
     n = int(COUNT.read_text()) + 1 if COUNT.exists() else 1
     wide = "--full" in sys.argv or n % FULL_EVERY == 0
     if not dry:
@@ -145,7 +149,7 @@ def main():
                 failed.append(name)
         if failed:
             sys.exit(f"failed: {' '.join(cmd)} ({', '.join(failed)})")
-    if any(f.startswith("crates/") for f in changed):
+    if every or any(f.startswith("crates/") for f in changed):
         run(["python3", "-I", "tools/check-ported.py"], env, dry)
         run(["python3", "-I", "tools/check-clobber.py"], env, dry)
         run(["python3", "-I", "tools/check-callwidth.py"], env, dry)
@@ -172,7 +176,7 @@ def main():
         run(["tools/build-hook.sh"], None, dry)
     # the replays also check their own scripts and comparison tools
     replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
-    if any(f.startswith(replay_inputs) for f in changed) and "--no-replays" not in sys.argv:
+    if (every or any(f.startswith(replay_inputs) for f in changed)) and "--no-replays" not in sys.argv:
         run(["tools/replays/run-all.sh"], env, dry)
     print("batch verified")
     if not dry:  # the status page, in the background (tools/status.sh)
