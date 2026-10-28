@@ -9,6 +9,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_glue_other::m5v_a::bridge as a;
 use ffx_glue_other::m5v_b::bridge as b;
+use ffx_glue_other::m5v_c::bridge as c;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -259,5 +260,40 @@ ported! {
     /// `BrokenScreen_vertexStride_006d3f50(e)` -> 0x18, 0x24 or 0.
     BrokenScreen_vertexStride_006d3f50 @ 0x006d_3f50 => extern "thiscall" fn vertex_stride(this: u32) -> u32 {
         b::vertex_stride(&mut mem(), this)
+    }
+    // ---- batch 3 (ffx_glue_other::m5v_c) ----
+    /// `pppDrawFilterDes(id)` -> `graphicVFXDestroy`'s `eax`.
+    pppDrawFilterDes @ 0x0075_7250 => extern "C" fn draw_filter_des(id: u32) -> u32 {
+        c::draw_filter_des(&mut mem(), id)
+    }
+    /// `TkWaitSemaBGThread_00888880()` -> `WaitSema`'s `eax`.
+    TkWaitSemaBGThread_00888880 @ 0x0088_8880 => extern "C" fn wait_sema_bg_thread() -> u32 {
+        c::wait_sema_bg_thread(&mut mem())
+    }
+    /// `pppSendWait()`.
+    pppSendWait @ 0x0076_b4a0 => extern "C" fn send_wait() {
+        c::send_wait(&mut mem());
+    }
+    /// `InitVFXRenderDataRects(lo, hi, p, arg)`.
+    InitVFXRenderDataRects @ 0x0071_1350 => extern "C" fn init_rects(lo: u32, hi: u32, p: u32, arg: u32) {
+        c::init_rects(&mut mem(), lo, hi, p, arg);
+    }
+    /// `InitVFXRenderDataShp_OShapeVu1(lo, hi, a, b, c)`.
+    InitVFXRenderDataShp_OShapeVu1 @ 0x0071_10d0 => extern "C" fn init_shp_vu1(lo: u32, hi: u32, x: u32, y: u32, z: u32) {
+        c::init_shp_vu1(&mut mem(), lo, hi, x, y, z, true);
+    }
+    /// `InitVFXRenderData_KaGra001(lo, hi, a, b, c)`.
+    InitVFXRenderData_KaGra001 @ 0x0071_1500 => extern "C" fn init_ka_gra001(lo: u32, hi: u32, x: u32, y: u32, z: u32) {
+        c::init_shp_vu1(&mut mem(), lo, hi, x, y, z, false);
+    }
+    /// `VfxShaderManager_combineTextureNameInCurrentLevel(name, out)`: the
+    /// folder buffer in the shim's frame (`ebp - 0x108`..`ebp - 4`).
+    VfxShaderManager_combineTextureNameInCurrentLevel @ 0x006c_0560 => extern "stdcall" fn combine_texture_name(name: u32, out: u32) {
+        let mut f = StackFrame::<0x43>::new();
+        c::combine_texture_name(&mut mem(), f.at() + 0x108, name, out);
+    }
+    /// `VfxShaderTree_insert_006be9e0(tree; node)` -> 0 or the existing node.
+    VfxShaderTree_insert_006be9e0 @ 0x006b_e9e0 => extern "thiscall" fn tree_insert(this: u32, node: u32) -> u32 {
+        c::tree_insert(&mut mem(), this, node)
     }
 }

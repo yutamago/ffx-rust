@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_glue_other::m5v_a::{self as ma, bridge as a};
 use ffx_glue_other::m5v_b::{self as mb, bridge as b};
+use ffx_glue_other::m5v_c::{self as mc, bridge as c};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -1888,6 +1889,239 @@ fn cluster_textures_match_the_original() {
             t.same_stack(what, ebp - 0x30, 0x30);
             t.same_stack(what, slots, 8);
             t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 3 (ffx_glue_other::m5v_c) ----
+
+#[test]
+fn small_ppp_helpers_match_the_original() {
+    // the destroy's 64-bit instance (signs and carries), the semaphore
+    // wait, the packet wait (already done; 1..4 waits)
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0301);
+        for case in 0..40_u32 {
+            let id = rng.word();
+            let prog = rng.word();
+            t.global(mc::CURRENT_PROGRAM.sym, prog);
+            t.stub_sym(mc::VFX_DESTROY, 1, false, 2, 0, Ret::Val(case));
+            t.check("pppDrawFilterDes", 0x0075_7250, Conv::Cdecl, &[id], |o| {
+                Out::U32(c::draw_filter_des(o, id))
+            });
+            t.reset();
+        }
+        t.stub_sym(mc::WAIT_SEMA, 1, false, 1, 0, Ret::Val(0x42));
+        t.check(
+            "TkWaitSemaBGThread_00888880",
+            0x0088_8880,
+            Conv::Cdecl,
+            &[],
+            |o| Out::U32(c::wait_sema_bg_thread(o)),
+        );
+        t.reset();
+        for waits in 0..5_u32 {
+            t.global(mc::WAIT_DONE.sym, u32::from(waits == 0));
+            let counter = t.words(&[waits]);
+            let done = t.rebase(mc::WAIT_DONE.sym);
+            // dec dword [counter]; jnz +10; mov dword [done], 1
+            let mut x = vec![0xff, 0x0d];
+            x.extend(counter.to_le_bytes());
+            x.extend([0x75, 0x0a, 0xc7, 0x05]);
+            x.extend(done.to_le_bytes());
+            x.extend(1_u32.to_le_bytes());
+            t.stub_sym(mc::GS_SYNC_V, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym_x(mc::SCE_PRINTF, 2, false, 2, 0, Ret::Val(2), &x);
+            t.check("pppSendWait", 0x0076_b4a0, Conv::Cdecl, &[], |o| {
+                c::send_wait(o);
+                Out::None
+            });
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn init_vfx_render_data_matches_the_original() {
+    // every failure point (buffer, render data, setup) and the success,
+    // segments 0..3, a negative count
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0302);
+        for case in 0..48_u32 {
+            let (lo, hi) = (rng.word(), rng.word());
+            let p = t.zeros(0x10);
+            let n = rng.next();
+            t.w32(p + 8, n);
+            let arg = rng.word();
+            let rd = if rng.chance(4) {
+                0
+            } else {
+                let rd = t.zeros(0xc0);
+                let k = match rng.below(4) {
+                    0 => 0,
+                    1 => 0xffff_fffe,
+                    _ => 1 + rng.below(3),
+                };
+                t.w32(rd + 0x90, k);
+                let segs: Vec<u32> = (0..3 * 27).map(|_| rng.next()).collect();
+                let segs = t.words(&segs);
+                t.w32(rd + 0x94, segs);
+                rd
+            };
+            let created = u32::from(case % 5 != 0);
+            let setup = u32::from(case % 7 != 3);
+            for (k, sym) in [mc::CREATE_RECTS, mc::CREATE_SHP_VU1]
+                .into_iter()
+                .enumerate()
+            {
+                t.stub_sym(sym, 1 + k as u32, false, 4, 0, Ret::Val(created));
+            }
+            t.stub_sym(mc::GET_RENDER_DATA, 3, false, 2, 0, Ret::Val(rd));
+            t.stub_sym(mc::VFX_2D_SETUP, 4, false, 2, 0, Ret::Val(setup));
+            t.stub_sym(mc::VFX_SETUP, 5, false, 2, 0, Ret::Val(setup));
+            t.stub_sym(mc::UPDATE_RECTS, 6, false, 3, 0, Ret::Val(6));
+            t.stub_sym(mc::UPDATE_SHP_VU1, 7, false, 4, 0, Ret::Val(7));
+            for (k, sym) in [
+                mc::VFX_2D_UPDATE,
+                mc::VFX_PATH3_UPDATE,
+                mc::VFX_UPDATE,
+                mc::VFX_DESTROY,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_sym(sym, 8 + k as u32, false, 2, 0, Ret::Val(8));
+            }
+            if !t.snapshot && case % 2 == 1 {
+                let d = 1 + rng.below(7);
+                t.global(mc::SEGMENT_DIVISOR.sym, d);
+            }
+            t.check(
+                "InitVFXRenderDataRects",
+                0x0071_1350,
+                Conv::Cdecl,
+                &[lo, hi, p, arg],
+                |o| {
+                    c::init_rects(o, lo, hi, p, arg);
+                    Out::None
+                },
+            );
+            let (x, y, z) = (rng.word(), rng.word(), rng.word());
+            t.check(
+                "InitVFXRenderDataShp_OShapeVu1",
+                0x0071_10d0,
+                Conv::Cdecl,
+                &[lo, hi, x, y, z],
+                |o| {
+                    c::init_shp_vu1(o, lo, hi, x, y, z, true);
+                    Out::None
+                },
+            );
+            t.check(
+                "InitVFXRenderData_KaGra001",
+                0x0071_1500,
+                Conv::Cdecl,
+                &[lo, hi, x, y, z],
+                |o| {
+                    c::init_shp_vu1(o, lo, hi, x, y, z, false);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn combine_texture_name_matches_the_original() {
+    // names with no '/', one, several, a leading and a trailing one, empty
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0303);
+        let names: [&[u8]; 7] = [
+            b"tex.dds",
+            b"a/b.dds",
+            b"x/y/z/w.dds",
+            b"/lead",
+            b"trail/",
+            b"",
+            b"some/longer/path/name_000.dds",
+        ];
+        for (case, name) in names.iter().enumerate() {
+            let mut s = name.to_vec();
+            s.push(0);
+            let name = t.alloc(&s);
+            let out = t.zeros(0x200);
+            let block = t.zeros(0x40) + 0x10;
+            t.stub_sym(mc::OPERATOR_NEW_ARRAY, 1, false, 1, 0, Ret::Val(block));
+            t.stub_sym(mc::OPERATOR_DELETE_ARRAY, 2, false, 1, 0, Ret::Val(2));
+            // the unified folder: mov eax, [esp+8]; mov dword [eax], "ab\0\0"
+            t.stub_sym_x(
+                mc::UNIFY_FILENAME,
+                3,
+                false,
+                3,
+                0,
+                Ret::Val(3),
+                &[0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00, 0x61, 0x62, 0x00, 0x00],
+            );
+            let level = t.alloc(b"lvl\0");
+            t.stub_sym(mc::LEVEL_FOLDER, 4, false, 0, 0, Ret::Val(level));
+            t.import_sym(mc::SPRINTF_SLOT, 5, 6, 0, Ret::Val(rng.below(9)));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x180);
+            t.check(
+                "VfxShaderManager_combineTextureNameInCurrentLevel",
+                0x006c_0560,
+                Conv::Stdcall,
+                &[name, out],
+                |o| {
+                    c::combine_texture_name(o, ebp, name, out);
+                    Out::None
+                },
+            );
+            t.same_stack("combineTextureNameInCurrentLevel", ebp - 0x108, 0x104);
+            t.b_top = None;
+            let _ = case;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn shader_tree_insert_matches_the_original() {
+    // random keys into trees built by the original itself (both oracles
+    // alike), duplicates, null keys, flag bits on keys and nodes
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0304);
+        for _ in 0..10 {
+            let tree = t.zeros(0x20);
+            t.w32(tree + 0xc, tree);
+            for _ in 0..12 {
+                let node = t.zeros(0x10);
+                let key = if rng.chance(8) {
+                    u32::from(rng.chance(2))
+                } else {
+                    let len = rng.below(3) as usize;
+                    let mut s: Vec<u8> = (0..len)
+                        .map(|_| [b'a', b'b', 0xe1][rng.below(3) as usize])
+                        .collect();
+                    s.push(0);
+                    s.extend([0; 3]);
+                    t.alloc(&s) | u32::from(rng.chance(3))
+                };
+                t.w32(node + 0xc, key);
+                let w = rng.next();
+                t.w32(node + 8, w);
+                t.check(
+                    "VfxShaderTree_insert_006be9e0",
+                    0x006b_e9e0,
+                    Conv::Thiscall(tree),
+                    &[node],
+                    |o| Out::U32(c::tree_insert(o, tree, node)),
+                );
+            }
             t.reset();
         }
     });
