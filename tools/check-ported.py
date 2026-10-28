@@ -211,7 +211,9 @@ for f in sorted(hook_side):
 # "Compiler bug").
 CLAMP_BUG = re.compile(r"if\s+(\w+)\s*([<>]=?)\s*([\w:.\-]+)\s*\{\s*\3\s*\}\s*else\s*\{\s*\1\s*\.\s*(?:max|min)\s*\(", re.S)
 for f in sorted(progress.REPO.glob("crates/*/src/**/*.rs")):
-    text = f.read_text(encoding="utf-8")
+    # comments may quote the shape (explaining the workaround): match code only,
+    # one line per line so the numbers stay right
+    text = "\n".join(line.split("//", 1)[0] for line in f.read_text(encoding="utf-8").split("\n"))
     for m in CLAMP_BUG.finditer(text):
         n = text[: m.start()].count("\n") + 1
         print(f"{f.relative_to(progress.REPO)}:{n}: clamp shape rustc 1.99 miscompiles (write the explicit else-if chain)")
