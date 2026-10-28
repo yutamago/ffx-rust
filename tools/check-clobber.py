@@ -224,6 +224,11 @@ MENU_SLOT = ("menu slot +0 control (record registered by TkMenuMainRegistMenu, s
              "mov eax, 1) and TkMenuCloseAll 0x8aa237 (eax reloaded at 0x8aa216) drop eax (2026-10-24)")
 VOID_OK = {
     0x008b15d0: MENU_SLOT,  # TkMenuCtrlSaveLoad (records 0x00c59ff0, 0x00c5a014)
+    # TkMenuCtrlTuto: record 0x00c5a8d8, registered as slot 0x16 by
+    # TkMenuMainOpenMode_008aa780 (push 0xc5a8d8 at 0x8aaa56, push 0x16, call
+    # TkMenuMainRegistMenu); seen once M5 script's progress.py change gave
+    # check-clobber more function bounds (2026-10-28)
+    0x008db4e0: MENU_SLOT,
     0x00922100: RCBG_DRAW,  # rcbgTrxTexDraw
     0x0092d470: RCBG_DRAW,  # rcbgTrxDraw_0092d470
     0x008d9e20: MENU_CTRL,  # MenuShop_SellWindowCtrl
