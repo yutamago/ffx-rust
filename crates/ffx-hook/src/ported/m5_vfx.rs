@@ -11,6 +11,7 @@ use ffx_glue_other::m5v_a::bridge as a;
 use ffx_glue_other::m5v_b::bridge as b;
 use ffx_glue_other::m5v_c::bridge as c;
 use ffx_glue_other::m5v_d::bridge as d;
+use ffx_glue_other::m5v_e::bridge as e;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -378,5 +379,50 @@ ported! {
     /// argument slot).
     opd_print_e_weapon_shadow_00a64f60 @ 0x00a6_4f60 => extern "C" fn print_e_weapon_shadow(op: u32; slots: u32) -> u32 {
         d::print_weapon_shadow(&mut mem(), slots, 0x00b7_c0ec, op)
+    }
+    // ---- batch 5 (ffx_glue_other::m5v_e): code outside the dump ----
+    /// `EtBindDefault_setBit12_007fb510()` -> 0x1000.
+    EtBindDefault_setBit12_007fb510 @ 0x007f_b510 => extern "C" fn bind_set_bit12() -> u32 {
+        e::bind_flags(&mut mem(), 0x1000, true)
+    }
+    /// `EtBindDefault_clearBit12_007fb520()` -> 0xefff.
+    EtBindDefault_clearBit12_007fb520 @ 0x007f_b520 => extern "C" fn bind_clear_bit12() -> u32 {
+        e::bind_flags(&mut mem(), 0xefff, false)
+    }
+    /// `EtBindDefault_setBit11_007fb680()` -> 0x800.
+    EtBindDefault_setBit11_007fb680 @ 0x007f_b680 => extern "C" fn bind_set_bit11() -> u32 {
+        e::bind_flags(&mut mem(), 0x0800, true)
+    }
+    /// `EtBindDefault_setBit13_007fb720()` -> 0x2000.
+    EtBindDefault_setBit13_007fb720 @ 0x007f_b720 => extern "C" fn bind_set_bit13() -> u32 {
+        e::bind_flags(&mut mem(), 0x2000, true)
+    }
+    /// `EtBindDefault_clearBit13_007fb730()` -> 0xdfff.
+    EtBindDefault_clearBit13_007fb730 @ 0x007f_b730 => extern "C" fn bind_clear_bit13() -> u32 {
+        e::bind_flags(&mut mem(), 0xdfff, false)
+    }
+    /// `op_debug_reset_008005f0()` -> 0.
+    op_debug_reset_008005f0 @ 0x0080_05f0 => extern "C" fn op_debug_reset() -> u32 {
+        e::op_debug_reset(&mut mem())
+    }
+    /// `jmp op_gs1_init` (`0x007eb760`): its `eax`.
+    op_gs1_init_thunk_007eb570 @ 0x007e_b570 => extern "C" fn t_7eb570(work: u32, flags: u32) -> u32 {
+        e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x007e_b570) }, &[work, flags])
+    }
+    /// `jmp opus_change_chrhd_ffx_to_battle` (`0x007fe200`): its `eax`.
+    opus_change_chrhd_ffx_to_battle_thunk_007fc290 @ 0x007f_c290 => extern "C" fn t_7fc290() -> u32 {
+        e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x007f_c290) }, &[])
+    }
+    /// `jmp op_oef2_tex0_get_007e5260` (`0x007e5260`): its `eax`.
+    op_oef2_tex0_get_thunk_00808a90 @ 0x0080_8a90 => extern "C" fn t_808a90(oef: u32, no: u32, out: u32) -> u32 {
+        e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x0080_8a90) }, &[oef, no, out])
+    }
+    /// `jmp op_et_bindeff_draw_off` (`0x007fba40`): its `eax`.
+    op_et_bindeff_draw_off_thunk @ 0x0092_d860 => extern "C" fn t_92d860(h: u32) -> u32 {
+        e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x0092_d860) }, &[h])
+    }
+    /// `jmp op_et_bindeff_draw_on` (`0x007fbab0`): its `eax`.
+    op_et_bindeff_draw_on_thunk @ 0x0092_d870 => extern "C" fn t_92d870(h: u32) -> u32 {
+        e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x0092_d870) }, &[h])
     }
 }
