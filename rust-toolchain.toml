@@ -1,0 +1,8 @@
+# rustc 1.99.0 (LLVM 23.1.1) miscompiles a clamp shape with optimization on
+# (docs/porting.md, "Compiler bug"); 1.100.0-beta.6 and beta.7 compile it correctly.
+# Pinned to beta.6 (beta-2026-10-17) until 1.100 is stable (user, 2026-10-28), then
+# move to stable 1.100 and drop check-ported's guard for the shape.
+[toolchain]
+channel = "beta-2026-10-17"
+components = ["clippy", "rustfmt"]
+targets = ["i686-pc-windows-msvc", "x86_64-pc-windows-msvc"]

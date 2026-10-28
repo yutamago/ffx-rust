@@ -284,7 +284,8 @@ the operand of the `smax` it becomes, and once that `smax` is hoisted out
 of the branch the bound check is folded away. The mirrored form
 (`if v < k { k } else { v.min(h) }`) and `i64`/`u32` versions fail the
 same way; whether a given site fails depends on what the optimizer can see
-of its callers. rustc 1.100.0-beta.7 compiles all of them correctly. Found
+of its callers. rustc 1.100.0-beta.6 and beta.7 compile all of them correctly; the repo pins
+beta.6 in `rust-toolchain.toml` until 1.100 is stable (user, 2026-10-28). Found
 by the pc-ui parity test of `Gui_WindowSetGlobalTrans` (2026-10-28).
 
 Until the toolchain moves past 1.99:
