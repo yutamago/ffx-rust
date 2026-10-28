@@ -5,6 +5,7 @@
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' argument words
 pub mod bridge {
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     pub const WINDOW_CREATE: u32 = 0x0084_a920;
@@ -273,5 +274,72 @@ pub mod bridge {
             c = c.wrapping_add(0x880);
         }
         0
+    }
+
+    // ---- the angle wrap and the help window (batch 10) ----
+
+    /// The wrap's bounds and step (`f64`): pi, 2 pi, -pi (each with a zero
+    /// low word).
+    pub const WRAP_HI: u32 = 0x00b5_82f0;
+    pub const WRAP_STEP: u32 = 0x00b5_9638;
+    pub const WRAP_LO: u32 = 0x00b5_9648;
+    pub const WINDOW_TO_FRONT: u32 = 0x0084_b770;
+    pub const WINDOW_CLOSE_TREE: u32 = 0x0084_ab80;
+    /// `MSVCR110!strncpy`.
+    pub const STRNCPY_IAT: u32 = 0x00b0_c368;
+    /// `g_GuHelpText` (64 bytes), `g_GuHelpWindow`, its position (names
+    /// ours).
+    pub const HELP_TEXT: u32 = 0x0132_59a0;
+    pub const HELP_WINDOW: u32 = 0x0132_5950;
+    pub const HELP_X: u32 = 0x0132_59e0;
+    pub const HELP_Y: u32 = 0x0132_59e4;
+
+    fn konst(h: &impl Host, sym: u32) -> f64 {
+        f64::from_bits(h.read::<u64>(h.rebase(sym)))
+    }
+
+    /// `Gu_WrapAngle_*(x)` -> `ST0` (three copies: `0x0084d330`,
+    /// `0x00853000`, `0x00854200`): while above pi, `x = f32(x - 2 pi)`;
+    /// then while below -pi, `x = f32(x + 2 pi)` (a NaN passes through).
+    pub fn wrap_angle(h: &impl Host, x: u32) -> f32 {
+        let hi = konst(h, WRAP_HI);
+        let step = konst(h, WRAP_STEP);
+        let lo = konst(h, WRAP_LO);
+        let mut v = x87::load(x);
+        while v > hi {
+            v = x87::load(x87::store(x87::sub(v, step)));
+        }
+        while v < lo {
+            v = x87::load(x87::store(x87::add(v, step)));
+        }
+        #[allow(clippy::cast_possible_truncation)] // v is an f32 value
+        let r = v as f32;
+        r
+    }
+
+    /// `Gu_HelpWindow_00855360(text)`: with a text, it is copied (64
+    /// bytes, `strncpy`), the help window made when missing and brought to
+    /// the front (a tail jump); without, the window closed and cleared.
+    pub fn help_window(h: &mut impl Host, text: u32) -> u32 {
+        if text != 0 {
+            let dst = h.rebase(HELP_TEXT);
+            let f: u32 = h.read(h.rebase(STRNCPY_IAT));
+            h.call(f, Conv::Cdecl, &[dst, text, 0x40]);
+            let mut w = g(h, HELP_WINDOW);
+            if w == 0 {
+                let x = g(h, HELP_X);
+                let y = g(h, HELP_Y);
+                w = window(h, [x, y, 0, 0xa, 0], 0x0085_5290);
+                set_g(h, HELP_WINDOW, w);
+            }
+            return h.call_sym(WINDOW_TO_FRONT, Conv::Cdecl, &[w]);
+        }
+        let w = g(h, HELP_WINDOW);
+        if w == 0 {
+            return 0;
+        }
+        let eax = h.call_sym(WINDOW_CLOSE_TREE, Conv::Cdecl, &[w]);
+        set_g(h, HELP_WINDOW, 0);
+        eax
     }
 }

@@ -610,4 +610,21 @@ ported! {
     Gu_ChrSelectorFill_00853dc0 @ 0x0085_3dc0 => extern "C" fn chr_selector_fill() -> u32 {
         gg::chr_selector_fill(&mut mem())
     }
+    // ---- batch 10 (ffx_pcui::m5u_g) ----
+    /// `Gu_WrapAngle_0084d330(x)` -> `ST0`.
+    Gu_WrapAngle_0084d330 @ 0x0084_d330 => extern "C" fn wrap_angle_0084d330(x: u32) -> f32 {
+        gg::wrap_angle(&mem(), x)
+    }
+    /// `Gu_WrapAngle_00853000(x)` -> `ST0`.
+    Gu_WrapAngle_00853000 @ 0x0085_3000 => extern "C" fn wrap_angle_00853000(x: u32) -> f32 {
+        gg::wrap_angle(&mem(), x)
+    }
+    /// `Gu_WrapAngle_00854200(x)` -> `ST0`.
+    Gu_WrapAngle_00854200 @ 0x0085_4200 => extern "C" fn wrap_angle_00854200(x: u32) -> f32 {
+        gg::wrap_angle(&mem(), x)
+    }
+    /// `Gu_HelpWindow_00855360(text)`.
+    Gu_HelpWindow_00855360 @ 0x0085_5360 => extern "C" fn help_window(text: u32) -> u32 {
+        gg::help_window(&mut mem(), text)
+    }
 }

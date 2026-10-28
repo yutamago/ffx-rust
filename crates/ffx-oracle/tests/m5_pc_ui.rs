@@ -3147,3 +3147,84 @@ fn debug_gui_light_file_and_chr_selector_match_the_original() {
         }
     });
 }
+
+// ---- batch 10 (ffx_pcui::m5u_g) ----
+
+/// The three copies of the angle wrap: inside, above, below, far
+/// outside, the bounds, infinities, NaN (quiet); `ST0` bit for bit.
+#[test]
+fn wrap_angle_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0a1e_0010);
+        let pi = std::f32::consts::PI;
+        let mut xs = vec![
+            0.0f32,
+            -0.0,
+            1.0,
+            pi,
+            -pi,
+            f32::from_bits(0x4049_0fdc), // just above pi
+            3.5,
+            -3.5,
+            7.0,
+            -7.0,
+            100.0,
+            -1000.0,
+            1e6,
+            f32::NAN,
+        ];
+        // exactly the bounds (pi and -pi with their low words zero)
+        let hi = f64::from_bits(0x4009_21fb_0000_0000) as f32;
+        xs.extend([hi, -hi]);
+        for _ in 0..30 {
+            xs.push(
+                f32::from_bits(rng.next() & 0x447f_ffff) * if rng.chance(2) { -1.0 } else { 1.0 },
+            );
+        }
+        for sym in [0x0084_d330u32, 0x0085_3000, 0x0085_4200] {
+            for &x in &xs {
+                let at = t.rebase(sym);
+                let ra = t.a.call(at, Conv::Cdecl, &[x.to_bits()]).unwrap();
+                let port = gg::wrap_angle(&G(&mut t.b, 0), x.to_bits());
+                let orig = ra.st0_f32().expect("the original leaves ST0 set");
+                assert_eq!(orig.to_bits(), port.to_bits(), "wrap {sym:#x} {x}");
+                t.diff("wrap angle");
+            }
+        }
+    });
+}
+
+#[test]
+fn help_window_matches_the_original() {
+    Twins::each(|t| {
+        for i in 0..6u32 {
+            t.reset();
+            t.stubs(&[
+                (gg::WINDOW_CREATE, false, 6, 0, 0x00a1_0000 + i),
+                (gg::WINDOW_TO_FRONT, false, 1, 0, 0xd1),
+                (gg::WINDOW_CLOSE_TREE, false, 1, 0, 0xd2),
+            ]);
+            t.g32(
+                gg::HELP_WINDOW,
+                if i % 3 == 0 { 0 } else { 0x00a2_0000 + i },
+            );
+            let at = t.rebase(gg::HELP_TEXT);
+            t.write(at, &[0x5a; 0x40]);
+            t.g32(gg::HELP_X, 10 + i);
+            t.g32(gg::HELP_Y, 20 + i);
+            let text = if i % 2 == 0 {
+                0
+            } else {
+                t.cstr("Press the button to continue")
+            };
+            t.run(
+                "help window",
+                0x0085_5360,
+                Conv::Cdecl,
+                &[text],
+                true,
+                |g| gg::help_window(g, text),
+            );
+        }
+    });
+}

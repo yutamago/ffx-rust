@@ -11524,6 +11524,7 @@
 0x0084ca30 function Gui_ChrMenuInit           # fh v3:exact 0x0084ca30
 0x0084cea0 function create_chrview               # layout+callees: sorts between Gui_ChrMenuInit and gui_chr_GWM_SELECTOR, and its named callees match the Switch 0x7100444a70 create_chrview's (similarity 1.00: Ch_GetClip, Gu_ButtonSetToggle, Gu_ButtonSetToggleValue, Gu_WindowCreate, Gu_WindowGetArg); symbols from Fahrenheit's server export
 0x0084d270 function gui_chr_GWM_SELECTOR      # fh v3:exact 0x0084d270
+0x0084d330 function Gu_WrapAngle_0084d330 # cdecl(x f32) -> ST0: while x > pi (f64 0x00b582f0) x = f32(x - 2pi); then while x < -pi x = f32(x + 2pi); same code at 0x00853000 and 0x00854200; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b10)
 0x0084d3a0 function Gu_SelectorFillFiles_0084d3a0 # cdecl(list, sel, dir): sg_make_filelist(list, dir, 0x00b5abcc), Gu_SelectorResetNbItem(sel, list[0]), Gu_SelectorSetItem(sel, i, list[2][i], i) each; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x0084d8a0 function Gui_SettingSaveLight         # str-match switch: only user of 3 string(s) held once by both builds, e.g. '%23LIGHT\\t%d'; Switch 0x710043ad70 Gui_SettingSaveLight (symbols from Fahrenheit's server export)
 0x0084e7c0 function SgGu_BgColor              # fh v3:exact 0x0084e7c0
@@ -11555,6 +11556,7 @@
 0x00851910 function Sg_MouseGetMove           # fh v3:bsim1.00 0x00851910
 0x00851920 function Sg_MouseMain                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'USB mouse error.\\n'; Switch 0x71004493f0 Sg_MouseMain (symbols from Fahrenheit's server export)
 0x00851ae0 function Sg_SetMouse               # fh v3:exact 0x00851ae0
+0x00853000 function Gu_WrapAngle_00853000 # as Gu_WrapAngle_0084d330; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b10)
 0x00853140 function Gu_PacketArg_00853140 # cdecl(i) -> Sg_PacketGetPtr()[i], "" (0x00b8fbeb) from i >= *0x01325910 (signed); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853170 function Gu_PacketArgInt_00853170 # cdecl(i): atoi(Gu_PacketArg_00853140(i)) as a tail jump with its argument slot replaced; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853310 function Gui_SettingSaveLightFile_00853310 # cdecl(): the packet buffer as g_GuByteCursor, Gu_LinePrintf_008533b0 of 0x00b5b61c and (0x00b5b62c, 0x197), Gui_SettingSaveLight; when anything was printed sprintf(g_DebugLine, 0x00b5b5e8, Sg_GetUserName()) and Sg_PcWrite(buf, len, g_DebugLine); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
@@ -11566,11 +11568,13 @@
 0x00853dc0 function Gu_ChrSelectorFill_00853dc0 # cdecl() -> 0 / -1 (none in use): Gu_SelectorResetNbItem(*0x01325918, Ch_SysGetNbUse()), Gu_SelectorSetItem(sel, k, chr +4, chr) for each g_ChrArray entry (0x880 bytes) with byte +2 set; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853e40 function Gu_LogPrintf_00853e40 # cdecl varargs(fmt, ...): vsprintf into ebp-0x404, Gu_PrintSetXY(0, g_GuLogY), g_GuLogY += 7, Gu_Printf(buf); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(8, 0x9e, 0x64, 0x3c, 6, 0x00853ec0)
+0x00854200 function Gu_WrapAngle_00854200 # as Gu_WrapAngle_0084d330; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b10)
 0x00854df0 function gui_eve_GWM_SELECTOR      # fh v3:exact 0x00854df0; cdecl(window, msg): msg 0x2c: 0x01325928 = Gu_SelectorGetItemValue(0x0132592c), Gu_WindowControlSetText(window, 0x2d, name), Sg_SetResource(4, value), Sg_SetResourceSTR(3, name), AtelSetEventJump(value, 0); other messages leave eax alone; ported M5 menu b6 (ffx_menu::m5m_f)
 0x00854e60 function gui_eve_Init              # fh v3:exact 0x00854e60; cdecl() -> 0x01325928 = Sg_GetResource(4, 0) after dbgPrintf(0x00b5b410); ported M5 menu b6 (ffx_menu::m5m_f)
 0x00854e80 function gui_eve_GWM_BUTTONUP      # fh switch:cg2 0x7100448490; cdecl(window) -> Gu_SelectorOpenXYWH's eax or 0: 0x01325924 freed (user_free_thunk), = Sg_PcRead("/ffx/proj/event/header/eventid.bin"); [0]/8 entries of 8 bytes (+0 name offset): Gu_SelectorAllocate -> 0x0132592c, Gu_SelectorResetNbItem, Gu_SelectorSetItem(sel, i, file + off, i), Gu_SelectorSortItem, Gu_SelectorSetSelectSTR(sel, Sg_GetResourceSTR(3)), Gu_SelectorOpenXYWH(sel, window, 0x2c, 200, 40, 150, 120); ported M5 menu b7 (ffx_menu::m5m_g)
 0x00854f60 function Gu_DrawRectStrip          # fh switch:bsim1.00 0x710043d750
 0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0; ported ffx_pcui::m5u_g (m5 pc-ui b8): once: Gu_WindowCreate(8, 0, 0x1e, 0xc1, 0xe, 0x00855020), Gu_WindowSetLocalTrans(w, 1, 0x10), Sg_SetResource(0x11, 0)
+0x00855360 function Gu_HelpWindow_00855360 # cdecl(text): text: strncpy(g_GuHelpText, text, 0x40), the window (Gu_WindowCreate(*0x013259e0, *0x013259e4, 0, 0xa, 0, 0x00855290)) made once, tail jump Gu_WindowToFront; no text: Gu_WindowCloseTree and clear; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b10)
 0x00855430 function Gui_ProgAvarage           # fh v3:exact 0x00855430
 0x00855a30 function Native_DrawBarSegment_00855a30 # (r25 c) one bar segment: width table(seg[4]) * 0x013259f0 / 0x013259e8, Gu_SetRgbaq + two Gu_SetXyzf2 from the cursor 0x013259f4; returns the width; caller caseD_8011; own name
 0x00855b30 function FFXUsbMouseInit              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bind errr\\n'; Switch 0x71004499c0 FFXUsbMouseInit (symbols from Fahrenheit's server export)
@@ -20813,7 +20817,9 @@
 0x01325910 label g_GuPacketArgCount # i32: Gu_PacketArg_00853140's argument count; name ours (m5 pc-ui b8)
 0x01325918 label g_GuChrSelector # the character selector Gu_ChrSelectorFill_00853dc0 fills; name ours (m5 pc-ui b9)
 0x01325920 label g_GuLogY # the debug log's next line y (+7 a line, Gu_LogPrintf_00853e40); name ours (m5 pc-ui b9)
+0x01325950 label g_GuHelpWindow # Gu_HelpWindow_00855360's window; name ours (m5 pc-ui b10)
 0x01325954 label g_GuMemGraphOpen # Gui_MemGraph's once flag; name ours (m5 pc-ui b8)
+0x013259a0 label g_GuHelpText # 64 bytes: the help window's text; name ours (m5 pc-ui b10)
 0x01325ac0 label    g_AtelLastSetMsg           # the message Native_MsgSetText (0x00857870) last put in a window; also written by 0x008607a0, 0x00860b00, read by 0x008e02f0
 0x01325ac8 label    g_MegasAdding                # read by getMegasAdding (0x00860a90)
 0x01325af0 label    g_AtelVoiceId              # the voice Native_VoiceStandby (0x0085cd00) set; used by VoiceStart and its end
