@@ -1854,6 +1854,12 @@ it writes the sandbox's copy (the game's parser, `Settings_Load`
 `0x00401cb0`, knows only `key=value` lines), and sets `Resolution`,
 `ScreenMode`, `Mute` and `MasterVolume` (`FFX_TEST_VOLUME`, default 5).
 
+`FFX_SAVES_FROM` (a WSL path) makes the sandbox copy the saves from that
+folder instead of the user's game folder under Documents. A second machine
+(PC2) sets it to a copy of the main machine's folder, so its replays load the
+saves they were written for and its user's own saves aren't read. Copy the
+folder with its modification times (`rsync -t`): the save lists sort by them.
+
 Other settings for one game (2026-10-26, m4-coverage2): a replay line
 `settings NAME` (read before the launch, like `realtime`), or
 `FFX_SETTINGS=NAME` for any harness game (`Options::settings`), merges

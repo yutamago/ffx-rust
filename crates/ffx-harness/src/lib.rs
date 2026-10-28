@@ -331,6 +331,18 @@ pub fn user_documents() -> Result<PathBuf> {
     Ok(PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
 }
 
+/// The folder the sandbox's saves are copied from: the user's game folder
+/// under Documents, or `FFX_SAVES_FROM` (a WSL path to a copy of that folder
+/// with the same layout). A second machine sets it to the main machine's
+/// saves, so its replays load the saves they were written for and its own
+/// user's saves are not even read.
+fn saves_source() -> Result<PathBuf> {
+    match std::env::var_os("FFX_SAVES_FROM").filter(|v| !v.is_empty()) {
+        Some(dir) => Ok(PathBuf::from(dir)),
+        None => Ok(user_documents()?.join(GAME_DOCUMENTS)),
+    }
+}
+
 /// Copies a file with its modification and access times. The load and save
 /// lists sort the saves by their modification time to the second
 /// (`SaveDataMachine_ScanFiles` `0x006f0a70`, `SortSaveTable_006f0fb0`):
@@ -447,7 +459,7 @@ fn prepare_home(
     }
     std::fs::create_dir_all(home)?;
     if copy {
-        let source = user_documents()?.join(GAME_DOCUMENTS);
+        let source = saves_source()?;
         if source.is_dir() {
             copy_tree(&source, &home.join(GAME_DOCUMENTS))?;
         }
