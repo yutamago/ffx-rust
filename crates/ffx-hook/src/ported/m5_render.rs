@@ -13,6 +13,7 @@ use ffx_prender::m5r_d::bridge as d;
 use ffx_prender::m5r_e::bridge as e;
 use ffx_prender::m5r_f::bridge as f;
 use ffx_prender::m5r_g::bridge as g;
+use ffx_prender::m5r_h::bridge as h;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1008,5 +1009,120 @@ ported! {
     /// `GsPackTag_0077ead0(out, a, b, c)`.
     GsPackTag_0077ead0 @ 0x0077_ead0 => extern "C" fn gs_pack_tag(out: u32, a0: u32, a1: u32, a2: u32) -> u32 {
         g::gs_pack_tag(&mut mem(), out, a0, a1, a2)
+    }
+    // ---- batch 8 (ffx_prender::m5r_h, and twins of earlier ports) ----
+    /// `RenderDelegationHelper_beforeScene(this)`: the flag-8 run
+    /// (`p6_more::run_delegations`, the code of `runFlag200`).
+    RenderDelegationHelper_beforeScene @ 0x006a_da20 => extern "thiscall" fn delegations_flag8(this: u32) -> u32 {
+        ffx_prender::p6_more::bridge::run_delegations(&mut mem(), this, 8)
+    }
+    /// `RenderDelegationHelper_runFlag2_006adad0(this)`: the flag-2 run.
+    RenderDelegationHelper_runFlag2_006adad0 @ 0x006a_dad0 => extern "thiscall" fn delegations_flag2(this: u32) -> u32 {
+        ffx_prender::p6_more::bridge::run_delegations(&mut mem(), this, 2)
+    }
+    /// `PClassDescriptor_ShadowDynamicMeshInstance_destructInstance_006f9910(p)`:
+    /// the code of `0x004469a0`.
+    PClassDescriptor_ShadowDynamicMeshInstance_destructInstance_006f9910 @ 0x006f_9910 => extern "stdcall" fn shadow_instance_destruct(p: u32) -> u8 {
+        ffx_pload::descriptor::bridge::destroy_virtual(&mut mem(), 0, 4, p)
+    }
+    /// `PClassDescriptorConcrete_ShadowDynamicMesh_constructInstance_006788e0(desc; obj)`.
+    PClassDescriptorConcrete_ShadowDynamicMesh_constructInstance_006788e0 @ 0x0067_88e0 => extern "thiscall" fn shadow_construct(_desc: u32, obj: u32) -> u8 {
+        ffx_prender::p6_descriptor::bridge::construct_with(&mut mem(), obj, 0x0049_68c0, Some(0x00b4_4c78), None)
+    }
+    /// `PClassDescriptorWithoutDefaultConstructor_ShadowDynamicMeshInstance_constructInstance_006f9890(desc; obj)`.
+    PClassDescriptorWithoutDefaultConstructor_ShadowDynamicMeshInstance_constructInstance_006f9890 @ 0x006f_9890 => extern "thiscall" fn shadow_instance_construct(_desc: u32, obj: u32) -> u8 {
+        ffx_pother_b::object::bridge::construct_mesh_instance_default(&mut mem(), obj, 0x00cc_c158, 0x00b4_c250)
+    }
+    /// `RadialLine_setParam6c_006f8b40(this; x, y, z, w)`: copies from its
+    /// own argument words.
+    RadialLine_setParam6c_006f8b40 @ 0x006f_8b40 => extern "thiscall" fn radial_line_set_param6c(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        ffx_glue_other::frames::post_set_param(&mut mem(), ffx_glue_other::frames::ParamSlot { guard: 0x6c, param: 0x6c, holder: 0x1c }, this, args)
+    }
+    /// `RadialLine_setParam70_006f8be0(this; x, y, z, w)`.
+    RadialLine_setParam70_006f8be0 @ 0x006f_8be0 => extern "thiscall" fn radial_line_set_param70(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        ffx_glue_other::frames::post_set_param(&mut mem(), ffx_glue_other::frames::ParamSlot { guard: 0x74, param: 0x70, holder: 0x1c }, this, args)
+    }
+    /// `PArray_release20_006af510(this)`.
+    PArray_release20_006af510 @ 0x006a_f510 => extern "thiscall" fn release_array20(this: u32) {
+        h::release_array20(&mut mem(), this, Some(ffx_prender::m5r_h::ELEMENT20_DTOR));
+    }
+    /// `PArray_destroyObjects20_006af5d0(this)`.
+    PArray_destroyObjects20_006af5d0 @ 0x006a_f5d0 => extern "thiscall" fn destroy_objects20(this: u32) {
+        h::release_array20(&mut mem(), this, None);
+    }
+    /// `PhyreScene_moveLoadingCluster_00657920(scene)`.
+    PhyreScene_moveLoadingCluster_00657920 @ 0x0065_7920 => extern "thiscall" fn move_loading_cluster(this: u32) {
+        h::move_loading_cluster(&mut mem(), this);
+    }
+    /// `PhyreScene_PushMeshMatrix(scene; mesh, matrix)`: the record in the
+    /// shim's frame (`ebp - 0x44`).
+    PhyreScene_PushMeshMatrix @ 0x0065_6780 => extern "thiscall" fn push_mesh_matrix(this: u32, mesh: u32, matrix: u32) -> u32 {
+        let mut f = StackFrame::<0x12>::new();
+        h::push_mesh_matrix(&mut mem(), f.at() + 0x48, this, mesh, matrix)
+    }
+    /// `DynGeoMemManager_swapBuffer_006dece0(this)`.
+    DynGeoMemManager_swapBuffer_006dece0 @ 0x006d_ece0 => extern "thiscall" fn swap_buffer(this: u32) -> u32 {
+        h::swap_buffer(&mut mem(), this)
+    }
+    /// `PhyreScene_unloadWaterEffectTexture(scene)`: the name in the
+    /// shim's frame.
+    PhyreScene_unloadWaterEffectTexture @ 0x0067_1b90 => extern "thiscall" fn unload_water_texture(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        h::unload_water_texture(&mut mem(), f.at() + 0x104, this)
+    }
+    /// `PhyreScene_updateTextureVideoCallback(job)`.
+    PhyreScene_updateTextureVideoCallback @ 0x0067_2070 => extern "C" fn update_texture_video_callback(job: u32) -> u32 {
+        h::update_texture_video_callback(&mut mem(), job)
+    }
+    /// `PArray_resizeWords_0066c690(array; n)`.
+    PArray_resizeWords_0066c690 @ 0x0066_c690 => extern "thiscall" fn resize_words_0066c690(this: u32, n: u32) -> u32 {
+        h::resize_words(&mut mem(), this, n, 0x0064_f7f0)
+    }
+    /// `PArray_resizeWords_0066c700(array; n)`.
+    PArray_resizeWords_0066c700 @ 0x0066_c700 => extern "thiscall" fn resize_words_0066c700(this: u32, n: u32) -> u32 {
+        h::resize_words(&mut mem(), this, n, 0x0064_f860)
+    }
+    /// `PhyreScene_setInstanceListOwners_0066c770(scene)`.
+    PhyreScene_setInstanceListOwners_0066c770 @ 0x0066_c770 => extern "thiscall" fn set_instance_list_owners(this: u32) {
+        h::set_instance_list_owners(&mut mem(), this);
+    }
+    /// `FloatHeap_sortHeap_006c7890(first, last, pred)`: parks the back
+    /// value in its second argument slot.
+    FloatHeap_sortHeap_006c7890 @ 0x006c_7890 => extern "C" fn sort_heap(first: u32, last: u32, pred: u32; slots: u32) -> u32 {
+        h::sort_heap(&mut mem(), slots + 4, first, last, pred)
+    }
+    /// `ClassCharacter_pushInstance_006a0d00(this; inst)`: hands on the
+    /// address of its argument slot.
+    ClassCharacter_pushInstance_006a0d00 @ 0x006a_0d00 => extern "thiscall" fn push_instance(this: u32, _inst: u32; slots: u32) -> u32 {
+        h::push_instance(&mut mem(), this, slots)
+    }
+    /// `TaggedBuffer_free_006c7ec0(this)`.
+    TaggedBuffer_free_006c7ec0 @ 0x006c_7ec0 => extern "thiscall" fn tagged_free(this: u32) {
+        h::tagged_free(&mut mem(), this);
+    }
+    /// `ShadowDynamicMesh_copyOut_00678ba0(L, out)`.
+    ShadowDynamicMesh_copyOut_00678ba0 @ 0x0067_8ba0 => extern "stdcall" fn shadow_copy_out(l: u32, out: u32) -> u32 {
+        h::shadow_copy_out(&mut mem(), l, out)
+    }
+    /// `MagicDLLAsyncLoad(job)`.
+    MagicDLLAsyncLoad @ 0x006f_9cc0 => extern "C" fn magic_dll_async_load(job: u32) -> u32 {
+        h::magic_dll_async_load(&mut mem(), job)
+    }
+    /// `syncStrCheckPC_HDD(stream)`: the ioctl word in the shim's frame.
+    syncStrCheckPC_HDD @ 0x0077_e8e0 => extern "C" fn sync_str_check_hdd(stream: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        h::sync_str_check_hdd(&mut mem(), f.at() + 4, stream)
+    }
+    /// `syncStrCheck_0077e8b0(stream)`.
+    syncStrCheck_0077e8b0 @ 0x0077_e8b0 => extern "C" fn sync_str_check(stream: u32) -> u32 {
+        h::sync_str_check(&mut mem(), stream)
+    }
+    /// `GsSetFrameRegs_0077e830(a, b, c)`.
+    GsSetFrameRegs_0077e830 @ 0x0077_e830 => extern "C" fn gs_set_frame_regs(a0: u32, a1: u32, a2: u32) -> u32 {
+        h::gs_set_frame_regs(&mut mem(), a0, a1, a2)
+    }
+    /// `Cache_Dump(tag)`: stores the tail message into its argument slot.
+    Cache_Dump @ 0x0084_0510 => extern "C" fn cache_dump(tag: u32; slots: u32) -> u32 {
+        h::cache_dump(&mut mem(), slots, tag)
     }
 }

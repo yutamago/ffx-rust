@@ -41,6 +41,7 @@ use ffx_prender::m5r_d::{self as md, bridge as d};
 use ffx_prender::m5r_e::{self as me, bridge as e};
 use ffx_prender::m5r_f::{self as mf, bridge as f};
 use ffx_prender::m5r_g::{self as mg, bridge as gb};
+use ffx_prender::m5r_h::{self as mh, bridge as h};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -4447,6 +4448,485 @@ fn small_g_functions_match_the_original() {
                 &[out, a0, a1, a2],
                 |g| Out::U32(gb::gs_pack_tag(g, out, a0, a1, a2)),
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 8 (ffx_prender::m5r_h and twins) ----
+
+#[test]
+fn batch8_twins_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0701);
+        for case in 0..30 {
+            // the delegation runs, flags 8 and 2: callbacks stubbed,
+            // one-shot entries, free-list results
+            for (sym, flag) in [(0x006a_da20_u32, 8_u32), (0x006a_dad0, 2)] {
+                let cb = t.stub_code(1, false, 1, 0, Ret::Val(0), false);
+                let n = rng.below(5);
+                let ds: Vec<u32> = (0..n)
+                    .map(|_| {
+                        if rng.chance(6) {
+                            return 0;
+                        }
+                        let d = rand_obj(t, &mut rng, 0x14);
+                        let f = (rng.next() & !0xff)
+                            | if rng.chance(2) { flag } else { 0 }
+                            | u32::from(rng.chance(2));
+                        t.w32(d + 0xc, f);
+                        t.w32(d + 0x10, cb);
+                        d
+                    })
+                    .collect();
+                let data = t.words(&ds);
+                let helper = t.words(&[n, data]);
+                stub_mutex(t);
+                let res: Vec<u32> = (0..8).map(|_| rng.word()).collect();
+                let r = t.seq(&res);
+                t.stub_sym(mb::SET_DATA_TO_FREE_LIST, 2, true, 1, 1, r);
+                t.stub_sym(mb::OPERATOR_DELETE, 3, false, 1, 0, Ret::Val(0));
+                t.stub_sym(ma::DELEGATIONS_COMPACT, 4, true, 0, 0, Ret::Val(0));
+                t.check(
+                    &format!("delegations_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(helper),
+                    &[],
+                    |g| {
+                        Out::U32(ffx_prender::p6_more::bridge::run_delegations(
+                            g, helper, flag,
+                        ))
+                    },
+                );
+                t.reset();
+            }
+
+            // destructInstance: virtual 0 of p - 4
+            let virt = t.stub_code(5, true, 1, 1, Ret::Val(0), false);
+            let obj = t.object(&[virt], 8);
+            let p = obj + 4;
+            t.check(
+                "destructInstance_006f9910",
+                0x006f_9910,
+                Conv::Stdcall,
+                &[p],
+                |g| Out::U8(ffx_pload::descriptor::bridge::destroy_virtual(g, 0, 4, p)),
+            );
+            t.reset();
+
+            // the shadow descriptors' constructInstance
+            let obj = if case % 4 == 0 {
+                0
+            } else {
+                rand_obj(t, &mut rng, 0x40)
+            };
+            t.stub_sym(0x0049_68c0, 6, true, 0, 0, Ret::Val(0));
+            t.check(
+                "constructInstance_006788e0",
+                0x0067_88e0,
+                Conv::Thiscall(0x1234),
+                &[obj],
+                |g| {
+                    Out::U8(ffx_prender::p6_descriptor::bridge::construct_with(
+                        g,
+                        obj,
+                        0x0049_68c0,
+                        Some(0x00b4_4c78),
+                        None,
+                    ))
+                },
+            );
+            let object = [0, 4, rng.next() | 8][(case % 3) as usize];
+            t.stub_sym(0x0043_cbb0, 7, true, 0, 0, Ret::Val(object));
+            t.stub_sym(0x004f_a420, 8, true, 1, 1, Ret::Val(0));
+            t.check(
+                "constructInstance_006f9890",
+                0x006f_9890,
+                Conv::Thiscall(0x1234),
+                &[obj],
+                |g| {
+                    Out::U8(
+                        ffx_pother_b::object::bridge::construct_mesh_instance_default(
+                            g,
+                            obj,
+                            0x00cc_c158,
+                            0x00b4_c250,
+                        ),
+                    )
+                },
+            );
+            t.reset();
+
+            // the radial line's parameter setters (they copy from their
+            // own argument words)
+            for (sym, guard, param) in [
+                (0x006f_8b40_u32, 0x6c_u32, 0x6c_u32),
+                (0x006f_8be0, 0x74, 0x70),
+            ] {
+                let this = rand_obj(t, &mut rng, 0x80);
+                if rng.chance(5) {
+                    t.w32(this + guard, 0);
+                }
+                let rec = t.zeros(0x10);
+                let off = [3_u16, 4, 8, 0x30][rng.below(4) as usize];
+                t.write(rec + 8, &off.to_le_bytes());
+                t.write(rec + 0xa, &(0x10_u16 | 0xe000).to_le_bytes());
+                t.w32(this + param, rec);
+                let buf = t.words(&[[0x18, 0x40][rng.below(2) as usize], 0, 0, 0]);
+                let holder = t.words(&[0, buf]);
+                t.w32(this + 0x1c, holder);
+                t.stub_sym(mc::MEMCPY, 9, false, 3, 0, Ret::Val(0));
+                let a: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+                let args = first_slot(&t.b, 4);
+                t.check(
+                    &format!("setParam_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &a,
+                    |g| {
+                        let slot = ffx_glue_other::frames::ParamSlot {
+                            guard,
+                            param,
+                            holder: 0x1c,
+                        };
+                        // the port reads the caller's words: put them where
+                        // the original's slots were
+                        for (k, &w) in a.iter().enumerate() {
+                            g.write(args + 4 * k as u32, w);
+                        }
+                        Out::U32(ffx_glue_other::frames::post_set_param(g, slot, this, args))
+                    },
+                );
+                t.reset();
+            }
+        }
+    });
+}
+
+#[test]
+fn batch8_functions_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0702);
+        for case in 0..40 {
+            // the loading cluster's move
+            let scene = rand_obj(t, &mut rng, 0xfa00);
+            t.w8(scene + 0xf9d1, (case % 2) as u8);
+            t.w8(scene + 0xf9d0, (case / 2 % 2) as u8);
+            t.stub_sym(mh::WORLD_REMOVE_CLUSTER, 1, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mh::WORLD_ADD_CLUSTER, 2, true, 1, 1, Ret::Val(0));
+            t.check(
+                "PhyreScene_moveLoadingCluster_00657920",
+                0x0065_7920,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    h::move_loading_cluster(g, scene);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the mesh matrix push (frame)
+            let scene = rand_obj(t, &mut rng, 0x1_0e00);
+            let matrix = rand_obj(t, &mut rng, 0x40);
+            let mesh = rng.next();
+            t.stub_sym(mh::PHYRE_MALLOC_ALIGNED, 3, false, 2, 0, Ret::Val(0x44));
+            t.stub_sym(mh::MESH_MATRIX_PUSH, 4, true, 2, 2, Ret::Val(0x45));
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "PhyreScene_PushMeshMatrix",
+                0x0065_6780,
+                Conv::Thiscall(scene),
+                &[mesh, matrix],
+                |g| Out::U32(h::push_mesh_matrix(g, ebp, scene, mesh, matrix)),
+            );
+            t.b_top = None;
+            for k in 0..0x11 {
+                let (x, y): (u32, u32) = (
+                    Mem::read(&t.a, ebp - 0x44 + 4 * k),
+                    Mem::read(&t.b, ebp - 0x44 + 4 * k),
+                );
+                assert_eq!(x, y, "PushMeshMatrix: the frame record");
+            }
+            t.reset();
+
+            // the dyn-geo swap: no buffers, indexes around the count
+            let n = [0, 1, 3, 4][(case % 4) as usize];
+            let bufs: Vec<u32> = (0..n.max(1)).map(|_| rand_obj(t, &mut rng, 0x10)).collect();
+            let arr = t.words(&bufs);
+            let this = t.words(&[0, rng.below(n.max(1)), n, 0, arr, rng.next()]);
+            t.import_sym(mh::PRINTF, 5, 1, 0, Ret::Val(9));
+            stub_mutex(t);
+            t.check(
+                "DynGeoMemManager_swapBuffer_006dece0",
+                0x006d_ece0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(h::swap_buffer(g, this)),
+            );
+            t.reset();
+
+            // the water unload (frame)
+            let scene = t.zeros(4);
+            t.stub_sym(mh::UNIFY_FILENAME, 6, false, 3, 0, Ret::Val(0));
+            t.stub_sym(mh::SCENE_UNLOAD_VFX_TEXTURE, 7, true, 2, 2, Ret::Val(0x66));
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x140);
+            t.check(
+                "PhyreScene_unloadWaterEffectTexture",
+                0x0067_1b90,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(h::unload_water_texture(g, ebp, scene)),
+            );
+            t.b_top = None;
+            t.reset();
+
+            // the texture video callback
+            let busy = t.zeros(4);
+            let flag = t.words(&[u32::from(case % 3 != 0)]);
+            let r = t.words(&[rng.next(), rng.next(), rng.next(), rng.next(), flag, busy]);
+            let job = t.words(&[0, r]);
+            let s = t.zeros(0xe00);
+            t.global(mh::SCENE.sym, s);
+            let ok = [0x100, 1, rng.next()][rng.below(3) as usize];
+            t.stub_sym(mh::VIDEO_UPDATE_TEXTURE, 8, true, 3, 3, Ret::Val(ok));
+            t.stub_sym(mh::OPERATOR_DELETE, 9, false, 1, 0, Ret::Val(0x99));
+            t.check(
+                "PhyreScene_updateTextureVideoCallback",
+                0x0067_2070,
+                Conv::Cdecl,
+                &[job],
+                |g| Out::U32(h::update_texture_video_callback(g, job)),
+            );
+            t.reset();
+
+            // the word array resizes
+            for (sym, alloc) in [
+                (0x0066_c690_u32, 0x0064_f7f0_u32),
+                (0x0066_c700, 0x0064_f860),
+            ] {
+                let c = rng.below(5) | if rng.chance(4) { 0x8000_0000 } else { 0 };
+                let n = if rng.chance(4) { c } else { rng.below(5) };
+                let old = rng.next();
+                let arr = t.words(&[c, old]);
+                let p = match rng.below(4) {
+                    0 => 0,
+                    1 => old,
+                    _ => rng.next(),
+                };
+                t.stub_sym(alloc, 10, false, 3, 0, Ret::Val(p));
+                t.stub_sym(mh::PHYRE_FREE, 11, false, 1, 0, Ret::Val(0));
+                t.check(
+                    &format!("PArray_resizeWords_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[n],
+                    |g| Out::U32(h::resize_words(g, arr, n, alloc)),
+                );
+                t.reset();
+            }
+
+            // the instance list owners
+            let scene = t.zeros(0xfb60);
+            let k = rng.below(4);
+            let mut lists = vec![];
+            for _ in 0..k {
+                if rng.chance(5) {
+                    lists.push(0);
+                    continue;
+                }
+                let n = rng.below(4);
+                let insts: Vec<u32> = (0..n)
+                    .map(|_| {
+                        if rng.chance(5) {
+                            return 0;
+                        }
+                        let i = rand_obj(t, &mut rng, 0x20);
+                        if rng.chance(4) {
+                            t.w32(i + 0x1c, 0);
+                        } else {
+                            let rec = rand_obj(t, &mut rng, 0x20);
+                            t.w32(i + 0x1c, rec);
+                        }
+                        i
+                    })
+                    .collect();
+                let d = t.words(&insts);
+                let l = t.words(&[n, d, 0, 0, 0, 0]);
+                t.w8(l + 0x14, (rng.next() & 1) as u8);
+                lists.push(l);
+            }
+            let d = t.words(&lists);
+            t.w32(scene + 0xfb48, k);
+            t.w32(scene + 0xfb50, d);
+            t.check(
+                "PhyreScene_setInstanceListOwners_0066c770",
+                0x0066_c770,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    h::set_instance_list_owners(g, scene);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the 0x20 arrays
+            for (sym, dtor) in [
+                (0x006a_f510_u32, Some(mh::ELEMENT20_DTOR)),
+                (0x006a_f5d0, None),
+            ] {
+                let virt = t.stub_code(12, true, 1, 1, Ret::Val(0), false);
+                let n = rng.below(4);
+                let mut els = vec![];
+                for _ in 0..n {
+                    let vt = t.words(&[virt]);
+                    els.extend([vt, 0, 0, 0, 0, 0, 0, 0]);
+                }
+                let data = if n == 0 && rng.chance(2) {
+                    0
+                } else {
+                    t.words(&els)
+                };
+                let arr = t.words(&[n | if rng.chance(4) { 0x8000_0000 } else { 0 }, data]);
+                t.stub_sym(mh::ELEMENT20_DTOR, 13, true, 0, 0, Ret::Val(0));
+                t.stub_sym(mh::PHYRE_FREE, 14, false, 1, 0, Ret::Val(0));
+                t.check(
+                    &format!("release20_{sym:08x}"),
+                    sym,
+                    Conv::Thiscall(arr),
+                    &[],
+                    |g| {
+                        h::release_array20(g, arr, dtor);
+                        Out::None
+                    },
+                );
+                t.reset();
+            }
+
+            // the heap sort loop (its second argument slot)
+            let n = rng.below(6);
+            let fl: Vec<u32> = (0..n).map(|_| float_word(&mut rng)).collect();
+            let first = t.words(&fl);
+            let last = first + 4 * n;
+            t.stub_sym(mh::FLOAT_HEAP_ADJUST, 15, false, 5, 0, Ret::Val(0));
+            let pred = rng.next();
+            let slot = first_slot(&t.b, 3) + 4;
+            t.b_top = Some(slot - 0x44);
+            t.check(
+                "FloatHeap_sortHeap_006c7890",
+                0x006c_7890,
+                Conv::Cdecl,
+                &[first, last, pred],
+                |g| Out::U32(h::sort_heap(g, slot, first, last, pred)),
+            );
+            t.b_top = None;
+            t.reset();
+
+            // the character push (its argument slot)
+            let chr = t.zeros(0x10);
+            stub_mutex(t);
+            t.stub_sym(mh::CHARACTER_TABLE_PUSH, 16, true, 1, 1, Ret::Val(0));
+            let inst = rng.next();
+            let slot = first_slot(&t.b, 1);
+            t.check(
+                "ClassCharacter_pushInstance_006a0d00",
+                0x006a_0d00,
+                Conv::Thiscall(chr),
+                &[inst],
+                |g| Out::U32(h::push_instance(g, chr, slot)),
+            );
+            t.reset();
+
+            // the tagged free, the shadow copy, the DLL load
+            let this = rand_obj(t, &mut rng, 0xd0);
+            t.stub_sym(mh::PHYRE_FREE, 17, false, 1, 0, Ret::Val(0));
+            t.check(
+                "TaggedBuffer_free_006c7ec0",
+                0x006c_7ec0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    h::tagged_free(g, this);
+                    Out::None
+                },
+            );
+            let copy = rand_obj(t, &mut rng, 0x1f0);
+            t.stub_sym(mh::SHADOW_GET, 18, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mh::SHADOW_COPY, 19, true, 1, 1, Ret::Val(copy));
+            let (l, out) = (rng.next(), rng.next());
+            t.check(
+                "ShadowDynamicMesh_copyOut_00678ba0",
+                0x0067_8ba0,
+                Conv::Stdcall,
+                &[l, out],
+                |g| Out::U32(h::shadow_copy_out(g, l, out)),
+            );
+            let cb = t.stub_code(20, false, 1, 0, Ret::Val(0x77), false);
+            let job = rand_obj(t, &mut rng, 0x88);
+            t.w32(job + 0x84, cb);
+            t.import_sym(mh::LOAD_LIBRARY_A, 21, 1, 1, Ret::Val(0x1000_0000));
+            t.check("MagicDLLAsyncLoad", 0x006f_9cc0, Conv::Cdecl, &[job], |g| {
+                Out::U32(h::magic_dll_async_load(g, job))
+            });
+            t.reset();
+
+            // the PS2 stream checks (frame word), the GS regs, the cache dump
+            let stream = t.zeros(0x5_0760);
+            let fd = [0xffff_fffe, 3, 0][(case % 3) as usize];
+            t.w32(stream + 0x5_0544, fd);
+            // the ioctl writes 0 or 1 through its third argument, or
+            // leaves it (-1 from the original)
+            let mut code = vec![0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00];
+            code.extend((case % 2_u32).to_le_bytes());
+            code.push(0xc3);
+            if case % 5 == 4 {
+                code = vec![0xc3];
+            }
+            let io = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), io);
+            t.jump(mh::SCE_IOCTL, io);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "syncStrCheckPC_HDD",
+                0x0077_e8e0,
+                Conv::Cdecl,
+                &[stream],
+                |g| Out::U32(h::sync_str_check_hdd(g, ebp, stream)),
+            );
+            t.b_top = None;
+            t.reset();
+            let stream = t.zeros(0x5_0760);
+            t.w8(stream + 0x5_075c, (case % 2) as u8);
+            t.stub_sym(mh::STR_A, 22, false, 1, 0, Ret::Val(0xa));
+            t.stub_sym(mh::STR_CHECK_HDD, 23, false, 1, 0, Ret::Val(0xb));
+            t.check(
+                "syncStrCheck_0077e8b0",
+                0x0077_e8b0,
+                Conv::Cdecl,
+                &[stream],
+                |g| Out::U32(h::sync_str_check(g, stream)),
+            );
+            let (a0, a1, a2) = (rng.next(), rng.next(), rng.word());
+            t.check(
+                "GsSetFrameRegs_0077e830",
+                0x0077_e830,
+                Conv::Cdecl,
+                &[a0, a1, a2],
+                |g| Out::U32(h::gs_set_frame_regs(g, a0, a1, a2)),
+            );
+            t.stub_sym(mh::DBG_PRINTF, 24, false, 1, 0, Ret::Val(0x31)); // the tail call passes one word
+            t.stub_sym(mh::CACHE_DUMP_SLOT, 25, false, 1, 0, Ret::Val(0));
+            let tag = rng.next();
+            let slot = first_slot(&t.b, 1);
+            t.b_top = Some(slot - 0x40);
+            t.check("Cache_Dump", 0x0084_0510, Conv::Cdecl, &[tag], |g| {
+                Out::U32(h::cache_dump(g, slot, tag))
+            });
+            t.b_top = None;
             t.reset();
         }
     });
