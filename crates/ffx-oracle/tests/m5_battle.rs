@@ -2623,3 +2623,91 @@ fn debug_actor_place_helpers_match_the_original() {
         }
     });
 }
+
+// ---- batch 6 ----
+
+#[test]
+fn read_vec3_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7ec3_0001);
+        t.skip = 4;
+        for i in 0..12 {
+            t.reset();
+            let body: &[u8] = [b"1 2 3".as_slice(), b"1.5 -2\n", b"\n", b"0.25 x 7e3 "][i % 4];
+            let r = reader(t, body, 0, body.len() as u32);
+            t.stub(mb::DBG_PRINTF, 2, 0);
+            t.g32(
+                mb::POS_FILE_NAME,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            t.g32(mb::POS_LINE, rng.below(9));
+            let out = t.zeros(12);
+            let args = [r, rng.next(), out, out + 4, out + 8];
+            t.check_framed(
+                &format!("MsReadVec3 #{i}"),
+                0x007c_d170,
+                &args,
+                0x104,
+                |m, ebp| {
+                    mb::ms_read_vec3(m, &mut oc, ebp - 0x104, args);
+                    Out::None
+                },
+            );
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn debug_camera_keep_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xcae9_0001);
+        for i in 0..40 {
+            t.reset();
+            let screen = rng.below(2);
+            t.g32(mb::DBG_CAMERA_SCREEN, screen);
+            let cam = rng.below(3);
+            let at = t.rebase(mb::DEBUG_CAMERA) + 0x1c0 * screen;
+            t.w8(at, cam as u8);
+            let ch = rng.below(4);
+            t.stub(mb::MS_CAMERA_GET_NUM, 1, ch);
+            t.stub(mb::MS_CAMERA_RESET_MOVE, 2, 0);
+            // the camera, the kept cameras and their flags
+            let camera = t.rebase(mb::CAMERAS) + 0xda0 * cam;
+            let mut c = Vec::new();
+            for _ in 0..0x368 {
+                c.extend(float_bits(&mut rng).to_le_bytes());
+            }
+            t.write(camera, &c);
+            let mut k = Vec::new();
+            for _ in 0..3 * 0x368 {
+                k.extend(float_bits(&mut rng).to_le_bytes());
+            }
+            let kept = t.rebase(mb::CAM_KEPT);
+            t.write(kept, &k);
+            let flags: Vec<u8> = (0..3)
+                .flat_map(|_| (rng.below(4) | if rng.chance(3) { 0x10 } else { 0 }).to_le_bytes())
+                .collect();
+            let fa = t.rebase(mb::CAM_KEPT_FLAGS);
+            t.write(fa, &flags);
+            t.g32(mb::CAM_RESTORE_WHOLE, u32::from(rng.chance(3)));
+            t.g32(mb::CAM_SLOT_FLAG, rng.next() & 6);
+            let slots = t.rebase(mb::CAMERA_SLOTS) + 0xda0 * cam;
+            for s in 0..4 {
+                let level = [0u32, 0x3, 0x13, 0xf0, 0x8][rng.below(5) as usize] << 16;
+                let w = (rng.next() & 0xff00_ffff) | level;
+                t.w32(slots + 8 * s, w);
+                let b = rng.next() & 0x00ff_ffff & if rng.chance(3) { !0xff00 } else { !0 };
+                t.w32(slots + 8 * s + 4, b);
+            }
+            let step = [0, 1, 0xffff_ffff, 2][i % 4];
+            t.check_framed(
+                &format!("MsDebugCameraKeep #{i}"),
+                0x007c_8c50,
+                &[step],
+                0,
+                |m, ebp| Out::U32(mb::ms_debug_camera_keep(m, &mut oc, ebp + 8, step)),
+            );
+        }
+    });
+}

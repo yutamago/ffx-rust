@@ -383,4 +383,16 @@ ported! {
     MsDebugSetDirAt_007d9550 @ 0x007d_9550 => extern "C" fn ms_debug_set_dir_at(a: u32, b: u32, c: u32, deg: u32) {
         mb::ms_debug_set_dir_at(&mut mem(), &mut call, [a, b, c, deg]);
     }
+
+    // ---- batch 6 ----
+    /// `MsReadVec3_007cd170(reader, name, x, y, z)`: a 0x100-byte frame buffer.
+    MsReadVec3_007cd170 @ 0x007c_d170 => extern "C" fn ms_read_vec3(reader: u32, name: u32, x: u32, y: u32, z: u32) {
+        let mut f = StackFrame::<0x40>::new();
+        mb::ms_read_vec3(&mut mem(), &mut call, f.at(), [reader, name, x, y, z]);
+    }
+    /// `MsDebugCameraKeep_007c8c50(step)`: `cam * 0xda0` in the `step`
+    /// slot.
+    MsDebugCameraKeep_007c8c50 @ 0x007c_8c50 => extern "C" fn ms_debug_camera_keep(step: u32; slots: u32) -> u32 {
+        mb::ms_debug_camera_keep(&mut mem(), &mut call, slots, step)
+    }
 }

@@ -2711,4 +2711,189 @@ pub mod bridge {
     }
 
     pub const CH_SET_DIR_F: u32 = 0x0082_b1b0;
+
+    pub const MS_CAMERA_RESET_MOVE: u32 = 0x007b_ed60;
+    /// `g_CameraSlots`; the debug camera store: per kept camera a used
+    /// flag word (`0x01139f14`, 3), the kept cameras (3 x 0xda0 from
+    /// `0x01139f20`), the restore-whole flag and the slot flag word.
+    pub const CAMERA_SLOTS: u32 = 0x0113_81a8;
+    pub const CAM_KEPT_FLAGS: u32 = 0x0113_9f14;
+    pub const CAM_KEPT: u32 = 0x0113_9f20;
+    pub const CAM_RESTORE_WHOLE: u32 = 0x0113_9f0c;
+    pub const CAM_SLOT_FLAG: u32 = 0x0113_9f18;
+
+    /// The bytes and floats of one camera side `0x007c8c50` copies or
+    /// clears: offsets from the side's `+0x160` (bytes, floats).
+    const SIDE_BYTES: [u32; 5] = [
+        0u32.wrapping_sub(0x12d),
+        0u32.wrapping_sub(0x6b),
+        0xc5,
+        0x1f5,
+        0x325,
+    ];
+    const SIDE_FLOATS: [u32; 16] = [
+        0, 4, 8, 0xc, 0x130, 0x134, 0x138, 0x13c, 0x260, 0x264, 0x268, 0x26c, 0x390, 0x394, 0x398,
+        0x39c,
+    ];
+
+    /// A kept camera `from` restored into `camera` (whole with
+    /// `CAM_RESTORE_WHOLE`, else its two sides' channel bytes and points
+    /// through the x87); `None` (never stored) clears those.
+    fn restore_kept(mem: &mut impl Mem, camera: u32, from: Option<u32>) {
+        let Some(from) = from else {
+            for side in 0..2u32 {
+                let d = camera + 0x160 + side * 0x61c;
+                for o in SIDE_BYTES {
+                    mem.write(d.wrapping_add(o), 0u8);
+                }
+                for o in SIDE_FLOATS {
+                    mem.write(d.wrapping_add(o), 0u32);
+                }
+            }
+            return;
+        };
+        if r32(mem, CAM_RESTORE_WHOLE) != 0 {
+            for k in 0..0x368 {
+                let w: u32 = mem.read(from.wrapping_add(4 * k));
+                mem.write(camera + 4 * k, w);
+            }
+            return;
+        }
+        for side in 0..2u32 {
+            let s = from.wrapping_add(0x160 + side * 0x61c);
+            let d = camera + 0x160 + side * 0x61c;
+            for o in SIDE_BYTES {
+                let b: u8 = mem.read(s.wrapping_add(o));
+                mem.write(d.wrapping_add(o), b);
+            }
+            for o in SIDE_FLOATS {
+                let v = ffx_bridge::x87::round_trip(f32::from_bits(mem.read(s.wrapping_add(o))));
+                mem.write(d.wrapping_add(o), v.to_bits());
+            }
+        }
+    }
+
+    /// `0x007c8c50(step)` (`MsDebugCameraKeep`, name ours): the debug
+    /// camera's current slot level (unless its slot is off) picks one of
+    /// three kept cameras (0 none, 1 low, 2 with bit 0x10), marked used.
+    /// With `step`: the camera (0xda0 bytes) kept there, then the next
+    /// used kept camera `step` away restored into it (whole, or its two
+    /// sides' channel bytes and points through the x87; a kept camera
+    /// never stored clears them), the camera's moves reset
+    /// (`MsCameraResetMove(slot, 8 | 9)`). Then the camera's four slots'
+    /// off flags and levels follow the kept camera reached (0: off, 1:
+    /// on with the level's low bits, 2: on with level bit 0x10). The
+    /// original keeps `cam * 0xda0` in its `step` argument slot
+    /// (`slots`). Returns the kept camera's index.
+    pub fn ms_debug_camera_keep<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        slots: u32,
+        step: u32,
+    ) -> u32 {
+        let screen = r32(mem, DBG_CAMERA_SCREEN);
+        let cam_at = mem
+            .rebase(DEBUG_CAMERA)
+            .wrapping_add(screen.wrapping_mul(0x1c0));
+        let cam = u32::from(mem.read::<u8>(cam_at));
+        let ch = game(mem, &mut *call, MS_CAMERA_GET_NUM, &[cam]);
+        let slot_base = mem
+            .rebase(CAMERA_SLOTS)
+            .wrapping_add(cam.wrapping_mul(0xda0));
+        let slot_at = slot_base.wrapping_add(ch.wrapping_mul(8));
+        let word: u32 = mem.read(slot_at);
+        if word & 0xf_0000 != 0 {
+            let f = r32(mem, CAM_SLOT_FLAG);
+            w32(mem, CAM_SLOT_FLAG, f | 1);
+        }
+        let v = if mem.read::<u8>(slot_at.wrapping_add(5)) != 0 {
+            0
+        } else {
+            word
+        };
+        let level = (v >> 16) & 0xff;
+        let mut kept = if level == 0 {
+            0
+        } else if level & 0x10 != 0 {
+            2
+        } else {
+            1
+        };
+        let flags = mem.rebase(CAM_KEPT_FLAGS);
+        let flag_at = |k: u32| flags.wrapping_add(k.wrapping_mul(4));
+        let f: u32 = mem.read(flag_at(kept));
+        mem.write(flag_at(kept), f | 1);
+        if step != 0 {
+            mem.write(slots, cam.wrapping_mul(0xda0));
+            let camera = mem.rebase(CAMERAS).wrapping_add(cam.wrapping_mul(0xda0));
+            let kept_base = mem.rebase(CAM_KEPT);
+            let store = |k: u32| kept_base.wrapping_add(k.wrapping_mul(0xda0));
+            let f: u32 = mem.read(flag_at(kept));
+            mem.write(flag_at(kept), f | 2);
+            let to = store(kept);
+            for k in 0..0x368 {
+                let w: u32 = mem.read(camera + 4 * k);
+                mem.write(to.wrapping_add(4 * k), w);
+            }
+            loop {
+                let next = kept.wrapping_add(step).cast_signed();
+                kept = if next < 0 {
+                    2
+                } else if next >= 3 {
+                    0
+                } else {
+                    next.cast_unsigned()
+                };
+                if mem.read::<u8>(flag_at(kept)) & 1 != 0 {
+                    break;
+                }
+            }
+            let stored = mem.read::<u8>(flag_at(kept)) & 2 != 0;
+            restore_kept(mem, camera, stored.then(|| store(kept)));
+            for k in 0..2 {
+                game(mem, &mut *call, MS_CAMERA_RESET_MOVE, &[v, k + 8]);
+            }
+        }
+        match kept {
+            0 => {
+                for k in 0..4 {
+                    mem.write(slot_base + 8 * k + 5, 1u8);
+                }
+            }
+            1 | 2 => {
+                for k in 0..4 {
+                    mem.write(slot_base + 8 * k + 5, 0u8);
+                }
+                for k in 0..4 {
+                    let at = slot_base + 8 * k;
+                    let w: u32 = mem.read(at);
+                    let level = if kept == 1 {
+                        w & 0xf_0000
+                    } else {
+                        (w & 0xef_0000) | 0x10_0000
+                    };
+                    mem.write(at, (w & 0xff00_ffff) | level);
+                }
+            }
+            _ => {}
+        }
+        kept
+    }
+
+    /// `0x007cd170(reader, name, x, y, z)` (`MsReadVec3`, name ours): three
+    /// tokens (into the frame buffer `tok`, 0x100 bytes at the original's
+    /// `ebp - 0x104`) scanned as floats into `x`, `y`, `z`; an empty one
+    /// gives the error lines and error 5 and ends it.
+    pub fn ms_read_vec3<M: Mem>(mem: &mut M, call: Call<'_, M>, tok: u32, args: [u32; 5]) {
+        let [reader, name, x, y, z] = args;
+        for out in [x, y, z] {
+            game(mem, &mut *call, READ_TOKEN, &[reader, tok, 0x100]);
+            if mem.read::<u8>(tok) == 0 {
+                pos_error(mem, call, MSG_POS_VALUE, name, 5);
+                return;
+            }
+            let fmt = mem.rebase(FMT_FLOAT);
+            import(mem, &mut *call, SSCANF_SLOT, &[tok, fmt, out]);
+        }
+    }
 }
