@@ -671,12 +671,13 @@ Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
 - Ruffle needs `ExternalInterface` available (a provider set), or the
   movies' `addCallback` calls do nothing.
 
-The Ruffle fork is the pinned rev plus a 168-line patch
-(`~/ffx-work/m5/ruffle-fork.patch`, outside the repo; built through the
-cargo `[patch]` package `~/ffx-work/m5/ffx-swf-fork`, `ffx-swf` feature
-`ruffle-fork`): three switches, all off by default, `FORCE_BITMAP_SMOOTHING`
-and `GDRAW_MIPMAPS` in `ruffle_render_wgpu`, `DETERMINISTIC_GET_TIMER` in
-`ruffle_core`, and the blur rounding.
+`ffx-swf` depends on the user's Ruffle fork (github.com/yutamago/ruffle,
+branch `ffx`, user decision 2026-10-28): upstream rev `07d3e430` plus one
+commit (`23dc6580`, 168 lines) with three switches, all off by default,
+`FORCE_BITMAP_SMOOTHING` and `GDRAW_MIPMAPS` in `ruffle_render_wgpu`,
+`DETERMINISTIC_GET_TIMER` in `ruffle_core`, and the blur rounding.
+`iggy-replay --mipmaps --force-smooth` turns the first two on (the
+pilot's round 2 page).
 
 ## Left original
 

@@ -165,74 +165,23 @@ pub struct Render {
 }
 
 /// Draws every bitmap smoothed, as Iggy does (the Ruffle fork's
-/// `FORCE_BITMAP_SMOOTHING`, feature `ruffle-fork`).
-///
-/// # Errors
-/// Built against stock Ruffle.
-pub fn force_bitmap_smoothing(on: bool) -> Result<()> {
-    #[cfg(feature = "ruffle-fork")]
-    {
-        ruffle_render_wgpu::FORCE_BITMAP_SMOOTHING.store(on, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-    #[cfg(not(feature = "ruffle-fork"))]
-    {
-        if on {
-            Err(anyhow!(
-                "forced smoothing needs the Ruffle fork (feature ruffle-fork)"
-            ))
-        } else {
-            Ok(())
-        }
-    }
+/// `FORCE_BITMAP_SMOOTHING`).
+pub fn force_bitmap_smoothing(on: bool) {
+    ruffle_render_wgpu::FORCE_BITMAP_SMOOTHING.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Gives every bitmap a full mip chain, sampled trilinear, as Iggy's `GDraw`
-/// does (the Ruffle fork's `GDRAW_MIPMAPS`, feature `ruffle-fork`).
-///
-/// # Errors
-/// Built against stock Ruffle.
-pub fn gdraw_mipmaps(on: bool) -> Result<()> {
-    #[cfg(feature = "ruffle-fork")]
-    {
-        ruffle_render_wgpu::GDRAW_MIPMAPS.store(on, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-    #[cfg(not(feature = "ruffle-fork"))]
-    {
-        if on {
-            Err(anyhow!(
-                "mipmaps need the Ruffle fork (feature ruffle-fork)"
-            ))
-        } else {
-            Ok(())
-        }
-    }
+/// does (the Ruffle fork's `GDRAW_MIPMAPS`).
+pub fn gdraw_mipmaps(on: bool) {
+    ruffle_render_wgpu::GDRAW_MIPMAPS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Makes `getTimer` read the player's own clock (the sum of the tick
 /// times) instead of the wall clock (the Ruffle fork's
-/// `DETERMINISTIC_GET_TIMER`, feature `ruffle-fork`): the replay no longer
-/// depends on how fast it runs.
-///
-/// # Errors
-/// Built against stock Ruffle.
-pub fn deterministic_get_timer(on: bool) -> Result<()> {
-    #[cfg(feature = "ruffle-fork")]
-    {
-        ruffle_core::DETERMINISTIC_GET_TIMER.store(on, std::sync::atomic::Ordering::Relaxed);
-        Ok(())
-    }
-    #[cfg(not(feature = "ruffle-fork"))]
-    {
-        if on {
-            Err(anyhow!(
-                "a deterministic getTimer needs the Ruffle fork (feature ruffle-fork)"
-            ))
-        } else {
-            Ok(())
-        }
-    }
+/// `DETERMINISTIC_GET_TIMER`): the replay no longer depends on how fast it
+/// runs.
+pub fn deterministic_get_timer(on: bool) {
+    ruffle_core::DETERMINISTIC_GET_TIMER.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// One movie in a Ruffle player.

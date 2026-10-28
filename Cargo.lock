@@ -129,7 +129,7 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 [[package]]
 name = "asc"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "anyhow",
 ]
@@ -242,7 +242,7 @@ dependencies = [
 [[package]]
 name = "build_playerglobal"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "asc",
  "clap",
@@ -251,7 +251,7 @@ dependencies = [
  "quote",
  "rascal",
  "regex",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "walkdir",
 ]
 
@@ -1465,7 +1465,7 @@ dependencies = [
 [[package]]
 name = "flv-rs"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "bitflags",
  "thiserror",
@@ -2346,7 +2346,7 @@ dependencies = [
 [[package]]
 name = "naga-agal"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "bitflags",
  "naga",
@@ -2357,7 +2357,7 @@ dependencies = [
 [[package]]
 name = "naga-pixelbender"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "anyhow",
  "naga",
@@ -2638,7 +2638,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pixel_bender"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "byteorder",
  "num-derive",
@@ -2947,7 +2947,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "ruffle_common"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "fnv",
  "gc-arena",
@@ -2956,7 +2956,7 @@ dependencies = [
  "regress",
  "ruffle_macros",
  "ruffle_wstr",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "thiserror",
  "tracing",
  "url",
@@ -2965,7 +2965,7 @@ dependencies = [
 [[package]]
 name = "ruffle_core"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "async-channel",
  "bitflags",
@@ -3010,7 +3010,7 @@ dependencies = [
  "serde_json",
  "slotmap",
  "smallvec",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "thiserror",
  "tracing",
  "ttf-parser",
@@ -3023,7 +3023,7 @@ dependencies = [
 [[package]]
 name = "ruffle_macros"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3033,7 +3033,7 @@ dependencies = [
 [[package]]
 name = "ruffle_render"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "byteorder",
  "enum-map",
@@ -3053,7 +3053,7 @@ dependencies = [
  "png",
  "ruffle_wstr",
  "smallvec",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "thiserror",
  "tracing",
  "wgpu",
@@ -3062,7 +3062,7 @@ dependencies = [
 [[package]]
 name = "ruffle_render_wgpu"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "bytemuck",
  "enum-map",
@@ -3076,7 +3076,7 @@ dependencies = [
  "naga-pixelbender",
  "ruffle_render",
  "smallvec",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "tracing",
  "web-sys",
  "wgpu",
@@ -3086,18 +3086,18 @@ dependencies = [
 [[package]]
 name = "ruffle_video"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "ruffle_render",
  "slotmap",
- "swf 0.3.0 (git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5)",
+ "swf 0.3.0 (git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc)",
  "thiserror",
 ]
 
 [[package]]
 name = "ruffle_wstr"
 version = "0.7.1"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 
 [[package]]
 name = "rustc-hash"
@@ -3365,7 +3365,7 @@ dependencies = [
 [[package]]
 name = "swf"
 version = "0.3.0"
-source = "git+https://github.com/ruffle-rs/ruffle?rev=07d3e430631333f80f754df01a968bdcd80d98c5#07d3e430631333f80f754df01a968bdcd80d98c5"
+source = "git+https://github.com/yutamago/ruffle?rev=23dc65800b90050f059cda78b2d6b64dd79976fc#23dc65800b90050f059cda78b2d6b64dd79976fc"
 dependencies = [
  "bitflags",
  "bitstream-io",

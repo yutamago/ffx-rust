@@ -167,6 +167,12 @@ def shared_scratch(path, text):
     for m in STATIC.finditer(text):
         if any(a <= m.start() < b for a, b in spans):
             continue
+        # A table filled once before the game runs and only read after (the
+        # vtables of objects Rust hands the game) is shared on purpose; the
+        # line says so with this marker.
+        line_end = text.find("\n", m.start(1))
+        if "check-ported: read-only table" in text[m.start(1) : line_end if line_end >= 0 else None]:
+            continue
         name = re.escape(m.group(1))
         took = re.search(rf"\b{name}\s*\.\s*(?:as_ptr|as_mut_ptr|get)\s*\(|addr_of(?:_mut)?!\s*\(\s*{name}\b|&raw\s+(?:const|mut)\s+{name}\b", text)
         if took:

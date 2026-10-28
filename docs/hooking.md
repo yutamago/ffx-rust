@@ -219,6 +219,9 @@ no Rust state shared between threads without the original's locking.
   rejects one. A shared `Ch_CalcElement` frame garbled every battle model
   (2026-10-17): two job threads overwrote each other's skeleton matrices
   before their upload. The oracle cannot see this: it is single-threaded.
+  The one exception is a table filled once before the game runs and only
+  read after, such as the vtable of an object Rust hands the game
+  (`rust_audio.rs`); its line carries `// check-ported: read-only table`.
 - The hosts' `callee_scratch()` / `scratch()` (`ffx-bridge`, `ffx-graphic`,
   `ffx-script`) are per thread, so a bridge must not hold one across a call
   that can re-enter another port on the same thread.

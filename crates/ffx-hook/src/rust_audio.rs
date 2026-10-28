@@ -225,8 +225,8 @@ struct Object {
     project: u32,
 }
 
-static mut PROJECT_VT: [usize; 14] = [0; 14];
-static mut GROUP_VT: [usize; 18] = [0; 18];
+static mut PROJECT_VT: [usize; 14] = [0; 14]; // check-ported: read-only table (filled at install)
+static mut GROUP_VT: [usize; 18] = [0; 18]; // check-ported: read-only table (filled at install)
 
 fn object(vtable: *const usize, project: u32) -> u32 {
     let o = Box::leak(Box::new(Object { vtable, project }));

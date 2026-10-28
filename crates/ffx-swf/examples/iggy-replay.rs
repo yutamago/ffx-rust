@@ -67,11 +67,11 @@ fn main() -> Result<()> {
             "--vbf" => vbf = args.next().map(PathBuf::from),
             "--no-pace" => pace = false,
             "--smooth" => smooth = true,
-            "--force-smooth" => ffx_swf::stage::force_bitmap_smoothing(true)?,
+            "--force-smooth" => ffx_swf::stage::force_bitmap_smoothing(true),
             "--no-font" => no_font = true,
-            "--mipmaps" => ffx_swf::stage::gdraw_mipmaps(true)?,
+            "--mipmaps" => ffx_swf::stage::gdraw_mipmaps(true),
             "--virtual-clock" => {
-                ffx_swf::stage::deterministic_get_timer(true)?;
+                ffx_swf::stage::deterministic_get_timer(true);
                 pace = false;
             }
             "--quality" => render.quality = args.next(),
