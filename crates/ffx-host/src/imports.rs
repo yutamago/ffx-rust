@@ -783,6 +783,209 @@ fn time64(e: &mut Exec, args: &Args) -> Ret {
     Ret::u64(t)
 }
 
+/// `wcstombs(dst, src, n)` / `mbstowcs(dst, src, n)` in the "C" locale
+/// (code units below 0x100 map to themselves); returns the count without
+/// the NUL, or `-1` for a unit the locale can't convert.
+fn convert(e: &mut Exec, args: &Args, to_wide: bool) -> Ret {
+    let mut mem = e.mem();
+    let (dst, src, n) = (a(args, 0), a(args, 1), a(args, 2));
+    let s = read_str(&mem, src, !to_wide);
+    if !to_wide && s.chars().any(|c| u32::from(c) > 0xff) {
+        return Ret::eax(u32::MAX);
+    }
+    let len = u32::try_from(s.chars().count()).unwrap_or(u32::MAX);
+    if dst == 0 {
+        return Ret::eax(len);
+    }
+    let k = len.min(n);
+    for (i, c) in (0..k).zip(s.chars()) {
+        if to_wide {
+            #[allow(clippy::cast_possible_truncation)] // below 0x100
+            mem.write(dst + 2 * i, u32::from(c) as u16);
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // checked above
+            mem.write(dst + i, u32::from(c) as u8);
+        }
+    }
+    if k < n {
+        if to_wide {
+            mem.write(dst + 2 * k, 0u16);
+        } else {
+            mem.write(dst + k, 0u8);
+        }
+    }
+    Ret::eax(k)
+}
+
+fn wcstombs(e: &mut Exec, args: &Args) -> Ret {
+    convert(e, args, false)
+}
+
+fn mbstowcs(e: &mut Exec, args: &Args) -> Ret {
+    convert(e, args, true)
+}
+
+/// MSVC's `printf` formatting of `fmt` with the variable arguments from
+/// stack word `first` on (`%d %i %u %x %X %o %c %s %S %p %f %e %g %%`,
+/// flags, width, precision, `h`/`l`/`ll`/`I64`).
+#[allow(clippy::too_many_lines)] // one formatter, conversion by conversion
+fn format(mem: &impl Mem, fmt: &str, args: &Args, first: u32) -> String {
+    let mut out = String::new();
+    let mut next = args.slots + 4 * first;
+    let mut word = || {
+        let w: u32 = mem.read(next);
+        next += 4;
+        w
+    };
+    let mut it = fmt.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        let mut flags = String::new();
+        while let Some(&f) = it.peek().filter(|f| "-+ #0".contains(**f)) {
+            flags.push(f);
+            it.next();
+        }
+        let mut width = String::new();
+        while let Some(&d) = it.peek().filter(|d| d.is_ascii_digit() || **d == '*') {
+            if d == '*' {
+                width = word().cast_signed().to_string();
+            } else {
+                width.push(d);
+            }
+            it.next();
+        }
+        let mut precision: Option<usize> = None;
+        if it.peek() == Some(&'.') {
+            it.next();
+            let mut p = String::new();
+            while let Some(&d) = it.peek().filter(|d| d.is_ascii_digit()) {
+                p.push(d);
+                it.next();
+            }
+            precision = Some(p.parse().unwrap_or(0));
+        }
+        let mut long = false;
+        while let Some(&m) = it.peek().filter(|m| "hlI6432".contains(**m)) {
+            if m == '4' || m == '6' {
+                long = true;
+            }
+            if m == 'l' && it.clone().nth(1) == Some('l') {
+                long = true;
+            }
+            it.next();
+        }
+        let Some(conv) = it.next() else { break };
+        let body = match conv {
+            'd' | 'i' => {
+                if long {
+                    let lo = word();
+                    let hi = word();
+                    ((u64::from(hi) << 32 | u64::from(lo)).cast_signed()).to_string()
+                } else {
+                    word().cast_signed().to_string()
+                }
+            }
+            'u' | 'x' | 'X' | 'o' => {
+                let v = if long {
+                    let lo = word();
+                    u64::from(word()) << 32 | u64::from(lo)
+                } else {
+                    u64::from(word())
+                };
+                match conv {
+                    'u' => v.to_string(),
+                    'x' => format!("{v:x}"),
+                    'X' => format!("{v:X}"),
+                    _ => format!("{v:o}"),
+                }
+            }
+            'p' => format!("{:08X}", word()),
+            'c' => char::from_u32(word() & 0xff)
+                .map(String::from)
+                .unwrap_or_default(),
+            's' | 'S' => {
+                let p = word();
+                let s = if p == 0 {
+                    "(null)".to_string()
+                } else {
+                    read_str(mem, p, conv == 'S')
+                };
+                match precision {
+                    Some(n) => s.chars().take(n).collect(),
+                    None => s,
+                }
+            }
+            'f' | 'e' | 'g' | 'F' | 'E' | 'G' => {
+                let lo = word();
+                let v = f64::from_bits(u64::from(word()) << 32 | u64::from(lo));
+                let p = precision.unwrap_or(6);
+                match conv {
+                    'e' | 'E' => format!("{v:.p$e}"),
+                    'g' | 'G' => format!("{v}"),
+                    _ => format!("{v:.p$}"),
+                }
+            }
+            '%' => "%".to_string(),
+            other => format!("%{other}"),
+        };
+        let w: usize = width.trim_start_matches('-').parse().unwrap_or(0);
+        let pad = w.saturating_sub(body.chars().count());
+        if flags.contains('-') || width.starts_with('-') {
+            out.push_str(&body);
+            out.extend(std::iter::repeat_n(' ', pad));
+        } else if flags.contains('0') && conv != 's' {
+            let (sign, digits) = body
+                .strip_prefix('-')
+                .map_or(("", body.as_str()), |d| ("-", d));
+            out.push_str(sign);
+            out.extend(std::iter::repeat_n('0', pad));
+            out.push_str(digits);
+        } else {
+            out.extend(std::iter::repeat_n(' ', pad));
+            out.push_str(&body);
+        }
+    }
+    out
+}
+
+/// `sprintf(buf, fmt, ...)`.
+fn sprintf(e: &mut Exec, args: &Args) -> Ret {
+    let mut mem = e.mem();
+    let fmt = read_str(&mem, a(args, 1), false);
+    let s = format(&mem, &fmt, args, 2);
+    let n = write_str(&mut mem, a(args, 0), u32::MAX, &s, false);
+    Ret::eax(n)
+}
+
+/// `sprintf_s(buf, size, fmt, ...)` / `_snprintf(buf, size, fmt, ...)`
+/// (the cut differs: `_snprintf` doesn't terminate a full buffer, which
+/// this doesn't model yet).
+fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
+    let mut mem = e.mem();
+    let fmt = read_str(&mem, a(args, 2), false);
+    let s = format(&mem, &fmt, args, 3);
+    let n = write_str(&mut mem, a(args, 0), a(args, 1), &s, false);
+    Ret::eax(n)
+}
+
+/// `_wfopen` / `fopen`: no stdio files yet (NULL, as for a missing file).
+fn fopen_missing(e: &mut Exec, args: &Args, wide: bool) -> Ret {
+    let name = read_str(&e.mem(), a(args, 0), wide);
+    e.files.log.push((format!("fopen {name}"), false));
+    Ret::eax(0)
+}
+
+fn wfopen(e: &mut Exec, args: &Args) -> Ret {
+    fopen_missing(e, args, true)
+}
+
+fn fopen(e: &mut Exec, args: &Args) -> Ret {
+    fopen_missing(e, args, false)
+}
+
 /// `InterlockedCompareExchange(&v, new, cmp)`.
 fn interlocked_cmpxchg(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
@@ -1021,6 +1224,13 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         zero,
     ),
     (CRT, "_time64", Conv::Cdecl, 1, time64),
+    (CRT, "wcstombs", Conv::Cdecl, 3, wcstombs),
+    (CRT, "mbstowcs", Conv::Cdecl, 3, mbstowcs),
+    (CRT, "sprintf", Conv::Cdecl, 2, sprintf),
+    (CRT, "sprintf_s", Conv::Cdecl, 3, sprintf_s),
+    (CRT, "_snprintf", Conv::Cdecl, 3, sprintf_s),
+    (CRT, "_wfopen", Conv::Cdecl, 2, wfopen),
+    (CRT, "fopen", Conv::Cdecl, 2, fopen),
     (
         "SHELL32.dll",
         "SHGetFolderPathW",

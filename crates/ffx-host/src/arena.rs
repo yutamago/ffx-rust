@@ -122,24 +122,32 @@ impl Arena {
         Ok(())
     }
 
-    /// Maps `size` bytes in the first free gap at or above `from`.
+    /// Maps `size` bytes in the first free gap at or above `from`, 64 KB
+    /// aligned (Windows' allocation granularity). On i686 an address the
+    /// process already uses (a DLL, the host heap) is skipped.
     ///
     /// # Errors
     /// When no gap is large enough.
     pub fn map_anywhere(&self, from: u32, size: u32, name: &str) -> Result<u32> {
+        const GRANULE: u64 = 0x1_0000;
         let size = size.next_multiple_of(PAGE);
-        let mut at = u64::from(from.next_multiple_of(PAGE));
-        for r in self.regions() {
-            if u64::from(r.start) >= at + u64::from(size) {
-                break;
+        let mut at = u64::from(from).next_multiple_of(GRANULE);
+        while at + u64::from(size) <= 1 << 32 {
+            for r in self.regions() {
+                if u64::from(r.start) >= at + u64::from(size) {
+                    break;
+                }
+                if r.end() > at {
+                    at = r.end().next_multiple_of(GRANULE);
+                }
             }
-            if r.end() > at {
-                at = r.end();
+            let Ok(start) = u32::try_from(at) else { break };
+            match self.map(start, size, name) {
+                Ok(()) => return Ok(start),
+                Err(_) => at += GRANULE,
             }
         }
-        let start = u32::try_from(at).map_err(|_| Error::Map(from, size, "arena full".into()))?;
-        self.map(start, size, name)?;
-        Ok(start)
+        Err(Error::Map(from, size, "arena full".into()))
     }
 
     /// Whether `addr..addr + len` lies in mapped regions.

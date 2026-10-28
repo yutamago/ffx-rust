@@ -156,8 +156,8 @@ stops the emulator, and the executor's loop decides.
   says where (`Stop::Failed(why, eip)`, the caller of an unstubbed import).
 - **x87.** The control word starts at `0x027f` (53-bit), as Windows starts
   threads. The oracle's exact transcendental instructions (`ffx-oracle`'s
-  `x87`) are not wired in yet: they matter once MSVCR110's math runs
-  emulated, which it won't (its imports are Rust).
+  `x87`) are not wired in yet: they matter if MSVCR110's math runs
+  emulated (below, "What blocks the next step").
 
 ## Imports
 
@@ -240,20 +240,55 @@ through the harness's background mode. This round did not launch it.
   initialiser and `WinMain`'s start run under the executor and the run
   ends at a missing import, not at an executor fault.
 
+## Building for Windows
+
+`tools/build-host.sh` (`build`, or `clippy` with cargo's arguments after
+it) builds `ffx-rust.exe` for i686 through cargo xwin, like the hook.
+Unicorn's C build needs cmake, ninja and `llvm-lib`, and cargo-xwin's
+cmake toolchain file sets `CMAKE_MSVC_RUNTIME_LIBRARY`, which unicorn's
+`CMakeLists.txt` refuses next to the `-MT` that `cc` passes. The script
+supplies cmake and ninja through `uvx` when they are missing, links the
+versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc`
+at a copy of the toolchain file without that line (all under
+`target/host-shims`). `build.rs` links the program at `/BASE:0x70000000`
+with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
+use the upper 2 GB.
+
 ## Status (2026-10-28)
 
-`ffx-rust --cover` on the player's `FFX.exe` (Linux, debug build):
+`ffx-rust` on the player's `FFX.exe` (Linux, release build):
 
 - the CRT start-up, 454 static initialisers (each registers its
-  destructor with `_onexit`) and `WinMain` (`Game_Main`) up to its first
-  `std::ofstream` run: 139 functions in Unicorn (5,656 basic blocks),
-  1,006 calls from Rust into Unicorn, 3,285 emulator starts, 0.48 s
-  emulated, 0.4 s wall;
-- one thread asked for and not run (`0x00948c30`, the user heap's);
-- strict mode stops at the first unstubbed import,
-  `__crtSetUnhandledExceptionFilter`... now stubbed;
-  the wall is `MSVCP110.dll!std::basic_ios<char>::basic_ios()` called from
-  `0x00403772` (an output stream `Game_Main` builds); with `--lenient`
-  `wcstombs`, `sprintf`, `mbstowcs` and `_wfopen` come first;
-- ports entered: none on this path yet (the hand-registered two aren't
-  reached; the `ported!` lists aren't in the table yet).
+  destructor with `_onexit`) and `Game_Main` (`WinMain`) run until
+  `Game_Main` reads `GameSetting.ini` (`fopen`, not found in the sandboxed
+  documents folder) and builds its first C++ stream: 139 functions in
+  Unicorn (5,657 basic blocks), 0 in Rust (no port on this path: the two
+  hand-registered ones aren't reached and the `ported!` lists aren't in
+  the table yet);
+- 889,693 instructions emulated, 1,006 calls from Rust into Unicorn
+  (`_initterm` and `_initterm_e`'s initialisers), 3,287 emulator starts
+  (every import and port call stops and resumes the emulator);
+  0.42 to 0.68 s emulated, 0.45 to 0.7 s wall, so 1.3 to 2.1 million
+  instructions a second on start-up code, which runs once and is
+  dominated by Unicorn's translation of each new block;
+- one `CreateThread` recorded, not run (`0x00948c30`, parameter
+  `0x00947e30`);
+- 139 of the 536 imports have a Rust side; the first unstubbed one is
+  `MSVCP110.dll!std::basic_ios<char>::basic_ios()` from `0x00403772`.
+
+### What blocks the next step
+
+1. **MSVCP110.** The game's iostreams, locale and strings are MSVCP110
+   classes whose members the inlined templates in `FFX.exe` touch
+   directly, so the Rust side must keep MSVCP110's object layouts.
+   Quickest way on: run the player's `MSVCP110.dll` and `MSVCR110.dll`
+   in Unicorn too, development only like `FFX.exe`'s own code (mapped into
+   the arena, relocated, their `KERNEL32` imports bound to the same stubs;
+   `ffx-oracle` already loads MSVCR110 this way), then replace their
+   functions with Rust as stage 1 reaches them.
+2. **The `ported!` lists in the table** (above, "One source of truth"):
+   the call router in `ffx-bridge`, then the host-side `ported!`.
+3. **Windows.** The forwarding imports (window, input, files, D3D11 COM
+   handles), `ffx-rust.exe` started by the harness in background mode, and
+   the threads.
+

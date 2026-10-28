@@ -100,6 +100,17 @@ pub enum Stop {
     Failed(String, u32),
 }
 
+impl std::fmt::Display for Stop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Returned => write!(f, "returned"),
+            Self::Milestone(m) => write!(f, "milestone: {m}"),
+            Self::Budget(eip) => write!(f, "time budget used up at {eip:#010x}"),
+            Self::Failed(why, eip) => write!(f, "{why} (eip {eip:#010x})"),
+        }
+    }
+}
+
 /// The executor.
 pub struct Exec {
     uc: Unicorn<'static, State>,

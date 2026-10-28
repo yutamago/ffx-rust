@@ -57,7 +57,7 @@ fn boots_through_the_crt_into_win_main() {
     let syms = ffx_host::report::Symbols::read(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../symbols/ffx.sym"),
     );
-    let report = ffx_host::report::text(&exec, &syms, &format!("{stop:?}"));
+    let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");
     // the static initialisers ran (each registers its destructor)
     assert!(exec.stats.imports["MSVCR110.dll!_onexit"] > 400, "{report}");

@@ -71,7 +71,7 @@ fn main() -> ExitCode {
         eprintln!("count: {e}");
     }
     let outcome = match exec.run_entry() {
-        Ok(stop) => format!("{stop:?}"),
+        Ok(stop) => format!("{stop}"),
         Err(e) => format!("error: {e}"),
     };
     let syms = ffx_host::report::Symbols::read(&sym);
