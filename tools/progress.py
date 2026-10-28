@@ -201,9 +201,16 @@ def functions():
     """The dump's functions with corrected sizes: Ghidra gives some
     functions (most of them Atel natives) a one-byte body although the code
     runs on to a `ret` 5-45 bytes later; symbols/sizes.tsv holds the length
-    measured in FFX.exe for those."""
+    measured in FFX.exe for those. It also holds the functions of
+    symbols/ffx.sym the dump has no start for (Ghidra left them as labels
+    or never decoded them: most are Atel natives reached only through
+    g_NativeTables), measured the same way; they are added here with an
+    empty Ghidra name."""
     fix = size_fixes()
-    return [(a, n, fix.get(a, s)) for a, n, s in dump_functions()]
+    rows = [(a, n, fix.get(a, s)) for a, n, s in dump_functions()]
+    have = {a for a, _, _ in rows}
+    rows += [(a, "", s) for a, s in fix.items() if a not in have]
+    return sorted(rows)
 
 
 # a body the dump sizes under this many bytes is measured (a hook needs 5)
@@ -239,7 +246,8 @@ def measure(code, a, limit):
 
 def measure_sizes(exe):
     """Rows of symbols/sizes.tsv: every function the dump sizes under five
-    bytes, measured in `exe`, where the measured length differs."""
+    bytes, measured in `exe`, where the measured length differs, and every
+    symbols/ffx.sym function the dump has no start for (dump size 0)."""
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import disasm_cache
     rows = sorted(dump_functions())
@@ -251,6 +259,19 @@ def measure_sizes(exe):
         if s < MEASURE_BELOW:
             limit = min(starts[i + 1] if i + 1 < len(rows) else a + 0x1000, a + 0x1000)
             todo.append((a, name, s, limit))
+    # ffx.sym functions without a dump start, outside every dump body:
+    # measured to the next start of either (dump size 0)
+    have = set(starts)
+    sym = symbols()
+    named = sorted(a for a in sym if a not in have)
+    every = sorted(have | set(named))
+    for a in named:
+        i = bisect.bisect_right(starts, a) - 1
+        if i >= 0 and starts[i] + rows[i][2] > a:
+            continue
+        j = bisect.bisect_right(every, a)
+        limit = min(every[j] if j < len(every) else a + 0x1000, a + 0x1000)
+        todo.append((a, sym[a], 0, limit))
     cache.prefetch([(a, limit - a) for a, _, _, limit in todo])
     out, unsure = [], []
     for a, name, s, limit in todo:
@@ -333,9 +354,19 @@ def main():
     if args.measure_sizes:
         exe = pathlib.Path(os.environ.get("FFX_GAME_DIR", "~/steam-games/FFX-X2-HD")).expanduser() / "FFX.exe"
         fixed, unsure = measure_sizes(exe)
+        # rows measured by hand (a dump body that runs into the next
+        # function, 0x00432820) stay
+        done = {a for a, _, _, _ in fixed} | {a for a, _, _ in unsure}
+        dump = {a: s for a, _, s in dump_functions()}
+        for line in (WORKTREE.read(SIZES) or "").splitlines():
+            p = line.split("\t")
+            if line and not line.startswith("#") and int(p[0], 16) not in done and dump.get(int(p[0], 16), 0) >= MEASURE_BELOW:
+                fixed.append((int(p[0], 16), int(p[1]), int(p[2]), p[3] if len(p) > 3 else ""))
+        fixed.sort()
         with open(REPO / SIZES, "w", encoding="utf-8") as f:
             f.write("# address\tsize\tdump size\tGhidra name (tools/progress.py --measure-sizes: functions the "
-                    "dump sizes under five bytes, measured in FFX.exe to the last ret/jmp)\n")
+                    "dump sizes under five bytes or lacks (dump size 0), measured in FFX.exe to the last "
+                    "ret/jmp)\n")
             for a, n, s, name in fixed:
                 f.write(f"0x{a:08x}\t{n}\t{s}\t{name}\n")
         print(f"{len(fixed)} sizes corrected; {len(unsure)} left as the dump has them (no clear end):",

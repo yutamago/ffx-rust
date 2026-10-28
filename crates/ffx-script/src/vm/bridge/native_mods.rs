@@ -3924,7 +3924,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x0091_af30 => Int(native_8069),
         0x0090_7e60 => Int(native_9000),
         0x00a4_45f0 => Int(native_d000),
-        _ => return None,
+        _ => return super::native_m5::find(sym),
     })
 }
 

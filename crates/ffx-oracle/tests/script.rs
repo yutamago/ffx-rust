@@ -18062,3 +18062,1098 @@ fn pc8a_event_frame_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     pc8a_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+// ---- M5 stage 1, list `script`: the Rust natives hooked at last ----
+
+/// One native of the M5 `script` list: its address, the globals its body
+/// reads or writes itself (address, bytes) and its direct callees
+/// (`call`/`jmp` targets), from its machine code. The natives ran in Rust
+/// through `Script_Run`'s dispatch already ([`natives_match`]); M5 hooks
+/// them at their own address too (the dump had no start for most of them;
+/// `symbols/sizes.tsv` measures them).
+type M5Native = (u32, &'static [(u32, u8)], &'static [u32]);
+
+/// Natives whose original leaves `EAX` as the caller had it (the empty
+/// `dbgPrintf` before a bare `ret`): their shims return nothing, so the
+/// thunk keeps the caller's `EAX` as the original does; the test compares
+/// memory only.
+const M5_KEEPS_EAX: [u32; 1] = [0x0076_eb00];
+
+/// Callees the Rust version doesn't call through the host: a stub there
+/// changes the original only, so they are never stubbed. `Native_MsgSelect_Poll`
+/// and `_Result`, the tail-jump targets of `0x013c`'s poll and result,
+/// which `find` maps to their Rust versions directly; `Atel_UcResume`,
+/// which `0x015b`'s result runs in Rust (`helpers::atel_uc_resume`);
+/// the stack pops, `AtelGetBattleIdAdrs2` and the empty `dbgPrintf`,
+/// which the Rust natives compute or leave out.
+const M5_NO_STUB: [u32; 7] = [
+    0x0085_9c50,
+    0x0085_a6f0,
+    0x0086_a130,
+    0x0086_df00,
+    0x0086_de50,
+    0x0086_a990,
+    0x0062_f500,
+];
+
+/// Natives that need the battle's character table (`MsGetChr`'s base
+/// `0x011334d4`, null outside a battle: the original faults there): on a
+/// snapshot without a battle they may never complete; battle.snap runs
+/// them.
+const M5_BATTLE_ONLY: [u32; 1] = [0x007a_3500];
+
+/// Whether `pages` holds a battle (`MsGetChr`'s table is set).
+fn battle_state(exe: &std::path::Path, pages: Option<&std::sync::Arc<Pages>>) -> bool {
+    pages.is_some_and(|p| {
+        let o = Oracle::from_snapshot(exe, p).unwrap();
+        Mem::read::<u32>(&o, o.rebase(0x0113_34d4)) != 0
+    })
+}
+
+/// The pairs for the M5 native cases: the image alone, or the snapshot's
+/// first ctrl work in use made current.
+struct M5Env<'a> {
+    exe: &'a std::path::Path,
+    pages: Option<std::sync::Arc<Pages>>,
+    /// `(worker, args, stack)`, from [`M5Env::lookup`] once: a case that
+    /// sets the current ctrl work's pointer would break the lookup.
+    args: [u32; 3],
+}
+
+impl M5Env<'_> {
+    fn pair(&self) -> (Oracle, Oracle) {
+        match &self.pages {
+            Some(pages) => {
+                let c = in_use(&Oracle::from_snapshot(self.exe, pages).unwrap())[0];
+                let (mut a, mut b) = fresh_run_pair(pages, self.exe, c);
+                // the args scratch a native's start leaves for its poll and
+                // result (`0x013c`'s poll reads its window there): window /
+                // slot 0 (once the args are known)
+                if self.args[1] != 0 {
+                    for k in 0..8 {
+                        poke(&mut a, &mut b, self.args[1] + 4 * k, 0u32);
+                    }
+                }
+                (a, b)
+            }
+            None => (
+                Oracle::load(self.exe).unwrap(),
+                Oracle::load(self.exe).unwrap(),
+            ),
+        }
+    }
+
+    /// `(worker, args, stack)` as the dispatch passes them: worker 0 of the
+    /// current ctrl work on a snapshot, zeros on the image (no ctrl work).
+    fn lookup(&self, b: &mut Oracle) -> [u32; 3] {
+        if self.pages.is_none() {
+            return [0; 3];
+        }
+        let w = v::atel_get_basic_work(b, 0);
+        let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+        [
+            w,
+            v::script_worker_level(b, w, lvl) + 0x2c,
+            w + worker::STACK,
+        ]
+    }
+}
+
+/// Native `sym` on both sides of `pair`: `EAX` (or `ST0`) and memory
+/// compared. Returns false when the original cannot finish (a stubbed
+/// pointer it dereferences, an image without the state); the pair is then
+/// started again.
+fn m5_native_case(env: &M5Env, pair: &mut (Oracle, Oracle), sym: u32, what: &str) -> bool {
+    // six integer arguments for the natives that pop (0: the window, actor
+    // or slot every native accepts)
+    m5_native_case_with(env, pair, sym, &[0; 6], what)
+}
+
+/// [`m5_native_case`] with the integers `push` pushed on the worker's
+/// stack (on a snapshot), the last one on top.
+fn m5_native_case_with(
+    env: &M5Env,
+    pair: &mut (Oracle, Oracle),
+    sym: u32,
+    push: &[u32],
+    what: &str,
+) -> bool {
+    use ffx_script::vm::bridge::native::{self, Native};
+    let (a, b) = (&mut pair.0, &mut pair.1);
+    let args = env.args;
+    if env.pages.is_some() {
+        poke(a, b, args[2], 0i32);
+        for &x in push {
+            push_both(a, b, args[2], stack::INT, x);
+        }
+    }
+    clear_stacks(a, b);
+    let ra = match a.call(a.rebase(sym), Conv::Cdecl, &args) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{what}: the original stops: {e}");
+            *pair = env.pair();
+            return false;
+        }
+    };
+    match native::find::<Run>(sym) {
+        Some(Native::Int(f)) => {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original returns {:?} in ST0",
+                ra.st0
+            );
+            let rb = f(&mut Run(b), args[0], args[1], args[2]);
+            if !M5_KEEPS_EAX.contains(&sym) {
+                assert_eq!(ra.eax, rb, "{what}: EAX");
+            }
+        }
+        Some(Native::Float(f)) => {
+            let raw = ra
+                .st0_raw
+                .unwrap_or_else(|| panic!("{what}: the original leaves no ST0"));
+            orig(a, FTOL2, &[]);
+            let rb = f(&mut Run(b), args[0], args[1], args[2]);
+            let x = ffx_oracle::f80_to_f64(&raw);
+            assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
+        }
+        None => panic!("{what}: not in find"),
+    }
+    native_no_diff(a, b, what);
+    true
+}
+
+/// Every native of `table` against the original: as the state has it,
+/// with each global it touches set to the edge values of its width (the
+/// branches the snapshots don't reach: most of these natives never ran in
+/// a coverage run), and with each callee stubbed to the results its
+/// branches test (0 to 7, -1: `0x00dd`'s jump table has 7 cases; float natives' callees are left
+/// alone, a stub has no `ST0`). On the image alone without `FFX_SNAPSHOT`,
+/// on the snapshot with it; on a snapshot every native must complete.
+fn m5_natives_match(table: &[M5Native]) {
+    use ffx_script::vm::bridge::native::{self, Native};
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut env = M5Env {
+        exe: &exe,
+        pages: std::env::var_os("FFX_SNAPSHOT").map(|s| Pages::read(PathBuf::from(s)).unwrap()),
+        args: [0; 3],
+    };
+    env.args = env.lookup(&mut env.pair().1);
+    let place = if env.pages.is_some() {
+        "snapshot"
+    } else {
+        "image"
+    };
+    let mut never = Vec::new();
+    for &(sym, globals, callees) in table {
+        let float = matches!(native::find::<Run>(sym), Some(Native::Float(_)));
+        let mut done = 0;
+        let mut pair = env.pair();
+        let what = format!("{sym:#x} {place}");
+        done += usize::from(m5_native_case(&env, &mut pair, sym, &what));
+        for &(g, width) in globals {
+            let at = pair.0.rebase(g);
+            let values: &[u32] = match width {
+                1 => &[0, 1, 2, 0x7f, 0x80, 0xff],
+                2 => &[0, 1, 0x8000, 0xffff],
+                _ => &[0, 1, 5, 0x8000_0000, 0xffff_ffff],
+            };
+            for &x in values {
+                let was = Mem::read::<u32>(&pair.0, at);
+                match width {
+                    1 => poke(&mut pair.0, &mut pair.1, at, x.to_le_bytes()[0]),
+                    2 => poke(&mut pair.0, &mut pair.1, at, u16::try_from(x).unwrap()),
+                    _ => poke(&mut pair.0, &mut pair.1, at, x),
+                }
+                let what = format!("{sym:#x} {place} with [{g:#x}] = {x:#x}");
+                done += usize::from(m5_native_case(&env, &mut pair, sym, &what));
+                poke(&mut pair.0, &mut pair.1, at, was);
+            }
+        }
+        if !float {
+            for &c in callees.iter().filter(|c| !M5_NO_STUB.contains(c)) {
+                for x in [0u32, 1, 2, 3, 4, 5, 6, 7, 0xffff_ffff] {
+                    let mut pair = env.pair();
+                    for o in [&mut pair.0, &mut pair.1] {
+                        let at = o.rebase(c);
+                        o.stub_return(at, x).unwrap();
+                    }
+                    let what = format!("{sym:#x} {place} with {c:#x} -> {x:#x}");
+                    done += usize::from(m5_native_case(&env, &mut pair, sym, &what));
+                }
+            }
+        }
+        if done == 0 {
+            never.push(format!("{sym:#x}"));
+        }
+    }
+    eprintln!(
+        "{place}: {} natives; never completed: {}",
+        table.len(),
+        never.join(" ")
+    );
+    never.retain(|s| {
+        !M5_BATTLE_ONLY
+            .iter()
+            .any(|b| format!("{b:#x}") == *s && !battle_state(&exe, env.pages.as_ref()))
+    });
+    assert!(
+        env.pages.is_none() || never.is_empty(),
+        "never completed on the snapshot: {never:?}"
+    );
+}
+
+/// Batch 1 of the M5 `script` list: the movie natives (`0xb000`-`0xb00f`)
+/// and the battle group's getters and setters (`0x7002`-`0x7114`).
+const M5_NATIVES_1: [M5Native; 60] = [
+    (0x0076_e980, &[], &[]),
+    (
+        0x0076_e9c0,
+        &[(0x00c4_0e2c, 4), (0x0112_a008, 4)],
+        &[0x0064_1cf0, 0x0064_1ce0, 0x0063_df30],
+    ),
+    (0x0076_ea40, &[], &[0x0064_10d0]),
+    (0x0076_ea50, &[], &[0x0064_37f0]),
+    (
+        0x0076_ea60,
+        &[(0x00c4_0e28, 4), (0x00c4_0e2c, 4), (0x0112_a008, 4)],
+        &[0x0076_efc0, 0x007c_06d0, 0x0082_1a20, 0x006f_6f80],
+    ),
+    (0x0076_eac0, &[], &[0x0063_df30]),
+    (0x0076_ead0, &[], &[0x0062_f500]),
+    (0x0076_eae0, &[], &[0x0062_f500]),
+    (0x0076_eaf0, &[], &[0x0062_f500]),
+    (0x0076_eb00, &[], &[0x0062_f500]),
+    (0x0076_eb10, &[], &[0x0062_f500]),
+    (0x0076_eb20, &[], &[0x0062_f500]),
+    (0x0076_eb40, &[], &[0x0064_1ce0]),
+    (
+        0x0076_eb60,
+        &[(0x0112_a008, 4)],
+        &[0x0064_27c0, 0x0076_edc0],
+    ),
+    (0x0076_ebe0, &[(0x0112_a00c, 4)], &[0x0064_1ce0]),
+    (0x0076_ec30, &[], &[0x0064_5e50]),
+    (0x0076_ec90, &[], &[0x0062_f500, 0x0064_1140]),
+    (0x0076_ecb0, &[(0x00c4_0e2c, 4)], &[]),
+    (0x0076_ecc0, &[], &[0x0062_f500]),
+    (0x0076_ecd0, &[], &[0x0062_f500]),
+    (0x007a_2cd0, &[], &[0x007a_d6e0]),
+    (0x007a_3440, &[(0x0113_6410, 2)], &[]),
+    (0x007a_3450, &[(0x0112_ca06, 1)], &[]),
+    (0x007a_34e0, &[(0x0113_63ec, 1), (0x0113_63ed, 1)], &[]),
+    (
+        0x007a_3500,
+        &[(0x0112_ca06, 1)],
+        &[0x0079_4020, 0x0082_aea0],
+    ),
+    (0x007a_35c0, &[], &[]),
+    (0x007a_36e0, &[(0x0113_63ec, 1), (0x0113_63ed, 1)], &[]),
+    (0x007a_3970, &[(0x0112_ca10, 1)], &[]),
+    (0x007a_3c00, &[], &[0x007b_19d0]),
+    (0x007a_3c90, &[], &[0x007b_19d0]),
+    (0x007a_3f40, &[(0x0112_ca15, 1)], &[]),
+    (0x007a_4430, &[(0x0112_c8d8, 4)], &[]),
+    (0x007a_4df0, &[(0x0112_c9dc, 1)], &[]),
+    (0x007a_53a0, &[(0x0112_c9f1, 1)], &[]),
+    (0x007a_5980, &[(0x0112_a8e4, 1)], &[]),
+    (
+        0x007a_5a10,
+        &[
+            (0x0112_a8e4, 1),
+            (0x0112_a8e5, 1),
+            (0x0112_bde1, 1),
+            (0x0112_c944, 1),
+            (0x0112_c9d0, 1),
+            (0x0112_c9d8, 1),
+            (0x0112_c9e4, 1),
+            (0x0112_ca08, 2),
+            (0x0112_ca09, 1),
+        ],
+        &[0x0079_4020],
+    ),
+    (0x007a_5d60, &[(0x0112_c022, 1)], &[]),
+    (0x007a_64c0, &[], &[0x0076_d0d0, 0x007a_8c20, 0x007b_2c10]),
+    (0x007a_6760, &[], &[0x0076_d0d0, 0x007a_8c20, 0x007b_2c10]),
+    (0x007a_6950, &[], &[0x0088_7630]),
+    (0x007a_6960, &[], &[]),
+    (0x007a_6a30, &[], &[0x007b_2be0]),
+    (0x007a_6ad0, &[], &[0x007b_2be0]),
+    (0x007a_6db0, &[(0x0112_c9ce, 1)], &[0x0088_7900]),
+    (0x007a_7010, &[], &[0x0089_bc60]),
+    (0x007a_70b0, &[], &[0x0089_bc60]),
+    (0x007a_7500, &[(0x0112_c9cf, 1), (0x0113_63e8, 4)], &[]),
+    (0x007a_7630, &[], &[]),
+    (0x007a_7790, &[(0x0112_c9e3, 1)], &[]),
+    (0x007a_79a0, &[], &[0x0079_86a0]),
+    (0x007a_79b0, &[], &[]),
+    (0x007a_7a90, &[], &[0x0078_4e80]),
+    (0x007a_7b00, &[], &[]),
+    (0x007a_7b30, &[(0x0112_c9fa, 1)], &[]),
+    (0x007a_7c20, &[(0x0112_c9f5, 1)], &[]),
+    (0x007a_7d10, &[], &[0x0079_88f0]),
+    (0x007a_7f60, &[(0x0112_a905, 1)], &[]),
+    (0x007a_7f70, &[(0x0112_a9c0, 4)], &[]),
+    (0x007a_8090, &[(0x0112_c9e5, 1)], &[]),
+    (0x007a_80a0, &[(0x0112_c9e5, 1)], &[]),
+];
+
+#[test]
+fn m5_script_natives_1_match_the_original() {
+    m5_natives_match(&M5_NATIVES_1);
+}
+
+/// Batch 2: the camera depth, the message waits, the system group's
+/// getters and setters (`0x000d`-`0x0266`), the party, the saves; the
+/// globals read by the small helpers they call are set too (helpers the
+/// Rust version computes inline).
+const M5_NATIVES_2: [M5Native; 60] = [
+    (0x007b_91f0, &[(0x0231_1430, 4)], &[0x007b_d510]),
+    (0x0085_5ec0, &[], &[0x0085_9c50]),
+    (0x0085_6030, &[], &[0x0085_a6f0]),
+    (
+        0x0085_6520,
+        &[(0x00cc_c820, 4), (0x025d_5ebc, 4)],
+        &[
+            0x0064_7e40,
+            0x0064_2390,
+            0x0078_6b00,
+            0x0078_2050,
+            0x0088_d1c0,
+            0x0064_3e70,
+        ],
+    ),
+    (0x0085_65f0, &[], &[0x0086_bc70]),
+    (0x0085_66a0, &[], &[0x0086_bc80]),
+    (0x0085_6790, &[], &[0x0086_c1c0]),
+    (0x0085_67d0, &[(0x0132_6b28, 4)], &[0x0086_aff0]),
+    (0x0085_6910, &[], &[0x0086_c1d0]),
+    (
+        0x0085_7200,
+        &[(0x0112_a509, 1), (0x0112_a50a, 1)],
+        &[0x0077_7e90],
+    ),
+    (0x0085_7350, &[(0x0112_a518, 4)], &[0x0077_87b0]),
+    (0x0085_74b0, &[(0x011a_0080, 2)], &[0x007f_b690]),
+    (0x0085_7690, &[(0x011a_0080, 2)], &[0x007f_b680]),
+    (0x0085_7810, &[(0x011a_0080, 2)], &[0x007f_b730]),
+    (0x0085_7910, &[(0x011a_0080, 2)], &[0x007f_b720]),
+    (0x0085_79f0, &[(0x011a_0080, 2)], &[0x007f_b520]),
+    (0x0085_7b60, &[(0x011a_0080, 2)], &[0x007f_b510]),
+    (0x0085_7c30, &[(0x0132_5db0, 4)], &[0x0086_a9b0]),
+    (0x0085_7fb0, &[], &[0x0086_a9d0]),
+    (
+        0x0085_82e0,
+        &[(0x0113_079c, 4)],
+        &[0x0078_51f0, 0x0078_fcf0, 0x0078_4fb0],
+    ),
+    (0x0085_8320, &[], &[0x0086_c410]),
+    (0x0085_8430, &[], &[0x0078_5290]),
+    (0x0085_85c0, &[], &[0x0086_a9a0]),
+    (0x0085_8780, &[], &[0x0088_7d10]),
+    (0x0085_8800, &[(0x0113_07a4, 4)], &[0x0078_4f50]),
+    (
+        0x0085_8940,
+        &[(0x018d_ed08, 4), (0x018d_ed28, 4), (0x0193_4ea8, 4)],
+        &[0x0090_85a0],
+    ),
+    (
+        0x0085_8ab0,
+        &[(0x018d_ed08, 4), (0x018d_ed28, 4)],
+        &[0x0090_8450],
+    ),
+    (0x0085_8e10, &[], &[0x0086_bcc0]),
+    (0x0085_8e40, &[], &[0x0090_a420]),
+    (0x0085_90e0, &[], &[0x0086_a7f0]),
+    (0x0085_9240, &[], &[0x0087_3db0]),
+    (0x0085_93e0, &[(0x0130_181e, 1)], &[0x0083_add0]),
+    (0x0085_9400, &[], &[0x0086_c270]),
+    (0x0085_9490, &[(0x0132_ff18, 4)], &[0x0088_7b00]),
+    (
+        0x0085_94c0,
+        &[(0x0132_7130, 4)],
+        &[0x0087_3b00, 0x0088_6a60, 0x0087_3d00],
+    ),
+    (
+        0x0085_9580,
+        &[
+            (0x00cc_b9d8, 4),
+            (0x0132_710c, 4),
+            (0x0132_7110, 4),
+            (0x0132_7114, 4),
+            (0x0132_7118, 4),
+        ],
+        &[0x0064_4280, 0x0087_4060],
+    ),
+    (0x0085_9620, &[(0x0132_7124, 4)], &[0x0087_3ad0]),
+    (0x0085_9630, &[], &[0x007a_d6e0]),
+    (0x0085_9ba0, &[], &[0x007a_d710]),
+    (0x0085_9c40, &[], &[0x0088_69f0]),
+    (0x0085_9d20, &[], &[0x007a_d710]),
+    (0x0085_9de0, &[], &[0x0088_63c0]),
+    (0x0085_9df0, &[], &[]),
+    (0x0085_a0e0, &[], &[0x0086_c8a0]),
+    (0x0085_a110, &[], &[]),
+    (0x0085_a120, &[], &[]),
+    (0x0085_a190, &[(0x0132_6b81, 1)], &[0x0087_08d0]),
+    (0x0085_a410, &[], &[0x008c_c140]),
+    (0x0085_a420, &[], &[0x0087_3c40]),
+    (0x0085_a570, &[], &[0x0087_3d30]),
+    (0x0085_a7f0, &[(0x00cc_cacc, 4)], &[]),
+    (0x0085_af10, &[(0x0186_a228, 4)], &[0x008b_eef0]),
+    (0x0085_af50, &[(0x0113_07a0, 4)], &[0x0090_6b10]),
+    (0x0085_af60, &[(0x00c5_a088, 4)], &[0x008b_ef00]),
+    (0x0085_b4b0, &[], &[0x0086_e310]),
+    (
+        0x0085_b4c0,
+        &[(0x0132_6b28, 4)],
+        &[0x0086_aff0, 0x0086_a130],
+    ),
+    (0x0085_b520, &[], &[0x0086_ddb0]),
+    (0x0085_b5c0, &[], &[0x0086_d9d0]),
+    (0x0085_c090, &[], &[0x0086_c4b0]),
+    (0x0085_c580, &[(0x0132_6b28, 4)], &[0x0086_c1a0]),
+];
+
+#[test]
+fn m5_script_natives_2_match_the_original() {
+    m5_natives_match(&M5_NATIVES_2);
+}
+
+/// Batch 3: the event-jump and pad getters, sound and movie states,
+/// the debug and map groups (`0x8000`), the camera and filter group
+/// (`0x4000`).
+const M5_NATIVES_3: [M5Native; 61] = [
+    (0x0085_cdb0, &[], &[0x0086_c1f0]),
+    (0x0085_cf90, &[], &[0x0086_c1c0]),
+    (0x0085_d160, &[], &[0x0086_bca0]),
+    (0x0085_d280, &[], &[0x0086_bc70]),
+    (0x0085_d3a0, &[], &[0x0079_8b60]),
+    (0x0085_d3b0, &[(0x0132_5be8, 4)], &[0x0086_b5d0]),
+    (
+        0x0085_d4e0,
+        &[(0x0132_70c0, 2)],
+        &[0x0086_af30, 0x0088_8c40],
+    ),
+    (
+        0x0085_d760,
+        &[(0x0132_70c8, 2)],
+        &[0x0086_af50, 0x0088_8c40],
+    ),
+    (
+        0x0085_d890,
+        &[(0x0132_70cc, 2)],
+        &[0x0086_af60, 0x0088_8c40],
+    ),
+    (0x0085_d8b0, &[(0x0132_6b28, 4)], &[0x0086_aff0]),
+    (
+        0x0085_db70,
+        &[(0x0132_70d4, 2)],
+        &[0x0086_af80, 0x0088_8c40],
+    ),
+    (0x0085_dcc0, &[(0x0132_70c0, 2)], &[0x0086_af30]),
+    (0x0085_ddc0, &[(0x0132_70c8, 2)], &[0x0086_af50]),
+    (0x0085_de60, &[(0x0132_70cc, 2)], &[0x0086_af60]),
+    (0x0085_de70, &[(0x00c5_8e89, 1)], &[0x0088_e5e0]),
+    (0x0085_dff0, &[(0x0132_70d0, 2)], &[0x0086_af70]),
+    (0x0085_e000, &[(0x00c5_2760, 4)], &[0x0087_41d0]),
+    (0x0085_e0d0, &[(0x0132_70d4, 2)], &[0x0086_af80]),
+    (0x0085_e400, &[(0x0132_ff5c, 4)], &[0x0088_63f0]),
+    (0x0085_e5d0, &[(0x0132_7130, 4)], &[0x0087_3b00]),
+    (0x0085_e800, &[], &[0x0078_5290]),
+    (0x0085_ea30, &[], &[]),
+    (0x0085_ed00, &[(0x0113_07d8, 4)], &[0x0078_4e80]),
+    (0x0085_f070, &[(0x0113_3364, 1)], &[0x0078_8bd0]),
+    (0x0085_fb00, &[(0x0132_6b58, 4)], &[0x0086_b060]),
+    (0x0085_fff0, &[], &[0x0086_a040]),
+    (0x0086_0170, &[(0x0132_5b8c, 4)], &[0x0087_29d0]),
+    (0x0086_0720, &[], &[]),
+    (
+        0x0087_8790,
+        &[
+            (0x0132_ff10, 4),
+            (0x0132_ff18, 4),
+            (0x0132_ff1c, 4),
+            (0x0132_ff24, 4),
+            (0x0133_0070, 4),
+            (0x0133_0088, 4),
+        ],
+        &[0x0088_7630],
+    ),
+    (
+        0x0087_87a0,
+        &[(0x0132_ff10, 4), (0x0132_ff14, 4)],
+        &[0x0088_64b0],
+    ),
+    (0x0087_87b0, &[(0x0113_079c, 4)], &[0x0078_51f0]),
+    (0x0087_87c0, &[(0x0113_079c, 4)], &[0x0078_51b0]),
+    (0x0087_8c60, &[], &[]),
+    (
+        0x0087_8ed0,
+        &[(0x0132_6b28, 4)],
+        &[0x0086_aff0, 0x0088_7d10],
+    ),
+    (0x0087_8f10, &[(0x0130_07e8, 1)], &[0x0083_0320]),
+    (0x0087_9150, &[(0x0133_0092, 1)], &[0x0088_6430]),
+    (0x0087_9180, &[(0x0133_0093, 1)], &[0x0088_6440]),
+    (0x0087_9190, &[], &[0x0088_6db0]),
+    (0x0087_9380, &[], &[]),
+    (0x0087_9390, &[], &[0x0076_f060, 0x0076_f090]),
+    (0x0087_93e0, &[(0x0133_0832, 1)], &[0x0088_d6d0]),
+    (0x0090_7e60, &[], &[0x0062_f500]),
+    (0x0091_b190, &[(0x0193_bf80, 4)], &[0x0091_a3d0]),
+    (0x0091_b530, &[(0x0193_bf80, 4)], &[0x0091_a700]),
+    (0x0091_b540, &[(0x0193_bf80, 4)], &[0x0091_a730]),
+    (0x0091_b5c0, &[(0x0193_bf80, 4)], &[0x0091_a900]),
+    (0x0091_b600, &[(0x0193_bf80, 4)], &[0x0091_a6d0]),
+    (0x0091_b670, &[(0x0193_bf80, 4)], &[0x0091_a8d0]),
+    (0x0091_b770, &[(0x0193_bf80, 4)], &[0x0091_9ca0]),
+    (0x0091_b780, &[], &[0x0091_9b70]),
+    (0x0091_c5a0, &[(0x018d_ed08, 4)], &[0x0090_8440]),
+    (0x0091_c890, &[], &[0x0091_9ab0]),
+    (0x00a7_7970, &[(0x00c4_96d5, 1)], &[0x0082_d850]),
+    (0x00a7_7a00, &[(0x012f_bbb6, 1)], &[0x0082_05d0]),
+    (
+        0x00a7_7c20,
+        &[(0x0130_0780, 4), (0x0130_079c, 4)],
+        &[0x0082_d930],
+    ),
+    (0x00a7_7e20, &[(0x0130_074c, 2)], &[0x0082_cc00]),
+    (0x00a7_7ed0, &[(0x0130_073c, 2)], &[0x0082_cc70]),
+    (0x00a7_82e0, &[], &[0x0084_0e40]),
+    (0x00a7_82f0, &[], &[0x0084_0e50]),
+    (0x00a7_8360, &[], &[0x0083_1a30]),
+    (0x00a7_9a10, &[], &[]),
+];
+
+#[test]
+fn m5_script_natives_3_match_the_original() {
+    m5_natives_match(&M5_NATIVES_3);
+}
+
+/// Batch 4: the debug natives `ffx_script::vm::bridge::native_m5` ports
+/// (their debug paths through `TkIsDebug`'s stub returning 1).
+const M5_NATIVES_4: [M5Native; 13] = [
+    (0x0076_ea30, &[], &[0x0062_f500]),
+    (
+        0x007a_4a60,
+        &[(0x0132_70d8, 4)],
+        &[0x0086_a990, 0x0086_df00, 0x0062_f500],
+    ),
+    (0x007a_4c30, &[], &[0x0086_a990, 0x0086_de50, 0x0062_f500]),
+    (
+        0x0085_8520,
+        &[(0x0132_70d8, 4)],
+        &[0x0086_df00, 0x0086_c2e0, 0x0088_7d10, 0x0094_964c],
+    ),
+    (
+        0x0087_85e0,
+        &[(0x0130_1804, 4)],
+        &[0x0088_7d10, 0x0083_a570],
+    ),
+    (0x0087_8d20, &[], &[0x0088_7d10, 0x0090_6b30, 0x0088_e780]),
+    (0x0087_8d60, &[], &[0x0088_7d10, 0x0088_e790]),
+    (0x0087_90b0, &[], &[0x0078_49d0]),
+    (0x0087_90c0, &[], &[0x0078_48b0]),
+    (0x00a7_7ab0, &[], &[0x0083_bb50]),
+    (
+        0x00a7_82c0,
+        &[(0x0132_70d8, 4)],
+        &[0x0086_df00, 0x0084_67b0],
+    ),
+    (
+        0x0087_8f20,
+        &[(0x0130_07e8, 1), (0x0132_70d8, 4), (0x0133_c910, 1)],
+        &[0x0086_df00, 0x0088_7d10, 0x0083_0330],
+    ),
+    (
+        0x0087_8b00,
+        &[(0x012f_bbb3, 1), (0x0132_70d8, 4)],
+        &[0x0086_df00, 0x0088_7d10, 0x0082_0420],
+    ),
+];
+
+#[test]
+fn m5_script_natives_4_match_the_original() {
+    m5_natives_match(&M5_NATIVES_4);
+}
+
+/// Batch 1's branches behind pointers, which neither snapshot reaches and
+/// [`m5_natives_match`]'s global edge values can't: on the image, with a
+/// made-up battle character table (`MsGetChr`'s base `0x011334d4`, 0x1f
+/// records of 0xf90 bytes):
+/// - `0x703e`'s poll (`0x007a5a10`): the latch at `0x0112a8e5` with its gate
+///   set, then each character (the first, the 30th, the last) with every
+///   busy flag pair (`+0xdc8` with `+0x508`/`+0x432`/`+0xdfb`, `+0x10` with
+///   `+0x436`/`+0xdf0`) and each half alone;
+/// - `0x70f8` (`0x007a36e0`): the list at `0x011363f0` stepped to its end;
+/// - `0x710e`/`0x710f` (`0x007a3c00`/`0x007a3c90`): the four reel records at
+///   `0x0112be80` with one set at each place;
+/// - `0x70d9` (`0x007a3500`): character 13 with a model, `Ch_ModelSetHide`
+///   logging its words into memory;
+/// - `0x70cf` (`0x007a7f70`): the byte behind `0x0112a9c0`, negative too.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per native
+fn m5_script_synthetic_1_match_the_original() {
+    const CHR: u32 = 0xf90;
+    fn set<T: ffx_bridge::Value>(pair: &mut (Oracle, Oracle), sym: u32, x: T) {
+        let at = pair.0.rebase(sym);
+        poke(&mut pair.0, &mut pair.1, at, x);
+    }
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let env = M5Env {
+        exe: &exe,
+        pages: None,
+        args: [0; 3],
+    };
+    let fresh = || {
+        let mut pair = env.pair();
+        let table = pair.0.alloc(0x1f * CHR as usize).unwrap();
+        assert_eq!(pair.1.alloc(0x1f * CHR as usize).unwrap(), table);
+        let at = pair.0.rebase(0x0113_34d4);
+        poke(&mut pair.0, &mut pair.1, at, table);
+        (pair, table)
+    };
+    let mut cases = 0;
+    let mut run = |pair: &mut (Oracle, Oracle), sym: u32, what: &str| {
+        assert!(m5_native_case(&env, pair, sym, what), "{what}: stopped");
+        cases += 1;
+    };
+    // 0x703e's poll
+    for (gate, latch) in [(0u8, 1u8), (1, 1), (1, 2), (1, 0)] {
+        let (mut pair, _) = fresh();
+        set(&mut pair, 0x0112_a8e4, gate);
+        set(&mut pair, 0x0112_a8e5, latch);
+        set(&mut pair, 0x0112_c9e4, 0x80u8);
+        run(
+            &mut pair,
+            0x007a_5a10,
+            &format!("703e latch {gate} {latch}"),
+        );
+    }
+    let pairs: [&[u32]; 10] = [
+        &[0xdc8, 0x508],
+        &[0xdc8, 0x432],
+        &[0xdc8, 0xdfb],
+        &[0xdc8],
+        &[0x508, 0x432, 0xdfb],
+        &[0x10, 0x436],
+        &[0x10, 0xdf0],
+        &[0x10],
+        &[0x436, 0xdf0],
+        &[0xdc8, 0x10, 0x436],
+    ];
+    for k in [0u32, 0x1d, 0x1e] {
+        for flags in pairs {
+            let (mut pair, table) = fresh();
+            set(&mut pair, 0x0112_c9e4, 0xffu8);
+            for &off in flags {
+                poke(&mut pair.0, &mut pair.1, table + k * CHR + off, 1u8);
+            }
+            run(&mut pair, 0x007a_5a10, &format!("703e chr {k} {flags:x?}"));
+        }
+    }
+    // 0x70f8: three entries, read to the end and past it
+    {
+        let (mut pair, _) = fresh();
+        set(&mut pair, 0x0113_63ec, 3u8);
+        set(&mut pair, 0x0113_63ed, 0u8);
+        for (i, v) in [0x1234u16, 0xabcd, 0x0042].into_iter().enumerate() {
+            set(&mut pair, 0x0113_63f0 + 2 * u32::try_from(i).unwrap(), v);
+        }
+        for step in 0..5 {
+            run(&mut pair, 0x007a_36e0, &format!("70f8 step {step}"));
+        }
+    }
+    // 0x710e / 0x710f: one record set at each place
+    for sym in [0x007a_3c00, 0x007a_3c90] {
+        for k in 0..5u32 {
+            let (mut pair, _) = fresh();
+            for j in 0..4u32 {
+                set(&mut pair, 0x0112_be80 + 4 * j, 0u32);
+            }
+            if k < 4 {
+                set(&mut pair, 0x0112_be80 + 4 * k, 0x0000_9a00_u32 | (k + 7));
+            }
+            // a later record set as well: the first one wins
+            if k < 3 {
+                set(&mut pair, 0x0112_be80 + 12, 0x0000_5503_u32);
+            }
+            run(&mut pair, sym, &format!("{sym:#x} record {k}"));
+        }
+    }
+    // 0x70d9: character 13 with a model; the hide call's words logged
+    for v in [0u8, 1, 0x80] {
+        let (mut pair, table) = fresh();
+        let model = pair.0.alloc(16).unwrap();
+        assert_eq!(pair.1.alloc(16).unwrap(), model);
+        poke(&mut pair.0, &mut pair.1, table + 13 * CHR, model);
+        set(&mut pair, 0x0112_ca06, v);
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(0x0082_aea0);
+            o.stand_in(at, ffx_oracle::Returns::Eax, model + 12, move |s| {
+                let (m, k, x) = (s.arg(0), s.arg(1), s.arg(2));
+                Mem::write(s, model, m ^ 0x5a5a_0000);
+                Mem::write(s, model + 4, k);
+                Mem::write(s, model + 8, x);
+                u64::from(k + 0x77)
+            })
+            .unwrap();
+        }
+        run(&mut pair, 0x007a_3500, &format!("70d9 model {v:#x}"));
+    }
+    // 0x70cf: the byte behind 0x0112a9c0
+    for x in [0u8, 5, 0x7f, 0x80, 0xff] {
+        let mut pair = env.pair();
+        let p = pair.0.alloc(4).unwrap();
+        assert_eq!(pair.1.alloc(4).unwrap(), p);
+        poke(&mut pair.0, &mut pair.1, p, u32::from(x) << 8 | 0x33);
+        set(&mut pair, 0x0112_a9c0, p);
+        run(&mut pair, 0x007a_7f70, &format!("70cf {x:#x}"));
+    }
+    eprintln!("{cases} synthetic cases");
+}
+
+/// The Atel module's `jmp` thunks (`ffx_script::m5_thunks`) against the
+/// original: each target is a stand-in that logs the words it is handed
+/// into memory and returns a value from them, so `EAX` and the diff show
+/// a dropped or wrong word. Then each with its real target, on the image
+/// and on `FFX_SNAPSHOT` (a target that cannot run on the state is
+/// skipped there, the stand-in case still runs).
+#[test]
+fn m5_script_thunks_match_the_original() {
+    use ffx_script::m5_thunks::{THUNKS, bridge};
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = std::env::var_os("FFX_SNAPSHOT").map(|s| Pages::read(PathBuf::from(s)).unwrap());
+    let fresh = || match &pages {
+        Some(p) => (
+            Oracle::from_snapshot(&exe, p).unwrap(),
+            Oracle::from_snapshot(&exe, p).unwrap(),
+        ),
+        None => (Oracle::load(&exe).unwrap(), Oracle::load(&exe).unwrap()),
+    };
+    let mut real = 0;
+    for (at, target) in THUNKS {
+        let words: &[u32] = if target == 0x0086_ed40 { &[3] } else { &[] };
+        // the stand-in
+        let (mut a, mut b) = fresh();
+        let cell = a.alloc(32).unwrap();
+        assert_eq!(b.alloc(32).unwrap(), cell);
+        let n = words.len();
+        for o in [&mut a, &mut b] {
+            let t = o.rebase(target);
+            o.stand_in(t, ffx_oracle::Returns::Eax, cell + 16, move |s| {
+                // the words the target reads (a target that reads none
+                // sees only the caller's leftovers there: not logged)
+                let x = if n == 0 { 0 } else { s.arg(0) };
+                Mem::write(s, cell, x);
+                Mem::write(s, cell + 4, 0x7e57_0000_u32 | (target & 0xffff));
+                u64::from(x ^ target)
+            })
+            .unwrap();
+        }
+        let ra = a.call(a.rebase(at), Conv::Cdecl, &[3, 0x55, 0x66]).unwrap();
+        let rb = bridge::jmp_thunk(&mut Run(&mut b), target, words);
+        assert_eq!(ra.eax, rb, "{at:#x}: EAX");
+        no_diff(&mut a, &mut b, &format!("{at:#x} stand-in"));
+        // the real target
+        let (mut a, mut b) = fresh();
+        clear_stacks(&mut a, &mut b);
+        let Ok(ra) = a.call(a.rebase(at), Conv::Cdecl, words) else {
+            eprintln!("{at:#x}: the target stops on this state");
+            continue;
+        };
+        let rb = bridge::jmp_thunk(&mut Run(&mut b), target, words);
+        assert_eq!(ra.eax, rb, "{at:#x} real: EAX");
+        no_diff(&mut a, &mut b, &format!("{at:#x} real"));
+        real += 1;
+    }
+    eprintln!("{real} of {} thunks ran their real target", THUNKS.len());
+}
+
+/// Batch 3's pad natives through `Pad_MapButtons` (`0x00888c40`, its map
+/// rows at `0x01330488 + 16 * (a + b)`) with two different rows, so a
+/// wrong row shows: row 0 the identity, row 1 reversed, on the image with
+/// the button getters stubbed.
+#[test]
+fn m5_script_synthetic_3_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let env = M5Env {
+        exe: &exe,
+        pages: None,
+        args: [0; 3],
+    };
+    for (sym, getter) in [
+        (0x0085_d4e0, 0x0086_af30),
+        (0x0085_d760, 0x0086_af50),
+        (0x0085_d890, 0x0086_af60),
+        (0x0085_db70, 0x0086_af80),
+    ] {
+        for buttons in [0x0000_00f3_u32, 0x0001_8001, 0xffff_ffff] {
+            let mut pair = env.pair();
+            for k in 0..16u8 {
+                let at = pair.0.rebase(0x0133_0488 + u32::from(k));
+                poke(&mut pair.0, &mut pair.1, at, k);
+                poke(&mut pair.0, &mut pair.1, at + 16, 15 - k);
+            }
+            for o in [&mut pair.0, &mut pair.1] {
+                let at = o.rebase(getter);
+                o.stub_return(at, buttons).unwrap();
+            }
+            let what = format!("{sym:#x} buttons {buttons:#x}");
+            assert!(
+                m5_native_case(&env, &mut pair, sym, &what),
+                "{what}: stopped"
+            );
+        }
+    }
+    // 0xc050 (0x00879390): movie_stop_prog (0x0076f090) counted in memory,
+    // movie_run_check (0x0076f060) answering both ways
+    for running in [0u32, 1, 0xffff_ffff] {
+        let mut pair = env.pair();
+        let cell = pair.0.alloc(8).unwrap();
+        assert_eq!(pair.1.alloc(8).unwrap(), cell);
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(0x0076_f060);
+            o.stub_return(at, running).unwrap();
+            let at = o.rebase(0x0076_f090);
+            o.stand_in(at, ffx_oracle::Returns::Eax, cell + 4, move |s| {
+                let n: u32 = Mem::read(s, cell);
+                Mem::write(s, cell, n + 1);
+                0
+            })
+            .unwrap();
+        }
+        let what = format!("c050 running {running:#x}");
+        assert!(
+            m5_native_case(&env, &mut pair, 0x0087_9390, &what),
+            "{what}: stopped"
+        );
+    }
+}
+
+/// Batch 2's branches behind state [`m5_natives_match`] doesn't build, on
+/// `FFX_SNAPSHOT` (the snapshot's worker, args scratch and window 0):
+/// - `0x013c`'s poll (`0x00855ec0`, `Native_MsgSelect_Poll`): window 0 in
+///   states 0..5, with `TOGetMessageStatus` (`0x008b7ca0`) and `0x008b7fb0`
+///   stubbed to each answer, and the choice getters (`0x008b7fd0` the
+///   list, `0x008b7ff0` its count) to a list and to none;
+/// - `0x013c`'s result (`0x00856030`): the chosen value (`+4`, signed) and
+///   0, 1 or 3 pushed words (`+6` the count, from `+8`);
+/// - `0x023d` (`0x00856520`): its callees stubbed (`MsBattleReadData` runs
+///   away on the snapshots), `0x025d5ebc` clear and set, the texture
+///   unload's word logged.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per native
+fn m5_script_synthetic_2_match_the_original() {
+    fn stub(pair: &mut (Oracle, Oracle), sym: u32, x: u32) {
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(sym);
+            o.stub_return(at, x).unwrap();
+        }
+    }
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut env = M5Env {
+        exe: &exe,
+        pages: Some(Pages::read(PathBuf::from(snap)).unwrap()),
+        args: [0; 3],
+    };
+    env.args = env.lookup(&mut env.pair().1);
+    let args = env.args;
+    let mut cases = 0;
+    let mut run = |env: &M5Env, pair: &mut (Oracle, Oracle), sym: u32, what: &str| {
+        assert!(m5_native_case(env, pair, sym, what), "{what}: stopped");
+        cases += 1;
+    };
+    // 0x013c's poll
+    for state in 0..6u16 {
+        for (status, kind, count) in [(3u32, 2u32, 2u32), (3, 1, 2), (1, 2, 2), (3, 2, 0)] {
+            let mut pair = env.pair();
+            let m = v::atel_get_mes_win_work(&pair.1, 0);
+            poke(&mut pair.0, &mut pair.1, m + 0x14, state);
+            let list = pair.0.alloc(4).unwrap();
+            assert_eq!(pair.1.alloc(4).unwrap(), list);
+            poke(&mut pair.0, &mut pair.1, list, 0x0000_00c7_u32);
+            stub(&mut pair, 0x008b_7ca0, status);
+            stub(&mut pair, 0x008b_7fb0, kind);
+            stub(&mut pair, 0x008b_7fd0, list);
+            stub(&mut pair, 0x008b_7ff0, count);
+            stub(&mut pair, 0x0086_40f0, 0);
+            let what = format!("013c poll state {state} {status} {kind} {count}");
+            run(&env, &mut pair, 0x0085_5ec0, &what);
+        }
+    }
+    // 0x013c's result
+    for (value, n) in [(5u16, 0u16), (0xffff, 1), (0x8001, 3), (7, 3)] {
+        let mut pair = env.pair();
+        poke(&mut pair.0, &mut pair.1, args[1] + 4, value);
+        poke(&mut pair.0, &mut pair.1, args[1] + 6, n);
+        for k in 0..4u32 {
+            poke(&mut pair.0, &mut pair.1, args[1] + 8 + 4 * k, 0x100 + k);
+        }
+        stub(&mut pair, 0x0086_40f0, 0);
+        run(
+            &env,
+            &mut pair,
+            0x0085_6030,
+            &format!("013c result {value:#x} {n}"),
+        );
+    }
+    // 0x023d
+    for g in [0u32, 1, 0x8000_0000] {
+        let mut pair = env.pair();
+        for c in [
+            0x0064_7e40,
+            0x0078_6b00,
+            0x0078_2050,
+            0x0088_d1c0,
+            0x0064_3e70,
+        ] {
+            stub(&mut pair, c, 0);
+        }
+        let cell = pair.0.alloc(8).unwrap();
+        assert_eq!(pair.1.alloc(8).unwrap(), cell);
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(0x0064_2390);
+            o.stand_in(at, ffx_oracle::Returns::Eax, cell + 4, move |s| {
+                let x = s.arg(0);
+                Mem::write(s, cell, x);
+                u64::from(x)
+            })
+            .unwrap();
+        }
+        let at = pair.0.rebase(0x025d_5ebc);
+        poke(&mut pair.0, &mut pair.1, at, g);
+        run(&env, &mut pair, 0x0085_6520, &format!("023d {g:#x}"));
+    }
+    // 0x00ea: the current ctrl work's byte 1, bit 4 alone and its neighbours
+    for x in [0x10u8, 0x08, 0x20, 0xef, 0xff] {
+        let mut pair = env.pair();
+        let c = v::CONTEXT.get(&pair.1);
+        poke(&mut pair.0, &mut pair.1, c + 1, x);
+        run(&env, &mut pair, 0x0085_67d0, &format!("00ea {x:#x}"));
+    }
+    // 0x015b's result (0x0085b4c0): byte 3's bit 2 cleared, its neighbours kept
+    for x in [0x04u8, 0x08, 0x0c, 0xff] {
+        let mut pair = env.pair();
+        let c = v::CONTEXT.get(&pair.1);
+        poke(&mut pair.0, &mut pair.1, c + 3, x);
+        run(&env, &mut pair, 0x0085_b4c0, &format!("015b {x:#x}"));
+    }
+    eprintln!("{cases} synthetic cases");
+}
+
+/// Batch 4's debug paths with chosen arguments, on `FFX_SNAPSHOT` (the
+/// snapshot's worker and stack; `TkIsDebug` stubbed to 0 and 1), each
+/// callee whose words matter a stand-in that logs them into memory and
+/// returns a value from them:
+/// - `0x00f8` (`0x00858520`): `(var, byte, count)` = `(0, 0x5a, 3)`
+///   and `(1, 0xa5, 2)`, the CRT `memset` logged;
+/// - `0xc027` (`0x00878d20`): `0x0088e780` counting its calls and summing
+///   their words;
+/// - `0x401e` (`0x00a782c0`): `(v)` = 2, 3, `Sg_Test` logged;
+/// - `0xc022` (`0x00878b00`): `(v)` = 5, `Sg_EnableDrawGui`'s `EAX` from
+///   its word.
+#[test]
+fn m5_script_synthetic_4_match_the_original() {
+    fn stub(pair: &mut (Oracle, Oracle), sym: u32, x: u32) {
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(sym);
+            o.stub_return(at, x).unwrap();
+        }
+    }
+    /// `sym` a stand-in on both sides: `cell` += 1, `cell + 4` += its first
+    /// word, `cell + 8..` the `words` words it reads (the rest of the stack
+    /// is the caller's leftovers); returns word 0 + 0x40.
+    fn logger(pair: &mut (Oracle, Oracle), sym: u32, words: u32) -> u32 {
+        let cell = pair.0.alloc(32).unwrap();
+        assert_eq!(pair.1.alloc(32).unwrap(), cell);
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(sym);
+            o.stand_in(at, ffx_oracle::Returns::Eax, cell + 24, move |s| {
+                let n: u32 = Mem::read(s, cell);
+                Mem::write(s, cell, n + 1);
+                let sum: u32 = Mem::read(s, cell + 4);
+                Mem::write(s, cell + 4, sum.wrapping_add(s.arg(0)));
+                for k in 0..words {
+                    let x = s.arg(k);
+                    Mem::write(s, cell + 8 + 4 * k, x);
+                }
+                u64::from(s.arg(0).wrapping_add(0x40))
+            })
+            .unwrap();
+        }
+        cell
+    }
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut env = M5Env {
+        exe: &exe,
+        pages: Some(Pages::read(PathBuf::from(snap)).unwrap()),
+        args: [0; 3],
+    };
+    env.args = env.lookup(&mut env.pair().1);
+    let mut cases = 0;
+    for debug in [0u32, 1] {
+        let mut run = |sym: u32, callee: u32, words: u32, push: &[u32], what: &str| {
+            let mut pair = env.pair();
+            stub(&mut pair, 0x0088_7d10, debug);
+            logger(&mut pair, callee, words);
+            let what = format!("{what} debug {debug}");
+            assert!(
+                m5_native_case_with(&env, &mut pair, sym, push, &what),
+                "{what}: stopped"
+            );
+            cases += 1;
+        };
+        // pushed var first, count on top
+        run(
+            0x0085_8520,
+            0x0094_964c,
+            3,
+            &[0, 0x5a, 3],
+            "00f8 (0, 0x5a, 3)",
+        );
+        run(
+            0x0085_8520,
+            0x0094_964c,
+            3,
+            &[1, 0xa5, 2],
+            "00f8 (1, 0xa5, 2)",
+        );
+        run(0x0087_8d20, 0x0088_e780, 1, &[], "c027");
+        run(0x00a7_82c0, 0x0084_67b0, 1, &[2], "401e 2");
+        run(0x00a7_82c0, 0x0084_67b0, 1, &[3], "401e 3");
+        run(0x0087_8b00, 0x0082_0420, 1, &[5], "c022 5");
+    }
+    eprintln!("{cases} synthetic cases");
+}
