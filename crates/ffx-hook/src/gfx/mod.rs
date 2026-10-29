@@ -421,6 +421,18 @@ pub unsafe fn install(module: usize) {
             CREATE_DEVICE_AND_SWAP_CHAIN.store(original, Ordering::Release);
             ENABLED.store(true, Ordering::Release);
             log("  gfx: D3D11CreateDeviceAndSwapChain patched");
+            // FFX_GFX_BOOT_CAPTURE="<dir> [hash] frames N": a capture armed
+            // before the device exists, so it holds the frames from the
+            // first Present on (the boot against ffx-rust's, docs/harness.md
+            // "Two processes")
+            if let Ok(v) = std::env::var("FFX_GFX_BOOT_CAPTURE")
+                && !v.is_empty()
+            {
+                log(&format!(
+                    "  gfx: boot capture: {}",
+                    capture(&format!("{v} async"))
+                ));
+            }
         }
         None => log("  gfx: D3D11CreateDeviceAndSwapChain not imported"),
     }

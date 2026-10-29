@@ -214,7 +214,11 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
         );
     }
     let s = ffx_host::report::summary(&exec, &syms);
-    assert!(s.unicorn_functions.len() > 1500, "{report}");
+    // ported functions run in Rust now, the rest in Unicorn
+    assert!(
+        s.unicorn_functions.len() + s.rust_functions > 1500,
+        "{report}"
+    );
     assert!(!s.dll_functions.is_empty(), "{report}");
     // the heap's decommit thread started and ended with the run
     let threads = exec.shared().threads.lock().unwrap().clone();

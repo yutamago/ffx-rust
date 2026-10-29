@@ -13,23 +13,9 @@ use ffx_prender::h3d_fmi::{self as fmi, bridge};
 /// value, which it destroys (an MSVC array, `std::string` and vectors:
 /// no pointers into themselves, so the copies may move).
 fn on_scene_loaded(f: u32, w: &[u32; fmi::ON_SCENE_LOADED_WORDS]) {
-    #[rustfmt::skip]
-    type F41 = unsafe extern "C" fn(
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-        u32, u32, u32, u32, u32, u32, u32, u32, u32,
-    );
-    // SAFETY: `f` is the game's cdecl `DepthBiasHooks_onSceneLoaded`,
-    // which takes exactly these 41 stack words; the caller pops them.
-    unsafe {
-        let g = std::mem::transmute::<usize, F41>(f as usize);
-        g(
-            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12], w[13],
-            w[14], w[15], w[16], w[17], w[18], w[19], w[20], w[21], w[22], w[23], w[24], w[25],
-            w[26], w[27], w[28], w[29], w[30], w[31], w[32], w[33], w[34], w[35], w[36], w[37],
-            w[38], w[39], w[40],
-        );
-    }
+    // `f` is the game's cdecl `DepthBiasHooks_onSceneLoaded`, which takes
+    // exactly these 41 stack words; the caller pops them
+    ffx_bridge::route::cdecl::<()>(f, w);
 }
 
 /// The frame: [`fmi::FRAME_LOW`] bytes below `ebp`, then `ebp` up to the

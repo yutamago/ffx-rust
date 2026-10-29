@@ -14,6 +14,7 @@
 //! (the game runs with ASLR). Heap addresses are used as they are.
 
 pub mod frame;
+pub mod route;
 pub mod snapshot;
 pub mod x87;
 
@@ -269,8 +270,13 @@ impl Mem for VecMem {
     }
 }
 
-/// The game's own memory, from inside the game process (32-bit).
-#[cfg(target_pointer_width = "32")]
+/// The game's own memory as the code running in its process sees it.
+///
+/// - 32-bit (the hooked game, and `ffx-rust.exe` at stage 3, whose arena is
+///   the process's own address space): plain loads and stores.
+/// - 64-bit (`ffx-host` at stage 4): through the thread's router
+///   ([`route::Router`]), which serves its arena; without one, reads are
+///   zero and writes are dropped.
 #[derive(Debug, Clone, Copy)]
 pub struct RawMem {
     /// Where `FFX.exe` was loaded.
@@ -303,6 +309,21 @@ impl Mem for RawMem {
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), addr as usize as *mut u8, data.len());
         }
+    }
+    fn image_base(&self) -> u32 {
+        self.image
+    }
+}
+
+#[cfg(not(target_pointer_width = "32"))]
+impl Mem for RawMem {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        if route::with(|r| r.read_bytes(addr, out)).is_none() {
+            out.fill(0);
+        }
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        let _ = route::with(|r| r.write_bytes(addr, data));
     }
     fn image_base(&self) -> u32 {
         self.image
@@ -369,10 +390,8 @@ pub fn too_many_arguments(helper: &str, addr: u32, n: usize, max: usize) {
     );
 }
 
-#[cfg(target_pointer_width = "32")]
 impl Host for RawMem {
     fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
-        type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> u32;
         // No panic here: a panic in a function the game calls ends the
         // process. A longer list is a bridge bug: say so and fail the call.
         if args.len() > CALL_WORDS {
@@ -381,20 +400,23 @@ impl Host for RawMem {
         }
         let mut a = [0u32; CALL_WORDS];
         a[..args.len()].copy_from_slice(args);
-        // SAFETY: the address is a cdecl function of the game taking at
-        // most these arguments; cdecl lets the caller pass more than the
-        // callee reads, and the caller pops them.
-        unsafe {
-            let f: F6 = std::mem::transmute(addr as usize);
-            f(a[0], a[1], a[2], a[3], a[4], a[5])
-        }
+        // the address is a cdecl function of the game taking at most these
+        // arguments; cdecl lets the caller pass more than the callee reads,
+        // and the caller pops them
+        route::cdecl(addr, &a)
     }
 
     fn callee_scratch(&mut self) -> Option<u32> {
+        if let Some(at) = route::scratch(route::Scratch::Bridge) {
+            return Some(at);
+        }
         // the address only: the bridge reads and writes it through `Mem`,
         // the originals through their pointers, as they would their stack
+        #[cfg(target_pointer_width = "32")]
         #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        Some(SCRATCH.with(|s| s.get() as usize as u32))
+        return Some(SCRATCH.with(|s| s.get() as usize as u32));
+        #[cfg(not(target_pointer_width = "32"))]
+        None
     }
 }
 

@@ -15,11 +15,9 @@ use super::{call0, mem, ported};
 /// `Phyre_PhyrePrintf(level, format)` (`0x004352f0`, cdecl, varargs), the
 /// engine's printf, for bridges that print.
 fn phyre_printf(level: u32, format: u32) {
-    // SAFETY: the engine's cdecl printf, a format without arguments.
-    unsafe {
-        let f: unsafe extern "C" fn(u32, u32) = std::mem::transmute(crate::rebase(0x0043_52f0));
-        f(level, format);
-    }
+    // the engine's cdecl printf, a format without arguments
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::cdecl::<()>(crate::rebase(0x0043_52f0) as u32, &[level, format]);
 }
 
 /// Calls the cdecl function at `f` (an absolute address, as the game's
@@ -52,34 +50,22 @@ fn call_sym_wide<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
 /// arguments (f32 arguments as their bits).
 #[allow(clippy::many_single_char_names)] // a..g: the words
 fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
-    let f = crate::rebase(sym);
-    // SAFETY: a cdecl function of `args.len()` word arguments returning in
-    // ST0; the caller cleans the stack, so the argument count is all the
-    // signature has to match.
-    unsafe {
-        match *args {
-            [] => std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)(),
-            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(a),
-            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(f)(a, b),
-            [a, b, c] => {
-                std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(f)(a, b, c)
-            }
-            [a, b, c, d] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32) -> f64,
-            >(f)(a, b, c, d),
-            [a, b, c, d, e] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32, u32) -> f64,
-            >(f)(a, b, c, d, e),
-            [a, b, c, d, e, g] => std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64,
-            >(f)(a, b, c, d, e, g),
-            _ => {
-                crate::log::log(&format!("system: no float call of {} words", args.len()));
-                f64::NAN
-            }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(sym) as u32;
+    // a cdecl function of `args.len()` word arguments returning in ST0;
+    // the caller cleans the stack, so the argument count is all the call
+    // has to match
+    match *args {
+        [] => ffx_bridge::route::cdecl(f, &[]),
+        [a] => ffx_bridge::route::cdecl(f, &[a]),
+        [a, b] => ffx_bridge::route::cdecl(f, &[a, b]),
+        [a, b, c] => ffx_bridge::route::cdecl(f, &[a, b, c]),
+        [a, b, c, d] => ffx_bridge::route::cdecl(f, &[a, b, c, d]),
+        [a, b, c, d, e] => ffx_bridge::route::cdecl(f, &[a, b, c, d, e]),
+        [a, b, c, d, e, g] => ffx_bridge::route::cdecl(f, &[a, b, c, d, e, g]),
+        _ => {
+            crate::log::log(&format!("system: no float call of {} words", args.len()));
+            f64::NAN
         }
     }
 }
@@ -88,78 +74,46 @@ fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
 /// behind the thunk `0x009498c2`) on a double: loaded with `fld qword`,
 /// the result stored with `fstp qword`.
 fn crt_cos<M>(_mem: &mut M, x: f64) -> f64 {
-    #[cfg(target_arch = "x86")]
-    {
-        let mut out = 0f64;
-        // SAFETY: the slot holds the address of the CRT's intrinsic, which
-        // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the
-        // x87 and SSE registers clobbered); edi, which holds the result's
-        // address, is kept by the callee.
-        unsafe {
-            let f = (crate::rebase(0x00b0_c3b4) as *const usize).read();
-            std::arch::asm!(
-                "fld qword ptr [{x}]",
-                "call {f}",
-                "fstp qword ptr [edi]",
-                x = in(reg) &raw const x,
-                f = in(reg) f,
-                in("edi") &raw mut out,
-                clobber_abi("C"),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = x;
-        f64::NAN
-    }
+    // the slot holds the address of the CRT's intrinsic, which takes its
+    // argument in ST0 and returns in ST0 (`fstp qword`)
+    ffx_bridge::route::x87(super::import_slot(0x00b0_c3b4), &[x])
 }
 
 /// `Phyre::PSerialization::PStreamFile::read(buf, n)` (`0x00608090`,
 /// thiscall), not ported yet.
 fn stream_read<M>(_mem: &mut M, stream: u32, buf: u32, n: u32) -> u32 {
-    // SAFETY: the game's thiscall stream read.
-    unsafe {
-        let f: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 =
-            std::mem::transmute(crate::rebase(0x0060_8090));
-        f(stream, buf, n)
-    }
+    // the game's thiscall stream read
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::thiscall(crate::rebase(0x0060_8090) as u32, stream, &[buf, n])
 }
 
 /// `GetFileSizeEx(handle, &size)` through its import slot.
 fn get_file_size_ex<M>(_mem: &mut M, handle: u32) -> Option<u64> {
-    let mut size = 0u64;
-    // SAFETY: GetFileSizeEx, stdcall, on the stream's handle.
-    let ok = unsafe {
-        let f: unsafe extern "stdcall" fn(u32, *mut u64) -> u32 =
-            std::mem::transmute(GameOs::import(0x00b0_c13c));
-        f(handle, &raw mut size)
-    };
+    use ffx_bridge::Mem;
+    // GetFileSizeEx, stdcall, on the stream's handle; the size in a frame
+    // the import writes
+    let mut frame = super::StackFrame::<2>::new();
+    let at = frame.at();
+    let ok: u32 = ffx_bridge::route::stdcall(GameOs::import(0x00b0_c13c), &[handle, at]);
+    let size: u64 = mem().read(at);
     (ok != 0).then_some(size)
 }
 
 /// `Phyre::PRedBlackTree::remove(node)` (`0x00575000`, thiscall, `ret 4`),
 /// the engine's, not ported here.
 fn red_black_remove<M>(_mem: &mut M, tree: u32, node: u32) {
-    // SAFETY: the engine's thiscall tree removal.
-    unsafe {
-        let f: unsafe extern "thiscall" fn(u32, u32) =
-            std::mem::transmute(crate::rebase(0x0057_5000));
-        f(tree, node);
-    }
+    // the engine's thiscall tree removal
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::thiscall::<()>(crate::rebase(0x0057_5000) as u32, tree, &[node]);
 }
 
 /// A `Phyre::PClassDescriptorForType<T>` destructor: the vtable, then the
 /// parent's destructor (`0x0043b3e0`, thiscall, not ported).
 fn class_descriptor_dtor(this: u32, vtable: u32) -> u32 {
     dtor::bridge::chain(&mut mem(), this, vtable, |_, this| {
-        // SAFETY: the engine's thiscall PClassDescriptor destructor.
-        unsafe {
-            let f: unsafe extern "thiscall" fn(u32) -> u32 =
-                std::mem::transmute(crate::rebase(dtor::CLASS_DESCRIPTOR_DTOR));
-            f(this)
-        }
+        // the engine's thiscall PClassDescriptor destructor
+        #[allow(clippy::cast_possible_truncation)] // a game address
+        ffx_bridge::route::thiscall(crate::rebase(dtor::CLASS_DESCRIPTOR_DTOR) as u32, this, &[])
     })
 }
 
@@ -351,56 +305,21 @@ impl<M: Mem> tolib::bridge::LimitWindowCalls<M> for GameMenu {
 /// A CRT `_CI*` intrinsic through the game's import thunk at `sym`: `x`
 /// in ST0 (`fld qword`), the result read back from ST0 (`fstp qword`).
 fn intrinsic(sym: u32, x: f64) -> f64 {
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    #[allow(clippy::cast_possible_truncation)] // a game address
     let f = crate::rebase(sym) as u32;
-    // SAFETY: the thunk jumps to the CRT intrinsic, which takes its
-    // argument in ST0 and leaves the result there (eax, ecx, edx, the x87
-    // and SSE registers clobbered; edi kept).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let mut out = 0f64;
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (f, x);
-        f64::NAN
-    }
+    // the thunk jumps to the CRT intrinsic, which takes its argument in
+    // ST0 and leaves the result there (`fstp qword`)
+    ffx_bridge::route::x87(f, &[x])
 }
 
 /// A cdecl function of no arguments at `sym` that returns a float in ST0,
 /// read back with `fstp qword`.
 fn st0_result(sym: u32) -> f64 {
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    #[allow(clippy::cast_possible_truncation)] // a game address
     let f = crate::rebase(sym) as u32;
-    // SAFETY: a cdecl function of no arguments; it leaves its result in
-    // ST0 and keeps edi.
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let mut out = 0f64;
-        std::arch::asm!(
-            "call {f}",
-            "fstp qword ptr [edi]",
-            f = in(reg) f,
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = f;
-        f64::NAN
-    }
+    // a cdecl function of no arguments; it leaves its result in ST0
+    // (`fstp qword`)
+    ffx_bridge::route::cdecl(f, &[])
 }
 
 impl<M: Mem> tolib::bridge::PadInput<M> for GameMenu {
@@ -547,19 +466,15 @@ struct GameOs;
 
 impl GameOs {
     /// The function in import slot `slot`.
-    fn import(slot: u32) -> usize {
-        // SAFETY: an import slot of this build, filled by the loader.
-        unsafe { (crate::rebase(slot) as *const usize).read() }
+    fn import(slot: u32) -> u32 {
+        super::import_slot(slot)
     }
 
     /// The one-argument stdcall import in `slot`; its `eax` (what a `void`
     /// import leaves is read as a `u32`, as the originals pass it on).
     fn stdcall1(slot: u32, x: u32) -> u32 {
-        // SAFETY: a one-argument stdcall KERNEL32 import of this build.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32) -> u32 = std::mem::transmute(Self::import(slot));
-            f(x)
-        }
+        // a one-argument stdcall KERNEL32 import of this build
+        ffx_bridge::route::stdcall(Self::import(slot), &[x])
     }
 }
 
@@ -570,20 +485,12 @@ impl<M> sync::Kernel<M> for GameOs {
         Self::stdcall1(0x00b0_c100, ms)
     }
     fn wait(&mut self, _mem: &mut M, handle: u32, ms: u32) -> u32 {
-        // SAFETY: WaitForSingleObject(handle, ms), stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c0f8));
-            f(handle, ms)
-        }
+        // WaitForSingleObject(handle, ms), stdcall
+        ffx_bridge::route::stdcall(Self::import(0x00b0_c0f8), &[handle, ms])
     }
     fn release_semaphore(&mut self, _mem: &mut M, handle: u32, count: u32, previous: u32) -> u32 {
-        // SAFETY: ReleaseSemaphore(handle, count, previous), stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c0f4));
-            f(handle, count, previous)
-        }
+        // ReleaseSemaphore(handle, count, previous), stdcall
+        ffx_bridge::route::stdcall(Self::import(0x00b0_c0f4), &[handle, count, previous])
     }
     fn create_semaphore(
         &mut self,
@@ -593,12 +500,11 @@ impl<M> sync::Kernel<M> for GameOs {
         maximum: u32,
         name: u32,
     ) -> u32 {
-        // SAFETY: CreateSemaphoreW(attributes, initial, maximum, name), stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32, u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c1e0));
-            f(attributes, initial, maximum, name)
-        }
+        // CreateSemaphoreW(attributes, initial, maximum, name), stdcall
+        ffx_bridge::route::stdcall(
+            Self::import(0x00b0_c1e0),
+            &[attributes, initial, maximum, name],
+        )
     }
     fn close_handle(&mut self, _mem: &mut M, handle: u32) -> u32 {
         Self::stdcall1(0x00b0_c0dc, handle)
@@ -625,112 +531,69 @@ impl<M> sync::Kernel<M> for GameOs {
 
 impl heap::Os for GameOs {
     fn enter_critical_section(&mut self, cs: u32) {
-        // SAFETY: EnterCriticalSection(cs), stdcall; `cs` is the game's.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c154));
-            f(cs);
-        }
+        // EnterCriticalSection(cs), stdcall; `cs` is the game's
+        ffx_bridge::route::stdcall::<()>(Self::import(0x00b0_c154), &[cs]);
     }
     fn leave_critical_section(&mut self, cs: u32) {
-        // SAFETY: LeaveCriticalSection(cs), stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c158));
-            f(cs);
-        }
+        // LeaveCriticalSection(cs), stdcall
+        ffx_bridge::route::stdcall::<()>(Self::import(0x00b0_c158), &[cs]);
     }
     fn virtual_alloc(&mut self, addr: u32, size: u32, alloc_type: u32, protect: u32) -> u32 {
-        // SAFETY: VirtualAlloc, stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32, u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c09c));
-            f(addr, size, alloc_type, protect)
-        }
+        // VirtualAlloc, stdcall
+        ffx_bridge::route::stdcall(
+            Self::import(0x00b0_c09c),
+            &[addr, size, alloc_type, protect],
+        )
     }
     fn virtual_free(&mut self, addr: u32, size: u32, free_type: u32) -> u32 {
-        // SAFETY: VirtualFree, stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c098));
-            f(addr, size, free_type)
-        }
+        // VirtualFree, stdcall
+        ffx_bridge::route::stdcall(Self::import(0x00b0_c098), &[addr, size, free_type])
     }
     fn report_free_failure(&mut self) {
         // As the originals: FormatMessageA(ALLOCATE_BUFFER | FROM_SYSTEM,
         // 0, GetLastError(), 0, &message, 0x1000, &args), then the error
         // hook at 0x0193cd4c with the message, when one is set.
-        // SAFETY: GetLastError and FormatMessageA (stdcall) through their
-        // import slots; the hook is the game's cdecl callback.
-        unsafe {
-            let last: unsafe extern "stdcall" fn() -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c030));
-            let format: unsafe extern "stdcall" fn(
-                u32,
-                u32,
-                u32,
-                u32,
-                *mut u32,
-                u32,
-                *mut u32,
-            ) -> u32 = std::mem::transmute(Self::import(0x00b0_c070));
-            let mut message = 0u32;
-            let mut args = 0u32;
-            format(
-                0x1100,
-                0,
-                last(),
-                0,
-                &raw mut message,
-                0x1000,
-                &raw mut args,
-            );
-            let hook = (crate::rebase(0x0193_cd4c) as *const usize).read();
-            if hook != 0 {
-                let f: unsafe extern "C" fn(u32) = std::mem::transmute(hook);
-                f(message);
-            }
+        // GetLastError and FormatMessageA (stdcall) through their import
+        // slots, `message` and `args` in a frame they write; the hook is
+        // the game's cdecl callback.
+        use ffx_bridge::Mem;
+        let mut frame = super::StackFrame::<2>::new();
+        let at = frame.at();
+        let last: u32 = ffx_bridge::route::stdcall(Self::import(0x00b0_c030), &[]);
+        ffx_bridge::route::stdcall::<u32>(
+            Self::import(0x00b0_c070),
+            &[0x1100, 0, last, 0, at, 0x1000, at + 4],
+        );
+        let message: u32 = mem().read(at);
+        #[allow(clippy::cast_possible_truncation)] // a game address
+        let hook: u32 = mem().read(crate::rebase(0x0193_cd4c) as u32);
+        if hook != 0 {
+            ffx_bridge::route::cdecl::<()>(hook, &[message]);
         }
     }
     fn initialize_critical_section(&mut self, cs: u32) {
-        // SAFETY: InitializeCriticalSection(cs), stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32) = std::mem::transmute(Self::import(0x00b0_c150));
-            f(cs);
-        }
+        // InitializeCriticalSection(cs), stdcall
+        ffx_bridge::route::stdcall::<()>(Self::import(0x00b0_c150), &[cs]);
     }
     fn crt_malloc(&mut self, size: u32) -> u32 {
-        // SAFETY: the C runtime's malloc, cdecl.
-        unsafe {
-            let f: unsafe extern "C" fn(u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c468));
-            f(size)
-        }
+        // the C runtime's malloc, cdecl
+        ffx_bridge::route::cdecl(Self::import(0x00b0_c468), &[size])
     }
     fn crt_free(&mut self, p: u32) {
-        // SAFETY: the C runtime's free, cdecl.
-        unsafe {
-            let f: unsafe extern "C" fn(u32) = std::mem::transmute(Self::import(0x00b0_c370));
-            f(p);
-        }
+        // the C runtime's free, cdecl
+        ffx_bridge::route::cdecl::<()>(Self::import(0x00b0_c370), &[p]);
     }
     fn mem_system_init(&mut self) {
         // the original slow path of 0x009428a0 (cdecl, no arguments)
         call0(0x0094_28b0);
     }
     fn wait_for_single_object(&mut self, handle: u32, ms: u32) -> u32 {
-        // SAFETY: WaitForSingleObject, stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32, u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c0f8));
-            f(handle, ms)
-        }
+        // WaitForSingleObject, stdcall
+        ffx_bridge::route::stdcall(Self::import(0x00b0_c0f8), &[handle, ms])
     }
     fn release_mutex(&mut self, handle: u32) -> u32 {
-        // SAFETY: ReleaseMutex, stdcall.
-        unsafe {
-            let f: unsafe extern "stdcall" fn(u32) -> u32 =
-                std::mem::transmute(Self::import(0x00b0_c1c0));
-            f(handle)
-        }
+        // ReleaseMutex, stdcall
+        ffx_bridge::route::stdcall(Self::import(0x00b0_c1c0), &[handle])
     }
 }
 
@@ -2510,13 +2373,10 @@ ported! {
     /// `LocalizationManager_getText(this, index, out, _)` (`ret 0xc`).
     LocalizationManager_getText @ 0x006d_b1f0 => extern "thiscall" fn localization_get_text(this: u32, index: u32, out: u32, _unused: u32) -> u32 {
         instance::bridge::localization_get_text(&mut mem(), this, index, out, |_, this| {
-            // SAFETY: LocalizationManager_readLocalizationKit (thiscall,
-            // no stack arguments), the platform's file read, not ported.
-            unsafe {
-                let f: unsafe extern "thiscall" fn(u32) -> u32 =
-                    std::mem::transmute(crate::rebase(0x006d_b2f0));
-                f(this);
-            }
+            // LocalizationManager_readLocalizationKit (thiscall, no stack
+            // arguments), the platform's file read, not ported
+            #[allow(clippy::cast_possible_truncation)] // a game address
+            ffx_bridge::route::thiscall::<u32>(crate::rebase(0x006d_b2f0) as u32, this, &[]);
         })
     }
     /// `TOGetFFXLang()`.
@@ -3440,12 +3300,9 @@ ported! {
     /// `VFile::fileRead(buf, n)` (`this` in ECX).
     VFile_fileRead @ 0x0061_aa60 => extern "thiscall" fn vfile_file_read(this: u32, buf: u32, n: u32) -> u32 {
         files::bridge::vfile_file_read(&mut mem(), this, buf, n, |_, t, b, c| {
-            // SAFETY: FileSys_Read (thiscall, ret 8), not ported yet.
-            unsafe {
-                let f: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 =
-                    std::mem::transmute(crate::rebase(0x0061_aa90));
-                f(t, b, c)
-            }
+            // FileSys_Read (thiscall, ret 8), not ported yet
+            #[allow(clippy::cast_possible_truncation)] // a game address
+            ffx_bridge::route::thiscall(crate::rebase(0x0061_aa90) as u32, t, &[b, c])
         })
     }
     /// `BigFileStream::setStreamPrefix(path)` (`this` in ECX).
@@ -4773,11 +4630,8 @@ ported! {
             &mut mem(),
             |m, size| heap::user_malloc(m, &mut GameOs, size),
             |_| {
-                // SAFETY: std::_Xbad_alloc through its MSVCP110 import slot; it throws.
-                unsafe {
-                    let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(GameOs::import(0x00b0_c2a0));
-                    f()
-                }
+                // std::_Xbad_alloc through its MSVCP110 import slot; it throws
+                ffx_bridge::route::cdecl(GameOs::import(0x00b0_c2a0), &[])
             },
         )
     }
@@ -4994,14 +4848,11 @@ ported! {
             &mut mem(),
             this,
             |m, obj| {
-                // SAFETY: the object's scalar deleting destructor (vtable
-                // slot 0, thiscall, flag 1), as the original calls it.
-                unsafe {
-                    let vtable: u32 = m.read(obj);
-                    let f: u32 = m.read(vtable);
-                    let f: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                    f(obj, 1);
-                }
+                // the object's scalar deleting destructor (vtable slot 0,
+                // thiscall, flag 1), as the original calls it
+                let vtable: u32 = m.read(obj);
+                let f: u32 = m.read(vtable);
+                ffx_bridge::route::thiscall::<u32>(f, obj, &[1]);
             },
             phyre_free_cb,
         );

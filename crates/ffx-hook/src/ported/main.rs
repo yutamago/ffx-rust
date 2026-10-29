@@ -2381,12 +2381,10 @@ ported! {
 /// seconds (the harness's virtual clock under replay), for
 /// `FFXApplication::getAppTime`.
 fn app_clock() -> f64 {
-    // SAFETY: a cdecl function of this build taking nothing and returning a
-    // double in ST0.
-    unsafe {
-        let f: unsafe extern "C" fn() -> f64 = std::mem::transmute(crate::rebase(0x0042_fd80));
-        f()
-    }
+    // a cdecl function of this build taking nothing and returning a double
+    // in ST0
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::cdecl(crate::rebase(0x0042_fd80) as u32, &[])
 }
 
 /// MSVCR110's `_CIsin`, `_CIcos` or `_CIacos` through the game's import
@@ -2400,31 +2398,10 @@ fn crt(c: Crt, x: f64) -> f32 {
         Crt::Acos => 0x0094_98da,
         Crt::Atan => 0x0094_9d5c,
     };
-    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
-    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
-    // registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = crate::rebase(thunk);
-        let bits: u32;
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "sub esp, 4",
-            "fstp dword ptr [esp]",
-            "pop eax",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            lateout("eax") bits,
-            clobber_abi("C"),
-        );
-        f32::from_bits(bits)
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (thunk, x);
-        unreachable!("the CRT's trigonometry runs in the 32-bit game")
-    }
+    // the thunk jumps to the CRT's intrinsic, which takes its argument in
+    // ST0 (`fld qword`) and returns in ST0 (`fstp dword`)
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::x87(crate::rebase(thunk) as u32, &[x])
 }
 
 /// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
@@ -2438,31 +2415,12 @@ fn crt_vector_trig(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
         Trig::Sin => 0x0094_98c8,
         Trig::Atan => 0x0094_9d5c,
     };
-    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
-    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
-    // registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = crate::rebase(thunk);
-        let bits: u32;
-        std::arch::asm!(
-            "fld dword ptr [{x}]",
-            "call {f}",
-            "sub esp, 4",
-            "fstp dword ptr [esp]",
-            "pop eax",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            lateout("eax") bits,
-            clobber_abi("C"),
-        );
-        bits
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (thunk, x);
-        0
-    }
+    // the thunk jumps to the CRT's intrinsic, which takes its argument in
+    // ST0 (`fld dword`: exactly the f32 widened) and returns in ST0
+    // (`fstp dword`)
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::x87::<f32>(crate::rebase(thunk) as u32, &[f64::from(f32::from_bits(x))])
+        .to_bits()
 }
 
 /// MSVCR110's `_CIatan2` (`ST1` = y, `ST0` = x, the result in `ST0`)
@@ -2470,32 +2428,11 @@ fn crt_vector_trig(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
 /// dword`, the result stored with `fstp dword`, as `Sg_ControlPlayer`
 /// does; `f32` bits in and out.
 fn crt_atan2(y: u32, x: u32) -> u32 {
-    let f = crate::rebase(0x0094_98bc);
-    #[cfg(target_arch = "x86")]
-    {
-        let pair = [y, x];
-        let mut out = 0u32;
-        // SAFETY: the thunk jumps to the CRT's `_CIatan2`, which takes its
-        // two operands on the x87 stack and leaves the result there; the
-        // asm loads them, calls it and stores the result through edi
-        // (which the callee keeps), leaving the x87 stack empty.
-        unsafe {
-            std::arch::asm!(
-                "fld dword ptr [{p}]",
-                "fld dword ptr [{p} + 4]",
-                "call {f}",
-                "fstp dword ptr [edi]",
-                p = in(reg) &raw const pair,
-                in("edi") &raw mut out,
-                f = in(reg) f,
-                clobber_abi("C"),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (f, y, x);
-        0
-    }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(0x0094_98bc) as u32;
+    // the thunk jumps to the CRT's `_CIatan2`, which takes its two
+    // operands on the x87 stack (`fld dword` each: y in ST1, x in ST0) and
+    // leaves the result there (`fstp dword`)
+    let (y, x) = (f64::from(f32::from_bits(y)), f64::from(f32::from_bits(x)));
+    ffx_bridge::route::x87::<f32>(f, &[y, x]).to_bits()
 }

@@ -25,6 +25,7 @@ ffx-graphic = { path = "crates/ffx-graphic" }
 ffx-glue-other = { path = "crates/ffx-glue-other" }
 ffx-harness = { path = "crates/ffx-harness" }
 ffx-hook = { path = "crates/ffx-hook", default-features = false }
+ffx-host-ports = { path = "crates/ffx-host-ports" }
 ffx-kernel = { path = "crates/ffx-kernel" }
 ffx-menu = { path = "crates/ffx-menu" }
 ffx-monster = { path = "crates/ffx-monster" }
@@ -75,6 +76,9 @@ windows-sys = "0.61.2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
+# ffx-host-ports compiles ffx-hook's shims a second time with cfg(ffx_host)
+# (docs/host.md, "One source of truth")
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(ffx_host)"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

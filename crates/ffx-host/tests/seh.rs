@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use ffx_bridge::Mem as _;
 use ffx_host::exec::{Exec, Stop};
-use ffx_host::table::{Conv, Entry, Ret, Table};
+use ffx_host::table::{Conv, Entry, Port, Ret, Table};
 
 /// `FUN_00948c30(f)`: `push ebp; mov ebp, esp; call [ebp+8]; pop ebp;
 /// ret 4` (the heap's decommit thread routine).
@@ -371,10 +371,10 @@ fn a_throw_is_caught_across_a_rust_port() {
             name: "call_arg",
             conv: Conv::Stdcall,
             words: 1,
-            port: |e, args| {
+            port: Port::Exec(|e, args| {
                 let _ = e.call_cdecl(args.stack[0], &[]);
                 Ret::VOID
-            },
+            }),
         },
     );
     let Some(mut exec) = boot(table) else { return };

@@ -153,6 +153,31 @@ pub fn summary(exec: &Exec, syms: &Symbols) -> Summary {
     }
 }
 
+/// Every port that ran (all threads) as tab-separated lines (address,
+/// name, calls), for `--ports FILE`: the list to bisect with
+/// `FFX_HOST_DISABLE`/`FFX_HOST_ONLY` (`crate::ports::ported`).
+#[must_use]
+pub fn ports_tsv(exec: &Exec) -> String {
+    let mut stats = exec.stats.clone();
+    for t in exec
+        .shared()
+        .threads
+        .lock()
+        .map(|t| t.clone())
+        .unwrap_or_default()
+    {
+        if let Some(s) = &t.stats {
+            stats.merge(s);
+        }
+    }
+    let mut out = String::from("address\tname\tcalls\n");
+    for (&addr, &n) in &stats.ports {
+        let name = exec.table().get(addr).map_or("?", |e| e.name);
+        let _ = writeln!(out, "{addr:#010x}\t{name}\t{n}");
+    }
+    out
+}
+
 /// Every Unicorn function as tab-separated lines (module, start, name,
 /// calls, blocks, samples), for `--profile FILE`.
 #[must_use]
@@ -198,6 +223,56 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
         );
     }
     let _ = writeln!(out, "milestones: {:?}", st.milestones);
+    let clock = &shared.clock;
+    let (turns, freed) = clock.loader_turns();
+    let _ = writeln!(
+        out,
+        "clock: {} updates, {} flips, game time {:.3} s past the start, {} loader turns ({} freed inside an update), {} FMOD turns",
+        clock.frame(),
+        clock.flips(),
+        clock.now() - crate::clock::VIRTUAL_START,
+        turns,
+        freed,
+        clock.fmod_turns()
+    );
+    if let Ok(s) = clock.script.lock()
+        && let Some(s) = s.as_ref()
+    {
+        let _ = writeln!(
+            out,
+            "replay: {} commands done{}, shots {:?}",
+            s.replies.len(),
+            if s.done() { ", finished" } else { "" },
+            s.shots
+        );
+    }
+    if let Some((blocks, ignored)) = shared.audio.summary() {
+        let _ = writeln!(
+            out,
+            "audio: {blocks} blocks mixed ({:.3} s), calls the engine did not follow: {ignored:?}",
+            f64::from(u32::try_from(blocks).unwrap_or(u32::MAX)) / 30.0
+        );
+    }
+    let players = shared.iggy.players();
+    if !players.is_empty() {
+        let _ = writeln!(
+            out,
+            "iggy: players (handle, movie bytes, ticks, draws): {players:x?}; calls: {:?}",
+            shared
+                .iggy
+                .calls
+                .lock()
+                .map(|c| c.clone())
+                .unwrap_or_default()
+        );
+    }
+    let notes = crate::log::notes();
+    if !notes.is_empty() {
+        let _ = writeln!(out, "notes:");
+        for n in notes.iter().take(80) {
+            let _ = writeln!(out, "  {n}");
+        }
+    }
     let _ = writeln!(out, "message boxes: {:?}", st.messages);
     let _ = writeln!(out, "files tried: {:?}", exec.files().log);
     let dlls: Vec<String> = shared

@@ -3,14 +3,20 @@
 //! ```text
 //! ffx-rust [--game-dir DIR] [--sym FILE] [--budget SECONDS] [--cover]
 //!          [--lenient] [--count] [--stop-at DLL!name]... [--no-dlls]
-//!          [--documents DIR] [--profile FILE] [--routes FILE]
-//!          [--gfx-out DIR] [--gfx-null] [--presents N]
+//!          [--documents DIR] [--profile FILE] [--routes FILE] [--ports FILE]
+//!          [--gfx-out DIR] [--gfx-null] [--presents N] [--replay FILE]
+//!          [--audio-wav FILE]
 //! ```
+//!
+//! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
+//! processes") it serves the harness protocol, takes its Documents folder
+//! from `FFX_HARNESS_HOME` and runs until the test quits it.
 //!
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
 //! function that ran in Unicorn with its calls and time (`--cover`
-//! implied); `--routes` where each import went (Rust, DLL, missing).
+//! implied); `--routes` where each import went (Rust, DLL, missing);
+//! `--ports` every port that ran, with its calls.
 //!
 //! The game directory defaults to `FFX_GAME_DIR`, then the directory of
 //! this executable. The run's report goes to stdout. Development build:
@@ -22,10 +28,29 @@ use std::time::{Duration, Instant};
 
 #[allow(clippy::too_many_lines)] // the argument loop and the report
 fn main() -> ExitCode {
+    // i686 Windows: FFX.exe's range before anything else allocates
+    if let Err(e) = ffx_host::arena::reserve_image_range() {
+        // the stack or a heap got there first: run in a child whose range
+        // is reserved before it starts (crate::relaunch)
+        #[cfg(all(windows, target_pointer_width = "32"))]
+        if !ffx_host::relaunch::is_child() {
+            return match ffx_host::relaunch::run_child() {
+                Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+                Err(e) => {
+                    eprintln!("arena: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        eprintln!("arena: {e}");
+        return ExitCode::FAILURE;
+    }
+    #[cfg(all(windows, target_pointer_width = "32"))]
+    ffx_host::relaunch::report_crashes();
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym = PathBuf::from("symbols/ffx.sym");
-    let mut budget = Duration::from_secs(60);
+    let mut budget: Option<Duration> = None;
     let mut cover = false;
     let mut lenient = false;
     let mut count = false;
@@ -33,7 +58,10 @@ fn main() -> ExitCode {
     let mut opts = ffx_host::Options::default();
     let mut profile: Option<PathBuf> = None;
     let mut routes: Option<PathBuf> = None;
+    let mut ports: Option<PathBuf> = None;
     let mut gfx_out: Option<PathBuf> = None;
+    let mut replay: Option<PathBuf> = None;
+    let mut audio_wav: Option<PathBuf> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--game-dir" => game = args.next().map(PathBuf::from),
@@ -42,7 +70,7 @@ fn main() -> ExitCode {
                 budget = args
                     .next()
                     .and_then(|s| s.parse().ok())
-                    .map_or(budget, Duration::from_secs_f64);
+                    .map(Duration::from_secs_f64);
             }
             "--cover" => cover = true,
             "--lenient" => lenient = true,
@@ -55,7 +83,10 @@ fn main() -> ExitCode {
                 cover = true;
             }
             "--routes" => routes = args.next().map(PathBuf::from),
+            "--ports" => ports = args.next().map(PathBuf::from),
             "--gfx-out" => gfx_out = args.next().map(PathBuf::from),
+            "--replay" => replay = args.next().map(PathBuf::from),
+            "--audio-wav" => audio_wav = args.next().map(PathBuf::from),
             "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
             "--presents" => {
                 opts.gfx.stop_after_presents = args.next().and_then(|s| s.parse().ok());
@@ -75,6 +106,13 @@ fn main() -> ExitCode {
         eprintln!("no game directory (--game-dir or FFX_GAME_DIR)");
         return ExitCode::FAILURE;
     };
+    // the harness's sandbox (FFX_HARNESS_HOME) unless --documents says
+    if opts.documents.is_none() {
+        opts.documents = ffx_host::harness::home();
+    }
+    // a harness game runs until the test quits it
+    let harness = std::env::var_os("FFX_HARNESS").is_some();
+    let budget = budget.unwrap_or(Duration::from_secs(if harness { 7 * 86_400 } else { 60 }));
     let t = Instant::now();
     let table = ffx_host::ports::table();
     let mut exec = match ffx_host::boot_opts(&game.join("FFX.exe"), table, &opts) {
@@ -84,6 +122,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Err(e) = ffx_host::harness::start(exec.shared()) {
+        eprintln!("harness: {e}");
+        return ExitCode::FAILURE;
+    }
     if cover && let Err(e) = exec.cover() {
         eprintln!("cover: {e}");
     }
@@ -91,6 +133,24 @@ fn main() -> ExitCode {
         exec.stop_at(s);
     }
     exec.set_budget(budget);
+    if let Ok(mut w) = exec.shared().audio.wav.lock() {
+        w.clone_from(&audio_wav);
+    }
+    if let Some(p) = &replay {
+        match std::fs::read_to_string(p) {
+            Ok(text) => {
+                let mut script = ffx_host::replay::Script::new(&text);
+                script.stop_when_done = true;
+                if let Ok(mut s) = exec.shared().clock.script.lock() {
+                    *s = Some(script);
+                }
+            }
+            Err(e) => {
+                eprintln!("replay {}: {e}", p.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     exec.set_lenient(lenient);
     if count && let Err(e) = exec.count_instructions() {
         eprintln!("count: {e}");
@@ -118,6 +178,11 @@ fn main() -> ExitCode {
         && let Err(e) = std::fs::write(&p, ffx_host::report::routes(&exec))
     {
         eprintln!("routes: {e}");
+    }
+    if let Some(p) = ports
+        && let Err(e) = std::fs::write(&p, ffx_host::report::ports_tsv(&exec))
+    {
+        eprintln!("ports: {e}");
     }
     println!("wall: {:.3} s", t.elapsed().as_secs_f64());
     if count {

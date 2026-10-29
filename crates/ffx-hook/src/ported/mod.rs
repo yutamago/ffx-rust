@@ -13,10 +13,19 @@
 //! One file per module crate (`battle`, `kernel`, ...), each with its own
 //! `ported!` list, so work on different modules does not touch the same
 //! file.
+//!
+//! The same files build `ffx-host`'s function table (docs/host.md, "One
+//! source of truth"): `ffx-host-ports` compiles this module a second time
+//! with `cfg(ffx_host)`, where [`ported!`] makes table entries instead of
+//! thunks, [`mem`] is the arena and [`StackFrame`] lives on the game
+//! thread's stack in the arena. Every call into original code goes through
+//! `ffx_bridge::route` (the helpers below), which calls natively in the
+//! hooked game and through the function table in `ffx-host`.
 
 use ffx_bridge::RawMem;
 
 use crate::Hook;
+use ffx_bridge::route;
 
 mod auto;
 mod battle;
@@ -84,12 +93,15 @@ mod vfx_hi;
 mod vfx_ppp;
 mod vfx_shape;
 
+#[cfg(not(ffx_host))]
 pub(crate) use battle::ms_screen_process;
 pub(crate) use m5_main::{
     animate as ffx_application_animate, animate_on as ffx_application_animate_on,
 };
 pub(crate) use m5_system_b::{loader_thread_main, loader_thread_main_on};
+#[cfg(not(ffx_host))]
 pub(crate) use map::rcbg_guide_update_ex;
+#[cfg(not(ffx_host))]
 pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 
 /// Every replacement, for the hook table.
@@ -174,8 +186,10 @@ pub fn hooks() -> Vec<Hook> {
 /// several threads at once (job-scheduler workers, docs/hooking.md,
 /// "Threads"), and a shared buffer gets overwritten mid-call
 /// (`tools/check-ported.py` rejects one).
+#[cfg(not(ffx_host))]
 pub(crate) struct StackFrame<const W: usize>([u32; W]);
 
+#[cfg(not(ffx_host))]
 impl<const W: usize> StackFrame<W> {
     pub(crate) const fn new() -> Self {
         Self([0; W])
@@ -187,6 +201,7 @@ impl<const W: usize> StackFrame<W> {
     }
 }
 
+#[cfg(not(ffx_host))]
 impl<const W: usize> Drop for StackFrame<W> {
     fn drop(&mut self) {
         // the bridge and the originals wrote it through its address
@@ -194,7 +209,36 @@ impl<const W: usize> Drop for StackFrame<W> {
     }
 }
 
+/// In `ffx-host`: `W` zeroed words on the game thread's stack in the arena
+/// (the router's [`route::Router::frame_alloc`]), released when dropped,
+/// so the originals in Unicorn can reach them.
+#[cfg(ffx_host)]
+pub(crate) struct StackFrame<const W: usize>(u32);
+
+#[cfg(ffx_host)]
+impl<const W: usize> StackFrame<W> {
+    pub(crate) fn new() -> Self {
+        #[allow(clippy::cast_possible_truncation)] // frames are small
+        let bytes = (4 * W) as u32;
+        Self(route::with(|r| r.frame_alloc(bytes)).unwrap_or(0))
+    }
+
+    /// The frame's game address.
+    pub(crate) fn at(&mut self) -> u32 {
+        self.0
+    }
+}
+
+#[cfg(ffx_host)]
+impl<const W: usize> Drop for StackFrame<W> {
+    fn drop(&mut self) {
+        let at = self.0;
+        let _ = route::with(|r| r.frame_free(at));
+    }
+}
+
 /// The game's memory, for the bridges.
+#[cfg(not(ffx_host))]
 fn mem() -> RawMem {
     #[allow(clippy::cast_possible_truncation)] // 32-bit process
     RawMem {
@@ -202,14 +246,29 @@ fn mem() -> RawMem {
     }
 }
 
+/// The game's memory, for the bridges: the arena (`FFX.exe` at its
+/// preferred base).
+#[cfg(ffx_host)]
+fn mem() -> RawMem {
+    RawMem {
+        image: ffx_bridge::IMAGE_BASE,
+    }
+}
+
+/// The address an import slot of `FFX.exe` holds (the slot's `ffx.sym`
+/// address): the DLL function the loader bound, or `ffx-host`'s import
+/// stub. Call it through `ffx_bridge::route` with the import's convention.
+#[allow(clippy::cast_possible_truncation)] // a game address
+fn import_slot(sym: u32) -> u32 {
+    ffx_bridge::Mem::read(&mem(), crate::rebase(sym) as u32)
+}
+
 /// Calls an original function by its `ffx.sym` address (cdecl, no
 /// arguments), for bridges that still need one.
+#[allow(clippy::cast_possible_truncation)] // a game address
 fn call0(sym: u32) -> u32 {
-    // SAFETY: the address is a cdecl function of this build taking nothing.
-    unsafe {
-        let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(crate::rebase(sym));
-        f()
-    }
+    // a cdecl function of this build taking nothing
+    route::cdecl(crate::rebase(sym) as u32, &[])
 }
 
 /// The scratch registers a shim's thunk saves for the caller, by the
@@ -222,6 +281,7 @@ fn call0(sym: u32) -> u32 {
 /// returns the `eax` of a call before `op_spr_free`, which only decrements
 /// a byte). A Rust function clobbers all three, as the ABI allows, so every
 /// replacement goes through a thunk that keeps them.
+#[cfg(not(ffx_host))]
 pub(crate) trait Saved {
     /// Whether `eax` is saved (nothing returned in it).
     const EAX: bool;
@@ -229,6 +289,7 @@ pub(crate) trait Saved {
     const EDX: bool;
 }
 
+#[cfg(not(ffx_host))]
 macro_rules! saved {
     ($($t:ty => $eax:literal, $edx:literal;)*) => {
         $(impl Saved for $t {
@@ -237,6 +298,7 @@ macro_rules! saved {
         })*
     };
 }
+#[cfg(not(ffx_host))]
 saved! {
     () => true, true;
     f32 => true, true;
@@ -365,10 +427,7 @@ pub(crate) fn call_cdecl_u64(f: u32, a: &[u32]) -> u64 {
 
 /// The call behind [`call_cdecl`] and its float forms: 12 words, the
 /// missing ones zero, `R` from `eax` (`u32`) or `ST0` (`f32`, `f64`).
-#[allow(clippy::many_single_char_names)] // the arguments, in order
-fn cdecl12<R>(helper: &str, f: u32, a: &[u32]) -> R {
-    type F12<R> =
-        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> R;
+fn cdecl12<R: route::Out>(helper: &str, f: u32, a: &[u32]) -> R {
     // No panic here: a panic in a function the game calls ends the process.
     if a.len() > 12 {
         crate::log::log(&format!(
@@ -379,15 +438,10 @@ fn cdecl12<R>(helper: &str, f: u32, a: &[u32]) -> R {
     let mut w = [0u32; 12];
     let n = a.len().min(12);
     w[..n].copy_from_slice(&a[..n]);
-    // SAFETY: a cdecl function of at most 12 word arguments returning `R`
-    // where the ABI puts it (`eax`, or `ST0` for a float); the extra zero
-    // words it doesn't read sit on the caller's side of the stack.
-    unsafe {
-        let g: F12<R> = std::mem::transmute::<usize, F12<R>>(f as usize);
-        g(
-            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
-        )
-    }
+    // a cdecl function of at most 12 word arguments returning `R` where
+    // the ABI puts it (`eax`, or `ST0` for a float); the extra zero words
+    // it doesn't read sit on the caller's side of the stack
+    route::cdecl(f, &w)
 }
 
 /// The most stack words [`call_cdecl_words`] passes.
@@ -403,11 +457,6 @@ pub(crate) const WIDE_WORDS: usize = 32;
 /// unread stack. More than [`WIDE_WORDS`] would cut a struct short: that is
 /// logged and the original is not called (0).
 pub(crate) fn call_cdecl_words(f: u32, a: &[u32]) -> u32 {
-    #[rustfmt::skip]
-    type Wide = unsafe extern "C" fn(
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-    ) -> u32;
     // No panic here: a panic in a function the game calls ends the process.
     if a.len() > WIDE_WORDS {
         crate::log::log(&format!(
@@ -418,17 +467,10 @@ pub(crate) fn call_cdecl_words(f: u32, a: &[u32]) -> u32 {
     }
     let mut w = [0u32; WIDE_WORDS];
     w[..a.len()].copy_from_slice(a);
-    // SAFETY: a cdecl function of this build taking at most these stack
-    // words and returning in `eax`; the zero words it doesn't read sit on
-    // the caller's side of the stack, which the caller pops.
-    unsafe {
-        let g = std::mem::transmute::<usize, Wide>(f as usize);
-        g(
-            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12], w[13],
-            w[14], w[15], w[16], w[17], w[18], w[19], w[20], w[21], w[22], w[23], w[24], w[25],
-            w[26], w[27], w[28], w[29], w[30], w[31],
-        )
-    }
+    // a cdecl function of this build taking at most these stack words and
+    // returning in `eax`; the zero words it doesn't read sit on the
+    // caller's side of the stack, which the caller pops
+    route::cdecl(f, &w)
 }
 
 /// Calls an original thiscall (or fastcall taking only `ecx`) function by
@@ -437,40 +479,18 @@ pub(crate) fn call_cdecl_words(f: u32, a: &[u32]) -> u32 {
 /// must hold exactly as many words as it takes; more than 8 is a bridge
 /// bug, logged, and the original is not called (0).
 pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
-    macro_rules! call {
-        ($($w:ident),*) => {{
-            // SAFETY: a thiscall function of this build that takes these
-            // stack words (the bridge's count) and pops them itself.
-            unsafe {
-                let g = std::mem::transmute::<
-                    usize,
-                    unsafe extern "thiscall" fn(u32 $(, call!(@word $w))*) -> u32,
-                >(f as usize);
-                g(this $(, $w)*)
-            }
-        }};
-        (@word $w:ident) => { u32 };
+    if a.len() > 8 {
+        // No panic here: a panic in a function the game calls ends the
+        // process. A wrong count would unbalance the stack: don't call.
+        crate::log::log(&format!(
+            "call_thiscall: {} arguments for {f:#010x}, at most 8; not called",
+            a.len()
+        ));
+        return 0;
     }
-    match *a {
-        [] => call!(),
-        [a0] => call!(a0),
-        [a0, a1] => call!(a0, a1),
-        [a0, a1, a2] => call!(a0, a1, a2),
-        [a0, a1, a2, a3] => call!(a0, a1, a2, a3),
-        [a0, a1, a2, a3, a4] => call!(a0, a1, a2, a3, a4),
-        [a0, a1, a2, a3, a4, a5] => call!(a0, a1, a2, a3, a4, a5),
-        [a0, a1, a2, a3, a4, a5, a6] => call!(a0, a1, a2, a3, a4, a5, a6),
-        [a0, a1, a2, a3, a4, a5, a6, a7] => call!(a0, a1, a2, a3, a4, a5, a6, a7),
-        _ => {
-            // No panic here: a panic in a function the game calls ends the
-            // process. A wrong count would unbalance the stack: don't call.
-            crate::log::log(&format!(
-                "call_thiscall: {} arguments for {f:#010x}, at most 8; not called",
-                a.len()
-            ));
-            0
-        }
-    }
+    // a thiscall function of this build that takes these stack words (the
+    // bridge's count) and pops them itself
+    route::thiscall(f, this, a)
 }
 
 /// `ported! { /// doc  Name @ 0xADDR => extern "C" fn shim(args) -> ret { body } ... }`:
@@ -490,6 +510,7 @@ pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
 /// ([`FASTCALL_CALLER_POPS`]): the original's custom convention, `ecx` and
 /// `edx` plus stack words the caller pops; the shim itself becomes
 /// `extern "C"` with the register arguments first. No `slots` there.
+#[cfg(not(ffx_host))]
 macro_rules! ported {
     ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:tt fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
         $(
@@ -512,10 +533,12 @@ macro_rules! ported {
         }
     };
 }
+#[cfg(not(ffx_host))]
 use ported;
 
 /// One shim of [`ported!`] in the ABI its thunk calls: the declared one, or
 /// `extern "C"` for [`FASTCALL_CALLER_POPS`].
+#[cfg(not(ffx_host))]
 macro_rules! shim_fn {
     ("fastcall-caller-pops", [$($doc:tt)*], $shim:ident, ($($p:tt)*), ($($ret:ty)?), $body:block) => {
         $($doc)*
@@ -526,12 +549,13 @@ macro_rules! shim_fn {
         unsafe extern $abi fn $shim($($p)*) $(-> $ret)? $body
     };
 }
+#[cfg(not(ffx_host))]
 pub(crate) use shim_fn;
 
 /// The address of `$shim`'s thunk: saves the scratch registers its return
 /// type leaves alone, copies the caller's stack arguments, calls the shim
 /// and returns as the original did (`ret n` for the callee-pops ABIs).
-#[cfg(target_arch = "x86")]
+#[cfg(all(target_arch = "x86", not(ffx_host)))]
 macro_rules! thunk {
     // `ecx`, `edx` and stack words the caller pops (FASTCALL_CALLER_POPS):
     // the cdecl shim gets the stack copy with `ecx` and `edx` pushed below
@@ -657,10 +681,214 @@ macro_rules! thunk {
     (@ret $ret:ty) => { $ret };
 }
 /// Off the game's architecture (host builds, clippy) the shim itself.
-#[cfg(not(target_arch = "x86"))]
+#[cfg(all(not(target_arch = "x86"), not(ffx_host)))]
 macro_rules! thunk {
     ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?) $(, $slots:ident)?) => {
         $shim as *const () as usize
     };
 }
+#[cfg(not(ffx_host))]
 pub(crate) use thunk;
+
+/// `ported!` in `ffx-host`: each shim as a plain Rust function (no ABI: the
+/// executor decodes the original's arguments), and the module's `hooks()`
+/// as function-table entries (`crate::Hook`: name, address, convention,
+/// stack words and the adapter from the caller's words to the shim).
+#[cfg(ffx_host)]
+macro_rules! ported {
+    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:tt fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
+        $(
+            $(#[$doc])*
+            unsafe fn $shim($($arg: $ty,)* $($slots: $sty)?) $(-> $ret)? $body
+        )*
+
+        /// This module's replacements, as function-table entries.
+        #[must_use]
+        pub fn hooks() -> Vec<crate::Hook> {
+            vec![$({
+                const CONV: ::ffx_bridge::route::Conv = $crate::ported::host::conv($abi);
+                #[allow(clippy::let_unit_value, clippy::unit_arg)] // void shims
+                fn run(a: &::ffx_bridge::route::Args) -> ::ffx_bridge::route::Ret {
+                    let mut w = $crate::ported::host::Words::new(CONV, a);
+                    let _ = &mut w;
+                    // SAFETY: the shim's arguments as its original's caller
+                    // passed them, decoded by the original's convention.
+                    let r = unsafe {
+                        $shim($(<$ty as $crate::ported::host::FromWords>::take(&mut w),)* $({ let _ = stringify!($slots); a.slots })?)
+                    };
+                    $crate::ported::host::IntoRet::into_ret(r)
+                }
+                crate::Hook {
+                    name: stringify!($name),
+                    address: $addr,
+                    conv: CONV,
+                    words: $crate::ported::stack_words($abi, &[$(::core::mem::size_of::<$ty>()),*]),
+                    run,
+                }
+            }),*]
+        }
+    };
+}
+#[cfg(ffx_host)]
+use ported;
+
+/// What `ffx-host`'s [`ported!`] expands to: the convention, the argument
+/// decoding and the result.
+#[cfg(ffx_host)]
+pub(crate) mod host {
+    use ffx_bridge::route::{Args, Conv, Ret};
+
+    /// The convention of a `ported!` ABI string.
+    pub(crate) const fn conv(abi: &str) -> Conv {
+        match abi.as_bytes() {
+            b"C" | b"cdecl" => Conv::Cdecl,
+            b"stdcall" => Conv::Stdcall,
+            b"thiscall" => Conv::Thiscall,
+            b"fastcall" => Conv::Fastcall,
+            _ if super::is_fastcall_caller_pops(abi) => Conv::FastcallCallerPops,
+            // the hook's build refuses any other ABI string (rustc's
+            // `extern`), so a line that builds there is one of the above
+            _ => Conv::Cdecl,
+        }
+    }
+
+    /// The caller's words in argument order: the register ones, then the
+    /// stack.
+    pub(crate) struct Words<'a> {
+        args: &'a Args,
+        regs: usize,
+        next: usize,
+    }
+
+    impl<'a> Words<'a> {
+        pub(crate) const fn new(conv: Conv, args: &'a Args) -> Self {
+            Self {
+                args,
+                regs: conv.register_args(),
+                next: 0,
+            }
+        }
+
+        fn word(&mut self) -> u32 {
+            let i = self.next;
+            self.next += 1;
+            match (self.regs, i) {
+                (1.., 0) => self.args.ecx,
+                (2, 1) => self.args.edx,
+                _ => self.args.stack.get(i - self.regs).copied().unwrap_or(0),
+            }
+        }
+    }
+
+    /// An argument type of a shim: decoded from the next word or two.
+    pub(crate) trait FromWords {
+        fn take(w: &mut Words<'_>) -> Self;
+    }
+
+    macro_rules! from_word {
+        ($($t:ty),*) => {$(
+            impl FromWords for $t {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // the low bits, as the shim's ABI reads them
+                fn take(w: &mut Words<'_>) -> Self {
+                    w.word() as $t
+                }
+            }
+        )*};
+    }
+    from_word!(u32, i32, u16, i16, u8, i8);
+
+    impl FromWords for bool {
+        fn take(w: &mut Words<'_>) -> Self {
+            w.word() & 0xff != 0
+        }
+    }
+
+    impl FromWords for f32 {
+        fn take(w: &mut Words<'_>) -> Self {
+            f32::from_bits(w.word())
+        }
+    }
+
+    impl FromWords for u64 {
+        fn take(w: &mut Words<'_>) -> Self {
+            let lo = w.word();
+            u64::from(w.word()) << 32 | u64::from(lo)
+        }
+    }
+
+    impl FromWords for i64 {
+        fn take(w: &mut Words<'_>) -> Self {
+            u64::take(w).cast_signed()
+        }
+    }
+
+    impl FromWords for f64 {
+        fn take(w: &mut Words<'_>) -> Self {
+            f64::from_bits(u64::take(w))
+        }
+    }
+
+    /// A shim's result: where its original's caller reads it.
+    pub(crate) trait IntoRet {
+        fn into_ret(self) -> Ret;
+    }
+
+    impl IntoRet for () {
+        fn into_ret(self) -> Ret {
+            Ret::VOID
+        }
+    }
+
+    macro_rules! into_eax {
+        ($($t:ty),*) => {$(
+            impl IntoRet for $t {
+                #[allow(clippy::cast_sign_loss, clippy::cast_lossless)] // the register's bits
+                fn into_ret(self) -> Ret {
+                    Ret::eax(self as u32)
+                }
+            }
+        )*};
+    }
+    into_eax!(u32, u16, u8);
+
+    macro_rules! into_eax_signed {
+        ($($t:ty),*) => {$(
+            impl IntoRet for $t {
+                fn into_ret(self) -> Ret {
+                    Ret::eax(i32::from(self).cast_unsigned())
+                }
+            }
+        )*};
+    }
+    into_eax_signed!(i32, i16, i8);
+
+    impl IntoRet for bool {
+        fn into_ret(self) -> Ret {
+            Ret::eax(u32::from(self))
+        }
+    }
+
+    impl IntoRet for u64 {
+        fn into_ret(self) -> Ret {
+            Ret::u64(self)
+        }
+    }
+
+    impl IntoRet for i64 {
+        fn into_ret(self) -> Ret {
+            Ret::u64(self.cast_unsigned())
+        }
+    }
+
+    impl IntoRet for f32 {
+        fn into_ret(self) -> Ret {
+            Ret::st0(f64::from(self))
+        }
+    }
+
+    impl IntoRet for f64 {
+        fn into_ret(self) -> Ret {
+            Ret::st0(self)
+        }
+    }
+}

@@ -36,7 +36,7 @@ use crate::dll::Dll;
 use crate::image::Image;
 use crate::imports::{Heap, ImportFn, Imports, ThreadCrt};
 use crate::sync::Objects;
-use crate::table::{Args, Conv, Ret, Table};
+use crate::table::{Args, Conv, Entry, Port, Ret, Table};
 use crate::{Error, Result};
 use ffx_fpu::x87::Op;
 
@@ -45,6 +45,8 @@ const INT3: u8 = 0xcc;
 /// The x87 control word Windows starts threads with (53-bit precision, all
 /// exceptions masked), as the game thread runs (docs/porting.md).
 pub const FPU_CONTROL: u16 = 0x027f;
+/// Each emulator's translation buffer (`Exec::on_thread`).
+const TCG_BUFFER: u32 = 64 << 20;
 /// The main thread's stack.
 const STACK_SIZE: u32 = 0x0020_0000;
 /// Every other thread's stack (the game asks for less; the emulated code
@@ -52,6 +54,8 @@ const STACK_SIZE: u32 = 0x0020_0000;
 const THREAD_STACK_SIZE: u32 = 0x0010_0000;
 /// The shared stub page: import stubs and data cells.
 const STUB_SIZE: u32 = 0x0001_0000;
+/// Where the trampolines start in the stub page (32 bytes each).
+const TRAMPOLINES: u32 = 0xc000;
 /// Where the executor's own regions start looking for room (above the
 /// image).
 const REGION_HINT: u32 = 0x0300_0000;
@@ -308,6 +312,16 @@ pub struct Shared {
     traps: RwLock<HashMap<u32, Trap>>,
     /// The D3D11 device and DXGI (`crate::gfx`), once created.
     pub gfx: crate::gfx::Slot,
+    /// Trampolines to the originals that ports wrap: address → trampoline
+    /// ([`Exec::call_original`]).
+    originals: HashMap<u32, u32>,
+    /// The virtual clock, the frame boundary and the turns
+    /// (`crate::clock`).
+    pub clock: crate::clock::Clock,
+    /// FMOD's imports on the Rust mixer (`crate::audio`).
+    pub audio: crate::audio::Audio,
+    /// Iggy's imports on `ffx-swf` (`crate::iggy`).
+    pub iggy: crate::iggy::Iggy,
 }
 
 impl std::fmt::Debug for Shared {
@@ -402,8 +416,13 @@ impl Shared {
             x87_watch: Vec::new(),
             traps: RwLock::new(HashMap::new()),
             gfx: crate::gfx::Slot::default(),
+            originals: HashMap::new(),
+            clock: crate::clock::Clock::default(),
+            audio: crate::audio::Audio::default(),
+            iggy: crate::iggy::Iggy::default(),
         };
         s.bind_imports(stubs_at);
+        s.build_trampolines(stubs_at + TRAMPOLINES);
         for addr in s.table.addresses().collect::<Vec<_>>() {
             if s.image.is_code(addr) {
                 s.arena.fill(addr, &[INT3]);
@@ -417,6 +436,35 @@ impl Shared {
             .spawn(move || watchdog(&weak))
             .map_err(Error::Io)?;
         Ok(s)
+    }
+
+    /// Copies each wrapped original's prologue (`Table::wrap`) into a
+    /// trampoline that jumps on into the original's body, before the
+    /// original's entry gets its `int3`. A prologue that doesn't match the
+    /// image leaves that original without a trampoline (its wrapper's
+    /// [`Exec::call_original`] fails).
+    fn build_trampolines(&mut self, mut at: u32) {
+        let mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        for (addr, prologue) in self.table.wrapped().collect::<Vec<_>>() {
+            let mut now = vec![0u8; prologue.len()];
+            ffx_bridge::Mem::read_bytes(&mem, addr, &mut now);
+            if now != prologue || prologue.len() > 24 {
+                crate::log::note(&format!(
+                    "no trampoline for {addr:#010x}: its code is {now:02x?}, not {prologue:02x?}"
+                ));
+                continue;
+            }
+            let mut code = prologue.to_vec();
+            let len = u32::try_from(prologue.len()).unwrap_or(0);
+            let from = at + len + 5;
+            code.push(0xe9);
+            code.extend_from_slice(&(addr + len).wrapping_sub(from).to_le_bytes());
+            self.arena.fill(at, &code);
+            self.originals.insert(addr, at);
+            at += 32;
+        }
     }
 
     /// Finds the x87 instructions `ffx_fpu` computes in `FFX.exe` and the
@@ -443,7 +491,7 @@ impl Shared {
     }
 
     /// Whether the run is ending or out of time.
-    fn overdue(&self) -> bool {
+    pub(crate) fn overdue(&self) -> bool {
         self.sync.stopping()
             || self
                 .deadline
@@ -596,6 +644,12 @@ impl Shared {
     pub fn image(&self) -> &Image {
         &self.image
     }
+
+    /// The arena.
+    #[must_use]
+    pub fn arena(&self) -> &Arc<Arena> {
+        &self.arena
+    }
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
@@ -647,6 +701,14 @@ pub struct Exec {
     pub crt: ThreadCrt,
     /// Exceptions in flight ([`seh`]).
     seh: seh::State,
+    /// The thread's scratch blocks in the arena (`ffx_bridge::route::Scratch`),
+    /// allocated on first use.
+    scratch: [u32; 3],
+    /// The ports' stack frames (`StackFrame`) on the game stack: each
+    /// frame's address and the `esp` below which it was carved.
+    frames: Vec<(u32, u32)>,
+    /// Nesting of [`ffx_bridge::route::Router::call_x87`] (its stubs).
+    x87_depth: u32,
 }
 
 impl Drop for Exec {
@@ -688,6 +750,23 @@ impl Exec {
         let stubs_at = block + 3 * PAGE;
 
         let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default())?;
+        // The translation buffer: QEMU's default is 1 GB per instance on a
+        // 64-bit host, one instance per game thread (33 on the way to the
+        // opening screen); on Windows an endpoint-security hook crashed
+        // reserving them (docs/host.md, "Windows"). 64 MB each.
+        // SAFETY: a plain control call on our own fresh instance, before
+        // anything initialises it.
+        unsafe {
+            unicorn_engine::uc_ctl(
+                uc.get_handle(),
+                unicorn_engine::ControlType(
+                    unicorn_engine::ControlType::TCG_BUFFER_SIZE.0
+                        | unicorn_engine::ControlType::IO_WRITE.0,
+                ),
+                TCG_BUFFER,
+            )
+        }
+        .and(Ok(()))?;
         // A Core 2: no SSE4.2, whose string instructions Unicorn gets wrong
         // (ffx-oracle, the same choice).
         uc.ctl_set_cpu_model(2)?;
@@ -710,6 +789,9 @@ impl Exec {
             recent: Vec::new(),
             crt: ThreadCrt::default(),
             seh: seh::State::default(),
+            scratch: [0; 3],
+            frames: Vec::new(),
+            x87_depth: 0,
         };
         if let Ok(mut l) = exec.shared.emulators.lock() {
             l.push((id, exec.uc.get_handle() as usize));
@@ -936,7 +1018,8 @@ impl Exec {
             if let Stop::Milestone(m) = &why {
                 self.stats.milestones.push(m.clone());
             }
-            if matches!(why, Stop::Failed(..)) {
+            if matches!(why, Stop::Failed(..)) || (self.is_main() && matches!(why, Stop::Budget(_)))
+            {
                 self.trace = self.backtrace();
                 self.recent = self.uc.get_data().recent.iter().copied().collect();
             }
@@ -984,6 +1067,11 @@ impl Exec {
         }
         if self.shared.sync.stopping() {
             self.stopped = Some(self.shared.stopped().unwrap_or(Stop::Returned));
+            // where the main thread was when another thread ended the run
+            // (the budget while it waited: the report says on what)
+            if self.is_main() && self.trace.is_empty() {
+                self.trace = self.backtrace();
+            }
             return true;
         }
         false
@@ -1008,7 +1096,11 @@ impl Exec {
         }
         let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
-            let ret = (entry.port)(self, args);
+            let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
+                self.run_port_from_rust(entry, args)?
+            } else {
+                self.run_port(entry, args)
+            };
             if self.halted() {
                 Err(Error::Stopped)
             } else {
@@ -1047,6 +1139,37 @@ impl Exec {
             }
             r => r,
         }
+    }
+
+    /// Calls the original a wrapping port replaced (`Table::wrap`): the
+    /// port the wrapper displaced when there was one (a `ported!` entry),
+    /// else the original in Unicorn, through its trampoline.
+    ///
+    /// # Errors
+    /// As [`Exec::call`]; an original without a trampoline is an
+    /// [`Error::Interrupt`] at its address.
+    pub fn call_original(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
+        if let Some(entry) = self.shared.table.wrapped_port(addr).copied() {
+            *self.stats.ports.entry(addr).or_default() += 1;
+            let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
+                self.run_port_from_rust(entry, args)?
+            } else {
+                self.run_port(entry, args)
+            };
+            return if self.halted() {
+                Err(Error::Stopped)
+            } else {
+                Ok(ret)
+            };
+        }
+        let Some(&t) = self.shared.originals.get(&addr) else {
+            self.end(Stop::Failed(
+                format!("no trampoline for {addr:#010x}"),
+                addr,
+            ));
+            return Err(Error::Stopped);
+        };
+        self.call(t, conv, args)
     }
 
     /// [`Exec::call`] for a cdecl function of word arguments, returning
@@ -1317,7 +1440,7 @@ impl Exec {
         *self.stats.ports.entry(at).or_default() += 1;
         let args = self.entry_args(entry.words)?;
         let saved = self.save_regs()?;
-        let ret = (entry.port)(self, &args);
+        let ret = self.run_port(entry, &args);
         self.restore_regs(&saved)?;
         if self.halted() {
             return Err(Error::Stopped);
@@ -1328,6 +1451,98 @@ impl Exec {
             0
         };
         self.finish(ret, pops)
+    }
+
+    /// Runs a port: a routed one (`ffx-host-ports`) with this executor as
+    /// the thread's `ffx_bridge::route` router, so its calls into the game
+    /// and its memory come here. Frames it left on the game stack are
+    /// released.
+    ///
+    /// A routed port can't see a stop: its calls into the game just return
+    /// 0, and one that polls (a wait loop around a call) would spin
+    /// forever. So once the thread is halted the router unwinds the port
+    /// ([`Halted`]), which ends here; the caller then sees the stop as for
+    /// any other call.
+    fn run_port(&mut self, entry: Entry, args: &Args) -> Ret {
+        let frames = self.frames.len();
+        let esp = self.uc.reg_read(RegisterX86::ESP).ok();
+        let ret = match entry.port {
+            Port::Exec(f) => f(self, args),
+            Port::Routed(f) => {
+                let me: &mut dyn ffx_bridge::route::Router = self;
+                // SAFETY: the executor outlives the guard, and while it is
+                // set the port reaches the executor only through it.
+                let router = unsafe { ffx_bridge::route::enter(std::ptr::NonNull::from(me)) };
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(args)));
+                drop(router);
+                match r {
+                    Ok(ret) => ret,
+                    Err(p) if p.is::<Halted>() => Ret::VOID,
+                    Err(p) => {
+                        let why = p
+                            .downcast_ref::<&str>()
+                            .map(ToString::to_string)
+                            .or_else(|| p.downcast_ref::<String>().cloned())
+                            .unwrap_or_default();
+                        let at = self.reg(RegisterX86::EIP).unwrap_or(0);
+                        self.end(Stop::Failed(
+                            format!("port {} panicked: {why}", entry.name),
+                            at,
+                        ));
+                        Ret::VOID
+                    }
+                }
+            }
+        };
+        if self.frames.len() > frames {
+            self.frames.truncate(frames);
+            if let Some(esp) = esp {
+                let _ = self.uc.reg_write(RegisterX86::ESP, esp);
+            }
+        }
+        ret
+    }
+
+    /// [`Exec::run_port`] for a call from Rust (`args.slots` 0): the words
+    /// are written to the game stack below the current frame first, as a
+    /// caller in the game would have pushed them, so a shim that reads its
+    /// caller's argument slots (a varargs `printf` reads its `va_list`
+    /// there) finds them in the arena.
+    fn run_port_from_rust(&mut self, entry: Entry, args: &Args) -> Result<Ret> {
+        let esp = self.reg(RegisterX86::ESP)?;
+        let words = u32::try_from(args.stack.len()).unwrap_or(u32::MAX);
+        let top = (esp - 0x40) & !0xf;
+        let Some(base) = top.checked_sub(4 * words) else {
+            return Err(Error::StackOverflow(0));
+        };
+        if base < self.stack.0 + 0x1000 {
+            return Err(Error::StackOverflow(base));
+        }
+        let mut mem = self.mem();
+        for (i, &w) in (0u32..).zip(&args.stack) {
+            ffx_bridge::Mem::write(&mut mem, base + 4 * i, w);
+        }
+        // the return address's word, as for a call from the game
+        ffx_bridge::Mem::write(&mut mem, base - 4, self.sentinel);
+        self.uc.reg_write(RegisterX86::ESP, u64::from(base - 4))?;
+        let mut on_stack = args.clone();
+        on_stack.slots = base;
+        let ret = self.run_port(entry, &on_stack);
+        self.uc.reg_write(RegisterX86::ESP, u64::from(esp))?;
+        Ok(ret)
+    }
+
+    /// Pops `ST0` off Unicorn's x87 stack (what the caller's `fstp` does
+    /// with a float result).
+    fn pop_st0(&mut self) -> Result<()> {
+        let sw = self.uc.reg_read(RegisterX86::FPSW)?;
+        let top = (sw >> 11) & 7;
+        let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
+        self.uc
+            .reg_write(RegisterX86::FPTAG, tag | (3 << (2 * top)))?;
+        let sw = (sw & !0x3800) | (((top + 1) & 7) << 11);
+        self.uc.reg_write(RegisterX86::FPSW, sw)?;
+        Ok(())
     }
 
     /// Runs trap `t` for Unicorn code that called it.
@@ -1846,4 +2061,151 @@ pub fn f80_to_f64(b: &[u8]) -> f64 {
     #[allow(clippy::cast_precision_loss)] // rounds to 53 bits, as fst does
     let m = mant as f64;
     sign * m * 2f64.powi((exp - 16383 - 63).clamp(-1100, 1100))
+}
+
+/// Where [`ffx_bridge::route::Router::call_x87`] writes its stubs in the
+/// thread's stub page (after the `fld; ret n` stubs, before the float cell
+/// at 0xf00 and the SEH stubs), one per nesting level.
+const X87_STUBS: u32 = 0x480;
+/// Bytes per x87 stub.
+const X87_STUB: u32 = 0x80;
+/// Nesting levels of x87 stubs.
+const X87_LEVELS: u32 = 8;
+
+/// The payload [`Exec::run_port`] catches: the thread was halted while a
+/// routed port ran.
+struct Halted;
+
+/// Unwinds the routed port that called into a halted thread
+/// ([`Exec::run_port`]).
+fn halted() -> ! {
+    std::panic::resume_unwind(Box::new(Halted))
+}
+
+/// The executor serves the ported shims' calls and memory
+/// (`ffx_bridge::route`): calls through [`Exec::call`] (the table, the
+/// imports, Unicorn), memory from the arena, scratch and frames inside it.
+impl ffx_bridge::route::Router for Exec {
+    fn call(
+        &mut self,
+        addr: u32,
+        conv: Conv,
+        args: &Args,
+        float: ffx_bridge::route::Float,
+    ) -> ffx_bridge::route::Raw {
+        use ffx_bridge::route::{Float, Raw};
+        let emulated = self.shared.table.get(addr).is_none()
+            && !self.shared.stubs.contains_key(&addr)
+            && self.shared.trap(addr).is_none();
+        let Ok(ret) = Exec::call(self, addr, conv, args) else {
+            halted()
+        };
+        let st0 = match (float, ret.st0) {
+            (Float::None, _) => 0.0,
+            (_, None) => f64::NAN,
+            (Float::F64, Some(v)) => v,
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            (Float::F32, Some(v)) => f64::from(v as f32),
+        };
+        if emulated && float != Float::None && ret.st0.is_some() {
+            // the original left it on Unicorn's x87 stack; the caller's
+            // fstp pops it
+            let _ = self.pop_st0();
+        }
+        Raw {
+            eax: ret.eax,
+            edx: ret.edx.unwrap_or(0),
+            st0,
+        }
+    }
+
+    fn call_x87(&mut self, addr: u32, st: &[f64], float: ffx_bridge::route::Float) -> f64 {
+        use ffx_bridge::Mem as _;
+        use ffx_bridge::route::Float;
+        if self.x87_depth >= X87_LEVELS || st.len() > 7 {
+            return f64::NAN;
+        }
+        // fld qword [cell] for each operand; mov eax, addr; call eax;
+        // fstp dword/qword [out]; ret
+        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
+        let cells = at + 0x40;
+        let out = cells + 0x38;
+        let mut code = Vec::new();
+        let mut mem = self.mem();
+        for (i, &v) in (0u32..).zip(st) {
+            mem.write(cells + 8 * i, v);
+            code.extend_from_slice(&[0xdd, 0x05]);
+            code.extend_from_slice(&(cells + 8 * i).to_le_bytes());
+        }
+        code.push(0xb8);
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(&[0xff, 0xd0]);
+        match float {
+            Float::F32 => code.extend_from_slice(&[0xd9, 0x1d]),
+            Float::F64 | Float::None => code.extend_from_slice(&[0xdd, 0x1d]),
+        }
+        code.extend_from_slice(&out.to_le_bytes());
+        code.push(0xc3);
+        self.write_code(at, &code);
+        self.x87_depth += 1;
+        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
+        self.x87_depth -= 1;
+        if r.is_err() {
+            halted();
+        }
+        match float {
+            Float::F32 => f64::from(mem.read::<f32>(out)),
+            Float::F64 | Float::None => mem.read::<f64>(out),
+        }
+    }
+
+    fn read_bytes(&mut self, addr: u32, out: &mut [u8]) {
+        ffx_bridge::Mem::read_bytes(&self.mem(), addr, out);
+    }
+
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        ffx_bridge::Mem::write_bytes(&mut self.mem(), addr, data);
+    }
+
+    fn scratch(&mut self, slot: ffx_bridge::route::Scratch) -> u32 {
+        let i = slot as usize;
+        if self.scratch[i] == 0 {
+            let at = self.alloc(ffx_bridge::SCRATCH_LEN);
+            if at != 0 {
+                let mut mem = self.mem();
+                ffx_bridge::Mem::write_bytes(&mut mem, at, &[0; ffx_bridge::SCRATCH_LEN as usize]);
+            }
+            self.scratch[i] = at;
+        }
+        self.scratch[i]
+    }
+
+    fn frame_alloc(&mut self, bytes: u32) -> u32 {
+        let Ok(esp) = self.reg(RegisterX86::ESP) else {
+            return 0;
+        };
+        let at = esp.wrapping_sub(bytes) & !0xf;
+        if at < self.stack.0 + 0x1000 || at > esp {
+            return 0;
+        }
+        let mut mem = self.mem();
+        ffx_bridge::Mem::write_bytes(&mut mem, at, &vec![0; (esp - at) as usize]);
+        if self.uc.reg_write(RegisterX86::ESP, u64::from(at)).is_err() {
+            return 0;
+        }
+        self.frames.push((at, esp));
+        at
+    }
+
+    fn frame_free(&mut self, at: u32) {
+        if at == 0 {
+            return;
+        }
+        while let Some((top, esp)) = self.frames.pop() {
+            let _ = self.uc.reg_write(RegisterX86::ESP, u64::from(esp));
+            if top == at {
+                break;
+            }
+        }
+    }
 }

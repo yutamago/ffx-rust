@@ -12,123 +12,50 @@ use ffx_vfx::{
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`), so the
 /// CRT's state moves as it does with the originals.
 fn crt_srand(seed: u32) {
-    // SAFETY: the slot holds the address of the CRT's cdecl `srand(seed)`.
-    unsafe {
-        let slot = crate::rebase(0x00b0_c484) as *const usize;
-        let f: unsafe extern "C" fn(u32) = std::mem::transmute(slot.read());
-        f(seed);
-    }
+    // the slot holds the address of the CRT's cdecl `srand(seed)`
+    ffx_bridge::route::cdecl::<()>(super::import_slot(0x00b0_c484), &[seed]);
 }
 
 /// MSVCR110's `_CIatan` (`ST0` in and out) through the game's import slot
 /// (`0x00b0c450`, behind the thunk `0x00949d5c`), on an x87 value the
 /// caller left unrounded (a 53-bit quotient, exactly an `f64`).
 fn crt_atan(x: f64) -> f64 {
-    let slot = crate::rebase(0x00b0_c450) as *const usize;
-    let mut out = 0f64;
-    // SAFETY: the slot holds the CRT's `_CIatan`, which takes its operand
-    // in ST0 and leaves the result there; the asm loads it, calls it and
-    // stores the result through edi, leaving the x87 stack empty.
-    unsafe {
-        let f = slot.read();
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            x = in(reg) &raw const x,
-            // edi: the callee keeps it (eax, ecx and edx it may not)
-            in("edi") &raw mut out,
-            f = in(reg) f,
-            clobber_abi("C"),
-        );
-    }
-    out
+    // the slot holds the CRT's `_CIatan`, which takes its operand in ST0
+    // and leaves the result there (`fstp qword`)
+    ffx_bridge::route::x87(super::import_slot(0x00b0_c450), &[x])
 }
 
 /// MSVCR110's `_CIatan2` (the x87 form: `ST1` = y, `ST0` = x, the result in
 /// `ST0`), through the game's import slot (`0x00b0c3b0`).
 fn crt_atan2(y: f64, x: f64) -> f64 {
-    let slot = crate::rebase(0x00b0_c3b0) as *const usize;
-    let mut out = 0f64;
-    // SAFETY: the slot holds the CRT's `_CIatan2`, which takes its two
-    // operands on the x87 stack and leaves the result there; the asm loads
-    // them, calls it and stores the result, leaving the x87 stack empty.
-    unsafe {
-        let f = slot.read();
-        std::arch::asm!(
-            "fld qword ptr [{y}]",
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            y = in(reg) &raw const y,
-            x = in(reg) &raw const x,
-            // edi: the callee keeps it (eax, ecx and edx it may not)
-            in("edi") &raw mut out,
-            f = in(reg) f,
-            clobber_abi("C"),
-        );
-    }
-    out
+    // the slot holds the CRT's `_CIatan2`, which takes its two operands on
+    // the x87 stack (y in ST1, x in ST0) and leaves the result there
+    ffx_bridge::route::x87(super::import_slot(0x00b0_c3b0), &[y, x])
 }
 
 /// MSVCR110's `_CIcos` (`cos`) or `_CIsin` through the game's import slot
 /// (`0x00b0c3b4`, `0x00b0c3b8`): the angle loaded as `fld dword`, the
 /// result stored as `fstp dword` through `edi`.
 fn crt_trig(cos: bool, x: f32) -> f32 {
-    let slot = crate::rebase(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }) as *const usize;
-    let mut out = 0f32;
-    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
-    // in ST0 and leaves the result there; the asm loads it, calls it and
-    // stores the result through edi (which the callee keeps), leaving the
-    // x87 stack empty.
-    unsafe {
-        let f = slot.read();
-        std::arch::asm!(
-            "fld dword ptr [{x}]",
-            "call {f}",
-            "fstp dword ptr [edi]",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-    }
-    out
+    let f = super::import_slot(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 });
+    // the slot holds the CRT's intrinsic, which takes its operand in ST0
+    // (`fld dword`) and leaves the result there (`fstp dword`)
+    ffx_bridge::route::x87(f, &[f64::from(x)])
 }
 
 /// MSVCR110's `_CItan` through the game's import slot (`0x00b0c3a0`): the
 /// operand loaded as `fld qword`, the result stored as `fstp qword`
 /// through `edi`.
 fn crt_tan(x: f64) -> f64 {
-    let slot = crate::rebase(0x00b0_c3a0) as *const usize;
-    let mut out = 0f64;
-    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
-    // in ST0 and leaves the result there; the asm loads it, calls it and
-    // stores the result through edi (which the callee keeps), leaving the
-    // x87 stack empty.
-    unsafe {
-        let f = slot.read();
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-    }
-    out
+    // the slot holds the CRT's intrinsic, which takes its operand in ST0
+    // (`fld qword`) and leaves the result there (`fstp qword`)
+    ffx_bridge::route::x87(super::import_slot(0x00b0_c3a0), &[x])
 }
 
 /// MSVCR110's `rand()`, through the game's import slot (`0x00b0c420`).
 fn crt_rand() -> u32 {
-    // SAFETY: the slot holds the address of the CRT's cdecl `rand()`.
-    unsafe {
-        let slot = crate::rebase(0x00b0_c420) as *const usize;
-        let f: unsafe extern "C" fn() -> u32 = std::mem::transmute(slot.read());
-        f()
-    }
+    // the slot holds the address of the CRT's cdecl `rand()`
+    ffx_bridge::route::cdecl(super::import_slot(0x00b0_c420), &[])
 }
 
 /// A function the originals call through a pointer (the program table's
@@ -141,21 +68,13 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
 /// An original cdecl function of up to 12 word arguments that returns a
 /// float in `ST0` (`MsGetChrWidth`, `Ch_GetThickness`): the value at the
 /// x87's precision (the declared `f64` return pops `ST0`).
-#[allow(clippy::many_single_char_names)] // the arguments, in order
 fn call_ptr_f64(f: u32, a: &[u32]) -> f64 {
-    type F12 =
-        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
     let mut w = [0u32; 12];
     let n = a.len().min(12);
     w[..n].copy_from_slice(&a[..n]);
-    // SAFETY: a cdecl function of at most 12 word arguments returning in
-    // ST0; the extra zero words sit on the caller's side of the stack.
-    unsafe {
-        let g: F12 = std::mem::transmute::<usize, F12>(f as usize);
-        g(
-            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
-        )
-    }
+    // a cdecl function of at most 12 word arguments returning in ST0; the
+    // extra zero words sit on the caller's side of the stack
+    ffx_bridge::route::cdecl(f, &w)
 }
 
 /// A rand program with the CRT's `srand`.
@@ -1538,11 +1457,8 @@ ported! {
     /// `ShadowEntries_Init_006d54c0(this, n, buf)`.
     ShadowEntries_Init_006d54c0 @ 0x006d_54c0 => extern "thiscall" fn shadow_entries_init(this: u32, n: u32, buf: u32) -> u32 {
         small::bridge::shadow_entries_init(&mut mem(), this, n, buf, &mut |_, f, this, a: &[u32]| {
-            // SAFETY: ShadowEntry_Init, thiscall of one stack word (`ret 4`).
-            unsafe {
-                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                g(this, a.first().copied().unwrap_or(0))
-            }
+            // ShadowEntry_Init, thiscall of one stack word (`ret 4`)
+            ffx_bridge::route::thiscall(f, this, &[a.first().copied().unwrap_or(0)])
         })
     }
     /// `pppInitProtocolDriver(d, a, b, c, e)`.
@@ -1673,21 +1589,15 @@ ported! {
     /// `ClassDynamicGeometry_setupDynMesh(this)`.
     ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {
         small::bridge::setup_dyn_mesh(&mut mem(), this, &mut |_, f, this, a: &[u32]| {
-            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
-            unsafe {
-                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                g(this, a.first().copied().unwrap_or(0))
-            }
+            // the engine's thiscall function of one stack word (`ret 4`)
+            ffx_bridge::route::thiscall(f, this, &[a.first().copied().unwrap_or(0)])
         })
     }
     /// `vfxIntTree_InsertFinalize_0070fd70(this, node)`.
     vfxIntTree_InsertFinalize_0070fd70 @ 0x0070_fd70 => extern "thiscall" fn vfx_int_tree_insert_finalize(this: u32, node: u32) -> u32 {
         tree::bridge::vfx_int_tree_insert_finalize(&mut mem(), this, node, &mut |_, f, this, a: &[u32]| {
-            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
-            unsafe {
-                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                g(this, a.first().copied().unwrap_or(0))
-            }
+            // the engine's thiscall function of one stack word (`ret 4`)
+            ffx_bridge::route::thiscall(f, this, &[a.first().copied().unwrap_or(0)])
         })
     }
     /// `pppKeBornPtCmpl(pc, pd, prog)`.
@@ -1766,11 +1676,8 @@ ported! {
         let mut frame = super::StackFrame::<4>::new();
         let at = frame.at();
         small::bridge::graphic_vfx_add_screen_fade_event(&mut mem(), [r, g, b, a], alpha, at, &mut |_, f, this, a: &[u32]| {
-            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
-            unsafe {
-                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                g(this, a.first().copied().unwrap_or(0))
-            }
+            // the engine's thiscall function of one stack word (`ret 4`)
+            ffx_bridge::route::thiscall(f, this, &[a.first().copied().unwrap_or(0)])
         })
     }
     /// `pppNoiseBlurDraw_007116d0(a0..a6)`.
@@ -1926,20 +1833,11 @@ ported! {
     /// `VfxGeometry_Register_006a52f0(this, kind)`.
     VfxGeometry_Register_006a52f0 @ 0x006a_52f0 => extern "thiscall" fn vfx_geometry_register(this: u32, kind: u32) -> u32 {
         small::bridge::vfx_geometry_register(&mut mem(), this, kind, &mut |_, f, this, a: &[u32]| {
-            // SAFETY: the engine's thiscall functions of one or two stack
-            // words (the bridge asks for no other count).
-            unsafe {
-                match *a {
-                    [x] => {
-                        let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-                        g(this, x)
-                    }
-                    [x, y] => {
-                        let g: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
-                        g(this, x, y)
-                    }
-                    _ => 0,
-                }
+            // the engine's thiscall functions of one or two stack words
+            // (the bridge asks for no other count)
+            match *a {
+                [_] | [_, _] => ffx_bridge::route::thiscall(f, this, a),
+                _ => 0,
             }
         })
     }

@@ -59,23 +59,18 @@ const ACHIEVEMENT_UNLOCK: u32 = 0x0082_2380;
 /// Calls an original cdecl function of one argument by its `ffx.sym`
 /// address.
 fn call1(sym: u32, a: u32) -> u32 {
-    // SAFETY: the address is a cdecl function of this build taking one u32.
-    unsafe {
-        let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(crate::rebase(sym));
-        f(a)
-    }
+    // a cdecl function of this build taking one u32
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::cdecl(crate::rebase(sym) as u32, &[a])
 }
 
 /// Calls an original cdecl function of four arguments by its `ffx.sym`
 /// address.
 #[allow(clippy::many_single_char_names)]
 fn call4(sym: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
-    // SAFETY: the address is a cdecl function of this build taking four u32s.
-    unsafe {
-        let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 =
-            std::mem::transmute(crate::rebase(sym));
-        f(a, b, c, d)
-    }
+    // a cdecl function of this build taking four u32s
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    ffx_bridge::route::cdecl(crate::rebase(sym) as u32, &[a, b, c, d])
 }
 
 /// Calls the game's cdecl code at a run-time address (`exec::Call`).
@@ -157,31 +152,11 @@ fn crt_trig(t: pos::Trig, x: u32) -> u32 {
         pos::Trig::Sin => 0x00b0_c3b8,
         pos::Trig::Atan => 0x00b0_c450,
     };
-    // SAFETY: the slot holds the address of the CRT's intrinsic, which
-    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
-    // and SSE registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = (crate::rebase(slot) as *const usize).read();
-        let bits: u32;
-        std::arch::asm!(
-            "fld dword ptr [{x}]",
-            "call {f}",
-            "sub esp, 4",
-            "fstp dword ptr [esp]",
-            "pop eax",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            lateout("eax") bits,
-            clobber_abi("C"),
-        );
-        bits
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (slot, x);
-        unreachable!("the CRT's trigonometry runs in the 32-bit game")
-    }
+    // the slot holds the address of the CRT's intrinsic, which takes its
+    // argument in ST0 (`fld dword`: exactly the f32 widened) and returns in
+    // ST0 (`fstp dword`)
+    let f = super::import_slot(slot);
+    ffx_bridge::route::x87::<f32>(f, &[f64::from(f32::from_bits(x))]).to_bits()
 }
 
 /// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot on a
@@ -193,63 +168,19 @@ fn crt_trig_f64(t: pos::Trig, x: f64) -> u32 {
         pos::Trig::Sin => 0x00b0_c3b8,
         pos::Trig::Atan => 0x00b0_c450,
     };
-    // SAFETY: the slot holds the address of the CRT's intrinsic, which
-    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
-    // and SSE registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = (crate::rebase(slot) as *const usize).read();
-        let bits: u32;
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "sub esp, 4",
-            "fstp dword ptr [esp]",
-            "pop eax",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            lateout("eax") bits,
-            clobber_abi("C"),
-        );
-        bits
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (slot, x);
-        0
-    }
+    // the slot holds the address of the CRT's intrinsic, which takes its
+    // argument in ST0 (`fld qword`) and returns in ST0 (`fstp dword`)
+    let f = super::import_slot(slot);
+    ffx_bridge::route::x87::<f32>(f, &[x]).to_bits()
 }
 
 /// MSVCR110's `_CIcos` through the game's import slot (`0x00b0c3b4`,
 /// behind the thunk `0x009498c2`) on a double, as `MsCameraMoveCalc`
 /// calls it: loaded with `fld qword`, the result stored with `fstp qword`.
 fn crt_cos(x: f64) -> f64 {
-    #[cfg(target_arch = "x86")]
-    {
-        let mut out = 0f64;
-        // SAFETY: the slot holds the address of the CRT's intrinsic, which
-        // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the
-        // x87 and SSE registers clobbered); edi, which holds the result's
-        // address, is kept by the callee.
-        unsafe {
-            let f = (crate::rebase(0x00b0_c3b4) as *const usize).read();
-            std::arch::asm!(
-                "fld qword ptr [{x}]",
-                "call {f}",
-                "fstp qword ptr [edi]",
-                x = in(reg) &raw const x,
-                f = in(reg) f,
-                in("edi") &raw mut out,
-                clobber_abi("C"),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = x;
-        f64::NAN
-    }
+    // the slot holds the address of the CRT's intrinsic, which takes its
+    // argument in ST0 and returns in ST0 (`fstp qword`)
+    ffx_bridge::route::x87::<f64>(super::import_slot(0x00b0_c3b4), &[x])
 }
 
 /// `TkMtCalcSpline` or `TkMtCalcSplineTangent` (`f`) into `out`, which
@@ -316,13 +247,13 @@ fn host() -> target::Host<'static> {
         let at = buf.at();
         let held: [u32; 3] = outs.map(|o| m.read(o));
         m.write(at, held);
-        // SAFETY: a cdecl function of this build taking eight words and
-        // returning an f32 in ST0.
-        let d = unsafe {
-            let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f32 =
-                std::mem::transmute(crate::rebase(0x00a4_4120));
-            f(a[0], a[1], a[2], a[3], at, at + 4, at + 8, a[7])
-        };
+        // a cdecl function of this build taking eight words and returning
+        // an f32 in ST0
+        #[allow(clippy::cast_possible_truncation)] // a game address
+        let d: f32 = ffx_bridge::route::cdecl(
+            crate::rebase(0x00a4_4120) as u32,
+            &[a[0], a[1], a[2], a[3], at, at + 4, at + 8, a[7]],
+        );
         let got: [u32; 3] = m.read(at);
         for (o, word) in outs.into_iter().zip(got) {
             m.write(o, word);
@@ -355,13 +286,10 @@ fn host() -> target::Host<'static> {
         call1(0x0086_d950, i)
     }
     fn dir(_: &mut target::Dm<'_>, i: u32) -> u32 {
-        // SAFETY: a cdecl function of this build taking a byte index and
-        // returning an f32 in ST0.
-        unsafe {
-            let f: unsafe extern "C" fn(u32) -> f32 =
-                std::mem::transmute(crate::rebase(0x0086_a6e0));
-            f(i).to_bits()
-        }
+        // a cdecl function of this build taking a byte index and returning
+        // an f32 in ST0
+        #[allow(clippy::cast_possible_truncation)] // a game address
+        ffx_bridge::route::cdecl::<f32>(crate::rebase(0x0086_a6e0) as u32, &[i]).to_bits()
     }
     fn pos(m: &mut target::Dm<'_>, actor: u32, x: u32, y: u32, z: u32) {
         // the outputs may be a frame's locals, at addresses the game never
