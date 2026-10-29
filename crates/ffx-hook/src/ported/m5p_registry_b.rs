@@ -4,8 +4,10 @@
 //! Threads: clusters load on the main thread and the loader; the kernels
 //! and helpers keep no state.
 
+use super::StackFrame;
 #[allow(unused_imports)]
 use super::{call_cdecl, mem, ported};
+use ffx_pload::m5p_registry_b::geometry as gm;
 use ffx_pload::m5p_registry_b::helpers as h;
 use ffx_pload::m5p_registry_b::mapping as mp;
 use ffx_pload::m5p_registry_b::more as m;
@@ -934,5 +936,21 @@ ported! {
     /// `Phyre_PSerialization_PNamespaceMapping_convert_0047c610`.
     Phyre_PSerialization_PNamespaceMapping_convert_0047c610 @ 0x0047_c610 => extern "thiscall" fn mp_0047c610(this: u32, counts: u32, src: u32, dst: u32) -> u32 {
         mp::bridge::driver(&mut mem(), this, counts, src, dst)
+    }
+    /// `FFXApplication_boxOutcode_005a4180`.
+    FFXApplication_boxOutcode_005a4180 @ 0x005a_4180 => extern "C" fn gm_005a4180(min: u32, max: u32, p: u32) -> u32 {
+        gm::bridge::outcode(&mut mem(), min, max, p)
+    }
+    /// `Phyre_PAnimation_bonePalette_005c8830`.
+    Phyre_PAnimation_bonePalette_005c8830 @ 0x005c_8830 => extern "C" fn gm_005c8830(out: u32, skin: u32) -> u32 {
+        { let mut f = StackFrame::<0x10>::new(); gm::bridge::palette(&mut mem(), f.at(), out, skin) }
+    }
+    /// `Phyre_PAnimation_bonePaletteRelative_005c8700`.
+    Phyre_PAnimation_bonePaletteRelative_005c8700 @ 0x005c_8700 => extern "C" fn gm_005c8700(out: u32, skin: u32) -> u32 {
+        { let mut f = StackFrame::<0x32>::new(); gm::bridge::palette_relative(&mut mem(), f.at(), out, skin) }
+    }
+    /// `FFXApplication_clipPolygonPlane_00a2f5e0`.
+    FFXApplication_clipPolygonPlane_00a2f5e0 @ 0x00a2_f5e0 => extern "C" fn gm_00a2f5e0(input: u32, n: u32, out: u32, count: u32, distance: u32) -> u32 {
+        { let mut f = StackFrame::<4>::new(); gm::bridge::clip(&mut mem(), f.at(), input, n, out, count, distance) }
     }
 }

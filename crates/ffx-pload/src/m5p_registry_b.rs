@@ -2466,3 +2466,178 @@ pub mod mapping {
         }
     }
 }
+
+/// Batch 7: the bounding-box out-codes, the bone matrix palettes and the
+/// polygon clipper of the application layer.
+pub mod geometry {
+    use ffx_bridge::x87;
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `PMatrix4_Inverse_004cc0c0(out, m)` (cdecl) -> `out`.
+    pub const INVERSE: u32 = 0x004c_c0c0;
+    /// `PMatrix4_Copy_004c9430(this; m)` (thiscall, `ret 4`).
+    pub const COPY: u32 = 0x004c_9430;
+    /// `PMatrix4_MulThis_004c9da0(a; out, b)` (thiscall, `ret 8`) -> `out`.
+    pub const MUL: u32 = 0x004c_9da0;
+    /// The clipper's edge intersection `(out, a, b, distance)` (cdecl) ->
+    /// `out`.
+    pub const INTERSECT: u32 = 0x00a2_f560;
+
+    pub mod bridge {
+        use super::{COPY, Conv, Host, INTERSECT, INVERSE, MUL, x87};
+
+        /// The point's out-code against a box `(&min, &max, &p)`
+        /// (`0x005a4180`, cdecl): per axis `k`, bit `2k` when `min[k] >
+        /// p[k]`, bit `2k + 1` when `max[k] < p[k]` (false when unordered).
+        pub fn outcode(h: &mut impl Host, min: u32, max: u32, p: u32) -> u32 {
+            let mut code = 0;
+            for k in 0..3u32 {
+                let v = x87::load(h.read(p.wrapping_add(4 * k)));
+                let lo = x87::load(h.read(min.wrapping_add(4 * k)));
+                let hi = x87::load(h.read(max.wrapping_add(4 * k)));
+                if lo > v {
+                    code |= 1 << (2 * k);
+                }
+                if hi < v {
+                    code |= 2 << (2 * k);
+                }
+            }
+            code
+        }
+
+        /// Copies the 16 floats of the matrix at `m` to `out` (through the
+        /// x87).
+        fn store_matrix(h: &mut impl Host, out: u32, m: u32) {
+            for k in 0..16u32 {
+                let f: u32 = h.read(m.wrapping_add(4 * k));
+                h.write(out.wrapping_add(4 * k), x87::store(x87::load(f)));
+            }
+        }
+
+        /// The skinned bone palette `(out, &&skin)` (`0x005c8830`, cdecl;
+        /// `frame`: 0x40 bytes the matrix products go through, as the
+        /// original's locals): the size `64n` (`n = [[skin+0x1c]+8]`), and
+        /// with `out`, `out[i] = mats[lo] * bones[hi]` for each pair `{lo,
+        /// hi}` (u16, `[[skin+0x1c]+0xc]`), the matrices `[skin+0x14]` and
+        /// `[[[skin+0x10]]+0xc]`.
+        pub fn palette(h: &mut impl Host, frame: u32, out: u32, skin: u32) -> u32 {
+            let s: u32 = h.read(skin);
+            let d: u32 = h.read(s.wrapping_add(0x1c));
+            let n = h.read::<u32>(d.wrapping_add(8)) & 0x7fff_ffff;
+            let size = n.wrapping_shl(6);
+            if out == 0 {
+                return size;
+            }
+            let b0: u32 = h.read(s.wrapping_add(0x10));
+            let b1: u32 = h.read(b0);
+            let bones: u32 = h.read(b1.wrapping_add(0xc));
+            let pairs: u32 = h.read(d.wrapping_add(0xc));
+            let mats: u32 = h.read(s.wrapping_add(0x14));
+            for i in 0..n {
+                let lo: u16 = h.read(pairs.wrapping_add(4 * i));
+                let hi: u16 = h.read(pairs.wrapping_add(4 * i + 2));
+                let a = mats.wrapping_add(u32::from(lo) << 6);
+                let b = bones.wrapping_add(u32::from(hi) << 6);
+                let r = h.call_sym(MUL, Conv::Thiscall(a), &[frame, b]);
+                store_matrix(h, out.wrapping_add(64 * i), r);
+            }
+            size
+        }
+
+        /// The palette relative to the first matrix `(out, &&skin)`
+        /// (`0x005c8700`; `frame`: 0xc8 bytes, the original's three local
+        /// matrices at `+0`, `+0x40`, `+0x80`): as [`palette`] with
+        /// `out[i] = inverse(mats[-1]) * mats[lo] * bones[hi]`.
+        pub fn palette_relative(h: &mut impl Host, frame: u32, out: u32, skin: u32) -> u32 {
+            let s: u32 = h.read(skin);
+            let d: u32 = h.read(s.wrapping_add(0x1c));
+            let n = h.read::<u32>(d.wrapping_add(8)) & 0x7fff_ffff;
+            let size = n.wrapping_shl(6);
+            if out == 0 {
+                return size;
+            }
+            let b0: u32 = h.read(s.wrapping_add(0x10));
+            let b1: u32 = h.read(b0);
+            let bones: u32 = h.read(b1.wrapping_add(0xc));
+            let pairs: u32 = h.read(d.wrapping_add(0xc));
+            let mats: u32 = h.read(s.wrapping_add(0x14));
+            let (m0, m1, inv) = (frame, frame.wrapping_add(0x40), frame.wrapping_add(0x80));
+            let r = h.call_sym(INVERSE, Conv::Cdecl, &[m1, mats.wrapping_sub(0x40)]);
+            h.call_sym(COPY, Conv::Thiscall(inv), &[r]);
+            for i in 0..n {
+                let lo: u16 = h.read(pairs.wrapping_add(4 * i));
+                let hi: u16 = h.read(pairs.wrapping_add(4 * i + 2));
+                let a = mats.wrapping_add(u32::from(lo) << 6);
+                let b = bones.wrapping_add(u32::from(hi) << 6);
+                let r1 = h.call_sym(MUL, Conv::Thiscall(inv), &[m0, a]);
+                let r2 = h.call_sym(MUL, Conv::Thiscall(r1), &[m1, b]);
+                store_matrix(h, out.wrapping_add(64 * i), r2);
+            }
+            size
+        }
+
+        /// Appends the 16-byte vertex at `v` (four floats through the x87)
+        /// to `out`, counting in `*count`.
+        fn emit(h: &mut impl Host, out: u32, count: u32, v: u32) {
+            let c: u32 = h.read(count);
+            let dst = out.wrapping_add(c.wrapping_shl(4));
+            h.write(count, c.wrapping_add(1));
+            for k in 0..4u32 {
+                let f: u32 = h.read(v.wrapping_add(4 * k));
+                h.write(dst.wrapping_add(4 * k), x87::store(x87::load(f)));
+            }
+        }
+
+        /// The polygon clip against one plane `(in, n, out, &count,
+        /// distance)` (`0x00a2f5e0`, cdecl; `distance(&v)` a cdecl callback
+        /// returning a float; `frame`: the original's 16-byte local the
+        /// intersection goes through): Sutherland-Hodgman, a vertex kept
+        /// unless its distance is above 0 (NaN keeps it), each edge that
+        /// crosses the plane cut by `0x00a2f560`; `out`.
+        pub fn clip(
+            h: &mut impl Host,
+            frame: u32,
+            input: u32,
+            n: u32,
+            out: u32,
+            count: u32,
+            distance: u32,
+        ) -> u32 {
+            h.write(count, 0u32);
+            if n == 0 {
+                return out;
+            }
+            let mut prev = input.wrapping_add(n.wrapping_sub(1).wrapping_shl(4));
+            let mut prev_out = h.call_st0_f64(distance, Conv::Cdecl, &[prev]) > 0.0;
+            if !prev_out {
+                emit(h, out, count, prev);
+            }
+            let mut cur = input;
+            for _ in 0..n {
+                let cur_out = h.call_st0_f64(distance, Conv::Cdecl, &[cur]) > 0.0;
+                if prev_out == cur_out {
+                    if !cur_out {
+                        emit(h, out, count, cur);
+                    }
+                } else {
+                    let c: u32 = h.read(count);
+                    let dst = out.wrapping_add(c.wrapping_shl(4));
+                    h.write(count, c.wrapping_add(1));
+                    let (a, b) = if prev_out { (cur, prev) } else { (prev, cur) };
+                    let r = h.call_sym(INTERSECT, Conv::Cdecl, &[frame, a, b, distance]);
+                    for k in 0..4u32 {
+                        let f: u32 = h.read(r.wrapping_add(4 * k));
+                        h.write(dst.wrapping_add(4 * k), x87::store(x87::load(f)));
+                    }
+                    if prev_out {
+                        emit(h, out, count, cur);
+                    }
+                }
+                prev = cur;
+                cur = cur.wrapping_add(0x10);
+                prev_out = cur_out;
+            }
+            out
+        }
+    }
+}

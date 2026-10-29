@@ -36,7 +36,8 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_b::{
-    self as rb, bridge as b, helpers as h, mapping as mp, more as m, rest as r, swap as s,
+    self as rb, bridge as b, geometry as gm, helpers as h, mapping as mp, more as m, rest as r,
+    swap as s,
 };
 use ffx_pload::m5p_tmpl_fortype as ft;
 
@@ -54,7 +55,7 @@ impl Rng {
 
 /// The bridge's view of an oracle: its memory, and its emulator for the
 /// original callees.
-struct G<'a>(&'a mut Oracle);
+struct G<'a>(&'a mut Oracle, u32);
 
 impl Mem for G<'_> {
     fn read_bytes(&self, addr: u32, out: &mut [u8]) {
@@ -84,6 +85,22 @@ impl Host for G<'_> {
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
+    }
+    fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        let r = self
+            .0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r.st0_f64().expect("the callee's ST0");
+        // the caller's fstp
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        v
     }
 }
 
@@ -127,6 +144,12 @@ struct Twins {
     log: u32,
     /// Stubs written, by original address.
     stubs: HashMap<u32, u32>,
+    /// `fstp st(0); ret` (the port's pop of a callee's `ST0`).
+    pop: u32,
+    /// Regions the port writes in its own memory where the original
+    /// writes its stack frame: copied to the original's side before the
+    /// next diff.
+    sync: Vec<(u32, usize)>,
 }
 
 impl Twins {
@@ -138,7 +161,11 @@ impl Twins {
             b,
             log: 0,
             stubs: HashMap::new(),
+            pop: 0,
+            sync: Vec::new(),
         };
+        t.pop = t.a.alloc_code(&[0xdd, 0xd8, 0xc3]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0xdd, 0xd8, 0xc3]).unwrap(), t.pop);
         t.log = t.zeros(4 + 64 * ENTRY as usize);
         t
     }
@@ -289,6 +316,11 @@ impl Twins {
     }
 
     fn diff(&mut self, what: &str) {
+        for (at, n) in std::mem::take(&mut self.sync) {
+            let mut v = vec![0u8; n];
+            self.b.read_bytes(at, &mut v);
+            self.a.write(at, &v).unwrap();
+        }
         let d = self.a.diff(&mut self.b).unwrap();
         assert!(
             d.is_empty(),
@@ -318,7 +350,7 @@ impl Twins {
             .a
             .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
-        let out = port(&mut G(&mut self.b));
+        let out = port(&mut G(&mut self.b, self.pop));
         assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
@@ -1459,7 +1491,7 @@ fn copies_and_floats_match_the_original() {
                 t.w32(xy + off, x.to_bits());
                 let addr = t.rebase(f);
                 let ra = t.a.call(addr, Conv::Cdecl, &[xy]).unwrap();
-                let port = m::bridge::axis(&mut G(&mut t.b), xy, off, neg);
+                let port = m::bridge::axis(&mut G(&mut t.b, t.pop), xy, off, neg);
                 assert_eq!(
                     ra.st0_f32().map(f32::to_bits),
                     Some(port.to_bits()),
@@ -1603,8 +1635,14 @@ fn batch4_destructors_and_factories_match_the_original() {
                 let ra =
                     t.a.call(addr, Conv::Thiscall(this), &[cluster, existing])
                         .unwrap();
-                let port =
-                    r::bridge::new_instance(&mut G(&mut t.b), pair, slots, this, cluster, existing);
+                let port = r::bridge::new_instance(
+                    &mut G(&mut t.b, t.pop),
+                    pair,
+                    slots,
+                    this,
+                    cluster,
+                    existing,
+                );
                 assert_eq!(ra.eax, port, "{name} {f:#x}");
                 // the slots the port wrote, against a fresh copy of what
                 // the original would write (instance in both, or one)
@@ -2137,7 +2175,7 @@ fn batch5_bind_and_bounds_match_the_original() {
                 .map(|i| core::array::from_fn(|k| Mem::read(&t.a, log + 4 + i * 32 + 4 * k as u32)))
                 .collect();
             t.b.write(log, &0u32.to_le_bytes()).unwrap();
-            let port = s::bridge::bind_buffer(&mut G(&mut t.b), slots, this, array, index);
+            let port = s::bridge::bind_buffer(&mut G(&mut t.b, t.pop), slots, this, array, index);
             assert_eq!(ra.eax, port, "{name} 0x598d00 {count:#x} {index}");
             let nb: u32 = Mem::read(&t.b, log);
             assert_eq!(na, nb, "{name} calls");
@@ -2475,6 +2513,133 @@ fn batch6_driver_matches_the_original() {
                     Conv::Thiscall(mapping),
                     &[counts, src, dst],
                     |g| Out::U32(mp::bridge::driver(g, mapping, counts, src, dst)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn batch7_outcodes_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let vals = [-2.0f32, -1.0, 0.0, 0.5, 1.0, 3.0, f32::NAN, -0.0];
+        let mut rng = Rng(0x0909_0909);
+        for _ in 0..60 {
+            let mk = |t: &mut Twins, rng: &mut Rng| {
+                let p = t.zeros(12);
+                for k in 0..3 {
+                    let v = vals[(rng.next() % vals.len() as u32) as usize];
+                    t.w32(p + 4 * k, v.to_bits());
+                }
+                p
+            };
+            let (min, max, p) = (
+                mk(&mut t, &mut rng),
+                mk(&mut t, &mut rng),
+                mk(&mut t, &mut rng),
+            );
+            t.check(
+                &format!("{name} 0x5a4180"),
+                0x005a_4180,
+                Conv::Cdecl,
+                &[min, max, p],
+                |g| Out::U32(gm::bridge::outcode(g, min, max, p)),
+            );
+        }
+    }
+}
+
+#[test]
+fn batch7_bone_palettes_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0a0a_0a0a);
+        for n in [0u32, 1, 3] {
+            for with_out in [false, true] {
+                let mats = t.zeros(64 * 6);
+                let bones = t.zeros(64 * 4);
+                for k in 0..(16 * 6) {
+                    t.w32(
+                        mats + 4 * k,
+                        ((rng.next() % 2000) as f32 / 500.0 - 2.0).to_bits(),
+                    );
+                }
+                for k in 0..(16 * 4) {
+                    t.w32(
+                        bones + 4 * k,
+                        ((rng.next() % 2000) as f32 / 500.0 - 2.0).to_bits(),
+                    );
+                }
+                let pairs = t.zeros(16);
+                for i in 0..3 {
+                    t.write(pairs + 4 * i, &((1 + rng.next() % 5) as u16).to_le_bytes());
+                    t.write(pairs + 4 * i + 2, &((rng.next() % 4) as u16).to_le_bytes());
+                }
+                let d = t.zeros(0x10);
+                t.w32(d + 8, n | 0x8000_0000);
+                t.w32(d + 0xc, pairs);
+                let b1 = t.zeros(0x10);
+                t.w32(b1 + 0xc, bones);
+                let b0 = t.zeros(4);
+                t.w32(b0, b1);
+                let s = t.zeros(0x20);
+                t.w32(s + 0x10, b0);
+                t.w32(s + 0x14, mats + 0x40);
+                t.w32(s + 0x1c, d);
+                let skin = t.zeros(4);
+                t.w32(skin, s);
+                let out = if with_out { t.zeros(64 * 3) } else { 0 };
+                for (f, rel) in [(0x005c_8830u32, false), (0x005c_8700, true)] {
+                    let frame = t.zeros(0xc8);
+                    t.sync.push((frame, 0xc8));
+                    t.check(
+                        &format!("{name} {f:#x} {n} {with_out}"),
+                        f,
+                        Conv::Cdecl,
+                        &[out, skin],
+                        |g| {
+                            Out::U32(if rel {
+                                gm::bridge::palette_relative(g, frame, out, skin)
+                            } else {
+                                gm::bridge::palette(g, frame, out, skin)
+                            })
+                        },
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn batch7_clipper_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0b0b_0b0b);
+        // the distance callback: FFXApplication_axisX_00a2f780 (x - 1)
+        let distance = t.rebase(0x00a2_f780);
+        let xs = [0.0f32, 2.0, 1.0, 3.0, -1.0, 0.5, 2.5, f32::NAN, 1.5];
+        for n in [0u32, 1, 3, 4, 6] {
+            for round in 0..4 {
+                let input = t.zeros(16 * 8);
+                for i in 0..n {
+                    let x = xs[((i + round * 3) as usize + rng.next() as usize % 2) % xs.len()];
+                    t.w32(input + 16 * i, x.to_bits());
+                    for k in 1..4 {
+                        t.w32(
+                            input + 16 * i + 4 * k,
+                            ((rng.next() % 100) as f32 / 10.0).to_bits(),
+                        );
+                    }
+                }
+                let out = t.object(&mut rng, 16 * 16);
+                let count = t.object(&mut rng, 4);
+                let frame = t.zeros(16);
+                t.sync.push((frame, 16));
+                t.check(
+                    &format!("{name} 0xa2f5e0 {n} {round}"),
+                    0x00a2_f5e0,
+                    Conv::Cdecl,
+                    &[input, n, out, count, distance],
+                    |g| Out::U32(gm::bridge::clip(g, frame, input, n, out, count, distance)),
                 );
             }
         }
