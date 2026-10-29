@@ -15,7 +15,8 @@
 #               "replacements" = every pure replacement, for replay parity)
 #   --seed N    seed the random number generators with N instead of the clock
 #   --renderer  the external renderer draws the scene (ffx-render.exe, built and copied next to the game)
-#   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx)
+#   --gfx       graphics layer on (FFX_GFX; crates/ffx-hook/src/gfx); FFX_GFX_BOOT_CAPTURE="<windows dir> [hash] frames N"
+#               captures from the first Present on (docs/harness.md, "Two processes")
 #   --rust-map  the map world drawn through ffx-draw (FFX_RUST_MAP; with --gfx;
 #               crates/ffx-hook/src/gfx/scene.rs, docs/draw.md)
 #   --rust-map=build  the same, the supported maps built by the scene builder
@@ -33,6 +34,14 @@
 #               copy of the game folder with its own DINPUT8.dll and
 #               ffx-hook.log), so harness games run side by side
 #   --mod DIR   (with --instance) add DIR as mods/<name of DIR> in the instance
+#   --rust      start ffx-rust.exe (crates/ffx-host, docs/host.md) instead of
+#               FFX.exe: built with tools/build-host.sh, copied into the game
+#               folder (an instance's own file), its report in ffx-rust.log
+#               there; the harness options mean the same (docs/harness.md,
+#               "Two processes"). Only with --background.
+# FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
+#               already built instead of building first (cargo-xwin builds
+#               queue for one lock shared by every worktree)
 #
 # The language lives in Documents\Square Enix\FINAL FANTASY X&X-2 HD
 # Remaster\GameSetting.ini, which the Steam launcher normally writes; the game
@@ -59,11 +68,12 @@ while [[ $# -gt 0 ]]; do
         --mod) mods+=(--mod "$2"); shift ;;
         --call-log) export FFX_HARNESS_CALL_LOG="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_CALL_LOG"; shift ;;
         --renderer) export FFX_RENDERER=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_RENDERER:FFX_RENDER_TEST:FFX_GFX_REDIRECT:FFX_GFX_SHARE:FFX_GFX_FENCE:FFX_RENDER_BACKEND:FFX_RENDERER_SKIP:FFX_RENDER_EXPORT_MATERIALS:FFX_RENDER_GLOW_DUMP/p"; renderer=1 ;;
-        --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT" ;;
+        --gfx) export FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_GFX:FFX_GFX_REDIRECT:FFX_GFX_BOOT_CAPTURE" ;;
         --rust-map) export FFX_RUST_MAP="${FFX_RUST_MAP:-1}" FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
+        --rust) rust=1 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift
@@ -118,6 +128,10 @@ if [[ -n "${FFX_AUDIO_NRT:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_NRT"
 fi
 case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2; exit 2 ;; esac
+# ffx-rust.exe opens a real window: never in the foreground (docs/harness.md)
+if [[ -n "${rust:-}" && "${FFX_HARNESS_BACKGROUND:-}" != 1 ]]; then
+    echo "--rust needs --background" >&2; exit 2
+fi
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"
 elif [[ ${#mods[@]} -gt 0 ]]; then
@@ -150,10 +164,15 @@ for dll in msvcr110 msvcp110; do
     fi
 done
 
-if [[ $hooks == 0 ]]; then
+if [[ -n "${rust:-}" ]]; then
+    [[ "${FFX_NO_BUILD:-}" == 1 ]] || "$repo/tools/build-host.sh" >/dev/null
+    # rm first: never write through a hard link into the game folder.
+    rm -f "$game/ffx-rust.exe"
+    install -m 755 "$repo/target/i686-pc-windows-msvc/release/ffx-rust.exe" "$game/ffx-rust.exe"
+elif [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
 else
-    "$repo/tools/build-hook.sh" >/dev/null
+    [[ "${FFX_NO_BUILD:-}" == 1 ]] || "$repo/tools/build-hook.sh" >/dev/null
     # rm first: never write through a hard link into the game folder.
     rm -f "$game/DINPUT8.dll"
     install -m 755 "$repo/target/i686-pc-windows-msvc/release/dinput8.dll" "$game/DINPUT8.dll"
@@ -241,7 +260,13 @@ if [[ "${FFX_GAME_SLOT_HELD:-}" != 1 && -f "$slot_lock" ]] && ! flock -n "$slot_
 fi
 
 cd "$game"
-if [[ -n "${fixed:-}" ]]; then
+if [[ -n "${rust:-}" ]]; then
+    # ffx-rust.exe restarts itself with bottom-up ASLR off (crates/ffx-host
+    # relaunch.rs), so --fixed-addresses needs no launcher here.
+    rm -f "$game/ffx-rust.log"
+    ./ffx-rust.exe > "$game/ffx-rust.log" 2>&1 &
+    echo "ffx-rust.exe started (language $lang, pid $!, report in $game/ffx-rust.log)"
+elif [[ -n "${fixed:-}" ]]; then
     PATH="$repo/tools/shims:$PATH" XWIN_ARCH=x86,x86_64 flock "${XDG_CACHE_HOME:-$HOME/.cache}/ffx-xwin.lock" cargo xwin build -q --release \
         --manifest-path "$repo/Cargo.toml" --target x86_64-pc-windows-msvc -p ffx-launch >/dev/null
     rm -f "$game/ffx-launch.exe"

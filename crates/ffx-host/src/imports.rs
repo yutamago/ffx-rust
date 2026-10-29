@@ -59,8 +59,9 @@ impl Imports {
     pub fn bind(&mut self, i: usize, dll: &str, name: &str, from: Option<&str>) {
         let from = from.map(str::to_string);
         let full = format!("{dll}!{name}");
-        let found = crate::win32::TABLE
+        let found = platform_table()
             .iter()
+            .chain(crate::win32::TABLE)
             .chain(TABLE)
             .chain(crate::crypt::TABLE)
             .chain(crate::stand_ins::TABLE)
@@ -106,6 +107,20 @@ impl Imports {
     pub fn coverage(&self) -> (usize, usize) {
         let stubbed = self.bound.values().filter(|b| b.run.is_some()).count();
         (stubbed, self.bound.len())
+    }
+}
+
+/// The imports that forward to the real system on this platform, bound
+/// ahead of the stand-ins (on Windows `crate::win_forward`; none
+/// elsewhere).
+fn platform_table() -> &'static [(&'static str, &'static str, Conv, usize, ImportFn)] {
+    #[cfg(windows)]
+    {
+        crate::win_forward::TABLE
+    }
+    #[cfg(not(windows))]
+    {
+        &[]
     }
 }
 

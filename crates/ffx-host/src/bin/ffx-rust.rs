@@ -7,6 +7,10 @@
 //!          [--gfx-out DIR] [--gfx-null] [--presents N]
 //! ```
 //!
+//! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
+//! processes") it serves the harness protocol, takes its Documents folder
+//! from `FFX_HARNESS_HOME` and runs until the test quits it.
+//!
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
 //! function that ran in Unicorn with its calls and time (`--cover`
@@ -22,10 +26,27 @@ use std::time::{Duration, Instant};
 
 #[allow(clippy::too_many_lines)] // the argument loop and the report
 fn main() -> ExitCode {
+    // i686 Windows: FFX.exe's range before anything else allocates
+    if let Err(e) = ffx_host::arena::reserve_image_range() {
+        // the stack or a heap got there first: run in a child whose range
+        // is reserved before it starts (crate::relaunch)
+        #[cfg(all(windows, target_pointer_width = "32"))]
+        if !ffx_host::relaunch::is_child() {
+            return match ffx_host::relaunch::run_child() {
+                Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+                Err(e) => {
+                    eprintln!("arena: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        eprintln!("arena: {e}");
+        return ExitCode::FAILURE;
+    }
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym = PathBuf::from("symbols/ffx.sym");
-    let mut budget = Duration::from_secs(60);
+    let mut budget: Option<Duration> = None;
     let mut cover = false;
     let mut lenient = false;
     let mut count = false;
@@ -42,7 +63,7 @@ fn main() -> ExitCode {
                 budget = args
                     .next()
                     .and_then(|s| s.parse().ok())
-                    .map_or(budget, Duration::from_secs_f64);
+                    .map(Duration::from_secs_f64);
             }
             "--cover" => cover = true,
             "--lenient" => lenient = true,
@@ -75,6 +96,13 @@ fn main() -> ExitCode {
         eprintln!("no game directory (--game-dir or FFX_GAME_DIR)");
         return ExitCode::FAILURE;
     };
+    // the harness's sandbox (FFX_HARNESS_HOME) unless --documents says
+    if opts.documents.is_none() {
+        opts.documents = ffx_host::harness::home();
+    }
+    // a harness game runs until the test quits it
+    let harness = std::env::var_os("FFX_HARNESS").is_some();
+    let budget = budget.unwrap_or(Duration::from_secs(if harness { 7 * 86_400 } else { 60 }));
     let t = Instant::now();
     let table = ffx_host::ports::table();
     let mut exec = match ffx_host::boot_opts(&game.join("FFX.exe"), table, &opts) {
@@ -84,6 +112,10 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Err(e) = ffx_host::harness::start(exec.shared()) {
+        eprintln!("harness: {e}");
+        return ExitCode::FAILURE;
+    }
     if cover && let Err(e) = exec.cover() {
         eprintln!("cover: {e}");
     }

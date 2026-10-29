@@ -596,6 +596,12 @@ impl Shared {
     pub fn image(&self) -> &Image {
         &self.image
     }
+
+    /// The arena.
+    #[must_use]
+    pub fn arena(&self) -> &Arc<Arena> {
+        &self.arena
+    }
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
