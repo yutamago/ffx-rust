@@ -475,3 +475,86 @@ fn angle_steps() {
         }
     }
 }
+
+/// `magic_0162` 0x100066e0: the motion script done, waiting, waiting for
+/// the motion (model and character), and running each command and each
+/// following argument in every mode.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per command
+fn motion_script() {
+    let Some(mut t) = twin(162) else { return };
+    let f = t.at(0x66e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let map = SCRATCH + 0x5000;
+    t.write(map, &[2, 0, 1, 3]);
+    t.set_u32(w(&t, 0xb8), map);
+    t.set_u32(w(&t, 0xb1), 0x0c0c_0001);
+    for i in 0..4 {
+        t.set_u32(w(&t, 0xc3) + 4 * i, 0x0c0c_0100 + i);
+    }
+    let speed = t.img.rel32_target(f + 0x8e);
+    t.set_u32(t.img.word(speed + 0x0a), map);
+    t.set_u32(t.img.word(f + 0x10e), 0x0529_0529);
+    rec(&mut t, 411, 1, |_, a| a[0] & 1);
+    rec(&mut t, 20, 1, |_, a| a[0] & 1);
+    rec(&mut t, 228, 2, |_, a| {
+        if a[1] == 0x10 {
+            (a[0] & 2) * 3
+        } else {
+            a[1].wrapping_sub(0x55)
+        }
+    });
+    for (s, n) in [(23u32, 2usize), (3, 1), (529, 1), (30, 1), (36, 3), (37, 4), (213, 2)] {
+        rec(&mut t, s, n, move |_, _| s);
+    }
+    rec(&mut t, 18, 1, |_, a| a[0].wrapping_sub(0x0c0c_0002));
+    for s in [530u32, 249] {
+        rec(&mut t, s, 2, move |_, _| s);
+    }
+    let (sc, cmds) = (SCRATCH + 0x100, SCRATCH + 0x1000);
+    // (done, wait, model, chr)
+    let states: [(u32, u16, u32, u32); 5] = [
+        (1, 0, 0x5000, 0x0c0c_0003),
+        (0, 3, 0x5000, 0x0c0c_0003),
+        (0, 1, 0x5000, 0x0c0c_0003),
+        (0, 0, 0x5001, 0x0c0c_0002),
+        (0, 0, 0x5000, 0x0c0c_0003),
+    ];
+    let lists: [&[(i32, i32)]; 6] = [
+        &[(-2, 0x40), (-3, 0), (-4, 0), (0x55, -7)],
+        &[(-4, 0), (0x56, -7)],
+        &[(-5, -6), (0, 0)],
+        &[(-1, -5)],
+        &[(0x57, -3), (0, 0)],
+        &[(0x55, -7)],
+    ];
+    for mode in [0u16, 1, 2, 3] {
+        for (k, &(done, wait, model, chr)) in states.iter().enumerate() {
+            for (li, list) in lists.iter().enumerate() {
+                for arg in [None, Some(-4), Some(-2), Some(-1), Some(5), Some(-8), Some(-6)] {
+                    if k < 3 && (li > 0 || arg.is_some()) {
+                        continue;
+                    }
+                    t.write(cmds, &[0x77; 0x40]);
+                    for (i, &(op, a)) in list.iter().enumerate() {
+                        let a = if i + 1 == list.len() { arg.unwrap_or(a) } else { a };
+                        t.set_u32(cmds + 8 * i as u32, op.cast_unsigned());
+                        t.set_u32(cmds + 8 * i as u32 + 4, a.cast_unsigned());
+                    }
+                    t.write(sc, &[0x5a; 0x20]);
+                    t.set_u32(sc, cmds);
+                    t.set_u32(sc + 4, [u32::MAX, 1, 2, 3][li % 4]);
+                    t.set_u32(sc + 8, model);
+                    t.set_u32(sc + 0xc, chr);
+                    t.set_u32(sc + 0x10, u32::MAX);
+                    t.set_u32(sc + 0x14, done);
+                    t.set_u16(sc + 0x18, wait);
+                    t.set_u16(sc + 0x1c, mode);
+                    t.check(f, Call::this(sc), &[], Eax::Checked, |g, img, fr| {
+                        Ret::eax(s4_misc::motion_script(g, img, fr.at, fr.ecx))
+                    });
+                }
+            }
+        }
+    }
+}

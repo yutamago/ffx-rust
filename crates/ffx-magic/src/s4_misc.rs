@@ -12,7 +12,7 @@ use crate::sa_misc::{
     reset_transform_3,
 };
 use crate::sa_pool::{GIVE_BACK, give_back};
-use crate::sb_common::{ANIM_STEP, anim_step};
+use crate::sb_common::{ANIM_STEP, SET_SPEED, anim_step, set_speed};
 use crate::sb_misc::{
     ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, anim_reset, ease_angle,
     ease_sample, mean_position, rotate_offset,
@@ -851,5 +851,180 @@ pub const ANGLE_STEP_CURVED: Sig = Sig {
         (0xed, Callee::Sig(&EASE_SAMPLE)),
         (0x200, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// Runs a motion script (internal, `ecx` = the script: `+0x0` the
+/// commands, 8 bytes each (an operation and its argument); `+0x4` the
+/// actor's index, `+0x8` its model, `+0xc` its character; `+0x10` the
+/// current command; `+0x14` done; `u16 +0x18` a wait, `+0x1a` a frame
+/// count, `+0x1c` the mode: 0 a model, else a character).
+///
+/// Done scripts return 1. A wait counts down (the script goes on when it
+/// runs out); without one the frame count goes up and the script goes on
+/// only when the motion has ended (slot 411 `MsEffectCheckMotion` of the
+/// model non-zero, or slot 20 `Ch_GetWaitMotion` of the character zero).
+/// Then the commands run from the next one: -2 sets the actor's speed
+/// ([`set_speed`]), -3 slot 23 `(chr, 0)`, -4 slot 3 on the actor's
+/// character (`G_SELF` or `G_CHRS[G_MAP[i]]`, operands `+0xb1`, `+0xc3`,
+/// `+0xb8`), each going on to the next; -5 slot 529 `(*G_X)` and -1 stop
+/// there; any other operation starts a motion (mode 0: slot 228 `(model,
+/// motion)`; 1: slots 30, 36 and 18 on the character; 2: slots 30, 37
+/// `(chr, 1, motion)` and 18; else nothing). The command's argument then
+/// says what follows: -7 waits for the motion (the command again, the
+/// wait 1 or the motion's answer; a model without one gets motion 0x10),
+/// -6, -5, -3, -1 end the script (a model gets slot 213 with 2, 3, 1 or
+/// 0), -4 ends it, -2 clears the wait and the count, anything else is the
+/// wait. Returns the done word (1 when it ends).
+///
+/// `magic_0162` 0x100066e0 (640 bytes with its two jump tables, `ecx`;
+/// 20 DLLs).
+#[allow(clippy::too_many_lines)] // the original's two dispatches
+pub fn motion_script<G: Game>(g: &mut G, img: &Image, f: u32, s: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    if g.read::<u32>(s + 0x14) == 1 {
+        return 1;
+    }
+    let wait = g.read::<u16>(s + 0x18);
+    if wait != 0 {
+        let left = wait - 1;
+        g.write::<u16>(s + 0x18, left);
+        if left != 0 {
+            return g.read::<u32>(s + 0x14);
+        }
+    } else {
+        let n = g.read::<u16>(s + 0x1a).wrapping_add(1);
+        g.write::<u16>(s + 0x1a, n);
+        let ended = if g.read::<u16>(s + 0x1c) == 0 {
+            let t = slot_target(g, w(0x23), 411);
+            g.call(t, 0, &[g.read::<u32>(s + 8)]).eax != 0
+        } else {
+            let t = slot_target(g, w(0x23), 20);
+            g.call(t, 0, &[g.read::<u32>(s + 0xc)]).eax == 0
+        };
+        if !ended {
+            return g.read::<u32>(s + 0x14);
+        }
+    }
+    let chr = |g: &G| g.read::<u32>(s + 0xc);
+    let (cmd, answer) = loop {
+        let i = g.read::<u32>(s + 0x10).wrapping_add(1);
+        g.write::<u32>(s + 0x10, i);
+        let cmd = g.read::<u32>(s).wrapping_add(8u32.wrapping_mul(i));
+        match g.read::<u32>(cmd).cast_signed() {
+            -2 => {
+                let (index, speed) = (g.read::<u32>(s + 4), g.read::<u32>(cmd + 4));
+                set_speed(g, img, img.rel32_target(f + 0x8e), index, speed);
+            }
+            -3 => {
+                let t = slot_target(g, w(0x95), 23);
+                g.call(t, 0, &[chr(g), 0]);
+            }
+            -4 => {
+                let i = g.read::<u32>(s + 4);
+                let actor = if i == u32::MAX {
+                    g.read::<u32>(w(0xb1))
+                } else {
+                    let map = g.read::<u32>(w(0xb8));
+                    let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+                    g.read::<u32>(w(0xc3).wrapping_add(4 * k))
+                };
+                let t = slot_target(g, w(0xc9), 3);
+                g.call(t, 0, &[actor]);
+            }
+            -5 => {
+                let t = slot_target(g, w(0x108), 529);
+                g.call(t, 0, &[g.read::<u32>(w(0x10e))]);
+                break (cmd, 1);
+            }
+            -1 => break (cmd, 1),
+            _ => {
+                let answer = match g.read::<u16>(s + 0x1c).cast_signed() {
+                    0 => {
+                        let t = slot_target(g, w(0x18b), 228);
+                        let (model, motion) = (g.read::<u32>(s + 8), g.read::<u32>(cmd));
+                        g.call(t, 0, &[model, motion]).eax
+                    }
+                    1 => {
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x158), 30);
+                        g.call(t, 0, &[c]);
+                        let motion = g.read::<u32>(cmd);
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x167), 36);
+                        g.call(t, 0, &[c, motion, c]);
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x177), 18);
+                        g.call(t, 0, &[c, c, motion, c]).eax
+                    }
+                    2 => {
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x125), 30);
+                        g.call(t, 0, &[c]);
+                        let motion = g.read::<u32>(cmd);
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x134), 37);
+                        g.call(t, 0, &[c, 1, motion, c]);
+                        let c = chr(g);
+                        let t = slot_target(g, w(0x146), 18);
+                        g.call(t, 0, &[c, c, 1, motion, c]).eax
+                    }
+                    _ => 1,
+                };
+                break (cmd, answer);
+            }
+        }
+    };
+    let arg = g.read::<u32>(cmd + 4);
+    let end = |g: &mut G, model_arg: Option<u32>| {
+        if let Some(x) = model_arg
+            && g.read::<u16>(s + 0x1c) == 0
+        {
+            let t = slot_target(g, w(0x1eb), 213);
+            g.call(t, 0, &[g.read::<u32>(s + 8), x]);
+        }
+        g.write::<u32>(s + 0x14, 1);
+        g.read::<u32>(s + 0x14)
+    };
+    match arg.cast_signed() {
+        -7 => {
+            let mut answer = answer;
+            if answer.cast_signed() <= 0 {
+                answer = 1;
+                if g.read::<u16>(s + 0x1c) == 0 {
+                    let t = slot_target(g, w(0x216), 228);
+                    let a = g.call(t, 0, &[g.read::<u32>(s + 8), 0x10]).eax;
+                    if a.cast_signed() > 0 {
+                        answer = a;
+                    }
+                }
+            }
+            let i = g.read::<u32>(s + 0x10).wrapping_sub(1);
+            g.write::<u32>(s + 0x10, i);
+            let done = g.read::<u32>(s + 0x14);
+            g.write::<u16>(s + 0x18, answer as u16);
+            done
+        }
+        -6 => end(g, Some(2)),
+        -5 => end(g, Some(3)),
+        -4 => end(g, None),
+        -3 => end(g, Some(1)),
+        -2 => {
+            g.write::<u32>(s + 0x18, 0);
+            g.read::<u32>(s + 0x14)
+        }
+        -1 => end(g, Some(0)),
+        _ => {
+            g.write::<u16>(s + 0x18, arg as u16);
+            g.read::<u32>(s + 0x14)
+        }
+    }
+}
+
+/// [`motion_script`] (the `rel32`s: [`set_speed`] and a jump inside).
+pub const MOTION_SCRIPT: Sig = Sig {
+    len: 640,
+    hash: 0x150f_79fd_9639_53ba,
+    calls: &[(0x8e, Callee::Sig(&SET_SPEED))],
     imports: &[],
 };
