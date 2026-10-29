@@ -415,6 +415,36 @@ impl Twins {
     }
 }
 
+// ---- batch 10: the pad's axis values ----
+
+#[test]
+fn pad_axes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (seed, words) in [
+            (0x71u8, [0u32, 255, 128, 1023]),
+            (0x72, [0x8000_0000, 0xffff_ffff, 7, 0x7fff_ffff]),
+        ] {
+            let pad = t.junk(0x400, seed);
+            for (i, off) in (0x370u32..0x398).step_by(4).enumerate() {
+                t.w32(pad + off, words[i % 4]);
+            }
+            for id in 0u32..=0x14 {
+                let what = format!("{label}: pad axis {seed:#x} {id:#x}");
+                t.check(&what, 0x0062_8ad0, Conv::Thiscall(pad), &[id], |g| {
+                    Out::F32(scb::pad_axis(g, pad, id))
+                });
+            }
+            t.check(
+                &format!("{label}: pad axis -1"),
+                0x0062_8ad0,
+                Conv::Thiscall(pad),
+                &[0xffff_ffff],
+                |g| Out::F32(scb::pad_axis(g, pad, 0xffff_ffff)),
+            );
+        }
+    }
+}
+
 impl Twins {
     /// A recording stub (as [`Twins::stub_code`]) put into the import slot
     /// `slot` (its `ffx.sym` address), tagged with the slot.

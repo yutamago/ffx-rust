@@ -646,4 +646,8 @@ ported! {
     Phyre_PFramework_PApplicationScriptProxy_Frames @ 0x0062_3660 => extern "C" fn fr_00623660(app: u32, _args: u32) -> u32 {
         fb9::frames(&mut mem(), app)
     }
+    /// `PInputDevicePad_getAxis`: sticks over 255 or 1023, triggers over 255, else 0, in `ST0`.
+    PInputDevicePad_getAxis @ 0x0062_8ad0 => extern "thiscall" fn ax_00628ad0(this: u32, id: u32) -> f32 {
+        sb6::pad_axis(&mem(), this, id)
+    }
 }

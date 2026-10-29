@@ -83,12 +83,28 @@ pub const fn pad_axis_field(id: u32) -> Option<u32> {
     }
 }
 
+/// What `PInputDevicePad::getAxis(id)` reads for `id`: `(field, byte,
+/// divisor)`: sticks 1..=6 the words [`pad_axis_field`] over 255, 7..=10
+/// over 1023, the triggers 0x11 / 0x12 the bytes `+0x3a8` / `+0x3a9` over
+/// 255; `None` (0) for the rest.
+#[must_use]
+pub const fn pad_axis_source(id: u32) -> Option<(u32, bool, f64)> {
+    match id {
+        0x11 => Some((0x3a8, true, 255.0)),
+        0x12 => Some((0x3a9, true, 255.0)),
+        _ => match pad_axis_field(id) {
+            Some(f) => Some((f, false, if id <= 6 { 255.0 } else { 1023.0 })),
+            None => None,
+        },
+    }
+}
+
 pub mod bridge {
     use super::{
         ADD_COMMAND, COMMANDS, Conv, FILE_CLOSE, FIND_NEXT_COMMAND, FIND_SPACE, FORMAT_INT, Host,
         MSG_BADLY_FORMED, MSG_OPEN_FAILED, MSG_UNRECOGNISED, Mem, PRINTF, READER_CTOR, READER_DTOR,
         READER_IS_OPEN, READER_READ_ALL, REPEAT_NAME, SCRIPT_BUFFER_VTABLE, SKIP_BLANK,
-        SSCANF_SLOT, STRICMP_SLOT, pad_axis_field,
+        SSCANF_SLOT, STRICMP_SLOT, pad_axis_field, pad_axis_source,
     };
 
     fn import(h: &impl Mem, slot: u32) -> u32 {
@@ -282,5 +298,18 @@ pub mod bridge {
         m.write(last, mapping);
         m.write(list + 4, mapping);
         0
+    }
+
+    /// `PInputDevicePad::getAxis(id)` (`0x00628ad0`, `ret 4`): the value
+    /// [`pad_axis_source`] names, `fild` / `f32` / divided / `f32`, in
+    /// `ST0`; 0 for other ids.
+    pub fn pad_axis(m: &impl Mem, this: u32, id: u32) -> f32 {
+        match pad_axis_source(id) {
+            Some((field, true, div)) => {
+                crate::p4_input::scaled(u32::from(m.read::<u8>(this + field)), div)
+            }
+            Some((field, false, div)) => crate::p4_input::scaled(m.read(this + field), div),
+            None => 0.0,
+        }
     }
 }
