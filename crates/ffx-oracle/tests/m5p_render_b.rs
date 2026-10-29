@@ -4179,3 +4179,168 @@ fn post4_match_the_original() {
         }
     }
 }
+
+// ---- batch 12: record insert, buffer upload, draw set-up ----
+
+use ffx_prender::m5p_render_b_d3d::{self as d3d, bridge as eb};
+
+#[test]
+fn d3d_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the insert: present, an empty slot, growing (owned, not owned,
+        // failing), an empty list
+        for (case, count, key) in [
+            (0u32, 3u32, 0x22u32),
+            (1, 3, 0x99),
+            (2, 3, 0x99),
+            (3, 0x8000_0003, 0x99),
+            (4, 3, 0x99),
+            (5, 0, 0x99),
+        ] {
+            let buf = t.junk(0x80, 1);
+            t.stub(
+                d3d::PHYRE_MALLOC,
+                false,
+                2,
+                0,
+                if case == 4 { 0 } else { buf },
+            );
+            t.stub(d3d::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let data = t.junk(0x40, 2);
+            for k in 0..3u32 {
+                t.w32(
+                    data + 16 * k,
+                    if case == 1 && k == 1 {
+                        0
+                    } else {
+                        0x11 * (k + 1)
+                    },
+                );
+            }
+            let list = t.zeros(8);
+            t.w32(list, count);
+            t.w32(list + 4, data);
+            let args = [list, key, 0xa, 0xb, 0xc];
+            t.check(
+                &format!("{label}: insert {case}"),
+                0x006a_b950,
+                Conv::Stdcall,
+                &args,
+                |g| Out::U32(eb::insert(g, list, [key, 0xa, 0xb, 0xc])),
+            );
+            t.reset();
+        }
+        // the upload: nothing pending; map failing, no pointer; dynamic or
+        // not; one element inline or several
+        for (case, pending, hr, ptr, dynamic, count) in [
+            (0u32, 0u32, 0u32, 1u32, 2u32, 2u32),
+            (1, 1, 0x8000_4005, 1, 2, 2),
+            (2, 1, 0, 0, 2, 2),
+            (3, 1, 0, 1, 2, 2),
+            (4, 1, 0, 1, 1, 1),
+        ] {
+            let mut words = vec![0u32; 0x10];
+            words[0x3c / 4] = 3;
+            let ctx = t.com_object(&words, &[]);
+            // Map (slot 14): logs its six words, writes the pointer
+            // through the last, returns `hr`
+            let target = t.junk(0x40, 9);
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes());
+            c.extend([0xc1, 0xe0, 0x05]);
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes());
+            c.extend([0xc7, 0x00]);
+            c.extend(0xc00eu32.to_le_bytes());
+            for k in 0..6u8 {
+                c.extend([0x8b, 0x54, 0x24, 4 + 4 * k]);
+                c.extend([0x89, 0x50, 8 + 4 * k]);
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes());
+            c.extend([0x8b, 0x54, 0x24, 0x18]); // mov edx, [esp+0x18]
+            c.extend([0xc7, 0x02]);
+            c.extend((if ptr == 0 { 0 } else { target }).to_le_bytes()); // mov dword [edx], ptr
+            c.push(0xb8);
+            c.extend(hr.to_le_bytes());
+            c.extend([0xc2, 0x18, 0x00]);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let vt = t.r32(ctx);
+            t.w32(vt + 0x38, code);
+            let holder = t.rebase(d3d::HOLDER_CONTEXT);
+            t.put_saved(holder, ctx);
+            t.stub(d3d::SCOPE_ENTER, true, 0, 0, 0x4d50);
+            t.stub(d3d::SCOPE_LEAVE, true, 0, 0, 0x4e90);
+            t.stub(d3d::HOLDER_CTOR, true, 0, 0, 0);
+            t.stub(d3d::ATEXIT, false, 1, 0, 0);
+            t.stub(d3d::MEMCPY, false, 3, 0, 0x3c);
+            let guard = t.rebase(d3d::HOLDER_GUARD);
+            let g = t.r32(guard);
+            t.put_saved(guard, if case == 3 { g & !1 } else { g | 1 });
+            let obj = t.junk(0x40, 3);
+            let elems = t.junk(0x40, 4);
+            let e = if count == 1 { obj + 0x10 } else { elems + 16 };
+            t.w32(obj + 0xc, count);
+            if count > 1 {
+                t.w32(obj + 0x10, elems);
+            }
+            t.w32(e + 8, pending);
+            t.w32(obj + 0x24, dynamic);
+            t.stub(d3d::ELEMENT, true, 1, 1, e);
+            let i = u32::from(count > 1);
+            let ebp = t.ebp_for(1);
+            t.check_frame(
+                &format!("{label}: upload {case}"),
+                0x0059_37a0,
+                Conv::Thiscall(obj),
+                &[i],
+                ebp,
+                0x20,
+                (0x20, 0xc),
+                |g| Out::U32(eb::upload(g, ebp, obj, i)),
+            );
+            t.reset();
+        }
+        // the draw set-up: no topology; each pixel shader; made
+        for (topology, alt) in [(0u32, 0u32), (4, 0), (4, 1)] {
+            t.stub(d3d::MAP_TOPOLOGY, false, 1, 0, topology);
+            t.stub(d3d::PASS_STATE_BIND, true, 1, 1, 0);
+            let mut words = vec![0u32; 0x46];
+            for (off, n) in [
+                (0x114, 4),
+                (0x5c, 4),
+                (0x44, 2),
+                (0x2c, 4),
+                (0x24, 4),
+                (0x1c, 4),
+                (0x40, 4),
+                (0x20, 4),
+                (0x28, 4),
+                (0x48, 6),
+                (0x60, 2),
+                (0x34, 3),
+            ] {
+                words[off / 4] = n;
+            }
+            let ctx = t.com_object(&words, &[]);
+            let r = t.junk(0x80, 5);
+            t.w32(r + 0x70, ctx);
+            let obj = t.junk(0x80, 6);
+            t.w32(obj + 0x58, alt);
+            let ebp = t.ebp_for(4);
+            t.check_frame(
+                &format!("{label}: draw setup {topology} {alt}"),
+                0x0059_2e90,
+                Conv::Thiscall(obj),
+                &[r, 7, 2, 6],
+                ebp,
+                0x30,
+                (0x30, 4),
+                |g| Out::U32(eb::draw_setup(g, ebp, obj, r, 7, 2, 6)),
+            );
+            t.reset();
+        }
+    }
+}

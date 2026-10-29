@@ -9,6 +9,7 @@
 
 use ffx_prender::m5p_render_b::{self as rb, bridge as b};
 use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
+use ffx_prender::m5p_render_b_d3d::bridge as eb;
 use ffx_prender::m5p_render_b_dtors::bridge as tb;
 use ffx_prender::m5p_render_b_frames::bridge as fb;
 use ffx_prender::m5p_render_b_more::bridge as mb;
@@ -1252,5 +1253,22 @@ ported! {
     PStructuredBufferD3D11_createViews_0058f5d0 @ 0x0058_f5d0 => extern "thiscall" fn j_0058f5d0(this: u32) -> u32 {
         let mut f = super::StackFrame::<3>::new();
         jb::create_views(&mut mem(), this, f.at())
+    }
+    // ---- batch 12: record insert, buffer upload, draw set-up (ffx_prender::m5p_render_b_d3d) ----
+    /// `MorphManager_insertRecord_006ab950`.
+    MorphManager_insertRecord_006ab950 @ 0x006a_b950 => extern "stdcall" fn e_006ab950(list: u32, key: u32, a: u32, b: u32, c: u32) -> u32 {
+        eb::insert(&mut mem(), list, [key, a, b, c])
+    }
+    /// `PDynamicBufferD3D11_upload_005937a0`: the lock and the mapping in this frame.
+    PDynamicBufferD3D11_upload_005937a0 @ 0x0059_37a0 => extern "thiscall" fn e_005937a0(this: u32, i: u32) -> u32 {
+        let mut f = super::StackFrame::<8>::new();
+        let ebp = f.at() + 0x20;
+        eb::upload(&mut mem(), ebp, this, i)
+    }
+    /// `PFullscreenQuadD3D11_drawSetup_00592e90`: the buffers, strides and offsets in this frame.
+    PFullscreenQuadD3D11_drawSetup_00592e90 @ 0x0059_2e90 => extern "thiscall" fn e_00592e90(this: u32, r: u32, primitive: u32, slot: u32, n: u32) -> u32 {
+        let mut f = super::StackFrame::<12>::new();
+        let ebp = f.at() + 0x30;
+        eb::draw_setup(&mut mem(), ebp, this, r, primitive, slot, n)
     }
 }
