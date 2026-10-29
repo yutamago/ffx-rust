@@ -65,7 +65,10 @@ pub mod sb_sse;
 pub mod sb_vm;
 // the shared work list's third round (shared-3)
 pub mod s3_matrix;
+pub mod s3_misc;
+pub mod s3_motion;
 pub mod s3_nodes;
+pub mod s3_summon;
 pub mod s3_vm;
 pub mod s3_wrap;
 
@@ -876,6 +879,9 @@ ports! {
     "vm actor record" => s3_vm::OP_ACTOR_RECORD, s3_vm::op_actor_record;
     "vm actor block" => s3_vm::OP_ACTOR_BLOCK, s3_vm::op_actor_block;
     "vm each actor unless listed" => s3_vm::OP_EACH_UNLESS_LISTED, s3_vm::op_each_unless_listed;
+    "summon frame" => s3_summon::SUMMON_FRAME, s3_summon::summon_frame;
+    "colour fade" => s3_misc::COLOUR_FADE, s3_misc::colour_fade;
+    "colour step" => s3_misc::COLOUR_STEP, s3_misc::colour_step;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1112,6 +1118,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("leave and reset", &s3_nodes::LEAVE_AND_RESET),
     ("particle node with", &s3_nodes::PARTICLE_NODE_WITH),
     ("effect node with", &s3_nodes::EFFECT_NODE_WITH),
+    ("motion step", &s3_motion::MOTION_STEP),
+    ("model nodes", &s3_summon::MODEL_NODES),
+    ("colour node", &s3_misc::COLOUR_NODE),
+    ("fade task", &s3_misc::FADE_TASK),
+    ("key step", &s3_misc::KEY_STEP),
+    ("key step (curved)", &s3_misc::KEY_STEP_CURVED),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
