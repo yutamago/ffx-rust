@@ -419,3 +419,125 @@ fn static_init_c_zero_words_and_imports() {
         let _ = t.snapshot;
     }
 }
+
+// ---- the destructors (batch 2) ----
+
+/// `CloseHandle`, the import of the `ImportWord` destructors (a recording
+/// stub, stdcall, one word).
+const CLOSE_HANDLE: &str = "CloseHandle";
+
+impl Twins {
+    /// Replaces each distinct callee in `syms` with a recording stub that
+    /// logs `ecx` (thiscalls) and `n` stack words and returns a marker of its own (the
+    /// callees are cdecl, or thiscall without stack words: plain `ret`).
+    fn stub_callees(&mut self, this: bool, n: u32, syms: impl IntoIterator<Item = u32>) {
+        let mut seen: Vec<u32> = Vec::new();
+        for sym in syms {
+            if !seen.contains(&sym) {
+                seen.push(sym);
+                self.stub(sym, this, n, 0, 0x5100_0000 | sym);
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_thiscalls() {
+    for (what, mut t) in Twins::all() {
+        t.stub_callees(true, 0, si::TAIL_THISCALLS.iter().map(|r| r.target));
+        t.stub_callees(true, 0, si::FRAME_THISCALLS.iter().map(|r| r.target));
+        t.stub_callees(true, 0, si::VT_TAILS.iter().map(|r| r.target));
+        for r in si::TAIL_THISCALLS {
+            t.run(&format!("{what} tail {:#x}", r.addr), r.addr, |g| {
+                si::tail_thiscall(g, r)
+            });
+        }
+        for r in si::FRAME_THISCALLS {
+            t.run(&format!("{what} frame {:#x}", r.addr), r.addr, |g| {
+                si::tail_thiscall(g, r)
+            });
+        }
+        for r in si::VT_TAILS {
+            t.set_global(r.obj, 0x1111_2222);
+            t.run(&format!("{what} vt tail {:#x}", r.addr), r.addr, |g| {
+                si::vt_tail(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_calls() {
+    for (what, mut t) in Twins::all() {
+        t.stub_callees(false, 1, si::CALL_ARGS.iter().map(|r| r.func));
+        t.stub_callees(false, 1, si::VT_CALLS.iter().map(|r| r.func));
+        t.stub_callees(false, 1, si::FREE_UNLESS_BIT0.iter().map(|r| r.func));
+        for r in si::CALL_ARGS {
+            t.run(&format!("{what} call {:#x}", r.addr), r.addr, |g| {
+                si::call_arg(g, r)
+            });
+        }
+        for r in si::VT_CALLS {
+            t.set_global(r.obj, 0x1111_2222);
+            t.run(&format!("{what} vt call {:#x}", r.addr), r.addr, |g| {
+                si::vt_call(g, r)
+            });
+        }
+        for r in si::FREE_UNLESS_BIT0 {
+            // the global as it is, then bit 0 clear (freed) and set (kept)
+            let at = t.rebase(r.g);
+            let own: u32 = Mem::read(&t.b, at);
+            for (case, word) in [("own", own), ("clear", 0x0bad_f00c), ("set", 0x0bad_f00d)] {
+                t.w32(at, word);
+                let freed = word & 1 == 0;
+                t.run_logged(
+                    &format!("{what} free {:#x} ({case} {word:#x})", r.addr),
+                    r.addr,
+                    true,
+                    freed,
+                    |g| si::free_unless_bit0(g, r),
+                );
+                if !freed {
+                    assert_eq!(t.log_entries(), 0, "{what} free {:#x}: kept", r.addr);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_stores_and_imports() {
+    for (what, mut t) in Twins::all() {
+        for r in si::STORE_WORDS {
+            t.set_global(r.g, 0x1111_2222);
+            // a void shim: the original leaves eax alone, nothing is logged
+            t.run_logged(
+                &format!("{what} store {:#x}", r.addr),
+                r.addr,
+                false,
+                false,
+                |g| {
+                    si::store_word(g, r);
+                    0
+                },
+            );
+            let at = t.rebase(r.g);
+            assert_eq!(
+                Mem::read::<u32>(&t.b, at),
+                t.rebase(r.value),
+                "{what} store {:#x}",
+                r.addr
+            );
+        }
+        // CloseHandle: logs its handle, pops it, returns a marker
+        let close = t.stub_code(0x0c7e_0002, false, 1, 1, 0x0c10_5e00);
+        t.a.bind_import(CLOSE_HANDLE, Some(close)).unwrap();
+        t.b.bind_import(CLOSE_HANDLE, Some(close)).unwrap();
+        for r in si::IMPORT_WORDS {
+            t.set_global(r.g, 0x0000_0abc ^ r.addr);
+            t.run(&format!("{what} import word {:#x}", r.addr), r.addr, |g| {
+                si::import_word(g, r)
+            });
+        }
+    }
+}

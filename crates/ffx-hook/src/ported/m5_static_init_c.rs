@@ -745,4 +745,724 @@ ported! {
     StaticInit_POccluderGeometryObject_00af99e0 @ 0x00af_99e0 => extern "C" fn s_00af99e0() -> u32 {
         si::class_decl_fn(&mut mem(), &si::CLASS_DECLS_FN[0])
     }
+    /// `StaticDtor_StoreVt_00af9b00`: atexit destructor: stores the vtable `0x00b0d9cc` in `0x00c8b438` (void: eax untouched).
+    StaticDtor_StoreVt_00af9b00 @ 0x00af_9b00 => extern "C" fn s_00af9b00() {
+        si::store_word(&mut mem(), &si::STORE_WORDS[0]);
+    }
+    /// `StaticDtor_StoreVt_00af9b10`: atexit destructor: stores the vtable `0x00b0d9cc` in `0x00c8b440` (void: eax untouched).
+    StaticDtor_StoreVt_00af9b10 @ 0x00af_9b10 => extern "C" fn s_00af9b10() {
+        si::store_word(&mut mem(), &si::STORE_WORDS[1]);
+    }
+    /// `StaticDtor_StoreVt_00af9b20`: atexit destructor: stores the vtable `0x00b0d9cc` in `0x00c8b43c` (void: eax untouched).
+    StaticDtor_StoreVt_00af9b20 @ 0x00af_9b20 => extern "C" fn s_00af9b20() {
+        si::store_word(&mut mem(), &si::STORE_WORDS[2]);
+    }
+    /// `StaticDtor_Free_00af9b60`: atexit destructor: when bit 0 of the word at `0x00c8ff30` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00af9b60 @ 0x00af_9b60 => extern "C" fn s_00af9b60() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[0])
+    }
+    /// `StaticDtor_Free_00af9b80`: atexit destructor: when bit 0 of the word at `0x00c8ff2c` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00af9b80 @ 0x00af_9b80 => extern "C" fn s_00af9b80() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[1])
+    }
+    /// `StaticDtor_Thiscall_00af9e10`: atexit destructor: ecx = `0x00c90288`, tail-jumps to `0x00433dd0` (thiscall); its eax.
+    StaticDtor_Thiscall_00af9e10 @ 0x00af_9e10 => extern "C" fn s_00af9e10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[0])
+    }
+    /// `StaticDtor_VtThiscall_00af9f00`: atexit destructor: stores the vtable `0x00b0e16c` in `0x00c902e8`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00af9f00 @ 0x00af_9f00 => extern "C" fn s_00af9f00() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[0])
+    }
+    /// `StaticDtor_VtThiscall_00afa040`: atexit destructor: stores the vtable `0x00b0eae4` in `0x00c90760`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00afa040 @ 0x00af_a040 => extern "C" fn s_00afa040() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[1])
+    }
+    /// `StaticDtor_Thiscall_00afa060`: atexit destructor: ecx = `0x00c907f4`, tail-jumps to `0x00575940` (thiscall); its eax.
+    StaticDtor_Thiscall_00afa060 @ 0x00af_a060 => extern "C" fn s_00afa060() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[1])
+    }
+    /// `StaticDtor_VtThiscall_00afaa00`: atexit destructor: stores the vtable `0x00b10abc` in `0x00c922c0`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00afaa00 @ 0x00af_aa00 => extern "C" fn s_00afaa00() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[2])
+    }
+    /// `StaticDtor_Thiscall_00afaf60`: atexit destructor: ecx = `0x00c940c4`, tail-jumps to `0x0045c1d0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afaf60 @ 0x00af_af60 => extern "C" fn s_00afaf60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[2])
+    }
+    /// `StaticDtor_Thiscall_00afc2e0`: atexit destructor: calls `0x0047fc10` on `0x00c98668` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc2e0 @ 0x00af_c2e0 => extern "C" fn s_00afc2e0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[0])
+    }
+    /// `StaticDtor_Thiscall_00afc2f0`: atexit destructor: calls `0x0047fc10` on `0x00c986a4` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc2f0 @ 0x00af_c2f0 => extern "C" fn s_00afc2f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[1])
+    }
+    /// `StaticDtor_Thiscall_00afc300`: atexit destructor: calls `0x0047fc10` on `0x00c98650` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc300 @ 0x00af_c300 => extern "C" fn s_00afc300() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[2])
+    }
+    /// `StaticDtor_Thiscall_00afc310`: atexit destructor: calls `0x0047fc10` on `0x00c98698` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc310 @ 0x00af_c310 => extern "C" fn s_00afc310() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[3])
+    }
+    /// `StaticDtor_Thiscall_00afc320`: atexit destructor: calls `0x0047fc10` on `0x00c9868c` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc320 @ 0x00af_c320 => extern "C" fn s_00afc320() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[4])
+    }
+    /// `StaticDtor_Thiscall_00afc330`: atexit destructor: calls `0x0047fc10` on `0x00c986c8` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc330 @ 0x00af_c330 => extern "C" fn s_00afc330() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[5])
+    }
+    /// `StaticDtor_Thiscall_00afc340`: atexit destructor: calls `0x0047fc10` on `0x00c986d4` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc340 @ 0x00af_c340 => extern "C" fn s_00afc340() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[6])
+    }
+    /// `StaticDtor_Thiscall_00afc350`: atexit destructor: calls `0x0047fc10` on `0x00c986e0` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc350 @ 0x00af_c350 => extern "C" fn s_00afc350() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[7])
+    }
+    /// `StaticDtor_Thiscall_00afc360`: atexit destructor: calls `0x0047fc10` on `0x00c98644` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc360 @ 0x00af_c360 => extern "C" fn s_00afc360() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[8])
+    }
+    /// `StaticDtor_Thiscall_00afc370`: atexit destructor: calls `0x0047fc10` on `0x00c986ec` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc370 @ 0x00af_c370 => extern "C" fn s_00afc370() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[9])
+    }
+    /// `StaticDtor_Thiscall_00afc380`: atexit destructor: calls `0x0047fc10` on `0x00c9862c` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc380 @ 0x00af_c380 => extern "C" fn s_00afc380() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[10])
+    }
+    /// `StaticDtor_Thiscall_00afc390`: atexit destructor: calls `0x0047fc10` on `0x00c98638` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc390 @ 0x00af_c390 => extern "C" fn s_00afc390() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[11])
+    }
+    /// `StaticDtor_Thiscall_00afc3a0`: atexit destructor: calls `0x0047fc10` on `0x00c985b4` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3a0 @ 0x00af_c3a0 => extern "C" fn s_00afc3a0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[12])
+    }
+    /// `StaticDtor_Thiscall_00afc3b0`: atexit destructor: calls `0x0047fc10` on `0x00c98614` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3b0 @ 0x00af_c3b0 => extern "C" fn s_00afc3b0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[13])
+    }
+    /// `StaticDtor_Thiscall_00afc3c0`: atexit destructor: calls `0x0047fc10` on `0x00c98608` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3c0 @ 0x00af_c3c0 => extern "C" fn s_00afc3c0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[14])
+    }
+    /// `StaticDtor_Thiscall_00afc3d0`: atexit destructor: calls `0x0047fc10` on `0x00c985fc` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3d0 @ 0x00af_c3d0 => extern "C" fn s_00afc3d0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[15])
+    }
+    /// `StaticDtor_Thiscall_00afc3e0`: atexit destructor: calls `0x0047fc10` on `0x00c985e4` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3e0 @ 0x00af_c3e0 => extern "C" fn s_00afc3e0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[16])
+    }
+    /// `StaticDtor_Thiscall_00afc3f0`: atexit destructor: calls `0x0047fc10` on `0x00c985f0` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc3f0 @ 0x00af_c3f0 => extern "C" fn s_00afc3f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[17])
+    }
+    /// `StaticDtor_Thiscall_00afc400`: atexit destructor: calls `0x0047fc10` on `0x00c985d8` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc400 @ 0x00af_c400 => extern "C" fn s_00afc400() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[18])
+    }
+    /// `StaticDtor_Thiscall_00afc410`: atexit destructor: calls `0x0047fc10` on `0x00c9865c` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc410 @ 0x00af_c410 => extern "C" fn s_00afc410() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[19])
+    }
+    /// `StaticDtor_Thiscall_00afc420`: atexit destructor: calls `0x0047fc10` on `0x00c98680` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc420 @ 0x00af_c420 => extern "C" fn s_00afc420() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[20])
+    }
+    /// `StaticDtor_Thiscall_00afc430`: atexit destructor: calls `0x0047fc10` on `0x00c98674` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc430 @ 0x00af_c430 => extern "C" fn s_00afc430() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[21])
+    }
+    /// `StaticDtor_Thiscall_00afc440`: atexit destructor: calls `0x0047fc10` on `0x00c986bc` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc440 @ 0x00af_c440 => extern "C" fn s_00afc440() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[22])
+    }
+    /// `StaticDtor_Thiscall_00afc450`: atexit destructor: calls `0x0047fc10` on `0x00c986b0` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc450 @ 0x00af_c450 => extern "C" fn s_00afc450() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[23])
+    }
+    /// `StaticDtor_Thiscall_00afc460`: atexit destructor: calls `0x0047fc10` on `0x00c98620` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc460 @ 0x00af_c460 => extern "C" fn s_00afc460() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[24])
+    }
+    /// `StaticDtor_Thiscall_00afc470`: atexit destructor: calls `0x0047fc10` on `0x00c985cc` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc470 @ 0x00af_c470 => extern "C" fn s_00afc470() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[25])
+    }
+    /// `StaticDtor_Thiscall_00afc480`: atexit destructor: calls `0x0047fc10` on `0x00c985c0` (thiscall, inside an ebp frame); its eax.
+    StaticDtor_Thiscall_00afc480 @ 0x00af_c480 => extern "C" fn s_00afc480() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::FRAME_THISCALLS[26])
+    }
+    /// `StaticDtor_Thiscall_00afe060`: atexit destructor: ecx = `0x00ca315c`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe060 @ 0x00af_e060 => extern "C" fn s_00afe060() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[3])
+    }
+    /// `StaticDtor_Thiscall_00afe090`: atexit destructor: ecx = `0x00ca3224`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe090 @ 0x00af_e090 => extern "C" fn s_00afe090() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[4])
+    }
+    /// `StaticDtor_Thiscall_00afe0a0`: atexit destructor: ecx = `0x00ca324c`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe0a0 @ 0x00af_e0a0 => extern "C" fn s_00afe0a0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[5])
+    }
+    /// `StaticDtor_Thiscall_00afe0f0`: atexit destructor: ecx = `0x00ca31ac`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe0f0 @ 0x00af_e0f0 => extern "C" fn s_00afe0f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[6])
+    }
+    /// `StaticDtor_Thiscall_00afe100`: atexit destructor: ecx = `0x00ca31d4`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe100 @ 0x00af_e100 => extern "C" fn s_00afe100() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[7])
+    }
+    /// `StaticDtor_Thiscall_00afe110`: atexit destructor: ecx = `0x00ca31fc`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe110 @ 0x00af_e110 => extern "C" fn s_00afe110() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[8])
+    }
+    /// `StaticDtor_Thiscall_00afe180`: atexit destructor: ecx = `0x00ca33dc`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe180 @ 0x00af_e180 => extern "C" fn s_00afe180() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[9])
+    }
+    /// `StaticDtor_Thiscall_00afe1f0`: atexit destructor: ecx = `0x00ca33b4`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe1f0 @ 0x00af_e1f0 => extern "C" fn s_00afe1f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[10])
+    }
+    /// `StaticDtor_Thiscall_00afe220`: atexit destructor: ecx = `0x00ca3184`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe220 @ 0x00af_e220 => extern "C" fn s_00afe220() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[11])
+    }
+    /// `StaticDtor_Thiscall_00afe230`: atexit destructor: ecx = `0x00ca329c`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe230 @ 0x00af_e230 => extern "C" fn s_00afe230() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[12])
+    }
+    /// `StaticDtor_Thiscall_00afe240`: atexit destructor: ecx = `0x00ca310c`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe240 @ 0x00af_e240 => extern "C" fn s_00afe240() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[13])
+    }
+    /// `StaticDtor_Thiscall_00afe250`: atexit destructor: ecx = `0x00ca34cc`, tail-jumps to `0x004c0ed0` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe250 @ 0x00af_e250 => extern "C" fn s_00afe250() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[14])
+    }
+    /// `StaticDtor_VtThiscall_00afe4c0`: atexit destructor: stores the vtable `0x00b1ec74` in `0x00ca4430`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00afe4c0 @ 0x00af_e4c0 => extern "C" fn s_00afe4c0() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[3])
+    }
+    /// `StaticDtor_Thiscall_00afe730`: atexit destructor: ecx = `0x00ca4edc`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe730 @ 0x00af_e730 => extern "C" fn s_00afe730() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[15])
+    }
+    /// `StaticDtor_Thiscall_00afe860`: atexit destructor: ecx = `0x00ca4ef4`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00afe860 @ 0x00af_e860 => extern "C" fn s_00afe860() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[16])
+    }
+    /// `StaticDtor_Thiscall_00afea50`: atexit destructor: ecx = `0x00ca54fc`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00afea50 @ 0x00af_ea50 => extern "C" fn s_00afea50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[17])
+    }
+    /// `StaticDtor_Thiscall_00afea60`: atexit destructor: ecx = `0x00ca5514`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00afea60 @ 0x00af_ea60 => extern "C" fn s_00afea60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[18])
+    }
+    /// `StaticDtor_Call_00afea70`: atexit destructor: `0x004327b0`(`0x00c169c4`) (cdecl); its eax.
+    StaticDtor_Call_00afea70 @ 0x00af_ea70 => extern "C" fn s_00afea70() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[0])
+    }
+    /// `StaticDtor_Call_00afea80`: atexit destructor: `0x004327b0`(`0x00c16bb4`) (cdecl); its eax.
+    StaticDtor_Call_00afea80 @ 0x00af_ea80 => extern "C" fn s_00afea80() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[1])
+    }
+    /// `StaticDtor_Call_00afea90`: atexit destructor: `0x004327b0`(`0x00c16bc4`) (cdecl); its eax.
+    StaticDtor_Call_00afea90 @ 0x00af_ea90 => extern "C" fn s_00afea90() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[2])
+    }
+    /// `StaticDtor_Call_00afeaa0`: atexit destructor: `0x004327b0`(`0x00c16a84`) (cdecl); its eax.
+    StaticDtor_Call_00afeaa0 @ 0x00af_eaa0 => extern "C" fn s_00afeaa0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[3])
+    }
+    /// `StaticDtor_Call_00afeab0`: atexit destructor: `0x004327b0`(`0x00c16ba4`) (cdecl); its eax.
+    StaticDtor_Call_00afeab0 @ 0x00af_eab0 => extern "C" fn s_00afeab0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[4])
+    }
+    /// `StaticDtor_Call_00afeac0`: atexit destructor: `0x004327b0`(`0x00c16b94`) (cdecl); its eax.
+    StaticDtor_Call_00afeac0 @ 0x00af_eac0 => extern "C" fn s_00afeac0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[5])
+    }
+    /// `StaticDtor_Call_00afead0`: atexit destructor: `0x004327b0`(`0x00c16b24`) (cdecl); its eax.
+    StaticDtor_Call_00afead0 @ 0x00af_ead0 => extern "C" fn s_00afead0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[6])
+    }
+    /// `StaticDtor_Call_00afeae0`: atexit destructor: `0x004327b0`(`0x00c16b34`) (cdecl); its eax.
+    StaticDtor_Call_00afeae0 @ 0x00af_eae0 => extern "C" fn s_00afeae0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[7])
+    }
+    /// `StaticDtor_Call_00afeaf0`: atexit destructor: `0x004327b0`(`0x00c16b74`) (cdecl); its eax.
+    StaticDtor_Call_00afeaf0 @ 0x00af_eaf0 => extern "C" fn s_00afeaf0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[8])
+    }
+    /// `StaticDtor_Call_00afeb00`: atexit destructor: `0x004327b0`(`0x00c16b14`) (cdecl); its eax.
+    StaticDtor_Call_00afeb00 @ 0x00af_eb00 => extern "C" fn s_00afeb00() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[9])
+    }
+    /// `StaticDtor_Call_00afeb10`: atexit destructor: `0x004327b0`(`0x00c16b44`) (cdecl); its eax.
+    StaticDtor_Call_00afeb10 @ 0x00af_eb10 => extern "C" fn s_00afeb10() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[10])
+    }
+    /// `StaticDtor_Call_00afeb20`: atexit destructor: `0x004327b0`(`0x00c16bd4`) (cdecl); its eax.
+    StaticDtor_Call_00afeb20 @ 0x00af_eb20 => extern "C" fn s_00afeb20() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[11])
+    }
+    /// `StaticDtor_Call_00afeb30`: atexit destructor: `0x004327b0`(`0x00c169e4`) (cdecl); its eax.
+    StaticDtor_Call_00afeb30 @ 0x00af_eb30 => extern "C" fn s_00afeb30() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[12])
+    }
+    /// `StaticDtor_Call_00afeb40`: atexit destructor: `0x004327b0`(`0x00c169b4`) (cdecl); its eax.
+    StaticDtor_Call_00afeb40 @ 0x00af_eb40 => extern "C" fn s_00afeb40() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[13])
+    }
+    /// `StaticDtor_Call_00afeb50`: atexit destructor: `0x004327b0`(`0x00c16b84`) (cdecl); its eax.
+    StaticDtor_Call_00afeb50 @ 0x00af_eb50 => extern "C" fn s_00afeb50() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[14])
+    }
+    /// `StaticDtor_Call_00afeb60`: atexit destructor: `0x004327b0`(`0x00c16af4`) (cdecl); its eax.
+    StaticDtor_Call_00afeb60 @ 0x00af_eb60 => extern "C" fn s_00afeb60() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[15])
+    }
+    /// `StaticDtor_Call_00afeb70`: atexit destructor: `0x004327b0`(`0x00c16b64`) (cdecl); its eax.
+    StaticDtor_Call_00afeb70 @ 0x00af_eb70 => extern "C" fn s_00afeb70() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[16])
+    }
+    /// `StaticDtor_Call_00afeb80`: atexit destructor: `0x004327b0`(`0x00c16a64`) (cdecl); its eax.
+    StaticDtor_Call_00afeb80 @ 0x00af_eb80 => extern "C" fn s_00afeb80() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[17])
+    }
+    /// `StaticDtor_Call_00afeb90`: atexit destructor: `0x004327b0`(`0x00c16a54`) (cdecl); its eax.
+    StaticDtor_Call_00afeb90 @ 0x00af_eb90 => extern "C" fn s_00afeb90() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[18])
+    }
+    /// `StaticDtor_Call_00afeba0`: atexit destructor: `0x004327b0`(`0x00c16ae4`) (cdecl); its eax.
+    StaticDtor_Call_00afeba0 @ 0x00af_eba0 => extern "C" fn s_00afeba0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[19])
+    }
+    /// `StaticDtor_Call_00afebb0`: atexit destructor: `0x004327b0`(`0x00c16a94`) (cdecl); its eax.
+    StaticDtor_Call_00afebb0 @ 0x00af_ebb0 => extern "C" fn s_00afebb0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[20])
+    }
+    /// `StaticDtor_Call_00afebc0`: atexit destructor: `0x004327b0`(`0x00c16ac4`) (cdecl); its eax.
+    StaticDtor_Call_00afebc0 @ 0x00af_ebc0 => extern "C" fn s_00afebc0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[21])
+    }
+    /// `StaticDtor_Call_00afebd0`: atexit destructor: `0x004327b0`(`0x00c16ad4`) (cdecl); its eax.
+    StaticDtor_Call_00afebd0 @ 0x00af_ebd0 => extern "C" fn s_00afebd0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[22])
+    }
+    /// `StaticDtor_Call_00afebe0`: atexit destructor: `0x004327b0`(`0x00c16aa4`) (cdecl); its eax.
+    StaticDtor_Call_00afebe0 @ 0x00af_ebe0 => extern "C" fn s_00afebe0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[23])
+    }
+    /// `StaticDtor_Call_00afebf0`: atexit destructor: `0x004327b0`(`0x00c16ab4`) (cdecl); its eax.
+    StaticDtor_Call_00afebf0 @ 0x00af_ebf0 => extern "C" fn s_00afebf0() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[24])
+    }
+    /// `StaticDtor_Call_00afec00`: atexit destructor: `0x004327b0`(`0x00c16b54`) (cdecl); its eax.
+    StaticDtor_Call_00afec00 @ 0x00af_ec00 => extern "C" fn s_00afec00() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[25])
+    }
+    /// `StaticDtor_Call_00afec10`: atexit destructor: `0x004327b0`(`0x00c16b04`) (cdecl); its eax.
+    StaticDtor_Call_00afec10 @ 0x00af_ec10 => extern "C" fn s_00afec10() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[26])
+    }
+    /// `StaticDtor_Call_00afec20`: atexit destructor: `0x004327b0`(`0x00c169f4`) (cdecl); its eax.
+    StaticDtor_Call_00afec20 @ 0x00af_ec20 => extern "C" fn s_00afec20() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[27])
+    }
+    /// `StaticDtor_Call_00afec30`: atexit destructor: `0x004327b0`(`0x00c169d4`) (cdecl); its eax.
+    StaticDtor_Call_00afec30 @ 0x00af_ec30 => extern "C" fn s_00afec30() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[28])
+    }
+    /// `StaticDtor_Call_00afec40`: atexit destructor: `0x004327b0`(`0x00c16a74`) (cdecl); its eax.
+    StaticDtor_Call_00afec40 @ 0x00af_ec40 => extern "C" fn s_00afec40() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[29])
+    }
+    /// `StaticDtor_Call_00afec50`: atexit destructor: `0x004327b0`(`0x00c16a34`) (cdecl); its eax.
+    StaticDtor_Call_00afec50 @ 0x00af_ec50 => extern "C" fn s_00afec50() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[30])
+    }
+    /// `StaticDtor_Call_00afec60`: atexit destructor: `0x004327b0`(`0x00c16a44`) (cdecl); its eax.
+    StaticDtor_Call_00afec60 @ 0x00af_ec60 => extern "C" fn s_00afec60() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[31])
+    }
+    /// `StaticDtor_Call_00afec70`: atexit destructor: `0x004327b0`(`0x00c16a04`) (cdecl); its eax.
+    StaticDtor_Call_00afec70 @ 0x00af_ec70 => extern "C" fn s_00afec70() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[32])
+    }
+    /// `StaticDtor_Call_00afec80`: atexit destructor: `0x004327b0`(`0x00c16a24`) (cdecl); its eax.
+    StaticDtor_Call_00afec80 @ 0x00af_ec80 => extern "C" fn s_00afec80() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[33])
+    }
+    /// `StaticDtor_Call_00afec90`: atexit destructor: `0x004327b0`(`0x00c16a14`) (cdecl); its eax.
+    StaticDtor_Call_00afec90 @ 0x00af_ec90 => extern "C" fn s_00afec90() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[34])
+    }
+    /// `StaticDtor_VtThiscall_00aff2d0`: atexit destructor: stores the vtable `0x00b22b0c` in `0x00ca7228`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00aff2d0 @ 0x00af_f2d0 => extern "C" fn s_00aff2d0() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[4])
+    }
+    /// `StaticDtor_Thiscall_00aff950`: atexit destructor: ecx = `0x00ca8998`, tail-jumps to `Phyre_PRendering_PRenderSurface_dtor_PRenderSurface` (thiscall); its eax.
+    StaticDtor_Thiscall_00aff950 @ 0x00af_f950 => extern "C" fn s_00aff950() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[19])
+    }
+    /// `StaticDtor_Thiscall_00aff960`: atexit destructor: ecx = `0x00ca89a8`, tail-jumps to `Phyre_PRendering_PRenderSurface_dtor_PRenderSurface` (thiscall); its eax.
+    StaticDtor_Thiscall_00aff960 @ 0x00af_f960 => extern "C" fn s_00aff960() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[20])
+    }
+    /// `StaticDtor_VtThiscall_00b00f70`: atexit destructor: stores the vtable `0x00b2a374` in `0x00cacd18`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b00f70 @ 0x00b0_0f70 => extern "C" fn s_00b00f70() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[5])
+    }
+    /// `StaticDtor_VtCall_00b01940`: atexit destructor: stores the vtable `0x00b2be10` in `0x00c20868`, then `0x00545e80`(`0x00c20868`) (cdecl); its eax.
+    StaticDtor_VtCall_00b01940 @ 0x00b0_1940 => extern "C" fn s_00b01940() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[0])
+    }
+    /// `StaticDtor_VtCall_00b01960`: atexit destructor: stores the vtable `0x00b2be10` in `0x00c20874`, then `0x00545e80`(`0x00c20874`) (cdecl); its eax.
+    StaticDtor_VtCall_00b01960 @ 0x00b0_1960 => extern "C" fn s_00b01960() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[1])
+    }
+    /// `StaticDtor_VtCall_00b01980`: atexit destructor: stores the vtable `0x00b2be10` in `0x00c20880`, then `0x00545e80`(`0x00c20880`) (cdecl); its eax.
+    StaticDtor_VtCall_00b01980 @ 0x00b0_1980 => extern "C" fn s_00b01980() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[2])
+    }
+    /// `StaticDtor_Thiscall_00b01de0`: atexit destructor: ecx = `0x00caecec`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00b01de0 @ 0x00b0_1de0 => extern "C" fn s_00b01de0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[21])
+    }
+    /// `StaticDtor_Thiscall_00b01df0`: atexit destructor: ecx = `0x00caed04`, tail-jumps to `Phyre_PFreeList_dtor_PFreeList` (thiscall); its eax.
+    StaticDtor_Thiscall_00b01df0 @ 0x00b0_1df0 => extern "C" fn s_00b01df0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[22])
+    }
+    /// `StaticDtor_Call_00b01e00`: atexit destructor: `0x00433550`(`0x00c21360`) (cdecl); its eax.
+    StaticDtor_Call_00b01e00 @ 0x00b0_1e00 => extern "C" fn s_00b01e00() -> u32 {
+        si::call_arg(&mut mem(), &si::CALL_ARGS[35])
+    }
+    /// `StaticDtor_VtThiscall_00b02c10`: atexit destructor: stores the vtable `0x00b2f85c` in `0x00cb1cf0`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b02c10 @ 0x00b0_2c10 => extern "C" fn s_00b02c10() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[6])
+    }
+    /// `StaticDtor_Thiscall_00b03680`: atexit destructor: ecx = `0x00cb3c94`, tail-jumps to `0x00463e70` (thiscall); its eax.
+    StaticDtor_Thiscall_00b03680 @ 0x00b0_3680 => extern "C" fn s_00b03680() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[23])
+    }
+    /// `StaticDtor_Thiscall_00b04760`: atexit destructor: ecx = `0x00c294d8`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04760 @ 0x00b0_4760 => extern "C" fn s_00b04760() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[24])
+    }
+    /// `StaticDtor_Thiscall_00b04770`: atexit destructor: ecx = `0x00c29518`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04770 @ 0x00b0_4770 => extern "C" fn s_00b04770() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[25])
+    }
+    /// `StaticDtor_Thiscall_00b04780`: atexit destructor: ecx = `0x00c29498`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04780 @ 0x00b0_4780 => extern "C" fn s_00b04780() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[26])
+    }
+    /// `StaticDtor_Thiscall_00b04790`: atexit destructor: ecx = `0x00c29598`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04790 @ 0x00b0_4790 => extern "C" fn s_00b04790() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[27])
+    }
+    /// `StaticDtor_Thiscall_00b047a0`: atexit destructor: ecx = `0x00c29558`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b047a0 @ 0x00b0_47a0 => extern "C" fn s_00b047a0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[28])
+    }
+    /// `StaticDtor_Thiscall_00b047d0`: atexit destructor: ecx = `0x00cbd428`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b047d0 @ 0x00b0_47d0 => extern "C" fn s_00b047d0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[29])
+    }
+    /// `StaticDtor_Thiscall_00b047e0`: atexit destructor: ecx = `0x00cbd5a8`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b047e0 @ 0x00b0_47e0 => extern "C" fn s_00b047e0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[30])
+    }
+    /// `StaticDtor_Thiscall_00b047f0`: atexit destructor: ecx = `0x00cbd728`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b047f0 @ 0x00b0_47f0 => extern "C" fn s_00b047f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[31])
+    }
+    /// `StaticDtor_Thiscall_00b04800`: atexit destructor: ecx = `0x00cbd4a8`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04800 @ 0x00b0_4800 => extern "C" fn s_00b04800() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[32])
+    }
+    /// `StaticDtor_Thiscall_00b04810`: atexit destructor: ecx = `0x00cbd628`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04810 @ 0x00b0_4810 => extern "C" fn s_00b04810() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[33])
+    }
+    /// `StaticDtor_Thiscall_00b04820`: atexit destructor: ecx = `0x00cbd7a8`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04820 @ 0x00b0_4820 => extern "C" fn s_00b04820() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[34])
+    }
+    /// `StaticDtor_Thiscall_00b04830`: atexit destructor: ecx = `0x00cbd528`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04830 @ 0x00b0_4830 => extern "C" fn s_00b04830() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[35])
+    }
+    /// `StaticDtor_Thiscall_00b04840`: atexit destructor: ecx = `0x00cbd6a8`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04840 @ 0x00b0_4840 => extern "C" fn s_00b04840() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[36])
+    }
+    /// `StaticDtor_Thiscall_00b04850`: atexit destructor: ecx = `0x00cbd828`, tail-jumps to `0x005c82a0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b04850 @ 0x00b0_4850 => extern "C" fn s_00b04850() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[37])
+    }
+    /// `StaticDtor_VtCall_00b04870`: atexit destructor: stores the vtable `0x00b38558` in `0x00c29794`, then `0x005cbf40`(`0x00c29794`) (cdecl); its eax.
+    StaticDtor_VtCall_00b04870 @ 0x00b0_4870 => extern "C" fn s_00b04870() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[3])
+    }
+    /// `StaticDtor_VtCall_00b04890`: atexit destructor: stores the vtable `0x00b38558` in `0x00c29788`, then `0x005cbf40`(`0x00c29788`) (cdecl); its eax.
+    StaticDtor_VtCall_00b04890 @ 0x00b0_4890 => extern "C" fn s_00b04890() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[4])
+    }
+    /// `StaticDtor_VtCall_00b048b0`: atexit destructor: stores the vtable `0x00b38558` in `0x00c297a0`, then `0x005cbf40`(`0x00c297a0`) (cdecl); its eax.
+    StaticDtor_VtCall_00b048b0 @ 0x00b0_48b0 => extern "C" fn s_00b048b0() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[5])
+    }
+    /// `StaticDtor_VtCall_00b048e0`: atexit destructor: stores the vtable `0x00b385d0` in `0x00c298bc`, then `0x005cc3a0`(`0x00c298bc`) (cdecl); its eax.
+    StaticDtor_VtCall_00b048e0 @ 0x00b0_48e0 => extern "C" fn s_00b048e0() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[6])
+    }
+    /// `StaticDtor_VtCall_00b04900`: atexit destructor: stores the vtable `0x00b385d0` in `0x00c298c8`, then `0x005cc3a0`(`0x00c298c8`) (cdecl); its eax.
+    StaticDtor_VtCall_00b04900 @ 0x00b0_4900 => extern "C" fn s_00b04900() -> u32 {
+        si::vt_call(&mut mem(), &si::VT_CALLS[7])
+    }
+    /// `StaticDtor_VtThiscall_00b04940`: atexit destructor: stores the vtable `0x00b389f4` in `0x00cbd9c8`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b04940 @ 0x00b0_4940 => extern "C" fn s_00b04940() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[7])
+    }
+    /// `StaticDtor_VtThiscall_00b04cb0`: atexit destructor: stores the vtable `0x00b3afd4` in `0x00cbe940`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b04cb0 @ 0x00b0_4cb0 => extern "C" fn s_00b04cb0() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[8])
+    }
+    /// `StaticDtor_VtThiscall_00b04cf0`: atexit destructor: stores the vtable `0x00b3b0cc` in `0x00cbe9d8`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b04cf0 @ 0x00b0_4cf0 => extern "C" fn s_00b04cf0() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[9])
+    }
+    /// `StaticDtor_VtThiscall_00b04f10`: atexit destructor: stores the vtable `0x00b3abec` in `0x00cbf0f8`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b04f10 @ 0x00b0_4f10 => extern "C" fn s_00b04f10() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[10])
+    }
+    /// `StaticDtor_VtThiscall_00b060d0`: atexit destructor: stores the vtable `0x00b3fdac` in `0x00cc9d20`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b060d0 @ 0x00b0_60d0 => extern "C" fn s_00b060d0() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[11])
+    }
+    /// `StaticDtor_VtThiscall_00b06110`: atexit destructor: stores the vtable `0x00b3fcc4` in `0x00cc9e50`, then ecx = it and tail-jumps to `Phyre_PClassDescriptor_Destruct` (thiscall); its eax.
+    StaticDtor_VtThiscall_00b06110 @ 0x00b0_6110 => extern "C" fn s_00b06110() -> u32 {
+        si::vt_tail(&mut mem(), &si::VT_TAILS[12])
+    }
+    /// `StaticDtor_Free_00b06770`: atexit destructor: when bit 0 of the word at `0x00ccb6f0` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06770 @ 0x00b0_6770 => extern "C" fn s_00b06770() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[2])
+    }
+    /// `StaticDtor_Free_00b06790`: atexit destructor: when bit 0 of the word at `0x00ccb6ec` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06790 @ 0x00b0_6790 => extern "C" fn s_00b06790() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[3])
+    }
+    /// `StaticDtor_CloseHandle_00b06810`: atexit destructor: `CloseHandle([0x00ccb6d0])` through the import slot `0x00b0c0dc` (stdcall); its eax.
+    StaticDtor_CloseHandle_00b06810 @ 0x00b0_6810 => extern "C" fn s_00b06810() -> u32 {
+        si::import_word(&mut mem(), &si::IMPORT_WORDS[0])
+    }
+    /// `StaticDtor_Thiscall_00b06850`: atexit destructor: ecx = `0x00ccb9f8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06850 @ 0x00b0_6850 => extern "C" fn s_00b06850() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[38])
+    }
+    /// `StaticDtor_Free_00b06860`: atexit destructor: when bit 0 of the word at `0x00ccb9e4` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06860 @ 0x00b0_6860 => extern "C" fn s_00b06860() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[4])
+    }
+    /// `StaticDtor_Free_00b06880`: atexit destructor: when bit 0 of the word at `0x00ccb9e0` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06880 @ 0x00b0_6880 => extern "C" fn s_00b06880() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[5])
+    }
+    /// `StaticDtor_Thiscall_00b068a0`: atexit destructor: ecx = `0x00ccb9e8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b068a0 @ 0x00b0_68a0 => extern "C" fn s_00b068a0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[39])
+    }
+    /// `StaticDtor_Free_00b06c10`: atexit destructor: when bit 0 of the word at `0x00ccc82c` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06c10 @ 0x00b0_6c10 => extern "C" fn s_00b06c10() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[6])
+    }
+    /// `StaticDtor_Free_00b06c30`: atexit destructor: when bit 0 of the word at `0x00ccc828` is clear, `Phyre_PhyreFree(that word)` (cdecl) and its eax; else the word.
+    StaticDtor_Free_00b06c30 @ 0x00b0_6c30 => extern "C" fn s_00b06c30() -> u32 {
+        si::free_unless_bit0(&mut mem(), &si::FREE_UNLESS_BIT0[7])
+    }
+    /// `StaticDtor_Thiscall_00b06df0`: atexit destructor: ecx = `0x00ccca1c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06df0 @ 0x00b0_6df0 => extern "C" fn s_00b06df0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[40])
+    }
+    /// `StaticDtor_Thiscall_00b06e00`: atexit destructor: ecx = `0x00ccca3c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e00 @ 0x00b0_6e00 => extern "C" fn s_00b06e00() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[41])
+    }
+    /// `StaticDtor_Thiscall_00b06e10`: atexit destructor: ecx = `0x00ccc8ac`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e10 @ 0x00b0_6e10 => extern "C" fn s_00b06e10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[42])
+    }
+    /// `StaticDtor_Thiscall_00b06e20`: atexit destructor: ecx = `0x00ccc9fc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e20 @ 0x00b0_6e20 => extern "C" fn s_00b06e20() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[43])
+    }
+    /// `StaticDtor_Thiscall_00b06e30`: atexit destructor: ecx = `0x00ccc8fc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e30 @ 0x00b0_6e30 => extern "C" fn s_00b06e30() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[44])
+    }
+    /// `StaticDtor_Thiscall_00b06e40`: atexit destructor: ecx = `0x00ccc8dc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e40 @ 0x00b0_6e40 => extern "C" fn s_00b06e40() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[45])
+    }
+    /// `StaticDtor_Thiscall_00b06e50`: atexit destructor: ecx = `0x00ccc8bc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e50 @ 0x00b0_6e50 => extern "C" fn s_00b06e50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[46])
+    }
+    /// `StaticDtor_Thiscall_00b06e60`: atexit destructor: ecx = `0x00ccc8cc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e60 @ 0x00b0_6e60 => extern "C" fn s_00b06e60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[47])
+    }
+    /// `StaticDtor_Thiscall_00b06e70`: atexit destructor: ecx = `0x00ccc90c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e70 @ 0x00b0_6e70 => extern "C" fn s_00b06e70() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[48])
+    }
+    /// `StaticDtor_Thiscall_00b06e80`: atexit destructor: ecx = `0x00ccc8ec`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e80 @ 0x00b0_6e80 => extern "C" fn s_00b06e80() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[49])
+    }
+    /// `StaticDtor_Thiscall_00b06e90`: atexit destructor: ecx = `0x00ccc94c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06e90 @ 0x00b0_6e90 => extern "C" fn s_00b06e90() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[50])
+    }
+    /// `StaticDtor_Thiscall_00b06ea0`: atexit destructor: ecx = `0x00ccc9cc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06ea0 @ 0x00b0_6ea0 => extern "C" fn s_00b06ea0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[51])
+    }
+    /// `StaticDtor_Thiscall_00b06eb0`: atexit destructor: ecx = `0x00ccc99c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06eb0 @ 0x00b0_6eb0 => extern "C" fn s_00b06eb0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[52])
+    }
+    /// `StaticDtor_Thiscall_00b06ec0`: atexit destructor: ecx = `0x00ccc98c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06ec0 @ 0x00b0_6ec0 => extern "C" fn s_00b06ec0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[53])
+    }
+    /// `StaticDtor_Thiscall_00b06ed0`: atexit destructor: ecx = `0x00ccc9ac`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06ed0 @ 0x00b0_6ed0 => extern "C" fn s_00b06ed0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[54])
+    }
+    /// `StaticDtor_Thiscall_00b06ee0`: atexit destructor: ecx = `0x00ccc9bc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06ee0 @ 0x00b0_6ee0 => extern "C" fn s_00b06ee0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[55])
+    }
+    /// `StaticDtor_Thiscall_00b06ef0`: atexit destructor: ecx = `0x00ccca0c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06ef0 @ 0x00b0_6ef0 => extern "C" fn s_00b06ef0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[56])
+    }
+    /// `StaticDtor_Thiscall_00b06f00`: atexit destructor: ecx = `0x00ccca2c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f00 @ 0x00b0_6f00 => extern "C" fn s_00b06f00() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[57])
+    }
+    /// `StaticDtor_Thiscall_00b06f10`: atexit destructor: ecx = `0x00ccc91c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f10 @ 0x00b0_6f10 => extern "C" fn s_00b06f10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[58])
+    }
+    /// `StaticDtor_Thiscall_00b06f20`: atexit destructor: ecx = `0x00ccc92c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f20 @ 0x00b0_6f20 => extern "C" fn s_00b06f20() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[59])
+    }
+    /// `StaticDtor_Thiscall_00b06f30`: atexit destructor: ecx = `0x00ccc93c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f30 @ 0x00b0_6f30 => extern "C" fn s_00b06f30() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[60])
+    }
+    /// `StaticDtor_Thiscall_00b06f40`: atexit destructor: ecx = `0x00ccc96c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f40 @ 0x00b0_6f40 => extern "C" fn s_00b06f40() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[61])
+    }
+    /// `StaticDtor_Thiscall_00b06f50`: atexit destructor: ecx = `0x00ccc97c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f50 @ 0x00b0_6f50 => extern "C" fn s_00b06f50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[62])
+    }
+    /// `StaticDtor_Thiscall_00b06f60`: atexit destructor: ecx = `0x00ccc95c`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f60 @ 0x00b0_6f60 => extern "C" fn s_00b06f60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[63])
+    }
+    /// `StaticDtor_Thiscall_00b06f70`: atexit destructor: ecx = `0x00ccc9ec`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f70 @ 0x00b0_6f70 => extern "C" fn s_00b06f70() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[64])
+    }
+    /// `StaticDtor_Thiscall_00b06f80`: atexit destructor: ecx = `0x00ccc9dc`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b06f80 @ 0x00b0_6f80 => extern "C" fn s_00b06f80() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[65])
+    }
+    /// `StaticDtor_CloseHandle_00b06ff0`: atexit destructor: `CloseHandle([0x00ccca78])` through the import slot `0x00b0c0dc` (stdcall); its eax.
+    StaticDtor_CloseHandle_00b06ff0 @ 0x00b0_6ff0 => extern "C" fn s_00b06ff0() -> u32 {
+        si::import_word(&mut mem(), &si::IMPORT_WORDS[1])
+    }
+    /// `StaticDtor_CloseHandle_00b07080`: atexit destructor: `CloseHandle([0x00cccaa0])` through the import slot `0x00b0c0dc` (stdcall); its eax.
+    StaticDtor_CloseHandle_00b07080 @ 0x00b0_7080 => extern "C" fn s_00b07080() -> u32 {
+        si::import_word(&mut mem(), &si::IMPORT_WORDS[2])
+    }
+    /// `StaticDtor_Thiscall_00b071b0`: atexit destructor: ecx = `0x00cdeb90`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b071b0 @ 0x00b0_71b0 => extern "C" fn s_00b071b0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[66])
+    }
+    /// `StaticDtor_Thiscall_00b071c0`: atexit destructor: ecx = `0x00cdebd8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b071c0 @ 0x00b0_71c0 => extern "C" fn s_00b071c0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[67])
+    }
+    /// `StaticDtor_Thiscall_00b071d0`: atexit destructor: ecx = `0x00cdebc8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b071d0 @ 0x00b0_71d0 => extern "C" fn s_00b071d0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[68])
+    }
+    /// `StaticDtor_Thiscall_00b071e0`: atexit destructor: ecx = `0x00cdebe8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b071e0 @ 0x00b0_71e0 => extern "C" fn s_00b071e0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[69])
+    }
+    /// `StaticDtor_Thiscall_00b071f0`: atexit destructor: ecx = `0x00cdebb8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b071f0 @ 0x00b0_71f0 => extern "C" fn s_00b071f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[70])
+    }
+    /// `StaticDtor_Thiscall_00b07200`: atexit destructor: ecx = `0x00cdeba8`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07200 @ 0x00b0_7200 => extern "C" fn s_00b07200() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[71])
+    }
+    /// `StaticDtor_Thiscall_00b072f0`: atexit destructor: ecx = `0x00cdec68`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b072f0 @ 0x00b0_72f0 => extern "C" fn s_00b072f0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[72])
+    }
+    /// `StaticDtor_Thiscall_00b07300`: atexit destructor: ecx = `0x00cdec38`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07300 @ 0x00b0_7300 => extern "C" fn s_00b07300() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[73])
+    }
+    /// `StaticDtor_Thiscall_00b07310`: atexit destructor: ecx = `0x00cdec58`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07310 @ 0x00b0_7310 => extern "C" fn s_00b07310() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[74])
+    }
+    /// `StaticDtor_Thiscall_00b07320`: atexit destructor: ecx = `0x00cdec78`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07320 @ 0x00b0_7320 => extern "C" fn s_00b07320() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[75])
+    }
+    /// `StaticDtor_Thiscall_00b07330`: atexit destructor: ecx = `0x00cdec48`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07330 @ 0x00b0_7330 => extern "C" fn s_00b07330() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[76])
+    }
+    /// `StaticDtor_Thiscall_00b07370`: atexit destructor: ecx = `0x00cded10`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07370 @ 0x00b0_7370 => extern "C" fn s_00b07370() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[77])
+    }
+    /// `StaticDtor_Thiscall_00b07380`: atexit destructor: ecx = `0x00cded00`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07380 @ 0x00b0_7380 => extern "C" fn s_00b07380() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[78])
+    }
+    /// `StaticDtor_Thiscall_00b07390`: atexit destructor: ecx = `0x00cdecd0`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b07390 @ 0x00b0_7390 => extern "C" fn s_00b07390() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[79])
+    }
+    /// `StaticDtor_Thiscall_00b073a0`: atexit destructor: ecx = `0x00cdecb0`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b073a0 @ 0x00b0_73a0 => extern "C" fn s_00b073a0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[80])
+    }
+    /// `StaticDtor_Thiscall_00b073b0`: atexit destructor: ecx = `0x00cdecf0`, tail-jumps to `0x004dbab0` (thiscall); its eax.
+    StaticDtor_Thiscall_00b073b0 @ 0x00b0_73b0 => extern "C" fn s_00b073b0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[81])
+    }
 }
