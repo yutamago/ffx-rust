@@ -72,6 +72,9 @@ pub mod s3_nodes;
 pub mod s3_summon;
 pub mod s3_vm;
 pub mod s3_wrap;
+// the shared work list's fourth round (shared-4)
+pub mod s4_summon;
+pub mod s4_wrap;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -934,6 +937,11 @@ ports! {
     "colour fade" => s3_misc::COLOUR_FADE, s3_misc::colour_fade;
     "colour step" => s3_misc::COLOUR_STEP, s3_misc::colour_step;
     "value step" => s3_misc::VALUE_STEP, s3_misc::value_step;
+    // shared-4 list
+    "thunk: leave and reset" => s4_wrap::JMP_LEAVE_AND_RESET, s4_wrap::ecx_jmp;
+    "thunk: element bone" => s4_wrap::JMP_ELEM_BONE, s4_wrap::ecx_jmp;
+    "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
+    "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1194,6 +1202,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("key step", &s3_misc::KEY_STEP),
     ("key step (curved)", &s3_misc::KEY_STEP_CURVED),
     ("task start", &s3_misc::TASK_START),
+    // shared-4 list
+    ("element bone", &s4_summon::ELEM_BONE),
+    ("colour node fade", &s4_summon::COLOUR_NODE_FADE),
+    ("motion state", &s4_summon::MOTION_STATE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

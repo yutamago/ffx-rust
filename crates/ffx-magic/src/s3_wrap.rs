@@ -26,11 +26,11 @@ use crate::{sb_nodes, sb_ppp};
 
 /// The masked hash of the 12-byte `mov ecx, [ebp + 8]; jmp` thunk (the
 /// `rel32` zeroed), the same for every callee.
-const ECX_JMP_HASH: u64 = 0x896f_4fde_1224_a07f;
+pub(crate) const ECX_JMP_HASH: u64 = 0x896f_4fde_1224_a07f;
 /// The 15-byte `mov edx, [ebp + 0xc]; mov ecx, [ebp + 8]; jmp` thunk.
-const ECX_EDX_JMP_HASH: u64 = 0x3c4e_32f4_8f4d_8fed;
+pub(crate) const ECX_EDX_JMP_HASH: u64 = 0x3c4e_32f4_8f4d_8fed;
 /// The 15-byte `push ecx; mov ecx, [ebp + 8]; call; pop ecx` thunk.
-const ECX_CALL_HASH: u64 = 0xd192_63e1_ae73_f895;
+pub(crate) const ECX_CALL_HASH: u64 = 0xd192_63e1_ae73_f895;
 
 /// A handler's port on the frame its thunk hands it.
 type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
