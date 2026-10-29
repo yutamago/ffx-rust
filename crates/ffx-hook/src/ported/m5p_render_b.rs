@@ -10,6 +10,7 @@
 use ffx_prender::m5p_render_b::{self as rb, bridge as b};
 use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
 use ffx_prender::m5p_render_b_dtors::bridge as tb;
+use ffx_prender::m5p_render_b_more::bridge as mb;
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
@@ -977,5 +978,78 @@ ported! {
     /// `Phyre_PArray_resize16_005af070`.
     Phyre_PArray_resize16_005af070 @ 0x005a_f070 => extern "thiscall" fn t_005af070(this: u32, n: u32) -> u32 {
         tb::resize16(&mut mem(), this, n)
+    }
+    // ---- batch 5: medium renderer, shader-manager, text and post methods (ffx_prender::m5p_render_b_more) ----
+    /// `Phyre_PPostProcessing_PDeferredLightingBase_initializeGeometry`.
+    Phyre_PPostProcessing_PDeferredLightingBase_initializeGeometry @ 0x00a1_9cb0 => extern "thiscall" fn m_00a19cb0(this: u32, cluster: u32) -> u32 {
+        mb::lighting_geometry(&mut mem(), this, cluster)
+    }
+    /// `Phyre_PRendering_PRenderRing_nextJobSlot_00614720`.
+    Phyre_PRendering_PRenderRing_nextJobSlot_00614720 @ 0x0061_4720 => extern "thiscall" fn m_00614720(this: u32, out: u32) -> u32 {
+        mb::next_slot(&mut mem(), this, out)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_setTarget_00a17da0`.
+    Phyre_PPostProcessing_PMotionBlur_setTarget_00a17da0 @ 0x00a1_7da0 => extern "thiscall" fn m_00a17da0(this: u32, cluster: u32, target: u32) -> u32 {
+        mb::blur_set_target(&mut mem(), this, cluster, target)
+    }
+    /// `Phyre_PLOD_PUtilityLOD_firstEntry_005a7410`.
+    Phyre_PLOD_PUtilityLOD_firstEntry_005a7410 @ 0x005a_7410 => extern "thiscall" fn m_005a7410(this: u32) -> u32 {
+        mb::lod_first(&mut mem(), this)
+    }
+    /// `Phyre_PText_PBitmapFontText_getKerning_00a29700`.
+    Phyre_PText_PBitmapFontText_getKerning_00a29700 @ 0x00a2_9700 => extern "thiscall" fn m_00a29700(this: u32, pair: u32, glyph: u32) -> f32 {
+        mb::kerning(&mut mem(), this, pair, glyph)
+    }
+    /// `Phyre_PDynamicGeometry_blend3_005cb8d0`.
+    Phyre_PDynamicGeometry_blend3_005cb8d0 @ 0x005c_b8d0 => extern "C" fn m_005cb8d0(weights: u32, n: u32, sources: u32, out: u32) {
+        mb::blend3(&mut mem(), weights, n, sources, out);
+    }
+    /// `PTexture2DD3D11_setBufferCount_00599b70`.
+    PTexture2DD3D11_setBufferCount_00599b70 @ 0x0059_9b70 => extern "thiscall" fn m_00599b70(this: u32, n: u32) -> u32 {
+        mb::set_buffer_count(&mut mem(), this, n)
+    }
+    /// `Phyre_CharacterLighting_lightPosition_006a8b40`.
+    Phyre_CharacterLighting_lightPosition_006a8b40 @ 0x006a_8b40 => extern "thiscall" fn m_006a8b40(this: u32, out: u32, i: u32) -> u32 {
+        mb::light_position(&mut mem(), this, out, i)
+    }
+    /// `Phyre_CharacterLighting_lightColour_006a8440`.
+    Phyre_CharacterLighting_lightColour_006a8440 @ 0x006a_8440 => extern "thiscall" fn m_006a8440(this: u32, out: u32, i: u32) -> u32 {
+        mb::light_colour(&mut mem(), this, out, i)
+    }
+    /// `Phyre_CharacterLightingTweakUtil_shadeSum_006a8bc0`.
+    Phyre_CharacterLightingTweakUtil_shadeSum_006a8bc0 @ 0x006a_8bc0 => extern "thiscall" fn m_006a8bc0(this: u32) -> f32 {
+        mb::shade_sum(&mut mem(), this)
+    }
+    /// `Phyre_CharacterShaderManager_insert_006df340`.
+    Phyre_CharacterShaderManager_insert_006df340 @ 0x006d_f340 => extern "thiscall" fn m_006df340(this: u32, key: u32, value: u32) -> u32 {
+        mb::shader_insert(&mut mem(), this, key, value)
+    }
+    /// `Phyre_PPostProcessing_makeRenderTarget_00a06a30`.
+    Phyre_PPostProcessing_makeRenderTarget_00a06a30 @ 0x00a0_6a30 => extern "C" fn m_00a06a30(cluster: u32, w: u32, h: u32, format: u32, flag1: u32, flag2: u32, out: u32; slots: u32) -> u32 {
+        mb::make_target(&mut mem(), [cluster, w, h, format, flag1, flag2, out], slots + 24)
+    }
+    /// `Phyre_PRendering_PRenderInterface_setClearColour_00599cc0`.
+    Phyre_PRendering_PRenderInterface_setClearColour_00599cc0 @ 0x0059_9cc0 => extern "thiscall" fn m_00599cc0(this: u32, argb: u32) {
+        mb::set_colour(&mut mem(), this, argb);
+    }
+    /// `Phyre_CharacterShaderManager_setShaderParameter`.
+    Phyre_CharacterShaderManager_setShaderParameter @ 0x006d_f8c0 => extern "C" fn m_006df8c0(inst: u32, name: u32, data: u32) {
+        mb::set_shader_parameter(&mut mem(), inst, name, data);
+    }
+    /// `Phyre_PFramework_PApplication_findByName_009eccb0`.
+    Phyre_PFramework_PApplication_findByName_009eccb0 @ 0x009e_ccb0 => extern "thiscall" fn m_009eccb0(this: u32, name: u32) -> u32 {
+        mb::find_by_name(&mut mem(), this, name)
+    }
+    /// `Phyre_PText_PBitmapFontText_setText_00a2aa30`.
+    Phyre_PText_PBitmapFontText_setText_00a2aa30 @ 0x00a2_aa30 => extern "thiscall" fn m_00a2aa30(this: u32, s: u32) -> u32 {
+        mb::set_text(&mut mem(), this, s)
+    }
+    /// `Phyre_CharacterShaderManager_resetCharacterShader`.
+    Phyre_CharacterShaderManager_resetCharacterShader @ 0x006d_f620 => extern "C" fn m_006df620() -> u32 {
+        mb::reset_shaders(&mut mem())
+    }
+    /// `Phyre_PRendering_PRenderInterface_bindComputeBuffer_0058ebb0`.
+    Phyre_PRendering_PRenderInterface_bindComputeBuffer_0058ebb0 @ 0x0058_ebb0 => extern "thiscall" fn m_0058ebb0(this: u32, buf: u32, uav: u32) -> u32 {
+        mb::bind_compute_buffer(&mut mem(), this, buf, uav)
     }
 }

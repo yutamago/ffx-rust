@@ -2316,3 +2316,610 @@ fn renderer_dtors_and_states_match_the_original() {
         }
     }
 }
+
+// ---- batch 5: medium renderer, shader-manager, text and post methods ----
+
+use ffx_prender::m5p_render_b_more::{self as more, bridge as mb};
+
+impl Twins {
+    /// The original's `ST0` (as `fst dword` stores it) against the port's
+    /// `f32`, bit for bit, and every byte written.
+    fn check_f32(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        port: impl FnOnce(&mut G) -> f32,
+    ) {
+        let addr = self.rebase(sym);
+        let ra = self
+            .a
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        let v = port(&mut G(&mut self.b));
+        let st0 = ra
+            .st0_f32()
+            .unwrap_or_else(|| panic!("{what}: the original leaves no ST0"));
+        assert_eq!(st0.to_bits(), v.to_bits(), "{what}: ST0 {st0} vs {v}");
+        self.diff(what);
+    }
+}
+
+#[test]
+fn more_render_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the lighting geometry
+        t.stub(more::CREATE_TRIANGLE, false, 1, 0, 0x7121);
+        t.stub(more::CREATE_SPHERE, false, 2, 0, 0x7122);
+        t.stub(more::CREATE_CONE, false, 2, 0, 0x7123);
+        let obj = t.junk(0x4000, 1);
+        t.check(
+            &format!("{label}: lighting geometry"),
+            0x00a1_9cb0,
+            Conv::Thiscall(obj),
+            &[0xc1],
+            |g| Out::U32(mb::lighting_geometry(g, obj, 0xc1)),
+        );
+        t.reset();
+        // the job slots: the cursor at 0, in the middle, at 15
+        for i in [0u32, 7, 15] {
+            t.stub(more::SEMAPHORE_WAIT, true, 0, 0, 0x5e);
+            let obj = t.junk(0x180, 2);
+            t.w32(obj + 0x154, i);
+            let out = t.zeros(4);
+            t.check(
+                &format!("{label}: next slot {i}"),
+                0x0061_4720,
+                Conv::Thiscall(obj),
+                &[out],
+                |g| Out::U32(mb::next_slot(g, obj, out)),
+            );
+            t.reset();
+        }
+        // the motion-blur target: already set, not a 2D texture, made, failing
+        for (have, class, mesh) in [
+            (true, true, 1u32),
+            (false, false, 1),
+            (false, true, 0x5151),
+            (false, true, 0),
+        ] {
+            t.stub(more::CREATE_TRIANGLE, false, 1, 0, mesh);
+            let obj = t.junk(0x1000, 3);
+            t.w32(obj + 0xd4c, if have { 0x55 } else { 0 });
+            let tex = t.junk(0x20, 4);
+            let c = t.rebase(more::TEXTURE_2D_CLASS);
+            t.w32(tex, if class { c } else { c + 4 });
+            let target = t.zeros(8);
+            t.w32(target, tex);
+            t.check(
+                &format!("{label}: blur target {have} {class} {mesh:#x}"),
+                0x00a1_7da0,
+                Conv::Thiscall(obj),
+                &[0xc1, target],
+                |g| Out::U32(mb::blur_set_target(g, obj, 0xc1, target)),
+            );
+            t.reset();
+        }
+        // the LOD lookup: no levels, empty lists, inline and buffered hits
+        for case in 0..6u32 {
+            let obj = t.junk(0x60, 5);
+            let levels = t.zeros(0x24 * 0x102);
+            let e = t.junk(0x10, 6);
+            let buf = t.zeros(0x10);
+            t.w32(buf + 8, e);
+            match case {
+                0 => t.w32(obj + 0x3c, 0x8000_0000),
+                1 => {
+                    t.w32(obj + 0x3c, 2);
+                }
+                2 => {
+                    t.w32(obj + 0x3c, 3);
+                    t.w32(levels + 0x24 + 4, 1);
+                    t.w32(levels + 0x24 + 8, e);
+                }
+                3 => {
+                    t.w32(obj + 0x3c, 3);
+                    t.w32(levels + 4, 0x8000_0003);
+                    t.w32(levels + 8, buf);
+                }
+                4 => {
+                    t.w32(obj + 0x3c, 1);
+                    t.w32(levels + 4, 1);
+                }
+                _ => {
+                    t.w32(obj + 0x3c, 0x101);
+                    t.w32(levels + 0x24 * 0x100 + 4, 1);
+                    t.w32(levels + 0x24 * 0x100 + 8, e);
+                }
+            }
+            t.w32(obj + 0x40, levels);
+            t.check(
+                &format!("{label}: lod {case}"),
+                0x005a_7410,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(mb::lod_first(g, obj)),
+            );
+        }
+        // the kerning: none, found at each position, the amount's sign
+        let face = t.zeros(0x40);
+        let table = t.zeros(0x100);
+        t.w32(face + 0x1c, table);
+        let font = t.zeros(0x40);
+        t.w32(font + 0x30, face);
+        let text = t.zeros(0x200);
+        t.w32(text + 0x158, font);
+        for k in 0..8u32 {
+            t.w32(table + 8 + 12 * k, 0x41 + k);
+            t.w32(
+                table + 8 + 12 * k + 4,
+                [
+                    3u32,
+                    0xffff_fffe,
+                    0,
+                    0x7fff_ffff,
+                    1,
+                    0x0100_0001,
+                    0x8000_0000,
+                    5,
+                ][k as usize],
+            );
+        }
+        for (n, first, key) in [
+            (0u32, 2u32, 0x41u32),
+            (4, 2, 0x41),
+            (4, 2, 0x42),
+            (8, 2, 0x46),
+            (8, 2, 0x47),
+            (4, 2, 0x44),
+            (8, 2, 0x48),
+            (8, 2, 0x99),
+            (0xffff_ffff, 2, 0x41),
+            (3, 2, 0x43),
+        ] {
+            let pair = t.zeros(0x10);
+            t.w32(pair + 4, n);
+            t.w32(pair + 8, first);
+            let glyph = t.zeros(4);
+            t.w32(glyph, key);
+            t.check_f32(
+                &format!("{label}: kerning {n} {key:#x}"),
+                0x00a2_9700,
+                Conv::Thiscall(text),
+                &[pair, glyph],
+                |g| mb::kerning(g, text, pair, glyph),
+            );
+        }
+        // the 3-stream blend
+        let weights = t.alloc(
+            &[0.25f32.to_bits(), 0x7fc0_1234, (-3.5f32).to_bits()]
+                .map(u32::to_le_bytes)
+                .concat(),
+        );
+        let w2 = t.alloc(
+            &[0.1f32.to_bits(), 0.7f32.to_bits(), 1e30f32.to_bits()]
+                .map(u32::to_le_bytes)
+                .concat(),
+        );
+        let vals: Vec<u8> = [1.0f32, -2.5, 1e-40, 3.4e38, 0.333, -0.0, 7.0, 1e30]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let s0 = t.alloc(&vals);
+        let s1 = t.alloc(&vals.iter().rev().copied().collect::<Vec<u8>>());
+        let s2 = t.alloc(&vals);
+        let sources = t.alloc(&[s0, s1, s2].map(u32::to_le_bytes).concat());
+        for (w, n) in [(weights, 8u32), (w2, 8), (w2, 1)] {
+            let dst = t.junk(0x40, 7);
+            let out = t.zeros(4);
+            t.w32(out, dst);
+            t.check(
+                &format!("{label}: blend3 {w:#x} {n}"),
+                0x005c_b8d0,
+                Conv::Cdecl,
+                &[w, n, sources, out],
+                |g| {
+                    mb::blend3(g, w, n, sources, out);
+                    Out::None
+                },
+            );
+        }
+        // the buffer count: bound (unbind failing or not), resize failing,
+        // a first buffer or none (one buffer inline, several)
+        for (bound, unbind, resize, count, first) in [
+            (1u32, 7u32, 0u32, 1u32, 0u32),
+            (1, 0, 9, 1, 0),
+            (0, 0, 0, 1, 0),
+            (1, 0, 0, 1, 0x55),
+            (0, 0, 0, 3, 0),
+            (0, 0, 0, 3, 0x66),
+        ] {
+            t.stub(more::UNBIND, true, 0, 0, unbind);
+            t.stub(more::BUFFERS_RESIZE, true, 1, 1, resize);
+            t.stub(more::CREATE_DEVICE_TEXTURE, true, 4, 4, 0xde);
+            let obj = t.junk(0x80, 8);
+            t.w32(obj + 0x70, bound);
+            t.w32(obj + 0x24, count);
+            let buf = t.zeros(0x10);
+            if count == 1 {
+                t.w32(obj + 0x28, first);
+            } else {
+                t.w32(buf, first);
+                t.w32(obj + 0x28, buf);
+            }
+            t.w32(obj + 0x14, 0xffff_fbff ^ (first << 10));
+            t.check(
+                &format!("{label}: buffer count {bound} {unbind} {resize} {count:#x} {first:#x}"),
+                0x0059_9b70,
+                Conv::Thiscall(obj),
+                &[2],
+                |g| Out::U32(mb::set_buffer_count(g, obj, 2)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn more_lighting_and_shaders_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the lights: ambient (3), set up or not, the kind matching or not
+        let dir = t.rebase(more::LIGHT_KIND_DIRECTIONAL);
+        let point = t.rebase(more::LIGHT_KIND_POINT);
+        for (i, set_up, kind) in [
+            (3u32, 1u8, dir),
+            (0, 1, dir),
+            (1, 0, dir),
+            (0, 1, point),
+            (1, 1, point),
+            (2, 1, 0),
+        ] {
+            let obj = t.junk(0x200, 1);
+            t.w8(obj + 0x1cc, set_up);
+            let list = t.zeros(0x10);
+            let e = t.junk(0x40, 2);
+            t.w32(e + 0x18, kind);
+            let node = t.junk(0x40, 3);
+            t.w32(node + 0x24, 0x7fc0_0001);
+            t.w32(e + 0x10, node);
+            t.w32(list + 4 * i, e);
+            let lights = t.zeros(8);
+            t.w32(lights + 4, list);
+            t.w32(obj + 0xf0, lights);
+            let out = t.junk(0x10, 4);
+            t.check(
+                &format!("{label}: light colour {i} {set_up} {kind:#x}"),
+                0x006a_8440,
+                Conv::Thiscall(obj),
+                &[out, i],
+                |g| Out::U32(mb::light_colour(g, obj, out, i)),
+            );
+            if i != 3 {
+                t.check(
+                    &format!("{label}: light position {i} {set_up} {kind:#x}"),
+                    0x006a_8b40,
+                    Conv::Thiscall(obj),
+                    &[out, i],
+                    |g| Out::U32(mb::light_position(g, obj, out, i)),
+                );
+            }
+        }
+        // the shade sum: under the minimum, between, over 1, NaN
+        for k in [
+            [0.0f32, 0.0, 0.0, 0.0],
+            [0.1, 0.2, 0.05, 0.0],
+            [0.5, 0.5, 0.5, 0.5],
+            [-1.0, 0.0, 0.0, 0.0],
+            [f32::NAN, 0.0, 0.0, 0.0],
+            [0.3, -0.25, 1e-8, 0.125],
+        ] {
+            let obj = t.junk(0x200, 5);
+            for (j, v) in k.iter().enumerate() {
+                t.w32(obj + 0x1d0 + 4 * j as u32, v.to_bits());
+            }
+            t.check_f32(
+                &format!("{label}: shade sum {k:?}"),
+                0x006a_8bc0,
+                Conv::Thiscall(obj),
+                &[],
+                |g| mb::shade_sum(g, obj),
+            );
+        }
+        // the shader map's insert: from the list, after growing, still
+        // empty, a clash
+        for (have, grows, clash) in [
+            (true, false, 0u32),
+            (false, true, 0),
+            (false, false, 0),
+            (true, false, 1),
+        ] {
+            let obj = t.junk(0x40, 6);
+            let node = t.junk(0x20, 7);
+            let spare = t.junk(0x20, 8);
+            t.w32(node, spare);
+            t.w32(obj + 0x18, if have { node } else { 0 });
+            // the grow stub puts `node` in the list when it grows
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes());
+            c.extend([0xc1, 0xe0, 0x05]);
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes());
+            c.extend([0xc7, 0x00]);
+            c.extend(more::FREE_LIST_GROW.to_le_bytes());
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes());
+            if grows {
+                c.extend([0xc7, 0x01]);
+                c.extend(node.to_le_bytes()); // mov dword [ecx], node
+            }
+            c.extend([0xc2, 0x04, 0x00]);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(more::FREE_LIST_GROW);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            t.stub(more::TREE_INSERT, true, 1, 1, clash);
+            t.stub(more::FREE_LIST_FREE, true, 1, 1, 0xf1);
+            t.stub(more::TREE_FINALIZE, true, 1, 1, 0xf2);
+            let key = t.junk(4, 9);
+            let value = t.junk(4, 10);
+            t.check(
+                &format!("{label}: shader insert {have} {grows} {clash}"),
+                0x006d_f340,
+                Conv::Thiscall(obj),
+                &[key, value],
+                |g| Out::U32(mb::shader_insert(g, obj, key, value)),
+            );
+            t.reset();
+        }
+        // the render target: out given or not, create failing, dimensions
+        // failing, the target failing, made
+        for (with_out, tex, dims, target) in [
+            (true, 0u32, 0u32, 0u32),
+            (true, 1, 3, 0),
+            (false, 1, 0, 0),
+            (true, 1, 0, 1),
+            (false, 1, 0, 1),
+        ] {
+            let tx = t.junk(0x20, 11);
+            t.w32(tx + 0x14, 0xffff_ffff);
+            let tg = t.junk(0x20, 12);
+            t.stub(
+                more::CLUSTER_CREATE,
+                true,
+                3,
+                3,
+                if tex == 0 { 0 } else { tx },
+            );
+            t.stub(more::SET_DIMENSIONS, true, 4, 4, dims);
+            t.stub(more::UPDATE_MAX_LEVEL, true, 0, 0, 0x55);
+            t.stub(
+                more::MAKE_TARGET,
+                true,
+                1,
+                1,
+                if target == 0 { 0 } else { tg },
+            );
+            let out = if with_out { t.junk(4, 13) } else { 0 };
+            let args = [0xc1, 64, 32, 0x1c, 0x1ff, 0x2fe, out];
+            t.check(
+                &format!("{label}: make target {with_out} {tex} {dims} {target}"),
+                0x00a0_6a30,
+                Conv::Cdecl,
+                &args,
+                |g| {
+                    let slot = g.scratch();
+                    Out::U32(mb::make_target(g, args, slot))
+                },
+            );
+            t.reset();
+        }
+        // the clear colour
+        for argb in [0u32, 0xffff_ffff, 0x80ff_4001, 0x7f00_ff80] {
+            let obj = t.junk(0x400, 14);
+            t.check(
+                &format!("{label}: colour {argb:#x}"),
+                0x0059_9cc0,
+                Conv::Thiscall(obj),
+                &[argb],
+                |g| {
+                    mb::set_colour(g, obj, argb);
+                    Out::None
+                },
+            );
+        }
+        // the shader parameter: no materials, no parameter, no data, out
+        // of range, an offset under 4, copied
+        for (count, found, data, off, size) in [
+            (0u32, true, true, 8u16, 4u16),
+            (2, false, true, 8, 4),
+            (1, true, false, 8, 4),
+            (1, true, true, 0x1c, 8),
+            (1, true, true, 2, 4),
+            (2, true, true, 8, 0xe004),
+            (1, true, true, 4, 0x1c),
+        ] {
+            let inst = t.junk(0x20, 15);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(inst + 0x10, arr);
+            let list = t.zeros(8);
+            let buffer = t.junk(0x40, 16);
+            t.w32(buffer, 0x20);
+            for k in 0..2 {
+                let e = t.zeros(8);
+                let mat = t.junk(0x10, 17);
+                t.w32(e, mat);
+                t.w32(e + 4, buffer);
+                t.w32(list + 4 * k, e);
+            }
+            let p = t.zeros(0x10);
+            t.write(p + 8, &off.to_le_bytes());
+            t.write(p + 0xa, &size.to_le_bytes());
+            t.stub(more::ARRAY_DATA, true, 0, 0, list);
+            t.stub(more::FIND_PARAM, true, 1, 1, if found { p } else { 0 });
+            t.stub(more::MEMCPY, false, 3, 0, 0x3c);
+            let d = if data { t.junk(0x20, 18) } else { 0 };
+            t.check(
+                &format!("{label}: shader parameter {count} {found} {data} {off} {size:#x}"),
+                0x006d_f8c0,
+                Conv::Cdecl,
+                &[inst, 0x4e4e, d],
+                |g| {
+                    mb::set_shader_parameter(g, inst, 0x4e4e, d);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the shader map's reset: an empty map, one node, three
+        for nodes in [0usize, 1, 3] {
+            let tree = t.rebase(more::SHADER_TREE);
+            let first = t.rebase(more::SHADER_TREE_FIRST);
+            let ns: Vec<u32> = (0..nodes).map(|k| t.junk(0x20, 19 + k as u8)).collect();
+            // the +0xc chain: first -> ... -> last -> tree; successor stub:
+            // each node's word +0x10 is its successor
+            for (k, &n) in ns.iter().enumerate() {
+                t.w32(n, ns.get(k + 1).copied().unwrap_or(tree));
+                t.w32(n + 0x10, ns.get(k + 1).copied().unwrap_or(tree));
+            }
+            t.put_saved(first, ns.first().copied().unwrap_or(tree));
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes());
+            c.extend([0xc1, 0xe0, 0x05]);
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes());
+            c.extend([0xc7, 0x00]);
+            c.extend(more::TREE_SUCCESSOR.to_le_bytes());
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes());
+            c.extend([0x8b, 0x42, 0x10]); // mov eax, [edx+0x10]
+            c.extend([0xc2, 0x04, 0x00]);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(more::TREE_SUCCESSOR);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            t.stub(more::RESTORE_SHADER, false, 1, 0, 0x7e);
+            t.stub(more::TREE_ORPHAN_ALL, true, 0, 0, 0x7f);
+            t.stub(more::FREE_LIST_RESET, true, 0, 0, 0x80);
+            t.check(
+                &format!("{label}: reset shaders {nodes}"),
+                0x006d_f620,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(mb::reset_shaders(g)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn more_text_and_bindings_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the application's find by name
+        let names = ["alpha\0", "beta\0", "gamma\0"];
+        let data = t.zeros(0x10);
+        let mut objs = Vec::new();
+        for (k, n) in names.iter().enumerate() {
+            let s = t.alloc(n.as_bytes());
+            let obj = t.zeros(8);
+            t.w32(obj + 4, s + u32::from(k == 1));
+            objs.push(obj);
+            t.w32(data + 4 * k as u32, obj);
+        }
+        let arr = t.zeros(8);
+        t.w32(arr, 3);
+        t.w32(arr + 4, data);
+        for q in ["beta\0", "gamma\0", "alph\0", "\0", "alphabet\0"] {
+            let s = t.alloc(q.as_bytes());
+            t.check(
+                &format!("{label}: find {q:?}"),
+                0x009e_ccb0,
+                Conv::Thiscall(arr),
+                &[s],
+                |g| Out::U32(mb::find_by_name(g, arr, s)),
+            );
+        }
+        // the text: null, equal, different, too long (the capacity grown
+        // or failing), no buffer
+        for (s, buffer, cap, strncmp, grow) in [
+            (None, true, 0x10u32, 0u32, 0u32),
+            (Some("hello\0"), true, 0x10, 0, 0),
+            (Some("hello\0"), true, 0x10, 1, 0),
+            (Some("a long text here\0"), true, 0x10, 1, 0),
+            (Some("a long text here\0"), true, 0x10, 1, 0x1d),
+            (Some("hi\0"), false, 0x10, 1, 0),
+            (Some("hello\0"), true, 6, 1, 0),
+        ] {
+            let text = t.junk(0x200, 1);
+            let buf = if buffer { t.junk(0x20, 2) } else { 0 };
+            t.w32(text + 0x160, buf);
+            t.w32(text + 0x15c, cap);
+            let sp = match s {
+                Some(x) => t.alloc(x.as_bytes()),
+                None => 0,
+            };
+            t.stub_import(more::STRNCMP, 3, 0, strncmp);
+            t.stub(more::TEXT_SET_CAPACITY, true, 1, 1, grow);
+            t.stub(more::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(more::TEXT_CREATE_MESH, true, 1, 1, 0x3d);
+            t.check(
+                &format!("{label}: set text {s:?} {buffer} {cap} {strncmp} {grow}"),
+                0x00a2_aa30,
+                Conv::Thiscall(text),
+                &[sp],
+                |g| Out::U32(mb::set_text(g, text, sp)),
+            );
+            t.reset();
+        }
+        // the compute binding: each refusal, bound
+        for (uav_flags, buf_flags, size, stride) in [
+            (0u8, 8u8, 8u32, 4u32),
+            (2, 0, 8, 4),
+            (4, 8, 3, 4),
+            (6, 8, 8, 8),
+            (2, 0xff, 4, 4),
+            (4, 8, 8, 4),
+        ] {
+            t.stub(more::UAV_OF, true, 1, 1, 0x0ab);
+            t.stub(more::SRV_OF, true, 1, 1, 0x05b);
+            let mut words = vec![0u32; 0x32];
+            words[0x31] = 4;
+            words[0x2f] = 3;
+            let ctx = t.com_object(&words, &[]);
+            let obj = t.junk(0x400, 3);
+            t.w32(obj + 0x70, ctx);
+            let buf = t.junk(0x10, 4);
+            t.w8(buf + 8, buf_flags);
+            t.w32(buf, size);
+            t.w32(buf + 4, stride);
+            let uav = t.junk(0x10, 5);
+            t.w8(uav + 8, uav_flags);
+            t.check(
+                &format!("{label}: compute {uav_flags} {buf_flags} {size} {stride}"),
+                0x0058_ebb0,
+                Conv::Thiscall(obj),
+                &[buf, uav],
+                |g| Out::U32(mb::bind_compute_buffer(g, obj, buf, uav)),
+            );
+            t.reset();
+        }
+    }
+}
