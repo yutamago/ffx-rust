@@ -1607,3 +1607,72 @@ fn fam446_sparks_cd() {
         }
     }
 }
+
+/// `magic_0543`'s small entries: the caster shown again (with and
+/// without the first slot), the counter reset, and the per-frame task
+/// with no objects (ending or not).
+#[test]
+fn fam543_small() {
+    let Some(mut t) = twin(543) else { return };
+    let sc = t.at(0x4c30);
+    rec(&mut t, 213, 2, |_, _| 0x213);
+    rec(&mut t, 219, 2, |_, a| 0x0219_0000 ^ a[0]);
+    rec(&mut t, 257, 2, |_, _| 0x257);
+    t.set_u32(t.img.word(sc + 0x13), 0x0aaa_0001);
+    t.set_u32(t.img.word(sc + 0x2b), 0x0bbb_0002);
+    for word in [0u16, 1] {
+        t.set_u16(t.img.word(sc + 0x3), word);
+        t.check_entry(sc, Call::default(), &[], Eax::Checked);
+    }
+    let cr = t.at(0x3ad0);
+    let block = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(cr + 0x2), block);
+    for v in [0u32, 5] {
+        t.write(block + 0xd740, &[0x77; 0x14]);
+        t.set_u32(block + 0xd748, v);
+        t.check_entry(cr, Call::default(), &[], Eax::Checked);
+    }
+    let ot = t.at(0x4a90);
+    t.set_u32(t.img.word(ot + 0xa), block);
+    for s in [
+        941u32, 772, 779, 552, 230, 554, 229, 231, 712, 713, 330, 328, 329,
+    ] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    let task = SCRATCH + 0x800;
+    let owner = SCRATCH + 0x900;
+    for end in [0u32, 1] {
+        t.set_u32(block + 0xebfc, end);
+        t.set_u32(task + 8, owner);
+        t.set_u32(task + 0x14, 0x55);
+        t.write(owner, &[0x44; 0x20]);
+        t.check_entry(ot, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0146` 0x10006d20 and `magic_0186` 0x10007780: an effect node set
+/// up from a record on the frame, its list empty or with a last child.
+#[test]
+fn effect_node_records() {
+    for (n, rva) in [(146u16, 0x6d20u32), (186, 0x7780)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[0] ^ a[2]);
+        let list = t.img.word(f + 0x18);
+        let node = SCRATCH + 0x1000;
+        let kid = SCRATCH + 0x1400;
+        for last in [list, kid] {
+            t.write(node, &[0xa5; 0x100]);
+            t.write(kid, &[0x3c; 0x40]);
+            t.set_u32(list + 0x10, last);
+            t.set_u16(list + 0x18, 0xfffe);
+            let c = Call::this(node);
+            t.check_entry(
+                f,
+                c,
+                &[0x0808_0808, 0x0c0c_0c0c, 0xdead, 0x0303],
+                Eax::Checked,
+            );
+        }
+    }
+}

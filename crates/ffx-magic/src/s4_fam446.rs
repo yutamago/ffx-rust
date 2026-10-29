@@ -1239,3 +1239,172 @@ pub const SPARKS_B: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The family's per-frame task (cdecl `(task)`; an 8-aligned frame): the
+/// objects run ([`crate::l5_objhost::run_objects`]); when none ran and
+/// the block's `+0xebfc` is 1, the task ends: its `+0x14` is 3, its
+/// owner's (`+0x8`) callback `+0x10` the next function (operand `+0x30`),
+/// the models are drawn ([`crate::sb_misc::draw_all`]) and the part
+/// handles registered ([`crate::sa_misc::register_16`]). Returns the
+/// last one's `eax`, or the objects' answer.
+///
+/// `magic_0543` 0x10004a90 (67 bytes; 9 DLLs).
+pub fn objects_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let block = g.read::<u32>(w(0xa));
+    // push ebp; and esp, -8; push ecx; push esi; call
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(12);
+    let ran = crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0xf), esp);
+    if ran != 1 || g.read::<u32>(block + 0xebfc) != 1 {
+        return Ret::eax(ran);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let owner = g.read::<u32>(task + 8);
+    g.write::<u32>(owner + 0x10, w(0x30));
+    crate::sb_misc::draw_all(g, img, img.rel32_target(f + 0x35), owner);
+    Ret::eax(crate::sa_misc::register_16(
+        g,
+        img,
+        img.rel32_target(f + 0x3a),
+    ))
+}
+
+/// [`objects_task`].
+pub const OBJECTS_TASK: Sig = Sig {
+    len: 67,
+    hash: 0x7e45_6214_745a_a5a7,
+    calls: &[
+        (0xf, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x35, Callee::Sig(&crate::sb_misc::DRAW_ALL)),
+        (0x3a, Callee::Sig(&crate::sa_misc::REGISTER_16)),
+    ],
+    imports: &[],
+};
+
+/// The caster shown again (a table entry, no arguments): unless the word
+/// `G_W` (operand `+0x3`) is set, slot 213 `(*G_A, 0)` (`+0x13`); then
+/// `G_C` (`+0x31`) is 1 and slot 257 `(slot 219 (*G_B, 0), 0)` (`+0x2b`)
+/// shows the element. Returns slot 257's `eax`.
+///
+/// `magic_0543` 0x10004c30 (85 bytes; 9 DLLs).
+pub fn show_caster<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    if g.read::<u16>(w(0x3)) == 0 {
+        let t = slot_target(g, w(0xb), 213);
+        g.call(t, 0, &[g.read::<u32>(w(0x13)), 0]);
+    }
+    let b = g.read::<u32>(w(0x2b));
+    g.write::<u32>(w(0x31), 1);
+    let t = slot_target(g, w(0x23), 219);
+    let elem = g.call(t, 0, &[b, 0]).eax;
+    let t = slot_target(g, w(0x45), 257);
+    Ret::eax(g.call(t, 0, &[elem, 0, b, 0]).eax)
+}
+
+/// [`show_caster`].
+pub const SHOW_CASTER: Sig = Sig {
+    len: 85,
+    hash: 0x7b8d_769e_d1ae_d123,
+    calls: &[],
+    imports: &[],
+};
+
+/// Resets the block's counter (a table entry, no arguments): `+0xd74c`
+/// is 0xc when `+0xd748` is 0, else 1; `+0xd740`, `+0xd744` and `+0xd750`
+/// are cleared. Returns the new `+0xd74c`.
+///
+/// `magic_0543` 0x10003ad0 (63 bytes; 8 DLLs).
+pub fn counter_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let block = g.read::<u32>(img.word(fr.at + 0x2));
+    let n = if g.read::<u32>(block + 0xd748) == 0 {
+        0xc
+    } else {
+        1
+    };
+    g.write::<u32>(block + 0xd740, 0);
+    g.write::<u32>(block + 0xd744, 0);
+    g.write::<u32>(block + 0xd74c, n);
+    g.write::<u32>(block + 0xd750, 0);
+    Ret::eax(n)
+}
+
+/// [`counter_reset`].
+pub const COUNTER_RESET: Sig = Sig {
+    len: 63,
+    hash: 0x739b_3521_82bc_6aab,
+    calls: &[],
+    imports: &[],
+};
+
+/// An effect node (`ecx`) set up from a record on the frame (`[ebp -
+/// 0x18]`: `[node, A, x, y, B, arg 3]`, `A`, `B` the operands at `+0x18`
+/// and the third word slot's, `x`/`y` arg 1 and the operand `+0x1f`, or
+/// arg 0 and `+0x1f`, per `args`) with [`crate::sb_nodes::effect_node`],
+/// then the node (read again) gets its vtable (operand `+0x37`). Returns
+/// the node.
+fn effect_node_record<G: Game>(g: &mut G, img: &Image, fr: &Frame, words: [u32; 6]) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    // push ebp; sub esp, 0x18
+    let rec = fr.esp.wrapping_sub(0x1c);
+    for (i, x) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, x);
+    }
+    crate::sb_nodes::effect_node(g, img, img.rel32_target(fr.at + 0x2e), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0x37));
+    Ret::eax(node)
+}
+
+/// [`effect_node_record`] with `[node, +0x18, +0x1f, arg 1, +0x26, arg
+/// 3]`.
+///
+/// `magic_0146` 0x10006d20 (63 bytes, `ecx` and four stack words; 8
+/// DLLs).
+pub fn effect_node_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let words = [
+        fr.ecx,
+        w(0x18),
+        w(0x1f),
+        fr.arg(g, 1),
+        w(0x26),
+        fr.arg(g, 3),
+    ];
+    effect_node_record(g, img, fr, words)
+}
+
+/// [`effect_node_a`].
+pub const EFFECT_NODE_A: Sig = Sig {
+    len: 63,
+    hash: 0x1340_7922_cc62_eacf,
+    calls: &[(0x2e, Callee::Sig(&crate::sb_nodes::EFFECT_NODE))],
+    imports: &[],
+};
+
+/// [`effect_node_record`] with `[node, +0x18, arg 0, +0x1f, +0x26, arg
+/// 3]`.
+///
+/// `magic_0186` 0x10007780 (63 bytes, `ecx` and four stack words; 8
+/// DLLs).
+pub fn effect_node_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let words = [
+        fr.ecx,
+        w(0x18),
+        fr.arg(g, 0),
+        w(0x1f),
+        w(0x26),
+        fr.arg(g, 3),
+    ];
+    effect_node_record(g, img, fr, words)
+}
+
+/// [`effect_node_b`].
+pub const EFFECT_NODE_B: Sig = Sig {
+    len: 63,
+    hash: 0xc3da_433a_3544_8ec3,
+    calls: &[(0x2e, Callee::Sig(&crate::sb_nodes::EFFECT_NODE))],
+    imports: &[],
+};
