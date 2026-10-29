@@ -7,7 +7,15 @@
 //!   `Bind` sequences: type dispenser, namespace);
 //! - [`object`]: small constructors, destructors and the class
 //!   descriptors' create/destroy callbacks (`mov al, 1; ret 4`);
-//! - [`physics`]: the physics classes' create callbacks.
+//! - [`physics`]: the physics classes' create callbacks;
+//! - [`m5p_scripting_small`]: M5 phyre-scripting batch 1, the small functions;
+//! - [`m5p_scripting_mid`]: M5 phyre-scripting batch 2, middle-sized Lua glue and fixups;
+//! - [`m5p_scripting_lua`]: M5 phyre-scripting batch 3, object accessors, Vector and Matrix functions;
+//! - [`m5p_scripting_sched`]: M5 phyre-scripting batch 4, the scheduler, scripted components, fixups;
+//! - [`m5p_scripting_state`]: M5 phyre-scripting batch 5, script states and runs, member setters;
+//! - [`m5p_scripting_more`]: M5 phyre-scripting batch 6, scheduler removal, Vector constructor, type queries;
+//! - [`m5p_scripting_run`]: M5 phyre-scripting batch 7, the scheduler's runs;
+//! - [`m5p_scripting_vec`]: M5 phyre-scripting batch 8, Vector dot and cross products.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -25,6 +33,14 @@
 use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
+pub mod m5p_scripting_lua;
+pub mod m5p_scripting_mid;
+pub mod m5p_scripting_more;
+pub mod m5p_scripting_run;
+pub mod m5p_scripting_sched;
+pub mod m5p_scripting_small;
+pub mod m5p_scripting_state;
+pub mod m5p_scripting_vec;
 pub mod object;
 pub mod p3_bind;
 pub mod p3_init;
