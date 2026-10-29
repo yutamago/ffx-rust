@@ -1502,3 +1502,64 @@ fn walk_thunk() {
         t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
     }
 }
+
+#[test]
+fn statics_children_sparkles() {
+    let Some(mut t) = twin(152) else { return };
+    let f = t.at(0x99b0);
+    let last = SCRATCH + 0x300;
+    t.write(last, &[0x77; 0x10]);
+    t.set_u32(op(&t, f, 0x1), last);
+    t.set_u32(op(&t, f, 0x3b), 0x0000_0003);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0xcc70);
+    let (node, parent, kid) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x300);
+    for (p, kids) in [(0u32, false), (parent, false), (parent, true)] {
+        t.write(node, &[0x66; 0x60]);
+        t.write(parent, &[0; 0x20]);
+        t.write(kid, &[0x77; 0x10]);
+        let last = if kids { kid } else { parent };
+        t.set_u32(parent + 0x10, last);
+        t.set_u32(parent + 0xc, last);
+        t.set_u16(parent + 0x18, u16::from(kids));
+        let c = Call {
+            ecx: node,
+            edx: p,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            c,
+            &[0x0001_0001, 0x0001_0030],
+            Eax::Checked,
+            s4_small::child_node,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(446) else { return };
+    recs(&mut t, &[(219, 2), (257, 4)]);
+    let f = t.at(0x3ad0);
+    let block = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x3), block);
+    t.set_u32(op(&t, f, 0x21), 0x0219_0001);
+    for on in [0u32, 1] {
+        t.write(block + 0xd740, &[0x44; 0x14]);
+        t.set_u32(block + 0xd748, on);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(430) else { return };
+    recs(&mut t, &[(0, 1), (26, 3), (10, 5), (257, 7)]);
+    let f = t.at(0x2210);
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x3e), p);
+    t.set_u8(p + 2, 1);
+    t.set_u32(op(&t, f, 0x55) + 4, 0x0257_0001);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}

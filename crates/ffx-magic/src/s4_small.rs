@@ -3255,6 +3255,18 @@ pub const BLOCK_TASK: Sig = Sig {
 /// `magic_0155` 0x10009500 (101 bytes; 2 DLLs).
 pub fn static_node_link<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
+    let last = static_link_head(g, img, f);
+    g.write::<u32>(op(img, f, 0x4c), fr.edx);
+    g.write::<u32>(op(img, f, 0x52), 0);
+    g.write::<u32>(op(img, f, 0x5c), 0);
+    Ret::eax(last)
+}
+
+/// The common start of [`static_node_link`] and [`static_node_link_b`]:
+/// the static node's handler table, callback and owner, the list's last
+/// before it and the list's head, the old last's `+0x4`, the list's flag
+/// bit 0 cleared and the node the new last. Returns the old last.
+fn static_link_head<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     let last = g.read::<u32>(op(img, f, 0x1));
     for (dst, src) in [(0x7, 0xb), (0x11, 0x15), (0x1b, 0x1f)] {
         g.write::<u32>(op(img, f, dst), op(img, f, src));
@@ -3266,10 +3278,7 @@ pub fn static_node_link<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let v = g.read::<u32>(flags);
     g.write::<u32>(flags, v & !1);
     g.write::<u32>(op(img, f, 0x42), op(img, f, 0x46));
-    g.write::<u32>(op(img, f, 0x4c), fr.edx);
-    g.write::<u32>(op(img, f, 0x52), 0);
-    g.write::<u32>(op(img, f, 0x5c), 0);
-    Ret::eax(last)
+    last
 }
 
 /// [`static_node_link`].
@@ -3389,6 +3398,140 @@ pub fn state_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const STATE_RESET: Sig = Sig {
     len: 104,
     hash: 0xf321_d8ba_93a4_b18f,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`static_node_link`] with the node's three last words 0 (operands
+/// `+0x4c`, `+0x56`, `+0x60`; no arguments). Returns the old last.
+///
+/// `magic_0152` 0x100099b0 (105 bytes; 3 DLLs).
+pub fn static_node_link_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = static_link_head(g, img, f);
+    for o in [0x4c, 0x56, 0x60] {
+        g.write::<u32>(op(img, f, o), 0);
+    }
+    Ret::eax(last)
+}
+
+/// [`static_node_link_b`].
+pub const STATIC_NODE_LINK_B: Sig = Sig {
+    len: 105,
+    hash: 0xd2e5_328d_7606_8b89,
+    calls: &[],
+    imports: &[],
+};
+
+/// A fresh node (`ecx`) under `parent` (`edx`, when not 0: `+0x4`, `+0x8`
+/// the parent's last child, which links to it, or the parent's first
+/// when it had none; the parent's count up and its last the node); then
+/// `+0x2c` the DLL's block (operand `+0x3b`), `+0x30` = y, `+0x34..+0x3c`
+/// 0, `u16 +0x4c` and byte `+0x4e` 0 and the handler table (operand
+/// `+0x63`) (internal, cdecl `(x, y)`). Returns y.
+///
+/// `magic_0150` 0x1000cc70 (105 bytes; 2 DLLs).
+pub fn child_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (n, parent) = (fr.ecx, fr.edx);
+    g.write::<u16>(n.wrapping_add(0x1a), 0xff);
+    g.write::<u32>(n.wrapping_add(0x10), n);
+    g.write::<u32>(n.wrapping_add(0xc), n);
+    g.write::<u32>(n.wrapping_add(0x14), parent);
+    if parent != 0 {
+        g.write::<u32>(n.wrapping_add(4), parent);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        g.write::<u32>(n.wrapping_add(8), last);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        if last == parent {
+            g.write::<u32>(parent.wrapping_add(0xc), n);
+        } else {
+            g.write::<u32>(last.wrapping_add(4), n);
+        }
+        let c = g.read::<u16>(parent.wrapping_add(0x18)).wrapping_add(1);
+        g.write::<u16>(parent.wrapping_add(0x18), c);
+        g.write::<u32>(parent.wrapping_add(0x10), n);
+    }
+    let y = fr.arg(g, 1);
+    g.write::<u32>(n.wrapping_add(0x2c), op(img, f, 0x3b));
+    g.write::<u32>(n.wrapping_add(0x30), y);
+    for off in [0x34, 0x38, 0x3c] {
+        g.write::<u32>(n.wrapping_add(off), 0);
+    }
+    g.write::<u16>(n.wrapping_add(0x4c), 0);
+    g.write::<u8>(n.wrapping_add(0x4e), 0);
+    g.write::<u32>(n, op(img, f, 0x63));
+    Ret::eax(y)
+}
+
+/// [`child_node`].
+pub const CHILD_NODE: Sig = Sig {
+    len: 105,
+    hash: 0x8807_da50_516c_e8de,
+    calls: &[],
+    imports: &[],
+};
+
+/// The block's sparkle (`*G`): with `+0xd748` set, slot 219 `(*G_P, 0)`
+/// gives a part and slot 257 `(part, 1)` shows it (the first call's words
+/// stay under the second's), `+0xd74c` 1; else `+0xd74c` 12. Then
+/// `+0xd740`, `+0xd744`, `+0xd750` 0 (no arguments). Returns slot 257's
+/// `eax`, or `eax` as it came.
+///
+/// `magic_0446` 0x10003ad0 (107 bytes; 2 DLLs).
+pub fn sparkle_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x3));
+    let mut ret = Ret::eax(fr.eax);
+    let v = if g.read::<u32>(block.wrapping_add(0xd748)) == 0 {
+        0xc
+    } else {
+        let x = g.read::<u32>(op(img, f, 0x21));
+        let part = slot_call(g, img, f, (0x19, 219), &[x, 0]).eax;
+        ret = through(slot_call(g, img, f, (0x35, 257), &[part, 1, x, 0]));
+        1
+    };
+    g.write::<u32>(block.wrapping_add(0xd74c), v);
+    for off in [0xd740, 0xd744, 0xd750] {
+        g.write::<u32>(block.wrapping_add(off), 0);
+    }
+    ret
+}
+
+/// [`sparkle_reset`].
+pub const SPARKLE_RESET: Sig = Sig {
+    len: 107,
+    hash: 0x20e9_5b22_5481_b38b,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 0 `(0x3016)` gives a handle `h` (`G_H`, operand `+0x31`), slot 26
+/// `(0x3016, 1)`, byte `G_B` 0x20, slot 10 `(h, 0)`, `G_S` 3, then slot
+/// 257 `(T[k], 1)` (`k` the byte `*G + 2`, `T` operand `+0x55`), each
+/// call seeing the words the earlier ones left (no arguments). Returns
+/// slot 257's `eax`.
+///
+/// `magic_0430` 0x10002210 (107 bytes; 2 DLLs).
+pub fn handle_3016<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = 0x3016;
+    let h = slot_call(g, img, f, (0x1, 0), &[s]).eax;
+    slot_call(g, img, f, (0x11, 26), &[s, 1, s]);
+    g.write::<u8>(op(img, f, 0x2a), 0x20);
+    g.write::<u32>(op(img, f, 0x31), h);
+    slot_call(g, img, f, (0x24, 10), &[h, 0, s, 1, s]);
+    let p = g.read::<u32>(op(img, f, 0x3e));
+    g.write::<u32>(op(img, f, 0x44), 3);
+    let k = u32::from(g.read::<u8>(p.wrapping_add(2)));
+    let part = g.read::<u32>(op(img, f, 0x55).wrapping_add(4 * k));
+    through(slot_call(g, img, f, (0x5a, 257), &[part, 1, h, 0, s, 1, s]))
+}
+
+/// [`handle_3016`].
+pub const HANDLE_3016: Sig = Sig {
+    len: 107,
+    hash: 0xe3f1_5f5f_2f81_d5e1,
     calls: &[],
     imports: &[],
 };
