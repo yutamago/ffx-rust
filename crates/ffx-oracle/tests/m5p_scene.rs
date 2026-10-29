@@ -1331,3 +1331,470 @@ fn m5p_scene_b_utilities() {
         tw.unstub();
     }
 }
+
+// ---- batch 3 (ffx_prender::m5p_scene_c) ----
+
+use ffx_prender::m5p_scene_c as sc;
+
+/// The `PUtility*` deleting destructors: the singleton first, later or
+/// missing in the registry (an empty one too), each flag.
+#[test]
+fn m5p_scene_c_utility_dtors() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sc::OPERATOR_DELETE, false, 1, 0, 0x0bad_0006);
+        let head = tw.rebase(sc::UTILITY_LIST);
+        let nodes: Vec<u32> = (0..3).map(|_| tw.zeros(0x10)).collect();
+        for f in [0x0043_2b80, 0x0043_2ce0, 0x0043_3460, 0x0050_41e0] {
+            for (case, this) in [(0, 0), (0, 1), (0, 2), (1, 0), (2, 1)] {
+                // case 0: nodes 0 -> 1 -> 2; 1: empty; 2: only node 0
+                let this = nodes[this];
+                tw.w32(head, if case == 1 { 0 } else { nodes[0] });
+                tw.w32(nodes[0] + 4, if case == 2 { 0 } else { nodes[1] });
+                tw.w32(nodes[1] + 4, nodes[2]);
+                tw.w32(nodes[2] + 4, 0);
+                for flags in [0, 1] {
+                    let label =
+                        format!("{what} utility delete {f:#x} case {case} this {this:#x} {flags}");
+                    tw.run(&label, f, Conv::Thiscall(this), &[flags], |g| {
+                        sc::bridge::utility_delete(g, this, flags)
+                    });
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The `PSharray<T*>` buffers: one element or none in the header, more
+/// allocated (a failing allocation too), copies with and without zero
+/// fill.
+#[test]
+fn m5p_scene_c_sharray_buffers() {
+    for (what, mut tw) in Twins::all() {
+        let this = tw.zeros(0x10);
+        let src = tw.alloc(&(1..=64u8).collect::<Vec<_>>());
+        let block = tw.zeros(0x80);
+        for ret in [block, 0] {
+            tw.stub(sc::PHYRE_MALLOC, false, 2, 0, ret);
+            for n in [0, 1, 2, 7] {
+                for f in [0x004f_6db0, 0x005a_6aa0] {
+                    tw.write(block, &[0xee; 0x80]);
+                    let label = format!("{what} sharray copy {f:#x} n {n} alloc {ret:#x}");
+                    tw.run(&label, f, Conv::Thiscall(this), &[n, src], |g| {
+                        sc::bridge::sharray_copy(g, this, n, src)
+                    });
+                }
+                for m in [0, 1, n] {
+                    if m > n {
+                        continue;
+                    }
+                    for f in [0x004f_6e10, 0x0054_fa00, 0x005a_6ba0] {
+                        tw.write(block, &[0xee; 0x80]);
+                        tw.w32(this + 4, 0xdddd_dddd);
+                        let label =
+                            format!("{what} sharray fill {f:#x} n {n} m {m} alloc {ret:#x}");
+                        tw.run(&label, f, Conv::Thiscall(this), &[n, src, m], |g| {
+                            sc::bridge::sharray_copy_fill(g, this, n, src, m)
+                        });
+                    }
+                }
+            }
+        }
+        // zeroed 32-byte items
+        let items = tw.zeros(0x100);
+        for n in [0, 1, 3] {
+            tw.write(items, &[0xee; 0x100]);
+            let label = format!("{what} zero items32 {n}");
+            tw.run_void(&label, 0x004d_f240, Conv::Cdecl, &[items, n], |g| {
+                sc::bridge::zero_items32(g, items, n);
+            });
+        }
+        let label = format!("{what} zero items32 null");
+        tw.run_void(&label, 0x004d_f240, Conv::Cdecl, &[0, 1], |g| {
+            sc::bridge::zero_items32(g, 0, 1);
+        });
+        tw.unstub();
+    }
+}
+
+/// The array resizes: the shrink, the render pass reallocation and the
+/// 8-byte reset, over the header counts and old buffers.
+#[test]
+fn m5p_scene_c_array_resizes() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sc::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let hdr = tw.zeros(0x10);
+        let fresh = 0x0066_0000;
+        for header in COUNTS {
+            for old in [0, fresh, 0x0012_3456] {
+                for n in [0, 1, 3, 0x7fff_ffff, header] {
+                    tw.w32(hdr, header);
+                    tw.w32(hdr + 4, old);
+                    let label = format!("{what} shrink ({header:#x}, {old:#x}) to {n:#x}");
+                    tw.run(&label, 0x00a3_07f0, Conv::Thiscall(hdr), &[n], |g| {
+                        sc::bridge::array_shrink(g, hdr, n)
+                    });
+                    for ret in [fresh, 0] {
+                        tw.stub(sc::RENDER_PASS_REALLOC, false, 3, 0, ret);
+                        tw.stub(sc::PHYRE_MALLOC, false, 2, 0, ret);
+                        tw.w32(hdr, header);
+                        tw.w32(hdr + 4, old);
+                        let label = format!(
+                            "{what} render pass resize ({header:#x}, {old:#x}) to {n:#x}, {ret:#x}"
+                        );
+                        tw.run(&label, 0x004e_74c0, Conv::Thiscall(hdr), &[n], |g| {
+                            sc::bridge::render_pass_resize(g, hdr, n)
+                        });
+                        tw.w32(hdr, header);
+                        tw.w32(hdr + 4, old);
+                        let label = format!(
+                            "{what} array8 reset ({header:#x}, {old:#x}) to {n:#x}, {ret:#x}"
+                        );
+                        tw.run(&label, 0x00a3_0780, Conv::Thiscall(hdr), &[n], |g| {
+                            sc::bridge::array8_reset(g, hdr, n)
+                        });
+                    }
+                }
+            }
+        }
+        // the constant buffers: the destructor is a recording stub
+        tw.stub(sc::CONSTANT_BUFFER_DTOR, true, 0, 0, 0x0bad_0010);
+        for count in [0, 1, 3, 0x8000_0002] {
+            for buffer in [0, 0x0012_3000] {
+                tw.w32(hdr, count);
+                tw.w32(hdr + 4, buffer);
+                let label = format!("{what} constant buffers ({count:#x}, {buffer:#x})");
+                tw.run(&label, 0x004f_d160, Conv::Thiscall(hdr), &[], |g| {
+                    sc::bridge::constant_buffers_clear(g, hdr)
+                });
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The list unlinks: the gameplay types and locator shapes (first, later,
+/// missing, empty), the component detach.
+#[test]
+fn m5p_scene_c_unlinks() {
+    for (what, mut tw) in Twins::all() {
+        let nodes: Vec<u32> = (0..3).map(|_| tw.zeros(0x10)).collect();
+        for (f, l) in [
+            (0x0043_3550, sc::GAMEPLAY_TYPES),
+            (0x0054_5e80, sc::LOCATOR_SHAPES),
+        ] {
+            let head = tw.rebase(l.head);
+            let saved = tw.r32(head);
+            for (empty, node) in [(false, 0), (false, 1), (false, 2), (true, 0)] {
+                tw.w32(head, if empty { 0 } else { nodes[0] });
+                tw.w32(nodes[0] + l.link, nodes[1]);
+                tw.w32(nodes[1] + l.link, 0);
+                let node = nodes[node];
+                let label = format!("{what} unlink {f:#x} {node:#x} empty {empty}");
+                tw.run(&label, f, Conv::Cdecl, &[node], |g| {
+                    sc::bridge::list_unlink(g, &l, node)
+                });
+            }
+            tw.w32(head, saved);
+        }
+        let owner = tw.zeros(0x10);
+        for (owned, at) in [(true, 0), (true, 1), (true, 2), (false, 0)] {
+            tw.w32(owner, nodes[0]);
+            tw.w32(nodes[0], nodes[1]);
+            tw.w32(nodes[1], 0);
+            let c = nodes[at];
+            tw.w32(c + 4, if owned { owner } else { 0x9999 });
+            let label = format!("{what} detach {c:#x} owned {owned}");
+            tw.run(&label, 0x0045_0450, Conv::Thiscall(owner), &[c], |g| {
+                sc::bridge::component_detach(g, owner, c)
+            });
+        }
+        tw.w32(owner, 0);
+        tw.w32(nodes[0] + 4, owner);
+        let label = format!("{what} detach from an empty list");
+        tw.run(
+            &label,
+            0x0045_0450,
+            Conv::Thiscall(owner),
+            &[nodes[0]],
+            |g| sc::bridge::component_detach(g, owner, nodes[0]),
+        );
+    }
+}
+
+/// The entity's class node (the tree calls stubbed), the world class
+/// test and the instances search over synthetic class chains.
+#[test]
+fn m5p_scene_c_classes() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sc::TREE_REMOVE, true, 1, 1, 0x0bad_0011);
+        tw.stub(sc::TREE_FIXUP, true, 1, 1, 0x0bad_0012);
+        let entity = tw.zeros(0x40);
+        for (had, class, found) in [
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 0x0077_0000, 0),
+            (1, 0x0077_0000, 0x0055_0000),
+            (2, 0x0077_0000, 0),
+        ] {
+            tw.stub(sc::TREE_ATTACH1, true, 1, 1, found);
+            tw.write(entity, &[0x44; 0x40]);
+            tw.w32(entity + 4, had);
+            let label = format!("{what} set class {had} {class:#x} found {found:#x}");
+            tw.run(&label, 0x0045_0500, Conv::Thiscall(entity), &[class], |g| {
+                sc::bridge::entity_set_class(g, entity, class)
+            });
+        }
+        tw.unstub();
+        // classes: c0 -> c1 -> world, c2 alone
+        let world = tw.rebase(sc::WORLD_CLASS);
+        let c: Vec<u32> = (0..3).map(|_| tw.zeros(0x50)).collect();
+        tw.w32(c[0] + 0x40, c[1]);
+        tw.w32(c[1] + 0x40, world);
+        let list = tw.zeros(0x10);
+        let e: Vec<u32> = (0..2).map(|_| tw.zeros(0x10)).collect();
+        for (entries, class) in [
+            (vec![], 0),
+            (vec![], c[2]),
+            (vec![], c[0]),
+            (vec![c[2]], c[0]),
+            (vec![c[2], c[1]], c[0]),
+            (vec![c[0]], c[1]),
+            (vec![0, c[2]], c[1]),
+        ] {
+            tw.w32(list, if entries.is_empty() { 0 } else { e[0] });
+            tw.w32(e[0], if entries.len() > 1 { e[1] } else { 0 });
+            tw.w32(e[1], 0);
+            for (i, &k) in entries.iter().enumerate() {
+                tw.w32(e[i] + 8, k);
+            }
+            let label = format!("{what} new world class {class:#x} entries {entries:x?}");
+            tw.run_al(&label, 0x0044_ff60, Conv::Thiscall(list), &[class], |g| {
+                sc::bridge::world_class_new(g, list, class)
+            });
+        }
+        // instances: three elements whose classes are c2, c0 (-> c1), 0
+        let comp = tw.zeros(0x20);
+        let items = tw.zeros(0x20);
+        for (i, k) in [c[2], c[0], 0].iter().enumerate() {
+            tw.w32(items + 8 * i as u32, 0x100 + i as u32);
+            tw.w32(items + 8 * i as u32 + 4, *k);
+        }
+        tw.w32(comp + 0x10, items);
+        let out = tw.zeros(8);
+        for count in [3, 0x8000_0003, 0, 1] {
+            tw.w32(comp + 0xc, count);
+            for class in [0, c[1], c[2], world] {
+                let label = format!("{what} instances find {class:#x} in {count:#x}");
+                tw.run(
+                    &label,
+                    0x0045_99c0,
+                    Conv::Thiscall(comp),
+                    &[out, class],
+                    |g| sc::bridge::instances_find(g, comp, out, class),
+                );
+            }
+        }
+    }
+}
+
+/// The scene cursor: its constructor, seek and next over a node ring
+/// whose nodes' owners list them or not; `PhyreSceneCursor_SetNode` is a
+/// recording stub.
+#[test]
+fn m5p_scene_c_cursor() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sc::CURSOR_SET_NODE, true, 1, 1, 0x0bad_0013);
+        // a ring of three nodes after the owner's +0x1c; each node's
+        // first word links on. Ownership: the cursor's +0x1c is matched
+        // against the owner's list from +0x2c (owner_lists): nodes are
+        // listed when the node itself is the owner (+0x18 = node) whose
+        // list (+0x2c) holds the mask.
+        let owner = tw.zeros(0x80);
+        let ring = owner + 0x1c;
+        let nodes: Vec<u32> = (0..3).map(|_| tw.zeros(0x60)).collect();
+        tw.w32(ring, nodes[0]);
+        tw.w32(nodes[0], nodes[1]);
+        tw.w32(nodes[1], nodes[2]);
+        tw.w32(nodes[2], ring);
+        let mask = tw.zeros(0x50);
+        let it = tw.zeros(0x20);
+        for listed in [
+            [true, true, true],
+            [false, true, false],
+            [false, false, true],
+            [false, false, false],
+        ] {
+            for (i, &n) in nodes.iter().enumerate() {
+                // the cursor's +0x18 is the node: its +0x2c chain and +0x40
+                tw.w32(n + 0x2c, if listed[i] { mask } else { 0 });
+                tw.w32(n + 0x40, 1);
+            }
+            let label = format!("{what} cursor ctor {listed:?}");
+            tw.run(
+                &label,
+                0x009f_2470,
+                Conv::Thiscall(it),
+                &[owner, mask],
+                |g| sc::bridge::cursor_ctor(g, it, owner, mask),
+            );
+            for f in [0x0044_3930, 0x009f_38c0, 0x0044_39a0] {
+                for (start, &node) in nodes.iter().enumerate() {
+                    // the words a settle at the end clears
+                    tw.write(it, &[0x5a; 0x14]);
+                    tw.w32(it + 0x14, ring);
+                    tw.w32(it + 0x18, node);
+                    tw.w32(it + 0x1c, mask);
+                    let label = format!("{what} cursor {f:#x} {listed:?} from {start}");
+                    tw.run(&label, f, Conv::Thiscall(it), &[], |g| {
+                        if f == 0x0044_39a0 {
+                            sc::bridge::cursor_next(g, it)
+                        } else {
+                            sc::bridge::cursor_seek(g, it)
+                        }
+                    });
+                }
+            }
+        }
+        // an empty ring, its head made to look listed (a cursor that took
+        // the head for a node would settle on it)
+        tw.w32(ring, ring);
+        tw.w32(ring + 0x2c, mask);
+        tw.w32(ring + 0x40, 1);
+        let label = format!("{what} cursor ctor, empty ring");
+        tw.run(
+            &label,
+            0x009f_2470,
+            Conv::Thiscall(it),
+            &[owner, mask],
+            |g| sc::bridge::cursor_ctor(g, it, owner, mask),
+        );
+        tw.unstub();
+    }
+}
+
+/// The light/caster pairs, the held name compare, the context switch
+/// type constructor, the timer assignment and the receivers setter.
+#[test]
+fn m5p_scene_c_misc() {
+    for (what, mut tw) in Twins::all() {
+        let mut lights: Vec<u32> = sc::COMPATIBLE.iter().map(|&(l, _)| tw.rebase(l)).collect();
+        let mut casters: Vec<u32> = sc::COMPATIBLE.iter().map(|&(_, c)| tw.rebase(c)).collect();
+        lights.push(0x1234);
+        casters.push(0);
+        for &l in &lights {
+            for &c in &casters {
+                let label = format!("{what} compatible {l:#x} {c:#x}");
+                tw.run_al(&label, 0x004c_ae20, Conv::Cdecl, &[l, c], |g| {
+                    sc::bridge::light_caster_compatible(g, l, c)
+                });
+            }
+        }
+        // names
+        let names: Vec<u32> = ["abc", "abd", "ab", "", "abc"]
+            .iter()
+            .map(|s| tw.alloc(format!("{s}\0").as_bytes()))
+            .collect();
+        let holder = tw.zeros(4);
+        let pname = tw.zeros(4);
+        tw.w32(holder, pname);
+        for held in [names[0], 0, names[3]] {
+            tw.w32(pname, held);
+            for &n in names.iter().chain(&[0]) {
+                let label = format!("{what} name is {held:#x} {n:#x}");
+                tw.run_al(&label, 0x0055_0430, Conv::Thiscall(holder), &[n], |g| {
+                    sc::bridge::name_is(g, holder, n)
+                });
+            }
+        }
+        // the switch type constructor
+        let head = tw.rebase(sc::SWITCH_TYPES[0]);
+        let saved = [tw.r32(head), tw.r32(head + 8)];
+        let ty = tw.zeros(0x20);
+        for (name, found) in [(0, 0), (names[0], 0x4444), (names[1], 0)] {
+            tw.stub(sc::SWITCH_TYPE_FIND, false, 1, 0, found);
+            let label = format!("{what} switch type {name:#x} found {found:#x}");
+            tw.run(&label, 0x004d_2e50, Conv::Thiscall(ty), &[7, name], |g| {
+                sc::bridge::switch_type_ctor(g, ty, name)
+            });
+        }
+        tw.w32(head, saved[0]);
+        tw.w32(head + 8, saved[1]);
+        tw.unstub();
+        // the timer assignment: slots 8 of the source and 7 of the timer
+        tw.stub(sc::TIMER_RELEASE, false, 1, 0, 0x0bad_000e);
+        let src_vt = tw.vtable_with_slot(0x20, 0, 0x0bad_0014);
+        let vt = tw.vtable_with_slot(0x1c, 1, 0x0bad_0015);
+        let src = tw.zeros(0x10);
+        tw.w32(src, src_vt);
+        let timer = tw.zeros(0x40);
+        tw.w32(timer, vt);
+        let label = format!("{what} timer assign, no source");
+        tw.run(&label, 0x0055_5e20, Conv::Thiscall(timer), &[0], |g| {
+            sc::bridge::timer_assign(g, timer, 0)
+        });
+        for (t, owned) in [(0, 1u8), (0x7000, 0), (0x7000, 1)] {
+            tw.w32(timer + 0x1c, t);
+            tw.write(timer + 0x28, &[owned]);
+            let label = format!("{what} timer assign {t:#x} {owned}");
+            tw.run(&label, 0x0055_5e20, Conv::Thiscall(timer), &[src], |g| {
+                sc::bridge::timer_assign(g, timer, src)
+            });
+        }
+        tw.unstub();
+        // the receivers: the global's slot 1 gives a descriptor or none
+        tw.stub(sc::APPLY_DEFAULT_BUFFER, true, 2, 2, 0x0bad_0016);
+        tw.stub(sc::RECEIVERS_RESIZE, true, 2, 2, 0x0bad_0017);
+        let g = tw.rebase(sc::TRIGGER_GLOBAL);
+        let saved = tw.r32(g);
+        let this = tw.zeros(0x10);
+        for d in [0, 0x00de_0000] {
+            let gvt = tw.vtable_with_slot(4, 0, d);
+            tw.w32(g, gvt);
+            for (buffer, n) in [(this + 4, 1), (this + 4, 2), (0x5000, 1), (0, 0)] {
+                let label = format!("{what} receivers {d:#x} ({buffer:#x}, {n})");
+                tw.run(
+                    &label,
+                    0x0055_0750,
+                    Conv::Thiscall(this),
+                    &[buffer, n],
+                    |g| sc::bridge::receivers_set(g, this, buffer, n),
+                );
+            }
+        }
+        tw.w32(g, saved);
+        tw.unstub();
+    }
+}
+
+/// The functions under five bytes (no hook; their bridges for the 64-bit
+/// table).
+#[test]
+fn m5p_scene_c_stubs() {
+    for (what, mut tw) in Twins::all() {
+        for this in [0, 0x0012_3450, 0xffff_fff8] {
+            for f in [0x0043_2bf0, 0x0050_42a0] {
+                let label = format!("{what} stub {f:#x}");
+                tw.run(&label, f, Conv::Thiscall(this), &[], |_| {
+                    sc::bridge::stub_zero()
+                });
+            }
+            let label = format!("{what} stub 0x555d00");
+            tw.run_al(&label, 0x0055_5d00, Conv::Thiscall(this), &[], |_| {
+                sc::bridge::stub_false()
+            });
+            let label = format!("{what} stub 0x4fd120");
+            tw.run(&label, 0x004f_d120, Conv::Thiscall(this), &[], |_| {
+                sc::bridge::stub_this(this)
+            });
+            let label = format!("{what} stub 0x4fc880");
+            tw.run(&label, 0x004f_c880, Conv::Thiscall(this), &[], |_| {
+                sc::bridge::stub_field_c(this)
+            });
+            let label = format!("{what} stub 0x5d7440");
+            tw.run_void(&label, 0x005d_7440, Conv::Thiscall(this), &[], |_| {
+                sc::bridge::stub_nothing();
+            });
+        }
+    }
+}
