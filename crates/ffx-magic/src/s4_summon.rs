@@ -8,6 +8,7 @@
 //! and how many DLLs carry it.
 
 use crate::nodes::walk;
+use crate::pushes::Pushes;
 use crate::runtime::slot_target;
 use crate::sa_summon::st0_f32;
 use crate::sb_sse::{add, mul, sub};
@@ -84,51 +85,58 @@ pub fn elem_bone<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let unit = ebp.wrapping_sub(0x54);
     let v = ebp.wrapping_sub(0x14);
     let (chara, elem) = (g.read::<u32>(n + 0x14c), g.read::<u32>(n + 0x150));
-    let t = slot_target(g, w(0x1c4), 236);
-    g.call(t, 0, &[chara, elem, m]);
+    // the words each call sees, the earlier calls' left below its own
+    let mut s = Pushes::default();
+    s.push_all(&[m, elem, chara]);
+    s.call(g, slot_target(g, w(0x1c4), 236), 0);
     let target = g.read::<u32>(n + 0x144).wrapping_add(0x1c);
     sb_matrix::rotation_19d0(g, img, img.rel32_target(f + 0x1eb), n + 0x5c, target);
+    s.pop(2);
     let src = g.read::<u32>(n + 0x140);
     let rate = mul(f32_at(g, src + 0x28), f32_at(g, w(0x201)));
-    let t = slot_target(g, w(0x213), 233);
-    g.call(t, 0, &[v, src + 0x1c, rate.to_bits()]);
+    s.set_top(rate.to_bits());
+    s.push_all(&[src + 0x1c, v]);
+    s.call(g, slot_target(g, w(0x213), 233), 0);
     for (i, op, (a, b)) in [
         (0u32, 0x225, (0x1c, 0x5c)),
         (1, 0x254, (0x2c, 0x6c)),
         (2, 0x276, (0x3c, 0x7c)),
     ] {
-        let x = g.read::<u32>(v + 4 * i);
-        let t = slot_target(g, w(op), 233);
-        g.call(t, 0, &[n + a, n + b, x]);
+        s.pop(2);
+        s.set_top(g.read::<u32>(v + 4 * i));
+        s.push_all(&[n + b, n + a]);
+        s.call(g, slot_target(g, w(op), 233), 0);
     }
     let obj = g.read::<u32>(n + 0x13c).wrapping_add(0x1c);
-    let t = slot_target(g, w(0x296), 325);
-    g.call(t, 0, &[n + 0x4c, obj]);
+    s.push_all(&[obj, n + 0x4c]);
+    s.call(g, slot_target(g, w(0x296), 325), 0);
     for i in 0..3 {
         let tgt = g.read::<u32>(n + 0x144);
         let x = g.read::<u32>(tgt + 0x1c + 4 * i);
         g.write::<u32>(n + 0x11c + 4 * i, x);
     }
     let src = g.read::<u32>(n + 0x140).wrapping_add(0x1c);
-    let t = slot_target(g, w(0x2e8), 325);
-    g.call(t, 0, &[n + 0x12c, src]);
-    let t = slot_target(g, w(0x301), 277);
-    let scale = st0_f32(g.call(t, 0, &[g.read::<u32>(n + 0x14c)]));
-    let s = mul(f32_at(g, n + 0x138), f32::from_bits(scale));
-    set_f32(g, n + 0x138, s);
+    s.push_all(&[src, n + 0x12c]);
+    s.call(g, slot_target(g, w(0x2e8), 325), 0);
+    s.push(g.read::<u32>(n + 0x14c));
+    let scale = st0_f32(s.call(g, slot_target(g, w(0x301), 277), 0));
+    let x = mul(f32_at(g, n + 0x138), f32::from_bits(scale));
+    set_f32(g, n + 0x138, x);
     for (row, op) in [(0u32, 0x33d), (1, 0x355), (2, 0x36a)] {
-        let t = slot_target(g, w(op), 232);
-        g.call(t, 0, &[unit + 0x10 * row, m + 0x10 * row]);
+        s.push_all(&[m + 0x10 * row, unit + 0x10 * row]);
+        s.call(g, slot_target(g, w(op), 232), 0);
     }
     for (i, x) in [0, 0, 0, ONE].into_iter().enumerate() {
         g.write::<u32>(unit + 0x30 + 4 * i as u32, x);
     }
-    let t = slot_target(g, w(0x389), 231);
-    g.call(t, 0, &[n + 0xdc, unit, n + 0x5c]);
-    let t = slot_target(g, w(0x3c4), 231);
-    g.call(t, 0, &[n + 0x9c, m, n + 0x1c]);
-    let t = slot_target(g, w(0x3e0), 229);
-    Ret::eax(g.call(t, 0, &[n + 0xcc, m, n + 0x4c]).eax)
+    s.push_all(&[n + 0x5c, unit, n + 0xdc]);
+    s.call(g, slot_target(g, w(0x389), 231), 0);
+    // add esp, 0x44: every word so far
+    s.pop(17);
+    s.push_all(&[n + 0x1c, m, n + 0x9c]);
+    s.call(g, slot_target(g, w(0x3c4), 231), 0);
+    s.push_all(&[n + 0x4c, m, n + 0xcc]);
+    Ret::eax(s.call(g, slot_target(g, w(0x3e0), 229), 0).eax)
 }
 
 /// [`elem_bone`] (the `rel32`s: [`sb_matrix::rotation_19d0`] and
@@ -414,10 +422,11 @@ pub fn motion_state<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let t = slot_target(g, w(0x1f8), 233);
         g.call(t, 0, &[v, v, left.to_bits()]);
         let t = slot_target(g, w(0x20b), 248);
-        g.call(t, 0, &[v, n + 0x2c, v]);
+        g.call(t, 0, &[v, n + 0x2c, v, v, v, left.to_bits()]);
         let t = slot_target(g, w(0x21c), 255);
         let m = g.read::<u32>(model());
-        return Ret::eax(g.call(t, 0, &[m, v]).eax);
+        let words = [m, v, v, n + 0x2c, v, v, v, left.to_bits()];
+        return Ret::eax(g.call(t, 0, &words).eax);
     }
     if flags & 8 != 0 {
         if flags & 1 != 0 {
@@ -427,17 +436,19 @@ pub fn motion_state<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let t = slot_target(g, w(0x271), 217);
         g.call(t, 0, &[g.read::<u32>(model()), v]);
         let t = slot_target(g, w(0x28d), 234);
-        g.call(t, 0, &[d, n + 0x2c, v]);
+        let m = g.read::<u32>(model());
+        g.call(t, 0, &[d, n + 0x2c, v, m, v]);
         let t = slot_target(g, w(0x2ac), 233);
         let k = g.read::<u32>(n + 0x74);
         g.call(t, 0, &[d, d, k]);
         // [ebp - 0x18]: the offset's fourth word
         g.write::<u32>(d + 0xc, 0);
         let t = slot_target(g, w(0x2c2), 248);
-        g.call(t, 0, &[v, v, d]);
+        g.call(t, 0, &[v, v, d, d, d, k]);
         let t = slot_target(g, w(0x2da), 255);
         let m = g.read::<u32>(model());
-        return Ret::eax(g.call(t, 0, &[m, v]).eax);
+        let words = [m, v, v, v, d, d, d, k];
+        return Ret::eax(g.call(t, 0, &words).eax);
     }
     if flags & 0x40 == 0 || flags & 1 != 0 {
         return Ret::eax(flags);
@@ -460,7 +471,9 @@ pub fn motion_state<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let floor_at = img.rel32_target(f + 0x373);
     let (mut floor, _) = sb_nodes::float_289(g, img, floor_at, g.read::<u32>(model()));
     let t = slot_target(g, w(0x378), 534);
-    let on = g.call(t, 0, &[g.read::<u32>(model())]).eax;
+    let m = g.read::<u32>(model());
+    // 217's words stay below
+    let on = g.call(t, 0, &[m, m, v]).eax;
     if on != 0 {
         let t = slot_target(g, w(0x394), 664);
         let extra = st0_f32(g.call(t, 0, &[g.read::<u32>(model())]));
@@ -503,5 +516,149 @@ pub const MOTION_STATE: Sig = Sig {
         (0x373, Callee::Sig(&sb_nodes::FLOAT_289)),
         (0x452, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// The summon's targets (internal, `ecx` = the effect's actor; a /GS
+/// frame): `G_ACTOR` (operand `+0x21`) = `ecx`; `G_CHR` (`+0x28`) = slot
+/// 168 (`MsGetEff2Chr`); slot 218 (`MsGetTargetList`) gives the targets
+/// and their count `G_N` (`+0x32`), copied as bytes into `G_LIST`
+/// (`+0x69`); each target's battle position (slot 531, `MsGetChrBtlPos`)
+/// goes into `G_POS` (`+0x75`, 16 bytes each, `w` = 1.0); the
+/// character's own into the frame (`[ebp - 0x14]`); its ground height
+/// (slot 289, `MsGetChrGround`, ST0) into `G_GROUND` (`+0xd8`). Then the
+/// statics are reset ([`crate::sa_summon::statics_init`]). Returns its
+/// `eax`.
+///
+/// `magic_0003` 0x10006390 (245 bytes; 69 DLLs).
+pub fn targets_init<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let ebp = esp.wrapping_sub(4);
+    g.write::<u32>(w(0x21), actor);
+    let t = slot_target(g, w(0x11), 168);
+    let chr = g.call(t, 0, &[actor]).eax;
+    g.write::<u32>(w(0x28), chr);
+    let count_at = w(0x32);
+    let t = slot_target(g, w(0x2d), 218);
+    let stored = g.read::<u32>(w(0x38));
+    // 168's word (the actor) stays below
+    let src = g.call(t, 0, &[stored, count_at, actor]).eax;
+    let n = g.read::<i32>(w(0x46));
+    let list = w(0x69);
+    for i in 0..n.max(0).cast_unsigned() {
+        let b = g.read::<u8>(src.wrapping_add(i));
+        g.write::<u8>(list + i, b);
+    }
+    if n > 0 {
+        // a do-while: the count is read again after each target
+        let pos = w(0x75);
+        let mut i = 0u32;
+        loop {
+            let target = u32::from(g.read::<u8>(w(0x83) + i));
+            let p = pos + 0x10 * i;
+            let t = slot_target(g, w(0x8a), 531);
+            g.call(t, 0, &[target, p]);
+            g.write::<u32>(p + 0xc, ONE);
+            i += 1;
+            if i.cast_signed() >= g.read::<i32>(w(0xa6)) {
+                break;
+            }
+        }
+    }
+    let t = slot_target(g, w(0xb1), 531);
+    let chr_b = g.read::<u32>(w(0xb7));
+    g.call(t, 0, &[chr_b, ebp.wrapping_sub(0x14)]);
+    let t = slot_target(g, w(0xc4), 289);
+    let chr = g.read::<u32>(w(0xca));
+    // 531's words stay below
+    let ground = st0_f32(g.call(t, 0, &[chr, chr_b, ebp.wrapping_sub(0x14)]));
+    g.write::<u32>(w(0xd8), ground);
+    // `sub esp, 0x14`, three pushes and the return address
+    crate::sa_summon::statics_init(g, img, img.rel32_target(f + 0xe0), ebp.wrapping_sub(0x24))
+}
+
+/// [`targets_init`] (the `rel32`s: the statics' reset and
+/// `__security_check_cookie`).
+pub const TARGETS_INIT: Sig = Sig {
+    len: 245,
+    hash: 0x8cd0_72a7_90ae_cfc8,
+    calls: &[
+        (0xe0, Callee::Sig(&crate::sa_summon::STATICS_INIT)),
+        (0xed, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The summon's start (a table entry, cdecl `(actor)`): the targets
+/// ([`targets_init`]); the DLL's task list, two static nodes and their
+/// links set up (words and immediates from the code); slot 718 and slot
+/// 719 `(part, 8, 0)` on the DLL's part, whose handle goes into `G_H`;
+/// slot 711 `(handle, program, 0)` with `**G_LOCK` 1 around it; slot 710
+/// loads the part's data; slots 222 and 221 `(part, 0, 1000, 2)`; a task
+/// is appended to the list (its links and three words cleared, the
+/// list's flag bit 0 cleared). Returns 0.
+///
+/// `magic_0003` 0x100068d0 (457 bytes; 18 DLLs).
+pub fn summon_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let actor = fr.arg(g, 0);
+    // push ebp; push esi; call
+    targets_init(g, img, img.rel32_target(f + 0x08), fr.esp.wrapping_sub(12), actor);
+    for (dst, src) in [(0x13, 0x17), (0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    g.write::<u32>(w(0x3b), 1);
+    g.write::<u32>(w(0x45), w(0x49));
+    g.write::<u16>(w(0x50), 0x1ff);
+    g.write::<u32>(w(0x58), w(0x5c));
+    g.write::<u32>(w(0x62), w(0x66));
+    g.write::<u32>(w(0x6c), 0);
+    g.write::<u32>(w(0x76), w(0x7a));
+    g.write::<u16>(w(0x81), 0xff);
+    g.write::<u32>(w(0x89), w(0x8d));
+    g.write::<u32>(w(0x93), w(0x97));
+    g.write::<u32>(w(0x9d), 0);
+    let mut s = Pushes::default();
+    s.push(w(0xac));
+    g.write::<u32>(w(0xb2), w(0xb6));
+    s.call(g, slot_target(g, w(0x0d), 718), 0);
+    s.push_all(&[0, 8, w(0xcc)]);
+    let handle = s.call(g, slot_target(g, w(0xbd), 719), 0).eax;
+    let lock = g.read::<u32>(w(0xd4));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0xdd), handle);
+    s.push_all(&[0, w(0xe2), handle]);
+    g.write::<u32>(lock, 1);
+    s.call(g, slot_target(g, w(0xe8), 711), 0);
+    let lock = g.read::<u32>(w(0xfb));
+    g.write::<u32>(lock, saved);
+    let handle = g.read::<u32>(w(0x112));
+    s.push_all(&[0x0010_0000, w(0x10c), handle, w(0x11d)]);
+    s.call(g, slot_target(g, w(0x107), 710), 0);
+    s.push_all(&[2, 1000, 0, w(0x138)]);
+    s.call(g, slot_target(g, w(0x124), 222), 0);
+    s.push_all(&[2, 1000, 0, w(0x153)]);
+    s.call(g, slot_target(g, w(0x13f), 221), 0);
+    let tail = g.read::<u32>(w(0x15a));
+    g.write::<u32>(w(0x162), tail);
+    for (dst, src) in [(0x168, 0x16c), (0x172, 0x176), (0x17c, 0x180), (0x186, 0x18a)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    g.write::<u32>(tail.wrapping_add(4), w(0x191));
+    let flags = g.read::<u32>(w(0x197));
+    g.write::<u32>(w(0x197), flags & !1);
+    g.write::<u32>(w(0x19e), w(0x1a2));
+    for dst in [0x1a8, 0x1b2, 0x1bc] {
+        g.write::<u32>(w(dst), 0);
+    }
+    Ret::eax(0)
+}
+
+/// [`summon_start`] (the `rel32`: [`targets_init`]).
+pub const SUMMON_START: Sig = Sig {
+    len: 457,
+    hash: 0x3e98_7198_16df_4276,
+    calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
     imports: &[],
 };

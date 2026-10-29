@@ -73,6 +73,7 @@ pub mod s3_summon;
 pub mod s3_vm;
 pub mod s3_wrap;
 // the shared work list's fourth round (shared-4)
+pub mod s4_misc;
 pub mod s4_summon;
 pub mod s4_wrap;
 
@@ -942,6 +943,7 @@ ports! {
     "thunk: element bone" => s4_wrap::JMP_ELEM_BONE, s4_wrap::ecx_jmp;
     "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
     "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
+    "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1206,6 +1208,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("element bone", &s4_summon::ELEM_BONE),
     ("colour node fade", &s4_summon::COLOUR_NODE_FADE),
     ("motion state", &s4_summon::MOTION_STATE),
+    ("start object at", &s4_misc::START_OBJECT_AT),
+    ("targets init", &s4_summon::TARGETS_INIT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -327,3 +327,96 @@ fn motion_state_steps() {
         }
     }
 }
+
+/// The summon's start (a table entry, `(actor)`): the targets, the lists,
+/// the part and its program, with the lock word as the game left it.
+#[test]
+fn summon_start() {
+    let Some(mut t) = twin(3) else { return };
+    let at = t.at(0x68d0);
+    let targets = t.img.rel32_target(at + 0x08);
+    let statics = t.img.rel32_target(targets + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    let lock = sa::node(21);
+    t.set_u32(t.img.word(at + 0xd4), lock);
+    let list = sa::node(20);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        list
+    });
+    rec(&mut t, 531, 2, |m, a| {
+        m.w32(a[1], a[0]);
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, _| 2.5);
+    rec(&mut t, 718, 1, |_, _| 0x718);
+    for s in [222u32, 221] {
+        rec(&mut t, s, 4, move |_, _| s);
+    }
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    rec(&mut t, 711, 3, move |m, a| {
+        // the lock word while the program starts
+        m.w32(list + 0x40, m.r32(lock));
+        a[0] ^ 0x711
+    });
+    rec(&mut t, 710, 4, |_, _| 0x710);
+    for (k, old) in [0u32, 7].into_iter().enumerate() {
+        t.write(list, &[0x80, 0x81]);
+        t.set_u32(lock, old);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, 0);
+        let flags = t.img.word(at + 0x197);
+        t.set_u32(flags, 0x5555_5555 + k as u32);
+        t.check_entry(at, magic::Call::default(), &[0x30 + k as u32], Eax::Checked);
+    }
+}
+
+/// The summon's targets (internal, `ecx` = the actor): no targets, one,
+/// three, and a list whose count grows while it is read; then the
+/// statics' reset under a root with and without a child.
+#[test]
+fn targets_init() {
+    let Some(mut t) = twin(3) else { return };
+    let at = t.at(0x6390);
+    let statics = t.img.rel32_target(at + 0xe0);
+    let root = t.img.word(statics + 0x10d);
+    let count_at = t.img.word(at + 0x32);
+    rec(&mut t, 168, 1, |_, a| 0x0168_0000 + a[0]);
+    let list = sa::node(20);
+    rec(&mut t, 218, 2, move |m, a| {
+        // the count the test left in the list's last word
+        m.w32(a[1], m.r32(list + 0x7c));
+        list
+    });
+    rec(&mut t, 531, 2, move |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, a[0].wrapping_mul(0x0101_0101) ^ i);
+        }
+        // the third target makes the list longer
+        if a[0] == 0x83 {
+            m.w32(count_at, 4);
+        }
+        0x531
+    });
+    rec(&mut t, 289, 1, |_, _| 0x289);
+    t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
+    for (k, count) in [0u32, 1, 3, 0xffff_fffe].into_iter().enumerate() {
+        t.write(list, &[0x80, 0x81, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88]);
+        t.set_u32(list + 0x7c, count);
+        t.write(root, &[0x5a; 0x150]);
+        t.set_u32(root + 4, if k % 2 == 0 { 0 } else { node(3) });
+        t.write(node(3), &[0x33; 0x40]);
+        t.set_u32(node(3) + 0x10, node(3));
+        t.check(
+            at,
+            magic::Call::this(0x40 + k as u32),
+            &[],
+            Eax::Checked,
+            |g, img, fr| {
+                ffx_magic::Ret::eax(s4_summon::targets_init(g, img, fr.at, fr.esp, fr.ecx))
+            },
+        );
+    }
+}
