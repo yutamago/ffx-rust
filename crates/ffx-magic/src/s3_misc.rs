@@ -305,7 +305,7 @@ pub fn fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
 /// Appends a pool node to a DLL's task list (`head`/`tail` globals;
 /// `empty` as read before the node was filled): first and last of an
 /// empty list, else linked after the last; its `+0x8` is itself.
-fn append_task<G: Game>(g: &mut G, node: u32, head: u32, tail: u32, empty: bool) {
+pub(crate) fn append_task<G: Game>(g: &mut G, node: u32, head: u32, tail: u32, empty: bool) {
     if empty {
         g.write::<u32>(node, 0);
         g.write::<u32>(head, node);

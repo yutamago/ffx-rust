@@ -842,3 +842,80 @@ fn fam446_children() {
         }
     }
 }
+
+/// A free ring of `n` nodes for the pool's take at `take` (its count and
+/// head operands), 0x40 bytes apart from `at`.
+fn free_ring(t: &mut Twin, take: u32, at: u32, n: u32) {
+    let node = |i: u32| at + 0x40 * i;
+    for i in 1..=n {
+        t.write(node(i), &[0x5a; 0x1c]);
+        t.set_u32(node(i), node(if i == 1 { n } else { i - 1 }));
+        t.set_u32(node(i) + 4, node(if i == n { 1 } else { i + 1 }));
+    }
+    t.set_u32(t.img.word(take + 0x17), node(1));
+    t.set_u16(t.img.word(take + 0x04), n as u16);
+}
+
+/// The `magic_0446` family's start-up and mode set-up: the task list empty
+/// and not, each mode.
+#[test]
+fn fam446_start_up() {
+    let Some(mut t) = twin(446) else { return };
+    let su = t.at(0x49c0);
+    let ms = t.at(0x2010);
+    let take = t.img.rel32_target(su + 0x7c);
+    let ps = t.img.rel32_target(su + 0x56);
+    t.set_u32(t.img.word(ps + 0x04), SCRATCH + 0x800);
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    for (s, n) in [
+        (711u32, 3usize),
+        (710, 4),
+        (271, 1),
+        (219, 2),
+        (357, 3),
+        (356, 3),
+        (362, 4),
+        (262, 4),
+    ] {
+        rec(&mut t, s, n, move |_, _| s);
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 1.25);
+    let head = t.img.word(su + 0x82);
+    let tail = t.img.word(su + 0x96);
+    let owner_res = SCRATCH + 0x880;
+    t.set_u32(t.img.word(ms + 0x12), owner_res);
+    t.set_u32(owner_res + 0x24, 0x0e5e_0001);
+    for k in 0..2u32 {
+        free_ring(&mut t, take, SCRATCH + 0x1000, 4);
+        if k == 0 {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        } else {
+            t.write(SCRATCH + 0x1400, &[0x22; 0x1c]);
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        }
+        t.check_entry(su, Call::default(), &[], Eax::Checked);
+    }
+    let block = t.u32(t.img.word(ms + 0x3));
+    for mode in [0u32, 1, 2] {
+        for k in 0..2u32 {
+            free_ring(&mut t, take, SCRATCH + 0x1000, 2);
+            if k == 0 {
+                t.set_u32(head, 0);
+                t.set_u32(tail, 0);
+            } else {
+                t.write(SCRATCH + 0x1400, &[0x22; 0x1c]);
+                t.set_u32(head, SCRATCH + 0x1400);
+                t.set_u32(tail, SCRATCH + 0x1400);
+            }
+            t.set_u32(block + 0x5c04, mode);
+            let c = Call {
+                eax: 0x00ea_0000 + mode,
+                ..Call::default()
+            };
+            t.check_entry(ms, c, &[], Eax::Checked);
+        }
+    }
+}

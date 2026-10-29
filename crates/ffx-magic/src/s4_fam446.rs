@@ -10,7 +10,9 @@
 
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
+use crate::s3_misc::append_task;
 use crate::s4_misc::{START_OBJECT_AT, start_object_at};
+use crate::sa_pool::{TAKE, take};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// [`start_object_at`] through the `rel32` at `f + call`: the object
@@ -402,5 +404,118 @@ pub const START_CHILD_C: Sig = Sig {
     len: 179,
     hash: 0x79aa_bbb1_fe0e_6001,
     calls: &[(0x3e, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// A task node for `owner` ([`take`] through the `rel32` at `f + call`)
+/// appended to the DLL's task list (`head`/`tail` operands; with `kind`,
+/// its byte `+0x18` set first). Returns the node.
+fn new_task<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    call: u32,
+    owner: u32,
+    kind: Option<u8>,
+    (head, tail): (u32, u32),
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let node = take(g, img, img.rel32_target(f + call), owner);
+    let empty = g.read::<u32>(w(head)) == 0;
+    if let Some(k) = kind {
+        g.write::<u8>(node + 0x18, k);
+    }
+    g.write::<u32>(node + 4, 0);
+    append_task(g, node, w(head), w(tail), empty);
+    node
+}
+
+/// The family's start-up (a table entry, no arguments): the DLL's lists
+/// cleared and its blocks set (immediates of the code: `G` among them);
+/// slot 719 `(part, 8, 0)` gives the part's handle (`+0x4c`);
+/// [`part_setup`] with the part block; the light ranges
+/// ([`light_ranges`]) and the camera target ([`camera_target`]); slot
+/// 271 (4); then two tasks (kinds 1 and 2, the callbacks at operands
+/// `+0x77` and `+0xbf`), the records ([`records_init`], the block at
+/// `+0xad`) set up between them. Returns 0.
+///
+/// `magic_0446` 0x100049c0 (264 bytes; 10 DLLs).
+pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    g.write::<u32>(w(0x16), 0);
+    for (dst, src) in [(0x20, 0x24), (0x2a, 0x2e), (0x34, 0x38), (0x3e, 0x42)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    let t = slot_target(g, w(0x1), 719);
+    let handle = g.call(t, 0, &[w(0x10), 8, 0]).eax;
+    g.write::<u32>(w(0x4c), handle);
+    // add esp, 8 leaves slot 719's last word (0) under the block pushed
+    let esp = fr.esp.wrapping_sub(12);
+    g.write::<u32>(esp + 8, 0);
+    g.write::<u32>(esp + 4, w(0x51));
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x56), esp);
+    crate::sb_misc::light_ranges(g, img, img.rel32_target(f + 0x5b));
+    crate::sa_misc::camera_target(g, img, img.rel32_target(f + 0x60));
+    let t = slot_target(g, w(0x65), 271);
+    g.call(t, 0, &[4, w(0x51), 0]);
+    new_task(g, img, f, 0x7c, w(0x77), Some(1), (0x82, 0x96));
+    crate::sa_misc::records_init(g, img, img.rel32_target(f + 0xba), w(0xad));
+    new_task(g, img, f, 0xc4, w(0xbf), Some(2), (0xca, 0xde));
+    Ret::eax(0)
+}
+
+/// [`start_up`].
+pub const START_UP: Sig = Sig {
+    len: 264,
+    hash: 0x8d33_9182_067f_87a0,
+    calls: &[
+        (0x56, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x5b, Callee::Sig(&crate::sb_misc::LIGHT_RANGES)),
+        (0x60, Callee::Sig(&crate::sa_misc::CAMERA_TARGET)),
+        (0x7c, Callee::Sig(&TAKE)),
+        (0xba, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+        (0xc4, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
+
+/// The mode's set-up (a table entry, no arguments): mode 0 (`G +
+/// 0x5c04`) sets the sprite block `G + 0x59b0` up
+/// ([`crate::sb_misc::sprite_init`] with the owner `*(*R + 0x24)`,
+/// operand `+0x12`) with frames 0x10, scales 1.0 and 0.5, byte 0x40;
+/// any mode but 1 then starts a task (the callback at `+0x55`, `G +
+/// 0x5c00` = 0x71). Returns the task, the set-up's `eax`, or `eax` as it
+/// came for mode 1.
+///
+/// `magic_0446` 0x10002010 (162 bytes; 10 DLLs).
+pub fn mode_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let block = g.read::<u32>(w(0x3));
+    let mut eax = fr.eax;
+    if g.read::<u32>(block + 0x5c04) == 0 {
+        let res = g.read::<u32>(g.read::<u32>(w(0x12)).wrapping_add(0x24));
+        eax = crate::sb_misc::sprite_init(g, block + 0x59b0, res);
+        g.write::<u32>(block + 0x5bd8, 0x10);
+        g.write::<u32>(block + 0x5bcc, 0x3f80_0000);
+        g.write::<u32>(block + 0x5bc8, 0x3f00_0000);
+        g.write::<u8>(block + 0x5bbf, 0x40);
+    }
+    if g.read::<u32>(block + 0x5c04) == 1 {
+        return Ret::eax(eax);
+    }
+    g.write::<u32>(block + 0x5c00, 0x71);
+    Ret::eax(new_task(g, img, f, 0x64, w(0x55), None, (0x6a, 0x7a)))
+}
+
+/// [`mode_setup`].
+pub const MODE_SETUP: Sig = Sig {
+    len: 162,
+    hash: 0xaa3c_fa5c_475c_d77e,
+    calls: &[
+        (0x21, Callee::Sig(&crate::sb_misc::SPRITE_INIT)),
+        (0x64, Callee::Sig(&TAKE)),
+    ],
     imports: &[],
 };

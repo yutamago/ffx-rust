@@ -959,6 +959,8 @@ ports! {
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
+    "0446 start-up" => s4_fam446::START_UP, s4_fam446::start_up;
+    "0446 mode set-up" => s4_fam446::MODE_SETUP, s4_fam446::mode_setup;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
