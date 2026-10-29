@@ -3916,3 +3916,138 @@ fn restore_shaders_match_the_original() {
         }
     }
 }
+
+// ---- batch 10: particle arrays, lighting buffers, FXAA setup ----
+
+use ffx_prender::m5p_render_b_post3::{self as post3, bridge as kb};
+
+#[test]
+fn post3_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the particle arrays: owned, not owned, null
+        t.stub(post3::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        let obj = t.junk(0x3080, 1);
+        for (k, at) in [0x3060u32, 0x3058, 0x3050, 0x3048, 0x3040]
+            .into_iter()
+            .enumerate()
+        {
+            t.w32(obj + at, [3u32, 0x8000_0002, 1, 0, 5][k]);
+            t.w32(obj + at + 4, if k == 3 { 0 } else { 0x1000 + at });
+        }
+        t.check(
+            &format!("{label}: particles release"),
+            0x009f_e3a0,
+            Conv::Thiscall(obj),
+            &[],
+            |g| {
+                kb::particles_release(g, obj);
+                Out::None
+            },
+        );
+        t.reset();
+        // the lighting buffers: none, bound or not, a dtor
+        for (mask, bound) in [(0u32, 0u32), (0x3f, 1), (0x15, 0), (0x2a, 0x100)] {
+            for k in [post3::CONSTANT, post3::STRUCTURED] {
+                t.stub(k.is_bound, true, 0, 0, bound);
+                t.stub(k.unbind, true, 0, 0, 0x0b);
+                t.stub(k.dtor, true, 0, 0, 0x0d);
+            }
+            t.stub(post3::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(post3::LIGHTING_RELEASE, true, 0, 0, 0x4a60);
+            let obj = t.junk(0x4040, 2);
+            for (k, at) in [0x3fc8u32, 0x3fcc, 0x3fd0, 0x3fd4, 0x4034, 0x4038]
+                .into_iter()
+                .enumerate()
+            {
+                let b = if (mask >> k) & 1 != 0 {
+                    t.junk(0x20, k as u8)
+                } else {
+                    0
+                };
+                t.w32(obj + at, b);
+            }
+            t.check(
+                &format!("{label}: lighting buffers {mask:#x} {bound}"),
+                0x00a2_4b00,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(kb::lighting_buffers_release(g, obj)),
+            );
+            // the resize: no size, a failing first, both made, malloc failing
+            for (w, hgt, r1, fail) in [
+                (0u32, 4u32, 0u32, false),
+                (8, 0, 0, false),
+                (8, 4, 7, false),
+                (8, 4, 0, false),
+                (8, 4, 0, true),
+            ] {
+                let b = if mask & 4 != 0 { t.junk(0x20, 9) } else { 0 };
+                t.w32(obj + 0x3fd0, b);
+                t.w32(obj + 0x3fd4, 0);
+                let p = t.junk(0x48, 10);
+                t.stub(post3::PHYRE_MALLOC, false, 1, 0, if fail { 0 } else { p });
+                t.stub(post3::STRUCTURED_CTOR, true, 0, 0, 0xc7);
+                t.stub(post3::STRUCTURED_CREATE, true, 4, 4, r1);
+                t.check(
+                    &format!("{label}: lighting resize {mask:#x} {w} {hgt} {r1} {fail}"),
+                    0x00a1_0590,
+                    Conv::Thiscall(obj),
+                    &[w, hgt],
+                    |g| Out::U32(kb::lighting_buffers_resize(g, obj, w, hgt)),
+                );
+            }
+            t.reset();
+        }
+        // the FXAA setup: each step failing in turn, made; defaults
+        for (case, w, hgt) in [
+            (0u32, 0u32, 0u32),
+            (1, 640, 0),
+            (2, 0, 360),
+            (3, 640, 360),
+            (4, 640, 360),
+            (5, 640, 360),
+        ] {
+            t.stub(post3::INTERFACE_CTOR, true, 0, 0, 0);
+            t.stub(post3::ATEXIT, false, 1, 0, 0);
+            let guard = t.rebase(post3::INTERFACE_GUARD);
+            let g = t.r32(guard);
+            t.put_saved(guard, if case % 2 == 0 { g & !1 } else { g | 1 });
+            let dw = t.rebase(post3::DEFAULT_WIDTH);
+            t.put_saved(dw, 1280);
+            let dh = t.rebase(post3::DEFAULT_HEIGHT);
+            t.put_saved(dh, 720);
+            let tex = t.junk(0x40, 11);
+            t.w32(tex + 0x14, 0xffff_ffff);
+            let list = t.junk(0x40, 12);
+            let target = t.junk(0x20, 13);
+            t.w32(list + 0x34, if case == 4 { 0 } else { target });
+            t.stub(
+                post3::CLUSTER_CREATE,
+                true,
+                3,
+                3,
+                if case == 1 { 0 } else { tex },
+            );
+            t.stub(post3::SET_DIMENSIONS, true, 4, 4, u32::from(case == 2) * 9);
+            t.stub(post3::UPDATE_MAX_LEVEL, true, 0, 0, 0x55);
+            t.stub(
+                post3::ALLOCATE_INSTANCES,
+                true,
+                3,
+                3,
+                if case == 3 { 0 } else { list },
+            );
+            t.stub(post3::TARGET_CTOR, true, 1, 1, 0x56);
+            t.stub(post3::COLOURED_TRIANGLE, false, 1, 0, 0x7717);
+            let obj = t.junk(0x80, 14);
+            t.check(
+                &format!("{label}: fxaa setup {case} {w} {hgt}"),
+                0x00a1_9970,
+                Conv::Thiscall(obj),
+                &[w, hgt],
+                |g| Out::U32(kb::fxaa_setup(g, obj, w, hgt)),
+            );
+            t.reset();
+        }
+    }
+}

@@ -16,6 +16,7 @@ use ffx_prender::m5p_render_b_more2::bridge as nb;
 use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
+use ffx_prender::m5p_render_b_post3::bridge as kb;
 use ffx_prender::m5p_render_b_shaders::{self as sh, bridge as hb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
 
@@ -1219,5 +1220,22 @@ ported! {
     /// `Phyre_PS2LightingSetup_restoreCharacterShader`: the same over the point-light setup's maps.
     Phyre_PS2LightingSetup_restoreCharacterShader @ 0x006e_5ee0 => extern "C" fn h_006e5ee0(inst: u32; slots: u32) {
         sh::restore::restore(&mut mem(), sh::PS2_LIGHTING, inst, slots);
+    }
+    // ---- batch 10: particle arrays, lighting buffers, FXAA setup (ffx_prender::m5p_render_b_post3) ----
+    /// `Phyre_PPostProcessing_PMeshParticleSystemBase_releaseArrays_009fe3a0`.
+    Phyre_PPostProcessing_PMeshParticleSystemBase_releaseArrays_009fe3a0 @ 0x009f_e3a0 => extern "thiscall" fn k_009fe3a0(this: u32) {
+        kb::particles_release(&mut mem(), this);
+    }
+    /// `Phyre_PPostProcessing_PDeferredLightingD3D11_releaseBuffers_00a24b00`.
+    Phyre_PPostProcessing_PDeferredLightingD3D11_releaseBuffers_00a24b00 @ 0x00a2_4b00 => extern "thiscall" fn k_00a24b00(this: u32) -> u32 {
+        kb::lighting_buffers_release(&mut mem(), this)
+    }
+    /// `Phyre_PPostProcessing_PDeferredLighting_resizeBuffers_00a10590`.
+    Phyre_PPostProcessing_PDeferredLighting_resizeBuffers_00a10590 @ 0x00a1_0590 => extern "thiscall" fn k_00a10590(this: u32, w: u32, h: u32) -> u32 {
+        kb::lighting_buffers_resize(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PFXAA_vslot04_setup`.
+    Phyre_PPostProcessing_PFXAA_vslot04_setup @ 0x00a1_9970 => extern "thiscall" fn k_00a19970(this: u32, w: u32, h: u32) -> u32 {
+        kb::fxaa_setup(&mut mem(), this, w, h)
     }
 }
