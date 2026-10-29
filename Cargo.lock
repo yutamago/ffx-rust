@@ -1310,6 +1310,7 @@ dependencies = [
  "ffx-battle",
  "ffx-bridge",
  "ffx-chara",
+ "ffx-graphic",
  "ffx-ps2",
  "ffx-script",
  "ffx-system",
