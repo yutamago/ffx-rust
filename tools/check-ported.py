@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Checks the ported replacements (crates/ffx-hook/src/ported/*.rs) against
 the Ghidra dump: every address is a function start, of at least five bytes
-(the jump patch), not ported twice nor already hooked by hand in
+(the jump patch; a `host_only!` line instead must be under five bytes,
+docs/porting.md "Functions under five bytes"), not ported twice nor already hooked by hand in
 crates/ffx-hook/src (wrappers, mods, the harness), and named alike in symbols/ffx.sym
 (which must name it).
 With FFX_GAME_DIR set, also that the shim pops what the original's `ret`
@@ -48,6 +49,22 @@ def popped(abi, args):
     return sum(sizes[skip:])
 
 
+def host_only(text):
+    """The addresses of the lines inside `host_only! { ... }` blocks (the
+    originals under five bytes: ffx-host table entries, no 32-bit hook;
+    docs/porting.md, "Functions under five bytes")."""
+    found = set()
+    for m in re.finditer(r"^host_only!\s*\{", text, re.M):
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        found |= {int(addr.replace("_", ""), 16) for _, addr, _, _ in SHIM.findall(text[m.end():i])}
+    return found
+
+
 RET = re.compile(r"ret(?!f)(?:\s+0x([0-9a-f]+)\b)?")
 
 
@@ -80,12 +97,22 @@ for line in progress.duplicate_hooks():
     bad += 1
 
 for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
-    for name, addr, abi, args in SHIM.findall(f.read_text(encoding="utf-8")):
+    text = f.read_text(encoding="utf-8")
+    short = host_only(text)
+    for name, addr, abi, args in SHIM.findall(text):
         a = int(addr.replace("_", ""), 16)
         where = f"{f.name}: {name} @ {a:#010x}"
         seen[a] = name
         body = a
-        if a not in rows:
+        if a in short:
+            if a not in rows:
+                print(f"{where}: host_only! line, not a function start in the dump")
+                bad += 1
+                continue
+            if rows[a][1] >= 5:
+                print(f"{where}: host_only! line of {rows[a][1]} bytes: hookable, use ported!")
+                bad += 1
+        elif a not in rows:
             body = progress.jmp_thunk(exe, a, rows) if exe else None
             if body is None:
                 print(f"{where}: not a function start in the dump (nor a jmp thunk to one)")

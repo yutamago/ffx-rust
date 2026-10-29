@@ -14,6 +14,8 @@
 //!   transpose and the registrations' tables (continuation round);
 //! - [`p5_lights`] has the per-instance light selection `0x004d4140` (round 4);
 //! - [`p5_gdraw_device`] has `GDraw`'s D3D11 device objects `0x00a34cc0`;
+//! - [`m5p_stubs`] has the functions under five bytes (M5 list `stubs`):
+//!   one generic port per shape and a table of the 179 copies;
 //! - [`small`] has the class descriptors' little virtual members (construct
 //!   in place, destroy, forward).
 //!
@@ -37,6 +39,7 @@
 
 pub mod array;
 pub mod freelist;
+pub mod m5p_stubs;
 pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_gdraw_device;

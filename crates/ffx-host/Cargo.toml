@@ -66,5 +66,9 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi_Common",
 ] }
 
+[dev-dependencies]
+# tests/m5p_stubs.rs: the stubs table (host-only entries)
+ffx-pcore.workspace = true
+
 [lints]
 workspace = true
