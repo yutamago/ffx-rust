@@ -32,6 +32,10 @@
 //! - [`m5p_tmpl_abstract_ab`]: the `PClassDescriptorAbstract<T>` slots 7, 12, 13, 14 (M5 lists tmpl-abstract-a, -b).
 //! - [`m5p_tmpl_abstract_cd`]: the same slots for M5 lists tmpl-abstract-c, -d (the ab ports, one more for slot 4).
 //! - [`m5p_tmpl_fortype`]: `PClassDescriptorForType<T>`'s slots, one port per shape with per-copy tables (M5 stage 1).
+//! - [`m5p_registry_load_a_convert`]: the serialization's data-conversion kernels (M5 phyre-registry-load-a);
+//! - [`m5p_registry_load_a_ptype`]: `PType` and `PTypeDefault<T>`'s methods (M5 phyre-registry-load-a);
+//! - [`m5p_registry_load_a_misc`]: descriptor destructors, setters, utility lists, shutdown steps (M5 phyre-registry-load-a);
+//! - [`m5p_registry_load_a_desc`]: class descriptors' and `PClassDescriptorDynamic`'s small methods (M5 phyre-registry-load-a).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -54,6 +58,10 @@ pub mod m5_static_init_d;
 pub mod m5p_tmpl_abstract_ab;
 pub mod m5p_tmpl_abstract_cd;
 pub mod m5p_tmpl_fortype;
+pub mod m5p_registry_load_a_convert;
+pub mod m5p_registry_load_a_desc;
+pub mod m5p_registry_load_a_misc;
+pub mod m5p_registry_load_a_ptype;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
