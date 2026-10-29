@@ -75,6 +75,7 @@ mod m5p_physics_stubs;
 mod m5p_registry_b;
 mod m5p_registry_load_a;
 mod m5p_render_a;
+mod m5p_render_b;
 mod m5p_scene;
 mod m5p_scene_b;
 mod m5p_scene_c;
@@ -184,6 +185,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_core_e::hooks());
     all.extend(m5p_core_f::hooks());
     all.extend(m5p_core_g::hooks());
+    all.extend(m5p_render_b::hooks());
     all.extend(m5_sound::hooks());
     all.extend(m5_movie::hooks());
     all.extend(m5_ps2_emu::hooks());
