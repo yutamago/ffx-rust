@@ -25,6 +25,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_desc::{self as dc, bridge as dcb};
 use ffx_pload::m5p_registry_load_a_misc::{self as ms, bridge as msb};
 use ffx_pload::m5p_registry_load_a_ptype::{self as pt, Kind, bridge as ptb};
 
@@ -1018,5 +1019,281 @@ fn misc_shutdown_steps_match_the_original() {
             });
         }
         t.reset();
+    }
+}
+
+// ---- batch 4: descriptors, members, PClassDescriptorDynamic ----
+
+/// Words each slot of a recording descriptor object takes (slot 0: 2, 1:
+/// 0, 4 and 6: 2, 11: 1, 12: 0, 13: 3, 14: 1).
+const DESC_WORDS: [u32; 15] = [2, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 1, 0, 3, 1];
+
+#[test]
+fn desc_releases_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(dc::FREE, false, 1, 0, 0xf4ee_0000);
+        for f in [0x0043_b360, 0x0044_77d0] {
+            for (head, data) in [
+                (0u32, 0u32),
+                (3, 0x0012_3450),
+                (0x8000_0003, 0x0012_3450),
+                (0x7fff_ffff, 0),
+            ] {
+                let arr = t.zeros(8);
+                t.w32(arr, head);
+                t.w32(arr + 4, data);
+                let what = format!("{label}: array release {f:#x} {head:#x} {data:#x}");
+                t.check(&what, f, Conv::Thiscall(arr), &[], |g| {
+                    Out::U32(dcb::array_release(g, arr))
+                });
+            }
+        }
+        for flags in [0u8, 1, 0xfe] {
+            let a = t.junk(0x20, 1);
+            let b = t.junk(0x20, 2);
+            let node = t.junk(0x20, 3);
+            t.w32(node, a);
+            t.w32(node + 4, b);
+            t.w8(node + 0x10, flags);
+            let what = format!("{label}: node release {flags:#x}");
+            t.check(&what, 0x0043_b3c0, Conv::Thiscall(node), &[], |g| {
+                Out::U32(dcb::node_release(g, node))
+            });
+        }
+        t.stub(dc::DESCRIPTOR_DESTRUCT, true, 0, 0, 0xde57);
+        t.stub(dc::ANNOTATION_DTOR, true, 0, 0, 0xa22);
+        t.stub(dc::OPERATOR_DELETE, false, 1, 0, 0xde1);
+        let obj = t.junk(0x40, 4);
+        for flags in [0, 1, 2, 0xffff_ffff] {
+            for (f, vt) in [(0x0043_b810, false), (0x0043_b840, true)] {
+                let what = format!("{label}: descriptor delete {f:#x} {flags:#x}");
+                t.check(&what, f, Conv::Thiscall(obj), &[flags], |g| {
+                    Out::U32(dcb::delete_descriptor(g, obj, flags, vt))
+                });
+            }
+            let what = format!("{label}: annotation delete {flags:#x}");
+            t.check(&what, 0x0044_7ab0, Conv::Thiscall(obj), &[flags], |g| {
+                Out::U32(dcb::delete_annotation(g, obj, flags))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn desc_queries_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the class-name fixup
+        let name = t.alloc(b"PClassName\0");
+        let outs = t.junk(8, 1);
+        for flags in [0u8, 1, 2, 0xff] {
+            let desc = t.zeros(0x100);
+            t.w8(desc + 0x90, flags);
+            t.w32(desc + 0x18, name);
+            let what = format!("{label}: class name fixup {flags:#x}");
+            t.check(
+                &what,
+                0x0043_bc10,
+                Conv::Cdecl,
+                &[desc, outs, outs + 4],
+                |g| Out::U32(dcb::class_name_fixup(g, desc, outs, outs + 4)),
+            );
+        }
+        // the validation buffer: computed / in the namespace / neither
+        t.stub(dc::CALCULATE_DEFAULT, true, 0, 0, 0xca1);
+        t.stub(dc::CALCULATE_VALIDATION, true, 0, 0, 0xca2);
+        for flags in [0x8000_0000u32, 0x4000_0000, 0, 0xc000_0000] {
+            let desc = t.object(&DESC_WORDS, &[]);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x68, 0x0bad_0068);
+            let what = format!("{label}: validation buffer {flags:#x}");
+            t.check(&what, 0x0043_cd80, Conv::Thiscall(desc), &[], |g| {
+                Out::U32(dcb::validation_buffer(g, desc))
+            });
+        }
+        // a member's size: pointer flag, kind-2 class with and without
+        // bit 6, no class
+        let ty = t.zeros(0x40);
+        t.w32(ty + 0x1c, 0x24);
+        for (flags, class_kind) in [
+            (0u32, None),
+            (2, None),
+            (0, Some(2u32)),
+            (0x40, Some(2)),
+            (0x42, Some(2)),
+            (0, Some(1)),
+        ] {
+            let class = match class_kind {
+                Some(k) => {
+                    let c = t.zeros(0x40);
+                    t.w32(c + 0x30, k);
+                    c
+                }
+                None => 0,
+            };
+            let member = t.object(&[0, 0], &[0, class]);
+            t.w32(member + 0x18, ty);
+            t.w32(member + 0x14, flags);
+            let what = format!("{label}: member size {flags:#x} {class_kind:?}");
+            t.check(&what, 0x0043_cd30, Conv::Thiscall(member), &[], |g| {
+                Out::U32(dcb::member_size(g, member))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn desc_forwards_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // slot 0 over n elements, results with al 0 and 1
+        for ret in [0x1234_5600u32, 0x1234_5601, 0x0000_0056] {
+            let this = t.object(&DESC_WORDS, &[ret]);
+            t.w32(this + 0x1c, 0x18);
+            for n in [0u32, 1, 3] {
+                let what = format!("{label}: for each {n} ret={ret:#x}");
+                t.check(
+                    &what,
+                    0x0043_d650,
+                    Conv::Thiscall(this),
+                    &[0x0040_0000, n, 7],
+                    |g| Out::U32(dcb::for_each_element(g, this, 0x0040_0000, n, 7)),
+                );
+            }
+        }
+        // the bound forwarder
+        let obj = t.object(&DESC_WORDS, &[]);
+        for flags in [0u8, 2, 0xfd] {
+            let this = t.zeros(0x20);
+            t.w32(this + 0x14, obj);
+            t.w32(this + 0x18, 0x5151);
+            t.w8(this + 0x10, flags);
+            let what = format!("{label}: bound forward {flags:#x}");
+            t.check(&what, 0x0043_7440, Conv::Thiscall(this), &[0x99], |g| {
+                Out::U32(dcb::forward_bound(g, this, 0x99))
+            });
+        }
+        // deleteObjectForScript
+        t.stub(dc::CLUSTER_DELETE_OBJECT, true, 1, 1, 0x13);
+        let cluster = t.zeros(0x20);
+        for o in [0u32, 0x00c0_0000] {
+            let what = format!("{label}: delete object for script {o:#x}");
+            t.check(&what, 0x0044_1380, Conv::Thiscall(cluster), &[o], |g| {
+                Out::U32(dcb::delete_object_for_script(g, cluster, o))
+            });
+        }
+        // PClassDescriptorDynamic: base or not
+        t.stub(dc::BASE_CHECK, false, 2, 0, 0x0b01);
+        let base = t.object(&DESC_WORDS, &[]);
+        for b in [0u32, base] {
+            let this = t.zeros(0x100);
+            t.w32(this + 0x40, b);
+            t.w32(this + 0x44, this + 0x44);
+            let what = format!("{label}: dynamic base check {b:#x}");
+            t.check(&what, 0x0044_9480, Conv::Thiscall(this), &[5], |g| {
+                Out::U32(dcb::base_check(g, this, 5))
+            });
+            let what = format!("{label}: dynamic slot 14 {b:#x}");
+            t.check(&what, 0x0044_9670, Conv::Thiscall(this), &[5], |g| {
+                Out::U32(dcb::forward_to_base(g, this, 14, &[5]))
+            });
+            let what = format!("{label}: dynamic slot 13 {b:#x}");
+            t.check(&what, 0x0044_97c0, Conv::Thiscall(this), &[5, 6, 7], |g| {
+                Out::U32(dcb::forward_to_base(g, this, 13, &[5, 6, 7]))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn desc_dynamic_members_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let base = t.object(&DESC_WORDS, &[]);
+        // a member class descriptor whose slot 11 records the place
+        let member_desc = t.object(&DESC_WORDS, &[]);
+        t.w32(member_desc + 0x88, 0x30);
+        for (b, n) in [(0u32, 0usize), (base, 0), (base, 3), (0, 2)] {
+            let this = t.zeros(0x100);
+            t.w32(this + 0x40, b);
+            t.w32(this + 0x88, 0x10);
+            let head = this + 0x44;
+            // members: external, no class, a class
+            let members: Vec<u32> = (0..n).map(|_| t.zeros(0x40)).collect();
+            t.w32(head, members.first().map_or(head, |m| m + 4));
+            for (i, &m) in members.iter().enumerate() {
+                t.w32(m + 4, members.get(i + 1).map_or(head, |x| x + 4));
+                t.w32(m + 0xc, this);
+                t.w32(m + 0x24, 0x100 * (i as u32 + 1));
+                t.w8(m + 0x14, if i == 0 { 2 } else { 0 });
+                let ty = t.object(&[0, 0], &[0, if i == 1 { 0 } else { member_desc }]);
+                t.w32(m + 0x18, ty);
+            }
+            let what = format!("{label}: dynamic destroy base={b:#x} n={n}");
+            t.check(
+                &what,
+                0x0044_95b0,
+                Conv::Thiscall(this),
+                &[0x0050_0000],
+                |g| Out::U32(dcb::destroy_dynamic(g, this, 0x0050_0000)),
+            );
+        }
+        // object offsets and pushes
+        t.stub(dc::LUA_CHECKSTACK, false, 2, 0, 1);
+        t.stub(dc::LUA_PUSHNIL, false, 1, 0, 0x5e11);
+        t.stub(dc::PUSH_OBJECT, false, 3, 0, 0x0b1e);
+        let this = t.zeros(0x100);
+        t.w32(this + 0x88, 0x20);
+        let l = t.junk(0x10, 1);
+        let cell = t.zeros(4);
+        for v in [0u32, 0x1000, 0xffff_ffe0] {
+            t.w32(cell, v);
+            let what = format!("{label}: push object by pointer {v:#x}");
+            t.check(&what, 0x0044_9ac0, Conv::Thiscall(this), &[l, cell], |g| {
+                Out::U32(dcb::push_object_through(g, this, l, cell))
+            });
+            let what = format!("{label}: push object {v:#x}");
+            t.check(&what, 0x0044_9b50, Conv::Thiscall(this), &[l, v], |g| {
+                Out::U32(dcb::push_object(g, this, l, v))
+            });
+        }
+        let out = t.junk(4, 9);
+        for r in [0u32, 0x0040_0030] {
+            t.stub(dc::OBJECT_GET, false, 1, 0, r);
+            let what = format!("{label}: object offset {r:#x}");
+            t.check(
+                &what,
+                0x0044_9840,
+                Conv::Thiscall(this),
+                &[0x77, out],
+                |g| Out::U32(dcb::object_offset(g, this, 0x77, out)),
+            );
+        }
+        t.reset();
+        // the asset owner walk: no class, an unrelated chain, the class
+        // itself, a child, with 0 and 3 instances
+        let target = t.rebase(dc::ASSET_CLASS);
+        let other = t.zeros(0x50);
+        let child = t.zeros(0x50);
+        t.w32(child + 0x40, target);
+        t.w32(child + 0x1c, 0x30);
+        for (class, n) in [
+            (0u32, 2u32),
+            (other, 2),
+            (target, 0),
+            (child, 0),
+            (child, 3),
+        ] {
+            let obj = t.zeros(0x50);
+            let inst = t.junk(0x100, 7);
+            t.w32(obj + 0x2c, class);
+            t.w32(obj + 0x3c, n);
+            t.w32(obj + 0x30, inst);
+            t.w32(obj + 0x28, 0x0a55_e700);
+            let what = format!("{label}: asset owner {class:#x} n={n}");
+            t.check(&what, 0x0045_da20, Conv::Cdecl, &[obj], |g| {
+                Out::U32(dcb::set_asset_owner(g, obj))
+            });
+        }
     }
 }

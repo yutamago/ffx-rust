@@ -8,6 +8,7 @@
 
 use ffx_pload::cluster;
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_desc::bridge as dcb;
 use ffx_pload::m5p_registry_load_a_misc::{self as ms, bridge as msb};
 use ffx_pload::m5p_registry_load_a_ptype::{Kind, bridge as ptb};
 
@@ -779,5 +780,87 @@ ported! {
     /// `cdecl(n)`: a jump to `PThreadPool::SetThreadCount`.
     Phyre_PThreadPool_SetThreadCount_jmp_00431170 @ 0x0043_1170 => extern "C" fn set_thread_count(n: u32) -> u32 {
         msb::set_thread_count(&mut mem(), n)
+    }
+
+    // ---- batch 4: descriptors, members, PClassDescriptorDynamic ----
+    /// `PArray<T>`'s release (thiscall).
+    Phyre_PArray_release_0043b360 @ 0x0043_b360 => extern "thiscall" fn ar_0043b360(this: u32) -> u32 {
+        dcb::array_release(&mut mem(), this)
+    }
+    /// `PArray<T>`'s release (thiscall).
+    Phyre_PArray_release_004477d0 @ 0x0044_77d0 => extern "thiscall" fn ar_004477d0(this: u32) -> u32 {
+        dcb::array_release(&mut mem(), this)
+    }
+    /// A list node unlinked, its data freed when owned.
+    Phyre_PListNode_release_0043b3c0 @ 0x0043_b3c0 => extern "thiscall" fn node_release(this: u32) -> u32 {
+        dcb::node_release(&mut mem(), this)
+    }
+    /// `PClassDescriptor`'s scalar deleting destructor.
+    Phyre_PClassDescriptor_deletingDtor_0043b810 @ 0x0043_b810 => extern "thiscall" fn desc_delete(this: u32, flags: u32) -> u32 {
+        dcb::delete_descriptor(&mut mem(), this, flags, false)
+    }
+    /// `PClassDescriptorForType<PClassDescriptor>`'s scalar deleting destructor.
+    Phyre_PClassDescriptorForType_PClassDescriptor_deletingDtor_0043b840 @ 0x0043_b840 => extern "thiscall" fn desc_for_desc_delete(this: u32, flags: u32) -> u32 {
+        dcb::delete_descriptor(&mut mem(), this, flags, true)
+    }
+    /// `PAnnotationWithValue<PUInt32>`'s scalar deleting destructor.
+    Phyre_PAnnotationWithValue_PUInt32_deletingDtor_00447ab0 @ 0x0044_7ab0 => extern "thiscall" fn annotation_delete(this: u32, flags: u32) -> u32 {
+        dcb::delete_annotation(&mut mem(), this, flags)
+    }
+    /// `cdecl(desc, &name, &len)`: a class descriptor's name for a fixup.
+    Phyre_PClassDescriptor_GetFixupForClassPointer_0043bc10 @ 0x0043_bc10 => extern "C" fn class_name_fixup(desc: u32, name: u32, len: u32) -> u32 {
+        dcb::class_name_fixup(&mut mem(), desc, name, len)
+    }
+    /// `PClassDescriptor::getValidationBuffer()`.
+    Phyre_PClassDescriptor_getValidationBuffer_0043cd80 @ 0x0043_cd80 => extern "thiscall" fn validation_buffer(this: u32) -> u32 {
+        dcb::validation_buffer(&mut mem(), this)
+    }
+    /// A data member's stored size.
+    Phyre_PClassDataMember_getStoredSize_0043cd30 @ 0x0043_cd30 => extern "thiscall" fn member_size(this: u32) -> u32 {
+        dcb::member_size(&mut mem(), this)
+    }
+    /// `thiscall(p, n, x)`: slot 0 on each element.
+    Phyre_PClassDataMember_forEachElement_0043d650 @ 0x0043_d650 => extern "thiscall" fn for_each_element(this: u32, p: u32, n: u32, x: u32) -> u32 {
+        dcb::for_each_element(&mut mem(), this, p, n, x)
+    }
+    /// `thiscall(x)`: the bound object's slot 6 or 4.
+    Phyre_PScriptedComponent_forwardBound_00437440 @ 0x0043_7440 => extern "thiscall" fn forward_bound(this: u32, x: u32) -> u32 {
+        dcb::forward_bound(&mut mem(), this, x)
+    }
+    /// `PCluster::deleteObjectForScript(obj)`.
+    Phyre_PCluster_deleteObjectForScript @ 0x0044_1380 => extern "thiscall" fn delete_object_for_script(this: u32, obj: u32) -> u32 {
+        dcb::delete_object_for_script(&mut mem(), this, obj)
+    }
+    /// `cdecl(obj)`: instances of an asset class get their owner.
+    Phyre_PAssetReference_setOwner_0045da20 @ 0x0045_da20 => extern "C" fn set_asset_owner(obj: u32) -> u32 {
+        dcb::set_asset_owner(&mut mem(), obj)
+    }
+    /// `PClassDescriptorDynamic` `(x)`: the base's check.
+    Phyre_PClassDescriptorDynamic_baseCheck_00449480 @ 0x0044_9480 => extern "thiscall" fn dyn_base_check(this: u32, x: u32) -> u32 {
+        dcb::base_check(&mut mem(), this, x)
+    }
+    /// `PClassDescriptorDynamic::destroyInstance(p)`.
+    Phyre_PClassDescriptorDynamic_destroyInstance_004495b0 @ 0x0044_95b0 => extern "thiscall" fn dyn_destroy(this: u32, p: u32) -> u32 {
+        dcb::destroy_dynamic(&mut mem(), this, p)
+    }
+    /// `PClassDescriptorDynamic` slot 14: the base's.
+    Phyre_PClassDescriptorDynamic_slot14_00449670 @ 0x0044_9670 => extern "thiscall" fn dyn_slot14(this: u32, x: u32) -> u32 {
+        dcb::forward_to_base(&mut mem(), this, 14, &[x])
+    }
+    /// `PClassDescriptorDynamic` slot 13: the base's.
+    Phyre_PClassDescriptorDynamic_slot13_004497c0 @ 0x0044_97c0 => extern "thiscall" fn dyn_slot13(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        dcb::forward_to_base(&mut mem(), this, 13, &[a, b, c])
+    }
+    /// `PClassDescriptorDynamic` `(x, out)`: a script object as an offset.
+    Phyre_PClassDescriptorDynamic_objectOffset_00449840 @ 0x0044_9840 => extern "thiscall" fn dyn_object_offset(this: u32, x: u32, out: u32) -> u32 {
+        dcb::object_offset(&mut mem(), this, x, out)
+    }
+    /// `PClassDescriptorDynamic` `(L, &v)`: the object pushed to Lua.
+    Phyre_PClassDescriptorDynamic_pushObjectThrough_00449ac0 @ 0x0044_9ac0 => extern "thiscall" fn dyn_push_through(this: u32, l: u32, pv: u32) -> u32 {
+        dcb::push_object_through(&mut mem(), this, l, pv)
+    }
+    /// `PClassDescriptorDynamic` `(L, v)`: the object pushed to Lua.
+    Phyre_PClassDescriptorDynamic_pushObject_00449b50 @ 0x0044_9b50 => extern "thiscall" fn dyn_push(this: u32, l: u32, v: u32) -> u32 {
+        dcb::push_object(&mut mem(), this, l, v)
     }
 }

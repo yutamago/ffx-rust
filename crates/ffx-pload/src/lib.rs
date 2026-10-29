@@ -31,7 +31,8 @@
 //! - [`p1_textures`]: `PBinary::loadClusterTextures` (round 5);
 //! - [`m5p_registry_load_a_convert`]: the serialization's data-conversion kernels (M5 phyre-registry-load-a);
 //! - [`m5p_registry_load_a_ptype`]: `PType` and `PTypeDefault<T>`'s methods (M5 phyre-registry-load-a);
-//! - [`m5p_registry_load_a_misc`]: descriptor destructors, setters, utility lists, shutdown steps (M5 phyre-registry-load-a).
+//! - [`m5p_registry_load_a_misc`]: descriptor destructors, setters, utility lists, shutdown steps (M5 phyre-registry-load-a);
+//! - [`m5p_registry_load_a_desc`]: class descriptors' and `PClassDescriptorDynamic`'s small methods (M5 phyre-registry-load-a).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -52,6 +53,7 @@ pub mod m5_static_init_b;
 pub mod m5_static_init_c;
 pub mod m5_static_init_d;
 pub mod m5p_registry_load_a_convert;
+pub mod m5p_registry_load_a_desc;
 pub mod m5p_registry_load_a_misc;
 pub mod m5p_registry_load_a_ptype;
 pub mod p1_bind;
