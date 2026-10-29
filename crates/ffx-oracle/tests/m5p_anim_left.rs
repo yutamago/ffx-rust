@@ -37,6 +37,7 @@ use ffx_panim::m5p_anim_left_i::{self as li, bridge as lib};
 use ffx_panim::m5p_anim_left_j::{self as lj, bridge as ljb};
 use ffx_panim::m5p_anim_left_k::{self as lk, bridge as lkb};
 use ffx_panim::m5p_anim_left_l::{self as ll, bridge as llb};
+use ffx_panim::m5p_anim_left_m::{self as lm, bridge as lmb};
 use ffx_panim::m5p_anim_small as sm;
 
 /// `ret` or `ret 4 * pops`.
@@ -4010,6 +4011,112 @@ fn scene_target_binds_match_the_original() {
                     top - results,
                     |h| Out::U32(llb::bind_targets(h, this, out, targets, n, s)),
                 );
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 13: data-member paths ----
+
+#[test]
+fn member_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lm::PRINTF, false, 6, 0, 0x99);
+        t.stub(lm::STORED_SIZE, true, 0, 0, 0x14);
+        t.stub_bump(la::PHYRE_MALLOC, 0x1000);
+        // members by the segment's first letter: a, b scalar; c an array
+        // of kind 4 (4 elements of 6 bytes at 0); d an array of kind 7
+        let table = t.zeros(0x400);
+        let mk_member = |t: &mut Twins, off: u32, array: u32| {
+            let cls = t.zeros(0x90);
+            t.w32(cls + 0x88, 0x10);
+            let next_cls = t.zeros(0x10);
+            let ty_get = t.stub_code(0x7f00, true, 0, 0, next_cls);
+            let ty = t.object_with(1, ty_get);
+            let arr_get = t.stub_code(0x7f10, true, 0, 0, array);
+            let m = t.object_with(1, arr_get);
+            t.w32(m + 0xc, cls);
+            t.w32(m + 0x18, ty);
+            t.w32(m + 0x24, off);
+            m
+        };
+        let mk_array = |t: &mut Twins, kind: u32| {
+            let el = t.zeros(0x20);
+            t.w32(el + 0x1c, 6);
+            let count = t.stub_code(0x7f20, true, 1, 1, 4);
+            let elem = t.stub_code(0x7f21, true, 0, 0, el);
+            let data = t.stub_code(0x7f22, true, 1, 1, 0);
+            let vt = t.zeros(0x40);
+            t.w32(vt + 0x10, count);
+            t.w32(vt + 0x18, data);
+            t.w32(vt + 0x24, elem);
+            let a = t.zeros(0x40);
+            t.w32(a, vt);
+            t.w32(a + 0x30, kind);
+            a
+        };
+        let ma = mk_member(&mut t, 0x18, 0);
+        let mb = mk_member(&mut t, 0x30, 0);
+        let arr = mk_array(&mut t, 4);
+        let mc = mk_member(&mut t, 0x40, arr);
+        let arr7 = mk_array(&mut t, 7);
+        let md = mk_member(&mut t, 0x50, arr7);
+        for (ch, m) in [(b'a', ma), (b'b', mb), (b'c', mc), (b'd', md)] {
+            t.w32(table + 4 * u32::from(ch), m);
+        }
+        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0x8b, 0x04, 0x85];
+        tail.extend(table.to_le_bytes()); // eax = table[first byte]
+        tail.extend(ret_bytes(1));
+        let code = t.stub_code_tail(lm::FIND_MEMBER, true, 1, &tail);
+        t.hook(lm::FIND_MEMBER, code);
+        // a class chain for the bind
+        let want = t.zeros(0x50);
+        let head = t.zeros(0x50);
+        t.w32(head + 0x40, want);
+        t.w32(head + 0x18, 0x0c1a);
+        let paths = ["a", "a.b", "a.b.c", "c", "d", "a.x", "x", "", "a.", "b.a.c"];
+        for obj8 in [0u32, 0x0b80] {
+            for (idx, nhead) in [(1u32, head), (4, head), (0, head), (2, 0)] {
+                let mut tv = Vec::new();
+                for (i, p) in paths.iter().enumerate() {
+                    let s = t.cstr(p) | (i as u32 & 1);
+                    let class = if i == 6 { 0x1234 } else { want };
+                    let ty = if i == 0 { 3 } else { 2 };
+                    for w in [class, 0x0b40 + i as u32, 0, 0, ty, s, idx] {
+                        tv.extend(w.to_le_bytes());
+                    }
+                }
+                let targets = t.alloc(&tv);
+                let n = paths.len() as u32;
+                let out = t.zeros(0x18 * n as usize);
+                t.w32(out + 0x18 * 2, 0);
+                t.w32(out + 0x18 * 9, 5);
+                let this = t.junk(0x10, 0x61);
+                t.w32(this + 4, nhead);
+                t.w32(this + 8, obj8);
+                for (o, g, nn) in [
+                    (out, targets, n),
+                    (0, targets, n),
+                    (out, 0, n),
+                    (out, targets, 0),
+                ] {
+                    let what = format!(
+                        "{label}: members obj {obj8:#x} idx {idx} head {nhead:#x} {o:#x} {g:#x} {nn}"
+                    );
+                    t.check_frame(
+                        &what,
+                        0x005c_dba0,
+                        Conv::Thiscall(this),
+                        &[o, g, nn],
+                        0x28,
+                        |h| {
+                            let frame = h.1;
+                            Out::U32(lmb::bind_members(h, this, o, g, nn, frame))
+                        },
+                    );
+                }
             }
         }
         t.reset();

@@ -19,6 +19,7 @@ use ffx_panim::m5p_anim_left_i::bridge as li;
 use ffx_panim::m5p_anim_left_j::bridge as lj;
 use ffx_panim::m5p_anim_left_k::bridge as lk;
 use ffx_panim::m5p_anim_left_l::bridge as ll;
+use ffx_panim::m5p_anim_left_m::bridge as lm;
 
 ported! {
     /// `Phyre_PUtilityGeometry_findNameIndex_00493f50`: the index of `name` among the names at `[this + 0x24]`, -1 when absent.
@@ -433,5 +434,11 @@ ported! {
     Phyre_PAnimationChannelTargetBindScene_bindTargets_005ce1a0 @ 0x005c_e1a0 => extern "thiscall" fn ll_005ce1a0(this: u32, out: u32, targets: u32, n: u32) -> u32 {
         let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_l::TARGETS_FRAME_WORDS as usize }>::new();
         ll::bind_targets_in(&mut mem(), this, out, targets, n, f.at())
+    }
+    // batch 13
+    /// `Phyre_PAnimation_PAnimationChannelTargetBindDataMember_bindTargets`: dotted member paths resolved to addresses (the segment `PString` in this frame); 0 or 1.
+    Phyre_PAnimation_PAnimationChannelTargetBindDataMember_bindTargets @ 0x005c_dba0 => extern "thiscall" fn lm_005cdba0(this: u32, out: u32, targets: u32, n: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_m::FRAME_WORDS as usize }>::new();
+        lm::bind_members(&mut mem(), this, out, targets, n, f.at())
     }
 }

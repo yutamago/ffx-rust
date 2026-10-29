@@ -36,6 +36,7 @@ pub mod m5p_anim_left_i;
 pub mod m5p_anim_left_j;
 pub mod m5p_anim_left_k;
 pub mod m5p_anim_left_l;
+pub mod m5p_anim_left_m;
 pub mod m5p_anim_misc;
 pub mod m5p_anim_small;
 pub mod network;
