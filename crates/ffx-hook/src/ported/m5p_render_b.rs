@@ -9,7 +9,9 @@
 
 use ffx_prender::m5p_render_b::{self as rb, bridge as b};
 use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
+use ffx_prender::m5p_render_b_dtors::bridge as tb;
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
+use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
 
 use super::{mem, ported};
@@ -809,5 +811,171 @@ ported! {
     /// `Phyre_FogEffectManager_setParam20_006e3b10`.
     Phyre_FogEffectManager_setParam20_006e3b10 @ 0x006e_3b10 => extern "thiscall" fn a_006e3b10(fog: u32, v: u32) -> u32 {
         ab::fog_set(&mut mem(), fog, const { arr::fog_field_of(0x006e_3b10) }, &[v])
+    }
+    // ---- batch 4: post-processing setups, entries, target resizes, dtors (ffx_prender::m5p_render_b_post2) ----
+    /// `Phyre_PPostProcessing_PDepthOfField_vslot04_setup`.
+    Phyre_PPostProcessing_PDepthOfField_vslot04_setup @ 0x00a1_98d0 => extern "thiscall" fn q_00a198d0(this: u32, w: u32, h: u32) -> u32 {
+        qb::setup(&mut mem(), this, const { post2::setup_of(0x00a1_98d0) }, w, h)
+    }
+    /// `Phyre_PPostProcessing_PGlow_vslot04_setup`.
+    Phyre_PPostProcessing_PGlow_vslot04_setup @ 0x00a1_9ac0 => extern "thiscall" fn q_00a19ac0(this: u32, w: u32, h: u32) -> u32 {
+        qb::setup(&mut mem(), this, const { post2::setup_of(0x00a1_9ac0) }, w, h)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_vslot04_setup`.
+    Phyre_PPostProcessing_PMotionBlur_vslot04_setup @ 0x00a1_9b60 => extern "thiscall" fn q_00a19b60(this: u32, w: u32, h: u32) -> u32 {
+        qb::setup(&mut mem(), this, const { post2::setup_of(0x00a1_9b60) }, w, h)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_vslot04_setup`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_vslot04_setup @ 0x00a1_9c10 => extern "thiscall" fn q_00a19c10(this: u32, w: u32, h: u32) -> u32 {
+        qb::setup(&mut mem(), this, const { post2::setup_of(0x00a1_9c10) }, w, h)
+    }
+    /// `Phyre_PPostProcessing_PDeferredLighting_vslot18_render`.
+    Phyre_PPostProcessing_PDeferredLighting_vslot18_render @ 0x00a2_1a20 => extern "thiscall" fn q_00a21a20(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        qb::entry(&mut mem(), this, const { post2::entry_of(0x00a2_1a20) }, [a, b, c, d, e])
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_vslot18_render`.
+    Phyre_PPostProcessing_PDepthOfField_vslot18_render @ 0x00a2_1aa0 => extern "thiscall" fn q_00a21aa0(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        qb::entry(&mut mem(), this, const { post2::entry_of(0x00a2_1aa0) }, [a, b, c, d, e])
+    }
+    /// `Phyre_PPostProcessing_PFXAA_vslot18_render`.
+    Phyre_PPostProcessing_PFXAA_vslot18_render @ 0x00a2_1b20 => extern "thiscall" fn q_00a21b20(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        qb::entry(&mut mem(), this, const { post2::entry_of(0x00a2_1b20) }, [a, b, c, d, e])
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_vslot18_render`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_vslot18_render @ 0x00a2_1cf0 => extern "thiscall" fn q_00a21cf0(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        qb::entry(&mut mem(), this, const { post2::entry_of(0x00a2_1cf0) }, [a, b, c, d, e])
+    }
+    /// `Phyre_PPostProcessing_PGlow_vslot18_render`.
+    Phyre_PPostProcessing_PGlow_vslot18_render @ 0x00a2_1ba0 => extern "thiscall" fn q_00a21ba0(this: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        qb::entry(&mut mem(), this, const { post2::entry_of(0x00a2_1ba0) }, [a, b, c, d, e])
+    }
+    /// `Phyre_PPostProcessing_resizeTarget5c_00a23200`.
+    Phyre_PPostProcessing_resizeTarget5c_00a23200 @ 0x00a2_3200 => extern "thiscall" fn q_00a23200(this: u32, w: u32, h: u32) -> u32 {
+        qb::resize_5c(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PFXAA_vslot0c_resize`.
+    Phyre_PPostProcessing_PFXAA_vslot0c_resize @ 0x00a1_b8f0 => extern "thiscall" fn q_00a1b8f0(this: u32, w: u32, h: u32) -> u32 {
+        qb::resize_5c_if_set_up(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_resizeHalves_00a23080`.
+    Phyre_PPostProcessing_PDepthOfField_resizeHalves_00a23080 @ 0x00a2_3080 => extern "thiscall" fn q_00a23080(this: u32, w: u32, h: u32) -> u32 {
+        qb::resize_halves(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_vslot0c_resize`.
+    Phyre_PPostProcessing_PDepthOfField_vslot0c_resize @ 0x00a1_b870 => extern "thiscall" fn q_00a1b870(this: u32, w: u32, h: u32) -> u32 {
+        qb::resize_depth_of_field(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PDeferredLightingBase_releaseResources_00a24a60`.
+    Phyre_PPostProcessing_PDeferredLightingBase_releaseResources_00a24a60 @ 0x00a2_4a60 => extern "thiscall" fn q_00a24a60(this: u32) {
+        qb::lighting_release(&mut mem(), this);
+    }
+    /// `Phyre_PPostProcessing_PDeferredLightingBase_dtor_009fdb80`.
+    Phyre_PPostProcessing_PDeferredLightingBase_dtor_009fdb80 @ 0x009f_db80 => extern "thiscall" fn q_009fdb80(this: u32) -> u32 {
+        qb::lighting_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_dtor_009fde10`.
+    Phyre_PPostProcessing_PDepthOfField_dtor_009fde10 @ 0x009f_de10 => extern "thiscall" fn q_009fde10(this: u32) -> u32 {
+        qb::depth_of_field_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PPostProcessing_PMeshParticleSystemBase_deleting_dtor`.
+    Phyre_PPostProcessing_PMeshParticleSystemBase_deleting_dtor @ 0x00a0_2d90 => extern "thiscall" fn q_00a02d90(this: u32, flags: u32) -> u32 {
+        qb::particles_delete(&mut mem(), this, flags)
+    }
+    // ---- batch 4: renderer dtors, state setters, trees (ffx_prender::m5p_render_b_dtors) ----
+    /// `Phyre_PRedBlackTree_dtor_006a6720`.
+    Phyre_PRedBlackTree_dtor_006a6720 @ 0x006a_6720 => extern "thiscall" fn t_006a6720(this: u32) -> u32 {
+        tb::tree_clear_twice(&mut mem(), this)
+    }
+    /// `Phyre_PRedBlackTree_dtor_006a6780`.
+    Phyre_PRedBlackTree_dtor_006a6780 @ 0x006a_6780 => extern "thiscall" fn t_006a6780(this: u32) -> u32 {
+        tb::tree_clear_twice(&mut mem(), this)
+    }
+    /// `Phyre_PRedBlackTreeMap_dtor_006a67e0`.
+    Phyre_PRedBlackTreeMap_dtor_006a67e0 @ 0x006a_67e0 => extern "thiscall" fn t_006a67e0(this: u32) -> u32 {
+        tb::tree_map_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PRedBlackTreeMap_removeAllDtor_006a68f0`.
+    Phyre_PRedBlackTreeMap_removeAllDtor_006a68f0 @ 0x006a_68f0 => extern "thiscall" fn t_006a68f0(this: u32) -> u32 {
+        tb::tree_map_remove_all(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_PooledHandle_dtor_00614300`.
+    Phyre_PRendering_PooledHandle_dtor_00614300 @ 0x0061_4300 => extern "thiscall" fn t_00614300(this: u32) -> u32 {
+        tb::handle_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_PRendererBase_dtor_005b49e0`.
+    Phyre_PRendering_PRendererBase_dtor_005b49e0 @ 0x005b_49e0 => extern "thiscall" fn t_005b49e0(this: u32) {
+        tb::renderer_base_dtor(&mut mem(), this, 0);
+    }
+    /// `Phyre_PRendering_PRendererBase_deleting_dtor`.
+    Phyre_PRendering_PRendererBase_deleting_dtor @ 0x005b_4fa0 => extern "thiscall" fn t_005b4fa0(this: u32, flags: u32) -> u32 {
+        tb::renderer_base_dtor(&mut mem(), this, flags)
+    }
+    /// `Phyre_PRendering_PRendererForJobs_deleting_dtor`.
+    Phyre_PRendering_PRendererForJobs_deleting_dtor @ 0x005b_5010 => extern "thiscall" fn t_005b5010(this: u32, flags: u32) -> u32 {
+        tb::renderer_base_dtor(&mut mem(), this, flags)
+    }
+    /// `Phyre_PRendering_PRenderer_dtor_005b4950`.
+    Phyre_PRendering_PRenderer_dtor_005b4950 @ 0x005b_4950 => extern "thiscall" fn t_005b4950(this: u32) {
+        tb::renderer_dtor(&mut mem(), this, 0);
+    }
+    /// `Phyre_PRendering_PRenderer_deleting_dtor`.
+    Phyre_PRendering_PRenderer_deleting_dtor @ 0x005b_4ef0 => extern "thiscall" fn t_005b4ef0(this: u32, flags: u32) -> u32 {
+        tb::renderer_dtor(&mut mem(), this, flags)
+    }
+    /// `Phyre_PRendering_PInternal_PRendererThreadPoolJob_ctor_005b4750`.
+    Phyre_PRendering_PInternal_PRendererThreadPoolJob_ctor_005b4750 @ 0x005b_4750 => extern "thiscall" fn t_005b4750(this: u32) -> u32 {
+        tb::job_ctor(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_PInternal_PRendererThreadPoolJob_new_005b3680`.
+    Phyre_PRendering_PInternal_PRendererThreadPoolJob_new_005b3680 @ 0x005b_3680 => extern "C" fn t_005b3680() -> u32 {
+        tb::new_job(&mut mem())
+    }
+    /// `Phyre_PDynamicGeometry_recordsDtor_005c82a0`.
+    Phyre_PDynamicGeometry_recordsDtor_005c82a0 @ 0x005c_82a0 => extern "thiscall" fn t_005c82a0(this: u32) {
+        tb::records_dtor(&mut mem(), this);
+    }
+    /// `Phyre_PRendering_PRenderInterface_setModes_00599820`.
+    Phyre_PRendering_PRenderInterface_setModes_00599820 @ 0x0059_9820 => extern "thiscall" fn t_00599820(this: u32, a: u32, b: u32) -> u32 {
+        tb::set_modes(&mut mem(), this, a, b)
+    }
+    /// `Phyre_PRendering_PRenderInterface_setState578_0059a070`.
+    Phyre_PRendering_PRenderInterface_setState578_0059a070 @ 0x0059_a070 => extern "thiscall" fn t_0059a070(this: u32, mode: u32) -> u32 {
+        tb::set_578(&mut mem(), this, mode)
+    }
+    /// `Phyre_PRendering_PRenderInterface_setBlendState_00599950`.
+    Phyre_PRendering_PRenderInterface_setBlendState_00599950 @ 0x0059_9950 => extern "thiscall" fn t_00599950(this: u32, enable: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        tb::set_blend(&mut mem(), this, enable, [a, b, c, d])
+    }
+    /// `Phyre_PRendering_PRenderInterface_setDepthStencilState_0059bac0`.
+    Phyre_PRendering_PRenderInterface_setDepthStencilState_0059bac0 @ 0x0059_bac0 => extern "thiscall" fn t_0059bac0(this: u32, w0: u32, w1: u32, _w2: u32, w3: u32, w4: u32, w5: u32, w6: u32, w7: u32, w8: u32, _w9: u32, _w10: u32, w11: u32, w12: u32, w13: u32, _w14: u32) -> u32 {
+        tb::set_depth_stencil(&mut mem(), this, [w0, w1, 0, w3, w4, w5, w6, w7, w8, 0, 0, w11, w12, w13, 0])
+    }
+    /// `PShaderD3D11_release_0059c190`.
+    PShaderD3D11_release_0059c190 @ 0x0059_c190 => extern "thiscall" fn t_0059c190(this: u32) -> u32 {
+        tb::shader_release(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_releaseComEight_0059c370`.
+    Phyre_PRendering_releaseComEight_0059c370 @ 0x0059_c370 => extern "thiscall" fn t_0059c370(this: u32) {
+        tb::release_eight(&mut mem(), this);
+    }
+    /// `Phyre_CharacterLightingTweakUtil_setEnabled`.
+    Phyre_CharacterLightingTweakUtil_setEnabled @ 0x006a_a5f0 => extern "thiscall" fn t_006aa5f0(this: u32, on: u32) -> u32 {
+        tb::tweak_set_enabled(&mut mem(), this, on)
+    }
+    /// `Phyre_CharacterLightingTweakUtil_release_006ab540`.
+    Phyre_CharacterLightingTweakUtil_release_006ab540 @ 0x006a_b540 => extern "thiscall" fn t_006ab540(this: u32) -> u32 {
+        tb::tweak_release(&mut mem(), this)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PText_PBitmapFontCharInfo_4__swapEndiannessStatic1`.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PText_PBitmapFontCharInfo_4__swapEndiannessStatic1 @ 0x00a2_b3b0 => extern "C" fn t_00a2b3b0(p: u32) -> u32 {
+        tb::char_info_swap(&mut mem(), p, 1)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PText_PBitmapFontCharInfo_4__swapEndiannessStatic0`.
+    Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PText_PBitmapFontCharInfo_4__swapEndiannessStatic0 @ 0x00a2_b510 => extern "C" fn t_00a2b510(p: u32) -> u32 {
+        tb::char_info_swap(&mut mem(), p, 0)
+    }
+    /// `Phyre_PArray_resize16_005af070`.
+    Phyre_PArray_resize16_005af070 @ 0x005a_f070 => extern "thiscall" fn t_005af070(this: u32, n: u32) -> u32 {
+        tb::resize16(&mut mem(), this, n)
     }
 }

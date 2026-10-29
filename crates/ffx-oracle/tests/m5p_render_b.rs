@@ -1685,3 +1685,634 @@ fn utilities_and_fog_match_the_original() {
         }
     }
 }
+
+// ---- batch 4: post-processing setups, entries, resizes; renderer dtors ----
+
+use ffx_prender::m5p_render_b_dtors::{self as dt, bridge as tb};
+use ffx_prender::m5p_render_b_post2::{self as post2, Render, bridge as qb};
+
+/// A target case: no handle, or a handle with or without a texture of a size.
+type Tex = Option<Option<(u32, u32)>>;
+
+/// A render-target handle `{texture, kind}` over a texture of `w` x `h`
+/// (or none, or a kind that holds none).
+fn target(t: &mut Twins, tex: Option<(u32, u32)>, kind: u8) -> u32 {
+    let handle = t.zeros(8);
+    if let Some((w, hgt)) = tex {
+        let tx = t.junk(0x40, 0x61);
+        t.w32(tx + 0x1c, w);
+        t.w32(tx + 0x20, hgt);
+        t.w32(handle, tx);
+    }
+    t.w8(handle + 4, kind);
+    handle
+}
+
+#[test]
+fn post_setups_and_entries_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the setups: the interface made or not, default sizes, the result
+        for &(f, init) in &post2::SETUPS {
+            assert_eq!(post2::setup_of(f), init);
+            for (made, w, hgt, r) in [
+                (true, 640u32, 360u32, 0u32),
+                (true, 0, 0, 0),
+                (false, 0, 200, 7),
+                (false, 320, 0, 0),
+            ] {
+                t.stub(post2::INTERFACE_CTOR, true, 0, 0, 0);
+                t.stub(post2::ATEXIT, false, 1, 0, 0);
+                t.stub(init, true, 3, 3, r);
+                let guard = t.rebase(post2::INTERFACE_GUARD);
+                let g = t.r32(guard);
+                t.put_saved(guard, if made { g | 1 } else { g & !1 });
+                let dw = t.rebase(post2::DEFAULT_WIDTH);
+                t.put_saved(dw, 1280);
+                let dh = t.rebase(post2::DEFAULT_HEIGHT);
+                t.put_saved(dh, 720);
+                let obj = t.junk(0x40, 1);
+                let what = format!("{label}: setup {f:#x} {made} {w} {hgt} {r}");
+                t.check(&what, f, Conv::Thiscall(obj), &[w, hgt], |g| {
+                    Out::U32(qb::setup(g, obj, init, w, hgt))
+                });
+                t.reset();
+            }
+        }
+        // the entries: set up or not (slot 1's result), no record, the
+        // material changed or not, missing, each renderer's result
+        for &(f, how) in &post2::ENTRIES {
+            assert_eq!(post2::entry_of(f), how);
+            for (set_up, r1, with_c, changed, material, e, r) in [
+                (0u8, 9u32, true, false, true, 1u32, 0u32),
+                (0, 0, true, true, true, 1, 0x33),
+                (0, 0, false, false, true, 1, 0),
+                (1, 0, true, false, false, 1, 0),
+                (1, 0, true, true, true, 0, 0),
+                (1, 0, true, false, true, 1, 0),
+                (1, 0, true, false, true, 1, 0x44),
+            ] {
+                let fs: Vec<u32> = match how {
+                    Render::Lighting(x)
+                    | Render::DepthOfField(x)
+                    | Render::Fxaa(x)
+                    | Render::Reflection(x) => vec![x],
+                    Render::Glow { pre, f } => vec![pre, f],
+                };
+                for (k, &x) in fs.iter().enumerate() {
+                    let n = match (how, k) {
+                        (Render::Lighting(_), _) => 3,
+                        (Render::DepthOfField(_) | Render::Reflection(_), _)
+                        | (Render::Glow { .. }, 1) => 5,
+                        (Render::Fxaa(_), _) => 4,
+                        (Render::Glow { .. }, _) => 2,
+                    };
+                    let ret = if k + 1 == fs.len() { r } else { r & 0x40 };
+                    t.stub(x, true, n, n, ret);
+                }
+                let o = t.object(&[1, 2, 0, 2, 0, 2, 5], &[0, r1]);
+                let vt = t.r32(o);
+                let obj = t.junk(0x100, 0x13);
+                t.w32(obj, vt);
+                t.w8(obj + 0x10, set_up);
+                let handle = t.zeros(8);
+                if material {
+                    let m = t.junk(0x10, 2);
+                    t.w32(handle, m);
+                }
+                t.w32(obj + 8, handle);
+                t.w32(obj + 0xc, if changed { 0x1234 } else { handle });
+                let bloom = t.junk(0x10, 3);
+                t.w8(bloom + 4, set_up);
+                t.w32(obj + 0xa8, bloom);
+                let a = t.junk(0x80, 4);
+                let c = if with_c {
+                    let c = t.junk(0x40, 5);
+                    t.w32(c + 0x1c, 800);
+                    t.w32(c + 0x20, 600);
+                    c
+                } else {
+                    0
+                };
+                let args = [a, 0xb, c, 0xd, e];
+                let what = format!(
+                    "{label}: entry {f:#x} {set_up} {r1} {with_c} {changed} {material} {e} {r:#x}"
+                );
+                t.check(&what, f, Conv::Thiscall(obj), &args, |g| {
+                    Out::U32(qb::entry(g, obj, how, args))
+                });
+                t.reset();
+            }
+        }
+    }
+}
+
+#[test]
+fn post_resizes_and_dtors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the size check through each path: no handle, a kind without a
+        // texture, the same size, bound (unbind fails or not), the resize
+        // failing, done
+        let cases: [(Tex, u8, u32, u32, u32); 8] = [
+            (None, 0, 0, 0, 0),
+            (Some(None), 0, 0, 0, 0),
+            (Some(Some((64, 32))), 1, 0, 0, 0),
+            (Some(Some((64, 32))), 0, 0, 0, 0),
+            (Some(Some((10, 32))), 0, 1, 0x77, 0),
+            (Some(Some((10, 32))), 0, 0x100, 0, 0x88),
+            (Some(Some((64, 10))), 0, 1, 0, 0),
+            (Some(Some((10, 10))), 0, 0, 0, 0),
+        ];
+        for (tex, kind, bound, unbind, set) in cases {
+            for (f, at, set_up) in [
+                (0x00a2_3200u32, 0x5cu32, None),
+                (0x00a1_b8f0, 0x5c, Some(1u8)),
+                (0x00a1_b8f0, 0x5c, Some(0)),
+                (0x00a1_b870, 0xfb0, Some(1)),
+                (0x00a1_b870, 0xfb0, Some(0)),
+            ] {
+                t.stub(post2::IS_BOUND, true, 0, 0, bound);
+                t.stub(post2::UNBIND, true, 0, 0, unbind);
+                t.stub(post2::SET_DIMENSIONS, true, 4, 4, set);
+                t.stub(post2::HALF_TARGETS, true, 2, 2, 0x5a);
+                let obj = t.junk(0x1000, 6);
+                let handle = match tex {
+                    None => 0,
+                    Some(x) => target(&mut t, x, kind),
+                };
+                t.w32(obj + at, handle);
+                if let Some(s) = set_up {
+                    t.w8(obj + 0x10, s);
+                }
+                let what = format!(
+                    "{label}: resize {f:#x} {tex:?} {kind} {bound} {unbind:#x} {set:#x} {set_up:?}"
+                );
+                t.check(&what, f, Conv::Thiscall(obj), &[64, 32], |g| {
+                    Out::U32(match f {
+                        0x00a2_3200 => qb::resize_5c(g, obj, 64, 32),
+                        0x00a1_b8f0 => qb::resize_5c_if_set_up(g, obj, 64, 32),
+                        _ => qb::resize_depth_of_field(g, obj, 64, 32),
+                    })
+                });
+                t.reset();
+            }
+        }
+        // the half-size targets: each failing in turn, all done
+        for bad in [0usize, 1, 2, 3] {
+            t.stub(post2::IS_BOUND, true, 0, 0, 0);
+            t.stub(post2::SET_DIMENSIONS, true, 4, 4, 0);
+            let obj = t.junk(0x1000, 7);
+            for k in 0..3u32 {
+                let h = if k as usize == bad {
+                    0
+                } else {
+                    target(&mut t, Some((50, 20)), 0)
+                };
+                t.w32(obj + 0xf2c + 4 * k, h);
+            }
+            let what = format!("{label}: halves {bad}");
+            t.check(&what, 0x00a2_3080, Conv::Thiscall(obj), &[101, 41], |g| {
+                Out::U32(qb::resize_halves(g, obj, 101, 41))
+            });
+            t.reset();
+        }
+        // the lighting release and the destructor bodies
+        for (flags, meshes) in [(0u32, false), (0x80, true), (0xffff_ffff, true)] {
+            t.stub(post2::SAMPLER_RELEASE, true, 0, 0, 0x5a);
+            t.stub(post2::SPRITE_ARRAYS_RELEASE, true, 0, 0, 0x5b);
+            t.stub(post2::SAMPLER_DTOR, true, 0, 0, 0x5c);
+            t.stub(post2::RENDER_TARGET_RELEASE, false, 1, 0, 0x5d);
+            t.stub(post2::DEPTH_OF_FIELD_BASE_DTOR, true, 0, 0, 0x5e);
+            t.stub(post2::PARTICLE_MEMBERS_RELEASE, true, 0, 0, 0x5f);
+            t.stub(post2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.junk(0x4000, 8);
+            for at in [0x3f04, 0x3f4c, 0x3f28] {
+                t.w32(obj + at, flags);
+            }
+            for at in [0x3edc, 0x3ee0, 0x3ee4] {
+                let p = if meshes {
+                    let p = t.zeros(4);
+                    let arrays = t.junk(0x10, 9);
+                    t.w32(p, arrays);
+                    p
+                } else {
+                    0
+                };
+                t.w32(obj + at, p);
+            }
+            t.check(
+                &format!("{label}: lighting release {flags:#x}"),
+                0x00a2_4a60,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    qb::lighting_release(g, obj);
+                    Out::None
+                },
+            );
+            t.stub(post2::LIGHTING_RELEASE, true, 0, 0, 0x60);
+            t.check(
+                &format!("{label}: lighting dtor"),
+                0x009f_db80,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(qb::lighting_dtor(g, obj)),
+            );
+            t.check(
+                &format!("{label}: dof dtor"),
+                0x009f_de10,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(qb::depth_of_field_dtor(g, obj)),
+            );
+            t.check(
+                &format!("{label}: particles delete {flags:#x}"),
+                0x00a0_2d90,
+                Conv::Thiscall(obj),
+                &[flags],
+                |g| Out::U32(qb::particles_delete(g, obj, flags)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn renderer_dtors_and_states_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for s in [
+            dt::TREE_CLEAR,
+            dt::TREE_ORPHAN_ALL,
+            dt::FREE_LIST_RESET,
+            dt::FREE_LIST_DTOR,
+            dt::POOLED_HANDLE_RELEASE,
+        ] {
+            t.stub(s, true, 0, 0, s & 0xfff);
+        }
+        t.stub(dt::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(dt::EH_VECTOR_DTOR, false, 4, 4, 0xe4);
+        t.stub(dt::CLEAR_WORD0, true, 0, 0, 0xc0);
+        let obj = t.junk(0x200, 1);
+        for f in [0x006a_6720u32, 0x006a_6780] {
+            t.check(
+                &format!("{label}: tree clear {f:#x}"),
+                f,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(tb::tree_clear_twice(g, obj)),
+            );
+        }
+        t.check(
+            &format!("{label}: map dtor"),
+            0x006a_67e0,
+            Conv::Thiscall(obj),
+            &[],
+            |g| Out::U32(tb::tree_map_dtor(g, obj)),
+        );
+        // remove all: empty (the tree itself), null, a chain of nodes
+        // ending at the tree or at 0; the remove stub logs and unlinks
+        // (`[tree + 0xc]` = the node's word 0)
+        {
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(dt::TREE_REMOVE.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.extend([0x8b, 0x02]); // mov eax, [edx]
+            c.extend([0x89, 0x41, 0x0c]); // mov [ecx+0xc], eax
+            c.extend([0xc2, 0x04, 0x00]); // ret 4
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(dt::TREE_REMOVE);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+        }
+        let n1 = t.zeros(0x10);
+        let n2 = t.zeros(0x10);
+        for (first, end) in [(obj, 0u32), (0, 0), (n1, obj), (n1, 0)] {
+            t.w32(n1, n2);
+            t.w32(n2, end);
+            t.w32(obj + 0xc, first);
+            t.check(
+                &format!("{label}: remove all {first:#x} {end:#x}"),
+                0x006a_68f0,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(tb::tree_map_remove_all(g, obj)),
+            );
+        }
+        t.check(
+            &format!("{label}: handle dtor"),
+            0x0061_4300,
+            Conv::Thiscall(obj),
+            &[],
+            |g| Out::U32(tb::handle_dtor(g, obj)),
+        );
+        t.check(
+            &format!("{label}: renderer base dtor"),
+            0x005b_49e0,
+            Conv::Thiscall(obj),
+            &[],
+            |g| {
+                tb::renderer_base_dtor(g, obj, 0);
+                Out::None
+            },
+        );
+        t.check(
+            &format!("{label}: renderer dtor"),
+            0x005b_4950,
+            Conv::Thiscall(obj),
+            &[],
+            |g| {
+                tb::renderer_dtor(g, obj, 0);
+                Out::None
+            },
+        );
+        for flags in [0u32, 1, 2] {
+            for f in [0x005b_4fa0u32, 0x005b_5010] {
+                t.check(
+                    &format!("{label}: renderer base delete {f:#x} {flags}"),
+                    f,
+                    Conv::Thiscall(obj),
+                    &[flags],
+                    |g| Out::U32(tb::renderer_base_dtor(g, obj, flags)),
+                );
+            }
+            t.check(
+                &format!("{label}: renderer delete {flags}"),
+                0x005b_4ef0,
+                Conv::Thiscall(obj),
+                &[flags],
+                |g| Out::U32(tb::renderer_dtor(g, obj, flags)),
+            );
+        }
+        t.check(
+            &format!("{label}: job ctor"),
+            0x005b_4750,
+            Conv::Thiscall(obj),
+            &[],
+            |g| Out::U32(tb::job_ctor(g, obj)),
+        );
+        t.reset();
+        // a job from the ring buffer, at once or after a wait
+        for waits in [0u32, 1] {
+            let ring = t.zeros(0x10);
+            let block = t.junk(0x60, 2);
+            t.stub(dt::RING_SINGLETON, false, 0, 0, ring);
+            // the allocation fails `waits` times: a counter stub
+            let counter = t.zeros(4);
+            t.w32(counter, waits);
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(dt::RING_ALLOCATE.to_le_bytes()); // mov [eax], tag
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.extend([0x83, 0x2d]);
+            c.extend(counter.to_le_bytes());
+            c.push(0x01); // sub dword [counter], 1
+            c.extend([0xb8, 0, 0, 0, 0]); // mov eax, 0 (flags kept)
+            c.extend([0x79, 0x05]); // jns +5: fail while the counter was > 0
+            c.push(0xb8);
+            c.extend(block.to_le_bytes()); // mov eax, block
+            c.extend([0xc2, 0x04, 0x00]); // ret 4
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(dt::RING_ALLOCATE);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            let pool = t.object(&[0, 0, 0, 0, 0, 0, 0], &[]);
+            t.stub(dt::POOL_SINGLETON, false, 0, 0, pool);
+            t.stub(dt::SLEEP, false, 1, 0, 0);
+            t.stub(dt::JOB_CTOR, true, 0, 0, block + 0x10);
+            let what = format!("{label}: new job {waits}");
+            t.check(&what, 0x005b_3680, Conv::Cdecl, &[], |g| {
+                Out::U32(tb::new_job(g))
+            });
+            t.reset();
+        }
+        // the records' arrays
+        for (c1, b1, c2, b2) in [
+            (3u32, 0x40u32, 0x8000_0001u32, 0x50u32),
+            (0, 0, 2, 0x60),
+            (1, 0x70, 0, 0),
+        ] {
+            t.stub(dt::RECORDS_RELEASE, false, 1, 0, 0x9930);
+            t.stub(dt::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.junk(0x20, 3);
+            t.w32(obj + 0x10, c1);
+            t.w32(obj + 0x14, b1);
+            t.w32(obj + 8, c2);
+            t.w32(obj + 0xc, b2);
+            t.check(
+                &format!("{label}: records dtor {c1:#x} {c2:#x}"),
+                0x005c_82a0,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    tb::records_dtor(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the state setters
+        let obj = t.junk(0x700, 4);
+        for (a, b) in [(0u32, 0u32), (1, 2), (3, 4), (5, 0xffff_ffff), (4, 5)] {
+            t.check(
+                &format!("{label}: modes {a} {b}"),
+                0x0059_9820,
+                Conv::Thiscall(obj),
+                &[a, b],
+                |g| Out::U32(tb::set_modes(g, obj, a, b)),
+            );
+        }
+        for m in [0u32, 1, 2, 3, 0xffff_ffff] {
+            t.w32(obj + 0x578, 0xdead);
+            t.w32(obj + 0x57c, 0xbeef);
+            t.check(
+                &format!("{label}: state 578 {m}"),
+                0x0059_a070,
+                Conv::Thiscall(obj),
+                &[m],
+                |g| Out::U32(tb::set_578(g, obj, m)),
+            );
+        }
+        for f in [dt::MAP_BLEND, dt::MAP_MODE8, dt::MAP_OP] {
+            t.stub(f, false, 1, 0, f & 0xff);
+        }
+        t.check(
+            &format!("{label}: blend"),
+            0x0059_9950,
+            Conv::Thiscall(obj),
+            &[0x1ff, 2, 3, 4, 5],
+            |g| Out::U32(tb::set_blend(g, obj, 0x1ff, [2, 3, 4, 5])),
+        );
+        let w: [u32; 15] = core::array::from_fn(|i| 0x0101_0100 * (i as u32 + 1) + i as u32);
+        t.check(
+            &format!("{label}: depth stencil"),
+            0x0059_bac0,
+            Conv::Thiscall(obj),
+            &w,
+            |g| Out::U32(tb::set_depth_stencil(g, obj, w)),
+        );
+        t.reset();
+        // the COM release loops: every other object set
+        for mask in [0u32, 0x5555_5555, 0xffff_ffff] {
+            t.stub(dt::RELEASE_VIEWS, true, 0, 0, 0x76);
+            let obj = t.junk(0x80, 5);
+            for k in 0..0x16u32 {
+                let o = if (mask >> k) & 1 != 0 {
+                    t.com_object(&[0, 0, 1], &[0, 0, k])
+                } else {
+                    0
+                };
+                t.w32(obj + 4 * k, o);
+            }
+            t.check(
+                &format!("{label}: shader release {mask:#x}"),
+                0x0059_c190,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(tb::shader_release(g, obj)),
+            );
+            let obj = t.junk(0x40, 6);
+            for k in 0..0xcu32 {
+                let o = if (mask >> k) & 1 != 0 {
+                    t.com_object(&[0, 0, 1], &[0, 0, k])
+                } else {
+                    0
+                };
+                t.w32(obj + 4 * k, o);
+            }
+            t.check(
+                &format!("{label}: release eight {mask:#x}"),
+                0x0059_c370,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    tb::release_eight(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the tweak utility
+        for (on, util) in [(0u32, 1u8), (1, 0), (1, 1), (0x100, 1), (0xff, 2)] {
+            t.stub(dt::TEXT_UTIL_SET_ENABLED, true, 1, 1, 0x5e);
+            t.stub(dt::TEXT_UTIL_RESIZE, true, 2, 2, 0x5f);
+            let obj = t.junk(0x200, 7);
+            t.w8(obj, util);
+            t.check(
+                &format!("{label}: tweak enabled {on:#x} {util}"),
+                0x006a_a5f0,
+                Conv::Thiscall(obj),
+                &[on],
+                |g| Out::U32(tb::tweak_set_enabled(g, obj, on)),
+            );
+            t.reset();
+        }
+        for (with, count, buffer) in [
+            (false, 0u32, 0u32),
+            (true, 0, 0x40),
+            (true, 2, 0),
+            (true, 2, 0x40),
+            (true, 0x8000_0002, 0x40),
+        ] {
+            t.stub(dt::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(dt::RENDER_TARGET_RELEASE, true, 0, 0, 0x41);
+            t.stub(dt::TREE_ORPHAN_ALL, true, 0, 0, 0x42);
+            t.stub(dt::FREE_LIST_RESET, true, 0, 0, 0x43);
+            let obj = t.junk(0x200, 8);
+            let arr = if with {
+                let a = t.zeros(8);
+                t.w32(a, count);
+                t.w32(a + 4, buffer);
+                a
+            } else {
+                0
+            };
+            t.w32(obj + 0xf0, arr);
+            t.check(
+                &format!("{label}: tweak release {with} {count:#x} {buffer:#x}"),
+                0x006a_b540,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(tb::tweak_release(g, obj)),
+            );
+            t.reset();
+        }
+        // the char-info descriptor: made now or already
+        for made in [false, true] {
+            for (f, flag) in [(0x00a2_b3b0u32, 1u32), (0x00a2_b510, 0)] {
+                t.stub(dt::CHAR_INFO_CTOR, true, 0, 0, 0);
+                t.stub(dt::ATEXIT, false, 1, 0, 0);
+                t.stub(dt::SWAP_ENDIANNESS, true, 2, 2, 0x5a00 | flag);
+                let guard = t.rebase(dt::CHAR_INFO_GUARD);
+                let g = t.r32(guard);
+                t.put_saved(guard, if made { g | 1 } else { g & !1 });
+                let fl = t.rebase(dt::CHAR_INFO_FLAGS);
+                t.put_saved(fl, 0xffff_ffff);
+                let desc = t.rebase(dt::CHAR_INFO_DESC);
+                t.put_saved(desc, 0);
+                let p = t.junk(0x10, 9);
+                t.check(
+                    &format!("{label}: char info {f:#x} {made}"),
+                    f,
+                    Conv::Cdecl,
+                    &[p],
+                    |g| Out::U32(tb::char_info_swap(g, p, flag)),
+                );
+                t.reset();
+            }
+        }
+        // the 16-byte resize
+        for (word, n, fails) in [
+            (3u32, 3u32, false),
+            (3, 2, false),
+            (3, 5, false),
+            (0x8000_0003, 5, false),
+            (3, 5, true),
+            (3, 0, false),
+            (0, 2, false),
+        ] {
+            let buf = t.junk(0x80, 10);
+            t.stub(dt::PHYRE_MALLOC, false, 2, 0, if fails { 0 } else { buf });
+            t.stub(dt::COPY16, false, 3, 0, 0x16);
+            t.stub(dt::ZERO16, false, 2, 0, 0x17);
+            t.stub(dt::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.zeros(8);
+            let old = if word == 0 { 0 } else { t.junk(0x40, 11) };
+            t.w32(obj, word);
+            t.w32(obj + 4, old);
+            t.check(
+                &format!("{label}: resize16 {word:#x} {n} {fails}"),
+                0x005a_f070,
+                Conv::Thiscall(obj),
+                &[n],
+                |g| Out::U32(tb::resize16(g, obj, n)),
+            );
+            t.reset();
+        }
+    }
+}
