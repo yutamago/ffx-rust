@@ -218,7 +218,7 @@ details summary:hover { color: var(--text-primary); }
     </div>
   </header>
   <nav class="jump">
-    <a href="#now">Now</a><a href="#roadmap">Phases and forecast</a><a href="#speed">Speed and time</a>
+    <a href="#now">Now</a><a href="#roadmap">Phases and forecast</a><a href="#speed">Speed and time</a><a href="#agentTime">Agents' time</a>
     <a href="#pulseCard">Pulse</a><a href="#binary">Binary and modules</a><a href="#ports">Recent ports</a><a href="#coverage">In-game coverage</a>
   </nav>
   <div id="app"><div class="card empty">No data yet: run <code>tools/status.sh</code>.</div></div>
@@ -303,7 +303,7 @@ document.addEventListener("mousemove", e => {
 
 // ---- state ---------------------------------------------------------------
 let D = null, L = null, current = 0, currentLive = 0;
-const ui = { mapMode: "port", scope: "game", focus: null, trajRange: "7" };
+const ui = { mapMode: "port", scope: "game", focus: null, trajRange: "7", win: "24" };
 
 function gameTotals(counts) {
   const t = {};
@@ -353,12 +353,20 @@ function render() {
         <div id="runs"></div>
       </div>
       <div class="card">
-        <h2>Where the machine's time goes</h2>
-        <p class="hint">Command time from <code>~/ffx-work/timing/*.tsv</code>, top-level commands only (a cargo run by mutants.py is in mutants.py's time). Agents run side by side, so the hours add up to more than the clock's.</p>
+        <div class="toolbar" style="margin-bottom:4px"><h2>Where the machine's time goes</h2><div class="seg" data-win></div></div>
+        <p class="hint">Command time from <code>~/ffx-work/timing/*.tsv</code>, top-level commands only (a cargo run by mutants.py is in mutants.py's time), by when each started. Agents run side by side, so the hours add up to more than the clock's; “Avg running” is how many ran at once. The arrows compare with <span class="baseName">the last 24 h</span>.</p>
         <div id="timeGroups"></div>
         <h3 style="margin-top:18px">Per hour, last 48 h</h3>
         <div id="timeHours"></div>
         <div class="legend" id="timeLegend" style="margin-top:6px"></div>
+      </div>
+    </section>
+    <section class="card" id="agentTime">
+      <div class="toolbar" style="margin-bottom:4px"><h2>Where the agents' time goes</h2><div class="seg" data-win></div></div>
+      <p class="hint">From the agents' Claude Code transcripts (<code>~/.claude/projects/*ffx-decomp*/…/subagents</code>): a model call runs from its API request to its last block, its thinking part as the transcript times it; a tool call from the tool_use to its result. Bash here is the agent's wait for a command, which the table above splits by kind. The arrows compare with <span class="baseName">the last 24 h</span>.</p>
+      <div class="grid-two" style="gap:24px">
+        <div id="agentTable"></div>
+        <div><h3>Share of the agents' time</h3><div id="agentBars"></div><div class="legend" id="agentLegend" style="margin-top:8px"></div><p class="note" id="agentNote" style="margin-top:12px"></p></div>
       </div>
     </section>
     <section class="card" id="pulseCard">
@@ -435,7 +443,9 @@ function renderLive() {
   updateLive();
   renderTiles(D.history[D.history.length - 1]);
   renderNow();
+  bindWin();
   renderTime();
+  renderAgentTime();
   renderRuns();
 }
 
@@ -827,20 +837,52 @@ function renderRuns() {
       <td><span class="branch" style="font-family:var(--mono);font-size:12px">${esc(r.name)}</span> <span class="delta">${esc(r.date.slice(5))}</span></td>
       <td class="num">${fmt(r.functions)}</td><td class="num">${fmt(r.minutes)}</td><td class="num">${rate(r) ? fmt(rate(r)) : "–"}</td><td class="num">${fmt(r.ktokens)}</td></tr>`).join("")}</tbody></table></div>`;
 }
+// the window toggles (1 / 3 / 24 h) of both time tables, kept in step
+const WIN = { "1": ["Last hour", 3600, "the last hour"], "3": ["Last 3 h", 3 * 3600, "the last 3 h"], "24": ["Last 24 h", 86400, "the last 24 h"], prev24: ["24 h before", 86400, "the 24 h before"] };
+const baseOf = w => w === "24" ? "prev24" : "24";
+const tfmt = s => s < 3600 ? dur(s) : hrs(s);
+function bindWin() {
+  const segs = document.querySelectorAll(".seg[data-win]");
+  const sync = () => {
+    segs.forEach(el => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === ui.win)));
+    document.querySelectorAll(".baseName").forEach(el => { el.textContent = ui.win === "24" ? "the 24 h before" : "the last 24 h"; });
+  };
+  segs.forEach(el => {
+    el.innerHTML = ["1", "3", "24"].map(w => `<button data-v="${w}">${w} h</button>`).join("");
+    el.onclick = e => { const b = e.target.closest("button"); if (!b) return; ui.win = b.dataset.v; sync(); renderTime(); renderAgentTime(); };
+  });
+  sync();
+}
+// a change against the baseline: lower is better for times, so it shows green
+function change(v, base, { lowerBetter = true, pts = false, min = 0 } = {}) {
+  if (v == null || base == null || !isFinite(v) || !isFinite(base) || base <= min) return "";
+  const d = pts ? v - base : 100 * (v - base) / base;
+  if (Math.abs(d) < (pts ? 1 : 5)) return `<div class="delta">≈</div>`;
+  const good = lowerBetter ? d < 0 : d > 0;
+  return `<div class="delta" style="color:${good ? C.good : C.serious}">${d > 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(0)}${pts ? " pts" : "%"}</div>`;
+}
 function renderTime() {
   const el = $("timeGroups");
   if (!el) return;
-  if (!L || !L.timing) { el.innerHTML = `<div class="note">No timing data.</div>`; return; }
-  const T = L.timing, G = T.groups.filter(g => g.runs);
+  if (!L || !L.timing || !L.timing.windows) { el.innerHTML = `<div class="note">No timing data.</div>`; return; }
+  const T = L.timing, w = ui.win, span = WIN[w][1];
+  const cur = T.windows[w], base = Object.fromEntries(T.windows[baseOf(w)].map(g => [g.group, g]));
+  const G = cur.filter(g => g.runs || (base[g.group] && base[g.group].runs));
   const colorOf = name => C.cat[T.names.indexOf(name) % 8];
   const total = G.reduce((n, g) => n + g.seconds, 0), max = Math.max(1, ...G.map(g => g.seconds));
-  el.innerHTML = `<table class="mods"><thead><tr><th>Last 24 h</th><th></th><th class="num">Hours</th><th class="num">Runs</th><th class="num" data-tip="runs that exited non-zero (a failing test while porting counts)">Failed</th><th class="num" data-tip="time spent while the 1-minute load was above the core count">Overloaded</th></tr></thead>
-    <tbody>${G.sort((a, b) => b.seconds - a.seconds).map(g => `<tr>
+  const bt = Object.values(base).reduce((n, g) => n + g.seconds, 0), bspan = WIN[baseOf(w)][1];
+  const avg = g => g && g.runs ? g.seconds / g.runs : null;
+  el.innerHTML = `<table class="mods"><thead><tr><th>${WIN[w][0]}</th><th></th><th class="num">Time</th><th class="num" data-tip="command time divided by the window: how many of these ran at once, on average">Avg running</th><th class="num">Runs</th><th class="num" data-tip="mean wall time of one run; the arrow compares with the baseline">Avg run</th><th class="num" data-tip="runs that exited non-zero (a failing test while porting counts)">Failed</th><th class="num" data-tip="time spent while the 1-minute load was above the core count">Overloaded</th></tr></thead>
+    <tbody>${G.sort((a, b) => b.seconds - a.seconds).map(g => { const bg = base[g.group]; return `<tr>
       <td class="name"><i class="dot" style="background:${colorOf(g.group)};border-radius:3px"></i>${esc(g.group)}</td>
-      <td style="width:34%"><div class="bar thin" style="background:transparent"><span style="width:${100 * g.seconds / max}%;background:${colorOf(g.group)};border-radius:4px"></span></div></td>
-      <td class="num">${hrs(g.seconds)}<div class="delta">${pct(g.seconds, total, 0)}</div></td>
-      <td class="num">${fmt(g.runs)}</td><td class="num">${pct(g.failed, g.runs, 0)}</td><td class="num">${pct(g.busy, g.seconds, 0)}</td></tr>`).join("")}</tbody></table>
-    <div class="note" style="margin-top:6px">${hrs(total)} of command time in 24 h: ${(total / 86400).toFixed(1)} commands running on average.</div>`;
+      <td style="width:20%"><div class="bar thin" style="background:transparent"><span style="width:${100 * g.seconds / max}%;background:${colorOf(g.group)};border-radius:4px"></span></div></td>
+      <td class="num">${tfmt(g.seconds)}<div class="delta">${pct(g.seconds, total, 0)}</div></td>
+      <td class="num">${(g.seconds / span).toFixed(1)}${change(g.seconds / span, bg ? bg.seconds / bspan : null, { min: .05 })}</td>
+      <td class="num">${fmt(g.runs)}</td>
+      <td class="num">${g.runs ? dur(avg(g)) : "–"}${bg && bg.runs >= 3 && g.runs ? change(avg(g), avg(bg)) : ""}</td>
+      <td class="num">${pct(g.failed, g.runs, 0)}${bg && bg.runs >= 3 && g.runs >= 3 ? change(100 * g.failed / g.runs, 100 * bg.failed / bg.runs, { pts: true }) : ""}</td>
+      <td class="num">${pct(g.busy, g.seconds, 0)}</td></tr>`; }).join("")}</tbody></table>
+    <div class="note" style="margin-top:6px">${tfmt(total)} of command time in ${WIN[w][2]}: ${(total / span).toFixed(1)} commands running on average (${(bt / bspan).toFixed(1)} in ${ui.win === "24" ? "the 24 h before" : "the last 24 h"}).</div>`;
   // per hour, stacked
   const box = $("timeHours"), W = box.clientWidth || 600, H = 150, Lm = 44, Rm = 8, Tm = 8, Bm = 22;
   const hours = T.hours, n = hours.length, end = T.hours_end;
@@ -875,6 +917,51 @@ function renderTime() {
   };
   box.onmouseleave = hideTip;
   $("timeLegend").innerHTML = T.names.filter((_, k) => hours.some(h => h[k])).map(nm => `<span><i style="background:${colorOf(nm)}"></i>${esc(nm)}</span>`).join("");
+}
+
+// ---- the agents' time (transcripts) ---------------------------------------------
+const AGENT_ROWS = [["Thinking", 6], ["Writing (model, not thinking)", 4], ["Bash", 0], ["Reading and editing", 2],
+  ["Waiting on agents", 3], ["Waiting on monitors", 1], ["Other tools", 7]];
+const agentColor = n => { const r = AGENT_ROWS.find(x => x[0] === n); return r ? C.cat[r[1]] : C.rest; };
+function renderAgentTime() {
+  const el = $("agentTable");
+  if (!el) return;
+  const A = L && L.timing && L.timing.agents;
+  if (!A || A.error || !A[ui.win]) { el.innerHTML = `<div class="note">No transcript data${A && A.error ? ": " + esc(A.error) : ""}.</div>`; $("agentBars").innerHTML = ""; return; }
+  const w = ui.win, span = WIN[w][1], bw = baseOf(w), bspan = WIN[bw][1];
+  const by = win => Object.fromEntries(A[win].rows.map(r => [r.group, r]));
+  const cur = by(w), base = by(bw);
+  const agentSum = rows => AGENT_ROWS.reduce((n, [g]) => n + (rows[g] ? rows[g].seconds : 0), 0);
+  const tot = agentSum(cur), btot = agentSum(base);
+  const max = Math.max(1, ...AGENT_ROWS.map(([g]) => cur[g] ? cur[g].seconds : 0));
+  // rows under a minute in both windows say nothing
+  const rows = AGENT_ROWS.filter(([g]) => (cur[g] && cur[g].seconds >= 60) || (base[g] && base[g].seconds * span / bspan >= 60)).map(([g]) => {
+    const r = cur[g] || { seconds: 0, calls: 0, tokens: 0 }, b = base[g];
+    const share = tot ? 100 * r.seconds / tot : 0, bshare = b && btot ? 100 * b.seconds / btot : null;
+    return `<tr><td class="name"><i class="dot" style="background:${agentColor(g)};border-radius:3px"></i>${esc(g)}</td>
+      <td style="width:18%"><div class="bar thin" style="background:transparent"><span style="width:${100 * r.seconds / max}%;background:${agentColor(g)};border-radius:4px"></span></div></td>
+      <td class="num">${tfmt(r.seconds)}<div class="delta">${share.toFixed(0)}%</div></td>
+      <td class="num" data-tip="share of the agents' time; the arrow is the change against the baseline's share">${bshare != null ? change(share, bshare, { pts: true, lowerBetter: g !== "Thinking" && g !== "Writing (model, not thinking)" }) || `<div class="delta">≈</div>` : ""}</td>
+      <td class="num">${(r.seconds / span).toFixed(1)}</td>
+      <td class="num">${r.calls ? fmt(r.calls) : "–"}</td>
+      <td class="num">${r.calls ? dur(r.seconds / r.calls) : "–"}${r.calls && b && b.calls >= 3 ? change(r.seconds / r.calls, b.seconds / b.calls) : ""}</td>
+      <td class="num">${r.tokens ? fmt(r.tokens / 1000) + "k" : "–"}</td></tr>`;
+  }).join("");
+  const ses = cur["Sessions: model"];
+  el.innerHTML = `<table class="mods"><thead><tr><th>${WIN[w][0]}</th><th></th><th class="num">Time</th><th class="num">Share</th><th class="num" data-tip="time divided by the window: how many agents were in this state at once, on average">Avg agents</th><th class="num">Calls</th><th class="num" data-tip="mean time of one call; the arrow compares with the baseline">Avg</th><th class="num" data-tip="output tokens (thinking tokens on the Thinking row)">Tokens</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="note" style="margin-top:6px">${A[w].agents} agent transcript${A[w].agents === 1 ? "" : "s"} active; ${tfmt(tot)} of agent time, ${(tot / span).toFixed(1)} agents busy on average.${ses ? ` Sessions (coordinator, interactive): ${tfmt(ses.seconds)} of model time over ${fmt(ses.calls)} calls.` : ""}</div>`;
+  // one 100% bar per window, so the shares line up for comparison
+  const order = ["1", "3", "24", "prev24"];
+  $("agentBars").innerHTML = order.filter(x => A[x]).map(x => {
+    const r = by(x), t = agentSum(r);
+    return `<div style="display:grid;grid-template-columns:90px minmax(0,1fr) 60px;gap:10px;align-items:center;margin-bottom:8px;font-size:12.5px;color:var(--text-secondary)">
+      <span style="${x === w ? "color:var(--text-primary);font-weight:600" : ""}">${WIN[x][0]}</span>
+      <div class="bar" style="height:14px">${t ? AGENT_ROWS.filter(([g]) => r[g] && r[g].seconds).map(([g]) => `<span data-tip="${esc(g)}: ${tfmt(r[g].seconds)} · ${(100 * r[g].seconds / t).toFixed(0)}%" style="width:${100 * r[g].seconds / t}%;background:${agentColor(g)}"></span>`).join("") : ""}</div>
+      <span style="text-align:right;font-variant-numeric:tabular-nums">${t ? tfmt(t) : "–"}</span></div>`;
+  }).join("");
+  $("agentLegend").innerHTML = AGENT_ROWS.map(([g]) => `<span><i style="background:${agentColor(g)}"></i>${esc(g)}</span>`).join("");
+  const model = x => { const r = by(x); return (r["Thinking"] ? r["Thinking"].seconds : 0) + (r["Writing (model, not thinking)"] ? r["Writing (model, not thinking)"].seconds : 0); };
+  $("agentNote").textContent = tot ? `The model takes ${(100 * model(w) / tot).toFixed(0)}% of the agents' time in ${WIN[w][2]} (${btot ? (100 * model(bw) / btot).toFixed(0) + "% in " + (w === "24" ? "the 24 h before" : "the last 24 h") : "no baseline"}); the rest is waiting on tools, mostly commands.` : "";
 }
 
 // ---- in-game coverage (hook-hit mode) ------------------------------------------

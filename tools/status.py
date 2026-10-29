@@ -44,7 +44,10 @@ Read from the file system, not git (missing or broken, the section says so):
   (/proc), for which agents are busy and with what;
 - $FFX_WORK/timing/*.tsv (docs/workflow.md, "Build and test timing"), for
   where the machine's time goes; $FFX_WORK/agents/metrics.tsv for finished
-  agent runs (functions, tokens, minutes);
+  agent runs (functions, tokens, minutes); the agents' Claude Code
+  transcripts for where their own time goes (model, thinking, tools;
+  transcripts(), read incrementally, offsets in transcripts.json). Both
+  over the last 1, 3 and 24 h and the 24 h before (windows());
 - $FFX_WORK/agents/pc2-<sha>.log, the second machine's replay runs of a
   merge, for what main has been verified at.
 
@@ -521,10 +524,18 @@ def worktrees(ref):
     return out
 
 
+def windows(now):
+    """The windows the time tables compare: the last 1, 3 and 24 h, and the
+    24 h before those (the 24 h window's baseline)."""
+    return {"1": (now - 3600, now), "3": (now - 3 * 3600, now), "24": (now - 86400, now),
+            "prev24": (now - 2 * 86400, now - 86400)}
+
+
 def timing(now, nproc):
-    """The timing log of the last 48 h: per group (TIME_GROUPS) the seconds
-    of the last 24 h, runs, failures and time at load > nproc; per hour and
-    group; per worktree the last command and seconds in the last 1 and 24 h.
+    """The timing log of the last 48 h: per window (windows()) and group
+    (TIME_GROUPS) the seconds, runs, failures and time at load > nproc of
+    the commands started in it; per hour and group; per worktree the last
+    command and seconds in the last 1 and 24 h.
     Top-level commands only for the groups (a cargo run by mutants.py is in
     mutants.py's time); every command for the worktrees' last one."""
     tr = _timing_report()
@@ -532,7 +543,8 @@ def timing(now, nproc):
     paths = [p for p in (WORK / "timing").glob("*.tsv") if p.stat().st_mtime >= now - 48 * 3600]
     rows = tr.load(paths, since)
     names = [g for g, _ in TIME_GROUPS] + ["Other"]
-    groups = {g: {"group": g, "seconds": 0, "runs": 0, "failed": 0, "busy": 0} for g in names}
+    win = windows(now)
+    groups = {w: {g: {"group": g, "seconds": 0, "runs": 0, "failed": 0, "busy": 0} for g in names} for w in win}
     hours = [[0] * len(names) for _ in range(48)]
     trees = {}
     for r in rows:
@@ -553,17 +565,162 @@ def timing(now, nproc):
         h = int((now - t) // 3600)
         if 0 <= h < 48:
             hours[47 - h][names.index(g)] += r["wall"]
-        if t >= now - 86400:
-            s = groups[g]
-            s["seconds"] += r["wall"]
-            s["runs"] += 1
-            s["failed"] += r["code"] not in ("0", "")
-            s["busy"] += r["wall"] if tr.busy(r, nproc) else 0
+        for w, (a, b) in win.items():
+            if a <= t < b:
+                s = groups[w][g]
+                s["seconds"] += r["wall"]
+                s["runs"] += 1
+                s["failed"] += r["code"] not in ("0", "")
+                s["busy"] += r["wall"] if tr.busy(r, nproc) else 0
     for w in trees.values():
         w["h1"], w["h24"], w["first"] = round(w["h1"]), round(w["h24"]), int(w["first"])
-    return {"groups": [{k: round(v) if isinstance(v, float) else v for k, v in g.items()} for g in groups.values()],
+    return {"windows": {w: [{k: round(v) if isinstance(v, float) else v for k, v in g.items()} for g in gs.values()]
+                        for w, gs in groups.items()},
             "names": names, "hours": [[round(x) for x in h] for h in hours],
             "hours_end": int(now // 3600 * 3600 + 3600), "trees": trees}
+
+
+# the transcripts' tools, by what they are for
+TOOL_GROUPS = [
+    ("Bash", lambda n: n == "Bash"),
+    ("Reading and editing", lambda n: n in ("Read", "Edit", "Write", "MultiEdit", "Grep", "Glob", "NotebookEdit")),
+    ("Waiting on agents", lambda n: n in ("Agent", "Task", "SendMessage", "TaskStop", "TaskOutput")),
+    ("Waiting on monitors", lambda n: n == "Monitor" or n.endswith("background_wait") or n.endswith("thread_wait")),
+]
+def _ts(text):
+    return datetime.datetime.fromisoformat(text.rstrip("Z") + "+00:00").timestamp()
+
+
+def transcripts(now, cache_path):
+    """The agents' time from their Claude Code transcripts
+    (~/.claude/projects/*ffx-decomp*/[<session>/subagents/]*.jsonl), read
+    on from where the last run stopped (the byte offsets and open requests
+    are cached in cache_path). Per model call the time from its API request
+    to its last content block (thinkingDurationMs of it thinking) and its
+    output and thinking tokens; per tool call the time from the tool_use to
+    its tool_result. Subagents are "agents", the rest "sessions" (the
+    coordinator, interactive sessions). Kept: the last 48 h."""
+    try:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    if cache.get("version") != 1:
+        cache = {"version": 1, "files": {}}
+    files = cache["files"]
+    root = pathlib.Path.home() / ".claude" / "projects"
+    keep = now - 48 * 3600
+    seen = set()
+    for d in root.glob("*ffx-decomp*"):
+        for f in list(d.glob("*.jsonl")) + list(d.glob("*/subagents/*.jsonl")):
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if st.st_mtime < keep:
+                continue
+            key = str(f)
+            seen.add(key)
+            c = files.get(key)
+            if c is None or c["size"] > st.st_size:
+                c = files[key] = {"offset": 0, "size": 0, "req": None, "asst": None, "tools": {}, "iv": [],
+                                  "agent": "/subagents/" in key}
+            if st.st_size == c["size"]:
+                continue
+            with open(f, "rb") as fh:
+                fh.seek(c["offset"])
+                data = fh.read()
+            end = data.rfind(b"\n") + 1
+            c["offset"] += end
+            c["size"] = st.st_size
+            for raw in data[:end].splitlines():
+                head = raw[:400]
+                if b'"type":"api-request"' in head:
+                    kind = "req"
+                elif b'"role":"assistant"' in head:  # its "type" comes after the message
+                    kind = "asst"
+                elif b'"type":"user"' in head and b'"tool_result"' in raw:
+                    kind = "user"
+                else:
+                    continue
+                try:
+                    r = json.loads(raw)
+                    t = _ts(r["timestamp"])
+                except (ValueError, KeyError):
+                    continue
+                if kind != "req" and r.get("type") != ("assistant" if kind == "asst" else "user"):
+                    continue
+                if kind != "asst" and c["req"] and c["asst"]:
+                    # the call ended with its last content block
+                    a = c["asst"]
+                    if a[0] >= keep:
+                        c["iv"].append([c["req"], a[0], "model", a[1], a[2], a[3]])
+                    c["req"], c["asst"] = None, None
+                if kind == "req":
+                    c["req"] = t
+                elif kind == "asst":
+                    m = r.get("message") or {}
+                    u = m.get("usage") or {}
+                    think = (r.get("thinkingDurationMs") or 0) / 1000
+                    prev = c["asst"] or [t, 0, 0, 0]
+                    c["asst"] = [t, prev[1] + think, u.get("output_tokens", 0),
+                                 (u.get("output_tokens_details") or {}).get("thinking_tokens", 0)]
+                    for b in m.get("content") or []:
+                        if isinstance(b, dict) and b.get("type") == "tool_use":
+                            c["tools"][b.get("id", "")] = [t, b.get("name", "?")]
+                else:
+                    for b in (r.get("message") or {}).get("content") or []:
+                        if isinstance(b, dict) and b.get("type") == "tool_result":
+                            start = c["tools"].pop(b.get("tool_use_id", ""), None)
+                            if start and t >= keep:
+                                c["iv"].append([start[0], t, "tool", start[1]])
+            c["iv"] = [i for i in c["iv"] if i[1] >= keep]
+            # tool calls never answered (a killed agent) don't wait forever
+            c["tools"] = {k: v for k, v in c["tools"].items() if v[0] >= keep}
+    for key in list(files):
+        if key not in seen:
+            del files[key]
+    tmp = cache_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(cache), encoding="utf-8")
+    tmp.replace(cache_path)
+
+    # per window: model and thinking time, tokens, calls; tool time by group
+    out = {}
+    for w, (a, b) in windows(now).items():
+        rows = {}
+        live = set()
+        for key, c in files.items():
+            who = "agents" if c["agent"] else "sessions"
+            for iv in c["iv"]:
+                lo, hi = max(a, iv[0]), min(b, iv[1])
+                if hi <= lo:
+                    continue
+                frac = (hi - lo) / max(1e-6, iv[1] - iv[0])
+                live.add(key)
+                if iv[2] == "model":
+                    name = "Thinking" if who == "agents" else "Sessions: model"
+                    if who == "agents":
+                        think = iv[3] * frac
+                        r = rows.setdefault("Thinking", {"group": "Thinking", "seconds": 0, "calls": 0, "tokens": 0})
+                        r["seconds"] += think
+                        r["tokens"] += iv[5] * frac
+                        name = "Writing (model, not thinking)"
+                        r = rows.setdefault(name, {"group": name, "seconds": 0, "calls": 0, "tokens": 0})
+                        r["seconds"] += (hi - lo) - think
+                        r["tokens"] += (iv[4] - iv[5]) * frac
+                        r["calls"] += 1
+                        continue
+                    r = rows.setdefault(name, {"group": name, "seconds": 0, "calls": 0, "tokens": 0})
+                    r["seconds"] += hi - lo
+                    r["calls"] += 1
+                    r["tokens"] += iv[4] * frac
+                elif who == "agents":
+                    g = next((g for g, test in TOOL_GROUPS if test(iv[3])), "Other tools")
+                    r = rows.setdefault(g, {"group": g, "seconds": 0, "calls": 0, "tokens": 0})
+                    r["seconds"] += hi - lo
+                    r["calls"] += 1
+        out[w] = {"rows": [{k: round(v) if isinstance(v, float) else v for k, v in r.items()} for r in rows.values()],
+                  "transcripts": len(live), "agents": sum(1 for k in live if files[k]["agent"])}
+    return out
 
 
 def agent_runs(path):
@@ -657,6 +814,10 @@ def live(args, now):
     trees = worktrees(args.ref)
     procs, seated = processes([w["path"] for w in trees])
     tm = timing(now, os.cpu_count() or 1)
+    try:
+        tm["agents"] = transcripts(now, pathlib.Path(args.out) / "transcripts.json")
+    except OSError as e:
+        tm["agents"] = {"error": str(e)}
     for w in trees:
         mine = [p for p in procs[w["path"]] if p[1] not in QUIET]
         top = min(mine) if mine else None
