@@ -2457,3 +2457,129 @@ fn pad_bind_matches_the_original() {
         }
     }
 }
+
+// ---- batch 7: application destructor, pad constructor, blur targets ----
+
+use ffx_pother_b::m5p_framework_input_life::{self as lf, bridge as lfb};
+
+#[test]
+fn application_dtor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lf::WORLD_RELEASE, true, 0, 0, 0x31);
+        t.stub(lf::EH_VECTOR_DTOR, false, 4, 4, 0x32);
+        t.stub(lf::RENDERER_DTOR, true, 0, 0, 0x33);
+        t.stub(lf::SURFACE_DTOR, true, 0, 0, 0x36);
+        t.stub(lf::RELEASE_A4_9C, true, 0, 0, 0x34);
+        t.stub(lf::RELEASE_E4, true, 0, 0, 0x35);
+        for (name, vcount, count, data) in [
+            (0x4000u32, 2u32, 1u32, 0x4100u32),
+            (0x4001, 0x8000_0002, 0x8000_0001, 0x4100),
+            (0, 0, 1, 0),
+        ] {
+            let app = t.junk(0x400, 0x61);
+            t.w32(app + 0x398, name);
+            t.w32(app + 0x2bc, vcount);
+            t.w32(app + 0x40, count);
+            t.w32(app + 0x44, data);
+            let what =
+                format!("{label}: application dtor {name:#x} {vcount:#x} {count:#x} {data:#x}");
+            t.check(&what, 0x0062_0bc0, Conv::Thiscall(app), &[], |g| {
+                Out::U32(lfb::application_dtor(g, app))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn pad_ctor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::EH_VECTOR_CTOR, false, 5, 5, 0x41);
+        t.stub(lf::MEMSET, false, 3, 0, 0x42);
+        let head = t.rebase(lf::DEVICE_LIST);
+        let saved = Oracle::read(&mut t.a, head, 8).unwrap();
+        let tail = t.zeros(8);
+        t.w32(head + 4, tail);
+        let pad = t.junk(0x400, 0x62);
+        t.check(
+            &format!("{label}: pad ctor"),
+            0x0062_01a0,
+            Conv::Thiscall(pad),
+            &[0x5150],
+            |g| Out::U32(lfb::pad_ctor(g, pad, 0x5150)),
+        );
+        t.write(head, &saved);
+        t.reset();
+    }
+}
+
+#[test]
+fn blur_targets_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // per holder: 0 missing, 1 flagged, 2 empty, 3 sized, 4 to resize;
+        // then bound, the unbind's and the resize's answers
+        let cases = [
+            (0u8, 3u8, false, 0u32, 0u32),
+            (1, 3, false, 0, 0),
+            (2, 3, false, 0, 0),
+            (3, 0, false, 0, 0),
+            (3, 1, false, 0, 0),
+            (3, 2, false, 0, 0),
+            (3, 3, false, 0, 0),
+            (4, 3, false, 0, 0),
+            (4, 3, true, 0, 0),
+            (4, 3, true, 7, 0),
+            (4, 3, false, 0, 9),
+            (4, 3, true, 0, 9),
+            (3, 4, true, 0, 0),
+            (3, 4, false, 0, 9),
+            (4, 4, false, 0, 0),
+        ];
+        for (i, &(k0, k1, bound, unbind, resize)) in cases.iter().enumerate() {
+            t.stub(
+                lf::TEXTURE_IS_BOUND,
+                true,
+                0,
+                0,
+                if bound { 0x101 } else { 0x100 },
+            );
+            t.stub(lf::TEXTURE_UNBIND, true, 0, 0, unbind);
+            t.stub(lf::TARGET_RESIZE, true, 4, 4, resize);
+            let blur = t.junk(0xe00, 0x63);
+            for (off, k) in [(0xcd8u32, k0), (0xd4c, k1)] {
+                let holder = t.zeros(8);
+                let target = t.junk(0x30, 0x64);
+                if k == 3 {
+                    t.w32(target + 0x1c, 0x280);
+                    t.w32(target + 0x20, 0x1e0);
+                } else {
+                    t.w32(target + 0x1c, 0x280);
+                    t.w32(target + 0x20, 0x1e1);
+                }
+                match k {
+                    0 => t.w32(blur + off, 0),
+                    1 => {
+                        t.w8(holder + 4, 1);
+                        t.w32(holder, target);
+                        t.w32(blur + off, holder);
+                    }
+                    2 => t.w32(blur + off, holder),
+                    _ => {
+                        t.w32(holder, target);
+                        t.w32(blur + off, holder);
+                    }
+                }
+            }
+            let what = format!("{label}: blur targets {i}");
+            t.check(
+                &what,
+                0x00a2_35f0,
+                Conv::Thiscall(blur),
+                &[0x280, 0x1e0],
+                |g| Out::U32(lfb::check_targets(g, blur, 0x280, 0x1e0)),
+            );
+            t.reset();
+        }
+    }
+}

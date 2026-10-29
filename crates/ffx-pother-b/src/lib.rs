@@ -33,6 +33,7 @@ pub mod m4r_dynblocks;
 pub mod m4r_mesh;
 pub mod m5p_framework_input_app;
 pub mod m5p_framework_input_devices;
+pub mod m5p_framework_input_life;
 pub mod m5p_framework_input_misc;
 pub mod m5p_framework_input_script;
 pub mod m5p_framework_input_small;

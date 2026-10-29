@@ -13,6 +13,7 @@
 use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_app::bridge as ab;
 use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as db};
+use ffx_pother_b::m5p_framework_input_life::bridge as lb;
 use ffx_pother_b::m5p_framework_input_misc::bridge as mb;
 use ffx_pother_b::m5p_framework_input_script::bridge as sb6;
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
@@ -616,5 +617,17 @@ ported! {
     /// `Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands`: the sixteen commands added in order.
     Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands @ 0x0062_bb60 => extern "thiscall" fn sc_0062bb60(this: u32) {
         sb6::register_commands(&mut mem(), this);
+    }
+    /// `PInputDevicePad_ctor`: the device lists, the pad's slots and state; `this`.
+    PInputDevicePad_ctor @ 0x0062_01a0 => extern "thiscall" fn lf_006201a0(this: u32, device: u32) -> u32 {
+        lb::pad_ctor(&mut mem(), this, device)
+    }
+    /// `Phyre_PFramework_PApplication_dtor_PApplication`: the application's names, world, viewports, renderer surfaces and arrays released; the last release's `eax`.
+    Phyre_PFramework_PApplication_dtor_PApplication @ 0x0062_0bc0 => extern "thiscall" fn lf_00620bc0(this: u32) -> u32 {
+        lb::application_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_checkTargets_00a235f0`: both render targets sized to `(w, h)`; 0, 1, or a failing step's `eax`.
+    Phyre_PPostProcessing_PMotionBlur_checkTargets_00a235f0 @ 0x00a2_35f0 => extern "thiscall" fn lf_00a235f0(this: u32, w: u32, h: u32) -> u32 {
+        lb::check_targets(&mut mem(), this, w, h)
     }
 }
