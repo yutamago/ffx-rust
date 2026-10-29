@@ -189,6 +189,28 @@ pub struct Shared {
     rand: u32,
 }
 
+/// `fld qword` of `x`: the 80-bit value (exact for every finite f64).
+fn f64_to_f80(x: f64) -> [u8; 10] {
+    let b = x.to_bits();
+    let sign = ((b >> 63) as u16) << 15;
+    let e = ((b >> 52) & 0x7ff) as u16;
+    let m = b & ((1 << 52) - 1);
+    let (e80, m80) = match e {
+        0 if m == 0 => (0, 0),
+        0 => {
+            // subnormal: normalise
+            let lz = m.leading_zeros() - 11;
+            (15_361 - lz as u16, m << (11 + lz))
+        }
+        0x7ff => (0x7fff, (1 << 63) | (m << 11)),
+        _ => (e + (16_383 - 1023), (1 << 63) | (m << 11)),
+    };
+    let mut out = [0u8; 10];
+    out[..8].copy_from_slice(&m80.to_le_bytes());
+    out[8..].copy_from_slice(&(sign | e80).to_le_bytes());
+    out
+}
+
 fn slot_of(target: u32) -> Option<u32> {
     ((TRAPS..TRAPS + 16 * SLOTS).contains(&target) && (target - TRAPS).is_multiple_of(16))
         .then(|| (target - TRAPS) / 16)
@@ -249,6 +271,9 @@ impl Host for OrigHost<'_> {
             regs.st[0] = f64_to_f80(v);
             regs.st_len = 1;
         }
+        // a trap reached through a stored pointer (not the table) is
+        // still its slot, as on the port's side
+        let slot = slot.or_else(|| slot_of(target));
         self.calls.push(CallOut { target, slot, args });
         regs.esp += 4;
         Ok(())

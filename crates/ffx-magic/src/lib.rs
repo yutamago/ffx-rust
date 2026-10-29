@@ -65,6 +65,10 @@ pub mod m0163;
 pub mod m0166;
 pub mod pushes;
 
+pub mod l5_objhost;
+pub mod l5_opu_boot;
+pub mod m0219;
+
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
 use ffx_core as _;
@@ -472,6 +476,21 @@ ports! {
     "m0196 effect wrapper 10f0" => m0196::E10F0, m0196::e10f0;
     "m0196 effect wrapper 1140" => m0196::E1140, m0196::e1140;
     "m0196 effect wrapper 11d0" => m0196::E11D0, m0196::e11d0;
+    "opu part init data (mode 1)" => opu_parts::INIT_DATA_1, opu_parts::init_data;
+    "opu boot a" => l5_opu_boot::BOOT_A, l5_opu_boot::boot_a;
+    "opu boot b" => l5_opu_boot::BOOT_B, l5_opu_boot::boot_b;
+    "opu boot c" => l5_opu_boot::BOOT_C, l5_opu_boot::boot_c;
+    "opu boot d" => l5_opu_boot::BOOT_D, l5_opu_boot::boot_d;
+    "opu shutdown" => l5_opu_boot::SHUTDOWN, l5_opu_boot::shutdown;
+    "objhost ret0" => l5_objhost::RET0, l5_objhost::ret0;
+    "objhost start" => l5_objhost::START, l5_objhost::start;
+    "objhost end" => l5_objhost::END, l5_objhost::end;
+    "objhost draw" => l5_objhost::DRAW, l5_objhost::draw;
+    "objhost update" => l5_objhost::UPDATE, l5_objhost::update;
+    "objhost countdown" => l5_objhost::COUNTDOWN, l5_objhost::countdown;
+    "objhost task step" => l5_objhost::TASK_STEP, l5_objhost::task_step;
+    "objhost finish" => l5_objhost::FINISH, l5_objhost::finish;
+    "m0219 per-frame" => m0219::PER_FRAME, m0219::per_frame;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -531,6 +550,21 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0153 ambient node", &m0153::AMBIENT_NODE),
     ("m0153 vector angle (+0x0, +0x8)", &m0153::VECTOR_ANGLE_XZ),
     ("m0153 vector angle (+0xc, +0x4)", &m0153::VECTOR_ANGLE_WY),
+    ("objhost list_cur", &l5_objhost::LIST_CUR),
+    ("objhost list_pop_tail", &l5_objhost::LIST_POP_TAIL),
+    ("objhost list_remove", &l5_objhost::LIST_REMOVE),
+    ("objhost pool_alloc", &l5_objhost::POOL_ALLOC),
+    ("objhost tasks_init", &l5_objhost::TASKS_INIT),
+    ("objhost task_alloc", &l5_objhost::TASK_ALLOC),
+    ("objhost run_group", &l5_objhost::RUN_GROUP),
+    ("objhost obj_block_init", &l5_objhost::OBJ_BLOCK_INIT),
+    ("objhost obj_block_fill", &l5_objhost::OBJ_BLOCK_FILL),
+    ("objhost obj_script", &l5_objhost::OBJ_SCRIPT),
+    ("objhost run_objects", &l5_objhost::RUN_OBJECTS),
+    ("objhost part_init", &l5_objhost::PART_INIT),
+    ("m0219 boot", &m0219::BOOT),
+    ("m0219 make_object", &m0219::MAKE_OBJECT),
+    ("m0219 object_init", &m0219::OBJECT_INIT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
