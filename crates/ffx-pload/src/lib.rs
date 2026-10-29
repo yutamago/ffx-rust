@@ -52,6 +52,7 @@ pub mod m5_static_init_c;
 pub mod m5_static_init_d;
 pub mod m5p_tmpl_abstract_ab;
 pub mod m5p_tmpl_abstract_cd;
+pub mod m5p_tmpl_concrete;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
