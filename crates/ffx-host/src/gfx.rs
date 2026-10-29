@@ -648,6 +648,12 @@ impl Gfx {
         out
     }
 
+    /// The back buffer as BGRA rows (`None` on the null device): the
+    /// harness's screenshots between two `Present`s (`crate::harness`).
+    pub fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        self.backend.back_buffer_image()
+    }
+
     /// The text log: one line per call (the first [`LOG_LINES`]).
     #[must_use]
     pub fn log(&self) -> &[String] {
