@@ -115,6 +115,7 @@ pub fn dirty_stack(t: &mut Twin, seed: u32, zero: &[u32]) {
 
 /// Rotations whose angle `A - rot` (operands `a`, `hi`, `lo` of `f`)
 /// wraps down, stays, wraps up, lands on either limit, or is NaN.
+#[allow(clippy::many_single_char_names)]
 pub fn rotations(t: &Twin, f: u32, a: u32, hi: u32, lo: u32) -> Vec<f32> {
     let k = |op: u32| f32::from_bits(t.u32(t.img.word(f + op)));
     let (a, hi, lo) = (k(a), k(hi), k(lo));
