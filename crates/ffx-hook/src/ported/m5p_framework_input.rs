@@ -11,6 +11,7 @@
 //! through [`mem`].
 
 use super::{mem, ported};
+use ffx_pother_b::m5p_framework_input_app::bridge as ab;
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
 use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
 use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
@@ -406,5 +407,83 @@ ported! {
     /// `Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic0`: builds the static descriptor on first use, then `swapEndiannessOfObject(p, 0)`; its `eax`.
     Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic0 @ 0x00a3_2d10 => extern "C" fn sl_00a32d10(p: u32) -> u32 {
         ffx_pload::m5p_tmpl_fortype::bridge::swap_lazy(&mut mem(), &const { so::lazy_of(0x00a3_2d10) }, p)
+    }
+    /// `Phyre_PhyreExit`: when the engine is up: the registry entries' `+8`, the timer, the pool, the namespace, the lock; the flag cleared; the lock release's `eax` (an `atexit` entry too, whose dispatcher drops it; 0 when the engine was down, where the original leaves the caller's).
+    Phyre_PhyreExit @ 0x0043_0d60 => extern "C" fn ap_00430d60() -> u32 {
+        ab::phyre_exit(&mut mem()).unwrap_or(0)
+    }
+    /// `Phyre_PFramework_PInputDevicePad_dtor_00620ff0`: its vtable, the pad slots destroyed, `PInputDevice`'s vtable.
+    Phyre_PFramework_PInputDevicePad_dtor_00620ff0 @ 0x0062_0ff0 => extern "thiscall" fn ap_00620ff0(this: u32) -> u32 {
+        ab::pad_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PInputDeviceTouch_dtor_00621130`: its vtable, the critical section released, `PInputDevice`'s vtable.
+    Phyre_PFramework_PInputDeviceTouch_dtor_00621130 @ 0x0062_1130 => extern "thiscall" fn ap_00621130(this: u32) -> u32 {
+        ab::touch_dtor(&mut mem(), this)
+    }
+    /// `Phyre_StdMapIterator_increment_006214b0`: `++it`; the iterator.
+    Phyre_StdMapIterator_increment_006214b0 @ 0x0062_14b0 => extern "thiscall" fn ap_006214b0(it: u32) -> u32 {
+        ab::tree_next(&mut mem(), it)
+    }
+    /// `Phyre_StdMapIterator_decrement_00621580`: `--it`; the iterator.
+    Phyre_StdMapIterator_decrement_00621580 @ 0x0062_1580 => extern "thiscall" fn ap_00621580(it: u32) -> u32 {
+        ab::tree_prev(&mut mem(), it)
+    }
+    /// `Phyre_PFramework_PApplication_getInputPair_00623ba0`: `out` = (application + 4 or 0, the word at `0x00c30fa4`); `out`.
+    Phyre_PFramework_PApplication_getInputPair_00623ba0 @ 0x0062_3ba0 => extern "C" fn ap_00623ba0(out: u32) -> u32 {
+        ab::app_pair(&mut mem(), out)
+    }
+    /// `PWindowWin32_AttachToHost`: `SetParent`, then `SendMessageA` of the registered `PHYREMSG_SENDHWND`; nothing without a host.
+    PWindowWin32_AttachToHost @ 0x0062_3d50 => extern "C" fn ap_00623d50(host: u32, hwnd: u32) {
+        ab::attach_to_host(&mut mem(), host, hwnd);
+    }
+    /// `PWindowWin32_MouseHookProc`: `WM_NCLBUTTONUP` posted for a left release during a non-client drag; `CallNextHookEx`'s `eax`.
+    PWindowWin32_MouseHookProc @ 0x0062_50e0 => extern "stdcall" fn ap_006250e0(code: u32, wparam: u32, lparam: u32) -> u32 {
+        ab::mouse_hook(&mut mem(), code, wparam, lparam)
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_setFrameTime_00625720`: the frame time from `text` to `+0x3c`; at or below 0 the clock is rebased; 0.
+    Phyre_PFramework_PApplicationScriptProxy_setFrameTime_00625720 @ 0x0062_5720 => extern "C" fn ap_00625720(app: u32, text: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        ab::set_frame_time(&mut mem(), app, text, local)
+    }
+    /// `PInputDeviceKeyboard_bind`: 5 below id 0x1c, 0x12 when bound; else the mapping reads the key byte and joins the list; 0.
+    PInputDeviceKeyboard_bind @ 0x0062_5ca0 => extern "thiscall" fn ap_00625ca0(this: u32, mapping: u32, id: u32) -> u32 {
+        ab::keyboard_bind(&mut mem(), this, mapping, id)
+    }
+    /// `Phyre_PFramework_PApplication_takeKey_00626a00`: takes (reads and clears) a pressed key; `al` the answer.
+    Phyre_PFramework_PApplication_takeKey_00626a00 @ 0x0062_6a00 => extern "thiscall" fn ap_00626a00(this: u32, key: u32, device: u32) -> u32 {
+        ab::take_key(&mut mem(), this, key, device)
+    }
+    /// `Phyre_StdMap_clear_00626b90`: erases every node; the head back to empty; the head.
+    Phyre_StdMap_clear_00626b90 @ 0x0062_6b90 => extern "thiscall" fn ap_00626b90(this: u32) -> u32 {
+        ab::tree_clear(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScriptBuffer_findSpace_00627810`: the first blank before the end, or 0.
+    Phyre_PFramework_PApplicationScriptBuffer_findSpace_00627810 @ 0x0062_7810 => extern "thiscall" fn ap_00627810(this: u32) -> u32 {
+        ab::find_space(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplication_getAxisValue_006282c0`: the mapped axis value of `id`, or 0, in `ST0`.
+    Phyre_PFramework_PApplication_getAxisValue_006282c0 @ 0x0062_82c0 => extern "thiscall" fn ap_006282c0(this: u32, id: u32) -> f32 {
+        ab::axis_value(&mut mem(), this, id)
+    }
+    /// `Phyre_PFramework_PApplicationViewport_render`: the renderer's `setViewport` (y flipped against the application's height), or 0x15.
+    Phyre_PFramework_PApplicationViewport_render @ 0x0062_be00 => extern "thiscall" fn ap_0062be00(this: u32) -> u32 {
+        ab::viewport_render(&mut mem(), this)
+    }
+    /// `PApplication_setMousePosition_0062bea0`: the input's mouse position, deltas 0.
+    PApplication_setMousePosition_0062bea0 @ 0x0062_bea0 => extern "thiscall" fn ap_0062bea0(this: u32, x: u32, y: u32) {
+        ab::set_mouse_position(&mut mem(), this, x, y);
+    }
+    /// `Phyre_PFramework_PApplication_scriptedFrame`: 9 while paused; the first frame's virtual `+0x24`; else the script's next command, its `eax`.
+    Phyre_PFramework_PApplication_scriptedFrame @ 0x0062_c6f0 => extern "thiscall" fn ap_0062c6f0(this: u32) -> u32 {
+        ab::scripted_frame(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScriptBuffer_skipBlank_0062cf90`: skips blanks and `#` lines; the next command, or 0 at the end.
+    Phyre_PFramework_PApplicationScriptBuffer_skipBlank_0062cf90 @ 0x0062_cf90 => extern "thiscall" fn ap_0062cf90(this: u32) -> u32 {
+        ab::skip_blank(&mut mem(), this)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_initialize_00a1b7e0`: the common shaders for the target, or `+0xc` = `+8` and 0.
+    Phyre_PPostProcessing_PMotionBlur_initialize_00a1b7e0 @ 0x00a1_b7e0 => extern "thiscall" fn ap_00a1b7e0(this: u32) -> u32 {
+        ab::motion_blur_init(&mut mem(), this)
     }
 }

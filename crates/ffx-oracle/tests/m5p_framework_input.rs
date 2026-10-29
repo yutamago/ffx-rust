@@ -72,6 +72,19 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.1
     }
+    fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        self.0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .st0_f64()
+            .unwrap_or_else(|| panic!("callee {addr:#x} left no ST0"))
+    }
     fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
@@ -1182,6 +1195,452 @@ fn registry_deletes_match_the_original() {
             }
         }
         t.w32(head, old);
+        t.reset();
+    }
+}
+
+// ---- batch 3: application helpers, script-buffer scanners, map iterators ----
+
+use ffx_pother_b::m5p_framework_input_app::{self as ap, bridge as apb};
+
+impl Twins {
+    /// `code` in fresh code memory of both oracles, put into the import
+    /// slot `slot`.
+    fn import_code(&mut self, slot: u32, code: &[u8]) {
+        let c = self.a.alloc_code(code).unwrap();
+        assert_eq!(self.b.alloc_code(code).unwrap(), c);
+        let at = self.rebase(slot);
+        let old = Oracle::read(&mut self.a, at, 4).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.w32(at, c);
+    }
+
+    /// A recording stub at `sym` (thiscall when `this`) logging `n` words,
+    /// popping `pops`, that leaves the `float` `bits` in `ST0`.
+    fn stub_float_pops(&mut self, sym: u32, this: bool, n: u32, pops: u32, bits: u32) {
+        let at = self.rebase(sym);
+        let cell = self.alloc(&bits.to_le_bytes());
+        let code = self.stub_code(sym, this, n, pops, 0);
+        // the stub ends `mov eax, 0; ret [n]`: load the float before it
+        let mut c = vec![0xd9, 0x05];
+        c.extend(cell.to_le_bytes()); // fld dword [cell]
+        c.push(0xe9);
+        let tramp = self.a.alloc_code(&[0; 16]).unwrap();
+        assert_eq!(self.b.alloc_code(&[0; 16]).unwrap(), tramp);
+        c.extend(code.wrapping_sub(tramp + 11).to_le_bytes()); // jmp code
+        self.write(tramp, &c);
+        let mut j = vec![0xe9];
+        j.extend(tramp.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+}
+
+/// `isspace` for the scanners' tests: space, `'\n'` and negative values
+/// (so a zero-extended byte would differ).
+const ISSPACE: [u8; 27] = [
+    0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+    0x83, 0xf8, 0x20, // cmp eax, ' '
+    0x74, 0x0c, // je yes
+    0x83, 0xf8, 0x0a, // cmp eax, '\n'
+    0x74, 0x07, // je yes
+    0x85, 0xc0, // test eax, eax
+    0x78, 0x03, // js yes
+    0x31, 0xc0, // xor eax, eax
+    0xc3, // ret
+    0xb8, 0x08, 0x00, 0x00, 0x00, // yes: mov eax, 8
+    0xc3,
+];
+
+/// `sscanf_s(text, fmt, &v)` for the tests: `v = bits` and 1.
+fn sscanf_code(bits: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00]; // mov eax,[esp+0xc]; mov [eax], bits
+    c.extend(bits.to_le_bytes());
+    c.extend([0xb8, 1, 0, 0, 0, 0xc3]); // mov eax, 1; ret
+    c
+}
+
+#[test]
+fn phyre_exit_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ap::TIMER_TERMINATE, false, 0, 0, 0x7e);
+        t.stub(ap::NAMESPACE_CLEAR, false, 0, 0, 0x5c);
+        t.stub(ap::POOL_RELEASE, false, 0, 0, 0x15);
+        let pool = t.object(&[0, 0, 0, 0], &[]);
+        t.stub(ap::THREAD_POOL, false, 0, 0, pool);
+        let head = t.rebase(ap::REGISTRY_HEAD);
+        let running = t.rebase(ap::G_PHYRE_RUNNING);
+        for (up, n) in [(0u8, 2u32), (1, 0), (1, 2), (0x80, 1)] {
+            let mut next = 0;
+            for _ in 0..n {
+                let e = t.object(&[0, 0, 0], &[]);
+                t.w32(e + 4, next);
+                next = e;
+            }
+            t.w32(head, next);
+            t.w8(running, up);
+            let what = format!("{label}: phyre exit {up} {n}");
+            t.check(
+                &what,
+                0x0043_0d60,
+                Conv::Cdecl,
+                &[],
+                |g| match apb::phyre_exit(g) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn app_frames_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ap::EXECUTE_NEXT, true, 0, 0, 0xe8);
+        t.stub(ap::SET_VIEWPORT, true, 4, 4, 0x5e7);
+        t.stub(ap::BLUR_INIT_SHADERS, true, 2, 2, 0);
+        for paused in [0u8, 1] {
+            for frames in [0u32, 5] {
+                for r in [0u32, 7] {
+                    let app = t.object(
+                        &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                        &[0, 0, 0, 0, 0, 0, 0, 0, 0, r],
+                    );
+                    t.w8(app + 0x39, paused);
+                    t.w32(app + 0x34, frames);
+                    t.w32(app + 0x2c, 0x4444);
+                    let what = format!("{label}: scripted frame {paused} {frames} {r}");
+                    t.check(&what, 0x0062_c6f0, Conv::Thiscall(app), &[], |g| {
+                        Out::U32(apb::scripted_frame(g, app))
+                    });
+                }
+            }
+        }
+        let g_app = t.rebase(ap::G_APPLICATION);
+        let old = t.r32(g_app);
+        for app in [0u32, t.junk(0x300, 0x12)] {
+            t.w32(g_app, app);
+            let vp = t.junk(0x30, 0x13);
+            let what = format!("{label}: viewport render {app:#x}");
+            t.check(&what, 0x0062_be00, Conv::Thiscall(vp), &[], |g| {
+                Out::U32(apb::viewport_render(g, vp))
+            });
+        }
+        let pair = t.zeros(8);
+        for app in [0u32, t.junk(0x10, 0x14)] {
+            t.w32(g_app, app);
+            let what = format!("{label}: app pair {app:#x}");
+            t.check(&what, 0x0062_3ba0, Conv::Cdecl, &[pair], |g| {
+                Out::U32(apb::app_pair(g, pair))
+            });
+        }
+        t.w32(g_app, old);
+        // the motion blur's initialization: no target, an empty one, one
+        // whose shaders fail and one whose shaders load
+        for (case, r) in [(0u32, 0u32), (1, 0), (2, 3), (2, 0)] {
+            t.stub(ap::BLUR_INIT_SHADERS, true, 2, 2, r);
+            let mb = t.junk(0x20, 0x15);
+            let target = t.zeros(8);
+            match case {
+                0 => t.w32(mb + 8, 0),
+                1 => t.w32(mb + 8, target),
+                _ => {
+                    t.w32(target, 0x77);
+                    t.w32(mb + 8, target);
+                }
+            }
+            let what = format!("{label}: motion blur init {case} {r}");
+            t.check(&what, 0x00a1_b7e0, Conv::Thiscall(mb), &[], |g| {
+                Out::U32(apb::motion_blur_init(g, mb))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn window_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub_import(ap::SET_PARENT_SLOT, 2, 0x9a);
+        t.stub_import(ap::REGISTER_WINDOW_MESSAGE_SLOT, 1, 0xc123);
+        t.stub_import(ap::SEND_MESSAGE_SLOT, 4, 0x5e);
+        t.stub_import(ap::POST_MESSAGE_SLOT, 4, 1);
+        t.stub_import(ap::CALL_NEXT_HOOK_SLOT, 4, 0x4e);
+        for host in [0u32, 0x0002_0040] {
+            let what = format!("{label}: attach {host:#x}");
+            t.check(&what, 0x0062_3d50, Conv::Cdecl, &[host, 0x0003_0050], |g| {
+                match apb::attach_to_host(g, host, 0x0003_0050) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                }
+            });
+        }
+        let drag = t.rebase(ap::G_NC_DRAG);
+        let hwnd = t.rebase(ap::G_HWND);
+        let hook = t.rebase(ap::G_MOUSE_HOOK);
+        t.w32(hwnd, 0x0001_0a2c);
+        t.w32(hook, 0x0005_0001);
+        for d in [0u8, 1] {
+            t.w8(drag, d);
+            for (code, wparam) in [
+                (0u32, 0x202u32),
+                (0, 0x201),
+                (1, 0x202),
+                (0xffff_ffff, 0x202),
+            ] {
+                let what = format!("{label}: mouse hook {d} {code:#x} {wparam:#x}");
+                t.check(
+                    &what,
+                    0x0062_50e0,
+                    Conv::Stdcall,
+                    &[code, wparam, 0x7000],
+                    |g| Out::U32(apb::mouse_hook(g, code, wparam, 0x7000)),
+                );
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn script_scanners_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.import_code(ap::ISSPACE_SLOT, &ISSPACE);
+        let texts: [&[u8]; 7] = [
+            b"  # note\n  cmd x\n",
+            b"abc def",
+            b"   ",
+            b"#only",
+            b"",
+            b"\n#a\n#b\n x",
+            b"\x80\xff y",
+        ];
+        for (i, text) in texts.iter().enumerate() {
+            let at = t.alloc(&[*text, b"\0\0\0\0"].concat());
+            let n = text.len() as u32;
+            for from in [0u32, 1, n] {
+                let buf = t.junk(0x20, 0x16);
+                t.w32(buf + 0xc, at + from.min(n));
+                t.w32(buf + 0x10, at + n);
+                let what = format!("{label}: find space {i} {from}");
+                t.check(&what, 0x0062_7810, Conv::Thiscall(buf), &[], |g| {
+                    Out::U32(apb::find_space(g, buf))
+                });
+                let what = format!("{label}: skip blank {i} {from}");
+                t.check(&what, 0x0062_cf90, Conv::Thiscall(buf), &[], |g| {
+                    Out::U32(apb::skip_blank(g, buf))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn input_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the axis value: no map, no mapping, a mapping
+        for (map, mapping, bits) in [
+            (0u32, 0u32, 0u32),
+            (1, 0, 0),
+            (1, 0x5150, 0x3f40_0000),
+            (1, 0x5150, 0xffc0_0001),
+        ] {
+            t.stub(ap::MAP_LOOKUP, true, 1, 1, mapping);
+            t.stub_float_pops(ap::MAPPING_VALUE, true, 1, 1, bits);
+            let input = t.junk(0x100, 0x17);
+            let m = if map == 0 { 0 } else { t.junk(0x10, 0x18) };
+            t.w32(input, m);
+            let app = t.junk(0x300, 0x19);
+            t.w32(app + 0x2b8, input);
+            let what = format!("{label}: axis value {map} {mapping:#x} {bits:#x}");
+            t.check(&what, 0x0062_82c0, Conv::Thiscall(app), &[0x33], |g| {
+                Out::F32(apb::axis_value(g, app, 0x33))
+            });
+            t.reset();
+        }
+        // the mouse position
+        let input = t.junk(0x100, 0x1a);
+        let app = t.junk(0x300, 0x1b);
+        t.w32(app + 0x2b8, input);
+        t.check(
+            &format!("{label}: mouse position"),
+            0x0062_bea0,
+            Conv::Thiscall(app),
+            &[0x140, 0xf0],
+            |g| {
+                apb::set_mouse_position(g, app, 0x140, 0xf0);
+                Out::None
+            },
+        );
+        // taking keys: devices around the limit, missing blocks, keys
+        // around the range, set and clear bytes
+        let block = t.junk(0x200, 0x1c);
+        t.w8(block + 0x18 + 5, 0);
+        let input = t.zeros(0x100);
+        for d in 0..7u32 {
+            t.w32(input + 0x80 + 4 * d, if d == 3 { 0 } else { block });
+        }
+        t.w32(input + 0x80 + 4 * 7, block);
+        let app = t.junk(0x300, 0x1d);
+        t.w32(app + 0x2b8, input);
+        for device in [0u32, 3, 6, 7, 0xffff_ffff] {
+            for key in [0x1bu32, 0x1c, 0x1c + 5, 0x1c + 6, 0x11b, 0x11c, 0xffff_ffff] {
+                let what = format!("{label}: take key {device:#x} {key:#x}");
+                t.check(
+                    &what,
+                    0x0062_6a00,
+                    Conv::Thiscall(app),
+                    &[key, device],
+                    |g| Out::U32(apb::take_key(g, app, key, device)),
+                );
+            }
+        }
+        // the keyboard's bind
+        let kb = t.junk(0x400, 0x1e);
+        let list = kb + 0xc;
+        t.w32(list, list);
+        t.w32(list + 4, list);
+        for (id, bound) in [
+            (0x1bu32, false),
+            (0xffff_fff0, false),
+            (0x1c, true),
+            (0x1c, false),
+            (0x80, false),
+        ] {
+            let mapping = t.junk(0x30, 0x1f);
+            t.w32(mapping + 8, u32::from(bound) * 0x1234);
+            let what = format!("{label}: keyboard bind {id:#x} {bound}");
+            t.check(
+                &what,
+                0x0062_5ca0,
+                Conv::Thiscall(kb),
+                &[mapping, id],
+                |g| Out::U32(apb::keyboard_bind(g, kb, mapping, id)),
+            );
+        }
+        // the devices' destructors
+        t.stub(ap::CS_RELEASE, true, 0, 0, 0xc5);
+        t.stub(ap::EH_VECTOR_DTOR, false, 4, 4, 0xe4);
+        let dev = t.junk(0x200, 0x20);
+        t.check(
+            &format!("{label}: touch dtor"),
+            0x0062_1130,
+            Conv::Thiscall(dev),
+            &[],
+            |g| Out::U32(apb::touch_dtor(g, dev)),
+        );
+        t.check(
+            &format!("{label}: pad dtor"),
+            0x0062_0ff0,
+            Conv::Thiscall(dev),
+            &[],
+            |g| Out::U32(apb::pad_dtor(g, dev)),
+        );
+        t.reset();
+    }
+}
+
+#[test]
+fn frame_time_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let start = t.rebase(ap::G_APP_START_TIME);
+        // a clock where the order of the sums rounds differently
+        for (now, begin, t28, t20) in [
+            (0x4a00_0010u32, 1234.5f64, 0x4120_0000u32, 0x3c88_8889u32),
+            (0x3f80_0000, 0.0, 0x5a00_0000, 0x3f00_0000),
+        ] {
+            t.stub_float(ap::GET_TIME, 0, now);
+            t.write(start, &begin.to_le_bytes());
+            for bits in [
+                0x3fc0_0000u32,
+                0,
+                0x8000_0000,
+                0xc000_0000,
+                0x7fc0_0000,
+                0xffc0_0000,
+            ] {
+                t.import_code(ap::SSCANF_SLOT, &sscanf_code(bits));
+                let app = t.junk(0x40, 0x21);
+                t.w32(app + 0x20, t20);
+                t.w32(app + 0x28, t28);
+                t.frame_len = 4;
+                let what = format!("{label}: frame time {now:#x} {bits:#x}");
+                t.check_frame(&what, 0x0062_5720, Conv::Cdecl, &[app, 0x6000], 0x14, |g| {
+                    let local = g.1;
+                    Out::U32(apb::set_frame_time(g, app, 0x6000, local))
+                });
+            }
+            t.reset();
+        }
+    }
+}
+
+/// A `std::map` of five nodes (keys 1..=5 at `+0x10`) under a nil head:
+/// `(head, [node 1..=5])`. Root 3; 1 and 5 its children; 2 right of 1, 4
+/// left of 5.
+fn small_map(t: &mut Twins) -> (u32, [u32; 5]) {
+    let head = t.zeros(0x14);
+    let n: Vec<u32> = (1..=5u32)
+        .map(|k| {
+            let x = t.zeros(0x14);
+            t.w32(x + 0x10, k);
+            x
+        })
+        .collect();
+    let n = [n[0], n[1], n[2], n[3], n[4]];
+    t.w8(head + 0xd, 1);
+    // node: left, parent, right
+    let set = |t: &mut Twins, x: u32, l: u32, p: u32, r: u32| {
+        t.w32(x, l);
+        t.w32(x + 4, p);
+        t.w32(x + 8, r);
+    };
+    set(t, head, n[0], n[2], n[4]);
+    set(t, n[2], n[0], head, n[4]);
+    set(t, n[0], head, n[2], n[1]);
+    set(t, n[1], head, n[0], head);
+    set(t, n[4], n[3], n[2], head);
+    set(t, n[3], head, n[4], head);
+    (head, n)
+}
+
+#[test]
+fn map_iterators_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let (head, n) = small_map(&mut t);
+        let it = t.zeros(4);
+        for &at in [head].iter().chain(n.iter()) {
+            t.w32(it, at);
+            let what = format!("{label}: map next from {at:#x}");
+            t.check(&what, 0x0062_14b0, Conv::Thiscall(it), &[], |g| {
+                Out::U32(apb::tree_next(g, it))
+            });
+            t.w32(it, at);
+            let what = format!("{label}: map prev from {at:#x}");
+            t.check(&what, 0x0062_1580, Conv::Thiscall(it), &[], |g| {
+                Out::U32(apb::tree_prev(g, it))
+            });
+        }
+        // clear: the right subtrees go to the (stubbed) erase
+        t.stub(ap::TREE_ERASE, true, 1, 1, 0xe5);
+        t.stub(ap::OPERATOR_DELETE, false, 1, 0, 0xde1);
+        for empty in [false, true] {
+            let (head, _) = small_map(&mut t);
+            if empty {
+                t.w32(head + 4, head);
+            }
+            let map = t.zeros(8);
+            t.w32(map, head);
+            t.w32(map + 4, 5);
+            let what = format!("{label}: map clear {empty}");
+            t.check(&what, 0x0062_6b90, Conv::Thiscall(map), &[], |g| {
+                Out::U32(apb::tree_clear(g, map))
+            });
+        }
         t.reset();
     }
 }
