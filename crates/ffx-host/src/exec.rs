@@ -1027,6 +1027,21 @@ impl Exec {
                 self.trace = self.backtrace();
                 self.recent = self.uc.get_data().recent.iter().copied().collect();
             }
+            // a failed game thread ends alone and the run goes on: noted
+            // now (the harness's `notes`), not only in the final report
+            if matches!(why, Stop::Failed(..)) {
+                let calls: Vec<String> = self
+                    .trace
+                    .iter()
+                    .take(8)
+                    .map(|a| format!("{a:#010x}"))
+                    .collect();
+                crate::log::note(&format!(
+                    "thread {:#x} failed: {why}; returns {}",
+                    self.id,
+                    calls.join(" ")
+                ));
+            }
             let global = self.is_main() || matches!(why, Stop::Milestone(_) | Stop::Budget(_));
             if global {
                 self.shared.stop_all(why.clone());

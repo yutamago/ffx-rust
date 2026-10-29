@@ -36,6 +36,7 @@
 //! | `pad`, `press` | the buttons the clock's `Input_KeyHeld` wrapper answers for |
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |
 //! | `gfxcapture <dir>` | the layer's recording so far (`capture.ffxgfx`, `calls.txt`) |
+//! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
 //! | `quit` | ends the process |
 //!
 //! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
@@ -1205,6 +1206,16 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             for e in events {
                 out.push('\n');
                 out.push_str(&e);
+            }
+            Ok(out)
+        }
+        "notes" => {
+            // the run's notes so far (the clock's turns, failed threads, …)
+            let notes = crate::log::notes();
+            let mut out = format!("ok {}", notes.len());
+            for n in notes {
+                out.push('\n');
+                out.push_str(&n.replace('\n', " "));
             }
             Ok(out)
         }

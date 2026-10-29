@@ -19,7 +19,7 @@ class Harness:
         if command == "quit":
             return "ok"
         reply = self.file.readline().rstrip("\n")
-        if command.split()[0] == "events" and reply.startswith("ok "):
+        if command.split()[0] in ("events", "notes") and reply.startswith("ok "):
             n = int(reply.split()[1])
             reply += "".join("\n" + self.file.readline().rstrip("\n") for _ in range(n))
         return reply
