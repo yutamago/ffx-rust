@@ -174,6 +174,7 @@ pub mod m5m_d;
 pub mod m5p_render_b;
 pub mod m5p_render_b_arrays;
 pub mod m5p_render_b_dtors;
+pub mod m5p_render_b_frames;
 pub mod m5p_render_b_more;
 pub mod m5p_render_b_more2;
 pub mod m5p_render_b_post;

@@ -104,6 +104,8 @@ enum Out {
     U32(u32),
     /// `edx:eax`.
     U64(u64),
+    /// `al`.
+    U8(u8),
 }
 
 struct Twins {
@@ -337,6 +339,7 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
             Out::U64(v) => assert_eq!(
                 u64::from(ra.edx) << 32 | u64::from(ra.eax),
                 v,
@@ -483,7 +486,7 @@ impl Twins {
         let mut vt = Vec::new();
         for (i, &n) in words.iter().enumerate() {
             let r = rets.get(i).copied().unwrap_or(0x2000 + i as u32);
-            let s = self.stub_code(0xc000 + i as u32, false, n, n, r);
+            let s = self.stub_code(0xc000 + i as u32, false, n.min(6), n, r);
             vt.extend(s.to_le_bytes());
         }
         let vt = self.alloc(&vt);
@@ -3368,6 +3371,317 @@ fn more2_packets_resizes_copies_match_the_original() {
                     nb::interface_release(g, obj);
                     Out::None
                 },
+            );
+            t.reset();
+        }
+    }
+}
+
+// ---- batch 7: locals handed to callees ----
+
+use ffx_prender::m5p_render_b_frames::{self as frames, bridge as fb};
+
+impl Twins {
+    /// Where the original's `ebp` lands for a call with `words` stack
+    /// arguments.
+    fn ebp_for(&self, words: u32) -> u32 {
+        assert_eq!(self.a.stack_range(), self.b.stack_range());
+        self.a.stack_range().end - 0x100 - 4 * words - 8
+    }
+
+    /// [`Twins::check`] with the port's calls below the original's frame
+    /// (`ebp - below`), then the frame bytes `ebp - from .. ebp - to`
+    /// compared.
+    #[allow(clippy::too_many_arguments)]
+    fn check_frame(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        ebp: u32,
+        below: u32,
+        local: (u32, u32),
+        port: impl FnOnce(&mut G) -> Out,
+    ) {
+        let (from, to) = local;
+        let junk: Vec<u8> = (0..from - to).map(|k| 0xa5 ^ k as u8).collect();
+        self.write(ebp - from, &junk);
+        self.b.set_call_top(Some(ebp - below - 0x100));
+        self.check(what, sym, conv, args, port);
+        self.b.set_call_top(None);
+        let mut x = vec![0; (from - to) as usize];
+        let mut y = vec![0; (from - to) as usize];
+        self.a.read_bytes(ebp - from, &mut x);
+        self.b.read_bytes(ebp - from, &mut y);
+        assert_eq!(x, y, "{what}: frame");
+    }
+}
+
+/// A material list for the parameter copies: `count` materials over one
+/// buffer of 0x20 bytes; the parameter's offset and size.
+fn materials(t: &mut Twins, count: u32, found: bool, off: u16, size: u16) -> u32 {
+    let arr = t.zeros(8);
+    t.w32(arr, count);
+    let list = t.zeros(8);
+    let buffer = t.junk(0x40, 1);
+    t.w32(buffer, 0x20);
+    for k in 0..2 {
+        let e = t.zeros(8);
+        let mat = t.junk(0x10, 2);
+        t.w32(e, mat);
+        t.w32(e + 4, buffer);
+        t.w32(list + 4 * k, e);
+    }
+    let p = t.zeros(0x10);
+    t.write(p + 8, &off.to_le_bytes());
+    t.write(p + 0xa, &size.to_le_bytes());
+    t.stub(frames::ARRAY_DATA, true, 0, 0, list);
+    t.stub(frames::FIND_PARAM, true, 1, 1, if found { p } else { 0 });
+    t.stub(frames::MEMCPY, false, 3, 0, 0x3c);
+    arr
+}
+
+#[test]
+fn frames_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the shader parameter vector
+        for (count, found, off, size) in [
+            (0u32, true, 8u16, 4u16),
+            (2, false, 8, 4),
+            (2, true, 8, 0x10),
+            (1, true, 0x1c, 8),
+            (2, true, 8, 0xe004),
+            (1, true, 2, 4),
+        ] {
+            let arr = materials(&mut t, count, found, off, size);
+            let inst = t.junk(0x20, 3);
+            t.w32(inst + 0x10, arr);
+            let v: Vec<u32> = [1.5f32, -0.0, f32::from_bits(0x7fc0_0001), 3.0]
+                .iter()
+                .map(|f| t.alloc(&f.to_bits().to_le_bytes()))
+                .collect();
+            let v = [v[0], v[1], v[2], v[3]];
+            let args = [inst, 0x4e4e, v[0], v[1], v[2], v[3]];
+            let ebp = t.ebp_for(6);
+            t.check_frame(
+                &format!("{label}: vector {count} {found} {off} {size}"),
+                0x006d_fa30,
+                Conv::Cdecl,
+                &args,
+                ebp,
+                0x14,
+                (0x14, 0),
+                |g| {
+                    fb::set_vector(g, ebp, inst, 0x4e4e, v);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the fog effect over the fog's tree: empty, one node, three
+        for nodes in [0usize, 1, 3] {
+            let arr = materials(&mut t, 1, true, 8, 0xc);
+            let fog = t.junk(0xb8, 4);
+            let tree = t.zeros(0x20);
+            t.w32(fog + 0xa8, tree);
+            let ns: Vec<u32> = (0..nodes).map(|k| t.junk(0x20, 5 + k as u8)).collect();
+            for (k, &n) in ns.iter().enumerate() {
+                t.w32(n, ns.get(k + 1).copied().unwrap_or(tree));
+                t.w32(n + 0x10, ns.get(k + 1).copied().unwrap_or(tree));
+                t.w32(n + 0xc, arr);
+            }
+            t.w32(tree + 0xc, ns.first().copied().unwrap_or(tree));
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes());
+            c.extend([0xc1, 0xe0, 0x05]);
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes());
+            c.extend([0xc7, 0x00]);
+            c.extend(frames::TREE_NEXT.to_le_bytes());
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+            c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+            c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes());
+            c.extend([0x8b, 0x42, 0x10]); // mov eax, [edx+0x10]
+            c.extend([0xc2, 0x04, 0x00]);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(frames::TREE_NEXT);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            let ebp = t.ebp_for(1);
+            t.check_frame(
+                &format!("{label}: fog effect {nodes}"),
+                0x006e_35c0,
+                Conv::Thiscall(fog),
+                &[0x3f00_0000],
+                ebp,
+                0x1c,
+                (0x1c, 4),
+                |g| {
+                    fb::set_chr_fog_effect(g, ebp, fog, 0x3f00_0000);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the UAV clear: no context, i past the views, no view, cleared
+        for (ctx, count, i, view) in [
+            (false, 2u32, 0u32, 1u32),
+            (true, 2, 2, 1),
+            (true, 0, 0, 0),
+            (true, 0x8000_0003, 1, 7),
+        ] {
+            t.stub(frames::UAV_OF, true, 1, 1, view);
+            let mut words = vec![0u32; 0x34];
+            words[0x33] = 3;
+            let c = if ctx { t.com_object(&words, &[]) } else { 0 };
+            let obj = t.junk(0x80, 6);
+            t.w32(obj + 0x70, c);
+            let buffer = t.junk(0x20, 7);
+            t.w32(buffer + 0x14, count);
+            let ebp = t.ebp_for(3);
+            t.check_frame(
+                &format!("{label}: clear uav {ctx} {count:#x} {i} {view}"),
+                0x0058_e510,
+                Conv::Thiscall(obj),
+                &[buffer, 0x3f80_0000, i],
+                ebp,
+                0x18,
+                (0x18, 4),
+                |g| Out::U32(fb::clear_uav(g, ebp, obj, buffer, 0x3f80_0000, i)),
+            );
+            t.reset();
+        }
+        // the motion-blur setup: already set, the target failing, a
+        // result word, made
+        for (have, target, result) in [
+            (true, 1u32, 0u32),
+            (false, 0, 0),
+            (false, 1, 9),
+            (false, 0, 9),
+            (false, 1, 0),
+        ] {
+            let tex = t.junk(0x20, 8);
+            let tg = t.zeros(8);
+            t.w32(tg, tex);
+            // the make-target stub writes `result` through its last word
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes());
+            c.extend([0xc1, 0xe0, 0x05]);
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes());
+            c.extend([0xc7, 0x00]);
+            c.extend(frames::MAKE_TARGET.to_le_bytes());
+            for k in 0..6u8 {
+                c.extend([0x8b, 0x54, 0x24, 4 + 4 * k]); // mov edx, [esp+4+4k]
+                c.extend([0x89, 0x50, 8 + 4 * k]); // mov [eax+8+4k], edx
+            }
+            c.extend([0x8b, 0x54, 0x24, 0x1c]); // mov edx, [esp+0x1c] (out)
+            c.extend([0x85, 0xd2]); // test edx, edx
+            c.extend([0x74, 0x06]); // je +6
+            c.extend([0xc7, 0x02]);
+            c.extend(result.to_le_bytes()); // mov dword [edx], result
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes());
+            c.push(0xb8);
+            c.extend((if target == 0 { 0 } else { tg }).to_le_bytes());
+            c.push(0xc3);
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(frames::MAKE_TARGET);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            t.stub(frames::UPDATE_MAX_LEVEL, true, 0, 0, 0x55);
+            t.stub(frames::BLUR_SET_TARGET, true, 2, 2, 0x5e7);
+            let obj = t.junk(0x1000, 9);
+            t.w32(obj + 0xd4c, u32::from(have) * 0x44);
+            let ebp = t.ebp_for(3);
+            t.check_frame(
+                &format!("{label}: blur setup {have} {target} {result}"),
+                0x00a1_7e00,
+                Conv::Thiscall(obj),
+                &[0xc1, 64, 32],
+                ebp,
+                4,
+                (4, 0),
+                |g| Out::U32(fb::blur_setup(g, ebp, obj, 0xc1, 64, 32)),
+            );
+            t.reset();
+        }
+        // the light direction: ambient, not set up, a directional light,
+        // another kind
+        let dir = t.rebase(frames::LIGHT_KIND_DIRECTIONAL);
+        for (i, set_up, kind) in [(3u32, 1u8, dir), (0, 0, dir), (1, 2, dir), (1, 1, 0)] {
+            t.stub(frames::MATRIX_FROM_3X4, true, 1, 1, 0x30);
+            t.stub(frames::MATRIX_ROTATE3, true, 2, 2, 0x31);
+            let obj = t.junk(0x200, 10);
+            t.w8(obj + 0x1cc, set_up);
+            let list = t.zeros(8);
+            let e = t.junk(0x20, 11);
+            t.w32(e + 0x18, kind);
+            t.w32(list + 4 * i.min(1), e);
+            let lights = t.zeros(8);
+            t.w32(lights + 4, list);
+            t.w32(obj + 0xf0, lights);
+            let out = t.junk(0x10, 12);
+            let ebp = t.ebp_for(2);
+            t.check_frame(
+                &format!("{label}: light direction {i} {set_up} {kind:#x}"),
+                0x006a_84d0,
+                Conv::Thiscall(obj),
+                &[out, i],
+                ebp,
+                0x50,
+                (0x10, 4),
+                |g| Out::U32(fb::light_direction(g, ebp, obj, out, i)),
+            );
+            t.reset();
+        }
+        // the compute tables: no UAV, a UAV, a slot, feature levels
+        for (uav, slot, level) in [
+            (0u32, 0xffff_ffffu32, 0xb000u32),
+            (0x77, 0xffff_ffff, 0xa100),
+            (0x77, 2, 0xb100),
+            (0, 3, 0xb000),
+        ] {
+            let mut words = vec![0u32; 0x45];
+            words[0xc0 / 4] = 7;
+            words[0x110 / 4] = 5;
+            words[0x5c / 4] = 4;
+            words[0x58 / 4] = 4;
+            words[0x7c / 4] = 4;
+            words[0x80 / 4] = 4;
+            let ctx = t.com_object(&words, &[]);
+            let r = t.junk(0x100, 13);
+            t.w32(r + 0x70, ctx);
+            t.w32(r + 0xb4, level);
+            let rp = t.zeros(4);
+            t.w32(rp, r);
+            let obj = t.junk(0x500, 14);
+            t.w32(obj, uav);
+            t.w32(obj + 4, 0x8000_0003);
+            t.w32(obj + 0x18, slot);
+            let ebp = t.ebp_for(2);
+            t.check_frame(
+                &format!("{label}: bind tables {uav:#x} {slot:#x} {level:#x}"),
+                0x0059_3380,
+                Conv::Thiscall(obj),
+                &[rp, 0x99],
+                ebp,
+                0x20,
+                (0x20, 0),
+                |g| Out::U8(fb::bind_tables(g, ebp, obj, rp)),
             );
             t.reset();
         }

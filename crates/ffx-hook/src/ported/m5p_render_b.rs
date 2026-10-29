@@ -10,6 +10,7 @@
 use ffx_prender::m5p_render_b::{self as rb, bridge as b};
 use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
 use ffx_prender::m5p_render_b_dtors::bridge as tb;
+use ffx_prender::m5p_render_b_frames::bridge as fb;
 use ffx_prender::m5p_render_b_more::bridge as mb;
 use ffx_prender::m5p_render_b_more2::bridge as nb;
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
@@ -1117,5 +1118,42 @@ ported! {
     /// `Phyre_PText_PBitmapFontText_dtor_00a295a0`.
     Phyre_PText_PBitmapFontText_dtor_00a295a0 @ 0x00a2_95a0 => extern "thiscall" fn n_00a295a0(this: u32) {
         nb::text_dtor(&mut mem(), this);
+    }
+    // ---- batch 7: locals handed to callees (ffx_prender::m5p_render_b_frames) ----
+    /// `Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30`.
+    Phyre_CharacterShaderManager_setShaderParameterVector_006dfa30 @ 0x006d_fa30 => extern "C" fn f_006dfa30(inst: u32, name: u32, x: u32, y: u32, z: u32, w: u32) {
+        let mut f = super::StackFrame::<6>::new();
+        let ebp = f.at() + 0x18;
+        fb::set_vector(&mut mem(), ebp, inst, name, [x, y, z, w]);
+    }
+    /// `Phyre_FogEffectManager_setChrFogEffect`.
+    Phyre_FogEffectManager_setChrFogEffect @ 0x006e_35c0 => extern "thiscall" fn f_006e35c0(this: u32, v: u32) {
+        let mut f = super::StackFrame::<8>::new();
+        let ebp = f.at() + 0x20;
+        fb::set_chr_fog_effect(&mut mem(), ebp, this, v);
+    }
+    /// `Phyre_PRendering_PRenderInterface_clearUav_0058e510`.
+    Phyre_PRendering_PRenderInterface_clearUav_0058e510 @ 0x0058_e510 => extern "thiscall" fn f_0058e510(this: u32, buffer: u32, value: u32, i: u32) -> u32 {
+        let mut f = super::StackFrame::<6>::new();
+        let ebp = f.at() + 0x18;
+        fb::clear_uav(&mut mem(), ebp, this, buffer, value, i)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_setupTargets_00a17e00`.
+    Phyre_PPostProcessing_PMotionBlur_setupTargets_00a17e00 @ 0x00a1_7e00 => extern "thiscall" fn f_00a17e00(this: u32, cluster: u32, w: u32, h: u32) -> u32 {
+        let mut f = super::StackFrame::<2>::new();
+        let ebp = f.at() + 8;
+        fb::blur_setup(&mut mem(), ebp, this, cluster, w, h)
+    }
+    /// `Phyre_CharacterLighting_lightDirection_006a84d0`.
+    Phyre_CharacterLighting_lightDirection_006a84d0 @ 0x006a_84d0 => extern "thiscall" fn f_006a84d0(this: u32, out: u32, i: u32) -> u32 {
+        let mut f = super::StackFrame::<0x14>::new();
+        let ebp = f.at() + 0x50;
+        fb::light_direction(&mut mem(), ebp, this, out, i)
+    }
+    /// `PShaderResourceTables_bindCompute_00593380`.
+    PShaderResourceTables_bindCompute_00593380 @ 0x0059_3380 => extern "thiscall" fn f_00593380(this: u32, renderer: u32, _x: u32) -> u8 {
+        let mut f = super::StackFrame::<8>::new();
+        let ebp = f.at() + 0x20;
+        fb::bind_tables(&mut mem(), ebp, this, renderer)
     }
 }
