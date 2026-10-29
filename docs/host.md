@@ -1035,6 +1035,57 @@ muted:
   machines, and the i686 TCG abort no longer blocks the Windows runs. The
   i686 abort was left alone.
 
+#### The main replay list on PC2 (2026-10-29, host-pc2)
+
+The 64-bit build through the harness (`FFX_HARNESS_EXE=rust`,
+`FFX_HOST_TARGET=x86_64-pc-windows-msvc`), one replay at a time, each
+compared with PC2's own original recordings (`replay-compare.py`,
+`shot-compare.py`, as `run-all.sh` does):
+
+| Replay | Trace events | Screenshots | Wall |
+|---|---|---|---|
+| field-walk (three runs) | same (4 ranges) | 0.0-0.1 (coarse) | 224-226 s |
+| menu-browse | same (2 ranges) | 5 of 5, 0 pixels | 225 s |
+| menu-shop | same (7 ranges) | 8 of 8 (one cursor-glow pixel, allowed) | 998 s |
+| menu-grid | same (6 ranges) | 9 of 9, 0 pixels | 1,128 s |
+| menu-save | stops at the save | 2 of 2 before it | 834 s |
+| battle-attack | no battle | none | (timeout) |
+
+Not run: battle-magic, battle-overdrive and event-besaid (after the
+battle-attack finding), boot and event-cliff (`realtime`: ffx-rust has only
+the virtual clock).
+
+- **menu-save**: the save machine (`g_SaveMachineState` `0x00ce72e8`)
+  stayed in state 4, `SaveDataMachine_WriteFile`, every frame:
+  `_wfopen` was asked for the path `000`. The port names the file through
+  `wsprintfW`'s IAT slot (`%s%s%03d`: folder, prefix, slot), and an import
+  called from Rust got no words on the game stack (`slots` 0), so
+  `wsprintfW`, which reads its varargs through `slots`, read zeros. Fixed:
+  `Exec::call` puts the words of an import called from Rust on the game
+  stack, as for a routed port (`tests/boot.rs`,
+  `a_varargs_import_called_from_rust_reads_its_words`). (The original
+  stores to address 0 when the file doesn't open, a deliberate crash; the
+  port's store went to the arena's unmapped page 0 and was dropped, so the
+  state machine retried each frame instead.)
+- **battle-attack**: the battle never starts. `g_BtlStatus` (`0x0112a8e0`)
+  stays at `0x16`, whose step waits for the message window, the sound
+  transfers, the actors' loads and the read hold (`MsBtlReadManage`,
+  `docs/formats/battle.md`); all are clear but the actors' loads: monsters
+  `0x14` and `0x15` keep `+0x433` set (`MsGetRamChrCTBbasic`), so their
+  models or motions never finish. No game thread failed (the run's notes)
+  and no access left the arena. In the first of three runs the main
+  thread also stopped advancing at update 197 (one core busy, every flip
+  presented); the other two ran on to the `waitfor`'s 4,000-update limit.
+  Not found yet.
+- **Memory**: the layer's draw recording grew to 6-9 GB in the longer
+  runs (menu-grid); it is now kept only with `--gfx-out` or
+  `FFX_HOST_GFX_RECORD=1` (above, the options). The other runs stayed near
+  3 GB.
+- **The harness client** does not see the game's end when the game is
+  ended from outside (`quit` from a second connection): over WSL's mirrored
+  network the open connection gets no reset, and the client waits for its
+  reply timeout (`FFX_HARNESS_REPLY_TIMEOUT`).
+
 #### The first comparison
 
 The original's boot was captured from its first `Present`
