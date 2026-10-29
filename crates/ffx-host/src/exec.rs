@@ -1,6 +1,6 @@
 //! The mixed executor (docs/host.md, "Rust and Unicorn"): Rust ports from
-//! the function table, everything else from `FFX.exe`'s `.text` in
-//! Unicorn, on one arena.
+//! the function table, everything else from `FFX.exe`'s `.text` (and the
+//! player's C runtime DLLs) in Unicorn, on one arena.
 //!
 //! Unicorn shares the arena's host memory (`mem_map_ptr`). Every ported
 //! address and every import stub holds an `int3` in the arena's copy of
@@ -13,18 +13,27 @@
 //! Nothing runs inside a Unicorn hook except bookkeeping, so the calls nest
 //! as plain Rust recursion.
 //!
+//! Threads (docs/host.md, "Threads"): [`Shared`] is what every game thread
+//! sees (the arena, the image, the table, the imports, the heap, the
+//! files, the synchronisation objects); each game thread is one host
+//! thread with its own [`Exec`]: its own Unicorn instance over the same
+//! arena regions, its own stack, thread block and return stubs.
+//!
 //! Development only: the release runs no `FFX.exe` code (rewrite-plan, M5).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use ffx_bridge::Mem as _;
 use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
 
 use crate::arena::{Arena, ArenaMem, PAGE};
+use crate::dll::Dll;
 use crate::image::Image;
-use crate::imports::{ImportFn, Imports};
+use crate::imports::{Heap, ImportFn, Imports, ThreadCrt};
+use crate::sync::Objects;
 use crate::table::{Args, Conv, Ret, Table};
 use crate::{Error, Result};
 
@@ -35,13 +44,30 @@ const INT3: u8 = 0xcc;
 pub const FPU_CONTROL: u16 = 0x027f;
 /// The main thread's stack.
 const STACK_SIZE: u32 = 0x0020_0000;
-/// The stub page: import stubs, return stubs, the sentinel.
+/// Every other thread's stack (the game asks for less; the emulated code
+/// never sees the difference, and some threads nest ports deeply).
+const THREAD_STACK_SIZE: u32 = 0x0010_0000;
+/// The shared stub page: import stubs and data cells.
 const STUB_SIZE: u32 = 0x0001_0000;
 /// Where the executor's own regions start looking for room (above the
 /// image).
 const REGION_HINT: u32 = 0x0300_0000;
 /// The `ret n` stubs: `n` stack words from 0 to this.
 const MAX_RET_WORDS: u32 = 64;
+/// The main thread's id (`GetCurrentThreadId`).
+pub const MAIN_THREAD: u32 = 0x1004;
+/// How often the watchdog looks at the stop flag and the budget.
+const WATCH: Duration = Duration::from_millis(20);
+
+// Unicorn's own stop request, which (unlike the rest of the API) may be
+// called from another thread: its timeout thread does the same.
+unsafe extern "C" {
+    fn uc_emu_stop(uc: *mut std::ffi::c_void) -> i32;
+}
+/// A thread block: GDT, TEB, PEB, its return stubs page.
+const THREAD_BLOCK: u32 = 4 * PAGE;
+/// The TEB's TLS slots (`TlsGetValue`): `TlsSlots` at `0xe10`, 64 of them.
+pub const TEB_TLS: u32 = 0xe10;
 
 /// What stopped the emulator.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,10 +84,37 @@ enum Event {
 #[derive(Debug, Default)]
 struct State {
     event: Option<Event>,
-    /// Basic blocks run in `.text` (when coverage is on).
-    blocks: BTreeSet<u32>,
+    /// The profile (when [`Exec::cover`] is on).
+    profile: Profile,
+    last_tick: u64,
+    /// The last basic blocks run (`FFX_HOST_TRACE=n`), oldest first.
+    recent: std::collections::VecDeque<u32>,
+    recent_cap: usize,
     /// Instructions run (when counting is on).
     instructions: u64,
+}
+
+/// Where emulated time went: basic blocks run, how often, and the clock
+/// samples that landed in each (one per millisecond tick of
+/// [`Exec::cover`]'s ticker, so a sample is about a millisecond).
+#[derive(Debug, Default, Clone)]
+pub struct Profile {
+    /// Executions per basic block.
+    pub blocks: HashMap<u32, u64>,
+    /// Clock samples per basic block.
+    pub samples: HashMap<u32, u64>,
+}
+
+impl Profile {
+    /// Adds `other` in.
+    pub fn merge(&mut self, other: &Self) {
+        for (k, v) in &other.blocks {
+            *self.blocks.entry(*k).or_default() += v;
+        }
+        for (k, v) in &other.samples {
+            *self.samples.entry(*k).or_default() += v;
+        }
+    }
 }
 
 /// What the executor saw on the way, for the report.
@@ -79,12 +132,35 @@ pub struct Stats {
     pub starts: u64,
     /// Time spent inside the emulator.
     pub emulated: Duration,
-    /// Threads the game asked for (entry, parameter); not run yet.
-    pub threads: Vec<(u32, u32)>,
     /// Message boxes the game showed (caption: text).
     pub messages: Vec<String>,
     /// Milestones reached (import names), in order.
     pub milestones: Vec<String>,
+    /// Instructions emulated (with [`Exec::count_instructions`]).
+    pub instructions: u64,
+}
+
+impl Stats {
+    /// Adds `other` in.
+    pub fn merge(&mut self, o: &Self) {
+        for (k, v) in &o.ports {
+            *self.ports.entry(*k).or_default() += v;
+        }
+        for (k, v) in &o.imports {
+            *self.imports.entry(k.clone()).or_default() += v;
+        }
+        for m in &o.missing_imports {
+            if !self.missing_imports.contains(m) {
+                self.missing_imports.push(m.clone());
+            }
+        }
+        self.unicorn_calls += o.unicorn_calls;
+        self.starts += o.starts;
+        self.emulated += o.emulated;
+        self.messages.extend(o.messages.iter().cloned());
+        self.milestones.extend(o.milestones.iter().cloned());
+        self.instructions += o.instructions;
+    }
 }
 
 /// Why a run ended without an error.
@@ -98,6 +174,8 @@ pub enum Stop {
     Budget(u32),
     /// An error (an unstubbed import, a fault) at this `eip`.
     Failed(String, u32),
+    /// This thread called `ExitThread` (ends only this thread).
+    ThreadExit(u32),
 }
 
 impl std::fmt::Display for Stop {
@@ -107,60 +185,424 @@ impl std::fmt::Display for Stop {
             Self::Milestone(m) => write!(f, "milestone: {m}"),
             Self::Budget(eip) => write!(f, "time budget used up at {eip:#010x}"),
             Self::Failed(why, eip) => write!(f, "{why} (eip {eip:#010x})"),
+            Self::ThreadExit(code) => write!(f, "ExitThread({code:#x})"),
         }
     }
 }
 
-/// The executor.
-pub struct Exec {
-    uc: Unicorn<'static, State>,
+/// A game thread, as the report lists it.
+#[derive(Debug, Clone)]
+pub struct ThreadInfo {
+    /// Its id.
+    pub id: u32,
+    /// Its handle.
+    pub handle: u32,
+    /// The thread routine.
+    pub entry: u32,
+    /// Its parameter.
+    pub param: u32,
+    /// Who started it (`CreateThread`, the thread pool).
+    pub via: &'static str,
+    /// Whether it ran yet (`CREATE_SUSPENDED` threads wait for
+    /// `ResumeThread`).
+    pub started: bool,
+    /// How it ended (`None`: still running at the report).
+    pub outcome: Option<String>,
+    /// When it started, from the run's start.
+    pub at: Duration,
+    /// Its emulated time, starts and imports.
+    pub stats: Option<Stats>,
+    /// Its return addresses when it failed.
+    pub trace: Vec<u32>,
+}
+
+/// Which side an import of `FFX.exe` or a DLL went to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    /// A Rust stand-in.
+    Rust,
+    /// The player's DLL, run in Unicorn.
+    Dll,
+    /// Nothing yet: stops the run when called.
+    Missing,
+}
+
+/// What every game thread shares.
+pub struct Shared {
     arena: Arc<Arena>,
     image: Image,
+    /// The player's C runtime DLLs, in load order.
+    pub dlls: Vec<Dll>,
     table: Table,
     imports: Imports,
     /// Import stub address → index into `imports`' bound list.
     stubs: HashMap<u32, usize>,
+    /// Every import of `FFX.exe` and the DLLs: `DLL!name` (`(from X)` for a
+    /// DLL's), and where it went.
+    pub routes: Vec<(String, Route)>,
+    /// The C runtime's heap (also `HeapAlloc`'s).
+    pub heap: Mutex<Heap>,
+    /// Open files.
+    pub files: Mutex<crate::files::Files>,
+    /// Events, semaphores, mutexes, thread handles, critical sections.
+    pub sync: Objects,
+    /// `_onexit` / `atexit` functions, in registration order.
+    pub at_exit: Mutex<Vec<u32>>,
+    /// The command line (`GetCommandLineA`, `_acmdln`), an arena address.
+    pub cmdline: u32,
+    stop: Mutex<Option<Stop>>,
+    stop_at: RwLock<BTreeSet<String>>,
+    deadline: Mutex<Option<Instant>>,
+    lenient: AtomicBool,
+    cover: AtomicBool,
+    count: AtomicBool,
+    handles: AtomicU32,
+    thread_ids: AtomicU32,
+    tls_next: AtomicU32,
+    tick: Arc<AtomicU64>,
+    started: Instant,
+    /// Every game thread asked for.
+    pub threads: Mutex<Vec<ThreadInfo>>,
+    /// The profile of every thread that ended.
+    finished: Mutex<Profile>,
+    /// Every live emulator (thread id, Unicorn handle), for the watchdog.
+    emulators: Mutex<Vec<(u32, usize)>>,
+    /// Thread-pool work items: handle → (callback, context).
+    pub pool_work: Mutex<HashMap<u32, (u32, u32)>>,
+    running: AtomicU32,
+}
+
+impl std::fmt::Debug for Shared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Shared")
+            .field("image", &self.image.base)
+            .field("dlls", &self.dlls.len())
+            .field("ports", &self.table.len())
+            .finish_non_exhaustive()
+    }
+}
+
+/// FFX.exe's `MSVCR110` imports that keep their Rust side when the
+/// player's DLLs are loaded: start-up and exit (the run's own), the heap
+/// (the DLL's `malloc` ends on the same heap through `HeapAlloc`), the
+/// copies and `rand` (per thread, MSVC's sequence). Everything else goes to
+/// the DLL (docs/host.md, "The C runtime DLLs").
+pub const RUST_WITH_DLLS: [&str; 26] = [
+    "__set_app_type",
+    "__setusermatherr",
+    "__getmainargs",
+    "_initterm",
+    "_initterm_e",
+    "_onexit",
+    "__dllonexit",
+    "__crtGetShowWindowMode",
+    "_crt_debugger_hook",
+    "__crtSetUnhandledExceptionFilter",
+    "_amsg_exit",
+    "exit",
+    "_exit",
+    "_cexit",
+    "abort",
+    "malloc",
+    "calloc",
+    "free",
+    "_recalloc",
+    "_calloc_crt",
+    "memset",
+    "memcpy",
+    "memmove",
+    "_strdup",
+    "rand",
+    "srand",
+];
+
+impl Shared {
+    /// Lays out the shared stub page, binds every import of `image` and
+    /// `dlls`, and marks the ports in `.text`.
+    ///
+    /// # Errors
+    /// When a mapping fails.
+    pub fn new(
+        arena: Arc<Arena>,
+        image: Image,
+        dlls: Vec<Dll>,
+        table: Table,
+        files: crate::files::Files,
+    ) -> Result<Arc<Self>> {
+        let stubs_at = arena.map_anywhere(REGION_HINT, STUB_SIZE, "import stubs")?;
+        let heap = Heap::new(&arena)?;
+        let mut s = Self {
+            arena,
+            image,
+            dlls,
+            table,
+            imports: Imports::new(),
+            stubs: HashMap::new(),
+            routes: Vec::new(),
+            heap: Mutex::new(heap),
+            files: Mutex::new(files),
+            sync: Objects::default(),
+            at_exit: Mutex::new(Vec::new()),
+            cmdline: 0,
+            stop: Mutex::new(None),
+            stop_at: RwLock::new(BTreeSet::new()),
+            deadline: Mutex::new(None),
+            lenient: AtomicBool::new(false),
+            cover: AtomicBool::new(false),
+            count: AtomicBool::new(false),
+            handles: AtomicU32::new(0x100),
+            thread_ids: AtomicU32::new(MAIN_THREAD),
+            tls_next: AtomicU32::new(0),
+            tick: Arc::new(AtomicU64::new(0)),
+            started: Instant::now(),
+            threads: Mutex::new(Vec::new()),
+            finished: Mutex::new(Profile::default()),
+            emulators: Mutex::new(Vec::new()),
+            pool_work: Mutex::new(HashMap::new()),
+            running: AtomicU32::new(0),
+        };
+        s.bind_imports(stubs_at);
+        for addr in s.table.addresses().collect::<Vec<_>>() {
+            if s.image.is_code(addr) {
+                s.arena.fill(addr, &[INT3]);
+            }
+        }
+        let s = Arc::new(s);
+        let weak = Arc::downgrade(&s);
+        std::thread::Builder::new()
+            .name("ffx-host watchdog".into())
+            .spawn(move || watchdog(&weak))
+            .map_err(Error::Io)?;
+        Ok(s)
+    }
+
+    /// Whether the run is ending or out of time.
+    fn overdue(&self) -> bool {
+        self.sync.stopping()
+            || self
+                .deadline
+                .lock()
+                .ok()
+                .and_then(|d| *d)
+                .is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// The loaded DLL called `name` (any case).
+    #[must_use]
+    pub fn dll(&self, name: &str) -> Option<&Dll> {
+        self.dlls.iter().find(|d| d.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Points every IAT slot of `FFX.exe` and the DLLs at its own `int3`
+    /// stub (the Rust side), at a DLL's export, or (data imports) at a cell.
+    fn bind_imports(&mut self, stubs_at: u32) {
+        let mut at = stubs_at;
+        let mut cells = stubs_at + 0x8000;
+        let mut mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        let cmdline = cells;
+        mem.write_bytes(cmdline, b"FFX.exe\0");
+        cells += 0x10;
+        self.cmdline = cmdline;
+        let mut index = 0usize;
+        let exe = self.image.imports.clone();
+        for imp in &exe {
+            let full = format!("{}!{}", imp.dll, imp.name);
+            let dll = self.dll(&imp.dll).cloned();
+            // a data import: the DLL's own variable, else a cell
+            if let Some(&(_, v)) = crate::imports::DATA.iter().find(|(n, _)| *n == full) {
+                let target = if let Some(x) = dll.as_ref().and_then(|d| d.exports.get(&imp.name)) {
+                    self.routes.push((full, Route::Dll));
+                    *x
+                } else {
+                    let v = if imp.name == "_acmdln" { cmdline } else { v };
+                    ffx_bridge::Mem::write(&mut mem, cells, v);
+                    if imp.name == "_HUGE" {
+                        ffx_bridge::Mem::write(&mut mem, cells + 4, 0x7ff0_0000u32);
+                    }
+                    self.routes.push((full, Route::Rust));
+                    cells += 0x10;
+                    cells - 0x10
+                };
+                ffx_bridge::Mem::write(&mut mem, imp.slot, target);
+                continue;
+            }
+            if let Some(d) = &dll
+                && !RUST_WITH_DLLS.contains(&imp.name.as_str())
+                && let Some(&x) = d.exports.get(&imp.name)
+            {
+                ffx_bridge::Mem::write(&mut mem, imp.slot, x);
+                self.routes.push((full, Route::Dll));
+                continue;
+            }
+            self.imports.bind(index, &imp.dll, &imp.name, None);
+            let route = if self.imports.bound(index).is_some_and(|b| b.run.is_some()) {
+                Route::Rust
+            } else {
+                Route::Missing
+            };
+            self.routes.push((full, route));
+            self.arena.fill(at, &[INT3]);
+            self.arena.fill(imp.slot, &at.to_le_bytes());
+            self.stubs.insert(at, index);
+            index += 1;
+            at += 4;
+        }
+        let dlls = self.dlls.clone();
+        for d in &dlls {
+            for imp in &d.imports {
+                let full = format!("{}!{} (from {})", imp.dll, imp.name, d.name);
+                if let Some(x) = self
+                    .dll(&imp.dll)
+                    .and_then(|t| t.exports.get(&imp.name).copied())
+                {
+                    ffx_bridge::Mem::write(&mut mem, imp.slot, x);
+                    self.routes.push((full, Route::Dll));
+                    continue;
+                }
+                self.imports.bind(index, &imp.dll, &imp.name, Some(&d.name));
+                let route = if self.imports.bound(index).is_some_and(|b| b.run.is_some()) {
+                    Route::Rust
+                } else {
+                    Route::Missing
+                };
+                self.routes.push((full, route));
+                self.arena.fill(at, &[INT3]);
+                self.arena.fill(imp.slot, &at.to_le_bytes());
+                self.stubs.insert(at, index);
+                index += 1;
+                at += 4;
+            }
+        }
+    }
+
+    /// Ends the whole run: every thread unwinds with [`Error::Stopped`].
+    pub fn stop_all(&self, why: Stop) {
+        if let Ok(mut s) = self.stop.lock()
+            && s.is_none()
+        {
+            *s = Some(why);
+        }
+        self.sync.stop();
+    }
+
+    /// Why the whole run ended, if it did.
+    #[must_use]
+    pub fn stopped(&self) -> Option<Stop> {
+        self.stop.lock().ok().and_then(|s| s.clone())
+    }
+
+    /// A fresh handle value.
+    pub fn handle(&self) -> u32 {
+        self.handles.fetch_add(4, Ordering::Relaxed) + 4
+    }
+
+    /// `TlsAlloc`: the next slot (64 of them).
+    pub fn tls_alloc(&self) -> Option<u32> {
+        let i = self.tls_next.fetch_add(1, Ordering::Relaxed);
+        (i < 64).then_some(i)
+    }
+
+    /// Game threads still running.
+    #[must_use]
+    pub fn running_threads(&self) -> u32 {
+        self.running.load(Ordering::Acquire)
+    }
+
+    /// The image.
+    #[must_use]
+    pub fn image(&self) -> &Image {
+        &self.image
+    }
+}
+
+/// Stops every emulator (at its next block) when the run ends or runs out
+/// of time, so the threads see it; they resume or unwind themselves.
+fn watchdog(shared: &std::sync::Weak<Shared>) {
+    loop {
+        std::thread::sleep(WATCH);
+        let Some(s) = shared.upgrade() else { return };
+        if s.overdue()
+            && let Ok(list) = s.emulators.lock()
+        {
+            for &(_, h) in list.iter() {
+                // SAFETY: a live handle: an `Exec` removes its own under this
+                // lock before its emulator closes.
+                unsafe {
+                    uc_emu_stop(h as *mut std::ffi::c_void);
+                }
+            }
+        }
+    }
+}
+
+/// One game thread's executor.
+pub struct Exec {
+    uc: Unicorn<'static, State>,
+    shared: Arc<Shared>,
+    /// The game thread's id.
+    pub id: u32,
+    stack: (u32, u32),
     sentinel: u32,
     ret_stubs: u32,
     ret_float_stubs: u32,
     float_cell: u32,
-    stack: (u32, u32),
-    deadline: Option<Instant>,
-    stop_at: BTreeSet<String>,
+    /// The thread environment block.
+    pub teb: u32,
+    generation: u64,
+    mapped: BTreeSet<u32>,
     stopped: Option<Stop>,
     /// The counters.
     pub stats: Stats,
-    /// The C runtime's state (heap, `atexit`, ...).
-    pub crt: crate::imports::Crt,
-    /// Lets unstubbed C runtime imports return 0 instead of stopping
-    /// (they are still listed as missing).
-    pub lenient: bool,
-    /// Open files (the game folder).
-    pub files: crate::files::Files,
+    /// Return addresses on the stack when this thread failed (innermost
+    /// first), for the report.
+    pub trace: Vec<u32>,
+    /// The last basic blocks run before this thread failed, oldest first
+    /// (with `FFX_HOST_TRACE=n`).
+    pub recent: Vec<u32>,
+    /// The C runtime's per-thread state (`errno`'s cousin `GetLastError`,
+    /// `rand`).
+    pub crt: ThreadCrt,
+}
+
+impl Drop for Exec {
+    fn drop(&mut self) {
+        let id = self.id;
+        if let Ok(mut l) = self.shared.emulators.lock() {
+            l.retain(|&(t, _)| t != id);
+        }
+    }
 }
 
 impl std::fmt::Debug for Exec {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Exec")
-            .field("image", &self.image.base)
-            .field("ports", &self.table.len())
+            .field("thread", &self.id)
             .field("stats", &self.stats)
             .finish_non_exhaustive()
     }
 }
 
 impl Exec {
-    /// Builds the executor on `arena`, which already holds `image`: maps
-    /// the arena's regions into Unicorn, the stack, the thread block and
-    /// the stubs, binds the imports and marks the ports.
+    /// The main thread's executor over `shared`.
     ///
     /// # Errors
     /// When a mapping fails.
-    pub fn new(arena: Arc<Arena>, image: Image, table: Table, imports: Imports) -> Result<Self> {
-        let stack_base = arena.map_anywhere(REGION_HINT, STACK_SIZE, "main stack")?;
-        let stubs_at = arena.map_anywhere(REGION_HINT, STUB_SIZE, "stubs")?;
-        let teb_at = arena.map_anywhere(REGION_HINT, 4 * PAGE, "thread block")?;
-        let heap = crate::imports::Crt::new(&arena)?;
+    pub fn new(shared: Arc<Shared>) -> Result<Self> {
+        Self::on_thread(shared, MAIN_THREAD, STACK_SIZE)
+    }
+
+    /// An executor for game thread `id`: its own Unicorn instance over the
+    /// arena, its own stack, thread block and return stubs.
+    ///
+    /// # Errors
+    /// When a mapping fails.
+    pub fn on_thread(shared: Arc<Shared>, id: u32, stack_size: u32) -> Result<Self> {
+        let arena = Arc::clone(&shared.arena);
+        let stack_base = arena.map_anywhere(REGION_HINT, stack_size, &format!("stack {id:#x}"))?;
+        let block = arena.map_anywhere(REGION_HINT, THREAD_BLOCK, &format!("thread {id:#x}"))?;
+        let stubs_at = block + 3 * PAGE;
 
         let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default())?;
         // A Core 2: no SSE4.2, whose string instructions Unicorn gets wrong
@@ -169,34 +611,50 @@ impl Exec {
 
         let mut exec = Self {
             uc,
-            arena,
-            image,
-            table,
-            imports,
-            stubs: HashMap::new(),
+            shared,
+            id,
+            stack: (stack_base, stack_base + stack_size),
             sentinel: stubs_at,
             ret_stubs: stubs_at + 0x10,
             ret_float_stubs: stubs_at + 0x10 + 4 * (MAX_RET_WORDS + 1),
-            float_cell: stubs_at + 0x800,
-            stack: (stack_base, stack_base + STACK_SIZE),
-            deadline: None,
-            stop_at: BTreeSet::new(),
+            float_cell: stubs_at + 0xf00,
+            teb: block + PAGE,
+            generation: u64::MAX,
+            mapped: BTreeSet::new(),
             stopped: None,
             stats: Stats::default(),
-            crt: heap,
-            files: crate::files::Files::default(),
-            lenient: false,
+            trace: Vec::new(),
+            recent: Vec::new(),
+            crt: ThreadCrt::default(),
         };
-        exec.write_stubs(stubs_at);
-        exec.bind_imports(stubs_at + 0x1000);
-        for addr in exec.table.addresses().collect::<Vec<_>>() {
-            if exec.image.is_code(addr) {
-                exec.arena.fill(addr, &[INT3]);
-            }
+        if let Ok(mut l) = exec.shared.emulators.lock() {
+            l.push((id, exec.uc.get_handle() as usize));
         }
-        exec.map_into_unicorn()?;
-        exec.thread_block(teb_at)?;
+        exec.write_stubs(stubs_at);
+        exec.sync_regions()?;
+        exec.thread_block(block)?;
         exec.add_hooks()?;
+        if exec.shared.cover.load(Ordering::Relaxed) {
+            exec.add_profile_hook()?;
+        }
+        if exec.shared.count.load(Ordering::Relaxed) {
+            exec.add_count_hook()?;
+        }
+        let recent = std::env::var("FFX_HOST_TRACE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        if recent > 0 {
+            exec.uc.get_data_mut().recent_cap = recent;
+            exec.uc.add_block_hook(1, 0, |uc, addr, _| {
+                let d = uc.get_data_mut();
+                if d.recent.len() == d.recent_cap {
+                    d.recent.pop_front();
+                }
+                #[allow(clippy::cast_possible_truncation)] // a 32-bit address
+                d.recent.push_back(addr as u32);
+            })?;
+        }
         let top = exec.stack.1 - 0x100;
         exec.uc.reg_write(RegisterX86::ESP, u64::from(top))?;
         exec.uc
@@ -204,50 +662,139 @@ impl Exec {
         Ok(exec)
     }
 
+    /// What every thread shares.
+    #[must_use]
+    pub fn shared(&self) -> &Arc<Shared> {
+        &self.shared
+    }
+
+    /// Whether this is the main thread.
+    #[must_use]
+    pub fn is_main(&self) -> bool {
+        self.id == MAIN_THREAD
+    }
+
     /// The arena.
     #[must_use]
     pub fn arena(&self) -> &Arc<Arena> {
-        &self.arena
+        &self.shared.arena
     }
 
     /// The arena as [`ffx_bridge::Mem`].
     #[must_use]
     pub fn mem(&self) -> ArenaMem {
         ArenaMem {
-            arena: Arc::clone(&self.arena),
+            arena: Arc::clone(&self.shared.arena),
         }
     }
 
     /// The image.
     #[must_use]
     pub fn image(&self) -> &Image {
-        &self.image
+        &self.shared.image
     }
 
     /// The function table.
     #[must_use]
     pub fn table(&self) -> &Table {
-        &self.table
+        &self.shared.table
     }
 
-    /// The basic blocks run in `.text` so far (with [`Exec::cover`] on).
+    /// The open files.
+    pub fn files(&self) -> MutexGuard<'_, crate::files::Files> {
+        self.shared
+            .files
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// `malloc` on the shared heap: a 16-byte aligned block, or 0.
     #[must_use]
-    pub fn blocks(&self) -> &BTreeSet<u32> {
-        &self.uc.get_data().blocks
+    pub fn alloc(&self, size: u32) -> u32 {
+        let mut mem = self.mem();
+        self.heap().alloc(&mut mem, size)
     }
 
-    /// Records every basic block run in `.text` (slower).
+    /// `free` on the shared heap.
+    pub fn release(&self, p: u32) {
+        let mem = self.mem();
+        self.heap().release(&mem, p);
+    }
+
+    /// A heap block's usable size.
+    #[must_use]
+    pub fn size_of(&self, p: u32) -> u32 {
+        let mem = self.mem();
+        self.heap().size_of(&mem, p)
+    }
+
+    fn heap(&self) -> MutexGuard<'_, Heap> {
+        self.shared
+            .heap
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A fresh handle value.
+    #[must_use]
+    pub fn new_handle(&self) -> u32 {
+        self.shared.handle()
+    }
+
+    /// This thread's profile so far (with [`Exec::cover`] on).
+    #[must_use]
+    pub fn profile(&self) -> &Profile {
+        &self.uc.get_data().profile
+    }
+
+    /// Every thread's profile: this one's and those of the threads that
+    /// ended.
+    #[must_use]
+    pub fn all_profile(&self) -> Profile {
+        let mut p = self
+            .shared
+            .finished
+            .lock()
+            .map(|f| f.clone())
+            .unwrap_or_default();
+        p.merge(self.profile());
+        p
+    }
+
+    /// Profiles every basic block run, by count and clock samples (slower;
+    /// threads started later profile too).
     ///
     /// # Errors
     /// When Unicorn refuses the hook.
     pub fn cover(&mut self) -> Result<()> {
-        let Some(text) = self.image.text().cloned() else {
-            return Ok(());
-        };
-        let (lo, hi) = (u64::from(text.start), u64::from(text.start + text.size));
-        self.uc.add_block_hook(lo, hi - 1, |uc, addr, _| {
+        if !self.shared.cover.swap(true, Ordering::Relaxed) {
+            let tick = Arc::downgrade(&self.shared.tick);
+            std::thread::Builder::new()
+                .name("ffx-host ticker".into())
+                .spawn(move || {
+                    while let Some(t) = tick.upgrade() {
+                        t.fetch_add(1, Ordering::Relaxed);
+                        drop(t);
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                })
+                .map_err(Error::Io)?;
+        }
+        self.add_profile_hook()
+    }
+
+    fn add_profile_hook(&mut self) -> Result<()> {
+        let tick = Arc::clone(&self.shared.tick);
+        self.uc.add_block_hook(1, 0, move |uc, addr, _| {
+            let t = tick.load(Ordering::Relaxed);
+            let d = uc.get_data_mut();
             #[allow(clippy::cast_possible_truncation)] // a 32-bit address
-            uc.get_data_mut().blocks.insert(addr as u32);
+            let addr = addr as u32;
+            *d.profile.blocks.entry(addr).or_default() += 1;
+            if t != d.last_tick {
+                d.last_tick = t;
+                *d.profile.samples.entry(addr).or_default() += 1;
+            }
         })?;
         Ok(())
     }
@@ -258,13 +805,19 @@ impl Exec {
     /// # Errors
     /// When Unicorn refuses the hook.
     pub fn count_instructions(&mut self) -> Result<()> {
-        self.uc.add_code_hook(0, u64::from(u32::MAX), |uc, _, _| {
+        self.shared.count.store(true, Ordering::Relaxed);
+        self.add_count_hook()
+    }
+
+    fn add_count_hook(&mut self) -> Result<()> {
+        self.uc.add_code_hook(1, 0, |uc, _, _| {
             uc.get_data_mut().instructions += 1;
         })?;
         Ok(())
     }
 
-    /// Instructions emulated so far (with [`Exec::count_instructions`]).
+    /// Instructions emulated so far on this thread (with
+    /// [`Exec::count_instructions`]).
     #[must_use]
     pub fn instructions(&self) -> u64 {
         self.uc.get_data().instructions
@@ -273,26 +826,86 @@ impl Exec {
     /// Stops the run when the import `name` (`USER32.dll!CreateWindowExW`)
     /// is first called: a milestone.
     pub fn stop_at(&mut self, name: &str) {
-        self.stop_at.insert(name.to_string());
+        if let Ok(mut s) = self.shared.stop_at.write() {
+            s.insert(name.to_string());
+        }
     }
 
     /// Ends the run after `budget` of wall-clock time.
     pub fn set_budget(&mut self, budget: Duration) {
-        self.deadline = Some(Instant::now() + budget);
+        if let Ok(mut d) = self.shared.deadline.lock() {
+            *d = Some(Instant::now() + budget);
+        }
     }
 
-    /// Ends the run (from a port or an import): every level unwinds with
-    /// [`Error::Stopped`].
+    /// Lets unstubbed C runtime imports return 0 instead of stopping
+    /// (they are still listed as missing).
+    pub fn set_lenient(&mut self, on: bool) {
+        self.shared.lenient.store(on, Ordering::Relaxed);
+    }
+
+    /// Ends the run (from a port or an import): every level of this thread
+    /// unwinds with [`Error::Stopped`]. On the main thread, and for a
+    /// milestone, an exit or the budget on any thread, the whole run ends.
     pub fn end(&mut self, why: Stop) {
         if self.stopped.is_none() {
             if let Stop::Milestone(m) = &why {
                 self.stats.milestones.push(m.clone());
             }
+            if matches!(why, Stop::Failed(..)) {
+                self.trace = self.backtrace();
+                self.recent = self.uc.get_data().recent.iter().copied().collect();
+            }
+            let global = self.is_main() || matches!(why, Stop::Milestone(_) | Stop::Budget(_));
+            if global {
+                self.shared.stop_all(why.clone());
+            }
             self.stopped = Some(why);
         }
     }
 
-    /// Why the last run stopped early, if it did.
+    /// Return addresses on this thread's stack, innermost first: words
+    /// that point into `FFX.exe`'s or a DLL's code just after a `call`.
+    #[must_use]
+    pub fn backtrace(&self) -> Vec<u32> {
+        let Ok(esp) = self.reg(RegisterX86::ESP) else {
+            return Vec::new();
+        };
+        let mem = self.mem();
+        let code =
+            |a: u32| self.shared.image.is_code(a) || self.shared.dlls.iter().any(|d| d.contains(a));
+        let after_call = |a: u32| {
+            let b = |k: u32| mem.read::<u8>(a.wrapping_sub(k));
+            b(5) == 0xe8
+                || (b(2) == 0xff && (b(1) & 0x38) == 0x10)
+                || (b(3) == 0xff && (b(2) & 0x38) == 0x10)
+                || (b(6) == 0xff && (b(5) & 0x38) == 0x10)
+        };
+        let mut out = Vec::new();
+        let mut p = esp;
+        while p < self.stack.1 && out.len() < 24 {
+            let w: u32 = mem.read(p);
+            if code(w) && after_call(w) {
+                out.push(w);
+            }
+            p += 4;
+        }
+        out
+    }
+
+    /// Whether this thread is to unwind (its own stop, or the run's).
+    fn halted(&mut self) -> bool {
+        if self.stopped.is_some() {
+            return true;
+        }
+        if self.shared.sync.stopping() {
+            self.stopped = Some(self.shared.stopped().unwrap_or(Stop::Returned));
+            return true;
+        }
+        false
+    }
+
+    /// Why this thread stopped early, if it did.
     #[must_use]
     pub fn stopped(&self) -> Option<&Stop> {
         self.stopped.as_ref()
@@ -306,24 +919,25 @@ impl Exec {
     /// A fault in the emulated code, an unstubbed import, or a stop
     /// ([`Exec::stopped`]) while it ran.
     pub fn call(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
-        if self.stopped.is_some() {
+        if self.halted() {
             return Err(Error::Stopped);
         }
-        let r = if let Some(entry) = self.table.get(addr).copied() {
+        let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
             let ret = (entry.port)(self, args);
-            if self.stopped.is_some() {
+            if self.halted() {
                 Err(Error::Stopped)
             } else {
                 Ok(ret)
             }
-        } else if let Some(&i) = self.stubs.get(&addr) {
+        } else if let Some(&i) = self.shared.stubs.get(&addr) {
             self.run_import(i, args)
         } else {
             self.call_unicorn(addr, conv, args)
         };
-        // A failure anywhere ends the whole run: callers (ports, `_initterm`)
-        // can't all carry a `Result`, so every level unwinds with `Stopped`.
+        // A failure anywhere ends the thread (the main thread: the run):
+        // callers (ports, `_initterm`) can't all carry a `Result`, so every
+        // level unwinds with `Stopped`.
         match r {
             Err(e) if !matches!(e, Error::Stopped) => {
                 let eip = self.reg(RegisterX86::EIP).unwrap_or(0);
@@ -345,6 +959,19 @@ impl Exec {
             ..Args::default()
         };
         Ok(self.call(addr, Conv::Cdecl, &args)?.eax)
+    }
+
+    /// [`Exec::call`] for a stdcall function of word arguments, returning
+    /// `eax`.
+    ///
+    /// # Errors
+    /// As [`Exec::call`].
+    pub fn call_stdcall(&mut self, addr: u32, words: &[u32]) -> Result<u32> {
+        let args = Args {
+            stack: words.to_vec(),
+            ..Args::default()
+        };
+        Ok(self.call(addr, Conv::Stdcall, &args)?.eax)
     }
 
     fn call_unicorn(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
@@ -388,16 +1015,56 @@ impl Exec {
     }
 
     /// Runs the game from its entry point (the CRT start-up, the static
-    /// initialisers, `WinMain`) until it returns or stops.
+    /// initialisers, `WinMain`) until it returns or stops; then ends every
+    /// other thread.
     ///
     /// # Errors
     /// As [`Exec::call`].
     pub fn run_entry(&mut self) -> Result<Stop> {
-        let entry = self.image.entry;
-        match self.call(entry, Conv::Stdcall, &Args::default()) {
+        let entry = self.shared.image.entry;
+        let r = match self.call(entry, Conv::Stdcall, &Args::default()) {
             Ok(_) => Ok(Stop::Returned),
             Err(Error::Stopped) => Ok(self.stopped.clone().unwrap_or(Stop::Returned)),
             Err(e) => Err(e),
+        };
+        if let Ok(stop) = &r {
+            self.shared.stop_all(stop.clone());
+        }
+        r
+    }
+
+    /// `DllMain(base, reason, 0)` of every loaded DLL, in load order
+    /// (`DLL_PROCESS_ATTACH` 1 on the main thread, `DLL_THREAD_ATTACH` 2 on
+    /// a new one).
+    ///
+    /// # Errors
+    /// As [`Exec::call`]; a `DllMain` returning FALSE stops the run.
+    pub fn attach_dlls(&mut self, reason: u32) -> Result<()> {
+        let dlls: Vec<(String, u32, u32)> = self
+            .shared
+            .dlls
+            .iter()
+            .map(|d| (d.name.clone(), d.base, d.entry))
+            .collect();
+        for (name, base, entry) in dlls {
+            let ok = self.call_stdcall(entry, &[base, reason, 0])?;
+            if ok == 0 && reason == 1 {
+                self.end(Stop::Failed(
+                    format!("{name}: DllMain returned FALSE"),
+                    entry,
+                ));
+                return Err(Error::Stopped);
+            }
+        }
+        Ok(())
+    }
+
+    /// Waits up to `limit` for the game threads to end (after the run
+    /// stopped, they unwind within a slice).
+    pub fn join_threads(&self, limit: Duration) {
+        let until = Instant::now() + limit;
+        while self.shared.running_threads() > 0 && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
         }
     }
 
@@ -405,29 +1072,29 @@ impl Exec {
     /// imports on the way.
     fn run(&mut self, mut pc: u32) -> Result<()> {
         loop {
+            if self.halted() {
+                return Err(Error::Stopped);
+            }
+            self.sync_regions()?;
             self.uc.get_data_mut().event = None;
-            let timeout = match self.deadline {
-                Some(d) => {
-                    let left = d.saturating_duration_since(Instant::now());
-                    if left.is_zero() {
-                        self.stopped = Some(Stop::Budget(pc));
-                        return Err(Error::Stopped);
-                    }
-                    u64::try_from(left.as_micros()).unwrap_or(u64::MAX).max(1)
+            if self.shared.overdue() {
+                if !self.shared.sync.stopping() {
+                    self.end(Stop::Budget(pc));
                 }
-                None => 0,
-            };
+                self.halted();
+                return Err(Error::Stopped);
+            }
             self.stats.starts += 1;
             let t = Instant::now();
-            let r = self.uc.emu_start(u64::from(pc), 0, timeout, 0);
+            let r = self.uc.emu_start(u64::from(pc), 0, 0, 0);
             self.stats.emulated += t.elapsed();
             let event = self.uc.get_data_mut().event.take();
             match event {
                 Some(Event::Int3(at)) if at == self.sentinel => return Ok(()),
                 Some(Event::Int3(at)) => {
-                    pc = if let Some(&i) = self.stubs.get(&at) {
+                    pc = if let Some(&i) = self.shared.stubs.get(&at) {
                         self.enter_import(i)?
-                    } else if self.table.get(at).is_some() {
+                    } else if self.shared.table.get(at).is_some() {
                         self.enter_port(at)?
                     } else {
                         return Err(Error::Interrupt(3, at));
@@ -445,14 +1112,43 @@ impl Exec {
                 None => {
                     r?;
                     let eip = self.reg(RegisterX86::EIP)?;
-                    if self.deadline.is_some_and(|d| Instant::now() >= d) {
-                        self.stopped = Some(Stop::Budget(eip));
-                        return Err(Error::Stopped);
+                    if self.shared.overdue() {
+                        // the watchdog stopped it: the loop's check ends it
+                        pc = eip;
+                        continue;
                     }
                     return Err(Error::Ended(eip));
                 }
             }
         }
+    }
+
+    /// Maps into this thread's emulator every arena region it hasn't seen
+    /// (another thread's `VirtualAlloc`, stack or DLL).
+    fn sync_regions(&mut self) -> Result<()> {
+        let g = self.shared.arena.generation();
+        if g == self.generation {
+            return Ok(());
+        }
+        for r in self.shared.arena.regions() {
+            if self.mapped.contains(&r.start) {
+                continue;
+            }
+            // SAFETY: the region is committed host memory owned by the
+            // arena, which outlives the emulator (the `Shared` this `Exec`
+            // holds keeps the arena; the emulator is dropped first).
+            unsafe {
+                self.uc.mem_map_ptr(
+                    u64::from(r.start),
+                    u64::from(r.size),
+                    Prot::ALL,
+                    self.shared.arena.ptr(r.start).cast(),
+                )?;
+            }
+            self.mapped.insert(r.start);
+        }
+        self.generation = g;
+        Ok(())
     }
 
     /// The caller's arguments at an entry from Unicorn: `esp` at the
@@ -474,14 +1170,13 @@ impl Exec {
     /// Runs the port at `at` for Unicorn code that called it; returns where
     /// to resume (a return stub).
     fn enter_port(&mut self, at: u32) -> Result<u32> {
-        let entry = *self.table.get(at).ok_or(Error::Interrupt(3, at))?;
+        let entry = *self.shared.table.get(at).ok_or(Error::Interrupt(3, at))?;
         *self.stats.ports.entry(at).or_default() += 1;
         let args = self.entry_args(entry.words)?;
         let saved = self.save_regs()?;
         let ret = (entry.port)(self, &args);
         self.restore_regs(&saved)?;
-        if let Some(stop) = &self.stopped {
-            let _ = stop;
+        if self.halted() {
             return Err(Error::Stopped);
         }
         let pops = if entry.conv.callee_pops() {
@@ -494,13 +1189,13 @@ impl Exec {
 
     /// Runs import `i` for Unicorn code that called it.
     fn enter_import(&mut self, i: usize) -> Result<u32> {
-        let words = self.imports.bound(i).map_or(0, |b| b.words);
+        let words = self.shared.imports.bound(i).map_or(0, |b| b.words);
         let args = self.entry_args(words)?;
         let saved = self.save_regs()?;
         let ret = self.run_import(i, &args);
         self.restore_regs(&saved)?;
         let ret = ret?;
-        let pops = match self.imports.bound(i) {
+        let pops = match self.shared.imports.bound(i) {
             Some(b) if b.conv.callee_pops() => b.words,
             _ => 0,
         };
@@ -508,33 +1203,41 @@ impl Exec {
     }
 
     fn run_import(&mut self, i: usize, args: &Args) -> Result<Ret> {
-        let Some(b) = self.imports.bound(i).cloned() else {
+        let Some(b) = self.shared.imports.bound(i).cloned() else {
             return Err(Error::Interrupt(3, 0));
         };
         *self.stats.imports.entry(b.name.clone()).or_default() += 1;
-        if self.stop_at.contains(&b.name) {
-            self.stats.milestones.push(b.name.clone());
-            self.stopped = Some(Stop::Milestone(b.name.clone()));
+        let stop = self
+            .shared
+            .stop_at
+            .read()
+            .is_ok_and(|s| s.contains(&b.name));
+        if stop {
+            self.end(Stop::Milestone(b.name.clone()));
             return Err(Error::Stopped);
         }
         match b.run {
             Some(f) => {
                 let ret = f(self, args);
-                if self.stopped.is_some() {
+                if self.halted() {
                     return Err(Error::Stopped);
                 }
                 Ok(ret)
             }
             None => {
-                if !self.stats.missing_imports.contains(&b.name) {
-                    self.stats.missing_imports.push(b.name.clone());
+                let shown = match &b.from {
+                    Some(d) => format!("{} (from {d})", b.name),
+                    None => b.name.clone(),
+                };
+                if !self.stats.missing_imports.contains(&shown) {
+                    self.stats.missing_imports.push(shown.clone());
                 }
                 // lenient: a C runtime function (cdecl, so nothing to pop)
                 // returns 0 and the run goes on, to see further
                 let cdecl = b.name.starts_with("MSVCR110.dll!")
                     && !b.name.contains('?')
                     && !b.name.contains("_CI");
-                if self.lenient && cdecl {
+                if self.shared.lenient.load(Ordering::Relaxed) && cdecl {
                     return Ok(Ret::eax(0));
                 }
                 let caller = if args.slots == 0 {
@@ -543,8 +1246,7 @@ impl Exec {
                     self.mem().read::<u32>(args.slots - 4)
                 };
                 Err(Error::UnstubbedImport(format!(
-                    "{} (called from {caller:#010x})",
-                    b.name
+                    "{shown} (called from {caller:#010x})"
                 )))
             }
         }
@@ -602,9 +1304,11 @@ impl Exec {
         Ok(Some(f80_to_f64(&raw[..10])))
     }
 
-    /// The sentinel, the `ret n` and `fld; ret n` stubs.
+    /// The sentinel, the `ret n` and `fld; ret n` stubs (this thread's own:
+    /// the float cell is per thread).
     fn write_stubs(&mut self, at: u32) {
-        self.arena.fill(at, &[INT3]);
+        let arena = Arc::clone(&self.shared.arena);
+        arena.fill(at, &[INT3]);
         for n in 0..=MAX_RET_WORDS {
             let mut code = [0x90u8; 4];
             if n == 0 {
@@ -614,88 +1318,21 @@ impl Exec {
                 #[allow(clippy::cast_possible_truncation)] // at most 256
                 code[1..3].copy_from_slice(&((4 * n) as u16).to_le_bytes());
             }
-            self.arena.fill(self.ret_stubs + 4 * n, &code);
+            arena.fill(self.ret_stubs + 4 * n, &code);
             // fld qword ptr [cell]; ret n
             let mut f = [0x90u8; 12];
             f[0] = 0xdd;
             f[1] = 0x05;
             f[2..6].copy_from_slice(&self.float_cell.to_le_bytes());
             f[6..10].copy_from_slice(&code);
-            self.arena.fill(self.ret_float_stubs + 12 * n, &f);
+            arena.fill(self.ret_float_stubs + 12 * n, &f);
         }
     }
 
-    /// Points every IAT slot at its own `int3` stub, and each data import
-    /// at a cell of its own.
-    fn bind_imports(&mut self, mut at: u32) {
-        let imports = self.image.imports.clone();
-        let mut cells = at + 0x8000;
-        let mut mem = self.mem();
-        let cmdline = cells;
-        mem.write_bytes(cmdline, b"FFX.exe\0");
-        cells += 0x10;
-        self.crt.cmdline = cmdline;
-        for (i, imp) in imports.iter().enumerate() {
-            let full = format!("{}!{}", imp.dll, imp.name);
-            if let Some(&(_, v)) = crate::imports::DATA.iter().find(|(n, _)| *n == full) {
-                let v = if imp.name == "_acmdln" { cmdline } else { v };
-                ffx_bridge::Mem::write(&mut mem, cells, v);
-                if imp.name == "_HUGE" {
-                    ffx_bridge::Mem::write(&mut mem, cells + 4, 0x7ff0_0000u32);
-                }
-                ffx_bridge::Mem::write(&mut mem, imp.slot, cells);
-                cells += 0x10;
-                continue;
-            }
-            self.imports.bind(i, &imp.dll, &imp.name);
-            self.arena.fill(at, &[INT3]);
-            self.arena.fill(imp.slot, &at.to_le_bytes());
-            self.stubs.insert(at, i);
-            at += 4;
-        }
-    }
-
-    /// Every arena region into Unicorn, on the same host memory.
-    fn map_into_unicorn(&mut self) -> Result<()> {
-        for r in self.arena.regions() {
-            // SAFETY: the region is committed host memory owned by the
-            // arena, which outlives the emulator (`Exec` holds both, the
-            // emulator dropped first).
-            unsafe {
-                self.uc.mem_map_ptr(
-                    u64::from(r.start),
-                    u64::from(r.size),
-                    Prot::ALL,
-                    self.arena.ptr(r.start).cast(),
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Maps a region the game asked for at run time (heap growth,
-    /// `VirtualAlloc`) into the arena and Unicorn.
-    ///
-    /// # Errors
-    /// When the arena or Unicorn refuse it.
-    pub fn map_region(&mut self, size: u32, name: &str) -> Result<u32> {
-        let at = self.arena.map_anywhere(REGION_HINT, size, name)?;
-        let size = size.next_multiple_of(PAGE);
-        // SAFETY: as in `map_into_unicorn`.
-        unsafe {
-            self.uc.mem_map_ptr(
-                u64::from(at),
-                u64::from(size),
-                Prot::ALL,
-                self.arena.ptr(at).cast(),
-            )?;
-        }
-        Ok(at)
-    }
-
-    /// The main thread's TEB at `at + PAGE` (fs), a GDT at `at`, an empty
-    /// PEB at `at + 2 * PAGE`: what MSVC's start-up code and SEH frames
-    /// read (`fs:[0]`, the stack limits, `fs:[0x18]`, `fs:[0x30]`).
+    /// The thread's TEB at `at + PAGE` (fs), a GDT at `at`, an empty PEB
+    /// at `at + 2 * PAGE`: what MSVC's start-up code and SEH frames read
+    /// (`fs:[0]`, the stack limits, `fs:[0x18]`, `fs:[0x30]`), and the TLS
+    /// slots at `TEB + 0xe10`.
     fn thread_block(&mut self, at: u32) -> Result<()> {
         let teb = at + PAGE;
         let peb = at + 2 * PAGE;
@@ -705,8 +1342,8 @@ impl Exec {
         w(&mut mem, teb + 4, self.stack.1);
         w(&mut mem, teb + 8, self.stack.0);
         w(&mut mem, teb + 0x18, teb);
-        w(&mut mem, teb + 0x24, 1);
-        w(&mut mem, teb + 0x2c, at + 3 * PAGE); // TLS slots
+        w(&mut mem, teb + 0x20, 0x1000); // ClientId: process
+        w(&mut mem, teb + 0x24, self.id);
         w(&mut mem, teb + 0x30, peb);
         let descriptor = |base: u64, limit: u64, access: u64, flags: u64| -> u64 {
             (limit & 0xffff)
@@ -769,15 +1406,25 @@ impl Exec {
         Ok(())
     }
 
+    /// Maps a region the game asked for at run time (`VirtualAlloc`) into
+    /// the arena; every thread's emulator maps it before it next runs.
+    ///
+    /// # Errors
+    /// When the arena or Unicorn refuse it.
+    pub fn map_region(&mut self, size: u32, name: &str) -> Result<u32> {
+        let at = self.shared.arena.map_anywhere(REGION_HINT, size, name)?;
+        self.sync_regions()?;
+        Ok(at)
+    }
+
     /// A heap block holding `code`, runnable by Unicorn (tests and
     /// trampolines).
     ///
     /// # Errors
     /// When the heap is full.
     pub fn alloc_code(&mut self, code: &[u8]) -> Result<u32> {
-        let mut mem = self.mem();
         let len = u32::try_from(code.len()).unwrap_or(u32::MAX);
-        let at = self.crt.alloc(&mut mem, len);
+        let at = self.alloc(len);
         if at == 0 {
             return Err(Error::Map(0, len, "heap full".into()));
         }
@@ -796,7 +1443,7 @@ impl Exec {
     /// The import table (for the report).
     #[must_use]
     pub fn imports(&self) -> &Imports {
-        &self.imports
+        &self.shared.imports
     }
 
     /// Runs an import's Rust side directly (tests).
@@ -805,6 +1452,174 @@ impl Exec {
     /// As [`Exec::call`].
     pub fn call_import(&mut self, f: ImportFn, args: &Args) -> Result<Ret> {
         Ok(f(self, args))
+    }
+
+    /// Starts game thread `entry(param)` on its own host thread
+    /// (`CreateThread`, `_beginthreadex` through the DLL, the thread
+    /// pool); with `suspended` it waits for [`Exec::resume_thread`].
+    /// Returns the handle and the id.
+    pub fn spawn_thread(
+        &mut self,
+        entry: u32,
+        param: u32,
+        suspended: bool,
+        via: &'static str,
+    ) -> (u32, u32) {
+        let shared = Arc::clone(&self.shared);
+        let handle = shared.handle();
+        let id = shared.thread_ids.fetch_add(4, Ordering::Relaxed) + 4;
+        shared.sync.insert(
+            handle,
+            crate::sync::Obj::Thread {
+                id,
+                code: crate::sync::STILL_ACTIVE,
+                done: false,
+            },
+        );
+        if let Ok(mut t) = shared.threads.lock() {
+            t.push(ThreadInfo {
+                id,
+                handle,
+                entry,
+                param,
+                via,
+                started: false,
+                outcome: None,
+                at: shared.started.elapsed(),
+                stats: None,
+                trace: Vec::new(),
+            });
+        }
+        if !suspended {
+            start_thread(&shared, handle);
+        }
+        (handle, id)
+    }
+
+    /// `ResumeThread`: starts a thread created suspended; the previous
+    /// suspend count (1 if it was waiting, else 0).
+    pub fn resume_thread(&mut self, handle: u32) -> u32 {
+        let waiting = self.shared.threads.lock().is_ok_and(|t| {
+            t.iter()
+                .any(|i| i.handle == handle && !i.started && i.outcome.is_none())
+        });
+        if waiting {
+            start_thread(&self.shared, handle);
+            1
+        } else {
+            0
+        }
+    }
+
+    /// The thread pool's `SubmitThreadpoolWork(work)`: runs the work's
+    /// callback `(instance, context, work)` on a thread of its own.
+    pub fn submit_work(&mut self, work: u32) {
+        let item = self
+            .shared
+            .pool_work
+            .lock()
+            .ok()
+            .and_then(|w| w.get(&work).copied());
+        if let Some((callback, context)) = item {
+            // a trampoline: callback(0, context, work); ret 4
+            let code = pool_trampoline(callback, context, work);
+            if let Ok(at) = self.alloc_code(&code) {
+                self.spawn_thread(at, 0, false, "SubmitThreadpoolWork");
+            }
+        }
+    }
+}
+
+/// `push work; push context; push 0; call callback; ret 4`: a thread
+/// routine (stdcall, one parameter) that runs a thread-pool callback.
+fn pool_trampoline(callback: u32, context: u32, work: u32) -> Vec<u8> {
+    let mut c = Vec::new();
+    for v in [work, context, 0] {
+        c.push(0x68);
+        c.extend_from_slice(&v.to_le_bytes());
+    }
+    // mov eax, callback; call eax; ret 4
+    c.push(0xb8);
+    c.extend_from_slice(&callback.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0xd0, 0xc2, 0x04, 0x00]);
+    c
+}
+
+/// Runs the thread behind `handle` on a new host thread.
+fn start_thread(shared: &Arc<Shared>, handle: u32) {
+    let Some((id, entry, param)) = shared.threads.lock().ok().and_then(|mut t| {
+        let i = t.iter_mut().find(|i| i.handle == handle)?;
+        i.started = true;
+        i.at = shared.started.elapsed();
+        Some((i.id, i.entry, i.param))
+    }) else {
+        return;
+    };
+    let shared2 = Arc::clone(shared);
+    shared.running.fetch_add(1, Ordering::AcqRel);
+    let spawned = std::thread::Builder::new()
+        .name(format!("game thread {id:#x}"))
+        .stack_size(64 << 20)
+        .spawn(move || thread_main(&shared2, handle, id, entry, param));
+    if spawned.is_err() {
+        shared.running.fetch_sub(1, Ordering::AcqRel);
+        finish_thread(shared, handle, "host thread refused".into(), None, None);
+        shared.sync.thread_done(handle, 0);
+    }
+}
+
+fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u32) {
+    let mut ex = match Exec::on_thread(Arc::clone(shared), id, THREAD_STACK_SIZE) {
+        Ok(e) => e,
+        Err(e) => {
+            finish_thread(shared, handle, format!("no executor: {e}"), None, None);
+            shared.sync.thread_done(handle, 0);
+            shared.running.fetch_sub(1, Ordering::AcqRel);
+            return;
+        }
+    };
+    let _ = ex.attach_dlls(2);
+    let r = ex.call_stdcall(entry, &[param]);
+    let (code, outcome) = match (r, ex.stopped()) {
+        (Ok(code), _) => (code, format!("returned {code:#x}")),
+        (Err(_), Some(Stop::ThreadExit(code))) => (*code, format!("ExitThread({code:#x})")),
+        (Err(_), Some(s)) => (0, s.to_string()),
+        (Err(e), None) => (0, e.to_string()),
+    };
+    ex.stats.instructions = ex.instructions();
+    let stats = ex.stats.clone();
+    let profile = ex.profile().clone();
+    let trace = std::mem::take(&mut ex.trace);
+    drop(ex);
+    // the record first: a waiter on the handle reads it as soon as the
+    // handle is signalled
+    if let Ok(mut t) = shared.threads.lock()
+        && let Some(i) = t.iter_mut().find(|i| i.handle == handle)
+    {
+        i.trace = trace;
+    }
+    finish_thread(shared, handle, outcome, Some(stats), Some(profile));
+    shared.sync.thread_done(handle, code);
+    shared.running.fetch_sub(1, Ordering::AcqRel);
+}
+
+fn finish_thread(
+    shared: &Shared,
+    handle: u32,
+    outcome: String,
+    stats: Option<Stats>,
+    profile: Option<Profile>,
+) {
+    if let Some(p) = profile
+        && let Ok(mut f) = shared.finished.lock()
+    {
+        f.merge(&p);
+    }
+    if let Ok(mut t) = shared.threads.lock()
+        && let Some(i) = t.iter_mut().find(|i| i.handle == handle)
+    {
+        i.outcome = Some(outcome);
+        i.stats = stats;
     }
 }
 

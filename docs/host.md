@@ -14,19 +14,39 @@ same memory. The release runs no `FFX.exe` code.
 | `src/arena.rs` | `Arena` (the game's 32-bit address space) and `ArenaMem` (`ffx_bridge::Mem` over it) |
 | `src/image.rs` | maps `FFX.exe` into the arena at `0x00400000`; lists sections and imports |
 | `src/table.rs` | `Table`, `Entry`, `Conv`, `Args`, `Ret`: every port under its original address |
-| `src/exec.rs` | `Exec`: the mixed Rust/Unicorn executor, `Exec::call`, the stats |
-| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, milestones) |
-| `src/files.rs` | the `CreateFile` family over `std::fs`, rooted at the game folder |
+| `src/dll.rs` | loads the player's `MSVCR110.dll` and `MSVCP110.dll` into the arena, relocated (development only) |
+| `src/exec.rs` | `Shared` (what every game thread sees) and `Exec` (one game thread): the mixed Rust/Unicorn executor, `Exec::call`, threads, the stats |
+| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Steam, Iggy, milestones) |
+| `src/win32.rs` | threads, synchronisation, TLS, modules and code pages: what the DLLs and the threads need |
+| `src/sync.rs` | events, semaphores, mutexes, thread handles, critical sections on host primitives |
+| `src/files.rs` | the `CreateFile` family over `std::fs`: the game folder (read-only) and a documents folder (read-write) |
 | `src/ports.rs` | what this build registers in the table (by hand for now, see below) |
-| `src/report.rs` | the run in numbers: Rust vs Unicorn functions, imports, the stop |
+| `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
 
 ```bash
-cargo run -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X2-HD --cover --budget 60 [--lenient] [--stop-at DLL!name]
-FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test -p ffx-host
+cargo run --release -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X2-HD \
+    --documents <empty folder> --cover --budget 60 \
+    [--profile FILE] [--routes FILE] [--count] [--no-dlls] [--lenient] [--stop-at DLL!name]
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-host
+FFX_HOST_TRACE=200 ffx-rust ...   # the last 200 basic blocks of a thread that failed
 tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn needs cmake and ninja, below)
 ```
+
+- `--documents DIR`: the folder the game sees as `C:\FFXDocuments`
+  (`SHGetFolderPathW`), where it reads and writes
+  `Square Enix\FINAL FANTASY X&X-2 HD Remaster\GameSetting.ini` and the
+  saves. Without it every file there is missing and the game's
+  `Settings_Save` ends in the C runtime's invalid-parameter handler
+  (`fwrite` on the NULL stream `fopen` gave it), as the original would.
+- `--profile FILE`: every function that ran in Unicorn, tab-separated:
+  module, start, name, calls, basic blocks, clock samples (about 1 ms
+  each). Implies `--cover`.
+- `--routes FILE`: every import of `FFX.exe` and the DLLs and where it went
+  (`rust`, `dll`, `missing`).
+- `--count`: counts instructions (a code hook on every instruction: about
+  twice as slow; the report gives instructions per second).
 
 ## The arena
 
@@ -150,13 +170,16 @@ stops the emulator, and the executor's loop decides.
   fastcall (`ecx`, `edx`) and `FastcallCallerPops`, the LTCG custom
   convention (`ecx`, `edx`, stack words the caller pops: `ret`, then the
   caller's `add esp`). `Conv::callee_pops` picks the return stub.
-- **Failures.** An unstubbed import, a fault or the budget ends the whole
-  run (`Exec::end`): every level returns `Error::Stopped`, since callers
+- **Failures.** An unstubbed import or a fault ends the thread, on the
+  main thread the whole run (`Exec::end`; a milestone or the budget end the
+  run from any thread): every level returns `Error::Stopped`, since callers
   such as `_initterm` or a port can't all carry a `Result`. The outcome
-  says where (`Stop::Failed(why, eip)`, the caller of an unstubbed import).
+  says where (`Stop::Failed(why, eip)`, the caller of an unstubbed import),
+  the report adds the return addresses found on the stack, and
+  `FFX_HOST_TRACE=n` the last `n` basic blocks.
 - **x87.** The control word starts at `0x027f` (53-bit), as Windows starts
   threads. The oracle's exact transcendental instructions (`ffx-oracle`'s
-  `x87`) are not wired in yet: they matter if MSVCR110's math runs
+  `x87`) are not wired in yet: they matter now that MSVCR110's math runs
   emulated (below, "What blocks the next step").
 
 ## Imports
@@ -168,11 +191,13 @@ in the stub page; the four data imports (`_acmdln`, `_fmode`, `_commode`,
 `_HUGE`) point at cells instead. `imports::TABLE` gives each import's
 convention, stack words and Rust side.
 
-- **C runtime and STL → Rust.** `MSVCR110` functions are written in Rust
-  (`malloc` on the arena heap, `_initterm` calling through `Exec::call`,
-  `rand` with MSVC's sequence). `MSVCP110` (iostreams, locale, strings) is
-  the next wall (below). `--lenient` lets unstubbed `MSVCR110` functions
-  (cdecl, so nothing to pop) return 0 and only lists them, to see further.
+- **C runtime and STL: the player's DLLs, some Rust.** See "The C runtime
+  DLLs" below: `FFX.exe`'s `MSVCR110` and `MSVCP110` imports go to the
+  player's own DLLs in Unicorn, except the 26 whose Rust side is exact
+  (`RUST_WITH_DLLS`). `--no-dlls` runs the Rust side only, as the first
+  round did (the run then stops at `MSVCP110.dll!basic_ios`); `--lenient`
+  lets unstubbed `MSVCR110` functions (cdecl, so nothing to pop) return 0
+  and only lists them.
 - **Win32.** This round's stand-ins are deterministic and platform-free,
   so the Linux check runs them (fixed clocks, fake handles, files from the
   game folder through `std::fs`, read-only). On Windows the window, input,
@@ -185,29 +210,108 @@ convention, stack words and Rust side.
   is a milestone for now.
 - **FMOD, Iggy, movies, Steam.** `rust_audio` (the M4 mixer), `ffx-swf`
   (Ruffle), `ffx-movie`, and `steam_api.dll` (`steam_api64.dll` at stage 4).
-- **Milestones.** `CreateWindowExA` and `D3D11CreateDevice*` end the run
-  with a milestone; `--stop-at DLL!name` adds any import.
+  This round's stand-ins, for the Linux check: Steam is absent
+  (`SteamAPI_RestartAppIfNecessary` and `SteamAPI_Init` return false, so
+  `Steam_Init` skips the interfaces and achievements); every Iggy export
+  is a null stand-in that returns 0 (its stack size comes from the
+  decorated name, `_IggyInit@4`).
+- **The window.** `CreateWindowExA` returns a fake handle and records a
+  milestone; `ShowWindow`, `SetWindowPos`, `GetClientRect` (1920 x 1080),
+  `PeekMessage` (no messages) and the rest of the window calls on the way
+  to the device are stand-ins.
+- **Milestones.** The renderer's start-up first calls `D3D11CreateDevice`
+  for the feature level only (no device, no context): `S_OK` and 11_0,
+  recorded. `D3D11CreateDeviceAndSwapChain` (or `D3D11CreateDevice` asked
+  for a device) ends the run: the Linux check can't go past it without COM
+  stand-ins for the device, the context and the swap chain. `--stop-at
+  DLL!name` stops at any import, the window included.
+
+## The C runtime DLLs
+
+The inlined STL templates in `FFX.exe` touch MSVCP110's objects directly
+(`basic_ios`, `locale` facets, `basic_string`), so a Rust side must keep
+MSVCP110's layouts. Until it does, the player's own `MSVCR110.dll` and
+`MSVCP110.dll` (from the game folder, read as data like `FFX.exe`, never in
+git) run in Unicorn beside `FFX.exe`, development only (`src/dll.rs`):
+
+- mapped into the arena at the first free 64 KB gap above `0x04000000`
+  (both prefer `0x10000000`, where the heap is), relocated
+  (`IMAGE_REL_BASED_HIGHLOW`), then `DllMain(DLL_PROCESS_ATTACH)`, MSVCR110
+  first, before the entry point; each new thread runs
+  `DllMain(DLL_THREAD_ATTACH)` first;
+- their `KERNEL32` imports go to the same Rust sides as `FFX.exe`'s
+  (`src/win32.rs`: TLS slots in each thread's TEB, Windows-1252 code pages,
+  the "C" locale, the standard handles, module handles; `GetProcAddress`
+  finds nothing, so MSVCR110 takes its `Tls*` fallbacks for `Fls*`);
+  `MSVCP110`'s `MSVCR110` imports go straight to the loaded MSVCR110's
+  exports;
+- `FFX.exe`'s data imports (`_acmdln`, `_fmode`, `_commode`, `_HUGE`)
+  point at the DLL's own variables.
+
+Which of `FFX.exe`'s imports go where (`ffx-rust --routes FILE` lists
+every one):
+
+| | Rust | DLL | missing |
+|---|---|---|---|
+| `MSVCR110.dll` (188) | 26: start-up and exit (`__set_app_type`, `__setusermatherr`, `__getmainargs`, `_initterm`, `_initterm_e`, `_onexit`, `__dllonexit`, `__crtGetShowWindowMode`, `_crt_debugger_hook`, `__crtSetUnhandledExceptionFilter`, `_amsg_exit`, `exit`, `_exit`, `_cexit`, `abort`), the heap (`malloc`, `calloc`, `free`, `_recalloc`, `_calloc_crt`), `memset`, `memcpy`, `memmove`, `_strdup`, `rand`, `srand` | the other 162 (`sprintf*`, `fopen`, `fwrite`, `_controlfp_s`, `_lock`, the `_CI*` math intrinsics, ...) | 0 |
+| `MSVCP110.dll` (75) | 0 | 75 | 0 |
+| the DLLs' own imports (383) | 123 (`KERNEL32`: the stand-ins above) | 170 (MSVCP110 → MSVCR110, all) | 90 (the rest of `KERNEL32`: `FindFirstFileExW`, `CreateProcessW`, timer queues, ...; none called on the way to the device) |
+
+The Rust sides kept are exact: the heap is one heap (the DLL's `malloc`
+calls `HeapAlloc`, whose Rust side allocates from the same arena heap as
+the Rust `malloc`, so a block can be freed on either side), the copies
+allow overlap as MSVCR110's do, and `rand` keeps MSVC's sequence per
+thread (seed 1). Everything else goes to the DLL: the Rust `sprintf`,
+`fopen`, `_controlfp_s` were approximations.
+
+Known gaps: the DLLs' x87 transcendental instructions (`fsin`, `fcos`,
+`fpatan`, ...) run on Unicorn's own x87, which is not bit-exact
+(`ffx-oracle` patches the 22 sites in this MSVCR110 build to its exact
+`x87` module; the host doesn't yet); C++ exceptions end the thread
+(`RaiseException` has no SEH dispatch yet).
 
 ## Threads
 
-The game starts its threads with `CreateThread` and the thread pool
-(`docs/hooking.md`, "Threads": JobWorkers, the loader, the render thread,
-VsyncEmulation, FMOD, the controller task manager). This round records
-each `CreateThread` (entry, parameter) and runs none. Next:
+Every game thread is a host thread with its own `Exec` (`src/exec.rs`):
+its own Unicorn instance (Unicorn is single-threaded) mapping the same
+arena regions, its own stack region (1 MB; the main thread 2 MB), thread
+block (GDT, TEB with the TLS slots, PEB) and return stubs (the float
+result cell is per thread). `Shared` holds what they share: the arena, the
+image, the DLLs, the function table, the import bindings (read-only), the
+heap (behind a lock), the files, the synchronisation objects.
 
-- one host thread per game thread, each with its own Unicorn instance
-  (Unicorn is single-threaded) mapping the same arena regions, its own
-  stack region and TEB, and its own `Exec` state; the function table is
-  shared and read-only;
-- regions mapped at run time (`VirtualAlloc`, heap growth) are mapped into
-  every thread's Unicorn (a region list with a generation counter checked
-  at each emulator start);
-- the heap behind a lock (the C runtime's is locked too);
-- synchronisation imports (events, semaphores, critical sections,
-  `Interlocked*`) on real host primitives, so the threads interleave as
-  they do in `FFX.exe`. Emulated `lock`-prefixed instructions on shared
-  arena memory are atomic within one Unicorn instance only: the threads'
-  own sync goes through those imports, which is what the game does.
+- `CreateThread(attr, stack, entry, param, flags, &id)` starts a host
+  thread that runs `DllMain(DLL_THREAD_ATTACH)` and then `entry(param)`
+  (stdcall); `CREATE_SUSPENDED` waits for `ResumeThread`. The thread
+  handle is signalled when the routine returns or calls `ExitThread`;
+  `GetExitCodeThread` gives its code. `SubmitThreadpoolWork` runs the work
+  item's callback on a thread of its own the same way.
+- Synchronisation maps onto host primitives (`src/sync.rs`, one lock and
+  one condition variable for all objects): events (manual and auto
+  reset), semaphores, mutexes, thread handles, `WaitForSingleObject(Ex)`,
+  `WaitForMultipleObjects`, and critical sections keyed by the game
+  address of their `CRITICAL_SECTION` (owner and recursion count, so
+  `TryEnterCriticalSection` and recursion behave). `Interlocked*` are host
+  atomics on the arena word. `Sleep` really sleeps.
+- Regions mapped at run time (`VirtualAlloc`, another thread's stack) are
+  mapped into each thread's emulator before it next runs (the arena keeps
+  a generation counter).
+- Stopping: a failure on a game thread ends that thread (its handle is
+  signalled, the report gives its outcome and return addresses); a failure
+  on the main thread, a milestone, `exit` or the budget end the run. A
+  watchdog thread then calls Unicorn's `uc_emu_stop` (thread-safe) on
+  every live emulator, waits wake up within 50 ms, and every thread
+  unwinds.
+- Emulated `lock`-prefixed instructions are atomic within one Unicorn
+  instance only; the game's own synchronisation goes through the imports
+  above, which is what keeps the threads apart.
+
+`tests/boot.rs`'s
+`game_threads_run_in_parallel_under_the_games_own_critical_section`
+proves it on emulated code: two threads started through `FFX.exe`'s own
+`CreateThread` import each add to one counter 3,000 times with a plain
+`inc` under one critical section (through the game's IAT), and the main
+thread waits on both thread handles: the count is exactly 6,000.
 
 ## The harness: a second process
 
@@ -231,14 +335,21 @@ through the harness's background mode. This round did not launch it.
 
 ## The Linux check
 
-`tests/boot.rs` (needs `FFX_GAME_DIR`, skips without it):
+`tests/boot.rs` (needs `FFX_GAME_DIR`, skips without it; run it with
+`--release`):
 
 - `unicorn_code_enters_a_port_and_matches_the_original`: code in the arena
   calls `MsCheckRange` the way the game does; once with the port (Unicorn
   → Rust), once with an empty table (all Unicorn); the results match;
-- `boots_through_the_crt_into_win_main`: the CRT start-up, every static
-  initialiser and `WinMain`'s start run under the executor and the run
-  ends at a missing import, not at an executor fault.
+- `game_threads_run_in_parallel_under_the_games_own_critical_section`:
+  above, "Threads";
+- `boots_past_the_window_to_the_d3d11_device_and_swap_chain`: with an
+  empty documents folder, the DLLs start, the CRT start-up and `Game_Main`
+  run, the game writes its default `GameSetting.ini`, creates the window,
+  probes the feature level and stops at `D3D11CreateDeviceAndSwapChain`;
+  the heap's decommit thread started on the way;
+- `without_the_dlls_the_stl_is_the_wall`: `--no-dlls` still stops at the
+  first `MSVCP110` import.
 
 ## Building for Windows
 
@@ -254,41 +365,60 @@ at a copy of the toolchain file without that line (all under
 with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
 use the upper 2 GB.
 
-## Status (2026-10-28)
+## Status (2026-10-29)
 
-`ffx-rust` on the player's `FFX.exe` (Linux, release build):
+`ffx-rust` on the player's `FFX.exe` with its `MSVCR110.dll` and
+`MSVCP110.dll` (Linux, release build, an empty documents folder):
 
-- the CRT start-up, 454 static initialisers (each registers its
-  destructor with `_onexit`) and `Game_Main` (`WinMain`) run until
-  `Game_Main` reads `GameSetting.ini` (`fopen`, not found in the sandboxed
-  documents folder) and builds its first C++ stream: 139 functions in
-  Unicorn (5,657 basic blocks), 0 in Rust (no port on this path: the two
-  hand-registered ones aren't reached and the `ported!` lists aren't in
-  the table yet);
-- 889,693 instructions emulated, 1,006 calls from Rust into Unicorn
-  (`_initterm` and `_initterm_e`'s initialisers), 3,287 emulator starts
-  (every import and port call stops and resumes the emulator);
-  0.42 to 0.68 s emulated, 0.45 to 0.7 s wall, so 1.3 to 2.1 million
-  instructions a second on start-up code, which runs once and is
-  dominated by Unicorn's translation of each new block;
-- one `CreateThread` recorded, not run (`0x00948c30`, parameter
-  `0x00947e30`);
-- 139 of the 536 imports have a Rust side; the first unstubbed one is
-  `MSVCP110.dll!std::basic_ios<char>::basic_ios()` from `0x00403772`.
+- the DLLs start (`DllMain`), then the CRT start-up, the static
+  initialisers and `Game_Main` run: `GameSetting.ini` is missing, so the
+  game writes its default one (through MSVCP110's streams and MSVCR110's
+  `fopen`/`fwrite` into the documents folder), Steam is absent, the Phyre
+  framework registers its classes, Iggy initialises (null stand-ins),
+  `CreateWindowExA` gets the fake window, the renderer probes the feature
+  level (`D3D11CreateDevice` without a device: 11_0), and the run stops at
+  `D3D11CreateDeviceAndSwapChain`, the first stop point the Linux check
+  can't pass;
+- 1,875 `FFX.exe` functions ran in Unicorn and 0 in Rust (no port on this
+  path: the hand-registered ones aren't reached and the `ported!` lists
+  aren't in the table yet), plus code in about 120 regions of the DLLs
+  (named by their nearest export, which is not always the function);
+  20,374 basic blocks;
+- 5.9 million instructions, 23,137 emulator starts (every import and port
+  call stops and resumes the emulator), 1,011 calls from Rust into Unicorn;
+  0.26 to 1.4 s emulated, 0.36 to 1.9 s wall depending on the machine's
+  load, so 4 to 23 million instructions a second (12 million with the
+  instruction-counting hook on); the start-up code runs once, so Unicorn's
+  translation of each new block dominates;
+- where the time goes (`--profile`, samples of about 1 ms): `mdct_init`
+  (the audio decoder's tables), `Phyre_PNamespace_getClassDescriptor`
+  (407 calls, 708,848 blocks: a linear search over the class list),
+  `Phyre_PClassDescriptor_calculateValidationBuffer` and
+  `calculateDefaultBuffer`, MSVCP110's locale and number formatting;
+- one game thread: the heap's decommit thread (`0x00948c30`, parameter
+  `0x00947e30`, from `UserHeap` start-up) runs on its own host thread and
+  Unicorn instance (`DLL_THREAD_ATTACH`, its TLS, then real waits on its
+  event) until the run ends; no other thread starts before the device;
+- imports: of `FFX.exe`'s 536 (and 4 data), 198 go to Rust, 237 to the
+  DLLs, 105 are still missing; none of the missing ones is called before
+  the device;
+- with a timeout on every `emu_start` (Unicorn starts a timer thread for
+  each one) the same run took 21 s; a watchdog thread that stops the
+  emulators only when the run ends or runs out of time replaced it.
 
 ### What blocks the next step
 
-1. **MSVCP110.** The game's iostreams, locale and strings are MSVCP110
-   classes whose members the inlined templates in `FFX.exe` touch
-   directly, so the Rust side must keep MSVCP110's object layouts.
-   Quickest way on: run the player's `MSVCP110.dll` and `MSVCR110.dll`
-   in Unicorn too, development only like `FFX.exe`'s own code (mapped into
-   the arena, relocated, their `KERNEL32` imports bound to the same stubs;
-   `ffx-oracle` already loads MSVCR110 this way), then replace their
-   functions with Rust as stage 1 reaches them.
+1. **The D3D11 device.** Going past `D3D11CreateDeviceAndSwapChain` needs the COM
+   stand-ins of "Imports" (handles with stub vtables): on Windows
+   forwarding to the real device, on Linux recorded ones (the device, the
+   immediate context, the swap chain, DXGI; the renderer's start-up right
+   after `D3D11CreateDeviceAndSwapChain` queries interfaces and creates
+   the back buffer views). The game's other threads start past it.
 2. **The `ported!` lists in the table** (above, "One source of truth"):
-   the call router in `ffx-bridge`, then the host-side `ported!`.
-3. **Windows.** The forwarding imports (window, input, files, D3D11 COM
-   handles), `ffx-rust.exe` started by the harness in background mode, and
-   the threads.
-
+   the call router in `ffx-bridge` (the host-table round), then the
+   host-side `ported!`. Until then every function runs in Unicorn.
+3. **Exactness of the DLLs' x87 math** (above, "The C runtime DLLs"):
+   wire `ffx-oracle`'s exact `x87` instructions into the host's MSVCR110
+   before any parity gate compares float results.
+4. **Windows.** The forwarding imports (window, input, files, D3D11),
+   `ffx-rust.exe` started by the harness in background mode.
