@@ -1742,7 +1742,14 @@ fn magic_0644_tables() {
     rec(&mut t, 219, 2, |_, a| 0x2190_0000 ^ a[0]);
     rec(&mut t, 833, 3, |_, a| 0x8330_0000 ^ a[2]);
     rec(&mut t, 847, 2, |_, _| 0x847);
-    for (s, e) in [(0u32, 10u32), (8, 10), (9, 10), (0x14, 0x30), (3, 0)] {
+    for (s, e) in [
+        (0u32, 10u32),
+        (8, 10),
+        (9, 10),
+        (0x13, 0x30),
+        (0x14, 0x30),
+        (3, 0),
+    ] {
         t.set_u32(step, s);
         t.set_u32(end, e);
         t.check_entry(f, Call::default(), &[0x00a1_0000], Eax::Checked);
@@ -1993,6 +2000,7 @@ fn small_internal_c() {
         (0x300, 0x400, 2, 3),
         (0x7f00, 0x8100, 5, 2),
         (0xfe00, 0x100, 0x7fff, -1),
+        (0x7f00, 0x100, 0, 3),
     ] {
         t.write(o, &[0x5a; 0x60]);
         t.set_u16(o + 0x48, sub);
@@ -2111,7 +2119,7 @@ fn magic_0515_records() {
     for i in 0..4u32 {
         t.write(recs + 0xcc * i, &[0x11; 0xcc]);
         t.set_u32(recs + 0xcc * i, 0x0b00_0000 + i);
-        t.set_u16(recs + 0xcc * i + 0x14, (i as u16).wrapping_mul(0x1234));
+        t.set_u16(recs + 0xcc * i + 0x14, (i as u16).wrapping_mul(0x5234));
     }
     for n in [0u32, 1, 4] {
         let c = Call {
