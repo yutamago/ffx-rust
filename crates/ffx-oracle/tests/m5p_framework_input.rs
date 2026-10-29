@@ -2657,3 +2657,88 @@ fn notifier_removal_matches_the_original() {
         t.reset();
     }
 }
+
+// ---- batch 9: the input log's Frames command ----
+
+use ffx_pother_b::m5p_framework_input_frames::{self as fr, bridge as frb};
+
+#[test]
+fn frames_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let count_at = t.rebase(fr::G_LOG_COUNT);
+        let next_at = t.rebase(fr::G_LOG_NEXT);
+        let recs_at = t.rebase(fr::G_LOG_RECORDS);
+        let saved = [
+            Oracle::read(&mut t.a, count_at, 4).unwrap(),
+            Oracle::read(&mut t.a, next_at, 4).unwrap(),
+            Oracle::read(&mut t.a, recs_at, 4).unwrap(),
+        ];
+        // records at frames 3, 5, 5, 7, 7, 9
+        let frames = [3u32, 5, 5, 7, 7, 9];
+        let mut recs = vec![0u8; 0x90 * frames.len()];
+        for (i, f) in frames.iter().enumerate() {
+            recs[0x90 * i + 4..0x90 * i + 8].copy_from_slice(&f.to_le_bytes());
+        }
+        let recs = t.alloc(&recs);
+        // (count, next, app frame, applies, the app's +0x1c, paused, step)
+        let cases = [
+            (6u32, 0u32, 7u32, 0x101u32, 0u32, 0u8, 0u32),
+            (6, 0, 7, 0x100, 0, 0, 0x55),
+            (6, 2, 5, 1, 0x33, 0, 0),
+            (6, 0, 1, 1, 0, 0, 0),
+            (6, 0, 9, 1, 0, 0, 0),
+            (6, 0, 20, 1, 0, 0, 0),
+            (6, 6, 20, 1, 0, 0, 0),
+            (6, 9, 20, 1, 0, 1, 0),
+            (0x8000_0006, 0, 20, 1, 0, 0, 0),
+            (0x8000_0006, 3, 7, 0, 0, 1, 0),
+            (0, 0, 7, 1, 0, 0, 0),
+            (0x8000_0000, 0, 7, 1, 0, 1, 0),
+            (0, 0, 7, 1, 0, 1, 0),
+            (6, 0, 7, 1, 0, 1, 0),
+        ];
+        for (i, &(count, next, frame, applies, react, paused, step)) in cases.iter().enumerate() {
+            t.stub(fr::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(fr::APPLY_FRAME_INPUT, false, 3, 0, applies);
+            t.stub(fr::SCRIPT_STEP, true, 0, 0, step);
+            t.w32(count_at, count);
+            t.w32(next_at, next);
+            t.w32(recs_at, recs);
+            let app = t.object(&[0, 0, 0, 0, 0, 0, 0, 0], &[0, 0, 0, 0, 0, 0, 0, react]);
+            t.w32(app + 0x34, frame);
+            t.w8(app + 0x39, paused);
+            t.w8(app + 0x14, 0x77);
+            let what = format!("{label}: frames {i}");
+            t.check(&what, 0x0062_3660, Conv::Cdecl, &[app, 0x6000], |g| {
+                Out::U32(frb::frames(g, app))
+            });
+            t.reset();
+        }
+        // a log without records, and an unsorted one (5 then 3)
+        let unsorted = t.zeros(0x90 * 2);
+        t.w32(unsorted + 4, 5);
+        t.w32(unsorted + 0x90 + 4, 3);
+        for (i, (records, count, next, frame)) in [(0u32, 6u32, 6u32, 20u32), (unsorted, 2, 0, 5)]
+            .into_iter()
+            .enumerate()
+        {
+            t.stub(fr::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(fr::APPLY_FRAME_INPUT, false, 3, 0, 1);
+            t.stub(fr::SCRIPT_STEP, true, 0, 0, 0);
+            t.w32(count_at, count);
+            t.w32(next_at, next);
+            t.w32(recs_at, records);
+            let app = t.object(&[0, 0, 0, 0, 0, 0, 0, 0], &[]);
+            t.w32(app + 0x34, frame);
+            t.w8(app + 0x39, 0);
+            let what = format!("{label}: frames extra {i}");
+            t.check(&what, 0x0062_3660, Conv::Cdecl, &[app, 0x6000], |g| {
+                Out::U32(frb::frames(g, app))
+            });
+            t.reset();
+        }
+        t.write(count_at, &saved[0]);
+        t.write(next_at, &saved[1]);
+        t.write(recs_at, &saved[2]);
+    }
+}

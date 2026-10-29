@@ -13,6 +13,7 @@
 use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_app::bridge as ab;
 use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as db};
+use ffx_pother_b::m5p_framework_input_frames::bridge as fb9;
 use ffx_pother_b::m5p_framework_input_life::bridge as lb;
 use ffx_pother_b::m5p_framework_input_misc::bridge as mb;
 use ffx_pother_b::m5p_framework_input_script::bridge as sb6;
@@ -640,5 +641,9 @@ ported! {
     /// `Phyre_PFramework_PApplication_setViewportKeepingAspect_0062cba0`: the rectangle fitted to the aspect, then the virtual apply; its `eax`.
     Phyre_PFramework_PApplication_setViewportKeepingAspect_0062cba0 @ 0x0062_cba0 => extern "thiscall" fn vw_0062cba0(this: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
         vb::set_viewport_keeping_aspect(&mut mem(), this, [x, y, w, h])
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_Frames`: the logged input frames due by now applied (then the virtual `+0x1c`), a played-out log dropped; paused: the log dropped, 0; else the next scripted step.
+    Phyre_PFramework_PApplicationScriptProxy_Frames @ 0x0062_3660 => extern "C" fn fr_00623660(app: u32, _args: u32) -> u32 {
+        fb9::frames(&mut mem(), app)
     }
 }
