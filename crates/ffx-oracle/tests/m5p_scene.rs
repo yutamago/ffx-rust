@@ -3311,3 +3311,82 @@ fn m5p_scene_k_instance_count() {
         });
     }
 }
+
+// ---- batch 12 (ffx_prender::m5p_scene_l, two m5p_scene_b bridges) ----
+
+use ffx_prender::m5p_scene_l as sl;
+
+/// The camera controller's look-at update: off, no node, and following
+/// random nodes (the real matrix and normalize code; the look-at and fly
+/// controller calls stubbed), the port's frame on the stack.
+#[test]
+fn m5p_scene_l_camera_follow() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sl::LOOK_AT_SET, true, 3, 3, 0x0bad_0027);
+        tw.stub(sl::FLY_SET[1], true, 1, 1, 0x0bad_0028);
+        tw.stub(sl::FLY_SET[0], true, 1, 1, 0x0bad_0029);
+        // the port's frame where the original's is (`ebp - 0x70`: the call
+        // pushes one word, the return address and `ebp` from the call
+        // top), the port's own calls below it, so the stubs log the same
+        // pointers
+        let top = tw.a.stack_range().end - 0x100;
+        let frame = top - 0xc - 0x70;
+        tw.b.set_call_top(Some(frame - 0x40));
+        let this = tw.zeros(0x120);
+        let mut rng = Rng(71);
+        let f = 0.75f32.to_bits();
+        for (on, has) in [(0u8, true), (1, false), (0x80, true)] {
+            tw.write(this + 0xb1, &[on]);
+            tw.w32(this + 0xb4, u32::from(has));
+            let label = format!("{what} camera follow, on {on}, node {has}");
+            if on == 0 {
+                // the original leaves its caller's eax: memory only
+                let (_, r) = tw.run_any(&label, 0x0055_8b10, Conv::Thiscall(this), &[f], |g| {
+                    sl::bridge::camera_follow(g, this, f32::from_bits(f), frame)
+                });
+                assert_eq!(r, None, "{label}");
+                continue;
+            }
+            if !has {
+                tw.run(&label, 0x0055_8b10, Conv::Thiscall(this), &[f], |g| {
+                    sl::bridge::camera_follow(g, this, f32::from_bits(f), frame).unwrap_or(1)
+                });
+                continue;
+            }
+            for round in 0..10 {
+                let node = tw.alloc(&float_words(&mut rng, 12));
+                tw.w32(this + 0xb4, node);
+                let s = float_words(&mut rng, 1);
+                let f = u32::from_le_bytes([s[0], s[1], s[2], s[3]]);
+                let label = format!("{what} camera follow {round}");
+                tw.run(&label, 0x0055_8b10, Conv::Thiscall(this), &[f], |g| {
+                    sl::bridge::camera_follow(g, this, f32::from_bits(f), frame).unwrap_or(1)
+                });
+                assert_eq!(tw.logged(), 3, "{label}: calls");
+                assert_eq!(tw.entry(0, 4), f, "{label}: f");
+                // the position and the direction the look-at got
+                let fa = Oracle::read(&mut tw.a, frame + 0x40, 0x20).unwrap();
+                let fb = Oracle::read(&mut tw.b, frame + 0x40, 0x20).unwrap();
+                assert_eq!(fa, fb, "{label}: the frame's vectors");
+            }
+        }
+        tw.b.set_call_top(None);
+        tw.unstub();
+        // the vector getter and the device getter
+        let src = tw.alloc(&float_words(&mut rng, 8));
+        let out = tw.zeros(0x10);
+        let label = format!("{what} get vector");
+        tw.run(&label, 0x004f_8100, Conv::Thiscall(src), &[out], |g| {
+            sb::bridge::get_vector3(g, src, out)
+        });
+        tw.stub(sb::GET_DEVICE, false, 2, 0, 0x0bad_002a);
+        for n in [0, 1, 7] {
+            let label = format!("{what} device {n}");
+            tw.run(&label, 0x0062_8700, Conv::Stdcall, &[n], |g| {
+                sb::bridge::input_device4(g, n)
+            });
+            assert_eq!((tw.entry(0, 2), tw.entry(0, 3)), (4, n), "{label}");
+        }
+        tw.unstub();
+    }
+}
