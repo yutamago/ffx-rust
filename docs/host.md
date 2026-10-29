@@ -1168,3 +1168,10 @@ runs past the third frame (the Unicorn abort).
    processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
    yet; the movie's audio stream is silent.
+7. **Battles in `ffx-rust.exe`** (host-pc2, 2026-10-29). A battle started
+   from the field never gets past `g_BtlStatus` `0x16`: monsters `0x14`
+   and `0x15` keep `+0x433` set, which `MsBtlReadMonsterProcess`
+   (`0x007839b0`) sets with their appear motion (`0x31`) when `+0x43d`
+   bit 1 is set; nothing clears it (what should, presumably the motion's
+   end, was not traced yet; "The main replay list on PC2"). battle-attack, battle-magic and battle-overdrive need it. The
+   menu replays, field-walk and menu-save pass.
