@@ -7,6 +7,7 @@
 //! game's memory through [`mem`].
 
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_ptype::{Kind, bridge as ptb};
 
 use super::{mem, ported};
 
@@ -352,5 +353,231 @@ ported! {
     /// `Float` to `PUInt64` (`FromF32(Unsigned64(false))`).
     Phyre_PSerialization_convert_Float_to_PUInt64 @ 0x0047_3d60 => extern "C" fn k_00473d60(src: u32, dst: u32, desc: u32, ctx: u32) {
         convert(82, src, dst, desc, ctx);
+    }
+
+    // ---- PType and PTypeDefault<T> (batch 2) ----
+    /// `PType::~PType()`: the vtable only; `eax` left alone.
+    Phyre_PType_dtor_00437700 @ 0x0043_7700 => extern "thiscall" fn pt_dtor(this: u32) {
+        ptb::ptype_dtor(&mut mem(), this);
+    }
+    /// `PType`'s scalar deleting destructor.
+    Phyre_PType_deletingDtor_00437710 @ 0x0043_7710 => extern "thiscall" fn pt_delete(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PType::PType(a, b, c)`.
+    Phyre_PType_ctor_00438cc0 @ 0x0043_8cc0 => extern "thiscall" fn pt_ctor(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        ptb::construct(&mut mem(), this, a, b, c)
+    }
+    /// `cdecl(name, seed, len)`: the type-name hash.
+    Phyre_PType_nameHash_004377d0 @ 0x0043_77d0 => extern "C" fn pt_hash(name: u32, seed: u32, len: u32) -> u32 {
+        ptb::name_hash(&mem(), name, seed, len)
+    }
+    /// `PType::GetFixupForPTypePointer(type, &name, &len)`.
+    Phyre_PType_GetFixupForPTypePointer @ 0x0043_7740 => extern "C" fn pt_get_fixup(ty: u32, name: u32, len: u32) -> u32 {
+        ptb::get_fixup(&mut mem(), ty, name, len)
+    }
+    /// `PType::ResolveFixupForPTypePointer(out, name)`.
+    Phyre_PType_ResolveFixupForPTypePointer @ 0x0043_7830 => extern "C" fn pt_resolve(out: u32, name: u32) -> u32 {
+        ptb::resolve_fixup(&mut mem(), out, name)
+    }
+    /// `cdecl(lo, hi)`: the 64-bit byte swap (`PInt64`).
+    Phyre_swapBytes64_00439230 @ 0x0043_9230 => extern "C" fn pt_swap64_s(lo: u32, hi: u32) -> u64 {
+        ptb::swap64(lo, hi)
+    }
+    /// `cdecl(lo, hi)`: the 64-bit byte swap (`PUInt64`).
+    Phyre_swapBytes64_004392c0 @ 0x0043_92c0 => extern "C" fn pt_swap64_u(lo: u32, hi: u32) -> u64 {
+        ptb::swap64(lo, hi)
+    }
+    /// `PTypeDefault<char>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_char_deletingDtor @ 0x0043_8e00 => extern "thiscall" fn d_00438e00(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<char>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_char_getValueFromScriptContext @ 0x0043_9670 => extern "stdcall" fn g_00439670(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::I8, l, out)
+    }
+    /// `PTypeDefault<char>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_char__putValueToScriptContext @ 0x0043_9910 => extern "stdcall" fn p_00439910(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::I8, l, value)
+    }
+    /// `PTypeDefault<char>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_char_swapEndian @ 0x0043_9bd0 => extern "stdcall" fn s_00439bd0(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::I8, p)
+    }
+    /// `PTypeDefault<PUInt8>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PUInt8_deletingDtor @ 0x0043_8e30 => extern "thiscall" fn d_00438e30(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PUInt8>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PUInt8_getValueFromScriptContext @ 0x0043_96a0 => extern "stdcall" fn g_004396a0(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::U8, l, out)
+    }
+    /// `PTypeDefault<PUInt8>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_unsigned_char__putValueToScriptContext @ 0x0043_9940 => extern "stdcall" fn p_00439940(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::U8, l, value)
+    }
+    /// `PTypeDefault<PUInt8>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PUInt8_swapEndian @ 0x0043_9be0 => extern "stdcall" fn s_00439be0(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::U8, p)
+    }
+    /// `PTypeDefault<PInt16>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PInt16_deletingDtor @ 0x0043_8e60 => extern "thiscall" fn d_00438e60(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PInt16>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PInt16_getValueFromScriptContext @ 0x0043_96d0 => extern "stdcall" fn g_004396d0(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::I16, l, out)
+    }
+    /// `PTypeDefault<PInt16>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_short__putValueToScriptContext @ 0x0043_9970 => extern "stdcall" fn p_00439970(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::I16, l, value)
+    }
+    /// `PTypeDefault<PInt16>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PInt16_swapEndian @ 0x0043_9bf0 => extern "stdcall" fn s_00439bf0(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::I16, p)
+    }
+    /// `PTypeDefault<PUInt16>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PUInt16_deletingDtor @ 0x0043_8e90 => extern "thiscall" fn d_00438e90(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PUInt16>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PUInt16_getValueFromScriptContext @ 0x0043_9700 => extern "stdcall" fn g_00439700(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::U16, l, out)
+    }
+    /// `PTypeDefault<PUInt16>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_unsigned_short__putValueToScriptContext @ 0x0043_99a0 => extern "stdcall" fn p_004399a0(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::U16, l, value)
+    }
+    /// `PTypeDefault<PUInt16>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PUInt16_swapEndian @ 0x0043_9c20 => extern "stdcall" fn s_00439c20(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::U16, p)
+    }
+    /// `PTypeDefault<PInt32>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PInt32_deletingDtor @ 0x0043_8ec0 => extern "thiscall" fn d_00438ec0(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PInt32>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PInt32_getValueFromScriptContext @ 0x0043_9730 => extern "stdcall" fn g_00439730(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::I32, l, out)
+    }
+    /// `PTypeDefault<PInt32>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_PInt32_putValueToScriptContext @ 0x0043_99d0 => extern "stdcall" fn p_004399d0(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::I32, l, value)
+    }
+    /// `PTypeDefault<PInt32>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PInt32_swapEndian @ 0x0043_9c40 => extern "stdcall" fn s_00439c40(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::I32, p)
+    }
+    /// `PTypeDefault<PUInt32>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PUInt32_deletingDtor @ 0x0043_8ef0 => extern "thiscall" fn d_00438ef0(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PUInt32>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PUInt32_getValueFromScriptContext @ 0x0043_9760 => extern "stdcall" fn g_00439760(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::U32, l, out)
+    }
+    /// `PTypeDefault<PUInt32>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_PUInt32_putValueToScriptContext @ 0x0043_9a00 => extern "stdcall" fn p_00439a00(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::U32, l, value)
+    }
+    /// `PTypeDefault<PUInt32>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PUInt32_swapEndian @ 0x0043_9c80 => extern "stdcall" fn s_00439c80(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::U32, p)
+    }
+    /// `PTypeDefault<float>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_float_deletingDtor @ 0x0043_8f20 => extern "thiscall" fn d_00438f20(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<float>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_float_getValueFromScriptContext @ 0x0043_9790 => extern "stdcall" fn g_00439790(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::F32, l, out)
+    }
+    /// `PTypeDefault<float>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_float__putValueToScriptContext @ 0x0043_9a30 => extern "stdcall" fn p_00439a30(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::F32, l, value)
+    }
+    /// `PTypeDefault<float>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_float_swapEndian @ 0x0043_9cc0 => extern "stdcall" fn s_00439cc0(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::F32, p)
+    }
+    /// `PTypeDefault<double>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_double_deletingDtor @ 0x0043_8f50 => extern "thiscall" fn d_00438f50(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<double>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_double_getValueFromScriptContext @ 0x0043_97c0 => extern "stdcall" fn g_004397c0(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::F64, l, out)
+    }
+    /// `PTypeDefault<double>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_double__putValueToScriptContext @ 0x0043_9a60 => extern "stdcall" fn p_00439a60(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::F64, l, value)
+    }
+    /// `PTypeDefault<double>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_double_swapEndian @ 0x0043_9d00 => extern "stdcall" fn s_00439d00(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::F64, p)
+    }
+    /// `PTypeDefault<PQWord>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PQWord_deletingDtor @ 0x0043_8f80 => extern "thiscall" fn d_00438f80(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PQWord>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PQWord_getValueFromScriptContext @ 0x0043_97f0 => extern "stdcall" fn g_004397f0(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::QWord, l, out)
+    }
+    /// `PTypeDefault<PQWord>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_PQWord_putValueToScriptContext @ 0x0043_9a90 => extern "stdcall" fn p_00439a90(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::QWord, l, value)
+    }
+    /// `PTypeDefault<PQWord>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PQWord_swapEndian @ 0x0043_9d30 => extern "stdcall" fn s_00439d30(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::QWord, p)
+    }
+    /// `PTypeDefault<PInt64>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PInt64_deletingDtor @ 0x0043_8fb0 => extern "thiscall" fn d_00438fb0(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PInt64>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PInt64_getValueFromScriptContext @ 0x0043_9840 => extern "stdcall" fn g_00439840(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::I64, l, out)
+    }
+    /// `PTypeDefault<PInt64>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_PInt64_putValueToScriptContext @ 0x0043_9ac0 => extern "stdcall" fn p_00439ac0(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::I64, l, value)
+    }
+    /// `PTypeDefault<PInt64>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PInt64_swapEndian @ 0x0043_9d70 => extern "stdcall" fn s_00439d70(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::I64, p)
+    }
+    /// `PTypeDefault<PUInt64>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_PUInt64_deletingDtor @ 0x0043_8fe0 => extern "thiscall" fn d_00438fe0(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<PUInt64>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_PUInt64_getValueFromScriptContext @ 0x0043_9880 => extern "stdcall" fn g_00439880(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::U64, l, out)
+    }
+    /// `PTypeDefault<PUInt64>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_PUInt64_putValueToScriptContext @ 0x0043_9af0 => extern "stdcall" fn p_00439af0(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::U64, l, value)
+    }
+    /// `PTypeDefault<PUInt64>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_PUInt64_swapEndian @ 0x0043_9d90 => extern "stdcall" fn s_00439d90(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::U64, p)
+    }
+    /// `PTypeDefault<bool>`'s scalar deleting destructor.
+    Phyre_PTypeDefault_bool_deletingDtor @ 0x0043_9010 => extern "thiscall" fn d_00439010(this: u32, flags: u32) -> u32 {
+        ptb::delete_type(&mut mem(), this, flags)
+    }
+    /// `PTypeDefault<bool>::getValueFromScriptContext(L, out)`.
+    Phyre_PTypeDefault_bool__getValueFromScriptContext @ 0x0043_98c0 => extern "stdcall" fn g_004398c0(l: u32, out: u32) -> u32 {
+        ptb::get_from_script(&mut mem(), Kind::Bool, l, out)
+    }
+    /// `PTypeDefault<bool>::putValueToScriptContext(L, value)`.
+    Phyre_PTypeDefault_bool__putValueToScriptContext @ 0x0043_9b20 => extern "stdcall" fn p_00439b20(l: u32, value: u32) -> u32 {
+        ptb::put_to_script(&mut mem(), Kind::Bool, l, value)
+    }
+    /// `PTypeDefault<bool>::swapEndian(p, n)`.
+    Phyre_PTypeDefault_bool_swapEndian @ 0x0043_9db0 => extern "stdcall" fn s_00439db0(p: u32, _n: u32) -> u32 {
+        ptb::swap_endian(&mut mem(), Kind::Bool, p)
     }
 }

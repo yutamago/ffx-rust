@@ -25,6 +25,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_ptype::{self as pt, Kind, bridge as ptb};
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -71,6 +72,19 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        self.0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .st0_f32()
+            .unwrap_or_else(|| panic!("callee {addr:#x} left no ST0"))
+    }
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -90,6 +104,8 @@ enum Out {
     U32(u32),
     /// `al` (the rest of `eax` is the caller's or a callee's).
     U8(u8),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 struct Twins {
@@ -227,6 +243,37 @@ impl Twins {
         at
     }
 
+    /// A recording stub (as [`Twins::stub_code`], cdecl) that leaves the
+    /// `float` with `bits` in `ST0`, placed at the original `sym`.
+    fn stub_float(&mut self, sym: u32, n: u32, bits: u32) {
+        let at = self.rebase(sym);
+        let cell = self.alloc(&bits.to_le_bytes());
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], sym
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0xd9, 0x05]);
+        c.extend(cell.to_le_bytes()); // fld dword [cell]
+        c.push(0xc3);
+        let code = self.a.alloc_code(&c).unwrap();
+        assert_eq!(self.b.alloc_code(&c).unwrap(), code);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+
     /// [`Twins::stub_code`] placed at the original `sym` (a `jmp` there),
     /// logged with `sym` as its tag.
     fn stub(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
@@ -289,6 +336,11 @@ impl Twins {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::U64(v) => assert_eq!(
+                u64::from(ra.edx) << 32 | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
         }
         self.diff(what);
     }
@@ -448,5 +500,243 @@ fn conversion_kernels_keep_their_types() {
     for &(k, dst, src, _) in cv::KERNELS {
         assert!(seen.insert((dst, src)), "{k:#x}: pair twice");
         assert_eq!(cv::kernel(k).map(|_| ()), Some(()));
+    }
+}
+
+// ---- PType and PTypeDefault<T> (batch 2) ----
+
+#[test]
+fn ptype_destructors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let obj = t.junk(0x30, 7);
+        // PType::~PType: the vtable only, eax left alone
+        let what = format!("{label}: ~PType");
+        t.check(&what, 0x0043_7700, Conv::Thiscall(obj), &[], |g| {
+            ptb::ptype_dtor(g, obj);
+            Out::None
+        });
+        t.stub(pt::FREE, false, 1, 0, 0xf4ee);
+        let dtors = std::iter::once(pt::PTYPE_DTOR).chain(pt::TYPES.iter().map(|ty| ty.dtor));
+        for d in dtors {
+            for flags in [0, 1, 2, 3, 0xffff_fffe, 0xffff_ffff] {
+                let what = format!("{label}: deleting dtor {d:#x}({flags:#x})");
+                t.check(&what, d, Conv::Thiscall(obj), &[flags], |g| {
+                    Out::U32(ptb::delete_type(g, obj, flags))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn ptype_constructor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let obj = t.junk(0x40, 9);
+        for (a, b, c) in [(0, 0, 0), (0x00b0_0000, 4, 0xffff_ffff), (1, 2, 3)] {
+            let what = format!("{label}: PType({a:#x}, {b:#x}, {c:#x})");
+            t.check(&what, 0x0043_8cc0, Conv::Thiscall(obj), &[a, b, c], |g| {
+                Out::U32(ptb::construct(g, obj, a, b, c))
+            });
+        }
+    }
+}
+
+#[test]
+fn ptype_fixups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let desc = t.zeros(0x100);
+        let name = t.alloc(b"PSomeType\0");
+        let empty = t.alloc(b"\0");
+        let outs = t.junk(0x10, 3);
+        for (has_desc, flags, nm) in [
+            (false, 0u8, name),
+            (true, 0, name),
+            (true, 1, name),
+            (true, 0xfe, empty),
+            (true, 0x81, empty),
+        ] {
+            let d = if has_desc { desc } else { 0 };
+            t.w8(desc + 0x90, flags);
+            let ty = t.object(&[0, 0], &[0, d]);
+            t.w32(ty + 0x18, nm);
+            let what = format!("{label}: GetFixupForPTypePointer desc={d:#x} flags={flags:#x}");
+            t.check(
+                &what,
+                0x0043_7740,
+                Conv::Cdecl,
+                &[ty, outs, outs + 4],
+                |g| Out::U32(ptb::get_fixup(g, ty, outs, outs + 4)),
+            );
+        }
+        // the dispenser lookup, stubbed: found and not found
+        for found in [0u32, 0x00c0_1234] {
+            t.stub(pt::DISPENSER_INSTANCE, false, 0, 0, 0x00c9_05f0);
+            t.stub(pt::DISPENSER_FIND, true, 1, 1, found);
+            for nm in [0, name] {
+                let what = format!("{label}: ResolveFixupForPTypePointer({nm:#x}) -> {found:#x}");
+                t.check(&what, 0x0043_7830, Conv::Cdecl, &[outs, nm], |g| {
+                    Out::U32(ptb::resolve_fixup(g, outs, nm))
+                });
+            }
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn ptype_name_hash_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x2468_ace1);
+        for case in 0..40u32 {
+            let len = (rng.next() % 24) as usize;
+            let mut bytes: Vec<u8> = (0..len).map(|_| (rng.next() % 255 + 1) as u8).collect();
+            bytes.push(0);
+            bytes.extend([0x41, 0x42, 0]);
+            let s = t.alloc(&bytes);
+            let seed = if case % 3 == 0 { 0x7b5 } else { rng.next() };
+            for n in [0, len as u32, (len as u32).min(3), len as u32 + 2] {
+                for p in [s, 0] {
+                    let what = format!("{label}: name hash {case} n={n} p={p:#x}");
+                    t.check(&what, 0x0043_77d0, Conv::Cdecl, &[p, seed, n], |g| {
+                        Out::U32(ptb::name_hash(g, p, seed, n))
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ptype_swap64_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x0bad_cafe);
+        for i in 0..200 {
+            let (lo, hi) = match i {
+                0 => (0, 0),
+                1 => (u32::MAX, u32::MAX),
+                2 => (0x8000_0000, 0x8000_0000),
+                3 => (0x0102_0304, 0x8506_0708),
+                _ => (rng.next(), rng.next()),
+            };
+            for f in [0x0043_9230, 0x0043_92c0] {
+                let what = format!("{label}: swap64 {f:#x}({lo:#x}, {hi:#x})");
+                t.check(&what, f, Conv::Cdecl, &[lo, hi], |_| {
+                    Out::U64(ptb::swap64(lo, hi))
+                });
+            }
+        }
+    }
+}
+
+/// Doubles and floats for the swaps and the Lua conversions (no signalling
+/// NaNs: the emulator keeps them signalling).
+const SWAP_BYTES: [[u8; 16]; 6] = [
+    [0; 16],
+    [
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+        0x80,
+    ],
+    [
+        0x00, 0x00, 0xc0, 0x7f, 0x00, 0x00, 0xf8, 0x7f, 0x34, 0x12, 0xc0, 0xff, 0, 0, 0, 0,
+    ],
+    [
+        0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f, 1, 2, 3, 4,
+    ],
+    [
+        0xff, 0xff, 0x7f, 0xff, 0xff, 0xff, 0xef, 0xff, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00,
+        0x80,
+    ],
+    [
+        0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x5a, 0x5a, 0x5a,
+        0x5a,
+    ],
+];
+
+#[test]
+fn ptype_swap_endian_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let p = t.zeros(0x20);
+        for ty in &pt::TYPES {
+            for (i, bytes) in SWAP_BYTES.iter().enumerate() {
+                t.write(p, bytes);
+                for n in [0, 1, 5] {
+                    let what = format!(
+                        "{label}: {} swapEndian {:#x} case {i} n={n}",
+                        ty.name, ty.swap
+                    );
+                    t.check(&what, ty.swap, Conv::Stdcall, &[p, n], |g| {
+                        Out::U32(ptb::swap_endian(g, ty.kind, p))
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ptype_script_values_match_the_original() {
+    let ints = [
+        0u32,
+        1,
+        0x7f,
+        0x80,
+        0xff,
+        0x7fff,
+        0x8000,
+        0xffff,
+        0x7fff_ffff,
+        0x8000_0000,
+        0xffff_ffff,
+        0x1234_5678,
+    ];
+    let floats = [
+        0u32,
+        0x8000_0000,
+        0x3f80_0000,
+        0xc2f6_e979,
+        0x7f80_0000,
+        0x7fc0_0000,
+        0xffc1_2345,
+        0x0000_0001,
+    ];
+    for (label, mut t) in Twins::all() {
+        let l = t.junk(0x40, 0x11);
+        let out = t.zeros(0x20);
+        for ty in &pt::TYPES {
+            // getValueFromScriptContext: the integer / number / boolean on
+            // top, popped, stored
+            let values: &[u32] = match ty.kind {
+                Kind::F32 | Kind::F64 => &floats,
+                _ => &ints,
+            };
+            for &v in values {
+                match ty.kind {
+                    Kind::F32 | Kind::F64 => t.stub_float(pt::LUA_TONUMBERX, 3, v),
+                    Kind::Bool => t.stub(pt::LUA_TOBOOLEAN, false, 2, 0, v),
+                    _ => t.stub(pt::LUA_TOINTEGERX, false, 3, 0, v),
+                }
+                t.stub(pt::LUA_SETTOP, false, 2, 0, 0x5e70_0000 ^ v);
+                t.write(out, &[0xa5; 0x20]);
+                let what = format!("{label}: {} get {:#x} value {v:#x}", ty.name, ty.get);
+                t.check(&what, ty.get, Conv::Stdcall, &[l, out], |g| {
+                    Out::U32(ptb::get_from_script(g, ty.kind, l, out))
+                });
+                t.reset();
+            }
+            // putValueToScriptContext: the value read at its width, pushed
+            for bytes in &SWAP_BYTES {
+                t.stub(pt::LUA_CHECKSTACK, false, 2, 0, 1);
+                t.stub(pt::LUA_PUSHINTEGER, false, 2, 0, 0x0001_1111);
+                t.stub(pt::LUA_PUSHNUMBER, false, 2, 0, 0x0002_2222);
+                t.stub(pt::LUA_PUSHBOOLEAN, false, 2, 0, 0x0003_3333);
+                t.write(out, bytes);
+                let what = format!("{label}: {} put {:#x} {bytes:x?}", ty.name, ty.put);
+                t.check(&what, ty.put, Conv::Stdcall, &[l, out], |g| {
+                    Out::U32(ptb::put_to_script(g, ty.kind, l, out))
+                });
+                t.reset();
+            }
+        }
     }
 }
