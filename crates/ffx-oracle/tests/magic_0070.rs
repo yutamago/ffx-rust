@@ -2,6 +2,7 @@
 //! `FFX_GAME_DIR`.
 
 mod magic;
+mod magic_l3;
 
 use ffx_magic::{Ret, m0070};
 use magic::{Call, Eax, SCRATCH, Twin};
@@ -510,5 +511,142 @@ fn small_model_calls_bind_in_every_carrier() {
                 "{name}"
             );
         }
+    }
+}
+
+/// The second round's own node set-ups (`node_init_scaled`, `root_child`,
+/// `static_child`) under no parent, an empty parent and one with a child.
+#[test]
+fn own_node_inits() {
+    let Some(mut t) = twin() else { return };
+    let args = SCRATCH;
+    for (p, l) in [(0, 0), (PARENT, PARENT), (PARENT, LAST)] {
+        nodes(&mut t, l);
+        for (i, v) in (0u32..).zip([NODE, p, 0x0bad_cafe]) {
+            t.set_u32(args + 4 * i, v);
+        }
+        t.check(
+            t.at(0x5a50),
+            Call::this(args),
+            &[],
+            Eax::Checked,
+            |g, _, fr| Ret::eax(m0070::node_init_scaled(g, fr.ecx)),
+        );
+    }
+    // the root's children: none, then one
+    let f = t.at(0x9750);
+    let root = t.img.word(f + 0x18);
+    for last in [root, LAST] {
+        t.write(NODE, &[0xc3; 0x150]);
+        t.write(LAST, &[0x5a; 0x10]);
+        t.set_u32(t.img.word(f + 0x24), last);
+        t.check(
+            f,
+            Call::this(NODE),
+            &[0x11, 0x22],
+            Eax::Checked,
+            |g, img, fr| {
+                let (a, b) = (fr.arg(g, 0), fr.arg(g, 1));
+                Ret::eax(m0070::root_child(g, img, fr.at, fr.ecx, a, b))
+            },
+        );
+        t.check(
+            t.at(0x9800),
+            Call::default(),
+            &[0x33],
+            Eax::Checked,
+            |g, img, fr| {
+                let a = fr.arg(g, 0);
+                Ret::eax(m0070::static_child(g, img, fr.at, a))
+            },
+        );
+    }
+}
+
+/// The step at 0x1000d3c0.
+#[test]
+fn step_d3c0() {
+    let Some(mut t) = twin() else { return };
+    for (s, n) in [(215u32, 1usize), (276, 3), (381, 4)] {
+        let row = SCRATCH + 0x3_0000 + 0x40 * s;
+        t.stub(s, move |m, a| {
+            let k = m.r32(row);
+            m.w32(row, k + 1);
+            for (i, w) in (0u32..).zip(&a[..n]) {
+                m.w32(row + 4 + 4 * i, *w);
+            }
+            0x0100 + s
+        });
+    }
+    t.set_u32(t.img.word(t.at(0xd3c0) + 0x07), 0x77);
+    t.check_entry(t.at(0xd3c0), Call::default(), &[], Eax::Checked);
+}
+
+#[test]
+fn dll_main_writes_only_crt_state() {
+    magic_l3::dll_main(N);
+}
+
+/// The step at 0x1000d410: each wait state and its answer, the node list
+/// run (two nodes, handlers slot 950) or held, and the two gated visits
+/// (their nodes without children).
+#[test]
+fn step_d410() {
+    let Some(mut t) = twin() else { return };
+    let f = t.at(0xd410);
+    let cfg = SCRATCH + 0x200;
+    for (k, s) in [(0u32, 225u32), (1, 313), (2, 549), (3, 227)] {
+        let row = SCRATCH + 0x3_0000 + 0x40 * s;
+        t.stub(s, move |m, a| {
+            let c = m.r32(row);
+            m.w32(row, c + 1);
+            m.w32(row + 4, a[0]);
+            m.r32(cfg + 4 * k)
+        });
+    }
+    for s in [226u32, 673, 950] {
+        let row = SCRATCH + 0x3_0000 + 0x40 * s;
+        t.stub(s, move |m, a| {
+            let c = m.r32(row);
+            m.w32(row, c + 1);
+            m.w32(row + 4 + 4 * (c % 8), a.first().copied().unwrap_or(0));
+            0
+        });
+    }
+    let state = t.img.word(f + 0x04);
+    let hold = t.img.word(f + 0xf8);
+    let list = t.img.word(f + 0xe6);
+    let end = t.img.word(f + 0x116);
+    let gp = t.img.word(f + 0xcf);
+    t.set_u32(gp, SCRATCH + 0x300);
+    for op in [0x161, 0x17c] {
+        let n = t.img.word(f + op);
+        t.set_u32(n + 0x10, n);
+    }
+    let vt = SCRATCH + 0x400;
+    t.set_u32(vt + 0x20, magic::TRAPS + 16 * 950);
+    let (n1, n2) = (SCRATCH + 0x500, SCRATCH + 0x540);
+    t.set_u32(n1, vt);
+    t.set_u32(n1 + 8, n2);
+    t.set_u32(n2, vt);
+    t.set_u32(n2 + 8, end);
+    for (st, ans, h, first) in [
+        (0u32, [1u32, 0, 0, 0], 0u32, n1),
+        (0, [0, 0, 0, 1], 0, n1),
+        (1, [0, 2, 0, 1], 1, n1),
+        (2, [0, 0, 1, 1], 0, end),
+        (2, [0, 0, 0, 0], 0, n1),
+        (3, [0, 0, 0, 1], 0, end),
+        (4, [0, 0, 0, 0], 1, end),
+        (4, [0, 0, 0, 0], 1, n1),
+        (9, [0, 0, 0, 0], 0, n1),
+    ] {
+        t.set_u32(state, st);
+        for (i, a) in (0u32..).zip(ans) {
+            t.set_u32(cfg + 4 * i, a);
+        }
+        t.set_u32(hold, h);
+        t.set_u32(list, first);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
