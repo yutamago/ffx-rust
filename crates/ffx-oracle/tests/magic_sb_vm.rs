@@ -142,7 +142,23 @@ fn opcodes() {
         t.set_u32(g, 0x0c0c_0001);
         let g = t.img.word(f + bytes);
         t.set_u32(g, BYTES);
+        // the character table the actor bytes index (operand `+0x23` /
+        // `+0x4f`): distinct words for the bytes `BYTES` holds (0..=9)
+        let chrs = t.img.word(f + if rva == 0x6f80 { 0x23 } else { 0x4f });
+        for b in 0..10 {
+            t.set_u32(chrs + 4 * b, 0x0c0c_0100 + b);
+        }
     }
+    // the record tables' operands: each record a run writes is filled
+    // first, so that the words it sets to 0 are seen
+    let records = |rva: u32| match rva {
+        0x70d0 => Some(0x2b),
+        0x72d0 => Some(0x3a),
+        0x7620 => Some(0x45),
+        0x77a0 => Some(0x27),
+        0x7820 => Some(0x26),
+        _ => None,
+    };
     let ops: [u32; 23] = [
         0x6c40, 0x6c50, 0x6d60, 0x6da0, 0x6d20, 0x6d80, 0x75b0, 0x76d0, 0x6c70, 0x6e10, 0x7570,
         0x78b0, 0x7010, 0x7920, 0x6ca0, 0x70d0, 0x6f80, 0x7960, 0x72d0, 0x7620, 0x77a0, 0x7340,
@@ -185,6 +201,12 @@ fn opcodes() {
                     ctx(&mut t, depth, counter);
                     t.set_u32(COUNT, [0u32, 3, 8, 0xffff_ffff][k]);
                     t.set_u32(COUNT + 4, [0u32, 1, 0, 5][k]);
+                    if let Some(op) = records(rva)
+                        && h != 0xffff
+                    {
+                        let rec = t.img.word(t.at(rva) + op) + 0x148 * u32::from(h);
+                        t.write(rec - 8, &[0x5a; 0x150]);
+                    }
                     run(&mut t, rva);
                 }
             }
