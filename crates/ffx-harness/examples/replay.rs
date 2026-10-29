@@ -28,6 +28,20 @@ fn main() -> ffx_harness::Result<()> {
         options.hook_disable = Some("replacements".into());
     }
     let mut game = ffx_harness::Game::launch(&options)?;
+    // The time limit runs from here, with the game slot ours: a limit around
+    // the whole command (run-all.sh's `timeout`) also counted the wait for a
+    // slot, and with many agents queued, replays were killed before they
+    // started (2026-10-29). FFX_REPLAY_TIMEOUT seconds, default 900; ends
+    // the run with 124 as `timeout` does.
+    let limit = std::env::var("FFX_REPLAY_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(900);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(limit));
+        eprintln!("replay: {limit} s since the game started; giving up");
+        std::process::exit(124);
+    });
     eprintln!(
         "replay: slot {}, port {}",
         game.instance().unwrap_or(0),
