@@ -14,6 +14,7 @@ use ffx_sg::m5main3_cd::bridge as cd;
 use ffx_sg::m5main3_gu::bridge as gu;
 use ffx_sg::m5main3_menu::bridge as menu;
 use ffx_sg::m5main3_misc::bridge as misc;
+use ffx_sg::m5main3_small::bridge as small;
 
 ported! {
     // ---- batch 1 ----
@@ -154,5 +155,72 @@ ported! {
     /// `set_path_name(window, ms, controls, page)`.
     set_path_name @ 0x0094_2360 => extern "C" fn set_path_name(window: u32, ms: u32, controls: u32, page: u32) {
         cam::set_path_name(&mut mem(), window, ms, controls, page);
+    }
+
+    // ---- batch 3 (list small) ----
+    /// `(map)` -> the head.
+    ClusterMap_clear_0069a970 @ 0x0069_a970 => extern "thiscall" fn cluster_map_clear(map: u32) -> u32 {
+        small::cluster_map_clear(&mut mem(), map)
+    }
+    /// `mspace_memalign(m, align, n)` -> the block.
+    mspace_memalign @ 0x006e_c8d0 => extern "C" fn mspace_memalign(m: u32, align: u32, n: u32) -> u32 {
+        small::mspace_memalign(&mut mem(), m, align, n)
+    }
+    /// `()` -> the decoder's `eax`.
+    MovieViewer_Audio_0077c360 @ 0x0077_c360 => extern "C" fn viewer_audio() -> u32 {
+        small::viewer_audio(&mut mem())
+    }
+    /// `()` -> the cursor or the viewer.
+    MovieViewer_Camera_0077c470 @ 0x0077_c470 => extern "C" fn viewer_camera() -> u32 {
+        small::viewer_camera(&mut mem())
+    }
+    /// `()` -> 0 or 1.
+    TexAnim_GsSinkReady_0077cf80 @ 0x0077_cf80 => extern "C" fn gs_sink_ready() -> u32 {
+        small::gs_sink_ready(&mut mem())
+    }
+    /// `(q, b)`: the TRXDIR quadword.
+    TexAnim_SetTrxDir_0077f0e0 @ 0x0077_f0e0 => extern "C" fn trxdir(q: u32, b: u32) -> u32 {
+        small::trxdir(&mut mem(), q, b)
+    }
+    /// `(q, x, y, dir)`: the TRXPOS quadword.
+    TexAnim_SetTrxPos_0077f100 @ 0x0077_f100 => extern "C" fn trxpos(q: u32, x: u32, y: u32, dir: u32) -> u32 {
+        small::trxpos(&mut mem(), q, x, y, dir)
+    }
+    /// `(q, b, c)`: the TRXREG quadword.
+    TexAnim_SetTrxReg_0077f140 @ 0x0077_f140 => extern "C" fn trxreg(q: u32, b: u32, c: u32) -> u32 {
+        small::trxreg(&mut mem(), q, b, c)
+    }
+    /// `Ch_BlkDisposeHandle(handle)`.
+    Ch_BlkDisposeHandle @ 0x0082_59f0 => extern "C" fn blk_dispose_handle(handle: u32) -> u32 {
+        small::blk_dispose_handle(&mut mem(), handle)
+    }
+    /// `Ch_ChrMemHeapSet()`.
+    Ch_ChrMemHeapSet @ 0x0082_6230 => extern "C" fn chr_mem_heap_set() -> u32 {
+        small::chr_mem_heap_set(&mut mem())
+    }
+    /// `Ch_FunctionHistoryDump()`.
+    Ch_FunctionHistoryDump @ 0x0082_69e0 => extern "C" fn function_history_dump() -> u32 {
+        small::function_history_dump(&mut mem())
+    }
+    /// `jmp Ch_MgrpRead`.
+    Ch_MgrpRead_thunk @ 0x0083_6a40 => extern "C" fn mgrp_read_thunk(id: u32, n: u32) -> u32 {
+        small::thunk(&mut mem(), small::MGRP_READ, &[id, n])
+    }
+    /// `jmp Sg_SetKeepFps`.
+    Sg_SetKeepFps_thunk_00839ca0 @ 0x0083_9ca0 => extern "C" fn set_keep_fps_thunk(v: u32) -> u32 {
+        small::thunk(&mut mem(), small::SET_KEEP_FPS, &[v])
+    }
+    /// `chr_anim_win(chr)`.
+    chr_anim_win @ 0x0093_e510 => extern "C" fn chr_anim_win(chr: u32) -> u32 {
+        small::chr_anim_win(&mut mem(), chr)
+    }
+    /// `()`: `GlobalMemoryStatusEx` on a frame buffer.
+    Mem_QueryStatus_009437c0 @ 0x0094_37c0 => extern "C" fn memory_status() -> u32 {
+        let mut f = StackFrame::<16>::new();
+        small::memory_status(&mut mem(), f.at())
+    }
+    /// `(ok, name)`: stops on a failed read.
+    HddRead_Check_00a42f50 @ 0x00a4_2f50 => extern "C" fn read_check(ok: u32, name: u32) {
+        small::read_check(&mut mem(), ok, name);
     }
 }

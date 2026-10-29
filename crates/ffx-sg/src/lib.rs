@@ -23,6 +23,7 @@ pub mod m5main3_cd;
 pub mod m5main3_gu;
 pub mod m5main3_menu;
 pub mod m5main3_misc;
+pub mod m5main3_small;
 pub mod m5main_app;
 pub mod m5main_dbg;
 pub mod m5main_dbg2;

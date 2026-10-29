@@ -515,3 +515,25 @@ pub fn fill_arg0(w: &[u32]) -> Vec<u8> {
     }
     c
 }
+
+/// A printf-like original at `sym` replaced by recording stubs that log
+/// the words each format (the first argument, an `ffx.sym` address) takes;
+/// `other` words for any other format. Returns `ret`.
+pub fn printf_stub(t: &mut Twins, sym: u32, fmts: &[(u32, u32)], other: u32, ret: u32) {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x04]; // mov edx, [esp + 4]
+    for &(fmt, n) in fmts {
+        let to = t.stub_code(sym, false, n, 0, &Ret::Fixed(ret), &[]);
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(fmt).to_le_bytes()); // cmp edx, fmt
+        c.extend([0x75, 7]); // jne next
+        c.push(0xb8);
+        c.extend(to.to_le_bytes()); // mov eax, to
+        c.extend([0xff, 0xe0]); // jmp eax
+    }
+    let rest = t.stub_code(sym, false, other, 0, &Ret::Fixed(ret), &[]);
+    c.push(0xb8);
+    c.extend(rest.to_le_bytes()); // mov eax, rest
+    c.extend([0xff, 0xe0]); // jmp eax
+    let at = t.code(&c);
+    t.jump(sym, at);
+}

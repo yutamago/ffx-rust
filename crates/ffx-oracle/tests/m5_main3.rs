@@ -1287,3 +1287,202 @@ fn mat_vec_and_path_names_match_the_original() {
         }
     });
 }
+
+// ---- small: texture animation tags, character memory, the movie viewer ----
+
+use ffx_sg::m5main3_small::bridge as small;
+
+#[test]
+fn small_helpers_match_the_original() {
+    let mut rng = Rng(0x0077_f0e0);
+    Twins::each(|t| {
+        for _ in 0..8 {
+            t.reset();
+            t.stub(small::SET_QWORD, false, 4, 0, 0x53);
+            let (q, b, c, d) = (rng.next(), rng.next(), rng.next(), rng.next());
+            t.check("trxdir", 0x0077_f0e0, Conv::Cdecl, &[q, b], |m| {
+                Out::U32(small::trxdir(m, q, b))
+            });
+            t.check("trxpos", 0x0077_f100, Conv::Cdecl, &[q, b, c, d], |m| {
+                Out::U32(small::trxpos(m, q, b, c, d))
+            });
+            t.check("trxreg", 0x0077_f140, Conv::Cdecl, &[q, b, c], |m| {
+                Out::U32(small::trxreg(m, q, b, c))
+            });
+        }
+        for v in [0u32, 0x4000, 0x8000, 0xc000, 0xffff_ffff, 0x7fff] {
+            t.reset();
+            t.g32(small::GS_SINK, v);
+            t.check("gs sink", 0x0077_cf80, Conv::Cdecl, &[], |m| {
+                Out::U32(small::gs_sink_ready(m))
+            });
+        }
+        t.reset();
+        t.stubs(&[
+            (small::USER_MALLOC, 1, 0x00ab_0000),
+            (small::SG_REALLOC, 2, 0xa1),
+            (small::MEM_SET_STR, 3, 0xa2),
+            (small::MEM_SET_MOVE_HEAP, 1, 0xa3),
+        ]);
+        t.check("Ch_ChrMemHeapSet", 0x0082_6230, Conv::Cdecl, &[], |m| {
+            Out::U32(small::chr_mem_heap_set(m))
+        });
+        for k in [0u32, 5, 39, 40] {
+            t.reset();
+            t.stubs(&[
+                (small::BLK_DISPOSE, 1, 0xb1),
+                (small::CACHE_DISPOSE_CHR, 1, 0xb2),
+            ]);
+            for i in 0..40 {
+                t.g32(small::BLOCKS + 0x12c * i, 0x1000 + i);
+            }
+            let handle = 0x1000 + k;
+            let what = format!("Ch_BlkDisposeHandle {k}");
+            t.check(&what, 0x0082_59f0, Conv::Cdecl, &[handle], |m| {
+                Out::U32(small::blk_dispose_handle(m, handle))
+            });
+        }
+        t.reset();
+        t.stubs(&[
+            (small::DBG_PRINTF, 2, 0xc1),
+            (small::WINDOW_CREATE, 6, 0xc2),
+        ]);
+        t.check("chr_anim_win", 0x0093_e510, Conv::Cdecl, &[0x77], |m| {
+            Out::U32(small::chr_anim_win(m, 0x77))
+        });
+        t.reset();
+        t.stubs(&[(small::MGRP_READ, 2, 0xd1), (small::SET_KEEP_FPS, 1, 0xd2)]);
+        t.check(
+            "Ch_MgrpRead thunk",
+            0x0083_6a40,
+            Conv::Cdecl,
+            &[3, 4],
+            |m| Out::U32(small::thunk(m, small::MGRP_READ, &[3, 4])),
+        );
+        t.check("Sg_SetKeepFps thunk", 0x0083_9ca0, Conv::Cdecl, &[2], |m| {
+            Out::U32(small::thunk(m, small::SET_KEEP_FPS, &[2]))
+        });
+        for (ok, name) in [
+            (1u32, &b"x\0"[..]),
+            (0, b"\0"),
+            (0, b"file.bin\0"),
+            (2, b"\0"),
+        ] {
+            t.reset();
+            m5_main3_common::printf_stub(
+                t,
+                small::DBG_PRINTF,
+                &[(small::READ_ERR_NONAME, 1)],
+                2,
+                0xe1,
+            );
+            t.stub(small::MOVIE_ERR, false, 3, 0, 0xe2);
+            let s = t.alloc(name);
+            t.check("read check", 0x00a4_2f50, Conv::Cdecl, &[ok, s], |m| {
+                small::read_check(m, ok, s);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn cluster_map_memalign_and_status_match_the_original() {
+    let mut rng = Rng(0x0069_a970);
+    Twins::each(|t| {
+        for n in [0u32, 1, 4] {
+            t.reset();
+            t.stub(small::ERASE_SUBTREE, true, 1, 1, 0xf1);
+            t.stub(small::OPERATOR_DELETE, false, 1, 0, 0xf2);
+            // the head (sentinel: byte +0xd set), then a chain of n nodes
+            let head = t.zeros(0x10);
+            t.w8(head + 0xd, 1);
+            let mut next = head;
+            for i in 0..n {
+                let node = t.words(&[next, 0, 0x7700 + i, 0]);
+                next = node;
+            }
+            t.w32(head + 4, next);
+            let map = t.words(&[head, 9]);
+            let what = format!("ClusterMap_clear {n}");
+            t.check(&what, 0x0069_a970, Conv::Thiscall(map), &[], |m| {
+                Out::U32(small::cluster_map_clear(m, map))
+            });
+        }
+        for head in [0x41u32, 0x40, 0x13, 0x10, 0x8, 0x5, 0x4, 0x42, 0x4d, 0xc] {
+            t.reset();
+            let block = t.zeros(0x50);
+            t.w32(block, head);
+            t.stub(small::INTERNAL_MEMALIGN, false, 3, 0, block + 4);
+            t.stub(small::MEMSET, false, 3, 0, 0x5e);
+            let what = format!("mspace_memalign {head:#x}");
+            t.check(
+                &what,
+                0x006e_c8d0,
+                Conv::Cdecl,
+                &[0x1111, 0x10, 0x20],
+                |m| Out::U32(small::mspace_memalign(m, 0x1111, 0x10, 0x20)),
+            );
+        }
+        t.reset();
+        t.stub_import(small::GLOBAL_MEMORY_STATUS_EX, 1, 1, 0x1);
+        let _ = rng.next();
+        t.check_framed(
+            "memory status",
+            0x0094_37c0,
+            Conv::Cdecl,
+            &[],
+            0x44,
+            |m, ebp| Out::U32(small::memory_status(m, ebp - 0x44)),
+        );
+    });
+}
+
+#[test]
+fn history_and_viewer_steps_match_the_original() {
+    let mut rng = Rng(0x0082_69e0);
+    Twins::each(|t| {
+        for (next, filled) in [(0u32, 0u32), (5, 3), (0x80, 0x80), (1, 200)] {
+            t.reset();
+            m5_main3_common::printf_stub(
+                t,
+                small::DBG_PRINTF,
+                &[(small::HISTORY_HEADER, 1)],
+                4,
+                0x91,
+            );
+            t.stub(small::GET_FUNC_NAME, false, 1, 0, 0x92);
+            for i in 0..0x80u32 {
+                let e = small::HISTORY + 16 * i;
+                // the entries before `next` (newest first) are filled
+                let age = next.wrapping_sub(1).wrapping_sub(i) & 0x7f;
+                t.g8(e, u8::from(age < filled));
+                t.g32(e + 8, rng.next());
+                t.g32(e + 0xc, rng.next());
+            }
+            t.g32(small::HISTORY_NEXT, next);
+            t.check("history dump", 0x0082_69e0, Conv::Cdecl, &[], |m| {
+                Out::U32(small::function_history_dump(m))
+            });
+        }
+        for (mode, len) in [(0u32, 0u32), (1, 0x20), (2, 0), (0xffff_ffff, 0x40)] {
+            t.reset();
+            t.stub(small::DECODE_BLOCKS, false, 4, 0, 0xa1);
+            t.stub(small::MOVIE_CAMERA, false, 4, 0, 0xa2);
+            let viewer = t.zeros(0x5_0800);
+            let stream = t.words(&[
+                len, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+            ]);
+            t.w32(viewer + 0x5_06c8, mode);
+            t.w32(viewer + 0x5_059c, stream);
+            t.w32(viewer + 0x5_051c, 640);
+            t.g32(small::VIEWER, viewer);
+            t.check("viewer audio", 0x0077_c360, Conv::Cdecl, &[], |m| {
+                Out::U32(small::viewer_audio(m))
+            });
+            t.check("viewer camera", 0x0077_c470, Conv::Cdecl, &[], |m| {
+                Out::U32(small::viewer_camera(m))
+            });
+        }
+    });
+}
