@@ -1716,8 +1716,9 @@ pub fn timed_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(s + 0x2d0, 0xff);
         return Ret::eax(prev);
     }
-    // comiss time, K2; jb: not yet
-    if mode != 0 || !(time >= f32_at(g, w(0x99))) {
+    // comiss time, K2; jb: not yet (NaN included)
+    let due = time >= f32_at(g, w(0x99));
+    if mode != 0 || !due {
         return Ret::eax(if mode == 0 { 0 } else { mode.wrapping_sub(1) });
     }
     let obj = g.read::<u32>(s + 0x2d4);
@@ -2366,10 +2367,13 @@ pub const PART_TOGGLE: Sig = Sig {
 pub fn nodes_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let owner = g.read::<u32>(fr.ecx);
     let mut eax = fr.eax;
-    let n = g.read::<i32>(owner + 0x4dc);
+    if g.read::<i32>(owner + 0x4dc) <= 0 {
+        return Ret::eax(eax);
+    }
     let cursor = fr.esp.wrapping_sub(8);
     let mut i = 0u32;
-    while n > 0 {
+    // the count is read again after each node
+    loop {
         let node = owner + 0x1c + 0x98 * i;
         let parent = g.read::<u32>(node + 0x14);
         if parent != 0 {
@@ -2890,16 +2894,15 @@ pub fn models_295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
         }
     }
-    let mut eax = 0;
     let mut m = w(0x36);
-    loop {
+    let eax = loop {
         let t = slot_target(g, w(0x41), 295);
-        eax = g.call(t, 0, &[g.read::<u32>(m), u32::MAX]).eax;
+        let eax = g.call(t, 0, &[g.read::<u32>(m), u32::MAX]).eax;
         m = m.wrapping_add(0xcc);
         if m.cast_signed() >= w(0x5c).cast_signed() {
-            break;
+            break eax;
         }
-    }
+    };
     Ret::eax(eax)
 }
 

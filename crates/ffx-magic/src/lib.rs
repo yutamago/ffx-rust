@@ -988,6 +988,10 @@ ports! {
     "0565 start 0xf70" => s4_fam446::START_F70, s4_fam446::start_f70;
     "0565 start 0x1300 low" => s4_fam446::START_1300_LOW, s4_fam446::start_1300_low;
     "0644 start 0x11d0" => s4_fam446::START_11D0, s4_fam446::start_11d0;
+    "0565 start-up" => s4_fam446::START_UP_B, s4_fam446::start_up_b;
+    "0644 start-up" => s4_fam446::START_UP_C, s4_fam446::start_up_c;
+    "0565 load step" => s4_fam446::LOAD_STEP_B, s4_fam446::load_step_b;
+    "0644 load step" => s4_fam446::LOAD_STEP_C, s4_fam446::load_step_c;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1174,6 +1178,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("static child", &sa_misc::STATIC_CHILD),
     ("reels match", &sa_misc::REELS_MATCH),
     ("camera target (b)", &sa_misc::CAMERA_TARGET_B),
+    ("camera target (c)", &sa_misc::CAMERA_TARGET_C), // shared-4 list
     ("register grid", &sa_misc::REGISTER_GRID),
     ("place me", &sa_misc::PLACE_ME),
     ("kind records", &sa_misc::KIND_RECORDS),

@@ -2587,6 +2587,37 @@ pub const CAMERA_TARGET_B: Sig = Sig {
     imports: &[],
 };
 
+/// `magic_0565` 0x10006d00 (internal, no arguments): [`camera_target_b`]
+/// with the `magic_0446` block layout: the vector at `+0x2f80`, the angle
+/// into `+0xebf0` and `+0xeca0`, `+0xec9c`, `+0xeca4` cleared; then
+/// `G_READY` 1 and `G_A`/`G_B` -1. Returns slot 333's `eax`.
+pub fn camera_target_c<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let o = CameraOps {
+        fx: 0x08,
+        t262: 0x1b,
+        model: 0x22,
+        t333: 0x2f,
+        model2: 0x3c,
+        k: [0x4f, 0x5e, 0x68, 0x72, 0x7f],
+        vec: 0x2f80,
+        out: [0xebf0, 0xeca0, 0xec9c, 0xeca4],
+    };
+    let (eax, _) = camera_fold(g, img, f, &o);
+    let w = |off: u32| img.word(f + off);
+    g.write::<u32>(w(0xac), 1);
+    g.write::<u32>(w(0xb6), u32::MAX);
+    g.write::<u32>(w(0xc0), u32::MAX);
+    eax
+}
+
+/// `camera_target_c` (205 bytes, 5 overlays).
+pub const CAMERA_TARGET_C: Sig = Sig {
+    len: 205,
+    hash: 0x35ff_ab2a_e2f8_6da4,
+    calls: &[],
+    imports: &[],
+};
+
 /// `magic_0250` 0x10002300 (internal, no arguments): registers `N x N`
 /// part handles (`N` = `G_N`, read again after every inner step): for
 /// record `k` (0x68 bytes from `*G_TABLE`) and index `i`, slot 941 maps

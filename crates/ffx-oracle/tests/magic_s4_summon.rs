@@ -2,7 +2,11 @@
 //! thunks (`ffx_magic::s4_wrap`) against `magic_0003.dll` and
 //! `magic_0087.dll`. Needs `FFX_GAME_DIR`.
 
-#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 
 mod magic;
 #[path = "magic/sa.rs"]

@@ -321,7 +321,15 @@ fn shake_task() {
             set_f(&mut t, st + 0x20, step);
             t.set_u32(st + 0x24, delay.cast_unsigned());
             t.set_u32(st + 0x28, left);
-            t.set_u16(st + 0x2c, flags | if mx == 2.0 { 0x8000 } else { 0 });
+            t.set_u16(
+                st + 0x2c,
+                flags
+                    | if mx.to_bits() == 2.0f32.to_bits() {
+                        0x8000
+                    } else {
+                        0
+                    },
+            );
             set_f(&mut t, gx, mx);
             set_f(&mut t, gy, my);
             let c = Call {
@@ -2162,8 +2170,8 @@ fn small_internals() {
         for (x, y) in [
             (k1, 0.0),
             (k2, k3 - 1.0),
-            ((k1 + k2) * 0.5, k3),
-            ((k1 + k2) * 0.5, k3 + 1.0),
+            (f32::midpoint(k1, k2), k3),
+            (f32::midpoint(k1, k2), k3 + 1.0),
             (f32::NAN, f32::NAN),
         ] {
             t.write(p, &[0x11; 0x70]);
@@ -2326,7 +2334,7 @@ fn view_node_part() {
                 Call::this(node),
                 &[0x0b0b],
                 Eax::Checked,
-                |g, img, fr| s4_misc::static_node(g, img, fr),
+                s4_misc::static_node,
             );
         }
     }
@@ -2409,6 +2417,92 @@ fn fam446_starts_565_644() {
                     t.check_entry(f, c, &[task], Eax::Checked);
                 }
             }
+        }
+    }
+}
+
+/// `magic_0565`'s camera target: every fold branch (above, below, inside).
+#[test]
+fn camera_target_c_folds() {
+    let Some(mut t) = twin(565) else { return };
+    let f = t.at(0x6d00);
+    let fx = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0x08), fx);
+    t.set_u32(t.img.word(f + 0x22), 0x00ab_0000);
+    rec(&mut t, 262, 4, |m, a| {
+        m.w32(a[1], 0x3f00_0000);
+        0x262
+    });
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    for angle in [0.0f64, 1.0, -3.0, 7.0, 100.0, -100.0] {
+        t.stub_st0(333, move |_, _| angle);
+        t.write(fx + 0x2f80, &[0x5a; 0x10]);
+        t.write(fx + 0xebf0, &[0x5a; 0xc0]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(ffx_magic::sa_misc::camera_target_c(g, img, fr.at))
+        });
+    }
+}
+
+/// The longer start-ups of `magic_0565` and `magic_0644` through their
+/// load steps (busy, asking, waiting, loaded with the task list empty and
+/// not).
+#[test]
+fn fam446_load_steps_565_644() {
+    for (n, rva) in [(565u16, 0x1270u32), (644, 0x5480)] {
+        let Some(mut t) = twin(n) else { return };
+        let ls = t.at(rva);
+        let su = t.img.rel32_target(ls + 0x5b);
+        let take = t.img.rel32_target(su + 0x9e);
+        let ps = t.img.rel32_target(su + 0x60);
+        t.set_u32(t.img.word(ps + 0x04), SCRATCH + 0x800);
+        rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+        for (s, k) in [
+            (711u32, 3usize),
+            (710, 4),
+            (271, 3),
+            (221, 7),
+            (219, 2),
+            (357, 3),
+            (356, 3),
+            (262, 4),
+            (226, 2),
+        ] {
+            rec(&mut t, s, k, move |_, _| s);
+        }
+        rec(&mut t, 333, 1, |_, _| 0x333);
+        let answers = SCRATCH + 0x8c0;
+        rec(&mut t, 225, 1, move |m, _| m.r32(answers));
+        rec(&mut t, 227, 1, move |m, _| m.r32(answers + 4));
+        t.set_u32(t.img.word(ls + 0x26), 0x0e5e_0026);
+        t.set_u32(t.img.word(ls + 0x46), 0x0e5e_0046);
+        t.set_u32(t.img.word(su + 0x16), 0x1616);
+        let asked = t.img.word(ls + 0x18);
+        let head = t.img.word(su + 0xa4);
+        let tail = t.img.word(su + 0xb8);
+        let cases = [
+            (1u32, 0u32, 0u32, false, 1.25f64),
+            (0, 0, 0, false, 1.25),
+            (0, 1, 0xffff_ffff, false, 1.25),
+            (0, 1, 1, false, 100.0),
+            (0, 0, 2, true, -100.0),
+            (0, 1, 1, true, 1.25),
+        ];
+        for (busy, state, there, listed, angle) in cases {
+            t.stub_st0(333, move |_, _| angle);
+            free_ring(&mut t, take, SCRATCH + 0x1000, 4);
+            if listed {
+                t.write(SCRATCH + 0x1400, &[0x22; 0x1c]);
+                t.set_u32(head, SCRATCH + 0x1400);
+                t.set_u32(tail, SCRATCH + 0x1400);
+            } else {
+                t.set_u32(head, 0);
+                t.set_u32(tail, 0);
+            }
+            t.set_u32(answers, busy);
+            t.set_u32(answers + 4, there);
+            t.set_u32(asked, state);
+            t.check_entry(ls, Call::default(), &[], Eax::Checked);
         }
     }
 }

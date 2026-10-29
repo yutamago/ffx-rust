@@ -447,39 +447,123 @@ fn new_task<G: Game>(
     node
 }
 
+/// Where a start-up keeps its operands: `magic_0446`'s and the longer
+/// `magic_0565`/`0644` one (an extra block word, and slot 221 after slot
+/// 271).
+struct StartUpOps {
+    /// `(destination, value)` operand pairs of the block words set.
+    blocks: &'static [(u32, u32)],
+    /// The part handle's global.
+    handle: u32,
+    /// The part block pushed for [`part_setup`].
+    block: u32,
+    /// The `rel32`s of [`part_setup`], the ranges and the camera target.
+    calls: [u32; 3],
+    /// Slot 271's table operand.
+    t271: u32,
+    /// Slot 221's table operand and its part operand, when there is one.
+    t221: Option<(u32, u32)>,
+    /// The first task: the `rel32` of [`take`], the callback, the list's
+    /// head and tail operands.
+    task1: (u32, u32, u32, u32),
+    /// [`records_init`]: its `rel32` and its block operand.
+    records: (u32, u32),
+    /// The second task, as `task1`.
+    task2: (u32, u32, u32, u32),
+}
+
+/// The block words a start-up sets: `(destination, value)` operands.
+const BLOCKS: [(u32, u32); 5] = [
+    (0x20, 0x24),
+    (0x2a, 0x2e),
+    (0x34, 0x38),
+    (0x3e, 0x42),
+    (0x48, 0x4c),
+];
+
+/// `magic_0446`'s start-up.
+const UP446: StartUpOps = StartUpOps {
+    blocks: BLOCKS.split_at(4).0,
+    handle: 0x4c,
+    block: 0x51,
+    calls: [0x56, 0x5b, 0x60],
+    t271: 0x65,
+    t221: None,
+    task1: (0x7c, 0x77, 0x82, 0x96),
+    records: (0xba, 0xad),
+    task2: (0xc4, 0xbf, 0xca, 0xde),
+};
+
+/// `magic_0565`'s and `magic_0644`'s start-up.
+const UP565: StartUpOps = StartUpOps {
+    blocks: &BLOCKS,
+    handle: 0x56,
+    block: 0x5b,
+    calls: [0x60, 0x65, 0x6a],
+    t271: 0x6f,
+    t221: Some((0x7e, 0x8f)),
+    task1: (0x9e, 0x99, 0xa4, 0xb8),
+    records: (0xdc, 0xcf),
+    task2: (0xe6, 0xe1, 0xec, 0x100),
+};
+
+/// An internal `(g, img, at) -> eax` callee of a start-up.
+type Internal<G> = fn(&mut G, &Image, u32) -> u32;
+
 /// The family's start-up (a table entry, no arguments): the DLL's lists
 /// cleared and its blocks set (immediates of the code: `G` among them);
-/// slot 719 `(part, 8, 0)` gives the part's handle (`+0x4c`);
-/// [`part_setup`] with the part block; the light ranges
-/// ([`light_ranges`]) and the camera target ([`camera_target`]); slot
-/// 271 (4); then two tasks (kinds 1 and 2, the callbacks at operands
-/// `+0x77` and `+0xbf`), the records ([`records_init`], the block at
-/// `+0xad`) set up between them. Returns 0.
-///
-/// `magic_0446` 0x100049c0 (264 bytes; 10 DLLs).
-pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+/// slot 719 `(part, 8, 0)` gives the part's handle; [`part_setup`] with
+/// the part block; the ranges and the camera target (`ranges`,
+/// `camera`); slot 271 (4), and in the longer layout slot 221 `(part, 2,
+/// 0x16, 1)`; then two tasks (kinds 1 and 2), the records
+/// ([`records_init`]) set up between them. Returns 0.
+fn start_up_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    o: &StartUpOps,
+    (ranges, camera): (Internal<G>, Internal<G>),
+) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let w = |op: u32| img.word(f + op);
     g.write::<u32>(w(0x16), 0);
-    for (dst, src) in [(0x20, 0x24), (0x2a, 0x2e), (0x34, 0x38), (0x3e, 0x42)] {
+    for &(dst, src) in o.blocks {
         g.write::<u32>(w(dst), w(src));
     }
     let t = slot_target(g, w(0x1), 719);
     let handle = g.call(t, 0, &[w(0x10), 8, 0]).eax;
-    g.write::<u32>(w(0x4c), handle);
+    g.write::<u32>(w(o.handle), handle);
     // add esp, 8 leaves slot 719's last word (0) under the block pushed
     let esp = fr.esp.wrapping_sub(12);
     g.write::<u32>(esp + 8, 0);
-    g.write::<u32>(esp + 4, w(0x51));
-    crate::sb_misc::part_setup(g, img, img.rel32_target(f + 0x56), esp);
-    crate::sb_misc::light_ranges(g, img, img.rel32_target(f + 0x5b));
-    crate::sa_misc::camera_target(g, img, img.rel32_target(f + 0x60));
-    let t = slot_target(g, w(0x65), 271);
-    g.call(t, 0, &[4, w(0x51), 0]);
-    new_task(g, img, f, 0x7c, w(0x77), Some(1), (0x82, 0x96));
-    crate::sa_misc::records_init(g, img, img.rel32_target(f + 0xba), w(0xad));
-    new_task(g, img, f, 0xc4, w(0xbf), Some(2), (0xca, 0xde));
+    g.write::<u32>(esp + 4, w(o.block));
+    crate::sb_misc::part_setup(g, img, img.rel32_target(f + o.calls[0]), esp);
+    ranges(g, img, img.rel32_target(f + o.calls[1]));
+    camera(g, img, img.rel32_target(f + o.calls[2]));
+    let t = slot_target(g, w(o.t271), 271);
+    g.call(t, 0, &[4, w(o.block), 0]);
+    if let Some((t221, part)) = o.t221 {
+        let t = slot_target(g, w(t221), 221);
+        // call width: 7 (slot 271's words are still under these)
+        g.call(t, 0, &[w(part), 2, 0x16, 1, 4, w(o.block), 0]);
+    }
+    let (call, owner, head, tail) = o.task1;
+    new_task(g, img, f, call, w(owner), Some(1), (head, tail));
+    let (call, block) = o.records;
+    crate::sa_misc::records_init(g, img, img.rel32_target(f + call), w(block));
+    let (call, owner, head, tail) = o.task2;
+    new_task(g, img, f, call, w(owner), Some(2), (head, tail));
     Ret::eax(0)
+}
+
+/// [`start_up_with`] in `magic_0446`: its own light ranges
+/// ([`crate::sb_misc::light_ranges`]) and [`crate::sa_misc::camera_target`].
+///
+/// `magic_0446` 0x100049c0 (264 bytes; 10 DLLs).
+pub fn start_up<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let calls: (Internal<G>, Internal<G>) =
+        (crate::sb_misc::light_ranges, crate::sa_misc::camera_target);
+    start_up_with(g, img, fr, &UP446, calls)
 }
 
 /// [`start_up`].
@@ -546,6 +630,16 @@ pub const MODE_SETUP: Sig = Sig {
 ///
 /// `magic_0446` 0x10001240 (118 bytes; 10 DLLs).
 pub fn load_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    load_step_with(g, img, fr, start_up)
+}
+
+/// [`load_step`] with the DLL's start-up `start`.
+fn load_step_with<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    start: fn(&mut G, &Image, &Frame) -> Ret,
+) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let t = slot_target(g, w(0x1), 225);
@@ -568,7 +662,7 @@ pub fn load_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp: fr.esp.wrapping_sub(4),
         ..*fr
     };
-    start_up(g, img, &callee);
+    start(g, img, &callee);
     g.write::<u32>(w(0x61), w(0x65));
     g.write::<u32>(w(0x6b), w(0x6f));
     Ret::eax(0)
@@ -1600,5 +1694,86 @@ pub const START_11D0: Sig = Sig {
     len: 112,
     hash: 0xf1a0_2267_8c6b_eda9,
     calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// [`start_up_with`] in `magic_0565`: an extra block word, the part
+/// ranges ([`crate::sa_misc::part_ranges`]), its camera target
+/// ([`crate::sa_misc::camera_target_c`]) and slot 221 after 271.
+///
+/// `magic_0565` 0x10007920 (298 bytes; 5 DLLs).
+pub fn start_up_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let calls: (Internal<G>, Internal<G>) =
+        (crate::sa_misc::part_ranges, crate::sa_misc::camera_target_c);
+    start_up_with(g, img, fr, &UP565, calls)
+}
+
+/// [`start_up_b`].
+pub const START_UP_B: Sig = Sig {
+    len: 298,
+    hash: 0x1787_9d15_43a9_c849,
+    calls: &[
+        (0x60, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x65, Callee::Sig(&crate::sa_misc::PART_RANGES)),
+        (0x6a, Callee::Sig(&crate::sa_misc::CAMERA_TARGET_C)),
+        (0x9e, Callee::Sig(&TAKE)),
+        (0xdc, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+        (0xe6, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
+
+/// [`start_up_b`] in `magic_0644`: its camera target
+/// ([`crate::sa_misc::camera_target_b`]).
+///
+/// `magic_0644` 0x1000b7c0 (298 bytes; 5 DLLs).
+pub fn start_up_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let calls: (Internal<G>, Internal<G>) =
+        (crate::sa_misc::part_ranges, crate::sa_misc::camera_target_b);
+    start_up_with(g, img, fr, &UP565, calls)
+}
+
+/// [`start_up_c`].
+pub const START_UP_C: Sig = Sig {
+    len: 298,
+    hash: 0x1787_9d15_43a9_c849,
+    calls: &[
+        (0x60, Callee::Sig(&crate::sb_misc::PART_SETUP)),
+        (0x65, Callee::Sig(&crate::sa_misc::PART_RANGES)),
+        (0x6a, Callee::Sig(&crate::sa_misc::CAMERA_TARGET_B)),
+        (0x9e, Callee::Sig(&TAKE)),
+        (0xdc, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+        (0xe6, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
+
+/// [`load_step`] starting [`start_up_b`].
+///
+/// `magic_0565` 0x10001270 (118 bytes; 5 DLLs).
+pub fn load_step_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    load_step_with(g, img, fr, start_up_b)
+}
+
+/// [`load_step_b`].
+pub const LOAD_STEP_B: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_B))],
+    imports: &[],
+};
+
+/// [`load_step`] starting [`start_up_c`].
+///
+/// `magic_0644` 0x10005480 (118 bytes; 5 DLLs).
+pub fn load_step_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    load_step_with(g, img, fr, start_up_c)
+}
+
+/// [`load_step_c`].
+pub const LOAD_STEP_C: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_C))],
     imports: &[],
 };
