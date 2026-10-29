@@ -848,4 +848,9 @@ ported! {
     Phyre_PAnimation_PAnimationChannelTargetBindSceneToMeshInstance_bindTargets_005ce320 @ 0x005c_e320 => extern "thiscall" fn s_005ce320(this: u32, out: u32, targets: u32, n: u32) -> u32 {
         mo::bind_mesh_targets(&mut mem(), this, out, targets, n)
     }
+    // ---- batch 12: the Phyre namespace index ----
+    /// `Phyre_PScripting_PhyreIndex_00436c80`.
+    Phyre_PScripting_PhyreIndex_00436c80 @ 0x0043_6c80 => extern "C" fn s_00436c80(l: u32) -> u32 {
+        mo::phyre_index(&mut mem(), l)
+    }
 }

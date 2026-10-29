@@ -2740,3 +2740,38 @@ fn b11_decode_and_bind_match_the_original() {
         t.unstub();
     }
 }
+
+// ---- batch 12: the Phyre namespace index ----
+
+#[test]
+fn b12_phyre_index_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        t.stub(s::GLOBAL_NAMESPACE, false, 1, 0, 0x00c9_0b00);
+        t.stub(mo_::PUSH_CLASS, false, 2, 0, 0x9c);
+        t.stub(s::LUA_CREATETABLE, false, 3, 0, 0xc7);
+        t.stub(lb::LUA_GETTOP, false, 1, 0, 5);
+        t.stub(mo_::LUA_PUSHLSTRING, false, 3, 0, 0x15);
+        t.stub(s::LUA_PUSHLIGHTUSERDATA, false, 2, 0, 0x16);
+        t.stub(mid::LUA_PUSHCCLOSURE, false, 3, 0, 0x17);
+        t.stub(mo_::LUA_RAWSET, false, 2, 0, 0x18);
+        t.stub(mo_::LUA_PUSHVALUE, false, 2, 0, 0x19);
+        t.stub(s::LUA_SETMETATABLE, false, 2, 0, 0x1a);
+        let keys = [
+            t.cstr("PNode"),
+            t.cstr("GetTypeOf"),
+            t.cstr("GetType"),
+            t.cstr(""),
+        ];
+        for key in keys.iter().copied().chain([0]) {
+            for (class, obj) in [(0u32, 0u32), (0x00c9_c100, 0), (0, 0x00c9_d100)] {
+                t.stub(mid::LUA_TOLSTRING, false, 3, 0, key);
+                t.stub(mo_::NAMESPACE_CLASS, true, 1, 1, class);
+                t.stub(mo_::FIND_NAMED, false, 1, 0, obj);
+                let what = format!("{label}: phyre index {key:#x} {class:#x} {obj:#x}");
+                t.cdecl(&what, 0x0043_6c80, &[l], |g| Some(mo::phyre_index(g, l)));
+            }
+        }
+        t.unstub();
+    }
+}

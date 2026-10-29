@@ -27,6 +27,26 @@ pub const TYPE_CLASS: u32 = 0x00c9_0760;
 pub const NAME_IS: u32 = 0x004e_a7a0;
 /// The class `0x005ce320` looks for in a target's chain.
 pub const MESH_INSTANCE_CLASS: u32 = 0x00ca_91f8;
+/// `Phyre_PNamespace_getClassDescriptor(ns; name)` (thiscall).
+pub const NAMESPACE_CLASS: u32 = 0x0043_e950;
+/// `0x004358e0` `(L, class)` (cdecl): a class pushed to Lua.
+pub const PUSH_CLASS: u32 = 0x0043_58e0;
+/// `Phyre_FindNamed(name)` (cdecl): a named utility object.
+pub const FIND_NAMED: u32 = 0x0043_6350;
+/// `lua_pushlstring(L, s, len)` (cdecl).
+pub const LUA_PUSHLSTRING: u32 = 0x0094_b6e0;
+/// `0x0094ba30` `(L, idx)` (cdecl): `lua_rawset`.
+pub const LUA_RAWSET: u32 = 0x0094_ba30;
+/// `lua_pushvalue(L, idx)` (cdecl).
+pub const LUA_PUSHVALUE: u32 = 0x0094_b850;
+/// `__index`.
+pub const STR_INDEX: u32 = 0x00b0_e52c;
+/// `GetTypeOf`.
+pub const STR_GET_TYPE_OF: u32 = 0x00b0_e534;
+/// `0x00436240`, the component index function the utility tables get.
+pub const COMPONENT_INDEX_FN: u32 = 0x0043_6240;
+/// `Phyre_PScripting_PhyreGetTypeOf`.
+pub const GET_TYPE_OF_FN: u32 = 0x0043_6b90;
 /// `PhyreGetTypeOf`'s error: file, line, function, message.
 pub const TYPEOF_ERROR: (u32, u32, u32, u32) = (0x00b0_e268, 0x1ec, 0x00b0_e4dc, 0x00b0_e500);
 
@@ -297,6 +317,63 @@ pub mod bridge {
                     h.write(o.wrapping_add(8), 0x40u32);
                 }
             }
+        }
+        0
+    }
+
+    /// `0x00436c80` `(L)`: the `Phyre` namespace's `__index`: the key
+    /// (argument 2) as a class of the global namespace (pushed by
+    /// `0x004358e0`), else as a named utility object (a table whose
+    /// metatable's `__index` is `0x00436240` with the object as upvalue),
+    /// else `GetTypeOf` (the C function `PhyreGetTypeOf`); 1, or 0 when
+    /// none of them (or no key).
+    pub fn phyre_index(h: &mut impl Host, l: u32) -> u32 {
+        use super::{
+            COMPONENT_INDEX_FN, FIND_NAMED, GET_TYPE_OF_FN, LUA_PUSHLSTRING, LUA_PUSHVALUE,
+            LUA_RAWSET, NAMESPACE_CLASS, PUSH_CLASS, STR_GET_TYPE_OF, STR_INDEX,
+        };
+        use crate::m5p_scripting_mid::{LUA_PUSHCCLOSURE, LUA_TOLSTRING};
+        let name = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 2, 0]);
+        if name == 0 {
+            return 0;
+        }
+        let ns = h.call_sym(
+            crate::m5p_scripting_small::GLOBAL_NAMESPACE,
+            Conv::Cdecl,
+            &[name],
+        );
+        let class = h.call_sym(NAMESPACE_CLASS, Conv::Thiscall(ns), &[name]);
+        if class != 0 {
+            h.call_sym(PUSH_CLASS, Conv::Cdecl, &[l, class]);
+            return 1;
+        }
+        let obj = h.call_sym(FIND_NAMED, Conv::Cdecl, &[name]);
+        if obj != 0 {
+            h.call_sym(
+                crate::m5p_scripting_small::LUA_CREATETABLE,
+                Conv::Cdecl,
+                &[l, 0, 0],
+            );
+            let top = h.call_sym(LUA_GETTOP, Conv::Cdecl, &[l]);
+            let index = h.rebase(STR_INDEX);
+            h.call_sym(LUA_PUSHLSTRING, Conv::Cdecl, &[l, index, 7]);
+            h.call_sym(
+                crate::m5p_scripting_small::LUA_PUSHLIGHTUSERDATA,
+                Conv::Cdecl,
+                &[l, obj],
+            );
+            let f = h.rebase(COMPONENT_INDEX_FN);
+            h.call_sym(LUA_PUSHCCLOSURE, Conv::Cdecl, &[l, f, 1]);
+            h.call_sym(LUA_RAWSET, Conv::Cdecl, &[l, top]);
+            h.call_sym(LUA_PUSHVALUE, Conv::Cdecl, &[l, top]);
+            h.call_sym(LUA_SETMETATABLE, Conv::Cdecl, &[l, top]);
+            return 1;
+        }
+        let key = h.rebase(STR_GET_TYPE_OF);
+        if crate::str_eq(h, name, key) {
+            let f = h.rebase(GET_TYPE_OF_FN);
+            h.call_sym(LUA_PUSHCCLOSURE, Conv::Cdecl, &[l, f, 0]);
+            return 1;
         }
         0
     }
