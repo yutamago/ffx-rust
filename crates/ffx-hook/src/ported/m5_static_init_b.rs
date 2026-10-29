@@ -409,4 +409,204 @@ ported! {
     StaticInit_DistortionCopyBuffer_00af0110 @ 0x00af_0110 => extern "C" fn s_00af0110() -> u32 {
         si::named_type(&mut mem(), &si::NAMED_TYPES[28])
     }
+    /// `StaticInit_ApplyBufferWithColor_00af0130`: render pass type `ApplyBufferWithColor` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyBufferWithColor_00af0130 @ 0x00af_0130 => extern "C" fn s_00af0130() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[29])
+    }
+    /// `StaticInit_ApplyBuffer_00af0150`: render pass type `ApplyBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyBuffer_00af0150 @ 0x00af_0150 => extern "C" fn s_00af0150() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[30])
+    }
+    /// `StaticInit_ApplyScratch_00af0170`: render pass type `ApplyScratch` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyScratch_00af0170 @ 0x00af_0170 => extern "C" fn s_00af0170() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[31])
+    }
+    /// `StaticInit_CopyBufferExWithColor_00af0190`: render pass type `CopyBufferExWithColor` built on its global (name, flag 0); atexit.
+    StaticInit_CopyBufferExWithColor_00af0190 @ 0x00af_0190 => extern "C" fn s_00af0190() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[32])
+    }
+    /// `StaticInit_CopyBufferEx_00af01b0`: render pass type `CopyBufferEx` built on its global (name, flag 0); atexit.
+    StaticInit_CopyBufferEx_00af01b0 @ 0x00af_01b0 => extern "C" fn s_00af01b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[33])
+    }
+    /// `StaticInit_BlendFrame_00af0220`: render pass type `BlendFrame` built on its global (name, flag 0); atexit.
+    StaticInit_BlendFrame_00af0220 @ 0x00af_0220 => extern "C" fn s_00af0220() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[34])
+    }
+    /// `StaticInit_ShadowGaussianBlurX_FromDepth_00af02e0`: render pass type `ShadowGaussianBlurX_FromDepth` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowGaussianBlurX_FromDepth_00af02e0 @ 0x00af_02e0 => extern "C" fn s_00af02e0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[35])
+    }
+    /// `StaticInit_ShadowGaussianBlurX_00af0300`: render pass type `ShadowGaussianBlurX` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowGaussianBlurX_00af0300 @ 0x00af_0300 => extern "C" fn s_00af0300() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[36])
+    }
+    /// `StaticInit_ShadowGaussianBlurY_Adv_00af0320`: render pass type `ShadowGaussianBlurY_Adv` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowGaussianBlurY_Adv_00af0320 @ 0x00af_0320 => extern "C" fn s_00af0320() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[37])
+    }
+    /// `StaticInit_ShadowGaussianBlurY_FromDepth_00af0340`: render pass type `ShadowGaussianBlurY_FromDepth` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowGaussianBlurY_FromDepth_00af0340 @ 0x00af_0340 => extern "C" fn s_00af0340() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[38])
+    }
+    /// `StaticInit_ShadowGaussianBlurY_00af0360`: render pass type `ShadowGaussianBlurY` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowGaussianBlurY_00af0360 @ 0x00af_0360 => extern "C" fn s_00af0360() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[39])
+    }
+    /// `StaticInit_Float_00af0380`: float global `0x00cd_ec2c` = 1 - (a - b) / (a - c) of the constants at `0x00c3_43f0`, `0x00c3_43f4`, `0x00c3_43ec`, rounded to float.
+    StaticInit_Float_00af0380 @ 0x00af_0380 => extern "C" fn s_00af0380() {
+        si::float_row(&mut mem(), &si::FLOATS[0]);
+    }
+    /// `StaticInit_Float_00af03b0`: float global `0x00cd_ec34` = (a - b) / (c - b) of the constants at `0x00c3_43f0`, `0x00c3_43f4`, `0x00c3_43f8`, rounded to float.
+    StaticInit_Float_00af03b0 @ 0x00af_03b0 => extern "C" fn s_00af03b0() {
+        si::float_row(&mut mem(), &si::FLOATS[1]);
+    }
+    /// `StaticInit_AdditiveColor_00af0420`: render pass type `AdditiveColor` built on its global (name, flag 0); atexit.
+    StaticInit_AdditiveColor_00af0420 @ 0x00af_0420 => extern "C" fn s_00af0420() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[40])
+    }
+    /// `StaticInit_ApplyColor_00af0440`: render pass type `ApplyColor` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyColor_00af0440 @ 0x00af_0440 => extern "C" fn s_00af0440() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[41])
+    }
+    /// `StaticInit_ApplyTextureWithColor_00af0460`: render pass type `ApplyTextureWithColor` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyTextureWithColor_00af0460 @ 0x00af_0460 => extern "C" fn s_00af0460() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[42])
+    }
+    /// `StaticInit_ApplyTexture_00af0480`: render pass type `ApplyTexture` built on its global (name, flag 0); atexit.
+    StaticInit_ApplyTexture_00af0480 @ 0x00af_0480 => extern "C" fn s_00af0480() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[43])
+    }
+    /// `StaticInit_CopyColor_00af04a0`: render pass type `CopyColor` built on its global (name, flag 0); atexit.
+    StaticInit_CopyColor_00af04a0 @ 0x00af_04a0 => extern "C" fn s_00af04a0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[44])
+    }
+    /// `StaticInit_CopyTextureWithAdditiveColor_00af04c0`: render pass type `CopyTextureWithAdditiveColor` built on its global (name, flag 0); atexit.
+    StaticInit_CopyTextureWithAdditiveColor_00af04c0 @ 0x00af_04c0 => extern "C" fn s_00af04c0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[45])
+    }
+    /// `StaticInit_CopyTextureWithColor_00af04e0`: render pass type `CopyTextureWithColor` built on its global (name, flag 0); atexit.
+    StaticInit_CopyTextureWithColor_00af04e0 @ 0x00af_04e0 => extern "C" fn s_00af04e0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[46])
+    }
+    /// `StaticInit_CopyTexture_00af0500`: render pass type `CopyTexture` built on its global (name, flag 0); atexit.
+    StaticInit_CopyTexture_00af0500 @ 0x00af_0500 => extern "C" fn s_00af0500() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[47])
+    }
+    /// `StaticInit_PaintColor_00af0520`: render pass type `PaintColor` built on its global (name, flag 0); atexit.
+    StaticInit_PaintColor_00af0520 @ 0x00af_0520 => extern "C" fn s_00af0520() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[48])
+    }
+    /// `StaticInit_VideoScreen_00af0590`: render pass type `VideoScreen` built on its global (name, flag 0); atexit.
+    StaticInit_VideoScreen_00af0590 @ 0x00af_0590 => extern "C" fn s_00af0590() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[49])
+    }
+    /// `StaticInit_Sentinel_00af06a0`: list object `0x00cd_ee20` constructed, then its sentinel `0x00cd_ee68` links to itself; atexit.
+    StaticInit_Sentinel_00af06a0 @ 0x00af_06a0 => extern "C" fn s_00af06a0() -> u32 {
+        si::sentinel(&mut mem(), &si::SENTINELS[0])
+    }
+    /// `StaticInit_FreeList_PMapPair_00af06d0`: free list of `PMapPair` built on a global (SEH frame); atexit.
+    StaticInit_FreeList_PMapPair_00af06d0 @ 0x00af_06d0 => extern "C" fn s_00af06d0() -> u32 {
+        si::free_list(&mut mem(), &si::FREE_LISTS[2])
+    }
+    /// `StaticInit_FreeList_PMapPair_00af0730`: free list of `PMapPair` built on a global (SEH frame); atexit.
+    StaticInit_FreeList_PMapPair_00af0730 @ 0x00af_0730 => extern "C" fn s_00af0730() -> u32 {
+        si::free_list(&mut mem(), &si::FREE_LISTS[3])
+    }
+    /// `StaticInit_ClothInstancingDynamicMesh_00af0790`: class descriptor `ClothInstancingDynamicMesh` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_ClothInstancingDynamicMesh_00af0790 @ 0x00af_0790 => extern "C" fn s_00af0790() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[46])
+    }
+    /// `StaticInit_ClothInstancingDynamicMeshInstance_00af0850`: class descriptor `ClothInstancingDynamicMeshInstance` (`cd_const_set8`): constructor, buffers, set8; atexit.
+    StaticInit_ClothInstancingDynamicMeshInstance_00af0850 @ 0x00af_0850 => extern "C" fn s_00af0850() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[47])
+    }
+    /// `StaticInit_DynamicMeshDefaultImplmenetation_00af0910`: class descriptor `DynamicMeshDefaultImplmenetation` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_DynamicMeshDefaultImplmenetation_00af0910 @ 0x00af_0910 => extern "C" fn s_00af0910() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[48])
+    }
+    /// `StaticInit_Atexit_00af09d0`: only registers its destructor with atexit.
+    StaticInit_Atexit_00af09d0 @ 0x00af_09d0 => extern "C" fn s_00af09d0() -> u32 {
+        si::at_exit_only(&mut mem(), &si::AT_EXIT_ONLY[3])
+    }
+    /// `StaticInit_Sentinel_00af0b20`: list object `0x00ce_6d70` constructed, then its sentinel `0x00ce_6db8` links to itself; atexit.
+    StaticInit_Sentinel_00af0b20 @ 0x00af_0b20 => extern "C" fn s_00af0b20() -> u32 {
+        si::sentinel(&mut mem(), &si::SENTINELS[1])
+    }
+    /// `StaticInit_FreeList_PMapPair_00af0b50`: free list of `PMapPair` built on a global (SEH frame); atexit.
+    StaticInit_FreeList_PMapPair_00af0b50 @ 0x00af_0b50 => extern "C" fn s_00af0b50() -> u32 {
+        si::free_list(&mut mem(), &si::FREE_LISTS[4])
+    }
+    /// `StaticInit_FreeList_PMapPair_00af0bb0`: free list of `PMapPair` built on a global (SEH frame); atexit.
+    StaticInit_FreeList_PMapPair_00af0bb0 @ 0x00af_0bb0 => extern "C" fn s_00af0bb0() -> u32 {
+        si::free_list(&mut mem(), &si::FREE_LISTS[5])
+    }
+    /// `StaticInit_ExtraPass_00af0cb0`: render pass type `ExtraPass` built on its global (name, flag 0); atexit.
+    StaticInit_ExtraPass_00af0cb0 @ 0x00af_0cb0 => extern "C" fn s_00af0cb0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[50])
+    }
+    /// `StaticInit_CtorStore_00af0d70`: constructor `0x0065_4ea0` on a global, its result stored in the global; atexit.
+    StaticInit_CtorStore_00af0d70 @ 0x00af_0d70 => extern "C" fn s_00af0d70() -> u32 {
+        si::ctor_store(&mut mem(), &si::CTOR_STORES[2])
+    }
+    /// `StaticInit_Ctor_00af0e10`: no-argument constructor `0x0058_3b20` on a global, then atexit.
+    StaticInit_Ctor_00af0e10 @ 0x00af_0e10 => extern "C" fn s_00af0e10() -> u32 {
+        si::ctor0_at_exit(&mut mem(), &si::CTOR0_AT_EXIT[2])
+    }
+    /// `StaticInit_Ctor_00af0e30`: no-argument constructor `0x0058_3b20` on a global, then atexit.
+    StaticInit_Ctor_00af0e30 @ 0x00af_0e30 => extern "C" fn s_00af0e30() -> u32 {
+        si::ctor0_at_exit(&mut mem(), &si::CTOR0_AT_EXIT[3])
+    }
+    /// `StaticInit_ShadowDynamicMeshInstance_00af0f40`: class descriptor `ShadowDynamicMeshInstance` (`cd_const_set8`): constructor, buffers, set8; atexit.
+    StaticInit_ShadowDynamicMeshInstance_00af0f40 @ 0x00af_0f40 => extern "C" fn s_00af0f40() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[49])
+    }
+    /// `StaticInit_CtorStore_00af1230`: constructor `0x0080_6b20` on a global, its result stored in the global; atexit.
+    StaticInit_CtorStore_00af1230 @ 0x00af_1230 => extern "C" fn s_00af1230() -> u32 {
+        si::ctor_store(&mut mem(), &si::CTOR_STORES[3])
+    }
+    /// `StaticInit_CtorStore_00af1250`: constructor `0x0080_6af0` on a global, its result stored in the global; atexit.
+    StaticInit_CtorStore_00af1250 @ 0x00af_1250 => extern "C" fn s_00af1250() -> u32 {
+        si::ctor_store(&mut mem(), &si::CTOR_STORES[4])
+    }
+    /// `StaticInit_ImportStore_00af1270`: stdcall import through the slot `0x00b0_c11c`, its result stored in `0x012f_410c`; atexit.
+    StaticInit_ImportStore_00af1270 @ 0x00af_1270 => extern "C" fn s_00af1270() -> u32 {
+        si::import_store(&mut mem(), &si::IMPORT_STORES[3])
+    }
+    /// `StaticInit_CondTail_00af1290`: jumps to `0x0094_28b0` when the word at `0x0193_cd2c` is zero, else returns.
+    StaticInit_CondTail_00af1290 @ 0x00af_1290 => extern "C" fn s_00af1290() -> u32 {
+        si::cond_tail(&mut mem(), &si::COND_TAILS[0])
+    }
+    /// `StaticInit_Atexit_00af12a0`: only registers its destructor with atexit.
+    StaticInit_Atexit_00af12a0 @ 0x00af_12a0 => extern "C" fn s_00af12a0() -> u32 {
+        si::at_exit_only(&mut mem(), &si::AT_EXIT_ONLY[4])
+    }
+    /// `StaticInit_Atexit_00af12ac`: only registers its destructor with atexit.
+    StaticInit_Atexit_00af12ac @ 0x00af_12ac => extern "C" fn s_00af12ac() -> u32 {
+        si::at_exit_only(&mut mem(), &si::AT_EXIT_ONLY[5])
+    }
+    /// `StaticInit_ChainAppend_00af12c0`: appends the object at `0x00c6_13f0` to the chain at `0xc901a8` (before the first block at least `0xff` full); atexit.
+    StaticInit_ChainAppend_00af12c0 @ 0x00af_12c0 => extern "C" fn s_00af12c0() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[1])
+    }
+    /// `StaticInit_Ctor_00af1308`: no-argument constructor `0x009d_9c20` on a global, then atexit.
+    StaticInit_Ctor_00af1308 @ 0x00af_1308 => extern "C" fn s_00af1308() -> u32 {
+        si::ctor0_at_exit(&mut mem(), &si::CTOR0_AT_EXIT[4])
+    }
+    /// `StaticInit_ImportObject_00af131e`: object `0x0193_fcfc` from the import at `0x00b0_c060` (vtable, handle, false); atexit.
+    StaticInit_ImportObject_00af131e @ 0x00af_131e => extern "C" fn s_00af131e() -> u32 {
+        si::import_object(&mut mem(), &si::IMPORT_OBJECTS[0])
+    }
+    /// `StaticInit_Atexit_00af1346`: only registers its destructor with atexit.
+    StaticInit_Atexit_00af1346 @ 0x00af_1346 => extern "C" fn s_00af1346() -> u32 {
+        si::at_exit_only(&mut mem(), &si::AT_EXIT_ONLY[6])
+    }
+    /// `StaticInit_PInputAction_00af1360`: class descriptor `PInputAction` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputAction_00af1360 @ 0x00af_1360 => extern "C" fn s_00af1360() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[50])
+    }
+    /// `StaticInit_PInputMap_00af1420`: class descriptor `PInputMap` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputMap_00af1420 @ 0x00af_1420 => extern "C" fn s_00af1420() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[51])
+    }
 }
