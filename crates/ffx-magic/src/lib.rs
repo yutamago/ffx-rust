@@ -40,6 +40,7 @@ pub mod pe;
 pub mod runtime;
 
 pub mod m0604;
+pub mod rcef;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -409,6 +410,17 @@ ports! {
     "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+    "rcef effect ready seq" => rcef::EFFECT_READY_SEQ, rcef::effect_ready_seq;
+    "rcef create task wait" => rcef::MAIN_CREATE_TASK_WAIT, rcef::main_create_task_wait;
+    "m0334 set seq, call seq" => rcef::SET_SEQ_CALL_SEQ, rcef::set_seq_call_seq;
+    "m0334 main init, create task" => rcef::MAIN_INIT_CREATE_TASK, rcef::main_init_create_task;
+    "m0335 create task pair" => rcef::CREATE_TASK_PAIR, rcef::create_task_pair;
+    "m0336 obj attach, set par C" => rcef::OBJ_ATTACH_SET_PAR_C, rcef::obj_attach_set_par_c;
+    "m0336 create task wait" => rcef::CREATE_TASK_WAIT, rcef::create_task_wait;
+    "m0336 damage seq" => rcef::DAMAGE_SEQ, rcef::damage_seq;
+    "m0337 obj attach, set par B" => rcef::OBJ_ATTACH_SET_PAR_B, rcef::obj_attach_set_par_b;
+    "m0339 task seq, no args" => rcef::TASK_SEQ_NO_ARGS, rcef::task_seq_no_args;
+    "m0339 obj attach, set par" => rcef::OBJ_ATTACH_SET_PAR, rcef::obj_attach_set_par;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

@@ -35,6 +35,9 @@ use ffx_bridge::Mem;
 use ffx_magic::{Frame, Game, Image, Libm, Out, Ret};
 use ffx_overlay::{Config, Host, Overlay, Pe, Regs};
 
+/// The map effects' shared task functions (every carrier's copy).
+pub mod map;
+
 pub const SERVICE: u32 = 0x7fff_0000;
 pub const SENTINEL: u32 = SERVICE + 0xfff0;
 pub const TABLE: u32 = 0x0080_0000;
