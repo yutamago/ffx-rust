@@ -9,6 +9,8 @@ use super::{StackFrame, mem, ported};
 use ffx_prender::m5p_render_a::{self as ma, bridge as a};
 use ffx_prender::m5p_render_a2::{self as m2, bridge as b};
 use ffx_prender::m5p_render_a3::bridge as c;
+use ffx_prender::m5p_render_a4::bridge as d;
+use ffx_prender::m5p_render_a5::{self as me, bridge as e};
 
 ported! {
     // ---- batch 1 ----
@@ -1174,5 +1176,117 @@ ported! {
     /// `(this; buffer, count)` -> 0 (`MEMBER_EXTERNALS`).
     PClassDataMemberPhyreSharray_setToExternalBuffer_00564330 @ 0x0056_4330 => extern "thiscall" fn member_external_00564330(this: u32, buffer: u32, count: u32) -> u32 {
         c::member_external(&mut mem(), this, buffer, count, 0x00cb_1088, 0x0056_4210)
+    }
+    // ---- batch 4 ----
+    /// `()` -> 0.
+    PUtilityGeometry_releaseAll_00432430 @ 0x0043_2430 => extern "C" fn release_all() -> u32 {
+        d::release_all(&mut mem())
+    }
+    /// `()`.
+    PUtilityDynamicGeometry_unlinkAll_00504040 @ 0x0050_4040 => extern "C" fn unlink_all() -> u32 {
+        d::unlink_all(&mut mem())
+    }
+    /// `(dst, src, count)`.
+    PSceneRenderPass_copyRecords_004d8a30 @ 0x004d_8a30 => extern "C" fn pass_records_copy(dst: u32, src: u32, count: u32) {
+        d::pass_records_copy(&mut mem(), dst, src, count);
+    }
+    /// `(dst, src, count)`.
+    PShaderPassInfo_copyRecords_004d8bd0 @ 0x004d_8bd0 => extern "C" fn pass_infos_copy(dst: u32, src: u32, count: u32) {
+        d::pass_infos_copy(&mut mem(), dst, src, count);
+    }
+    /// `(dst, src, count)`.
+    PMaterialSwitch_copyRecords_004e19c0 @ 0x004e_19c0 => extern "C" fn string_pairs_copy(dst: u32, src: u32, count: u32) {
+        d::string_pairs_copy(&mut mem(), dst, src, count);
+    }
+    /// `(this; n)` -> status (`COPY_INIT_RESIZES`).
+    PArray_resizeCopyInit20_004e1090 @ 0x004e_1090 => extern "thiscall" fn copy_init_resize_004e1090(this: u32, n: u32) -> u32 {
+        d::copy_init_resize(&mut mem(), this, n, 20, 0x004d_89e0, 0x004d_f180, 0)
+    }
+    /// `(this; n)` -> status (`COPY_INIT_RESIZES`).
+    PArray_resizeCopyInit32_004e11e0 @ 0x004e_11e0 => extern "thiscall" fn copy_init_resize_004e11e0(this: u32, n: u32) -> u32 {
+        d::copy_init_resize(&mut mem(), this, n, 32, 0x004d_8bd0, 0x004d_f240, 0x004d_d770)
+    }
+    /// `(this)` -> this.
+    PZeroQuads_ctor_004fef30 @ 0x004f_ef30 => extern "thiscall" fn quads_ctor(this: u32) -> u32 {
+        d::quads_ctor(&mut mem(), this)
+    }
+    /// `(half)` -> ST0.
+    PPhysicsMesh_halfToFloat_0049a470 @ 0x0049_a470 => extern "C" fn half_to_float(half: u32) -> f32 {
+        d::half_to_float(&mut mem(), half)
+    }
+    /// `(this; px, py, pz)` -> pz.
+    PPhysicsMesh_unpackNormal_0049bbe0 @ 0x0049_bbe0 => extern "thiscall" fn unpack_normal(this: u32, px: u32, py: u32, pz: u32) -> u32 {
+        d::unpack_normal(&mut mem(), this, px, py, pz)
+    }
+    /// `(format)` -> bytes.
+    PPhysicsMesh_formatSize_0055bb40 @ 0x0055_bb40 => extern "C" fn format_size(format: u32) -> u32 {
+        d::format_size(format)
+    }
+    /// `(this; arr)`.
+    PPhysicsMesh_decodeStream_0049bec0 @ 0x0049_bec0 => extern "thiscall" fn decode_stream(this: u32, arr: u32) -> u32 {
+        d::decode_stream(&mut mem(), this, arr)
+    }
+    /// `(this)`.
+    PSpriteAnimationInfoChar_dtor_00567590 @ 0x0056_7590 => extern "thiscall" fn animation_info_char_dtor(this: u32) {
+        d::animation_info_char_dtor(&mut mem(), this);
+    }
+    /// `(this; out)` -> out.
+    PGameplay_objectMatrix_0055b490 @ 0x0055_b490 => extern "thiscall" fn object_matrix(this: u32, out: u32) -> u32 {
+        d::object_matrix(&mut mem(), this, out)
+    }
+    // ---- batch 5 ----
+    /// `(this; n)` -> status (`m5p_render_a4::COPY_INIT_RESIZES`).
+    PArray_resizeCopyInit20_0056e300 @ 0x0056_e300 => extern "thiscall" fn copy_init_resize_0056e300(this: u32, n: u32) -> u32 {
+        d::copy_init_resize(&mut mem(), this, n, 20, 0x0056_5110, 0x0056_bab0, 0x0056_a700)
+    }
+    /// `(this)` (`DTOR_SEQUENCES`).
+    PRendererD3D11_memberDtors_00584f70 @ 0x0058_4f70 => extern "thiscall" fn dtor_sequence_00584f70(this: u32) -> u32 {
+        e::dtor_sequence(&mut mem(), this, const { me::dtor_sequence(0x0058_4f70) })
+    }
+    /// `(this)` (`DTOR_SEQUENCES`).
+    PRendererD3D11_memberDtors_00585110 @ 0x0058_5110 => extern "thiscall" fn dtor_sequence_00585110(this: u32) -> u32 {
+        e::dtor_sequence(&mut mem(), this, const { me::dtor_sequence(0x0058_5110) })
+    }
+    /// `(this)` (`DTOR_SEQUENCES`).
+    PRendererD3D11_memberDtors_00584fd0 @ 0x0058_4fd0 => extern "thiscall" fn dtor_sequence_00584fd0(this: u32) -> u32 {
+        e::dtor_sequence(&mut mem(), this, const { me::dtor_sequence(0x0058_4fd0) })
+    }
+    /// `(this)`.
+    PRedBlackTree_dtor_00584aa0 @ 0x0058_4aa0 => extern "thiscall" fn tree_dtor(this: u32) -> u32 {
+        e::tree_dtor(&mut mem(), this)
+    }
+    /// `(dst, src, count)`.
+    PSubTextureInfo_copyRecords_00565110 @ 0x0056_5110 => extern "C" fn subtextures_copy(dst: u32, src: u32, count: u32) {
+        e::subtextures_copy(&mut mem(), dst, src, count);
+    }
+    /// `(this; out)` -> status.
+    PSpriteCollection_addFrame_0056c150 @ 0x0056_c150 => extern "thiscall" fn add_frame(this: u32, out: u32) -> u32 {
+        e::add_frame(&mut mem(), this, out)
+    }
+    /// `(this)` -> id, -1 or -2 (the local id by address).
+    PSpriteCollection_addFrameId_0056c230 @ 0x0056_c230 => extern "thiscall" fn add_frame_id(this: u32) -> u32 {
+        let mut slot = StackFrame::<1>::new();
+        e::add_frame_id(&mut mem(), this, slot.at())
+    }
+    /// `(this; frame)` -> status.
+    PSpriteCollection_removeFrame_0056df90 @ 0x0056_df90 => extern "thiscall" fn remove_frame(this: u32, frame: u32) -> u32 {
+        e::remove_frame(&mut mem(), this, frame)
+    }
+    /// `(this; frame, w, h)` -> status (`SPRITE_SIZES`).
+    PSpriteCollection_setFrameSize10_0056e850 @ 0x0056_e850 => extern "thiscall" fn sprite_size_0056e850(this: u32, frame: u32, w: u32, h: u32) -> u32 {
+        e::sprite_size(&mut mem(), this, frame, w, h, 0x10)
+    }
+    /// `(this; frame, w, h)` -> status (`SPRITE_SIZES`).
+    PSpriteCollection_setFrameSize18_0056e960 @ 0x0056_e960 => extern "thiscall" fn sprite_size_0056e960(this: u32, frame: u32, w: u32, h: u32) -> u32 {
+        e::sprite_size(&mut mem(), this, frame, w, h, 0x18)
+    }
+    /// `(this; n)` -> status.
+    PSpriteCollection_setVertexCount_0056e410 @ 0x0056_e410 => extern "thiscall" fn set_vertex_count(this: u32, n: u32) -> u32 {
+        e::set_vertex_count(&mut mem(), this, n)
+    }
+    /// `(this; v)` (the value by address).
+    PSpriteAnimationInfo_pushWord_0056c270 @ 0x0056_c270 => extern "thiscall" fn push_word(this: u32, v: u32) -> u32 {
+        let mut slot = StackFrame::<1>::new();
+        e::push_word(&mut mem(), this, v, slot.at())
     }
 }
