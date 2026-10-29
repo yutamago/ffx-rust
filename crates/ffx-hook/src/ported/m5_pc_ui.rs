@@ -16,6 +16,7 @@ use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
+use ffx_pcui::m5u_i::bridge as ii;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -709,5 +710,84 @@ ported! {
     /// `AddrOfGlobal01a858cc_00a3d7c0()`.
     AddrOfGlobal01a858cc_00a3d7c0 @ 0x00a3_d7c0 => extern "C" fn gdraw_block() -> u32 {
         hh::gdraw_block(&mem())
+    }
+    // ---- render-pcui batch 4 (ffx_pcui::m5u_i) ----
+    /// `PArray_release_00a25e50(array)`.
+    PArray_release_00a25e50 @ 0x00a2_5e50 => extern "thiscall" fn array_release_00a25e50(this: u32) {
+        ii::array_release(&mut mem(), this, false);
+    }
+    /// `PArray_releaseChecked_00a25e80(array)`.
+    PArray_releaseChecked_00a25e80 @ 0x00a2_5e80 => extern "thiscall" fn array_release_00a25e80(this: u32) {
+        ii::array_release(&mut mem(), this, true);
+    }
+    /// `PArray_releaseChecked_00a3d3d0(array)`.
+    PArray_releaseChecked_00a3d3d0 @ 0x00a3_d3d0 => extern "thiscall" fn array_release_00a3d3d0(this: u32) {
+        ii::array_release(&mut mem(), this, true);
+    }
+    /// `GDraw_rectCall_00a36040(rect, a, b)` (argument slots).
+    GDraw_rectCall_00a36040 @ 0x00a3_6040 => extern "C" fn rect_call(rect: u32, a: u32, b: u32; slots: u32) -> u32 {
+        ii::rect_call(&mut mem(), slots, rect, a, b)
+    }
+    /// `IggyPlayerHolder_queueDestroy_00a3d720(this; renderer)` (the block pointer's frame).
+    IggyPlayerHolder_queueDestroy_00a3d720 @ 0x00a3_d720 => extern "thiscall" fn queue_destroy(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ii::queue_destroy(&mut mem(), f.at(), this, renderer)
+    }
+    /// `IggyPlayer_QueueDraw_00a3d9b0(this; renderer)` (the block pointer's frame).
+    IggyPlayer_QueueDraw_00a3d9b0 @ 0x00a3_d9b0 => extern "thiscall" fn queue_draw(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ii::queue_draw(&mut mem(), f.at(), this, renderer)
+    }
+    /// `GDraw_releaseIf_00a398a0(node, key, x)` (stdcall).
+    GDraw_releaseIf_00a398a0 @ 0x00a3_98a0 => extern "stdcall" fn release_if(node: u32, key: u32, x: u32) -> u32 {
+        ii::release_if(&mut mem(), node, key, x)
+    }
+    /// `PageHeap_fillBuckets_00946100(heap)`.
+    PageHeap_fillBuckets_00946100 @ 0x0094_6100 => extern "thiscall" fn fill_buckets(this: u32) {
+        ii::fill_buckets(&mut mem(), this);
+    }
+    /// `PageList_free_009470f0(list)`.
+    PageList_free_009470f0 @ 0x0094_70f0 => extern "thiscall" fn free_pages(this: u32) {
+        ii::free_pages(&mut mem(), this);
+    }
+    /// `PageBits_ctor_00946520(this; owner, n)`.
+    PageBits_ctor_00946520 @ 0x0094_6520 => extern "thiscall" fn page_bits_ctor(this: u32, owner: u32, n: u32) -> u32 {
+        ii::page_bits_ctor(&mut mem(), this, owner, n)
+    }
+    /// `PVideoPlaybackWin32_CopyPlane_00a26fe0(dst, dpitch, src, spitch, w, rows)`.
+    PVideoPlaybackWin32_CopyPlane_00a26fe0 @ 0x00a2_6fe0 => extern "C" fn copy_plane(dst: u32, dpitch: u32, src: u32, spitch: u32, w: u32, rows: u32) {
+        ii::copy_plane(&mut mem(), dst, dpitch, src, spitch, w, rows);
+    }
+    /// `GDraw_freeResources_00a36300(stats)`.
+    GDraw_freeResources_00a36300 @ 0x00a3_6300 => extern "C" fn free_resources(stats: u32) {
+        ii::free_resources(&mut mem(), stats);
+    }
+    /// `GDraw_releaseSlots_00a3cfc0()`.
+    GDraw_releaseSlots_00a3cfc0 @ 0x00a3_cfc0 => extern "C" fn release_slots() {
+        ii::release_slots(&mut mem());
+    }
+    /// `PageHeap_lockAll_00946c40(heap)`.
+    PageHeap_lockAll_00946c40 @ 0x0094_6c40 => extern "thiscall" fn lock_all(this: u32) -> u32 {
+        ii::lock_all(&mut mem(), this, ii::ENTER_CRITICAL_SECTION_IAT)
+    }
+    /// `PageHeap_unlockAll_00946cc0(heap)`.
+    PageHeap_unlockAll_00946cc0 @ 0x0094_6cc0 => extern "thiscall" fn unlock_all(this: u32) -> u32 {
+        ii::lock_all(&mut mem(), this, ii::LEAVE_CRITICAL_SECTION_IAT)
+    }
+    /// `PageBucket_init_00948900(this; size, align, heap)`.
+    PageBucket_init_00948900 @ 0x0094_8900 => extern "thiscall" fn bucket_init(this: u32, size: u32, align: u32, heap: u32) -> u32 {
+        ii::bucket_init(&mut mem(), this, size, align, heap)
+    }
+    /// `PageHash_find_009455d0(table; key, out)` -> `al`.
+    PageHash_find_009455d0 @ 0x0094_55d0 => extern "thiscall" fn hash_find(this: u32, key: u32, out: u32) -> bool {
+        ii::hash_find(&mut mem(), this, key, out)
+    }
+    /// `IggyValue_readClass_00a25860(reader; v, class, out, cursor)`.
+    IggyValue_readClass_00a25860 @ 0x00a2_5860 => extern "thiscall" fn value_read_00a25860(this: u32, v: u32, class: u32, out: u32, cursor: u32) -> u32 {
+        ii::value_read(&mut mem(), this, v, class, out, cursor, true)
+    }
+    /// `IggyValue_read_00a258c0(reader; v, class, out, cursor)`.
+    IggyValue_read_00a258c0 @ 0x00a2_58c0 => extern "thiscall" fn value_read_00a258c0(this: u32, v: u32, class: u32, out: u32, cursor: u32) -> u32 {
+        ii::value_read(&mut mem(), this, v, class, out, cursor, false)
     }
 }

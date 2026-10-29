@@ -34,6 +34,7 @@ use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
+use ffx_pcui::m5u_i::bridge as ii;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -137,6 +138,8 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `al` (the callers read no more).
+    U8(u8),
 }
 
 struct Twins {
@@ -395,6 +398,7 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
         self.diff(what);
     }
@@ -3471,6 +3475,365 @@ fn rp3_small_functions_match_the_original() {
                 |g| Out::U32(hh::gdraw_block(g)),
             );
             t.reset();
+        }
+    });
+}
+
+// ---- render-pcui batch 4 (ffx_pcui::m5u_i) ----
+
+impl Twins {
+    /// A COM-style object whose vtable `+8` is a recording stdcall stub
+    /// taking the object (tag `tag`, `eax` `ret`).
+    fn com_object(&mut self, tag: u32, ret: u32) -> u32 {
+        let release = self.stub_code(tag, false, 1, 1, ret);
+        let vt = self.words(&[0, 0, release]);
+        self.words(&[vt, 0])
+    }
+
+    /// `queueDataCallback`'s stub: writes `block` (or nothing for 0)
+    /// through its third word, logs and returns `ret` (`ret 0xc`).
+    fn stub_queue(&mut self, block: u32, ret: u32) {
+        let log = self.stub_code(0x5b59, true, 3, 3, ret);
+        let at = self.cave_next;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c]; // mov eax, [esp+0xc]
+        c.extend([0xc7, 0x00]);
+        c.extend(block.to_le_bytes()); // mov dword [eax], block
+        c.push(0xe9);
+        c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        let code = self.cave_code(&c);
+        self.jump(ii::QUEUE_DATA_CALLBACK, code);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn rp4_functions_match_the_original() {
+    // Every branch on synthetic data: owned and borrowed arrays with and
+    // without data; the rectangle call (its kept argument slot); both
+    // render-thread queues queued or refused, with the renderer's flush
+    // and sync results; the keyed release (key 0, matching, not; pool
+    // node or not); the bucket fill over 0..3 steps; the page chain of
+    // 0..3 pages; the page-bits constructor; the plane copy (no rows, no
+    // width, equal and different pitches); the GDraw teardowns with and
+    // without objects; the bucket locks over random bit sets; the bucket
+    // setup (nonzero divisors); the hash lookup (empty, hit, miss, wrap);
+    // the value readers (no value, no out, the class matching or not).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b41);
+        for case in 0..30u32 {
+            // the array releases
+            for (sym, checked) in [
+                (0x00a2_5e50_u32, false),
+                (0x00a2_5e80, true),
+                (0x00a3_d3d0, true),
+            ] {
+                let owner = if rng.chance(2) { 0x8000_0000 } else { 0 };
+                let data = if rng.chance(3) { 0 } else { rng.next() | 1 };
+                let arr = t.words(&[owner | rng.below(9), data]);
+                t.stub(ii::PHYRE_FREE, false, 1, 0, 0);
+                t.check("array release", sym, Conv::Thiscall(arr), &[], |g| {
+                    ii::array_release(g, arr, checked);
+                    Out::None
+                });
+            }
+            // the rectangle call
+            let rect: Vec<u32> = (0..4).map(|_| rng.word()).collect();
+            let rect = t.words(&rect);
+            let (a, b) = (rng.word(), rng.word());
+            t.stub(ii::GDRAW_RECT, false, 6, 0, rng.word());
+            let slot = t.frame_ebp(3) + 8;
+            t.w32(slot, rect);
+            // the port's callees below the slot it writes
+            t.b.set_call_top(Some(slot - 0x200));
+            t.check(
+                "GDraw_rectCall_00a36040",
+                0x00a3_6040,
+                Conv::Cdecl,
+                &[rect, a, b],
+                |g| Out::U32(ii::rect_call(g, slot, rect, a, b)),
+            );
+            t.b.set_call_top(None);
+            assert_eq!(
+                Mem::read::<u32>(&t.a, slot),
+                Mem::read::<u32>(&t.b, slot),
+                "rect slot"
+            );
+            // the render-thread queues
+            let block = t.zeros(8);
+            let refused = case % 4 == 0;
+            t.stub_queue(
+                if refused { 0 } else { block },
+                if refused { 0xd } else { 0 },
+            );
+            let v = if rng.chance(2) { 0 } else { rng.word() };
+            let renderer = t.object(&[(0, 0), (0, 0), (0, v)]);
+            t.stub(
+                ii::SYNC_RENDER,
+                true,
+                0,
+                0,
+                if rng.chance(2) { 0 } else { 7 },
+            );
+            let holder = rng.word();
+            t.check_framed(
+                "IggyPlayerHolder_queueDestroy_00a3d720",
+                0x00a3_d720,
+                Conv::Thiscall(holder),
+                &[renderer],
+                4,
+                |g, ebp| Out::U32(ii::queue_destroy(g, ebp - 4, holder, renderer)),
+            );
+            t.check_framed(
+                "IggyPlayer_QueueDraw_00a3d9b0",
+                0x00a3_d9b0,
+                Conv::Thiscall(holder),
+                &[renderer],
+                4,
+                |g, ebp| Out::U32(ii::queue_draw(g, ebp - 4, holder, renderer)),
+            );
+            // GDraw
+            let gd = t.zeros(0xa00);
+            let at = t.rebase(ii::GDRAW);
+            t.patch(at, &gd.to_le_bytes());
+            let node = t.zeros(0x20);
+            let key = rng.word() | 1;
+            t.w32(node + 0x14, if rng.chance(2) { key } else { key ^ 2 });
+            t.w32(
+                node + 0x18,
+                if rng.chance(2) {
+                    gd + 0x290
+                } else {
+                    rng.word()
+                },
+            );
+            let key = if case % 5 == 0 { 0 } else { key };
+            t.stub(ii::NODE_REQUEUE, false, 1, 0, rng.word());
+            t.stub(ii::GDRAW_CALLBACK, false, 2, 0, rng.word());
+            let x = rng.word();
+            t.check(
+                "GDraw_releaseIf_00a398a0",
+                0x00a3_98a0,
+                Conv::Stdcall,
+                &[node, key, x],
+                |g| Out::U32(ii::release_if(g, node, key, x)),
+            );
+            for off in [0x788_u32, 0x794] {
+                let o = if rng.chance(3) {
+                    0
+                } else {
+                    t.com_object(0x60 + off, 0)
+                };
+                t.w32(gd + off, o);
+            }
+            t.stub(ii::GDRAW_POOL_FREE_ALL, false, 2, 0, 0);
+            let stats = rng.word();
+            t.check(
+                "GDraw_freeResources_00a36300",
+                0x00a3_6300,
+                Conv::Cdecl,
+                &[stats],
+                |g| {
+                    ii::free_resources(g, stats);
+                    Out::None
+                },
+            );
+            for k in 0..0x60 {
+                let w = match (0x800 + 4 * k, rng.below(3)) {
+                    (o, 0) if (0x880..0x900).contains(&o) => t.com_object(0x70, 0),
+                    (o, _) if (0x880..0x900).contains(&o) => 0,
+                    _ => rng.next(),
+                };
+                t.w32(gd + 0x800 + 4 * k, w);
+            }
+            let w = rng.next() | 1;
+            t.w32(gd + 0x980, w);
+            t.check(
+                "GDraw_releaseSlots_00a3cfc0",
+                0x00a3_cfc0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    ii::release_slots(g);
+                    Out::None
+                },
+            );
+            // the page heap
+            let heap = t.zeros(0x800);
+            let base = rng.below(0x100) * 0x10;
+            t.w32(heap + 8, base);
+            t.w32(heap + 0x14, base + 0x10 * rng.below(4));
+            t.stub(ii::PAGE_BUCKET_FILL, true, 2, 2, 0);
+            t.check(
+                "PageHeap_fillBuckets_00946100",
+                0x0094_6100,
+                Conv::Thiscall(heap),
+                &[],
+                |g| {
+                    ii::fill_buckets(g, heap);
+                    Out::None
+                },
+            );
+            let mut next = 0;
+            for _ in 0..rng.below(4) {
+                let p = t.words(&[next, 0]);
+                next = p;
+            }
+            let list = t.words(&[0, next]);
+            t.stub(ii::DECOMMIT, false, 2, 0, 0);
+            t.stub(ii::RELEASE, false, 2, 0, 0x1000);
+            t.check(
+                "PageList_free_009470f0",
+                0x0094_70f0,
+                Conv::Thiscall(list),
+                &[],
+                |g| {
+                    ii::free_pages(g, list);
+                    Out::None
+                },
+            );
+            // dirty: the memset must clear all 0x400 bytes
+            let dirty: Vec<u8> = (0..0x500).map(|_| rng.next() as u8 | 1).collect();
+            let bits = t.alloc(&dirty);
+            t.stub(ii::PAGE_BITS_INIT, true, 2, 2, 0);
+            let (owner, n) = (rng.word(), rng.word());
+            t.check(
+                "PageBits_ctor_00946520",
+                0x0094_6520,
+                Conv::Thiscall(bits),
+                &[owner, n],
+                |g| Out::U32(ii::page_bits_ctor(g, bits, owner, n)),
+            );
+            let set: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            let set = t.words(&set);
+            t.w32(heap + 0x40c, set);
+            for k in 0..0x100 {
+                let b = rng.next();
+                t.w32(heap + 4 + 4 * k, b);
+            }
+            t.stub_import(ii::ENTER_CRITICAL_SECTION_IAT, false, 1, 1, 0);
+            t.stub_import(ii::LEAVE_CRITICAL_SECTION_IAT, false, 1, 1, 0);
+            t.check(
+                "PageHeap_lockAll_00946c40",
+                0x0094_6c40,
+                Conv::Thiscall(heap),
+                &[],
+                |g| Out::U32(ii::lock_all(g, heap, ii::ENTER_CRITICAL_SECTION_IAT)),
+            );
+            t.check(
+                "PageHeap_unlockAll_00946cc0",
+                0x0094_6cc0,
+                Conv::Thiscall(heap),
+                &[],
+                |g| Out::U32(ii::lock_all(g, heap, ii::LEAVE_CRITICAL_SECTION_IAT)),
+            );
+            let bucket = t.zeros(0x20);
+            let size = rng.below(0x400);
+            let align = [1u32, 4, 8, 16, 3][rng.below(5) as usize];
+            let room = t.zeros(0x20);
+            // a size of 0 gives a rounded size of 0 for align > 1: a divide fault
+            let size = if size < 2 { 2 } else { size };
+            // half the time exactly the header plus whole buckets: the
+            // quotient's edge
+            let rounded = ((size - 1) / align + 1) * align;
+            let header = (15 / align + 1) * align;
+            let space = if rng.chance(2) {
+                header + rounded * rng.below(8)
+            } else {
+                rng.below(0x10000)
+            };
+            t.w32(room + 0x18, space);
+            t.check(
+                "PageBucket_init_00948900",
+                0x0094_8900,
+                Conv::Thiscall(bucket),
+                &[size, align, room],
+                |g| Out::U32(ii::bucket_init(g, bucket, size, align, room)),
+            );
+            // the hash lookup
+            let size = [4u32, 8, 16][(case % 3) as usize];
+            let slots = if case % 6 == 0 {
+                0
+            } else {
+                t.zeros(4 * size as usize)
+            };
+            let mut keys = vec![];
+            if slots != 0 {
+                for i in 0..size {
+                    if rng.chance(2) {
+                        let k = rng.below(4);
+                        let e = t.words(&[k, 0, rng.next()]);
+                        t.w32(slots + 4 * i, e);
+                        keys.push(k);
+                    }
+                }
+                // one empty slot at least: the probe stops there
+                let hole = rng.below(size);
+                t.w32(slots + 4 * hole, 0);
+            }
+            let table = t.words(&[size, slots]);
+            // several keys per table: hits, misses and wrapped probes
+            for _ in 0..6 {
+                let key = t.words(&[rng.below(4), rng.next()]);
+                let out = t.zeros(4);
+                t.check(
+                    "PageHash_find_009455d0",
+                    0x0094_55d0,
+                    Conv::Thiscall(table),
+                    &[key, out],
+                    |g| Out::U8(u8::from(ii::hash_find(g, table, key, out))),
+                );
+            }
+            // the value readers
+            for (sym, class_call) in [(0x00a2_5860_u32, true), (0x00a2_58c0, false)] {
+                let f = t.stub_code(0x80, true, 1, 1, rng.word());
+                let reader = t.words(&[0, f]);
+                let v = if rng.chance(5) { 0 } else { rng.next() | 1 };
+                let src = t.words(&[rng.next(), rng.next()]);
+                let cursor = t.words(&[src]);
+                let out = if rng.chance(5) { 0 } else { t.zeros(8) };
+                let desc = rng.next() & !1;
+                t.stub(ii::GET_CLASS_DESCRIPTOR, false, 0, 0, desc);
+                let want = if class_call {
+                    desc
+                } else {
+                    t.rebase(ii::VALUE_CLASS)
+                } | 1;
+                let class = if rng.chance(3) { rng.word() } else { want };
+                t.check(
+                    "IggyValue read",
+                    sym,
+                    Conv::Thiscall(reader),
+                    &[v, class, out, cursor],
+                    |g| Out::U32(ii::value_read(g, reader, v, class, out, cursor, class_call)),
+                );
+            }
+            t.reset();
+        }
+        // the plane copy on real buffers (the game's memcpy)
+        for case in 0..40u32 {
+            let rows = [0u32, 1, 3, 5][(case % 4) as usize];
+            let w = [0u32, 1, 7, 16][((case / 4) % 4) as usize];
+            let spitch = 16 + 4 * rng.below(3);
+            let dpitch = if case % 3 == 0 {
+                spitch
+            } else {
+                16 + 4 * rng.below(3)
+            };
+            let src: Vec<u8> = (0..spitch * 6).map(|_| rng.next() as u8).collect();
+            let src = t.alloc(&src);
+            let dst = t.zeros((dpitch * 6 + spitch * 6) as usize);
+            t.check(
+                "PVideoPlaybackWin32_CopyPlane_00a26fe0",
+                0x00a2_6fe0,
+                Conv::Cdecl,
+                &[dst, dpitch, src, spitch, w, rows],
+                |g| {
+                    ii::copy_plane(g, dst, dpitch, src, spitch, w, rows);
+                    Out::None
+                },
+            );
         }
     });
 }
