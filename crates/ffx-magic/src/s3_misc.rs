@@ -298,7 +298,14 @@ pub fn fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     g.write::<u32>(node + 0x14, rec);
     g.write::<u8>(node + 0x18, 1);
     g.write::<u32>(node + 4, 0);
-    let tail = w(0x93);
+    append_task(g, node, head, w(0x93), empty);
+    node
+}
+
+/// Appends a pool node to a DLL's task list (`head`/`tail` globals;
+/// `empty` as read before the node was filled): first and last of an
+/// empty list, else linked after the last; its `+0x8` is itself.
+fn append_task<G: Game>(g: &mut G, node: u32, head: u32, tail: u32, empty: bool) {
     if empty {
         g.write::<u32>(node, 0);
         g.write::<u32>(head, node);
@@ -310,7 +317,6 @@ pub fn fade_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         g.write::<u32>(tail, node);
     }
     g.write::<u32>(node + 8, node);
-    node
 }
 
 /// [`fade_task`].
@@ -430,5 +436,100 @@ pub const KEY_STEP_CURVED: Sig = Sig {
         (0xbb, Callee::Sig(&EASE_SAMPLE)),
         (0xd0, Callee::Sig(&EASE_SAMPLE)),
     ],
+    imports: &[],
+};
+
+/// A value step task of the `magic_0162` family (cdecl `(task)`, its
+/// state at `+0x14`: a delay `+0xc`, the time left `+0x10` of `+0x14`,
+/// the values `+0x4` (from) and `+0x8` (to), a callback `+0x0`, flags
+/// `u16 +0x18`): the delay counts down first; then slot 543 gets `(to *
+/// (total - left) + from * left) / total` (`idiv`) and the time left
+/// counts down. When none is left the callback runs `(state)`; unless bit
+/// 0 of the flags is set, bit 15 is set and the task is given back
+/// ([`give_back`], the original's tail jump). Returns the new delay or
+/// time left, the flags, or `give_back`'s `eax`.
+///
+/// `magic_0162` 0x10007c10 (120 bytes; 24 DLLs).
+pub fn value_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let delay = g.read::<i32>(s + 0xc);
+    if delay > 0 {
+        let d = delay - 1;
+        g.write::<i32>(s + 0xc, d);
+        return Ret::eax(d.cast_unsigned());
+    }
+    let total = g.read::<i32>(s + 0x14);
+    let left = g.read::<i32>(s + 0x10);
+    let n = total
+        .wrapping_sub(left)
+        .wrapping_mul(g.read::<i32>(s + 8))
+        .wrapping_add(g.read::<i32>(s + 4).wrapping_mul(left));
+    // idiv: a zero total (or an overflow) faults in the original
+    let v = n.checked_div(total).unwrap_or(0);
+    let t = slot_target(g, img.word(f + 0x33), 543);
+    g.call(t, 0, &[v.cast_unsigned()]);
+    let left = g.read::<u32>(s + 0x10);
+    if left != 0 {
+        g.write::<u32>(s + 0x10, left.wrapping_sub(1));
+        return Ret::eax(left.wrapping_sub(1));
+    }
+    let callback = g.read::<u32>(s);
+    if callback != 0 {
+        g.call(callback, 0, &[s]);
+    }
+    let flags = u32::from(g.read::<u16>(s + 0x18));
+    if flags & 1 != 0 {
+        return Ret::eax(flags);
+    }
+    g.write::<u16>(s + 0x18, (flags | 0x8000) as u16);
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0x6c), task))
+}
+
+/// [`value_step`].
+pub const VALUE_STEP: Sig = Sig {
+    len: 120,
+    hash: 0x09bb_76a7_978a_f491,
+    calls: &[(0x6c, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};
+
+/// The DLL's task started: the argument and the task's state block
+/// (operands from `+0x07` on: the argument, zeroed words, the step
+/// function's pointer `+0x40` at `+0x3c`, the flag 1 at `+0x60`, two
+/// cleared halfwords) set, a pool node taken for the task function
+/// (operand `+0x0e`, [`take`]) with the state block (`+0x7d`) and
+/// appended to the task list (`G_HEAD` `+0x75`, `G_TAIL` `+0x8c`).
+/// Returns the node.
+///
+/// `magic_0052` 0x10002670 (180 bytes, one stack word; 22 DLLs).
+pub fn task_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    g.write::<u32>(w(0x07), fr.arg(g, 0));
+    for op in [0x14, 0x1e, 0x28, 0x32] {
+        g.write::<u32>(w(op), 0);
+    }
+    g.write::<u32>(w(0x3c), w(0x40));
+    g.write::<u32>(w(0x46), 0);
+    g.write::<u32>(w(0x50), 0);
+    g.write::<u16>(w(0x5a), 0);
+    g.write::<u32>(w(0x60), 1);
+    g.write::<u16>(w(0x6a), 0);
+    let node = take(g, img, img.rel32_target(f + 0x6f), w(0x0e));
+    let head = w(0x75);
+    let empty = g.read::<u32>(head) == 0;
+    g.write::<u32>(node + 0x14, w(0x7d));
+    g.write::<u32>(node + 4, 0);
+    append_task(g, node, head, w(0x8c), empty);
+    node
+}
+
+/// [`task_start`].
+pub const TASK_START: Sig = Sig {
+    len: 180,
+    hash: 0xbffd_174e_fc53_e357,
+    calls: &[(0x6f, Callee::Sig(&TAKE))],
     imports: &[],
 };

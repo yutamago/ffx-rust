@@ -882,6 +882,7 @@ ports! {
     "summon frame" => s3_summon::SUMMON_FRAME, s3_summon::summon_frame;
     "colour fade" => s3_misc::COLOUR_FADE, s3_misc::colour_fade;
     "colour step" => s3_misc::COLOUR_STEP, s3_misc::colour_step;
+    "value step" => s3_misc::VALUE_STEP, s3_misc::value_step;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1124,6 +1125,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("fade task", &s3_misc::FADE_TASK),
     ("key step", &s3_misc::KEY_STEP),
     ("key step (curved)", &s3_misc::KEY_STEP_CURVED),
+    ("task start", &s3_misc::TASK_START),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -441,6 +441,7 @@ fn key_steps() {
 /// each command and each end word, from a wait and from a finished
 /// motion.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn motion_step() {
     let Some(mut t) = twin(18) else { return };
     let f = t.at(0x2c40);
@@ -672,5 +673,80 @@ fn summon_frame() {
             t.set_u8(at + 0x1b, 0);
         }
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0162` 0x10007c10: the value step task waiting, stepping and
+/// ending (with and without its callback, kept or given back).
+#[test]
+fn value_step() {
+    let Some(mut t) = twin(162) else { return };
+    let f = t.at(0x7c10);
+    log_slot(&mut t, 543, 1, 0, 0, 0x543);
+    t.set_u32(magic::TABLE + 4 * 1000, magic::TRAPS + 16 * 1000);
+    log_slot(&mut t, 1000, 1, 1, 1, 0x1000);
+    let (task, st) = (SCRATCH + 0x1000, SCRATCH + 0x2000);
+    for (delay, left, total, cb, flags) in [
+        (2i32, 3u32, 8u32, 0u32, 0u16),
+        (0, 3, 8, 0, 0),
+        (0, 0, 8, 0, 0),
+        (0, 0, 8, magic::TRAPS + 16 * 1000, 1),
+        (0, 0, 8, magic::TRAPS + 16 * 1000, 0x7ffe),
+        (0, 0, 8, 0, 0xfffe),
+        (-3, 9, 9, 0, 0xffff),
+    ] {
+        rest_node(&mut t, task);
+        t.set_u32(task + 0x14, st);
+        t.write(st, &[0x44; 0x20]);
+        t.set_u32(st, cb);
+        t.set_u32(st + 4, 0xffff_ff80);
+        t.set_u32(st + 8, 0x7f);
+        t.set_u32(st + 0xc, delay.cast_unsigned());
+        t.set_u32(st + 0x10, left);
+        t.set_u32(st + 0x14, total);
+        t.set_u16(st + 0x18, flags);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0052` 0x10002670: the task started on an empty and a filled
+/// task list.
+#[test]
+fn task_start() {
+    let Some(mut t) = twin(52) else { return };
+    let f = t.at(0x2670);
+    let take = t.img.rel32_target(f + 0x6f);
+    let (count, free) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+    let (head, tail) = (t.img.word(f + 0x75), t.img.word(f + 0x8c));
+    let pool = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for filled in [false, true, false] {
+        for i in 1..=2u32 {
+            t.write(pool(i), &[0x5a; 0x1c]);
+            t.set_u32(pool(i), pool(3 - i));
+            t.set_u32(pool(i) + 4, pool(3 - i));
+        }
+        t.set_u32(free, pool(1));
+        t.set_u16(count, 2);
+        // the state block's words hold old values the start clears
+        for op in [
+            0x14u32, 0x1e, 0x28, 0x32, 0x3c, 0x46, 0x50, 0x5a, 0x60, 0x6a,
+        ] {
+            t.set_u32(t.img.word(f + op), 0x5a5a_5a5a);
+        }
+        if filled {
+            t.write(pool(5), &[0x22; 0x1c]);
+            t.set_u32(head, pool(5));
+            t.set_u32(tail, pool(5));
+        } else {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        }
+        t.check(
+            f,
+            Call::default(),
+            &[0x00a5_0000 + u32::from(filled)],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(s3_misc::task_start(g, img, fr)),
+        );
     }
 }
