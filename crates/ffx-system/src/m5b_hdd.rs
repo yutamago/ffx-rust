@@ -215,6 +215,93 @@ pub const MOUNT_MSG: [u32; 6] = [
     0x00b5_3650,
 ];
 
+/// `file_offset_get`'s: `sceCdSearchFile`, `TkSyncV`, the three offsets
+/// (`0x01128ab4`, `0x01128a98`/`9c`, `0x01128aa0`/`a4`).
+pub const CD_SEARCH_FILE: u32 = 0x00a4_47d0;
+pub const SYNC_V: u32 = 0x0088_7f00;
+pub const FILE_OFFSETS: [u32; 5] = [
+    0x0112_8ab4,
+    0x0112_8a98,
+    0x0112_8a9c,
+    0x0112_8aa0,
+    0x0112_8aa4,
+];
+/// `hdd_install_check`'s: the byte `0x0112a509`, `hdd_unmount`,
+/// `hdd_ins_check`, the byte `0x01128a86`, `TkRefreshHDDMode`, its three
+/// messages; `0x007787c0`'s: `hdd_rmode_get`, its messages.
+pub const INSTALL_RESULT: u32 = 0x0112_a509;
+pub const HDD_UNMOUNT: u32 = 0x0077_9730;
+pub const INS_CHECK: u32 = 0x0077_8d70;
+pub const BYTE_8A86: u32 = 0x0112_8a86;
+pub const VERIFY_FILES: u32 = 0x0077_87c0;
+pub const INSTALL_CHECK_MSG: [u32; 3] = [0x00b5_3c4c, 0x00b5_3c64, 0x00b5_3c78];
+pub const VERIFY_MSG: [u32; 7] = [
+    0x00b5_3bd0,
+    0x00b5_3a70,
+    0x00b5_3be4,
+    0x00b5_3c00,
+    0x00b5_3c10,
+    0x00b5_3c1c,
+    0x00b5_3c38,
+];
+
+/// `hdd_OpenFfxPartition`'s: the partition "ffxpassr" (`0x00c41764`),
+/// its name format, `sceIoctl2`, the close `0x0062f630`,
+/// `hdd_InstalledMb2_00778fb0`, the free-space check `0x00777610` and its
+/// device, the five messages.
+pub const FFX_PARTITION: u32 = 0x00c4_1764;
+pub const PARTITION_FMT: u32 = 0x00b5_3b10;
+pub const SCE_IOCTL2: u32 = 0x0062_f8b0;
+pub const SCE_DCLOSE: u32 = 0x0062_f630;
+pub const INSTALLED_MB: u32 = 0x0077_8fb0;
+pub const FREE_SPACE_OK: u32 = 0x0077_7610;
+pub const FREE_SPACE_DEVICE: u32 = 0x00b5_3b74;
+pub const OPEN_PARTITION_MSG: [u32; 5] = [
+    0x00b5_3b1c,
+    0x00b5_3b30,
+    0x00b5_3b48,
+    0x00b5_3b5c,
+    0x00b5_3b6c,
+];
+/// `FUN_00779ad0`'s: the help tables `0x0112a048` and picture buffer
+/// `0x0112a030`, `crt_memset_thunk`, `sceGsSetDefLoadImage`,
+/// `sceGsExecLoadImage`.
+pub const HELP_TABLE: u32 = 0x0112_a048;
+pub const HELP_PICTURE: u32 = 0x0112_a030;
+pub const SET_LOAD_IMAGE: u32 = 0x0062_f820;
+pub const EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+
+/// `hdd_thread_main`'s: `0x00778a10`, the read-function setter cell
+/// `0x02310c4c` (called through), `0x00777980`, its device format,
+/// `0x00779d20`, the status word `0x0112a520`, its four messages.
+pub const INSTALL_SETUP: u32 = 0x0077_8a10;
+pub const SET_READ_FUNCS_CELL: u32 = 0x0231_0c4c;
+pub const INSTALL_COPY: u32 = 0x0077_7980;
+pub const FULL_PARTITION_FMT: u32 = 0x00b5_38ac;
+pub const INSTALL_FINISH: u32 = 0x0077_9d20;
+pub const INSTALL_BUSY: u32 = 0x0112_a520;
+pub const THREAD_MSG: [u32; 4] = [0x00b5_3d28, 0x00b5_3d3c, 0x00b5_3d5c, 0x00b5_3d74];
+/// `FUN_0076ccb0`'s: `0x00a44810`, the disk flag `0x01128a87`, the check
+/// byte `0x01128aac`, the expected header `0x0112a064`, the read buffer
+/// cell `0x01128ac8` and mode `0x00c40e18`, `sceCdRead`,
+/// `hdd_state_clear`, `cd_module_file_sector`, its five messages.
+pub const CD_STATUS: u32 = 0x00a4_4810;
+pub const DISK_FLAG: u32 = 0x0112_8a87;
+pub const DISK_CHECK_ON: u32 = 0x0112_8aac;
+pub const DISK_HEADER: u32 = 0x0112_a064;
+pub const DISK_BUFFER: u32 = 0x0112_8ac8;
+pub const DISK_READ_MODE: u32 = 0x00c4_0e18;
+pub const CD_READ: u32 = 0x00a4_47c0;
+pub const STATE_CLEAR: u32 = 0x0077_7420;
+pub const TASK_WAIT_SYM: u32 = 0x0077_a4e0;
+pub const DISK_WAIT_MSG: [u32; 5] = [
+    0x00b5_1e08,
+    0x00b5_1e1c,
+    0x00b5_1e34,
+    0x00b5_1e48,
+    0x00b5_1e64,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -977,5 +1064,404 @@ pub mod bridge {
         cdecl(h, super::MOUNT_LOG, &[msg]);
         h.write(flag, 1u8);
         0
+    }
+
+    /// Searches the CD for `name` into the entry at `entry` until found
+    /// (`TkSyncV(1)` between tries).
+    fn search_file(h: &mut impl Host, entry: u32, name: u32) {
+        while cdecl(h, super::CD_SEARCH_FILE, &[entry, name]) == 0 {
+            cdecl(h, super::SYNC_V, &[1]);
+        }
+    }
+
+    /// `file_offset_get(names)` with its frame at `ebp`: the three files
+    /// `names[0..3]` searched on the CD (`sceCdSearchFile` into `ebp -
+    /// 0x28`, retried every frame); the first's sector to `0x01128ab4`,
+    /// the others' first two words to `0x01128a98`/`9c` and
+    /// `0x01128aa0`/`a4`. Returns the last word stored; with no names
+    /// the original returns its cookie word (`None`).
+    pub fn file_offset_get(h: &mut impl Host, ebp: u32, names: u32) -> Option<u32> {
+        if names == 0 {
+            return None;
+        }
+        let entry = ebp.wrapping_sub(0x28);
+        let at = super::FILE_OFFSETS.map(|s| h.rebase(s));
+        let name: u32 = h.read(names);
+        search_file(h, entry, name);
+        let v: u32 = h.read(entry);
+        h.write(at[0], v);
+        let mut last = 0;
+        for (k, pair) in [[at[1], at[2]], [at[3], at[4]]].into_iter().enumerate() {
+            let name: u32 = h.read(names.wrapping_add(4 + 4 * u32::from(k == 1)));
+            search_file(h, entry, name);
+            let lo: u32 = h.read(entry);
+            h.write(pair[0], lo);
+            last = h.read(entry.wrapping_add(4));
+            h.write(pair[1], last);
+        }
+        Some(last)
+    }
+
+    /// `FUN_007787c0()`: each installed head's file (size `+4` set and
+    /// `hdd_rmode_get(i)`) opened and its size (`sceLseek64(fd, 0, 2)`)
+    /// compared with the head's, logged; returns the number of heads that
+    /// failed to open or differ.
+    pub fn verify_files(h: &mut impl Host) -> u32 {
+        let [m0, m1, m2, m3, m4, m5, m6] = super::VERIFY_MSG;
+        let msg = h.rebase(m0);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        let fmt = h.rebase(m1);
+        let count = global(h, HEAD_COUNT);
+        cdecl(h, DBG_PRINTF, &[fmt, count]);
+        let mut bad = 0u32;
+        let mut i = 0u32;
+        while i.cast_signed() < global(h, HEAD_COUNT).cast_signed() {
+            let size: u32 = h.read(h.rebase(HEADS).wrapping_add(4 + 12 * i));
+            if size != 0 && cdecl(h, RMODE_GET, &[i]) != 0 {
+                let name = cdecl(h, super::HDD_NAME, &[i]);
+                let fd = cdecl(h, super::SCE_OPEN, &[name, 1]);
+                let fmt = h.rebase(m2);
+                cdecl(h, DBG_PRINTF, &[fmt, name]);
+                if fd.cast_signed() < 0 {
+                    bad = bad.wrapping_add(1);
+                    let fmt = h.rebase(m3);
+                    cdecl(h, DBG_PRINTF, &[fmt, fd]);
+                } else {
+                    let end = cdecl(h, super::SCE_LSEEK64, &[fd, 0, 2]);
+                    cdecl(h, super::SCE_CLOSE, &[fd]);
+                    if size == end {
+                        let fmt = h.rebase(m4);
+                        cdecl(h, DBG_PRINTF, &[fmt]);
+                    } else {
+                        let fmt = h.rebase(m5);
+                        cdecl(h, DBG_PRINTF, &[fmt, size, end]);
+                        bad = bad.wrapping_add(1);
+                    }
+                }
+            }
+            i = i.wrapping_add(1);
+        }
+        let msg = h.rebase(m6);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        bad
+    }
+
+    /// `hdd_install_check(arg)`: the install's state found: the result
+    /// byte `0x0112a509` and `0x0112a514` cleared, the kind
+    /// (`|0x00778980()| & 0xf`, logged): kind 0 mounts the HDD (failing:
+    /// HDD mode off), checks the installed files (`0x007787c0` failing:
+    /// result 2, mode off, `hdd_unmount`), else `hdd_ins_check(arg)`
+    /// (result 1; with `0x01128a86` and the CD flag 1, HDD mode on and
+    /// `TkRefreshHDDMode`); without heads the HDD is unmounted, the
+    /// answer 0 and the mode off. Kinds 1..3 turn the mode off; others
+    /// leave it. Both bytes logged; returns `hdd_ins_check`'s answer or
+    /// 0.
+    pub fn install_check(h: &mut impl Host, arg: u32) -> u32 {
+        let a514 = h.rebase(super::WORD_A514);
+        h.write(a514, 0u32);
+        let result = h.rebase(super::INSTALL_RESULT);
+        h.write(result, 0u8);
+        let r = cdecl(h, super::INSTALL_KIND, &[]);
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[0]);
+        cdecl(h, DBG_PRINTF, &[fmt, r]);
+        let kind = r.cast_signed().unsigned_abs() & 0xf;
+        let mode = h.rebase(HDD_MODE);
+        let mut answer = 0u32;
+        if kind == 0 {
+            if cdecl(h, HDD_MOUNT, &[]) != 0 {
+                h.write(mode, 0u8);
+            } else if cdecl(h, super::VERIFY_FILES, &[]) != 0 {
+                h.write(result, 2u8);
+                h.write(mode, 0u8);
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+            } else {
+                answer = cdecl(h, super::INS_CHECK, &[arg]);
+                h.write(result, 1u8);
+                let cd = global(h, super::READ_FUNCS_CD);
+                if h.read::<u8>(h.rebase(super::BYTE_8A86)) != 0 && cd == 1 {
+                    h.write(mode, 1u8);
+                    cdecl(h, REFRESH_HDD_MODE, &[]);
+                }
+            }
+            if global(h, HEAD_COUNT) == 0 {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                answer = 0;
+                h.write(mode, 0u8);
+            }
+        } else if kind <= 3 {
+            h.write(mode, 0u8);
+        }
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[1]);
+        let r = i32::from(h.read::<i8>(result)).cast_unsigned();
+        cdecl(h, DBG_PRINTF, &[fmt, r]);
+        let fmt = h.rebase(super::INSTALL_CHECK_MSG[2]);
+        let m = i32::from(h.read::<i8>(mode)).cast_unsigned();
+        cdecl(h, DBG_PRINTF, &[fmt, m, answer]);
+        answer
+    }
+    /// `hdd_OpenFfxPartition_00779000()` with its frame at `ebp`: the
+    /// HDD unmounted meanwhile when it was (and mounted again at the end),
+    /// `0x0112a514` cleared; the "ffxpassr" partition's size: its device
+    /// name (`sprintf(ebp - 0x44, "hdd0:%s,,%s", 0x00779ca0(partition),
+    /// partition)`, the second word the one left on the stack), opened
+    /// (`sceOpen(name, 1)`, failure logged), `sceIoctl2(fd, 0x6803, 0 x4)`
+    /// (negative counts 0) and closed, plus 1; the space needed
+    /// (`hdd_InstalledMb2() >> 7` less that) checked by `0x00777610` (no
+    /// room: `0x0112a514` = -1). Returns the check's or the remount's
+    /// `eax`.
+    pub fn open_ffx_partition(h: &mut impl Host, ebp: u32) -> u32 {
+        let mounted = h.read::<u8>(h.rebase(HDD_MOUNTED)) != 0;
+        let a514 = h.rebase(super::WORD_A514);
+        h.write(a514, 0u32);
+        if mounted {
+            cdecl(h, super::HDD_UNMOUNT, &[]);
+        }
+        cdecl(h, super::MOUNT_PREPARE, &[]);
+        let part = h.rebase(super::FFX_PARTITION);
+        let name = cdecl(h, super::PARTITION_NAME, &[part]);
+        let buf = ebp.wrapping_sub(0x44);
+        let fmt = h.rebase(super::PARTITION_FMT);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, name, part]);
+        let fd = cdecl(h, super::SCE_OPEN, &[buf, 1]);
+        let [m0, m1, m2, m3, m4] = super::OPEN_PARTITION_MSG;
+        let mut used = 0u32;
+        if fd.cast_signed() < 0 {
+            let msg = h.rebase(m1);
+            cdecl(h, DBG_PRINTF, &[msg, buf]);
+        } else {
+            used = cdecl(h, super::SCE_IOCTL2, &[fd, 0x6803, 0, 0, 0, 0]);
+            if used.cast_signed() < 0 {
+                let msg = h.rebase(m0);
+                cdecl(h, DBG_PRINTF, &[msg]);
+                used = 0;
+            }
+            cdecl(h, super::SCE_DCLOSE, &[fd]);
+            used = used.wrapping_add(1);
+        }
+        let msg = h.rebase(m2);
+        cdecl(h, DBG_PRINTF, &[msg, used]);
+        cdecl(h, super::MOUNT_PRE2, &[]);
+        let mb = cdecl(h, super::INSTALLED_MB, &[0]);
+        let msg = h.rebase(m3);
+        cdecl(h, DBG_PRINTF, &[msg, mb]);
+        let need = (mb >> 7).wrapping_sub(used);
+        let msg = h.rebase(m4);
+        cdecl(h, DBG_PRINTF, &[msg, need]);
+        let device = h.rebase(super::FREE_SPACE_DEVICE);
+        let mut r = cdecl(h, super::FREE_SPACE_OK, &[device, need]);
+        if r == 0 {
+            h.write(a514, u32::MAX);
+        }
+        if mounted {
+            r = cdecl(h, HDD_MOUNT, &[]);
+        }
+        r
+    }
+
+    /// `FUN_00779ad0(page, clut)` with its (16-byte aligned) frame at
+    /// `ebp`: help picture `page`: the picture buffer (`0x0112a030`)
+    /// cleared (0x4000 bytes) and filled with 97 rows of 97 bytes (rows
+    /// 0x80 apart) from the table `0x0112a048 + 0x10400 + page * 0x24c1`,
+    /// then two GS uploads through the transfer at `ebp - 0x60`: the
+    /// palette (`0x0112a048 + page << 10`, 16 x 16 at `clut`) and the
+    /// picture (0x80 x 0x80 at `clut + 4`), each `FlushCache(0)`,
+    /// `sceGsExecLoadImage`, `sceGsSyncPath(0, 0)`. The last sync's
+    /// `eax`.
+    pub fn help_picture(h: &mut impl Host, ebp: u32, page: u32, clut: u32) -> u32 {
+        let table = global(h, super::HELP_TABLE);
+        let palette = (page << 10).wrapping_add(table);
+        let mut src = table
+            .wrapping_add(0x1_0400)
+            .wrapping_add(page.wrapping_mul(0x24c1));
+        let dst = global(h, super::HELP_PICTURE);
+        cdecl(h, MEMSET, &[dst, 0, 0x4000]);
+        let mut row = 0u32;
+        while row < 0x3080 {
+            for col in 0..0x61u32 {
+                let b: u8 = h.read(src);
+                let dst = global(h, super::HELP_PICTURE);
+                h.write(dst.wrapping_add(row).wrapping_add(col), b);
+                src = src.wrapping_add(1);
+            }
+            row += 0x80;
+        }
+        let image = ebp.wrapping_sub(0x60);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, clut, 1, 0, 0, 0, 0x10, 0x10],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, palette]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0]);
+        let at = clut.wrapping_add(4);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, at, 2, 0x13, 0, 0, 0x80, 0x80],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let picture = global(h, super::HELP_PICTURE);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, picture]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0])
+    }
+    /// `hdd_thread_main()` with its frame at `ebp` (the install thread):
+    /// install state 1 and busy; `0x00778a10()`; 0 runs the copy: the
+    /// read functions for the HDD (`[0x02310c4c](1)`), the HDD mounted,
+    /// `0x00777980()`; its 0 also sets the partition up (unmounted, the
+    /// name `sprintf(ebp - 0x44, "hdd0:%s,%s,%s,128M,PFS",
+    /// 0x00779ca0(0x00c41758), 0x00c41758, 0x00c41764)` with the two
+    /// words left on the stack, `sceOpen(name, 3)`: `0x00779d20(fd)` and
+    /// `sceClose`, or a message; mounted again); the read functions put
+    /// back (`[0x02310c4c](cd)`). The two buffers freed; the result sets
+    /// the install state (0: done 2 and checked 1; 1: unmounted, -1; 2:
+    /// -2); `disk_open_check_set(0)`, a message; not busy. The message's
+    /// `eax`.
+    pub fn install_thread(h: &mut impl Host, ebp: u32) -> u32 {
+        let [m0, m1, m2, m3] = super::THREAD_MSG.map(|s| h.rebase(s));
+        cdecl(h, DBG_PRINTF, &[m0]);
+        let state = h.rebase(INSTALL_STATE);
+        h.write(state, 1u8);
+        let busy = h.rebase(super::INSTALL_BUSY);
+        h.write(busy, 1u32);
+        let mut result = cdecl(h, super::INSTALL_SETUP, &[]);
+        if result == 0 {
+            let cd = global(h, super::READ_FUNCS_CD);
+            let set = global(h, super::SET_READ_FUNCS_CELL);
+            h.call(set, Conv::Cdecl, &[1]);
+            cdecl(h, HDD_MOUNT, &[]);
+            result = cdecl(h, super::INSTALL_COPY, &[]);
+            if result == 0 {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                cdecl(h, super::MOUNT_PREPARE, &[]);
+                let (dev, part) = (
+                    h.rebase(super::MOUNT_DEVICE),
+                    h.rebase(super::FFX_PARTITION),
+                );
+                let name = cdecl(h, super::PARTITION_NAME, &[dev]);
+                let buf = ebp.wrapping_sub(0x44);
+                let fmt = h.rebase(super::FULL_PARTITION_FMT);
+                let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+                h.call(sprintf, Conv::Cdecl, &[buf, fmt, name, dev, part]);
+                cdecl(h, super::MOUNT_PRE2, &[]);
+                let fd = cdecl(h, super::SCE_OPEN, &[buf, 3]);
+                if fd.cast_signed() < 0 {
+                    cdecl(h, DBG_PRINTF, &[m1]);
+                } else {
+                    cdecl(h, super::INSTALL_FINISH, &[fd]);
+                    cdecl(h, super::SCE_CLOSE, &[fd]);
+                }
+                cdecl(h, HDD_MOUNT, &[]);
+            }
+            cdecl(h, DBG_PRINTF, &[m2]);
+            let set = global(h, super::SET_READ_FUNCS_CELL);
+            h.call(set, Conv::Cdecl, &[cd]);
+        }
+        for buffer in BUFFERS {
+            let at = h.rebase(buffer);
+            let p: u32 = h.read(at);
+            if p != 0 {
+                cdecl(h, USER_FREE, &[p]);
+                h.write(at, 0u32);
+            }
+        }
+        match result {
+            0 => {
+                let checked = h.rebase(super::INSTALL_RESULT);
+                h.write(checked, 1u8);
+                h.write(state, 2u8);
+            }
+            1 => {
+                cdecl(h, super::HDD_UNMOUNT, &[]);
+                h.write(state, 0xffu8);
+            }
+            2 => h.write(state, 0xfeu8),
+            _ => {}
+        }
+        cdecl(h, DISK_OPEN_CHECK_SET, &[0]);
+        let cd = global(h, super::READ_FUNCS_CD);
+        let r = cdecl(h, DBG_PRINTF, &[m3, cd]);
+        h.write(busy, 0u32);
+        r
+    }
+
+    /// `FUN_0076ccb0()`: waits for the right disc. Not ready
+    /// (`0x00a44810() != 1`): logged, 1. Else, until the drive reports a
+    /// disc (`sceCdDiskReady(1)` 2 with `0x00a44810()` not 1; meanwhile
+    /// the flag `0x01128a87` and `task_wait(1)`): with the check off
+    /// (`0x01128aac`) 0, without an expected header 1; else the header
+    /// sector read (`sceCdRead(cd_module_file_sector(1, 1), 1, buffer,
+    /// mode)`, retried from the start on failure, its completion awaited
+    /// through `0x00777310`, -1 meaning busy), cut at 0x20 bytes and
+    /// compared with the expected 32 bytes: equal 0; else logged, the
+    /// tray waited on (`sceCdDiskReady(1)` 2) and the wait starts over.
+    pub fn wait_disc(h: &mut impl Host) -> u32 {
+        let [m0, m1, m2, m3, m4] = super::DISK_WAIT_MSG.map(|s| h.rebase(s));
+        let status = cdecl(h, super::CD_STATUS, &[]);
+        if status != 1 {
+            cdecl(h, DBG_PRINTF, &[m4, status]);
+            return 1;
+        }
+        let mut log_wait = true;
+        loop {
+            if log_wait {
+                cdecl(h, DBG_PRINTF, &[m0]);
+                // until a disc is in and the drive is past its first state
+                loop {
+                    if cdecl(h, DISK_READY, &[1]) == 2 && cdecl(h, super::CD_STATUS, &[]) != 1 {
+                        break;
+                    }
+                    let flag = h.rebase(super::DISK_FLAG);
+                    h.write(flag, 1u8);
+                    cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                }
+            }
+            log_wait = true;
+            cdecl(h, DBG_PRINTF, &[m1]);
+            if h.read::<u8>(h.rebase(super::DISK_CHECK_ON)) == 0 {
+                return 0;
+            }
+            let expected = global(h, super::DISK_HEADER);
+            if expected == 0 {
+                return 1;
+            }
+            cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            cdecl(h, super::STATE_CLEAR, &[]);
+            let sector = cdecl(h, MODULE_FILE_SECTOR, &[1, 1]);
+            cdecl(h, FLUSH_CACHE, &[0]);
+            let buffer = global(h, super::DISK_BUFFER);
+            let mode = h.rebase(super::DISK_READ_MODE);
+            if cdecl(h, super::CD_READ, &[sector, 1, buffer, mode]) == 0 {
+                continue;
+            }
+            let mut r = cdecl(h, DISK_CHANGED, &[]);
+            while r == u32::MAX {
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+                r = cdecl(h, DISK_CHANGED, &[]);
+            }
+            if r != 0 {
+                continue;
+            }
+            cdecl(h, FLUSH_CACHE, &[0]);
+            let buffer = global(h, super::DISK_BUFFER);
+            h.write(buffer.wrapping_add(0x20), 0u8);
+            let expected = global(h, super::DISK_HEADER);
+            let same = (0..8u32).all(|k| {
+                h.read::<u32>(buffer.wrapping_add(4 * k))
+                    == h.read::<u32>(expected.wrapping_add(4 * k))
+            });
+            if same {
+                cdecl(h, DBG_PRINTF, &[m2]);
+                return 0;
+            }
+            cdecl(h, DBG_PRINTF, &[m3]);
+            while cdecl(h, DISK_READY, &[1]) != 2 {
+                cdecl(h, super::TASK_WAIT_SYM, &[1]);
+            }
+            // a disc in: the first wait again while the drive settles,
+            // else straight to the check
+            log_wait = cdecl(h, super::CD_STATUS, &[]) == 1;
+        }
     }
 }

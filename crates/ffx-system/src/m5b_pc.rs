@@ -156,6 +156,25 @@ pub const MAIN_PREPARE: u32 = 0x0083_c200;
 pub const MAIN_INIT: u32 = 0x0082_0310;
 pub const MAIN_LOOP: u32 = 0x0082_0860;
 
+/// `FUN_0092cdd0`'s: `TkGetNowEventJumpMapNo_0086c1f0`, `rcuiGetStageName`,
+/// the CRT's `sprintf` (import slot) and the map-object path format,
+/// `g_YnMapSystem`, `rcPrint` and its messages (the assert's file, line
+/// 0xa9), `rcdtChunkNew`, `rcdtChunkLoadFromFile`, `rcbgLoadBin`,
+/// `rcbgGuideSetModel`, `rcdtChunkDelete`.
+pub const EVENT_JUMP_MAP: u32 = 0x0086_c1f0;
+pub const STAGE_NAME: u32 = 0x0093_7940;
+pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+pub const MAP_OBJECT_FMT: u32 = 0x00b6_7d38;
+pub const YN_MAP_SYSTEM: u32 = 0x0193_bf80;
+pub const RC_PRINT: u32 = 0x0092_7550;
+pub const RC_ASSERT_MSG: [u32; 3] = [0x00b6_7a14, 0x00b6_7d90, 0x00b6_7d70];
+pub const RC_MSG: [u32; 3] = [0x00b6_7db4, 0x00b6_7d18, 0x00b6_7dd4];
+pub const CHUNK_NEW: u32 = 0x0092_b900;
+pub const CHUNK_LOAD: u32 = 0x0092_b880;
+pub const BG_LOAD_BIN: u32 = 0x0092_1d60;
+pub const GUIDE_SET_MODEL: u32 = 0x0091_d590;
+pub const CHUNK_DELETE: u32 = 0x0092_b7d0;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -878,5 +897,58 @@ pub mod bridge {
         cdecl(h, super::MAIN_INIT, &[count, words]);
         cdecl(h, super::MAIN_LOOP, &[count, words]);
         1
+    }
+    /// `FUN_0092cdd0()` with its frame at `ebp` (a debug reload of the
+    /// map's objects): the current map (`TkGetNowEventJumpMapNo(ebp -
+    /// 0xc)`, four signed chars) when `rcuiGetStageName` knows it: the
+    /// path `sprintf(ebp - 0x10c, fmt, c0, c1, c2, c3, ebp - 0xc)`, an
+    /// assert print while `g_YnMapSystem + 0x14` holds a chunk, a chunk
+    /// (`rcdtChunkNew`) loaded from it (`rcdtChunkLoadFromFile`): loaded,
+    /// printed, `rcbgLoadBin([chunk])`, kept at `+0x14` and the guide
+    /// model set (`rcbgGuideSetModel(map +4, [[map] + 8] + 0x1c)`); not
+    /// loaded, deleted. Returns the last `rcPrint`'s `eax`, or 0 for an
+    /// unknown map.
+    pub fn reload_map_objects(h: &mut impl Host, ebp: u32) -> u32 {
+        let id = ebp.wrapping_sub(0xc);
+        let map = cdecl(h, super::EVENT_JUMP_MAP, &[id]);
+        // the map word goes on with the first call's word still on the stack
+        let known = cdecl(h, super::STAGE_NAME, &[map, id]);
+        if known == 0 {
+            return 0;
+        }
+        let path = ebp.wrapping_sub(0x10c);
+        let fmt = h.rebase(super::MAP_OBJECT_FMT);
+        let c =
+            [0u32, 1, 2, 3].map(|k| i32::from(h.read::<i8>(id.wrapping_add(k))).cast_unsigned());
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(
+            sprintf,
+            Conv::Cdecl,
+            &[path, fmt, c[0], c[1], c[2], c[3], id],
+        );
+        let system: u32 = h.read(h.rebase(super::YN_MAP_SYSTEM));
+        if h.read::<u32>(system.wrapping_add(0x14)) != 0 {
+            let [m0, m1, m2] = super::RC_ASSERT_MSG.map(|s| h.rebase(s));
+            cdecl(h, super::RC_PRINT, &[m0, m1, m2, 0xa9]);
+        }
+        let [n0, n1, n2] = super::RC_MSG.map(|s| h.rebase(s));
+        cdecl(h, super::RC_PRINT, &[n0]);
+        let chunk = cdecl(h, super::CHUNK_NEW, &[]);
+        if cdecl(h, super::CHUNK_LOAD, &[chunk, path]) != 0 {
+            cdecl(h, super::RC_PRINT, &[n1, path]);
+            let data: u32 = h.read(chunk);
+            cdecl(h, super::BG_LOAD_BIN, &[data]);
+            let system: u32 = h.read(h.rebase(super::YN_MAP_SYSTEM));
+            h.write(system.wrapping_add(0x14), chunk);
+            let system: u32 = h.read(h.rebase(super::YN_MAP_SYSTEM));
+            let map: u32 = if system == 0 { 0 } else { h.read(system) };
+            let guide: u32 = h.read(map.wrapping_add(8));
+            let model: u32 = h.read(guide.wrapping_add(0x1c));
+            let at: u32 = h.read(system.wrapping_add(4));
+            cdecl(h, super::GUIDE_SET_MODEL, &[at, model]);
+        } else if chunk != 0 {
+            cdecl(h, super::CHUNK_DELETE, &[chunk]);
+        }
+        cdecl(h, super::RC_PRINT, &[n2])
     }
 }

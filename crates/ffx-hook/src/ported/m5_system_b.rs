@@ -1103,6 +1103,58 @@ ported! {
     GameMain_00822490 @ 0x0082_2490 => extern "C" fn game_main(argc: u32, argv: u32) -> u32 {
         pc::game_main(&mut mem(), argc, argv)
     }
+
+    // ---- round 3, batch 5: the screen capture, the CD offsets, the install check ----
+    /// `(x, y)`.
+    TOCaptureScreen_008adaf0 @ 0x008a_daf0 => extern "C" fn capture_screen(x: u32, y: u32) -> u32 {
+        mn::capture_screen(&mut mem(), x, y)
+    }
+    /// `(names)`: frame `ebp - 0x28`; without names `eax` untouched.
+    file_offset_get @ 0x0076_db40 => extern "C" fn file_offset_get(names: u32) {
+        let mut f = StackFrame::<0xa>::new();
+        let _ = hd::file_offset_get(&mut mem(), f.at() + 0x28, names);
+    }
+    /// `()`.
+    hdd_VerifyFiles_007787c0 @ 0x0077_87c0 => extern "C" fn verify_files() -> u32 {
+        hd::verify_files(&mut mem())
+    }
+    /// `(arg)`.
+    hdd_install_check @ 0x0077_91a0 => extern "C" fn install_check(arg: u32) -> u32 {
+        hd::install_check(&mut mem(), arg)
+    }
+
+    // ---- round 3, batch 5: the partition size, the help picture, the map-object reload ----
+    /// `()`: frame `ebp - 0x44`.
+    hdd_OpenFfxPartition_00779000 @ 0x0077_9000 => extern "C" fn open_ffx_partition() -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        hd::open_ffx_partition(&mut mem(), f.at() + 0x44)
+    }
+    /// `(page, clut)`: frame `ebp - 0x68` (16-byte aligned).
+    hdd_HelpPicture_00779ad0 @ 0x0077_9ad0 => extern "C" fn help_picture(page: u32, clut: u32) -> u32 {
+        let mut f = StackFrame::<0x1a>::new();
+        hd::help_picture(&mut mem(), f.at() + 0x68, page, clut)
+    }
+    /// `()`: frame `ebp - 0x10c`.
+    rcReloadMapObjects_0092cdd0 @ 0x0092_cdd0 => extern "C" fn reload_map_objects() -> u32 {
+        let mut f = StackFrame::<0x43>::new();
+        pc::reload_map_objects(&mut mem(), f.at() + 0x10c)
+    }
+
+    // ---- round 3, batch 5: printf2, the install thread, the disc wait ----
+    /// `(fmt, args)`: frame `ebp - 0x204`.
+    printf2 @ 0x0076_dd10 => extern "C" fn printf2(fmt: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::printf2(&mut mem(), f.at() + 0x204, fmt, args)
+    }
+    /// `()`: the install thread; frame `ebp - 0x44`.
+    hdd_thread_main @ 0x0077_95b0 => extern "C" fn install_thread() -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        hd::install_thread(&mut mem(), f.at() + 0x44)
+    }
+    /// `()`.
+    CdWaitDisc_0076ccb0 @ 0x0076_ccb0 => extern "C" fn wait_disc() -> u32 {
+        hd::wait_disc(&mut mem())
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

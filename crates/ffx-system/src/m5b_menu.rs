@@ -269,6 +269,45 @@ pub const FRAME_BUFFER_W: u32 = 0x00b4_1d9c;
 pub const FRAME_BUFFER_H: u32 = 0x00b4_1d98;
 pub const FRAME_BUFFER_NAME: u32 = 0x00b4_5b2c;
 
+/// `FUN_008adaf0`'s: `MsGetSaveMenu`, the option word `0x00c59558`,
+/// `Sg_GetDispMode`, the capture flags `0x01841d40..42`, the buffer words
+/// `0x01865f08..18`, its two messages and format, `TOTransImageLH`,
+/// `TOSetMessageWindowMode`, the halfwords `0x01841d44`/`0x01841d48`.
+pub const SAVE_MENU: u32 = 0x0078_5290;
+pub const CAPTURE_OPTION: u32 = 0x00c5_9558;
+pub const DISP_MODE: u32 = 0x0082_0550;
+pub const CAPTURE_FLAGS: [u32; 3] = [0x0184_1d40, 0x0184_1d41, 0x0184_1d42];
+pub const CAPTURE_BUF: [u32; 5] = [
+    0x0186_5f08,
+    0x0186_5f0c,
+    0x0186_5f10,
+    0x0186_5f14,
+    0x0186_5f18,
+];
+pub const CAPTURE_MSG: [u32; 3] = [0x00b6_2d20, 0x00b6_2d0c, 0x00b6_2d5c];
+pub const TRANS_IMAGE_LH: u32 = 0x008b_0da0;
+pub const MESSAGE_WINDOW_MODE: u32 = 0x008a_f840;
+pub const CAPTURE_XY: [u32; 2] = [0x0184_1d44, 0x0184_1d48];
+
+/// `printf2`'s: the CRT's `vsprintf` and `strncpy` (import slots), the
+/// 128-line ring (`0x01128be8`, 40 bytes a line, the index `0x01128abc`),
+/// `sceGsSetDefDrawEnv2` (the debug-output switch), `TkGetFFXCofingAdrs`,
+/// the filter `0x01129fe8` and its sense `0x01128ac1`, the output mode
+/// `0x01128aaf`, its two outputs `0x00888160` ("FFXDEBUG") and
+/// `printf2_dump_0076e890`, the flag `0x01128aae`.
+pub const STRNCPY_IAT: u32 = 0x00b0_c368;
+pub const LOG_RING: u32 = 0x0112_8be8;
+pub const LOG_INDEX: u32 = 0x0112_8abc;
+pub const DEBUG_SWITCH: u32 = 0x0088_7c60;
+pub const FFX_CONFIG: u32 = 0x0088_d5e0;
+pub const LOG_FILTER: u32 = 0x0112_9fe8;
+pub const LOG_FILTER_SENSE: u32 = 0x0112_8ac1;
+pub const LOG_MODE: u32 = 0x0112_8aaf;
+pub const LOG_SEND: u32 = 0x0088_8160;
+pub const LOG_SEND_TAG: u32 = 0x00b5_21dc;
+pub const LOG_DUMP: u32 = 0x0076_e890;
+pub const LOG_WRITTEN: u32 = 0x0112_8aae;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -1792,5 +1831,139 @@ pub mod bridge {
         put_words(h, q.wrapping_add(0x30), &[rgb, rgb, rgb, alpha]);
         let name = h.rebase(super::FRAME_BUFFER_NAME);
         cdecl(h, super::DRAW_UI_ELEMENT, &[q, name, 1, 0, 0])
+    }
+
+    /// `FUN_008adaf0(x, y)`: with the save menu's flag `0x200` or the
+    /// option `0x00c59558` at 1, the screen captured: flag `0x01841d40`
+    /// set; in a display mode (`Sg_GetDispMode()` nonzero) the capture
+    /// buffer laid out (`0x01865f0c..18` from `0x01865f08`, two log
+    /// lines), and unless the mode is 6 the screen stored
+    /// (`TOTransImageLH(buffer, 0x2100, 0x1b, 0, 0, 0x200, 0x80)`, flags
+    /// `0x01841d41`/`42`), `TOSetMessageWindowMode(1)` and `(x, y)` kept as
+    /// halfwords. Returns the `eax` the original leaves: `MsGetSaveMenu`'s,
+    /// the mode, or the window mode call's with `y`'s halfword over it.
+    pub fn capture_screen(h: &mut impl Host, x: u32, y: u32) -> u32 {
+        let menu = cdecl(h, super::SAVE_MENU, &[]);
+        if h.read::<u32>(menu) & 0x200 == 0 && global(h, super::CAPTURE_OPTION) != 1 {
+            return menu;
+        }
+        let [taken, stored, shown] = super::CAPTURE_FLAGS.map(|s| h.rebase(s));
+        h.write(taken, 1u8);
+        let mode = cdecl(h, super::DISP_MODE, &[]);
+        if mode == 0 {
+            return 0;
+        }
+        let [fmt, m1, m2] = super::CAPTURE_MSG.map(|s| h.rebase(s));
+        cdecl(h, DBG_PRINTF, &[fmt, m1]);
+        cdecl(h, DBG_PRINTF, &[fmt, m2]);
+        let [base, buf, size, end, total] = super::CAPTURE_BUF.map(|s| h.rebase(s));
+        let b: u32 = h.read(base);
+        h.write(buf, b);
+        h.write(size, 0x2_0000u32);
+        h.write(total, 0x4_0000u32);
+        h.write(end, b.wrapping_add(0x2_0000));
+        let mode = cdecl(h, super::DISP_MODE, &[]);
+        if mode == 6 {
+            return 6;
+        }
+        let image: u32 = h.read(buf);
+        h.write(stored, 1u8);
+        cdecl(
+            h,
+            super::TRANS_IMAGE_LH,
+            &[image, 0x2100, 0x1b, 0, 0, 0x200, 0x80],
+        );
+        h.write(shown, 1u8);
+        let r = cdecl(h, super::MESSAGE_WINDOW_MODE, &[1]);
+        let [at_x, at_y] = super::CAPTURE_XY.map(|s| h.rebase(s));
+        #[allow(clippy::cast_possible_truncation)] // the halfwords
+        let (x, y) = (x as u16, y as u16);
+        h.write(at_x, x);
+        h.write(at_y, y);
+        (r & 0xffff_0000) | u32::from(y)
+    }
+    /// `printf2(fmt, args)` with its frame at `ebp`: the line formatted
+    /// (`vsprintf(ebp - 0x204, fmt, args)`) and its first 39 bytes kept in
+    /// the 128-line ring; shown (`dbgPrintf`) when the debug output is on
+    /// (`sceGsSetDefDrawEnv2() == 1`, else the config's byte `+0xb`) and,
+    /// with a filter (`0x01129fe8`), whether the filter is a proper prefix
+    /// of the line equals its sense (`i8 0x01128ac1`); sent on by mode
+    /// `0x01128aaf` (3: `0x00888160("FFXDEBUG", line, len)`; 4, debug on:
+    /// `printf2_dump(line, len)`; empty lines not). `0x01128aae` = 1.
+    /// Returns the `eax` the original leaves.
+    pub fn printf2(h: &mut impl Host, ebp: u32, fmt: u32, args: u32) -> u32 {
+        let buf = ebp.wrapping_sub(0x204);
+        crt(h, super::VSPRINTF_IAT, &[buf, fmt, args]);
+        let index = global(h, super::LOG_INDEX);
+        let line = h
+            .rebase(super::LOG_RING)
+            .wrapping_add(index.wrapping_mul(40));
+        crt(h, super::STRNCPY_IAT, &[line, buf, 0x27]);
+        h.write(line.wrapping_add(0x27), 0u8);
+        let index = global(h, super::LOG_INDEX).wrapping_add(1) & 0x7f;
+        let at = h.rebase(super::LOG_INDEX);
+        h.write(at, index);
+        let on = if cdecl(h, super::DEBUG_SWITCH, &[]) == 1 {
+            true
+        } else {
+            let config = cdecl(h, super::FFX_CONFIG, &[]);
+            h.read::<u8>(config.wrapping_add(0xb)) != 0
+        };
+        if on {
+            let filter = h.rebase(super::LOG_FILTER);
+            let show = if h.read::<u8>(filter) == 0 {
+                true
+            } else {
+                let sense = i32::from(h.read::<i8>(h.rebase(super::LOG_FILTER_SENSE)));
+                i32::from(proper_prefix(h, filter, line)) == sense
+            };
+            if show {
+                cdecl(h, DBG_PRINTF, &[buf]);
+            }
+        }
+        let mode = i32::from(h.read::<i8>(h.rebase(super::LOG_MODE)));
+        let mut eax = mode.wrapping_sub(4).cast_unsigned();
+        if mode == 3 {
+            eax = 0;
+            let len = strlen(h, line);
+            if len != 0 {
+                let tag = h.rebase(super::LOG_SEND_TAG);
+                eax = cdecl(h, super::LOG_SEND, &[tag, line, len]);
+            }
+        } else if mode == 4 {
+            eax = cdecl(h, super::DEBUG_SWITCH, &[]);
+            if eax == 1 {
+                eax = 0;
+                let len = strlen(h, line);
+                if len != 0 {
+                    eax = cdecl(h, super::LOG_DUMP, &[line, len]);
+                }
+            }
+        }
+        let at = h.rebase(super::LOG_WRITTEN);
+        h.write(at, 1u8);
+        eax
+    }
+
+    /// Whether the string at `filter` is a proper prefix of the nonempty
+    /// string at `line` (`printf2`'s filter test).
+    fn proper_prefix(h: &impl Host, filter: u32, line: u32) -> bool {
+        if h.read::<u8>(line) == 0 {
+            return false;
+        }
+        let mut k = 0u32;
+        loop {
+            let f: u8 = h.read(filter.wrapping_add(k));
+            if f == 0 {
+                return true;
+            }
+            if h.read::<u8>(line.wrapping_add(k)) != f {
+                return false;
+            }
+            k = k.wrapping_add(1);
+            if h.read::<u8>(line.wrapping_add(k)) == 0 {
+                return false;
+            }
+        }
     }
 }

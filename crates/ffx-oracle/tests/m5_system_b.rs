@@ -5258,3 +5258,434 @@ fn r3b4_frame_buffer_install_mount_main_match_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b5_capture_offsets_install_check_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b01);
+        for case in 0..18u32 {
+            t.reset();
+            let r = rng.next();
+            // the capture: off, on by the menu flag or the option, the
+            // display modes 0, 6 and others
+            let menu = t.words(&[[0u32, 0x200, 0xffff_fdff][(case % 3) as usize]]);
+            t.stub(mnc::SAVE_MENU, false, 0, 0, menu);
+            t.g32(mnc::CAPTURE_OPTION, u32::from(case % 4 == 3));
+            t.stub_seq(
+                mnc::DISP_MODE,
+                0,
+                0,
+                &[
+                    [0u32, 1, 6, 2][(case / 3 % 4) as usize],
+                    [3, 6, 1, 6][(case % 4) as usize],
+                ],
+            );
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r);
+            t.stub(mnc::TRANS_IMAGE_LH, false, 7, 0, r ^ 1);
+            t.stub(mnc::MESSAGE_WINDOW_MODE, false, 1, 0, r ^ 2);
+            t.g32(mnc::CAPTURE_BUF[0], rng.next());
+            let xy = [rng.next(), rng.next()];
+            t.check(
+                &format!("capture #{case}"),
+                0x008a_daf0,
+                Conv::Cdecl,
+                &xy,
+                |m| Out::U32(mnb::capture_screen(m, xy[0], xy[1])),
+            );
+            // the CD offsets: found at once or after a wait
+            t.stub_seq(
+                hdc::CD_SEARCH_FILE,
+                2,
+                0,
+                &[1, 0, 1, u32::from(case & 1 == 0), 1, 1],
+            );
+            t.stub(hdc::SYNC_V, false, 1, 0, r ^ 3);
+            for sym in hdc::FILE_OFFSETS {
+                t.g32(sym, 0x5a5a_5a5a);
+            }
+            let names = if case % 5 == 4 {
+                0
+            } else {
+                t.words(&[rng.next(), rng.next(), rng.next()])
+            };
+            t.check_fs(
+                &format!("file offsets #{case}"),
+                0x0076_db40,
+                &[names],
+                0x28,
+                4,
+                |m, ebp, _| hdb::file_offset_get(m, ebp, names).map_or(Out::None, Out::U32),
+            );
+            // the installed files: heads with sizes, read modes, opens
+            let heads = t.rebase(hdc::HEADS);
+            let n = [0u32, 2, 3, 0xffff_ffff][(case % 4) as usize];
+            t.g32(hdc::HEAD_COUNT, n);
+            for k in 0..3u32 {
+                t.put(
+                    heads + 12 * k,
+                    &[0x10, [0, 0x800, 0x1000][((k + case) % 3) as usize], 0],
+                );
+            }
+            t.stub_seq(hdc::RMODE_GET, 1, 0, &[1, u32::from(case & 2 != 0), 1]);
+            t.stub(hdc::HDD_NAME, false, 1, 0, r ^ 4);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                2,
+                0,
+                &[3, [0x8000_0001, 4][(case & 1) as usize], 5],
+            );
+            t.stub_seq(hdc::SCE_LSEEK64, 3, 0, &[0x800, 0x1000, 0x7ff]);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r ^ 6);
+            // the format alone: the calls pass one to three words
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 7);
+            t.check(
+                &format!("verify files #{case}"),
+                0x0077_87c0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::verify_files(m)),
+            );
+            // the install check
+            let kind = [0u32, 0x10, 0xffff_fff1, 3, 4, 0][(case % 6) as usize];
+            t.stub(hdc::INSTALL_KIND, false, 0, 0, kind);
+            t.stub(hdc::HDD_MOUNT, false, 0, 0, u32::from(case % 4 == 1));
+            t.stub(hdc::VERIFY_FILES, false, 0, 0, u32::from(case % 4 == 2));
+            t.stub(hdc::INS_CHECK, false, 1, 0, r ^ 8);
+            t.stub(hdc::HDD_UNMOUNT, false, 0, 0, r ^ 9);
+            t.stub(hdc::REFRESH_HDD_MODE, false, 0, 0, r ^ 0xa);
+            // kind 0 reaching hdd_ins_check: cases 0 (both set), 11 (CD 0),
+            // 12 (byte 0)
+            t.write(t.rebase(hdc::BYTE_8A86), &[u8::from(case != 12)]);
+            t.g32(hdc::READ_FUNCS_CD, u32::from(case != 11));
+            t.g32(hdc::WORD_A514, 0x5a5a);
+            t.write(t.rebase(hdc::HDD_MODE), &[0x55]);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 0xb);
+            t.check(
+                &format!("install check #{case}"),
+                0x0077_91a0,
+                Conv::Cdecl,
+                &[r],
+                |m| Out::U32(hdb::install_check(m, r)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b5_partition_help_picture_map_reload_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b02);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            // the partition: mounted or not, open failing, ioctl failing,
+            // space or not
+            t.write(t.rebase(hdc::HDD_MOUNTED), &[u8::from(case & 1 != 0)]);
+            t.g32(hdc::WORD_A514, 0x5a5a);
+            for (k, sym) in [
+                hdc::HDD_UNMOUNT,
+                hdc::MOUNT_PREPARE,
+                hdc::MOUNT_PRE2,
+                hdc::HDD_MOUNT,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, 0, 0, r ^ (k as u32 + 1));
+            }
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 5);
+            imp(t, hdc::SPRINTF_IAT, 4, false, r ^ 6);
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [3u32, 0x8000_0000][((case >> 1) & 1) as usize],
+            );
+            t.stub(
+                hdc::SCE_IOCTL2,
+                false,
+                6,
+                0,
+                [0x40u32, 0xffff_fff0][((case >> 2) & 1) as usize],
+            );
+            t.stub(hdc::SCE_DCLOSE, false, 1, 0, r ^ 7);
+            t.stub(hdc::INSTALLED_MB, false, 1, 0, 0x1234_5678 ^ r);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 8);
+            t.stub(hdc::FREE_SPACE_OK, false, 2, 0, u32::from(case % 3 != 0));
+            t.check_fs(
+                &format!("open partition #{case}"),
+                0x0077_9000,
+                &[],
+                0x44,
+                4,
+                |m, ebp, _| Out::U32(hdb::open_ffx_partition(m, ebp)),
+            );
+            // the help picture: tables of known bytes
+            let table = t.zeros(0x1_0400 + 0x24c1 * 3);
+            let bytes: Vec<u8> = (0..0x24c1 * 3).map(|_| rng.next() as u8).collect();
+            t.write(table + 0x1_0400, &bytes);
+            t.g32(hdc::HELP_TABLE, table);
+            let picture = t.alloc(&[0xa5; 0x4000]);
+            t.g32(hdc::HELP_PICTURE, picture);
+            t.stub_copy_fill(hdc::MEMSET);
+            t.stub(hdc::SET_LOAD_IMAGE, false, 8, 0, r ^ 9);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 0xa);
+            t.stub(hdc::EXEC_LOAD_IMAGE, false, 2, 0, r ^ 0xb);
+            t.stub_seq(hdc::GS_SYNC_PATH, 2, 0, &[r ^ 0xc, r ^ 0xd]);
+            let args = [case % 3, rng.next()];
+            let entry = t.frame_ebp(args.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs(
+                &format!("help picture #{case}"),
+                0x0077_9ad0,
+                &args,
+                0,
+                0,
+                |m, _, _| Out::U32(hdb::help_picture(m, ebp, args[0], args[1])),
+            );
+            // the map objects: unknown map, a chunk held, loaded or not
+            t.stub_store(
+                pcs::EVENT_JUMP_MAP,
+                None,
+                0,
+                0x8061_7a41 ^ (case << 8),
+                false,
+                1,
+                0,
+                r ^ 0xe,
+            );
+            t.stub(pcs::STAGE_NAME, false, 2, 0, u32::from(case % 4 != 3));
+            imp(t, pcs::SPRINTF_IAT, 7, false, r ^ 0xf);
+            let map = t.words(&[0, 0, 0]);
+            let guide = t.words(&[0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67]);
+            t.put(map + 8, &[guide]);
+            let system = t.words(&[map, rng.next(), 0, 0, 0, [0u32, 5][(case & 1) as usize]]);
+            t.g32(pcs::YN_MAP_SYSTEM, system);
+            t.stub(pcs::RC_PRINT, false, 1, 0, r ^ 0x10);
+            let chunk = if case & 4 == 0 {
+                t.words(&[rng.next(), 0])
+            } else {
+                0
+            };
+            t.stub(pcs::CHUNK_NEW, false, 0, 0, chunk);
+            t.stub(
+                pcs::CHUNK_LOAD,
+                false,
+                2,
+                0,
+                u32::from(case & 2 != 0 && chunk != 0),
+            );
+            t.stub(pcs::BG_LOAD_BIN, false, 1, 0, r ^ 0x11);
+            t.stub(pcs::GUIDE_SET_MODEL, false, 2, 0, r ^ 0x12);
+            t.stub(pcs::CHUNK_DELETE, false, 1, 0, r ^ 0x13);
+            t.check_fs(
+                &format!("map reload #{case}"),
+                0x0092_cdd0,
+                &[],
+                0x10c,
+                4,
+                |m, ebp, _| Out::U32(pcb::reload_map_objects(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A `memset(dst, c, n)` stub over `sym` (cdecl): fills and logs the
+    /// three words; returns `dst`.
+    fn stub_copy_fill(&mut self, sym: u32) {
+        let log_stub = self.stub_code(sym, false, 3, 0, 0);
+        let mut c = vec![0x57]; // push edi
+        c.extend([0x8b, 0x7c, 0x24, 0x08]); // mov edi, [esp+8] (dst)
+        c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc] (c)
+        c.extend([0x8b, 0x4c, 0x24, 0x10]); // mov ecx, [esp+0x10] (n)
+        c.extend([0xf3, 0xaa]); // rep stosb
+        c.push(0x5f); // pop edi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b5_printf2_install_thread_disc_wait_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b03);
+        let text = t.alloc(b"MAP: loaded field ffx_base 0123456789 abcdefghij\0");
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // printf2: vsprintf writes the line; the switches and filters
+            t.fill_import(mnc::VSPRINTF_IAT, 3, 0, Some(2), 0, text, r);
+            t.stub_import_copy(mnc::STRNCPY_IAT);
+            t.g32(mnc::LOG_INDEX, [0u32, 5, 0x7f, 0x80][(case % 4) as usize]);
+            t.stub(
+                mnc::DEBUG_SWITCH,
+                false,
+                0,
+                0,
+                // mode 4 (cases 2, 3, 10, 11) sees 1 and 2
+                [1u32, 0, 1, 2][((case / 4 + case) % 4) as usize],
+            );
+            let config = t.words(&[0, 0, 0x0100_0000 * (case & 1), 0]);
+            t.stub(mnc::FFX_CONFIG, false, 0, 0, config);
+            let filter: &[u8] = [
+                &b"\0"[..],
+                b"MAP\0",
+                b"MAP: loaded field ffx_base 0123456789 abcdefghij\0",
+                b"XX\0",
+            ][(case % 4) as usize];
+            t.write(t.rebase(mnc::LOG_FILTER), filter);
+            t.write(t.rebase(mnc::LOG_FILTER_SENSE), &[u8::from(case & 2 != 0)]);
+            t.write(
+                t.rebase(mnc::LOG_MODE),
+                &[[3u8, 4, 0, 0xff][(case / 2 % 4) as usize]],
+            );
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 1);
+            t.stub(mnc::LOG_SEND, false, 3, 0, r ^ 2);
+            t.stub(mnc::LOG_DUMP, false, 2, 0, r ^ 3);
+            let args = [rng.next(), [0u32, 3, 15, 0x1f][(case % 4) as usize]];
+            t.check_fs(
+                &format!("printf2 #{case}"),
+                0x0076_dd10,
+                &args,
+                0x204,
+                4,
+                |m, ebp, _| Out::U32(mnb::printf2(m, ebp, args[0], args[1])),
+            );
+            // the install thread: each setup and copy result
+            let setup = [0u32, 1, 2, 3][(case % 4) as usize];
+            let copy = [0u32, 1, 2, 0][(case / 4 % 4) as usize];
+            t.stub(hdc::INSTALL_SETUP, false, 0, 0, setup);
+            let setter = t.stub_code(0x0e0f_0201, false, 1, 0, r ^ 4);
+            t.g32(hdc::SET_READ_FUNCS_CELL, setter);
+            t.g32(hdc::READ_FUNCS_CD, rng.next());
+            for (k, sym) in [
+                hdc::HDD_MOUNT,
+                hdc::HDD_UNMOUNT,
+                hdc::MOUNT_PREPARE,
+                hdc::MOUNT_PRE2,
+                hdc::DISK_OPEN_CHECK_SET,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(
+                    sym,
+                    false,
+                    u32::from(sym == hdc::DISK_OPEN_CHECK_SET),
+                    0,
+                    r ^ (0x10 + k as u32),
+                );
+            }
+            t.stub(hdc::INSTALL_COPY, false, 0, 0, copy);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 5);
+            imp(t, hdc::SPRINTF_IAT, 5, false, r ^ 6);
+            t.stub(
+                hdc::SCE_OPEN,
+                false,
+                2,
+                0,
+                [3u32, 0xffff_fff0][((case / 4) & 1) as usize],
+            );
+            t.stub(hdc::INSTALL_FINISH, false, 1, 0, r ^ 7);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 8);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 9);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 0xa);
+            t.put(
+                t.rebase(hdc::BUFFERS[0]),
+                &[[0u32, 0x1234][(case & 1) as usize]],
+            );
+            t.put(
+                t.rebase(hdc::BUFFERS[1]),
+                &[[0x5678u32, 0][(case & 1) as usize]],
+            );
+            t.check_fs(
+                &format!("install thread #{case}"),
+                0x0077_95b0,
+                &[],
+                0x44,
+                4,
+                |m, ebp, _| Out::U32(hdb::install_thread(m, ebp)),
+            );
+            // the disc wait: status, readiness, read and compare outcomes
+            let off = [[0u32, 2][(case / 4 % 2) as usize]];
+            let status: &[u32] =
+                [&off[..], &[1, 0, 0, 0], &[1, 1, 0, 0, 0], &[1, 0, 1, 0, 0]][(case % 4) as usize];
+            t.stub_seq(hdc::CD_STATUS, 0, 0, &[status, &[0; 8][..]].concat());
+            t.stub_seq(hdc::DISK_READY, 1, 0, &[0, 2, 2, 2, 2, 2, 2, 2]);
+            t.stub(hdc::TASK_WAIT_SYM, false, 1, 0, r ^ 0xb);
+            t.write(t.rebase(hdc::DISK_CHECK_ON), &[u8::from(case % 8 != 1)]);
+            let header: Vec<u32> = (0..8).map(|k| 0x4000 + k).collect();
+            let expected = if case % 8 == 2 { 0 } else { t.words(&header) };
+            t.g32(hdc::DISK_HEADER, expected);
+            let mut read = header.clone();
+            if case & 4 != 0 {
+                read[7] ^= 1;
+            }
+            let buffer = t.words(&[read, vec![0xa5a5_a5a5; 4]].concat());
+            t.g32(hdc::DISK_BUFFER, buffer);
+            t.stub(hdc::STATE_CLEAR, false, 0, 0, r ^ 0xc);
+            t.stub(hdc::MODULE_FILE_SECTOR, false, 2, 0, 0x99);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 0xd);
+            t.stub_seq(hdc::CD_READ, 4, 0, &[u32::from(case & 8 == 0), 1, 1, 1]);
+            t.stub_seq(
+                hdc::DISK_CHANGED,
+                0,
+                0,
+                &[
+                    0xffff_ffff,
+                    0xffff_ffff,
+                    [0u32, 5][(case & 1) as usize],
+                    0,
+                    0,
+                    0,
+                ],
+            );
+            // a mismatch would wait forever: the mismatch message (the
+            // n-th print of the case) puts the right word in
+            let nth = match case {
+                6 => 3,
+                5 | 7 | 14 => 5,
+                13 | 15 => 7,
+                _ => 0,
+            };
+            t.stub_store_nth(hdc::DBG_PRINTF, buffer + 28, header[7], nth, r ^ 0xe);
+            t.check(
+                &format!("disc wait #{case}"),
+                0x0076_ccb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::wait_disc(m)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, one word logged) that on its
+    /// `nth` call (1-based; 0 never) first stores `value` at the absolute
+    /// address `at`; returns `ret`.
+    fn stub_store_nth(&mut self, sym: u32, at: u32, value: u32, nth: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 1, 0, ret);
+        let ctr = self.words(&[0]);
+        let mut c = vec![0xff, 0x05];
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.extend([0x81, 0x3d]);
+        c.extend(ctr.to_le_bytes());
+        c.extend(nth.to_le_bytes()); // cmp dword [ctr], nth
+        c.extend([0x75, 0x0a]); // jne +10
+        c.extend([0xc7, 0x05]);
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [at], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
