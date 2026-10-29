@@ -31,6 +31,7 @@ fn node_init_big_table_links_and_sets_the_table() {
                 eax: 0,
                 ecx: args,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

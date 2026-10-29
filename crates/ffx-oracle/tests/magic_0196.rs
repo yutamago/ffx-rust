@@ -60,6 +60,7 @@ fn wrappers_pass_their_callbacks_and_the_argument() {
         eax: 0x55,
         ecx: 3,
         edx: 4,
+        ..Call::default()
     };
     t.check_entry(t.at(0x1040), entry, &[obj], Eax::Checked);
     t.check_entry(t.at(0x1090), entry, &[obj], Eax::Checked);

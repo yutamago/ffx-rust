@@ -40,6 +40,7 @@ fn node_init_links_into_the_parent() {
                 eax: 0,
                 ecx: args,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -68,6 +69,7 @@ fn release_and_set_value() {
             eax: 0,
             ecx: 0x00ab_cdef,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,
@@ -83,6 +85,7 @@ fn release_and_set_value() {
                 eax: 0,
                 ecx: obj,
                 edx: 0x00ed_0042,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -132,6 +135,7 @@ fn unlink_closes_the_gap() {
                 eax: 0,
                 ecx: this,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -234,6 +238,7 @@ fn node_init_big_and_time_left() {
                 eax: 0,
                 ecx: args,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -286,6 +291,7 @@ fn node_init_big_and_time_left() {
                 eax: 0,
                 ecx: this,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

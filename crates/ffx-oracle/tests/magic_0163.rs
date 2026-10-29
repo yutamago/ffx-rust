@@ -83,6 +83,7 @@ fn target_angle() {
                     eax: 0,
                     ecx: index,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Junk,

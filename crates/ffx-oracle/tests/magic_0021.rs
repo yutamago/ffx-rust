@@ -131,6 +131,7 @@ fn start_up_tail_jumps_into_the_set_up() {
                 eax: 0,
                 ecx: 0x77,
                 edx: 0,
+                ..Call::default()
             },
             &[0x00ab_cdef],
             Eax::Checked,

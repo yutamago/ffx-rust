@@ -32,11 +32,13 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use ffx_bridge::Mem;
-use ffx_magic::{Frame, Game, Image, Libm, Out, Ret};
+use ffx_magic::{Frame, Game, Image, Libm, Out, Ret, Xmm};
 use ffx_overlay::{Config, Host, Overlay, Pe, Regs};
 
 /// The map effects' shared task functions (every carrier's copy).
 pub mod map;
+/// The slots whose callee reads `ecx` (generated).
+mod this_slots;
 
 pub const SERVICE: u32 = 0x7fff_0000;
 pub const SENTINEL: u32 = SERVICE + 0xfff0;
@@ -172,11 +174,13 @@ type Stub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> u32>;
 /// A stub's float result (ST0).
 type FloatStub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> f64>;
 
-/// One call-out: the target, its slot, the argument words.
+/// One call-out: the target, its slot, `ecx` at the call (a thiscall's
+/// `this`) and the argument words.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallOut {
     pub target: u32,
     pub slot: Option<u32>,
+    pub ecx: u32,
     pub args: Vec<u32>,
 }
 
@@ -256,7 +260,12 @@ impl Host for OrigHost<'_> {
         // a trap reached through a stored pointer (not the table) is
         // still its slot, as on the port's side
         let slot = slot.or_else(|| slot_of(target));
-        self.calls.push(CallOut { target, slot, args });
+        self.calls.push(CallOut {
+            target,
+            slot,
+            ecx: regs.ecx,
+            args,
+        });
         regs.esp += 4;
         Ok(())
     }
@@ -320,12 +329,13 @@ impl Mem for PortGame {
 }
 
 impl Game for PortGame {
-    fn call(&mut self, target: u32, _ecx: u32, args: &[u32]) -> Out {
+    fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
         let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
         self.calls.push(CallOut {
             target,
             slot: slot_of(target),
+            ecx,
             args: args.to_vec(),
         });
         Out {
@@ -370,6 +380,28 @@ pub struct Call {
     pub eax: u32,
     pub ecx: u32,
     pub edx: u32,
+    /// `xmm0`..`xmm3` (float arguments of internal functions; [`Xmm::reg`]).
+    pub xmm: [u128; 4],
+}
+
+impl Call {
+    /// `ecx` = `this`, the rest zero.
+    #[must_use]
+    pub fn this(ecx: u32) -> Call {
+        Call {
+            ecx,
+            ..Call::default()
+        }
+    }
+
+    /// These float arguments in `xmm0`.. (the rest zero).
+    #[must_use]
+    pub fn with_xmm(mut self, xmm: &[Xmm]) -> Call {
+        for (r, x) in self.xmm.iter_mut().zip(xmm) {
+            *r = x.reg();
+        }
+        self
+    }
 }
 
 /// One DLL in Unicorn and in Rust, on the same memory.
@@ -461,6 +493,11 @@ impl Twin {
         let pe = Pe::parse(&file).expect("a PE image");
         let base = pe.preferred_base;
         let mut a = ArenaMem;
+        // this thread's Unicorn instance keeps its thread block (`fs`) in
+        // the heap cleared below: a fresh one, its block allocated again
+        // by the first call (an earlier DLL loaded on this thread would
+        // otherwise leave `fs` pointing at zeroes)
+        let _ = ffx_overlay::release_thread();
         // a clean arena for the regions the tests use
         zero(&mut a, base, pe.span());
         zero(&mut a, TABLE, 4 * SLOTS);
@@ -687,6 +724,10 @@ impl Twin {
         regs.eax = c.eax;
         regs.ecx = c.ecx;
         regs.edx = c.edx;
+        regs.xmm0 = c.xmm[0].to_le_bytes();
+        regs.xmm1 = c.xmm[1].to_le_bytes();
+        regs.xmm2 = c.xmm[2].to_le_bytes();
+        regs.xmm3 = c.xmm[3].to_le_bytes();
         let mut host = OrigHost {
             shared: &mut self.shared,
             calls: Vec::new(),
@@ -722,6 +763,7 @@ impl Twin {
             eax: c.eax,
             ecx: c.ecx,
             edx: c.edx,
+            xmm: c.xmm,
         };
         let img = self.img.clone();
         let mut g = PortGame {
@@ -759,11 +801,19 @@ impl Twin {
             ),
             (a, b) => panic!("{}: {at:#010x} st0 {a:?} vs {b:?}", self.name),
         }
+        if let Some(x) = r.xmm0 {
+            let o0 = u128::from_le_bytes(o.xmm0);
+            assert!(
+                x.is_in(o0),
+                "{}: {at:#010x} xmm0: original {o0:#034x}, port {x:x?}",
+                self.name
+            );
+        }
         self.compare_memory(at);
         r
     }
 
-    fn compare_calls(&self, at: u32, o: &[CallOut], p: &[CallOut]) {
+    pub fn compare_calls(&self, at: u32, o: &[CallOut], p: &[CallOut]) {
         let n = o.len().min(p.len());
         for (i, (a, b)) in o.iter().zip(p).enumerate() {
             assert_eq!(
@@ -772,6 +822,15 @@ impl Twin {
                 "{}: {at:#010x} call-out {i}: original {a:x?}, port {b:x?}",
                 self.name
             );
+            // `ecx` where the callee reads it (elsewhere it is whatever
+            // the overlay code left there)
+            if a.slot.is_none_or(|s| this_slots::THIS_SLOTS.contains(&s)) {
+                assert_eq!(
+                    a.ecx, b.ecx,
+                    "{}: {at:#010x} call-out {i} (slot {:?}) ecx: original {:#x}, port {:#x}",
+                    self.name, a.slot, a.ecx, b.ecx
+                );
+            }
             assert!(
                 b.args.len() <= a.args.len() && a.args[..b.args.len()] == b.args[..],
                 "{}: {at:#010x} call-out {i} (slot {:?}) arguments: original {:x?}, port {:x?}",

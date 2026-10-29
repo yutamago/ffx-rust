@@ -83,6 +83,7 @@ fn place_picks_the_slot() {
                 eax: 0,
                 ecx: 0,
                 edx: pos,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -126,6 +127,7 @@ fn scaled_camera_scales_the_rows() {
             eax: 0,
             ecx: 0x0123_4567,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,

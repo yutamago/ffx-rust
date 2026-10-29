@@ -82,6 +82,7 @@ fn tick_handler_walks_and_sets_the_clock() {
                 eax: 0xaabb_ccdd,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[CURSOR],
             Eax::Checked,

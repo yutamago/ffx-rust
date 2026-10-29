@@ -27,6 +27,7 @@ fn reset_record() {
             eax: 1,
             ecx: this,
             edx: 2,
+            ..Call::default()
         },
         &[],
         Eax::Checked,
@@ -58,6 +59,7 @@ fn pool_take() {
                 eax: 0x99,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

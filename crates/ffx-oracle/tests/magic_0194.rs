@@ -44,7 +44,12 @@ fn wrapper_passes_its_callbacks_and_the_argument() {
     for (eax, ecx) in [(0u32, 0u32), (0x1234, 0x77)] {
         t.check_entry(
             t.at(0x1230),
-            Call { eax, ecx, edx: 9 },
+            Call {
+                eax,
+                ecx,
+                edx: 9,
+                ..Call::default()
+            },
             &[obj],
             Eax::Checked,
         );
@@ -55,6 +60,7 @@ fn wrapper_passes_its_callbacks_and_the_argument() {
         eax: 0x55,
         ecx: 3,
         edx: 4,
+        ..Call::default()
     };
     t.check_entry(t.at(0x1050), entry, &[obj], Eax::Checked);
     let ctx = t.img.word(t.at(0x16d0) + 0x39);

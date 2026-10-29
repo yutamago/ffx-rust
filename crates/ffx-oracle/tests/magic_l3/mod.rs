@@ -129,6 +129,7 @@ pub fn start_up(t: &mut Twin, f: u32, setup_call: u32, n715: usize, shutdown: Op
                 eax: 0x1234,
                 ecx: 0x77,
                 edx: 0x99,
+                ..Call::default()
             },
             &[0x00ab_cdef, 0x0102_0304],
             Eax::Checked,

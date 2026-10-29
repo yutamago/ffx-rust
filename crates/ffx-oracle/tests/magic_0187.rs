@@ -58,6 +58,7 @@ fn wrappers_pass_their_callbacks_and_the_argument() {
         eax: 0x55,
         ecx: 3,
         edx: 4,
+        ..Call::default()
     };
     for rva in [0x1000, 0x1050, 0x10a0, 0x1170, 0x10f0, 0x1210, 0x11d0] {
         t.check_entry(t.at(rva), entry, &[obj], Eax::Checked);

@@ -57,6 +57,7 @@ fn reset_state_writes_the_block() {
             eax: 0,
             ecx: this,
             edx: 0,
+            ..Call::default()
         },
         &[0x1111, 0x1000_2130],
         Eax::Junk,

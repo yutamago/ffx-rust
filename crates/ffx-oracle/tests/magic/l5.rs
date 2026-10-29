@@ -79,6 +79,7 @@ pub fn boot_cases(t: &mut Twin, f: u32, ops: (u32, u32, u32, u32)) {
                 eax: 0,
                 ecx: 0x77,
                 edx: 0,
+                ..Call::default()
             },
             &[0x00ab_cdef, 0x1234],
             Eax::Checked,
@@ -100,6 +101,7 @@ pub fn shutdown_cases(t: &mut Twin, f: u32) {
                 eax: 0x3333,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

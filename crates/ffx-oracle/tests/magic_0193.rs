@@ -42,6 +42,7 @@ fn copies_of_the_bound_ports() {
         eax: 0x55,
         ecx: 3,
         edx: 4,
+        ..Call::default()
     };
     t.check_entry(t.at(0x1050), entry, &[obj], Eax::Checked);
     t.check_entry(t.at(0x1610), entry, &[obj], Eax::Checked);

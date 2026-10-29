@@ -35,6 +35,7 @@ fn this_call(c: u32) -> Call {
         eax: 0x1111,
         ecx: c,
         edx: 0x2222,
+        ..Call::default()
     }
 }
 

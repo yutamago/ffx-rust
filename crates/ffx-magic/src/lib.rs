@@ -89,14 +89,56 @@ impl std::fmt::Display for PeError {
 
 impl std::error::Error for PeError {}
 
-/// What a call into the game returned: `eax`, `edx` and a float left in
-/// ST0. The game runs x87 at 53-bit precision (control word 0x027f), so
-/// an ST0 result is exact as an `f64`.
+/// What a call into the game returned: `eax`, `edx`, a float left in
+/// ST0 and `xmm0` as the callee left it (a float returned there, by the
+/// few functions that use SSE results). The game runs x87 at 53-bit
+/// precision (control word 0x027f), so an ST0 result is exact as an
+/// `f64`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Out {
     pub eax: u32,
     pub edx: u32,
     pub st0: Option<f64>,
+    pub xmm0: u128,
+}
+
+/// A float in the low lane of an SSE register (what a caller reads of a
+/// `movss`/`movsd` result), as bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Xmm {
+    F32(u32),
+    F64(u64),
+}
+
+impl Xmm {
+    #[must_use]
+    pub fn f32(x: f32) -> Xmm {
+        Xmm::F32(x.to_bits())
+    }
+
+    #[must_use]
+    pub fn f64(x: f64) -> Xmm {
+        Xmm::F64(x.to_bits())
+    }
+
+    /// A register holding this value in its low lane, the rest zero.
+    #[must_use]
+    pub fn reg(self) -> u128 {
+        match self {
+            Xmm::F32(b) => u128::from(b),
+            Xmm::F64(b) => u128::from(b),
+        }
+    }
+
+    /// Whether the low lane of `reg` holds this value, bit for bit (the
+    /// lanes above it are not part of the result).
+    #[must_use]
+    pub fn is_in(self, reg: u128) -> bool {
+        match self {
+            Xmm::F32(b) => reg as u32 == b,
+            Xmm::F64(b) => reg as u64 == b,
+        }
+    }
 }
 
 /// The `_libm_sse2_*_precise` imports (`xmm0` in, `xmm0` out).
@@ -127,7 +169,9 @@ pub trait Game: Mem {
 
 /// A call into overlay code: the address called, `esp` at the return
 /// address (the stack arguments above it) and the registers a port may
-/// read (register arguments; `eax` for code that returns it untouched).
+/// read (register arguments; `eax` for code that returns it untouched;
+/// `xmm0`..`xmm3` for the float arguments LTCG passes the overlays'
+/// internal functions there).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Frame {
     pub at: u32,
@@ -135,6 +179,7 @@ pub struct Frame {
     pub eax: u32,
     pub ecx: u32,
     pub edx: u32,
+    pub xmm: [u128; 4],
 }
 
 impl Frame {
@@ -142,10 +187,23 @@ impl Frame {
     pub fn arg(&self, m: &impl Mem, i: u32) -> u32 {
         m.read::<u32>(self.esp + 4 + 4 * i)
     }
+
+    /// The `f32` in the low lane of `xmm<i>`.
+    #[must_use]
+    pub fn xmm_f32(&self, i: usize) -> f32 {
+        f32::from_bits(self.xmm[i] as u32)
+    }
+
+    /// The `f64` in the low lane of `xmm<i>`.
+    #[must_use]
+    pub fn xmm_f64(&self, i: usize) -> f64 {
+        f64::from_bits(self.xmm[i] as u64)
+    }
 }
 
-/// What a port leaves for its caller: `eax`, `edx`, a float in ST0 and
-/// the argument bytes it popped (`ret n`; 0 for cdecl). Or a tail jump:
+/// What a port leaves for its caller: `eax`, `edx`, a float in ST0 or in
+/// `xmm0` (an internal function's SSE result) and the argument bytes it
+/// popped (`ret n`; 0 for cdecl). Or a tail jump:
 /// `jump` is where the original jumps with the caller's stack as it was
 /// at the entry (`jmp eax` with eax = the target); the host continues
 /// there and the target returns to the caller.
@@ -154,6 +212,7 @@ pub struct Ret {
     pub eax: u32,
     pub edx: u32,
     pub st0: Option<f64>,
+    pub xmm0: Option<Xmm>,
     pub pops: u32,
     pub jump: Option<u32>,
 }
@@ -164,6 +223,16 @@ impl Ret {
     pub fn eax(eax: u32) -> Ret {
         Ret {
             eax,
+            ..Ret::default()
+        }
+    }
+
+    /// A float returned in `xmm0`, `eax` as the original leaves it.
+    #[must_use]
+    pub fn xmm0(x: Xmm, eax: u32) -> Ret {
+        Ret {
+            eax,
+            xmm0: Some(x),
             ..Ret::default()
         }
     }

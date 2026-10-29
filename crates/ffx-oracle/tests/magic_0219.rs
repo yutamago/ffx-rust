@@ -186,6 +186,7 @@ fn start(t: &mut Twin, n: u32, alt: u32) {
             eax: 0,
             ecx: 0x55,
             edx: 0,
+            ..Call::default()
         },
         &[0x00ab_c000],
         Eax::Checked,
@@ -245,6 +246,7 @@ fn update(t: &mut Twin) {
             eax: 0,
             ecx: 0x99,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,
@@ -432,6 +434,7 @@ fn list_primitives() {
             eax: 0,
             ecx: list,
             edx: item,
+            ..Call::default()
         };
         t.check(rm, c, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::l5_objhost::list_remove(
@@ -445,6 +448,7 @@ fn list_primitives() {
             eax: 0,
             ecx: list,
             edx: 0,
+            ..Call::default()
         };
         t.check(pop, c, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::l5_objhost::list_pop_tail(g, img, fr.at, fr.ecx))
@@ -457,6 +461,7 @@ fn list_primitives() {
             eax: 0,
             ecx: l,
             edx: 0,
+            ..Call::default()
         };
         t.check(t.at(0x18f0), c, &[], Eax::Checked, |g, _, fr| {
             ffx_magic::Ret::eax(ffx_magic::l5_objhost::list_cur(g, fr.ecx))
@@ -534,6 +539,7 @@ fn tasks_and_steps() {
             eax: 0,
             ecx: u32::from(group),
             edx: 0,
+            ..Call::default()
         };
         t.check(rg, c, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::l5_objhost::run_group(
@@ -568,6 +574,7 @@ fn object_block() {
             eax: 0,
             ecx: 0x00ab_c000,
             edx: 0,
+            ..Call::default()
         };
         t.check(t.at(0x14b0), c, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(ffx_magic::l5_objhost::obj_block_init(g, img, fr.at, fr.ecx))
@@ -601,6 +608,7 @@ fn object_script() {
             eax: 0,
             ecx: SCRIPT,
             edx: 0,
+            ..Call::default()
         };
         t.check(t.at(0x1530), c, &[], Eax::Junk, |g, img, fr| {
             ffx_magic::l5_objhost::obj_script(g, img, fr.at, fr.ecx);

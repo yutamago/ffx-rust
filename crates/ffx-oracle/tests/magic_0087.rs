@@ -155,6 +155,7 @@ fn visit_nodes_all_paths() {
                         eax,
                         ecx: GROUP,
                         edx: 0,
+                        ..Call::default()
                     },
                     &[],
                     Eax::Checked,
@@ -177,6 +178,7 @@ fn visit_thunk_jumps_into_the_walk() {
                 eax: 0x0bad_f00d,
                 ecx: 0x1111,
                 edx: 0x2222,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -188,6 +190,7 @@ fn visit_thunk_jumps_into_the_walk() {
                 eax: 0x0bad_f00d,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -209,6 +212,7 @@ fn visit_nodes_vu0_all_paths() {
                     eax: 0x7777_0001,
                     ecx: GROUP,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Checked,
@@ -230,6 +234,7 @@ fn visit_thunk_vu0_jumps_into_the_walk() {
                 eax: 0x3131,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -251,6 +256,7 @@ fn visit_slot268_all_paths() {
                     eax: 0x2680_0009,
                     ecx: GROUP,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Checked,
@@ -272,6 +278,7 @@ fn visit_thunk_slot268_jumps_into_the_walk() {
                 eax: 0x4141,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -303,6 +310,7 @@ fn visit_plain_gated_and_add_float() {
                             eax,
                             ecx: 0,
                             edx: 0,
+                            ..Call::default()
                         },
                         &[GROUP],
                         Eax::Checked,
@@ -316,6 +324,7 @@ fn visit_plain_gated_and_add_float() {
                             eax,
                             ecx: 0,
                             edx: 0,
+                            ..Call::default()
                         },
                         &[GROUP],
                         Eax::Checked,
@@ -335,6 +344,7 @@ fn visit_plain_gated_and_add_float() {
                 eax: 0x3400_0001,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -362,6 +372,7 @@ fn unlink_list_links_the_node_to_itself() {
                 eax: 0x3520_0001,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -390,6 +401,7 @@ fn flag_calls_pass_the_node_or_the_pointer() {
                     eax: 0x5f70_0001,
                     ecx: 0,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[GROUP],
                 Eax::Checked,
@@ -402,6 +414,7 @@ fn flag_calls_pass_the_node_or_the_pointer() {
                     eax: 0x5f20_0001,
                     ecx: 0,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[GROUP],
                 Eax::Checked,
@@ -429,6 +442,7 @@ fn free_tail_stores_and_jumps_to_slot_713() {
                 eax: 0x3c20_0001,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -467,6 +481,7 @@ fn node_insert_links_the_node_into_its_parent() {
                 eax: 0,
                 ecx: GROUP,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -518,6 +533,7 @@ fn unlink_takes_the_node_out_of_its_list() {
                 eax: 0x4444,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[GROUP],
             Eax::Checked,
@@ -533,6 +549,7 @@ fn unlink_takes_the_node_out_of_its_list() {
             eax: 0x4444,
             ecx: 0,
             edx: 0,
+            ..Call::default()
         },
         &[GROUP],
         Eax::Checked,
@@ -551,6 +568,7 @@ fn zero_ret_returns_zero() {
                 eax,
                 ecx: 3,
                 edx: 4,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -584,6 +602,7 @@ fn visit_children_calls_the_children_then_adds_their_vectors() {
                     eax: 0x5e70_0001,
                     ecx: GROUP,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Checked,
@@ -598,6 +617,7 @@ fn visit_children_calls_the_children_then_adds_their_vectors() {
                     eax: 0x5f10_0001,
                     ecx: 0,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[GROUP],
                 Eax::Checked,
@@ -633,6 +653,7 @@ fn free_then_unlink_frees_and_leaves_the_parent() {
                 eax: 0x3c70_0001,
                 ecx: GROUP,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -651,6 +672,7 @@ fn free_then_unlink_frees_and_leaves_the_parent() {
             eax: 0x3c70_0002,
             ecx: GROUP,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,

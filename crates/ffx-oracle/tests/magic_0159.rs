@@ -66,6 +66,7 @@ fn chr_fade() {
                 eax: 7,
                 ecx: this,
                 edx: 9,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -112,6 +113,7 @@ fn list_unlink_current() {
                 eax: 0xeeee,
                 ecx: 1,
                 edx: 2,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -161,6 +163,7 @@ fn facing_angle() {
                 eax: 0,
                 ecx: 0x3f00_0000,
                 edx: out,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

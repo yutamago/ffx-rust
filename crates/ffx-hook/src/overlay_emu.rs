@@ -263,6 +263,7 @@ impl ffx_magic::Game for HookGame {
             eax: r.eax,
             edx: r.edx,
             st0: (r.st_len > 0).then(|| f80_to_f64(&r.st[0])),
+            xmm0: u128::from_le_bytes(r.xmm0),
         }
     }
     fn rand(&mut self) -> u32 {
@@ -302,6 +303,9 @@ fn enter_rust(fr: &mut EnterFrame, img: &ffx_magic::Image, i: usize) {
         eax: fr.eax,
         ecx: fr.ecx,
         edx: fr.edx,
+        // the game calls overlay entries cdecl or thiscall: no float
+        // arguments in SSE registers
+        xmm: [0; 4],
     };
     let r = f(&mut HookGame, img, &frame);
     if let Ok(mut c) = RUST_CALLS.lock() {
@@ -320,6 +324,11 @@ fn enter_rust(fr: &mut EnterFrame, img: &ffx_magic::Image, i: usize) {
         return;
     }
     fr.ret_slot = fr.s + r.pops;
+    if let Some(x) = r.xmm0 {
+        let b = x.reg() as u64;
+        fr.has_xmm0 = 1;
+        fr.xmm0 = [b as u32, (b >> 32) as u32];
+    }
     match r.st0 {
         Some(x) => {
             fr.has_st0 = 1;
@@ -586,7 +595,10 @@ struct EnterFrame {
     fpu_cw: u16,
     _pad2: u16,
     mxcsr: u32,
-    _pad3: [u32; 3],
+    /// A port's float result in `xmm0` (`Ret::xmm0`): its low 64 bits,
+    /// loaded with `movq` when `has_xmm0` is set (xmm0 is volatile).
+    has_xmm0: u32,
+    xmm0: [u32; 2],
     target: u32,
     ret: u32,
 }
@@ -635,6 +647,10 @@ unsafe extern "C" fn enter_thunk() {
         "je 3f",
         "fld tbyte ptr [ebx + 44]",
         "3:",
+        "cmp dword ptr [ebx + 64], 0",
+        "je 4f",
+        "movq xmm0, qword ptr [ebx + 68]",
+        "4:",
         "mov eax, [ebx + 80]",
         "mov ecx, [ebx + 36]",
         "mov [ecx], eax",
@@ -683,6 +699,8 @@ thread_local! {
 extern "C" fn enter(f: *mut EnterFrame) {
     // SAFETY: the thunk's frame.
     let fr = unsafe { &mut *f };
+    // the thunk's answer area starts as junk
+    fr.has_xmm0 = 0;
     let at = fr.s;
     let regs = Regs {
         eax: fr.eax,
@@ -780,9 +798,11 @@ struct OutFrame {
     _pad2: u16,            // 246
     has_st_out: u32,       // 248
     args_after: [u32; 32], // 252
+    xmm2: [u8; 16],        // 380
+    xmm3: [u8; 16],        // 396
 }
 
-const _: () = assert!(std::mem::size_of::<OutFrame>() == 380);
+const _: () = assert!(std::mem::size_of::<OutFrame>() == 412);
 const ARGS: u32 = 32;
 
 /// Calls `frame.target` natively with the overlay's registers, its 32
@@ -810,6 +830,8 @@ unsafe extern "C" fn call_native(frame: *mut OutFrame) {
         "ldmxcsr dword ptr [ebx + 36]",
         "movdqu xmm0, xmmword ptr [ebx + 64]",
         "movdqu xmm1, xmmword ptr [ebx + 80]",
+        "movdqu xmm2, xmmword ptr [ebx + 380]",
+        "movdqu xmm3, xmmword ptr [ebx + 396]",
         "fnstsw ax",
         "mov [ebx + 232], ax",
         "cmp dword ptr [ebx + 40], 2",
@@ -836,6 +858,8 @@ unsafe extern "C" fn call_native(frame: *mut OutFrame) {
         "mov [ebx + 228], esp",
         "movdqu xmmword ptr [ebx + 64], xmm0",
         "movdqu xmmword ptr [ebx + 80], xmm1",
+        "movdqu xmmword ptr [ebx + 380], xmm2",
+        "movdqu xmmword ptr [ebx + 396], xmm3",
         "fnstcw word ptr [ebx + 32]",
         "stmxcsr dword ptr [ebx + 36]",
         "fnstsw ax",
@@ -891,6 +915,8 @@ fn native(target: u32, regs: &mut Regs) {
         _pad2: 0,
         has_st_out: 0,
         args_after: [0; 32],
+        xmm2: regs.xmm2,
+        xmm3: regs.xmm3,
     };
     let at = regs.esp + 4;
     for (i, a) in (0u32..).zip(f.args.iter_mut()) {
@@ -919,6 +945,8 @@ fn native(target: u32, regs: &mut Regs) {
     regs.mxcsr = f.mxcsr;
     regs.xmm0 = f.xmm0;
     regs.xmm1 = f.xmm1;
+    regs.xmm2 = f.xmm2;
+    regs.xmm3 = f.xmm3;
     regs.st_len = u8::from(f.has_st_out != 0);
     regs.st[0] = f.st_out;
 }

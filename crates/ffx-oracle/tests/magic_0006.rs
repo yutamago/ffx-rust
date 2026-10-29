@@ -72,6 +72,7 @@ fn follow_moves_the_node_and_reports_it() {
                 eax: 0x1122_3344,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[CURSOR],
             Eax::Checked,

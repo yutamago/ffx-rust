@@ -31,6 +31,7 @@ fn pick_reads_the_default_or_the_table() {
                 eax: 0x5555_5555,
                 ecx: index,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -50,6 +51,7 @@ fn reset_state_with_edx() {
             eax: 0,
             ecx: this,
             edx: 0x00ed_0123,
+            ..Call::default()
         },
         &[0x1111, 0x1000_2270],
         // eax is the 0x8000 the u16 store leaves (no caller reads it)

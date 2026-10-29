@@ -127,6 +127,7 @@ pub fn check(t: &mut Twin, rva: u32, var: Var) {
                     eax,
                     ecx,
                     edx: 0x77,
+                    ..Call::default()
                 },
                 &[obj],
                 Eax::Checked,

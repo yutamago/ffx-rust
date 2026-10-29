@@ -94,6 +94,7 @@ fn start_up_both_data_choices() {
                 eax: 0x1234,
                 ecx: 0x77,
                 edx: 0,
+                ..Call::default()
             },
             &[0x00ab_cdef],
             Eax::Checked,

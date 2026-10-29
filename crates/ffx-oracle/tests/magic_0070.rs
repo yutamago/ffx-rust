@@ -43,6 +43,7 @@ fn node_inits() {
                 eax: 0,
                 ecx: args,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -55,6 +56,7 @@ fn node_inits() {
                 eax: 0,
                 ecx: NODE,
                 edx: p,
+                ..Call::default()
             },
             &[0x00aa_0001],
             Eax::Checked,
@@ -77,6 +79,7 @@ fn node_inits() {
                 eax: 0,
                 ecx: NODE,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -106,6 +109,7 @@ fn free_part_unless_kept() {
                 eax: 0x00ea_0000,
                 ecx: part,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -226,6 +230,7 @@ fn model_state_reads_the_model() {
                 eax: 0,
                 ecx: this,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -260,6 +265,7 @@ fn show_and_hide() {
                 eax: 0,
                 ecx: this,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -365,6 +371,7 @@ fn ring_take_wraps() {
                 eax: 0,
                 ecx: req,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -422,6 +429,7 @@ fn small_model_calls() {
                     eax: 0x00ea_00ea,
                     ecx: obj,
                     edx: 0x00ed_00ed,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Checked,
@@ -442,6 +450,7 @@ fn small_model_calls() {
                 eax: 0,
                 ecx: obj,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,
@@ -458,6 +467,7 @@ fn small_model_calls() {
             eax: 0,
             ecx: 0,
             edx: v,
+            ..Call::default()
         },
         &[],
         Eax::Checked,

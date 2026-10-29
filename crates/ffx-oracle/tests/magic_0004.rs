@@ -36,6 +36,7 @@ fn node_init_links_into_the_parent() {
                 eax: 0,
                 ecx: args,
                 edx: 0,
+                ..Call::default()
             },
             &[],
             Eax::Checked,

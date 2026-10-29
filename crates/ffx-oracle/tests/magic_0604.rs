@@ -115,6 +115,7 @@ fn opu_start_run_stop() {
                     eax: 0xeeee,
                     ecx: 0x4444,
                     edx: 0,
+                    ..Call::default()
                 },
                 &[],
                 Eax::Checked,
@@ -130,6 +131,7 @@ fn opu_start_run_stop() {
             eax: 0xabcd,
             ecx: 0,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,
@@ -145,6 +147,7 @@ fn ret_keeps_eax() {
             eax: 0x1234_5678,
             ecx: 1,
             edx: 2,
+            ..Call::default()
         },
         &[7],
         Eax::Checked,
@@ -207,6 +210,7 @@ fn start_up_and_shutdown() {
                 eax: 0,
                 ecx: 0x77,
                 edx: 0,
+                ..Call::default()
             },
             &[0x00ab_cdef],
             Eax::Checked,
@@ -328,6 +332,7 @@ fn opu_part_callbacks() {
                 eax: 0x1234,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[PART],
             Eax::Checked,
@@ -360,6 +365,7 @@ fn opu_part_callbacks() {
             eax: 0x77,
             ecx: 0,
             edx: 0,
+            ..Call::default()
         },
         &[],
         Eax::Checked,
@@ -403,6 +409,7 @@ fn opu_init_data_and_env() {
                 eax: 0x99,
                 ecx: 0,
                 edx: 0,
+                ..Call::default()
             },
             &[SCRATCH + 0xd000],
             Eax::Checked,

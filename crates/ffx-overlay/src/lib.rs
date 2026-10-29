@@ -42,7 +42,7 @@ mod engine;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-pub use engine::{call, call_with};
+pub use engine::{call, call_with, release_thread};
 pub use ffx_magic::pe::{IMAGE_ALIGN, Import, Pe, Section};
 
 /// Something went wrong loading or running overlay code.
@@ -97,9 +97,13 @@ pub struct Regs {
     /// x87 control word (the game runs at 0x027f) and SSE control.
     pub fpu_cw: u16,
     pub mxcsr: u32,
-    /// `xmm0`/`xmm1` (the `_libm_sse2_*` functions' argument and result).
+    /// `xmm0`..`xmm3`: the `_libm_sse2_*` functions' argument and result,
+    /// and the float arguments (and `xmm0` result) the overlays' LTCG
+    /// internal functions pass in them.
     pub xmm0: [u8; 16],
     pub xmm1: [u8; 16],
+    pub xmm2: [u8; 16],
+    pub xmm3: [u8; 16],
     /// The x87 stack, `st[0]` = ST0 (80-bit values), `st_len` of them:
     /// a float result on the way out, `_CIatan2`'s two arguments on the
     /// way in. Empty at an ordinary call.

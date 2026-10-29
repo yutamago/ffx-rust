@@ -41,6 +41,7 @@ fn copies_of_the_bound_ports() {
         eax: 0x55,
         ecx: 3,
         edx: 4,
+        ..Call::default()
     };
     t.check_entry(t.at(0x1060), entry, &[obj], Eax::Checked);
     // the effect reads the context global its operand names (+0x39)
