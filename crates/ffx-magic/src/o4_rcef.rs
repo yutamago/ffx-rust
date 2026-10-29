@@ -187,3 +187,116 @@ pub const CREATE_TASK_WAIT_0522_11B0: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `(obj)` (`magic_0357` 0x100018e0, 198 bytes; 8 copies): the object
+/// attached (slot 441 or 442, the copy's `[eax + 0x6e4]`/`0x6e8` at
+/// `+0x1c`: `(obj, V, A)`, `V` the word at `*G + D` (`D` at `+0x10`,
+/// `G` at `+0x04`), `A` the `push imm8` at `+0x0d`), its mode set
+/// (`rcefObjSetMode(obj, M)`, slot 443, `M` at `+0x28`), eight `mov dword
+/// [obj + d], imm32` (from `+0x42`, 10 bytes each), `rcefMainSetPar(P,
+/// obj, 0, B)` (slot 440, `P` the game word `*G` read again, `B` at
+/// `+0x38`), `rcefTaskSetSeq(obj, cb)` (450, `+0xa0`) and
+/// `rcefTaskCallSeq(obj, cb2)` (449, `+0xb3`), each call with the earlier
+/// ones' words still on the stack after its own. Returns slot 449's
+/// `eax`.
+pub fn attach_set_par<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let p = g.read::<u32>(w(0x04));
+    let obj = fr.arg(g, 0);
+    let a = disp8(img, f + 0x0d);
+    let v = g.read::<u32>(p.wrapping_add(w(0x10)));
+    // mov eax, [eax + 4 * slot]
+    let attach = slot_target(g, w(0x15), w(0x1c) / 4);
+    g.call(attach, fr.ecx, &[obj, v, a]);
+    let mode = disp8(img, f + 0x28);
+    let s443 = slot_target(g, w(0x23), 443);
+    g.call(s443, fr.ecx, &[obj, mode, obj, v, a]);
+    let b = disp8(img, f + 0x38);
+    let p2 = g.read::<u32>(w(0x3e));
+    for k in 0..8 {
+        // c7 86 disp32 imm32
+        let insn = f + 0x42 + 10 * k;
+        g.write::<u32>(obj.wrapping_add(img.word(insn + 2)), img.word(insn + 6));
+    }
+    let s440 = slot_target(g, w(0x33), 440);
+    g.call(s440, fr.ecx, &[p2, obj, 0, b, obj, mode, obj, v, a]);
+    let (cb, cb2) = (w(0xa0), w(0xb3));
+    let s450 = slot_target(g, w(0x9b), 450);
+    g.call(
+        s450,
+        fr.ecx,
+        &[obj, cb, p2, obj, 0, b, obj, mode, obj, v, a],
+    );
+    let s449 = slot_target(g, w(0xae), 449);
+    let r = g.call(
+        s449,
+        fr.ecx,
+        &[obj, cb2, obj, cb, p2, obj, 0, b, obj, mode, obj, v, a],
+    );
+    Ret::eax(r.eax)
+}
+
+/// [`attach_set_par`] in `magic_0357` (0x100018e0, 198 bytes).
+pub const ATTACH_SET_PAR_0357_18E0: Sig = Sig {
+    len: 198,
+    hash: 0x0456_dd01_35f2_33ea,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0359` (0x10001820, 198 bytes).
+pub const ATTACH_SET_PAR_0359_1820: Sig = Sig {
+    len: 198,
+    hash: 0xb9c8_ce70_27af_7823,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0361` (0x10001be0, 198 bytes).
+pub const ATTACH_SET_PAR_0361_1BE0: Sig = Sig {
+    len: 198,
+    hash: 0xd595_d3d6_36ca_2afa,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0416` (0x10001710, 198 bytes).
+pub const ATTACH_SET_PAR_0416_1710: Sig = Sig {
+    len: 198,
+    hash: 0x7797_c0f1_bf3c_da54,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0521` (0x10001200, 198 bytes).
+pub const ATTACH_SET_PAR_0521_1200: Sig = Sig {
+    len: 198,
+    hash: 0x3c77_ac73_c0e4_26f7,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0521` (0x100012d0, 198 bytes).
+pub const ATTACH_SET_PAR_0521_12D0: Sig = Sig {
+    len: 198,
+    hash: 0x13d8_a6c5_15c4_b1fa,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0522` (0x10001290, 198 bytes).
+pub const ATTACH_SET_PAR_0522_1290: Sig = Sig {
+    len: 198,
+    hash: 0x627c_dfda_e21e_a78e,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_set_par`] in `magic_0526` (0x10001380, 198 bytes).
+pub const ATTACH_SET_PAR_0526_1380: Sig = Sig {
+    len: 198,
+    hash: 0x4dd5_1654_5208_acc2,
+    calls: &[],
+    imports: &[],
+};

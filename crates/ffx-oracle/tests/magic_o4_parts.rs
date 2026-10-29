@@ -3,6 +3,8 @@
 //! and `DllMain` of each of those DLLs against every port bound in it.
 //! Needs `FFX_GAME_DIR`.
 
+#![allow(clippy::many_single_char_names)]
+
 mod magic;
 mod magic_l3;
 #[path = "magic/o4.rs"]

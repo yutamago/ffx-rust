@@ -3,6 +3,8 @@
 //! every DLL's own copy, and `DllMain` of each of those DLLs. Needs
 //! `FFX_GAME_DIR`.
 
+#![allow(clippy::many_single_char_names)]
+
 mod magic;
 mod magic_l3;
 #[path = "magic/o4.rs"]
@@ -75,13 +77,62 @@ fn create_task_wait_in_every_copy() {
     }
 }
 
+const ATTACH_SET_PAR: &[(u16, u32)] = &[
+    (357, 0x18e0),
+    (359, 0x1820),
+    (361, 0x1be0),
+    (416, 0x1710),
+    (521, 0x1200),
+    (521, 0x12d0),
+    (522, 0x1290),
+    (526, 0x1380),
+];
+
+#[test]
+fn attach_set_par_in_every_copy() {
+    let list = copies("o4 attach set par", ATTACH_SET_PAR);
+    for n in dlls(&[ATTACH_SET_PAR]) {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        let moved = SCRATCH + 0x5000;
+        for s in [441u32, 442] {
+            rec(&mut t, s, 3, move |_, a| a[1] ^ s);
+        }
+        rec(&mut t, 440, 9, |_, a| a[0] ^ 0x440);
+        rec(&mut t, 450, 11, |_, a| a[1] ^ 0x450);
+        rec(&mut t, 449, 13, |_, a| a[1] ^ 0x449_0000);
+        for &(_, rva) in list.iter().filter(|c| c.0 == n) {
+            let f = t.at(rva);
+            let g = t.img.word(f + 0x04);
+            // slot 443 moves the game object: the set-par call reads it again
+            rec(&mut t, 443, 5, move |m, a| {
+                m.w32(g, moved);
+                a[1] ^ 0x443
+            });
+            let d = t.img.word(f + 0x10);
+            for k in 0..2u32 {
+                let obj = SCRATCH + 0x2000 + 0x1000 * k;
+                let p = SCRATCH + 0x4000 + 0x400 * k;
+                t.set_u32(g, p);
+                t.set_u32(p + d, 0x1980_0000 + rva + k);
+                for i in 0..8 {
+                    let field = t.img.word(f + 0x42 + 10 * i + 2);
+                    t.set_u32(obj + field, 0x5a5a_0000 + i);
+                }
+                t.check_entry(f, Call::this(0x4444), &[obj], Eax::Checked);
+            }
+        }
+    }
+}
+
 #[test]
 fn dll_main_writes_only_crt_state() {
-    for n in dlls(&[SEQ_WAIT_447, CREATE_TASK_WAIT]) {
+    for n in dlls(&[SEQ_WAIT_447, CREATE_TASK_WAIT, ATTACH_SET_PAR]) {
         magic_l3::dll_main(n);
     }
 }
 
 // Mutation testing (M5 magic round 4, tools/mutants.py): 15 mutants of
 // `o4_rcef` and the generalised wait time of `rcef::create_task_wait`,
-// all killed.
+// all killed; `attach_set_par`: 10 more, all killed.

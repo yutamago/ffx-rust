@@ -1,6 +1,8 @@
 //! The effect start-ups of `ffx_magic::o4_effect` against every DLL's
 //! own copy, and `DllMain` of each of those DLLs. Needs `FFX_GAME_DIR`.
 
+#![allow(clippy::many_single_char_names)]
+
 mod magic;
 mod magic_l3;
 #[path = "magic/o4.rs"]

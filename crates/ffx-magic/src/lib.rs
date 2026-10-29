@@ -77,6 +77,8 @@ pub mod s3_wrap;
 pub mod o4_effect;
 pub mod o4_parts;
 pub mod o4_rcef;
+pub mod o4_state;
+pub mod o4_steps;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -1017,6 +1019,42 @@ ports! {
     "o4 start turned 0589@1e00" => o4_effect::START_TURNED_0589_1E00, o4_effect::start_turned;
     "o4 start turned 0598@7470" => o4_effect::START_TURNED_0598_7470, o4_effect::start_turned;
     "o4 start turned 0605@7db0" => o4_effect::START_TURNED_0605_7DB0, o4_effect::start_turned;
+    "o4 attach set par 0357@18e0" => o4_rcef::ATTACH_SET_PAR_0357_18E0, o4_rcef::attach_set_par;
+    "o4 attach set par 0359@1820" => o4_rcef::ATTACH_SET_PAR_0359_1820, o4_rcef::attach_set_par;
+    "o4 attach set par 0361@1be0" => o4_rcef::ATTACH_SET_PAR_0361_1BE0, o4_rcef::attach_set_par;
+    "o4 attach set par 0416@1710" => o4_rcef::ATTACH_SET_PAR_0416_1710, o4_rcef::attach_set_par;
+    "o4 attach set par 0521@1200" => o4_rcef::ATTACH_SET_PAR_0521_1200, o4_rcef::attach_set_par;
+    "o4 attach set par 0521@12d0" => o4_rcef::ATTACH_SET_PAR_0521_12D0, o4_rcef::attach_set_par;
+    "o4 attach set par 0522@1290" => o4_rcef::ATTACH_SET_PAR_0522_1290, o4_rcef::attach_set_par;
+    "o4 attach set par 0526@1380" => o4_rcef::ATTACH_SET_PAR_0526_1380, o4_rcef::attach_set_par;
+    "o4 task step (no pause) 0162@2190" => o4_steps::STEP_PLAIN_0162_2190, ob_summon::step_plain;
+    "o4 task step (no pause) 0348@65c0" => o4_steps::STEP_PLAIN_0348_65C0, ob_summon::step_plain;
+    "o4 task step (no pause) 0350@5a10" => o4_steps::STEP_PLAIN_0350_5A10, ob_summon::step_plain;
+    "o4 task step (no pause) 0352@4c90" => o4_steps::STEP_PLAIN_0352_4C90, ob_summon::step_plain;
+    "o4 task step (no pause) 0353@1940" => o4_steps::STEP_PLAIN_0353_1940, ob_summon::step_plain;
+    "o4 task step (no pause) 0392@1460" => o4_steps::STEP_PLAIN_0392_1460, ob_summon::step_plain;
+    "o4 step then register 0165@1760" => o4_steps::STEP_THEN_REGISTER_0165_1760, o4_steps::step_then_register;
+    "o4 step then register 0307@15a0" => o4_steps::STEP_THEN_REGISTER_0307_15A0, o4_steps::step_then_register;
+    "o4 step then register 0605@6ef0" => o4_steps::STEP_THEN_REGISTER_0605_6EF0, o4_steps::step_then_register;
+    "o4 step then register 0612@7390" => o4_steps::STEP_THEN_REGISTER_0612_7390, o4_steps::step_then_register;
+    "o4 step then register 0688@3a90" => o4_steps::STEP_THEN_REGISTER_0688_3A90, o4_steps::step_then_register;
+    "o4 release node 0162@4120" => o4_steps::RELEASE_NODE_0162_4120, o4_steps::release_node;
+    "o4 release node 0165@3050" => o4_steps::RELEASE_NODE_0165_3050, o4_steps::release_node;
+    "o4 release node 0430@3190" => o4_steps::RELEASE_NODE_0430_3190, o4_steps::release_node;
+    "o4 release node 0431@4360" => o4_steps::RELEASE_NODE_0431_4360, o4_steps::release_node;
+    "o4 release node 0586@3d30" => o4_steps::RELEASE_NODE_0586_3D30, o4_steps::release_node;
+    "o4 release node 0587@3af0" => o4_steps::RELEASE_NODE_0587_3AF0, o4_steps::release_node;
+    "o4 release node 0588@2580" => o4_steps::RELEASE_NODE_0588_2580, o4_steps::release_node;
+    "o4 sub const 0168@33a0" => o4_steps::SUB_CONST_0168_33A0, o4_steps::sub_const;
+    "o4 sub const 0430@3860" => o4_steps::SUB_CONST_0430_3860, o4_steps::sub_const;
+    "o4 sub const 0568@2820" => o4_steps::SUB_CONST_0568_2820, o4_steps::sub_const;
+    "o4 sub const 0568@2dc0" => o4_steps::SUB_CONST_0568_2DC0, o4_steps::sub_const;
+    "o4 sub const 0587@2ec0" => o4_steps::SUB_CONST_0587_2EC0, o4_steps::sub_const;
+    "o4 pool node 0350@6280" => o4_steps::POOL_NODE_0350_6280, o4_steps::pool_node;
+    "o4 pool node 0353@2180" => o4_steps::POOL_NODE_0353_2180, o4_steps::pool_node;
+    "o4 pool node 0434@7a50" => o4_steps::POOL_NODE_0434_7A50, o4_steps::pool_node;
+    "o4 pool node 0610@b980" => o4_steps::POOL_NODE_0610_B980, o4_steps::pool_node;
+    "o4 pool node 0672@1860" => o4_steps::POOL_NODE_0672_1860, o4_steps::pool_node;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1277,6 +1315,74 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("key step", &s3_misc::KEY_STEP),
     ("key step (curved)", &s3_misc::KEY_STEP_CURVED),
     ("task start", &s3_misc::TASK_START),
+    (
+        "o4 state reset (arg) 0182@1a50",
+        &o4_state::RESET_STATE_ARG_0182_1A50,
+    ),
+    (
+        "o4 state reset (arg) 0197@19b0",
+        &o4_state::RESET_STATE_ARG_0197_19B0,
+    ),
+    (
+        "o4 state reset (arg) 0199@2b20",
+        &o4_state::RESET_STATE_ARG_0199_2B20,
+    ),
+    (
+        "o4 state reset (arg) 0252@1ee0",
+        &o4_state::RESET_STATE_ARG_0252_1EE0,
+    ),
+    (
+        "o4 state reset (arg) 0266@3900",
+        &o4_state::RESET_STATE_ARG_0266_3900,
+    ),
+    (
+        "o4 state reset (arg) 0311@2b40",
+        &o4_state::RESET_STATE_ARG_0311_2B40,
+    ),
+    (
+        "o4 state reset (arg) 0365@1560",
+        &o4_state::RESET_STATE_ARG_0365_1560,
+    ),
+    (
+        "o4 state reset (arg) 0447@3200",
+        &o4_state::RESET_STATE_ARG_0447_3200,
+    ),
+    (
+        "o4 state reset (arg) 0475@26c0",
+        &o4_state::RESET_STATE_ARG_0475_26C0,
+    ),
+    (
+        "o4 state reset (bare) 0245@23f0",
+        &o4_state::RESET_STATE_BARE_0245_23F0,
+    ),
+    (
+        "o4 state reset (bare) 0298@2ce0",
+        &o4_state::RESET_STATE_BARE_0298_2CE0,
+    ),
+    (
+        "o4 state reset (bare) 0308@1ec0",
+        &o4_state::RESET_STATE_BARE_0308_1EC0,
+    ),
+    (
+        "o4 state reset (bare) 0435@2790",
+        &o4_state::RESET_STATE_BARE_0435_2790,
+    ),
+    (
+        "o4 state reset (bare) 0671@2b50",
+        &o4_state::RESET_STATE_BARE_0671_2B50,
+    ),
+    (
+        "o4 state reset (edx) 0108@1af0",
+        &o4_state::RESET_STATE_EDX_0108_1AF0,
+    ),
+    (
+        "o4 state reset (edx) 0221@1af0",
+        &o4_state::RESET_STATE_EDX_0221_1AF0,
+    ),
+    (
+        "o4 state reset (edx) 0419@37c0",
+        &o4_state::RESET_STATE_EDX_0419_37C0,
+    ),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
