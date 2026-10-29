@@ -18023,6 +18023,156 @@
 0x00aebf20 function StaticInit_AtExit_00aebf20 # static initializer: atexit(0x00b04790), the destructor; no globals; name ours; static-init-a (M5)
 0x00aebf30 function StaticInit_AtExit_00aebf30 # static initializer: atexit(0x00b047a0), the destructor; no globals; name ours; static-init-a (M5)
 0x00aec9b0 function StaticInit_AtExit_00aec9b0 # static initializer: atexit(0x00b04b40), the destructor; no globals; name ours; static-init-a (M5)
+0x00aecc50 function StaticInit_PPhysicsCallbackData_00aecc50 # class descriptor "PPhysicsCallbackData" (cd_desc_set8): constructor, buffers, set8; atexit
+0x00aecd10 function StaticInit_PPhysicsCapsule_00aecd10 # class descriptor "PPhysicsCapsule" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aecdd0 function StaticInit_PPhysicsCapsuleBase_00aecdd0 # class descriptor "PPhysicsCapsuleBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aece90 function StaticInit_PPhysicsCapsuleBullet_00aece90 # class descriptor "PPhysicsCapsuleBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aecf50 function StaticInit_CtorVt_00aecf50 # no-argument constructor 0x005d_d540 on a global, flags &= ~2, its vtable, atexit
+0x00aecf80 function StaticInit_PPhysicsCharacterController_00aecf80 # class descriptor "PPhysicsCharacterController" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed040 function StaticInit_CtorVt_00aed040 # no-argument constructor 0x005d_d680 on a global, flags &= ~2, its vtable, atexit
+0x00aed070 function StaticInit_PPhysicsCharacterControllerBullet_00aed070 # class descriptor "PPhysicsCharacterControllerBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed130 function StaticInit_PPhysicsCylinder_00aed130 # class descriptor "PPhysicsCylinder" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed1f0 function StaticInit_PPhysicsCylinderBase_00aed1f0 # class descriptor "PPhysicsCylinderBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed2b0 function StaticInit_PPhysicsCylinderBullet_00aed2b0 # class descriptor "PPhysicsCylinderBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed370 function StaticInit_PPhysicsInterface_00aed370 # class descriptor "PPhysicsInterface" (cd_const_keep): constructor, buffers, keep; atexit
+0x00aed420 function StaticInit_PPhysicsInterfaceBase_00aed420 # class descriptor "PPhysicsInterfaceBase" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed4e0 function StaticInit_PPhysicsInterfaceBullet_00aed4e0 # class descriptor "PPhysicsInterfaceBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed5a0 function StaticInit_PPhysicsMaterial_00aed5a0 # class descriptor "PPhysicsMaterial" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed660 function StaticInit_PPhysicsMesh_00aed660 # class descriptor "PPhysicsMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed720 function StaticInit_PPhysicsMeshBase_00aed720 # class descriptor "PPhysicsMeshBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed7e0 function StaticInit_PPhysicsMeshBullet_00aed7e0 # class descriptor "PPhysicsMeshBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aed8a0 function StaticInit_PPhysicsModel_00aed8a0 # class descriptor "PPhysicsModel" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aed960 function StaticInit_PPhysicsPlane_00aed960 # class descriptor "PPhysicsPlane" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aeda20 function StaticInit_PPhysicsPlaneBase_00aeda20 # class descriptor "PPhysicsPlaneBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedae0 function StaticInit_PPhysicsPlaneBullet_00aedae0 # class descriptor "PPhysicsPlaneBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedba0 function StaticInit_PPhysicsRigidBody_00aedba0 # class descriptor "PPhysicsRigidBody" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedc60 function StaticInit_CtorVt_00aedc60 # no-argument constructor 0x005d_e070 on a global, flags &= ~2, its vtable, atexit
+0x00aedc90 function StaticInit_PPhysicsRigidBodyBullet_00aedc90 # class descriptor "PPhysicsRigidBodyBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedd50 function StaticInit_PPhysicsShape_00aedd50 # class descriptor "PPhysicsShape" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aede10 function StaticInit_PPhysicsShapeBase_00aede10 # class descriptor "PPhysicsShapeBase" (cd_desc_keep): constructor, buffers, keep; atexit
+0x00aedec0 function StaticInit_PPhysicsShapeBullet_00aedec0 # class descriptor "PPhysicsShapeBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aedfa0 function StaticInit_PPhysicsSphere_00aedfa0 # class descriptor "PPhysicsSphere" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee060 function StaticInit_PPhysicsSphereBase_00aee060 # class descriptor "PPhysicsSphereBase" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee120 function StaticInit_PPhysicsSphereBullet_00aee120 # class descriptor "PPhysicsSphereBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee1e0 function StaticInit_PPhysicsTaperedCapsule_00aee1e0 # class descriptor "PPhysicsTaperedCapsule" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee2a0 function StaticInit_PPhysicsTaperedCylinder_00aee2a0 # class descriptor "PPhysicsTaperedCylinder" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee360 function StaticInit_PPhysicsWorld_00aee360 # class descriptor "PPhysicsWorld" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee420 function StaticInit_PPhysicsWorldBase_00aee420 # class descriptor "PPhysicsWorldBase" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee4e0 function StaticInit_PPhysicsWorldBullet_00aee4e0 # class descriptor "PPhysicsWorldBullet" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aee5a0 function StaticInit_PRaycastResult_00aee5a0 # class descriptor "PRaycastResult" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee660 function StaticInit_ChainAppend_00aee660 # appends the object at 0x00c2_a0f4 to the chain at 0xc901a8 (before the first block at least 0xff full); atexit
+0x00aee6b0 function StaticInit_Atexit_00aee6b0 # only registers its destructor with atexit
+0x00aee6c0 function StaticInit_PAsyncProcessHeader_00aee6c0 # class descriptor "PAsyncProcessHeader" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee780 function StaticInit_PClassCallableMethodScript_00aee780 # class descriptor "PClassCallableMethodScript" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aee840 function StaticInit_CtorStore_00aee840 # constructor 0x0062_5850 on a global, its result stored in the global; atexit
+0x00aee860 function StaticInit_Ctor_00aee860 # no-argument constructor 0x0061_f1d0 on a global, then atexit
+0x00aee880 function StaticInit_PApplicationViewport_00aee880 # class descriptor "PApplicationViewport" (cd_desc_set8): constructor, buffers, set8; atexit
+0x00aee940 function StaticInit_CtorVt_00aee940 # no-argument constructor 0x0061_f310 on a global, flags &= ~2, its vtable, atexit
+0x00aee970 function StaticInit_Atexit_00aee970 # only registers its destructor with atexit
+0x00aee9d0 function StaticInit_FreeList_PMapPair_00aee9d0 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00aeea80 function StaticInit_Ctor_00aeea80 # no-argument constructor 0x0063_0f40 on a global, then atexit
+0x00aeeaf0 function StaticInit_MallocCopy_00aeeaf0 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_b6f0; atexit
+0x00aeeb40 function StaticInit_MallocCopy_00aeeb40 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_b6ec; atexit
+0x00aeeb90 function StaticInit_Atexit_00aeeb90 # only registers its destructor with atexit
+0x00aeeba0 function StaticInit_CtorArg_00aeeba0 # constructor 0x0063_8240 on a global with one argument (0x32); atexit
+0x00aeebc0 function StaticInit_ImportStore_00aeebc0 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_b6d0; atexit
+0x00aeec30 function StaticInit_CutBuffer_00aeec30 # render pass type "CutBuffer" built on its global (name, flag 0); atexit
+0x00aeec50 function StaticInit_MallocCopy_00aeec50 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_b9e4; atexit
+0x00aeeca0 function StaticInit_MallocCopy_00aeeca0 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_b9e0; atexit
+0x00aeecf0 function StaticInit_ScissorPass_00aeecf0 # render pass type "ScissorPass" built on its global (name, flag 0); atexit
+0x00aeed60 function StaticInit_ClassDynamicMesh_00aeed60 # class descriptor "ClassDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aeee70 function StaticInit_ClassDynamicMeshInstance_00aeee70 # class descriptor "ClassDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aeefa0 function StaticInit_DistortionGridDynamicMesh_00aeefa0 # class descriptor "DistortionGridDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef0b0 function StaticInit_DistortionGridDynamicMeshInstance_00aef0b0 # class descriptor "DistortionGridDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef1c0 function StaticInit_RadialLineDynamicMeshInstance_00aef1c0 # class descriptor "RadialLineDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef2d0 function StaticInit_RadialLineDynamicMesh_00aef2d0 # class descriptor "RadialLineDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef3e0 function StaticInit_BrokenScreenPolygonDynamicMeshInstance_00aef3e0 # class descriptor "BrokenScreenPolygonDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aef4f0 function StaticInit_BrokenScreenPolygonDynamicMesh_00aef4f0 # class descriptor "BrokenScreenPolygonDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef600 function StaticInit_ShadowDynamicMesh_00aef600 # class descriptor "ShadowDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef760 function StaticInit_Copy_00aef760 # copies the word at 0x00c3_3478 to 0x00cc_c7c8 and returns it
+0x00aef7c0 function StaticInit_MallocCopy_00aef7c0 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_c82c; atexit
+0x00aef810 function StaticInit_MallocCopy_00aef810 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_c828; atexit
+0x00aef900 function StaticInit_CtorStore_00aef900 # constructor 0x0068_6bb0 on a global, its result stored in the global; atexit
+0x00aefab0 function StaticInit_BlendingWeightCalculation_00aefab0 # render pass type "BlendingWeightCalculation" built on its global (name, flag 0); atexit
+0x00aefad0 function StaticInit_BrightBlend_00aefad0 # render pass type "BrightBlend" built on its global (name, flag 0); atexit
+0x00aefaf0 function StaticInit_ColorCorrection_00aefaf0 # render pass type "ColorCorrection" built on its global (name, flag 0); atexit
+0x00aefb10 function StaticInit_ColorEdgeDetection_00aefb10 # render pass type "ColorEdgeDetection" built on its global (name, flag 0); atexit
+0x00aefb30 function StaticInit_CopyBufferWithAdditive_00aefb30 # render pass type "CopyBufferWithAdditive" built on its global (name, flag 0); atexit
+0x00aefb50 function StaticInit_CopyBufferWithAlphaBlend_00aefb50 # render pass type "CopyBufferWithAlphaBlend" built on its global (name, flag 0); atexit
+0x00aefb70 function StaticInit_CopyBuffer_00aefb70 # render pass type "CopyBuffer" built on its global (name, flag 0); atexit
+0x00aefb90 function StaticInit_CopyDepthBuffer_00aefb90 # render pass type "CopyDepthBuffer" built on its global (name, flag 0); atexit
+0x00aefbb0 function StaticInit_CopyRGBBufferWithAdditive_00aefbb0 # render pass type "CopyRGBBufferWithAdditive" built on its global (name, flag 0); atexit
+0x00aefbd0 function StaticInit_CopyRGBBufferWithAlphaBlend_00aefbd0 # render pass type "CopyRGBBufferWithAlphaBlend" built on its global (name, flag 0); atexit
+0x00aefbf0 function StaticInit_GenerateGlowMap_00aefbf0 # render pass type "GenerateGlowMap" built on its global (name, flag 0); atexit
+0x00aefc10 function StaticInit_HDAO_Blur_USM_00aefc10 # render pass type "HDAO_Blur_USM" built on its global (name, flag 0); atexit
+0x00aefc30 function StaticInit_HDAO_Blur_00aefc30 # render pass type "HDAO_Blur" built on its global (name, flag 0); atexit
+0x00aefc50 function StaticInit_HDAO_BufferGen_00aefc50 # render pass type "HDAO_BufferGen" built on its global (name, flag 0); atexit
+0x00aefc70 function StaticInit_HDAO_BufferRender_00aefc70 # render pass type "HDAO_BufferRender" built on its global (name, flag 0); atexit
+0x00aefc90 function StaticInit_HDAO_Combine_00aefc90 # render pass type "HDAO_Combine" built on its global (name, flag 0); atexit
+0x00aefcb0 function StaticInit_LumaEdgeDetection_00aefcb0 # render pass type "LumaEdgeDetection" built on its global (name, flag 0); atexit
+0x00aefcd0 function StaticInit_NeighborhoodBlending_00aefcd0 # render pass type "NeighborhoodBlending" built on its global (name, flag 0); atexit
+0x00aefcf0 function StaticInit_ResolveDepthBuffer2_00aefcf0 # render pass type "ResolveDepthBuffer2" built on its global (name, flag 0); atexit
+0x00aefd10 function StaticInit_ResolveDepthBuffer4_00aefd10 # render pass type "ResolveDepthBuffer4" built on its global (name, flag 0); atexit
+0x00aefd30 function StaticInit_ResolveDepthBuffer8_00aefd30 # render pass type "ResolveDepthBuffer8" built on its global (name, flag 0); atexit
+0x00aefd50 function StaticInit_ScreenFadeAdditive_00aefd50 # render pass type "ScreenFadeAdditive" built on its global (name, flag 0); atexit
+0x00aefd70 function StaticInit_ScreenFadeSubtract_00aefd70 # render pass type "ScreenFadeSubtract" built on its global (name, flag 0); atexit
+0x00aefd90 function StaticInit_ScreenFade_00aefd90 # render pass type "ScreenFade" built on its global (name, flag 0); atexit
+0x00aefdb0 function StaticInit_USM_Apply_00aefdb0 # render pass type "USM_Apply" built on its global (name, flag 0); atexit
+0x00aefdd0 function StaticInit_USM_Blur_00aefdd0 # render pass type "USM_Blur" built on its global (name, flag 0); atexit
+0x00aefe90 function StaticInit_ImportStore_00aefe90 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_ca78; atexit
+0x00aefeb0 function StaticInit_FreeList_PMapPair_00aefeb0 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00aeff10 function StaticInit_ImportStore_00aeff10 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_caa0; atexit
+0x00af0110 function StaticInit_DistortionCopyBuffer_00af0110 # render pass type "DistortionCopyBuffer" built on its global (name, flag 0); atexit
+0x00af0130 function StaticInit_ApplyBufferWithColor_00af0130 # render pass type "ApplyBufferWithColor" built on its global (name, flag 0); atexit
+0x00af0150 function StaticInit_ApplyBuffer_00af0150 # render pass type "ApplyBuffer" built on its global (name, flag 0); atexit
+0x00af0170 function StaticInit_ApplyScratch_00af0170 # render pass type "ApplyScratch" built on its global (name, flag 0); atexit
+0x00af0190 function StaticInit_CopyBufferExWithColor_00af0190 # render pass type "CopyBufferExWithColor" built on its global (name, flag 0); atexit
+0x00af01b0 function StaticInit_CopyBufferEx_00af01b0 # render pass type "CopyBufferEx" built on its global (name, flag 0); atexit
+0x00af0220 function StaticInit_BlendFrame_00af0220 # render pass type "BlendFrame" built on its global (name, flag 0); atexit
+0x00af02e0 function StaticInit_ShadowGaussianBlurX_FromDepth_00af02e0 # render pass type "ShadowGaussianBlurX_FromDepth" built on its global (name, flag 0); atexit
+0x00af0300 function StaticInit_ShadowGaussianBlurX_00af0300 # render pass type "ShadowGaussianBlurX" built on its global (name, flag 0); atexit
+0x00af0320 function StaticInit_ShadowGaussianBlurY_Adv_00af0320 # render pass type "ShadowGaussianBlurY_Adv" built on its global (name, flag 0); atexit
+0x00af0340 function StaticInit_ShadowGaussianBlurY_FromDepth_00af0340 # render pass type "ShadowGaussianBlurY_FromDepth" built on its global (name, flag 0); atexit
+0x00af0360 function StaticInit_ShadowGaussianBlurY_00af0360 # render pass type "ShadowGaussianBlurY" built on its global (name, flag 0); atexit
+0x00af0380 function StaticInit_Float_00af0380 # float global 0x00cd_ec2c = 1 - (a - b) / (a - c) of the constants at 0x00c3_43f0, 0x00c3_43f4, 0x00c3_43ec, rounded to float
+0x00af03b0 function StaticInit_Float_00af03b0 # float global 0x00cd_ec34 = (a - b) / (c - b) of the constants at 0x00c3_43f0, 0x00c3_43f4, 0x00c3_43f8, rounded to float
+0x00af0420 function StaticInit_AdditiveColor_00af0420 # render pass type "AdditiveColor" built on its global (name, flag 0); atexit
+0x00af0440 function StaticInit_ApplyColor_00af0440 # render pass type "ApplyColor" built on its global (name, flag 0); atexit
+0x00af0460 function StaticInit_ApplyTextureWithColor_00af0460 # render pass type "ApplyTextureWithColor" built on its global (name, flag 0); atexit
+0x00af0480 function StaticInit_ApplyTexture_00af0480 # render pass type "ApplyTexture" built on its global (name, flag 0); atexit
+0x00af04a0 function StaticInit_CopyColor_00af04a0 # render pass type "CopyColor" built on its global (name, flag 0); atexit
+0x00af04c0 function StaticInit_CopyTextureWithAdditiveColor_00af04c0 # render pass type "CopyTextureWithAdditiveColor" built on its global (name, flag 0); atexit
+0x00af04e0 function StaticInit_CopyTextureWithColor_00af04e0 # render pass type "CopyTextureWithColor" built on its global (name, flag 0); atexit
+0x00af0500 function StaticInit_CopyTexture_00af0500 # render pass type "CopyTexture" built on its global (name, flag 0); atexit
+0x00af0520 function StaticInit_PaintColor_00af0520 # render pass type "PaintColor" built on its global (name, flag 0); atexit
+0x00af0590 function StaticInit_VideoScreen_00af0590 # render pass type "VideoScreen" built on its global (name, flag 0); atexit
+0x00af06a0 function StaticInit_Sentinel_00af06a0 # list object 0x00cd_ee20 constructed, then its sentinel 0x00cd_ee68 links to itself; atexit
+0x00af06d0 function StaticInit_FreeList_PMapPair_00af06d0 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00af0730 function StaticInit_FreeList_PMapPair_00af0730 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00af0790 function StaticInit_ClothInstancingDynamicMesh_00af0790 # class descriptor "ClothInstancingDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00af0850 function StaticInit_ClothInstancingDynamicMeshInstance_00af0850 # class descriptor "ClothInstancingDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00af0910 function StaticInit_DynamicMeshDefaultImplmenetation_00af0910 # class descriptor "DynamicMeshDefaultImplmenetation" (cd_const_clear): constructor, buffers, clear; atexit
+0x00af09d0 function StaticInit_Atexit_00af09d0 # only registers its destructor with atexit
+0x00af0b20 function StaticInit_Sentinel_00af0b20 # list object 0x00ce_6d70 constructed, then its sentinel 0x00ce_6db8 links to itself; atexit
+0x00af0b50 function StaticInit_FreeList_PMapPair_00af0b50 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00af0bb0 function StaticInit_FreeList_PMapPair_00af0bb0 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00af0cb0 function StaticInit_ExtraPass_00af0cb0 # render pass type "ExtraPass" built on its global (name, flag 0); atexit
+0x00af0d70 function StaticInit_CtorStore_00af0d70 # constructor 0x0065_4ea0 on a global, its result stored in the global; atexit
+0x00af0e10 function StaticInit_Ctor_00af0e10 # no-argument constructor 0x0058_3b20 on a global, then atexit
+0x00af0e30 function StaticInit_Ctor_00af0e30 # no-argument constructor 0x0058_3b20 on a global, then atexit
+0x00af0f40 function StaticInit_ShadowDynamicMeshInstance_00af0f40 # class descriptor "ShadowDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
+0x00af1230 function StaticInit_CtorStore_00af1230 # constructor 0x0080_6b20 on a global, its result stored in the global; atexit
+0x00af1250 function StaticInit_CtorStore_00af1250 # constructor 0x0080_6af0 on a global, its result stored in the global; atexit
+0x00af1270 function StaticInit_ImportStore_00af1270 # stdcall import through the slot 0x00b0_c11c, its result stored in 0x012f_410c; atexit
+0x00af1290 function StaticInit_CondTail_00af1290 # jumps to 0x0094_28b0 when the word at 0x0193_cd2c is zero, else returns
+0x00af12a0 function StaticInit_Atexit_00af12a0 # only registers its destructor with atexit
+0x00af12ac function StaticInit_Atexit_00af12ac # only registers its destructor with atexit
+0x00af12c0 function StaticInit_ChainAppend_00af12c0 # appends the object at 0x00c6_13f0 to the chain at 0xc901a8 (before the first block at least 0xff full); atexit
+0x00af1308 function StaticInit_Ctor_00af1308 # no-argument constructor 0x009d_9c20 on a global, then atexit
+0x00af131e function StaticInit_ImportObject_00af131e # object 0x0193_fcfc from the import at 0x00b0_c060 (vtable, handle, false); atexit
+0x00af1346 function StaticInit_Atexit_00af1346 # only registers its destructor with atexit
+0x00af1360 function StaticInit_PInputAction_00af1360 # class descriptor "PInputAction" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00af1420 function StaticInit_PInputMap_00af1420 # class descriptor "PInputMap" (cd_desc_clear): constructor, buffers, clear; atexit
 0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b072b0 label ShadowManager_tileRects_atexit_00b072b0 # the atexit handler ShadowManager_renderCharacterTiles_006caee0 registers for its static rectangle list 0x00cdec88 (guard bit 0 of 0x00cdec90); name ours
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
