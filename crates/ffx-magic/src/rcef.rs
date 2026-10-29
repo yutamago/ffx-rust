@@ -155,7 +155,8 @@ pub const OBJ_ATTACH_SET_PAR_C: Sig = Sig {
 /// `magic_0336` 0x10001090 (71 bytes; 3 DLLs carry it, with `magic_0193` and
 /// `magic_0363`): `rcefMainCreateTask(V, cb)` (slot 434) with `V` the game word
 /// at `ds:G2`, `rcefTaskSetSeq(arg, cb2)` (450) and `rcefTaskWait(arg, 0x1e)`
-/// (451); returns slot 451's eax.
+/// (451); returns slot 451's eax. Seven more copies wait other times (the
+/// `push imm8` at `+0x35`; round 4, [`crate::o4_rcef`]'s signatures).
 pub fn create_task_wait<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let table = img.word(f + 4);
@@ -166,7 +167,9 @@ pub fn create_task_wait<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let slot450 = slot_target(g, table, 450);
     g.call(slot450, fr.ecx, &[arg, img.word(f + 0x21)]);
     let slot451 = slot_target(g, table, 451);
-    let r = g.call(slot451, fr.ecx, &[arg, 0x1e]);
+    // push imm8
+    let time = crate::o4_parts::disp8(img, f + 0x36);
+    let r = g.call(slot451, fr.ecx, &[arg, time]);
     Ret::eax(r.eax)
 }
 
