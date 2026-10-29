@@ -276,7 +276,20 @@ registers and stack, and fails on any difference in:
   the stack above the entry, the data pages, the heap and the scratch
   area.
 `Twin::check(addr, …, |g, img, fr| port(…))` does the same for an
-internal function with its own convention. Stubs (`Twin::stub(slot, |m,
+internal function with its own convention. `ecx` at a call-out is
+compared where the slot's function reads it before writing it (a
+method's `this`): the slots in `magic/this_slots.rs`, generated from the
+player's `FFX.exe` by `tools/check-thisarg.py --magic-slots --write`
+(`--magic-slots` alone fails when the file is out of date); elsewhere it
+is whatever the overlay code left there. Float arguments in SSE registers
+(LTCG internal functions) go in `Call::with_xmm(&[Xmm::f32(..), ..])`:
+`xmm0`..`xmm3` of the original (`ffx_overlay::Regs`) and `Frame::xmm` of
+the port (`Frame::xmm_f32(i)`/`xmm_f64(i)`); a port returning a float in
+`xmm0` gives `Ret::xmm0(Xmm::f32(x), eax)`, and the low lane is compared
+bit for bit with the original's (`Twin::last` keeps the original's
+registers). A test may load several DLLs one after another on its thread
+(`Twin::load` starts a fresh Unicorn instance each time,
+`ffx_overlay::release_thread`; `magic_harness.rs`). Stubs (`Twin::stub(slot, |m,
 args| eax)`) answer a slot for both sides alike and may read and write
 memory; make them read every argument word the original passes and write
 what they see (a stub that ignores an argument cannot catch a port that
@@ -310,14 +323,32 @@ and `tools/replays/run-all.sh --extra battle-ifrit` (battle-magic reaches
 `magic_0481`; battle-overdrive `magic_0390`, `0595`, `0604`;
 battle-ifrit `magic_0309`, `0596`).
 
-**Claiming and naming.** The work list is `~/ffx-work/m5/magic/worklist.tsv`
+**One port per identity.** Two ports with the same code identity
+(length, masked hash, callees and imports: `ffx_magic::sigs_overlap`)
+would both match one address and `bind` would silently take the first, so
+`PORTS` and `INTERNAL` refuse a second registration when the crate builds
+(`first_overlap`; `cargo test -p ffx-magic one_port_per_identity` names
+the pair). Before porting a function, look it up (`magic-sig --covered`)
+and reuse the existing port; a test of another DLL's copy binds to it
+through `check_entry`.
+
+**Claiming and naming.** The first work list, `~/ffx-work/m5/magic/worklist.tsv`,
+cut the DLLs into 15 lists (contiguous ranges of about equal bytes); that
+membership is fixed. The current one is `~/ffx-work/m5/magic/worklist2.tsv`
 (`tools/magic-worklist.py`, from `tools/overlay-census.py`'s
-`overlay-dll-functions.tsv`): every DLL with its function counts, the
-bytes it owns, what is covered now, what it waits for from other lists,
-the replays that reach it, and a list number (15 contiguous ranges of
-about equal bytes) and order. A shared function is ported by the list of
-the lowest-numbered DLL using it; a list that needs another list's
-function waits for it or ports it after claiming it. Claim DLLs with
+`overlay-dll-functions.tsv`; a rerun never rewrites the lists file and
+refuses to overwrite its output without `--replace`): one row per
+function not covered yet, by code identity (the identity `bind` uses;
+the census hash also keeps read-only constants and splits what one port
+covers), "shared first": every function used by 2 or more DLLs, callees
+before callers, then each DLL's own code (the replays' DLLs first). Each
+row gives the `Sig` length and hash, the DLLs using it, the owner (the
+lowest-numbered DLL, and its list) and the uncovered callees.
+`worklist2-dlls.tsv` gives per DLL what is covered and left and the
+shared functions it waits on. The CRT is never ported: its mnemonic
+groups and every function using its failure imports
+(`__report_gsfailure`, `__raise_securityfailure`, which the census cuts
+as one 312-byte function) count as covered. Claim DLLs with
 `tools/claim.py magic_NNNN --agent <id>` (the DLL name is the claim).
 Modules: `ffx-magic/src/mNNNN.rs` for a DLL's own functions, named for
 what the code does once known (`opu.rs`, the OPU host); a function shared
@@ -329,6 +360,21 @@ prints the hash; `--bind <dll> <addr>…` shows what binds), a line in the
 `ports!` list (entries) or `INTERNAL` (internal functions), the parity
 test, the mutants, and the replay that reaches the DLL with
 `FFX_MAGIC_RUST`.
+
+**Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
+and 66 internal functions (plus the slot thunks by shape): the runtime,
+the OPU host and its start-up variants, the node lists, the object host
+(224 overlays), the map effects' task functions (`rcef.rs`) and the own
+code of the families listed in `ffx-magic/src/lib.rs`. Nine functions
+had been ported more than once, by lists that saw different census
+hashes: `xor eax, eax; ret` (kept: `runtime::zero_ret`), the OPU start-up
+with the byte flag (`l3_opu::start_up`), the free-list take (three
+copies; `m0032::pop_node`) and six `m0187`/`m0196` wrappers that are the
+map effects' functions (`rcef`); one port each is kept, and every test
+of a removed copy now checks the kept one.
+Of 4,578 distinct functions, 430 are covered and 75 are the CRT; 4,073
+are left (1,205 used by 2+ DLLs come first in `worklist2.tsv`), and 121
+DLLs are fully covered.
 
 **Status (2026-10-29, pilot).** 25 ports (21 entries, 3 internal
 functions, plus the slot thunks by shape): the runtime (`DllMain`,
