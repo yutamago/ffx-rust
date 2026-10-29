@@ -1974,3 +1974,65 @@ fn takes_and_starts() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// The part toggle (`magic_0165`) with and without a part, and the model
+/// nodes reset (`magic_0201`) with no nodes, one under a parent and two.
+#[test]
+fn part_toggle_and_nodes_reset() {
+    if let Some(mut t) = twin(165) {
+        let f = t.at(0x6ad0);
+        t.set_u32(t.img.word(f + 0x13), 0x0c0c_0001);
+        for s in [210u32, 211, 255] {
+            rec(&mut t, s, 2, move |_, _| s);
+        }
+        rec(&mut t, 217, 2, |m, a| {
+            m.w32(a[1], 0x3f80_0000 ^ a[0]);
+            0x217
+        });
+        for (part, skip, actor) in [
+            (0x0e00_0001u32, 0u32, 3u32),
+            (0, 0, 3),
+            (0, 1, 3),
+            (0, 0, 0x20),
+        ] {
+            t.set_u32(t.img.word(f + 0x34), skip);
+            t.set_u32(t.img.word(f + 0x3e), actor);
+            let c = Call {
+                edx: part,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::part_toggle(g, img, fr)
+            });
+        }
+    }
+    if let Some(mut t) = twin(201) {
+        let f = t.at(0x3720);
+        for s in [538u32, 213, 211, 35, 34, 547, 276, 219] {
+            rec(&mut t, s, 1, move |_, _| s);
+        }
+        let (cursor, owner, parent) = (SCRATCH + 0x80, SCRATCH + 0x1000, SCRATCH + 0x3000);
+        for n in [0u32, 1, 2] {
+            t.write(owner, &[0; 0x500]);
+            t.set_u32(owner + 0x4dc, n);
+            t.write(parent, &[0x45; 0x40]);
+            for i in 0..2u32 {
+                let node = owner + 0x1c + 0x98 * i;
+                t.set_u32(node + 0x14, if i == 0 { parent } else { 0 });
+                t.set_u32(node + 4, parent);
+                t.set_u32(node + 8, parent);
+                t.set_u32(node + 0x64, u32::MAX);
+            }
+            t.set_u16(parent + 0x18, 2);
+            t.set_u32(cursor, owner);
+            let c = Call {
+                eax: 0x00ea_0000,
+                ecx: cursor,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::nodes_reset(g, img, fr)
+            });
+        }
+    }
+}

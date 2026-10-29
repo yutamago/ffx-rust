@@ -2316,3 +2316,85 @@ pub const PART_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Shows or hides a character's part (internal, `edx` = the part, 0 for
+/// none; a /GS frame): with a part, slot 210 `(*G_A, part)` (operand
+/// `+0x13`); without one, unless `G_B` (`+0x34`) is set, an actor `G_C <
+/// 0x20` (`+0x3e`) is put back where it stands (slots 217 and 255 with a
+/// position on the frame). Then slot 211 `(*G_A, part)`. Returns its
+/// `eax`.
+///
+/// `magic_0165` 0x10006ad0 (145 bytes; 7 DLLs).
+pub fn part_toggle<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let chr = g.read::<u32>(w(0x13));
+    let part = fr.edx;
+    if part != 0 {
+        let t = slot_target(g, w(0x1f), 210);
+        g.call(t, 0, &[chr, part]);
+    } else if g.read::<u32>(w(0x34)) == 0 {
+        let actor = g.read::<u32>(w(0x3e));
+        if actor.cast_signed() < 0x20 {
+            let pos = fr.esp.wrapping_sub(4 + 0x14);
+            let t = slot_target(g, w(0x4c), 217);
+            g.call(t, 0, &[actor, pos]);
+            let t = slot_target(g, w(0x5e), 255);
+            g.call(t, 0, &[actor, pos, actor, pos]);
+        }
+    }
+    let t = slot_target(g, w(0x70), 211);
+    Ret::eax(g.call(t, 0, &[chr, part]).eax)
+}
+
+/// [`part_toggle`].
+pub const PART_TOGGLE: Sig = Sig {
+    len: 145,
+    hash: 0xb0e7_d9dd_f896_9c65,
+    calls: &[(0x89, Callee::Any)],
+    imports: &[],
+};
+
+/// Detaches the owner's model nodes and sets each up again (internal,
+/// `ecx` = a cursor on the owner: `+0x4dc` nodes of 0x98 bytes from
+/// `+0x1c`): each node leaves its parent (`+0x14`; the count `u16 +0x18`
+/// down, the links joined, its own links to itself) and its model is set
+/// up ([`crate::sa_summon::model_setup`] with a cursor on the frame).
+/// Returns 0xffff, or `eax` as it came with no nodes.
+///
+/// `magic_0201` 0x10003720 (130 bytes; 6 DLLs).
+pub fn nodes_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let owner = g.read::<u32>(fr.ecx);
+    let mut eax = fr.eax;
+    let n = g.read::<i32>(owner + 0x4dc);
+    let cursor = fr.esp.wrapping_sub(8);
+    let mut i = 0u32;
+    while n > 0 {
+        let node = owner + 0x1c + 0x98 * i;
+        let parent = g.read::<u32>(node + 0x14);
+        if parent != 0 {
+            crate::nodes::leave_parent(g, node, parent);
+        }
+        g.write::<u32>(cursor, node);
+        let callee = Frame {
+            at: img.rel32_target(fr.at + 0x63),
+            esp: cursor.wrapping_sub(16),
+            ecx: cursor,
+            ..*fr
+        };
+        crate::sa_summon::model_setup(g, img, &callee);
+        eax = 0xffff;
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(owner + 0x4dc) {
+            break;
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`nodes_reset`].
+pub const NODES_RESET: Sig = Sig {
+    len: 130,
+    hash: 0xc7b2_0fdb_2430_e9f7,
+    calls: &[(0x63, Callee::Sig(&crate::sa_summon::MODEL_SETUP))],
+    imports: &[],
+};

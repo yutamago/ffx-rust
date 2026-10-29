@@ -1274,6 +1274,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("float of slot 307", &s4_misc::FLOAT_307),
     ("unlist and free", &s4_misc::UNLIST_FREE),
     ("sprite take", &s4_misc::SPRITE_TAKE),
+    ("part toggle", &s4_misc::PART_TOGGLE),
+    ("nodes reset", &s4_misc::NODES_RESET),
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
