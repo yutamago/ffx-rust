@@ -6,7 +6,7 @@
 //! `magic_0070`'s.
 
 use crate::runtime::slot_target;
-use crate::{Game, Image, Mem, Sig};
+use crate::{Callee, Frame, Game, Image, Mem, Ret, Sig};
 
 /// Appends `node` to `parent`'s children (links `+0x4`/`+0x8`, the
 /// parent's first `+0xc` and last `+0x10` child, u16 count `+0x18`).
@@ -454,5 +454,271 @@ pub const HIDE_MODEL: Sig = Sig {
     len: 48,
     hash: 0x0403_1610_a47e_6694,
     calls: &[],
+    imports: &[],
+};
+
+/// 0x10005a50 (internal; `ecx` = `[node, parent, a]`): an empty child
+/// list with pass byte 0xff (u16), the parent `+0x14` and, under a
+/// parent, the link as its last child (the count `+0x18` up); `+0x3c` =
+/// `a`, `+0x40..+0x50` 0, scale `+0x28` 1.0. Returns `a`.
+pub fn node_init_scaled(g: &mut impl Mem, args: u32) -> u32 {
+    let node = g.read::<u32>(args);
+    let parent = g.read::<u32>(args + 4);
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, parent);
+    if parent != 0 {
+        g.write::<u32>(node + 4, parent);
+        let last = g.read::<u32>(parent + 0x10);
+        g.write::<u32>(node + 8, last);
+        let last = g.read::<u32>(parent + 0x10);
+        if last == parent {
+            g.write::<u32>(parent + 0xc, node);
+        } else {
+            g.write::<u32>(last + 4, node);
+        }
+        let n = g.read::<u16>(parent + 0x18).wrapping_add(1);
+        g.write::<u16>(parent + 0x18, n);
+        g.write::<u32>(parent + 0x10, node);
+    }
+    let a = g.read::<u32>(args + 8);
+    g.write::<u32>(node + 0x3c, a);
+    for o in [0x40u32, 0x44, 0x48, 0x4c, 0x50] {
+        g.write::<u32>(node + o, 0);
+    }
+    g.write::<u32>(node + 0x28, 0x3f80_0000);
+    a
+}
+
+/// `node_init_scaled` (106 bytes, 1 overlay).
+pub const NODE_INIT_SCALED: Sig = Sig {
+    len: 106,
+    hash: 0x5a88_096a_c15d_f22c,
+    calls: &[],
+    imports: &[],
+};
+
+/// 0x10009750 (internal; `ecx` = the node, cdecl `(a, b)`): the node
+/// with its handler table `T` (operand `+0x05`), an empty child list,
+/// pass byte 0xff, appended to the root node `ROOT` (`+0x18`; its last
+/// child `+0x24`, first `+0x39`, count `+0x48`); `+0x3c` = `a`, `+0x40`
+/// = `b`. Returns `b`.
+pub fn root_child<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, a: u32, b: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    g.write::<u32>(node, w(0x05));
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, w(0x18));
+    g.write::<u32>(node + 4, w(0x1f));
+    let last = g.read::<u32>(w(0x24));
+    g.write::<u32>(node + 8, last);
+    let last = g.read::<u32>(w(0x2c));
+    if last == w(0x31) {
+        g.write::<u32>(w(0x39), node);
+    } else {
+        g.write::<u32>(last + 4, node);
+    }
+    let n = g.read::<u16>(w(0x48)).wrapping_add(1);
+    g.write::<u16>(w(0x48), n);
+    g.write::<u32>(w(0x4e), node);
+    g.write::<u32>(node + 0x3c, a);
+    g.write::<u32>(node + 0x40, b);
+    b
+}
+
+/// `root_child` (93 bytes, 1 overlay).
+pub const ROOT_CHILD: Sig = Sig {
+    len: 93,
+    hash: 0x9a44_c222_fc54_ce59,
+    calls: &[],
+    imports: &[],
+};
+
+/// 0x10009800 (internal; cdecl `(a)`): the static node `NODE` (operand
+/// `+0x0a`) set up like [`root_child`]'s (table `+0x0e`), appended to
+/// `ROOT`; scale `+0x28` 1.0, `+0x2c` = `a`, `+0x30` = 14. Returns `a`.
+pub fn static_child<G: Game>(g: &mut G, img: &Image, f: u32, a: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let last = g.read::<u32>(w(0x04));
+    g.write::<u32>(w(0x0a), w(0x0e));
+    g.write::<u16>(w(0x15), 0xff);
+    g.write::<u32>(w(0x1d), w(0x21));
+    g.write::<u32>(w(0x27), w(0x2b));
+    g.write::<u32>(w(0x31), w(0x35));
+    g.write::<u32>(w(0x3b), w(0x3f));
+    g.write::<u32>(w(0x44), last);
+    if last == w(0x49) {
+        g.write::<u32>(w(0x51), w(0x55));
+    } else {
+        g.write::<u32>(last + 4, w(0x5e));
+    }
+    let n = g.read::<u16>(w(0x68)).wrapping_add(1);
+    g.write::<u16>(w(0x68), n);
+    g.write::<u32>(w(0x6e), w(0x72));
+    g.write::<u32>(w(0x78), w(0x7c));
+    g.write::<u32>(w(0x81), a);
+    g.write::<u32>(w(0x87), 0xe);
+    a
+}
+
+/// `static_child` (145 bytes, 1 overlay).
+pub const STATIC_CHILD: Sig = Sig {
+    len: 145,
+    hash: 0x7ba0_d61a_f3e0_3d35,
+    calls: &[],
+    imports: &[],
+};
+
+/// A step (0x1000d3c0, no arguments): slot 215 `(G_X)`, slot 276 `(h,
+/// 0)`, slot 381 `(0)` (each call with the words the earlier ones left).
+/// Returns 0.
+pub fn e_d3c0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let s215 = slot_target(g, w(0x01), 215);
+    let x = g.read::<u32>(w(0x07));
+    let h = g.call(s215, fr.ecx, &[x]).eax;
+    let s276 = slot_target(g, w(0x17), 276);
+    // call width: 3
+    g.call(s276, fr.ecx, &[h, 0, x]);
+    let s381 = slot_target(g, w(0x24), 381);
+    // call width: 4
+    g.call(s381, fr.ecx, &[0, h, 0, x]);
+    Ret::eax(0)
+}
+
+/// 0x1000d3c0 (56 bytes, 1 overlay).
+pub const E_D3C0: Sig = Sig {
+    len: 56,
+    hash: 0xabf5_5b71_48b2_eacd,
+    calls: &[],
+    imports: &[],
+};
+
+/// A call of [`crate::nodes::visit_gated`] as the original's `push
+/// &group; call` makes it: the argument at `esp + 4`, the callee's `esp`
+/// at its return address.
+fn gated<G: Game>(g: &mut G, img: &Image, target: u32, esp: u32, group: u32, ecx: u32) {
+    g.write::<u32>(esp + 4, group);
+    let fr = Frame {
+        at: target,
+        esp,
+        ecx,
+        ..Frame::default()
+    };
+    crate::nodes::visit_gated(g, img, &fr);
+}
+
+/// The step at 0x1000d410 (no arguments): the waits of `G_STATE`
+/// (operand `+0x04`), each passed once and in order: 0 slot 225 `(2)`, 1
+/// slot 313 `(2)`, 2 slot 549 `(2)` (any of them nonzero waits) then
+/// slot 226 `(G_ARG, 1)`, 3 slot 227 `(G_ARG)` (below 1 waits). Then slot
+/// 673, `*G_P = ITEM`, the frame byte `G_B` up, two globals copied, and
+/// unless `G_HOLD` is set each node of the list `G_LIST` (to `END`) run
+/// through its handler's `+0x20` with a pointer to a local holding it;
+/// an empty list sets bit 0 of `G_DONE`. Last the two nodes `NODE1`,
+/// `NODE2` visited through [`crate::nodes::visit_gated`] with a local
+/// group (`ebp - 8`, mode `G_B`). Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn step_d410<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ecx = fr.ecx;
+    let mut st = g.read::<u32>(w(0x04));
+    if st <= 3 {
+        loop {
+            match st {
+                0 | 1 => {
+                    let (tab, slot) = if st == 0 { (0x1c, 225) } else { (0x38, 313) };
+                    let s = slot_target(g, w(tab), slot);
+                    if g.call(s, ecx, &[2]).eax != 0 {
+                        return Ret::eax(0);
+                    }
+                }
+                2 => {
+                    let s549 = slot_target(g, w(0x54), 549);
+                    if g.call(s549, ecx, &[2]).eax != 0 {
+                        return Ret::eax(0);
+                    }
+                    let s226 = slot_target(g, w(0x6e), 226);
+                    let a = g.read::<u32>(w(0x76));
+                    g.call(s226, ecx, &[a, 1]);
+                }
+                _ => {
+                    let s227 = slot_target(g, w(0x9c), 227);
+                    let a = g.read::<u32>(w(0xa2));
+                    if g.call(s227, ecx, &[a]).eax.cast_signed() < 1 {
+                        return Ret::eax(0);
+                    }
+                    let n = g.read::<u32>(w(0xbc));
+                    g.write::<u32>(w(0xbc), n.wrapping_add(1));
+                    break;
+                }
+            }
+            st = g.read::<u32>(w(0x86)).wrapping_add(1);
+            g.write::<u32>(w(0x8c), st);
+            if st > 3 {
+                break;
+            }
+        }
+    }
+    let s673 = slot_target(g, w(0xc1), 673);
+    g.call(s673, ecx, &[]);
+    let p = g.read::<u32>(w(0xcf));
+    let mut b = g.read::<u8>(w(0xd5));
+    g.write::<u32>(p, w(0xdb));
+    let x = g.read::<u32>(w(0xe0));
+    let mut node = g.read::<u32>(w(0xe6));
+    g.write::<u32>(w(0xeb), x);
+    let z = g.read::<u32>(w(0xf0));
+    b = b.wrapping_add(1);
+    let hold = g.read::<u32>(w(0xf8));
+    g.write::<u8>(w(0xff), b);
+    g.write::<u32>(w(0x105), 0);
+    g.write::<u32>(w(0x10e), z);
+    let ebp = fr.esp - 4;
+    let local = ebp - 8;
+    if hold == 0 && node != w(0x116) {
+        loop {
+            g.write::<u32>(local, node);
+            let method = g.read::<u32>(g.read::<u32>(node) + 0x20);
+            node = g.read::<u32>(node + 8);
+            // lea ecx, [ebp - 8]; push ecx; call
+            g.call(method, local, &[local]);
+            if node == w(0x138) {
+                break;
+            }
+        }
+        b = g.read::<u8>(w(0x140));
+        node = g.read::<u32>(w(0x146));
+    }
+    if node == w(0x14c) {
+        let v = g.read::<u32>(w(0x155)) | 1;
+        g.write::<u32>(w(0x155), v);
+    }
+    let target = img.rel32_target(f + 0x169);
+    g.write::<u32>(local, w(0x161));
+    g.write::<u8>(local + 5, b);
+    gated(g, img, target, ebp - 0x10, local, ecx);
+    let b = g.read::<u8>(w(0x16e));
+    g.write::<u8>(local + 5, b);
+    g.write::<u32>(local, w(0x17c));
+    let target = img.rel32_target(f + 0x181);
+    // (the first call's argument stays below)
+    gated(g, img, target, ebp - 0x14, local, ecx);
+    Ret::eax(0)
+}
+
+/// 0x1000d410 (434 bytes with the switch table and the following
+/// `GetEffectOverlayTable`, which the census cut into it; 1 overlay).
+pub const STEP_D410: Sig = Sig {
+    len: 434,
+    hash: 0xa8c3_75b0_c7a5_240e,
+    calls: &[
+        (0x169, Callee::Sig(&crate::nodes::GATED)),
+        (0x181, Callee::Sig(&crate::nodes::GATED)),
+    ],
     imports: &[],
 };

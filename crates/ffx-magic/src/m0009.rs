@@ -2,6 +2,7 @@
 //! code).
 
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, mul, sub};
 use crate::{Callee, Game, Image, Sig};
 
 /// `1.0f32`'s bits.
@@ -90,9 +91,9 @@ pub fn setup<G: Game>(g: &mut G, img: &Image, f: u32, pos: u32, from: u32, arg: 
     ] {
         g.write::<u32>(fx + o, v);
     }
-    let d = |o: u32| g.read::<f32>(pos + o) - g.read::<f32>(from + o);
+    let d = |o: u32| sub(g.read::<f32>(pos + o), g.read::<f32>(from + o));
     let (dx, dy, dz) = (d(0), d(4), d(8));
-    let s = dy * dy + dx * dx + dz * dz;
+    let s = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
     g.write::<f32>(fx + 0x58, f64::from(s).sqrt() as f32);
     g.write::<u32>(fx + 0x5c, ONE);
     g.write::<u32>(fx + 0x9b0, 0);

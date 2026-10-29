@@ -6,6 +6,7 @@ use ffx_bridge::x87::cvttsd2si;
 
 use crate::opu_parts::start_part;
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -111,7 +112,7 @@ pub fn e10d0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let max = k(g, 0x0b);
     let v = k(g, 0x13);
     let v = if g.read::<u32>(w(0x02)) == 0 {
-        let v = v + k(g, 0x1d);
+        let v = add(v, k(g, 0x1d));
         g.write::<f32>(w(0x28), v);
         if v > max {
             g.write::<f32>(w(0x52), max);
@@ -120,7 +121,7 @@ pub fn e10d0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             v
         }
     } else {
-        let v = v - k(g, 0x37);
+        let v = sub(v, k(g, 0x37));
         g.write::<f32>(w(0x45), v);
         if 0.0 > v {
             g.write::<f32>(w(0x52), 0.0);
@@ -129,7 +130,7 @@ pub fn e10d0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             v
         }
     };
-    let c = (max - v * k(g, 0x5a)).to_bits();
+    let c = sub(max, mul(v, k(g, 0x5a))).to_bits();
     let s933 = slot_target(g, w(0x5f), 933);
     g.call(s933, fr.ecx, &[c, c, c, ONE]);
     // ucomiss + jp: 0 only when ordered and equal
@@ -257,11 +258,11 @@ fn drift<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, ops: [u32; 7], after
     if g.read::<u32>(w(ops[1])).cast_signed() > after {
         let s = g.read::<f32>(w(ops[2]));
         let tilt = g.read::<u16>(obj + 0x76);
-        y -= s;
-        let s = s + g.read::<f32>(w(ops[3]));
+        y = sub(y, s);
+        let s = add(s, g.read::<f32>(w(ops[3])));
         g.write::<f32>(w(ops[4]), y);
         g.write::<f32>(w(ops[5]), s);
-        let m = f32::from(tilt) * g.read::<f32>(w(ops[6]));
+        let m = mul(f32::from(tilt), g.read::<f32>(w(ops[6])));
         g.write::<u16>(obj + 0x76, cvttsd2si(f64::from(m)) as u16);
     }
     y
@@ -290,7 +291,7 @@ fn finish<G: Game>(
     let mut stack = vec![v, a, v];
     g.call(s229, ecx, &stack);
     for i in 0..3u32 {
-        let t = g.read::<f32>(c + 0x30 + 4 * i) + g.read::<f32>(v + 4 * i);
+        let t = add(g.read::<f32>(c + 0x30 + 4 * i), g.read::<f32>(v + 4 * i));
         g.write::<f32>(c + 0x30 + 4 * i, t);
     }
     let s230 = slot_target(g, w(ops[1]), 230);
@@ -725,8 +726,9 @@ pub fn e1e00<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let x = g.read::<f32>(w(0x2ca));
     let z = g.read::<f32>(w(0x2d2));
-    let d = z * z + x * x;
-    let d = f64::from(d).sqrt() as f32 * g.read::<f32>(w(0x2f2));
+    // movss xmm1, [x]; movss xmm0, [z]; squares; addss xmm1, xmm0
+    let d = add(mul(x, x), mul(z, z));
+    let d = mul(f64::from(d).sqrt() as f32, g.read::<f32>(w(0x2f2)));
     g.write::<f32>(w(0x2fa), d);
     Ret::eax(1)
 }
@@ -795,7 +797,7 @@ fn first_frame<G: Game>(g: &mut G, img: &Image, f: u32, ecx: u32, s: u32) {
     g.call(s232, ecx, &stack);
     let k = g.read::<f32>(w(0x1fa));
     for (ld, st) in [(0x1f2u32, 0x210u32), (0x218, 0x226), (0x22e, 0x23a)] {
-        let v = g.read::<f32>(w(ld)) * k;
+        let v = mul(g.read::<f32>(w(ld)), k);
         g.write::<f32>(w(st), v);
     }
     let s288 = slot_target(g, w(0x208), 288);
@@ -858,7 +860,9 @@ pub fn bars<G: Game>(
     let w = |off: u32| img.word(f + off);
     let k = |g: &G, off: u32| g.read::<f32>(w(off));
     let (k10, k20) = (k(g, 0x0a), k(g, 0x12));
-    let t0 = b * k(g, 0x1d) * k10 - k(g, 0x39) + k20;
+    // x * K * W - O + H, each step its own rounding
+    let pos = |g: &G, x: f32, kk: u32, o: u32| add(sub(mul(mul(x, k(g, kk)), k10), k(g, o)), k20);
+    let t0 = pos(g, b, 0x1d, 0x39);
     for (o, v) in [
         (0xa8u32, 0u32),
         (0xac, 0),
@@ -870,17 +874,17 @@ pub fn bars<G: Game>(
     ] {
         g.write::<u32>(p + o, v);
     }
-    let t1 = c * k(g, 0x98) * k10 - k(g, 0xcd) + k20;
+    let t1 = pos(g, c, 0x98, 0xcd);
     g.write::<u32>(p + 0xb4, 0);
     g.write::<u32>(p + 0xf0, 0x00ff_ffff);
     g.write::<u32>(p + 0xe4, 0);
     g.write::<u32>(p + 0xc8, ftol2(f64::from(t0)));
-    let t2 = s0 * k(g, 0xfc) * k10 - k(g, 0x112) + k20;
+    let t2 = pos(g, s0, 0xfc, 0x112);
     g.write::<u32>(p + 0xcc, ftol2(f64::from(t1)));
-    let t3 = s1 * k(g, 0x139) * k10 - k(g, 0x151) + k20;
+    let t3 = pos(g, s1, 0x139, 0x151);
     g.write::<u32>(p + 0xe8, ftol2(f64::from(t2)));
     g.write::<u32>(p + 0xec, ftol2(f64::from(t3)));
-    let t4 = a * k(g, 0x1ad);
+    let t4 = mul(a, k(g, 0x1ad));
     for o in [0xb8u32, 0xbc, 0xc0] {
         g.write::<u32>(p + o, 0x80);
     }
@@ -892,8 +896,8 @@ pub fn bars<G: Game>(
     let s823 = slot_target(g, w(0x236), 823);
     g.call(s823, p, &[ONE, ONE]);
     let h = k(g, 0x262);
-    let u = ((c + s1) * h - k(g, 0x28b)) * h + h;
-    let v = ((b + s0) * h - k(g, 0x2af)) * h + h;
+    let u = add(mul(sub(mul(add(c, s1), h), k(g, 0x28b)), h), h);
+    let v = add(mul(sub(mul(add(b, s0), h), k(g, 0x2af)), h), h);
     let s824 = slot_target(g, w(0x276), 824);
     g.call(s824, p, &[v.to_bits(), u.to_bits(), 0, 0]);
 }

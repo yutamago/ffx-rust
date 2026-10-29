@@ -4,6 +4,7 @@
 use crate::l5_objhost::list_remove;
 use crate::m0018::wrap;
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, mul};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// A task step (stored at 0x10004775, `(task)`, the task unused): moves
@@ -68,24 +69,26 @@ pub fn spin_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         eax = tilt;
         g.write::<u16>(obj + 0x76, tilt as u16);
         for i in 0..3u32 {
-            let v = g.read::<f32>(r + 4 * i) + g.read::<f32>(obj + 0xc0 + 4 * i);
+            // the third: movss xmm0, [obj + 0xc8]; addss xmm0, [r + 8]
+            let (a, b) = (g.read::<f32>(r + 4 * i), g.read::<f32>(obj + 0xc0 + 4 * i));
+            let v = if i == 2 { add(b, a) } else { add(a, b) };
             g.write::<f32>(obj + 0xc0 + 4 * i, wrap(v, hi, lo, t));
         }
-        let x = g.read::<f32>(obj + 0xd0) + g.read::<f32>(r + 0x10);
-        let dy = g.read::<f32>(r + 0x24) + g.read::<f32>(r + 0x14);
+        let x = add(g.read::<f32>(obj + 0xd0), g.read::<f32>(r + 0x10));
+        let dy = add(g.read::<f32>(r + 0x24), g.read::<f32>(r + 0x14));
         g.write::<f32>(obj + 0xd0, x);
-        let y = g.read::<f32>(obj + 0xd4) + dy;
+        let y = add(g.read::<f32>(obj + 0xd4), dy);
         g.write::<f32>(obj + 0xd4, y);
-        let z = g.read::<f32>(obj + 0xd8) + g.read::<f32>(r + 0x18);
+        let z = add(g.read::<f32>(obj + 0xd8), g.read::<f32>(r + 0x18));
         g.write::<f32>(obj + 0xd8, z);
         for o in [0x10u32, 0x14, 0x18] {
-            let v = g.read::<f32>(r + 0x28) * g.read::<f32>(r + o);
+            let v = mul(g.read::<f32>(r + 0x28), g.read::<f32>(r + o));
             g.write::<f32>(r + o, v);
         }
         for o in [0u32, 4, 8] {
             let v = g.read::<f32>(r + o);
             if abs(v) > eps {
-                g.write::<f32>(r + o, v * slow);
+                g.write::<f32>(r + o, mul(v, slow));
             }
         }
     }

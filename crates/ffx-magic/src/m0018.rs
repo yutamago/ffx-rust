@@ -3,6 +3,7 @@
 
 use crate::l5_objhost::list_remove;
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The x87 indefinite an `fstp` of an empty stack stores (a call-out
@@ -20,9 +21,9 @@ pub fn st0_f32(st0: Option<f64>) -> f32 {
 #[must_use]
 pub fn wrap(v: f32, hi: f32, lo: f32, t: f32) -> f32 {
     if v > hi {
-        v - t
+        sub(v, t)
     } else if lo > v {
-        v + t
+        add(v, t)
     } else {
         v
     }
@@ -87,22 +88,22 @@ pub fn bounce_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         eax = tilt;
         g.write::<u16>(obj + 0x76, tilt as u16);
         for i in 0..3u32 {
-            let v = g.read::<f32>(obj + 0xc0 + 4 * i) + g.read::<f32>(r + 4 * i);
+            let v = add(g.read::<f32>(obj + 0xc0 + 4 * i), g.read::<f32>(r + 4 * i));
             g.write::<f32>(obj + 0xc0 + 4 * i, wrap(v, hi, lo, t));
         }
-        let fall = g.read::<f32>(r + 0x24) + g.read::<f32>(r + 0x28);
+        let fall = add(g.read::<f32>(r + 0x24), g.read::<f32>(r + 0x28));
         g.write::<f32>(r + 0x24, fall);
-        let x = g.read::<f32>(obj + 0xd0) + g.read::<f32>(r + 0x10);
+        let x = add(g.read::<f32>(obj + 0xd0), g.read::<f32>(r + 0x10));
         g.write::<f32>(obj + 0xd0, x);
-        let dy = fall + g.read::<f32>(r + 0x14);
-        let y = g.read::<f32>(obj + 0xd4) + dy;
+        let dy = add(fall, g.read::<f32>(r + 0x14));
+        let y = add(g.read::<f32>(obj + 0xd4), dy);
         g.write::<f32>(obj + 0xd4, y);
-        let z = g.read::<f32>(r + 0x18) + g.read::<f32>(obj + 0xd8);
+        let z = add(g.read::<f32>(r + 0x18), g.read::<f32>(obj + 0xd8));
         g.write::<f32>(obj + 0xd8, z);
         let damp = g.read::<f32>(r + 0x30);
-        let vx = damp * g.read::<f32>(r + 0x10);
+        let vx = mul(damp, g.read::<f32>(r + 0x10));
         g.write::<f32>(r + 0x10, vx);
-        let vz = g.read::<f32>(r + 0x18) * damp;
+        let vz = mul(g.read::<f32>(r + 0x18), damp);
         g.write::<f32>(r + 0x18, vz);
         let y = g.read::<f32>(obj + 0xd4);
         let floor = g.read::<f32>(r + 0x2c);
@@ -111,11 +112,17 @@ pub fn bounce_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             continue;
         }
         if g.read::<f32>(r + 0x14) != 0.0 && dy != 0.0 {
-            let q = abs(y - floor) / abs(dy);
+            let q = abs(sub(y, floor)) / abs(dy);
             let back = (f64::from_bits(g.read::<u64>(w(0x21d))) - q) as f32;
-            let x = g.read::<f32>(obj + 0xd0) - back * g.read::<f32>(r + 0x10);
+            let x = sub(
+                g.read::<f32>(obj + 0xd0),
+                mul(back, g.read::<f32>(r + 0x10)),
+            );
             g.write::<f32>(obj + 0xd0, x);
-            let z = g.read::<f32>(obj + 0xd8) - g.read::<f32>(r + 0x18) * back;
+            let z = sub(
+                g.read::<f32>(obj + 0xd8),
+                mul(g.read::<f32>(r + 0x18), back),
+            );
             g.write::<f32>(obj + 0xd8, z);
         }
         eax = g.read::<u32>(r + 0x2c);
@@ -125,14 +132,14 @@ pub fn bounce_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         if abs(spin) > f64::from_bits(g.read::<u64>(w(0x27b))) {
             let s314 = slot_target(g, w(0x282), 314);
             let o = g.call(s314, ecx, &[spin.to_bits()]);
-            let vx = st0_f32(o.st0) + g.read::<f32>(r + 0x10);
+            let vx = add(st0_f32(o.st0), g.read::<f32>(r + 0x10));
             g.write::<f32>(r + 0x10, vx);
             let s314 = slot_target(g, w(0x2a4), 314);
             let spin = g.read::<u32>(r + 0x38);
             let o = g.call(s314, ecx, &[spin]);
-            let vz = g.read::<f32>(r + 0x18) + st0_f32(o.st0);
+            let vz = add(g.read::<f32>(r + 0x18), st0_f32(o.st0));
             g.write::<f32>(r + 0x18, vz);
-            let spin = g.read::<f32>(r + 0x38) * k(g, 0x2df);
+            let spin = mul(g.read::<f32>(r + 0x38), k(g, 0x2df));
             g.write::<f32>(r + 0x38, spin);
         }
         for (i, op) in (0u32..).zip([0x2e9u32, 0x301, 0x318]) {
@@ -142,14 +149,14 @@ pub fn bounce_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<f32>(r + 4 * i, st0_f32(o.st0));
         }
         let neg = g.read::<u32>(w(0x347));
-        let vy = f32::from_bits((g.read::<f32>(r + 0x34) * dy).to_bits() ^ neg);
+        let vy = f32::from_bits(mul(g.read::<f32>(r + 0x34), dy).to_bits() ^ neg);
         g.write::<f32>(r + 0x14, vy);
         if f64::from(g.read::<f32>(r + 0x28)) > abs(vy) {
             let c = k(g, 0x372);
-            let vx = g.read::<f32>(r + 0x10) * c;
+            let vx = mul(g.read::<f32>(r + 0x10), c);
             g.write::<u32>(r + 0x14, 0);
             g.write::<f32>(r + 0x10, vx);
-            let vz = g.read::<f32>(r + 0x18) * k(g, 0x38b);
+            let vz = mul(g.read::<f32>(r + 0x18), k(g, 0x38b));
             g.write::<f32>(r + 0x18, vz);
             g.write::<u32>(r + 0x28, 0);
         }

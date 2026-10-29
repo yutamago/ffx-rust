@@ -5,6 +5,7 @@
 
 use crate::l5_objhost::{ONE, run_objects};
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// The x87 indefinite an `fstp` of an empty stack stores (a call-out
@@ -91,9 +92,11 @@ pub fn e15f0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         .call(s277, fr.ecx, &stack)
         .st0
         .map_or(INDEFINITE, |v| v as f32);
-    let k = g.read::<f32>(w(0x70)) / s;
+    let k = div(g.read::<f32>(w(0x70)), s);
     for i in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
-        let v = g.read::<f32>(mat + 4 * i) * k;
+        // the third: movaps xmm0, xmm1; mulss xmm0, [esi + 8]
+        let m = g.read::<f32>(mat + 4 * i);
+        let v = if i == 2 { mul(k, m) } else { mul(m, k) };
         g.write::<f32>(mat + 4 * i, v);
     }
     let s235 = slot_target(g, w(0x93), 235);
@@ -144,42 +147,39 @@ pub fn e1be0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let n = g.read::<u32>(state + 0xc6c).cast_signed();
     let (c20, c1c, c38) = (k(g, 0xa6), k(g, 0xdd), k(g, 0x75));
     let d28 = f64::from_bits(g.read::<u64>(w(0xf0)));
-    #[allow(clippy::cast_precision_loss)] // cvtdq2ps rounds the same
-    let t = n as f32 / k(g, 0x59);
-    let u = k(g, 0x51) - t;
-    let ut = u * t;
-    let uu = u * u;
-    let tt = t * t;
+    let t = div(cvt(n.cast_unsigned()), k(g, 0x59));
+    let u = sub(k(g, 0x51), t);
+    let ut = mul(u, t);
+    let uu = mul(u, u);
+    let tt = mul(t, t);
+    // cvtps2pd; mulsd; cvtpd2ps (one NaN at most: the constant is a number)
     let rd = |v: f32| (f64::from(v) * d28) as f32;
     // x
-    let d = g.read::<f32>(state + 0xac0) - g.read::<f32>(state + 0xab0);
-    let mut a = ut * uu * c38 * (d * c20);
-    a += uu * uu * d;
-    a += tt * uu * c38 * (d * c1c);
-    a += tt * ut * c38 * rd(d);
-    a += tt * tt * 0.0;
-    a += g.read::<f32>(state + 0xab0);
-    let x = a;
+    let d = sub(g.read::<f32>(state + 0xac0), g.read::<f32>(state + 0xab0));
+    let mut a = mul(mul(mul(ut, uu), c38), mul(d, c20));
+    a = add(a, mul(mul(uu, uu), d));
+    a = add(a, mul(mul(mul(tt, uu), c38), mul(d, c1c)));
+    a = add(a, mul(mul(mul(tt, ut), c38), rd(d)));
+    a = add(a, mul(mul(tt, tt), 0.0));
+    let x = add(a, g.read::<f32>(state + 0xab0));
     // z
     let z0 = g.read::<f32>(state + 0xab8);
-    let d = g.read::<f32>(state + 0xac8) - z0;
-    let ut = u * t;
-    let mut b = ut * uu * c38 * (d * c20);
-    b += uu * uu * d;
-    b += tt * uu * c38 * (d * c1c);
-    b += tt * ut * c38 * rd(d);
-    b += tt * tt * 0.0;
-    b += z0;
-    let z = b;
+    let d = sub(g.read::<f32>(state + 0xac8), z0);
+    let ut = mul(u, t);
+    let mut b = mul(mul(mul(ut, uu), c38), mul(d, c20));
+    b = add(b, mul(mul(uu, uu), d));
+    b = add(b, mul(mul(mul(tt, uu), c38), mul(d, c1c)));
+    b = add(b, mul(mul(mul(tt, ut), c38), rd(d)));
+    b = add(b, mul(mul(tt, tt), 0.0));
+    let z = add(b, z0);
     let mut y = g.read::<f32>(state + 0xab4);
     if n < 0x17 {
-        #[allow(clippy::cast_precision_loss)]
-        let t = n as f32 / k(g, 0x1fc);
-        let u = k(g, 0x1f4) - t;
-        let mut v = u * t * k(g, 0x213) * g.read::<f32>(state + 0xc64);
-        v += u * u * 0.0;
-        v += t * t * 0.0;
-        y += v;
+        let t = div(cvt(n.cast_unsigned()), k(g, 0x1fc));
+        let u = sub(k(g, 0x1f4), t);
+        let mut v = mul(mul(mul(u, t), k(g, 0x213)), g.read::<f32>(state + 0xc64));
+        v = add(v, mul(mul(u, u), 0.0));
+        v = add(v, mul(mul(t, t), 0.0));
+        y = add(v, y);
     }
     let p = fr.esp - 4 - 0x14;
     g.write::<f32>(p, x);

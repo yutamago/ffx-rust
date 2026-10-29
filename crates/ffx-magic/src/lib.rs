@@ -41,9 +41,9 @@ pub mod l3_opu;
 pub mod l5_objhost;
 pub mod l5_opu_boot;
 pub mod nodes;
-pub mod objcb;
 pub mod ob_model;
 pub mod ob_summon;
+pub mod objcb;
 pub mod opu;
 pub mod opu_parts;
 pub mod pe;
@@ -71,8 +71,14 @@ pub mod m0046;
 pub mod m0052;
 pub mod m0054;
 pub mod m0070;
+pub mod m0071;
+pub mod m0072;
 pub mod m0074;
 pub mod m0078;
+pub mod m0084;
+pub mod m0090;
+pub mod m0093;
+pub mod m0098;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
@@ -707,6 +713,15 @@ ports! {
     "m0045 object 18b0" => m0045::E18B0, m0045::e18b0;
     "m0045 object 19c0" => m0045::E19C0, m0045::e19c0;
     "m0045 start-up" => m0045::E1C10, m0045::e1c10;
+    "m0070 step d3c0" => m0070::E_D3C0, m0070::e_d3c0;
+    "m0070 step d410" => m0070::STEP_D410, m0070::step_d410;
+    "m0071 spin visit" => m0071::E3F00, m0071::e3f00;
+    "m0072 place" => m0072::PLACE, m0072::place;
+    "m0090 step" => m0090::STEP, m0090::step;
+    "m0098 show" => m0098::SHOW, m0098::show;
+    "m0098 hide" => m0098::HIDE, m0098::hide;
+    "m0098 draw" => m0098::DRAW, m0098::draw;
+    "m0098 start" => m0098::START, m0098::start;
     "m0020 step 1d90" => m0020::E1D90, m0020::e1d90;
     "m0390 task step" => m0390::E13F0, m0390::e13f0;
     "m0390 entry 15b0" => m0390::E15B0, m0390::e15b0;
@@ -886,6 +901,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0020 bars", &m0020::BARS),
     ("m0042 build", &m0042::BUILD),
     ("m0046 start object", &m0046::START_OBJECT),
+    ("m0070 node init (scaled)", &m0070::NODE_INIT_SCALED),
+    ("m0070 root child", &m0070::ROOT_CHILD),
+    ("m0070 static child", &m0070::STATIC_CHILD),
+    ("m0071 node init (vec)", &m0071::NODE_INIT_VEC),
+    ("m0071 static node", &m0071::STATIC_NODE),
+    ("m0071 root node", &m0071::ROOT_NODE),
+    ("m0072 pool set-up", &m0072::POOL_SETUP),
+    ("m0072 pool take", &m0072::POOL_TAKE),
+    ("m0084 start object", &m0084::START_OBJECT),
+    ("m0093 state reset (0x12)", &m0093::RESET_STATE_12),
+    ("m0098 target height", &m0098::TARGET_HEIGHT),
+    ("m0098 view matrix", &m0098::VIEW_MATRIX),
     ("m0481 free record", &m0481::FREE_RECORD),
     ("m0481 draw records", &m0481::DRAW_RECORDS),
     ("m0481 facing", &m0481::FACING),
