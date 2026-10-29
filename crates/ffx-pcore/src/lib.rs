@@ -41,6 +41,7 @@
 pub mod array;
 pub mod freelist;
 pub mod m5p_core;
+pub mod m5p_core_b;
 pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_gdraw_device;

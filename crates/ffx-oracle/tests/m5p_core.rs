@@ -23,6 +23,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pcore::m5p_core::{self as c, bridge as b};
+use ffx_pcore::m5p_core_b::{self as cb, bridge as bb};
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -88,6 +89,8 @@ fn game_dir() -> Option<PathBuf> {
 #[derive(Clone, Copy)]
 enum Ret {
     Imm(u32),
+    /// The word in this cell at the time of the call.
+    Cell(u32),
 }
 
 /// Log entries: 16 words (tag, `ecx`, 14 stack words).
@@ -211,6 +214,10 @@ impl Twins {
             Ret::Imm(v) => {
                 c.push(0xb8);
                 c.extend(v.to_le_bytes()); // mov eax, v
+            }
+            Ret::Cell(at) => {
+                c.push(0xa1);
+                c.extend(at.to_le_bytes()); // mov eax, [at]
             }
         }
         if pops == 0 {
@@ -1122,6 +1129,456 @@ fn small_members_match_the_original() {
                 &[],
                 ALL,
                 |g| b::rigid_body_slot8(g, this),
+            );
+        }
+    }
+}
+
+// ---- batch 2: the containers (ffx_pcore::m5p_core_b) ----
+
+/// An array header: a count word (owned or external) and data (none or a
+/// block of `size` random bytes).
+fn array_header(t: &mut Twins, rng: &mut Rng, size: usize) -> u32 {
+    let this = t.random(rng, 0x10);
+    t.w32(this, count_word(rng));
+    let data = if rng.chance(4) {
+        0
+    } else {
+        t.random(rng, size)
+    };
+    t.w32(this + 4, data);
+    this
+}
+
+/// The new count for a resize of `this`: the same word, 0, or small.
+fn new_count(t: &Twins, rng: &mut Rng, this: u32, case: u32) -> u32 {
+    match case % 5 {
+        0 => t.r32(this),
+        1 => 0,
+        _ => rng.below(7),
+    }
+}
+
+#[test]
+fn resizes_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d101);
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x400);
+        t.stub(cb::PHYRE_MALLOC, false, 2, 0, Ret::Cell(cell));
+        t.stub(cb::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        for &(f, r) in cb::RESIZE {
+            match r.alloc {
+                cb::Alloc::Realloc(g) => t.stub(g, false, 3, 0, Ret::Cell(cell)),
+                cb::Alloc::Malloc {
+                    copy, construct, ..
+                } => {
+                    if copy != 0 {
+                        t.stub(copy, false, 3, 0, Ret::Imm(0x00c0_0000));
+                    }
+                    if construct != 0 {
+                        t.stub(construct, false, 2, 0, Ret::Imm(0x00c1_0000));
+                    }
+                }
+            }
+            if let cb::Release::Destroy(g) = r.release {
+                t.stub(g, false, 2, 0, Ret::Imm(0x00de_0000));
+            }
+            for case in 0..30u32 {
+                let this = array_header(&mut t, &mut rng, 0x40);
+                let n = new_count(&t, &mut rng, this, case);
+                // the block: fresh, none, or the old data itself
+                let block = match case % 7 {
+                    0 => 0,
+                    1 => t.r32(this + 4),
+                    _ => fresh,
+                };
+                t.w32(cell, block);
+                t.check("resize", f, Conv::Thiscall(this), &[n], ALL, |g| {
+                    bb::resize(g, this, n, r)
+                });
+            }
+            assert_eq!(format!("{:?}", cb::resize_of(f)), format!("{r:?}"));
+        }
+        // the PSharray resize: inline and heap storage
+        t.stub(cb::SHARRAY_REALLOC, true, 3, 3, Ret::Cell(cell));
+        for case in 0..40u32 {
+            let this = array_header(&mut t, &mut rng, 0x40);
+            let n = new_count(&t, &mut rng, this, case);
+            let block = match case % 6 {
+                0 => 0,
+                1 => this + 4,
+                2 => t.r32(this + 4),
+                _ => fresh,
+            };
+            t.w32(cell, block);
+            t.check(
+                "sharray resize",
+                0x0048_c470,
+                Conv::Thiscall(this),
+                &[n],
+                ALL,
+                |g| bb::sharray_resize(g, this, n),
+            );
+        }
+        // the LOD levels: copy, defaults and the storage setter
+        t.stub(cb::LOD_LEVELS_COPY, false, 3, 0, Ret::Imm(0x0f80_0000));
+        t.stub(cb::LOD_LEVELS_DEFAULT, false, 2, 0, Ret::Imm(0x6280_0000));
+        t.stub(cb::LOD_LEVELS_SET, true, 2, 2, Ret::Imm(0x7d90_0000));
+        for case in 0..20u32 {
+            let this = array_header(&mut t, &mut rng, 0x40);
+            let n = new_count(&t, &mut rng, this, case);
+            t.w32(cell, if case % 4 == 0 { 0 } else { fresh });
+            t.check(
+                "lod resize",
+                0x005a_7b60,
+                Conv::Thiscall(this),
+                &[n],
+                ALL,
+                |g| bb::lod_levels_resize(g, this, n),
+            );
+        }
+    }
+}
+
+#[test]
+fn elements_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d102);
+        for _ in 0..20 {
+            let this = t.random(&mut rng, 0x20);
+            t.w32(this, count_word(&mut rng) & 0x8000_0003);
+            t.w32(this + 0x14, count_word(&mut rng) & 0x8000_0003);
+            let i = rng.below(9);
+            t.check(
+                "element16",
+                0x0058_5b50,
+                Conv::Thiscall(this),
+                &[i],
+                ALL,
+                |g| ffx_prender::array::bridge::element(g, this, i, 0x10),
+            );
+            t.check(
+                "element12",
+                0x005a_7770,
+                Conv::Thiscall(this),
+                &[i],
+                ALL,
+                |g| ffx_prender::array::bridge::element(g, this + 0x14, i, 12),
+            );
+        }
+        // the 20-byte zeroing and the 64-byte constructions, a null start
+        t.stub(cb::CTOR_55DC40, true, 0, 0, Ret::Imm(0xdc40_0000));
+        // page 0 for the slots after a null start
+        t.a.map_zeroed(0, 0x1000).unwrap();
+        t.b.map_zeroed(0, 0x1000).unwrap();
+        for case in 0..8u32 {
+            let p = if case % 4 == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x140)
+            };
+            let n = rng.below(5);
+            if p == 0 {
+                // known words in the slots the original writes
+                let junk: Vec<u8> = (0..0x80).map(|_| rng.next() as u8).collect();
+                t.write(0, &junk);
+            }
+            t.check("zero20", 0x0058_afd0, Conv::Cdecl, &[p, n], 0, |g| {
+                bb::zero20(g, p, n);
+                0
+            });
+            t.check("construct64", 0x0043_43c0, Conv::Cdecl, &[p, n], 0, |g| {
+                bb::construct64(g, p, n);
+                0
+            });
+        }
+    }
+}
+
+#[test]
+fn element_copies_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d103);
+        // a null destination skips its slot without moving the source;
+        // page 0 holds the slots after it
+        t.a.map_zeroed(0, 0x1000).unwrap();
+        t.b.map_zeroed(0, 0x1000).unwrap();
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x400);
+        t.stub(cb::PHYRE_MALLOC, false, 2, 0, Ret::Cell(cell));
+        let texts: Vec<u32> = ["", "a", "Position", "TEXCOORD0"]
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        for case in 0..16u32 {
+            let n = rng.below(4);
+            let src = t.random(&mut rng, 0x14 * 4);
+            for k in 0..4 {
+                let s = match rng.below(4) {
+                    0 => 0,
+                    1 => 1,
+                    _ => texts[rng.below(4) as usize] | (rng.next() & 1),
+                };
+                t.w32(src + 0x14 * k, s);
+            }
+            let dst = if case % 4 == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x14 * 4)
+            };
+            t.w32(cell, if case % 5 == 0 { 0 } else { fresh });
+            t.check(
+                "stream descs",
+                0x0057_e190,
+                Conv::Cdecl,
+                &[dst, src, n],
+                0,
+                |g| {
+                    bb::copy_stream_descs(g, dst, src, n);
+                    0
+                },
+            );
+        }
+        t.stub(cb::CONTEXT_TAIL_COPY, true, 1, 1, Ret::Imm(0x2740_0000));
+        t.stub(cb::LOD_LEVEL_4_COPY, true, 1, 1, Ret::Imm(0x2380_0000));
+        t.stub(cb::LOD_SHARRAY_COPY, true, 1, 1, Ret::Imm(0x2440_0000));
+        for case in 0..12u32 {
+            let n = rng.below(4);
+            let src = t.alloc(
+                &(0..0x24)
+                    .flat_map(|_| float_word(&mut rng).to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let dst = if case % 4 == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x24 * 4)
+            };
+            t.check(
+                "segment contexts",
+                0x004f_0950,
+                Conv::Cdecl,
+                &[dst, src, n],
+                0,
+                |g| {
+                    bb::copy_segment_contexts(g, dst, src, n);
+                    0
+                },
+            );
+            // a fresh destination: the copy above wrote the first words
+            let dst = if dst == 0 {
+                0
+            } else {
+                t.random(&mut rng, 0x24 * 4)
+            };
+            t.check(
+                "lod levels",
+                0x005a_0f80,
+                Conv::Cdecl,
+                &[dst, src, n],
+                0,
+                |g| {
+                    bb::copy_lod_levels(g, dst, src, n);
+                    0
+                },
+            );
+            t.check(
+                "lod defaults",
+                0x005a_6280,
+                Conv::Cdecl,
+                &[dst, n],
+                0,
+                |g| {
+                    bb::default_lod_levels(g, dst, n);
+                    0
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn sharrays_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d104);
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x400);
+        t.stub(cb::PHYRE_MALLOC, false, 2, 0, Ret::Cell(cell));
+        t.stub(cb::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        t.stub(cb::COPY12, false, 3, 0, Ret::Imm(0x1030_0000));
+        t.stub(cb::STRING_COPY, true, 1, 1, Ret::Imm(0xae10_0000));
+        t.stub(cb::RELEASE_TAGGED_WORDS, false, 2, 0, Ret::Imm(0x4360_0000));
+        for case in 0..48u32 {
+            let src = array_header(&mut t, &mut rng, 0x40);
+            t.w32(src, rng.below(4) | (rng.next() & 0x8000_0000));
+            let this = array_header(&mut t, &mut rng, 0x40);
+            t.w32(cell, if case % 5 == 0 { 0 } else { fresh });
+            t.check(
+                "sharray12 copy",
+                0x005a_2440,
+                Conv::Thiscall(this),
+                &[src],
+                ALL,
+                |g| bb::sharray12_copy(g, this, src),
+            );
+            // PSharray<PString>: one element (inline, owned or borrowed
+            // text), several, or a negative count; one element before in
+            // half the cases
+            let this = array_header(&mut t, &mut rng, 0x40);
+            let count = if case % 2 == 0 {
+                1 | (rng.next() & 0x8000_0000)
+            } else {
+                count_word(&mut rng) & 0xc000_0003
+            };
+            t.w32(this, count);
+            let n = match case % 6 {
+                0 | 3 => 1,
+                1 => 0x8000_0002,
+                5 => u32::MAX,
+                _ => rng.below(4),
+            };
+            let data = if case % 3 == 0 {
+                this + 4
+            } else {
+                t.random(&mut rng, 0x10)
+            };
+            t.check(
+                "string sharray set",
+                0x0044_c960,
+                Conv::Thiscall(this),
+                &[data, n],
+                ALL,
+                |g| bb::string_sharray_set(g, this, data, n),
+            );
+        }
+        // the assign: the inline word with one element and a descriptor,
+        // or anything else
+        let desc = t.zeros(4);
+        let vt_slot = t.stub_code(0x1048_0004, true, 0, 0, Ret::Cell(desc));
+        let vt = t.alloc(&[[0u8; 4], vt_slot.to_le_bytes()].concat());
+        let g = t.rebase(cb::STRING_SHARRAY_TYPE);
+        t.w32(g, vt);
+        t.stub(cb::APPLY_DEFAULT_BUFFER, true, 2, 2, Ret::Imm(0xc160_0000));
+        t.stub(cb::STRING_SHARRAY_SET, true, 2, 2, Ret::Imm(0xc960_0000));
+        for case in 0..12u32 {
+            let this = t.random(&mut rng, 0x10);
+            t.w32(desc, if case % 3 == 0 { 0 } else { 0x00d0_0d00 });
+            let data = if case % 2 == 0 { this + 4 } else { rng.next() };
+            let n = if case % 4 < 2 { 1 } else { rng.below(3) };
+            t.check(
+                "string sharray assign",
+                0x0044_ca80,
+                Conv::Thiscall(this),
+                &[data, n],
+                ALL,
+                |g| bb::string_sharray_assign(g, this, data, n),
+            );
+        }
+    }
+}
+
+#[test]
+fn builders_and_records_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d105);
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x400);
+        t.stub(cb::PHYRE_MALLOC, false, 2, 0, Ret::Cell(cell));
+        t.stub(cb::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        // the builder from a text (the real reserve on the stubbed allocator)
+        for case in 0..8u32 {
+            let this = t.random(&mut rng, 0x10);
+            let s = match case % 4 {
+                0 => 0,
+                1 => t.alloc(b"\0"),
+                _ => t.alloc(b"PhyreEngine builder\0"),
+            };
+            t.w32(cell, if case % 3 == 0 { 0 } else { fresh });
+            t.check(
+                "builder",
+                0x0044_49e0,
+                Conv::Thiscall(this),
+                &[s],
+                ALL,
+                |g| bb::builder_new(g, this, s),
+            );
+        }
+        // += int (the CRT's sprintf_s, the real append) into room enough
+        for v in [0u32, 1, 42, 0xffff_ffff, 0x8000_0000, 1_234_567_890] {
+            let this = t.zeros(0x10);
+            let buf = t.zeros(0x100);
+            t.w32(this, 0x100);
+            t.w32(this + 4, buf);
+            let local = t.b.stack_range().start + 0x200;
+            t.check(
+                "append int",
+                0x0044_4b90,
+                Conv::Thiscall(this),
+                &[v],
+                ALL,
+                |g| bb::builder_append_int(g, this, v, local),
+            );
+        }
+        // the record's arrays
+        t.stub(cb::RELEASE_THREE, true, 0, 0, Ret::Imm(0x9930_0000));
+        for _ in 0..10 {
+            let this = t.random(&mut rng, 0x40);
+            t.w32(this + 4, count_word(&mut rng));
+            if rng.chance(3) {
+                t.w32(this + 8, 0);
+            }
+            t.w32(this + 0x30, count_word(&mut rng));
+            t.check(
+                "record dtor",
+                0x0043_1bf0,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| bb::record_dtor(g, this),
+            );
+        }
+        // the pool's destructor body: records or none
+        t.stub(cb::THREAD_JOIN, true, 0, 1, Ret::Imm(0x01b0_0000));
+        t.stub(cb::THREAD_CLOSE, true, 0, 0, Ret::Imm(1));
+        t.stub(cb::VECTOR_DTOR, false, 4, 4, Ret::Imm(0x96d2_0000));
+        for case in 0..6u32 {
+            let this = t.random(&mut rng, 0x20);
+            let n = rng.below(4);
+            let recs = if case % 3 == 0 {
+                0
+            } else {
+                let block = t.random(&mut rng, 4 + 0x18 * 4);
+                t.w32(block, n);
+                block + 4
+            };
+            t.w32(this + 4, recs);
+            t.w32(this + 8, n);
+            let local = t.b.stack_range().start + 0x80;
+            t.check(
+                "pool dtor body",
+                0x0044_d070,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| bb::pool_dtor_body(g, this, local),
+            );
+        }
+        // the 3x4 identity through the real PMatrix4_toWorldMatrix3x4
+        for _ in 0..2 {
+            let m = t.random(&mut rng, 0x30);
+            let local = t.b.stack_range().start + 0x200;
+            t.check(
+                "identity 3x4",
+                0x0045_0ee0,
+                Conv::Thiscall(m),
+                &[],
+                ALL,
+                |g| bb::identity_3x4(g, m, local),
             );
         }
     }
