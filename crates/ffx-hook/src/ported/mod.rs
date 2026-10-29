@@ -46,6 +46,7 @@ mod m5_sound;
 mod m5_static_init_a;
 mod m5_static_init_b;
 mod m5_system_a;
+mod m5_system_b;
 mod m5_vfx;
 mod main;
 mod map;
@@ -81,6 +82,7 @@ mod vfx_ppp;
 mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
+pub(crate) use m5_system_b::{loader_thread_main, loader_thread_main_on};
 pub(crate) use map::rcbg_guide_update_ex;
 pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 
@@ -107,6 +109,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_static_init_a::hooks());
     all.extend(m5_static_init_b::hooks());
     all.extend(m5_system_a::hooks());
+    all.extend(m5_system_b::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5_sound::hooks());
     all.extend(m5_movie::hooks());

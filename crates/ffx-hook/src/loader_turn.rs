@@ -108,6 +108,10 @@ pub fn note_render_thread() {
 /// Called as the thread's body, with whatever it is given.
 pub unsafe extern "C" fn loader_thread(arg: usize) -> u32 {
     LOADER_TID.store(current_thread(), Ordering::Release);
+    // the port (`ffx_system::m5b_async`), unless turned off
+    if crate::ported::loader_thread_main_on() {
+        return crate::ported::loader_thread_main();
+    }
     // SAFETY: the trampoline runs the original body.
     unsafe {
         let f: unsafe extern "C" fn(usize) -> u32 =

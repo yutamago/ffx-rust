@@ -253,6 +253,19 @@ pub fn hooks() -> Vec<Hook> {
             original: Some(&world::RENDER_WORLD_ORIGINAL),
             steal: 0,
         },
+        // The loader thread: notes its id for the harness's loader turn
+        // (`loader_turn.rs`), then runs the port (`ported/m5_system_b.rs`)
+        // or, when that is off, the original through the trampoline.
+        Hook {
+            name: "AsyncLoadManager_threadMain_00691360",
+            address: 0x0069_1360,
+            // push ebp; mov ebp, esp; mov eax, [abs32] (relocated: only its
+            // opcode is checked; 8 bytes are copied)
+            prologue: &[0x55, 0x8b, 0xec, 0xa1],
+            replacement: loader_turn::loader_thread as *const () as usize,
+            original: Some(&loader_turn::LOADER_ORIGINAL),
+            steal: 8,
+        },
     ];
     all.extend(ported::hooks());
     all

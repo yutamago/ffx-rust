@@ -3123,23 +3123,12 @@ pub unsafe fn install(module: usize) {
     let r = unsafe { crate::install(module, &frame_hooks, &[]) };
     log(&format!("  harness: frame boundary hooks {r:?}"));
     // The asset loader's turn at the render lock in lockstep
-    // (crate::loader_turn; docs/harness.md, "Load pacing"). A trampoline:
-    // the original code runs under the same harness. The lock side is the
-    // port of Phyre_PMutex_lockInner_00431850 (ported/p1_load.rs), or
-    // loader_turn::install_fallback's wrapper when that port is left out.
-    let loader_hooks = [crate::Hook {
-        name: "AsyncLoadManager_threadMain_00691360",
-        address: 0x0069_1360,
-        // push ebp; mov ebp, esp; mov eax, [abs32] (relocated: only its
-        // opcode is checked; 8 bytes are copied)
-        prologue: &[0x55, 0x8b, 0xec, 0xa1],
-        replacement: crate::loader_turn::loader_thread as *const () as usize,
-        original: Some(&crate::loader_turn::LOADER_ORIGINAL),
-        steal: 8,
-    }];
-    // SAFETY: the game has not started (the loader thread is made later).
-    let r = unsafe { crate::install(module, &loader_hooks, &[]) };
-    log(&format!("  harness: loader turn hooks {r:?}"));
+    // (crate::loader_turn; docs/harness.md, "Load pacing"): the loader
+    // thread's wrapper is in the hook table (lib.rs, always installed: it
+    // runs the port of AsyncLoadManager_threadMain_00691360 or the
+    // original). The lock side is the port of Phyre_PMutex_lockInner_00431850
+    // (ported/p1_load.rs), or loader_turn::install_fallback's wrapper when
+    // that port is left out.
     // SAFETY: forwarded from the caller.
     let seeded = unsafe { patch_seeded_jobs(module) };
     log(&format!(
