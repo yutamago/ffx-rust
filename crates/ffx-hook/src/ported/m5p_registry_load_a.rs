@@ -863,4 +863,18 @@ ported! {
     Phyre_PClassDescriptorDynamic_pushObject_00449b50 @ 0x0044_9b50 => extern "thiscall" fn dyn_push(this: u32, l: u32, v: u32) -> u32 {
         dcb::push_object(&mut mem(), this, l, v)
     }
+
+    // ---- batch 5: an iterator seek, block copy, asset-import fixup ----
+    /// The class-member iterator's seek (a copy of `0x00464b40`).
+    Phyre_PClusterHeader_iterSeek_00441b80 @ 0x0044_1b80 => extern "thiscall" fn iter_seek_441b80(this: u32) -> u32 {
+        cluster::bridge::iter_seek(&mut mem(), this)
+    }
+    /// `cdecl(n, src, len)`: a new block holding a copy.
+    Phyre_PhyreMalloc_copy_00447d50 @ 0x0044_7d50 => extern "C" fn copy_to_new_block(n: u32, src: u32, len: u32) -> u32 {
+        dcb::copy_to_new_block(&mut mem(), n, src, len)
+    }
+    /// `PAssetReferenceImport::GetFixup(x, &out, &flags, array)`.
+    Phyre_PAssetReferenceImport_GetFixup @ 0x0045_d300 => extern "C" fn asset_import_fixup(x: u32, out: u32, flags: u32, array: u32) -> u32 {
+        dcb::asset_import_fixup(&mut mem(), x, out, flags, array)
+    }
 }

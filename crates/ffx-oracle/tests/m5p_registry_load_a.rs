@@ -14,8 +14,7 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::too_many_lines,
-    clippy::many_single_char_names,
-    dead_code
+    clippy::many_single_char_names
 )]
 
 use std::collections::HashMap;
@@ -104,8 +103,6 @@ enum Out {
     None,
     /// `eax`.
     U32(u32),
-    /// `al` (the rest of `eax` is the caller's or a callee's).
-    U8(u8),
     /// `edx:eax`.
     U64(u64),
 }
@@ -341,7 +338,6 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
-            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
             Out::U64(v) => assert_eq!(
                 u64::from(ra.edx) << 32 | u64::from(ra.eax),
                 v,
@@ -1294,6 +1290,73 @@ fn desc_dynamic_members_match_the_original() {
             t.check(&what, 0x0045_da20, Conv::Cdecl, &[obj], |g| {
                 Out::U32(dcb::set_asset_owner(g, obj))
             });
+        }
+    }
+}
+
+// ---- batch 5: an iterator seek, block copy, asset-import fixup ----
+
+#[test]
+fn desc_late_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the iterator seek copy at 0x00441b80 (check 0x00441e10)
+        t.stub(0x0044_1dc0, true, 1, 1, 0x77);
+        let want = t.zeros(0x50);
+        let (owner, e) = iter_owner(&mut t, want);
+        let end = owner + 0x1c;
+        for cur in [e[0], e[1], e[2], e[3], 0] {
+            let it = t.junk(0x20, 1);
+            t.w32(it + 0x14, end);
+            t.w32(it + 0x18, cur);
+            t.w32(it + 0x1c, want);
+            let what = format!("{label}: iterSeek 0x441b80 {cur:#x}");
+            t.check(&what, 0x0044_1b80, Conv::Thiscall(it), &[], |g| {
+                Out::U32(ffx_pload::cluster::bridge::iter_seek(g, it))
+            });
+        }
+        t.reset();
+        // the block copy: no size, no block, copies of 0, 3 and n bytes
+        let src = t.alloc(b"abcdefghijklmnop");
+        for (n, block, len) in [
+            (0u32, 0x10u32, 3u32),
+            (8, 0, 3),
+            (8, 1, 0),
+            (8, 1, 3),
+            (16, 1, 16),
+        ] {
+            let at = if block == 0 { 0 } else { t.junk(0x20, 0x44) };
+            t.stub(dc::MALLOC, false, 2, 0, at);
+            let what = format!("{label}: copy to new block n={n} block={at:#x} len={len}");
+            t.check(&what, 0x0044_7d50, Conv::Cdecl, &[n, src, len], |g| {
+                Out::U32(dcb::copy_to_new_block(g, n, src, len))
+            });
+        }
+        t.reset();
+        // the asset-import fixup: no entry, no block, indices either sign
+        let entry = t.zeros(0x40);
+        t.w32(entry + 0x30, 0x0010_0000);
+        let outs = t.junk(8, 3);
+        for (found, block, x) in [
+            (false, true, 0x0010_0000u32),
+            (true, false, 0x0010_0000),
+            (true, true, 0x0010_0000),
+            (true, true, 0x0010_0000 + 12 * 0x1234),
+            (true, true, 0x0010_0000 + 12 * 0x1_2345 + 7),
+            (true, true, 0x000f_fff4),
+            (true, true, 0x000f_0000 - 5),
+        ] {
+            t.stub(dc::FIND_BY_ID, false, 2, 0, if found { entry } else { 0 });
+            let blk = if block { t.junk(4, 0x55) } else { 0 };
+            t.stub(dc::MALLOC, false, 2, 0, blk);
+            let what = format!("{label}: asset import fixup found={found} block={blk:#x} x={x:#x}");
+            t.check(
+                &what,
+                0x0045_d300,
+                Conv::Cdecl,
+                &[x, outs, outs + 4, 0x0044_4440],
+                |g| Out::U32(dcb::asset_import_fixup(g, x, outs, outs + 4, 0x0044_4440)),
+            );
+            t.reset();
         }
     }
 }

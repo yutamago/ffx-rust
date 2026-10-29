@@ -8,6 +8,12 @@ use ffx_graphic::host::{Conv, Host};
 
 /// `PhyreFree` (cdecl).
 pub const FREE: u32 = 0x0042_fb20;
+/// `PhyreMalloc(size, align)` (cdecl).
+pub const MALLOC: u32 = 0x0042_fb80;
+/// `Phyre_PArray_findById(&array, id)` (cdecl).
+pub const FIND_BY_ID: u32 = 0x0045_cd00;
+/// The import table `PAssetReferenceImport::GetFixup` looks up.
+pub const IMPORT_TABLE: u32 = 0x00c9_4030;
 /// `operator delete` (cdecl).
 pub const OPERATOR_DELETE: u32 = 0x0063_0390;
 /// `PClassDescriptor::Destruct` (thiscall).
@@ -43,8 +49,8 @@ pub mod bridge {
     use super::{
         ANNOTATION_DTOR, ASSET_CLASS, BASE_CHECK, CALCULATE_DEFAULT, CALCULATE_VALIDATION,
         CLASS_REFUSED, CLUSTER_DELETE_OBJECT, Conv, DESCRIPTOR_DESTRUCT,
-        DESCRIPTOR_FOR_DESCRIPTOR_VTABLE, FREE, Host, LUA_CHECKSTACK, LUA_PUSHNIL, Mem, OBJECT_GET,
-        OPERATOR_DELETE, PUSH_OBJECT,
+        DESCRIPTOR_FOR_DESCRIPTOR_VTABLE, FIND_BY_ID, FREE, Host, IMPORT_TABLE, LUA_CHECKSTACK,
+        LUA_PUSHNIL, MALLOC, Mem, OBJECT_GET, OPERATOR_DELETE, PUSH_OBJECT,
     };
 
     /// `PArray<T>`'s release (`0x0043b360`, `0x004477d0`, thiscall): the
@@ -318,5 +324,54 @@ pub mod bridge {
     pub fn push_object_through(h: &mut impl Host, this: u32, l: u32, pv: u32) -> u32 {
         let v: u32 = h.read(pv);
         push_object(h, this, l, v)
+    }
+
+    /// `0x00447d50` `cdecl(n, src, len)`: a block of `n` bytes
+    /// (`PhyreMalloc(n, 1)`) holding the first `len` bytes of `src`; 0
+    /// for `n` = 0 or no block.
+    pub fn copy_to_new_block(h: &mut impl Host, n: u32, src: u32, len: u32) -> u32 {
+        if n == 0 {
+            return 0;
+        }
+        let block = h.call_sym(MALLOC, Conv::Cdecl, &[n, 1]);
+        if block == 0 {
+            return 0;
+        }
+        let mut d = block;
+        let mut s = src;
+        for _ in 0..len {
+            if d != 0 {
+                let b: u8 = h.read(s);
+                h.write(d, b);
+            }
+            d = d.wrapping_add(1);
+            s = s.wrapping_add(1);
+        }
+        block
+    }
+
+    /// `PAssetReferenceImport::GetFixup(x, &out, &flags, array)`
+    /// (`0x0045d300`, cdecl): 7 when the asset array has no entry for the
+    /// import table `0x00c94030` (`Phyre_PArray_findById`); else a 2-byte
+    /// block (`PhyreMalloc(2, 2)`) holding the import's index (`(x -
+    /// [entry+0x30]) / 12`, big-endian) into `out`, `0x80000002` into
+    /// `flags`; 0 (also when the block can't be had, then nothing is
+    /// stored).
+    pub fn asset_import_fixup(h: &mut impl Host, x: u32, out: u32, flags: u32, array: u32) -> u32 {
+        let table = h.rebase(IMPORT_TABLE);
+        let entry = h.call_sym(FIND_BY_ID, Conv::Cdecl, &[array, table]);
+        if entry == 0 {
+            return 7;
+        }
+        let block = h.call_sym(MALLOC, Conv::Cdecl, &[2, 2]);
+        if block == 0 {
+            return 0;
+        }
+        let base: u32 = h.read(entry + 0x30);
+        let index = x.wrapping_sub(base).cast_signed() / 12;
+        h.write(block, (index as u16).swap_bytes());
+        h.write(out, block);
+        h.write(flags, 0x8000_0002u32);
+        0
     }
 }
