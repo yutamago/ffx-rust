@@ -834,3 +834,354 @@ fn setters_match_the_original() {
         }
     }
 }
+
+// ---- batch 2: input sources, streams, lazy swaps ----
+
+use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sob};
+use ffx_pother_b::m5p_framework_input_streams::{self as st, bridge as stb};
+
+/// Source scales: ordinary values, zeros, infinities, quiet NaNs, denormals.
+const SCALES: [u32; 6] = [
+    0x3f80_0000,
+    0x8000_0000,
+    0x7f80_0000,
+    0xffc0_1234,
+    0x0000_0001,
+    0xc2c8_0000,
+];
+
+/// A source object (0x40 bytes) with its words set from `seed`.
+fn source(t: &mut Twins, seed: u8, scale: u32) -> u32 {
+    let s = t.junk(0x40, seed);
+    t.w32(s + 0x14, scale);
+    s
+}
+
+#[test]
+fn source_clones_match_the_original() {
+    assert_eq!(so::PLAIN_CLONES.len(), 16);
+    assert_eq!(so::PAIR_CLONES.len(), 4);
+    for (label, mut t) in Twins::all() {
+        for &(_, k) in so::PAIR_CLONES {
+            t.stub(k.check, true, 0, 0, 0xc4ec);
+        }
+        for &(f, ctor) in so::CTOR_CLONES {
+            t.stub(ctor, true, 4, 4, 0xc7 ^ f);
+        }
+        for (i, &scale) in SCALES.iter().enumerate() {
+            for fail in [false, true] {
+                let buf = t.junk(0x40, 0x99);
+                t.stub(so::PHYRE_MALLOC, false, 1, 0, if fail { 0 } else { buf });
+                let src = source(&mut t, i as u8, scale);
+                for &(f, k) in so::PLAIN_CLONES {
+                    let what = format!("{label}: plain clone {f:#x} {i} {fail}");
+                    t.check(&what, f, Conv::Thiscall(src), &[], |g| {
+                        Out::U32(sob::plain_clone(g, k, src))
+                    });
+                }
+                for &(f, k) in so::PAIR_CLONES {
+                    let what = format!("{label}: pair clone {f:#x} {i} {fail}");
+                    t.check(&what, f, Conv::Thiscall(src), &[], |g| {
+                        Out::U32(sob::pair_clone(g, k, src))
+                    });
+                }
+                for &(f, ctor) in so::CTOR_CLONES {
+                    let what = format!("{label}: ctor clone {f:#x} {i} {fail}");
+                    t.check(&what, f, Conv::Thiscall(src), &[], |g| {
+                        Out::U32(sob::ctor_clone(g, ctor, src))
+                    });
+                }
+            }
+        }
+        assert!(t.log_entries() > 100);
+        t.reset();
+    }
+}
+
+#[test]
+fn source_ctors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the default mouse device: an object whose kind is 0xc
+        let def = t.object(&[0, 0], &[0, 0xc]);
+        let vt = t.r32(def);
+        let at = t.rebase(so::DEFAULT_MOUSE_DEVICE);
+        t.w32(at, vt);
+        for (i, &scale) in SCALES.iter().enumerate() {
+            let map = t.junk(0x20, 0x31 + i as u8);
+            for m in [0u32, map] {
+                let obj = t.junk(0x40, 5);
+                let args = [m, 0x1234_5678 ^ i as u32, 0xabcd_ef00 | i as u32, scale];
+                let what = format!("{label}: joypad axis ctor {i} {m:#x}");
+                t.check(&what, 0x009e_1420, Conv::Thiscall(obj), &args, |g| {
+                    Out::U32(sob::joypad_axis_ctor(g, obj, args))
+                });
+            }
+        }
+        for kind in [0u32, 0xa, 0xb, 0xc, 0xd, 0xe, 0xffff_ffff] {
+            let dev = t.object(&[0, 0], &[0, kind]);
+            for m in [0u32, dev] {
+                let obj = t.junk(0x40, 6);
+                let args = [m, 7, 0x1ff, SCALES[kind as usize % SCALES.len()]];
+                let what = format!("{label}: mouse button ctor {kind:#x} {m:#x}");
+                t.check(&what, 0x009e_1910, Conv::Thiscall(obj), &args, |g| {
+                    Out::U32(sob::mouse_button_ctor(g, obj, args))
+                });
+                let src = t.junk(0x40, 7);
+                t.w32(src + 0x1c, m);
+                let what = format!("{label}: mouse button refresh {kind:#x} {m:#x}");
+                t.check(&what, 0x009f_0430, Conv::Thiscall(src), &[], |g| {
+                    Out::U32(sob::mouse_button_refresh(g, src))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn set_storage_copies_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(0x0042_fb20, false, 1, 0, 0xf4ee);
+        for f in [0x009e_f5b0, 0x009e_f600] {
+            for count in [0u32, 1, 7, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff] {
+                for (owned, same) in [(true, false), (false, false), (true, true)] {
+                    let old = t.junk(0x10, 1);
+                    let arr = t.zeros(8);
+                    t.w32(arr, if owned { 3 } else { 0x8000_0003 });
+                    t.w32(arr + 4, old);
+                    let data = if same { old } else { t.junk(0x10, 2) };
+                    let what = format!("{label}: set storage {f:#x} {count:#x} {owned} {same}");
+                    t.check(&what, f, Conv::Thiscall(arr), &[data, count], |g| {
+                        Out::U32(ffx_prender::array::bridge::set_storage(
+                            g, arr, data, count, None,
+                        ))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn lazy_swaps_match_the_original() {
+    assert_eq!(so::SWAP_LAZY.len(), 2);
+    for (label, mut t) in Twins::all() {
+        t.stub(0x00a3_2ef0, true, 0, 0, 0xc7);
+        t.stub(0x0094_9207, false, 1, 0, 0xa7);
+        t.stub(0x0043_d6a0, true, 2, 2, 0x5a9);
+        for &(f, l) in so::SWAP_LAZY {
+            for guard in [0u32, 1, 0xffff_fffe, 0x8000_0003] {
+                let g = t.rebase(l.guard);
+                t.w32(g, guard);
+                let fl = t.rebase(l.flags);
+                t.w32(fl, 0xffff_ffff ^ guard);
+                let p = t.junk(0x20, 3);
+                let what = format!("{label}: lazy swap {f:#x} guard {guard:#x}");
+                t.check(&what, f, Conv::Cdecl, &[p], |g| {
+                    Out::U32(ffx_pload::m5p_tmpl_fortype::bridge::swap_lazy(
+                        g,
+                        &so::lazy_of(f),
+                        p,
+                    ))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn stream_files_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub_import(st::SET_FILE_POINTER_SLOT, 4, 0x10);
+        // the archive seek, the loose seek, a file without either
+        for (entry, handle, r) in [
+            (0u32, 0x1c4u32, 0x10u32),
+            (0, 0x1c4, 0xffff_ffff),
+            (0, 0xffff_ffff, 0),
+        ] {
+            t.stub_import(st::SET_FILE_POINTER_SLOT, 4, r);
+            let file = t.zeros(8);
+            t.w32(file, handle);
+            t.w32(file + 4, entry);
+            for off in [0u32, 0x40, 0xffff_fff0] {
+                let what = format!("{label}: seek {handle:#x} {r:#x} {off:#x}");
+                t.check(&what, 0x0060_8120, Conv::Thiscall(file), &[off], |g| {
+                    Out::U32(stb::file_seek(g, file, off))
+                });
+            }
+        }
+        for r in [0x22u32, 0xffff_ffff] {
+            t.stub(st::VFILE_SEEK, true, 2, 2, r);
+            let entry = t.junk(0x20, 4);
+            let file = t.zeros(8);
+            t.w32(file, 0x55);
+            t.w32(file + 4, entry);
+            let what = format!("{label}: archive seek {r:#x}");
+            t.check(&what, 0x0060_8120, Conv::Thiscall(file), &[0x99], |g| {
+                Out::U32(stb::file_seek(g, file, 0x99))
+            });
+        }
+        // writes: an archive entry (al only), a loose file
+        let file = t.zeros(8);
+        t.w32(file, 0x1c8);
+        t.w32(file + 4, 0x1234);
+        t.check(
+            &format!("{label}: write archive"),
+            0x0060_8160,
+            Conv::Thiscall(file),
+            &[1, 2],
+            |g| {
+                assert!(stb::file_write(g, file, 1, 2, 0).is_none());
+                Out::Al(0)
+            },
+        );
+        t.w32(file + 4, 0);
+        for r in [1u32, 0, 2] {
+            t.stub_import(st::WRITE_FILE_SLOT, 5, r);
+            // the stub writes nothing there: the log's pointer is the check
+            let what = format!("{label}: write loose {r}");
+            t.check_frame(
+                &what,
+                0x0060_8160,
+                Conv::Thiscall(file),
+                &[0x3000, 0x40],
+                0x14,
+                |g| {
+                    let written = g.1;
+                    Out::U32(stb::file_write(g, file, 0x3000, 0x40, written).unwrap())
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn stream_readers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // reset: closed, open but the seek fails, both succeed
+        for (open, ok) in [
+            (0x1200u32, 0u32),
+            (0x1201, 0xab00),
+            (0x0101, 0x7701),
+            (1, 1),
+        ] {
+            for word8 in [0u32, 1, 0x1235] {
+                let r = t.object(&[0, 0, 0, 1], &[0, open, 0, ok]);
+                t.w32(r + 8, word8);
+                t.w32(r + 0xc, 0x77);
+                let what = format!("{label}: reset {open:#x} {ok:#x} {word8:#x}");
+                t.check(&what, 0x0057_6a10, Conv::Thiscall(r), &[], |g| {
+                    Out::U32(stb::reader_reset(g, r))
+                });
+            }
+        }
+        // open
+        t.stub(st::STRING_ASSIGN, true, 1, 1, 0x5a);
+        t.stub(st::FILE_SIZE, true, 0, 0, 0x1234);
+        for r in [0u32, 5] {
+            t.stub(st::OPEN_FILE, true, 5, 5, r);
+            let obj = t.junk(0x40, 8);
+            let what = format!("{label}: open {r}");
+            t.check(&what, 0x0057_6990, Conv::Thiscall(obj), &[0x4000], |g| {
+                Out::U32(stb::reader_open(g, obj, 0x4000))
+            });
+        }
+        // the deleting destructors
+        t.stub(st::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(st::READER_DTOR, true, 0, 0, 0xd7);
+        for flags in [0u32, 1, 2, 0xffff_ffff] {
+            let obj = t.junk(0x40, 9);
+            let what = format!("{label}: reader file delete {flags:#x}");
+            t.check(&what, 0x0057_6820, Conv::Thiscall(obj), &[flags], |g| {
+                Out::U32(stb::reader_file_delete(g, obj, flags))
+            });
+            for name in [0u32, 0x4000, 0x4001] {
+                let obj = t.junk(0x20, 10);
+                t.w32(obj + 8, name);
+                let what = format!("{label}: stream delete {flags:#x} {name:#x}");
+                t.check(&what, 0x0060_f100, Conv::Thiscall(obj), &[flags], |g| {
+                    Out::U32(stb::stream_delete(g, obj, flags))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn stream_writers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for ok in [0x101u32, 0x100, 1, 0] {
+            let w = t.object(&[0, 0, 0, 0, 0, 2], &[0, 0, 0, 0, 0, ok]);
+            t.w32(w + 0xc, 0xffff_fff8);
+            let what = format!("{label}: writer write {ok:#x}");
+            t.check(
+                &what,
+                0x009f_06a0,
+                Conv::Thiscall(w),
+                &[0x5000, 0x10],
+                |g| Out::U32(stb::writer_write(g, w, 0x5000, 0x10)),
+            );
+        }
+        t.stub(st::FILE_CTOR, true, 5, 5, 0xfc);
+        t.stub(st::READER_CTOR, true, 1, 1, 0xec);
+        let obj = t.junk(0x40, 11);
+        t.check(
+            &format!("{label}: writer file ctor"),
+            0x009f_06d0,
+            Conv::Thiscall(obj),
+            &[0x4100],
+            |g| Out::U32(stb::writer_file_ctor(g, obj, 0x4100)),
+        );
+        // the file's destructor is a bare `ret` and runs as it is
+        t.stub(st::WRITER_DTOR, true, 0, 0, 0x7d);
+        let obj = t.junk(0x40, 12);
+        t.check(
+            &format!("{label}: writer file dtor"),
+            0x009f_0740,
+            Conv::Thiscall(obj),
+            &[],
+            |g| Out::U32(stb::writer_file_dtor(g, obj)),
+        );
+        assert_eq!(t.log_entries(), 4 + 2 + 1);
+        t.reset();
+    }
+}
+
+#[test]
+fn registry_deletes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(st::OPERATOR_DELETE, false, 1, 0, 0xde1);
+        let head = t.rebase(st::REGISTRY_HEAD);
+        let old = t.r32(head);
+        // where `this` sits: absent from an empty list, first, middle, last, absent
+        for (case, at) in [
+            (0u32, None),
+            (3, Some(0)),
+            (3, Some(1)),
+            (3, Some(2)),
+            (3, None),
+        ] {
+            for flags in [0u32, 1] {
+                let entries: Vec<u32> = (0..case).map(|i| t.junk(0x10, i as u8)).collect();
+                let this = match at {
+                    Some(i) => entries[i],
+                    None => t.junk(0x10, 0x40),
+                };
+                for (i, &e) in entries.iter().enumerate() {
+                    t.w32(e + 4, entries.get(i + 1).copied().unwrap_or(0));
+                }
+                t.w32(head, entries.first().copied().unwrap_or(0));
+                let what = format!("{label}: registry delete {case} {at:?} {flags}");
+                t.check(&what, 0x009f_4590, Conv::Thiscall(this), &[flags], |g| {
+                    Out::U32(stb::registry_delete(g, this, flags))
+                });
+            }
+        }
+        t.w32(head, old);
+        t.reset();
+    }
+}

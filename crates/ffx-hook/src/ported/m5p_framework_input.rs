@@ -12,6 +12,8 @@
 
 use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
+use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
+use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
 
 ported! {
     /// `Phyre_PhyreOS_Sleep(ms)`: `Sleep(ms)`; its `eax`.
@@ -246,5 +248,163 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_PGame_PGameSettings__dtor`: its vtable, then `PClassDescriptor::Destruct` (tail jump); its `eax`.
     Phyre_PClassDescriptorForType_Phyre_PGame_PGameSettings__dtor @ 0x00a3_3190 => extern "thiscall" fn td_00a33190(this: u32) -> u32 {
         smb::tail_dtor(&mut mem(), const { sm::tail_of(0x00a3_3190) }, this)
+    }
+    /// `Phyre_PSerialization_PStreamReaderFile_deletingDtor_00576820`: its vtable, both destructors, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PSerialization_PStreamReaderFile_deletingDtor_00576820 @ 0x0057_6820 => extern "thiscall" fn dd_00576820(this: u32, flags: u32) -> u32 {
+        tb::reader_file_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PSerialization_PStreamReaderFile_open_00576990`: opens `path`, keeps its name and size; 1 when the open returned 0.
+    Phyre_PSerialization_PStreamReaderFile_open_00576990 @ 0x0057_6990 => extern "thiscall" fn fi_00576990(this: u32, path: u32) -> u32 {
+        tb::reader_open(&mut mem(), this, path)
+    }
+    /// `Phyre_PSerialization_PStreamReaderFile_reset_00576a10`: seeks back to the start when open; `al` the answer.
+    Phyre_PSerialization_PStreamReaderFile_reset_00576a10 @ 0x0057_6a10 => extern "thiscall" fn fi_00576a10(this: u32) -> u32 {
+        tb::reader_reset(&mut mem(), this)
+    }
+    /// `Phyre_PSerialization_PStreamFileWin32_seek_00608120`: a relative seek through the archive entry or `SetFilePointer`; `offset` or 0.
+    Phyre_PSerialization_PStreamFileWin32_seek_00608120 @ 0x0060_8120 => extern "thiscall" fn fi_00608120(this: u32, offset: u32) -> u32 {
+        tb::file_seek(&mut mem(), this, offset)
+    }
+    /// `Phyre_PSerialization_PStreamFileWin32_write_00608160`: `WriteFile` on a loose file (1 when it returns 1); `al` = 0 for an archive entry.
+    Phyre_PSerialization_PStreamFileWin32_write_00608160 @ 0x0060_8160 => extern "thiscall" fn fi_00608160(this: u32, data: u32, size: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let written = frame.at();
+        tb::file_write(&mut mem(), this, data, size, written).unwrap_or(0)
+    }
+    /// `Phyre_PSerialization_PStream_deletingDtor_0060f100`: its vtable, the name freed unless borrowed, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PSerialization_PStream_deletingDtor_0060f100 @ 0x0060_f100 => extern "thiscall" fn dd_0060f100(this: u32, flags: u32) -> u32 {
+        tb::stream_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PInputs_PInputSourceJoypadAxis_ctor_009e1420`: the source's fields, `+0x18` from the map; `this`.
+    Phyre_PInputs_PInputSourceJoypadAxis_ctor_009e1420 @ 0x009e_1420 => extern "thiscall" fn ct_009e1420(this: u32, map: u32, id: u32, flag: u32, scale: u32) -> u32 {
+        sb::joypad_axis_ctor(&mut mem(), this, [map, id, flag, scale])
+    }
+    /// `Phyre_PInputs_PInputSourceMouseButton_ctor_009e1910`: the source's fields, then the mouse-device rule; `this`.
+    Phyre_PInputs_PInputSourceMouseButton_ctor_009e1910 @ 0x009e_1910 => extern "thiscall" fn ct_009e1910(this: u32, map: u32, id: u32, flag: u32, scale: u32) -> u32 {
+        sb::mouse_button_ctor(&mut mem(), this, [map, id, flag, scale])
+    }
+    /// `Phyre_PInputs_PInputSourceJoypadAxis_clone`: a copy through the class's constructor, or 0.
+    Phyre_PInputs_PInputSourceJoypadAxis_clone @ 0x009e_b7a0 => extern "thiscall" fn cl_009eb7a0(this: u32) -> u32 {
+        sb::ctor_clone(&mut mem(), const { so::ctor_of(0x009e_b7a0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceJoypadButton_clone`: a copy with both keys and its semantic check, or 0.
+    Phyre_PInputs_PInputSourceJoypadButton_clone @ 0x009e_b820 => extern "thiscall" fn cl_009eb820(this: u32) -> u32 {
+        sb::pair_clone(&mut mem(), const { so::clone_of(so::PAIR_CLONES, 0x009e_b820) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceKey_clone`: a copy with both keys and its semantic check, or 0.
+    Phyre_PInputs_PInputSourceKey_clone @ 0x009e_b8d0 => extern "thiscall" fn cl_009eb8d0(this: u32) -> u32 {
+        sb::pair_clone(&mut mem(), const { so::clone_of(so::PAIR_CLONES, 0x009e_b8d0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionAngularVelocityX_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionAngularVelocityX_clone @ 0x009e_b980 => extern "thiscall" fn cl_009eb980(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_b980) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionAngularVelocityY_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionAngularVelocityY_clone @ 0x009e_b9d0 => extern "thiscall" fn cl_009eb9d0(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_b9d0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionAngularVelocityZ_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionAngularVelocityZ_clone @ 0x009e_ba20 => extern "thiscall" fn cl_009eba20(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_ba20) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionLinearAccelerationX_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionLinearAccelerationX_clone @ 0x009e_ba70 => extern "thiscall" fn cl_009eba70(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_ba70) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionLinearAccelerationY_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionLinearAccelerationY_clone @ 0x009e_bac0 => extern "thiscall" fn cl_009ebac0(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bac0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionLinearAccelerationZ_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionLinearAccelerationZ_clone @ 0x009e_bb10 => extern "thiscall" fn cl_009ebb10(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bb10) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionQuatW_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionQuatW_clone @ 0x009e_bb60 => extern "thiscall" fn cl_009ebb60(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bb60) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionQuatX_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionQuatX_clone @ 0x009e_bbb0 => extern "thiscall" fn cl_009ebbb0(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bbb0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionQuatY_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionQuatY_clone @ 0x009e_bc00 => extern "thiscall" fn cl_009ebc00(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bc00) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMotionQuatZ_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceMotionQuatZ_clone @ 0x009e_bc50 => extern "thiscall" fn cl_009ebc50(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bc50) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMouseButton_clone`: a copy through the class's constructor, or 0.
+    Phyre_PInputs_PInputSourceMouseButton_clone @ 0x009e_bca0 => extern "thiscall" fn cl_009ebca0(this: u32) -> u32 {
+        sb::ctor_clone(&mut mem(), const { so::ctor_of(0x009e_bca0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMouseDeltaX_clone`: a copy with both keys and its semantic check, or 0.
+    Phyre_PInputs_PInputSourceMouseDeltaX_clone @ 0x009e_bd20 => extern "thiscall" fn cl_009ebd20(this: u32) -> u32 {
+        sb::pair_clone(&mut mem(), const { so::clone_of(so::PAIR_CLONES, 0x009e_bd20) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceMouseDeltaY_clone`: a copy with both keys and its semantic check, or 0.
+    Phyre_PInputs_PInputSourceMouseDeltaY_clone @ 0x009e_bdd0 => extern "thiscall" fn cl_009ebdd0(this: u32) -> u32 {
+        sb::pair_clone(&mut mem(), const { so::clone_of(so::PAIR_CLONES, 0x009e_bdd0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchDragX_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchDragX_clone @ 0x009e_be80 => extern "thiscall" fn cl_009ebe80(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_be80) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchDragY_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchDragY_clone @ 0x009e_bed0 => extern "thiscall" fn cl_009ebed0(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bed0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchPinch_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchPinch_clone @ 0x009e_bf20 => extern "thiscall" fn cl_009ebf20(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bf20) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchRotate_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchRotate_clone @ 0x009e_bf70 => extern "thiscall" fn cl_009ebf70(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bf70) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchTwoFingerDragX_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchTwoFingerDragX_clone @ 0x009e_bfd0 => extern "thiscall" fn cl_009ebfd0(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_bfd0) }, this)
+    }
+    /// `Phyre_PInputs_PInputSourceTouchTwoFingerDragY_clone`: a copy of the source (`PhyreMalloc(0x18)`), or 0.
+    Phyre_PInputs_PInputSourceTouchTwoFingerDragY_clone @ 0x009e_c020 => extern "thiscall" fn cl_009ec020(this: u32) -> u32 {
+        sb::plain_clone(&mut mem(), const { so::clone_of(so::PLAIN_CLONES, 0x009e_c020) }, this)
+    }
+    /// `Phyre_PArray_setStorage_009ef5b0`: `PArray::setStorage(data, count)` (a copy of `Phyre_PArray_setStorage_004f02e0`).
+    Phyre_PArray_setStorage_009ef5b0 @ 0x009e_f5b0 => extern "thiscall" fn ss_009ef5b0(this: u32, data: u32, count: u32) -> u32 {
+        ffx_prender::array::bridge::set_storage(&mut mem(), this, data, count, None)
+    }
+    /// `Phyre_PArray_setStorage_009ef600`: `PArray::setStorage(data, count)` (a copy of `Phyre_PArray_setStorage_004f02e0`).
+    Phyre_PArray_setStorage_009ef600 @ 0x009e_f600 => extern "thiscall" fn ss_009ef600(this: u32, data: u32, count: u32) -> u32 {
+        ffx_prender::array::bridge::set_storage(&mut mem(), this, data, count, None)
+    }
+    /// `Phyre_PInputs_PInputSourceMouseButton_refresh_009f0430`: a non-mouse device falls back on the default; `+0x18` = its kind, returned.
+    Phyre_PInputs_PInputSourceMouseButton_refresh_009f0430 @ 0x009f_0430 => extern "thiscall" fn fi_009f0430(this: u32) -> u32 {
+        sb::mouse_button_refresh(&mut mem(), this)
+    }
+    /// `Phyre_PSerialization_PStreamWriter_write_009f06a0`: the stream's write; 0 and the position advanced, or 9.
+    Phyre_PSerialization_PStreamWriter_write_009f06a0 @ 0x009f_06a0 => extern "thiscall" fn fi_009f06a0(this: u32, data: u32, n: u32) -> u32 {
+        tb::writer_write(&mut mem(), this, data, n)
+    }
+    /// `Phyre_PSerialization_PStreamWriterFile_ctor_009f06d0`: the file, the reader base, its vtable; `this`.
+    Phyre_PSerialization_PStreamWriterFile_ctor_009f06d0 @ 0x009f_06d0 => extern "thiscall" fn fi_009f06d0(this: u32, path: u32) -> u32 {
+        tb::writer_file_ctor(&mut mem(), this, path)
+    }
+    /// `Phyre_PSerialization_PStreamWriterFile_dtor_009f0740`: its vtable, the writer's and the file's destructors; the writer's `eax`.
+    Phyre_PSerialization_PStreamWriterFile_dtor_009f0740 @ 0x009f_0740 => extern "thiscall" fn fi_009f0740(this: u32) -> u32 {
+        tb::writer_file_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PInputs_PUtilityInputs_deletingDtor_009f4590`: its vtable, unlinked from the registry, `operator delete` when `flags & 1`; `this`.
+    Phyre_PInputs_PUtilityInputs_deletingDtor_009f4590 @ 0x009f_4590 => extern "thiscall" fn dd_009f4590(this: u32, flags: u32) -> u32 {
+        tb::registry_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic1`: builds the static descriptor on first use, then `swapEndiannessOfObject(p, 1)`; its `eax`.
+    Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic1 @ 0x00a3_2c60 => extern "C" fn sl_00a32c60(p: u32) -> u32 {
+        ffx_pload::m5p_tmpl_fortype::bridge::swap_lazy(&mut mem(), &const { so::lazy_of(0x00a3_2c60) }, p)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic0`: builds the static descriptor on first use, then `swapEndiannessOfObject(p, 0)`; its `eax`.
+    Phyre_PClassDescriptorConcrete_Phyre_PArray_Phyre_PInputs_PInputMap_4__swapEndiannessStatic0 @ 0x00a3_2d10 => extern "C" fn sl_00a32d10(p: u32) -> u32 {
+        ffx_pload::m5p_tmpl_fortype::bridge::swap_lazy(&mut mem(), &const { so::lazy_of(0x00a3_2d10) }, p)
     }
 }
