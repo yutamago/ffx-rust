@@ -394,6 +394,8 @@ fn scale_ratio_801() {
             [3.0, 0.25, 1.0, 1.0],
             [f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, 1.0],
             [f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY, 1.0],
+            // (+0 and -0 tie, and a negative `q0` keeps the tie's pick)
+            [f32::INFINITY, f32::NEG_INFINITY, -1.0, 1.0],
         ] {
             for (i, x) in (0u32..).zip(v) {
                 t.set_u32(this + 4 * i, x.to_bits());
