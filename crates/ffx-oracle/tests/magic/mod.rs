@@ -427,6 +427,13 @@ impl Call {
     }
 }
 
+/// A set-up kept by [`Twin::save`].
+pub struct Saved {
+    regions: Vec<(u32, Vec<u8>)>,
+    heap: u32,
+    rand: u32,
+}
+
 /// One DLL in Unicorn and in Rust, on the same memory.
 pub struct Twin {
     _guard: MutexGuard<'static, ()>,
@@ -680,6 +687,38 @@ impl Twin {
             (STACK_TOP - STACK_LEN, STACK_LEN),
             (SCRATCH, SCRATCH_LEN),
         ]
+    }
+
+    /// The state a test set up (both sides hold the same bytes then):
+    /// every region, the heap's next block and `rand`'s state, for
+    /// [`Twin::restore`] (running two functions from one set-up, such as
+    /// a handler and the thunk over it).
+    #[must_use]
+    pub fn save(&self) -> Saved {
+        let regions = self
+            .regions()
+            .into_iter()
+            .map(|(at, len)| {
+                let mut b = vec![0u8; len as usize];
+                ArenaMem.read_bytes(at, &mut b);
+                (at, b)
+            })
+            .collect();
+        Saved {
+            regions,
+            heap: self.heap,
+            rand: self.shared.rand,
+        }
+    }
+
+    /// Back to a [`Twin::save`]d state on both sides.
+    pub fn restore(&mut self, s: &Saved) {
+        for (at, b) in &s.regions {
+            ArenaMem.write_bytes(*at, b);
+            self.port.write_bytes(*at, b);
+        }
+        self.heap = s.heap;
+        self.shared.rand = s.rand;
     }
 
     /// The address of `rva` in the image.
@@ -938,6 +977,38 @@ impl Twin {
         // the next call starts equal again (the stack below too)
         self.ignore.clear();
         self.sync_regions();
+    }
+
+    /// [`Twin::check`] of an internal handler, then the same set-up
+    /// through `thunk`, the register thunk over it (`ffx_magic::s3_wrap`):
+    /// `ecx` (and `edx` with `edx_too`) as its first stack words, the
+    /// registers themselves junk. Returns the handler's result.
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_thunked(
+        &mut self,
+        at: u32,
+        thunk: u32,
+        edx_too: bool,
+        c: Call,
+        args: &[u32],
+        eax: Eax,
+        port: impl FnOnce(&mut PortGame, &Image, &Frame) -> Ret,
+    ) -> Ret {
+        let s = self.save();
+        let r = self.check(at, c, args, eax, port);
+        self.restore(&s);
+        let mut words = vec![c.ecx];
+        if edx_too {
+            words.push(c.edx);
+        }
+        words.extend_from_slice(args);
+        let junk = Call {
+            ecx: 0x0bad_0ecc,
+            edx: 0x0bad_0edd,
+            ..c
+        };
+        self.check_entry(thunk, junk, &words, eax);
+        r
     }
 
     /// Runs the bound port of `addr` against the original

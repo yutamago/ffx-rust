@@ -63,6 +63,11 @@ pub mod sb_nodes;
 pub mod sb_ppp;
 pub mod sb_sse;
 pub mod sb_vm;
+// the shared work list's third round (shared-3)
+pub mod s3_matrix;
+pub mod s3_nodes;
+pub mod s3_vm;
+pub mod s3_wrap;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -839,6 +844,38 @@ ports! {
     "show 219" => sb_misc::SHOW_219, sb_misc::show_219;
     "free own part" => sb_misc::FREE_OWN_PART, sb_misc::free_own_part;
     "start seq" => sb_misc::START_SEQ, sb_misc::start_seq;
+    // shared-3 list
+    "thunk: place" => s3_wrap::JMP_PLACE, s3_wrap::ecx_jmp;
+    "thunk: model setup" => s3_wrap::JMP_MODEL_SETUP, s3_wrap::ecx_jmp;
+    "thunk: sub walk" => s3_wrap::JMP_SUB_WALK, s3_wrap::ecx_jmp;
+    "thunk: scaled place" => s3_wrap::JMP_SCALED_PLACE, s3_wrap::ecx_jmp;
+    "thunk: vector op" => s3_wrap::JMP_VECTOR_OP, s3_wrap::ecx_jmp;
+    "thunk: summon bounce" => s3_wrap::JMP_SUMMON_BOUNCE, s3_wrap::ecx_jmp;
+    "thunk: pair aim" => s3_wrap::JMP_PAIR_AIM, s3_wrap::ecx_jmp;
+    "thunk: bone (scaled)" => s3_wrap::JMP_BONE_SCALED, s3_wrap::ecx_jmp;
+    "thunk: add to parent" => s3_wrap::JMP_ADD_TO_PARENT, s3_wrap::ecx_jmp;
+    "thunk: blur setup" => s3_wrap::JMP_BLUR_SETUP, s3_wrap::ecx_jmp;
+    "thunk: visit pair 229" => s3_wrap::JMP_VISIT_PAIR_229, s3_wrap::ecx_jmp;
+    "thunk: visit add vector" => s3_wrap::JMP_VISIT_ADD_VECTOR, s3_wrap::ecx_jmp;
+    "thunk: visit offset (int)" => s3_wrap::JMP_VISIT_OFFSET_INT, s3_wrap::ecx_jmp;
+    "thunk: visit offset (float)" => s3_wrap::JMP_VISIT_OFFSET_FLOAT, s3_wrap::ecx_jmp;
+    "thunk: axis sprites" => s3_wrap::JMP_AXIS_SPRITES, s3_wrap::ecx_jmp;
+    "thunk: node bounce" => s3_wrap::JMP_NODE_BOUNCE, s3_wrap::ecx_jmp;
+    "thunk: draw model" => s3_wrap::JMP_DRAW_MODEL, s3_wrap::ecx_jmp;
+    "thunk: run part" => s3_wrap::JMP_RUN_PART, s3_wrap::ecx_jmp;
+    "thunk: aim parent" => s3_wrap::JMP_AIM_PARENT, s3_wrap::ecx_jmp;
+    "thunk: rotation (0x52a0)" => s3_wrap::JMP_ROTATION_52A0, s3_wrap::ecx_edx_jmp;
+    "thunk: rotation (0x19d0)" => s3_wrap::JMP_ROTATION_19D0, s3_wrap::ecx_edx_jmp;
+    "thunk: rotation (0x47c0)" => s3_wrap::JMP_ROTATION_47C0, s3_wrap::ecx_edx_jmp;
+    "thunk: rotation (0x4d40)" => s3_wrap::JMP_ROTATION_4D40, s3_wrap::ecx_edx_jmp;
+    "thunk: rotation (0x4250)" => s3_wrap::JMP_ROTATION_4250, s3_wrap::ecx_edx_jmp;
+    "thunk: bone (call)" => s3_wrap::CALL_BONE, s3_wrap::ecx_call;
+    "vm each actor" => s3_vm::OP_EACH_ACTOR, s3_vm::op_each_actor;
+    "vm show others" => s3_vm::OP_SHOW_OTHERS, s3_vm::op_show_others;
+    "vm show all" => s3_vm::OP_SHOW_ALL, s3_vm::op_show_all;
+    "vm actor record" => s3_vm::OP_ACTOR_RECORD, s3_vm::op_actor_record;
+    "vm actor block" => s3_vm::OP_ACTOR_BLOCK, s3_vm::op_actor_block;
+    "vm each actor unless listed" => s3_vm::OP_EACH_UNLESS_LISTED, s3_vm::op_each_unless_listed;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1068,6 +1105,13 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("aim parent", &sb_misc::AIM_PARENT),
     ("pick variant", &sb_misc::PICK_VARIANT),
     ("read pads", &sb_misc::READ_PADS),
+    // shared-3 list
+    ("rotation matrix (0x47c0)", &s3_matrix::ROTATION_47C0),
+    ("rotation matrix (0x4d40)", &s3_matrix::ROTATION_4D40),
+    ("rotation matrix (0x4250)", &s3_matrix::ROTATION_4250),
+    ("leave and reset", &s3_nodes::LEAVE_AND_RESET),
+    ("particle node with", &s3_nodes::PARTICLE_NODE_WITH),
+    ("effect node with", &s3_nodes::EFFECT_NODE_WITH),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

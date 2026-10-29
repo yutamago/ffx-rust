@@ -591,8 +591,10 @@ fn aim_parent() {
         }
         t.set_u32(na, vt);
         t.set_u32(nb, vt);
-        t.check(
+        t.check_thunked(
             t.at(0x4fe0),
+            t.at(0x51a0),
+            false,
             Call::this(cur),
             &[],
             Eax::Checked,

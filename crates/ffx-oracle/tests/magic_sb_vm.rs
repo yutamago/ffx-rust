@@ -307,3 +307,60 @@ fn call_239() {
     t.set_u32(CTX + 0x120, 0x0120);
     t.check_entry(f, Call::default(), &[CTX], Eax::Checked);
 }
+
+/// The shared-3 list's opcodes over the actor helpers
+/// (`ffx_magic::s3_vm`): each with the party list, the DLL's list and
+/// the record words in a few states.
+#[test]
+fn s3_actor_opcodes() {
+    let Some(mut t) = twin_0162() else { return };
+    // the helpers' globals: the effect's own character, the DLL's actor
+    // list and count, the battle flags
+    let each = t.at(0x63d0);
+    let all = t.at(0x62b0);
+    let block = t.at(0x6640);
+    let rec = t.at(0x65c0);
+    let w = |t: &Twin, f: u32, o: u32| t.img.word(f + o);
+    let me = w(&t, each, 0x16);
+    let count = w(&t, all, 0x08);
+    let list = w(&t, all, 0x19);
+    let battle = w(&t, all, 0x12);
+    t.set_u32(list, BYTES);
+    let objs = w(&t, all, 0x55);
+    for i in 0..0x10 {
+        t.set_u32(objs + 4 * i, 0x0b0b_0000 + i);
+    }
+    t.set_u32(w(&t, rec, 0x1b), BYTES);
+    t.stub(520, |m, _| m.r32(COUNT + 0xc));
+    let ops = [0x6ff0u32, 0x7780, 0x6fd0, 0x6dd0, 0x6df0, 0x79c0];
+    for rva in ops {
+        for (k, (h, n, mine, fight, cur)) in [
+            (0u16, 0u32, 0x11u32, 0u32, 0u32),
+            (3, 3, 0x05, 0, 0x0237_0000),
+            (0xffff, 8, 0x22, 1, 7),
+            (2, 0xffff_ffff, 0x01, 0, 0xffff_ffff),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // the record opcodes: the record, then the owner word
+            if rva == 0x6dd0 || rva == 0x6df0 {
+                ip(&mut t, h, &[SCRATCH + 0x4000, 0x00ab_cdef + n]);
+            } else {
+                ip(&mut t, h, &[0x40 + n]);
+            }
+            ctx(&mut t, 1, 1);
+            t.write(SCRATCH + 0x4000, &[0xee; 0x20]);
+            t.set_u32(COUNT, [0u32, 3, 8, 2][k]);
+            t.set_u32(COUNT + 8, [0u32, 1, 0, 1][k]);
+            t.set_u32(COUNT + 0xc, cur);
+            t.set_u32(count, n.min(8));
+            t.set_u32(me, mine);
+            t.set_u32(battle, fight);
+            t.set_u32(w(&t, block, 0x1d), fight);
+            t.set_u32(w(&t, block, 0x5a), fight ^ 1);
+            t.set_u32(w(&t, rec, 0x28), fight);
+            run(&mut t, rva);
+        }
+    }
+}

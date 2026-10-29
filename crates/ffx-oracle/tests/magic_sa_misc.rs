@@ -648,7 +648,13 @@ fn magic_0042_node_helpers() {
         t.set_u32(parent + 0x20, 2.5f32.to_bits());
         t.set_u32(sa::node(0) + 0x14, parent);
         t.set_u32(sa::node(0) + 0x1c, (-0.75f32).to_bits());
-        sa::check_this(&mut t, f, ffx_magic::sa_misc::add_to_parent);
+        sa::check_this_thunk(
+            &mut t,
+            f,
+            0x4f50,
+            ffx_magic::sa_misc::add_to_parent,
+            Eax::Checked,
+        );
     }
     let f = t.at(0x7e20);
     let node = |i: u32| SCRATCH + 0x8000 + 0x200 * i;
@@ -1271,7 +1277,13 @@ fn blur_setup_by_count() {
             sa::ring(&mut t, c, p, cp, 0x30 + k as u8);
             t.set_u8(sa::node(0) + 0x1c, count);
             t.set_u32(sa::node(0) + 0x20, time.to_bits());
-            sa::check_this(&mut t, f, ffx_magic::sa_misc::blur_setup);
+            sa::check_this_thunk(
+                &mut t,
+                f,
+                0x1150,
+                ffx_magic::sa_misc::blur_setup,
+                Eax::Checked,
+            );
         }
     }
 }

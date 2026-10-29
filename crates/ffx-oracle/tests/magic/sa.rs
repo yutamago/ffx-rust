@@ -123,3 +123,30 @@ pub fn check_this_eax(
         port,
     );
 }
+
+/// [`check_this_eax`], then the same set-up through the thunk at RVA `thunk`
+/// that hands the handler its cursor (the node tables' 12- and 15-byte
+/// `mov ecx, [ebp + 8]` thunks, `ffx_magic::s3_wrap`): the cursor as its
+/// first stack word, `ecx` junk.
+pub fn check_this_thunk(
+    t: &mut Twin,
+    f: u32,
+    thunk: u32,
+    port: fn(&mut super::magic::PortGame, &Image, &Frame) -> Ret,
+    eax: Eax,
+) {
+    let s = t.save();
+    check_this_eax(t, f, port, eax);
+    t.restore(&s);
+    t.check_entry(
+        t.at(thunk),
+        Call {
+            eax: 0xaabb_ccdd,
+            ecx: 0x0bad_0ecc,
+            edx: 0x55,
+            ..Call::default()
+        },
+        &[CURSOR, 0x0bad_f00e],
+        eax,
+    );
+}

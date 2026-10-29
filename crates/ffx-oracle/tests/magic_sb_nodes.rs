@@ -178,8 +178,10 @@ fn visit_pair_229() {
         for ms in method_sets() {
             for (ma, mb) in [(trap(1000), trap(1003)), (trap(1001), trap(1000))] {
                 group(&mut t, flag, mode, om, &ms, ma, mb);
-                t.check(
+                t.check_thunked(
                     t.at(0x3f00),
+                    t.at(0x3fb0),
+                    false,
                     this_call(GROUP, 0x1234_5678),
                     &[],
                     Eax::Checked,
@@ -201,8 +203,10 @@ fn visit_add_vector() {
     for (flag, mode, om) in MODES {
         for ms in method_sets() {
             group(&mut t, flag, mode, om, &ms, 0, 0);
-            t.check(
+            t.check_thunked(
                 t.at(0x61b0),
+                t.at(0x6240),
+                false,
                 this_call(GROUP, 0xffff_ff00),
                 &[],
                 Eax::Checked,
@@ -229,8 +233,10 @@ fn visit_offsets() {
                     group(&mut t, flag, mode, om, &ms, ma, 0);
                     kids(&mut t, NODE_A, GRANDKIDS, VTABLES + 0x600, 0x1c, &grand);
                     t.set_u8(NODE_A + 0x1a, a_mode);
-                    t.check(
+                    t.check_thunked(
                         t.at(0x3ab0),
+                        t.at(0x3b60),
+                        false,
                         this_call(GROUP, 0x0101_0101),
                         &[],
                         Eax::Checked,
@@ -239,8 +245,10 @@ fn visit_offsets() {
                         },
                     );
                     group(&mut t, flag, mode, om, &ms, ma, 0);
-                    t.check(
+                    t.check_thunked(
                         t.at(0x3b70),
+                        t.at(0x3c10),
+                        false,
                         this_call(GROUP, 0x0202_0202),
                         &[],
                         Eax::Checked,
@@ -481,16 +489,16 @@ fn effect_node() {
 
 #[test]
 fn axis_sprites() {
-    axis_sprites_in(N, 0x33a0);
+    axis_sprites_in(N, 0x33a0, 0x3580);
 }
 
 /// The copy in `magic_0087` (other read-only constants, the same code).
 #[test]
 fn axis_sprites_0087() {
-    axis_sprites_in(87, 0x35e0);
+    axis_sprites_in(87, 0x35e0, 0x37c0);
 }
 
-fn axis_sprites_in(n: u16, rva: u32) {
+fn axis_sprites_in(n: u16, rva: u32, thunk: u32) {
     let Some(mut t) = twin_of(n) else { return };
     stubs(&mut t);
     let buf = SCRATCH + 0x8000;
@@ -517,8 +525,10 @@ fn axis_sprites_in(n: u16, rva: u32) {
             group(&mut t, flag, mode, om, &ms, 0, 0);
             t.set_u32(OWNER + 0x1c, NODE_A);
             t.write(buf, &[0xee; 0x200]);
-            t.check(
+            t.check_thunked(
                 t.at(rva),
+                t.at(thunk),
+                false,
                 this_call(GROUP, 0x4444),
                 &[],
                 Eax::Checked,
@@ -530,16 +540,16 @@ fn axis_sprites_in(n: u16, rva: u32) {
 
 #[test]
 fn bounce() {
-    bounce_in(N, 0x6030);
+    bounce_in(N, 0x6030, 0x61a0);
 }
 
 /// The copy in `magic_0087` (other read-only constants, the same code).
 #[test]
 fn bounce_0087() {
-    bounce_in(87, 0x61b0);
+    bounce_in(87, 0x61b0, 0x6320);
 }
 
-fn bounce_in(n: u16, rva: u32) {
+fn bounce_in(n: u16, rva: u32, thunk: u32) {
     let Some(mut t) = twin_of(n) else { return };
     stubs(&mut t);
     // slot 248: a[0] = a[1] + a[2] (three floats), as FFXVu0AddVector
@@ -564,8 +574,10 @@ fn bounce_in(n: u16, rva: u32) {
             for floor in [-100.0f32, 0.0, 4.0, 100.0, f32::NAN] {
                 group(&mut t, flag, mode, om, &ms, 0, 0);
                 t.set_u32(OWNER + 0x34, floor.to_bits());
-                t.check(
+                t.check_thunked(
                     t.at(rva),
+                    t.at(thunk),
+                    false,
                     this_call(GROUP, 0x5555),
                     &[],
                     Eax::Checked,
@@ -578,16 +590,16 @@ fn bounce_in(n: u16, rva: u32) {
 
 #[test]
 fn draw_model() {
-    draw_model_in(N, 0x3c20);
+    draw_model_in(N, 0x3c20, 0x3e70);
 }
 
 /// The copy in `magic_0087` (other read-only constants, the same code).
 #[test]
 fn draw_model_0087() {
-    draw_model_in(87, 0x3e70);
+    draw_model_in(87, 0x3e70, 0x40c0);
 }
 
-fn draw_model_in(n: u16, rva: u32) {
+fn draw_model_in(n: u16, rva: u32, thunk: u32) {
     let Some(mut t) = twin_of(n) else { return };
     stubs(&mut t);
     let f = t.at(rva);
@@ -653,8 +665,10 @@ fn draw_model_in(n: u16, rva: u32) {
                 t.set_u32(ready, r);
                 // junk under the entry: the draw record's fields must be written
                 t.write(magic::STACK_TOP - 0x2000, &[0x6b; 0x1f00]);
-                t.check(
+                t.check_thunked(
                     f,
+                    t.at(thunk),
+                    false,
                     this_call(GROUP, 0x6666),
                     &[],
                     Eax::Checked,
