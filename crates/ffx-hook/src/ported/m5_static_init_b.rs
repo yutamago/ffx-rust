@@ -609,4 +609,604 @@ ported! {
     StaticInit_PInputMap_00af1420 @ 0x00af_1420 => extern "C" fn s_00af1420() -> u32 {
         si::class_decl(&mut mem(), &si::CLASS_DECLS[51])
     }
+    /// `StaticInit_JoypadAxis_00af2670`: type-enum value `JoypadAxis`: when 0x009f48f0 finds no such name, the node 0x00c68240 goes on the head of its list 0x0194359c (old head to 0x00c68248); atexit(0x00b08380).
+    StaticInit_JoypadAxis_00af2670 @ 0x00af_2670 => extern "C" fn s_00af2670() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[0])
+    }
+    /// `StaticInit_JoypadButton_00af26b0`: type-enum value `JoypadButton`: when 0x009f48f0 finds no such name, the node 0x00c68234 goes on the head of its list 0x0194359c (old head to 0x00c6823c); atexit(0x00b083a0).
+    StaticInit_JoypadButton_00af26b0 @ 0x00af_26b0 => extern "C" fn s_00af26b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[1])
+    }
+    /// `StaticInit_Key_00af26f0`: type-enum value `Key`: when 0x009f48f0 finds no such name, the node 0x00c68228 goes on the head of its list 0x0194359c (old head to 0x00c68230); atexit(0x00b083c0).
+    StaticInit_Key_00af26f0 @ 0x00af_26f0 => extern "C" fn s_00af26f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[2])
+    }
+    /// `StaticInit_MotionAngularVelocityX_00af2730`: type-enum value `MotionAngularVelocityX`: when 0x009f48f0 finds no such name, the node 0x00c682e8 goes on the head of its list 0x0194359c (old head to 0x00c682f0); atexit(0x00b083e0).
+    StaticInit_MotionAngularVelocityX_00af2730 @ 0x00af_2730 => extern "C" fn s_00af2730() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[3])
+    }
+    /// `StaticInit_MotionAngularVelocityY_00af2770`: type-enum value `MotionAngularVelocityY`: when 0x009f48f0 finds no such name, the node 0x00c682f4 goes on the head of its list 0x0194359c (old head to 0x00c682fc); atexit(0x00b08400).
+    StaticInit_MotionAngularVelocityY_00af2770 @ 0x00af_2770 => extern "C" fn s_00af2770() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[4])
+    }
+    /// `StaticInit_MotionAngularVelocityZ_00af27b0`: type-enum value `MotionAngularVelocityZ`: when 0x009f48f0 finds no such name, the node 0x00c68300 goes on the head of its list 0x0194359c (old head to 0x00c68308); atexit(0x00b08420).
+    StaticInit_MotionAngularVelocityZ_00af27b0 @ 0x00af_27b0 => extern "C" fn s_00af27b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[5])
+    }
+    /// `StaticInit_MotionLinearAccelerationX_00af27f0`: type-enum value `MotionLinearAccelerationX`: when 0x009f48f0 finds no such name, the node 0x00c6830c goes on the head of its list 0x0194359c (old head to 0x00c68314); atexit(0x00b08440).
+    StaticInit_MotionLinearAccelerationX_00af27f0 @ 0x00af_27f0 => extern "C" fn s_00af27f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[6])
+    }
+    /// `StaticInit_MotionLinearAccelerationY_00af2830`: type-enum value `MotionLinearAccelerationY`: when 0x009f48f0 finds no such name, the node 0x00c68318 goes on the head of its list 0x0194359c (old head to 0x00c68320); atexit(0x00b08460).
+    StaticInit_MotionLinearAccelerationY_00af2830 @ 0x00af_2830 => extern "C" fn s_00af2830() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[7])
+    }
+    /// `StaticInit_MotionLinearAccelerationZ_00af2870`: type-enum value `MotionLinearAccelerationZ`: when 0x009f48f0 finds no such name, the node 0x00c68324 goes on the head of its list 0x0194359c (old head to 0x00c6832c); atexit(0x00b08480).
+    StaticInit_MotionLinearAccelerationZ_00af2870 @ 0x00af_2870 => extern "C" fn s_00af2870() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[8])
+    }
+    /// `StaticInit_MotionQuatW_00af28b0`: type-enum value `MotionQuatW`: when 0x009f48f0 finds no such name, the node 0x00c682dc goes on the head of its list 0x0194359c (old head to 0x00c682e4); atexit(0x00b084a0).
+    StaticInit_MotionQuatW_00af28b0 @ 0x00af_28b0 => extern "C" fn s_00af28b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[9])
+    }
+    /// `StaticInit_MotionQuatX_00af28f0`: type-enum value `MotionQuatX`: when 0x009f48f0 finds no such name, the node 0x00c682b8 goes on the head of its list 0x0194359c (old head to 0x00c682c0); atexit(0x00b084c0).
+    StaticInit_MotionQuatX_00af28f0 @ 0x00af_28f0 => extern "C" fn s_00af28f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[10])
+    }
+    /// `StaticInit_MotionQuatY_00af2930`: type-enum value `MotionQuatY`: when 0x009f48f0 finds no such name, the node 0x00c682c4 goes on the head of its list 0x0194359c (old head to 0x00c682cc); atexit(0x00b084e0).
+    StaticInit_MotionQuatY_00af2930 @ 0x00af_2930 => extern "C" fn s_00af2930() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[11])
+    }
+    /// `StaticInit_MotionQuatZ_00af2970`: type-enum value `MotionQuatZ`: when 0x009f48f0 finds no such name, the node 0x00c682d0 goes on the head of its list 0x0194359c (old head to 0x00c682d8); atexit(0x00b08500).
+    StaticInit_MotionQuatZ_00af2970 @ 0x00af_2970 => extern "C" fn s_00af2970() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[12])
+    }
+    /// `StaticInit_MouseButton_00af29b0`: type-enum value `MouseButton`: when 0x009f48f0 finds no such name, the node 0x00c6824c goes on the head of its list 0x0194359c (old head to 0x00c68254); atexit(0x00b08520).
+    StaticInit_MouseButton_00af29b0 @ 0x00af_29b0 => extern "C" fn s_00af29b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[13])
+    }
+    /// `StaticInit_MouseDeltaX_00af29f0`: type-enum value `MouseDeltaX`: when 0x009f48f0 finds no such name, the node 0x00c68258 goes on the head of its list 0x0194359c (old head to 0x00c68260); atexit(0x00b08540).
+    StaticInit_MouseDeltaX_00af29f0 @ 0x00af_29f0 => extern "C" fn s_00af29f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[14])
+    }
+    /// `StaticInit_MouseDeltaY_00af2a30`: type-enum value `MouseDeltaY`: when 0x009f48f0 finds no such name, the node 0x00c68264 goes on the head of its list 0x0194359c (old head to 0x00c6826c); atexit(0x00b08560).
+    StaticInit_MouseDeltaY_00af2a30 @ 0x00af_2a30 => extern "C" fn s_00af2a30() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[15])
+    }
+    /// `StaticInit_TouchDragX_00af2a70`: type-enum value `TouchDragX`: when 0x009f48f0 finds no such name, the node 0x00c68270 goes on the head of its list 0x0194359c (old head to 0x00c68278); atexit(0x00b08580).
+    StaticInit_TouchDragX_00af2a70 @ 0x00af_2a70 => extern "C" fn s_00af2a70() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[16])
+    }
+    /// `StaticInit_TouchDragY_00af2ab0`: type-enum value `TouchDragY`: when 0x009f48f0 finds no such name, the node 0x00c6827c goes on the head of its list 0x0194359c (old head to 0x00c68284); atexit(0x00b085a0).
+    StaticInit_TouchDragY_00af2ab0 @ 0x00af_2ab0 => extern "C" fn s_00af2ab0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[17])
+    }
+    /// `StaticInit_TouchPinch_00af2af0`: type-enum value `TouchPinch`: when 0x009f48f0 finds no such name, the node 0x00c682a0 goes on the head of its list 0x0194359c (old head to 0x00c682a8); atexit(0x00b085c0).
+    StaticInit_TouchPinch_00af2af0 @ 0x00af_2af0 => extern "C" fn s_00af2af0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[18])
+    }
+    /// `StaticInit_TouchRotate_00af2b30`: type-enum value `TouchRotate`: when 0x009f48f0 finds no such name, the node 0x00c682ac goes on the head of its list 0x0194359c (old head to 0x00c682b4); atexit(0x00b085e0).
+    StaticInit_TouchRotate_00af2b30 @ 0x00af_2b30 => extern "C" fn s_00af2b30() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[19])
+    }
+    /// `StaticInit_TouchTwoFingerDragX_00af2b70`: type-enum value `TouchTwoFingerDragX`: when 0x009f48f0 finds no such name, the node 0x00c68288 goes on the head of its list 0x0194359c (old head to 0x00c68290); atexit(0x00b08600).
+    StaticInit_TouchTwoFingerDragX_00af2b70 @ 0x00af_2b70 => extern "C" fn s_00af2b70() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[20])
+    }
+    /// `StaticInit_TouchTwoFingerDragY_00af2bb0`: type-enum value `TouchTwoFingerDragY`: when 0x009f48f0 finds no such name, the node 0x00c68294 goes on the head of its list 0x0194359c (old head to 0x00c6829c); atexit(0x00b08620).
+    StaticInit_TouchTwoFingerDragY_00af2bb0 @ 0x00af_2bb0 => extern "C" fn s_00af2bb0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[21])
+    }
+    /// `StaticInit_Gyro_00af4c50`: type-enum value `Gyro`: when 0x00a2dea0 finds no such name, the node 0x00c6b6b4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6bc); atexit(0x00b09220).
+    StaticInit_Gyro_00af4c50 @ 0x00af_4c50 => extern "C" fn s_00af4c50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[22])
+    }
+    /// `StaticInit_XAxis_0_00af4c90`: type-enum value `XAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b744 goes on the head of its list 0x01a85318 (old head to 0x00c6b74c); atexit(0x00b09240).
+    StaticInit_XAxis_0_00af4c90 @ 0x00af_4c90 => extern "C" fn s_00af4c90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[23])
+    }
+    /// `StaticInit_XAxis_1_00af4cd0`: type-enum value `XAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b714 goes on the head of its list 0x01a85318 (old head to 0x00c6b71c); atexit(0x00b09260).
+    StaticInit_XAxis_1_00af4cd0 @ 0x00af_4cd0 => extern "C" fn s_00af4cd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[24])
+    }
+    /// `StaticInit_XAxis_2_00af4d10`: type-enum value `XAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6e4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6ec); atexit(0x00b09280).
+    StaticInit_XAxis_2_00af4d10 @ 0x00af_4d10 => extern "C" fn s_00af4d10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[25])
+    }
+    /// `StaticInit_YAxis_0_00af4d50`: type-enum value `YAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b734 goes on the head of its list 0x01a85318 (old head to 0x00c6b73c); atexit(0x00b092a0).
+    StaticInit_YAxis_0_00af4d50 @ 0x00af_4d50 => extern "C" fn s_00af4d50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[26])
+    }
+    /// `StaticInit_YAxis_1_00af4d90`: type-enum value `YAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b704 goes on the head of its list 0x01a85318 (old head to 0x00c6b70c); atexit(0x00b092c0).
+    StaticInit_YAxis_1_00af4d90 @ 0x00af_4d90 => extern "C" fn s_00af4d90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[27])
+    }
+    /// `StaticInit_YAxis_2_00af4dd0`: type-enum value `YAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6d4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6dc); atexit(0x00b092e0).
+    StaticInit_YAxis_2_00af4dd0 @ 0x00af_4dd0 => extern "C" fn s_00af4dd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[28])
+    }
+    /// `StaticInit_ZAxis_0_00af4e10`: type-enum value `ZAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b724 goes on the head of its list 0x01a85318 (old head to 0x00c6b72c); atexit(0x00b09300).
+    StaticInit_ZAxis_0_00af4e10 @ 0x00af_4e10 => extern "C" fn s_00af4e10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[29])
+    }
+    /// `StaticInit_ZAxis_1_00af4e50`: type-enum value `ZAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b6f4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6fc); atexit(0x00b09320).
+    StaticInit_ZAxis_1_00af4e50 @ 0x00af_4e50 => extern "C" fn s_00af4e50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[30])
+    }
+    /// `StaticInit_ZAxis_2_00af4e90`: type-enum value `ZAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6c4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6cc); atexit(0x00b09340).
+    StaticInit_ZAxis_2_00af4e90 @ 0x00af_4e90 => extern "C" fn s_00af4e90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[31])
+    }
+    /// `StaticInit_Button_0_00af4ed0`: type-enum value `Button_0`: when 0x00a2e310 finds no such name, the node 0x00c6bb34 goes on the head of its list 0x01a85354 (old head to 0x00c6bb3c); atexit(0x00b09370).
+    StaticInit_Button_0_00af4ed0 @ 0x00af_4ed0 => extern "C" fn s_00af4ed0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[32])
+    }
+    /// `StaticInit_Button_10_00af4f10`: type-enum value `Button_10`: when 0x00a2e310 finds no such name, the node 0x00c6b964 goes on the head of its list 0x01a85354 (old head to 0x00c6b96c); atexit(0x00b09390).
+    StaticInit_Button_10_00af4f10 @ 0x00af_4f10 => extern "C" fn s_00af4f10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[33])
+    }
+    /// `StaticInit_Button_11_00af4f50`: type-enum value `Button_11`: when 0x00a2e310 finds no such name, the node 0x00c6b934 goes on the head of its list 0x01a85354 (old head to 0x00c6b93c); atexit(0x00b093b0).
+    StaticInit_Button_11_00af4f50 @ 0x00af_4f50 => extern "C" fn s_00af4f50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[34])
+    }
+    /// `StaticInit_Button_12_00af4f90`: type-enum value `Button_12`: when 0x00a2e310 finds no such name, the node 0x00c6b904 goes on the head of its list 0x01a85354 (old head to 0x00c6b90c); atexit(0x00b093d0).
+    StaticInit_Button_12_00af4f90 @ 0x00af_4f90 => extern "C" fn s_00af4f90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[35])
+    }
+    /// `StaticInit_Button_13_00af4fd0`: type-enum value `Button_13`: when 0x00a2e310 finds no such name, the node 0x00c6b8e4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8ec); atexit(0x00b093f0).
+    StaticInit_Button_13_00af4fd0 @ 0x00af_4fd0 => extern "C" fn s_00af4fd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[36])
+    }
+    /// `StaticInit_Button_14_00af5010`: type-enum value `Button_14`: when 0x00a2e310 finds no such name, the node 0x00c6b8c4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8cc); atexit(0x00b09410).
+    StaticInit_Button_14_00af5010 @ 0x00af_5010 => extern "C" fn s_00af5010() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[37])
+    }
+    /// `StaticInit_Button_15_00af5050`: type-enum value `Button_15`: when 0x00a2e310 finds no such name, the node 0x00c6b8a4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8ac); atexit(0x00b09430).
+    StaticInit_Button_15_00af5050 @ 0x00af_5050 => extern "C" fn s_00af5050() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[38])
+    }
+    /// `StaticInit_Button_1_00af5090`: type-enum value `Button_1`: when 0x00a2e310 finds no such name, the node 0x00c6bb04 goes on the head of its list 0x01a85354 (old head to 0x00c6bb0c); atexit(0x00b09450).
+    StaticInit_Button_1_00af5090 @ 0x00af_5090 => extern "C" fn s_00af5090() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[39])
+    }
+    /// `StaticInit_Button_2_00af50d0`: type-enum value `Button_2`: when 0x00a2e310 finds no such name, the node 0x00c6bad4 goes on the head of its list 0x01a85354 (old head to 0x00c6badc); atexit(0x00b09470).
+    StaticInit_Button_2_00af50d0 @ 0x00af_50d0 => extern "C" fn s_00af50d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[40])
+    }
+    /// `StaticInit_Button_3_00af5110`: type-enum value `Button_3`: when 0x00a2e310 finds no such name, the node 0x00c6baa4 goes on the head of its list 0x01a85354 (old head to 0x00c6baac); atexit(0x00b09490).
+    StaticInit_Button_3_00af5110 @ 0x00af_5110 => extern "C" fn s_00af5110() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[41])
+    }
+    /// `StaticInit_Button_4_00af5150`: type-enum value `Button_4`: when 0x00a2e310 finds no such name, the node 0x00c6ba74 goes on the head of its list 0x01a85354 (old head to 0x00c6ba7c); atexit(0x00b094b0).
+    StaticInit_Button_4_00af5150 @ 0x00af_5150 => extern "C" fn s_00af5150() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[42])
+    }
+    /// `StaticInit_Button_5_00af5190`: type-enum value `Button_5`: when 0x00a2e310 finds no such name, the node 0x00c6ba44 goes on the head of its list 0x01a85354 (old head to 0x00c6ba4c); atexit(0x00b094d0).
+    StaticInit_Button_5_00af5190 @ 0x00af_5190 => extern "C" fn s_00af5190() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[43])
+    }
+    /// `StaticInit_Button_6_00af51d0`: type-enum value `Button_6`: when 0x00a2e310 finds no such name, the node 0x00c6ba14 goes on the head of its list 0x01a85354 (old head to 0x00c6ba1c); atexit(0x00b094f0).
+    StaticInit_Button_6_00af51d0 @ 0x00af_51d0 => extern "C" fn s_00af51d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[44])
+    }
+    /// `StaticInit_Button_7_00af5210`: type-enum value `Button_7`: when 0x00a2e310 finds no such name, the node 0x00c6b9e4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9ec); atexit(0x00b09510).
+    StaticInit_Button_7_00af5210 @ 0x00af_5210 => extern "C" fn s_00af5210() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[45])
+    }
+    /// `StaticInit_Button_8_00af5250`: type-enum value `Button_8`: when 0x00a2e310 finds no such name, the node 0x00c6b9b4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9bc); atexit(0x00b09530).
+    StaticInit_Button_8_00af5250 @ 0x00af_5250 => extern "C" fn s_00af5250() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[46])
+    }
+    /// `StaticInit_Button_9_00af5290`: type-enum value `Button_9`: when 0x00a2e310 finds no such name, the node 0x00c6b984 goes on the head of its list 0x01a85354 (old head to 0x00c6b98c); atexit(0x00b09550).
+    StaticInit_Button_9_00af5290 @ 0x00af_5290 => extern "C" fn s_00af5290() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[47])
+    }
+    /// `StaticInit_Button_A_00af52d0`: type-enum value `Button_A`: when 0x00a2e310 finds no such name, the node 0x00c6bae4 goes on the head of its list 0x01a85354 (old head to 0x00c6baec); atexit(0x00b09570).
+    StaticInit_Button_A_00af52d0 @ 0x00af_52d0 => extern "C" fn s_00af52d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[48])
+    }
+    /// `StaticInit_Button_B_00af5310`: type-enum value `Button_B`: when 0x00a2e310 finds no such name, the node 0x00c6bab4 goes on the head of its list 0x01a85354 (old head to 0x00c6babc); atexit(0x00b09590).
+    StaticInit_Button_B_00af5310 @ 0x00af_5310 => extern "C" fn s_00af5310() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[49])
+    }
+    /// `StaticInit_Button_Back_00af5350`: type-enum value `Button_Back`: when 0x00a2e310 finds no such name, the node 0x00c6b994 goes on the head of its list 0x01a85354 (old head to 0x00c6b99c); atexit(0x00b095b0).
+    StaticInit_Button_Back_00af5350 @ 0x00af_5350 => extern "C" fn s_00af5350() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[50])
+    }
+    /// `StaticInit_Button_Circle_00af5390`: type-enum value `Button_Circle`: when 0x00a2e310 finds no such name, the node 0x00c6bac4 goes on the head of its list 0x01a85354 (old head to 0x00c6bacc); atexit(0x00b095d0).
+    StaticInit_Button_Circle_00af5390 @ 0x00af_5390 => extern "C" fn s_00af5390() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[51])
+    }
+    /// `StaticInit_Button_Cross_00af53d0`: type-enum value `Button_Cross`: when 0x00a2e310 finds no such name, the node 0x00c6baf4 goes on the head of its list 0x01a85354 (old head to 0x00c6bafc); atexit(0x00b095f0).
+    StaticInit_Button_Cross_00af53d0 @ 0x00af_53d0 => extern "C" fn s_00af53d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[52])
+    }
+    /// `StaticInit_Button_Down_00af5410`: type-enum value `Button_Down`: when 0x00a2e310 finds no such name, the node 0x00c6b8b4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8bc); atexit(0x00b09610).
+    StaticInit_Button_Down_00af5410 @ 0x00af_5410 => extern "C" fn s_00af5410() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[53])
+    }
+    /// `StaticInit_Button_L1_00af5450`: type-enum value `Button_L1`: when 0x00a2e310 finds no such name, the node 0x00c6ba64 goes on the head of its list 0x01a85354 (old head to 0x00c6ba6c); atexit(0x00b09630).
+    StaticInit_Button_L1_00af5450 @ 0x00af_5450 => extern "C" fn s_00af5450() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[54])
+    }
+    /// `StaticInit_Button_L2_00af5490`: type-enum value `Button_L2`: when 0x00a2e310 finds no such name, the node 0x00c6ba04 goes on the head of its list 0x01a85354 (old head to 0x00c6ba0c); atexit(0x00b09650).
+    StaticInit_Button_L2_00af5490 @ 0x00af_5490 => extern "C" fn s_00af5490() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[55])
+    }
+    /// `StaticInit_Button_L3_00af54d0`: type-enum value `Button_L3`: when 0x00a2e310 finds no such name, the node 0x00c6b954 goes on the head of its list 0x01a85354 (old head to 0x00c6b95c); atexit(0x00b09670).
+    StaticInit_Button_L3_00af54d0 @ 0x00af_54d0 => extern "C" fn s_00af54d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[56])
+    }
+    /// `StaticInit_Button_LB_00af5510`: type-enum value `Button_LB`: when 0x00a2e310 finds no such name, the node 0x00c6ba54 goes on the head of its list 0x01a85354 (old head to 0x00c6ba5c); atexit(0x00b09690).
+    StaticInit_Button_LB_00af5510 @ 0x00af_5510 => extern "C" fn s_00af5510() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[57])
+    }
+    /// `StaticInit_Button_LS_00af5550`: type-enum value `Button_LS`: when 0x00a2e310 finds no such name, the node 0x00c6b944 goes on the head of its list 0x01a85354 (old head to 0x00c6b94c); atexit(0x00b096b0).
+    StaticInit_Button_LS_00af5550 @ 0x00af_5550 => extern "C" fn s_00af5550() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[58])
+    }
+    /// `StaticInit_Button_LT_00af5590`: type-enum value `Button_LT`: when 0x00a2e310 finds no such name, the node 0x00c6b9f4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9fc); atexit(0x00b096d0).
+    StaticInit_Button_LT_00af5590 @ 0x00af_5590 => extern "C" fn s_00af5590() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[59])
+    }
+    /// `StaticInit_Button_Left_00af55d0`: type-enum value `Button_Left`: when 0x00a2e310 finds no such name, the node 0x00c6b894 goes on the head of its list 0x01a85354 (old head to 0x00c6b89c); atexit(0x00b096f0).
+    StaticInit_Button_Left_00af55d0 @ 0x00af_55d0 => extern "C" fn s_00af55d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[60])
+    }
+    /// `StaticInit_Button_R1_00af5610`: type-enum value `Button_R1`: when 0x00a2e310 finds no such name, the node 0x00c6ba34 goes on the head of its list 0x01a85354 (old head to 0x00c6ba3c); atexit(0x00b09710).
+    StaticInit_Button_R1_00af5610 @ 0x00af_5610 => extern "C" fn s_00af5610() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[61])
+    }
+    /// `StaticInit_Button_R2_00af5650`: type-enum value `Button_R2`: when 0x00a2e310 finds no such name, the node 0x00c6b9d4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9dc); atexit(0x00b09730).
+    StaticInit_Button_R2_00af5650 @ 0x00af_5650 => extern "C" fn s_00af5650() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[62])
+    }
+    /// `StaticInit_Button_R3_00af5690`: type-enum value `Button_R3`: when 0x00a2e310 finds no such name, the node 0x00c6b924 goes on the head of its list 0x01a85354 (old head to 0x00c6b92c); atexit(0x00b09750).
+    StaticInit_Button_R3_00af5690 @ 0x00af_5690 => extern "C" fn s_00af5690() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[63])
+    }
+    /// `StaticInit_Button_RB_00af56d0`: type-enum value `Button_RB`: when 0x00a2e310 finds no such name, the node 0x00c6ba24 goes on the head of its list 0x01a85354 (old head to 0x00c6ba2c); atexit(0x00b09770).
+    StaticInit_Button_RB_00af56d0 @ 0x00af_56d0 => extern "C" fn s_00af56d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[64])
+    }
+    /// `StaticInit_Button_RS_00af5710`: type-enum value `Button_RS`: when 0x00a2e310 finds no such name, the node 0x00c6b914 goes on the head of its list 0x01a85354 (old head to 0x00c6b91c); atexit(0x00b09790).
+    StaticInit_Button_RS_00af5710 @ 0x00af_5710 => extern "C" fn s_00af5710() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[65])
+    }
+    /// `StaticInit_Button_RT_00af5750`: type-enum value `Button_RT`: when 0x00a2e310 finds no such name, the node 0x00c6b9c4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9cc); atexit(0x00b097b0).
+    StaticInit_Button_RT_00af5750 @ 0x00af_5750 => extern "C" fn s_00af5750() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[66])
+    }
+    /// `StaticInit_Button_Right_00af5790`: type-enum value `Button_Right`: when 0x00a2e310 finds no such name, the node 0x00c6b8d4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8dc); atexit(0x00b097d0).
+    StaticInit_Button_Right_00af5790 @ 0x00af_5790 => extern "C" fn s_00af5790() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[67])
+    }
+    /// `StaticInit_Button_Select_00af57d0`: type-enum value `Button_Select`: when 0x00a2e310 finds no such name, the node 0x00c6b9a4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9ac); atexit(0x00b097f0).
+    StaticInit_Button_Select_00af57d0 @ 0x00af_57d0 => extern "C" fn s_00af57d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[68])
+    }
+    /// `StaticInit_Button_Square_00af5810`: type-enum value `Button_Square`: when 0x00a2e310 finds no such name, the node 0x00c6bb24 goes on the head of its list 0x01a85354 (old head to 0x00c6bb2c); atexit(0x00b09810).
+    StaticInit_Button_Square_00af5810 @ 0x00af_5810 => extern "C" fn s_00af5810() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[69])
+    }
+    /// `StaticInit_Button_Start_00af5850`: type-enum value `Button_Start`: when 0x00a2e310 finds no such name, the node 0x00c6b974 goes on the head of its list 0x01a85354 (old head to 0x00c6b97c); atexit(0x00b09830).
+    StaticInit_Button_Start_00af5850 @ 0x00af_5850 => extern "C" fn s_00af5850() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[70])
+    }
+    /// `StaticInit_Button_Triangle_00af5890`: type-enum value `Button_Triangle`: when 0x00a2e310 finds no such name, the node 0x00c6ba94 goes on the head of its list 0x01a85354 (old head to 0x00c6ba9c); atexit(0x00b09850).
+    StaticInit_Button_Triangle_00af5890 @ 0x00af_5890 => extern "C" fn s_00af5890() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[71])
+    }
+    /// `StaticInit_Button_Up_00af58d0`: type-enum value `Button_Up`: when 0x00a2e310 finds no such name, the node 0x00c6b8f4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8fc); atexit(0x00b09870).
+    StaticInit_Button_Up_00af58d0 @ 0x00af_58d0 => extern "C" fn s_00af58d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[72])
+    }
+    /// `StaticInit_Button_X_00af5910`: type-enum value `Button_X`: when 0x00a2e310 finds no such name, the node 0x00c6bb14 goes on the head of its list 0x01a85354 (old head to 0x00c6bb1c); atexit(0x00b09890).
+    StaticInit_Button_X_00af5910 @ 0x00af_5910 => extern "C" fn s_00af5910() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[73])
+    }
+    /// `StaticInit_Button_Y_00af5950`: type-enum value `Button_Y`: when 0x00a2e310 finds no such name, the node 0x00c6ba84 goes on the head of its list 0x01a85354 (old head to 0x00c6ba8c); atexit(0x00b098b0).
+    StaticInit_Button_Y_00af5950 @ 0x00af_5950 => extern "C" fn s_00af5950() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[74])
+    }
+    /// `StaticInit_Empty_00af5990`: type-enum value `Empty`: when 0x00a2e310 finds no such name, the node 0x00c6b884 goes on the head of its list 0x01a85354 (old head to 0x00c6b88c); atexit(0x00b098d0).
+    StaticInit_Empty_00af5990 @ 0x00af_5990 => extern "C" fn s_00af5990() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[75])
+    }
+    /// `StaticInit_Empty_00af59d0`: type-enum value `Empty`: when 0x00a2e780 finds no such name, the node 0x00c6bc94 goes on the head of its list 0x01a85390 (old head to 0x00c6bc9c); atexit(0x00b09900).
+    StaticInit_Empty_00af59d0 @ 0x00af_59d0 => extern "C" fn s_00af59d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[76])
+    }
+    /// `StaticInit_Key_0_00af5a10`: type-enum value `Key_0`: when 0x00a2e780 finds no such name, the node 0x00c6c064 goes on the head of its list 0x01a85390 (old head to 0x00c6c06c); atexit(0x00b09920).
+    StaticInit_Key_0_00af5a10 @ 0x00af_5a10 => extern "C" fn s_00af5a10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[77])
+    }
+    /// `StaticInit_Key_1_00af5a50`: type-enum value `Key_1`: when 0x00a2e780 finds no such name, the node 0x00c6c0f4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0fc); atexit(0x00b09940).
+    StaticInit_Key_1_00af5a50 @ 0x00af_5a50 => extern "C" fn s_00af5a50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[78])
+    }
+    /// `StaticInit_Key_2_00af5a90`: type-enum value `Key_2`: when 0x00a2e780 finds no such name, the node 0x00c6c0e4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0ec); atexit(0x00b09960).
+    StaticInit_Key_2_00af5a90 @ 0x00af_5a90 => extern "C" fn s_00af5a90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[79])
+    }
+    /// `StaticInit_Key_3_00af5ad0`: type-enum value `Key_3`: when 0x00a2e780 finds no such name, the node 0x00c6c0d4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0dc); atexit(0x00b09980).
+    StaticInit_Key_3_00af5ad0 @ 0x00af_5ad0 => extern "C" fn s_00af5ad0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[80])
+    }
+    /// `StaticInit_Key_4_00af5b10`: type-enum value `Key_4`: when 0x00a2e780 finds no such name, the node 0x00c6c0c4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0cc); atexit(0x00b099a0).
+    StaticInit_Key_4_00af5b10 @ 0x00af_5b10 => extern "C" fn s_00af5b10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[81])
+    }
+    /// `StaticInit_Key_5_00af5b50`: type-enum value `Key_5`: when 0x00a2e780 finds no such name, the node 0x00c6c0b4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0bc); atexit(0x00b099c0).
+    StaticInit_Key_5_00af5b50 @ 0x00af_5b50 => extern "C" fn s_00af5b50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[82])
+    }
+    /// `StaticInit_Key_6_00af5b90`: type-enum value `Key_6`: when 0x00a2e780 finds no such name, the node 0x00c6c0a4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0ac); atexit(0x00b099e0).
+    StaticInit_Key_6_00af5b90 @ 0x00af_5b90 => extern "C" fn s_00af5b90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[83])
+    }
+    /// `StaticInit_Key_7_00af5bd0`: type-enum value `Key_7`: when 0x00a2e780 finds no such name, the node 0x00c6c094 goes on the head of its list 0x01a85390 (old head to 0x00c6c09c); atexit(0x00b09a00).
+    StaticInit_Key_7_00af5bd0 @ 0x00af_5bd0 => extern "C" fn s_00af5bd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[84])
+    }
+    /// `StaticInit_Key_8_00af5c10`: type-enum value `Key_8`: when 0x00a2e780 finds no such name, the node 0x00c6c084 goes on the head of its list 0x01a85390 (old head to 0x00c6c08c); atexit(0x00b09a20).
+    StaticInit_Key_8_00af5c10 @ 0x00af_5c10 => extern "C" fn s_00af5c10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[85])
+    }
+    /// `StaticInit_Key_9_00af5c50`: type-enum value `Key_9`: when 0x00a2e780 finds no such name, the node 0x00c6c074 goes on the head of its list 0x01a85390 (old head to 0x00c6c07c); atexit(0x00b09a40).
+    StaticInit_Key_9_00af5c50 @ 0x00af_5c50 => extern "C" fn s_00af5c50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[86])
+    }
+    /// `StaticInit_Key_A_00af5c90`: type-enum value `Key_A`: when 0x00a2e780 finds no such name, the node 0x00c6c294 goes on the head of its list 0x01a85390 (old head to 0x00c6c29c); atexit(0x00b09a60).
+    StaticInit_Key_A_00af5c90 @ 0x00af_5c90 => extern "C" fn s_00af5c90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[87])
+    }
+    /// `StaticInit_Key_AccentGrave_00af5cd0`: type-enum value `Key_AccentGrave`: when 0x00a2e780 finds no such name, the node 0x00c6bca4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcac); atexit(0x00b09a80).
+    StaticInit_Key_AccentGrave_00af5cd0 @ 0x00af_5cd0 => extern "C" fn s_00af5cd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[88])
+    }
+    /// `StaticInit_Key_Apostrophe_00af5d10`: type-enum value `Key_Apostrophe`: when 0x00a2e780 finds no such name, the node 0x00c6bee4 goes on the head of its list 0x01a85390 (old head to 0x00c6beec); atexit(0x00b09aa0).
+    StaticInit_Key_Apostrophe_00af5d10 @ 0x00af_5d10 => extern "C" fn s_00af5d10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[89])
+    }
+    /// `StaticInit_Key_B_00af5d50`: type-enum value `Key_B`: when 0x00a2e780 finds no such name, the node 0x00c6c284 goes on the head of its list 0x01a85390 (old head to 0x00c6c28c); atexit(0x00b09ac0).
+    StaticInit_Key_B_00af5d50 @ 0x00af_5d50 => extern "C" fn s_00af5d50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[90])
+    }
+    /// `StaticInit_Key_Backslash_00af5d90`: type-enum value `Key_Backslash`: when 0x00a2e780 finds no such name, the node 0x00c6bf04 goes on the head of its list 0x01a85390 (old head to 0x00c6bf0c); atexit(0x00b09ae0).
+    StaticInit_Key_Backslash_00af5d90 @ 0x00af_5d90 => extern "C" fn s_00af5d90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[91])
+    }
+    /// `StaticInit_Key_Backspace_00af5dd0`: type-enum value `Key_Backspace`: when 0x00a2e780 finds no such name, the node 0x00c6bf74 goes on the head of its list 0x01a85390 (old head to 0x00c6bf7c); atexit(0x00b09b00).
+    StaticInit_Key_Backspace_00af5dd0 @ 0x00af_5dd0 => extern "C" fn s_00af5dd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[92])
+    }
+    /// `StaticInit_Key_C_00af5e10`: type-enum value `Key_C`: when 0x00a2e780 finds no such name, the node 0x00c6c274 goes on the head of its list 0x01a85390 (old head to 0x00c6c27c); atexit(0x00b09b20).
+    StaticInit_Key_C_00af5e10 @ 0x00af_5e10 => extern "C" fn s_00af5e10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[93])
+    }
+    /// `StaticInit_Key_Comma_00af5e50`: type-enum value `Key_Comma`: when 0x00a2e780 finds no such name, the node 0x00c6bed4 goes on the head of its list 0x01a85390 (old head to 0x00c6bedc); atexit(0x00b09b40).
+    StaticInit_Key_Comma_00af5e50 @ 0x00af_5e50 => extern "C" fn s_00af5e50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[94])
+    }
+    /// `StaticInit_Key_D_00af5e90`: type-enum value `Key_D`: when 0x00a2e780 finds no such name, the node 0x00c6c264 goes on the head of its list 0x01a85390 (old head to 0x00c6c26c); atexit(0x00b09b60).
+    StaticInit_Key_D_00af5e90 @ 0x00af_5e90 => extern "C" fn s_00af5e90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[95])
+    }
+    /// `StaticInit_Key_Delete_00af5ed0`: type-enum value `Key_Delete`: when 0x00a2e780 finds no such name, the node 0x00c6be14 goes on the head of its list 0x01a85390 (old head to 0x00c6be1c); atexit(0x00b09b80).
+    StaticInit_Key_Delete_00af5ed0 @ 0x00af_5ed0 => extern "C" fn s_00af5ed0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[96])
+    }
+    /// `StaticInit_Key_Down_00af5f10`: type-enum value `Key_Down`: when 0x00a2e780 finds no such name, the node 0x00c6be74 goes on the head of its list 0x01a85390 (old head to 0x00c6be7c); atexit(0x00b09ba0).
+    StaticInit_Key_Down_00af5f10 @ 0x00af_5f10 => extern "C" fn s_00af5f10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[97])
+    }
+    /// `StaticInit_Key_E_00af5f50`: type-enum value `Key_E`: when 0x00a2e780 finds no such name, the node 0x00c6c254 goes on the head of its list 0x01a85390 (old head to 0x00c6c25c); atexit(0x00b09bc0).
+    StaticInit_Key_E_00af5f50 @ 0x00af_5f50 => extern "C" fn s_00af5f50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[98])
+    }
+    /// `StaticInit_Key_End_00af5f90`: type-enum value `Key_End`: when 0x00a2e780 finds no such name, the node 0x00c6be54 goes on the head of its list 0x01a85390 (old head to 0x00c6be5c); atexit(0x00b09be0).
+    StaticInit_Key_End_00af5f90 @ 0x00af_5f90 => extern "C" fn s_00af5f90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[99])
+    }
+    /// `StaticInit_Key_Enter_00af5fd0`: type-enum value `Key_Enter`: when 0x00a2e780 finds no such name, the node 0x00c6bf84 goes on the head of its list 0x01a85390 (old head to 0x00c6bf8c); atexit(0x00b09c00).
+    StaticInit_Key_Enter_00af5fd0 @ 0x00af_5fd0 => extern "C" fn s_00af5fd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[100])
+    }
+    /// `StaticInit_Key_Equals_00af6010`: type-enum value `Key_Equals`: when 0x00a2e780 finds no such name, the node 0x00c6bf34 goes on the head of its list 0x01a85390 (old head to 0x00c6bf3c); atexit(0x00b09c20).
+    StaticInit_Key_Equals_00af6010 @ 0x00af_6010 => extern "C" fn s_00af6010() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[101])
+    }
+    /// `StaticInit_Key_Escape_00af6050`: type-enum value `Key_Escape`: when 0x00a2e780 finds no such name, the node 0x00c6c054 goes on the head of its list 0x01a85390 (old head to 0x00c6c05c); atexit(0x00b09c40).
+    StaticInit_Key_Escape_00af6050 @ 0x00af_6050 => extern "C" fn s_00af6050() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[102])
+    }
+    /// `StaticInit_Key_F10_00af6090`: type-enum value `Key_F10`: when 0x00a2e780 finds no such name, the node 0x00c6bfb4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfbc); atexit(0x00b09c60).
+    StaticInit_Key_F10_00af6090 @ 0x00af_6090 => extern "C" fn s_00af6090() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[103])
+    }
+    /// `StaticInit_Key_F11_00af60d0`: type-enum value `Key_F11`: when 0x00a2e780 finds no such name, the node 0x00c6bfa4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfac); atexit(0x00b09c80).
+    StaticInit_Key_F11_00af60d0 @ 0x00af_60d0 => extern "C" fn s_00af60d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[104])
+    }
+    /// `StaticInit_Key_F12_00af6110`: type-enum value `Key_F12`: when 0x00a2e780 finds no such name, the node 0x00c6bf94 goes on the head of its list 0x01a85390 (old head to 0x00c6bf9c); atexit(0x00b09ca0).
+    StaticInit_Key_F12_00af6110 @ 0x00af_6110 => extern "C" fn s_00af6110() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[105])
+    }
+    /// `StaticInit_Key_F1_00af6150`: type-enum value `Key_F1`: when 0x00a2e780 finds no such name, the node 0x00c6c044 goes on the head of its list 0x01a85390 (old head to 0x00c6c04c); atexit(0x00b09cc0).
+    StaticInit_Key_F1_00af6150 @ 0x00af_6150 => extern "C" fn s_00af6150() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[106])
+    }
+    /// `StaticInit_Key_F2_00af6190`: type-enum value `Key_F2`: when 0x00a2e780 finds no such name, the node 0x00c6c034 goes on the head of its list 0x01a85390 (old head to 0x00c6c03c); atexit(0x00b09ce0).
+    StaticInit_Key_F2_00af6190 @ 0x00af_6190 => extern "C" fn s_00af6190() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[107])
+    }
+    /// `StaticInit_Key_F3_00af61d0`: type-enum value `Key_F3`: when 0x00a2e780 finds no such name, the node 0x00c6c024 goes on the head of its list 0x01a85390 (old head to 0x00c6c02c); atexit(0x00b09d00).
+    StaticInit_Key_F3_00af61d0 @ 0x00af_61d0 => extern "C" fn s_00af61d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[108])
+    }
+    /// `StaticInit_Key_F4_00af6210`: type-enum value `Key_F4`: when 0x00a2e780 finds no such name, the node 0x00c6c014 goes on the head of its list 0x01a85390 (old head to 0x00c6c01c); atexit(0x00b09d20).
+    StaticInit_Key_F4_00af6210 @ 0x00af_6210 => extern "C" fn s_00af6210() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[109])
+    }
+    /// `StaticInit_Key_F5_00af6250`: type-enum value `Key_F5`: when 0x00a2e780 finds no such name, the node 0x00c6c004 goes on the head of its list 0x01a85390 (old head to 0x00c6c00c); atexit(0x00b09d40).
+    StaticInit_Key_F5_00af6250 @ 0x00af_6250 => extern "C" fn s_00af6250() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[110])
+    }
+    /// `StaticInit_Key_F6_00af6290`: type-enum value `Key_F6`: when 0x00a2e780 finds no such name, the node 0x00c6bff4 goes on the head of its list 0x01a85390 (old head to 0x00c6bffc); atexit(0x00b09d60).
+    StaticInit_Key_F6_00af6290 @ 0x00af_6290 => extern "C" fn s_00af6290() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[111])
+    }
+    /// `StaticInit_Key_F7_00af62d0`: type-enum value `Key_F7`: when 0x00a2e780 finds no such name, the node 0x00c6bfe4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfec); atexit(0x00b09d80).
+    StaticInit_Key_F7_00af62d0 @ 0x00af_62d0 => extern "C" fn s_00af62d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[112])
+    }
+    /// `StaticInit_Key_F8_00af6310`: type-enum value `Key_F8`: when 0x00a2e780 finds no such name, the node 0x00c6bfd4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfdc); atexit(0x00b09da0).
+    StaticInit_Key_F8_00af6310 @ 0x00af_6310 => extern "C" fn s_00af6310() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[113])
+    }
+    /// `StaticInit_Key_F9_00af6350`: type-enum value `Key_F9`: when 0x00a2e780 finds no such name, the node 0x00c6bfc4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfcc); atexit(0x00b09dc0).
+    StaticInit_Key_F9_00af6350 @ 0x00af_6350 => extern "C" fn s_00af6350() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[114])
+    }
+    /// `StaticInit_Key_F_00af6390`: type-enum value `Key_F`: when 0x00a2e780 finds no such name, the node 0x00c6c244 goes on the head of its list 0x01a85390 (old head to 0x00c6c24c); atexit(0x00b09de0).
+    StaticInit_Key_F_00af6390 @ 0x00af_6390 => extern "C" fn s_00af6390() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[115])
+    }
+    /// `StaticInit_Key_G_00af63d0`: type-enum value `Key_G`: when 0x00a2e780 finds no such name, the node 0x00c6c234 goes on the head of its list 0x01a85390 (old head to 0x00c6c23c); atexit(0x00b09e00).
+    StaticInit_Key_G_00af63d0 @ 0x00af_63d0 => extern "C" fn s_00af63d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[116])
+    }
+    /// `StaticInit_Key_H_00af6410`: type-enum value `Key_H`: when 0x00a2e780 finds no such name, the node 0x00c6c224 goes on the head of its list 0x01a85390 (old head to 0x00c6c22c); atexit(0x00b09e20).
+    StaticInit_Key_H_00af6410 @ 0x00af_6410 => extern "C" fn s_00af6410() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[117])
+    }
+    /// `StaticInit_Key_Home_00af6450`: type-enum value `Key_Home`: when 0x00a2e780 finds no such name, the node 0x00c6be64 goes on the head of its list 0x01a85390 (old head to 0x00c6be6c); atexit(0x00b09e40).
+    StaticInit_Key_Home_00af6450 @ 0x00af_6450 => extern "C" fn s_00af6450() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[118])
+    }
+    /// `StaticInit_Key_I_00af6490`: type-enum value `Key_I`: when 0x00a2e780 finds no such name, the node 0x00c6c214 goes on the head of its list 0x01a85390 (old head to 0x00c6c21c); atexit(0x00b09e60).
+    StaticInit_Key_I_00af6490 @ 0x00af_6490 => extern "C" fn s_00af6490() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[119])
+    }
+    /// `StaticInit_Key_Insert_00af64d0`: type-enum value `Key_Insert`: when 0x00a2e780 finds no such name, the node 0x00c6be24 goes on the head of its list 0x01a85390 (old head to 0x00c6be2c); atexit(0x00b09e80).
+    StaticInit_Key_Insert_00af64d0 @ 0x00af_64d0 => extern "C" fn s_00af64d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[120])
+    }
+    /// `StaticInit_Key_J_00af6510`: type-enum value `Key_J`: when 0x00a2e780 finds no such name, the node 0x00c6c204 goes on the head of its list 0x01a85390 (old head to 0x00c6c20c); atexit(0x00b09ea0).
+    StaticInit_Key_J_00af6510 @ 0x00af_6510 => extern "C" fn s_00af6510() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[121])
+    }
+    /// `StaticInit_Key_K_00af6550`: type-enum value `Key_K`: when 0x00a2e780 finds no such name, the node 0x00c6c1f4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1fc); atexit(0x00b09ec0).
+    StaticInit_Key_K_00af6550 @ 0x00af_6550 => extern "C" fn s_00af6550() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[122])
+    }
+    /// `StaticInit_Key_L_00af6590`: type-enum value `Key_L`: when 0x00a2e780 finds no such name, the node 0x00c6c1e4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1ec); atexit(0x00b09ee0).
+    StaticInit_Key_L_00af6590 @ 0x00af_6590 => extern "C" fn s_00af6590() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[123])
+    }
+    /// `StaticInit_Key_LeftBracket_00af65d0`: type-enum value `Key_LeftBracket`: when 0x00a2e780 finds no such name, the node 0x00c6bf24 goes on the head of its list 0x01a85390 (old head to 0x00c6bf2c); atexit(0x00b09f00).
+    StaticInit_Key_LeftBracket_00af65d0 @ 0x00af_65d0 => extern "C" fn s_00af65d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[124])
+    }
+    /// `StaticInit_Key_Left_Alt_00af6610`: type-enum value `Key_Left_Alt`: when 0x00a2e780 finds no such name, the node 0x00c6bce4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcec); atexit(0x00b09f20).
+    StaticInit_Key_Left_Alt_00af6610 @ 0x00af_6610 => extern "C" fn s_00af6610() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[125])
+    }
+    /// `StaticInit_Key_Left_Control_00af6650`: type-enum value `Key_Left_Control`: when 0x00a2e780 finds no such name, the node 0x00c6bd04 goes on the head of its list 0x01a85390 (old head to 0x00c6bd0c); atexit(0x00b09f40).
+    StaticInit_Key_Left_Control_00af6650 @ 0x00af_6650 => extern "C" fn s_00af6650() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[126])
+    }
+    /// `StaticInit_Key_Left_Shift_00af6690`: type-enum value `Key_Left_Shift`: when 0x00a2e780 finds no such name, the node 0x00c6bcf4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcfc); atexit(0x00b09f60).
+    StaticInit_Key_Left_Shift_00af6690 @ 0x00af_6690 => extern "C" fn s_00af6690() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[127])
+    }
+    /// `StaticInit_Key_Left_00af66d0`: type-enum value `Key_Left`: when 0x00a2e780 finds no such name, the node 0x00c6bea4 goes on the head of its list 0x01a85390 (old head to 0x00c6beac); atexit(0x00b09f80).
+    StaticInit_Key_Left_00af66d0 @ 0x00af_66d0 => extern "C" fn s_00af66d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[128])
+    }
+    /// `StaticInit_Key_M_00af6710`: type-enum value `Key_M`: when 0x00a2e780 finds no such name, the node 0x00c6c1d4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1dc); atexit(0x00b09fa0).
+    StaticInit_Key_M_00af6710 @ 0x00af_6710 => extern "C" fn s_00af6710() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[129])
+    }
+    /// `StaticInit_Key_Minus_00af6750`: type-enum value `Key_Minus`: when 0x00a2e780 finds no such name, the node 0x00c6bf44 goes on the head of its list 0x01a85390 (old head to 0x00c6bf4c); atexit(0x00b09fc0).
+    StaticInit_Key_Minus_00af6750 @ 0x00af_6750 => extern "C" fn s_00af6750() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[130])
+    }
+    /// `StaticInit_Key_N_00af6790`: type-enum value `Key_N`: when 0x00a2e780 finds no such name, the node 0x00c6c1c4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1cc); atexit(0x00b09fe0).
+    StaticInit_Key_N_00af6790 @ 0x00af_6790 => extern "C" fn s_00af6790() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[131])
+    }
+    /// `StaticInit_Key_Numpad_0_00af67d0`: type-enum value `Key_Numpad_0`: when 0x00a2e780 finds no such name, the node 0x00c6bd74 goes on the head of its list 0x01a85390 (old head to 0x00c6bd7c); atexit(0x00b0a000).
+    StaticInit_Key_Numpad_0_00af67d0 @ 0x00af_67d0 => extern "C" fn s_00af67d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[132])
+    }
+    /// `StaticInit_Key_Numpad_1_00af6810`: type-enum value `Key_Numpad_1`: when 0x00a2e780 finds no such name, the node 0x00c6be04 goes on the head of its list 0x01a85390 (old head to 0x00c6be0c); atexit(0x00b0a020).
+    StaticInit_Key_Numpad_1_00af6810 @ 0x00af_6810 => extern "C" fn s_00af6810() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[133])
+    }
+    /// `StaticInit_Key_Numpad_2_00af6850`: type-enum value `Key_Numpad_2`: when 0x00a2e780 finds no such name, the node 0x00c6bdf4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdfc); atexit(0x00b0a040).
+    StaticInit_Key_Numpad_2_00af6850 @ 0x00af_6850 => extern "C" fn s_00af6850() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[134])
+    }
+    /// `StaticInit_Key_Numpad_3_00af6890`: type-enum value `Key_Numpad_3`: when 0x00a2e780 finds no such name, the node 0x00c6bde4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdec); atexit(0x00b0a060).
+    StaticInit_Key_Numpad_3_00af6890 @ 0x00af_6890 => extern "C" fn s_00af6890() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[135])
+    }
+    /// `StaticInit_Key_Numpad_4_00af68d0`: type-enum value `Key_Numpad_4`: when 0x00a2e780 finds no such name, the node 0x00c6bdd4 goes on the head of its list 0x01a85390 (old head to 0x00c6bddc); atexit(0x00b0a080).
+    StaticInit_Key_Numpad_4_00af68d0 @ 0x00af_68d0 => extern "C" fn s_00af68d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[136])
+    }
+    /// `StaticInit_Key_Numpad_5_00af6910`: type-enum value `Key_Numpad_5`: when 0x00a2e780 finds no such name, the node 0x00c6bdc4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdcc); atexit(0x00b0a0a0).
+    StaticInit_Key_Numpad_5_00af6910 @ 0x00af_6910 => extern "C" fn s_00af6910() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[137])
+    }
+    /// `StaticInit_Key_Numpad_6_00af6950`: type-enum value `Key_Numpad_6`: when 0x00a2e780 finds no such name, the node 0x00c6bdb4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdbc); atexit(0x00b0a0c0).
+    StaticInit_Key_Numpad_6_00af6950 @ 0x00af_6950 => extern "C" fn s_00af6950() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[138])
+    }
+    /// `StaticInit_Key_Numpad_7_00af6990`: type-enum value `Key_Numpad_7`: when 0x00a2e780 finds no such name, the node 0x00c6bda4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdac); atexit(0x00b0a0e0).
+    StaticInit_Key_Numpad_7_00af6990 @ 0x00af_6990 => extern "C" fn s_00af6990() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[139])
+    }
+    /// `StaticInit_Key_Numpad_8_00af69d0`: type-enum value `Key_Numpad_8`: when 0x00a2e780 finds no such name, the node 0x00c6bd94 goes on the head of its list 0x01a85390 (old head to 0x00c6bd9c); atexit(0x00b0a100).
+    StaticInit_Key_Numpad_8_00af69d0 @ 0x00af_69d0 => extern "C" fn s_00af69d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[140])
+    }
+    /// `StaticInit_Key_Numpad_9_00af6a10`: type-enum value `Key_Numpad_9`: when 0x00a2e780 finds no such name, the node 0x00c6bd84 goes on the head of its list 0x01a85390 (old head to 0x00c6bd8c); atexit(0x00b0a120).
+    StaticInit_Key_Numpad_9_00af6a10 @ 0x00af_6a10 => extern "C" fn s_00af6a10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[141])
+    }
+    /// `StaticInit_Key_Numpad_Asterisk_00af6a50`: type-enum value `Key_Numpad_Asterisk`: when 0x00a2e780 finds no such name, the node 0x00c6bd54 goes on the head of its list 0x01a85390 (old head to 0x00c6bd5c); atexit(0x00b0a140).
+    StaticInit_Key_Numpad_Asterisk_00af6a50 @ 0x00af_6a50 => extern "C" fn s_00af6a50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[142])
+    }
+    /// `StaticInit_Key_Numpad_Enter_00af6a90`: type-enum value `Key_Numpad_Enter`: when 0x00a2e780 finds no such name, the node 0x00c6bd24 goes on the head of its list 0x01a85390 (old head to 0x00c6bd2c); atexit(0x00b0a160).
+    StaticInit_Key_Numpad_Enter_00af6a90 @ 0x00af_6a90 => extern "C" fn s_00af6a90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[143])
+    }
+    /// `StaticInit_Key_Numpad_Minus_00af6ad0`: type-enum value `Key_Numpad_Minus`: when 0x00a2e780 finds no such name, the node 0x00c6bd44 goes on the head of its list 0x01a85390 (old head to 0x00c6bd4c); atexit(0x00b0a180).
+    StaticInit_Key_Numpad_Minus_00af6ad0 @ 0x00af_6ad0 => extern "C" fn s_00af6ad0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[144])
+    }
+    /// `StaticInit_Key_Numpad_Period_00af6b10`: type-enum value `Key_Numpad_Period`: when 0x00a2e780 finds no such name, the node 0x00c6bd14 goes on the head of its list 0x01a85390 (old head to 0x00c6bd1c); atexit(0x00b0a1a0).
+    StaticInit_Key_Numpad_Period_00af6b10 @ 0x00af_6b10 => extern "C" fn s_00af6b10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[145])
+    }
+    /// `StaticInit_Key_Numpad_Plus_00af6b50`: type-enum value `Key_Numpad_Plus`: when 0x00a2e780 finds no such name, the node 0x00c6bd34 goes on the head of its list 0x01a85390 (old head to 0x00c6bd3c); atexit(0x00b0a1c0).
+    StaticInit_Key_Numpad_Plus_00af6b50 @ 0x00af_6b50 => extern "C" fn s_00af6b50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[146])
+    }
+    /// `StaticInit_Key_Numpad_Slash_00af6b90`: type-enum value `Key_Numpad_Slash`: when 0x00a2e780 finds no such name, the node 0x00c6bd64 goes on the head of its list 0x01a85390 (old head to 0x00c6bd6c); atexit(0x00b0a1e0).
+    StaticInit_Key_Numpad_Slash_00af6b90 @ 0x00af_6b90 => extern "C" fn s_00af6b90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[147])
+    }
+    /// `StaticInit_Key_O_00af6bd0`: type-enum value `Key_O`: when 0x00a2e780 finds no such name, the node 0x00c6c1b4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1bc); atexit(0x00b0a200).
+    StaticInit_Key_O_00af6bd0 @ 0x00af_6bd0 => extern "C" fn s_00af6bd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[148])
+    }
+    /// `StaticInit_Key_P_00af6c10`: type-enum value `Key_P`: when 0x00a2e780 finds no such name, the node 0x00c6c1a4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1ac); atexit(0x00b0a220).
+    StaticInit_Key_P_00af6c10 @ 0x00af_6c10 => extern "C" fn s_00af6c10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[149])
+    }
 }
