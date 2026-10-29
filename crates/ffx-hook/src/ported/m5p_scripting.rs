@@ -10,6 +10,7 @@ use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
+use ffx_pother_a::m5p_scripting_state::bridge as st;
 
 use super::{StackFrame, mem, ported};
 
@@ -732,5 +733,33 @@ ported! {
     /// `Phyre_PPostProcessing_PDepthOfField_fixObjects_00a07f00`.
     Phyre_PPostProcessing_PDepthOfField_fixObjects_00a07f00 @ 0x00a0_7f00 => extern "C" fn s_00a07f00(p: u32) -> u32 {
         sc::fix_dof(&mut mem(), p)
+    }
+    // ---- batch 5: script states and runs, member setters ----
+    /// `PScripting_NewStateForScript`.
+    PScripting_NewStateForScript @ 0x005d_53b0 => extern "C" fn s_005d53b0(script: u32, alloc: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        st::new_state(&mut mem(), script, alloc, f.at())
+    }
+    /// `PScriptedComponent_createThread`.
+    PScriptedComponent_createThread @ 0x0055_4860 => extern "thiscall" fn s_00554860(this: u32, l: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        let cell = f.at();
+        st::create_thread(&mut mem(), this, l, cell, cell.wrapping_add(4))
+    }
+    /// `Phyre_PScripting_VectorNewIndexHandler`.
+    Phyre_PScripting_VectorNewIndexHandler @ 0x0057_36c0 => extern "C" fn s_005736c0(l: u32) -> u32 {
+        st::vector_newindex(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_MatrixNewIndexHandler`.
+    Phyre_PScripting_MatrixNewIndexHandler @ 0x0057_1d60 => extern "C" fn s_00571d60(l: u32) -> u32 {
+        st::matrix_newindex(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_PScheduledScript_execute`.
+    Phyre_PScripting_PScheduledScript_execute @ 0x0061_8330 => extern "thiscall" fn s_00618330(this: u32, l: u32, function: u32) -> u32 {
+        st::execute(&mut mem(), this, l, function)
+    }
+    /// `Phyre_PScripting_PScheduledScript_executePersistent`.
+    Phyre_PScripting_PScheduledScript_executePersistent @ 0x0061_8490 => extern "thiscall" fn s_00618490(this: u32, function: u32) -> u32 {
+        st::execute_persistent(&mut mem(), this, function)
     }
 }

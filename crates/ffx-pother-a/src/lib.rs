@@ -11,7 +11,8 @@
 //! - [`m5p_scripting_small`]: M5 phyre-scripting batch 1, the small functions;
 //! - [`m5p_scripting_mid`]: M5 phyre-scripting batch 2, middle-sized Lua glue and fixups;
 //! - [`m5p_scripting_lua`]: M5 phyre-scripting batch 3, object accessors, Vector and Matrix functions;
-//! - [`m5p_scripting_sched`]: M5 phyre-scripting batch 4, the scheduler, scripted components, fixups.
+//! - [`m5p_scripting_sched`]: M5 phyre-scripting batch 4, the scheduler, scripted components, fixups;
+//! - [`m5p_scripting_state`]: M5 phyre-scripting batch 5, script states and runs, member setters.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -33,6 +34,7 @@ pub mod m5p_scripting_lua;
 pub mod m5p_scripting_mid;
 pub mod m5p_scripting_sched;
 pub mod m5p_scripting_small;
+pub mod m5p_scripting_state;
 pub mod object;
 pub mod p3_bind;
 pub mod p3_init;

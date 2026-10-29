@@ -296,6 +296,15 @@ impl Twins {
     /// callee handed the address of a frame word: the frames differ, the
     /// word they hold must not).
     pub fn stub_deref0(&mut self, sym: u32, n: u32, pops: u32, ret: u32) {
+        self.stub_deref0_with(sym, true, n, pops, ret);
+    }
+
+    /// [`Twins::stub_deref0`] for a cdecl callee (`ecx` not logged).
+    pub fn stub_deref0_cdecl(&mut self, sym: u32, n: u32, ret: u32) {
+        self.stub_deref0_with(sym, false, n, 0, ret);
+    }
+
+    fn stub_deref0_with(&mut self, sym: u32, this: bool, n: u32, pops: u32, ret: u32) {
         let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -304,7 +313,9 @@ impl Twins {
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
         c.extend(sym.to_le_bytes()); // mov [eax], sym
-        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        }
         for i in 0..n {
             c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
             if i == 0 {

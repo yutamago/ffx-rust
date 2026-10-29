@@ -25,6 +25,7 @@ use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_sched::{self as sc_, bridge as sc};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
+use ffx_pother_a::m5p_scripting_state::{self as st_, bridge as st};
 use m5p_scripting_twins::{JUNK, Rng, Twins};
 
 /// Floats for the copies through the x87: signs, fractions, huge, tiny,
@@ -1957,6 +1958,261 @@ fn b4_fixups_match_the_original() {
             }
             let what = format!("{label}: dof fixup {slot1} {ctx} {r}");
             t.cdecl(&what, 0x00a0_7f00, &[p], |g| Some(sc::fix_dof(g, p)));
+        }
+        t.unstub();
+    }
+}
+
+// ---- batch 5: script states and runs, member setters ----
+
+/// Stubs for every Lua and Phyre callee the batch-5 functions reach;
+/// `printf` logs `printf_words`.
+fn lua_b5(t: &mut Twins, printf_words: u32) {
+    t.stub(st_::LUA_NEWSTATE, false, 2, 0, 0x00c9_1100);
+    t.stub(st_::LUA_OPENLIBS, false, 1, 0, 0x0b1);
+    t.stub(s::GLOBAL_NAMESPACE, false, 1, 0, 0x00c9_0b00);
+    t.stub(s::REGISTER_TYPES, false, 3, 0, 0x7e9);
+    t.stub(mid::LUA_PUSHCCLOSURE, false, 3, 0, 0xcc10);
+    t.stub(s::LUA_SETGLOBAL, false, 2, 0, 0x5e7);
+    t.stub(s::LUA_PUSHLIGHTUSERDATA, false, 2, 0, 0x119);
+    t.stub(mid::LUA_TOLSTRING, false, 3, 0, 0x00c9_7700);
+    t.stub(s::LUA_SETTOP, false, 2, 0, 0x7020);
+    t.stub(s::LUA_CLOSE, false, 1, 0, 0xc1);
+    t.stub(mid::PRINTF, false, printf_words, 0, 0x9f);
+    t.stub(s::LUA_GETGLOBAL, false, 2, 0, 0x6e7);
+    t.stub(s::PUSH_OBJECT, false, 3, 0, 0x0b1);
+    t.stub(st_::LUA_GC, false, 3, 0, 0x6c);
+}
+
+/// A script: buffer, size, name table at `+0xc` (two names), the name
+/// count `+8`, its own name at `+0x1c`.
+fn script(t: &mut Twins, names: u32) -> u32 {
+    let sc = t.zeros(0x40);
+    t.w32(sc, 0x10);
+    t.w32(sc + 4, 0x00c9_8800);
+    t.w32(sc + 8, names);
+    let tab = t.zeros(8);
+    let f0 = t.cstr("init");
+    let f1 = t.cstr("update");
+    t.w32(tab, f0);
+    t.w32(tab + 4, f1 + 1);
+    t.w32(sc + 0xc, tab);
+    let n = t.cstr("test.lua");
+    t.w32(sc + 0x1c, n + 1);
+    sc
+}
+
+#[test]
+fn b5_states_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let cell = t.b.stack_range().start + 0x40;
+        // new states: no state, no script, load failing, names, chunk run ok and failing
+        for (k, (state, has_script, load, names, run)) in [
+            (0u32, true, 0u32, 0u32, 0u32),
+            (1, false, 0, 0, 0),
+            (1, true, 1, 0, 0),
+            (1, true, 0, 0, 0),
+            (1, true, 0, 0, 4),
+            (1, true, 0, 3, 0),
+            (1, true, 0, 3, 2),
+            (1, true, 0, 0x8000_0000, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lua_b5(&mut t, 4);
+            t.stub(st_::LUA_NEWSTATE, false, 2, 0, state * 0x00c9_1100);
+            t.stub(mid::LUA_LOADBUFFERX, false, 5, 0, load);
+            t.stub(mid::LUA_PCALLK, false, 6, 0, run);
+            t.stub_deref0_cdecl(st_::GET_FUNCTION_NAMES, 2, run);
+            let sc = if has_script { script(&mut t, names) } else { 0 };
+            let what = format!("{label}: new state case {k}");
+            t.cdecl(&what, 0x005d_53b0, &[sc, 0x00c9_a110], |g| {
+                Some(st::new_state(g, sc, 0x00c9_a110, cell))
+            });
+        }
+        // createThread: no scheduler, given state, no script, own state, failing state,
+        // existing state, the start function, kicking a started component
+        t.stub_deref0(sc_::NAME_INDEX, 2, 2, 0);
+        for (k, (sched, l, flag, owned, has, st_ok, insert, start, add, started)) in [
+            (false, 0u32, 0u8, 0u8, 0u32, true, 0u32, false, 0u32, 1u8),
+            (true, 0x00c9_1200, 0, 0, 0, true, 0, false, 0, 0),
+            (true, 0, 0, 0, 0, true, 3, false, 0, 1),
+            (true, 0, 1, 1, 1, true, 0, false, 0, 0),
+            (true, 0, 1, 0, 0, false, 0, false, 0, 0),
+            (true, 0, 1, 0, 0, true, 0, true, 0, 1),
+            (true, 0, 1, 0, 0, true, 0, true, 5, 1),
+            (true, 0x00c9_1200, 0, 0, 0, true, 0, true, 0, 0),
+            // an owned flag without a state, an empty start name, no component
+            (true, 0, 1, 1, 0, true, 0, false, 0, 1),
+            (true, 0, 1, 0, 0, true, 0, true, 0, 1),
+            (true, 0, 0, 0, 0, true, 0, false, 0, 1),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lua_b5(&mut t, 4);
+            t.stub(mid::LUA_LOADBUFFERX, false, 5, 0, 0);
+            t.stub(mid::LUA_PCALLK, false, 6, 0, 0);
+            t.stub(
+                st_::LUA_NEWSTATE,
+                false,
+                2,
+                0,
+                if st_ok { 0x00c9_1100 } else { 0 },
+            );
+            t.stub(st_::SCHEDULER_INSERT, true, 6, 6, insert);
+            t.stub(st_::SCHEDULER_ADD, true, 4, 4, add);
+            t.stub(st_::SCHEDULER_START, true, 4, 4, 0x57a);
+            let c = t.junk(0x40, 3);
+            let comp = script(&mut t, 2);
+            t.w8(comp + 0x20, flag);
+            t.w32(c + 0x14, comp);
+            t.w32(c + 0x18, if sched { 0x00c9_5000 } else { 0 });
+            t.w8(c + 0x2d, owned);
+            t.w32(c + 0x1c, has);
+            t.w8(c + 0x2e, started);
+            t.w8(c + 0x2c, 0);
+            let name = t.cstr("tick");
+            t.w32(c + 0x10, name);
+            let sname = if k == 9 { t.cstr("") } else { t.cstr("start") };
+            t.w32(c + 0x20, if start { sname } else { 0 });
+            if k == 10 {
+                t.w32(c + 0x14, 0);
+            }
+            let what = format!("{label}: create thread case {k}");
+            t.this(&what, 0x0055_4860, c, &[l], |g| {
+                Some(st::create_thread(g, c, l, cell, cell + 4))
+            });
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b5_member_setters_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let table = t.alloc(
+            &[0u32, 0x3f80_0000, 0xc020_0000, 0x4049_0fdb]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let keys: Vec<u32> = ["x", "w", "3", "4", "xy", "", "q", "0"]
+            .iter()
+            .map(|k| t.cstr(k))
+            .collect();
+        for f in [0x0057_36c0u32, 0x0057_1d60] {
+            for key in keys.iter().copied().chain([0]) {
+                for ok in [false, true] {
+                    lua_b3(&mut t, 0, 1, 1, 0, 3);
+                    t.stub(mid::LUA_TOLSTRING, false, 3, 0, key);
+                    let target = if ok { t.junk(0x40, 2) } else { 0 };
+                    let v = t.junk(0x10, 4);
+                    // the Vector check answers the target (Vector setter) or the row (Matrix setter)
+                    t.stub(
+                        s::LUA_TOUSERDATA,
+                        false,
+                        2,
+                        0,
+                        if f == 0x0057_36c0 { target } else { v },
+                    );
+                    t.stub(st_::CHECK_MATRIX, false, 2, 0, target);
+                    t.stub_float_table(lb::LUA_CHECKNUMBER, 2, 1, table);
+                    let what = format!("{label}: newindex {f:#x} {key:#x} {ok}");
+                    t.cdecl(&what, f, &[l], |g| {
+                        Some(if f == 0x0057_36c0 {
+                            st::vector_newindex(g, l)
+                        } else {
+                            st::matrix_newindex(g, l)
+                        })
+                    });
+                }
+            }
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b5_execute_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        // execute: no script, no state, load failing, run failing, no entry, call failing,
+        // call with and without a message
+        for (k, (has_script, state, load, run, entry, call, msg)) in [
+            (false, l, 0u32, 0u32, 0u32, 0u32, 0u32),
+            (true, 0, 0, 0, 0, 0, 0),
+            (true, l, 1, 0, 0, 0, 0),
+            (true, l, 0, 3, 0, 0, 0x00c9_7700),
+            (true, l, 0, 0, 0x8000_0000, 0, 0),
+            (true, l, 0, 0, 1, 2, 0x00c9_7700),
+            (true, l, 0, 0, 1, 0, 0x00c9_7700),
+            (true, l, 0, 0, 1, 0, 0),
+            (true, l, 0, 0, 0, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let words = match k {
+                3 => 5,
+                4 | 6 => 3,
+                _ => 4,
+            };
+            lua_b5(&mut t, words);
+            t.stub(mid::LUA_LOADBUFFERX, false, 5, 0, load);
+            t.stub(mid::LUA_TOLSTRING, false, 3, 0, msg);
+            // the first pcall answers `run`, the second `call`
+            let cell = t.zeros(4);
+            let mut c = vec![0xff, 0x05];
+            c.extend(cell.to_le_bytes()); // inc dword [cell]
+            c.extend([0x83, 0x3d]);
+            c.extend(cell.to_le_bytes());
+            c.push(0x01); // cmp dword [cell], 1
+            c.push(0xb8);
+            c.extend(run.to_le_bytes()); // mov eax, run
+            c.extend([0x74, 0x05]); // je +5
+            c.push(0xb8);
+            c.extend(call.to_le_bytes()); // mov eax, call
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(mid::LUA_PCALLK, code);
+            let o = t.zeros(0x20);
+            let sc = if has_script { script(&mut t, 2) } else { 0 };
+            t.w32(o + 4, sc);
+            t.w32(o + 8, 0x00c9_6600);
+            t.w32(o + 0xc, 0x00c9_6700);
+            t.w32(o + 0x10, entry);
+            let what = format!("{label}: execute case {k}");
+            t.this(&what, 0x0061_8330, o, &[state, 1], |g| {
+                Some(st::execute(g, o, state, 1))
+            });
+        }
+        // executePersistent: no script, no state, failing, a message, none
+        for (k, (has_script, state, call, msg)) in [
+            (false, l, 0u32, 0u32),
+            (true, 0, 0, 0),
+            (true, l, 2, 0x00c9_7700),
+            (true, l, 0, 0x00c9_7700),
+            (true, l, 0, 0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            lua_b5(&mut t, if k == 2 { 5 } else { 3 });
+            t.stub(mid::LUA_PCALLK, false, 6, 0, call);
+            t.stub(mid::LUA_TOLSTRING, false, 3, 0, msg);
+            let o = t.zeros(0x20);
+            let sc = if has_script { script(&mut t, 2) } else { 0 };
+            t.w32(o + 4, sc);
+            t.w32(o + 8, 0x00c9_6600);
+            t.w32(o + 0xc, 0x00c9_6700);
+            t.w32(o + 0x1c, state);
+            let what = format!("{label}: execute persistent case {k}");
+            t.this(&what, 0x0061_8490, o, &[0], |g| {
+                Some(st::execute_persistent(g, o, 0))
+            });
         }
         t.unstub();
     }
