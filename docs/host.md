@@ -16,6 +16,8 @@ same memory. The release runs no `FFX.exe` code.
 | `src/table.rs` | `Table`, `Entry`, `Conv`, `Args`, `Ret`: every port under its original address |
 | `src/dll.rs` | loads the player's `MSVCR110.dll` and `MSVCP110.dll` into the arena, relocated (development only) |
 | `src/exec.rs` | `Shared` (what every game thread sees) and `Exec` (one game thread): the mixed Rust/Unicorn executor, `Exec::call`, threads, the stats |
+| `src/exec/seh.rs` | structured exceptions: `RaiseException` and faults through the `fs:[0]` chain, `RtlUnwind`, the report of an unhandled one (below, "Exceptions") |
+| `crates/ffx-fpu` | the x87 instructions Unicorn gets wrong, computed as the FPU does (moved out of `ffx-oracle`, which uses it too; below, "x87") |
 | `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Steam, Iggy, milestones) |
 | `src/win32.rs` | threads, synchronisation, TLS, modules and code pages: what the DLLs and the threads need |
 | `src/sync.rs` | events, semaphores, mutexes, thread handles, critical sections on host primitives |
@@ -24,6 +26,7 @@ same memory. The release runs no `FFX.exe` code.
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
+| `tests/x87.rs`, `tests/seh.rs` | MSVCR110's maths against the CPU's recorded results; throw and catch, faults |
 
 ```bash
 cargo run --release -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X2-HD \
@@ -170,7 +173,8 @@ stops the emulator, and the executor's loop decides.
   fastcall (`ecx`, `edx`) and `FastcallCallerPops`, the LTCG custom
   convention (`ecx`, `edx`, stack words the caller pops: `ret`, then the
   caller's `add esp`). `Conv::callee_pops` picks the return stub.
-- **Failures.** An unstubbed import or a fault ends the thread, on the
+- **Failures.** An unstubbed import, or a fault or exception no frame
+  handles (below, "Exceptions"), ends the thread, on the
   main thread the whole run (`Exec::end`; a milestone or the budget end the
   run from any thread): every level returns `Error::Stopped`, since callers
   such as `_initterm` or a port can't all carry a `Result`. The outcome
@@ -178,9 +182,100 @@ stops the emulator, and the executor's loop decides.
   the report adds the return addresses found on the stack, and
   `FFX_HOST_TRACE=n` the last `n` basic blocks.
 - **x87.** The control word starts at `0x027f` (53-bit), as Windows starts
-  threads. The oracle's exact transcendental instructions (`ffx-oracle`'s
-  `x87`) are not wired in yet: they matter now that MSVCR110's math runs
-  emulated (below, "What blocks the next step").
+  threads. The transcendental instructions run exactly (below, "x87").
+
+## x87
+
+Unicorn (QEMU) computes `fsin`, `fcos`, `fsincos`, `fptan`, `fpatan`,
+`f2xm1`, `fyl2x`, `fyl2xp1`, `fprem` and `fprem1` through host `double`
+functions: 11 bits of the 64-bit mantissa are lost and `fprem`'s remainder
+loses its sign, so MSVCR110's maths (which runs on them; `pow(3, 4)` came
+out `81.00000000000003`) is wrong in the last bits. `ffx-fpu` (the oracle's
+module, now a crate both use) computes them as an Intel FPU does: 320-bit
+arithmetic rounded to the 64-bit mantissa in the control word's rounding
+mode, the FPU's 66-bit pi for the argument reduction, `fprem` exact.
+
+- **Where.** `ffx_fpu::sites` lists them per module from the PE header's
+  `TimeDateStamp` and `CheckSum`: the player's `MSVCR110.dll`
+  (11.0.51106.1) has 22, at RVAs from a linear disassembly; its
+  `MSVCP110.dll` and `FFX.exe` have none (22 and 798 `0xd9 xx` byte pairs
+  in `.text`, none an instruction start: the game's own maths calls the
+  runtime or uses SSE). A module of another build gets every possible
+  pair, watched by a code hook each (a hook fires only where an
+  instruction really starts; slower, never patched).
+- **How.** The known sites hold `int3` in the arena; the executor's
+  interrupt hook computes the instruction on the emulator's registers
+  (`ffx_fpu::unicorn::step`: `ST0`/`ST1`, the stack top and tags, the
+  condition codes and flags) and the emulator goes on after it, without
+  stopping. The report counts them ("exact x87 instructions").
+- **Checked.** `tests/x87.rs` runs the 1,327 recorded cases of
+  `ffx-oracle`'s `tests/data/msvcr110-math.tsv` (the cdecl maths exports,
+  the `_CI*` intrinsics and the `_libm_sse2_*_precise` ones, recorded from
+  the same DLL on an Intel CPU at control word `0x027f`) through the
+  player's DLL in `ffx-host`: all match, bit for bit, NaNs included.
+
+## Exceptions
+
+Emulated code throws and catches as on 32-bit Windows (`src/exec/seh.rs`):
+
+- **Dispatch.** `RaiseException` (a C++ `throw` is MSVCR110's
+  `_CxxThrowException` → `RaiseException(0xe06d7363, ...)`) and faults
+  (access violation `0xc0000005` with its read/write/execute and
+  address, division by zero, illegal instruction, a stray `int3`) write an
+  `EXCEPTION_RECORD`, a `CONTEXT` and a dispatcher context below the
+  stack and call each handler on the thread's `fs:[0]` chain,
+  `handler(record, frame, context, dispatcher context)`, as
+  `RtlDispatchException` does: `ExceptionContinueSearch` goes to the next
+  frame, `ExceptionContinueExecution` loads the registers (and the x87
+  state) from the `CONTEXT`, `ExceptionNestedException` marks the record
+  nested until past the frame it names.
+- **In the executor's loop, not in Rust.** A handler is entered with a
+  return address in the thread's stub page (an `int3`), so a handler that
+  never returns (a catch: MSVCR110's `_JumpToContinuation` goes on in the
+  catching function) just goes on, at no cost to the host stack. Each
+  call is wrapped in a registration of the dispatcher's own, as
+  `RtlpExecuteHandler2` does; MSVCR110's catch code relies on it
+  (`_UnwindNestedFrames` saves and restores that head, `_JumpToContinuation`
+  unlinks it), and its handler reports a nested exception.
+- **`RtlUnwind(target, ip, record, value)`** (MSVCR110's import) calls the
+  handlers from the head down to `target` with `EXCEPTION_UNWINDING` (and
+  `EXCEPTION_EXIT_UNWIND` for 0), each in an unwind registration, unlinks
+  each frame, and returns `value` to its caller (x86 ignores `ip`). These
+  handlers return (they run destructors and `__finally` blocks), so they
+  are called from Rust.
+- **Across a Rust port.** When a port called the code that threw and the
+  catch is in a frame older than the port, the catching function returns
+  to an outer level's sentinel (`esp` tells which: each Rust → Unicorn
+  call records the `esp` its sentinel return leaves). Every Rust level in
+  between unwinds (`Exec::call` returns `Error::Stopped` to the port,
+  whose further calls do nothing), and the outer level returns as if its
+  own call had, with the registers the sentinel return left: the port's
+  frame is abandoned, as an unwind abandons a frame without handlers.
+  Ports hold no destructors that need to run, so nothing is lost.
+- **Unhandled.** At the chain's end (no frame took it), or when the C
+  runtime gives up on it (`UnhandledExceptionFilter`, which its start-up's
+  `__except` and `terminate` call), the thread ends, on the main thread the
+  run: `Stop::Failed` names the exception, for a C++ one its type from the
+  throw information (`unhandled C++ exception std::bad_alloc`), with the
+  `eip` of the throw or fault, the return addresses on the stack and the
+  last blocks (`FFX_HOST_TRACE`). The report counts the exceptions
+  dispatched.
+- **Checked.** `tests/seh.rs` builds MSVC-shaped frames (an EH
+  registration, `__CxxFrameHandler3` tables: unwind map, try block, catch
+  handlers) and throws an `int` through the player's MSVCR110: caught
+  across `FFX.exe`'s `FUN_00948c30` (`call [ebp+8]`), the try block's
+  object destroyed by the unwind, the chain empty after; a `catch (...)`
+  that rethrows (`throw;`) to an outer catch; the same catch across a Rust
+  port in `FUN_00948c30`'s place (the port's frame abandoned, the
+  catching function's tail run once); an access violation handled by an
+  SEH handler that fixes the `CONTEXT` and continues; an unhandled throw
+  ending the run with its report.
+- **Not done.** Collided unwinds (an unwind started inside an unwind
+  handler that reaches the outer one) go on as a plain continue; the
+  vectored handlers (`AddVectoredExceptionHandler`) don't exist; a
+  thread's top frame is the chain's end, not Windows' `BaseThreadInitThunk`
+  filter (the same report either way); faults inside the Rust side
+  (`ArenaMem`'s dropped writes) are not exceptions.
 
 ## Imports
 
@@ -264,11 +359,9 @@ allow overlap as MSVCR110's do, and `rand` keeps MSVC's sequence per
 thread (seed 1). Everything else goes to the DLL: the Rust `sprintf`,
 `fopen`, `_controlfp_s` were approximations.
 
-Known gaps: the DLLs' x87 transcendental instructions (`fsin`, `fcos`,
-`fpatan`, ...) run on Unicorn's own x87, which is not bit-exact
-(`ffx-oracle` patches the 22 sites in this MSVCR110 build to its exact
-`x87` module; the host doesn't yet); C++ exceptions end the thread
-(`RaiseException` has no SEH dispatch yet).
+The DLLs' x87 transcendental instructions run exactly (above, "x87")
+and their C++ exceptions dispatch through the SEH chain (above,
+"Exceptions").
 
 ## Threads
 
@@ -351,6 +444,10 @@ through the harness's background mode. This round did not launch it.
 - `without_the_dlls_the_stl_is_the_wall`: `--no-dlls` still stops at the
   first `MSVCP110` import.
 
+`tests/x87.rs` and `tests/seh.rs` (same conditions): MSVCR110's maths
+against the CPU (above, "x87"), throw, catch, rethrow, faults and the
+unhandled report (above, "Exceptions").
+
 ## Building for Windows
 
 `tools/build-host.sh` (`build`, or `clippy` with cargo's arguments after
@@ -417,8 +514,8 @@ use the upper 2 GB.
 2. **The `ported!` lists in the table** (above, "One source of truth"):
    the call router in `ffx-bridge` (the host-table round), then the
    host-side `ported!`. Until then every function runs in Unicorn.
-3. **Exactness of the DLLs' x87 math** (above, "The C runtime DLLs"):
-   wire `ffx-oracle`'s exact `x87` instructions into the host's MSVCR110
-   before any parity gate compares float results.
+3. Done (2026-10-29): the DLLs' x87 maths is exact (above, "x87"), and
+   structured exceptions and C++ `throw`/`catch` dispatch through the SEH
+   chain (above, "Exceptions").
 4. **Windows.** The forwarding imports (window, input, files, D3D11),
    `ffx-rust.exe` started by the harness in background mode.

@@ -21,6 +21,8 @@
 //!
 //! Development only: the release runs no `FFX.exe` code (rewrite-plan, M5).
 
+pub mod seh;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
@@ -36,6 +38,7 @@ use crate::imports::{Heap, ImportFn, Imports, ThreadCrt};
 use crate::sync::Objects;
 use crate::table::{Args, Conv, Ret, Table};
 use crate::{Error, Result};
+use ffx_fpu::x87::Op;
 
 /// `int3`.
 const INT3: u8 = 0xcc;
@@ -92,6 +95,8 @@ struct State {
     recent_cap: usize,
     /// Instructions run (when counting is on).
     instructions: u64,
+    /// x87 instructions computed by `ffx_fpu` instead of the emulator.
+    x87: u64,
 }
 
 /// Where emulated time went: basic blocks run, how often, and the clock
@@ -138,6 +143,11 @@ pub struct Stats {
     pub milestones: Vec<String>,
     /// Instructions emulated (with [`Exec::count_instructions`]).
     pub instructions: u64,
+    /// x87 instructions (`fsin`, `fpatan`, `fprem`, ...) computed exactly
+    /// by `ffx_fpu` instead of Unicorn's own x87.
+    pub x87: u64,
+    /// Exceptions dispatched through the SEH chain ([`seh`]).
+    pub exceptions: u64,
 }
 
 impl Stats {
@@ -160,6 +170,8 @@ impl Stats {
         self.messages.extend(o.messages.iter().cloned());
         self.milestones.extend(o.milestones.iter().cloned());
         self.instructions += o.instructions;
+        self.x87 += o.x87;
+        self.exceptions += o.exceptions;
     }
 }
 
@@ -270,6 +282,11 @@ pub struct Shared {
     /// Thread-pool work items: handle → (callback, context).
     pub pool_work: Mutex<HashMap<u32, (u32, u32)>>,
     running: AtomicU32,
+    /// The x87 instructions `ffx_fpu` computes, at exact instruction
+    /// starts (patched to `int3`; game addresses).
+    x87: Arc<HashMap<u32, Op>>,
+    /// Possible ones in modules of unknown builds (a code hook each).
+    x87_watch: Vec<(u32, Op)>,
 }
 
 impl std::fmt::Debug for Shared {
@@ -360,6 +377,8 @@ impl Shared {
             emulators: Mutex::new(Vec::new()),
             pool_work: Mutex::new(HashMap::new()),
             running: AtomicU32::new(0),
+            x87: Arc::new(HashMap::new()),
+            x87_watch: Vec::new(),
         };
         s.bind_imports(stubs_at);
         for addr in s.table.addresses().collect::<Vec<_>>() {
@@ -367,6 +386,7 @@ impl Shared {
                 s.arena.fill(addr, &[INT3]);
             }
         }
+        s.mark_x87();
         let s = Arc::new(s);
         let weak = Arc::downgrade(&s);
         std::thread::Builder::new()
@@ -374,6 +394,29 @@ impl Shared {
             .spawn(move || watchdog(&weak))
             .map_err(Error::Io)?;
         Ok(s)
+    }
+
+    /// Finds the x87 instructions `ffx_fpu` computes in `FFX.exe` and the
+    /// DLLs: exact sites get an `int3` (the interrupt hook computes them),
+    /// a module of an unknown build a code hook on every possible one
+    /// (docs/host.md, "x87").
+    fn mark_x87(&mut self) {
+        let mut exact = HashMap::new();
+        let modules = std::iter::once((self.image.base, &self.image.x87))
+            .chain(self.dlls.iter().map(|d| (d.base, &d.x87)));
+        for (base, sites) in modules {
+            for &(rva, op) in &sites.at {
+                if sites.exact() {
+                    exact.insert(base + rva, op);
+                } else {
+                    self.x87_watch.push((base + rva, op));
+                }
+            }
+        }
+        for &at in exact.keys() {
+            self.arena.fill(at, &[INT3]);
+        }
+        self.x87 = Arc::new(exact);
     }
 
     /// Whether the run is ending or out of time.
@@ -564,6 +607,8 @@ pub struct Exec {
     /// The C runtime's per-thread state (`errno`'s cousin `GetLastError`,
     /// `rand`).
     pub crt: ThreadCrt,
+    /// Exceptions in flight ([`seh`]).
+    seh: seh::State,
 }
 
 impl Drop for Exec {
@@ -626,6 +671,7 @@ impl Exec {
             trace: Vec::new(),
             recent: Vec::new(),
             crt: ThreadCrt::default(),
+            seh: seh::State::default(),
         };
         if let Ok(mut l) = exec.shared.emulators.lock() {
             l.push((id, exec.uc.get_handle() as usize));
@@ -895,7 +941,7 @@ impl Exec {
 
     /// Whether this thread is to unwind (its own stop, or the run's).
     fn halted(&mut self) -> bool {
-        if self.stopped.is_some() {
+        if self.stopped.is_some() || self.seh.unwinding.is_some() {
             return true;
         }
         if self.shared.sync.stopping() {
@@ -931,7 +977,17 @@ impl Exec {
                 Ok(ret)
             }
         } else if let Some(&i) = self.shared.stubs.get(&addr) {
-            self.run_import(i, args)
+            let raise = self
+                .shared
+                .imports
+                .bound(i)
+                .is_some_and(|b| b.name.ends_with("!RaiseException"));
+            if raise {
+                // the dispatch runs in the executor's loop
+                self.call_unicorn(addr, conv, args)
+            } else {
+                self.run_import(i, args)
+            }
         } else {
             self.call_unicorn(addr, conv, args)
         };
@@ -1002,7 +1058,16 @@ impl Exec {
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         self.uc.reg_write(RegisterX86::FPSW, sw & !0x3800)?;
         self.uc.reg_write(RegisterX86::FPTAG, 0xffff)?;
-        let run = self.run(addr);
+        // the esp the sentinel return leaves
+        let pops = if conv.callee_pops() {
+            4 * u32::try_from(args.stack.len()).unwrap_or(0)
+        } else {
+            0
+        };
+        let expect = sp + 4 + pops;
+        self.seh.levels.push(expect);
+        let run = self.run(addr, expect);
+        self.seh.levels.pop();
         let ret = Ret {
             eax: self.reg(RegisterX86::EAX)?,
             edx: Some(self.reg(RegisterX86::EDX)?),
@@ -1068,9 +1133,13 @@ impl Exec {
         }
     }
 
-    /// Emulates from `pc` until the sentinel returns, taking ports and
-    /// imports on the way.
-    fn run(&mut self, mut pc: u32) -> Result<()> {
+    /// Emulates from `pc` until the sentinel returns with `esp` at
+    /// `expect`, taking ports, imports and exceptions on the way.
+    ///
+    /// A sentinel return at an outer level's `esp` (a C++ catch continued
+    /// in a frame older than a Rust port, [`seh`]) unwinds every Rust
+    /// level to that one, which then returns as if its own call had.
+    fn run(&mut self, mut pc: u32, expect: u32) -> Result<()> {
         loop {
             if self.halted() {
                 return Err(Error::Stopped);
@@ -1090,24 +1159,51 @@ impl Exec {
             self.stats.emulated += t.elapsed();
             let event = self.uc.get_data_mut().event.take();
             match event {
-                Some(Event::Int3(at)) if at == self.sentinel => return Ok(()),
+                Some(Event::Int3(at)) if at == self.sentinel => {
+                    let esp = self.reg(RegisterX86::ESP)?;
+                    if self.outer_level(esp, expect) {
+                        self.start_unwinding(esp)?;
+                        return Err(Error::Stopped);
+                    }
+                    return Ok(());
+                }
+                Some(Event::Int3(at)) if at == self.sentinel + seh::STUB_RETURN => {
+                    pc = self.handler_returned()?;
+                }
                 Some(Event::Int3(at)) => {
-                    pc = if let Some(&i) = self.shared.stubs.get(&at) {
-                        self.enter_import(i)?
+                    let next = if let Some(&i) = self.shared.stubs.get(&at) {
+                        self.enter_import(i, at)
                     } else if self.shared.table.get(at).is_some() {
-                        self.enter_port(at)?
+                        self.enter_port(at)
                     } else {
-                        return Err(Error::Interrupt(3, at));
+                        // a stray int3: EXCEPTION_BREAKPOINT at it
+                        self.uc.reg_write(RegisterX86::EIP, u64::from(at))?;
+                        self.raise_fault(seh::BREAKPOINT, at, &[0])
+                    };
+                    pc = match next {
+                        Ok(pc) => pc,
+                        Err(Error::Stopped) if self.unwound_to(expect)? => return Ok(()),
+                        Err(e) => return Err(e),
                     };
                 }
-                Some(Event::Interrupt(n, at)) => return Err(Error::Interrupt(n, at)),
+                Some(Event::Interrupt(n, at)) => {
+                    let code = match n {
+                        0 => seh::DIVIDE_BY_ZERO,
+                        6 => seh::ILLEGAL_INSTRUCTION,
+                        _ => return Err(Error::Interrupt(n, at)),
+                    };
+                    pc = self.raise_fault(code, at, &[])?;
+                }
                 Some(Event::BadAccess(at, write)) => {
                     let eip = self.reg(RegisterX86::EIP)?;
-                    return Err(Error::BadAccess {
-                        addr: at,
-                        eip,
-                        write,
-                    });
+                    let kind = if write {
+                        1
+                    } else if at == eip {
+                        8
+                    } else {
+                        0
+                    };
+                    pc = self.raise_fault(seh::ACCESS_VIOLATION, eip, &[kind, at])?;
                 }
                 None => {
                     r?;
@@ -1187,14 +1283,19 @@ impl Exec {
         self.finish(ret, pops)
     }
 
-    /// Runs import `i` for Unicorn code that called it.
-    fn enter_import(&mut self, i: usize) -> Result<u32> {
+    /// Runs import `i` (its stub at `stub`) for Unicorn code that called
+    /// it.
+    fn enter_import(&mut self, i: usize, stub: u32) -> Result<u32> {
         let words = self.shared.imports.bound(i).map_or(0, |b| b.words);
         let args = self.entry_args(words)?;
         let saved = self.save_regs()?;
         let ret = self.run_import(i, &args);
         self.restore_regs(&saved)?;
         let ret = ret?;
+        if self.seh.pending.is_some() {
+            // RaiseException: the dispatch goes on from here
+            return self.raise_pending(stub);
+        }
         let pops = match self.shared.imports.bound(i) {
             Some(b) if b.conv.callee_pops() => b.words,
             _ => 0,
@@ -1327,6 +1428,7 @@ impl Exec {
             f[6..10].copy_from_slice(&code);
             arena.fill(self.ret_float_stubs + 12 * n, &f);
         }
+        self.write_seh_stubs();
     }
 
     /// The thread's TEB at `at + PAGE` (fs), a GDT at `at`, an empty PEB
@@ -1380,9 +1482,19 @@ impl Exec {
     }
 
     fn add_hooks(&mut self) -> Result<()> {
-        self.uc.add_intr_hook(|uc, intno| {
+        let x87 = Arc::clone(&self.shared.x87);
+        self.uc.add_intr_hook(move |uc, intno| {
             #[allow(clippy::cast_possible_truncation)] // 32-bit eip
             let eip = uc.reg_read(RegisterX86::EIP).unwrap_or(0) as u32;
+            // an x87 instruction `ffx_fpu` computes: done here, the
+            // emulator goes on after it
+            if intno == 3
+                && let Some(&op) = x87.get(&eip.wrapping_sub(1))
+                && ffx_fpu::unicorn::step(uc, u64::from(eip) - 1, op).is_ok()
+            {
+                uc.get_data_mut().x87 += 1;
+                return;
+            }
             let ev = if intno == 3 {
                 Event::Int3(eip.wrapping_sub(1))
             } else {
@@ -1403,7 +1515,21 @@ impl Exec {
                 false
             },
         )?;
+        for &(at, op) in &self.shared.x87_watch {
+            let at = u64::from(at);
+            self.uc.add_code_hook(at, at, move |uc, addr, _| {
+                if ffx_fpu::unicorn::step(uc, addr, op).is_ok() {
+                    uc.get_data_mut().x87 += 1;
+                }
+            })?;
+        }
         Ok(())
+    }
+
+    /// x87 instructions computed by `ffx_fpu` on this thread so far.
+    #[must_use]
+    pub fn x87_steps(&self) -> u64 {
+        self.uc.get_data().x87
     }
 
     /// Maps a region the game asked for at run time (`VirtualAlloc`) into
@@ -1587,6 +1713,8 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
         (Err(e), None) => (0, e.to_string()),
     };
     ex.stats.instructions = ex.instructions();
+    ex.stats.x87 = ex.x87_steps();
+    ex.stats.exceptions = ex.exceptions_raised();
     let stats = ex.stats.clone();
     let profile = ex.profile().clone();
     let trace = std::mem::take(&mut ex.trace);

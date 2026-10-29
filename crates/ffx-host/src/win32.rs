@@ -706,22 +706,40 @@ fn thread_times(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(1)
 }
 
-/// `RaiseException(code, flags, n, args)`: no SEH dispatch yet; a C++
-/// `throw` (`0xe06d7363`) ends the thread with its code.
+/// `RaiseException(code, flags, n, args)`: dispatched through the
+/// thread's registration chain once the import returns
+/// (`crate::exec::seh`).
 fn raise_exception(e: &mut Exec, args: &Args) -> Ret {
+    e.raise_exception(args)
+}
+
+/// `UnhandledExceptionFilter(pointers)`: the C runtime's last word on an
+/// exception nothing handled (its start-up's `__except`, `terminate`):
+/// ends the thread, the main thread the run, naming the exception.
+fn unhandled_filter(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    let pointers = a(args, 0);
+    let (rec, ctx): (u32, u32) = if pointers == 0 {
+        (0, 0)
+    } else {
+        (mem.read(pointers), mem.read(pointers + 4))
+    };
+    let what = if rec == 0 {
+        "an exception".to_string()
+    } else {
+        crate::exec::seh::describe(&mem, rec)
+    };
+    let eip = if ctx == 0 { 0 } else { mem.read(ctx + 0xb8) };
     e.end(Stop::Failed(
-        format!(
-            "RaiseException({:#010x}): no exception dispatch yet",
-            a(args, 0)
-        ),
-        0,
+        format!("unhandled {what} (the C runtime's UnhandledExceptionFilter)"),
+        eip,
     ));
-    Ret::VOID
+    Ret::eax(0)
 }
 
 fn give_up(e: &mut Exec, _: &Args) -> Ret {
     e.end(Stop::Failed(
-        "the C runtime gave up (TerminateProcess, UnhandledExceptionFilter or DebugBreak)".into(),
+        "the C runtime gave up (TerminateProcess or DebugBreak)".into(),
         0,
     ));
     Ret::eax(0)
@@ -944,7 +962,16 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "IsValidLocale", Conv::Stdcall, 2, one),
     // the runtime's last resorts
     (K32, "RaiseException", Conv::Stdcall, 4, raise_exception),
-    (K32, "UnhandledExceptionFilter", Conv::Stdcall, 1, give_up),
+    (K32, "RtlUnwind", Conv::Stdcall, 4, |e, args| {
+        e.rtl_unwind(args)
+    }),
+    (
+        K32,
+        "UnhandledExceptionFilter",
+        Conv::Stdcall,
+        1,
+        unhandled_filter,
+    ),
     (K32, "TerminateProcess", Conv::Stdcall, 2, give_up),
     (K32, "DebugBreak", Conv::Stdcall, 0, give_up),
 ];

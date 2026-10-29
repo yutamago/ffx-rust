@@ -41,7 +41,8 @@ use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
 pub mod harvest;
 pub use harvest::{CallState, Case, Driver, OracleHost, Store, harvested};
 mod win32;
-mod x87;
+
+use ffx_fpu::x87;
 
 const PAGE: u64 = 0x1000;
 const PAGE_BYTES: usize = 0x1000;
@@ -1329,19 +1330,6 @@ struct LoadedDll {
     x87_exact: bool,
 }
 
-/// The x87 instructions [`x87`] computes in the game's `MSVCR110.dll`
-/// (11.0.51106.1: PE timestamp `0x5098858e`, checksum `0xe396c`), as RVAs
-/// of their first byte from a linear disassembly. These are patched to
-/// `int3` and trapped by one interrupt hook. Any other build of the DLL
-/// gets a code hook on every `0xd9 xx` pair that could be one, which is
-/// exact as well but makes the emulator about four times slower (a code
-/// hook costs at every translated instruction).
-const MSVCR110_X87: [u32; 22] = [
-    0x323f5, 0x32538, 0x3266d, 0x32793, 0x327c0, 0x327ca, 0x328ed, 0x329bb, 0x32b0a, 0x32c80,
-    0x32ecc, 0x32ef9, 0x32f03, 0x330ae, 0x330dd, 0x330e7, 0x3854a, 0x424e2, 0x447ff, 0x45e51,
-    0x46dda, 0xb182a,
-];
-
 /// The sections of a PE file laid out as in memory (unrelocated).
 fn lay_out(bytes: &[u8], pe: &PE) -> Result<Vec<u8>> {
     let opt = pe
@@ -1412,41 +1400,26 @@ fn load_runtime(
         + pe.header
             .optional_header
             .map_or(0, |o| o.standard_fields.address_of_entry_point);
-    let known = pe.header.coff_header.time_date_stamp == 0x5098_858e
-        && pe
-            .header
+    let code: Vec<(u32, u32)> = pe
+        .sections
+        .iter()
+        .filter(|s| s.characteristics & 0x2000_0000 != 0)
+        .map(|s| (s.virtual_address, s.virtual_size))
+        .collect();
+    let found = ffx_fpu::sites(
+        &image,
+        pe.header.coff_header.time_date_stamp,
+        pe.header
             .optional_header
-            .is_some_and(|o| o.windows_fields.check_sum == 0x000e_396c);
-    let listed: Option<Vec<(u64, x87::Op)>> = known
-        .then(|| {
-            MSVCR110_X87
-                .iter()
-                .map(|&rva| {
-                    let i = rva as usize;
-                    (image.get(i) == Some(&0xd9))
-                        .then(|| x87::Op::decode(*image.get(i + 1)?))
-                        .flatten()
-                        .map(|op| (base + u64::from(rva), op))
-                })
-                .collect()
-        })
-        .flatten();
-    let x87_exact = listed.is_some();
-    let mut x87_sites = listed.unwrap_or_default();
-    for section in pe.sections.iter().filter(|_| !x87_exact) {
-        if section.characteristics & 0x2000_0000 == 0 {
-            continue; // not executable
-        }
-        let va = section.virtual_address as usize;
-        let end = (va + section.virtual_size as usize).min(image.len());
-        for i in va..end.saturating_sub(1) {
-            if image[i] == 0xd9
-                && let Some(op) = x87::Op::decode(image[i + 1])
-            {
-                x87_sites.push((base + i as u64, op));
-            }
-        }
-    }
+            .map_or(0, |o| o.windows_fields.check_sum),
+        &code,
+    );
+    let x87_exact = found.exact();
+    let x87_sites = found
+        .at
+        .iter()
+        .map(|&(rva, op)| (base + u64::from(rva), op))
+        .collect();
     Ok(LoadedDll {
         base: base32,
         size: image.len() as u64,
@@ -1460,47 +1433,7 @@ fn load_runtime(
 /// Runs one of the x87 instructions [`x87`] computes in place of the
 /// emulator's own version, then continues after it.
 fn x87_hook(uc: &mut Unicorn<State>, addr: u64, op: x87::Op) -> Result<()> {
-    let st = |uc: &Unicorn<State>, r| -> Result<x87::Ext> {
-        let v = uc.reg_read_long(r)?;
-        let mut b = [0u8; 10];
-        b.copy_from_slice(&v[..10]);
-        Ok(x87::Ext::from_bytes(&b))
-    };
-    let (st0, st1) = (st(uc, RegisterX86::ST0)?, st(uc, RegisterX86::ST1)?);
-    let cw = u16::try_from(uc.reg_read(RegisterX86::FPCW)? & 0xffff).expect("16 bits");
-    let mut sw = u16::try_from(uc.reg_read(RegisterX86::FPSW)? & 0xffff).expect("16 bits");
-    let e = x87::execute(op, st0, st1, cw);
-    // condition codes C0, C1, C2 (bits 8..10) and C3 (bit 14)
-    for (k, bit) in [8u16, 9, 10, 14].into_iter().enumerate() {
-        if let Some(v) = e.c[k] {
-            sw = (sw & !(1 << bit)) | (u16::from(v) << bit);
-        }
-    }
-    sw |= e.flags;
-    let top = (sw >> 11) & 7;
-    let mut tag = u16::try_from(uc.reg_read(RegisterX86::FPTAG)? & 0xffff).expect("16 bits");
-    let set_top = |sw: u16, t: u16| (sw & !0x3800) | ((t & 7) << 11);
-    if e.push {
-        let t = top.wrapping_sub(1) & 7;
-        uc.reg_write(RegisterX86::FPSW, u64::from(set_top(sw, t)))?;
-        tag &= !(3 << (2 * t)); // the new ST0 is in use
-        uc.reg_write(RegisterX86::FPTAG, u64::from(tag))?;
-    } else {
-        uc.reg_write(RegisterX86::FPSW, u64::from(sw))?;
-    }
-    if let Some(v) = e.st0 {
-        uc.reg_write_long(RegisterX86::ST0, &v.to_bytes())?;
-    }
-    if let Some(v) = e.st1 {
-        uc.reg_write_long(RegisterX86::ST1, &v.to_bytes())?;
-    }
-    if e.pop {
-        tag |= 3 << (2 * top); // the old ST0 is empty
-        uc.reg_write(RegisterX86::FPTAG, u64::from(tag))?;
-        uc.reg_write(RegisterX86::FPSW, u64::from(set_top(sw, top + 1)))?;
-    }
-    uc.reg_write(RegisterX86::EIP, addr + 2)?;
-    Ok(())
+    Ok(ffx_fpu::unicorn::step(uc, addr, op)?)
 }
 
 /// Applies the image's base relocations for a load `delta` away.

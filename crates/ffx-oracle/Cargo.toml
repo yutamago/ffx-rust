@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 ffx-bridge.workspace = true
+ffx-fpu = { workspace = true, features = ["unicorn"] }
 goblin.workspace = true
 lz4_flex.workspace = true
 thiserror.workspace = true
