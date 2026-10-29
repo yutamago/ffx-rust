@@ -4051,3 +4051,131 @@ fn post3_match_the_original() {
         }
     }
 }
+
+// ---- batch 11: SSR targets, glow resize, buffer views ----
+
+use ffx_prender::m5p_render_b_post4::{self as post4, bridge as jb};
+
+#[test]
+fn post4_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the SSR targets: no triangle; textures, sizes, targets failing
+        for case in 0..5u32 {
+            let tex = t.junk(0x40, 1);
+            t.w32(tex + 0x14, 0xffff_ffff);
+            let tg = t.junk(0x20, 2);
+            t.stub(
+                post4::CREATE_TRIANGLE,
+                false,
+                1,
+                0,
+                u32::from(case != 0) * 0x7171,
+            );
+            t.stub(
+                post4::CLUSTER_CREATE,
+                true,
+                3,
+                3,
+                if case == 1 { 0 } else { tex },
+            );
+            t.stub(post4::SET_DIMENSIONS, true, 4, 4, u32::from(case == 2) * 3);
+            t.stub(post4::UPDATE_MAX_LEVEL, true, 0, 0, 0x55);
+            t.stub(
+                post4::MAKE_TARGET,
+                true,
+                1,
+                1,
+                if case == 3 { 0 } else { tg },
+            );
+            let obj = t.junk(0x80, 3);
+            t.check(
+                &format!("{label}: ssr targets {case}"),
+                0x00a1_7ec0,
+                Conv::Thiscall(obj),
+                &[0xc1, 641, 361],
+                |g| Out::U32(jb::ssr_targets(g, obj, 0xc1, 641, 361)),
+            );
+            t.reset();
+        }
+        // the glow resize: a missing level handle, a kind, errors, the
+        // bloom target null / missing / resized, all done
+        for (case, bound, unbind, set) in [
+            (0u32, 0u32, 0u32, 0u32),
+            (1, 0, 0, 0),
+            (2, 1, 6, 0),
+            (3, 0, 0, 0x22),
+            (4, 0, 0, 0),
+            (5, 1, 0, 0),
+            (6, 0, 0, 0),
+        ] {
+            t.stub(post4::IS_BOUND, true, 0, 0, bound);
+            t.stub(post4::UNBIND, true, 0, 0, unbind);
+            t.stub(post4::SET_DIMENSIONS, true, 4, 4, set);
+            let obj = t.junk(0x100, 4);
+            let ats = [0x90u32, 0x9c, 0x94, 0xa0, 0x98, 0xa4, 0xa8];
+            for (k, at) in ats.into_iter().enumerate() {
+                let tex = t.junk(0x40, 5);
+                t.w32(tex + 0x1c, if k % 2 == 0 { 40 } else { 7 });
+                t.w32(tex + 0x20, if case == 6 { 23 } else { 22 });
+                let handle = t.zeros(8);
+                t.w32(handle, if case == 1 && k == 3 { 0 } else { tex });
+                t.w8(handle + 4, u8::from(case == 4 && k == 6));
+                let hv = if case == 0 && k == 2 { 0 } else { handle };
+                t.w32(obj + at, hv);
+            }
+            if case == 5 {
+                t.w32(obj + 0xa8, 0);
+            }
+            t.check(
+                &format!("{label}: glow resize {case}"),
+                0x00a2_3280,
+                Conv::Thiscall(obj),
+                &[320, 180],
+                |g| Out::U32(jb::glow_resize(g, obj, 320, 180)),
+            );
+            t.reset();
+        }
+        // the buffer views: no views flag, one inline, three, a failure
+        for (flags, count, hr) in [
+            (0u8, 3u32, 0u32),
+            (8, 1, 0),
+            (8, 3, 0),
+            (8, 3, 0x8007_000e),
+            (8, 3, 1),
+            (0xff, 2, 0),
+        ] {
+            let mut words = vec![0u32; 8];
+            words[7] = 4;
+            let dev = t.com_object(&words, &[0, 0, 0, 0, 0, 0, 0, hr]);
+            let holder = t.rebase(post4::HOLDER_DEVICE);
+            t.put_saved(holder, dev);
+            t.stub(post4::SCOPE_ENTER, true, 0, 0, 0x4d50);
+            t.stub(post4::SCOPE_LEAVE, true, 0, 0, 0x4e90);
+            t.stub(post4::HOLDER_CTOR, true, 0, 0, 0);
+            t.stub(post4::ATEXIT, false, 1, 0, 0);
+            let guard = t.rebase(post4::HOLDER_GUARD);
+            let g = t.r32(guard);
+            t.put_saved(guard, if count == 3 { g & !1 } else { g | 1 });
+            let obj = t.junk(0x40, 6);
+            t.w8(obj + 0x34, flags);
+            t.w32(obj + 0x14, count);
+            let elems = t.junk(0x14 * 3, 7);
+            if count > 1 {
+                t.w32(obj + 0x18, elems);
+            }
+            let ebp = t.ebp_for(0);
+            let lock = ebp - 0x18;
+            t.check_frame(
+                &format!("{label}: buffer views {flags:#x} {count} {hr:#x}"),
+                0x0058_f5d0,
+                Conv::Thiscall(obj),
+                &[],
+                ebp,
+                0x18,
+                (0x18, 0xc),
+                |g| Out::U32(jb::create_views(g, obj, lock)),
+            );
+            t.reset();
+        }
+    }
+}

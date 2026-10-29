@@ -17,6 +17,7 @@ use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
 use ffx_prender::m5p_render_b_post3::bridge as kb;
+use ffx_prender::m5p_render_b_post4::bridge as jb;
 use ffx_prender::m5p_render_b_shaders::{self as sh, bridge as hb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
 
@@ -1237,5 +1238,19 @@ ported! {
     /// `Phyre_PPostProcessing_PFXAA_vslot04_setup`.
     Phyre_PPostProcessing_PFXAA_vslot04_setup @ 0x00a1_9970 => extern "thiscall" fn k_00a19970(this: u32, w: u32, h: u32) -> u32 {
         kb::fxaa_setup(&mut mem(), this, w, h)
+    }
+    // ---- batch 11: SSR targets, glow resize, buffer views (ffx_prender::m5p_render_b_post4) ----
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_makeTargets_00a17ec0`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_makeTargets_00a17ec0 @ 0x00a1_7ec0 => extern "thiscall" fn j_00a17ec0(this: u32, cluster: u32, w: u32, h: u32) -> u32 {
+        jb::ssr_targets(&mut mem(), this, cluster, w, h)
+    }
+    /// `Phyre_PPostProcessing_PGlow_resizeTargets_00a23280`.
+    Phyre_PPostProcessing_PGlow_resizeTargets_00a23280 @ 0x00a2_3280 => extern "thiscall" fn j_00a23280(this: u32, w: u32, h: u32) -> u32 {
+        jb::glow_resize(&mut mem(), this, w, h)
+    }
+    /// `PStructuredBufferD3D11_createViews_0058f5d0`: the scope lock and its locals in this frame.
+    PStructuredBufferD3D11_createViews_0058f5d0 @ 0x0058_f5d0 => extern "thiscall" fn j_0058f5d0(this: u32) -> u32 {
+        let mut f = super::StackFrame::<3>::new();
+        jb::create_views(&mut mem(), this, f.at())
     }
 }
