@@ -516,6 +516,21 @@ slightly differently.
    - Port the CRT, STL and Lua functions the game reaches: memory, files,
      strings, math and `rand`, onto Rust `std`, keeping each function's
      observable results (`rand`'s sequence, `printf` formatting).
+   - Port the PhyreEngine code the game reaches (m5-phyre-scope,
+     2026-10-29). Scope: the 6,142 functions (517 KB) that the class-gated
+     model (`tools/phyre-classes.py`) reaches and no hook covers yet,
+     without the script layer. The script layer is the
+     `PMethodCallerConcrete`/`PFunctionCallerConcrete` vtables and
+     descriptor slots 3-6, and 2,950 functions only it reaches. A coverage
+     run put a trap on each of its 3,032 entry points and 1,692 inner
+     functions, ran the original code through the main list, the extra
+     list and the five coverage sessions, and none of them fired; the three
+     control traps fired in every run. The script layer is ported only if a
+     later replay reaches it. More than half of the scope (3,205) is
+     descriptor-template slot copies: one generic port per template slot,
+     with a generated table of per-copy constants. The 136 movie-library
+     functions (mkvparser, vorbis, libvpx) go to stage 2. The lists are in
+     `~/ffx-work/m5/phyre/` (`tools/phyre-lists.py`, `plan.md`).
    - The spell and summon overlays (581 `magic_*.dll`, 10 MB of code, at
      most 3.8 MB unique; above) are not on M5's path (user, 2026-10-28).
      A 64-bit program can't load them, so from stage 3 on `ffx-host` runs
