@@ -177,7 +177,7 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-const LOGGED: usize = 12;
+const LOGGED: usize = 16;
 
 #[derive(Default)]
 pub struct Shared {

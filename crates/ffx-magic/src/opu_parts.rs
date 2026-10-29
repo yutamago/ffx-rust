@@ -357,8 +357,10 @@ pub const INIT_ENV: Sig = Sig {
 /// `+0x40` (0x10001710, `(part)`): finds the part's data among the
 /// effect's entries (`op_oef2_a_get(effect, 8, i)`, slot 719, the effect
 /// being `*G_SLOTS + 4`) and, the first time for that entry, records it
-/// in the previous-part words and runs `pppInitData(data, program[i], 0)`
-/// (slot 711, the program table in `.rdata`) with the flag set. Returns 0.
+/// in the previous-part words and runs `pppInitData(data, program[i],
+/// mode)` (slot 711, the program table in `.rdata`; `mode` the `push
+/// imm8` at `+0xe5`: 0, or 1 in [`INIT_DATA_1`]'s DLLs) with the flag
+/// set. Returns 0.
 pub fn init_data<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
@@ -394,8 +396,10 @@ pub fn init_data<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let d = g.read::<u32>(part + 0xd0);
     let saved = g.read::<u32>(lock);
     g.write::<u32>(lock, 1);
+    // +0xe5: push imm8 (sign-extended)
+    let mode = i32::from((img.word(f + 0xe6) as u8).cast_signed()).cast_unsigned();
     let slot711 = slot_target(g, w(0xe1), 711);
-    g.call(slot711, 0, &[d, program, 0]);
+    g.call(slot711, 0, &[d, program, mode]);
     let lock = g.read::<u32>(w(0xf2));
     g.write::<u32>(lock, saved);
     Ret::eax(0)
@@ -405,6 +409,15 @@ pub fn init_data<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const INIT_DATA: Sig = Sig {
     len: 258,
     hash: 0xee8b_f9ba_56dd_0b49,
+    calls: &[],
+    imports: &[],
+};
+
+/// `init_data` with `pppInitData`'s mode 1 (`magic_0208` 0x10001730, 258
+/// bytes, 11 overlays; ported by list 5).
+pub const INIT_DATA_1: Sig = Sig {
+    len: 258,
+    hash: 0x7fd9_321e_a01b_2404,
     calls: &[],
     imports: &[],
 };

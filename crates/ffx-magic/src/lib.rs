@@ -41,6 +41,8 @@ pub mod runtime;
 
 pub mod m0604;
 
+pub mod l5_opu_boot;
+
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
 use ffx_core as _;
@@ -409,6 +411,12 @@ ports! {
     "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+    "opu part init data (mode 1)" => opu_parts::INIT_DATA_1, opu_parts::init_data;
+    "opu boot a" => l5_opu_boot::BOOT_A, l5_opu_boot::boot_a;
+    "opu boot b" => l5_opu_boot::BOOT_B, l5_opu_boot::boot_b;
+    "opu boot c" => l5_opu_boot::BOOT_C, l5_opu_boot::boot_c;
+    "opu boot d" => l5_opu_boot::BOOT_D, l5_opu_boot::boot_d;
+    "opu shutdown" => l5_opu_boot::SHUTDOWN, l5_opu_boot::shutdown;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
