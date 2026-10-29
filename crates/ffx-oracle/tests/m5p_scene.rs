@@ -3390,3 +3390,95 @@ fn m5p_scene_l_camera_follow() {
         tw.unstub();
     }
 }
+
+// ---- batch 13 (ffx_prender::m5p_scene_m) ----
+
+use ffx_prender::m5p_scene_m as sm;
+
+/// A bump allocator at `PhyreMalloc` (cdecl `(size, align)`): blocks from
+/// an arena whose cursor is its first word; `fail_at` (the arena's second
+/// word) numbers the call that returns 0 (counted in the third).
+fn bump_malloc(tw: &mut Twins) -> u32 {
+    let arena = tw.zeros(0x1000);
+    tw.w32(arena, arena + 0x10);
+    tw.w32(arena + 4, u32::MAX);
+    // inc [arena+8]; mov eax,[arena+8]; dec eax; cmp eax,[arena+4]; je zero;
+    // mov eax,[arena]; mov ecx,[esp+4]; add ecx,0xf; and ecx,-0x10;
+    // add [arena],ecx; ret; zero: xor eax,eax; ret
+    let mut c = vec![0xff, 0x05];
+    c.extend((arena + 8).to_le_bytes());
+    c.push(0xa1);
+    c.extend((arena + 8).to_le_bytes());
+    c.push(0x48);
+    c.extend([0x3b, 0x05]);
+    c.extend((arena + 4).to_le_bytes());
+    c.extend([0x74, 0x16]);
+    c.push(0xa1);
+    c.extend(arena.to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x04, 0x83, 0xc1, 0x0f, 0x83, 0xe1, 0xf0]);
+    c.extend([0x01, 0x0d]);
+    c.extend(arena.to_le_bytes());
+    c.push(0xc3);
+    c.extend([0x31, 0xc0, 0xc3]);
+    let code = tw.a.alloc_code(&c).unwrap();
+    assert_eq!(tw.b.alloc_code(&c).unwrap(), code);
+    let at = tw.rebase(sm::PHYRE_MALLOC);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut tw.a, at, 5).unwrap();
+    tw.saved.entry(at).or_insert(old);
+    tw.write(at, &j);
+    arena
+}
+
+/// The LOD level's define string: levels 0 and others, string arrays of
+/// one and other counts (owned, external), old strings owned and not;
+/// allocations failing at each call. The real builder code over a bump
+/// allocator; `PhyreFree` and the array release stubbed.
+#[test]
+fn m5p_scene_m_lod_level_strings() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sm::PHYRE_FREE, false, 1, 0, 0);
+        tw.stub(sm::STRINGS_RELEASE, false, 2, 0, 0x0bad_002b);
+        let arena = bump_malloc(&mut tw);
+        let frame = tw.b.stack_range().start + 0x1000;
+        let name = tw.alloc(b"LODLEVEL_\0");
+        let this = tw.zeros(0x10);
+        tw.w32(this + 4, name);
+        let packed = tw.alloc(&[0, 0, 0, 0, 3, 0, 0, 0, 0xff, 0xff, 0xff, 0x7f]);
+        let cursor = tw.zeros(4);
+        let strings = tw.zeros(8);
+        let slot = tw.zeros(4);
+        for word in 0..3 {
+            for (count, old_buf) in [
+                (1, slot),
+                (0, 0),
+                (2, 0x0012_3000),
+                (0x8000_0002, 0x0012_3000),
+            ] {
+                for old_string in [0x0013_0000, 0x0013_0001] {
+                    for fail in [u32::MAX, 0, 1, 2] {
+                        tw.w32(arena, arena + 0x10);
+                        tw.w32(arena + 4, fail);
+                        tw.w32(arena + 8, 0);
+                        tw.w32(cursor, packed + 4 * word);
+                        tw.w32(strings, count);
+                        tw.w32(strings + 4, old_buf);
+                        tw.w32(slot, old_string);
+                        let label = format!(
+                            "{what} lod strings word {word} ({count:#x}, {old_buf:#x}) old {old_string:#x} fail {fail}"
+                        );
+                        tw.run(
+                            &label,
+                            0x004d_4ba0,
+                            Conv::Thiscall(this),
+                            &[cursor, 9, strings],
+                            |g| sm::bridge::lod_level_strings(g, this, cursor, strings, frame),
+                        );
+                    }
+                }
+            }
+        }
+        tw.unstub();
+    }
+}

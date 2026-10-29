@@ -72,6 +72,7 @@ mod m5p_scene_i;
 mod m5p_scene_j;
 mod m5p_scene_k;
 mod m5p_scene_l;
+mod m5p_scene_m;
 mod m5p_tmpl_abstract_ab;
 mod m5p_tmpl_abstract_cd;
 mod m5p_tmpl_fortype;
@@ -165,6 +166,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_scene_j::hooks());
     all.extend(m5p_scene_k::hooks());
     all.extend(m5p_scene_l::hooks());
+    all.extend(m5p_scene_m::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());

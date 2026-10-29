@@ -183,6 +183,7 @@ pub mod m5p_scene_i;
 pub mod m5p_scene_j;
 pub mod m5p_scene_k;
 pub mod m5p_scene_l;
+pub mod m5p_scene_m;
 pub mod m5r_a;
 pub mod m5r_b;
 pub mod m5r_c;
