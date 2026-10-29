@@ -222,8 +222,190 @@ fn dll_main_writes_only_crt_state() {
     };
     t.dll_main_check(
         &[
-            0x10d0, 0x10e0, 0x1160, 0x11f0, 0x1660, 0x1820, 0x1860, 0x1880,
+            0x10d0, 0x10e0, 0x1160, 0x11f0, 0x1250, 0x1380, 0x1440, 0x14b0, 0x14d0, 0x1530, 0x15a0,
+            0x1600, 0x1660, 0x1710, 0x1820, 0x1860, 0x1880,
         ],
         &[(0x1000, 206), (0x2230, 53), (0x2270, 28)],
     );
+}
+
+/// Every stub of the part callbacks: records all the words it is given
+/// into its own scratch row (so a dropped or reordered word shows) and
+/// answers something the port must pass on.
+fn part_stubs(t: &mut Twin) {
+    // (slot, the words the original's callee reads)
+    let arity = [
+        (710u32, 4usize),
+        (711, 3),
+        (712, 5),
+        (713, 1),
+        (714, 5),
+        (719, 3),
+        (722, 2),
+        (941, 1),
+    ];
+    for (k, (slot, n_args)) in (0u32..).zip(arity) {
+        let row = SCRATCH + 0x2_0000 + 0x100 * k;
+        t.stub(slot, move |m, a| {
+            let n = m.r32(row);
+            for (i, w) in (0u32..).zip(&a[..n_args]) {
+                m.w32(row + 4 + 0x18 * (n % 8) + 4 * i, *w);
+            }
+            m.w32(row, n + 1);
+            match slot {
+                // the program list: SCRATCH + 0x8000 holds 4 words
+                941 => SCRATCH + 0x8000,
+                // the effect's entry: the part's data for i == 1
+                719 => {
+                    if a[2] == 1 {
+                        SCRATCH + 0x9000
+                    } else {
+                        0x0abc_0000 + a[2]
+                    }
+                }
+                // done every other run
+                712 => n & 1,
+                _ => 0x7100 + slot,
+            }
+        });
+    }
+}
+
+const PART: u32 = SCRATCH + 0xa000;
+
+fn part(t: &mut Twin, key: (u8, u16), state: u8, buf: u32) {
+    t.set_u32(PART + 0xd0, SCRATCH + 0x9000);
+    t.set_u8(PART + 0x1e, key.0);
+    t.set_u16(PART + 0x1a, key.1);
+    t.set_u8(PART + 0xbb, state);
+    t.set_u32(PART + 0xbc, buf);
+    t.set_u8(PART + 0xd4, 2);
+    for (i, w) in (0u32..).zip([0x14u32, 0x18, 0x1c, 0x10]) {
+        t.set_u32(SCRATCH + 0x9000 + w, 0x0d00_0000 + i);
+    }
+    for i in 0..4 {
+        t.set_u32(SCRATCH + 0x8000 + 4 * i, 0x0e00_0000 + i);
+    }
+}
+
+#[test]
+fn opu_part_callbacks() {
+    let Some(mut t) = twin() else { return };
+    part_stubs(&mut t);
+    let alloc = t.at(0x1250);
+    let parts = t.img.word(alloc + 0x76);
+    let bufs = t.img.word(alloc + 0xab);
+    // parts: some keys, some free slots, the part's own key at 5
+    for i in 0..0x40u32 {
+        let v = if i % 3 == 0 { 0 } else { 0x0055_0000 + i };
+        t.set_u32(parts + 4 * i, v);
+        t.set_u16(bufs + 0x80 * i + 0x1e, u16::try_from(i).unwrap());
+    }
+    t.set_u32(parts + 4 * 5, 0x0007_0042);
+    // the game flag the OPU calls raise holds a value to restore
+    let lock = t.u32(globals(&t).lock);
+    t.set_u32(lock, 0x0bad);
+    for key in [(7u8, 0x42u16), (9, 0x99)] {
+        part(&mut t, key, 3, 0);
+        t.check_entry(alloc, Call::default(), &[PART], Eax::Checked);
+    }
+    // every slot taken and no match: slot 64, past the table
+    for i in 0..0x40u32 {
+        t.set_u32(parts + 4 * i, 0x0066_0000 + i);
+    }
+    part(&mut t, (1, 1), 3, 0);
+    t.check_entry(alloc, Call::default(), &[PART], Eax::Checked);
+    // run, twice (done on the second), free, the others
+    for _ in 0..2 {
+        part(&mut t, (7, 0x42), 3, bufs + 0x80 * 5);
+        t.check_entry(t.at(0x1380), Call::default(), &[PART], Eax::Checked);
+    }
+    for (state, buf) in [(3u8, bufs + 0x80 * 9), (2, bufs), (3, 0)] {
+        part(&mut t, (7, 0x42), state, buf);
+        t.check_entry(
+            t.at(0x1530),
+            Call {
+                eax: 0x1234,
+                ecx: 0,
+                edx: 0,
+            },
+            &[PART],
+            Eax::Checked,
+        );
+    }
+    let prev = t.img.word(t.at(0x1440) + 0x0e);
+    for i in 0..0x40u32 {
+        t.set_u32(prev + 4 * i, 0x0abc_0000 + (i % 5));
+        t.set_u32(parts + 4 * i, if i % 4 == 0 { 0 } else { i });
+    }
+    // forget: entries 0..5 of the effect at SCRATCH + 0x9000
+    t.set_u16(SCRATCH + 0x9000 + 0x50, 5);
+    t.check_entry(
+        t.at(0x15a0),
+        Call::default(),
+        &[SCRATCH + 0x9000],
+        Eax::Checked,
+    );
+    t.set_u16(SCRATCH + 0x9000 + 0x50, 0);
+    t.check_entry(
+        t.at(0x15a0),
+        Call::default(),
+        &[SCRATCH + 0x9000],
+        Eax::Checked,
+    );
+    t.check_entry(t.at(0x1440), Call::default(), &[], Eax::Checked);
+    t.check_entry(
+        t.at(0x14b0),
+        Call {
+            eax: 0x77,
+            ecx: 0,
+            edx: 0,
+        },
+        &[],
+        Eax::Checked,
+    );
+    for i in 0..0x40u32 {
+        t.set_u32(parts + 4 * i, if i % 7 == 0 { i } else { 0 });
+        t.set_u32(prev + 4 * i, 0x0def_0000 + i);
+    }
+    t.check_entry(t.at(0x14d0), Call::default(), &[], Eax::Checked);
+    t.check_entry(t.at(0x14d0), Call::default(), &[], Eax::Checked);
+}
+
+#[test]
+fn opu_init_data_and_env() {
+    let Some(mut t) = twin() else { return };
+    part_stubs(&mut t);
+    let f = t.at(0x1710);
+    let slots = t.u32(t.img.word(f + 0x5d));
+    let prev = t.img.word(f + 0xaf);
+    let effect = SCRATCH + 0xc000;
+    for (count, prev1) in [(3u16, 0u32), (3, 5), (1, 0), (0, 0)] {
+        part(&mut t, (1, 2), 3, 0);
+        t.set_u32(slots + 4, effect);
+        t.set_u16(effect + 0x50, count);
+        t.set_u32(prev + 4, prev1);
+        t.check_entry(f, Call::default(), &[PART], Eax::Checked);
+    }
+    t.set_u32(slots + 4, 0);
+    t.check_entry(f, Call::default(), &[PART], Eax::Checked);
+    let e = t.at(0x1600);
+    let m0 = t.img.word(e + 0x05);
+    let flags = t.u32(t.img.word(e + 0x30));
+    t.set_u32(SCRATCH + 0xd0a0, 0x1111);
+    t.set_u32(SCRATCH + 0xd0a4, 0x2222);
+    for (m, flag) in [(0u32, 0u8), (0, 1), (5, 1)] {
+        t.set_u32(m0, m);
+        t.set_u8(flags + 0x10, flag);
+        t.check_entry(
+            e,
+            Call {
+                eax: 0x99,
+                ecx: 0,
+                edx: 0,
+            },
+            &[SCRATCH + 0xd000],
+            Eax::Checked,
+        );
+    }
 }

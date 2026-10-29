@@ -29,9 +29,13 @@
 //!   imports whose results must be the game's own); the 32-bit hook, the
 //!   parity tests and `ffx-host` each provide one.
 
-#![allow(clippy::cast_possible_truncation)] // guest addresses are u32 by design
+#![allow(clippy::cast_possible_truncation)]
+// guest addresses are u32 by design
+// every port names the game `g`, its address `f` and its operand reader `w`
+#![allow(clippy::many_single_char_names)]
 
 pub mod opu;
+pub mod opu_parts;
 pub mod pe;
 pub mod runtime;
 
@@ -394,8 +398,38 @@ ports! {
     "opu start" => opu::START, opu::start;
     "opu run" => opu::RUN, opu::run;
     "opu stop" => opu::STOP, opu::stop;
+    "opu part init data" => opu_parts::INIT_DATA, opu_parts::init_data;
+    "opu part alloc" => opu_parts::ALLOC, opu_parts::alloc;
+    "opu part run" => opu_parts::RUN, opu_parts::run;
+    "opu parts save and free" => opu_parts::SAVE_AND_FREE, opu_parts::save_and_free;
+    "opu parts restore" => opu_parts::RESTORE, opu_parts::restore;
+    "opu parts clear and free" => opu_parts::CLEAR_AND_FREE, opu_parts::clear_and_free;
+    "opu part free" => opu_parts::FREE, opu_parts::free;
+    "opu parts forget" => opu_parts::FORGET, opu_parts::forget;
+    "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+}
+
+/// Functions the ports reproduce inside others (no entry of their own:
+/// custom register conventions, or reached only from ported code), for
+/// the work list's coverage (`magic-sig --covered`).
+pub const INTERNAL: &[(&str, &Sig)] = &[
+    ("opu set-up", &opu::SETUP),
+    ("opu printf wrapper", &opu::DEBUG_PRINTF),
+    ("pppStartPart wrapper", &opu_parts::START_PART),
+];
+
+/// What covers the function at `addr`: a port's name (an entry
+/// [`bind`] finds, or an [`INTERNAL`] function).
+#[must_use]
+pub fn covered(img: &Image, addr: u32) -> Option<&'static str> {
+    bind(img, addr).map(|i| PORTS[i].0).or_else(|| {
+        INTERNAL
+            .iter()
+            .find(|(_, sig)| img.in_text(addr) && img.matches(addr, sig))
+            .map(|(n, _)| *n)
+    })
 }
 
 /// The port of the function at `addr` of `img`: its index in [`PORTS`].

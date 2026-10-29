@@ -3,11 +3,12 @@
 //! ```text
 //! magic-sig <dll> <addr> <len> [rel32 offset...]   the masked hash
 //! magic-sig --bind <dll> <addr>...                 the port each address binds to
+//! magic-sig --covered <dll> <addr>...              the port or internal function covering it
 //! ```
 //! `<dll>` is a path to `magic_NNNN.dll`; addresses are the DLL's own
 //! (preferred base), hex.
 
-use ffx_magic::{Image, PORTS, bind};
+use ffx_magic::{Image, PORTS, bind, covered};
 
 fn hex(s: &str) -> u32 {
     u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap_or_else(|_| panic!("not hex: {s}"))
@@ -15,21 +16,24 @@ fn hex(s: &str) -> u32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let (binding, rest) = match args.first().map(String::as_str) {
-        Some("--bind") => (true, &args[1..]),
-        _ => (false, &args[..]),
+    let (mode, rest) = match args.first().map(String::as_str) {
+        Some("--bind") => (1, &args[1..]),
+        Some("--covered") => (2, &args[1..]),
+        _ => (0, &args[..]),
     };
     let path = &rest[0];
     let file = std::fs::read(path).expect("read the DLL");
     let pe = ffx_magic::pe::Pe::parse(&file).expect("a PE image");
     let img = Image::new(path, &file, pe.preferred_base).expect("an overlay");
-    if binding {
+    if mode != 0 {
         for a in &rest[1..] {
             let addr = hex(a);
-            match bind(&img, addr) {
-                Some(i) => println!("{addr:#010x} {}", PORTS[i].0),
-                None => println!("{addr:#010x} -"),
-            }
+            let name = if mode == 1 {
+                bind(&img, addr).map(|i| PORTS[i].0)
+            } else {
+                covered(&img, addr)
+            };
+            println!("{addr:#010x} {}", name.unwrap_or("-"));
         }
         return;
     }
