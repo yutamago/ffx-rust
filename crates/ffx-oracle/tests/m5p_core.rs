@@ -1656,8 +1656,19 @@ fn bump_malloc(t: &mut Twins, size: usize) -> (u32, u32) {
     c.push(0xc3);
     c.extend([0x31, 0xc0, 0xc3]); // fail: xor eax, eax; ret
     let code = t.code(&c);
+    // logged (size and alignment) before it allocates
+    let rec = t.stub_code(cc::PHYRE_MALLOC, false, 2, 0, Ret::Imm(0));
+    let mut l = vec![0xff, 0x74, 0x24, 0x08, 0xff, 0x74, 0x24, 0x08]; // push [esp+8] twice: the words
+    l.push(0xe8);
+    l.extend([0; 4]); // call rec (patched)
+    l.extend([0x83, 0xc4, 0x08]); // add esp, 8
+    l.extend([0x90; 5]); // jmp code (patched)
+    let front = t.code(&l);
+    let rel = rec.wrapping_sub(front + 13);
+    t.write(front + 9, &rel.to_le_bytes());
+    t.jump(front + 16, code);
     let at = t.rebase(cc::PHYRE_MALLOC);
-    t.jump(at, code);
+    t.jump(at, front);
     (cell, left)
 }
 
@@ -2942,6 +2953,212 @@ fn work_stealing_shutdown_matches_the_original() {
                 &[],
                 ALL,
                 |g| be::shutdown(g, this),
+            );
+        }
+    }
+}
+
+// ---- batch 6 (ffx_pcore::m5p_core_f) ----
+
+use ffx_pcore::m5p_core_f::{self as cf, bridge as bf};
+
+/// A stub that copies `words` words from the pointer in its stack word
+/// `arg` into `seen`, then runs `rec` (a recording stub; `ecx` kept).
+fn copying_stub(t: &mut Twins, rec: u32, seen: u32, arg: u32, words: u32, next: bool) -> u32 {
+    let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+    c.extend([0x8b, 0x74, 0x24, (0x10 + 4 * arg) as u8]); // mov esi, [esp+0x10+4arg]
+    c.push(0xbf);
+    c.extend(seen.to_le_bytes()); // mov edi, seen
+    c.push(0xb9);
+    c.extend(words.to_le_bytes()); // mov ecx, words
+    c.extend([0xf3, 0xa5]); // rep movsd
+    if next {
+        // the next stack word after the pointer (a size, never a frame pointer)
+        c.extend([0x8b, 0x74, 0x24, (0x14 + 4 * arg) as u8]); // mov esi, [esp+0x14+4arg]
+        c.extend([0x89, 0x37]); // mov [edi], esi
+    }
+    c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+    c.extend([0x90; 5]);
+    let code = t.code(&c);
+    t.jump(code + c.len() as u32 - 5, rec);
+    code
+}
+
+#[test]
+fn start_threads_matches_the_original() {
+    // the array new's size saturates as the original's seto/setb pair
+    assert_eq!(cf::array_bytes(3, 0x18), 0x4c);
+    assert_eq!(cf::array_bytes(0x1000_0000, 0x18), u32::MAX);
+    assert_eq!(cf::array_bytes(0x3fff_ffff, 4), u32::MAX);
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d501);
+        let (_, left) = bump_malloc(&mut t, 0x8000);
+        t.stub(c::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        let plain = t.zeros(4);
+        t.stub(cf::PHYRE_MALLOC_PLAIN, false, 1, 0, Ret::Cell(plain));
+        t.stub(cf::VECTOR_CTOR, false, 5, 5, Ret::Imm(0x966a_0000));
+        let seen = t.zeros(0x20);
+        let err = t.zeros(4);
+        let rec = t.stub_code(cf::THREAD_CREATE, true, 0, 1, Ret::Cell(err));
+        let code = copying_stub(&mut t, rec, seen, 0, 6, false);
+        let at = t.rebase(cf::THREAD_CREATE);
+        t.jump(at, code);
+        for case in 0..48u32 {
+            let this = t.random(&mut rng, 0x20);
+            let n = rng.below(4);
+            t.w32(this + 8, n);
+            t.w32(this + 0x14, rng.below(4));
+            let block = t.random(&mut rng, (4 + 0x18 * 4) as usize);
+            t.w32(plain, if case % 7 == 3 { 0 } else { block });
+            // an allocation fails: the job pointers or the scratch (the name
+            // builder's failing would crash the original too)
+            let stack = if case % 2 == 0 { 0 } else { 0x40 };
+            let k = u32::from(t.r32(this + 0x14) != 0) + u32::from(stack != 0);
+            t.w32(
+                left,
+                if case % 5 == 2 && k > 0 {
+                    case / 5 % k
+                } else {
+                    u32::MAX
+                },
+            );
+            // the frame starts with junk: every word the original sets shows
+            let local = t.b.stack_range().start + 0x300;
+            let junk: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            t.b.write(local, &junk).unwrap();
+            t.w32(err, if case % 6 == 5 { 0x0000_0e11 } else { 0 });
+            let priority = rng.below(3);
+            t.check(
+                "start threads",
+                0x0044_ce70,
+                Conv::Thiscall(this),
+                &[stack, priority],
+                ALL,
+                |g| bf::start_threads(g, this, stack, priority, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn work_stealing_initialize_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d502);
+        let (_, left) = bump_malloc(&mut t, 0x8000);
+        let newa = t.zeros(4);
+        t.stub(cf::OPERATOR_NEW_ARRAY, false, 1, 0, Ret::Cell(newa));
+        t.stub(cf::VECTOR_CTOR, false, 5, 5, Ret::Imm(0x966a_0000));
+        let seen = t.zeros(0x20);
+        let init_err = t.zeros(4);
+        let rec = t.stub_code(cf::TIMELINE_INIT, true, 0, 2, Ret::Cell(init_err));
+        let code = copying_stub(&mut t, rec, seen, 0, 4, true);
+        let at = t.rebase(cf::TIMELINE_INIT);
+        t.jump(at, code);
+        let add_err = t.zeros(4);
+        t.stub(cf::ADD_TIMELINE, true, 1, 1, Ret::Cell(add_err));
+        t.stub(cf::SEMAPHORE_INIT, true, 2, 2, Ret::Imm(0));
+        t.stub(cf::START_THREADS, true, 2, 2, Ret::Imm(0x5a5a_0000));
+        for case in 0..48u32 {
+            let this = t.random(&mut rng, 0x60);
+            let n = if case % 8 == 0 { 0 } else { rng.below(4) };
+            t.w32(this + 8, n);
+            t.w32(
+                this + 0x14,
+                if case % 9 == 4 { 0 } else { 1 + rng.below(3) },
+            );
+            let block = t.random(&mut rng, 4 + 4 * 4);
+            t.w32(newa, if case % 7 == 3 { 0 } else { block });
+            t.w32(init_err, if case % 11 == 6 { 0x31 } else { 0 });
+            t.w32(add_err, if case % 13 == 5 { 0x32 } else { 0 });
+            t.w32(
+                left,
+                if case % 5 == 2 {
+                    case / 5 % 2
+                } else {
+                    u32::MAX
+                },
+            );
+            let local = t.b.stack_range().start + 0x300;
+            t.check(
+                "initialize",
+                0x0057_d4f0,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| bf::initialize(g, this, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn worker_thread_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d503);
+        // the run semaphore's wait: logs, and sets the record's stop flag
+        // (address in `stop`) on the `count`th call
+        let count = t.zeros(4);
+        let stop = t.zeros(4);
+        let rec = t.stub_code(cf::SEMAPHORE_WAIT, true, 0, 0, Ret::Imm(0));
+        let mut c = vec![0xff, 0x0d];
+        c.extend(count.to_le_bytes()); // dec dword [count]
+        c.extend([0x75, 0x08]); // jnz +8
+        c.push(0xa1);
+        c.extend(stop.to_le_bytes()); // mov eax, [stop]
+        c.extend([0xc6, 0x00, 0x01]); // mov byte [eax], 1
+        c.extend([0x90; 5]);
+        let code = t.code(&c);
+        t.jump(code + c.len() as u32 - 5, rec);
+        let at = t.rebase(cf::SEMAPHORE_WAIT);
+        t.jump(at, code);
+        t.stub(cf::SEMAPHORE_SIGNAL, true, 2, 2, Ret::Imm(0));
+        // InterlockedCompareExchange(dest, exchange, comparand)
+        let cas = t.code(&[
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ]);
+        let slot = t.rebase(cf::COMPARE_EXCHANGE);
+        t.w32(slot, cas);
+        for _ in 0..16 {
+            let workers = 1 + rng.below(3);
+            let index = rng.below(workers);
+            let this = t.random(&mut rng, 0x60);
+            let recd = t.random(&mut rng, 0x18);
+            t.write(recd + 0x10, &(index as u16).to_le_bytes());
+            t.write(recd + 0x12, &(workers as u16).to_le_bytes());
+            t.w8(recd + 0x14, 0);
+            for p in 0..2u32 {
+                let records = t.random(&mut rng, (12 * 3) as usize);
+                for w in 0..workers {
+                    let k = rng.below(4);
+                    let jobs: Vec<u32> = (0..k)
+                        .map(|_| {
+                            if rng.chance(5) {
+                                0
+                            } else {
+                                t.object(&mut rng, 0x7007_0000, &[0, 3], 8)
+                            }
+                        })
+                        .collect();
+                    let v: Vec<u8> = jobs.iter().flat_map(|j| j.to_le_bytes()).collect();
+                    let list = t.alloc(&[v, vec![0; 4]].concat());
+                    let r = records + 12 * w;
+                    t.w32(r + 4, list);
+                    t.w32(r + 8, list + 4 * k);
+                }
+                t.w32(this + 0x58 + 4 * p, records);
+            }
+            t.w32(count, 1 + rng.below(5));
+            t.w32(stop, recd + 0x14);
+            let local = t.b.stack_range().start + 0x300;
+            // the counter and flag cells are shared: each side starts alike
+            t.check(
+                "worker thread",
+                0x0057_da20,
+                Conv::Thiscall(this),
+                &[recd],
+                ALL,
+                |g| bf::worker_thread(g, this, recd, local),
             );
         }
     }
