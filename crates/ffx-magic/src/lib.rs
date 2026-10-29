@@ -1217,6 +1217,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("start object (owners)", &s4_misc::START_OBJECT_OWNERS),
     ("start object (plain)", &s4_misc::START_OBJECT_PLAIN),
     ("motion script", &s4_misc::MOTION_SCRIPT),
+    ("trail draw", &s4_misc::TRAIL_DRAW),
     ("targets init", &s4_summon::TARGETS_INIT),
     ("targets init (b)", &s4_summon::TARGETS_INIT_B),
     ("target nodes", &s4_summon::TARGET_NODES),

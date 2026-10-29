@@ -1028,3 +1028,204 @@ pub const MOTION_SCRIPT: Sig = Sig {
     calls: &[(0x8e, Callee::Sig(&SET_SPEED))],
     imports: &[],
 };
+
+/// A trail of sprites (internal, `ecx` = the trail, `edx` = four matrix
+/// rows' floats (`+0x0..+0x28`), the stack word = the newest point; an
+/// 16-aligned /GS frame, `E` = `esp` after it and two pushes). The
+/// screen and camera matrices (slots 723, 724) go into the frame, the
+/// trail's animation steps ([`anim_step`], `+0x0` cursor), `G_P`
+/// (operand `+0x66`) points at the sprite matrix `E + 0x78` and `G_X`
+/// (`+0x6c`) is 0. The point goes into the ring of 32 (`+0xc`, 16 bytes
+/// each, the newest index `+0x220`). Then `+0x224` sprites are placed
+/// along the ring, `+0x21c` apart: walking back from the newest point,
+/// segment by segment (slot 234 the step, its length by
+/// `_libm_sse2_sqrt_precise`; at most 32), each sprite `i` at the
+/// distance reached on its segment (slot 248; the segment's start when
+/// the distance is past it), coloured from `+0x20c` to `+0x210` by
+/// `i / n` (`idiv`, into `G_COL`), scaled by `(K - f) +0x214 + f
+/// +0x218` (`f = (i + 1) / n`, `K` operand `+0x320`) on the rows of
+/// `edx`, placed with the camera (slot 229) and, when the colour's
+/// alpha is not 0, drawn by its handle as [`sprites_run`] draws (slots
+/// 772 to 778 with `**G_LOCK` 1 around them). A zero-length segment
+/// skips its sprite. Returns 0x1f, or the point's last word when there
+/// are no sprites.
+///
+/// `magic_0018` 0x10002580 (1462 bytes; 20 DLLs).
+#[allow(clippy::too_many_lines)] // the original's walk and draw, step by step
+pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (obj, rows) = (fr.ecx, fr.edx);
+    // push ebp; and esp, -16; sub esp, 0x138; two pushes
+    let e = (fr.esp.wrapping_sub(4) & !15).wrapping_sub(0x138 + 8);
+    let at = |o: u32| e.wrapping_add(o);
+    let t = slot_target(g, w(0x25), 723);
+    g.call(t, 0, &[at(0xf8)]);
+    let t = slot_target(g, w(0x47), 724);
+    g.call(t, 0, &[at(0xb8)]);
+    let entry = anim_step(g, img, img.rel32_target(f + 0x59), obj);
+    g.write::<u32>(w(0x66), at(0x78));
+    g.write::<u32>(w(0x6c), 0);
+    let mut newest = g.read::<u32>(obj + 0x220).wrapping_add(1);
+    g.write::<u32>(obj + 0x220, newest);
+    if newest.cast_signed() >= 0x20 {
+        newest = 0;
+        g.write::<u32>(obj + 0x220, 0);
+    }
+    let point = fr.arg(g, 0);
+    let ring = |i: u32| obj + 0xc + 16 * i;
+    let mut last = 0;
+    for k in 0..4 {
+        last = g.read::<u32>(point + 4 * k);
+        g.write::<u32>(ring(newest) + 4 * k, last);
+    }
+    let total = g.read::<i32>(obj + 0x224);
+    if total <= 0 {
+        return last;
+    }
+    let (cur_pt, delta, p) = (at(0x60), at(0x50), at(0x40));
+    let mut cur = newest;
+    let mut walked = 0.0f32;
+    let mut seg = 0.0f32;
+    let mut left = 0x20i32;
+    let mut i = 0u32;
+    loop {
+        // comiss walked, seg; jb: still on this segment
+        if walked >= seg {
+            // the next segment back
+            // cmovs: a negative index wraps to the last
+            let prev = cur.wrapping_sub(1);
+            let prev = if prev.cast_signed() < 0 { 0x1f } else { prev };
+            walked = sub(walked, seg);
+            for k in 0..4 {
+                let x = g.read::<u32>(ring(cur) + 4 * k);
+                g.write::<u32>(cur_pt + 4 * k, x);
+            }
+            let t = slot_target(g, w(0x158), 234);
+            g.call(t, 0, &[delta, ring(prev), cur_pt]);
+            let (dx, dy, dz) = (f32_at(g, delta), f32_at(g, delta + 4), f32_at(g, delta + 8));
+            let sq = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+            seg = f64::from(sq).sqrt() as f32;
+            cur = prev;
+            left -= 1;
+            if left <= 0 {
+                return 0x1f;
+            }
+            // ucomiss seg, 0; lahf; test ah, 0x44; jnp: equal skips
+            if seg == 0.0 {
+                i += 1;
+                if i.cast_signed() >= g.read::<i32>(obj + 0x224) {
+                    return 0x1f;
+                }
+                continue;
+            }
+        }
+        for (k, op) in [(0u32, 0x201), (1, 0x22d), (2, 0x259), (3, 0x288)] {
+            let n = g.read::<i32>(obj + 0x224);
+            let from = i32::from(g.read::<u8>(obj + 0x20c + k));
+            let to = i32::from(g.read::<u8>(obj + 0x210 + k));
+            let x = from
+                .wrapping_mul(n.wrapping_sub(i.cast_signed()))
+                .wrapping_add(to.wrapping_mul(i.cast_signed()));
+            // idiv: a zero count (or an overflow) faults in the original
+            g.write::<u8>(w(op), x.checked_div(n).unwrap_or(0) as u8);
+        }
+        if walked < seg || walked.is_nan() || seg.is_nan() {
+            let r = div(walked, seg);
+            let d = [f32_at(g, delta), f32_at(g, delta + 4), f32_at(g, delta + 8)];
+            for (k, x) in (0u32..).zip(d) {
+                set_f32(g, p + 4 * k, mul(r, x));
+            }
+            let t = slot_target(g, w(0x2d1), 248);
+            g.call(t, 0, &[p, cur_pt, p]);
+            walked = add(f32_at(g, obj + 0x21c), walked);
+        } else {
+            for k in 0..4 {
+                let x = g.read::<u32>(cur_pt + 4 * k);
+                g.write::<u32>(p + 4 * k, x);
+            }
+        }
+        let n = cvt(g.read::<u32>(obj + 0x224));
+        let frac = div(cvt(i.wrapping_add(1)), n);
+        let k = f32_at(g, w(0x320));
+        let scale = add(
+            mul(sub(k, frac), f32_at(g, obj + 0x214)),
+            mul(f32_at(g, obj + 0x218), frac),
+        );
+        set_f32(g, p + 0xc, 1.0);
+        let m = at(0x78);
+        let t = slot_target(g, w(0x346), 235);
+        g.call(t, 0, &[m]);
+        for row in 0..3 {
+            for col in 0..3 {
+                let x = mul(f32_at(g, rows + 0x10 * row + 4 * col), scale);
+                set_f32(g, m + 0x10 * row + 4 * col, x);
+            }
+        }
+        let t = slot_target(g, w(0x419), 229);
+        g.call(t, 0, &[at(0xa8), at(0xb8), p]);
+        if g.read::<u8>(w(0x433)) != 0 {
+            let t = slot_target(g, w(0x43f), 941);
+            let table = g.call(t, 0, &[g.read::<u32>(obj)]).eax;
+            let rec = i32::from(g.read::<u16>(entry).cast_signed())
+                .cast_unsigned()
+                .wrapping_add(table);
+            let t = slot_target(g, w(0x45a), 772);
+            let out = g.call(t, 0, &[obj, i]);
+            let (lo, hi) = (out.eax, out.edx);
+            let lock_at = g.read::<u32>(w(0x46e));
+            let saved = g.read::<u32>(lock_at);
+            g.write::<u32>(lock_at, 1);
+            let t = slot_target(g, w(0x480), 773);
+            let known = g.call(t, 0, &[lo, hi, obj, i]).eax;
+            let lock_at = g.read::<u32>(w(0x49c));
+            g.write::<u32>(lock_at, saved);
+            let colour = w(0x4b8);
+            if known != 0 {
+                let kind = u32::from(g.read::<u16>(obj + 8));
+                g.write::<u32>(lock_at, 1);
+                let t = slot_target(g, w(0x4b3), 774);
+                g.call(t, 0, &[lo, hi, obj, colour, kind]);
+                let lock_at = g.read::<u32>(w(0x4d1));
+                g.write::<u32>(lock_at, 1);
+                let t = slot_target(g, w(0x4df), 775);
+                g.call(t, 0, &[lo, hi]);
+                let lock_at = g.read::<u32>(w(0x4f1));
+                g.write::<u32>(lock_at, saved);
+            } else {
+                let off = g.read::<u32>(rec + 4);
+                let byte = u32::from(g.read::<u8>(off.wrapping_add(rec).wrapping_add(4)));
+                let t = slot_target(g, w(0x50e), 776);
+                let a = g.call(t, 0, &[byte]).eax;
+                let t = slot_target(g, w(0x51c), 777);
+                let x = g.read::<u32>(w(0x52b));
+                let flags = a | g.call(t, 0, &[x]).eax;
+                let kind = u32::from(g.read::<u16>(obj + 8));
+                let lock_at = g.read::<u32>(w(0x539));
+                let saved = g.read::<u32>(lock_at);
+                g.write::<u32>(lock_at, 1);
+                let t = slot_target(g, w(0x545), 778);
+                g.call(t, 0, &[lo, hi, obj, w(0x54c), kind, flags]);
+                let lock_at = g.read::<u32>(w(0x56b));
+                g.write::<u32>(lock_at, saved);
+            }
+        }
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(obj + 0x224) {
+            return 0x1f;
+        }
+    }
+}
+
+/// [`trail_draw`] (the `rel32`s: [`anim_step`], the square root and the
+/// cookie check).
+pub const TRAIL_DRAW: Sig = Sig {
+    len: 1462,
+    hash: 0xd093_6870_caca_e3cf,
+    calls: &[
+        (0x59, Callee::Sig(&ANIM_STEP)),
+        (0x191, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x5ae, Callee::Any),
+    ],
+    imports: &[],
+};

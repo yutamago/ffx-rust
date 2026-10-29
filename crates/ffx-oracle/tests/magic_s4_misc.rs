@@ -504,7 +504,15 @@ fn motion_script() {
             a[1].wrapping_sub(0x55)
         }
     });
-    for (s, n) in [(23u32, 2usize), (3, 1), (529, 1), (30, 1), (36, 3), (37, 4), (213, 2)] {
+    for (s, n) in [
+        (23u32, 2usize),
+        (3, 1),
+        (529, 1),
+        (30, 1),
+        (36, 3),
+        (37, 4),
+        (213, 2),
+    ] {
         rec(&mut t, s, n, move |_, _| s);
     }
     rec(&mut t, 18, 1, |_, a| a[0].wrapping_sub(0x0c0c_0002));
@@ -531,13 +539,25 @@ fn motion_script() {
     for mode in [0u16, 1, 2, 3] {
         for (k, &(done, wait, model, chr)) in states.iter().enumerate() {
             for (li, list) in lists.iter().enumerate() {
-                for arg in [None, Some(-4), Some(-2), Some(-1), Some(5), Some(-8), Some(-6)] {
+                for arg in [
+                    None,
+                    Some(-4),
+                    Some(-2),
+                    Some(-1),
+                    Some(5),
+                    Some(-8),
+                    Some(-6),
+                ] {
                     if k < 3 && (li > 0 || arg.is_some()) {
                         continue;
                     }
                     t.write(cmds, &[0x77; 0x40]);
                     for (i, &(op, a)) in list.iter().enumerate() {
-                        let a = if i + 1 == list.len() { arg.unwrap_or(a) } else { a };
+                        let a = if i + 1 == list.len() {
+                            arg.unwrap_or(a)
+                        } else {
+                            a
+                        };
                         t.set_u32(cmds + 8 * i as u32, op.cast_unsigned());
                         t.set_u32(cmds + 8 * i as u32 + 4, a.cast_unsigned());
                     }
@@ -556,5 +576,138 @@ fn motion_script() {
                 }
             }
         }
+    }
+}
+
+/// `magic_0018` 0x10002580: the trail with no sprites, a few, more than
+/// the ring holds, zero-length and NaN segments, spacing below and past
+/// the segments, drawn by known and new handles, alpha 0 and not.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per field
+fn trail_draw() {
+    let Some(mut t) = twin(18) else { return };
+    let f = t.at(0x2580);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let lock = SCRATCH + 0x9000;
+    t.set_u32(w(&t, 0x46e), lock);
+    let table = SCRATCH + 0x8000;
+    rec(&mut t, 941, 1, move |_, _| table);
+    t.write(table, &[0; 0x100]);
+    t.set_u16(table + 6, 3);
+    for k in 0..3u32 {
+        let e = table + 0x10 + 8 * k;
+        t.set_u16(e, (0x80 + 0x10 * k) as u16);
+        t.set_u16(e + 2, 0x300);
+        let r = table + 0x80 + 0x10 * k;
+        t.set_u32(r + 4, 4 * k);
+        t.set_u8(r + 4 * k + 4, 0x31 + k as u8);
+    }
+    for s in [723u32, 724, 235] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                let v = (i as f32 + 1.0) * if s == 235 { 1.0 } else { 0.5 };
+                m.w32(a[0] + 4 * i, v.to_bits());
+            }
+            s
+        });
+    }
+    let fv = |m: &dyn magic::StubMem, a: u32| f32::from_bits(m.r32(a));
+    rec(&mut t, 234, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) - fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 248, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) + fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x248
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        // the scaled matrix and the point it places
+        let mut v = [0u32; 13];
+        for (i, x) in v.iter_mut().enumerate().take(12) {
+            *x = m.r32(a[0] - 0x30 + 4 * i as u32);
+        }
+        v[12] = m.r32(a[2] + 0xc);
+        log(m, &v);
+        let p = [m.r32(a[2]), m.r32(a[2] + 4), m.r32(a[2] + 8)];
+        log(m, &p);
+        0x229
+    });
+    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(&mut t, 773, 4, move |m, a| {
+        m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
+        a[3] & 1
+    });
+    for s in [774u32, 775, 778] {
+        rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
+            m.w32(SCRATCH + 0x9300 + 4 * (s - 774), m.r32(lock));
+            if s != 775 {
+                let c = m.r32(a[3]);
+                log(m, &[s, c]);
+            }
+            s
+        });
+    }
+    rec(&mut t, 776, 1, |_, a| a[0] << 4);
+    rec(&mut t, 777, 1, |_, a| 0x0ff0 ^ a[0]);
+    let (obj, rows, point) = (SCRATCH + 0x1000, SCRATCH + 0x2000, SCRATCH + 0x2100);
+    for i in 0..12u32 {
+        set_f(&mut t, rows + 4 * i, 0.5 + i as f32 * 0.25);
+    }
+    for (case, (n, spacing, newest, alpha)) in [
+        (0u32, 1.0f32, 3u32, 0x80u8),
+        (1, 0.5, 0, 0x80),
+        (5, 0.75, 31, 0x80),
+        (6, 2.5, 7, 0),
+        (40, 0.1, 12, 0x40),
+        (3, f32::NAN, 2, 0x10),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.set_u32(LOG, 0);
+        t.write(obj, &[0x33; 0x230]);
+        t.set_u32(obj, 0x0a00 + case as u32);
+        t.set_u32(obj + 4, 1);
+        t.set_u16(obj + 8, case as u16 % 3);
+        t.set_u16(obj + 0xa, 0x100);
+        for k in 0..32u32 {
+            // a spiral, with a repeated point (zero length) and a NaN
+            let r = 1.0 + k as f32 * 0.3;
+            let a = k as f32 * 0.7;
+            let pt = if k == 5 {
+                [1.0, 2.0, f32::NAN, 1.0]
+            } else if k == 9 || k == 10 {
+                [4.0, 4.0, 4.0, 1.0]
+            } else {
+                [r * a.cos(), k as f32 * 0.2, r * a.sin(), 1.0]
+            };
+            for (i, x) in (0u32..).zip(pt) {
+                set_f(&mut t, obj + 0xc + 16 * k + 4 * i, x);
+            }
+        }
+        t.write(obj + 0x20c, &[10, 200, 0, alpha, 250, 3, 128, alpha / 2]);
+        set_f(&mut t, obj + 0x214, 1.5);
+        set_f(&mut t, obj + 0x218, 0.25);
+        set_f(&mut t, obj + 0x21c, spacing);
+        t.set_u32(obj + 0x220, newest);
+        t.set_u32(obj + 0x224, n);
+        for (i, x) in [0.5f32, 9.0, -1.0, 7.0].into_iter().enumerate() {
+            set_f(&mut t, point + 4 * i as u32, x);
+        }
+        let c = Call {
+            ecx: obj,
+            edx: rows,
+            ..Call::default()
+        };
+        t.check(f, c, &[point], Eax::Checked, |g, img, fr| {
+            Ret::eax(s4_misc::trail_draw(g, img, fr))
+        });
     }
 }
