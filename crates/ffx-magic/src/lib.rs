@@ -73,6 +73,7 @@ pub mod s3_summon;
 pub mod s3_vm;
 pub mod s3_wrap;
 // the shared work list's fourth round (shared-4)
+pub mod s4_fam446;
 pub mod s4_misc;
 pub mod s4_summon;
 pub mod s4_wrap;
@@ -948,6 +949,13 @@ ports! {
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
+    "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
+    "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
+    "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
+    "0446 start 0x1300" => s4_fam446::START_1300, s4_fam446::start_1300;
+    "0446 start 0x1430 low" => s4_fam446::START_1430_LOW, s4_fam446::start_1430_low;
+    "0446 start 0x720" => s4_fam446::START_720, s4_fam446::start_720;
+    "0446 start 0x260" => s4_fam446::START_260, s4_fam446::start_260;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

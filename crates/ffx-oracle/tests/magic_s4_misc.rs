@@ -711,3 +711,78 @@ fn trail_draw() {
         });
     }
 }
+
+/// The `magic_0446` family's effect starts against `magic_0446` (and
+/// `magic_0565`'s copies where it has them): each start with the pool
+/// free and empty, and the kinds of the table ones.
+#[test]
+fn fam446_starts() {
+    let Some(mut t) = twin(446) else { return };
+    let block = SCRATCH + 0x1_0000;
+    let soa = t.img.rel32_target(t.at(0x2980) + 0x39);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        SCRATCH + 0x400
+    });
+    t.stub(714, |m, a| {
+        let k = m.r32(SCRATCH + 0x90c);
+        m.w32(SCRATCH + 0x90c, k + 1);
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w ^ k);
+        }
+        0x714
+    });
+    rec(&mut t, 219, 2, |_, a| 0x0219_0000 ^ a[0]);
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[3] + 4 * i, a[0].wrapping_add(i));
+        }
+        0x237
+    });
+    t.set_u32(t.img.word(t.at(0x41f0) + 0x2c), 0x0c0c_0007);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let nodes = t.img.word(pa + 0x27) - 8;
+    let tail = t.img.word(soa + 0xa8);
+    let task = SCRATCH + 0x800;
+    for (rva, kinds) in [
+        (0x2980u32, &[0u32, 1, 2][..]),
+        (0x1530, &[0, 1, 2]),
+        (0x2910, &[0]),
+        (0x3050, &[0]),
+        (0x4180, &[0]),
+        (0x40d0, &[0]),
+        (0x41f0, &[0]),
+    ] {
+        for &kind in kinds {
+            for (count, tl) in [(3u16, 0u32), (0, SCRATCH + 0x600), (5, SCRATCH + 0x700)] {
+                t.write(block, &vec![0x3c; 0xec00]);
+                for i in 0..4 {
+                    set_f(&mut t, block + 0x2f80 + 4 * i, 1.5 * i as f32);
+                }
+                t.set_u32(block + 0xebf0, 0x00c1_0c00 + kind);
+                t.set_u32(block + 0x5c04, 0x77);
+                for i in 0..8 {
+                    t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+                    t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+                    t.set_u32(nodes + 12 * i + 8, 0);
+                }
+                t.set_u16(free, count);
+                t.set_u32(tail, tl);
+                t.set_u32(task + 0x2c, kind);
+                t.set_u32(t.img.word(t.at(0x2980) + 0x15), block);
+                let c = Call {
+                    ecx: 0x0bad_0ecc,
+                    ..Call::default()
+                };
+                t.check_entry(t.at(rva), c, &[task], Eax::Checked);
+            }
+        }
+    }
+}
