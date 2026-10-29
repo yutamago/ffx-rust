@@ -1789,6 +1789,38 @@ the draw-field gate passes. Those ran with
 `PhyreScene_doOnFieldMapAssetLoaded` unhooked; after merging main, which
 hooks it again (fh-learn), iggy-menus passed 6 of 6 with it on.
 
+### Command latency (pc2-input, 2026-10-29)
+
+On the second machine (PC2), driven over SSH, every `load direct` failed
+with "the title scene did not come back". The hook log showed the title,
+memochek, loopdemo and the title again. The input itself was fine:
+`pad start` put `0x800` into the pad word (`0x00ccb170`) on the next
+update, and `keys 30` (B) did the same. The cause was time.
+`screens::load_direct` polls two reads and sends `press start 3 20` until
+the title comes back from memochek (map `0x17`, previous map `0x15c`). In
+fast mode memochek lasts about 120 updates. On PC2 one turn of that loop
+took 100 to 330 updates (0.2-0.7 s), so no press landed during memochek.
+The opening (map `0x15d`) ran, and a later Start skipped it to the
+title, now with previous map `0x15d`. The loop waits only for `0x15c`, so
+it pressed Start until its 120 s ran out.
+
+The delay was TCP's: the client wrote a command and its line end as two
+writes (`writeln!`), and the hook wrote replies the same way. With
+Nagle's algorithm on, the second small segment waited for the delayed ACK
+of the first, about 200 ms once the connection had left quick-ack mode. A
+probe measured it: 50 reads took 28 updates at the start of a game, but
+later each `read`/`frame`/`press` turn took about 100 updates. The main
+machine never showed the delay (why its loopback differs is not known).
+Both ends now set
+`TCP_NODELAY` and send each line in one write (`Game::connect`/`command`,
+the hook's `serve`). On PC2 the loop then took 25 updates a turn (the
+press's 23 plus the reads), and the title came back from memochek at the
+fourth press. `run-all.sh --record` then recorded the main list and the
+extra list there.
+
+The `ffx-harness` crate's `Game::command` and `tools/harness.py` (which
+flushes whole lines) are the only clients.
+
 ## Parallel games
 
 `Game_Main` (`0x0062ee50`) takes the named mutex

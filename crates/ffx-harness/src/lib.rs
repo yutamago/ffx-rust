@@ -729,6 +729,9 @@ impl Game {
             .map(|a| TcpStream::connect_timeout(&a, Duration::from_secs(2)))
             .ok_or_else(|| Error::Launch("no address".into()))??;
         stream.set_read_timeout(Some(Duration::from_secs(600)))?;
+        // Each command goes out at once as one segment (see the hook's
+        // `serve`; `docs/harness.md`, "Command latency").
+        stream.set_nodelay(true)?;
         let shot_dir = work_dir();
         std::fs::create_dir_all(&shot_dir)?;
         Ok(Self {
@@ -748,7 +751,9 @@ impl Game {
     /// # Errors
     /// Fails on `err` replies and broken connections.
     pub fn command(&mut self, line: &str) -> Result<String> {
-        writeln!(self.stream.get_mut(), "{line}")?;
+        self.stream
+            .get_mut()
+            .write_all(format!("{line}\n").as_bytes())?;
         let mut reply = String::new();
         if self.stream.read_line(&mut reply)? == 0 {
             return Err(Error::Harness("connection closed".into()));
@@ -923,7 +928,7 @@ impl Game {
             return Ok(());
         }
         self.owned = false;
-        writeln!(self.stream.get_mut(), "quit")?;
+        self.stream.get_mut().write_all(b"quit\n")?;
         // The process ends, which closes the connection.
         self.stream
             .get_mut()

@@ -2975,6 +2975,11 @@ fn serve(port: u16) {
     };
     log(&format!("  harness: listening on 127.0.0.1:{port}"));
     for stream in listener.incoming().flatten() {
+        // Each reply goes out at once as one segment: with Nagle's
+        // algorithm on and the line end written apart, a reply's end
+        // waited for the client's delayed ACK (`docs/harness.md`,
+        // "Command latency").
+        let _ = stream.set_nodelay(true);
         let Ok(mut out) = stream.try_clone() else {
             continue;
         };
@@ -2984,7 +2989,7 @@ fn serve(port: u16) {
                 continue;
             }
             let reply = command(&line).unwrap_or_else(|e| format!("err {e}"));
-            if writeln!(out, "{reply}").is_err() {
+            if out.write_all(format!("{reply}\n").as_bytes()).is_err() {
                 break;
             }
         }
