@@ -1548,3 +1548,62 @@ fn fam446_sparks() {
         }
     }
 }
+
+/// The family's other two sparks (`magic_0446` 0x100018b0 and
+/// 0x10001b90): both made, held back by the flags, and the pool full.
+#[test]
+fn fam446_sparks_cd() {
+    for (n, rva) in [(446u16, 0x18b0u32), (446, 0x1b90)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let take = t
+            .img
+            .rel32_target(f + if rva == 0x18b0 { 0x13 } else { 0x17 });
+        let recs = SCRATCH + 0x4000;
+        t.set_u32(t.img.word(take + 0x37), recs);
+        t.set_u32(t.img.word(take + 0x61), recs);
+        let gf = SCRATCH + 0x800;
+        t.set_u32(t.img.word(f + if rva == 0x18b0 { 0x14c } else { 0x5 }), gf);
+        let r2 = SCRATCH + 0x880;
+        for op in if rva == 0x18b0 {
+            [0x5u32, 0x18f]
+        } else {
+            [0x27, 0x18c]
+        } {
+            t.set_u32(t.img.word(f + op), r2);
+        }
+        for i in 0..8 {
+            t.set_u32(r2 + 4 * i, 0x0e00_0000 + i);
+        }
+        rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+        rec(&mut t, 941, 1, |_, a| 0x9410_0000 ^ a[0]);
+        for s in [314u32, 404] {
+            rec(&mut t, s, 1, move |_, a| s ^ a[0]);
+            t.stub_st0(s, move |_, a| {
+                f64::from(f32::from_bits(a[0])) * if s == 404 { 0.75 } else { 0.5 }
+            });
+        }
+        let pos = SCRATCH + 0x900;
+        for (i, x) in [1.5f32, -2.0, 3.25, 1.0].into_iter().enumerate() {
+            set_f(&mut t, pos + 4 * i as u32, x);
+        }
+        for (flags, count, taken) in [(0u8, 8u32, 0u32), (2, 8, 0), (0, 2, 1), (4, 8, 0)] {
+            t.set_u8(gf, flags);
+            t.set_u32(t.img.word(take + 0x08), 0);
+            t.set_u32(t.img.word(take + 0x0f), count);
+            t.set_u32(t.img.word(take + 0x97), count);
+            t.set_u32(t.img.word(take + 0x2b), 0);
+            for i in 0..8 {
+                t.write(recs + 0x74 * i, &[0x22; 0x74]);
+                t.set_u32(recs + 0x74 * i + 0x6c, taken);
+            }
+            t.check(f, Call::this(pos), &[], Eax::Checked, |g, img, fr| {
+                if rva == 0x18b0 {
+                    s4_fam446::sparks_c(g, img, fr)
+                } else {
+                    s4_fam446::sparks_d(g, img, fr)
+                }
+            });
+        }
+    }
+}

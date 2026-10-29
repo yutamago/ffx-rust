@@ -1247,6 +1247,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("start object (first part)", &s4_misc::START_OBJECT_FIRST),
     ("sparks (0446)", &s4_fam446::SPARKS_A),
     ("sparks (0565)", &s4_fam446::SPARKS_B),
+    ("sparks (0446, c)", &s4_fam446::SPARKS_C),
+    ("sparks (0446, d)", &s4_fam446::SPARKS_D),
     ("actor point", &s4_misc::ACTOR_POINT),
     ("screen place", &s4_misc::SCREEN_PLACE),
     ("motion script", &s4_misc::MOTION_SCRIPT),
