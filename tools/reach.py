@@ -951,11 +951,24 @@ def main():
         if state(a) == "replaced":
             ev.append("ported anyway (no coverage run saw it)" if a not in cov_nodes else "ported; SEEN IN COVERAGE")
         dropped.append((a, g.name[a], g.module[a], g.size[a], "; ".join(ev), category.get(a, "")))
+    # rows written by hand (a list owner's decision, e.g. phyre-physics' script-only
+    # library code) are kept: only this script's own rows are regenerated
+    ours = ("tools/refs.py:", "callers only unreachable:")
+    kept = []
+    if args.dropped.exists():
+        mine = {a for a, *_ in dropped}
+        for line in args.dropped.read_text(encoding="utf-8").splitlines():
+            row = line.split("\t")
+            if line.startswith("#") or len(row) < 5 or row[4].startswith(ours):
+                continue
+            if int(row[0], 16) not in mine:
+                kept.append((int(row[0], 16), line))
+    rows = [(a, f"0x{a:08x}\t{n}\t{m}\t{s}\t{ev}") for a, n, m, s, ev, _ in dropped] + kept
     with open(args.dropped, "w", encoding="utf-8") as f:
         f.write("# address\tname\tmodule\tsize\tevidence (tools/reach.py: unreachable from every root; "
                 "docs/rewrite-plan.md M5, draft)\n")
-        for a, n, m, s, ev, _ in dropped:
-            f.write(f"0x{a:08x}\t{n}\t{m}\t{s}\t{ev}\n")
+        for _, line in sorted(rows):
+            f.write(line + "\n")
 
     # ---- work lists
     args.lists.mkdir(parents=True, exist_ok=True)
