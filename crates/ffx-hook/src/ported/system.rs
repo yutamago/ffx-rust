@@ -48,6 +48,7 @@ fn call_sym_wide<M>(mem: &mut M, sym: u32, args: &[u32]) -> u32 {
 /// Calls the original cdecl function at `sym` (an `ffx.sym` address) that
 /// returns its result in ST0, read back at double precision; up to six
 /// arguments (f32 arguments as their bits).
+#[allow(clippy::many_single_char_names)] // a..g: the words
 fn fcall<M>(_mem: &mut M, sym: u32, args: &[u32]) -> f64 {
     #[allow(clippy::cast_possible_truncation)] // a game address
     let f = crate::rebase(sym) as u32;
