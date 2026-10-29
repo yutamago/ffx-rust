@@ -1,0 +1,13 @@
+# Address-sorted lists: merged by line set and re-sorted (tools/merge-sorted.py;
+# register once per clone, with the main checkout's absolute path so older
+# worktrees use it too: git config merge.ffx-sorted.driver
+# 'python3 -I <clone>/tools/merge-sorted.py %O %A %B %P'). Without the config
+# git falls back to its normal text merge.
+symbols/ffx.sym merge=ffx-sorted
+symbols/sizes.tsv merge=ffx-sorted
+symbols/classes.tsv merge=ffx-sorted
+symbols/m5-dropped.tsv merge=ffx-sorted
+symbols/m5-not-portable.tsv merge=ffx-sorted
+# The ported module list: branches only add lines (mod x; all.extend(x::hooks())),
+# so both sides' lines are kept; the build catches a duplicate.
+crates/ffx-hook/src/ported/mod.rs merge=union

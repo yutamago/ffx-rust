@@ -44,10 +44,35 @@ ORACLE = {
 # changes here affect every oracle test
 # a change to these rebuilds everything: every crate, check, the hook and the replays
 # (the compiler itself: rust-toolchain.toml, 2026-10-28)
-EVERYTHING = ("crates/ffx-oracle/src/", "crates/ffx-bridge/", "Cargo.lock", "rust-toolchain.toml")
+# (Cargo.lock only when an external package changes: tools/verify-batch.py
+# `lock_changed`; a new workspace crate also rewrites it, 2026-10-29)
+EVERYTHING = ("crates/ffx-oracle/src/", "crates/ffx-bridge/", "rust-toolchain.toml")
 # a wide run (every dependent crate's tests) every this many verifications
 FULL_EVERY = 4
 COUNT = pathlib.Path.home() / "ffx-work/verify-count"
+
+
+def lock_packages(text):
+    """The external packages in a Cargo.lock: (name, version, source)."""
+    out, cur = set(), {}
+    for line in text.splitlines() + ["[[package]]"]:
+        if line.strip() == "[[package]]":
+            if cur.get("source"):
+                out.add((cur.get("name"), cur.get("version"), cur["source"]))
+            cur = {}
+        elif " = " in line:
+            k, v = line.split(" = ", 1)
+            cur[k.strip()] = v.strip().strip('"')
+    return out
+
+
+def lock_changed(base):
+    """Whether Cargo.lock's external packages (crates.io, git) differ from
+    BASE's: a new compiler input for every crate. Workspace crates added or
+    removed only change their own entries, which the crate rules cover."""
+    old = subprocess.run(["git", "show", f"{base}:Cargo.lock"], cwd=REPO,
+                         capture_output=True, text=True).stdout
+    return lock_packages(old) != lock_packages((REPO / "Cargo.lock").read_text())
 
 
 def run(cmd, env=None, dry=False):
@@ -86,7 +111,7 @@ def main():
         if not more:
             break
         affected |= more
-    every = any(f.startswith(EVERYTHING) for f in changed)
+    every = any(f.startswith(EVERYTHING) for f in changed) or ("Cargo.lock" in changed and lock_changed(base))
     if every:
         affected = set(crates)
     n = int(COUNT.read_text()) + 1 if COUNT.exists() else 1
