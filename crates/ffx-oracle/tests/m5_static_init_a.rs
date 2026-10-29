@@ -1,9 +1,11 @@
 //! M5 stage 1, list `static-init-a` (`ffx_static_a`) against the original:
 //! every row of each shape, on the image alone and on the snapshot
-//! (`FFX_SNAPSHOT`). The original and the port run on twin oracles. `atexit`
-//! is a recording stub in both, so the call log in memory compares the
-//! registrations too; the globals and every other byte written outside the
-//! stacks are compared by `diff`. Needs `FFX_GAME_DIR`.
+//! (`FFX_SNAPSHOT`). The original and the port run on twin oracles. The
+//! callees that are not the initialiser itself (`atexit`, the scene pass
+//! finder, the constructors) are recording stubs in both, so the call log in
+//! memory compares the calls and their arguments; the globals and every other
+//! byte written outside the stacks are compared by `diff`. Needs
+//! `FFX_GAME_DIR`.
 //!
 //! Branch reach: the only branch is the find of a scene render pass type,
 //! and both of its results run (the stub returns 0 and a pass type). The
@@ -24,8 +26,11 @@ const ATEXIT: u32 = sa::ATEXIT;
 /// What the recording `atexit` returns (not 0, so the test sees that the
 /// shim passes the result on).
 const ATEXIT_RET: u32 = 0x7e57;
-/// The call log: a count, then entries of 4 words (tag, the argument).
+/// The call log: a count, then entries of ten words (tag, `ecx` or 0, eight
+/// stack words).
 const LOG_WORDS: u32 = 0x1000;
+/// Bytes per log entry.
+const ENTRY: u32 = 40;
 
 const ALL: u32 = u32::MAX;
 
@@ -88,7 +93,7 @@ struct Twins {
     label: &'static str,
     a: Oracle,
     b: Oracle,
-    /// The call log: a count, then entries (tag, argument, ...).
+    /// The call log: a count, then entries (see [`ENTRY`]).
     log: u32,
 }
 
@@ -162,21 +167,21 @@ impl Twins {
         self.write(at, &v.to_le_bytes());
     }
 
-    /// Both oracles' copies of `at`, which must agree before a check.
+    /// The original's copy of `at` (both oracles agree before a check).
     fn r32(&self, at: u32) -> u32 {
         Mem::read(&self.a, at)
     }
 
     /// Replaces the original at `sym` by a recording stub in both oracles.
-    /// The stub logs an entry of four words into the call log: `sym`, `ecx`
-    /// when `this` (else 0), and its first `n` stack words (at most two),
-    /// then returns `ret`. A callee that pops its words (`pops`) pops `4n`.
+    /// The stub logs an entry into the call log: `sym`, `ecx` when `this`
+    /// (else 0), and its first `n` stack words (at most eight), then returns
+    /// `ret`. A callee that pops its words (`pops`) pops `4n`.
     fn stub_fn(&mut self, sym: u32, this: bool, n: u32, pops: bool, ret: u32) {
-        assert!(n <= 2);
+        assert!(n <= 8);
         let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
-        c.extend([0xc1, 0xe0, 0x04]); // shl eax, 4
+        c.extend([0x6b, 0xc0, ENTRY as u8]); // imul eax, eax, ENTRY
         c.push(0x05);
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
@@ -346,6 +351,26 @@ fn call_then_destructor_initialisers_match_the_original() {
             t.stub_fn(r.callee, true, n, true, 0x1234);
             let what = format!("call {:#x} -> {:#x}", r.at, r.callee);
             t.check(&what, r.at, ALL, |g| sa::call_dtor(g, r.at));
+            let log = t.log;
+            assert_eq!(
+                t.r32(log),
+                2,
+                "{} {what}: the constructor, then atexit",
+                t.label
+            );
+        }
+    }
+}
+
+/// The eight-word constructor: the thiscall's eight words (the image addresses
+/// rebased) are logged in order, then `atexit`.
+#[test]
+fn ctor8_initialisers_match_the_original() {
+    for mut t in Twins::all() {
+        for r in rows::CTOR8 {
+            t.stub_fn(sa::CTOR8, true, 8, true, 0x4242);
+            let what = format!("ctor8 {:#x}", r.at);
+            t.check(&what, r.at, ALL, |g| sa::ctor8(g, r.at));
             let log = t.log;
             assert_eq!(
                 t.r32(log),

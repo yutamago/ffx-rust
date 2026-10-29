@@ -165,143 +165,143 @@ ported! {
     StaticInit_CopyWord_00ae0410 @ 0x00ae_0410 => extern "C" fn init_00ae0410() -> u32 {
         sa::copy_word(&mut mem(), 0x00ae_0410)
     }
-    /// `0x00ae_6290`: the render pass type "BlackInside" linked into its list unless it is there.
+    /// `0x00ae_6290`: the render pass type `BlackInside` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6290 @ 0x00ae_6290 => extern "C" fn init_00ae6290() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6290)
     }
-    /// `0x00ae_62d0`: the render pass type "CaptureEmissiveSurfaces" linked into its list unless it is there.
+    /// `0x00ae_62d0`: the render pass type `CaptureEmissiveSurfaces` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae62d0 @ 0x00ae_62d0 => extern "C" fn init_00ae62d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_62d0)
     }
-    /// `0x00ae_6310`: the render pass type "CaptureTriangleGeometry" linked into its list unless it is there.
+    /// `0x00ae_6310`: the render pass type `CaptureTriangleGeometry` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6310 @ 0x00ae_6310 => extern "C" fn init_00ae6310() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6310)
     }
-    /// `0x00ae_6350`: the render pass type "DeferredRender" linked into its list unless it is there.
+    /// `0x00ae_6350`: the render pass type `DeferredRender` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6350 @ 0x00ae_6350 => extern "C" fn init_00ae6350() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6350)
     }
-    /// `0x00ae_6390`: the render pass type "DepthTestDisableWithOptimize" linked into its list unless it is there.
+    /// `0x00ae_6390`: the render pass type `DepthTestDisableWithOptimize` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6390 @ 0x00ae_6390 => extern "C" fn init_00ae6390() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6390)
     }
-    /// `0x00ae_63d0`: the render pass type "DepthTestDisable" linked into its list unless it is there.
+    /// `0x00ae_63d0`: the render pass type `DepthTestDisable` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae63d0 @ 0x00ae_63d0 => extern "C" fn init_00ae63d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_63d0)
     }
-    /// `0x00ae_6410`: the render pass type "DressUpFast" linked into its list unless it is there.
+    /// `0x00ae_6410`: the render pass type `DressUpFast` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6410 @ 0x00ae_6410 => extern "C" fn init_00ae6410() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6410)
     }
-    /// `0x00ae_6450`: the render pass type "DressUpMelt" linked into its list unless it is there.
+    /// `0x00ae_6450`: the render pass type `DressUpMelt` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6450 @ 0x00ae_6450 => extern "C" fn init_00ae6450() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6450)
     }
-    /// `0x00ae_6490`: the render pass type "EnableStencilTest" linked into its list unless it is there.
+    /// `0x00ae_6490`: the render pass type `EnableStencilTest` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6490 @ 0x00ae_6490 => extern "C" fn init_00ae6490() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6490)
     }
-    /// `0x00ae_64d0`: the render pass type "FakeTransparent" linked into its list unless it is there.
+    /// `0x00ae_64d0`: the render pass type `FakeTransparent` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae64d0 @ 0x00ae_64d0 => extern "C" fn init_00ae64d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_64d0)
     }
-    /// `0x00ae_6510`: the render pass type "HSVPass" linked into its list unless it is there.
+    /// `0x00ae_6510`: the render pass type `HSVPass` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6510 @ 0x00ae_6510 => extern "C" fn init_00ae6510() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6510)
     }
-    /// `0x00ae_6550`: the render pass type "NULL" linked into its list unless it is there.
+    /// `0x00ae_6550`: the render pass type `NULL` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6550 @ 0x00ae_6550 => extern "C" fn init_00ae6550() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6550)
     }
-    /// `0x00ae_6590`: the render pass type "OpaqueNoMSAA" linked into its list unless it is there.
+    /// `0x00ae_6590`: the render pass type `OpaqueNoMSAA` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6590 @ 0x00ae_6590 => extern "C" fn init_00ae6590() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6590)
     }
-    /// `0x00ae_65d0`: the render pass type "Opaque" linked into its list unless it is there.
+    /// `0x00ae_65d0`: the render pass type `Opaque` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae65d0 @ 0x00ae_65d0 => extern "C" fn init_00ae65d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_65d0)
     }
-    /// `0x00ae_6610`: the render pass type "OptimizedTrans" linked into its list unless it is there.
+    /// `0x00ae_6610`: the render pass type `OptimizedTrans` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6610 @ 0x00ae_6610 => extern "C" fn init_00ae6610() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6610)
     }
-    /// `0x00ae_6650`: the render pass type "PS2Lighting" linked into its list unless it is there.
+    /// `0x00ae_6650`: the render pass type `PS2Lighting` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6650 @ 0x00ae_6650 => extern "C" fn init_00ae6650() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6650)
     }
-    /// `0x00ae_6690`: the render pass type "SetStencilFlag" linked into its list unless it is there.
+    /// `0x00ae_6690`: the render pass type `SetStencilFlag` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6690 @ 0x00ae_6690 => extern "C" fn init_00ae6690() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6690)
     }
-    /// `0x00ae_66d0`: the render pass type "ShadowTransparent" linked into its list unless it is there.
+    /// `0x00ae_66d0`: the render pass type `ShadowTransparent` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae66d0 @ 0x00ae_66d0 => extern "C" fn init_00ae66d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_66d0)
     }
-    /// `0x00ae_6710`: the render pass type "Shadow" linked into its list unless it is there.
+    /// `0x00ae_6710`: the render pass type `Shadow` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6710 @ 0x00ae_6710 => extern "C" fn init_00ae6710() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6710)
     }
-    /// `0x00ae_6750`: the render pass type "SpecularPass_akaza" linked into its list unless it is there.
+    /// `0x00ae_6750`: the render pass type `SpecularPass_akaza` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6750 @ 0x00ae_6750 => extern "C" fn init_00ae6750() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6750)
     }
-    /// `0x00ae_6790`: the render pass type "SpecularPass" linked into its list unless it is there.
+    /// `0x00ae_6790`: the render pass type `SpecularPass` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6790 @ 0x00ae_6790 => extern "C" fn init_00ae6790() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6790)
     }
-    /// `0x00ae_67d0`: the render pass type "SpecularPass_nolight_akaza1" linked into its list unless it is there.
+    /// `0x00ae_67d0`: the render pass type `SpecularPass_nolight_akaza1` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae67d0 @ 0x00ae_67d0 => extern "C" fn init_00ae67d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_67d0)
     }
-    /// `0x00ae_6810`: the render pass type "SpecularPass_nolight_akaza2" linked into its list unless it is there.
+    /// `0x00ae_6810`: the render pass type `SpecularPass_nolight_akaza2` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6810 @ 0x00ae_6810 => extern "C" fn init_00ae6810() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6810)
     }
-    /// `0x00ae_6850`: the render pass type "SpecularPass_nolight" linked into its list unless it is there.
+    /// `0x00ae_6850`: the render pass type `SpecularPass_nolight` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6850 @ 0x00ae_6850 => extern "C" fn init_00ae6850() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6850)
     }
-    /// `0x00ae_6890`: the render pass type "SpecularPass_nolight_kohno1" linked into its list unless it is there.
+    /// `0x00ae_6890`: the render pass type `SpecularPass_nolight_kohno1` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6890 @ 0x00ae_6890 => extern "C" fn init_00ae6890() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6890)
     }
-    /// `0x00ae_68d0`: the render pass type "TransparentClipY" linked into its list unless it is there.
+    /// `0x00ae_68d0`: the render pass type `TransparentClipY` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae68d0 @ 0x00ae_68d0 => extern "C" fn init_00ae68d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_68d0)
     }
-    /// `0x00ae_6910`: the render pass type "TransparentNega" linked into its list unless it is there.
+    /// `0x00ae_6910`: the render pass type `TransparentNega` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6910 @ 0x00ae_6910 => extern "C" fn init_00ae6910() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6910)
     }
-    /// `0x00ae_6950`: the render pass type "TransparentNoMSAA" linked into its list unless it is there.
+    /// `0x00ae_6950`: the render pass type `TransparentNoMSAA` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6950 @ 0x00ae_6950 => extern "C" fn init_00ae6950() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6950)
     }
-    /// `0x00ae_6990`: the render pass type "Transparent" linked into its list unless it is there.
+    /// `0x00ae_6990`: the render pass type `Transparent` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6990 @ 0x00ae_6990 => extern "C" fn init_00ae6990() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6990)
     }
-    /// `0x00ae_69d0`: the render pass type "ZPrePass" linked into its list unless it is there.
+    /// `0x00ae_69d0`: the render pass type `ZPrePass` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae69d0 @ 0x00ae_69d0 => extern "C" fn init_00ae69d0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_69d0)
     }
-    /// `0x00ae_6a10`: the render pass type "postOpaque" linked into its list unless it is there.
+    /// `0x00ae_6a10`: the render pass type `postOpaque` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6a10 @ 0x00ae_6a10 => extern "C" fn init_00ae6a10() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6a10)
     }
-    /// `0x00ae_6a50`: the render pass type "postTransparent" linked into its list unless it is there.
+    /// `0x00ae_6a50`: the render pass type `postTransparent` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6a50 @ 0x00ae_6a50 => extern "C" fn init_00ae6a50() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6a50)
     }
-    /// `0x00ae_6a90`: the render pass type "preOpaque" linked into its list unless it is there.
+    /// `0x00ae_6a90`: the render pass type `preOpaque` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6a90 @ 0x00ae_6a90 => extern "C" fn init_00ae6a90() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6a90)
     }
-    /// `0x00ae_6ad0`: the render pass type "preTransparentATC" linked into its list unless it is there.
+    /// `0x00ae_6ad0`: the render pass type `preTransparentATC` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6ad0 @ 0x00ae_6ad0 => extern "C" fn init_00ae6ad0() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6ad0)
     }
-    /// `0x00ae_6b10`: the render pass type "preTransparent" linked into its list unless it is there.
+    /// `0x00ae_6b10`: the render pass type `preTransparent` linked into its list unless it is there.
     StaticInit_SceneRenderPassType_00ae6b10 @ 0x00ae_6b10 => extern "C" fn init_00ae6b10() -> u32 {
         sa::find_link(&mut mem(), 0x00ae_6b10)
     }
@@ -340,5 +340,137 @@ ported! {
     /// `0x00ae_a5b0`: `PhyreCtor_eventOwner_004315e0(0x00cb_3c94)`, then `atexit(0x00b0_3680)`.
     StaticInit_PhyreCtor_eventOwner_004315e0_00aea5b0 @ 0x00ae_a5b0 => extern "C" fn init_00aea5b0() -> u32 {
         sa::call_dtor(&mut mem(), 0x00ae_a5b0)
+    }
+    /// `0x00ae_49e0`: `Ctor8(0x00ca_3094, ...)` with the word `A16`, then `atexit(0x00af_e050)`.
+    StaticInit_Ctor8_00ae49e0 @ 0x00ae_49e0 => extern "C" fn init_00ae49e0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_49e0)
+    }
+    /// `0x00ae_4a10`: `Ctor8(0x00ca_315c, ...)` with the word `A2RGB10`, then `atexit(0x00af_e060)`.
+    StaticInit_Ctor8_00ae4a10 @ 0x00ae_4a10 => extern "C" fn init_00ae4a10() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4a10)
+    }
+    /// `0x00ae_4a40`: `Ctor8(0x00ca_2ff4, ...)` with the word `A8`, then `atexit(0x00af_e070)`.
+    StaticInit_Ctor8_00ae4a40 @ 0x00ae_4a40 => extern "C" fn init_00ae4a40() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4a40)
+    }
+    /// `0x00ae_4a70`: `Ctor8(0x00ca_3134, ...)` with the word `ARGB8`, then `atexit(0x00af_e080)`.
+    StaticInit_Ctor8_00ae4a70 @ 0x00ae_4a70 => extern "C" fn init_00ae4a70() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4a70)
+    }
+    /// `0x00ae_4aa0`: `Ctor8(0x00ca_3224, ...)` with the word `BC4`, then `atexit(0x00af_e090)`.
+    StaticInit_Ctor8_00ae4aa0 @ 0x00ae_4aa0 => extern "C" fn init_00ae4aa0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4aa0)
+    }
+    /// `0x00ae_4ad0`: `Ctor8(0x00ca_324c, ...)` with the word `BC5`, then `atexit(0x00af_e0a0)`.
+    StaticInit_Ctor8_00ae4ad0 @ 0x00ae_4ad0 => extern "C" fn init_00ae4ad0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4ad0)
+    }
+    /// `0x00ae_4b00`: `Ctor8(0x00ca_342c, ...)` with the word `DEPTH16`, then `atexit(0x00af_e0b0)`.
+    StaticInit_Ctor8_00ae4b00 @ 0x00ae_4b00 => extern "C" fn init_00ae4b00() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4b00)
+    }
+    /// `0x00ae_4b30`: `Ctor8(0x00ca_347c, ...)` with the word `DEPTH24S8`, then `atexit(0x00af_e0c0)`.
+    StaticInit_Ctor8_00ae4b30 @ 0x00ae_4b30 => extern "C" fn init_00ae4b30() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4b30)
+    }
+    /// `0x00ae_4b60`: `Ctor8(0x00ca_3454, ...)` with the word `DEPTH24`, then `atexit(0x00af_e0d0)`.
+    StaticInit_Ctor8_00ae4b60 @ 0x00ae_4b60 => extern "C" fn init_00ae4b60() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4b60)
+    }
+    /// `0x00ae_4b90`: `Ctor8(0x00ca_34a4, ...)` with the word `DEPTH32`, then `atexit(0x00af_e0e0)`.
+    StaticInit_Ctor8_00ae4b90 @ 0x00ae_4b90 => extern "C" fn init_00ae4b90() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4b90)
+    }
+    /// `0x00ae_4bc0`: `Ctor8(0x00ca_31ac, ...)` with the word `DXT1`, then `atexit(0x00af_e0f0)`.
+    StaticInit_Ctor8_00ae4bc0 @ 0x00ae_4bc0 => extern "C" fn init_00ae4bc0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4bc0)
+    }
+    /// `0x00ae_4bf0`: `Ctor8(0x00ca_31d4, ...)` with the word `DXT3`, then `atexit(0x00af_e100)`.
+    StaticInit_Ctor8_00ae4bf0 @ 0x00ae_4bf0 => extern "C" fn init_00ae4bf0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4bf0)
+    }
+    /// `0x00ae_4c20`: `Ctor8(0x00ca_31fc, ...)` with the word `DXT5`, then `atexit(0x00af_e110)`.
+    StaticInit_Ctor8_00ae4c20 @ 0x00ae_4c20 => extern "C" fn init_00ae4c20() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4c20)
+    }
+    /// `0x00ae_4c50`: `Ctor8(0x00ca_32ec, ...)` with the word `L16F`, then `atexit(0x00af_e120)`.
+    StaticInit_Ctor8_00ae4c50 @ 0x00ae_4c50 => extern "C" fn init_00ae4c50() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4c50)
+    }
+    /// `0x00ae_4c80`: `Ctor8(0x00ca_306c, ...)` with the word `L16`, then `atexit(0x00af_e130)`.
+    StaticInit_Ctor8_00ae4c80 @ 0x00ae_4c80 => extern "C" fn init_00ae4c80() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4c80)
+    }
+    /// `0x00ae_4cb0`: `Ctor8(0x00ca_333c, ...)` with the word `L32F`, then `atexit(0x00af_e140)`.
+    StaticInit_Ctor8_00ae4cb0 @ 0x00ae_4cb0 => extern "C" fn init_00ae4cb0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4cb0)
+    }
+    /// `0x00ae_4ce0`: `Ctor8(0x00ca_2fcc, ...)` with the word `L8`, then `atexit(0x00af_e150)`.
+    StaticInit_Ctor8_00ae4ce0 @ 0x00ae_4ce0 => extern "C" fn init_00ae4ce0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4ce0)
+    }
+    /// `0x00ae_4d10`: `Ctor8(0x00ca_338c, ...)` with the word `LA16F`, then `atexit(0x00af_e160)`.
+    StaticInit_Ctor8_00ae4d10 @ 0x00ae_4d10 => extern "C" fn init_00ae4d10() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4d10)
+    }
+    /// `0x00ae_4d40`: `Ctor8(0x00ca_30bc, ...)` with the word `LA16`, then `atexit(0x00af_e170)`.
+    StaticInit_Ctor8_00ae4d40 @ 0x00ae_4d40 => extern "C" fn init_00ae4d40() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4d40)
+    }
+    /// `0x00ae_4d70`: `Ctor8(0x00ca_33dc, ...)` with the word `LA32F`, then `atexit(0x00af_e180)`.
+    StaticInit_Ctor8_00ae4d70 @ 0x00ae_4d70 => extern "C" fn init_00ae4d70() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4d70)
+    }
+    /// `0x00ae_4da0`: `Ctor8(0x00ca_301c, ...)` with the word `LA8`, then `atexit(0x00af_e190)`.
+    StaticInit_Ctor8_00ae4da0 @ 0x00ae_4da0 => extern "C" fn init_00ae4da0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4da0)
+    }
+    /// `0x00ae_4dd0`: `Ctor8(0x00ca_32c4, ...)` with the word `R16F`, then `atexit(0x00af_e1a0)`.
+    StaticInit_Ctor8_00ae4dd0 @ 0x00ae_4dd0 => extern "C" fn init_00ae4dd0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4dd0)
+    }
+    /// `0x00ae_4e00`: `Ctor8(0x00ca_3314, ...)` with the word `R32F`, then `atexit(0x00af_e1b0)`.
+    StaticInit_Ctor8_00ae4e00 @ 0x00ae_4e00 => extern "C" fn init_00ae4e00() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4e00)
+    }
+    /// `0x00ae_4e30`: `Ctor8(0x00ca_3404, ...)` with the word `R32`, then `atexit(0x00af_e1c0)`.
+    StaticInit_Ctor8_00ae4e30 @ 0x00ae_4e30 => extern "C" fn init_00ae4e30() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4e30)
+    }
+    /// `0x00ae_4e60`: `Ctor8(0x00ca_3364, ...)` with the word `RG16F`, then `atexit(0x00af_e1d0)`.
+    StaticInit_Ctor8_00ae4e60 @ 0x00ae_4e60 => extern "C" fn init_00ae4e60() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4e60)
+    }
+    /// `0x00ae_4e90`: `Ctor8(0x00ca_30e4, ...)` with the word `RG16`, then `atexit(0x00af_e1e0)`.
+    StaticInit_Ctor8_00ae4e90 @ 0x00ae_4e90 => extern "C" fn init_00ae4e90() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4e90)
+    }
+    /// `0x00ae_4ec0`: `Ctor8(0x00ca_33b4, ...)` with the word `RG32F`, then `atexit(0x00af_e1f0)`.
+    StaticInit_Ctor8_00ae4ec0 @ 0x00ae_4ec0 => extern "C" fn init_00ae4ec0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4ec0)
+    }
+    /// `0x00ae_4ef0`: `Ctor8(0x00ca_3044, ...)` with the word `RG8`, then `atexit(0x00af_e200)`.
+    StaticInit_Ctor8_00ae4ef0 @ 0x00ae_4ef0 => extern "C" fn init_00ae4ef0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4ef0)
+    }
+    /// `0x00ae_4f20`: `Ctor8(0x00ca_3274, ...)` with the word `RGBA16F`, then `atexit(0x00af_e210)`.
+    StaticInit_Ctor8_00ae4f20 @ 0x00ae_4f20 => extern "C" fn init_00ae4f20() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4f20)
+    }
+    /// `0x00ae_4f50`: `Ctor8(0x00ca_3184, ...)` with the word `RGBA16`, then `atexit(0x00af_e220)`.
+    StaticInit_Ctor8_00ae4f50 @ 0x00ae_4f50 => extern "C" fn init_00ae4f50() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4f50)
+    }
+    /// `0x00ae_4f80`: `Ctor8(0x00ca_329c, ...)` with the word `RGBA32F`, then `atexit(0x00af_e230)`.
+    StaticInit_Ctor8_00ae4f80 @ 0x00ae_4f80 => extern "C" fn init_00ae4f80() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4f80)
+    }
+    /// `0x00ae_4fb0`: `Ctor8(0x00ca_310c, ...)` with the word `RGBA8`, then `atexit(0x00af_e240)`.
+    StaticInit_Ctor8_00ae4fb0 @ 0x00ae_4fb0 => extern "C" fn init_00ae4fb0() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_4fb0)
+    }
+    /// `0x00ae_5000`: `Ctor8(0x00ca_34cc, ...)` with the word `UNKNOWN`, then `atexit(0x00af_e250)`.
+    StaticInit_Ctor8_00ae5000 @ 0x00ae_5000 => extern "C" fn init_00ae5000() -> u32 {
+        sa::ctor8(&mut mem(), 0x00ae_5000)
     }
 }

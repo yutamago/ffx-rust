@@ -24,6 +24,8 @@ pub const ATEXIT: u32 = 0x0094_9207;
 /// `Phyre_PRendering_PSceneRenderPassType_find_004dd860` (cdecl `(name)`):
 /// the pass type in the list whose name is `name`, else 0.
 pub const FIND_PASS: u32 = 0x004d_d860;
+/// `Phyre_PRendering_Ctor8_005844a0` (thiscall, eight stack words).
+pub const CTOR8: u32 = 0x0058_44a0;
 
 /// Calls the original at `sym` as a cdecl function with `args`; its `eax`.
 pub fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
@@ -36,6 +38,18 @@ pub fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
 pub fn thiscall(h: &mut impl Host, sym: u32, this: u32, args: &[u32]) -> u32 {
     let f = h.rebase(sym);
     h.call(f, Conv::Thiscall(this), args)
+}
+
+/// The words of a row, with the image addresses (bit `i` of `addr` set)
+/// rebased.
+fn words_for<const N: usize>(h: &impl Host, words: [u32; N], addr: u8) -> [u32; N] {
+    let mut out = words;
+    for (i, w) in out.iter_mut().enumerate() {
+        if ((addr >> i) & 1) == 1 {
+            *w = h.rebase(*w);
+        }
+    }
+    out
 }
 
 /// The `atexit`-only initialisers ([`rows::DTOR_ONLY`]): `atexit(dtor)`,
@@ -124,6 +138,20 @@ pub fn call_dtor(h: &mut impl Host, at: u32) -> u32 {
     cdecl(h, ATEXIT, &[dtor])
 }
 
+/// The eight-word constructor initialisers ([`rows::CTOR8`]): `Ctor8(this,
+/// words)` as a thiscall (the callee pops the eight words), then
+/// `atexit(dtor)`. Returns the `atexit` result.
+pub fn ctor8(h: &mut impl Host, at: u32) -> u32 {
+    let Some(row) = rows::CTOR8.iter().find(|r| r.at == at) else {
+        return 0;
+    };
+    let this = h.rebase(row.this);
+    let words = words_for(h, row.words, row.addr);
+    let _ = thiscall(h, CTOR8, this, &words); // call width: 8
+    let dtor = h.rebase(row.dtor);
+    cdecl(h, ATEXIT, &[dtor])
+}
+
 #[cfg(test)]
 mod tests {
     use super::rows;
@@ -136,6 +164,7 @@ mod tests {
         all.extend(rows::COPY_WORD.iter().map(|r| r.at));
         all.extend(rows::FIND_LINK.iter().map(|r| r.at));
         all.extend(rows::CALL_DTOR.iter().map(|r| r.at));
+        all.extend(rows::CTOR8.iter().map(|r| r.at));
         let n = all.len();
         all.sort_unstable();
         all.dedup();
