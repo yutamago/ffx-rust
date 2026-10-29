@@ -969,6 +969,7 @@ ports! {
     "0446 load step" => s4_fam446::LOAD_STEP, s4_fam446::load_step;
     "0565 record reset" => s4_fam446::RECORD_RESET, s4_fam446::record_reset;
     "0565 host start" => s4_fam446::HOST_START_565, s4_fam446::host_start_565;
+    "0565 screen bars" => s4_fam446::SCREEN_BARS, s4_fam446::screen_bars;
     "0446 mode object" => s4_fam446::MODE_OBJECT, s4_fam446::mode_object;
     "0446 start child, sound" => s4_fam446::START_CHILD_SOUND_A, s4_fam446::start_child_sound_a;
     "0446 start child (scaled), sound" => s4_fam446::START_CHILD_SOUND_B, s4_fam446::start_child_sound_b;

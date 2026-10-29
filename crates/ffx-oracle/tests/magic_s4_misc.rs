@@ -1461,3 +1461,38 @@ fn fam565_reset_and_start() {
         t.check_entry(hs, Call::default(), &[arg], Eax::Checked);
     }
 }
+
+/// `magic_0565` 0x100013f0: the screen bars for several counts, the first
+/// time and later, with and without the last two slots.
+#[test]
+fn fam565_screen_bars() {
+    let Some(mut t) = twin(565) else { return };
+    let f = t.at(0x13f0);
+    for (s, n) in [
+        (628u32, 1usize),
+        (821, 1),
+        (811, 5),
+        (809, 3),
+        (812, 4),
+        (650, 0),
+        (382, 2),
+    ] {
+        rec(&mut t, s, 0, move |m, a| {
+            let words: Vec<u32> = a.iter().take(n).copied().collect();
+            log(m, &words);
+            s
+        });
+    }
+    for (init, n, m) in [
+        (0u32, 0u32, 1u32),
+        (1, 3, 0),
+        (1, 10, 1),
+        (1, 0xffff_fff0, 2),
+    ] {
+        t.set_u32(t.img.word(f + 0x8), init);
+        t.set_u32(t.img.word(f + 0x45), n);
+        t.set_u32(t.img.word(f + 0x22f), m);
+        t.set_u32(LOG, 0);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

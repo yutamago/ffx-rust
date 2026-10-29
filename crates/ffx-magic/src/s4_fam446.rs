@@ -833,3 +833,88 @@ pub const HOST_START_565: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The family's screen frame (a table entry, no arguments; an 8-aligned
+/// frame): once, slot 628 `(1)` (`G_INIT`, operands `+0x8`, `+0x25`);
+/// slot 821 `(1)`; then three bars drawn with slots 811 (a colour: `(0,
+/// 0, 0, a, mode)`), 809 (a corner: `(x, y, mode)` as floats) and 812
+/// (`(0, 0, 1, kind)`): the alphas `(10 - n) * 64 / 10` and `(10 - n) *
+/// 128 / 10` (`n = G_N`, operands `+0x45`, `+0xf2`; `idiv` by 10 through
+/// the multiply), the corners (0, 0)-(512, 416), (0, 0)-(512, 80) and (0,
+/// 336)-(512, 416). With `G_M` 1 (`+0x22f`) slots 650 and 382 `(0, 0)`
+/// follow. Each call sees the words the earlier ones left. Returns the
+/// last call's `eax`.
+///
+/// `magic_0565` 0x100013f0 (605 bytes; 10 DLLs).
+pub fn screen_bars<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    if g.read::<u32>(w(0x8)) == 0 {
+        let t = slot_target(g, w(0x12), 628);
+        g.call(t, 0, &[1]);
+        g.write::<u32>(w(0x25), 1);
+    }
+    let alpha = |g: &G, op: u32, shift: u32| {
+        let n = 10u32.wrapping_sub(g.read::<u32>(w(op)));
+        (n << shift).cast_signed() / 10
+    };
+    let mut s = Pushes::default();
+    s.push(1);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x2e), 821), 0);
+    let a = alpha(g, 0x45, 6).cast_unsigned();
+    s.pop(1);
+    let (x512, y416, y80, y336) = (0x4400_0000, 0x43d0_0000, 0x42a0_0000, 0x43a8_0000);
+    let colour = |g: &mut G, s: &mut Pushes, op: u32, a: u32, mode: u32| {
+        s.push_all(&[mode, a, 0, 0, 0]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(op), 811), 0)
+    };
+    let corner = |g: &mut G, s: &mut Pushes, op: u32, (x, y): (u32, u32), mode: u32| {
+        s.push_all(&[mode, y, x]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(op), 809), 0);
+        s.pop(3);
+    };
+    let bar = |g: &mut G, s: &mut Pushes, op: u32, kind: u32| {
+        s.push_all(&[kind, 1, 0, 0]);
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(op), 812), 0)
+    };
+    colour(g, &mut s, 0x54, a, 0);
+    s.pop(5);
+    corner(g, &mut s, 0x77, (0, 0), 0);
+    colour(g, &mut s, 0x9b, a, 1);
+    s.pop(5);
+    corner(g, &mut s, 0xb4, (x512, y416), 1);
+    bar(g, &mut s, 0xd9, 0);
+    let a = alpha(g, 0xf2, 7).cast_unsigned();
+    colour(g, &mut s, 0x101, a, 0);
+    s.pop(9);
+    corner(g, &mut s, 0x121, (0, 0), 0);
+    colour(g, &mut s, 0x148, 0, 1);
+    s.pop(5);
+    corner(g, &mut s, 0x15f, (x512, y80), 1);
+    bar(g, &mut s, 0x183, 2);
+    colour(g, &mut s, 0x19b, 0, 0);
+    s.pop(9);
+    corner(g, &mut s, 0x1b2, (0, y336), 0);
+    colour(g, &mut s, 0x1d6, a, 1);
+    s.pop(5);
+    corner(g, &mut s, 0x1ef, (x512, y416), 1);
+    let mut eax = bar(g, &mut s, 0x213, 2).eax;
+    if g.read::<u32>(w(0x22f)) == 1 {
+        let t = slot_target(g, w(0x237), 650);
+        g.call(t, 0, &[]);
+        let t = slot_target(g, w(0x244), 382);
+        eax = g.call(t, 0, &[0, 0]).eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`screen_bars`].
+pub const SCREEN_BARS: Sig = Sig {
+    len: 605,
+    hash: 0xa460_a890_153b_a0e9,
+    calls: &[],
+    imports: &[],
+};
