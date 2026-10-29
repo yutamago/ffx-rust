@@ -127,6 +127,16 @@ check-tailargs report "0 problems" when clean; check-clobber and
 check-argslots exit 0, and check-clobber reports no "reads the eax the
 original returns".
 
+check-callwidth, check-callconv and check-thisarg follow forwarding
+helpers (`fn forward(h, target, conv, args)`) to their callers. A call
+reaches the helper its path names, resolved through the module tree,
+`use` imports and aliases, `super::` and `crate::`
+(`tools/rustpath.py`), so a new function with the same name elsewhere
+does not change what is checked. A bare name is the fallback only when
+the path can't be resolved and one function in the workspace has that
+name. Each of the three has a `--self-test` with same-named helpers in
+several modules.
+
 ### Test stubs
 
 An oracle test replaces the callees a port calls through the game with

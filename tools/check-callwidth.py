@@ -3,6 +3,7 @@
 (crates/ffx-bridge/src/lib.rs, `Host`, "Call width").
 
   tools/check-callwidth.py [-v] [--root DIR]
+  tools/check-callwidth.py --self-test
 
 In the game, `ffx_bridge::Host::call` (`RawMem`) passes at most 6 words and
 refuses a longer list without calling (the result is 0). A bridge that
@@ -37,7 +38,12 @@ passes its own slice parameter on (`fn call(h, sym, args: &[u32]) {
 h.call(h.rebase(sym), args) }`, also with words put in front:
 `let mut v = vec![fmt]; v.extend_from_slice(args)`) becomes a limited
 callee itself, and its callers are checked the same way, to a fixed point;
-so does a local closure that forwards its slice parameter. Loop tables
+so does a local closure that forwards its slice parameter. A call reaches
+the function its path resolves to (tools/rustpath.py: `a::b::f`,
+`super::`, `crate::`, `use` imports and aliases, `use .. as g` calls of
+`g`); by the bare name only when the path can't be resolved and no other
+function has the name (--self-test: several `forward`s and `this_call`s,
+each call naming one). Loop tables
 (`for (f, args) in [(F, &[..][..]), ..]` or a const of such tuples), array
 `.map(..)`, `[..][..n]`, `[..].concat()`, `if .. { [..] } else { [..] }`
 and functions returning `[u32; N]` are followed too. A slice whose width
@@ -61,6 +67,9 @@ import bisect
 import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rustpath  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ffx-host runs the game's code in its own executor (docs/host.md), which
@@ -231,11 +240,12 @@ def split_top(s):
 
 
 def eval_int(s, consts):
-    s = s.strip().replace('_', '')
-    if re.fullmatch(r'\d+(usize|u32)?', s):
-        return int(re.match(r'\d+', s).group(0))
-    if re.fullmatch(r'0x[0-9a-fA-F]+(usize|u32)?', s):
-        return int(re.match(r'0x[0-9a-fA-F]+', s).group(0), 16)
+    s = s.strip()
+    n = s.replace('_', '')  # digit separators; a name keeps its `_`s
+    if re.fullmatch(r'\d+(usize|u32)?', n):
+        return int(re.match(r'\d+', n).group(0))
+    if re.fullmatch(r'0x[0-9a-fA-F]+(usize|u32)?', n):
+        return int(re.match(r'0x[0-9a-fA-F]+', n).group(0), 16)
     name = s.split('::')[-1]
     if name in consts:
         return consts[name]
@@ -747,14 +757,11 @@ def graphic_limit(conv):
     return 12, f'conv `{conv}`'
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('-v', '--verbose', action='store_true')
-    ap.add_argument('--root', default=ROOT)
-    a = ap.parse_args()
-
+def analyze(root, reviewed):
+    """(problems, resolved calls, forwarding functions) of the crates
+    under `root`."""
     files = []
-    crates = os.path.join(a.root, 'crates')
+    crates = os.path.join(root, 'crates')
     for crate in sorted(os.listdir(crates)):
         if crate in SKIP_CRATES:
             continue
@@ -763,11 +770,12 @@ def main():
             for fn in sorted(fs):
                 if fn.endswith('.rs'):
                     p = os.path.join(dp, fn)
-                    rel = os.path.relpath(p, a.root)
+                    rel = os.path.relpath(p, root).replace(os.sep, '/')
                     with open(p, encoding='utf-8') as fh:
                         files.append(File(rel, fh.read()))
 
     by_rel = {f.rel: f for f in files}
+    ws = rustpath.Workspace({f.rel: f.src for f in files}, root)
     used_reviews = set()
     for f in files:
         for m in re.finditer(r'\b(?:const|static)\s+(\w+)\s*:\s*&?\s*(?:\'static\s+)?\[\s*\(', f.code):
@@ -832,8 +840,8 @@ def main():
         if w.n is None and ann is not None:
             w = Width(ann)
         slice_text = ' '.join(args[idx].split())
-        if w.n is None and (f.rel, inside, slice_text) in REVIEWED:
-            w = Width(REVIEWED[(f.rel, inside, slice_text)][0])
+        if w.n is None and (f.rel, inside, slice_text) in reviewed:
+            w = Width(reviewed[(f.rel, inside, slice_text)][0])
             used_reviews.add((f.rel, inside, slice_text))
         if w.n is None:
             problems.append(f'{where}: in {inside}: {kind} with a dynamic width ({w.why}); '
@@ -892,30 +900,38 @@ def main():
                 home = by_rel[rel]
                 wfn = next(fn for fn in home.fns if fn.start == start)
                 unique = sum(name in g.fn_names for g in files) == 1
+                # a real fn is found through each call's path (rustpath);
+                # a local forwarding closure only in its own function
+                real = ws.known(rel, start)
+                renamed = ws.aliases(name) if real and not wfn.has_self else {}
                 for f in files:
-                    if name not in f.words:
+                    if name not in f.words and f.rel not in renamed:
                         continue
                     for method in (False, True):
                         for off, args in call_sites(f, name, method):
-                            if f is home:
-                                target = f.visible(name, off)
-                                if target is not wfn and not (method and wfn.has_self and unique):
+                            if method:
+                                if f is home:
+                                    if f.visible(name, off) is not wfn and not (wfn.has_self and unique):
+                                        continue
+                                elif not (wfn.has_self and unique):
+                                    # a method elsewhere: only a name no other fn has
                                     continue
-                            elif method:
-                                # a method elsewhere: only a name no other fn has
-                                if not (wfn.has_self and unique):
+                            elif not real:
+                                if f is not home or f.visible(name, off) is not wfn:
                                     continue
                             else:
-                                if wfn.scope[0] != 0 or wfn.has_self or name in f.top_names:
-                                    continue
+                                if wfn.has_self:
+                                    continue  # `Self::f(self, ..)`: the slice index moves
                                 qual = f.code[off:f.code.index(name, off)]
-                                segs = [q for q in qual.split('::') if q.strip()]
-                                if segs:
-                                    if segs[-1].strip() not in home.mods:
-                                        continue
-                                elif not re.search(r'\b(' + '|'.join(sorted(home.mods)) + r')\b[^;]*\b' + re.escape(name) + r'\b', f.uses):
+                                if not ws.reaches(f.rel, off, qual, name, (rel, start)):
                                     continue
                             check(f, off, args, idx, lim, kind)
+                    # `use path::name as alias;` calls
+                    for alias in sorted(renamed.get(f.rel, ())):
+                        for off, args in call_sites(f, alias, False):
+                            qual = f.code[off:f.code.index(alias, off)]
+                            if ws.reaches(f.rel, off, qual, alias, (rel, start)):
+                                check(f, off, args, idx, lim, kind)
 
     settle()
 
@@ -955,16 +971,152 @@ def main():
                               f'closure `{pname}` ({via})')
     settle()
 
+    for k in sorted(set(reviewed) - used_reviews):
+        problems.append(f'REVIEWED entry {k} matches no dynamic call: remove it or update it')
+    return sorted(set(problems)), sorted(set(resolved)), wrappers
+
+
+# --self-test: forwarders of one name in several modules, each call
+# naming one by its path (2026-10-29: ffx-prender's and ffx-pcui's new
+# `bridge::forward(h, target, conv, args)` were taken for the calls of
+# ffx-pcore's `small::bridge::forward(h, sym, p, checked)`, 5 false
+# problems; a second `this_call` hid a right path in check-callconv)
+SELF_TEST = {
+    'crates/ffx-pcore/src/lib.rs': 'pub mod small;\n',
+    'crates/ffx-pcore/src/small.rs': '''
+pub const DESTROY: u32 = 0x0044_af00;
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, sym: u32, p: u32, checked: bool) -> u8 {
+        if !checked || p != 0 {
+            h.call_sym(sym, Conv::Thiscall(p), &[]);
+        }
+        1
+    }
+}
+''',
+    'crates/ffx-prender/src/lib.rs': 'pub mod m5r_l;\npub mod snd;\npub mod movie;\npub mod user;\n',
+    'crates/ffx-prender/src/m5r_l.rs': '''
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, target: u32, conv: Conv, args: &[u32]) -> u32 {
+        h.call_sym(target, conv, args)
+    }
+    pub fn here(h: &mut impl Host, p: u32) {
+        // ffx-pcore's forward, named by its path in a file with another
+        ffx_pcore::small::bridge::forward(h, ffx_pcore::small::DESTROY, p, false);
+    }
+}
+''',
+    'crates/ffx-pcui/src/lib.rs': 'pub mod m5u_h;\n',
+    'crates/ffx-pcui/src/m5u_h.rs': '''
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, target: u32, conv: Conv, args: &[u32]) -> u32 {
+        h.call_sym(target, conv, args)
+    }
+}
+''',
+    # three `this_call`s; the calls name the first through `use` aliases,
+    # `super::` and `crate::`
+    'crates/ffx-prender/src/snd.rs': '''
+use ffx_graphic::{Conv, Host};
+pub fn this_call(h: &mut impl Host, f: u32, this: u32, args: &[u32]) -> u32 {
+    h.call_sym(f, Conv::Thiscall(this), args)
+}
+pub mod inner {
+    pub fn far(h: &mut impl Host) {
+        super::this_call(h, 0x0080_6d10, 0, &[0; 17]);
+    }
+}
+''',
+    'crates/ffx-prender/src/movie.rs': '''
+use ffx_graphic::{Conv, Host};
+pub fn this_call(h: &mut impl Host, f: u32, this: u32, a: u32) -> u32 {
+    h.call_sym(f, Conv::Thiscall(this), &[a])
+}
+''',
+    'crates/ffx-pcui/src/this.rs': '''
+pub fn this_call(f: u32, this: u32, n: u32) -> u32 {
+    f + this + n
+}
+''',
+    'crates/ffx-prender/src/user.rs': '''
+use crate::snd as s;
+use crate::snd::this_call as tc;
+use ffx_pcui::m5u_h::bridge::forward;
+pub fn user(h: &mut impl Host, p: u32) {
+    s::this_call(h, 0x0080_6d10, p, &[0; 17]);
+    tc(h, 0x0080_6d10, p, &[0; 18]);
+    crate::snd::this_call(h, 0x0080_6d10, p, &[0; 16]);
+    crate::movie::this_call(h, 0x0080_6d10, p, 7);
+    forward(h, 0x0080_6d10, Conv::Stdcall, &[0; 14]);
+    crate::m5r_l::bridge::forward(h, 0x0080_6d10, Conv::Cdecl, &[0; 13]);
+}
+''',
+    'crates/ffx-hook/src/ported/p5_core.rs': '''
+use super::{mem, ported};
+fn destroy(p: u32) -> u8 {
+    ffx_pcore::small::bridge::forward(&mut mem(), ffx_pcore::small::DESTROY, p, false)
+}
+fn checked(p: u32) -> u8 {
+    ffx_pcore::small::bridge::forward(&mut mem(), ffx_pcore::small::DESTROY, p, true)
+}
+''',
+}
+SELF_EXPECT = [
+    ('snd.rs:8:', 'this_call -> graphic Host::call_sym (thiscall) with 17 words'),
+    ('user.rs:6:', 'this_call -> graphic Host::call_sym (thiscall) with 17 words'),
+    ('user.rs:7:', 'this_call -> graphic Host::call_sym (thiscall) with 18 words'),
+    ('user.rs:10:', 'forward -> graphic Host::call_sym (conv `conv`) with 14 words'),
+    ('user.rs:11:', 'forward -> graphic Host::call_sym (conv `conv`) with 13 words'),
+]
+
+
+def self_test():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        for rel, text in SELF_TEST.items():
+            p = os.path.join(d, rel)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, 'w', encoding='utf-8') as fh:
+                fh.write(text)
+        problems, resolved, _ = analyze(d, {})
+    bad = []
+    for where, text in SELF_EXPECT:
+        if not any(where in p and text in p for p in problems):
+            bad.append(f'missed: {where} {text}')
+    for p in problems:
+        if not any(where in p and text in p for where, text in SELF_EXPECT):
+            bad.append(f'unexpected: {p}')
+    # the call that fits (16 words); p5_core.rs's and m5r_l.rs's calls of
+    # ffx-pcore's forward pass no slice: neither checked nor a problem
+    for where in ('user.rs:8:',):
+        if not any(where in r for r in resolved):
+            bad.append(f'not checked: {where}')
+    for b in bad:
+        print(b)
+    print('self-test', 'FAILED' if bad else 'passed', f'({len(problems)} problems, {len(resolved)} calls checked)')
+    return 1 if bad else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('-v', '--verbose', action='store_true')
+    ap.add_argument('--root', default=ROOT)
+    ap.add_argument('--self-test', action='store_true')
+    a = ap.parse_args()
+    if a.self_test:
+        return self_test()
+    problems, resolved, wrappers = analyze(a.root, REVIEWED)
     if a.verbose:
-        for r in sorted(set(resolved)):
+        for r in resolved:
             print('ok', r)
         for (rel, name, _), (idx, lim, kind) in sorted(wrappers.items()):
             print(f'wrapper {rel}: {name} (slice argument {idx}) at most {lim}: {kind}')
-    for k in sorted(set(REVIEWED) - used_reviews):
-        problems.append(f'REVIEWED entry {k} matches no dynamic call: remove it or update it')
-    for p in sorted(set(problems)):
+    for p in problems:
         print(p)
-    print(f'{len(set(problems))} problems ({len(set(resolved))} calls checked, '
+    print(f'{len(problems)} problems ({len(resolved)} calls checked, '
           f'{len(wrappers)} forwarding functions)')
     return 1 if problems else 0
 

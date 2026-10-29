@@ -3,6 +3,7 @@
 reads it: a method called as a plain function (m4-pilot, 2026-10-25).
 
   tools/check-thisarg.py [-v] [--root DIR] [--exe FFX.exe]
+  tools/check-thisarg.py --self-test
 
 Ghidra shows some methods as plain functions; their callers leave the
 object in `ecx` (`Phyre_PGeometry_PDynamicMesh_getDataBlockCount`
@@ -34,7 +35,11 @@ Two halves:
    anywhere), `x.rebase(..)`/`rebase(..)` of one, or a local assigned one
    of those earlier in the same function (`let f = h.rebase(NAME);`).
    Targets it can't resolve (pointers read from memory, parameters) are
-   counted, not reported.
+   counted, not reported. A function of the file passing a parameter on
+   as such a target is a forwarder: its calls are checked with their
+   argument, a call reaching it when its path resolves to it
+   (tools/rustpath.py; `other::name(..)` is another module's `name`).
+   --self-test checks that on fixtures.
 
 Every resolved call to an original that takes `ecx` is a problem unless
 REVIEWED below names it (file, callee, why the port is right). A REVIEWED
@@ -61,6 +66,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import disasm_cache  # noqa: E402
+import rustpath  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SKIP_CRATES = {"ffx-oracle", "ffx-studio"}
@@ -282,7 +288,7 @@ class Resolver:
         return None
 
 
-PRIMITIVE = r"(\.call|\.call_st0(?:_f64)?|\.call_u64|\.call_sym|\.call_sym_st0(?:_f64)?|\.call_sym_u64|\.call_wide|\.call_sym_wide|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
+PRIMITIVE = r"((?:ffx_bridge::)?Host::call\b|\.call|\.call_st0(?:_f64)?|\.call_u64|\.call_sym|\.call_sym_st0(?:_f64)?|\.call_sym_u64|\.call_wide|\.call_sym_wide|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
 
 
 def params_of(code, fn_start):
@@ -297,17 +303,49 @@ def params_of(code, fn_start):
     return names
 
 
-def calls(f, code, resolver, forwarders):
+CLOSURE = re.compile(r"\blet\s+(?:mut\s+)?([a-z_]\w*)\s*=\s*(?:move\s+)?\|([^|]*)\|")
+
+
+def closure_param(rf, code, lo, off, name):
+    """(closure's `let` name, index of `name` among its parameters, offset
+    of the `let`) when `name` is a parameter of a `let x = |..| ..`
+    closure whose body holds `off`, else None."""
+    best = None
+    for m in CLOSURE.finditer(code, lo, off):
+        params = [re.sub(r"^\s*(?:mut\s+)?", "", x.split(":")[0]).strip() for x in m[2].split(",")]
+        if name in params and rf.closure_holds(m.end(), off):
+            best = (m[1], params.index(name), m.start())
+    return best
+
+
+def reaches(ws, f, code, at, name, home):
+    """Whether the call of `name` at `at` reaches the forwarder `home`: a
+    fn's offset (by the call's path, rustpath) or ("closure", lo, hi), a
+    local closure seen from its `let` to the end of its function."""
+    qual = re.search(r"((?:\w+::)*)$", code[max(0, at - 200):at]).group(1)
+    if isinstance(home, tuple):
+        return not qual and home[1] < at < home[2]
+    if ws is None:
+        return True
+    return ws.reaches(f, at - len(qual), qual, name, (f, home))
+
+
+def calls(f, code, resolver, forwarders, ws=None):
     """(line, callee, how) of the calls in `code` that pass no ecx, the
-    count of unresolved ones, and the forwarders found: functions passing
-    a parameter of theirs on as such a call's target, `name -> (index,
-    how)` (their callers are then checked with that argument)."""
+    count of unresolved ones, and the forwarders found: functions and
+    local closures passing a parameter of theirs on as such a call's
+    target, `(name, home) -> (index, how)` (their callers are then checked
+    with that argument). A call reaches a forwarder when its path resolves
+    to it (`ws`, rustpath): `other::name(..)` is not this file's `name`,
+    nor is a closure `name` in another function."""
     out, unresolved, found = [], 0, {}
+    rf = ws.files[f] if ws is not None else None
     fns = [(m.start(), m[1]) for m in FN.finditer(code)]
-    names = "|".join(re.escape(n) for n in forwarders)
+    names = "|".join(re.escape(n) for n in sorted({k[0] for k in forwarders}))
     pattern = "(?:" + PRIMITIVE + rf"|(?<![\w.])({names or '(?!x)x'}))"
     for m in re.finditer(pattern + r"\s*\(", code):
         name = (m.group(1) or m.group(2) or "").lstrip(".")
+        ufcs = name.endswith("Host::call")  # `ffx_bridge::Host::call(h, f, args)`
         i = m.end() - 1
         a = args_of(code, i)
         if not a:
@@ -317,15 +355,22 @@ def calls(f, code, resolver, forwarders):
             continue  # the definition itself
         how, at = None, 0
         if m.group(2):
-            idx, how = forwarders[name]
-            if idx >= len(a):
+            hit = [v for k, v in sorted(forwarders.items(), key=repr)
+                   if k[0] == name and reaches(ws, f, code, m.start(), name, k[1])]
+            if not hit or hit[0][0] >= len(a):
                 continue
+            idx, how = hit[0]
             at = idx
             how = f"{name} -> {how}"
+        elif ufcs:
+            if len(a) != 3:
+                continue
+            how, at = "ffx_bridge Host::call (cdecl)", 1
         elif name in ("call", "call_st0", "call_st0_f64", "call_u64", "call_sym", "call_sym_st0", "call_sym_st0_f64", "call_sym_u64"):
             if len(a) >= 3 and NO_ECX.search(a[1]):
                 how = f"{name}({a[1]})"
-            elif name == "call" and len(a) == 2 and a[1].startswith("&"):
+            elif name == "call" and len(a) == 2 and (a[1].startswith("&") or re.search(
+                    r"\b" + re.escape(a[1]) + r"\s*:\s*&\s*(?:'\w+\s+)?\[\s*u32\s*\]", code[start:m.start()])):
                 how = "ffx_bridge Host::call (cdecl)"
         else:
             how = name
@@ -335,6 +380,18 @@ def calls(f, code, resolver, forwarders):
         lets = {}
         for lm in LET.finditer(body):
             lets[lm[1]] = lm[2]
+        if rf is not None:
+            # inside a `let x = |..| ..` closure its parameters shadow the
+            # function's lets, and its own lets come after them
+            inner = None
+            for cm in CLOSURE.finditer(code, start, m.start()):
+                if rf.closure_holds(cm.end(), m.start()):
+                    inner = cm
+            if inner is not None:
+                for x in inner[2].split(","):
+                    lets.pop(re.sub(r"^\s*(?:mut\s+)?", "", x.split(":")[0]).strip(), None)
+                for lm in LET.finditer(code, inner.end(), m.start()):
+                    lets[lm[1]] = lm[2]
         target = resolver.expr(f, a[at], lets)
         line = code.count("\n", 0, m.start()) + 1
         if target is None:
@@ -343,11 +400,16 @@ def calls(f, code, resolver, forwarders):
             for _ in range(4):
                 if e in lets:
                     e = lets[e].strip()
-            mm = re.fullmatch(r"(?:[\w.()]+\.|crate::)?rebase\((\w+)\)(?:\s+as\s+u32)?", e)
+            mm = re.fullmatch(r"(?:[\w.()]+\.|crate::)?rebase\((\w+)\)(?:\s+as\s+u32)?", e) \
+                or re.fullmatch(r"(?:\w+::)*Mem::rebase\(\s*\w+\s*,\s*(\w+)\s*\)", e)  # `Mem::rebase(h, f)`
             p = mm[1] if mm else e
             ps = params_of(code, start) if fname else []
-            if fname and p in ps:
-                found[fname] = (ps.index(p) - (1 if ps and ps[0] is None else 0), how)
+            cp = closure_param(rf, code, start, m.start(), p) if rf is not None else None
+            if cp is not None:
+                body = rf.enclosing_fn(m.start())
+                found[(cp[0], ("closure", cp[2], body[1] if body else len(code)))] = (cp[1], how)
+            elif fname and p in ps:
+                found[(fname, start)] = (ps.index(p) - (1 if ps and ps[0] is None else 0), how)
             else:
                 unresolved += 1
             continue
@@ -414,52 +476,144 @@ def main():
     ap.add_argument("-v", action="store_true")
     ap.add_argument("--magic-slots", action="store_true")
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--root", default=str(ROOT))
     ap.add_argument("--exe", default=os.path.join(os.environ.get("FFX_GAME_DIR", os.path.expanduser("~/steam-games/FFX-X2-HD")), "FFX.exe"))
     args = ap.parse_args()
     if args.magic_slots:
         return magic_slots(args.exe, args.write)
-    root = pathlib.Path(args.root)
-    files = {}
+    if args.self_test:
+        return self_test(args.exe)
+    problems, found, unresolved = analyze(args.root, args.exe, REVIEWED, args.v)
+    for p in problems:
+        print(p)
+    print(f"{len(problems)} problems ({len(found)} calls resolved, {unresolved} not resolved)")
+    return 1 if problems else 0
+
+
+def analyze(root, exe, reviewed, verbose=False):
+    """(problems, resolved calls, count of unresolved ones)."""
+    root = pathlib.Path(root)
+    files, sources = {}, {}
     for p in sorted(root.glob("crates/*/src/**/*.rs")):
         rel = p.relative_to(root).as_posix()
         if rel.split("/")[1] in SKIP_CRATES:
             continue
-        files[rel] = blank(p.read_text(encoding="utf-8"))
+        sources[rel] = p.read_text(encoding="utf-8")
+        files[rel] = blank(sources[rel])
     resolver = Resolver(files)
+    ws = rustpath.Workspace(sources, str(root))
     found, unresolved = [], 0
     for f, code in files.items():
         # forwarders are per file (private `fn call(h, sym, args)` helpers),
         # found to a fixed point
         fwd = {}
         for _ in range(6):
-            c, u, new = calls(f, code, resolver, fwd)
+            c, u, new = calls(f, code, resolver, fwd, ws)
             if set(new) <= set(fwd):
                 break
             for k, v in new.items():
                 fwd.setdefault(k, v)
         unresolved += u
         found += [(f, *x) for x in c]
-    walker = Walker(args.exe, [])
+    walker = Walker(exe, [])
     walker.cache.prefetch([(t, 0x400) for t in sorted({t for _, _, t, _ in found if IMAGE_LO <= t < IMAGE_HI})])
     problems, used = [], set()
     for f, line, target, how in found:
         takes = walker.takes(target)
-        if args.v:
+        if verbose:
             print(f"{f}:{line}: {target:#010x} {how}{'  TAKES ECX' if takes else ''}")
         if not takes:
             continue
-        if (f, target) in REVIEWED:
+        if (f, target) in reviewed:
             used.add((f, target))
             continue
         problems.append(f"{f}:{line}: {target:#010x} reads ecx on entry, called through {how} (no ecx)")
     walker.cache.save()
-    for k in sorted(set(REVIEWED) - used):
+    for k in sorted(set(reviewed) - used):
         problems.append(f"REVIEWED entry {k} matches no call any more")
-    for p in problems:
-        print(p)
-    print(f"{len(problems)} problems ({len(found)} calls resolved, {unresolved} not resolved)")
-    return 1 if problems else 0
+    return problems, found, unresolved
+
+
+# --self-test: a file's own forwarder and another module's of the same
+# name, the call naming that one by its path (2026-10-29: a new
+# `bridge::forward` was taken for ffx-pcore's `small::bridge::forward`).
+# 0x00806d10 (a thiscall tree rotation, `ret 4`) reads ecx.
+SELF_TEST = {
+    "crates/ffx-pcore/src/small.rs": """
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, sym: u32, p: u32, checked: bool) -> u8 {
+        if !checked || p != 0 {
+            h.call_sym(sym, Conv::Thiscall(p), &[]);
+        }
+        1
+    }
+}
+""",
+    "crates/ffx-prender/src/m5r_l.rs": """
+pub const ROTATE: u32 = 0x0080_6d10;
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    use ffx_pcore::small::bridge as small;
+    pub fn forward(h: &mut impl Host, target: u32, conv: Conv, args: &[u32]) -> u32 {
+        h.call_sym(target, Conv::Cdecl, args)
+    }
+    pub fn here(h: &mut impl Host, p: u32) {
+        ffx_pcore::small::bridge::forward(h, 0x0080_6d10, p, false);
+        small::forward(h, 0x0080_6d10, p, true);
+        forward(h, 0x0080_6d10, Conv::Cdecl, &[p]);
+        self::forward(h, 0x0080_6d10, Conv::Cdecl, &[p]);
+    }
+}
+""",
+    # a local closure `call` and another function's nested `fn call`:
+    # each call reaches the one in its own function
+    "crates/ffx-sg/src/state.rs": """
+pub mod bridge {
+    pub fn one<H: ffx_bridge::Host>(h: &mut H) {
+        let call = |h: &mut H, f: u32, args: &[u32]| {
+            let f = h.rebase(f);
+            h.call(f, args)
+        };
+        call(h, 0x0080_6d10, &[]);
+    }
+    pub fn two(h: &mut impl ffx_bridge::Host) {
+        fn call(h: &mut impl ffx_bridge::Host, f: u32) -> u32 {
+            h.call(f, &[])
+        }
+        call(h, 0x0080_6d10);
+    }
+    pub fn three<H: ffx_bridge::Host>(h: &mut H) {
+        let call = |h: &mut _, f: u32, args: &[u32]| ffx_bridge::Host::call(h, f, args);
+        call(h, 0x0080_6d10, &[1]);
+    }
+}
+""",
+}
+SELF_EXPECT = [
+    "m5r_l.rs:12: 0x00806d10 reads ecx on entry, called through forward -> call_sym",
+    "m5r_l.rs:13: 0x00806d10 reads ecx on entry, called through forward -> call_sym",
+    "state.rs:8: 0x00806d10 reads ecx on entry, called through call -> ffx_bridge Host::call",
+    "state.rs:14: 0x00806d10 reads ecx on entry, called through call -> ffx_bridge Host::call",
+    "state.rs:18: 0x00806d10 reads ecx on entry, called through call -> ffx_bridge Host::call",
+]
+
+
+def self_test(exe):
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        for rel, text in SELF_TEST.items():
+            p = pathlib.Path(d) / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text)
+        problems, found, unresolved = analyze(d, exe, {})
+    bad = [f"missed: {e}" for e in SELF_EXPECT if not any(e in p for p in problems)]
+    bad += [f"unexpected: {p}" for p in problems if not any(e in p for e in SELF_EXPECT)]
+    for b in bad:
+        print(b)
+    print("self-test", "FAILED" if bad else "passed", f"({len(problems)} problems, {len(found)} calls resolved)")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
