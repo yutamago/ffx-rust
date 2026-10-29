@@ -9,5 +9,7 @@ symbols/classes.tsv merge=ffx-sorted
 symbols/m5-dropped.tsv merge=ffx-sorted
 symbols/m5-not-portable.tsv merge=ffx-sorted
 # The ported module list: branches only add lines (mod x; all.extend(x::hooks())),
-# so both sides' lines are kept; the build catches a duplicate.
-crates/ffx-hook/src/ported/mod.rs merge=union
+# so both sides' lines are kept, repeats dropped and the result rustfmt'd
+# (tools/merge-modlist.py; register like ffx-sorted: git config
+# merge.ffx-modlist.driver 'python3 -I <clone>/tools/merge-modlist.py %O %A %B %P').
+crates/ffx-hook/src/ported/mod.rs merge=ffx-modlist
