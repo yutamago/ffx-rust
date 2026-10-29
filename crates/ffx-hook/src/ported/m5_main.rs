@@ -10,6 +10,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_sg::m5main_app::bridge as app;
 use ffx_sg::m5main_dbg::bridge as dbg;
+use ffx_sg::m5main_loop::{self as lp, bridge as main_loop};
 
 ported! {
     // ---- FFXApplication ----
@@ -97,4 +98,48 @@ ported! {
     Sg_DrawSetEnvironmentInitMovie @ 0x0082_caa0 => extern "C" fn draw_set_environment_init_movie() -> u32 {
         dbg::draw_set_environment_init_movie(&mut mem())
     }
+
+    // ---- the frame ----
+    /// `Sg_MainLoop(dt)`: the frame's locals in this frame; the scaled
+    /// `dt` back in the argument slot, as the original leaves it.
+    Sg_MainLoop @ 0x0082_0ae0 => extern "C" fn sg_main_loop(dt: u32; slots: u32) {
+        let mut f = StackFrame::<{ lp::MAIN_LOOP_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + lp::MAIN_LOOP_FRAME;
+        main_loop::main_loop(&mut mem(), ebp, dt, slots);
+    }
+    /// `updateFFX(dt)`: 0 in the argument slot, as the original leaves it.
+    updateFFX @ 0x0082_2840 => extern "C" fn update_ffx(dt: u32; slots: u32) -> u32 {
+        main_loop::update_ffx(&mut mem(), dt, slots)
+    }
+    /// `jmp TkClearVsyncHandler` (`FFXApplication::exitApplication`'s).
+    TkClearVsyncHandler_thunk_00822750 @ 0x0082_2750 => extern "C" fn clear_vsync_thunk() -> u32 {
+        main_loop::clear_vsync_thunk(&mut mem())
+    }
+}
+
+/// The name `FFX_HOOK_DISABLE` and `FFX_HOOK_ONLY` know the
+/// `FFXApplication::animate` port by: the harness's frame-boundary
+/// wrapper (`harness::animate`) owns the address and calls the port
+/// instead of its trampoline (two hooks can't share an address).
+pub(crate) const ANIMATE_NAME: &str = "FFXApplication_animate_port";
+
+/// Whether the wrapper runs the `FFXApplication::animate` port: not with
+/// `FFX_HOOK_DISABLE` naming it or `replacements`, nor when
+/// `FFX_HOOK_ONLY` leaves it out.
+pub(crate) fn animate_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
+        let only = crate::hook_only().is_none_or(|names| names.iter().any(|n| n == ANIMATE_NAME));
+        only && !off
+            .split(',')
+            .map(str::trim)
+            .any(|n| n == "replacements" || n == ANIMATE_NAME)
+    })
+}
+
+/// `FFXApplication::animate(app)` (`0x0042f520`, thiscall): the port,
+/// for the harness's wrapper.
+pub(crate) fn animate(app: u32) -> u32 {
+    main_loop::animate(&mut mem(), app)
 }

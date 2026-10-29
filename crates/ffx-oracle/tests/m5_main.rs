@@ -92,6 +92,11 @@ impl Host for G<'_> {
         ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(c, false));
         self.0.call(addr, conv(c), args).unwrap().eax
     }
+    fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
+        ffx_oracle::check_width("Host::call_st0", addr, args.len(), host::max_words(c, true));
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f32().expect("the callee leaves ST0 set")
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -1043,5 +1048,426 @@ fn unlock_achievement_and_movie_environment_match_the_original() {
                 Out::U32(dbg::draw_set_environment_init_movie(m))
             });
         }
+    });
+}
+
+// ---- the frame ----
+
+use ffx_sg::m5main_loop::{self as lpc, bridge as lp, f as lf, g as lg};
+
+/// `fld dword [cell]` (a stub's `ST0` result).
+fn fld(cell: u32) -> Vec<u8> {
+    let mut c = vec![0xd9, 0x05];
+    c.extend(cell.to_le_bytes());
+    c
+}
+
+/// Writes `v[i]` (`f32` bits) through argument `i` (`mov eax, [esp + 4 +
+/// 4i]; mov dword [eax], v[i]`).
+fn fill_args(v: &[u32]) -> Vec<u8> {
+    let mut c = Vec::new();
+    for (i, w) in v.iter().enumerate() {
+        c.extend([0x8b, 0x44, 0x24, (4 + 4 * i) as u8]);
+        c.extend([0xc7, 0x00]);
+        c.extend(w.to_le_bytes());
+    }
+    c
+}
+
+/// The callees of `Sg_MainLoop` whose result no branch reads, with the
+/// words the original passes.
+const MAIN_LOOP_PLAIN: [(u32, u32); 112] = [
+    (lf::USE_EXTENDED_ALPHA, 1),
+    (lf::SCENE_CLEAR_LIST, 0),
+    (lf::PS2_LOADING_CALLBACK, 0),
+    (lf::MODEL_MEM_USAGE, 0),
+    (lf::VIDEO_UPDATE, 2),
+    (lf::SET_DISTORTION_SKIPPED, 1),
+    (lf::TK_UPDATE_SCAN, 0),
+    (lf::FRAME_SYNC, 1),
+    (lf::TK_SCAN, 0),
+    (lf::VFX_UPDATE_DELETED, 0),
+    (lf::CHR_INSTANTIATE, 0),
+    (lf::CHR_DELAY_RELEASE, 1),
+    (lf::STUB_639380, 0),
+    (lf::SAVE_UPDATE, 0),
+    (lf::GET_U32_01325AC4, 0),
+    (lf::ALBHED_DIC, 2),
+    (lf::SAVE_SCREEN, 0),
+    (lf::RESET_NAME, 0),
+    (lf::DYN_GEO_SWAP, 1),
+    (lf::UNLOCK_FADE, 0),
+    (lf::SET_FADE_COLOR, 4),
+    (lf::SET_FADE_ALPHA_MODE, 1),
+    (lf::LOCK_FADE, 0),
+    (lf::SET_FADE_LAST_REASON, 1),
+    (lf::PROFILER_MARKER, 1),
+    (lf::CONTROL_MAIN, 0),
+    (lf::MENU_RESET, 0),
+    (lf::ACHIEVEMENT, 1),
+    (lf::CALC_RATE, 0),
+    (lf::INIT_FONT, 0),
+    (lf::USER_FREE, 1),
+    (lf::VFX_DESTROY, 2),
+    (lf::CLEAR_FLAGS24, 0),
+    (lf::CONTROL_PLAYER, 0),
+    (lf::BATTLE_PROCESS, 0),
+    (lf::EVENT_JUMP, 0),
+    (lf::MESSAGE_WINDOW, 0),
+    (lf::COUNTERS_FLUSH, 1),
+    (lf::OP_LOOP_BEFORE, 0),
+    (lf::EFFECT_PROCESS, 1),
+    (lf::CAMERA_PROCESS, 0),
+    (lf::FIELD_PROC, 0),
+    (lf::CALC_MAIN, 1),
+    (lf::CAMERA_SET_PLAYER, 0),
+    (lf::CALC_MIDDLE, 0),
+    (lf::YI_ANIM, 0),
+    (lf::MOVIE_CAMERA, 0),
+    (lf::VIDEO_PLAY, 0),
+    (lf::TEXTURE_VIDEO, 0),
+    (lf::SET_DISP_DRAW_ENV, 1),
+    (lf::ENV_INIT, 0),
+    (lf::SET_CHADIST, 0),
+    (lf::MFIFO_RESET, 0),
+    (lf::CAMERA_PUT_RECTS, 0),
+    (lf::GET_PART_MATRIX, 2),
+    (lf::COPY_CAMERA, 1),
+    (lf::COPY_SCREEN, 1),
+    (lf::SET_PART_MATRIX, 2),
+    (lf::INVERSE, 2),
+    (lf::VIEW_PROJECTION, 0),
+    (lf::YI_SCALE, 1),
+    (lf::YI_VIEW, 1),
+    (lf::YI_BATTLE_VIEW, 1),
+    (lf::CH_CAMERA_MATRIX, 1),
+    (lf::CH_SCREEN_MATRIX, 1),
+    (lf::DRAW_ENV, 1),
+    (lf::ACC_FRAME_MAP, 0),
+    (lf::ACC_DRAW_BG, 0),
+    (lf::YI_DISP, 0),
+    (lf::YI_DISP2, 0),
+    (lf::ACC_FRAME_CHR, 0),
+    (lf::MFIFO_END, 0),
+    (lf::MFIFO_SPAD_SYNC, 0),
+    (lf::MFIFO_SYNC, 0),
+    (lf::DREAM_EFFECT, 0),
+    (lf::MENU_WATER, 0),
+    (lf::OP_LOOP_AFTER, 0),
+    (lf::BATTLE_DRAW, 0),
+    (lf::TK_DRAW_NO_TRANS, 0),
+    (lf::YN_DRAW_SCENE, 0),
+    (lf::CH_DRAW_SHADOW, 1),
+    (lf::GS1_TRANSFER, 0),
+    (lf::SET_VFX_TYPE, 1),
+    (lf::FIELD_PARTICLE, 0),
+    (lf::PART_LOOP, 0),
+    (lf::OT_DRAW, 0),
+    (lf::SAVE_MANAGER_UPDATE, 0),
+    (lf::DRAW_FILTER, 0),
+    (lf::ACC_SET_CURRENT, 0),
+    (lf::SCR_EFFECT, 0),
+    (lf::TK_088D500, 0),
+    (lf::DRAW_MESSAGE_WINDOW, 0),
+    (lf::SET_PAD_CTRL, 1),
+    (lf::TK_DRAW_DEBUG, 0),
+    (lf::NUM_VDISP, 0),
+    (lf::MAIN_DEBUG, 0),
+    (lf::OP_LOOP_END, 0),
+    (lf::CALM_COPYRIGHT, 1),
+    (lf::MENU_UPDATE, 0),
+    (lf::FLUSH_CACHE, 1),
+    (lf::GS_SYNC_PATH, 2),
+    (lf::COUNTERS_SNAPSHOT, 0),
+    (lf::TK_SYNC_V, 1),
+    (lf::SWAP_DBUFF, 2),
+    (lf::SET_TK_ANTI_XYB, 3),
+    (lf::ENV_MOVIE_MESSAGE, 0),
+    (lf::MAGIC_FILE_UPDATE, 0),
+    (lf::CLUSTER_RELATIONSHIP, 0),
+    (lf::CLOTH_WAIT, 0),
+    (lf::CLOTH_STATS, 0),
+    (lf::SOFTWARE_RESET, 0),
+    (lf::IS_PREREND, 0),
+];
+
+fn bit(rng: &mut Rng, n: u32) -> u32 {
+    u32::from(rng.chance(n))
+}
+
+/// A stub over `sym` (`n` words) returning `values` in turn.
+fn seq(t: &mut Twins, sym: u32, n: u32, values: Vec<u32>) {
+    t.stub_ex(sym, false, n, 0, &Ret::Seq(values), &[]);
+}
+
+/// The byte and word globals `Sg_MainLoop` tests, drawn from `rng`.
+fn main_loop_globals(t: &mut Twins, rng: &mut Rng) {
+    for sym in [
+        lg::FIELD_ON,
+        lg::FIELD_DRAW,
+        lg::CHARA_ON,
+        lg::CHARA_DRAW,
+        lg::FIELD_FIRST,
+        lg::MOVIE_LAST,
+        lg::CHARA_CALC,
+        lg::PART_MATRIX,
+        lg::CAMERA_IDLE,
+        lg::EFFECT_ON,
+        lg::PARTICLE_ON,
+        lg::MESSAGE_ON,
+        lg::DEBUG_ON,
+    ] {
+        let v = u8::from(!rng.chance(3));
+        t.g8(sym, v);
+    }
+    let v = u8::from(rng.chance(4));
+    t.g8(lg::MOVIE_ON, v);
+    let v = u8::from(rng.chance(4));
+    t.g8(lg::MOVIE_HOLD, v);
+    let v = rng.pick(&[0, 1, 0xff]);
+    t.g8(lg::SCREEN_LAST, v);
+    let airship = rng.pick(&[0u8, 1, 0x7e, 0x7f, 0x80]);
+    t.g8(lg::AIRSHIP, airship);
+    for (sym, of) in [
+        (lg::PAUSE_ON, &[0u32, 0, 0, 1][..]),
+        (lg::SCENE_REQUEST, &[0, 0, 0, 3]),
+        (lg::DEBUG_HOLD, &[0, 0, 0, 1]),
+        (lg::VOICE_HOLD, &[0, 1, 2, 5]),
+        (lg::REPEAT_A, &[0, 1]),
+        (lg::REPEAT_B, &[0, 1]),
+        (lg::REPEAT_C, &[0, 1]),
+        (lg::DYN_GEO_STATE, &[0, 1, 2]),
+        (lg::MENU_FADE, &[0, 1]),
+        (lg::RESET_REQUEST, &[0, 1, 2]),
+        (lg::DISP_FLAGS, &[0, 0x0100_0000, 0xffff_ffff]),
+        (lg::INTERFACE, &[0, 0x1234]),
+        (lg::MAP, &[0, 0x17]),
+        (lg::SCENARIO_LAST, &[0, 0xa4, 0x43d, 0x938]),
+        (lg::AIRSHIP_DONE, &[0, 1, 0xffff_ffff]),
+        (lg::FREE_NEXT, &[0, 0x0077_0000, 0x0077_0010]),
+        (lg::FREE_SEEN, &[0, 0x0077_0000]),
+        (lg::VFX_DESTROY, &[0, 1]),
+        (lg::VFX_HOLD, &[0, 1]),
+        (lg::NAME_RESET, &[0, 1]),
+        (lg::MENU_WATER, &[0, 1]),
+        (lg::CALM_STATE, &[0, 1, 2]),
+        (lg::CALM_FRAMES, &[0, 0x12f, 0x130]),
+        (lg::DRAW_BUFFER, &[0, 1, 0xffff_ffff]),
+    ] {
+        let v = rng.pick(of);
+        t.g32(sym, v);
+    }
+    let printed = rng.below(3) as u16;
+    let at = t.rebase(lg::SCENARIO_PRINTED);
+    t.write(at, &printed.to_le_bytes());
+}
+
+/// Recording stubs over every callee of `Sg_MainLoop`, with results and
+/// globals drawn from `rng` so that each case takes other branches.
+fn main_loop_case(t: &mut Twins, rng: &mut Rng) {
+    for (sym, n) in MAIN_LOOP_PLAIN {
+        t.stub(sym, false, n, 0, 0x4000 + (sym & 0xfff));
+    }
+    // the special-list clear may end the scene request, the characters'
+    // draw the field switch (both are read again after them)
+    let at = t.rebase(lg::SCENE_REQUEST);
+    let extra = if rng.chance(2) {
+        set_word(at, 0)
+    } else {
+        Vec::new()
+    };
+    t.stub_ex(lf::CLEAR_SPECIAL, false, 0, 0, &Ret::Fixed(0), &extra);
+    let at = t.rebase(lg::FIELD_ON);
+    let extra = if rng.chance(2) {
+        set_byte(at, 0)
+    } else {
+        Vec::new()
+    };
+    t.stub_ex(lf::CH_DRAW, false, 0, 0, &Ret::Fixed(0), &extra);
+    let scaled = rng.pick(&[1.0f32 / 60.0, 0.5, 0.0, 2.0]).to_bits();
+    let cell = t.words(&[scaled]);
+    t.stub_ex(lf::SPD_SCALE, false, 1, 0, &Ret::Fixed(0), &fld(cell));
+    let cam = if rng.chance(8) { 2 } else { 1 };
+    seq(t, lf::FREE_CAMERA_TYPE, 0, vec![cam]);
+    let v = vec![bit(rng, 2), bit(rng, 2)];
+    seq(t, lf::GET_DISP_MODE, 0, v);
+    let v = vec![bit(rng, 3), bit(rng, 3)];
+    seq(t, lf::SAVE_TAKE_LOADED, 0, v);
+    let v = vec![bit(rng, 2)];
+    seq(t, lf::RETURN_CONST1, 0, v);
+    let v = vec![rng.pick(&[0, 0x8120, 0xffff, 0x1_8120, 0x8100])];
+    seq(t, lf::CONTROLER_HIST, 3, v);
+    let v = vec![bit(rng, 5), bit(rng, 5), bit(rng, 5)];
+    seq(t, lf::CHECK_MENU, 0, v);
+    let v = vec![u32::from(!rng.chance(8)), u32::from(!rng.chance(3))];
+    seq(t, lf::SAVE_SCREEN_CLOSED, 0, v);
+    let v = vec![bit(rng, 8)];
+    seq(t, lf::SCENE_LOADING, 0, v);
+    let v = vec![bit(rng, 2), bit(rng, 2)];
+    seq(t, lf::ASSETS_LOADED, 0, v);
+    let v: Vec<u32> = (0..3).map(|_| rng.pick(&[0, 1, 2, 0xffff_ffff])).collect();
+    seq(t, lf::FADE_LAST_REASON, 0, v);
+    let v = vec![bit(rng, 2), bit(rng, 2)];
+    seq(t, lf::FADE_LOCKED, 0, v);
+    let v = vec![bit(rng, 3)];
+    seq(t, lf::VALIDATE_INTERFACE, 1, v);
+    let v = vec![rng.pick(&[0xa4, 0x43d, 0x938, 7, 0])];
+    seq(t, lf::SCENARIO_FLAG, 0, v);
+    let v = vec![rng.pick(&[0, 1, 2, 3])];
+    seq(t, lf::EXEC_FRAMES, 0, v);
+    let v: Vec<u32> = (0..8)
+        .map(|_| rng.pick(&[0, 0, 0xffff_ffff, 1]))
+        .chain([1, 1, 1, 1, 1])
+        .collect();
+    seq(t, lf::SCREEN_PROCESS, 1, v);
+    let v: Vec<u32> = (0..8).map(|_| rng.pick(&[0, 1, 2])).collect();
+    seq(t, lf::SCREEN_DATA, 5, v);
+    let v = vec![bit(rng, 2), bit(rng, 2), bit(rng, 2)];
+    seq(t, lf::SPLIT_SCREEN, 0, v);
+    let v = vec![bit(rng, 2)];
+    seq(t, lf::IS_ETERNAL_CALM, 1, v);
+    let v = vec![bit(rng, 2)];
+    seq(t, lf::MOVIE_LOAD_IMAGE, 0, v);
+    let v = vec![rng.below(3), rng.below(3)];
+    seq(t, lf::GET_SCENARIO, 0, v);
+    // the fade colour, alpha last
+    let alpha = rng.pick(&[1.0f32, 0.5, f32::NAN]).to_bits();
+    let rgb = [
+        0.25f32.to_bits(),
+        0.5f32.to_bits(),
+        0.75f32.to_bits(),
+        alpha,
+    ];
+    t.stub_ex(
+        lf::GET_FADE_COLOR,
+        false,
+        4,
+        0,
+        &Ret::Fixed(0),
+        &fill_args(&rgb),
+    );
+    // the movie's environment may end the movie
+    let movie_at = t.rebase(lg::MOVIE_ON);
+    let end_movie = if rng.chance(2) {
+        set_byte(movie_at, 0)
+    } else {
+        Vec::new()
+    };
+    t.stub_ex(lf::ENV_INIT_MOVIE, false, 0, 0, &Ret::Fixed(0), &end_movie);
+    // the scenario print's imports
+    t.stub_import(lg::IOB_FUNC_IAT, 0, 0, 0x0055_0000);
+    t.stub_import(lg::FPRINTF_IAT, 3, 0, 0);
+    main_loop_globals(t, rng);
+}
+
+#[test]
+fn main_loop_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0082_0ae0);
+        for i in 0..400 {
+            t.reset();
+            main_loop_case(t, &mut rng);
+            let dt = rng.pick(&[1.0f32 / 60.0, 0.25, 0.0]).to_bits();
+            let what = format!("Sg_MainLoop #{i}");
+            let slot = t.frame_ebp(1) + 8;
+            t.check_framed(
+                &what,
+                0x0082_0ae0,
+                Conv::Cdecl,
+                &[dt],
+                lpc::MAIN_LOOP_FRAME,
+                |m, ebp| {
+                    lp::main_loop(m, ebp, dt, ebp + 8);
+                    Out::None
+                },
+            );
+            // the scaled step in the argument slot
+            let a: u32 = Mem::read(&t.a, slot);
+            let b: u32 = Mem::read(&t.b, slot);
+            assert_eq!(a, b, "{what}: the argument slot");
+        }
+    });
+}
+
+#[test]
+fn update_ffx_animate_and_thunk_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0082_2840);
+        for i in 0..40 {
+            t.reset();
+            t.stubs(&[
+                (lp::SET_INPUT_INFO, 0, 1),
+                (lp::DYN_GEO_CLEAR, 0, 2),
+                (lp::FILL_CLEAR_REQUEST, 0, 3),
+                (lp::REMOVE_DELEGATIONS, 0, 4),
+                (lp::FILL_KICK, 1, 0x55),
+            ]);
+            // the voice hold runs out after a few frames
+            let hold_at = t.rebase(lg::VOICE_HOLD);
+            let frames = rng.below(3);
+            t.g32(lg::VOICE_HOLD, frames);
+            let ctr = t.words(&[frames + 1]);
+            // dec dword [ctr]; mov eax, [ctr]; mov [hold], eax
+            let mut c = vec![0xff, 0x0d];
+            c.extend(ctr.to_le_bytes());
+            c.push(0xa1);
+            c.extend(ctr.to_le_bytes());
+            c.push(0xa3);
+            c.extend(hold_at.to_le_bytes());
+            t.stub_ex(lp::MAIN_LOOP, false, 1, 0, &Ret::Fixed(0), &c);
+            t.g32(lp::ASYNC_CONTROLLER_ON, u32::from(rng.chance(2)));
+            let dt = rng.pick(&[1.0f32 / 60.0, 0.5]).to_bits();
+            let what = format!("updateFFX #{i}");
+            // the port's slot at the bottom of its oracle's stack, which no
+            // call there reaches (the original's is its own argument word)
+            let slot = t.frame_ebp(1) + 8;
+            let port_slot = t.b.stack_range().start + 0x200;
+            Mem::write(&mut t.b, port_slot, dt);
+            t.check(&what, 0x0082_2840, Conv::Cdecl, &[dt], |m| {
+                Out::U32(lp::update_ffx(m, dt, port_slot))
+            });
+            let a: u32 = Mem::read(&t.a, slot);
+            let b: u32 = Mem::read(&t.b, port_slot);
+            assert_eq!(a, b, "{what}: the argument slot");
+        }
+        for i in 0..120 {
+            t.reset();
+            t.stubs(&[
+                (lp::TROPHY_ERROR, 0, rng.pick(&[0, 0, 0, 0, 1, 2])),
+                (lp::IS_ETERNAL_CALM, 1, u32::from(rng.chance(2))),
+                (lp::RESIZE_POST_TARGET, 0, 0),
+                (lp::UPDATE_FFX, 1, 0),
+                (lp::SCENE_ANIMATE, 0, 0),
+            ]);
+            let esc = vec![u32::from(rng.chance(2)), u32::from(rng.chance(2))];
+            t.stub_ex(lp::IS_ESC_MENU_ACTIVE, false, 0, 0, &Ret::Seq(esc), &[]);
+            t.stub(lp::LOAD_SPECIAL_TEXTURE, true, 3, 3, 0);
+            t.stub(lp::UPDATE_GLOBAL_TIME, true, 0, 0, 0);
+            t.stub(lp::APPLICATION_ANIMATE, true, 0, 0, 0x0aa0 + i);
+            t.stub_import(lp::RUN_CALLBACKS_IAT, 0, 0, 0);
+            t.g8(lp::STEAM_READY, u8::from(rng.chance(2)));
+            t.g32(lp::CALM_TEXTURE_DONE, u32::from(rng.chance(2)));
+            t.g32(lp::MENU_TEXTURES, 0x0066_0000);
+            t.g32(lg::MAP, rng.below(3));
+            let this = t.zeros(0x400);
+            t.w8(this + 0x3ad, u8::from(rng.chance(2)));
+            // the YIQ update may close the menu (the flag is read again)
+            let extra = if rng.chance(2) {
+                set_byte(this + 0x3ad, 0)
+            } else {
+                Vec::new()
+            };
+            t.stub_ex(lp::UPDATE_MAP_YIQ, false, 0, 0, &Ret::Fixed(0), &extra);
+            t.w32(this + 0x24, rng.pick(&[1.0f32 / 60.0, 0.5]).to_bits());
+            let what = format!("FFXApplication::animate #{i}");
+            t.check(&what, 0x0042_f520, Conv::Thiscall(this), &[], |m| {
+                Out::U32(lp::animate(m, this))
+            });
+        }
+        t.reset();
+        t.stub(lp::CLEAR_VSYNC_HANDLER, false, 0, 0, 0xffff_ffff);
+        t.check("0x00822750", 0x0082_2750, Conv::Cdecl, &[], |m| {
+            Out::U32(lp::clear_vsync_thunk(m))
+        });
     });
 }

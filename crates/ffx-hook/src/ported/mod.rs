@@ -76,6 +76,9 @@ mod vfx_ppp;
 mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
+pub(crate) use m5_main::{
+    animate as ffx_application_animate, animate_on as ffx_application_animate_on,
+};
 pub(crate) use map::rcbg_guide_update_ex;
 pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 

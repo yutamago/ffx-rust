@@ -20,6 +20,7 @@ pub mod help;
 pub mod light;
 pub mod m5main_app;
 pub mod m5main_dbg;
+pub mod m5main_loop;
 pub mod player;
 pub mod quat;
 pub mod savecmd;
