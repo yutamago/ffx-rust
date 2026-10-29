@@ -6,6 +6,7 @@ use crate::l5_objhost::{POOL_ALLOC, pool_alloc};
 use crate::opu_parts::{START_PART, start_part};
 use crate::runtime::slot_target;
 use crate::sa_misc::{RESET_TRANSFORM, reset_transform};
+use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -371,5 +372,106 @@ pub const SPRITES_RUN: Sig = Sig {
     len: 1243,
     hash: 0xff0f_41cd_ae14_c472,
     calls: &[(0xdd, Callee::Any), (0x343, Callee::Sig(&ANIM_STEP))],
+    imports: &[],
+};
+
+/// `|a| > |b|` as the original compares them: both widened to `f64`, the
+/// sign cleared with the DLL's mask (`andpd`), `comisd` (unordered: no).
+fn wider(mask: u64, a: f32, b: f32) -> bool {
+    let abs = |x: f32| f64::from_bits(f64::from(x).to_bits() & mask);
+    abs(a) > abs(b)
+}
+
+/// A shake task of the `magic_0162` family (cdecl `(task)`, its state
+/// `s` at `+0x14`; an 8-aligned frame). A delay `+0x24` counts down first
+/// (returned). While the time left `+0x28` counts down, the curve's time
+/// `t` (`+0x1c`) steps by `+0x20` and two quadratic curves of `u = K - t`
+/// and `t` (`K` operand `+0x49`, the middle terms times `K2`, operands
+/// `+0x6c`/`+0x9d`) give `x` (from `+0x4`, `+0x8`, `+0xc`) and `y` (from
+/// `+0x10`, `+0x14`, `+0x18`); flags `+0x2c` bit 0/1 put `x`/`y` through
+/// slot 314 (ST0). At the end the callback `+0x0` runs `(s)` and, unless
+/// flag bit 2 is set, the task is marked (bit 15) and given back
+/// ([`give_back`]); `x` and `y` are then 0. An odd time left scales both
+/// by `K3` (operands `+0x12c`, `+0x134`). `G_X` and `G_Y` keep the larger
+/// in size. Returns the delay left, the time left, slot 314's `eax`, the
+/// flags or [`give_back`]'s `eax`, as the original leaves it.
+///
+/// `magic_0162` 0x10007d10 (471 bytes; 27 DLLs).
+pub fn shake_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let delay = g.read::<i32>(s + 0x24);
+    if delay > 0 {
+        g.write::<i32>(s + 0x24, delay - 1);
+        return Ret::eax((delay - 1).cast_unsigned());
+    }
+    let mut eax = g.read::<u32>(s + 0x28);
+    if eax.cast_signed() > 0 {
+        eax -= 1;
+        g.write::<u32>(s + 0x28, eax);
+    }
+    let (x, y) = if g.read::<i32>(s + 0x28) > 0 {
+        let flags = g.read::<u8>(s + 0x2c);
+        let t = add(f32_at(g, s + 0x20), f32_at(g, s + 0x1c));
+        let k = f32_at(g, w(0x49));
+        let u = sub(k, t);
+        set_f32(g, s + 0x1c, t);
+        let curve = |g: &G, k2: u32, o: u32| {
+            let mid = mul(mul(mul(u, t), f32_at(g, w(k2))), f32_at(g, s + o + 4));
+            let first = mul(mul(u, u), f32_at(g, s + o));
+            add(add(mid, first), mul(mul(t, t), f32_at(g, s + o + 8)))
+        };
+        let mut x = curve(g, 0x6c, 0x4);
+        let mut y = curve(g, 0x9d, 0x10);
+        if flags & 1 != 0 {
+            let t = slot_target(g, w(0xcb), 314);
+            let out = g.call(t, 0, &[x.to_bits()]);
+            eax = out.eax;
+            x = f32::from_bits(crate::sa_summon::st0_f32(out));
+        }
+        if g.read::<u8>(s + 0x2c) & 2 != 0 {
+            let t = slot_target(g, w(0xfd), 314);
+            let out = g.call(t, 0, &[y.to_bits()]);
+            eax = out.eax;
+            y = f32::from_bits(crate::sa_summon::st0_f32(out));
+        }
+        (x, y)
+    } else {
+        let callback = g.read::<u32>(s);
+        if callback != 0 {
+            eax = g.call(callback, fr.ecx, &[s]).eax;
+        }
+        let flags = u32::from(g.read::<u16>(s + 0x2c));
+        eax = flags;
+        if flags & 4 == 0 {
+            g.write::<u16>(s + 0x2c, (flags | 0x8000) as u16);
+            eax = give_back(g, img, img.rel32_target(f + 0x1ce), task);
+        }
+        // junk read: xmm2 (x) never written on this path; 0 (brief
+        // 2026-10-24)
+        (0.0, 0.0)
+    };
+    let (mut x, mut y) = (x, y);
+    if g.read::<u8>(s + 0x28) & 1 != 0 {
+        x = mul(x, f32_at(g, w(0x12c)));
+        y = mul(y, f32_at(g, w(0x134)));
+    }
+    let mask = g.read::<u64>(w(0x144));
+    if wider(mask, x, f32_at(g, w(0x13c))) {
+        set_f32(g, w(0x160), x);
+    }
+    if wider(mask, y, f32_at(g, w(0x168))) {
+        set_f32(g, w(0x188), y);
+    }
+    Ret::eax(eax)
+}
+
+/// [`shake_task`] (the `rel32`: [`give_back`]; the jump back is inside).
+pub const SHAKE_TASK: Sig = Sig {
+    len: 471,
+    hash: 0x1e1a_5c75_1f8c_62f4,
+    calls: &[(0x1ce, Callee::Sig(&GIVE_BACK))],
     imports: &[],
 };

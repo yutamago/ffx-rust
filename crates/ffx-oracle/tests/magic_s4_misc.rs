@@ -203,3 +203,65 @@ fn start_object_at() {
         }
     }
 }
+
+/// A node at rest for the pool's give-back: its own links, no chain.
+fn rest_node(t: &mut Twin, n: u32) {
+    t.write(n, &[0x5a; 0x1c]);
+    t.set_u32(n, n);
+    t.set_u32(n + 4, n);
+    t.set_u32(n + 8, n);
+    t.set_u32(n + 0xc, 0);
+}
+
+/// `magic_0162` 0x10007d10: the shake task waiting, running (each flag,
+/// odd and even time left, the global maxima beaten or not) and ending
+/// (with and without its callback, kept or given back).
+#[test]
+fn shake_task() {
+    let Some(mut t) = twin(162) else { return };
+    let f = t.at(0x7d10);
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ (a[0] >> 16));
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * -1.25 + 0.1);
+    rec(&mut t, 0, 1, |m, a| {
+        m.w32(SCRATCH + 0x3000, a[0]);
+        0x0c0b
+    });
+    let (task, st) = (SCRATCH + 0x1000, SCRATCH + 0x2000);
+    let gx = t.img.word(f + 0x13c);
+    let gy = t.img.word(f + 0x168);
+    for (delay, left, flags, callback, step) in [
+        (3i32, 4u32, 0u16, 0u32, 0.1f32),
+        (0, 4, 0, 0, 0.1),
+        (0, 5, 1, 0, 0.2),
+        (0, 6, 2, 0, -0.3),
+        (0, 3, 3, 0, 0.05),
+        (0, 9, 3, 0, f32::NAN),
+        (0, 1, 0, 0, 0.1),
+        (0, 0, 4, magic::TRAPS, 0.1),
+        (0, 1, 0, magic::TRAPS, 0.1),
+        (-1, 0xffff_fff0, 5, 0, 0.1),
+    ] {
+        for (mx, my) in [(0.0f32, 0.0f32), (-1.0e6, 1.0e6), (f32::NAN, -0.01)] {
+            rest_node(&mut t, task);
+            t.set_u32(task + 0x14, st);
+            t.write(st, &[0x44; 0x30]);
+            t.set_u32(st, callback);
+            for (i, v) in [2.0f32, -3.5, 0.75, 1.5, 4.0, -0.25].iter().enumerate() {
+                set_f(&mut t, st + 4 + 4 * i as u32, *v);
+            }
+            set_f(&mut t, st + 0x1c, 0.25);
+            set_f(&mut t, st + 0x20, step);
+            t.set_u32(st + 0x24, delay.cast_unsigned());
+            t.set_u32(st + 0x28, left);
+            t.set_u16(st + 0x2c, flags);
+            set_f(&mut t, gx, mx);
+            set_f(&mut t, gy, my);
+            let c = Call {
+                ecx: 0x0bad_0ecc,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::f32(1.0), Xmm::f32(2.0), Xmm::f32(0.0), Xmm::f32(4.0)]);
+            t.check_entry(f, c, &[task], Eax::Checked);
+        }
+    }
+}
