@@ -18,6 +18,7 @@ ffx-chara = { path = "crates/ffx-chara" }
 ffx-core = { path = "crates/ffx-core" }
 ffx-dxbc = { path = "crates/ffx-dxbc" }
 ffx-field = { path = "crates/ffx-field" }
+ffx-fpu = { path = "crates/ffx-fpu" }
 ffx-fxdraw = { path = "crates/ffx-fxdraw" }
 ffx-gfx = { path = "crates/ffx-gfx" }
 ffx-graphic = { path = "crates/ffx-graphic" }

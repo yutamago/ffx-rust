@@ -22,7 +22,8 @@
 //!   more set C2 and stay unchanged.
 //!
 //! Checked against the game's `MSVCR110.dll` on an Intel CPU
-//! (`tests/data/msvcr110-math.tsv`).
+//! (`crates/ffx-oracle/tests/data/msvcr110-math.tsv`, run by the oracle
+//! and by `ffx-host`).
 
 // x, y, a, b, e, k, q, r: the names of the formulas and the manuals
 #![allow(clippy::many_single_char_names)]
@@ -567,7 +568,7 @@ fn atan_unit(t: &F) -> F {
 /// An 80-bit extended value: sign, biased exponent, mantissa (explicit
 /// integer bit).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Ext {
+pub struct Ext {
     pub neg: bool,
     pub exp: u16,
     pub mant: u64,
@@ -580,7 +581,8 @@ const INDEFINITE: Ext = Ext {
 };
 
 impl Ext {
-    pub(crate) fn from_bytes(b: &[u8; 10]) -> Self {
+    #[must_use]
+    pub fn from_bytes(b: &[u8; 10]) -> Self {
         let mant = u64::from_le_bytes(b[..8].try_into().expect("8 bytes"));
         let se = u16::from_le_bytes([b[8], b[9]]);
         Self {
@@ -590,7 +592,8 @@ impl Ext {
         }
     }
 
-    pub(crate) fn to_bytes(self) -> [u8; 10] {
+    #[must_use]
+    pub fn to_bytes(self) -> [u8; 10] {
         let mut b = [0u8; 10];
         b[..8].copy_from_slice(&self.mant.to_le_bytes());
         let se = self.exp | if self.neg { 0x8000 } else { 0 };
@@ -742,7 +745,7 @@ fn round(x: &F, rc: Rc) -> (Ext, bool, bool) {
 
 /// One of the instructions this module computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Op {
+pub enum Op {
     Fsin,
     Fcos,
     Fsincos,
@@ -757,7 +760,8 @@ pub(crate) enum Op {
 
 impl Op {
     /// The instruction for the second byte after `0xd9`.
-    pub(crate) fn decode(second: u8) -> Option<Self> {
+    #[must_use]
+    pub fn decode(second: u8) -> Option<Self> {
         Some(match second {
             0xfe => Self::Fsin,
             0xff => Self::Fcos,
@@ -776,7 +780,7 @@ impl Op {
 
 /// What an instruction does to the stack and the status word.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Effect {
+pub struct Effect {
     /// New ST0 (and ST1 for the two-operand ones); for a push, `st0` is
     /// the pushed value and `st1` the replaced old ST0.
     pub st0: Option<Ext>,
@@ -844,7 +848,8 @@ fn denormal_flag(xs: &[Ext]) -> u16 {
 
 /// Computes one instruction from ST0, ST1 and the control word.
 #[allow(clippy::too_many_lines)] // the special cases, instruction by instruction
-pub(crate) fn execute(op: Op, st0: Ext, st1: Ext, cw: u16) -> Effect {
+#[must_use]
+pub fn execute(op: Op, st0: Ext, st1: Ext, cw: u16) -> Effect {
     let rc = rc_of(cw);
     let mut e = Effect {
         st0: None,

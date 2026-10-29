@@ -28,8 +28,8 @@ Limits (what each in-game host passes):
   ffx-hook call_cdecl_words                       32  (refused: 0)
   ffx-hook call_thiscall(f, this, args)            8  (refused: 0)
 
-For every call of these in crates/*/src (ffx-oracle and ffx-studio left
-out) the width of the argument slice is worked out: a literal (`&[a, b]`,
+For every call of these in crates/*/src (ffx-oracle, ffx-studio and
+ffx-host left out: emulators that pass any width) the width of the argument slice is worked out: a literal (`&[a, b]`,
 `&[0; N]`, `vec![..]`), a local or const array, a sub-slice of one (bounded
 by the array), or a parameter of the enclosing function. A function that
 passes its own slice parameter on (`fn call(h, sym, args: &[u32]) {
@@ -62,7 +62,10 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP_CRATES = {'ffx-oracle', 'ffx-studio'}
+# ffx-host runs the game's code in its own executor (docs/host.md), which
+# passes any number of words, as ffx-oracle does; the limits are the hooked
+# game's
+SKIP_CRATES = {'ffx-oracle', 'ffx-studio', 'ffx-host'}
 
 # method name -> (args before the slice, limit, kind); limit None: by conv
 METHODS = {

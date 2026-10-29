@@ -926,6 +926,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-fpu"
+version = "0.1.0"
+dependencies = [
+ "unicorn-engine",
+]
+
+[[package]]
 name = "ffx-fxdraw"
 version = "0.1.0"
 dependencies = [
@@ -1011,6 +1018,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ffx-host"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-core",
+ "ffx-fpu",
+ "ffx-kernel",
+ "goblin",
+ "libc",
+ "thiserror",
+ "unicorn-engine",
+ "windows-sys",
+]
+
+[[package]]
 name = "ffx-kernel"
 version = "0.1.0"
 dependencies = [
@@ -1085,6 +1107,7 @@ dependencies = [
  "ffx-chara",
  "ffx-core",
  "ffx-field",
+ "ffx-fpu",
  "ffx-glue-other",
  "ffx-graphic",
  "ffx-kernel",
