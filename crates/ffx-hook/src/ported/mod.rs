@@ -45,6 +45,7 @@ mod kernel;
 mod m4_rest;
 mod m5_battle;
 mod m5_main;
+mod m5_main3;
 mod m5_map;
 mod m5_menu;
 mod m5_movie;
@@ -146,6 +147,7 @@ pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 #[must_use]
 // one line per module: it grows with every merged port list
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)] // one line per module
 pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
     all.extend(auto::hooks());
@@ -161,6 +163,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_battle::hooks());
     all.extend(m5_map::hooks());
     all.extend(m5_main::hooks());
+    all.extend(m5_main3::hooks());
     all.extend(m5_pc_ui::hooks());
     all.extend(m5_menu::hooks());
     all.extend(m5_render::hooks());
