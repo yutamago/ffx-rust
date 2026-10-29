@@ -1644,3 +1644,295 @@ fn map_iterators_match_the_original() {
         t.reset();
     }
 }
+
+// ---- batch 4: device and script teardown, notifiers, input-log helpers ----
+
+use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as dvb};
+
+impl Twins {
+    /// A COM object: a vtable of `slots` stdcall stubs (tag `0x7100 + i`,
+    /// the interface and `words[i] - 1` more words logged and popped, `ecx`
+    /// not logged); 0x40 bytes after the vtable pointer.
+    fn com_object(&mut self, words: &[u32]) -> u32 {
+        let mut vt = Vec::new();
+        for (i, &n) in words.iter().enumerate() {
+            let s = self.stub_code(0x7100 + i as u32, false, n, n, 0x2000 + i as u32);
+            vt.extend(s.to_le_bytes());
+        }
+        let vt = self.alloc(&vt);
+        let obj = self.zeros(0x40);
+        self.w32(obj, vt);
+        obj
+    }
+}
+
+#[test]
+fn device_deletes_match_the_original() {
+    assert_eq!(dv::DEVICE_DELETES.len(), 6);
+    for (label, mut t) in Twins::all() {
+        t.stub(dv::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(dv::CS_RELEASE, true, 0, 0, 0xc5);
+        t.stub(dv::EH_VECTOR_DTOR, false, 4, 4, 0xe4);
+        for &(f, d) in dv::DEVICE_DELETES {
+            for (with_dev, flags) in [
+                (false, 0u32),
+                (true, 1),
+                (true, 0),
+                (true, 2),
+                (false, 0xffff_ffff),
+            ] {
+                let obj = t.junk(0x200, f as u8);
+                let field = if with_dev {
+                    let com = t.com_object(&[1, 1, 1, 1, 1, 1, 1, 1, 1]);
+                    if d == dv::Device::Mouse {
+                        let wrapper = t.junk(0x10, 0x31);
+                        t.w32(wrapper + 4, com);
+                        wrapper
+                    } else {
+                        com
+                    }
+                } else {
+                    0
+                };
+                t.w32(obj + 0x14, field);
+                let what = format!("{label}: device delete {f:#x} {with_dev} {flags:#x}");
+                t.check(&what, f, Conv::Thiscall(obj), &[flags], |g| {
+                    Out::U32(dvb::device_delete(g, d, obj, flags))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn script_teardown_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(dv::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(dv::OPERATOR_DELETE, false, 1, 0, 0xde1);
+        // the buffer destructor: no count, owned data, borrowed, null data
+        for (count, data) in [
+            (0u32, 0u32),
+            (0, 0x4400),
+            (3, 0x4400),
+            (0x8000_0003, 0x4400),
+            (3, 0),
+            (0x8000_0000, 0),
+        ] {
+            let obj = t.junk(0x30, 0x32);
+            t.w32(obj + 4, count);
+            t.w32(obj + 8, data);
+            let what = format!("{label}: script buffer dtor {count:#x} {data:#x}");
+            t.check(&what, 0x0062_0d80, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(dvb::script_buffer_dtor(g, obj))
+            });
+        }
+        t.stub(dv::SCRIPT_BUFFER_DTOR, true, 0, 0, 0xbd);
+        for text in [0u32, 0x4500] {
+            let obj = t.junk(0x30, 0x33);
+            t.w32(obj + 0x14, text);
+            let what = format!("{label}: script dtor {text:#x}");
+            t.check(&what, 0x0062_0d00, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(dvb::script_dtor(g, obj))
+            });
+            for f in dv::SCRIPT_DELETES {
+                for flags in [0u32, 1] {
+                    let obj = t.junk(0x30, 0x34);
+                    t.w32(obj + 0x14, text);
+                    let what = format!("{label}: script delete {f:#x} {text:#x} {flags}");
+                    t.check(&what, f, Conv::Thiscall(obj), &[flags], |g| {
+                        Out::U32(dvb::script_delete(g, obj, flags))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn app_arrays_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(dv::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        // 0xe4-byte elements with recording virtual destructors
+        let make = |t: &mut Twins, n: u32| {
+            let data = t.zeros((0xe4 * n.max(1)) as usize);
+            for i in 0..n {
+                let e = t.object(&[1], &[0x55]);
+                let vt = t.r32(e);
+                t.w32(data + 0xe4 * i, vt);
+            }
+            data
+        };
+        for (count, n, null) in [
+            (0u32, 0u32, false),
+            (2, 2, false),
+            (0x8000_0002, 2, false),
+            (3, 0, true),
+        ] {
+            let data = if null { 0 } else { make(&mut t, n) };
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, data);
+            let what = format!("{label}: release e4 {count:#x} {null}");
+            t.check(&what, 0x0062_0990, Conv::Thiscall(arr), &[], |g| {
+                Out::U32(dvb::release_e4(g, arr))
+            });
+        }
+        t.stub(dv::ARRAY_E4_RELEASE, true, 0, 0, 0xe4e4);
+        for (count, data) in [(1u32, 0x4600u32), (1, 0), (0x8000_0001, 0x4600)] {
+            let obj = t.junk(0x20, 0x35);
+            t.w32(obj, count);
+            t.w32(obj + 4, data);
+            let what = format!("{label}: release pair {count:#x} {data:#x}");
+            t.check(&what, 0x0062_11b0, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(dvb::release_pair(g, obj))
+            });
+        }
+        for (c1, c2) in [(1u32, 1u32), (0x8000_0001, 0), (0, 0x8000_0000)] {
+            let app = t.junk(0x100, 0x36);
+            t.w32(app + 0xa4, c1);
+            t.w32(app + 0x9c, c2);
+            let what = format!("{label}: release a4/9c {c1:#x} {c2:#x}");
+            t.check(&what, 0x0062_1230, Conv::Thiscall(app), &[], |g| {
+                Out::U32(dvb::release_a4_9c(g, app))
+            });
+        }
+        // resize: same count, to 0, a new buffer, a failed allocation
+        for (count, n, got, old) in [
+            (3u32, 3u32, 0x7000u32, 0x4700u32),
+            (3, 0, 0, 0x4700),
+            (3, 5, 0x7000, 0x4700),
+            (0x8000_0003, 5, 0x7000, 0x4700),
+            (3, 5, 0x7000, 0x7000),
+            (3, 5, 0x7000, 0),
+            (3, 5, 0, 0x4700),
+            (0, 0x1c71_c71d, 0x7000, 0x4700),
+        ] {
+            t.stub(dv::PHYRE_MALLOC_ALIGNED, false, 2, 0, got);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            t.w32(arr + 4, old);
+            let what = format!("{label}: resize {count:#x} {n:#x} {got:#x} {old:#x}");
+            t.check(&what, 0x0062_c1f0, Conv::Thiscall(arr), &[n], |g| {
+                Out::U32(dvb::resize_90(g, arr, n))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn notifiers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let holder = t.rebase(dv::NOTIFIERS);
+        let old = t.r32(holder);
+        // an empty map, then the five-node map with recording values
+        let empty = t.zeros(0x14);
+        t.w8(empty + 0xd, 1);
+        t.w32(empty, empty);
+        let (head, nodes) = small_map(&mut t);
+        for &n in &nodes {
+            let v = t.object(&[0, 0], &[]);
+            t.w32(n + 0x10, v);
+        }
+        for h in [empty, head] {
+            t.w32(holder, h);
+            t.check(
+                &format!("{label}: suspend {h:#x}"),
+                0x0062_7850,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    dvb::notify_all(g, 0);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("{label}: resume {h:#x}"),
+                0x0062_78b0,
+                Conv::Cdecl,
+                &[],
+                |g| {
+                    dvb::notify_all(g, 1);
+                    Out::None
+                },
+            );
+        }
+        assert_eq!(t.log_entries(), 10);
+        t.w32(holder, old);
+        t.reset();
+    }
+}
+
+#[test]
+fn command_drain_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(dv::CS_RELEASE, true, 0, 0, 0xc5);
+        t.stub(dv::SLEEP, false, 1, 0, 0x51);
+        // done at once; not done but already equal; one sleep then done
+        for (first, equal) in [(1u32, false), (0, true), (0, false)] {
+            // the drain step answers `first`, then 1
+            let n = t.zeros(4);
+            let mut c = vec![0xa1];
+            c.extend(n.to_le_bytes()); // mov eax, [n]
+            c.extend([0xff, 0x05]);
+            c.extend(n.to_le_bytes()); // inc dword [n]
+            c.extend([0x85, 0xc0, 0x75, 0x06]); // test eax, eax; jnz +6
+            c.push(0xb8);
+            c.extend(first.to_le_bytes()); // mov eax, first
+            c.push(0xc3);
+            c.extend([0xb8, 1, 0, 0, 0, 0xc3]); // mov eax, 1; ret
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(dv::DRAIN_STEP);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            let obj = t.junk(0x40, 0x37);
+            t.w32(obj + 0x24, 0x99);
+            t.w32(obj + 0x28, if equal { 0x99 } else { 0x98 });
+            let what = format!("{label}: drain {first} {equal}");
+            t.check(&what, 0x0062_d100, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(dvb::drain_commands(g, obj))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn tokens_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let texts: [&[u8]; 6] = [
+            b"a,bc,d",
+            b",x",
+            b"abc",
+            b"a,",
+            b"a\0b,c",
+            b"\x80,\x80y\x80",
+        ];
+        for (i, text) in texts.iter().enumerate() {
+            for delim in [b',', 0x80u8, 0] {
+                let n = text.len() as u32;
+                for (from, to) in [
+                    (0u32, n),
+                    (0, n.saturating_sub(1)),
+                    (1, n),
+                    (1, 1),
+                    (n, n),
+                    (n, 0),
+                ] {
+                    let at = t.alloc(&[*text, b"\x01\x01\x01\x01"].concat());
+                    let what = format!("{label}: token {i} {delim:#x} {from}..{to}");
+                    let args = [at + from, at + to, 0x1234_5600 | u32::from(delim)];
+                    t.check(&what, 0x0062_8e40, Conv::Cdecl, &args, |g| {
+                        Out::U32(dvb::next_token(g, at + from, at + to, delim))
+                    });
+                }
+            }
+        }
+    }
+}

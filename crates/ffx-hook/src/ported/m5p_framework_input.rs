@@ -12,6 +12,7 @@
 
 use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_app::bridge as ab;
+use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as db};
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
 use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
 use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
@@ -485,5 +486,77 @@ ported! {
     /// `Phyre_PPostProcessing_PMotionBlur_initialize_00a1b7e0`: the common shaders for the target, or `+0xc` = `+8` and 0.
     Phyre_PPostProcessing_PMotionBlur_initialize_00a1b7e0 @ 0x00a1_b7e0 => extern "thiscall" fn ap_00a1b7e0(this: u32) -> u32 {
         ab::motion_blur_init(&mut mem(), this)
+    }
+    /// `Phyre_PArray_releaseE4_00620990`: each element's virtual destructor, the buffer freed; both words zero.
+    Phyre_PArray_releaseE4_00620990 @ 0x0062_0990 => extern "thiscall" fn ap_00620990(this: u32) -> u32 {
+        db::release_e4(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScript_dtor_00620d00`: its vtable, the text freed, fields cleared, the buffer's destructor; its `eax`.
+    Phyre_PFramework_PApplicationScript_dtor_00620d00 @ 0x0062_0d00 => extern "thiscall" fn ap_00620d00(this: u32) -> u32 {
+        db::script_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScriptBuffer_dtor_00620d80`: its vtable, the buffer released; the release's `eax`.
+    Phyre_PFramework_PApplicationScriptBuffer_dtor_00620d80 @ 0x0062_0d80 => extern "thiscall" fn ap_00620d80(this: u32) -> u32 {
+        db::script_buffer_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PArray_releasePair_006211b0`: the element array at `+8`, then the array at `this`.
+    Phyre_PArray_releasePair_006211b0 @ 0x0062_11b0 => extern "thiscall" fn ap_006211b0(this: u32) -> u32 {
+        db::release_pair(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplication_releaseArrays_00621230`: the arrays at `+0xa4` and `+0x9c` released.
+    Phyre_PFramework_PApplication_releaseArrays_00621230 @ 0x0062_1230 => extern "thiscall" fn ap_00621230(this: u32) -> u32 {
+        db::release_a4_9c(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScript_deletingDtor_00621a30`: the script's teardown, `operator delete` when `flags & 1`; `this`.
+    Phyre_PFramework_PApplicationScript_deletingDtor_00621a30 @ 0x0062_1a30 => extern "thiscall" fn dd_00621a30(this: u32, flags: u32) -> u32 {
+        db::script_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_deletingDtor_00621b00`: the script's teardown, `operator delete` when `flags & 1`; `this`.
+    Phyre_PFramework_PApplicationScriptProxy_deletingDtor_00621b00 @ 0x0062_1b00 => extern "thiscall" fn dd_00621b00(this: u32, flags: u32) -> u32 {
+        db::script_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PFramework_PInputDeviceKeyboard_deletingDtor_00621c00`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDeviceKeyboard_deletingDtor_00621c00 @ 0x0062_1c00 => extern "thiscall" fn dd_00621c00(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1c00) }, this, flags)
+    }
+    /// `Phyre_PFramework_PInputDeviceMouse_deletingDtor_00621cb0`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDeviceMouse_deletingDtor_00621cb0 @ 0x0062_1cb0 => extern "thiscall" fn dd_00621cb0(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1cb0) }, this, flags)
+    }
+    /// `Phyre_PFramework_PInputDevicePad_deletingDtor_00621d50`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDevicePad_deletingDtor_00621d50 @ 0x0062_1d50 => extern "thiscall" fn dd_00621d50(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1d50) }, this, flags)
+    }
+    /// `Phyre_PFramework_PInputDevicePadDirectInput_deletingDtor_00621dd0`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDevicePadDirectInput_deletingDtor_00621dd0 @ 0x0062_1dd0 => extern "thiscall" fn dd_00621dd0(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1dd0) }, this, flags)
+    }
+    /// `Phyre_PFramework_PInputDevicePadXInput_deletingDtor_00621e70`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDevicePadXInput_deletingDtor_00621e70 @ 0x0062_1e70 => extern "thiscall" fn dd_00621e70(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1e70) }, this, flags)
+    }
+    /// `Phyre_PFramework_PInputDeviceTouch_deletingDtor_00621ef0`: its teardown, `PInputDevice`'s vtable, `PhyreFree` when `flags & 1`; `this`.
+    Phyre_PFramework_PInputDeviceTouch_deletingDtor_00621ef0 @ 0x0062_1ef0 => extern "thiscall" fn dd_00621ef0(this: u32, flags: u32) -> u32 {
+        db::device_delete(&mut mem(), const { dv::device_of(0x0062_1ef0) }, this, flags)
+    }
+    /// `PApplication_NotifySuspend_00627850`: virtual slot 0 of every notifier.
+    PApplication_NotifySuspend_00627850 @ 0x0062_7850 => extern "C" fn ap_00627850() {
+        db::notify_all(&mut mem(), 0);
+    }
+    /// `PApplication_NotifyResume_006278b0`: virtual slot 1 of every notifier.
+    PApplication_NotifyResume_006278b0 @ 0x0062_78b0 => extern "C" fn ap_006278b0() {
+        db::notify_all(&mut mem(), 1);
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_nextToken_00628e40`: the next `delim`-separated token, NUL-terminated, or 0.
+    Phyre_PFramework_PApplicationScriptProxy_nextToken_00628e40 @ 0x0062_8e40 => extern "C" fn ap_00628e40(p: u32, end: u32, delim: u8) -> u32 {
+        db::next_token(&mut mem(), p, end, delim)
+    }
+    /// `Phyre_PArray_resize90_0062c1f0`: a new 0x90-byte-record buffer for `n`; 0, or 0xd when the allocation fails.
+    Phyre_PArray_resize90_0062c1f0 @ 0x0062_c1f0 => extern "thiscall" fn ap_0062c1f0(this: u32, n: u32) -> u32 {
+        db::resize_90(&mut mem(), this, n)
+    }
+    /// `Phyre_PFramework_PApplication_drainCommands_0062d100`: the lock released, the queue drained, the fields cleared; 0.
+    Phyre_PFramework_PApplication_drainCommands_0062d100 @ 0x0062_d100 => extern "thiscall" fn ap_0062d100(this: u32) -> u32 {
+        db::drain_commands(&mut mem(), this)
     }
 }
