@@ -282,6 +282,11 @@ pub trait Backend: Send {
     fn query_data(&mut self, id: u32, out: &mut [u8]) -> u32;
     /// `Present(sync, flags)`.
     fn present(&mut self, sync: u32, flags: u32) -> u32;
+    /// The back buffer as it is now, BGRA rows (the harness's `shot`);
+    /// `None` without a real one.
+    fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        None
+    }
 }
 
 /// The recording null device: no GPU, every object a stand-in.
@@ -1287,6 +1292,8 @@ impl Gfx {
     }
 
     fn present(&mut self, e: &mut Exec, a: &[u32]) -> u32 {
+        let backend = &mut self.backend;
+        crate::harness::on_present(|| backend.back_buffer_image());
         let hr = self.backend.present(a[1], a[2]);
         let f = self.frame();
         self.emit(&Msg::Frame(f));
@@ -1611,7 +1618,12 @@ impl Gfx {
             ) => S_OK,
             ("IDirectInputDevice8A", "GetDeviceState") => {
                 if a[2] != 0 {
-                    mem.write_bytes(a[2], &vec![0u8; a[1].min(4096) as usize]);
+                    let mut state = vec![0u8; a[1].min(4096) as usize];
+                    if state.len() == 256 {
+                        // the keyboard: the keys a harness test holds
+                        crate::harness::keyboard_state(&mut state);
+                    }
+                    mem.write_bytes(a[2], &state);
                 }
                 S_OK
             }
@@ -2157,7 +2169,15 @@ pub fn report(exec: &Exec) -> String {
 /// # Errors
 /// When a file can't be written.
 pub fn write(exec: &Exec, dir: &std::path::Path) -> std::io::Result<()> {
-    let slot = exec.shared().gfx.lock();
+    write_shared(exec.shared(), dir)
+}
+
+/// [`write`] from any thread (the harness's `gfxcapture`).
+///
+/// # Errors
+/// When a file can't be written.
+pub fn write_shared(shared: &crate::exec::Shared, dir: &std::path::Path) -> std::io::Result<()> {
+    let slot = shared.gfx.lock();
     let Some(g) = slot.as_ref() else {
         return Ok(());
     };

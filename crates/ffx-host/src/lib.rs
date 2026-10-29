@@ -22,17 +22,22 @@ pub mod dll;
 pub mod exec;
 pub mod files;
 pub mod gfx;
+pub mod harness;
 pub mod iggy;
 pub mod image;
 pub mod imports;
 pub mod log;
 pub mod ports;
+#[cfg(all(windows, target_pointer_width = "32"))]
+pub mod relaunch;
 pub mod replay;
 pub mod report;
 pub mod stand_ins;
 pub mod sync;
 pub mod table;
 pub mod win32;
+#[cfg(windows)]
+pub mod win_forward;
 
 use std::path::Path;
 use std::sync::Arc;

@@ -98,6 +98,10 @@ pub struct Options {
     /// default file's and add keys it lacks. `None` (the default unless
     /// `FFX_SETTINGS` names one) keeps the default file alone.
     pub settings: Option<String>,
+    /// Start `ffx-rust.exe` instead of `FFX.exe` (`tools/run-game.sh
+    /// --rust`; `docs/harness.md`, "Two processes"). Default from
+    /// `FFX_HARNESS_EXE=rust`.
+    pub rust: bool,
 }
 
 impl Default for Options {
@@ -121,6 +125,7 @@ impl Default for Options {
                 .filter(|v| !v.is_empty()),
             rust_map: std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1" || v == "build"),
             settings: std::env::var("FFX_SETTINGS").ok().filter(|v| !v.is_empty()),
+            rust: std::env::var("FFX_HARNESS_EXE").is_ok_and(|v| v == "rust"),
         }
     }
 }
@@ -607,6 +612,9 @@ impl Game {
         }
         if options.rust_map {
             cmd.arg("--rust-map");
+        }
+        if options.rust {
+            cmd.arg("--rust");
         }
         let log_start =
             std::fs::metadata(instance_dir(number).join("ffx-hook.log")).map_or(0, |m| m.len());

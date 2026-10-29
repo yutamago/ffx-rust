@@ -13,6 +13,9 @@
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cmd=build
+# FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit program (docs/host.md,
+# "Building for Windows")
+target="${FFX_HOST_TARGET:-i686-pc-windows-msvc}"
 if [[ "${1:-}" == build || "${1:-}" == clippy ]]; then
     cmd=$1
     shift
@@ -32,18 +35,23 @@ if ! command -v llvm-lib >/dev/null; then
     lib="$(compgen -c llvm-lib- | grep -E '^llvm-lib-[0-9]+$' | sort -t- -k3 -n | tail -1)"
     [[ -n "$lib" ]] && ln -sf "$(command -v "$lib")" "$shims/llvm-lib"
 fi
+# ml64 (MASM) for unicorn's x86_64 setjmp wrapper: LLVM's llvm-ml64
+if [[ "$target" == x86_64-* ]] && ! command -v ml64 >/dev/null; then
+    ml="$(compgen -c llvm-ml64- | grep -E '^llvm-ml64-[0-9]+$' | sort -t- -k3 -n | tail -1)"
+    [[ -n "$ml" ]] && ln -sf "$(command -v "$ml")" "$shims/ml64"
+fi
 export PATH="$repo/tools/shims:$shims:$PATH"
 export XWIN_ARCH=x86,x86_64
 toolchain_env=()
-xwin_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/cargo-xwin/cmake/clang-cl/i686-pc-windows-msvc-toolchain.cmake"
+xwin_toolchain="${XDG_CACHE_HOME:-$HOME/.cache}/cargo-xwin/cmake/clang-cl/$target-toolchain.cmake"
 if [[ -f "$xwin_toolchain" ]]; then
-    toolchain="$shims/i686-pc-windows-msvc-toolchain.cmake"
+    toolchain="$shims/$target-toolchain.cmake"
     grep -v CMAKE_MSVC_RUNTIME_LIBRARY "$xwin_toolchain" |
         sed "s|\${CMAKE_CURRENT_LIST_DIR}|$(dirname "$xwin_toolchain")|" >"$toolchain"
-    toolchain_env=("CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc=$toolchain")
+    toolchain_env=("CMAKE_TOOLCHAIN_FILE_$target=$toolchain")
 fi
 # cargo-xwin's environment, its CRT cache set up under a lock (tools/xwin-env.sh)
-eval "$(tools/xwin-env.sh i686-pc-windows-msvc)"
-env "${toolchain_env[@]}" cargo "$cmd" --release --target i686-pc-windows-msvc -p ffx-host "$@"
-[[ "$cmd" == build ]] && echo "built: $repo/target/i686-pc-windows-msvc/release/ffx-rust.exe"
+eval "$(tools/xwin-env.sh "$target")"
+env "${toolchain_env[@]}" cargo "$cmd" --release --target "$target" -p ffx-host "$@"
+[[ "$cmd" == build ]] && echo "built: $repo/target/$target/release/ffx-rust.exe"
 exit 0

@@ -334,12 +334,14 @@ fn boot_runs_ports_from_the_table() {
     assert_eq!(stop, Stop::Milestone("Present 3".into()), "{report}");
 }
 
-/// Every arena region but the stacks and the stub page, with the `int3`s
-/// of the ported entry points put back to the original's bytes.
+/// Every arena region but the stacks, the stub pages and the thread's
+/// block (its TEB holds stack addresses such as the SEH chain's head, its
+/// stub page the router's x87 stubs), with the `int3`s of the ported entry
+/// points put back to the original's bytes.
 fn state(exec: &Exec, original: &Exec) -> Vec<(String, u32, Vec<u8>)> {
     let mut out = Vec::new();
     for r in exec.arena().regions() {
-        if r.name.contains("stack") || r.name == "stubs" {
+        if r.name.contains("stack") || r.name.contains("stubs") || r.name.starts_with("thread ") {
             continue;
         }
         let mut a = vec![0; r.size as usize];
@@ -360,7 +362,7 @@ fn state(exec: &Exec, original: &Exec) -> Vec<(String, u32, Vec<u8>)> {
 fn boot_with_the_table_ends_where_unicorn_alone_ends() {
     let Some(exe) = exe() else { return };
     // without the C runtime DLLs the boot ends at the first MSVCP110
-    // import, the same point every run (the STL is the wall)
+    // import (the STL is the wall)
     let opts = |name| ffx_host::Options {
         no_dlls: true,
         documents: Some(documents(name)),
@@ -372,8 +374,13 @@ fn boot_with_the_table_ends_where_unicorn_alone_ends() {
     let mut clock = Table::new();
     ffx_host::clock::register(&mut clock);
     let mut original = ffx_host::boot_opts(&exe, clock, &opts("same-b")).unwrap();
-    ported.set_budget(Duration::from_secs(60));
-    original.set_budget(Duration::from_secs(60));
+    // and before the first game thread starts: the threads run beside the
+    // main thread, so the memory past that point differs from run to run,
+    // Unicorn alone against itself included
+    for e in [&mut ported, &mut original] {
+        e.stop_at("KERNEL32.dll!CreateThread");
+        e.set_budget(Duration::from_secs(60));
+    }
     let a = ported.run_entry().unwrap();
     let b = original.run_entry().unwrap();
     ported.join_threads(Duration::from_secs(5));

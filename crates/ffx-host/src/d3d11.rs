@@ -5,10 +5,12 @@
 //! interfaces). Nothing here hands a host pointer to the game, so it
 //! builds the same for i686 (stage 3) and `x86_64` (stage 4).
 //!
-//! The window stays the import stand-ins' fake one until the window
-//! calls forward (docs/host.md, "What blocks the next step", 4): until
-//! then the device has no swap chain, the back buffer is an offscreen
-//! texture of the swap chain's description and `Present` flushes.
+//! On Windows the window is real (`crate::win_forward`): the device is
+//! made with its swap chain on the game's window
+//! (`D3D11CreateDeviceAndSwapChain`, the game's description), the back
+//! buffer is the swap chain's buffer 0 and `Present` presents. Without a
+//! window (the description names none) the device has no swap chain: the
+//! back buffer is an offscreen texture and `Present` flushes.
 
 // The methods' arguments keep their short `d3d11.h` roles (`c` the
 // context, `d` the device, `r` a resource, `v` views, `s` states).
@@ -18,26 +20,33 @@ use std::collections::HashMap;
 use std::ffi::CString;
 
 use ffx_gfx::StateKind;
-use windows::Win32::Foundation::{HMODULE, RECT};
+use windows::Win32::Foundation::{HMODULE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0, D3D_PRIMITIVE_TOPOLOGY,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BLEND_DESC, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CREATE_DEVICE_FLAG,
-    D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_INPUT_ELEMENT_DESC,
-    D3D11_INPUT_PER_INSTANCE_DATA, D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAP_READ,
-    D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_QUERY_DESC, D3D11_RASTERIZER_DESC,
-    D3D11_RENDER_TARGET_VIEW_DESC, D3D11_SAMPLER_DESC, D3D11_SDK_VERSION,
+    D3D11_BLEND_DESC, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ,
+    D3D11_CREATE_DEVICE_FLAG, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCIL_VIEW_DESC,
+    D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_INSTANCE_DATA, D3D11_INPUT_PER_VERTEX_DATA,
+    D3D11_MAP_READ, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_QUERY_DESC,
+    D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_VIEW_DESC, D3D11_SAMPLER_DESC, D3D11_SDK_VERSION,
     D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE1D_DESC,
-    D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC, D3D11_UNORDERED_ACCESS_VIEW_DESC, D3D11_VIEWPORT,
-    D3D11CreateDevice, ID3D11Asynchronous, ID3D11BlendState, ID3D11Buffer, ID3D11ComputeShader,
+    D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC, D3D11_UNORDERED_ACCESS_VIEW_DESC,
+    D3D11_USAGE_STAGING, D3D11_VIEWPORT, D3D11CreateDevice, D3D11CreateDeviceAndSwapChain,
+    ID3D11Asynchronous, ID3D11BlendState, ID3D11Buffer, ID3D11ComputeShader,
     ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext,
     ID3D11DeviceContext1, ID3D11DomainShader, ID3D11GeometryShader, ID3D11HullShader,
     ID3D11InputLayout, ID3D11PixelShader, ID3D11Query, ID3D11RasterizerState,
     ID3D11RenderTargetView, ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView,
     ID3D11Texture2D, ID3D11UnorderedAccessView, ID3D11VertexShader,
 };
-use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT;
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT, DXGI_MODE_DESC, DXGI_MODE_SCALING, DXGI_MODE_SCANLINE_ORDER, DXGI_RATIONAL,
+    DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    DXGI_PRESENT, DXGI_SWAP_CHAIN_DESC, DXGI_SWAP_EFFECT, DXGI_USAGE, IDXGISwapChain,
+};
 use windows::core::{IUnknown, Interface, PCSTR};
 
 use crate::com::{E_FAIL, E_INVALIDARG, S_FALSE, S_OK};
@@ -76,6 +85,10 @@ pub struct D3d11 {
     context: Option<ID3D11DeviceContext>,
     context1: Option<ID3D11DeviceContext1>,
     objects: HashMap<u32, Object>,
+    /// The swap chain on the game's window (`None`: offscreen).
+    swap_chain: Option<IDXGISwapChain>,
+    /// The back buffer's handle in the layer.
+    back_buffer: u32,
 }
 
 // SAFETY: the device is free-threaded, and the layer calls the back end
@@ -598,23 +611,71 @@ impl Backend for D3d11 {
         "Direct3D 11"
     }
 
-    fn create_device(&mut self, _: &SwapChainDesc, flags: u32) -> u32 {
+    fn create_device(&mut self, desc: &SwapChainDesc, flags: u32) -> u32 {
         let mut device = None;
         let mut context = None;
         let mut level = D3D_FEATURE_LEVEL::default();
-        // SAFETY: the out-pointers are locals.
-        let r = unsafe {
-            D3D11CreateDevice(
-                None,
-                D3D_DRIVER_TYPE_HARDWARE,
-                HMODULE::default(),
-                D3D11_CREATE_DEVICE_FLAG(flags),
-                Some(&[D3D_FEATURE_LEVEL_11_0]),
-                D3D11_SDK_VERSION,
-                Some(&raw mut device),
-                Some(&raw mut level),
-                Some(&raw mut context),
-            )
+        let w = desc.0;
+        let r = if desc.window() == 0 {
+            // SAFETY: the out-pointers are locals.
+            unsafe {
+                D3D11CreateDevice(
+                    None,
+                    D3D_DRIVER_TYPE_HARDWARE,
+                    HMODULE::default(),
+                    D3D11_CREATE_DEVICE_FLAG(flags),
+                    Some(&[D3D_FEATURE_LEVEL_11_0]),
+                    D3D11_SDK_VERSION,
+                    Some(&raw mut device),
+                    Some(&raw mut level),
+                    Some(&raw mut context),
+                )
+            }
+        } else {
+            // the game's description, field by field (DXGI_SWAP_CHAIN_DESC)
+            #[allow(clippy::cast_possible_wrap)] // enums and BOOL
+            let sd = DXGI_SWAP_CHAIN_DESC {
+                BufferDesc: DXGI_MODE_DESC {
+                    Width: w[0],
+                    Height: w[1],
+                    RefreshRate: DXGI_RATIONAL {
+                        Numerator: w[2],
+                        Denominator: w[3],
+                    },
+                    Format: DXGI_FORMAT(w[4] as i32),
+                    ScanlineOrdering: DXGI_MODE_SCANLINE_ORDER(w[5] as i32),
+                    Scaling: DXGI_MODE_SCALING(w[6] as i32),
+                },
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: w[7],
+                    Quality: w[8],
+                },
+                BufferUsage: DXGI_USAGE(w[9]),
+                BufferCount: w[10],
+                OutputWindow: HWND(w[11] as usize as *mut _),
+                Windowed: windows::core::BOOL(w[12] as i32),
+                SwapEffect: DXGI_SWAP_EFFECT(w[13] as i32),
+                Flags: w[14],
+            };
+            let mut chain = None;
+            // SAFETY: the description and the out-pointers are locals.
+            let r = unsafe {
+                D3D11CreateDeviceAndSwapChain(
+                    None,
+                    D3D_DRIVER_TYPE_HARDWARE,
+                    HMODULE::default(),
+                    D3D11_CREATE_DEVICE_FLAG(flags),
+                    Some(&[D3D_FEATURE_LEVEL_11_0]),
+                    D3D11_SDK_VERSION,
+                    Some(&raw const sd),
+                    Some(&raw mut chain),
+                    Some(&raw mut device),
+                    Some(&raw mut level),
+                    Some(&raw mut context),
+                )
+            };
+            self.swap_chain = chain;
+            r
         };
         if let Err(e) = r {
             return hr(&e);
@@ -630,6 +691,14 @@ impl Backend for D3d11 {
     fn back_buffer(&mut self, id: u32) -> u32 {
         if self.objects.contains_key(&id) {
             return S_OK;
+        }
+        self.back_buffer = id;
+        if let Some(chain) = self.swap_chain.as_ref() {
+            // SAFETY: buffer 0 of our own swap chain.
+            return match unsafe { chain.GetBuffer::<ID3D11Texture2D>(0) } {
+                Ok(t) => self.keep(id, Some(t), 0),
+                Err(e) => hr(&e),
+            };
         }
         // no window yet: an offscreen texture stands for the back buffer
         let desc = D3D11_TEXTURE2D_DESC {
@@ -708,11 +777,59 @@ impl Backend for D3d11 {
         }
     }
 
-    fn present(&mut self, _: u32, _: u32) -> u32 {
+    fn present(&mut self, sync: u32, flags: u32) -> u32 {
+        if let Some(chain) = self.swap_chain.as_ref() {
+            // SAFETY: a plain call on our own swap chain.
+            let r = unsafe { chain.Present(sync, DXGI_PRESENT(flags)) };
+            return u32::from_ne_bytes(r.0.to_ne_bytes());
+        }
         if let Some(c) = self.context.as_ref() {
             // SAFETY: a plain call on the device's own context.
             unsafe { c.Flush() };
         }
         S_OK
+    }
+
+    fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        let (d, c) = (self.device.clone()?, self.context.clone()?);
+        let bb = self.get::<ID3D11Texture2D>(self.back_buffer)?;
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: a copy of the back buffer into a staging texture of its
+        // description, mapped for reading; at most `w * 4` bytes a row are
+        // read, `h` rows.
+        unsafe {
+            bb.GetDesc(&raw mut desc);
+            desc.Usage = D3D11_USAGE_STAGING;
+            desc.BindFlags = 0;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+            desc.MiscFlags = 0;
+            let mut staging: Option<ID3D11Texture2D> = None;
+            d.CreateTexture2D(&raw const desc, None, Some(&raw mut staging))
+                .ok()?;
+            let staging = staging?;
+            c.CopyResource(&staging, &bb);
+            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+            c.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&raw mut m))
+                .ok()?;
+            let (w, h) = (desc.Width, desc.Height);
+            let row = (w * 4) as usize;
+            let mut out = vec![0u8; row * h as usize];
+            let src = m.pData.cast::<u8>().cast_const();
+            for y in 0..h as usize {
+                std::ptr::copy_nonoverlapping(
+                    src.add(y * m.RowPitch as usize),
+                    out.as_mut_ptr().add(y * row),
+                    row,
+                );
+            }
+            c.Unmap(&staging, 0);
+            // R8G8B8A8 (28, 29) to BGRA; B8G8R8A8 (87, 91) as is
+            if matches!(desc.Format.0, 27..=32) {
+                for px in out.as_chunks_mut::<4>().0 {
+                    px.swap(0, 2);
+                }
+            }
+            Some((w, h, out))
+        }
     }
 }

@@ -33,7 +33,20 @@ unicorn-engine.workspace = true
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_System_Memory"] }
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Media",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Environment",
+    "Win32_System_JobObjects",
+    "Win32_System_Kernel",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+] }
 # The real device behind the game's D3D11 calls (src/d3d11.rs); the same
 # version as ffx-draw's and ffx-render's.
 windows = { version = "0.62.2", features = [

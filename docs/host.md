@@ -33,6 +33,9 @@ same memory. The release runs no `FFX.exe` code.
 | `src/audio.rs` | FMOD's 40 imports on the Rust mixer (`ffx_sound::replay::Engine`): below, "FMOD" |
 | `src/iggy.rs`, `src/iggy/swf.rs` | Iggy's imports: players, fast names, AS3 calls both ways; Ruffle with feature `swf`: below, "Iggy" |
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
+| `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
+| `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes") |
+| `src/relaunch.rs` | i686 Windows: the game in a child process whose `FFX.exe` range was reserved before it ran (below, "The arena") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
 | `tests/table.rs` | the `ported!` lists in the table: entries, parity with Unicorn, the boot |
@@ -109,9 +112,22 @@ every region stay unmapped: Unicorn reports an access there as
 `BadAccess`, and `ArenaMem` reads zeros, drops the write and counts it
 (the report lists the first ones).
 
-On i686 `ffx-rust.exe` must leave `0x00400000`–`0x0277d000` free:
-link it with `/BASE` above it (and `/DYNAMICBASE`), and map the image
-before anything else allocates. Not done yet: the next step on Windows.
+On i686 `ffx-rust.exe` must leave `0x00400000`–`0x0277d000` free. It
+links at `/BASE:0x70000000`, and `main` reserves the range first thing
+(`arena::reserve_image_range`; the image's regions are then committed
+inside that reservation). That is not enough: Windows creates the main
+thread's stack and the first heaps at the lowest free addresses before
+any of the program's code runs, and on the first launch the stack's 1 MB
+reservation sat at `0x00400000` (`VirtualQuery`: `MEM_RESERVE`,
+`MEM_PRIVATE`, allocation base `0x00400000`). So when the reservation
+fails, `ffx-rust.exe` starts itself again (`src/relaunch.rs`): suspended,
+with bottom-up ASLR off (as `ffx-launch` does for `FFX.exe`), reserves the
+range in the child with `VirtualAllocEx` while nothing in it has run,
+resumes it with `FFX_HOST_IMAGE_RESERVED=1` (the child adopts the
+reservation after checking it with `VirtualQuery`), waits for it and
+exits with its code. The child is in a job that ends it when the parent
+goes. A child whose range is taken anyway would be ended and another
+started (8 tries); every launch so far got it on the first.
 
 The release maps only the data sections (`.rdata`, `.data`, `.rodata`,
 `_RDATA`, `.rsrc`). This build maps `.text` too, read as data, for Unicorn.
@@ -354,12 +370,12 @@ convention, stack words and Rust side.
   round did (the run then stops at `MSVCP110.dll!basic_ios`); `--lenient`
   lets unstubbed `MSVCR110` functions (cdecl, so nothing to pop) return 0
   and only lists them.
-- **Win32.** This round's stand-ins are deterministic and platform-free,
-  so the Linux check runs them (fixed clocks, fake handles, files from the
-  game folder through `std::fs`, read-only). On Windows the window, input,
-  file and timer calls forward to the real APIs from a 64-bit-clean
-  wrapper (pointer arguments translated through the arena base, handles
-  through the handle table at stage 4).
+- **Win32.** The stand-ins are deterministic and platform-free, so the
+  Linux check runs them (fixed clocks, fake handles, files from the game
+  folder through `std::fs`, read-only). On Windows the window, message,
+  cursor and timer calls forward to the real API (below, "Windows"); the
+  files already are the real game folder through `std::fs` on either
+  side (`src/files.rs`).
 - **D3D11, DXGI, DirectInput.** COM objects in the arena, a back end
   behind them: below, "D3D11 and DXGI".
 - **FMOD, Iggy, movies, Steam.** FMOD on the Rust mixer (below,
@@ -370,10 +386,11 @@ convention, stack words and Rust side.
   achievements); Iggy exports without a Rust side are null stand-ins that
   return 0 (their stack size comes from the decorated name,
   `_IggyInit@4`).
-- **The window.** `CreateWindowExA` returns a fake handle and records a
-  milestone; `ShowWindow`, `SetWindowPos`, `GetClientRect` (1920 x 1080),
-  `PeekMessage` (no messages) and the rest of the window calls on the way
-  to the device are stand-ins.
+- **The window.** Linux: `CreateWindowExA` returns a fake handle and
+  records a milestone; `ShowWindow`, `SetWindowPos`, `GetClientRect`
+  (1920 x 1080), `PeekMessage` (no messages) and the rest of the window
+  calls on the way to the device are stand-ins. Windows: real (below,
+  "Windows").
 - **Milestones.** The renderer's start-up first calls `D3D11CreateDevice`
   for the feature level only (no device, no context): `S_OK` and 11_0,
   recorded. `D3D11CreateDeviceAndSwapChain` makes the layer's device and
@@ -444,9 +461,13 @@ hands the decoded call to the back end (`Backend`: `create`, `op`,
   write reaches the resource at `Unmap` (a discarding map of a dynamic
   resource, else `UpdateSubresource`), a mapped read is read back at
   `Map`. No host pointer reaches the game, so it builds the same for
-  stage 4. Until the window forwards (below, blocker 4) the device has no
-  swap chain: the back buffer is an offscreen texture and `Present`
-  flushes. Not run yet (no `ffx-rust.exe` launch on Windows this round).
+  stage 4. The device is made with its swap chain on the game's (real)
+  window, from the game's `DXGI_SWAP_CHAIN_DESC` field by field
+  (`D3D11CreateDeviceAndSwapChain`); the back buffer is the swap chain's
+  buffer 0 and `Present` presents. A description without a window gets
+  the device alone, an offscreen back buffer and a flush for `Present`.
+  The harness's `shot` copies the back buffer to a staging texture
+  (`Backend::back_buffer_image`).
 
 **The recording.** Whatever the back end, the layer writes the stream the
 hook's capture writes (`ffx_gfx`, `docs/drawdiff.md`): `Buffer`,
@@ -677,25 +698,66 @@ proves it on emulated code: two threads started through `FFX.exe`'s own
 `inc` under one critical section (through the game's IAT), and the main
 thread waits on both thread handles: the count is exactly 6,000.
 
+## Windows
+
+`src/win_forward.rs` binds ahead of the stand-ins on Windows
+(`imports::platform_table`):
+
+- **The window.** `RegisterClassA` registers a real class of the game's
+  name whose procedure is a Rust function (`host_wndproc`); the game's
+  procedure (`Phyre_PFramework_PWindowWin32Base_WndProc`, `0x00625130`) is
+  kept by class. `CreateWindowExA` makes the real window with the game's
+  strings, styles and size, then gives the game's procedure its
+  `WM_CREATE` with a `CREATESTRUCTA` in the arena, as Windows would have
+  during the call. The game holds the real `HWND` (32 bits on i686; the
+  handle table maps it at stage 4).
+- **Messages.** `PeekMessageA/W` peek the real queue into the game's
+  `MSG`; `DispatchMessageA/W` of a message for the game's window calls
+  the game's procedure through `Exec::call` (emulated or ported), other
+  windows' messages go to the real `DispatchMessage`. What Windows sends
+  to the window (`WM_SIZE`, `WM_ACTIVATE`) arrives in `host_wndproc` on
+  the game's main thread with no executor at hand: it is queued and given
+  to the game's procedure at its next `PeekMessage`. `WM_CLOSE` is not
+  given to the game (its handler starts the Steam launcher,
+  `ShellExecuteA`): it ends the run. `DefWindowProcA`, `SendMessageA/W`
+  (the game's window: its procedure), `PostMessageA`, `PostQuitMessage`,
+  `Set/GetWindowLongA` (the window procedure slot kept by the host),
+  `GetClientRect`, `GetWindowRect`, `AdjustWindowRect`, `ClientToScreen`,
+  `SetWindowTextA`, `UpdateWindow`, `DestroyWindow`, `ShowCursor`,
+  `GetSystemMetrics` and `GetClipCursor` forward.
+- **Background mode** (`FFX_HARNESS_BACKGROUND=1`): the window is made
+  without `WS_VISIBLE`, `ShowWindow` shows it without activating it and
+  puts it at the bottom of the stack, `SetWindowPos` never raises or
+  activates it, `GetCursorPos` reads a point far outside the window, and
+  `SetCursorPos`/`ClipCursor` never touch the user's pointer (always, for
+  now).
+- **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep` has
+  the 1 ms granularity the game asks for (its threads poll with
+  `Sleep(1)`: 7,755 calls on the way to the third frame), not Windows'
+  default 15.6 ms.
+- **Memory.** On i686 a region (`VirtualAlloc`, a thread's stack) goes
+  into the first free gap of the process's own address space, which the
+  GPU driver fills with reservations of hundreds of MB. Probing those 64 KB
+  at a time made each of the boot's 765 `VirtualAlloc`s take tens of ms:
+  190 s to the third `Present`. `Arena::map_anywhere` now jumps past what
+  `VirtualQuery` says holds a refused address: 27 s (Linux: 7 s).
+- **Input.** `DirectInput` stays the layer's (no devices: the real
+  keyboard, mouse and pads never reach the game); the harness's `keys`
+  fill the keyboard's `GetDeviceState`. XInput is never called (the game
+  makes XInput devices only for controllers `DirectInput` enumerates).
+- **Files** were already real: the game folder (the executable's folder
+  by default) through `std::fs`, read-only, and the Documents folder
+  (`--documents`, or the harness's `FFX_HARNESS_HOME`) read-write.
+
 ## The harness: a second process
 
-The stage 3 gate runs the replays against the original in a second
-process (`docs/harness.md` gets a "Two processes" section then):
-
-- `ffx-rust.exe` takes `FFX_HARNESS=<port>` like the hook and serves the
-  same command set, from `ffx-host` (the harness code moves out of
-  `ffx-hook` into a crate both link);
-- `ffx-harness` starts it like `FFX.exe`: in a game slot, background mode
-  (no focus, bottom of the window stack), the slot's sandboxed Documents
-  folder; `Game::launch` gets an `Exe::Rust` option and `tools/run-game.sh`
-  a `--rust` flag;
-- a replay runs twice, once per program, with the same inputs and the
-  virtual clock, and `replay-compare.py`, `shot-compare.py`, the draw-diff
-  gates and the WAV checks compare the two runs as they compare two
-  `FFX.exe` runs today.
-
-Launching `ffx-rust.exe` on Windows counts as running the game: only
-through the harness's background mode. This round did not launch it.
+`ffx-rust.exe` serves the test harness's protocol (`src/harness.rs`) and
+`ffx-harness` starts it like `FFX.exe`: `Options::rust`
+(`FFX_HARNESS_EXE=rust`), `tools/run-game.sh --rust`, a game slot,
+background mode, the slot's sandboxed Documents folder. What it serves and
+what it can't yet: `docs/harness.md`, "Two processes". Launching
+`ffx-rust.exe` on Windows counts as running the game: only through the
+harness's background mode.
 
 ## The Linux check
 
@@ -708,12 +770,19 @@ through the harness's background mode. This round did not launch it.
   `ST0` results) called from code in Unicorn, once through the table
   (Unicorn → Rust), once with an empty table (all Unicorn): the same
   results and the same bytes written;
-- `boot_runs_ports_from_the_table`: the boot with the full table runs 88
-  ported functions in Rust (2,622 calls);
-- `boot_with_the_table_ends_where_unicorn_alone_ends`: that boot and the
-  all-Unicorn boot stop at the same import, call the same imports as often
-  (but `memset`/`memcpy`/`memmove`, which ports do in Rust), and leave
-  every arena region but the stacks byte for byte the same.
+- `boot_runs_ports_from_the_table`: the boot with the full table to
+  three presents on the null device (about 2,600 ported functions in
+  Rust, 270,000 calls);
+- `boot_with_the_table_ends_where_unicorn_alone_ends`: without the DLLs
+  and up to the first `CreateThread`, the full table and a table with only
+  the clock's entries stop at the same import, call the same imports as
+  often (but `memset`/`memcpy`/`memmove`, which ports do in Rust), and
+  leave every arena region but the stacks, the stub pages and the
+  thread's block byte for byte the same (14 ported functions on the
+  way). Past the first thread the comparison means nothing: the game's
+  threads run beside the main thread, and where their blocks,
+  `VirtualAlloc`s and heap blocks land differs from run to run, two
+  all-Unicorn runs included.
 
 `tests/boot.rs` (needs `FFX_GAME_DIR`, skips without it; run it with
 `--release`):
@@ -750,7 +819,10 @@ versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc`
 at a copy of the toolchain file without that line (all under
 `target/host-shims`). `build.rs` links the program at `/BASE:0x70000000`
 with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
-use the upper 2 GB.
+use the upper 2 GB. `FFX_HOST_TARGET=x86_64-pc-windows-msvc` builds the
+64-bit program instead (the arena with a base, stage 4); Unicorn's
+`setjmp` wrapper is MASM there, assembled by LLVM's `llvm-ml64` under the
+name `ml64`.
 
 ## Status (2026-10-29, the device round)
 
@@ -871,6 +943,67 @@ run in Rust (67 million calls), 3.9 million calls from Rust into Unicorn,
 the switches between Rust and Unicorn. The boot to three presents takes
 5 s (2,643 ports, 270,444 calls).
 
+### Status on Windows (2026-10-29, the Windows round)
+
+`ffx-rust.exe` (i686, release) on the player's game folder, through the
+game slots in background mode (the window never activated, at the bottom
+of the stack):
+
+- the image range is reserved in a relaunched child (the parent's stack
+  held `0x00400000`), the DLLs start, the CRT and `Game_Main` run, the
+  game's `GameSetting.ini` is read from the sandbox, the real window is
+  created (1296 x 759 outer, the sandbox's 1280 x 720 client), the real
+  device and swap chain are made on it from the game's description
+  (`D3D11CreateDeviceAndSwapChain`, hardware, 11_0), the render, job and
+  loader threads start and the opening screen presents: three `Present`s
+  in 25 s (`--presents 3`), 1,181 COM calls on 33 methods, none
+  unhandled; each frame 2 clears and no draws, as on Linux;
+- the harness answers on the slot's port (`ping`, `stats` with the
+  present count, `read` of `g_hWnd` gave the real window);
+- **then the process ends** with `0xc0000409` (`__fastfail(7)`, the C
+  runtime's `abort`). The minidump (Windows Error Reporting keeps them in
+  `%LOCALAPPDATA%\CrashDumps`) symbolised against a line-table build:
+  `abort` <- `tcg_reg_alloc` (`qemu/tcg/tcg.c:3018`, no free host
+  register) <- `tcg_reg_alloc_op` <- `tcg_gen_code` <- `tb_gen_code` <-
+  `cpu_exec` <- `uc_emu_start` <- `Exec::run`. QEMU's 32-bit x86 host
+  backend runs out of registers translating one of the game's blocks: a
+  Unicorn bug on 32-bit hosts, reached a few seconds past the third
+  frame, on a game thread. The Linux host (64-bit) never hits it.
+- `x86_64-pc-windows-msvc` (the stage 4 arena, `FFX_HOST_TARGET` in
+  `tools/build-host.sh`, with LLVM's `llvm-ml64` for Unicorn's MASM file)
+  builds, but on this machine it ends at start-up with an access
+  violation inside `SophosED.dll` (the endpoint-security product's hook
+  DLL) while Unicorn initialises its translator (`tcg_exec_init`,
+  `tcg_prologue_init`), with the default 1 GB translation buffer and with
+  64 MB (`TCG_BUFFER`) alike.
+
+#### The first comparison
+
+The original's boot was captured from its first `Present`
+(`FFX_GFX_BOOT_CAPTURE`, hash mode, 30 frames, virtual clock, lockstep
+from the first update; 437 draws) and compared with ffx-rust's three
+Windows frames (`--gfx-out`), `drawdiff orig rust`:
+
+- each frame's first item, a colour clear, pairs as equal (the
+  original's clears a 1024 x 1024 `R8G8B8A8` target, ffx-rust's the
+  1280 x 720 back buffer: drawdiff's clear key leaves the size out);
+- ffx-rust's depth clear is the swap chain's depth target (1280 x 720,
+  `D24_UNORM_S8_UINT`), where the original clears its 1024 x 1024 target
+  twice in frame 0 and then draws Iggy's GDraw quads (`Plain` draws of 3 and 6
+  vertices, one vertex/pixel shader pair) every frame: 2 missing, 1 extra
+  per frame; frames 3–29 are missing (ffx-rust stopped at 3);
+- they are not the same frames yet: the hook's fast mode ends the
+  start-up logos (`OpeningScreen.swf`) on their first frame and its
+  capture labels them `memochek`, while ffx-rust, with no clock and Iggy
+  null, sits on the opening screen (`PhyreScene_renderOpeningScreen`).
+  The Iggy draws are the allowed difference; the depth target follows
+  from the different scene.
+
+So the stream comparison runs end to end between the two processes. The
+virtual clock and Iggy's calls are in now (above, "The clock", "Iggy";
+merged after this round); the frames line up once the Windows build also
+runs past the third frame (the Unicorn abort).
+
 ### What blocks the next step
 
 1. Done (2026-10-29, the libraries round): the clock and the loads
@@ -902,9 +1035,18 @@ the switches between Rust and Unicorn. The boot to three presents takes
 5. Done (2026-10-29): the DLLs' x87 maths is exact (above, "x87"), and
    structured exceptions and C++ `throw`/`catch` dispatch through the SEH
    chain (above, "Exceptions").
-6. **Windows.** The forwarding imports (window, input, files); then the
-   D3D11 back end (`src/d3d11.rs`, built and clippy-clean for i686, not
-   run yet) gets a real swap chain, and `ffx-rust.exe` is started by the
-   harness in background mode. FMOD's device output (WASAPI) is the
-   hook's `rust_audio_out.rs`, not shared with `ffx-host` yet; the movie's
-   audio stream is silent.
+6. **Windows.** Done: the window, message, cursor and timer imports
+   forward, the real device presents on the real window, the harness
+   starts `ffx-rust.exe` in background mode (above, "Windows" and
+   "Status on Windows"). Left: (a) the i686 abort in Unicorn's 32-bit
+   TCG backend (`tcg_reg_alloc`) a few seconds past the third frame,
+   which ends every Windows run; the 64-bit build avoids that backend
+   but crashes inside the endpoint-security DLL on this machine, so one
+   of the two needs a fix or a workaround (a Unicorn patch for the
+   register pressure, or the security product's exclusion for the 64-bit
+   build); (b) the harness's frame commands on the clock's boundary
+   (`frame`, `waitfor`, lockstep, `call`, the trace): the boundary is in
+   (`src/clock.rs`, which plays `--replay` scripts there), but
+   `src/harness.rs` still counts `Present`s; (c) FMOD's device output
+   (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
+   yet; the movie's audio stream is silent.

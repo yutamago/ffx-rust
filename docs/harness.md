@@ -2019,6 +2019,86 @@ boot-3 failure rather than bisect it. Measured with
 `~/ffx-work/pixel-regress/measure.sh` (`ORIGINAL=1` for the original
 code).
 
+## Two processes
+
+From M5 stage 3 on the harness drives two programs: `FFX.exe` with the
+hook (everything above) and `ffx-rust.exe` (`crates/ffx-host`,
+`docs/host.md`), which runs the game without loading `FFX.exe`. A test
+picks the program at launch; the commands, the slots, the sandbox and the
+replay scripts are the same, so a replay can run once per program and the
+comparisons (`replay-compare.py`, `shot-compare.py`, `drawdiff`) compare
+the two runs as they compare two `FFX.exe` runs.
+
+```bash
+FFX_HARNESS_EXE=rust target/release/examples/replay <script> <trace>   # Options::rust
+tools/run-game.sh --instance N --harness P --background --rust          # what Game::launch runs
+```
+
+- **Launch.** `Options::rust` (default from `FFX_HARNESS_EXE=rust`) adds
+  `--rust` to `tools/run-game.sh`, which builds `ffx-rust.exe`
+  (`tools/build-host.sh`), copies it into the slot's instance folder (its
+  own file, never a hard link into the game folder) and starts it there
+  instead of `FFX.exe`, its report in `ffx-rust.log` beside it. The game
+  folder is the executable's folder. `--rust` refuses to start without
+  `--background`. Everything else is as for `FFX.exe`: the slot's port,
+  instance and lock, `end_orphan` (`quit` on the slot's port), the ready
+  check (`stats`' `presents` above 0).
+- **The server.** `ffx-host`'s `harness.rs` serves the protocol from
+  inside `ffx-rust.exe` (a thread on `127.0.0.1:<FFX_HARNESS>`,
+  `TCP_NODELAY`, one write a reply, as the hook's `serve`). It is a second
+  implementation, not the hook's code: the hook's harness lives in
+  `FFX.exe`'s process and patches its imports and functions, where
+  `ffx-host` owns the imports and the device. What it serves today:
+  `ping`, `stats`, `frame`, `wait`, `read`, `readp`, `readabs`, `write`,
+  `writep`, `keys`, `key`, `pad`, `press`, `shot`, `gfxcapture`, `quit`
+  (and `trace off`/`calllog off`, the replay player's closing lines).
+  Every other command answers `err ... not served by ffx-rust yet`.
+- **Frames.** Without a hook at the update boundary
+  (`FFXApplication_animate`) and without the virtual clock, ffx-rust's
+  `frame` and `wait` count `Present`s, not updates. `waitfor`,
+  `shotwhen`, `lockstep`, `pin`, `call`, `loadsave` and the trace need the
+  boundary (an executor hook on the main thread) and the clock
+  (`docs/host.md`, "What blocks the next step").
+- **Input.** `keys`/`key` set the `DirectInput` keyboard's state that the
+  layer's `GetDeviceState` returns. `pad`/`press` hold the buttons'
+  default keys (Circle C, Cross X, Start B, the arrows; the sandbox's
+  `GameSetting.ini` keeps the default bindings), where the hook answers
+  `Input_KeyHeld` for the bindings directly: the same pad word, as long as
+  the bindings are the defaults. The real keyboard, mouse and pads never
+  reach the game (the layer has no real devices).
+- **Background mode.** `FFX_HARNESS_BACKGROUND=1` reaches `ffx-rust.exe`
+  as it reaches the hook. Its window imports are real on Windows
+  (`win_forward.rs`): the window is made without `WS_VISIBLE`,
+  `ShowWindow` shows it without activating it and drops it to the bottom
+  of the window stack, `SetWindowPos` never raises or activates it,
+  `SetCursorPos` and `ClipCursor` do nothing, and `GetCursorPos` reads a
+  point far outside the window. Message boxes are logged and answered OK
+  (the import's Rust side never shows one).
+- **Sandbox and sound.** `FFX_HARNESS_HOME` is the game's Documents folder
+  (`--documents`), made by `Game::launch` as for `FFX.exe`, with the
+  sandbox's `GameSetting.ini` (`FFX_TEST_VOLUME` included). ffx-rust has no
+  sound yet (FMOD is missing, `docs/host.md`), so nothing reaches the
+  speakers either way.
+- **Screenshots.** `shot` reads the back buffer at the next `Present` (a
+  staging copy of the swap chain's buffer 0) into a 32-bit BMP; the reply
+  says `update <n>` with `n` the `Present`. With the null device
+  (`--gfx-null`) there is nothing to read and `shot` fails.
+- **Draw streams.** `gfxcapture <dir>` writes ffx-rust's recording so far
+  (`capture.ffxgfx` from the first `Present`, `calls.txt`). For the same
+  frames of `FFX.exe`, `FFX_GFX_BOOT_CAPTURE="<dir> [hash] frames N"`
+  (with `--gfx`) arms the hook's capture before the device exists, so it
+  holds the frames from the first `Present` on; a script waits for it with
+  `gfxcapture result`.
+- **How far it gets (2026-10-29).** `Game::launch` with `rust` returns
+  (the first `Present` comes about 20 s after the start) and `ping`,
+  `stats` and `read` answer; a few seconds later the i686 process ends in
+  an abort inside Unicorn's 32-bit translator (`docs/host.md`, "Status on
+  Windows"), so no replay runs through yet.
+- **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
+  `ffx-rust.exe` runs the game in a child process of itself
+  (`docs/host.md`, "The arena"), in a job that ends with the parent, so
+  ending either ends the game.
+
 ## Tests
 
 `crates/ffx-harness` launches the game (`Game::launch`, background mode)
