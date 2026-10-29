@@ -77,6 +77,7 @@ pub mod s3_wrap;
 pub mod o4_effect;
 pub mod o4_parts;
 pub mod o4_rcef;
+pub mod o4_small;
 pub mod o4_state;
 pub mod o4_steps;
 
@@ -1055,6 +1056,53 @@ ports! {
     "o4 pool node 0434@7a50" => o4_steps::POOL_NODE_0434_7A50, o4_steps::pool_node;
     "o4 pool node 0610@b980" => o4_steps::POOL_NODE_0610_B980, o4_steps::pool_node;
     "o4 pool node 0672@1860" => o4_steps::POOL_NODE_0672_1860, o4_steps::pool_node;
+    "o4 store imm 0168@3400" => o4_small::STORE_IMM_0168_3400, o4_small::store_imm;
+    "o4 store imm 0673@2030" => o4_small::STORE_IMM_0673_2030, o4_small::store_imm;
+    "o4 store imm 0673@2060" => o4_small::STORE_IMM_0673_2060, o4_small::store_imm;
+    "o4 store imm 0673@2070" => o4_small::STORE_IMM_0673_2070, o4_small::store_imm;
+    "o4 slot imm 0303@14b0" => o4_small::SLOT_IMM_0303_14B0, o4_small::slot_imm;
+    "o4 slot imm 0473@20c0" => o4_small::SLOT_IMM_0473_20C0, o4_small::slot_imm;
+    "o4 slot imm 0511@2b20" => o4_small::SLOT_IMM_0511_2B20, o4_small::slot_imm;
+    "o4 slot imm, 1 0443@1c00" => o4_small::SLOT_IMM_RET1_0443_1C00, o4_small::slot_imm_ret1;
+    "o4 slot imm, 1 0540@1030" => o4_small::SLOT_IMM_RET1_0540_1030, o4_small::slot_imm_ret1;
+    "o4 slot imm, 1 0540@1060" => o4_small::SLOT_IMM_RET1_0540_1060, o4_small::slot_imm_ret1;
+    "o4 copy twice 0162@39c0" => o4_small::COPY_TWICE_0162_39C0, o4_small::copy_twice;
+    "o4 copy twice 0304@3790" => o4_small::COPY_TWICE_0304_3790, o4_small::copy_twice;
+    "o4 copy twice 0586@35d0" => o4_small::COPY_TWICE_0586_35D0, o4_small::copy_twice;
+    "o4 slot 237, scale 0276@32f0" => o4_small::SLOT237_SCALE_0276_32F0, o4_small::slot237_scale;
+    "o4 slot 237, scale 0305@1cb0" => o4_small::SLOT237_SCALE_0305_1CB0, o4_small::slot237_scale;
+    "o4 slot 237, scale 0417@48e0" => o4_small::SLOT237_SCALE_0417_48E0, o4_small::slot237_scale;
+    "o4 slots 719, 306 0417@4920" => o4_small::SLOT719_306_0417_4920, o4_small::slot719_306;
+    "o4 slots 719, 306 0419@1d10" => o4_small::SLOT719_306_0419_1D10, o4_small::slot719_306;
+    "o4 slots 719, 306 0432@20d0" => o4_small::SLOT719_306_0432_20D0, o4_small::slot719_306;
+    "o4 slots 719, 306 0572@1630" => o4_small::SLOT719_306_0572_1630, o4_small::slot719_306;
+    "o4 slot, seq, wait 0378@1040" => o4_small::SLOT_SEQ_WAIT_0378_1040, o4_small::slot_seq_wait;
+    "o4 slot, seq, wait 0521@1130" => o4_small::SLOT_SEQ_WAIT_0521_1130, o4_small::slot_seq_wait;
+    "o4 slot, seq, wait 0525@1150" => o4_small::SLOT_SEQ_WAIT_0525_1150, o4_small::slot_seq_wait;
+    "o4 seq keep (447) 0193@1c70" => o4_small::SEQ_KEEP_447_0193_1C70, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0300@1280" => o4_small::SEQ_KEEP_447_0300_1280, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0525@15a0" => o4_small::SEQ_KEEP_447_0525_15A0, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0529@15c0" => o4_small::SEQ_KEEP_447_0529_15C0, o4_small::seq_keep_447;
+    "o4 record node 0596@3900" => o4_small::RECORD_NODE_0596_3900, o4_small::record_node;
+    "o4 record node 0348@29a0" => o4_small::RECORD_NODE_0348_29A0, o4_small::record_node;
+    "o4 record node 0353@4a00" => o4_small::RECORD_NODE_0353_4A00, o4_small::record_node;
+    "o4 record node 0612@3e60" => o4_small::RECORD_NODE_0612_3E60, o4_small::record_node;
+    "o4 static record node 0163@2410" => o4_small::STATIC_RECORD_NODE_0163_2410, o4_small::static_record_node;
+    "o4 static record node 0253@48d0" => o4_small::STATIC_RECORD_NODE_0253_48D0, o4_small::static_record_node;
+    "o4 static record node 0298@2850" => o4_small::STATIC_RECORD_NODE_0298_2850, o4_small::static_record_node;
+    "o4 static record node 0508@2b80" => o4_small::STATIC_RECORD_NODE_0508_2B80, o4_small::static_record_node;
+    "o4 part and vectors 0477@11c0" => o4_small::PART_AND_VECTORS_0477_11C0, o4_small::part_and_vectors;
+    "o4 part and vectors 0477@13a0" => o4_small::PART_AND_VECTORS_0477_13A0, o4_small::part_and_vectors;
+    "o4 part and vectors 0486@11c0" => o4_small::PART_AND_VECTORS_0486_11C0, o4_small::part_and_vectors;
+    "o4 part and vectors 0486@1360" => o4_small::PART_AND_VECTORS_0486_1360, o4_small::part_and_vectors;
+    "o4 attach plain 8 0300@1300" => o4_rcef::ATTACH_PLAIN8_0300_1300, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0301@1de0" => o4_rcef::ATTACH_PLAIN8_0301_1DE0, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0510@15c0" => o4_rcef::ATTACH_PLAIN8_0510_15C0, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0529@1270" => o4_rcef::ATTACH_PLAIN8_0529_1270, o4_rcef::attach_plain8;
+    "o4 attach plain 12 0301@1d00" => o4_rcef::ATTACH_PLAIN12_0301_1D00, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0360@1400" => o4_rcef::ATTACH_PLAIN12_0360_1400, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0360@14e0" => o4_rcef::ATTACH_PLAIN12_0360_14E0, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0510@14e0" => o4_rcef::ATTACH_PLAIN12_0510_14E0, o4_rcef::attach_plain12;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1147,6 +1195,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0481 free record", &m0481::FREE_RECORD),
     ("m0481 draw records", &m0481::DRAW_RECORDS),
     ("m0481 facing", &m0481::FACING),
+    ("m0481 spawn", &m0481::SPAWN),
     ("m0596 part init", &m0596::PART_INIT),
     ("m0596 object init", &m0596::OBJECT_INIT),
     ("m0596 place pair", &m0596::PLACE_PAIR),

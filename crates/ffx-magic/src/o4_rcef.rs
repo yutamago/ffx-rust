@@ -300,3 +300,112 @@ pub const ATTACH_SET_PAR_0526_1380: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`attach_set_par`] without the mode call, with `n` stores
+/// (`magic_0300` 0x10001300, 182 bytes, 8 stores; `magic_0301`
+/// 0x10001d00, 222 bytes, 12 stores): the attach slot at `+0x1c`, `A` at
+/// `+0x0d`, `D` at `+0x10`; `rcefMainSetPar(P, obj, 0, B)` (`B` at
+/// `+0x28`, `P` at `+0x2e`, the stores from `+0x32`), then the set-seq
+/// and call-seq callbacks after the stores (`+0x0e` and `+0x21` past
+/// them). Returns slot 449's `eax`.
+fn attach_plain<G: Game>(g: &mut G, img: &Image, fr: &Frame, n: u32) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let p = g.read::<u32>(w(0x04));
+    let obj = fr.arg(g, 0);
+    let a = disp8(img, f + 0x0d);
+    let v = g.read::<u32>(p.wrapping_add(w(0x10)));
+    // mov eax, [eax + 4 * slot]
+    let attach = slot_target(g, w(0x15), w(0x1c) / 4);
+    g.call(attach, fr.ecx, &[obj, v, a]);
+    let b = disp8(img, f + 0x28);
+    let p2 = g.read::<u32>(w(0x2e));
+    for k in 0..n {
+        // c7 86 disp32 imm32
+        let insn = f + 0x32 + 10 * k;
+        g.write::<u32>(obj.wrapping_add(img.word(insn + 2)), img.word(insn + 6));
+    }
+    let end = 0x32 + 10 * n;
+    let s440 = slot_target(g, w(0x23), 440);
+    g.call(s440, fr.ecx, &[p2, obj, 0, b, obj, v, a]);
+    let (cb, cb2) = (w(end + 0x0e), w(end + 0x21));
+    let s450 = slot_target(g, w(end + 0x09), 450);
+    g.call(s450, fr.ecx, &[obj, cb, p2, obj, 0, b, obj, v, a]);
+    let s449 = slot_target(g, w(end + 0x1c), 449);
+    let r = g.call(s449, fr.ecx, &[obj, cb2, obj, cb, p2, obj, 0, b, obj, v, a]);
+    Ret::eax(r.eax)
+}
+
+/// [`attach_plain`] with 8 stores (182 bytes).
+pub fn attach_plain8<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    attach_plain(g, img, fr, 8)
+}
+
+/// [`attach_plain`] with 12 stores (222 bytes).
+pub fn attach_plain12<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    attach_plain(g, img, fr, 12)
+}
+
+/// [`attach_plain8`] in `magic_0300` (0x10001300, 182 bytes).
+pub const ATTACH_PLAIN8_0300_1300: Sig = Sig {
+    len: 182,
+    hash: 0x6647_5c8b_f044_4c39,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain8`] in `magic_0301` (0x10001de0, 182 bytes).
+pub const ATTACH_PLAIN8_0301_1DE0: Sig = Sig {
+    len: 182,
+    hash: 0xfee1_0c08_74d9_1acb,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain8`] in `magic_0510` (0x100015c0, 182 bytes).
+pub const ATTACH_PLAIN8_0510_15C0: Sig = Sig {
+    len: 182,
+    hash: 0xf983_b317_ca6d_ca24,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain8`] in `magic_0529` (0x10001270, 182 bytes).
+pub const ATTACH_PLAIN8_0529_1270: Sig = Sig {
+    len: 182,
+    hash: 0x89a8_4dfc_6dd9_6584,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain12`] in `magic_0301` (0x10001d00, 222 bytes).
+pub const ATTACH_PLAIN12_0301_1D00: Sig = Sig {
+    len: 222,
+    hash: 0xb9d2_8e23_d988_8529,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain12`] in `magic_0360` (0x10001400, 222 bytes).
+pub const ATTACH_PLAIN12_0360_1400: Sig = Sig {
+    len: 222,
+    hash: 0x6b14_b0e9_fdbe_f558,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain12`] in `magic_0360` (0x100014e0, 222 bytes).
+pub const ATTACH_PLAIN12_0360_14E0: Sig = Sig {
+    len: 222,
+    hash: 0xe8b7_2a48_79cc_74f2,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`attach_plain12`] in `magic_0510` (0x100014e0, 222 bytes).
+pub const ATTACH_PLAIN12_0510_14E0: Sig = Sig {
+    len: 222,
+    hash: 0xd3bb_d6bb_ac0e_d2ef,
+    calls: &[],
+    imports: &[],
+};

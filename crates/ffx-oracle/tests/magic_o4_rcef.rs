@@ -126,13 +126,63 @@ fn attach_set_par_in_every_copy() {
     }
 }
 
+const ATTACH_PLAIN: &[(u16, u32, u32)] = &[
+    (300, 0x1300, 8),
+    (301, 0x1de0, 8),
+    (510, 0x15c0, 8),
+    (529, 0x1270, 8),
+    (301, 0x1d00, 12),
+    (360, 0x1400, 12),
+    (360, 0x14e0, 12),
+    (510, 0x14e0, 12),
+];
+
+#[test]
+fn attach_plain_in_every_copy() {
+    for &(n, rva, stores) in ATTACH_PLAIN {
+        let label = format!("o4 attach plain {stores}");
+        if copies(&label, &[(n, rva)]).is_empty() {
+            return;
+        }
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        rec(&mut t, 440, 7, |_, a| a[0] ^ 0x440);
+        rec(&mut t, 450, 9, |_, a| a[1] ^ 0x450);
+        rec(&mut t, 449, 11, |_, a| a[1] ^ 0x449_0000);
+        let f = t.at(rva);
+        let g = t.img.word(f + 0x04);
+        let moved = SCRATCH + 0x5000;
+        // the attach moves the game object: the set-par call reads it again
+        for s in [441u32, 442] {
+            rec(&mut t, s, 3, move |m, a| {
+                m.w32(g, moved);
+                a[1] ^ s
+            });
+        }
+        let d = t.img.word(f + 0x10);
+        for k in 0..2u32 {
+            let obj = SCRATCH + 0x2000 + 0x1000 * k;
+            let p = SCRATCH + 0x4000 + 0x400 * k;
+            t.set_u32(g, p);
+            t.set_u32(p + d, 0x1980_0000 + rva + k);
+            for i in 0..stores {
+                let field = t.img.word(f + 0x32 + 10 * i + 2);
+                t.set_u32(obj + field, 0x5a5a_0000 + i);
+            }
+            t.check_entry(f, Call::this(0x4444), &[obj], Eax::Checked);
+        }
+    }
+}
+
 #[test]
 fn dll_main_writes_only_crt_state() {
-    for n in dlls(&[SEQ_WAIT_447, CREATE_TASK_WAIT, ATTACH_SET_PAR]) {
+    let plain: Vec<(u16, u32)> = ATTACH_PLAIN.iter().map(|c| (c.0, c.1)).collect();
+    for n in dlls(&[SEQ_WAIT_447, CREATE_TASK_WAIT, ATTACH_SET_PAR, &plain]) {
         magic_l3::dll_main(n);
     }
 }
 
 // Mutation testing (M5 magic round 4, tools/mutants.py): 15 mutants of
 // `o4_rcef` and the generalised wait time of `rcef::create_task_wait`,
-// all killed; `attach_set_par`: 10 more, all killed.
+// all killed; `attach_set_par` and `attach_plain`: 21 more, all killed.
