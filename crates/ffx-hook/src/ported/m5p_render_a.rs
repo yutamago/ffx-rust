@@ -8,6 +8,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::m5p_render_a::{self as ma, bridge as a};
 use ffx_prender::m5p_render_a2::{self as m2, bridge as b};
+use ffx_prender::m5p_render_a3::bridge as c;
 
 ported! {
     // ---- batch 1 ----
@@ -1088,5 +1089,90 @@ ported! {
     /// `()`.
     PhyreStaticEventOwner_004ff0a0 @ 0x004f_f0a0 => extern "C" fn static_event_owner() -> u32 {
         b::static_event_owner(&mut mem())
+    }
+    // ---- batch 3 ----
+    /// `(this)`.
+    PSpriteCollection_dtorBody_00433c80 @ 0x0043_3c80 => extern "thiscall" fn sprite_collection_dtor(this: u32) -> u32 {
+        c::sprite_collection_dtor(&mut mem(), this)
+    }
+    /// `(this; src)` -> this.
+    Phyre_PGeometry_PMeshSegmentBase_copy_004870b0 @ 0x0048_70b0 => extern "thiscall" fn segment_base_copy(this: u32, src: u32) -> u32 {
+        c::segment_base_copy(&mut mem(), this, src)
+    }
+    /// `(dst, src, count)`.
+    Phyre_PGeometry_PMeshSegment_copyArray_00486120 @ 0x0048_6120 => extern "C" fn segments_copy(dst: u32, src: u32, count: u32) {
+        c::segments_copy(&mut mem(), dst, src, count);
+    }
+    /// `(dst, src, count)` (`COPY_CONSTRUCTS`).
+    PhyreCopyConstruct6C_0048c960 @ 0x0048_c960 => extern "C" fn copy_construct_0048c960(dst: u32, src: u32, count: u32) {
+        c::copy_construct(&mut mem(), dst, src, count, 0x6c, 0x0048_f0d0);
+    }
+    /// `(dst, src, count)` (`COPY_CONSTRUCTS`).
+    PhyreCopyConstruct254_004baed0 @ 0x004b_aed0 => extern "C" fn copy_construct_004baed0(dst: u32, src: u32, count: u32) {
+        c::copy_construct(&mut mem(), dst, src, count, 0x254, 0x004b_bcb0);
+    }
+    /// `(dst, count)`.
+    PShaderPassD3D11_constructArray_004bd1e0 @ 0x004b_d1e0 => extern "C" fn shader_pass_construct(dst: u32, count: u32) {
+        c::shader_pass_construct(&mut mem(), dst, count);
+    }
+    /// `(this; n, src, count)` -> storage.
+    PSharray_wordsAlloc_0048bbc0 @ 0x0048_bbc0 => extern "thiscall" fn sharray_words_alloc(this: u32, n: u32, src: u32, count: u32) -> u32 {
+        c::sharray_words_alloc(&mut mem(), this, n, src, count)
+    }
+    /// `(this; src)` -> this.
+    PSharray20_copy_0048eed0 @ 0x0048_eed0 => extern "thiscall" fn sharray20_copy(this: u32, src: u32) -> u32 {
+        c::sharray20_copy(&mut mem(), this, src)
+    }
+    /// `(this; src)` -> this.
+    Phyre_PGeometry_PMeshSegment_copy_0048f060 @ 0x0048_f060 => extern "thiscall" fn mesh_segment_copy(this: u32, src: u32) -> u32 {
+        c::mesh_segment_copy(&mut mem(), this, src)
+    }
+    /// `(this; src)` -> this.
+    Phyre_PGeometry_PMesh_copy_0048f0d0 @ 0x0048_f0d0 => extern "thiscall" fn mesh_copy(this: u32, src: u32) -> u32 {
+        c::mesh_copy(&mut mem(), this, src)
+    }
+    /// `(dst, src, count)` (`STRING_RECORD_COPIES`).
+    PShaderRecord_copyArray_004a3530 @ 0x004a_3530 => extern "C" fn string_records_copy_004a3530(dst: u32, src: u32, count: u32) {
+        c::string_records_copy(&mut mem(), dst, src, count);
+    }
+    /// `(dst, src, count)` (`STRING_RECORD_COPIES`).
+    PShaderRecord_copyArray_004a3620 @ 0x004a_3620 => extern "C" fn string_records_copy_004a3620(dst: u32, src: u32, count: u32) {
+        c::string_records_copy(&mut mem(), dst, src, count);
+    }
+    /// `(this; w, h, d, format, mips)` -> status.
+    Phyre_PTexture3DBase_setDimensions_004c5980 @ 0x004c_5980 => extern "thiscall" fn set_dimensions(this: u32, w: u32, h: u32, d: u32, format: u32, mips: u32) -> u32 {
+        c::set_dimensions(&mut mem(), this, w, h, d, format, mips)
+    }
+    /// `(this; n)`.
+    PArray_truncateTagged_004d5940 @ 0x004d_5940 => extern "thiscall" fn truncate_tagged(this: u32, n: u32) {
+        c::truncate_tagged(&mut mem(), this, n);
+    }
+    /// `(this; n)`.
+    PArray_truncateHeaders_004d58b0 @ 0x004d_58b0 => extern "thiscall" fn truncate_headers(this: u32, n: u32) {
+        c::truncate_headers(&mut mem(), this, n);
+    }
+    /// `(this; n)` -> status (`SHARRAY_RESIZES`).
+    PSharray20_resize_00563df0 @ 0x0056_3df0 => extern "thiscall" fn sharray20_resize_00563df0(this: u32, n: u32) -> u32 {
+        c::sharray20_resize(&mut mem(), this, n, 0x0048_0b60, 0x0056_0df0)
+    }
+    /// `(this; n)` -> status (`SHARRAY_RESIZES`).
+    PSharray20_resize_00563ed0 @ 0x0056_3ed0 => extern "thiscall" fn sharray20_resize_00563ed0(this: u32, n: u32) -> u32 {
+        c::sharray20_resize(&mut mem(), this, n, 0x0048_4a30, 0x0056_0e40)
+    }
+    /// `(this; buffer, count)` -> status (`SHARRAY_EXTERNALS`).
+    PSharray20_setToExternalBuffer_00564160 @ 0x0056_4160 => extern "thiscall" fn sharray20_external_00564160(this: u32, buffer: u32, count: u32) -> u32 {
+        c::sharray20_external(&mut mem(), this, buffer, count)
+    }
+    /// `(this; buffer, count)` -> status (`SHARRAY_EXTERNALS`).
+    PSharray20_setToExternalBuffer_00564210 @ 0x0056_4210 => extern "thiscall" fn sharray20_external_00564210(this: u32, buffer: u32, count: u32) -> u32 {
+        c::sharray20_external(&mut mem(), this, buffer, count)
+    }
+    /// `(this; buffer, count)` -> 0 (`MEMBER_EXTERNALS`).
+    PClassDataMemberPhyreSharray_setToExternalBuffer_005642e0 @ 0x0056_42e0 => extern "thiscall" fn member_external_005642e0(this: u32, buffer: u32, count: u32) -> u32 {
+        c::member_external(&mut mem(), this, buffer, count, 0x00cb_11b8, 0x0056_4160)
+    }
+    /// `(this; buffer, count)` -> 0 (`MEMBER_EXTERNALS`).
+    PClassDataMemberPhyreSharray_setToExternalBuffer_00564330 @ 0x0056_4330 => extern "thiscall" fn member_external_00564330(this: u32, buffer: u32, count: u32) -> u32 {
+        c::member_external(&mut mem(), this, buffer, count, 0x00cb_1088, 0x0056_4210)
     }
 }
