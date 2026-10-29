@@ -2280,3 +2280,55 @@ fn small_loops() {
         }
     }
 }
+
+/// The view matrix (`magic_0307`), the static node (`magic_0070`, an
+/// empty list and one with a last node) and the part block start
+/// (`magic_0477`).
+#[test]
+fn view_node_part() {
+    if let Some(mut t) = twin(307) {
+        let f = t.at(0x63e0);
+        for s in [723u32, 724, 327] {
+            rec(&mut t, s, 1, move |m, a| {
+                m.w32(a[0], s);
+                s
+            });
+        }
+        t.check_entry(f, Call::default(), &[SCRATCH + 0x100], Eax::Checked);
+    }
+    if let Some(mut t) = twin(70) {
+        let f = t.at(0x92a0);
+        let list = t.img.word(f + 0x1f);
+        let node = SCRATCH + 0x1000;
+        for last in [list, SCRATCH + 0x2000] {
+            t.write(node, &[0x66; 0x80]);
+            t.write(SCRATCH + 0x2000, &[0x22; 0x20]);
+            t.set_u32(list + 0x10, last);
+            t.set_u16(list + 0x18, 4);
+            t.check(
+                f,
+                Call::this(node),
+                &[0x0b0b],
+                Eax::Checked,
+                |g, img, fr| s4_misc::static_node(g, img, fr),
+            );
+        }
+    }
+    if let Some(mut t) = twin(477) {
+        let f = t.at(0x1000);
+        t.set_u32(t.img.word(f + 0x1), SCRATCH + 0x200);
+        t.set_u32(t.img.word(f + 0xc), SCRATCH + 0x300);
+        t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+        t.set_u32(SCRATCH + 0x400, 0x1111);
+        t.stub(941, |_, _| SCRATCH + 0x400);
+        t.stub(714, |m, a| {
+            for (i, w) in (0u32..).zip(&a[..5]) {
+                m.w32(SCRATCH + 0x910 + 4 * i, *w);
+            }
+            0x714
+        });
+        let start = t.img.rel32_target(f + 0x31);
+        t.set_u32(t.img.word(start + 0x04), SCRATCH + 0x980);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

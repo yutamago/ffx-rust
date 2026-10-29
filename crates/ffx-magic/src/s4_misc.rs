@@ -2,6 +2,7 @@
 //! list. Each doc names the DLL and address it was ported from, its size
 //! and how many DLLs carry it.
 
+use crate::l3_common::{ListAt, attach};
 use crate::l5_objhost::{OBJ_SCRIPT, POOL_ALLOC, obj_script, pool_alloc};
 use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
@@ -2907,5 +2908,123 @@ pub const MODELS_295: Sig = Sig {
     len: 100,
     hash: 0x7828_8662_28f8_083e,
     calls: &[],
+    imports: &[],
+};
+
+/// An object's view matrix (cdecl `(object)`; a /GS frame): the screen
+/// and camera matrices into the frame (slots 723, 724), then slot 327
+/// `(object + 0x80, camera)`. Each call sees the words the earlier ones
+/// left. Returns slot 327's `eax`.
+///
+/// `magic_0307` 0x100063e0 (102 bytes; 4 DLLs).
+pub fn view_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (screen, camera) = (ebp.wrapping_sub(0x84), ebp.wrapping_sub(0x44));
+    let mut s = Pushes::default();
+    s.push(screen);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x1f), 723), 0);
+    s.push(camera);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x30), 724), 0);
+    s.push_all(&[camera, obj + 0x80]);
+    // call width: 12 (Pushes caps the words at 12)
+    Ret::eax(s.call(g, slot_target(g, w(0x48), 327), 0).eax)
+}
+
+/// [`view_matrix`].
+pub const VIEW_MATRIX: Sig = Sig {
+    len: 102,
+    hash: 0x3461_f6f2_1f30_e856,
+    calls: &[(0x5e, Callee::Any)],
+    imports: &[],
+};
+
+/// A node (`ecx`) set up under the DLL's static list (internal, the stack
+/// word a value): its vtable (operand `+0x5`), lists and owner (the
+/// list, immediates `+0x18`/`+0x1f`) and appended to the list (its last
+/// `+0x24`/`+0x2c`/`+0x4e`, first `+0x39`, count `+0x45`); `+0x70` the
+/// DLL's block (`+0x55`), `+0x6c` the value, byte `+0x74` 0, `+0x68` 2.
+/// Returns the value.
+///
+/// `magic_0070` 0x100092a0 (105 bytes; 4 DLLs).
+pub fn static_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let node = fr.ecx;
+    g.write::<u32>(node, w(0x5));
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, w(0x18));
+    attach(
+        g,
+        node,
+        w(0x1f),
+        ListAt {
+            last: w(0x24),
+            last2: w(0x2c),
+            sentinel: w(0x31),
+            first: w(0x39),
+            count: w(0x45),
+            last_w: w(0x4e),
+        },
+    );
+    let v = fr.arg(g, 0);
+    g.write::<u32>(node + 0x70, w(0x55));
+    g.write::<u32>(node + 0x6c, v);
+    g.write::<u8>(node + 0x74, 0);
+    g.write::<u32>(node + 0x68, 2);
+    Ret::eax(v)
+}
+
+/// [`static_node`].
+pub const STATIC_NODE: Sig = Sig {
+    len: 105,
+    hash: 0x64d1_9e3d_2b25_363e,
+    calls: &[],
+    imports: &[],
+};
+
+/// The effect's start (a table entry, no arguments): `*G_P = ITEM`
+/// (operands `+0x1`, `+0x7`); the part `list[0]` of slot 941 `(*G_D +
+/// 0x10)` (`+0xc`) started on the DLL's part block (`+0x2c`, 0x1000, 1;
+/// [`start_part`]); three 16-byte constants copied into the DLL's blocks
+/// (`+0x38` to `+0x3f`, `+0x47` to `+0x4f`, `+0x56` to `+0x60`). Returns
+/// 1.
+///
+/// `magic_0477` 0x10001000 (106 bytes; 4 DLLs).
+pub fn part_block_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let p = g.read::<u32>(w(0x1));
+    g.write::<u32>(p, w(0x7));
+    let d = g.read::<u32>(g.read::<u32>(w(0xc)).wrapping_add(0x10));
+    let t = slot_target(g, w(0x14), 941);
+    let list = g.call(t, 0, &[d]).eax;
+    let program = g.read::<u32>(list);
+    start_part(
+        g,
+        img,
+        img.rel32_target(f + 0x31),
+        w(0x2c),
+        0x1000,
+        program,
+        1,
+    );
+    for (src, dst) in [(0x38, 0x3f), (0x47, 0x4f), (0x56, 0x60)] {
+        let mut b = [0u8; 16];
+        g.read_bytes(w(src), &mut b);
+        g.write_bytes(w(dst), &b);
+    }
+    Ret::eax(1)
+}
+
+/// [`part_block_start`].
+pub const PART_BLOCK_START: Sig = Sig {
+    len: 106,
+    hash: 0xcdba_5dca_5535_6346,
+    calls: &[(0x31, Callee::Sig(&START_PART))],
     imports: &[],
 };
