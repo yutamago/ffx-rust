@@ -28,4 +28,17 @@ ported! {
     Phyre_PScripting_hasMemberPath_0050be90 @ 0x0050_be90 => extern "C" fn has_member_path(class: u32, path: u32) -> u8 {
         lb::has_member_path(&mut mem(), class, path)
     }
+    /// `Phyre::PScripting::RegisterTypes(L, ns, name)`.
+    Phyre_PScripting_RegisterTypes @ 0x0043_6f90 => extern "C" fn register_types(l: u32, ns: u32, name: u32) -> u32 {
+        lb::register_types(&mut mem(), l, ns, name)
+    }
+    /// `Phyre::PScripting::RegisterVectorMatrixTypes(L)`.
+    Phyre_PScripting_RegisterVectorMatrixTypes @ 0x0057_21b0 => extern "C" fn register_vector_matrix(l: u32) -> u32 {
+        lb::register_vector_matrix(&mut mem(), l)
+    }
+    /// `Phyre::PScripting::Require(L)`.
+    Phyre_PScripting_Require @ 0x005d_63a0 => extern "C" fn require_module(l: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::require_module(&mut mem(), l, f.at())
+    }
 }
