@@ -27,6 +27,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
+use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
 
@@ -3896,6 +3897,719 @@ fn glue_stubs_and_thunks_match_the_original() {
                     Out::U32(gl::jump_thunk(m, target))
                 });
             }
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_savedata2) ----
+
+/// A recording stub over the original at `sym` (`this`, `n` words, `pops`
+/// as [`Twins::stub_code`]) returning `seq[k]` on its `k`-th call (`seq`
+/// must be long enough).
+fn stub_seq(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let mut c = Vec::new();
+    let logw = t.log;
+    c.push(0xa1);
+    c.extend(logw.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((logw + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    if this {
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    }
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(logw.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+    }
+    let addr = t.cave_code(&c);
+    t.jump(sym, addr);
+}
+
+/// A recording cdecl stub bound to the import slot `slot` for a variadic
+/// callee (`sprintf`, `wsprintfW`): logs `long` words, or `short` when
+/// its word `which` is `value` (a call with fewer arguments: the words
+/// past them are the caller's stack). Returns `value_out`.
+#[allow(clippy::too_many_arguments)]
+fn stub_import_varargs(
+    t: &mut Twins,
+    slot: u32,
+    which: u32,
+    value: u32,
+    short: u32,
+    most: u32,
+    value_out: u32,
+) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(slot.to_le_bytes()); // mov [eax], tag
+    for i in 0..short {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0x81, 0x7c, 0x24, (4 + 4 * which) as u8]);
+    c.extend(value.to_le_bytes()); // cmp dword [esp+4+4which], value
+    let tail: Vec<u8> = (short..most)
+        .flat_map(|i| {
+            [
+                0x8b,
+                0x54,
+                0x24,
+                (4 + 4 * i) as u8,
+                0x89,
+                0x50,
+                (8 + 4 * i) as u8,
+            ]
+        })
+        .collect();
+    c.extend([0x74, tail.len() as u8]); // je past the tail
+    c.extend(tail);
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(value_out.to_le_bytes()); // mov eax, value_out
+    c.push(0xc3);
+    let addr = t.cave_code(&c);
+    let at = t.rebase(slot);
+    t.patch(at, &addr.to_le_bytes());
+}
+
+/// The save layer's forwarders: `SaveDataManager_MarkAlbhedLoaded`,
+/// `SaveDataIsAlbhedLoaded` (no manager or one), the three
+/// `SaveDataIs*Finished` and `SaveDataResetToIdle` (stubbed and on the real
+/// methods), `SaveDataSetState`, `SaveDataSetSaveDataInfo`,
+/// `SaveDataPreDebugSave`, `AutoSave_DebugSave_00647e10` (`al` 0 or not),
+/// `SaveDataToLoad`, `SaveDataToLoadAllAlBhed`, `SaveDataToSave` (saving
+/// enabled or not), the debug-load/save thunks and `debugSavedataLoadAll`,
+/// the Eternal Calm sizes (outside the 7 maps, cached, measured) and
+/// `EternalCalm_FileSize_0067a9f0` (open or not; sizes around the
+/// signed rounding).
+#[test]
+#[allow(clippy::too_many_lines)] // two dozen forwarders, one case setup
+fn save2_forwarders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0101);
+        for case in 0..40 {
+            t.reset();
+            let obj = t.zeros(0x400);
+            let dialog = t.zeros(0x40);
+            t.g32(s2::MANAGER, dialog);
+            let none = |name: &str| format!("{name} #{case}");
+            // the real methods on a manager object
+            t.stub(s2b::INSTANCE, false, 0, 0, obj);
+            t.w32(obj + 8, rng.below(8));
+            t.w32(obj + 0xc, rng.word());
+            for (sym, method) in [
+                (0x0064_8060u32, s2b::IS_DELETING),
+                (0x0064_8090, s2b::IS_LOADING),
+                (0x0064_80f0, s2b::IS_SAVING),
+                (0x0064_8530, s2b::RESET_IDLE),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x} real")),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(s2b::manager_call(m, method)),
+                );
+            }
+            t.check(
+                &none("IsAlbhedLoaded real"),
+                0x0064_8020,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::is_albhed_loaded(m)),
+            );
+            t.check(
+                &none("MarkAlbhedLoaded real"),
+                0x0064_7e40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::mark_albhed_loaded(m)),
+            );
+            let v = rng.word();
+            t.check(&none("SetState"), 0x0064_8710, Conv::Cdecl, &[v], |m| {
+                Out::U32(s2b::set_state(m, v))
+            });
+            // stubbed methods
+            t.reset();
+            let m0 = if rng.chance(4) { 0 } else { rng.next() };
+            let pad: Vec<u8> = (0..4).map(|_| rng.next() as u8).collect();
+            let pad_at = t.rebase(s2::PAD_WORDS[0]);
+            t.write(pad_at, &pad);
+            t.stubs(&[
+                (s2b::INSTANCE, false, 0, 0, m0),
+                // SetWord0 leaves eax (the manager) alone
+                (s2b::MARK_ALBHED, true, 0, 0, m0),
+                (s2b::IS_ALBHED, true, 0, 0, rng.next()),
+                (s2b::IS_DELETING, true, 0, 0, rng.next()),
+                (s2b::IS_LOADING, true, 0, 0, rng.next()),
+                (s2b::IS_SAVING, true, 0, 0, rng.next()),
+                (s2b::RESET_IDLE, true, 0, 0, rng.next()),
+                (s2b::SET_CB_RESULT, true, 1, 1, rng.next()),
+                (
+                    s2b::IS_SAVE_ENABLED,
+                    true,
+                    0,
+                    0,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                ),
+                (s2b::SET_INFO, true, 3, 3, rng.next()),
+                (s2b::PRE_DEBUG_SAVE, true, 1, 1, rng.next()),
+                (
+                    s2b::CHECK_DEBUG_SAVE,
+                    true,
+                    1,
+                    1,
+                    rng.next() & !(0xff * u32::from(rng.chance(2))),
+                ),
+                (s2b::DO_LOAD, true, 0, 0, rng.next()),
+                (s2b::LOAD_ALL, true, 0, 0, rng.next()),
+                (s2b::DEBUG_LOAD, false, 3, 0, rng.next()),
+                (s2b::DEBUG_SAVE, false, 3, 0, rng.next()),
+                (s2b::DEBUG_LOAD_ALL, false, 3, 0, rng.next()),
+            ]);
+            // doSave's stub keeps the pad words it sees (set for the call)
+            let r = rng.next();
+            let log = t.stub_code(s2b::DO_SAVE, true, 0, 0, r);
+            let snoop = t.zeros(4);
+            let mut c = vec![0xa1];
+            c.extend(pad_at.to_le_bytes()); // mov eax, [pad words]
+            c.push(0xa3);
+            c.extend(snoop.to_le_bytes()); // mov [snoop], eax
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+            let at = t.cave_code(&c);
+            t.jump(s2b::DO_SAVE, at);
+            t.check(
+                &none("MarkAlbhedLoaded"),
+                0x0064_7e40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::mark_albhed_loaded(m)),
+            );
+            t.check(
+                &none("IsAlbhedLoaded"),
+                0x0064_8020,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::is_albhed_loaded(m)),
+            );
+            let a: Vec<u32> = (0..3).map(|_| rng.word()).collect();
+            t.check(
+                &none("SetSaveDataInfo"),
+                0x0064_86c0,
+                Conv::Cdecl,
+                &a,
+                |m| Out::U32(s2b::set_save_data_info_forward(m, a[0], a[1], a[2])),
+            );
+            t.check(
+                &none("PreDebugSave"),
+                0x0064_84d0,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::pre_debug_save_forward(m, a[0])),
+            );
+            t.check(
+                &none("AutoSave_DebugSave"),
+                0x0064_7e10,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::auto_debug_save(m, a[0])),
+            );
+            t.check(&none("ToLoad"), 0x0064_8760, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_load(m))
+            });
+            t.check(&none("ToLoadAll"), 0x0064_8790, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_load_all(m))
+            });
+            t.check(&none("ToSave"), 0x0064_87a0, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_save(m))
+            });
+            for (sym, target) in [
+                (0x0064_92b0u32, s2b::DEBUG_LOAD),
+                (0x0064_92e0, s2b::DEBUG_SAVE),
+            ] {
+                t.check(&none(&format!("{sym:#x}")), sym, Conv::Cdecl, &a, |m| {
+                    Out::U32(s2b::debug_thunk(m, target, a[0], a[1], a[2]))
+                });
+            }
+            t.check(
+                &none("debugSavedataLoadAll"),
+                0x0064_92c0,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::debug_load_all(m, a[0])),
+            );
+            // the Eternal Calm sizes
+            let first = rng.below(0x100);
+            t.g32(s2::CALM_FIRST, first);
+            for tbl in [s2::CALM_MGRP_SIZES, s2::CALM_SCENE_SIZES] {
+                let sizes: Vec<u32> = (0..7)
+                    .map(|_| {
+                        if rng.chance(2) {
+                            0xffff_ffff
+                        } else {
+                            rng.below(0x10000)
+                        }
+                    })
+                    .collect();
+                let at = t.rebase(tbl);
+                let bytes: Vec<u8> = sizes.iter().flat_map(|v| v.to_le_bytes()).collect();
+                t.write(at, &bytes);
+            }
+            t.stub(s2b::CALM_FILE_SIZE, false, 1, 0, rng.word());
+            let map = first.wrapping_add(rng.below(10)).wrapping_sub(1);
+            for (sym, sizes, names) in [
+                (0x0067_aa70u32, s2::CALM_MGRP_SIZES, s2::CALM_MGRP_NAMES),
+                (0x0067_aae0, s2::CALM_SCENE_SIZES, s2::CALM_SCENE_NAMES),
+            ] {
+                let what = none(&format!("{sym:#x} map {map:#x}"));
+                t.check(&what, sym, Conv::Cdecl, &[map], |m| {
+                    Out::U32(s2b::calm_size(m, sizes, names, map))
+                });
+            }
+            // the measuring itself (its stub above put back)
+            t.reset();
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            let size = [
+                0,
+                1,
+                15,
+                16,
+                17,
+                0xffff_fff0,
+                0xffff_ffef,
+                0x7fff_fff5,
+                rng.next(),
+            ][rng.below(9) as usize];
+            t.stubs(&[
+                (s2b::SCE_OPEN, false, 2, 0, f),
+                (s2b::SCE_FILE_SIZE, false, 1, 0, size),
+                (s2b::SCE_CLOSE, false, 1, 0, rng.next()),
+            ]);
+            t.stub_import(s2b::IOB_FUNC_IAT, false, 0, 0, rng.next());
+            t.stub_import(s2b::FPRINTF_IAT, false, 3, 0, rng.next());
+            let name = rng.next();
+            let what = none(&format!("EternalCalm_FileSize f {f:#x} size {size:#x}"));
+            t.check(&what, 0x0067_a9f0, Conv::Cdecl, &[name], |m| {
+                Out::U32(s2b::calm_file_size(m, name))
+            });
+        }
+    });
+}
+
+/// The manager's own methods: `setSaveDataInfo` (each string null or
+/// not), `setSaveDataIconString`, `preDebugSave`, `0x006f1c40` (word 0x1b
+/// or not; the debug save's answer 0 or not), `doLoad`, `0x006f1d10`,
+/// `doSave` (enabled or not), `0x006f2630` (synthetic tables: ids found,
+/// appended), the `std::string` moves `0x006494d0`/`0x00649540` (short
+/// and long), `SaveDataLocRemoveNumTag` (tags at random places, short
+/// strings) and the load/save starts.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the methods
+fn save2_manager_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0102);
+        for case in 0..50 {
+            t.reset();
+            let dialog = t.zeros(0x40);
+            t.g32(s2::MANAGER, dialog);
+            let dbg = t.zeros(0x40);
+            t.g32(s2::SAVE_BUFFER, dbg);
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            t.stub_import(s2b::MEMMOVE_IAT, false, 3, 0, rng.next());
+            t.stubs(&[
+                (s2b::MEMCPY, false, 3, 0, rng.next()),
+                (
+                    s2b::DEBUG_SAVE_INTERNAL,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                ),
+                (s2b::START_LOAD, false, 2, 0, rng.next()),
+                (s2b::START_LOAD_ALL, false, 2, 0, rng.next()),
+                (s2b::START_SAVE, false, 2, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MENU_OPEN, false, 0, 0, rng.next()),
+                (s2b::MENU_CLEAR, false, 0, 0, rng.next()),
+                (s2b::SHOW_POPUP, false, 1, 0, rng.next()),
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            let none = |name: &str| format!("{name} #{case}");
+            let this = t.zeros(0x800);
+            let save = t.zeros(0x40);
+            t.write(
+                save + 0x18,
+                &(if rng.chance(3) {
+                    0x1bu16
+                } else {
+                    rng.next() as u16
+                })
+                .to_le_bytes(),
+            );
+            t.w32(this, if rng.chance(3) { 0 } else { rng.next() });
+            t.w32(this + 0x350, save);
+            t.w32(this + 0x354, rng.next());
+            let s: Vec<u32> = (0..3)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            t.check(
+                &none("setSaveDataInfo"),
+                0x006f_2560,
+                Conv::Thiscall(this),
+                &s,
+                |m| Out::U32(s2b::set_save_data_info(m, this, s[0], s[1], s[2])),
+            );
+            t.check(
+                &none("setIconString"),
+                0x006f_2530,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::set_icon_string(m, this, s[0])),
+            );
+            t.check(
+                &none("preDebugSave"),
+                0x006f_2410,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::pre_debug_save(m, this)),
+            );
+            t.check(
+                &none("0x006f1c40"),
+                0x006f_1c40,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::check_debug_save(m, this)),
+            );
+            t.check(
+                &none("doLoad"),
+                0x006f_1ce0,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::do_load(m, this)),
+            );
+            t.check(
+                &none("0x006f1d10"),
+                0x006f_1d10,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::load_all(m, this)),
+            );
+            t.check(
+                &none("doSave"),
+                0x006f_1d70,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::do_save(m, this)),
+            );
+            // the starts themselves, their callees stubbed again
+            t.reset();
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            t.stub_import(s2b::MEMMOVE_IAT, false, 3, 0, rng.next());
+            t.stubs(&[
+                (s2b::MEMCPY, false, 3, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MENU_OPEN, false, 0, 0, rng.next()),
+                (s2b::MENU_CLEAR, false, 0, 0, rng.next()),
+                (s2b::SHOW_POPUP, false, 1, 0, rng.next()),
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            let (size, buf) = (rng.next(), rng.next());
+            for (sym, state) in [(0x006f_01d0u32, 0xb), (0x006e_feb0, 0x15)] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Cdecl,
+                    &[size, buf],
+                    |m| Out::U32(s2b::start_load(m, state, size, buf)),
+                );
+            }
+            t.check(
+                &none("0x006f07a0"),
+                0x006f_07a0,
+                Conv::Cdecl,
+                &[size, buf],
+                |m| Out::U32(s2b::start_save(m, size, buf)),
+            );
+            // 0x006f2630: a table of up to 8 entries with small ids
+            let n = rng.below(8);
+            let mut table = Vec::new();
+            for _ in 0..n * 8 {
+                table.push(rng.next());
+            }
+            for k in 0..n as usize {
+                let id = rng.below(12);
+                table[k * 8 + 1] = (table[k * 8 + 1] & 0xffff) | (id << 16);
+            }
+            table.extend(std::iter::repeat_n(0, 0x80));
+            let table = t.words(&table);
+            let mgr = t.alloc(&(0..0x500).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let flags: Vec<u8> = (0..200)
+                .map(|i| u8::from((i < 12 || i == 199) && rng.chance(3)) * (1 + rng.below(3) as u8))
+                .collect();
+            t.write(mgr + 0x3bc, &flags);
+            t.w32(mgr + 0x368, table);
+            t.w32(mgr + 0x3a0, if rng.chance(8) { 0xffff_ffff } else { n });
+            t.check(
+                &none("0x006f2630"),
+                0x006f_2630,
+                Conv::Thiscall(mgr),
+                &[],
+                |m| {
+                    s2b::rebuild_table(m, mgr);
+                    Out::None
+                },
+            );
+            // the string moves
+            let long = rng.chance(2);
+            let src = t.words(&[
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                [0, 1, 0xf, rng.next(), 0xffff_ffff][rng.below(5) as usize],
+                if long {
+                    0x10 + rng.below(0x100)
+                } else {
+                    rng.below(0x10)
+                },
+                rng.next(),
+            ]);
+            let dst = t.zeros(0x20);
+            for sym in [0x0064_94d0u32, 0x0064_9540] {
+                let x = rng.next();
+                t.check(
+                    &none(&format!("{sym:#x} long {long}")),
+                    sym,
+                    Conv::Thiscall(dst),
+                    &[src, x],
+                    |m| Out::U32(s2b::string_move(m, dst, src)),
+                );
+            }
+            // SaveDataLocRemoveNumTag
+            // a one-character tag now and then (its NUL matches the end)
+            let second = if rng.chance(4) {
+                0
+            } else {
+                b'0' + rng.below(2) as u8
+            };
+            let tag = t.alloc(&[b'#', second, 0]);
+            t.g32(s2::NUM_TAG, tag);
+            let text: Vec<u8> = (0..rng.below(20))
+                .map(|_| b"#01a"[rng.below(4) as usize])
+                .chain([0])
+                .collect();
+            let text = t.alloc(&text);
+            let out = t.alloc(&(0..0x20).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>());
+            t.check(
+                &none("LocRemoveNumTag"),
+                0x0064_8150,
+                Conv::Cdecl,
+                &[text, out],
+                |m| Out::U32(s2b::loc_remove_num_tag(m, text, out)),
+            );
+        }
+    });
+}
+
+/// The framed ones: `SaveDataManager_debugSave_Internal_6f0650` (the file
+/// opens or not), `SetUpDefaultSaveFolder` (already set; the folder
+/// lookup failing; each directory there, made, or failing) and
+/// `SaveDataManager_initSaveDataSys`: the imports stubbed.
+#[test]
+fn save2_framed_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0103);
+        for case in 0..40 {
+            t.reset();
+            let dialog = t.alloc(&(0..0x40).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>());
+            t.g32(s2::MANAGER, dialog);
+            t.stubs(&[
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MEMSET, false, 3, 0, rng.next()),
+                (s2b::STREAM_PREFIX, false, 0, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            t.stub_import(s2b::GET_TICK_COUNT_IAT, false, 0, 0, rng.next());
+            t.stub_import(s2b::WSPRINTFW_IAT, false, 5, 0, rng.next());
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            t.stub_import(s2b::WFOPEN_IAT, false, 2, 0, f);
+            t.stub_import(s2b::FWRITE_IAT, false, 4, 0, rng.next());
+            t.stub_import(s2b::FCLOSE_IAT, false, 1, 0, rng.next());
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            let fmt = t.rebase(s2::PREFIX_FORMAT);
+            let r = rng.next();
+            stub_import_varargs(t, s2b::SPRINTF_IAT, 1, fmt, 3, 5, r);
+            let (size, buf) = (rng.next(), rng.next());
+            t.skip = 4;
+            let what = format!("debugSave_Internal #{case} f {f:#x}");
+            t.check_framed(
+                &what,
+                0x006f_0510,
+                Conv::Cdecl,
+                &[size, buf],
+                s2b::DEBUG_SAVE_FRAME,
+                |m, ebp| Out::U32(s2b::debug_save_internal(m, ebp, size, buf)),
+            );
+            let this = t.zeros(0x400);
+            let what = format!("initSaveDataSys #{case}");
+            t.check_framed(
+                &what,
+                0x006f_1fa0,
+                Conv::Thiscall(this),
+                &[buf, size],
+                s2b::INIT_FRAME,
+                |m, ebp| Out::U32(s2b::init_save_data_sys(m, ebp, this, buf, size)),
+            );
+            // SetUpDefaultSaveFolder (the real one: the stub above is gone)
+            t.reset();
+            t.g32(s2::FOLDER_SET, u32::from(rng.chance(6)));
+            let hr = if rng.chance(5) {
+                0x8000_4005
+            } else {
+                rng.below(2)
+            };
+            t.stub_import(s2b::SH_GET_FOLDER_PATH_IAT, false, 5, 5, hr);
+            let fmt = t.rebase(s2::DIR_FORMAT);
+            let r = rng.next();
+            stub_import_varargs(t, s2b::WSPRINTFW_IAT, 1, fmt, 3, 4, r);
+            let attrs: Vec<u32> = (0..3)
+                .map(|_| [0xffff_ffff, 0x10, 0x30, 0x20, rng.next()][rng.below(5) as usize])
+                .collect();
+            let made: Vec<u32> = (0..3).map(|_| u32::from(!rng.chance(5))).collect();
+            t.stub_import_seq(s2b::GET_FILE_ATTRIBUTES_IAT, 1, 1, &attrs);
+            t.stub_import_seq(s2b::CREATE_DIRECTORY_IAT, 2, 2, &made);
+            // _chkstk leaves its own words at ebp - 8 (the cookie at ebp - 4)
+            t.skip = 8;
+            let what = format!("SetUpDefaultSaveFolder #{case} hr {hr:#x} {attrs:x?} {made:?}");
+            t.check_framed(
+                &what,
+                0x006f_0330,
+                Conv::Cdecl,
+                &[],
+                s2b::FOLDER_FRAME,
+                |m, ebp| {
+                    s2b::set_up_default_save_folder(m, ebp);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// The water-wave shader setters: the parameter lookups found or not (a
+/// sequence per call), the values by the caller's slots (logged as
+/// pointers); `setScrollSpeed` also leaves three lookups in its argument
+/// slots, compared after the call.
+#[test]
+fn save2_water_wave_setters_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0104);
+        for case in 0..60 {
+            t.reset();
+            let seq: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(5) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, s2b::FIND_PARAM, true, 1, 1, &seq);
+            t.stub(s2b::SET_VALUE, true, 2, 2, rng.next());
+            let c = t.words(&[rng.next(), rng.next()]);
+            let none = |name: &str| format!("{name} #{case}");
+            let v = rng.next();
+            let slots = t.frame_ebp(2) + 8;
+            for (sym, name) in [
+                (0x006f_5760u32, s2::BUOYANCY_FIX),
+                (0x006f_57e0, s2::DRAUGHT_OFFSET),
+                (0x006f_5810, s2::FOAM_STRENGTH),
+                (0x006f_5840, s2::MULTI_TEX_BLEND),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Stdcall,
+                    &[c, v],
+                    |m| {
+                        s2b::set_one(m, name, c, slots);
+                        Out::None
+                    },
+                );
+            }
+            let ab: Vec<u32> = (0..2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            for (sym, names) in [
+                (0x006f_5790u32, s2::CIRCLE_WAVE),
+                (0x006f_59a0, s2::SINE_WAVE),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Stdcall,
+                    &[c, ab[0], ab[1]],
+                    |m| {
+                        s2b::set_two(m, names, c, ab[0], ab[1]);
+                        Out::None
+                    },
+                );
+            }
+            t.reset();
+            let seq: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(8) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, s2b::FIND_PARAM, true, 1, 1, &seq);
+            t.stub(s2b::SET_VALUE, true, 2, 2, rng.next());
+            let args: Vec<u32> = std::iter::once(c)
+                .chain((0..4).map(|_| rng.next()))
+                .collect();
+            let slots = t.frame_ebp(5) + 8;
+            // the caller's slots as the call leaves them before the body runs
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            t.b.set_call_top(Some(slots - 0x200));
+            t.check(
+                &none("setScrollSpeed"),
+                0x006f_5870,
+                Conv::Stdcall,
+                &args,
+                |m| {
+                    s2b::set_scroll_speed(m, c, slots);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            let mut x = [0; 20];
+            let mut y = [0; 20];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "setScrollSpeed #{case}: the argument slots");
         }
     });
 }

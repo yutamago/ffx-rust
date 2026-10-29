@@ -21,6 +21,7 @@ pub mod intl;
 pub mod m5a_glue;
 pub mod m5a_platform;
 pub mod m5a_savedata;
+pub mod m5a_savedata2;
 pub mod m5a_settings;
 pub mod m5a_std;
 pub mod m5b_async;

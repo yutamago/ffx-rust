@@ -12,6 +12,7 @@ use super::{StackFrame, mem, ported};
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
+use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
 
@@ -867,6 +868,183 @@ ported! {
     /// `code_006793d0()`: the 5-byte `jmp Compare_006f9b70` (PRX state 3).
     code_006793d0 @ 0x0067_93d0 => extern "C" fn prx_loaded_thunk() -> u32 {
         gl::jump_thunk(&mut mem(), gl::PRX_LOADED)
+    }
+
+    // ---- round 3: the save manager's forwarders, load/save starts, debug save ----
+    /// `SetUpDefaultSaveFolder()`: frame `ebp - 0x1004`.
+    SetUpDefaultSaveFolder @ 0x006f_0330 => extern "C" fn set_up_default_save_folder() {
+        let mut f = StackFrame::<{ (s2::bridge::FOLDER_FRAME / 4) as usize }>::new();
+        s2b::set_up_default_save_folder(&mut mem(), f.at() + s2::bridge::FOLDER_FRAME);
+    }
+    /// `SaveDataManager_initSaveDataSys(this; buf, size)`: frame `ebp - 0x84`.
+    SaveDataManager_initSaveDataSys @ 0x006f_1fa0 => extern "thiscall" fn init_save_data_sys(this: u32, buf: u32, size: u32) -> u32 {
+        let mut f = StackFrame::<{ (s2::bridge::INIT_FRAME / 4) as usize }>::new();
+        s2b::init_save_data_sys(&mut mem(), f.at() + s2::bridge::INIT_FRAME, this, buf, size)
+    }
+    /// `SaveDataManager_debugSave_Internal_6f0650(size, buf)`: frame `ebp - 0x404`.
+    SaveDataManager_debugSave_Internal_6f0650 @ 0x006f_0510 => extern "C" fn debug_save_internal(size: u32, buf: u32) -> u32 {
+        let mut f = StackFrame::<{ (s2::bridge::DEBUG_SAVE_FRAME / 4) as usize }>::new();
+        s2b::debug_save_internal(&mut mem(), f.at() + s2::bridge::DEBUG_SAVE_FRAME, size, buf)
+    }
+    /// `0x006f1c40(this; _)`.
+    SaveDataManager_checkDebugSave_006f1c40 @ 0x006f_1c40 => extern "thiscall" fn check_debug_save(this: u32, _x: u32) -> u32 {
+        s2b::check_debug_save(&mut mem(), this)
+    }
+    /// `AutoSave_DebugSave_00647e10(x)`.
+    AutoSave_DebugSave_00647e10 @ 0x0064_7e10 => extern "C" fn auto_debug_save(x: u32) -> u32 {
+        s2b::auto_debug_save(&mut mem(), x)
+    }
+    /// `SaveDataManager_MarkAlbhedLoaded()`.
+    SaveDataManager_MarkAlbhedLoaded @ 0x0064_7e40 => extern "C" fn mark_albhed_loaded() -> u32 {
+        s2b::mark_albhed_loaded(&mut mem())
+    }
+    /// `SaveDataIsAlbhedLoaded()`.
+    SaveDataIsAlbhedLoaded @ 0x0064_8020 => extern "C" fn is_albhed_loaded() -> u32 {
+        s2b::is_albhed_loaded(&mut mem())
+    }
+    /// `SaveDataIsDeletingFinished()`.
+    SaveDataIsDeletingFinished @ 0x0064_8060 => extern "C" fn is_deleting_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_DELETING)
+    }
+    /// `SaveDataIsLoadingFinished()`.
+    SaveDataIsLoadingFinished @ 0x0064_8090 => extern "C" fn is_loading_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_LOADING)
+    }
+    /// `SaveDataIsSavingFinished()`.
+    SaveDataIsSavingFinished @ 0x0064_80f0 => extern "C" fn is_saving_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_SAVING)
+    }
+    /// `SaveDataLocRemoveNumTag(src, dst)`.
+    SaveDataLocRemoveNumTag @ 0x0064_8150 => extern "C" fn loc_remove_num_tag(src: u32, dst: u32) -> u32 {
+        s2b::loc_remove_num_tag(&mut mem(), src, dst)
+    }
+    /// `SaveDataManager_preDebugSave(this; _)`.
+    SaveDataManager_preDebugSave @ 0x006f_2410 => extern "thiscall" fn pre_debug_save(this: u32, _x: u32) -> u32 {
+        s2b::pre_debug_save(&mut mem(), this)
+    }
+    /// `SaveDataPreDebugSave(x)`.
+    SaveDataPreDebugSave @ 0x0064_84d0 => extern "C" fn pre_debug_save_forward(x: u32) -> u32 {
+        s2b::pre_debug_save_forward(&mut mem(), x)
+    }
+    /// `SaveDataResetToIdle()`.
+    SaveDataResetToIdle @ 0x0064_8530 => extern "C" fn reset_to_idle() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::RESET_IDLE)
+    }
+    /// `SaveDataManager_setSaveDataInfo(this; title, detail, text)`.
+    SaveDataManager_setSaveDataInfo @ 0x006f_2560 => extern "thiscall" fn set_save_data_info(this: u32, title: u32, detail: u32, text: u32) -> u32 {
+        s2b::set_save_data_info(&mut mem(), this, title, detail, text)
+    }
+    /// `SaveDataSetSaveDataInfo(title, detail, text)`.
+    SaveDataSetSaveDataInfo @ 0x0064_86c0 => extern "C" fn set_save_data_info_forward(title: u32, detail: u32, text: u32) -> u32 {
+        s2b::set_save_data_info_forward(&mut mem(), title, detail, text)
+    }
+    /// `SaveDataSetState(v)`.
+    SaveDataSetState @ 0x0064_8710 => extern "C" fn set_state(v: u32) -> u32 {
+        s2b::set_state(&mut mem(), v)
+    }
+    /// `SaveDataMachine_StartLoad(size, buf)`.
+    SaveDataMachine_StartLoad @ 0x006f_01d0 => extern "C" fn start_load(size: u32, buf: u32) -> u32 {
+        s2b::start_load(&mut mem(), 0xb, size, buf)
+    }
+    /// `SaveDataManager_doLoad(this)`.
+    SaveDataManager_doLoad @ 0x006f_1ce0 => extern "thiscall" fn do_load(this: u32) -> u32 {
+        s2b::do_load(&mut mem(), this)
+    }
+    /// `SaveDataToLoad()`.
+    SaveDataToLoad @ 0x0064_8760 => extern "C" fn to_load() -> u32 {
+        s2b::to_load(&mut mem())
+    }
+    /// `0x006efeb0(size, buf)`.
+    SaveDataMachine_StartLoadAll_006efeb0 @ 0x006e_feb0 => extern "C" fn start_load_all(size: u32, buf: u32) -> u32 {
+        s2b::start_load(&mut mem(), 0x15, size, buf)
+    }
+    /// `0x006f1d10(this)`.
+    SaveDataManager_doLoadAll_006f1d10 @ 0x006f_1d10 => extern "thiscall" fn do_load_all(this: u32) -> u32 {
+        s2b::load_all(&mut mem(), this)
+    }
+    /// `SaveDataToLoadAllAlBhed()`.
+    SaveDataToLoadAllAlBhed @ 0x0064_8790 => extern "C" fn to_load_all() -> u32 {
+        s2b::to_load_all(&mut mem())
+    }
+    /// `0x006f07a0(size, buf)`.
+    SaveDataMachine_StartSave_006f07a0 @ 0x006f_07a0 => extern "C" fn start_save(size: u32, buf: u32) -> u32 {
+        s2b::start_save(&mut mem(), size, buf)
+    }
+    /// `SaveDataManager_doSave(this)`.
+    SaveDataManager_doSave @ 0x006f_1d70 => extern "thiscall" fn do_save(this: u32) -> u32 {
+        s2b::do_save(&mut mem(), this)
+    }
+    /// `SaveDataToSave()`.
+    SaveDataToSave @ 0x0064_87a0 => extern "C" fn to_save() -> u32 {
+        s2b::to_save(&mut mem())
+    }
+    /// `SaveDataManager_setSaveDataIconString(this; s)`.
+    SaveDataManager_setSaveDataIconString @ 0x006f_2530 => extern "thiscall" fn set_icon_string(this: u32, s: u32) -> u32 {
+        s2b::set_icon_string(&mut mem(), this, s)
+    }
+    /// `debugLoad_Thunk_006492b0(slot, buf, size)`.
+    debugLoad_Thunk_006492b0 @ 0x0064_92b0 => extern "C" fn debug_load_thunk(slot: u32, buf: u32, size: u32) -> u32 {
+        s2b::debug_thunk(&mut mem(), s2b::DEBUG_LOAD, slot, buf, size)
+    }
+    /// `debugSavedataLoadAll(slot)`.
+    debugSavedataLoadAll @ 0x0064_92c0 => extern "C" fn debug_load_all(slot: u32) -> u32 {
+        s2b::debug_load_all(&mut mem(), slot)
+    }
+    /// `debugSave_Thunk_006492e0(slot, buf, size)`.
+    debugSave_Thunk_006492e0 @ 0x0064_92e0 => extern "C" fn debug_save_thunk(slot: u32, buf: u32, size: u32) -> u32 {
+        s2b::debug_thunk(&mut mem(), s2b::DEBUG_SAVE, slot, buf, size)
+    }
+    /// `0x006f2630(this)`.
+    SaveDataManager_rebuildTable_006f2630 @ 0x006f_2630 => extern "thiscall" fn rebuild_table(this: u32) {
+        s2b::rebuild_table(&mut mem(), this);
+    }
+    /// `0x006494d0(this; src, _)`.
+    NamedValue_moveCtor_006494d0 @ 0x0064_94d0 => extern "thiscall" fn named_value_move_6494d0(this: u32, src: u32, _x: u32) -> u32 {
+        s2b::string_move(&mut mem(), this, src)
+    }
+    /// `0x00649540(this; src, _)`.
+    NamedValue_moveCtor_00649540 @ 0x0064_9540 => extern "thiscall" fn named_value_move_649540(this: u32, src: u32, _x: u32) -> u32 {
+        s2b::string_move(&mut mem(), this, src)
+    }
+    /// `EternalCalm_FileSize_0067a9f0(name)`.
+    EternalCalm_FileSize_0067a9f0 @ 0x0067_a9f0 => extern "C" fn calm_file_size(name: u32) -> u32 {
+        s2b::calm_file_size(&mut mem(), name)
+    }
+    /// `getEternalCalmMgrpSize(map)`.
+    getEternalCalmMgrpSize @ 0x0067_aa70 => extern "C" fn calm_mgrp_size(map: u32) -> u32 {
+        s2b::calm_size(&mut mem(), s2::CALM_MGRP_SIZES, s2::CALM_MGRP_NAMES, map)
+    }
+    /// `getEternalCalmSceneSize(map)`.
+    getEternalCalmSceneSize @ 0x0067_aae0 => extern "C" fn calm_scene_size(map: u32) -> u32 {
+        s2b::calm_size(&mut mem(), s2::CALM_SCENE_SIZES, s2::CALM_SCENE_NAMES, map)
+    }
+    /// `WaterWaveController_setBuoyancyFix(c, v)`: `v` by its slot.
+    WaterWaveController_setBuoyancyFix @ 0x006f_5760 => extern "stdcall" fn set_buoyancy_fix(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::BUOYANCY_FIX, c, slots);
+    }
+    /// `WaterWaveController_setCircleWaveStrength(c, a, b)`.
+    WaterWaveController_setCircleWaveStrength @ 0x006f_5790 => extern "stdcall" fn set_circle_wave(c: u32, a: u32, b: u32) {
+        s2b::set_two(&mut mem(), s2::CIRCLE_WAVE, c, a, b);
+    }
+    /// `WaterWaveController_setDraughtOffset(c, v)`: `v` by its slot.
+    WaterWaveController_setDraughtOffset @ 0x006f_57e0 => extern "stdcall" fn set_draught_offset(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::DRAUGHT_OFFSET, c, slots);
+    }
+    /// `WaterWaveController_setFoamStrength(c, v)`: `v` by its slot.
+    WaterWaveController_setFoamStrength @ 0x006f_5810 => extern "stdcall" fn set_foam_strength(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::FOAM_STRENGTH, c, slots);
+    }
+    /// `WaterWaveController_setMultiTexBlendFactor(c, v)`: `v` by its slot.
+    WaterWaveController_setMultiTexBlendFactor @ 0x006f_5840 => extern "stdcall" fn set_multi_tex_blend(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::MULTI_TEX_BLEND, c, slots);
+    }
+    /// `WaterWaveController_setScrollSpeed(c, x0, y0, x1, y1)`: by the slots.
+    WaterWaveController_setScrollSpeed @ 0x006f_5870 => extern "stdcall" fn set_scroll_speed(c: u32, _x0: u32, _y0: u32, _x1: u32, _y1: u32; slots: u32) {
+        s2b::set_scroll_speed(&mut mem(), c, slots);
+    }
+    /// `WaterWaveController_setSineWaveStrength(c, a, b)`.
+    WaterWaveController_setSineWaveStrength @ 0x006f_59a0 => extern "stdcall" fn set_sine_wave(c: u32, a: u32, b: u32) {
+        s2b::set_two(&mut mem(), s2::SINE_WAVE, c, a, b);
     }
 }
 
