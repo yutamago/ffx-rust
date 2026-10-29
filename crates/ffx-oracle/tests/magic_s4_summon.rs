@@ -653,3 +653,57 @@ fn particle_node_draws() {
         }
     }
 }
+
+/// `magic_0042` 0x1000b170: the summon's frame before stage 4, with an
+/// empty ring, a ring of two and the ring skipped; the bone and the two
+/// nodes already at the pass.
+#[test]
+fn summon_frame_b() {
+    let Some(mut t) = twin(42) else { return };
+    let f = t.at(0xb170);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let bm = t.img.rel32_target(f + 0x3a);
+    t.set_u32(t.img.word(bm + 0x7e), node(20));
+    for s in [673u32, 723, 724, 230, 253, 214] {
+        rec(&mut t, s, 0, move |_, _| s);
+    }
+    t.set_u32(w(&t, 0x25), node(21));
+    let vt = node(22);
+    t.set_u32(vt + 0x20, magic::TRAPS);
+    rec(&mut t, 0, 1, |m, a| {
+        let x = m.r32(a[0]);
+        let k = m.r32(node(23));
+        m.w32(node(23), k + 1);
+        m.w32(node(23) + 4 + 4 * (k % 8), x);
+        0x77
+    });
+    let root = w(&t, 0x5b);
+    for (stage, skip, n) in [
+        (3u32, 0u32, 0u32),
+        (4, 0, 0),
+        (4, 0, 2),
+        (5, 1, 2),
+        (4, 1, 0),
+    ] {
+        t.set_u32(w(&t, 0xb), stage);
+        t.set_u32(w(&t, 0x4d), skip);
+        let pass = t.u32(w(&t, 0x3f)) as u8;
+        // the ring: n nodes after the root
+        let mut prev = root;
+        for i in 0..n {
+            let nd = node(10 + i);
+            t.write(nd, &[0x6a; 0x40]);
+            t.set_u32(nd, vt);
+            t.set_u32(prev + 8, nd);
+            prev = nd;
+        }
+        t.set_u32(prev + 8, root);
+        // the bone and the two nodes at the next pass: nothing moves
+        for op in [0xa3u32, 0xc4, 0xe4] {
+            t.set_u8(w(&t, op) + 0x1a, pass.wrapping_add(1));
+        }
+        t.set_u32(w(&t, 0x96), 0x10);
+        t.set_u16(w(&t, 0xfc), 0);
+        t.check_entry(f, magic::Call::default(), &[], Eax::Checked);
+    }
+}

@@ -1086,3 +1086,98 @@ pub const PARTICLE_NODE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The summon's frame (a table entry, no arguments; an 8-aligned frame,
+/// `E` = `esp` after it and one push): nothing before stage 4 (`G_STAGE`,
+/// operand `+0xb`). Slot 673; `*G_P = ITEM` (operands `+0x25`, `+0x2b`);
+/// `G_X = G_Y` (`+0x35`, `+0x30`); the models bound
+/// ([`crate::sa_summon::bind_models`]). The pass byte `G_PASS` (`+0x3f`)
+/// goes up; unless `G_SKIP` (`+0x4d`) is set, each node of the root's ring
+/// (the root at operand `+0x5b`, its first `+0x45`) runs its method
+/// `+0x20` with a cursor on the frame (`E + 8`). An empty ring sets bit 0
+/// of `G_FLAGS` (`+0x96`). The bone `A` (`+0xa3`) is updated
+/// ([`crate::sa_summon::bone_plain`]) and the nodes `B` (`+0xc4`) and `C`
+/// (`+0xe4`) visited ([`crate::nodes::visit_gated`]), each with the pass.
+/// With bit 0 of `G_FLAGS` and the word `G_W` (`+0xfc`) 0, slot 214
+/// `(*G_Z)` (`+0x10a`) follows. Returns 0.
+///
+/// `magic_0042` 0x1000b170 (288 bytes; 10 DLLs).
+pub fn summon_frame_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    if g.read::<i32>(w(0xb)) < 4 {
+        return Ret::eax(0);
+    }
+    let t = slot_target(g, w(0x18), 673);
+    g.call(t, 0, &[]);
+    let p = g.read::<u32>(w(0x25));
+    g.write::<u32>(p, w(0x2b));
+    let y = g.read::<u32>(w(0x30));
+    g.write::<u32>(w(0x35), y);
+    crate::sa_summon::bind_models(g, img, img.rel32_target(f + 0x3a));
+    // push ebp; and esp, -8; sub esp, 0xc; push esi
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xc + 4);
+    let cursor = e + 8;
+    let root = w(0x5b);
+    let mut pass = g.read::<u8>(w(0x3f)).wrapping_add(1);
+    let mut first = g.read::<u32>(w(0x45));
+    let skip = g.read::<u32>(w(0x4d)) != 0;
+    g.write::<u8>(w(0x53), pass);
+    if !skip && first != root {
+        let mut node = first;
+        while node != root {
+            g.write::<u32>(cursor, node);
+            let next = g.read::<u32>(node + 8);
+            let method = g.read::<u32>(g.read::<u32>(node) + 0x20);
+            g.call(method, cursor, &[cursor]);
+            node = next;
+        }
+        pass = g.read::<u8>(w(0x82));
+        first = g.read::<u32>(w(0x88));
+    }
+    if first == root {
+        let flags = g.read::<u32>(w(0x96));
+        g.write::<u32>(w(0x96), flags | 1);
+    }
+    g.write::<u32>(cursor, w(0xa3));
+    g.write::<u8>(cursor + 5, pass);
+    let bone = Frame {
+        at: img.rel32_target(f + 0xac),
+        esp: e.wrapping_sub(4),
+        ecx: cursor,
+        ..*fr
+    };
+    crate::sa_summon::bone_plain(g, img, &bone);
+    for (node, call) in [(0xc4u32, 0xc9u32), (0xe4, 0xe9)] {
+        let pass = g.read::<u8>(w(if call == 0xc9 { 0xb3 } else { 0xd0 }));
+        g.write::<u8>(cursor + 5, pass);
+        g.write::<u32>(cursor, w(node));
+        let esp = e.wrapping_sub(8);
+        g.write::<u32>(esp + 4, cursor);
+        let visit = Frame {
+            at: img.rel32_target(f + call),
+            esp,
+            ecx: 0,
+            ..*fr
+        };
+        crate::nodes::visit_gated(g, img, &visit);
+    }
+    if g.read::<u32>(w(0xf2)) & 1 != 0 && g.read::<u16>(w(0xfc)) == 0 {
+        let t = slot_target(g, w(0x104), 214);
+        g.call(t, 0, &[g.read::<u32>(w(0x10a))]);
+    }
+    Ret::eax(0)
+}
+
+/// [`summon_frame_b`].
+pub const SUMMON_FRAME_B: Sig = Sig {
+    len: 288,
+    hash: 0x2d77_9ff3_c2c0_c733,
+    calls: &[
+        (0x3a, Callee::Sig(&crate::sa_summon::BIND_MODELS)),
+        (0xac, Callee::Sig(&crate::sa_summon::BONE)),
+        (0xc9, Callee::Sig(&crate::nodes::GATED)),
+        (0xe9, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
