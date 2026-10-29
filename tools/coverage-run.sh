@@ -12,6 +12,9 @@
 # included, tools/coverage.py candidates --all) and does not merge into
 # symbols/coverage.txt: the hits stay in $COVERAGE_DIR/cand.txt.hits.
 # Each run's own hits land in $COVERAGE_DIR/<tag>.hits as well.
+# COVERAGE_CANDIDATES=<file> arms the functions of that file instead
+# (`<address> <first byte>` lines, e.g. tools/phyre-classes.py
+# --script-traps) and, like COVERAGE_ALL, leaves symbols/coverage.txt alone.
 # COVERAGE_REPLAYS="a b ..." picks the replays (default field-walk
 # battle-attack menu-browse); COVERAGE_DIR the Windows-drive folder.
 set -u
@@ -26,7 +29,12 @@ fi
 lin="$COVERAGE_DIR"
 mkdir -p "$lin"
 win="$(wslpath -w "$lin")"
-python3 -I tools/coverage.py candidates ${COVERAGE_ALL:+--all} "$lin/cand.txt"
+if [ -n "${COVERAGE_CANDIDATES:-}" ]; then
+    cp "$COVERAGE_CANDIDATES" "$lin/cand.txt"
+    echo "$(wc -l < "$lin/cand.txt") candidates from $COVERAGE_CANDIDATES"
+else
+    python3 -I tools/coverage.py candidates ${COVERAGE_ALL:+--all} "$lin/cand.txt"
+fi
 rm -f "$lin/cand.txt.hits"
 export FFX_COVERAGE="$lin/cand.txt"
 log="$FFX_GAME_DIR/ffx-hook.log"
@@ -54,7 +62,7 @@ for s in "${@:-0 1 2 3 5}"; do
         run "$lin/session-$e.txt" "session-$e"
     done
 done
-if [[ -z "${COVERAGE_ALL:-}" ]]; then
+if [[ -z "${COVERAGE_ALL:-}${COVERAGE_CANDIDATES:-}" ]]; then
     python3 -I tools/coverage.py merge "$lin/cand.txt.hits"
 else
     echo "hits: $lin/cand.txt.hits ($(sort -u "$lin/cand.txt.hits" | wc -l) functions)"
