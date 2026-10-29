@@ -4,6 +4,7 @@
 //! tables), so one shim per address; the parity tests are
 //! `crates/ffx-oracle/tests/m5_static_init_b.rs`.
 
+use ffx_pload::m5_static_init_ab as sab;
 use ffx_pload::m5_static_init_b as si;
 
 use super::{mem, ported};
@@ -1640,5 +1641,205 @@ ported! {
     /// `StaticInit_PBitmapFontCharInfo_00af4b90`: class descriptor `PBitmapFontCharInfo` (`cd_desc_clear`): constructor, buffers, clear; atexit.
     StaticInit_PBitmapFontCharInfo_00af4b90 @ 0x00af_4b90 => extern "C" fn s_00af4b90() -> u32 {
         si::class_decl(&mut mem(), &si::CLASS_DECLS[108])
+    }
+    /// `StaticInit_MallocCopy_00ae0470`: `PhyreMalloc`(0x11, 2); when it returns a block, 4 words and a byte of the template 0x00b0da48 into it; the block to 0x00c8ff30; atexit(0x00af9b60).
+    StaticInit_MallocCopy_00ae0470 @ 0x00ae_0470 => extern "C" fn s_00ae0470() -> u32 {
+        sab::malloc_copy(&mut mem(), &sab::MALLOC_COPIES[0])
+    }
+    /// `StaticInit_MallocCopy_00ae04c0`: `PhyreMalloc`(0x10, 2); when it returns a block, 4 words of the template 0x00b0da38 into it; the block to 0x00c8ff2c; atexit(0x00af9b80).
+    StaticInit_MallocCopy_00ae04c0 @ 0x00ae_04c0 => extern "C" fn s_00ae04c0() -> u32 {
+        sab::malloc_copy(&mut mem(), &sab::MALLOC_COPIES[1])
+    }
+    /// `StaticInit_ChainAppend_00ae0530`: appends the object 0x00c0a2d0 (vtable 0x00b0e088) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a2d4); atexit(0x00af9c30).
+    StaticInit_ChainAppend_00ae0530 @ 0x00ae_0530 => extern "C" fn s_00ae0530() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[0])
+    }
+    /// `StaticInit_ChainAppend_00ae0580`: appends the object 0x00c0a33c (vtable 0x00b0e0a8) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a340); atexit(0x00af9c80).
+    StaticInit_ChainAppend_00ae0580 @ 0x00ae_0580 => extern "C" fn s_00ae0580() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[1])
+    }
+    /// `StaticInit_ChainAppend_00ae05d0`: appends the object 0x00c0a37c (vtable 0x00b0e0c4) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a380); atexit(0x00af9cd0).
+    StaticInit_ChainAppend_00ae05d0 @ 0x00ae_05d0 => extern "C" fn s_00ae05d0() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[2])
+    }
+    /// `StaticInit_ChainAppend_00ae0620`: appends the object 0x00c0a3c0 (vtable 0x00b0e0e0) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a3c4); atexit(0x00af9d20).
+    StaticInit_ChainAppend_00ae0620 @ 0x00ae_0620 => extern "C" fn s_00ae0620() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[3])
+    }
+    /// `StaticInit_ChainAppend_00ae0670`: appends the object 0x00c0a3fc (vtable 0x00b0e0f8) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a400); atexit(0x00af9d70).
+    StaticInit_ChainAppend_00ae0670 @ 0x00ae_0670 => extern "C" fn s_00ae0670() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[4])
+    }
+    /// `StaticInit_ChainAppend_00ae06c0`: appends the object 0x00c0a440 (vtable 0x00b0e124) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a444); atexit(0x00af9dc0).
+    StaticInit_ChainAppend_00ae06c0 @ 0x00ae_06c0 => extern "C" fn s_00ae06c0() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[5])
+    }
+    /// `StaticInit_PClassMember_00ae0750`: class descriptor `PClassMember` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa000).
+    StaticInit_PClassMember_00ae0750 @ 0x00ae_0750 => extern "C" fn s_00ae0750() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[0])
+    }
+    /// `StaticInit_PClassDescriptor_00ae0810`: class descriptor `PClassDescriptor` (base `GetClassDescriptor()`): constructor, flags |= 2, the buffer words stored directly, vtable 0x00b0eb74; atexit(0x00afa040).
+    StaticInit_PClassDescriptor_00ae0810 @ 0x00ae_0810 => extern "C" fn s_00ae0810() -> u32 {
+        sab::class_decl_inline(&mut mem(), &sab::CLASS_DECLS_INLINE[0])
+    }
+    /// `StaticInit_PNamespace_00ae0890`: class descriptor `PNamespace` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afa0b0).
+    StaticInit_PNamespace_00ae0890 @ 0x00ae_0890 => extern "C" fn s_00ae0890() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[1])
+    }
+    /// `StaticInit_PCluster_00ae0940`: class descriptor `PCluster` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afa160).
+    StaticInit_PCluster_00ae0940 @ 0x00ae_0940 => extern "C" fn s_00ae0940() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[2])
+    }
+    /// `StaticInit_PWorld_00ae09f0`: class descriptor `PWorld` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa290).
+    StaticInit_PWorld_00ae09f0 @ 0x00ae_09f0 => extern "C" fn s_00ae09f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[3])
+    }
+    /// `StaticInit_PTypedObject_00ae0ab0`: class descriptor `PTypedObject` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa2f0).
+    StaticInit_PTypedObject_00ae0ab0 @ 0x00ae_0ab0 => extern "C" fn s_00ae0ab0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[4])
+    }
+    /// `StaticInit_PString_00ae0b70`: class descriptor `PString` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa330).
+    StaticInit_PString_00ae0b70 @ 0x00ae_0b70 => extern "C" fn s_00ae0b70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[5])
+    }
+    /// `StaticInit_PClusterDependencyList_00ae0db0`: class descriptor `PClusterDependencyList` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa510).
+    StaticInit_PClusterDependencyList_00ae0db0 @ 0x00ae_0db0 => extern "C" fn s_00ae0db0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[6])
+    }
+    /// `StaticInit_PComponent_00ae0e70`: class descriptor `PComponent` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa5a0).
+    StaticInit_PComponent_00ae0e70 @ 0x00ae_0e70 => extern "C" fn s_00ae0e70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[7])
+    }
+    /// `StaticInit_PEntity_00ae0f30`: class descriptor `PEntity` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa670).
+    StaticInit_PEntity_00ae0f30 @ 0x00ae_0f30 => extern "C" fn s_00ae0f30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[8])
+    }
+    /// `StaticInit_PWorldMatrix_00ae1000`: class descriptor `PWorldMatrix` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa8d0).
+    StaticInit_PWorldMatrix_00ae1000 @ 0x00ae_1000 => extern "C" fn s_00ae1000() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[9])
+    }
+    /// `StaticInit_CtorVt_00ae10c0`: constructor 0x00452e80 (thiscall, no words) on 0x00c922c0, flags 0x00c92350 &= ~2, its vtable 0x00b10b4c; atexit(0x00afaa00).
+    StaticInit_CtorVt_00ae10c0 @ 0x00ae_10c0 => extern "C" fn s_00ae10c0() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[0])
+    }
+    /// `StaticInit_PCameraOrthographic_00ae11a0`: class descriptor `PCameraOrthographic` (base 0x00c92358, clear): constructor, buffers, tail; atexit(0x00afac90).
+    StaticInit_PCameraOrthographic_00ae11a0 @ 0x00ae_11a0 => extern "C" fn s_00ae11a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[10])
+    }
+    /// `StaticInit_PCameraPerspective_00ae1260`: class descriptor `PCameraPerspective` (base 0x00c92358, clear): constructor, buffers, tail; atexit(0x00afad00).
+    StaticInit_PCameraPerspective_00ae1260 @ 0x00ae_1260 => extern "C" fn s_00ae1260() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[11])
+    }
+    /// `StaticInit_PInstancesComponent_00ae1320`: class descriptor `PInstancesComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00afad30).
+    StaticInit_PInstancesComponent_00ae1320 @ 0x00ae_1320 => extern "C" fn s_00ae1320() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[12])
+    }
+    /// `StaticInit_PAssetReference_00ae14a0`: class descriptor `PAssetReference` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afaf20).
+    StaticInit_PAssetReference_00ae14a0 @ 0x00ae_14a0 => extern "C" fn s_00ae14a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[13])
+    }
+    /// `StaticInit_PAssetReferenceImport_00ae1560`: class descriptor `PAssetReferenceImport` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afaf40).
+    StaticInit_PAssetReferenceImport_00ae1560 @ 0x00ae_1560 => extern "C" fn s_00ae1560() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[14])
+    }
+    /// `StaticInit_PRandomGenerator_00ae1640`: class descriptor `PRandomGenerator` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afb0b0).
+    StaticInit_PRandomGenerator_00ae1640 @ 0x00ae_1640 => extern "C" fn s_00ae1640() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[15])
+    }
+    /// `StaticInit_PClusterHeader_00ae1700`: class descriptor `PClusterHeader` (base 0x00c970f8, clear): constructor, buffers, tail; atexit(0x00afb720).
+    StaticInit_PClusterHeader_00ae1700 @ 0x00ae_1700 => extern "C" fn s_00ae1700() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[16])
+    }
+    /// `StaticInit_PClusterHeaderBase_00ae17c0`: class descriptor `PClusterHeaderBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afb740).
+    StaticInit_PClusterHeaderBase_00ae17c0 @ 0x00ae_17c0 => extern "C" fn s_00ae17c0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[17])
+    }
+    /// `StaticInit_PClusterHeaderD3D11_00ae1880`: class descriptor `PClusterHeaderD3D11` (base 0x00c96aa8, clear): constructor, buffers, tail; atexit(0x00afb880).
+    StaticInit_PClusterHeaderD3D11_00ae1880 @ 0x00ae_1880 => extern "C" fn s_00ae1880() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[18])
+    }
+    /// `StaticInit_PInstanceListHeader_00ae1940`: class descriptor `PInstanceListHeader` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afb8d0).
+    StaticInit_PInstanceListHeader_00ae1940 @ 0x00ae_1940 => extern "C" fn s_00ae1940() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[19])
+    }
+    /// `StaticInit_PVertexStream_00ae1f20`: class descriptor `PVertexStream` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc4a0).
+    StaticInit_PVertexStream_00ae1f20 @ 0x00ae_1f20 => extern "C" fn s_00ae1f20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[20])
+    }
+    /// `StaticInit_PDataBlock_00ae1fe0`: class descriptor `PDataBlock` (base 0x00cb1250, clear): constructor, buffers, tail; atexit(0x00afc500).
+    StaticInit_PDataBlock_00ae1fe0 @ 0x00ae_1fe0 => extern "C" fn s_00ae1fe0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[21])
+    }
+    /// `StaticInit_PDataBlockBase_00ae20a0`: class descriptor `PDataBlockBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc520).
+    StaticInit_PDataBlockBase_00ae20a0 @ 0x00ae_20a0 => extern "C" fn s_00ae20a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[22])
+    }
+    /// `StaticInit_PDynamicDataBlock_00ae2160`: class descriptor `PDynamicDataBlock` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc5d0).
+    StaticInit_PDynamicDataBlock_00ae2160 @ 0x00ae_2160 => extern "C" fn s_00ae2160() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[23])
+    }
+    /// `StaticInit_PIndexDataBlock_00ae2220`: class descriptor `PIndexDataBlock` (base 0x00cb1120, clear): constructor, buffers, tail; atexit(0x00afc630).
+    StaticInit_PIndexDataBlock_00ae2220 @ 0x00ae_2220 => extern "C" fn s_00ae2220() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[24])
+    }
+    /// `StaticInit_PIndexDataBlockBase_00ae22e0`: class descriptor `PIndexDataBlockBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc650).
+    StaticInit_PIndexDataBlockBase_00ae22e0 @ 0x00ae_22e0 => extern "C" fn s_00ae22e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[25])
+    }
+    /// `StaticInit_PMeshSegment_00ae23a0`: class descriptor `PMeshSegment` (base 0x00cb0ff0, clear): constructor, buffers, tail; atexit(0x00afc6c0).
+    StaticInit_PMeshSegment_00ae23a0 @ 0x00ae_23a0 => extern "C" fn s_00ae23a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[26])
+    }
+    /// `StaticInit_PMeshSegmentBase_00ae2460`: class descriptor `PMeshSegmentBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc6e0).
+    StaticInit_PMeshSegmentBase_00ae2460 @ 0x00ae_2460 => extern "C" fn s_00ae2460() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[27])
+    }
+    /// `StaticInit_PSkinBoneRemap_00ae2520`: class descriptor `PSkinBoneRemap` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc700).
+    StaticInit_PSkinBoneRemap_00ae2520 @ 0x00ae_2520 => extern "C" fn s_00ae2520() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[28])
+    }
+    /// `StaticInit_PMaterialSet_00ae25e0`: class descriptor `PMaterialSet` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc810).
+    StaticInit_PMaterialSet_00ae25e0 @ 0x00ae_25e0 => extern "C" fn s_00ae25e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[29])
+    }
+    /// `StaticInit_PMesh_00ae26a0`: class descriptor `PMesh` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc950).
+    StaticInit_PMesh_00ae26a0 @ 0x00ae_26a0 => extern "C" fn s_00ae26a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[30])
+    }
+    /// `StaticInit_PSkeletonJointBounds_00ae2760`: class descriptor `PSkeletonJointBounds` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc970).
+    StaticInit_PSkeletonJointBounds_00ae2760 @ 0x00ae_2760 => extern "C" fn s_00ae2760() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[31])
+    }
+    /// `StaticInit_PDynamicMesh_00ae2820`: class descriptor `PDynamicMesh` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afcc10).
+    StaticInit_PDynamicMesh_00ae2820 @ 0x00ae_2820 => extern "C" fn s_00ae2820() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[32])
+    }
+    /// `StaticInit_PDynamicSegmentDesc_00ae28d0`: class descriptor `PDynamicSegmentDesc` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcc30).
+    StaticInit_PDynamicSegmentDesc_00ae28d0 @ 0x00ae_28d0 => extern "C" fn s_00ae28d0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[33])
+    }
+    /// `StaticInit_PShape_00ae2990`: class descriptor `PShape` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcd10).
+    StaticInit_PShape_00ae2990 @ 0x00ae_2990 => extern "C" fn s_00ae2990() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[34])
+    }
+    /// `StaticInit_PLight_00ae2a50`: class descriptor `PLight` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcde0).
+    StaticInit_PLight_00ae2a50 @ 0x00ae_2a50 => extern "C" fn s_00ae2a50() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[35])
+    }
+    /// `StaticInit_AmbientLight_00ae2b10`: type-enum value `AmbientLight` registered once: when the guard 0x00c9af08 is 0 and 0x0049e2c0 finds no such name, the node 0x00c1083c goes on the head of its list 0x00c9aef8 (old head to 0x00c10844), two plain words, the guard = node; atexit(0x00afce00).
+    StaticInit_AmbientLight_00ae2b10 @ 0x00ae_2b10 => extern "C" fn s_00ae2b10() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[0])
+    }
+    /// `StaticInit_DirectionalLight_00ae2b70`: type-enum value `DirectionalLight` registered once: when the guard 0x00c9af04 is 0 and 0x0049e2c0 finds no such name, the node 0x00c10828 goes on the head of its list 0x00c9aef8 (old head to 0x00c10830), two plain words, the guard = node; atexit(0x00afce40).
+    StaticInit_DirectionalLight_00ae2b70 @ 0x00ae_2b70 => extern "C" fn s_00ae2b70() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[1])
+    }
+    /// `StaticInit_PointLight_00ae2bd0`: type-enum value `PointLight` registered once: when the guard 0x00c9af00 is 0 and 0x0049e2c0 finds no such name, the node 0x00c10814 goes on the head of its list 0x00c9aef8 (old head to 0x00c1081c), two plain words, the guard = node; atexit(0x00afce80).
+    StaticInit_PointLight_00ae2bd0 @ 0x00ae_2bd0 => extern "C" fn s_00ae2bd0() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[2])
+    }
+    /// `StaticInit_SpotLight_00ae2c30`: type-enum value `SpotLight` registered once: when the guard 0x00c9af0c is 0 and 0x0049e2c0 finds no such name, the node 0x00c10850 goes on the head of its list 0x00c9aef8 (old head to 0x00c10858), two plain words, the guard = node; atexit(0x00afcec0).
+    StaticInit_SpotLight_00ae2c30 @ 0x00ae_2c30 => extern "C" fn s_00ae2c30() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[3])
     }
 }

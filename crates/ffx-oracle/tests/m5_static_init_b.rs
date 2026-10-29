@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_pload::m5_static_init_ab as sab;
 use ffx_pload::m5_static_init_b as si;
 
 /// CRT `atexit`: replaced by a recording stub in both oracles.
@@ -291,7 +292,7 @@ fn static_init_b_type_enums() {
     for (what, mut t) in Twins::all() {
         // a node that holds the name, for the lookup's "found" branch
         let node = t.zeros(0x10);
-        for r in si::TYPE_ENUMS {
+        for r in si::TYPE_ENUMS.iter().chain(sab::TYPE_ENUMS) {
             let label = format!("{what} type enum {:#x}", r.addr);
             // the snapshot's own list
             t.run(&label, r.addr, true, |g| si::type_enum(g, r));
@@ -302,6 +303,9 @@ fn static_init_b_type_enums() {
             });
             // a list whose only node holds the name: found, nothing linked
             let name = t.rebase(r.name);
+            // the name at +0 and +4: the lookups keep it at +4 (next at
+            // +8) or at +0 (next at +4, 0x0054d130); either finds it at once
+            t.w32(node, name);
             t.w32(node + 4, name);
             t.w32(node + 8, 0);
             t.set_head(r.head, node);
@@ -354,7 +358,7 @@ fn static_init_b_ctors() {
                 si::ctor0_at_exit(g, r)
             });
         }
-        for r in si::CTOR0_FLAGS_VT {
+        for r in si::CTOR0_FLAGS_VT.iter().chain(sab::CTOR0_FLAGS_VT) {
             if t.snapshot && SNAPSHOT_SKIP_CTORS.contains(&r.addr) {
                 continue;
             }
@@ -371,7 +375,7 @@ fn static_init_b_ctors() {
 #[test]
 fn static_init_b_class_decls() {
     for (what, mut t) in Twins::all() {
-        for r in si::CLASS_DECLS {
+        for r in si::CLASS_DECLS.iter().chain(sab::CLASS_DECLS) {
             t.run(&format!("{what} class {:#x}", r.addr), r.addr, true, |g| {
                 si::class_decl(g, r)
             });
@@ -419,7 +423,7 @@ fn static_init_b_chain_appends() {
     for (what, mut t) in Twins::all() {
         let b0 = t.zeros(0x10);
         let b1 = t.zeros(0x10);
-        for r in si::LIST_APPENDS {
+        for r in si::LIST_APPENDS.iter().chain(sab::LIST_APPENDS) {
             let label = format!("{what} chain {:#x}", r.addr);
             // the snapshot's own chain
             t.run(&label, r.addr, true, |g| si::list_append(g, r));
@@ -472,7 +476,7 @@ fn static_init_b_malloc_copies() {
         // PhyreMalloc returns a block, then 0 (the copy is skipped)
         for ret in [block, 0] {
             t.stub(PHYRE_MALLOC_SYM, false, 2, 0, ret);
-            for r in si::MALLOC_COPIES {
+            for r in si::MALLOC_COPIES.iter().chain(sab::MALLOC_COPIES) {
                 t.run(
                     &format!("{what} malloc {:#x} ({ret:#x})", r.addr),
                     r.addr,
@@ -524,7 +528,7 @@ fn static_init_b_stores_and_sentinels() {
                 si::ctor_store(g, r)
             });
         }
-        for r in si::FREE_LISTS {
+        for r in si::FREE_LISTS.iter().chain(sab::FREE_LISTS) {
             t.run(
                 &format!("{what} free list {:#x}", r.addr),
                 r.addr,
@@ -604,7 +608,7 @@ fn static_init_b_copies_and_tails() {
             );
         }
         // the jump's target registers nothing itself: the log is not checked
-        for r in si::TAIL_THISCALLS {
+        for r in si::TAIL_THISCALLS.iter().chain(sab::TAIL_THISCALLS) {
             t.run_logged(
                 &format!("{what} tail {:#x}", r.addr),
                 r.addr,
@@ -641,6 +645,155 @@ fn static_init_b_cond_tails() {
                 false,
                 false,
                 |g| si::cond_tail(g, r),
+            );
+        }
+    }
+}
+
+// ---- static-init-ab: the new shapes (ffx_pload::m5_static_init_ab) ----
+
+#[test]
+fn static_init_ab_class_decls_flags() {
+    for (what, mut t) in Twins::all() {
+        for r in sab::CLASS_DECLS_FLAGS {
+            t.run(
+                &format!("{what} class flags {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| sab::class_decl_flags(g, r),
+            );
+        }
+        for r in sab::CLASS_DECLS_INLINE {
+            t.run(
+                &format!("{what} class inline {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| sab::class_decl_inline(g, r),
+            );
+        }
+    }
+}
+
+#[test]
+fn static_init_ab_ctor_links() {
+    for (what, mut t) in Twins::all() {
+        for r in sab::CTOR_LINKS {
+            let label = format!("{what} ctor link {:#x}", r.addr);
+            // the image's (or the snapshot's) list
+            t.run(&label, r.addr, true, |g| sab::ctor_link(g, r));
+            // an empty list
+            t.set_head(r.head, 0);
+            t.run(&format!("{label} (empty list)"), r.addr, true, |g| {
+                sab::ctor_link(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_ab_guarded_enums() {
+    for (what, mut t) in Twins::all() {
+        // a node that holds the name, for the lookup's "found" branch
+        let node = t.zeros(0x10);
+        for r in sab::GUARDED_ENUMS {
+            let label = format!("{what} guarded enum {:#x}", r.addr);
+            // the image's (or the snapshot's) guard and list
+            t.run(&label, r.addr, true, |g| sab::guarded_enum(g, r));
+            // the guard clear, the list empty: the node is linked in and
+            // becomes the guard
+            t.set_head(r.guard, 0);
+            t.set_head(r.head, 0);
+            t.run(&format!("{label} (empty list)"), r.addr, true, |g| {
+                sab::guarded_enum(g, r)
+            });
+            // the guard set (by the run above): nothing is looked up
+            t.run(&format!("{label} (guard set)"), r.addr, true, |g| {
+                sab::guarded_enum(g, r)
+            });
+            // the guard clear, a list whose only node holds the name: found,
+            // nothing linked
+            let name = t.rebase(r.name);
+            // the name at +0 and +4: the lookups keep it at +4 (next at
+            // +8) or at +0 (next at +4, 0x0054d130); either finds it at once
+            t.w32(node, name);
+            t.w32(node + 4, name);
+            t.w32(node + 8, 0);
+            t.set_head(r.guard, 0);
+            t.set_head(r.head, node);
+            t.run(&format!("{label} (found)"), r.addr, true, |g| {
+                sab::guarded_enum(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_ab_counted_enums() {
+    for (what, mut t) in Twins::all() {
+        let node = t.zeros(0x10);
+        for r in sab::COUNTED_ENUMS {
+            let label = format!("{what} counted enum {:#x}", r.addr);
+            t.run(&label, r.addr, true, |g| sab::counted_enum(g, r));
+            // an empty list, a count to carry: the node is linked in
+            t.set_head(r.head, 0);
+            t.set_head(r.count, 0x0000_ffff);
+            t.run(&format!("{label} (empty list)"), r.addr, true, |g| {
+                sab::counted_enum(g, r)
+            });
+            // a list whose only node holds the name: found, only the vtable
+            let name = t.rebase(r.name);
+            // the name at +0 and +4: the lookups keep it at +4 (next at
+            // +8) or at +0 (next at +4, 0x0054d130); either finds it at once
+            t.w32(node, name);
+            t.w32(node + 4, name);
+            t.w32(node + 8, 0);
+            t.set_head(r.head, node);
+            t.run(&format!("{label} (found)"), r.addr, true, |g| {
+                sab::counted_enum(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_ab_arrays() {
+    for (what, mut t) in Twins::all() {
+        for r in sab::CTOR_ARRAYS {
+            t.run(
+                &format!("{what} ctor array {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| sab::ctor_array(g, r),
+            );
+        }
+        for r in sab::VEC_CTORS {
+            t.run(
+                &format!("{what} vector ctor {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| sab::vec_ctor(g, r),
+            );
+        }
+        // again with recording stubs: the element constructor of the array
+        // (it writes nothing, so only its log shows each element's `this`)
+        // and the vector iterator (its log shows the five words, the
+        // element destructor included, which it uses only on unwinding)
+        for r in sab::CTOR_ARRAYS {
+            t.stub(r.elem, true, 0, 0, 0);
+            t.run(
+                &format!("{what} ctor array {:#x} (logged)", r.addr),
+                r.addr,
+                true,
+                |g| sab::ctor_array(g, r),
+            );
+        }
+        for r in sab::VEC_CTORS {
+            t.stub(r.iter, false, 5, 5, 0);
+            t.run(
+                &format!("{what} vector ctor {:#x} (logged)", r.addr),
+                r.addr,
+                true,
+                |g| sab::vec_ctor(g, r),
             );
         }
     }
