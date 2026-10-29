@@ -728,7 +728,6 @@ function renderBurn() {
   }
   s += `<line x1="${x(t1)}" x2="${x(t1)}" y1="${Tm}" y2="${H - Bm}" stroke="${C.secondary}" stroke-opacity=".4" stroke-dasharray="2 3"/><text x="${x(t1) + 4}" y="${Tm + 10}" font-size="11" fill="${C.muted}">now</text>`;
   s += `<line x1="${Lm}" x2="${W - Rm}" y1="${H - Bm}" y2="${H - Bm}" stroke="${C.muted}" stroke-opacity=".5"/>`;
-  const labels = [];
   for (const p of M) {
     const col = phaseColor(p), b = base(p);
     let path = "";
@@ -741,16 +740,8 @@ function renderBurn() {
       const v1 = q.cut ? 100 * last[1] / b * (1 - (q.t - last[0]) / ((p.pace_bytes || p.pace)[1].eta - last[0])) : 0;
       s += `<line x1="${x(last[0])}" y1="${y(100 * last[1] / b)}" x2="${x(q.t)}" y2="${y(v1)}" stroke="${col}" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>`;
       if (!q.cut) s += `<circle cx="${x(q.t)}" cy="${y(0)}" r="4" fill="${C.surface}" stroke="${col}" stroke-width="2"/>`;
-      labels.push({ x: x(q.t), y: q.cut ? y(v1) : y(0), color: col, text: q.cut ? "beyond 30 days" : etaShort((p.pace_bytes || p.pace)[1].eta) });
     }
   }
-  // each projection's date above its end, stacked where ends meet
-  labels.sort((a, b) => a.x - b.x);
-  labels.forEach((l, i) => {
-    const near = labels.slice(0, i).filter(o => Math.abs(o.x - l.x) < 90 && Math.abs(o.y - l.y) < 30).length;
-    const tx = Math.min(W - 4, Math.max(Lm + 40, l.x)), anchor = l.x > W - 60 ? "end" : "middle";
-    s += `<text x="${tx}" y="${l.y - 10 - near * 14}" text-anchor="${anchor}" font-size="11.5" font-weight="600" fill="${C.primary}"><tspan fill="${l.color}">●</tspan> ${esc(l.text)}</text>`;
-  });
   s += `<g class="hover" style="display:none"><line y1="${Tm}" y2="${H - Bm}" stroke="${C.secondary}" stroke-opacity=".5"/></g>`;
   s += `<rect x="${Lm}" y="${Tm}" width="${W - Lm - Rm}" height="${H - Tm - Bm}" fill="transparent"/></svg>`;
   el.innerHTML = s;
@@ -765,10 +756,11 @@ function renderBurn() {
     const rows = M.map(p => {
       let q = null;
       for (const z of p.series) { if (z[0] <= t) q = z; else break; }
-      if (t > t1) return row(`<i style="background:${phaseColor(p)}"></i>${esc(p.title)}`, "future");
+      const eta = (p.pace_bytes || p.pace)[1].eta;
+      if (t > t1) return row(`<i style="background:${phaseColor(p)}"></i>${esc(p.title)}`, eta ? "done " + etaText(eta) : "no pace");
       return q ? row(`<i style="background:${phaseColor(p)}"></i>${esc(p.title)}`, `${fmt(q[1])} left · ${(100 * q[1] / base(p)).toFixed(1)}%`) : "";
     }).join("");
-    showTip(`<div style="margin-bottom:4px">${whenDay(t)}</div>${rows}`, e);
+    showTip(`<div style="margin-bottom:4px">${whenDay(t)}${t > t1 ? " · at the 24 h pace" : ""}</div>${rows}`, e);
   };
   svg.onmouseleave = () => { hov.parentNode.style.display = "none"; hideTip(); };
 }
@@ -1275,8 +1267,8 @@ function renderPulse() {
 
 // ---- line charts ---------------------------------------------------------------
 function lineChart(el, series, opt) {
-  const W = el.clientWidth || 600, H = (opt.height || 220) + (opt.project ? 30 : 0);
-  const L = 58, R = 64, T = opt.project ? 40 : 10, B = 26;
+  const W = el.clientWidth || 600, H = opt.height || 220;
+  const L = 58, R = 64, T = opt.project ? 16 : 10, B = 26;
   const pts = series.flatMap(s => s.points);
   const tData = Math.max(...pts.map(p => p.t));
   const t0 = Math.max(Math.min(...pts.map(p => p.t)), opt.from || 0);
@@ -1320,13 +1312,7 @@ function lineChart(el, series, opt) {
     s += `<circle cx="${x(q.end)}" cy="${y(v1)}" r="4" fill="${C.surface}" stroke="${se.color}" stroke-width="2"/>`;
     for (const m of q.marks || []) marks.push({ ...m, color: se.color });
   });
-  for (const m of marks) {
-    const mx = x(m.t), right = mx > W - 160;
-    s += `<circle cx="${mx}" cy="${y(m.v)}" r="4" fill="${C.surface}" stroke="${m.color}" stroke-width="2"/>`;
-    // a mark on the reference line is labelled at the right end, above the line
-    const ty = m.below ? y(m.v) - 6 : y(m.v) - 9 - (m.up || 0);
-    s += `<text x="${m.below ? W - R : right ? mx + 6 : mx - 6}" y="${ty}" text-anchor="${m.below || right ? "end" : "start"}" font-size="11.5" font-weight="600" fill="${C.primary}"><tspan fill="${m.color}">●</tspan> ${esc(m.label)}</text>`;
-  }
+  for (const m of marks) s += `<circle cx="${x(m.t)}" cy="${y(m.v)}" r="4" fill="${C.surface}" stroke="${m.color}" stroke-width="2"/>`;
   s += `<clipPath id="${clip}"><rect x="${L}" y="0" width="${W - L - R + 12}" height="${H - B}"/></clipPath><g clip-path="url(#${clip})">`;
   for (const se of series) {
     const p = se.points;
@@ -1358,7 +1344,8 @@ function lineChart(el, series, opt) {
       hov.querySelector("line").setAttribute("x2", mx);
       const vs = series.map((se, k) => { const lp = se.points[se.points.length - 1], q = P[k]; return q ? Math.min(q.to, lp.v + q.rate * (t - lp.t) / 86400) : lp.v; });
       hov.querySelectorAll("circle").forEach((c, i) => { c.setAttribute("cx", mx); c.setAttribute("cy", y(vs[i])); });
-      showTip(`<div style="margin-bottom:4px">${whenDay(t)} · projected</div>${series.map((se, i) => row(`<i style="background:${se.color}"></i>${se.name}`, P[i] ? opt.fmtV(vs[i]) : "no pace")).join("")}`, e);
+      showTip(`<div style="margin-bottom:4px">${whenDay(t)} · at the 24 h pace</div>${series.map((se, i) => row(`<i style="background:${se.color}"></i>${se.name}`, P[i] ? opt.fmtV(vs[i]) : "no pace")).join("")}
+        ${marks.length ? `<div style="margin-top:6px">${marks.sort((a, b) => a.t - b.t).map(m => row(`<i style="background:${m.color}"></i>${esc(m.label)}`, etaText(m.t))).join("")}</div>` : ""}`, e);
       return;
     }
     const at = se => { let q = se.points[0]; for (const p of se.points) { if (p.t <= t) q = p; else break; } return q; };
@@ -1391,18 +1378,15 @@ function renderTrajectory() {
   const listLeft = Object.entries(D.m5_left || {}).filter(([m]) => D.kinds[m] === "game").reduce((n, [, v]) => n + v[1], 0);
   const ceil = Math.min(100, 100 * (g.replaced_bytes + listLeft) / g.bytes);
   const tn = now(), cap = tn + 45 * 86400;
-  const proj = (pts, hours, extra) => {
+  const proj = (name, pts, hours, extra) => {
     const rate = paceOf(pts, hours), lp = pts[pts.length - 1];
     if (rate <= 0 || lp.v >= 100) return null;
     const hit = lp.t + (100 - lp.v) / rate * 86400;
-    const marks = hit <= cap ? [{ t: hit, v: 100, label: "100% " + etaShort(hit) }] : [];
-    for (const m of extra || []) if (m.v > lp.v) { const tm = lp.t + (m.v - lp.v) / rate * 86400; if (tm <= cap) marks.push({ t: tm, v: m.v, label: m.label + " " + etaShort(tm), below: true }); }
+    const marks = hit <= cap ? [{ t: hit, v: 100, label: name + " 100%" }] : [];
+    for (const m of extra || []) if (m.v > lp.v) { const tm = lp.t + (m.v - lp.v) / rate * 86400; if (tm <= cap) marks.push({ t: tm, v: m.v, label: m.label }); }
     return { rate, to: 100, end: Math.min(hit, cap), hit, marks };
   };
-  const pN = proj(named, 24), pR = proj(repl, 24, [{ v: ceil, label: "lists done" }]);
-  // the two 100% labels one above the other
-  const at100 = [pN, pR].map(q => q && q.marks.find(m => m.v === 100)).filter(Boolean).sort((a, b) => a.t - b.t);
-  at100.forEach((m, i) => { m.up = 15 * (at100.length - 1 - i); });
+  const pN = proj("Named", named, 24), pR = proj("Replaced", repl, 24, [{ v: ceil, label: "M5 lists done" }]);
   lineChart($("traj"), [
     { name: "Named", color: C.named, area: false, points: named },
     { name: "Replaced", color: C.replaced, area: true, points: repl },
@@ -1414,7 +1398,7 @@ function renderTrajectory() {
     return `${name}: +${q.rate.toFixed(1)} pts a day over 24 h, 100% ${etaShort(q.hit)}${hit72 ? ` (at the 72 h pace, +${r72.toFixed(1)} a day: ${etaShort(hit72)})` : ""}.`;
   };
   $("trajHint").innerHTML = `Dashed: the last 24 h's pace carried on. ${esc(say("Named", named, pN))} ${esc(say("Replaced", repl, pR))}
-    Replaced stops short of 100%: code <code>tools/reach.py</code> finds unreachable (<code>symbols/m5-dropped.tsv</code>), the not-portable lists and code in no M5 list are never replaced, so the dotted line is where the current lists end${pR && pR.marks.find(m => m.label.startsWith("lists")) ? "" : " (beyond 45 days at this pace)"}.`;
+    Replaced stops short of 100%: code <code>tools/reach.py</code> finds unreachable (<code>symbols/m5-dropped.tsv</code>), the not-portable lists and code in no M5 list are never replaced, so the dotted line is where the current lists end${pR && pR.marks.find(m => m.label === "M5 lists done") ? "" : " (beyond 45 days at this pace)"}.`;
 }
 
 // ---- feed ---------------------------------------------------------------------
