@@ -1214,6 +1214,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("motion state", &s4_summon::MOTION_STATE),
     ("start object at", &s4_misc::START_OBJECT_AT),
     ("targets init", &s4_summon::TARGETS_INIT),
+    ("angle step", &s4_misc::ANGLE_STEP),
+    ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

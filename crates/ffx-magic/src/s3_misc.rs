@@ -337,6 +337,23 @@ enum KeyTime {
     Curve(u32, u32),
 }
 
+/// The quartic curve of a key track's time `t`: five control floats at
+/// `c`, `u = k1 - t`, the middle terms weighted by `k` (the original's
+/// order: `u t u^2 k c1 + u^4 c0`, `+ t^2 u^2 k c2`, `+ t^2 u t k c3`,
+/// `+ t^4 c4`).
+pub(crate) fn quartic<G: Game>(g: &G, c: u32, t: f32, k1: f32, k: f32) -> f32 {
+    let ck = |i: u32| f32_at(g, c + 4 * i);
+    let u = sub(k1, t);
+    let uu = mul(u, u);
+    let ut = mul(u, t);
+    let tt = mul(t, t);
+    let mut x = add(mul(mul(mul(ut, uu), k), ck(1)), mul(mul(uu, uu), ck(0)));
+    x = add(x, mul(mul(mul(tt, uu), k), ck(2)));
+    let t4 = mul(tt, tt);
+    x = add(x, mul(mul(mul(tt, ut), k), ck(3)));
+    add(x, mul(t4, ck(4)))
+}
+
 /// One step of a key track (`ecx` = the track: the keys `+0x20`, three
 /// floats per key, `n` keys `+0x38`, the time `+0x2c` and its step
 /// `+0x30`, the steps left `+0x34`; `edx` = the three floats out). On the
@@ -369,20 +386,7 @@ fn key_track<G: Game>(g: &mut G, img: &Image, fr: &Frame, time: KeyTime, calls: 
         KeyTime::Plain => None,
         KeyTime::Curve(k1, k2) => {
             let c = g.read::<u32>(s + 0x28);
-            let ck = |g: &G, i: u32| f32_at(g, c + 4 * i);
-            let u = sub(f32_at(g, w(k1)), t);
-            let k = f32_at(g, w(k2));
-            let uu = mul(u, u);
-            let ut = mul(u, t);
-            let tt = mul(t, t);
-            let mut x = add(
-                mul(mul(mul(ut, uu), k), ck(g, 1)),
-                mul(mul(uu, uu), ck(g, 0)),
-            );
-            x = add(x, mul(mul(mul(tt, uu), k), ck(g, 2)));
-            let t4 = mul(tt, tt);
-            x = add(x, mul(mul(mul(tt, ut), k), ck(g, 3)));
-            Some(add(x, mul(t4, ck(g, 4))))
+            Some(quartic(g, c, t, f32_at(g, w(k1)), f32_at(g, w(k2))))
         }
     };
     g.write::<u32>(s + 0x2c, t.to_bits());

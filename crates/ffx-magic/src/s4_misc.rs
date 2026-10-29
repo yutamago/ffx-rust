@@ -5,11 +5,15 @@
 use crate::l5_objhost::{OBJ_SCRIPT, POOL_ALLOC, obj_script, pool_alloc};
 use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
+use crate::pushes::Pushes;
 use crate::runtime::slot_target;
 use crate::sa_misc::{RESET_TRANSFORM, reset_transform};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
-use crate::sb_misc::{MEAN_POSITION, ROTATE_OFFSET, mean_position, rotate_offset};
+use crate::sb_misc::{
+    EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, ease_angle, ease_sample, mean_position,
+    rotate_offset,
+};
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
@@ -568,6 +572,151 @@ pub const FOLLOW_TASK: Sig = Sig {
         (0xce, Callee::Sig(&OBJ_SCRIPT)),
         (0xee, Callee::Sig(&GIVE_BACK)),
         (0xfa, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// The operand offsets of one [`angle_track`] copy: the three easing
+/// calls' `rel32`s and the table operands of slots 235, 330, 328, 329,
+/// 229.
+struct AngleOps {
+    calls: [u32; 3],
+    slots: [u32; 5],
+}
+
+/// One step of an angle track (`ecx` = the track: the keys `+0x20`,
+/// three floats per key, `n` keys `+0x38`, the time `+0x2c` and its step
+/// `+0x30`, the steps left `+0x34`, the base `+0x24`; `edx` = four floats
+/// out; a /GS frame). On the last step the last key is taken and `+0x3c`
+/// cleared; otherwise the time moves on and, at it (or at the quartic
+/// curve of it, `curve` the operands of `K1` and `K2`,
+/// [`crate::s3_misc::quartic`]), the keys give two angles
+/// ([`ease_angle`]) and a distance ([`ease_sample`]; stride 3, each call
+/// seeing the strides the earlier ones pushed). The distance `(0, 0, d,
+/// 1)` on the frame (`[ebp - 0x14]`) is turned by a matrix (`[ebp -
+/// 0x54]`: slot 235's unit, rolled by 0 (330), the first angle (328), the
+/// second (329); slot 229) and added to the base; the base's `w` is
+/// copied and returned.
+fn angle_track<G: Game>(g: &mut G, img: &Image, fr: &Frame, curve: Option<(u32, u32)>, o: &AngleOps) -> u32 {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let (s, out) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let left = g.read::<u32>(s + 0x34).wrapping_sub(1);
+    g.write::<u32>(s + 0x34, left);
+    let keys = g.read::<u32>(s + 0x20);
+    let (a0, a1, d) = if left == 0 {
+        let n = g.read::<u32>(s + 0x38);
+        let last = keys.wrapping_add(n.wrapping_mul(12)).wrapping_sub(12);
+        let key = (f32_at(g, last), f32_at(g, last + 4), f32_at(g, last + 8));
+        g.write::<u32>(s + 0x3c, 0);
+        key
+    } else {
+        let t = add(f32_at(g, s + 0x30), f32_at(g, s + 0x2c));
+        let x = match curve {
+            Some((k1, k2)) => {
+                let c = g.read::<u32>(s + 0x28);
+                crate::s3_misc::quartic(g, c, t, f32_at(g, w(k1)), f32_at(g, w(k2)))
+            }
+            None => t,
+        };
+        let n = g.read::<u32>(s + 0x38);
+        set_f32(g, s + 0x2c, t);
+        // sub esp, 0x64; three pushes; then a stride pushed per call
+        let mut esp = ebp.wrapping_sub(0x64 + 12);
+        let mut ease = |g: &mut G, i: u32, angle: bool| {
+            esp = esp.wrapping_sub(4);
+            g.write::<u32>(esp, 3);
+            let target = img.rel32_target(f + o.calls[i as usize]);
+            let at = esp.wrapping_sub(4);
+            if angle {
+                ease_angle(g, img, target, at, keys + 4 * i, n, x)
+            } else {
+                ease_sample(g, img, target, at, keys + 4 * i, n, x)
+            }
+        };
+        let a0 = ease(g, 0, true);
+        let a1 = ease(g, 1, true);
+        let d = ease(g, 2, false);
+        (a0, a1, d)
+    };
+    let m = ebp.wrapping_sub(0x54);
+    let v = ebp.wrapping_sub(0x14);
+    for (i, x) in [0, 0, d.to_bits(), 0x3f80_0000].into_iter().enumerate() {
+        g.write::<u32>(v + 4 * i as u32, x);
+    }
+    let [s235, s330, s328, s329, s229] = o.slots;
+    let mut st = Pushes::default();
+    st.push(m);
+    st.call(g, slot_target(g, w(s235), 235), 0);
+    st.set_top(0);
+    st.push_all(&[m, m]);
+    st.call(g, slot_target(g, w(s330), 330), 0);
+    st.pop(2);
+    st.set_top(a0.to_bits());
+    st.push_all(&[m, m]);
+    st.call(g, slot_target(g, w(s328), 328), 0);
+    st.pop(2);
+    st.set_top(a1.to_bits());
+    st.push_all(&[m, m]);
+    st.call(g, slot_target(g, w(s329), 329), 0);
+    st.push_all(&[v, m, v]);
+    st.call(g, slot_target(g, w(s229), 229), 0);
+    let base = g.read::<u32>(s + 0x24);
+    for i in 0..3 {
+        let x = add(f32_at(g, base + 4 * i), f32_at(g, v + 4 * i));
+        set_f32(g, out + 4 * i, x);
+    }
+    let last = g.read::<u32>(base + 0xc);
+    g.write::<u32>(out + 0xc, last);
+    last
+}
+
+/// [`angle_track`] at the track's own time.
+///
+/// `magic_0162` 0x10005b00 (391 bytes, `ecx`/`edx`; 24 DLLs).
+pub fn angle_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let o = AngleOps {
+        calls: [0x40, 0x56, 0x6c],
+        slots: [0xa9, 0xdc, 0xfb, 0x11a, 0x133],
+    };
+    angle_track(g, img, fr, None, &o)
+}
+
+/// [`angle_step`].
+pub const ANGLE_STEP: Sig = Sig {
+    len: 391,
+    hash: 0xb735_9d3a_2c6e_ca06,
+    calls: &[
+        (0x40, Callee::Sig(&EASE_ANGLE)),
+        (0x56, Callee::Sig(&EASE_ANGLE)),
+        (0x6c, Callee::Sig(&EASE_SAMPLE)),
+        (0x17f, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`angle_track`] through the quartic curve (`K1` operand `+0x14`, `K2`
+/// `+0x3c`).
+///
+/// `magic_0162` 0x10005c90 (520 bytes, `ecx`/`edx`; 24 DLLs).
+pub fn angle_step_curved<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let o = AngleOps {
+        calls: [0xc1, 0xd7, 0xed],
+        slots: [0x12a, 0x15d, 0x17c, 0x19b, 0x1b4],
+    };
+    angle_track(g, img, fr, Some((0x14, 0x3c)), &o)
+}
+
+/// [`angle_step_curved`].
+pub const ANGLE_STEP_CURVED: Sig = Sig {
+    len: 520,
+    hash: 0x088c_5e9c_2474_39d6,
+    calls: &[
+        (0xc1, Callee::Sig(&EASE_ANGLE)),
+        (0xd7, Callee::Sig(&EASE_ANGLE)),
+        (0xed, Callee::Sig(&EASE_SAMPLE)),
+        (0x200, Callee::Any),
     ],
     imports: &[],
 };

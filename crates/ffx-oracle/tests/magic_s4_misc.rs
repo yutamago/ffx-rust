@@ -342,3 +342,77 @@ fn follow_task() {
         }
     }
 }
+
+/// `magic_0162` 0x10005b00 and 0x10005c90: angle tracks stepping (plain
+/// and through the curve, angles past a turn) and on their last step.
+#[test]
+fn angle_steps() {
+    let Some(mut t) = twin(162) else { return };
+    let (track, keys, out, ctl, base) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+        SCRATCH + 0x400,
+    );
+    for i in 0..30u32 {
+        let x = (i as f32 * 0.7).sin() * 4.0 + i as f32 * 0.9;
+        set_f(&mut t, keys + 4 * i, x);
+    }
+    for (i, c) in [0.5f32, 1.0, -2.0, 3.5, 4.0].iter().enumerate() {
+        set_f(&mut t, ctl + 4 * i as u32, *c);
+    }
+    for (i, c) in [10.0f32, -20.0, 0.125, 7.0].iter().enumerate() {
+        set_f(&mut t, base + 4 * i as u32, *c);
+    }
+    for s in [235u32, 330, 328, 329] {
+        rec(&mut t, s, 1, move |m, a| {
+            let v = m.r32(a[0] + 4 * (s % 16)) ^ s;
+            m.w32(a[0] + 4 * (s % 16), v);
+            s
+        });
+    }
+    rec(&mut t, 229, 4, |m, a| {
+        // the vector it is given, turned
+        let (x, z) = (m.r32(a[2]), m.r32(a[2] + 8));
+        m.w32(a[0], z ^ m.r32(a[1] + 0x2c));
+        m.w32(a[0] + 8, x.wrapping_add(m.r32(a[1] + 0x1c)));
+        0x229
+    });
+    for (rva, curved) in [(0x5b00u32, false), (0x5c90, true)] {
+        for (left, tm, step) in [
+            (5u32, 0.0f32, 0.25f32),
+            (5, 1.5, 0.3),
+            (1, 2.0, 0.5),
+            (9, 7.6, 0.5),
+            (3, 0.2, 0.1),
+        ] {
+            t.write(track, &[0x33; 0x40]);
+            t.write(out, &[0xee; 0x10]);
+            t.set_u32(track + 0x20, keys);
+            t.set_u32(track + 0x24, base);
+            t.set_u32(track + 0x28, ctl);
+            set_f(&mut t, track + 0x2c, tm);
+            set_f(&mut t, track + 0x30, step);
+            t.set_u32(track + 0x34, left);
+            t.set_u32(track + 0x38, 9);
+            t.check(
+                t.at(rva),
+                Call {
+                    ecx: track,
+                    edx: out,
+                    ..Call::default()
+                },
+                &[],
+                Eax::Checked,
+                |g, img, fr| {
+                    Ret::eax(if curved {
+                        s4_misc::angle_step_curved(g, img, fr)
+                    } else {
+                        s4_misc::angle_step(g, img, fr)
+                    })
+                },
+            );
+        }
+    }
+}
