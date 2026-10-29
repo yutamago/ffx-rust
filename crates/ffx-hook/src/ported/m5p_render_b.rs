@@ -1271,4 +1271,9 @@ ported! {
         let ebp = f.at() + 0x30;
         eb::draw_setup(&mut mem(), ebp, this, r, primitive, slot, n)
     }
+    // ---- batch 13: the renderer pool (ffx_prender::m5p_render_b_d3d) ----
+    /// `Phyre_PRendering_PRendererPool_resize_005bbc30`.
+    Phyre_PRendering_PRendererPool_resize_005bbc30 @ 0x005b_bc30 => extern "thiscall" fn e_005bbc30(this: u32, n: u32, device: u32) -> u32 {
+        ffx_prender::m5p_render_b_d3d::pool::resize(&mut mem(), this, n, device)
+    }
 }

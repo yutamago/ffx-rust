@@ -4344,3 +4344,50 @@ fn d3d_match_the_original() {
         }
     }
 }
+
+#[test]
+fn renderer_pool_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the same count (owned, external); growing (owned / not owned old
+        // buffer, failing, the old buffer handed back, no old buffer); the
+        // same block count (with data, without, the word's bit 31 set); no
+        // renderers; a pool that has an array
+        // (case, word 0, buffer: 0 junk / 1 the malloc one / 2 none, +8, n, fails, +0xc)
+        for (case, word, buffer, have, n, fails, arr) in [
+            (0u32, 0u32, 0u32, 3u32, 3u32, false, 0u32),
+            (1, 0x8000_0000, 0, 0, 2, false, 0),
+            (2, 0, 0, 0x8000_0000, 2, false, 0),
+            (3, 0x8000_0000, 0, 0, 2, true, 0),
+            (4, 15, 1, 0, 1, false, 0),
+            (5, 0x8000_0003, 0, 2, 0, false, 0),
+            (6, 0, 0, 0, 2, false, 0x5555),
+            (7, 0x8000_0002, 0, 0x8000_0002, 2, false, 0),
+            (8, 0x8000_000f, 0, 0, 1, false, 0),
+            (9, 15, 2, 0, 1, false, 0),
+            (10, 0, 1, 0, 1, false, 0),
+            (11, 0, 2, 0, 1, false, 0),
+            (12, 0, 0, 5, 2, false, 0),
+        ] {
+            let buf = t.junk(0x400, 1);
+            t.stub(d3d::PHYRE_MALLOC, false, 2, 0, if fails { 0 } else { buf });
+            t.stub(d3d::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(d3d::BLOCKS_INIT, false, 2, 0, 0x60);
+            t.stub(d3d::RENDERER_CTOR, true, 1, 1, 0x61);
+            t.stub(d3d::FREE_RENDERERS, false, 2, 0, 0x62);
+            let obj = t.zeros(0x10);
+            t.w32(obj, word);
+            let old = t.junk(0x10, 2);
+            t.w32(obj + 4, [old, buf, 0][buffer as usize]);
+            t.w32(obj + 8, have);
+            t.w32(obj + 0xc, arr);
+            t.check(
+                &format!("{label}: pool {case}"),
+                0x005b_bc30,
+                Conv::Thiscall(obj),
+                &[n, 0xdd],
+                |g| Out::U32(d3d::pool::resize(g, obj, n, 0xdd)),
+            );
+            t.reset();
+        }
+    }
+}

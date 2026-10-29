@@ -220,3 +220,79 @@ pub mod bridge {
         0
     }
 }
+
+/// The renderer pool's callees: `Phyre_PhyreMalloc_0042fb80(size, align)`,
+/// the block init `0x00539600(blocks, n)` (cdecl), the renderer
+/// constructor `Phyre_PRendering_PRendererBase_PRendererBase_005b4650(r;
+/// device)` (thiscall), the renderers' release
+/// `Phyre_PRendering_freeJobs_005b5330(array, n)` (cdecl) and
+/// `Phyre_PRendering_PRendererForJobs_vftable`.
+pub const BLOCKS_INIT: u32 = 0x0053_9600;
+pub const RENDERER_CTOR: u32 = 0x005b_4650;
+pub const FREE_RENDERERS: u32 = 0x005b_5330;
+pub const FOR_JOBS_VTABLE: u32 = 0x00b3_63e8;
+/// A `PRendererForJobs`' size.
+pub const RENDERER_SIZE: u32 = 0xe4;
+
+pub mod pool {
+    //! `0x005bbc30` over game memory.
+
+    use super::{
+        BLOCKS_INIT, FOR_JOBS_VTABLE, FREE_RENDERERS, PHYRE_FREE, PHYRE_MALLOC, RENDERER_CTOR,
+        RENDERER_SIZE,
+    };
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `0x005bbc30(pool; n, device)`: nothing when the pool already holds
+    /// `n` renderers; else its 16-byte block buffer (`+0`, `+4`) sized for
+    /// `n` 0xe4-byte renderers (`PhyreMalloc`, aligned 16, initialised;
+    /// the old owned one freed; 0xd when it fails), each block slot
+    /// constructed as a `PRendererForJobs`, the first one made becoming the
+    /// pool's array (`+8`, `+0xc`, external) while it has none; 0.
+    pub fn resize(h: &mut impl Host, this: u32, n: u32, device: u32) -> u32 {
+        if n == h.read::<u32>(this + 8) & 0x7fff_ffff {
+            return 0;
+        }
+        let blocks = n.wrapping_mul(RENDERER_SIZE).wrapping_add(0xf) >> 4;
+        if blocks != h.read::<u32>(this) {
+            let mut buf = 0;
+            if blocks != 0 {
+                buf = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[blocks << 4, 0x10]);
+                if buf == 0 {
+                    return 0xd;
+                }
+                h.call_sym(BLOCKS_INIT, Conv::Cdecl, &[buf, blocks]);
+            }
+            let old: u32 = h.read(this + 4);
+            let word: u32 = h.read(this);
+            if old != buf && word & 0x8000_0000 == 0 && old != 0 {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+            }
+            h.write(this + 4, buf);
+            h.write(this, blocks);
+        }
+        let mut p: u32 = h.read(this + 4);
+        for _ in 0..n {
+            let made = if p == 0 {
+                0
+            } else {
+                h.call_sym(RENDERER_CTOR, Conv::Thiscall(p), &[device]);
+                let vt = h.rebase(FOR_JOBS_VTABLE);
+                h.write(p, vt);
+                h.write(p + 0xe0, 0u32);
+                p
+            };
+            if h.read::<u32>(this + 0xc) == 0 && (n as i32) >= 0 {
+                let count: u32 = h.read(this + 8);
+                if made != 0 && count & 0x8000_0000 == 0 {
+                    let arr: u32 = h.read(this + 0xc);
+                    h.call_sym(FREE_RENDERERS, Conv::Cdecl, &[arr, count & 0x7fff_ffff]);
+                }
+                h.write(this + 8, n | 0x8000_0000);
+                h.write(this + 0xc, made);
+            }
+            p = p.wrapping_add(RENDERER_SIZE);
+        }
+        0
+    }
+}
