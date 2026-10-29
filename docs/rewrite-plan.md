@@ -524,12 +524,17 @@ slightly differently.
      `g_MagicImports` calls to the function table. That makes them
      identical by construction. Unicorn is C, the one exception to "pure
      Rust" (user: "just this once"), and only for the overlays.
-   - Porting them continues as a background track with spare capacity:
-     each overlay becomes a Rust overlay behind the same two exports,
-     shared pieces are ported once, parity tests run the DLL's own code
-     against the port, and `battle-magic`, `battle-ifrit` and
-     `battle-overdrive` gate them in the game. A ported overlay replaces
-     its Unicorn run; when the last one is ported, Unicorn goes.
+   - Porting them (user, 2026-10-29: before the release; Unicorn,
+     GPL-2.0, stays a development and test tool): each overlay becomes a
+     Rust overlay behind the same interface (`crates/ffx-magic`,
+     docs/formats/magic.md "Porting the overlays"), shared pieces are
+     ported once and bind by code identity in every DLL that carries
+     them, parity tests run the DLL's own code in Unicorn against the
+     port, and `battle-magic`, `battle-ifrit` and `battle-overdrive` gate
+     them in the game (`FFX_MAGIC_RUST`). The work list is
+     `~/ffx-work/m5/magic/worklist.tsv` (`tools/magic-worklist.py`). A
+     ported overlay replaces its Unicorn run; when the last one is
+     ported, Unicorn goes.
    - Gate: a coverage run with a trap on every original `.text` byte
      except the libraries still to replace in stage 2 shows no game code
      running, across the main, extra and audio replay lists (the
@@ -568,6 +573,16 @@ slightly differently.
 5. **Saves, settings and delivery.**
    - Gate: saves and settings written by `ffx-rust.exe` load in `FFX.exe`
      and back, byte for byte (on copies, never the user's saves).
+   - Gate: the release links no GPL code. Unicorn (GPL-2.0) is behind
+     the `dev-unicorn` feature of `ffx-hook`, `ffx-dinput8` and
+     `ffx-host` (on by default for development builds);
+     `tools/check-licences.py` lists the release trees (`cargo tree -e
+     normal --no-default-features`) of `ffx-dinput8` (i686) and
+     `ffx-host` (x86_64) and fails on any GPL-family licence, and both
+     crates build with `--no-default-features`. Today `ffx-dinput8`
+     builds that way (no overlay runner) and `ffx-host` refuses to (a
+     `compile_error!`: its executor still needs Unicorn for code without
+     a port, which goes at the stage 4 gate).
    - `ffx-launch` starts either program. The release package holds
      `ffx-rust.exe`, `steam_api64.dll` and the licences.
    - Docs: what a player needs and what stays the original's.

@@ -8,7 +8,10 @@ here). Each exports `GetEffectOverlayTable` and `InitMagicPRX`.
 `onMagicDLLLoaded` (`0x009db110`) looks up `InitMagicPRX`, and
 `MagicFile_Start` (`0x009da7f0`) calls it with `g_MagicImports`
 (`0x00c64ce8`): 744 slots of 4 bytes (`0xba0`), the overlays' only way into
-the game. The last three slots are data, not functions: `0x0230ffe0` (next
+the game. (The table goes on past them: `InitMagicPRX` copies words up to
+`+0xea0` into its globals, pointers to game variables, and the overlays
+call through words up to at least `+0xeb4`, slot 941; the slot list
+below stops at 743.) The last three slots are data, not functions: `0x0230ffe0` (next
 to `g_pppCurrentPart`), `0x02332e8c` and `g_OpusBattle` (`0x012a40c0`);
 `InitMagicPRX` reads them at `+0xb94`, `+0xb98` and `+0xb9c` and keeps the
 table's address in a global of its own. Every later call loads that global
@@ -185,6 +188,207 @@ needs CMake, Ninja and `llvm-lib` (`tools/shims/cmake`, `ninja`,
 cargo-xwin's toolchain file sets `CMAKE_MSVC_RUNTIME_LIBRARY` while the
 `cmake` crate passes `-MT`, which Unicorn's `CMakeLists.txt` refuses. The
 first build of a target directory compiles Unicorn (about 3 minutes).
+
+## Porting the overlays
+
+Decision (user, 2026-10-29): the 581 overlays are ported to Rust before
+the release. Unicorn (GPL-2.0) stays a development and test tool: it runs
+the player's DLLs as the reference for the parity tests and as the
+fallback for code without a port. `crates/ffx-magic` holds the ports.
+
+**What a Rust overlay is.** The game still loads `magic_NNNN.dll` and
+gets the same module handle, exports and data: the player's file is read
+as data, its headers and data sections laid out at the image base the
+original gets (`ffx_magic::Image::new`, `write_data`), relocated. Only the
+code is replaced: every address the game calls into the overlay's code
+(`DllMain`, `InitMagicPRX`, `GetEffectOverlayTable`, the overlay table's
+entries, callbacks the overlay stored, the particle programs' step
+functions, which are slot thunks) is answered by a port bound to that
+address. Pointers the game stores into overlay data stay the same, and
+the ports reach the game only through `g_MagicImports`, read through the
+DLL's own global as the original reads it.
+
+**Binding by code identity.** A port declares the function it replaces as
+an `ffx_magic::Sig`: the length (trailing `int3` left out) and the FNV-1a
+hash of its bytes with every relocated word and every `rel32` field
+zeroed (what the link moves); the `rel32` callees (another `Sig`, an
+import thunk such as `memset`, or `Any` for the CRT's internal calls) and
+`call [IAT]` imports are checked too. `ffx_magic::bind(img, addr)` finds
+the port whose signature matches the code at `addr`, so one port binds
+in every DLL that carries the same function: the runtime in all 581, the
+OPU host in 130. The addresses that differ between DLLs (their globals,
+tables and strings) are read from the original instructions' operands:
+`img.word(f + off)`, where `off` is the operand's offset in the function
+(the comments name the instruction). Slot thunks differ only in their
+slot and bind by shape (`runtime::slot_of_thunk`).
+
+**The interface.** Ports are generic over `ffx_magic::Game`
+(`ffx_bridge::Mem` plus `call(target, ecx, args) -> Out` with `eax`,
+`edx` and ST0, and the MSVCR110 imports whose results must be the game's:
+`rand`, `_libm_sse2_*_precise`, `_CIatan2`). An entry is
+`fn(&mut G, &Image, &Frame) -> Ret`: the frame has the called address,
+`esp` at the return address (stack arguments through `Frame::arg`) and
+`eax`/`ecx`/`edx` (register arguments; `eax` for code that returns it
+untouched, such as the lone `ret`). `Ret` gives `eax`, `edx`, ST0 and the
+bytes popped, or a tail jump (`Ret::jump(target)`: the original's
+`jmp eax` with the caller's stack as it was at the entry; the host
+continues there). Internal functions (custom register conventions from
+LTCG, such as the OPU set-up's `ecx`) are plain Rust functions the ports
+call; they get no entry. Each call through a slot passes exactly the
+words on the original's stack at that call, earlier pushes the original
+leaves there included (the OPU host's per-frame calls see the camera and
+screen matrices after their own arguments).
+
+Hosts: the 32-bit hook (`overlay_emu.rs`, below), the parity tests
+(`crates/ffx-oracle/tests/magic/mod.rs`) and later `ffx-host`, whose
+function table registers the bound ports under their overlay addresses.
+
+**Floats.** The overlays are SSE code: f32 operations rounded at each
+step, in the original's order, no FMA. x87 appears only to return a float
+in ST0 (an `Out::st0`/`Ret::st0` `f64`, exact at the game's 53-bit
+precision). The libm imports are the game's MSVCR110 through `Game`, never
+Rust's `f64::sin`.
+
+**The CRT.** `DllMain` (`_DllMainCRTStartup`, the same 35 bytes in all
+581) is ported as TRUE with no state: the cookie, the `onexit` list and
+the attach count are the CRT's own bookkeeping. The parity test runs the
+original's `DllMain` attach and detach, takes every word it writes, and
+fails if any is an operand of the DLL's ported functions; those words are
+the only ones left out of the comparison. The initialiser tables of the
+DLLs seen so far hold only the CRT's own functions; a DLL with C++ static
+constructors would need them ported.
+
+**Parity harness** (`crates/ffx-oracle/tests/magic/mod.rs`, one test file
+per DLL: `magic_NNNN.rs`). `Twin::load(n)` loads the DLL in Unicorn
+(`ffx-overlay`, a 4 GiB arena, the preferred base, `DllMain` run) and
+gives the port a sparse copy of the same memory. The stand-in
+`g_MagicImports` has 1024 words: each word the player's `FFX.exe` has
+pointing into code becomes a trap (`TRAPS + 16 * slot`), each data word a
+zeroed page of its own (`Twin::data(slot)`). `Twin::init()` runs
+`InitMagicPRX` on both sides and checks it. `check_entry(addr, regs,
+args, Eax::Checked)` runs the original and the bound port from the same
+registers and stack, and fails on any difference in:
+- `eax` (unless the test marks the original's as junk), ST0 (bit for
+  bit), the bytes popped, a tail jump's target;
+- the call-outs in order: target, slot, and the port's argument words
+  against the original's stack;
+- memory: every page either side's set-up or the port wrote, the image,
+  the stack above the entry, the data pages, the heap and the scratch
+  area.
+`Twin::check(addr, …, |g, img, fr| port(…))` does the same for an
+internal function with its own convention. `ecx` at a call-out is
+compared where the slot's function reads it before writing it (a
+method's `this`): the slots in `magic/this_slots.rs`, generated from the
+player's `FFX.exe` by `tools/check-thisarg.py --magic-slots --write`
+(`--magic-slots` alone fails when the file is out of date); elsewhere it
+is whatever the overlay code left there. Float arguments in SSE registers
+(LTCG internal functions) go in `Call::with_xmm(&[Xmm::f32(..), ..])`:
+`xmm0`..`xmm3` of the original (`ffx_overlay::Regs`) and `Frame::xmm` of
+the port (`Frame::xmm_f32(i)`/`xmm_f64(i)`); a port returning a float in
+`xmm0` gives `Ret::xmm0(Xmm::f32(x), eax)`, and the low lane is compared
+bit for bit with the original's (`Twin::last` keeps the original's
+registers). A test may load several DLLs one after another on its thread
+(`Twin::load` starts a fresh Unicorn instance each time,
+`ffx_overlay::release_thread`; `magic_harness.rs`). Stubs (`Twin::stub(slot, |m,
+args| eax)`) answer a slot for both sides alike and may read and write
+memory; make them read every argument word the original passes and write
+what they see (a stub that ignores an argument cannot catch a port that
+drops it), and fill the tables a function clears with non-zero bytes
+first. `Twin::stub_st0(slot, |m, args| f64)` makes a slot also return
+a float in ST0 (the game's float functions), on both sides. A call-out
+logs 16 words of the original's stack. Mutants go through
+`tools/mutants.py` as for every port (`MUT_TEST=magic_NNNN MUT_SNAPS=`,
+no snapshots).
+
+**Locals.** A function that hands the address of a local to the game
+(`lea eax, [ebp - 0x44]; push eax`) is ported with the local where the
+original's frame has it, below the entry `esp` (`m0052::scaled_camera`,
+`m0003::tick`), so the game sees the same pointers and the parity test
+the same words. The space is the port's: the 32-bit hook runs ports 64
+KiB below the caller's stack (`overlay_emu.rs`, `GAP`); other hosts
+must leave the same room. The memory comparison skips the stack below
+the entry, so a stub that receives such a pointer reads what is there
+(`magic_0052.rs`).
+
+**The gate in the game.** `FFX_MAGIC_RUST=1` (every DLL) or a comma list
+of numbers (`FFX_MAGIC_RUST=604,309`) makes `overlay_emu.rs` answer each
+trapped call into a selected DLL's code with the port bound there; code
+without a port still runs in Unicorn, on the same memory. It needs the
+`dev-unicorn` build (the loader is `FFX_MAGIC_EMU`'s) and
+`tools/run-game.sh` passes it on. At unload, `ffx-hook.log` lists each
+entry as `+0xNNNN rust: N calls` or `+0xNNNN unicorn: …`; a DLL is fully
+ported when its replays show no `unicorn` line. The replays:
+`FFX_MAGIC_RUST=1 tools/replays/run-all.sh battle-magic battle-overdrive`
+and `tools/replays/run-all.sh --extra battle-ifrit` (battle-magic reaches
+`magic_0481`; battle-overdrive `magic_0390`, `0595`, `0604`;
+battle-ifrit `magic_0309`, `0596`).
+
+**One port per identity.** Two ports with the same code identity
+(length, masked hash, callees and imports: `ffx_magic::sigs_overlap`)
+would both match one address and `bind` would silently take the first, so
+`PORTS` and `INTERNAL` refuse a second registration when the crate builds
+(`first_overlap`; `cargo test -p ffx-magic one_port_per_identity` names
+the pair). Before porting a function, look it up (`magic-sig --covered`)
+and reuse the existing port; a test of another DLL's copy binds to it
+through `check_entry`.
+
+**Claiming and naming.** The first work list, `~/ffx-work/m5/magic/worklist.tsv`,
+cut the DLLs into 15 lists (contiguous ranges of about equal bytes); that
+membership is fixed. The current one is `~/ffx-work/m5/magic/worklist2.tsv`
+(`tools/magic-worklist.py`, from `tools/overlay-census.py`'s
+`overlay-dll-functions.tsv`; a rerun never rewrites the lists file and
+refuses to overwrite its output without `--replace`): one row per
+function not covered yet, by code identity (the identity `bind` uses;
+the census hash also keeps read-only constants and splits what one port
+covers), "shared first": every function used by 2 or more DLLs, callees
+before callers, then each DLL's own code (the replays' DLLs first). Each
+row gives the `Sig` length and hash, the DLLs using it, the owner (the
+lowest-numbered DLL, and its list) and the uncovered callees.
+`worklist2-dlls.tsv` gives per DLL what is covered and left and the
+shared functions it waits on. The CRT is never ported: its mnemonic
+groups and every function using its failure imports
+(`__report_gsfailure`, `__raise_securityfailure`, which the census cuts
+as one 312-byte function) count as covered. Claim DLLs with
+`tools/claim.py magic_NNNN --agent <id>` (the DLL name is the claim).
+Modules: `ffx-magic/src/mNNNN.rs` for a DLL's own functions, named for
+what the code does once known (`opu.rs`, the OPU host); a function shared
+by several DLLs goes into the module of the family (or `runtime.rs`),
+its doc comment naming the DLL and address it was ported from, its size
+and how many DLLs carry it. A new port: its `Sig` (`cargo run -p
+ffx-magic --example magic-sig -- <dll> <addr> <len> [rel32 offsets]`
+prints the hash; `--bind <dll> <addr>…` shows what binds), a line in the
+`ports!` list (entries) or `INTERNAL` (internal functions), the parity
+test, the mutants, and the replay that reaches the DLL with
+`FFX_MAGIC_RUST`.
+
+**Status (2026-10-29, merge of the pilot and lists 1-6).** 76 entries
+and 66 internal functions (plus the slot thunks by shape): the runtime,
+the OPU host and its start-up variants, the node lists, the object host
+(224 overlays), the map effects' task functions (`rcef.rs`) and the own
+code of the families listed in `ffx-magic/src/lib.rs`. Nine functions
+had been ported more than once, by lists that saw different census
+hashes: `xor eax, eax; ret` (kept: `runtime::zero_ret`), the OPU start-up
+with the byte flag (`l3_opu::start_up`), the free-list take (three
+copies; `m0032::pop_node`) and six `m0187`/`m0196` wrappers that are the
+map effects' functions (`rcef`); one port each is kept, and every test
+of a removed copy now checks the kept one.
+Of 4,578 distinct functions, 430 are covered and 75 are the CRT; 4,073
+are left (1,205 used by 2+ DLLs come first in `worklist2.tsv`), and 121
+DLLs are fully covered.
+
+**Status (2026-10-29, pilot).** 25 ports (21 entries, 3 internal
+functions, plus the slot thunks by shape): the runtime (`DllMain`,
+`InitMagicPRX`, `GetEffectOverlayTable` in all 581 DLLs, every slot
+thunk, the lone `ret` of 267); the OPU host of 128-130 DLLs (start,
+per-frame run, stop, set-up, the printf wrapper, and the nine particle
+part callbacks with the `pppStartPart` wrapper); `magic_0604`'s two own
+entries. Fully covered: `magic_0604`, `magic_0306`, `magic_0593`,
+`magic_0615`. With `FFX_MAGIC_RUST=1` battle-magic, battle-overdrive and
+battle-ifrit match the originals (traces and screenshots), and
+`magic_0604` runs in battle-overdrive with no Unicorn entry left;
+`magic_0309` and `magic_0595` fall back for 2-3 one-shot entries each,
+`magic_0481` for its four effect functions (the 3,982-byte per-frame
+one), `magic_0390` and `magic_0596` for their own code.
 
 ## The slots
 

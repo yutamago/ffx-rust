@@ -39,12 +39,11 @@
 
 mod crt;
 mod engine;
-mod pe;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-pub use engine::{call, call_with};
-pub use pe::{Import, Pe, Section};
+pub use engine::{call, call_with, release_thread};
+pub use ffx_magic::pe::{IMAGE_ALIGN, Import, Pe, Section};
 
 /// Something went wrong loading or running overlay code.
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +64,14 @@ pub enum Error {
     Host(String),
     #[error("ffx_overlay::configure was not called")]
     NotConfigured,
+}
+
+impl From<ffx_magic::PeError> for Error {
+    fn from(e: ffx_magic::PeError) -> Self {
+        match e {
+            ffx_magic::PeError::BadImage(s) => Error::BadImage(s),
+        }
+    }
 }
 
 impl From<unicorn_engine::uc_error> for Error {
@@ -90,9 +97,13 @@ pub struct Regs {
     /// x87 control word (the game runs at 0x027f) and SSE control.
     pub fpu_cw: u16,
     pub mxcsr: u32,
-    /// `xmm0`/`xmm1` (the `_libm_sse2_*` functions' argument and result).
+    /// `xmm0`..`xmm3`: the `_libm_sse2_*` functions' argument and result,
+    /// and the float arguments (and `xmm0` result) the overlays' LTCG
+    /// internal functions pass in them.
     pub xmm0: [u8; 16],
     pub xmm1: [u8; 16],
+    pub xmm2: [u8; 16],
+    pub xmm3: [u8; 16],
     /// The x87 stack, `st[0]` = ST0 (80-bit values), `st_len` of them:
     /// a float result on the way out, `_CIatan2`'s two arguments on the
     /// way in. Empty at an ordinary call.
@@ -172,9 +183,6 @@ pub(crate) fn config() -> Result<&'static Config, Error> {
     CONFIG.get().ok_or(Error::NotConfigured)
 }
 
-/// 64 KiB, the granularity images are placed at.
-pub const IMAGE_ALIGN: u32 = 0x1_0000;
-
 /// One loaded overlay, as the engines see it.
 #[derive(Debug)]
 pub(crate) struct Loaded {
@@ -233,30 +241,6 @@ pub fn by_base(base: u32) -> Option<Overlay> {
 /// A loaded overlay.
 #[derive(Debug, Clone)]
 pub struct Overlay(Arc<Loaded>);
-
-impl Pe {
-    /// The executable section's range relative to the image base,
-    /// page-rounded: the embedder keeps it inaccessible natively.
-    ///
-    /// # Errors
-    /// No executable section, or more than one.
-    pub fn text_range(&self) -> Result<(u32, u32), Error> {
-        let mut exec = self.sections.iter().filter(|s| s.exec);
-        let t = exec
-            .next()
-            .ok_or_else(|| Error::BadImage("no executable section".into()))?;
-        if exec.next().is_some() {
-            return Err(Error::BadImage("more than one executable section".into()));
-        }
-        Ok((t.rva & !0xfff, (t.rva + t.size + 0xfff) & !0xfff))
-    }
-
-    /// The image's footprint, 64 KiB-rounded.
-    #[must_use]
-    pub fn span(&self) -> u32 {
-        self.image_size.next_multiple_of(IMAGE_ALIGN)
-    }
-}
 
 impl Overlay {
     /// Lays `file` (parsed as `pe`) out at `base` and registers it. The

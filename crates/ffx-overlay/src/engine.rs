@@ -345,6 +345,25 @@ fn engine(host: &mut impl Host) -> Result<*mut Engine, Error> {
     Ok(e)
 }
 
+/// Drops this thread's Unicorn instance, so the next [`call`] on the
+/// thread makes a new one (with a new thread block from [`Host::alloc`]).
+/// For an embedder that reuses or clears the memory the block came from
+/// (the parity tests reset their heap for every DLL they load). `false`
+/// when overlay code is running on this thread (nothing is dropped) or
+/// there was no instance.
+#[must_use]
+pub fn release_thread() -> bool {
+    let e = ENGINE.with(Cell::get);
+    // SAFETY: this thread's engine; `depth` 0 means no call holds it.
+    if e.is_null() || unsafe { (*e).depth } > 0 {
+        return false;
+    }
+    ENGINE.with(|c| c.set(std::ptr::null_mut()));
+    // SAFETY: made by `Box::into_raw` in `engine`, now unreachable.
+    drop(unsafe { Box::from_raw(e) });
+    true
+}
+
 /// `g_MagicImports` by address: the first slot holding each.
 fn slot_of(cfg: &Config, target: u32) -> Option<u32> {
     static SLOTS: OnceLock<HashMap<u32, u32>> = OnceLock::new();
@@ -439,6 +458,10 @@ fn get_regs(uc: &mut Unicorn<'_, State>) -> Result<Regs, Error> {
         .copy_from_slice(&uc.reg_read_long(RegisterX86::XMM0)?[..16]);
     regs.xmm1
         .copy_from_slice(&uc.reg_read_long(RegisterX86::XMM1)?[..16]);
+    regs.xmm2
+        .copy_from_slice(&uc.reg_read_long(RegisterX86::XMM2)?[..16]);
+    regs.xmm3
+        .copy_from_slice(&uc.reg_read_long(RegisterX86::XMM3)?[..16]);
     read_st(uc, &mut regs)?;
     Ok(regs)
 }
@@ -462,6 +485,8 @@ fn put_regs(uc: &mut Unicorn<'_, State>, regs: &Regs) -> Result<(), Error> {
     uc.reg_write(RegisterX86::MXCSR, u64::from(regs.mxcsr))?;
     uc.reg_write_long(RegisterX86::XMM0, &regs.xmm0)?;
     uc.reg_write_long(RegisterX86::XMM1, &regs.xmm1)?;
+    uc.reg_write_long(RegisterX86::XMM2, &regs.xmm2)?;
+    uc.reg_write_long(RegisterX86::XMM3, &regs.xmm3)?;
     for i in (0..usize::from(regs.st_len.min(2))).rev() {
         push_st(uc, &regs.st[i])?;
     }

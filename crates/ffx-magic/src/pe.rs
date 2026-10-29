@@ -2,7 +2,7 @@
 //! imports and exports. Read as data from the player's file; nothing is
 //! executed here.
 
-use crate::Error;
+use crate::PeError as Error;
 
 /// One section, as the image maps it.
 #[derive(Debug, Clone)]
@@ -254,4 +254,29 @@ impl Pe {
         }
         Ok(img)
     }
+
+    /// The executable section's range relative to the image base,
+    /// page-rounded: the embedder keeps it inaccessible natively.
+    ///
+    /// # Errors
+    /// No executable section, or more than one.
+    pub fn text_range(&self) -> Result<(u32, u32), Error> {
+        let mut exec = self.sections.iter().filter(|s| s.exec);
+        let t = exec
+            .next()
+            .ok_or_else(|| Error::BadImage("no executable section".into()))?;
+        if exec.next().is_some() {
+            return Err(Error::BadImage("more than one executable section".into()));
+        }
+        Ok((t.rva & !0xfff, (t.rva + t.size + 0xfff) & !0xfff))
+    }
+
+    /// The image's footprint, 64 KiB-rounded.
+    #[must_use]
+    pub fn span(&self) -> u32 {
+        self.image_size.next_multiple_of(IMAGE_ALIGN)
+    }
 }
+
+/// 64 KiB, the granularity images are placed at.
+pub const IMAGE_ALIGN: u32 = 0x1_0000;

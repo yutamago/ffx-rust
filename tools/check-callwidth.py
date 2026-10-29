@@ -27,6 +27,7 @@ Limits (what each in-game host passes):
   ffx-hook call_cdecl / _f64 / _f32 / _u64        12  (logged, cut short)
   ffx-hook call_cdecl_words                       32  (refused: 0)
   ffx-hook call_thiscall(f, this, args)            8  (refused: 0)
+  ffx_magic Game::call(target, ecx, args)         32  (the hook's call_regs; more are dropped)
 
 For every call of these in crates/*/src (ffx-oracle, ffx-studio and
 ffx-host left out: emulators that pass any width) the width of the argument slice is worked out: a literal (`&[a, b]`,
@@ -856,6 +857,11 @@ def main():
                 if name == 'call':
                     if len(args) == 2:
                         check(f, off, args, 1, 6, 'Host::call')
+                    elif len(args) == 3 and f.rel.startswith('crates/ffx-magic/'):
+                        # ffx_magic::Game::call(target, ecx, args): the
+                        # hook's call_regs copies ARGS = 32 words
+                        # (crates/ffx-hook/src/overlay_emu.rs)
+                        check(f, off, args, 2, 32, 'ffx_magic Game::call')
                     elif len(args) == 3:
                         lim, conv = graphic_limit(args[1])
                         check(f, off, args, 2, lim, f'graphic Host::call ({conv})')

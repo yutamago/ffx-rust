@@ -25,6 +25,15 @@
 //! Cost is logged per overlay when it is unloaded (`ffx-hook.log`,
 //! `overlay-emu:` lines): per function, calls, time in Unicorn and time in
 //! the native call-outs it made.
+//!
+//! `FFX_MAGIC_RUST=1` (every DLL) or a comma list of DLL numbers
+//! (`604,309`) answers the trapped calls of those DLLs with their Rust
+//! ports (`ffx-magic`, docs/formats/magic.md "Porting the overlays")
+//! where one binds at the address; anything without a port still runs in
+//! Unicorn. The loader is the same (it implies `FFX_MAGIC_EMU`), so the
+//! DLL's data stays where the original's would be. The unload report
+//! marks each entry `rust` or `unicorn`; a DLL is fully ported when a
+//! replay shows no `unicorn` entry for it.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -68,8 +77,21 @@ pub fn enabled() -> bool {
 /// # Safety
 /// `base` must be the main module; called before game code runs.
 pub unsafe fn install(base: usize) {
-    if std::env::var("FFX_MAGIC_EMU").map_or(true, |v| v != "1") {
+    let emu = std::env::var("FFX_MAGIC_EMU").is_ok_and(|v| v == "1");
+    let rust = std::env::var("FFX_MAGIC_RUST")
+        .ok()
+        .filter(|v| !v.is_empty());
+    if !emu && rust.is_none() {
         return;
+    }
+    if let Some(v) = rust {
+        let sel = if v == "1" {
+            RustSel::All
+        } else {
+            RustSel::List(v.split(',').filter_map(|n| n.trim().parse().ok()).collect())
+        };
+        log(&format!("overlay-emu: Rust overlays for {sel:?}"));
+        let _ = RUST.set(sel);
     }
     // SAFETY: reserves 64 KiB of address space nothing else will get.
     let service = unsafe { VirtualAlloc(std::ptr::null(), 0x1_0000, MEM_RESERVE, PAGE_NOACCESS) };
@@ -115,6 +137,205 @@ pub unsafe fn install(base: usize) {
         "overlay-emu: on (service {:#010x}); magic_*.dll run in Unicorn",
         service as usize
     ));
+}
+
+/// Which DLLs `FFX_MAGIC_RUST` hands to the ports.
+#[derive(Debug)]
+enum RustSel {
+    All,
+    List(Vec<u16>),
+}
+
+static RUST: std::sync::OnceLock<RustSel> = std::sync::OnceLock::new();
+
+/// The loaded overlays as the ports see them, by base.
+type Images = Vec<(u32, std::sync::Arc<ffx_magic::Image>)>;
+static IMAGES: Mutex<Images> = Mutex::new(Vec::new());
+/// The port bound at an address (`None`: none), per loaded overlay.
+static BINDS: Mutex<Option<HashMap<u32, Option<usize>>>> = Mutex::new(None);
+/// Calls answered in Rust, per entry address.
+static RUST_CALLS: Mutex<Option<HashMap<u32, u64>>> = Mutex::new(None);
+
+/// The image and port for a trapped call at `at`, when `FFX_MAGIC_RUST`
+/// selects its DLL and a port binds there.
+fn rust_port(at: u32) -> Option<(std::sync::Arc<ffx_magic::Image>, usize)> {
+    let sel = RUST.get()?;
+    let img = IMAGES
+        .lock()
+        .ok()?
+        .iter()
+        .find(|(b, i)| at >= *b && i.in_text(at))
+        .map(|(_, i)| std::sync::Arc::clone(i))?;
+    if let RustSel::List(l) = sel
+        && !l.contains(&img.number)
+    {
+        return None;
+    }
+    let mut binds = BINDS.lock().ok()?;
+    let i = *binds
+        .get_or_insert_with(HashMap::new)
+        .entry(at)
+        .or_insert_with(|| ffx_magic::bind(&img, at));
+    i.map(|i| (img, i))
+}
+
+/// The game for the ports: its own memory (identity) and native calls.
+struct HookGame;
+
+impl ffx_bridge::Mem for HookGame {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        ffx_bridge::RawMem { image: 0 }.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        ffx_bridge::RawMem { image: 0 }.write_bytes(addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        0
+    }
+}
+
+/// An x87 80-bit value from an `f64` (exact).
+fn f64_to_f80(x: f64) -> [u8; 10] {
+    let b = x.to_bits();
+    let sign = ((b >> 63) as u16) << 15;
+    let exp = ((b >> 52) & 0x7ff) as u16;
+    let frac = b & ((1 << 52) - 1);
+    let (e, m): (u16, u64) = match exp {
+        0 if frac == 0 => (0, 0),
+        0 => {
+            // subnormal: the leading 1 moves to bit 63
+            let shift = frac.leading_zeros() - 11;
+            (15361 - shift as u16, frac << (shift + 11))
+        }
+        0x7ff => (0x7fff, (1 << 63) | (frac << 11)),
+        _ => (exp - 1023 + 16383, (1 << 63) | (frac << 11)),
+    };
+    let mut out = [0u8; 10];
+    out[..8].copy_from_slice(&m.to_le_bytes());
+    out[8..].copy_from_slice(&(sign | e).to_le_bytes());
+    out
+}
+
+/// An x87 80-bit value as an `f64` (the game's 53-bit results are exact).
+fn f80_to_f64(b: &[u8; 10]) -> f64 {
+    let m = u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+    let se = u16::from_le_bytes([b[8], b[9]]);
+    let sign = if se & 0x8000 != 0 { -1.0 } else { 1.0 };
+    let e = i32::from(se & 0x7fff);
+    if e == 0x7fff {
+        return if m << 1 == 0 {
+            sign * f64::INFINITY
+        } else {
+            f64::NAN
+        };
+    }
+    #[allow(clippy::cast_precision_loss)] // exact for 53-bit mantissas
+    let v = (m as f64) * 2f64.powi(e - 16383 - 63);
+    sign * v
+}
+
+/// Calls `target` natively ([`native`]) with `args` on a stack of our
+/// own, `st` pushed (ST0 first) and `xmm0`.
+fn call_regs(target: u32, ecx: u32, args: &[u32], st: &[f64], xmm0: Option<f64>) -> Regs {
+    let mut stack = [0u32; 1 + ARGS as usize];
+    for (d, a) in stack[1..].iter_mut().zip(args) {
+        *d = *a;
+    }
+    let mut regs = Regs::at(stack.as_mut_ptr() as u32);
+    regs.ecx = ecx;
+    regs.st_len = st.len().min(2) as u8;
+    for (d, x) in regs.st.iter_mut().zip(st) {
+        *d = f64_to_f80(*x);
+    }
+    if let Some(x) = xmm0 {
+        regs.xmm0[..8].copy_from_slice(&x.to_le_bytes());
+    }
+    native(target, &mut regs);
+    // `stack` lives until here: native read and wrote it
+    std::hint::black_box(&mut stack);
+    regs
+}
+
+impl ffx_magic::Game for HookGame {
+    fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> ffx_magic::Out {
+        let r = call_regs(target, ecx, args, &[], None);
+        ffx_magic::Out {
+            eax: r.eax,
+            edx: r.edx,
+            st0: (r.st_len > 0).then(|| f80_to_f64(&r.st[0])),
+            xmm0: u128::from_le_bytes(r.xmm0),
+        }
+    }
+    fn rand(&mut self) -> u32 {
+        msvcr110(c"rand").map_or(0, |f| call_regs(f, 0, &[], &[], None).eax)
+    }
+    fn libm(&mut self, f: ffx_magic::Libm, x: f64) -> f64 {
+        let name = match f {
+            ffx_magic::Libm::Sin => c"_libm_sse2_sin_precise",
+            ffx_magic::Libm::Cos => c"_libm_sse2_cos_precise",
+            ffx_magic::Libm::Atan => c"_libm_sse2_atan_precise",
+            ffx_magic::Libm::Acos => c"_libm_sse2_acos_precise",
+        };
+        msvcr110(name).map_or(0.0, |a| {
+            let r = call_regs(a, 0, &[], &[], Some(x));
+            let mut b = [0u8; 8];
+            b.copy_from_slice(&r.xmm0[..8]);
+            f64::from_le_bytes(b)
+        })
+    }
+    fn atan2(&mut self, y: f64, x: f64) -> f64 {
+        // ST0 = x, ST1 = y
+        msvcr110(c"_CIatan2").map_or(0.0, |a| {
+            let r = call_regs(a, 0, &[], &[x, y], None);
+            f80_to_f64(&r.st[0])
+        })
+    }
+}
+
+/// Runs the port `i` of `img` for the trapped call in `fr`; never panics.
+fn enter_rust(fr: &mut EnterFrame, img: &ffx_magic::Image, i: usize) {
+    let Some(f) = ffx_magic::entry::<HookGame>(i) else {
+        return;
+    };
+    let frame = ffx_magic::Frame {
+        at: fr.target,
+        esp: fr.s,
+        eax: fr.eax,
+        ecx: fr.ecx,
+        edx: fr.edx,
+        // the game calls overlay entries cdecl or thiscall: no float
+        // arguments in SSE registers
+        xmm: [0; 4],
+    };
+    let r = f(&mut HookGame, img, &frame);
+    if let Ok(mut c) = RUST_CALLS.lock() {
+        *c.get_or_insert_with(HashMap::new)
+            .entry(fr.target)
+            .or_default() += 1;
+    }
+    fr.eax = r.eax;
+    fr.edx = r.edx;
+    if let Some(t) = r.jump {
+        // `jmp eax`: the thunk "returns" into the target with the
+        // caller's stack as it was (its return address on top)
+        fr.ret_slot = fr.s - 4;
+        fr.ret = t;
+        fr.has_st0 = 0;
+        return;
+    }
+    fr.ret_slot = fr.s + r.pops;
+    if let Some(x) = r.xmm0 {
+        let b = x.reg() as u64;
+        fr.has_xmm0 = 1;
+        fr.xmm0 = [b as u32, (b >> 32) as u32];
+    }
+    match r.st0 {
+        Some(x) => {
+            fr.has_st0 = 1;
+            fr.st0 = f64_to_f80(x);
+        }
+        None => fr.has_st0 = 0,
+    }
 }
 
 fn is_overlay_path(path: &str) -> bool {
@@ -168,6 +389,14 @@ unsafe extern "system" fn free_library(module: usize) -> i32 {
         // SAFETY: the overlay's entry point, run through the trap.
         let ok = unsafe { dll_main(&ov, 0) };
         ov.unload();
+        if let Ok(mut i) = IMAGES.lock() {
+            i.retain(|(b, _)| *b != ov.base());
+        }
+        if let Ok(mut b) = BINDS.lock()
+            && let Some(m) = b.as_mut()
+        {
+            m.retain(|a, _| *a < ov.base() || *a >= ov.base() + ov.span());
+        }
         report(&ov);
         // SAFETY: the reservation `load_overlay` made.
         unsafe { VirtualFree(ov.base() as *mut c_void, 0, MEM_RELEASE) };
@@ -247,6 +476,16 @@ fn load_overlay(path: &str) -> Result<u32, String> {
         return Err("commit failed".into());
     }
     let name = path.rsplit(['\\', '/']).next().unwrap_or(path).to_owned();
+    if RUST.get().is_some() {
+        match ffx_magic::Image::new(&name, &file, base) {
+            Ok(img) => {
+                if let Ok(mut i) = IMAGES.lock() {
+                    i.push((base, std::sync::Arc::new(img)));
+                }
+            }
+            Err(e) => log(&format!("overlay-emu: {name}: no Rust view ({e})")),
+        }
+    }
     let ov = match Overlay::load(&name, &file, &pe, base) {
         Ok(ov) => ov,
         Err(e) => {
@@ -356,7 +595,10 @@ struct EnterFrame {
     fpu_cw: u16,
     _pad2: u16,
     mxcsr: u32,
-    _pad3: [u32; 3],
+    /// A port's float result in `xmm0` (`Ret::xmm0`): its low 64 bits,
+    /// loaded with `movq` when `has_xmm0` is set (xmm0 is volatile).
+    has_xmm0: u32,
+    xmm0: [u32; 2],
     target: u32,
     ret: u32,
 }
@@ -405,6 +647,10 @@ unsafe extern "C" fn enter_thunk() {
         "je 3f",
         "fld tbyte ptr [ebx + 44]",
         "3:",
+        "cmp dword ptr [ebx + 64], 0",
+        "je 4f",
+        "movq xmm0, qword ptr [ebx + 68]",
+        "4:",
         "mov eax, [ebx + 80]",
         "mov ecx, [ebx + 36]",
         "mov [ecx], eax",
@@ -453,6 +699,8 @@ thread_local! {
 extern "C" fn enter(f: *mut EnterFrame) {
     // SAFETY: the thunk's frame.
     let fr = unsafe { &mut *f };
+    // the thunk's answer area starts as junk
+    fr.has_xmm0 = 0;
     let at = fr.s;
     let regs = Regs {
         eax: fr.eax,
@@ -468,6 +716,10 @@ extern "C" fn enter(f: *mut EnterFrame) {
         mxcsr: fr.mxcsr,
         ..Regs::default()
     };
+    if let Some((img, i)) = rust_port(fr.target) {
+        enter_rust(fr, &img, i);
+        return;
+    }
     let depth = DEPTH.with(Cell::get);
     DEPTH.with(|d| d.set(depth + 1));
     let (t0, outs0) = (now(), OUTS.with(|o| *o.borrow()));
@@ -546,9 +798,11 @@ struct OutFrame {
     _pad2: u16,            // 246
     has_st_out: u32,       // 248
     args_after: [u32; 32], // 252
+    xmm2: [u8; 16],        // 380
+    xmm3: [u8; 16],        // 396
 }
 
-const _: () = assert!(std::mem::size_of::<OutFrame>() == 380);
+const _: () = assert!(std::mem::size_of::<OutFrame>() == 412);
 const ARGS: u32 = 32;
 
 /// Calls `frame.target` natively with the overlay's registers, its 32
@@ -576,6 +830,8 @@ unsafe extern "C" fn call_native(frame: *mut OutFrame) {
         "ldmxcsr dword ptr [ebx + 36]",
         "movdqu xmm0, xmmword ptr [ebx + 64]",
         "movdqu xmm1, xmmword ptr [ebx + 80]",
+        "movdqu xmm2, xmmword ptr [ebx + 380]",
+        "movdqu xmm3, xmmword ptr [ebx + 396]",
         "fnstsw ax",
         "mov [ebx + 232], ax",
         "cmp dword ptr [ebx + 40], 2",
@@ -602,6 +858,8 @@ unsafe extern "C" fn call_native(frame: *mut OutFrame) {
         "mov [ebx + 228], esp",
         "movdqu xmmword ptr [ebx + 64], xmm0",
         "movdqu xmmword ptr [ebx + 80], xmm1",
+        "movdqu xmmword ptr [ebx + 380], xmm2",
+        "movdqu xmmword ptr [ebx + 396], xmm3",
         "fnstcw word ptr [ebx + 32]",
         "stmxcsr dword ptr [ebx + 36]",
         "fnstsw ax",
@@ -657,6 +915,8 @@ fn native(target: u32, regs: &mut Regs) {
         _pad2: 0,
         has_st_out: 0,
         args_after: [0; 32],
+        xmm2: regs.xmm2,
+        xmm3: regs.xmm3,
     };
     let at = regs.esp + 4;
     for (i, a) in (0u32..).zip(f.args.iter_mut()) {
@@ -685,6 +945,8 @@ fn native(target: u32, regs: &mut Regs) {
     regs.mxcsr = f.mxcsr;
     regs.xmm0 = f.xmm0;
     regs.xmm1 = f.xmm1;
+    regs.xmm2 = f.xmm2;
+    regs.xmm3 = f.xmm3;
     regs.st_len = u8::from(f.has_st_out != 0);
     regs.st[0] = f.st_out;
 }
@@ -782,7 +1044,7 @@ fn report(ov: &Overlay) {
             total += c.total;
             native += c.native;
             lines.push(format!(
-                "  +{:#07x}: {} calls, {} us in all ({} us/call), {} us native call-outs ({} of them)",
+                "  +{:#07x} unicorn: {} calls, {} us in all ({} us/call), {} us native call-outs ({} of them)",
                 a - b,
                 c.calls,
                 us(c.total),
@@ -801,6 +1063,20 @@ fn report(ov: &Overlay) {
                 us(total - native)
             ),
         );
+        m.retain(|a, _| *a < b || *a >= e);
+    }
+    if let Ok(mut c) = RUST_CALLS.lock()
+        && let Some(m) = c.as_mut()
+    {
+        let mut rows: Vec<(u32, u64)> = m
+            .iter()
+            .filter(|(a, _)| **a >= b && **a < e)
+            .map(|(a, n)| (*a, *n))
+            .collect();
+        rows.sort_unstable();
+        for (a, n) in &rows {
+            lines.push(format!("  +{:#07x} rust: {n} calls", a - b));
+        }
         m.retain(|a, _| *a < b || *a >= e);
     }
     if let Ok(mut c) = CALL_OUTS.lock()

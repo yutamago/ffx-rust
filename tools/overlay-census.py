@@ -37,6 +37,9 @@ Outputs (default $FFX_WORK/m5/scope):
   overlay-functions.tsv  one row per distinct function: hash, size, DLL
                          count, first DLL and address, shape, ops group
                          size, slots, FFX.exe copy (address, name, hooked)
+  overlay-dll-functions.tsv  one row per function per DLL: address, size,
+                         hash, ops group, DLLs sharing the hash, slots
+                         (input of tools/magic-worklist.py)
   overlays-census.md     the counts
 """
 import argparse
@@ -373,8 +376,19 @@ def main():
                 f.write(f"0x{nb:08x} {g.name.get(nb, '')}\t{sc:.2f}\t{g.module.get(nb, '')}\t"
                         f"{'yes' if nb in replaced else 'no'}\n")
 
+    # ---- per DLL: every function with its identity (tools/magic-worklist.py)
+    with open(args.out / "overlay-dll-functions.tsv", "w", encoding="utf-8") as f:
+        f.write("# dll\taddress\tsize\thash\tops\tdlls sharing the hash\tslots\n")
+        for name in sorted(per_dll):
+            _, _, rows, _, hashes = per_dll[name]
+            for s in sorted(rows):
+                size, _, _, ops, slots, _ = rows[s]
+                h = hashes[s]
+                f.write(f"{name}\t{s:#010x}\t{size}\t{h}\t{ops}\t{len(distinct[h]['dlls'])}\t"
+                        f"{','.join(map(str, slots))}\n")
+
     # ---- counts
-    total_fns = sum(len(v[2]) for v in per_dll.values())
+    total_fns =sum(len(v[2]) for v in per_dll.values())
     total_code = sum(sum(r[0] for r in v[2].values()) for v in per_dll.values())
     text_total = sum(v[0] for v in per_dll.values())
     dist_size = sum(d["size"] for d in distinct.values())
