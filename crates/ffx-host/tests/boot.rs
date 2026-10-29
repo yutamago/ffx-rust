@@ -150,10 +150,14 @@ fn game_threads_run_in_parallel_under_the_games_own_critical_section() {
 }
 
 #[test]
-fn boots_past_the_window_to_the_d3d11_device_and_swap_chain() {
+fn boots_past_the_d3d11_device_to_the_first_frames() {
     let Some(exe) = exe() else { return };
     let opts = ffx_host::Options {
         documents: Some(documents("boot")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            stop_after_presents: Some(3),
+        },
         ..ffx_host::Options::default()
     };
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
@@ -175,18 +179,40 @@ fn boots_past_the_window_to_the_d3d11_device_and_swap_chain() {
         .unwrap()
         .join("Square Enix/FINAL FANTASY X&X-2 HD Remaster/GameSetting.ini");
     assert!(ini.is_file(), "{report}");
-    // the window, the feature level probe, then the device and swap
-    // chain: the Linux check's stop
+    // the window, the feature level probe, the device and swap chain on
+    // the recording null device, then three frames presented
     assert_eq!(
         exec.stats.milestones,
         [
             "first window (CreateWindowExA)",
             "D3D11 feature level probe (11_0)",
-            "D3D11 device and swap chain (D3D11CreateDeviceAndSwapChain)"
+            "D3D11 device and swap chain (null (recording), 1920 x 1080)"
         ],
         "{report}"
     );
-    assert!(matches!(stop, Stop::Milestone(_)), "{report}");
+    assert_eq!(stop, Stop::Milestone("Present 3".into()), "{report}");
+    {
+        let slot = exec.shared().gfx.lock();
+        let g = slot.as_ref().unwrap();
+        assert_eq!(g.presents, 3, "{report}");
+        // the renderer's start-up made its shaders, states and targets
+        // through the device, with nothing the layer doesn't answer
+        assert!(g.counts["ID3D11Device::CreateVertexShader"] > 0, "{report}");
+        assert!(g.counts["ID3D11Device::CreateBlendState"] > 0, "{report}");
+        assert_eq!(g.counts["IDXGISwapChain::GetBuffer"], 1, "{report}");
+        assert!(g.unhandled.is_empty(), "{:?}", g.unhandled);
+        // the stream reads back as the captures do: objects, then frames
+        let msgs = ffx_gfx::read_all(&g.stream()).unwrap();
+        let frames = msgs
+            .iter()
+            .filter(|m| matches!(m, ffx_gfx::Msg::Frame(_)))
+            .count();
+        assert_eq!(frames, 3);
+        assert!(
+            msgs.iter()
+                .any(|m| matches!(m, ffx_gfx::Msg::Shader { kind: b'v', .. }))
+        );
+    }
     let s = ffx_host::report::summary(&exec, &syms);
     assert!(s.unicorn_functions.len() > 1500, "{report}");
     assert!(!s.dll_functions.is_empty(), "{report}");
@@ -206,6 +232,7 @@ fn without_the_dlls_the_stl_is_the_wall() {
     let opts = ffx_host::Options {
         no_dlls: true,
         documents: Some(documents("no-dlls")),
+        ..ffx_host::Options::default()
     };
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(60));

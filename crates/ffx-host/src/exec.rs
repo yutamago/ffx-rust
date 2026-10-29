@@ -239,6 +239,23 @@ pub enum Route {
     Missing,
 }
 
+/// A trap's Rust side: the executor, the trap's tag, the arguments.
+pub type TrapFn = fn(&mut Exec, u32, &Args) -> Ret;
+
+/// An `int3` the host placed at run time (a COM method's vtable slot,
+/// `crate::com`): what runs there and how it returns.
+#[derive(Debug, Clone, Copy)]
+pub struct Trap {
+    /// The Rust side.
+    pub run: TrapFn,
+    /// Handed to `run` (which method of which class).
+    pub tag: u32,
+    /// The convention.
+    pub conv: Conv,
+    /// Stack words.
+    pub words: usize,
+}
+
 /// What every game thread shares.
 pub struct Shared {
     arena: Arc<Arena>,
@@ -287,6 +304,10 @@ pub struct Shared {
     x87: Arc<HashMap<u32, Op>>,
     /// Possible ones in modules of unknown builds (a code hook each).
     x87_watch: Vec<(u32, Op)>,
+    /// Traps placed at run time ([`Shared::add_trap`]).
+    traps: RwLock<HashMap<u32, Trap>>,
+    /// The D3D11 device and DXGI (`crate::gfx`), once created.
+    pub gfx: crate::gfx::Slot,
 }
 
 impl std::fmt::Debug for Shared {
@@ -379,6 +400,8 @@ impl Shared {
             running: AtomicU32::new(0),
             x87: Arc::new(HashMap::new()),
             x87_watch: Vec::new(),
+            traps: RwLock::new(HashMap::new()),
+            gfx: crate::gfx::Slot::default(),
         };
         s.bind_imports(stubs_at);
         for addr in s.table.addresses().collect::<Vec<_>>() {
@@ -428,6 +451,21 @@ impl Shared {
                 .ok()
                 .and_then(|d| *d)
                 .is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// Places a trap at `at`, which must hold an `int3` in a region the
+    /// caller mapped: emulated code reaching it (or [`Exec::call`]) runs
+    /// `trap.run`.
+    pub fn add_trap(&self, at: u32, trap: Trap) {
+        if let Ok(mut t) = self.traps.write() {
+            t.insert(at, trap);
+        }
+    }
+
+    /// The trap at `at`.
+    #[must_use]
+    pub fn trap(&self, at: u32) -> Option<Trap> {
+        self.traps.read().ok().and_then(|t| t.get(&at).copied())
     }
 
     /// The loaded DLL called `name` (any case).
@@ -988,6 +1026,13 @@ impl Exec {
             } else {
                 self.run_import(i, args)
             }
+        } else if let Some(t) = self.shared.trap(addr) {
+            let ret = (t.run)(self, t.tag, args);
+            if self.halted() {
+                Err(Error::Stopped)
+            } else {
+                Ok(ret)
+            }
         } else {
             self.call_unicorn(addr, conv, args)
         };
@@ -1175,6 +1220,8 @@ impl Exec {
                         self.enter_import(i, at)
                     } else if self.shared.table.get(at).is_some() {
                         self.enter_port(at)
+                    } else if let Some(t) = self.shared.trap(at) {
+                        self.enter_trap(t)
                     } else {
                         // a stray int3: EXCEPTION_BREAKPOINT at it
                         self.uc.reg_write(RegisterX86::EIP, u64::from(at))?;
@@ -1280,6 +1327,19 @@ impl Exec {
         } else {
             0
         };
+        self.finish(ret, pops)
+    }
+
+    /// Runs trap `t` for Unicorn code that called it.
+    fn enter_trap(&mut self, t: Trap) -> Result<u32> {
+        let args = self.entry_args(t.words)?;
+        let saved = self.save_regs()?;
+        let ret = (t.run)(self, t.tag, &args);
+        self.restore_regs(&saved)?;
+        if self.halted() {
+            return Err(Error::Stopped);
+        }
+        let pops = if t.conv.callee_pops() { t.words } else { 0 };
         self.finish(ret, pops)
     }
 

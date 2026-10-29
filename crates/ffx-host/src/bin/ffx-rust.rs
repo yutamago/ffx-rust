@@ -4,6 +4,7 @@
 //! ffx-rust [--game-dir DIR] [--sym FILE] [--budget SECONDS] [--cover]
 //!          [--lenient] [--count] [--stop-at DLL!name]... [--no-dlls]
 //!          [--documents DIR] [--profile FILE] [--routes FILE]
+//!          [--gfx-out DIR] [--gfx-null] [--presents N]
 //! ```
 //!
 //! `--documents` is the folder the game sees as its documents folder
@@ -19,6 +20,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+#[allow(clippy::too_many_lines)] // the argument loop and the report
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -31,6 +33,7 @@ fn main() -> ExitCode {
     let mut opts = ffx_host::Options::default();
     let mut profile: Option<PathBuf> = None;
     let mut routes: Option<PathBuf> = None;
+    let mut gfx_out: Option<PathBuf> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--game-dir" => game = args.next().map(PathBuf::from),
@@ -52,6 +55,11 @@ fn main() -> ExitCode {
                 cover = true;
             }
             "--routes" => routes = args.next().map(PathBuf::from),
+            "--gfx-out" => gfx_out = args.next().map(PathBuf::from),
+            "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
+            "--presents" => {
+                opts.gfx.stop_after_presents = args.next().and_then(|s| s.parse().ok());
+            }
             other => {
                 eprintln!("unknown argument {other}");
                 return ExitCode::FAILURE;
@@ -94,6 +102,12 @@ fn main() -> ExitCode {
     exec.join_threads(Duration::from_secs(2));
     let syms = ffx_host::report::Symbols::read(&sym);
     println!("{}", ffx_host::report::text(&exec, &syms, &outcome));
+    print!("{}", ffx_host::gfx::report(&exec));
+    if let Some(dir) = gfx_out
+        && let Err(e) = ffx_host::gfx::write(&exec, &dir)
+    {
+        eprintln!("gfx-out: {e}");
+    }
     if let Some(p) = profile {
         let s = ffx_host::report::summary(&exec, &syms);
         if let Err(e) = std::fs::write(&p, ffx_host::report::profile_tsv(&s)) {

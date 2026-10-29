@@ -710,6 +710,13 @@ fn thread_times(e: &mut Exec, args: &Args) -> Ret {
 /// thread's registration chain once the import returns
 /// (`crate::exec::seh`).
 fn raise_exception(e: &mut Exec, args: &Args) -> Ret {
+    // MSVC's thread-naming exception (`0x406d1388`, a debugger reads the
+    // name): the game's filter answers EXCEPTION_CONTINUE_EXECUTION
+    // (Phyre_PSemaphoreWin32_initialize, `or eax, -1` at 0x0043015c), so
+    // without a debugger RaiseException just returns
+    if a(args, 0) == 0x406d_1388 {
+        return Ret::VOID;
+    }
     e.raise_exception(args)
 }
 

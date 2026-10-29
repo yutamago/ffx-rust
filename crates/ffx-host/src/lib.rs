@@ -11,14 +11,21 @@
 //! - [`report`]: what a run reached, for the log and the tests.
 
 pub mod arena;
+pub mod com;
+pub mod com_methods;
+pub mod crypt;
+#[cfg(windows)]
+pub mod d3d11;
 pub mod dll;
 pub mod exec;
 pub mod files;
+pub mod gfx;
 pub mod image;
 pub mod imports;
 pub mod log;
 pub mod ports;
 pub mod report;
+pub mod stand_ins;
 pub mod sync;
 pub mod table;
 pub mod win32;
@@ -109,6 +116,8 @@ pub struct Options {
     /// (`SHGetFolderPathW`), for `GameSetting.ini` and the saves; `None`:
     /// none (every file there is missing).
     pub documents: Option<std::path::PathBuf>,
+    /// The D3D11 layer's back end and stop (`crate::gfx`).
+    pub gfx: gfx::Config,
 }
 
 /// [`boot_with`] with [`Options`]: maps the image and (unless
@@ -130,6 +139,7 @@ pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec
     let mut files = files::Files::new(dir);
     files.documents.clone_from(&opts.documents);
     let shared = exec::Shared::new(arena, image, dlls, table, files)?;
+    shared.gfx.configure(opts.gfx.clone());
     let mut exec = exec::Exec::new(shared)?;
     match exec.attach_dlls(1) {
         Ok(()) => Ok(exec),
