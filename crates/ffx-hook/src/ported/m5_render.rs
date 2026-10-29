@@ -20,6 +20,9 @@ use ffx_prender::m5r_j::bridge as j;
 use ffx_prender::m5r_k::bridge as k;
 use ffx_prender::m5r_l::{self as ml, bridge as l};
 use ffx_prender::m5r_m::bridge as m;
+use ffx_prender::m5r_n::bridge as n;
+use ffx_prender::m5r_o::bridge as o;
+use ffx_prender::m5r_p::bridge as p;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1362,5 +1365,121 @@ ported! {
     FloatSort_introsortLoop_006c77a0 @ 0x006c_77a0 => extern "C" fn introsort(first: u32, last: u32, depth: u32, less: u32; slots: u32) {
         let mut f = StackFrame::<2>::new();
         m::introsort(&mut mem(), slots, f.at(), first, last, depth, less);
+    }
+    // ---- round 5 batch 1 (ffx_prender::m5r_n) ----
+    /// `PhyreScene_finalize_00659d20(scene)`.
+    PhyreScene_finalize_00659d20 @ 0x0065_9d20 => extern "thiscall" fn scene_finalize(this: u32) {
+        n::finalize(&mut mem(), this);
+    }
+    /// `graphicCharacterGetBounds_0063a410(chr, max, min)` (the 0xc4-byte frame).
+    graphicCharacterGetBounds_0063a410 @ 0x0063_a410 => extern "C" fn chr_bounds(chr: u32, max: u32, min: u32) -> u32 {
+        let mut f = StackFrame::<0x31>::new();
+        n::chr_bounds(&mut mem(), f.at(), chr, max, min)
+    }
+    /// `graphicCharacterGetJointBounds_0063a610(chr, max, min, jmax, jmin)` (the corner).
+    graphicCharacterGetJointBounds_0063a610 @ 0x0063_a610 => extern "C" fn chr_joint_bounds(chr: u32, max: u32, min: u32, jmax: u32, jmin: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        n::chr_joint_bounds(&mut mem(), f.at(), chr, max, min, jmax, jmin)
+    }
+    /// `graphicCharacterInstanceOutputAllVertexBuffers(inst)` (the mapped range).
+    graphicCharacterInstanceOutputAllVertexBuffers @ 0x0063_b290 => extern "C" fn output_vertex_buffers(inst: u32) {
+        let mut f = StackFrame::<2>::new();
+        n::output_vertex_buffers(&mut mem(), f.at(), inst);
+    }
+    /// `graphicCharacterSetSummonTexture_0063c0c0(inst, name)` (the iterator and the sampler value).
+    graphicCharacterSetSummonTexture_0063c0c0 @ 0x0063_c0c0 => extern "C" fn set_summon_texture(inst: u32, name: u32) {
+        let mut f = StackFrame::<8>::new();
+        n::set_summon_texture(&mut mem(), f.at(), inst, name);
+    }
+    /// `graphicCharacterClearSummonLayers_0063dad0(inst)`.
+    graphicCharacterClearSummonLayers_0063dad0 @ 0x0063_dad0 => extern "C" fn clear_summon_layers(inst: u32) {
+        n::clear_summon_layers(&mut mem(), inst);
+    }
+    /// `graphicCharacterRestoreSummonTexture()`.
+    graphicCharacterRestoreSummonTexture @ 0x0063_d550 => extern "C" fn restore_summon_texture() -> u32 {
+        n::restore_summon_texture(&mut mem())
+    }
+    /// `graphicDrawDream()` (the four UI elements).
+    graphicDrawDream @ 0x0063_df70 => extern "C" fn draw_dream() {
+        let mut f = StackFrame::<0x98>::new();
+        n::draw_dream(&mut mem(), f.at());
+    }
+    /// `Cache_FreeClothVertexBuff_00640e70(slot)`.
+    Cache_FreeClothVertexBuff_00640e70 @ 0x0064_0e70 => extern "C" fn free_cloth_buffers(slot: u32) -> u32 {
+        n::free_cloth_buffers(&mut mem(), slot)
+    }
+    /// `graphicMagic0708ConvBallChr(list, center, range, rate)` (argument slots: `range` and `rate` are copied from them).
+    graphicMagic0708ConvBallChr @ 0x0064_1e60 => extern "C" fn conv_ball_chr(list: u32, center: u32, range: u32, rate: u32; slots: u32) {
+        let _ = (range, rate);
+        n::conv_ball_chr(&mut mem(), slots, list, center);
+    }
+    /// `graphicMagic_DrawColorModel_KaMdldrw(inst, origin, modify, now, gradient)`.
+    graphicMagic_DrawColorModel_KaMdldrw @ 0x0064_2110 => extern "C" fn color_model(inst: u32, origin: u32, modify: u32, now: u32, gradient: u32) {
+        n::color_model(&mut mem(), inst, [origin, modify, now, gradient]);
+    }
+    /// `graphicSetLoadingScreen_00643500(on, mode)` (argument slots: the first holds the 0.0 handed on; the two parameters).
+    graphicSetLoadingScreen_00643500 @ 0x0064_3500 => extern "C" fn loading_screen(on: u32, mode: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        n::loading_screen(&mut mem(), slots, f.at(), on, mode)
+    }
+    /// `PhyreScene_setColorScale_0066d3b0(scene; r, g, b, ...)` (`ret 0x1c`: four more words it never reads).
+    PhyreScene_setColorScale_0066d3b0 @ 0x0066_d3b0 => extern "thiscall" fn set_color_scale(this: u32, r: u32, g: u32, b: u32, _w3: u32, _w4: u32, _w5: u32, _w6: u32) {
+        n::set_color_scale(&mut mem(), this, [r, g, b]);
+    }
+    /// `SpecularMapParamsManager_setSpecularMaterial_006c6390(inst, name, uv0, uv1, vector1, float1, mat1, v2x, v2y, v2w)` (the 0x80-byte frame).
+    SpecularMapParamsManager_setSpecularMaterial_006c6390 @ 0x006c_6390 => extern "stdcall" fn set_specular_material(inst: u32, name: u32, uv0: u32, uv1: u32, vector1: u32, float1: u32, mat1: u32, v2x: u32, v2y: u32, v2w: u32) {
+        let mut f = StackFrame::<0x20>::new();
+        o::set_specular_material(&mut mem(), f.at(), inst, name, [uv0, uv1], vector1, float1, mat1, [v2x, v2y, v2w]);
+    }
+    /// `SpecularMapParamsManager_setShadeSpecularMapParams(inst, name, u0, u1, shininess)` (the 0x7c-byte frame).
+    SpecularMapParamsManager_setShadeSpecularMapParams @ 0x006c_6830 => extern "stdcall" fn set_shade_specular(inst: u32, name: u32, u0: u32, u1: u32, shininess: u32) {
+        let mut f = StackFrame::<0x1f>::new();
+        o::set_shade_specular(&mut mem(), f.at(), inst, name, [u0, u1], shininess);
+    }
+    /// `CharacterAnimationTweakUtil_updateAnimation(this)` (the name buffer).
+    CharacterAnimationTweakUtil_updateAnimation @ 0x006b_c130 => extern "thiscall" fn update_animation(this: u32) {
+        let mut f = StackFrame::<5>::new();
+        o::update_animation(&mut mem(), f.at(), this);
+    }
+    /// `CharacterAnimationTweakUtil_updateText_006bc750(this)` (the line buffer).
+    CharacterAnimationTweakUtil_updateText_006bc750 @ 0x006b_c750 => extern "thiscall" fn animation_text(this: u32) {
+        let mut f = StackFrame::<13>::new();
+        o::animation_text(&mut mem(), f.at(), this);
+    }
+    /// `CharacterTextureAnimationTweakUtil_updateText_006bc850(this)` (the line buffer).
+    CharacterTextureAnimationTweakUtil_updateText_006bc850 @ 0x006b_c850 => extern "thiscall" fn texanim_text(this: u32) {
+        let mut f = StackFrame::<13>::new();
+        o::texanim_text(&mut mem(), f.at(), this);
+    }
+    /// `ObjectList_ctor_0064cec0(this; 2 unread words)` (the insert result and head locals).
+    ObjectList_ctor_0064cec0 @ 0x0064_cec0 => extern "thiscall" fn object_list_ctor(this: u32, _w0: u32, _w1: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        o::object_list_ctor(&mut mem(), f.at(), this)
+    }
+    /// `CA2W_ctor_00651800(this; text, codepage)`.
+    CA2W_ctor_00651800 @ 0x0065_1800 => extern "thiscall" fn ca2w(this: u32, text: u32, codepage: u32) {
+        o::ca2w(&mut mem(), this, text, codepage);
+    }
+    /// `DistortionGridDynamicMesh_getValue_006746e0(object, out)`.
+    DistortionGridDynamicMesh_getValue_006746e0 @ 0x0067_46e0 => extern "stdcall" fn grid_get_value(object: u32, out: u32) -> u32 {
+        o::grid_get_value(&mut mem(), object, out)
+    }
+    /// `PhyreScene_setLayerGroupVisible_006589e0(scene; group)` -> `al`.
+    PhyreScene_setLayerGroupVisible_006589e0 @ 0x0065_89e0 => extern "thiscall" fn set_layer_group(this: u32, group: u32) -> u8 {
+        o::set_layer_group(&mut mem(), this, group)
+    }
+    /// `PhyreScene_linkMapObjects_0066f380(scene)` (cursor frame).
+    PhyreScene_linkMapObjects_0066f380 @ 0x0066_f380 => extern "thiscall" fn map_objects_link(this: u32) {
+        let mut f = StackFrame::<10>::new();
+        o::map_objects_link(&mut mem(), f.at() + 0x28, this);
+    }
+    /// `PhyreScene_GetVFXSortMode(scene)`.
+    PhyreScene_GetVFXSortMode @ 0x0067_21b0 => extern "thiscall" fn vfx_sort_mode(this: u32) -> u32 {
+        o::vfx_sort_mode(&mut mem(), this)
+    }
+    // ---- round 5 batch 3 (ffx_prender::m5r_p) ----
+    /// `RadialLine_update_006f8f00(this; hold, color, a, b)`.
+    RadialLine_update_006f8f00 @ 0x006f_8f00 => extern "thiscall" fn radial_update(this: u32, hold: u32, color: u32, a: u32, b: u32) {
+        p::radial_update(&mut mem(), this, hold as u8, color, a, b);
     }
 }
