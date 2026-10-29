@@ -83,6 +83,35 @@ pub const USER_FREE: u32 = 0x0068_7010;
 pub const STRSTR_IAT: u32 = 0x00b0_c378;
 pub const MEMMOVE_IAT: u32 = 0x00b0_c34c;
 
+/// The magic-file preloads: `g_MagicFilePreloadOn`, the 12-slot
+/// `g_MagicFilePreloadTable` (magic, ?, file), the per-slot counts
+/// `0x0193fd44` and handles `0x0193fd78`, the report format;
+/// `MSVCR110` `__iob_func`, `fprintf`, `printf` (cdecl);
+/// `PhyreFIOS_UnloadMagicfilePrx(count, &handle)` (cdecl).
+pub const PRELOAD_ON: u32 = 0x0193_fd40;
+pub const PRELOAD_TABLE: u32 = 0x00c6_4c10;
+pub const PRELOAD_COUNTS: u32 = 0x0193_fd44;
+pub const PRELOAD_HANDLES: u32 = 0x0193_fd78;
+pub const PRELOAD_MSG: u32 = 0x00b7_0858;
+pub const IOB_FUNC_IAT: u32 = 0x00b0_c350;
+pub const FPRINTF_IAT: u32 = 0x00b0_c38c;
+pub const PRINTF_IAT: u32 = 0x00b0_c380;
+pub const UNLOAD_PRX: u32 = 0x0067_94f0;
+/// `onMagicDLLLoaded`: `g_MagicFile_Handle`, its message, `KERNEL32`
+/// `GetLastError` and `GetProcAddress` (stdcall), and the two exports
+/// (name, cell).
+pub const MAGIC_HANDLE: u32 = 0x00c6_4cac;
+pub const MAGIC_LOAD_FAILED: u32 = 0x00b7_03e4;
+pub const GET_LAST_ERROR_IAT: u32 = 0x00b0_c030;
+pub const GET_PROC_ADDRESS_IAT: u32 = 0x00b0_c118;
+pub const MAGIC_EXPORTS: [(u32, u32); 2] = [(0x00b7_0418, 0x022f_b6a4), (0x00b7_0430, 0x022f_b6a0)];
+/// The vector cells `0x00c0a004` and `0x00c8f980`; `VFX_Copy16To(src,
+/// dst)` and `VFX_Copy16From(dst, src)` (cdecl).
+pub const VEC_C0A004: u32 = 0x00c0_a004;
+pub const VEC_C8F980: u32 = 0x00c8_f980;
+pub const COPY16_TO: u32 = 0x0071_0e70;
+pub const COPY16_FROM: u32 = 0x0071_0e30;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -454,5 +483,107 @@ pub mod bridge {
                 return buf;
             }
         }
+    }
+    // ---- magic files ----
+
+    /// `MagicFile_clearAllPreloadedPrx(magic)`: when preloading is on,
+    /// `MagicFile_ClearPreloadedPrx(magic, -1)`. Off, `eax` is left alone
+    /// (`None`).
+    pub fn clear_all_preloaded(h: &mut impl Host, magic: u32) -> Option<u32> {
+        if h.read::<u32>(h.rebase(super::PRELOAD_ON)) == 0 {
+            return None;
+        }
+        clear_preloaded(h, magic, u32::MAX)
+    }
+
+    /// `MagicFile_ClearPreloadedPrx_009dacc0(magic, file)`: when preloading
+    /// is on, each of the 12 preload slots whose magic and file match
+    /// (a negative argument matches any, signed) is unloaded: a held
+    /// handle (count `0x0193fd44 + 4 i` > 0, signed) is reported on
+    /// stdout (`fprintf(__iob_func() + 0x20, fmt, file, i, count,
+    /// handle)`) and released (`PhyreFIOS_UnloadMagicfilePrx(count,
+    /// &handle)`), then count and handle cleared. Returns `file` (`eax`
+    /// holds it throughout); off, `eax` untouched (`None`).
+    pub fn clear_preloaded(h: &mut impl Host, magic: u32, file: u32) -> Option<u32> {
+        if h.read::<u32>(h.rebase(super::PRELOAD_ON)) == 0 {
+            return None;
+        }
+        let table = h.rebase(super::PRELOAD_TABLE);
+        let counts = h.rebase(super::PRELOAD_COUNTS);
+        let handles = h.rebase(super::PRELOAD_HANDLES);
+        for i in 0..12u32 {
+            let slot = table.wrapping_add(12 * i);
+            let magic_ok = magic.cast_signed() < 0 || magic == h.read::<u32>(slot);
+            if !magic_ok {
+                continue;
+            }
+            if file.cast_signed() >= 0 && file != h.read::<u32>(slot.wrapping_add(8)) {
+                continue;
+            }
+            let count_at = counts.wrapping_add(4 * i);
+            let handle_at = handles.wrapping_add(4 * i);
+            let count: u32 = h.read(count_at);
+            if count.cast_signed() > 0 {
+                let handle: u32 = h.read(handle_at);
+                let fmt = h.rebase(super::PRELOAD_MSG);
+                let iob = import(h, super::IOB_FUNC_IAT, Conv::Cdecl, &[]);
+                import(
+                    h,
+                    super::FPRINTF_IAT,
+                    Conv::Cdecl,
+                    &[iob.wrapping_add(0x20), fmt, file, i, count, handle],
+                );
+                let count: u32 = h.read(count_at);
+                h.call_sym(super::UNLOAD_PRX, Conv::Cdecl, &[count, handle_at]);
+            }
+            h.write(count_at, 0u32);
+            h.write(handle_at, 0u32);
+        }
+        Some(file)
+    }
+
+    /// `onMagicDLLLoaded(module)`: `g_MagicFile_Handle` = `module`; without
+    /// one, the error printed (`printf(fmt, 0, GetLastError())`), the
+    /// handle -1 and 0; else the two exports looked up
+    /// (`GetProcAddress`) into `0x022fb6a4` and `0x022fb6a0`, and 1.
+    pub fn on_magic_dll_loaded(h: &mut impl Host, module: u32) -> u32 {
+        let cell = h.rebase(super::MAGIC_HANDLE);
+        h.write(cell, module);
+        if module == 0 {
+            let e = import(h, super::GET_LAST_ERROR_IAT, Conv::Stdcall, &[]);
+            let fmt = h.rebase(super::MAGIC_LOAD_FAILED);
+            import(h, super::PRINTF_IAT, Conv::Cdecl, &[fmt, module, e]);
+            h.write(cell, u32::MAX);
+            return 0;
+        }
+        for (name, out) in super::MAGIC_EXPORTS {
+            let name = h.rebase(name);
+            let p = import(
+                h,
+                super::GET_PROC_ADDRESS_IAT,
+                Conv::Stdcall,
+                &[module, name],
+            );
+            let out = h.rebase(out);
+            h.write(out, p);
+        }
+        1
+    }
+
+    // ---- the VFX vector cells ----
+
+    /// `FUN_0092cc20(dst)`: `VFX_Copy16To(0x00c0a004, dst)`; its `eax`.
+    pub fn copy_c0a004(h: &mut impl Host, dst: u32) -> u32 {
+        let src = h.rebase(super::VEC_C0A004);
+        h.call_sym(super::COPY16_TO, Conv::Cdecl, &[src, dst])
+    }
+
+    /// `FUN_0092cbf0(dst, src)`: `src` into the cell `0x00c8f980`
+    /// (`VFX_Copy16From`), then the cell into `dst` (`VFX_Copy16To`); its
+    /// `eax`.
+    pub fn copy_via_c8f980(h: &mut impl Host, dst: u32, src: u32) -> u32 {
+        let cell = h.rebase(super::VEC_C8F980);
+        h.call_sym(super::COPY16_FROM, Conv::Cdecl, &[cell, src]);
+        h.call_sym(super::COPY16_TO, Conv::Cdecl, &[cell, dst])
     }
 }

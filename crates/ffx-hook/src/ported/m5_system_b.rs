@@ -10,6 +10,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
 use ffx_system::m5b_hdd::bridge as hd;
+use ffx_system::m5b_menu::bridge as mn;
 use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_movie::bridge as mv;
 use ffx_system::m5b_pc::bridge as pc;
@@ -653,6 +654,194 @@ ported! {
         let mut m = mem();
         let own = ffx_bridge::Mem::rebase(&m, 0x0077_9120);
         hd::install_start(&mut m).unwrap_or(own)
+    }
+
+    // ---- round 3: menu wrappers and table entries ----
+    /// `(a, b, c, d)`.
+    TOMkpValueFontMClutRight @ 0x0090_42e0 => extern "C" fn value_font_m_clut_right(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::value_font_m_clut_right(&mut mem(), [a, b, c, d])
+    }
+    /// `(a, b, c, d)`.
+    TOMkpFont_00902810 @ 0x0090_2810 => extern "C" fn font_902810(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::font_902810(&mut mem(), [a, b, c, d])
+    }
+    /// `(id, x, y, w, h, c0, c1)`.
+    TOMkpShapeXYWHC2 @ 0x0090_3b70 => extern "C" fn shape_xywhc2(id: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        mn::shape_xywhc2(&mut mem(), [id, x, y, w, h, c0, c1])
+    }
+    /// `(text, x, y, colour)`.
+    TOMkpBaseMesFont_00901cb0 @ 0x0090_1cb0 => extern "C" fn base_mes_font(text: u32, x: u32, y: u32, colour: u32) -> u32 {
+        mn::base_mes_font(&mut mem(), [text, x, y, colour])
+    }
+    /// `(a, b, c, d, e)`.
+    TOMkpMesFont_00901d10 @ 0x0090_1d10 => extern "C" fn mes_font_901d10(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::mes_font_901d10(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(text, out, x, y)`.
+    TOMkpStrFontM_00901f80 @ 0x0090_1f80 => extern "C" fn str_font_m4(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::str_font_m4(&mut mem(), [a, b, c, d])
+    }
+    /// `(text, x, y)`.
+    TOMkpEasyStrFontM @ 0x0090_1f40 => extern "C" fn easy_str_font_m(text: u32, x: u32, y: u32) -> u32 {
+        mn::easy_str_font_m(&mut mem(), text, x, y)
+    }
+    /// `(prim)`.
+    TOMakePktSeqPrimFunc @ 0x008f_e040 => extern "C" fn seq_prim_func(prim: u32) -> u32 {
+        mn::seq_prim_func(&mut mem(), prim)
+    }
+    /// `(prim)`.
+    TOMakePktSeqPrimMes @ 0x008f_e080 => extern "C" fn seq_prim_mes(prim: u32) -> u32 {
+        mn::seq_prim_mes(&mut mem(), prim)
+    }
+    /// `()`.
+    TOMenuTransSmallFacePlyTex @ 0x0090_1160 => extern "C" fn trans_small_face() -> u32 {
+        mn::trans_small_face(&mut mem())
+    }
+    /// `(cursor, text, out, a, b, c, d, e, f)`.
+    TOAdpStrFontM_008edfc0 @ 0x008e_dfc0 => extern "C" fn str_font_m(cursor: u32, text: u32, out: u32, a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32 {
+        mn::str_font_m(&mut mem(), cursor, text, out, [a, b, c, d, e, f])
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008ac7a0 @ 0x008a_c7a0 => extern "C" fn const_8ac7a0() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008b7c90 @ 0x008b_7c90 => extern "C" fn const_8b7c90() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB62cf4_008df680 @ 0x008d_f680 => extern "C" fn const_8df680() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B62CF4)
+    }
+    /// `()`: a constant.
+    ConstB66b30_008fa4e0 @ 0x008f_a4e0 => extern "C" fn const_8fa4e0() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B66B30)
+    }
+    /// `()`: a constant.
+    ConstB66b30_00906c10 @ 0x0090_6c10 => extern "C" fn const_906c10() -> u32 {
+        mn::constant(&mut mem(), ffx_system::m5b_menu::STR_B66B30)
+    }
+    /// `()`.
+    TkMenuUpdateSaveNeed_008b34f0 @ 0x008b_34f0 => extern "C" fn update_save_need() -> u32 {
+        mn::update_save_need(&mut mem())
+    }
+    /// `()`.
+    TkMcUnlock_008b3600 @ 0x008b_3600 => extern "C" fn mc_unlock() -> u32 {
+        mn::mc_unlock(&mut mem())
+    }
+    /// `()`: `jmp 0x008fd500` (no stack words; the target's code inline).
+    TOMkpPkt8eb4e0_008be250 @ 0x008b_e250 => extern "C" fn pkt_8eb4e0() -> u32 {
+        mn::pkt_8eb4e0(&mut mem())
+    }
+    /// `()`.
+    HddMenuEnter_008bf050 @ 0x008b_f050 => extern "C" fn hdd_menu_enter() -> u32 {
+        mn::hdd_menu_enter(&mut mem())
+    }
+    /// `()`.
+    HddMenuFunc_008bf0a0 @ 0x008b_f0a0 => extern "C" fn hdd_menu_func() -> u32 {
+        mn::hdd_menu_func(&mut mem())
+    }
+    /// `()`.
+    TkMenuCloseItemWindows_008c66c0 @ 0x008c_66c0 => extern "C" fn close_item_windows() -> u32 {
+        mn::close_item_windows(&mut mem())
+    }
+    /// `()`: `jmp TOAmapGetItemListMax`.
+    Thunk_TOAmapGetItemListMax_008c6700 @ 0x008c_6700 => extern "C" fn item_list_max() -> u32 {
+        mn::item_list_max(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionEnter_008e1910 @ 0x008e_1910 => extern "C" fn option_enter() -> u32 {
+        mn::option_enter(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionOpen_008e1950 @ 0x008e_1950 => extern "C" fn option_open() -> u32 {
+        mn::option_open(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionClose_008e19b0 @ 0x008e_19b0 => extern "C" fn option_close() -> u32 {
+        mn::option_close(&mut mem())
+    }
+    /// `()`.
+    TkMenuOptionLeave_008e19d0 @ 0x008e_19d0 => extern "C" fn option_leave() -> u32 {
+        mn::option_leave(&mut mem())
+    }
+    /// `()`.
+    TkMenuAbmExit_008e27b0 @ 0x008e_27b0 => extern "C" fn abm_exit() -> u32 {
+        mn::abm_exit(&mut mem())
+    }
+    /// `()`: `jmp 0x00a56030` (the target's code inline).
+    TkMenuAbmEnter_008e27c0 @ 0x008e_27c0 => extern "C" fn abm_enter() -> u32 {
+        mn::abm_enter(&mut mem())
+    }
+    /// `()`: `jmp 0x00a54760` (the target's code inline).
+    TkMenuAbmLeave_008e27d0 @ 0x008e_27d0 => extern "C" fn abm_leave() -> u32 {
+        mn::abm_leave(&mut mem())
+    }
+    /// `(a, b)`: `jmp TOMakePktFont1612Edge`.
+    Thunk_TOMakePktFont1612Edge_00906260 @ 0x0090_6260 => extern "C" fn font_1612_edge(a: u32, b: u32) -> u32 {
+        mn::font_1612_edge(&mut mem(), a, b)
+    }
+    /// `()`.
+    PrintB53060_0076ef90 @ 0x0076_ef90 => extern "C" fn print_b53060() -> u32 {
+        mn::print_b53060(&mut mem())
+    }
+    /// `()`: `jmp TOGetFFXLangJmp`.
+    TOGetFFXLang_008dfe10 @ 0x008d_fe10 => extern "C" fn get_ffx_lang() -> u32 {
+        mn::get_ffx_lang(&mut mem())
+    }
+    /// `()`.
+    CallbackOne_008abb00 @ 0x008a_bb00 => extern "C" fn callback_one() -> u32 {
+        mn::callback_one(&mut mem())
+    }
+    /// `(cursor, a, b, c, d, e)`.
+    TOAdpMesFont_008ed120 @ 0x008e_d120 => extern "C" fn mes_font_8ed120(cursor: u32, a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::mes_font_8ed120(&mut mem(), [cursor, a, b, c, d, e])
+    }
+    /// `(a, b, c)`.
+    TOMkpFont_008f8870 @ 0x008f_8870 => extern "C" fn font_8f8870(a: u32, b: u32, c: u32) -> u32 {
+        mn::font_8f8870(&mut mem(), a, b, c)
+    }
+    /// `()`: with no names `eax` untouched.
+    SetWakkalimitMagicFileTexturesUnloaded @ 0x008e_89d0 => extern "C" fn wakka_textures_unloaded() {
+        let _ = mn::wakka_textures_unloaded(&mut mem());
+    }
+    /// `(pos, glyph)`.
+    TOGlyphAdvance_008fc770 @ 0x008f_c770 => extern "C" fn glyph_advance(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_advance(&mut mem(), pos, glyph)
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDb_008f1a90 @ 0x008f_1a90 => extern "C" fn shape_da_db_8f1a90(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db(&mut mem(), [cursor, x, y, w, c, c1])
+    }
+    /// `(cursor, x, y, w, c, c1)`: the same code.
+    TOAdpShapeDaDb_008f1af0 @ 0x008f_1af0 => extern "C" fn shape_da_db_8f1af0(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db(&mut mem(), [cursor, x, y, w, c, c1])
+    }
+    /// `(cursor, id1, id2, x, y, w, c, c1)`.
+    TOAdpShapePair_008f0990 @ 0x008f_0990 => extern "C" fn shape_ids(cursor: u32, id1: u32, id2: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_ids(&mut mem(), [cursor, id1, id2, x, y, w, c, c1])
+    }
+
+    // ---- round 3: magic files, VFX vector cells ----
+    /// `(magic)`: off, `eax` untouched.
+    MagicFile_clearAllPreloadedPrx @ 0x009d_aca0 => extern "C" fn clear_all_preloaded(magic: u32) {
+        let _ = pc::clear_all_preloaded(&mut mem(), magic);
+    }
+    /// `(magic, file)`: off, `eax` untouched.
+    MagicFile_ClearPreloadedPrx_009dacc0 @ 0x009d_acc0 => extern "C" fn clear_preloaded(magic: u32, file: u32) {
+        let _ = pc::clear_preloaded(&mut mem(), magic, file);
+    }
+    /// `(module)`.
+    onMagicDLLLoaded @ 0x009d_b110 => extern "C" fn on_magic_dll_loaded(module: u32) -> u32 {
+        pc::on_magic_dll_loaded(&mut mem(), module)
+    }
+    /// `(dst)`.
+    VFX_CopyC0a004_0092cc20 @ 0x0092_cc20 => extern "C" fn copy_c0a004(dst: u32) -> u32 {
+        pc::copy_c0a004(&mut mem(), dst)
+    }
+    /// `(dst, src)`.
+    VFX_CopyViaC8f980_0092cbf0 @ 0x0092_cbf0 => extern "C" fn copy_via_c8f980(dst: u32, src: u32) -> u32 {
+        pc::copy_via_c8f980(&mut mem(), dst, src)
     }
 }
 

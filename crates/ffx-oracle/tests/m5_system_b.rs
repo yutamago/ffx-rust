@@ -3500,3 +3500,423 @@ fn r2_hdd_mount_and_heads_match_the_original() {
         }
     });
 }
+
+// ---- round 3: menu wrappers and table entries (`ffx_system::m5b_menu`) ----
+//
+// The packet wrappers ran in the menus; the table entries (the HDD menu,
+// the option menu, the sphere grid's) mostly never did. Every branch runs
+// on synthetic globals; the snapshots repeat the cases over their memory.
+
+use ffx_system::m5b_menu::{self as mnc, bridge as mnb};
+
+/// `TOCtrlPkt`'s state by `case % 4`: packets not added; added with the
+/// cursor below the limit; added with the limit 0 (`TODrawKick`); added
+/// with the limit at `cursor`, the cursor the call leaves (`TODrawKick`).
+fn ctrl_state(t: &mut Twins, case: u32, cursor: u32) {
+    let (add, limit) = [(0, 0), (1, 0xffff_ffff), (1, 0), (1, cursor)][(case % 4) as usize];
+    t.g32(mnc::ADD_PKT, add);
+    t.g32(mnc::PKT_LIMIT, limit);
+}
+
+#[test]
+fn r3_menu_packet_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0401);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::VALUE_FONT_M, 5),
+                (mnc::FONT_8F2BF0, 5),
+                (mnc::EASY_SHAPE, 8),
+                (mnc::BASE_MES_FONT, 5),
+                (mnc::MES_FONT_8ED120, 6),
+                (mnc::STR_FONT_M, 9),
+                (mnc::DRAW_KICK, 0),
+                (mnc::CHANGE_SEQ_ANM, 3),
+                (mnc::TRANS_IMAGE_HL, 7),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                // one cursor for all, so that the limit can equal it
+                t.stub(
+                    sym,
+                    false,
+                    n,
+                    0,
+                    if sym == mnc::DRAW_KICK {
+                        r ^ (k as u32 * 0x111)
+                    } else {
+                        r
+                    },
+                );
+            }
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, r);
+            ctrl_state(t, case, r);
+            let w: Vec<u32> = (0..7).map(|_| rng.word()).collect();
+            let w4 = [w[0], w[1], w[2], w[3]];
+            t.check("value font", 0x0090_42e0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::value_font_m_clut_right(m, w4))
+            });
+            t.check("font 902810", 0x0090_2810, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::font_902810(m, w4))
+            });
+            let w7 = [w[0], w[1], w[2], w[3], w[4], w[5], w[6]];
+            t.check("shape", 0x0090_3b70, Conv::Cdecl, &w7, |m| {
+                Out::U32(mnb::shape_xywhc2(m, w7))
+            });
+            t.check("base mes font", 0x0090_1cb0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::base_mes_font(m, w4))
+            });
+            let w5 = [w[0], w[1], w[2], w[3], w[4]];
+            t.check("mes font", 0x0090_1d10, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::mes_font_901d10(m, w5))
+            });
+            t.check("str font 4", 0x0090_1f80, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::str_font_m4(m, w4))
+            });
+            t.check("easy str font", 0x0090_1f40, Conv::Cdecl, &w4[..3], |m| {
+                Out::U32(mnb::easy_str_font_m(m, w[0], w[1], w[2]))
+            });
+            let prim = t.zeros(0x20);
+            let halves: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+            t.write(prim, &halves);
+            t.check("seq prim func", 0x008f_e040, Conv::Cdecl, &[prim], |m| {
+                Out::U32(mnb::seq_prim_func(m, prim))
+            });
+            t.check("seq prim mes", 0x008f_e080, Conv::Cdecl, &[prim], |m| {
+                Out::U32(mnb::seq_prim_mes(m, prim))
+            });
+            t.check("small face", 0x0090_1160, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::trans_small_face(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3_menu_str_font_m_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0402);
+        for (case, text) in [&b"\0"[..], b"A\0", b"Gil 123\0", b"\xff\x01\0"]
+            .into_iter()
+            .enumerate()
+        {
+            t.reset();
+            t.stub(mnc::IDENTITY, false, 1, 0, rng.next());
+            t.stub(mnc::FONT_M_ASCII, false, 9, 0, rng.next());
+            let s = t.alloc(text);
+            let out = t.zeros(0x80);
+            let rest: [u32; 6] = std::array::from_fn(|_| rng.word());
+            let cur = rng.next();
+            let mut args = vec![cur, s, out];
+            args.extend(rest);
+            t.check(
+                &format!("str font #{case}"),
+                0x008e_dfc0,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::str_font_m(m, cur, s, out, rest)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_menu_table_entries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0403);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::CD_SIZE_KB, 0),
+                (mnc::MC_SET_DEBUG_LOCK, 1),
+                (mnc::PKT_8EB4E0, 1),
+                (mnc::DRAW_KICK, 0),
+                (mnc::CLOSE_WINDOW, 0),
+                (mnc::CLOSE_WINDOW3, 0),
+                (mnc::CLOSE_WINDOW2, 0),
+                (mnc::CLOSE_SUB_CMD, 0),
+                (mnc::SEQ_STOP_SCENE, 2),
+                (mnc::ITEM_LIST_MAX, 0),
+                (mnc::SHADE_RATIO_DIFF, 1),
+                (mnc::SHADE_RATIO_STEP, 1),
+                (mnc::OPTION_MENU, 1),
+                (mnc::MAIN_HELP, 1),
+                (mnc::SET_HELP, 1),
+                (mnc::SCREEN_X2, 1),
+                (mnc::IGNORE_JOIN, 1),
+                (mnc::SEQ_INIT_SCENE, 1),
+                (mnc::SEQ_STOP_EXEC, 1),
+                (mnc::ABM_EXIT, 0),
+                (mnc::ET_CHR_SHOW, 1),
+                (mnc::TEX_VDISP_LOAD, 1),
+                (mnc::PPP_INIT_DATA, 3),
+                (mnc::FONT_1612_EDGE, 2),
+                (mnc::DBG_PRINTF, 1),
+                (mnc::GET_FFX_LANG_JMP, 0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x1001));
+            }
+            let consts: [(u32, u32); 5] = [
+                (0x008a_c7a0, mnc::STR_B62CF4),
+                (0x008b_7c90, mnc::STR_B62CF4),
+                (0x008d_f680, mnc::STR_B62CF4),
+                (0x008f_a4e0, mnc::STR_B66B30),
+                (0x0090_6c10, mnc::STR_B66B30),
+            ];
+            for (sym, v) in consts {
+                t.check("constant", sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(mnb::constant(m, v))
+                });
+            }
+            let none: [(u32, Thunk0); 14] = [
+                (0x008b_34f0, |m| mnb::update_save_need(m)),
+                (0x008b_3600, |m| mnb::mc_unlock(m)),
+                (0x008c_66c0, |m| mnb::close_item_windows(m)),
+                (0x008c_6700, |m| mnb::item_list_max(m)),
+                (0x008e_1910, |m| mnb::option_enter(m)),
+                (0x008e_1950, |m| mnb::option_open(m)),
+                (0x008e_19b0, |m| mnb::option_close(m)),
+                (0x008e_19d0, |m| mnb::option_leave(m)),
+                (0x008e_27b0, |m| mnb::abm_exit(m)),
+                (0x008e_27c0, |m| mnb::abm_enter(m)),
+                (0x008e_27d0, |m| mnb::abm_leave(m)),
+                (0x0076_ef90, |m| mnb::print_b53060(m)),
+                (0x008d_fe10, |m| mnb::get_ffx_lang(m)),
+                (0x008b_f0a0, |m| mnb::hdd_menu_func(m)),
+            ];
+            // the option window (or none), the words the entries write
+            let win = t.alloc(&[0xa5; 0x50]);
+            let wcell = t.rebase(mnc::OPT_WINDOW);
+            t.w32(wcell, if case & 1 == 0 { win } else { 0 });
+            for sym in [
+                mnc::OPT_WORD_44,
+                mnc::OPT_WORD_54,
+                mnc::OPT_WORD_5C,
+                mnc::OPT_WORD_60,
+                mnc::WORD_134085C,
+                mnc::BYTE_1340858,
+                mnc::WORD_186A22C,
+                mnc::WORD_186A230,
+            ] {
+                let at = t.rebase(sym);
+                t.w32(at, 0x5a5a_5a5a);
+            }
+            let item = t.rebase(mnc::OPT_ITEM);
+            t.w32(item, rng.below(8));
+            // the sphere grid's leave: its once-flag, the record's first byte
+            t.g32(mnc::ABM_RUNNING, 0x5a5a_5a5a);
+            t.g32(mnc::ABM_LEAVE_DONE, u32::from(case & 2 != 0));
+            let mut rec = [0xa5u8; 0x10];
+            rec[0] = u8::from(case & 4 != 0);
+            let rec = t.alloc(&rec);
+            t.g32(mnc::ABM_PPP_RECORD, rec);
+            // PKT_8EB4E0 is stub 2 above
+            ctrl_state(t, case, r ^ 0x2002);
+            t.g32(mnc::PKT_CURSOR, rng.next());
+            // the two HDD menu pointers: recording stubs
+            let f1 = t.stub_code(0x0e0f_0101, false, 0, 0, r ^ 0x77);
+            let f2 = t.stub_code(0x0e0f_0102, false, 0, 0, r ^ 0x78);
+            let p1 = t.rebase(mnc::HDD_MENU_ENTER);
+            t.patch(p1, &f1.to_le_bytes());
+            let p2 = t.rebase(mnc::HDD_MENU_FUNC);
+            t.patch(p2, &f2.to_le_bytes());
+            for (sym, f) in none {
+                t.check(
+                    &format!("entry {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(f(m)),
+                );
+            }
+            t.check("hdd menu enter", 0x008b_f050, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::hdd_menu_enter(m))
+            });
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check("pkt 8eb4e0", 0x008b_e250, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::pkt_8eb4e0(m))
+            });
+            t.check("font 1612 edge", 0x0090_6260, Conv::Cdecl, &w6[..2], |m| {
+                Out::U32(mnb::font_1612_edge(m, w6[0], w6[1]))
+            });
+            // the callback object
+            let cb = t.stub_code(0x0e0f_0103, false, 1, 0, r ^ 0x79);
+            let obj = t.words(&[0, 0, cb]);
+            let ocell = t.rebase(mnc::CALLBACK_OBJECT);
+            t.w32(ocell, obj);
+            t.check("callback one", 0x008a_bb00, Conv::Cdecl, &[], |m| {
+                Out::U32(mnb::callback_one(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3_menu_font_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0404);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::MES_FONT_8ED190, false, 11, 0, r);
+            t.stub(mnc::FONT_8F1880, false, 8, 0, r ^ 1);
+            t.stub(mnc::UNLOAD_TEXTURE, false, 1, 0, r ^ 2);
+            t.stub(mnc::GLYPH_A, false, 2, 0, r ^ 3);
+            t.stub(mnc::GLYPH_B, false, 2, 0, r ^ 4);
+            t.stub(mnc::GLYPH_C, false, 2, 0, r ^ 5);
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check("mes font 8ed120", 0x008e_d120, Conv::Cdecl, &w6, |m| {
+                Out::U32(mnb::mes_font_8ed120(m, w6))
+            });
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, rng.next());
+            t.check("font 8f8870", 0x008f_8870, Conv::Cdecl, &w6[..3], |m| {
+                Out::U32(mnb::font_8f8870(m, w6[0], w6[1], w6[2]))
+            });
+            let count = t.rebase(mnc::WAKKA_COUNT);
+            t.w32(count, [0, 1, 3, 0xffff_ffff][(case % 4) as usize]);
+            t.check("wakka unloaded", 0x008e_89d0, Conv::Cdecl, &[], |m| {
+                mnb::wakka_textures_unloaded(m).map_or(Out::None, Out::U32)
+            });
+            let glyph = t.zeros(0x28);
+            // 2^60 and -2^60: the sum's order shows (the pad is lost in 2^60)
+            let adv = [0.0f32, 1.5, -3.25, 1_152_921_504_606_846_976.0][(case % 4) as usize];
+            t.w32(glyph + 0x1c, adv.to_bits());
+            let flags = [0u16, 1, 2, 4, 0xfffc][(case % 5) as usize];
+            t.write(glyph + 0x26, &flags.to_le_bytes());
+            let pos = t.zeros(8);
+            let x = [0.0f32, 100.25, -7.0, -1_152_921_504_606_846_976.0][(case / 4 % 4) as usize];
+            t.w32(pos + 4, x.to_bits());
+            t.check(
+                "glyph advance",
+                0x008f_c770,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_advance(m, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_menu_shape_pairs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0405);
+        for _ in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+            let info = t.zeros(0x10);
+            let ww = (rng.below(0x80) as u16).to_le_bytes();
+            t.write(info + 8, &ww);
+            t.stub(mnc::SHAPE_INFO, false, 1, 0, info);
+            t.stub(mnc::SHAPE_INFO_ID, false, 1, 0, info);
+            let w8: [u32; 8] = std::array::from_fn(|_| rng.word());
+            let w6 = [w8[0], w8[1], w8[2], w8[3], w8[4], w8[5]];
+            for sym in [0x008f_1a90u32, 0x008f_1af0] {
+                t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+                t.check("shape da db", sym, Conv::Cdecl, &w6, |m| {
+                    Out::U32(mnb::shape_da_db(m, w6))
+                });
+            }
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1]);
+            t.check("shape ids", 0x008f_0990, Conv::Cdecl, &w8, |m| {
+                Out::U32(mnb::shape_ids(m, w8))
+            });
+        }
+    });
+}
+
+// ---- round 3: magic-file preloads, VFX vector cells (`ffx_system::m5b_pc`) ----
+
+#[test]
+fn r3_magic_preloads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0501);
+        for case in 0..24u32 {
+            t.reset();
+            imp(t, pcs::IOB_FUNC_IAT, 0, false, 0x0e10_0000);
+            imp(t, pcs::FPRINTF_IAT, 6, false, 0x11);
+            t.stub(pcs::UNLOAD_PRX, false, 2, 0, 0x12);
+            let on = t.rebase(pcs::PRELOAD_ON);
+            t.w32(on, u32::from(case % 6 != 0));
+            let table = t.rebase(pcs::PRELOAD_TABLE);
+            let counts = t.rebase(pcs::PRELOAD_COUNTS);
+            let handles = t.rebase(pcs::PRELOAD_HANDLES);
+            for i in 0..12 {
+                t.put(table + 12 * i, &[rng.below(4), rng.next(), rng.below(3)]);
+                let c = [0, 1, 3, 0xffff_ffff][rng.below(4) as usize];
+                t.w32(counts + 4 * i, c);
+                t.w32(handles + 4 * i, rng.next());
+            }
+            let magic = [0, 1, 3, 0xffff_ffff][(case % 4) as usize];
+            let file = [0, 2, 0x8000_0000][(case / 4 % 3) as usize];
+            if case & 1 == 0 {
+                t.check(
+                    &format!("clear #{case}"),
+                    0x009d_acc0,
+                    Conv::Cdecl,
+                    &[magic, file],
+                    |m| pcb::clear_preloaded(m, magic, file).map_or(Out::None, Out::U32),
+                );
+            } else {
+                t.check(
+                    &format!("clear all #{case}"),
+                    0x009d_aca0,
+                    Conv::Cdecl,
+                    &[magic],
+                    |m| pcb::clear_all_preloaded(m, magic).map_or(Out::None, Out::U32),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r3_magic_dll_loaded_matches_the_original() {
+    Twins::each(|t| {
+        for module in [0u32, 0x1000_0000] {
+            t.reset();
+            imp(t, pcs::GET_LAST_ERROR_IAT, 0, true, 0x7e);
+            imp(t, pcs::PRINTF_IAT, 3, false, 0x21);
+            imp(t, pcs::GET_PROC_ADDRESS_IAT, 2, true, 0x1000_1234);
+            t.check(
+                &format!("dll loaded {module:#x}"),
+                0x009d_b110,
+                Conv::Cdecl,
+                &[module],
+                |m| Out::U32(pcb::on_magic_dll_loaded(m, module)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_vfx_vector_cells_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0502);
+        for _ in 0..4 {
+            t.reset();
+            let src = t.words(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let dst = t.zeros(16);
+            t.check("copy c0a004", 0x0092_cc20, Conv::Cdecl, &[dst], |m| {
+                Out::U32(pcb::copy_c0a004(m, dst))
+            });
+            t.check(
+                "copy via c8f980",
+                0x0092_cbf0,
+                Conv::Cdecl,
+                &[dst, src],
+                |m| Out::U32(pcb::copy_via_c8f980(m, dst, src)),
+            );
+        }
+    });
+}
