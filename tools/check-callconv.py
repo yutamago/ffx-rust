@@ -1119,10 +1119,33 @@ pub const IME: u32 = 0x009d_a254;
 pub fn bridge<M>(m: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
     call(m, IME, &[1, 0]);
 }
+// a closure's parameter does not bind a later `let` of the same name:
+// `f` below is no forward of `rotate`'s `f`, so the `rotate` calls (the
+// thiscall 0x00806d10, `ret 4`) are not `call`'s (cdecl)
+pub fn erase<M>(
+    m: &mut M,
+    call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+) {
+    const LEFT: u32 = 0x0080_6d10;
+    let mut rotate = |m: &mut M, f: u32, n: u32| {
+        this_call(m, f, 0, &[n]);
+    };
+    let f = load(m);
+    call(m, f, &[2]);
+    rotate(m, LEFT, 3);
+}
 """,
     "crates/ffx-hook/src/ported/fixture.rs": """
 fn shim() {
     ffx_prender::closure::bridge(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+}
+fn shim_erase() {
+    ffx_prender::closure::erase(
+        &mut mem(),
+        &mut |_, f, a| super::call_cdecl(f, a),
+        &mut |_, f, this, a| super::call_thiscall(f, this, a),
+    );
 }
 """,
     "crates/ffx-oracle/tests/fixture.rs": """
