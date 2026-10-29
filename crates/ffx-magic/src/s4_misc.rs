@@ -1740,3 +1740,100 @@ pub const TIMED_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A task node for the state `s` ([`crate::sa_pool::take`] through the
+/// `rel32` at `f + call`, its callback the operand at `cb`; `+0x14` the
+/// state, with `kind` its byte `+0x18`) appended to the DLL's task list
+/// (`head`/`tail` operands). Returns the node.
+fn task_for<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (call, cb): (u32, u32),
+    s: u32,
+    kind: Option<u8>,
+    (head, tail): (u32, u32),
+) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + call), w(cb));
+    let empty = g.read::<u32>(w(head)) == 0;
+    g.write::<u32>(node + 0x14, s);
+    if let Some(k) = kind {
+        g.write::<u8>(node + 0x18, k);
+    }
+    g.write::<u32>(node + 4, 0);
+    crate::s3_misc::append_task(g, node, w(head), w(tail), empty);
+    node
+}
+
+/// Starts a two-colour scale task (internal, `ecx` = the state, `xmm1`,
+/// `xmm2` two scales, the stack word a count): a scale not above 0 is
+/// `K` (operand `+0x7`); `G_A`/`G_B` (`+0x2d`, `+0x35`) and the state's
+/// two vectors `+0x0`, `+0x10` (`w` 1.0) take them; `+0x28` the count,
+/// `+0x34` 0, `+0x30`/`+0x2c` 0x1e. A task node (kind 1) runs it. Returns
+/// the node.
+///
+/// `magic_0162` 0x10007ef0 (195 bytes; 9 DLLs).
+pub fn scale_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = fr.ecx;
+    let k = f32_at(g, w(0x7));
+    // comiss 0, x; jb: kept when above 0 (or unordered)
+    let keep = |x: f32| if 0.0 < x || x.is_nan() { x } else { k };
+    let (a, b) = (keep(fr.xmm_f32(1)), keep(fr.xmm_f32(2)));
+    set_f32(g, w(0x2d), a);
+    set_f32(g, w(0x35), b);
+    for o in [8, 4, 0] {
+        set_f32(g, s + o, a);
+    }
+    g.write::<u32>(s + 0xc, 0x3f80_0000);
+    for o in [0x18, 0x14, 0x10] {
+        set_f32(g, s + o, b);
+    }
+    g.write::<u32>(s + 0x1c, 0x3f80_0000);
+    g.write::<u32>(s + 0x28, fr.arg(g, 0));
+    g.write::<u32>(s + 0x34, 0);
+    g.write::<u32>(s + 0x30, 0x1e);
+    g.write::<u32>(s + 0x2c, 0x1e);
+    Ret::eax(task_for(g, img, f, (0x7d, 0x25), s, Some(1), (0x83, 0x9b)))
+}
+
+/// [`scale_task`].
+pub const SCALE_TASK: Sig = Sig {
+    len: 195,
+    hash: 0x4f79_da4c_36e9_c1c2,
+    calls: &[(0x7d, Callee::Sig(&crate::sa_pool::TAKE))],
+    imports: &[],
+};
+
+/// Starts a state's task (internal, `ecx` = the state, the stack word a
+/// value): `+0x20..+0x2c`, `+0x38`, `+0x3c` and the halfwords `+0x40`,
+/// `+0x4c` cleared, `+0x34` the value, `+0x30` the step (operand
+/// `+0x32`), `+0x44` 1; a task node runs it. Returns the node.
+///
+/// `magic_0053` 0x10002c30 (150 bytes; 8 DLLs).
+pub fn state_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = fr.ecx;
+    for o in [0x28, 0x24, 0x20, 0x2c] {
+        g.write::<u32>(s + o, 0);
+    }
+    g.write::<u32>(s + 0x34, fr.arg(g, 0));
+    g.write::<u32>(s + 0x30, w(0x32));
+    g.write::<u32>(s + 0x38, 0);
+    g.write::<u32>(s + 0x3c, 0);
+    g.write::<u16>(s + 0x40, 0);
+    g.write::<u32>(s + 0x44, 1);
+    g.write::<u16>(s + 0x4c, 0);
+    Ret::eax(task_for(g, img, f, (0x54, 0xa), s, None, (0x5a, 0x6e)))
+}
+
+/// [`state_task`].
+pub const STATE_TASK: Sig = Sig {
+    len: 150,
+    hash: 0x363f_1ddd_6eaa_2c9f,
+    calls: &[(0x54, Callee::Sig(&crate::sa_pool::TAKE))],
+    imports: &[],
+};

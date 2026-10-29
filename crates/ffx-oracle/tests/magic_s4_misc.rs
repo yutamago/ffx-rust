@@ -1676,3 +1676,45 @@ fn effect_node_records() {
         }
     }
 }
+
+/// `magic_0162` 0x10007ef0 and `magic_0053` 0x10002c30: a state's task
+/// started on an empty task list and on one with a last node (the scales
+/// above 0, at 0, below and NaN).
+#[test]
+fn state_tasks() {
+    for (n, rva) in [(162u16, 0x7ef0u32), (53, 0x2c30)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let (call, head, tail) = if n == 162 {
+            (0x7d, 0x83, 0x9b)
+        } else {
+            (0x54, 0x5a, 0x6e)
+        };
+        let take = t.img.rel32_target(f + call);
+        let (head, tail) = (t.img.word(f + head), t.img.word(f + tail));
+        let s = SCRATCH + 0x100;
+        for (k, (a, b)) in [(1.5f32, 2.0f32), (0.0, -1.0), (f32::NAN, 0.5), (-0.0, 3.0)]
+            .into_iter()
+            .enumerate()
+        {
+            free_ring(&mut t, take, SCRATCH + 0x1000, 3);
+            if k % 2 == 0 {
+                t.set_u32(head, 0);
+                t.set_u32(tail, 0);
+            } else {
+                t.write(SCRATCH + 0x1400, &[0x22; 0x1c]);
+                t.set_u32(head, SCRATCH + 0x1400);
+                t.set_u32(tail, SCRATCH + 0x1400);
+            }
+            t.write(s, &[0x11; 0x50]);
+            let c = Call::this(s).with_xmm(&[Xmm::f32(9.0), Xmm::f32(a), Xmm::f32(b)]);
+            t.check(f, c, &[0x0a00 + k as u32], Eax::Checked, |g, img, fr| {
+                if n == 162 {
+                    s4_misc::scale_task(g, img, fr)
+                } else {
+                    s4_misc::state_task(g, img, fr)
+                }
+            });
+        }
+    }
+}

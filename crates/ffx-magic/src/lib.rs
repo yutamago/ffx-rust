@@ -1256,6 +1256,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sparks (0446, d)", &s4_fam446::SPARKS_D),
     ("actor point", &s4_misc::ACTOR_POINT),
     ("screen place", &s4_misc::SCREEN_PLACE),
+    ("scale task", &s4_misc::SCALE_TASK),
+    ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
     ("targets init", &s4_summon::TARGETS_INIT),
