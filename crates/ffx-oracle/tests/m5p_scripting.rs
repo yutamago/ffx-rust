@@ -2775,3 +2775,197 @@ fn b12_phyre_index_matches_the_original() {
         t.unstub();
     }
 }
+
+// ---- round left2 (ffx_pother_a::m5p_scripting_left2) ----
+
+/// A stub prefix that replaces stack word `i` by the word it points at
+/// (a frame's address differs between the two runs; what it holds must
+/// not).
+fn deref_arg(i: u8) -> Vec<u8> {
+    let off = 4 + 4 * i;
+    vec![
+        0x8b, 0x44, 0x24, off, // mov eax, [esp+off]
+        0x8b, 0x00, // mov eax, [eax]
+        0x89, 0x44, 0x24, off, // mov [esp+off], eax
+    ]
+}
+
+/// A stub prefix that stores `v` where stack word 0 points.
+fn store_arg0(v: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], v
+    c.extend(v.to_le_bytes());
+    c
+}
+
+#[test]
+fn left2_cloth_create_instance_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::CLOTH_INSTANCE[2], true, 1, 1, 0xc1c1);
+        let with = t.zeros(0x40);
+        t.w32(with + 0x34, 0x0055_0000);
+        let without = t.zeros(0x40);
+        for (existing, list) in [(0x77u32, with), (0, 0), (0, without), (0, with)] {
+            t.stub(l2::CLOTH_INSTANCE[0], true, 3, 3, list);
+            let what =
+                format!("{label}: cloth createInstance existing {existing:#x} list {list:#x}");
+            t.this(
+                &what,
+                0x006e_1ec0,
+                0x0012_0000,
+                &[0x0034_0000, existing],
+                |g| {
+                    Some(l2b::cloth_create_instance(
+                        g,
+                        0x0012_0000,
+                        0x0034_0000,
+                        existing,
+                    ))
+                },
+            );
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn left2_require_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let cb1 = t.stub_code(0x00cb_e6b4, false, 4, 4, 0);
+        let cb2 = t.stub_code(0x00cb_e6c8, false, 4, 4, 0);
+        for (name, word, loaded, source, script, callbacks) in [
+            (0u32, 0x0060_0000u32, 1u32, 1u32, 1u32, 3u32),
+            (0x0061_0000, 0x0060_0000, 0, 1, 1, 3),
+            (0x0061_0000, 0x0060_0001, 0x100, 1, 1, 3),
+            (0x0061_0000, 0x0060_0000, 1, 0, 1, 3),
+            (0x0061_0000, 0x0060_0001, 1, 0x0062_0000, 0, 3),
+            (0x0061_0000, 0x0060_0000, 1, 0x0062_0000, 0x0063_0000, 3),
+            (0x0061_0000, 0x0060_0000, 1, 0x0062_0000, 0x0063_0000, 1),
+            (0x0061_0000, 0x0060_0000, 1, 0x0062_0000, 0x0063_0000, 2),
+            (0x0061_0000, 0x0060_0000, 1, 0x0062_0000, 0x0063_0000, 0),
+        ] {
+            t.stub(l2::LUAL_CHECKLSTRING, false, 3, 0, name);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            let mut pre = store_arg0(word);
+            pre.extend(deref_arg(0));
+            let s = t.stub_code_with(&pre, l2::REQUIRE_CALLS[0], false, 2, 0, 0);
+            t.place(l2::REQUIRE_CALLS[0], s);
+            t.stub(l2::REQUIRE_CALLS[1], false, 3, 0, loaded);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_PUSHNIL, false, 1, 0, 0);
+            t.stub(l2::LUA_SETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_SETGLOBAL, false, 2, 0, 0);
+            t.stub(l2::REQUIRE_CALLS[2], false, 1, 0, source);
+            t.stub(l2::REQUIRE_CALLS[3], false, 1, 0, script);
+            t.stub(l2::FREE, false, 1, 0, 0);
+            let c1 = t.rebase(l2::LOAD_CALLBACKS[0]);
+            t.w32(c1, if callbacks & 1 != 0 { cb1 } else { 0 });
+            let u1 = t.rebase(l2::LOAD_CALLBACKS[1]);
+            t.w32(u1, 0x1111);
+            let c2 = t.rebase(l2::LOAD_CALLBACKS[2]);
+            t.w32(c2, if callbacks & 2 != 0 { cb2 } else { 0 });
+            let u2 = t.rebase(l2::LOAD_CALLBACKS[3]);
+            t.w32(u2, 0x2222);
+            let what = format!(
+                "{label}: require name {name:#x} word {word:#x} loaded {loaded:#x} source {source:#x} script {script:#x} callbacks {callbacks}"
+            );
+            t.cdecl(&what, 0x005d_67b0, &[l], |g| {
+                let s = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::require(g, l, s))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_reload_script_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for (component, state, index, err, ty, boolean, word) in [
+            (0u32, 1u32, 0u32, 0u32, 1u32, 1u32, 0x0060_0000u32),
+            (1, 0, 0, 0, 1, 1, 0x0060_0000),
+            (1, 1, 0xffff_ffff, 0, 1, 1, 0x0060_0000),
+            (1, 1, 2, 5, 1, 1, 0x0060_0000),
+            (1, 1, 0, 0, 1, 1, 0x0060_0001),
+            (1, 1, 0, 0, 1, 0, 0x0060_0000),
+            (1, 1, 0, 0, 4, 1, 0x0060_0000),
+        ] {
+            t.stub(l2::PRINTF, false, 4, 0, 0);
+            t.stub(l2::RELOAD_CALLS[0], true, 2, 2, index);
+            let mut pre = store_arg0(word);
+            pre.extend(deref_arg(0));
+            let s = t.stub_code_with(&pre, l2::REQUIRE_CALLS[0], false, 2, 0, 0);
+            t.place(l2::REQUIRE_CALLS[0], s);
+            t.stub(l2::LUA_GETGLOBAL, false, 2, 0, 0);
+            t.stub(l2::RELOAD_CALLS[1], false, 3, 0, 0);
+            let s = t.stub_code_with(&deref_arg(1), l2::RELOAD_CALLS[2], false, 3, 0, 0);
+            t.place(l2::RELOAD_CALLS[2], s);
+            t.stub(l2::LUA_PCALLK, false, 6, 0, err);
+            t.stub(l2::LUA_TOLSTRING, false, 3, 0, 0x0064_0000);
+            t.stub(l2::LUA_TYPE, false, 2, 0, ty);
+            t.stub(l2::LUA_TOBOOLEAN, false, 2, 0, boolean);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            t.stub(l2::FREE, false, 1, 0, 0);
+            let this = t.object(0x7700, &[0, 3, 0], &[]);
+            let names = t.zeros(0x40);
+            t.w32(names + 0x1c, 0x0065_0001);
+            t.w32(this + 0x14, names);
+            t.w32(this + 0x1c, if state != 0 { 0x00d0_0000 } else { 0 });
+            t.w32(this + 0xc, 0x24);
+            let comp = if component != 0 {
+                let c = t.zeros(0x40);
+                t.w32(c + 0x1c, 0x0066_0000);
+                c
+            } else {
+                0
+            };
+            let what = format!(
+                "{label}: reloadScript component {component} state {state} index {index:#x} err {err} type {ty} bool {boolean} word {word:#x}"
+            );
+            t.this(&what, 0x0055_32a0, this, &[comp], |g| {
+                let s = ffx_graphic::host::Host::scratch(g);
+                l2b::reload_script(g, this, comp, s);
+                None
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_member_path_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let paths: Vec<u32> = ["a.b.c", "single", "end.", "", ".lead", "x..y"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        for found in [true, false] {
+            for block in [true, false] {
+                for &path in paths.iter().chain([0u32].iter()) {
+                    t.stub(l2::FREE, false, 1, 0, 0);
+                    let b = if block { t.junk(0x20, 9) } else { 0 };
+                    t.stub(l2::MALLOC, false, 2, 0, b);
+                    t.stub(l2::MEMCPY, false, 3, 0, b);
+                    let next_class = t.zeros(0x40);
+                    let ty = t.object(0x7800, &[0, 0], &[0, next_class]);
+                    let member = t.zeros(0x40);
+                    t.w32(member + 0x18, ty);
+                    t.stub(l2::FIND_MEMBER, true, 1, 1, if found { member } else { 0 });
+                    let what =
+                        format!("{label}: member path {path:#x} found {found} block {block}");
+                    let mut al = 0u8;
+                    let eax = t.cdecl(&what, 0x0050_be90, &[0x0040_0000, path], |g| {
+                        al = l2b::has_member_path(g, 0x0040_0000, path);
+                        None
+                    });
+                    assert_eq!(eax & 0xff, u32::from(al), "{what}: al");
+                    t.unstub();
+                }
+            }
+        }
+    }
+}
