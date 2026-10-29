@@ -1020,6 +1020,25 @@ ports! {
     "finish and give back" => s4_small::FINISH_GIVE_BACK, s4_small::finish_give_back;
     "slot 371 twice" => s4_small::CALL_371_TWICE, s4_small::call_371_twice;
     "call slot 211, flag" => s4_small::CALL_211_FLAG, s4_small::call_211_flag;
+    "reset, then slot 575" => s4_small::RESET_THEN_575, s4_small::reset_then_575;
+    "callback and 15" => s4_small::CALLBACK_AND_15, s4_small::callback_and_count;
+    "callback and 30" => s4_small::CALLBACK_AND_30, s4_small::callback_and_count;
+    "callback and 10" => s4_small::CALLBACK_AND_10, s4_small::callback_and_10;
+    "ready and callback" => s4_small::READY_CALLBACK, s4_small::ready_callback;
+    "callback slot 461" => s4_small::CALLBACK_461, s4_small::callback_461;
+    "take +0x1ee4" => s4_small::TAKE_1EE4, s4_small::take_1ee4;
+    "run, then slot 214" => s4_small::RUN_THEN_214, s4_small::run_then_214;
+    "script step done" => s4_small::SCRIPT_STEP_DONE, s4_small::script_step_done;
+    "motion step done" => s4_small::MOTION_STEP_DONE, s4_small::motion_step_done;
+    "part slot 257" => s4_small::PART_257, s4_small::part_257;
+    "free slot 713" => s4_small::FREE_713, s4_small::free_713;
+    "place at bone 0x99" => s4_small::PLACE_BONE_99, s4_small::place_bone_99;
+    "place at own bone" => s4_small::PLACE_BONE_OWN, s4_small::place_bone_own;
+    "call slot 388" => s4_small::CALL_388, s4_small::call_388;
+    "check slot 411" => s4_small::CHECK_411, s4_small::check_411;
+    "ranges off" => s4_small::RANGES_OFF, s4_small::ranges_off;
+    "place from block" => s4_small::PLACE_FROM_BLOCK, s4_small::place_from_block;
+    "count or slot 257" => s4_small::COUNT_OR_257, s4_small::count_or_257;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1354,6 +1373,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("locked slot 878", &s4_small::LOCKED_878),
     ("call slot 213 when idle", &s4_small::CALL_213_IDLE),
     ("handle for slot 393", &s4_small::HANDLE_393),
+    ("attach slot 211", &s4_small::ATTACH_211),
+    ("locked slot 712", &s4_small::LOCKED_712),
+    ("frames to time", &s4_small::FRAMES_TIME),
+    ("big node", &s4_small::BIG_NODE),
+    ("particle node from", &s4_small::PARTICLE_FROM),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

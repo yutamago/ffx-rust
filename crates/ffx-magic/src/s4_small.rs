@@ -3,9 +3,11 @@
 //! address it was ported from, its size and how many DLLs carry it;
 //! "`G`" is a global of the DLL (an operand of the code).
 
+use crate::l5_objhost::{RUN_OBJECTS, run_objects};
 use crate::runtime::slot_target;
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sa_summon::{BONE, MODEL_SETUP, bone_plain, model_setup};
+use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
 /// A slot's result handed on as the function's own (`eax` and, for a
@@ -772,6 +774,631 @@ pub fn call_211_flag<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const CALL_211_FLAG: Sig = Sig {
     len: 46,
     hash: 0xcace_696f_543e_3f39,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 211 `(model, v + 0x9c)` with the model `this + 0x54`, then bit 4
+/// of `u16 this + 0x90` and `this + 0x4c` = v (internal, `ecx` = this,
+/// `edx` = v). Returns slot 211's `eax`.
+///
+/// `magic_0070` 0x100095f0 (46 bytes; 2 DLLs).
+pub fn attach_211<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (obj, v) = (fr.ecx, fr.edx);
+    let model = g.read::<u32>(obj.wrapping_add(0x54));
+    let out = slot_call(g, img, fr.at, (0xc, 211), &[model, v.wrapping_add(0x9c)]);
+    let flags = g.read::<u16>(obj.wrapping_add(0x90));
+    g.write::<u16>(obj.wrapping_add(0x90), flags | 0x10);
+    g.write::<u32>(obj.wrapping_add(0x4c), v);
+    through(out)
+}
+
+/// [`attach_211`].
+pub const ATTACH_211: Sig = Sig {
+    len: 46,
+    hash: 0xcd5a_d4b3_7243_ce8f,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 568 `(0)` and slot 566 `(0, 0)` (the first's word stays under
+/// the second's), then a tail jump to slot 575 with the caller's stack (no
+/// arguments).
+///
+/// `magic_0168` 0x10002370 (46 bytes; 2 DLLs).
+pub fn reset_then_575<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    slot_call(g, img, f, (0x1, 568), &[0]);
+    slot_call(g, img, f, (0x10, 566), &[0, 0]);
+    Ret::jump(slot_target(g, op(img, f, 0x1f), 575))
+}
+
+/// [`reset_then_575`].
+pub const RESET_THEN_575: Sig = Sig {
+    len: 46,
+    hash: 0xa94b_bd21_621f_116f,
+    calls: &[],
+    imports: &[],
+};
+
+/// The push of an 8-bit immediate at `f + off` (sign-extended).
+fn imm8(img: &Image, f: u32, off: u32) -> u32 {
+    let b = img.word(f + off).to_le_bytes()[0];
+    i32::from(i8::from_le_bytes([b])).cast_unsigned()
+}
+
+/// Slot 450 `(obj, callback)` (operand `+0x9`), then slot 451 `(obj, n)`
+/// with the code's 8-bit `n` (operand `+0x1e`; the first call's words
+/// stay under the second's; cdecl `(obj)`). Returns slot 451's `eax`.
+///
+/// `magic_0356` 0x10001770 (n 15) and `magic_0301` 0x10002220 (n 30)
+/// (47 bytes; 2 DLLs each).
+pub fn callback_and_count<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let cb = op(img, f, 0x9);
+    slot_call(g, img, f, (0x4, 450), &[obj, cb]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x19, 451),
+        &[obj, imm8(img, f, 0x1e), obj, cb],
+    ))
+}
+
+/// [`callback_and_count`] with 15.
+pub const CALLBACK_AND_15: Sig = Sig {
+    len: 47,
+    hash: 0xf726_725a_acda_e8bb,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`callback_and_count`] with 30.
+pub const CALLBACK_AND_30: Sig = Sig {
+    len: 47,
+    hash: 0xda5b_23ac_0b60_e044,
+    calls: &[],
+    imports: &[],
+};
+
+/// `obj + 0x18c` -0.1, slot 450 `(obj, callback)` (operand `+0x13`), then
+/// slot 451 `(obj, 10)` (the first call's words stay under the second's;
+/// cdecl `(obj)`). Returns slot 451's `eax`.
+///
+/// `magic_0384` 0x100015a0 (58 bytes; 3 DLLs).
+pub fn callback_and_10<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let cb = op(img, f, 0x13);
+    g.write::<u32>(obj.wrapping_add(0x18c), 0xbdcc_cccd);
+    slot_call(g, img, f, (0x4, 450), &[obj, cb]);
+    through(slot_call(g, img, f, (0x25, 451), &[obj, 10, obj, cb]))
+}
+
+/// [`callback_and_10`].
+pub const CALLBACK_AND_10: Sig = Sig {
+    len: 58,
+    hash: 0xe3dd_2922_8e58_96d0,
+    calls: &[],
+    imports: &[],
+};
+
+/// `G_READY` 1, slot 432 without arguments, then slot 450 `(obj,
+/// callback)` (operand `+0x20`; cdecl `(obj)`). Returns slot 450's `eax`.
+///
+/// `magic_0384` 0x10001460 (52 bytes; 3 DLLs).
+pub fn ready_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    g.write::<u32>(op(img, f, 0xa), 1);
+    slot_call(g, img, f, (0x4, 432), &[]);
+    let obj = fr.arg(g, 0);
+    through(slot_call(g, img, f, (0x1b, 450), &[obj, op(img, f, 0x20)]))
+}
+
+/// [`ready_callback`].
+pub const READY_CALLBACK: Sig = Sig {
+    len: 52,
+    hash: 0xb034_5c56_bfa5_008e,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 447 `(x, 0xc1)` with `x` the word `*G + 0x198`, then slot 461
+/// `(obj, callback)` (operand `+0x26`; the first call's words stay under
+/// the second's; cdecl `(obj)`). Returns slot 461's `eax`.
+///
+/// `magic_0415` 0x10001100 (58 bytes; 2 DLLs).
+pub fn callback_461<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let base = g.read::<u32>(op(img, f, 0x4));
+    let x = g.read::<u32>(base.wrapping_add(0x198));
+    slot_call(g, img, f, (0x14, 447), &[x, 0xc1]);
+    let obj = fr.arg(g, 0);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x21, 461),
+        &[obj, op(img, f, 0x26), x, 0xc1],
+    ))
+}
+
+/// [`callback_461`].
+pub const CALLBACK_461: Sig = Sig {
+    len: 58,
+    hash: 0x491e_7de3_73f6_1cff,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 623 `(*G, 0, 0, 0, 0, 0, 0)` gives a handle, kept at the block's
+/// `+0x1ee4` (the block `*G_BLOCK` read before the call; no arguments).
+/// Returns the handle.
+///
+/// `magic_0393` 0x10001ae0 (49 bytes; 2 DLLs).
+pub fn take_1ee4<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0xe));
+    let x = g.read::<u32>(op(img, f, 0x20));
+    let h = slot_call(g, img, f, (0x1, 623), &[x, 0, 0, 0, 0, 0, 0]).eax;
+    g.write::<u32>(block.wrapping_add(0x1ee4), h);
+    Ret::eax(h)
+}
+
+/// [`take_1ee4`].
+pub const TAKE_1EE4: Sig = Sig {
+    len: 49,
+    hash: 0x3c8b_1ef2_2d5f_3528,
+    calls: &[],
+    imports: &[],
+};
+
+/// The objects run ([`run_objects`]); when they are all done (1) and the
+/// block's `+0x1c08` is 1 too, slot 214 `(*G)` (no arguments). Returns
+/// slot 214's `eax`, or the run's.
+///
+/// `magic_0349` 0x10004760 (49 bytes; 2 DLLs).
+pub fn run_then_214<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x3));
+    // push esi; call: the run's return address
+    let done = run_objects(g, img, img.rel32_target(f + 0x8), fr.esp.wrapping_sub(8));
+    if done != 1 || g.read::<u32>(block.wrapping_add(0x1c08)) != 1 {
+        return Ret::eax(done);
+    }
+    let x = g.read::<u32>(op(img, f, 0x20));
+    through(slot_call(g, img, f, (0x1a, 214), &[x]))
+}
+
+/// [`run_then_214`].
+pub const RUN_THEN_214: Sig = Sig {
+    len: 49,
+    hash: 0x370e_2474_38db_a398,
+    calls: &[(0x8, Callee::Sig(&RUN_OBJECTS))],
+    imports: &[],
+};
+
+/// A task step: the script or motion (`first`, the `rel32` at `+0x5`)
+/// and the objects ([`run_objects`], `+0xc`) run; when both are done (1),
+/// and `guard` (an operand) is not above 0 when there is one, the task
+/// `t` (cdecl `(t)`) gets state 3 (`+0x14`) and its record (`+0x8`) the
+/// next function (operand `next`). Returns the record, or the objects'
+/// result.
+fn step_done<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    first: fn(&mut G, &Image, u32) -> u32,
+    (guard, next): (Option<u32>, u32),
+) -> Ret {
+    let f = fr.at;
+    let a = first(g, img, img.rel32_target(f + 0x5));
+    // push ebp; push esi; call: the run's return address
+    let b = run_objects(g, img, img.rel32_target(f + 0xc), fr.esp.wrapping_sub(12));
+    if b != 1 || a != 1 {
+        return Ret::eax(b);
+    }
+    if let Some(gd) = guard
+        && g.read::<i32>(op(img, f, gd)) > 0
+    {
+        return Ret::eax(b);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), op(img, f, next));
+    Ret::eax(rec)
+}
+
+/// [`step_done`] with the script ([`crate::sa_script::run`]).
+///
+/// `magic_0369` 0x10001340 (48 bytes; 2 DLLs).
+pub fn script_step_done<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    step_done(g, img, fr, crate::sa_script::run, (None, 0x29))
+}
+
+/// [`script_step_done`].
+pub const SCRIPT_STEP_DONE: Sig = Sig {
+    len: 48,
+    hash: 0x98ce_01e7_f9a5_0997,
+    calls: &[
+        (0x5, Callee::Sig(&crate::sa_script::RUN)),
+        (0xc, Callee::Sig(&RUN_OBJECTS)),
+    ],
+    imports: &[],
+};
+
+/// [`step_done`] with the motion ([`crate::s3_motion::motion_step`]) and
+/// the guard `G_WAIT` (operand `+0x1b`, signed).
+///
+/// `magic_0442` 0x10002f10 (57 bytes; 2 DLLs).
+pub fn motion_step_done<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    step_done(
+        g,
+        img,
+        fr,
+        crate::s3_motion::motion_step,
+        (Some(0x1b), 0x32),
+    )
+}
+
+/// [`motion_step_done`].
+pub const MOTION_STEP_DONE: Sig = Sig {
+    len: 57,
+    hash: 0xfd14_9868_796d_0654,
+    calls: &[
+        (0x5, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xc, Callee::Sig(&RUN_OBJECTS)),
+    ],
+    imports: &[],
+};
+
+/// Slot 219 `(k, 1)` with `k` the byte `**G` gives a part; when there is
+/// one, slot 257 `(part, 1)` (no arguments). Returns slot 257's `eax`, or
+/// 0.
+///
+/// `magic_0162` 0x10004f30 (51 bytes; 2 DLLs).
+pub fn part_257<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x1));
+    let k = u32::from(g.read::<u8>(p));
+    let part = slot_call(g, img, f, (0xc, 219), &[k, 1]).eax;
+    if part == 0 {
+        return Ret::eax(0);
+    }
+    through(slot_call(g, img, f, (0x23, 257), &[part, 1]))
+}
+
+/// [`part_257`].
+pub const PART_257: Sig = Sig {
+    len: 51,
+    hash: 0xa7ae_d42c_f621_983b,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 402 without arguments, `*G_P` = `ITEM` (operands `+0x11`,
+/// `+0x1a`), then slot 713 `(x)` (cdecl `(x)`). Returns 1.
+///
+/// `magic_0484` 0x10001320 (53 bytes; 2 DLLs).
+pub fn free_713<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    slot_call(g, img, f, (0x4, 402), &[]);
+    let x = fr.arg(g, 0);
+    let p = g.read::<u32>(op(img, f, 0x11));
+    g.write::<u32>(p, op(img, f, 0x1a));
+    slot_call(g, img, f, (0x1f, 713), &[x]);
+    Ret::eax(1)
+}
+
+/// [`free_713`].
+pub const FREE_713: Sig = Sig {
+    len: 53,
+    hash: 0xb470_ba28_e665_13a2,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 237 `(*G, bone, 0, obj + 0xd0)` puts the object's place (`+0xd0`)
+/// at a bone of the model `*G`; `+0xdc` (w) 1.0. Returns slot 237's
+/// `eax`.
+fn place_at_bone<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (table, model): (u32, u32),
+    bone: u32,
+) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let m = g.read::<u32>(op(img, f, model));
+    let out = slot_call(
+        g,
+        img,
+        f,
+        (table, 237),
+        &[m, bone, 0, obj.wrapping_add(0xd0)],
+    );
+    g.write::<u32>(obj.wrapping_add(0xdc), 0x3f80_0000);
+    through(out)
+}
+
+/// [`place_at_bone`] with bone 0x99 (cdecl `(obj)`).
+///
+/// `magic_0470` 0x10001640 (53 bytes; 2 DLLs).
+pub fn place_bone_99<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    place_at_bone(g, img, fr, (0x4, 0x22), 0x99)
+}
+
+/// [`place_bone_99`].
+pub const PLACE_BONE_99: Sig = Sig {
+    len: 53,
+    hash: 0x14f6_8d85_2863_14ec,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`place_at_bone`] with the object's bone `+0x120` (cdecl `(obj)`).
+///
+/// `magic_0307` 0x10002b30 (54 bytes; 2 DLLs).
+pub fn place_bone_own<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let obj = fr.arg(g, 0);
+    let bone = g.read::<u32>(obj.wrapping_add(0x120));
+    place_at_bone(g, img, fr, (0x17, 0x1d), bone)
+}
+
+/// [`place_bone_own`].
+pub const PLACE_BONE_OWN: Sig = Sig {
+    len: 54,
+    hash: 0x6ba1_d7d8_c2b1_abb3,
+    calls: &[],
+    imports: &[],
+};
+
+/// `*G_P` = `ITEM` (operands `+0x1`, `+0x8`), then slot 712 `(edx, 0x30)`
+/// with the lock `**G_LOCK` 1 around it (internal, `edx` = the part).
+/// Returns slot 712's `eax`.
+///
+/// `magic_0481` 0x10001000 (54 bytes; 2 DLLs).
+pub fn locked_712<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x1));
+    g.write::<u32>(p, op(img, f, 0x8));
+    let lock = g.read::<u32>(op(img, f, 0xd));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let out = slot_call(g, img, f, (0x1c, 712), &[fr.edx, 0x30]);
+    let lock = g.read::<u32>(op(img, f, 0x2b));
+    g.write::<u32>(lock, saved);
+    through(out)
+}
+
+/// [`locked_712`].
+pub const LOCKED_712: Sig = Sig {
+    len: 54,
+    hash: 0x74be_dae2_eece_9fd3,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 388 `(x, 14, 1)`: `x` the byte `G_MAP[i]` for the object's index
+/// `i` (`+0x120`), or the word `G_NONE` when it is -1 (cdecl `(obj)`).
+/// Returns slot 388's `eax`.
+///
+/// `magic_0349` 0x10004e90 (56 bytes; 2 DLLs).
+pub fn call_388<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let i = g.read::<u32>(obj.wrapping_add(0x120));
+    let x = if i == u32::MAX {
+        g.read::<u32>(op(img, f, 0x12))
+    } else {
+        let map = g.read::<u32>(op(img, f, 0x19));
+        u32::from(g.read::<u8>(map.wrapping_add(i)))
+    };
+    through(slot_call(g, img, f, (0x27, 388), &[x, 0xe, 1]))
+}
+
+/// [`call_388`].
+pub const CALL_388: Sig = Sig {
+    len: 56,
+    hash: 0x282c_aeea_9626_a22e,
+    calls: &[],
+    imports: &[],
+};
+
+/// The frame count `edx` kept as `u16 G_N` and turned into a time `t =
+/// edx * K1 * K2` (operands `+0x12`, `+0x24`) stored twice (`+0x2c`,
+/// `+0x34`), `G_T` cleared (internal). Returns `t` in `xmm0`, `eax` as it
+/// came.
+///
+/// `magic_0155` 0x10008d70 (57 bytes; 3 DLLs).
+pub fn frames_time<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let n = fr.edx;
+    let [lo, hi, _, _] = n.to_le_bytes();
+    g.write::<u16>(op(img, f, 0xa), u16::from_le_bytes([lo, hi]));
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(op(img, f, o)));
+    let mut t = crate::sb_sse::mul(crate::sb_sse::cvt(n), k(g, 0x12));
+    g.write::<u32>(op(img, f, 0x18), 0);
+    t = crate::sb_sse::mul(t, k(g, 0x24));
+    g.write::<u32>(op(img, f, 0x2c), t.to_bits());
+    g.write::<u32>(op(img, f, 0x34), t.to_bits());
+    Ret::xmm0(crate::Xmm::F32(t.to_bits()), fr.eax)
+}
+
+/// [`frames_time`].
+pub const FRAMES_TIME: Sig = Sig {
+    len: 57,
+    hash: 0x4d5f_17df_eee5_ccc9,
+    calls: &[],
+    imports: &[],
+};
+
+/// A big node set up ([`crate::m0070::node_init_big`], a five-word record
+/// on the frame: the node `this`, the parent (operand `+0x15`), `x`, and
+/// two words (operands `+0x1f`, `+0x26`)), then the node's handler table
+/// (operand `+0x31`; internal, `ecx` = the node, cdecl `(x)`). Returns
+/// the set-up's result.
+///
+/// `magic_0070` 0x100098a0 (58 bytes; 2 DLLs).
+pub fn big_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let node = fr.ecx;
+    // push ebp; sub esp, 0x14: the record is [ebp - 0x14]
+    let rec = fr.esp.wrapping_sub(0x18);
+    let x = fr.arg(g, 0);
+    let words = [
+        node,
+        op(img, f, 0x15),
+        x,
+        op(img, f, 0x1f),
+        op(img, f, 0x26),
+    ];
+    for (i, w) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, w);
+    }
+    let eax = crate::m0070::node_init_big(g, rec);
+    g.write::<u32>(node, op(img, f, 0x31));
+    Ret::eax(eax)
+}
+
+/// [`big_node`].
+pub const BIG_NODE: Sig = Sig {
+    len: 58,
+    hash: 0x9f15_40a9_05fc_7fbd,
+    calls: &[(0x2b, Callee::Sig(&crate::m0070::NODE_INIT_BIG))],
+    imports: &[],
+};
+
+/// Slot 411 `(*G)`; when it answers -1, slot 213 `(*G, 0)` and 0 is
+/// returned, else 1 (no arguments).
+///
+/// `magic_0530` 0x10001100 (60 bytes; 2 DLLs).
+pub fn check_411<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let x = g.read::<u32>(op(img, f, 0x7));
+    if slot_call(g, img, f, (0x1, 411), &[x]).eax != u32::MAX {
+        return Ret::eax(1);
+    }
+    let x = g.read::<u32>(op(img, f, 0x24));
+    slot_call(g, img, f, (0x1c, 213), &[x, 0]);
+    Ret::eax(0)
+}
+
+/// [`check_411`].
+pub const CHECK_411: Sig = Sig {
+    len: 60,
+    hash: 0x5e8c_c040_8a31_9f5e,
+    calls: &[],
+    imports: &[],
+};
+
+/// The light ranges of the actor's model (`**task + 0x88`, its `+0x54`):
+/// slot 357 `(m, -1, -1)` and 356 `(m, -1, -1)` (the first call's words
+/// stay under the second's; cdecl `(task)`). Returns slot 356's `eax`.
+///
+/// `magic_0297` 0x10003ce0 (60 bytes; 2 DLLs).
+pub fn ranges_off<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let task = fr.arg(g, 0);
+    let actor = g.read::<u32>(g.read::<u32>(task).wrapping_add(0x88));
+    let m = g.read::<u32>(actor.wrapping_add(0x54));
+    let all = u32::MAX;
+    slot_call(g, img, f, (0x17, 357), &[m, all, all]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x25, 356),
+        &[m, all, all, m, all, all],
+    ))
+}
+
+/// [`ranges_off`].
+pub const RANGES_OFF: Sig = Sig {
+    len: 60,
+    hash: 0x1030_323f_6fcb_4d8f,
+    calls: &[],
+    imports: &[],
+};
+
+/// A particle node ([`particle_node`]) from a six-word record on the
+/// frame: the node `this` (its handler table, operand `+0x16`, set
+/// first), its list (operand `+0x20`), `x`, the owner `*G` (operand
+/// `+0xd`), the part (operand `+0x2a`) and index 0 (internal, `ecx` = the
+/// node, cdecl `(x)`). Returns the node's set-up result.
+///
+/// `magic_0159` 0x100066c0 (62 bytes; 2 DLLs).
+pub fn particle_from<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let node = fr.ecx;
+    // push ebp; sub esp, 0x18: the record is [ebp - 0x18]
+    let rec = fr.esp.wrapping_sub(0x1c);
+    let x = fr.arg(g, 0);
+    let owner = g.read::<u32>(op(img, f, 0xd));
+    g.write::<u32>(node, op(img, f, 0x16));
+    let words = [node, op(img, f, 0x20), x, owner, op(img, f, 0x2a), 0];
+    for (i, w) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, w);
+    }
+    Ret::eax(particle_node(g, img, img.rel32_target(f + 0x36), rec))
+}
+
+/// [`particle_from`].
+pub const PARTICLE_FROM: Sig = Sig {
+    len: 62,
+    hash: 0x2782_0af5_e3eb_90ad,
+    calls: &[(0x36, Callee::Sig(&PARTICLE_NODE))],
+    imports: &[],
+};
+
+/// The object's place (`+0xd0..+0xdc`) from the block's `+0x1c00..`
+/// (`*G`; cdecl `(obj)`). Returns the last word copied.
+///
+/// `magic_0393` 0x100030a0 (62 bytes; 2 DLLs).
+pub fn place_from_block<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let block = g.read::<u32>(op(img, fr.at, 0x5));
+    let obj = fr.arg(g, 0);
+    let mut x = 0;
+    for i in 0..4 {
+        x = g.read::<u32>(block.wrapping_add(0x1c00 + 4 * i));
+        g.write::<u32>(obj.wrapping_add(0xd0 + 4 * i), x);
+    }
+    Ret::eax(x)
+}
+
+/// [`place_from_block`].
+pub const PLACE_FROM_BLOCK: Sig = Sig {
+    len: 62,
+    hash: 0x43f8_0e30_0f04_3e79,
+    calls: &[],
+    imports: &[],
+};
+
+/// While `G_DONE` is 0 and the count `G_N` below 32 (signed): slot 296
+/// `(n, 0)`; else slot 257 `(*G_PART, 1)` (no arguments). Returns the
+/// slot's `eax`.
+///
+/// `magic_0249` 0x100024b0 (64 bytes; 3 DLLs).
+pub fn count_or_257<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    if g.read::<u32>(op(img, f, 0x2)) == 0 {
+        let n = g.read::<u32>(op(img, f, 0xa));
+        if n.cast_signed() < 0x20 {
+            return through(slot_call(g, img, f, (0x17, 296), &[n, 0]));
+        }
+    }
+    let part = g.read::<u32>(op(img, f, 0x30));
+    through(slot_call(g, img, f, (0x28, 257), &[part, 1]))
+}
+
+/// [`count_or_257`].
+pub const COUNT_OR_257: Sig = Sig {
+    len: 64,
+    hash: 0x4b07_bd41_bd14_a92e,
     calls: &[],
     imports: &[],
 };
