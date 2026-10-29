@@ -129,8 +129,11 @@ fn done_flags() {
     let flags = SCRATCH + 0x40;
     let Some(mut t) = twin(300) else { return };
     recs(&mut t, &[(432, 0)]);
-    t.set_u32(flags, 0x0f0f_0f0b);
-    t.check_entry(t.at(0x12e0), Call::default(), &[flags], Eax::Checked);
+    // the flag clear and already set
+    for x in [0x0f0f_0f0b, 0x0f0f_0f0f] {
+        t.set_u32(flags, x);
+        t.check_entry(t.at(0x12e0), Call::default(), &[flags], Eax::Checked);
+    }
     drop(t);
     let Some(mut t) = twin(356) else { return };
     recs(&mut t, &[(434, 2)]);
@@ -1727,20 +1730,31 @@ fn statics_strips_faders() {
         t.check(f, Call::this(c), &[], Eax::Checked, s4_small::strip_window);
     }
     drop(t);
-    let Some(mut t) = twin(168) else { return };
-    let f = t.at(0x7680);
-    let take = t.img.rel32_target(f + 0x31);
-    let s = SCRATCH + 0x100;
-    for listed in [false, true] {
-        pool_ring(&mut t, take);
-        t.write(s, &[0x44; 0x40]);
-        if listed {
-            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
-            t.set_u32(op(&t, f, 0x37), SCRATCH + 0x5000);
-            t.set_u32(op(&t, f, 0x4f), SCRATCH + 0x5000);
-        } else {
-            t.set_u32(op(&t, f, 0x37), 0);
+    for (n, rva) in [(168u16, 0x7680u32), (162, 0x7c90), (392, 0x6580)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let take = t.img.rel32_target(f + 0x31);
+        let s = SCRATCH + 0x100;
+        for listed in [false, true] {
+            pool_ring(&mut t, take);
+            t.write(s, &[0x44; 0x40]);
+            if listed {
+                t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+                t.set_u32(op(&t, f, 0x37), SCRATCH + 0x5000);
+                t.set_u32(op(&t, f, 0x4f), SCRATCH + 0x5000);
+            } else {
+                t.set_u32(op(&t, f, 0x37), 0);
+            }
+            t.check(f, Call::this(s), &[], Eax::Checked, s4_small::fader_task);
         }
-        t.check(f, Call::this(s), &[], Eax::Checked, s4_small::fader_task);
+    }
+    for (n, rva) in [(206u16, 0x2cb0u32), (371, 0x2a00)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let recs_at = SCRATCH + 0x1_0000;
+        t.set_u32(op(&t, f, 0x7), recs_at);
+        t.write(op(&t, f, 0x11), &[0x99; 0x5c]);
+        t.write(recs_at, &[0x99; 0x94 * 1000]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

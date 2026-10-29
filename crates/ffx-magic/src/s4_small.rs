@@ -3885,22 +3885,20 @@ pub const STRIP_WINDOW: Sig = Sig {
 };
 
 /// A fader's state reset (internal, `ecx` = the state: `+0x0`, `+0x1c`,
-/// `+0x24` 0, `+0x20` 1/30, `+0x28` 30, `u16 +0x2c` 0) and a task node
+/// `+0x24` 0, `+0x20` the step and `+0x28` the count, the code's
+/// immediates at `+0x1a`, `+0x28`, `u16 +0x2c` 0) and a task node
 /// for the callback (operand `+0x6`; [`take`], kind 1, `+0x14` the state)
 /// appended to the task list (operands `+0x37`, `+0x4f`, `+0x59`;
 /// `+0x68`, `+0x6d` when it was empty). Returns the node.
 ///
-/// `magic_0168` 0x10007680 (117 bytes; 3 DLLs).
+/// `magic_0168` 0x10007680 (1/30, 30; 3 DLLs), `magic_0162` 0x10007c90
+/// (0.025, 40) and `magic_0392` 0x10006580 (0.02, 50) (117 bytes; 2
+/// DLLs each).
 pub fn fader_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let s = fr.ecx;
-    for (off, v) in [
-        (0x0, 0),
-        (0x1c, 0),
-        (0x20, 0x3d08_8889),
-        (0x24, 0),
-        (0x28, 0x1e),
-    ] {
+    let (step, count) = (op(img, f, 0x1a), op(img, f, 0x28));
+    for (off, v) in [(0x0, 0), (0x1c, 0), (0x20, step), (0x24, 0), (0x28, count)] {
         g.write::<u32>(s.wrapping_add(off), v);
     }
     g.write::<u16>(s.wrapping_add(0x2c), 0);
@@ -3928,5 +3926,70 @@ pub const FADER_TASK: Sig = Sig {
     len: 117,
     hash: 0xfcb8_c95f_ab2e_a737,
     calls: &[(0x31, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`fader_task`] with 0.025 and 40.
+pub const FADER_TASK_40: Sig = Sig {
+    len: 117,
+    hash: 0xe699_da99_acdf_6e10,
+    calls: &[(0x31, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`fader_task`] with 0.02 and 50.
+pub const FADER_TASK_50: Sig = Sig {
+    len: 117,
+    hash: 0x3ff1_7735_63b1_3235,
+    calls: &[(0x31, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// The DLL's record header (operand `+0x11`; 0x5c bytes cleared, then
+/// the count, the records `*G` and `+0x8`, `+0x10`, `+0x18` 0) and its
+/// records of 0x94 bytes (each cleared, its first word 0 again; the
+/// count the code's, operand `+0x4c`) (no arguments; `memset`). Returns
+/// the last record (`memset`'s result).
+///
+/// `magic_0206` 0x10002cb0 (500 records) and `magic_0371` 0x10002a00
+/// (1000) (117 bytes; 2-3 DLLs).
+pub fn records_clear<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut rec = g.read::<u32>(op(img, f, 0x7));
+    g.write_bytes(op(img, f, 0x11), &[0; 0x5c]);
+    g.write::<u32>(op(img, f, 0x1f), op(img, f, 0x23));
+    g.write::<u32>(op(img, f, 0x29), rec);
+    for o in [0x2f, 0x39, 0x43] {
+        g.write::<u32>(op(img, f, o), 0);
+    }
+    let mut last = rec;
+    for _ in 0..op(img, f, 0x4c) {
+        g.write_bytes(rec, &[0; 0x94]);
+        g.write::<u32>(rec, 0);
+        last = rec;
+        rec = rec.wrapping_add(0x94);
+    }
+    Ret::eax(last)
+}
+
+/// [`records_clear`] with 500.
+pub const RECORDS_CLEAR_500: Sig = Sig {
+    len: 117,
+    hash: 0x6aa3_b3cc_b7a8_627c,
+    calls: &[
+        (0x16, Callee::Import("memset")),
+        (0x59, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
+
+/// [`records_clear`] with 1000.
+pub const RECORDS_CLEAR_1000: Sig = Sig {
+    len: 117,
+    hash: 0x6128_b91d_cec3_b314,
+    calls: &[
+        (0x16, Callee::Import("memset")),
+        (0x59, Callee::Import("memset")),
+    ],
     imports: &[],
 };
