@@ -23,11 +23,14 @@ Three halves:
    `SURFACE_CTOR` differently), plus import slots read through
    `h.read(..)`/`import(..)`; the width as check-callwidth does. A function
    passing its own parameter on as the target, the convention or the slice
-   is a forwarder: its callers are checked with their arguments (same file;
-   other files when the name is unique), to a fixed point. A closure the
+   is a forwarder: its callers are checked with their arguments, to a
+   fixed point. A call reaches the forwarder its path resolves to
+   (tools/rustpath.py: `a::b::f`, `super::`, `crate::`, `use` imports and
+   aliases); by the bare name only when the path can't be resolved and no
+   other function has the name. A closure the
    shims hand a bridge (`&mut |_, f, a| call_cdecl(f, a)`) or bind with
    `let` gives its convention to the calls made through it in the bridge
-   (and the functions the bridge hands it on to). When a forwarder makes
+   (and the functions the bridge hands it on to, resolved the same way). When a forwarder makes
    several calls of its parameter target (bind_tables: 6 words when
    `with_tables`, else 5), a caller is right when one of them fits.
 2. The callee's convention from FFX.exe: every path from its entry is
@@ -80,6 +83,7 @@ import tempfile
 TOOLS = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 import disasm_cache  # noqa: E402
+import rustpath  # noqa: E402
 
 
 def _load(name, file):
@@ -558,6 +562,14 @@ class Ports:
     def __init__(self, root, files, imports):
         self.root, self.files, self.imports = root, files, imports
         self.consts = Consts(files)
+        self._ws = None
+
+    @property
+    def ws(self):
+        """The module tree calls are resolved through (rustpath)."""
+        if self._ws is None:
+            self._ws = rustpath.Workspace({f.rel: f.src for f in self.files}, self.root)
+        return self._ws
 
     def target(self, f, fn, e, off, depth=0):
         """('addr', a) | ('import', slot) | ('param', index, deref) | None."""
@@ -730,8 +742,9 @@ IDENT = re.compile(r"[a-z_]\w*")
 
 
 def enclosing_call(f, at):
-    """(callee name, argument index) of the call whose arguments hold
-    offset `at`, or None."""
+    """(callee name, argument index, (offset of the callee's path, the path
+    before the name)) of the call whose arguments hold offset `at`, or
+    None."""
     k = at
     while True:
         k = f.code.rfind("(", 0, k)
@@ -740,7 +753,8 @@ def enclosing_call(f, at):
         q = f.match(k)
         if q > at:
             break
-    m = re.search(r"(\w+)\s*(?:::<[^>]*>)?\s*$", f.code[max(0, k - 120):k])
+    lo = max(0, k - 120)
+    m = re.search(r"((?:\w+::)*)(\w+)\s*(?:::<[^>]*>)?\s*$", f.code[lo:k])
     if not m:
         return None
     depth, j = 0, 0
@@ -751,7 +765,7 @@ def enclosing_call(f, at):
             depth -= 1
         elif c == "," and depth == 0:
             j += 1
-    return m.group(1), j
+    return m.group(2), j, (lo + m.start(), m.group(1))
 
 
 def closure_sites(ports, s, done):
@@ -782,11 +796,57 @@ def closure_sites(ports, s, done):
     else:
         ec = enclosing_call(f, at)
         if ec:
-            carriers.append(("fn",) + ec)
+            carriers.append(fn_carrier(ports, f, ec))
+    return carry(ports, s, carriers, k1, k2, fixed, how, done)
+
+
+def fn_item_sites(ports, s, fn, done):
+    """The calls made through a forwarder `fn` handed on as a value
+    (`ms_atel_chr_init(&mut mem(), &mut call_ptr, ..)`): like a closure,
+    with `fn`'s target and slice parameters at the same places. A
+    reference reaches `fn` when its path resolves to it (rustpath)."""
+    t, w = s.target, s.words
+    if not (isinstance(t, tuple) and t[0] == "param" and not t[2]) or not isinstance(s.conv, str):
+        return []
+    if isinstance(w, tuple):
+        if w[0] != "param" or w[2]:
+            return []
+        k2, fixed = w[1], None
+    else:
+        k2, fixed = None, w
+    k1 = t[1]
+    ws = ports.ws
+    key = (s.f.rel, fn.start)
+    if not ws.known(*key):
+        return []
+    how = f"{fn.name} -> {s.how}"
+    carriers = []
+    pat = re.compile(r"(?<![\w.:])((?:\w+::)*)" + re.escape(fn.name) + r"\b(?=\s*[,)])")
+    for g in ports.files:
+        if fn.name not in g.words:
+            continue
+        for m in pat.finditer(g.code):
+            name_at = m.start() + len(m.group(1))
+            if not ws.reaches(g.rel, m.start(), m.group(1), fn.name, key):
+                continue
+            ec = enclosing_call(g, name_at)
+            if ec and ec[0] != fn.name:
+                carriers.append(fn_carrier(ports, g, ec))
+    return carry(ports, s, carriers, k1, k2, fixed, how, done) if carriers else []
+
+
+def carry(ports, s, carriers, k1, k2, fixed, how, done):
+    """Sites of the calls made through a closure (or fn item) carried into
+    `carriers`: its target at argument `k1`, its slice at `k2` (else
+    `fixed` words), with `s`'s convention; and the carriers it is handed
+    on to, to a fixed point."""
     out = []
     while carriers:
         c = carriers.pop()
-        key = (c[0], c[1] if c[0] == "fn" else c[1].rel, c[2] if c[0] == "fn" else c[3], k1, k2, s.conv, repr(fixed))
+        if c[0] == "fn":
+            key = c + (k1, k2, s.conv, repr(fixed))
+        else:
+            key = (c[0], c[1].rel, c[3], k1, k2, s.conv, repr(fixed))
         if key in done:
             continue
         done.add(key)
@@ -794,14 +854,20 @@ def closure_sites(ports, s, done):
             _, g, gfn, name, lo = c
             scopes = [(g, gfn, name, lo, gfn.end if gfn else len(g.code))]
         else:
-            _, name, j = c
+            _, name, j, defs, by_path = c
             scopes = []
             for g in ports.files:
                 if name not in g.words:
                     continue
                 for d in g.fns:
-                    if d.name == name and j < len(d.params) and d.body_start < d.end:
-                        scopes.append((g, d, d.params[j][0], d.body_start, d.end))
+                    if d.name != name or d.body_start >= d.end:
+                        continue
+                    if defs is not None and (g.rel, d.start) not in defs:
+                        continue
+                    # `Type::f(this, ..)` passes a method's self first
+                    i = j - 1 if by_path and d.has_self else j
+                    if 0 <= i < len(d.params):
+                        scopes.append((g, d, d.params[i][0], d.body_start, d.end))
         for g, gfn, pname, lo, hi in scopes:
             body = g.code[lo:hi]
             for m in re.finditer(r"(?<![\w.])\(?\s*\*?\s*" + re.escape(pname) + r"\s*\)?\s*\(", body):
@@ -822,8 +888,59 @@ def closure_sites(ports, s, done):
             for m in re.finditer(r"(?<![\w.])(?:&\s*mut\s*\*?\s*|&\s*)?" + re.escape(pname) + r"\b(?!\s*[(.:\[])", body):
                 ec = enclosing_call(g, lo + m.start())
                 if ec and ec[0] != pname:
-                    carriers.append(("fn",) + ec)
+                    carriers.append(fn_carrier(ports, g, ec))
     return out
+
+
+def fn_carrier(ports, f, ec):
+    """("fn", name, argument index, definitions, by path) of a function a
+    closure is handed to: the definitions its call's path resolves to
+    (rustpath); for a path that can't be resolved, every function of the
+    name when it is the only one (None), else none; a method call
+    (`x.f(..)`) keeps every method of the name (None)."""
+    name, j, (off, qual) = ec
+    if re.search(r"\.\s*$", f.code[max(0, off - 4):off]):
+        return ("fn", name, j, None, False)
+    defs = ports.ws.targets(f.rel, off, qual, name)
+    if defs is None and len(ports.ws.by_name.get(name, ())) > 1:
+        defs = frozenset()
+    return ("fn", name, j, defs, True)
+
+
+def forwarder_calls(ports, g, home, fn, homes):
+    """(offset, arguments) of the calls in file `g` of the forwarder `fn`
+    (defined in `home`): a free call when its path resolves to `fn`
+    (rustpath; by the bare name only when the path can't be resolved and
+    no other function has the name), `use .. as alias` calls too; a method
+    call in `fn`'s file, or anywhere when no other function has the name.
+    A local closure (no fn item) only where it is visible."""
+    ws = ports.ws
+    real = ws.known(home.rel, fn.start)
+    renamed = ws.aliases(fn.name).get(g.rel, ()) if real and not fn.has_self else ()
+    if fn.name not in g.words and not renamed:
+        return
+    for method in (False, True):
+        if method and not fn.has_self:
+            continue
+        for off, args in cw.call_sites(g, fn.name, method):
+            if method:
+                if g is not home and len(homes) != 1:
+                    continue
+            elif not real:
+                if g is not home or home.visible(fn.name, off) is not fn:
+                    continue
+            else:
+                if fn.has_self:
+                    continue  # `Type::f(this, ..)`: the indices move
+                qual = g.code[off:g.code.index(fn.name, off)]
+                if not ws.reaches(g.rel, off, qual, fn.name, (home.rel, fn.start)):
+                    continue
+            yield off, args
+    for alias in sorted(renamed):
+        for off, args in cw.call_sites(g, alias, False):
+            qual = g.code[off:g.code.index(alias, off)]
+            if ws.reaches(g.rel, off, qual, alias, (home.rel, fn.start)):
+                yield off, args
 
 
 def resolve_sites(ports, sites):
@@ -861,59 +978,50 @@ def resolve_sites(ports, sites):
             continue
         wkey = (s.f.rel, fn.name, fn.start)
         wrappers.setdefault(wkey, []).append(s)
+        # the forwarder handed on as a value, like a closure
+        todo.extend(fn_item_sites(ports, s, fn, closures))
         # the forwarder's callers
         homes = names.get(fn.name, set())
         for g in ports.files:
-            if fn.name not in g.words:
-                continue
-            if g is not s.f and len(homes) != 1:
-                continue
-            for method in (False, True):
-                if method and not fn.has_self:
+            for off, args in forwarder_calls(ports, g, s.f, fn, homes):
+                if g.enclosing(off) is fn and off < fn.body_start:
                     continue
-                for off, args in cw.call_sites(g, fn.name, method):
-                    if g is s.f and not method and s.f.visible(fn.name, off) is not fn:
-                        continue
-                    if g is not s.f and not method and (fn.scope[0] != 0 or fn.name in g.top_names):
-                        continue
-                    if g.enclosing(off) is fn and off < fn.body_start:
-                        continue
-                    caller = g.enclosing(off)
-                    t, c, w = s.target, s.conv, s.words
-                    ok = True
-                    if isinstance(t, tuple) and t[0] == "param":
-                        if t[1] >= len(args):
-                            ok = False
-                        else:
-                            r = ports.target(g, caller, args[t[1]], off)
-                            if t[2]:  # the parameter is an import slot read
-                                if r and r[0] == "addr" and r[1] in ports.imports:
-                                    r = ("import", r[1])
-                                elif r and r[0] == "param" and not r[2]:
-                                    r = ("param", r[1], True)
-                                else:
-                                    r = None
-                            t = r
-                    if isinstance(c, tuple) and c[0] == "param":
-                        c = ports.conv(caller, args[c[1]]) if c[1] < len(args) else None
-                    if isinstance(w, tuple) and w[0] == "param":
-                        if w[1] < len(args):
-                            x = ports.words(g, caller, args[w[1]], off)
-                            if isinstance(x, int):
-                                w = x + w[2]
-                            elif isinstance(x, tuple):
-                                w = ("param", x[1], x[2] + w[2])
+                caller = g.enclosing(off)
+                t, c, w = s.target, s.conv, s.words
+                ok = True
+                if isinstance(t, tuple) and t[0] == "param":
+                    if t[1] >= len(args):
+                        ok = False
+                    else:
+                        r = ports.target(g, caller, args[t[1]], off)
+                        if t[2]:  # the parameter is an import slot read
+                            if r and r[0] == "addr" and r[1] in ports.imports:
+                                r = ("import", r[1])
+                            elif r and r[0] == "param" and not r[2]:
+                                r = ("param", r[1], True)
                             else:
-                                w = None
+                                r = None
+                        t = r
+                if isinstance(c, tuple) and c[0] == "param":
+                    c = ports.conv(caller, args[c[1]]) if c[1] < len(args) else None
+                if isinstance(w, tuple) and w[0] == "param":
+                    if w[1] < len(args):
+                        x = ports.words(g, caller, args[w[1]], off)
+                        if isinstance(x, int):
+                            w = x + w[2]
+                        elif isinstance(x, tuple):
+                            w = ("param", x[1], x[2] + w[2])
                         else:
                             w = None
-                    if ok:
-                        te = args[s.target[1]] if isinstance(s.target, tuple) and s.target[0] == "param" else s.t_expr
-                        se = args[s.words[1]] if isinstance(s.words, tuple) and s.words[0] == "param" \
-                            and s.words[1] < len(args) else s.s_expr
-                        if isinstance(s.target, tuple) and s.target[0] == "param" and s.target[2]:
-                            te = None  # an import slot read: no closure
-                        todo.append(Site(g, off, f"{fn.name} -> {s.how}", t, c, w, te, se))
+                    else:
+                        w = None
+                if ok:
+                    te = args[s.target[1]] if isinstance(s.target, tuple) and s.target[0] == "param" else s.t_expr
+                    se = args[s.words[1]] if isinstance(s.words, tuple) and s.words[0] == "param" \
+                        and s.words[1] < len(args) else s.s_expr
+                    if isinstance(s.target, tuple) and s.target[0] == "param" and s.target[2]:
+                        te = None  # an import slot read: no closure
+                    todo.append(Site(g, off, f"{fn.name} -> {s.how}", t, c, w, te, se))
     return final, unresolved, wrappers
 
 
@@ -1135,6 +1243,9 @@ pub fn erase<M>(
     call(m, f, &[2]);
     rotate(m, LEFT, 3);
 }
+pub fn item<M>(m: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+    call(m, IME, &[3, 0]);
+}
 """,
     "crates/ffx-hook/src/ported/fixture.rs": """
 fn shim() {
@@ -1146,6 +1257,76 @@ fn shim_erase() {
         &mut |_, f, a| super::call_cdecl(f, a),
         &mut |_, f, this, a| super::call_thiscall(f, this, a),
     );
+}
+// a forwarder handed on as a value, like a closure
+fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
+    super::call_cdecl(f, args)
+}
+fn shim_item() {
+    ffx_prender::closure::item(&mut mem(), &mut call_ptr);
+}
+""",
+    # forwarders of one name in several modules; each call names one by
+    # its path (b7efbac17: a second and third `this_call` hid a right call
+    # path; 2026-10-29: a new `bridge::forward` was taken for ffx-pcore's)
+    "crates/ffx-prender/src/sound.rs": """
+use ffx_graphic::{Conv, Host};
+pub fn this_call(h: &mut impl Host, f: u32, this: u32, a: &[u32]) -> u32 {
+    h.call_sym(f, Conv::Thiscall(this), a)
+}
+""",
+    "crates/ffx-prender/src/movie.rs": """
+use ffx_graphic::{Conv, Host};
+pub fn this_call(h: &mut impl Host, f: u32, a: &[u32]) -> u32 {
+    h.call_sym(f, Conv::Cdecl, a)
+}
+""",
+    "crates/ffx-pcui/src/this.rs": """
+pub fn this_call(f: u32, this: u32, n: u32) -> u32 {
+    f + this + n
+}
+""",
+    "crates/ffx-pcore/src/small.rs": """
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, sym: u32, a: u32, b: u32) -> u32 {
+        h.call_sym(sym, Conv::Stdcall, &[a, b])
+    }
+}
+""",
+    "crates/ffx-pcui/src/m5u_h.rs": """
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, target: u32, conv: Conv, args: &[u32]) -> u32 {
+        h.call_sym(target, conv, args)
+    }
+}
+""",
+    "crates/ffx-prender/src/m5r_l.rs": """
+const IME: u32 = 0x009d_a254;
+pub mod bridge {
+    use ffx_graphic::{Conv, Host};
+    pub fn forward(h: &mut impl Host, target: u32, a: u32, b: u32) -> u32 {
+        h.call_sym(target, Conv::Cdecl, &[a, b])
+    }
+    pub fn here(h: &mut impl Host, hwnd: u32) {
+        ffx_pcore::small::bridge::forward(h, super::IME, hwnd, 0);
+        forward(h, super::IME, hwnd, 0);
+    }
+}
+""",
+    "crates/ffx-prender/src/user.rs": """
+use crate::sound as snd;
+use crate::movie::this_call as cdecl_call;
+use ffx_pcui::m5u_h::bridge::forward;
+const IME: u32 = 0x009d_a254;
+pub fn user(h: &mut impl Host, hwnd: u32) {
+    snd::this_call(h, IME, hwnd, &[0]);
+    crate::sound::this_call(h, IME, hwnd, &[hwnd, 0]);
+    cdecl_call(h, IME, &[hwnd, 0]);
+    super::movie::this_call(h, IME, &[hwnd, 0]);
+    forward(h, IME, Conv::Stdcall, &[hwnd, 0]);
+    forward(h, IME, Conv::Cdecl, &[hwnd, 0]);
 }
 """,
     "crates/ffx-oracle/tests/fixture.rs": """
@@ -1170,6 +1351,13 @@ SELF_EXPECT = [
     ("fixture.rs:8:", "stub of"),
     ("fixture.rs:10:", "stub_conv of"),
     ("closure.rs:4:", "closure fixture.rs:3 -> call_cdecl calls"),
+    ("closure.rs:23:", "call_ptr -> call_cdecl calls"),
+    # by path: the file's own `forward` (cdecl), not ffx-pcore's on line 9
+    ("m5r_l.rs:10:", "forward -> call_sym calls"),
+    ("user.rs:7:", "this_call -> call_sym passes 1 stack words (thiscall)"),
+    ("user.rs:9:", "this_call -> call_sym calls"),
+    ("user.rs:10:", "this_call -> call_sym calls"),
+    ("user.rs:12:", "forward -> call_sym calls"),
 ]
 
 
