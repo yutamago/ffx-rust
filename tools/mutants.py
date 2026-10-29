@@ -30,6 +30,7 @@ Settings (environment, as in the agents' mut22.py; flags override):
   MUT_PASSED  tests that must pass per run (default: what the unmutated run passes)
   MUT_SNAPS   snapshots after the image, comma list (default battle,field; "" = image only)
   MUT_JOBS    parallel runs (default cores / 2)
+  MUT_THREADS test threads per run (default cores / MUT_JOBS)
   MUT_TIMEOUT seconds per run (default max(120, 20 x the unmutated run))
   MUT_SCHEMA  0 = no schemata, every mutant rebuilds (the old way)
 
@@ -170,7 +171,11 @@ class Runner:
         self.files = [self.relative(f) for f in args.files]
         cores = os.cpu_count() or 2
         self.jobs = args.jobs or max(1, cores // 2)
-        self.threads = max(1, cores // self.jobs)
+        # test threads per job: cores / jobs by default, so jobs alone never
+        # lowered the total (16 test threads either way). MUT_THREADS caps it:
+        # the overlay tests hold Unicorn and the DLLs per thread (one 8-thread
+        # run reached 27 GB and WSL nearly ran out, 2026-10-29)
+        self.threads = args.threads or max(1, cores // self.jobs)
         self.snaps = [""] + [s for s in args.snaps.split(",") if s]
         self.env = dict(os.environ, CARGO_TARGET_DIR=str(self.target),
                         FFX_GAME_DIR=os.environ.get("FFX_GAME_DIR", str(HOME / "steam-games/FFX-X2-HD")))
@@ -551,6 +556,7 @@ def main():
     ap.add_argument("--passed", type=int, default=int(env["MUT_PASSED"]) if env.get("MUT_PASSED") else None)
     ap.add_argument("--snaps", default=env.get("MUT_SNAPS", "battle,field"))
     ap.add_argument("--jobs", type=int, default=int(env.get("MUT_JOBS", "0")))
+    ap.add_argument("--threads", type=int, default=int(env.get("MUT_THREADS", "0")))
     ap.add_argument("--timeout", type=float, default=float(env.get("MUT_TIMEOUT", "0")))
     ap.add_argument("--no-schema", action="store_true", default=env.get("MUT_SCHEMA") == "0")
     ap.add_argument("--work", default=env.get("MUT_WORK"))
