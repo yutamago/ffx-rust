@@ -1798,3 +1798,386 @@ fn m5p_scene_c_stubs() {
         }
     }
 }
+
+// ---- batch 4 (ffx_prender::m5p_scene_d) ----
+
+use ffx_prender::m5p_scene_d as sd;
+
+/// The one-word-key attach on synthetic trees (repeated keys find their
+/// node; the fix-up runs as the original between attaches), the loaded
+/// entities' fix-up (classes and none, a stride) on the image's or the
+/// snapshot's class tree, and the entity lookup with the member calls
+/// stubbed.
+#[test]
+fn m5p_scene_d_class_tree() {
+    for (what, mut tw) in Twins::all() {
+        let fixup = tw.rebase(sd::TREE_FIXUP);
+        let head = tw.zeros(0x10);
+        empty_tree(&mut tw, head);
+        let mut rng = Rng(11);
+        for i in 0..60 {
+            let node = tw.zeros(0x14);
+            let k = rng.next() % 25;
+            tw.w32(node + 8, rng.next() & 0xff);
+            tw.w32(node + 0xc, k);
+            let label = format!("{what} attach1 #{i} key {k}");
+            let r = tw.run(
+                &label,
+                sd::TREE_ATTACH1,
+                Conv::Thiscall(head),
+                &[node],
+                |g| sd::bridge::tree_attach1(g, head, node),
+            );
+            if r == 0 {
+                tw.a.call(fixup, Conv::Thiscall(head), &[node]).unwrap();
+                tw.b.call(fixup, Conv::Thiscall(head), &[node]).unwrap();
+                tw.diff(&format!("{label} fix-up"));
+            }
+        }
+        // the class tree: emptied on the image (it holds no head there)
+        let tree = tw.rebase(sd::CLASS_TREE);
+        if !tw.snapshot {
+            empty_tree(&mut tw, tree);
+        }
+        // a loaded list: four entities of 0x34 bytes, classes 0, c, the second entity itself (a key 0x0044f6d0 finds), c
+        let desc = tw.zeros(0x20);
+        tw.w32(desc + 0x1c, 0x34);
+        let ents = tw.zeros(0x34 * 4);
+        for (i, c) in [0u32, 0x00c1_0000, ents + 0x34, 0x00c1_0000]
+            .iter()
+            .enumerate()
+        {
+            tw.w32(ents + 0x34 * i as u32 + 4, *c);
+        }
+        let list = tw.zeros(0x40);
+        tw.w32(list + 0x2c, desc);
+        tw.w32(list + 0x30, ents);
+        for n in [0, 4] {
+            tw.w32(list + 0x3c, n);
+            let label = format!("{what} fix instances {n}");
+            tw.run(&label, 0x0044_f780, Conv::Cdecl, &[list], |g| {
+                sd::bridge::fix_instances(g, list)
+            });
+        }
+        // a node of key 0 (no loaded entity has one)
+        let zero = tw.zeros(0x20);
+        tw.w32(zero + 0x10, 0x0000_1234);
+        let attach = tw.rebase(sd::TREE_ATTACH1);
+        if tw
+            .a
+            .call(attach, Conv::Thiscall(tree), &[zero])
+            .unwrap()
+            .eax
+            == 0
+        {
+            tw.a.call(fixup, Conv::Thiscall(tree), &[zero]).unwrap();
+        }
+        if tw
+            .b
+            .call(attach, Conv::Thiscall(tree), &[zero])
+            .unwrap()
+            .eax
+            == 0
+        {
+            tw.b.call(fixup, Conv::Thiscall(tree), &[zero]).unwrap();
+        }
+        tw.diff(&format!("{what} key 0"));
+        // lookups: an entity class, a class with the member, without it
+        let entity = tw.rebase(sd::ENTITY_CLASS);
+        let derived = tw.zeros(0x50);
+        tw.w32(derived + 0x40, entity);
+        let other = tw.zeros(0x50);
+        for (member, value) in [
+            (0, 0),
+            (0x0099_0000, 0),
+            (0x0099_0000, 0x00c2_0000),
+            (0x0099_0000, 0x00c3_0000),
+        ] {
+            tw.stub(sd::CLASS_MEMBER, true, 1, 1, member);
+            tw.stub(sd::MEMBER_VALUE, false, 2, 0, value);
+            for (object, class) in [
+                (0, derived),
+                (ents + 0x34, derived),
+                (ents + 0x68, derived),
+                (ents, other),
+                (ents, 0),
+            ] {
+                let label = format!(
+                    "{what} entity lookup {object:#x} {class:#x} member {member:#x} {value:#x}"
+                );
+                tw.run(&label, 0x0044_f6d0, Conv::Cdecl, &[object, class], |g| {
+                    sd::bridge::entity_lookup(g, object, class)
+                });
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The script count of entities of a class: no class, a class not derived
+/// from the world class, one with entities of it and of others.
+#[test]
+fn m5p_scene_d_instance_member() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sd::GLOBAL_NAMESPACE, false, 0, 0, 0x00ab_c000);
+        tw.stub(sd::PUSH_INSTANCE, false, 3, 0, 0x0bad_0018);
+        let world = tw.rebase(sd::WORLD_CLASS);
+        let d = tw.zeros(0x50);
+        tw.w32(d + 0x40, world);
+        let sub = tw.zeros(0x50);
+        tw.w32(sub + 0x40, d);
+        let alone = tw.zeros(0x50);
+        let e: Vec<u32> = (0..3).map(|_| tw.zeros(0x10)).collect();
+        tw.w32(e[0], e[1]);
+        tw.w32(e[1], e[2]);
+        tw.w32(e[0] + 8, sub);
+        tw.w32(e[1] + 8, alone);
+        tw.w32(e[2] + 8, d);
+        let list = tw.zeros(4);
+        for (class, first) in [(0, e[0]), (alone, e[0]), (d, e[0]), (sub, e[0]), (d, 0)] {
+            tw.stub(sd::GET_CLASS_DESCRIPTOR, true, 1, 1, class);
+            tw.w32(list, first);
+            let label = format!("{what} instance member {class:#x} from {first:#x}");
+            tw.run(
+                &label,
+                0x0044_e520,
+                Conv::Cdecl,
+                &[list, 0x5555, 0x6666],
+                |g| sd::bridge::entity_instance_member(g, list, 0x5555, 0x6666),
+            );
+        }
+        tw.unstub();
+    }
+}
+
+/// The timer component's copy, the data block search, the array
+/// constructors, the free list's named node and the destructors.
+#[test]
+fn m5p_scene_d_components() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sd::STRING_ASSIGN, true, 1, 1, 0);
+        let src = tw.alloc(&(0..0x30u8).map(|b| b.wrapping_mul(7)).collect::<Vec<_>>());
+        tw.write(src + 0x20, &0x7fc0_0042u32.to_le_bytes());
+        let this = tw.zeros(0x30);
+        for owned in [0u8, 1] {
+            tw.write(src + 0x10, &[0x40 | owned]);
+            let label = format!("{what} timer copy, name bit {owned}");
+            tw.run(&label, 0x0055_5270, Conv::Thiscall(this), &[src], |g| {
+                sd::bridge::timer_copy(g, this, src)
+            });
+        }
+        let label = format!("{what} timer copy from itself");
+        tw.run(&label, 0x0055_5270, Conv::Thiscall(this), &[this], |g| {
+            sd::bridge::timer_copy(g, this, this)
+        });
+        assert_eq!(tw.logged(), 0, "{label}: no string assign");
+        // the mesh: two segments of 2 and 3 blocks
+        let mesh = tw.zeros(0x40);
+        let segs = tw.zeros(0x80);
+        let blocks = tw.zeros(0x80);
+        tw.w32(segs + 8, 2);
+        tw.w32(segs + 0xc, blocks);
+        tw.w32(segs + 0x48, 0x8000_0003);
+        tw.w32(segs + 0x4c, blocks + 0x18);
+        for i in 0..5 {
+            tw.w32(blocks + 0xc * i + 4, 0x100 + i);
+        }
+        tw.w32(mesh + 0x2c, segs);
+        let out = tw.zeros(4);
+        for count in [0, 1, 2, 0x8000_0002] {
+            tw.w32(mesh + 0x28, count);
+            for key in [0x100, 0x101, 0x103, 0x104, 0x105] {
+                let label = format!("{what} data block {key:#x} in {count:#x}");
+                tw.run(
+                    &label,
+                    0x0048_9150,
+                    Conv::Thiscall(mesh),
+                    &[out, key],
+                    |g| sd::bridge::find_data_block(g, mesh, out, key),
+                );
+            }
+        }
+        // the array constructors (the element constructors are stubs)
+        for (f, stride, ctor) in [
+            (0x004d_f1d0, 0x20, sd::SHADER_CTOR),
+            (0x004e_61d0, 8, sd::MATERIAL_SWITCH_CTOR),
+            (0x004e_6250, 0x28, sd::RENDER_LIST_CTOR),
+        ] {
+            tw.stub(ctor, true, 0, 0, 0x0bad_0019);
+            let items = tw.zeros(0x100);
+            for n in [0, 1, 3] {
+                let label = format!("{what} construct {f:#x} {n}");
+                tw.run_void(&label, f, Conv::Cdecl, &[items, n], |g| {
+                    sd::bridge::construct_items(g, items, n, stride, ctor);
+                });
+                assert_eq!(tw.logged(), n, "{label}: calls");
+            }
+            let label = format!("{what} construct {f:#x} null slot");
+            tw.run_void(&label, f, Conv::Cdecl, &[0, 1], |g| {
+                sd::bridge::construct_items(g, 0, 1, stride, ctor);
+            });
+        }
+        tw.stub(sd::SHARRAY_COPY_CTOR, true, 1, 1, 0x0bad_001a);
+        let dst = tw.zeros(0x40);
+        for (d, n) in [(dst, 0), (dst, 3), (0, 1)] {
+            let label = format!("{what} copy construct {d:#x} {n}");
+            tw.run_void(&label, 0x004e_7d70, Conv::Cdecl, &[d, src, n], |g| {
+                sd::bridge::copy_construct_items(g, d, src, n, sd::SHARRAY_COPY_CTOR);
+            });
+        }
+        tw.unstub();
+        // the named node
+        tw.stub(sd::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        tw.stub(sd::FREE_LIST_DEALLOCATE, true, 1, 1, 0x0bad_001b);
+        let node = tw.zeros(0x20);
+        for (a, b2) in [
+            (0x1000, 0x2000),
+            (0x1001, 0x2000),
+            (0x1000, 0x2001),
+            (0x1001, 0x2001),
+        ] {
+            tw.w32(node + 0x10, a);
+            tw.w32(node + 0xc, b2);
+            let label = format!("{what} named node {a:#x} {b2:#x}");
+            tw.run(&label, 0x0064_b8c0, Conv::Thiscall(0x7777), &[node], |g| {
+                sd::bridge::free_named_node(g, 0x7777, node)
+            });
+        }
+        // the scriptable component's deleting destructor
+        tw.stub(sd::OBJECT_REF_RELEASE, true, 0, 0, 0x0bad_001c);
+        let comp = tw.zeros(0x20);
+        for (name, flags) in [(0x1000, 0), (0x1001, 1), (0x1000, 3), (0x1000, 2)] {
+            tw.w32(comp + 0x10, name);
+            let label = format!("{what} scriptable delete {name:#x} {flags}");
+            tw.run(&label, 0x0055_2d30, Conv::Thiscall(comp), &[flags], |g| {
+                sd::bridge::scriptable_delete(g, comp, flags)
+            });
+        }
+        // the tree owner's destructor (all callees stubbed)
+        for f in [
+            sd::TREE_ORPHAN,
+            sd::TREE_CLEAR,
+            sd::FREE_LIST_RESET,
+            sd::FREE_LIST_DTOR,
+        ] {
+            tw.stub(f, true, 0, 0, f);
+        }
+        let label = format!("{what} tree owner dtor");
+        tw.run(&label, 0x0057_7e90, Conv::Thiscall(comp), &[], |g| {
+            sd::bridge::tree_owner_dtor(g, comp)
+        });
+        assert_eq!(tw.logged(), 5, "{label}: calls");
+        tw.unstub();
+    }
+}
+
+/// The `PSharray` copy constructor (the buffer call stubbed, returning the
+/// header's own word or a block) and the receivers' set, over sources and
+/// old headers of 0, 1 and more elements, owned and external.
+#[test]
+fn m5p_scene_d_sharrays() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sd::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let this = tw.zeros(0x10);
+        let src = tw.zeros(0x10);
+        for count in [0, 1, 3, 0x8000_0003] {
+            for own in [false, true] {
+                let ret = if own { this + 4 } else { 0x0044_0000 };
+                tw.stub(sd::SHARRAY_ALLOC, true, 2, 2, ret);
+                tw.w32(src, count);
+                tw.w32(src + 4, 0x0033_0000);
+                tw.w32(this + 4, 0x0022_0000);
+                let label = format!("{what} sharray copy ctor {count:#x} own {own}");
+                tw.run(&label, 0x004e_9ee0, Conv::Thiscall(this), &[src], |g| {
+                    sd::bridge::sharray_copy_ctor(g, this, src)
+                });
+            }
+        }
+        // the stub writes nothing, so the count the original reads back
+        // is the 0 it stored: a stand-in that leaves a count shows the
+        // free paths
+        for header in [2, 0x8000_0002, 1] {
+            let code = {
+                // mov dword [ecx], header; mov eax, 0x00440000; ret 8
+                let mut c = vec![0xc7, 0x01];
+                c.extend(u32::to_le_bytes(header));
+                c.push(0xb8);
+                c.extend(0x0044_0000u32.to_le_bytes());
+                c.extend([0xc2, 0x08, 0x00]);
+                let at = tw.a.alloc_code(&c).unwrap();
+                assert_eq!(tw.b.alloc_code(&c).unwrap(), at);
+                at
+            };
+            let at = tw.rebase(sd::SHARRAY_ALLOC);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            tw.write(at, &j);
+            for old in [0, 0x0022_0000, 0x0044_0000] {
+                tw.w32(src, 3);
+                tw.w32(this + 4, old);
+                let label = format!("{what} sharray copy ctor, left {header:#x}, old {old:#x}");
+                tw.run(&label, 0x004e_9ee0, Conv::Thiscall(this), &[src], |g| {
+                    sd::bridge::sharray_copy_ctor(g, this, src)
+                });
+            }
+        }
+        tw.unstub();
+        tw.stub(sd::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let buf = tw.alloc(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        for header in [0, 1, 3, 0x8000_0003] {
+            for old in [0, 0x0022_0000, buf] {
+                for n in [0, 1, 2, 0x8000_0000] {
+                    tw.w32(this, header);
+                    tw.w32(this + 4, old);
+                    let label = format!("{what} sharray set ({header:#x}, {old:#x}) n {n:#x}");
+                    tw.run(&label, 0x0055_06c0, Conv::Thiscall(this), &[buf, n], |g| {
+                        sd::bridge::sharray_set(g, this, buf, n)
+                    });
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The LOD blend packer: no LOD data, no blend, weights 0, 1, between, a
+/// NaN, over sharrays of one and more levels.
+#[test]
+fn m5p_scene_d_lod_blend() {
+    for (what, mut tw) in Twins::all() {
+        let node = tw.zeros(0x40);
+        let lod = tw.zeros(0x40);
+        let ctx = tw.zeros(0x100);
+        let levels = tw.zeros(0x40);
+        let cursor = tw.zeros(4);
+        let out = tw.zeros(0x10);
+        for (count, data) in [(1, lod + 0x18), (3, levels)] {
+            tw.w32(lod + 0x14, count);
+            tw.w32(lod + 0x18, if count == 1 { 0 } else { levels });
+            for (has, blends) in [(0, 1), (lod, 0), (lod, 1)] {
+                tw.w32(node + 0x20, has);
+                tw.w32(ctx + 0xbc, blends);
+                for (index, w) in [
+                    (0, 0.0f32),
+                    (0, 1.0),
+                    (0, 0.5),
+                    (0, -0.0),
+                    (0, f32::NAN),
+                    (2, 0.25),
+                ] {
+                    if count == 1 && index != 0 {
+                        continue;
+                    }
+                    tw.write(data + 12 * index, &w.to_le_bytes());
+                    tw.w32(ctx + 0xc4, index);
+                    tw.w32(cursor, out);
+                    let args = [1, node, ctx, cursor, 5, 6, 7];
+                    let label = format!("{what} lod blend ({count}, {has:#x}, {blends}) {w}");
+                    tw.run(&label, 0x004d_40c0, Conv::Thiscall(0x1234), &args, |g| {
+                        sd::bridge::pack_lod_blend(g, node, ctx, cursor)
+                    });
+                }
+            }
+        }
+    }
+}
