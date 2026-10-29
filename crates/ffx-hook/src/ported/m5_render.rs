@@ -19,6 +19,7 @@ use ffx_prender::m5r_i::bridge as i;
 use ffx_prender::m5r_j::bridge as j;
 use ffx_prender::m5r_k::bridge as k;
 use ffx_prender::m5r_l::{self as ml, bridge as l};
+use ffx_prender::m5r_m::bridge as m;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1301,5 +1302,65 @@ ported! {
     /// `BrokenScreenEffect_releaseObjects_thunk_006d3600(this)`.
     BrokenScreenEffect_releaseObjects_thunk_006d3600 @ 0x006d_3600 => extern "thiscall" fn broken_screen_release_thunk(this: u32) {
         l::forward(&mut mem(), ml::BROKEN_SCREEN_RELEASE, Conv::Thiscall(this), &[]);
+    }
+    // ---- render-pcui batch 2 (ffx_prender::m5r_m) ----
+    /// `PhyreScene_resetMapObjects_0065f0e0(scene)` (cursor frame).
+    PhyreScene_resetMapObjects_0065f0e0 @ 0x0065_f0e0 => extern "thiscall" fn map_objects_reset(this: u32) {
+        let mut f = StackFrame::<9>::new();
+        m::map_objects_reset(&mut mem(), f.at() + 0x24, this);
+    }
+    /// `SpecularMapParamsManager_AddSpecularEvent(x)` (stdcall; event frame).
+    SpecularMapParamsManager_AddSpecularEvent @ 0x006c_56f0 => extern "stdcall" fn add_specular_event(x: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        m::add_specular_event(&mut mem(), f.at(), x)
+    }
+    /// `SpecularMapParamsManager_setAkazaNoLight_006c5b80(this; id, a, b, f0..f3, v, kind)`.
+    SpecularMapParamsManager_setAkazaNoLight_006c5b80 @ 0x006c_5b80 => extern "thiscall" fn set_akaza_no_light(this: u32, id: u32, a: u32, b: u32, f0: u32, f1: u32, f2: u32, f3: u32, v: u32, kind: u32) {
+        m::set_akaza_no_light(&mut mem(), this, id, a, b, [f0, f1, f2, f3], v, kind);
+    }
+    /// `SpecularMapParamsManager_setAkaza_006c5c90(this; id, a, b, f0..f3, v, last, lv, lc, event)`.
+    SpecularMapParamsManager_setAkaza_006c5c90 @ 0x006c_5c90 => extern "thiscall" fn set_akaza(this: u32, id: u32, a: u32, b: u32, f0: u32, f1: u32, f2: u32, f3: u32, v: u32, last: u32, lv: u32, lc: u32, event: u32) {
+        m::set_akaza(&mut mem(), this, id, a, b, [f0, f1, f2, f3], v, last, lv, lc, event);
+    }
+    /// `SpecularMapParamsManager_setNoLight_006c5e30(this; id, w0, f0, f1, w1, f2, w2, f3, f4, f5)`.
+    SpecularMapParamsManager_setNoLight_006c5e30 @ 0x006c_5e30 => extern "thiscall" fn set_no_light(this: u32, id: u32, w0: u32, f0: u32, f1: u32, w1: u32, f2: u32, w2: u32, f3: u32, f4: u32, f5: u32) {
+        m::set_no_light(&mut mem(), this, [id, w0, f0, f1, w1, f2, w2, f3, f4, f5]);
+    }
+    /// `PhyreScene_addCopyBufferEvent_006568a0(scene; b0, b1, x, h)`.
+    PhyreScene_addCopyBufferEvent_006568a0 @ 0x0065_68a0 => extern "thiscall" fn add_copy_buffer_event(this: u32, b0: u32, b1: u32, x: u32, hw: u32) -> u32 {
+        m::add_copy_buffer_event(&mut mem(), this, b0, b1, x, hw)
+    }
+    /// `PhyreScene_AddVFXToAfterPostList(scene; vfx)`.
+    PhyreScene_AddVFXToAfterPostList @ 0x0065_67e0 => extern "thiscall" fn add_vfx_after_post(this: u32, vfx: u32) {
+        m::add_vfx_after_post(&mut mem(), this, vfx);
+    }
+    /// `PArray44_pushInto_0065fbe0(array; block, item)`.
+    PArray44_pushInto_0065fbe0 @ 0x0065_fbe0 => extern "thiscall" fn push_into_44(this: u32, block: u32, item: u32) -> u32 {
+        m::push_into_44(&mut mem(), this, block, item)
+    }
+    /// `PArray4_pushInto_006add90(array; block, item)`.
+    PArray4_pushInto_006add90 @ 0x006a_dd90 => extern "thiscall" fn push_into_4(this: u32, block: u32, item: u32) -> u32 {
+        m::push_into_4(&mut mem(), this, block, item)
+    }
+    /// `ShadowMeshDescriptor_newInstance_00678940(this; cluster, existing)` (argument slots).
+    ShadowMeshDescriptor_newInstance_00678940 @ 0x0067_8940 => extern "thiscall" fn shadow_instance(this: u32, cluster: u32, existing: u32; slots: u32) -> u32 {
+        m::shadow_instance(&mut mem(), slots, this, cluster, existing)
+    }
+    /// `TreePair_clear_006df080(this)`.
+    TreePair_clear_006df080 @ 0x006d_f080 => extern "thiscall" fn tree_clear_twice(this: u32) -> u32 {
+        m::tree_clear_twice(&mut mem(), this)
+    }
+    /// `TextureAnimationManager_dtor_006af8a0(this)`.
+    TextureAnimationManager_dtor_006af8a0 @ 0x006a_f8a0 => extern "thiscall" fn texanim_manager_dtor(this: u32) -> u32 {
+        m::texanim_manager_dtor(&mut mem(), this)
+    }
+    /// `TexAnim_setTag_0077eb00(q, a, b, c, flag)`.
+    TexAnim_setTag_0077eb00 @ 0x0077_eb00 => extern "C" fn set_tag(q: u32, a: u32, b: u32, c: u32, flag: u32) -> u32 {
+        m::set_tag(&mut mem(), q, a, b, c, flag)
+    }
+    /// `FloatSort_introsortLoop_006c77a0(first, last, depth, less)` (argument slots; the pair frame).
+    FloatSort_introsortLoop_006c77a0 @ 0x006c_77a0 => extern "C" fn introsort(first: u32, last: u32, depth: u32, less: u32; slots: u32) {
+        let mut f = StackFrame::<2>::new();
+        m::introsort(&mut mem(), slots, f.at(), first, last, depth, less);
     }
 }
