@@ -4487,3 +4487,54 @@ fn render_thread_stop_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn renderer_job_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // no lists; two lists (the count's bit 31 set); can kick or not;
+        // with and without the +0xc holder
+        for (case, count, kick, holder) in [
+            (0u32, 0u32, 0x100u32, true),
+            (1, 2, 0x101, true),
+            (2, 0x8000_0002, 0x100, false),
+            (3, 1, 0x1, false),
+        ] {
+            t.stub(d3d::INIT_RINGS, true, 5, 5, 0x41);
+            t.stub(d3d::RENDER_LIST, true, 3, 3, 0x42);
+            t.stub(d3d::CAN_KICK, true, 0, 0, kick);
+            let vt_owner = t.object(&[0, 0, 0], &[]);
+            let vt = t.r32(vt_owner);
+            let arr = t.junk(0xe4 * 3, 7);
+            for k in 0..3 {
+                t.w32(arr + 0xe4 * k, vt);
+            }
+            let job = t.junk(0x40, 8);
+            let a = t.junk(8, 9);
+            let b = t.junk(8, 10);
+            t.w32(job + 0xc, if holder { a } else { 0 });
+            t.w32(job + 0x10, arr);
+            t.w32(job + 0x14, b);
+            t.w32(job + 0x2c, count);
+            t.w32(job + 0x30, 0x5000);
+            t.w32(job + 0x1c, 0x8000_1230);
+            t.w32(job + 0x24, 0x8000_0480);
+            let ebp = t.ebp_for(3);
+            t.check_frame(
+                &format!("{label}: job {case}"),
+                0x005b_6820,
+                Conv::Thiscall(job),
+                &[0xa, 0xb, 1],
+                ebp,
+                0x20,
+                (0x14, 0),
+                |g| Out::U32(d3d::job::run(g, ebp, ebp + 0x10, job, 1)),
+            );
+            let mut x = [0; 4];
+            let mut y = [0; 4];
+            t.a.read_bytes(ebp + 0x10, &mut x);
+            t.b.read_bytes(ebp + 0x10, &mut y);
+            assert_eq!(x, y, "{label}: job {case}: the index slot");
+            t.reset();
+        }
+    }
+}

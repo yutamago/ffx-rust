@@ -412,3 +412,81 @@ pub mod thread {
         h.write(this + 0x168, 0u8);
     }
 }
+
+/// The thread-pool job's callees: `Phyre_PRendering_PRendererBase_initRings_005b8e80`,
+/// the instance-list render `0x005b9ee0(renderer; list, &cursor, arg)` and
+/// `Phyre_PRendering_PDeferredKick_canKick`, all thiscall.
+pub const INIT_RINGS: u32 = 0x005b_8e80;
+pub const RENDER_LIST: u32 = 0x005b_9ee0;
+pub const CAN_KICK: u32 = 0x0061_47e0;
+
+pub mod job {
+    //! `0x005b6820` over game memory.
+
+    use super::{CAN_KICK, INIT_RINGS, RENDER_LIST, RENDERER_SIZE};
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `PRendererThreadPoolJob` virtual slot 1, `0x005b6820(job; a, b,
+    /// index)` (thiscall, `ret 0xc`): renderer `index` of the array `+0x10`
+    /// (0xe4 bytes each, stored over the `index` argument's slot `slot`) takes
+    /// the context `+0x38` (`+4`) and its rings (`initRings(+0x28, +0x20,
+    /// +0x24 & 0x7fffffff, +0x1c & 0x7fffffff, 1)`, `+0x44` = 0 before,
+    /// then `+0xe0` = the job's kick `+0x18`, `+0x44` = `+0x34`); each of
+    /// the `+0x2c & 0x7fffffff` 12-byte lists at `+0x30` rendered (with
+    /// the cursor `ebp - 0x14` = `+0x14` + 0x10, the frame's other words
+    /// `+0x30`, `+0x34`, the job and the count left, decremented each
+    /// time, and `+0x3c`); virtual slot 2 when the kick can kick, then
+    /// slot 1; the words `+4` of `+0xc` (when set) and `+0x14` cleared;
+    /// `eax` = `+0x14`.
+    pub fn run(h: &mut impl Host, ebp: u32, slot: u32, this: u32, index: u32) -> u32 {
+        let lists: u32 = h.read(this + 0x30);
+        let mut count = h.read::<u32>(this + 0x2c) & 0x7fff_ffff;
+        let r = index
+            .wrapping_mul(RENDERER_SIZE)
+            .wrapping_add(h.read(this + 0x10));
+        h.write(slot, r);
+        let out: u32 = h.read(this + 0x14);
+        let first: u32 = h.read(this + 0x34);
+        h.write(
+            ebp - 0x14,
+            [out.wrapping_add(0x10), lists, first, this, count],
+        );
+        let ctx: u32 = h.read(this + 0x38);
+        h.write(r + 4, ctx);
+        h.write(r + 0x44, 0u32);
+        let rings: [u32; 4] = h.read(this + 0x1c);
+        h.call_sym(
+            INIT_RINGS,
+            Conv::Thiscall(r),
+            &[
+                rings[3],
+                rings[1],
+                rings[2] & 0x7fff_ffff,
+                rings[0] & 0x7fff_ffff,
+                1,
+            ],
+        );
+        let kick = this + 0x18;
+        h.write(r + 0xe0, kick);
+        h.write(r + 0x44, first);
+        let mut list = lists;
+        while count != 0 {
+            let arg: u32 = h.read(this + 0x3c);
+            h.call_sym(RENDER_LIST, Conv::Thiscall(r), &[list, ebp - 0x14, arg]);
+            list = list.wrapping_add(0xc);
+            count = h.read::<u32>(ebp - 4).wrapping_sub(1);
+            h.write(ebp - 4, count);
+        }
+        if h.call_sym(CAN_KICK, Conv::Thiscall(kick), &[]) & 0xff != 0 {
+            h.call_virtual(r, 2, &[]);
+        }
+        h.call_virtual(r, 1, &[]);
+        let a: u32 = h.read(this + 0xc);
+        if a != 0 {
+            h.write(a + 4, 0u32);
+        }
+        let b: u32 = h.read(this + 0x14);
+        h.write(b + 4, 0u32);
+        b
+    }
+}

@@ -1288,4 +1288,10 @@ ported! {
         let ebp = f.at() + 4;
         ffx_prender::m5p_render_b_d3d::thread::stop(&mut mem(), ebp, this);
     }
+    /// `Phyre_PRendering_PInternal_PRendererThreadPoolJob_run_005b6820`: the cursor, count and the rest in this frame; the renderer stored over the `index` slot.
+    Phyre_PRendering_PInternal_PRendererThreadPoolJob_run_005b6820 @ 0x005b_6820 => extern "thiscall" fn e_005b6820(this: u32, _a: u32, _b: u32, index: u32; slots: u32) -> u32 {
+        let mut f = super::StackFrame::<5>::new();
+        let ebp = f.at() + 0x14;
+        ffx_prender::m5p_render_b_d3d::job::run(&mut mem(), ebp, slots + 8, this, index)
+    }
 }
