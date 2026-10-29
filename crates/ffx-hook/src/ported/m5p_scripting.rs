@@ -8,6 +8,7 @@
 
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
+use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 
 use super::{StackFrame, mem, ported};
@@ -669,5 +670,67 @@ ported! {
     Phyre_PScripting_Matrix_rotation_005713e0 @ 0x0057_13e0 => extern "C" fn s_005713e0(l: u32) -> u32 {
         let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
         lua::matrix_rotation(&mut mem(), l, f.at())
+    }
+    // ---- batch 4: the scheduler, scripted components, fixups ----
+    /// `Phyre_PScripting_PScheduler_addEntry_005d01d0`.
+    Phyre_PScripting_PScheduler_addEntry_005d01d0 @ 0x005d_01d0 => extern "thiscall" fn s_005d01d0(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        sc::scheduler_add(&mut mem(), this, [a0, a1, a2, a3, a4], f.at())
+    }
+    /// `Phyre_PScripting_PScheduler_leastPhase_005d0a80`.
+    Phyre_PScripting_PScheduler_leastPhase_005d0a80 @ 0x005d_0a80 => extern "thiscall" fn s_005d0a80(this: u32, n: u32) -> u32 {
+        sc::least_phase(&mem(), this, n)
+    }
+    /// `Phyre_PScripting_PScheduler_insertEntry_005d0280`.
+    Phyre_PScripting_PScheduler_insertEntry_005d0280 @ 0x005d_0280 => extern "thiscall" fn s_005d0280(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        sc::scheduler_insert(&mut mem(), this, [a0, a1, a2, a3, a4, a5], f.at())
+    }
+    /// `Phyre_PGameplay_PScriptedComponent_setFunctionName_00553440`.
+    Phyre_PGameplay_PScriptedComponent_setFunctionName_00553440 @ 0x0055_3440 => extern "thiscall" fn s_00553440(this: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        sc::set_function_name(&mut mem(), this, name, f.at())
+    }
+    /// `Phyre_PGameplay_PScriptedComponent_run_00554b60`.
+    Phyre_PGameplay_PScriptedComponent_run_00554b60 @ 0x0055_4b60 => extern "thiscall" fn s_00554b60(this: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        sc::scripted_run(&mut mem(), this, f.at())
+    }
+    /// `Phyre_PGameplay_PScriptedComponent_slot2_00554b50`.
+    Phyre_PGameplay_PScriptedComponent_slot2_00554b50 @ 0x0055_4b50 => extern "thiscall" fn s_00554b50(this: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        sc::scripted_run(&mut mem(), this, f.at())
+    }
+    /// `Phyre_PGameplay_PScriptedComponent_assign_00553b80`.
+    Phyre_PGameplay_PScriptedComponent_assign_00553b80 @ 0x0055_3b80 => extern "thiscall" fn s_00553b80(this: u32, src: u32) -> u32 {
+        sc::scripted_assign(&mut mem(), this, src)
+    }
+    /// `Phyre_PNameComponent_find_0045ac30`.
+    Phyre_PNameComponent_find_0045ac30 @ 0x0045_ac30 => extern "C" fn s_0045ac30(name: u32) -> u32 {
+        sc::find_name_component(&mem(), name)
+    }
+    /// `Phyre_PLODGroup_setExternalBuffer_005a80f0`.
+    Phyre_PLODGroup_setExternalBuffer_005a80f0 @ 0x005a_80f0 => extern "thiscall" fn s_005a80f0(this: u32, buf: u32, n: u32) -> u32 {
+        sc::sharray_set_external(&mut mem(), this, buf, n, 1)
+    }
+    /// `Phyre_PLODLevel_setExternalBuffer_005a8190`.
+    Phyre_PLODLevel_setExternalBuffer_005a8190 @ 0x005a_8190 => extern "thiscall" fn s_005a8190(this: u32, buf: u32, n: u32) -> u32 {
+        sc::sharray_set_external(&mut mem(), this, buf, n, 3)
+    }
+    /// `Phyre_PClassDescriptorDynamic_fixObjects_00448680`.
+    Phyre_PClassDescriptorDynamic_fixObjects_00448680 @ 0x0044_8680 => extern "C" fn s_00448680(p: u32) -> u32 {
+        sc::fix_dynamic_classes(&mut mem(), p)
+    }
+    /// `Phyre_PScripting_PClassCallableMethodScript_dtor_00619400`.
+    Phyre_PScripting_PClassCallableMethodScript_dtor_00619400 @ 0x0061_9400 => extern "thiscall" fn s_00619400(this: u32) -> u32 {
+        sc::method_script_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_constructSlots_00541780`.
+    Phyre_PAnimation_constructSlots_00541780 @ 0x0054_1780 => extern "C" fn s_00541780(array: u32, n: u32) {
+        sc::construct_slots(&mut mem(), array, n);
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_fixObjects_00a07f00`.
+    Phyre_PPostProcessing_PDepthOfField_fixObjects_00a07f00 @ 0x00a0_7f00 => extern "C" fn s_00a07f00(p: u32) -> u32 {
+        sc::fix_dof(&mut mem(), p)
     }
 }

@@ -291,6 +291,36 @@ impl Twins {
         self.place(sym, code);
     }
 
+    /// A thiscall recording stub at `sym` like [`Twins::stub`] that logs
+    /// the word its first stack word points at instead of the pointer (a
+    /// callee handed the address of a frame word: the frames differ, the
+    /// word they hold must not).
+    pub fn stub_deref0(&mut self, sym: u32, n: u32, pops: u32, ret: u32) {
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], sym
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        for i in 0..n {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            if i == 0 {
+                c.extend([0x8b, 0x12]); // mov edx, [edx]
+            }
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.push(0xb8);
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        Self::ret(&mut c, pops);
+        let code = self.code(&c);
+        self.place(sym, code);
+    }
+
     /// Puts back every stubbed original.
     pub fn unstub(&mut self) {
         let saved: Vec<_> = self.saved.drain().collect();

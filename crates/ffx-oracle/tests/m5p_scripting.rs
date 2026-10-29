@@ -23,6 +23,7 @@ mod m5p_scripting_twins;
 
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
+use ffx_pother_a::m5p_scripting_sched::{self as sc_, bridge as sc};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use m5p_scripting_twins::{JUNK, Rng, Twins};
 
@@ -1672,6 +1673,291 @@ fn b3_unary_math_matches_the_original() {
         t.cdecl(&what, 0x0057_13e0, &[l], |g| {
             Some(lua::matrix_rotation(g, l, frame))
         });
+        t.unstub();
+    }
+}
+
+// ---- batch 4: the scheduler, scripted components, fixups ----
+
+/// A scheduler: free list at `+4` (`free` entries of 0x20 bytes, `+0xc`
+/// the block size), counters at `+0x84`; the lists `+0x20`, `+0x24`.
+fn scheduler(t: &mut Twins, free: u32) -> u32 {
+    let s_ = t.junk(0x300, 3);
+    let mut head = 0;
+    for _ in 0..free {
+        let e = t.junk(0x20, 5);
+        t.w32(e, head);
+        head = e;
+    }
+    t.w32(s_ + 4, head);
+    t.w32(s_ + 0xc, 0x10);
+    t.w32(s_ + 0x20, 0x00c9_0020);
+    t.w32(s_ + 0x24, 0x00c9_0024);
+    for i in 0..0x100u32 {
+        t.write(
+            s_ + 0x84 + 2 * i,
+            &((i * 7919 + 3) as u16 % 5).to_le_bytes(),
+        );
+    }
+    s_
+}
+
+#[test]
+fn b4_scheduler_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the port's name word: low in its own stack (the original's is in
+        // its frame or argument area; the lookup stub logs what it holds)
+        let cell = t.b.stack_range().start + 0x40;
+        t.stub(sc_::FREELIST_GROW, true, 1, 1, 0x9f0);
+        for (idx, free) in [(0x8000_0000u32, 2u32), (3, 0), (3, 2), (0, 2)] {
+            t.stub_deref0(sc_::NAME_INDEX, 2, 2, idx);
+            let s_ = scheduler(&mut t, free);
+            let owner = t.zeros(0x10);
+            let a = [owner, 0x11, 0x22, 0x00c9_3300, 0x44];
+            let what = format!("{label}: scheduler add {idx:#x} {free}");
+            t.this(&what, 0x005d_01d0, s_, &a, |g| {
+                Some(sc::scheduler_add(g, s_, a, cell))
+            });
+            for (name, step) in [
+                (0u32, 1u32),
+                (0x00c9_3300, 0),
+                (0x00c9_3300, 1),
+                (0x00c9_3300, 7),
+                (0x00c9_3300, 0x100),
+                (0x00c9_3300, 0x101),
+            ] {
+                let s_ = scheduler(&mut t, free);
+                let a = [owner, 0x11, 0x22, name, step, 0x66];
+                let what = format!("{label}: scheduler insert {idx:#x} {free} {name:#x} {step:#x}");
+                t.this(&what, 0x005d_0280, s_, &a, |g| {
+                    Some(sc::scheduler_insert(g, s_, a, cell))
+                });
+            }
+        }
+        for n in [0u32, 1, 2, 3, 7, 0x80, 0xff, 0x100, 0x101, 0xffff_ffff] {
+            let s_ = scheduler(&mut t, 0);
+            let what = format!("{label}: least phase {n:#x}");
+            t.this(&what, 0x005d_0a80, s_, &[n], |g| {
+                Some(sc::least_phase(g, s_, n))
+            });
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b4_scripted_components_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let cell = t.b.stack_range().start + 0x40;
+        t.stub(s::STRING_ASSIGN, true, 1, 1, 0xa55);
+        // the function name: no component, empty, unknown, known, the same string
+        let names = [t.cstr(""), t.cstr("update")];
+        for (comp, nm, idx, same) in [
+            (false, 1usize, 0u32, false),
+            (true, 0, 0, false),
+            (true, 1, 0x8000_0000, false),
+            (true, 1, 2, false),
+            (true, 1, 2, true),
+            (true, 2, 2, false),
+        ] {
+            t.stub_deref0(sc_::NAME_INDEX, 2, 2, idx);
+            let c = t.junk(0x40, 2);
+            let cv = if comp { t.zeros(0x10) } else { 0 };
+            t.w32(c + 0x14, cv);
+            let pname = if same { c + 0x10 } else { t.zeros(4) };
+            let word = if nm == 2 { 0 } else { names[nm] + 1 };
+            t.w32(pname, word);
+            let what = format!("{label}: set function name {comp} {nm} {idx:#x} {same}");
+            t.this(&what, 0x0055_3440, c, &[pname], |g| {
+                Some(sc::set_function_name(g, c, pname, cell))
+            });
+        }
+        // the run
+        t.stub(sc_::SCHEDULER_REMOVE, true, 3, 3, 0x5e3);
+        t.stub(sc_::CLOSE_STATE, false, 1, 0, 0xc1);
+        t.stub(mid::NAME_IS, true, 1, 1, 1);
+        for (k, (has_sched, has_entry, fname, idx, slot4, owned)) in [
+            (true, true, 1usize, 0u32, 0u32, false),
+            (false, true, 1, 0, 0, false),
+            (true, false, 1, 0, 0, false),
+            (true, true, 2, 0, 0, true),
+            (true, true, 0, 0, 0, false),
+            (true, true, 1, 0x8000_0000, 0, true),
+            (true, true, 1, 1, 0x77, false),
+            (true, true, 1, 1, 0, true),
+            (true, true, 1, 0, 0x78, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.stub_deref0(sc_::NAME_INDEX, 2, 2, idx);
+            let c = t.junk(0x40, 4);
+            let comp = t.zeros(0x20);
+            t.w32(c + 0x14, comp);
+            if k == 0 {
+                // a scheduler but no component
+                let sched = t.zeros(0x40);
+                // with an entry for a null owner, which only the component check stops
+                let e = t.zeros(0x20);
+                t.w32(e + 8, c + 4);
+                t.w32(sched + 0x24, e);
+                t.w32(c + 0x18, sched);
+                t.w32(c + 0x14, 0);
+            }
+            t.w32(c + 0x10, names[1] + 1);
+            t.w32(c + 0x24, if fname == 2 { 0 } else { names[fname] });
+            t.w8(c + 0x2d, u8::from(owned));
+            t.w32(c + 0x1c, if owned { 0x00c9_4400 } else { 0 });
+            if k == 0 {
+                // set above
+            } else if has_sched {
+                // the scheduler: its live list (+0x24) holds the component's entry or not
+                let sched = t.object(0x7e00, &[0, 0, 0, 0, 3], &[0, 0, 0, 0, slot4]);
+                let e = t.zeros(0x20);
+                t.w32(e + 4, if has_entry { comp } else { 0x55 });
+                t.w32(e + 8, c + 4);
+                t.w32(sched + 0x24, e);
+                t.w32(c + 0x18, sched);
+            } else {
+                t.w32(c + 0x18, 0);
+            }
+            let what = format!("{label}: scripted run case {k}");
+            t.this(&what, 0x0055_4b60, c, &[], |g| {
+                Some(sc::scripted_run(g, c, cell))
+            });
+        }
+        // the copy assignment: another component, itself
+        for same in [false, true] {
+            let c = t.junk(0x40, 6);
+            let src = if same { c } else { t.junk(0x40, 9) };
+            let what = format!("{label}: scripted assign {same}");
+            t.this(&what, 0x0055_3b80, c, &[src], |g| {
+                Some(sc::scripted_assign(g, c, src))
+            });
+        }
+        // the name components
+        let list = t.rebase(sc_::NAME_LIST);
+        let old = t.r32(list);
+        let strs = [t.cstr("alpha"), t.cstr("beta")];
+        let recs: Vec<u32> = (0..3).map(|_| t.zeros(0x20)).collect();
+        for (i, &r) in recs.iter().enumerate() {
+            t.w32(r + 0xc, if i < 2 { recs[i + 1] + 0xc } else { list });
+            t.w32(r + 0x14, if i == 1 { 0 } else { strs[i / 2] + 1 });
+        }
+        for start in [list, 0, recs[0] + 0xc] {
+            t.w32(list, start);
+            let wants = [0u32, strs[0], strs[1], t.cstr("beta"), t.cstr("gamma")];
+            for want in wants {
+                let what = format!("{label}: find name {start:#x} {want:#x}");
+                t.cdecl(&what, 0x0045_ac30, &[want], |g| {
+                    Some(sc::find_name_component(g, want))
+                });
+            }
+        }
+        t.w32(list, old);
+        t.unstub();
+    }
+}
+
+#[test]
+fn b4_fixups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(s::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        // the PSharray external buffers
+        for (f, words) in [(0x005a_80f0u32, 1u32), (0x005a_8190, 3)] {
+            for head in [0u32, 1, 3, 0x8000_0003] {
+                for n in [0u32, 1, 4, 0x8000_0000] {
+                    for same in [false, true] {
+                        let a = t.junk(0x20, 1);
+                        let block = t.junk(0x40, 2);
+                        t.w32(a, head);
+                        t.w32(a + 4, block);
+                        let buf = if same { block } else { t.junk(0x40, 3) };
+                        let what = format!("{label}: sharray {f:#x} {head:#x} {n:#x} {same}");
+                        t.this(&what, f, a, &[buf, n], |g| {
+                            Some(sc::sharray_set_external(g, a, buf, n, words))
+                        });
+                    }
+                }
+            }
+        }
+        // dynamic class descriptors
+        t.stub(sc_::DYNAMIC_FIX_MEMBERS, true, 0, 0, 0xd1);
+        t.stub(sc_::DYNAMIC_SET_DEFAULTS, true, 1, 1, 0xd2);
+        t.stub(sc_::ADD_TO_NAMESPACE, true, 0, 0, 0xd3);
+        for (found, defaults) in [(false, 0u32), (true, 0), (true, 0x00c9_d000)] {
+            t.stub(sc_::DEFAULT_BUFFER, true, 0, 0, defaults);
+            let old = if found {
+                t.object(0x7f00, &[0, 0, 0, 0, 0, 0, 0, 1], &[])
+            } else {
+                0
+            };
+            t.stub(sc_::NAMESPACE_FIND, true, 1, 1, old);
+            for n in [0u32, 2] {
+                let (p, _) = instance_list(&mut t, n, 0x80, 0x18);
+                t.w32(p + 0x28, 0x00c9_e000);
+                let what = format!("{label}: dynamic classes {found} {defaults:#x} {n}");
+                t.cdecl(&what, 0x0044_8680, &[p], |g| {
+                    Some(sc::fix_dynamic_classes(g, p))
+                });
+            }
+        }
+        // the method script record destructor
+        for (a, b_, flag) in [(0u32, 0u32, 0u8), (1, 1, 1), (0x00c9_0f00, 0x00c9_0f01, 3)] {
+            let r = t.junk(0x40, 5);
+            let prev = t.zeros(8);
+            let next = t.zeros(8);
+            t.w32(r, prev);
+            t.w32(r + 4, next);
+            t.w32(r + 0x30, a);
+            t.w32(r + 0x2c, b_);
+            t.w8(r + 0x10, flag);
+            let what = format!("{label}: method script dtor {a:#x} {b_:#x} {flag}");
+            t.this(&what, 0x0061_9400, r, &[], |g| {
+                Some(sc::method_script_dtor(g, r))
+            });
+        }
+        // animation slots
+        for (off, ctor) in sc_::SLOT_CTORS {
+            t.stub(ctor, true, 0, 0, 0xc700 + off);
+        }
+        for n in [0u32, 1, 3] {
+            let arr = t.junk(0x4c * 3, 1);
+            let what = format!("{label}: slots {n}");
+            t.cdecl(&what, 0x0054_1780, &[arr, n], |g| {
+                sc::construct_slots(g, arr, n);
+                None
+            });
+        }
+        // depth of field
+        t.stub(sc_::SHADER_PARAM, true, 1, 1, 0x00c9_d000);
+        for (slot1, ctx, r) in [
+            (0u32, 0u32, 0u32),
+            (5, 0, 0),
+            (0, 1, 0),
+            (0, 1, 7),
+            (0, 2, 0),
+        ] {
+            t.stub(sc_::DOF_INIT_SHADERS, true, 2, 2, r);
+            let (p, recs) = instance_list(&mut t, 2, 0x1000, 4);
+            for i in 0..2u32 {
+                let e = recs + 0x1000 * i;
+                let o = t.object(
+                    0x7d80 + 0x10 * i,
+                    &[0, 2],
+                    &[0, if i == 1 { slot1 } else { 0 }],
+                );
+                let vt = t.r32(o);
+                t.w32(e, vt);
+                if ctx != 0 {
+                    let c = t.zeros(8);
+                    t.w32(c, if ctx == 1 { 0x00c9_0300 } else { 0 });
+                    t.w32(e + 8, c);
+                }
+            }
+            let what = format!("{label}: dof fixup {slot1} {ctx} {r}");
+            t.cdecl(&what, 0x00a0_7f00, &[p], |g| Some(sc::fix_dof(g, p)));
+        }
         t.unstub();
     }
 }
