@@ -830,4 +830,13 @@ ported! {
     Phyre_PScripting_Vector_div_00572810 @ 0x0057_2810 => extern "C" fn s_00572810(l: u32) -> u32 {
         ve::arith(&mut mem(), l, ve_::ARITH[3].1)
     }
+    // ---- batch 10: Vector and Matrix equality ----
+    /// `Phyre_PScripting_Vector_equals_00572c80`.
+    Phyre_PScripting_Vector_equals_00572c80 @ 0x0057_2c80 => extern "C" fn s_00572c80(l: u32) -> u32 {
+        ve::equals(&mut mem(), l, ve_::EQUALS[0].1, ve_::EQUALS[0].2)
+    }
+    /// `Phyre_PScripting_Matrix_equals_00571600`.
+    Phyre_PScripting_Matrix_equals_00571600 @ 0x0057_1600 => extern "C" fn s_00571600(l: u32) -> u32 {
+        ve::equals(&mut mem(), l, ve_::EQUALS[1].1, ve_::EQUALS[1].2)
+    }
 }

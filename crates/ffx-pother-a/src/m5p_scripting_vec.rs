@@ -9,7 +9,8 @@ use ffx_graphic::host::{Conv, Host};
 
 use crate::m5p_scripting_mid::bridge as mid;
 use crate::m5p_scripting_small::{
-    LUA_GETFIELD, LUA_NEWUSERDATA, LUA_PUSHNUMBER, LUA_REGISTRYINDEX, LUA_SETMETATABLE, STR_VECTOR,
+    LUA_GETFIELD, LUA_NEWUSERDATA, LUA_PUSHNUMBER, LUA_REGISTRYINDEX, LUA_SETMETATABLE, STR_MATRIX,
+    STR_VECTOR,
 };
 
 /// The dot products: (function, components).
@@ -39,12 +40,17 @@ pub const ARITH: [(u32, Arith); 4] = [
 
 /// `luaL_checknumber(L, arg)` (cdecl, the `float` in `ST0`).
 pub const LUA_CHECKNUMBER: u32 = 0x0094_c9e0;
+/// `lua_pushboolean(L, b)` (cdecl).
+pub const LUA_PUSHBOOLEAN: u32 = 0x0094_b5a0;
+/// The equality metamethods: (function, metatable name, words).
+pub const EQUALS: [(u32, u32, u32); 2] =
+    [(0x0057_2c80, STR_VECTOR, 4), (0x0057_1600, STR_MATRIX, 16)];
 
 /// The ports over game memory.
 pub mod bridge {
     use super::{
-        Arith, Conv, Host, LUA_CHECKNUMBER, LUA_GETFIELD, LUA_NEWUSERDATA, LUA_PUSHNUMBER,
-        LUA_REGISTRYINDEX, LUA_SETMETATABLE, STR_VECTOR, mid, x87,
+        Arith, Conv, Host, LUA_CHECKNUMBER, LUA_GETFIELD, LUA_NEWUSERDATA, LUA_PUSHBOOLEAN,
+        LUA_PUSHNUMBER, LUA_REGISTRYINDEX, LUA_SETMETATABLE, STR_VECTOR, mid, x87,
     };
 
     fn f(h: &impl Host, v: u32, i: u32) -> f64 {
@@ -138,6 +144,22 @@ pub mod bridge {
             let y = if b == 0 { n } else { f(h, b, i) };
             h.write(u.wrapping_add(4 * i), apply(op, x, y));
         }
+        1
+    }
+
+    /// [`super::EQUALS`] `(L)`: whether the two userdata of that
+    /// metatable (arguments 1 and 2) are equal component by component
+    /// (x87 compares: a NaN is unequal, -0 equals 0), pushed as a
+    /// boolean; 1, or 0 when either is not of the type.
+    pub fn equals(h: &mut impl Host, l: u32, name: u32, words: u32) -> u32 {
+        let a = mid::check_userdata(h, name, l, 1);
+        let b = mid::check_userdata(h, name, l, 2);
+        if a == 0 || b == 0 {
+            return 0;
+        }
+        #[allow(clippy::float_cmp)] // the original's exact x87 compare (fucompp)
+        let eq = (0..words).all(|i| f(h, a, i) == f(h, b, i));
+        h.call_sym(LUA_PUSHBOOLEAN, Conv::Cdecl, &[l, u32::from(eq)]);
         1
     }
 }

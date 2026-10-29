@@ -2606,3 +2606,51 @@ fn b9_vector_arithmetic_matches_the_original() {
         t.unstub();
     }
 }
+
+// ---- batch 10: Vector and Matrix equality ----
+
+#[test]
+fn b10_equality_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        t.stub(mo_::LUA_PUSHBOOLEAN, false, 2, 0, 0xb0);
+        for &(f, _, words) in &ve_::EQUALS {
+            // equal, one component off at each place, signed zeros, NaNs
+            let mut cases: Vec<(Vec<u32>, Vec<u32>)> = Vec::new();
+            let base: Vec<u32> = (0..words).map(|i| 0x3f80_0000 + i * 0x1000).collect();
+            cases.push((base.clone(), base.clone()));
+            for k in 0..words {
+                let mut b_ = base.clone();
+                b_[k as usize] ^= 1;
+                cases.push((base.clone(), b_));
+            }
+            let mut z = base.clone();
+            z[0] = 0x8000_0000;
+            let mut z2 = base.clone();
+            z2[0] = 0;
+            cases.push((z, z2));
+            let mut n = base.clone();
+            n[words as usize - 1] = 0x7fc0_0000;
+            cases.push((n.clone(), n));
+            for (k, (x, y)) in cases.iter().enumerate() {
+                let a = t.alloc(&x.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>());
+                let b_ = t.alloc(&y.iter().flat_map(|w| w.to_le_bytes()).collect::<Vec<_>>());
+                for (pa, pb) in [(0u32, b_), (a, 0), (a, b_)] {
+                    lua_b3(&mut t, 0, 1, 1, 0, 3);
+                    let c = vec_args(&mut t, pa, pb);
+                    t.place(s::LUA_TOUSERDATA, c);
+                    let what = format!("{label}: equals {f:#x} case {k} {pa:#x} {pb:#x}");
+                    t.cdecl(&what, f, &[l], |g| {
+                        Some(ve::equals(
+                            g,
+                            l,
+                            ve_::EQUALS[usize::from(words == 16)].1,
+                            words,
+                        ))
+                    });
+                }
+            }
+        }
+        t.unstub();
+    }
+}
