@@ -972,6 +972,7 @@ ports! {
     "models slot 276" => s4_misc::MODELS_276, s4_misc::models_276;
     "repeat slot 310" => s4_misc::REPEAT_310, s4_misc::repeat_310;
     "range stop" => s4_misc::RANGE_STOP, s4_misc::range_stop;
+    "hook object" => s4_misc::HOOK_OBJECT, s4_misc::hook_object;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
@@ -1286,6 +1287,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model node with", &s4_misc::MODEL_NODE_WITH),
     ("records clear", &s4_misc::RECORDS_CLEAR),
     ("float of slot 664", &s4_misc::FLOAT_664),
+    ("actors slot 296", &s4_misc::ACTORS_296),
+    ("ring run", &s4_misc::RING_RUN),
+    ("register 0x80", &s4_misc::REGISTER_80),
+    ("fade set", &s4_misc::FADE_SET),
+    ("register parts (b)", &s4_misc::REGISTER_PARTS_B),
+    ("models slot 295", &s4_misc::MODELS_295),
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),

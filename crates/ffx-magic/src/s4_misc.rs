@@ -2654,3 +2654,258 @@ pub const RANGE_STOP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Slot 296 `(actor, ecx)` for each of the DLL's `G_N` actors (operand
+/// `+0x2`, read again after each call; the actor words 0xcc bytes apart
+/// from the immediate `+0x12`) that is not 0xff (internal, `ecx` = a
+/// flag). Returns the last call's `eax` (0xff when the last actor was
+/// skipped), or `eax` as it came.
+///
+/// `magic_0515` 0x10002510 (70 bytes; 4 DLLs).
+pub fn actors_296<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut eax = fr.eax;
+    let mut n = g.read::<i32>(w(0x2));
+    let mut a = w(0x12);
+    let mut i = 0i32;
+    while i < n {
+        eax = g.read::<u32>(a);
+        if eax != 0xff {
+            let t = slot_target(g, w(0x22), 296);
+            eax = g.call(t, 0, &[eax, fr.ecx]).eax;
+            n = g.read::<i32>(w(0x30));
+        }
+        i += 1;
+        a = a.wrapping_add(0xcc);
+    }
+    Ret::eax(eax)
+}
+
+/// [`actors_296`].
+pub const ACTORS_296: Sig = Sig {
+    len: 70,
+    hash: 0x13a0_11f0_b848_f2e4,
+    calls: &[],
+    imports: &[],
+};
+
+/// Runs an object's ring (internal, `ecx` = the object: the ring's
+/// sentinel at `+0x4`, its first node `+0xc`): unless `G_SKIP` (operand
+/// `+0x8`) is set, each node's method `+0x20` runs with a cursor on the
+/// frame (`[ebp - 0x8]`); an empty ring sets bit 0 of `+0x10`. Returns
+/// the last method's `eax`, or `eax` as it came.
+///
+/// `magic_0577` 0x100087a0 (74 bytes; 4 DLLs).
+pub fn ring_run<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let obj = fr.ecx;
+    let mut eax = fr.eax;
+    let sentinel = obj + 4;
+    let mut node = g.read::<u32>(obj + 0xc);
+    if g.read::<u32>(img.word(fr.at + 0x8)) == 0 && node != sentinel {
+        let cursor = fr.esp.wrapping_sub(0xc);
+        while node != sentinel {
+            g.write::<u32>(cursor, node);
+            let next = g.read::<u32>(node + 8);
+            let method = g.read::<u32>(g.read::<u32>(node) + 0x20);
+            eax = g.call(method, cursor, &[cursor]).eax;
+            node = next;
+        }
+    }
+    if g.read::<u32>(sentinel + 8) == sentinel {
+        let flags = g.read::<u32>(obj + 0x10);
+        g.write::<u32>(obj + 0x10, flags | 1);
+    }
+    Ret::eax(eax)
+}
+
+/// [`ring_run`].
+pub const RING_RUN: Sig = Sig {
+    len: 74,
+    hash: 0x2e3d_1852_3464_efbb,
+    calls: &[],
+    imports: &[],
+};
+
+/// Registers 0x80 handles of a key (internal, `ecx` = the key): slot 772
+/// `(key, i)` gives each 64-bit handle, slot 779 registers it with
+/// `**G_LOCK` 1 around the call (operands `+0x21`, `+0x3d`). Returns the
+/// lock pointer.
+///
+/// `magic_0132` 0x10002c80 (83 bytes; 4 DLLs).
+pub fn register_80<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let key = fr.ecx;
+    let mut lock = 0;
+    for i in 0..0x80 {
+        let t = slot_target(g, w(0x11), 772);
+        let h = g.call(t, 0, &[key, i]);
+        lock = g.read::<u32>(w(0x21));
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        let t = slot_target(g, w(0x2a), 779);
+        g.call(t, 0, &[h.eax, h.edx, key, i]);
+        lock = g.read::<u32>(w(0x3d));
+        g.write::<u32>(lock, saved);
+    }
+    Ret::eax(lock)
+}
+
+/// [`register_80`].
+pub const REGISTER_80: Sig = Sig {
+    len: 83,
+    hash: 0xcb3b_0284_fbff_163b,
+    calls: &[],
+    imports: &[],
+};
+
+/// Sets the DLL's fade (internal, `xmm1` = its level): slot 234 `(A, B,
+/// C)` (the immediates `+0x1a`, `+0x15`, `+0xa`), then `G_F` bit 0 (`u16`,
+/// operand `+0x30`), `G_ON` 1 (`+0x37`), `G_LEVEL` the level (`+0x43`)
+/// and `G_T` 0 (`+0x49`). Returns slot 234's `eax`.
+///
+/// `magic_0155` 0x10009180 (85 bytes; 4 DLLs).
+pub fn fade_set<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let level = fr.xmm_f32(1);
+    let t = slot_target(g, w(0x5), 234);
+    let eax = g.call(t, 0, &[w(0x1a), w(0x15), w(0xa)]).eax;
+    let flags = g.read::<u16>(w(0x30)) | 1;
+    g.write::<u16>(w(0x30), flags);
+    g.write::<u32>(w(0x37), 1);
+    set_f32(g, w(0x43), level);
+    g.write::<u32>(w(0x49), 0);
+    Ret::eax(eax)
+}
+
+/// [`fade_set`].
+pub const FADE_SET: Sig = Sig {
+    len: 85,
+    hash: 0x96a5_05af_984e_1d64,
+    calls: &[],
+    imports: &[],
+};
+
+/// Registers the handles of the DLL's parts (internal, no arguments):
+/// for each part (0x3c bytes from the immediate `+0x4` to `+0x54`, its
+/// count at `+0x38` of it, the key at `-0x38`), handles `0..=count`
+/// (slot 772 `(key, i)`, slot 779 under `**G_LOCK` 1; operands `+0x22`,
+/// `+0x3e`). Returns the last key, or `eax` as it came.
+///
+/// `magic_0515` 0x100038e0 (94 bytes; 4 DLLs).
+pub fn register_parts_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut eax = fr.eax;
+    let mut p = w(0x4);
+    loop {
+        let mut i = 0u32;
+        if g.read::<i32>(p) >= 0 {
+            loop {
+                let key = p.wrapping_sub(0x38);
+                let t = slot_target(g, w(0x14), 772);
+                let h = g.call(t, 0, &[key, i]);
+                let lock = g.read::<u32>(w(0x22));
+                let saved = g.read::<u32>(lock);
+                g.write::<u32>(lock, 1);
+                let t = slot_target(g, w(0x2b), 779);
+                g.call(t, 0, &[h.eax, h.edx, key, i]);
+                let lock = g.read::<u32>(w(0x3e));
+                g.write::<u32>(lock, saved);
+                i += 1;
+                eax = key;
+                if i.cast_signed() > g.read::<i32>(p) {
+                    break;
+                }
+            }
+        }
+        p = p.wrapping_add(0x3c);
+        if p.cast_signed() >= w(0x54).cast_signed() {
+            break;
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`register_parts_b`].
+pub const REGISTER_PARTS_B: Sig = Sig {
+    len: 94,
+    hash: 0xb0bd_44dc_4dfa_9259,
+    calls: &[],
+    imports: &[],
+};
+
+/// Hooks an object up (cdecl `(object)`): slot 447 `(chr, 0xb2)` on the
+/// character `*G_A + 0x198` (operand `+0x4`), slots 450 and 449 give the
+/// object its two callbacks (operands `+0x32`, `+0x3f`), and the
+/// character goes into the object's table at `+0x2c + 16 * (+0xac)`.
+/// Each call sees the words the earlier ones left. Returns twice the
+/// index.
+///
+/// `magic_0301` 0x10001c10 (95 bytes; 4 DLLs).
+pub fn hook_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let chr = g.read::<u32>(g.read::<u32>(w(0x4)).wrapping_add(0x198));
+    let obj = fr.arg(g, 0);
+    let mut s = Pushes::default();
+    s.push_all(&[0xb2, chr]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x11), 447), 0);
+    s.push_all(&[w(0x32), obj]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x24), 450), 0);
+    s.push_all(&[w(0x3f), obj]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x3a), 449), 0);
+    let i2 = g.read::<u32>(obj + 0xac).wrapping_mul(2);
+    g.write::<u32>(obj.wrapping_add(i2.wrapping_mul(8)).wrapping_add(0x2c), chr);
+    Ret::eax(i2)
+}
+
+/// [`hook_object`].
+pub const HOOK_OBJECT: Sig = Sig {
+    len: 95,
+    hash: 0xea28_4a48_1502_a71a,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 295 `(model, -1)` on each of the DLL's `G_N` actor models
+/// (operand `+0x5`; 0xcc bytes apart from the immediate `+0xd`) and on
+/// each of its fixed models (from the immediate `+0x36` to `+0x5c`).
+/// Returns the last call's `eax`.
+///
+/// `magic_0515` 0x100025d0 (100 bytes; 4 DLLs).
+pub fn models_295<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    if g.read::<i32>(w(0x5)) > 0 {
+        let mut m = w(0xd);
+        let mut i = 0u32;
+        loop {
+            let t = slot_target(g, w(0x12), 295);
+            g.call(t, 0, &[g.read::<u32>(m), u32::MAX]);
+            i += 1;
+            m = m.wrapping_add(0xcc);
+            if i.cast_signed() >= g.read::<i32>(w(0x2e)) {
+                break;
+            }
+        }
+    }
+    let mut eax = 0;
+    let mut m = w(0x36);
+    loop {
+        let t = slot_target(g, w(0x41), 295);
+        eax = g.call(t, 0, &[g.read::<u32>(m), u32::MAX]).eax;
+        m = m.wrapping_add(0xcc);
+        if m.cast_signed() >= w(0x5c).cast_signed() {
+            break;
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`models_295`].
+pub const MODELS_295: Sig = Sig {
+    len: 100,
+    hash: 0x7828_8662_28f8_083e,
+    calls: &[],
+    imports: &[],
+};

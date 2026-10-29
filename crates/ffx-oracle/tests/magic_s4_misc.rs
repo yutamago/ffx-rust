@@ -2157,3 +2157,126 @@ fn small_internals() {
         }
     }
 }
+
+/// More small functions: the actors' and models' slot loops, the ring
+/// run, the handle registrations, the fade and the object hook.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per function
+fn small_loops() {
+    if let Some(mut t) = twin(515) {
+        rec(&mut t, 296, 2, |_, a| 0x0296_0000 ^ a[0]);
+        rec(&mut t, 295, 2, |_, a| 0x0295_0000 ^ a[0]);
+        rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+        let lock = SCRATCH + 0x80;
+        rec(&mut t, 779, 2, move |m, _| m.r32(lock));
+        let f = t.at(0x2510);
+        let n = t.img.word(f + 0x2);
+        let actors = t.img.word(f + 0x12);
+        for (count, skip) in [(0u32, 9u32), (3, 1), (2, 1)] {
+            t.set_u32(n, count);
+            for i in 0..3 {
+                t.set_u32(actors + 0xcc * i, if i == skip { 0xff } else { 0x10 + i });
+            }
+            let c = Call {
+                eax: 0x00ea,
+                ecx: 0x0f,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::actors_296(g, img, fr)
+            });
+        }
+        let f = t.at(0x25d0);
+        for count in [0u32, 2] {
+            t.set_u32(t.img.word(f + 0x5), count);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                s4_misc::models_295(g, img, fr)
+            });
+        }
+        let f = t.at(0x38e0);
+        t.set_u32(t.img.word(f + 0x22), lock);
+        t.set_u32(lock, 3);
+        let parts = t.img.word(f + 0x4);
+        for i in 0..0x200 {
+            t.set_u32(parts + 0x3c * i, [u32::MAX, 0, 1][(i % 3) as usize]);
+        }
+        let c = Call {
+            eax: 0x00ec,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            s4_misc::register_parts_b(g, img, fr)
+        });
+    }
+    if let Some(mut t) = twin(577) {
+        let f = t.at(0x87a0);
+        let vt = SCRATCH + 0x100;
+        t.set_u32(vt + 0x20, magic::TRAPS);
+        rec(&mut t, 0, 1, |m, a| 0x77 ^ m.r32(a[0]));
+        let obj = SCRATCH + 0x200;
+        for (skip, n) in [(0u32, 0u32), (0, 2), (1, 2)] {
+            t.write(obj, &[0x33; 0x20]);
+            t.set_u32(t.img.word(f + 0x8), skip);
+            let mut prev = obj + 4;
+            for i in 0..n {
+                let nd = SCRATCH + 0x400 + 0x40 * i;
+                t.set_u32(nd, vt);
+                if i == 0 {
+                    t.set_u32(obj + 0xc, nd);
+                } else {
+                    t.set_u32(prev + 8, nd);
+                }
+                prev = nd;
+            }
+            if n == 0 {
+                t.set_u32(obj + 0xc, obj + 4);
+            } else {
+                t.set_u32(prev + 8, obj + 4);
+            }
+            let c = Call {
+                eax: 0x00ed,
+                ecx: obj,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::ring_run(g, img, fr)
+            });
+        }
+    }
+    if let Some(mut t) = twin(132) {
+        let f = t.at(0x2c80);
+        let lock = SCRATCH + 0x80;
+        t.set_u32(t.img.word(f + 0x21), lock);
+        t.set_u32(lock, 5);
+        rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+        rec(&mut t, 779, 2, move |m, _| m.r32(lock));
+        t.check(f, Call::this(0x4242), &[], Eax::Checked, |g, img, fr| {
+            s4_misc::register_80(g, img, fr)
+        });
+    }
+    if let Some(mut t) = twin(155) {
+        let f = t.at(0x9180);
+        rec(&mut t, 234, 3, |_, _| 0x234);
+        let c = Call::default().with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.75)]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            s4_misc::fade_set(g, img, fr)
+        });
+    }
+    if let Some(mut t) = twin(301) {
+        let f = t.at(0x1c10);
+        let a = SCRATCH + 0x100;
+        t.set_u32(t.img.word(f + 0x4), a);
+        t.set_u32(a + 0x198, 0x0c0c_0001);
+        for s in [447u32, 450, 449] {
+            rec(&mut t, s, 2, move |_, _| s);
+        }
+        let obj = SCRATCH + 0x400;
+        for i in [0u32, 3] {
+            t.write(obj, &[0x22; 0xb0]);
+            t.set_u32(obj + 0xac, i);
+            t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+        }
+    }
+}
