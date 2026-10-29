@@ -1282,4 +1282,10 @@ ported! {
         let ebp = f.at() + 8;
         ffx_prender::m5p_render_b_d3d::queue::push(&mut mem(), ebp, this, arg)
     }
+    /// `Phyre_PRendering_PRenderThread_stop_00615f40`: the exit code in this frame.
+    Phyre_PRendering_PRenderThread_stop_00615f40 @ 0x0061_5f40 => extern "thiscall" fn e_00615f40(this: u32) {
+        let mut f = super::StackFrame::<1>::new();
+        let ebp = f.at() + 4;
+        ffx_prender::m5p_render_b_d3d::thread::stop(&mut mem(), ebp, this);
+    }
 }

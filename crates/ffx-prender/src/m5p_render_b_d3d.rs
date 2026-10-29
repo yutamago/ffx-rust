@@ -344,3 +344,71 @@ pub mod queue {
         0
     }
 }
+
+/// The render thread's stop callees: `Phyre_PRendering_PRenderThread_sync`,
+/// the Win32 wrappers `Phyre_PSemaphoreWin32_wait` (`0x004302b0`),
+/// `Phyre_PEventFlagWin32_signal` (`0x00430200`), the thread's join
+/// (`0x004301b0(thread; &exit_code)`, `WaitForSingleObject` then
+/// `GetExitCodeThread`), the thread's no-op `0x00430260` and the handle
+/// closes `0x00430240` (events) and `0x00430250` (semaphores), all
+/// thiscall.
+pub const THREAD_SYNC: u32 = 0x0061_5ea0;
+pub const SEMAPHORE_WAIT: u32 = 0x0043_02b0;
+pub const EVENT_SIGNAL: u32 = 0x0043_0200;
+pub const THREAD_JOIN: u32 = 0x0043_01b0;
+pub const THREAD_NOP: u32 = 0x0043_0260;
+pub const EVENT_CLOSE: u32 = 0x0043_0240;
+pub const SEMAPHORE_CLOSE: u32 = 0x0043_0250;
+
+pub mod thread {
+    //! `0x00615f40` over game memory.
+
+    use super::{
+        EVENT_CLOSE, EVENT_SIGNAL, SEMAPHORE_CLOSE, SEMAPHORE_WAIT, THREAD_JOIN, THREAD_NOP,
+        THREAD_SYNC,
+    };
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `0x00615f40(thread)` (thiscall, called by
+    /// `Phyre_PFramework_PApplication_onExit`, which reads no `eax`): for
+    /// a render thread not stopped (`+0xc` != 2) a sync; then, when it
+    /// runs (`+0xc` == 1): stopped (2), the semaphore `+0x15c` waited, the
+    /// next of the 16 command slots (20 bytes at `+0x10`, index `+0x154`
+    /// wrapping) cleared (`+0x10`, `+0x14`, `+0x20`) and its event
+    /// (`+0x18`) signalled, the thread joined (its exit code through the
+    /// frame's `ebp - 4`, which the prologue's `push ecx` set to `thread`),
+    /// every slot's event closed and its flag (`+0x1c`) cleared, both
+    /// semaphores (`+0x15c`, `+0x164`) closed and their flags cleared, the
+    /// thread's own flag `+4` too.
+    pub fn stop(h: &mut impl Host, ebp: u32, this: u32) {
+        h.write(ebp - 4, this);
+        if h.read::<u32>(this + 0xc) == 2 {
+            return;
+        }
+        h.call_sym(THREAD_SYNC, Conv::Thiscall(this), &[]);
+        if h.read::<u32>(this + 0xc) != 1 {
+            return;
+        }
+        h.write(this + 0xc, 2u32);
+        h.call_sym(SEMAPHORE_WAIT, Conv::Thiscall(this + 0x15c), &[]);
+        let i: u32 = h.read(this + 0x154);
+        let e = this.wrapping_add(i.wrapping_mul(20));
+        let next = i.wrapping_add(1);
+        h.write(e + 0x10, [0u32; 2]);
+        h.write(e + 0x20, 0u32);
+        h.write(this + 0x154, if next == 0x10 { 0 } else { next });
+        h.call_sym(EVENT_SIGNAL, Conv::Thiscall(e + 0x18), &[]);
+        h.call_sym(THREAD_JOIN, Conv::Thiscall(this), &[ebp - 4]);
+        h.call_sym(THREAD_NOP, Conv::Thiscall(this), &[]);
+        h.write(this + 4, 0u8);
+        for k in 0..0x10 {
+            let s = this + 0x18 + 0x14 * k;
+            h.call_sym(EVENT_CLOSE, Conv::Thiscall(s), &[]);
+            h.write(s + 4, 0u8);
+        }
+        h.call_sym(SEMAPHORE_CLOSE, Conv::Thiscall(this + 0x15c), &[]);
+        h.write(this + 0x160, 0u8);
+        h.call_sym(SEMAPHORE_CLOSE, Conv::Thiscall(this + 0x164), &[]);
+        h.write(this + 0x168, 0u8);
+    }
+}

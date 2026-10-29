@@ -4443,3 +4443,47 @@ fn command_push_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn render_thread_stop_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // stopped; idle; running at slot 3; running at the last slot; another state
+        for (case, state, slot) in [
+            (0u32, 2u32, 3u32),
+            (1, 0, 3),
+            (2, 1, 3),
+            (3, 1, 15),
+            (4, 3, 3),
+        ] {
+            for (sym, n) in [
+                (d3d::THREAD_SYNC, 0),
+                (d3d::SEMAPHORE_WAIT, 0),
+                (d3d::EVENT_SIGNAL, 0),
+                (d3d::THREAD_JOIN, 1),
+                (d3d::THREAD_NOP, 0),
+                (d3d::EVENT_CLOSE, 0),
+                (d3d::SEMAPHORE_CLOSE, 0),
+            ] {
+                t.stub(sym, true, n, n, 0x50 + n);
+            }
+            let th = t.junk(0x170, 5);
+            t.w32(th + 0xc, state);
+            t.w32(th + 0x154, slot);
+            let ebp = t.ebp_for(0);
+            t.check_frame(
+                &format!("{label}: stop {case}"),
+                0x0061_5f40,
+                Conv::Thiscall(th),
+                &[],
+                ebp,
+                0x20,
+                (4, 0),
+                |g| {
+                    d3d::thread::stop(g, ebp, th);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}
