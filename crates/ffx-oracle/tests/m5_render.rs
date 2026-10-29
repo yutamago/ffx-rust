@@ -45,6 +45,7 @@ use ffx_prender::m5r_h::{self as mh, bridge as h};
 use ffx_prender::m5r_i::{self as mi, bridge as i};
 use ffx_prender::m5r_j::{self as mj, bridge as j};
 use ffx_prender::m5r_k::{self as mk, bridge as k};
+use ffx_prender::m5r_l::{self as ml, bridge as lb};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -181,6 +182,8 @@ enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// `ST0`, a float the original loads with `fld dword`.
+    F32(f32),
 }
 
 struct Twins {
@@ -505,15 +508,23 @@ impl Twins {
         self.b.set_call_top(self.b_top);
         let out = bridge(&mut G(&mut self.b, poison, top));
         self.b.set_call_top(None);
-        assert!(
-            ra.st0_raw.is_none(),
-            "{what}: the original leaves ST0 set ({:?})",
-            ra.st0
-        );
+        if let Out::F32(v) = out {
+            let st0 = ra.st0.unwrap_or_else(|| panic!("{what}: no float in ST0"));
+            assert!(
+                ffx_oracle::same_float(st0, f64::from(v)),
+                "{what}: st0 {st0} vs {v}"
+            );
+        } else {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original leaves ST0 set ({:?})",
+                ra.st0
+            );
+        }
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
-            Out::None => {}
+            Out::None | Out::F32(_) => {}
         }
         self.diff(what);
     }
@@ -5369,6 +5380,238 @@ fn batch11_functions_match_the_original() {
                 Conv::Thiscall(this),
                 &[],
                 |g| Out::U32(k::debug_text_panel_ctor(g, this)),
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- render-pcui batch 1 (ffx_prender::m5r_l) ----
+
+#[test]
+fn rp1_thunks_match_the_original() {
+    // Every thunk's target is a recording stub: the diff shows the
+    // target was called with the thunk's `ecx` and words, and its `eax`
+    // comes back.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b01);
+        for case in 0..8 {
+            let this = t.zeros(0x40);
+            let scene = t.zeros(0x40);
+            t.global(ml::SCENE.sym, scene);
+            let r = rng.word();
+            t.stub_sym(ml::RADIAL_LINE_DESTROY, 1, true, 0, 0, Ret::Val(r));
+            t.check(
+                "RadialLine_destroyRadialLine_thunk_006f7b10",
+                0x006f_7b10,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::RADIAL_LINE_DESTROY,
+                        host::Conv::Thiscall(this),
+                        &[],
+                    ))
+                },
+            );
+            t.stub_sym(ml::BROKEN_SCREEN_RELEASE, 2, true, 0, 0, Ret::Val(r ^ 1));
+            t.check(
+                "BrokenScreenEffect_releaseObjects_thunk_006d3600",
+                0x006d_3600,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::BROKEN_SCREEN_RELEASE,
+                        host::Conv::Thiscall(this),
+                        &[],
+                    ))
+                },
+            );
+            for (k, (sym, target)) in [
+                (0x0063_8e20, ml::MS_GET_ENCOUNT_TYPE),
+                (0x0063_8e60, ml::MS_BATTLE_CHECK),
+                (0x0064_20d0, ml::SEGMENTS_ALL_READY),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let k = k as u32;
+                t.stub_sym(target, 3 + k, false, 0, 0, Ret::Val(r.wrapping_add(k)));
+                t.check("cdecl thunk", sym, Conv::Cdecl, &[], |g| {
+                    Out::U32(lb::forward(g, target, host::Conv::Cdecl, &[]))
+                });
+            }
+            let chr = if case % 3 == 0 { 0 } else { this };
+            t.stub_sym(ml::CHARACTER_UNLOAD_TASK, 6, false, 1, 0, Ret::Val(r));
+            t.check(
+                "graphicCharacterUnloadTask_thunk_0063d9a0",
+                0x0063_d9a0,
+                Conv::Cdecl,
+                &[chr],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::CHARACTER_UNLOAD_TASK,
+                        host::Conv::Cdecl,
+                        &[chr],
+                    ))
+                },
+            );
+            for (k, (sym, target)) in [
+                (0x0063_9350, ml::ATTACH_CHR_CLUSTER),
+                (0x0064_49c0, ml::SCENE_UPDATE_MAP_YIQ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_sym(target, 7 + k as u32, true, 0, 0, Ret::Val(r ^ 0x55));
+                t.check("scene thunk", sym, Conv::Cdecl, &[], |g| {
+                    Out::U32(lb::scene_forward(g, target))
+                });
+            }
+            assert_eq!(t.calls(), 8);
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp1_video_accessors_match_the_original() {
+    // A synthetic FMV manager from a stubbed GetInstance: the playing and
+    // state bytes in every combination, getEndTimeMs and
+    // isVideoAtEndFrame stubs returning words with upper bytes set. The
+    // snapshots run the game's own manager too (GetInstance original).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b02);
+        for case in 0..24 {
+            let m = t.zeros(0x800) + 4 * rng.below(64);
+            let playing = [0, 1, 0x80, rng.next() as u8][case % 4];
+            let state = [0, 1, 0xff, rng.next() as u8][(case / 4) % 4];
+            t.w8(m + ml::FMV_PLAYING, playing);
+            t.w8(m + ml::FMV_STATE, state);
+            let real = t.snapshot && case >= 20;
+            if !real {
+                t.stub_sym(ml::FMV_MANAGER, 1, false, 0, 0, Ret::Val(m));
+            }
+            let r = rng.word();
+            t.stub_sym(ml::FMV_END_TIME_MS, 2, true, 0, 0, Ret::Val(r));
+            t.check(
+                "graphicGetVideoEndTime",
+                0x0064_1140,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_end_time(g)),
+            );
+            t.stub_sym(
+                ml::FMV_AT_END_FRAME,
+                3,
+                true,
+                0,
+                0,
+                Ret::Val(r ^ 0xffff_ff00),
+            );
+            t.check(
+                "graphicisVideoAtEndFrame",
+                0x0064_5e50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_at_end_frame(g)),
+            );
+            t.check(
+                "graphicVideoState_00645dc0",
+                0x0064_5dc0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_state(g)),
+            );
+            t.check(
+                "graphicVideoIsPlaying_00660410",
+                0x0066_0410,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_is_playing(g)),
+            );
+            t.check(
+                "graphicVideoClearPlaying_00643e50",
+                0x0064_3e50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_clear_playing(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp1_app_floats_and_flags_match_the_original() {
+    // The application's floats from a stubbed GetApplication (any float
+    // but a signalling NaN; the snapshots also read the game's own
+    // application), the post-process flag on a synthetic manager and on
+    // the game's, and the float swap on distinct and equal cells.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b03);
+        for case in 0..24 {
+            let app = t.zeros(0x100);
+            for k in 0..0x40 {
+                let v = float_word(&mut rng);
+                t.w32(app + 4 * k, v);
+            }
+            let real = t.snapshot && case >= 20;
+            if !real {
+                t.stub_sym(ml::GET_APPLICATION, 1, false, 0, 0, Ret::Val(app));
+            }
+            for (sym, off) in [
+                (0x0064_11a0, 0x78),
+                (0x0064_1270, 0xd8),
+                (0x0064_1280, 0xd4),
+                (0x0064_1290, 0xdc),
+                (0x0064_12a0, 0xd0),
+            ] {
+                t.check("app float", sym, Conv::Cdecl, &[], |g| {
+                    Out::F32(lb::app_float(g, off))
+                });
+            }
+            if !real {
+                let p = t.zeros(0x1_2400);
+                let v = rng.next() as u8;
+                t.w8(p + ml::POST_FLAG, v);
+                t.global(ml::POST_PROCESS.sym, p);
+            }
+            if ml::POST_PROCESS.get(&t.b) != 0 {
+                t.check(
+                    "graphicPostProcessSetFlag_00699080",
+                    0x0069_9080,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(lb::post_set_flag(g)),
+                );
+            }
+            let cells = t.zeros(8);
+            let (a, b) = if case % 5 == 0 {
+                (cells, cells)
+            } else {
+                (cells, cells + 4)
+            };
+            let x = float_word(&mut rng);
+            let y = float_word(&mut rng);
+            t.w32(cells, x);
+            t.w32(cells + 4, y);
+            let slot = first_slot(&t.a, 2);
+            t.check(
+                "FloatSwap_006c7c80",
+                0x006c_7c80,
+                Conv::Cdecl,
+                &[a, b],
+                |g| Out::U32(lb::float_swap(g, slot, a, b)),
+            );
+            assert_eq!(
+                Mem::read::<u32>(&t.a, slot),
+                Mem::read::<u32>(&t.b, slot),
+                "FloatSwap_006c7c80: the parked word"
             );
             t.reset();
         }

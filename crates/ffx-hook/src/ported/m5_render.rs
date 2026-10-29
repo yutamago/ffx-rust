@@ -6,6 +6,7 @@
 //! shims keep no state.
 
 use super::{StackFrame, mem, ported};
+use ffx_graphic::host::Conv;
 use ffx_prender::m5r_a::bridge as a;
 use ffx_prender::m5r_b::bridge as b;
 use ffx_prender::m5r_c::bridge as c;
@@ -17,6 +18,7 @@ use ffx_prender::m5r_h::bridge as h;
 use ffx_prender::m5r_i::bridge as i;
 use ffx_prender::m5r_j::bridge as j;
 use ffx_prender::m5r_k::bridge as k;
+use ffx_prender::m5r_l::{self as ml, bridge as l};
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1214,5 +1216,90 @@ ported! {
     /// `DebugTextPanel_ctor_006b53b0(this)`.
     DebugTextPanel_ctor_006b53b0 @ 0x006b_53b0 => extern "thiscall" fn debug_text_panel_ctor(this: u32) -> u32 {
         k::debug_text_panel_ctor(&mut mem(), this)
+    }
+    // ---- render-pcui batch 1 (ffx_prender::m5r_l) ----
+    /// `graphicRemoveDelegations_0063dab0()`: `jmp RenderDelegationHelper_removeFlag1000_006ae530`.
+    graphicRemoveDelegations_0063dab0 @ 0x0063_dab0 => extern "C" fn remove_delegations() -> u32 {
+        a::remove_delegations(&mut mem())
+    }
+    /// `RadialLine_destroyRadialLine_thunk_006f7b10(this)`.
+    RadialLine_destroyRadialLine_thunk_006f7b10 @ 0x006f_7b10 => extern "thiscall" fn radial_line_destroy_thunk(this: u32) {
+        l::forward(&mut mem(), ml::RADIAL_LINE_DESTROY, Conv::Thiscall(this), &[]);
+    }
+    /// `MsGetEncountType_thunk_00638e20()`.
+    MsGetEncountType_thunk_00638e20 @ 0x0063_8e20 => extern "C" fn ms_get_encount_type_thunk() -> u32 {
+        l::forward(&mut mem(), ml::MS_GET_ENCOUNT_TYPE, Conv::Cdecl, &[])
+    }
+    /// `MsBattleCheck_thunk_00638e60()`.
+    MsBattleCheck_thunk_00638e60 @ 0x0063_8e60 => extern "C" fn ms_battle_check_thunk() -> u32 {
+        l::forward(&mut mem(), ml::MS_BATTLE_CHECK, Conv::Cdecl, &[])
+    }
+    /// `graphicAttachChrClusterTo3DWorld_00639350()`.
+    graphicAttachChrClusterTo3DWorld_00639350 @ 0x0063_9350 => extern "C" fn attach_chr_cluster_thunk() {
+        l::scene_forward(&mut mem(), ml::ATTACH_CHR_CLUSTER);
+    }
+    /// `graphicCharacterUnloadTask_thunk_0063d9a0(chr)`.
+    graphicCharacterUnloadTask_thunk_0063d9a0 @ 0x0063_d9a0 => extern "C" fn character_unload_task_thunk(chr: u32) {
+        l::forward(&mut mem(), ml::CHARACTER_UNLOAD_TASK, Conv::Cdecl, &[chr]);
+    }
+    /// `graphicGetVideoEndTime()`.
+    graphicGetVideoEndTime @ 0x0064_1140 => extern "C" fn video_end_time() -> u32 {
+        l::video_end_time(&mut mem())
+    }
+    /// `graphicGetAppFloat78_006411a0()` (`ST0`).
+    graphicGetAppFloat78_006411a0 @ 0x0064_11a0 => extern "C" fn app_float_78() -> f32 {
+        l::app_float(&mut mem(), 0x78)
+    }
+    /// `graphicGetAppFloatD8_00641270()` (`ST0`).
+    graphicGetAppFloatD8_00641270 @ 0x0064_1270 => extern "C" fn app_float_d8() -> f32 {
+        l::app_float(&mut mem(), 0xd8)
+    }
+    /// `graphicGetAppFloatD4_00641280()` (`ST0`).
+    graphicGetAppFloatD4_00641280 @ 0x0064_1280 => extern "C" fn app_float_d4() -> f32 {
+        l::app_float(&mut mem(), 0xd4)
+    }
+    /// `graphicGetAppFloatDC_00641290()` (`ST0`).
+    graphicGetAppFloatDC_00641290 @ 0x0064_1290 => extern "C" fn app_float_dc() -> f32 {
+        l::app_float(&mut mem(), 0xdc)
+    }
+    /// `graphicGetAppFloatD0_006412a0()` (`ST0`).
+    graphicGetAppFloatD0_006412a0 @ 0x0064_12a0 => extern "C" fn app_float_d0() -> f32 {
+        l::app_float(&mut mem(), 0xd0)
+    }
+    /// `graphicSegmentsAllReady_thunk_006420d0()`.
+    graphicSegmentsAllReady_thunk_006420d0 @ 0x0064_20d0 => extern "C" fn segments_all_ready_thunk() -> u32 {
+        l::forward(&mut mem(), ml::SEGMENTS_ALL_READY, Conv::Cdecl, &[])
+    }
+    /// `graphicVideoClearPlaying_00643e50()`.
+    graphicVideoClearPlaying_00643e50 @ 0x0064_3e50 => extern "C" fn video_clear_playing() -> u32 {
+        l::video_clear_playing(&mut mem())
+    }
+    /// `graphicUpdateMapYIQ_thunk_006449c0()`.
+    graphicUpdateMapYIQ_thunk_006449c0 @ 0x0064_49c0 => extern "C" fn update_map_yiq_thunk() {
+        l::scene_forward(&mut mem(), ml::SCENE_UPDATE_MAP_YIQ);
+    }
+    /// `graphicVideoState_00645dc0()`.
+    graphicVideoState_00645dc0 @ 0x0064_5dc0 => extern "C" fn video_state() -> u32 {
+        l::video_state(&mut mem())
+    }
+    /// `graphicisVideoAtEndFrame()`.
+    graphicisVideoAtEndFrame @ 0x0064_5e50 => extern "C" fn video_at_end_frame() -> u32 {
+        l::video_at_end_frame(&mut mem())
+    }
+    /// `graphicVideoIsPlaying_00660410()`.
+    graphicVideoIsPlaying_00660410 @ 0x0066_0410 => extern "C" fn video_is_playing() -> u32 {
+        l::video_is_playing(&mut mem())
+    }
+    /// `graphicPostProcessSetFlag_00699080()`.
+    graphicPostProcessSetFlag_00699080 @ 0x0069_9080 => extern "C" fn post_set_flag() -> u32 {
+        l::post_set_flag(&mut mem())
+    }
+    /// `FloatSwap_006c7c80(a, b)`.
+    FloatSwap_006c7c80 @ 0x006c_7c80 => extern "C" fn float_swap(a: u32, b: u32; slots: u32) -> u32 {
+        l::float_swap(&mut mem(), slots, a, b)
+    }
+    /// `BrokenScreenEffect_releaseObjects_thunk_006d3600(this)`.
+    BrokenScreenEffect_releaseObjects_thunk_006d3600 @ 0x006d_3600 => extern "thiscall" fn broken_screen_release_thunk(this: u32) {
+        l::forward(&mut mem(), ml::BROKEN_SCREEN_RELEASE, Conv::Thiscall(this), &[]);
     }
 }
