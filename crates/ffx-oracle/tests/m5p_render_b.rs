@@ -3761,3 +3761,158 @@ fn morphs_match_the_original() {
         }
     }
 }
+
+// ---- batch 9: compute and geometry shader programs ----
+
+use ffx_prender::m5p_render_b_shaders::{self as shaders, bridge as hb};
+
+#[test]
+fn shader_programs_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0xd3d1_0b09);
+        for case in 0..48u32 {
+            let (sym, k) = if case % 2 == 1 {
+                (0x0058_d350, shaders::GEOMETRY)
+            } else {
+                (0x0058_d030, shaders::COMPUTE)
+            };
+            let mut words = vec![0u32; 24];
+            words[k.slot as usize] = 5;
+            let dev = t.com_object(&words, &[]);
+            let holder = t.rebase(shaders::HOLDER_DEVICE);
+            t.put_saved(holder, if case % 7 == 3 { 0 } else { dev });
+            t.stub(shaders::SCOPE_ENTER, true, 0, 0, 0x4d50);
+            t.stub(shaders::SCOPE_LEAVE, true, 0, 0, 0x4e90);
+            t.stub(shaders::HOLDER_CTOR, true, 0, 0, 0);
+            t.stub(shaders::ATEXIT, false, 1, 0, 0);
+            t.stub(shaders::PRINTF, false, 2, 0, 0);
+            let guard = t.rebase(shaders::HOLDER_GUARD);
+            let g = (rng.next() & !1) | u32::from(case % 3 == 0);
+            t.put_saved(guard, g);
+            let ctx = t.junk(0x100, case as u8);
+            t.w32(ctx + 0x6c, dev);
+            let level =
+                [0x9300u32, 0xa0ff, 0xa100, 0xafff, 0xb000, 0xb100][(case / 2 % 6) as usize];
+            t.w32(ctx + 0xb4, level);
+            t.stub(shaders::RENDERER_CONTEXT, false, 0, 0, ctx);
+            let sampler = t.rebase(shaders::HOLDER_SAMPLER);
+            t.put_saved(sampler, rng.next());
+            t.stub(shaders::CONSTANT_BUFFER_CREATE, true, 0, 0, 0xcb);
+            let this = t.junk(0x500, case as u8 ^ 0x40);
+            t.w32(this + 0xc, 0x100 | ((case % 3) << 30));
+            t.w32(this + 0x4e0, if case % 4 == 2 { 0x0bad_0000 } else { 0 });
+            let profile = [
+                k.profile_50,
+                k.profile_41,
+                0x1234_5678,
+                k.profile_50 ^ k.profile_41,
+            ][(case / 12 % 4) as usize];
+            t.w32(this + 0x4dc, profile);
+            let ebp = t.ebp_for(0);
+            let lock = ebp - 0x10;
+            t.check_frame(
+                &format!("{label}: shader program case {case}"),
+                sym,
+                Conv::Thiscall(this),
+                &[],
+                ebp,
+                0x10,
+                (0x10, 0xc),
+                |g| Out::U32(hb::create(g, this, lock, k)),
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn restore_shaders_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (f, r) in [
+            (0x006d_f6d0u32, shaders::SHADER_MANAGER),
+            (0x006e_5ee0, shaders::PS2_LIGHTING),
+        ] {
+            // no entry; a material saved or not; objects 0, 1, 3 (owned or
+            // not); the instance found deeper in either map or absent
+            for case in 0..6u32 {
+                let inst = t.junk(0x40, case as u8);
+                let mat_node = t.junk(0x20, 1);
+                let obj_node = t.junk(0x20, 2);
+                t.w32(mat_node + 0x10, if case % 2 == 0 { 0x3333 } else { 0 });
+                let count = [0u32, 1, 3, 0x8000_0003, 3, 2][case as usize];
+                let objs = t.zeros(8);
+                let buf = t.junk(0x20, 3);
+                t.w32(objs, count);
+                t.w32(
+                    objs + 4,
+                    if count & 0x7fff_ffff == 1 {
+                        0x4141
+                    } else {
+                        buf
+                    },
+                );
+                t.w32(obj_node + 0x10, objs);
+                // the find stub returns its tag's node: the first map's
+                // the material node, the second's the objects node
+                let log = t.log;
+                let mut c = vec![0xa1];
+                c.extend(log.to_le_bytes());
+                c.extend([0xc1, 0xe0, 0x05]);
+                c.push(0x05);
+                c.extend((log + 4).to_le_bytes());
+                c.extend([0xc7, 0x00]);
+                c.extend(shaders::TREE_FIND.to_le_bytes());
+                c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+                c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+                c.extend([0x89, 0x50, 0x08]); // mov [eax+8], edx
+                c.extend([0xff, 0x05]);
+                c.extend(log.to_le_bytes());
+                let tree = t.rebase(r.tree);
+                c.push(0xb8);
+                c.extend(obj_node.to_le_bytes()); // mov eax, obj_node
+                c.extend([0x81, 0xf9]);
+                c.extend(tree.to_le_bytes()); // cmp ecx, tree
+                c.extend([0x75, 0x05]); // jne +5
+                c.push(0xb8);
+                c.extend((if case == 5 { 0 } else { mat_node }).to_le_bytes()); // mov eax, mat_node
+                c.extend([0xc2, 0x04, 0x00]);
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let at = t.rebase(shaders::TREE_FIND);
+                let old = Oracle::read(&mut t.a, at, 5).unwrap();
+                t.saved.entry(at).or_insert(old);
+                let mut j = vec![0xe9];
+                j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+                t.write(at, &j);
+                t.stub(shaders::DELETE_OBJECT, true, 1, 1, 0xde);
+                t.stub(shaders::TREE_REMOVE, true, 1, 1, 0x7e);
+                t.stub(shaders::FREE_LIST_FREE, true, 1, 1, 0xf1);
+                t.stub(shaders::PHYRE_FREE, false, 1, 0, 0xf4ee);
+                // the maps: a root whose key is less (go right), then the
+                // instance (or a leaf back at the tree)
+                for tr in [r.tree, r.tree2] {
+                    let tree = t.rebase(tr);
+                    let root = t.junk(0x20, 4);
+                    let found = t.junk(0x20, 5);
+                    t.w32(root + 0xc, 0);
+                    t.w32(root + 4, if case == 3 { tree } else { found });
+                    t.w32(found + 0xc, inst);
+                    t.put_saved(tree + 0xc, root);
+                }
+                let ebp = t.ebp_for(1);
+                let key = ebp + 8;
+                t.check(
+                    &format!("{label}: restore {f:#x} case {case}"),
+                    f,
+                    Conv::Cdecl,
+                    &[inst],
+                    |g| {
+                        shaders::restore::restore(g, r, inst, key);
+                        Out::None
+                    },
+                );
+                t.reset();
+            }
+        }
+    }
+}

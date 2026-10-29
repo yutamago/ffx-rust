@@ -16,6 +16,7 @@ use ffx_prender::m5p_render_b_more2::bridge as nb;
 use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
+use ffx_prender::m5p_render_b_shaders::{self as sh, bridge as hb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
 
 use super::{mem, ported};
@@ -1199,5 +1200,24 @@ ported! {
         let mut f = super::StackFrame::<9>::new();
         let ebp = f.at() + 36;
         gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_ad30) }, weights, n, streams, out)
+    }
+    // ---- batch 9: compute and geometry shader programs (ffx_prender::m5p_render_b_shaders) ----
+    /// `PShaderComputeProgramD3D11_create_0058d030`: the scope lock in this frame.
+    PShaderComputeProgramD3D11_create_0058d030 @ 0x0058_d030 => extern "thiscall" fn h_0058d030(this: u32) -> u32 {
+        let mut f = super::StackFrame::<1>::new();
+        hb::create(&mut mem(), this, f.at(), sh::COMPUTE)
+    }
+    /// `PShaderGeometryProgramD3D11_create_0058d350`: the scope lock in this frame.
+    PShaderGeometryProgramD3D11_create_0058d350 @ 0x0058_d350 => extern "thiscall" fn h_0058d350(this: u32) -> u32 {
+        let mut f = super::StackFrame::<1>::new();
+        hb::create(&mut mem(), this, f.at(), sh::GEOMETRY)
+    }
+    /// `Phyre_CharacterShaderManager_restoreCharacterShader`: the map lookups take the argument's own address.
+    Phyre_CharacterShaderManager_restoreCharacterShader @ 0x006d_f6d0 => extern "C" fn h_006df6d0(inst: u32; slots: u32) {
+        sh::restore::restore(&mut mem(), sh::SHADER_MANAGER, inst, slots);
+    }
+    /// `Phyre_PS2LightingSetup_restoreCharacterShader`: the same over the point-light setup's maps.
+    Phyre_PS2LightingSetup_restoreCharacterShader @ 0x006e_5ee0 => extern "C" fn h_006e5ee0(inst: u32; slots: u32) {
+        sh::restore::restore(&mut mem(), sh::PS2_LIGHTING, inst, slots);
     }
 }

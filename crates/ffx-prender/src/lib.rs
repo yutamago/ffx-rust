@@ -180,6 +180,7 @@ pub mod m5p_render_b_more2;
 pub mod m5p_render_b_morph;
 pub mod m5p_render_b_post;
 pub mod m5p_render_b_post2;
+pub mod m5p_render_b_shaders;
 pub mod m5p_render_b_small;
 pub mod m5r_a;
 pub mod m5r_b;
