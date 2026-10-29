@@ -21,7 +21,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// group as its one argument and `ecx` as the caller left it; eax is the
 /// last method's, its low byte then the mode. The group is restored to the
 /// owner, the owner's `+0x1a` takes the mode and the flag is set (`Some`).
-fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, Option<u32>) {
+pub(crate) fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, Option<u32>) {
     let owner = g.read::<u32>(this);
     let mut eax = (eax & !0xff) | u32::from(g.read::<u8>(owner + 0x1a));
     if g.read::<u8>(this + 5) == g.read::<u8>(owner + 0x1a) {

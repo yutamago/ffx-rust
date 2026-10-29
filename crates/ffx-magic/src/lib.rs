@@ -47,6 +47,13 @@ pub mod pe;
 pub mod pushes;
 pub mod rcef;
 pub mod runtime;
+pub mod sb_common;
+pub mod sb_matrix;
+pub mod sb_misc;
+pub mod sb_nodes;
+pub mod sb_ppp;
+pub mod sb_sse;
+pub mod sb_vm;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -663,6 +670,48 @@ ports! {
     "m0337 obj attach, set par B" => rcef::OBJ_ATTACH_SET_PAR_B, rcef::obj_attach_set_par_b;
     "m0339 task seq, no args" => rcef::TASK_SEQ_NO_ARGS, rcef::task_seq_no_args;
     "m0339 obj attach, set par" => rcef::OBJ_ATTACH_SET_PAR, rcef::obj_attach_set_par;
+    // shared-B list
+    "node children visit (+0x20)" => sb_nodes::VISIT_CHILDREN_20, sb_nodes::visit_children_20;
+    "node visit, slot 668" => sb_nodes::VISIT_668, sb_nodes::visit_668;
+    "node slot 779, flagged" => sb_nodes::CALL_779_FLAGGED, sb_nodes::call_779_flagged;
+    "vm jump" => sb_vm::OP_JUMP, sb_vm::op_jump;
+    "vm jump reg" => sb_vm::OP_JUMP_REG, sb_vm::op_jump_reg;
+    "vm set 28" => sb_vm::OP_SET_28, sb_vm::op_set_28;
+    "vm label" => sb_vm::OP_LABEL, sb_vm::op_label;
+    "vm call" => sb_vm::OP_CALL, sb_vm::op_call;
+    "vm set reg" => sb_vm::OP_SET_REG, sb_vm::op_set_reg;
+    "vm 543" => sb_vm::OP_543, sb_vm::op_543;
+    "vm 371" => sb_vm::OP_371, sb_vm::op_371;
+    "vm loop" => sb_vm::OP_LOOP, sb_vm::op_loop;
+    "vm 222" => sb_vm::OP_222, sb_vm::op_222;
+    "vm 549 550" => sb_vm::OP_549_550, sb_vm::op_549_550;
+    "vm 271 267" => sb_vm::OP_271_267, sb_vm::op_271_267;
+    "vm select" => sb_vm::OP_SELECT, sb_vm::op_select;
+    "vm 306" => sb_vm::OP_306, sb_vm::op_306;
+    "vm loop end" => sb_vm::OP_LOOP_END, sb_vm::op_loop_end;
+    "vm set vector" => sb_vm::OP_SET_VECTOR, sb_vm::op_set_vector;
+    "vm hide" => sb_vm::OP_HIDE, sb_vm::op_hide;
+    "vm show group" => sb_vm::OP_SHOW_GROUP, sb_vm::op_show_group;
+    "vm timer" => sb_vm::OP_TIMER, sb_vm::op_timer;
+    "vm set scaled" => sb_vm::OP_SET_SCALED, sb_vm::op_set_scaled;
+    "vm fade 4" => sb_vm::OP_FADE_4, sb_vm::op_fade_4;
+    "vm 256" => sb_vm::OP_256, sb_vm::op_256;
+    "vm fade 6" => sb_vm::OP_FADE_6, sb_vm::op_fade_6;
+    "slot 239 callback" => sb_common::CALL_239, sb_common::call_239;
+    "start steps (225, 313, 549)" => sb_misc::START_STEPS, sb_misc::start_steps;
+    "slot 439 entry" => sb_misc::CALL_439, sb_misc::call_439;
+    "slot 438 entry" => sb_misc::CALL_438, sb_misc::call_438;
+    "free part, 1" => sb_misc::FREE_PART_1, sb_misc::free_part_1;
+    "load step" => sb_misc::LOAD_STEP, sb_misc::load_step;
+    "op free part" => sb_misc::OP_FREE_PART, sb_misc::op_free_part;
+    "place model" => sb_misc::PLACE_MODEL, sb_misc::place_model;
+    "place model unscaled" => sb_misc::PLACE_MODEL_UNSCALED, sb_misc::place_model_unscaled;
+    "state match (0x8528)" => sb_misc::STATE_MATCH_8528, sb_misc::state_match;
+    "state match (0xebe0)" => sb_misc::STATE_MATCH_EBE0, sb_misc::state_match;
+    "objhost start with 551" => sb_misc::START_551, sb_misc::start_551;
+    "show 219" => sb_misc::SHOW_219, sb_misc::show_219;
+    "free own part" => sb_misc::FREE_OWN_PART, sb_misc::free_own_part;
+    "start seq" => sb_misc::START_SEQ, sb_misc::start_seq;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -735,6 +784,61 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0219 boot", &m0219::BOOT),
     ("m0219 make_object", &m0219::MAKE_OBJECT),
     ("m0219 object_init", &m0219::OBJECT_INIT),
+    // shared-B list
+    ("set speed", &sb_common::SET_SPEED),
+    ("float of slot 289", &sb_nodes::FLOAT_289),
+    ("node visit pair, slot 229", &sb_nodes::VISIT_PAIR_229),
+    ("node visit add vector", &sb_nodes::VISIT_ADD_VECTOR),
+    ("node visit offset (int)", &sb_nodes::VISIT_OFFSET_INT),
+    ("node visit offset (float)", &sb_nodes::VISIT_OFFSET_FLOAT),
+    ("scale ratio, slot 801", &sb_nodes::SCALE_RATIO_801),
+    ("particle node", &sb_nodes::PARTICLE_NODE),
+    ("effect node (slot 719)", &sb_nodes::EFFECT_NODE),
+    ("node axis sprites", &sb_nodes::AXIS_SPRITES),
+    ("node bounce", &sb_nodes::BOUNCE),
+    ("node draw model", &sb_nodes::DRAW_MODEL),
+    ("rotation matrix (0x52a0)", &sb_matrix::ROTATION_52A0),
+    ("rotation matrix (0x19d0)", &sb_matrix::ROTATION_19D0),
+    ("node run part", &sb_ppp::RUN_PART),
+    ("vm show others", &sb_vm::SHOW_OTHERS),
+    ("vm actor record", &sb_vm::ACTOR_RECORD),
+    ("anim step", &sb_common::ANIM_STEP),
+    ("mean position", &sb_misc::MEAN_POSITION),
+    ("pool take (0x74)", &sb_misc::POOL_TAKE),
+    ("node append", &sb_misc::NODE_APPEND),
+    ("part setup", &sb_misc::PART_SETUP),
+    ("rotate offset, list pop", &sb_misc::ROTATE_OFFSET),
+    ("move start", &sb_misc::MOVE_START),
+    ("move start 2", &sb_misc::MOVE_START_2),
+    ("ease sample", &sb_misc::EASE_SAMPLE),
+    ("ease angle", &sb_misc::EASE_ANGLE),
+    ("anim reset", &sb_misc::ANIM_RESET),
+    ("script run", &sb_misc::SCRIPT_RUN),
+    ("timeline run", &sb_misc::TIMELINE_RUN),
+    ("sprite init", &sb_misc::SPRITE_INIT),
+    ("actor scale", &sb_misc::ACTOR_SCALE),
+    ("lookup actors", &sb_misc::LOOKUP_ACTORS),
+    ("effect reset", &sb_misc::EFFECT_RESET),
+    ("draw frame", &sb_misc::DRAW_FRAME),
+    ("pool take (0x140)", &sb_misc::POOL_TAKE_140),
+    ("sprite init colour", &sb_misc::SPRITE_INIT_COLOUR),
+    ("timeline stop", &sb_misc::TIMELINE_STOP),
+    ("timeline stop (globals)", &sb_misc::TIMELINE_STOP_GLOBAL),
+    (
+        "timeline stop (globals, CRT tail)",
+        &sb_misc::TIMELINE_STOP_GLOBAL_CRT,
+    ),
+    ("static nodes init", &sb_misc::STATIC_NODES_INIT),
+    ("draw all", &sb_misc::DRAW_ALL),
+    ("deal", &sb_misc::DEAL),
+    ("draw grid", &sb_misc::DRAW_GRID),
+    ("anim reset 2", &sb_misc::ANIM_RESET_2),
+    ("call 220", &sb_misc::CALL_220),
+    ("call 628, 213", &sb_misc::CALL_628_213),
+    ("light ranges", &sb_misc::LIGHT_RANGES),
+    ("aim parent", &sb_misc::AIM_PARENT),
+    ("pick variant", &sb_misc::PICK_VARIANT),
+    ("read pads", &sb_misc::READ_PADS),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
