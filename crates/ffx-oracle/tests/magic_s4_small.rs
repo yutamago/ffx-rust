@@ -1754,7 +1754,7 @@ fn statics_strips_faders() {
         let recs_at = SCRATCH + 0x1_0000;
         t.set_u32(op(&t, f, 0x7), recs_at);
         t.write(op(&t, f, 0x11), &[0x99; 0x5c]);
-        t.write(recs_at, &[0x99; 0x94 * 1000]);
+        t.write(recs_at, &vec![0x99; 0x94 * 1000]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
