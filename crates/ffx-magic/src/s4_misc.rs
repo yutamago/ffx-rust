@@ -7,7 +7,10 @@ use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
-use crate::sa_misc::{RESET_TRANSFORM, RESET_TRANSFORM_3, reset_transform, reset_transform_3};
+use crate::sa_misc::{
+    RESET_TRANSFORM, RESET_TRANSFORM_0, RESET_TRANSFORM_3, reset_transform, reset_transform_0,
+    reset_transform_3,
+};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
 use crate::sb_misc::{
@@ -187,6 +190,38 @@ pub fn start_object_owners<G: Game>(
     let list = [0xa7, 0xba, 0xc0, 0xc9, 0xd5, 0xde, 0xe7];
     start_object(g, img, f, obj, scale, index, reset, (0x84, 0x9c, list))
 }
+
+/// Starts an effect object (internal: `edx` = the object, `xmm3` its
+/// scale, the stack `(index)`): [`start_object`] with its transform reset
+/// with no owners ([`reset_transform_0`]). Returns the object.
+///
+/// `magic_0162` 0x100096a0 (234 bytes; 16 DLLs).
+pub fn start_object_plain<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    index: u32,
+) -> u32 {
+    let reset = |g: &mut G| {
+        reset_transform_0(g, obj);
+    };
+    let list = [0xa1, 0xb4, 0xba, 0xc3, 0xcf, 0xd8, 0xe1];
+    start_object(g, img, f, obj, scale, index, reset, (0x84, 0x96, list))
+}
+
+/// [`start_object_plain`].
+pub const START_OBJECT_PLAIN: Sig = Sig {
+    len: 234,
+    hash: 0x72e6_9a9a_6c3a_e971,
+    calls: &[
+        (0x84, Callee::Sig(&START_PART)),
+        (0x8e, Callee::Sig(&RESET_TRANSFORM_0)),
+        (0x96, Callee::Sig(&POOL_ALLOC)),
+    ],
+    imports: &[],
+};
 
 /// [`start_object_owners`].
 pub const START_OBJECT_OWNERS: Sig = Sig {

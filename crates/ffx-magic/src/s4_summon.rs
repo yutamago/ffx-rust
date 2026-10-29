@@ -533,18 +533,36 @@ pub const MOTION_STATE: Sig = Sig {
 ///
 /// `magic_0003` 0x10006390 (245 bytes; 69 DLLs).
 pub fn targets_init<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u32) -> u32 {
+    targets(g, img, f, esp, actor, false)
+}
+
+/// [`targets_init`] with slot 168's word popped at once (the operands
+/// from `+0x28` to `+0x46` three bytes later).
+///
+/// `magic_0076` 0x100062c0 (245 bytes; 18 DLLs).
+pub fn targets_init_b<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u32) -> u32 {
+    targets(g, img, f, esp, actor, true)
+}
+
+/// [`targets_init`] and [`targets_init_b`].
+fn targets<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u32, popped: bool) -> u32 {
     let w = |o: u32| img.word(f + o);
+    let k = if popped { 3 } else { 0 };
     let ebp = esp.wrapping_sub(4);
     g.write::<u32>(w(0x21), actor);
     let t = slot_target(g, w(0x11), 168);
     let chr = g.call(t, 0, &[actor]).eax;
-    g.write::<u32>(w(0x28), chr);
-    let count_at = w(0x32);
-    let t = slot_target(g, w(0x2d), 218);
-    let stored = g.read::<u32>(w(0x38));
-    // 168's word (the actor) stays below
-    let src = g.call(t, 0, &[stored, count_at, actor]).eax;
-    let n = g.read::<i32>(w(0x46));
+    g.write::<u32>(w(0x28 + k), chr);
+    let count_at = w(0x32 + k);
+    let t = slot_target(g, w(0x2d + k), 218);
+    let stored = g.read::<u32>(w(0x38 + k));
+    let src = if popped {
+        g.call(t, 0, &[stored, count_at]).eax
+    } else {
+        // 168's word (the actor) stays below
+        g.call(t, 0, &[stored, count_at, actor]).eax
+    };
+    let n = g.read::<i32>(w(0x46 + k));
     let list = w(0x69);
     for i in 0..n.max(0).cast_unsigned() {
         let b = g.read::<u8>(src.wrapping_add(i));
@@ -577,6 +595,17 @@ pub fn targets_init<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, actor: u3
     // `sub esp, 0x14`, three pushes and the return address
     crate::sa_summon::statics_init(g, img, img.rel32_target(f + 0xe0), ebp.wrapping_sub(0x24))
 }
+
+/// [`targets_init_b`].
+pub const TARGETS_INIT_B: Sig = Sig {
+    len: 245,
+    hash: 0xdafe_ce41_6d6e_d64c,
+    calls: &[
+        (0xe0, Callee::Sig(&crate::sa_summon::STATICS_INIT)),
+        (0xed, Callee::Any),
+    ],
+    imports: &[],
+};
 
 /// [`targets_init`] (the `rel32`s: the statics' reset and
 /// `__security_check_cookie`).
