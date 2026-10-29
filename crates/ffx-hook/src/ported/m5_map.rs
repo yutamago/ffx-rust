@@ -10,6 +10,7 @@ use super::{StackFrame, mem, ported};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
+use ffx_prender::m5m_d::bridge as d;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -342,6 +343,40 @@ ported! {
     rcdtRsdLoad_009243c0 @ 0x0092_43c0 => extern "C" fn rsd_load(model: u32, path: u32) -> u32 {
         let mut f = StackFrame::<0xcc>::new();
         c::rsd_load(&mut mem(), f.at() + 0x330, model, path)
+    }
+    /// `rcbgDrawGuidePackets_0092c130()`: the register block and the
+    /// packet in the shim's frame.
+    rcbgDrawGuidePackets_0092c130 @ 0x0092_c130 => extern "C" fn draw_guide_packets() -> u32 {
+        let mut f = StackFrame::<0x12>::new();
+        d::draw_guide_packets(&mut mem(), f.at() + 0x44)
+    }
+    /// `rcbgDrawGuidePoints_0092c4c0(pkt, obj)`: the point record, matrix
+    /// and vector in the shim's frame.
+    rcbgDrawGuidePoints_0092c4c0 @ 0x0092_c4c0 => extern "C" fn draw_guide_points(pkt: u32, obj: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        d::draw_guide_points(&mut mem(), f.at() + 0x98, pkt, obj)
+    }
+    /// `rcuiGetStageName2(no, out, battle)`: the chunk and parse in the
+    /// shim's frame.
+    rcuiGetStageName2 @ 0x0093_7960 => extern "C" fn stage_name2(no: u32, out: u32, battle: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        d::stage_name2(&mut mem(), f.at() + 0xa0, no, out, battle)
+    }
+    /// `rcuiMouseMoveGet(&dx, &dy)`.
+    rcuiMouseMoveGet @ 0x0093_c060 => extern "C" fn mouse_move_get(dx: u32, dy: u32) -> u32 {
+        d::mouse_move_get(&mut mem(), dx, dy)
+    }
+    /// `rcuiAddItems(window, items)`.
+    rcuiAddItems @ 0x0093_7780 => extern "C" fn add_items(window: u32, items: u32) -> u32 {
+        d::add_items(&mut mem(), window, items)
+    }
+    /// `rcuiPercentPrint_00930ba0(x)` (`x` an f32's bits).
+    rcuiPercentPrint_00930ba0 @ 0x0093_0ba0 => extern "C" fn percent_print(x: u32) -> u32 {
+        d::percent_print(&mut mem(), x)
+    }
+    /// `rcuiNumberCreate(num, value, kind, title, parent)`.
+    rcuiNumberCreate @ 0x0093_c2e0 => extern "C" fn number_create(num: u32, value: u32, kind: u32, title: u32, parent: u32) {
+        d::number_create(&mut mem(), num, value, kind, title, parent);
     }
     /// `Wrap_0092c600_0092c5e0(a, b)`.
     Wrap_0092c600_0092c5e0 @ 0x0092_c5e0 => extern "C" fn wrap_0092c600(x: u32, y: u32) -> u32 {

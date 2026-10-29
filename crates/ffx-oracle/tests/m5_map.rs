@@ -35,6 +35,7 @@ use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
+use ffx_prender::m5m_d::{self as md, bridge as d};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -2347,4 +2348,306 @@ impl Twins {
         self.write(ecx_at, &[0x90; 3]);
         s
     }
+}
+
+// ---- batch 4: the rcui item lists, number windows, percent readout ----
+
+#[test]
+fn rcui_items_numbers_and_percent_match_the_original() {
+    // item lists (empty, buttons, statics, other kinds); the percentage
+    // below and above 50, NaN and out of range; number windows of every
+    // value kind and of floats whose text has trailing zeros, a bare
+    // point, more than ten characters (the real sprintf).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a401);
+        for case in 0..40 {
+            let n = case % 4;
+            let mut words = Vec::new();
+            for _ in 0..n {
+                words.push([1, 2, 3, 7][rng.below(4) as usize]);
+                words.extend((0..6).map(|_| rng.next()));
+            }
+            words.extend([0; 7]);
+            let items = t.words(&words);
+            let window = rng.next();
+            t.stub_sym(md::ADD_BUTTON, 1, false, 7, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::ADD_STATIC, 2, false, 7, 0, Ret::Val(rng.next()));
+            t.check(
+                "rcuiAddItems",
+                0x0093_7780,
+                Conv::Cdecl,
+                &[window, items],
+                |g| {
+                    let r = d::add_items(g, window, items);
+                    // with no items the original leaves the caller's eax
+                    if n == 0 { Out::None } else { Out::U32(r) }
+                },
+            );
+            t.reset();
+
+            let x = match case % 5 {
+                0 => 49.9_f32.to_bits(),
+                1 => 50.0_f32.to_bits(),
+                2 => 0x7fc0_0001,
+                3 => 3.0e9_f32.to_bits(),
+                _ => float_word(&mut rng),
+            };
+            t.stub_sym(md::PRINT_SET_COLOR, 3, false, 4, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::PRINTF, 4, false, 2, 0, Ret::Val(rng.next()));
+            t.check(
+                "rcuiPercentPrint_00930ba0",
+                0x0093_0ba0,
+                Conv::Cdecl,
+                &[x],
+                |g| Out::U32(d::percent_print(g, x)),
+            );
+            t.reset();
+
+            let num = t.alloc(&[0xa5; 0x40]);
+            let kind = [0xb, 0xb, 0xb, 1, 2, 5, 9][case % 7];
+            let fv = [1.5_f32, 100.0, 0.0, -2.25, 123_456_789.0, 1e-7, 7.0][rng.below(7) as usize];
+            let value = t.words(&[if kind == 0xb {
+                fv.to_bits()
+            } else {
+                rng.next()
+            }]);
+            t.stub_sym(md::RCUI_WINDOW_CREATE, 5, false, 9, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::WINDOW_SET_ARG, 6, false, 2, 0, Ret::Val(rng.next()));
+            let (title, parent) = (rng.next(), rng.next());
+            t.check(
+                "rcuiNumberCreate",
+                0x0093_c2e0,
+                Conv::Cdecl,
+                &[num, value, kind, title, parent],
+                |g| {
+                    d::number_create(g, num, value, kind, title, parent);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn guide_packet_drivers_match_the_original() {
+    // the object list (none, several), the selected one with either
+    // highlight; the selected point among none or several, its x/y/w
+    // (written by the stubbed vector callees) as floats.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a402);
+        for case in 0..30 {
+            let w = t.zeros(0x900);
+            let n = [0_u32, 1, 3, 0xffff_ffff][case % 4];
+            t.w32(w + 0x824, n);
+            for k in 0..4 {
+                let o = rng.next();
+                t.w32(w + 0x870 + 4 * k, o);
+            }
+            let sel = rng.below(4);
+            t.w32(w + 0x8b0, sel);
+            let hl = rng.below(2);
+            t.w32(w + 0x8b4, hl);
+            let np = [0_u32, 1, 4, 0xffff_fffe][(case / 4) % 4];
+            t.w32(w + 0x8cc, np);
+            let sp = rng.below(5);
+            t.w32(w + 0x8d0, sp);
+            t.global(md::RCUI_WORK.sym, w);
+            for round in 0..2 {
+                for (k, f) in [
+                    md::SET_REG,
+                    md::RESTORE_REG,
+                    md::PACKET_INIT,
+                    md::PACKET_OPEN,
+                    md::PACKET_CLOSE,
+                    md::PACKET_DRAW,
+                    md::GUIDE_OBJECT,
+                    md::GUIDE_SELECTED_A,
+                    md::GUIDE_SELECTED_B,
+                    md::POINT_GET,
+                    md::POINT_FIX,
+                    md::POINT_MATRIX,
+                    md::PACKET_RECT,
+                    md::WRAP_92C600,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let words = match f {
+                        md::RESTORE_REG => 0,
+                        md::POINT_GET => 4,
+                        md::PACKET_RECT => 6,
+                        md::SET_REG
+                        | md::PACKET_INIT
+                        | md::PACKET_CLOSE
+                        | md::PACKET_DRAW
+                        | md::POINT_FIX => 1,
+                        _ => 2,
+                    };
+                    // the second round runs FUN_0092c4c0 itself
+                    if round == 1 && f == md::GUIDE_SELECTED_B {
+                        continue;
+                    }
+                    t.stub_sym(
+                        f,
+                        k as u32 + 1,
+                        false,
+                        words,
+                        0,
+                        Ret::Val(k as u32 * 0x1111),
+                    );
+                }
+                // the vector callees write the point's x, y, z, w
+                let vals: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+                let mut code = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+                for (k, v) in vals.iter().enumerate() {
+                    code.extend([0xc7, 0x40, 4 * k as u8]);
+                    code.extend(v.to_le_bytes()); // mov dword [eax+4k], v
+                }
+                code.push(0xc3);
+                let x = t.a.alloc_code(&code).unwrap();
+                assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+                for f in [md::VEC_ORIGIN, md::APPLY_MATRIX] {
+                    t.jump(f, x);
+                }
+                // the w divide logs its float; the register block is copied
+                t.stub_sym(md::DIVIDE_W, 30, false, 3, 0, Ret::Val(0));
+                let s = t.copy_stub_arg(31, 0, 12, 0, 0x77);
+                t.jump(md::SET_REG, s);
+                if round == 0 {
+                    let ebp = frame_ebp(&t.a, 0);
+                    t.write(ebp - 0x60, &[0; 0x60]);
+                    t.b_top = Some(ebp - 0x60);
+                    t.check(
+                        "rcbgDrawGuidePackets_0092c130",
+                        0x0092_c130,
+                        Conv::Cdecl,
+                        &[],
+                        |g| Out::U32(d::draw_guide_packets(g, ebp)),
+                    );
+                    t.b_top = None;
+                    t.reset();
+                    t.global(md::RCUI_WORK.sym, w);
+                    continue;
+                }
+                let (pkt, obj) = (rng.next(), rng.next());
+                let ebp = frame_ebp(&t.a, 2);
+                t.write(ebp - 0xb0, &[0; 0xb0]);
+                t.b_top = Some(ebp - 0xb0);
+                t.check(
+                    "rcbgDrawGuidePoints_0092c4c0",
+                    0x0092_c4c0,
+                    Conv::Cdecl,
+                    &[pkt, obj],
+                    |g| Out::U32(d::draw_guide_points(g, ebp, pkt, obj)),
+                );
+                t.b_top = None;
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn stage_name2_matches_the_original() {
+    // the file missing; header lines before the first number; the number
+    // found on the first, a later or no line (the real parse, isdigit and
+    // strncpy); field and battle lists.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a403);
+        for case in 0..30 {
+            let mut text = String::new();
+            // header lines (atoi reads them as 0: number 0 must not
+            // match them)
+            for _ in 0..=rng.below(2) {
+                text.push_str("id,header\n");
+            }
+            let ids: Vec<u32> = (0..=rng.below(5)).map(|_| rng.below(20)).collect();
+            for &id in &ids {
+                text.push_str(&format!("{id},bsil{:04},x\n", rng.below(10_000)));
+            }
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            let size = bytes.len() as u32;
+            let data = t.alloc(&bytes);
+            let loads = case % 7 != 3;
+            // the load fills the chunk (begin, size) and returns 1, or 0
+            let mut code = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            code.extend([0xc7, 0x00]);
+            code.extend(data.to_le_bytes()); // mov dword [eax], data
+            code.extend([0xc7, 0x40, 0x04]);
+            code.extend(size.to_le_bytes()); // mov dword [eax+4], size
+            code.push(0xb8);
+            code.extend(u32::from(loads).to_le_bytes()); // mov eax, loads
+            code.push(0xc3);
+            let x = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+            t.jump(md::CHUNK_LOAD_FROM_FILE, x);
+            // the releases free through the game heap (not set up on the
+            // image): logged instead
+            t.stub_sym(md::CHUNK_FINI, 1, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::PARSE_FINI, 2, false, 1, 0, Ret::Val(rng.next()));
+            let out = t.alloc(&[0xa5; 0x10]);
+            let no = match case % 4 {
+                0 => 99,
+                1 => 0,
+                _ => ids[rng.below(ids.len() as u32) as usize],
+            };
+            let battle = rng.below(2);
+            let ebp = frame_ebp(&t.a, 3);
+            t.write(ebp - 0xa0, &[0; 0xa0]);
+            t.b_top = Some(ebp - 0xb0);
+            t.check(
+                "rcuiGetStageName2",
+                0x0093_7960,
+                Conv::Cdecl,
+                &[no, out, battle],
+                |g| Out::U32(d::stage_name2(g, ebp, no, out, battle)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn mouse_move_get_matches_the_original() {
+    // either pointer missing; dx inside and outside the dead zone (-1..1),
+    // dy anything.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a404);
+        for case in 0..30 {
+            let w = t.zeros(0xc00);
+            for off in [0xbe8_u32, 0xbf4, 0xbf8] {
+                let v = rng.below(400);
+                t.w32(w + off, v);
+            }
+            t.global(md::RCUI_WORK.sym, w);
+            let ox = t.r32(w + 0xbf4);
+            let x = ox.wrapping_add([0, 1, 2, 0xffff_ffff, 0xffff_fffe, rng.next()][case % 6]);
+            t.stub_sym(md::MOUSE_X, 1, false, 1, 0, Ret::Val(x));
+            t.stub_sym(md::MOUSE_Y, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::WINDOW_CREATE, 3, false, 6, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::WINDOW_UPDATE, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(md::WINDOW_CLOSE_TREE, 5, false, 1, 0, Ret::Val(rng.next()));
+            let dx = if case % 4 == 3 {
+                0
+            } else {
+                t.alloc(&[0xa5; 4])
+            };
+            let dy = if case % 5 == 4 {
+                0
+            } else {
+                t.alloc(&[0xa5; 4])
+            };
+            t.check(
+                "rcuiMouseMoveGet",
+                0x0093_c060,
+                Conv::Cdecl,
+                &[dx, dy],
+                |g| Out::U32(d::mouse_move_get(g, dx, dy)),
+            );
+            t.reset();
+        }
+    });
 }
