@@ -57,10 +57,12 @@ fn twin() -> Option<Twin> {
     });
     rec(&mut t, 333, 5, |_, _| 0);
     t.stub_st0(333, |m, _| f64::from(f32::from_bits(m.r32(CFG))));
-    rec(&mut t, 277, 1, |_, _| 0);
+    // the scale calls log every word they see: their own (the caster
+    // or character, then the matrix) and the earlier calls' words left
+    // below them ([`update`]'s widths; [`place`] has 9 more)
+    scale_logs(&mut t, 0);
     t.stub_st0(277, |_, a| 40.0 + f64::from(a[0] & 0xf));
     for (s, v) in [(15u32, 1.5f64), (16, -0.75), (17, 3.0)] {
-        rec(&mut t, s, 1, |_, _| 0);
         t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0x3));
     }
     rec(&mut t, 235, 1, |m, a| {
@@ -96,6 +98,16 @@ fn twin() -> Option<Twin> {
     });
     rec_all(&mut t, &[(210, 2), (211, 2), (217, 2), (255, 4)]);
     Some(t)
+}
+
+/// Logs slot 277's and slots 15-17's calls with all `2 + base`, `3 +
+/// base`, ... words (each call's own words above the matrix and the
+/// `base` words the caller's earlier calls left on the stack), not just
+/// the first.
+fn scale_logs(t: &mut Twin, base: usize) {
+    for (s, n) in [(277u32, 2usize), (15, 3), (16, 4), (17, 5)] {
+        rec(t, s, n + base, |_, _| 0);
+    }
 }
 
 /// Rotations whose angle `A - rot` (operands `a`, `hi`, `lo` of `f`)
@@ -216,6 +228,7 @@ fn small_callbacks() {
 fn place() {
     let Some(mut t) = twin() else { return };
     let f = t.at(0x24d0);
+    scale_logs(&mut t, 9);
     // the facing -rot: facing + K = K - rot hits each case
     for rot in rotations(&t, f, 0x30, 0x51, 0x7f) {
         t.set_u32(STATE + 0x1ee0, (-rot).to_bits());
