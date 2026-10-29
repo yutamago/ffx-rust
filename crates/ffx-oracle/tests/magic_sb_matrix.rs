@@ -25,19 +25,38 @@ const OUT: u32 = SCRATCH + 0x200;
 /// (the larger significand), not the CPU's SSE rule (the destination's;
 /// `ffx_magic::sb_sse`), which the port follows.
 fn twin(rva: u32, table_op: u32) -> Option<Twin> {
+    twin_with(rva, table_op, |i| match i {
+        7 => Some(-0.0),
+        9 => Some(1.0e30),
+        11 => Some(-3.0),
+        13 => Some(f32::MIN_POSITIVE),
+        _ => None,
+    })
+}
+
+/// [`twin`] with infinite sines and cosines (angles `7 << 4`, `9 << 4`,
+/// `13 << 4` and their quarter turns back): the products with 0 make NaN
+/// of them, and the NaN every such product and `inf - inf` give is the
+/// one "indefinite" NaN, so no two different NaNs meet.
+fn twin_inf(rva: u32, table_op: u32) -> Option<Twin> {
+    twin_with(rva, table_op, |i| match i {
+        7 | 0x40d => Some(f32::INFINITY),
+        9 | 0x407 => Some(f32::NEG_INFINITY),
+        11 | 0x40b => Some(1.0e30),
+        13 => Some(-0.0),
+        _ => None,
+    })
+}
+
+fn twin_with(rva: u32, table_op: u32, special: fn(u32) -> Option<f32>) -> Option<Twin> {
     let mut t = Twin::load(3)?;
     t.init();
     let g = t.img.word(t.at(rva) + table_op);
     t.set_u32(g, SINES);
     let mut b = Vec::with_capacity(4 * 4096);
     for i in 0..4096u32 {
-        let x = match i {
-            7 => -0.0f32,
-            9 => 1.0e30,
-            11 => -3.0,
-            13 => f32::MIN_POSITIVE,
-            _ => (f64::from(i) * std::f64::consts::TAU / 4096.0).sin() as f32,
-        };
+        let x = special(i)
+            .unwrap_or_else(|| (f64::from(i) * std::f64::consts::TAU / 4096.0).sin() as f32);
         b.extend_from_slice(&x.to_bits().to_le_bytes());
     }
     t.write(SINES, &b);
@@ -70,13 +89,10 @@ fn angle_sets() -> Vec<[u32; 3]> {
     v
 }
 
-fn check(
-    t: &mut Twin,
-    rva: u32,
-    thunk: u32,
-    port: fn(&mut magic::PortGame, &ffx_magic::Image, u32, u32, u32) -> u32,
-) {
-    for a in angle_sets() {
+type Port = fn(&mut magic::PortGame, &ffx_magic::Image, u32, u32, u32) -> u32;
+
+fn check(t: &mut Twin, rva: u32, thunk: u32, port: Port, sets: &[[u32; 3]]) {
+    for &a in sets {
         for (i, x) in (0u32..).zip(a) {
             t.set_u32(ANGLES + 4 * i, x);
         }
@@ -103,7 +119,13 @@ fn rotation_52a0() {
     let Some(mut t) = twin(0x52a0, 0x1c) else {
         return;
     };
-    check(&mut t, 0x52a0, 0x5b90, sb_matrix::rotation_52a0);
+    check(
+        &mut t,
+        0x52a0,
+        0x5b90,
+        sb_matrix::rotation_52a0,
+        &angle_sets(),
+    );
 }
 
 #[test]
@@ -111,7 +133,13 @@ fn rotation_19d0() {
     let Some(mut t) = twin(0x19d0, 0x17) else {
         return;
     };
-    check(&mut t, 0x19d0, 0x5b50, sb_matrix::rotation_19d0);
+    check(
+        &mut t,
+        0x19d0,
+        0x5b50,
+        sb_matrix::rotation_19d0,
+        &angle_sets(),
+    );
 }
 
 /// The shared-3 list's three (`ffx_magic::s3_matrix`), through their
@@ -121,7 +149,13 @@ fn rotation_47c0() {
     let Some(mut t) = twin(0x47c0, 0x1f) else {
         return;
     };
-    check(&mut t, 0x47c0, 0x5b80, ffx_magic::s3_matrix::rotation_47c0);
+    check(
+        &mut t,
+        0x47c0,
+        0x5b80,
+        ffx_magic::s3_matrix::rotation_47c0,
+        &angle_sets(),
+    );
 }
 
 #[test]
@@ -129,7 +163,13 @@ fn rotation_4d40() {
     let Some(mut t) = twin(0x4d40, 0x0c) else {
         return;
     };
-    check(&mut t, 0x4d40, 0x5b60, ffx_magic::s3_matrix::rotation_4d40);
+    check(
+        &mut t,
+        0x4d40,
+        0x5b60,
+        ffx_magic::s3_matrix::rotation_4d40,
+        &angle_sets(),
+    );
 }
 
 #[test]
@@ -137,5 +177,65 @@ fn rotation_4250() {
     let Some(mut t) = twin(0x4250, 0x0c) else {
         return;
     };
-    check(&mut t, 0x4250, 0x5b70, ffx_magic::s3_matrix::rotation_4250);
+    check(
+        &mut t,
+        0x4250,
+        0x5b70,
+        ffx_magic::s3_matrix::rotation_4250,
+        &angle_sets(),
+    );
+}
+
+/// The angle words of [`twin_inf`]'s special entries in every place, and
+/// the usual spread.
+fn inf_angle_sets() -> Vec<[u32; 3]> {
+    let special = [
+        7u32 << 4,
+        9 << 4,
+        13 << 4,
+        (7u32 << 4).wrapping_sub(0x4000),
+        (11u32 << 4).wrapping_sub(0x4000),
+        0x1230,
+    ];
+    let mut sets = angle_sets();
+    for a in special {
+        for b in special {
+            for c in special {
+                sets.push([a, b, c]);
+            }
+        }
+    }
+    sets
+}
+
+fn check_inf(rva: u32, table_op: u32, thunk: u32, port: Port) {
+    let Some(mut t) = twin_inf(rva, table_op) else {
+        return;
+    };
+    check(&mut t, rva, thunk, port, &inf_angle_sets());
+}
+
+#[test]
+fn rotation_52a0_on_infinities() {
+    check_inf(0x52a0, 0x1c, 0x5b90, sb_matrix::rotation_52a0);
+}
+
+#[test]
+fn rotation_19d0_on_infinities() {
+    check_inf(0x19d0, 0x17, 0x5b50, sb_matrix::rotation_19d0);
+}
+
+#[test]
+fn rotation_47c0_on_infinities() {
+    check_inf(0x47c0, 0x1f, 0x5b80, ffx_magic::s3_matrix::rotation_47c0);
+}
+
+#[test]
+fn rotation_4d40_on_infinities() {
+    check_inf(0x4d40, 0x0c, 0x5b60, ffx_magic::s3_matrix::rotation_4d40);
+}
+
+#[test]
+fn rotation_4250_on_infinities() {
+    check_inf(0x4250, 0x0c, 0x5b70, ffx_magic::s3_matrix::rotation_4250);
 }
