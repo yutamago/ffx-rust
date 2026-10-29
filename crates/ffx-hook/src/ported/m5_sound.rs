@@ -21,16 +21,33 @@ ported! {
     // ---- the vsync emulation thread ----
     /// `createVsyncEmuThread(handler)`: the thread name in a 100-byte
     /// frame buffer at `ebp - 0x68`.
+    /// On the harness's virtual clock the harness's stand-in runs instead
+    /// (its hook at this address is replaced by this one).
     createVsyncEmuThread @ 0x0067_9e60 => extern "C" fn create_vsync_emu_thread(handler: u32) -> u32 {
+        if crate::harness::virtual_clock() {
+            // SAFETY: the harness's stand-in, as its own hook would call it.
+            unsafe { crate::harness::virtual_vsync_start(handler as usize) };
+            return 0;
+        }
         let mut f = StackFrame::<0x1b>::new();
         b::create_vsync_emu_thread(&mut game(), f.at() + 0x68, handler)
     }
-    /// `endVsyncEmuThread()`.
+    /// `endVsyncEmuThread()` (the harness's on its virtual clock).
     endVsyncEmuThread @ 0x0067_9f20 => extern "C" fn end_vsync_emu_thread() -> u32 {
+        if crate::harness::virtual_clock() {
+            // SAFETY: as above.
+            unsafe { crate::harness::virtual_vsync_end() };
+            return 0;
+        }
         b::end_vsync_emu_thread(&mut game())
     }
-    /// `VsyncEmu_Wake()`.
+    /// `VsyncEmu_Wake()` (nothing on the harness's virtual clock).
     VsyncEmu_Wake @ 0x0067_9f80 => extern "C" fn vsync_emu_wake() -> u32 {
+        if crate::harness::virtual_clock() {
+            // SAFETY: as above.
+            unsafe { crate::harness::virtual_vsync_wake() };
+            return 0;
+        }
         b::vsync_emu_wake(&mut game())
     }
     /// `Sys_Thread`'s deleting destructor `(this; flags)`.
@@ -154,7 +171,14 @@ ported! {
         b::fmod_manager_create(&mut game());
     }
     /// `FmodManager_tick(this)`.
+    /// With the audio capture on, inside its turn rule (`audio_wav`, whose
+    /// wrapper this hook replaces).
     FmodManager_tick @ 0x006f_a700 => extern "thiscall" fn fmod_manager_tick(this: u32) -> u32 {
+        if crate::audio_wav::active() {
+            let mut r = 0;
+            crate::audio_wav::tick_with(this, |m| r = b::fmod_manager_tick(&mut game(), m));
+            return r;
+        }
         b::fmod_manager_tick(&mut game(), this)
     }
     /// `FmodManager_Destroy()`.
@@ -205,5 +229,122 @@ ported! {
     /// `FmodMusic_volumeReset(this; id, volume, keep)` (volume f32 bits).
     FmodMusic_volumeReset @ 0x0070_9f20 => extern "thiscall" fn music_volume_reset(this: u32, id: u32, volume: u32, keep: u32) -> u32 {
         b::music_volume_reset(&mut game(), this, id, volume, keep)
+    }
+
+    // ---- the voice's volume translation, the sfx event helpers, the
+    // tree members (b3) ----
+    /// `FmodVoice_volumeTranslate(this; frames, volume)`: the FMOD state
+    /// word in a frame at `ebp - 4`.
+    FmodVoice_volumeTranslate @ 0x0070_b880 => extern "thiscall" fn voice_volume_translate(this: u32, frames: u32, volume: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        b::voice_volume_translate(&mut game(), f.at() + 4, this, frames, volume)
+    }
+    /// `user_free(this + 8)` (`ecx`).
+    FreePlus8_0070c1d0 @ 0x0070_c1d0 => extern "thiscall" fn free_plus_8_0070c1d0(this: u32) -> u32 {
+        b::free_plus_8(&mut game(), this)
+    }
+    /// `user_free(this + 8)` (`ecx`).
+    FreePlus8_0070c1e0 @ 0x0070_c1e0 => extern "thiscall" fn free_plus_8_0070c1e0(this: u32) -> u32 {
+        b::free_plus_8(&mut game(), this)
+    }
+    /// `user_free(this + 8)` (`ecx`).
+    FreePlus8_0070e830 @ 0x0070_e830 => extern "thiscall" fn free_plus_8_0070e830(this: u32) -> u32 {
+        b::free_plus_8(&mut game(), this)
+    }
+    /// A tree's destructors (`ecx`).
+    TreeClearTwice_0070c1f0 @ 0x0070_c1f0 => extern "thiscall" fn tree_clear_twice_0070c1f0(tree: u32) {
+        b::tree_clear_twice(&mut game(), tree);
+    }
+    /// A tree's destructors (`ecx`).
+    TreeClearTwice_0070c250 @ 0x0070_c250 => extern "thiscall" fn tree_clear_twice_0070c250(tree: u32) {
+        b::tree_clear_twice(&mut game(), tree);
+    }
+    /// A tree's destructors (`ecx`).
+    TreeClearTwice_00710010 @ 0x0071_0010 => extern "thiscall" fn tree_clear_twice_00710010(tree: u32) {
+        b::tree_clear_twice(&mut game(), tree);
+    }
+    /// A tree's destructors (`ecx`).
+    TreeClearTwice_00710840 @ 0x0071_0840 => extern "thiscall" fn tree_clear_twice_00710840(tree: u32) {
+        b::tree_clear_twice(&mut game(), tree);
+    }
+    /// A tree with a free list destroyed (`ecx`).
+    TreeFreeListDtor_0070c2b0 @ 0x0070_c2b0 => extern "thiscall" fn tree_with_free_list_dtor_0070c2b0(tree: u32) {
+        b::tree_with_free_list_dtor(&mut game(), tree);
+    }
+    /// A tree with a free list destroyed (`ecx`).
+    TreeFreeListDtor_00710070 @ 0x0071_0070 => extern "thiscall" fn tree_with_free_list_dtor_00710070(tree: u32) {
+        b::tree_with_free_list_dtor(&mut game(), tree);
+    }
+    /// A node tree's teardown (`ecx`), as 0x0070c3c0.
+    SfxNodeTree_dtor_007108b0 @ 0x0071_08b0 => extern "thiscall" fn sfx_node_tree_dtor_007108b0(tree: u32) {
+        b::sfx_node_tree_dtor(&mut game(), tree);
+    }
+    /// `FmodSfx_stopAllNonloopSound(this)`.
+    FmodSfx_stopAllNonloopSound @ 0x0070_d9e0 => extern "thiscall" fn sfx_stop_all_nonloop_sound(this: u32) {
+        b::sfx_stop_all_nonloop_sound(&mut game(), this);
+    }
+    /// `SfxEvent_delayStart(this; frames, a, b)`.
+    SfxEvent_delayStart @ 0x0070_eac0 => extern "thiscall" fn sfx_event_delay_start(this: u32, frames: u32, a: u32, bb: u32) -> u32 {
+        b::sfx_event_delay_start(&mut game(), this, frames, a, bb)
+    }
+    /// `SfxEvent_setEntireVolume_0070ee90(this; volume)` (f32 bits).
+    SfxEvent_setEntireVolume_0070ee90 @ 0x0070_ee90 => extern "thiscall" fn sfx_event_set_entire_volume(this: u32, volume: u32) -> u32 {
+        b::sfx_event_set_entire_volume(&mut game(), this, volume)
+    }
+    /// `SfxEvent_setPan2(this; pan, frames)`: the current pan in a frame
+    /// word at `ebp - 0x10`.
+    SfxEvent_setPan2 @ 0x0070_f000 => extern "thiscall" fn sfx_event_set_pan2(this: u32, pan: u32, frames: u32) {
+        let mut f = StackFrame::<4>::new();
+        b::sfx_event_set_pan2(&mut game(), f.at() + 0x10, this, pan, frames);
+    }
+
+    // ---- the PS2 sound API's jump thunks ----
+    /// `jmp SqsStraightStreamingVolumeDirect`.
+    SqsStraightStreamingVolumeDirect_thunk_008871f0 @ 0x0088_71f0 => extern "C" fn sqs_straight_volume_direct_thunk(v: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::SQS_STRAIGHT_VOLUME_DIRECT, &[v])
+    }
+    /// `jmp SqsStraightStreamingDataSend`.
+    SqsStraightStreamingDataSend_thunk_00885ed0 @ 0x0088_5ed0 => extern "C" fn sqs_straight_data_send_thunk(a: u32, bb: u32, c: u32, d: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::SQS_STRAIGHT_DATA_SEND, &[a, bb, c, d])
+    }
+    /// `jmp SqsIopSoundSystemStatus`.
+    SqsIopSoundSystemStatus_thunk_008873b0 @ 0x0088_73b0 => extern "C" fn sqs_iop_status_thunk() -> u32 {
+        b::jmp_thunk(&mut game(), b::SQS_IOP_STATUS, &[])
+    }
+    /// `SndMusicReplayPointClear(id)`: `jmp iMusicReplayPointClear`.
+    SndMusicReplayPointClear @ 0x0088_69e0 => extern "C" fn snd_music_replay_point_clear(id: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::I_MUSIC_REPLAY_POINT_CLEAR, &[id])
+    }
+    /// `jmp SndIsReadStatus`.
+    SndIsReadStatus_thunk_00886630 @ 0x0088_6630 => extern "C" fn snd_is_read_status_thunk() -> u32 {
+        b::jmp_thunk(&mut game(), b::SND_IS_READ_STATUS, &[])
+    }
+    /// `SndMusicMuteSet(a, b)`: `jmp iMusicMuteSet`.
+    SndMusicMuteSet_008868e0 @ 0x0088_68e0 => extern "C" fn snd_music_mute_set(a: u32, bb: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::I_MUSIC_MUTE_SET, &[a, bb])
+    }
+    /// `SndMusicPlayFast(id)`: `jmp iMusicPlayFast`.
+    SndMusicPlayFast_00886950 @ 0x0088_6950 => extern "C" fn snd_music_play_fast(id: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::I_MUSIC_PLAY_FAST, &[id])
+    }
+    /// `jmp SqsBattleStreamingDataSend`.
+    SqsBattleStreamingDataSend_thunk_00887440 @ 0x0088_7440 => extern "C" fn sqs_battle_data_send_thunk(a: u32, bb: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::SQS_BATTLE_DATA_SEND, &[a, bb])
+    }
+    /// `SndStop(a, b)`: `jmp SqsSeStop`.
+    SndStop @ 0x0088_7750 => extern "C" fn snd_stop(a: u32, bb: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::SQS_SE_STOP, &[a, bb])
+    }
+    /// `SndVagStreamPanDirect(v)`: `jmp iVoicePanDirect`.
+    SndVagStreamPanDirect_00887970 @ 0x0088_7970 => extern "C" fn snd_vag_stream_pan_direct(v: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::I_VOICE_PAN_DIRECT, &[v])
+    }
+    /// `SndVagStreamPanTranslate(a, b)`: `jmp iVoicePanTranslate`.
+    SndVagStreamPanTranslate_00887980 @ 0x0088_7980 => extern "C" fn snd_vag_stream_pan_translate(a: u32, bb: u32) -> u32 {
+        b::jmp_thunk(&mut game(), b::I_VOICE_PAN_TRANSLATE, &[a, bb])
+    }
+    /// `jmp TODrawMenuBG`.
+    TODrawMenuBG_thunk_008cc190 @ 0x008c_c190 => extern "C" fn to_draw_menu_bg_thunk() -> u32 {
+        b::jmp_thunk(&mut game(), b::TO_DRAW_MENU_BG, &[])
     }
 }

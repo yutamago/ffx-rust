@@ -1128,4 +1128,261 @@ pub mod bridge {
         h.write(slot + 0x14, 0u32);
         0
     }
+
+    // ---- batch 3: the voice's volume translation, the sfx event helpers,
+    // the tree members, the PS2 sound API's jump thunks ----
+
+    /// `30.0` (f64): frames per second.
+    pub const FRAMES_PER_SECOND: u32 = 0x00b9_22c8;
+    /// `-1.0` (f32): the slowest falling volume rate.
+    pub const MIN_FALL_RATE: u32 = 0x00b9_2340;
+    /// `SfxEvent.cpp`'s name for `ERRCHECK`.
+    pub const SFX_EVENT_CPP: u32 = 0x00b4_fddc;
+    /// `FMOD::Event::getState(event, &state)`.
+    pub const EVENT_GET_STATE: u32 = 0x0094_8ca6;
+    /// `FMOD::Event::getVolume(event, &volume)`.
+    pub const EVENT_GET_VOLUME: u32 = 0x0094_8cb8;
+    /// `FmodVoice_volumeDirect` (thiscall `(voice; volume f32, a)` ret 8).
+    pub const VOICE_VOLUME_DIRECT: u32 = 0x0070_b7f0;
+    /// `SfxEvent_isPlaying` (`ecx`) -> `al`.
+    pub const SFX_EVENT_IS_PLAYING: u32 = 0x0070_ec40;
+    /// `SfxEvent_start` (thiscall `(event; a, b)` ret 8).
+    pub const SFX_EVENT_START: u32 = 0x0070_f310;
+    /// `SfxEvent_applyVolume_0070f140` (thiscall `(event; volume f32)` ret 4).
+    pub const SFX_EVENT_APPLY_VOLUME: u32 = 0x0070_f140;
+    /// `SfxEvent_setPan` (thiscall `(event; pan)` ret 4).
+    pub const SFX_EVENT_SET_PAN: u32 = 0x0070_ef80;
+    /// `SfxEvent_volumeFrom127_0070ea20` (stdcall `(v)` -> `ST0`).
+    pub const SFX_EVENT_FROM_127: u32 = 0x0070_ea20;
+
+    fn f32_from_i32(v: u32) -> u32 {
+        // `fild dword` then `fstp dword`: one rounding
+        #[allow(clippy::cast_precision_loss)]
+        let f = v.cast_signed() as f32;
+        f.to_bits()
+    }
+
+    /// `FmodVoice_volumeTranslate(this; frames, volume)` (0x0070b880, ret
+    /// 8) -> 0: with an event (`+0x14`). Over 0 frames the fade stops
+    /// (`+0x2c` 0, `+0x30` 0, `+0x34`/`+0x38`/`+0x3c` 0.0) and the volume
+    /// is set at once (`FmodVoice_volumeDirect(f32(volume), 1)`).
+    /// Otherwise, while the event plays (`getState` bit 3, `ERRCHECK`):
+    /// `+0x30` frames, `+0x3c` the target, `+0x38` the current volume
+    /// (`getVolume`), `+0x2c` 1, and `+0x34` the rate `(target - current *
+    /// 127) / frames`, made at least 1 rising and at least -1 falling.
+    /// `frame` is the original's `ebp` (the state word at `ebp - 4`).
+    pub fn voice_volume_translate(
+        h: &mut impl Host,
+        frame: u32,
+        this: u32,
+        frames: u32,
+        volume: u32,
+    ) -> u32 {
+        let event: u32 = h.read(this + 0x14);
+        if event == 0 {
+            return 0;
+        }
+        if frames == 0 {
+            h.write(this + 0x2c, 0u8);
+            h.write(this + 0x34, 0u32);
+            h.write(this + 0x30, 0u32);
+            h.write(this + 0x38, 0u32);
+            h.write(this + 0x3c, 0u32);
+            this_call(h, VOICE_VOLUME_DIRECT, this, &[f32_from_i32(volume), 1]);
+            return 0;
+        }
+        let state = frame - 4;
+        let r = h.call_sym(EVENT_GET_STATE, Conv::Stdcall, &[event, state]);
+        errcheck(h, r, VOICE_FILE, 0x300);
+        if h.read::<u8>(state) & 8 == 0 {
+            return 0;
+        }
+        h.write(this + 0x30, frames);
+        let target = f32_from_i32(volume);
+        h.write(this + 0x3c, target);
+        let event: u32 = h.read(this + 0x14);
+        let r = h.call_sym(EVENT_GET_VOLUME, Conv::Stdcall, &[event, this + 0x38]);
+        errcheck(h, r, VOICE_FILE, 0x307);
+        let scale = f64_at(h, VOLUME_SCALE);
+        let current = x87::mul(x87::load(h.read(this + 0x38)), scale);
+        let diff = x87::sub(x87::load(target), current);
+        let rate = x87::store(x87::div(diff, x87::load(f32_from_i32(frames))));
+        h.write(this + 0x2c, 1u8);
+        h.write(this + 0x34, rate);
+        let r = x87::load(rate);
+        if r < 0.0 {
+            let min_at = h.rebase(MIN_FALL_RATE);
+            let min: u32 = h.read(min_at);
+            if x87::load(min) < r {
+                h.write(this + 0x34, x87::store(x87::load(min)));
+            }
+        } else if r > 0.0 && r < 1.0 {
+            h.write(this + 0x34, 1.0f32.to_bits());
+        }
+        0
+    }
+
+    /// The small teardown helpers' `user_free(this + 8)` (0x0070c1d0,
+    /// 0x0070c1e0, 0x0070e830, `ecx`): returns the `eax` the original
+    /// leaves (the word when 0, else `user_free`'s).
+    pub fn free_plus_8(h: &mut impl Host, this: u32) -> u32 {
+        let p: u32 = h.read(this + 8);
+        if p == 0 { 0 } else { cdecl(h, USER_FREE, &[p]) }
+    }
+
+    /// A `PRedBlackTree`'s destructors run (0x0070c1f0, 0x0070c250,
+    /// 0x00710010, 0x00710840, `ecx`): `Phyre_PRedBlackTree_clear` twice.
+    pub fn tree_clear_twice(h: &mut impl Host, tree: u32) {
+        this_call(h, TREE_CLEAR, tree, &[]);
+        this_call(h, TREE_CLEAR, tree, &[]);
+    }
+
+    /// A tree with a free list destroyed (0x0070c2b0, 0x00710070, `ecx`):
+    /// orphaned, the free list reset and destroyed, cleared twice.
+    pub fn tree_with_free_list_dtor(h: &mut impl Host, tree: u32) {
+        tree_member_dtor(h, tree);
+    }
+
+    /// `FmodSfx_stopAllNonloopSound(this)` (0x0070d9e0): for every node of
+    /// the `+0x64` tree, each of its events that is not playing in a loop
+    /// (`SfxEvent_isPlaying`'s `al` 0) stopped at once, and the `+0xc8`
+    /// event stopped too (once per node).
+    pub fn sfx_stop_all_nonloop_sound(h: &mut impl Host, this: u32) {
+        let tree = this + 0x64;
+        let mut node = leftmost(h, tree);
+        if node == tree {
+            return;
+        }
+        let mut next = this_call(h, TREE_SUCCESSOR, tree, &[node]);
+        loop {
+            let mut i = 0u32;
+            while i < h.read::<u32>(node + 0x10) {
+                let events: u32 = h.read(node + 0x18);
+                let event: u32 = h.read(events + 4 * i);
+                if event != 0
+                    && this_call(h, SFX_EVENT_IS_PLAYING, event, &[]).to_le_bytes()[0] == 0
+                {
+                    let events: u32 = h.read(node + 0x18);
+                    let event: u32 = h.read(events + 4 * i);
+                    this_call(h, SFX_EVENT_STOP, event, &[1]);
+                }
+                i += 1;
+            }
+            let shout: u32 = h.read(this + 0xc8);
+            if shout != 0 {
+                this_call(h, SFX_EVENT_STOP, shout, &[1]);
+            }
+            node = next;
+            if next != tree {
+                next = this_call(h, TREE_SUCCESSOR, tree, &[next]);
+            }
+            if node == tree {
+                break;
+            }
+        }
+    }
+
+    /// `SfxEvent_delayStart(this; frames, a, b)` (0x0070eac0, ret 0xc):
+    /// at once (`SfxEvent_start(a, b)`, its `eax`) for 0 frames; else the
+    /// delay in seconds (`+0xc`, `f32(f32(frames) / 30.0)`), `a` and `b`
+    /// kept (`+0x10`, `+0x14`) and every instance's flag (`+8` array of 8
+    /// bytes, `+4` byte) set. Returns the `eax` the original leaves.
+    pub fn sfx_event_delay_start(h: &mut impl Host, this: u32, frames: u32, a: u32, b: u32) -> u32 {
+        if frames == 0 {
+            return this_call(h, SFX_EVENT_START, this, &[a, b]);
+        }
+        let fps = f64_at(h, FRAMES_PER_SECOND);
+        let delay = x87::store(x87::div(x87::load(f32_from_i32(frames)), fps));
+        let n: u32 = h.read(this);
+        h.write(this + 0x10, a);
+        h.write(this + 0x14, b);
+        h.write(this + 0xc, delay);
+        let mut eax = b;
+        let n = n.cast_signed();
+        for i in 0..n.max(0).cast_unsigned() {
+            let arr: u32 = h.read(this + 8);
+            h.write(arr + 8 * i + 4, 1u8);
+            eax = arr;
+        }
+        eax
+    }
+
+    /// `SfxEvent_setEntireVolume_0070ee90(this; volume)` (0x0070ee90, ret
+    /// 4): `+0x24` = volume, then `SfxEvent_applyVolume(+0x20)` (its
+    /// `eax`).
+    pub fn sfx_event_set_entire_volume(h: &mut impl Host, this: u32, volume: u32) -> u32 {
+        h.write(this + 0x24, x87::store(x87::load(volume)));
+        let requested = x87::store(x87::load(h.read(this + 0x20)));
+        this_call(h, SFX_EVENT_APPLY_VOLUME, this, &[requested])
+    }
+
+    /// `SfxEvent_setPan2(this; pan, frames)` (0x0070f000, ret 8): at once
+    /// (`SfxEvent_setPan(pan)`, its `eax`) for 0 frames; else a new pan
+    /// fade (`+0x1c`, 16 bytes, the old one deleted): `+0` the target
+    /// (`SfxEvent_volumeFrom127(pan)`), `+4` the current pan (FMOD
+    /// `getVolume` of the first instance when its `+4` byte is set, else
+    /// 0.0; the original's frame word `ebp - 0x10`, `frame` its `ebp`),
+    /// `+8` the duration `f32(f32(frames) / 30.0)`, `+0xc` the rate
+    /// `(target - current) / duration`. Returns the `eax` it leaves.
+    pub fn sfx_event_set_pan2(
+        h: &mut impl Host,
+        frame: u32,
+        this: u32,
+        pan: u32,
+        frames: u32,
+    ) -> u32 {
+        if frames == 0 {
+            return this_call(h, SFX_EVENT_SET_PAN, this, &[pan]);
+        }
+        let old: u32 = h.read(this + 0x1c);
+        if old != 0 {
+            cdecl(h, OPERATOR_DELETE, &[old]);
+        }
+        let fade = cdecl(h, OPERATOR_NEW, &[0x10]);
+        if fade != 0 {
+            let cur = frame - 0x10;
+            h.write(cur, 0u32);
+            let inst: u32 = h.read(this + 8);
+            if h.read::<u8>(inst + 4) != 0 {
+                let event: u32 = h.read(inst);
+                let r = h.call_sym(EVENT_GET_VOLUME, Conv::Stdcall, &[event, cur]);
+                errcheck(h, r, SFX_EVENT_CPP, 0x10f);
+            }
+            let f = h.rebase(SFX_EVENT_FROM_127);
+            let target = h.call_st0(f, Conv::Stdcall, &[pan]).to_bits();
+            h.write(fade, target);
+            let current: u32 = h.read(cur);
+            h.write(fade + 4, x87::store(x87::load(current)));
+            let fps = f64_at(h, FRAMES_PER_SECOND);
+            let duration = x87::store(x87::div(x87::load(f32_from_i32(frames)), fps));
+            h.write(fade + 8, duration);
+            let rate = x87::div(
+                x87::sub(x87::load(target), x87::load(current)),
+                x87::load(duration),
+            );
+            h.write(fade + 0xc, x87::store(rate));
+        }
+        h.write(this + 0x1c, fade);
+        fade
+    }
+
+    /// A PS2 sound API slot's 5-byte `jmp` to `target` (cdecl): the
+    /// target's `eax`.
+    pub fn jmp_thunk(h: &mut impl Host, target: u32, args: &[u32]) -> u32 {
+        cdecl(h, target, args)
+    }
+
+    /// The jump thunks' targets.
+    pub const SQS_STRAIGHT_VOLUME_DIRECT: u32 = 0x0081_f800;
+    pub const SQS_STRAIGHT_DATA_SEND: u32 = 0x0081_f210;
+    pub const SQS_IOP_STATUS: u32 = 0x0081_d710;
+    pub const I_MUSIC_REPLAY_POINT_CLEAR: u32 = 0x0067_a190;
+    pub const SND_IS_READ_STATUS: u32 = 0x0088_6650;
+    pub const I_MUSIC_MUTE_SET: u32 = 0x0067_a0b0;
+    pub const I_MUSIC_PLAY_FAST: u32 = 0x0067_a130;
+    pub const SQS_BATTLE_DATA_SEND: u32 = 0x0081_cef0;
+    pub const SQS_SE_STOP: u32 = 0x0081_e7c0;
+    pub const I_VOICE_PAN_DIRECT: u32 = 0x0067_a6d0;
+    pub const I_VOICE_PAN_TRANSLATE: u32 = 0x0067_a6f0;
+    pub const TO_DRAW_MENU_BG: u32 = 0x008f_5c10;
 }

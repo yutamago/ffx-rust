@@ -1055,3 +1055,291 @@ fn music_pause_mute_and_reset_match_the_original() {
         }
     });
 }
+
+// ---- batch 3: the voice's volume translation, the sfx event helpers,
+// the tree members, the jump thunks ----
+
+#[test]
+fn voice_volume_translate_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0b0b_7777);
+        for case in 0..40u32 {
+            t.reset();
+            let frames = [0, 1, 30, 90, 0xffff_fff6][(case % 5) as usize];
+            let volume = [0, 64, 127, 200, 0xffff_ff80][(case / 5 % 5) as usize];
+            let playing = case % 3 != 2;
+            let cur = [0.0f32, 0.25, 0.5, 1.0, 0.999][(case % 4) as usize];
+            let mut w = vec![0x1111_1111u32; 0x10];
+            w[0x14 / 4] = if case == 7 { 0 } else { 0x0e0e_0000 };
+            let this = t.words(&w);
+            // getState writes the state word, getVolume the volume
+            let state = if playing {
+                8 | rng.below(8)
+            } else {
+                rng.below(8)
+            };
+            let log = t.stub_code(b::EVENT_GET_STATE, false, 2, 2, 0);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            c.extend([0xc7, 0x00]);
+            c.extend((state | 0xab00).to_le_bytes()); // mov dword [eax], state
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.jump(b::EVENT_GET_STATE, code);
+            let log = t.stub_code(b::EVENT_GET_VOLUME, false, 2, 2, 0);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            c.extend([0xc7, 0x00]);
+            c.extend(cur.to_bits().to_le_bytes()); // mov dword [eax], cur
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.jump(b::EVENT_GET_VOLUME, code);
+            t.stub(b::ERRCHECK, false, 3, 0, 0);
+            t.stub(b::VOICE_VOLUME_DIRECT, true, 2, 2, 0);
+            let what = format!("FmodVoice_volumeTranslate #{case}");
+            if frames == 0 || case == 7 {
+                // no state word: the original's slot keeps its pushed ecx
+                let ebp = t.frame_ebp(2);
+                t.check(
+                    &what,
+                    0x0070_b880,
+                    Conv::Thiscall(this),
+                    &[frames, volume],
+                    |m| Out::U32(b::voice_volume_translate(m, ebp, this, frames, volume)),
+                );
+            } else {
+                t.check_framed(
+                    &what,
+                    0x0070_b880,
+                    Conv::Thiscall(this),
+                    &[frames, volume],
+                    4,
+                    |m, ebp| Out::U32(b::voice_volume_translate(m, ebp, this, frames, volume)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn small_teardown_helpers_match_the_original() {
+    Twins::each(|t| {
+        for sym in [0x0070_c1d0, 0x0070_c1e0, 0x0070_e830] {
+            for p in [0, 0x4321] {
+                t.reset();
+                t.stub(b::USER_FREE, false, 1, 0, 0x99);
+                let this = t.words(&[1, 2, p, 3]);
+                t.check(
+                    &format!("{sym:#x} {p:#x}"),
+                    sym,
+                    Conv::Thiscall(this),
+                    &[],
+                    |m| Out::U32(b::free_plus_8(m, this)),
+                );
+            }
+        }
+        for sym in [0x0070_c1f0, 0x0070_c250, 0x0071_0010, 0x0071_0840] {
+            t.reset();
+            t.stub(b::TREE_CLEAR, true, 0, 0, 0);
+            let tree = t.zeros(0x30);
+            t.check(&format!("{sym:#x}"), sym, Conv::Thiscall(tree), &[], |m| {
+                b::tree_clear_twice(m, tree);
+                Out::None
+            });
+        }
+        for sym in [0x0070_c2b0, 0x0071_0070] {
+            t.reset();
+            t.stub(b::TREE_ORPHAN, true, 0, 0, 0);
+            t.stub(b::FREE_LIST_RESET, true, 0, 0, 0);
+            t.stub(b::FREE_LIST_DTOR, true, 0, 0, 0);
+            t.stub(b::TREE_CLEAR, true, 0, 0, 0);
+            let tree = t.zeros(0x30);
+            t.check(&format!("{sym:#x}"), sym, Conv::Thiscall(tree), &[], |m| {
+                b::tree_with_free_list_dtor(m, tree);
+                Out::None
+            });
+        }
+        for case in 0..3 {
+            t.reset();
+            let n1 = node(t, 0x1000);
+            let n2 = node(t, 0);
+            let (first, after): (u32, Vec<u32>) = match case {
+                0 => (u32::MAX, vec![]),
+                1 => (0, vec![]),
+                _ => (n1, vec![n2]),
+            };
+            let tree = drained_tree(t, first, &after);
+            t.stub(b::USER_FREE, false, 1, 0, 0);
+            t.stub(b::FREE_LIST_RESET, true, 0, 0, 0);
+            t.stub(b::FREE_LIST_DTOR, true, 0, 0, 0);
+            t.stub(b::TREE_CLEAR, true, 0, 0, 0);
+            t.check(
+                &format!("0x007108b0 #{case}"),
+                0x0071_08b0,
+                Conv::Thiscall(tree),
+                &[],
+                |m| {
+                    b::sfx_node_tree_dtor(m, tree);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn sfx_stop_all_nonloop_sound_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..6u32 {
+            t.reset();
+            let count = [0, 1, 2, 3, 2, 1][case as usize];
+            let mut nodes = Vec::new();
+            let mut playing = Vec::new();
+            for k in 0..count {
+                let n_events = [0, 1, 3][((case + k) % 3) as usize];
+                let ev: Vec<u32> = (0..n_events)
+                    .map(|e| {
+                        if (case + e) % 3 == 0 {
+                            0
+                        } else {
+                            0x4000 + 0x10 * e
+                        }
+                    })
+                    .collect();
+                for &e in &ev {
+                    if e != 0 {
+                        playing.push(u32::from((e >> 4) % 2 == 0) | 0x100);
+                    }
+                }
+                let arr = t.words(&if ev.is_empty() { vec![0] } else { ev });
+                nodes.push(t.words(&[0, 0, 0, 0, n_events, 0, arr, 0]));
+            }
+            playing.push(0);
+            let sfx = sfx_with_tree(t, 0x64, &nodes, case % 2 == 0);
+            t.w32(sfx + 0xc8, if case & 2 == 0 { 0x8800 } else { 0 });
+            t.stub_seq(b::SFX_EVENT_IS_PLAYING, true, 0, 0, &playing);
+            t.stub(b::SFX_EVENT_STOP, true, 1, 1, 0);
+            t.check(
+                &format!("FmodSfx_stopAllNonloopSound #{case}"),
+                0x0070_d9e0,
+                Conv::Thiscall(sfx),
+                &[],
+                |m| {
+                    b::sfx_stop_all_nonloop_sound(m, sfx);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn sfx_event_helpers_match_the_original() {
+    Twins::each(|t| {
+        for case in 0..8u32 {
+            t.reset();
+            let frames = [0, 1, 45, 0xffff_ffff, 30, 7, 0, 1000][case as usize];
+            let n = [0, 1, 3, 2, 0xffff_ffff, 4, 2, 1][case as usize];
+            let inst = t.zeros(0x40);
+            let this = t.words(&[n, 0, inst, 0, 0, 0, 0, 0, 0x3f00_0000, 0x3f80_0000, 0]);
+            t.stub(b::SFX_EVENT_START, true, 2, 2, 0x5151);
+            let (a, bb) = (0x1234, 0x5678 + case);
+            t.check(
+                &format!("SfxEvent_delayStart #{case}"),
+                0x0070_eac0,
+                Conv::Thiscall(this),
+                &[frames, a, bb],
+                |m| Out::U32(b::sfx_event_delay_start(m, this, frames, a, bb)),
+            );
+            let volume = [0.5f32, 0.0, 1.0, -3.0, 1e-40, 2.5, 0.75, 100.0][case as usize].to_bits();
+            t.stub(b::SFX_EVENT_APPLY_VOLUME, true, 1, 1, 0x6262);
+            t.check(
+                &format!("SfxEvent_setEntireVolume #{case}"),
+                0x0070_ee90,
+                Conv::Thiscall(this),
+                &[volume],
+                |m| Out::U32(b::sfx_event_set_entire_volume(m, this, volume)),
+            );
+        }
+        for case in 0..12u32 {
+            t.reset();
+            let frames = [0, 1, 30, 7, 0xffff_ffe2, 1000][(case % 6) as usize];
+            let pan = [0, 64, 127, 300][(case % 4) as usize];
+            let event = t.words(&[0x0e0e, u32::from(case % 3 != 0)]);
+            let old = if case % 2 == 0 { 0 } else { 0x0dd0 };
+            let mut w = vec![0u32; 8];
+            w[2] = event;
+            w[7] = old;
+            let this = t.words(&w);
+            let fade = t.alloc(&[0xcc; 0x10]);
+            t.stub(
+                b::OPERATOR_NEW,
+                false,
+                1,
+                0,
+                if case == 5 { 0 } else { fade },
+            );
+            t.stub(b::OPERATOR_DELETE, false, 1, 0, 0);
+            t.stub(b::SFX_EVENT_SET_PAN, true, 1, 1, 0x7373);
+            t.stub(b::ERRCHECK, false, 3, 0, 0);
+            t.stub_float_pops(
+                b::SFX_EVENT_FROM_127,
+                [0.0f32, 0.5, 1.0, 0.25][(case % 4) as usize],
+                1,
+            );
+            let cur = [0.0f32, 0.75, -0.5][(case % 3) as usize];
+            let log = t.stub_code(b::EVENT_GET_VOLUME, false, 2, 2, 0);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            c.extend([0xc7, 0x00]);
+            c.extend(cur.to_bits().to_le_bytes()); // mov dword [eax], cur
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let code = t.cave_code(&c);
+            t.jump(b::EVENT_GET_VOLUME, code);
+            t.skip = 0xc;
+            t.check_framed(
+                &format!("SfxEvent_setPan2 #{case}"),
+                0x0070_f000,
+                Conv::Thiscall(this),
+                &[pan, frames],
+                0x10,
+                |m, ebp| {
+                    b::sfx_event_set_pan2(m, ebp, this, pan, frames);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn sound_jump_thunks_match_the_original() {
+    Twins::each(|t| {
+        let thunks: [(u32, u32, usize); 12] = [
+            (0x0088_71f0, b::SQS_STRAIGHT_VOLUME_DIRECT, 1),
+            (0x0088_5ed0, b::SQS_STRAIGHT_DATA_SEND, 4),
+            (0x0088_73b0, b::SQS_IOP_STATUS, 0),
+            (0x0088_69e0, b::I_MUSIC_REPLAY_POINT_CLEAR, 1),
+            (0x0088_6630, b::SND_IS_READ_STATUS, 0),
+            (0x0088_68e0, b::I_MUSIC_MUTE_SET, 2),
+            (0x0088_6950, b::I_MUSIC_PLAY_FAST, 1),
+            (0x0088_7440, b::SQS_BATTLE_DATA_SEND, 2),
+            (0x0088_7750, b::SQS_SE_STOP, 2),
+            (0x0088_7970, b::I_VOICE_PAN_DIRECT, 1),
+            (0x0088_7980, b::I_VOICE_PAN_TRANSLATE, 2),
+            (0x008c_c190, b::TO_DRAW_MENU_BG, 0),
+        ];
+        for (sym, target, n) in thunks {
+            t.reset();
+            t.stub(target, false, n as u32, 0, sym ^ 0x5555);
+            let args: Vec<u32> = (0..n as u32).map(|i| 0x100 * (i + 1) + 7).collect();
+            t.check(&format!("thunk {sym:#x}"), sym, Conv::Cdecl, &args, |m| {
+                Out::U32(b::jmp_thunk(m, target, &args))
+            });
+        }
+    });
+}

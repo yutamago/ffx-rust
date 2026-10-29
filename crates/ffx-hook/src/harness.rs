@@ -280,19 +280,19 @@ static VSYNC_TICKS: AtomicU64 = AtomicU64::new(0);
 /// `createVsyncEmuThread(callback)` on the virtual clock: no thread (which
 /// would call `callback` every 16 ms of real time); [`run_vsync`] calls it
 /// at the main thread's frame boundary as game time passes ([`animate`]; before the first update, from `Present`).
-unsafe extern "C" fn virtual_vsync_start(callback: usize) {
+pub(crate) unsafe extern "C" fn virtual_vsync_start(callback: usize) {
     VSYNC_TICKS.store(vsync_ticks_now(), Ordering::Release);
     VSYNC_CALLBACK.store(callback, Ordering::Release);
 }
 
 /// `endVsyncEmuThread` on the virtual clock.
-unsafe extern "C" fn virtual_vsync_end() {
+pub(crate) unsafe extern "C" fn virtual_vsync_end() {
     VSYNC_CALLBACK.store(0, Ordering::Release);
 }
 
 /// `VsyncEmu_Wake` (`0x00679f80`) on the virtual clock: there is no thread
 /// to wake.
-unsafe extern "C" fn virtual_vsync_wake() {}
+pub(crate) unsafe extern "C" fn virtual_vsync_wake() {}
 
 fn vsync_ticks_now() -> u64 {
     // SAFETY: the wrapped clock, as the game reads it.

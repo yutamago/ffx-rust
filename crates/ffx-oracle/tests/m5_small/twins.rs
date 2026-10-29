@@ -422,6 +422,32 @@ impl Twins {
         self.jump(sym, addr);
     }
 
+    /// A stub over `sym` that logs its `pops` words (tag `sym`), pops them
+    /// and returns `value` in `ST0` (`fld dword`).
+    pub fn stub_float_pops(&mut self, sym: u32, value: f32, pops: u32) {
+        let cell = self.words(&[value.to_bits()]);
+        let log = self.log;
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], tag
+        for i in 0..pops {
+            c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+            c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+        }
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0xd9, 0x05]);
+        c.extend(cell.to_le_bytes()); // fld dword [cell]
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
     /// A stub over `sym` that returns `value` in `ST0` (`fld dword`).
     pub fn stub_float(&mut self, sym: u32, value: f32) {
         let cell = self.words(&[value.to_bits()]);
