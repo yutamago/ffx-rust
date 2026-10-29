@@ -1,0 +1,401 @@
+//! `ffx_prender::m5m_*`: M5 stage 1, list `map` (the debug tweak panels,
+//! the free camera's attach, scene and `std::string` helpers and the
+//! field-map code the static call graph reaches and no coverage run ran).
+//!
+//! Threads: the main thread (`PhyreScene_bootInit`, `PhyreScene_render`,
+//! the debug menu, the unwind funclets of the main thread's frames); the
+//! shims keep no state.
+
+use super::{StackFrame, mem, ported};
+use ffx_prender::m5m_a::{self as ma, bridge as a};
+use ffx_prender::m5m_b::{self as mb, bridge as b};
+use ffx_prender::m5m_c::{self as mc, bridge as c};
+use ffx_prender::m5m_d::bridge as d;
+
+ported! {
+    // ---- batch 1 (ffx_prender::m5m_a) ----
+    /// `SectionVector_pushBack_006ba110(v; &item)`.
+    SectionVector_pushBack_006ba110 @ 0x006b_a110 => extern "thiscall" fn section_push_back(this: u32, item: u32) {
+        a::section_push_back(&mut mem(), this, item);
+    }
+    /// `BasicDebugTweakUtil_setEnabled(t; on)`: the strings, the line and
+    /// the three numbers in the shim's frame (`ebp - 0x198..`).
+    BasicDebugTweakUtil_setEnabled @ 0x006b_af60 => extern "thiscall" fn basic_set_enabled(this: u32, on: u32) -> u32 {
+        let mut f = StackFrame::<0x68>::new();
+        a::basic_set_enabled(&mut mem(), f.at() + 0x1a0, this, on)
+    }
+    /// `CharacterAnimationTweakUtil_setEnabled(t; on)`.
+    CharacterAnimationTweakUtil_setEnabled @ 0x006b_b5f0 => extern "thiscall" fn char_anim_set_enabled(this: u32, on: u32) -> u32 {
+        a::char_anim_set_enabled(&mut mem(), this, on)
+    }
+    /// `CharacterSwitchTweakUtil_setEnabled_006bb670(t; on)`.
+    CharacterSwitchTweakUtil_setEnabled_006bb670 @ 0x006b_b670 => extern "thiscall" fn char_switch_set_enabled(this: u32, on: u32) -> u32 {
+        a::set_enabled(&mut mem(), ma::CHAR_SWITCH_ENABLE, this, on)
+    }
+    /// `CharacterTextureAnimationTweakUtil_setEnabled_006bb6d0(t; on)`.
+    CharacterTextureAnimationTweakUtil_setEnabled_006bb6d0 @ 0x006b_b6d0 => extern "thiscall" fn char_tex_set_enabled(this: u32, on: u32) -> u32 {
+        a::char_tex_set_enabled(&mut mem(), this, on)
+    }
+    /// `MapSwitchTweakUtil_setEnabled_006bb880(t; on)`.
+    MapSwitchTweakUtil_setEnabled_006bb880 @ 0x006b_b880 => extern "thiscall" fn map_switch_set_enabled(this: u32, on: u32) -> u32 {
+        a::set_enabled(&mut mem(), ma::MAP_SWITCH_ENABLE, this, on)
+    }
+    /// `InlineBuffer_free_0064e9a0(b)`.
+    InlineBuffer_free_0064e9a0 @ 0x0064_e9a0 => extern "thiscall" fn inline_buffer_free(this: u32) -> u32 {
+        a::inline_buffer_free(&mut mem(), this)
+    }
+    /// `AtlCString_release_0064e9e0(s)`.
+    AtlCString_release_0064e9e0 @ 0x0064_e9e0 => extern "thiscall" fn cstring_release(this: u32) -> u32 {
+        a::cstring_release(&mut mem(), this)
+    }
+    /// `std_string_tidy_0064ea00(s)`.
+    std_string_tidy_0064ea00 @ 0x0064_ea00 => extern "thiscall" fn string_tidy(this: u32) {
+        a::string_tidy(&mut mem(), this);
+    }
+    /// `std_vector_tidy_0064ea30(v)`.
+    std_vector_tidy_0064ea30 @ 0x0064_ea30 => extern "thiscall" fn vector_tidy(this: u32) -> u32 {
+        a::vector_tidy(&mut mem(), this)
+    }
+    /// `PhyreSceneCursor_postNext4_0064f1a0(c; out, _)` -> out.
+    PhyreSceneCursor_postNext4_0064f1a0 @ 0x0064_f1a0 => extern "thiscall" fn cursor_post_next4(this: u32, out: u32, _unused: u32) -> u32 {
+        a::cursor_post_next4(&mut mem(), this, out)
+    }
+    /// `std_string_less_0064f550(a, b)`.
+    std_string_less_0064f550 @ 0x0064_f550 => extern "stdcall" fn string_less(x: u32, y: u32) -> u32 {
+        a::string_less(&mut mem(), x, y)
+    }
+    /// `std_string_append_cstr_0064f5e0(s; p)`.
+    std_string_append_cstr_0064f5e0 @ 0x0064_f5e0 => extern "thiscall" fn string_append_cstr(this: u32, p: u32) -> u32 {
+        a::string_append_cstr(&mut mem(), this, p)
+    }
+    /// `FreeCamera_attach_0067fda0(cam; target)`: the matrices in the
+    /// shim's frame (`ebp - 0x80..`).
+    FreeCamera_attach_0067fda0 @ 0x0067_fda0 => extern "thiscall" fn free_camera_attach(this: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<0x20>::new();
+        a::free_camera_attach(&mut mem(), f.at() + 0x80, this, target)
+    }
+    /// `BasicDebugTweakUtil_initialize(t)`: the line in the shim's frame.
+    BasicDebugTweakUtil_initialize @ 0x006b_9360 => extern "thiscall" fn basic_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::init_lines(&mut mem(), ma::BASIC_INIT, f.at() + 0x104, this)
+    }
+    /// `BtlChrParamConfigTweakUitl_initialize(t)`.
+    BtlChrParamConfigTweakUitl_initialize @ 0x006b_94a0 => extern "thiscall" fn btl_chr_param_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::init_lines(&mut mem(), ma::BTL_CHR_PARAM_INIT, f.at() + 0x104, this)
+    }
+    /// `BtlDebugTweakUtil_initialize(t)`.
+    BtlDebugTweakUtil_initialize @ 0x006b_9600 => extern "thiscall" fn btl_debug_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::btl_debug_init(&mut mem(), f.at() + 0x104, this)
+    }
+    /// `CharacterAnimationTweakUtil_initialize(t)`.
+    CharacterAnimationTweakUtil_initialize @ 0x006b_97f0 => extern "thiscall" fn char_anim_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        a::char_anim_init(&mut mem(), f.at() + 0x2c, this)
+    }
+    /// `CharacterSwitchTweakUtil_initialize(t)`.
+    CharacterSwitchTweakUtil_initialize @ 0x006b_9970 => extern "thiscall" fn char_switch_init(this: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        a::char_switch_init(&mut mem(), f.at() + 0x18, this)
+    }
+    /// `CharacterTextureAnimationTweakUtil_initialize(t)`.
+    CharacterTextureAnimationTweakUtil_initialize @ 0x006b_9aa0 => extern "thiscall" fn char_tex_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0xe>::new();
+        a::char_tex_init(&mut mem(), f.at() + 0x38, this)
+    }
+    /// `GameParamConfigTweakUitl_initialize(t)`.
+    GameParamConfigTweakUitl_initialize @ 0x006b_9cd0 => extern "thiscall" fn game_param_init(this: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::init_lines(&mut mem(), ma::GAME_PARAM_INIT, f.at() + 0x104, this)
+    }
+    /// `BasicDebugTweakUtil_render(t; ctx, fps)`.
+    BasicDebugTweakUtil_render @ 0x006b_a1a0 => extern "thiscall" fn basic_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::BASIC_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `BtlChrParamConfigTweakUitl_render(t; ctx, fps)`.
+    BtlChrParamConfigTweakUitl_render @ 0x006b_a240 => extern "thiscall" fn btl_chr_param_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::BTL_CHR_PARAM_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `BtlDebugTweakUtil_render(t; ctx, fps)`.
+    BtlDebugTweakUtil_render @ 0x006b_a2e0 => extern "thiscall" fn btl_debug_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::BTL_DEBUG_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `CharacterAnimationTweakUtil_render(t; ctx, fps)`.
+    CharacterAnimationTweakUtil_render @ 0x006b_a390 => extern "thiscall" fn char_anim_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::CHAR_ANIM_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `CharacterSwitchTweakUtil_render(t; ctx, fps)`.
+    CharacterSwitchTweakUtil_render @ 0x006b_a430 => extern "thiscall" fn char_switch_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        a::render(&mut mem(), ma::CHAR_SWITCH_RENDER, f.at() + 0x24, this, ctx, fps)
+    }
+    /// `CharacterTextureAnimationTweakUtil_render(t; ctx, fps)`.
+    CharacterTextureAnimationTweakUtil_render @ 0x006b_a4d0 => extern "thiscall" fn char_tex_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::CHAR_TEX_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `GameParamConfigTweakUitl_render(t; ctx, fps)`.
+    GameParamConfigTweakUitl_render @ 0x006b_a570 => extern "thiscall" fn game_param_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::GAME_PARAM_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `MapSwitchTweakUtil_render(t; ctx, fps)`.
+    MapSwitchTweakUtil_render @ 0x006b_a610 => extern "thiscall" fn map_switch_render(this: u32, ctx: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        a::render(&mut mem(), ma::MAP_SWITCH_RENDER, f.at() + 0x104, this, ctx, fps)
+    }
+    /// `rcbgGuideMapSave(a, loc)`: writes its second argument slot.
+    rcbgGuideMapSave @ 0x006e_9570 => extern "C" fn guide_map_save(x: u32, loc: u32; slots: u32) -> u32 {
+        a::guide_map_save(&mut mem(), slots, x, loc)
+    }
+
+    // ---- batch 2 (ffx_prender::m5m_b) ----
+    /// `SqsStraightStreamingNextHalf_0081f160()`.
+    SqsStraightStreamingNextHalf_0081f160 @ 0x0081_f160 => extern "C" fn stream_next_half() -> u32 {
+        b::stream_next_half(&mut mem())
+    }
+    /// `SqsStraightStreamingRecord_0081f760()`.
+    SqsStraightStreamingRecord_0081f760 @ 0x0081_f760 => extern "C" fn stream_record() -> u32 {
+        b::stream_record(&mut mem())
+    }
+    /// `SqsStraightStreamingDataSend(data, start, adpcm, arg)`: reuses its
+    /// first two argument slots.
+    SqsStraightStreamingDataSend @ 0x0081_f210 => extern "C" fn straight_data_send(data: u32, start: u32, adpcm: u32, arg: u32; slots: u32) -> u32 {
+        b::straight_data_send(&mut mem(), slots, data, start, adpcm, arg)
+    }
+    /// `SqsStraightStreamingDigitalModeSet(x)`.
+    SqsStraightStreamingDigitalModeSet @ 0x0081_f550 => extern "C" fn digital_mode_set(x: u32) -> u32 {
+        b::digital_mode_set(&mut mem(), x)
+    }
+    /// `YiRenderStatus_clearBit8_00908440()`.
+    YiRenderStatus_clearBit8_00908440 @ 0x0090_8440 => extern "C" fn yi_status_clear_bit8() {
+        b::yi_status_clear_bit8(&mut mem());
+    }
+    /// `yiGui_setfogparam()`.
+    yiGui_setfogparam @ 0x0090_8f90 => extern "C" fn set_fog_param() -> u32 {
+        b::set_fog_param(&mut mem())
+    }
+    /// `TkVibrateCurve_get_009090b0()`.
+    TkVibrateCurve_get_009090b0 @ 0x0090_90b0 => extern "C" fn vibrate_curve() -> u32 {
+        b::vibrate_curve(&mut mem())
+    }
+    /// `YiRender_initFogDefault_0090a420()`.
+    YiRender_initFogDefault_0090a420 @ 0x0090_a420 => extern "C" fn yi_init_fog() -> u32 {
+        b::yi_init_fog(&mut mem())
+    }
+    /// `yiSendGsPacket(packet, qwc)`: clears its argument slots.
+    yiSendGsPacket @ 0x0091_2690 => extern "C" fn send_gs_packet(packet: u32, qwc: u32; slots: u32) -> u32 {
+        b::send_gs_packet(&mut mem(), slots, packet, qwc)
+    }
+    /// `YnMapChain_clearBit0_0091a200()`.
+    YnMapChain_clearBit0_0091a200 @ 0x0091_a200 => extern "C" fn chain_clear_bit0() -> u32 {
+        b::chain_bit0(&mut mem(), false)
+    }
+    /// `YnMapChain_setBit0_0091a220()`.
+    YnMapChain_setBit0_0091a220 @ 0x0091_a220 => extern "C" fn chain_set_bit0() -> u32 {
+        b::chain_bit0(&mut mem(), true)
+    }
+    /// `rcdtChunkLoadFromFile(chunk, path)`.
+    rcdtChunkLoadFromFile @ 0x0092_b880 => extern "C" fn chunk_load_from_file(chunk: u32, path: u32) -> u32 {
+        b::chunk_load_from_file(&mut mem(), chunk, path)
+    }
+    /// `Yn_FpMemWinOpen()`.
+    Yn_FpMemWinOpen @ 0x0093_3c80 => extern "C" fn fp_mem_win_open() -> u32 {
+        b::fp_mem_win_open(&mut mem())
+    }
+    /// `rcuiInit()`.
+    rcuiInit @ 0x0093_4390 => extern "C" fn rcui_init() -> u32 {
+        b::rcui_init(&mut mem())
+    }
+    /// `rcuiWindowCreate(holder, x, y, w, h, flags, proc, title, parent)`.
+    rcuiWindowCreate @ 0x0093_7ef0 => extern "C" fn window_create(holder: u32, x: u32, y: u32, w: u32, h: u32, flags: u32, proc: u32, title: u32, parent: u32) -> u32 {
+        b::window_create(&mut mem(), holder, [x, y, w, h, flags, proc], title, parent)
+    }
+    /// `SqsSeSeparateMaskClear_thunk_00886dc0(m0..m7)`.
+    SqsSeSeparateMaskClear_thunk_00886dc0 @ 0x0088_6dc0 => extern "C" fn se_separate_mask_clear_thunk(m0: u32, m1: u32, m2: u32, m3: u32, m4: u32, m5: u32, m6: u32, m7: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SE_SEPARATE_MASK_CLEAR_THUNK, &[m0, m1, m2, m3, m4, m5, m6, m7])
+    }
+    /// `SqsSetCycleMode_thunk(a)`.
+    SqsSetCycleMode_thunk @ 0x0088_7070 => extern "C" fn set_cycle_mode_thunk(x: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SET_CYCLE_MODE_THUNK, &[x])
+    }
+    /// `SqsSetReverbPlaySwitch_thunk(a)`.
+    SqsSetReverbPlaySwitch_thunk @ 0x0088_7170 => extern "C" fn set_reverb_play_switch_thunk(x: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SET_REVERB_PLAY_SWITCH_THUNK, &[x])
+    }
+    /// `SqsAllVoiceTerminate_thunk_008872e0()`.
+    SqsAllVoiceTerminate_thunk_008872e0 @ 0x0088_72e0 => extern "C" fn all_voice_terminate_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::ALL_VOICE_TERMINATE_THUNK, &[])
+    }
+    /// `SqsShoutStreamingDataSend_thunk(src, size)`.
+    SqsShoutStreamingDataSend_thunk @ 0x0088_7560 => extern "C" fn shout_streaming_data_send_thunk(src: u32, size: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SHOUT_STREAMING_DATA_SEND_THUNK, &[src, size])
+    }
+    /// `yiFree(p)`.
+    yiFree @ 0x0090_bbc0 => extern "C" fn yi_free(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::YI_FREE, &[p])
+    }
+    /// `rcbgInit_thunk_00919a70()`.
+    rcbgInit_thunk_00919a70 @ 0x0091_9a70 => extern "C" fn rcbg_init_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::RCBG_INIT_THUNK, &[])
+    }
+    /// `pppFpDispDebug_thunk_00919b70()`.
+    pppFpDispDebug_thunk_00919b70 @ 0x0091_9b70 => extern "C" fn fp_disp_debug_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::FP_DISP_DEBUG_THUNK, &[])
+    }
+    /// `Yn_FpMemWinOpen_thunk_00919b80()`.
+    Yn_FpMemWinOpen_thunk_00919b80 @ 0x0091_9b80 => extern "C" fn fp_mem_win_open_thunk() -> u32 {
+        b::thunk(&mut mem(), mb::FP_MEM_WIN_OPEN_THUNK, &[])
+    }
+    /// `Yn_PreBgSetData_thunk_00919b90(data)`.
+    Yn_PreBgSetData_thunk_00919b90 @ 0x0091_9b90 => extern "C" fn pre_bg_set_data_thunk_a(data: u32) -> u32 {
+        b::thunk(&mut mem(), mb::PRE_BG_SET_DATA_THUNK_A, &[data])
+    }
+    /// `rcbgTrxPairSetNo_thunk_00919bd0(p, n)`.
+    rcbgTrxPairSetNo_thunk_00919bd0 @ 0x0091_9bd0 => extern "C" fn trx_pair_set_no_thunk(p: u32, n: u32) -> u32 {
+        b::thunk(&mut mem(), mb::TRX_PAIR_SET_NO_THUNK, &[p, n])
+    }
+    /// `Yn_PreBgSetData_thunk_00919d30(data)`.
+    Yn_PreBgSetData_thunk_00919d30 @ 0x0091_9d30 => extern "C" fn pre_bg_set_data_thunk_b(data: u32) -> u32 {
+        b::thunk(&mut mem(), mb::PRE_BG_SET_DATA_THUNK_B, &[data])
+    }
+    /// `rcbgSceneSetChadist_thunk(scene)`.
+    rcbgSceneSetChadist_thunk @ 0x0092_0780 => extern "C" fn scene_set_chadist_thunk(scene: u32) -> u32 {
+        b::thunk(&mut mem(), mb::SCENE_SET_CHADIST_THUNK, &[scene])
+    }
+    /// `rcFree(p)`.
+    rcFree @ 0x0092_58e0 => extern "C" fn rc_free(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::RC_FREE, &[p])
+    }
+    /// `rcFree_thunk_0092ba50(p)`.
+    rcFree_thunk_0092ba50 @ 0x0092_ba50 => extern "C" fn rc_free_thunk(p: u32) -> u32 {
+        b::thunk(&mut mem(), mb::RC_FREE_THUNK, &[p])
+    }
+    /// `rcefTaskRetSeqCont_thunk(t)`.
+    rcefTaskRetSeqCont_thunk @ 0x0093_04d0 => extern "C" fn task_ret_seq_cont_thunk(t: u32) -> u32 {
+        b::thunk(&mut mem(), mb::TASK_RET_SEQ_CONT_THUNK, &[t])
+    }
+
+    // ---- batch 3 (ffx_prender::m5m_c) ----
+    /// `rcdtTm2LoadEx_009232a0(pic, path, ps2_alpha)`.
+    rcdtTm2LoadEx_009232a0 @ 0x0092_32a0 => extern "C" fn tm2_load(pic: u32, path: u32, ps2_alpha: u32) -> u32 {
+        c::tm2_load(&mut mem(), pic, path, ps2_alpha)
+    }
+    /// `rcdtTm2OpaqueBounds_009234d0(pic, &x, &y, &w, &h)`.
+    rcdtTm2OpaqueBounds_009234d0 @ 0x0092_34d0 => extern "C" fn tm2_opaque_bounds(pic: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        c::tm2_bounds(&mut mem(), mc::Opaque::Alpha, pic, [x, y, w, h])
+    }
+    /// `rcdtTm2KeyBounds_00923660(pic, &x, &y, &w, &h)`.
+    rcdtTm2KeyBounds_00923660 @ 0x0092_3660 => extern "C" fn tm2_key_bounds(pic: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        c::tm2_bounds(&mut mem(), mc::Opaque::Black, pic, [x, y, w, h])
+    }
+    /// `rcdtTm2Load(pic, path)`.
+    rcdtTm2Load @ 0x0092_3800 => extern "C" fn tm2_load_ps2(pic: u32, path: u32) -> u32 {
+        c::tm2_load_ps2(&mut mem(), pic, path)
+    }
+    /// `rcdtRsdLoad_LoadMat_00923b60(model, path)`.
+    rcdtRsdLoad_LoadMat_00923b60 @ 0x0092_3b60 => extern "C" fn load_mat(model: u32, path: u32) -> u32 {
+        c::load_mat(&mut mem(), model, path)
+    }
+    /// `rcbgIDLoad()`: the path in the shim's frame.
+    rcbgIDLoad @ 0x0092_5730 => extern "C" fn id_load() -> u32 {
+        let mut f = StackFrame::<0x42>::new();
+        c::id_load(&mut mem(), f.at() + 0x104)
+    }
+    /// `rcPacketRect_00927630(pkt, x, y, w, h, rgba)`.
+    rcPacketRect_00927630 @ 0x0092_7630 => extern "C" fn packet_rect(pkt: u32, x: u32, y: u32, w: u32, h: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_rect(&mut mem(), f.at() + 0x20, pkt, [x, y, w, h, rgba])
+    }
+    /// `rcPacketCircle_00927720(pkt, x, y, r, rgba)`.
+    rcPacketCircle_00927720 @ 0x0092_7720 => extern "C" fn packet_circle(pkt: u32, x: u32, y: u32, r: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_circle(&mut mem(), f.at() + 0x20, pkt, [x, y, r, rgba])
+    }
+    /// `rcPacketLine_00927810(pkt, x0, y0, x1, y1, rgba)`.
+    rcPacketLine_00927810 @ 0x0092_7810 => extern "C" fn packet_line(pkt: u32, x0: u32, y0: u32, x1: u32, y1: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_line(&mut mem(), f.at() + 0x20, pkt, [x0, y0, x1, y1, rgba])
+    }
+    /// `rcdtRsdLoad_LoadMatRsd(model, path)`: the type byte in the shim's
+    /// frame.
+    rcdtRsdLoad_LoadMatRsd @ 0x0092_3bc0 => extern "C" fn load_mat_rsd(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        c::load_mat_rsd(&mut mem(), f.at() + 0x14, model, path)
+    }
+    /// `rcdtRsdLoad_LoadMatRsd2(model, path)`: the type byte in the
+    /// shim's frame.
+    rcdtRsdLoad_LoadMatRsd2 @ 0x0092_3ed0 => extern "C" fn load_mat_rsd2(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        c::load_mat_rsd2(&mut mem(), f.at() + 0x14, model, path)
+    }
+    /// `rcdtRsdLoad_LoadPly(model, path)`.
+    rcdtRsdLoad_LoadPly @ 0x0092_4090 => extern "C" fn load_ply(model: u32, path: u32) -> u32 {
+        c::load_ply(&mut mem(), model, path)
+    }
+    /// `rcdtRsdLoad_009243c0(model, path)`: the keyword table and the
+    /// path buffers in the shim's frame (`ebp - 0x328..`).
+    rcdtRsdLoad_009243c0 @ 0x0092_43c0 => extern "C" fn rsd_load(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<0xcc>::new();
+        c::rsd_load(&mut mem(), f.at() + 0x330, model, path)
+    }
+    /// `rcbgDrawGuidePackets_0092c130()`: the register block and the
+    /// packet in the shim's frame.
+    rcbgDrawGuidePackets_0092c130 @ 0x0092_c130 => extern "C" fn draw_guide_packets() -> u32 {
+        let mut f = StackFrame::<0x12>::new();
+        d::draw_guide_packets(&mut mem(), f.at() + 0x44)
+    }
+    /// `rcbgDrawGuidePoints_0092c4c0(pkt, obj)`: the point record, matrix
+    /// and vector in the shim's frame.
+    rcbgDrawGuidePoints_0092c4c0 @ 0x0092_c4c0 => extern "C" fn draw_guide_points(pkt: u32, obj: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        d::draw_guide_points(&mut mem(), f.at() + 0x98, pkt, obj)
+    }
+    /// `rcuiGetStageName2(no, out, battle)`: the chunk and parse in the
+    /// shim's frame.
+    rcuiGetStageName2 @ 0x0093_7960 => extern "C" fn stage_name2(no: u32, out: u32, battle: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        d::stage_name2(&mut mem(), f.at() + 0xa0, no, out, battle)
+    }
+    /// `rcuiMouseMoveGet(&dx, &dy)`.
+    rcuiMouseMoveGet @ 0x0093_c060 => extern "C" fn mouse_move_get(dx: u32, dy: u32) -> u32 {
+        d::mouse_move_get(&mut mem(), dx, dy)
+    }
+    /// `rcuiAddItems(window, items)`.
+    rcuiAddItems @ 0x0093_7780 => extern "C" fn add_items(window: u32, items: u32) -> u32 {
+        d::add_items(&mut mem(), window, items)
+    }
+    /// `rcuiPercentPrint_00930ba0(x)` (`x` an f32's bits).
+    rcuiPercentPrint_00930ba0 @ 0x0093_0ba0 => extern "C" fn percent_print(x: u32) -> u32 {
+        d::percent_print(&mut mem(), x)
+    }
+    /// `rcuiNumberCreate(num, value, kind, title, parent)`.
+    rcuiNumberCreate @ 0x0093_c2e0 => extern "C" fn number_create(num: u32, value: u32, kind: u32, title: u32, parent: u32) {
+        d::number_create(&mut mem(), num, value, kind, title, parent);
+    }
+    /// `Wrap_0092c600_0092c5e0(a, b)`.
+    Wrap_0092c600_0092c5e0 @ 0x0092_c5e0 => extern "C" fn wrap_0092c600(x: u32, y: u32) -> u32 {
+        c::wrap_0092c600(&mut mem(), x, y)
+    }
+    /// `rcuiGetStageName(a, b)`.
+    rcuiGetStageName @ 0x0093_7940 => extern "C" fn stage_name(x: u32, y: u32) -> u32 {
+        c::stage_name(&mut mem(), x, y)
+    }
+    /// `rcbgFpSaveCurrent_00938340()`.
+    rcbgFpSaveCurrent_00938340 @ 0x0093_8340 => extern "C" fn fp_save_current() -> u32 {
+        c::fp_save_current(&mut mem())
+    }
+    /// `rcbgGuideMapConvCurrent_00938570()`.
+    rcbgGuideMapConvCurrent_00938570 @ 0x0093_8570 => extern "C" fn guide_map_conv_current() -> u32 {
+        c::guide_map_conv_current(&mut mem())
+    }
+    /// `rcbgFpLoadTextCurrent_0093a7e0()`.
+    rcbgFpLoadTextCurrent_0093a7e0 @ 0x0093_a7e0 => extern "C" fn fp_load_text_current() -> u32 {
+        c::fp_load_text_current(&mut mem())
+    }
+}
