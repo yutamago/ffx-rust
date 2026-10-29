@@ -1044,8 +1044,8 @@ compared with PC2's own original recordings (`replay-compare.py`,
 
 | Replay | Trace events | Screenshots | Wall |
 |---|---|---|---|
-| field-walk (three runs) | same (4 ranges) | 0.0-0.1 (coarse) | 224-226 s |
-| menu-browse | same (2 ranges) | 5 of 5, 0 pixels | 225 s |
+| field-walk (four runs) | same (4 ranges) | 0.0-0.1 (coarse) | 218-226 s |
+| menu-browse (two runs) | same (2 ranges) | 5 of 5, 0 pixels | 213-225 s |
 | menu-shop | same (7 ranges) | 8 of 8 (one cursor-glow pixel, allowed) | 998 s |
 | menu-grid | same (6 ranges) | 9 of 9, 0 pixels | 1,128 s |
 | menu-save (after two fixes, below) | same (14 ranges) | 4 of 6; shots 4 and 6 differ in the cursor glow's phase (520 and 574 pixels) | 1,605 s |
