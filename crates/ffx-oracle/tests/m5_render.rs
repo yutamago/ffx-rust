@@ -7377,3 +7377,291 @@ fn rp3_shade_specular_matches_the_original() {
         }
     });
 }
+
+/// A NUL-terminated string in both oracles.
+fn cstr(t: &mut Twins, s: &str) -> u32 {
+    let mut b = s.as_bytes().to_vec();
+    b.push(0);
+    t.alloc(&b)
+}
+
+#[test]
+fn rp3_tweak_utils_match_the_original() {
+    // The CRT calls (sprintf_s, atoi, strstr, memset) run as they are;
+    // TextUtil_changeLine captures each line. Debug mode on and off,
+    // names with and without a motion, a player or none; panels enabled
+    // or not, each line selected, on/off both ways; the texture panel on
+    // a "grid00" viewer map (its line builder stubbed) and elsewhere.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0d);
+        for case in 0..40 {
+            let viewer = t.zeros(0x80);
+            let names = ["a12", "c0", "z999", "m"];
+            let name = cstr(t, names[rng.below(4) as usize]);
+            let bytes: Vec<u8> = (0..0x14).map(|k| t.r32(name + k) as u8).collect();
+            t.write(viewer + 0x1c, &bytes[..8]);
+            let map = if rng.chance(2) { "xgrid00y" } else { "bsil" };
+            let mb = cstr(t, map);
+            let bytes: Vec<u8> = (0..9).map(|k| t.r32(mb + k) as u8).collect();
+            t.write(viewer + 0x30, &bytes);
+            t.global(mo::VIEWER_MANAGER, viewer);
+            t.stub_sym(
+                mo::IS_DEBUG_MODE,
+                1,
+                false,
+                0,
+                0,
+                Ret::Val(u32::from(case % 3 != 0) | 0x100),
+            );
+            let r = if rng.chance(3) { 0 } else { 1 + rng.below(9) };
+            t.stub_sym(mo::READ_VIEWER_ANIMATION, 2, false, 2, 0, Ret::Val(r));
+            let players = t.seq(&[
+                if rng.chance(4) { 0 } else { rng.next() },
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            t.stub_sym(mo::GET_PLAYER, 3, false, 0, 0, players);
+            t.stub_sym(mo::SET_MOTION_TYPE, 4, false, 2, 0, Ret::Val(0));
+            t.stub_sym(mo::SET_VIEWER_MOTION, 5, false, 5, 0, Ret::Val(rng.next()));
+            t.stub_sym(mo::MOTION_SET_LOOP, 6, false, 2, 0, Ret::Val(0));
+            let this = t.zeros(0x100);
+            for k in 0..5 {
+                t.w32(this + 4 * k, rng.word());
+            }
+            let frame = frame_ebp(&t.a, 0) - 0x18;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "CharacterAnimationTweakUtil_updateAnimation",
+                0x006b_c130,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    ob::update_animation(g, frame, this);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            // the two text panels
+            capture_sym(t, mo::TEXT_CHANGE_LINE, 7, 2, 1, 13);
+            let labels: Vec<u32> = ["a:", "bb:", "c:", "d:"]
+                .iter()
+                .map(|s| cstr(t, s))
+                .collect();
+            for (k, &l) in (0u32..).zip(&labels) {
+                t.w32(this + 0xa8 + 4 * k, l);
+            }
+            t.w8(this, u8::from(rng.chance(2)));
+            t.w32(this + 4, rng.word());
+            t.w32(this + 8, rng.word());
+            t.w32(this + 0xc, rng.below(4));
+            t.w8(this + 0x14, u8::from(!rng.chance(4)));
+            t.w32(this + 0xbc, rng.below(5));
+            let frame = frame_ebp(&t.a, 0) - 0x38;
+            t.write(frame, &[0; 0x34]);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "CharacterAnimationTweakUtil_updateText_006bc750",
+                0x006b_c750,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    ob::animation_text(g, frame, this);
+                    Out::None
+                },
+            );
+            t.w8(this + 0x1c, u8::from(!rng.chance(4)));
+            t.w8(this + 0x11, u8::from(rng.chance(2)));
+            t.w32(this + 0xcc, rng.below(2));
+            t.stub_sym(mo::TEXANIM_LINE, 8, true, 2, 2, Ret::Val(0));
+            t.check(
+                "CharacterTextureAnimationTweakUtil_updateText_006bc850",
+                0x006b_c850,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    ob::texanim_text(g, frame, this);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_small_scene_helpers_match_the_original() {
+    // The list constructor (callees stubbed; the frame's result and head
+    // pointers logged), the ANSI-to-wide conversion (null text, success,
+    // a buffer too small then success or failure, another error: the
+    // thrower unwinds), the distortion grid accessor copy.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0e);
+        for case in 0..40 {
+            let this = t.zeros(0x40);
+            t.stub_sym(mo::LIST_NEW_HEAD, 1, false, 2, 2, Ret::Val(rng.next()));
+            // the head local handed by pointer: captured
+            capture_sym(t, mo::VECTOR_FILL, 2, 4, 3, 1);
+            let frame = frame_ebp(&t.a, 2) - 0x18;
+            t.b_top = Some(frame - 0x40);
+            let (w0, w1) = (rng.next(), rng.next());
+            t.check(
+                "ObjectList_ctor_0064cec0",
+                0x0064_cec0,
+                Conv::Thiscall(this),
+                &[w0, w1],
+                |g| Out::U32(ob::object_list_ctor(g, frame, this)),
+            );
+            t.b_top = None;
+            // CA2W
+            let this = t.zeros(0x120);
+            t.w32(this, rng.next());
+            let text = if case % 9 == 0 {
+                0
+            } else {
+                let s = ["", "a", "hello", "x y z 123"][rng.below(4) as usize];
+                cstr(t, s)
+            };
+            let buf = t.zeros(0x200);
+            let log = t.stub_code(3, false, 4, 0, Ret::Val(0), false);
+            let alloc = writer_code(t, &[(Some(0), 0, buf)], log);
+            t.jump(mo::CONV_ALLOC, alloc);
+            let first = if rng.chance(2) { 0 } else { rng.below(50) + 1 };
+            let rets = t.seq(&[first, rng.below(300), if rng.chance(2) { 0 } else { 7 }]);
+            t.import_sym(mo::MULTI_BYTE_TO_WIDE, 4, 6, 6, rets);
+            let err = if rng.chance(3) { 5 } else { 0x7a };
+            t.import_sym(mo::GET_LAST_ERROR, 5, 0, 0, Ret::Val(err));
+            t.throw_sym(mo::ATL_THROW_LAST_ERROR, 6, 0);
+            let cp = rng.below(70000);
+            t.check(
+                "CA2W_ctor_00651800",
+                0x0065_1800,
+                Conv::Thiscall(this),
+                &[text, cp],
+                |g| {
+                    ob::ca2w(g, this, text, cp);
+                    Out::None
+                },
+            );
+            // the grid accessor
+            let src: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            let src = t.words(&src);
+            t.stub_sym(mo::GRID_GET, 7, false, 1, 0, Ret::Val(src));
+            t.stub_sym(mo::GRID_ASSIGN_8, 8, true, 1, 1, Ret::Val(rng.word()));
+            t.stub_sym(mo::GRID_ASSIGN_10, 9, true, 1, 1, Ret::Val(rng.word()));
+            let out = t.zeros(0x20);
+            let object = rng.next();
+            t.check(
+                "DistortionGridDynamicMesh_getValue_006746e0",
+                0x0067_46e0,
+                Conv::Stdcall,
+                &[object, out],
+                |g| Out::U32(ob::grid_get_value(g, object, out)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_scene_layers_and_sort_match_the_original() {
+    // Layer groups: null layers, groups matching (byte sign extended:
+    // 0xff against -1) or not, layers on and off, entries without an
+    // object. The map object link walk as rp2's reset walk. The sort mode
+    // for every listed magic id, two others, the listed levels and others.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0f);
+        for case in 0..60 {
+            let scene = t.zeros(0x10000);
+            let n = rng.below(5);
+            let layers: Vec<u32> = (0..n)
+                .map(|_| {
+                    if rng.chance(5) {
+                        return 0;
+                    }
+                    let m = rng.below(4);
+                    let entries: Vec<u32> = (0..m)
+                        .map(|_| {
+                            if rng.chance(5) {
+                                return 0;
+                            }
+                            let e = t.zeros(0x20);
+                            let o = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+                            t.w32(e + 0x1c, o);
+                            e
+                        })
+                        .collect();
+                    let list = t.words(&entries);
+                    let layer = t.zeros(0x20);
+                    t.w32(layer, m | if rng.chance(3) { 0x8000_0000 } else { 0 });
+                    t.w32(layer + 4, list);
+                    t.w8(layer + 0x14, u8::from(rng.chance(2)));
+                    t.w8(layer + 0x15, [0_u8, 1, 2, 0xff][rng.below(4) as usize]);
+                    layer
+                })
+                .collect();
+            let list = t.words(&layers);
+            t.w32(scene + 0xfb48, n);
+            t.w32(scene + 0xfb50, list);
+            let group = [0_u32, 1, 2, 0xffff_ffff, 0xff][rng.below(5) as usize];
+            t.check(
+                "PhyreScene_setLayerGroupVisible_006589e0",
+                0x0065_89e0,
+                Conv::Thiscall(scene),
+                &[group],
+                |g| Out::U8(ob::set_layer_group(g, scene, group)),
+            );
+            // the link walk
+            t.w8(scene + 0x93c, u8::from(!rng.chance(6)));
+            t.w32(
+                scene + 0x1128,
+                if rng.chance(6) { 0 } else { scene + 0x100 },
+            );
+            let n = if case % 7 == 0 { 0 } else { 1 + rng.below(4) };
+            let objects = t.zeros(0x20);
+            let mut steps = vec![];
+            for k in 0..n {
+                let o = t.zeros(0x40);
+                t.w32(o + 0x1c, rng.next());
+                t.w32(objects + 4 * k, o);
+                steps.extend(rp_cursor_steps(t, &mut rng));
+            }
+            t.w32(scene + 0x112c, n);
+            t.w32(scene + 0x1134, objects);
+            t.cursor_script(mo::CURSOR_BEGIN, mo::CURSOR_NEXT, &steps);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "PhyreScene_linkMapObjects_0066f380",
+                0x0066_f380,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    ob::map_objects_link(g, ebp, scene);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            // the sort mode
+            let ids: Vec<u32> = mo::SORT_ONE_MAGIC
+                .iter()
+                .chain(&mo::SORT_TWO_MAGIC)
+                .copied()
+                .chain([0, 0x204])
+                .collect();
+            let id = ids[case as usize % ids.len()];
+            t.stub_sym(mo::MAGIC_ID, 9, false, 0, 0, Ret::Val(id));
+            let levels = [0x1eb6_u32, 0x482, 0x1165, 0x1e48, 0x20a6, 0, 0x1eb7];
+            t.w32(scene + 0xfaf4, levels[rng.below(7) as usize]);
+            t.check(
+                "PhyreScene_GetVFXSortMode",
+                0x0067_21b0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| Out::U32(ob::vfx_sort_mode(g, scene)),
+            );
+            t.reset();
+        }
+    });
+}

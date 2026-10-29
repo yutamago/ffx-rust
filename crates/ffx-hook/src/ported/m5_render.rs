@@ -1435,4 +1435,45 @@ ported! {
         let mut f = StackFrame::<0x1f>::new();
         o::set_shade_specular(&mut mem(), f.at(), inst, name, [u0, u1], shininess);
     }
+    /// `CharacterAnimationTweakUtil_updateAnimation(this)` (the name buffer).
+    CharacterAnimationTweakUtil_updateAnimation @ 0x006b_c130 => extern "thiscall" fn update_animation(this: u32) {
+        let mut f = StackFrame::<5>::new();
+        o::update_animation(&mut mem(), f.at(), this);
+    }
+    /// `CharacterAnimationTweakUtil_updateText_006bc750(this)` (the line buffer).
+    CharacterAnimationTweakUtil_updateText_006bc750 @ 0x006b_c750 => extern "thiscall" fn animation_text(this: u32) {
+        let mut f = StackFrame::<13>::new();
+        o::animation_text(&mut mem(), f.at(), this);
+    }
+    /// `CharacterTextureAnimationTweakUtil_updateText_006bc850(this)` (the line buffer).
+    CharacterTextureAnimationTweakUtil_updateText_006bc850 @ 0x006b_c850 => extern "thiscall" fn texanim_text(this: u32) {
+        let mut f = StackFrame::<13>::new();
+        o::texanim_text(&mut mem(), f.at(), this);
+    }
+    /// `ObjectList_ctor_0064cec0(this; 2 unread words)` (the insert result and head locals).
+    ObjectList_ctor_0064cec0 @ 0x0064_cec0 => extern "thiscall" fn object_list_ctor(this: u32, _w0: u32, _w1: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        o::object_list_ctor(&mut mem(), f.at(), this)
+    }
+    /// `CA2W_ctor_00651800(this; text, codepage)`.
+    CA2W_ctor_00651800 @ 0x0065_1800 => extern "thiscall" fn ca2w(this: u32, text: u32, codepage: u32) {
+        o::ca2w(&mut mem(), this, text, codepage);
+    }
+    /// `DistortionGridDynamicMesh_getValue_006746e0(object, out)`.
+    DistortionGridDynamicMesh_getValue_006746e0 @ 0x0067_46e0 => extern "stdcall" fn grid_get_value(object: u32, out: u32) -> u32 {
+        o::grid_get_value(&mut mem(), object, out)
+    }
+    /// `PhyreScene_setLayerGroupVisible_006589e0(scene; group)` -> `al`.
+    PhyreScene_setLayerGroupVisible_006589e0 @ 0x0065_89e0 => extern "thiscall" fn set_layer_group(this: u32, group: u32) -> u8 {
+        o::set_layer_group(&mut mem(), this, group)
+    }
+    /// `PhyreScene_linkMapObjects_0066f380(scene)` (cursor frame).
+    PhyreScene_linkMapObjects_0066f380 @ 0x0066_f380 => extern "thiscall" fn map_objects_link(this: u32) {
+        let mut f = StackFrame::<10>::new();
+        o::map_objects_link(&mut mem(), f.at() + 0x28, this);
+    }
+    /// `PhyreScene_GetVFXSortMode(scene)`.
+    PhyreScene_GetVFXSortMode @ 0x0067_21b0 => extern "thiscall" fn vfx_sort_mode(this: u32) -> u32 {
+        o::vfx_sort_mode(&mut mem(), this)
+    }
 }
