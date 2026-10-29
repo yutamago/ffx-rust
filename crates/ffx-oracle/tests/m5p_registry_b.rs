@@ -2973,3 +2973,74 @@ fn batch10_skin_positions_match_the_original() {
         }
     }
 }
+
+#[test]
+fn batch11_skin_tangents_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x1111_2222);
+        // one NaN source at a time (see batch9_skin_kernel_matches_the_original)
+        let invalid = [
+            0.0f32,
+            -0.0,
+            1.0,
+            f32::INFINITY,
+            f32::from_bits(0x0001_0000),
+            -3.0e38,
+        ];
+        let quiet = [0.0f32, -0.0, 1.0, f32::NAN, f32::from_bits(0x0001_0000)];
+        for n in [0u32, 1, 2, 3, 4, 5, 8] {
+            for special in [0u32, 1, 2] {
+                let specials: &[f32] = if special == 1 { &invalid } else { &quiet };
+                let raw = t.zeros(64 * 6 + 16);
+                let bones = (raw + 15) & !15;
+                for k in 0..(16 * 6) {
+                    let v = if special != 0 && rng.next() % 9 == 0 {
+                        specials[(rng.next() % specials.len() as u32) as usize]
+                    } else {
+                        (rng.next() % 4000) as f32 / 1000.0 - 2.0
+                    };
+                    t.w32(bones + 4 * k, v.to_bits());
+                }
+                let mut vecs = [0u32; 3];
+                for v in &mut vecs {
+                    *v = t.zeros(12 * n as usize + 16);
+                    for k in 0..(3 * n) {
+                        t.w32(
+                            *v + 4 * k,
+                            ((rng.next() % 2000) as f32 / 700.0 - 1.0).to_bits(),
+                        );
+                    }
+                }
+                let w = t.zeros(16 * n as usize + 16);
+                for k in 0..(4 * n) {
+                    t.w32(w + 4 * k, ((rng.next() % 1000) as f32 / 999.0).to_bits());
+                }
+                let idx = t.zeros(4 * n as usize + 4);
+                for k in 0..(4 * n) {
+                    t.write(idx + k, &[(rng.next() % 6) as u8]);
+                }
+                let src = t.zeros(20);
+                for (i, v) in vecs.iter().enumerate() {
+                    t.w32(src + 4 * i as u32, *v);
+                }
+                t.w32(src + 0xc, w);
+                t.w32(src + 0x10, idx);
+                let dst = t.zeros(12);
+                for i in 0..3 {
+                    let o = t.object(&mut rng, 12 * n as usize + 16);
+                    t.w32(dst + 4 * i, o);
+                }
+                t.check(
+                    &format!("{name} 0x5c8e90 {n} {special}"),
+                    0x005c_8e90,
+                    Conv::Cdecl,
+                    &[bones, n, src, dst],
+                    |g| {
+                        sk::bridge::skin4_tangents(g, bones, n, src, dst);
+                        Out::Void
+                    },
+                );
+            }
+        }
+    }
+}

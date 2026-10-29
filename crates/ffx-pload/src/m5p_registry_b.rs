@@ -2901,6 +2901,124 @@ pub mod skin {
         /// when `n` is a multiple of 4 run on SSE and store 16 bytes each
         /// (the fourth lane spills into the next vector); that last one
         /// runs on the x87 and stores 12.
+        /// Bone 0's 3x3 on `(x, y, z)` as the SSE loop computes normals:
+        /// `(y c1 + x c0) + z c2`, the scalar the destination operand.
+        fn rotate_simd(h: &impl Host, b0: u32, [x, y, z]: [f32; 3]) -> super::Lanes {
+            let xn = mul4(splat(x), column(h, b0, 0));
+            let yn = mul4(splat(y), column(h, b0, 1));
+            add4(add4(yn, xn), mul4(splat(z), column(h, b0, 2)))
+        }
+
+        /// The x87 tail's `(c0 x + c1 y) + c2 z` of bone 0, as floats.
+        fn rotate_x87(h: &mut impl Host, b0: u32, at: u32, out: u32) {
+            let v: [f64; 3] =
+                core::array::from_fn(|k| x87::load(h.read(at.wrapping_add(4 * k as u32))));
+            let r: [f64; 3] = core::array::from_fn(|c| transform_x87(h, b0, c as u32, v, false));
+            for (c, x) in r.iter().enumerate() {
+                h.write(out.wrapping_add(4 * c as u32), x87::store(*x));
+            }
+        }
+
+        /// The four-bone kernel with tangents `(bones, n, &src, &dst)`
+        /// (`0x005c8e90`, cdecl; `src = {positions, normals, tangents,
+        /// weights, indices}`, `dst = {positions, normals, tangents}`): as
+        /// [`skin4`] with the tangent through bone 0's 3x3 after the
+        /// normal, bone 0's position `((x c0 + c3) + y c1) + z c2`.
+        pub fn skin4_tangents(h: &mut impl Host, bones: u32, n: u32, src: u32, dst: u32) {
+            if n == 0 {
+                return;
+            }
+            let mut pos: u32 = h.read(src);
+            let mut nrm: u32 = h.read(src.wrapping_add(4));
+            let mut tan: u32 = h.read(src.wrapping_add(8));
+            let mut w: u32 = h.read(src.wrapping_add(0xc));
+            let mut idx: u32 = h.read(src.wrapping_add(0x10));
+            let mut pout: u32 = h.read(dst);
+            let mut nout: u32 = h.read(dst.wrapping_add(4));
+            let mut tout: u32 = h.read(dst.wrapping_add(8));
+            let simd = if n & 3 != 0 { n } else { n - 1 };
+            for _ in 0..simd {
+                let b0 = bones.wrapping_add(u32::from(h.read::<u8>(idx)) << 6);
+                let ny = scalar(h, nrm.wrapping_add(4));
+                let nx = scalar(h, nrm);
+                let px = scalar(h, pos);
+                let py = scalar(h, pos.wrapping_add(4));
+                let pz = scalar(h, pos.wrapping_add(8));
+                let nz = scalar(h, nrm.wrapping_add(8));
+                let normal = rotate_simd(h, b0, [nx, ny, nz]);
+                put4(h, nout, normal);
+                let t: [f32; 3] = [
+                    scalar(h, tan),
+                    scalar(h, tan.wrapping_add(4)),
+                    scalar(h, tan.wrapping_add(8)),
+                ];
+                let tangent = rotate_simd(h, b0, t);
+                put4(h, tout, tangent);
+                let (x, y, z) = (splat(px), splat(py), splat(pz));
+                let b1 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(1))) << 6);
+                let p1 = add4(
+                    add4(
+                        add4(mul4(column(h, b1, 0), x), column(h, b1, 3)),
+                        mul4(column(h, b1, 1), y),
+                    ),
+                    mul4(column(h, b1, 2), z),
+                );
+                let mut acc = mul4(p1, splat(scalar(h, w.wrapping_add(4))));
+                let b2 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(2))) << 6);
+                let b3 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(3))) << 6);
+                let p0 = add4(
+                    add4(
+                        add4(mul4(x, column(h, b0, 0)), column(h, b0, 3)),
+                        mul4(y, column(h, b0, 1)),
+                    ),
+                    mul4(z, column(h, b0, 2)),
+                );
+                acc = add4(acc, mul4(p0, splat(scalar(h, w))));
+                for (b, k) in [(b2, 2u32), (b3, 3)] {
+                    let c1y = mul4(column(h, b, 1), y);
+                    let p = add4(
+                        add4(add4(mul4(column(h, b, 0), x), column(h, b, 3)), c1y),
+                        mul4(column(h, b, 2), z),
+                    );
+                    acc = add4(acc, mul4(p, splat(scalar(h, w.wrapping_add(4 * k)))));
+                }
+                put4(h, pout, acc);
+                pos = pos.wrapping_add(0xc);
+                nrm = nrm.wrapping_add(0xc);
+                tan = tan.wrapping_add(0xc);
+                pout = pout.wrapping_add(0xc);
+                nout = nout.wrapping_add(0xc);
+                tout = tout.wrapping_add(0xc);
+                w = w.wrapping_add(0x10);
+                idx = idx.wrapping_add(4);
+            }
+            if simd == n {
+                return;
+            }
+            let p: [f64; 3] =
+                core::array::from_fn(|k| x87::load(h.read(pos.wrapping_add(4 * k as u32))));
+            let mut acc: [f64; 3] = [0.0; 3];
+            for k in 0..4u32 {
+                let b = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(k))) << 6);
+                let r: [f64; 3] = core::array::from_fn(|c| transform_x87(h, b, c as u32, p, true));
+                let wk = x87::load(h.read(w.wrapping_add(4 * k)));
+                for c in 0..3 {
+                    let t = x87::load(x87::store(x87::mul(wk, r[c])));
+                    acc[c] = if k == 0 {
+                        t
+                    } else {
+                        x87::load(x87::store(x87::add(acc[c], t)))
+                    };
+                }
+            }
+            for (c, v) in acc.iter().enumerate() {
+                h.write(pout.wrapping_add(4 * c as u32), x87::store(*v));
+            }
+            let b0 = bones.wrapping_add(u32::from(h.read::<u8>(idx)) << 6);
+            rotate_x87(h, b0, nrm, nout);
+            rotate_x87(h, b0, tan, tout);
+        }
+
         /// The positions-only four-bone kernel `(bones, n, &src, &dst)`
         /// (`0x005c94f0`, cdecl; `src = {positions, weights, indices}`,
         /// `dst = {positions}`): as [`skin4`] without normals, every bone
