@@ -37,6 +37,7 @@ HOST_ADDR = re.compile(
 ENTRY = re.compile(
     r'(\w+)\s*@\s*(0x[0-9a-fA-F_]+)\s*=>\s*extern\s+"[^"]+"\s+fn\s+(\w+)\s*\(')
 FN = re.compile(r'(?<![\w.])fn\s+(\w+)\s*(?:<[^>{]*>)?\s*\(')
+MACRO = re.compile(r'\bmacro_rules!\s*(\w+)\s*')
 IDENT = re.compile(r'\b[a-z_][a-z0-9_]*\b')
 
 
@@ -93,6 +94,19 @@ def block(code, at):
     return i, len(code)
 
 
+def params_end(code, at):
+    """Just past the `)` closing the parameter list whose `(` ends at `at`."""
+    depth = 1
+    for j in range(at, len(code)):
+        if code[j] == '(':
+            depth += 1
+        elif code[j] == ')':
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return len(code)
+
+
 def scan(path):
     """[(addr, name, reasons)] for the file's held shims."""
     code = strip(path.read_text())
@@ -110,9 +124,17 @@ def scan(path):
             b0, b1 = block(code, m.end())
         except ValueError:
             continue
-        semi = code.find(';', m.end())
+        # a `;` between the parameter list and the body: a declaration (the
+        # parameters' own `[u32; 8]` don't count)
+        semi = code.find(';', params_end(code, m.end()))
         if 0 <= semi < b0:
             continue  # a declaration (trait method) without a body
+        fns.setdefault(m.group(1), []).append(code[b0:b1])
+    # a `macro_rules!` body counts as a function of the macro's name: a shim
+    # that invokes `name!` names it (battle.rs's `script!` hands every shim
+    # `regist_signal`, which took a local's address and slipped through)
+    for m in MACRO.finditer(code):
+        b0, b1 = block(code, m.end())
         fns.setdefault(m.group(1), []).append(code[b0:b1])
     direct = {name for name, bodies in fns.items() if any(HOST_ADDR.search(b) for b in bodies)}
     tainted = set(direct)

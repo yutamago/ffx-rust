@@ -97,9 +97,10 @@ fn sep_vol_pan<M>(_: &mut M, pos: u32, vol: u32) -> (u32, u32) {
 /// are stack garbage; zeros here).
 fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
     if let [file, dest, done, i] = *args {
-        let block = [0u32, 0, 0, i, 0, 0, 0];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = block.as_ptr() as u32;
+        use ffx_bridge::Mem;
+        let mut block = super::StackFrame::<7>::new();
+        let at = block.at();
+        mem().write(at + 0xc, i);
         call_ptr(m, f, &[file, dest, done, at])
     } else {
         call_ptr(m, f, args)
@@ -107,10 +108,17 @@ fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
 }
 
 /// `AtelRegistSignal2` with the signal block on this stack, as the
-/// original builds it.
+/// original builds it: a [`super::StackFrame`], so in ffx-host it is on
+/// the game thread's stack in the arena (a Rust local's address there is
+/// outside it: the signal read zeros, no motion request was ever queued
+/// and every battle waited at status 0x16 for its monsters' appear
+/// motions, docs/host.md, blocker 7).
 fn regist_signal<M>(_: &mut M, block: [u32; 8]) -> u32 {
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    call1(0x0086_e9e0, block.as_ptr() as u32)
+    use ffx_bridge::Mem;
+    let mut frame = super::StackFrame::<8>::new();
+    let at = frame.at();
+    mem().write(at, block);
+    call1(0x0086_e9e0, at)
 }
 
 /// The camera natives' calls (`ffx_battle::camera_native`): the script's
