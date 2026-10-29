@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::{self as settings, bridge as st};
@@ -128,6 +129,8 @@ enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 struct Twins {
@@ -388,6 +391,37 @@ impl Twins {
         self.patch(at, &addr.to_le_bytes());
     }
 
+    /// A recording stub (`tag`, `this`, `n` words, `pops`, `ret` as
+    /// [`Twins::stub_code`]) that first copies `len` bytes from `src` to
+    /// the pointer in its stack word `arg` (what the callee writes there).
+    /// Returns its address.
+    #[allow(clippy::too_many_arguments)]
+    fn stub_code_writes(
+        &mut self,
+        tag: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+        arg: u32,
+        src: u32,
+        len: u32,
+    ) -> u32 {
+        let log_stub = self.stub_code(tag, this, n, pops, ret);
+        let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, (0x10 + 4 * arg) as u8]); // mov edi, [esp+0x10+4arg]
+        c.push(0xb9);
+        c.extend(len.to_le_bytes()); // mov ecx, len
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        self.cave_code(&c)
+    }
+
     /// Recording stubs over the originals `(sym, this, words, pops, ret)`.
     fn stubs(&mut self, list: &[(u32, bool, u32, u32, u32)]) {
         for &(sym, this, n, pops, ret) in list {
@@ -468,6 +502,11 @@ impl Twins {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::U64(v) => assert_eq!(
+                u64::from(ra.edx) << 32 | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
         }
         self.diff(what);
     }
@@ -3400,6 +3439,463 @@ fn set_input_info_matches_the_original() {
                 &init,
                 |m, ebp| Out::U32(sa::set_input_info(m, ebp, obj)),
             );
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_glue) ----
+
+/// The forwarders: the input manager's (`inputClear`,
+/// `inputClearAllInputInfo`, `inputGetCurrDeviceButtonInfo`,
+/// `Input_AsyncPoll`, `inputIsReleaseButton`, `inputIsRepButton`),
+/// `SaveDataGetLoc`, the voice-volume and voice-table ones, `fiosLseek`
+/// and `sceLseek` (null file or not), the `ListVector_dtor` thunk and
+/// `vsnprintf1K` (its `va_list` the caller's fourth slot): stubbed
+/// callees, then the button reads again on the real callees.
+#[test]
+#[allow(clippy::too_many_lines)] // eighteen forwarders, one case setup
+fn glue_forwarders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0001);
+        for case in 0..40 {
+            t.reset();
+            let (m, c, app, loc, fmod, voices) = (
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            );
+            t.stubs(&[
+                (gl::INPUT_MANAGER, false, 0, 0, m),
+                (gl::INPUT_BUTTON_INFO, true, 0, 0, rng.next()),
+                (gl::INPUT_IS_RELEASE, true, 1, 1, rng.next()),
+                (gl::INPUT_IS_REP, true, 1, 1, rng.next()),
+                (gl::CONTROLLER_MANAGER, false, 0, 0, c),
+                (gl::CLEAR_CONTROLLER_INFO, true, 0, 0, rng.next()),
+                (gl::GET_APPLICATION, false, 0, 0, app),
+                (gl::POLL_INPUT_ASYNC, true, 0, 0, rng.next()),
+                (gl::LOC_MANAGER, false, 0, 0, loc),
+                (gl::LOC_TEXT, true, 3, 3, rng.next()),
+                (gl::FMOD_COMMAND3, true, 3, 3, rng.next()),
+                (gl::VOICE_SELECT, true, 4, 4, rng.next()),
+                (gl::VOICE_FIND, true, 2, 2, rng.next()),
+                (gl::STREAM_SEEK, true, 2, 2, rng.next()),
+                (gl::LIST_VECTOR_DTOR, true, 0, 0, rng.next()),
+            ]);
+            t.stub_import(gl::VSNPRINTF_S_IAT, false, 5, 0, rng.next());
+            t.g32(gl::FMOD_MANAGER, fmod);
+            t.g32(gl::VOICE_TABLE, voices);
+            let none = |name: &str| format!("{name} #{case}");
+            t.check(&none("inputClear"), 0x0063_0c30, Conv::Cdecl, &[], |m| {
+                Out::U32(gl::input_clear(m))
+            });
+            t.check(
+                &none("inputClearAllInputInfo"),
+                0x0063_0c40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::clear_all_input_info(m)),
+            );
+            t.check(
+                &none("inputGetCurrDeviceButtonInfo"),
+                0x0063_0c80,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::button_info(m)),
+            );
+            t.check(
+                &none("Input_AsyncPoll"),
+                0x0063_0cb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::async_poll(m)),
+            );
+            let b = rng.word();
+            for (sym, method) in [
+                (0x0063_0d10u32, gl::INPUT_IS_RELEASE),
+                (0x0063_0d30, gl::INPUT_IS_REP),
+            ] {
+                t.check(&none(&format!("{sym:#x}")), sym, Conv::Cdecl, &[b], |m| {
+                    Out::U32(gl::input_button(m, method, b))
+                });
+            }
+            let (id, out) = (rng.word(), rng.next());
+            t.check(
+                &none("SaveDataGetLoc"),
+                0x0064_12d0,
+                Conv::Cdecl,
+                &[id, out],
+                |m| Out::U32(gl::save_data_get_loc(m, id, out)),
+            );
+            let (v, w) = (rng.word(), rng.word());
+            t.check(
+                &none("iVoiceVolumeDirect"),
+                0x0067_a7b0,
+                Conv::Cdecl,
+                &[v],
+                |m| Out::U32(gl::voice_volume_direct(m, v)),
+            );
+            t.check(
+                &none("iVoiceVolumeTranslate"),
+                0x0067_a7d0,
+                Conv::Cdecl,
+                &[v, w],
+                |m| Out::U32(gl::voice_volume_translate(m, v, w)),
+            );
+            let a: Vec<u32> = (0..4).map(|_| rng.word()).collect();
+            t.check(&none("0x0067a9b0"), 0x0067_a9b0, Conv::Cdecl, &a, |m| {
+                Out::U32(gl::voice_select_forward(m, a[0], a[1], a[2], a[3]))
+            });
+            t.check(
+                &none("0x0067a9d0"),
+                0x0067_a9d0,
+                Conv::Cdecl,
+                &a[..2],
+                |m| Out::U32(gl::voice_find_forward(m, a[0], a[1])),
+            );
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            for sym in [0x0067_9710u32, 0x0062_f8e0] {
+                t.check(
+                    &none(&format!("{sym:#x} f {f:#x}")),
+                    sym,
+                    Conv::Cdecl,
+                    &[f, a[0], a[1]],
+                    |m| Out::U64(gl::fios_lseek(m, f, a[0], a[1])),
+                );
+            }
+            let this = rng.next();
+            t.check(
+                &none("0x00634360"),
+                0x0063_4360,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(gl::list_vector_dtor_thunk(m, this)),
+            );
+            // the va_list is the address of the caller's fourth slot
+            let slots = t.frame_ebp(4) + 8;
+            t.check(&none("vsnprintf1K"), 0x0068_7070, Conv::Cdecl, &a, |m| {
+                Out::U32(gl::vsnprintf_1k(m, a[0], a[1], a[2], slots + 12))
+            });
+            // the real input manager
+            t.reset();
+            let b = 1 << rng.below(32);
+            for (sym, method) in [
+                (0x0063_0d10u32, gl::INPUT_IS_RELEASE),
+                (0x0063_0d30, gl::INPUT_IS_REP),
+            ] {
+                let what = format!("{sym:#x} real #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[b], |m| {
+                    Out::U32(gl::input_button(m, method, b))
+                });
+            }
+            t.check(
+                &none("inputGetCurrDeviceButtonInfo real"),
+                0x0063_0c80,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::button_info(m)),
+            );
+            t.check(
+                &none("inputClear real"),
+                0x0063_0c30,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::input_clear(m)),
+            );
+        }
+    });
+}
+
+/// `Virtuos_InputManager_setVibration`: pads with and without a device,
+/// vibration on and off; `0x0062f5b0` (`GetSystemTime` stubbed to write a
+/// random `SYSTEMTIME`).
+#[test]
+fn glue_vibration_and_clock_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0002);
+        for case in 0..40 {
+            t.reset();
+            let table = t.zeros(0x60);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x2b8, table);
+            let pad = rng.below(10);
+            if !rng.chance(3) {
+                let dev = rng.next();
+                t.w32(table + 0x38 + 4 * pad, dev);
+            }
+            let this = t.zeros(0x100);
+            let on = if rng.chance(2) { 0 } else { rng.word() };
+            t.w32(this + 0xa8, on);
+            t.stubs(&[
+                (gl::GET_APPLICATION, false, 0, 0, app),
+                (gl::PAD_SET_VIBRATION, true, 2, 2, rng.next()),
+            ]);
+            let (small, large) = (rng.word(), rng.word());
+            let what = format!("setVibration #{case} pad {pad}");
+            t.check(
+                &what,
+                0x0063_29c0,
+                Conv::Thiscall(this),
+                &[pad, small, large],
+                |m| Out::U32(gl::set_vibration(m, this, pad, small, large)),
+            );
+            let time: Vec<u8> = (0..16).map(|_| rng.next() as u8).collect();
+            let src = t.alloc(&time);
+            let r = rng.next();
+            let stub = t.stub_code_writes(gl::GET_SYSTEM_TIME_IAT, false, 1, 1, r, 0, src, 16);
+            let at = t.rebase(gl::GET_SYSTEM_TIME_IAT);
+            t.patch(at, &stub.to_le_bytes());
+            let out = t.alloc(&(0..8).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            t.skip = 4;
+            let what = format!("0x0062f5b0 #{case}");
+            t.check_framed(
+                &what,
+                0x0062_f5b0,
+                Conv::Cdecl,
+                &[out],
+                gl::SYSTEM_TIME_FRAME,
+                |m, ebp| Out::U32(gl::system_clock(m, ebp, out)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// A circular `std::list` of `n` nodes after the head; returns the owner
+/// (`+0` the head, `+4` the size).
+fn std_list(t: &mut Twins, n: u32) -> u32 {
+    let head = t.zeros(0x10);
+    let mut prev = head;
+    for _ in 0..n {
+        let node = t.zeros(0x10);
+        t.w32(prev, node);
+        t.w32(node + 4, prev);
+        prev = node;
+    }
+    t.w32(prev, head);
+    t.w32(head + 4, prev);
+    t.words(&[head, n])
+}
+
+/// The unwinding destructors and small teardowns: `0x00631230` (kept or
+/// not), `0x00631060` (buffer set or not), `0x00634200` (tagged or not),
+/// `0x00634340`, `0x00634370` (0..4 nodes), `0x006343b0`/`0x006343e0`
+/// (framed: the erase's iterator at `ebp - 4`), `0x00634500` (empty or
+/// not), `0x00633f70`, `0x00630b10` (device set or not), `0x00686bb0`
+/// (`next` 0 or not), `0x00630f40` (`inputGetCurTime` a random float).
+#[test]
+#[allow(clippy::too_many_lines)] // thirteen functions, one case setup
+fn glue_dtors_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0003);
+        for case in 0..40 {
+            t.reset();
+            t.stubs(&[
+                (gl::USER_FREE_THUNK, false, 1, 0, rng.next()),
+                (gl::PHYRE_FREE, false, 1, 0, rng.next()),
+                (gl::OPERATOR_DELETE, false, 1, 0, rng.next()),
+                (gl::TREE_ERASE_636D60, true, 3, 3, rng.next()),
+                (gl::TREE_ERASE_6370D0, true, 3, 3, rng.next()),
+                (gl::DESTROY_RANGE, false, 2, 2, rng.next()),
+                (gl::TEARDOWN_636970, true, 0, 0, rng.next()),
+                (gl::FREE_LIST_DTOR, true, 0, 0, rng.next()),
+                (gl::TREE_CLEAR, true, 0, 0, rng.next()),
+                (gl::INPUT_TEARDOWN, false, 0, 0, rng.next()),
+                (gl::TOUCH_RECORD_CREATE, false, 0, 0, rng.next()),
+                (gl::TOUCH_MANAGER, false, 0, 0, rng.next()),
+                (gl::GUI_TOUCH_RESET, true, 0, 0, rng.next()),
+                (gl::MOUSE_STATE_CREATE, false, 0, 0, rng.next()),
+                (gl::ARRAY16_CREATE, false, 0, 0, rng.next()),
+            ]);
+            let words = |rng: &mut Rng| -> Vec<u32> {
+                (0..0x30)
+                    .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                    .collect()
+            };
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let keep = [0, 1, 0x100, 0xff00, rng.word()][rng.below(5) as usize];
+            let what = format!("0x00631230 #{case} keep {keep:#x}");
+            t.check(&what, 0x0063_1230, Conv::Thiscall(this), &[keep], |m| {
+                gl::buffer_reset(m, this, keep);
+                Out::None
+            });
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let what = format!("0x00631060 #{case}");
+            t.check(&what, 0x0063_1060, Conv::Thiscall(this), &[], |m| {
+                Out::U32(gl::free_member8(m, this))
+            });
+            let what = format!("0x00634200 #{case}");
+            t.check(&what, 0x0063_4200, Conv::Thiscall(this), &[], |m| {
+                gl::phyre_free_member_c(m, this);
+                Out::None
+            });
+            let what = format!("0x00634340 #{case}");
+            t.check(&what, 0x0063_4340, Conv::Thiscall(this), &[], |m| {
+                gl::delete_member0(m, this);
+                Out::None
+            });
+            let list = std_list(t, rng.below(5));
+            let what = format!("0x00634370 #{case}");
+            t.check(&what, 0x0063_4370, Conv::Thiscall(list), &[], |m| {
+                gl::list_dtor(m, list);
+                Out::None
+            });
+            for (sym, erase) in [
+                (0x0063_43b0u32, gl::TREE_ERASE_636D60),
+                (0x0063_43e0, gl::TREE_ERASE_6370D0),
+            ] {
+                let head = t.words(&[rng.next(), rng.next(), rng.next()]);
+                let tree = t.words(&[head, rng.next()]);
+                let what = format!("{sym:#x} #{case}");
+                t.check_framed(
+                    &what,
+                    sym,
+                    Conv::Thiscall(tree),
+                    &[],
+                    gl::TREE_DTOR_FRAME,
+                    |m, ebp| {
+                        gl::tree_dtor(m, ebp, erase, tree);
+                        Out::None
+                    },
+                );
+            }
+            let v = t.words(&words(&mut rng)[..3]);
+            let what = format!("0x00634500 #{case}");
+            t.check(&what, 0x0063_4500, Conv::Thiscall(v), &[], |m| {
+                Out::U32(gl::vector_dtor(m, v))
+            });
+            let what = format!("0x00633f70 #{case}");
+            t.check(&what, 0x0063_3f70, Conv::Thiscall(this), &[], |m| {
+                gl::tree_set_dtor(m, this);
+                Out::None
+            });
+            let dev = if rng.chance(3) {
+                0
+            } else {
+                let r = rng.next();
+                t.object(&[(1, r)])
+            };
+            t.g32(gl::INPUT_DEVICE, dev);
+            let what = format!("0x00630b10 #{case}");
+            t.check(&what, 0x0063_0b10, Conv::Cdecl, &[], |m| {
+                Out::U32(gl::input_shutdown(m))
+            });
+            let node = t.zeros(0x24);
+            t.stub(gl::OPERATOR_NEW, false, 1, 0, node);
+            let next = if rng.chance(2) { 0 } else { rng.next() };
+            let prev = rng.next();
+            let what = format!("0x00686bb0 #{case} next {next:#x}");
+            t.check(&what, 0x0068_6bb0, Conv::Stdcall, &[next, prev], |m| {
+                Out::U32(gl::buy_list_node(m, next, prev))
+            });
+            let now = f32::from_bits(rng.next() & 0x7f7f_ffff);
+            t.stub_float(gl::CUR_TIME, now);
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let what = format!("0x00630f40 #{case}");
+            t.check(&what, 0x0063_0f40, Conv::Thiscall(this), &[], |m| {
+                Out::U32(gl::controller_ctor(m, this))
+            });
+        }
+    });
+}
+
+/// The voice table's lookups `0x006fb380` and `0x006fb410`: no table, a
+/// table still loading (the sleep stub marks it loaded), 0..6 rows of
+/// small values so that some rows match (several for the find, whose
+/// last match counts), a negative count.
+#[test]
+fn glue_voice_table_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0004);
+        for case in 0..120 {
+            t.reset();
+            let this = t.zeros(0x40);
+            let n = rng.below(7);
+            for off in [4u32, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38, 0x3c] {
+                let col: Vec<u32> = (0..n.max(1)).map(|_| rng.below(2)).collect();
+                let col = t.words(&col);
+                t.w32(this + off, col);
+            }
+            let count = if rng.chance(8) { 0xffff_fffe } else { n };
+            t.w32(this + 0x10, count);
+            t.w32(this + 0x14, count);
+            t.w32(this + 0x1c, u32::from(!rng.chance(5)));
+            let loaded = u32::from(!rng.chance(3));
+            t.w32(this + 0x20, loaded);
+            // the sleep stub: logs, then marks the table loaded
+            let log = t.stub_code(gl::SLEEP_MS, false, 1, 0, 0);
+            let mut c = vec![0xc7, 0x05];
+            c.extend((this + 0x20).to_le_bytes());
+            c.extend(1u32.to_le_bytes()); // mov dword [this+0x20], 1
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let sleep = t.cave_code(&c);
+            t.jump(gl::SLEEP_MS, sleep);
+            // bits 8 and 16 of the id: only its low half counts
+            let id = rng.below(2)
+                | ((rng.below(2) << 8) * u32::from(rng.chance(4)))
+                | (rng.below(2) << 16);
+            let (b, c, d) = (rng.below(2), rng.below(2), rng.below(2));
+            let what = format!("0x006fb380 #{case} n {count:#x}");
+            t.check(
+                &what,
+                0x006f_b380,
+                Conv::Thiscall(this),
+                &[id, b, c, d],
+                |m| Out::U32(gl::voice_select(m, this, id, b, c, d)),
+            );
+            t.w32(this + 0x20, loaded);
+            let what = format!("0x006fb410 #{case} n {count:#x}");
+            t.check(&what, 0x006f_b410, Conv::Thiscall(this), &[b, c], |m| {
+                Out::U32(gl::voice_find(m, this, b, c))
+            });
+        }
+    });
+}
+
+/// The three `xor eax, eax; ret` stubs (host-only table entries) and the
+/// PRX-state jump thunks `code_006793b0`/`c0`/`d0`: on the real targets
+/// with the PRX state words random, and on recording stubs.
+#[test]
+fn glue_stubs_and_thunks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0005);
+        for case in 0..24 {
+            t.reset();
+            for sym in [0x0062_f640u32, 0x0062_f980, 0x0062_fb00] {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |_| {
+                    Out::U32(ffx_pcore::m5p_stubs::bridge::zero())
+                });
+            }
+            // PhyreFIOS's PRX load state and error words
+            t.g32(0x00ce_83c4, rng.below(5));
+            t.g32(0x00ce_83c0, rng.below(2));
+            let thunks = [
+                (0x0067_93b0u32, gl::PRX_IDLE),
+                (0x0067_93c0, gl::PRX_IN_PROGRESS),
+                (0x0067_93d0, gl::PRX_LOADED),
+            ];
+            for (sym, target) in thunks {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(gl::jump_thunk(m, target))
+                });
+            }
+            for (sym, target) in thunks {
+                let r = rng.next();
+                t.stub(target, false, 0, 0, r);
+                let what = format!("{sym:#x} stubbed #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(gl::jump_thunk(m, target))
+                });
+            }
         }
     });
 }

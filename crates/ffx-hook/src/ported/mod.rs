@@ -58,6 +58,7 @@ mod m5_static_init_b;
 mod m5_static_init_c;
 mod m5_static_init_d;
 mod m5_system_a;
+mod m5_system_a_stubs;
 mod m5_system_b;
 mod m5_vfx;
 mod m5p_anim;
@@ -172,6 +173,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_tmpl_fortype::hooks());
     all.extend(m5p_registry_b::hooks());
     all.extend(m5_system_a::hooks());
+    all.extend(m5_system_a_stubs::hooks());
     all.extend(m5_system_b::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5p_anim::hooks());

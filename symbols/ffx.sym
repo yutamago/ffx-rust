@@ -8234,7 +8234,9 @@
 0x0062f500 function dbgPrintf                 # fh v3:bsim1.00+call.cs 0x0062f6b0 cdecl
 0x0062f510 function debug_exit_trace          # fh v3:bsim1.00 0x0062f6c0
 0x0062f550 function sceCdDiskReady            # fh v3:bsim1.00 0x0062f700
+0x0062f5b0 function Rng_ReadSystemClock_0062f5b0 # cdecl(out) -> 0: GetSystemTime (0x00b0c1bc) into ebp-0x14, then second/minute/hour low bytes to out+1..3, day/month/year to out+5..7 (the PS2 clock bytes); called by Rng_ClockSeed; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x0062f610 function sceClose # fh v3:bsim1.00+call.cs 0x0062f7c0 cdecl; cdecl(fd) -> 0: fiosClose(fd); ported ffx_system::m5a_platform (m5 system-a c2)
+0x0062f640 function code_0062f640              # xor eax, eax; ret (3 bytes, int3 padding): cdecl() -> 0, called by 0x00885560 (TkRefreshHDDMode's helper); not in the dump; host_only! (under five bytes), ffx_pcore::m5p_stubs::bridge::zero (m5 system-a r3 b1)
 0x0062f650 function sceMcStub_0062f650        # xor eax,eax; ret (a PS2 memory-card call left as a stub); TkMcCallback_008852a0's read (req[0], buffer, n); name ours
 0x0062f670 function sceMcStub_0062f670        # xor eax,eax; ret (a PS2 memory-card call left as a stub); TkMcCallback_008852a0's op 3 (req[0], req[1], u16 req+0xc); name ours
 0x0062f680 function sceDeci2Open              # fh v3:bsim1.00 0x0062f830
@@ -8263,7 +8265,7 @@
 0x0062f8a0 function sceIoctl                     # layout: alphabetical run between sceGsSyncV and sceIoctl2 (1 unnamed in the gap); Switch 0x71001c2650 sceIoctl is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062f8b0 function sceIoctl2                 # fh v3:bsim1.00 0x0062fa60
 0x0062f8d0 function sceIpuSync                   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008aba18 sceIpuSync, 2 votes, round 2
-0x0062f8e0 function sceLseek                  # fh v3:bsim1.00+call.cs 0x0062fa90 cdecl
+0x0062f8e0 function sceLseek                  # fh v3:bsim1.00+call.cs 0x0062fa90 cdecl; jump thunk (push/pop ebp, jmp) to fiosLseek with the caller's three words; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x0062f8f0 function sceLseek64                   # layout: alphabetical run between sceLseek and sceMcGetInfo (8 unnamed in the gap); Switch 0x71001c2b50 sceLseek64 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062f900 function sceMcChdir                   # layout: alphabetical run between sceLseek and sceMcGetInfo (8 unnamed in the gap); Switch 0x71001c26b0 sceMcChdir is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062f910 function sceMcClose                   # layout: alphabetical run between sceLseek and sceMcGetInfo (8 unnamed in the gap); Switch 0x71001c26c0 sceMcClose is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -8273,10 +8275,12 @@
 0x0062f950 function sceMcGetDir                  # layout: alphabetical run between sceLseek and sceMcGetInfo (8 unnamed in the gap); Switch 0x71001c2700 sceMcGetDir is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062f960 function sceMcGetEntSpace             # layout: alphabetical run between sceLseek and sceMcGetInfo (8 unnamed in the gap); Switch 0x71001c2710 sceMcGetEntSpace is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062f970 function sceMcGetInfo              # fh v3:bsim1.00 0x0062fb20
+0x0062f980 function code_0062f980              # xor eax, eax; ret (3 bytes, int3 padding): cdecl() -> 0, called by TkSyncVEI (0x00887fb9); not in the dump; host_only! (under five bytes), ffx_pcore::m5p_stubs::bridge::zero (m5 system-a r3 b1)
 0x0062f9f0 function sceMcSync                 # fh switch:bsim1.00 0x71001c2790
 0x0062fa10 function sceMcWrite                   # layout: alphabetical run between sceMcSync and sceMount (1 unnamed in the gap); Switch 0x71001c27a0 sceMcWrite is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0062fa20 function sceMount                  # fh v3:bsim1.00 0x0062fbd0
 0x0062fa30 function sceOpen # host0:/ffx/... -> /ffx_ps2/ffx/..., then the PC file layer; was Ps2File_Open; cdecl(name, mode): "/ffx_ps2/" 0x00b41330 + name + 7 at ebp-0x404 (memset 0x3f6, memcpy), fiosUnifyFilename into ebp-0x804, fiosIsFileExist, fiosOpen(path, mode) -> the file or 0; ported ffx_system::m5a_platform (m5 system-a c2)
+0x0062fb00 function code_0062fb00              # xor eax, eax; ret (3 bytes, int3 padding): cdecl() -> 0, called by TkRefreshHDDMode (0x0088e9a9); not in the dump; host_only! (under five bytes), ffx_pcore::m5p_stubs::bridge::zero (m5 system-a r3 b1)
 0x0062fb10 function scePadEnterPressMode      # PS2 SDK stub (xor eax, eax; ret) between sceOpen and scePadG...; called by Pad_CheckPressMode after scePadInfoPressMode, as libpad's sequence
 0x0062fb30 function scePadGetState            # fh v3:bsim1.00 0x0062fce0
 0x0062fb40 function scePadInfoAct             # fh v3:bsim1.00 0x0062fcf0
@@ -8307,26 +8311,30 @@
 0x006304c0 function operator_new_006304c0     # fh v3:cg17 0x630670 operator.new[]
 0x00630540 function operator_delete_00630540  # fh v3:bsim1.00 0x006306f0 operator.delete[]
 0x00630a60 function AllocTracker_Release # cdecl(p): with *0x00ccb15c set, under its mutex (+0xa8, WaitForSingleObject/ReleaseMutex): user_free(record of p in the map 0x00c31e9c, +0x10), then the node removed (Phyre_PRedBlackTree_remove) and pushed on the free list 0x00c31eb4; called by operator_delete and delete[]; name ours
-0x00630c30 function inputClear                # fh v3:cg2 0x630de0
-0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0
+0x00630b10 function Input_ShutdownDevice_00630b10 # cdecl(): the object at 0x00ccb15c taken (word cleared), its vtable slot 0 (deleting dtor, 1) when set; tail jump 0x00630730; called from graphicFinalize's 0x006dc870; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00630c30 function inputClear                # fh v3:cg2 0x630de0; cdecl() -> the input manager (0x00631300), tail jump to the bare ret 0x00631260; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00630c40 function inputClearAllInputInfo    # fh v3:bsim1.00 0x00630df0; cdecl(): tail jump AsyncControllerTaskManager_ClearControllerInfo(sGetInstance()); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00630c60 function inputGetCurTime # fh v3:exact 0x00630e10; cdecl() -> ST0: Phyre_PTimerWin32_GetTime() - g_AppStartTime (f64) rounded to f32; ported ffx_system::m5a_platform (m5 system-a c2)
-0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30
+0x00630c80 function inputGetCurrDeviceButtonInfo # fh v3:bsim1.00 0x00630e30; cdecl() -> getButtonInfo(getInstance()) (tail jump); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00630c90 function inputGetCurrDeviceStickInfo # fh v3:bsim1.00 0x00630e40; ported ffx_system::m5a_savedata: tail jump Virtuos_InputManager_getStickInfo(getInstance()) (m5 system-a b2)
-0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input)
+0x00630cb0 function Input_AsyncPoll # GetApplication, 0x0042f790; callers 0x0068d740, 0x0068dc30 (platform census 2026-10-25, docs/formats/platform.md; input); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00630cd0 function inputIsHoldButton # fh v3:cg3 0x630e80; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isHoldButton(instance; b) (m5 system-a b2)
 0x00630cf0 function inputIsPressButton # fh v3:cg9 0x630ea0; ported ffx_system::m5a_savedata: cdecl(b) -> movzx of Virtuos_InputManager_isPressButton(instance; b) (m5 system-a b2)
-0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1
-0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0
+0x00630d10 function inputIsReleaseButton         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710021abd0 inputIsReleaseButton, 2 votes, round 1; cdecl(b) -> movzx isReleaseButton(manager; b); ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00630d30 function inputIsRepButton          # fh v3:cg3 0x630ee0; cdecl(b) -> movzx isRepButton(manager; b); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00630d50 function inputODUpdate # layout+callees: sorts between inputIsRepButton and inputSetInputInfoToCurrentFrame, and its named callees match the Switch 0x710021aca0 inputODUpdate's (similarity 0.67: Virtuos_InputManager_getInstance, Virtuos_InputManager_updateInput); symbols from Fahrenheit's server export; cdecl(): with [0x0133c930], Virtuos_InputManager_updateInput(getInstance()), tail jump IggyMenuManager_dispatchMouse_00a26ce0([g_IggyMenuManager]); the port returns 0 on the other path (the original leaves eax; its caller, a tail jump from FFXApplication_pollInputAsync, returns nothing); ported ffx_system::m5a_platform (m5 system-a c2)
 0x00630de0 function inputSetInputInfoToCurrentFrame # fh v3:bsim1.00 0x00630f90; ported ffx_pcui::m5u_a (m5 pc-ui b1): tail jump to Virtuos_InputManager_setInputInfo(getInstance()), its eax
 0x00630df0 function inputSwapState_00630df0 # cdecl(out, a, b, c) -> out: InputManager_SwapState_00632930(Virtuos_InputManager_getInstance(); out, a, b, c); name ours; ported ffx_pcui::m5u_a (m5 pc-ui b1)
 0x00630e20 function inputSetVibration         # fh v3:cg2 0x630fd0; ported ffx_pcui::m5u_a (m5 pc-ui b1): cdecl(a, b, c) -> setVibration's eax
 0x00630e40 function FlashScene_dtor_FlashScene # fh switch:bsim1.00 0x71007e49e0 FlashScene::~FlashScene
 0x00630e80 function Input_UpdateAll_00630e80  # cdecl() from FFXApplication_handleInputs, Pause_Update, Pause_Enter; name ours: unless [0x0133c930] is set: Virtuos_InputManager_updateInput(getInstance()), GuiTouch_update(TouchManager_GetInstance()), 0x00a25ab0(GetGlobal01984c68_00a25a30()) (thiscall each), tail jmp 0x00a26ce0 with ecx = g_IggyMenuManager (its eax); set: a bare ret; ported (ffx_pcui::input, pc round 2)
+0x00630f40 function Virtuos_InputManager_ctor_00630f40 # thiscall(this = 0x00ccb170, from the static initialiser 0x00aeea80) -> this: +0/+4/+0x9c..+0xb4 zeroed, floats +0x8c/+0x94/+0x90 = 0; TouchRecord_sCreateInstance, GuiTouch_reset(TouchManager_GetInstance()), MouseState_createInstance, PArray16_sCreateInstance; +0x88 = inputGetCurTime() (ST0); name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00631060 function UserBuffer_dtor_00631060   # thiscall(this) (unwinding): user_free_thunk(+8) when set; eax its result or 0; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00631110 function PairArray_assign_00631110 # thiscall(this; other) ret 4 -> this: unless other is this, count 0, PairArray_reserve_00631450(other's count), the pairs copied to non-null slots, the count copied; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00631170 function Index8At8_00631170 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x00631180 function Index8At8_00631180 # thiscall(this; i), ret 4 -> this[2] + 8 i (vtable only); name ours
 0x006311b0 function Table60_Get               # thiscall(this, i), ret 4: [this + 0x60 + 4 i]; callers 0x00700da0, 0x00701fa0; name ours
+0x00631230 function UserBuffer_reset_00631230  # thiscall(this; keep) ret 4: unless keep's low byte, user_free_thunk(+8), +8 = +4 = 0; +0 = 0; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00631270 function InputManager_ClearHoldTimers # +8..+0x78 = 0, +0x88 = inputGetCurTime() (platform census 2026-10-25, docs/formats/platform.md; input); ported ffx_system::m5a_platform: thiscall, eax junk (m5 system-a c2)
 0x006312e0 function Virtuos_InputManager_getButtonInfo # fh v3:bsim1.00 0x00631490 Virtuos::InputManager::getButtonInfo
 0x00631300 function Virtuos_InputManager_getInstance # fh v3:bsim1.00 0x006314b0 Virtuos::InputManager::getInstance
@@ -8340,7 +8348,7 @@
 0x00631550 function Virtuos_InputManager_setInputInfo # fh v3:exact 0x00631700 Virtuos::InputManager::setInputInfo; thiscall(this) -> the info word: AsyncControllerTaskManager_GetControllerInfo(&word ebp-0x18, &floats ebp-0x14); +4 = old +0, +0 = word, +0x8c..+0x98 = the 4 floats (fld/fstp); ported ffx_system::m5a_savedata (m5 system-a b2)
 0x006315c0 function Input_BuildPadMap          # pairs each key binding (settings +0x60) with its PS2 pad bit
 0x00632930 function InputManager_SwapState_00632930 # thiscall(this; out, a, b, c), ret 0x10 -> out: the three words at +0xac to out, replaced by a, b, c; +0, +4 zeroed; caller 0x00630df0 (input manager); name ours
-0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration
+0x006329c0 function Virtuos_InputManager_setVibration # fh v3:exact 0x00632b70 Virtuos::InputManager::setVibration; thiscall(this; pad, small, large) ret 0xc: app +0x2b8 table word pad*4+0x38 set: pad setVibration(large, small) when +0xa8 set, else (0, 0); eax that call's, or the table address; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00632a30 function Virtuos_InputManager_updateInput # fastcall(input 0x00ccb170): ORs the bits of held bindings into the pad word (+0), previous at +4; was Input_UpdatePad
 0x006330e0 function InputManager_UpdateHoldTimers # 29 per-bit hold timers advanced while held (platform census 2026-10-25, docs/formats/platform.md; input); thiscall(this) -> eax 1 << 29: d = f32(now - +0x88); timer i (+8 + 4i, 29 of them) += d while bit i of the pad word +0 is set, else 0 (+4, the previous word, makes no difference); +0x88 = now; ported ffx_system::m5a_platform (m5 system-a c2)
 0x006331a0 function Add_006331a0 # cdecl(a, b) -> a + b (frame-pointer build, no direct callers); name ours
@@ -8390,13 +8398,21 @@
 0x00633e20 function PRedBlackTreePair_dtor_00633e20 # thiscall(this): as 0x00633dc0 (another EH state table); name ours; ported M5 render b2 (ffx_prender::m5r_b)
 0x00633e80 function PRedBlackTreePair_dtor_00633e80 # thiscall(this): as 0x00633dc0 (another EH state table); name ours; ported M5 render b2 (ffx_prender::m5r_b)
 0x00633ef0 function PRedBlackTreeFree_dtor_00633ef0 # thiscall(this): orphanAllContents, free list +0x18 reset and destroyed, Phyre_PRedBlackTree_clear twice; unwind funclet target; name ours; ported M5 render b2 (ffx_prender::m5r_b)
+0x00633f70 function TreeSet_dtor_00633f70      # thiscall(this) (unwinding): 0x00636970(this), Phyre_PFreeList_dtor(+0x18), Phyre_PRedBlackTree_clear(this) twice; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00633fe0 function BufferTree_dtor_00633fe0 # thiscall(this): while the first node (+0xc) is neither the tree nor null: Phyre_PRedBlackTree_remove(this; node), user_free_thunk(node+0x18) when set; Phyre_PFreeList_reset/_dtor on +0x18; Phyre_PRedBlackTree_clear twice; eax junk; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x00634200 function PString_release_00634200   # thiscall(this) (unwinding): Phyre_PhyreFree(+0xc) unless its bit 0 is set; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00634220 function ListVector_dtor_00634220 # thiscall(this) -> operator delete's eax: std::vector at +8 (deleted, +8/+0xc/+0x10 cleared when set), std::list at +0 (sentinel relinked to itself, size +4 = 0, nodes then the sentinel deleted); name ours; ported ffx_system::m5a_platform (m5 system-a c2)
+0x00634340 function Unwind_deleteMember0_00634340 # thiscall(this) (unwinding): operator delete(+0); name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00634360 function ListVector_dtor_thunk_00634360 # 5-byte jmp ListVector_dtor_00634220 (unwinding); name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x00634370 function StdList_dtor_00634370      # thiscall(this) (unwinding): std::list dtor: head relinked to itself, size 0, every node then the head deleted; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x006343b0 function StdTree_dtor_006343b0      # thiscall(this) (unwinding): std_Tree_erase_range_00636d60(this; &it at ebp-4 (holding ecx), head->left, head), operator delete(head); name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x006343e0 function StdTree_dtor_006343e0      # thiscall(this) (unwinding): as StdTree_dtor_006343b0 with the erase 0x006370d0; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00634410 function StdString_Tidy_00634410 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
 0x00634440 function StdString_Tidy_00634440 # thiscall: std::string _Tidy(true): capacity +0x14 >= 16: operator delete(+0); capacity 15, size +0x10 0, first byte 0; name ours
 0x00634470 function StdVector_Tidy_00634470 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x006344a0 function StdVector_Tidy_006344a0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
 0x006344d0 function StdVector_Tidy_006344d0 # thiscall: std::vector _Tidy: storage +0 non-null: operator delete, first/last/end 0; name ours
+0x00634500 function StdVector_dtor_00634500    # thiscall(this) (unwinding): when +0 set: 0x00635c40(first, last) (stdcall), operator delete(first), the three words 0; eax delete's or 0; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00634610 function AssetListReader_dtor_AssetListReader # fh v3:exact 0x006347c0 AssetListReader::~AssetListReader
 0x00634790 function LoadingScreen_dtor_00634790 # thiscall(this): LoadingScreen_terminate, then the arrays +0x20/+0x24 and +0x18/+0x1c (count, data): PhyreFree(data) unless the count is negative, both cleared; eax junk; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00634830 function MutexHandle_Close # thiscall: CloseHandle(*this) through 0x00b0c0dc; name ours
@@ -8619,7 +8635,7 @@
 0x00641290 function graphicGetAppFloatDC_00641290 # cdecl() -> ST0: fld dword [GetApplication() + 0xdc]; the dump has no function here; name ours; ported M5 render-pcui b1 (ffx_prender::m5r_l)
 0x006412a0 function graphicGetAppFloatD0_006412a0 # cdecl() -> ST0: fld dword [GetApplication() + 0xd0]; the dump has no function here; name ours; ported M5 render-pcui b1 (ffx_prender::m5r_l)
 0x006412b0 function graphicMapPartLangOverride_006412b0 # cdecl(a, b): MapPart_LangOverride(a, b) on g_GraphicUi; name ours; ported M4 h3 (ffx_prender::glue2)
-0x006412d0 function SaveDataGetLoc            # fh v3:bsim1.00+call.cs 0x00641480 cdecl
+0x006412d0 function SaveDataGetLoc            # fh v3:bsim1.00+call.cs 0x00641480 cdecl; cdecl(id, out) -> LocalizationManager_getText(GetInstance(); id, out, 0); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x006412f0 function graphicGetLocTextWithLength # fh v3:bsim1.00 0x006414a0
 0x00641310 function graphicGetMagic0146Key    # () -> movzx g_PhyreScene +3; name Fahrenheit's (Switch BSim)
 0x00641320 function graphicGetMiniMapType     # fh v3:bsim1.00 0x006414d0
@@ -9476,6 +9492,9 @@
 0x00678d70 function PClassDescriptorForType_ShadowDynamicMesh_pushPointer_00678d70 # stdcall(L, pp) ret 8: [pp] set: 0x00436e80(L, [pp] + 4, class 0x00ccc158), else 0x0094ac00(L, 1), lua_pushnil(L); ShadowDynamicMesh script binding; reached through the descriptor vtable / binding table (0 direct callers); name ours (the template's members); ported M5 render b6 (ffx_prender::m5r_f)
 0x00678db0 function PClassDescriptorForType_ShadowDynamicMesh_pushObject_00678db0 # stdcall(L, p) ret 8: 0x00436e80(L, p ? p + 4 : 0, class 0x00ccc158); ShadowDynamicMesh script binding; reached through the descriptor vtable / binding table (0 direct callers); name ours (the template's members); ported M5 render b6 (ffx_prender::m5r_f)
 0x00678de0 function PClassDescriptorForType_ShadowDynamicMesh_registerFlagged_00678de0 # stdcall(p, flag byte) ret 8 -> al 1: 0x0043d6a0(class 0x00ccc158; p ? p + 4 : 0, flag != 0); ShadowDynamicMesh script binding; reached through the descriptor vtable / binding table (0 direct callers); name ours (the template's members); ported M5 render b6 (ffx_prender::m5r_f)
+0x006793b0 function code_006793b0              # cdecl(): 5-byte jmp PhyreFIOS_LoadPrxIdle (from Sg_EffectReadPoll); a jmp thunk the dump lacks, confirmed from the machine code; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x006793c0 function code_006793c0              # cdecl(): 5-byte jmp PhyreFIOS_LoadPrxInProgress (from graphicSetMagicFileAsyncLoadEnable); a jmp thunk the dump lacks; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x006793d0 function code_006793d0              # cdecl(): 5-byte jmp Compare_006f9b70 (PRX state 3; from Sg_EffectReadPoll); a jmp thunk the dump lacks; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x006793e0 function PhyreFIOS_LoadMagicfilePrx # fh v3:exact 0x00679590 PhyreFIOS::LoadMagicfilePrx
 0x006794f0 function PhyreFIOS_UnloadMagicfilePrx # fh v3:cg2 0x6796a0 PhyreFIOS::UnloadMagicfilePrx; ported (ffx_glue_other::misc, m4 h4 r1): jmp PhyreFIOS_UnloadPrx (cdecl, 1 word)
 0x00679500 function fiosClearOps              # fh v3:bsim1.00 0x006796b0
@@ -9485,7 +9504,7 @@
 0x00679590 function fiosFinalize # fh switch:bsim1.00 0x71001cad60; cdecl() -> 0: 0x006db040, 0x0061b690, 0x006f9d10 (a bare ret, not called); ported ffx_system::m5a_platform (m5 system-a c2)
 0x006795b0 function Game_InitFileSystem       # mounts data\FFX_Data.vbf, shows MessageBoxW on failure; cdecl() -> PhyreFIOS_Initialize(&params)'s eax; BigFileStream_get takes no word and setStreamPrefix/registerBigFile are thiscall with one (the push before get is theirs); FIOS prefix by the localization manager's first word (jump table 0x006796d4: 1..3, else PCSG 0x00b44d8c); failure: CStringW from the ATL manager 0x00c64bf0 slot 3, LoadString(0x7836), ShowCursor, MessageBoxW, ResetToLauncher, release; ported ffx_sg::m5main_init (m5 main r2)
 0x006796f0 function fiosIsFileExist           # fh v3:exact 0x006798a0
-0x00679710 function fiosLseek                 # fh v3:exact 0x006798c0
+0x00679710 function fiosLseek                 # fh v3:exact 0x006798c0; cdecl(f, offset, whence) -> u64: PhyreFIOSStreamFile_seek(f; offset, whence) in eax (0 for null f), edx 0; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00679730 function fiosOpen # allocates a File and calls File_Construct/File_Open; MessageBoxW on failure; was PcFile_Open; cdecl(name, mode) -> the PStreamFile or 0: mode's low byte &= 1 in its argument slot, operator new(8), PStreamFile_ctor(name, mode, 0, 0, 1), isOpen (asked of a null file too); not open: delete, the CString (in the mode slot) of string 0x7836 (0x0064f970/0x00652310; the string manager 0x00c64bf0's nil string without the resource), ShowCursor(1), MessageBoxW(0, msg, L"error", 0x10), byte 0x00ccc7bc = 1, ResetToLauncher, the CString released; ported ffx_system::m5a_platform (m5 system-a c2)
 0x00679800 function fiosRead                  # fh v3:exact 0x006799b0
 0x00679820 function fiosUnifyFilename         # fh v4:imported+call.cs cdecl
@@ -9562,13 +9581,15 @@
 0x0067a750 function iVoiceSetPaused           # fh v3:bsim1.00 0x0067a900; ported (ffx_glue_other::sound, m4 h4 r1): command 0x08 (flag)
 0x0067a770 function iVoiceStart # (pan, volume) -> 0: voice start signal (0x006fa6c0) then FMOD cmd 0xf; called by SndStartStream/SndStartStream2; layout: alphabetical run between iVoiceSetPaused and iVoiceStop (1 unnamed in the gap); Switch 0x710021b410 iVoiceStart is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_glue_other::sound, m4 h4 r1): FmodManager_signalVoiceStart(g_FmodManager), then command 0x0f (pan, volume) with g_FmodManager read again; returns 0
 0x0067a7a0 function iVoiceStop                # fh v3:bsim1.00 0x0067a950; ported (ffx_glue_other::sound, m4 h4 r1): command 0x0a
-0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960
-0x0067a7d0 function iVoiceVolumeTranslate     # (frames, volume): FMOD cmd 0xd; SndVagStreamVolumeTranslate jumps here
+0x0067a7b0 function iVoiceVolumeDirect        # fh v3:exact 0x0067a960; cdecl(v) -> FmodManager_registCommandAsync3([0x00ce9010]; 0xe, v, 1); ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x0067a7d0 function iVoiceVolumeTranslate     # (frames, volume): FMOD cmd 0xd; SndVagStreamVolumeTranslate jumps here; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x0067a8e0 function iSyncDataChange           # fh v3:bsim1.00 0x0067aa90; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncDataChangeAsync(g_SyncManager 0x00ce9014; id)
 0x0067a900 function SyncManager_shutdown_0067a900 # cdecl() -> 0: the SyncManager at 0x00ce9014 released (code_006fa8c0, jmp SyncManager_releaseData) and deleted when set, the global cleared; name ours; ported ffx_system::m5a_platform (m5 system-a c2)
 0x0067a930 function iSyncGetData                 # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225650 iSyncGetData's (similarity 1.00: SyncManager_syncGetData); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): SyncManager_syncGetData(g_SyncManager; a, b, c)
 0x0067a950 function iSyncInit                    # layout+callees: sorts between iSyncDataChange and iSyncInitialize, and its named callees match the Switch 0x7100225710 iSyncInit's (similarity 1.00: SyncManager_syncInit); symbols from Fahrenheit's server export; ported (ffx_glue_other::sound, m4 h4 r1): tail jump to SyncManager_syncInit(g_SyncManager)
 0x0067a960 function iSyncInitialize # fh v3:exact 0x0067ab10; cdecl() -> 0: the SyncManager at 0x00ce9014 created once (new(0x44), SyncManager_SyncManager; 0 when new fails); ported ffx_system::m5a_platform (m5 system-a c2)
+0x0067a9b0 function VoiceTable_selectForward_0067a9b0 # cdecl(id, b, c, d) -> VoiceTable_select_006fb380([0x00ce9014]; id, b, c, d); from Script_OpReq; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x0067a9d0 function VoiceTable_findForward_0067a9d0 # cdecl(a, b) -> VoiceTable_find_006fb410([0x00ce9014]; a, b); from Native_VoiceStandby; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x0067a9f0 function EternalCalm_FileSize_0067a9f0 # (path) -> sceFileSize of the opened file, "failed to open EternalCalm data file: %s"; callers getEternalCalmMgrpSize, getEternalCalmSceneSize; own name
 0x0067aa50 function Table_00c334d4_0067aa50 # cdecl(x): word x - *0x00c33468 of the 7 at 0x00c334d4, 0 outside; caller Cd_QueueRead; name ours
 0x0067aa70 function getEternalCalmMgrpSize    # fh v3:bsim1.00 0x0067ac20
@@ -9683,6 +9704,7 @@
 0x006857b0 function AbmapManager_ToDestroy    # fh v3:bsim1.00 0x00685950 AbmapManager::ToDestroy
 0x006857c0 function MenuTextureManager_unloadDefaultTextures_006857c0 # cdecl(): every name of the std::list<std::string> 0x00ccc840 fiosUnifyFilename'd into the frame (ebp-0x104) and PhyreScene_unloadMenuTexture'd; StdStringList_Clear(0x00ccc840)'s eax; caller MenuTextureManager_UnLoadDefaultMenuTexture; name ours; ported M5 render b3 (ffx_prender::m5r_c)
 0x00685840 function GraphicAbmap_update_00685840 # graphicAbmapUpdate's tail-jump target with ecx = g_GraphicAbmap (refs: only 0x00639104); ported (ffx_glue_other::h4_m5, m4 h4 cont11): ecx = this, plain ret -> the state, its negation, or the last geometry destructor's eax; by state +4: below 2 (signed) unless g_ChrDrawDetached the fifteen 64-bit geometry handles +0x10..+0x88 get render data into their +0x24 (+0x88..+0x94, then +0x98..+0xac for a negative state else +0xb0..+0xc4, +0xc8, +0xcc, +0xd0/+0xd4 or +0xd8/+0xdc by +8's sign, +0xe0; a missing one prints 0x00b45b48) and the state is negated; 3 frees the 23 render data (1, 2 or 4 segments of 0x6c bytes: +0x20 delete, +0x14/+0x1c/+0x10/+0x18/+0xc delete[]) in GraphicAbmap_ctor's order, releases (0x006a1570) and deletes each geometry (vtable slot 0 with 1), then increments; else increments; name ours
+0x00686bb0 function StdList_buyNode_00686bb0   # stdcall(next, prev) ret 8 -> node: operator_new(0x24) (std::_Xbad_alloc 0x00b0c2a0 on failure), +0 = next, +4 = prev, both the node when next is 0; from a static initialiser; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x00686c50 function IdentityStd_00686c50 # stdcall(x) -> x, ret 4; name ours
 0x00686cb0 function Identity_00686cb0 # cdecl(x) -> x (frame-pointer build); name ours
 0x00686ce0 function CopyThisTo_00686ce0 # thiscall(this; p), ret 4: *p = *this, returns p (vtable only); name ours
@@ -9698,7 +9720,7 @@
 0x00687040 function malloc_pool_init_thunk # (): jmp malloc_pool_init 0x006fb9b0; name ours
 0x00687050 function user_mem_size             # cdecl(p): jmp UserHeap_MemSize; fh v3:bsim1.00 0x006871f0
 0x00687060 function user_realloc              # cdecl(p, size): jmp UserHeap_Realloc; name ours (after user_mem_size)
-0x00687070 function vsnprintf1K_00687070         # structure: (buffer, fmt, ...) -> _vsnprintf_s(buffer, 0x400, fmt, args); used by the four user-heap report printers 0x006882a0..0x006885f0, next to user_malloc/user_realloc; name ours
+0x00687070 function vsnprintf1K_00687070         # structure: (buffer, fmt, ...) -> _vsnprintf_s(buffer, 0x400, fmt, args); used by the four user-heap report printers 0x006882a0..0x006885f0, next to user_malloc/user_realloc; name ours; asm: (buffer, count, fmt, ...) -> _vsnprintf_s(buffer, 0x400, count, fmt, &args); ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x006870b0 function StackWalker_ctor_006870b0 # the crash reporter's StackWalker (the open-source class; its vtable StackWalker_vftable, its format strings): thiscall(this; options, symPath, processId, process) ret 0x10 -> this: +0x18 options (| 0x10 with a path), +8 process, +4 the 0x44-byte helper (operator_new + Init68_00687190(walker, process)), +0xc processId, +0x14 _strdup(symPath) or 0, +0x1c 1000; name ours; ported ffx_system::m5b_stackwalker (m5 system-b b1)
 0x00687190 function Init68_00687190 # thiscall(this; a, b), ret 8 -> this: +0 a, +8 b, +4 and +0xc..+0x40 zeroed; callers 0x006870b0, 0x00687130; name ours
 0x00687210 function StackWalker_dtor_00687210 # thiscall(this): vtable back, free(+0x14), the helper's SymCleanup(process) (stdcall pointer at +0x10) and FreeLibrary(+4), free(+0xc), operator_delete(helper), +4 = 0; name ours; ported ffx_system::m5b_stackwalker (m5 system-b b1)
@@ -11082,6 +11104,8 @@
 0x006fb160 function SyncManager_syncGetData   # fh v3:exact 0x006fb240 SyncManager::syncGetData; h4-glue-other e2: thiscall(this; &x, &y, &id) ret 0xc; 0x3e7 without data or at the end record (x, y 1.0, id 0x3e7; cursor +8 cleared), else 0; waits on +0x20 in 5 ms sleeps
 0x006fb210 function SyncManager_syncInit         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Read SyncList.txt failed!\\n'; Switch 0x7100237ed0 SyncManager::syncInit (symbols from Fahrenheit's server export); ported (ffx_glue_other::h4_f5, m4 h4 f): thiscall(this) -> 0; sprintf("/FFX_Data/GameData/%sData/Sync..." 0x00b4c370, +0) and fiosUnifyFilename into zeroed 0x100-byte locals; SyncManager_readSyncFile (none: dbgPrintf "Read SyncList.txt failed!"); an "SL\0\0" file's count of words appended to +0x40 (count +0x18); user_aligned_free
 0x006fb320 function SelectId_006fb320 # thiscall(this; n), ret 4: for n in 1..=500 not already +0xc: +0xc = n, +8 = +0x1c = 0, +0x1c = 1 when n is in the +0x18 words at *(this + 0x40); returns 0; caller 0x0067a990; name ours
+0x006fb380 function VoiceTable_select_006fb380 # thiscall(this; id, b, c, d) ret 0x10 -> 0: no table (+0x1c) nothing; waits on +0x20 (Sleep 5); first of +0x10 (signed) rows with +0x28[i] == (u16)id, +0x30[i] == b, +0x34[i] == c, +0x38[i] == d: +8 = +4[i]; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
+0x006fb410 function VoiceTable_find_006fb410   # thiscall(this; a, b) ret 8 -> 0 without a table (+0x1c); waits on +0x20; the +0x3c[i] of the last of +0x14 (signed) rows with +0x2c[i] == a and +0x24[i] == b, else 0; name ours; ported ffx_system::m5a_glue (m5 system-a r3 b1)
 0x006fb500 function CriticalSection_ctor         # structure: fastcall(cs): InitializeCriticalSection(cs), returns cs; with 0x006fb510/30/40 a small lock wrapper (the Switch build uses nn::os mutexes instead); name ours
 0x006fb510 function CriticalSectionLock_ctor     # structure: thiscall(this, cs): this[0] = cs, EnterCriticalSection(cs); scoped lock; name ours
 0x006fb530 function CriticalSection_dtor         # structure: fastcall(cs): DeleteCriticalSection(cs); 19 callers, unwind funclets; name ours

@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_settings::bridge as st;
@@ -724,6 +725,148 @@ ported! {
     /// `code_006f2740()`: the 5-byte `jmp SaveDataMachine_Update`.
     code_006f2740 @ 0x006f_2740 => extern "C" fn machine_update_thunk() -> u32 {
         sa::machine_update_thunk(&mut mem())
+    }
+
+    // ---- round 3: the input forwarders, clock, seek, voice glue, dtors ----
+    /// `0x0062f5b0(out)`: frame `ebp - 0x14` (the `SYSTEMTIME`).
+    Rng_ReadSystemClock_0062f5b0 @ 0x0062_f5b0 => extern "C" fn read_system_clock(out: u32) -> u32 {
+        let mut f = StackFrame::<{ (gl::SYSTEM_TIME_FRAME / 4) as usize }>::new();
+        gl::system_clock(&mut mem(), f.at() + gl::SYSTEM_TIME_FRAME, out)
+    }
+    /// `sceLseek(f, offset, whence)`: the jump thunk to `fiosLseek`.
+    sceLseek @ 0x0062_f8e0 => extern "C" fn sce_lseek(f: u32, offset: u32, whence: u32) -> u64 {
+        gl::fios_lseek(&mut mem(), f, offset, whence)
+    }
+    /// `0x00630b10()`.
+    Input_ShutdownDevice_00630b10 @ 0x0063_0b10 => extern "C" fn input_shutdown_device() -> u32 {
+        gl::input_shutdown(&mut mem())
+    }
+    /// `inputClear()`.
+    inputClear @ 0x0063_0c30 => extern "C" fn input_clear() -> u32 {
+        gl::input_clear(&mut mem())
+    }
+    /// `inputClearAllInputInfo()`.
+    inputClearAllInputInfo @ 0x0063_0c40 => extern "C" fn clear_all_input_info() -> u32 {
+        gl::clear_all_input_info(&mut mem())
+    }
+    /// `inputGetCurrDeviceButtonInfo()`.
+    inputGetCurrDeviceButtonInfo @ 0x0063_0c80 => extern "C" fn button_info() -> u32 {
+        gl::button_info(&mut mem())
+    }
+    /// `Input_AsyncPoll()`.
+    Input_AsyncPoll @ 0x0063_0cb0 => extern "C" fn async_poll() -> u32 {
+        gl::async_poll(&mut mem())
+    }
+    /// `inputIsReleaseButton(b)`.
+    inputIsReleaseButton @ 0x0063_0d10 => extern "C" fn is_release_button(b: u32) -> u32 {
+        gl::input_button(&mut mem(), gl::INPUT_IS_RELEASE, b)
+    }
+    /// `inputIsRepButton(b)`.
+    inputIsRepButton @ 0x0063_0d30 => extern "C" fn is_rep_button(b: u32) -> u32 {
+        gl::input_button(&mut mem(), gl::INPUT_IS_REP, b)
+    }
+    /// `0x00631230(this; keep)`.
+    UserBuffer_reset_00631230 @ 0x0063_1230 => extern "thiscall" fn user_buffer_reset(this: u32, keep: u32) {
+        gl::buffer_reset(&mut mem(), this, keep);
+    }
+    /// `0x00631060` (`ecx`; unwinding).
+    UserBuffer_dtor_00631060 @ 0x0063_1060 => extern "thiscall" fn user_buffer_dtor(this: u32) -> u32 {
+        gl::free_member8(&mut mem(), this)
+    }
+    /// `Virtuos_InputManager_setVibration(this; pad, small, large)`.
+    Virtuos_InputManager_setVibration @ 0x0063_29c0 => extern "thiscall" fn set_vibration(this: u32, pad: u32, small: u32, large: u32) -> u32 {
+        gl::set_vibration(&mut mem(), this, pad, small, large)
+    }
+    /// `0x00630f40` (`ecx` = the input manager `0x00ccb170`).
+    Virtuos_InputManager_ctor_00630f40 @ 0x0063_0f40 => extern "thiscall" fn input_manager_ctor(this: u32) -> u32 {
+        gl::controller_ctor(&mut mem(), this)
+    }
+    /// `0x00633f70` (`ecx`; unwinding).
+    TreeSet_dtor_00633f70 @ 0x0063_3f70 => extern "thiscall" fn tree_set_dtor(this: u32) {
+        gl::tree_set_dtor(&mut mem(), this);
+    }
+    /// `0x00634200` (`ecx`; unwinding).
+    PString_release_00634200 @ 0x0063_4200 => extern "thiscall" fn pstring_release(this: u32) {
+        gl::phyre_free_member_c(&mut mem(), this);
+    }
+    /// `0x00634340` (`ecx`; unwinding).
+    Unwind_deleteMember0_00634340 @ 0x0063_4340 => extern "thiscall" fn delete_member0(this: u32) {
+        gl::delete_member0(&mut mem(), this);
+    }
+    /// `0x00634360`: the 5-byte `jmp ListVector_dtor_00634220`.
+    ListVector_dtor_thunk_00634360 @ 0x0063_4360 => extern "thiscall" fn list_vector_dtor_thunk(this: u32) -> u32 {
+        gl::list_vector_dtor_thunk(&mut mem(), this)
+    }
+    /// `0x00634370` (`ecx`; unwinding).
+    StdList_dtor_00634370 @ 0x0063_4370 => extern "thiscall" fn std_list_dtor(this: u32) {
+        gl::list_dtor(&mut mem(), this);
+    }
+    /// `0x006343b0` (`ecx`; unwinding): frame `ebp - 4`.
+    StdTree_dtor_006343b0 @ 0x0063_43b0 => extern "thiscall" fn std_tree_dtor_6343b0(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        gl::tree_dtor(&mut mem(), f.at() + gl::TREE_DTOR_FRAME, gl::TREE_ERASE_636D60, this);
+    }
+    /// `0x006343e0` (`ecx`; unwinding): frame `ebp - 4`.
+    StdTree_dtor_006343e0 @ 0x0063_43e0 => extern "thiscall" fn std_tree_dtor_6343e0(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        gl::tree_dtor(&mut mem(), f.at() + gl::TREE_DTOR_FRAME, gl::TREE_ERASE_6370D0, this);
+    }
+    /// `0x00634500` (`ecx`; unwinding).
+    StdVector_dtor_00634500 @ 0x0063_4500 => extern "thiscall" fn std_vector_dtor(this: u32) -> u32 {
+        gl::vector_dtor(&mut mem(), this)
+    }
+    /// `SaveDataGetLoc(id, out)`.
+    SaveDataGetLoc @ 0x0064_12d0 => extern "C" fn save_data_get_loc(id: u32, out: u32) -> u32 {
+        gl::save_data_get_loc(&mut mem(), id, out)
+    }
+    /// `iVoiceVolumeDirect(v)`.
+    iVoiceVolumeDirect @ 0x0067_a7b0 => extern "C" fn voice_volume_direct(v: u32) -> u32 {
+        gl::voice_volume_direct(&mut mem(), v)
+    }
+    /// `iVoiceVolumeTranslate(v, t)`.
+    iVoiceVolumeTranslate @ 0x0067_a7d0 => extern "C" fn voice_volume_translate(v: u32, t: u32) -> u32 {
+        gl::voice_volume_translate(&mut mem(), v, t)
+    }
+    /// `0x0067a9b0(id, b, c, d)`.
+    VoiceTable_selectForward_0067a9b0 @ 0x0067_a9b0 => extern "C" fn voice_select_forward(id: u32, b: u32, c: u32, d: u32) -> u32 {
+        gl::voice_select_forward(&mut mem(), id, b, c, d)
+    }
+    /// `0x0067a9d0(a, b)`.
+    VoiceTable_findForward_0067a9d0 @ 0x0067_a9d0 => extern "C" fn voice_find_forward(a: u32, b: u32) -> u32 {
+        gl::voice_find_forward(&mut mem(), a, b)
+    }
+    /// `fiosLseek(f, offset, whence)`.
+    fiosLseek @ 0x0067_9710 => extern "C" fn fios_lseek(f: u32, offset: u32, whence: u32) -> u64 {
+        gl::fios_lseek(&mut mem(), f, offset, whence)
+    }
+    /// `0x00686bb0(next, prev)`.
+    StdList_buyNode_00686bb0 @ 0x0068_6bb0 => extern "stdcall" fn buy_list_node(next: u32, prev: u32) -> u32 {
+        gl::buy_list_node(&mut mem(), next, prev)
+    }
+    /// `vsnprintf1K_00687070(buffer, count, fmt, ...)`: the variadic
+    /// words from the caller's fourth slot.
+    vsnprintf1K_00687070 @ 0x0068_7070 => extern "C" fn vsnprintf_1k(buffer: u32, count: u32, fmt: u32; slots: u32) -> u32 {
+        gl::vsnprintf_1k(&mut mem(), buffer, count, fmt, slots + 12)
+    }
+    /// `0x006fb380(this; id, b, c, d)`.
+    VoiceTable_select_006fb380 @ 0x006f_b380 => extern "thiscall" fn voice_select(this: u32, id: u32, b: u32, c: u32, d: u32) -> u32 {
+        gl::voice_select(&mut mem(), this, id, b, c, d)
+    }
+    /// `0x006fb410(this; a, b)`.
+    VoiceTable_find_006fb410 @ 0x006f_b410 => extern "thiscall" fn voice_find(this: u32, a: u32, b: u32) -> u32 {
+        gl::voice_find(&mut mem(), this, a, b)
+    }
+    /// `code_006793b0()`: the 5-byte `jmp PhyreFIOS_LoadPrxIdle`.
+    code_006793b0 @ 0x0067_93b0 => extern "C" fn prx_idle_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_IDLE)
+    }
+    /// `code_006793c0()`: the 5-byte `jmp PhyreFIOS_LoadPrxInProgress`.
+    code_006793c0 @ 0x0067_93c0 => extern "C" fn prx_in_progress_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_IN_PROGRESS)
+    }
+    /// `code_006793d0()`: the 5-byte `jmp Compare_006f9b70` (PRX state 3).
+    code_006793d0 @ 0x0067_93d0 => extern "C" fn prx_loaded_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_LOADED)
     }
 }
 
