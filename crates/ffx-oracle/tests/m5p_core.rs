@@ -43,8 +43,24 @@ impl Rng {
     }
 }
 
-/// The bridge's view of an oracle.
-struct G<'a>(&'a mut Oracle);
+/// The bridge's view of an oracle, with the oracle's float trampoline
+/// ([`TRAMPOLINE`]).
+struct G<'a>(&'a mut Oracle, u32);
+
+/// `fld qword [esp+4]; call [esp+0xc]; ret`, then at +16 `fstp st(0);
+/// ret`: a CRT intrinsic called with its operand in `ST0`, and the pop
+/// after a float result was read.
+const TRAMPOLINE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
+
+impl G<'_> {
+    /// Pops the float a call left in `ST0`.
+    fn pop(&mut self) {
+        self.0.call(self.1 + 16, Conv::Cdecl, &[]).unwrap();
+    }
+}
 
 impl Mem for G<'_> {
     fn read_bytes(&self, addr: u32, out: &mut [u8]) {
@@ -74,6 +90,31 @@ impl Host for G<'_> {
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
+    }
+    fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        let r = self
+            .0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"));
+        let v = r.st0_f32().expect("the callee's ST0");
+        self.pop();
+        v
+    }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(self.1, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap();
+        let v = r.st0_f32().expect("the intrinsic's ST0");
+        self.pop();
+        v
     }
 }
 
@@ -105,6 +146,8 @@ struct Twins {
     b: Oracle,
     /// The call log: a count, then [`ENTRY`]-byte entries.
     log: u32,
+    /// [`TRAMPOLINE`] in both oracles.
+    tramp: u32,
 }
 
 impl Twins {
@@ -118,8 +161,10 @@ impl Twins {
             a,
             b,
             log: 0,
+            tramp: 0,
         };
         t.log = t.zeros((4 + ENTRY * ENTRIES) as usize);
+        t.tramp = t.code(&TRAMPOLINE);
         t
     }
 
@@ -294,7 +339,7 @@ impl Twins {
             .a
             .call(f, conv, args)
             .unwrap_or_else(|e| panic!("{} {what}: original: {e}", self.label));
-        let rb = port(&mut G(&mut self.b));
+        let rb = port(&mut G(&mut self.b, self.tramp));
         assert!(
             ra.st0.is_none(),
             "{} {what}: the original leaves ST0 set",
@@ -319,7 +364,7 @@ impl Twins {
             .a
             .call(f, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{} {what}: original: {e}", self.label));
-        let rb = port(&mut G(&mut self.b));
+        let rb = port(&mut G(&mut self.b, self.tramp));
         assert!(
             ra.st0_is(f64::from(rb)),
             "{} {what}: ST0 {:?} vs {rb:?}",
@@ -2236,6 +2281,461 @@ fn animatable_elements_match_the_original() {
                 ALL,
                 |g| bc::rigid_body_slot6(g, this),
             );
+        }
+    }
+}
+
+// ---- batch 4 (ffx_pcore::m5p_core_d) ----
+
+use ffx_pcore::m5p_core_d::{self as cd, bridge as bd};
+
+/// `n` floats from [`float_word`] in a fresh block.
+fn floats(t: &mut Twins, rng: &mut Rng, n: usize) -> u32 {
+    let v: Vec<u8> = (0..n).flat_map(|_| float_word(rng).to_le_bytes()).collect();
+    t.alloc(&v)
+}
+
+/// Ordinary floats (no NaN or infinity): angles and matrices the real
+/// callees take.
+fn plain_floats(t: &mut Twins, rng: &mut Rng, n: usize) -> u32 {
+    let v: Vec<u8> = (0..n)
+        .flat_map(|_| (f32::from((rng.next() % 4000) as u16) / 500.0 - 4.0).to_le_bytes())
+        .collect();
+    t.alloc(&v)
+}
+
+#[test]
+fn matrices_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d301);
+        // the look-at through the real 4x4 helpers
+        for _ in 0..12 {
+            let this = plain_floats(&mut t, &mut rng, 12);
+            let m = plain_floats(&mut t, &mut rng, 12);
+            let local = t.b.stack_range().start + 0x300;
+            t.check(
+                "world look at",
+                0x0045_2520,
+                Conv::Thiscall(this),
+                &[m],
+                ALL,
+                |g| bd::world_look_at(g, this, m, local),
+            );
+        }
+        for _ in 0..8 {
+            let this = t.random(&mut rng, 0x30);
+            let m = floats(&mut t, &mut rng, 12);
+            t.check(
+                "copy 3x4",
+                0x0045_2740,
+                Conv::Thiscall(this),
+                &[m],
+                ALL,
+                |g| bd::copy_3x4(g, this, m),
+            );
+        }
+        // the Euler matrix through the CRT's sine and cosine
+        for _ in 0..24 {
+            let out = t.random(&mut rng, 0x40);
+            let angles = floats(&mut t, &mut rng, 3);
+            t.check(
+                "euler",
+                0x0057_4520,
+                Conv::Cdecl,
+                &[out, angles],
+                ALL,
+                |g| bd::euler_matrix(g, out, angles),
+            );
+        }
+        // the lerp: every float kind, the output over the first input once
+        for case in 0..60u32 {
+            let a = floats(&mut t, &mut rng, 3);
+            let b = floats(&mut t, &mut rng, 3);
+            let out = if case % 10 == 0 {
+                a
+            } else {
+                t.random(&mut rng, 12)
+            };
+            let tt = float_word(&mut rng);
+            t.check(
+                "lerp3",
+                0x006a_9b40,
+                Conv::Cdecl,
+                &[out, tt, a, b],
+                ALL,
+                |g| bd::lerp3(g, out, tt, a, b),
+            );
+        }
+    }
+}
+
+#[test]
+fn small_utilities_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d302);
+        // the shadow caster types' list: first, middle, last, absent, empty
+        let head = t.rebase(cd::SHADOW_CASTER_TYPES);
+        let saved = t.r32(head);
+        for case in 0..10u32 {
+            let n = rng.below(4);
+            let nodes: Vec<u32> = (0..n).map(|_| t.random(&mut rng, 0x10)).collect();
+            for (i, &x) in nodes.iter().enumerate() {
+                t.w32(x + 8, nodes.get(i + 1).copied().unwrap_or(0));
+            }
+            t.w32(head, nodes.first().copied().unwrap_or(0));
+            let ty = if n > 0 && case % 3 != 0 {
+                nodes[rng.below(n) as usize]
+            } else {
+                t.random(&mut rng, 0x10)
+            };
+            t.check(
+                "shadow type unlink",
+                0x004c_c050,
+                Conv::Cdecl,
+                &[ty],
+                ALL,
+                |g| bd::shadow_type_unlink(g, ty),
+            );
+        }
+        t.w32(head, saved);
+        // the node count over real trees (the successor copy runs)
+        for _ in 0..12 {
+            let n = if rng.chance(4) {
+                0
+            } else {
+                rng.below(9) as usize
+            };
+            let tr = t.zeros(0x20);
+            if n == 0 {
+                t.w32(tr + 0xc, tr);
+            } else {
+                build_tree(&mut t, &mut rng, tr, n);
+            }
+            t.check(
+                "count nodes",
+                0x0057_4860,
+                Conv::Thiscall(tr),
+                &[],
+                ALL,
+                |g| bd::count_nodes(g, tr),
+            );
+        }
+        // byte swaps
+        for _ in 0..6 {
+            let p = t.random(&mut rng, 16);
+            t.check("swap4", 0x0057_6c70, Conv::Cdecl, &[p], ALL, |g| {
+                bd::swap4(g, p)
+            });
+            t.check("swap3", 0x0057_6d20, Conv::Cdecl, &[p], ALL, |g| {
+                bd::swap3(g, p)
+            });
+        }
+        // the name reset: owned or borrowed name
+        t.stub(cd::PBASE_DESCRIPTOR, false, 0, 0, Ret::Imm(0x00c0_b000));
+        t.stub(cd::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        for case in 0..6u32 {
+            let this = t.random(&mut rng, 0x68);
+            let name = rng.next() & !1 | (case & 1);
+            t.w32(this + 0x54, name);
+            t.check(
+                "reset names",
+                0x0055_afc0,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| bd::reset_names(g, this),
+            );
+        }
+        // the float pairs set by key
+        for case in 0..10u32 {
+            let n = rng.below(5);
+            let pairs = t.random(&mut rng, 8 * 5);
+            let key = rng.next();
+            for i in 0..n {
+                let obj = if rng.chance(4) {
+                    0
+                } else {
+                    let o = t.random(&mut rng, 0x60);
+                    if rng.chance(2) {
+                        t.w32(o + 0x58, key);
+                    }
+                    o
+                };
+                t.w32(pairs + 8 * i, obj);
+            }
+            let this = t.random(&mut rng, 0x10);
+            t.w32(this + 8, n | (case & 1) << 31);
+            t.w32(this + 0xc, pairs);
+            let f = float_word(&mut rng);
+            t.check(
+                "set by key",
+                0x006a_c0b0,
+                Conv::Thiscall(this),
+                &[key, f],
+                ALL,
+                |g| bd::set_by_key(g, this, key, f),
+            );
+        }
+        // the PSharray resize through 0x0058c590
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x100);
+        t.stub(cd::SHARRAY_REALLOC, true, 3, 3, Ret::Cell(cell));
+        for case in 0..30u32 {
+            let this = t.random(&mut rng, 0x10);
+            t.w32(
+                this,
+                if case % 7 == 3 {
+                    1
+                } else {
+                    count_word(&mut rng)
+                },
+            );
+            if case % 4 == 0 {
+                t.w32(this + 4, 0);
+            }
+            let n = match case % 5 {
+                0 => t.r32(this),
+                1 => 0,
+                _ => rng.below(6),
+            };
+            let block = match case % 6 {
+                0 => 0,
+                1 => this + 4,
+                2 => t.r32(this + 4),
+                _ => fresh,
+            };
+            t.w32(cell, block);
+            t.check(
+                "sharray resize",
+                0x0059_9540,
+                Conv::Thiscall(this),
+                &[n],
+                ALL,
+                |g| bd::sharray_resize(g, this, n),
+            );
+        }
+    }
+}
+
+#[test]
+fn lod_groups_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d303);
+        // a group of levels, each with a PSharray of 12-byte elements and
+        // one of objects with targets
+        let group = |t: &mut Twins, rng: &mut Rng| {
+            let n = rng.below(4);
+            let levels = t.random(rng, (0x24 * 4) as usize);
+            for k in 0..n {
+                let lv = levels + 0x24 * k;
+                let m = rng.below(4);
+                t.w32(lv + 0x14, m | (rng.next() & 0x8000_0000));
+                if m > 1 {
+                    let s = t.random(rng, (12 * m) as usize);
+                    t.w32(lv + 0x18, s);
+                }
+                let c = rng.below(4);
+                t.w32(lv + 4, c | (rng.next() & 0x8000_0000));
+                let objs: Vec<u32> = (0..c)
+                    .map(|_| {
+                        if rng.chance(4) {
+                            0
+                        } else {
+                            let o = t.random(rng, 0x20);
+                            let tg = if rng.chance(3) {
+                                0
+                            } else {
+                                t.random(rng, 0x20)
+                            };
+                            t.w32(o + 0x1c, tg);
+                            o
+                        }
+                    })
+                    .collect();
+                if c == 1 {
+                    t.w32(lv + 8, objs[0]);
+                } else if c > 1 {
+                    let v: Vec<u8> = objs.iter().flat_map(|o| o.to_le_bytes()).collect();
+                    let s = t.alloc(&v);
+                    t.w32(lv + 8, s);
+                }
+            }
+            let g = t.random(rng, 0x48);
+            t.w32(g + 0x3c, n | (rng.next() & 0x8000_0000));
+            t.w32(g + 0x40, levels);
+            (g, levels, n)
+        };
+        for _ in 0..8 {
+            let (g, levels, n) = group(&mut t, &mut rng);
+            t.check(
+                "levels reset",
+                0x005a_7990,
+                Conv::Thiscall(g),
+                &[],
+                ALL,
+                |gg| bd::lod_levels_reset(gg, g),
+            );
+            for k in 0..n {
+                let lv = levels + 0x24 * k;
+                let flag = rng.next() & 0xffff_ff00 | rng.below(2);
+                t.check(
+                    "level owners",
+                    0x005a_83a0,
+                    Conv::Thiscall(lv),
+                    &[flag],
+                    0,
+                    |gg| {
+                        bd::lod_level_owners(gg, lv, flag);
+                        0
+                    },
+                );
+            }
+        }
+        for case in 0..12u32 {
+            let (g, _, _) = group(&mut t, &mut rng);
+            let cur = rng.below(2) as u8;
+            t.w8(g + 0x44, cur);
+            let flag = rng.next() & 0xffff_ff00 | (case & 1);
+            t.check(
+                "group enable",
+                0x005a_7d10,
+                Conv::Thiscall(g),
+                &[flag],
+                0,
+                |gg| {
+                    bd::lod_group_enable(gg, g, flag);
+                    0
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn character_lighting_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d304);
+        let coeff = t.code(&[
+            0xd9, 0x05, 0x00, 0x00, 0x00, 0x00, // fld dword [k]
+            0xc3,
+        ]);
+        let k = t.alloc(&0.625f32.to_bits().to_le_bytes());
+        t.write(coeff + 2, &k.to_le_bytes());
+        let at = t.rebase(cd::SHADE_COEFF);
+        t.jump(at, coeff);
+        t.stub(cd::SET_SHADE_COEFF, true, 2, 2, Ret::Imm(0xaef0_0000));
+        // PArray_Data: the array's +4
+        let data = t.code(&[0x8b, 0x41, 0x04, 0xc3]); // mov eax, [ecx+4]; ret
+        let at = t.rebase(cd::ARRAY_DATA);
+        t.jump(at, data);
+        // the parameter lookup: the shader's word for each name, a table
+        // [name, param] the stub walks: `mov eax,[ecx]` is the table
+        let mut find = vec![0x8b, 0x01]; // mov eax, [ecx]
+        find.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+        // loop: cmp [eax], 0; je none; cmp [eax], edx; je hit; add eax, 8; jmp loop
+        find.extend([0x83, 0x38, 0x00, 0x74, 0x0f]);
+        find.extend([0x39, 0x10, 0x74, 0x05]);
+        find.extend([0x83, 0xc0, 0x08, 0xeb, 0xf2]);
+        find.extend([0x8b, 0x40, 0x04, 0xc2, 0x04, 0x00]); // hit: mov eax, [eax+4]; ret 4
+        find.extend([0x31, 0xc0, 0xc2, 0x04, 0x00]); // none: xor eax, eax; ret 4
+        let find = t.code(&find);
+        let at = t.rebase(cd::FIND_PARAMETER);
+        t.jump(at, find);
+        let names = [cd::ADD_LIGHT_COLOUR, cd::SHININESS, cd::MATERIAL_COLOUR].map(|n| t.rebase(n));
+        for case in 0..32u32 {
+            let n = rng.below(4);
+            let insts: Vec<u32> = (0..n)
+                .map(|_| {
+                    // parameters: offsets and sizes in and out of range
+                    let mut table: Vec<u32> = Vec::new();
+                    for (j, &name) in names.iter().enumerate() {
+                        if rng.chance(4) {
+                            continue;
+                        }
+                        let size = match j {
+                            0 => 16,
+                            1 => 12,
+                            _ => 16 - 4 * rng.below(2),
+                        };
+                        let off = match rng.below(6) {
+                            0 => 0,
+                            1 => 0x70,
+                            // ending at the buffer's size word exactly
+                            2 => 0x40 - size,
+                            _ => 4 + 4 * rng.below(8),
+                        };
+                        let q = t.random(&mut rng, 12);
+                        t.write(q + 8, &(off as u16).to_le_bytes());
+                        let hi = (rng.next() as u16) & 0xe000;
+                        t.write(q + 0xa, &(size as u16 | hi).to_le_bytes());
+                        table.extend([name, q]);
+                    }
+                    table.extend([0, 0]);
+                    let tb: Vec<u8> = table.iter().flat_map(|w| w.to_le_bytes()).collect();
+                    let tb = t.alloc(&tb);
+                    let shader = t.alloc(&tb.to_le_bytes());
+                    let buf = t.random(&mut rng, 0x60);
+                    t.w32(
+                        buf,
+                        if rng.chance(2) {
+                            0x40
+                        } else {
+                            0x40 + 8 * rng.below(4)
+                        },
+                    );
+                    t.alloc(&[shader.to_le_bytes(), buf.to_le_bytes()].concat())
+                })
+                .collect();
+            let ptrs: Vec<u8> = insts.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let ptrs = t.alloc(&[ptrs, vec![0; 4]].concat());
+            let arr = t.zeros(8);
+            t.w32(arr, n | (rng.next() & 0x8000_0000));
+            t.w32(arr + 4, ptrs);
+            let inst = t.random(&mut rng, 0x20);
+            t.w32(inst + 0x10, arr);
+            let cl = t.random(&mut rng, 0x10);
+            let rgb = [
+                float_word(&mut rng),
+                float_word(&mut rng),
+                float_word(&mut rng),
+            ];
+            let intensity = float_word(&mut rng);
+            let local = t.b.stack_range().start + 0x300;
+            if case % 2 == 0 {
+                let args = [inst, rgb[0], rgb[1], rgb[2], intensity];
+                t.check(
+                    "add light",
+                    0x006a_9bb0,
+                    Conv::Thiscall(cl),
+                    &args,
+                    0,
+                    |g| {
+                        bd::add_light(g, cl, inst, rgb, intensity, local);
+                        0
+                    },
+                );
+            } else {
+                let c = [
+                    float_word(&mut rng),
+                    float_word(&mut rng),
+                    float_word(&mut rng),
+                    float_word(&mut rng),
+                ];
+                let args = [
+                    inst, c[0], c[1], c[2], c[3], rgb[0], rgb[1], rgb[2], intensity,
+                ];
+                t.check(
+                    "add light material",
+                    0x006a_9cd0,
+                    Conv::Thiscall(cl),
+                    &args,
+                    0,
+                    |g| {
+                        bd::add_light_material(g, cl, inst, c, rgb, intensity, local);
+                        0
+                    },
+                );
+            }
         }
     }
 }
