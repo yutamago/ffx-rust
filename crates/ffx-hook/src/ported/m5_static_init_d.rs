@@ -411,4 +411,204 @@ ported! {
     StaticDtor_PInputAxisSemantic_00b09260 @ 0x00b0_9260 => extern "C" fn s_00b09260() -> u32 {
         si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[24])
     }
+    /// `StaticDtor_PInputAxisSemantic_00b09280`: the `PInputAxisSemantic` value at `0x00c6_b6e4` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09280 @ 0x00b0_9280 => extern "C" fn s_00b09280() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[25])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b092a0`: the `PInputAxisSemantic` value at `0x00c6_b734` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b092a0 @ 0x00b0_92a0 => extern "C" fn s_00b092a0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[26])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b092c0`: the `PInputAxisSemantic` value at `0x00c6_b704` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b092c0 @ 0x00b0_92c0 => extern "C" fn s_00b092c0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[27])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b092e0`: the `PInputAxisSemantic` value at `0x00c6_b6d4` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b092e0 @ 0x00b0_92e0 => extern "C" fn s_00b092e0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[28])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09300`: the `PInputAxisSemantic` value at `0x00c6_b724` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09300 @ 0x00b0_9300 => extern "C" fn s_00b09300() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[29])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09320`: the `PInputAxisSemantic` value at `0x00c6_b6f4` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09320 @ 0x00b0_9320 => extern "C" fn s_00b09320() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[30])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09340`: the `PInputAxisSemantic` value at `0x00c6_b6c4` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09340 @ 0x00b0_9340 => extern "C" fn s_00b09340() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[31])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09370`: the `PInputJoypadButtonSemantic` value at `0x00c6_bb34` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09370 @ 0x00b0_9370 => extern "C" fn s_00b09370() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[32])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09390`: the `PInputJoypadButtonSemantic` value at `0x00c6_b964` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09390 @ 0x00b0_9390 => extern "C" fn s_00b09390() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[33])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b093b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b934` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b093b0 @ 0x00b0_93b0 => extern "C" fn s_00b093b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[34])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b093d0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b904` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b093d0 @ 0x00b0_93d0 => extern "C" fn s_00b093d0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[35])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b093f0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8e4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b093f0 @ 0x00b0_93f0 => extern "C" fn s_00b093f0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[36])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09410`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8c4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09410 @ 0x00b0_9410 => extern "C" fn s_00b09410() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[37])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09430`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8a4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09430 @ 0x00b0_9430 => extern "C" fn s_00b09430() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[38])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09450`: the `PInputJoypadButtonSemantic` value at `0x00c6_bb04` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09450 @ 0x00b0_9450 => extern "C" fn s_00b09450() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[39])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09470`: the `PInputJoypadButtonSemantic` value at `0x00c6_bad4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09470 @ 0x00b0_9470 => extern "C" fn s_00b09470() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[40])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09490`: the `PInputJoypadButtonSemantic` value at `0x00c6_baa4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09490 @ 0x00b0_9490 => extern "C" fn s_00b09490() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[41])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b094b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba74` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b094b0 @ 0x00b0_94b0 => extern "C" fn s_00b094b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[42])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b094d0`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba44` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b094d0 @ 0x00b0_94d0 => extern "C" fn s_00b094d0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[43])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b094f0`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba14` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b094f0 @ 0x00b0_94f0 => extern "C" fn s_00b094f0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[44])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09510`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9e4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09510 @ 0x00b0_9510 => extern "C" fn s_00b09510() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[45])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09530`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9b4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09530 @ 0x00b0_9530 => extern "C" fn s_00b09530() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[46])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09550`: the `PInputJoypadButtonSemantic` value at `0x00c6_b984` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09550 @ 0x00b0_9550 => extern "C" fn s_00b09550() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[47])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09570`: the `PInputJoypadButtonSemantic` value at `0x00c6_bae4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09570 @ 0x00b0_9570 => extern "C" fn s_00b09570() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[48])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09590`: the `PInputJoypadButtonSemantic` value at `0x00c6_bab4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09590 @ 0x00b0_9590 => extern "C" fn s_00b09590() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[49])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b095b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b994` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b095b0 @ 0x00b0_95b0 => extern "C" fn s_00b095b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[50])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b095d0`: the `PInputJoypadButtonSemantic` value at `0x00c6_bac4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b095d0 @ 0x00b0_95d0 => extern "C" fn s_00b095d0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[51])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b095f0`: the `PInputJoypadButtonSemantic` value at `0x00c6_baf4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b095f0 @ 0x00b0_95f0 => extern "C" fn s_00b095f0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[52])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09610`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8b4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09610 @ 0x00b0_9610 => extern "C" fn s_00b09610() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[53])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09630`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba64` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09630 @ 0x00b0_9630 => extern "C" fn s_00b09630() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[54])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09650`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba04` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09650 @ 0x00b0_9650 => extern "C" fn s_00b09650() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[55])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09670`: the `PInputJoypadButtonSemantic` value at `0x00c6_b954` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09670 @ 0x00b0_9670 => extern "C" fn s_00b09670() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[56])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09690`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba54` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09690 @ 0x00b0_9690 => extern "C" fn s_00b09690() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[57])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b096b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b944` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b096b0 @ 0x00b0_96b0 => extern "C" fn s_00b096b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[58])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b096d0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9f4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b096d0 @ 0x00b0_96d0 => extern "C" fn s_00b096d0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[59])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b096f0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b894` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b096f0 @ 0x00b0_96f0 => extern "C" fn s_00b096f0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[60])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09710`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba34` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09710 @ 0x00b0_9710 => extern "C" fn s_00b09710() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[61])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09730`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9d4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09730 @ 0x00b0_9730 => extern "C" fn s_00b09730() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[62])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09750`: the `PInputJoypadButtonSemantic` value at `0x00c6_b924` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09750 @ 0x00b0_9750 => extern "C" fn s_00b09750() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[63])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09770`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba24` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09770 @ 0x00b0_9770 => extern "C" fn s_00b09770() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[64])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09790`: the `PInputJoypadButtonSemantic` value at `0x00c6_b914` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09790 @ 0x00b0_9790 => extern "C" fn s_00b09790() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[65])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b097b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9c4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b097b0 @ 0x00b0_97b0 => extern "C" fn s_00b097b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[66])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b097d0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8d4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b097d0 @ 0x00b0_97d0 => extern "C" fn s_00b097d0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[67])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b097f0`: the `PInputJoypadButtonSemantic` value at `0x00c6_b9a4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b097f0 @ 0x00b0_97f0 => extern "C" fn s_00b097f0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[68])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09810`: the `PInputJoypadButtonSemantic` value at `0x00c6_bb24` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09810 @ 0x00b0_9810 => extern "C" fn s_00b09810() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[69])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09830`: the `PInputJoypadButtonSemantic` value at `0x00c6_b974` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09830 @ 0x00b0_9830 => extern "C" fn s_00b09830() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[70])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09850`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba94` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09850 @ 0x00b0_9850 => extern "C" fn s_00b09850() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[71])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09870`: the `PInputJoypadButtonSemantic` value at `0x00c6_b8f4` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09870 @ 0x00b0_9870 => extern "C" fn s_00b09870() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[72])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b09890`: the `PInputJoypadButtonSemantic` value at `0x00c6_bb14` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b09890 @ 0x00b0_9890 => extern "C" fn s_00b09890() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[73])
+    }
+    /// `StaticDtor_PInputJoypadButtonSemantic_00b098b0`: the `PInputJoypadButtonSemantic` value at `0x00c6_ba84` gets its vtable back, then `0x00a2_e410(obj)` unlinks it.
+    StaticDtor_PInputJoypadButtonSemantic_00b098b0 @ 0x00b0_98b0 => extern "C" fn s_00b098b0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[74])
+    }
 }
