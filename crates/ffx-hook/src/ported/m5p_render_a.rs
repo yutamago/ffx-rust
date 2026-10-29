@@ -11,6 +11,8 @@ use ffx_prender::m5p_render_a2::{self as m2, bridge as b};
 use ffx_prender::m5p_render_a3::bridge as c;
 use ffx_prender::m5p_render_a4::bridge as d;
 use ffx_prender::m5p_render_a5::{self as me, bridge as e};
+use ffx_prender::m5p_render_a6::bridge as f;
+use ffx_prender::m5p_render_a7::bridge as g;
 
 ported! {
     // ---- batch 1 ----
@@ -1288,5 +1290,33 @@ ported! {
     PSpriteAnimationInfo_pushWord_0056c270 @ 0x0056_c270 => extern "thiscall" fn push_word(this: u32, v: u32) -> u32 {
         let mut slot = StackFrame::<1>::new();
         e::push_word(&mut mem(), this, v, slot.at())
+    }
+    // ---- batch 6 ----
+    /// `(this; topology, count, indices, index, instances)` -> al.
+    PRendererD3D11_drawIndexedInstanced_00592de0 @ 0x0059_2de0 => extern "thiscall" fn draw_indexed_instanced(this: u32, topology: u32, count: u32, indices: u32, index: u32, instances: u32) -> u8 {
+        f::draw_indexed_instanced(&mut mem(), this, topology, count, indices, index, instances)
+    }
+    /// `(this)` -> al.
+    Phyre_PAnimation_PNetworkOptimizeBufferAllocator_grow_00616330 @ 0x0061_6330 => extern "thiscall" fn grow_slots(this: u32) -> u32 {
+        f::grow_slots(&mut mem(), this)
+    }
+    /// `(this; size, accept)` -> slot or -1.
+    Phyre_PAnimation_PNetworkOptimizeBufferAllocator_findSlot_006161e0 @ 0x0061_61e0 => extern "thiscall" fn find_slot(this: u32, size: u32, accept: u32) -> u32 {
+        f::find_slot(&mut mem(), this, size, accept)
+    }
+    /// `(this; out)` -> out (a 0x100-byte frame for the matrices handed by address).
+    PUtilityScene_nodeWorldMatrix_00506660 @ 0x0050_6660 => extern "thiscall" fn node_world_matrix(this: u32, out: u32) -> u32 {
+        let mut frame = StackFrame::<64>::new();
+        g::node_world_matrix(&mut mem(), this, out, frame.at())
+    }
+    /// `(this; out)` (a 0x100-byte frame).
+    PUtilityScene_setWorldMatrix_00507410 @ 0x0050_7410 => extern "thiscall" fn set_world_matrix(this: u32, out: u32) -> u32 {
+        let mut frame = StackFrame::<64>::new();
+        g::set_world_matrix(&mut mem(), this, out, frame.at())
+    }
+    /// `(this)` (a 0x80-byte frame).
+    PGameplay_updateObject_0055b670 @ 0x0055_b670 => extern "thiscall" fn update_object(this: u32) {
+        let mut frame = StackFrame::<32>::new();
+        g::update_object(&mut mem(), this, frame.at());
     }
 }

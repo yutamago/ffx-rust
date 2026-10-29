@@ -720,3 +720,7 @@ include!("m5p_render_a/b4.rs");
 // ---- batch 5 ----
 
 include!("m5p_render_a/b5.rs");
+
+// ---- batch 6 ----
+
+include!("m5p_render_a/b6.rs");
