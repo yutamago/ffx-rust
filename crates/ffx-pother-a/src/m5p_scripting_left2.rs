@@ -268,6 +268,26 @@ pub const COPY_VALUES: u32 = 0x0061_96e0;
 /// The call error message (`Phyre_PhyrePrintf(3, ..., code, text)`).
 pub const CALL_ERROR: u32 = 0x00b2_d298;
 
+/// The ring buffer's callees: its lock and unlock (thiscall on the
+/// buffer), the full check `(size)` (thiscall, `al`), `PhyreSleep(ms)`
+/// (cdecl); the frame counter a block's time stamp is compared with.
+pub const RING_CALLS: [u32; 4] = [0x0043_1920, 0x0043_1a80, 0x005c_e9d0, 0x0043_0030];
+/// The frame counter (`0x00cbd9c0`).
+pub const RING_FRAME: u32 = 0x00cb_d9c0;
+/// The ring buffer's messages: the wait report (every 1000 tries), then
+/// the five lines of the give-up report.
+pub const RING_MESSAGES: [u32; 6] = [
+    0x00b3_8988,
+    0x00b3_86f8,
+    0x00b3_8760,
+    0x00b3_8788,
+    0x00b3_87b4,
+    0x00b3_87e4,
+];
+/// How many waits the ring buffer allows before it reports and crashes
+/// (on purpose, a write to address 0).
+pub const RING_MAX_WAITS: u32 = 10_000;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{
@@ -278,8 +298,8 @@ pub mod bridge {
         LUA_SETFIELD, LUA_SETGLOBAL, LUA_SETTOP, LUA_TOBOOLEAN, LUA_TOLSTRING, LUA_TYPE,
         LUAL_CHECKLSTRING, MALLOC, MEMCPY, NAMES_CALLS, NEW_INDEX_MESSAGES, PRINTF,
         REGISTER_VECTOR_MATRIX, RELOAD_CALLS, RELOAD_DATA, REQUIRE_CALLS, REQUIRE_MAX_DEPTH,
-        REQUIRE_MORE, REQUIRE_STATE, STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA,
-        VM_MATRIX, VM_VECTOR,
+        REQUIRE_MORE, REQUIRE_STATE, RING_CALLS, RING_FRAME, RING_MAX_WAITS, RING_MESSAGES,
+        STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA, VM_MATRIX, VM_VECTOR,
     };
 
     /// A `PString` word's pointer (bit 0 cleared).
@@ -1158,5 +1178,125 @@ pub mod bridge {
             );
         }
         h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]).wrapping_sub(top)
+    }
+
+    /// The ring buffer's reclaim (inside the lock): from the read block
+    /// (`+0x28`), every block with no time stamp or one older than the
+    /// frame counter is released (the read block moves on). `false` when
+    /// nothing is in use or nothing could be released.
+    fn ring_reclaim(h: &mut impl Host, ring: u32) -> bool {
+        let write: u32 = h.read(ring + 0x24);
+        let frame: u32 = h.read(h.rebase(RING_FRAME));
+        let mut progressed = false;
+        if h.read::<u32>(ring + 0x28) == write {
+            return false;
+        }
+        loop {
+            let block: u32 = h.read(ring + 0x28);
+            let stamp: u32 = h.read(block + 4);
+            if stamp != 0 && stamp.wrapping_sub(frame) & 0x8000_0000 == 0 {
+                return progressed;
+            }
+            let next: u32 = h.read(block);
+            h.write(ring + 0x28, next);
+            progressed = true;
+            if next == write {
+                return true;
+            }
+        }
+    }
+
+    /// `PRingBuffer<PAsyncProcessBufferBlock>::allocateBlock(size)`
+    /// (`0x005ce6e0`, thiscall, `ret 4`): a block of `size` bytes rounded
+    /// up to 16 plus a 16-byte header `{next, stamp 0, size}` at the write
+    /// position (`+0x24`), wrapping to the start (`+0x18`) when it would
+    /// pass the end (`+0x1c`: the rest becomes a filler block). While the
+    /// buffer is full (`0x005ce9d0`) the released blocks are reclaimed,
+    /// waiting a millisecond at a time (a report every 1000 waits; after
+    /// 10000 a report and a deliberate crash). 0 for a request too large
+    /// (`+0x20`), no buffer, or nothing to reclaim; else the block (also
+    /// kept at `+0x2c`).
+    pub fn ring_allocate(h: &mut impl Host, ring: u32, size: u32) -> u32 {
+        let need = (size.wrapping_add(15) & 0xffff_fff0).wrapping_add(16);
+        if need >= h.read::<u32>(ring + 0x20) {
+            return 0;
+        }
+        if h.read::<u32>(ring + 0x24) == 0 {
+            return 0;
+        }
+        h.call_sym(RING_CALLS[0], Conv::Thiscall(ring), &[]);
+        loop {
+            if h.call_sym(RING_CALLS[2], Conv::Thiscall(ring), &[need]) & 0xff != 0 {
+                if !ring_reclaim(h, ring) {
+                    h.call_sym(RING_CALLS[1], Conv::Thiscall(ring), &[]);
+                    return 0;
+                }
+                let mut tries = 0u32;
+                while h.call_sym(RING_CALLS[2], Conv::Thiscall(ring), &[need]) & 0xff != 0 {
+                    if tries.is_multiple_of(1000) {
+                        let read: u32 = h.read(ring + 0x28);
+                        let msg = h.rebase(RING_MESSAGES[0]);
+                        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, read]);
+                    }
+                    h.call_sym(RING_CALLS[3], Conv::Cdecl, &[1]);
+                    if !ring_reclaim(h, ring) {
+                        h.call_sym(RING_CALLS[1], Conv::Thiscall(ring), &[]);
+                        return 0;
+                    }
+                    let old = tries;
+                    tries += 1;
+                    if old > RING_MAX_WAITS {
+                        ring_give_up(h, ring);
+                    }
+                }
+            }
+            let write: u32 = h.read(ring + 0x24);
+            let end: u32 = h.read(ring + 0x1c);
+            if write.wrapping_add(need) > end {
+                let start: u32 = h.read(ring + 0x18);
+                h.write(ring + 0x24, start);
+                h.write(write + 4, 0u32);
+                h.write(write + 8, end.wrapping_sub(write));
+                h.write(write, start);
+                continue;
+            }
+            let mut next = write.wrapping_add(need);
+            if next == end {
+                next = h.read(ring + 0x18);
+            }
+            h.write(ring + 0x24, next);
+            h.write(write + 8, size);
+            h.write(write + 4, 0u32);
+            h.write(write, next);
+            h.write(ring + 0x2c, write);
+            h.call_sym(RING_CALLS[1], Conv::Thiscall(ring), &[]);
+            return write;
+        }
+    }
+
+    /// The ring buffer's give-up report, then the original's deliberate
+    /// crash (a write to address 0).
+    fn ring_give_up(h: &mut impl Host, ring: u32) {
+        for &m in &RING_MESSAGES[1..3] {
+            let msg = h.rebase(m);
+            h.call_sym(PRINTF, Conv::Cdecl, &[2, msg]);
+        }
+        let (a, b, c): (u32, u32, u32) = (
+            h.read(ring + 0x18),
+            h.read(ring + 0x1c),
+            h.read(ring + 0x20),
+        );
+        let msg = h.rebase(RING_MESSAGES[3]);
+        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, a, b, c]);
+        let (a, b, c): (u32, u32, u32) = (
+            h.read(ring + 0x24),
+            h.read(ring + 0x28),
+            h.read(ring + 0x2c),
+        );
+        let msg = h.rebase(RING_MESSAGES[4]);
+        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, a, b, c]);
+        let msg = h.rebase(RING_MESSAGES[5]);
+        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg]);
+        h.write(0, 0u32);
     }
 }

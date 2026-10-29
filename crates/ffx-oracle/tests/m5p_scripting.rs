@@ -3591,3 +3591,99 @@ fn left2_caller_call_matches_the_original() {
         }
     }
 }
+
+/// A thiscall stub at `sym` popping `pops` words and answering `values`
+/// in turn (then the last one again); it logs nothing.
+fn seq_stub_this(t: &mut Twins, sym: u32, pops: u16, values: &[u32]) {
+    let mut v = values.to_vec();
+    v.push(*values.last().unwrap());
+    let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    let tab = t.alloc(&bytes);
+    let cell = t.zeros(4);
+    let last = values.len() as u32;
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.push(0x3d);
+    c.extend(last.to_le_bytes()); // cmp eax, last
+    c.extend([0x74, 0x06]); // je +6
+    c.extend([0xff, 0x05]);
+    c.extend(cell.to_le_bytes()); // inc dword [cell]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    c.push(0xc2);
+    c.extend((pops * 4).to_le_bytes()); // ret pops*4
+    let code = t.code(&c);
+    t.place(sym, code);
+}
+
+#[test]
+#[allow(clippy::type_complexity)] // one row per case, columns named above
+fn left2_ring_allocate_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // (size, write offset or none, full answers, stamps of the four
+        //  queued blocks, frame, nothing queued); PhyreSleep moves the
+        //  frame counter on by one, as the other threads would
+        let cases: [(u32, Option<u32>, &[u32], [u32; 4], u32, bool); 15] = [
+            (0x400, Some(0x80), &[0], [0; 4], 10, false),
+            (0xf0, Some(0x80), &[0], [0; 4], 10, false),
+            (0x10, None, &[0], [0; 4], 10, false),
+            (0x10, Some(0x80), &[0], [0; 4], 10, false),
+            (0x13, Some(0xe0), &[0], [0; 4], 10, false),
+            (0x10, Some(0xe0), &[0], [0; 4], 10, false),
+            (0x10, Some(0xd0), &[0], [0; 4], 10, false),
+            (0x10, Some(0x80), &[1, 0], [0, 20, 20, 20], 10, false),
+            (0x10, Some(0x80), &[1, 0], [20, 0, 0, 0], 10, false),
+            (0x10, Some(0x80), &[1, 0], [3, 4, 5, 6], 10, false),
+            (0x10, Some(0x80), &[1, 0], [0, 0, 20, 20], 0, false),
+            (
+                0x10,
+                Some(0x80),
+                &[1, 1, 1, 1, 0],
+                [5, 10, 11, 12],
+                10,
+                false,
+            ),
+            (0x10, Some(0x80), &[1, 1, 0], [5, 30, 30, 30], 10, false),
+            (0x10, Some(0x80), &[1, 0], [0; 4], 10, true),
+            (0x10, Some(0x80), &[1, 1, 1, 0], [5, 11, 40, 40], 10, false),
+        ];
+        for (i, &(size, write, full, stamps, frame, empty)) in cases.iter().enumerate() {
+            let buf = t.junk(0x100, 3);
+            let ring = t.zeros(0x30);
+            t.w32(ring + 0x18, buf);
+            t.w32(ring + 0x1c, buf + 0x100);
+            t.w32(ring + 0x20, 0x100);
+            let w = write.map_or(0, |o| buf + o);
+            t.w32(ring + 0x24, w);
+            // four queued blocks from the start, then the write block
+            // (a stamp from the future, so a reclaim stops there)
+            for (k, &stamp) in stamps.iter().enumerate() {
+                let b = buf + 0x20 * k as u32;
+                let next = if k == 3 { w } else { b + 0x20 };
+                t.w32(b, next);
+                t.w32(b + 4, stamp);
+            }
+            if w != 0 {
+                t.w32(w, buf);
+                t.w32(w + 4, 0);
+            }
+            t.w32(ring + 0x28, if empty { w } else { buf });
+            let fc = t.rebase(l2::RING_FRAME);
+            t.w32(fc, frame);
+            t.stub(l2::RING_CALLS[0], true, 0, 0, 0);
+            t.stub(l2::RING_CALLS[1], true, 0, 0, 0);
+            seq_stub_this(&mut t, l2::RING_CALLS[2], 1, full);
+            let mut pre = vec![0xff, 0x05];
+            pre.extend(fc.to_le_bytes()); // inc dword [frame]
+            let sleep = t.stub_code_with(&pre, l2::RING_CALLS[3], false, 1, 0, 0);
+            t.place(l2::RING_CALLS[3], sleep);
+            t.stub(l2::PRINTF, false, 3, 0, 0);
+            let what = format!("{label}: ring allocate case {i}");
+            t.this(&what, 0x005c_e6e0, ring, &[size], |g| {
+                Some(l2b::ring_allocate(g, ring, size))
+            });
+            t.unstub();
+        }
+    }
+}

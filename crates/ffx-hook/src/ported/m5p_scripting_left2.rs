@@ -62,4 +62,8 @@ ported! {
     Phyre_PScripting_PCallerScript_callFunction_00619e90 @ 0x0061_9e90 => extern "thiscall" fn caller_call(this: u32, l: u32) -> u32 {
         lb::caller_call(&mut mem(), this, l)
     }
+    /// `PRingBuffer<PAsyncProcessBufferBlock>::allocateBlock(size)`.
+    Phyre_PRingBuffer_Phyre_PScripting_PAsyncProcessBufferBlock__allocateBlock @ 0x005c_e6e0 => extern "thiscall" fn ring_allocate(ring: u32, size: u32) -> u32 {
+        lb::ring_allocate(&mut mem(), ring, size)
+    }
 }
