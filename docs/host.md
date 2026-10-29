@@ -325,16 +325,14 @@ convention, stack words and Rust side.
   through the handle table at stage 4).
 - **D3D11, DXGI, DirectInput.** COM objects in the arena, a back end
   behind them: below, "D3D11 and DXGI".
-- **FMOD, Iggy, movies, Steam.** `rust_audio` (the M4 mixer), `ffx-swf`
-  (Ruffle), `ffx-movie`, and `steam_api.dll` (`steam_api64.dll` at stage 4).
-  This round's stand-ins, for the Linux check: Steam is absent
-  (`SteamAPI_RestartAppIfNecessary` and `SteamAPI_Init` return false, so
-  `Steam_Init` skips the interfaces and achievements); every Iggy export
-  is a null stand-in that returns 0 (its stack size comes from the
-  decorated name, `_IggyInit@4`), except `IggyPlayerCreateFromMemory`,
-  which returns a zeroed heap block as the player (with 0 the menu
-  constructor `IggyMenu_ctor_00a288f0` keeps a null player and
-  `SetFields_00a3dd00` faults on it).
+- **FMOD, Iggy, movies, Steam.** FMOD on the Rust mixer (below,
+  "FMOD"), Iggy on the layer of `src/iggy.rs` and `ffx-swf` (below,
+  "Iggy"); `ffx-movie` and `steam_api.dll` (`steam_api64.dll` at stage 4)
+  later. Steam is absent for now (`SteamAPI_RestartAppIfNecessary` and
+  `SteamAPI_Init` return false, so `Steam_Init` skips the interfaces and
+  achievements); Iggy exports without a Rust side are null stand-ins that
+  return 0 (their stack size comes from the decorated name,
+  `_IggyInit@4`).
 - **The window.** `CreateWindowExA` returns a fake handle and records a
   milestone; `ShowWindow`, `SetWindowPos`, `GetClientRect` (1920 x 1080),
   `PeekMessage` (no messages) and the rest of the window calls on the way
@@ -758,24 +756,82 @@ same frames from `ffx-rust --gfx-out` with the harness's clock. Both runs
 must also agree on Iggy: either both draw the menus (`ffx-swf` in
 `ffx-host`) or the comparison allows the GDraw draws as missing.
 
+### The boot to the title (2026-10-29, the libraries round)
+
+`ffx-rust --replay tools/replays/boot.txt` with the sandbox's
+`GameSetting.ini` (Linux, release build, the null device, no `--profile`):
+
+- the boot replay runs to its end: memochek's map at update 5 (`lockstep
+  on`, `pin`), shot 1 (the logo) at update 115, the opening's map at 181,
+  its event from 198, shot 2 (the campfire) at 1103, shot 3 at 1403,
+  Start at 1407, the title's event count 108 (shot 4, the title menu) at
+  update **1549**; 2,151 presents. Two runs gave the same updates for
+  every command (r9, r11), as the lockstep promises.
+- the recorded stream draws the scenes: 3 draws a frame on memochek, 217
+  on the opening's campfire, 73 a frame on the title (2,151 frames, 5.9
+  million COM calls on 64 methods, none unhandled; the capture is 1.8 GB,
+  so `--gfx-out` is for short runs or a later `--gfx-from`).
+- FMOD: 6 projects loaded through the game's file callbacks (`0001.fev`
+  is missing in the game folder: `FMOD_ERR_FILE_NOTFOUND`, as FMOD
+  answers), 1,550 blocks mixed (one a boundary: 51.7 s of game time),
+  every call followed; `--audio-wav` wrote the mix (music from the
+  opening on, peak 0.025 at the sandbox's master volume 5).
+- Iggy: 4 players (the logos, `pausemenu.swf`, `escmenu.swf` and its 73
+  set-up calls, a 1800x86 strip), none drawn on the way (the PC menu is
+  hidden; the title is not Flash). With `--features swf` Ruffle runs on
+  llvmpipe (Vulkan) and the players load.
+- 1,626 s wall, 857 s emulated on 12 threads, 9.19 million emulator
+  starts; 5 loader turns at a boundary and 9,222 times the loader was
+  freed inside an update (the main thread sleeping in `CdReadSync` and the
+  loading screen); 1,550 FMOD turns.
+- instructions: a `--count` run did 3.79 billion in its first 871
+  updates (300 s wall, 184 s emulated, 20.6 million a second with the
+  counting hook); the whole boot to the title, at that rate, about 17.7
+  billion.
+- where the time goes (a `--profile` run of the first 666 updates: 694
+  million `FFX.exe` basic blocks in 6,200 functions): **96.7 % of the
+  blocks are in functions the hook has already ported** (5,887 of the
+  6,200; `PShaderResourceTable_unbindSlot_00598b50` alone 24 %,
+  `UserHeap_FindFree` 8 %, `PRenderThread_copyConstantBuffer` 7 %). So
+  the speed-up is blocker 4 below, not new ports: the hottest functions
+  no list has are the CRT helpers (`security_check_cookie` 0.85 %,
+  `alldiv` 0.48 %, `alloca_probe*`, `ftol2_sse`, `allshl`), a few loader
+  ones (`BigFileHandle_initialize`, the `Fixup_*` unpackers,
+  `Phyre_PSerialization_PStreamFileWin32_openFile`,
+  `AssetListReader_readAssetHeader`) and `PhyreScene_GetVFXSortMode`.
+- `zlib_uncompress` (`0x00405e20`) is a Rust port here (`ffx_core::zlib`,
+  as the hook's replacement): it was 35 % of the first round's samples.
+
 ### What blocks the next step
 
-1. **The clocks and the loads.** The stand-in clocks are fixed
-   (`QueryPerformanceCounter`, `GetTickCount`, `timeGetTime`): anything
-   timed waits forever. The harness's virtual clock (2^20 s, stepped per
-   update) belongs in `ffx-host`, and the opening screen ends when the
-   async loads do; under Unicorn the loader runs about 50 times slower
-   than native.
-2. **FMOD.** The audio thread dies at `FMOD_Memory_Initialize`: the
-   mixer (`rust_audio`) or null FMOD stand-ins (its C++ exports are
-   stdcall methods; the stack sizes come from the decorated names).
-3. **Iggy.** The opening screen, the title and the menus are Iggy's:
-   `ffx-swf` behind the 41 imports, drawing through the layer's device.
-4. **The `ported!` lists in the table** (above, "One source of truth").
+1. Done (2026-10-29, the libraries round): the clock and the loads
+   (above, "The clock"), FMOD (above, "FMOD"), Iggy's calls (above,
+   "Iggy").
+2. **An intermittent stack-cookie failure at start-up.** In about half
+   the runs (4 of 8), `FFEscMenu_initializeVideoSettingPage`
+   (`0x006fcca0`) fails its `security_check_cookie` at `0x006fed0f`
+   (`0xc0000409`), before the first update; the others go on to the
+   title. Not found yet: the frame's cookie or `ebp` changes while the
+   page's 24 Iggy calls run, and the loads run free beside it then (no
+   lockstep before the first update). Suspects: the Iggy value-path
+   imports (`IggyValueRefCreateArray`, `IggyValuePathFromRef`,
+   `MakeArrayRef`, `SetArrayIndex` are still null and write nothing into
+   the frames `IggyStringArray_ctor_006fcbc0` hands them), and
+   lock-prefixed instructions, which are atomic only within one Unicorn
+   instance.
+3. **Iggy's image.** With `--features swf` each player renders in Ruffle;
+   compositing the image into the back buffer through the D3D11 layer
+   (a texture, a quad, GDraw's premultiplied blend) is not done; the
+   AS3 external calls' answers reach the game but not the movie
+   (`undefined`); the value-path imports (string arrays) are null.
+4. **The `ported!` lists in the table** (above, "One source of truth"):
+   now also the speed-up (96.7 % of the boot's emulated blocks).
 5. Done (2026-10-29): the DLLs' x87 maths is exact (above, "x87"), and
    structured exceptions and C++ `throw`/`catch` dispatch through the SEH
    chain (above, "Exceptions").
 6. **Windows.** The forwarding imports (window, input, files); then the
    D3D11 back end (`src/d3d11.rs`, built and clippy-clean for i686, not
    run yet) gets a real swap chain, and `ffx-rust.exe` is started by the
-   harness in background mode.
+   harness in background mode. FMOD's device output (WASAPI) is the
+   hook's `rust_audio_out.rs`, not shared with `ffx-host` yet; the movie's
+   audio stream is silent.

@@ -1863,8 +1863,14 @@ impl Gfx {
             }
             "Flush" => self.backend.op(&Op::Flush),
             "GetType" | "GetContextFlags" => return Some(0),
-            "SetPredication" | "SetResourceMinLOD" | "DiscardResource" | "DiscardView"
-            | "SOSetTargets" | "Dispatch" | "DispatchIndirect" => {}
+            "SetPredication"
+            | "SetResourceMinLOD"
+            | "DiscardResource"
+            | "DiscardView"
+            | "SOSetTargets"
+            | "Dispatch"
+            | "DispatchIndirect"
+            | "CSSetUnorderedAccessViews" => {}
             "GetResourceMinLOD" => return Some(0),
             m if m.contains("Get") => {
                 // a getter the layer doesn't answer yet: listed

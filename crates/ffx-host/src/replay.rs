@@ -398,3 +398,36 @@ fn pin(e: &mut Exec) -> String {
     }
     pinned.join(", ")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ranges_values_and_buttons_parse_as_the_harness_reads_them() {
+        let r = parse_range("0x01325d94:4").unwrap();
+        assert_eq!((r.addr, r.deref, r.off, r.len), (0x0132_5d94, false, 0, 4));
+        let r = parse_range("*0x023c44e4+0x4d4:16").unwrap();
+        assert_eq!(
+            (r.addr, r.deref, r.off, r.len),
+            (0x023c_44e4, true, 0x4d4, 16)
+        );
+        assert!(parse_range("0x10").is_err());
+        assert_eq!(hex_bytes("6c000000").unwrap(), [0x6c, 0, 0, 0]);
+        // the boot replay's count window: 108..111 match, 112 does not
+        let value = hex_bytes("6c000000").unwrap();
+        let mask = hex_bytes("fcffffff").unwrap();
+        assert!(matches(&111u32.to_le_bytes(), &value, &mask));
+        assert!(!matches(&112u32.to_le_bytes(), &value, &mask));
+        assert_eq!(parse_buttons("start").unwrap(), 0x800);
+        assert_eq!(parse_buttons("cross+up").unwrap(), 0x1040);
+        assert!(parse_buttons("jump").is_err());
+    }
+
+    #[test]
+    fn comments_and_blank_lines_are_not_commands() {
+        let s = Script::new("# a comment\n\nwaitfor 0x10:4 01000000 # why\n  press start 3 0\n");
+        assert_eq!(s.lines, ["waitfor 0x10:4 01000000", "press start 3 0"]);
+        assert!(!s.done());
+    }
+}

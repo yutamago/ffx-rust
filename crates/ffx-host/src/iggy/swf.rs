@@ -171,22 +171,28 @@ fn stage_thread(rx: &Receiver<Req>, done: &Sender<Done>) {
         };
         match req {
             Req::Create(p, swf, size) => {
-                if font.is_none() {
-                    font = GameFont::from_swf(&swf).ok();
-                }
+                // the game's font is `box.swf`'s DefineFont3: a movie whose
+                // font registers keeps it for the others
+                let own = GameFont::from_swf(&swf).ok();
                 if let Some(gpu) = &gpu {
-                    match Stage::new(
-                        gpu,
-                        &swf,
-                        &format!("file:///{p:08x}.swf"),
-                        size,
-                        font.as_ref(),
-                        &Render::default(),
-                    ) {
-                        Ok(s) => {
+                    let url = format!("file:///{p:08x}.swf");
+                    let render = Render::default();
+                    let made = [own.as_ref(), font.as_ref(), None]
+                        .into_iter()
+                        .enumerate()
+                        .find_map(|(i, f)| {
+                            Stage::new(gpu, &swf, &url, size, f, &render)
+                                .ok()
+                                .map(|s| (i, s))
+                        });
+                    match made {
+                        Some((i, s)) => {
+                            if i == 0 {
+                                font = own;
+                            }
                             stages.insert(p, s);
                         }
-                        Err(e) => crate::log::note(&format!("iggy: Ruffle refused {p:#x}: {e}")),
+                        None => crate::log::note(&format!("iggy: Ruffle refused {p:#x}")),
                     }
                 }
             }
