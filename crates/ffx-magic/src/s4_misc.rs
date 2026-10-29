@@ -7,7 +7,7 @@ use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
-use crate::sa_misc::{RESET_TRANSFORM, reset_transform};
+use crate::sa_misc::{RESET_TRANSFORM, RESET_TRANSFORM_3, reset_transform, reset_transform_3};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
 use crate::sb_misc::{
@@ -163,6 +163,42 @@ pub fn start_object_anim<G: Game>(
     let list = [0xa4, 0xb7, 0xbd, 0xc6, 0xd2, 0xdb, 0xe4];
     start_object(g, img, f, obj, scale, index, reset, (0x84, 0x99, list))
 }
+
+/// Starts an effect object (internal: `edx` = the object, `xmm3` its
+/// scale, the stack `(index, owner, a, b)`): [`start_object`] with its
+/// transform reset with three owners ([`reset_transform_3`]: `+0x114` =
+/// `owner`, `+0x11c` = `a`, `+0x100` = `b`). Returns the object.
+///
+/// `magic_0092` 0x100027f0 (240 bytes; 20 DLLs).
+#[allow(clippy::too_many_arguments)] // the original's registers and stack words
+pub fn start_object_owners<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    index: u32,
+    owner: u32,
+    (a, b): (u32, u32),
+) -> u32 {
+    let reset = |g: &mut G| {
+        reset_transform_3(g, obj, owner, a, b);
+    };
+    let list = [0xa7, 0xba, 0xc0, 0xc9, 0xd5, 0xde, 0xe7];
+    start_object(g, img, f, obj, scale, index, reset, (0x84, 0x9c, list))
+}
+
+/// [`start_object_owners`].
+pub const START_OBJECT_OWNERS: Sig = Sig {
+    len: 240,
+    hash: 0x794c_89b3_4294_d9a2,
+    calls: &[
+        (0x84, Callee::Sig(&START_PART)),
+        (0x94, Callee::Sig(&RESET_TRANSFORM_3)),
+        (0x9c, Callee::Sig(&POOL_ALLOC)),
+    ],
+    imports: &[],
+};
 
 /// [`start_object_anim`].
 pub const START_OBJECT_ANIM: Sig = Sig {
