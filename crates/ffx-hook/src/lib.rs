@@ -129,7 +129,7 @@ pub mod log;
 pub mod minimap;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod mods;
-#[cfg(all(windows, target_arch = "x86"))]
+#[cfg(all(windows, target_arch = "x86", feature = "dev-unicorn"))]
 pub mod overlay_emu;
 #[cfg(all(windows, target_arch = "x86"))]
 mod patch;

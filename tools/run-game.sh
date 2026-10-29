@@ -105,6 +105,13 @@ fi
 if [[ -n "${FFX_MAGIC_EMU:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_MAGIC_EMU"
 fi
+# The Rust overlays (crates/ffx-magic, docs/formats/magic.md "Porting the
+# overlays"): FFX_MAGIC_RUST=1 or a comma list of DLL numbers (604,309)
+# answers those DLLs' calls with their ports; it implies FFX_MAGIC_EMU's
+# loader, and code without a port still runs in Unicorn.
+if [[ -n "${FFX_MAGIC_RUST:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_MAGIC_RUST"
+fi
 # The Rust sound engine in place of FMOD (crates/ffx-hook/src/rust_audio.rs,
 # docs/formats/audio-platform.md "The Rust engine in the game").
 if [[ -n "${FFX_RUST_AUDIO:-}" ]]; then

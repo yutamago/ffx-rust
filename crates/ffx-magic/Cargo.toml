@@ -1,0 +1,15 @@
+[package]
+name = "ffx-magic"
+description = "The spell and summon overlays (magic_*.dll) in Rust, behind the DLLs' own interface (docs/formats/magic.md, \"Porting the overlays\")"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ffx-bridge.workspace = true
+ffx-core.workspace = true
+
+[lints]
+workspace = true

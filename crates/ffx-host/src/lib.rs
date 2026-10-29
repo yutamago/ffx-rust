@@ -10,6 +10,12 @@
 //! - [`ports`]: what this crate registers in the table;
 //! - [`report`]: what a run reached, for the log and the tests.
 
+#[cfg(not(feature = "dev-unicorn"))]
+compile_error!(
+    "ffx-host's executor still needs Unicorn (feature `dev-unicorn`): the release build \
+     without it is the stage 4 gate (docs/rewrite-plan.md, M5)"
+);
+
 pub mod arena;
 pub mod com;
 pub mod com_methods;
