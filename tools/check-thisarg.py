@@ -399,7 +399,11 @@ def magic_slots(exe, write):
     if write:
         THIS_SLOTS.write_text(text, encoding="utf-8")
         return 0
-    if not THIS_SLOTS.exists() or THIS_SLOTS.read_text(encoding="utf-8") != text:
+    # (rustfmt may lay the list out differently)
+    def squash(t):
+        return re.sub(r"\s+", "", t).replace(",]", "]")
+
+    if not THIS_SLOTS.exists() or squash(THIS_SLOTS.read_text(encoding="utf-8")) != squash(text):
         print(f"{THIS_SLOTS.relative_to(ROOT)} is out of date: run with --write")
         return 1
     return 0
