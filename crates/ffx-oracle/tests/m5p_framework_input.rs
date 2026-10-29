@@ -2217,3 +2217,243 @@ fn motion_blur_apply_matches_the_original() {
         t.reset();
     }
 }
+
+// ---- batch 6: the application script: commands, parser, dispatcher,
+// loader; the pad's bind ----
+
+use ffx_pother_b::m5p_framework_input_script::{self as scr, bridge as scb};
+
+/// `strcmp` for the dispatcher's tests (0 equal, 1 different).
+const STRCMP: [u8; 31] = [
+    0x8b, 0x4c, 0x24, 0x04, // mov ecx, [esp+4]
+    0x8b, 0x54, 0x24, 0x08, // mov edx, [esp+8]
+    0x8a, 0x01, // l: mov al, [ecx]
+    0x3a, 0x02, // cmp al, [edx]
+    0x75, 0x0b, // jne diff
+    0x84, 0xc0, // test al, al
+    0x74, 0x04, // je eq
+    0x41, // inc ecx
+    0x42, // inc edx
+    0xeb, 0xf2, // jmp l
+    0x31, 0xc0, 0xc3, // eq: xor eax, eax; ret
+    0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, // diff: mov eax, 1; ret
+];
+
+/// A script buffer over `text` (NUL-terminated past its end).
+fn script_buffer(t: &mut Twins, text: &[u8]) -> u32 {
+    let at = t.alloc(&[text, b"\0\0\0\0"].concat());
+    let buf = t.junk(0x30, 0x51);
+    t.w32(buf + 0xc, at);
+    t.w32(buf + 0x10, at + text.len() as u32);
+    buf
+}
+
+#[test]
+fn command_registration_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(scr::ADD_COMMAND, true, 2, 2, 0xad);
+        let proxy = t.junk(0x30, 0x52);
+        t.check(
+            &format!("{label}: register commands"),
+            0x0062_bb60,
+            Conv::Thiscall(proxy),
+            &[],
+            |g| {
+                scb::register_commands(g, proxy);
+                Out::None
+            },
+        );
+        assert_eq!(t.log_entries(), 16);
+        t.reset();
+    }
+}
+
+#[test]
+fn command_parser_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.import_code(0x00b0_c400, &ISSPACE);
+        t.stub(scr::PRINTF, false, 3, 0, 0x7f00);
+        let texts: [&[u8]; 10] = [
+            b"cmd(a b) next(1)",
+            b"  cmd(x)",
+            b"cmd x",
+            b"cmd)(x",
+            b")(",
+            b"",
+            b"#c\n",
+            b"a(b)c d(e)",
+            b"(x)",
+            b"a(b",
+        ];
+        for (i, text) in texts.iter().enumerate() {
+            let buf = script_buffer(&mut t, text);
+            let outs = t.zeros(8);
+            let what = format!("{label}: find next command {i}");
+            t.check(
+                &what,
+                0x0062_76e0,
+                Conv::Thiscall(buf),
+                &[outs, outs + 4],
+                |g| Out::U32(scb::find_next_command(g, buf, outs, outs + 4)),
+            );
+        }
+        // an end before the parentheses: they are not searched past it
+        for cut in [2u32, 4] {
+            let buf = script_buffer(&mut t, b"ab(c)d");
+            let at = t.r32(buf + 0xc);
+            t.w32(buf + 0x10, at + cut);
+            let outs = t.zeros(8);
+            let what = format!("{label}: find next command cut {cut}");
+            t.check(
+                &what,
+                0x0062_76e0,
+                Conv::Thiscall(buf),
+                &[outs, outs + 4],
+                |g| Out::U32(scb::find_next_command(g, buf, outs, outs + 4)),
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn command_dispatch_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.import_code(0x00b0_c400, &ISSPACE);
+        t.import_code(scr::STRICMP_SLOT, &STRCMP);
+        t.import_code(scr::SSCANF_SLOT, &sscanf_code(2));
+        t.stub(scr::PRINTF, false, 4, 0, 0x7f00);
+        // the repeat command's own name, read from the image
+        let repeat_at = t.rebase(scr::REPEAT_NAME);
+        let raw = Oracle::read(&mut t.a, repeat_at, 0x20).unwrap();
+        let repeat: Vec<u8> = raw.iter().copied().take_while(|&b| b != 0).collect();
+        // three commands: the repeat command, "go", "stop"
+        let names: [&[u8]; 3] = [&repeat, b"go", b"stop"];
+        let mut table = Vec::new();
+        for (i, n) in names.iter().enumerate() {
+            let handler = t.stub_code(0x7300 + i as u32, false, 2, 0, 0x30 + i as u32);
+            let mut rec = vec![0u8; 0x48];
+            rec[..4].copy_from_slice(&handler.to_le_bytes());
+            rec[4..4 + n.len()].copy_from_slice(n);
+            table.extend(rec);
+        }
+        let table = t.alloc(&table);
+        let text = [&repeat[..], b"(2) go(1) what(3) stop(4)"].concat();
+        let script = script_buffer(&mut t, &text);
+        t.w32(script + 0x14, table);
+        t.w32(script + 0x18, 3);
+        t.w32(script + 0x20, 0x0077_0000);
+        t.w32(script + 0x24, 0);
+        // the repeat, two repeated runs, go, the unknown, stop, the end
+        for step in 0..8 {
+            t.frame_len = 8;
+            let what = format!("{label}: execute step {step}");
+            t.check_frame(&what, 0x0062_7480, Conv::Thiscall(script), &[], 0x10, |g| {
+                let frame = g.1;
+                Out::U32(scb::execute_next(g, script, frame))
+            });
+        }
+        // an empty table: a pending repeat finds nothing, a command is unknown
+        let bare = script_buffer(&mut t, b"go(1) junk");
+        t.w32(bare + 0x18, 0);
+        for pending in [1u32, 0, 0] {
+            t.w32(bare + 0x24, pending);
+            t.frame_len = 8;
+            let what = format!("{label}: execute bare {pending}");
+            t.check_frame(&what, 0x0062_7480, Conv::Thiscall(bare), &[], 0x10, |g| {
+                let frame = g.1;
+                Out::U32(scb::execute_next(g, bare, frame))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn script_loader_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(scr::READER_CTOR, true, 1, 1, 0x1c);
+        t.stub(scr::FILE_CLOSE, true, 0, 0, 0xc1);
+        t.stub(scr::READER_DTOR, true, 0, 0, 0xd1);
+        t.stub(scr::PRINTF, false, 3, 0, 0x7f00);
+        for (open, read) in [(0x100u32, 0u32), (1, 0), (1, 3)] {
+            t.stub(scr::READER_IS_OPEN, true, 0, 0, open);
+            // the read fills the array: 0x10 bytes, borrowed, at 0x6100
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+            c.extend([0xc7, 0x00]);
+            c.extend(0x8000_0010u32.to_le_bytes()); // mov [eax], count
+            c.extend([0xc7, 0x40, 0x04]);
+            c.extend(0x6100u32.to_le_bytes()); // mov [eax+4], data
+            c.push(0xb8);
+            c.extend(read.to_le_bytes()); // mov eax, read
+            c.extend([0xc2, 0x08, 0x00]); // ret 8
+            let code = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+            let at = t.rebase(scr::READER_READ_ALL);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            let buf = t.junk(0x30, 0x53);
+            t.w32(buf + 4, 0x8000_0010);
+            t.w32(buf + 8, 0x6100);
+            let what = format!("{label}: script loader {open:#x} {read}");
+            t.check_frame(
+                &what,
+                0x0061_fc20,
+                Conv::Thiscall(buf),
+                &[0x6200],
+                0x38,
+                |g| {
+                    let reader = g.1;
+                    Out::U32(scb::buffer_ctor(g, buf, 0x6200, reader))
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn pad_bind_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let pad = t.junk(0x400, 0x54);
+        let list = pad + 0xc;
+        t.w32(list, list);
+        t.w32(list + 4, list);
+        for id in [
+            0u32,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            0xa,
+            0xb,
+            0x10,
+            0x1a,
+            0x1b,
+            0x20,
+            0xffff_ffff,
+        ] {
+            for bound in [false, true] {
+                let mapping = t.junk(0x30, 0x55);
+                t.w32(mapping + 8, u32::from(bound));
+                let what = format!("{label}: pad bind {id:#x} {bound}");
+                t.check(
+                    &what,
+                    0x0062_5dd0,
+                    Conv::Thiscall(pad),
+                    &[mapping, id],
+                    |g| Out::U32(scb::pad_bind(g, pad, mapping, id)),
+                );
+            }
+        }
+    }
+}

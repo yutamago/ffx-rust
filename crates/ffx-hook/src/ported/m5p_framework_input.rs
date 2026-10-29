@@ -14,6 +14,7 @@ use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_app::bridge as ab;
 use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as db};
 use ffx_pother_b::m5p_framework_input_misc::bridge as mb;
+use ffx_pother_b::m5p_framework_input_script::bridge as sb6;
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
 use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
 use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
@@ -591,5 +592,29 @@ ported! {
     /// `Phyre_PPostProcessing_PMotionBlur_apply_00a21c40`: the blur's set-up and apply; its `eax`, 5 or 0x15.
     Phyre_PPostProcessing_PMotionBlur_apply_00a21c40 @ 0x00a2_1c40 => extern "thiscall" fn ms_00a21c40(this: u32, a: u32, b: u32, target: u32, d: u32, _e: u32) -> u32 {
         mb::motion_blur_apply(&mut mem(), this, [a, b, target, d])
+    }
+    /// `Phyre_PFramework_PApplicationScriptBuffer_PApplicationScriptBuffer`: the script file read into the buffer through a stack `PStreamReaderFile`; `this`.
+    Phyre_PFramework_PApplicationScriptBuffer_PApplicationScriptBuffer @ 0x0061_fc20 => extern "thiscall" fn sc_0061fc20(this: u32, path: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let reader = frame.at();
+        sb6::buffer_ctor(&mut mem(), this, path, reader)
+    }
+    /// `PInputDevicePad_bind`: a button or axis id bound to the mapping; 0, 5 or 0x12.
+    PInputDevicePad_bind @ 0x0062_5dd0 => extern "thiscall" fn sc_00625dd0(this: u32, mapping: u32, id: u32) -> u32 {
+        sb6::pad_bind(&mut mem(), this, mapping, id)
+    }
+    /// `Phyre_PFramework_PApplicationScript_executeNextCommand`: a pending repeat, the repeat count, a known command's handler, or 0x11.
+    Phyre_PFramework_PApplicationScript_executeNextCommand @ 0x0062_7480 => extern "thiscall" fn sc_00627480(this: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let at = frame.at();
+        sb6::execute_next(&mut mem(), this, at)
+    }
+    /// `Phyre_PFramework_PApplicationScriptBuffer_findNextCommand`: the next `name(args)`; `al` 1 when well formed.
+    Phyre_PFramework_PApplicationScriptBuffer_findNextCommand @ 0x0062_76e0 => extern "thiscall" fn sc_006276e0(this: u32, name: u32, args: u32) -> u32 {
+        sb6::find_next_command(&mut mem(), this, name, args)
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands`: the sixteen commands added in order.
+    Phyre_PFramework_PApplicationScriptProxy_registerScriptCommands @ 0x0062_bb60 => extern "thiscall" fn sc_0062bb60(this: u32) {
+        sb6::register_commands(&mut mem(), this);
     }
 }
