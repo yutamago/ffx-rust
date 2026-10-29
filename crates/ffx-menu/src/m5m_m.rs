@@ -1204,4 +1204,245 @@ pub mod bridge {
         }
         r
     }
+
+    // ---- batch 5: the battle debug windows' slider callbacks ----
+
+    /// `f64` 0.1, pi (as `f32`) and 180 (`.rdata`).
+    pub const TENTH: u32 = 0x00b5_51e0;
+    pub const PI_F64: u32 = 0x00b9_2288;
+    pub const DEG_180: u32 = 0x00b4_8378;
+    pub const MS_DEBUG_GET_CAMERA_MODE: u32 = 0x007c_fb20;
+    pub const ATEL_GET_TOTAL_ACTOR_NUMBER2: u32 = 0x0086_c510;
+    /// `g_DebugCameraKeepAngleDeg` (`0x0113ed78`, name ours): the angle the
+    /// camera window shows.
+    pub const KEEP_ANGLE_DEG: u32 = 0x0113_ed78;
+
+    fn f64_at(h: &impl Host, sym: u32) -> f64 {
+        h.read(h.rebase(sym))
+    }
+
+    fn f32_at(h: &impl Host, p: u32) -> f64 {
+        ffx_bridge::x87::load(h.read(p))
+    }
+
+    /// `x` to an `f32` through `fild dword` after `_ftol2_sse`: the value
+    /// truncated, then rounded to `f32`; returns the integer too.
+    fn trunc_f32(h: &impl Host, x: f64) -> (u32, u32) {
+        let i = ffx_bridge::x87::ftol(h, x);
+        (i, ffx_bridge::x87::store(f64::from(i.cast_signed())))
+    }
+
+    /// The step `f32(field -/+ p * 0.1)` at `p`'s field `+o` (`fsubp` /
+    /// `fadd`).
+    fn step_tenth(h: &mut impl Host, obj: u32, o: u32, p: u32, sub: bool) {
+        use ffx_bridge::x87;
+        let d = x87::mul(x87::load(p), f64_at(h, TENTH));
+        let f = f32_at(h, at(obj, o));
+        let v = if sub { x87::sub(f, d) } else { x87::add(d, f) };
+        h.write(at(obj, o), x87::store(v));
+    }
+
+    /// `MsDebugSliderXyz_007d6dc0(obj, id, p)` / `MsDebugSliderXyz_007dabc0`
+    /// (names ours; a debug window's slider callback): ids 0x27..0x2c
+    /// step `+0x30`, `+0x34`, `+0x38` by `-/+ p * 0.1`; 0x33 truncates
+    /// the three to integers (`_ftol2_sse`, the arguments' second slot
+    /// holding the last). Returns `eax` as the original leaves it (`obj`,
+    /// the last integer, or `id - 0x27`).
+    pub fn slider_xyz(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        let k = id.wrapping_sub(0x27);
+        match k {
+            0..=5 => {
+                step_tenth(h, obj, 0x30 + (k / 2) * 4, p, k.is_multiple_of(2));
+                obj
+            }
+            0xc => {
+                let mut eax = 0;
+                for o in [0x30u32, 0x34, 0x38] {
+                    let (i, f) = trunc_f32(h, f32_at(h, at(obj, o)));
+                    h.write(at(slots, 4), i);
+                    h.write(at(obj, o), f);
+                    eax = i;
+                }
+                eax
+            }
+            _ => k,
+        }
+    }
+
+    /// `MsDebugSliderCamera_007d0af0(obj, id, p)` (name ours): ids
+    /// 0x27..0x2a step the angles `+0x40`, `+0x44` by `-/+ p * 0.1 * pi /
+    /// 180`, 0x2b..0x2e step `+0x48`, `+0x4c` by `-/+ p * 0.1`; 0x33 rounds
+    /// the angles to whole degrees and `+0x48`, `+0x4c` to integers (the
+    /// arguments' second slot holding each). Returns `eax` as left.
+    pub fn slider_camera(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let k = id.wrapping_sub(0x27);
+        let pi = f64_at(h, PI_F64);
+        let deg = f64_at(h, DEG_180);
+        match k {
+            0..=3 => {
+                let o = 0x40 + (k / 2) * 4;
+                let d = x87::div(x87::mul(x87::mul(x87::load(p), f64_at(h, TENTH)), pi), deg);
+                let f = f32_at(h, at(obj, o));
+                let v = if k.is_multiple_of(2) {
+                    x87::sub(f, d)
+                } else {
+                    x87::add(d, f)
+                };
+                h.write(at(obj, o), x87::store(v));
+                obj
+            }
+            4..=7 => {
+                step_tenth(h, obj, 0x48 + ((k - 4) / 2) * 4, p, k.is_multiple_of(2));
+                obj
+            }
+            0xc => {
+                for o in [0x40u32, 0x44] {
+                    let x = x87::div(x87::mul(f32_at(h, at(obj, o)), deg), pi);
+                    let (i, f) = trunc_f32(h, x);
+                    h.write(at(slots, 4), f);
+                    let _ = i;
+                    let v = x87::div(x87::mul(x87::load(f), pi), deg);
+                    h.write(at(obj, o), x87::store(v));
+                }
+                let mut eax = 0;
+                for o in [0x48u32, 0x4c] {
+                    let (i, f) = trunc_f32(h, f32_at(h, at(obj, o)));
+                    h.write(at(slots, 4), i);
+                    h.write(at(obj, o), f);
+                    eax = i;
+                }
+                eax
+            }
+            _ => k,
+        }
+    }
+
+    /// `MsDebugSliderKeepAngle_007d6470(obj, id, p)` (name ours): 0x27 /
+    /// 0x28 step the angle `+0x40` by `-/+ p * 0.1 * pi / 180` and show it
+    /// in degrees (`0x0113ed78`); 0x33 rounds it to whole degrees.
+    /// Returns `eax` as left (`obj`, the integer, or `id - 0x33`).
+    pub fn slider_keep_angle(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let pi = f64_at(h, PI_F64);
+        let deg = f64_at(h, DEG_180);
+        match id {
+            0x27 | 0x28 => {
+                let d = x87::div(x87::mul(x87::mul(x87::load(p), f64_at(h, TENTH)), pi), deg);
+                let f = f32_at(h, at(obj, 0x40));
+                let v = if id == 0x27 {
+                    x87::sub(f, d)
+                } else {
+                    x87::add(d, f)
+                };
+                let v = x87::store(v);
+                h.write(at(slots, 4), v);
+                h.write(at(obj, 0x40), v);
+                let shown = x87::div(x87::mul(deg, x87::load(v)), pi);
+                h.write(h.rebase(KEEP_ANGLE_DEG), x87::store(shown));
+                obj
+            }
+            0x33 => {
+                let x = x87::div(x87::mul(f32_at(h, at(obj, 0x40)), deg), pi);
+                let (i, f) = trunc_f32(h, x);
+                h.write(at(slots, 4), f);
+                let v = x87::div(x87::mul(pi, x87::load(f)), deg);
+                h.write(at(obj, 0x40), x87::store(v));
+                i
+            }
+            _ => id.wrapping_sub(0x33),
+        }
+    }
+
+    /// `MsDebugSliderActors_007d95e0(obj, id, p, flags)` (name ours): the
+    /// actor indices `i16 +0xc` / `+0xe` stepped by `-/+ (int) p` (ids
+    /// 0x27..0x2a), the `f32 +0x34` by `-/+ p * 0.1` (0x2b, 0x2c) or
+    /// truncated (0x33; the flags' slot holding it); then both indices
+    /// clamped to `-1 ..= n - 1` (`n` 0x1f with flags `0x50000`, else
+    /// `AtelGetTotalActorNumber2()`, at least 1). Returns `eax` as left.
+    pub fn slider_actors(
+        h: &mut impl Host,
+        obj: u32,
+        id: u32,
+        p: u32,
+        flags: u32,
+        slots: u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let n = if flags & 0xf_0000 == 0x5_0000 {
+            0x1f
+        } else {
+            let n = cdecl(h, ATEL_GET_TOTAL_ACTOR_NUMBER2, &[]) as i32;
+            if n > 0 { n } else { 1 }
+        };
+        let k = id.wrapping_sub(0x27);
+        match k {
+            0..=3 => {
+                let i = x87::ftol(h, x87::load(p)) as u16;
+                let o = if k < 2 { 0xc } else { 0xe };
+                let v: u16 = h.read(at(obj, o));
+                let v = if k.is_multiple_of(2) {
+                    v.wrapping_sub(i)
+                } else {
+                    v.wrapping_add(i)
+                };
+                h.write(at(obj, o), v);
+            }
+            4 | 5 => step_tenth(h, obj, 0x34, p, k == 4),
+            0xc => {
+                let (i, f) = trunc_f32(h, f32_at(h, at(obj, 0x34)));
+                h.write(at(slots, 0xc), i);
+                h.write(at(obj, 0x34), f);
+            }
+            _ => {}
+        }
+        let mut eax = 0;
+        for o in [0xcu32, 0xe] {
+            if h.read::<i16>(at(obj, o)) < -1 {
+                h.write(at(obj, o), 0xffffu16);
+            }
+            eax = i32::from(h.read::<i16>(at(obj, o)));
+            if eax >= n {
+                eax = n - 1;
+                h.write(at(obj, o), eax as u16);
+            }
+        }
+        eax as u32
+    }
+
+    /// `MsDebugKeepWindows_007d71d0(all)` (name ours): the 32 debug
+    /// windows of the camera keeps: shown (`+0x21`) for kept ones while
+    /// the debugger is on (`0x01139eec`) and `all` or the camera mode is
+    /// 8 or 9 (`MsDebugGetCameraMode(1)`), the current one orange, the
+    /// rest green (`+0x28..+0x30`), at the keep's position. Returns the
+    /// last window.
+    pub fn debug_keep_windows(h: &mut impl Host, all: u32) -> u32 {
+        let n = CAMERA_KEEP_COUNT.get(h);
+        let mode = cdecl(h, MS_DEBUG_GET_CAMERA_MODE, &[1]);
+        let wins = h.rebase(DEBUG_WINDOWS);
+        let keeps = h.rebase(CAMERA_KEEPS);
+        let on: u32 = h.read(h.rebase(0x0113_9eec));
+        let mut w = 0;
+        for i in 0..32u32 {
+            let show = (i as i32) < n && on != 0 && (all != 0 || mode == 8 || mode == 9);
+            w = h.read(at(wins, i * 4));
+            h.write(at(w, 0x21), u8::from(show));
+            let cur = CAMERA_KEEP_CUR.get(h);
+            let colour = if i == cur {
+                [0xd6u32, 0x8c, 0x40]
+            } else {
+                [0x80, 0xd4, 0x86]
+            };
+            for (j, c) in colour.into_iter().enumerate() {
+                w = h.read(at(wins, i * 4));
+                h.write(at(w, 0x28 + 4 * j as u32), c);
+            }
+            for j in 0..3u32 {
+                w = h.read(at(wins, i * 4));
+                let v: u32 = h.read(at(keeps, i * 0x30 + 4 * j));
+                h.write(at(w, 4 * j), fcopy(v));
+            }
+        }
+        w
+    }
 }

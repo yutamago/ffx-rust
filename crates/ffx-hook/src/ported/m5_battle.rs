@@ -442,4 +442,29 @@ ported! {
     MenuBtlEnd_Step_008be1d0 @ 0x008b_e1d0 => extern "C" fn menu_btl_end_step() -> u32 {
         mm::btl_end_menu_step(&mut mem())
     }
+    // ---- round 4 (menu-battle-script 2), batch 5 (ffx_menu::m5m_m) ----
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderCamera_007d0af0 @ 0x007d_0af0 => extern "C" fn ms_debug_slider_camera(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_camera(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word.
+    MsDebugSliderKeepAngle_007d6470 @ 0x007d_6470 => extern "C" fn ms_debug_slider_keep_angle(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_keep_angle(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderXyz_007d6dc0 @ 0x007d_6dc0 => extern "C" fn ms_debug_slider_xyz_6dc0(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_xyz(&mut mem(), obj, id, p, slots)
+    }
+    /// `(all)`: the keep windows.
+    MsDebugKeepWindows_007d71d0 @ 0x007d_71d0 => extern "C" fn ms_debug_keep_windows(all: u32) -> u32 {
+        mm::debug_keep_windows(&mut mem(), all)
+    }
+    /// `(obj, id, p, flags)`: writes the caller's `flags` word on 0x33.
+    MsDebugSliderActors_007d95e0 @ 0x007d_95e0 => extern "C" fn ms_debug_slider_actors(obj: u32, id: u32, p: u32, flags: u32; slots: u32) -> u32 {
+        mm::slider_actors(&mut mem(), obj, id, p, flags, slots)
+    }
+    /// `(obj, id, p)`: as 0x007d6dc0.
+    MsDebugSliderXyz_007dabc0 @ 0x007d_abc0 => extern "C" fn ms_debug_slider_xyz_abc0(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_xyz(&mut mem(), obj, id, p, slots)
+    }
 }

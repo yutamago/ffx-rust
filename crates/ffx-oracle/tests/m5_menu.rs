@@ -5466,3 +5466,118 @@ fn r4b4_btl_end_menu_step_matches_the_original() {
         }
     });
 }
+
+// ---- round 4, batch 5 (ffx_menu::m5m_m, the battle debug sliders) ----
+
+/// A slider's object: floats at `+0x30..+0x4c`, indices at `+0xc`/`+0xe`.
+fn slider_object(t: &mut Twins, rng: &mut Rng, i: u32) -> u32 {
+    let mut o = vec![0u8; 0x50];
+    for k in (0x30..0x50).step_by(4) {
+        let v: f32 = match (i + k as u32) % 4 {
+            0 => rng.below(2000) as f32 / 7.0 - 140.0,
+            1 => (rng.below(720) as f32 - 360.0) * 0.017_453_3,
+            2 => rng.below(1_000_000) as f32 * 3.3,
+            _ => -(rng.below(5000) as f32) / 3.0,
+        };
+        o[k..k + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+    }
+    for k in [0xcusize, 0xe] {
+        let v = rng.below(40) as i16 - 4;
+        o[k..k + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    t.alloc(&o)
+}
+
+#[test]
+fn r4b5_debug_sliders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0501);
+        // the CRT's SSE2 flag both ways (the image has not run its start-up)
+        for sse in [0u32, 1] {
+            t.g32(0x0193_ed20, sse);
+            for id in 0x25..0x36u32 {
+                for k in 0..6u32 {
+                    t.reset();
+                    let obj = slider_object(t, &mut rng, k);
+                    let p = match k % 3 {
+                        0 => (rng.below(100) as f32 / 3.0).to_bits(),
+                        1 => (-(rng.below(1000) as f32)).to_bits(),
+                        _ => 2.5f32.to_bits(),
+                    };
+                    let flags = match k % 3 {
+                        0 => 0x5_0000,
+                        1 => 0x7_0000 | (rng.next() & 0xfff0_ffff),
+                        _ => rng.next() & 0xfff0_ffff,
+                    };
+                    t.stub(
+                        mm::ATEL_GET_TOTAL_ACTOR_NUMBER2,
+                        false,
+                        0,
+                        0,
+                        [0u32, 3, 0x40, 0xffff_ffff][(k / 2) as usize % 4],
+                    );
+                    let args = [obj, id, p, flags];
+                    for (sym, n) in [
+                        (0x007d_6dc0u32, 3usize),
+                        (0x007d_abc0, 3),
+                        (0x007d_0af0, 3),
+                        (0x007d_6470, 3),
+                        (0x007d_95e0, 4),
+                    ] {
+                        let slots = t.arg_slots(&args[..n]);
+                        t.check(
+                            &format!("slider {sym:#x} id {id:#x} #{k} sse {sse}"),
+                            sym,
+                            Conv::Cdecl,
+                            &args[..n],
+                            |m| {
+                                Out::U32(match sym {
+                                    0x007d_0af0 => mm::slider_camera(m, obj, id, p, slots),
+                                    0x007d_6470 => mm::slider_keep_angle(m, obj, id, p, slots),
+                                    0x007d_95e0 => mm::slider_actors(m, obj, id, p, flags, slots),
+                                    _ => mm::slider_xyz(m, obj, id, p, slots),
+                                })
+                            },
+                        );
+                        t.same_slots(&format!("slider {sym:#x} id {id:#x}"), slots, n);
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b5_debug_keep_windows_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0502);
+        for i in 0..24u32 {
+            t.reset();
+            let wins: Vec<u8> = (0..0x40 * 32).map(|_| rng.next() as u8).collect();
+            let wins = t.alloc(&wins);
+            for k in 0..32u32 {
+                t.g32(0x0113_ec98 + 4 * k, wins + 0x40 * k);
+            }
+            // finite floats: the emulator keeps signalling NaNs the CPU quiets
+            let keeps: Vec<u8> = (0..0xc * 32)
+                .flat_map(|_| ((rng.next() & 0x3fff_ffff) | 0x0080_0000).to_le_bytes())
+                .collect();
+            let at = t.rebase(0x0113_ed8c);
+            t.write(at, &keeps);
+            t.g32(0x0113_ed7c, [0u32, 5, 32, 40][i as usize % 4]);
+            t.g32(0x0113_ed5c, rng.below(34));
+            t.g32(0x0113_9eec, rng.below(2));
+            t.stub(
+                mm::MS_DEBUG_GET_CAMERA_MODE,
+                false,
+                1,
+                0,
+                [7u32, 8, 9, 0][(i / 4) as usize % 4],
+            );
+            let all = rng.below(2);
+            t.check("keep windows", 0x007d_71d0, Conv::Cdecl, &[all], |m| {
+                Out::U32(mm::debug_keep_windows(m, all))
+            });
+        }
+    });
+}
