@@ -3482,3 +3482,130 @@ fn m5p_scene_m_lod_level_strings() {
         tw.unstub();
     }
 }
+
+// ---- batch 14 (ffx_prender::m5p_scene_n) ----
+
+use ffx_prender::m5p_scene_n as sn;
+
+/// The plane test over random matrices and points (specials included),
+/// and points on the planes (results of exactly 0 and -0).
+#[test]
+fn m5p_scene_n_planes_below() {
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(81);
+        for round in 0..200 {
+            let planes = tw.alloc(&float_words(&mut rng, 16));
+            let point = tw.alloc(&float_words(&mut rng, 3));
+            let label = format!("{what} planes below {round}");
+            tw.run(&label, 0x009f_2890, Conv::Cdecl, &[planes, point], |g| {
+                sn::bridge::planes_below(g, planes, point)
+            });
+        }
+        // on the planes: x = 1, the first row 1, the last row 1 (0), and
+        // a negative zero from -0 * 1 - 0
+        let planes = tw.alloc(
+            &[
+                1.0f32, -0.0, 2.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 3.0,
+                -2.0,
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect::<Vec<_>>(),
+        );
+        let point = tw.alloc(
+            &[1.0f32, 5.0, 7.0]
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let label = format!("{what} planes below, on the planes");
+        let r = tw.run(&label, 0x009f_2890, Conv::Cdecl, &[planes, point], |g| {
+            sn::bridge::planes_below(g, planes, point)
+        });
+        assert_eq!(r, 0x0001_0000, "{label}");
+        // the sums' order and rounding decide the sign: plane 0 is
+        // (1e8 - 1e8) + 0.5 - 0.25 (above; summed the other way round it
+        // would be below), plane 1 is 1 - 1.0000001 (below; one extra
+        // rounding step up would make it 0)
+        let planes = tw.alloc(
+            &[
+                1.0e8f32,
+                1.0,
+                0.0,
+                0.0,
+                -1.0e8,
+                0.0,
+                0.0,
+                0.0,
+                0.5,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                1.000_000_1,
+                0.0,
+                0.0,
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect::<Vec<_>>(),
+        );
+        let point = tw.alloc(
+            &[1.0f32, 1.0, 1.0]
+                .iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let label = format!("{what} planes below, rounding");
+        let r = tw.run(&label, 0x009f_2890, Conv::Cdecl, &[planes, point], |g| {
+            sn::bridge::planes_below(g, planes, point)
+        });
+        assert_eq!(r, 0x0000_0100, "{label}");
+    }
+}
+
+/// A joint's world matrix over a skeleton of five joints (a chain 4 -> 2
+/// -> 0 and a root 1, 3 -> 1), random local and world matrices, the
+/// world applied or not; joints past the count.
+#[test]
+fn m5p_scene_n_joint_world() {
+    for (what, mut tw) in Twins::all() {
+        let frame = tw.b.stack_range().start + 0x1000;
+        let mut rng = Rng(91);
+        let parents = tw.alloc(
+            &[u32::MAX, u32::MAX, 0, 1, 2]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let skel = tw.zeros(0x40);
+        tw.w32(skel + 0x2c, parents);
+        let this = tw.zeros(0x80);
+        tw.w32(this, skel);
+        let out = tw.zeros(0x40);
+        for round in 0..6 {
+            let mats = tw.alloc(&float_words(&mut rng, 16 * 5));
+            let world = tw.alloc(&float_words(&mut rng, 12));
+            tw.w32(this + 0xc, mats);
+            tw.w32(this + 4, world);
+            for count in [5, 0x8000_0005, 3] {
+                tw.w32(skel + 0x18, count);
+                for flags in [0, 1, 2] {
+                    tw.w32(this + 0x6c, flags);
+                    for joint in [0, 1, 3, 4, 5, 0x8000_0000] {
+                        let label = format!(
+                            "{what} joint world {round} joint {joint:#x} count {count:#x} flags {flags}"
+                        );
+                        tw.run(
+                            &label,
+                            0x004f_71e0,
+                            Conv::Thiscall(this),
+                            &[out, joint],
+                            |g| sn::bridge::joint_world(g, this, out, joint, frame),
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
