@@ -9,6 +9,7 @@
 //! `StackFrame`s.
 
 use super::{StackFrame, mem, ported};
+use ffx_sg::m5main3_cam::bridge as cam;
 use ffx_sg::m5main3_cd::bridge as cd;
 use ffx_sg::m5main3_gu::bridge as gu;
 use ffx_sg::m5main3_menu::bridge as menu;
@@ -97,5 +98,61 @@ ported! {
     /// `(camera, width, height, view)`: the movie viewer's projection.
     MovieViewer_Camera_00a43e60 @ 0x00a4_3e60 => extern "C" fn movie_camera(camera: u32, width: u32, height: u32, view: u32) {
         misc::movie_camera(&mut mem(), camera, width, height, view);
+    }
+
+    // ---- batch 2 ----
+    /// `(window, msg, id, spin)`: a spin control's arrows.
+    Gu_SpinMsg_00851b20 @ 0x0085_1b20 => extern "C" fn spin_msg(window: u32, msg: u32, id: u32, spin: u32) -> u32 {
+        menu::spin_msg(&mut mem(), window, msg, id, spin)
+    }
+    /// `(window, spin, x, y, h, label, w, wv)`: a spin control's row.
+    Gu_SpinAdd_00851c70 @ 0x0085_1c70 => extern "C" fn spin_add(window: u32, spin: u32, x: u32, y: u32, hh: u32, label: u32, w: u32, wv: u32) -> u32 {
+        menu::spin_add(&mut mem(), window, spin, x, y, hh, label, w, wv)
+    }
+    /// `(window, msg, id)` -> 0: the mouth window.
+    Gui_MouthProc_00851e70 @ 0x0085_1e70 => extern "C" fn mouth_proc(window: u32, msg: u32, id: u32) -> u32 {
+        menu::mouth_proc(&mut mem(), window, msg, id)
+    }
+    /// `(window, msg, id)` -> 0: the physics window.
+    Gui_PhysicsProc_00852080 @ 0x0085_2080 => extern "C" fn physics_proc(window: u32, msg: u32, id: u32; slots: u32) -> u32 {
+        menu::physics_proc(&mut mem(), window, msg, id, slots)
+    }
+    /// `(window, msg, id; slots)` -> 0: the shadow window; the colour
+    /// goes through the caller's `msg` word and the frame.
+    Gui_ShadowProc_008523e0 @ 0x0085_23e0 => extern "C" fn shadow_proc(window: u32, msg: u32, id: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<{ menu::SHADOW_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + menu::SHADOW_FRAME;
+        menu::shadow_proc(&mut mem(), window, msg, id, slots, ebp)
+    }
+    /// `()`: the camera onto the selected point.
+    CamDebug_RectFromPoint_00941a30 @ 0x0094_1a30 => extern "C" fn cam_rect_from_point() -> u32 {
+        let mut f = StackFrame::<9>::new();
+        let ebp = f.at() + 0x24;
+        cam::rect_from_point(&mut mem(), ebp)
+    }
+    /// `()`: the current list's points as `.float` lines.
+    CamDebug_DumpPoints_00941ae0 @ 0x0094_1ae0 => extern "C" fn cam_dump_points() -> u32 {
+        cam::dump_points(&mut mem())
+    }
+    /// `()`: the camera keeps its position, takes the point's y.
+    CamDebug_RectKeepY_00942060 @ 0x0094_2060 => extern "C" fn cam_rect_keep_y() -> u32 {
+        let mut f = StackFrame::<9>::new();
+        let ebp = f.at() + 0x24;
+        cam::rect_keep_y(&mut mem(), ebp)
+    }
+    /// `()`: the current list written to the path file.
+    CamDebug_WritePoints_00942140 @ 0x0094_2140 => extern "C" fn cam_write_points() {
+        let mut f = StackFrame::<3>::new();
+        let ebp = f.at() + 0xc;
+        cam::write_points(&mut mem(), ebp);
+    }
+    /// `(dst, m, v)` -> `rcuiCopyVector`'s `eax`.
+    CamDebug_MatVec_00942260 @ 0x0094_2260 => extern "C" fn cam_mat_vec(dst: u32, m: u32, v: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        cam::mat_vec(&mut mem(), dst, m, v, f.at())
+    }
+    /// `set_path_name(window, ms, controls, page)`.
+    set_path_name @ 0x0094_2360 => extern "C" fn set_path_name(window: u32, ms: u32, controls: u32, page: u32) {
+        cam::set_path_name(&mut mem(), window, ms, controls, page);
     }
 }

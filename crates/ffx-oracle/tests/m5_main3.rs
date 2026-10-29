@@ -10,6 +10,7 @@
 
 #![allow(
     clippy::cast_precision_loss,
+    clippy::too_many_lines,
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
@@ -790,6 +791,499 @@ fn deci2_callback_matches_the_original() {
             t.check(&what, 0x0084_ed10, Conv::Cdecl, &[event, n, req], |m| {
                 Out::U32(misc::deci2_callback(m, event, n, req))
             });
+        }
+    });
+}
+
+// ---- the spin controls and the character windows ----
+
+fn spin_block(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let up = rng.pick(&[3u32, 0xd]);
+    let w = [
+        u32::from_le_bytes([
+            rng.below(2) as u8,
+            rng.below(2) as u8,
+            rng.below(2) as u8,
+            0x77,
+        ]),
+        rng.pick(&[1, 5, 0xffff_ffff, 0]),
+        rng.pick(&[1, 0xffff_ffff, 2]),
+        rng.pick(&[10, 0xffff_ffff, 3]),
+        up,
+        up + 5,
+        up + 10,
+        rng.pick(&[0, 0x00b0_f604]),
+        rng.pick(&[0, 5, 299, 300, 301, 0xffff_fffe, 100, 0xffff_ffff]),
+        rng.pick(&[300, 0xff, 0x168, 0, 7, 0xffff_fff0]),
+        rng.pick(&[0, 1, 0xffff_ffff, 400, 0x168]),
+        rng.pick(&[0, 1, 2, 10]),
+    ];
+    t.words(&w)
+}
+
+#[test]
+fn spin_control_matches_the_original() {
+    let mut rng = Rng(0x0085_1b20);
+    Twins::each(|t| {
+        for k in 0..300 {
+            t.reset();
+            t.stub(menu::CONTROL_SET_TEXTF, false, 4, 0, 0xa1);
+            let sp = spin_block(t, &mut rng);
+            let up: u32 = ffx_bridge::Mem::read(&t.a, sp + 0x10);
+            let id = rng.pick(&[up, up + 5, up + 1, 0]);
+            let msg = 0x8000 + rng.below(0x14);
+            let what = format!("spin {k} msg {msg:#x} id {id}");
+            t.check(
+                &what,
+                0x0085_1b20,
+                Conv::Cdecl,
+                &[0xab00, msg, id, sp],
+                |m| Out::U32(menu::spin_msg(m, 0xab00, msg, id, sp)),
+            );
+        }
+        // a press below 0 that wraps (minimum -1): -1 becomes max - 1
+        for value in [0u32, 1] {
+            t.reset();
+            t.stub(menu::CONTROL_SET_TEXTF, false, 4, 0, 0xa1);
+            let sp = t.words(&[1, 1, 1, 1, 3, 8, 13, 0, value, 7, 0xffff_ffff, 0]);
+            let what = format!("spin wrap {value}");
+            t.check(
+                &what,
+                0x0085_1b20,
+                Conv::Cdecl,
+                &[0xab00, 0x8005, 8, sp],
+                |m| Out::U32(menu::spin_msg(m, 0xab00, 0x8005, 8, sp)),
+            );
+        }
+        // a press past the maximum, clamped (minimum below maximum)
+        for (value, min, max) in [
+            (300u32, 0u32, 300u32),
+            (5, 4, 5),
+            (0xffff_fffe, 0xffff_fffd, 0xffff_ffff),
+        ] {
+            t.reset();
+            t.stub(menu::CONTROL_SET_TEXTF, false, 4, 0, 0xa1);
+            let sp = t.words(&[1, 1, 1, 1, 3, 8, 13, 0, value, max, min, 0]);
+            let what = format!("spin clamp {value:#x}");
+            t.check(
+                &what,
+                0x0085_1b20,
+                Conv::Cdecl,
+                &[0xab00, 0x8005, 3, sp],
+                |m| Out::U32(menu::spin_msg(m, 0xab00, 0x8005, 3, sp)),
+            );
+        }
+        for k in 0..8 {
+            t.reset();
+            t.stubs(&[
+                (menu::WINDOW_ADD_STATIC, 7, 0xb1),
+                (menu::WINDOW_ADD_BUTTON, 7, 0xb2),
+                (menu::CONTROL_SET_TEXTF, 4, 0xb3),
+            ]);
+            let sp = spin_block(t, &mut rng);
+            let a = [
+                0xab00,
+                sp,
+                rng.below(0x50),
+                rng.below(0x50),
+                10,
+                0x5500,
+                rng.below(0x30),
+                0x28,
+            ];
+            let what = format!("spin add {k}");
+            t.check(&what, 0x0085_1c70, Conv::Cdecl, &a, |m| {
+                Out::U32(menu::spin_add(
+                    m, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+                ))
+            });
+        }
+    });
+}
+
+#[test]
+fn mouth_and_physics_windows_match_the_original() {
+    let mut rng = Rng(0x0085_1e70);
+    Twins::each(|t| {
+        let msgs: Vec<(u32, u32)> = [(0x8001, 0), (0x8003, 0), (0x8011, 0), (0x8002, 1)]
+            .into_iter()
+            .chain((0..9).map(|id| (0x8007, id)))
+            .collect();
+        for &(msg, id) in &msgs {
+            t.reset();
+            t.stubs(&[
+                (menu::WINDOW_SET_TITLE, 2, 0xc1),
+                (menu::WINDOW_ADD_BUTTON, 7, 0xc2),
+                (menu::WINDOW_ADD_STATIC, 7, 0xc3),
+                (menu::CONTROL_SET_TEXT, 3, 0xc4),
+                (menu::BUTTON_SET_TOGGLE, 3, 0xc5),
+                (menu::BUTTON_SET_TOGGLE_VALUE, 3, 0xc6),
+                (menu::GUI_SET_TALK, 2, 0xc7),
+                (menu::GUI_SET_MOUTH_TH, 1, 0xc8),
+            ]);
+            t.stub_ex(
+                menu::GUI_GET_MOUTH_TH,
+                false,
+                0,
+                0,
+                &m5_main3_common::Ret::Seq(vec![25, 0xffff_ffe2, 7]),
+                &[],
+            );
+            t.g8(
+                menu::MOUTH_COUNT,
+                if id == 1 {
+                    3
+                } else {
+                    rng.pick(&[0u8, 3, 0xff, 2])
+                },
+            );
+            t.g8(menu::MOUTH_OPEN, 1);
+            let what = format!("mouth msg {msg:#x} id {id}");
+            t.check(&what, 0x0085_1e70, Conv::Cdecl, &[0xab00, msg, id], |m| {
+                Out::U32(menu::mouth_proc(m, 0xab00, msg, id))
+            });
+        }
+        for &(msg, id) in &msgs {
+            for odd in [0u32, 1] {
+                t.reset();
+                t.stubs(&[
+                    (menu::WINDOW_SET_TITLE, 2, 0xc1),
+                    (menu::WINDOW_ADD_BUTTON, 7, 0xc2),
+                    (menu::WINDOW_ADD_STATIC, 7, 0xc3),
+                    (menu::BUTTON_SET_TOGGLE, 3, 0xc5),
+                    (menu::BUTTON_SET_TOGGLE_VALUE, 3, 0xc6),
+                    (menu::CONTROL_SET_TEXTF, 5, 0xc7),
+                    (menu::CLOTH_GET_PARA_EDIT, 0, 1),
+                    (menu::CLOTH_SET_PARA_EDIT, 1, 0xc8),
+                    (menu::CLOTH_RESET_ALL, 0, 0xc9),
+                    (menu::GLOBAL_SET_WIND, 3, 0xca),
+                    (menu::CLOTH_SET_Y, 1, 0xcb),
+                    (menu::CLOTH_SET_XZ, 1, 0xcc),
+                ]);
+                t.g32(menu::WIND_COUNT, odd + 2 * rng.below(4));
+                for sp in menu::CLOTH_SPINS {
+                    let w: Vec<u32> = (0..12).map(|_| rng.word()).collect();
+                    let at = t.rebase(sp);
+                    let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+                    t.write(at, &bytes);
+                    t.g32(sp + 0x20, rng.pick(&[100, 0xffff_ff9c, 12345, 0]));
+                }
+                let what = format!("physics msg {msg:#x} id {id} odd {odd}");
+                let slots = t.frame_ebp(3) + 8;
+                let words: Vec<u8> = [0xab00, msg, id]
+                    .iter()
+                    .flat_map(|w: &u32| w.to_le_bytes())
+                    .collect();
+                t.b.write(slots, &words).unwrap();
+                t.b.set_call_top(Some(slots - 0x200));
+                t.check(&what, 0x0085_2080, Conv::Cdecl, &[0xab00, msg, id], |m| {
+                    Out::U32(menu::physics_proc(m, 0xab00, msg, id, slots))
+                });
+                t.b.set_call_top(None);
+                let (x, y) = (t.a.read(slots, 12).unwrap(), t.b.read(slots, 12).unwrap());
+                assert_eq!(x, y, "{what}: the caller's argument words");
+            }
+        }
+    });
+}
+
+#[test]
+fn shadow_window_matches_the_original() {
+    let mut rng = Rng(0x0085_23e0);
+    Twins::each(|t| {
+        let msgs: Vec<(u32, u32)> = [(0x8001, 0), (0x8003, 0), (0x8002, 1)]
+            .into_iter()
+            .chain((0..9).map(|id| (0x8007, id)))
+            .chain((0..6).map(|_| (0x8011, 0)))
+            .collect();
+        // no security cookie: the whole frame is compared
+        t.skip = 0;
+        for (k, &(msg, id)) in msgs.iter().enumerate() {
+            t.reset();
+            t.stubs(&[
+                (menu::WINDOW_SET_TITLE, 2, 0xd1),
+                (menu::WINDOW_ADD_BUTTON, 7, 0xd2),
+                (menu::WINDOW_ADD_STATIC, 7, 0xd3),
+                (menu::BUTTON_SET_TOGGLE, 3, 0xd5),
+                (menu::BUTTON_SET_TOGGLE_VALUE, 3, 0xd6),
+                (menu::CONTROL_SET_TEXTF, 4, 0xd7),
+                (menu::WINDOW_SET_CLIENT_H, 2, 0xd8),
+                (menu::SET_SHADOW_MODE, 1, 0xd9),
+                (menu::GET_SHADOW_SEMI, 0, 1),
+                (menu::SET_MOVIE_GOMI_AVOID, 1, 0xda),
+                (menu::GET_SHADOW_MODE, 0, (k % 6) as u32),
+                (menu::SET_SHADOW_COLOR, 3, 0xdc),
+                (menu::SET_SHADOW_DIR, 2, 0xdd),
+                (menu::CONTROL_SET_DISABLE, 3, 0xde),
+            ]);
+            // dbgPrintf logs three words; the last format's call passes one
+            // (its other two words are the caller's stack: cleared)
+            let last = t.rebase(menu::SHADOW_FORMATS[2]);
+            let mut p = vec![0x8b, 0x54, 0x24, 0x04, 0x81, 0xfa];
+            p.extend(last.to_le_bytes());
+            p.extend([
+                0x75, 0x0e, 0xc7, 0x40, 0x0c, 0, 0, 0, 0, 0xc7, 0x40, 0x10, 0, 0, 0, 0,
+            ]);
+            t.stub_ex(
+                menu::DBG_PRINTF,
+                false,
+                3,
+                0,
+                &m5_main3_common::Ret::Fixed(0xdb),
+                &p,
+            );
+            // the getters write one word through each pointer (logged)
+            let mut c = fill_arg(0, &[0x11]);
+            c.extend(fill_arg(1, &[0x22]));
+            c.extend(fill_arg(2, &[0x33]));
+            t.stub_ex(
+                menu::GET_SHADOW_COLOR,
+                false,
+                3,
+                0,
+                &m5_main3_common::Ret::Fixed(0xe1),
+                &c,
+            );
+            let mut d = fill_arg(0, &[0x44]);
+            d.extend(fill_arg(1, &[0x55]));
+            t.stub_ex(
+                menu::GET_SHADOW_DIR,
+                false,
+                2,
+                0,
+                &m5_main3_common::Ret::Fixed(0xe2),
+                &d,
+            );
+            for (sp, _, _) in menu::SHADOW_SPINS {
+                let w: Vec<u32> = (0..12).map(|_| rng.word()).collect();
+                let at = t.rebase(sp);
+                let bytes: Vec<u8> = w.iter().flat_map(|v| v.to_le_bytes()).collect();
+                t.write(at, &bytes);
+            }
+            let window = 0xab00;
+            let slots = t.frame_ebp(3) + 8;
+            let words: Vec<u8> = [window, msg, id]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect();
+            t.b.write(slots, &words).unwrap();
+            let what = format!("shadow {k} msg {msg:#x} id {id}");
+            t.check_framed(
+                &what,
+                0x0085_23e0,
+                Conv::Cdecl,
+                &[window, msg, id],
+                menu::SHADOW_FRAME,
+                |m, ebp| Out::U32(menu::shadow_proc(m, window, msg, id, slots, ebp)),
+            );
+            let (x, y) = (t.a.read(slots, 12).unwrap(), t.b.read(slots, 12).unwrap());
+            assert_eq!(x, y, "{what}: the caller's argument words");
+        }
+    });
+}
+
+// ---- the camera debug screen ----
+
+use ffx_sg::m5main3_cam::bridge as cam;
+
+/// A camera list as the screen keeps it: `n` points (12-byte flag
+/// entries with bit 1 on the `sel`-th, 16-byte points).
+fn cam_list(t: &mut Twins, rng: &mut Rng, list: u32, n: u32, sel: Option<u32>) {
+    let mut flags = vec![0u8; 12 * n.max(1) as usize];
+    for (i, f) in flags.chunks_mut(12).enumerate() {
+        f[0] = (rng.below(256) as u8) & !2;
+        if Some(i as u32) == sel {
+            f[0] |= 2;
+        }
+    }
+    let flags = t.alloc(&flags);
+    let points: Vec<u32> = (0..4 * n.max(1)).map(|_| float_word(rng)).collect();
+    let points = t.words(&points);
+    t.g32(cam::LIST, list);
+    t.g32(cam::LIST_FLAGS + 4 * list, flags);
+    t.g32(cam::LIST_COUNTS + 4 * list, n);
+    t.g32(cam::LIST_POINTS + 4 * list, points);
+}
+
+#[test]
+fn camera_debug_lists_match_the_original() {
+    let mut rng = Rng(0x0094_1a30);
+    Twins::each(|t| {
+        for k in 0..24 {
+            let n = [0u32, 1, 3, 5][k % 4];
+            let sel = if k % 3 == 0 {
+                None
+            } else {
+                Some(rng.below(n.max(1)))
+            };
+            let list = rng.below(2);
+            for addr in [0x0094_1a30u32, 0x0094_2060] {
+                t.reset();
+                t.stub_ex(
+                    cam::SET_RECT,
+                    false,
+                    2,
+                    0,
+                    &m5_main3_common::Ret::Seq(vec![0xe1, 0xe2]),
+                    &log_pointee(2, 3, 4),
+                );
+                let pos = fill_arg(
+                    1,
+                    &[
+                        float_word(&mut rng),
+                        float_word(&mut rng),
+                        float_word(&mut rng),
+                    ],
+                );
+                t.stub_ex(
+                    cam::GET_POS_NOW,
+                    false,
+                    1,
+                    0,
+                    &m5_main3_common::Ret::Fixed(0xe3),
+                    &pos,
+                );
+                t.g32(cam::CAMERA, 0x0102);
+                cam_list(t, &mut rng, list, n, sel);
+                let what = format!("camera rect {addr:#x} {k}");
+                t.check_framed(&what, addr, Conv::Cdecl, &[], 0x24, |m, ebp| {
+                    Out::U32(if addr == 0x0094_1a30 {
+                        cam::rect_from_point(m, ebp)
+                    } else {
+                        cam::rect_keep_y(m, ebp)
+                    })
+                });
+            }
+            t.reset();
+            // dbgPrintf logs nine words; past each format's own words the
+            // caller's stack is cleared
+            let float_fmt = t.rebase(cam::DUMP_FORMATS[2]);
+            let count_fmt = t.rebase(cam::DUMP_FORMATS[1]);
+            let mut p = vec![0x8b, 0x54, 0x24, 0x04, 0x81, 0xfa];
+            p.extend(float_fmt.to_le_bytes());
+            p.extend([0x74, 7 * 7 + 6 + 2 + 7]); // je past everything
+            for w in 0..7u8 {
+                p.extend([0xc7, 0x40, 0x10 + 4 * w, 0, 0, 0, 0]);
+            }
+            p.extend([0x81, 0xfa]);
+            p.extend(count_fmt.to_le_bytes());
+            p.extend([0x74, 7, 0xc7, 0x40, 0x0c, 0, 0, 0, 0]);
+            t.stub_ex(
+                cam::DBG_PRINTF,
+                false,
+                9,
+                0,
+                &m5_main3_common::Ret::Fixed(0xe4),
+                &p,
+            );
+            cam_list(t, &mut rng, list, n, sel);
+            let what = format!("camera dump {k}");
+            t.check("camera dump", 0x0094_1ae0, Conv::Cdecl, &[], |m| {
+                Out::U32(cam::dump_points(m))
+            });
+            let _ = what;
+            t.reset();
+            t.stubs(&[
+                (cam::SCE_OPEN, 2, if k % 5 == 4 { 0xffff_ffff } else { 7 }),
+                (cam::SCE_CLOSE, 1, 0xe6),
+                (cam::DBG_PRINTF, 2, 0xe7),
+            ]);
+            t.stub_ex(
+                cam::SCE_WRITE,
+                false,
+                3,
+                0,
+                &m5_main3_common::Ret::Fixed(4),
+                &log_pointee(1, 1, 5),
+            );
+            cam_list(t, &mut rng, list, n, sel);
+            if k % 7 == 6 {
+                t.g32(cam::LIST_POINTS + 4 * list, 0);
+            }
+            t.g8(cam::PATH_FILE, if k % 6 == 5 { 0 } else { b'p' });
+            let skip = t.skip;
+            t.skip = 0;
+            let what = format!("camera write {k}");
+            t.check_framed(&what, 0x0094_2140, Conv::Cdecl, &[], 0xc, |m, ebp| {
+                cam::write_points(m, ebp);
+                Out::None
+            });
+            t.skip = skip;
+        }
+    });
+}
+
+#[test]
+fn mat_vec_and_path_names_match_the_original() {
+    let mut rng = Rng(0x0094_2260);
+    Twins::each(|t| {
+        for k in 0..20 {
+            t.reset();
+            t.stub_ex(
+                cam::COPY_VECTOR,
+                false,
+                1,
+                0,
+                &m5_main3_common::Ret::Fixed(0xf1),
+                &log_pointee(1, 4, 4),
+            );
+            let m: Vec<u32> = (0..16).map(|_| float_word(&mut rng)).collect();
+            let v: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            let (m, v) = (t.words(&m), t.words(&v));
+            let what = format!("mat vec {k}");
+            t.check_framed(
+                &what,
+                0x0094_2260,
+                Conv::Cdecl,
+                &[0x1234, m, v],
+                0x14,
+                |g, ebp| Out::U32(cam::mat_vec(g, 0x1234, m, v, ebp - 0x14)),
+            );
+        }
+        for k in 0..12 {
+            t.reset();
+            let n = [0u32, 1, 3][k % 3];
+            let names: Vec<u32> = (0..n.max(1))
+                .map(|i| t.alloc(format!("file{i}.bin\0").as_bytes()))
+                .collect();
+            let names = t.words(&names);
+            // Gu_MakeFileList fills the list: count, 0, names
+            let fill = fill_arg(0, &[n, 0, names]);
+            t.stub_ex(
+                cam::MAKE_FILE_LIST,
+                false,
+                2,
+                0,
+                &m5_main3_common::Ret::Fixed(0xf2),
+                &fill,
+            );
+            let buf = t.zeros(0x200 * 12);
+            t.stubs(&[
+                (cam::USER_FREE, 1, 0xf3),
+                (cam::USER_MALLOC, 1, if k == 7 { 0 } else { buf }),
+                (cam::MOVIE_ERR, 3, 0xf4),
+                (cam::SET_TEXT, 3, 0xf5),
+            ]);
+            let ms = t.zeros(0x220);
+            t.w32(ms + 0x214, rng.pick(&[0, 0x5555]));
+            t.g32(cam::NONE_BELOW, 2);
+            let page = rng.below(4);
+            let controls = [0x102, 0x103, 0x106, 0x100][k % 4];
+            let what = format!("set_path_name {k}");
+            if k == 7 {
+                // a failed allocation: the original copies to address 0
+                continue;
+            }
+            t.check(
+                &what,
+                0x0094_2360,
+                Conv::Cdecl,
+                &[0xab00, ms, controls, page],
+                |g| {
+                    cam::set_path_name(g, 0xab00, ms, controls, page);
+                    Out::None
+                },
+            );
         }
     });
 }

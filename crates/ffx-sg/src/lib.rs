@@ -18,6 +18,7 @@ pub mod envelope;
 pub mod gs;
 pub mod help;
 pub mod light;
+pub mod m5main3_cam;
 pub mod m5main3_cd;
 pub mod m5main3_gu;
 pub mod m5main3_menu;

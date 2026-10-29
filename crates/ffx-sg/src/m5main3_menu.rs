@@ -7,8 +7,9 @@
 //! open, `0x01303cc8` points at the entry a new window edits.
 
 /// The originals over game memory.
-#[allow(clippy::many_single_char_names)]
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
 pub mod bridge {
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     fn at(p: u32, o: u32) -> u32 {
@@ -694,6 +695,364 @@ pub mod bridge {
                 let th = cdecl(h, GUI_GET_MOUTH_TH, &[]).wrapping_add(delta.cast_unsigned());
                 cdecl(h, GUI_SET_MOUTH_TH, &[th]);
                 mouth_th_text(h, window);
+            }
+            _ => {}
+        }
+        0
+    }
+    /// A spin control's set-up (`FUN_00852080`, `FUN_008523e0` write
+    /// these words before `FUN_00851c70`): steps 1, 1, -1, 10 with the
+    /// add flags of the press and the repeat, the up, down and value
+    /// ids, the format, value, maximum and minimum, the delay cleared.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Spin {
+        pub up: u32,
+        pub down: u32,
+        pub id: u32,
+        pub fmt: u32,
+        pub value: Option<u32>,
+        pub max: u32,
+        pub min: u32,
+    }
+
+    /// Writes `s` into the spin control at `at_` in the original's order.
+    fn spin_init(h: &mut impl Host, sp: u32, s: &Spin) {
+        h.write(at(sp, 0x10), s.up);
+        h.write(at(sp, 0x14), s.down);
+        h.write(at(sp, 0x18), s.id);
+        h.write(at(sp, 0x1c), s.fmt);
+        if let Some(v) = s.value {
+            h.write(at(sp, 0x20), v);
+        }
+        h.write(at(sp, 0x28), s.min);
+        h.write(at(sp, 0x24), s.max);
+        h.write(sp, 1u16);
+        h.write(at(sp, 2), 1u8);
+        h.write(at(sp, 4), 1u32);
+        h.write(at(sp, 8), u32::MAX);
+        h.write(at(sp, 0xc), 10u32);
+        h.write(at(sp, 0x2c), 0u32);
+    }
+
+    /// The physics window's two spin controls (cloth y and xz, in 1/100).
+    pub const CLOTH_SPINS: [u32; 2] = [0x0132_5758, 0x0132_5788];
+    /// `Ch_ClothGetParaEdit()`, `Ch_ClothSetParaEdit(v)`,
+    /// `Ch_ClothResetAll()`, `Gu_WrapAngle_00853000(a)` (`ST0`),
+    /// `Sg_GlobalSetWind(x, y, z)` (`f32`), `Ch_ClothSetY(f)`,
+    /// `Ch_ClothSetXZ(f)` (cdecl).
+    pub const CLOTH_GET_PARA_EDIT: u32 = 0x0082_4610;
+    pub const CLOTH_SET_PARA_EDIT: u32 = 0x0082_4a30;
+    pub const CLOTH_RESET_ALL: u32 = 0x0083_3800;
+    pub const WRAP_ANGLE: u32 = 0x0085_3000;
+    pub const GLOBAL_SET_WIND: u32 = 0x0082_4e30;
+    pub const CLOTH_SET_Y: u32 = 0x0082_4a50;
+    pub const CLOTH_SET_XZ: u32 = 0x0082_4a40;
+    /// The physics window's open byte, wind toggle counter, title, button
+    /// labels, spin labels, `"%d.%02d"`; pi and 0.5 (`f32`), 100.0
+    /// (`f64`).
+    pub const PHYSICS_OPEN: u32 = 0x0132_52c8;
+    pub const WIND_COUNT: u32 = 0x0132_52cc;
+    pub const PHYSICS_TITLE: u32 = 0x00b3_c3ec;
+    pub const PHYSICS_BUTTONS: [(u32, u32, u32); 3] = [
+        (4, 0x00b5_b5cc, 0),
+        (3, 0x00b5_b5d4, 0xa),
+        (0, 0x00b5_54dc, 0x14),
+    ];
+    pub const PHYSICS_LABELS: [u32; 2] = [0x00b8_f804, 0x00b5_b5dc];
+    pub const FMT_HUNDREDTHS: u32 = 0x00b5_b5e0;
+    pub const F_PI: u32 = 0x00b5_ae68;
+    pub const F_HALF: u32 = 0x00b9_2194;
+    pub const C_100: u32 = 0x00b9_22e0;
+
+    /// `v / 100` as the original rounds it for `Ch_ClothSetY/XZ`.
+    fn hundredths(h: &impl Host, v: u32) -> u32 {
+        let f = x87::load(x87::store(f64::from(v.cast_signed())));
+        let k: f64 = h.read(h.rebase(C_100));
+        x87::store(x87::div(f, k))
+    }
+
+    /// `FUN_00852080(window, msg, id)` (cdecl): the physics window. Both
+    /// spin controls see the message first (`FUN_00851b20`, the xz one
+    /// first). Create (`0x8001`): "Physics", Reset (4), wind (3) and
+    /// edit (0) toggles, the y and xz spins (ids 5/7/9 and 6/8/10, 1.00,
+    /// 0..=300 with minimum 0 and 1). Close (`0x8003`): open byte
+    /// cleared. Release (`0x8007`): 0 toggles the cloth editing, 3 the
+    /// wind (odd: `Sg_GlobalSetWind(0.5, wrap(pi), 0)`, even: all 0), 4
+    /// resets the cloth. Paint (`0x8011`): the toggles, both values as
+    /// `"%d.%02d"` and to `Ch_ClothSetY` / `Ch_ClothSetXZ` (`/ 100`, rounded
+    /// through the caller's `msg` argument word, `slots + 4`).
+    /// Returns 0.
+    pub fn physics_proc(h: &mut impl Host, window: u32, msg: u32, id: u32, slots: u32) -> u32 {
+        for sp in [CLOTH_SPINS[1], CLOTH_SPINS[0]] {
+            let sp = h.rebase(sp);
+            spin_msg(h, window, msg, id, sp);
+        }
+        match msg {
+            0x8001 => {
+                let t = h.rebase(PHYSICS_TITLE);
+                cdecl(h, WINDOW_SET_TITLE, &[window, t]);
+                for (bid, text, y) in PHYSICS_BUTTONS {
+                    let t = h.rebase(text);
+                    cdecl(h, WINDOW_ADD_BUTTON, &[window, bid, t, 0, y, 0x36, 9]);
+                }
+                cdecl(h, BUTTON_SET_TOGGLE, &[window, 0, 1]);
+                cdecl(h, BUTTON_SET_TOGGLE, &[window, 3, 1]);
+                for (k, (ids, min, y)) in [((5, 7, 9), 0, 0x1e), ((6, 8, 10), 1, 0x29)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let sp = h.rebase(CLOTH_SPINS[k]);
+                    let s = Spin {
+                        up: ids.0,
+                        down: ids.1,
+                        id: ids.2,
+                        fmt: 0,
+                        value: Some(100),
+                        max: 300,
+                        min,
+                    };
+                    spin_init(h, sp, &s);
+                    let label = h.rebase(PHYSICS_LABELS[k]);
+                    spin_add(h, window, sp, 0, y, 10, label, 0x2c, 0x28);
+                }
+            }
+            0x8003 => h.write(h.rebase(PHYSICS_OPEN), 0u8),
+            0x8007 => match id {
+                0 => {
+                    let v = cdecl(h, CLOTH_GET_PARA_EDIT, &[]);
+                    cdecl(h, CLOTH_SET_PARA_EDIT, &[1u32.wrapping_sub(v)]);
+                }
+                3 => {
+                    let at_ = h.rebase(WIND_COUNT);
+                    let n = h.read::<u32>(at_).wrapping_add(1);
+                    h.write(at_, n);
+                    if n & 1 != 0 {
+                        let pi: u32 = h.read(h.rebase(F_PI));
+                        let a =
+                            h.call_sym_st0(WRAP_ANGLE, Conv::Cdecl, &[x87::store(x87::load(pi))]);
+                        let half: u32 = h.read(h.rebase(F_HALF));
+                        let a = x87::store(x87::load(a.to_bits()));
+                        cdecl(h, GLOBAL_SET_WIND, &[x87::store(x87::load(half)), a, 0]);
+                    } else {
+                        cdecl(h, GLOBAL_SET_WIND, &[0, 0, 0]);
+                    }
+                }
+                4 => {
+                    cdecl(h, CLOTH_RESET_ALL, &[]);
+                }
+                _ => {}
+            },
+            0x8011 => {
+                let v = cdecl(h, CLOTH_GET_PARA_EDIT, &[]);
+                cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, 0, v]);
+                let w = h.read::<u32>(h.rebase(WIND_COUNT)) & 1;
+                cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, 3, w]);
+                for (sp, set) in [
+                    (CLOTH_SPINS[0], CLOTH_SET_Y),
+                    (CLOTH_SPINS[1], CLOTH_SET_XZ),
+                ] {
+                    let sp = h.rebase(sp);
+                    let v: i32 = h.read(at(sp, 0x20));
+                    let id: u32 = h.read(at(sp, 0x18));
+                    let fmt = h.rebase(FMT_HUNDREDTHS);
+                    let (q, r) = (v.wrapping_div(100), v.wrapping_rem(100));
+                    let args = [window, id, fmt, q.cast_unsigned(), r.cast_unsigned()];
+                    cdecl(h, CONTROL_SET_TEXTF, &args);
+                    let v: u32 = h.read(at(sp, 0x20));
+                    let f = hundredths(h, v);
+                    // the original rounds through its `msg` argument word
+                    h.write(at(slots, 4), f);
+                    cdecl(h, set, &[f]);
+                }
+            }
+            _ => {}
+        }
+        0
+    }
+    /// The shadow window's five spin controls (colour r, g, b, direction
+    /// a, b) and their (up, down, value, maximum, minimum, label).
+    pub const SHADOW_SPINS: [(u32, Spin, u32); 5] = [
+        (0x0132_5638, shadow_spin(0xd, 0xff, 0), 0x00b8_f7e8),
+        (0x0132_5668, shadow_spin(0xe, 0xff, 0), 0x00b8_f7bc),
+        (0x0132_5698, shadow_spin(0xf, 0xff, 0), 0x00b8_f7ac),
+        (0x0132_56c8, shadow_spin(0x10, 0x168, u32::MAX), 0x00b8_f7c0),
+        (0x0132_56f8, shadow_spin(0x11, 0x5a, 1), 0x00b8_f7f8),
+    ];
+
+    const fn shadow_spin(up: u32, max: u32, min: u32) -> Spin {
+        Spin {
+            up,
+            down: up + 5,
+            id: up + 10,
+            fmt: FMT_D,
+            value: None,
+            max,
+            min,
+        }
+    }
+
+    /// `Ch_DrawSetShadowMode(m)`, `Ch_DrawGetShadowSemi()`,
+    /// `Sg_SetMovieGomiAvoid(v)`, `Ch_DrawGetShadowColor(&r, &g, &b)`,
+    /// `Ch_DrawGetShadowDir(&a, &b)` (one word each), `dbgPrintf`,
+    /// `Ch_DrawGetShadowMode()`, `Ch_DrawSetShadowColor(r, g, b)`,
+    /// `Ch_DrawSetShadowDir(a, b)`, `Gu_WindowControlSetDisable(window,
+    /// id, off)` (cdecl).
+    pub const SET_SHADOW_MODE: u32 = 0x0083_0140;
+    pub const GET_SHADOW_SEMI: u32 = 0x0082_ec70;
+    pub const SET_MOVIE_GOMI_AVOID: u32 = 0x0083_0150;
+    pub const GET_SHADOW_COLOR: u32 = 0x0082_ebf0;
+    pub const GET_SHADOW_DIR: u32 = 0x0082_ec30;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const GET_SHADOW_MODE: u32 = 0x0082_ec60;
+    pub const SET_SHADOW_COLOR: u32 = 0x0083_0100;
+    pub const SET_SHADOW_DIR: u32 = 0x0083_0120;
+    pub const CONTROL_SET_DISABLE: u32 = 0x0084_a620;
+    /// The shadow window's open byte, title, its mode buttons' labels,
+    /// the dump button's label, and the dump's three formats.
+    pub const SHADOW_OPEN: u32 = 0x0132_52d0;
+    pub const SHADOW_TITLE: u32 = 0x00b7_c868;
+    pub const SHADOW_BUTTONS: [u32; 5] = [
+        0x00b5_b5a0,
+        0x00b5_b5a8,
+        0x00b5_b5b0,
+        0x00b5_b5b8,
+        0x00b5_b5bc,
+    ];
+    pub const SHADOW_DUMP: u32 = 0x00b5_b5c4;
+    pub const SHADOW_FORMATS: [u32; 3] = [0x00b5_b55c, 0x00b5_b580, 0x00b7_cae0];
+    /// The original's frame below `ebp` (the colour and direction words,
+    /// the mode).
+    pub const SHADOW_FRAME: u32 = 0x14;
+
+    /// The shadow colour and direction into the caller's `msg` word
+    /// (`slots + 4`, r) and the frame (`ebp - 4` g, `- 8` b, `- 0xc` a,
+    /// `- 0x10` b); returns the five words.
+    fn shadow_get(h: &mut impl Host, slots: u32, ebp: u32) -> [u32; 5] {
+        let r = at(slots, 4);
+        let at_ = |o: u32| ebp.wrapping_sub(o);
+        cdecl(h, GET_SHADOW_COLOR, &[r, at_(4), at_(8)]);
+        cdecl(h, GET_SHADOW_DIR, &[at_(0xc), at_(0x10)]);
+        [
+            h.read(r),
+            h.read(at_(4)),
+            h.read(at_(8)),
+            h.read(at_(0xc)),
+            h.read(at_(0x10)),
+        ]
+    }
+
+    /// The five values into the spin controls' `+0x20`.
+    fn shadow_store(h: &mut impl Host, v: [u32; 5]) {
+        for ((sp, _, _), v) in SHADOW_SPINS.into_iter().zip(v) {
+            let sp = h.rebase(sp);
+            h.write(at(sp, 0x20), v);
+        }
+    }
+
+    /// `FUN_008523e0(window, msg, id; slots)` (cdecl, frame at `ebp`, 0x14
+    /// bytes): the shadow window. The five spin controls see the message
+    /// first. Create (`0x8001`): "Shadow", the five mode toggles 0..=4,
+    /// toggle 5 too, the spins from the current colour and direction
+    /// (through the caller's `msg` word and the frame, as the original),
+    /// the dump button 6, client height 0x41. Close (`0x8003`): open byte
+    /// cleared. Release (`0x8007`): 0..=4 set the shadow mode, 5 toggles
+    /// the semi flag (`Sg_SetMovieGomiAvoid`), 6 prints the settings as C
+    /// code. Paint (`0x8011`): the toggles; in mode 0 the spins take the
+    /// current values, else the shadow takes the spins'; the spins and
+    /// their labels (8..=0x1b, -1) are disabled below mode 3. Returns 0.
+    pub fn shadow_proc(
+        h: &mut impl Host,
+        window: u32,
+        msg: u32,
+        id: u32,
+        slots: u32,
+        ebp: u32,
+    ) -> u32 {
+        for (sp, _, _) in SHADOW_SPINS {
+            let sp = h.rebase(sp);
+            spin_msg(h, window, msg, id, sp);
+        }
+        match msg {
+            0x8001 => {
+                let t = h.rebase(SHADOW_TITLE);
+                cdecl(h, WINDOW_SET_TITLE, &[window, t]);
+                for (i, (text, y)) in SHADOW_BUTTONS
+                    .into_iter()
+                    .zip([0, 0xa, 0x14, 0x1e, 0x28])
+                    .enumerate()
+                {
+                    let t = h.rebase(text);
+                    cdecl(h, WINDOW_ADD_BUTTON, &[window, i as u32, t, 0, y, 0x3c, 9]);
+                }
+                for i in 0..6 {
+                    cdecl(h, BUTTON_SET_TOGGLE, &[window, i, 1]);
+                }
+                let v = shadow_get(h, slots, ebp);
+                shadow_store(h, v);
+                for (k, (sp, s, label)) in SHADOW_SPINS.into_iter().enumerate() {
+                    let sp = h.rebase(sp);
+                    let s = Spin {
+                        fmt: h.rebase(s.fmt),
+                        ..s
+                    };
+                    spin_init(h, sp, &s);
+                    let label = h.rebase(label);
+                    let y = 0xb * k as u32;
+                    spin_add(h, window, sp, 0x41, y, 10, label, 10, 0x28);
+                }
+                let t = h.rebase(SHADOW_DUMP);
+                cdecl(h, WINDOW_ADD_BUTTON, &[window, 6, t, 0, 0x37, 0x8c, 9]);
+                cdecl(h, WINDOW_SET_CLIENT_H, &[window, 0x41]);
+            }
+            0x8003 => h.write(h.rebase(SHADOW_OPEN), 0u8),
+            0x8007 => match id {
+                0..=4 => {
+                    cdecl(h, SET_SHADOW_MODE, &[id]);
+                }
+                5 => {
+                    let v = cdecl(h, GET_SHADOW_SEMI, &[]);
+                    cdecl(h, SET_MOVIE_GOMI_AVOID, &[1u32.wrapping_sub(v)]);
+                }
+                6 => {
+                    let v = shadow_get(h, slots, ebp);
+                    let f = h.rebase(SHADOW_FORMATS[0]);
+                    cdecl(h, DBG_PRINTF, &[f, v[0], v[1], v[2]]);
+                    let f = h.rebase(SHADOW_FORMATS[1]);
+                    cdecl(h, DBG_PRINTF, &[f, v[3], v[4]]);
+                    let f = h.rebase(SHADOW_FORMATS[2]);
+                    cdecl(h, DBG_PRINTF, &[f]);
+                }
+                _ => {}
+            },
+            0x8011 => {
+                let mode = cdecl(h, GET_SHADOW_MODE, &[]);
+                h.write(ebp.wrapping_sub(0x14), mode);
+                for i in 0..5 {
+                    cdecl(
+                        h,
+                        BUTTON_SET_TOGGLE_VALUE,
+                        &[window, i, u32::from(mode == i)],
+                    );
+                }
+                let semi = cdecl(h, GET_SHADOW_SEMI, &[]);
+                cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, 5, semi]);
+                if mode == 0 {
+                    let v = shadow_get(h, slots, ebp);
+                    shadow_store(h, v);
+                } else {
+                    let mut v = [0u32; 5];
+                    for (k, w) in v.iter_mut().enumerate() {
+                        let sp = h.rebase(SHADOW_SPINS[k].0);
+                        *w = h.read(at(sp, 0x20));
+                    }
+                    cdecl(h, SET_SHADOW_COLOR, &[v[0], v[1], v[2]]);
+                    cdecl(h, SET_SHADOW_DIR, &[v[3], v[4]]);
+                }
+                let off = u32::from(h.read::<i32>(ebp.wrapping_sub(0x14)) < 3);
+                for i in 8..0x1c {
+                    cdecl(h, CONTROL_SET_DISABLE, &[window, i, off]);
+                }
+                cdecl(h, CONTROL_SET_DISABLE, &[window, u32::MAX, off]);
             }
             _ => {}
         }
