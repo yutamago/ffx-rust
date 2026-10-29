@@ -1004,4 +1004,204 @@ pub mod bridge {
     pub fn set_global_01326b81(h: &mut impl Host) {
         h.write(h.rebase(0x0132_6b81), 1u8);
     }
+
+    // ---- batch 4: the battle debug camera's state and a menu step ----
+
+    pub const MS_DEBUG_WIN_ALLOC: u32 = 0x007c_8bb0;
+    pub const MS_DEBUG_CAMERA_KEEP_007D7130: u32 = 0x007d_7130;
+    /// The debug windows' 32 records (`0x0113ec98`), the camera keeps
+    /// (count `0x0113ed7c`, current `0x0113ed5c`, 0x30-byte records from
+    /// `0x0113ed8c`), the window state block `0x0113f528` (0x60 words).
+    pub const DEBUG_WINDOWS: u32 = 0x0113_ec98;
+    pub const CAMERA_KEEP_COUNT: Global<i32> = Global::new(0x0113_ed7c);
+    pub const CAMERA_KEEP_CUR: Global<u32> = Global::new(0x0113_ed5c);
+    pub const CAMERA_KEEPS: u32 = 0x0113_ed8c;
+
+    /// An `f32` as `fld dword` / `fstp dword` copy it.
+    fn fcopy(bits: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(bits))
+    }
+
+    /// `MsDebugWinAllocAll_007d6440()` (name ours): the 32 debug window
+    /// records allocated (`MsDebugWinAlloc_007c8bb0(0)`, each record's
+    /// byte `+0x21` cleared). Returns the last record.
+    pub fn debug_win_alloc_all(h: &mut impl Host) -> u32 {
+        let base = h.rebase(DEBUG_WINDOWS);
+        let mut r = 0;
+        for i in 0..32u32 {
+            r = cdecl(h, MS_DEBUG_WIN_ALLOC, &[0]);
+            h.write(at(base, i * 4), r);
+            h.write(at(r, 0x21), 0u8);
+        }
+        r
+    }
+
+    /// `MsDebugWinStateClear_007d7a20()` (name ours): the 0x60 words at
+    /// `0x0113f528` cleared; 0.
+    pub fn debug_win_state_clear(h: &mut impl Host) -> u32 {
+        h.write(h.rebase(0x0113_f528), [0u32; 0x60]);
+        0
+    }
+
+    /// `MsDebugCameraInit_007d62c0()` (name ours): the debug camera's
+    /// state reset (constants from `.rdata`, zeros and ones as `fldz` /
+    /// `fld1` store them), the 32 debug windows allocated, 32 keep records
+    /// `[0, 0, 0, 1, 0, c, d, 0]` from `0x0113ed8c` (32 bytes apart), one
+    /// keep counted; tail-jumps to `0x007d7130` (its `eax`).
+    pub fn debug_camera_init(h: &mut impl Host) -> u32 {
+        let c = |h: &mut _, sym: u32| fcopy(Mem::read(h, Mem::rebase(h, sym)));
+        let one = 0x3f80_0000u32;
+        let w = |h: &mut _, sym: u32, v: u32| {
+            let a = Mem::rebase(h, sym);
+            Mem::write(h, a, v);
+        };
+        let v = c(h, 0x00b3_04fc);
+        w(h, 0x0113_ed38, v);
+        w(h, 0x0113_ed4c, 0);
+        w(h, 0x0113_ed5c, 0);
+        w(h, 0x0113_ed3c, 0);
+        w(h, 0x0113_ed60, 1);
+        let v = c(h, 0x00b5_67a8);
+        w(h, 0x0113_ed40, v);
+        w(h, 0x0113_ed44, 0);
+        w(h, 0x0113_ed48, one);
+        let a = c(h, 0x00b5_01c0);
+        w(h, 0x0113_ed18, a);
+        let b = c(h, 0x00b5_67b8);
+        w(h, 0x0113_ed1c, b);
+        w(h, 0x0113_f3d8, b);
+        for sym in [
+            0x0113_ed20u32,
+            0x0113_ed24,
+            0x0113_f3dc,
+            0x0113_f3e0,
+            0x0113_ed28,
+            0x0113_ed2c,
+            0x0113_ed30,
+            0x0113_ed34,
+        ] {
+            w(h, sym, 0);
+        }
+        w(h, 0x0113_f3d4, a);
+        w(h, 0x0113_ed50, 0);
+        let cc = c(h, 0x00b5_67ac);
+        w(h, 0x0113_ed54, cc);
+        let d = c(h, 0x00b1_f2c8);
+        w(h, 0x0113_ed58, d);
+        for sym in [
+            0x0113_ed64u32,
+            0x0113_ed68,
+            0x0113_ed6c,
+            0x0113_ed70,
+            0x0113_ed74,
+            0x0113_ed78,
+        ] {
+            w(h, sym, 0);
+        }
+        debug_win_alloc_all(h);
+        let keeps = h.rebase(CAMERA_KEEPS);
+        for i in 0..32u32 {
+            h.write(at(keeps, i * 0x20), [0u32, 0, 0, one, 0, cc, d, 0]);
+        }
+        w(h, 0x0113_ed7c, 1);
+        w(h, 0x0113_ed80, 0);
+        w(h, 0x0113_ed84, 0);
+        w(h, 0x0113_ed88, 0);
+        h.call_sym(MS_DEBUG_CAMERA_KEEP_007D7130, Conv::Cdecl, &[])
+    }
+
+    /// `MsDebugCameraKeepAdd_007d0ee0()` (name ours): while fewer than 32
+    /// keeps, the current camera's (debug camera byte of screen
+    /// `[0x01139f10]`, 0xda0-byte cameras from `0x01137b8c`) position
+    /// `+0x30..+0x38`, the view's angle `0x0113ed74`, the two angles in
+    /// radians (`f32(deg * pi / 180)`), the distance `0x0113ed70` and the
+    /// roll `0x0113ed64` kept as a new record (the rest 0), the count
+    /// raised and the new one current. Returns `eax` as the original
+    /// leaves it (the record's offset, or the count).
+    pub fn debug_camera_keep_add(h: &mut impl Host) -> u32 {
+        use ffx_bridge::x87;
+        let screen: u32 = h.read(h.rebase(0x0113_9f10));
+        let cam = u32::from(
+            h.read::<u8>(
+                h.rebase(0x0113_70c1)
+                    .wrapping_add(screen.wrapping_mul(0x1c0)),
+            ),
+        );
+        let c = h.rebase(0x0113_7b8c).wrapping_add(cam * 0xda0);
+        let n = CAMERA_KEEP_COUNT.get(h);
+        if n >= 0x20 {
+            return n as u32;
+        }
+        CAMERA_KEEP_COUNT.set(h, n + 1);
+        CAMERA_KEEP_CUR.set(h, n as u32);
+        let keeps = h.rebase(CAMERA_KEEPS);
+        let g = |h: &_, sym: u32| -> u32 { Mem::read(h, Mem::rebase(h, sym)) };
+        // each field into the record of the current keep, re-read before
+        // each store as the original does (a record can overlap it)
+        let field = |h: &mut _, o: u32, v: u32| -> u32 {
+            let cur = CAMERA_KEEP_CUR.get(h).wrapping_mul(0x30);
+            Mem::write(h, keeps.wrapping_add(cur).wrapping_add(o), v);
+            cur
+        };
+        let pos: u32 = h.read(at(c, 0x30));
+        h.write(
+            keeps.wrapping_add((n as u32).wrapping_mul(0x30)),
+            fcopy(pos),
+        );
+        let v = fcopy(h.read(at(c, 0x34)));
+        field(h, 4, v);
+        let v = fcopy(h.read(at(c, 0x38)));
+        field(h, 8, v);
+        let v = fcopy(g(h, 0x0113_ed74));
+        field(h, 0xc, v);
+        let pi: f64 = h.read(h.rebase(0x00b9_2288));
+        let deg: f64 = h.read(h.rebase(0x00b4_8378));
+        let a = x87::store(x87::div(x87::mul(x87::load(g(h, 0x0113_ed68)), pi), deg));
+        field(h, 0x10, a);
+        let b = x87::store(x87::div(x87::mul(pi, x87::load(g(h, 0x0113_ed6c))), deg));
+        field(h, 0x14, b);
+        let v = fcopy(g(h, 0x0113_ed70));
+        field(h, 0x18, v);
+        field(h, 0x1c, 0);
+        let v = fcopy(g(h, 0x0113_ed64));
+        field(h, 0x20, v);
+        field(h, 0x24, 0);
+        field(h, 0x28, 0);
+        field(h, 0x2c, 0)
+    }
+
+    pub const SND_PLAY_CLICK: u32 = 0x0088_6ba0;
+    pub const TO_INIT_MESSAGE_SLOT: u32 = 0x008a_da30;
+    pub const TO_MENU_GET_CONTROL_PAD_REP2: u32 = 0x008b_e470;
+
+    /// `MenuBtlEnd_Step_008be1d0()` (name ours; table entry, data
+    /// `0x00c5a078`): by the trigger word `0x025d09d4`: bit 6 clears
+    /// `0x0186a214` and clicks (4); bit 0 clicks (1), sets `0x0186a208`,
+    /// re-inits message slot 7 and sets the state `0x0186a1c8` to 2
+    /// (returns 2); else repeat bits 12 and 14 each click (1). Returns
+    /// `eax` as the original leaves it.
+    pub fn btl_end_menu_step(h: &mut impl Host) -> u32 {
+        let t = h.rebase(0x025d_09d4);
+        let mut v = u32::from(h.read::<u16>(t));
+        if v & 0x40 != 0 {
+            h.write(h.rebase(0x0186_a214), 0u32);
+            cdecl(h, SND_PLAY_CLICK, &[4]);
+            v = u32::from(h.read::<u16>(t));
+        }
+        if v & 1 != 0 {
+            cdecl(h, SND_PLAY_CLICK, &[1]);
+            h.write(h.rebase(0x0186_a208), 1u8);
+            cdecl(h, TO_INIT_MESSAGE_SLOT, &[7]);
+            h.write(h.rebase(0x0186_a1c8), 2u16);
+            return 2;
+        }
+        if cdecl(h, TO_MENU_GET_CONTROL_PAD_REP2, &[]) & 0x1000 != 0 {
+            cdecl(h, SND_PLAY_CLICK, &[1]);
+        }
+        let r = cdecl(h, TO_MENU_GET_CONTROL_PAD_REP2, &[]);
+        if r & 0x4000 != 0 {
+            return cdecl(h, SND_PLAY_CLICK, &[1]);
+        }
+        r
+    }
 }

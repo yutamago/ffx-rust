@@ -5387,3 +5387,82 @@ fn r4b3_one_liners_match_the_original() {
         }
     });
 }
+
+// ---- round 4, batch 4 (ffx_menu::m5m_m, the battle debug camera) ----
+
+#[test]
+fn r4b4_debug_camera_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0401);
+        for i in 0..20u32 {
+            t.reset();
+            let recs = t.alloc(&[0xff; 0x40 * 33]);
+            t.stub_countdown(mm::MS_DEBUG_WIN_ALLOC, 1, 100, recs + 0x40 * (i % 3), 0);
+            t.stub(mm::MS_DEBUG_CAMERA_KEEP_007D7130, false, 0, 0, rng.word());
+            t.check("MsDebugWinAllocAll", 0x007d_6440, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::debug_win_alloc_all(m))
+            });
+            t.check("MsDebugCameraInit", 0x007d_62c0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::debug_camera_init(m))
+            });
+            let at = t.rebase(0x0113_f528);
+            t.write(at, &[0xa5; 0x180]);
+            t.check("MsDebugWinStateClear", 0x007d_7a20, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::debug_win_state_clear(m))
+            });
+            // the cameras' positions
+            let cams: Vec<u8> = (0..0x4000).map(|_| rng.next() as u8).collect();
+            let at = t.rebase(0x0113_7b8c);
+            t.write(at, &cams);
+            for k in 0..30u32 {
+                // a keep: the count below, at and past 32
+                let n = [0u32, 5, 31, 32, 40, 1][(i + k) as usize % 6];
+                t.g32(0x0113_ed7c, n);
+                let screen = rng.below(2);
+                t.g32(0x0113_9f10, screen);
+                let at = t.rebase(0x0113_70c1 + screen * 0x1c0);
+                t.write(at, &[rng.below(4) as u8]);
+                for sym in [
+                    0x0113_ed64u32,
+                    0x0113_ed68,
+                    0x0113_ed6c,
+                    0x0113_ed70,
+                    0x0113_ed74,
+                ] {
+                    let v = if i % 2 == 0 {
+                        (rng.below(7200) as f32 / 10.0 - 360.0).to_bits()
+                    } else {
+                        (rng.next() & 0x3fff_ffff) | 0x3000_0000
+                    };
+                    t.g32(sym, v);
+                }
+                t.check("MsDebugCameraKeepAdd", 0x007d_0ee0, Conv::Cdecl, &[], |m| {
+                    Out::U32(mm::debug_camera_keep_add(m))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b4_btl_end_menu_step_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0402);
+        for i in 0..64u32 {
+            t.reset();
+            let trg = (i & 1) | if i & 2 != 0 { 0x40 } else { 0 } | (rng.next() & 0xffbe);
+            let at = t.rebase(0x025d_09d4);
+            t.write(at, &(trg as u16).to_le_bytes());
+            let rep =
+                [0u32, 0x1000, 0x4000, 0x5000][(i / 4) as usize % 4] | (rng.next() & 0xffff_afff);
+            t.stubs(&[
+                (mm::SND_PLAY_CLICK, false, 1, 0, rng.word()),
+                (mm::TO_INIT_MESSAGE_SLOT, false, 1, 0, 0x131),
+                (mm::TO_MENU_GET_CONTROL_PAD_REP2, false, 0, 0, rep),
+            ]);
+            t.check("BtlEnd menu step", 0x008b_e1d0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::btl_end_menu_step(m))
+            });
+        }
+    });
+}

@@ -421,4 +421,25 @@ ported! {
     ChnSystemMgrpReset_0079cca0 @ 0x0079_cca0 => extern "C" fn chn_system_mgrp_reset() {
         mm::chn_system_mgrp_reset(&mut mem());
     }
+    // ---- round 4 (menu-battle-script 2), batch 4 (ffx_menu::m5m_m) ----
+    /// `()`: the debug camera's keep.
+    MsDebugCameraKeepAdd_007d0ee0 @ 0x007d_0ee0 => extern "C" fn ms_debug_camera_keep_add() -> u32 {
+        mm::debug_camera_keep_add(&mut mem())
+    }
+    /// `()`: the debug camera's state.
+    MsDebugCameraInit_007d62c0 @ 0x007d_62c0 => extern "C" fn ms_debug_camera_init() -> u32 {
+        mm::debug_camera_init(&mut mem())
+    }
+    /// `()`: the 32 debug windows.
+    MsDebugWinAllocAll_007d6440 @ 0x007d_6440 => extern "C" fn ms_debug_win_alloc_all() -> u32 {
+        mm::debug_win_alloc_all(&mut mem())
+    }
+    /// `()`: the window state block cleared.
+    MsDebugWinStateClear_007d7a20 @ 0x007d_7a20 => extern "C" fn ms_debug_win_state_clear() -> u32 {
+        mm::debug_win_state_clear(&mut mem())
+    }
+    /// `()`: the battle-end menu's step.
+    MenuBtlEnd_Step_008be1d0 @ 0x008b_e1d0 => extern "C" fn menu_btl_end_step() -> u32 {
+        mm::btl_end_menu_step(&mut mem())
+    }
 }
