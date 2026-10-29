@@ -193,8 +193,7 @@ const LOGGED: usize = 16;
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
     floats: HashMap<u32, FloatStub>,
-    /// `edx` of slots returning 64 bits (`edx:eax`).
-    highs: HashMap<u32, Stub>,
+    edxs: HashMap<u32, Stub>,
     rand: u32,
 }
 
@@ -232,10 +231,10 @@ fn answer_st0(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -
         .map(|f| f(m, args))
 }
 
-/// The `edx` a slot's [`Twin::stub_edx`] answers (after its `eax` stub).
+/// The `edx` a slot's `edx` stub answers (after its `eax` stub ran).
 fn answer_edx(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> Option<u32> {
     slot_of(target)
-        .and_then(|s| shared.highs.get(&s))
+        .and_then(|s| shared.edxs.get(&s))
         .map(|f| f(m, args))
 }
 
@@ -542,7 +541,7 @@ impl Twin {
             shared: Shared {
                 stubs: HashMap::new(),
                 floats: HashMap::new(),
-                highs: HashMap::new(),
+                edxs: HashMap::new(),
                 rand: 1,
             },
             functions,
@@ -722,11 +721,11 @@ impl Twin {
         self.shared.floats.insert(slot, Box::new(f));
     }
 
-    /// Makes `slot` also return `edx` (a 64-bit `edx:eax` result) on both
-    /// sides (after its [`Twin::stub`]). Without one, the port's side
-    /// sees 0 and the original's whatever `edx` held before the call.
+    /// Makes `slot` return `edx` too (a 64-bit result's high word), on
+    /// both sides (without one the port sees 0 and the original whatever
+    /// `edx` held).
     pub fn stub_edx(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static) {
-        self.shared.highs.insert(slot, Box::new(f));
+        self.shared.edxs.insert(slot, Box::new(f));
     }
 
     /// The original's `xmm0` low word after the last [`Twin::check`].
@@ -777,7 +776,11 @@ impl Twin {
         for (i, w) in (0u32..).zip(args) {
             self.port.write::<u32>(ENTRY_ESP + 4 + 4 * i, *w);
         }
+        // both sides draw `rand` from the same state; the original's end
+        // state is compared with the port's after
+        let rand0 = self.shared.rand;
         let (o, ocalls) = self.orig(at, c, args);
+        let orand = std::mem::replace(&mut self.shared.rand, rand0);
         self.last = o;
         let frame = Frame {
             at,
@@ -807,6 +810,11 @@ impl Twin {
         let pcalls = std::mem::take(&mut g.calls);
         self.port = std::mem::take(&mut g.mem);
         self.shared = std::mem::take(&mut g.shared);
+        assert_eq!(
+            self.shared.rand, orand,
+            "{}: {at:#010x} rand draws",
+            self.name
+        );
         self.compare_calls(at, &ocalls, &pcalls);
         let opops = o.esp - (ENTRY_ESP + 4);
         assert_eq!(r.pops, opops, "{}: {at:#010x} pops", self.name);

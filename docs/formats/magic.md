@@ -295,12 +295,19 @@ memory; make them read every argument word the original passes and write
 what they see (a stub that ignores an argument cannot catch a port that
 drops it), and fill the tables a function clears with non-zero bytes
 first. `Twin::stub_st0(slot, |m, args| f64)` makes a slot also return
-a float in ST0 (the game's float functions), on both sides, and
-`Twin::stub_edx(slot, …)` its `edx` (a 64-bit `edx:eax` result, such as
-slot 772's part handle). A call-out logs 16 words of the original's
-stack; the port's words are compared as a prefix of them, so a port
-that drops trailing words the callee never reads (an earlier call's
-words the original leaves on the stack) still passes. Mutants go through
+a float in ST0 (the game's float functions), on both sides;
+`Twin::stub_edx(slot, ..)` gives a 64-bit result's `edx` (without one
+the port sees 0 and the original whatever `edx` held). Both sides draw
+`rand` from the same state, and the end states are compared. Unicorn
+(QEMU) picks between two NaN operands of an SSE instruction by the x87
+rule (the larger significand), not the CPU's (the destination's), so
+tests avoid inputs where two different NaNs meet; ports of SSE code use
+`ffx_magic::sb_sse` (`add`, `sub`, `mul`, `div`: the CPU's NaN results,
+whatever the compiler or target). A call-out
+logs 16 words of the original's stack; the port's words are compared as
+a prefix of them, so a port that drops trailing words the callee never
+reads (an earlier call's words the original leaves on the stack) still
+passes. Mutants go through
 `tools/mutants.py` as for every port (`MUT_TEST=magic_NNNN MUT_SNAPS=`,
 no snapshots).
 

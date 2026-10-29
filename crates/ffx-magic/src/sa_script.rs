@@ -12,9 +12,9 @@
 //! `G_OBJS[number]`). Slot tables named by the instructions' operands
 //! (`w(offset)`) as everywhere.
 
-use crate::l5_objhost::list_remove;
 use crate::runtime::slot_target;
 use crate::sa_misc::cvt;
+use crate::sb_sse::{div, mul};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 fn slot<G: Game>(g: &G, img: &Image, f: u32, off: u32, slot: u32) -> u32 {
@@ -245,7 +245,7 @@ fn ramp<G: Game>(
 ) {
     let [target, step, frames] = words;
     let k = f32::from_bits(g.read::<u32>(img.word(f + k_op)));
-    let inv = k / cvt(frames.cast_signed());
+    let inv = div(k, cvt(frames.cast_signed()));
     g.write::<u32>(block + 0x38, step);
     g.write::<u32>(block + 0x20, target);
     g.write::<u32>(block + 0x34, step.wrapping_mul(frames));
@@ -264,7 +264,7 @@ pub fn record_ramp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let a = g.read::<u32>(pc + 4);
     let d = g.read::<u32>(pc + 8);
     let k = f32::from_bits(g.read::<u32>(img.word(f + 7)));
-    let inv = k / cvt(frames.cast_signed());
+    let inv = div(k, cvt(frames.cast_signed()));
     let at = record(g, img, f, 0x3a, pc);
     g.write::<u32>(at, a);
     g.write::<u32>(at + 0x10, d.wrapping_mul(frames));
@@ -575,7 +575,7 @@ pub fn actor_scaled<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let pc = fr.arg(g, 1);
     let f = fr.at;
     let k = f32::from_bits(g.read::<u32>(img.word(f + 0x24)));
-    let x = (cvt(g.read::<i32>(pc + 4)) * k).to_bits();
+    let x = mul(cvt(g.read::<i32>(pc + 4)), k).to_bits();
     let i = i16_at(g, pc + 2);
     let o = PartyOps {
         battle: 0x05,
@@ -601,35 +601,6 @@ pub const ACTOR_SCALED: Sig = Sig {
     len: 149,
     hash: 0x46c9_1ff2_5495_b33e,
     calls: &[],
-    imports: &[],
-};
-
-/// 0x10006e80: takes the object `[pc + 8]` out of the list at the owner
-/// `[pc + 4]`'s `+0x30` (the object host's `list_remove`); when it was
-/// there, `*G_OWNER` becomes the owner, slot 713 releases the object and
-/// bit 15 of its flags `+0x124` is cleared.
-pub fn release<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    let pc = fr.arg(g, 1);
-    let f = fr.at;
-    let owner = g.read::<u32>(pc + 4);
-    let o = g.read::<u32>(pc + 8);
-    let rm = img.rel32_target(f + 0x15);
-    if list_remove(g, img, rm, owner + 0x30, o) != 0 {
-        let p = g.read::<u32>(img.word(f + 0x1e));
-        g.write::<u32>(p, owner);
-        let t = slot(g, img, f, 0x26, 713);
-        g.call(t, 0, &[o]);
-        let v = g.read::<u16>(o + 0x124);
-        g.write::<u16>(o + 0x124, v & 0x7fff);
-    }
-    Ret::eax(pc + 0xc)
-}
-
-/// `release` (73 bytes, 53 overlays).
-pub const RELEASE: Sig = Sig {
-    len: 73,
-    hash: 0xed4f_7858_4951_716c,
-    calls: &[(0x15, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))],
     imports: &[],
 };
 

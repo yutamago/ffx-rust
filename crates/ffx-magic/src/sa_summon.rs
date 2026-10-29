@@ -11,6 +11,7 @@
 
 use crate::nodes::walk;
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `1.0f32`'s bits.
@@ -191,7 +192,7 @@ pub fn scaled_place<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.call(t, n, &[model, n + 0x1c]);
     for i in 0..3 {
         let n = g.read::<u32>(this);
-        let v = f32_at(g, n + 0x2c + 4 * i) * f32_at(g, n + 0x1c + 4 * i);
+        let v = mul(f32_at(g, n + 0x2c + 4 * i), f32_at(g, n + 0x1c + 4 * i));
         g.write::<u32>(n + 0x1c + 4 * i, v.to_bits());
     }
     let n = g.read::<u32>(this);
@@ -398,7 +399,7 @@ pub fn vector_op<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         _ => {}
     }
     for i in 0..3 {
-        let x = f32_at(g, n + 0x2c + 4 * i) + f32_at(g, n + 0x1c + 4 * i);
+        let x = add(f32_at(g, n + 0x2c + 4 * i), f32_at(g, n + 0x1c + 4 * i));
         g.write::<u32>(n + 0x1c + 4 * i, x.to_bits());
     }
     Ret::eax(eax)
@@ -454,42 +455,43 @@ pub fn bounce<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let pv = p + 0x1c;
     let t = slot(g, img, f, 0x71, 248);
     g.call(t, 0, &[vt, pv, n + 0x1c]);
-    let mut x2 = f32_at(g, vt + 4) - f32_at(g, n + 0x38);
+    let mut x2 = sub(f32_at(g, vt + 4), f32_at(g, n + 0x38));
     if x2 > f32_at(g, w(0x90)) {
-        x2 /= f32_at(g, n + 0x20);
+        x2 = div(x2, f32_at(g, n + 0x20));
         let sign = g.read::<u32>(w(0xaf));
-        let x0 = f32::from_bits((f32_at(g, n + 0x2c) * f32_at(g, n + 0x20)).to_bits() ^ sign);
+        let x0 = mul(f32_at(g, n + 0x2c), f32_at(g, n + 0x20));
+        let x0 = f32::from_bits(x0.to_bits() ^ sign);
         g.write::<u32>(n + 0x20, x0.to_bits());
         let mut x6 = f32_at(g, n + 0x1c);
         let mut x5 = f32_at(g, n + 0x24);
-        let mut x4 = x6 * x2;
-        let x0 = x0 * x2;
-        x6 -= x4;
-        x5 *= x2;
+        let mut x4 = mul(x6, x2);
+        let x0 = mul(x0, x2);
+        x6 = sub(x6, x4);
+        x5 = mul(x5, x2);
         g.write::<u32>(vt, x6.to_bits());
-        let x1 = f32_at(g, n + 0x20) - x0;
+        let x1 = sub(f32_at(g, n + 0x20), x0);
         g.write::<u32>(vt + 4, x1.to_bits());
-        let x2b = f32_at(g, n + 0x24) - x5;
+        let x2b = sub(f32_at(g, n + 0x24), x5);
         g.write::<u32>(vt + 8, x2b.to_bits());
         let x3 = f32_at(g, n + 0x30);
-        x4 *= x3;
-        x5 *= x3;
-        x4 = x4 + f32_at(g, pv) + x6;
+        x4 = mul(x4, x3);
+        x5 = mul(x5, x3);
+        x4 = add(add(x4, f32_at(g, pv)), x6);
         g.write::<u32>(vt, x4.to_bits());
-        let y = f32_at(g, n + 0x38) + x1;
+        let y = add(f32_at(g, n + 0x38), x1);
         g.write::<u32>(vt + 4, y.to_bits());
-        x5 = x5 + f32_at(g, p + 0x24) + x2b;
+        x5 = add(add(x5, f32_at(g, p + 0x24)), x2b);
         g.write::<u32>(vt + 8, x5.to_bits());
-        let a = f32_at(g, n + 0x1c) * x3;
+        let a = mul(f32_at(g, n + 0x1c), x3);
         g.write::<u32>(n + 0x1c, a.to_bits());
-        let c = f32_at(g, n + 0x24) * x3;
+        let c = mul(f32_at(g, n + 0x24), x3);
         g.write::<u32>(n + 0x24, c.to_bits());
         let k = g.read::<u16>(n + 0x40);
         g.write::<u16>(n + 0x40, k.wrapping_add(1));
     }
     let t = slot(g, img, f, 0x151, 325);
     g.call(t, 0, &[pv, vt]);
-    let r = f32_at(g, n + 0x34) + f32_at(g, n + 0x20);
+    let r = add(f32_at(g, n + 0x34), f32_at(g, n + 0x20));
     g.write::<u32>(n + 0x20, r.to_bits());
     let k = g.read::<u16>(n + 0x42).wrapping_add(1);
     g.write::<u16>(n + 0x42, k);
@@ -646,7 +648,7 @@ fn bone<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &BoneOps) -> Ret {
     let src = g.read::<u32>(n + 0x140);
     let mut rate = f32_at(g, src + 0x28);
     if let Some(k) = o.k1 {
-        rate *= f32_at(g, w(k));
+        rate = mul(rate, f32_at(g, w(k)));
     }
     let t = slot(g, img, f, o.s233[0], 233);
     g.call(t, 0, &[vt, src + 0x1c, rate.to_bits()]);
@@ -665,7 +667,7 @@ fn bone<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &BoneOps) -> Ret {
     g.call(t, 0, &[n + 0x4c, obj, n + 0x3c, n + 0x7c, x]);
     let scale_138 = |g: &mut G, k: Option<u32>| {
         if let Some(k) = k {
-            let v = f32_at(g, n + 0x138) * f32_at(g, w(k));
+            let v = mul(f32_at(g, n + 0x138), f32_at(g, w(k)));
             g.write::<u32>(n + 0x138, v.to_bits());
         }
     };
@@ -723,7 +725,7 @@ fn bone<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &BoneOps) -> Ret {
         } else {
             (b, a)
         };
-        let v = x + y;
+        let v = add(x, y);
         g.write::<u32>(n + 0xcc + 4 * i, v.to_bits());
     }
     Ret::eax(p)

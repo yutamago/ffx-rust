@@ -3,6 +3,7 @@
 //! how many overlays carry it).
 
 use crate::runtime::slot_target;
+use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 fn f32_at(g: &impl crate::Mem, addr: u32) -> f32 {
@@ -32,7 +33,7 @@ pub fn set_four<G: Game>(g: &mut G, img: &Image, f: u32, v: u32) -> u32 {
     g.call(t, 0, &a);
     let x = f32_at(g, v);
     g.write::<u32>(w(0x7f), x.to_bits());
-    let y = x * f32_at(g, w(0x87));
+    let y = mul(x, f32_at(g, w(0x87)));
     let t = slot_target(g, w(0x77), 785);
     g.call(t, 0, &[y.to_bits()]).eax
 }
@@ -648,12 +649,12 @@ pub fn drift<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, eax_in: u32) -> 
             eax = out.eax;
             #[allow(clippy::assign_op_pattern)] // r + sum: the original's operand order
             {
-                sum = f32::from_bits(crate::sa_summon::st0_f32(out)) + sum;
+                sum = add(f32::from_bits(crate::sa_summon::st0_f32(out)), sum);
             }
             i += 1;
         }
         for k in 0..3 {
-            let v = f32_at(g, obj + at + 4 * k) + sum;
+            let v = add(f32_at(g, obj + at + 4 * k), sum);
             g.write::<u32>(obj + at + 4 * k, v.to_bits());
         }
     }
@@ -962,7 +963,7 @@ pub fn add_to_parent<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
     }
     let n = g.read::<u32>(this);
     let p = g.read::<u32>(n + 0x14);
-    let v = f32_at(g, n + 0x1c) + f32_at(g, p + 0x20);
+    let v = add(f32_at(g, n + 0x1c), f32_at(g, p + 0x20));
     g.write::<u32>(p + 0x20, v.to_bits());
     Ret::eax(n)
 }
@@ -1143,9 +1144,9 @@ pub fn move_start<G: Game>(g: &mut G, args: u32) -> u32 {
     if g.read::<u32>(args + 4) == 0 {
         g.write::<u32>(n + 0xac, flags & !1);
         for i in 0..4 {
-            let a = f32_at(g, n + 0x2c + 4 * i) - f32_at(g, n + 0x1c + 4 * i);
+            let a = sub(f32_at(g, n + 0x2c + 4 * i), f32_at(g, n + 0x1c + 4 * i));
             g.write::<u32>(n + 0x3c + 4 * i, a.to_bits());
-            let b = f32_at(g, n + 0x5c + 4 * i) - f32_at(g, n + 0x4c + 4 * i);
+            let b = sub(f32_at(g, n + 0x5c + 4 * i), f32_at(g, n + 0x4c + 4 * i));
             g.write::<u32>(n + 0x6c + 4 * i, b.to_bits());
         }
     } else {
@@ -1271,23 +1272,23 @@ pub fn sprite_fade<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) -> u32 {
         }
     }
     if flags & 2 != 0 {
-        let p = int(g, o + 0x28) / int(g, o + 0x24);
+        let p = div(int(g, o + 0x28), int(g, o + 0x24));
         g.write::<u32>(o + 0x68, p.to_bits());
     }
     let k1 = f32_at(g, w(0x3a));
     if flags & 4 != 0 {
-        let p = int(g, o + 0x28) / int(g, o + 0x24);
-        let q = k1 - p;
+        let p = div(int(g, o + 0x28), int(g, o + 0x24));
+        let q = sub(k1, p);
         let lerp = |g: &G, from: u32, to: u32| {
             let a = g.read::<u32>(o + from);
             let d = g.read::<u32>(o + to).wrapping_sub(a);
-            cvt(d.cast_signed()) * q + cvt(a.cast_signed())
+            add(mul(cvt(d.cast_signed()), q), cvt(a.cast_signed()))
         };
         for (dst, from, to) in [(0x5c, 0x6c, 0x7c), (0x60, 0x70, 0x80), (0x64, 0x74, 0x84)] {
             let v = lerp(g, from, to);
             g.write::<u32>(o + dst, ffx_bridge::x87::cvttsd2si(f64::from(v)));
         }
-        let v = lerp(g, 0x78, 0x88) / f32_at(g, w(0xff));
+        let v = div(lerp(g, 0x78, 0x88), f32_at(g, w(0xff)));
         g.write::<u32>(o + 0x68, v.to_bits());
         if 0.0 > v {
             g.write::<u32>(o + 0x68, 0);
@@ -1297,10 +1298,10 @@ pub fn sprite_fade<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) -> u32 {
         }
     }
     if flags & 8 != 0 {
-        let p = int(g, o + 0x28) / int(g, o + 0x24);
+        let p = div(int(g, o + 0x28), int(g, o + 0x24));
         let a = f32_at(g, o + 0x8c);
         let b = f32_at(g, o + 0x90);
-        let v = (k1 - p) * (b - a) + a;
+        let v = add(mul(sub(k1, p), sub(b, a)), a);
         g.write::<u32>(o + 0x54, v.to_bits());
     }
     let t = slot_target(g, w(0x168), 248);
@@ -1715,14 +1716,14 @@ pub fn facing_int<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, out: u32, e
         let m = g.read::<u32>(obj + 0x54);
         let a = crate::sa_summon::st0_f32(g.call(t, 0, &[m]));
         g.write::<u32>(local, a);
-        f32_at(g, w(0x34)) - f32::from_bits(a)
+        sub(f32_at(g, w(0x34)), f32::from_bits(a))
     } else {
         let t = slot_target(g, w(0x47), 601);
         let o = g.read::<u32>(obj + 0x50);
         g.call(t, 0, &[o, local]);
-        f32_at(g, w(0x5a)) - f32_at(g, local)
+        sub(f32_at(g, w(0x5a)), f32_at(g, local))
     };
-    let v = x * f32_at(g, w(0x6a)) / f32_at(g, w(0x72));
+    let v = div(mul(x, f32_at(g, w(0x6a))), f32_at(g, w(0x72)));
     let n = ffx_bridge::x87::cvttsd2si(f64::from(v));
     g.write::<u32>(out + 4, n);
     n
@@ -1814,7 +1815,7 @@ pub fn scale_rotate<G: Game>(g: &mut G, img: &Image, f: u32, m: u32, v: u32) -> 
     g.call(t, 0, &[m]);
     let h = g.read::<u32>(w(0x1d));
     let t = slot_target(g, w(0x17), 277);
-    let s = st(g.call(t, 0, &[h, m])) * f32_at(g, w(0x35));
+    let s = mul(st(g.call(t, 0, &[h, m])), f32_at(g, w(0x35)));
     for off in [0x28, 0x14, 0] {
         g.write::<u32>(m + off, s.to_bits());
     }
@@ -1825,7 +1826,7 @@ pub fn scale_rotate<G: Game>(g: &mut G, img: &Image, f: u32, m: u32, v: u32) -> 
         stack.insert(0, h2);
         // call width: 5 (the earlier calls' words stay on the stack)
         let a = st(g.call(t, 0, &stack));
-        let x = f32_at(g, m + off) * a;
+        let x = mul(f32_at(g, m + off), a);
         g.write::<u32>(m + off, x.to_bits());
     }
     let mut eax = 0;
@@ -1890,7 +1891,7 @@ pub fn actor_scale<G: Game>(g: &mut G, img: &Image, f: u32, i: u32, m: u32) -> u
     g.call(t, 0, &[m]);
     let o = obj(g, 0x21, 0x28, 0x33);
     let t = slot_target(g, w(0x39), 277);
-    let s = st(g.call(t, 0, &[o])) * f32_at(g, w(0x51));
+    let s = mul(st(g.call(t, 0, &[o])), f32_at(g, w(0x51)));
     for off in [0x28, 0x14, 0] {
         g.write::<u32>(m + off, s.to_bits());
     }
@@ -1903,7 +1904,7 @@ pub fn actor_scale<G: Game>(g: &mut G, img: &Image, f: u32, i: u32, m: u32) -> u
         // call width: 3 (the earlier calls' words stay on the stack)
         let out = g.call(t, 0, &stack);
         eax = out.eax;
-        let x = f32_at(g, m + off) * st(out);
+        let x = mul(f32_at(g, m + off), st(out));
         g.write::<u32>(m + off, x.to_bits());
     }
     eax
@@ -1944,12 +1945,12 @@ pub fn blur_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     if !positive || k <= 1 {
         return Ret::eax(n);
     }
-    let x0 = f32_at(g, w(0x89)) / time;
+    let x0 = div(f32_at(g, w(0x89)), time);
     g.write::<u32>(ebp.wrapping_sub(4), x0.to_bits());
     let t = slot_target(g, w(0x8e), 821);
     g.call(t, 0, &[0]);
     let t = slot_target(g, w(0xa6), 822);
-    let xk = crate::sa_misc::cvt(i32::from(k)) * f32_at(g, w(0xbe));
+    let xk = mul(cvt(i32::from(k)), f32_at(g, w(0xbe)));
     let one = 0x3f80_0000;
     g.call(t, 0, &[one, one, one, xk.to_bits()]);
     let t = slot_target(g, w(0xe7), 823);
@@ -2292,7 +2293,7 @@ pub fn part_matrix<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
         // call width: 7 (the earlier calls' words stay on the stack)
         let x = st(g.call(t, 0, &stack));
         g.write::<u32>(a + 8, x.to_bits());
-        let y = f32_at(g, m + off) * x;
+        let y = mul(f32_at(g, m + off), x);
         g.write::<u32>(m + off, y.to_bits());
     }
     for (op, slot, i) in [(0xf5, 330, 2), (0x114, 328, 0), (0x134, 329, 1)] {
@@ -2543,11 +2544,11 @@ fn camera_fold<G: Game>(g: &mut G, img: &Image, f: u32, o: &CameraOps) -> (u32, 
     let m2 = g.read::<u32>(w(o.model2));
     let out = g.call(t, 0, &[m2, m, v, v + 4, v + 8]);
     let angle = f32::from_bits(crate::sa_summon::st0_f32(out));
-    let mut a = f32_at(g, w(o.k[0])) - angle;
+    let mut a = sub(f32_at(g, w(o.k[0])), angle);
     if a > f32_at(g, w(o.k[1])) {
-        a -= f32_at(g, w(o.k[2]));
+        a = sub(a, f32_at(g, w(o.k[2])));
     } else if f32_at(g, w(o.k[3])) > a {
-        a += f32_at(g, w(o.k[4]));
+        a = add(a, f32_at(g, w(o.k[4])));
     }
     g.write::<u32>(fx + o.out[0], a.to_bits());
     for &off in &o.out[1..] {
@@ -2780,7 +2781,7 @@ pub fn jitter<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) -> u32 {
                 let t = slot_target(g, img.word(f + op), 314);
                 let x = g.read::<u32>(o + spread);
                 let r = f32::from_bits(crate::sa_summon::st0_f32(g.call(t, 0, &[x])));
-                let v = f32_at(g, o + base + 4 * c) + r;
+                let v = add(f32_at(g, o + base + 4 * c), r);
                 g.write::<u32>(o + base + 4 * c, v.to_bits());
                 eax = g.read::<u32>(o + count);
                 i += 1;
@@ -2795,48 +2796,6 @@ pub const JITTER: Sig = Sig {
     len: 236,
     hash: 0xa707_7a21_b5b0_9ac1,
     calls: &[],
-    imports: &[],
-};
-
-/// `magic_0644` 0x100035a0 (internal, `ecx` = a rotation, `edx` = the
-/// result, the stack word a vector; a /GS frame): a matrix in the frame
-/// (`[ebp - 0x54]`) reset (slot 235) and rotated by the rotation's `+0x0`
-/// and `+0x4` (slots 328, 329); the vector's `w` becomes 1.0 and slot 229
-/// turns it by the matrix into a local (`[ebp - 0x14]`); slot 248 adds
-/// that to the result, whose `w` becomes 1.0. Every call passes the words
-/// the original's stack holds there. Returns slot 248's `eax`. (The
-/// census cut runs on into the next function, the object host's
-/// `list_pop_tail` copy; the signature keeps its bytes.)
-pub fn rotate_add<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
-    let w = |off: u32| img.word(fr.at + off);
-    let (rot, out) = (fr.ecx, fr.edx);
-    let v = fr.arg(g, 0);
-    let ebp = fr.esp.wrapping_sub(4);
-    let m = ebp.wrapping_sub(0x54);
-    let vt = ebp.wrapping_sub(0x14);
-    let t = slot_target(g, w(0x1b), 235);
-    g.call(t, 0, &[m]);
-    let r0 = g.read::<u32>(rot);
-    let t = slot_target(g, w(0x3a), 328);
-    g.call(t, 0, &[m, m, r0]);
-    let r1 = g.read::<u32>(rot + 4);
-    let t = slot_target(g, w(0x59), 329);
-    g.call(t, 0, &[m, m, r1]);
-    g.write::<u32>(v + 0xc, 0x3f80_0000);
-    let t = slot_target(g, w(0x6f), 229);
-    g.call(t, 0, &[vt, m, v, m, m, r1]);
-    let t = slot_target(g, w(0x87), 248);
-    let r = g.call(t, 0, &[out, out, vt, vt, m, v, m, m, r1]).eax;
-    g.write::<u32>(out + 0xc, 0x3f80_0000);
-    r
-}
-
-/// `rotate_add` (176 bytes and the 66 after it, 5 overlays; the `rel32`
-/// is `__security_check_cookie`).
-pub const ROTATE_ADD: Sig = Sig {
-    len: 242,
-    hash: 0xeb81_7307_4606_4344,
-    calls: &[(0xa8, Callee::Any)],
     imports: &[],
 };
 
@@ -3151,6 +3110,289 @@ pub fn node_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
 pub const NODE_START: Sig = Sig {
     len: 74,
     hash: 0x0956_e5f0_a5a2_51ef,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 772 turns `(x, i)` into a 64-bit handle and slot 779 registers
+/// it with `**G_LOCK` 1 around the call (the operands at `o772`, `lock`
+/// (read twice: `lock_a` before, `lock_b` after) and `o779`). Returns
+/// `*G_LOCK` as read after.
+fn register_handle<G: Game>(g: &mut G, img: &Image, f: u32, ops: [u32; 4], x: u32, i: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let [o772, lock_a, o779, lock_b] = ops;
+    let t = slot_target(g, w(o772), 772);
+    let h = g.call(t, 0, &[x, i]);
+    let lock = g.read::<u32>(w(lock_a));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(o779), 779);
+    g.call(t, 0, &[h.eax, h.edx, x, i]);
+    let lock = g.read::<u32>(w(lock_b));
+    g.write::<u32>(lock, saved);
+    lock
+}
+
+/// `magic_0284` 0x10002a90 (internal, `ecx` = a value): its 8 part
+/// handles registered ([`register_handle`] with indices 0..8). Returns
+/// `*G_LOCK`.
+pub fn register_8<G: Game>(g: &mut G, img: &Image, f: u32, x: u32) -> u32 {
+    let mut r = 0;
+    for i in 0..8 {
+        r = register_handle(g, img, f, [0x11, 0x21, 0x2a, 0x3d], x, i);
+    }
+    r
+}
+
+/// `register_8` (80 bytes, 4 overlays).
+pub const REGISTER_8: Sig = Sig {
+    len: 80,
+    hash: 0x2352_d7c2_11c6_dd7c,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0515` 0x10003e90 (internal, no arguments): the handle (index
+/// 0) of each of the DLL's records (0x4c bytes, from `A` to `B`)
+/// registered. Returns `*G_LOCK`.
+pub fn register_records<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let end = img.word(f + 0x4c);
+    let mut p = img.word(f + 0x04);
+    loop {
+        let r = register_handle(g, img, f, [0x11, 0x22, 0x2b, 0x3e], p, 0);
+        p = p.wrapping_add(0x4c);
+        if p.cast_signed() >= end.cast_signed() {
+            return r;
+        }
+    }
+}
+
+/// `register_records` (86 bytes, 4 overlays).
+pub const REGISTER_RECORDS: Sig = Sig {
+    len: 86,
+    hash: 0x3142_d0f6_1ef8_15f7,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0515` 0x100034b0 (internal, no arguments): for each of the
+/// DLL's records (0xa8 bytes) its handles 0..=count (`i32 +0xa4`, none
+/// when negative) registered. Returns the last record that had any, or
+/// `eax` as given.
+pub fn register_counted<G: Game>(g: &mut G, img: &Image, f: u32, eax_in: u32) -> u32 {
+    let end = img.word(f + 0x5d);
+    let mut c = img.word(f + 0x04);
+    let mut eax = eax_in;
+    loop {
+        let mut i = 0i32;
+        if g.read::<i32>(c) >= 0 {
+            loop {
+                let base = c.wrapping_sub(0xa4);
+                register_handle(g, img, f, [0x17, 0x25, 0x2e, 0x41], base, i.cast_unsigned());
+                i += 1;
+                eax = base;
+                if i > g.read::<i32>(c) {
+                    break;
+                }
+            }
+        }
+        c = c.wrapping_add(0xa8);
+        if c.cast_signed() >= end.cast_signed() {
+            return eax;
+        }
+    }
+}
+
+/// `register_counted` (103 bytes, 4 overlays).
+pub const REGISTER_COUNTED: Sig = Sig {
+    len: 103,
+    hash: 0x4200_88cb_9306_6a8d,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0515` 0x100028f0 (internal, `ecx` = records of 0xcc bytes,
+/// `edx` = their count): each record's object `+0x0` is put at its
+/// `+0x2c` (slot 255) and given the angle `i16 +0x14` times `K1 * K2`
+/// (slot 170; slot 255's word left below). Returns slot 170's `eax`, or
+/// `eax` as given for none.
+pub fn place_records<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    recs: u32,
+    n: u32,
+    eax_in: u32,
+) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let mut eax = eax_in;
+    let mut p = recs;
+    for _ in 0..n {
+        let t = slot_target(g, w(0x15), 255);
+        let o = g.read::<u32>(p);
+        g.call(t, 0, &[o, p + 0x2c]);
+        let a = crate::sa_misc::cvt(i32::from(g.read::<i16>(p + 0x14)));
+        let x = crate::sb_sse::mul(
+            crate::sb_sse::mul(a, f32_at(g, w(0x3d))),
+            f32_at(g, w(0x48)),
+        );
+        let t = slot_target(g, w(0x2c), 170);
+        let o = g.read::<u32>(p);
+        eax = g.call(t, 0, &[o, x.to_bits()]).eax;
+        p = p.wrapping_add(0xcc);
+    }
+    eax
+}
+
+/// `place_records` (100 bytes, 4 overlays).
+pub const PLACE_RECORDS: Sig = Sig {
+    len: 100,
+    hash: 0x3a39_5fd0_dadb_975e,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0515` 0x10002560 (internal, no arguments): slot 295 `(object,
+/// 0)` for the first `*G_N` records of table A and every record of table
+/// B (0xcc bytes each, the object at `+0x0`). Returns the last call's
+/// `eax`.
+pub fn records_295<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let mut p = w(0x0d);
+    let mut i = 0i32;
+    while i < g.read::<i32>(w(0x05)) {
+        let t = slot_target(g, w(0x12), 295);
+        let o = g.read::<u32>(p);
+        g.call(t, 0, &[o, 0]);
+        i += 1;
+        p = p.wrapping_add(0xcc);
+    }
+    let end = w(0x5c);
+    let mut p = w(0x36);
+    loop {
+        let t = slot_target(g, w(0x41), 295);
+        let o = g.read::<u32>(p);
+        let r = g.call(t, 0, &[o, 0]).eax;
+        p = p.wrapping_add(0xcc);
+        if p.cast_signed() >= end.cast_signed() {
+            return r;
+        }
+    }
+}
+
+/// `records_295` (100 bytes, 4 overlays).
+pub const RECORDS_295: Sig = Sig {
+    len: 100,
+    hash: 0x7e64_2a74_45ad_3e84,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0284` 0x10003510 (internal, no arguments): [`ring_take`] for a
+/// ring of 0x68-byte entries (free when `+0x60` is 0): the entry is reset
+/// (`+0x54` 0, colours `+0x58`/`+0x5c` 0x80808080, scale `+0x38` 1.0),
+/// marked used and the rover moved past it. Returns it, or 0 when the
+/// ring is full.
+pub fn ring_take_68<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let mut i = g.read::<u32>(w(0x02));
+    let n = g.read::<i32>(w(0x0a));
+    if n <= 0 {
+        return 0;
+    }
+    let base = g.read::<u32>(w(0x17));
+    for _ in 0..n {
+        let e = i.wrapping_mul(0x68).wrapping_add(base);
+        i = i.wrapping_add(1);
+        if i.cast_signed() >= n {
+            i = 0;
+        }
+        if g.read::<u32>(e + 0x60) == 0 {
+            g.write::<u32>(e + 0x54, 0);
+            g.write::<u32>(e + 0x58, 0x8080_8080);
+            g.write::<u32>(e + 0x5c, 0x8080_8080);
+            g.write::<u32>(e + 0x38, 0x3f80_0000);
+            g.write::<u32>(e + 0x60, 1);
+            g.write::<u32>(w(0x62), i);
+            return e;
+        }
+    }
+    0
+}
+
+/// `ring_take_68` (104 bytes, 4 overlays).
+pub const RING_TAKE_68: Sig = Sig {
+    len: 104,
+    hash: 0xff7f_a4bb_bfe0_f625,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0515` 0x10003ef0 (internal, `edx` = an angle): `G_B` 1, slot
+/// 247 turns the DLL's matrix `M` by `-0x4000 - angle`, its last row takes
+/// the four words of `A`, and slot 327 applies it to the vector `V` (the
+/// earlier words left below). Returns slot 327's `eax`.
+pub fn turn_matrix<G: Game>(g: &mut G, img: &Image, f: u32, angle: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let x = 0xffff_c000u32.wrapping_sub(angle);
+    g.write::<u8>(w(0x0f), 1);
+    let t = slot_target(g, w(0x09), 247);
+    let m = w(0x1b);
+    g.call(t, 0, &[m, x]);
+    for (src, dst) in [(0x25, 0x32), (0x3a, 0x42), (0x4a, 0x52), (0x5a, 0x62)] {
+        let v = g.read::<u32>(w(src));
+        g.write::<u32>(w(dst), v);
+    }
+    let t = slot_target(g, w(0x2a), 327);
+    g.call(t, 0, &[w(0x72), w(0x6d), m, x]).eax
+}
+
+/// `turn_matrix` (124 bytes, 4 overlays).
+pub const TURN_MATRIX: Sig = Sig {
+    len: 124,
+    hash: 0x16c3_3e31_ca87_a91e,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0042` 0x10008470 (internal, no arguments): the DLL's static
+/// node `A` set up under its static parent `P` (the handler table, pass
+/// byte 0xff, an empty child list, appended to `P`'s children), with
+/// `+0x70`/`+0x6c` two of the DLL's blocks, byte `+0x74` 0 and `+0x68` 2.
+/// Returns `P`'s last child before it.
+pub fn static_node<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let last = g.read::<u32>(w(0x01));
+    g.write::<u32>(w(0x07), w(0x0b));
+    g.write::<u16>(w(0x12), 0xff);
+    for (dst, v) in [
+        (0x1a, w(0x1e)),
+        (0x24, w(0x28)),
+        (0x2e, w(0x32)),
+        (0x38, w(0x3c)),
+        (0x41, last),
+    ] {
+        g.write::<u32>(w(dst), v);
+    }
+    if last == w(0x46) {
+        g.write::<u32>(w(0x4e), w(0x52));
+    } else {
+        g.write::<u32>(last + 4, w(0x5b));
+    }
+    let c = g.read::<u16>(w(0x62));
+    g.write::<u16>(w(0x62), c.wrapping_add(1));
+    for (dst, v) in [(0x68, w(0x6c)), (0x72, w(0x76)), (0x7c, w(0x80))] {
+        g.write::<u32>(w(dst), v);
+    }
+    g.write::<u8>(w(0x86), 0);
+    g.write::<u32>(w(0x8d), 2);
+    last
+}
+
+/// `static_node` (150 bytes, 4 overlays).
+pub const STATIC_NODE: Sig = Sig {
+    len: 150,
+    hash: 0x82d4_dbc5_3c59_69e5,
     calls: &[],
     imports: &[],
 };

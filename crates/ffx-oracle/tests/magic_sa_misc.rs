@@ -1867,7 +1867,9 @@ fn host_start_d_and_rotate_add() {
         ..Call::default()
     };
     t.check(f, c, &[v], Eax::Checked, |g, img, fr| {
-        ffx_magic::Ret::eax(ffx_magic::sa_misc::rotate_add(g, img, fr))
+        ffx_magic::Ret::eax(ffx_magic::sb_misc::rotate_offset(
+            g, img, fr.at, fr.esp, fr.ecx, fr.edx,
+        ))
     });
 }
 
@@ -2050,4 +2052,162 @@ fn small_internal_c() {
     t.check(t.at(0x99a0), c, &[], Eax::Checked, |g, img, fr| {
         ffx_magic::Ret::eax(ffx_magic::sa_misc::node_start(g, img, fr))
     });
+}
+
+/// The handle stubs: slot 772 answers `edx:eax` from its words, slot 779
+/// logs the lock as it sees it.
+fn handle_stubs(t: &mut Twin, lock: u32) {
+    t.set_u32(lock, SCRATCH + 0x800);
+    t.set_u32(SCRATCH + 0x800, 0x5555);
+    rec(t, 772, 2, |_, a| 0x7720_0000 ^ a[0] ^ a[1] << 4);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(t, 779, 4, |m, a| {
+        m.w32(SCRATCH + 0x804, m.r32(SCRATCH + 0x800));
+        a[0]
+    });
+}
+
+#[test]
+fn handle_registers() {
+    let Some(mut t) = sa::twin(284) else { return };
+    let f = t.at(0x2a90);
+    let lock = t.img.word(f + 0x21);
+    handle_stubs(&mut t, lock);
+    t.check(f, Call::this(0x0042), &[], Eax::Checked, |g, img, fr| {
+        ffx_magic::Ret::eax(ffx_magic::sa_misc::register_8(g, img, fr.at, fr.ecx))
+    });
+    drop(t);
+    let Some(mut t) = sa::twin(515) else { return };
+    let f = t.at(0x3e90);
+    let lock = t.img.word(f + 0x22);
+    handle_stubs(&mut t, lock);
+    t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+        ffx_magic::Ret::eax(ffx_magic::sa_misc::register_records(g, img, fr.at))
+    });
+    let f = t.at(0x34b0);
+    let (first, end) = (t.img.word(f + 0x04), t.img.word(f + 0x5d));
+    let n = (end - first) / 0xa8;
+    for counts in [[-1i32, -1, -1], [0, 2, -1], [-1, -1, 1]] {
+        for i in 0..n {
+            let c = if i < 3 { counts[i as usize] } else { -1 };
+            t.set_u32(first + 0xa8 * i, c.cast_unsigned());
+        }
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::register_counted(g, img, fr.at, fr.eax))
+        });
+    }
+}
+
+#[test]
+fn magic_0515_records() {
+    let Some(mut t) = sa::twin(515) else { return };
+    rec(&mut t, 255, 2, |_, a| 0x2550_0000 ^ a[0]);
+    rec(&mut t, 170, 2, |_, a| 0x1700_0000 ^ a[1]);
+    let recs = SCRATCH + 0x1000;
+    for i in 0..4u32 {
+        t.write(recs + 0xcc * i, &[0x11; 0xcc]);
+        t.set_u32(recs + 0xcc * i, 0x0b00_0000 + i);
+        t.set_u16(recs + 0xcc * i + 0x14, (i as u16).wrapping_mul(0x1234));
+    }
+    for n in [0u32, 1, 4] {
+        let c = Call {
+            eax: 0x00ea_0000,
+            ecx: recs,
+            edx: n,
+            ..Call::default()
+        };
+        t.check(t.at(0x28f0), c, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::place_records(
+                g, img, fr.at, fr.ecx, fr.edx, fr.eax,
+            ))
+        });
+    }
+    rec(&mut t, 295, 2, |_, a| 0x2950_0000 ^ a[0]);
+    let f = t.at(0x2560);
+    let (n, a, b) = (
+        t.img.word(f + 0x05),
+        t.img.word(f + 0x0d),
+        t.img.word(f + 0x36),
+    );
+    for i in 0..4 {
+        t.set_u32(a + 0xcc * i, 0x0a00_0000 + i);
+    }
+    let _ = b;
+    for count in [0u32, 2, 0xffff_ffff] {
+        t.set_u32(n, count);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::records_295(g, img, fr.at))
+        });
+    }
+    drop(t);
+    let Some(mut t) = sa::twin(284) else { return };
+    let f = t.at(0x3510);
+    let (rover, count, base) = (
+        t.img.word(f + 0x02),
+        t.img.word(f + 0x0a),
+        t.img.word(f + 0x17),
+    );
+    let ring = SCRATCH + 0x1000;
+    t.set_u32(base, ring);
+    for (n, start, used) in [
+        (0i32, 0u32, 0u32),
+        (4, 0, 0),
+        (4, 2, 0b0100),
+        (4, 3, 0b1000),
+        (4, 1, 0b1111),
+    ] {
+        t.write(ring, &vec![0x55; 0x68 * 5]);
+        for i in 0..5 {
+            t.set_u32(ring + 0x68 * i + 0x60, (used >> i) & 1);
+        }
+        t.set_u32(count, n as u32);
+        t.set_u32(rover, start);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::ring_take_68(g, img, fr.at))
+        });
+    }
+}
+
+#[test]
+fn turn_matrix_and_static_node() {
+    let Some(mut t) = sa::twin(515) else { return };
+    let f = t.at(0x3ef0);
+    rec(&mut t, 247, 2, |m, a| {
+        m.w32(a[0], a[1]);
+        0x247
+    });
+    rec(&mut t, 327, 2, |m, a| {
+        m.w32(SCRATCH + 0x900, m.r32(a[1] + 0x30));
+        0x3270_0000 ^ a[0]
+    });
+    for (i, op) in [0x25u32, 0x3a, 0x4a, 0x5a].into_iter().enumerate() {
+        let src = t.img.word(f + op);
+        t.set_u32(src, 0x4100_0000 + i as u32);
+    }
+    for angle in [0u32, 0x1234, 0xffff_c000] {
+        let c = Call {
+            eax: 0,
+            ecx: 0,
+            edx: angle,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::turn_matrix(g, img, fr.at, fr.edx))
+        });
+    }
+    drop(t);
+    let Some(mut t) = sa::twin(42) else { return };
+    let f = t.at(0x8470);
+    let p = t.img.word(f + 0x46);
+    for kids in [0u32, 1] {
+        t.write(p, &[0x44; 0x20]);
+        t.set_u32(p + 0x10, if kids == 0 { p } else { SCRATCH + 0x400 });
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::static_node(g, img, fr.at))
+        });
+    }
 }
