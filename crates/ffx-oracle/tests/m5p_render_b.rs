@@ -3687,3 +3687,77 @@ fn frames_match_the_original() {
         }
     }
 }
+
+// ---- batch 8: the morph blends ----
+
+use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
+
+#[test]
+fn morphs_match_the_original() {
+    assert_eq!(morph::MORPHS.len(), 7);
+    for (label, mut t) in Twins::all() {
+        for &(f, m) in &morph::MORPHS {
+            assert_eq!(morph::morph_of(f), m);
+            // which weights are 0: none, one left, two, all; a weight of
+            // 1.0 alone, -0.0, a NaN
+            let z = 0u32;
+            let cases: [[u32; 4]; 8] = [
+                [z, z, z, z],
+                [0x3f00_0000, z, z, z],
+                [z, 0x3f80_0000, z, z],
+                [0x8000_0000, z, 0xbf40_0000, z],
+                [0x3e80_0000, 0x3f00_0000, z, z],
+                [0x3e80_0000, 0x3f00_0000, 0x3f40_0000, z],
+                [0x3e80_0000, 0x3f00_0000, 0x3f40_0000, 0x3fc0_0000],
+                [0x7fc0_0000, z, z, z],
+            ];
+            for (c, w) in cases.iter().enumerate() {
+                for n in [0u32, 1, 5] {
+                    t.stub(morph::MEMCPY, false, 3, 0, 0x3c);
+                    t.stub(morph::MEMSET, false, 3, 0, 0x3d);
+                    t.stub(morph::BLEND2, false, 4, 0, 0xb2);
+                    t.stub(morph::BLEND3, false, 4, 0, 0xb3);
+                    t.stub(morph::BLEND4, false, 4, 0, 0xb4);
+                    let weights = t.alloc(&w.map(u32::to_le_bytes).concat());
+                    let srcs: Vec<u32> = [1.0f32, 2.0, 3.0, 4.0]
+                        .into_iter()
+                        .map(|k| {
+                            let v: Vec<u8> = (0..0x60u32)
+                                .flat_map(|i| {
+                                    (f32::from_bits(0x3f80_0000 + i * 0x0001_1111) * k)
+                                        .to_le_bytes()
+                                })
+                                .collect();
+                            t.alloc(&v)
+                        })
+                        .collect();
+                    let streams = t.alloc(
+                        &[srcs[0], srcs[1], srcs[2], srcs[3]]
+                            .map(u32::to_le_bytes)
+                            .concat(),
+                    );
+                    let dst = t.junk(0x200, 3);
+                    let out = t.zeros(4);
+                    t.w32(out, dst);
+                    let ebp = t.ebp_for(4);
+                    let (wl, sl) = morph::locals(m.k);
+                    t.check_frame(
+                        &format!("{label}: morph {f:#x} case {c} n {n}"),
+                        f,
+                        Conv::Cdecl,
+                        &[weights, n, streams, out],
+                        ebp,
+                        sl.max(wl),
+                        (sl.max(wl), 4),
+                        |g| {
+                            let r = gb::morph(g, ebp, m, weights, n, streams, out);
+                            // no vertices: the original leaves the caller's eax or its cookie
+                            if n == 0 { Out::None } else { Out::U32(r) }
+                        },
+                    );
+                    t.reset();
+                }
+            }
+        }
+    }
+}

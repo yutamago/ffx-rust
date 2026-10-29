@@ -13,6 +13,7 @@ use ffx_prender::m5p_render_b_dtors::bridge as tb;
 use ffx_prender::m5p_render_b_frames::bridge as fb;
 use ffx_prender::m5p_render_b_more::bridge as mb;
 use ffx_prender::m5p_render_b_more2::bridge as nb;
+use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
@@ -1155,5 +1156,48 @@ ported! {
         let mut f = super::StackFrame::<8>::new();
         let ebp = f.at() + 0x20;
         fb::bind_tables(&mut mem(), ebp, this, renderer)
+    }
+    // ---- batch 8: the morph blends (ffx_prender::m5p_render_b_morph MORPHS) ----
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend2x2_005c9f50`: 2 weighted streams of 2-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend2x2_005c9f50 @ 0x005c_9f50 => extern "C" fn g_005c9f50(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<4>::new();
+        let ebp = f.at() + 16;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_9f50) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend3x2_005ca3e0`: 3 weighted streams of 2-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend3x2_005ca3e0 @ 0x005c_a3e0 => extern "C" fn g_005ca3e0(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<7>::new();
+        let ebp = f.at() + 28;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_a3e0) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend3x3_005ca5b0`: 3 weighted streams of 3-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend3x3_005ca5b0 @ 0x005c_a5b0 => extern "C" fn g_005ca5b0(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<7>::new();
+        let ebp = f.at() + 28;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_a5b0) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend3x4_005ca780`: 3 weighted streams of 4-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend3x4_005ca780 @ 0x005c_a780 => extern "C" fn g_005ca780(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<7>::new();
+        let ebp = f.at() + 28;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_a780) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend4x2_005ca950`: 4 weighted streams of 2-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend4x2_005ca950 @ 0x005c_a950 => extern "C" fn g_005ca950(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<9>::new();
+        let ebp = f.at() + 36;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_a950) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend4x3_005cab40`: 4 weighted streams of 3-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend4x3_005cab40 @ 0x005c_ab40 => extern "C" fn g_005cab40(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<9>::new();
+        let ebp = f.at() + 36;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_ab40) }, weights, n, streams, out)
+    }
+    /// `Phyre_PDynamicGeometry_PMorphModifier_blend4x4_005cad30`: 4 weighted streams of 4-float vertices.
+    Phyre_PDynamicGeometry_PMorphModifier_blend4x4_005cad30 @ 0x005c_ad30 => extern "C" fn g_005cad30(weights: u32, n: u32, streams: u32, out: u32) -> u32 {
+        let mut f = super::StackFrame::<9>::new();
+        let ebp = f.at() + 36;
+        gb::morph(&mut mem(), ebp, const { morph::morph_of(0x005c_ad30) }, weights, n, streams, out)
     }
 }
