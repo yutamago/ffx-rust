@@ -248,6 +248,19 @@ impl Twins {
     /// is not one entry per row: it must be the same on both sides, and
     /// at least one entry.
     fn run(&mut self, what: &str, sym: u32, check_eax: bool, port: impl FnOnce(&mut G) -> u32) {
+        self.run_logged(what, sym, check_eax, true, port);
+    }
+
+    /// [`Twins::run`]; `must_log` asks for at least one destructor
+    /// registered (false for the rows that register none on some path).
+    fn run_logged(
+        &mut self,
+        what: &str,
+        sym: u32,
+        check_eax: bool,
+        must_log: bool,
+        port: impl FnOnce(&mut G) -> u32,
+    ) {
         let log = self.log;
         self.w32(log, 0);
         let addr = self.rebase(sym);
@@ -261,7 +274,9 @@ impl Twins {
             assert_eq!(ra.eax, eb, "{what}: eax");
         }
         self.diff(what);
-        assert!(self.log_entries() >= 1, "{what}: no destructor registered");
+        if must_log {
+            assert!(self.log_entries() >= 1, "{what}: no destructor registered");
+        }
     }
 
     /// Writes the list head at `head` (an image global) in both oracles.
@@ -360,6 +375,266 @@ fn static_init_b_class_decls() {
             t.run(&format!("{what} class {:#x}", r.addr), r.addr, true, |g| {
                 si::class_decl(g, r)
             });
+        }
+    }
+}
+
+// ---- the odd shapes ----
+
+/// `PhyreMalloc`, replaced by a stub returning a block (or 0).
+const PHYRE_MALLOC_SYM: u32 = 0x0042_fb80;
+/// `MemSystem_Ensure`'s body: the conditional tail-jump's target, a stub.
+const MEM_SYSTEM_ENSURE_SYM: u32 = 0x0094_28b0;
+/// The import slots of `ImportStore` (three and four words) and `ImportObject`.
+const IAT_3: u32 = 0x00b0_c198;
+const IAT_4: u32 = 0x00b0_c11c;
+const IAT_0: u32 = 0x00b0_c060;
+/// The global the conditional tail-jump tests.
+const COND_FLAG: u32 = 0x0193_cd2c;
+
+/// A xorshift step, and a finite float in [-100, 100] from it.
+fn xorshift(s: &mut u32) -> u32 {
+    *s ^= *s << 13;
+    *s ^= *s >> 17;
+    *s ^= *s << 5;
+    *s
+}
+
+fn unit_float(s: &mut u32) -> f32 {
+    #[allow(clippy::cast_precision_loss)]
+    let v = (xorshift(s) % 2_000_001) as f32;
+    v / 10_000.0 - 100.0
+}
+
+impl Twins {
+    /// A chain block: its count (at `+0xc`) and its next link (at `+4`).
+    fn set_block(&mut self, block: u32, count: u32, next: u32) {
+        self.w32(block + 0xc, count);
+        self.w32(block + 4, next);
+    }
+}
+
+#[test]
+fn static_init_b_chain_appends() {
+    for (what, mut t) in Twins::all() {
+        let b0 = t.zeros(0x10);
+        let b1 = t.zeros(0x10);
+        for r in si::LIST_APPENDS {
+            let label = format!("{what} chain {:#x}", r.addr);
+            // the snapshot's own chain
+            t.run(&label, r.addr, true, |g| si::list_append(g, r));
+            // an empty chain
+            t.set_head(si::CHAIN_HEAD, 0);
+            t.run(&format!("{label} (empty)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
+            // one full block: the walk stops at the head
+            t.set_block(b0, 0xff, 0);
+            t.set_head(si::CHAIN_HEAD, b0);
+            t.run(&format!("{label} (full)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
+            // one empty block: the walk ends at its link
+            t.set_block(b0, 0, 0);
+            t.set_head(si::CHAIN_HEAD, b0);
+            t.run(&format!("{label} (empty block)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
+            // an empty block, then a full one: the walk stops at the second
+            t.set_block(b0, 0, b1);
+            t.set_block(b1, 0xff, 0);
+            t.set_head(si::CHAIN_HEAD, b0);
+            t.run(&format!("{label} (empty, full)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
+            // two empty blocks: the walk ends at the last link
+            t.set_block(b0, 0, b1);
+            t.set_block(b1, 0, 0);
+            t.set_head(si::CHAIN_HEAD, b0);
+            t.run(&format!("{label} (empty, empty)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_b_malloc_copies() {
+    for (what, mut t) in Twins::all() {
+        let block = t.zeros(0x20);
+        // PhyreMalloc returns a block, then 0 (the copy is skipped)
+        for ret in [block, 0] {
+            t.stub(PHYRE_MALLOC_SYM, false, 2, 0, ret);
+            for r in si::MALLOC_COPIES {
+                t.run(
+                    &format!("{what} malloc {:#x} ({ret:#x})", r.addr),
+                    r.addr,
+                    true,
+                    |g| si::malloc_copy(g, r),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_b_imports() {
+    for (what, mut t) in Twins::all() {
+        // stdcall stubs that log their words and pop them, returning a marker
+        let s3 = t.stub_code(0x0c7e_0010, false, 3, 3, 0x1111_0003);
+        let s4 = t.stub_code(0x0c7e_0011, false, 4, 4, 0x1111_0004);
+        let s0 = t.stub_code(0x0c7e_0012, false, 0, 0, 0x1111_0000);
+        for r in si::IMPORT_STORES {
+            let stub = match r.iat {
+                IAT_3 => s3,
+                IAT_4 => s4,
+                other => panic!("unexpected import slot {other:#x}"),
+            };
+            let at = t.rebase(r.iat);
+            t.w32(at, stub);
+            t.run(&format!("{what} import {:#x}", r.addr), r.addr, true, |g| {
+                si::import_store(g, r)
+            });
+        }
+        for r in si::IMPORT_OBJECTS {
+            let at = t.rebase(IAT_0);
+            t.w32(at, s0);
+            t.run(
+                &format!("{what} import object {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| si::import_object(g, r),
+            );
+        }
+    }
+}
+
+#[test]
+fn static_init_b_stores_and_sentinels() {
+    for (what, mut t) in Twins::all() {
+        for r in si::CTOR_STORES {
+            t.run(&format!("{what} store {:#x}", r.addr), r.addr, true, |g| {
+                si::ctor_store(g, r)
+            });
+        }
+        for r in si::FREE_LISTS {
+            t.run(
+                &format!("{what} free list {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| si::free_list(g, r),
+            );
+        }
+        for r in si::SENTINELS {
+            t.run(
+                &format!("{what} sentinel {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| si::sentinel(g, r),
+            );
+        }
+        for r in si::CTOR_ARGS {
+            t.run(
+                &format!("{what} ctor arg {:#x}", r.addr),
+                r.addr,
+                true,
+                |g| si::ctor_arg(g, r),
+            );
+        }
+    }
+}
+
+#[test]
+fn static_init_b_floats() {
+    for (what, mut t) in Twins::all() {
+        let mut seed = 0x2545_f491u32;
+        for r in si::FLOATS {
+            for case in 0..40 {
+                // the constants, with the denominators away from zero
+                let (a, b, c) = loop {
+                    let (a, b, c) = (
+                        unit_float(&mut seed),
+                        unit_float(&mut seed),
+                        unit_float(&mut seed),
+                    );
+                    if (a - c).abs() > 1e-3 && (c - b).abs() > 1e-3 {
+                        break (a, b, c);
+                    }
+                };
+                for (at, v) in [(r.a, a), (r.b, b), (r.c, c)] {
+                    let at = t.rebase(at);
+                    t.w32(at, v.to_bits());
+                }
+                // a void shim: eax is not compared, the stored float is
+                t.run_logged(
+                    &format!("{what} float {:#x} case {case}", r.addr),
+                    r.addr,
+                    false,
+                    false,
+                    |g| {
+                        si::float_row(g, r);
+                        0
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_b_copies_and_tails() {
+    for (what, mut t) in Twins::all() {
+        for r in si::COPY_WORDS {
+            let src = t.rebase(r.src);
+            t.w32(src, 0x1234_5678 ^ r.addr);
+            // a copy registers no destructor: the log is not checked
+            t.run_logged(
+                &format!("{what} copy {:#x}", r.addr),
+                r.addr,
+                true,
+                false,
+                |g| si::copy_word(g, r),
+            );
+        }
+        // the jump's target registers nothing itself: the log is not checked
+        for r in si::TAIL_THISCALLS {
+            t.run_logged(
+                &format!("{what} tail {:#x}", r.addr),
+                r.addr,
+                true,
+                false,
+                |g| si::tail_thiscall(g, r),
+            );
+        }
+    }
+}
+
+#[test]
+fn static_init_b_cond_tails() {
+    for (what, mut t) in Twins::all() {
+        // MemSystem_Ensure (the jump's target) is a stub in both: it logs and returns 0x77
+        t.stub(MEM_SYSTEM_ENSURE_SYM, false, 0, 0, 0x77);
+        for r in si::COND_TAILS {
+            // the flag zero: the jump is taken, its eax is ours
+            let flag = t.rebase(COND_FLAG);
+            t.w32(flag, 0);
+            t.run(
+                &format!("{what} cond {:#x} (taken)", r.addr),
+                r.addr,
+                true,
+                |g| si::cond_tail(g, r),
+            );
+            // the flag set: the original returns with the caller's eax, which
+            // the port does not reproduce (nothing reads it); nothing is logged
+            let flag = t.rebase(COND_FLAG);
+            t.w32(flag, 1);
+            t.run_logged(
+                &format!("{what} cond {:#x} (not taken)", r.addr),
+                r.addr,
+                false,
+                false,
+                |g| si::cond_tail(g, r),
+            );
         }
     }
 }

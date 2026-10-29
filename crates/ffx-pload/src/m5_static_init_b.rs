@@ -4111,3 +4111,595 @@ pub const CLASS_DECLS: &[ClassDecl] = &[
         dtor: 0x00b0_90b0,
     },
 ];
+
+// ---- the odd shapes: bridges (hand-written from their disassembly) ----
+
+/// `PhyreMalloc(size, align)`, cdecl.
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+/// The constructor of a list object whose sentinel the shape then links,
+/// thiscall with no arguments.
+pub const SENTINEL_CTOR: u32 = 0x0057_6630;
+/// `PFreeList::PFreeList(size, count, align, name)`, thiscall, `ret 0x10`.
+pub const FREE_LIST_CTOR: u32 = 0x0049_c480;
+/// The head of the chain of blocks [`list_append`] links into.
+pub const CHAIN_HEAD: u32 = 0x00c9_01a8;
+/// `MemSystem_Ensure`'s body, which the conditional tail-jump reaches.
+pub const MEM_SYSTEM_ENSURE: u32 = 0x0094_28b0;
+
+/// A `ListAppend` row (5): walks the chain at [`CHAIN_HEAD`] to its first
+/// block that is not full (`count` at `+0xc`, below 0xff) or to the last
+/// link (`next` at `+4`); the object at `slot` takes that link, the
+/// link's old value goes to `save`, the object's vtable is `vt`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListAppend {
+    pub addr: u32,
+    pub save: u32,
+    pub slot: u32,
+    pub vt: u32,
+    pub dtor: u32,
+}
+
+/// The `ListAppend` shims' body. The walk keeps `slot`, the address of the
+/// link to the block it is looking at, as the original keeps `eax`.
+pub fn list_append(h: &mut impl Host, r: &ListAppend) -> u32 {
+    let head = h.rebase(CHAIN_HEAD);
+    let mut slot = head;
+    if h.read::<u32>(head) != 0 {
+        loop {
+            let cur: u32 = h.read(slot);
+            let count: u32 = h.read(cur + 0xc);
+            if count >= 0xff {
+                break;
+            }
+            let next: u32 = h.read(cur + 4);
+            slot = cur + 4;
+            if next == 0 {
+                break;
+            }
+        }
+    }
+    let old: u32 = h.read(slot);
+    let save = h.rebase(r.save);
+    h.write(save, old);
+    let obj = h.rebase(r.slot);
+    h.write(slot, obj);
+    let vt = h.rebase(r.vt);
+    h.write(obj, vt);
+    at_exit(h, r.dtor)
+}
+
+/// A `CtorStore` row (5): `obj` is constructed by `ctor` (thiscall, `args`),
+/// and its result is stored at `obj`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CtorStore {
+    pub addr: u32,
+    pub ctor: u32,
+    pub obj: u32,
+    pub args: &'static [u32],
+    pub dtor: u32,
+}
+
+/// The `CtorStore` shims' body.
+pub fn ctor_store(h: &mut impl Host, r: &CtorStore) -> u32 {
+    let obj = h.rebase(r.obj);
+    // call width: 2 (the rows pass none or two words: `[0, 0]`)
+    let v = h.call_sym(r.ctor, Conv::Thiscall(obj), r.args);
+    h.write(obj, v);
+    at_exit(h, r.dtor)
+}
+
+/// A `FreeList` row (6): `PFreeList(obj)` with (0x14, 8, 4, name), then atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FreeList {
+    pub addr: u32,
+    pub obj: u32,
+    pub name: u32,
+    pub dtor: u32,
+}
+
+/// The `FreeList` shims' body.
+pub fn free_list(h: &mut impl Host, r: &FreeList) -> u32 {
+    let obj = h.rebase(r.obj);
+    let name = h.rebase(r.name);
+    h.call_sym(FREE_LIST_CTOR, Conv::Thiscall(obj), &[0x14, 8, 4, name]);
+    at_exit(h, r.dtor)
+}
+
+/// A `Sentinel` row (3): `obj`'s constructor, then `sent` links to itself
+/// (`+0` and `+4`); atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sentinel {
+    pub addr: u32,
+    pub obj: u32,
+    pub sent: u32,
+    pub dtor: u32,
+}
+
+/// The `Sentinel` shims' body.
+pub fn sentinel(h: &mut impl Host, r: &Sentinel) -> u32 {
+    let obj = h.rebase(r.obj);
+    h.call_sym(SENTINEL_CTOR, Conv::Thiscall(obj), &[]);
+    let s = h.rebase(r.sent);
+    h.write(s, s);
+    h.write(s + 4, s);
+    at_exit(h, r.dtor)
+}
+
+/// A `MallocCopy` row (6): `PhyreMalloc(size, 2)`; when it returns a block,
+/// `words` words of the template at `tpl` are copied into it, and a byte
+/// after them when `byte`; the block goes to `store`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MallocCopy {
+    pub addr: u32,
+    pub size: u32,
+    pub tpl: u32,
+    pub words: u32,
+    pub byte: bool,
+    pub store: u32,
+    pub dtor: u32,
+}
+
+/// The `MallocCopy` shims' body.
+pub fn malloc_copy(h: &mut impl Host, r: &MallocCopy) -> u32 {
+    let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[r.size, 2]);
+    if p != 0 {
+        let tpl = h.rebase(r.tpl);
+        for i in 0..r.words {
+            let w: u32 = h.read(tpl + 4 * i);
+            h.write(p + 4 * i, w);
+        }
+        if r.byte {
+            let b: u8 = h.read(tpl + 4 * r.words);
+            h.write(p + 4 * r.words, b);
+        }
+    }
+    let store = h.rebase(r.store);
+    h.write(store, p);
+    at_exit(h, r.dtor)
+}
+
+/// An `ImportStore` row (4): a stdcall import through the slot `iat` with
+/// `args`; its result to `store`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportStore {
+    pub addr: u32,
+    pub iat: u32,
+    pub args: &'static [u32],
+    pub store: u32,
+    pub dtor: u32,
+}
+
+/// The `ImportStore` shims' body.
+pub fn import_store(h: &mut impl Host, r: &ImportStore) -> u32 {
+    let slot = h.rebase(r.iat);
+    let f: u32 = h.read(slot);
+    // call width: 4 (the rows pass three or four words: `[0, 0, 0]`, `[0, 1, 1, 0]`)
+    let v = h.call(f, Conv::Stdcall, r.args);
+    let store = h.rebase(r.store);
+    h.write(store, v);
+    at_exit(h, r.dtor)
+}
+
+/// An `ImportObject` row (1): an object `{vt, result of the import at iat,
+/// 0 byte}`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportObject {
+    pub addr: u32,
+    pub iat: u32,
+    pub vt: u32,
+    pub obj: u32,
+    pub dtor: u32,
+}
+
+/// The `ImportObject` shims' body.
+pub fn import_object(h: &mut impl Host, r: &ImportObject) -> u32 {
+    let slot = h.rebase(r.iat);
+    let f: u32 = h.read(slot);
+    let v = h.call(f, Conv::Stdcall, &[]);
+    let obj = h.rebase(r.obj);
+    let vt = h.rebase(r.vt);
+    h.write(obj, vt);
+    h.write(obj + 4, v);
+    h.write(obj + 8, 0u8);
+    at_exit(h, r.dtor)
+}
+
+/// A `CtorArg` row (1): `ctor` (thiscall) with one argument `arg`; atexit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CtorArg {
+    pub addr: u32,
+    pub ctor: u32,
+    pub obj: u32,
+    pub arg: u32,
+    pub dtor: u32,
+}
+
+/// The `CtorArg` shims' body.
+pub fn ctor_arg(h: &mut impl Host, r: &CtorArg) -> u32 {
+    let obj = h.rebase(r.obj);
+    h.call_sym(r.ctor, Conv::Thiscall(obj), &[r.arg]);
+    at_exit(h, r.dtor)
+}
+
+/// The two float shapes (`FLOATS`): the x87 code runs at 53 bits, so the
+/// arithmetic is `f64`, and the store rounds to `f32` as `fstp dword` does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatForm {
+    /// `1 - (a - b) / (a - c)` (0x00af0380).
+    OneMinusRatio,
+    /// `(a - b) / (c - b)` (0x00af03b0).
+    Ratio,
+}
+
+/// A `Float` row (2): the global `g` = the form of the three float
+/// constants `a`, `b`, `c` (globals).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Float {
+    pub addr: u32,
+    pub form: FloatForm,
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+    pub g: u32,
+}
+
+/// The `Float` shims' body (a void shim: nothing is returned in `eax`).
+#[allow(
+    clippy::cast_possible_truncation, // the store rounds to f32, as fstp does
+    clippy::many_single_char_names // the constants and the result, as the code names them
+)]
+pub fn float_row(h: &mut impl Host, r: &Float) {
+    let a = f64::from(h.read::<f32>(h.rebase(r.a)));
+    let b = f64::from(h.read::<f32>(h.rebase(r.b)));
+    let c = f64::from(h.read::<f32>(h.rebase(r.c)));
+    let v = match r.form {
+        FloatForm::OneMinusRatio => 1.0 - (a - b) / (a - c),
+        FloatForm::Ratio => (a - b) / (c - b),
+    };
+    let g = h.rebase(r.g);
+    h.write(g, v as f32);
+}
+
+/// A `CopyWord` row (1): `dst = src`; the word is returned in `eax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CopyWord {
+    pub addr: u32,
+    pub src: u32,
+    pub dst: u32,
+}
+
+/// The `CopyWord` shims' body.
+pub fn copy_word(h: &mut impl Host, r: &CopyWord) -> u32 {
+    let src = h.rebase(r.src);
+    let v: u32 = h.read(src);
+    let dst = h.rebase(r.dst);
+    h.write(dst, v);
+    v
+}
+
+/// A `TailThiscall` row (1): `ecx = obj`, then the original jumps to
+/// `target`, which returns to our caller; its `eax` is ours.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TailThiscall {
+    pub addr: u32,
+    pub obj: u32,
+    pub target: u32,
+}
+
+/// The `TailThiscall` shims' body.
+pub fn tail_thiscall(h: &mut impl Host, r: &TailThiscall) -> u32 {
+    let obj = h.rebase(r.obj);
+    h.call_sym(r.target, Conv::Thiscall(obj), &[])
+}
+
+/// A `CondTail` row (1): when the word at `flag` is zero the original jumps
+/// to `MemSystem_Ensure`, which returns to our caller with its `eax`;
+/// otherwise it returns with the caller's `eax` (0 here: the CRT's
+/// initialiser loop reads nothing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CondTail {
+    pub addr: u32,
+    pub flag: u32,
+    pub target: u32,
+}
+
+/// The `CondTail` shims' body.
+pub fn cond_tail(h: &mut impl Host, r: &CondTail) -> u32 {
+    let flag = h.rebase(r.flag);
+    if h.read::<u32>(flag) == 0 {
+        h.call_sym(r.target, Conv::Cdecl, &[])
+    } else {
+        0
+    }
+}
+
+// ---- the odd shapes: generated by static-init-b-work/gen_odd_tables.py ----
+
+/// The chain appends (5): a block is linked into the list at 0xc901a8.
+pub const LIST_APPENDS: &[ListAppend] = &[
+    ListAppend {
+        addr: 0x00ae_e660,
+        save: 0x00c2_a0f8,
+        slot: 0x00c2_a0f4,
+        vt: 0x00b3_9384,
+        dtor: 0x00b0_5ef0,
+    },
+    ListAppend {
+        addr: 0x00af_12c0,
+        save: 0x00c6_13f4,
+        slot: 0x00c6_13f0,
+        vt: 0x00b6_a004,
+        dtor: 0x00b0_7d50,
+    },
+    ListAppend {
+        addr: 0x00af_2620,
+        save: 0x00c6_81f0,
+        slot: 0x00c6_81ec,
+        vt: 0x00b7_3d8c,
+        dtor: 0x00b0_8330,
+    },
+    ListAppend {
+        addr: 0x00af_2bf0,
+        save: 0x00c6_8460,
+        slot: 0x00c6_845c,
+        vt: 0x00b7_3f58,
+        dtor: 0x00b0_8650,
+    },
+    ListAppend {
+        addr: 0x00af_4a30,
+        save: 0x00c6_8498,
+        slot: 0x00c6_8494,
+        vt: 0x00b7_3f70,
+        dtor: 0x00b0_9010,
+    },
+];
+
+/// Constructors whose result is stored in their own global (5).
+pub const CTOR_STORES: &[CtorStore] = &[
+    CtorStore {
+        addr: 0x00ae_e840,
+        ctor: 0x0062_5850,
+        obj: 0x00cc_9ee4,
+        args: &[],
+        dtor: 0x00b0_6050,
+    },
+    CtorStore {
+        addr: 0x00ae_f900,
+        ctor: 0x0068_6bb0,
+        obj: 0x00cc_c840,
+        args: &[0, 0],
+        dtor: 0x00b0_6cb0,
+    },
+    CtorStore {
+        addr: 0x00af_0d70,
+        ctor: 0x0065_4ea0,
+        obj: 0x00ce_6eb0,
+        args: &[],
+        dtor: 0x00b0_7920,
+    },
+    CtorStore {
+        addr: 0x00af_1230,
+        ctor: 0x0080_6b20,
+        obj: 0x012f_4104,
+        args: &[],
+        dtor: 0x00b0_7c20,
+    },
+    CtorStore {
+        addr: 0x00af_1250,
+        ctor: 0x0080_6af0,
+        obj: 0x012f_40f8,
+        args: &[],
+        dtor: 0x00b0_7ca0,
+    },
+];
+
+/// Free lists of `PMapPair` (6), constructed under an SEH frame.
+pub const FREE_LISTS: &[FreeList] = &[
+    FreeList {
+        addr: 0x00ae_e9d0,
+        obj: 0x00c3_1eb4,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_6630,
+    },
+    FreeList {
+        addr: 0x00ae_feb0,
+        obj: 0x00c3_41b4,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_7000,
+    },
+    FreeList {
+        addr: 0x00af_06d0,
+        obj: 0x00c3_4b64,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_74e0,
+    },
+    FreeList {
+        addr: 0x00af_0730,
+        obj: 0x00c3_4b34,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_7560,
+    },
+    FreeList {
+        addr: 0x00af_0b50,
+        obj: 0x00c3_5014,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_7750,
+    },
+    FreeList {
+        addr: 0x00af_0bb0,
+        obj: 0x00c3_4fe4,
+        name: 0x00b1_3bc8,
+        dtor: 0x00b0_77d0,
+    },
+];
+
+/// List sentinels (3): a constructor, then the self links.
+pub const SENTINELS: &[Sentinel] = &[
+    Sentinel {
+        addr: 0x00af_06a0,
+        obj: 0x00cd_ee20,
+        sent: 0x00cd_ee68,
+        dtor: 0x00b0_74d0,
+    },
+    Sentinel {
+        addr: 0x00af_0b20,
+        obj: 0x00ce_6d70,
+        sent: 0x00ce_6db8,
+        dtor: 0x00b0_7740,
+    },
+    Sentinel {
+        addr: 0x00af_2c40,
+        obj: 0x0194_3da0,
+        sent: 0x0194_3de8,
+        dtor: 0x00b0_86a0,
+    },
+];
+
+/// Template copies into blocks from `PhyreMalloc` (6).
+pub const MALLOC_COPIES: &[MallocCopy] = &[
+    MallocCopy {
+        addr: 0x00ae_eaf0,
+        size: 17,
+        tpl: 0x00b0_da48,
+        words: 4,
+        byte: true,
+        store: 0x00cc_b6f0,
+        dtor: 0x00b0_6770,
+    },
+    MallocCopy {
+        addr: 0x00ae_eb40,
+        size: 16,
+        tpl: 0x00b0_da38,
+        words: 4,
+        byte: false,
+        store: 0x00cc_b6ec,
+        dtor: 0x00b0_6790,
+    },
+    MallocCopy {
+        addr: 0x00ae_ec50,
+        size: 17,
+        tpl: 0x00b0_da48,
+        words: 4,
+        byte: true,
+        store: 0x00cc_b9e4,
+        dtor: 0x00b0_6860,
+    },
+    MallocCopy {
+        addr: 0x00ae_eca0,
+        size: 16,
+        tpl: 0x00b0_da38,
+        words: 4,
+        byte: false,
+        store: 0x00cc_b9e0,
+        dtor: 0x00b0_6880,
+    },
+    MallocCopy {
+        addr: 0x00ae_f7c0,
+        size: 17,
+        tpl: 0x00b0_da48,
+        words: 4,
+        byte: true,
+        store: 0x00cc_c82c,
+        dtor: 0x00b0_6c10,
+    },
+    MallocCopy {
+        addr: 0x00ae_f810,
+        size: 16,
+        tpl: 0x00b0_da38,
+        words: 4,
+        byte: false,
+        store: 0x00cc_c828,
+        dtor: 0x00b0_6c30,
+    },
+];
+
+/// Imports whose result is stored (4).
+pub const IMPORT_STORES: &[ImportStore] = &[
+    ImportStore {
+        addr: 0x00ae_ebc0,
+        iat: 0x00b0_c198,
+        args: &[0, 0, 0],
+        store: 0x00cc_b6d0,
+        dtor: 0x00b0_6810,
+    },
+    ImportStore {
+        addr: 0x00ae_fe90,
+        iat: 0x00b0_c198,
+        args: &[0, 0, 0],
+        store: 0x00cc_ca78,
+        dtor: 0x00b0_6ff0,
+    },
+    ImportStore {
+        addr: 0x00ae_ff10,
+        iat: 0x00b0_c198,
+        args: &[0, 0, 0],
+        store: 0x00cc_caa0,
+        dtor: 0x00b0_7080,
+    },
+    ImportStore {
+        addr: 0x00af_1270,
+        iat: 0x00b0_c11c,
+        args: &[0, 1, 1, 0],
+        store: 0x012f_410c,
+        dtor: 0x00b0_7d20,
+    },
+];
+
+/// An object built from an import's result (1).
+pub const IMPORT_OBJECTS: &[ImportObject] = &[ImportObject {
+    addr: 0x00af_131e,
+    iat: 0x00b0_c060,
+    vt: 0x00b7_02a0,
+    obj: 0x0193_fcfc,
+    dtor: 0x00b0_7dc4,
+}];
+
+/// A constructor with one argument (1).
+pub const CTOR_ARGS: &[CtorArg] = &[CtorArg {
+    addr: 0x00ae_eba0,
+    ctor: 0x0063_8240,
+    obj: 0x00cc_b6e0,
+    arg: 50,
+    dtor: 0x00b0_67f0,
+}];
+
+/// Float constants (2), computed in double and rounded at the store.
+pub const FLOATS: &[Float] = &[
+    Float {
+        addr: 0x00af_0380,
+        form: FloatForm::OneMinusRatio,
+        a: 0x00c3_43f0,
+        b: 0x00c3_43f4,
+        c: 0x00c3_43ec,
+        g: 0x00cd_ec2c,
+    },
+    Float {
+        addr: 0x00af_03b0,
+        form: FloatForm::Ratio,
+        a: 0x00c3_43f0,
+        b: 0x00c3_43f4,
+        c: 0x00c3_43f8,
+        g: 0x00cd_ec34,
+    },
+];
+
+/// A word copied between globals, returned (1).
+pub const COPY_WORDS: &[CopyWord] = &[CopyWord {
+    addr: 0x00ae_f760,
+    src: 0x00c3_3478,
+    dst: 0x00cc_c7c8,
+}];
+
+/// A thiscall tail-jump (1).
+pub const TAIL_THISCALLS: &[TailThiscall] = &[TailThiscall {
+    addr: 0x00af_2610,
+    obj: 0x0194_2998,
+    target: 0x009f_2510,
+}];
+
+/// A conditional tail-jump (1).
+pub const COND_TAILS: &[CondTail] = &[CondTail {
+    addr: 0x00af_1290,
+    flag: 0x0193_cd2c,
+    target: 0x0094_28b0,
+}];

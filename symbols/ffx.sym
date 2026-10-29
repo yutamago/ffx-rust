@@ -17896,16 +17896,25 @@
 0x00aee420 function StaticInit_PPhysicsWorldBase_00aee420 # class descriptor "PPhysicsWorldBase" (cd_desc_clear): constructor, buffers, clear; atexit
 0x00aee4e0 function StaticInit_PPhysicsWorldBullet_00aee4e0 # class descriptor "PPhysicsWorldBullet" (cd_const_clear): constructor, buffers, clear; atexit
 0x00aee5a0 function StaticInit_PRaycastResult_00aee5a0 # class descriptor "PRaycastResult" (cd_desc_clear): constructor, buffers, clear; atexit
+0x00aee660 function StaticInit_ChainAppend_00aee660 # appends the object at 0x00c2_a0f4 to the chain at 0xc901a8 (before the first block at least 0xff full); atexit
 0x00aee6b0 function StaticInit_Atexit_00aee6b0 # only registers its destructor with atexit
 0x00aee6c0 function StaticInit_PAsyncProcessHeader_00aee6c0 # class descriptor "PAsyncProcessHeader" (cd_desc_clear): constructor, buffers, clear; atexit
 0x00aee780 function StaticInit_PClassCallableMethodScript_00aee780 # class descriptor "PClassCallableMethodScript" (cd_const_set8): constructor, buffers, set8; atexit
+0x00aee840 function StaticInit_CtorStore_00aee840 # constructor 0x0062_5850 on a global, its result stored in the global; atexit
 0x00aee860 function StaticInit_Ctor_00aee860 # no-argument constructor 0x0061_f1d0 on a global, then atexit
 0x00aee880 function StaticInit_PApplicationViewport_00aee880 # class descriptor "PApplicationViewport" (cd_desc_set8): constructor, buffers, set8; atexit
 0x00aee940 function StaticInit_CtorVt_00aee940 # no-argument constructor 0x0061_f310 on a global, flags &= ~2, its vtable, atexit
 0x00aee970 function StaticInit_Atexit_00aee970 # only registers its destructor with atexit
+0x00aee9d0 function StaticInit_FreeList_PMapPair_00aee9d0 # free list of "PMapPair" built on a global (SEH frame); atexit
 0x00aeea80 function StaticInit_Ctor_00aeea80 # no-argument constructor 0x0063_0f40 on a global, then atexit
+0x00aeeaf0 function StaticInit_MallocCopy_00aeeaf0 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_b6f0; atexit
+0x00aeeb40 function StaticInit_MallocCopy_00aeeb40 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_b6ec; atexit
 0x00aeeb90 function StaticInit_Atexit_00aeeb90 # only registers its destructor with atexit
+0x00aeeba0 function StaticInit_CtorArg_00aeeba0 # constructor 0x0063_8240 on a global with one argument (0x32); atexit
+0x00aeebc0 function StaticInit_ImportStore_00aeebc0 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_b6d0; atexit
 0x00aeec30 function StaticInit_CutBuffer_00aeec30 # render pass type "CutBuffer" built on its global (name, flag 0); atexit
+0x00aeec50 function StaticInit_MallocCopy_00aeec50 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_b9e4; atexit
+0x00aeeca0 function StaticInit_MallocCopy_00aeeca0 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_b9e0; atexit
 0x00aeecf0 function StaticInit_ScissorPass_00aeecf0 # render pass type "ScissorPass" built on its global (name, flag 0); atexit
 0x00aeed60 function StaticInit_ClassDynamicMesh_00aeed60 # class descriptor "ClassDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
 0x00aeee70 function StaticInit_ClassDynamicMeshInstance_00aeee70 # class descriptor "ClassDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
@@ -17916,6 +17925,10 @@
 0x00aef3e0 function StaticInit_BrokenScreenPolygonDynamicMeshInstance_00aef3e0 # class descriptor "BrokenScreenPolygonDynamicMeshInstance" (cd_const_set8): constructor, buffers, set8; atexit
 0x00aef4f0 function StaticInit_BrokenScreenPolygonDynamicMesh_00aef4f0 # class descriptor "BrokenScreenPolygonDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
 0x00aef600 function StaticInit_ShadowDynamicMesh_00aef600 # class descriptor "ShadowDynamicMesh" (cd_const_clear): constructor, buffers, clear; atexit
+0x00aef760 function StaticInit_Copy_00aef760 # copies the word at 0x00c3_3478 to 0x00cc_c7c8 and returns it
+0x00aef7c0 function StaticInit_MallocCopy_00aef7c0 # PhyreMalloc(0x11, 2) copied from the template at 0x00b0_da48, stored in 0x00cc_c82c; atexit
+0x00aef810 function StaticInit_MallocCopy_00aef810 # PhyreMalloc(0x10, 2) copied from the template at 0x00b0_da38, stored in 0x00cc_c828; atexit
+0x00aef900 function StaticInit_CtorStore_00aef900 # constructor 0x0068_6bb0 on a global, its result stored in the global; atexit
 0x00aefab0 function StaticInit_BlendingWeightCalculation_00aefab0 # render pass type "BlendingWeightCalculation" built on its global (name, flag 0); atexit
 0x00aefad0 function StaticInit_BrightBlend_00aefad0 # render pass type "BrightBlend" built on its global (name, flag 0); atexit
 0x00aefaf0 function StaticInit_ColorCorrection_00aefaf0 # render pass type "ColorCorrection" built on its global (name, flag 0); atexit
@@ -17942,6 +17955,9 @@
 0x00aefd90 function StaticInit_ScreenFade_00aefd90 # render pass type "ScreenFade" built on its global (name, flag 0); atexit
 0x00aefdb0 function StaticInit_USM_Apply_00aefdb0 # render pass type "USM_Apply" built on its global (name, flag 0); atexit
 0x00aefdd0 function StaticInit_USM_Blur_00aefdd0 # render pass type "USM_Blur" built on its global (name, flag 0); atexit
+0x00aefe90 function StaticInit_ImportStore_00aefe90 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_ca78; atexit
+0x00aefeb0 function StaticInit_FreeList_PMapPair_00aefeb0 # free list of "PMapPair" built on a global (SEH frame); atexit
+0x00aeff10 function StaticInit_ImportStore_00aeff10 # stdcall import through the slot 0x00b0_c198, its result stored in 0x00cc_caa0; atexit
 0x00af0110 function StaticInit_DistortionCopyBuffer_00af0110 # render pass type "DistortionCopyBuffer" built on its global (name, flag 0); atexit
 0x00af9ba0 function FFXApplication_atexit_dtor # static FFXApplication (0x00c8fb78) destructor: vftable, WM_CLOSE when 0x00c8fae4 == 1, PApplication dtor; ours (platform census 2026-10-25, docs/formats/platform.md; window)
 0x00b072b0 label ShadowManager_tileRects_atexit_00b072b0 # the atexit handler ShadowManager_renderCharacterTiles_006caee0 registers for its static rectangle list 0x00cdec88 (guard bit 0 of 0x00cdec90); name ours
