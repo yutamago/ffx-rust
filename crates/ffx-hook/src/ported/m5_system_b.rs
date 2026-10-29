@@ -478,7 +478,11 @@ ported! {
     /// `(chars, count)`.
     JobSchedule_Ch_Cloth_PerCharacter @ 0x00a4_4b40 => extern "C" fn schedule_cloth(chars: u32, count: u32) -> u32 {
         let mut f = StackFrame::<1>::new();
-        pc::schedule_cloth(&mut mem(), chars, count, f.at())
+        let mut m = mem();
+        // the job as the original pushes it: the harness may have pointed
+        // that operand at its seeded wrapper
+        let job: u32 = ffx_bridge::Mem::read(&m, ffx_bridge::Mem::rebase(&m, ffx_system::m5b_pc::CLOTH_JOB_PUSH));
+        pc::schedule_cloth(&mut m, chars, count, job, f.at())
     }
     /// `()`: the same code as `JobScheduleWait_Ch_Cloth_PerCharacter`.
     JobScheduleWait_Ch_CalcMiddle_Batch @ 0x00a4_4b80 => extern "C" fn wait_calc_middle() {
@@ -487,7 +491,10 @@ ported! {
     /// `(chars, pass, count)`.
     JobSchedule_Ch_CalcMiddle_Batch @ 0x00a4_4b90 => extern "C" fn schedule_calc_middle(chars: u32, pass: u32, count: u32) -> u32 {
         let mut f = StackFrame::<1>::new();
-        pc::schedule_calc_middle(&mut mem(), chars, pass, count, f.at())
+        let mut m = mem();
+        // the job as the original pushes it (see `schedule_cloth`)
+        let job: u32 = ffx_bridge::Mem::read(&m, ffx_bridge::Mem::rebase(&m, ffx_system::m5b_pc::CALC_MIDDLE_JOB_PUSH));
+        pc::schedule_calc_middle(&mut m, [chars, pass, count], job, f.at())
     }
     /// `(this; func, a, b, c, queue)`: a three-word job pushed.
     JobScheduler_pushJob3_0071e720 @ 0x0071_e720 => extern "thiscall" fn push_job3(this: u32, func: u32, a: u32, b: u32, c: u32, queue: u32; slots: u32) -> u32 {

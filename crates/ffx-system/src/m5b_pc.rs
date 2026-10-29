@@ -63,6 +63,12 @@ pub const HANDLER_INSERT: u32 = 0x0062_5c70;
 pub const SCHEDULER: u32 = 0x00cd_ede4;
 pub const CLOTH_JOB: u32 = 0x0082_e390;
 pub const CALC_MIDDLE_JOB: u32 = 0x0083_3530;
+/// Where the two originals hold their job: the `push imm32` operands at
+/// `0x00a44b52` and `0x00a44ba5`. The harness points them at seeded
+/// wrappers (`harness.rs`, `patch_seeded_jobs`), so the hook side reads
+/// the job from there, as the original does.
+pub const CLOTH_JOB_PUSH: u32 = 0x00a4_4b52;
+pub const CALC_MIDDLE_JOB_PUSH: u32 = 0x00a4_4ba5;
 pub const WAIT_FOR_SINGLE_OBJECT_IAT: u32 = 0x00b0_c0f8;
 pub const RELEASE_SEMAPHORE_IAT: u32 = 0x00b0_c0f4;
 /// `0x00a44a50` and `0x0071e720`: the two- and three-argument job
@@ -378,28 +384,22 @@ pub mod bridge {
         import(h, RELEASE_SEMAPHORE_IAT, Conv::Stdcall, &[run_sem, 1, 0])
     }
 
-    /// `JobSchedule_Ch_Cloth_PerCharacter(chars, count)` (cdecl):
-    /// `Ch_Cloth_PerCharacter` pushed with both on queue 0 of the
+    /// `JobSchedule_Ch_Cloth_PerCharacter(chars, count)` (cdecl): `job`
+    /// (`Ch_Cloth_PerCharacter`, the original's `push imm32` at
+    /// [`super::CLOTH_JOB_PUSH`]) pushed with both on queue 0 of the
     /// scheduler (`0x00a44a50`; `slot` stands for its queue argument).
-    pub fn schedule_cloth(h: &mut impl Host, chars: u32, count: u32, slot: u32) -> u32 {
+    pub fn schedule_cloth(h: &mut impl Host, chars: u32, count: u32, job: u32, slot: u32) -> u32 {
         let s: u32 = h.read(h.rebase(SCHEDULER));
-        let job = h.rebase(super::CLOTH_JOB);
         push_job(h, s, job, &[chars, count], 0, slot)
     }
 
-    /// `JobSchedule_Ch_CalcMiddle_Batch(chars, pass, count)` (cdecl):
-    /// `Ch_CalcMiddle_Batch` pushed with the three on queue 0
+    /// `JobSchedule_Ch_CalcMiddle_Batch(chars, pass, count)` (cdecl): `job`
+    /// (`Ch_CalcMiddle_Batch`, the original's `push imm32` at
+    /// [`super::CALC_MIDDLE_JOB_PUSH`]) pushed with the three on queue 0
     /// (`0x0071e720`; `slot` stands for its queue argument).
-    pub fn schedule_calc_middle(
-        h: &mut impl Host,
-        chars: u32,
-        pass: u32,
-        count: u32,
-        slot: u32,
-    ) -> u32 {
+    pub fn schedule_calc_middle(h: &mut impl Host, args: [u32; 3], job: u32, slot: u32) -> u32 {
         let s: u32 = h.read(h.rebase(SCHEDULER));
-        let job = h.rebase(super::CALC_MIDDLE_JOB);
-        push_job(h, s, job, &[chars, pass, count], 0, slot)
+        push_job(h, s, job, &args, 0, slot)
     }
 
     // ---- str_replace ----

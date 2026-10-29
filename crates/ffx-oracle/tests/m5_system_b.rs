@@ -3040,14 +3040,18 @@ fn r2_job_pushes_match_the_original() {
             let cell = t.rebase(pcs::SCHEDULER);
             t.w32(cell, s);
             t.check("schedule cloth", 0x00a4_4b40, Conv::Cdecl, &[a, b], |m| {
-                Out::U32(pcb::schedule_cloth(m, a, b, slot))
+                let job = Mem::read(&*m, Mem::rebase(&*m, pcs::CLOTH_JOB_PUSH));
+                Out::U32(pcb::schedule_cloth(m, a, b, job, slot))
             });
             t.check(
                 "schedule calc middle",
                 0x00a4_4b90,
                 Conv::Cdecl,
                 &[a, b, c],
-                |m| Out::U32(pcb::schedule_calc_middle(m, a, b, c, slot)),
+                |m| {
+                    let job = Mem::read(&*m, Mem::rebase(&*m, pcs::CALC_MIDDLE_JOB_PUSH));
+                    Out::U32(pcb::schedule_calc_middle(m, [a, b, c], job, slot))
+                },
             );
             t.check("wait calc middle", 0x00a4_4b80, Conv::Cdecl, &[], |m| {
                 ffx_system::m5a_platform::bridge::wait_cloth(m);
