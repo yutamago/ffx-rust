@@ -222,6 +222,7 @@ RCBG_DRAW = ("rcbg object +0xc draw: its dispatcher 0x92075e (rcbgScene draw loo
 MENU_SLOT = ("menu slot +0 control (record registered by TkMenuMainRegistMenu, slot table "
              "g_TkMenuSlots 0x01840888): its dispatchers TkMenuMainActiveMenu 0x8aa15f (then "
              "mov eax, 1) and TkMenuCloseAll 0x8aa237 (eax reloaded at 0x8aa216) drop eax (2026-10-24)")
+KERNEL_DROPS_EAX = "conversion kernel: the driver 0x0047c610 (call eax at 0x0047c82d) drops eax"
 VOID_OK = {
     0x008b15d0: MENU_SLOT,  # TkMenuCtrlSaveLoad (records 0x00c59ff0, 0x00c5a014)
     # TkMenuCtrlTuto: record 0x00c5a8d8, registered as slot 0x16 by
@@ -256,6 +257,76 @@ VOID_OK = {
     # IggyMenuHandlers_flush_00a28ff0 (call eax at 0x00a29011), which drops
     # it (add esp / mov byte / loop) (2026-10-25, m4 h4 r2)
     0x0068f9b0: "IggyMenuHandlers record invoker: the dispatcher 0x00a28ff0 drops its eax",
+    # PhyreEngine conversion kernels (m5p registry-b): stored in the conversion
+    # registry's nodes (+0x14) and the mapping entries (+0x1c, 0x0047e180 at
+    # 0x0047e2d4, the selector 0x0047b950); their one dispatcher, the
+    # conversion driver 0x0047c610, runs `call eax; add esp, 0x10` at
+    # 0x0047c82d and reloads eax on every path after it (2026-10-29)
+    **{a: KERNEL_DROPS_EAX for a in (
+        0x00473e10,
+        0x00473f00,
+        0x00473f60,
+        0x00473fd0,
+        0x00474030,
+        0x004740a0,
+        0x00474100,
+        0x00474170,
+        0x00474210,
+        0x004742b0,
+        0x00474360,
+        0x004743c0,
+        0x00474460,
+        0x00474550,
+        0x004745a0,
+        0x004745f0,
+        0x00474650,
+        0x004746b0,
+        0x00474700,
+        0x00474750,
+        0x004747f0,
+        0x00474890,
+        0x00474910,
+        0x00474970,
+        0x004749d0,
+        0x00474a30,
+        0x00474a80,
+        0x00474ad0,
+        0x00474b30,
+        0x00474b90,
+        0x00474be0,
+        0x00474c30,
+        0x00474cd0,
+        0x00474d70,
+        0x00474de0,
+        0x00474e40,
+        0x00474ea0,
+        0x00474f00,
+        0x00474f50,
+        0x00474fa0,
+        0x00475000,
+        0x00475060,
+        0x004750b0,
+        0x00475100,
+        0x00475290,
+        0x00475420,
+        0x00475490,
+        0x004754f0,
+        0x00475550,
+        0x004755b0,
+        0x00475600,
+        0x00475650,
+        0x004756b0,
+        0x00475710,
+        0x00475770,
+        0x004757d0,
+        0x00475890,
+        0x00475950,
+        0x004759c0,
+        0x00475a20,
+        0x00475a80,
+        0x00476c20,
+        0x0047a510,
+    )},
 }
 
 # g_MagicImports (ffx.sym): the function table MagicFile_Start hands to
