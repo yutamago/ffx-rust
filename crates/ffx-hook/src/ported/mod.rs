@@ -63,6 +63,7 @@ mod m5_vfx;
 mod m5p_tmpl_abstract_ab;
 mod m5p_tmpl_abstract_cd;
 mod m5p_tmpl_concrete;
+mod m5p_tmpl_members_dynamic;
 mod main;
 mod map;
 mod menu;
@@ -141,6 +142,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_tmpl_abstract_ab::hooks());
     all.extend(m5p_tmpl_abstract_cd::hooks());
     all.extend(m5p_tmpl_concrete::hooks());
+    all.extend(m5p_tmpl_members_dynamic::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());
