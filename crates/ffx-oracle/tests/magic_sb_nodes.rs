@@ -362,6 +362,9 @@ fn float_289() {
             assert!(r.xmm0.is_some());
         }
     }
+    // (a slot leaving no ST0 is not tested: the port stores the
+    // indefinite NaN, as the CPU's `fstp` of an empty stack does, but
+    // Unicorn reads the empty register as 0; slot 289 always returns one)
 }
 
 #[test]
@@ -384,7 +387,14 @@ fn scale_ratio_801() {
         [0.005, -0.0, 150.0, 99.99],
     ];
     for v in cases {
-        for s in [[1.0f32, 2.0, 4.0, 0.5], [3.0, 0.25, 1.0, 1.0]] {
+        // (the infinities give quotients of +0 and -0, which compare
+        // equal: which one the maximum keeps shows)
+        for s in [
+            [1.0f32, 2.0, 4.0, 0.5],
+            [3.0, 0.25, 1.0, 1.0],
+            [f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, 1.0],
+            [f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY, 1.0],
+        ] {
             for (i, x) in (0u32..).zip(v) {
                 t.set_u32(this + 4 * i, x.to_bits());
             }
@@ -561,7 +571,9 @@ fn bounce_in(n: u16, rva: u32) {
     });
     for (flag, mode, om) in MODES {
         for ms in method_sets() {
-            for floor in [-100.0f32, 0.0, 4.0, 100.0, f32::NAN] {
+            // (-3.5: the vector's `y`, the parent's -5.25 plus the
+            // owner's 1.75, exactly on the floor)
+            for floor in [-100.0f32, 0.0, 4.0, 100.0, f32::NAN, -3.5] {
                 group(&mut t, flag, mode, om, &ms, 0, 0);
                 t.set_u32(OWNER + 0x34, floor.to_bits());
                 t.check(
@@ -629,6 +641,9 @@ fn draw_model_in(n: u16, rva: u32) {
             for i in 0..0x12 {
                 m.w32(row + 0x20 + 4 * i, m.r32(a[3] + 4 * i));
             }
+            // the draw leaves the lock changed: the lock is set again
+            // before slot 775
+            m.w32(lock, slot);
             slot
         });
     }
