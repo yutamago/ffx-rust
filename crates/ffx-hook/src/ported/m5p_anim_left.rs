@@ -12,6 +12,13 @@ use ffx_panim::m5p_anim_left_b::bridge as lb;
 use ffx_panim::m5p_anim_left_c::bridge as lc;
 use ffx_panim::m5p_anim_left_d::bridge as ld;
 use ffx_panim::m5p_anim_left_e::bridge as le;
+use ffx_panim::m5p_anim_left_f::bridge as lf;
+use ffx_panim::m5p_anim_left_g::bridge as lg;
+use ffx_panim::m5p_anim_left_h::bridge as lh;
+use ffx_panim::m5p_anim_left_i::bridge as li;
+use ffx_panim::m5p_anim_left_j::bridge as lj;
+use ffx_panim::m5p_anim_left_k::bridge as lk;
+use ffx_panim::m5p_anim_left_l::bridge as ll;
 
 ported! {
     /// `Phyre_PUtilityGeometry_findNameIndex_00493f50`: the index of `name` among the names at `[this + 0x24]`, -1 when absent.
@@ -376,5 +383,55 @@ ported! {
     /// `Phyre_PAnimatableComponent_useFirstSource_00543570`: the component plays its first source alone (one made when none); 0, 1, 0x11 or an error.
     Phyre_PAnimatableComponent_useFirstSource_00543570 @ 0x0054_3570 => extern "thiscall" fn le_00543570(this: u32, arg: u32) -> u32 {
         le::use_first_source(&mut mem(), this, arg)
+    }
+    // batch 6
+    /// `Phyre_PAnimationWeightedBlenderController_blendKernel_0052dae0`: weighted blend of four-float sources (linear, quaternion, largest weight); `al`.
+    Phyre_PAnimationWeightedBlenderController_blendKernel_0052dae0 @ 0x0052_dae0 => extern "C" fn lf_0052dae0(out: u32, mode: u32, sources: u32, n: u32, weights: u32) -> u32 {
+        lf::weighted(&mut mem(), out, mode, sources, n, weights)
+    }
+    /// `Phyre_PAnimationAdditiveBlenderController_blendKernel_0052ef70`: additive blend of four-float sources onto the first; `al`.
+    Phyre_PAnimationAdditiveBlenderController_blendKernel_0052ef70 @ 0x0052_ef70 => extern "C" fn lf_0052ef70(out: u32, mode: u32, sources: u32, n: u32, weights: u32) -> u32 {
+        lf::additive(&mut mem(), out, mode, sources, n, weights)
+    }
+    /// `Phyre_PAnimationTargetBlenderController_applyTargets_00531660`: blended values applied to their bound targets (matrices, copies, logs; locals in this frame); 0 or 1.
+    Phyre_PAnimationTargetBlenderController_applyTargets_00531660 @ 0x0053_1660 => extern "thiscall" fn lf_00531660(this: u32, binds: u32, values: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_f::APPLY_FRAME_WORDS as usize }>::new();
+        lf::apply_targets(&mut mem(), this, binds, values, f.at())
+    }
+    // batch 7
+    /// `Phyre_PAnimationSet_buildData_005114b0`: the set's packed data (header, key counts, sorted channel records, slots; the lookups in this frame); 0.
+    Phyre_PAnimationSet_buildData_005114b0 @ 0x0051_14b0 => extern "thiscall" fn lg_005114b0(this: u32, targets: u32, set: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_g::FRAME_WORDS as usize }>::new();
+        lg::build_set_data(&mut mem(), this, targets, set, f.at())
+    }
+    /// `Phyre_PAnimationSet_buildSlots_0051de90`: the set's slots per (class, target), sorted by batch, indexed per target (the lookup in this frame); 0 or an error.
+    Phyre_PAnimationSet_buildSlots_0051de90 @ 0x0051_de90 => extern "thiscall" fn lh_0051de90(this: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_h::FRAME_WORDS as usize }>::new();
+        lh::build_slots(&mut mem(), this, f.at())
+    }
+    /// `Phyre_PAnimationSet_rebuildTargets_0051c490`: the set's distinct targets gathered from its clips, the slots and every clip's data rebuilt; 0 or an error.
+    Phyre_PAnimationSet_rebuildTargets_0051c490 @ 0x0051_c490 => extern "thiscall" fn li_0051c490(this: u32, cluster: u32) -> u32 {
+        li::rebuild_targets(&mut mem(), this, cluster)
+    }
+    /// `Phyre_PAnimatableComponent_orderRecords_0053cb90`: the records ordered by a network optimiser (in this frame), the level array sized; 0 or 0xd.
+    Phyre_PAnimatableComponent_orderRecords_0053cb90 @ 0x0053_cb90 => extern "thiscall" fn lj_0053cb90(this: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_j::FRAME_WORDS as usize }>::new();
+        lj::order_records(&mut mem(), this, f.at())
+    }
+    /// `Phyre_PAnimatableComponent_setNetwork_0053a2e0`: the network's nodes collected and laid out, targets bound, the batch block built (visitors in this frame); 0, 0xd or an error.
+    Phyre_PAnimatableComponent_setNetwork_0053a2e0 @ 0x0053_a2e0 => extern "thiscall" fn lk_0053a2e0(this: u32, network: u32, binders: u32, n: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_k::FRAME_WORDS as usize }>::new();
+        lk::set_network(&mut mem(), this, network, binders, n, f.at())
+    }
+    // batch 12
+    /// `Phyre_PAnimationChannelTargetBindScene_bindNames_00617350`: the target names keyed into the bind's tree and the scene walked (the node array in this frame).
+    Phyre_PAnimationChannelTargetBindScene_bindNames_00617350 @ 0x0061_7350 => extern "thiscall" fn ll_00617350(this: u32, names: u32, results: u32, n: u32) {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_l::NAMES_FRAME_WORDS as usize }>::new();
+        ll::bind_names(&mut mem(), this, names, results, n, f.at());
+    }
+    /// `Phyre_PAnimationChannelTargetBindScene_bindTargets_005ce1a0`: scene-node targets bound to the nodes found by name (temporaries in this frame, or a heap block past 64 targets); 0 or 1.
+    Phyre_PAnimationChannelTargetBindScene_bindTargets_005ce1a0 @ 0x005c_e1a0 => extern "thiscall" fn ll_005ce1a0(this: u32, out: u32, targets: u32, n: u32) -> u32 {
+        let mut f = super::StackFrame::<{ ffx_panim::m5p_anim_left_l::TARGETS_FRAME_WORDS as usize }>::new();
+        ll::bind_targets_in(&mut mem(), this, out, targets, n, f.at())
     }
 }

@@ -30,6 +30,13 @@ use ffx_panim::m5p_anim_left_b::{self as lb, bridge as lbb};
 use ffx_panim::m5p_anim_left_c::{self as lc, bridge as lcb};
 use ffx_panim::m5p_anim_left_d::{self as ld, bridge as ldb};
 use ffx_panim::m5p_anim_left_e::{self as le, bridge as leb};
+use ffx_panim::m5p_anim_left_f::{self as lf, bridge as lfb};
+use ffx_panim::m5p_anim_left_g::{self as lg, bridge as lgb};
+use ffx_panim::m5p_anim_left_h::{self as lh, bridge as lhb};
+use ffx_panim::m5p_anim_left_i::{self as li, bridge as lib};
+use ffx_panim::m5p_anim_left_j::{self as lj, bridge as ljb};
+use ffx_panim::m5p_anim_left_k::{self as lk, bridge as lkb};
+use ffx_panim::m5p_anim_left_l::{self as ll, bridge as llb};
 use ffx_panim::m5p_anim_small as sm;
 
 /// `ret` or `ret 4 * pops`.
@@ -472,6 +479,7 @@ impl Twins {
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::Al(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::None => {}
             _ => unreachable!(),
         }
         if self.frame_len != 0 {
@@ -3225,6 +3233,783 @@ fn first_source_uses_match_the_original() {
                         });
                     }
                 }
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 6: the blenders' kernels ----
+
+#[test]
+fn blend_kernels_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut r = Rng(0x6006_1234);
+        for case in 0..48u32 {
+            let n = [0u32, 1, 2, 3, 5][(case % 5) as usize];
+            let mut ptrs = Vec::new();
+            let mut ws = Vec::new();
+            for i in 0..n {
+                let q = t.zeros(16);
+                for k in 0..4 {
+                    let v = ((r.next() % 2001) as f32 - 1000.0) / 1000.0;
+                    t.wf(q + 4 * k, v);
+                }
+                if case >= 40 && i == 1 {
+                    t.w32(q + 4 * (r.next() % 4), FLOATS[6 + (case % 4) as usize]);
+                }
+                // some null sources
+                let p = if (case + i) % 7 == 3 { 0 } else { q };
+                ptrs.extend(p.to_le_bytes());
+                let w = match (case / 5) % 4 {
+                    0 => ((r.next() % 1000) as f32) / 999.0,
+                    1 => ((r.next() % 1000) as f32) / 999.0 - 0.5,
+                    2 => [0.0f32, 1.0, 0.25, 0.25, f32::NAN][i as usize % 5],
+                    _ => 0.0,
+                };
+                ws.extend(w.to_bits().to_le_bytes());
+            }
+            ptrs.extend([0; 4]);
+            ws.extend([0; 4]);
+            let ptrs = t.alloc(&ptrs);
+            let wdata = t.alloc(&ws);
+            // the relative pointer sits a little before the weights
+            let wref = t.zeros(8);
+            t.w32(wref, wdata.wrapping_sub(wref));
+            for mode in [0u32, 1, 2, 3] {
+                for (f, add) in [(0x0052_dae0, false), (0x0052_ef70, true)] {
+                    for nulls in [false, true] {
+                        let out = if nulls && case % 2 == 0 {
+                            0
+                        } else {
+                            t.junk(16, 0xb7)
+                        };
+                        let p = if nulls && case % 2 == 1 { 0 } else { ptrs };
+                        if nulls && out != 0 && p != 0 {
+                            continue;
+                        }
+                        let what =
+                            format!("{label}: kernel {f:#x} case {case} mode {mode} nulls {nulls}");
+                        t.check(&what, f, Conv::Cdecl, &[out, mode, p, n, wref], |h| {
+                            let v = if add {
+                                lfb::additive(h, out, mode, p, n, wref)
+                            } else {
+                                lfb::weighted(h, out, mode, p, n, wref)
+                            };
+                            Out::Al(v as u8)
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn target_applies_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::LOG, false, 3, 0, 0x106);
+        let (rot, trans, scale) = (
+            t.rebase(lf::ROT_TYPE),
+            t.rebase(lf::TRANS_TYPE),
+            t.rebase(lf::SCALE_TYPE),
+        );
+        let mut r = Rng(0x0a11_7a11);
+        // runs of (target, types); targets 0..5
+        let runs: [&[(u32, u32)]; 6] = [
+            &[(5, 3), (0, 1), (2, 2)],
+            &[(0, 1), (0, 2), (0, 3)],
+            &[(1, 1), (2, 3), (2, 2), (3, 9), (4, 1), (4, 9)],
+            &[(5, 2), (5, 3), (0, 9), (1, 9)],
+            &[(3, 1), (3, 0), (2, 1)],
+            &[],
+        ];
+        for (case, run) in runs.iter().enumerate() {
+            // values: 32 bytes each, the record order reversed
+            let n = run.len() as u32;
+            let vals = t.zeros(32 * run.len() + 32);
+            let recs = t.zeros(16 * run.len() + 16);
+            for (i, &(tgt, ty)) in run.iter().enumerate() {
+                let i = i as u32;
+                let idx = n - 1 - i;
+                t.w32(recs + 16 * i + 0xc, idx);
+                t.w32(recs + 16 * idx + 8, tgt);
+                let v = vals + 32 * idx;
+                for k in 0..4 {
+                    let x = ((r.next() % 2001) as f32 - 1000.0) / 250.0;
+                    t.wf(v + 4 * k, x);
+                }
+                let tyw = match ty {
+                    0 => 0,
+                    1 => rot,
+                    2 => scale,
+                    3 => trans,
+                    _ => 0x0e0e,
+                };
+                t.w32(v + 0x10, tyw);
+            }
+            let owner = t.zeros(0x20);
+            t.w32(owner + 0x10, n | if case == 2 { sm::NOT_OWNED } else { 0 });
+            t.w32(owner + 0x14, recs);
+            let this = t.zeros(0x10);
+            t.w32(this + 8, owner);
+            let values = t.alloc(&vals.to_le_bytes());
+            // binds: kind per target, a destination for each
+            let table = t.zeros(24 * 6);
+            for (tgt, kind) in [(0u32, 1u32), (1, 2), (2, 1), (3, 3), (4, 0), (5, 1)] {
+                let e = table + 24 * tgt;
+                let dst = t.junk(0x40, 0xc0 + tgt as u8);
+                t.w32(e, if case == 4 && tgt == 2 { 0 } else { kind });
+                t.w32(e + 4, dst);
+                t.w32(e + 8, 12);
+                t.w32(e + 0xc, 0xf00 + tgt);
+                t.w32(e + 0x10, 0xb00 + tgt);
+                t.w32(e + 0x14, 0xc00 + tgt);
+            }
+            let binds = t.zeros(0x20);
+            t.w32(binds + 0x10, table);
+            for b in [binds, 0] {
+                let what = format!("{label}: apply targets case {case} binds {b:#x}");
+                t.check_frame(
+                    &what,
+                    0x0053_1660,
+                    Conv::Thiscall(this),
+                    &[b, values],
+                    0x134,
+                    |h| {
+                        let frame = h.1;
+                        Out::U32(lfb::apply_targets(h, this, b, values, frame))
+                    },
+                );
+            }
+        }
+        assert!(t.log_entries() > 0);
+        t.reset();
+    }
+}
+
+// ---- batch 7: PAnimationSet's packed data ----
+
+#[test]
+fn set_data_builds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let slots_at = t.rebase(lg::KEY_SLOTS);
+        t.w32(slots_at, 16);
+        t.stub(lg::LOOKUP_CTOR, true, 1, 1, 0x1c7);
+        t.stub(lg::LOOKUP_DTOR, true, 0, 0, 0x1d7);
+        t.stub(lg::TABLE_CTOR, true, 1, 1, 0x2c7);
+        t.stub(lg::TABLE_DTOR, true, 0, 0, 0x2d7);
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        // the lookup's key: the item's +0x20 word; the table's answer:
+        // the key's class plus its lookup key (so the key it saw shows)
+        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x20]; // mov eax,[esp+4]; mov eax,[eax+0x20]
+        tail.extend(ret_bytes(1));
+        let code = t.stub_code_tail(lg::LOOKUP_KEY, true, 1, &tail);
+        t.hook(lg::LOOKUP_KEY, code);
+        let mut tail = vec![
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x50, 0x08, 0x03, 0x50, 0x04, 0x8b, 0x00, 0x01, 0xd0,
+        ]; // eax = [k] + [k+4] + [k+8]
+        tail.extend(ret_bytes(1));
+        let code = t.stub_code_tail(lg::TABLE_FIND, true, 1, &tail);
+        t.hook(lg::TABLE_FIND, code);
+        for fail in [false, true] {
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x800);
+            }
+            for (nch, nslots) in [(0u32, 0u32), (1, 0), (5, 2), (7, 3), (0, 2)] {
+                let mut list = Vec::new();
+                for i in 0..nch {
+                    let ch = t.junk(0x40, 0x30 + i as u8);
+                    let class = t.junk(0x10, 0x40 + i as u8);
+                    // a few classes, keys from them and +0x20
+                    t.w32(class + 8, 0x10 + (i % 3));
+                    t.w32(class + 0xc, i % 2);
+                    let target = t.junk(0x10, 0x50 + i as u8);
+                    t.w32(ch + 0x1c, class);
+                    t.w32(ch + 0x20, (i * 5) % 7);
+                    t.w32(ch + 0x24, target);
+                    list.extend(ch.to_le_bytes());
+                }
+                list.extend([0; 4]);
+                let list = t.alloc(&list);
+                let slots = t.junk(0x34 * nslots as usize + 4, 0x60);
+                for j in 0..nslots {
+                    let class = t.junk(0x10, 0x70 + j as u8);
+                    t.w32(slots + 0x34 * j + 0x1c, class);
+                }
+                let set = t.junk(0x20, 0x61);
+                t.w32(set + 4, nch);
+                t.w32(set + 8, list);
+                t.w32(
+                    set + 0xc,
+                    nslots | if nslots == 3 { sm::NOT_OWNED } else { 0 },
+                );
+                t.w32(set + 0x10, slots);
+                let this = t.junk(0x200, 0x62);
+                let what = format!("{label}: set data fail {fail} {nch} channels {nslots} slots");
+                t.check_frame(
+                    &what,
+                    0x0051_14b0,
+                    Conv::Thiscall(this),
+                    &[0x7a6, set],
+                    0xa0,
+                    |h| {
+                        let frame = h.1;
+                        Out::U32(lgb::build_set_data(h, this, 0x7a6, set, frame))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 8: PAnimationSet's slot list ----
+
+/// A clip's channels and constant channels: (class, target) each.
+type ClipSpec = (Vec<(usize, u32)>, Vec<(usize, u32)>);
+
+#[test]
+fn slot_lists_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let classes_at = t.rebase(lh::CLASSES);
+        t.w32(classes_at, 4);
+        t.stub(lh::LOOKUP_CTOR, true, 1, 1, 0x1c7);
+        t.stub(lh::LOOKUP_DTOR, true, 0, 0, 0x1d7);
+        t.stub(0x0051_7900, false, 3, 0, 0xc0);
+        t.stub(0x0051_bc30, false, 2, 0, 0xc1);
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        // the target of an item: its +0x24
+        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x24]; // mov eax,[esp+4]; mov eax,[eax+0x24]
+        tail.extend(ret_bytes(1));
+        let code = t.stub_code_tail(lh::LOOKUP_KEY, true, 1, &tail);
+        t.hook(lh::LOOKUP_KEY, code);
+        let cls: Vec<u32> = (0..5u32)
+            .map(|g| {
+                let c = t.junk(0x10, 0x90 + g as u8);
+                t.w32(c + 0xc, g % 4);
+                c
+            })
+            .collect();
+        for (case, fail) in [(0u32, false), (1, false), (2, false), (3, true), (4, false)] {
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x800);
+            }
+            let n_targets = 6u32;
+            // clips: channels (class, target) and constant channels
+            let clip_specs: Vec<ClipSpec> = match case {
+                0 => vec![],
+                1 => vec![(
+                    vec![(0, 1), (1, 2), (0, 1), (2, 0)],
+                    vec![(1, 3), (3, 7), (3, 5)],
+                )],
+                2 => vec![
+                    (vec![(0, 1), (4, 1), (2, 5)], vec![]),
+                    (vec![(0, 2), (0, 1)], vec![(1, 0), (2, 5), (0, 0)]),
+                    (vec![], vec![]),
+                ],
+                _ => vec![
+                    (vec![(1, 4), (3, 4), (2, 2)], vec![(1, 4)]),
+                    (vec![(1, 2)], vec![]),
+                ],
+            };
+            let mut clips = Vec::new();
+            for (chs, ccs) in &clip_specs {
+                let clip = t.junk(0x40, 0xa0);
+                let mut list = Vec::new();
+                for &(c, tg) in chs {
+                    let ch = t.junk(0x40, 0xa1);
+                    t.w32(ch + 0x1c, cls[c]);
+                    t.w32(ch + 0x24, tg);
+                    list.extend(ch.to_le_bytes());
+                }
+                list.extend(0u32.to_le_bytes());
+                list.extend([0; 4]);
+                let list = t.alloc(&list);
+                t.w32(clip + 4, chs.len() as u32 + 1);
+                t.w32(clip + 8, list);
+                let recs = t.junk(0x34 * ccs.len() + 4, 0xa2);
+                for (j, &(c, tg)) in ccs.iter().enumerate() {
+                    let cc = recs + 0x34 * j as u32;
+                    t.w32(cc + 0x1c, cls[c]);
+                    t.w32(cc + 0x24, tg);
+                }
+                t.w32(clip + 0xc, ccs.len() as u32);
+                t.w32(clip + 0x10, recs);
+                clips.push(clip);
+            }
+            if case == 2 {
+                clips.push(0);
+            }
+            let this = t.junk(0x20, 0xa3);
+            t.w32(this, clips.len() as u32);
+            if clips.len() == 1 {
+                t.w32(this + 4, clips[0]);
+            } else {
+                let mut b = Vec::new();
+                for c in &clips {
+                    b.extend(c.to_le_bytes());
+                }
+                b.extend([0; 4]);
+                let data = t.alloc(&b);
+                t.w32(this + 4, data);
+            }
+            t.w32(this + 8, n_targets);
+            t.w32(this + 0x10, 0);
+            t.w32(this + 0x14, 0);
+            let what = format!("{label}: slot list case {case}");
+            t.check_frame(&what, 0x0051_de90, Conv::Thiscall(this), &[], 0x68, |h| {
+                let frame = h.1;
+                Out::U32(lhb::build_slots(h, this, frame))
+            });
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 9: PAnimationSet's targets ----
+
+#[test]
+fn target_rebuilds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(li::TARGETS_RELEASE, false, 2, 0, 0x7e1);
+        t.stub(li::TARGET_ASSIGN, true, 1, 1, 0xa55);
+        t.stub(li::TARGETS_CONSTRUCT, false, 2, 0, 0xc0);
+        t.stub(li::CLIP_REBUILD, true, 2, 2, 0xc1);
+        // targets are equal when their first words are
+        let mut tail = vec![
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x3b, 0x01, 0x0f, 0x94, 0xc0,
+        ];
+        tail.extend(ret_bytes(1));
+        let code = t.stub_code_tail(li::TARGET_EQUALS, true, 1, &tail);
+        t.hook(li::TARGET_EQUALS, code);
+        for (case, fail, slots) in [
+            (0u32, 0u32, 0u32),
+            (1, 0, 0),
+            (2, 0, 0x5e),
+            (3, 1, 0),
+            (4, 2, 0),
+            (5, 0, 0),
+        ] {
+            t.stub(li::BUILD_SLOTS, true, 0, 0, slots);
+            match fail {
+                1 => t.stub(la::PHYRE_MALLOC, false, 2, 0, 0),
+                // the list succeeds, the target array fails
+                2 => {
+                    let buf = t.junk(0x100, 0x11);
+                    let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x3d, 0x54, 0, 0, 0, 0xb8];
+                    tail.extend(buf.to_le_bytes());
+                    tail.extend([0x75, 0x02, 0x31, 0xc0, 0xc3]); // 0 for 0x54 bytes
+                    let code = t.stub_code_tail(la::PHYRE_MALLOC, false, 2, &tail);
+                    t.hook(la::PHYRE_MALLOC, code);
+                }
+                _ => t.stub_bump(la::PHYRE_MALLOC, 0x800),
+            }
+            // items: first words decide equality
+            let mk = |t: &mut Twins, key: u32| {
+                let it = t.junk(0x34, 0x12);
+                t.w32(it, key);
+                it
+            };
+            let specs: Vec<(Vec<u32>, Vec<u32>)> = match case {
+                0 => vec![],
+                1..=4 => vec![
+                    (vec![1, 2, 1], vec![3, 2]),
+                    (vec![], vec![]),
+                    (vec![3], vec![]),
+                ],
+                _ => vec![(vec![7, 7], vec![])],
+            };
+            let mut clips = Vec::new();
+            for (chs, ccs) in &specs {
+                let clip = t.junk(0x40, 0x13);
+                let mut list = Vec::new();
+                for &k in chs {
+                    let it = mk(&mut t, k);
+                    list.extend(it.to_le_bytes());
+                }
+                list.extend([0; 4]);
+                let list = t.alloc(&list);
+                t.w32(clip + 4, chs.len() as u32);
+                t.w32(clip + 8, list);
+                let recs = t.junk(0x34 * ccs.len() + 4, 0x14);
+                for (j, &k) in ccs.iter().enumerate() {
+                    t.w32(recs + 0x34 * j as u32, k);
+                }
+                t.w32(clip + 0xc, ccs.len() as u32);
+                t.w32(clip + 0x10, recs);
+                clips.push(clip);
+            }
+            // (a null clip faults in the original's count loop)
+            let this = t.junk(0x20, 0x15);
+            t.w32(this, clips.len() as u32);
+            if clips.len() == 1 {
+                t.w32(this + 4, clips[0]);
+            } else {
+                let mut b = Vec::new();
+                for c in &clips {
+                    b.extend(c.to_le_bytes());
+                }
+                b.extend([0; 4]);
+                let data = t.alloc(&b);
+                t.w32(this + 4, data);
+            }
+            // the old targets: owned with names, or none
+            let old = t.junk(0x1c * 2, 0x16);
+            let name = t.cstr("tgt");
+            t.w32(old + 0x14, name);
+            t.w32(old + 0x1c + 0x14, name | 1);
+            let (raw, data) = match case {
+                2 => (3, old),
+                3 => (2 | sm::NOT_OWNED, old),
+                4 => (0, 0),
+                5 => (1, old),
+                _ => (2, old),
+            };
+            t.w32(this + 8, raw);
+            t.w32(this + 0xc, data);
+            let what = format!("{label}: target rebuild case {case}");
+            t.check(&what, 0x0051_c490, Conv::Thiscall(this), &[0xc1c], |h| {
+                Out::U32(lib::rebuild_targets(h, this, 0xc1c))
+            });
+            t.reset();
+            t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(li::TARGETS_RELEASE, false, 2, 0, 0x7e1);
+            t.stub(li::TARGET_ASSIGN, true, 1, 1, 0xa55);
+            t.stub(li::TARGETS_CONSTRUCT, false, 2, 0, 0xc0);
+            t.stub(li::CLIP_REBUILD, true, 2, 2, 0xc1);
+            t.hook(li::TARGET_EQUALS, code);
+        }
+    }
+}
+
+// ---- batch 10: the component's evaluation order ----
+
+impl Twins {
+    /// A recording `thiscall` stub at `sym` taking `n` words that answers
+    /// `(word[arg] + add) & mask`.
+    fn stub_arg(&mut self, sym: u32, n: u32, arg: u32, add: u8, mask: u8) {
+        let mut tail = vec![0x8b, 0x44, 0x24, (4 + 4 * arg) as u8]; // mov eax, [esp+4+4arg]
+        tail.extend([0x83, 0xc0, add, 0x83, 0xe0, mask]); // add eax, add; and eax, mask
+        tail.extend(ret_bytes(n));
+        let code = self.stub_code_tail(sym, true, n, &tail);
+        self.hook(sym, code);
+    }
+}
+
+#[test]
+fn record_orders_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lj::OPT_CTOR, true, 0, 0, 0x1c7);
+        t.stub(lj::OPT_DTOR, true, 0, 0, 0x1d7);
+        t.stub(lj::OPT_MAKE_NODES, true, 1, 1, 1);
+        t.stub(lj::OPT_LINK, true, 6, 6, 0x101);
+        t.stub(lj::OPT_RUN, true, 1, 1, 0x201);
+        t.stub_arg(lj::OPT_LEVEL, 2, 0, 1, 1);
+        t.stub_arg(lj::OPT_NODE, 1, 0, 1, 1);
+        t.stub_arg(lj::OPT_INPUTS, 1, 0, 0, 1);
+        t.stub_arg(lj::OPT_INPUT, 2, 1, 1, 1);
+        for (case, n, nb, fail) in [
+            (0u32, 0u32, 0u32, false),
+            (1, 3, 3, false),
+            (2, 4, 4, false),
+            (3, 4, 4, true),
+            (4, 2, 2, false),
+            (5, 1, 1, false),
+        ] {
+            t.stub(lj::OPT_COUNT, true, 0, 0, nb);
+            // case 5: a single node at level 0
+            t.stub_arg(lj::OPT_LEVEL, 2, 0, u8::from(case != 5), 1);
+            t.stub_arg(lj::OPT_NODE, 1, 0, u8::from(case != 5), 1);
+            if fail {
+                // only the level array's 8 bytes fail
+                let buf = t.junk(0x100, 0x35);
+                let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x3d, 8, 0, 0, 0, 0xb8];
+                tail.extend(buf.to_le_bytes());
+                tail.extend([0x75, 0x02, 0x31, 0xc0, 0xc3]);
+                let code = t.stub_code_tail(la::PHYRE_MALLOC, false, 2, &tail);
+                t.hook(la::PHYRE_MALLOC, code);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x800);
+            }
+            let recs = t.junk(0x94 * 5, 0x31);
+            let mut srcs = Vec::new();
+            for i in 0..n {
+                // source i has inputs: the sources before it, a stranger, a null
+                let inputs = t.zeros(0x20);
+                for j in 0..i {
+                    let prev = srcs[j as usize];
+                    t.w32(inputs + 4 * j, prev);
+                }
+                t.w32(inputs + 4 * i, 0x7777);
+                let m = i + 2;
+                let count = t.stub_code(0x7900 + i, true, 0, 0, m);
+                let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+                tail.extend(inputs.to_le_bytes()); // mov eax, [inputs + 4*arg]
+                tail.extend(ret_bytes(1));
+                let get = t.stub_code_tail(0x7a00 + i, true, 1, &tail);
+                let vt = t.alloc(&[0; 12]);
+                t.w32(vt + 4, count);
+                t.w32(vt + 8, get);
+                let src = t.zeros(0x10);
+                t.w32(src, vt);
+                srcs.push(src);
+                t.w32(recs + 0x94 * i, src);
+            }
+            let this = t.junk(0x40, 0x32);
+            t.w32(this + 4, n);
+            t.w32(this + 8, recs);
+            let (raw, data) = match case {
+                2 => (4, t.junk(0x10, 0x33)),
+                4 => (2 | sm::NOT_OWNED, t.junk(0x10, 0x34)),
+                _ => (0, 0),
+            };
+            t.w32(this + 0x2c, raw);
+            t.w32(this + 0x30, data);
+            let what = format!("{label}: record order case {case}");
+            t.check_frame(&what, 0x0053_cb90, Conv::Thiscall(this), &[], 0x38, |h| {
+                let frame = h.1;
+                Out::U32(ljb::order_records(h, this, frame))
+            });
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 11: the component's network set-up ----
+
+#[test]
+fn network_setups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lk::VISITOR_DTOR, true, 0, 0, 0xd7);
+        t.stub(lk::RECORDS_SET_COUNT, true, 1, 1, 0x5c);
+        t.stub(lk::TARGET_ARRAY, true, 1, 1, 0xda7a);
+        t.stub(lk::NODE_PREPARE, true, 0, 0, 0x9e);
+        t.stub(lk::MEMSET, false, 3, 0, 0x3e);
+        // the root's visit (slot 3): the visitor's count word becomes 3
+        let mut tail = vec![
+            0x8b, 0x44, 0x24, 0x04, 0xc7, 0x40, 0x08, 3, 0, 0, 0, 0x31, 0xc0,
+        ];
+        tail.extend(ret_bytes(2));
+        let visit = t.stub_code_tail(0x7c00, true, 2, &tail);
+        let root = t.object_with(3, visit);
+        for (case, errs) in [
+            (0u32, [0u32; 5]),
+            (1, [0x11, 0, 0, 0, 0]),
+            (2, [0, 0x12, 0, 0, 0]),
+            (3, [0, 0, 0x13, 0, 0]),
+            (4, [0, 0, 0, 0x14, 0]),
+            (5, [0, 0, 0, 0, 0x15]),
+            (6, [0; 5]),
+            (7, [0; 5]),
+            (8, [0; 5]),
+        ] {
+            t.stub(lk::RECORDS_RESIZE, true, 1, 1, errs[0]);
+            t.stub(lk::ORDER_RECORDS, true, 0, 0, errs[1]);
+            t.stub(lk::DATA_RESIZE, true, 1, 1, errs[2]);
+            t.stub(lk::TARGETS_RESIZE, true, 1, 1, errs[3]);
+            if case == 6 {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x1000);
+            }
+            // three records, each with a node answering sizes in slots 5, 6
+            let recs = t.junk(0x94 * 3, 0x41);
+            for k in 0..3u32 {
+                let s5 = t.stub_code(0x7d00 + k, true, 0, 0, 0x13 * (k + 1));
+                let s6 = t.stub_code(0x7e00 + k, true, 0, 0, 0x7 + k);
+                let vt = t.alloc(&[0; 0x20]);
+                t.w32(vt + 0x14, s5);
+                t.w32(vt + 0x18, s6);
+                let node = t.zeros(0x10);
+                t.w32(node, vt);
+                let rec = recs + 0x94 * k;
+                t.w32(rec, node);
+                t.w32(rec + 4, k);
+            }
+            let set = t.junk(0x20, 0x42);
+            t.w32(set + 8, 2);
+            t.w32(set + 0x10, 3 | sm::NOT_OWNED);
+            let this = t.junk(0x40, 0x43);
+            t.w32(this + 4, 3);
+            t.w32(this + 8, recs);
+            t.w32(this + 0x14, if case == 7 { set } else { 0x51 });
+            t.w32(this + 0x20, [0, 2, 2 | sm::NOT_OWNED][(case % 3) as usize]);
+            let data = if case == 8 { 0 } else { t.junk(0x10, 0x44) };
+            t.w32(this + 0x24, data);
+            t.w32(this + 0x2c, 2);
+            let network = t.zeros(0x10);
+            t.w32(network + 8, set);
+            t.w32(network + 0xc, if case == 8 { 0 } else { root });
+            let b1 = t.object(&[0, 3], &[0, 0]);
+            let b2 = t.object(&[0, 3], &[0, errs[4]]);
+            let binders = t.alloc(&[0; 8]);
+            t.w32(binders, b1);
+            t.w32(binders + 4, b2);
+            for (net, n) in [(network, 2u32), (0, 2)] {
+                let what = format!("{label}: network case {case} net {net:#x}");
+                t.check_frame(
+                    &what,
+                    0x0053_a2e0,
+                    Conv::Thiscall(this),
+                    &[net, binders, n],
+                    0x3c,
+                    |h| {
+                        let frame = h.1;
+                        Out::U32(lkb::set_network(h, this, net, binders, n, frame))
+                    },
+                );
+            }
+        }
+        // a network without targets
+        let network = t.zeros(0x10);
+        let this = t.junk(0x40, 0x45);
+        t.check_frame(
+            &format!("{label}: network without targets"),
+            0x0053_a2e0,
+            Conv::Thiscall(this),
+            &[network, 0, 0],
+            0x3c,
+            |h| {
+                let frame = h.1;
+                Out::U32(lkb::set_network(h, this, network, 0, 0, frame))
+            },
+        );
+        t.reset();
+    }
+}
+
+// ---- batch 12: the scene bind's targets ----
+
+#[test]
+fn scene_name_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(ll::BIND_TREE, false, 2, 0, 0xb7);
+        for (case, fail) in [(0u32, false), (1, false), (2, true), (3, false)] {
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x800);
+            }
+            let words: &[Option<&str>] = match case {
+                0 => &[],
+                1 => &[
+                    Some("root"),
+                    Some("#skip"),
+                    None,
+                    Some("arm#2"),
+                    Some("leg"),
+                    Some("root"),
+                ],
+                _ => &[Some("a"), Some("b#c")],
+            };
+            let mut v = Vec::new();
+            for w in words {
+                let p = match w {
+                    Some(s) => t.cstr(s),
+                    None => 0,
+                };
+                v.extend(p.to_le_bytes());
+            }
+            v.extend([0; 4]);
+            let names = t.alloc(&v);
+            let results = t.zeros(4 * words.len() + 4);
+            let this = t.junk(0x30, 0x51);
+            let hdr = this + 0xc;
+            for off in [0u32, 4, 8, 0xc, 0x10, 0x14] {
+                t.w32(hdr + off, hdr);
+            }
+            let n = if case == 3 { 0 } else { words.len() as u32 };
+            let what = format!("{label}: scene names case {case}");
+            t.check_frame(
+                &what,
+                0x0061_7350,
+                Conv::Thiscall(this),
+                &[names, results, n],
+                0x2c,
+                |h| {
+                    let frame = h.1;
+                    llb::bind_names(h, this, names, results, n, frame);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn scene_target_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ll::TREE_CLEAR, true, 0, 0, 0xc1);
+        // the names binder: logs, and "finds" each name as its node
+        // (results[i] = names[i])
+        let tail = vec![
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x4c, 0x24,
+            0x0c, // names, results, n
+            0x85, 0xc9, 0x74, 0x09, 0x49, 0xff, 0x34, 0x88, 0x8f, 0x04, 0x8a, 0xeb,
+            0xf3, // copy
+            0xc2, 0x0c, 0x00,
+        ];
+        let code = t.stub_code_tail(ll::BIND_NAMES, true, 3, &tail);
+        t.hook(ll::BIND_NAMES, code);
+        let scene = t.rebase(ll::SCENE_NODE_CLASS);
+        let sub = t.zeros(0x50);
+        t.w32(sub + 0x40, scene);
+        let other = t.zeros(0x50);
+        let sub2 = t.zeros(0x50);
+        // two steps to a dead end
+        t.w32(sub2 + 0x40, other);
+        for n in [0u32, 1, 5] {
+            for (o, g) in [(1u32, 1u32), (0, 1), (1, 0)] {
+                let mut tv = Vec::new();
+                for (i, (class, ty)) in [(sub, 1u32), (scene, 1), (other, 1), (scene, 2), (sub2, 1)]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let s = t.cstr(&format!("n{i}")) | 1;
+                    for w in [class, 0, 0, 0, ty, s, 0] {
+                        tv.extend(w.to_le_bytes());
+                    }
+                }
+                let targets = if g == 0 { 0 } else { t.alloc(&tv) };
+                let out = if o == 0 { 0 } else { t.zeros(0x18 * 5) };
+                if out != 0 {
+                    t.w32(out + 0x18, 0);
+                    if n == 5 {
+                        t.w32(out, 9);
+                    }
+                }
+                let this = t.junk(0x10, 0x52);
+                // the original's temporaries: ebp - 0x3c, then the two
+                // 16-aligned allocas below its saved registers
+                let top = t.b.stack_range().end - 0x100;
+                let ebp = top - 20;
+                let names = (ebp - 0x4c - 4 * n) & !0xf;
+                let results = (names - 4 * n) & !0xf;
+                let s = llb::Scratch {
+                    bind: ebp - 0x3c,
+                    names,
+                    results,
+                };
+
+                let what = format!("{label}: scene targets n {n} out {o} targets {g}");
+                t.check_frame(
+                    &what,
+                    0x005c_e1a0,
+                    Conv::Thiscall(this),
+                    &[out, targets, n],
+                    top - results,
+                    |h| Out::U32(llb::bind_targets(h, this, out, targets, n, s)),
+                );
             }
         }
         t.reset();
