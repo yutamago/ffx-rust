@@ -13,6 +13,7 @@ use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_stackwalker::bridge as sw;
 use ffx_system::m5b_steam::{self as steam, bridge as sm};
 use ffx_system::m5b_stl::{self as stl, bridge as st};
+use ffx_system::m5b_sync::{self as sy, bridge as sb3};
 
 ported! {
     // ---- StackWalker ----
@@ -276,6 +277,69 @@ ported! {
     /// `std::vector<word>::push_back(this; &value)`.
     StdVector_pushBack_006f4890 @ 0x006f_4890 => extern "thiscall" fn vector_push_back(this: u32, value: u32) {
         st::vector_push_back(&mut mem(), this, value);
+    }
+    // ---- sound objects, the FMOD ring, SyncManager ----
+    /// The sound objects' constructor `(this)`.
+    FfxSound_ctor_00706490 @ 0x0070_6490 => extern "thiscall" fn fmod_objects_ctor(this: u32) -> u32 {
+        sb3::fmod_objects_ctor(&mut mem(), this)
+    }
+    /// `FmodManager`'s command flush `(this)`.
+    FmodManager_flushCommands_006fa7e0 @ 0x006f_a7e0 => extern "thiscall" fn fmod_flush(this: u32) -> u32 {
+        sb3::fmod_flush(&mut mem(), this)
+    }
+    /// `SyncManager::initSyncFileList(this)`: frame `ebp - 0x214`.
+    SyncManager_initSyncFileList @ 0x006f_aa30 => extern "thiscall" fn init_sync_file_list(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (sy::LIST_FRAME / 4) as usize }>::new();
+        sb3::init_sync_file_list(&mut mem(), f.at() + sy::LIST_FRAME, this)
+    }
+    /// `SyncManager::initSyncVoiceList(this)`: frame `ebp - 0x210`.
+    SyncManager_initSyncVoiceList @ 0x006f_aba0 => extern "thiscall" fn init_sync_voice_list(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (sy::LIST_FRAME / 4) as usize }>::new();
+        sb3::init_sync_voice_list(&mut mem(), f.at() + sy::LIST_FRAME, this)
+    }
+    /// `SyncManager::releaseSyncData(this)`.
+    SyncManager_releaseSyncData @ 0x006f_aee0 => extern "thiscall" fn release_sync_data(this: u32) -> u32 {
+        sb3::release_sync_data(&mut mem(), this)
+    }
+    /// `SyncManager::syncDataChange(this; _)`: its frame and the list
+    /// readers' below it.
+    SyncManager_syncDataChange @ 0x006f_af90 => extern "thiscall" fn sync_data_change(this: u32, _unused: u32) -> u32 {
+        let mut f = StackFrame::<{ ((sy::CHANGE_LIST_EBP + sy::LIST_FRAME) / 4) as usize }>::new();
+        sb3::sync_data_change(&mut mem(), f.at() + sy::CHANGE_LIST_EBP + sy::LIST_FRAME, this)
+    }
+    /// `SyncManager_syncDataChangeAsyncTask(args)` (an async task).
+    SyncManager_syncDataChangeAsyncTask @ 0x006f_b130 => extern "C" fn sync_data_change_task(args: u32) -> u32 {
+        let mut f = StackFrame::<{ ((sy::CHANGE_LIST_EBP + sy::LIST_FRAME) / 4) as usize }>::new();
+        sb3::sync_data_change_task(&mut mem(), f.at() + sy::CHANGE_LIST_EBP + sy::LIST_FRAME, args)
+    }
+
+    // ---- RadialBlur's parameters, Sys::Thread ----
+    /// `RadialBlur_setTextureParam_00703610(this; sampler, texture)`:
+    /// the value block in a frame.
+    RadialBlur_setTextureParam_00703610 @ 0x0070_3610 => extern "thiscall" fn radial_set_texture_param(this: u32, sampler: u32, texture: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        mb::post_set_texture_param(&mut mem(), f.at(), this, 0x60, 0x2c, sampler, texture)
+    }
+    /// `RadialBlur_setParam58_00703780(this; x, y, z, w)`: copies from its
+    /// own argument words.
+    RadialBlur_setParam58_00703780 @ 0x0070_3780 => extern "thiscall" fn radial_set_param58(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        ffx_glue_other::frames::post_set_param(&mut mem(), ffx_glue_other::frames::ParamSlot { guard: 0x58, param: 0x58, holder: 0x2c }, this, args)
+    }
+    /// `RadialBlur_setParam5c_00703820(this; x, y, z, w)`.
+    RadialBlur_setParam5c_00703820 @ 0x0070_3820 => extern "thiscall" fn radial_set_param5c(this: u32, _x: u32, _y: u32, _z: u32, _w: u32; args: u32) -> u32 {
+        ffx_glue_other::frames::post_set_param(&mut mem(), ffx_glue_other::frames::ParamSlot { guard: 0x60, param: 0x5c, holder: 0x2c }, this, args)
+    }
+    /// `Sys::Thread::~Thread(this)`.
+    SysThread_dtor_00703990 @ 0x0070_3990 => extern "thiscall" fn thread_dtor(this: u32) {
+        mb::thread_destruct(&mut mem(), this);
+    }
+    /// `Sys::Thread`'s deleting destructor `(this; flags)`.
+    SysThread_deletingDtor_007039d0 @ 0x0070_39d0 => extern "thiscall" fn thread_delete(this: u32, flags: u32) -> u32 {
+        mb::thread_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// `JobWorker_start_00703a50(this; queue, arg)`.
+    JobWorker_start_00703a50 @ 0x0070_3a50 => extern "thiscall" fn job_worker_start(this: u32, queue: u32, arg: u32) -> u32 {
+        mb::job_worker_start(&mut mem(), this, queue, arg)
     }
 }
 

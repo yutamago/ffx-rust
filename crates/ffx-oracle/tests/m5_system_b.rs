@@ -35,6 +35,7 @@ use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_stackwalker::{self as swk, bridge as sw};
 use ffx_system::m5b_steam::{self as steam, bridge as sm};
 use ffx_system::m5b_stl::{self as stl, bridge as st};
+use ffx_system::m5b_sync::{self as sy, bridge as sb3};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -2086,6 +2087,389 @@ fn has_key_and_symbol_id_match_the_original() {
                 |m, ebp| Out::U32(st::get_symbol_id(m, ebp, this, name)),
             );
             t.skip = 0;
+        }
+    });
+}
+
+impl Twins {
+    /// A recording cdecl stub bound to the import slot `slot` that logs
+    /// `widths[k]` words on its `k`-th call (the last width from then on).
+    fn stub_import_widths(&mut self, slot: u32, widths: &[u32], eax: u32) {
+        let stubs: Vec<u32> = widths
+            .iter()
+            .map(|&n| self.stub_code(slot, false, n, 0, eax))
+            .collect();
+        let tbl = self.words(&stubs);
+        let ctr = self.words(&[0]);
+        let last = (widths.len() - 1) as u8;
+        let mut c = vec![0xa1];
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.extend([0x83, 0xf8, last]); // cmp eax, last
+        c.extend([0x76, 0x05]); // jbe +5
+        c.push(0xb8);
+        c.extend(u32::from(last).to_le_bytes()); // mov eax, last
+        c.extend([0xff, 0x24, 0x85]);
+        c.extend(tbl.to_le_bytes()); // jmp [tbl + eax*4]
+        let addr = self.cave_code(&c);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+}
+
+#[test]
+fn fmod_flush_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xf10d_0005);
+        for case in 0..30u32 {
+            t.reset();
+            imp(t, sy::SET_EVENT_IAT, 1, true, 1);
+            // the 70 handlers: one recording stub (the argument block it
+            // logs tells the commands apart)
+            let handler = t.stub_code(0x7000, false, 2, 0, 0x100 + case);
+            let table = t.rebase(sy::FMOD_HANDLERS);
+            for k in 0..70u32 {
+                t.patch(table + 4 * k, &handler.to_le_bytes());
+            }
+            let commands = t.rebase(sy::FMOD_RING);
+            for i in 0..150u32 {
+                t.patch(commands + 20 * i, &rng.below(70).to_le_bytes());
+            }
+            // (write index 0 with the read index just below it: the last
+            // step wraps through 150, its quotient 1 comes back)
+            let write = if case % 5 == 2 { 0 } else { rng.below(150) };
+            let read = match case % 3 {
+                0 => write,
+                1 => (write + 150 - 1 - rng.below(5)) % 150,
+                _ => rng.below(150),
+            };
+            let this = t.zeros(0x50);
+            t.put(this + 8, &[0xf00d]);
+            t.put(this + 0x1c, &[0xe7e7, 0, 0, write, read, rng.below(70)]);
+            t.write(this + 0x44, &[u8::from(case % 4 == 0)]);
+            let what = format!("FMOD flush #{case}");
+            t.check(&what, 0x006f_a7e0, Conv::Thiscall(this), &[], |m| {
+                Out::U32(sb3::fmod_flush(m, this))
+            });
+        }
+    });
+}
+
+#[test]
+fn fmod_objects_ctor_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..8u32 {
+            t.reset();
+            let blocks = [t.zeros(0x34), t.zeros(0x90), t.zeros(0xd4)];
+            let seq: Vec<u32> = (0..3)
+                .map(|i| {
+                    if case >> i & 1 == 0 {
+                        0
+                    } else {
+                        blocks[i as usize]
+                    }
+                })
+                .collect();
+            t.stub_seq(sy::OPERATOR_NEW, 1, 0, &seq);
+            t.stub(sy::MUSIC_CTOR, true, 0, 0, 0x3001);
+            t.stub(sy::SOUND_CTOR, true, 0, 0, 0x3002);
+            t.stub(sy::SFX_CTOR, true, 0, 0, 0x3003);
+            let this = t.words(&[0x7777_7777; 10]);
+            let what = format!("FMOD objects ctor #{case}");
+            t.check(&what, 0x0070_6490, Conv::Thiscall(this), &[], |m| {
+                Out::U32(sb3::fmod_objects_ctor(m, this))
+            });
+        }
+    });
+}
+
+#[test]
+fn radial_blur_setters_match_the_original() {
+    use ffx_glue_other::frames::{ParamSlot, post_set_param};
+    Twins::each(|t| {
+        let mut rng = Rng(0x7036_1006);
+        for case in 0..40u32 {
+            t.reset();
+            t.stub_copy(ms::MEMCPY);
+            t.stub(
+                ms::BIND_TEXTURE,
+                true,
+                1,
+                1,
+                if case % 7 == 3 { 0x22 } else { 0 },
+            );
+            let block = t.zeros(0x80);
+            t.put(block, &[[0x40u32, 0x10, 0x80, 0x3c][(case % 4) as usize]]);
+            let holder = t.words(&[0, block]);
+            let kind = [0x42u8, 0xd9, 0xdc, 0x12, 0x13, 0x41][rng.below(6) as usize];
+            let offset = [0u16, 3, 4, 0x10, 0x30][rng.below(5) as usize];
+            // (sizes past 0x10 copy the bytes after the value block or the
+            // argument words: the callers' stack, which differs here)
+            let size = [0x10u16, 0xe010, 8, 0][rng.below(4) as usize];
+            let mut rec = vec![0u8, 0, kind, 0, 0, 0, 0, 0];
+            rec.extend(offset.to_le_bytes());
+            rec.extend(size.to_le_bytes());
+            let rec = t.alloc(&rec);
+            let this = t.zeros(0x70);
+            t.put(this + 0x2c, &[holder]);
+            let present = !rng.chance(5);
+            for off in [0x58u32, 0x5c, 0x60] {
+                t.put(this + off, &[if present { rec } else { 0 }]);
+            }
+            let sampler = if rng.chance(4) { 0 } else { 0x5a5a };
+            let texture = if rng.chance(4) { 0 } else { 0x7e7e };
+            let what = format!("RadialBlur texture param #{case}");
+            t.skip = 0;
+            t.check_framed(
+                &what,
+                0x0070_3610,
+                Conv::Thiscall(this),
+                &[sampler, texture],
+                0x10,
+                |m, ebp| {
+                    Out::U32(mb::post_set_texture_param(
+                        m,
+                        ebp - 0x10,
+                        this,
+                        0x60,
+                        0x2c,
+                        sampler,
+                        texture,
+                    ))
+                },
+            );
+            let words = [rng.next(), rng.next(), rng.next(), rng.next()];
+            for (sym, slot) in [
+                (
+                    0x0070_3780u32,
+                    ParamSlot {
+                        guard: 0x58,
+                        param: 0x58,
+                        holder: 0x2c,
+                    },
+                ),
+                (
+                    0x0070_3820,
+                    ParamSlot {
+                        guard: 0x60,
+                        param: 0x5c,
+                        holder: 0x2c,
+                    },
+                ),
+            ] {
+                // the copy reads the original's own argument words: the
+                // port reads the same words at the same address
+                let ebp = t.frame_ebp(4);
+                let args = ebp + 8;
+                let bytes: Vec<u8> = words.iter().flat_map(|v| v.to_le_bytes()).collect();
+                Mem::write_bytes(&mut t.b, args, &bytes);
+                t.b.set_call_top(Some(args - 0x200));
+                let what = format!("RadialBlur param {sym:#x} #{case}");
+                t.check(&what, sym, Conv::Thiscall(this), &words, |m| {
+                    Out::U32(post_set_param(m, slot, this, args))
+                });
+                t.b.set_call_top(None);
+            }
+        }
+    });
+}
+
+#[test]
+fn threads_match_the_original() {
+    Twins::each(|t| {
+        for case in 0..6u32 {
+            t.reset();
+            imp(t, ms::TERMINATE_THREAD_IAT, 2, true, 1);
+            imp(t, ms::CLOSE_HANDLE_IAT, 1, true, 1);
+            imp(t, ms::SET_THREAD_PRIORITY_IAT, 2, true, 1);
+            imp(t, ms::RESUME_THREAD_IAT, 1, true, 0x55);
+            t.stub(ms::OPERATOR_DELETE, false, 1, 0, 0);
+            t.stub(ms::THREAD_CREATE, true, 4, 4, 0);
+            let this = t.words(&[0, if case & 1 == 0 { 0 } else { 0x7a7a }, 9, 0, 0]);
+            let what = format!("Sys::Thread dtor #{case}");
+            t.check(&what, 0x0070_3990, Conv::Thiscall(this), &[], |m| {
+                mb::thread_destruct(m, this);
+                Out::None
+            });
+            t.put(this + 4, &[if case & 1 == 0 { 0 } else { 0x7a7a }]);
+            let flags = case % 3;
+            let what = format!("Sys::Thread deleting dtor #{case}");
+            t.check(&what, 0x0070_39d0, Conv::Thiscall(this), &[flags], |m| {
+                Out::U32(mb::thread_deleting_dtor(m, this, flags))
+            });
+            t.put(this + 4, &[0x4444]);
+            let what = format!("JobWorker start #{case}");
+            t.check(
+                &what,
+                0x0070_3a50,
+                Conv::Thiscall(this),
+                &[case, 0xa5a5],
+                |m| Out::U32(mb::job_worker_start(m, this, case, 0xa5a5)),
+            );
+        }
+    });
+}
+
+// ---- batch 3: SyncManager, the FMOD ring, post-effect setters, threads ----
+
+/// A `SyncManager` with its columns and file table (128 words each).
+fn sync_manager(t: &mut Twins, event: u32, enabled: u32) -> u32 {
+    let platform = t.alloc(b"PS3\0");
+    let this = t.zeros(0x40);
+    t.put(this, &[platform]);
+    let files = t.alloc(&[0x11; 0x200]);
+    t.put(this + 4, &[files]);
+    t.put(this + 0xc, &[event, 0, 0, 0, enabled]);
+    for col in [0x24u32, 0x28, 0x2c, 0x30, 0x34, 0x38, 0x3c] {
+        let c = t.zeros(0x200);
+        t.put(this + col, &[c]);
+    }
+    this
+}
+
+/// A list file: the magic (`magic`), a count and records of `width`
+/// words, every other one for `event`.
+fn sync_list(t: &mut Twins, magic: [u8; 4], count: u32, width: u32, id_at: u32, event: u32) -> u32 {
+    let mut w: Vec<u32> = vec![u32::from_le_bytes(magic), count];
+    for r in 0..count {
+        for k in 0..width {
+            w.push(if k == id_at {
+                if r % 2 == 0 { event } else { event + 1 }
+            } else {
+                0x100 * (r + 1) + k
+            });
+        }
+    }
+    t.words(&w)
+}
+
+fn sync_stubs(t: &mut Twins) {
+    t.stub(sy::MEMSET, false, 3, 0, 0);
+    t.stub(sy::FIOS_UNIFY, false, 3, 0, 0);
+    t.stub(sy::ALIGNED_FREE, false, 1, 0, 0);
+    t.stub(sy::DBG_PRINTF, false, 1, 0, 0);
+    t.stub(sy::ASYNC_INSTANCE, false, 0, 0, 0x0a51_0000);
+}
+
+#[test]
+fn sync_lists_match_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        for case in 0..15u32 {
+            for voice in [false, true] {
+                t.reset();
+                sync_stubs(t);
+                let (fmt_words, width, id_at) = if voice { (3, 4, 1) } else { (3, 5, 0) };
+                imp(t, sy::SPRINTF_IAT, fmt_words, false, 0);
+                let magic: [u8; 4] = match case % 5 {
+                    1 => *b"SX\0\0",
+                    2 => *b"SL\0x",
+                    3 => *b"SLx\0",
+                    _ => *b"SL\0\0",
+                };
+                let count = [1u32, 4, 7][(case / 5) as usize];
+                let list = sync_list(t, magic, count, width, id_at, 0x42);
+                t.stub(
+                    sy::READ_SYNC_FILE,
+                    true,
+                    1,
+                    1,
+                    if case == 13 { 0 } else { list },
+                );
+                let this = sync_manager(t, 0x42, 1);
+                let (sym, what) = if voice {
+                    (0x006f_aba0u32, format!("initSyncVoiceList #{case}"))
+                } else {
+                    (0x006f_aa30, format!("initSyncFileList #{case}"))
+                };
+                t.check_framed(&what, sym, Conv::Thiscall(this), &[], 0x204, |m, ebp| {
+                    Out::U32(if voice {
+                        sb3::init_sync_voice_list(m, ebp, this)
+                    } else {
+                        sb3::init_sync_file_list(m, ebp, this)
+                    })
+                });
+            }
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn sync_release_and_change_match_the_original() {
+    Twins::each(|t| {
+        for case in 0..6u32 {
+            t.reset();
+            sync_stubs(t);
+            let this = sync_manager(t, 7, u32::from(case != 0));
+            t.put(this + 0x10, &[3, 4]);
+            let files = t.r32(this + 4);
+            for i in 0..128 {
+                t.put(
+                    files + 4 * i,
+                    &[if (i + case) % 3 == 0 { 0 } else { 0xf000 + i }],
+                );
+            }
+            let what = format!("releaseSyncData #{case}");
+            t.check(&what, 0x006f_aee0, Conv::Thiscall(this), &[], |m| {
+                Out::U32(sb3::release_sync_data(m, this))
+            });
+            // syncDataChange: the two lists read nothing (null data), so
+            // only the preset entries are loaded
+            let reads: Vec<u32> = [0, 0]
+                .into_iter()
+                .chain((0..8).map(|i| 0x5f00 + i))
+                .collect();
+            t.stub_seq(sy::READ_SYNC_FILE, 1, 1, &reads);
+            let entries = [0u32, 1, 3, 0xffff_ffff, 2, 5][case as usize];
+            t.put(this + 0x10, &[entries]);
+            for col in [0x28u32, 0x30, 0x34, 0x38] {
+                let c = t.r32(this + col);
+                for i in 0..8 {
+                    t.put(c + 4 * i, &[col * 0x100 + i]);
+                }
+            }
+            // the list readers' sprintf (3 words) and the entries' (8)
+            t.stub_import_widths(sy::SPRINTF_IAT, &[3, 3, 8], 0);
+            t.skip = 4;
+            let what = format!("syncDataChange #{case}");
+            t.check_framed(
+                &what,
+                0x006f_af90,
+                Conv::Thiscall(this),
+                &[0x99],
+                sy::CHANGE_FRAME,
+                |m, ebp| Out::U32(sb3::sync_data_change(m, ebp, this)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+#[test]
+fn sync_data_change_task_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..3u32 {
+            t.reset();
+            sync_stubs(t);
+            let this = sync_manager(t, 7, u32::from(case != 0));
+            t.put(this + 0x10, &[case]);
+            let reads: Vec<u32> = [0, 0, 0x5f01, 0x5f02].to_vec();
+            t.stub_seq(sy::READ_SYNC_FILE, 1, 1, &reads);
+            t.stub_import_widths(sy::SPRINTF_IAT, &[3, 3, 8], 0);
+            let args = t.words(&[this, 0x99]);
+            // syncDataChange's frame pointer is 0x10 below the task's; the
+            // frames hold the original's saved registers, so only the
+            // calls (their logged pointers) and memory are compared
+            let ebp = t.frame_ebp(1);
+            let low = 0x10 + sy::CHANGE_LIST_EBP + sy::LIST_FRAME;
+            t.b.set_call_top(Some(ebp - low - 0x100));
+            let what = format!("syncDataChangeAsyncTask #{case}");
+            t.check(&what, 0x006f_b130, Conv::Cdecl, &[args], |m| {
+                Out::U32(sb3::sync_data_change_task(m, ebp - 0x10, args))
+            });
+            t.b.set_call_top(None);
         }
     });
 }

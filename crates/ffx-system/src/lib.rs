@@ -27,6 +27,7 @@ pub mod m5b_misc;
 pub mod m5b_stackwalker;
 pub mod m5b_steam;
 pub mod m5b_stl;
+pub mod m5b_sync;
 pub mod magic;
 pub mod math;
 pub mod menu;

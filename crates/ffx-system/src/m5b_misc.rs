@@ -65,19 +65,44 @@ pub const SET_MAP_ALPHA_FAST: u32 = 0x0082_1b00;
 pub const ASSET_LIST_DTOR: u32 = 0x0063_4610;
 pub const USER_FREE: u32 = 0x0068_7010;
 
+/// `0x0059e520(texture; sampler)` (thiscall, `ret 4`: binds the pair) and
+/// `memcpy` (`0x00949256`, cdecl).
+pub const BIND_TEXTURE: u32 = 0x0059_e520;
+pub const MEMCPY: u32 = 0x0094_9256;
+/// `Sys_Thread_vftable`, `"JobWorker"`, `SysThread_create_00679cb0(this;
+/// arg, a, b, name)` (thiscall, `ret 0x10`), `operator_delete`; `KERNEL32`
+/// `TerminateThread`, `CloseHandle`, `SetThreadPriority`, `ResumeThread`
+/// (stdcall).
+pub const THREAD_VFTABLE: u32 = 0x00b4_4e2c;
+pub const JOB_WORKER_NAME: u32 = 0x00b4_cf38;
+pub const THREAD_CREATE: u32 = 0x0067_9cb0;
+pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+pub const TERMINATE_THREAD_IAT: u32 = 0x00b0_c1d8;
+pub const CLOSE_HANDLE_IAT: u32 = 0x00b0_c0dc;
+pub const SET_THREAD_PRIORITY_IAT: u32 = 0x00b0_c10c;
+pub const RESUME_THREAD_IAT: u32 = 0x00b0_c1dc;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
-        ASSET_LIST_DTOR, DEPTH_BIAS_MAPS, ESC_MENU_LISTENER_VFTABLE, ESC_MENU_VFTABLE, FIOS_CLOSE,
-        FIOS_LSEEK, FIOS_OPEN, FIOS_READ, FIOS_UNIFY, IGGY_MENU_DTOR, LEVEL_NAME, LOC_KIT_DIR,
-        LOC_KIT_DIR_LEN, LOC_KIT_ERROR, LOC_KIT_FORMATS, MEMSET, NEW_ARRAY, PHYRE_SCENE,
-        PRINTF_IAT, PS3, REMOVE_LISTENER, SET_MAP_ALPHA_FAST, SPRINTF_IAT, STRSTR_IAT, USER_FREE,
+        ASSET_LIST_DTOR, BIND_TEXTURE, CLOSE_HANDLE_IAT, DEPTH_BIAS_MAPS,
+        ESC_MENU_LISTENER_VFTABLE, ESC_MENU_VFTABLE, FIOS_CLOSE, FIOS_LSEEK, FIOS_OPEN, FIOS_READ,
+        FIOS_UNIFY, IGGY_MENU_DTOR, JOB_WORKER_NAME, LEVEL_NAME, LOC_KIT_DIR, LOC_KIT_DIR_LEN,
+        LOC_KIT_ERROR, LOC_KIT_FORMATS, MEMCPY, MEMSET, NEW_ARRAY, OPERATOR_DELETE, PHYRE_SCENE,
+        PRINTF_IAT, PS3, REMOVE_LISTENER, RESUME_THREAD_IAT, SET_MAP_ALPHA_FAST,
+        SET_THREAD_PRIORITY_IAT, SPRINTF_IAT, STRSTR_IAT, TERMINATE_THREAD_IAT, THREAD_CREATE,
+        THREAD_VFTABLE, USER_FREE,
     };
     use ffx_graphic::host::{Conv, Host};
 
     fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
         let f: u32 = h.read(h.rebase(slot));
         h.call(f, Conv::Cdecl, args)
+    }
+
+    fn import_std(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Stdcall, args)
     }
 
     /// `LocalizationManager_readLocalizationKit(this)` (`0x006db2f0`,
@@ -173,5 +198,96 @@ pub mod bridge {
         h.write(listener, h.rebase(ESC_MENU_LISTENER_VFTABLE));
         h.call_sym(REMOVE_LISTENER, Conv::Cdecl, &[listener]);
         h.call_sym(IGGY_MENU_DTOR, Conv::Thiscall(this), &[])
+    }
+
+    /// A post effect's texture parameter setter `(this; sampler, texture)`
+    /// (thiscall, `ret 8`; `frame` its 0x10-byte value block; the record
+    /// at `this + record`, the buffer holder at `this + holder`; the code
+    /// of `BlurEffectEx_setTextureParam_006c44e0`): no record gives 0x13; a
+    /// record that is no texture type (byte `+2`: 0x42, 0xd9..=0xdc, 0x12)
+    /// gives 5; the texture bound to the sampler when both are set (its
+    /// failure returned); a record past the buffer's size word or below
+    /// offset 4 gives 3; else `{0x42, 0, texture, sampler}` copied in and
+    /// 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn post_set_texture_param(
+        h: &mut impl Host,
+        frame: u32,
+        this: u32,
+        record: u32,
+        holder: u32,
+        sampler: u32,
+        texture: u32,
+    ) -> u32 {
+        let rec: u32 = h.read(this.wrapping_add(record));
+        if rec == 0 {
+            return 0x13;
+        }
+        let holder: u32 = h.read(this.wrapping_add(holder));
+        let block: u32 = h.read(holder.wrapping_add(4));
+        let kind: u8 = h.read(rec.wrapping_add(2));
+        h.write(frame, 0x42u32);
+        h.write(frame.wrapping_add(0xc), sampler);
+        h.write(frame.wrapping_add(8), texture);
+        h.write(frame.wrapping_add(4), 0u32);
+        if !matches!(kind, 0x42 | 0xd9..=0xdc | 0x12) {
+            return 5;
+        }
+        if texture != 0 && sampler != 0 {
+            let r = h.call_sym(BIND_TEXTURE, Conv::Thiscall(texture), &[sampler]);
+            if r != 0 {
+                return r;
+            }
+        }
+        let len = u32::from(h.read::<u16>(rec.wrapping_add(0xa)) & 0x1fff);
+        let offset = u32::from(h.read::<u16>(rec.wrapping_add(8)));
+        if offset.wrapping_add(len) > h.read::<u32>(block) || offset < 4 {
+            return 3;
+        }
+        h.call_sym(
+            MEMCPY,
+            Conv::Cdecl,
+            &[offset.wrapping_add(block), frame, len],
+        );
+        0
+    }
+
+    /// `Sys::Thread::~Thread(this)` (`0x00703990`, thiscall): the vtable;
+    /// a running thread terminated (`TerminateThread(h, 0)`) and closed,
+    /// its handle and id cleared.
+    pub fn thread_destruct(h: &mut impl Host, this: u32) {
+        let handle: u32 = h.read(this.wrapping_add(4));
+        h.write(this, h.rebase(THREAD_VFTABLE));
+        if handle != 0 {
+            import_std(h, TERMINATE_THREAD_IAT, &[handle, 0]);
+            let handle: u32 = h.read(this.wrapping_add(4));
+            import_std(h, CLOSE_HANDLE_IAT, &[handle]);
+            h.write(this.wrapping_add(4), 0u32);
+            h.write(this.wrapping_add(8), 0u32);
+        }
+    }
+
+    /// The deleting destructor `(this; flags)` (`0x007039d0`): as
+    /// [`thread_destruct`], `operator delete` when `flags & 1`; `this`.
+    pub fn thread_deleting_dtor(h: &mut impl Host, this: u32, flags: u32) -> u32 {
+        thread_destruct(h, this);
+        if flags & 1 != 0 {
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[this]);
+        }
+        this
+    }
+
+    /// `JobWorker_start_00703a50(this; queue, arg)` (thiscall, `ret 8`):
+    /// `+0x10` = `queue`; the thread created suspended
+    /// (`SysThread_create_00679cb0(this; arg, 0, 0, "JobWorker")`), its
+    /// priority 0, resumed. Returns `ResumeThread`'s result.
+    pub fn job_worker_start(h: &mut impl Host, this: u32, queue: u32, arg: u32) -> u32 {
+        h.write(this.wrapping_add(0x10), queue);
+        let name = h.rebase(JOB_WORKER_NAME);
+        h.call_sym(THREAD_CREATE, Conv::Thiscall(this), &[arg, 0, 0, name]);
+        let handle: u32 = h.read(this.wrapping_add(4));
+        import_std(h, SET_THREAD_PRIORITY_IAT, &[handle, 0]);
+        let handle: u32 = h.read(this.wrapping_add(4));
+        import_std(h, RESUME_THREAD_IAT, &[handle])
     }
 }

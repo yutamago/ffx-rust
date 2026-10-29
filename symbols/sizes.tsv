@@ -9,6 +9,7 @@
 0x0063d9a0	5	0	graphicCharacterUnloadTask_thunk_0063d9a0
 0x00641140	12	0	graphicGetVideoEndTime
 0x00645e50	16	0	graphicisVideoAtEndFrame
+0x00679cb0	198	189	FUN_00679cb0
 0x00687010	5	0	user_free_thunk
 0x00687030	5	0	user_heap_destroy
 0x00687040	5	0	malloc_pool_init_thunk
