@@ -14,11 +14,18 @@ fn twin() -> Option<Twin> {
     Some(t)
 }
 
-/// Every slot the wrapper calls answers with `0x7000 + slot` and writes the
-/// words its callee reads (432 takes none, 449 and 450 two) into its own
-/// scratch row.
+/// Every slot the wrapper and the copies of other ports call answers with
+/// `0x7000 + slot` and writes the words its callee reads (432 takes none, 433
+/// one, 434 and 449/450 two, 436 nine) into its own scratch row.
 fn record(t: &mut Twin) {
-    for (s, n) in [(432u32, 0usize), (449, 2), (450, 2)] {
+    for (s, n) in [
+        (432u32, 0usize),
+        (433, 1),
+        (434, 2),
+        (436, 9),
+        (449, 2),
+        (450, 2),
+    ] {
         let row = SCRATCH + 0x1_0000 + 0x100 * (s - 432);
         t.stub(s, move |m: &mut dyn StubMem, a: &[u32]| {
             for (i, w) in (0u32..).zip(a.iter().take(n)) {
@@ -42,4 +49,15 @@ fn wrapper_passes_its_callbacks_and_the_argument() {
             Eax::Checked,
         );
     }
+    // copies of other ports: 0x1050 (the wrapper of m0187's 0x1050) and 0x16d0
+    // (the effect of m0187's 0x1420, with its own context operand)
+    let entry = Call {
+        eax: 0x55,
+        ecx: 3,
+        edx: 4,
+    };
+    t.check_entry(t.at(0x1050), entry, &[obj], Eax::Checked);
+    let ctx = t.img.word(t.at(0x16d0) + 0x39);
+    t.set_u32(ctx, SCRATCH + 0x3000);
+    t.check_entry(t.at(0x16d0), entry, &[obj], Eax::Checked);
 }

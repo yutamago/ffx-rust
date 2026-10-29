@@ -22,6 +22,7 @@ fn arity(slot: u32) -> usize {
         432 | 472 => 0,
         433 | 444 => 1,
         442 => 3,
+        436 => 9,
         440 => 4,
         473 => 5,
         _ => 2,
@@ -65,6 +66,12 @@ fn wrappers_pass_their_callbacks_and_the_argument() {
     t.check_entry(t.at(0x10f0), entry, &[obj], Eax::Checked);
     t.check_entry(t.at(0x1140), entry, &[obj], Eax::Checked);
     t.check_entry(t.at(0x1180), entry, &[obj], Eax::Checked);
+    // copies of other ports: 0x1000 (the wrapper of m0187's 0x1210) and
+    // 0x1280 (the effect of m0187's 0x1420, with its own context operand)
+    t.check_entry(t.at(0x1000), entry, &[obj], Eax::Checked);
+    let ctx_280 = t.img.word(t.at(0x1280) + 0x39);
+    t.set_u32(ctx_280, SCRATCH + 0x3000);
+    t.check_entry(t.at(0x1280), entry, &[obj], Eax::Checked);
     // the context's word changes between the calls, and so does the context
     t.set_u32(ctx + 0x1a0, 0x0bad_f00d);
     t.check_entry(t.at(0x11d0), entry, &[obj], Eax::Checked);
