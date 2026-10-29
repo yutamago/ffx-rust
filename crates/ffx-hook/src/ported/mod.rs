@@ -76,6 +76,7 @@ mod m5p_core_d;
 mod m5p_core_e;
 mod m5p_core_f;
 mod m5p_core_g;
+mod m5p_stubs;
 mod main;
 mod map;
 mod menu;
@@ -167,6 +168,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_tmpl_members_dynamic::hooks());
     all.extend(m5p_tmpl_members_phyrearray::hooks());
     all.extend(m5p_render_a::hooks());
+    all.extend(m5p_stubs::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());
@@ -763,6 +765,38 @@ macro_rules! ported {
 }
 #[cfg(ffx_host)]
 use ported;
+
+/// [`ported!`] for originals under five bytes (`docs/porting.md`,
+/// "Functions under five bytes"): the hook's 5-byte `jmp` doesn't fit, so
+/// the 32-bit game gets no hook from these lines (`hooks()` is empty
+/// there and the original bytes keep running; the shims are still
+/// compiled and linted), while `ffx-host` makes the same table entries as
+/// [`ported!`]. `tools/check-ported.py` accepts an address under five
+/// bytes only here, and only such addresses.
+#[cfg(not(ffx_host))]
+macro_rules! host_only {
+    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:tt fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
+        $(
+            $crate::ported::shim_fn! {
+                $abi, [#[allow(dead_code)] $(#[$doc])*], $shim, ($($arg: $ty,)* $($slots: $sty)?), ($($ret)?), $body
+            }
+        )*
+
+        /// This module's replacements in the 32-bit game: none (every
+        /// original here is too short for the hook's `jmp`).
+        #[must_use]
+        pub fn hooks() -> Vec<crate::Hook> {
+            Vec::new()
+        }
+    };
+}
+#[cfg(ffx_host)]
+macro_rules! host_only {
+    ($($t:tt)*) => {
+        $crate::ported::ported! { $($t)* }
+    };
+}
+use host_only;
 
 /// What `ffx-host`'s [`ported!`] expands to: the convention, the argument
 /// decoding and the result.

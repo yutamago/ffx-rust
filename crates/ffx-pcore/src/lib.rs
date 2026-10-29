@@ -17,6 +17,8 @@
 //! - [`m5p_core`] has M5 stage 1's list `phyre-core` (the descriptor
 //!   destructors' and array resets' tables, destructors, the pools' small
 //!   members, float setters);
+//! - [`m5p_stubs`] has the functions under five bytes (M5 list `stubs`):
+//!   one generic port per shape and a table of the 179 copies;
 //! - [`small`] has the class descriptors' little virtual members (construct
 //!   in place, destroy, forward).
 //!
@@ -48,6 +50,7 @@ pub mod m5p_core_e;
 pub mod m5p_core_f;
 pub mod m5p_core_g;
 pub mod m5p_core_h;
+pub mod m5p_stubs;
 pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_gdraw_device;

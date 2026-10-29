@@ -112,7 +112,7 @@ not replaced yet).
 | platform | file layer (fios, CD/DVD emulation, VBF), allocators (Sg_Mem, user heap), threads and locks, settings, saves on disk, Steam, window/input setup, std:: copies | replaced by the host and Rust `std` |
 | debug | debug consoles, debug drawing, host0: readers, Deci2, tweak overlays | not ported now; kept as mod-tool candidates (below) |
 | dead | nothing reaches it (no call, jump or pointer anywhere in the image), or PS2-only (memory card, IOP) | not ported |
-| stub | logic under five bytes, too short for the hook's 5-byte jmp: a bare `ret` (115, such as `dbgPrintf`), `ret 4`/`ret 8`, `xor eax, eax; ret`, `mov eax, ecx`, a `lea`/`mov` field return off `ecx` (158 on 2026-10-24); the evidence names the bytes' behaviour | not ported or hooked: the original bytes keep running, and callers' ports reproduce them or call them; counted apart from "to port" (`stub`, `stub_bytes`) |
+| stub | logic under five bytes, too short for the hook's 5-byte jmp: a bare `ret` (115, such as `dbgPrintf`), `ret 4`/`ret 8`, `xor eax, eax; ret`, `mov eax, ecx`, a `lea`/`mov` field return off `ecx` (158 on 2026-10-24); the evidence names the bytes' behaviour | not hooked: the original bytes keep running in the hooked game, and callers' ports reproduce them or call them; counted apart from "to port" (`stub`, `stub_bytes`). For M5 they get a port as an `ffx-host` table entry only (`host_only!`, `docs/porting.md` "Functions under five bytes") |
 
 Numbers (2026-10-17, with runtime coverage; functions and size):
 

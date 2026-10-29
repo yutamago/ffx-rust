@@ -88,7 +88,8 @@ MsGetRomItem @ 0x0079_09f0 => extern "C" fn ms_get_rom_item(id: u32, strings: u3
 for an original that takes `ecx` and `edx` plus stack words its caller
 pops (an LTCG custom convention; `docs/hooking.md`, "The hook table";
 `Conv::FastcallCallerPops` in the oracle). The name must be the one in
-`symbols/ffx.sym`; the function must be at least five bytes (the jump).
+`symbols/ffx.sym`; the function must be at least five bytes (the jump;
+shorter ones go in a `host_only!` list, "Functions under five bytes" below).
 `tools/check-ported.py` checks both, and with `FFX_GAME_DIR` set that the
 shim pops what the original's `ret` pops. Sizes come from
 `progress.functions()`: the dump's, except where `symbols/sizes.tsv` holds the
@@ -261,6 +262,42 @@ arguments, pointers, indices and globals, and on both snapshots; `eax` in all
 generated files; a function a module agent ports by hand simply leaves the
 table on the next run. `--rejects` shows why the other candidates were
 skipped.
+
+## Functions under five bytes
+
+A bare `ret`, `ret 4`, `xor eax, eax; ret`, `mov al, 1; ret`,
+`mov eax, ecx; ret` or a one-instruction field read off `ecx` is too short
+for the hook's 5-byte `jmp`: patching it would overwrite the next function
+or its padding. In the 32-bit game their bytes keep running (until M4 they
+were only listed, `stub` in `symbols/classes.tsv` and
+`symbols/m4-not-portable.tsv`). `ffx-rust` runs no `FFX.exe` code in the
+end, so its function table needs them too: they get a port and a table
+entry, and no hook.
+
+- The lines go in a `host_only! { ... }` block instead of `ported!`
+  (same syntax; `crates/ffx-hook/src/ported/mod.rs`). In the hook's build
+  the shims are compiled and linted but the module's `hooks()` is empty;
+  under `cfg(ffx_host)` (`crates/ffx-host-ports`) the block is a
+  `ported!` list, one table entry per line. ffx-host traps an entry with an
+  `int3` on its first byte, so the length doesn't matter there.
+- `tools/check-ported.py` accepts an address under five bytes only inside
+  `host_only!`, and refuses one of five bytes or more there (that one gets
+  a hook). Name, convention and `ret n` are checked as for `ported!`.
+- The shim declares what the original pops (`ret n`: thiscall with `n / 4`
+  stack words when it is a method) and returns what the original leaves:
+  `u8` for `xor al, al` / `mov al, 1` / `mov al, [ecx+n]` (the upper bytes
+  of `eax` are the caller's there, as for any `u8` port), `f32` for
+  `fld dword [ecx+n]`, nothing for a bare `ret` (the table keeps the
+  caller's `eax`, `ecx` and `edx`).
+- Tests: the oracle test as for any port (each copy against its own bytes,
+  on the image and both snapshots), plus a run through the table, since no
+  replay of the hooked game reaches the port: `crates/ffx-host/tests/m5p_stubs.rs`
+  calls each copy from Unicorn code with the ported table and without it.
+- List each in `symbols/m5-not-portable.tsv` with the reason (not hookable
+  in-process; a host-only table entry), unless `m4-not-portable.tsv` has it.
+
+The PhyreEngine ones are `ffx_pcore::m5p_stubs` (M5 list `stubs`): nine
+shapes, one generic port each, and a generated table of the 179 copies.
 
 ## What not to do
 
