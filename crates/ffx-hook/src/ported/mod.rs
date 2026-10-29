@@ -60,6 +60,7 @@ mod m5_static_init_d;
 mod m5_system_a;
 mod m5_system_b;
 mod m5_vfx;
+mod m5p_tmpl_abstract_ab;
 mod main;
 mod map;
 mod menu;
@@ -135,6 +136,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_sound::hooks());
     all.extend(m5_movie::hooks());
     all.extend(m5_ps2_emu::hooks());
+    all.extend(m5p_tmpl_abstract_ab::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());
