@@ -547,11 +547,7 @@ pub mod bridge {
     pub fn compare_depth(h: &mut impl Host, a: u32, b: u32) -> u32 {
         let x = x87::load(h.read(a + 0x28));
         let y = x87::load(h.read(b + 0x28));
-        if y > x {
-            0xffff_ffff
-        } else {
-            u32::from(y < x)
-        }
+        if y > x { 0xffff_ffff } else { u32::from(y < x) }
     }
 
     /// `FUN_0056df40(this)` -> 0: no current frame (`+0xc0`, `+0x20`);
