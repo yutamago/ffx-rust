@@ -30,6 +30,7 @@
 //! - [`p1_cluster`]: `PBinary::loadCluster` (round 4);
 //! - [`p1_textures`]: `PBinary::loadClusterTextures` (round 5).
 //! - [`m5p_tmpl_abstract_ab`]: the `PClassDescriptorAbstract<T>` slots 7, 12, 13, 14 (M5 lists tmpl-abstract-a, -b).
+//! - [`m5p_tmpl_abstract_cd`]: the same slots for M5 lists tmpl-abstract-c, -d (the ab ports, one more for slot 4).
 //!
 //! Everything this crate does not port is called at its address through
 //! [`ffx_graphic::host::Host`] (the allocator, the file layer, the
@@ -50,6 +51,7 @@ pub mod m5_static_init_b;
 pub mod m5_static_init_c;
 pub mod m5_static_init_d;
 pub mod m5p_tmpl_abstract_ab;
+pub mod m5p_tmpl_abstract_cd;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
