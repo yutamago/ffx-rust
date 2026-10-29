@@ -64,6 +64,7 @@ mod m5p_core;
 mod m5p_core_b;
 mod m5p_core_c;
 mod m5p_core_d;
+mod m5p_core_e;
 mod main;
 mod map;
 mod menu;
@@ -140,6 +141,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_core_b::hooks());
     all.extend(m5p_core_c::hooks());
     all.extend(m5p_core_d::hooks());
+    all.extend(m5p_core_e::hooks());
     all.extend(m5_sound::hooks());
     all.extend(m5_movie::hooks());
     all.extend(m5_ps2_emu::hooks());

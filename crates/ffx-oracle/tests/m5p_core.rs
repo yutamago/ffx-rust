@@ -2739,3 +2739,210 @@ fn character_lighting_matches_the_original() {
         }
     }
 }
+
+// ---- batch 5 (ffx_pcore::m5p_core_e) ----
+
+use ffx_pcore::m5p_core_e::{self as ce, bridge as be};
+
+/// A work-stealing pool with `workers` workers: random words, a vtable
+/// whose slot `+0x18` is a recording stub, two job buffers of `cap`
+/// words, the thread records (+4), range records per parity.
+fn ws_pool(t: &mut Twins, rng: &mut Rng, workers: u32, cap: u32) -> u32 {
+    let this = t.random(rng, 0x60);
+    let slots: Vec<u32> = (0..8u32)
+        .map(|i| t.stub_code(0x7d00_0000 + 4 * i, true, 0, 0, Ret::Imm(0x7d00_0000 | i)))
+        .collect();
+    let vt: Vec<u8> = slots.iter().flat_map(|s| s.to_le_bytes()).collect();
+    let vt = t.alloc(&vt);
+    t.w32(this, vt);
+    t.w32(this + 8, workers);
+    let threads = t.random(rng, (0x18 * 4) as usize);
+    t.w32(this + 4, threads);
+    t.w32(this + 0x14, cap);
+    let a = t.random(rng, (4 * cap + 4) as usize);
+    let b = t.random(rng, (4 * cap + 4) as usize);
+    t.w32(this + 0x18, a);
+    t.w32(this + 0x48, b);
+    for p in 0..2 {
+        let r = t.random(rng, (12 * 4) as usize);
+        t.w32(this + 0x58 + 4 * p, r);
+    }
+    t.w32(this + 0x40, rng.below(9));
+    t.w32(this + 0x4c, rng.below(cap + 1));
+    // started flags: 0, 1 or another non-zero byte
+    t.write(this + 0x54, &[rng.below(3) as u8, rng.below(3) as u8]);
+    this
+}
+
+#[test]
+fn work_stealing_pool_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d401);
+        t.stub(ce::SEMAPHORE_WAIT, true, 0, 0, Ret::Imm(0));
+        t.stub(ce::SEMAPHORE_SIGNAL, true, 2, 2, Ret::Imm(0));
+        for case in 0..80u32 {
+            let workers = rng.below(4);
+            let cap = 1 + rng.below(4);
+            let this = ws_pool(&mut t, &mut rng, workers, cap);
+            let job = t.random(&mut rng, 0x10);
+            match case % 4 {
+                0 => t.check(
+                    "submit",
+                    0x0057_d3e0,
+                    Conv::Thiscall(this),
+                    &[job],
+                    ALL,
+                    |g| be::submit(g, this, job),
+                ),
+                1 => t.check(
+                    "try submit",
+                    0x0057_d8d0,
+                    Conv::Thiscall(this),
+                    &[job],
+                    ALL,
+                    |g| be::try_submit(g, this, job),
+                ),
+                2 => {
+                    // a job of this generation, one or two back, or older
+                    let g = t.r32(this + 0x40);
+                    t.w32(job + 8, g.wrapping_sub(rng.below(5)));
+                    t.check(
+                        "wait",
+                        0x0057_d970,
+                        Conv::Thiscall(this),
+                        &[job],
+                        ALL,
+                        |gg| be::wait(gg, this, job),
+                    );
+                }
+                _ => {
+                    if case % 8 == 3 {
+                        t.w32(this + 0x4c, 0);
+                    } else {
+                        // jobs queued, workers to share them
+                        // some not divisible between the workers
+                        let (q, w) = if case % 16 == 7 {
+                            (2, 3)
+                        } else {
+                            (1 + rng.below(cap), 1 + rng.below(3))
+                        };
+                        t.w32(this + 0x4c, q);
+                        t.w32(this + 8, w);
+                    }
+
+                    // nothing queued: the original returns with the caller's eax
+                    let mask = if t.r32(this + 0x4c) == 0 { 0 } else { ALL };
+                    t.check("flush", 0x0057_d740, Conv::Thiscall(this), &[], mask, |g| {
+                        be::flush(g, this)
+                    });
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn work_stealing_lifetime_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d402);
+        t.stub(ce::POOL_CTOR, true, 2, 2, Ret::Imm(0xcbe0_0000));
+        t.stub(ce::VECTOR_CTOR, false, 5, 5, Ret::Imm(0x966a_0000));
+        t.stub(ce::VECTOR_DTOR, false, 4, 4, Ret::Imm(0x96d2_0000));
+        t.stub(ce::SHUTDOWN, true, 0, 0, Ret::Imm(0xd7e0_0000));
+        t.stub(ce::POOL_DTOR, true, 0, 0, Ret::Imm(0xcc60_0000));
+        t.stub(ce::OPERATOR_DELETE, false, 1, 0, Ret::Imm(0x0390_0000));
+        t.stub(
+            ce::OPERATOR_DELETE_ARRAY,
+            false,
+            1,
+            0,
+            Ret::Imm(0x0540_0000),
+        );
+        t.stub(ce::TIMELINE_DTOR, true, 0, 0, Ret::Imm(0xec70_0000));
+        for case in 0..8u32 {
+            let this = t.random(&mut rng, 0x60);
+            let (a, v) = (rng.next(), rng.next());
+            t.check(
+                "ctor",
+                0x0057_d100,
+                Conv::Thiscall(this),
+                &[a, v],
+                ALL,
+                |g| be::ctor(g, this, a, v),
+            );
+            t.check("dtor", 0x0057_d1f0, Conv::Thiscall(this), &[], ALL, |g| {
+                be::dtor(g, this)
+            });
+            let flags = rng.next() & !3 | (case & 3);
+            t.check(
+                "delete",
+                0x0057_d310,
+                Conv::Thiscall(this),
+                &[flags],
+                ALL,
+                |g| be::delete(g, this, flags),
+            );
+            let block = t.random(&mut rng, 0x10);
+            let tl = block + 4;
+            t.check(
+                "timeline delete",
+                0x0057_d280,
+                Conv::Thiscall(tl),
+                &[flags],
+                ALL,
+                |g| be::timeline_vector_delete(g, tl, flags),
+            );
+        }
+    }
+}
+
+#[test]
+fn work_stealing_shutdown_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d403);
+        // the shutdown: timelines or none, records or none
+        t.stub(ce::REMOVE_TIMELINE, true, 1, 1, Ret::Imm(0xede0_0000));
+        t.stub(
+            ce::OPERATOR_DELETE_ARRAY,
+            false,
+            1,
+            0,
+            Ret::Imm(0x0540_0000),
+        );
+        t.stub(ce::SEMAPHORE_SIGNAL, true, 2, 2, Ret::Imm(0));
+        t.stub(ce::POOL_DTOR_BODY, true, 0, 0, Ret::Imm(0xd070_0000));
+        t.stub(ce::CLOSE, true, 0, 0, Ret::Imm(0));
+        t.stub(ce::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        for case in 0..12u32 {
+            let workers = rng.below(4);
+            let this = ws_pool(&mut t, &mut rng, workers, 2);
+            let tls = match case % 3 {
+                0 => 0,
+                1 => {
+                    let block = t.zeros(4 + 4 * 4);
+                    block + 4
+                }
+                _ => {
+                    let block = t.zeros(4 + 4 * 4);
+                    t.w32(block, workers.max(1));
+                    let obj = t.object(&mut rng, 0x7006_0000, &[1], 4);
+                    let vt = t.r32(obj);
+                    t.w32(block + 4, vt);
+                    block + 4
+                }
+            };
+            t.w32(this + 0x1c, tls);
+            if case % 2 == 0 {
+                t.w32(this + 0x58, 0);
+            }
+            t.check(
+                "shutdown",
+                0x0057_d7e0,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| be::shutdown(g, this),
+            );
+        }
+    }
+}
