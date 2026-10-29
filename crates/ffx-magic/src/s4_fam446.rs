@@ -28,7 +28,16 @@ fn start<G: Game>(
     (owner, owner_b): (u32, u32),
 ) -> u32 {
     let scale = f32::from_bits(g.read::<u32>(img.word(f + k)));
-    start_object_at(g, img, img.rel32_target(f + call), obj, scale, index, owner, owner_b)
+    start_object_at(
+        g,
+        img,
+        img.rel32_target(f + call),
+        obj,
+        scale,
+        index,
+        owner,
+        owner_b,
+    )
 }
 
 /// The block's place `+0x2f80..+0x2f8c` copied into the object's
@@ -250,5 +259,148 @@ pub const START_260: Sig = Sig {
     len: 127,
     hash: 0xd337_1612_b58a_a93d,
     calls: &[(0x1f, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// Where a child start of [`start_child`] finds its words: the scale
+/// (`Fixed`: the operand points at it; `Table`: at the operand plus 4
+/// `kind`), the part table, the callback `owner_b`, the `rel32` of
+/// [`start_object_at`] and the operands of `G_A`/`G_B`.
+struct ChildOps {
+    scale: Scale,
+    parts: u32,
+    callback: u32,
+    call: u32,
+    globals: (u32, u32),
+}
+
+#[derive(Clone, Copy)]
+enum Scale {
+    Fixed(u32),
+    Table(u32),
+}
+
+/// A child object of a container (internal, `ecx` = the container,
+/// `edx` = two words): the object `this + 0x130` started with the
+/// kind's part and scale, its owner the callback; the container's place
+/// `+0x270..+0x27c` copied into its `+0xd0..+0xdc`, the two words into
+/// `+0xc0`/`+0xc4`, and its `+0x120` the word `*G_A` when the
+/// container's `+0x514` is -1, else the byte `G_B[+0x514]`. Returns that
+/// value.
+fn start_child<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (this, pair): (u32, u32),
+    kind: u32,
+    o: &ChildOps,
+) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let entry = |op: u32| w(op).wrapping_add(kind.wrapping_mul(4));
+    let scale = match o.scale {
+        Scale::Fixed(op) => w(op),
+        Scale::Table(op) => entry(op),
+    };
+    let scale = f32::from_bits(g.read::<u32>(scale));
+    let part = g.read::<u32>(entry(o.parts));
+    let obj = this + 0x130;
+    start_object_at(
+        g,
+        img,
+        img.rel32_target(f + o.call),
+        obj,
+        scale,
+        part,
+        0,
+        w(o.callback),
+    );
+    for i in 0..4 {
+        let x = g.read::<u32>(this + 0x270 + 4 * i);
+        g.write::<u32>(obj + 0xd0 + 4 * i, x);
+    }
+    let (a, b) = (g.read::<u32>(pair), g.read::<u32>(pair + 4));
+    g.write::<u32>(obj + 0xc0, a);
+    g.write::<u32>(obj + 0xc4, b);
+    let i = g.read::<u32>(this + 0x514);
+    let v = if i == u32::MAX {
+        g.read::<u32>(w(o.globals.0))
+    } else {
+        u32::from(g.read::<u8>(g.read::<u32>(w(o.globals.1)).wrapping_add(i)))
+    };
+    g.write::<u32>(obj + 0x120, v);
+    v
+}
+
+/// [`start_child`] with a fixed scale (operand `+0xa`) and the kind on
+/// the stack (cdecl, `ecx`/`edx` and one word).
+///
+/// `magic_0446` 0x100021d0 (164 bytes; 10 DLLs).
+pub fn start_child_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = ChildOps {
+        scale: Scale::Fixed(0xa),
+        parts: 0x1e,
+        callback: 0x12,
+        call: 0x2d,
+        globals: (0x81, 0x91),
+    };
+    let kind = fr.arg(g, 0);
+    Ret::eax(start_child(g, img, fr.at, (fr.ecx, fr.edx), kind, &o))
+}
+
+/// [`start_child_a`].
+pub const START_CHILD_A: Sig = Sig {
+    len: 164,
+    hash: 0xddd3_ffbd_d549_fa1c,
+    calls: &[(0x2d, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// [`start_child`] with the scale by kind (operand `+0xc`) and the kind
+/// on the stack.
+///
+/// `magic_0446` 0x100029e0 (165 bytes; 10 DLLs).
+pub fn start_child_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = ChildOps {
+        scale: Scale::Table(0xc),
+        parts: 0x1f,
+        callback: 0x13,
+        call: 0x2e,
+        globals: (0x82, 0x92),
+    };
+    let kind = fr.arg(g, 0);
+    Ret::eax(start_child(g, img, fr.at, (fr.ecx, fr.edx), kind, &o))
+}
+
+/// [`start_child_b`].
+pub const START_CHILD_B: Sig = Sig {
+    len: 165,
+    hash: 0x224b_54de_3e62_006a,
+    calls: &[(0x2e, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// [`start_child`] with the kind slot 641 gives for `*G_A` (operand
+/// `+0x10`), the scale by kind (`+0x1f`).
+///
+/// `magic_0446` 0x100030c0 (179 bytes, `ecx`/`edx`; 10 DLLs).
+pub fn start_child_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |off: u32| img.word(fr.at + off);
+    let o = ChildOps {
+        scale: Scale::Table(0x1f),
+        parts: 0x37,
+        callback: 0x2d,
+        call: 0x3e,
+        globals: (0x92, 0xa1),
+    };
+    let t = slot_target(g, w(0x1), 641);
+    let kind = g.call(t, 0, &[g.read::<u32>(w(0x10))]).eax;
+    Ret::eax(start_child(g, img, fr.at, (fr.ecx, fr.edx), kind, &o))
+}
+
+/// [`start_child_c`].
+pub const START_CHILD_C: Sig = Sig {
+    len: 179,
+    hash: 0x79aa_bbb1_fe0e_6001,
+    calls: &[(0x3e, Callee::Sig(&START_OBJECT_AT))],
     imports: &[],
 };

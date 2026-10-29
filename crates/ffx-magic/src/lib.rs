@@ -956,6 +956,9 @@ ports! {
     "0446 start 0x1430 low" => s4_fam446::START_1430_LOW, s4_fam446::start_1430_low;
     "0446 start 0x720" => s4_fam446::START_720, s4_fam446::start_720;
     "0446 start 0x260" => s4_fam446::START_260, s4_fam446::start_260;
+    "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
+    "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
+    "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

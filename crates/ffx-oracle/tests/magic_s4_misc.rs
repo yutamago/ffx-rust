@@ -786,3 +786,59 @@ fn fam446_starts() {
         }
     }
 }
+
+/// The `magic_0446` family's child starts (a container in `ecx`, two
+/// words at `edx`): each kind, the container's index -1 and not, the pool
+/// free and empty.
+#[test]
+fn fam446_children() {
+    let Some(mut t) = twin(446) else { return };
+    let soa = t.img.rel32_target(t.at(0x21d0) + 0x2d);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    let kind_at = SCRATCH + 0x880;
+    rec(&mut t, 641, 1, move |m, _| m.r32(kind_at));
+    let map = SCRATCH + 0x5000;
+    t.write(map, &[0x21, 0x22, 0x23, 0x24]);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let (this, pair) = (SCRATCH + 0x1000, SCRATCH + 0x900);
+    t.set_u32(pair, 0x0aaa_0001);
+    t.set_u32(pair + 4, 0x0bbb_0002);
+    for (rva, ga, gb) in [
+        (0x21d0u32, 0x81u32, 0x91u32),
+        (0x29e0, 0x82, 0x92),
+        (0x30c0, 0x92, 0xa1),
+    ] {
+        let f = t.at(rva);
+        t.set_u32(t.img.word(f + ga), 0x00a0_0000u32.wrapping_add(rva));
+        t.set_u32(t.img.word(f + gb), map);
+        for kind in [0u32, 1, 2] {
+            for (index, count) in [(u32::MAX, 3u16), (2, 0)] {
+                t.write(this, &[0x3c; 0x520]);
+                for i in 0..4 {
+                    set_f(&mut t, this + 0x270 + 4 * i, 2.5 * i as f32);
+                }
+                t.set_u32(this + 0x514, index);
+                t.set_u16(free, count);
+                t.set_u32(kind_at, kind);
+                let c = Call {
+                    ecx: this,
+                    edx: pair,
+                    ..Call::default()
+                };
+                t.check_entry(f, c, &[kind], Eax::Checked);
+            }
+        }
+    }
+}
