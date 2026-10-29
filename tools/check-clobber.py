@@ -223,6 +223,11 @@ MENU_SLOT = ("menu slot +0 control (record registered by TkMenuMainRegistMenu, s
              "g_TkMenuSlots 0x01840888): its dispatchers TkMenuMainActiveMenu 0x8aa15f (then "
              "mov eax, 1) and TkMenuCloseAll 0x8aa237 (eax reloaded at 0x8aa216) drop eax (2026-10-24)")
 VOID_OK = {
+    # PGameplay_updateObject_0055b670: stored at 0x55a0fa as the method of a
+    # PMethodCallerConcrete<PAttachableComponent, void> (vtable 0x00b2dfd0);
+    # its callers 0x55ae2a and 0x55b96f (`call eax`) xor eax right after
+    # (phyre render-a, 2026-10-29)
+    0x0055b670: "void method caller 0x00b2dfd0: dispatchers 0x55ae2a/0x55b96f xor eax after the call",
     0x008b15d0: MENU_SLOT,  # TkMenuCtrlSaveLoad (records 0x00c59ff0, 0x00c5a014)
     # TkMenuCtrlTuto: record 0x00c5a8d8, registered as slot 0x16 by
     # TkMenuMainOpenMode_008aa780 (push 0xc5a8d8 at 0x8aaa56, push 0x16, call

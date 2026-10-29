@@ -68,6 +68,7 @@ mod m5p_registry_load_a;
 mod m5p_tmpl_concrete;
 mod m5p_tmpl_members_dynamic;
 mod m5p_tmpl_members_phyrearray;
+mod m5p_render_a;
 mod main;
 mod map;
 mod menu;
@@ -151,6 +152,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5p_tmpl_concrete::hooks());
     all.extend(m5p_tmpl_members_dynamic::hooks());
     all.extend(m5p_tmpl_members_phyrearray::hooks());
+    all.extend(m5p_render_a::hooks());
     all.extend(main::hooks());
     all.extend(map::hooks());
     all.extend(menu::hooks());
