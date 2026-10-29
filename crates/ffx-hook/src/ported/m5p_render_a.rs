@@ -15,6 +15,7 @@ use ffx_prender::m5p_render_a6::bridge as f;
 use ffx_prender::m5p_render_a7::bridge as g;
 use ffx_prender::m5p_render_a8::bridge as h;
 use ffx_prender::m5p_render_a9::bridge as i;
+use ffx_prender::m5p_render_a10::bridge as j;
 
 ported! {
     // ---- batch 1 ----
@@ -1341,5 +1342,10 @@ ported! {
     PTexture3DD3D11_create_005903a0 @ 0x0059_03a0 => extern "thiscall" fn texture3d_create(this: u32, data: u32, views: u32, _unused: u32, skip: u32) -> u32 {
         let mut f = StackFrame::<{ ffx_prender::m5p_render_a9::bridge::CREATE_FRAME as usize / 4 }>::new();
         i::create(&mut mem(), this, data, views as u8, skip as u8, f.at())
+    }
+    // ---- batch 9 ----
+    /// `(out, src, format, count)` -> the end of `out`.
+    PPhysicsMesh_convertStream_0049a520 @ 0x0049_a520 => extern "C" fn convert_stream(out: u32, src: u32, format: u32, count: u32) -> u32 {
+        j::convert(&mut mem(), out, src, format, count)
     }
 }

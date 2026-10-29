@@ -732,3 +732,7 @@ include!("m5p_render_a/b7.rs");
 // ---- batch 8 ----
 
 include!("m5p_render_a/b8.rs");
+
+// ---- batch 9 ----
+
+include!("m5p_render_a/b9.rs");
