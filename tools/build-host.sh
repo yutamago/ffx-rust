@@ -42,9 +42,8 @@ if [[ -f "$xwin_toolchain" ]]; then
         sed "s|\${CMAKE_CURRENT_LIST_DIR}|$(dirname "$xwin_toolchain")|" >"$toolchain"
     toolchain_env=("CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc=$toolchain")
 fi
-# One cargo-xwin at a time (tools/build-hook.sh).
-mkdir -p "${XDG_CACHE_HOME:-$HOME/.cache}"
-flock "${XDG_CACHE_HOME:-$HOME/.cache}/ffx-xwin.lock" \
-    env "${toolchain_env[@]}" cargo xwin "$cmd" --release --target i686-pc-windows-msvc -p ffx-host "$@"
+# cargo-xwin's environment, its CRT cache set up under a lock (tools/xwin-env.sh)
+eval "$(tools/xwin-env.sh i686-pc-windows-msvc)"
+env "${toolchain_env[@]}" cargo "$cmd" --release --target i686-pc-windows-msvc -p ffx-host "$@"
 [[ "$cmd" == build ]] && echo "built: $repo/target/i686-pc-windows-msvc/release/ffx-rust.exe"
 exit 0

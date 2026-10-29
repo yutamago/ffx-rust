@@ -168,11 +168,12 @@ def main():
             run(cmd + ["--", "-D", "warnings"], None, dry)
         hook = sorted(affected & {"ffx-hook", "ffx-dinput8"})
         if hook:
-            cmd = ["cargo", "xwin", "clippy", "--release", "--target", "i686-pc-windows-msvc"]
-            for c in hook:
-                cmd += ["-p", c]
-            shims = f"{REPO / 'tools/shims'}:{os.environ.get('PATH', '')}"
-            run(cmd + ["--", "-D", "warnings"], {"PATH": shims, "XWIN_ARCH": "x86,x86_64"}, dry)
+            # cargo-xwin's environment (its CRT cache set up under a lock,
+            # tools/xwin-env.sh), then plain cargo: builds run side by side
+            pkgs = " ".join(f"-p {c}" for c in hook)
+            cmd = ["bash", "-c", 'eval "$(tools/xwin-env.sh i686-pc-windows-msvc)" && '
+                   f"cargo clippy --release --target i686-pc-windows-msvc {pkgs} -- -D warnings"]
+            run(cmd, None, dry)
         run(["tools/build-hook.sh"], None, dry)
     # the replays also check their own scripts and comparison tools
     replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
