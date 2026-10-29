@@ -182,6 +182,8 @@ pub mod m5r_h;
 pub mod m5r_i;
 pub mod m5r_j;
 pub mod m5r_k;
+pub mod m5r_l;
+pub mod m5r_m;
 pub mod mesh;
 pub mod misc;
 pub mod p6_app;
