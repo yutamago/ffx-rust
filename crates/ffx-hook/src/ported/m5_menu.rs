@@ -15,6 +15,7 @@ use ffx_menu::m5m_f::bridge as f;
 use ffx_menu::m5m_g::bridge as g;
 use ffx_menu::m5m_h::bridge as h;
 use ffx_menu::m5m_i::bridge as i;
+use ffx_menu::m5m_j::bridge as j;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -762,5 +763,17 @@ ported! {
     /// `(w, x, y)`: the customize screen's second cursor.
     MenuKaizou_DrawCursor_008d65f0 @ 0x008d_65f0 => extern "C" fn menu_kaizou_draw_cursor_008d65f0(w: u32, x: u32, y: u32) -> u32 {
         i::row_cursor(&mut mem(), w, x, y)
+    }
+    // ---- round 3, batch 3 (ffx_menu::m5m_j) ----
+    /// `MallocAndReadGamecode(lang)`: the name and descriptor in a frame
+    /// at the original's `ebp - 0x88`.
+    MallocAndReadGamecode @ 0x0064_6920 => extern "C" fn malloc_and_read_gamecode(lang: u32) -> u32 {
+        let mut fr = StackFrame::<34>::new();
+        let ebp = fr.at() + 0x88;
+        j::malloc_and_read_gamecode(&mut mem(), ebp, lang)
+    }
+    /// `(c)`: the customize screen's fade band.
+    MenuKaizou_DrawFadeBand_008d6340 @ 0x008d_6340 => extern "C" fn menu_kaizou_draw_fade_band(c: u32) -> u32 {
+        j::kaizou_fade_band(&mut mem(), c)
     }
 }

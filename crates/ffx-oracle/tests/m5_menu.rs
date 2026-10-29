@@ -34,6 +34,7 @@ use ffx_menu::m5m_f::bridge as mf;
 use ffx_menu::m5m_g::bridge as mg;
 use ffx_menu::m5m_h::bridge as mh;
 use ffx_menu::m5m_i::bridge as mi;
+use ffx_menu::m5m_j::bridge as mj;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -120,6 +121,11 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f64().expect("the callee leaves ST0 set")
+    }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
     fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
         ffx_oracle::check_width(
@@ -3167,6 +3173,87 @@ fn r3b2_menu_row_drawers_match_the_original() {
                     },
                 );
             }
+        }
+    });
+}
+
+// ---- round 3, batch 3 (ffx_menu::m5m_j) ----
+
+#[test]
+fn r3b3_malloc_and_read_gamecode_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x7e3c_0001);
+        let langs = [0u32, 1, 2, 5, 6, 8, 9, 10, 11, 0x12, 0x13, 0xffff_ffff];
+        let ends = [
+            0u32,
+            1,
+            15,
+            16,
+            0x1e1,
+            0xffff_ffff,
+            0u32.wrapping_sub(20),
+            0u32.wrapping_sub(100),
+        ];
+        for (i, &lang) in langs.iter().enumerate() {
+            for (k, &end) in ends.iter().enumerate() {
+                t.reset();
+                // a negative descriptor counts as open (only 0 fails)
+                let fd = match (i + k) % 5 {
+                    4 => 0,
+                    3 => 0xffff_fff0,
+                    _ => 7 + rng.below(4),
+                };
+                let pad = t.zeros(0x80);
+                // 0xff fill: the cleared first word and the 0 byte after the data show
+                let data = t.alloc(&[0xff; 0x400]) + 0x100;
+                let _ = pad;
+                t.stub_import(mj::SPRINTF_IAT, false, 3, 0, 0x20);
+                t.stubs(&[
+                    (mj::SCE_OPEN, false, 2, 0, fd),
+                    (mj::SCE_LSEEK, false, 3, 0, end),
+                    (mj::SCE_READ, false, 3, 0, 0x31),
+                    (mj::SCE_CLOSE, false, 1, 0, 0),
+                    (mj::DBG_PRINTF, false, 2, 0, 0x32),
+                    (mj::TK_MALLOC, false, 1, 0, data),
+                    (mj::TK_FREE, false, 1, 0, 0x33),
+                ]);
+                for g in [0x00cc_b95c, 0x00cc_b960] {
+                    let old = if rng.chance(2) { 0 } else { rng.word() | 1 };
+                    t.g32(g, old);
+                }
+                let what = format!("MallocAndReadGamecode {lang:#x} end {end:#x}");
+                t.check_framed(&what, 0x0064_6920, Conv::Cdecl, &[lang], 0x88, |m, ebp| {
+                    Out::U32(mj::malloc_and_read_gamecode(m, ebp, lang))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn r3b3_kaizou_fade_band_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3c_0002);
+        for i in 0..400 {
+            t.reset();
+            let ret = rng.word();
+            t.stub(mj::TO_MKP_SHAPE_XYWHUVC2, false, 11, 0, ret);
+            let c = match i % 4 {
+                0 => rng.below(0x20),
+                1 => 0x20 << rng.below(8),
+                _ => rng.next(),
+            };
+            let y = (rng.next() as i16) >> rng.below(14);
+            let at = t.rebase(0x0186_aa42);
+            t.write(at, &y.to_le_bytes());
+            t.check(
+                &format!("0x008d6340 #{i}"),
+                0x008d_6340,
+                Conv::Cdecl,
+                &[c],
+                |m| Out::U32(mj::kaizou_fade_band(m, c)),
+            );
         }
     });
 }
