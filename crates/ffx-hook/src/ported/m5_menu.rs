@@ -13,6 +13,7 @@ use ffx_menu::m5m_d::bridge as d;
 use ffx_menu::m5m_e::bridge as e;
 use ffx_menu::m5m_f::bridge as f;
 use ffx_menu::m5m_g::bridge as g;
+use ffx_menu::m5m_h::bridge as h;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -489,5 +490,150 @@ ported! {
     /// `gui_eve_GWM_BUTTONUP(window)`.
     gui_eve_GWM_BUTTONUP @ 0x0085_4e80 => extern "C" fn gui_eve_gwm_buttonup(window: u32) -> u32 {
         g::eve_gwm_buttonup(&mut mem(), window)
+    }
+    // ---- round 3, batch 1 (ffx_menu::m5m_h) ----
+    /// `code_0088d500()`: `jmp AtelDrawSemiTrans`.
+    AtelDrawSemiTrans_thunk_0088d500 @ 0x0088_d500 => extern "C" fn atel_draw_semi_trans_thunk() -> u32 {
+        h::atel_draw_semi_trans_thunk(&mut mem())
+    }
+    /// `setNearPlane(near)`: tail jump to the camera's virtual method 1.
+    setNearPlane @ 0x0064_5f00 => extern "C" fn set_near_plane(near: u32) -> u32 {
+        h::set_near_plane(&mut mem(), near)
+    }
+    /// `code_00887ae0()`: `jmp TkSndIsRead`.
+    TkSndIsRead_thunk_00887ae0 @ 0x0088_7ae0 => extern "C" fn tk_snd_is_read_thunk() -> u32 {
+        h::tk_snd_is_read_thunk(&mut mem())
+    }
+    /// `TkGetLang_thunk()`: `jmp TkGetLang`.
+    TkGetLang_thunk @ 0x0088_7c30 => extern "C" fn tk_get_lang_thunk() -> u32 {
+        h::tk_get_lang_thunk(&mut mem())
+    }
+    /// `jmp TkGetNowEventJumpMapNo`.
+    TkGetNowEventJumpMapNo_0086c1f0 @ 0x0086_c1f0 => extern "C" fn tk_get_now_event_jump_map_no_thunk() -> u32 {
+        h::tk_get_now_event_jump_map_no_thunk(&mut mem())
+    }
+    /// `code_0086c1d0()`: `jmp TkGetNowEventJumpIndex`.
+    TkGetNowEventJumpIndex_thunk_0086c1d0 @ 0x0086_c1d0 => extern "C" fn tk_get_now_event_jump_index_thunk() -> u32 {
+        h::tk_get_now_event_jump_index_thunk(&mut mem())
+    }
+    /// `TkGetSaveEventAddress()`: `jmp MsGetSaveEventAddress`.
+    TkGetSaveEventAddress @ 0x0088_c830 => extern "C" fn tk_get_save_event_address() -> u32 {
+        h::tk_get_save_event_address(&mut mem())
+    }
+    /// `code_0088e780(id)`: `jmp MsImportantReset`.
+    MsImportantReset_thunk_0088e780 @ 0x0088_e780 => extern "C" fn ms_important_reset_thunk(id: u32) -> u32 {
+        h::ms_important_reset_thunk(&mut mem(), id)
+    }
+    /// `code_0087aa30()`: the image address `0x00b546a0`.
+    TkVibrateCurve_get_0087aa30 @ 0x0087_aa30 => extern "C" fn vibrate_curve_0087aa30() -> u32 {
+        h::vibrate_curve_0087aa30(&mem())
+    }
+    /// `code_00888310()`.
+    TkMcResetPorts_00888310 @ 0x0088_8310 => extern "C" fn tk_mc_reset_ports() -> u32 {
+        h::mc_reset_ports(&mut mem())
+    }
+    /// `code_00888760()`.
+    TkSyncAndClearVsync_00888760 @ 0x0088_8760 => extern "C" fn tk_sync_and_clear_vsync() -> u32 {
+        h::sync_and_clear_vsync(&mut mem())
+    }
+    /// `code_0088de60()`.
+    TkInitScene_LoadShoutStream_0088de60 @ 0x0088_de60 => extern "C" fn tk_load_shout_stream() -> u32 {
+        h::load_shout_stream(&mut mem())
+    }
+    /// `code_0088ded0()`.
+    TkInitScene_SendShoutStream_0088ded0 @ 0x0088_ded0 => extern "C" fn tk_send_shout_stream() -> u32 {
+        h::send_shout_stream(&mut mem())
+    }
+    /// `code_008c1790()`: `jmp TkVU1SyncPath`.
+    TkVU1SyncPath_thunk_008c1790 @ 0x008c_1790 => extern "C" fn tk_vu1_sync_path_thunk() -> u32 {
+        h::tk_vu1_sync_path_thunk(&mut mem())
+    }
+    /// `code_008a9850()`: the image address `0x00b5f46c`.
+    TkVibrateCurve_get_008a9850 @ 0x008a_9850 => extern "C" fn vibrate_curve_008a9850() -> u32 {
+        h::vibrate_curve_008a9850(&mem())
+    }
+    /// `jmp MsGetGIL`.
+    TkMenuGetGil_008a98b0 @ 0x008a_98b0 => extern "C" fn tk_menu_get_gil() -> u32 {
+        h::ms_get_gil_thunk(&mut mem())
+    }
+    /// `Pause_Leave_008ab2d0()`.
+    Pause_Leave_008ab2d0 @ 0x008a_b2d0 => extern "C" fn pause_leave() -> u32 {
+        h::pause_leave(&mut mem())
+    }
+    /// `code_008bc080()`: `eax` is left as the callers don't read it.
+    BtlEnd_DrawGilPages_008bc080 @ 0x008b_c080 => extern "C" fn btl_end_draw_gil_pages() {
+        h::draw_gil_pages(&mut mem());
+    }
+    /// `code_008bd940()`.
+    BtlEnd_DrawSpoilPages_008bd940 @ 0x008b_d940 => extern "C" fn btl_end_draw_spoil_pages() {
+        h::draw_spoil_pages(&mut mem());
+    }
+    /// `code_008bd9c0()`.
+    BtlEnd_TakeSpoils_008bd9c0 @ 0x008b_d9c0 => extern "C" fn btl_end_take_spoils() {
+        h::take_spoils(&mut mem());
+    }
+    /// `code_008bda30()`: `jmp MsGetGIL`.
+    MsGetGIL_thunk_008bda30 @ 0x008b_da30 => extern "C" fn ms_get_gil_thunk() -> u32 {
+        h::ms_get_gil_thunk(&mut mem())
+    }
+    /// `code_008beff0()`.
+    code_008beff0 @ 0x008b_eff0 => extern "C" fn menu_help_draw() -> u32 {
+        h::help_draw(&mut mem())
+    }
+    /// `TkMn2DrawScissorRect(x, y, w, h)`: `jmp TODrawScissorXYWH`.
+    TkMn2DrawScissorRect @ 0x008c_1390 => extern "C" fn tk_mn2_draw_scissor_rect(x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        h::draw_scissor_rect_thunk(&mut mem(), x, y, w, hh)
+    }
+    /// `code_008c1b10()`: `jmp TOMenuGetAbilitymapWorkAdrs`.
+    TOMenuGetAbilitymapWorkAdrs_thunk_008c1b10 @ 0x008c_1b10 => extern "C" fn get_abilitymap_work_thunk() -> u32 {
+        h::get_abilitymap_work_thunk(&mut mem())
+    }
+    /// `code_008c2380(list, kind)`: `jmp TkMn2BuildItemList_008c2390`.
+    TkMn2BuildItemList_thunk_008c2380 @ 0x008c_2380 => extern "C" fn build_item_list_thunk(list: u32, kind: u32) -> u32 {
+        h::build_item_list_thunk(&mut mem(), list, kind)
+    }
+    /// `TkMsSetSaveParamAll()`: `jmp MsSetSaveParamAll`.
+    TkMsSetSaveParamAll @ 0x008c_30d0 => extern "C" fn tk_ms_set_save_param_all() -> u32 {
+        h::tk_ms_set_save_param_all(&mut mem())
+    }
+    /// `code_008c3340()`.
+    code_008c3340 @ 0x008c_3340 => extern "C" fn menu_help_close() -> u32 {
+        h::help_close(&mut mem())
+    }
+    /// `code_008c3360()`.
+    code_008c3360 @ 0x008c_3360 => extern "C" fn draw_empty_screen_008c3360() -> u32 {
+        h::draw_empty_screen(&mut mem())
+    }
+    /// `code_008c3380()`: `0x01871538` = 1.
+    code_008c3380 @ 0x008c_3380 => extern "C" fn help_flag_on() {
+        h::set_help_flag(&mut mem(), 1);
+    }
+    /// `code_008c33e0()`: `0x01871538` = 0.
+    code_008c33e0 @ 0x008c_33e0 => extern "C" fn help_flag_off() {
+        h::set_help_flag(&mut mem(), 0);
+    }
+    /// `code_008c5ee0()`.
+    code_008c5ee0 @ 0x008c_5ee0 => extern "C" fn item_step_draw_bg() -> u32 {
+        h::item_step_draw_bg(&mut mem())
+    }
+    /// `code_008c5ef0()`.
+    code_008c5ef0 @ 0x008c_5ef0 => extern "C" fn item_open() -> u32 {
+        h::item_open(&mut mem())
+    }
+    /// `code_008c6050()`.
+    code_008c6050 @ 0x008c_6050 => extern "C" fn item_close() -> u32 {
+        h::item_close(&mut mem())
+    }
+    /// `code_008c60a0()`.
+    code_008c60a0 @ 0x008c_60a0 => extern "C" fn screen_x2_off() -> u32 {
+        h::screen_x2_off(&mut mem())
+    }
+    /// `code_008c64a0()`.
+    code_008c64a0 @ 0x008c_64a0 => extern "C" fn item_draw_plate() -> u32 {
+        h::item_draw_plate(&mut mem())
+    }
+    /// `code_008c64f0()`.
+    code_008c64f0 @ 0x008c_64f0 => extern "C" fn shop_open_rect() -> u32 {
+        h::shop_open_rect(&mut mem())
     }
 }
