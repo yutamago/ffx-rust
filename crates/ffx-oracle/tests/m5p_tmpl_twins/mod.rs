@@ -267,6 +267,34 @@ impl Twins {
         eb
     }
 
+    /// Runs the original at `sym` with `conv` and `args` in `a`, and
+    /// `port` on `b`, from the same memory (the log emptied first); every
+    /// byte written must agree, and `eax` too when the port gives one.
+    /// Returns the original's `eax`.
+    pub fn run_conv(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        port: impl FnOnce(&mut G) -> Option<u32>,
+    ) -> u32 {
+        let log = self.log;
+        self.w32(log, 0);
+        let addr = self.rebase(sym);
+        let ra = self
+            .a
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        let eb = port(&mut G(&mut self.b));
+        assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
+        if let Some(eb) = eb {
+            assert_eq!(ra.eax, eb, "{what}: eax");
+        }
+        self.diff(what);
+        ra.eax
+    }
+
     /// A NUL-terminated string in both oracles.
     pub fn cstr(&mut self, s: &str) -> u32 {
         let mut v = s.as_bytes().to_vec();

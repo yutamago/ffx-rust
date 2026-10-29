@@ -447,3 +447,45 @@ pub const ELEMENT_TYPE_JUMP: &[(u32, u32)] = &[
     (0x005a_e370, 0x0043_7d30), // unsigned_char
     (0x005b_2b30, 0x0043_5740), // Phyre_PBase
 ];
+
+/// `PArray<T>::resize` copies with a reallocating helper `(count, data, kept)` (cdecl): the helper and the release.
+pub const RESIZE_REALLOC: &[(u32, (u32, Release))] = &[
+    (0x0049_4cf0, (0x0049_00c0, Release::Free { check_null: true })), // PInt32
+    (0x0049_4f60, (0x0049_01f0, Release::Elements(0x0043_4360))), // PString
+    (0x004e_fae0, (0x004e_b0a0, Release::Free { check_null: false })), // PContextSwitch
+    (0x004e_fb50, (0x004e_b110, Release::Free { check_null: false })), // PEffectVariant
+    (0x004e_fbc0, (0x004e_b180, Release::Free { check_null: false })), // PLightType
+    (0x004e_fc30, (0x004e_b1f0, Release::Free { check_null: false })), // PShadowCasterType
+    (0x004e_fca0, (0x004e_b260, Release::Elements(0x004e_c310))), // PNodeContext
+    (0x0051_d600, (0x0051_9d30, Release::Elements(0x0051_a890))), // PAnimationChannelTarget
+    (0x005a_f120, (0x005a_b070, Release::Free { check_null: true })), // PRenderStream
+    (0x005c_7440, (0x005c_0720, Release::Free { check_null: true })), // PRenderStreamInput
+];
+
+/// `PArray<T>::resize` copies that allocate with `PhyreMalloc`.
+pub const RESIZE_MALLOC: &[(u32, Grow)] = &[
+    (0x0045_9f90, Grow { size: 0x8, copy: 0x0045_6da0, ctor: 0x0045_90f0, release: Release::Free { check_null: true } }), // PTypedObject
+    (0x0049_4d60, Grow { size: 0x40, copy: 0x0048_c930, ctor: 0, release: Release::Free { check_null: true } }), // PMatrix4
+    (0x0049_4e00, Grow { size: 0x6c, copy: 0x0048_c960, ctor: 0x0043_4430, release: Release::Elements(0x0043_4210) }), // PMeshSegment
+    (0x0049_4eb0, Grow { size: 0x20, copy: 0x0048_c9d0, ctor: 0x0049_32a0, release: Release::Free { check_null: true } }), // PSkeletonJointBounds
+    (0x004b_2170, Grow { size: 0x10, copy: 0x004a_3530, ctor: 0x004a_eb60, release: Release::Elements(0x004a_b4d0) }), // PShaderParameterDefinition
+    (0x004b_2220, Grow { size: 0x10, copy: 0x004a_3620, ctor: 0x004a_ebd0, release: Release::Elements(0x004a_b510) }), // PShaderStreamDefinition
+    (0x0054_c630, Grow { size: 0x10, copy: 0x0054_65f0, ctor: 0, release: Release::Free { check_null: true } }), // Vector3
+    (0x005c_72c0, Grow { size: 0x14, copy: 0x005b_c500, ctor: 0x005c_4650, release: Release::Elements(0x005c_1ef0) }), // PModifierAndInputs
+    (0x005c_7380, Grow { size: 0x14, copy: 0x005b_c610, ctor: 0x005c_46a0, release: Release::Free { check_null: true } }), // PModifierNetworkBuffer
+];
+
+/// `PSharray<T *>::resize` copies: the block helper (thiscall `(count, data, kept)`, `ret 0xc`).
+pub const SHARRAY_RESIZE: &[(u32, u32)] = &[
+    (0x005a_7bf0, 0x005a_6ba0), // PMeshInstance
+    (0x0060_2b00, 0x005f_3f40), // PPhysicsShape
+];
+
+/// Element constructors `(elements, n)` (cdecl): the stride and the words stored in each element.
+pub const ELEMENTS: &[(u32, (u32, Words))] = &[
+    (0x0049_32a0, (0x20, &[(0x0, 0x0), (0x4, 0x0), (0x8, 0x0), (0xc, 0x0), (0x10, 0x0), (0x14, 0x0), (0x18, 0x0), (0x1c, 0x0)])), // PSkeletonJointBounds
+    (0x004a_eb60, (0x10, &[(0x0, 0x3446_0000), (0x4, 0x0), (0x8, 0x0), (0xc, 0x0)])), // PShaderParameterDefinition
+    (0x004a_ebd0, (0x10, &[(0x0, 0x0), (0x4, 0x0), (0x8, 0x0), (0xc, 0x0034_0000)])), // PShaderStreamDefinition
+    (0x005c_4650, (0x14, &[(0x0, 0x0), (0x4, 0x0), (0x8, 0x0), (0xc, 0x0), (0x10, 0x0)])), // PModifierAndInputs
+    (0x005c_46a0, (0x14, &[(0x0, 0x0), (0x4, 0x0), (0x8, 0x0), (0xc, 0x0), (0x10, 0x0)])), // PModifierNetworkBuffer
+];

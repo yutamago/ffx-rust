@@ -46,6 +46,10 @@ ported! {
     Phyre_PClassDataMemberPhyreSharray_Phyre_PString__dtor @ 0x0044_b100 => extern "thiscall" fn tp_0044b100(this: u32, flags: u32) -> u32 {
         t::bridge::dtor_without_vtable(&mut mem(), this, flags, const { t::word_of(t::DTORS, 0x0044_b100) })
     }
+    /// `Phyre_PSharray_PString_allocBlock`: block helper `(count, data, kept)`: the inline word for a count up to 1, else `PhyreMalloc(4 count, 4)` (0 when it fails); `0x0044a470(block, data, kept)`, the rest zeroed; the block.
+    Phyre_PSharray_PString_allocBlock @ 0x0044_c220 => extern "thiscall" fn tp_0044c220(array: u32, count: u32, data: u32, kept: u32) -> u32 {
+        t::arrays::sharray_string_alloc(&mut mem(), array, count, data, kept)
+    }
     /// `Phyre_PClassDataMemberPhyreSharray_Phyre_PString__slot9`: slot 9 (the element type): `0x00c91048`.
     Phyre_PClassDataMemberPhyreSharray_Phyre_PString__slot9 @ 0x0044_c390 => extern "thiscall" fn tp_0044c390(_this: u32) -> u32 {
         t::bridge::element_type(&mem(), const { t::word_of(t::ELEMENT_TYPE, 0x0044_c390) })
@@ -65,6 +69,10 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x0044_c4a0) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PSharray_PString_resize`: `resize(count)`: as the `PSharray<T *>` resize with `0x0044c220`; an old inline string's block freed when its bit 0 is clear, an old owned block to `0x00434360(data, old count)`; 0.
+    Phyre_PSharray_PString_resize @ 0x0044_c790 => extern "thiscall" fn tp_0044c790(array: u32, count: u32) -> u32 {
+        t::arrays::sharray_string_resize(&mut mem(), array, count)
+    }
     /// `Phyre_PClassDataMemberPhyreSharray_Phyre_PString__setCount`: `setCount(object, count)` (slot 5): `0x44c790` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreSharray_Phyre_PString__setCount @ 0x0044_c850 => extern "thiscall" fn tp_0044c850(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x0044_c850) })
@@ -76,6 +84,10 @@ ported! {
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__dtor`: scalar deleting destructor (slot 0): `PClassDataMemberArray`'s destructor `0x00575f70`, `PhyreFree` when `flags & 1`; `this`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__dtor @ 0x0045_7d50 => extern "thiscall" fn tp_00457d50(this: u32, flags: u32) -> u32 {
         t::bridge::dtor_without_vtable(&mut mem(), this, flags, const { t::word_of(t::DTORS, 0x0045_7d50) })
+    }
+    /// `Phyre_PArray_Phyre_PTypedObject_constructElements`: element constructor `(elements, n)`: `[e] = 0`, `[e+4] = PBase::GetClassDescriptor()` in each 8-byte element.
+    Phyre_PArray_Phyre_PTypedObject_constructElements @ 0x0045_90f0 => extern "C" fn tp_004590f0(elements: u32, n: u32) {
+        t::arrays::construct_typed_objects(&mut mem(), elements, n);
     }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__slot9`: slot 9 (the element type): `0x00c90f30`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__slot9 @ 0x0045_9890 => extern "thiscall" fn tp_00459890(_this: u32) -> u32 {
@@ -96,6 +108,10 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x0045_9960) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PTypedObject_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x8 count, 4)` (0xd when it fails), `0x00456da0(block, data, kept)`, `0x004590f0(block + kept, count - kept)` (cdecl), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PTypedObject_resize @ 0x0045_9f90 => extern "thiscall" fn tp_00459f90(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x0045_9f90) })
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__setCount`: `setCount(object, count)` (slot 5): `0x459f90` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__setCount @ 0x0045_a050 => extern "thiscall" fn tp_0045a050(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x0045_a050) })
@@ -103,6 +119,14 @@ ported! {
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__setToExternalBuffer`: `setToExternalBuffer(object, buffer, count)` (slot 8): 5 for a negative count; else an owned old block other than `buffer` released (PhyreFree(data) unless data is 0), then `[count | bit 31, buffer]`; 0.
     Phyre_PClassDataMemberPhyreArray_Phyre_PTypedObject__setToExternalBuffer @ 0x0045_a190 => extern "thiscall" fn tp_0045a190(this: u32, object: u32, buffer: u32, count: u32) -> u32 {
         t::bridge::set_external(&mut mem(), this, object, buffer, count, const { t::release_of(0x0045_a190) })
+    }
+    /// `Phyre_PClassDataMemberDynamicType_Phyre_PAssetReference__dtor`: scalar deleting destructor (slot 0): vtable `0x00b11ca8`, `0x005754f0`, `0x00630390(this)` when `flags & 1`; `this`.
+    Phyre_PClassDataMemberDynamicType_Phyre_PAssetReference__dtor @ 0x0045_c2c0 => extern "thiscall" fn tp_0045c2c0(this: u32, flags: u32) -> u32 {
+        t::arrays::dtor_with(&mut mem(), this, flags, t::DYNAMIC_TYPE_DTOR_PARTS)
+    }
+    /// `Phyre_PClassDataMemberDynamicType_Phyre_PAssetReference__slot1`: slot 1 `(object)`: the getter at `+8` (thiscall on `object + [this+0xc]`) when set and not 0; else `[[this+4]+0x18]`.
+    Phyre_PClassDataMemberDynamicType_Phyre_PAssetReference__slot1 @ 0x0045_dea0 => extern "thiscall" fn tp_0045dea0(this: u32, object: u32) -> u32 {
+        t::arrays::dynamic_type_descriptor(&mut mem(), this, object)
     }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PGeometry_PVertexStream__dtor`: scalar deleting destructor (slot 0): `PClassDataMemberArray`'s destructor `0x00575f70`, `PhyreFree` when `flags & 1`; `this`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PGeometry_PVertexStream__dtor @ 0x0048_1c20 => extern "thiscall" fn tp_00481c20(this: u32, flags: u32) -> u32 {
@@ -217,6 +241,11 @@ ported! {
     Phyre_PClassDataMemberPhyreArray_Phyre_PString__dtor @ 0x0048_fa60 => extern "thiscall" fn tp_0048fa60(this: u32, flags: u32) -> u32 {
         t::bridge::dtor_without_vtable(&mut mem(), this, flags, const { t::word_of(t::DTORS, 0x0048_fa60) })
     }
+    /// `Phyre_PArray_PSkeletonJointBounds_constructElements`: element constructor `(elements, n)`: 0x20-byte elements zeroed (an element at address 0 skipped).
+    Phyre_PArray_PSkeletonJointBounds_constructElements @ 0x0049_32a0 => extern "C" fn tp_004932a0(elements: u32, n: u32) {
+        let (stride, words) = const { t::elements_of(0x0049_32a0) };
+        t::arrays::construct_elements(&mut mem(), elements, n, stride, words);
+    }
     /// `Phyre_PClassDataMemberPhyreArray_int__slot9`: slot 9 (the element type): tail jump to `Phyre_PTypeDispenser_GetType_PInt32` (cdecl, no arguments).
     Phyre_PClassDataMemberPhyreArray_int__slot9 @ 0x0049_4140 => extern "thiscall" fn tp_00494140(_this: u32) -> u32 {
         t::bridge::element_type_jump(&mut mem(), const { t::word_of(t::ELEMENT_TYPE_JUMP, 0x0049_4140) })
@@ -312,6 +341,28 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x0049_45d0) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PInt32_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004900c0(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PInt32_resize @ 0x0049_4cf0 => extern "thiscall" fn tp_00494cf0(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x0049_4cf0) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
+    /// `Phyre_PArray_PMatrix4_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x40 count, 4)` (0xd when it fails), `0x0048c930(block, data, kept)` (cdecl), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PMatrix4_resize @ 0x0049_4d60 => extern "thiscall" fn tp_00494d60(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x0049_4d60) })
+    }
+    /// `Phyre_PArray_PMeshSegment_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x6c count, 4)` (0xd when it fails), `0x0048c960(block, data, kept)`, `0x00434430(block + kept, count - kept)` (cdecl), the old block released (0x00434210(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PMeshSegment_resize @ 0x0049_4e00 => extern "thiscall" fn tp_00494e00(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x0049_4e00) })
+    }
+    /// `Phyre_PArray_PSkeletonJointBounds_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x20 count, 4)` (0xd when it fails), `0x0048c9d0(block, data, kept)`, `0x004932a0(block + kept, count - kept)` (cdecl), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PSkeletonJointBounds_resize @ 0x0049_4eb0 => extern "thiscall" fn tp_00494eb0(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x0049_4eb0) })
+    }
+    /// `Phyre_PArray_PString_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004901f0(count, data, kept)` (cdecl, 0xd when it fails), the old block released (0x00434360(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PString_resize @ 0x0049_4f60 => extern "thiscall" fn tp_00494f60(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x0049_4f60) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
     /// `Phyre_PClassDataMemberPhyreArray_int__setCount`: `setCount(object, count)` (slot 5): `0x494cf0` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_int__setCount @ 0x0049_5020 => extern "thiscall" fn tp_00495020(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x0049_5020) })
@@ -391,6 +442,16 @@ ported! {
     Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderStreamDefinition__dtor @ 0x004a_8cd0 => extern "thiscall" fn tp_004a8cd0(this: u32, flags: u32) -> u32 {
         t::bridge::dtor_without_vtable(&mut mem(), this, flags, const { t::word_of(t::DTORS, 0x004a_8cd0) })
     }
+    /// `Phyre_PArray_PShaderParameterDefinition_constructElements`: element constructor `(elements, n)`: 0x10-byte elements zeroed, +0x0 = 0x34460000 (an element at address 0 skipped).
+    Phyre_PArray_PShaderParameterDefinition_constructElements @ 0x004a_eb60 => extern "C" fn tp_004aeb60(elements: u32, n: u32) {
+        let (stride, words) = const { t::elements_of(0x004a_eb60) };
+        t::arrays::construct_elements(&mut mem(), elements, n, stride, words);
+    }
+    /// `Phyre_PArray_PShaderStreamDefinition_constructElements`: element constructor `(elements, n)`: 0x10-byte elements zeroed, +0xc = 0x340000 (an element at address 0 skipped).
+    Phyre_PArray_PShaderStreamDefinition_constructElements @ 0x004a_ebd0 => extern "C" fn tp_004aebd0(elements: u32, n: u32) {
+        let (stride, words) = const { t::elements_of(0x004a_ebd0) };
+        t::arrays::construct_elements(&mut mem(), elements, n, stride, words);
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderParameterDefinition__slot9`: slot 9 (the element type): `0x00c9b980`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderParameterDefinition__slot9 @ 0x004b_0960 => extern "thiscall" fn tp_004b0960(_this: u32) -> u32 {
         t::bridge::element_type(&mem(), const { t::word_of(t::ELEMENT_TYPE, 0x004b_0960) })
@@ -428,6 +489,14 @@ ported! {
     Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderStreamDefinition__getCount @ 0x004b_0b30 => extern "thiscall" fn tp_004b0b30(this: u32, object: u32) -> u32 {
         const { t::listed(t::GET_COUNT, 0x004b_0b30) };
         t::bridge::array_count(&mem(), this, object)
+    }
+    /// `Phyre_PArray_PShaderParameterDefinition_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x10 count, 4)` (0xd when it fails), `0x004a3530(block, data, kept)`, `0x004aeb60(block + kept, count - kept)` (cdecl), the old block released (0x004ab4d0(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PShaderParameterDefinition_resize @ 0x004b_2170 => extern "thiscall" fn tp_004b2170(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x004b_2170) })
+    }
+    /// `Phyre_PArray_PShaderStreamDefinition_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x10 count, 4)` (0xd when it fails), `0x004a3620(block, data, kept)`, `0x004aebd0(block + kept, count - kept)` (cdecl), the old block released (0x004ab510(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PShaderStreamDefinition_resize @ 0x004b_2220 => extern "thiscall" fn tp_004b2220(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x004b_2220) })
     }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderParameterDefinition__setCount`: `setCount(object, count)` (slot 5): `0x4b2170` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PShaderParameterDefinition__setCount @ 0x004b_2310 => extern "thiscall" fn tp_004b2310(this: u32, object: u32, count: u32) -> u32 {
@@ -870,6 +939,31 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x004e_f2b0) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PContextSwitch_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004eb0a0(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old)), `[count, block]`; 0.
+    Phyre_PArray_PContextSwitch_ptr_resize @ 0x004e_fae0 => extern "thiscall" fn tp_004efae0(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x004e_fae0) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
+    /// `Phyre_PArray_PEffectVariant_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004eb110(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old)), `[count, block]`; 0.
+    Phyre_PArray_PEffectVariant_ptr_resize @ 0x004e_fb50 => extern "thiscall" fn tp_004efb50(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x004e_fb50) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
+    /// `Phyre_PArray_PLightType_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004eb180(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old)), `[count, block]`; 0.
+    Phyre_PArray_PLightType_ptr_resize @ 0x004e_fbc0 => extern "thiscall" fn tp_004efbc0(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x004e_fbc0) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
+    /// `Phyre_PArray_PShadowCasterType_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004eb1f0(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old)), `[count, block]`; 0.
+    Phyre_PArray_PShadowCasterType_ptr_resize @ 0x004e_fc30 => extern "thiscall" fn tp_004efc30(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x004e_fc30) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
+    /// `Phyre_PArray_PNodeContext_resize`: `resize(count)`: 0 when the header already equals `count`; `0x004eb260(count, data, kept)` (cdecl, 0xd when it fails), the old block released (0x004ec310(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PNodeContext_resize @ 0x004e_fca0 => extern "thiscall" fn tp_004efca0(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x004e_fca0) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PContextSwitch__setCount`: `setCount(object, count)` (slot 5): `0x4efae0` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PRendering_PContextSwitch__setCount @ 0x004e_fd60 => extern "thiscall" fn tp_004efd60(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x004e_fd60) })
@@ -1165,6 +1259,11 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x0051_d110) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PAnimationChannelTarget_resize`: `resize(count)`: 0 when the header already equals `count`; `0x00519d30(count, data, kept)` (cdecl, 0xd when it fails), the old block released (0x0051a890(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PAnimationChannelTarget_resize @ 0x0051_d600 => extern "thiscall" fn tp_0051d600(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x0051_d600) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PAnimation_PAnimationChannelTarget__setCount`: `setCount(object, count)` (slot 5): `0x51d600` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PAnimation_PAnimationChannelTarget__setCount @ 0x0051_d850 => extern "thiscall" fn tp_0051d850(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x0051_d850) })
@@ -1274,6 +1373,10 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x0054_b1e0) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_Vector3_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x10 count, 4)` (0xd when it fails), `0x005465f0(block, data, kept)` (cdecl), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_Vector3_resize @ 0x0054_c630 => extern "thiscall" fn tp_0054c630(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x0054_c630) })
+    }
     /// `Phyre_PClassDataMemberPhyreArray_sce_Vectormath_Scalar_Aos_Vector3__setCount`: `setCount(object, count)` (slot 5): `0x54c630` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_sce_Vectormath_Scalar_Aos_Vector3__setCount @ 0x0054_c980 => extern "thiscall" fn tp_0054c980(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x0054_c980) })
@@ -1381,6 +1484,10 @@ ported! {
     Phyre_PClassDataMemberPhyreSharray_Phyre_PGeometry_PIndexDataBlockBufferD3D11__getCount @ 0x0056_2850 => extern "thiscall" fn tp_00562850(this: u32, object: u32) -> u32 {
         const { t::listed(t::GET_COUNT, 0x0056_2850) };
         t::bridge::array_count(&mem(), this, object)
+    }
+    /// `Phyre_PArray_PDataBlockD3D11_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x40 count, 4)` (0xd when it fails), `0x00486120(block, data, kept)`, `0x004343c0(block + kept, count - kept)`, then `0x00434e40(array; block, count)` (thiscall); 0.
+    Phyre_PArray_PDataBlockD3D11_resize @ 0x0056_3d60 => extern "thiscall" fn tp_00563d60(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc_set(&mut mem(), array, count, t::DATA_BLOCK_RESIZE_PARTS)
     }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PGeometry_PDataBlockD3D11__setCount`: `setCount(object, count)` (slot 5): `0x563d60` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PGeometry_PDataBlockD3D11__setCount @ 0x0056_4080 => extern "thiscall" fn tp_00564080(this: u32, object: u32, count: u32) -> u32 {
@@ -1514,6 +1621,10 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x005a_7360) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PSharray_PMeshInstance_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x005a6ba0(array; count, data, kept)` (0xd when it fails), an owned old block other than the new one and the inline word freed, the new block stored unless inline; 0.
+    Phyre_PSharray_PMeshInstance_ptr_resize @ 0x005a_7bf0 => extern "thiscall" fn tp_005a7bf0(array: u32, count: u32) -> u32 {
+        t::arrays::sharray_resize(&mut mem(), array, count, const { t::word_of(t::SHARRAY_RESIZE, 0x005a_7bf0) })
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PLOD_PLODLevel__setCount`: `setCount(object, count)` (slot 5): `0x5a7b60` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PLOD_PLODLevel__setCount @ 0x005a_7cb0 => extern "thiscall" fn tp_005a7cb0(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x005a_7cb0) })
@@ -1521,6 +1632,14 @@ ported! {
     /// `Phyre_PClassDataMemberPhyreSharray_Phyre_PRendering_PMeshInstance__setCount`: `setCount(object, count)` (slot 5): `0x5a7bf0` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreSharray_Phyre_PRendering_PMeshInstance__setCount @ 0x005a_7cd0 => extern "thiscall" fn tp_005a7cd0(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x005a_7cd0) })
+    }
+    /// `Phyre_PSharray_PMeshInstance_ptr_setToExternalBuffer`: `setToExternalBuffer(buffer, count)`: 5 for a negative count; 1 keeps `buffer`'s word inline, any other count uses `buffer` (marked external); an owned old block other than the new one and the inline word freed; 0.
+    Phyre_PSharray_PMeshInstance_ptr_setToExternalBuffer @ 0x005a_8060 => extern "thiscall" fn tp_005a8060(array: u32, buffer: u32, count: u32) -> u32 {
+        t::arrays::sharray_set_external(&mut mem(), array, buffer, count)
+    }
+    /// `Phyre_PLOD_PUtilityLOD_setToExternalBuffer_005a8250`: `setToExternalBuffer(buffer, count)` override: slot 1 of the global object `0x00ca7228`; the inline word with a count of 1 and an answer: `0x0043c160(answer; inline, 1)`; else `0x005a8060(array; buffer, count)`; 0.
+    Phyre_PLOD_PUtilityLOD_setToExternalBuffer_005a8250 @ 0x005a_8250 => extern "thiscall" fn tp_005a8250(array: u32, buffer: u32, count: u32) -> u32 {
+        t::arrays::sharray_set_external_lod(&mut mem(), array, buffer, count)
     }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PLOD_PLODLevel__setToExternalBuffer`: `setToExternalBuffer(object, buffer, count)` (slot 8): 5 for a negative count; else `0x5a7d90(array; buffer, count | bit 31)` (thiscall), 0.
     Phyre_PClassDataMemberPhyreArray_Phyre_PLOD_PLODLevel__setToExternalBuffer @ 0x005a_8300 => extern "thiscall" fn tp_005a8300(this: u32, object: u32, buffer: u32, count: u32) -> u32 {
@@ -1599,6 +1718,11 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x005a_e620) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PRenderStream_resize`: `resize(count)`: 0 when the header already equals `count`; `0x005ab070(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PRenderStream_resize @ 0x005a_f120 => extern "thiscall" fn tp_005af120(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x005a_f120) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
     /// `Phyre_PClassDataMemberPhyreArray_unsigned_char__setCount_005af1c0`: `setCount(object, count)` (slot 5): `0x5af000` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_unsigned_char__setCount_005af1c0 @ 0x005a_f1c0 => extern "thiscall" fn tp_005af1c0(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x005a_f1c0) })
@@ -1666,6 +1790,16 @@ ported! {
     Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PRenderStreamInput__dtor @ 0x005b_fd70 => extern "thiscall" fn tp_005bfd70(this: u32, flags: u32) -> u32 {
         t::bridge::dtor_without_vtable(&mut mem(), this, flags, const { t::word_of(t::DTORS, 0x005b_fd70) })
     }
+    /// `Phyre_PArray_PModifierAndInputs_constructElements`: element constructor `(elements, n)`: 0x14-byte elements zeroed (an element at address 0 skipped).
+    Phyre_PArray_PModifierAndInputs_constructElements @ 0x005c_4650 => extern "C" fn tp_005c4650(elements: u32, n: u32) {
+        let (stride, words) = const { t::elements_of(0x005c_4650) };
+        t::arrays::construct_elements(&mut mem(), elements, n, stride, words);
+    }
+    /// `Phyre_PArray_PModifierNetworkBuffer_constructElements`: element constructor `(elements, n)`: 0x14-byte elements zeroed (an element at address 0 skipped).
+    Phyre_PArray_PModifierNetworkBuffer_constructElements @ 0x005c_46a0 => extern "C" fn tp_005c46a0(elements: u32, n: u32) {
+        let (stride, words) = const { t::elements_of(0x005c_46a0) };
+        t::arrays::construct_elements(&mut mem(), elements, n, stride, words);
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PModifierAndInputs__slot9`: slot 9 (the element type): `0x00cbc128`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PModifierAndInputs__slot9 @ 0x005c_5fd0 => extern "thiscall" fn tp_005c5fd0(_this: u32) -> u32 {
         t::bridge::element_type(&mem(), const { t::word_of(t::ELEMENT_TYPE, 0x005c_5fd0) })
@@ -1723,6 +1857,19 @@ ported! {
         const { t::listed(t::GET_COUNT, 0x005c_6290) };
         t::bridge::array_count(&mem(), this, object)
     }
+    /// `Phyre_PArray_PModifierAndInputs_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x14 count, 4)` (0xd when it fails), `0x005bc500(block, data, kept)`, `0x005c4650(block + kept, count - kept)` (cdecl), the old block released (0x005c1ef0(old, old count) (cdecl)), `[count, block]`; 0.
+    Phyre_PArray_PModifierAndInputs_resize @ 0x005c_72c0 => extern "thiscall" fn tp_005c72c0(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x005c_72c0) })
+    }
+    /// `Phyre_PArray_PModifierNetworkBuffer_resize`: `resize(count)`: 0 when the header already equals `count`; `PhyreMalloc(0x14 count, 4)` (0xd when it fails), `0x005bc610(block, data, kept)`, `0x005c46a0(block + kept, count - kept)` (cdecl), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PModifierNetworkBuffer_resize @ 0x005c_7380 => extern "thiscall" fn tp_005c7380(array: u32, count: u32) -> u32 {
+        t::arrays::resize_malloc(&mut mem(), array, count, const { t::grow_of(0x005c_7380) })
+    }
+    /// `Phyre_PArray_PRenderStreamInput_resize`: `resize(count)`: 0 when the header already equals `count`; `0x005c0720(count, data, kept)` (cdecl, 0xd when it fails), the old block released (PhyreFree(old) unless 0), `[count, block]`; 0.
+    Phyre_PArray_PRenderStreamInput_resize @ 0x005c_7440 => extern "thiscall" fn tp_005c7440(array: u32, count: u32) -> u32 {
+        let (realloc, how) = const { t::realloc_of(0x005c_7440) };
+        t::arrays::resize_realloc(&mut mem(), array, count, realloc, how)
+    }
     /// `Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PModifierAndInputs__setCount`: `setCount(object, count)` (slot 5): `0x5c72c0` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PModifierAndInputs__setCount @ 0x005c_74e0 => extern "thiscall" fn tp_005c74e0(this: u32, object: u32, count: u32) -> u32 {
         t::bridge::array_set_count(&mut mem(), this, object, count, const { t::word_of(t::SET_COUNT, 0x005c_74e0) })
@@ -1747,6 +1894,10 @@ ported! {
     Phyre_PClassDataMemberPhyreArray_Phyre_PDynamicGeometry_PRenderStreamInput__setToExternalBuffer @ 0x005c_7c10 => extern "thiscall" fn tp_005c7c10(this: u32, object: u32, buffer: u32, count: u32) -> u32 {
         t::bridge::set_external(&mut mem(), this, object, buffer, count, const { t::release_of(0x005c_7c10) })
     }
+    /// `Phyre_PSharray_PPhysicsShape_ptr_allocBlock`: block helper `(count, data, kept)`: the inline word for a count up to 1, else `PhyreMalloc(4 count, 4)` (0 when it fails); the kept words copied, the rest zeroed; the block.
+    Phyre_PSharray_PPhysicsShape_ptr_allocBlock @ 0x005f_3f40 => extern "thiscall" fn tp_005f3f40(array: u32, count: u32, data: u32, kept: u32) -> u32 {
+        t::arrays::sharray_alloc_inline(&mut mem(), array, count, data, kept)
+    }
     /// `Phyre_PClassDataMemberPhyreSharray_Phyre_PPhysics_PPhysicsShape__slot9`: slot 9 (the element type): `0x00cbf358`.
     Phyre_PClassDataMemberPhyreSharray_Phyre_PPhysics_PPhysicsShape__slot9 @ 0x005f_c820 => extern "thiscall" fn tp_005fc820(_this: u32) -> u32 {
         t::bridge::element_type(&mem(), const { t::word_of(t::ELEMENT_TYPE, 0x005f_c820) })
@@ -1765,6 +1916,10 @@ ported! {
     Phyre_PClassDataMemberPhyreSharray_Phyre_PPhysics_PPhysicsShape__getCount @ 0x005f_cd00 => extern "thiscall" fn tp_005fcd00(this: u32, object: u32) -> u32 {
         const { t::listed(t::GET_COUNT, 0x005f_cd00) };
         t::bridge::array_count(&mem(), this, object)
+    }
+    /// `Phyre_PSharray_PPhysicsShape_ptr_resize`: `resize(count)`: 0 when the header already equals `count`; `0x005f3f40(array; count, data, kept)` (0xd when it fails), an owned old block other than the new one and the inline word freed, the new block stored unless inline; 0.
+    Phyre_PSharray_PPhysicsShape_ptr_resize @ 0x0060_2b00 => extern "thiscall" fn tp_00602b00(array: u32, count: u32) -> u32 {
+        t::arrays::sharray_resize(&mut mem(), array, count, const { t::word_of(t::SHARRAY_RESIZE, 0x0060_2b00) })
     }
     /// `Phyre_PClassDataMemberPhyreSharray_Phyre_PPhysics_PPhysicsShape__setCount`: `setCount(object, count)` (slot 5): `0x602b00` (thiscall on the array, `ret 4`); its `eax`.
     Phyre_PClassDataMemberPhyreSharray_Phyre_PPhysics_PPhysicsShape__setCount @ 0x0060_3260 => extern "thiscall" fn tp_00603260(this: u32, object: u32, count: u32) -> u32 {
