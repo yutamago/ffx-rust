@@ -2089,6 +2089,11 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   (with `--gfx`) arms the hook's capture before the device exists, so it
   holds the frames from the first `Present` on; a script waits for it with
   `gfxcapture result`.
+- **How far it gets (2026-10-29).** `Game::launch` with `rust` returns
+  (the first `Present` comes about 20 s after the start) and `ping`,
+  `stats` and `read` answer; a few seconds later the i686 process ends in
+  an abort inside Unicorn's 32-bit translator (`docs/host.md`, "Status on
+  Windows"), so no replay runs through yet.
 - **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
   `ffx-rust.exe` runs the game in a child process of itself
   (`docs/host.md`, "The arena"), in a job that ends with the parent, so

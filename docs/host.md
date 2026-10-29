@@ -620,7 +620,10 @@ versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc`
 at a copy of the toolchain file without that line (all under
 `target/host-shims`). `build.rs` links the program at `/BASE:0x70000000`
 with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
-use the upper 2 GB.
+use the upper 2 GB. `FFX_HOST_TARGET=x86_64-pc-windows-msvc` builds the
+64-bit program instead (the arena with a base, stage 4); Unicorn's
+`setjmp` wrapper is MASM there, assembled by LLVM's `llvm-ml64` under the
+name `ml64`.
 
 ## Status (2026-10-29, the device round)
 
@@ -684,6 +687,66 @@ same frames from `ffx-rust --gfx-out` with the harness's clock. Both runs
 must also agree on Iggy: either both draw the menus (`ffx-swf` in
 `ffx-host`) or the comparison allows the GDraw draws as missing.
 
+### Status on Windows (2026-10-29, the Windows round)
+
+`ffx-rust.exe` (i686, release) on the player's game folder, through the
+game slots in background mode (the window never activated, at the bottom
+of the stack):
+
+- the image range is reserved in a relaunched child (the parent's stack
+  held `0x00400000`), the DLLs start, the CRT and `Game_Main` run, the
+  game's `GameSetting.ini` is read from the sandbox, the real window is
+  created (1296 x 759 outer, the sandbox's 1280 x 720 client), the real
+  device and swap chain are made on it from the game's description
+  (`D3D11CreateDeviceAndSwapChain`, hardware, 11_0), the render, job and
+  loader threads start and the opening screen presents: three `Present`s
+  in 25 s (`--presents 3`), 1,181 COM calls on 33 methods, none
+  unhandled; each frame 2 clears and no draws, as on Linux;
+- the harness answers on the slot's port (`ping`, `stats` with the
+  present count, `read` of `g_hWnd` gave the real window);
+- **then the process ends** with `0xc0000409` (`__fastfail(7)`, the C
+  runtime's `abort`). The minidump (Windows Error Reporting keeps them in
+  `%LOCALAPPDATA%\CrashDumps`) symbolised against a line-table build:
+  `abort` <- `tcg_reg_alloc` (`qemu/tcg/tcg.c:3018`, no free host
+  register) <- `tcg_reg_alloc_op` <- `tcg_gen_code` <- `tb_gen_code` <-
+  `cpu_exec` <- `uc_emu_start` <- `Exec::run`. QEMU's 32-bit x86 host
+  backend runs out of registers translating one of the game's blocks: a
+  Unicorn bug on 32-bit hosts, reached a few seconds past the third
+  frame, on a game thread. The Linux host (64-bit) never hits it.
+- `x86_64-pc-windows-msvc` (the stage 4 arena, `FFX_HOST_TARGET` in
+  `tools/build-host.sh`, with LLVM's `llvm-ml64` for Unicorn's MASM file)
+  builds, but on this machine it ends at start-up with an access
+  violation inside `SophosED.dll` (the endpoint-security product's hook
+  DLL) while Unicorn initialises its translator (`tcg_exec_init`,
+  `tcg_prologue_init`), with the default 1 GB translation buffer and with
+  64 MB (`TCG_BUFFER`) alike.
+
+#### The first comparison
+
+The original's boot was captured from its first `Present`
+(`FFX_GFX_BOOT_CAPTURE`, hash mode, 30 frames, virtual clock, lockstep
+from the first update; 437 draws) and compared with ffx-rust's three
+Windows frames (`--gfx-out`), `drawdiff orig rust`:
+
+- each frame's first item, a colour clear, pairs as equal (the
+  original's clears a 1024 x 1024 `R8G8B8A8` target, ffx-rust's the
+  1280 x 720 back buffer: drawdiff's clear key leaves the size out);
+- ffx-rust's depth clear is the swap chain's depth target (1280 x 720,
+  `D24_UNORM_S8_UINT`), where the original clears its 1024 x 1024 target
+  twice in frame 0 and then draws Iggy's GDraw quads (`Plain` draws of 3 and 6
+  vertices, one vertex/pixel shader pair) every frame: 2 missing, 1 extra
+  per frame; frames 3–29 are missing (ffx-rust stopped at 3);
+- they are not the same frames yet: the hook's fast mode ends the
+  start-up logos (`OpeningScreen.swf`) on their first frame and its
+  capture labels them `memochek`, while ffx-rust, with no clock and Iggy
+  null, sits on the opening screen (`PhyreScene_renderOpeningScreen`).
+  The Iggy draws are the allowed difference; the depth target follows
+  from the different scene.
+
+So the stream comparison runs end to end between the two processes; the
+frames line up once ffx-rust has the virtual clock and Iggy (host-libs)
+and runs past the third frame (the Unicorn abort).
+
 ### What blocks the next step
 
 1. **The clocks and the loads.** The stand-in clocks are fixed
@@ -701,7 +764,14 @@ must also agree on Iggy: either both draw the menus (`ffx-swf` in
 5. Done (2026-10-29): the DLLs' x87 maths is exact (above, "x87"), and
    structured exceptions and C++ `throw`/`catch` dispatch through the SEH
    chain (above, "Exceptions").
-6. **Windows.** The forwarding imports (window, input, files); then the
-   D3D11 back end (`src/d3d11.rs`, built and clippy-clean for i686, not
-   run yet) gets a real swap chain, and `ffx-rust.exe` is started by the
-   harness in background mode.
+6. **Windows.** Done: the window, message, cursor and timer imports
+   forward, the real device presents on the real window, the harness
+   starts `ffx-rust.exe` in background mode (above, "Windows" and
+   "Status on Windows"). Left: (a) the i686 abort in Unicorn's 32-bit
+   TCG backend (`tcg_reg_alloc`) a few seconds past the third frame,
+   which ends every Windows run; the 64-bit build avoids that backend
+   but crashes inside the endpoint-security DLL on this machine, so one
+   of the two needs a fix or a workaround (a Unicorn patch for the
+   register pressure, or the security product's exclusion for the 64-bit
+   build); (b) the frame boundary for the harness (`frame`, `waitfor`,
+   lockstep, `call`, the trace), which waits for the clock (blocker 1).
