@@ -4,7 +4,9 @@
 # (llvm-lib-18, -21, ...) or not at all (PC2: there, `rustup component add
 # llvm-tools`, installed by hand, not in rust-toolchain.toml, so no other
 # machine downloads it); its llvm-ar acts as llvm-lib under that name.
-for v in llvm-lib llvm-lib-{22,21,20,19,18}; do
+# (not `llvm-lib` itself: that is this shim, first on PATH; it ran itself
+# forever and the hook build hung, 2026-10-29)
+for v in llvm-lib-{22,21,20,19,18}; do
     command -v "$v" >/dev/null && exec "$v" "$@"
 done
 ar="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-ar"
