@@ -2089,7 +2089,7 @@ fn m5p_scene_d_sharrays() {
                 tw.w32(this + 4, 0x0022_0000);
                 let label = format!("{what} sharray copy ctor {count:#x} own {own}");
                 tw.run(&label, 0x004e_9ee0, Conv::Thiscall(this), &[src], |g| {
-                    sd::bridge::sharray_copy_ctor(g, this, src)
+                    sd::bridge::sharray_copy_ctor(g, this, src, sd::SHARRAY_ALLOC, false)
                 });
             }
         }
@@ -2117,7 +2117,7 @@ fn m5p_scene_d_sharrays() {
                 tw.w32(this + 4, old);
                 let label = format!("{what} sharray copy ctor, left {header:#x}, old {old:#x}");
                 tw.run(&label, 0x004e_9ee0, Conv::Thiscall(this), &[src], |g| {
-                    sd::bridge::sharray_copy_ctor(g, this, src)
+                    sd::bridge::sharray_copy_ctor(g, this, src, sd::SHARRAY_ALLOC, false)
                 });
             }
         }
@@ -2179,5 +2179,301 @@ fn m5p_scene_d_lod_blend() {
                 }
             }
         }
+    }
+}
+
+// ---- batch 5 (ffx_prender::m5p_scene_e) ----
+
+use ffx_prender::m5p_scene_e as se;
+
+/// The gameplay types: the clean-up over registered and other entries
+/// (first, middle, last; the free list resets stubbed), and the type
+/// getter: listed, a null name, new (free lists with and without nodes,
+/// the grow stubbed, the real `memcpy`).
+#[test]
+fn m5p_scene_e_gameplay_types() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(se::FREE_LIST_RESET, true, 0, 0, 0x0bad_001d);
+        let head = tw.rebase(se::GAMEPLAY_TYPES);
+        let saved = tw.r32(head);
+        let e: Vec<u32> = (0..4).map(|_| tw.zeros(0x10)).collect();
+        for marks in [[1u8, 0, 1, 0], [0, 1, 0, 1], [1, 1, 1, 1], [0, 0, 0, 0]] {
+            tw.w32(head, e[0]);
+            for i in 0..4 {
+                tw.w32(e[i] + 4, e.get(i + 1).copied().unwrap_or(0));
+                tw.write(e[i] + 8, &[marks[i]]);
+            }
+            let label = format!("{what} gameplay cleanup {marks:?}");
+            tw.run(&label, 0x0043_34e0, Conv::Cdecl, &[], |g| {
+                se::bridge::gameplay_cleanup(g)
+            });
+            assert_eq!(tw.logged(), 2, "{label}: resets");
+        }
+        tw.w32(head, 0);
+        let label = format!("{what} gameplay cleanup, empty");
+        tw.run(&label, 0x0043_34e0, Conv::Cdecl, &[], |g| {
+            se::bridge::gameplay_cleanup(g)
+        });
+        tw.unstub();
+        // the getter
+        tw.stub(se::PRINTF, false, 3, 0, 0);
+        tw.stub(se::FIND_TYPE, false, 1, 0, 0);
+        tw.stub(se::TYPE_CTOR, true, 2, 2, 0x0bad_001e);
+        tw.stub(se::FREE_LIST_GROW, true, 1, 1, 0);
+        let pools = [
+            tw.rebase(se::GAMEPLAY_TYPE_POOL),
+            tw.rebase(se::GAMEPLAY_NAME_POOL),
+        ];
+        let saved_pools = [tw.r32(pools[0]), tw.r32(pools[1])];
+        let name = tw.alloc(b"trigger\0");
+        let nodes: Vec<u32> = (0..2).map(|_| tw.zeros(0x20)).collect();
+        for (a, b2) in [(true, true), (false, true), (true, false), (false, false)] {
+            tw.w32(pools[0], if a { nodes[0] } else { 0 });
+            tw.w32(pools[1], if b2 { nodes[1] } else { 0 });
+            tw.write(nodes[0], &[0xee; 0x20]);
+            tw.write(nodes[1], &[0xee; 0x20]);
+            tw.w32(nodes[0], 0x0101_0101);
+            tw.w32(nodes[1], 0x0202_0202);
+            tw.w32(pools[0] + 8, 0x40);
+            tw.w32(pools[1] + 8, 0x20);
+            let label = format!("{what} gameplay type, pools {a} {b2}");
+            tw.run(&label, 0x0054_d1e0, Conv::Cdecl, &[name], |g| {
+                se::bridge::gameplay_type(g, name)
+            });
+        }
+        let label = format!("{what} gameplay type, null name");
+        tw.run(&label, 0x0054_d1e0, Conv::Cdecl, &[0], |g| {
+            se::bridge::gameplay_type(g, 0)
+        });
+        tw.stub(se::FIND_TYPE, false, 1, 0, 0x0077_0000);
+        let label = format!("{what} gameplay type, listed");
+        tw.run(&label, 0x0054_d1e0, Conv::Cdecl, &[name], |g| {
+            se::bridge::gameplay_type(g, name)
+        });
+        tw.w32(pools[0], saved_pools[0]);
+        tw.w32(pools[1], saved_pools[1]);
+        tw.w32(head, saved);
+        tw.unstub();
+    }
+}
+
+/// The resizes: `PSharray<T*>` through their fills (stubbed: the header's
+/// own word, a block, none), `PArray<PSceneRenderPass>` and
+/// `PArray<PMaterialSwitch>` (allocation, copy, construct and release
+/// stubbed), the LOD levels' external buffer, the segment contexts' copy
+/// constructor.
+#[test]
+fn m5p_scene_e_resizes() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(se::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let this = tw.zeros(0x10);
+        let block = 0x0066_0000;
+        for (f, fill) in [
+            (0x004f_8a40, se::STREAM_BINDINGS_FILL),
+            (0x0055_0530, se::RECEIVERS_FILL),
+        ] {
+            for ret in [this + 4, block, 0] {
+                tw.stub(fill, true, 3, 3, ret);
+                for header in [0, 1, 3, 0x8000_0003] {
+                    for n in [0, 1, 2, 3, header] {
+                        tw.w32(this, header);
+                        tw.w32(this + 4, 0x0012_3000);
+                        let label = format!(
+                            "{what} sharray resize {f:#x} ({header:#x}) to {n:#x}, {ret:#x}"
+                        );
+                        tw.run(&label, f, Conv::Thiscall(this), &[n], |g| {
+                            se::bridge::sharray_resize(g, this, n, fill)
+                        });
+                    }
+                }
+            }
+        }
+        for (f, words) in [
+            (se::RENDER_PASS_COPY, 3),
+            (se::RENDER_PASS_CONSTRUCT, 2),
+            (se::MATERIAL_COPY, 3),
+            (se::MATERIAL_CONSTRUCT, 2),
+            (se::MATERIAL_RELEASE, 2),
+        ] {
+            tw.stub(f, false, words, 0, f);
+        }
+        tw.stub(se::RENDER_PASS_SET_STORAGE, true, 2, 2, 0x0bad_001f);
+        for ret in [block, 0] {
+            tw.stub(se::PHYRE_MALLOC, false, 2, 0, ret);
+            for header in [0, 1, 3, 0x8000_0003] {
+                for old in [0, block, 0x0012_3000] {
+                    for n in [0, 1, 2, 5, header] {
+                        for f in [0x004e_75e0, 0x004e_7530] {
+                            tw.w32(this, header);
+                            tw.w32(this + 4, old);
+                            let label = format!(
+                                "{what} array resize {f:#x} ({header:#x}, {old:#x}) to {n:#x}, {ret:#x}"
+                            );
+                            tw.run(&label, f, Conv::Thiscall(this), &[n], |g| {
+                                if f == 0x004e_75e0 {
+                                    se::bridge::render_pass_array_resize(g, this, n)
+                                } else {
+                                    se::bridge::material_array_resize(g, this, n)
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        tw.stub(se::LOD_LEVEL_DTOR, true, 0, 0, 0x0bad_0020);
+        for header in [0, 2, 0x8000_0002] {
+            for old in [0, block, 0x0012_3000] {
+                tw.w32(this, header);
+                tw.w32(this + 4, old);
+                let label = format!("{what} lod levels ({header:#x}, {old:#x})");
+                tw.run(
+                    &label,
+                    0x005a_7d90,
+                    Conv::Thiscall(this),
+                    &[block, 7],
+                    |g| se::bridge::lod_levels_set_external(g, this, block, 7),
+                );
+            }
+        }
+        // the segment contexts' copy constructor: its buffer call stubbed
+        let src = tw.zeros(0x10);
+        for count in [0, 1, 3] {
+            for ret in [this + 4, block] {
+                tw.stub(se::SEGMENT_CONTEXTS_COPY, true, 2, 2, ret);
+                tw.w32(src, count);
+                tw.w32(src + 4, 0x0033_0000);
+                let label = format!("{what} segment contexts copy {count} {ret:#x}");
+                tw.run(&label, 0x004f_2740, Conv::Thiscall(this), &[src], |g| {
+                    sd::bridge::sharray_copy_ctor(g, this, src, se::SEGMENT_CONTEXTS_COPY, true)
+                });
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The tree destructors (callees stubbed; the removing one over trees of
+/// three roots, an empty and a null root).
+#[test]
+fn m5p_scene_e_tree_dtors() {
+    for (what, mut tw) in Twins::all() {
+        for f in [
+            se::TREE_ORPHAN,
+            se::TREE_CLEAR,
+            se::FREE_LIST_RESET,
+            se::FREE_LIST_DTOR,
+        ] {
+            tw.stub(f, true, 0, 0, f);
+        }
+        // remove: a stub that sets the root (+0xc) to the next word of the
+        // removed node, so the loop ends
+        let code = {
+            // mov eax, [esp+4]; mov eax, [eax]; mov [ecx+0xc], eax; ret 4
+            let c = [
+                0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x89, 0x41, 0x0c, 0xc2, 0x04, 0x00,
+            ];
+            let at = tw.a.alloc_code(&c).unwrap();
+            assert_eq!(tw.b.alloc_code(&c).unwrap(), at);
+            at
+        };
+        let at = tw.rebase(se::TREE_REMOVE);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        tw.write(at, &j);
+        let tree = tw.zeros(0x100);
+        let n: Vec<u32> = (0..3).map(|_| tw.zeros(0x10)).collect();
+        for end in [tree, 0] {
+            tw.w32(tree + 0xc, n[0]);
+            tw.w32(n[0], n[1]);
+            tw.w32(n[1], n[2]);
+            tw.w32(n[2], end);
+            let label = format!("{what} tree dtor removing, end {end:#x}");
+            tw.run(&label, 0x0057_7da0, Conv::Thiscall(tree), &[], |g| {
+                se::bridge::tree_dtor_removing(g, tree)
+            });
+        }
+        tw.w32(tree + 0x64 + 0xc, tree + 0x64);
+        let label = format!("{what} three trees dtor");
+        tw.run(&label, 0x0057_8030, Conv::Thiscall(tree), &[], |g| {
+            se::bridge::three_trees_dtor(g, tree)
+        });
+        assert_eq!(tw.logged(), 4 + 5 + 5, "{label}: calls");
+        tw.unstub();
+    }
+}
+
+/// The split distances over cascade counts 0..5 (a quiet NaN distance
+/// among them).
+#[test]
+fn m5p_scene_e_split_distances() {
+    for (what, mut tw) in Twins::all() {
+        let this = tw.zeros(0x20);
+        let cascades = tw.zeros(0x400);
+        for i in 0..4u32 {
+            let v = if i == 2 {
+                0x7fc0_0077
+            } else {
+                (10.0f32 * f32::from(u8::try_from(i + 1).unwrap())).to_bits()
+            };
+            tw.w32(cascades + 0xc4 + 0xe0 * i, v);
+        }
+        tw.w32(this + 0xc, cascades);
+        let out = tw.zeros(0x10);
+        for count in [0, 1, 2, 3, 4, 5, 0x8000_0002] {
+            tw.w32(this + 8, count);
+            let label = format!("{what} split distances {count:#x}");
+            tw.run(&label, 0x005b_8c70, Conv::Thiscall(this), &[out], |g| {
+                se::bridge::split_distances(g, this, out)
+            });
+        }
+    }
+}
+
+/// The world cursor's advance over a chain of blocks (the skip stubbed):
+/// within a block, across blocks, to the end, by 0.
+#[test]
+fn m5p_scene_e_cursor_advance() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(se::CURSOR_SKIP_EMPTY, true, 0, 0, 0x0bad_0021);
+        let cur = tw.zeros(0x20);
+        // three blocks of 16-byte entries; each block's end word links on
+        let blocks: Vec<u32> = (0..3).map(|_| tw.zeros(0x44)).collect();
+        for i in 0..3 {
+            let next_end = if i < 2 { blocks[i + 1] + 0x40 } else { 0 };
+            tw.w32(blocks[i] + 0x40, next_end);
+        }
+        for (start, remaining, n) in [
+            (0, 10, 1),
+            (0, 10, 4),
+            (0, 10, 6),
+            (0x30, 8, 3),
+            (0, 4, 4),
+            (0x20, 12, 12),
+            (0x40, 5, 2),
+        ] {
+            tw.w32(cur + 0xc, blocks[0] + start);
+            tw.w32(cur + 0x10, blocks[0] + 0x40);
+            tw.w32(cur + 0x14, 0x10);
+            tw.w32(cur + 0x18, remaining);
+            let label = format!("{what} cursor advance from {start:#x} ({remaining}) by {n}");
+            tw.run(&label, 0x009f_3e50, Conv::Thiscall(cur), &[n], |g| {
+                se::bridge::cursor_advance(g, cur, n)
+            });
+        }
+        // by 0: nothing (the original leaves its caller's eax)
+        let label = format!("{what} cursor advance by 0");
+        tw.run_any(&label, 0x009f_3e50, Conv::Thiscall(cur), &[0], |g| {
+            se::bridge::cursor_advance(g, cur, 0)
+        });
+        // past a start beyond the end: the remaining count rules
+        tw.w32(cur + 0xc, blocks[2] + 0x50);
+        tw.w32(cur + 0x10, 0);
+        tw.w32(cur + 0x18, 2);
+        let label = format!("{what} cursor advance, no end");
+        tw.run(&label, 0x009f_3e50, Conv::Thiscall(cur), &[2], |g| {
+            se::bridge::cursor_advance(g, cur, 2)
+        });
+        tw.unstub();
     }
 }

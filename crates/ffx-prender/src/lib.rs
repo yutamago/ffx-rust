@@ -175,6 +175,7 @@ pub mod m5p_scene;
 pub mod m5p_scene_b;
 pub mod m5p_scene_c;
 pub mod m5p_scene_d;
+pub mod m5p_scene_e;
 pub mod m5r_a;
 pub mod m5r_b;
 pub mod m5r_c;

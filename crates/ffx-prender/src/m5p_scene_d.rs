@@ -65,7 +65,7 @@ pub mod bridge {
         CLASS_MEMBER, CLASS_TREE, Conv, ENTITY_CLASS, ENTITY_MEMBER_NAME, FREE_LIST_DEALLOCATE,
         FREE_LIST_DTOR, FREE_LIST_RESET, GET_CLASS_DESCRIPTOR, GLOBAL_NAMESPACE, Host,
         MEMBER_VALUE, Mem, OBJECT_REF_RELEASE, PHYRE_FREE, PUSH_INSTANCE, SCRIPTABLE_VTABLE,
-        SHARRAY_ALLOC, STRING_ASSIGN, TREE_CLEAR, TREE_FIXUP, TREE_ORPHAN, WORLD_CLASS, x87,
+        STRING_ASSIGN, TREE_CLEAR, TREE_FIXUP, TREE_ORPHAN, WORLD_CLASS, x87,
     };
 
     const EXTERNAL: u32 = 0x8000_0000;
@@ -320,23 +320,31 @@ pub mod bridge {
     }
 
     /// `0x004e9ee0` (thiscall `(src)`, `ret 4`): a `PSharray` copy
-    /// constructor: the count cleared, a buffer for the source's elements
-    /// ([`SHARRAY_ALLOC`] with the count and data), an owned old buffer
+    /// constructor (`0x004f2740` with another `alloc`): the count cleared,
+    /// a buffer for the source's elements (`alloc`, thiscall on the
+    /// header, with the count and data: [`SHARRAY_ALLOC`] here; `0x004f2740`
+    /// frees a null old buffer too, `free_null`), an owned old buffer
     /// that is neither the new one nor the header's own word freed, the
     /// count stored, the buffer word set unless the data is the header's
     /// own. `this`.
-    pub fn sharray_copy_ctor(h: &mut impl Host, this: u32, src: u32) -> u32 {
+    pub fn sharray_copy_ctor(
+        h: &mut impl Host,
+        this: u32,
+        src: u32,
+        alloc: u32,
+        free_null: bool,
+    ) -> u32 {
         h.write(this, 0u32);
         let n = {
             let c: u32 = h.read(src);
             c & !EXTERNAL
         };
         let data = sharray_data(h, src);
-        let new = h.call_sym(SHARRAY_ALLOC, Conv::Thiscall(this), &[n, data]);
+        let new = h.call_sym(alloc, Conv::Thiscall(this), &[n, data]);
         let header: u32 = h.read(this);
         let cur = sharray_data(h, this);
         let own = this + 4;
-        if cur != new && cur != own && header & EXTERNAL == 0 && cur != 0 {
+        if cur != new && cur != own && header & EXTERNAL == 0 && (free_null || cur != 0) {
             h.call_sym(PHYRE_FREE, Conv::Cdecl, &[cur]);
         }
         h.write(this, n);

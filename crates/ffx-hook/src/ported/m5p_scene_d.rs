@@ -51,7 +51,7 @@ ported! {
     }
     /// `Phyre_PSharray_copyCtor_004e9ee0`: a `PSharray` copied from another; `this`.
     Phyre_PSharray_copyCtor_004e9ee0 @ 0x004e_9ee0 => extern "thiscall" fn sd_004e9ee0(this: u32, src: u32) -> u32 {
-        b::sharray_copy_ctor(&mut mem(), this, src)
+        b::sharray_copy_ctor(&mut mem(), this, src, t::SHARRAY_ALLOC, false)
     }
     /// `Phyre_PSharray_PTriggerReceiverComponentPtr_set_005506c0`: set to `n` elements at a buffer; 5 for a negative `n`, else 0.
     Phyre_PSharray_PTriggerReceiverComponentPtr_set_005506c0 @ 0x0055_06c0 => extern "thiscall" fn sd_005506c0(this: u32, buffer: u32, n: u32) -> u32 {
