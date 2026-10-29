@@ -41,4 +41,17 @@ ported! {
         let mut f = StackFrame::<1>::new();
         lb::require_module(&mut mem(), l, f.at())
     }
+    /// `Phyre::PScripting::IndexHandler(L)`.
+    Phyre_PScripting_IndexHandler @ 0x0043_6430 => extern "C" fn index_handler(l: u32) -> u32 {
+        lb::index_handler(&mut mem(), l)
+    }
+    /// `Phyre::PScripting::NewIndexHandler(L)`.
+    Phyre_PScripting_NewIndexHandler @ 0x0043_6860 => extern "C" fn new_index_handler(l: u32) -> u32 {
+        lb::new_index_handler(&mut mem(), l)
+    }
+    /// `Phyre::PScripting::GetScriptFunctionNames(script, names)`.
+    Phyre_PScripting_GetScriptFunctionNames @ 0x005d_5860 => extern "C" fn script_function_names(script: u32, names: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::script_function_names(&mut mem(), script, names, f.at())
+    }
 }

@@ -163,15 +163,89 @@ pub const REQUIRE_MORE: [u32; 5] = [
 /// How deep `Require` nests before it refuses.
 pub const REQUIRE_MAX_DEPTH: u32 = 0x14;
 
+/// The index handlers' Lua API (cdecl): `lua_touserdata(L, i)`,
+/// `lua_getmetatable(L, i)`, `lua_rawequal(L, a, b)`, `lua_remove(L, i)`
+/// (`0x0094bb70`), `lua_pushlightuserdata(L, p)`, `lua_pushinteger(L,
+/// n)`, `lua_settable(L, i)` (`0x0094bd90`), `luaL_error(L, fmt, ...)`
+/// (varargs; it never returns in the game: it unwinds the Lua call past
+/// the shim, as past the original's frame, so the ports return what the
+/// original's unreachable tail returns).
+pub const LUA_INDEX: [u32; 8] = [
+    0x0094_c1b0,
+    0x0094_b0d0,
+    0x0094_b8b0,
+    0x0094_bb70,
+    0x0094_b6c0,
+    0x0094_b690,
+    0x0094_bd90,
+    0x0094_cd50,
+];
+/// `PClassDescriptor`'s own descriptor (`PClassDescriptorForClassDescriptor`).
+pub const CLASS_DESCRIPTOR: u32 = 0x00c9_0760;
+/// The named-entry lookups of a descriptor's lists `+0x54`, `+0x4c`,
+/// `+0x5c` (thiscall `(name)`), `inheritsFrom(other)` (thiscall), the
+/// list count `0x004361d0(list)` (cdecl), the descriptor-property get
+/// `0x00437440(L)` (thiscall).
+pub const INDEX_CALLS: [u32; 6] = [
+    0x0043_5b80,
+    0x0043_5c10,
+    0x0043_5d30,
+    0x0043_1420,
+    0x0043_61d0,
+    0x0043_7440,
+];
+/// The C closures the index handler pushes for a method (`+0x54`) and a
+/// function (`+0x4c`) entry.
+pub const INDEX_CLOSURES: [u32; 2] = [0x0043_7160, 0x0043_71e0];
+/// The error location globals: file, line, function.
+pub const ERROR_AT: [u32; 3] = [0x00c9_6a98, 0x00c9_6a9c, 0x00c9_6aa0];
+/// The handlers' source file and function names (index, new index).
+pub const ERROR_NAMES: [u32; 3] = [0x00b0_e268, 0x00b0_e248, 0x00b0_e3f4];
+/// The index handler's messages: not an object, a write-only member, not
+/// a member (a class with lists, one without), not a descriptor member.
+pub const INDEX_MESSAGES: [u32; 5] = [
+    0x00b0_e288,
+    0x00b0_e2bc,
+    0x00b0_e2dc,
+    0x00b0_e310,
+    0x00b0_e3a0,
+];
+/// The new-index handler's messages: not an object, not a member, not a
+/// descriptor member, read-only (bit 3), constant (bit 4).
+pub const NEW_INDEX_MESSAGES: [u32; 5] = [
+    0x00b0_e418,
+    0x00b0_e44c,
+    0x00b0_e470,
+    0x00b0_e2bc,
+    0x00b0_e4b0,
+];
+
+/// `GetScriptFunctionNames`' callees: `lua_rawgeti(L, i, n)`, `lua_next(L,
+/// i)`, `lua_iscfunction(L, i)`, the names' release `(data, n)`, the
+/// array's push `(block, &string)` (thiscall), `qsort`'s import slot and
+/// the comparison it passes; the call error message.
+pub const NAMES_CALLS: [u32; 8] = [
+    0x0094_b950,
+    0x0094_b490,
+    0x0094_bf30,
+    0x0043_4360,
+    0x005d_6b00,
+    0x00b0_c3ac,
+    0x005d_6760,
+    0x00b3_92d4,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{
-        CLOTH_INSTANCE, Conv, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, LOAD_CALLBACKS,
-        LOADED_TABLE, LUA_GETFIELD, LUA_GETGLOBAL, LUA_MORE, LUA_PCALLK, LUA_PUSHNIL,
+        CLASS_DESCRIPTOR, CLOTH_INSTANCE, Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE,
+        GLOBAL_NAMESPACE, Host, INDEX_CALLS, INDEX_CLOSURES, INDEX_MESSAGES, LOAD_CALLBACKS,
+        LOADED_TABLE, LUA_GETFIELD, LUA_GETGLOBAL, LUA_INDEX, LUA_MORE, LUA_PCALLK, LUA_PUSHNIL,
         LUA_REGISTRYINDEX, LUA_SETFIELD, LUA_SETGLOBAL, LUA_SETTOP, LUA_TOBOOLEAN, LUA_TOLSTRING,
-        LUA_TYPE, LUAL_CHECKLSTRING, MALLOC, MEMCPY, PRINTF, REGISTER_VECTOR_MATRIX, RELOAD_CALLS,
-        RELOAD_DATA, REQUIRE_CALLS, REQUIRE_MAX_DEPTH, REQUIRE_MORE, REQUIRE_STATE, STRCHR_SLOT,
-        TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA, VM_MATRIX, VM_VECTOR,
+        LUA_TYPE, LUAL_CHECKLSTRING, MALLOC, MEMCPY, NAMES_CALLS, NEW_INDEX_MESSAGES, PRINTF,
+        REGISTER_VECTOR_MATRIX, RELOAD_CALLS, RELOAD_DATA, REQUIRE_CALLS, REQUIRE_MAX_DEPTH,
+        REQUIRE_MORE, REQUIRE_STATE, STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA,
+        VM_MATRIX, VM_VECTOR,
     };
 
     /// A `PString` word's pointer (bit 0 cleared).
@@ -574,5 +648,302 @@ pub mod bridge {
                 h.call(f, Conv::Stdcall, &[script, source, 1, user]);
             }
         }
+    }
+
+    /// The error location globals, then `luaL_error(L, fmt, args...)`.
+    fn lua_error(h: &mut impl Host, l: u32, line: u32, function: u32, msg: u32, args: &[u32]) {
+        let file = h.rebase(ERROR_NAMES[0]);
+        let at = h.rebase(ERROR_AT[0]);
+        h.write(at, file);
+        let at = h.rebase(ERROR_AT[1]);
+        h.write(at, line);
+        let function = h.rebase(function);
+        let at = h.rebase(ERROR_AT[2]);
+        h.write(at, function);
+        let msg = h.rebase(msg);
+        let mut words = vec![l, msg];
+        words.extend_from_slice(args);
+        h.call_sym(LUA_INDEX[7], Conv::Cdecl, &words);
+    }
+
+    /// The `PhyreObject` userdata at stack index 1: its block when the
+    /// value is a userdata whose metatable is the registry's `PhyreObject`
+    /// (both popped again), else 0.
+    fn phyre_object(h: &mut impl Host, l: u32) -> u32 {
+        let ud = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[l, 1]);
+        if ud == 0 || h.call_sym(LUA_INDEX[1], Conv::Cdecl, &[l, 1]) == 0 {
+            return 0;
+        }
+        let name = h.rebase(TYPES_DATA[1]);
+        h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+        let same = h.call_sym(LUA_INDEX[2], Conv::Cdecl, &[l, u32::MAX, 0xffff_fffe]) != 0;
+        h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffd]);
+        if same { ud } else { 0 }
+    }
+
+    /// The object a descriptor userdata stands for (`[ud + 4]` less its
+    /// `0x18` header, 0 for none).
+    fn descriptor_object(h: &mut impl Host, ud: u32) -> u32 {
+        let o: u32 = h.read(ud + 4);
+        if o == 0 { 0 } else { o.wrapping_sub(0x18) }
+    }
+
+    /// A light userdata and the C closure `f` over it (one upvalue).
+    fn push_closure(h: &mut impl Host, l: u32, p: u32, f: u32) {
+        h.call_sym(LUA_INDEX[4], Conv::Cdecl, &[l, p]);
+        let f = h.rebase(f);
+        h.call_sym(LUA_MORE[4], Conv::Cdecl, &[l, f, 1]);
+    }
+
+    /// `Phyre::PScripting::IndexHandler(L)` (`0x00436430`, cdecl, the
+    /// `PhyreObject` metatable's `__index`): for an object and a key, a
+    /// function (`+0x4c`) or method (`+0x54`) entry as a closure, a
+    /// readable member's value (`vt[3](L, object)`), else the class's own
+    /// lookup (`vt[13](object, L, key)`): several results packed in a
+    /// table, one or none as they are; on a class descriptor the
+    /// descriptor's property or method entries. Errors (Lua errors) for a
+    /// non-object, a write-only member or an unknown key; their
+    /// unreachable tail returns 0.
+    pub fn index_handler(h: &mut impl Host, l: u32) -> u32 {
+        let ud = phyre_object(h, l);
+        let key = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 2, 0]);
+        let at = ERROR_NAMES[1];
+        if ud == 0 {
+            lua_error(h, l, 0x164, at, INDEX_MESSAGES[0], &[key]);
+            return 0;
+        }
+        let desc: u32 = h.read(ud);
+        let function = h.call_sym(INDEX_CALLS[1], Conv::Thiscall(desc), &[key]);
+        if function != 0 {
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffe]);
+            push_closure(h, l, function, INDEX_CLOSURES[1]);
+            return 1;
+        }
+        let member = h.call_sym(FIND_MEMBER, Conv::Thiscall(desc), &[key]);
+        if member != 0 {
+            if h.read::<u32>(member + 0x14) & 8 != 0 {
+                let name: u32 = h.read(desc + 0x18);
+                lua_error(h, l, 0x177, at, INDEX_MESSAGES[1], &[key, name]);
+                return 0;
+            }
+            let object: u32 = h.read(ud + 4);
+            h.call_virtual(member, 3, &[l, object]);
+            return 1;
+        }
+        let method = h.call_sym(INDEX_CALLS[0], Conv::Thiscall(desc), &[key]);
+        if method != 0 {
+            push_closure(h, l, method, INDEX_CLOSURES[0]);
+            return 1;
+        }
+        let object: u32 = h.read(ud + 4);
+        let n = h.call_virtual(desc, 13, &[object, l, key]);
+        if n.cast_signed() >= 0 {
+            if n.cast_signed() > 1 {
+                h.call_sym(LUA_MORE[8], Conv::Cdecl, &[l, 0, 0]);
+                let first = 0xffff_fffdu32.wrapping_sub(n);
+                for i in 1..=n {
+                    h.call_sym(LUA_INDEX[5], Conv::Cdecl, &[l, i]);
+                    h.call_sym(LUA_MORE[9], Conv::Cdecl, &[l, first.wrapping_add(i)]);
+                    h.call_sym(LUA_INDEX[6], Conv::Cdecl, &[l, 0xffff_fffd]);
+                }
+                return 1;
+            }
+            return n;
+        }
+        let class = h.rebase(CLASS_DESCRIPTOR);
+        let is_descriptor = h.call_sym(INDEX_CALLS[3], Conv::Thiscall(desc), &[class]) & 0xff != 0;
+        if !is_descriptor {
+            let a = h.call_sym(INDEX_CALLS[4], Conv::Cdecl, &[desc + 0x54]);
+            let b = h.call_sym(INDEX_CALLS[4], Conv::Cdecl, &[desc + 0x4c]);
+            let c = h.call_sym(INDEX_CALLS[4], Conv::Cdecl, &[desc + 0x44]);
+            let name: u32 = h.read(desc + 0x18);
+            if a | b | c != 0 {
+                lua_error(h, l, 0x190, at, INDEX_MESSAGES[2], &[key, name]);
+            } else {
+                lua_error(h, l, 0x192, at, INDEX_MESSAGES[3], &[key, name, name]);
+            }
+            return 0;
+        }
+        let o = descriptor_object(h, ud);
+        let property = h.call_sym(INDEX_CALLS[2], Conv::Thiscall(o), &[key]);
+        if property != 0 {
+            h.call_sym(INDEX_CALLS[5], Conv::Thiscall(property), &[l]);
+            return 1;
+        }
+        let method = h.call_sym(INDEX_CALLS[0], Conv::Thiscall(o), &[key]);
+        if method != 0 {
+            push_closure(h, l, method, INDEX_CLOSURES[0]);
+            return 1;
+        }
+        let name: u32 = h.read(desc + 0x18);
+        let oname: u32 = h.read(o + 0x18);
+        lua_error(h, l, 0x1a7, at, INDEX_MESSAGES[4], &[key, name, oname]);
+        0
+    }
+
+    /// `Phyre::PScripting::NewIndexHandler(L)` (`0x00436860`, cdecl, the
+    /// `PhyreObject` metatable's `__newindex`): the key taken off the
+    /// stack; for an object, a writable member set (`vt[2](L, object)`);
+    /// on a class descriptor, the descriptor property set (`vt[5]` for
+    /// bit 1 of its flags, else `vt[3]`, `(L, value word)`). 1; Lua errors
+    /// for a non-object, an unknown key, a read-only (bit 3) or constant
+    /// (bit 4) member, whose unreachable tail returns 0.
+    pub fn new_index_handler(h: &mut impl Host, l: u32) -> u32 {
+        let key = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 2, 0]);
+        h.call_sym(LUA_INDEX[3], Conv::Cdecl, &[l, 2]);
+        let ud = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[l, 1]);
+        let at = ERROR_NAMES[2];
+        let valid = ud != 0 && h.call_sym(LUA_INDEX[1], Conv::Cdecl, &[l, 1]) != 0 && {
+            let name = h.rebase(TYPES_DATA[1]);
+            h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+            let same = h.call_sym(LUA_INDEX[2], Conv::Cdecl, &[l, u32::MAX, 0xffff_fffe]) != 0;
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffd]);
+            same
+        };
+        if !valid {
+            lua_error(h, l, 0x1c9, at, NEW_INDEX_MESSAGES[0], &[key]);
+            return 0;
+        }
+        let desc: u32 = h.read(ud);
+        let member = h.call_sym(FIND_MEMBER, Conv::Thiscall(desc), &[key]);
+        if member != 0 {
+            let flags: u32 = h.read(member + 0x14);
+            let name: u32 = h.read(desc + 0x18);
+            if flags & 8 != 0 {
+                lua_error(h, l, 0x1da, at, NEW_INDEX_MESSAGES[3], &[key, name]);
+                return 0;
+            }
+            if flags & 0x10 != 0 {
+                lua_error(h, l, 0x1dc, at, NEW_INDEX_MESSAGES[4], &[key, name]);
+                return 0;
+            }
+            let object: u32 = h.read(ud + 4);
+            h.call_virtual(member, 2, &[l, object]);
+            return 1;
+        }
+        let class = h.rebase(CLASS_DESCRIPTOR);
+        let mut d = desc;
+        let mut is_descriptor = false;
+        if desc != 0 {
+            while d != 0 {
+                if d == class {
+                    is_descriptor = true;
+                    break;
+                }
+                d = h.read(d + 0x40);
+            }
+        }
+        if !is_descriptor {
+            let name: u32 = h.read(desc + 0x18);
+            lua_error(h, l, 0x1cf, at, NEW_INDEX_MESSAGES[1], &[key, name]);
+            return 0;
+        }
+        let o = descriptor_object(h, ud);
+        let property = h.call_sym(INDEX_CALLS[2], Conv::Thiscall(o), &[key]);
+        if property == 0 {
+            let name: u32 = h.read(desc + 0x18);
+            let oname: u32 = h.read(o + 0x18);
+            lua_error(h, l, 0x1d5, at, NEW_INDEX_MESSAGES[2], &[key, name, oname]);
+            return 0;
+        }
+        let target: u32 = h.read(property + 0x14);
+        let value: u32 = h.read(property + 0x18);
+        let slot = if h.read::<u8>(property + 0x10) & 2 != 0 {
+            5
+        } else {
+            3
+        };
+        h.call_virtual(target, slot, &[l, value]);
+        1
+    }
+
+    /// `Phyre::PScripting::GetScriptFunctionNames(script, names)`
+    /// (`0x005d5860`, cdecl): the script's chunk run (`lua_pcallk(L, 0,
+    /// 0)`; an error is printed, 9); the names array emptied (its strings
+    /// released unless external); every string key of the globals table
+    /// whose value is a Lua (not C) function copied into a new string (in
+    /// `string`, the original's frame) and pushed; the names sorted
+    /// (`qsort` with `0x005d6760`). 0.
+    pub fn script_function_names(h: &mut impl Host, script: u32, names: u32, string: u32) -> u32 {
+        let l: u32 = h.read(script);
+        let err = h.call_sym(LUA_PCALLK, Conv::Cdecl, &[l, 0, 0, 0, 0, 0]);
+        if err != 0 {
+            let l: u32 = h.read(script);
+            let text = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, u32::MAX, 0]);
+            let l: u32 = h.read(script);
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffe]);
+            let msg = h.rebase(NAMES_CALLS[7]);
+            h.call_sym(PRINTF, Conv::Cdecl, &[3, msg, err, text]);
+            return 9;
+        }
+        let head: u32 = h.read(names);
+        if head != 0 {
+            let data: u32 = h.read(names + 4);
+            if data != 0 && head & 0x8000_0000 == 0 {
+                h.call_sym(NAMES_CALLS[3], Conv::Cdecl, &[data, head & 0x7fff_ffff]);
+            }
+            h.write(names + 4, 0u32);
+            h.write(names, 0u32);
+        }
+        let l: u32 = h.read(script);
+        h.call_sym(NAMES_CALLS[0], Conv::Cdecl, &[l, LUA_REGISTRYINDEX, 2]);
+        let l: u32 = h.read(script);
+        let table = h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]);
+        let l: u32 = h.read(script);
+        h.call_sym(LUA_PUSHNIL, Conv::Cdecl, &[l]);
+        loop {
+            let l: u32 = h.read(script);
+            if h.call_sym(NAMES_CALLS[1], Conv::Cdecl, &[l, table]) == 0 {
+                break;
+            }
+            let l: u32 = h.read(script);
+            let key = h.call_sym(LUA_TYPE, Conv::Cdecl, &[l, 0xffff_fffe]);
+            let l: u32 = h.read(script);
+            let value = h.call_sym(LUA_TYPE, Conv::Cdecl, &[l, u32::MAX]);
+            if key == 4 && value == 6 {
+                let l: u32 = h.read(script);
+                if h.call_sym(NAMES_CALLS[2], Conv::Cdecl, &[l, u32::MAX]) == 0 {
+                    add_name(h, script, names, string);
+                }
+            }
+            let l: u32 = h.read(script);
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffe]);
+        }
+        let l: u32 = h.read(script);
+        h.call_sym(LUA_SETTOP, Conv::Cdecl, &[l, 0xffff_fffe]);
+        let n = h.read::<u32>(names) & 0x7fff_ffff;
+        let data: u32 = h.read(names + 4);
+        let qsort: u32 = h.read(h.rebase(NAMES_CALLS[5]));
+        let compare = h.rebase(NAMES_CALLS[6]);
+        h.call(qsort, Conv::Cdecl, &[data, n, 4, compare]);
+        0
+    }
+
+    /// One function name: the key copied (`PhyreMalloc(len + 1, 2)`; none
+    /// for no string or no block) into `string`, pushed with a block of
+    /// `count + 1` words, released unless borrowed.
+    fn add_name(h: &mut impl Host, script: u32, names: u32, string: u32) {
+        let l: u32 = h.read(script);
+        let s = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 0xffff_fffe, 0]);
+        let mut copy = 0;
+        if s != 0 {
+            let mut len = 0u32;
+            while h.read::<u8>(s.wrapping_add(len)) != 0 {
+                len += 1;
+            }
+            copy = h.call_sym(MALLOC, Conv::Cdecl, &[len + 1, 2]);
+            if copy != 0 {
+                h.call_sym(MEMCPY, Conv::Cdecl, &[copy, s, len + 1]);
+            }
+        }
+        h.write(string, copy);
+        let count = h.read::<u32>(names) & 0x7fff_ffff;
+        let block = h.call_sym(
+            MALLOC,
+            Conv::Cdecl,
+            &[count.wrapping_mul(4).wrapping_add(4), 4],
+        );
+        h.call_sym(NAMES_CALLS[4], Conv::Thiscall(names), &[block, string]);
+        release(h, copy);
     }
 }

@@ -3185,3 +3185,243 @@ fn left2_require_module_matches_the_original() {
         }
     }
 }
+
+/// The stubs both index handlers call; `object` picks how the userdata
+/// at 1 resolves (0 none, 1 no metatable, 2 another metatable, 3 a
+/// `PhyreObject`), `ud` is its block.
+fn stub_index_common(t: &mut Twins, object: u32, ud: u32, key: u32) {
+    use ffx_pother_a::m5p_scripting_left2 as l2;
+    t.stub(
+        l2::LUA_INDEX[0],
+        false,
+        2,
+        0,
+        if object == 0 { 0 } else { ud },
+    );
+    t.stub(l2::LUA_INDEX[1], false, 2, 0, u32::from(object >= 2));
+    t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+    t.stub(l2::LUA_INDEX[2], false, 3, 0, u32::from(object == 3));
+    t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+    t.stub(l2::LUA_TOLSTRING, false, 3, 0, key);
+    // luaL_error: the state, the message and the key (the names after it
+    // vary in number; the message tells the paths apart)
+    t.stub(l2::LUA_INDEX[7], false, 3, 0, 0);
+    for f in [
+        l2::LUA_INDEX[3],
+        l2::LUA_INDEX[4],
+        l2::LUA_INDEX[5],
+        l2::LUA_INDEX[6],
+    ] {
+        t.stub(f, false, 2, 0, 0);
+    }
+    t.stub(l2::LUA_MORE[4], false, 3, 0, 0);
+    t.stub(l2::LUA_MORE[8], false, 3, 0, 0);
+    t.stub(l2::LUA_MORE[9], false, 2, 0, 0);
+}
+
+#[test]
+#[allow(clippy::type_complexity)] // one row per case, columns named above
+fn left2_index_handlers_match_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let key = t.cstr("key");
+        // (object, function, member, method, n, descriptor, counts,
+        //  property, method on the descriptor)
+        let cases: [(u32, u32, u32, u32, u32, bool, u32, u32, u32); 22] = [
+            (0, 0, 0, 0, 0, false, 0, 0, 0),
+            (1, 0, 0, 0, 0, false, 0, 0, 0),
+            (2, 0, 0, 0, 0, false, 0, 0, 0),
+            (3, 0x31, 0, 0, 0, false, 0, 0, 0),
+            (3, 0, 1, 0, 0, false, 0, 0, 0),
+            (3, 0, 2, 0, 0, false, 0, 0, 0),
+            (3, 0, 0, 0x32, 0, false, 0, 0, 0),
+            (3, 0, 0, 0, 0, false, 0, 0, 0),
+            (3, 0, 0, 0, 1, false, 0, 0, 0),
+            (3, 0, 0, 0, 3, false, 0, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, false, 2, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, false, 0, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, true, 0, 0x33, 0),
+            (3, 0, 0, 0, 0xffff_ffff, true, 0, 0, 0x34),
+            (3, 0, 0, 0, 0xffff_ffff, true, 0, 0, 0),
+            (3, 0, 4, 0, 0, false, 0, 0, 0),
+            (3, 0, 8, 0, 0, false, 0, 0, 0),
+            (3, 0, 0, 0, 2, false, 0, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, false, 4, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, false, 1, 0, 0),
+            (3, 0, 0, 0, 0xffff_ffff, true, 0, 0x33, 0),
+            (3, 0, 0, 0, 0xffff_ffff, true, 0, 0x33, 0),
+        ];
+        for (i, &(object, function, member, method, n, descriptor, counts, property, method2)) in
+            cases.iter().enumerate()
+        {
+            let mut words = vec![0u32; 14];
+            words[13] = 3;
+            let mut rets = vec![0u32; 14];
+            rets[13] = n;
+            // the class: its vtable on a block large enough for the lists
+            // at +0x44..+0x5c (the list counter below reads their heads)
+            let vt_owner = t.object(0x7300, &words, &rets);
+            let desc = t.zeros(0x100);
+            let vt = t.r32(vt_owner);
+            t.w32(desc, vt);
+            // counts: bit 0 the +0x54 list, bit 1 +0x4c, bit 2 +0x44
+            t.w32(desc + 0x54, counts & 1);
+            t.w32(desc + 0x4c, (counts >> 1) & 1);
+            t.w32(desc + 0x44, (counts >> 2) & 1);
+            t.w32(desc + 0x18, 0x0042_0000);
+            let ud = t.zeros(8);
+            t.w32(ud, desc);
+            let obj = t.zeros(0x40);
+            t.w32(obj + 0x18, 0x0043_0000);
+            // no object (0) only where the paths do not read its name
+            t.w32(
+                ud + 4,
+                if i % 2 == 0 || (descriptor && property == 0) {
+                    obj + 0x18
+                } else {
+                    0
+                },
+            );
+            let m = t.object(0x7400, &[0, 0, 2, 2], &[]);
+            // member: 1 readable, 2 write-only (bit 3), 4 read-only for
+            // the new index (bit 3), 8 constant (bit 4)
+            t.w32(
+                m + 0x14,
+                match member {
+                    2 | 4 => 8,
+                    8 => 0x10,
+                    _ => 0,
+                },
+            );
+            stub_index_common(&mut t, object, ud, key);
+            t.stub(l2::INDEX_CALLS[1], true, 1, 1, function);
+            t.stub(l2::FIND_MEMBER, true, 1, 1, if member != 0 { m } else { 0 });
+            t.stub(
+                l2::INDEX_CALLS[0],
+                true,
+                1,
+                1,
+                if method != 0 { method } else { method2 },
+            );
+            t.stub(
+                l2::INDEX_CALLS[3],
+                true,
+                1,
+                1,
+                u32::from(descriptor) | 0x100,
+            );
+            // the list counter answers the word at the list
+            let code = t.code(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xc3]);
+            t.place(l2::INDEX_CALLS[4], code);
+            let target = t.object(0x7500, &[0, 0, 0, 2, 0, 2], &[]);
+            let prop = t.zeros(0x20);
+            t.w32(prop + 0x14, target);
+            t.w32(prop + 0x18, 0x0044_0000);
+            t.w8(prop + 0x10, if i % 3 == 0 { 2 } else { 0 });
+            t.stub(
+                l2::INDEX_CALLS[2],
+                true,
+                1,
+                1,
+                if property != 0 { prop } else { 0 },
+            );
+            t.stub(l2::INDEX_CALLS[5], true, 1, 1, 0);
+            let what = format!("{label}: IndexHandler case {i}");
+            t.cdecl(&what, 0x0043_6430, &[l], |g| Some(l2b::index_handler(g, l)));
+            // the new index: the class chain reaches the descriptor class
+            // or not
+            if descriptor {
+                let class = t.rebase(l2::CLASS_DESCRIPTOR);
+                let mid = t.zeros(0x44);
+                t.w32(mid + 0x40, class);
+                t.w32(desc + 0x40, mid);
+            }
+            let what = format!("{label}: NewIndexHandler case {i}");
+            t.cdecl(&what, 0x0043_6860, &[l], |g| {
+                Some(l2b::new_index_handler(g, l))
+            });
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_script_function_names_match_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let s = t.cstr("update");
+        for (err, head, data, entries, string, block, cfunc) in [
+            (0u32, 0u32, 0u32, 2u32, true, true, 1u32),
+            (5, 0, 0, 0, true, true, 0),
+            (0, 3, 0x0045_0000, 2, true, true, 0),
+            (0, 0x8000_0003, 0x0045_0000, 1, true, true, 0),
+            (0, 3, 0, 1, false, true, 0),
+            (0, 0, 0, 3, true, false, 0),
+        ] {
+            t.stub(l2::LUA_PCALLK, false, 6, 0, err);
+            t.stub(l2::LUA_TOLSTRING, false, 3, 0, if string { s } else { 0 });
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            t.stub(l2::PRINTF, false, 4, 0, 0);
+            t.stub(l2::NAMES_CALLS[3], false, 2, 0, 0);
+            t.stub(l2::NAMES_CALLS[0], false, 3, 0, 0);
+            t.stub(l2::LUA_MORE[2], false, 1, 0, 5);
+            t.stub(l2::LUA_PUSHNIL, false, 1, 0, 0);
+            // lua_next: `entries` pairs, then 0
+            let cell = t.zeros(4);
+            t.w32(cell, entries);
+            let mut c = vec![0x31, 0xc0]; // xor eax, eax
+            c.extend([0x83, 0x3d]);
+            c.extend(cell.to_le_bytes());
+            c.push(0); // cmp dword [cell], 0
+            c.extend([0x74, 0x07]); // je +7
+            c.extend([0xff, 0x0d]);
+            c.extend(cell.to_le_bytes()); // dec dword [cell]
+            c.push(0x40); // inc eax
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(l2::NAMES_CALLS[1], code);
+            // lua_type: alternately (4, 6) pairs and others
+            let tcell = t.zeros(4);
+            let mut c = vec![0xa1];
+            c.extend(tcell.to_le_bytes()); // mov eax, [tcell]
+            c.extend([0xff, 0x05]);
+            c.extend(tcell.to_le_bytes()); // inc dword [tcell]
+            c.extend([0x83, 0xe0, 0x03]); // and eax, 3
+            c.extend([0x0f, 0xb6, 0x80]);
+            let types = t.alloc(&[4, 6, 4, 5]);
+            c.extend(types.to_le_bytes()); // movzx eax, byte [eax + types]
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(l2::LUA_TYPE, code);
+            t.stub(l2::NAMES_CALLS[2], false, 2, 0, cfunc);
+            let b = if block { t.zeros(0x10) } else { 0 };
+            t.stub(l2::MALLOC, false, 2, 0, b);
+            t.stub(l2::MEMCPY, false, 3, 0, b);
+            // the push leaves the array external (bit 31) with 2 names
+            let mut pre = vec![0xc7, 0x01];
+            pre.extend(0x8000_0002u32.to_le_bytes()); // mov dword [ecx], 0x80000002
+            pre.extend(deref_arg(1));
+            let s5 = t.stub_code_with(&pre, l2::NAMES_CALLS[4], true, 2, 2, 0);
+            t.place(l2::NAMES_CALLS[4], s5);
+            t.stub(l2::FREE, false, 1, 0, 0);
+            let qsort = t.stub_code(l2::NAMES_CALLS[5], false, 4, 0, 0);
+            let slot = t.rebase(l2::NAMES_CALLS[5]);
+            t.w32(slot, qsort);
+            let script = t.zeros(4);
+            t.w32(script, l);
+            let names = t.zeros(8);
+            t.w32(names, head);
+            t.w32(names + 4, data);
+            let what = format!(
+                "{label}: script function names err {err} head {head:#x} data {data:#x} entries {entries} string {string} block {block}"
+            );
+            t.cdecl(&what, 0x005d_5860, &[script, names], |g| {
+                let s = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::script_function_names(g, script, names, s))
+            });
+            t.unstub();
+        }
+    }
+}
