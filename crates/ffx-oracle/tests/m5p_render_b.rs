@@ -4613,3 +4613,52 @@ fn shader_texture_matches_the_original() {
         }
     }
 }
+
+// ---- round left2 (ffx_prender::m5p_render_b_left2) ----
+
+/// `PDeferredLightingNVN::initializeShaders`: no buffers (either), the
+/// common shaders failing, and the table: the lookup stub answers each
+/// name with a value of its own, so every field is checked against its
+/// own name.
+#[test]
+fn left2_nvn_shaders_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // the lookup: logs this and the name, returns name ^ 0x5a5a_0000
+        let at = t.rebase(l2::FIND_PARAM);
+        let log_stub = t.stub_code(l2::FIND_PARAM, true, 1, 0, 0);
+        let code_at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), code_at);
+        // call log_stub (it logs [esp+4] as the word after the return
+        // address it sees, so push the name again first)
+        let mut code = vec![0xff, 0x74, 0x24, 0x04]; // push dword [esp+4]
+        code.push(0xe8);
+        code.extend(log_stub.wrapping_sub(code_at + 9).to_le_bytes()); // call log_stub
+        code.extend([0x83, 0xc4, 0x04]); // add esp, 4
+        code.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+        code.push(0x35);
+        code.extend(0x5a5a_0000u32.to_le_bytes()); // xor eax, imm
+        code.extend([0xc2, 0x04, 0x00]); // ret 4
+        t.write(code_at, &code);
+        let mut j = vec![0xe9];
+        j.extend(code_at.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut t.a, at, 5).unwrap();
+        t.saved.entry(at).or_insert(old);
+        t.write(at, &j);
+        for (b0, b1, common) in [(0u32, 1u32, 0u32), (1, 0, 0), (1, 1, 0x0b), (1, 1, 0)] {
+            t.stub(l2::INIT_COMMON, true, 2, 2, common);
+            let this = t.junk(0x4100, 3);
+            t.w32(this + 0x3ee0, b0);
+            t.w32(this + 0x3ee4, b1);
+            let what = format!("{label}: NVN shaders {b0} {b1} common {common:#x}");
+            t.check(
+                &what,
+                0x00a1_a4f0,
+                Conv::Thiscall(this),
+                &[0x0012_0000, 0x0034_0000],
+                |g| Out::U32(l2b::init_nvn_shaders(g, this, 0x0012_0000, 0x0034_0000)),
+            );
+        }
+        t.reset();
+    }
+}
