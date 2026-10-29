@@ -2051,24 +2051,42 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   `TCP_NODELAY`, one write a reply, as the hook's `serve`). It is a second
   implementation, not the hook's code: the hook's harness lives in
   `FFX.exe`'s process and patches its imports and functions, where
-  `ffx-host` owns the imports and the device. What it serves today:
-  `ping`, `stats`, `frame`, `wait`, `read`, `readp`, `readabs`, `write`,
-  `writep`, `keys`, `key`, `pad`, `press`, `shot`, `gfxcapture`, `quit`
-  (and `trace off`/`calllog off`, the replay player's closing lines).
-  Every other command answers `err ... not served by ffx-rust yet`.
-- **Frames.** Without a hook at the update boundary
-  (`FFXApplication_animate`) and without the virtual clock, ffx-rust's
-  `frame` and `wait` count `Present`s, not updates. `waitfor`,
-  `shotwhen`, `lockstep`, `pin`, `call`, `loadsave` and the trace need the
-  boundary (an executor hook on the main thread) and the clock
-  (`docs/host.md`, "What blocks the next step").
+  `ffx-host` owns the imports and the device. What it serves:
+  `ping`, `stats`, `frame`, `wait`, `waitfor`, `shotwhen`, `holdfor`,
+  `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events`,
+  `read`, `readp`, `readabs`, `write`, `writep`, `keys`, `key`, `pad`,
+  `press`, `shot`, `gfxcapture`, `quit` (and `calllog off`, the replay
+  player's closing line). Every other command (`snapshot`, `fpucw`,
+  `audiomark`, the overlay and editor commands, `cursor`, `threads`)
+  answers `err ... not served by ffx-rust yet`.
+- **Frames** (2026-10-29, host-pc2) are updates, as in the hook: frame `n`
+  is the boundary after `n` updates, the entry of `FFXApplication_animate`,
+  which `ffx-host`'s clock wraps (`docs/host.md`, "The clock"). There, on
+  the main thread and after an in-process `--replay` script's turn, the
+  trace samples, the jobs run (`call`, `wait`, `press`'s release,
+  `waitfor`, `shotwhen`, `holdfor`, `loadsave`, `pin`) and lockstep holds
+  until the script allows more updates; then the clock's loader, vsync
+  and FMOD turns, the `callnext` calls and the update. The clock is always
+  virtual and the frames always run back to back (fast mode); lockstep is
+  the harness's, on `lockstep on` or `loadsave <save> lockstep`, as with
+  the hook. `Phyre_PRendering_PRenderer_flip` is wrapped to label each
+  flip with the update it shows, and `Renderer_PresentFlip` holds the
+  flip of update `n` on the render thread (lockstep, or a `shotwhen`
+  pending) until the main thread has left boundary `n`, taking the shots
+  asked for meanwhile from the back buffer. The hold waits at most 60 s
+  for the main thread to reach that boundary (the hook's 5 s; the
+  emulator is slower). The `open <file>` events come from
+  `Phyre_PSerialization_PStreamFileWin32_openFile`, wrapped, and
+  `FFX_HARNESS_SEED` replaces `Rng_ClockSeed`, as in the hook.
 - **Input.** `keys`/`key` set the `DirectInput` keyboard's state that the
-  layer's `GetDeviceState` returns. `pad`/`press` hold the buttons'
-  default keys (Circle C, Cross X, Start B, the arrows; the sandbox's
-  `GameSetting.ini` keeps the default bindings), where the hook answers
-  `Input_KeyHeld` for the bindings directly: the same pad word, as long as
-  the bindings are the defaults. The real keyboard, mouse and pads never
-  reach the game (the layer has no real devices).
+  layer's `GetDeviceState` returns. `pad`/`press` hold PS2 buttons through
+  the clock's `Input_KeyHeld` wrapper, which answers for each held
+  button's first keyboard binding, as the hook's does. The real keyboard,
+  mouse and pads never reach the game (the layer has no real devices).
+- **Timeouts.** ffx-rust's updates are emulated: `load direct` waits for
+  the title for 120 s and 3000 updates, and `FFX_HARNESS_REPLY_TIMEOUT`
+  (seconds, default 600) lets one command's reply (a long `waitfor`) take
+  longer.
 - **Background mode.** `FFX_HARNESS_BACKGROUND=1` reaches `ffx-rust.exe`
   as it reaches the hook. Its window imports are real on Windows
   (`win_forward.rs`): the window is made without `WS_VISIBLE`,
@@ -2082,10 +2100,11 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   sandbox's `GameSetting.ini` (`FFX_TEST_VOLUME` included). ffx-rust has no
   sound yet (FMOD is missing, `docs/host.md`), so nothing reaches the
   speakers either way.
-- **Screenshots.** `shot` reads the back buffer at the next `Present` (a
-  staging copy of the swap chain's buffer 0) into a 32-bit BMP; the reply
-  says `update <n>` with `n` the `Present`. With the null device
-  (`--gfx-null`) there is nothing to read and `shot` fails.
+- **Screenshots.** `shot` reads the back buffer (a staging copy of the
+  swap chain's buffer 0) of the update the main thread stands after, or a
+  later one, into a 32-bit BMP; the reply says `update <n>`, as the hook's.
+  With the null device (`--gfx-null`) there is nothing to read and `shot`
+  fails.
 - **Draw streams.** `gfxcapture <dir>` writes ffx-rust's recording so far
   (`capture.ffxgfx` from the first `Present`, `calls.txt`). For the same
   frames of `FFX.exe`, `FFX_GFX_BOOT_CAPTURE="<dir> [hash] frames N"`

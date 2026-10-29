@@ -34,7 +34,8 @@ same memory. The release runs no `FFX.exe` code.
 | `src/iggy.rs`, `src/iggy/swf.rs` | Iggy's imports: players, fast names, AS3 calls both ways; Ruffle with feature `swf`: below, "Iggy" |
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
-| `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes") |
+| `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
+| `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
 | `src/relaunch.rs` | i686 Windows: the game in a child process whose `FFX.exe` range was reserved before it ran (below, "The arena") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
@@ -511,8 +512,10 @@ advances the same way whatever the host's (or the emulator's) speed:
   clock registers after the `ported!` entries, so its own ports at the
   vsync thread's and `SleepThreadInMillisecond`'s addresses replace
   theirs. Boundary `n` (`n` updates done) runs the
-  replay script, the loader's turn, the vsyncs and FMOD's turn, in that
-  order, as the hook's `animate` does.
+  replay script, the harness (its trace, jobs and lockstep hold:
+  `docs/harness.md`, "Two processes"), the loader's turn, the vsyncs,
+  FMOD's turn and the harness's `callnext` calls, in that order, as the
+  hook's `animate` does.
 - **Lockstep** holds from the main loop's first boundary on (before it, the
   start-up loop's loads run free, as before the replays' `lockstep on`).
   Every boundary is a hold: the script decides there and the next update
@@ -976,6 +979,40 @@ of the stack):
   DLL) while Unicorn initialises its translator (`tcg_exec_init`,
   `tcg_prologue_init`), with the default 1 GB translation buffer and with
   64 MB (`TCG_BUFFER`) alike.
+
+#### The 64-bit build on PC2 (2026-10-29, host-pc2)
+
+PC2 (the second machine: Windows Defender only, no endpoint-security
+hook) runs the x86_64 `ffx-rust.exe` (`FFX_HOST_TARGET=x86_64-pc-windows-msvc
+tools/build-host.sh`) through the harness's game slots in background mode,
+muted:
+
+- **Unicorn's translator starts**: the crash at `tcg_exec_init` on the
+  main machine is its security product's DLL, not the program.
+- **Then it crashed after about 200 s** (`0xc0000005`, a write in
+  `VCRUNTIME140!memcpy` from `tcg_gen_code`, at a page of the main
+  thread's translation buffer). Unicorn 2.1.5 on Windows only reserves each
+  instance's buffer and commits it from a vectored exception handler, 4 MB
+  from each faulting address (`qemu/accel/tcg/translate-all.c`,
+  `code_gen_buffer_handler`); in the buffer's last 4 MB it still asks for
+  4 MB (`size = base_end - base` where `right - base` was meant), past the
+  reservation, `VirtualAlloc` refuses, and the fault is unhandled. The
+  faults come at unaligned addresses (translated code is written block
+  after block), so every thread whose 64 MB buffer filled that far hit
+  it. `src/tcg_commit.rs` registers a handler of our own in front of
+  Unicorn's that commits such a fault's page run (at most 4 MB, never past
+  the reservation); only `PAGE_EXECUTE_READWRITE` reservations, which only
+  Unicorn makes, are touched.
+- **With that**, a 1,200 s run (the old present-counting harness: `wait`,
+  `stats`, `shot`) reached 3,018 presents without a failure: the memochek
+  logo, the opening's credits and the campfire scene drawn by the real
+  device on PC2's GPU (`shot` images of the opening at updates 1217, 2118,
+  3019), 2.2 GB private memory at the end. The opening runs at about 2
+  presents a second in the campfire scene (217 draws a frame), faster on
+  the screens before it.
+- **So item 6(a) is settled for stage 4**: the 64-bit build runs on a
+  machine without the security product, and the i686 TCG abort no longer
+  blocks the Windows runs. The i686 abort was left alone.
 
 #### The first comparison
 
