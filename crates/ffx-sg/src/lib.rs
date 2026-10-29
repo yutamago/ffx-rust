@@ -23,6 +23,7 @@ pub mod m5main_dbg;
 pub mod m5main_dbg2;
 pub mod m5main_init;
 pub mod m5main_loop;
+pub mod m5main_mem;
 pub mod m5main_task;
 pub mod player;
 pub mod quat;

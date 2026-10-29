@@ -13,6 +13,7 @@ use ffx_sg::m5main_dbg::bridge as dbg;
 use ffx_sg::m5main_dbg2::bridge as dbg2;
 use ffx_sg::m5main_init::bridge as init;
 use ffx_sg::m5main_loop::{self as lp, bridge as main_loop};
+use ffx_sg::m5main_mem::bridge as sgmem;
 use ffx_sg::m5main_task::bridge as task;
 
 ported! {
@@ -400,6 +401,122 @@ ported! {
         let mut f = StackFrame::<{ dbg2::ID_DRAW_FRAME as usize / 4 }>::new();
         let ebp = f.at() + dbg2::ID_DRAW_FRAME;
         dbg2::id_draw_main(&mut mem(), ebp);
+    }
+
+    // ---- the Sg_Mem heaps, the allocation wrappers, small getters (round 2) ----
+    /// `Sg_MemRealloc(heap, kind, p, size)`.
+    Sg_MemRealloc @ 0x0083_c480 => extern "C" fn mem_realloc(_heap: u32, _kind: u32, p: u32, size: u32) -> u32 {
+        sgmem::mem_realloc(&mut mem(), p, size)
+    }
+    /// `SgReallocD(p, size)`.
+    SgReallocD @ 0x0083_f030 => extern "C" fn sg_realloc_d(p: u32, size: u32) -> u32 {
+        sgmem::sg_realloc(&mut mem(), 1, p, size)
+    }
+    /// `SgRealloc(p, size)`.
+    SgRealloc @ 0x0083_f010 => extern "C" fn sg_realloc(p: u32, size: u32) -> u32 {
+        sgmem::sg_realloc(&mut mem(), 0, p, size)
+    }
+    /// `Sg_ReadWholeFile_0084f1c0(name, out_size)`.
+    Sg_ReadWholeFile_0084f1c0 @ 0x0084_f1c0 => extern "C" fn read_whole_file(name: u32, out_size: u32) -> u32 {
+        sgmem::read_whole_file(&mut mem(), name, out_size)
+    }
+    /// `jmp user_malloc` (after a frame).
+    user_malloc_thunk_0083f100 @ 0x0083_f100 => extern "C" fn malloc_thunk(size: u32) -> u32 {
+        sgmem::malloc_thunk(&mut mem(), size)
+    }
+    /// `SgStrdupD(s)`.
+    SgStrdupD @ 0x0083_f050 => extern "C" fn strdup(s: u32) -> u32 {
+        sgmem::strdup(&mut mem(), s)
+    }
+    /// `sg_split_lines_00850590(text, out, filter)`: the line buffer in
+    /// this frame.
+    sg_split_lines_00850590 @ 0x0085_0590 => extern "C" fn split_lines(text: u32, out: u32, filter: u32) -> u32 {
+        let mut f = StackFrame::<{ sgmem::SPLIT_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + sgmem::SPLIT_FRAME;
+        sgmem::split_lines(&mut mem(), ebp, text, out, filter)
+    }
+    /// `sg_make_filelist(list, path, filter)`: the size and the probe
+    /// name in this frame.
+    sg_make_filelist @ 0x0085_09e0 => extern "C" fn make_filelist(list: u32, path: u32, filter: u32) -> u32 {
+        let mut f = StackFrame::<{ sgmem::FILELIST_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + sgmem::FILELIST_FRAME;
+        sgmem::make_filelist(&mut mem(), ebp, list, path, filter)
+    }
+    /// `SqsIopCommand3b_0081fc30(a, b)`.
+    SqsIopCommand3b_0081fc30 @ 0x0081_fc30 => extern "C" fn sqs_command_3b(a: u32, b: u32) -> u32 {
+        sgmem::sqs_command_3b(&mut mem(), a, b)
+    }
+    /// `GetWord_012fbc3c_00821740()`.
+    GetWord_012fbc3c_00821740 @ 0x0082_1740 => extern "C" fn get_012fbc3c() -> u32 {
+        sgmem::get_012fbc3c(&mut mem())
+    }
+    /// `Sg_SetResource9_0083ff00(on)`.
+    Sg_SetResource9_0083ff00 @ 0x0083_ff00 => extern "C" fn set_resource9(on: u32) -> u32 {
+        sgmem::set_resource9(&mut mem(), on)
+    }
+    /// `Sg_ToggleResource9_00821e40()`.
+    Sg_ToggleResource9_00821e40 @ 0x0082_1e40 => extern "C" fn toggle_resource9() -> u32 {
+        sgmem::toggle_resource9(&mut mem())
+    }
+    /// `Sg_MemInit(id, start, end)`.
+    Sg_MemInit @ 0x0083_c260 => extern "C" fn mem_init(id: u32, start: u32, end: u32) -> u32 {
+        sgmem::mem_init(&mut mem(), id, start, end)
+    }
+    /// `Sg_MemSetup_0083c200()`.
+    Sg_MemSetup_0083c200 @ 0x0083_c200 => extern "C" fn mem_setup() -> u32 {
+        sgmem::mem_setup(&mut mem())
+    }
+    /// `trophyCheckDefeatMonster(monster)`.
+    trophyCheckDefeatMonster @ 0x0082_2760 => extern "C" fn trophy_check_defeat_monster(monster: u32) {
+        sgmem::trophy_check_defeat_monster(&mut mem(), monster);
+    }
+    /// `Sg_MemMergeFree_0083c5b0(block)`.
+    Sg_MemMergeFree_0083c5b0 @ 0x0083_c5b0 => extern "C" fn merge_free(block: u32) -> u32 {
+        sgmem::merge_free(&mut mem(), block)
+    }
+    /// `Sg_MemCreateFree(heap, block, prev, next)`.
+    Sg_MemCreateFree @ 0x0083_baf0 => extern "C" fn create_free(heap: u32, block: u32, prev: u32, next: u32) -> u32 {
+        sgmem::create_free(&mut mem(), heap, block, prev, next)
+    }
+    /// `Sg_MemMoveWork(pp, moved)`.
+    Sg_MemMoveWork @ 0x0083_c350 => extern "C" fn move_work(pp: u32, moved: u32) -> u32 {
+        sgmem::move_work(&mut mem(), pp, moved)
+    }
+    /// `ClearHalf_0130074c_0082cc00()`.
+    ClearHalf_0130074c_0082cc00 @ 0x0082_cc00 => extern "C" fn clear_half() -> u32 {
+        sgmem::clear_half_0130074c(&mut mem())
+    }
+    /// `GetHalf_0130074c_0082cc10()`.
+    GetHalf_0130074c_0082cc10 @ 0x0082_cc10 => extern "C" fn get_half() -> u32 {
+        sgmem::get_half_0130074c(&mut mem())
+    }
+    /// `Sg_GetCameraFollow_0082d850()`.
+    Sg_GetCameraFollow_0082d850 @ 0x0082_d850 => extern "C" fn get_camera_follow() -> u32 {
+        sgmem::get_camera_follow(&mut mem())
+    }
+    /// `jmp MsCameraGetYaw` (`ST0`).
+    Sg_CameraGetYaw @ 0x0083_f2d0 => extern "C" fn camera_get_yaw() -> f64 {
+        sgmem::camera_get_yaw(&mut mem())
+    }
+    /// `Sg_CameraYawStore_0082d930()`.
+    Sg_CameraYawStore_0082d930 @ 0x0082_d930 => extern "C" fn store_camera_yaw() {
+        sgmem::store_camera_yaw(&mut mem());
+    }
+    /// `jmp Sg_PLightDispose`.
+    Sg_PLightDispose_thunk @ 0x0083_1a30 => extern "C" fn plight_dispose_thunk() -> u32 {
+        sgmem::plight_dispose_thunk(&mut mem())
+    }
+    /// `Sg_CaptureClear_0083a570()`.
+    Sg_CaptureClear_0083a570 @ 0x0083_a570 => extern "C" fn capture_clear() {
+        sgmem::capture_clear(&mut mem());
+    }
+    /// `Sg_CaptureSetFilter(on)`.
+    Sg_CaptureSetFilter @ 0x0083_a650 => extern "C" fn capture_set_filter(on: u32) {
+        sgmem::capture_set(&mut mem(), sgmem::CAPTURE_BLEND, on);
+    }
+    /// `Sg_CaptureSetMode(on)`.
+    Sg_CaptureSetMode @ 0x0083_a670 => extern "C" fn capture_set_mode(on: u32) {
+        sgmem::capture_set(&mut mem(), sgmem::CAPTURE_INTERLACED, on);
     }
 }
 

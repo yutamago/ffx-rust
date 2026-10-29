@@ -10700,6 +10700,7 @@
 0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
 0x0081f800 function SqsStraightStreamingVolumeDirect # SndSetStraightStreamVolumeDirect's slot (0x008871f0) jumps here; ported (field round 39): command (0x3e, v & 0x7f)
 0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
+0x0081fc30 function SqsIopCommand3b_0081fc30 # cdecl(a, b) -> a: IOP command (0x3b, a, b & 0x7f) appended at g_SqsCmdNext, the queue sent first (SqsIopCommandSend, dbgPrintf 0x00b58d28 when 0x012f4148 bit 0) when next + 0x20 > 0x012f4e00 (unsigned); name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0081fcd0 function Sg_IsSceneLoading        # () -> 1 while the field map loads outside a battle map (graphicIsFieldMapLoading, graphicIsAnyBattleMap), characters load for a listed map outside a battle map (graphicIsCharacterLoadingOrInstanciating, graphicIsMapInList), or the scene assets are not all in with the fade colour locked (graphicIsAllSceneAssetsLoaded, graphicIsScreenFadeColorLocked); from Sg_MainLoop; name ours; ported (field round 48)
 0x0081fd30 function Sg_CanSpeedUp             # ours: () -> 1/0, asked by the world update 0x00821e80 before its time-rate step: every callee first (MagicFile_GetMagicId, graphicLevelGetNameHash, getScenerioFlag, MsBattleCheck, graphicIsVideoPlaying, movie_have_camera, getUCStatus, getInterValefor, Atel_WindowsBusy), 1 while SpdCtrl_IsSpeedingUp; 0 for a video without the movie camera, magic 0x14a/0x14c/0x17d on map 0xd0, magic 0x132/0xa9/0x1b5/0x1b6/0xcd, story points by map/level hash/flag, g_MovieFading, 8 level hashes under getUCStatus, words 0x012f20a4/a8/ac; ported (ffx_sg::state, main round 16)
 0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090; ported in ffx_sg::state (chara-main-map round 2): screen states 1-4; debug save of all 200 slots via g_SaveDebugSlot
@@ -10737,6 +10738,7 @@
 0x008207f0 function Sg_MainDebug              # fh v3:exact 0x00820900; ported ffx_sg::m5main_dbg (m5 main b1): Sg_IdDrawMain, Counters_Flush(4); with byte 0x0133c910: Sg_DbDraw, Gu_Main([0x023cbbf4], Sg_PacketGetPtr()) and Sg_SaveResourceCheck unless the capture hides the GUI or byte 0x012fbbb3 is 0, Sg_Capture, then Sg_SetTkAntiXYB(0, 1, 0x80) when it ran
 0x00820860 function Sg_MainInit               # fh switch:cg4 0x710042ce30; cdecl(argc, argv) -> 0x00a44a30's eax (tail jmp; callers 0x00820680/0x00822490 drop it): the platform/GS/DMA resets, sceDmaGetChan(2/0/1) into 0x023cbbf4/0x023cbbfc/0x023cbbf8, sound/movie/pad/cache inits, MsBattleMemInit, TkInit, Sg_InitAll, Ch_InitAll, Sg_MapInitAll, yiInit, MsScreenInit(0x200, 0x1a0), MsCameraInit, initEventList (debug), Sg_IdInitAll .. op inits, the Sg_Enable* switches on, Sg_SetPause(0); g_SgVCount -> 0x012fbc30, g_SgFrame 0; first scene: debug TkInitScene(0), else TkSetEventJump + TkInitScene of g_EternalCalmFirstMap (argc > 1 signed and argv[1] == "_ECalm" 0x00b0da90) or 0x17; Sg_SetScreenCenter(0x100, 0xd0), Sg_CalcScreenMatrix, MagicFile_Init; ported ffx_sg::state::main_init (pc r9)
 0x00820ae0 function Sg_MainLoop               # the game's frame (update and draw): with g_PauseOn the world update (0x00821e80) is skipped for the pause's (0x008893e0); calls Battle_Update, Cam_Update, Screen_UpdateFades; was Game_Frame; ported ffx_sg::m5main_loop (m5 main b2): cdecl(dt f32), frame ebp-0xa4 (field scale -0x14, camera matrix -0x54, screen matrix -0x94, fade colour -0xa4..-0x98); dt = SpdCtrl_ScaleElapsedTime (ST0) stored back in its argument slot; free camera mode 2: distortion only; the fstp st(0) after useExtendedAlpha pops an empty x87 stack (useExtendedAlpha leaves none); MsGetScreenData gets 5 zero words; the scenario print is fprintf(__iob_func() + 0x20, 0x00b5911c, n)
+0x00821740 function GetWord_012fbc3c_00821740 # cdecl() -> u32 [0x012fbc3c]; data ref 0x00c88f64 (Native_MenuOpen_Result); name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x00821750 function Sg_MenuSetReserve         # (menu id): g_012fbc38 = id, result 0x012fbc3c = -1; 0x40100000/0x40200000 handled separately; was Menu_Request
 0x008217d0 function Sg_SetDispDrawEnv_008217d0 # cdecl(buffer) -> eax: Sg_SetScreenWH from the video mode byte 0x012fb8fb (i16 pairs at 0x00c494ac), then the odd (0x012fb900 disp, 0x012fba80 regs, 0x012fba90/0x012fbaf0 draw) or even (0x012fb928, 0x012fb950, 0x012fb960/0x012fb9c0) environment set: sceGsSetDefDispEnv(env, 1, w, h, 0, 0xe), frame base 0 / w*h/2048 into the low 9 bits, the 0x0062f800 and sceGsSetDefDrawEnv halves (ztest 3 in mode 0, zpsm 0x31), Sg_VramGetAddrZ()/2048 into both Z words; leaves buffer & 1 in its argument slot; eax the last merge; callers Sg_MainInit, Sg_MainLoop; name ours; ported (ffx_glue_other::h4b_a, m4 h4b)
 0x00821a20 function SetByte_012fb8fb # cdecl(v): byte 0x012fb8fb = v; name ours
@@ -10755,6 +10757,7 @@
 0x00821d50 function Sg_SetthDispEnable        # fh v3:bsim1.00 0x00821e70
 0x00821d60 function Sg_SyncCutScene              # layout+callees: sorts between Sg_SetthDispEnable and achievementUnlockAchievement, and its named callees match the Switch 0x710042caa0 Sg_SyncCutScene's (similarity 1.00: iSyncGetData); symbols from Fahrenheit's server export
 0x00821e30 function Sg_ToggleTkAnti           # (): byte 0x012fbbb7 = (it - 1) & 1 (flips Sg_EnableTkAnti's switch); WMainProc's key handler
+0x00821e40 function Sg_ToggleResource9_00821e40 # cdecl() -> 1 - (i8)[0x012fbbb9] after it flips ((b - 1) & 1) and Sg_SetResource9_0083ff00(it); from WMainProc; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x00821e80 function Sg_FrameSync # cdecl(f32 dt) -> Sg_EffectReadPoll's eax: from Sg_MainLoop each frame (name ours): setFramSync; dt capped at 0.3 (f32 0x00b3eb44), due = (f32 0x012fb7f8 + dt) x 60; unless g_VoiceHold: g_SyncFrameIndex 0, Sg_SyncCutScene; with g_SyncOn 1 the sync clock (graphicGetTimeInMicroseconds edx:eax, less start 0x012fb818 and paused 0x012fb7e8 + pending 0x00ccc868, u64 to f32 / 1000 into 0x012fb8a8): restart when 0x00c494d4 is 1, behind the last 0x012fb8a4 it steps (hold and index up, last = step 0x012fb8ac, Sg_SyncCutScene) while rate 0x012fb8b0 < lag and the sync stays on, ahead by >= 0.1 ms it spins (10000-count loops) re-reading the clock; off: due < 2 or no Sg_CanSpeedUp gives hold 1 and both remainders 0, else remainder (due - ftol(due))/60, hold ftol((0x012fb7fc + dt) x 30) and its fraction / 30 into 0x012fb7fc; then g_SgVCount/0x012fb7f4 += 2 unless g_MovieFading/g_PauseOn/0x0134082c or the save screen is open, TkScanControler, Gu_VSyncMain in debug, Sg_EffectReadPoll(dt); ported (ffx_sg::state, main round 17)
 0x00822250 function Sg_EffectReadPoll         # ours: (), from 0x00821e80 every frame: the battle effect read (counter 0x00c421e8, preloaded 0x012fb8b8) and the event effect read (0x00c421e4, 0x012fb8bc) each count a frame while >= 0; no async magic load: complete now; else wait for PRX state 3 (0x006793d0), PRX error > 0: MsEffectReadError (2: dbgPrintf no kernel memory), !IsLoadTexture: MsEffectReadStatInit and end; async 1 completes a preloaded file first; ends when 0x006420d0 says loaded; ended: counter -1, preloaded 0; ported (ffx_sg::state, main round 16)
 0x00822380 function achievementUnlockAchievement # fh call.cs cdecl; ported ffx_sg::m5main_dbg (m5 main b1): cdecl(id): SaveDataIsSaveEnabled, then a tail jump to SaveDataUnlockAchievement(id)
@@ -10768,7 +10771,7 @@
 0x00822620 function recallSceneEffect2        # fh v3:exact 0x008226b0
 0x00822720 function setFramSync                  # layout+callees: sorts between recallSceneEffect2 and trophyCheckDefeatMonster, and its named callees match the Switch 0x710042cbd0 setFramSync's (similarity 1.00: MagicFile_GetMagicId, MsBattleCheck, getScenerioFlag); symbols from Fahrenheit's server export
 0x00822750 function TkClearVsyncHandler_thunk_00822750 # jmp TkClearVsyncHandler (5 bytes; FFXApplication_exitApplication's); name ours; ported ffx_sg::m5main_loop (m5 main b2)
-0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0
+0x00822760 function trophyCheckDefeatMonster  # fh v3:exact 0x008227f0; cdecl(monster): achievementUnlockAchievement for (0x114, 0x1f), (0x158, 0x1e), (0x82, 0xa), (0xb0, 0x20), (0x83, 0xb) (a table in its frame); eax junk; ported ffx_sg::m5main_mem (m5 main r2)
 0x00822810 function trophyUnlockTrophy           # layout+callees: sorts between trophyCheckDefeatMonster and updateFFX, and its named callees match the Switch 0x710042de60 trophyUnlockTrophy's (similarity 1.00: SaveDataIsSaveEnabled, SaveDataUnlockTrophy); symbols from Fahrenheit's server export
 0x00822840 function updateFFX                 # fh v3:exact 0x008228d0; ported ffx_sg::m5main_loop (m5 main b2): cdecl(dt f32): input/dyn-geo/fill/delegation steps and Sg_MainLoop while g_VoiceHold; then its argument slot = 0 and a tail jump to JobSchedule_pppPart_fillBuffer_Kick with that 0
 0x00822890 function Sg_ClothRodMaxPin         # cloth rod constraint kind 1 of the cloth step 0x00822de0: (rods, n, points) 12-byte rods {i16 a, i16 b, f32 len, f32 lim}; when |b - a|^2 > lim, b = a + d * len / |d|; name ours; ported (ffx_sg::vec::cloth_rods)
@@ -11012,6 +11015,8 @@
 0x0082cba0 function Sg_FadeInW                # fh v3:bsim1.00+call.cs 0x0082cc20 cdecl
 0x0082cbc0 function Sg_FadeOut                # fh v3:bsim1.00 0x0082cc40
 0x0082cbe0 function Sg_FadeOutW               # fh v3:bsim1.00 0x0082cc60
+0x0082cc00 function ClearHalf_0130074c_0082cc00 # cdecl() -> 0: u16 [0x0130074c] = 0; data ref 0x00c88e44 (Native_400b); name ours; ported ffx_sg::m5main_mem (m5 main r2)
+0x0082cc10 function GetHalf_0130074c_0082cc10 # cdecl() -> (i16)[0x0130074c]; data ref 0x00c88e5c (Native_FadeWait_Poll); name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0082cc20 function Sg_FilterAdd              # fh v3:exact 0x0082cca0
 0x0082cc70 function Sg_FilterReset            # fh v3:bsim1.00 0x0082ccf0
 0x0082cc80 function Sg_FilterSub              # fh v3:exact 0x0082cd00
@@ -11035,12 +11040,13 @@
 0x0082d820 function Sg_GetExecStep            # () -> i8 0x013007b3 (set when the debug pad steps the frame count below 0); called by Sg_GetCurExecFrames, Switch name order
 0x0082d830 function Sg_GetIgnoreID            # () -> 0x023c44b4; Fahrenheit Switch BSim 1.00 0x7100427730
 0x0082d840 function Sg_GetLRButtonMode        # fh v3:bsim1.00 0x0082d8c0
-0x0082d850 function Sg_GetCameraFollow_0082d850 # () -> bit 1 of g_CameraFollow 0x00c496d5 (movsx, & 2, >> 1): the getter of Sg_SetCameraFollow (0x0082dab0) bit; native 0x4031 jumps to it; name ours
+0x0082d850 function Sg_GetCameraFollow_0082d850 # () -> bit 1 of g_CameraFollow 0x00c496d5 (movsx, & 2, >> 1): the getter of Sg_SetCameraFollow (0x0082dab0) bit; native 0x4031 jumps to it; name ours; ported ffx_sg::m5main_mem (m5 main r2): ((i8)[0x00c496d5] & 2) >> 1
 0x0082d860 function Sg_GetPlayer              # fh v3:bsim1.00 0x0082d8e0
 0x0082d870 function Sg_GetPlayerControlEnable    # layout: alphabetical run between Sg_GetPlayer and Sg_GetPlayerPos (1 unnamed in the gap); Switch 0x7100427b20 Sg_GetPlayerControlEnable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
 0x0082d8d0 function Sg_PlayerInitDefault      # (): Sg_PlayerInitAll, then Sg_PlayerSetSpeed(1, 16), (2, 38), (0x12, 20) from .rdata; caller Sg_EventjumpInit; name ours; ported (ffx_sg::state)
 0x0082d910 function Sg_PlayerInitAll          # fh v3:bsim1.00 0x0082d990
+0x0082d930 function Sg_CameraYawStore_0082d930 # cdecl(): f32 [0x0130079c] = Sg_CameraGetYaw() (ST0), [0x01300780] = 0.0; data ref 0x00c89184 (Native_403f); name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0082d950 function Sg_PlayerSetControlAngle   # ours (sorts between Sg_PlayerInitAll and Sg_PlayerSetDirFix as the Switch player file's names): cdecl(f32 deg): g_PlayerCameraYaw = f32 Sg_CameraGetYaw() (ST0), g_PlayerDirOffset = f32(Angle_Wrap(f32(deg * 3.141592 / 180)) + g_PlayerStickDir); caller Native_SetControlAngle; ported (ffx_sg::player, main round 16)
 0x0082d990 function Sg_PlayerSetDirFix        # (on, degrees): byte 0x013007c4, f32 0x013007c8 = Angle_Wrap(deg * pi / 180), read by Sg_ControlPlayer; Switch name by position (Player functions) and arguments
 0x0082d9d0 function Sg_PlayerSetDiving           # layout: the two unnamed functions after Sg_PlayerSetDirFix take the Switch player file's names sorting there: Sg_PlayerSetDiving (12 bytes; ours 13, stores byte 0x013007c5) and Sg_PlayerSetSpeed (72; ours 70)
@@ -11128,7 +11134,7 @@
 0x00831940 function Sg_GuiSetTextureAnim      # (v): byte 0x013007eb = v; partner of Sg_GuiGetTextureAnim
 0x00831950 function Sg_PLightAllocate         # fh v3:exact 0x008319d0
 0x008319b0 function Sg_PLightDefine           # fh v3:exact 0x00831a30
-0x00831a30 function Sg_PLightDispose_thunk    # g_MagicImports slot 402 (3 overlays), after Sg_PLightDefine: jmp Sg_PLightDispose; hidden from the dump
+0x00831a30 function Sg_PLightDispose_thunk    # g_MagicImports slot 402 (3 overlays), after Sg_PLightDefine: jmp Sg_PLightDispose; hidden from the dump; ported ffx_sg::m5main_mem (m5 main r2): jmp Sg_PLightDispose
 0x00831a40 function Sg_PLightGetAttenuation   # fh v3:bsim1.00 0x00831ac0
 0x00831a60 function Sg_PLightGetColor         # fh v3:exact 0x00831ae0
 0x00831ad0 function Sg_PLightGetEnable        # (i) -> i8 enabled (+0x28) of point light i, 0 past the last (docs/formats/main.md)
@@ -11353,12 +11359,13 @@
 0x0083a270 function Sg_Capture                # fh v3:exact 0x0083a2f0; cdecl() -> 0/1: with 0x01301804 set, sprintf of the capture name into ebp-0x204 (0x200), two host mkdir commands once (0x00c497d4) with a user name, then Sg_CaptureToFile every frame (0x01301810) or when the skip count 0x01301808 runs out (0x01301804 one less); file number 0x01301814; ported ffx_sg::m5main_dbg (m5 main b1)
 0x0083a470 function Sg_CaptureEnable          # fh v3:exact 0x0083a4f0
 0x0083a4f0 function Sg_CaptureEnable_Kari     # (mode, on): with on, a capture in mode hiding the GUI; Switch name (CaptureEnable, _Kari, _KariOn in this order)
+0x0083a570 function Sg_CaptureClear_0083a570 # cdecl(): [0x01301804] = 0 (the capture's frames left); native table 0x00c52e44; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083a580 function Sg_CaptureEnable_KariOn   # (mode): a capture in mode, hiding the GUI, flag +0xc set; Switch name
 0x0083a620 function Sg_CaptureGetGuiHide      # fh v3:exact 0x0083a6a0
 0x0083a640 function Sg_CaptureGetSelect       # () -> i8 0x0130181c; Fahrenheit Switch BSim 1.00 0x7100434760
-0x0083a650 function Sg_CaptureSetFilter          # layout: alphabetical run between Sg_CaptureGetSelect and Sg_CaptureSetGui (1 unnamed in the gap); Switch 0x7100434790 Sg_CaptureSetFilter is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0083a650 function Sg_CaptureSetFilter          # layout: alphabetical run between Sg_CaptureGetSelect and Sg_CaptureSetGui (1 unnamed in the gap); Switch 0x7100434790 Sg_CaptureSetFilter is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(on): byte 0x00c497d3 (blend fields) = on (al = on, eax high bytes the caller's); ported ffx_sg::m5main_mem (m5 main r2)
 0x0083a660 function Sg_CaptureSetGui          # (v): byte 0x0130181d, which Sg_CaptureEnable turns into the GUI-hide word (1 - v & 1); Switch name
-0x0083a670 function Sg_CaptureSetMode            # layout: alphabetical run between Sg_CaptureSetGui and Sg_CaptureSetSelect (1 unnamed in the gap); Switch 0x7100434740 Sg_CaptureSetMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0083a670 function Sg_CaptureSetMode            # layout: alphabetical run between Sg_CaptureSetGui and Sg_CaptureSetSelect (1 unnamed in the gap); Switch 0x7100434740 Sg_CaptureSetMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(on): byte 0x00c497d2 (interlaced) = on (al = on); ported ffx_sg::m5main_mem (m5 main r2)
 0x0083a680 function Sg_CaptureSetSelect       # (v): byte 0x0130181c = v; partner of Sg_CaptureGetSelect
 0x0083a690 function Sg_CaptureToFile          # fh v3:exact 0x0083a710; cdecl(name) -> the last user_free's eax: host0:<name> opened 0x602, both frame buffers stored (0x01301820/80, base 0/0xd00 by g_SgFrame bit 0) into two 0xd0000 heap buffers, BMP header 0x00c4979c (height 0x1a0 at 0x00c497b2), 0x9c000 bytes of 24-bit rows bottom-up: line-doubled from 0xd0 lines unless 0x00c497d2, else 0x1a0 lines blended with the one below when 0x00c497d3 (the last read is one line past the buffer); chmod 777 through SystemOnHost; ported ffx_sg::m5main_dbg2 (m5 main r2)
 0x0083a9a0 function Sg_CaptureToFileZ         # fh switch:cg4 0x7100434b80
@@ -11390,7 +11397,7 @@
 0x0083b960 function Sg_MemCheckMCB               # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'code=-1 mcb=%x < top=%x\\n'; Switch 0x71004303f0 Sg_MemCheckMCB (symbols from Fahrenheit's server export)
 0x0083ba50 function Sg_MemCheckPtr               # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'code=-10 ptr=%x < top=%x\\n'; Switch 0x7100430550 Sg_MemCheckPtr (symbols from Fahrenheit's server export)
 0x0083bab0 function Sg_MemClearStr            # (p): empties the block's debug name slot (0x05fb0000 + id * 32) and drops the id (u16 at p-6); Switch name
-0x0083baf0 function Sg_MemCreateFree             # layout: alphabetical run between Sg_MemClearStr and Sg_MemDump (1 unnamed in the gap); Switch 0x7100431040 Sg_MemCreateFree is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0083baf0 function Sg_MemCreateFree             # layout: alphabetical run between Sg_MemClearStr and Sg_MemDump (1 unnamed in the gap); Switch 0x7100431040 Sg_MemCreateFree is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(heap, block, prev, next) -> heap * 3 (lea after the calls): block zeroed with heap bits 27..28, linked, Sg_MemSetFree, Sg_MemMergeFree_0083c5b0, g_SgMemHeaps[heap] byte 0 = 0; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083bb50 function Sg_MemDump                # fh v3:exact 0x0083bbd0
 0x0083bb90 function Sg_MemDumpFile               # layout: alphabetical run between Sg_MemDump and Sg_MemDumpMCB (1 unnamed in the gap); Switch 0x7100431160 Sg_MemDumpFile is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083bbc0 function Sg_MemDumpMCB             # fh v3:exact 0x0083bc40
@@ -11401,10 +11408,11 @@
 0x0083c050 function Sg_MemGetSize             # fh v3:exact 0x0083c0d0
 0x0083c070 function Sg_MemGetStr              # (p) -> the block's debug name slot, "" without one or outside debug builds; Switch name
 0x0083c0b0 function Sg_MemGetSum              # (header) -> 16-bit sum of the block's data halfwords (AX); Switch name
-0x0083c260 function Sg_MemInit                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'heap=%x-%x\\n'; Switch 0x71004301f0 Sg_MemInit (symbols from Fahrenheit's server export)
+0x0083c200 function Sg_MemSetup_0083c200 # cdecl() -> Sg_MemSetMoveHeapStartAddr's eax: bytes 0x01301969/81 and 0x01301964 cleared, Sg_MemSetCheck(1), Sg_MemSetFast(0), heap 0 over user_aligned_malloc(0x1100000, 0x10) (kept at 0x01301960); name ours; ported ffx_sg::m5main_mem (m5 main r2)
+0x0083c260 function Sg_MemInit                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'heap=%x-%x\\n'; Switch 0x71004301f0 Sg_MemInit (symbols from Fahrenheit's server export); cdecl(id, start, end) -> the first block (start & ~3): end & ~3, end block at end - 0x10 (state 0xf, prev the first), the heap record (+4 id, +8 size, +0xc first, +0x10 end block, +0x14 first, u16 +0 = 0x100), heap bits (id & 3) << 27; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c320 function Sg_MemIsFree              # (p) -> 1 when the block's owner nibble (+0xc of the header) is 0; Switch name (28 bytes there)
-0x0083c350 function Sg_MemMoveWork            # switch: called by Ch_MemMoveEventMgrp before Ch_MgrpMove (cg_switch.calls); (&ptr, &moved): moves the heap block *ptr points at (header at -0x10, heap 0x013019b8) to a free block lower down or into the free block before it (memmove), updates *ptr, adds its size - 0x10 to *moved; returns new - old, 0 when it did not move
-0x0083c480 function Sg_MemRealloc             # fh v3:bsim1.00 0x0083c500
+0x0083c350 function Sg_MemMoveWork            # switch: called by Ch_MemMoveEventMgrp before Ch_MgrpMove (cg_switch.calls); (&ptr, &moved): moves the heap block *ptr points at (header at -0x10, heap 0x013019b8) to a free block lower down or into the free block before it (memmove), updates *ptr, adds its size - 0x10 to *moved; returns new - old, 0 when it did not move; ported ffx_sg::m5main_mem (m5 main r2): the search from [0x013019b8] stops at the block's previous by a signed address compare and needs a free block larger (unsigned) than the moved one; memmove through the CRT slot 0x00b0c34c
+0x0083c480 function Sg_MemRealloc             # fh v3:bsim1.00 0x0083c500; cdecl(heap, kind, p, size) -> user_realloc(p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c4a0 function Sg_MemSetAlign            # fh v3:exact 0x0083c520
 0x0083c4d0 function Sg_MemSetCheck            # fh v3:bsim1.00 0x0083c550
 0x0083c4e0 function Sg_MemSetCurrentAddr      # fh v3:exact 0x0083c560
@@ -11414,6 +11422,7 @@
 0x0083c560 function Sg_MemSetRtAddr           # (a): 0x013019b0 = ((a - 8) >> 2) & 0x7fffff; called by Sg_MemSetCurrentAddr; Switch name (24 bytes there too)
 0x0083c580 function Sg_MemSetStr              # fh v3:bsim1.00 0x0083c600
 0x0083c590 function Sg_MemSetType             # fh v3:bsim1.00 0x0083c610
+0x0083c5b0 function Sg_MemMergeFree_0083c5b0 # cdecl(block) -> the merged block (or block when in use): walks back over free previous blocks, absorbs the free ones after, relinks next's prev; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c600 function Sg_MemCheckMCBerr            # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'the MCB broken maybe.code=%d\\n'; Switch 0x71004305d0 _Sg_MemCheckMCBerr (symbols from Fahrenheit's server export)
 0x0083c630 function Sg_MemDump_0083c630       # fh v3:exact 0x0083c6b0 _Sg_MemDump
 0x0083c6a0 function Ch_MemRelinkBack         # ours: (heap) block list from +0xc: free blocks (kind 0) absorb free successors, each next's previous (+4) set; heap byte 0 cleared
@@ -11480,18 +11489,19 @@
 0x0083ea00 function Sg_IdSetPtr               # fh v3:exact 0x0083ea00
 0x0083eb30 function Sg_ChrSortByZ             # (n): selection sort of the first n of g_SgPushChrs by chr +0x14 (z), the last of equal minimums swapping in; caller 0x0083d3b0 (the push-apart pass, before its pair loop); name ours; ported (ffx_sg::state)
 0x0083ecd0 function Sg_ChrPushApart           # (a, b, reach, dist): pushes two chrs apart by reach - dist in x-z, shared by their +0x500 weights (both <0: by Sg_VectorGetLengthXZ from their anchors); +0x4c/+0x54 step, +0x194 bit 5; caller 0x0083d3b0
-0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010
-0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00
-0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010; cdecl(p, size) -> Sg_MemRealloc(0, 6, p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
+0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00; cdecl(p, size) -> Sg_MemRealloc(1, 6, p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
+0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(s) -> a copy from user_malloc_thunk_0083f100(strlen + 1); ported ffx_sg::m5main_mem (m5 main r2)
 0x0083f090 function Sg_FreeA                  # fh v3:bsim1.00 0x0083f090
 0x0083f0a0 function Sg_MallocA                # fh v3:bsim1.00 0x0083f0a0
 0x0083f0c0 function virtuos_realloc           # fh switch:bsim1.00 0x7100431a80
+0x0083f100 function user_malloc_thunk_0083f100 # cdecl(size): empty frame, jmp user_malloc; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083f130 function Sg_CameraPutRects         # cdecl() -> eax: MsCameraGet(6, 0, 0), then MsCameraSetRect(cam, 0, 0x00c4ded0 the camera ref point) and MsCameraSetRect(cam, 1, 0x00c4dec0 the camera position), the last eax returned; callers Sg_MainLoop, Sg_CameraSetPlayer; name ours; ported in ffx_sg::camera (main round 15)
 0x0083f160 function Sg_CalcScreenMatrix       # fh v3:exact 0x0083f160
 0x0083f1c0 function Sg_CalcViewClipMatrix     # (m, wide): unit matrix, m[0][0] and m[1][1] = 1/(2 extent/depth) scaled, m[2][2], m[3][2] fixed; Switch name order after Sg_CalcScreenMatrix
 0x0083f260 function Sg_CameraGetPos           # fh switch:bsim1.00 0x710042a480
 0x0083f2a0 function Sg_CameraGetRef           # (&v) -> 0x00c4ded0 (the reference point, copied to v); Switch name beside Sg_CameraGetPos
-0x0083f2d0 function Sg_CameraGetYaw            # jmp MsCameraGetYaw (0x007bcf20): the camera yaw in ST0, for Sg_ControlPlayer (0x0082d180); a thunk outside functions.tsv; name ours
+0x0083f2d0 function Sg_CameraGetYaw            # jmp MsCameraGetYaw (0x007bcf20): the camera yaw in ST0, for Sg_ControlPlayer (0x0082d180); a thunk outside functions.tsv; name ours; ported ffx_sg::m5main_mem (m5 main r2): jmp MsCameraGetYaw (ST0)
 0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0; (): distance 0x01301bb4 eases 1/8 toward 0x01301bb8; reference 0x00c4ded0 = player pos (0 without) - 10 in y + offset 0x00c4dee0; yaw 0x00c4def0 held to +-pi/2, distance >= 1; position 0x00c4dec0 = ref - dist (sin p cos y, sin y, cos p cos y) (CRT sin/cos), then Sg_CameraPutRects (eax); Ch_GetFieldMode(player) result unused; ported (ffx_sg::state, main round 16)
 0x0083f4b0 function Sg_ControlCamera             # layout: alphabetical run between Sg_CameraSetPlayer and Sg_ControlMouseCamera (1 unnamed in the gap); Switch 0x710042a6d0 Sg_ControlCamera is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083f6f0 function Sg_ControlMouseCamera     # fh v3:bsim1.00 0x0083f6f0
@@ -11509,6 +11519,7 @@
 0x0083fd60 function Sg_SaveVramResource       # fh v3:exact 0x0083fd60
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
 0x0083fe60 function Sg_SetResourceSTR         # fh v3:exact 0x0083fe60
+0x0083ff00 function Sg_SetResource9_0083ff00 # cdecl(on) -> Sg_SetResource(9, 1 - on)'s eax; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083ffe0 function Cache_CheckYet            # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); was ChrData_State
 0x00840030 function Cache_Clear               # fh v3:exact 0x00840030; cdecl(): every live entry not in use: +0x24 = 1 while unread, else freed with its render data (models unless Cache_IsPersistentChr, user_free_thunk +0x18/+0x1c, Cache_FreeClothVertexBuff on +0x20, Cache_FreeEntry); tail jmp Cache_Empty; ported (render r23, cache::bridge::clear)
 0x00840120 function Cache_ClearCheck             # layout: alphabetical run between Cache_Clear and Cache_Dispose (2 unnamed in the gap); Switch 0x71004361b0 Cache_ClearCheck is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11823,12 +11834,14 @@
 0x0084eb10 function Light_SeveralStoresSetTableConstantsArgumentsAddresses_0084eb10 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c20)] = a1; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c24)] = a2; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c28)] = a3; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c30)] = a4; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c34)] = a5; return a5; callers: Light_Set; name ours
 0x0084eb60 function Angle_Wrap_0084eb60       # the same code as Angle_Wrap; a copy
 0x0084ede0 function SystemOnHost              # fh v3:exact 0x0084ede0; cdecl(command, out) -> i32: DECI2 "EH" request in the uncached mirror (| 0x20000000) of 0x01303d40, reply from 0x01313d40 after spinning on 0x01303d14; faults on the PC (outside the image) as the original; ported ffx_sg::m5main_dbg (m5 main b1)
+0x0084f1c0 function Sg_ReadWholeFile_0084f1c0 # cdecl(name, &size) -> buffer: sceOpen(name, 1), sceLseek end/start, user_malloc(size + 3 rounded to 4 toward zero, cdq), sceRead, sceClose, FlushCache(0) around; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0084f270 function Sg_SelectMainMenu         # fh v3:exact 0x0084f270
 0x0084f320 function Sg_SelectMainMenu2        # fh switch:bsim1.00 0x7100438600
 0x0084f340 function WCameParaProc                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'CamePara'; Switch 0x7100438090 WCameParaProc (symbols from Fahrenheit's server export)
 0x0084f490 function WFukaProc                    # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'ANM:%d\\n'; Switch 0x7100437fa0 WFukaProc (symbols from Fahrenheit's server export)
 0x0084f550 function WMainProc                 # fh v3:exact 0x0084f550
 0x008504d0 function WTestProc                    # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'TestText 12345678\\n'; Switch 0x7100437eb0 WTestProc (symbols from Fahrenheit's server export)
+0x00850590 function sg_split_lines_00850590 # cdecl(text, out, filter) -> lines kept: in-place split at LF (CR to 0, scan goes on), each line strcpy'd to ebp-0x84 (0x80, no bound) and SgStrdupD'd; with filter only lines whose strchr '.' equals 0x00b5abcc, cut there; reads one byte past a final unterminated line's 0; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x00850820 function sg_AddY                   # fh v3:exact 0x00850820
 0x00850830 function sg_GetY                   # fh v3:bsim1.00 0x00850830
 0x00850840 function sg_SetY                      # layout: alphabetical run between sg_GetY and sg_addButton (1 unnamed in the gap); Switch 0x7100438350 sg_SetY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11836,7 +11849,7 @@
 0x008508a0 function sg_addButtonS             # fh v3:bsim1.00 0x008508a0
 0x008508f0 function sg_addStatic              # fh v3:exact 0x008508f0
 0x00850940 function sg_mainmenu_mapname       # fh v3:exact 0x00850940
-0x008509e0 function sg_make_filelist          # fh v3:exact 0x008509e0
+0x008509e0 function sg_make_filelist          # fh v3:exact 0x008509e0; cdecl(list, path, filter) -> user_free's eax: 64 KB text from Sg_ReadWholeFile_0084f1c0(0x00b5b004) when size < 0x10000 (signed), host probes, old list freed, array of LF-count words zeroed, list[0] = sg_split_lines_00850590; ported ffx_sg::m5main_mem (m5 main r2)
 0x008510b0 function Send_DebugFont            # fh v3:bsim1.00 0x008510b0; ported ffx_sg::m5main_dbg (m5 main b1): Load1TIM(0x01325170)
 0x008510c0 function SetPrintfFunc             # fh switch:bsim1.00 0x7100449f80
 0x008510e0 function SgPrint                      # layout+callees: sorts between SetPrintfFunc and Sg_SetDebugTEX_0, and its named callees match the Switch 0x710044a680 SgPrint's (similarity 1.00: sg_vfprintf); symbols from Fahrenheit's server export

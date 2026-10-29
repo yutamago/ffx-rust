@@ -2361,3 +2361,429 @@ fn id_draw_main_matches_the_original() {
         }
     });
 }
+
+// ---- round 2: the Sg_Mem heaps, the allocation wrappers, small getters ----
+
+use ffx_sg::m5main_mem::bridge as sgm;
+
+/// `strchr(s, c)` in emulated code.
+const STRCHR_CODE: [u8; 24] = [
+    0x8b, 0x44, 0x24, 0x04, // mov eax, [esp + 4]
+    0x8a, 0x54, 0x24, 0x08, // mov dl, [esp + 8]
+    0x8a, 0x08, // mov cl, [eax]
+    0x38, 0xd1, // cmp cl, dl
+    0x74, 0x09, // je done
+    0x84, 0xc9, // test cl, cl
+    0x74, 0x03, // je null
+    0x40, // inc eax
+    0xeb, 0xf3, // jmp loop
+    0x31, 0xc0, // null: xor eax, eax
+    0xc3, // done: ret
+];
+
+/// `memcpy(d, s, n)` / a downward `memmove` in emulated code (forward
+/// bytes).
+const COPY_CODE: [u8; 23] = [
+    0x56, 0x57, // push esi; push edi
+    0x8b, 0x7c, 0x24, 0x0c, // mov edi, [esp + 0xc]
+    0x8b, 0x74, 0x24, 0x10, // mov esi, [esp + 0x10]
+    0x8b, 0x4c, 0x24, 0x14, // mov ecx, [esp + 0x14]
+    0xf3, 0xa4, // rep movsb
+    0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp + 0xc]
+    0x5f, 0x5e, // pop edi; pop esi
+    0xc3, // ret
+];
+
+#[test]
+fn sg_alloc_wrappers_match_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        t.stub(sgm::USER_REALLOC, false, 2, 0, 0x71);
+        t.check(
+            "Sg_MemRealloc",
+            0x0083_c480,
+            Conv::Cdecl,
+            &[1, 2, 0x1234, 0x40],
+            |m| Out::U32(sgm::mem_realloc(m, 0x1234, 0x40)),
+        );
+        for (heap, addr) in [(0, 0x0083_f010), (1, 0x0083_f030)] {
+            t.reset();
+            t.stub(sgm::MEM_REALLOC, false, 4, 0, 0x72 + heap);
+            t.check("SgRealloc", addr, Conv::Cdecl, &[0x5678, 0x20], |m| {
+                Out::U32(sgm::sg_realloc(m, heap, 0x5678, 0x20))
+            });
+        }
+        t.reset();
+        t.stub(sgm::USER_MALLOC, false, 1, 0, 0x73);
+        t.check("0x0083f100", 0x0083_f100, Conv::Cdecl, &[0x30], |m| {
+            Out::U32(sgm::malloc_thunk(m, 0x30))
+        });
+        for s in [&b"\0"[..], b"abc\0", b"a longer string\0"] {
+            t.reset();
+            let out = t.zeros(0x40);
+            t.stub(sgm::MALLOC_THUNK, false, 1, 0, out);
+            let src = t.alloc(s);
+            t.check("SgStrdupD", 0x0083_f050, Conv::Cdecl, &[src], |m| {
+                Out::U32(sgm::strdup(m, src))
+            });
+        }
+        for size in [0, 5, 8, 0xffff_fffb, 0x100] {
+            for give in [false, true] {
+                t.reset();
+                let buf = t.zeros(0x10);
+                t.stub(sgm::SCE_OPEN, false, 2, 0, 9);
+                t.stub_ex(sgm::SCE_LSEEK, false, 3, 0, &Ret::Seq(vec![size, 0]), &[]);
+                t.stubs(&[
+                    (sgm::USER_MALLOC, 1, buf),
+                    (sgm::FLUSH_CACHE, 1, 0),
+                    (sgm::SCE_READ, 3, size),
+                    (sgm::SCE_CLOSE, 1, 0),
+                ]);
+                let out = if give { t.words(&[0x5555]) } else { 0 };
+                let name = t.alloc(b"f\0");
+                let what = format!("read whole file size {size:#x} out {give}");
+                t.check(&what, 0x0084_f1c0, Conv::Cdecl, &[name, out], |m| {
+                    Out::U32(sgm::read_whole_file(m, name, out))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn file_lists_match_the_original() {
+    Twins::each(|t| {
+        let ext_at = t.rebase(sgm::STR_EXTENSION);
+        let mut ext = Vec::new();
+        loop {
+            let c: u8 = Mem::read(&t.a, ext_at + ext.len() as u32);
+            if c == 0 {
+                break;
+            }
+            ext.push(c);
+        }
+        let with = |name: &str| {
+            let mut v = name.as_bytes().to_vec();
+            v.extend(&ext);
+            v
+        };
+        let mut texts: Vec<Vec<u8>> = Vec::new();
+        let mut a = with("a");
+        a.extend(b"\r\nb.txt\n");
+        a.extend(with("c.d"));
+        a.extend(b"\n\nlast");
+        texts.push(a);
+        texts.push(b"x\n".to_vec());
+        texts.push(with("only"));
+        texts.push(b"\r\r\n".to_vec());
+        for text in &texts {
+            for filter in [0, 1, 2] {
+                t.reset();
+                let mut buf = text.clone();
+                buf.extend([0, 0, 0, 0]);
+                let p = t.alloc(&buf);
+                let out = t.zeros(0x40);
+                let dups: Vec<u32> = (0..8).map(|k| 0x0d00 + k).collect();
+                t.stub_ex(sgm::STRDUP, false, 1, 0, &Ret::Seq(dups), &[]);
+                let f = t.code(&STRCHR_CODE);
+                let slot = t.rebase(sgm::STRCHR_IAT);
+                t.patch(slot, &f.to_le_bytes());
+                let what = format!(
+                    "split lines {:?} filter {filter}",
+                    String::from_utf8_lossy(text)
+                );
+                t.check_framed(
+                    &what,
+                    0x0085_0590,
+                    Conv::Cdecl,
+                    &[p, out, filter],
+                    sgm::SPLIT_FRAME,
+                    |m, ebp| Out::U32(sgm::split_lines(m, ebp, p, out, filter)),
+                );
+            }
+        }
+        let copy = t.code(&COPY_CODE);
+        for (data, size) in [(true, 6), (true, 0x1_0000), (false, 0), (true, 0)] {
+            for old in [0, 3] {
+                t.reset();
+                let text = t.alloc(&[0x41; 0x40]);
+                let arr = t.words(&[0x5a5a_5a5a; 0x10]);
+                t.stub_ex(
+                    sgm::USER_MALLOC,
+                    false,
+                    1,
+                    0,
+                    &Ret::Seq(vec![text, arr]),
+                    &[],
+                );
+                t.stubs(&[
+                    (sgm::DBG_PRINTF, 2, 0),
+                    (sgm::SCE_OPEN, 2, 0x44),
+                    (sgm::USER_FREE, 1, 0x45),
+                    (sgm::SPLIT_LINES, 3, 7),
+                ]);
+                t.stub_import(sgm::SPRINTF_IAT, 4, 0, 1);
+                t.jump(sgm::MEMCPY, copy);
+                let file = t.alloc(b"one\ntwo\n\nthree\0");
+                let file = if data { file } else { 0 };
+                // mov eax, [esp + 8]; mov dword [eax], size
+                let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00];
+                extra.extend(u32::to_le_bytes(size));
+                t.stub_ex(sgm::READ_WHOLE_FILE, false, 2, 0, &Ret::Fixed(file), &extra);
+                let strings = t.words(&[0x0e00, 0, 0x0e02]);
+                let list = if old == 0 {
+                    t.words(&[9, 0, 0])
+                } else {
+                    t.words(&[9, old, strings])
+                };
+                let path = t.alloc(b"dir\0");
+                let what = format!("sg_make_filelist data {data} size {size:#x} old {old}");
+                t.check_framed(
+                    &what,
+                    0x0085_09e0,
+                    Conv::Cdecl,
+                    &[list, path, 1],
+                    sgm::FILELIST_FRAME,
+                    |m, ebp| Out::U32(sgm::make_filelist(m, ebp, list, path, 1)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn sqs_command_and_resource_toggles_match_the_original() {
+    Twins::each(|t| {
+        // below the limit, ending at it exactly, past it
+        for full in [0, 0x20, 0x10] {
+            for debug in [0u8, 1, 2] {
+                t.reset();
+                let q = t.zeros(0x100);
+                let at = if full != 0 {
+                    t.rebase(sgm::SQS_CMD_LIMIT) - full
+                } else {
+                    q
+                };
+                t.g32(sgm::SQS_CMD_NEXT, at);
+                t.g8(sgm::SQS_DEBUG_FLAGS, debug);
+                t.stub(sgm::DBG_PRINTF, false, 1, 0, 0);
+                let extra = set_word(t.rebase(sgm::SQS_CMD_NEXT), q + 0x40);
+                t.stub_ex(sgm::SQS_SEND, false, 0, 0, &Ret::Fixed(0x66), &extra);
+                let what = format!("sqs 0x3b full {full} debug {debug}");
+                t.check(&what, 0x0081_fc30, Conv::Cdecl, &[0x1234, 0x1ff], |m| {
+                    Out::U32(sgm::sqs_command_3b(m, 0x1234, 0x1ff))
+                });
+            }
+        }
+        for on in [0, 1, 5] {
+            t.reset();
+            t.stub(sgm::SET_RESOURCE, false, 2, 0, 0x31);
+            t.check("set resource 9", 0x0083_ff00, Conv::Cdecl, &[on], |m| {
+                Out::U32(sgm::set_resource9(m, on))
+            });
+        }
+        for b in [0u8, 1, 2, 0xff] {
+            t.reset();
+            t.g8(sgm::RESOURCE9_TOGGLE, b);
+            t.stub(sgm::SET_RESOURCE9, false, 1, 0, 0x32);
+            let what = format!("toggle resource 9 from {b}");
+            t.check(&what, 0x0082_1e40, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm::toggle_resource9(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn small_getters_and_setters_match_the_original() {
+    Twins::each(|t| {
+        for v in [0u32, 0x1234_8765, 0xffff_ffff] {
+            t.reset();
+            t.g32(sgm::WORD_012FBC3C, v);
+            t.g32(sgm::HALF_0130074C, v);
+            t.g8(sgm::CAMERA_FLAGS, v as u8);
+            t.check("0x00821740", 0x0082_1740, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm::get_012fbc3c(m))
+            });
+            t.check("0x0082cc10", 0x0082_cc10, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm::get_half_0130074c(m))
+            });
+            t.check("camera follow", 0x0082_d850, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm::get_camera_follow(m))
+            });
+            t.check("0x0082cc00", 0x0082_cc00, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm::clear_half_0130074c(m))
+            });
+            t.g32(sgm::CAPTURE_LEFT, v);
+            t.check("0x0083a570", 0x0083_a570, Conv::Cdecl, &[], |m| {
+                sgm::capture_clear(m);
+                Out::None
+            });
+            t.check("Sg_CaptureSetFilter", 0x0083_a650, Conv::Cdecl, &[v], |m| {
+                sgm::capture_set(m, sgm::CAPTURE_BLEND, v);
+                Out::None
+            });
+            t.check("Sg_CaptureSetMode", 0x0083_a670, Conv::Cdecl, &[v], |m| {
+                sgm::capture_set(m, sgm::CAPTURE_INTERLACED, v);
+                Out::None
+            });
+        }
+        for yaw in [0.5f32, -3.0, 1e-3] {
+            t.reset();
+            let cell = t.words(&[yaw.to_bits()]);
+            t.stub_ex(
+                sgm::MS_CAMERA_GET_YAW,
+                false,
+                0,
+                0,
+                &Ret::Fixed(0),
+                &fld(cell),
+            );
+            t.g32(sgm::YAW_ZERO, 0x1234);
+            t.check("0x0082d930", 0x0082_d930, Conv::Cdecl, &[], |m| {
+                sgm::store_camera_yaw(m);
+                Out::None
+            });
+            let addr = t.rebase(0x0083_f2d0);
+            let ra = t.a.call(addr, Conv::Cdecl, &[]).unwrap();
+            let r = sgm::camera_get_yaw(&mut G(&mut t.b));
+            assert!(ra.st0_is(r), "Sg_CameraGetYaw {yaw}: {:?} != {r}", ra.st0);
+            t.diff("Sg_CameraGetYaw");
+        }
+        t.reset();
+        t.stub(sgm::PLIGHT_DISPOSE, false, 0, 0, 0x88);
+        t.check("PLightDispose thunk", 0x0083_1a30, Conv::Cdecl, &[], |m| {
+            Out::U32(sgm::plight_dispose_thunk(m))
+        });
+        for monster in [0x114, 0x158, 0x82, 0xb0, 0x83, 0, 0x115] {
+            t.reset();
+            t.stub(sgm::UNLOCK_ACHIEVEMENT, false, 1, 0, 0x99);
+            let what = format!("trophyCheckDefeatMonster {monster:#x}");
+            t.check(&what, 0x0082_2760, Conv::Cdecl, &[monster], |m| {
+                sgm::trophy_check_defeat_monster(m, monster);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn mem_init_and_setup_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_c260);
+        for i in 0..24 {
+            t.reset();
+            let id = rng.below(8);
+            let area = t.words(&(0..0x80).map(|_| rng.next()).collect::<Vec<_>>());
+            let start = area + rng.below(8);
+            let end = area + 0x100 + rng.below(0x100);
+            t.stub(sgm::DBG_PRINTF, false, 3, 0, 0);
+            let what = format!("Sg_MemInit #{i} id {id}");
+            t.check(&what, 0x0083_c260, Conv::Cdecl, &[id, start, end], |m| {
+                Out::U32(sgm::mem_init(m, id, start, end))
+            });
+        }
+        t.reset();
+        let p = t.zeros(0x40);
+        t.stubs(&[
+            (sgm::SET_CHECK, 1, 0),
+            (sgm::SET_FAST, 1, 0),
+            (sgm::USER_ALIGNED_MALLOC, 2, p),
+            (sgm::MEM_INIT, 3, 0),
+            (sgm::SET_MOVE_START, 1, 0x5f),
+        ]);
+        t.check("Sg_MemSetup", 0x0083_c200, Conv::Cdecl, &[], |m| {
+            Out::U32(sgm::mem_setup(m))
+        });
+    });
+}
+
+/// A heap of `states.len()` blocks laid out back to back from `base`
+/// with `sizes` data bytes each, then the end block (state 0xf); the
+/// first block's previous is the end block. Returns the headers.
+fn build_heap(t: &mut Twins, rng: &mut Rng, states: &[u32], sizes: &[u32]) -> Vec<u32> {
+    let total: u32 = sizes.iter().map(|s| s + 0x10).sum::<u32>() + 0x10;
+    let fill: Vec<u32> = (0..total / 4).map(|_| rng.next()).collect();
+    let base = t.words(&fill);
+    let mut at = Vec::new();
+    let mut p = base;
+    for s in sizes {
+        at.push(p);
+        p += s + 0x10;
+    }
+    at.push(p);
+    let n = at.len();
+    for k in 0..n {
+        let next = if k + 1 < n { at[k + 1] } else { 0 };
+        let prev = if k == 0 { at[n - 1] } else { at[k - 1] };
+        let state = if k + 1 < n { states[k] } else { 0xf };
+        t.w32(at[k], next);
+        t.w32(at[k] + 4, prev);
+        t.w32(at[k] + 8, 0);
+        t.w32(at[k] + 0xc, state);
+    }
+    at
+}
+
+#[test]
+fn heap_blocks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_c5b0);
+        for i in 0..60 {
+            t.reset();
+            let n = 3 + rng.below(5) as usize;
+            let mut states: Vec<u32> = (0..n).map(|_| u32::from(!rng.chance(2))).collect();
+            states[0] = 1;
+            let sizes: Vec<u32> = (0..n).map(|_| 0x10 * (1 + rng.below(4))).collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            let b = at[rng.below(n as u32) as usize];
+            let what = format!("merge free #{i}");
+            t.check(&what, 0x0083_c5b0, Conv::Cdecl, &[b], |m| {
+                Out::U32(sgm::merge_free(m, b))
+            });
+        }
+        for i in 0..30 {
+            t.reset();
+            t.stub(sgm::SET_FREE, false, 1, 0, 0x11);
+            t.stub(sgm::MERGE_FREE, false, 1, 0, 0x12);
+            let blocks = t.words(&(0..0x30).map(|_| rng.next()).collect::<Vec<_>>());
+            let heap = rng.below(4);
+            let (block, prev, next) = (blocks + 0x40, blocks, blocks + 0x80);
+            let what = format!("Sg_MemCreateFree #{i}");
+            t.check(
+                &what,
+                0x0083_baf0,
+                Conv::Cdecl,
+                &[heap, block, prev, next],
+                |m| Out::U32(sgm::create_free(m, heap, block, prev, next)),
+            );
+        }
+        let copy = t.code(&COPY_CODE);
+        for i in 0..80 {
+            t.reset();
+            let slot = t.rebase(sgm::MEMMOVE_IAT);
+            t.patch(slot, &copy.to_le_bytes());
+            let n = 3 + rng.below(6) as usize;
+            let mut states: Vec<u32> = (0..n).map(|_| u32::from(!rng.chance(2))).collect();
+            states[0] = 1;
+            let target = 1 + rng.below(n as u32 - 1) as usize;
+            states[target] = 1;
+            let sizes: Vec<u32> = (0..n).map(|_| 0x10 * (1 + rng.below(4))).collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            let start = at[rng.below(target as u32) as usize];
+            t.g32(sgm::MOVE_START, if i % 9 == 0 { at[n] } else { start });
+            let data = if i % 13 == 0 { 0 } else { at[target] + 0x10 };
+            let pp = t.words(&[data]);
+            let moved = if i % 3 == 0 {
+                0
+            } else {
+                t.words(&[rng.below(0x100)])
+            };
+            let what =
+                format!("Sg_MemMoveWork #{i} target {target} states {states:?} sizes {sizes:x?}");
+            t.check(&what, 0x0083_c350, Conv::Cdecl, &[pp, moved], |m| {
+                Out::U32(sgm::move_work(m, pp, moved))
+            });
+        }
+    });
+}
