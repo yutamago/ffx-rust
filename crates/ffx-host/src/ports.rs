@@ -42,9 +42,37 @@ fn ms_check_range(_: &mut Exec, args: &Args) -> Ret {
     Ret::eax(ffx_kernel::bridge::ms_check_range(x, lo, hi).cast_unsigned())
 }
 
+/// `zlib_uncompress(dst, &dst_len, src, src_len)` (`0x00405e20`):
+/// `ffx_core::zlib`, as the hook's hand-written replacement; `*dst_len` is
+/// updated only on success. The loads' hot spot under Unicorn (every
+/// compressed block of `FFX_Data.vbf`).
+fn zlib_uncompress(e: &mut Exec, args: &Args) -> Ret {
+    let [dst, dst_len, src, src_len] = [0, 1, 2, 3].map(|i| args.arg(Conv::Cdecl, i));
+    let mut mem = e.mem();
+    let capacity: u32 = mem.read(dst_len);
+    let mut input = vec![0u8; src_len as usize];
+    mem.read_bytes(src, &mut input);
+    let mut out = vec![0u8; capacity as usize];
+    match ffx_core::zlib::uncompress(&mut out, &input) {
+        Ok(written) => {
+            mem.write_bytes(dst, &out[..written]);
+            mem.write(dst_len, u32::try_from(written).unwrap_or(u32::MAX));
+            Ret::eax(0)
+        }
+        Err(code) => Ret::eax(code.cast_unsigned()),
+    }
+}
+
 /// The hand-registered ports: address, `ffx.sym` name, convention, stack
 /// words, port.
-pub const HAND: [(u32, &str, Conv, usize, Port); 2] = [
+pub const HAND: [(u32, &str, Conv, usize, Port); 3] = [
+    (
+        0x0040_5e20,
+        "zlib_uncompress",
+        Conv::Cdecl,
+        4,
+        zlib_uncompress,
+    ),
     (
         0x0060_7d50,
         "Path_ToLowerAscii",
@@ -70,5 +98,6 @@ pub fn table() -> Table {
             },
         );
     }
+    crate::clock::register(&mut t);
     t
 }

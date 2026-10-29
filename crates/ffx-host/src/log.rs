@@ -25,3 +25,27 @@ pub fn bad_access(addr: u32, len: usize, write: bool) {
 pub fn bad_accesses() -> (u64, Vec<Access>) {
     BAD.lock().map(|b| b.clone()).unwrap_or_default()
 }
+
+/// Notes of the run (the clock's turns, the libraries' events), for the
+/// report: the first [`NOTES`] kept.
+static NOTE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// How many notes are kept.
+const NOTES: usize = 400;
+
+/// Adds a note (also to stderr with `FFX_HOST_NOTES=1`).
+pub fn note(line: &str) {
+    if std::env::var_os("FFX_HOST_NOTES").is_some() {
+        eprintln!("{line}");
+    }
+    if let Ok(mut n) = NOTE.lock()
+        && n.len() < NOTES
+    {
+        n.push(line.to_owned());
+    }
+}
+
+/// The notes so far.
+#[must_use]
+pub fn notes() -> Vec<String> {
+    NOTE.lock().map(|n| n.clone()).unwrap_or_default()
+}

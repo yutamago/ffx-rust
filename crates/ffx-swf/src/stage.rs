@@ -38,6 +38,9 @@ use ruffle_render_wgpu::wgpu;
 
 use crate::log::Arg;
 
+/// Ruffle's external value, for users of [`CallOut`] (`ffx-host`).
+pub use ruffle_core::external::Value as RuffleValue;
+
 /// The GPU device every stage shares.
 pub struct Gpu {
     descriptors: Arc<Descriptors>,

@@ -52,6 +52,8 @@ const STACK_SIZE: u32 = 0x0020_0000;
 const THREAD_STACK_SIZE: u32 = 0x0010_0000;
 /// The shared stub page: import stubs and data cells.
 const STUB_SIZE: u32 = 0x0001_0000;
+/// Where the trampolines start in the stub page (32 bytes each).
+const TRAMPOLINES: u32 = 0xc000;
 /// Where the executor's own regions start looking for room (above the
 /// image).
 const REGION_HINT: u32 = 0x0300_0000;
@@ -308,6 +310,16 @@ pub struct Shared {
     traps: RwLock<HashMap<u32, Trap>>,
     /// The D3D11 device and DXGI (`crate::gfx`), once created.
     pub gfx: crate::gfx::Slot,
+    /// Trampolines to the originals that ports wrap: address → trampoline
+    /// ([`Exec::call_original`]).
+    originals: HashMap<u32, u32>,
+    /// The virtual clock, the frame boundary and the turns
+    /// (`crate::clock`).
+    pub clock: crate::clock::Clock,
+    /// FMOD's imports on the Rust mixer (`crate::audio`).
+    pub audio: crate::audio::Audio,
+    /// Iggy's imports on `ffx-swf` (`crate::iggy`).
+    pub iggy: crate::iggy::Iggy,
 }
 
 impl std::fmt::Debug for Shared {
@@ -402,8 +414,13 @@ impl Shared {
             x87_watch: Vec::new(),
             traps: RwLock::new(HashMap::new()),
             gfx: crate::gfx::Slot::default(),
+            originals: HashMap::new(),
+            clock: crate::clock::Clock::default(),
+            audio: crate::audio::Audio::default(),
+            iggy: crate::iggy::Iggy::default(),
         };
         s.bind_imports(stubs_at);
+        s.build_trampolines(stubs_at + TRAMPOLINES);
         for addr in s.table.addresses().collect::<Vec<_>>() {
             if s.image.is_code(addr) {
                 s.arena.fill(addr, &[INT3]);
@@ -417,6 +434,35 @@ impl Shared {
             .spawn(move || watchdog(&weak))
             .map_err(Error::Io)?;
         Ok(s)
+    }
+
+    /// Copies each wrapped original's prologue (`Table::wrap`) into a
+    /// trampoline that jumps on into the original's body, before the
+    /// original's entry gets its `int3`. A prologue that doesn't match the
+    /// image leaves that original without a trampoline (its wrapper's
+    /// [`Exec::call_original`] fails).
+    fn build_trampolines(&mut self, mut at: u32) {
+        let mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        for (addr, prologue) in self.table.wrapped().collect::<Vec<_>>() {
+            let mut now = vec![0u8; prologue.len()];
+            ffx_bridge::Mem::read_bytes(&mem, addr, &mut now);
+            if now != prologue || prologue.len() > 24 {
+                crate::log::note(&format!(
+                    "no trampoline for {addr:#010x}: its code is {now:02x?}, not {prologue:02x?}"
+                ));
+                continue;
+            }
+            let mut code = prologue.to_vec();
+            let len = u32::try_from(prologue.len()).unwrap_or(0);
+            let from = at + len + 5;
+            code.push(0xe9);
+            code.extend_from_slice(&(addr + len).wrapping_sub(from).to_le_bytes());
+            self.arena.fill(at, &code);
+            self.originals.insert(addr, at);
+            at += 32;
+        }
     }
 
     /// Finds the x87 instructions `ffx_fpu` computes in `FFX.exe` and the
@@ -443,7 +489,7 @@ impl Shared {
     }
 
     /// Whether the run is ending or out of time.
-    fn overdue(&self) -> bool {
+    pub(crate) fn overdue(&self) -> bool {
         self.sync.stopping()
             || self
                 .deadline
@@ -1047,6 +1093,23 @@ impl Exec {
             }
             r => r,
         }
+    }
+
+    /// Calls the original a wrapping port replaced (`Table::wrap`), in
+    /// Unicorn, through its trampoline.
+    ///
+    /// # Errors
+    /// As [`Exec::call`]; an original without a trampoline is an
+    /// [`Error::Interrupt`] at its address.
+    pub fn call_original(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
+        let Some(&t) = self.shared.originals.get(&addr) else {
+            self.end(Stop::Failed(
+                format!("no trampoline for {addr:#010x}"),
+                addr,
+            ));
+            return Err(Error::Stopped);
+        };
+        self.call(t, conv, args)
     }
 
     /// [`Exec::call`] for a cdecl function of word arguments, returning

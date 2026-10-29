@@ -165,6 +165,10 @@ pub struct Entry {
 #[derive(Debug, Default, Clone)]
 pub struct Table {
     entries: BTreeMap<u32, Entry>,
+    /// Ports that wrap their original: address → the original's first
+    /// instructions (whole ones, position-independent), which the executor
+    /// copies into a trampoline ([`crate::exec::Exec::call_original`]).
+    wraps: BTreeMap<u32, &'static [u8]>,
 }
 
 impl Table {
@@ -177,6 +181,20 @@ impl Table {
     /// Registers `entry` at `addr`, replacing (and returning) an earlier one.
     pub fn register(&mut self, addr: u32, entry: Entry) -> Option<Entry> {
         self.entries.insert(addr, entry)
+    }
+
+    /// Registers `entry` at `addr` as a wrapper of the original there,
+    /// whose code starts with `prologue` (checked against the image when
+    /// the executor is built; the wrapper calls the original through
+    /// [`crate::exec::Exec::call_original`]).
+    pub fn wrap(&mut self, addr: u32, entry: Entry, prologue: &'static [u8]) -> Option<Entry> {
+        self.wraps.insert(addr, prologue);
+        self.entries.insert(addr, entry)
+    }
+
+    /// The wrapped originals: address and prologue.
+    pub fn wrapped(&self) -> impl Iterator<Item = (u32, &'static [u8])> + '_ {
+        self.wraps.iter().map(|(&a, &p)| (a, p))
     }
 
     /// The port at `addr`.

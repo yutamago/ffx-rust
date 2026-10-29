@@ -137,16 +137,151 @@ fn wsprintf(e: &mut Exec, args: &Args, wide: bool) -> Ret {
     Ret::eax(u32::try_from(out.len()).unwrap_or(0))
 }
 
-/// `IggyPlayerCreateFromMemory(data, size, config)`: a player handle (a
-/// zeroed block on the heap, opaque to the game), where the null Iggy
-/// stand-in's 0 makes `IggyMenu_ctor_00a288f0` keep a null player and
-/// fault in `SetFields_00a3dd00`. Until `ffx-swf` plays the movie.
-fn iggy_player(e: &mut Exec, _: &Args) -> Ret {
-    let p = e.alloc(0x100);
-    if p != 0 {
-        e.mem().write_bytes(p, &[0u8; 0x100]);
+/// `IDirectInput8A::EnumDevices(this, class, callback, ref, flags)`: the
+/// system mouse and keyboard every PC has (`DIDEVICEINSTANCEA`, 0x244
+/// bytes: `dwDevType` `+0x24` 0x12 mouse, 0x13 keyboard; the game's
+/// callback `0x00623330` makes its Phyre input devices from them), each
+/// handed to `callback(instance, ref)` (stdcall) while it answers
+/// `DIENUM_CONTINUE`. `class` 0 (all), 2 (pointers) or 3 (keyboards).
+pub fn dinput_enum_devices(e: &mut Exec, args: &Args) -> Ret {
+    let w = |i: usize| args.stack.get(i).copied().unwrap_or(0);
+    let (class, callback, user) = (w(1), w(2), w(3));
+    let inst = e.alloc(0x244);
+    if inst == 0 || callback == 0 {
+        return Ret::eax(0x8000_4005);
     }
-    Ret::eax(p)
+    // GUID_SysMouse / GUID_SysKeyboard: {6F1D2B60/61-D5A0-11CF-BFC7-444553540000}
+    let devices: [(u32, u32, u8, &[u8]); 2] = [
+        (2, 0x6f1d_2b60, 0x12, b"Mouse"),
+        (3, 0x6f1d_2b61, 0x13, b"Keyboard"),
+    ];
+    for (c, guid, kind, label) in devices {
+        if class != 0 && class != c {
+            continue;
+        }
+        let mut mem = e.mem();
+        mem.write_bytes(inst, &[0u8; 0x244]);
+        mem.write(inst, 0x244u32);
+        for at in [inst + 4, inst + 0x14] {
+            mem.write(at, guid);
+            mem.write(at + 4, 0x11cf_d5a0u32);
+            mem.write_bytes(at + 8, &[0xbf, 0xc7, 0x44, 0x45, 0x53, 0x54, 0x00, 0x00]);
+        }
+        mem.write(inst + 0x24, u32::from(kind) | (1 << 8));
+        mem.write_bytes(inst + 0x28, label);
+        mem.write_bytes(inst + 0x12c, label);
+        match e.call_stdcall(callback, &[inst, user]) {
+            Ok(1) => {}
+            _ => break,
+        }
+    }
+    e.release(inst);
+    Ret::eax(0)
+}
+
+/// `GetCursorPos(&pt)`: far outside the window, where the harness's
+/// background games keep the pointer the game reads (docs/harness.md, "The
+/// mouse in background games"), so no menu sees a hover.
+fn cursor_pos(e: &mut Exec, args: &Args) -> Ret {
+    e.mem().write(a(args, 0), [-32108i32, -32131]);
+    Ret::eax(1)
+}
+
+/// `GetWindowInfo(hwnd, &info)` / `GetClipCursor(&rect)`: the fake
+/// window, 1920 x 1080 at the origin (as `GetClientRect`).
+fn window_info(e: &mut Exec, args: &Args) -> Ret {
+    let info = a(args, 1);
+    let mut mem = e.mem();
+    mem.write_bytes(info + 4, &[0u8; 0x38]);
+    mem.write(info + 4, [0u32, 0, 1920, 1080]);
+    mem.write(info + 0x14, [0u32, 0, 1920, 1080]);
+    // WS_VISIBLE | WS_POPUP, active
+    mem.write(info + 0x24, 0x9000_0000u32);
+    mem.write(info + 0x2c, 1u32);
+    Ret::eax(1)
+}
+
+fn clip_cursor_rect(e: &mut Exec, args: &Args) -> Ret {
+    e.mem().write(a(args, 0), [0u32, 0, 1920, 1080]);
+    Ret::eax(1)
+}
+
+/// `FileTimeToSystemTime(&ft, &st)`: the calendar date of a FILETIME
+/// (100 ns since 1601-01-01, UTC; proleptic Gregorian).
+fn file_time_to_system_time(e: &mut Exec, args: &Args) -> Ret {
+    let ft: u64 = e.mem().read(a(args, 0));
+    let ms_all = ft / 10_000;
+    let days = ms_all / 86_400_000;
+    let ms_day = ms_all % 86_400_000;
+    // days since 1601-01-01 (a Monday) to y/m/d
+    let civil = |days: u64| -> (u64, u64, u64) {
+        // days from 0000-03-01: 1601-01-01 is 134,774 days before
+        // 1970-01-01, which is day 719,468
+        let shifted = days + 584_694;
+        let era = shifted / 146_097;
+        let doe = shifted % 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = yoe + era * 400 + u64::from(month <= 2);
+        (year, month, day)
+    };
+    let (year, month, day) = civil(days);
+    let weekday = (days + 1) % 7;
+    #[allow(clippy::cast_possible_truncation)] // calendar fields
+    let st = [
+        year as u16,
+        month as u16,
+        weekday as u16,
+        day as u16,
+        (ms_day / 3_600_000) as u16,
+        (ms_day / 60_000 % 60) as u16,
+        (ms_day / 1000 % 60) as u16,
+        (ms_day % 1000) as u16,
+    ];
+    e.mem().write(a(args, 1), st);
+    Ret::eax(1)
+}
+
+/// `SystemTimeToTzSpecificLocalTime(tz, &utc, &local)`: UTC (the run's
+/// time zone).
+fn tz_local_time(e: &mut Exec, args: &Args) -> Ret {
+    let st: [u16; 8] = e.mem().read(a(args, 1));
+    e.mem().write(a(args, 2), st);
+    Ret::eax(1)
+}
+
+/// `GetTimeZoneInformation(&tzi)`: UTC, no daylight time.
+fn time_zone(e: &mut Exec, args: &Args) -> Ret {
+    e.mem().write_bytes(a(args, 0), &[0u8; 172]);
+    Ret::eax(0)
+}
+
+/// `GetFileTime(h, &created, &accessed, &written)`: the fixed clock.
+fn file_time(e: &mut Exec, args: &Args) -> Ret {
+    for i in 1..4 {
+        let p = a(args, i);
+        if p != 0 {
+            e.mem().write(p, 0x01d0_0000_0000_0000u64);
+        }
+    }
+    Ret::eax(1)
+}
+
+/// `XInputGetState` / `XInputSetState`: no controller
+/// (`ERROR_DEVICE_NOT_CONNECTED`).
+fn no_controller(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0x48f)
+}
+
+fn ret0(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0)
+}
+
+fn ret1(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(1)
 }
 
 /// `GetSystemTime(&st)`: the fixed clock of `GetSystemTimeAsFileTime`
@@ -158,7 +293,6 @@ fn system_time(e: &mut Exec, args: &Args) -> Ret {
 }
 
 const K32: &str = "KERNEL32.dll";
-const IGGY: &str = "iggy_w32.dll";
 const U32: &str = "USER32.dll";
 
 /// The stand-ins: DLL, name, convention, stack words.
@@ -166,17 +300,54 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     // the C runtime's file names: ANSI code page
     (K32, "AreFileApisANSI", Conv::Stdcall, 0, one),
     (K32, "GetSystemTime", Conv::Stdcall, 1, system_time),
+    (U32, "GetCursorPos", Conv::Stdcall, 1, cursor_pos),
+    (U32, "GetWindowInfo", Conv::Stdcall, 2, window_info),
+    (U32, "GetClipCursor", Conv::Stdcall, 1, clip_cursor_rect),
+    (U32, "TranslateMessage", Conv::Stdcall, 1, ret1),
+    (U32, "DispatchMessageA", Conv::Stdcall, 1, ret0),
+    (U32, "DispatchMessageW", Conv::Stdcall, 1, ret0),
+    (U32, "DefWindowProcA", Conv::Stdcall, 4, ret0),
+    (U32, "SendMessageA", Conv::Stdcall, 4, ret0),
+    (U32, "SendMessageW", Conv::Stdcall, 4, ret0),
+    (U32, "PostMessageA", Conv::Stdcall, 4, ret1),
+    (U32, "ReleaseDC", Conv::Stdcall, 2, ret1),
+    (
+        K32,
+        "FileTimeToSystemTime",
+        Conv::Stdcall,
+        2,
+        file_time_to_system_time,
+    ),
+    (
+        K32,
+        "SystemTimeToTzSpecificLocalTime",
+        Conv::Stdcall,
+        3,
+        tz_local_time,
+    ),
+    (K32, "GetTimeZoneInformation", Conv::Stdcall, 1, time_zone),
+    (K32, "GetFileTime", Conv::Stdcall, 4, file_time),
+    (K32, "SetEndOfFile", Conv::Stdcall, 1, ret1),
+    (K32, "FormatMessageA", Conv::Stdcall, 7, ret0),
+    (K32, "HeapDestroy", Conv::Stdcall, 1, ret1),
+    (
+        "XINPUT9_1_0.dll",
+        "XInputGetState",
+        Conv::Stdcall,
+        2,
+        no_controller,
+    ),
+    (
+        "XINPUT9_1_0.dll",
+        "XInputSetState",
+        Conv::Stdcall,
+        2,
+        no_controller,
+    ),
     (U32, "wsprintfW", Conv::Cdecl, 2, |e, x| {
         wsprintf(e, x, true)
     }),
     (U32, "wsprintfA", Conv::Cdecl, 2, |e, x| {
         wsprintf(e, x, false)
     }),
-    (
-        IGGY,
-        "_IggyPlayerCreateFromMemory@12",
-        Conv::Stdcall,
-        3,
-        iggy_player,
-    ),
 ];
