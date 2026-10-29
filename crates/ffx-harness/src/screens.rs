@@ -181,9 +181,12 @@ fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
         game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    // and 3000 updates: ffx-rust.exe's emulated boot takes far longer than
+    // 120 s to the title (a game in fast mode or real time passes them first)
+    let first = game.frame()?;
     // map 0x17, previous map 0x15c, no jump pending
     while game.read(0x0112_ca90, 4)? != [0x17, 0, 0x5c, 1] || game.read(0x0133_084c, 4)? != [0; 4] {
-        if std::time::Instant::now() > deadline {
+        if std::time::Instant::now() > deadline && game.frame()?.saturating_sub(first) > 3000 {
             return Err(Error::Harness("the title scene did not come back".into()));
         }
         game.command("press start 3 20")?;
