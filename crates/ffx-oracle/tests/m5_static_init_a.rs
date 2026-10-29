@@ -5,9 +5,10 @@
 //! registrations too; the globals and every other byte written outside the
 //! stacks are compared by `diff`. Needs `FFX_GAME_DIR`.
 //!
-//! Branch reach: these initialisers have no branches (the shapes are
-//! straight-line code), so each row is one path. The counter and copy rows
-//! run with several values in their source word (0, 1, all ones, random).
+//! Branch reach: the only branch is the find of a scene render pass type,
+//! and both of its results run (the stub returns 0 and a pass type). The
+//! other shapes are straight-line code. The counter and copy rows run with
+//! several values in their source word (0, 1, all ones, random).
 
 #![allow(clippy::cast_possible_truncation)]
 
@@ -110,8 +111,7 @@ impl Twins {
             log: 0,
         };
         t.log = t.zeros(LOG_WORDS as usize * 4);
-        let log = t.log;
-        t.stub_atexit(log);
+        t.stub_fn(ATEXIT, false, 1, false, ATEXIT_RET);
         t
     }
 
@@ -167,27 +167,45 @@ impl Twins {
         Mem::read(&self.a, at)
     }
 
-    /// Puts a `jmp` to a recording stub at `atexit` in both oracles: the
-    /// stub logs its tag and the one argument, then returns [`ATEXIT_RET`].
-    fn stub_atexit(&mut self, log: u32) {
+    /// Replaces the original at `sym` by a recording stub in both oracles.
+    /// The stub logs an entry of four words into the call log: `sym`, `ecx`
+    /// when `this` (else 0), and its first `n` stack words (at most two),
+    /// then returns `ret`. A callee that pops its words (`pops`) pops `4n`.
+    fn stub_fn(&mut self, sym: u32, this: bool, n: u32, pops: bool, ret: u32) {
+        assert!(n <= 2);
+        let log = self.log;
         let mut c = vec![0xa1];
         c.extend(log.to_le_bytes()); // mov eax, [log]
         c.extend([0xc1, 0xe0, 0x04]); // shl eax, 4
         c.push(0x05);
         c.extend((log + 4).to_le_bytes()); // add eax, log + 4
         c.extend([0xc7, 0x00]);
-        c.extend(ATEXIT.to_le_bytes()); // mov dword [eax], ATEXIT (tag)
-        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp + 4]
-        c.extend([0x89, 0x50, 0x04]); // mov [eax + 4], edx
+        c.extend(sym.to_le_bytes()); // mov dword [eax], sym (the tag)
+        if this {
+            c.extend([0x89, 0x48, 0x04]); // mov [eax + 4], ecx
+        } else {
+            c.extend([0xc7, 0x40, 0x04, 0, 0, 0, 0]); // mov dword [eax + 4], 0
+        }
+        for i in 0..n {
+            let from = (4 + 4 * i) as u8; // the argument, above the return address
+            let to = (8 + 4 * i) as u8;
+            c.extend([0x8b, 0x54, 0x24, from]); // mov edx, [esp + from]
+            c.extend([0x89, 0x50, to]); // mov [eax + to], edx
+        }
         c.extend([0xff, 0x05]);
         c.extend(log.to_le_bytes()); // inc dword [log]
         c.push(0xb8);
-        c.extend(ATEXIT_RET.to_le_bytes()); // mov eax, ATEXIT_RET
-        c.push(0xc3); // ret (cdecl: the caller pops)
+        c.extend(ret.to_le_bytes()); // mov eax, ret
+        if pops && n > 0 {
+            c.push(0xc2);
+            c.extend(((4 * n) as u16).to_le_bytes()); // ret 4n
+        } else {
+            c.push(0xc3); // ret
+        }
         let code_a = self.a.alloc_code(&c).unwrap();
         let code_b = self.b.alloc_code(&c).unwrap();
         assert_eq!(code_a, code_b);
-        let at = self.rebase(ATEXIT);
+        let at = self.rebase(sym);
         let mut j = vec![0xe9];
         j.extend(code_a.wrapping_sub(at + 5).to_le_bytes());
         self.write(at, &j);
@@ -291,6 +309,50 @@ fn copy_word_initialisers_match_the_original() {
                     sa::copy_word(g, r.at)
                 });
             }
+        }
+    }
+}
+
+/// Both branches of the find: `FindPass` returns 0 (the pass type is linked
+/// in) and a non-zero pass type (nothing is linked). Two calls each run: the
+/// find, then `atexit`.
+#[test]
+fn find_or_link_initialisers_match_the_original() {
+    let mut rng = Rng(0x7777_1111);
+    for mut t in Twins::all() {
+        for found in [0, 0x5a5a_0000] {
+            t.stub_fn(sa::FIND_PASS, false, 1, false, found);
+            for r in rows::FIND_LINK {
+                for _ in 0..2 {
+                    t.w32(t.rebase(r.head), rng.word());
+                    t.w32(t.rebase(r.dst), rng.word());
+                    let what = format!("find-link {:#x} found {found:#x}", r.at);
+                    t.check(&what, r.at, ALL, |g| sa::find_link(g, r.at));
+                    let log = t.log;
+                    assert_eq!(t.r32(log), 2, "{} {what}: the find, then atexit", t.label);
+                }
+            }
+        }
+    }
+}
+
+/// The constructor (a thiscall, with its one argument when the row has one),
+/// then `atexit`: two calls, each logged.
+#[test]
+fn call_then_destructor_initialisers_match_the_original() {
+    for mut t in Twins::all() {
+        for r in rows::CALL_DTOR {
+            let n = u32::from(r.arg.is_some());
+            t.stub_fn(r.callee, true, n, true, 0x1234);
+            let what = format!("call {:#x} -> {:#x}", r.at, r.callee);
+            t.check(&what, r.at, ALL, |g| sa::call_dtor(g, r.at));
+            let log = t.log;
+            assert_eq!(
+                t.r32(log),
+                2,
+                "{} {what}: the constructor, then atexit",
+                t.label
+            );
         }
     }
 }
