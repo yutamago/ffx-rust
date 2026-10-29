@@ -3202,3 +3202,112 @@ fn m5p_scene_j_occluder_job() {
         tw.unstub();
     }
 }
+
+// ---- batch 11 (ffx_prender::m5p_scene_k) ----
+
+use ffx_prender::m5p_scene_k as sk;
+
+/// An instance list node for the world count test: class, first
+/// instance, count, block word; returns the node (`+0x20` links on).
+fn instance_node(tw: &mut Twins, class: u32, first: u32, count: u32, block: u32) -> u32 {
+    let n = tw.zeros(0x60) + 0x20;
+    tw.w32(n + 0xc, class);
+    tw.w32(n + 0x14, first);
+    tw.w32(n + 0x1c, count);
+    tw.w32(n - 0x18, block);
+    n
+}
+
+/// The world's instance count. The world's list entries (20 bytes, in
+/// class depth order: `+0` the ring of its lists, `+8` its instance count,
+/// `+0x10` the class depth) and their rings (each list node links on
+/// through `+0`, the last one to the next entry). Classes: base (entry 0)
+/// <- mid (no entry) <- leaf (entry 1); other (entry 2). Queries of each
+/// class with its own entry, through the chain (mid: base's entry, then
+/// the leaf lists under it), past the entries, and with no entry on the
+/// chain. Lists hold instances over blocks with an empty block in front.
+/// The real `PWorldCursor_nextList`.
+#[test]
+fn m5p_scene_k_instance_count() {
+    for (what, mut tw) in Twins::all() {
+        let frame = tw.b.stack_range().start + 0x1000;
+        let base = tw.zeros(0x90);
+        let mid = tw.zeros(0x90);
+        let leaf = tw.zeros(0x90);
+        let other = tw.zeros(0x90);
+        tw.w32(base + 0x80, 0);
+        tw.w32(mid + 0x80, 0x8000_0000);
+        tw.w32(mid + 0x40, base);
+        tw.w32(leaf + 0x80, 1);
+        tw.w32(leaf + 0x40, mid);
+        tw.w32(other + 0x80, 2);
+        for c in [base, mid, leaf, other] {
+            tw.w32(c + 0x1c, 0x10);
+        }
+        // blocks: [.. blocks+0x100), then [.. blocks+0x200), then the end
+        let blocks = tw.zeros(0x400);
+        tw.w32(blocks + 0x100, blocks + 0x200);
+        tw.w32(blocks + 0x200, 0);
+        let entries = tw.zeros(20 * 4);
+        let e = |i: u32| entries + 20 * i;
+        // lists: base (2 instances, the first block empty); five leaf
+        // lists over the blocks (starting at a block's end, before it,
+        // in the last block, longer than their blocks); other (2)
+        let n_base = instance_node(&mut tw, base, blocks + 0x100, 2, blocks + 0x100);
+        let leaf_lists = [
+            (blocks + 0xc0, 9, blocks + 0x100),
+            (blocks + 0x1d0, 3, blocks + 0x200),
+            (blocks + 0x100, 4, blocks + 0x100),
+            (blocks + 0x210, 5, 0),
+            (blocks + 0xf0, 2, blocks + 0x100),
+        ];
+        let mut leaves = Vec::new();
+        for (first, count, block) in leaf_lists {
+            leaves.push(instance_node(&mut tw, leaf, first, count, block));
+        }
+        let n_other = instance_node(&mut tw, other, blocks + 0x40, 2, blocks + 0x100);
+        tw.w32(e(0), n_base);
+        tw.w32(n_base, e(1));
+        tw.w32(e(1), leaves[0]);
+        for w in leaves.windows(2) {
+            tw.w32(w[0], w[1]);
+        }
+        tw.w32(leaves[4], e(2));
+        tw.w32(e(2), n_other);
+        tw.w32(n_other, e(3));
+        // depths: base and other 1, leaf 3; other derives from mid too, so
+        // a walk that ran past base's subtree would count it. Each entry's
+        // +0xc names a class, so a walk that took an entry for a list
+        // would count it.
+        tw.w32(other + 0x40, mid);
+        for (i, (count, depth)) in [(2u32, 1u32), (23, 3), (2, 1)].into_iter().enumerate() {
+            let at = e(u32::try_from(i).unwrap());
+            tw.w32(at + 8, count);
+            tw.w32(at + 0xc, leaf);
+            tw.w32(at + 0x10, depth);
+        }
+        let world = tw.zeros(0x20);
+        tw.w32(world + 0xc, entries);
+        for count in [3, 0x8000_0003, 1, 0] {
+            tw.w32(world + 8, count);
+            for class in [base, mid, leaf, other] {
+                // stale words in the port's frame (the shim's starts zeroed)
+                tw.write(frame, &[0x77; 12]);
+                let label = format!("{what} instance count {class:#x} lists {count:#x}");
+                let r = tw.run(&label, 0x0044_3550, Conv::Thiscall(world), &[class], |g| {
+                    sk::bridge::world_instance_count(g, world, class, frame)
+                });
+                if class == mid && count == 3 {
+                    assert!(r > 0, "{label}: the walk counts");
+                }
+            }
+        }
+        // no entry anywhere on the chain
+        tw.w32(base + 0x80, 0x8000_0001);
+        tw.w32(world + 8, 3);
+        let label = format!("{what} instance count, no list on the chain");
+        tw.run(&label, 0x0044_3550, Conv::Thiscall(world), &[mid], |g| {
+            sk::bridge::world_instance_count(g, world, mid, frame)
+        });
+    }
+}
