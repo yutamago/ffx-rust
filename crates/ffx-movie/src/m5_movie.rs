@@ -269,4 +269,162 @@ pub mod bridge {
             cdecl(h, GU_WINDOW_CREATE, &[0x64, 0x1e, 0xdc, 0xbe, 0xe, draw]);
         }
     }
+
+    // ---- batch 6: the PS2 movie layer's frame conversion and reads ----
+
+    /// `FlushCache(mode)` (cdecl, empty on PC).
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    /// `g_GsRegisterSink`: the one word every GS register write lands in.
+    pub const GS_REGISTER_SINK: Global<u32> = Global::new(0x0230_56e8);
+    /// The movie's IPU work base (`+0x10d0` the conversion's input).
+    pub const IPU_WORK: Global<u32> = Global::new(0x0112_a840);
+    /// The CD read's "movie" byte (`0x00777320`).
+    pub const MOVIE_CD_READ: Global<u8> = Global::new(0x0112_a4ec);
+    /// `MSVCR110!sprintf` (cdecl).
+    pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+    pub const FFX_GET_VIDEO_MODE: u32 = 0x0088_7c40;
+    pub const TK_GET_GS_CSR: u32 = 0x0088_7db0;
+    pub const SPAD_CALL: u32 = 0x0077_a480;
+    /// `movie_csc`'s scratchpad job.
+    pub const CSC_JOB: u32 = 0x0077_ca80;
+    pub const TO_DEBUG_PRINT: u32 = 0x0077_de90;
+    pub const TO_DRAW_MOVIE_MESSAGE: u32 = 0x008a_bf30;
+    pub const MOVIE_LOAD_IMAGE_SET: u32 = 0x0076_f030;
+    pub const MOVIE_STREAM_READ: u32 = 0x0077_7380;
+    pub const SCE_READ: u32 = 0x0062_fc00;
+    pub const SCE_IPU_SYNC: u32 = 0x0062_f8d0;
+    pub const CD_READ_SECTORS: u32 = 0x0077_7080;
+    pub const CD_READ_WAIT: u32 = 0x0077_7440;
+    /// The CD read's buffer descriptor.
+    pub const CD_READ_DESC: u32 = 0x00c4_1748;
+    /// `0x00820520(n)` (cdecl): the frame counter.
+    pub const FRAME_COUNT: u32 = 0x0082_0520;
+    pub const MSG_CSC_WAIT: u32 = 0x00b5_4380;
+    pub const FMT_DEBUG_1: u32 = 0x00b5_436c;
+    pub const FMT_DEBUG_2: u32 = 0x00b5_4378;
+
+    /// `0x0077de90()`: the movie's debug line (two `sprintf`s into a
+    /// 0x80-byte buffer at the original's `ebp - 0x84`, `frame` its `ebp`);
+    /// the last `sprintf`'s `eax`.
+    pub fn movie_debug_line(h: &mut impl Host, frame: u32) -> u32 {
+        let w = AUDIO_WORK.get(h);
+        let buf = frame - 0x84;
+        let first: u32 = h.read(w + 0x50528);
+        let second: u32 = h.read(w + 0x50708);
+        let sprintf: u32 = h.read(h.rebase(SPRINTF_IAT));
+        let fmt = h.rebase(FMT_DEBUG_1);
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, first, second]);
+        let n = cdecl(h, FRAME_COUNT, &[0]);
+        let fmt = h.rebase(FMT_DEBUG_2);
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, n])
+    }
+
+    /// `movie_csc()` (0x0077d5e0): with a picture (`+0x506dc` of the work):
+    /// in the video mode, wait (`TkSyncV(0)`) for the GS CSR's field bit
+    /// (0x2000), then the colour conversion (`SPAD_CALL` of the job at
+    /// `0x0077ca80` over the IPU output) and the debug line, then a tail
+    /// call of `TODrawMovieMessage` (its `eax`; 0 without a picture).
+    pub fn movie_csc(h: &mut impl Host) -> u32 {
+        let w = AUDIO_WORK.get(h);
+        if h.read::<u32>(w + 0x506dc) == 0 {
+            return 0;
+        }
+        if cdecl(h, FFX_GET_VIDEO_MODE, &[]) != 0 && cdecl(h, TK_GET_GS_CSR, &[]) & 0x2000 == 0 {
+            loop {
+                cdecl(h, TK_SYNC_V, &[0]);
+                dbg(h, MSG_CSC_WAIT, &[]);
+                if cdecl(h, TK_GET_GS_CSR, &[]) & 0x2000 != 0 {
+                    break;
+                }
+            }
+        }
+        GS_REGISTER_SINK.set(h, 0x4000_0000);
+        cdecl(h, MOVIE_LOAD_IMAGE_SET, &[]);
+        let src = IPU_WORK.get(h).wrapping_add(0x10d0);
+        let job = h.rebase(CSC_JOB);
+        cdecl(h, SPAD_CALL, &[src, 0x1800, job, 0]);
+        if cdecl(h, TO_DEBUG_PAD_PRINT_FLAG, &[]) != 0 {
+            cdecl(h, TO_DEBUG_PRINT, &[]);
+        }
+        cdecl(h, TO_DRAW_MOVIE_MESSAGE, &[])
+    }
+
+    /// `0x0077e110(fd, buf, size, &read, work)`: `FlushCache(0)`, then the
+    /// movie stream's read (`0x00777380(buf, size, &read, work)`, its
+    /// `eax`) when streaming (byte `+0x5075c`), else `sceRead(fd, size,
+    /// buf)` with `*read` = 0 and 1.
+    pub fn movie_read(
+        h: &mut impl Host,
+        fd: u32,
+        buf: u32,
+        size: u32,
+        read: u32,
+        work: u32,
+    ) -> u32 {
+        cdecl(h, FLUSH_CACHE, &[0]);
+        if h.read::<u8>(work + 0x5075c) != 0 {
+            return cdecl(h, MOVIE_STREAM_READ, &[buf, size, read, work]);
+        }
+        cdecl(h, SCE_READ, &[fd, size, buf]);
+        h.write(read, 0u32);
+        1
+    }
+
+    /// `0x0077e160(slot)`: the read position (`+0x50548`) kept for `slot`
+    /// (`+0x5054c`), then whole sizes from the table at `+0x10100`
+    /// consumed while their running sum stays below `+0x506f8`; the sum.
+    pub fn movie_take_sizes(h: &mut impl Host, slot: u32) -> u32 {
+        let w = AUDIO_WORK.get(h);
+        let pos: u32 = h.read(w + 0x50548);
+        h.write(w + 0x5054c + 4 * slot, pos);
+        let limit: u32 = h.read(w + 0x506f8);
+        let mut sum = 0u32;
+        let mut size: u32 = h.read(w + 4 * pos + 0x10100);
+        while size != 0 {
+            let next = size.wrapping_add(sum);
+            if next.cast_signed() >= limit.cast_signed() {
+                break;
+            }
+            let pos: u32 = h.read(w + 0x50548);
+            h.write(w + 0x50548, pos.wrapping_add(1));
+            sum = next;
+            let pos: u32 = h.read(w + 0x50548);
+            size = h.read(w + 4 * pos + 0x10100);
+        }
+        sum
+    }
+
+    /// `movieHardWareInit()` (0x0077d230): the GS register writes, then
+    /// `sceIpuSync(0, 0)` twice (the last one's `eax`).
+    pub fn movie_hardware_init(h: &mut impl Host) -> u32 {
+        GS_REGISTER_SINK.set(h, 0x1_0000);
+        let v = GS_REGISTER_SINK.get(h) & 0xffff_feff;
+        GS_REGISTER_SINK.set(h, v);
+        GS_REGISTER_SINK.set(h, 0);
+        GS_REGISTER_SINK.set(h, 0x4000_0000);
+        cdecl(h, SCE_IPU_SYNC, &[0, 0]);
+        GS_REGISTER_SINK.set(h, 0);
+        cdecl(h, SCE_IPU_SYNC, &[0, 0])
+    }
+
+    /// `0x00777320(sector, size, buf, mode)` -> 1: `size` bytes as whole
+    /// 2048-byte sectors (signed, rounded up) read from the CD
+    /// (`CdReadSectors_00777080(sector, n, buf, 0x00c41748, mode)`), the
+    /// movie byte set, then the wait `0x00777440(0, mode)`.
+    pub fn movie_cd_read(h: &mut impl Host, sector: u32, size: u32, buf: u32, mode: u32) -> u32 {
+        let s = size.cast_signed();
+        let mut n = s / 2048;
+        if s % 2048 != 0 {
+            n += 1;
+        }
+        MOVIE_CD_READ.set(h, 1);
+        let desc = h.rebase(CD_READ_DESC);
+        cdecl(
+            h,
+            CD_READ_SECTORS,
+            &[sector, n.cast_unsigned(), buf, desc, mode],
+        );
+        cdecl(h, CD_READ_WAIT, &[0, mode]);
+        1
+    }
 }

@@ -7877,6 +7877,7 @@
 0x00777080 function CdReadSectors_00777080 # cdecl(sector, count, buf, mode, ctx): count 0x800-byte sectors into buf; the sector after the last read comes from its copy 0x0112a4f4 (the advanced sector stored into its own first argument slot); hard disk (ctx+0x5075d): hd_file_read_no_wait's eax; disc: sceCdRead retried with CdDiscWait/movie frames, sceCdRead reset 0x00a447a0 every 60 tries, 1; request/last-read state 0x0112a4dc..0x0112a4f8; name ours; ported ffx_battle::m5_battle (m5 battle b1)
 0x00777230 function ReturnAddress_00777230 # () -> 0x00c41748 (an address in the image); name ours
 0x00777240 function movieOpenCd                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'movieOpenCd() hdd_mode=%d\\n'; Switch 0x7100322db0 movieOpenCd (symbols from Fahrenheit's server export)
+0x00777320 function MovieCdRead_00777320 # cdecl(sector, size, buf, mode) -> 1: ceil(size / 2048) (signed) sectors by CdReadSectors_00777080(sector, n, buf, 0x00c41748, mode), byte 0x0112a4ec = 1, then 0x00777440(0, mode); name ours; ported (ffx_movie::m5_movie, m5 small b6)
 0x00777420 function hdd_state_clear           # (): zeroes the two words at 0x0112a4fc (before g_Hdd_Mounted); name ours
 0x00777680 function TkyiAssert                # fh v3:exact 0x00777780
 0x00777940 function hdd_set_pass_names        # (): "ffxpassf" at 0x00c41758 and "ffxpassr" at 0x00c41764 (four word stores); name ours
@@ -8006,8 +8007,8 @@
 0x0077c950 function chr_texanim_set           # fh v3:exact 0x0077ca40
 0x0077ca10 function chr_texanim_clut_swizzle # ours: (dst, src, which) dst[i] = src[table[i]] for 64 bytes, table 0x00c42130 or (which) 0x00c42170
 0x0077cdc0 function chr_texanim_count        # ours: (&n, &max) entries of g_ChrTexAnim with a source (+0), and 64
-0x0077d230 function movieHardWareInit         # fh switch:bsim1.00 0x71003266a0
-0x0077d5e0 function movie_csc                    # layout+callees: sorts between movieHardWareInit and movie_iPicture_Main, and its named callees match the Switch 0x7100326240 movie_csc's (similarity 0.88: FFXGetVideoMode, SPAD_CALL, TODebugGetPadPrintFlag, TODrawMovieMessage, TkGetGsRegisterCSR); symbols from Fahrenheit's server export
+0x0077d230 function movieHardWareInit # fh switch:bsim1.00 0x71003266a0; ported (ffx_movie::m5_movie, m5 small b6): g_GsRegisterSink 0x10000, & ~0x100, 0, 0x40000000, sceIpuSync(0, 0), 0, sceIpuSync(0, 0)
+0x0077d5e0 function movie_csc # layout+callees: sorts between movieHardWareInit and movie_iPicture_Main, and its named callees match the Switch 0x7100326240 movie_csc's (similarity 0.88: FFXGetVideoMode, SPAD_CALL, TODebugGetPadPrintFlag, TODrawMovieMessage, TkGetGsRegisterCSR); symbols from Fahrenheit's server export; ported (ffx_movie::m5_movie, m5 small b6): with work +0x506dc: in FFXGetVideoMode, TkSyncV(0) until TkGetGsRegisterCSR & 0x2000; g_GsRegisterSink 0x40000000, movie_load_image_set, SPAD_CALL(IPU +0x10d0, 0x1800, 0x0077ca80, 0), 0x0077de90 when TODebugGetPadPrintFlag, then jmp TODrawMovieMessage
 0x0077d670 function movie_iPicture_Main       # fh switch:bsim1.00 0x7100326700
 0x0077d700 function movie_iPicture_Main2      # fh switch:bsim1.00 0x7100326c70
 0x0077da90 function TODebugGetPadPrintFlag_thunk_0077da90 # cdecl(): a 5-byte jmp TODebugGetPadPrintFlag; name ours; ported (ffx_movie::m5_movie, m5 small b5)
@@ -8015,7 +8016,10 @@
 0x0077dab0 function mpegstrendsub                # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'mpegstrendsub(%d)\\n'; Switch 0x7100325dc0 mpegstrendsub (symbols from Fahrenheit's server export)
 0x0077dc50 function MovieFrameWait_0077dc50 # cdecl(convert): 0: its argument word 0 and jmp TkSyncV; else movie_csc(), argument word 1 and jmp task_wait; name ours; ported (ffx_movie::m5_movie, m5 small b5)
 0x0077de40 function code_0077de40 # cdecl(): the movie audio work (0x00c421b0): +0x506c8 0: 0x0077b060(+0x5059c + 0x10, 0, w); 1: with the second channel at +0x5059c + +0x50758 + 0x10; ported (ffx_movie::m5_movie, m5 small b5)
+0x0077de90 function MovieDebugLine_0077de90 # cdecl() -> sprintf's eax: two sprintfs into [ebp-0x84] (0x00b5436c with work +0x50528/+0x50708, 0x00b54378 with 0x00820520(0)); name ours; ported (ffx_movie::m5_movie, m5 small b6)
 0x0077df00 function print_sound_debug_info       # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'ee  %d %d'; Switch 0x7100326180 print_sound_debug_info (symbols from Fahrenheit's server export)
+0x0077e110 function MovieRead_0077e110 # cdecl(fd, buf, size, &read, work): FlushCache(0); streaming (byte +0x5075c): 0x00777380(buf, size, &read, work); else sceRead(fd, size, buf), *read = 0, 1; name ours; ported (ffx_movie::m5_movie, m5 small b6)
+0x0077e160 function MovieTakeSizes_0077e160 # cdecl(slot) -> sum: work +0x5054c[slot] = +0x50548, then the sizes at +0x10100[+0x50548] taken while their sum stays below +0x506f8 (signed; the limit read once); name ours; ported (ffx_movie::m5_movie, m5 small b6)
 0x0077e730 function loadImage                 # fh switch:bsim1.00 0x7100336e30
 0x0077e770 function TexAnim_LoadImageRegs     # cdecl(a, b, bytes): g_GsRegisterSink gets 0xff0000, & 0x7cf, a, b, bytes / 16 (toward zero), then 0x100; returns bytes / 16; name ours
 0x0077e7c0 function TexAnim_LoadImage101      # cdecl(addr, bytes): as loadImage with command 0x101 (addr >= 0x70000000 less 0x80000000, bytes / 16); name ours

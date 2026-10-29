@@ -127,4 +127,31 @@ ported! {
     movie_view @ 0x0094_1830 => extern "C" fn movie_view() {
         b::movie_view(&mut game());
     }
+
+    // ---- the PS2 movie layer's frame conversion and reads (b6) ----
+    /// `0x0077de90()`: a 0x80-byte buffer at `ebp - 0x84`.
+    MovieDebugLine_0077de90 @ 0x0077_de90 => extern "C" fn movie_debug_line() -> u32 {
+        let mut f = StackFrame::<0x21>::new();
+        b::movie_debug_line(&mut game(), f.at() + 0x84)
+    }
+    /// `movie_csc()`.
+    movie_csc @ 0x0077_d5e0 => extern "C" fn movie_csc() -> u32 {
+        b::movie_csc(&mut game())
+    }
+    /// `0x0077e110(fd, buf, size, &read, work)`.
+    MovieRead_0077e110 @ 0x0077_e110 => extern "C" fn movie_read(fd: u32, buf: u32, size: u32, read: u32, work: u32) -> u32 {
+        b::movie_read(&mut game(), fd, buf, size, read, work)
+    }
+    /// `0x0077e160(slot)`.
+    MovieTakeSizes_0077e160 @ 0x0077_e160 => extern "C" fn movie_take_sizes(slot: u32) -> u32 {
+        b::movie_take_sizes(&mut game(), slot)
+    }
+    /// `movieHardWareInit()`.
+    movieHardWareInit @ 0x0077_d230 => extern "C" fn movie_hardware_init() -> u32 {
+        b::movie_hardware_init(&mut game())
+    }
+    /// `0x00777320(sector, size, buf, mode)`.
+    MovieCdRead_00777320 @ 0x0077_7320 => extern "C" fn movie_cd_read(sector: u32, size: u32, buf: u32, mode: u32) -> u32 {
+        b::movie_cd_read(&mut game(), sector, size, buf, mode)
+    }
 }

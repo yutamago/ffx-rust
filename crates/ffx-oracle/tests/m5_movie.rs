@@ -297,3 +297,140 @@ fn ps2_movie_layer_matches_the_original() {
         }
     });
 }
+
+// ---- batch 6: the PS2 movie layer's frame conversion and reads ----
+
+#[test]
+fn movie_frame_conversion_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..10u32 {
+            t.reset();
+            let w = t.zeros(0x5_0800);
+            t.w32(w + 0x506dc, u32::from(case != 0));
+            t.w32(w + 0x50528, 0x1234 + case);
+            t.w32(w + 0x50708, 77);
+            t.g32(b::AUDIO_WORK.sym, w);
+            t.g32(b::IPU_WORK.sym, 0x0abc_0000);
+            t.stub(b::FFX_GET_VIDEO_MODE, false, 0, 0, u32::from(case % 2 == 1));
+            // the CSR: the field bit on the k-th read
+            let csr: Vec<u32> = (0..8)
+                .map(|i| if i + 1 >= case / 2 { 0x2000 } else { 0x1fff })
+                .collect();
+            t.stub_seq(b::TK_GET_GS_CSR, false, 0, 0, &csr);
+            t.stub(b::TK_SYNC_V, false, 1, 0, 0);
+            t.stub(b::DBG_PRINTF, false, 1, 0, 0);
+            t.stub(b::MOVIE_LOAD_IMAGE_SET, false, 0, 0, 0);
+            t.stub(b::SPAD_CALL, false, 4, 0, 0);
+            t.stub(
+                b::TO_DEBUG_PAD_PRINT_FLAG,
+                false,
+                0,
+                0,
+                u32::from(case % 3 == 0),
+            );
+            t.stub(b::TO_DEBUG_PRINT, false, 0, 0, 0);
+            t.stub(b::TO_DRAW_MOVIE_MESSAGE, false, 0, 0, 0x4d4d);
+            let what = format!("movie_csc #{case}");
+            t.check(&what, 0x0077_d5e0, Conv::Cdecl, &[], |h| {
+                let r = b::movie_csc(h);
+                if case == 0 { Out::None } else { Out::U32(r) }
+            });
+            t.reset();
+            t.g32(b::AUDIO_WORK.sym, w);
+            t.stub(b::FRAME_COUNT, false, 1, 0, 0x99 + case);
+            t.skip = 4;
+            t.check_framed(
+                &format!("0x0077de90 #{case}"),
+                0x0077_de90,
+                Conv::Cdecl,
+                &[],
+                0x84,
+                |h, ebp| Out::U32(b::movie_debug_line(h, ebp)),
+            );
+            t.skip = 0;
+        }
+        t.reset();
+        t.stub(b::SCE_IPU_SYNC, false, 2, 0, 0x17);
+        t.g32(b::GS_REGISTER_SINK.sym, 0xffff_ffff);
+        t.check("movieHardWareInit", 0x0077_d230, Conv::Cdecl, &[], |h| {
+            Out::U32(b::movie_hardware_init(h))
+        });
+    });
+}
+
+#[test]
+fn movie_reads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x2ead_0001);
+        for case in 0..4u32 {
+            t.reset();
+            let work = t.zeros(0x5_0800);
+            t.write(work + 0x5075c, &[u8::from(case % 2 == 1)]);
+            let read = t.words(&[0x5555]);
+            t.stub(b::FLUSH_CACHE, false, 1, 0, 0);
+            t.stub(b::MOVIE_STREAM_READ, false, 4, 0, 0x33);
+            t.stub(b::SCE_READ, false, 3, 0, 0x44);
+            let args = [3, 0x1000, 0x800 + case, read, work];
+            t.check(
+                &format!("0x0077e110 #{case}"),
+                0x0077_e110,
+                Conv::Cdecl,
+                &args,
+                |h| Out::U32(b::movie_read(h, 3, 0x1000, 0x800 + case, read, work)),
+            );
+        }
+        for case in 0..12u32 {
+            t.reset();
+            let w = t.zeros(0x5_0800);
+            t.g32(b::AUDIO_WORK.sym, w);
+            let pos = rng.below(8);
+            t.w32(w + 0x50548, pos);
+            t.w32(
+                w + 0x506f8,
+                [0, 100, 1000, 0x8000_0000, 0x7fff_ffff, 250][(case % 6) as usize],
+            );
+            for k in 0..16 {
+                let v = if k == 12 {
+                    0
+                } else {
+                    [10, 50, 0, 0xffff_fff0][((k + case) % 4) as usize]
+                };
+                t.w32(
+                    w + 0x10100 + 4 * k,
+                    if (k + case) % 5 == 4 { 0 } else { v.max(1) },
+                );
+            }
+            t.w32(w + 0x10100 + 4 * 15, 0);
+            let slot = case % 3;
+            t.check(
+                &format!("0x0077e160 #{case}"),
+                0x0077_e160,
+                Conv::Cdecl,
+                &[slot],
+                |h| Out::U32(b::movie_take_sizes(h, slot)),
+            );
+        }
+        for size in [
+            0u32,
+            1,
+            2047,
+            2048,
+            2049,
+            0xffff_ffff,
+            0x8000_0000,
+            0xffff_f7ff,
+        ] {
+            t.reset();
+            t.stub(b::CD_READ_SECTORS, false, 5, 0, 0);
+            t.stub(b::CD_READ_WAIT, false, 2, 0, 0);
+            let args = [100, size, 0x2000, 1];
+            t.check(
+                &format!("0x00777320 {size:#x}"),
+                0x0077_7320,
+                Conv::Cdecl,
+                &args,
+                |h| Out::U32(b::movie_cd_read(h, 100, size, 0x2000, 1)),
+            );
+        }
+    });
+}
