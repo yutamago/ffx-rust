@@ -162,6 +162,12 @@ fn colour_node_fades() {
                     (0.125, -3.0, -4.0, 1.25),
                     (1.0e-3, k + 1.0, f32::NAN, 0.75),
                     (f32::NAN, 0.5, 0.25, f32::NAN),
+                    // no step: the channels 1, 2, 3 (4 after them) against
+                    // limits on, between and past them
+                    (0.0, 0.5, 9.0, 3.0),
+                    (0.0, 0.5, 9.0, 3.5),
+                    (0.0, 0.5, 9.0, 1.5),
+                    (0.0, 0.5, 9.0, 1.0),
                 ] {
                     ring(&mut t, c, p, cp, 0x30 + kr as u8);
                     let n0 = node(0);
@@ -173,6 +179,11 @@ fn colour_node_fades() {
                     }
                     for j in 0..4 {
                         t.set_u32(n0 + 0x8c + 4 * j, [255, 128, 7, 0x8000_0000][j as usize]);
+                    }
+                    if rate == 0.0 {
+                        for j in 0..4 {
+                            set_f(&mut t, n0 + 0x1c + 4 * j, 1.0 + j as f32);
+                        }
                     }
                     set_f(&mut t, n0 + 0x9c, rate);
                     set_f(&mut t, n0 + 0xa0, progress);
