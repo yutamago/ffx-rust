@@ -1936,3 +1936,284 @@ fn tokens_match_the_original() {
         }
     }
 }
+
+// ---- batch 5: script constructor, render sync, pad index, strongest value,
+// range erase, command table, motion blur apply ----
+
+use ffx_pother_b::m5p_framework_input_misc::{self as mi, bridge as mib};
+
+impl Twins {
+    /// [`Twins::stub_import`] for a cdecl import (the caller pops).
+    fn stub_import_cdecl(&mut self, slot: u32, n: u32, ret: u32) {
+        let code = self.stub_code(slot, false, n, 0, ret);
+        let at = self.rebase(slot);
+        let old = Oracle::read(&mut self.a, at, 4).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.w32(at, code);
+    }
+}
+
+#[test]
+fn script_ctor_and_sync_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the array copy fills +4/+8 from the source PArray, adding what
+        // was there (so the zeroing before it shows)
+        let copy = [
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+            0x8b, 0x10, // mov edx, [eax]
+            0x03, 0x11, // add edx, [ecx]
+            0x89, 0x11, // mov [ecx], edx
+            0x8b, 0x50, 0x04, // mov edx, [eax+4]
+            0x03, 0x51, 0x04, // add edx, [ecx+4]
+            0x89, 0x51, 0x04, // mov [ecx+4], edx
+            0xc2, 0x04, 0x00, // ret 4
+        ];
+        let code = t.a.alloc_code(&copy).unwrap();
+        assert_eq!(t.b.alloc_code(&copy).unwrap(), code);
+        let at = t.rebase(mi::ARRAY_ASSIGN);
+        let old = Oracle::read(&mut t.a, at, 5).unwrap();
+        t.saved.entry(at).or_insert(old);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        for count in [0u32, 7, 0x8000_0007] {
+            let src = t.zeros(8);
+            t.w32(src, count);
+            t.w32(src + 4, 0x5000);
+            let obj = t.junk(0x30, 0x41);
+            let what = format!("{label}: script ctor {count:#x}");
+            t.check(&what, 0x0061_fac0, Conv::Thiscall(obj), &[0x77, src], |g| {
+                Out::U32(mib::script_ctor(g, obj, 0x77, src))
+            });
+        }
+        t.reset();
+        t.stub(mi::SCOPE_LOCK_ENTER, true, 0, 0, 0x11);
+        t.stub(mi::SCOPE_LOCK_LEAVE, true, 0, 0, 0x12);
+        t.stub(mi::RENDER_INTERFACE_CTOR, true, 0, 0, 0x13);
+        t.stub(mi::ATEXIT, false, 1, 0, 0x14);
+        t.stub(mi::RENDER_INTERFACE_SYNC, true, 0, 0, 0x15);
+        let guard = t.rebase(mi::RENDER_INTERFACE_GUARD);
+        for g in [0u32, 1, 0xffff_fffe] {
+            t.w32(guard, g);
+            // the stubs write nothing there: the logged `ecx` is the check
+            let what = format!("{label}: render sync {g:#x}");
+            t.check_frame(&what, 0x0062_d3d0, Conv::Cdecl, &[], 0x18, |g| {
+                let lock = g.1;
+                Out::U32(mib::render_sync(g, lock))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn pad_index_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let head = t.rebase(mi::DEVICE_LIST);
+        let saved = Oracle::read(&mut t.a, head, 8).unwrap();
+        // devices of types 2, 3, 2, 2 linked through +4 (the link is the
+        // device + 4)
+        let devs: Vec<u32> = [2u32, 3, 2, 4, 2]
+            .iter()
+            .map(|&ty| t.object(&[0, 0], &[0, ty]))
+            .collect();
+        for (i, &d) in devs.iter().enumerate() {
+            let next = devs.get(i + 1).map_or(head, |n| n + 4);
+            t.w32(d + 4, next);
+        }
+        for (case, first) in [(0, devs[0] + 4), (1, head), (2, 0), (3, 4)] {
+            t.w32(head, first);
+            for this in [devs[0], devs[1], devs[2], devs[3], devs[4], 0, 0x1234] {
+                let what = format!("{label}: pad index {case} {this:#x}");
+                t.check(&what, 0x0062_8170, Conv::Thiscall(this), &[], |g| {
+                    Out::U32(mib::pad_index(g, this))
+                });
+            }
+        }
+        t.write(head, &saved);
+        t.reset();
+    }
+}
+
+#[test]
+fn strongest_value_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the source value: the float at the source's +0
+        let value = [
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]
+            0xd9, 0x00, // fld dword [eax]
+            0xc2, 0x04, 0x00, // ret 4
+        ];
+        let code = t.a.alloc_code(&value).unwrap();
+        assert_eq!(t.b.alloc_code(&value).unwrap(), code);
+        let at = t.rebase(mi::SOURCE_VALUE);
+        let old = Oracle::read(&mut t.a, at, 5).unwrap();
+        t.saved.entry(at).or_insert(old);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let cases: [&[u32]; 6] = [
+            &[],
+            &[0x3f80_0000],
+            &[0x3f80_0000, 0xc000_0000, 0x3fc0_0000],
+            &[0x8000_0000, 0x0000_0000],
+            &[0x7fc0_0000, 0x3f00_0000, 0xbf00_0000],
+            &[0xbf00_0000, 0x3f00_0000, 0x7f80_0000],
+        ];
+        for (i, vals) in cases.iter().enumerate() {
+            let srcs: Vec<u32> = vals.iter().map(|v| t.alloc(&v.to_le_bytes())).collect();
+            let table = t.alloc(
+                &srcs
+                    .iter()
+                    .flat_map(|s| s.to_le_bytes())
+                    .collect::<Vec<u8>>()
+                    .iter()
+                    .copied()
+                    .chain([0; 4])
+                    .collect::<Vec<u8>>(),
+            );
+            let mapping = t.junk(0x20, 0x42);
+            t.w32(
+                mapping + 8,
+                vals.len() as u32 | if i == 5 { 0x8000_0000 } else { 0 },
+            );
+            t.w32(mapping + 0xc, table);
+            for m in [0, mapping] {
+                let what = format!("{label}: strongest {i} {m:#x}");
+                t.check(&what, 0x0062_9620, Conv::Thiscall(0x99), &[m], |g| {
+                    Out::F32(mib::strongest_value(g, 0x99, m))
+                });
+            }
+        }
+        // more than 0xff sources: the last one is the strongest
+        let small = t.alloc(&0x3f00_0000u32.to_le_bytes());
+        let large = t.alloc(&0x4100_0000u32.to_le_bytes());
+        let mut words: Vec<u8> = Vec::new();
+        for i in 0..0x101u32 {
+            words.extend(if i == 0x100 { large } else { small }.to_le_bytes());
+        }
+        let table = t.alloc(&words);
+        let mapping = t.junk(0x20, 0x48);
+        t.w32(mapping + 8, 0x101);
+        t.w32(mapping + 0xc, table);
+        t.check(
+            &format!("{label}: strongest of 0x101"),
+            0x0062_9620,
+            Conv::Thiscall(0x99),
+            &[mapping],
+            |g| Out::F32(mib::strongest_value(g, 0x99, mapping)),
+        );
+        t.reset();
+    }
+}
+
+#[test]
+fn range_erase_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(mi::MAP_CLEAR, true, 0, 0, 0xc1);
+        t.stub(mi::MAP_ERASE, true, 2, 2, 0xe1);
+        let (head, n) = small_map(&mut t);
+        let map = t.zeros(8);
+        t.w32(map, head);
+        for (first, last) in [
+            (n[0], head),
+            (n[1], head),
+            (n[0], n[3]),
+            (n[2], n[2]),
+            (n[4], head),
+            (n[0], n[0]),
+        ] {
+            let out = t.zeros(4);
+            // the erase stub writes nothing there: the logged pointer is the check
+            let what = format!("{label}: erase {first:#x}..{last:#x}");
+            t.check_frame(
+                &what,
+                0x0062_7130,
+                Conv::Thiscall(map),
+                &[out, first, last],
+                0x18,
+                |g| {
+                    let local = g.1;
+                    Out::U32(mib::erase_range(g, map, out, first, last, local))
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn command_table_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(mi::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(mi::MEMCPY, false, 3, 0, 0x3c);
+        t.stub_import_cdecl(mi::STRNCPY_SLOT, 3, 0x5c);
+        let table = t.junk(0x48 * 0x20, 0x43);
+        // room left; full with a table; full, empty and small; a failed
+        // allocation; a capacity that overflows
+        for (count, cap, old, got) in [
+            (3u32, 8u32, table, 0x9000u32),
+            (8, 8, table, 0x9000),
+            (0, 0, 0, 0x9000),
+            (4, 4, table, 0),
+            (0x2000_0000, 0x2000_0000, table, 0x9000),
+            (0x8000_0000, 0x8000_0000, 0, 0x9000),
+        ] {
+            let buf = if got == 0 {
+                0
+            } else {
+                t.junk(0x48 * 0x20, 0x44)
+            };
+            t.stub(mi::PHYRE_MALLOC, false, 1, 0, buf);
+            let proxy = t.junk(0x30, 0x45);
+            t.w32(proxy + 0x14, old);
+            t.w32(proxy + 0x18, count);
+            t.w32(proxy + 0x1c, cap);
+            let what = format!("{label}: add command {count:#x} {cap:#x} {got:#x}");
+            t.check(
+                &what,
+                0x0062_bab0,
+                Conv::Thiscall(proxy),
+                &[0x4321, 0x6000],
+                |g| {
+                    mib::add_command(g, proxy, 0x4321, 0x6000);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn motion_blur_apply_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(mi::BLUR_APPLY, true, 5, 5, 0xab);
+        let a = t.junk(0x80, 0x46);
+        for (ready, setup, has_target, moved, valid) in [
+            (0u8, 0u32, true, true, true),
+            (0, 7, true, false, true),
+            (1, 0, false, false, false),
+            (0, 0, false, false, false),
+            (1, 0, true, false, true),
+            (1, 0, true, true, false),
+            (1, 0, true, false, false),
+        ] {
+            let mb = t.object(&[0, 2, 0], &[0, setup, 0]);
+            t.w8(mb + 0x10, ready);
+            let cur = t.zeros(8);
+            if valid {
+                t.w32(cur, 0x55);
+            }
+            t.w32(mb + 8, cur);
+            t.w32(mb + 0xc, if moved { 0x1234 } else { cur });
+            let target = if has_target { t.junk(0x40, 0x47) } else { 0 };
+            let args = [a, 0x22, target, 0x44, 0x55];
+            let what = format!("{label}: blur apply {ready} {setup} {has_target} {moved} {valid}");
+            t.check(&what, 0x00a2_1c40, Conv::Thiscall(mb), &args, |g| {
+                Out::U32(mib::motion_blur_apply(g, mb, [a, 0x22, target, 0x44]))
+            });
+        }
+        t.reset();
+    }
+}

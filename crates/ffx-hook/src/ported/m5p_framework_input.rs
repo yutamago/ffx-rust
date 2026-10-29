@@ -13,6 +13,7 @@
 use super::{mem, ported};
 use ffx_pother_b::m5p_framework_input_app::bridge as ab;
 use ffx_pother_b::m5p_framework_input_devices::{self as dv, bridge as db};
+use ffx_pother_b::m5p_framework_input_misc::bridge as mb;
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
 use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
 use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
@@ -558,5 +559,37 @@ ported! {
     /// `Phyre_PFramework_PApplication_drainCommands_0062d100`: the lock released, the queue drained, the fields cleared; 0.
     Phyre_PFramework_PApplication_drainCommands_0062d100 @ 0x0062_d100 => extern "thiscall" fn ap_0062d100(this: u32) -> u32 {
         db::drain_commands(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PApplicationScript_ctor_0061fac0`: the buffer over a copy of `text`, the owner, its vtable; `this`.
+    Phyre_PFramework_PApplicationScript_ctor_0061fac0 @ 0x0061_fac0 => extern "thiscall" fn ms_0061fac0(this: u32, owner: u32, text: u32) -> u32 {
+        mb::script_ctor(&mut mem(), this, owner, text)
+    }
+    /// `Phyre_StdMap_eraseRange_00627130`: the range erased (all at once for `begin..end`); `*out` the iterator after it; `out`.
+    Phyre_StdMap_eraseRange_00627130 @ 0x0062_7130 => extern "thiscall" fn ms_00627130(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        mb::erase_range(&mut mem(), this, out, first, last, local)
+    }
+    /// `PInput_GetPadIndex`: the device's index among the pads (type 2), or -1.
+    PInput_GetPadIndex @ 0x0062_8170 => extern "thiscall" fn ms_00628170(this: u32) -> u32 {
+        mb::pad_index(&mut mem(), this)
+    }
+    /// `Phyre_PFramework_PInputMapping_getStrongestValue_00629620`: the strongest source value of `mapping`, or 0, in `ST0`.
+    Phyre_PFramework_PInputMapping_getStrongestValue_00629620 @ 0x0062_9620 => extern "thiscall" fn ms_00629620(this: u32, mapping: u32) -> f32 {
+        mb::strongest_value(&mut mem(), this, mapping)
+    }
+    /// `Phyre_PFramework_PApplicationScriptProxy_addCommand_0062bab0`: a `(handler, name)` command record appended, the table grown when full.
+    Phyre_PFramework_PApplicationScriptProxy_addCommand_0062bab0 @ 0x0062_bab0 => extern "thiscall" fn ms_0062bab0(this: u32, handler: u32, name: u32) {
+        mb::add_command(&mut mem(), this, handler, name);
+    }
+    /// `Phyre_PFramework_PApplication_syncRenderInterface_0062d3d0`: the render interface synced under the scope lock (built on first use); 0.
+    Phyre_PFramework_PApplication_syncRenderInterface_0062d3d0 @ 0x0062_d3d0 => extern "C" fn ms_0062d3d0() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let lock = frame.at();
+        mb::render_sync(&mut mem(), lock)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_apply_00a21c40`: the blur's set-up and apply; its `eax`, 5 or 0x15.
+    Phyre_PPostProcessing_PMotionBlur_apply_00a21c40 @ 0x00a2_1c40 => extern "thiscall" fn ms_00a21c40(this: u32, a: u32, b: u32, target: u32, d: u32, _e: u32) -> u32 {
+        mb::motion_blur_apply(&mut mem(), this, [a, b, target, d])
     }
 }
