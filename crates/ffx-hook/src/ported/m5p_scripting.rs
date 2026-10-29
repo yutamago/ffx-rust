@@ -13,7 +13,7 @@ use ffx_pother_a::m5p_scripting_run::bridge as ru;
 use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::bridge as st;
-use ffx_pother_a::m5p_scripting_vec::bridge as ve;
+use ffx_pother_a::m5p_scripting_vec::{self as ve_, bridge as ve};
 
 use super::{StackFrame, mem, ported};
 
@@ -812,5 +812,22 @@ ported! {
     /// `Phyre_PScripting_Vector_cross_00572690`.
     Phyre_PScripting_Vector_cross_00572690 @ 0x0057_2690 => extern "C" fn s_00572690(l: u32) -> u32 {
         ve::cross(&mut mem(), l)
+    }
+    // ---- batch 9: Vector arithmetic ----
+    /// `Phyre_PScripting_Vector_add_00572450`.
+    Phyre_PScripting_Vector_add_00572450 @ 0x0057_2450 => extern "C" fn s_00572450(l: u32) -> u32 {
+        ve::arith(&mut mem(), l, ve_::ARITH[0].1)
+    }
+    /// `Phyre_PScripting_Vector_sub_00573930`.
+    Phyre_PScripting_Vector_sub_00573930 @ 0x0057_3930 => extern "C" fn s_00573930(l: u32) -> u32 {
+        ve::arith(&mut mem(), l, ve_::ARITH[1].1)
+    }
+    /// `Phyre_PScripting_Vector_mul_00573480`.
+    Phyre_PScripting_Vector_mul_00573480 @ 0x0057_3480 => extern "C" fn s_00573480(l: u32) -> u32 {
+        ve::arith(&mut mem(), l, ve_::ARITH[2].1)
+    }
+    /// `Phyre_PScripting_Vector_div_00572810`.
+    Phyre_PScripting_Vector_div_00572810 @ 0x0057_2810 => extern "C" fn s_00572810(l: u32) -> u32 {
+        ve::arith(&mut mem(), l, ve_::ARITH[3].1)
     }
 }

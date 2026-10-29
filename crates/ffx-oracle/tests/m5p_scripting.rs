@@ -2556,3 +2556,53 @@ fn vec_args(t: &mut Twins, a: u32, b: u32) -> u32 {
     c.push(0xc3);
     t.code(&c)
 }
+
+// ---- batch 9: Vector arithmetic ----
+
+#[test]
+fn b9_vector_arithmetic_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let mut rng = Rng(0x0bad_cafe);
+        let w = |r: u32| (r & 0x8000_0000) | (0x3a00_0000 + (r & 0x0fff_ffff));
+        for k in 0..30u32 {
+            let a = t.zeros(0x10);
+            let b_ = t.zeros(0x10);
+            for i in 0..4 {
+                let (x, y) = if k < 10 {
+                    (
+                        FLOATS[(k + i) as usize % FLOATS.len()],
+                        FLOATS[(k * 3 + i) as usize % FLOATS.len()],
+                    )
+                } else {
+                    (w(rng.next()), w(rng.next()))
+                };
+                t.w32(a + 4 * i, x);
+                t.w32(b_ + 4 * i, y);
+            }
+            let table = t.alloc(
+                &[0u32, w(rng.next()), FLOATS[k as usize % FLOATS.len()]]
+                    .iter()
+                    .flat_map(|x| x.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            for (pa, pb) in [(0u32, 0u32), (0, b_), (a, 0), (a, b_)] {
+                lua_b3(&mut t, 0, 1, 1, 0, 3);
+                let c = vec_args(&mut t, pa, pb);
+                t.place(s::LUA_TOUSERDATA, c);
+                let out = t.junk(0x10, 3);
+                t.stub(s::LUA_NEWUSERDATA, false, 2, 0, out);
+                t.stub_float_table(ve_::LUA_CHECKNUMBER, 2, 1, table);
+                for &(f, op) in &ve_::ARITH {
+                    if pa == 0 && pb == 0 && op == ve_::Arith::Div {
+                        // the original divides by the words at address 0 (a fault)
+                        continue;
+                    }
+                    let what = format!("{label}: {op:?} #{k} {pa:#x} {pb:#x}");
+                    t.cdecl(&what, f, &[l], |g| Some(ve::arith(g, l, op)));
+                }
+            }
+        }
+        t.unstub();
+    }
+}
