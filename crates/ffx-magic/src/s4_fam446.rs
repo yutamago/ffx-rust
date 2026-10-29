@@ -698,3 +698,138 @@ pub const START_CHILD_SOUND_B: Sig = Sig {
     calls: &[(0x2e, Callee::Sig(&START_OBJECT_AT))],
     imports: &[],
 };
+
+/// Resets the current record of the DLL's table (a table entry, no
+/// arguments): `i = G_I` (operand `+0x1`); by the kind `G_K[i]` (`+0xf`;
+/// the jump table: 1, 2, 3 or any other) a data block `D` (the
+/// immediates at `+0x20`, `+0x27`, `+0x2e`, `+0x35`); the record's words
+/// (each its own operand, 0x78 bytes per record) take `D`, `D + 8`, `D +
+/// 0x10`, zeros and the constants 0x3000, 0x200, 0xa2, 0xf and 1. Returns
+/// `D + 0x10`.
+///
+/// `magic_0565` 0x10001870 (312 bytes with its jump table; 10 DLLs).
+pub fn record_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let i = g.read::<u32>(w(0x1));
+    let kind = g.read::<u32>(w(0xf).wrapping_add(i.wrapping_mul(4)));
+    let data = match kind {
+        1 => w(0x20),
+        2 => w(0x27),
+        3 => w(0x2e),
+        _ => w(0x35),
+    };
+    let rec = i.wrapping_mul(0x78);
+    for (op, v) in [
+        (0x3c, data),
+        (0x43, 0),
+        (0x4e, 0),
+        (0x59, 0),
+        (0x64, 0),
+        (0x72, data.wrapping_add(8)),
+        (0x79, 0),
+        (0x84, 0),
+        (0x8f, 0),
+        (0x9a, 0),
+        (0xa8, data.wrapping_add(0x10)),
+        (0xaf, 0),
+        (0xba, 0),
+        (0xc5, 0),
+        (0xd0, 0),
+        (0xdb, 0x3000),
+        (0xe6, 0x200),
+        (0xf1, 0xa2),
+        (0xfc, 0xf),
+        (0x107, 0),
+        (0x112, 0),
+        (0x11d, 1),
+    ] {
+        g.write::<u32>(w(op).wrapping_add(rec), v);
+    }
+    Ret::eax(data.wrapping_add(0x10))
+}
+
+/// [`record_reset`].
+pub const RECORD_RESET: Sig = Sig {
+    len: 312,
+    hash: 0xc474_3702_4518_6f8d,
+    calls: &[],
+    imports: &[],
+};
+
+/// The `magic_0565` family's start-up (a table entry, cdecl `(arg)`):
+/// `G_ARG` = arg (operand `+0x8`) and the object block set up
+/// ([`crate::l5_objhost::obj_block_init`]); slots 556, 555 and 331 on the
+/// DLL's three blocks (each call's words left for the next); three scales
+/// 1.0 and slot 790's float into `G_F`; the task ring
+/// ([`crate::l5_objhost::tasks_init`]); the 0x3ff nodes of pool A free
+/// (payload 0, the free count 0x3ff, the rover 0); slot 720 (0x3400,
+/// 0x800); slot 718 and 222 `(part, 0, 0x16, 1)` on part A; slot 718,
+/// 222 `(part, 0, 1000, 1)` and 221 `(part, 0, 1, 1)` on part B; slot 718
+/// and 221 `(part, 0, 1, 1)` on part A; `G_DONE` 0. Returns 0.
+///
+/// `magic_0565` 0x10001000 (371 bytes; 10 DLLs).
+pub fn host_start_565<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x8), arg);
+    crate::l5_objhost::obj_block_init(g, img, img.rel32_target(f + 0xd), arg);
+    let mut s = Pushes::default();
+    for (t, slot, block) in [(0x12, 556, 0x17), (0x24, 555, 0x29), (0x36, 331, 0x3b)] {
+        s.push(w(block));
+        // call width: 12 (Pushes caps the words at 12)
+        s.call(g, slot_target(g, w(t), slot), 0);
+    }
+    s.pop(3);
+    for op in [0x57, 0x61, 0x6b] {
+        g.write::<u32>(w(op), 0x3f80_0000);
+    }
+    let t = slot_target(g, w(0x48), 790);
+    let out = g.call(t, 0, &[]);
+    g.write::<u32>(w(0x77), crate::sa_summon::st0_f32(out));
+    crate::l5_objhost::tasks_init(g, img, img.rel32_target(f + 0x7c));
+    for k in 0..0x3ff {
+        g.write::<u32>(w(0x81) + 12 * k, 0);
+    }
+    g.write::<u16>(w(0xa3), 0x3ff);
+    g.write::<u16>(w(0xab), 0);
+    s.push_all(&[0x800, 0x3400]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xb0), 720), 0);
+    let (a, b) = (w(0xcc), w(0xf6));
+    s.push(a);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xc7), 718), 0);
+    s.push_all(&[1, 0x16, 0, w(0xea)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xd9), 222), 0);
+    s.push(b);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xf1), 718), 0);
+    s.push_all(&[1, 1000, 0, w(0x117)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x103), 222), 0);
+    s.push_all(&[1, 1, 0, w(0x12f)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x11e), 221), 0);
+    s.pop(16);
+    s.push(w(0x144));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x136), 718), 0);
+    s.push_all(&[1, 1, 0, w(0x15c)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x14b), 221), 0);
+    g.write::<u32>(w(0x167), 0);
+    Ret::eax(0)
+}
+
+/// [`host_start_565`].
+pub const HOST_START_565: Sig = Sig {
+    len: 371,
+    hash: 0xfa05_7819_3e8d_d38c,
+    calls: &[
+        (0xd, Callee::Sig(&crate::l5_objhost::OBJ_BLOCK_INIT)),
+        (0x7c, Callee::Sig(&crate::l5_objhost::TASKS_INIT)),
+    ],
+    imports: &[],
+};

@@ -1432,3 +1432,32 @@ fn timed_task() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+/// `magic_0565` 0x10001870 and 0x10001000: a record reset for each kind,
+/// and the family's start-up.
+#[test]
+fn fam565_reset_and_start() {
+    let Some(mut t) = twin(565) else { return };
+    let f = t.at(0x1870);
+    let i_at = t.img.word(f + 0x1);
+    let kinds = t.img.word(f + 0xf);
+    for (i, kind) in [(0u32, 0u32), (1, 1), (2, 2), (3, 3), (1, 7)] {
+        t.set_u32(i_at, i);
+        t.set_u32(kinds + 4 * i, kind);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    let hs = t.at(0x1000);
+    let block = SCRATCH + 0x2000;
+    rec(&mut t, 168, 1, move |_, _| block);
+    t.write(block, &[0; 0x200]);
+    for s in [
+        215u32, 413, 218, 291, 367, 556, 555, 331, 720, 718, 222, 221,
+    ] {
+        rec(&mut t, s, 1, move |_, a| s ^ (a[0] << 8));
+    }
+    rec(&mut t, 790, 0, |_, _| 0x790);
+    t.stub_st0(790, |_, _| 0.625);
+    for arg in [0x0a0a_0001u32, 0x0a0a_0002] {
+        t.check_entry(hs, Call::default(), &[arg], Eax::Checked);
+    }
+}
