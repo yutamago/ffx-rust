@@ -115,14 +115,17 @@ pub fn ctor0_at_exit(h: &mut impl Host, r: &Ctor0AtExit) -> u32 {
     at_exit(h, r.dtor)
 }
 
-/// A `ctor0_flags_vt` row (4): a no-argument constructor on a global, then
-/// `flags &= ~2`, the object's vtable, `atexit(dtor)`.
+/// A `ctor0_flags_vt` row (4, and static-init-ab's): a no-argument
+/// constructor on a global, then `flags = (flags & ~2) | set`, the object's
+/// vtable, `atexit(dtor)`. `set` is 0 (`and` alone) or 8 (the originals
+/// that also `or eax, 8`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ctor0FlagsVt {
     pub addr: u32,
     pub ctor: u32,
     pub obj: u32,
     pub flags: u32,
+    pub set: u32,
     pub vt: u32,
     pub dtor: u32,
 }
@@ -133,7 +136,7 @@ pub fn ctor0_flags_vt(h: &mut impl Host, r: &Ctor0FlagsVt) -> u32 {
     h.call_sym(r.ctor, Conv::Thiscall(obj), &[]);
     let flags = h.rebase(r.flags);
     let f: u32 = h.read(flags);
-    h.write(flags, f & !2);
+    h.write(flags, (f & !2) | r.set);
     let vt = h.rebase(r.vt);
     h.write(obj, vt);
     at_exit(h, r.dtor)
@@ -2335,6 +2338,7 @@ pub const CTOR0_FLAGS_VT: &[Ctor0FlagsVt] = &[
         ctor: 0x005d_d540,
         obj: 0x00cb_e940,
         flags: 0x00cb_e9d0,
+        set: 0,
         vt: 0x00b3_b064,
         dtor: 0x00b0_4cb0,
     },
@@ -2343,6 +2347,7 @@ pub const CTOR0_FLAGS_VT: &[Ctor0FlagsVt] = &[
         ctor: 0x005d_d680,
         obj: 0x00cb_e9d8,
         flags: 0x00cb_ea68,
+        set: 0,
         vt: 0x00b3_b15c,
         dtor: 0x00b0_4cf0,
     },
@@ -2351,6 +2356,7 @@ pub const CTOR0_FLAGS_VT: &[Ctor0FlagsVt] = &[
         ctor: 0x005d_e070,
         obj: 0x00cb_f0f8,
         flags: 0x00cb_f188,
+        set: 0,
         vt: 0x00b3_ac7c,
         dtor: 0x00b0_4f10,
     },
@@ -2359,6 +2365,7 @@ pub const CTOR0_FLAGS_VT: &[Ctor0FlagsVt] = &[
         ctor: 0x0061_f310,
         obj: 0x00cc_9e50,
         flags: 0x00cc_9ee0,
+        set: 0,
         vt: 0x00b3_fd54,
         dtor: 0x00b0_6110,
     },
@@ -4188,11 +4195,16 @@ pub fn ctor_store(h: &mut impl Host, r: &CtorStore) -> u32 {
     at_exit(h, r.dtor)
 }
 
-/// A `FreeList` row (6): `PFreeList(obj)` with (0x14, 8, 4, name), then atexit.
+/// A `FreeList` row (6, and static-init-ab's): `PFreeList(obj)` with
+/// (`size`, `count`, `align`, name), then atexit. The original's SEH frame
+/// (the rows under one and the rows without) writes no global.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FreeList {
     pub addr: u32,
     pub obj: u32,
+    pub size: u32,
+    pub count: u32,
+    pub align: u32,
     pub name: u32,
     pub dtor: u32,
 }
@@ -4201,7 +4213,11 @@ pub struct FreeList {
 pub fn free_list(h: &mut impl Host, r: &FreeList) -> u32 {
     let obj = h.rebase(r.obj);
     let name = h.rebase(r.name);
-    h.call_sym(FREE_LIST_CTOR, Conv::Thiscall(obj), &[0x14, 8, 4, name]);
+    h.call_sym(
+        FREE_LIST_CTOR,
+        Conv::Thiscall(obj),
+        &[r.size, r.count, r.align, name],
+    );
     at_exit(h, r.dtor)
 }
 
@@ -4498,36 +4514,54 @@ pub const FREE_LISTS: &[FreeList] = &[
     FreeList {
         addr: 0x00ae_e9d0,
         obj: 0x00c3_1eb4,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_6630,
     },
     FreeList {
         addr: 0x00ae_feb0,
         obj: 0x00c3_41b4,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_7000,
     },
     FreeList {
         addr: 0x00af_06d0,
         obj: 0x00c3_4b64,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_74e0,
     },
     FreeList {
         addr: 0x00af_0730,
         obj: 0x00c3_4b34,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_7560,
     },
     FreeList {
         addr: 0x00af_0b50,
         obj: 0x00c3_5014,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_7750,
     },
     FreeList {
         addr: 0x00af_0bb0,
         obj: 0x00c3_4fe4,
+        size: 0x14,
+        count: 8,
+        align: 4,
         name: 0x00b1_3bc8,
         dtor: 0x00b0_77d0,
     },

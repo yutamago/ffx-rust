@@ -4,6 +4,7 @@
 //! tables), so one shim per address; the parity tests are
 //! `crates/ffx-oracle/tests/m5_static_init_b.rs`.
 
+use ffx_pload::m5_static_init_ab as sab;
 use ffx_pload::m5_static_init_b as si;
 
 use super::{mem, ported};
@@ -608,5 +609,2021 @@ ported! {
     /// `StaticInit_PInputMap_00af1420`: class descriptor `PInputMap` (`cd_desc_clear`): constructor, buffers, clear; atexit.
     StaticInit_PInputMap_00af1420 @ 0x00af_1420 => extern "C" fn s_00af1420() -> u32 {
         si::class_decl(&mut mem(), &si::CLASS_DECLS[51])
+    }
+    /// `StaticInit_JoypadAxis_00af2670`: type-enum value `JoypadAxis`: when 0x009f48f0 finds no such name, the node 0x00c68240 goes on the head of its list 0x0194359c (old head to 0x00c68248); atexit(0x00b08380).
+    StaticInit_JoypadAxis_00af2670 @ 0x00af_2670 => extern "C" fn s_00af2670() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[0])
+    }
+    /// `StaticInit_JoypadButton_00af26b0`: type-enum value `JoypadButton`: when 0x009f48f0 finds no such name, the node 0x00c68234 goes on the head of its list 0x0194359c (old head to 0x00c6823c); atexit(0x00b083a0).
+    StaticInit_JoypadButton_00af26b0 @ 0x00af_26b0 => extern "C" fn s_00af26b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[1])
+    }
+    /// `StaticInit_Key_00af26f0`: type-enum value `Key`: when 0x009f48f0 finds no such name, the node 0x00c68228 goes on the head of its list 0x0194359c (old head to 0x00c68230); atexit(0x00b083c0).
+    StaticInit_Key_00af26f0 @ 0x00af_26f0 => extern "C" fn s_00af26f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[2])
+    }
+    /// `StaticInit_MotionAngularVelocityX_00af2730`: type-enum value `MotionAngularVelocityX`: when 0x009f48f0 finds no such name, the node 0x00c682e8 goes on the head of its list 0x0194359c (old head to 0x00c682f0); atexit(0x00b083e0).
+    StaticInit_MotionAngularVelocityX_00af2730 @ 0x00af_2730 => extern "C" fn s_00af2730() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[3])
+    }
+    /// `StaticInit_MotionAngularVelocityY_00af2770`: type-enum value `MotionAngularVelocityY`: when 0x009f48f0 finds no such name, the node 0x00c682f4 goes on the head of its list 0x0194359c (old head to 0x00c682fc); atexit(0x00b08400).
+    StaticInit_MotionAngularVelocityY_00af2770 @ 0x00af_2770 => extern "C" fn s_00af2770() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[4])
+    }
+    /// `StaticInit_MotionAngularVelocityZ_00af27b0`: type-enum value `MotionAngularVelocityZ`: when 0x009f48f0 finds no such name, the node 0x00c68300 goes on the head of its list 0x0194359c (old head to 0x00c68308); atexit(0x00b08420).
+    StaticInit_MotionAngularVelocityZ_00af27b0 @ 0x00af_27b0 => extern "C" fn s_00af27b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[5])
+    }
+    /// `StaticInit_MotionLinearAccelerationX_00af27f0`: type-enum value `MotionLinearAccelerationX`: when 0x009f48f0 finds no such name, the node 0x00c6830c goes on the head of its list 0x0194359c (old head to 0x00c68314); atexit(0x00b08440).
+    StaticInit_MotionLinearAccelerationX_00af27f0 @ 0x00af_27f0 => extern "C" fn s_00af27f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[6])
+    }
+    /// `StaticInit_MotionLinearAccelerationY_00af2830`: type-enum value `MotionLinearAccelerationY`: when 0x009f48f0 finds no such name, the node 0x00c68318 goes on the head of its list 0x0194359c (old head to 0x00c68320); atexit(0x00b08460).
+    StaticInit_MotionLinearAccelerationY_00af2830 @ 0x00af_2830 => extern "C" fn s_00af2830() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[7])
+    }
+    /// `StaticInit_MotionLinearAccelerationZ_00af2870`: type-enum value `MotionLinearAccelerationZ`: when 0x009f48f0 finds no such name, the node 0x00c68324 goes on the head of its list 0x0194359c (old head to 0x00c6832c); atexit(0x00b08480).
+    StaticInit_MotionLinearAccelerationZ_00af2870 @ 0x00af_2870 => extern "C" fn s_00af2870() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[8])
+    }
+    /// `StaticInit_MotionQuatW_00af28b0`: type-enum value `MotionQuatW`: when 0x009f48f0 finds no such name, the node 0x00c682dc goes on the head of its list 0x0194359c (old head to 0x00c682e4); atexit(0x00b084a0).
+    StaticInit_MotionQuatW_00af28b0 @ 0x00af_28b0 => extern "C" fn s_00af28b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[9])
+    }
+    /// `StaticInit_MotionQuatX_00af28f0`: type-enum value `MotionQuatX`: when 0x009f48f0 finds no such name, the node 0x00c682b8 goes on the head of its list 0x0194359c (old head to 0x00c682c0); atexit(0x00b084c0).
+    StaticInit_MotionQuatX_00af28f0 @ 0x00af_28f0 => extern "C" fn s_00af28f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[10])
+    }
+    /// `StaticInit_MotionQuatY_00af2930`: type-enum value `MotionQuatY`: when 0x009f48f0 finds no such name, the node 0x00c682c4 goes on the head of its list 0x0194359c (old head to 0x00c682cc); atexit(0x00b084e0).
+    StaticInit_MotionQuatY_00af2930 @ 0x00af_2930 => extern "C" fn s_00af2930() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[11])
+    }
+    /// `StaticInit_MotionQuatZ_00af2970`: type-enum value `MotionQuatZ`: when 0x009f48f0 finds no such name, the node 0x00c682d0 goes on the head of its list 0x0194359c (old head to 0x00c682d8); atexit(0x00b08500).
+    StaticInit_MotionQuatZ_00af2970 @ 0x00af_2970 => extern "C" fn s_00af2970() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[12])
+    }
+    /// `StaticInit_MouseButton_00af29b0`: type-enum value `MouseButton`: when 0x009f48f0 finds no such name, the node 0x00c6824c goes on the head of its list 0x0194359c (old head to 0x00c68254); atexit(0x00b08520).
+    StaticInit_MouseButton_00af29b0 @ 0x00af_29b0 => extern "C" fn s_00af29b0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[13])
+    }
+    /// `StaticInit_MouseDeltaX_00af29f0`: type-enum value `MouseDeltaX`: when 0x009f48f0 finds no such name, the node 0x00c68258 goes on the head of its list 0x0194359c (old head to 0x00c68260); atexit(0x00b08540).
+    StaticInit_MouseDeltaX_00af29f0 @ 0x00af_29f0 => extern "C" fn s_00af29f0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[14])
+    }
+    /// `StaticInit_MouseDeltaY_00af2a30`: type-enum value `MouseDeltaY`: when 0x009f48f0 finds no such name, the node 0x00c68264 goes on the head of its list 0x0194359c (old head to 0x00c6826c); atexit(0x00b08560).
+    StaticInit_MouseDeltaY_00af2a30 @ 0x00af_2a30 => extern "C" fn s_00af2a30() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[15])
+    }
+    /// `StaticInit_TouchDragX_00af2a70`: type-enum value `TouchDragX`: when 0x009f48f0 finds no such name, the node 0x00c68270 goes on the head of its list 0x0194359c (old head to 0x00c68278); atexit(0x00b08580).
+    StaticInit_TouchDragX_00af2a70 @ 0x00af_2a70 => extern "C" fn s_00af2a70() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[16])
+    }
+    /// `StaticInit_TouchDragY_00af2ab0`: type-enum value `TouchDragY`: when 0x009f48f0 finds no such name, the node 0x00c6827c goes on the head of its list 0x0194359c (old head to 0x00c68284); atexit(0x00b085a0).
+    StaticInit_TouchDragY_00af2ab0 @ 0x00af_2ab0 => extern "C" fn s_00af2ab0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[17])
+    }
+    /// `StaticInit_TouchPinch_00af2af0`: type-enum value `TouchPinch`: when 0x009f48f0 finds no such name, the node 0x00c682a0 goes on the head of its list 0x0194359c (old head to 0x00c682a8); atexit(0x00b085c0).
+    StaticInit_TouchPinch_00af2af0 @ 0x00af_2af0 => extern "C" fn s_00af2af0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[18])
+    }
+    /// `StaticInit_TouchRotate_00af2b30`: type-enum value `TouchRotate`: when 0x009f48f0 finds no such name, the node 0x00c682ac goes on the head of its list 0x0194359c (old head to 0x00c682b4); atexit(0x00b085e0).
+    StaticInit_TouchRotate_00af2b30 @ 0x00af_2b30 => extern "C" fn s_00af2b30() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[19])
+    }
+    /// `StaticInit_TouchTwoFingerDragX_00af2b70`: type-enum value `TouchTwoFingerDragX`: when 0x009f48f0 finds no such name, the node 0x00c68288 goes on the head of its list 0x0194359c (old head to 0x00c68290); atexit(0x00b08600).
+    StaticInit_TouchTwoFingerDragX_00af2b70 @ 0x00af_2b70 => extern "C" fn s_00af2b70() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[20])
+    }
+    /// `StaticInit_TouchTwoFingerDragY_00af2bb0`: type-enum value `TouchTwoFingerDragY`: when 0x009f48f0 finds no such name, the node 0x00c68294 goes on the head of its list 0x0194359c (old head to 0x00c6829c); atexit(0x00b08620).
+    StaticInit_TouchTwoFingerDragY_00af2bb0 @ 0x00af_2bb0 => extern "C" fn s_00af2bb0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[21])
+    }
+    /// `StaticInit_Gyro_00af4c50`: type-enum value `Gyro`: when 0x00a2dea0 finds no such name, the node 0x00c6b6b4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6bc); atexit(0x00b09220).
+    StaticInit_Gyro_00af4c50 @ 0x00af_4c50 => extern "C" fn s_00af4c50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[22])
+    }
+    /// `StaticInit_XAxis_0_00af4c90`: type-enum value `XAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b744 goes on the head of its list 0x01a85318 (old head to 0x00c6b74c); atexit(0x00b09240).
+    StaticInit_XAxis_0_00af4c90 @ 0x00af_4c90 => extern "C" fn s_00af4c90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[23])
+    }
+    /// `StaticInit_XAxis_1_00af4cd0`: type-enum value `XAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b714 goes on the head of its list 0x01a85318 (old head to 0x00c6b71c); atexit(0x00b09260).
+    StaticInit_XAxis_1_00af4cd0 @ 0x00af_4cd0 => extern "C" fn s_00af4cd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[24])
+    }
+    /// `StaticInit_XAxis_2_00af4d10`: type-enum value `XAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6e4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6ec); atexit(0x00b09280).
+    StaticInit_XAxis_2_00af4d10 @ 0x00af_4d10 => extern "C" fn s_00af4d10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[25])
+    }
+    /// `StaticInit_YAxis_0_00af4d50`: type-enum value `YAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b734 goes on the head of its list 0x01a85318 (old head to 0x00c6b73c); atexit(0x00b092a0).
+    StaticInit_YAxis_0_00af4d50 @ 0x00af_4d50 => extern "C" fn s_00af4d50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[26])
+    }
+    /// `StaticInit_YAxis_1_00af4d90`: type-enum value `YAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b704 goes on the head of its list 0x01a85318 (old head to 0x00c6b70c); atexit(0x00b092c0).
+    StaticInit_YAxis_1_00af4d90 @ 0x00af_4d90 => extern "C" fn s_00af4d90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[27])
+    }
+    /// `StaticInit_YAxis_2_00af4dd0`: type-enum value `YAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6d4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6dc); atexit(0x00b092e0).
+    StaticInit_YAxis_2_00af4dd0 @ 0x00af_4dd0 => extern "C" fn s_00af4dd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[28])
+    }
+    /// `StaticInit_ZAxis_0_00af4e10`: type-enum value `ZAxis_0`: when 0x00a2dea0 finds no such name, the node 0x00c6b724 goes on the head of its list 0x01a85318 (old head to 0x00c6b72c); atexit(0x00b09300).
+    StaticInit_ZAxis_0_00af4e10 @ 0x00af_4e10 => extern "C" fn s_00af4e10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[29])
+    }
+    /// `StaticInit_ZAxis_1_00af4e50`: type-enum value `ZAxis_1`: when 0x00a2dea0 finds no such name, the node 0x00c6b6f4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6fc); atexit(0x00b09320).
+    StaticInit_ZAxis_1_00af4e50 @ 0x00af_4e50 => extern "C" fn s_00af4e50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[30])
+    }
+    /// `StaticInit_ZAxis_2_00af4e90`: type-enum value `ZAxis_2`: when 0x00a2dea0 finds no such name, the node 0x00c6b6c4 goes on the head of its list 0x01a85318 (old head to 0x00c6b6cc); atexit(0x00b09340).
+    StaticInit_ZAxis_2_00af4e90 @ 0x00af_4e90 => extern "C" fn s_00af4e90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[31])
+    }
+    /// `StaticInit_Button_0_00af4ed0`: type-enum value `Button_0`: when 0x00a2e310 finds no such name, the node 0x00c6bb34 goes on the head of its list 0x01a85354 (old head to 0x00c6bb3c); atexit(0x00b09370).
+    StaticInit_Button_0_00af4ed0 @ 0x00af_4ed0 => extern "C" fn s_00af4ed0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[32])
+    }
+    /// `StaticInit_Button_10_00af4f10`: type-enum value `Button_10`: when 0x00a2e310 finds no such name, the node 0x00c6b964 goes on the head of its list 0x01a85354 (old head to 0x00c6b96c); atexit(0x00b09390).
+    StaticInit_Button_10_00af4f10 @ 0x00af_4f10 => extern "C" fn s_00af4f10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[33])
+    }
+    /// `StaticInit_Button_11_00af4f50`: type-enum value `Button_11`: when 0x00a2e310 finds no such name, the node 0x00c6b934 goes on the head of its list 0x01a85354 (old head to 0x00c6b93c); atexit(0x00b093b0).
+    StaticInit_Button_11_00af4f50 @ 0x00af_4f50 => extern "C" fn s_00af4f50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[34])
+    }
+    /// `StaticInit_Button_12_00af4f90`: type-enum value `Button_12`: when 0x00a2e310 finds no such name, the node 0x00c6b904 goes on the head of its list 0x01a85354 (old head to 0x00c6b90c); atexit(0x00b093d0).
+    StaticInit_Button_12_00af4f90 @ 0x00af_4f90 => extern "C" fn s_00af4f90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[35])
+    }
+    /// `StaticInit_Button_13_00af4fd0`: type-enum value `Button_13`: when 0x00a2e310 finds no such name, the node 0x00c6b8e4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8ec); atexit(0x00b093f0).
+    StaticInit_Button_13_00af4fd0 @ 0x00af_4fd0 => extern "C" fn s_00af4fd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[36])
+    }
+    /// `StaticInit_Button_14_00af5010`: type-enum value `Button_14`: when 0x00a2e310 finds no such name, the node 0x00c6b8c4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8cc); atexit(0x00b09410).
+    StaticInit_Button_14_00af5010 @ 0x00af_5010 => extern "C" fn s_00af5010() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[37])
+    }
+    /// `StaticInit_Button_15_00af5050`: type-enum value `Button_15`: when 0x00a2e310 finds no such name, the node 0x00c6b8a4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8ac); atexit(0x00b09430).
+    StaticInit_Button_15_00af5050 @ 0x00af_5050 => extern "C" fn s_00af5050() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[38])
+    }
+    /// `StaticInit_Button_1_00af5090`: type-enum value `Button_1`: when 0x00a2e310 finds no such name, the node 0x00c6bb04 goes on the head of its list 0x01a85354 (old head to 0x00c6bb0c); atexit(0x00b09450).
+    StaticInit_Button_1_00af5090 @ 0x00af_5090 => extern "C" fn s_00af5090() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[39])
+    }
+    /// `StaticInit_Button_2_00af50d0`: type-enum value `Button_2`: when 0x00a2e310 finds no such name, the node 0x00c6bad4 goes on the head of its list 0x01a85354 (old head to 0x00c6badc); atexit(0x00b09470).
+    StaticInit_Button_2_00af50d0 @ 0x00af_50d0 => extern "C" fn s_00af50d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[40])
+    }
+    /// `StaticInit_Button_3_00af5110`: type-enum value `Button_3`: when 0x00a2e310 finds no such name, the node 0x00c6baa4 goes on the head of its list 0x01a85354 (old head to 0x00c6baac); atexit(0x00b09490).
+    StaticInit_Button_3_00af5110 @ 0x00af_5110 => extern "C" fn s_00af5110() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[41])
+    }
+    /// `StaticInit_Button_4_00af5150`: type-enum value `Button_4`: when 0x00a2e310 finds no such name, the node 0x00c6ba74 goes on the head of its list 0x01a85354 (old head to 0x00c6ba7c); atexit(0x00b094b0).
+    StaticInit_Button_4_00af5150 @ 0x00af_5150 => extern "C" fn s_00af5150() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[42])
+    }
+    /// `StaticInit_Button_5_00af5190`: type-enum value `Button_5`: when 0x00a2e310 finds no such name, the node 0x00c6ba44 goes on the head of its list 0x01a85354 (old head to 0x00c6ba4c); atexit(0x00b094d0).
+    StaticInit_Button_5_00af5190 @ 0x00af_5190 => extern "C" fn s_00af5190() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[43])
+    }
+    /// `StaticInit_Button_6_00af51d0`: type-enum value `Button_6`: when 0x00a2e310 finds no such name, the node 0x00c6ba14 goes on the head of its list 0x01a85354 (old head to 0x00c6ba1c); atexit(0x00b094f0).
+    StaticInit_Button_6_00af51d0 @ 0x00af_51d0 => extern "C" fn s_00af51d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[44])
+    }
+    /// `StaticInit_Button_7_00af5210`: type-enum value `Button_7`: when 0x00a2e310 finds no such name, the node 0x00c6b9e4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9ec); atexit(0x00b09510).
+    StaticInit_Button_7_00af5210 @ 0x00af_5210 => extern "C" fn s_00af5210() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[45])
+    }
+    /// `StaticInit_Button_8_00af5250`: type-enum value `Button_8`: when 0x00a2e310 finds no such name, the node 0x00c6b9b4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9bc); atexit(0x00b09530).
+    StaticInit_Button_8_00af5250 @ 0x00af_5250 => extern "C" fn s_00af5250() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[46])
+    }
+    /// `StaticInit_Button_9_00af5290`: type-enum value `Button_9`: when 0x00a2e310 finds no such name, the node 0x00c6b984 goes on the head of its list 0x01a85354 (old head to 0x00c6b98c); atexit(0x00b09550).
+    StaticInit_Button_9_00af5290 @ 0x00af_5290 => extern "C" fn s_00af5290() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[47])
+    }
+    /// `StaticInit_Button_A_00af52d0`: type-enum value `Button_A`: when 0x00a2e310 finds no such name, the node 0x00c6bae4 goes on the head of its list 0x01a85354 (old head to 0x00c6baec); atexit(0x00b09570).
+    StaticInit_Button_A_00af52d0 @ 0x00af_52d0 => extern "C" fn s_00af52d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[48])
+    }
+    /// `StaticInit_Button_B_00af5310`: type-enum value `Button_B`: when 0x00a2e310 finds no such name, the node 0x00c6bab4 goes on the head of its list 0x01a85354 (old head to 0x00c6babc); atexit(0x00b09590).
+    StaticInit_Button_B_00af5310 @ 0x00af_5310 => extern "C" fn s_00af5310() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[49])
+    }
+    /// `StaticInit_Button_Back_00af5350`: type-enum value `Button_Back`: when 0x00a2e310 finds no such name, the node 0x00c6b994 goes on the head of its list 0x01a85354 (old head to 0x00c6b99c); atexit(0x00b095b0).
+    StaticInit_Button_Back_00af5350 @ 0x00af_5350 => extern "C" fn s_00af5350() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[50])
+    }
+    /// `StaticInit_Button_Circle_00af5390`: type-enum value `Button_Circle`: when 0x00a2e310 finds no such name, the node 0x00c6bac4 goes on the head of its list 0x01a85354 (old head to 0x00c6bacc); atexit(0x00b095d0).
+    StaticInit_Button_Circle_00af5390 @ 0x00af_5390 => extern "C" fn s_00af5390() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[51])
+    }
+    /// `StaticInit_Button_Cross_00af53d0`: type-enum value `Button_Cross`: when 0x00a2e310 finds no such name, the node 0x00c6baf4 goes on the head of its list 0x01a85354 (old head to 0x00c6bafc); atexit(0x00b095f0).
+    StaticInit_Button_Cross_00af53d0 @ 0x00af_53d0 => extern "C" fn s_00af53d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[52])
+    }
+    /// `StaticInit_Button_Down_00af5410`: type-enum value `Button_Down`: when 0x00a2e310 finds no such name, the node 0x00c6b8b4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8bc); atexit(0x00b09610).
+    StaticInit_Button_Down_00af5410 @ 0x00af_5410 => extern "C" fn s_00af5410() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[53])
+    }
+    /// `StaticInit_Button_L1_00af5450`: type-enum value `Button_L1`: when 0x00a2e310 finds no such name, the node 0x00c6ba64 goes on the head of its list 0x01a85354 (old head to 0x00c6ba6c); atexit(0x00b09630).
+    StaticInit_Button_L1_00af5450 @ 0x00af_5450 => extern "C" fn s_00af5450() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[54])
+    }
+    /// `StaticInit_Button_L2_00af5490`: type-enum value `Button_L2`: when 0x00a2e310 finds no such name, the node 0x00c6ba04 goes on the head of its list 0x01a85354 (old head to 0x00c6ba0c); atexit(0x00b09650).
+    StaticInit_Button_L2_00af5490 @ 0x00af_5490 => extern "C" fn s_00af5490() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[55])
+    }
+    /// `StaticInit_Button_L3_00af54d0`: type-enum value `Button_L3`: when 0x00a2e310 finds no such name, the node 0x00c6b954 goes on the head of its list 0x01a85354 (old head to 0x00c6b95c); atexit(0x00b09670).
+    StaticInit_Button_L3_00af54d0 @ 0x00af_54d0 => extern "C" fn s_00af54d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[56])
+    }
+    /// `StaticInit_Button_LB_00af5510`: type-enum value `Button_LB`: when 0x00a2e310 finds no such name, the node 0x00c6ba54 goes on the head of its list 0x01a85354 (old head to 0x00c6ba5c); atexit(0x00b09690).
+    StaticInit_Button_LB_00af5510 @ 0x00af_5510 => extern "C" fn s_00af5510() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[57])
+    }
+    /// `StaticInit_Button_LS_00af5550`: type-enum value `Button_LS`: when 0x00a2e310 finds no such name, the node 0x00c6b944 goes on the head of its list 0x01a85354 (old head to 0x00c6b94c); atexit(0x00b096b0).
+    StaticInit_Button_LS_00af5550 @ 0x00af_5550 => extern "C" fn s_00af5550() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[58])
+    }
+    /// `StaticInit_Button_LT_00af5590`: type-enum value `Button_LT`: when 0x00a2e310 finds no such name, the node 0x00c6b9f4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9fc); atexit(0x00b096d0).
+    StaticInit_Button_LT_00af5590 @ 0x00af_5590 => extern "C" fn s_00af5590() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[59])
+    }
+    /// `StaticInit_Button_Left_00af55d0`: type-enum value `Button_Left`: when 0x00a2e310 finds no such name, the node 0x00c6b894 goes on the head of its list 0x01a85354 (old head to 0x00c6b89c); atexit(0x00b096f0).
+    StaticInit_Button_Left_00af55d0 @ 0x00af_55d0 => extern "C" fn s_00af55d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[60])
+    }
+    /// `StaticInit_Button_R1_00af5610`: type-enum value `Button_R1`: when 0x00a2e310 finds no such name, the node 0x00c6ba34 goes on the head of its list 0x01a85354 (old head to 0x00c6ba3c); atexit(0x00b09710).
+    StaticInit_Button_R1_00af5610 @ 0x00af_5610 => extern "C" fn s_00af5610() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[61])
+    }
+    /// `StaticInit_Button_R2_00af5650`: type-enum value `Button_R2`: when 0x00a2e310 finds no such name, the node 0x00c6b9d4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9dc); atexit(0x00b09730).
+    StaticInit_Button_R2_00af5650 @ 0x00af_5650 => extern "C" fn s_00af5650() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[62])
+    }
+    /// `StaticInit_Button_R3_00af5690`: type-enum value `Button_R3`: when 0x00a2e310 finds no such name, the node 0x00c6b924 goes on the head of its list 0x01a85354 (old head to 0x00c6b92c); atexit(0x00b09750).
+    StaticInit_Button_R3_00af5690 @ 0x00af_5690 => extern "C" fn s_00af5690() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[63])
+    }
+    /// `StaticInit_Button_RB_00af56d0`: type-enum value `Button_RB`: when 0x00a2e310 finds no such name, the node 0x00c6ba24 goes on the head of its list 0x01a85354 (old head to 0x00c6ba2c); atexit(0x00b09770).
+    StaticInit_Button_RB_00af56d0 @ 0x00af_56d0 => extern "C" fn s_00af56d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[64])
+    }
+    /// `StaticInit_Button_RS_00af5710`: type-enum value `Button_RS`: when 0x00a2e310 finds no such name, the node 0x00c6b914 goes on the head of its list 0x01a85354 (old head to 0x00c6b91c); atexit(0x00b09790).
+    StaticInit_Button_RS_00af5710 @ 0x00af_5710 => extern "C" fn s_00af5710() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[65])
+    }
+    /// `StaticInit_Button_RT_00af5750`: type-enum value `Button_RT`: when 0x00a2e310 finds no such name, the node 0x00c6b9c4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9cc); atexit(0x00b097b0).
+    StaticInit_Button_RT_00af5750 @ 0x00af_5750 => extern "C" fn s_00af5750() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[66])
+    }
+    /// `StaticInit_Button_Right_00af5790`: type-enum value `Button_Right`: when 0x00a2e310 finds no such name, the node 0x00c6b8d4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8dc); atexit(0x00b097d0).
+    StaticInit_Button_Right_00af5790 @ 0x00af_5790 => extern "C" fn s_00af5790() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[67])
+    }
+    /// `StaticInit_Button_Select_00af57d0`: type-enum value `Button_Select`: when 0x00a2e310 finds no such name, the node 0x00c6b9a4 goes on the head of its list 0x01a85354 (old head to 0x00c6b9ac); atexit(0x00b097f0).
+    StaticInit_Button_Select_00af57d0 @ 0x00af_57d0 => extern "C" fn s_00af57d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[68])
+    }
+    /// `StaticInit_Button_Square_00af5810`: type-enum value `Button_Square`: when 0x00a2e310 finds no such name, the node 0x00c6bb24 goes on the head of its list 0x01a85354 (old head to 0x00c6bb2c); atexit(0x00b09810).
+    StaticInit_Button_Square_00af5810 @ 0x00af_5810 => extern "C" fn s_00af5810() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[69])
+    }
+    /// `StaticInit_Button_Start_00af5850`: type-enum value `Button_Start`: when 0x00a2e310 finds no such name, the node 0x00c6b974 goes on the head of its list 0x01a85354 (old head to 0x00c6b97c); atexit(0x00b09830).
+    StaticInit_Button_Start_00af5850 @ 0x00af_5850 => extern "C" fn s_00af5850() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[70])
+    }
+    /// `StaticInit_Button_Triangle_00af5890`: type-enum value `Button_Triangle`: when 0x00a2e310 finds no such name, the node 0x00c6ba94 goes on the head of its list 0x01a85354 (old head to 0x00c6ba9c); atexit(0x00b09850).
+    StaticInit_Button_Triangle_00af5890 @ 0x00af_5890 => extern "C" fn s_00af5890() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[71])
+    }
+    /// `StaticInit_Button_Up_00af58d0`: type-enum value `Button_Up`: when 0x00a2e310 finds no such name, the node 0x00c6b8f4 goes on the head of its list 0x01a85354 (old head to 0x00c6b8fc); atexit(0x00b09870).
+    StaticInit_Button_Up_00af58d0 @ 0x00af_58d0 => extern "C" fn s_00af58d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[72])
+    }
+    /// `StaticInit_Button_X_00af5910`: type-enum value `Button_X`: when 0x00a2e310 finds no such name, the node 0x00c6bb14 goes on the head of its list 0x01a85354 (old head to 0x00c6bb1c); atexit(0x00b09890).
+    StaticInit_Button_X_00af5910 @ 0x00af_5910 => extern "C" fn s_00af5910() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[73])
+    }
+    /// `StaticInit_Button_Y_00af5950`: type-enum value `Button_Y`: when 0x00a2e310 finds no such name, the node 0x00c6ba84 goes on the head of its list 0x01a85354 (old head to 0x00c6ba8c); atexit(0x00b098b0).
+    StaticInit_Button_Y_00af5950 @ 0x00af_5950 => extern "C" fn s_00af5950() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[74])
+    }
+    /// `StaticInit_Empty_00af5990`: type-enum value `Empty`: when 0x00a2e310 finds no such name, the node 0x00c6b884 goes on the head of its list 0x01a85354 (old head to 0x00c6b88c); atexit(0x00b098d0).
+    StaticInit_Empty_00af5990 @ 0x00af_5990 => extern "C" fn s_00af5990() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[75])
+    }
+    /// `StaticInit_Empty_00af59d0`: type-enum value `Empty`: when 0x00a2e780 finds no such name, the node 0x00c6bc94 goes on the head of its list 0x01a85390 (old head to 0x00c6bc9c); atexit(0x00b09900).
+    StaticInit_Empty_00af59d0 @ 0x00af_59d0 => extern "C" fn s_00af59d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[76])
+    }
+    /// `StaticInit_Key_0_00af5a10`: type-enum value `Key_0`: when 0x00a2e780 finds no such name, the node 0x00c6c064 goes on the head of its list 0x01a85390 (old head to 0x00c6c06c); atexit(0x00b09920).
+    StaticInit_Key_0_00af5a10 @ 0x00af_5a10 => extern "C" fn s_00af5a10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[77])
+    }
+    /// `StaticInit_Key_1_00af5a50`: type-enum value `Key_1`: when 0x00a2e780 finds no such name, the node 0x00c6c0f4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0fc); atexit(0x00b09940).
+    StaticInit_Key_1_00af5a50 @ 0x00af_5a50 => extern "C" fn s_00af5a50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[78])
+    }
+    /// `StaticInit_Key_2_00af5a90`: type-enum value `Key_2`: when 0x00a2e780 finds no such name, the node 0x00c6c0e4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0ec); atexit(0x00b09960).
+    StaticInit_Key_2_00af5a90 @ 0x00af_5a90 => extern "C" fn s_00af5a90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[79])
+    }
+    /// `StaticInit_Key_3_00af5ad0`: type-enum value `Key_3`: when 0x00a2e780 finds no such name, the node 0x00c6c0d4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0dc); atexit(0x00b09980).
+    StaticInit_Key_3_00af5ad0 @ 0x00af_5ad0 => extern "C" fn s_00af5ad0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[80])
+    }
+    /// `StaticInit_Key_4_00af5b10`: type-enum value `Key_4`: when 0x00a2e780 finds no such name, the node 0x00c6c0c4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0cc); atexit(0x00b099a0).
+    StaticInit_Key_4_00af5b10 @ 0x00af_5b10 => extern "C" fn s_00af5b10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[81])
+    }
+    /// `StaticInit_Key_5_00af5b50`: type-enum value `Key_5`: when 0x00a2e780 finds no such name, the node 0x00c6c0b4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0bc); atexit(0x00b099c0).
+    StaticInit_Key_5_00af5b50 @ 0x00af_5b50 => extern "C" fn s_00af5b50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[82])
+    }
+    /// `StaticInit_Key_6_00af5b90`: type-enum value `Key_6`: when 0x00a2e780 finds no such name, the node 0x00c6c0a4 goes on the head of its list 0x01a85390 (old head to 0x00c6c0ac); atexit(0x00b099e0).
+    StaticInit_Key_6_00af5b90 @ 0x00af_5b90 => extern "C" fn s_00af5b90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[83])
+    }
+    /// `StaticInit_Key_7_00af5bd0`: type-enum value `Key_7`: when 0x00a2e780 finds no such name, the node 0x00c6c094 goes on the head of its list 0x01a85390 (old head to 0x00c6c09c); atexit(0x00b09a00).
+    StaticInit_Key_7_00af5bd0 @ 0x00af_5bd0 => extern "C" fn s_00af5bd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[84])
+    }
+    /// `StaticInit_Key_8_00af5c10`: type-enum value `Key_8`: when 0x00a2e780 finds no such name, the node 0x00c6c084 goes on the head of its list 0x01a85390 (old head to 0x00c6c08c); atexit(0x00b09a20).
+    StaticInit_Key_8_00af5c10 @ 0x00af_5c10 => extern "C" fn s_00af5c10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[85])
+    }
+    /// `StaticInit_Key_9_00af5c50`: type-enum value `Key_9`: when 0x00a2e780 finds no such name, the node 0x00c6c074 goes on the head of its list 0x01a85390 (old head to 0x00c6c07c); atexit(0x00b09a40).
+    StaticInit_Key_9_00af5c50 @ 0x00af_5c50 => extern "C" fn s_00af5c50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[86])
+    }
+    /// `StaticInit_Key_A_00af5c90`: type-enum value `Key_A`: when 0x00a2e780 finds no such name, the node 0x00c6c294 goes on the head of its list 0x01a85390 (old head to 0x00c6c29c); atexit(0x00b09a60).
+    StaticInit_Key_A_00af5c90 @ 0x00af_5c90 => extern "C" fn s_00af5c90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[87])
+    }
+    /// `StaticInit_Key_AccentGrave_00af5cd0`: type-enum value `Key_AccentGrave`: when 0x00a2e780 finds no such name, the node 0x00c6bca4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcac); atexit(0x00b09a80).
+    StaticInit_Key_AccentGrave_00af5cd0 @ 0x00af_5cd0 => extern "C" fn s_00af5cd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[88])
+    }
+    /// `StaticInit_Key_Apostrophe_00af5d10`: type-enum value `Key_Apostrophe`: when 0x00a2e780 finds no such name, the node 0x00c6bee4 goes on the head of its list 0x01a85390 (old head to 0x00c6beec); atexit(0x00b09aa0).
+    StaticInit_Key_Apostrophe_00af5d10 @ 0x00af_5d10 => extern "C" fn s_00af5d10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[89])
+    }
+    /// `StaticInit_Key_B_00af5d50`: type-enum value `Key_B`: when 0x00a2e780 finds no such name, the node 0x00c6c284 goes on the head of its list 0x01a85390 (old head to 0x00c6c28c); atexit(0x00b09ac0).
+    StaticInit_Key_B_00af5d50 @ 0x00af_5d50 => extern "C" fn s_00af5d50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[90])
+    }
+    /// `StaticInit_Key_Backslash_00af5d90`: type-enum value `Key_Backslash`: when 0x00a2e780 finds no such name, the node 0x00c6bf04 goes on the head of its list 0x01a85390 (old head to 0x00c6bf0c); atexit(0x00b09ae0).
+    StaticInit_Key_Backslash_00af5d90 @ 0x00af_5d90 => extern "C" fn s_00af5d90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[91])
+    }
+    /// `StaticInit_Key_Backspace_00af5dd0`: type-enum value `Key_Backspace`: when 0x00a2e780 finds no such name, the node 0x00c6bf74 goes on the head of its list 0x01a85390 (old head to 0x00c6bf7c); atexit(0x00b09b00).
+    StaticInit_Key_Backspace_00af5dd0 @ 0x00af_5dd0 => extern "C" fn s_00af5dd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[92])
+    }
+    /// `StaticInit_Key_C_00af5e10`: type-enum value `Key_C`: when 0x00a2e780 finds no such name, the node 0x00c6c274 goes on the head of its list 0x01a85390 (old head to 0x00c6c27c); atexit(0x00b09b20).
+    StaticInit_Key_C_00af5e10 @ 0x00af_5e10 => extern "C" fn s_00af5e10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[93])
+    }
+    /// `StaticInit_Key_Comma_00af5e50`: type-enum value `Key_Comma`: when 0x00a2e780 finds no such name, the node 0x00c6bed4 goes on the head of its list 0x01a85390 (old head to 0x00c6bedc); atexit(0x00b09b40).
+    StaticInit_Key_Comma_00af5e50 @ 0x00af_5e50 => extern "C" fn s_00af5e50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[94])
+    }
+    /// `StaticInit_Key_D_00af5e90`: type-enum value `Key_D`: when 0x00a2e780 finds no such name, the node 0x00c6c264 goes on the head of its list 0x01a85390 (old head to 0x00c6c26c); atexit(0x00b09b60).
+    StaticInit_Key_D_00af5e90 @ 0x00af_5e90 => extern "C" fn s_00af5e90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[95])
+    }
+    /// `StaticInit_Key_Delete_00af5ed0`: type-enum value `Key_Delete`: when 0x00a2e780 finds no such name, the node 0x00c6be14 goes on the head of its list 0x01a85390 (old head to 0x00c6be1c); atexit(0x00b09b80).
+    StaticInit_Key_Delete_00af5ed0 @ 0x00af_5ed0 => extern "C" fn s_00af5ed0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[96])
+    }
+    /// `StaticInit_Key_Down_00af5f10`: type-enum value `Key_Down`: when 0x00a2e780 finds no such name, the node 0x00c6be74 goes on the head of its list 0x01a85390 (old head to 0x00c6be7c); atexit(0x00b09ba0).
+    StaticInit_Key_Down_00af5f10 @ 0x00af_5f10 => extern "C" fn s_00af5f10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[97])
+    }
+    /// `StaticInit_Key_E_00af5f50`: type-enum value `Key_E`: when 0x00a2e780 finds no such name, the node 0x00c6c254 goes on the head of its list 0x01a85390 (old head to 0x00c6c25c); atexit(0x00b09bc0).
+    StaticInit_Key_E_00af5f50 @ 0x00af_5f50 => extern "C" fn s_00af5f50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[98])
+    }
+    /// `StaticInit_Key_End_00af5f90`: type-enum value `Key_End`: when 0x00a2e780 finds no such name, the node 0x00c6be54 goes on the head of its list 0x01a85390 (old head to 0x00c6be5c); atexit(0x00b09be0).
+    StaticInit_Key_End_00af5f90 @ 0x00af_5f90 => extern "C" fn s_00af5f90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[99])
+    }
+    /// `StaticInit_Key_Enter_00af5fd0`: type-enum value `Key_Enter`: when 0x00a2e780 finds no such name, the node 0x00c6bf84 goes on the head of its list 0x01a85390 (old head to 0x00c6bf8c); atexit(0x00b09c00).
+    StaticInit_Key_Enter_00af5fd0 @ 0x00af_5fd0 => extern "C" fn s_00af5fd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[100])
+    }
+    /// `StaticInit_Key_Equals_00af6010`: type-enum value `Key_Equals`: when 0x00a2e780 finds no such name, the node 0x00c6bf34 goes on the head of its list 0x01a85390 (old head to 0x00c6bf3c); atexit(0x00b09c20).
+    StaticInit_Key_Equals_00af6010 @ 0x00af_6010 => extern "C" fn s_00af6010() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[101])
+    }
+    /// `StaticInit_Key_Escape_00af6050`: type-enum value `Key_Escape`: when 0x00a2e780 finds no such name, the node 0x00c6c054 goes on the head of its list 0x01a85390 (old head to 0x00c6c05c); atexit(0x00b09c40).
+    StaticInit_Key_Escape_00af6050 @ 0x00af_6050 => extern "C" fn s_00af6050() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[102])
+    }
+    /// `StaticInit_Key_F10_00af6090`: type-enum value `Key_F10`: when 0x00a2e780 finds no such name, the node 0x00c6bfb4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfbc); atexit(0x00b09c60).
+    StaticInit_Key_F10_00af6090 @ 0x00af_6090 => extern "C" fn s_00af6090() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[103])
+    }
+    /// `StaticInit_Key_F11_00af60d0`: type-enum value `Key_F11`: when 0x00a2e780 finds no such name, the node 0x00c6bfa4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfac); atexit(0x00b09c80).
+    StaticInit_Key_F11_00af60d0 @ 0x00af_60d0 => extern "C" fn s_00af60d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[104])
+    }
+    /// `StaticInit_Key_F12_00af6110`: type-enum value `Key_F12`: when 0x00a2e780 finds no such name, the node 0x00c6bf94 goes on the head of its list 0x01a85390 (old head to 0x00c6bf9c); atexit(0x00b09ca0).
+    StaticInit_Key_F12_00af6110 @ 0x00af_6110 => extern "C" fn s_00af6110() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[105])
+    }
+    /// `StaticInit_Key_F1_00af6150`: type-enum value `Key_F1`: when 0x00a2e780 finds no such name, the node 0x00c6c044 goes on the head of its list 0x01a85390 (old head to 0x00c6c04c); atexit(0x00b09cc0).
+    StaticInit_Key_F1_00af6150 @ 0x00af_6150 => extern "C" fn s_00af6150() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[106])
+    }
+    /// `StaticInit_Key_F2_00af6190`: type-enum value `Key_F2`: when 0x00a2e780 finds no such name, the node 0x00c6c034 goes on the head of its list 0x01a85390 (old head to 0x00c6c03c); atexit(0x00b09ce0).
+    StaticInit_Key_F2_00af6190 @ 0x00af_6190 => extern "C" fn s_00af6190() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[107])
+    }
+    /// `StaticInit_Key_F3_00af61d0`: type-enum value `Key_F3`: when 0x00a2e780 finds no such name, the node 0x00c6c024 goes on the head of its list 0x01a85390 (old head to 0x00c6c02c); atexit(0x00b09d00).
+    StaticInit_Key_F3_00af61d0 @ 0x00af_61d0 => extern "C" fn s_00af61d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[108])
+    }
+    /// `StaticInit_Key_F4_00af6210`: type-enum value `Key_F4`: when 0x00a2e780 finds no such name, the node 0x00c6c014 goes on the head of its list 0x01a85390 (old head to 0x00c6c01c); atexit(0x00b09d20).
+    StaticInit_Key_F4_00af6210 @ 0x00af_6210 => extern "C" fn s_00af6210() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[109])
+    }
+    /// `StaticInit_Key_F5_00af6250`: type-enum value `Key_F5`: when 0x00a2e780 finds no such name, the node 0x00c6c004 goes on the head of its list 0x01a85390 (old head to 0x00c6c00c); atexit(0x00b09d40).
+    StaticInit_Key_F5_00af6250 @ 0x00af_6250 => extern "C" fn s_00af6250() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[110])
+    }
+    /// `StaticInit_Key_F6_00af6290`: type-enum value `Key_F6`: when 0x00a2e780 finds no such name, the node 0x00c6bff4 goes on the head of its list 0x01a85390 (old head to 0x00c6bffc); atexit(0x00b09d60).
+    StaticInit_Key_F6_00af6290 @ 0x00af_6290 => extern "C" fn s_00af6290() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[111])
+    }
+    /// `StaticInit_Key_F7_00af62d0`: type-enum value `Key_F7`: when 0x00a2e780 finds no such name, the node 0x00c6bfe4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfec); atexit(0x00b09d80).
+    StaticInit_Key_F7_00af62d0 @ 0x00af_62d0 => extern "C" fn s_00af62d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[112])
+    }
+    /// `StaticInit_Key_F8_00af6310`: type-enum value `Key_F8`: when 0x00a2e780 finds no such name, the node 0x00c6bfd4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfdc); atexit(0x00b09da0).
+    StaticInit_Key_F8_00af6310 @ 0x00af_6310 => extern "C" fn s_00af6310() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[113])
+    }
+    /// `StaticInit_Key_F9_00af6350`: type-enum value `Key_F9`: when 0x00a2e780 finds no such name, the node 0x00c6bfc4 goes on the head of its list 0x01a85390 (old head to 0x00c6bfcc); atexit(0x00b09dc0).
+    StaticInit_Key_F9_00af6350 @ 0x00af_6350 => extern "C" fn s_00af6350() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[114])
+    }
+    /// `StaticInit_Key_F_00af6390`: type-enum value `Key_F`: when 0x00a2e780 finds no such name, the node 0x00c6c244 goes on the head of its list 0x01a85390 (old head to 0x00c6c24c); atexit(0x00b09de0).
+    StaticInit_Key_F_00af6390 @ 0x00af_6390 => extern "C" fn s_00af6390() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[115])
+    }
+    /// `StaticInit_Key_G_00af63d0`: type-enum value `Key_G`: when 0x00a2e780 finds no such name, the node 0x00c6c234 goes on the head of its list 0x01a85390 (old head to 0x00c6c23c); atexit(0x00b09e00).
+    StaticInit_Key_G_00af63d0 @ 0x00af_63d0 => extern "C" fn s_00af63d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[116])
+    }
+    /// `StaticInit_Key_H_00af6410`: type-enum value `Key_H`: when 0x00a2e780 finds no such name, the node 0x00c6c224 goes on the head of its list 0x01a85390 (old head to 0x00c6c22c); atexit(0x00b09e20).
+    StaticInit_Key_H_00af6410 @ 0x00af_6410 => extern "C" fn s_00af6410() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[117])
+    }
+    /// `StaticInit_Key_Home_00af6450`: type-enum value `Key_Home`: when 0x00a2e780 finds no such name, the node 0x00c6be64 goes on the head of its list 0x01a85390 (old head to 0x00c6be6c); atexit(0x00b09e40).
+    StaticInit_Key_Home_00af6450 @ 0x00af_6450 => extern "C" fn s_00af6450() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[118])
+    }
+    /// `StaticInit_Key_I_00af6490`: type-enum value `Key_I`: when 0x00a2e780 finds no such name, the node 0x00c6c214 goes on the head of its list 0x01a85390 (old head to 0x00c6c21c); atexit(0x00b09e60).
+    StaticInit_Key_I_00af6490 @ 0x00af_6490 => extern "C" fn s_00af6490() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[119])
+    }
+    /// `StaticInit_Key_Insert_00af64d0`: type-enum value `Key_Insert`: when 0x00a2e780 finds no such name, the node 0x00c6be24 goes on the head of its list 0x01a85390 (old head to 0x00c6be2c); atexit(0x00b09e80).
+    StaticInit_Key_Insert_00af64d0 @ 0x00af_64d0 => extern "C" fn s_00af64d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[120])
+    }
+    /// `StaticInit_Key_J_00af6510`: type-enum value `Key_J`: when 0x00a2e780 finds no such name, the node 0x00c6c204 goes on the head of its list 0x01a85390 (old head to 0x00c6c20c); atexit(0x00b09ea0).
+    StaticInit_Key_J_00af6510 @ 0x00af_6510 => extern "C" fn s_00af6510() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[121])
+    }
+    /// `StaticInit_Key_K_00af6550`: type-enum value `Key_K`: when 0x00a2e780 finds no such name, the node 0x00c6c1f4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1fc); atexit(0x00b09ec0).
+    StaticInit_Key_K_00af6550 @ 0x00af_6550 => extern "C" fn s_00af6550() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[122])
+    }
+    /// `StaticInit_Key_L_00af6590`: type-enum value `Key_L`: when 0x00a2e780 finds no such name, the node 0x00c6c1e4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1ec); atexit(0x00b09ee0).
+    StaticInit_Key_L_00af6590 @ 0x00af_6590 => extern "C" fn s_00af6590() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[123])
+    }
+    /// `StaticInit_Key_LeftBracket_00af65d0`: type-enum value `Key_LeftBracket`: when 0x00a2e780 finds no such name, the node 0x00c6bf24 goes on the head of its list 0x01a85390 (old head to 0x00c6bf2c); atexit(0x00b09f00).
+    StaticInit_Key_LeftBracket_00af65d0 @ 0x00af_65d0 => extern "C" fn s_00af65d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[124])
+    }
+    /// `StaticInit_Key_Left_Alt_00af6610`: type-enum value `Key_Left_Alt`: when 0x00a2e780 finds no such name, the node 0x00c6bce4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcec); atexit(0x00b09f20).
+    StaticInit_Key_Left_Alt_00af6610 @ 0x00af_6610 => extern "C" fn s_00af6610() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[125])
+    }
+    /// `StaticInit_Key_Left_Control_00af6650`: type-enum value `Key_Left_Control`: when 0x00a2e780 finds no such name, the node 0x00c6bd04 goes on the head of its list 0x01a85390 (old head to 0x00c6bd0c); atexit(0x00b09f40).
+    StaticInit_Key_Left_Control_00af6650 @ 0x00af_6650 => extern "C" fn s_00af6650() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[126])
+    }
+    /// `StaticInit_Key_Left_Shift_00af6690`: type-enum value `Key_Left_Shift`: when 0x00a2e780 finds no such name, the node 0x00c6bcf4 goes on the head of its list 0x01a85390 (old head to 0x00c6bcfc); atexit(0x00b09f60).
+    StaticInit_Key_Left_Shift_00af6690 @ 0x00af_6690 => extern "C" fn s_00af6690() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[127])
+    }
+    /// `StaticInit_Key_Left_00af66d0`: type-enum value `Key_Left`: when 0x00a2e780 finds no such name, the node 0x00c6bea4 goes on the head of its list 0x01a85390 (old head to 0x00c6beac); atexit(0x00b09f80).
+    StaticInit_Key_Left_00af66d0 @ 0x00af_66d0 => extern "C" fn s_00af66d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[128])
+    }
+    /// `StaticInit_Key_M_00af6710`: type-enum value `Key_M`: when 0x00a2e780 finds no such name, the node 0x00c6c1d4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1dc); atexit(0x00b09fa0).
+    StaticInit_Key_M_00af6710 @ 0x00af_6710 => extern "C" fn s_00af6710() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[129])
+    }
+    /// `StaticInit_Key_Minus_00af6750`: type-enum value `Key_Minus`: when 0x00a2e780 finds no such name, the node 0x00c6bf44 goes on the head of its list 0x01a85390 (old head to 0x00c6bf4c); atexit(0x00b09fc0).
+    StaticInit_Key_Minus_00af6750 @ 0x00af_6750 => extern "C" fn s_00af6750() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[130])
+    }
+    /// `StaticInit_Key_N_00af6790`: type-enum value `Key_N`: when 0x00a2e780 finds no such name, the node 0x00c6c1c4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1cc); atexit(0x00b09fe0).
+    StaticInit_Key_N_00af6790 @ 0x00af_6790 => extern "C" fn s_00af6790() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[131])
+    }
+    /// `StaticInit_Key_Numpad_0_00af67d0`: type-enum value `Key_Numpad_0`: when 0x00a2e780 finds no such name, the node 0x00c6bd74 goes on the head of its list 0x01a85390 (old head to 0x00c6bd7c); atexit(0x00b0a000).
+    StaticInit_Key_Numpad_0_00af67d0 @ 0x00af_67d0 => extern "C" fn s_00af67d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[132])
+    }
+    /// `StaticInit_Key_Numpad_1_00af6810`: type-enum value `Key_Numpad_1`: when 0x00a2e780 finds no such name, the node 0x00c6be04 goes on the head of its list 0x01a85390 (old head to 0x00c6be0c); atexit(0x00b0a020).
+    StaticInit_Key_Numpad_1_00af6810 @ 0x00af_6810 => extern "C" fn s_00af6810() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[133])
+    }
+    /// `StaticInit_Key_Numpad_2_00af6850`: type-enum value `Key_Numpad_2`: when 0x00a2e780 finds no such name, the node 0x00c6bdf4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdfc); atexit(0x00b0a040).
+    StaticInit_Key_Numpad_2_00af6850 @ 0x00af_6850 => extern "C" fn s_00af6850() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[134])
+    }
+    /// `StaticInit_Key_Numpad_3_00af6890`: type-enum value `Key_Numpad_3`: when 0x00a2e780 finds no such name, the node 0x00c6bde4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdec); atexit(0x00b0a060).
+    StaticInit_Key_Numpad_3_00af6890 @ 0x00af_6890 => extern "C" fn s_00af6890() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[135])
+    }
+    /// `StaticInit_Key_Numpad_4_00af68d0`: type-enum value `Key_Numpad_4`: when 0x00a2e780 finds no such name, the node 0x00c6bdd4 goes on the head of its list 0x01a85390 (old head to 0x00c6bddc); atexit(0x00b0a080).
+    StaticInit_Key_Numpad_4_00af68d0 @ 0x00af_68d0 => extern "C" fn s_00af68d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[136])
+    }
+    /// `StaticInit_Key_Numpad_5_00af6910`: type-enum value `Key_Numpad_5`: when 0x00a2e780 finds no such name, the node 0x00c6bdc4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdcc); atexit(0x00b0a0a0).
+    StaticInit_Key_Numpad_5_00af6910 @ 0x00af_6910 => extern "C" fn s_00af6910() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[137])
+    }
+    /// `StaticInit_Key_Numpad_6_00af6950`: type-enum value `Key_Numpad_6`: when 0x00a2e780 finds no such name, the node 0x00c6bdb4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdbc); atexit(0x00b0a0c0).
+    StaticInit_Key_Numpad_6_00af6950 @ 0x00af_6950 => extern "C" fn s_00af6950() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[138])
+    }
+    /// `StaticInit_Key_Numpad_7_00af6990`: type-enum value `Key_Numpad_7`: when 0x00a2e780 finds no such name, the node 0x00c6bda4 goes on the head of its list 0x01a85390 (old head to 0x00c6bdac); atexit(0x00b0a0e0).
+    StaticInit_Key_Numpad_7_00af6990 @ 0x00af_6990 => extern "C" fn s_00af6990() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[139])
+    }
+    /// `StaticInit_Key_Numpad_8_00af69d0`: type-enum value `Key_Numpad_8`: when 0x00a2e780 finds no such name, the node 0x00c6bd94 goes on the head of its list 0x01a85390 (old head to 0x00c6bd9c); atexit(0x00b0a100).
+    StaticInit_Key_Numpad_8_00af69d0 @ 0x00af_69d0 => extern "C" fn s_00af69d0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[140])
+    }
+    /// `StaticInit_Key_Numpad_9_00af6a10`: type-enum value `Key_Numpad_9`: when 0x00a2e780 finds no such name, the node 0x00c6bd84 goes on the head of its list 0x01a85390 (old head to 0x00c6bd8c); atexit(0x00b0a120).
+    StaticInit_Key_Numpad_9_00af6a10 @ 0x00af_6a10 => extern "C" fn s_00af6a10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[141])
+    }
+    /// `StaticInit_Key_Numpad_Asterisk_00af6a50`: type-enum value `Key_Numpad_Asterisk`: when 0x00a2e780 finds no such name, the node 0x00c6bd54 goes on the head of its list 0x01a85390 (old head to 0x00c6bd5c); atexit(0x00b0a140).
+    StaticInit_Key_Numpad_Asterisk_00af6a50 @ 0x00af_6a50 => extern "C" fn s_00af6a50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[142])
+    }
+    /// `StaticInit_Key_Numpad_Enter_00af6a90`: type-enum value `Key_Numpad_Enter`: when 0x00a2e780 finds no such name, the node 0x00c6bd24 goes on the head of its list 0x01a85390 (old head to 0x00c6bd2c); atexit(0x00b0a160).
+    StaticInit_Key_Numpad_Enter_00af6a90 @ 0x00af_6a90 => extern "C" fn s_00af6a90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[143])
+    }
+    /// `StaticInit_Key_Numpad_Minus_00af6ad0`: type-enum value `Key_Numpad_Minus`: when 0x00a2e780 finds no such name, the node 0x00c6bd44 goes on the head of its list 0x01a85390 (old head to 0x00c6bd4c); atexit(0x00b0a180).
+    StaticInit_Key_Numpad_Minus_00af6ad0 @ 0x00af_6ad0 => extern "C" fn s_00af6ad0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[144])
+    }
+    /// `StaticInit_Key_Numpad_Period_00af6b10`: type-enum value `Key_Numpad_Period`: when 0x00a2e780 finds no such name, the node 0x00c6bd14 goes on the head of its list 0x01a85390 (old head to 0x00c6bd1c); atexit(0x00b0a1a0).
+    StaticInit_Key_Numpad_Period_00af6b10 @ 0x00af_6b10 => extern "C" fn s_00af6b10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[145])
+    }
+    /// `StaticInit_Key_Numpad_Plus_00af6b50`: type-enum value `Key_Numpad_Plus`: when 0x00a2e780 finds no such name, the node 0x00c6bd34 goes on the head of its list 0x01a85390 (old head to 0x00c6bd3c); atexit(0x00b0a1c0).
+    StaticInit_Key_Numpad_Plus_00af6b50 @ 0x00af_6b50 => extern "C" fn s_00af6b50() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[146])
+    }
+    /// `StaticInit_Key_Numpad_Slash_00af6b90`: type-enum value `Key_Numpad_Slash`: when 0x00a2e780 finds no such name, the node 0x00c6bd64 goes on the head of its list 0x01a85390 (old head to 0x00c6bd6c); atexit(0x00b0a1e0).
+    StaticInit_Key_Numpad_Slash_00af6b90 @ 0x00af_6b90 => extern "C" fn s_00af6b90() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[147])
+    }
+    /// `StaticInit_Key_O_00af6bd0`: type-enum value `Key_O`: when 0x00a2e780 finds no such name, the node 0x00c6c1b4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1bc); atexit(0x00b0a200).
+    StaticInit_Key_O_00af6bd0 @ 0x00af_6bd0 => extern "C" fn s_00af6bd0() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[148])
+    }
+    /// `StaticInit_Key_P_00af6c10`: type-enum value `Key_P`: when 0x00a2e780 finds no such name, the node 0x00c6c1a4 goes on the head of its list 0x01a85390 (old head to 0x00c6c1ac); atexit(0x00b0a220).
+    StaticInit_Key_P_00af6c10 @ 0x00af_6c10 => extern "C" fn s_00af6c10() -> u32 {
+        si::type_enum(&mut mem(), &si::TYPE_ENUMS[149])
+    }
+    /// `StaticInit_PInputSource_00af14e0`: class descriptor `PInputSource` (`cd_desc_keep`): constructor, buffers, keep; atexit.
+    StaticInit_PInputSource_00af14e0 @ 0x00af_14e0 => extern "C" fn s_00af14e0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[52])
+    }
+    /// `StaticInit_PInputSourceJoypadAxis_00af1590`: class descriptor `PInputSourceJoypadAxis` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceJoypadAxis_00af1590 @ 0x00af_1590 => extern "C" fn s_00af1590() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[53])
+    }
+    /// `StaticInit_PInputSourceJoypadButton_00af1650`: class descriptor `PInputSourceJoypadButton` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceJoypadButton_00af1650 @ 0x00af_1650 => extern "C" fn s_00af1650() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[54])
+    }
+    /// `StaticInit_PInputSourceKey_00af1710`: class descriptor `PInputSourceKey` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceKey_00af1710 @ 0x00af_1710 => extern "C" fn s_00af1710() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[55])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityX_00af17d0`: class descriptor `PInputSourceMotionAngularVelocityX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityX_00af17d0 @ 0x00af_17d0 => extern "C" fn s_00af17d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[56])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityY_00af1890`: class descriptor `PInputSourceMotionAngularVelocityY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityY_00af1890 @ 0x00af_1890 => extern "C" fn s_00af1890() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[57])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityZ_00af1950`: class descriptor `PInputSourceMotionAngularVelocityZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityZ_00af1950 @ 0x00af_1950 => extern "C" fn s_00af1950() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[58])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationX_00af1a10`: class descriptor `PInputSourceMotionLinearAccelerationX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationX_00af1a10 @ 0x00af_1a10 => extern "C" fn s_00af1a10() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[59])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationY_00af1ad0`: class descriptor `PInputSourceMotionLinearAccelerationY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationY_00af1ad0 @ 0x00af_1ad0 => extern "C" fn s_00af1ad0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[60])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationZ_00af1b90`: class descriptor `PInputSourceMotionLinearAccelerationZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationZ_00af1b90 @ 0x00af_1b90 => extern "C" fn s_00af1b90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[61])
+    }
+    /// `StaticInit_PInputSourceMotionQuatW_00af1c50`: class descriptor `PInputSourceMotionQuatW` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatW_00af1c50 @ 0x00af_1c50 => extern "C" fn s_00af1c50() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[62])
+    }
+    /// `StaticInit_PInputSourceMotionQuatX_00af1d10`: class descriptor `PInputSourceMotionQuatX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatX_00af1d10 @ 0x00af_1d10 => extern "C" fn s_00af1d10() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[63])
+    }
+    /// `StaticInit_PInputSourceMotionQuatY_00af1dd0`: class descriptor `PInputSourceMotionQuatY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatY_00af1dd0 @ 0x00af_1dd0 => extern "C" fn s_00af1dd0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[64])
+    }
+    /// `StaticInit_PInputSourceMotionQuatZ_00af1e90`: class descriptor `PInputSourceMotionQuatZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatZ_00af1e90 @ 0x00af_1e90 => extern "C" fn s_00af1e90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[65])
+    }
+    /// `StaticInit_PInputSourceMouseButton_00af1f50`: class descriptor `PInputSourceMouseButton` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseButton_00af1f50 @ 0x00af_1f50 => extern "C" fn s_00af1f50() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[66])
+    }
+    /// `StaticInit_PInputSourceMouseDeltaX_00af2010`: class descriptor `PInputSourceMouseDeltaX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseDeltaX_00af2010 @ 0x00af_2010 => extern "C" fn s_00af2010() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[67])
+    }
+    /// `StaticInit_PInputSourceMouseDeltaY_00af20d0`: class descriptor `PInputSourceMouseDeltaY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseDeltaY_00af20d0 @ 0x00af_20d0 => extern "C" fn s_00af20d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[68])
+    }
+    /// `StaticInit_PInputSourceTouchDragX_00af2190`: class descriptor `PInputSourceTouchDragX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchDragX_00af2190 @ 0x00af_2190 => extern "C" fn s_00af2190() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[69])
+    }
+    /// `StaticInit_PInputSourceTouchDragY_00af2250`: class descriptor `PInputSourceTouchDragY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchDragY_00af2250 @ 0x00af_2250 => extern "C" fn s_00af2250() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[70])
+    }
+    /// `StaticInit_PInputSourceTouchPinch_00af2310`: class descriptor `PInputSourceTouchPinch` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchPinch_00af2310 @ 0x00af_2310 => extern "C" fn s_00af2310() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[71])
+    }
+    /// `StaticInit_PInputSourceTouchRotate_00af23d0`: class descriptor `PInputSourceTouchRotate` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchRotate_00af23d0 @ 0x00af_23d0 => extern "C" fn s_00af23d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[72])
+    }
+    /// `StaticInit_PInputSourceTouchTwoFingerDragX_00af2490`: class descriptor `PInputSourceTouchTwoFingerDragX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchTwoFingerDragX_00af2490 @ 0x00af_2490 => extern "C" fn s_00af2490() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[73])
+    }
+    /// `StaticInit_PInputSourceTouchTwoFingerDragY_00af2550`: class descriptor `PInputSourceTouchTwoFingerDragY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchTwoFingerDragY_00af2550 @ 0x00af_2550 => extern "C" fn s_00af2550() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[74])
+    }
+    /// `StaticInit_TailThiscall_00af2610`: ecx = `0x0194_2998`, then a tail jump to 0x009f2510 (thiscall, no stack words), whose eax is returned.
+    StaticInit_TailThiscall_00af2610 @ 0x00af_2610 => extern "C" fn s_00af2610() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[0])
+    }
+    /// `StaticInit_ChainAppend_00af2620`: appends the object at `0x00c6_81ec` (vtable 0x00b73d8c) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b08330).
+    StaticInit_ChainAppend_00af2620 @ 0x00af_2620 => extern "C" fn s_00af2620() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[2])
+    }
+    /// `StaticInit_ChainAppend_00af2bf0`: appends the object at `0x00c6_845c` (vtable 0x00b73f58) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b08650).
+    StaticInit_ChainAppend_00af2bf0 @ 0x00af_2bf0 => extern "C" fn s_00af2bf0() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[3])
+    }
+    /// `StaticInit_Sentinel_00af2c40`: list object `0x0194_3da0` constructed, then its sentinel `0x0194_3de8` links to itself; atexit(0x00b086a0).
+    StaticInit_Sentinel_00af2c40 @ 0x00af_2c40 => extern "C" fn s_00af2c40() -> u32 {
+        si::sentinel(&mut mem(), &si::SENTINELS[2])
+    }
+    /// `StaticInit_PDeferredLighting_00af2c70`: class descriptor `PDeferredLighting` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLighting_00af2c70 @ 0x00af_2c70 => extern "C" fn s_00af2c70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[75])
+    }
+    /// `StaticInit_PDeferredLightingBase_00af2d30`: class descriptor `PDeferredLightingBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLightingBase_00af2d30 @ 0x00af_2d30 => extern "C" fn s_00af2d30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[76])
+    }
+    /// `StaticInit_PDeferredLightingD3D11_00af2df0`: class descriptor `PDeferredLightingD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLightingD3D11_00af2df0 @ 0x00af_2df0 => extern "C" fn s_00af2df0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[77])
+    }
+    /// `StaticInit_PDepthOfField_00af2eb0`: class descriptor `PDepthOfField` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfField_00af2eb0 @ 0x00af_2eb0 => extern "C" fn s_00af2eb0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[78])
+    }
+    /// `StaticInit_PDepthOfFieldBase_00af2f70`: class descriptor `PDepthOfFieldBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfFieldBase_00af2f70 @ 0x00af_2f70 => extern "C" fn s_00af2f70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[79])
+    }
+    /// `StaticInit_PDepthOfFieldD3D11_00af3030`: class descriptor `PDepthOfFieldD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfFieldD3D11_00af3030 @ 0x00af_3030 => extern "C" fn s_00af3030() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[80])
+    }
+    /// `StaticInit_PFXAA_00af30f0`: class descriptor `PFXAA` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAA_00af30f0 @ 0x00af_30f0 => extern "C" fn s_00af30f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[81])
+    }
+    /// `StaticInit_PFXAABase_00af31b0`: class descriptor `PFXAABase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAABase_00af31b0 @ 0x00af_31b0 => extern "C" fn s_00af31b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[82])
+    }
+    /// `StaticInit_PFXAAD3D11_00af3270`: class descriptor `PFXAAD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAAD3D11_00af3270 @ 0x00af_3270 => extern "C" fn s_00af3270() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[83])
+    }
+    /// `StaticInit_PGlow_00af3330`: class descriptor `PGlow` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlow_00af3330 @ 0x00af_3330 => extern "C" fn s_00af3330() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[84])
+    }
+    /// `StaticInit_PGlowBase_00af33f0`: class descriptor `PGlowBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowBase_00af33f0 @ 0x00af_33f0 => extern "C" fn s_00af33f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[85])
+    }
+    /// `StaticInit_PGlowD3D11_00af34b0`: class descriptor `PGlowD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowD3D11_00af34b0 @ 0x00af_34b0 => extern "C" fn s_00af34b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[86])
+    }
+    /// `StaticInit_PGlowGPUBase_00af3570`: class descriptor `PGlowGPUBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowGPUBase_00af3570 @ 0x00af_3570 => extern "C" fn s_00af3570() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[87])
+    }
+    /// `StaticInit_PLegacyGlow_00af3630`: class descriptor `PLegacyGlow` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlow_00af3630 @ 0x00af_3630 => extern "C" fn s_00af3630() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[88])
+    }
+    /// `StaticInit_PLegacyGlowBase_00af36f0`: class descriptor `PLegacyGlowBase` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowBase_00af36f0 @ 0x00af_36f0 => extern "C" fn s_00af36f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[89])
+    }
+    /// `StaticInit_PLegacyGlowD3D11_00af37b0`: class descriptor `PLegacyGlowD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowD3D11_00af37b0 @ 0x00af_37b0 => extern "C" fn s_00af37b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[90])
+    }
+    /// `StaticInit_PLegacyGlowGPUBase_00af3870`: class descriptor `PLegacyGlowGPUBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowGPUBase_00af3870 @ 0x00af_3870 => extern "C" fn s_00af3870() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[91])
+    }
+    /// `StaticInit_PMLAA_00af3930`: class descriptor `PMLAA` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAA_00af3930 @ 0x00af_3930 => extern "C" fn s_00af3930() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[92])
+    }
+    /// `StaticInit_PMLAABase_00af39f0`: class descriptor `PMLAABase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAABase_00af39f0 @ 0x00af_39f0 => extern "C" fn s_00af39f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[93])
+    }
+    /// `StaticInit_PMLAAD3D11_00af3ab0`: class descriptor `PMLAAD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAAD3D11_00af3ab0 @ 0x00af_3ab0 => extern "C" fn s_00af3ab0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[94])
+    }
+    /// `StaticInit_PMeshParticleSystemBase_00af3b70`: class descriptor `PMeshParticleSystemBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMeshParticleSystemBase_00af3b70 @ 0x00af_3b70 => extern "C" fn s_00af3b70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[95])
+    }
+    /// `StaticInit_PMotionBlur_00af3c30`: class descriptor `PMotionBlur` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlur_00af3c30 @ 0x00af_3c30 => extern "C" fn s_00af3c30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[96])
+    }
+    /// `StaticInit_PMotionBlurBase_00af3cf0`: class descriptor `PMotionBlurBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlurBase_00af3cf0 @ 0x00af_3cf0 => extern "C" fn s_00af3cf0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[97])
+    }
+    /// `StaticInit_PMotionBlurD3D11_00af3db0`: class descriptor `PMotionBlurD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlurD3D11_00af3db0 @ 0x00af_3db0 => extern "C" fn s_00af3db0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[98])
+    }
+    /// `StaticInit_PPostEffectBase_00af3e70`: class descriptor `PPostEffectBase` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PPostEffectBase_00af3e70 @ 0x00af_3e70 => extern "C" fn s_00af3e70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[99])
+    }
+    /// `StaticInit_PPostEffectManager_00af3f30`: class descriptor `PPostEffectManager` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PPostEffectManager_00af3f30 @ 0x00af_3f30 => extern "C" fn s_00af3f30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[100])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusion_00af3ff0`: class descriptor `PScreenSpaceAmbientOcclusion` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusion_00af3ff0 @ 0x00af_3ff0 => extern "C" fn s_00af3ff0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[101])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusionBase_00af40b0`: class descriptor `PScreenSpaceAmbientOcclusionBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusionBase_00af40b0 @ 0x00af_40b0 => extern "C" fn s_00af40b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[102])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusionD3D11_00af4170`: class descriptor `PScreenSpaceAmbientOcclusionD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusionD3D11_00af4170 @ 0x00af_4170 => extern "C" fn s_00af4170() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[103])
+    }
+    /// `StaticInit_PScreenSpaceReflection_00af4230`: class descriptor `PScreenSpaceReflection` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflection_00af4230 @ 0x00af_4230 => extern "C" fn s_00af4230() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[104])
+    }
+    /// `StaticInit_PScreenSpaceReflectionBase_00af42f0`: class descriptor `PScreenSpaceReflectionBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflectionBase_00af42f0 @ 0x00af_42f0 => extern "C" fn s_00af42f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[105])
+    }
+    /// `StaticInit_PScreenSpaceReflectionD3D11_00af43b0`: class descriptor `PScreenSpaceReflectionD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflectionD3D11_00af43b0 @ 0x00af_43b0 => extern "C" fn s_00af43b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[106])
+    }
+    /// `StaticInit_BetweenBlurTiledPass_00af4470`: render pass type `BetweenBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_BetweenBlurTiledPass_00af4470 @ 0x00af_4470 => extern "C" fn s_00af4470() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[51])
+    }
+    /// `StaticInit_BlockerSearch_00af4490`: render pass type `BlockerSearch` built on its global (name, flag 0); atexit.
+    StaticInit_BlockerSearch_00af4490 @ 0x00af_4490 => extern "C" fn s_00af4490() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[52])
+    }
+    /// `StaticInit_CalculateFocusDistance_00af44b0`: render pass type `CalculateFocusDistance` built on its global (name, flag 0); atexit.
+    StaticInit_CalculateFocusDistance_00af44b0 @ 0x00af_44b0 => extern "C" fn s_00af44b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[53])
+    }
+    /// `StaticInit_CompositeScreenSpaceReflection_00af44d0`: render pass type `CompositeScreenSpaceReflection` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeScreenSpaceReflection_00af44d0 @ 0x00af_44d0 => extern "C" fn s_00af44d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[54])
+    }
+    /// `StaticInit_CompositeToScreenTiled_00af44f0`: render pass type `CompositeToScreenTiled` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeToScreenTiled_00af44f0 @ 0x00af_44f0 => extern "C" fn s_00af44f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[55])
+    }
+    /// `StaticInit_CompositeToScreen_00af4510`: render pass type `CompositeToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeToScreen_00af4510 @ 0x00af_4510 => extern "C" fn s_00af4510() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[56])
+    }
+    /// `StaticInit_ConvertShadowToExponential_00af4530`: render pass type `ConvertShadowToExponential` built on its global (name, flag 0); atexit.
+    StaticInit_ConvertShadowToExponential_00af4530 @ 0x00af_4530 => extern "C" fn s_00af4530() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[57])
+    }
+    /// `StaticInit_CopyCompositedOutputToScreen_00af4550`: render pass type `CopyCompositedOutputToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CopyCompositedOutputToScreen_00af4550 @ 0x00af_4550 => extern "C" fn s_00af4550() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[58])
+    }
+    /// `StaticInit_CopyGaussianBlurToScreen_00af4570`: render pass type `CopyGaussianBlurToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CopyGaussianBlurToScreen_00af4570 @ 0x00af_4570 => extern "C" fn s_00af4570() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[59])
+    }
+    /// `StaticInit_CopyNoMLAA_00af4590`: render pass type `CopyNoMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_CopyNoMLAA_00af4590 @ 0x00af_4590 => extern "C" fn s_00af4590() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[60])
+    }
+    /// `StaticInit_DownsampleColorBuffer_00af45b0`: render pass type `DownsampleColorBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_DownsampleColorBuffer_00af45b0 @ 0x00af_45b0 => extern "C" fn s_00af45b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[61])
+    }
+    /// `StaticInit_DownsampleScreenSpaceReflectionDepth_00af45d0`: render pass type `DownsampleScreenSpaceReflectionDepth` built on its global (name, flag 0); atexit.
+    StaticInit_DownsampleScreenSpaceReflectionDepth_00af45d0 @ 0x00af_45d0 => extern "C" fn s_00af45d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[62])
+    }
+    /// `StaticInit_FullBlurTiledPass_00af45f0`: render pass type `FullBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_FullBlurTiledPass_00af45f0 @ 0x00af_45f0 => extern "C" fn s_00af45f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[63])
+    }
+    /// `StaticInit_FullDofGPU_00af4610`: render pass type `FullDofGPU` built on its global (name, flag 0); atexit.
+    StaticInit_FullDofGPU_00af4610 @ 0x00af_4610 => extern "C" fn s_00af4610() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[64])
+    }
+    /// `StaticInit_GaussianBlur_00af4630`: render pass type `GaussianBlur` built on its global (name, flag 0); atexit.
+    StaticInit_GaussianBlur_00af4630 @ 0x00af_4630 => extern "C" fn s_00af4630() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[65])
+    }
+    /// `StaticInit_GenerateGlowBuffer_00af4650`: render pass type `GenerateGlowBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateGlowBuffer_00af4650 @ 0x00af_4650 => extern "C" fn s_00af4650() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[66])
+    }
+    /// `StaticInit_GenerateLightScatteringInstantLights_00af4670`: render pass type `GenerateLightScatteringInstantLights` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightScatteringInstantLights_00af4670 @ 0x00af_4670 => extern "C" fn s_00af4670() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[67])
+    }
+    /// `StaticInit_GenerateLightScattering_00af4690`: render pass type `GenerateLightScattering` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightScattering_00af4690 @ 0x00af_4690 => extern "C" fn s_00af4690() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[68])
+    }
+    /// `StaticInit_GenerateLightingInstantLightsTiled_00af46b0`: render pass type `GenerateLightingInstantLightsTiled` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightingInstantLightsTiled_00af46b0 @ 0x00af_46b0 => extern "C" fn s_00af46b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[69])
+    }
+    /// `StaticInit_GenerateLightingTiled_00af46d0`: render pass type `GenerateLightingTiled` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightingTiled_00af46d0 @ 0x00af_46d0 => extern "C" fn s_00af46d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[70])
+    }
+    /// `StaticInit_GenerateVelocityBuffer_00af46f0`: render pass type `GenerateVelocityBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateVelocityBuffer_00af46f0 @ 0x00af_46f0 => extern "C" fn s_00af46f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[71])
+    }
+    /// `StaticInit_NoBlurTiledPass_00af4710`: render pass type `NoBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_NoBlurTiledPass_00af4710 @ 0x00af_4710 => extern "C" fn s_00af4710() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[72])
+    }
+    /// `StaticInit_RenderCameraMotionBlur_00af4730`: render pass type `RenderCameraMotionBlur` built on its global (name, flag 0); atexit.
+    StaticInit_RenderCameraMotionBlur_00af4730 @ 0x00af_4730 => extern "C" fn s_00af4730() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[73])
+    }
+    /// `StaticInit_RenderDirectionalLight_00af4750`: render pass type `RenderDirectionalLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderDirectionalLight_00af4750 @ 0x00af_4750 => extern "C" fn s_00af4750() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[74])
+    }
+    /// `StaticInit_RenderEdgeDetect_00af4770`: render pass type `RenderEdgeDetect` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeDetect_00af4770 @ 0x00af_4770 => extern "C" fn s_00af4770() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[75])
+    }
+    /// `StaticInit_RenderEdgeLength0_00af4790`: render pass type `RenderEdgeLength0` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeLength0_00af4790 @ 0x00af_4790 => extern "C" fn s_00af4790() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[76])
+    }
+    /// `StaticInit_RenderEdgeLength_00af47b0`: render pass type `RenderEdgeLength` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeLength_00af47b0 @ 0x00af_47b0 => extern "C" fn s_00af47b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[77])
+    }
+    /// `StaticInit_RenderFXAA_00af47d0`: render pass type `RenderFXAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderFXAA_00af47d0 @ 0x00af_47d0 => extern "C" fn s_00af47d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[78])
+    }
+    /// `StaticInit_RenderGaussianBlurX_00af47f0`: render pass type `RenderGaussianBlurX` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurX_00af47f0 @ 0x00af_47f0 => extern "C" fn s_00af47f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[79])
+    }
+    /// `StaticInit_RenderGaussianBlurYAdditive_00af4810`: render pass type `RenderGaussianBlurYAdditive` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYAdditive_00af4810 @ 0x00af_4810 => extern "C" fn s_00af4810() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[80])
+    }
+    /// `StaticInit_RenderGaussianBlurYCompositeCombine_00af4830`: render pass type `RenderGaussianBlurYCompositeCombine` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYCompositeCombine_00af4830 @ 0x00af_4830 => extern "C" fn s_00af4830() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[81])
+    }
+    /// `StaticInit_RenderGaussianBlurYComposite_00af4850`: render pass type `RenderGaussianBlurYComposite` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYComposite_00af4850 @ 0x00af_4850 => extern "C" fn s_00af4850() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[82])
+    }
+    /// `StaticInit_RenderGaussianBlurY_00af4870`: render pass type `RenderGaussianBlurY` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurY_00af4870 @ 0x00af_4870 => extern "C" fn s_00af4870() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[83])
+    }
+    /// `StaticInit_RenderHorizVertMLAA_00af4890`: render pass type `RenderHorizVertMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderHorizVertMLAA_00af4890 @ 0x00af_4890 => extern "C" fn s_00af4890() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[84])
+    }
+    /// `StaticInit_RenderMLAA_00af48b0`: render pass type `RenderMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderMLAA_00af48b0 @ 0x00af_48b0 => extern "C" fn s_00af48b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[85])
+    }
+    /// `StaticInit_RenderMotionBlur_00af48d0`: render pass type `RenderMotionBlur` built on its global (name, flag 0); atexit.
+    StaticInit_RenderMotionBlur_00af48d0 @ 0x00af_48d0 => extern "C" fn s_00af48d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[86])
+    }
+    /// `StaticInit_RenderNoMLAA_00af48f0`: render pass type `RenderNoMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderNoMLAA_00af48f0 @ 0x00af_48f0 => extern "C" fn s_00af48f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[87])
+    }
+    /// `StaticInit_RenderPointLight_00af4910`: render pass type `RenderPointLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderPointLight_00af4910 @ 0x00af_4910 => extern "C" fn s_00af4910() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[88])
+    }
+    /// `StaticInit_RenderRGBL_00af4930`: render pass type `RenderRGBL` built on its global (name, flag 0); atexit.
+    StaticInit_RenderRGBL_00af4930 @ 0x00af_4930 => extern "C" fn s_00af4930() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[89])
+    }
+    /// `StaticInit_RenderScreenSpaceReflection_00af4950`: render pass type `RenderScreenSpaceReflection` built on its global (name, flag 0); atexit.
+    StaticInit_RenderScreenSpaceReflection_00af4950 @ 0x00af_4950 => extern "C" fn s_00af4950() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[90])
+    }
+    /// `StaticInit_RenderSpotLight_00af4970`: render pass type `RenderSpotLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderSpotLight_00af4970 @ 0x00af_4970 => extern "C" fn s_00af4970() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[91])
+    }
+    /// `StaticInit_RenderVolumetricLight_00af4990`: render pass type `RenderVolumetricLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderVolumetricLight_00af4990 @ 0x00af_4990 => extern "C" fn s_00af4990() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[92])
+    }
+    /// `StaticInit_ScreenSpaceReflectionPrePass_00af49b0`: render pass type `ScreenSpaceReflectionPrePass` built on its global (name, flag 0); atexit.
+    StaticInit_ScreenSpaceReflectionPrePass_00af49b0 @ 0x00af_49b0 => extern "C" fn s_00af49b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[93])
+    }
+    /// `StaticInit_ShadowDirectionalLight_00af49d0`: render pass type `ShadowDirectionalLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowDirectionalLight_00af49d0 @ 0x00af_49d0 => extern "C" fn s_00af49d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[94])
+    }
+    /// `StaticInit_ShadowPointLight_00af49f0`: render pass type `ShadowPointLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowPointLight_00af49f0 @ 0x00af_49f0 => extern "C" fn s_00af49f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[95])
+    }
+    /// `StaticInit_ShadowSpotLight_00af4a10`: render pass type `ShadowSpotLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowSpotLight_00af4a10 @ 0x00af_4a10 => extern "C" fn s_00af4a10() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[96])
+    }
+    /// `StaticInit_ChainAppend_00af4a30`: appends the object at `0x00c6_8494` (vtable 0x00b73f70) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b09010).
+    StaticInit_ChainAppend_00af4a30 @ 0x00af_4a30 => extern "C" fn s_00af4a30() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[4])
+    }
+    /// `StaticInit_PBitmapFont_00af4ad0`: class descriptor `PBitmapFont` (`cd_desc_set8`): constructor, buffers, set8; atexit.
+    StaticInit_PBitmapFont_00af4ad0 @ 0x00af_4ad0 => extern "C" fn s_00af4ad0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[107])
+    }
+    /// `StaticInit_PBitmapFontCharInfo_00af4b90`: class descriptor `PBitmapFontCharInfo` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PBitmapFontCharInfo_00af4b90 @ 0x00af_4b90 => extern "C" fn s_00af4b90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[108])
+    }
+    /// `StaticInit_MallocCopy_00ae0470`: `PhyreMalloc`(0x11, 2); when it returns a block, 4 words and a byte of the template 0x00b0da48 into it; the block to 0x00c8ff30; atexit(0x00af9b60).
+    StaticInit_MallocCopy_00ae0470 @ 0x00ae_0470 => extern "C" fn s_00ae0470() -> u32 {
+        sab::malloc_copy(&mut mem(), &sab::MALLOC_COPIES[0])
+    }
+    /// `StaticInit_MallocCopy_00ae04c0`: `PhyreMalloc`(0x10, 2); when it returns a block, 4 words of the template 0x00b0da38 into it; the block to 0x00c8ff2c; atexit(0x00af9b80).
+    StaticInit_MallocCopy_00ae04c0 @ 0x00ae_04c0 => extern "C" fn s_00ae04c0() -> u32 {
+        sab::malloc_copy(&mut mem(), &sab::MALLOC_COPIES[1])
+    }
+    /// `StaticInit_ChainAppend_00ae0530`: appends the object 0x00c0a2d0 (vtable 0x00b0e088) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a2d4); atexit(0x00af9c30).
+    StaticInit_ChainAppend_00ae0530 @ 0x00ae_0530 => extern "C" fn s_00ae0530() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[0])
+    }
+    /// `StaticInit_ChainAppend_00ae0580`: appends the object 0x00c0a33c (vtable 0x00b0e0a8) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a340); atexit(0x00af9c80).
+    StaticInit_ChainAppend_00ae0580 @ 0x00ae_0580 => extern "C" fn s_00ae0580() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[1])
+    }
+    /// `StaticInit_ChainAppend_00ae05d0`: appends the object 0x00c0a37c (vtable 0x00b0e0c4) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a380); atexit(0x00af9cd0).
+    StaticInit_ChainAppend_00ae05d0 @ 0x00ae_05d0 => extern "C" fn s_00ae05d0() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[2])
+    }
+    /// `StaticInit_ChainAppend_00ae0620`: appends the object 0x00c0a3c0 (vtable 0x00b0e0e0) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a3c4); atexit(0x00af9d20).
+    StaticInit_ChainAppend_00ae0620 @ 0x00ae_0620 => extern "C" fn s_00ae0620() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[3])
+    }
+    /// `StaticInit_ChainAppend_00ae0670`: appends the object 0x00c0a3fc (vtable 0x00b0e0f8) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a400); atexit(0x00af9d70).
+    StaticInit_ChainAppend_00ae0670 @ 0x00ae_0670 => extern "C" fn s_00ae0670() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[4])
+    }
+    /// `StaticInit_ChainAppend_00ae06c0`: appends the object 0x00c0a440 (vtable 0x00b0e124) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c0a444); atexit(0x00af9dc0).
+    StaticInit_ChainAppend_00ae06c0 @ 0x00ae_06c0 => extern "C" fn s_00ae06c0() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[5])
+    }
+    /// `StaticInit_PClassMember_00ae0750`: class descriptor `PClassMember` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa000).
+    StaticInit_PClassMember_00ae0750 @ 0x00ae_0750 => extern "C" fn s_00ae0750() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[0])
+    }
+    /// `StaticInit_PClassDescriptor_00ae0810`: class descriptor `PClassDescriptor` (base `GetClassDescriptor()`): constructor, flags |= 2, the buffer words stored directly, vtable 0x00b0eb74; atexit(0x00afa040).
+    StaticInit_PClassDescriptor_00ae0810 @ 0x00ae_0810 => extern "C" fn s_00ae0810() -> u32 {
+        sab::class_decl_inline(&mut mem(), &sab::CLASS_DECLS_INLINE[0])
+    }
+    /// `StaticInit_PNamespace_00ae0890`: class descriptor `PNamespace` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afa0b0).
+    StaticInit_PNamespace_00ae0890 @ 0x00ae_0890 => extern "C" fn s_00ae0890() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[1])
+    }
+    /// `StaticInit_PCluster_00ae0940`: class descriptor `PCluster` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afa160).
+    StaticInit_PCluster_00ae0940 @ 0x00ae_0940 => extern "C" fn s_00ae0940() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[2])
+    }
+    /// `StaticInit_PWorld_00ae09f0`: class descriptor `PWorld` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa290).
+    StaticInit_PWorld_00ae09f0 @ 0x00ae_09f0 => extern "C" fn s_00ae09f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[3])
+    }
+    /// `StaticInit_PTypedObject_00ae0ab0`: class descriptor `PTypedObject` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afa2f0).
+    StaticInit_PTypedObject_00ae0ab0 @ 0x00ae_0ab0 => extern "C" fn s_00ae0ab0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[4])
+    }
+    /// `StaticInit_PString_00ae0b70`: class descriptor `PString` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa330).
+    StaticInit_PString_00ae0b70 @ 0x00ae_0b70 => extern "C" fn s_00ae0b70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[5])
+    }
+    /// `StaticInit_PClusterDependencyList_00ae0db0`: class descriptor `PClusterDependencyList` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa510).
+    StaticInit_PClusterDependencyList_00ae0db0 @ 0x00ae_0db0 => extern "C" fn s_00ae0db0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[6])
+    }
+    /// `StaticInit_PComponent_00ae0e70`: class descriptor `PComponent` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa5a0).
+    StaticInit_PComponent_00ae0e70 @ 0x00ae_0e70 => extern "C" fn s_00ae0e70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[7])
+    }
+    /// `StaticInit_PEntity_00ae0f30`: class descriptor `PEntity` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa670).
+    StaticInit_PEntity_00ae0f30 @ 0x00ae_0f30 => extern "C" fn s_00ae0f30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[8])
+    }
+    /// `StaticInit_PWorldMatrix_00ae1000`: class descriptor `PWorldMatrix` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afa8d0).
+    StaticInit_PWorldMatrix_00ae1000 @ 0x00ae_1000 => extern "C" fn s_00ae1000() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[9])
+    }
+    /// `StaticInit_CtorVt_00ae10c0`: constructor 0x00452e80 (thiscall, no words) on 0x00c922c0, flags 0x00c92350 &= ~2, its vtable 0x00b10b4c; atexit(0x00afaa00).
+    StaticInit_CtorVt_00ae10c0 @ 0x00ae_10c0 => extern "C" fn s_00ae10c0() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[0])
+    }
+    /// `StaticInit_PCameraOrthographic_00ae11a0`: class descriptor `PCameraOrthographic` (base 0x00c92358, clear): constructor, buffers, tail; atexit(0x00afac90).
+    StaticInit_PCameraOrthographic_00ae11a0 @ 0x00ae_11a0 => extern "C" fn s_00ae11a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[10])
+    }
+    /// `StaticInit_PCameraPerspective_00ae1260`: class descriptor `PCameraPerspective` (base 0x00c92358, clear): constructor, buffers, tail; atexit(0x00afad00).
+    StaticInit_PCameraPerspective_00ae1260 @ 0x00ae_1260 => extern "C" fn s_00ae1260() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[11])
+    }
+    /// `StaticInit_PInstancesComponent_00ae1320`: class descriptor `PInstancesComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00afad30).
+    StaticInit_PInstancesComponent_00ae1320 @ 0x00ae_1320 => extern "C" fn s_00ae1320() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[12])
+    }
+    /// `StaticInit_PAssetReference_00ae14a0`: class descriptor `PAssetReference` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afaf20).
+    StaticInit_PAssetReference_00ae14a0 @ 0x00ae_14a0 => extern "C" fn s_00ae14a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[13])
+    }
+    /// `StaticInit_PAssetReferenceImport_00ae1560`: class descriptor `PAssetReferenceImport` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afaf40).
+    StaticInit_PAssetReferenceImport_00ae1560 @ 0x00ae_1560 => extern "C" fn s_00ae1560() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[14])
+    }
+    /// `StaticInit_PRandomGenerator_00ae1640`: class descriptor `PRandomGenerator` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afb0b0).
+    StaticInit_PRandomGenerator_00ae1640 @ 0x00ae_1640 => extern "C" fn s_00ae1640() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[15])
+    }
+    /// `StaticInit_PClusterHeader_00ae1700`: class descriptor `PClusterHeader` (base 0x00c970f8, clear): constructor, buffers, tail; atexit(0x00afb720).
+    StaticInit_PClusterHeader_00ae1700 @ 0x00ae_1700 => extern "C" fn s_00ae1700() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[16])
+    }
+    /// `StaticInit_PClusterHeaderBase_00ae17c0`: class descriptor `PClusterHeaderBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afb740).
+    StaticInit_PClusterHeaderBase_00ae17c0 @ 0x00ae_17c0 => extern "C" fn s_00ae17c0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[17])
+    }
+    /// `StaticInit_PClusterHeaderD3D11_00ae1880`: class descriptor `PClusterHeaderD3D11` (base 0x00c96aa8, clear): constructor, buffers, tail; atexit(0x00afb880).
+    StaticInit_PClusterHeaderD3D11_00ae1880 @ 0x00ae_1880 => extern "C" fn s_00ae1880() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[18])
+    }
+    /// `StaticInit_PInstanceListHeader_00ae1940`: class descriptor `PInstanceListHeader` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afb8d0).
+    StaticInit_PInstanceListHeader_00ae1940 @ 0x00ae_1940 => extern "C" fn s_00ae1940() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[19])
+    }
+    /// `StaticInit_PVertexStream_00ae1f20`: class descriptor `PVertexStream` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc4a0).
+    StaticInit_PVertexStream_00ae1f20 @ 0x00ae_1f20 => extern "C" fn s_00ae1f20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[20])
+    }
+    /// `StaticInit_PDataBlock_00ae1fe0`: class descriptor `PDataBlock` (base 0x00cb1250, clear): constructor, buffers, tail; atexit(0x00afc500).
+    StaticInit_PDataBlock_00ae1fe0 @ 0x00ae_1fe0 => extern "C" fn s_00ae1fe0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[21])
+    }
+    /// `StaticInit_PDataBlockBase_00ae20a0`: class descriptor `PDataBlockBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc520).
+    StaticInit_PDataBlockBase_00ae20a0 @ 0x00ae_20a0 => extern "C" fn s_00ae20a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[22])
+    }
+    /// `StaticInit_PDynamicDataBlock_00ae2160`: class descriptor `PDynamicDataBlock` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc5d0).
+    StaticInit_PDynamicDataBlock_00ae2160 @ 0x00ae_2160 => extern "C" fn s_00ae2160() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[23])
+    }
+    /// `StaticInit_PIndexDataBlock_00ae2220`: class descriptor `PIndexDataBlock` (base 0x00cb1120, clear): constructor, buffers, tail; atexit(0x00afc630).
+    StaticInit_PIndexDataBlock_00ae2220 @ 0x00ae_2220 => extern "C" fn s_00ae2220() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[24])
+    }
+    /// `StaticInit_PIndexDataBlockBase_00ae22e0`: class descriptor `PIndexDataBlockBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc650).
+    StaticInit_PIndexDataBlockBase_00ae22e0 @ 0x00ae_22e0 => extern "C" fn s_00ae22e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[25])
+    }
+    /// `StaticInit_PMeshSegment_00ae23a0`: class descriptor `PMeshSegment` (base 0x00cb0ff0, clear): constructor, buffers, tail; atexit(0x00afc6c0).
+    StaticInit_PMeshSegment_00ae23a0 @ 0x00ae_23a0 => extern "C" fn s_00ae23a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[26])
+    }
+    /// `StaticInit_PMeshSegmentBase_00ae2460`: class descriptor `PMeshSegmentBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc6e0).
+    StaticInit_PMeshSegmentBase_00ae2460 @ 0x00ae_2460 => extern "C" fn s_00ae2460() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[27])
+    }
+    /// `StaticInit_PSkinBoneRemap_00ae2520`: class descriptor `PSkinBoneRemap` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc700).
+    StaticInit_PSkinBoneRemap_00ae2520 @ 0x00ae_2520 => extern "C" fn s_00ae2520() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[28])
+    }
+    /// `StaticInit_PMaterialSet_00ae25e0`: class descriptor `PMaterialSet` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc810).
+    StaticInit_PMaterialSet_00ae25e0 @ 0x00ae_25e0 => extern "C" fn s_00ae25e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[29])
+    }
+    /// `StaticInit_PMesh_00ae26a0`: class descriptor `PMesh` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc950).
+    StaticInit_PMesh_00ae26a0 @ 0x00ae_26a0 => extern "C" fn s_00ae26a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[30])
+    }
+    /// `StaticInit_PSkeletonJointBounds_00ae2760`: class descriptor `PSkeletonJointBounds` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afc970).
+    StaticInit_PSkeletonJointBounds_00ae2760 @ 0x00ae_2760 => extern "C" fn s_00ae2760() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[31])
+    }
+    /// `StaticInit_PDynamicMesh_00ae2820`: class descriptor `PDynamicMesh` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afcc10).
+    StaticInit_PDynamicMesh_00ae2820 @ 0x00ae_2820 => extern "C" fn s_00ae2820() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[32])
+    }
+    /// `StaticInit_PDynamicSegmentDesc_00ae28d0`: class descriptor `PDynamicSegmentDesc` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcc30).
+    StaticInit_PDynamicSegmentDesc_00ae28d0 @ 0x00ae_28d0 => extern "C" fn s_00ae28d0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[33])
+    }
+    /// `StaticInit_PShape_00ae2990`: class descriptor `PShape` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcd10).
+    StaticInit_PShape_00ae2990 @ 0x00ae_2990 => extern "C" fn s_00ae2990() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[34])
+    }
+    /// `StaticInit_PLight_00ae2a50`: class descriptor `PLight` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afcde0).
+    StaticInit_PLight_00ae2a50 @ 0x00ae_2a50 => extern "C" fn s_00ae2a50() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[35])
+    }
+    /// `StaticInit_AmbientLight_00ae2b10`: type-enum value `AmbientLight` registered once: when the guard 0x00c9af08 is 0 and 0x0049e2c0 finds no such name, the node 0x00c1083c goes on the head of its list 0x00c9aef8 (old head to 0x00c10844), two plain words, the guard = node; atexit(0x00afce00).
+    StaticInit_AmbientLight_00ae2b10 @ 0x00ae_2b10 => extern "C" fn s_00ae2b10() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[0])
+    }
+    /// `StaticInit_DirectionalLight_00ae2b70`: type-enum value `DirectionalLight` registered once: when the guard 0x00c9af04 is 0 and 0x0049e2c0 finds no such name, the node 0x00c10828 goes on the head of its list 0x00c9aef8 (old head to 0x00c10830), two plain words, the guard = node; atexit(0x00afce40).
+    StaticInit_DirectionalLight_00ae2b70 @ 0x00ae_2b70 => extern "C" fn s_00ae2b70() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[1])
+    }
+    /// `StaticInit_PointLight_00ae2bd0`: type-enum value `PointLight` registered once: when the guard 0x00c9af00 is 0 and 0x0049e2c0 finds no such name, the node 0x00c10814 goes on the head of its list 0x00c9aef8 (old head to 0x00c1081c), two plain words, the guard = node; atexit(0x00afce80).
+    StaticInit_PointLight_00ae2bd0 @ 0x00ae_2bd0 => extern "C" fn s_00ae2bd0() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[2])
+    }
+    /// `StaticInit_SpotLight_00ae2c30`: type-enum value `SpotLight` registered once: when the guard 0x00c9af0c is 0 and 0x0049e2c0 finds no such name, the node 0x00c10850 goes on the head of its list 0x00c9aef8 (old head to 0x00c10858), two plain words, the guard = node; atexit(0x00afcec0).
+    StaticInit_SpotLight_00ae2c30 @ 0x00ae_2c30 => extern "C" fn s_00ae2c30() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[3])
+    }
+    /// `StaticInit_PConstantBuffer_00ae2c90`: class descriptor `PConstantBuffer` (base 0x00cb3de0, clear): constructor, buffers, tail; atexit(0x00afd230).
+    StaticInit_PConstantBuffer_00ae2c90 @ 0x00ae_2c90 => extern "C" fn s_00ae2c90() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[36])
+    }
+    /// `StaticInit_PConstantBufferBase_00ae2d50`: class descriptor `PConstantBufferBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd250).
+    StaticInit_PConstantBufferBase_00ae2d50 @ 0x00ae_2d50 => extern "C" fn s_00ae2d50() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[37])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferLocation_00ae2e10`: class descriptor `PShaderParameterCaptureBufferLocation` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd280).
+    StaticInit_PShaderParameterCaptureBufferLocation_00ae2e10 @ 0x00ae_2e10 => extern "C" fn s_00ae2e10() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[38])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferLocationSize_00ae2ed0`: class descriptor `PShaderParameterCaptureBufferLocationSize` (base 0x00c9b720, clear): constructor, buffers, tail; atexit(0x00afd2a0).
+    StaticInit_PShaderParameterCaptureBufferLocationSize_00ae2ed0 @ 0x00ae_2ed0 => extern "C" fn s_00ae2ed0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[39])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferLocationType_00ae2fa0`: class descriptor `PShaderParameterCaptureBufferLocationType` (base 0x00c9b720, clear): constructor, buffers, tail; atexit(0x00afd2c0).
+    StaticInit_PShaderParameterCaptureBufferLocationType_00ae2fa0 @ 0x00ae_2fa0 => extern "C" fn s_00ae2fa0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[40])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferLocationTypeConstantBuffer_00ae3060`: class descriptor `PShaderParameterCaptureBufferLocationTypeConstantBuffer` (base 0x00c9b720, clear): constructor, buffers, tail; atexit(0x00afd2e0).
+    StaticInit_PShaderParameterCaptureBufferLocationTypeConstantBuffer_00ae3060 @ 0x00ae_3060 => extern "C" fn s_00ae3060() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[41])
+    }
+    /// `StaticInit_PShaderParameterDefinition_00ae3120`: class descriptor `PShaderParameterDefinition` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd300).
+    StaticInit_PShaderParameterDefinition_00ae3120 @ 0x00ae_3120 => extern "C" fn s_00ae3120() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[42])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferByteAddressBuffer_00ae3420`: class descriptor `PShaderParameterCaptureBufferByteAddressBuffer` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd440).
+    StaticInit_PShaderParameterCaptureBufferByteAddressBuffer_00ae3420 @ 0x00ae_3420 => extern "C" fn s_00ae3420() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[43])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferDataBlock_00ae34e0`: class descriptor `PShaderParameterCaptureBufferDataBlock` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd460).
+    StaticInit_PShaderParameterCaptureBufferDataBlock_00ae34e0 @ 0x00ae_34e0 => extern "C" fn s_00ae34e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[44])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferIndexDataBlock_00ae35a0`: class descriptor `PShaderParameterCaptureBufferIndexDataBlock` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd480).
+    StaticInit_PShaderParameterCaptureBufferIndexDataBlock_00ae35a0 @ 0x00ae_35a0 => extern "C" fn s_00ae35a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[45])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferRWByteAddressBuffer_00ae3660`: class descriptor `PShaderParameterCaptureBufferRWByteAddressBuffer` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd4a0).
+    StaticInit_PShaderParameterCaptureBufferRWByteAddressBuffer_00ae3660 @ 0x00ae_3660 => extern "C" fn s_00ae3660() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[46])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferRWStructuredBuffer_00ae3720`: class descriptor `PShaderParameterCaptureBufferRWStructuredBuffer` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd4c0).
+    StaticInit_PShaderParameterCaptureBufferRWStructuredBuffer_00ae3720 @ 0x00ae_3720 => extern "C" fn s_00ae3720() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[47])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferRWTexture2D_00ae37e0`: class descriptor `PShaderParameterCaptureBufferRWTexture2D` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd4e0).
+    StaticInit_PShaderParameterCaptureBufferRWTexture2D_00ae37e0 @ 0x00ae_37e0 => extern "C" fn s_00ae37e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[48])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferRWTexture3D_00ae38a0`: class descriptor `PShaderParameterCaptureBufferRWTexture3D` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd500).
+    StaticInit_PShaderParameterCaptureBufferRWTexture3D_00ae38a0 @ 0x00ae_38a0 => extern "C" fn s_00ae38a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[49])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferSampler_00ae3960`: class descriptor `PShaderParameterCaptureBufferSampler` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd520).
+    StaticInit_PShaderParameterCaptureBufferSampler_00ae3960 @ 0x00ae_3960 => extern "C" fn s_00ae3960() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[50])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferStream_00ae3a20`: class descriptor `PShaderParameterCaptureBufferStream` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd540).
+    StaticInit_PShaderParameterCaptureBufferStream_00ae3a20 @ 0x00ae_3a20 => extern "C" fn s_00ae3a20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[51])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferStructuredBuffer_00ae3ae0`: class descriptor `PShaderParameterCaptureBufferStructuredBuffer` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd560).
+    StaticInit_PShaderParameterCaptureBufferStructuredBuffer_00ae3ae0 @ 0x00ae_3ae0 => extern "C" fn s_00ae3ae0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[52])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferTexture2D_00ae3ba0`: class descriptor `PShaderParameterCaptureBufferTexture2D` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd580).
+    StaticInit_PShaderParameterCaptureBufferTexture2D_00ae3ba0 @ 0x00ae_3ba0 => extern "C" fn s_00ae3ba0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[53])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferTexture3D_00ae3c60`: class descriptor `PShaderParameterCaptureBufferTexture3D` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd5a0).
+    StaticInit_PShaderParameterCaptureBufferTexture3D_00ae3c60 @ 0x00ae_3c60 => extern "C" fn s_00ae3c60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[54])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferTextureBase_00ae3d20`: class descriptor `PShaderParameterCaptureBufferTextureBase` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afd5c0).
+    StaticInit_PShaderParameterCaptureBufferTextureBase_00ae3d20 @ 0x00ae_3d20 => extern "C" fn s_00ae3d20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[55])
+    }
+    /// `StaticInit_PShaderParameterCaptureBufferTextureCubeMap_00ae3de0`: class descriptor `PShaderParameterCaptureBufferTextureCubeMap` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd5e0).
+    StaticInit_PShaderParameterCaptureBufferTextureCubeMap_00ae3de0 @ 0x00ae_3de0 => extern "C" fn s_00ae3de0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[56])
+    }
+    /// `StaticInit_PShaderParameterCaptureConstantBuffer_00ae3ea0`: class descriptor `PShaderParameterCaptureConstantBuffer` (base 0x00c9bdc8, clear): constructor, buffers, tail; atexit(0x00afd600).
+    StaticInit_PShaderParameterCaptureConstantBuffer_00ae3ea0 @ 0x00ae_3ea0 => extern "C" fn s_00ae3ea0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[57])
+    }
+    /// `StaticInit_PShaderProgramBase_00ae3f60`: class descriptor `PShaderProgramBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd620).
+    StaticInit_PShaderProgramBase_00ae3f60 @ 0x00ae_3f60 => extern "C" fn s_00ae3f60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[58])
+    }
+    /// `StaticInit_PShaderProgramParamsAndStreams_00ae4020`: class descriptor `PShaderProgramParamsAndStreams` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd640).
+    StaticInit_PShaderProgramParamsAndStreams_00ae4020 @ 0x00ae_4020 => extern "C" fn s_00ae4020() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[59])
+    }
+    /// `StaticInit_PShaderSource_00ae40e0`: class descriptor `PShaderSource` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afd660).
+    StaticInit_PShaderSource_00ae40e0 @ 0x00ae_40e0 => extern "C" fn s_00ae40e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[60])
+    }
+    /// `StaticInit_PShaderStreamDefinition_00ae41a0`: class descriptor `PShaderStreamDefinition` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd680).
+    StaticInit_PShaderStreamDefinition_00ae41a0 @ 0x00ae_41a0 => extern "C" fn s_00ae41a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[61])
+    }
+    /// `StaticInit_PShaderPass_00ae4320`: class descriptor `PShaderPass` (base 0x00cb3448, clear): constructor, buffers, tail; atexit(0x00afd970).
+    StaticInit_PShaderPass_00ae4320 @ 0x00ae_4320 => extern "C" fn s_00ae4320() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[62])
+    }
+    /// `StaticInit_PShaderPassBase_00ae43e0`: class descriptor `PShaderPassBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd990).
+    StaticInit_PShaderPassBase_00ae43e0 @ 0x00ae_43e0 => extern "C" fn s_00ae43e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[63])
+    }
+    /// `StaticInit_PShaderPassParameterLocationTypes_00ae44a0`: class descriptor `PShaderPassParameterLocationTypes` (base 0x00ca1338, clear): constructor, buffers, tail; atexit(0x00afd9b0).
+    StaticInit_PShaderPassParameterLocationTypes_00ae44a0 @ 0x00ae_44a0 => extern "C" fn s_00ae44a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[64])
+    }
+    /// `StaticInit_PShaderPassParameterLocationTypesBase_00ae4560`: class descriptor `PShaderPassParameterLocationTypesBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afd9d0).
+    StaticInit_PShaderPassParameterLocationTypesBase_00ae4560 @ 0x00ae_4560 => extern "C" fn s_00ae4560() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[65])
+    }
+    /// `StaticInit_PShaderPassParameterLocationTypesConstantBuffer_00ae4620`: class descriptor `PShaderPassParameterLocationTypesConstantBuffer` (base 0x00ca1338, clear): constructor, buffers, tail; atexit(0x00afd9f0).
+    StaticInit_PShaderPassParameterLocationTypesConstantBuffer_00ae4620 @ 0x00ae_4620 => extern "C" fn s_00ae4620() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[66])
+    }
+    /// `StaticInit_PShaderPassStateBase_00ae46e0`: class descriptor `PShaderPassStateBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afda10).
+    StaticInit_PShaderPassStateBase_00ae46e0 @ 0x00ae_46e0 => extern "C" fn s_00ae46e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[67])
+    }
+    /// `StaticInit_PShader_00ae47a0`: class descriptor `PShader` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afdbc0).
+    StaticInit_PShader_00ae47a0 @ 0x00ae_47a0 => extern "C" fn s_00ae47a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[68])
+    }
+    /// `StaticInit_PSamplerState_00ae4860`: class descriptor `PSamplerState` (base 0x00cb3c00, clear): constructor, buffers, tail; atexit(0x00afdc80).
+    StaticInit_PSamplerState_00ae4860 @ 0x00ae_4860 => extern "C" fn s_00ae4860() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[69])
+    }
+    /// `StaticInit_PSamplerStateBase_00ae4920`: class descriptor `PSamplerStateBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afdca0).
+    StaticInit_PSamplerStateBase_00ae4920 @ 0x00ae_4920 => extern "C" fn s_00ae4920() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[70])
+    }
+    /// `StaticInit_PTextureCommonBase_00ae5030`: class descriptor `PTextureCommonBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe270).
+    StaticInit_PTextureCommonBase_00ae5030 @ 0x00ae_5030 => extern "C" fn s_00ae5030() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[71])
+    }
+    /// `StaticInit_PTexture2D_00ae50f0`: class descriptor `PTexture2D` (base 0x00cb39a0, clear): constructor, buffers, tail; atexit(0x00afe320).
+    StaticInit_PTexture2D_00ae50f0 @ 0x00ae_50f0 => extern "C" fn s_00ae50f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[72])
+    }
+    /// `StaticInit_PTexture2DBase_00ae51b0`: class descriptor `PTexture2DBase` (base 0x00ca3530, clear): constructor, buffers, tail; atexit(0x00afe340).
+    StaticInit_PTexture2DBase_00ae51b0 @ 0x00ae_51b0 => extern "C" fn s_00ae51b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[73])
+    }
+    /// `StaticInit_PTexture3D_00ae5270`: class descriptor `PTexture3D` (base 0x00cb3a38, clear): constructor, buffers, tail; atexit(0x00afe380).
+    StaticInit_PTexture3D_00ae5270 @ 0x00ae_5270 => extern "C" fn s_00ae5270() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[74])
+    }
+    /// `StaticInit_PTexture3DBase_00ae5330`: class descriptor `PTexture3DBase` (base 0x00ca3530, clear): constructor, buffers, tail; atexit(0x00afe3a0).
+    StaticInit_PTexture3DBase_00ae5330 @ 0x00ae_5330 => extern "C" fn s_00ae5330() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[75])
+    }
+    /// `StaticInit_PTextureCubeMap_00ae53f0`: class descriptor `PTextureCubeMap` (base 0x00cb3ad0, clear): constructor, buffers, tail; atexit(0x00afe3f0).
+    StaticInit_PTextureCubeMap_00ae53f0 @ 0x00ae_53f0 => extern "C" fn s_00ae53f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[76])
+    }
+    /// `StaticInit_PTextureCubeMapBase_00ae54b0`: class descriptor `PTextureCubeMapBase` (base 0x00ca3530, clear): constructor, buffers, tail; atexit(0x00afe410).
+    StaticInit_PTextureCubeMapBase_00ae54b0 @ 0x00ae_54b0 => extern "C" fn s_00ae54b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[77])
+    }
+    /// `StaticInit_PRenderTargetBase_00ae5630`: class descriptor `PRenderTargetBase` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afe460).
+    StaticInit_PRenderTargetBase_00ae5630 @ 0x00ae_5630 => extern "C" fn s_00ae5630() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[78])
+    }
+    /// `StaticInit_PShadowCaster_00ae56e0`: class descriptor `PShadowCaster` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe4a0).
+    StaticInit_PShadowCaster_00ae56e0 @ 0x00ae_56e0 => extern "C" fn s_00ae56e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[79])
+    }
+    /// `StaticInit_CtorVt_00ae57a0`: constructor 0x004c9160 (thiscall, no words) on 0x00ca4430, flags 0x00ca44c0 &= ~2, its vtable 0x00b1ed04; atexit(0x00afe4c0).
+    StaticInit_CtorVt_00ae57a0 @ 0x00ae_57a0 => extern "C" fn s_00ae57a0() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[1])
+    }
+    /// `StaticInit_CascadedShadowMap_00ae57d0`: type-enum value `CascadedShadowMap` registered once: when the guard 0x00ca43b8 is 0 and 0x004cb090 finds no such name, the node 0x00c158d8 goes on the head of its list 0x00ca43a8 (old head to 0x00c158e0), two plain words, the guard = node; atexit(0x00afe4e0).
+    StaticInit_CascadedShadowMap_00ae57d0 @ 0x00ae_57d0 => extern "C" fn s_00ae57d0() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[4])
+    }
+    /// `StaticInit_CombinedCascadedShadowMap_00ae5830`: type-enum value `CombinedCascadedShadowMap` registered once: when the guard 0x00ca43bc is 0 and 0x004cb090 finds no such name, the node 0x00c158ec goes on the head of its list 0x00ca43a8 (old head to 0x00c158f4), two plain words, the guard = node; atexit(0x00afe520).
+    StaticInit_CombinedCascadedShadowMap_00ae5830 @ 0x00ae_5830 => extern "C" fn s_00ae5830() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[5])
+    }
+    /// `StaticInit_NoShadow_00ae5890`: type-enum value `NoShadow` registered once: when the guard 0x00ca43b0 is 0 and 0x004cb090 finds no such name, the node 0x00c158b0 goes on the head of its list 0x00ca43a8 (old head to 0x00c158b8), two plain words, the guard = node; atexit(0x00afe560).
+    StaticInit_NoShadow_00ae5890 @ 0x00ae_5890 => extern "C" fn s_00ae5890() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[6])
+    }
+    /// `StaticInit_PCFShadowMap_00ae58f0`: type-enum value `PCFShadowMap` registered once: when the guard 0x00ca43b4 is 0 and 0x004cb090 finds no such name, the node 0x00c158c4 goes on the head of its list 0x00ca43a8 (old head to 0x00c158cc), two plain words, the guard = node; atexit(0x00afe5a0).
+    StaticInit_PCFShadowMap_00ae58f0 @ 0x00ae_58f0 => extern "C" fn s_00ae58f0() -> u32 {
+        sab::guarded_enum(&mut mem(), &sab::GUARDED_ENUMS[7])
+    }
+    /// `StaticInit_PNodeContext_00ae5950`: class descriptor `PNodeContext` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe690).
+    StaticInit_PNodeContext_00ae5950 @ 0x00ae_5950 => extern "C" fn s_00ae5950() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[80])
+    }
+    /// `StaticInit_PMeshSegmentContext_00ae5a10`: class descriptor `PMeshSegmentContext` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe710).
+    StaticInit_PMeshSegmentContext_00ae5a10 @ 0x00ae_5a10 => extern "C" fn s_00ae5a10() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[81])
+    }
+    /// `StaticInit_FreeList_00ae5ad0`: `PFreeList` 0x00ca4edc constructed (size 0x18, count 0x100, align 4, name `PContextSwitch`); atexit(0x00afe730).
+    StaticInit_FreeList_00ae5ad0 @ 0x00ae_5ad0 => extern "C" fn s_00ae5ad0() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[0])
+    }
+    /// `StaticInit_INSTANCING_ENABLED_00ae5b00`: type-enum value `INSTANCING_ENABLED`: when 0x004d3780 finds no such name, the node 0x00c16108 goes on the head of its list 0x00ca4e18 (old head to 0x00c16110, count 0x00ca4e20 + 1, a plain word); its vtable 0x00b1f7e8 either way; atexit(0x00afe740).
+    StaticInit_INSTANCING_ENABLED_00ae5b00 @ 0x00ae_5b00 => extern "C" fn s_00ae5b00() -> u32 {
+        sab::counted_enum(&mut mem(), &sab::COUNTED_ENUMS[0])
+    }
+    /// `StaticInit_LOD_BLEND_00ae5b50`: type-enum value `LOD_BLEND`: when 0x004d3780 finds no such name, the node 0x00c160f0 goes on the head of its list 0x00ca4e18 (old head to 0x00c160f8, count 0x00ca4e20 + 1, a plain word); its vtable 0x00b1f7d4 either way; atexit(0x00afe770).
+    StaticInit_LOD_BLEND_00ae5b50 @ 0x00ae_5b50 => extern "C" fn s_00ae5b50() -> u32 {
+        sab::counted_enum(&mut mem(), &sab::COUNTED_ENUMS[1])
+    }
+    /// `StaticInit_INDICES_16BIT_00ae5bc0`: type-enum value `INDICES_16BIT`: when 0x004d3780 finds no such name, the node 0x00c16150 goes on the head of its list 0x00ca4e18 (old head to 0x00c16158, count 0x00ca4e20 + 1, a plain word); its vtable 0x00b1f828 either way; atexit(0x00afe7d0).
+    StaticInit_INDICES_16BIT_00ae5bc0 @ 0x00ae_5bc0 => extern "C" fn s_00ae5bc0() -> u32 {
+        sab::counted_enum(&mut mem(), &sab::COUNTED_ENUMS[2])
+    }
+    /// `StaticInit_SHADER_LOD_LEVEL_00ae5c10`: type-enum value `SHADER_LOD_LEVEL`: when 0x004d3780 finds no such name, the node 0x00c16120 goes on the head of its list 0x00ca4e18 (old head to 0x00c16128, count 0x00ca4e20 + 1, a plain word); its vtable 0x00b1f7fc either way; atexit(0x00afe800).
+    StaticInit_SHADER_LOD_LEVEL_00ae5c10 @ 0x00ae_5c10 => extern "C" fn s_00ae5c10() -> u32 {
+        sab::counted_enum(&mut mem(), &sab::COUNTED_ENUMS[3])
+    }
+    /// `StaticInit_ORTHO_CAMERA_00ae5c60`: type-enum value `ORTHO_CAMERA`: when 0x004d3780 finds no such name, the node 0x00c16138 goes on the head of its list 0x00ca4e18 (old head to 0x00c16140, count 0x00ca4e20 + 1, a plain word); its vtable 0x00b1f810 either way; atexit(0x00afe830).
+    StaticInit_ORTHO_CAMERA_00ae5c60 @ 0x00ae_5c60 => extern "C" fn s_00ae5c60() -> u32 {
+        sab::counted_enum(&mut mem(), &sab::COUNTED_ENUMS[4])
+    }
+    /// `StaticInit_FreeList_00ae5cb0`: `PFreeList` 0x00ca4ef4 constructed (size 0x40, count 0x100, align 1, name `PContextSwitch`); atexit(0x00afe860).
+    StaticInit_FreeList_00ae5cb0 @ 0x00ae_5cb0 => extern "C" fn s_00ae5cb0() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[1])
+    }
+    /// `StaticInit_PParameterBuffer_00ae5cf0`: class descriptor `PParameterBuffer` (base 0x00ca4fa8): constructor, buffers; flags = ((flags & 0xfffffffd) | 0xc) & 0xffffffff, the function 0x004d6c00 at flags + 4, vtable 0x00b1fc0c; atexit(0x00afe8c0).
+    StaticInit_PParameterBuffer_00ae5cf0 @ 0x00ae_5cf0 => extern "C" fn s_00ae5cf0() -> u32 {
+        sab::class_decl_flags(&mut mem(), &sab::CLASS_DECLS_FLAGS[0])
+    }
+    /// `StaticInit_PParameterBufferBase_00ae5dc0`: class descriptor `PParameterBufferBase` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00afe8e0).
+    StaticInit_PParameterBufferBase_00ae5dc0 @ 0x00ae_5dc0 => extern "C" fn s_00ae5dc0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[82])
+    }
+    /// `StaticInit_PMaterial_00ae5e70`: class descriptor `PMaterial` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afe930).
+    StaticInit_PMaterial_00ae5e70 @ 0x00ae_5e70 => extern "C" fn s_00ae5e70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[83])
+    }
+    /// `StaticInit_PMaterialSwitch_00ae5f30`: class descriptor `PMaterialSwitch` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe950).
+    StaticInit_PMaterialSwitch_00ae5f30 @ 0x00ae_5f30 => extern "C" fn s_00ae5f30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[84])
+    }
+    /// `StaticInit_PContextVariantFoldingTable_00ae5ff0`: class descriptor `PContextVariantFoldingTable` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afe9f0).
+    StaticInit_PContextVariantFoldingTable_00ae5ff0 @ 0x00ae_5ff0 => extern "C" fn s_00ae5ff0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[85])
+    }
+    /// `StaticInit_PSceneRenderPass_00ae60b0`: class descriptor `PSceneRenderPass` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afea10).
+    StaticInit_PSceneRenderPass_00ae60b0 @ 0x00ae_60b0 => extern "C" fn s_00ae60b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[86])
+    }
+    /// `StaticInit_PShaderPassInfo_00ae6170`: class descriptor `PShaderPassInfo` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00afea30).
+    StaticInit_PShaderPassInfo_00ae6170 @ 0x00ae_6170 => extern "C" fn s_00ae6170() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[87])
+    }
+    /// `StaticInit_FreeList_00ae6230`: `PFreeList` 0x00ca54fc constructed (size 0x10, count 0x100, align 4, name `PSceneRenderPassType`); atexit(0x00afea50).
+    StaticInit_FreeList_00ae6230 @ 0x00ae_6230 => extern "C" fn s_00ae6230() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[2])
+    }
+    /// `StaticInit_FreeList_00ae6260`: `PFreeList` 0x00ca5514 constructed (size 0x40, count 0x100, align 1, name `PSceneRenderPassType`); atexit(0x00afea60).
+    StaticInit_FreeList_00ae6260 @ 0x00ae_6260 => extern "C" fn s_00ae6260() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[3])
+    }
+    /// `StaticInit_PEffectVariant_00ae6b50`: class descriptor `PEffectVariant` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00afeed0).
+    StaticInit_PEffectVariant_00ae6b50 @ 0x00ae_6b50 => extern "C" fn s_00ae6b50() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[88])
+    }
+    /// `StaticInit_PEffect_00ae6c10`: class descriptor `PEffect` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00aff070).
+    StaticInit_PEffect_00ae6c10 @ 0x00ae_6c10 => extern "C" fn s_00ae6c10() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[89])
+    }
+    /// `StaticInit_CtorVt_00ae6cd0`: constructor 0x004f2200 (thiscall, no words) on 0x00ca7228, flags 0x00ca72b8 = (flags & ~2) | 8, its vtable 0x00b22b9c; atexit(0x00aff2d0).
+    StaticInit_CtorVt_00ae6cd0 @ 0x00ae_6cd0 => extern "C" fn s_00ae6cd0() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[2])
+    }
+    /// `StaticInit_PMeshInstanceSegmentContext_00ae6d00`: class descriptor `PMeshInstanceSegmentContext` (base 0x00ca4e28, clear): constructor, buffers, tail; atexit(0x00aff2f0).
+    StaticInit_PMeshInstanceSegmentContext_00ae6d00 @ 0x00ae_6d00 => extern "C" fn s_00ae6d00() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[90])
+    }
+    /// `StaticInit_PMeshInstanceSegmentStreamBinding_00ae6dc0`: class descriptor `PMeshInstanceSegmentStreamBinding` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00aff310).
+    StaticInit_PMeshInstanceSegmentStreamBinding_00ae6dc0 @ 0x00ae_6dc0 => extern "C" fn s_00ae6dc0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[91])
+    }
+    /// `StaticInit_PDynamicMeshInstance_00ae6e80`: class descriptor `PDynamicMeshInstance` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00aff7d0).
+    StaticInit_PDynamicMeshInstance_00ae6e80 @ 0x00ae_6e80 => extern "C" fn s_00ae6e80() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[92])
+    }
+    /// `StaticInit_PSceneWideParameterBuffer_00ae7000`: class descriptor `PSceneWideParameterBuffer` (base 0x00ca4fa8, clear): constructor, buffers, tail; atexit(0x00aff880).
+    StaticInit_PSceneWideParameterBuffer_00ae7000 @ 0x00ae_7000 => extern "C" fn s_00ae7000() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[93])
+    }
+    /// `StaticInit_CtorArray_00ae70c0`: constructor 0x00431690 on 0x00ca852c, 0x00ca8544 = 0, then 0x004fd120 on 2 elements from 0x00ca8548, 0x110 apart; atexit(0x00aff8a0).
+    StaticInit_CtorArray_00ae70c0 @ 0x00ae_70c0 => extern "C" fn s_00ae70c0() -> u32 {
+        sab::ctor_array(&mut mem(), &sab::CTOR_ARRAYS[0])
+    }
+    /// `StaticInit_VecCtor_00ae7140`: eh vector constructor iterator 0x0094966a (stdcall) on 0x00ca8330: 30 elements of 0x10 bytes, constructor 0x004a1660, destructor 0x004a1770; atexit(0x00aff930).
+    StaticInit_VecCtor_00ae7140 @ 0x00ae_7140 => extern "C" fn s_00ae7140() -> u32 {
+        sab::vec_ctor(&mut mem(), &sab::VEC_CTORS[0])
+    }
+    /// `StaticInit_PMeshInstanceBounds_00ae71b0`: class descriptor `PMeshInstanceBounds` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00aff970).
+    StaticInit_PMeshInstanceBounds_00ae71b0 @ 0x00ae_71b0 => extern "C" fn s_00ae71b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[94])
+    }
+    /// `StaticInit_PMeshInstanceAttachPoint_00ae7270`: class descriptor `PMeshInstanceAttachPoint` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00aff9e0).
+    StaticInit_PMeshInstanceAttachPoint_00ae7270 @ 0x00ae_7270 => extern "C" fn s_00ae7270() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[95])
+    }
+    /// `StaticInit_PStructuredBuffer_00ae7330`: class descriptor `PStructuredBuffer` (base 0x00cb3cb0, clear): constructor, buffers, tail; atexit(0x00affa30).
+    StaticInit_PStructuredBuffer_00ae7330 @ 0x00ae_7330 => extern "C" fn s_00ae7330() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[96])
+    }
+    /// `StaticInit_PStructuredBufferBase_00ae73f0`: class descriptor `PStructuredBufferBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00affa50).
+    StaticInit_PStructuredBufferBase_00ae73f0 @ 0x00ae_73f0 => extern "C" fn s_00ae73f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[97])
+    }
+    /// `StaticInit_PIndirectArgsBuffer_00ae74b0`: class descriptor `PIndirectArgsBuffer` (base 0x00cb3d48, clear): constructor, buffers, tail; atexit(0x00affaa0).
+    StaticInit_PIndirectArgsBuffer_00ae74b0 @ 0x00ae_74b0 => extern "C" fn s_00ae74b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[98])
+    }
+    /// `StaticInit_PIndirectArgsBufferBase_00ae7570`: class descriptor `PIndirectArgsBufferBase` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00affac0).
+    StaticInit_PIndirectArgsBufferBase_00ae7570 @ 0x00ae_7570 => extern "C" fn s_00ae7570() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[99])
+    }
+    /// `StaticInit_ChainAppend_00ae7630`: appends the object 0x00c1a300 (vtable 0x00b24c60) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c1a304); atexit(0x00affae0).
+    StaticInit_ChainAppend_00ae7630 @ 0x00ae_7630 => extern "C" fn s_00ae7630() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[6])
+    }
+    /// `StaticInit_ChainAppend_00ae7680`: appends the object 0x00c1a350 (vtable 0x00b24c80) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c1a354); atexit(0x00affb30).
+    StaticInit_ChainAppend_00ae7680 @ 0x00ae_7680 => extern "C" fn s_00ae7680() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[7])
+    }
+    /// `StaticInit_PNode_00ae76d0`: class descriptor `PNode` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00affb80).
+    StaticInit_PNode_00ae76d0 @ 0x00ae_76d0 => extern "C" fn s_00ae76d0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[100])
+    }
+    /// `StaticInit_PAnimationSlotArray_00ae79f0`: class descriptor `PAnimationSlotArray` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00080).
+    StaticInit_PAnimationSlotArray_00ae79f0 @ 0x00ae_79f0 => extern "C" fn s_00ae79f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[101])
+    }
+    /// `StaticInit_PAnimationSlotListIndex_00ae7ab0`: class descriptor `PAnimationSlotListIndex` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b000a0).
+    StaticInit_PAnimationSlotListIndex_00ae7ab0 @ 0x00ae_7ab0 => extern "C" fn s_00ae7ab0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[102])
+    }
+    /// `StaticInit_PAnimationChannelTimes_00ae7b70`: class descriptor `PAnimationChannelTimes` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00100).
+    StaticInit_PAnimationChannelTimes_00ae7b70 @ 0x00ae_7b70 => extern "C" fn s_00ae7b70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[103])
+    }
+    /// `StaticInit_PAnimationChannelTarget_00ae7c30`: class descriptor `PAnimationChannelTarget` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00190).
+    StaticInit_PAnimationChannelTarget_00ae7c30 @ 0x00ae_7c30 => extern "C" fn s_00ae7c30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[104])
+    }
+    /// `StaticInit_PAnimationChannelBase_00ae7cf0`: class descriptor `PAnimationChannelBase` (base 0x00ca9c28, clear): constructor, buffers, tail; atexit(0x00b00320).
+    StaticInit_PAnimationChannelBase_00ae7cf0 @ 0x00ae_7cf0 => extern "C" fn s_00ae7cf0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[105])
+    }
+    /// `StaticInit_PAnimationChannel_00ae7db0`: class descriptor `PAnimationChannel` (base 0x00ca9f30, clear): constructor, buffers, tail; atexit(0x00b00360).
+    StaticInit_PAnimationChannel_00ae7db0 @ 0x00ae_7db0 => extern "C" fn s_00ae7db0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[106])
+    }
+    /// `StaticInit_PAnimationConstantChannel_00ae7e70`: class descriptor `PAnimationConstantChannel` (base 0x00ca9f30, clear): constructor, buffers, tail; atexit(0x00b003b0).
+    StaticInit_PAnimationConstantChannel_00ae7e70 @ 0x00ae_7e70 => extern "C" fn s_00ae7e70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[107])
+    }
+    /// `StaticInit_PAnimationClipBinding_00ae7f30`: class descriptor `PAnimationClipBinding` (base `GetClassDescriptor()`): constructor, buffers; flags = ((flags & 0xfffffffd) | 0xc) & 0xfffffff7, the function 0x00510f90 at flags + 4, vtable 0x00b26334; atexit(0x00b003e0).
+    StaticInit_PAnimationClipBinding_00ae7f30 @ 0x00ae_7f30 => extern "C" fn s_00ae7f30() -> u32 {
+        sab::class_decl_flags(&mut mem(), &sab::CLASS_DECLS_FLAGS[1])
+    }
+    /// `StaticInit_PAnimationClipBindingChannelMap_00ae8000`: class descriptor `PAnimationClipBindingChannelMap` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00400).
+    StaticInit_PAnimationClipBindingChannelMap_00ae8000 @ 0x00ae_8000 => extern "C" fn s_00ae8000() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[108])
+    }
+    /// `StaticInit_PAnimationClipBindingDataBlockCache_00ae80c0`: class descriptor `PAnimationClipBindingDataBlockCache` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00420).
+    StaticInit_PAnimationClipBindingDataBlockCache_00ae80c0 @ 0x00ae_80c0 => extern "C" fn s_00ae80c0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[109])
+    }
+    /// `StaticInit_PAnimationClip_00ae8180`: class descriptor `PAnimationClip` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b004c0).
+    StaticInit_PAnimationClip_00ae8180 @ 0x00ae_8180 => extern "C" fn s_00ae8180() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[110])
+    }
+    /// `StaticInit_PAnimationSet_00ae8240`: class descriptor `PAnimationSet` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00860).
+    StaticInit_PAnimationSet_00ae8240 @ 0x00ae_8240 => extern "C" fn s_00ae8240() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[111])
+    }
+    /// `StaticInit_PAnimationEvent_00ae8300`: class descriptor `PAnimationEvent` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00a60).
+    StaticInit_PAnimationEvent_00ae8300 @ 0x00ae_8300 => extern "C" fn s_00ae8300() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[112])
+    }
+    /// `StaticInit_PAnimationEventList_00ae83c0`: class descriptor `PAnimationEventList` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00a80).
+    StaticInit_PAnimationEventList_00ae83c0 @ 0x00ae_83c0 => extern "C" fn s_00ae83c0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[113])
+    }
+    /// `StaticInit_PAnimationHierarchyNode_00ae8480`: class descriptor `PAnimationHierarchyNode` (base `GetClassDescriptor()`, keep): constructor, buffers, tail; atexit(0x00b00b20).
+    StaticInit_PAnimationHierarchyNode_00ae8480 @ 0x00ae_8480 => extern "C" fn s_00ae8480() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[114])
+    }
+    /// `StaticInit_PTimeController_00ae8530`: class descriptor `PTimeController` (base 0x00cab858, clear): constructor, buffers, tail; atexit(0x00b00b40).
+    StaticInit_PTimeController_00ae8530 @ 0x00ae_8530 => extern "C" fn s_00ae8530() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[115])
+    }
+    /// `StaticInit_PTimeIntervalController_00ae85f0`: class descriptor `PTimeIntervalController` (base 0x00cab920, clear): constructor, buffers, tail; atexit(0x00b00ba0).
+    StaticInit_PTimeIntervalController_00ae85f0 @ 0x00ae_85f0 => extern "C" fn s_00ae85f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[116])
+    }
+    /// `StaticInit_PTimeScaleOffsetController_00ae86b0`: class descriptor `PTimeScaleOffsetController` (base 0x00cab920, clear): constructor, buffers, tail; atexit(0x00b00c00).
+    StaticInit_PTimeScaleOffsetController_00ae86b0 @ 0x00ae_86b0 => extern "C" fn s_00ae86b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[117])
+    }
+    /// `StaticInit_PAnimationEventController_00ae8820`: class descriptor `PAnimationEventController` (base 0x00cabd28, clear): constructor, buffers, tail; atexit(0x00b00c80).
+    StaticInit_PAnimationEventController_00ae8820 @ 0x00ae_8820 => extern "C" fn s_00ae8820() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[118])
+    }
+    /// `StaticInit_PAnimationController_00ae88e0`: class descriptor `PAnimationController` (base 0x00cabd28, clear): constructor, buffers, tail; atexit(0x00b00cc0).
+    StaticInit_PAnimationController_00ae88e0 @ 0x00ae_88e0 => extern "C" fn s_00ae88e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[119])
+    }
+    /// `StaticInit_PAnimationSlotFilter_00ae89a0`: class descriptor `PAnimationSlotFilter` (base 0x00cabd28, clear): constructor, buffers, tail; atexit(0x00b00d00).
+    StaticInit_PAnimationSlotFilter_00ae89a0 @ 0x00ae_89a0 => extern "C" fn s_00ae89a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[120])
+    }
+    /// `StaticInit_PAnimationSlotFilterDeferredLoad_00ae8a60`: class descriptor `PAnimationSlotFilterDeferredLoad` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00d20).
+    StaticInit_PAnimationSlotFilterDeferredLoad_00ae8a60 @ 0x00ae_8a60 => extern "C" fn s_00ae8a60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[121])
+    }
+    /// `StaticInit_PAnimationWeightedBlenderController_00ae8bd0`: class descriptor `PAnimationWeightedBlenderController` (base 0x00cac618, clear): constructor, buffers, tail; atexit(0x00b00eb0).
+    StaticInit_PAnimationWeightedBlenderController_00ae8bd0 @ 0x00ae_8bd0 => extern "C" fn s_00ae8bd0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[122])
+    }
+    /// `StaticInit_PAnimationAdditiveBlenderController_00ae8c90`: class descriptor `PAnimationAdditiveBlenderController` (base 0x00cac618, clear): constructor, buffers, tail; atexit(0x00b00ee0).
+    StaticInit_PAnimationAdditiveBlenderController_00ae8c90 @ 0x00ae_8c90 => extern "C" fn s_00ae8c90() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[123])
+    }
+    /// `StaticInit_PAnimationSpuTargetBlenderController_00ae8d50`: class descriptor `PAnimationSpuTargetBlenderController` (base 0x00cabd28, clear): constructor, buffers, tail; atexit(0x00b00f10).
+    StaticInit_PAnimationSpuTargetBlenderController_00ae8d50 @ 0x00ae_8d50 => extern "C" fn s_00ae8d50() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[124])
+    }
+    /// `StaticInit_PAnimationTargetBlenderController_00ae8e10`: class descriptor `PAnimationTargetBlenderController` (base 0x00cabd28, clear): constructor, buffers, tail; atexit(0x00b00f40).
+    StaticInit_PAnimationTargetBlenderController_00ae8e10 @ 0x00ae_8e10 => extern "C" fn s_00ae8e10() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[125])
+    }
+    /// `StaticInit_CtorVt_00ae8ed0`: constructor 0x00533d60 (thiscall, no words) on 0x00cacd18, flags 0x00cacda8 &= ~2, its vtable 0x00b2a404; atexit(0x00b00f70).
+    StaticInit_CtorVt_00ae8ed0 @ 0x00ae_8ed0 => extern "C" fn s_00ae8ed0() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[3])
+    }
+    /// `StaticInit_PAnimationNetworkInstance_00ae8f00`: class descriptor `PAnimationNetworkInstance` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00f90).
+    StaticInit_PAnimationNetworkInstance_00ae8f00 @ 0x00ae_8f00 => extern "C" fn s_00ae8f00() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[126])
+    }
+    /// `StaticInit_PAnimationNetworkInstanceTarget_00ae8fc0`: class descriptor `PAnimationNetworkInstanceTarget` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b00fb0).
+    StaticInit_PAnimationNetworkInstanceTarget_00ae8fc0 @ 0x00ae_8fc0 => extern "C" fn s_00ae8fc0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[127])
+    }
+    /// `StaticInit_PAnimatableComponent_00ae9090`: class descriptor `PAnimatableComponent` (base 0x00c91c18, c = 4, clear): constructor, buffers, tail; atexit(0x00b01220).
+    StaticInit_PAnimatableComponent_00ae9090 @ 0x00ae_9090 => extern "C" fn s_00ae9090() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[128])
+    }
+    /// `StaticInit_PBlendableAnimationSource_00ae9150`: class descriptor `PBlendableAnimationSource` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b01240).
+    StaticInit_PBlendableAnimationSource_00ae9150 @ 0x00ae_9150 => extern "C" fn s_00ae9150() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[129])
+    }
+    /// `StaticInit_PLocator_00ae9210`: class descriptor `PLocator` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b01920).
+    StaticInit_PLocator_00ae9210 @ 0x00ae_9210 => extern "C" fn s_00ae9210() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[130])
+    }
+    /// `StaticInit_Cross_00ae92d0`: type-enum value `Cross`: when 0x00545840 finds no such name, the node 0x00c20868 goes on the head of its list 0x00cae548 (old head to 0x00c20870); atexit(0x00b01940).
+    StaticInit_Cross_00ae92d0 @ 0x00ae_92d0 => extern "C" fn s_00ae92d0() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[0])
+    }
+    /// `StaticInit_Cube_00ae9310`: type-enum value `Cube`: when 0x00545840 finds no such name, the node 0x00c20874 goes on the head of its list 0x00cae548 (old head to 0x00c2087c); atexit(0x00b01960).
+    StaticInit_Cube_00ae9310 @ 0x00ae_9310 => extern "C" fn s_00ae9310() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[1])
+    }
+    /// `StaticInit_Plane_00ae9350`: type-enum value `Plane`: when 0x00545840 finds no such name, the node 0x00c20880 goes on the head of its list 0x00cae548 (old head to 0x00c20888); atexit(0x00b01980).
+    StaticInit_Plane_00ae9350 @ 0x00ae_9350 => extern "C" fn s_00ae9350() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[2])
+    }
+    /// `StaticInit_PSpline_00ae9390`: class descriptor `PSpline` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b01ae0).
+    StaticInit_PSpline_00ae9390 @ 0x00ae_9390 => extern "C" fn s_00ae9390() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[131])
+    }
+    /// `StaticInit_FreeList_00ae9450`: `PFreeList` 0x00caecec constructed (size 0xc, count 0x100, align 4, name `PTriggerType`); atexit(0x00b01de0).
+    StaticInit_FreeList_00ae9450 @ 0x00ae_9450 => extern "C" fn s_00ae9450() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[4])
+    }
+    /// `StaticInit_FreeList_00ae9480`: `PFreeList` 0x00caed04 constructed (size 0x40, count 0x100, align 1, name `PTriggerType`); atexit(0x00b01df0).
+    StaticInit_FreeList_00ae9480 @ 0x00ae_9480 => extern "C" fn s_00ae9480() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[5])
+    }
+    /// `StaticInit_UnsetTrigger_00ae94b0`: type-enum value `UnsetTrigger`: when 0x0054d130 finds no such name, the node 0x00c21360 goes on the head of its list 0x00caece8 (old head to 0x00c21364); atexit(0x00b01e00).
+    StaticInit_UnsetTrigger_00ae94b0 @ 0x00ae_94b0 => extern "C" fn s_00ae94b0() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[3])
+    }
+    /// `StaticInit_PTrigger_00ae94f0`: class descriptor `PTrigger` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b01e20).
+    StaticInit_PTrigger_00ae94f0 @ 0x00ae_94f0 => extern "C" fn s_00ae94f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[132])
+    }
+    /// `StaticInit_PTriggerReceiverTypeCallbackData_00ae95b0`: class descriptor `PTriggerReceiverTypeCallbackData` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00b01fe0).
+    StaticInit_PTriggerReceiverTypeCallbackData_00ae95b0 @ 0x00ae_95b0 => extern "C" fn s_00ae95b0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[133])
+    }
+    /// `StaticInit_PTriggerReceiverComponent_00ae9670`: class descriptor `PTriggerReceiverComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00b02040).
+    StaticInit_PTriggerReceiverComponent_00ae9670 @ 0x00ae_9670 => extern "C" fn s_00ae9670() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[134])
+    }
+    /// `StaticInit_PQuarryComponent_00ae9730`: class descriptor `PQuarryComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00b02090).
+    StaticInit_PQuarryComponent_00ae9730 @ 0x00ae_9730 => extern "C" fn s_00ae9730() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[135])
+    }
+    /// `StaticInit_PScriptedComponent_00ae98a0`: class descriptor `PScriptedComponent` (base 0x00caf780, clear): constructor, buffers, tail; atexit(0x00b02120).
+    StaticInit_PScriptedComponent_00ae98a0 @ 0x00ae_98a0 => extern "C" fn s_00ae98a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[136])
+    }
+    /// `StaticInit_PTimerComponent_00ae9960`: class descriptor `PTimerComponent` (base 0x00caf780, clear): constructor, buffers, tail; atexit(0x00b02280).
+    StaticInit_PTimerComponent_00ae9960 @ 0x00ae_9960 => extern "C" fn s_00ae9960() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[137])
+    }
+    /// `StaticInit_PSplineFollowerComponent_00ae9a20`: class descriptor `PSplineFollowerComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00b02370).
+    StaticInit_PSplineFollowerComponent_00ae9a20 @ 0x00ae_9a20 => extern "C" fn s_00ae9a20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[138])
+    }
+    /// `StaticInit_PCameraControllerComponent_00ae9ae0`: class descriptor `PCameraControllerComponent` (base 0x00caf8d0, clear): constructor, buffers, tail; atexit(0x00b023d0).
+    StaticInit_PCameraControllerComponent_00ae9ae0 @ 0x00ae_9ae0 => extern "C" fn s_00ae9ae0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[139])
+    }
+    /// `StaticInit_PAttachableComponent_00ae9ba0`: class descriptor `PAttachableComponent` (base 0x00c91c18, clear): constructor, buffers, tail; atexit(0x00b02690).
+    StaticInit_PAttachableComponent_00ae9ba0 @ 0x00ae_9ba0 => extern "C" fn s_00ae9ba0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[140])
+    }
+    /// `StaticInit_PDataBlockBufferD3D11_00ae9c60`: class descriptor `PDataBlockBufferD3D11` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b029a0).
+    StaticInit_PDataBlockBufferD3D11_00ae9c60 @ 0x00ae_9c60 => extern "C" fn s_00ae9c60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[141])
+    }
+    /// `StaticInit_PDataBlockD3D11_00ae9d20`: class descriptor `PDataBlockD3D11` (base 0x00c988b0, clear): constructor, buffers, tail; atexit(0x00b029c0).
+    StaticInit_PDataBlockD3D11_00ae9d20 @ 0x00ae_9d20 => extern "C" fn s_00ae9d20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[142])
+    }
+    /// `StaticInit_PIndexDataBlockBufferD3D11_00ae9de0`: class descriptor `PIndexDataBlockBufferD3D11` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b029e0).
+    StaticInit_PIndexDataBlockBufferD3D11_00ae9de0 @ 0x00ae_9de0 => extern "C" fn s_00ae9de0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[143])
+    }
+    /// `StaticInit_PIndexDataBlockD3D11_00ae9ea0`: class descriptor `PIndexDataBlockD3D11` (base 0x00c98ec8, clear): constructor, buffers, tail; atexit(0x00b02a00).
+    StaticInit_PIndexDataBlockD3D11_00ae9ea0 @ 0x00ae_9ea0 => extern "C" fn s_00ae9ea0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[144])
+    }
+    /// `StaticInit_PMeshSegmentD3D11_00ae9f60`: class descriptor `PMeshSegmentD3D11` (base 0x00c99298, clear): constructor, buffers, tail; atexit(0x00b02a20).
+    StaticInit_PMeshSegmentD3D11_00ae9f60 @ 0x00ae_9f60 => extern "C" fn s_00ae9f60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[145])
+    }
+    /// `StaticInit_PSpriteAnimationInfo_00aea020`: class descriptor `PSpriteAnimationInfo` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b02bb0).
+    StaticInit_PSpriteAnimationInfo_00aea020 @ 0x00ae_a020 => extern "C" fn s_00aea020() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[146])
+    }
+    /// `StaticInit_PSpriteAnimationInfoChar_00aea0e0`: class descriptor `PSpriteAnimationInfoChar` (base 0x00cb1eb8, clear): constructor, buffers, tail; atexit(0x00b02bd0).
+    StaticInit_PSpriteAnimationInfoChar_00aea0e0 @ 0x00ae_a0e0 => extern "C" fn s_00aea0e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[147])
+    }
+    /// `StaticInit_PSpriteAttributes_00aea1a0`: class descriptor `PSpriteAttributes` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b02bf0).
+    StaticInit_PSpriteAttributes_00aea1a0 @ 0x00ae_a1a0 => extern "C" fn s_00aea1a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[148])
+    }
+    /// `StaticInit_CtorVt_00aea260`: constructor 0x00566a80 (thiscall, no words) on 0x00cb1cf0, flags 0x00cb1d80 &= ~2, its vtable 0x00b2f8ec; atexit(0x00b02c10).
+    StaticInit_CtorVt_00aea260 @ 0x00ae_a260 => extern "C" fn s_00aea260() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[4])
+    }
+    /// `StaticInit_PSubTextureInfo_00aea290`: class descriptor `PSubTextureInfo` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b02c30).
+    StaticInit_PSubTextureInfo_00aea290 @ 0x00ae_a290 => extern "C" fn s_00aea290() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[149])
+    }
+    /// `StaticInit_PTextureAtlasInfo_00aea350`: class descriptor `PTextureAtlasInfo` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b02c50).
+    StaticInit_PTextureAtlasInfo_00aea350 @ 0x00ae_a350 => extern "C" fn s_00aea350() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[150])
+    }
+    /// `StaticInit_PSpriteAnimationInfoInstance_00aea410`: class descriptor `PSpriteAnimationInfoInstance` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b034f0).
+    StaticInit_PSpriteAnimationInfoInstance_00aea410 @ 0x00ae_a410 => extern "C" fn s_00aea410() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[151])
+    }
+    /// `StaticInit_FreeList_00aea500`: `PFreeList` 0x00c24f24 constructed (size 0x14, count 0x8, align 4, name `PMapPair`); atexit(0x00b035b0).
+    StaticInit_FreeList_00aea500 @ 0x00ae_a500 => extern "C" fn s_00aea500() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[6])
+    }
+    /// `StaticInit_FreeList_00aea5d0`: `PFreeList` 0x00c2538c constructed (size 0x10, count 0x8, align 4, name `PMapPair`); atexit(0x00b03690).
+    StaticInit_FreeList_00aea5d0 @ 0x00ae_a5d0 => extern "C" fn s_00aea5d0() -> u32 {
+        sab::free_list(&mut mem(), &sab::FREE_LISTS[7])
+    }
+    /// `StaticInit_PConstantBufferD3D11_00aea630`: class descriptor `PConstantBufferD3D11` (base 0x00c9b4c8, clear): constructor, buffers, tail; atexit(0x00b03710).
+    StaticInit_PConstantBufferD3D11_00aea630 @ 0x00ae_a630 => extern "C" fn s_00aea630() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[152])
+    }
+    /// `StaticInit_PIndirectArgsBufferD3D11_00aea6f0`: class descriptor `PIndirectArgsBufferD3D11` (base 0x00ca9038, clear): constructor, buffers, tail; atexit(0x00b03730).
+    StaticInit_PIndirectArgsBufferD3D11_00aea6f0 @ 0x00ae_a6f0 => extern "C" fn s_00aea6f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[153])
+    }
+    /// `StaticInit_PSamplerStateD3D11_00aea860`: class descriptor `PSamplerStateD3D11` (base 0x00ca2898, clear): constructor, buffers, tail; atexit(0x00b03770).
+    StaticInit_PSamplerStateD3D11_00aea860 @ 0x00ae_a860 => extern "C" fn s_00aea860() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[154])
+    }
+    /// `StaticInit_PShaderPassD3D11_00aeab60`: class descriptor `PShaderPassD3D11` (base 0x00ca1500, clear): constructor, buffers, tail; atexit(0x00b037f0).
+    StaticInit_PShaderPassD3D11_00aeab60 @ 0x00ae_ab60 => extern "C" fn s_00aeab60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[155])
+    }
+    /// `StaticInit_PShaderPassStateD3D11_00aeac20`: class descriptor `PShaderPassStateD3D11` (base 0x00ca1630, clear): constructor, buffers, tail; atexit(0x00b03810).
+    StaticInit_PShaderPassStateD3D11_00aeac20 @ 0x00ae_ac20 => extern "C" fn s_00aeac20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[156])
+    }
+    /// `StaticInit_PStreamInputDescD3D11_00aeae60`: class descriptor `PStreamInputDescD3D11` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b03870).
+    StaticInit_PStreamInputDescD3D11_00aeae60 @ 0x00ae_ae60 => extern "C" fn s_00aeae60() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[157])
+    }
+    /// `StaticInit_PStreamInputLayoutD3D11_00aeaf20`: class descriptor `PStreamInputLayoutD3D11` (base `GetClassDescriptor()`, clearset8): constructor, buffers, tail; atexit(0x00b03890).
+    StaticInit_PStreamInputLayoutD3D11_00aeaf20 @ 0x00ae_af20 => extern "C" fn s_00aeaf20() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[158])
+    }
+    /// `StaticInit_PStructuredBufferD3D11_00aeafe0`: class descriptor `PStructuredBufferD3D11` (base 0x00ca8d30, clear): constructor, buffers, tail; atexit(0x00b038b0).
+    StaticInit_PStructuredBufferD3D11_00aeafe0 @ 0x00ae_afe0 => extern "C" fn s_00aeafe0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[159])
+    }
+    /// `StaticInit_PTexture2DD3D11_00aeb0a0`: class descriptor `PTexture2DD3D11` (base 0x00ca3738, clear): constructor, buffers, tail; atexit(0x00b038d0).
+    StaticInit_PTexture2DD3D11_00aeb0a0 @ 0x00ae_b0a0 => extern "C" fn s_00aeb0a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[160])
+    }
+    /// `StaticInit_PTexture3DD3D11_00aeb160`: class descriptor `PTexture3DD3D11` (base 0x00ca3ac8, clear): constructor, buffers, tail; atexit(0x00b038f0).
+    StaticInit_PTexture3DD3D11_00aeb160 @ 0x00ae_b160 => extern "C" fn s_00aeb160() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[161])
+    }
+    /// `StaticInit_PTextureCubeMapD3D11_00aeb220`: class descriptor `PTextureCubeMapD3D11` (base 0x00ca3e58, clear): constructor, buffers, tail; atexit(0x00b03910).
+    StaticInit_PTextureCubeMapD3D11_00aeb220 @ 0x00ae_b220 => extern "C" fn s_00aeb220() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[162])
+    }
+    /// `StaticInit_PLODGroup_00aeb2e0`: class descriptor `PLODGroup` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b03dc0).
+    StaticInit_PLODGroup_00aeb2e0 @ 0x00ae_b2e0 => extern "C" fn s_00aeb2e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[163])
+    }
+    /// `StaticInit_PLODLevel_00aeb3a0`: class descriptor `PLODLevel` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b03de0).
+    StaticInit_PLODLevel_00aeb3a0 @ 0x00ae_b3a0 => extern "C" fn s_00aeb3a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[164])
+    }
+    /// `StaticInit_PModifierNetworkDynamicMesh_00aeb460`: class descriptor `PModifierNetworkDynamicMesh` (base 0x00c9a7d0, clear): constructor, buffers, tail; atexit(0x00b03fe0).
+    StaticInit_PModifierNetworkDynamicMesh_00aeb460 @ 0x00ae_b460 => extern "C" fn s_00aeb460() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[165])
+    }
+    /// `StaticInit_PModifierNetworkDynamicMeshSegment_00aeb520`: class descriptor `PModifierNetworkDynamicMeshSegment` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04000).
+    StaticInit_PModifierNetworkDynamicMeshSegment_00aeb520 @ 0x00ae_b520 => extern "C" fn s_00aeb520() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[166])
+    }
+    /// `StaticInit_PModifierNetworkInstance_00aeb5e0`: class descriptor `PModifierNetworkInstance` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04190).
+    StaticInit_PModifierNetworkInstance_00aeb5e0 @ 0x00ae_b5e0 => extern "C" fn s_00aeb5e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[167])
+    }
+    /// `StaticInit_PModifierNetworkInstanceInput_00aeb6a0`: class descriptor `PModifierNetworkInstanceInput` (base 0x00cbbf60, clear): constructor, buffers, tail; atexit(0x00b041b0).
+    StaticInit_PModifierNetworkInstanceInput_00aeb6a0 @ 0x00ae_b6a0 => extern "C" fn s_00aeb6a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[168])
+    }
+    /// `StaticInit_PModifierNetworkInstancePacketInput_00aeb760`: class descriptor `PModifierNetworkInstancePacketInput` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b041d0).
+    StaticInit_PModifierNetworkInstancePacketInput_00aeb760 @ 0x00ae_b760 => extern "C" fn s_00aeb760() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[169])
+    }
+    /// `StaticInit_PModifierAndInputs_00aeb820`: class descriptor `PModifierAndInputs` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b042b0).
+    StaticInit_PModifierAndInputs_00aeb820 @ 0x00ae_b820 => extern "C" fn s_00aeb820() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[170])
+    }
+    /// `StaticInit_PModifierNetwork_00aeb8e0`: class descriptor `PModifierNetwork` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b042d0).
+    StaticInit_PModifierNetwork_00aeb8e0 @ 0x00ae_b8e0 => extern "C" fn s_00aeb8e0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[171])
+    }
+    /// `StaticInit_PModifierNetworkBuffer_00aeb9a0`: class descriptor `PModifierNetworkBuffer` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b042f0).
+    StaticInit_PModifierNetworkBuffer_00aeb9a0 @ 0x00ae_b9a0 => extern "C" fn s_00aeb9a0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[172])
+    }
+    /// `StaticInit_PModifierNetworkInfoPacket_00aeba60`: class descriptor `PModifierNetworkInfoPacket` (base `GetClassDescriptor()`): constructor, buffers; flags = ((flags & 0xfffffffd) | 0xc) & 0xfffffff7, the function 0x005c5170 at flags + 4, vtable 0x00b36c94; atexit(0x00b04310).
+    StaticInit_PModifierNetworkInfoPacket_00aeba60 @ 0x00ae_ba60 => extern "C" fn s_00aeba60() -> u32 {
+        sab::class_decl_flags(&mut mem(), &sab::CLASS_DECLS_FLAGS[2])
+    }
+    /// `StaticInit_PModifierNetworkInfoPacket_Buffer_00aebb30`: class descriptor `PModifierNetworkInfoPacket_Buffer` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04330).
+    StaticInit_PModifierNetworkInfoPacket_Buffer_00aebb30 @ 0x00ae_bb30 => extern "C" fn s_00aebb30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[173])
+    }
+    /// `StaticInit_PModifierNetworkInfoPacket_ModifierCode_00aebbf0`: class descriptor `PModifierNetworkInfoPacket_ModifierCode` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04350).
+    StaticInit_PModifierNetworkInfoPacket_ModifierCode_00aebbf0 @ 0x00ae_bbf0 => extern "C" fn s_00aebbf0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[174])
+    }
+    /// `StaticInit_PModifierNetworkInfoPacket_ModifierInstance_00aebcb0`: class descriptor `PModifierNetworkInfoPacket_ModifierInstance` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04370).
+    StaticInit_PModifierNetworkInfoPacket_ModifierInstance_00aebcb0 @ 0x00ae_bcb0 => extern "C" fn s_00aebcb0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[175])
+    }
+    /// `StaticInit_PRenderStream_00aebd70`: class descriptor `PRenderStream` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04390).
+    StaticInit_PRenderStream_00aebd70 @ 0x00ae_bd70 => extern "C" fn s_00aebd70() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[176])
+    }
+    /// `StaticInit_PRenderStreamInput_00aebe30`: class descriptor `PRenderStreamInput` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b043b0).
+    StaticInit_PRenderStreamInput_00aebe30 @ 0x00ae_be30 => extern "C" fn s_00aebe30() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[177])
+    }
+    /// `StaticInit_PMorphModifierWeightsUserDataObject_00aebf40`: class descriptor `PMorphModifierWeightsUserDataObject` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b047b0).
+    StaticInit_PMorphModifierWeightsUserDataObject_00aebf40 @ 0x00ae_bf40 => extern "C" fn s_00aebf40() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[178])
+    }
+    /// `StaticInit_Morph22_00aec000`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph22`) on 0x00cbd428, linked on the head of the list 0x00cbd388 (old head to 0x00cbd468), then ten plain words; atexit(0x00b047d0).
+    StaticInit_Morph22_00aec000 @ 0x00ae_c000 => extern "C" fn s_00aec000() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[0])
+    }
+    /// `StaticInit_Morph23_00aec0c0`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph23`) on 0x00cbd5a8, linked on the head of the list 0x00cbd388 (old head to 0x00cbd5e8), then ten plain words; atexit(0x00b047e0).
+    StaticInit_Morph23_00aec0c0 @ 0x00ae_c0c0 => extern "C" fn s_00aec0c0() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[1])
+    }
+    /// `StaticInit_Morph24_00aec180`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph24`) on 0x00cbd728, linked on the head of the list 0x00cbd388 (old head to 0x00cbd768), then ten plain words; atexit(0x00b047f0).
+    StaticInit_Morph24_00aec180 @ 0x00ae_c180 => extern "C" fn s_00aec180() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[2])
+    }
+    /// `StaticInit_Morph32_00aec240`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph32`) on 0x00cbd4a8, linked on the head of the list 0x00cbd388 (old head to 0x00cbd4e8), then ten plain words; atexit(0x00b04800).
+    StaticInit_Morph32_00aec240 @ 0x00ae_c240 => extern "C" fn s_00aec240() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[3])
+    }
+    /// `StaticInit_Morph33_00aec300`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph33`) on 0x00cbd628, linked on the head of the list 0x00cbd388 (old head to 0x00cbd668), then ten plain words; atexit(0x00b04810).
+    StaticInit_Morph33_00aec300 @ 0x00ae_c300 => extern "C" fn s_00aec300() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[4])
+    }
+    /// `StaticInit_Morph34_00aec3c0`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph34`) on 0x00cbd7a8, linked on the head of the list 0x00cbd388 (old head to 0x00cbd7e8), then ten plain words; atexit(0x00b04820).
+    StaticInit_Morph34_00aec3c0 @ 0x00ae_c3c0 => extern "C" fn s_00aec3c0() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[5])
+    }
+    /// `StaticInit_Morph42_00aec480`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph42`) on 0x00cbd528, linked on the head of the list 0x00cbd388 (old head to 0x00cbd568), then ten plain words; atexit(0x00b04830).
+    StaticInit_Morph42_00aec480 @ 0x00ae_c480 => extern "C" fn s_00aec480() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[6])
+    }
+    /// `StaticInit_Morph43_00aec540`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph43`) on 0x00cbd6a8, linked on the head of the list 0x00cbd388 (old head to 0x00cbd6e8), then ten plain words; atexit(0x00b04840).
+    StaticInit_Morph43_00aec540 @ 0x00ae_c540 => extern "C" fn s_00aec540() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[7])
+    }
+    /// `StaticInit_Morph44_00aec600`: constructor 0x005c8100 (thiscall, ten words, the first the name `Morph44`) on 0x00cbd828, linked on the head of the list 0x00cbd388 (old head to 0x00cbd868), then ten plain words; atexit(0x00b04850).
+    StaticInit_Morph44_00aec600 @ 0x00ae_c600 => extern "C" fn s_00aec600() -> u32 {
+        sab::ctor_link(&mut mem(), &sab::CTOR_LINKS[8])
+    }
+    /// `StaticInit_DistanceToBoundBox_00aec6c0`: type-enum value `DistanceToBoundBox`: when 0x005cbe40 finds no such name, the node 0x00c29794 goes on the head of its list 0x00cbd908 (old head to 0x00c2979c); atexit(0x00b04870).
+    StaticInit_DistanceToBoundBox_00aec6c0 @ 0x00ae_c6c0 => extern "C" fn s_00aec6c0() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[4])
+    }
+    /// `StaticInit_DistanceToNode_00aec700`: type-enum value `DistanceToNode`: when 0x005cbe40 finds no such name, the node 0x00c29788 goes on the head of its list 0x00cbd908 (old head to 0x00c29790); atexit(0x00b04890).
+    StaticInit_DistanceToNode_00aec700 @ 0x00ae_c700 => extern "C" fn s_00aec700() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[5])
+    }
+    /// `StaticInit_ScreenSize_00aec740`: type-enum value `ScreenSize`: when 0x005cbe40 finds no such name, the node 0x00c297a0 goes on the head of its list 0x00cbd908 (old head to 0x00c297a8); atexit(0x00b048b0).
+    StaticInit_ScreenSize_00aec740 @ 0x00ae_c740 => extern "C" fn s_00aec740() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[6])
+    }
+    /// `StaticInit_Distance_00aec780`: type-enum value `Distance`: when 0x005cc2a0 finds no such name, the node 0x00c298bc goes on the head of its list 0x00cbd944 (old head to 0x00c298c4); atexit(0x00b048e0).
+    StaticInit_Distance_00aec780 @ 0x00ae_c780 => extern "C" fn s_00aec780() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[7])
+    }
+    /// `StaticInit_Time_00aec7c0`: type-enum value `Time`: when 0x005cc2a0 finds no such name, the node 0x00c298c8 goes on the head of its list 0x00cbd944 (old head to 0x00c298d0); atexit(0x00b04900).
+    StaticInit_Time_00aec7c0 @ 0x00ae_c7c0 => extern "C" fn s_00aec7c0() -> u32 {
+        sab::type_enum(&mut mem(), &sab::TYPE_ENUMS[8])
+    }
+    /// `StaticInit_CtorVt_00aec800`: constructor 0x005cefd0 (thiscall, no words) on 0x00cbd9c8, flags 0x00cbda58 = (flags & ~2) | 8, its vtable 0x00b38a84; atexit(0x00b04940).
+    StaticInit_CtorVt_00aec800 @ 0x00ae_c800 => extern "C" fn s_00aec800() -> u32 {
+        sab::ctor0_flags_vt(&mut mem(), &sab::CTOR0_FLAGS_VT[5])
+    }
+    /// `StaticInit_PScriptCallbackHandler_00aec830`: class descriptor `PScriptCallbackHandler` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04a60).
+    StaticInit_PScriptCallbackHandler_00aec830 @ 0x00ae_c830 => extern "C" fn s_00aec830() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[179])
+    }
+    /// `StaticInit_PScript_00aec8f0`: class descriptor `PScript` (base `GetClassDescriptor()`, clear): constructor, buffers, tail; atexit(0x00b04aa0).
+    StaticInit_PScript_00aec8f0 @ 0x00ae_c8f0 => extern "C" fn s_00aec8f0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[180])
+    }
+    /// `StaticInit_ChainAppend_00aec9c0`: appends the object 0x00c2a054 (vtable 0x00b39098) to the chain at 0x00c901a8 (before the first block at least 0xff full; the old link to 0x00c2a058); atexit(0x00b04b80).
+    StaticInit_ChainAppend_00aec9c0 @ 0x00ae_c9c0 => extern "C" fn s_00aec9c0() -> u32 {
+        sab::list_append(&mut mem(), &sab::LIST_APPENDS[8])
+    }
+    /// `StaticInit_PPhysicsBox_00aeca10`: class descriptor `PPhysicsBox` (base 0x00cbf8b0, clear): constructor, buffers, tail; atexit(0x00b04bd0).
+    StaticInit_PPhysicsBox_00aeca10 @ 0x00ae_ca10 => extern "C" fn s_00aeca10() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[181])
+    }
+    /// `StaticInit_PPhysicsBoxBase_00aecad0`: class descriptor `PPhysicsBoxBase` (base 0x00cbf358, clear): constructor, buffers, tail; atexit(0x00b04bf0).
+    StaticInit_PPhysicsBoxBase_00aecad0 @ 0x00ae_cad0 => extern "C" fn s_00aecad0() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[182])
+    }
+    /// `StaticInit_PPhysicsBoxBullet_00aecb90`: class descriptor `PPhysicsBoxBullet` (base 0x00cbe6e0, clear): constructor, buffers, tail; atexit(0x00b04c10).
+    StaticInit_PPhysicsBoxBullet_00aecb90 @ 0x00ae_cb90 => extern "C" fn s_00aecb90() -> u32 {
+        sab::class_decl(&mut mem(), &sab::CLASS_DECLS[183])
     }
 }
