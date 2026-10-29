@@ -1,0 +1,18 @@
+[package]
+name = "ffx-fpu"
+description = "The x87 instructions an emulator gets wrong (fsin, fpatan, fprem, ...), computed as an Intel FPU does them, for ffx-oracle and ffx-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+# `unicorn::step`: runs one of them on a Unicorn x86 CPU's registers.
+unicorn = ["dep:unicorn-engine"]
+
+[dependencies]
+unicorn-engine = { workspace = true, optional = true }
+
+[lints]
+workspace = true

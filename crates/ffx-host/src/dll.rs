@@ -39,6 +39,8 @@ pub struct Dll {
     pub exports: HashMap<String, u32>,
     /// Its imports, IAT slots at their loaded addresses.
     pub imports: Vec<Import>,
+    /// Where its x87 instructions the emulator gets wrong are (RVAs).
+    pub x87: ffx_fpu::Sites,
 }
 
 impl Dll {
@@ -134,6 +136,7 @@ pub fn load(arena: &Arena, bytes: &[u8], name: &str) -> Result<Dll> {
         entry: base + opt.standard_fields.address_of_entry_point,
         exports,
         imports,
+        x87: crate::image::x87_sites(bytes, &pe),
     })
 }
 

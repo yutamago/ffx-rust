@@ -36,6 +36,7 @@ use crate::imports::{Heap, ImportFn, Imports, ThreadCrt};
 use crate::sync::Objects;
 use crate::table::{Args, Conv, Ret, Table};
 use crate::{Error, Result};
+use ffx_fpu::x87::Op;
 
 /// `int3`.
 const INT3: u8 = 0xcc;
@@ -92,6 +93,8 @@ struct State {
     recent_cap: usize,
     /// Instructions run (when counting is on).
     instructions: u64,
+    /// x87 instructions computed by `ffx_fpu` instead of the emulator.
+    x87: u64,
 }
 
 /// Where emulated time went: basic blocks run, how often, and the clock
@@ -138,6 +141,9 @@ pub struct Stats {
     pub milestones: Vec<String>,
     /// Instructions emulated (with [`Exec::count_instructions`]).
     pub instructions: u64,
+    /// x87 instructions (`fsin`, `fpatan`, `fprem`, ...) computed exactly
+    /// by `ffx_fpu` instead of Unicorn's own x87.
+    pub x87: u64,
 }
 
 impl Stats {
@@ -160,6 +166,7 @@ impl Stats {
         self.messages.extend(o.messages.iter().cloned());
         self.milestones.extend(o.milestones.iter().cloned());
         self.instructions += o.instructions;
+        self.x87 += o.x87;
     }
 }
 
@@ -270,6 +277,11 @@ pub struct Shared {
     /// Thread-pool work items: handle → (callback, context).
     pub pool_work: Mutex<HashMap<u32, (u32, u32)>>,
     running: AtomicU32,
+    /// The x87 instructions `ffx_fpu` computes, at exact instruction
+    /// starts (patched to `int3`; game addresses).
+    x87: Arc<HashMap<u32, Op>>,
+    /// Possible ones in modules of unknown builds (a code hook each).
+    x87_watch: Vec<(u32, Op)>,
 }
 
 impl std::fmt::Debug for Shared {
@@ -360,6 +372,8 @@ impl Shared {
             emulators: Mutex::new(Vec::new()),
             pool_work: Mutex::new(HashMap::new()),
             running: AtomicU32::new(0),
+            x87: Arc::new(HashMap::new()),
+            x87_watch: Vec::new(),
         };
         s.bind_imports(stubs_at);
         for addr in s.table.addresses().collect::<Vec<_>>() {
@@ -367,6 +381,7 @@ impl Shared {
                 s.arena.fill(addr, &[INT3]);
             }
         }
+        s.mark_x87();
         let s = Arc::new(s);
         let weak = Arc::downgrade(&s);
         std::thread::Builder::new()
@@ -374,6 +389,29 @@ impl Shared {
             .spawn(move || watchdog(&weak))
             .map_err(Error::Io)?;
         Ok(s)
+    }
+
+    /// Finds the x87 instructions `ffx_fpu` computes in `FFX.exe` and the
+    /// DLLs: exact sites get an `int3` (the interrupt hook computes them),
+    /// a module of an unknown build a code hook on every possible one
+    /// (docs/host.md, "x87").
+    fn mark_x87(&mut self) {
+        let mut exact = HashMap::new();
+        let modules = std::iter::once((self.image.base, &self.image.x87))
+            .chain(self.dlls.iter().map(|d| (d.base, &d.x87)));
+        for (base, sites) in modules {
+            for &(rva, op) in &sites.at {
+                if sites.exact() {
+                    exact.insert(base + rva, op);
+                } else {
+                    self.x87_watch.push((base + rva, op));
+                }
+            }
+        }
+        for &at in exact.keys() {
+            self.arena.fill(at, &[INT3]);
+        }
+        self.x87 = Arc::new(exact);
     }
 
     /// Whether the run is ending or out of time.
@@ -1380,9 +1418,19 @@ impl Exec {
     }
 
     fn add_hooks(&mut self) -> Result<()> {
-        self.uc.add_intr_hook(|uc, intno| {
+        let x87 = Arc::clone(&self.shared.x87);
+        self.uc.add_intr_hook(move |uc, intno| {
             #[allow(clippy::cast_possible_truncation)] // 32-bit eip
             let eip = uc.reg_read(RegisterX86::EIP).unwrap_or(0) as u32;
+            // an x87 instruction `ffx_fpu` computes: done here, the
+            // emulator goes on after it
+            if intno == 3
+                && let Some(&op) = x87.get(&eip.wrapping_sub(1))
+                && ffx_fpu::unicorn::step(uc, u64::from(eip) - 1, op).is_ok()
+            {
+                uc.get_data_mut().x87 += 1;
+                return;
+            }
             let ev = if intno == 3 {
                 Event::Int3(eip.wrapping_sub(1))
             } else {
@@ -1403,7 +1451,21 @@ impl Exec {
                 false
             },
         )?;
+        for &(at, op) in &self.shared.x87_watch {
+            let at = u64::from(at);
+            self.uc.add_code_hook(at, at, move |uc, addr, _| {
+                if ffx_fpu::unicorn::step(uc, addr, op).is_ok() {
+                    uc.get_data_mut().x87 += 1;
+                }
+            })?;
+        }
         Ok(())
+    }
+
+    /// x87 instructions computed by `ffx_fpu` on this thread so far.
+    #[must_use]
+    pub fn x87_steps(&self) -> u64 {
+        self.uc.get_data().x87
     }
 
     /// Maps a region the game asked for at run time (`VirtualAlloc`) into
@@ -1587,6 +1649,7 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
         (Err(e), None) => (0, e.to_string()),
     };
     ex.stats.instructions = ex.instructions();
+    ex.stats.x87 = ex.x87_steps();
     let stats = ex.stats.clone();
     let profile = ex.profile().clone();
     let trace = std::mem::take(&mut ex.trace);
