@@ -259,6 +259,71 @@ def norm(name):
     return re.sub(r"\s+", "", name).replace("Phyre::", "")
 
 
+def write_script_traps(out, img, g, vinfo, seen, seen_ns, used):
+    """The script layer's entry points as coverage-mode candidates.
+
+    Entries: every slot of every PMethodCallerConcrete/PFunctionCallerConcrete
+    vtable and slots 3-6 (SCRIPT_SLOTS) of every PClassDescriptor* vtable,
+    used class or not, at the slot's own target address (Ghidra does not
+    always start a function there, so COVERAGE_ALL may not have armed it).
+    Inner: the function starts only the script layer reaches (seen minus
+    seen_ns), any module. Writes
+      cand.txt     `<address> <first byte>` (tools/coverage.py's format)
+      entries.tsv  address, kind (entry/inner), family, class, slot, class used,
+                   in the dump, name
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    starts = set(g.starts)
+    rows = {}  # address -> [kind, family, class, slot, used]
+
+    def matches(cls):
+        return norm(cls) in used or bool(identifiers(cls) & used)
+
+    for v, (n, _, fam, cls) in sorted(vinfo.items()):
+        if not fam:
+            continue
+        if fam in SCRIPT:
+            ks = range(n)
+        elif fam.startswith("PClassDescriptor"):
+            ks = [k for k in SCRIPT_SLOTS if k < n]
+        else:
+            continue
+        for k in ks:
+            a = img.dword(v + 4 * k)
+            if not img.in_text(a):
+                continue
+            r = rows.setdefault(a, ["entry", set(), set(), set(), False])
+            r[1].add(fam)
+            r[2].add(cls)
+            r[3].add(k)
+            r[4] |= matches(cls)
+    for a in sorted(set(seen) - set(seen_ns)):
+        rows.setdefault(a, ["inner", set(), set(), set(), False])
+    text = [(va, blob) for _, va, blob, code in img.secs if code]
+
+    def first_byte(a):
+        for va, blob in text:
+            if va <= a < va + len(blob):
+                return blob[a - va]
+        return None
+
+    cand, tsv = [], ["# address\tkind\tfamilies\tclasses\tslots\tclass used\tin dump\tname"]
+    for a in sorted(rows):
+        kind, fams, clss, ks, use = rows[a]
+        b = first_byte(a)
+        if b is None or b == 0xCC:
+            continue
+        cand.append(f"{a:08x} {b:02x}")
+        node = g.node_of(a)
+        name = g.name.get(a) or (f"{g.name[node]}+0x{a - node:x}" if node is not None else "")
+        tsv.append(f"0x{a:08x}\t{kind}\t{','.join(sorted(fams))}\t{';'.join(sorted(clss))[:300]}\t"
+                   f"{','.join(map(str, sorted(ks)))}\t{int(use)}\t{int(a in starts)}\t{name}")
+    (out / "cand.txt").write_text("\n".join(cand) + "\n", encoding="utf-8")
+    (out / "entries.tsv").write_text("\n".join(tsv) + "\n", encoding="utf-8")
+    n_entry = sum(1 for r in rows.values() if r[0] == "entry")
+    print(f"script traps: {len(cand)} candidates ({n_entry} entries, {len(rows) - n_entry} inner) -> {out}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("--census", type=pathlib.Path, default=WORK / "m5/scope/cluster-classes.tsv")
@@ -268,6 +333,8 @@ def main():
     ap.add_argument("--jobs",type=int, default=max(1, (os.cpu_count() or 2) // 2))
     ap.add_argument("--always", default=",".join(map(str, ALWAYS_SLOTS)),
                     help="descriptor slots every registered class keeps (default %(default)s)")
+    ap.add_argument("--script-traps", type=pathlib.Path, metavar="DIR",
+                    help="also write the script layer's coverage traps to DIR (see write_script_traps)")
     args = ap.parse_args()
     always = tuple(int(k) for k in args.always.split(",") if k)
 
@@ -457,6 +524,8 @@ def main():
 
     seen, used, code_used = solve(True)
     seen_ns, used_ns, code_used_ns = solve(False)
+    if args.script_traps:
+        write_script_traps(args.script_traps, img, g, vinfo, seen, seen_ns, used)
     if os.environ.get("PHYRE_SLOTS"):
         k = int(os.environ["PHYRE_SLOTS"])
         tally = Counter()
