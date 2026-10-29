@@ -1,7 +1,11 @@
 //! The shared-4 list's functions without a family (`ffx_magic::s4_misc`)
 //! against the DLLs they were ported from. Needs `FFX_GAME_DIR`.
 
-#![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 
 mod magic;
 #[path = "magic/sa.rs"]
@@ -159,7 +163,7 @@ fn sprites_run() {
             t.write(b + 0x3c, &[10, 200, 0, 255, 250, 3, 128, 1]);
             // the animation cursor at +0x8
             t.set_u32(b + 8, 0x0a00 + r);
-            t.set_u32(b + 0xc, u32::from(v % 3 != 0));
+            t.set_u32(b + 0xc, u32::from(!v.is_multiple_of(3)));
             t.set_u16(b + 0x10, (v % 3) as u16);
             t.set_u16(b + 0x12, if r == 3 { 0x100 } else { 0x500 });
             t.set_u32(b + 0x24, [0xffff_ffff, 2, 1, 0, 0xffff_ffff, 5][r as usize]);
@@ -348,9 +352,9 @@ fn follow_task() {
     t.set_u32(t.img.word(mean + 0x4d), map);
     let mean_n = t.img.word(mean + 0x11);
     rec(&mut t, 262, 4, |m, a| {
-        for i in 1..4 {
+        for i in 1..4usize {
             let v = (a[0] & 0xff) as f32 * 0.5 + i as f32;
-            m.w32(a[i as usize], v.to_bits());
+            m.w32(a[i], v.to_bits());
         }
         0x262
     });

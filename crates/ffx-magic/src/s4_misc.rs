@@ -352,7 +352,7 @@ fn sprite<G: Game>(g: &mut G, img: &Image, f: u32, fs: &SpriteFrame, b: u32, i: 
                 .wrapping_add(to.wrapping_mul(at));
             // idiv: a zero total (or an overflow) faults in the original
             let c = n.checked_div(total).unwrap_or(0);
-            g.write::<u8>(w(op), c as u8);
+            g.write::<u8>(w(op), c.cast_unsigned() as u8);
         }
         let n = g.read::<u32>(b + 0x2c).wrapping_add(1);
         g.write::<u32>(b + 0x2c, n);
@@ -462,13 +462,13 @@ pub fn sprites_run<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0x6a), fs.at(0x68));
     let t = slot_target(g, w(0x77), 235);
     g.call(t, 0, &[fs.at(0x28)]);
-    let mut live = 0u32;
+    let mut count = 0u32;
     if g.read::<i32>(w(0x90)) > 0 {
         let mut b = list.wrapping_add(0x28);
         let mut i = 0u32;
         loop {
             if g.read::<u32>(b + 0x44) != 0 {
-                live = live.wrapping_add(1);
+                count = count.wrapping_add(1);
                 let wait = g.read::<i32>(b + 0x38);
                 if wait > 0 {
                     g.write::<i32>(b + 0x38, wait - 1);
@@ -490,8 +490,8 @@ pub fn sprites_run<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
         }
     }
-    g.write::<u32>(w(0xcc), live);
-    Ret::eax(live)
+    g.write::<u32>(w(0xcc), count);
+    Ret::eax(count)
 }
 
 /// [`sprites_run`] (the `rel32`s: the cookie check and [`anim_step`]).
@@ -568,7 +568,8 @@ pub fn shake_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     } else {
         let callback = g.read::<u32>(s);
         if callback != 0 {
-            eax = g.call(callback, fr.ecx, &[s]).eax;
+            // its eax is overwritten at once
+            g.call(callback, fr.ecx, &[s]);
         }
         let flags = u32::from(g.read::<u16>(s + 0x2c));
         eax = flags;
@@ -1128,7 +1129,8 @@ pub fn trail_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
                 .wrapping_mul(n.wrapping_sub(i.cast_signed()))
                 .wrapping_add(to.wrapping_mul(i.cast_signed()));
             // idiv: a zero count (or an overflow) faults in the original
-            g.write::<u8>(w(op), x.checked_div(n).unwrap_or(0) as u8);
+            let c = x.checked_div(n).unwrap_or(0);
+            g.write::<u8>(w(op), c.cast_unsigned() as u8);
         }
         if walked < seg || walked.is_nan() || seg.is_nan() {
             let r = div(walked, seg);
