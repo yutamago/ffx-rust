@@ -370,6 +370,12 @@ fn load_step() {
     ] {
         t.set_u32(t.img.word(f + o), v);
     }
+    // the counters are the flags `+0x14`/`+0x67` (the same globals), so
+    // they are 0 whenever they are counted up: the words a misread
+    // operand would name instead (one byte on) are made non-zero
+    for o in [0x37u32, 0x8c] {
+        t.set_u32(t.img.word(f + o), 0x5a5a);
+    }
     for ready in [0u32, 1] {
         for r225 in [0u32, 1] {
             for r227 in [0u32, 1, 2, 0x8000_0000] {
@@ -490,3 +496,39 @@ fn op_free_part() {
         t.check_entry(f, Call::default(), &[SCRATCH, ip], Eax::Checked);
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_misc (against this file and magic_sb_misc2.rs): 923
+//   mutants, 901 killed. Equivalent:
+//   - mean_position: the `i == u32::MAX` arm (i counts up from 0 and
+//     stops at a signed count) and the frame vector's `w = 1.0` (slot 262
+//     gets x, y, z only; nothing reads it).
+//   - pool_take: `esi < esi + 0x200` as `<=` (true either way, `esi` is
+//     `page << 9`); `l4`'s step (it only places a second refill in the
+//     same call, and the search ends after `n` probes, one wrap at most,
+//     with the count slot 941 does not change).
+//   - pool_take_140: `tried` counting down (the search then ends after
+//     2^31 probes instead of `n`, with the same 0: the loop stores nothing
+//     until it finds a record) and `>=` as `>` (one more probe of a record
+//     already refused).
+//   - unwrap_near's `a > b` as `>=` (at `a == b` both arms give `b`,
+//     `0 > k5` being false for k5 = pi); ease_angle's `turns > 0` as `>=`
+//     (taking off `0 * k6` = +0 leaves any `x2` as it is).
+//   - timeline_run's `r` initial value (only `r == 0` matters).
+//   - the ST0-less defaults of actor_scale, place_model_unscaled and
+//     start_551 (the slots always return a float; Unicorn reads an empty
+//     x87 register as 0 where the CPU stores the indefinite NaN).
+//   - lookup_actors: `+0x34`/`+0x73` swapped (the same global); slot 215
+//     as 219 (the mode word `+0x42` is `+0x18`, which the function sets
+//     to 1 first: the 215 arm never runs).
+//   - start_551: the `ecx` of the cdecl slot 221 call.
+//   - sprite_init_colour's and aim_parent's `eax` initial values (the
+//     loops set them).
+//   - deal: `ebp` 8 bytes up (the frame's scratch counts and pool move,
+//     still below the entry for any pool the original's 256 bytes hold);
+//     `max(0)` as `max(1)` (n > 1 there); `c > 0` as `>= 0` (a zero count
+//     adds nothing); `unwrap_or(1)` (only for an empty pool, where the
+//     original's `idiv` faults).
+//   - pick_variant's record step (the count `+0x5c` is `+0x24`, set to 1
+//     just before: one record).

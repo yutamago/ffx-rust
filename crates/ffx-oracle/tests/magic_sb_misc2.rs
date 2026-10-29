@@ -640,6 +640,9 @@ fn aim_parent() {
         m.w32(LOG + 0xff4, c);
         m.w32(LOG + 0xc00 + 8 * (c & 0x1f), m.r32(a[0]));
         m.w32(LOG + 0xc04 + 8 * (c & 0x1f), m.r32(a[0] + 4));
+        // a visit leaves the cursor's pass byte changed: the second
+        // node's pass is stored again
+        m.w32(a[0] + 4, m.r32(a[0] + 4) ^ 0xff00);
         0x1003
     });
     // slot 234 writes a vector from its two sources
