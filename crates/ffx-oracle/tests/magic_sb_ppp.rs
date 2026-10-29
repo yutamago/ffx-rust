@@ -64,6 +64,10 @@ fn stubs(t: &mut Twin, lock: u32) {
         m.w32(LOG + 0x400, a[0]);
         m.w32(LOG + 0x404, a[1]);
         m.w32(LOG + 0x408, m.r32(lock));
+        // the part changes the word handed over to it (`*+0x2e0`, the
+        // `PTRS + 0x20` the test points it at), so that the hand-back
+        // into `+0x2e5`'s global is seen
+        m.w32(PTRS + 0x20, m.r32(PTRS + 0x20) ^ 0x0712_0000);
         m.r32(a[0] - 4)
     });
 }
@@ -126,9 +130,6 @@ fn run_part() {
         t.set_u32(g, v);
     }
     t.set_u32(w(&t, 0x2e5), 0x2e5_2e5);
-    // the word handed back (`**+0x334` into the global at `+0x33b`)
-    t.set_u32(w(&t, 0x334), PTRS + 0x40);
-    t.set_u32(PTRS + 0x40, 0x334_0334);
     stubs(&mut t, lock);
     for (flags, delay) in [
         (0u32, 0u32),
