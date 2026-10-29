@@ -1065,6 +1065,21 @@ ports! {
     "drift and 6" => s4_small::DRIFT_AND_6, s4_small::drift_and_count;
     "drift and 12" => s4_small::DRIFT_AND_12, s4_small::drift_and_count;
     "run, draw, register" => s4_small::RUN_DRAW_REGISTER, s4_small::run_draw_register;
+    "motion entry 0xb4" => s4_small::MOTION_ENTRY_B4, s4_small::motion_entry;
+    "motion entry 0xba" => s4_small::MOTION_ENTRY_BA, s4_small::motion_entry;
+    "motion entry 0xc2" => s4_small::MOTION_ENTRY_C2, s4_small::motion_entry;
+    "motion entry 0xc0" => s4_small::MOTION_ENTRY_C0, s4_small::motion_entry;
+    "motion entry 0xb3" => s4_small::MOTION_ENTRY_B3, s4_small::motion_entry;
+    "records start" => s4_small::RECORDS_START, s4_small::records_start;
+    "motion pair" => s4_small::MOTION_PAIR, s4_small::motion_pair;
+    "drift by count" => s4_small::DRIFT_BY_COUNT, s4_small::drift_by_count;
+    "entry by slot 434" => s4_small::ENTRY_434, s4_small::entry_434;
+    "ranges, four" => s4_small::RANGES_FOUR, s4_small::ranges_four;
+    "chain to slot 461" => s4_small::CHAIN_461, s4_small::chain_461;
+    "speeds and count" => s4_small::SPEEDS_COUNT, s4_small::speeds_count;
+    "register all" => s4_small::REGISTER_ALL, s4_small::register_all;
+    "object done" => s4_small::OBJECT_DONE, s4_small::object_done;
+    "run once, motion" => s4_small::RUN_ONCE_MOTION, s4_small::run_once_motion;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1416,6 +1431,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("link node, x y", &s4_small::LINK_NODE_XY),
     ("records clear 100", &s4_small::RECORDS_CLEAR_100),
     ("register 320", &s4_small::REGISTER_320),
+    ("link node, +0x38 and 1.0", &s4_small::LINK_NODE_38_ONE),
+    ("link node, x and 0xff", &s4_small::LINK_NODE_X_FF),
+    ("link node, +0x2c", &s4_small::LINK_NODE_2C),
+    ("walk, then slot 275", &s4_small::WALK_275),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
