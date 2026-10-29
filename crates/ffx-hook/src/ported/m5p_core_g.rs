@@ -54,4 +54,14 @@ ported! {
     Phyre_Vector3_lengthTo_0054bd60 @ 0x0054_bd60 => extern "C" fn length_of(out: u32, v: u32) -> u32 {
         b::length_of(&mut mem(), out, v)
     }
+    /// `Phyre_PSpline_segmentLength_0054bdb0(spline; i)` -> `ST0`; the sample points in a per-call frame.
+    Phyre_PSpline_segmentLength_0054bdb0 @ 0x0054_bdb0 => extern "thiscall" fn segment_length(this: u32, i: u32) -> f32 {
+        let mut frame = StackFrame::<{ (c::SEGMENT_FRAME / 4) as usize }>::new();
+        b::segment_length(&mut mem(), this, i, frame.at())
+    }
+    /// `Phyre_PTextureD3D11_uploadLevel_0059d8f0(texture; level, unused)` -> 0, 3 or 0x15; the scope lock in a per-call frame.
+    Phyre_PTextureD3D11_uploadLevel_0059d8f0 @ 0x0059_d8f0 => extern "thiscall" fn upload_level(this: u32, level: u32, _unused: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        ffx_pcore::m5p_core_h::bridge::upload(&mut mem(), this, level, frame.at())
+    }
 }

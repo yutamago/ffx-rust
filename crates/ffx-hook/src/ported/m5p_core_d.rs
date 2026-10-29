@@ -79,4 +79,8 @@ ported! {
         let mut frame = StackFrame::<13>::new();
         b::add_light_material(&mut mem(), this, inst, [c0, c1, c2, c3], [s0, s1, s2], intensity, frame.at());
     }
+    /// `Phyre_PCamera_assign_004533b0(dst; &src)` -> `dst`.
+    Phyre_PCamera_assign_004533b0 @ 0x0045_33b0 => extern "thiscall" fn camera_assign(this: u32, src: u32) -> u32 {
+        b::camera_assign(&mut mem(), this, src)
+    }
 }

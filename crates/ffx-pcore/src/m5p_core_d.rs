@@ -55,6 +55,11 @@ pub const fn swap_and_eax(x: u32) -> (u32, u32) {
     (hi | lo, hi)
 }
 
+/// `PMatrix4_Copy_00453340(out; m)` and `Phyre_PString_Assign(this;
+/// text)` (thiscall).
+pub const MATRIX_COPY: u32 = 0x0045_3340;
+pub const STRING_ASSIGN: u32 = 0x0044_5cf0;
+
 pub mod bridge {
     //! The originals over game memory.
 
@@ -543,5 +548,34 @@ pub mod bridge {
                 copy_parameter(h, buf, q, material);
             }
         }
+    }
+
+    /// `PCamera`'s copy assignment `0x004533b0(dst; &src)` -> `dst`: the
+    /// floats (through `fld`/`fstp`), the two 4x4s at `+0x30` and `+0x70`
+    /// (`PMatrix4_Copy`), the word `+0xb0`, the name `+0xcc` (assigned
+    /// unless it is the same object; the tag bit dropped) and the rest of
+    /// the floats; `+0xdc` and `+0xfc` are left alone.
+    pub fn camera_assign(h: &mut impl Host, dst: u32, src: u32) -> u32 {
+        for k in 0..12 {
+            copy_float(h, src + 4 * k, dst + 4 * k);
+        }
+        thiscall(h, MATRIX_COPY, dst + 0x30, &[src + 0x30]);
+        thiscall(h, MATRIX_COPY, dst + 0x70, &[src + 0x70]);
+        let w: u32 = h.read(src + 0xb0);
+        h.write(dst + 0xb0, w);
+        for off in (0xb4..=0xc4).step_by(4) {
+            copy_float(h, src + off, dst + off);
+        }
+        if dst != src {
+            let tagged: u32 = h.read(src + 0xcc);
+            thiscall(h, STRING_ASSIGN, dst + 0xcc, &[tagged - (tagged & 1)]);
+        }
+        for off in (0xd0..=0x148).step_by(4) {
+            // `+0xdc` and `+0xfc` are not the camera's to copy
+            if off != 0xdc && off != 0xfc {
+                copy_float(h, src + off, dst + off);
+            }
+        }
+        dst
     }
 }

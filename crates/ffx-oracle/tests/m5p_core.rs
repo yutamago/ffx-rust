@@ -358,11 +358,23 @@ impl Twins {
 
     /// [`Twins::check`] for a float result in `ST0`.
     fn check_f32(&mut self, what: &str, sym: u32, args: &[u32], port: impl FnOnce(&mut G) -> f32) {
+        self.check_f32_conv(what, sym, Conv::Cdecl, args, port);
+    }
+
+    /// [`Twins::check_f32`] in another convention.
+    fn check_f32_conv(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        port: impl FnOnce(&mut G) -> f32,
+    ) {
         self.fresh_log();
         let f = self.rebase(sym);
         let ra = self
             .a
-            .call(f, Conv::Cdecl, args)
+            .call(f, conv, args)
             .unwrap_or_else(|e| panic!("{} {what}: original: {e}", self.label));
         let rb = port(&mut G(&mut self.b, self.tramp));
         assert!(
@@ -3343,6 +3355,157 @@ fn spline_distances_match_the_original() {
                 &[out, d],
                 ALL,
                 |g| bg::world_position(g, this, out, d, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn spline_segment_lengths_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d603);
+        control_points(&mut t, &mut rng);
+        for case in 0..24u32 {
+            let this = spline(&mut t, &mut rng, 3);
+            t.w32(
+                this + 4,
+                if case % 6 == 0 {
+                    rng.below(2)
+                } else {
+                    2 + rng.below(8)
+                } | (rng.next() & 0x8000_0000),
+            );
+            let i = rng.below(9);
+            let local = t.b.stack_range().start + 0x300;
+            t.check_f32_conv(
+                "segment length",
+                0x0054_bdb0,
+                Conv::Thiscall(this),
+                &[i],
+                |g| bg::segment_length(g, this, i, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn camera_assign_matches_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d304);
+        let names: Vec<u32> = ["", "MainCamera"]
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        t.stub(c::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        let (_, _) = bump_malloc(&mut t, 0x1000);
+        for case in 0..12u32 {
+            let src = floats(&mut t, &mut rng, 0x150 / 4);
+            let name = match case % 3 {
+                0 => 0,
+                _ => names[rng.below(2) as usize] | (rng.next() & 1),
+            };
+            t.w32(src + 0xcc, name);
+            let dst = if case % 4 == 3 {
+                src
+            } else {
+                floats(&mut t, &mut rng, 0x150 / 4)
+            };
+            if dst != src {
+                // borrowed text: the assignment does not free it
+                t.w32(dst + 0xcc, names[1] | 1);
+            }
+            t.check(
+                "camera assign",
+                0x0045_33b0,
+                Conv::Thiscall(dst),
+                &[src],
+                ALL,
+                |g| bd::camera_assign(g, dst, src),
+            );
+        }
+    }
+}
+
+#[test]
+fn texture_upload_matches_the_original() {
+    use ffx_pcore::m5p_core_h::{self as ch, bridge as bh};
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d701);
+        t.stub(ch::LOCK_ENTER, false, 0, 0, Ret::Imm(0x3d50_0000));
+        t.stub(ch::LOCK_LEAVE, false, 0, 0, Ret::Imm(0x3e90_0000));
+        t.stub(ch::RENDERER_CTOR, true, 0, 0, Ret::Imm(0xee70_0000));
+        t.stub(ch::ATEXIT, false, 1, 0, Ret::Imm(0));
+        t.a.map_zeroed(0, 0x1000).unwrap();
+        t.b.map_zeroed(0, 0x1000).unwrap();
+        for case in 0..40u32 {
+            // the device context: methods +0x3c (3 words) and +0xc0 (7),
+            // stdcall with the context first (ecx is junk: not logged)
+            let m3c = t.stub_code(0x7008_003c, false, 3, 3, Ret::Imm(0));
+            let mc0 = t.stub_code(0x7008_00c0, false, 7, 7, Ret::Imm(0));
+            let mut vt = [0u32; 49];
+            vt[15] = m3c;
+            vt[48] = mc0;
+            let vt: Vec<u8> = vt.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let vt = t.alloc(&vt);
+            let ctx = t.alloc(&vt.to_le_bytes());
+            let c = t.rebase(ch::CONTEXT);
+            t.w32(c, ctx);
+            let guard = t.rebase(ch::RENDERER_GUARD);
+            let g = t.r32(guard);
+            t.w32(guard, if case % 3 == 0 { g & !1 } else { g | 1 });
+            let this = t.random(&mut rng, 0x70);
+            let fmt = t.random(&mut rng, 0x14);
+            t.w32(fmt + 0xc, [4u32, 8, 16, 32][rng.below(4) as usize]);
+            t.w8(fmt + 0x10, rng.below(2) as u8);
+            t.w32(this, fmt);
+            t.w32(this + 0xc, rng.below(4));
+            t.w32(this + 0x14, rng.next() & 2 | (rng.next() & !2));
+            t.w32(
+                this + 0x1c,
+                if case % 7 == 0 { 0 } else { 1 + rng.below(64) },
+            );
+            t.w32(
+                this + 0x20,
+                if case % 5 == 0 { 0 } else { 1 + rng.below(64) },
+            );
+            t.w32(
+                this + 0x68,
+                if case % 4 == 1 {
+                    0x1_0000
+                } else {
+                    rng.next() & !0x1_0000
+                },
+            );
+            let level = rng.below(5);
+            // no surfaces counts as one at a null storage (page 0, mapped
+            // with a zero resource word: 0x15)
+            let n = rng.below(4);
+            let entries = t.random(&mut rng, (0x1c * 4) as usize);
+            for k in 0..n.max(1) {
+                let res = if rng.chance(5) { 0 } else { rng.next() | 1 };
+                t.w32(entries + 0x1c * k, res);
+            }
+            t.w32(this + 0x24, n | (rng.next() & 0x8000_0000));
+            if n == 1 {
+                // one surface lives in the header itself: entry at +0x28
+                let res = if rng.chance(5) { 0 } else { rng.next() | 1 };
+                t.w32(this + 0x28, res);
+            } else {
+                t.w32(this + 0x28, entries);
+            }
+            let unused = rng.next();
+            let local = t.b.stack_range().start + 0x300;
+            t.check(
+                "upload",
+                0x0059_d8f0,
+                Conv::Thiscall(this),
+                &[level, unused],
+                ALL,
+                |g| bh::upload(g, this, level, local),
             );
         }
     }

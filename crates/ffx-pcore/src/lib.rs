@@ -47,6 +47,7 @@ pub mod m5p_core_d;
 pub mod m5p_core_e;
 pub mod m5p_core_f;
 pub mod m5p_core_g;
+pub mod m5p_core_h;
 pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_gdraw_device;

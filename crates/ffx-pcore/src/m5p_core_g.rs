@@ -43,6 +43,10 @@ pub const EVAL_FRAME: u32 = 0x40;
 pub const DIRECTION_FRAME: u32 = EVAL_FRAME + 0x20;
 pub const AT_FRAME: u32 = DIRECTION_FRAME + 0x20;
 pub const WORLD_FRAME: u32 = AT_FRAME + 0x60;
+pub const SEGMENT_FRAME: u32 = 0x40 + EVAL_FRAME;
+/// The segment length's sample parameters (floats: 1/3, 2/3).
+pub const THIRD: u32 = 0x00b2_c5c0;
+pub const TWO_THIRDS: u32 = 0x00b2_c5c4;
 
 /// What `0x0054b710` / `0x0054b8f0` evaluate per segment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -362,5 +366,33 @@ pub mod bridge {
         let len = length(h, d);
         st(h, out, len);
         out
+    }
+
+    /// `0x0054bdb0(spline; i)` -> `ST0`: segment `i`'s length as three
+    /// chords: control point `i`, the points at the image's 1/3 and 2/3
+    /// (`0x00549920`), control point `i + 1`; 0 for fewer than two
+    /// control points (`+4`, less bit 31). The points live in the frame
+    /// at `frame` ([`SEGMENT_FRAME`] bytes).
+    pub fn segment_length(h: &mut impl Host, this: u32, i: u32, frame: u32) -> f32 {
+        if h.read::<u32>(this + 4) & 0x7fff_ffff < 2 {
+            return 0.0;
+        }
+        let a = frame;
+        let b = frame + 0x10;
+        let c = frame + 0x20;
+        let d = frame + 0x30;
+        let sub = frame + 0x40;
+        thiscall(h, CONTROL_POINT, this, &[a, i]);
+        for (at, k) in [(b, THIRD), (c, TWO_THIRDS)] {
+            let t = x87::store(ld(h, h.rebase(k)));
+            eval(h, this, at, i, t, sub);
+        }
+        thiscall(h, CONTROL_POINT, this, &[d, i.wrapping_add(1)]);
+        let (av, bv, cv, dv) = (ld3(h, a), ld3(h, b), ld3(h, c), ld3(h, d));
+        let l1 = length(h, diff(cv, dv));
+        let l2 = length(h, diff(bv, cv));
+        let l3 = length(h, diff(av, bv));
+        let s = r(x87::add(l2, l3));
+        f32::from_bits(x87::store(x87::add(l1, s)))
     }
 }
