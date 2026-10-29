@@ -21,6 +21,23 @@ fn set_f(t: &mut Twin, a: u32, x: f32) {
     t.set_u32(a, x.to_bits());
 }
 
+/// A log in scratch memory (compared like the rest): its next free word
+/// is kept at `LOG`.
+const LOG: u32 = SCRATCH + 0x3_8000;
+
+/// Appends `words` to the log.
+fn log(m: &mut dyn magic::StubMem, words: &[u32]) {
+    let mut at = m.r32(LOG);
+    if at == 0 {
+        at = LOG + 4;
+    }
+    for &x in words {
+        m.w32(at, x);
+        at += 4;
+    }
+    m.w32(LOG, at);
+}
+
 /// The sprites' frame: paused, no records, and records in every state
 /// (dead, waiting, damped, scaled over frames, rolled past both limits,
 /// copied, colour faded or plain, a held life, a dying one), drawn by
@@ -47,13 +64,17 @@ fn sprites_run() {
         });
     }
     rec(&mut t, 330, 3, |m, a| {
-        // the scale matrix's diagonal it rolls
-        m.w32(a[0], m.r32(a[1]) ^ m.r32(a[1] + 0x14) ^ m.r32(a[1] + 0x28));
+        // the scale matrix's diagonal it rolls, and the roll
+        let d = [m.r32(a[1]), m.r32(a[1] + 0x14), m.r32(a[1] + 0x28), a[2]];
+        log(m, &d);
+        m.w32(a[0], d[0] ^ d[1] ^ d[2]);
         m.w32(a[0] + 0x38, a[2]);
         0x330
     });
     rec(&mut t, 229, 3, |m, a| {
-        m.w32(a[0], m.r32(a[2]) ^ m.r32(a[2] + 4) ^ m.r32(a[2] + 8));
+        let p = [m.r32(a[2]), m.r32(a[2] + 4), m.r32(a[2] + 8)];
+        log(m, &p);
+        m.w32(a[0], p[0] ^ p[1] ^ p[2]);
         0x229
     });
     rec(&mut t, 230, 2, |m, a| {
@@ -83,13 +104,25 @@ fn sprites_run() {
         a[3] & 1
     });
     for s in [774u32, 775, 778] {
-        rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, _| {
+        rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
             m.w32(SCRATCH + 0x9300 + 4 * (s - 774), m.r32(lock));
+            // the colour behind the pointer
+            if s != 775 {
+                let c = m.r32(a[3]);
+                log(m, &[s, c]);
+            }
             s
         });
     }
     rec(&mut t, 776, 1, |_, a| a[0] << 4);
-    rec(&mut t, 777, 1, |_, a| a[0] & 0x0f00);
+    rec(&mut t, 777, 1, |m, a| {
+        // the copied matrix (its `z` moved), when there is one
+        if a[0] != 0 {
+            let z = [m.r32(a[0] + 0x38), m.r32(a[0] + 0x30)];
+            log(m, &z);
+        }
+        0x0ff0 ^ a[0]
+    });
     let k1 = f32::from_bits(t.u32(t.img.word(at + 0x199)));
     let hi = f32::from_bits(t.u32(t.img.word(at + 0x1e0)));
     let lo = f32::from_bits(t.u32(t.img.word(at + 0x1f0)));
@@ -98,6 +131,7 @@ fn sprites_run() {
         .enumerate()
     {
         t.set_u32(pause, paused);
+        t.set_u32(LOG, 0);
         t.set_u32(t.img.word(at + 0x90), count.cast_unsigned());
         t.set_u32(lock, 0x77);
         for r in 0..6u32 {
@@ -105,7 +139,7 @@ fn sprites_run() {
             let b = rec0 + 0x28;
             let v = case as u32 * 6 + r;
             t.write(rec0, &[0x11; 0x74]);
-            for j in 0..10 {
+            for j in 0..11 {
                 set_f(&mut t, rec0 + 4 * j, (j as f32 - 4.5) * 0.75 + v as f32);
             }
             t.set_u32(b + 0x44, u32::from(r != 1));
@@ -162,6 +196,13 @@ fn start_object_at() {
         });
         let pa = t.img.rel32_target(at + 0x9d);
         let free = t.img.word(pa + 0x04);
+        // the pool's nodes: free (payload 0), their links old words
+        let nodes = t.img.word(pa + 0x27) - 8;
+        for i in 0..8 {
+            t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+            t.set_u32(nodes + 12 * i + 8, 0);
+        }
         let tail = t.img.word(at + 0xa8);
         let obj = SCRATCH + 0x1000;
         for (k, (count, scale, tl)) in [
