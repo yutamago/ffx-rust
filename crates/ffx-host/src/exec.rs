@@ -1134,6 +1134,13 @@ impl Exec {
             if raise {
                 // the dispatch runs in the executor's loop
                 self.call_unicorn(addr, conv, args)
+            } else if args.slots == 0 && !args.stack.is_empty() {
+                // from Rust: the words on the game stack too, for the
+                // imports that read past their declared words through
+                // `slots` (`wsprintfW`'s varargs: a port's save file name
+                // came out "000")
+                self.on_game_stack(args, |e, a| e.run_import(i, a))
+                    .and_then(|r| r)
             } else {
                 self.run_import(i, args)
             }
@@ -1528,6 +1535,19 @@ impl Exec {
     /// caller's argument slots (a varargs `printf` reads its `va_list`
     /// there) finds them in the arena.
     fn run_port_from_rust(&mut self, entry: Entry, args: &Args) -> Result<Ret> {
+        self.on_game_stack(args, |e, a| e.run_port(entry, a))
+    }
+
+    /// Runs `run` with `args`' words on the game stack below the current
+    /// frame, a return-address word under them, and `slots` pointing at
+    /// them, as a call from the game would leave them; `esp` is restored
+    /// after. For callees that read their words through `slots` when Rust
+    /// calls them (a port's varargs, `wsprintfW`'s).
+    fn on_game_stack<R>(
+        &mut self,
+        args: &Args,
+        run: impl FnOnce(&mut Self, &Args) -> R,
+    ) -> Result<R> {
         let esp = self.reg(RegisterX86::ESP)?;
         let words = u32::try_from(args.stack.len()).unwrap_or(u32::MAX);
         let top = (esp - 0x40) & !0xf;
@@ -1546,7 +1566,7 @@ impl Exec {
         self.uc.reg_write(RegisterX86::ESP, u64::from(base - 4))?;
         let mut on_stack = args.clone();
         on_stack.slots = base;
-        let ret = self.run_port(entry, &on_stack);
+        let ret = run(self, &on_stack);
         self.uc.reg_write(RegisterX86::ESP, u64::from(esp))?;
         Ok(ret)
     }
