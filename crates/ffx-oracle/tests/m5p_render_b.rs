@@ -423,7 +423,7 @@ fn not_supported_match_the_original() {
 /// destination, overlapping ranges both ways.
 #[test]
 fn copies_match_the_original() {
-    assert_eq!(rb::COPIES.len(), 4);
+    assert_eq!(rb::COPIES.len(), 5);
     for (label, mut t) in Twins::all() {
         for &(f, size) in &rb::COPIES {
             assert_eq!(rb::copy_size_of(f), size);
@@ -1309,6 +1309,379 @@ fn render_small_match_the_original() {
                 &[pp, out, len],
                 |g| Out::U32(sb::string_with_length(g, pp, out, len)),
             );
+        }
+    }
+}
+
+// ---- batch 3: arrays, command hand-over, utilities, fog ----
+
+use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
+
+impl Twins {
+    /// Writes word `v` at `at` in both oracles, the old bytes put back by
+    /// [`Twins::reset`].
+    fn put_saved(&mut self, at: u32, v: u32) {
+        let old = Oracle::read(&mut self.a, at, 4).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.w32(at, v);
+    }
+}
+
+#[test]
+fn sharray_fields_match_the_original() {
+    assert_eq!(arr::SH_FIELDS.len(), 12);
+    for (label, mut t) in Twins::all() {
+        for &(f, e) in &arr::SH_FIELDS {
+            assert_eq!(arr::sh_field_of(f), e);
+            for count in [0u32, 1, 2, 3, 0x8000_0001, 0x8000_0003] {
+                for i in [0u32, 1, 2, 3, 0x8000_0000] {
+                    for flag in [0u8, 1, 0xfe, 0xff] {
+                        if e.flag.is_none() && flag != 1 {
+                            continue;
+                        }
+                        let obj = t.junk(0x80, i as u8 ^ count as u8);
+                        let data = t.junk(0x80, 0x33);
+                        t.w32(obj + e.count, count);
+                        t.w32(obj + e.count + 4, data);
+                        if let Some(fl) = e.flag {
+                            t.w8(obj + fl, flag);
+                        }
+                        let what = format!("{label}: field {f:#x} {count:#x} {i:#x} {flag:#x}");
+                        t.check(&what, f, Conv::Thiscall(obj), &[i], |g| {
+                            Out::U32(ab::sh_field(g, obj, i, e))
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn alloc_copies_match_the_original() {
+    assert_eq!(arr::ALLOC_COPIES.len(), 4);
+    for (label, mut t) in Twins::all() {
+        for &(f, fill) in &arr::ALLOC_COPIES {
+            assert_eq!(arr::fill_of(f), fill);
+            for (n, m, fails) in [
+                (0u32, 0u32, false),
+                (4, 2, true),
+                (4, 0, false),
+                (4, 2, false),
+                (4, 4, false),
+                (1, 1, false),
+            ] {
+                let buf = t.junk(0x40, 0x21);
+                t.stub(arr::PHYRE_MALLOC, false, 2, 0, if fails { 0 } else { buf });
+                if let arr::Fill::Pairs { copy, .. } = fill {
+                    t.stub(copy, false, 3, 0, 0xc0c0);
+                }
+                let src = t.junk(0x40, 0x45);
+                let what = format!("{label}: alloc copy {f:#x} {n} {m} {fails}");
+                t.check(&what, f, Conv::Cdecl, &[n, src, m], |g| {
+                    Out::U32(ab::alloc_copy(g, n, src, m, fill))
+                });
+                t.reset();
+            }
+        }
+        // the resize: same word, smaller, larger, not owned, failing, empty
+        for (word, n, ret, same) in [
+            (3u32, 3u32, 0x100u32, false),
+            (0x8000_0003, 3, 0x100, false),
+            (3, 2, 0x100, false),
+            (3, 5, 0x100, false),
+            (0x8000_0003, 5, 0x100, false),
+            (3, 5, 0, false),
+            (3, 0, 0, false),
+            (3, 4, 0, true),
+        ] {
+            let obj = t.zeros(8);
+            let old = t.junk(0x20, 1);
+            let new = t.junk(0x20, 2);
+            t.stub(
+                arr::ALLOC_COPY_U8P,
+                false,
+                3,
+                0,
+                if same {
+                    old
+                } else if ret == 0 {
+                    0
+                } else {
+                    new
+                },
+            );
+            t.stub(arr::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.w32(obj, word);
+            t.w32(obj + 4, old);
+            let what = format!("{label}: resize {word:#x} {n} {ret:#x} {same}");
+            t.check(&what, 0x005a_f000, Conv::Thiscall(obj), &[n], |g| {
+                Out::U32(ab::resize_u8p(g, obj, n))
+            });
+            t.reset();
+        }
+        // the 0x1c-byte storage
+        for (n, m, fails) in [
+            (0u32, 0u32, false),
+            (1, 1, false),
+            (3, 2, false),
+            (3, 0, false),
+            (3, 2, true),
+        ] {
+            let buf = t.junk(0x80, 3);
+            t.stub(arr::PHYRE_MALLOC, false, 2, 0, if fails { 0 } else { buf });
+            t.stub(arr::ZERO_ARRAY_28, false, 2, 0, 0x2828);
+            let obj = t.junk(0x40, 4);
+            let src = t.junk(0x80, 5);
+            let what = format!("{label}: alloc copy 28 {n} {m} {fails}");
+            t.check(&what, 0x0058_c590, Conv::Thiscall(obj), &[n, src, m], |g| {
+                Out::U32(ab::alloc_copy_28(g, obj, n, src, m))
+            });
+            t.reset();
+        }
+        let obj = t.junk(0x60, 6);
+        let src = t.junk(0x40, 7);
+        t.check(
+            &format!("{label}: copy 16"),
+            0x0060_41e0,
+            Conv::Thiscall(obj),
+            &[src],
+            |g| Out::U32(ab::copy_16_words(g, obj, src)),
+        );
+        let obj = t.junk(0x3080, 8);
+        t.check(
+            &format!("{label}: zero 3040"),
+            0x009f_c970,
+            Conv::Thiscall(obj),
+            &[],
+            |g| Out::U32(ab::zero_3040(g, obj)),
+        );
+        let obj = t.junk(0x2340, 9);
+        t.check(
+            &format!("{label}: init records"),
+            0x005b_4440,
+            Conv::Thiscall(obj),
+            &[1, 2, 3],
+            |g| Out::U32(ab::init_records(g, obj, 1, 2, 3)),
+        );
+    }
+}
+
+#[test]
+fn hand_over_and_buffers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for with in [false, true] {
+            t.stub(arr::EVENT_SIGNAL, true, 0, 0, 0x5151);
+            let slot = t.zeros(4);
+            if with {
+                let cmd = t.junk(0x20, 1);
+                t.w32(slot, cmd);
+            }
+            let what = format!("{label}: hand over {with}");
+            t.check(
+                &what,
+                0x0061_52a0,
+                Conv::Thiscall(0x7777),
+                &[slot, 0xb, 0xc, 0xd],
+                |g| Out::U32(ab::hand_over(g, slot, 0xb, 0xc, 0xd)),
+            );
+            t.reset();
+        }
+        for (with, r) in [(false, 0u32), (true, 5), (true, 0)] {
+            t.stub(arr::RENDER_THREAD_INSTANCE, false, 0, 0, 0x7e7e_0000);
+            t.stub(arr::HAND_OVER, true, 4, 4, r);
+            t.stub(arr::NEXT_SEGMENT, true, 0, 0, 0x5e);
+            let obj = t.junk(0x100, 2);
+            let slot = if with { t.junk(4, 3) } else { 0 };
+            t.w32(obj + 0xe0, slot);
+            let what = format!("{label}: flush {with} {r}");
+            t.check(&what, 0x005b_6ca0, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(ab::flush_commands(g, obj))
+            });
+            t.reset();
+        }
+        // the PArray external buffer
+        for (word, same, n) in [
+            (3u32, false, 2u32),
+            (0x8000_0003, false, 2),
+            (3, true, 0),
+            (3, false, 0x8000_0000),
+            (3, false, 0x7fff_ffff),
+        ] {
+            t.stub(arr::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.zeros(8);
+            let old = t.junk(0x10, 4);
+            let buf = if same { old } else { t.junk(0x10, 5) };
+            t.w32(obj, word);
+            t.w32(obj + 4, old);
+            let what = format!("{label}: set external {word:#x} {same} {n:#x}");
+            t.check(&what, 0x00a2_3be0, Conv::Thiscall(obj), &[buf, n], |g| {
+                Out::U32(ab::set_external(g, obj, buf, n))
+            });
+            t.reset();
+        }
+        // the PSharray external buffer
+        for (count, n, same) in [
+            (0u32, 1u32, false),
+            (1, 1, false),
+            (3, 1, false),
+            (0x8000_0003, 1, false),
+            (3, 2, false),
+            (3, 2, true),
+            (0x8000_0003, 2, false),
+            (1, 2, false),
+            (0, 0, false),
+            (3, 0x8000_0001, false),
+        ] {
+            t.stub(arr::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.zeros(8);
+            let old = t.junk(0x10, 6);
+            let buf = if same { old } else { t.junk(0x10, 7) };
+            t.w32(obj, count);
+            t.w32(obj + 4, old);
+            let what = format!("{label}: sharray external {count:#x} {n:#x} {same}");
+            t.check(&what, 0x0060_3dc0, Conv::Thiscall(obj), &[buf, n], |g| {
+                Out::U32(ab::sharray_set_external(g, obj, buf, n))
+            });
+            t.reset();
+        }
+        // the shapes member's setter: its own word with one element (with
+        // and without a descriptor), anything else
+        for (own, n, desc) in [
+            (true, 1u32, 0x4444u32),
+            (true, 1, 0),
+            (true, 2, 0x4444),
+            (false, 1, 0x4444),
+        ] {
+            t.stub(arr::APPLY_DEFAULT_BUFFER, true, 2, 2, 0xad);
+            t.stub(arr::SHAPES_SET_EXTERNAL, true, 2, 2, 0x5e);
+            let member = t.rebase(arr::SHAPES_MEMBER);
+            let o = t.object(&[0, 0], &[0, desc]);
+            let vt = t.r32(o);
+            t.put_saved(member, vt);
+            let obj = t.junk(0x10, 8);
+            let buf = if own { obj + 4 } else { t.junk(0x10, 9) };
+            let what = format!("{label}: shapes buffer {own} {n} {desc:#x}");
+            t.check(&what, 0x0060_3e50, Conv::Thiscall(obj), &[buf, n], |g| {
+                Out::U32(ab::shapes_set_buffer(g, obj, buf, n))
+            });
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn utilities_and_fog_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the registry list: empty, first, middle, absent; both flags
+        for (case, flags) in [
+            ("empty", 1u32),
+            ("first", 0),
+            ("middle", 1),
+            ("absent", 0),
+            ("last", 1),
+            ("absent", 2),
+        ] {
+            t.stub(arr::OPERATOR_DELETE, false, 1, 0, 0xde1e);
+            let head = t.rebase(arr::UTILITY_LIST);
+            let this = t.junk(0x10, 1);
+            let a = t.junk(0x10, 2);
+            let b = t.junk(0x10, 3);
+            let first = match case {
+                "empty" => 0,
+                "first" => {
+                    t.w32(this + 4, a);
+                    t.w32(a + 4, 0);
+                    this
+                }
+                "middle" => {
+                    t.w32(a + 4, this);
+                    t.w32(this + 4, b);
+                    t.w32(b + 4, 0);
+                    a
+                }
+                "last" => {
+                    t.w32(a + 4, this);
+                    t.w32(this + 4, 0);
+                    a
+                }
+                _ => {
+                    t.w32(a + 4, b);
+                    t.w32(b + 4, 0);
+                    a
+                }
+            };
+            t.put_saved(head, first);
+            for f in [0x00a0_3140u32, 0x00a3_e800] {
+                let what = format!("{label}: utility delete {f:#x} {case} {flags}");
+                // both copies on the same list state
+                let snapshot_head = t.r32(head);
+                let next = t.r32(this + 4);
+                t.check(&what, f, Conv::Thiscall(this), &[flags], |g| {
+                    Out::U32(ab::utility_delete(g, this, flags))
+                });
+                t.w32(head, snapshot_head);
+                t.w32(this + 4, next);
+                if case == "middle" || case == "last" {
+                    t.w32(a + 4, this);
+                }
+                t.diff(&what);
+            }
+            t.reset();
+        }
+        // the post-processing resources
+        for (f1, f2, with) in [
+            (0u32, 0u32, false),
+            (0x80, 0, true),
+            (0, 0x80, true),
+            (0x180, 0x7f, false),
+            (0xffff_ffff, 0xffff_ffff, true),
+        ] {
+            t.stub(arr::SAMPLER_RELEASE, true, 0, 0, 0x5a);
+            t.stub(arr::SPRITE_ARRAYS_RELEASE, true, 0, 0, 0x5b);
+            let obj = t.junk(0x1000, 4);
+            t.w32(obj + 0xf5c, f1);
+            t.w32(obj + 0xf80, f2);
+            let p = if with {
+                let p = t.zeros(4);
+                let arrays = t.junk(0x10, 5);
+                t.w32(p, arrays);
+                p
+            } else {
+                0
+            };
+            t.w32(obj + 0xf38, p);
+            let what = format!("{label}: post resources {f1:#x} {f2:#x} {with}");
+            t.check(&what, 0x00a2_4c90, Conv::Thiscall(obj), &[], |g| {
+                ab::release_post_resources(g, obj);
+                Out::None
+            });
+            t.reset();
+        }
+        // the fog setters: moving (al set), not moving with a non-zero eax
+        for moving in [1u32, 0x100, 0] {
+            for &(f, field) in &arr::FOG_SETTERS {
+                assert_eq!(arr::fog_field_of(f), field);
+                t.stub(arr::FOG_IS_MOVING, true, 0, 0, moving);
+                let fog = t.junk(0xb8, 6);
+                let src = t.junk(0x40, 7);
+                t.w32(fog + 0xa0, src);
+                let what = format!("{label}: fog {f:#x} {moving:#x}");
+                t.check(&what, f, Conv::Thiscall(fog), &[0x3f40_0000], |g| {
+                    Out::U32(ab::fog_set(g, fog, field, &[0x3f40_0000]))
+                });
+                t.reset();
+            }
+            t.stub(arr::FOG_IS_MOVING, true, 0, 0, moving);
+            let fog = t.junk(0xb8, 8);
+            let src = t.junk(0x40, 9);
+            t.w32(fog + 0xa0, src);
+            let rgb = [0x3f80_0000, 0x7fc0_0000, 0x8000_0000];
+            let what = format!("{label}: fog colour {moving:#x}");
+            t.check(&what, 0x006e_36f0, Conv::Thiscall(fog), &rgb, |g| {
+                Out::U32(ab::fog_set(g, fog, 0x10, &rgb))
+            });
+            t.reset();
         }
     }
 }

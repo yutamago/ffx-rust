@@ -95,11 +95,12 @@ pub const NOT_SUPPORTED: [(u32, u32); 10] = [
 ];
 
 /// The element copies `(address, element size)`.
-pub const COPIES: [(u32, u32); 4] = [
+pub const COPIES: [(u32, u32); 5] = [
     (0x005a_8840, 8),
     (0x005b_c660, 8),
     (0x005a_8800, 16),
     (0x00a2_adc0, 48),
+    (0x005b_c610, 20),
 ];
 
 /// The 16-byte element zeroing.

@@ -8,6 +8,7 @@
 //! keeps state; each works on the game's memory through [`mem`].
 
 use ffx_prender::m5p_render_b::{self as rb, bridge as b};
+use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
 
@@ -671,5 +672,142 @@ ported! {
     /// `Phyre_PDynamicGeometry_stringWithLength_005c8580`.
     Phyre_PDynamicGeometry_stringWithLength_005c8580 @ 0x005c_8580 => extern "C" fn s_005c8580(pp: u32, out: u32, len: u32) -> u32 {
         sb::string_with_length(&mut mem(), pp, out, len)
+    }
+    // ---- batch 3: arrays, command hand-over, utilities, fog (ffx_prender::m5p_render_b_arrays) ----
+    /// `Phyre_copyConstructElements20_005bc610`: `count` 20-byte elements from `src` to `dst`.
+    Phyre_copyConstructElements20_005bc610 @ 0x005b_c610 => extern "C" fn c_005bc610(dst: u32, src: u32, count: u32) {
+        b::copy(&mut mem(), dst, src, count, const { rb::copy_size_of(0x005b_c610) });
+    }
+    /// `Phyre_PSharray_field_00593ca0`.
+    Phyre_PSharray_field_00593ca0 @ 0x0059_3ca0 => extern "thiscall" fn a_00593ca0(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3ca0) })
+    }
+    /// `Phyre_PSharray_field_00593d10`.
+    Phyre_PSharray_field_00593d10 @ 0x0059_3d10 => extern "thiscall" fn a_00593d10(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3d10) })
+    }
+    /// `Phyre_PSharray_field_00593d60`.
+    Phyre_PSharray_field_00593d60 @ 0x0059_3d60 => extern "thiscall" fn a_00593d60(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3d60) })
+    }
+    /// `Phyre_PSharray_field_00593de0`.
+    Phyre_PSharray_field_00593de0 @ 0x0059_3de0 => extern "thiscall" fn a_00593de0(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3de0) })
+    }
+    /// `Phyre_PSharray_field_00593eb0`.
+    Phyre_PSharray_field_00593eb0 @ 0x0059_3eb0 => extern "thiscall" fn a_00593eb0(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3eb0) })
+    }
+    /// `Phyre_PSharray_field_00593f00`.
+    Phyre_PSharray_field_00593f00 @ 0x0059_3f00 => extern "thiscall" fn a_00593f00(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3f00) })
+    }
+    /// `Phyre_PSharray_field_00593f90`.
+    Phyre_PSharray_field_00593f90 @ 0x0059_3f90 => extern "thiscall" fn a_00593f90(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_3f90) })
+    }
+    /// `Phyre_PSharray_field_00594010`.
+    Phyre_PSharray_field_00594010 @ 0x0059_4010 => extern "thiscall" fn a_00594010(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_4010) })
+    }
+    /// `Phyre_PSharray_field_00594730`.
+    Phyre_PSharray_field_00594730 @ 0x0059_4730 => extern "thiscall" fn a_00594730(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_4730) })
+    }
+    /// `Phyre_PSharray_field_00594780`.
+    Phyre_PSharray_field_00594780 @ 0x0059_4780 => extern "thiscall" fn a_00594780(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_4780) })
+    }
+    /// `Phyre_PSharray_field_00594830`.
+    Phyre_PSharray_field_00594830 @ 0x0059_4830 => extern "thiscall" fn a_00594830(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x0059_4830) })
+    }
+    /// `Phyre_PRendering_PRendererBase_textureSlot_005b8840`.
+    Phyre_PRendering_PRendererBase_textureSlot_005b8840 @ 0x005b_8840 => extern "thiscall" fn a_005b8840(this: u32, i: u32) -> u32 {
+        ab::sh_field(&mut mem(), this, i, const { arr::sh_field_of(0x005b_8840) })
+    }
+    /// `Phyre_PArray_allocCopy_005aafb0`.
+    Phyre_PArray_allocCopy_005aafb0 @ 0x005a_afb0 => extern "C" fn a_005aafb0(n: u32, src: u32, m: u32) -> u32 {
+        ab::alloc_copy(&mut mem(), n, src, m, const { arr::fill_of(0x005a_afb0) })
+    }
+    /// `Phyre_PArray_allocCopy_005b1320`.
+    Phyre_PArray_allocCopy_005b1320 @ 0x005b_1320 => extern "C" fn a_005b1320(n: u32, src: u32, m: u32) -> u32 {
+        ab::alloc_copy(&mut mem(), n, src, m, const { arr::fill_of(0x005b_1320) })
+    }
+    /// `Phyre_PArray_allocCopy_005ab070`.
+    Phyre_PArray_allocCopy_005ab070 @ 0x005a_b070 => extern "C" fn a_005ab070(n: u32, src: u32, m: u32) -> u32 {
+        ab::alloc_copy(&mut mem(), n, src, m, const { arr::fill_of(0x005a_b070) })
+    }
+    /// `Phyre_PArray_allocCopy_005c0720`.
+    Phyre_PArray_allocCopy_005c0720 @ 0x005c_0720 => extern "C" fn a_005c0720(n: u32, src: u32, m: u32) -> u32 {
+        ab::alloc_copy(&mut mem(), n, src, m, const { arr::fill_of(0x005c_0720) })
+    }
+    /// `Phyre_PArray_resize_005af000`.
+    Phyre_PArray_resize_005af000 @ 0x005a_f000 => extern "thiscall" fn a_005af000(this: u32, n: u32) -> u32 {
+        ab::resize_u8p(&mut mem(), this, n)
+    }
+    /// `Phyre_PSharray_allocCopy28_0058c590`.
+    Phyre_PSharray_allocCopy28_0058c590 @ 0x0058_c590 => extern "thiscall" fn a_0058c590(this: u32, n: u32, src: u32, m: u32) -> u32 {
+        ab::alloc_copy_28(&mut mem(), this, n, src, m)
+    }
+    /// `Phyre_PPhysics_copyMatrix_006041e0`.
+    Phyre_PPhysics_copyMatrix_006041e0 @ 0x0060_41e0 => extern "thiscall" fn a_006041e0(this: u32, src: u32) -> u32 {
+        ab::copy_16_words(&mut mem(), this, src)
+    }
+    /// `Phyre_PPostProcessing_PMeshParticleSystemBase_zero3040_009fc970`.
+    Phyre_PPostProcessing_PMeshParticleSystemBase_zero3040_009fc970 @ 0x009f_c970 => extern "thiscall" fn a_009fc970(this: u32) -> u32 {
+        ab::zero_3040(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_initRecords_005b4440`.
+    Phyre_PRendering_initRecords_005b4440 @ 0x005b_4440 => extern "thiscall" fn a_005b4440(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        ab::init_records(&mut mem(), this, a, b, c)
+    }
+    /// `Phyre_PRendering_PRenderThread_handOver_006152a0`.
+    Phyre_PRendering_PRenderThread_handOver_006152a0 @ 0x0061_52a0 => extern "thiscall" fn a_006152a0(_this: u32, slot: u32, b: u32, c: u32, d: u32) -> u32 {
+        ab::hand_over(&mut mem(), slot, b, c, d)
+    }
+    /// `Phyre_PRendering_PRendererForJobs_flushCommands_005b6ca0`.
+    Phyre_PRendering_PRendererForJobs_flushCommands_005b6ca0 @ 0x005b_6ca0 => extern "thiscall" fn a_005b6ca0(this: u32) -> u32 {
+        ab::flush_commands(&mut mem(), this)
+    }
+    /// `Phyre_PArray_setExternalBuffer_00a23be0`.
+    Phyre_PArray_setExternalBuffer_00a23be0 @ 0x00a2_3be0 => extern "thiscall" fn a_00a23be0(this: u32, buffer: u32, n: u32) -> u32 {
+        ab::set_external(&mut mem(), this, buffer, n)
+    }
+    /// `Phyre_PSharray_setExternalBuffer_00603dc0`.
+    Phyre_PSharray_setExternalBuffer_00603dc0 @ 0x0060_3dc0 => extern "thiscall" fn a_00603dc0(this: u32, buffer: u32, n: u32) -> u32 {
+        ab::sharray_set_external(&mut mem(), this, buffer, n)
+    }
+    /// `Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__setBuffer_00603e50`.
+    Phyre_PSharray_Phyre_PPhysics_PPhysicsShape__setBuffer_00603e50 @ 0x0060_3e50 => extern "thiscall" fn a_00603e50(this: u32, buffer: u32, n: u32) -> u32 {
+        ab::shapes_set_buffer(&mut mem(), this, buffer, n)
+    }
+    /// `Phyre_PPostProcessing_PUtilityPostProcessing_deleting_dtor`.
+    Phyre_PPostProcessing_PUtilityPostProcessing_deleting_dtor @ 0x00a0_3140 => extern "thiscall" fn a_00a03140(this: u32, flags: u32) -> u32 {
+        ab::utility_delete(&mut mem(), this, flags)
+    }
+    /// `Phyre_PText_PUtilityText_deleting_dtor`.
+    Phyre_PText_PUtilityText_deleting_dtor @ 0x00a3_e800 => extern "thiscall" fn a_00a3e800(this: u32, flags: u32) -> u32 {
+        ab::utility_delete(&mut mem(), this, flags)
+    }
+    /// `PostProcessManager_releaseResources_00a24c90`.
+    PostProcessManager_releaseResources_00a24c90 @ 0x00a2_4c90 => extern "thiscall" fn a_00a24c90(this: u32) {
+        ab::release_post_resources(&mut mem(), this);
+    }
+    /// `Phyre_FogEffectManager_setColour_006e36f0`.
+    Phyre_FogEffectManager_setColour_006e36f0 @ 0x006e_36f0 => extern "thiscall" fn a_006e36f0(fog: u32, r: u32, g: u32, b: u32) -> u32 {
+        ab::fog_set(&mut mem(), fog, 0x10, &[r, g, b])
+    }
+    /// `Phyre_FogEffectManager_setParam28_006e3760`.
+    Phyre_FogEffectManager_setParam28_006e3760 @ 0x006e_3760 => extern "thiscall" fn a_006e3760(fog: u32, v: u32) -> u32 {
+        ab::fog_set(&mut mem(), fog, const { arr::fog_field_of(0x006e_3760) }, &[v])
+    }
+    /// `Phyre_FogEffectManager_setParam24_006e3a30`.
+    Phyre_FogEffectManager_setParam24_006e3a30 @ 0x006e_3a30 => extern "thiscall" fn a_006e3a30(fog: u32, v: u32) -> u32 {
+        ab::fog_set(&mut mem(), fog, const { arr::fog_field_of(0x006e_3a30) }, &[v])
+    }
+    /// `Phyre_FogEffectManager_setParam20_006e3b10`.
+    Phyre_FogEffectManager_setParam20_006e3b10 @ 0x006e_3b10 => extern "thiscall" fn a_006e3b10(fog: u32, v: u32) -> u32 {
+        ab::fog_set(&mut mem(), fog, const { arr::fog_field_of(0x006e_3b10) }, &[v])
     }
 }
