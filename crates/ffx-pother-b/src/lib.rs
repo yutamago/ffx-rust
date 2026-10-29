@@ -3,6 +3,8 @@
 //! pipeline of `docs/porting.md` with the pilot's "Library code" rules.
 //!
 //! - [`physics`]: the `PPhysics` class descriptors' instance callbacks;
+//! - [`m5p_physics`] (M5 list `phyre-physics`): `PUtilityPhysics` and the
+//!   physics world/model/body unlink helpers;
 //! - [`object`]: scalar deleting destructors, dynamic-mesh instance
 //!   constructors, class registrations;
 //! - [`p4_input`], [`p4_light`], [`p4_fog`], [`p4_morph`], [`p4_cloth`]
@@ -31,6 +33,7 @@
 
 pub mod m4r_dynblocks;
 pub mod m4r_mesh;
+pub mod m5p_physics;
 pub mod methods;
 pub mod object;
 pub mod p4_abmap;
