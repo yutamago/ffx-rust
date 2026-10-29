@@ -332,9 +332,10 @@ def check(repo, exe_path, sizes):
         """(conv, word cap or None, closure, arm set name or None) of a call
         through a named helper."""
         conv = "cdecl"
-        if name in ("scene_call", "this_call", "call_virtual") or any("Conv::Thiscall" in p for p in parts):
+        if name in ("scene_call", "this_call", "call_virtual", "call_thiscall") or any("Conv::Thiscall" in p for p in parts):
             conv = "thiscall"
-        elif any("Conv::Stdcall" in p for p in parts):
+        elif name == "call_stdcall" or any("Conv::Stdcall" in p for p in parts):
+            # ffx-host's Exec::call_stdcall names its convention
             conv = "stdcall"
         elif any("Conv::Fastcall" in p for p in parts):
             conv = "fastcall"
