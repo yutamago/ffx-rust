@@ -608,7 +608,7 @@ fn static_init_b_copies_and_tails() {
             );
         }
         // the jump's target registers nothing itself: the log is not checked
-        for r in si::TAIL_THISCALLS.iter().chain(sab::TAIL_THISCALLS) {
+        for r in si::TAIL_THISCALLS {
             t.run_logged(
                 &format!("{what} tail {:#x}", r.addr),
                 r.addr,

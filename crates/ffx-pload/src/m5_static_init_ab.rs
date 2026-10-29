@@ -22,8 +22,8 @@ use ffx_graphic::host::{Conv, Host};
 pub use crate::m5_static_init_b::{
     Base, CLASS_CTOR, ClassDecl, Ctor0FlagsVt, FreeList, GET_CLASS_DESCRIPTOR,
     GET_GLOBAL_NAMESPACE, ListAppend, MallocCopy, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER,
-    SET_WRITE_MASK_BUFFER, Tail, TailThiscall, TypeEnum, at_exit, class_decl, ctor0_flags_vt,
-    free_list, list_append, malloc_copy, tail_thiscall, type_enum,
+    SET_WRITE_MASK_BUFFER, Tail, TypeEnum, at_exit, class_decl, ctor0_flags_vt, free_list,
+    list_append, malloc_copy, type_enum,
 };
 
 /// A class declaration whose tail computes the flags with three masks and
@@ -3490,13 +3490,6 @@ pub const TYPE_ENUMS: &[TypeEnum] = &[
         dtor: 0x00b0_4900,
     },
 ];
-
-/// More thiscall tail-jumps (static-init-b's family) (1).
-pub const TAIL_THISCALLS: &[TailThiscall] = &[TailThiscall {
-    addr: 0x00af_2610,
-    obj: 0x0194_2998,
-    target: 0x009f_2510,
-}];
 
 /// More `PFreeList` constructions (static-init-b's family) (8).
 pub const FREE_LISTS: &[FreeList] = &[
