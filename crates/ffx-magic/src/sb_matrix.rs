@@ -1,347 +1,142 @@
-//! Matrix builders the node family shares (`magic_0003`'s code, 116
-//! DLLs), ported by the shared-B list: straight-line SSE, transcribed
-//! instruction by instruction (each `addss`/`mulss` rounds to `f32` in the
-//! original's order, the products with 0.0 kept: they decide `-0.0` and
-//! NaN). The angles are fixed-point words (`>> 4`, `& 0xfff`: 4096 steps)
-//! indexing the game's sine table (the DLL's pointer global); the cosine
-//! is the sine a quarter turn (`+0x4000`) on.
-
-#![allow(clippy::similar_names, clippy::too_many_lines)]
+//! The node family's rotation matrices (`magic_0003`'s code, 116 DLLs):
+//! a 4x4 matrix (16 floats, row-major, for row vectors) built from three
+//! angle words as the product of the rotations about the three axes, in
+//! one of the six orders. This module has the parts the five builders
+//! share and two of them; [`crate::s3_matrix`] has the other three.
+//!
+//! An angle word is fixed point, `0x10000` to the turn: `(angle >> 4) &
+//! 0xfff` indexes the game's sine table (4,096 floats behind the DLL's
+//! pointer global) and the cosine is the sine a quarter turn (`+0x4000`)
+//! on. With `si`, `ci` the sine and cosine of angle `i` (the word at
+//! `edx + 4 * i`) the rotations are
+//!
+//! ```text
+//! X = [1 0 0 0; 0 c0 s0 0; 0 -s0 c0 0; 0 0 0 1]
+//! Y = [c1 0 -s1 0; 0 1 0 0; s1 0 c1 0; 0 0 0 1]
+//! Z = [c2 s2 0 0; -s2 c2 0 0; 0 0 1 0; 0 0 0 1]
+//! ```
+//!
+//! The original is two inlined 4x4 products: first factor times second,
+//! then that times the third, each entry the sum of its four products.
+//! Two of each builder's three factors carry `S`, the swap of the first
+//! two axes (`S * S` = 1), as in `Y * Z * X = Y * (Z * S) * (S * X)`; the
+//! docs of each give its factors. The compiler dropped the products with
+//! a constant 1 and folded those of two constants, but kept every product
+//! of a sine or cosine with 0: `x * 0` is `-0.0` for a negative `x` and
+//! NaN for an infinite or NaN one, and the sums those reach change with
+//! it. The ports keep those products ([`z`]) and add the four terms in the
+//! original's order ([`sum`]), the original's operand first in each
+//! `mulss`/`addss`: one `f32` rounding per instruction and the CPU's
+//! choice of NaN ([`crate::sb_sse`]). Where every row of a product has its
+//! terms in the same order, a function or closure multiplies a row and the
+//! left factor goes in as rows of values, its 0s and 1s included: those
+//! give what the folded constants give (`x * 1` is `x`, a NaN quieted, as
+//! the `addss` it goes into does anyway). Where the order changes from
+//! row to row, the product is written out entry by entry
+//! ([`crate::s3_matrix`]).
 
 use crate::sb_sse::{add, mul};
 use crate::{Game, Image, Sig};
 
-fn f32_at<G: Game>(g: &G, a: u32) -> f32 {
-    f32::from_bits(g.read::<u32>(a))
+/// A 4x4 matrix, row by row.
+pub(crate) type Matrix = [[f32; 4]; 4];
+
+/// The last row of every factor.
+pub(crate) const E3: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+
+/// The sines and the cosines of the three angle words at `angles`, from
+/// the sine table behind the pointer global at operand `table_op` of the
+/// function at `f`. The original shifts arithmetically (`sar`); the 12
+/// bits the mask keeps are the same.
+pub(crate) fn sines<G: Game>(
+    g: &G,
+    img: &Image,
+    f: u32,
+    table_op: u32,
+    angles: u32,
+) -> ([f32; 3], [f32; 3]) {
+    let table = g.read::<u32>(img.word(f + table_op));
+    let at = |angle: u32| {
+        let i = (angle >> 4) & 0xfff;
+        f32::from_bits(g.read::<u32>(table.wrapping_add(4 * i)))
+    };
+    let mut s = [0.0; 3];
+    let mut c = [0.0; 3];
+    for i in 0..3 {
+        let angle = g.read::<u32>(angles.wrapping_add(4 * i));
+        s[i as usize] = at(angle);
+        c[i as usize] = at(angle.wrapping_add(0x4000));
+    }
+    (s, c)
 }
 
-fn set_f32<G: Game>(g: &mut G, a: u32, x: f32) {
-    g.write::<u32>(a, x.to_bits());
+/// The terms added left to right, `((t0 + t1) + t2) + ...`.
+pub(crate) fn sum<const N: usize>(terms: [f32; N]) -> f32 {
+    terms[1..].iter().fold(terms[0], |s, &t| add(s, t))
 }
 
-/// A rotation matrix (16 floats at `ecx`) from three angles at `edx`
-/// (words `+0x0`, `+0x4`, `+0x8`), the three axis rotations multiplied out
-/// with every term the original keeps. Returns `ecx` (`eax`).
+/// `x * 0.0`: `0.0` with `x`'s sign, NaN for an infinite or NaN `x`. (With
+/// a constant operand the order of `mulss`'s operands doesn't matter.)
+pub(crate) fn z(x: f32) -> f32 {
+    mul(x, 0.0)
+}
+
+/// Writes `m` (16 floats) at `at`.
+pub(crate) fn store<G: Game>(g: &mut G, at: u32, m: &Matrix) {
+    for (i, x) in (0u32..).zip(m.as_flattened()) {
+        g.write::<u32>(at.wrapping_add(4 * i), x.to_bits());
+    }
+}
+
+/// A row times `S * X` = `[0 c s 0; 1 0 0 0; 0 -s c 0; 0 0 0 1]` (`s`,
+/// `c` of angle 0): the last factor of [`rotation_52a0`] and
+/// [`rotation_19d0`]. (The last column adds `r1`'s term before `r0`'s,
+/// as the original does.)
+fn times_sx([r0, r1, r2, r3]: [f32; 4], s: f32, c: f32) -> [f32; 4] {
+    [
+        sum([z(r0), r1, z(r2), z(r3)]),
+        sum([mul(r0, c), z(r1), mul(r2, -s), z(r3)]),
+        sum([mul(r0, s), z(r1), mul(r2, c), z(r3)]),
+        sum([z(r1), z(r0), z(r2), r3]),
+    ]
+}
+
+/// A row times `Y` (`s`, `c` of angle 1): the last factor of
+/// [`crate::s3_matrix::rotation_47c0`] and
+/// [`crate::s3_matrix::rotation_4250`].
+pub(crate) fn times_y([r0, r1, r2, r3]: [f32; 4], s: f32, c: f32) -> [f32; 4] {
+    [
+        sum([mul(r0, c), z(r1), mul(r2, s), z(r3)]),
+        sum([z(r0), r1, z(r2), z(r3)]),
+        sum([mul(r0, -s), z(r1), mul(r2, c), z(r3)]),
+        sum([z(r0), z(r1), z(r2), r3]),
+    ]
+}
+
+/// `Y * Z * X`, as `Y * (Z * S) * (S * X)`. Returns `ecx` (`eax`).
 ///
 /// `0x100052a0` (1,393 bytes, `ecx` = the matrix, `edx` = the angles; 116
 /// DLLs).
 pub fn rotation_52a0<G: Game>(g: &mut G, img: &Image, f: u32, ecx: u32, edx: u32) -> u32 {
-    let w = |off: u32| img.word(f + off);
-    let eax = g.read::<u32>(edx.wrapping_add(0x4));
-    let esi = eax;
-    let eax = eax.wrapping_add(0x4000);
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let edi = g.read::<u32>(w(0x1c));
-    let l_48 = ecx;
-    let x7 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let ecx = g.read::<u32>(edx.wrapping_add(0x8));
-    let eax = ecx;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let x4 = 0.0f32;
-    let x5 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let x1 = x5;
-    let x1 = f32::from_bits(x1.to_bits() ^ g.read::<u32>(w(0x43)));
-    let x6 = x1;
-    let l_38 = x1;
-    let x6 = mul(x6, x4);
-    let x1 = x4;
-    let x1 = mul(x1, x4);
-    let esi = (esi.cast_signed() >> 0x4).cast_unsigned();
-    let eax = ecx.wrapping_add(0x4000);
-    let l_8 = x1;
-    let esi = esi & 0xfff;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let x2 = f32_at(g, edi.wrapping_add(esi.wrapping_mul(4)));
-    let x2 = f32::from_bits(x2.to_bits() ^ g.read::<u32>(w(0x79)));
-    let eax = eax & 0xfff;
-    let l_34 = x6;
-    let x3 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let x0 = x2;
-    let x0 = mul(x0, x4);
-    let x1 = x7;
-    let x1 = mul(x1, x3);
-    let x4 = x3;
-    let x1 = add(x1, x6);
-    let x6 = 0.0f32;
-    let x4 = mul(x4, x6);
-    let x6 = x7;
-    let x6 = mul(x6, x5);
-    let x1 = add(x1, x0);
-    let x6 = add(x6, x4);
-    let x1 = add(x1, l_8);
-    let x6 = add(x6, x0);
-    let l_10 = x1;
-    let x6 = add(x6, l_8);
-    let l_1c = x6;
-    let x6 = x7;
-    let x6 = mul(x6, f32_at(g, w(0xd6)));
-    let x6 = add(x6, l_8);
-    let l_2c = x6;
-    let x6 = add(x6, x2);
-    let x2 = x6;
-    let x6 = l_8;
-    let x2 = add(x2, x6);
-    let l_28 = x2;
-    let x2 = l_2c;
-    let x2 = add(x2, x0);
-    let x0 = 0.0f32;
-    let x2 = add(x2, x0);
-    let x0 = x4;
-    let x0 = add(x0, l_38);
-    let l_2c = x2;
-    let x2 = 0.0f32;
-    let x0 = add(x0, x6);
-    let x1 = x2;
-    let x1 = add(x1, x6);
-    let x0 = add(x0, x6);
-    let l_14 = x0;
-    let x0 = x5;
-    let x0 = mul(x0, x2);
-    let l_4 = x0;
-    let x0 = add(x0, x3);
-    let x0 = add(x0, x6);
-    let x0 = add(x0, x6);
-    let l_20 = x0;
-    let x0 = x1;
-    let x1 = add(x1, x6);
-    let x0 = add(x0, x2);
-    let ecx = g.read::<u32>(edx);
-    let eax = ecx;
-    let ecx = ecx.wrapping_add(0x4000);
-    let x1 = add(x1, x2);
-    let x0 = add(x0, x6);
-    let x6 = l_34;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let l_40 = x1;
-    let x1 = f32_at(g, edi.wrapping_add(esi.wrapping_mul(4)));
-    let x1 = mul(x1, x3);
-    let l_3c = x0;
-    let x3 = f32_at(g, edi.wrapping_add(esi.wrapping_mul(4)));
-    let x1 = add(x1, x6);
-    let x0 = x7;
-    let x0 = mul(x0, x2);
-    let ecx = (ecx.cast_signed() >> 0x4).cast_unsigned();
-    let ecx = ecx & 0xfff;
-    let x1 = add(x1, x0);
-    let x1 = add(x1, l_8);
-    let l_c = x1;
-    let x1 = x3;
-    let x1 = mul(x1, x5);
-    let x5 = l_8;
-    let x3 = mul(x3, x2);
-    let x1 = add(x1, x4);
-    let x3 = add(x3, x5);
-    let x1 = add(x1, x0);
-    let x1 = add(x1, x5);
-    let l_24 = x1;
-    let x1 = x3;
-    let x3 = add(x3, x0);
-    let x0 = x4;
-    let x0 = add(x0, x6);
-    let x1 = add(x1, x7);
-    let x6 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let x3 = add(x3, x2);
-    let x7 = 0.0f32;
-    let x0 = add(x0, x5);
-    let x1 = add(x1, x5);
-    let x6 = f32::from_bits(x6.to_bits() ^ g.read::<u32>(w(0x202)));
-    let l_34 = x3;
-    let x3 = l_1c;
-    let x0 = add(x0, x2);
-    let l_44 = x1;
-    let x3 = mul(x3, x2);
-    let x1 = x2;
-    let l_18 = x0;
-    let x0 = l_4;
-    let x0 = add(x0, x4);
-    let x4 = l_28;
-    let l_30 = x6;
-    let x0 = add(x0, x5);
-    let x0 = add(x0, x2);
-    let l_4 = x0;
-    let x0 = x5;
-    let x0 = add(x0, x5);
-    let x5 = add(x5, x0);
-    let x1 = add(x1, x0);
-    let x0 = x3;
-    let x0 = add(x0, l_10);
-    let x5 = add(x5, f32_at(g, w(0x260)));
-    let x1 = add(x1, x2);
-    let x2 = x4;
-    let x2 = mul(x2, x7);
-    let l_8 = x5;
-    let x5 = l_2c;
-    let l_38 = x1;
-    let x0 = add(x0, x2);
-    let x1 = x5;
-    let x1 = mul(x1, x7);
-    let x0 = add(x0, x1);
-    let l_2c = x0;
-    let x0 = l_10;
-    let x0 = mul(x0, x7);
-    let x7 = l_1c;
-    let x7 = mul(x7, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let l_10 = x0;
-    let x7 = add(x7, x0);
-    let x0 = x4;
-    let x0 = mul(x0, x6);
-    let x6 = l_10;
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x7 = add(x7, x0);
-    let x0 = l_1c;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x7 = add(x7, x1);
-    let x0 = add(x0, x6);
-    let x6 = add(x6, x3);
-    let l_28 = x7;
-    let x0 = add(x0, x4);
-    let x4 = l_20;
-    let x7 = l_40;
-    let x6 = add(x6, x2);
-    let x3 = x4;
-    let x0 = add(x0, x1);
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x6 = add(x6, x5);
-    let x5 = l_3c;
-    let l_1c = x0;
-    let x0 = 0.0f32;
-    let x3 = mul(x3, x0);
-    let l_10 = x6;
-    let x6 = l_14;
-    let x1 = x7;
-    let x1 = mul(x1, x0);
-    let x2 = x5;
-    let x2 = mul(x2, x0);
-    let x0 = x3;
-    let x0 = add(x0, x6);
-    let x0 = add(x0, x2);
-    let x0 = add(x0, x1);
-    let l_40 = x0;
-    let x0 = 0.0f32;
-    let x6 = mul(x6, x0);
-    let x0 = x5;
-    let x0 = mul(x0, l_30);
-    let x4 = add(x4, x6);
-    let x4 = add(x4, x0);
-    let x0 = l_20;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x4 = add(x4, x1);
-    let x0 = add(x0, x6);
-    let x6 = add(x6, x3);
-    let l_3c = x4;
-    let x4 = f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4)));
-    let x6 = add(x6, x2);
-    let x5 = mul(x5, x4);
-    let x0 = add(x0, x5);
-    let x5 = l_44;
-    let x6 = add(x6, x7);
-    let x2 = x5;
-    let x0 = add(x0, x1);
-    let x1 = l_34;
-    let l_14 = x6;
-    let x6 = 0.0f32;
-    let x2 = mul(x2, x6);
-    let l_20 = x0;
-    let x0 = l_24;
-    let x3 = x0;
-    let x3 = mul(x3, x6);
-    let x1 = mul(x1, x6);
-    let x6 = l_c;
-    let x7 = x3;
-    let x7 = add(x7, x6);
-    let x6 = mul(x6, f32_at(g, w(0x3cb)));
-    let l_c = x6;
-    let x6 = x0;
-    let x6 = mul(x6, x4);
-    let x0 = x5;
-    let x0 = mul(x0, l_30);
-    let x6 = add(x6, l_c);
-    let x7 = add(x7, x2);
-    let x6 = add(x6, x0);
-    let x0 = l_24;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x7 = add(x7, x1);
-    let x6 = add(x6, x1);
-    let l_44 = x7;
-    let x0 = add(x0, l_c);
-    let x5 = mul(x5, x4);
-    let x4 = 0.0f32;
-    let x0 = add(x0, x5);
-    let x0 = add(x0, x1);
-    let x1 = l_8;
-    let x1 = mul(x1, x4);
-    let l_24 = x0;
-    let x0 = l_c;
-    let x0 = add(x0, x3);
-    let x3 = l_4;
-    let x3 = mul(x3, x4);
-    let x0 = add(x0, x2);
-    let x0 = add(x0, l_34);
-    let x5 = x3;
-    let l_c = x0;
-    let x0 = l_38;
-    let x2 = x0;
-    let x0 = mul(x0, l_30);
-    let x2 = mul(x2, x4);
-    let x4 = l_18;
-    let x5 = add(x5, x4);
-    let x4 = mul(x4, f32_at(g, w(0x46a)));
-    let l_18 = x4;
-    let x4 = l_4;
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x5 = add(x5, x2);
-    let x4 = add(x4, l_18);
-    let x5 = add(x5, x1);
-    let x4 = add(x4, x0);
-    let x0 = l_4;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let eax = l_48;
-    let x4 = add(x4, x1);
-    let x0 = add(x0, l_18);
-    let l_4 = x0;
-    let x0 = l_38;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x7 = l_4;
-    let x7 = add(x7, x0);
-    set_f32(g, eax.wrapping_add(0x24), x6);
-    set_f32(g, eax.wrapping_add(0x30), x5);
-    set_f32(g, eax.wrapping_add(0x34), x4);
-    let x0 = x7;
-    let x0 = add(x0, x1);
-    let x1 = l_18;
-    let x7 = l_44;
-    let x1 = add(x1, x3);
-    let l_4 = x0;
-    let x0 = l_2c;
-    set_f32(g, eax, x0);
-    let x0 = l_28;
-    set_f32(g, eax.wrapping_add(0x4), x0);
-    let x0 = l_1c;
-    set_f32(g, eax.wrapping_add(0x8), x0);
-    let x0 = l_10;
-    set_f32(g, eax.wrapping_add(0xc), x0);
-    let x0 = l_40;
-    set_f32(g, eax.wrapping_add(0x10), x0);
-    let x0 = l_3c;
-    set_f32(g, eax.wrapping_add(0x14), x0);
-    let x0 = l_20;
-    set_f32(g, eax.wrapping_add(0x18), x0);
-    let x0 = l_14;
-    let x1 = add(x1, x2);
-    set_f32(g, eax.wrapping_add(0x1c), x0);
-    let x0 = l_24;
-    set_f32(g, eax.wrapping_add(0x28), x0);
-    let x0 = l_c;
-    let x1 = add(x1, l_8);
-    set_f32(g, eax.wrapping_add(0x2c), x0);
-    let x0 = l_4;
-    set_f32(g, eax.wrapping_add(0x20), x7);
-    set_f32(g, eax.wrapping_add(0x38), x0);
-    set_f32(g, eax.wrapping_add(0x3c), x1);
-    eax
+    let ([s0, s1, s2], [c0, c1, c2]) = sines(g, img, f, 0x1c, edx);
+    let y = [
+        [c1, 0.0, -s1, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [s1, 0.0, c1, 0.0],
+        E3,
+    ];
+    // a row times Z * S = [s2 c2 0 0; c2 -s2 0 0; 0 0 1 0; 0 0 0 1]
+    let times_zs = |[r0, r1, r2, r3]: [f32; 4]| {
+        [
+            sum([mul(r0, s2), mul(c2, r1), z(r2), z(r3)]),
+            sum([mul(r0, c2), mul(-s2, r1), z(r2), z(r3)]),
+            sum([z(r0), z(r1), r2, z(r3)]),
+            sum([z(r0), z(r1), z(r2), r3]),
+        ]
+    };
+    let m = y.map(times_zs).map(|r| times_sx(r, s0, c0));
+    store(g, ecx, &m);
+    ecx
 }
 
 /// [`rotation_52a0`].
@@ -352,330 +147,30 @@ pub const ROTATION_52A0: Sig = Sig {
     imports: &[],
 };
 
-/// The other order of the three rotations (`edx`'s `+0x8` first): 16
-/// floats at `ecx`. Returns `ecx` (`eax`).
+/// `Z * Y * X`, as `Z * (Y * S) * (S * X)`. Returns `ecx` (`eax`).
 ///
 /// `0x100019d0` (1,413 bytes, `ecx` = the matrix, `edx` = the angles; 116
 /// DLLs).
 pub fn rotation_19d0<G: Game>(g: &mut G, img: &Image, f: u32, ecx: u32, edx: u32) -> u32 {
-    let w = |off: u32| img.word(f + off);
-    let esi = g.read::<u32>(edx.wrapping_add(0x8));
-    let eax = esi;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let edi = g.read::<u32>(w(0x17));
-    let l_48 = ecx;
-    let x1 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let ecx = g.read::<u32>(edx.wrapping_add(0x4));
-    let eax = esi.wrapping_add(0x4000);
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let x0 = x1;
-    let x3 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let eax = ecx;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let ecx = ecx.wrapping_add(0x4000);
-    let x4 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let x6 = x4;
-    let x6 = f32::from_bits(x6.to_bits() ^ g.read::<u32>(w(0x57)));
-    let l_8 = x6;
-    let x6 = 0.0f32;
-    let x0 = mul(x0, x6);
-    let x6 = x4;
-    let x4 = 0.0f32;
-    let x7 = x4;
-    let x7 = mul(x7, x4);
-    let ecx = (ecx.cast_signed() >> 0x4).cast_unsigned();
-    let ecx = ecx & 0xfff;
-    let l_4 = x7;
-    let x5 = f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4)));
-    let x7 = x3;
-    let x7 = mul(x7, x5);
-    let x6 = mul(x6, x4);
-    let x7 = add(x7, x0);
-    let x2 = x1;
-    let x2 = f32::from_bits(x2.to_bits() ^ g.read::<u32>(w(0x9c)));
-    let l_34 = x2;
-    let x7 = add(x7, x6);
-    let x2 = x7;
-    let x7 = x3;
-    let x7 = mul(x7, x4);
-    let x2 = add(x2, l_4);
-    let l_20 = x7;
-    let x7 = add(x7, x1);
-    let x1 = x5;
-    let x1 = mul(x1, x4);
-    let l_c = x2;
-    let x7 = add(x7, l_4);
-    let x2 = l_34;
-    let x7 = add(x7, l_4);
-    let l_24 = x7;
-    let x7 = l_8;
-    let x7 = mul(x7, x3);
-    let x7 = add(x7, x0);
-    let x7 = add(x7, x1);
-    let x7 = add(x7, l_4);
-    let l_38 = x7;
-    let x7 = l_20;
-    let x7 = add(x7, x0);
-    let x0 = x7;
-    let x0 = add(x0, l_4);
-    let x7 = x2;
-    let x0 = add(x0, x4);
-    let l_20 = x0;
-    let x0 = x3;
-    let x0 = mul(x0, x4);
-    let x4 = x2;
-    let x4 = mul(x4, x5);
-    let x4 = add(x4, x0);
-    let x4 = add(x4, x6);
-    let x4 = add(x4, l_4);
-    let l_1c = x4;
-    let x4 = 0.0f32;
-    let x7 = mul(x7, x4);
-    let x4 = x7;
-    let x4 = add(x4, x3);
-    let x7 = add(x7, x0);
-    let x3 = x4;
-    let x3 = add(x3, l_4);
-    let x4 = 0.0f32;
-    let ecx = g.read::<u32>(edx);
-    let x3 = add(x3, l_4);
-    let l_18 = x3;
-    let x3 = l_8;
-    let x3 = mul(x3, x2);
-    let x2 = l_4;
-    let x7 = add(x7, x2);
-    let x3 = add(x3, x0);
-    let x0 = 0.0f32;
-    let x7 = add(x7, x0);
-    let x3 = add(x3, x1);
-    let l_40 = x7;
-    let x3 = add(x3, x2);
-    let x7 = x1;
-    let x7 = add(x7, x2);
-    let l_3c = x3;
-    let x3 = x4;
-    let x3 = add(x3, x2);
-    let x0 = x7;
-    let x0 = add(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x7 = add(x7, x6);
-    let eax = ecx;
-    let eax = (eax.cast_signed() >> 0x4).cast_unsigned();
-    let eax = eax & 0xfff;
-    let x0 = add(x0, x2);
-    let x6 = f32_at(g, edi.wrapping_add(eax.wrapping_mul(4)));
-    let x6 = f32::from_bits(x6.to_bits() ^ g.read::<u32>(w(0x1d3)));
-    let x7 = add(x7, x4);
-    let ecx = ecx.wrapping_add(0x4000);
-    let l_28 = x0;
-    let x0 = x3;
-    let x0 = add(x0, x4);
-    let l_14 = x7;
-    let x7 = l_38;
-    let ecx = (ecx.cast_signed() >> 0x4).cast_unsigned();
-    let ecx = ecx & 0xfff;
-    let x0 = add(x0, x2);
-    let l_34 = x6;
-    let l_10 = x0;
-    let x0 = l_8;
-    let x0 = mul(x0, x4);
-    let x0 = add(x0, x2);
-    let l_8 = x0;
-    let x0 = add(x0, x5);
-    let x5 = l_20;
-    let x0 = add(x0, x2);
-    let l_44 = x0;
-    let x0 = x2;
-    let x0 = add(x0, x2);
-    let x2 = x4;
-    let x2 = add(x2, x0);
-    let x2 = add(x2, x4);
-    let l_30 = x2;
-    let x2 = l_4;
-    let x3 = add(x3, x2);
-    let x2 = add(x2, x0);
-    let x3 = add(x3, x4);
-    let x2 = add(x2, f32_at(g, w(0x25e)));
-    let l_2c = x3;
-    let x3 = l_8;
-    let x3 = add(x3, x1);
-    let l_4 = x2;
-    let x2 = x7;
-    let x2 = mul(x2, x4);
-    let x3 = add(x3, x4);
-    let x1 = x5;
-    let x1 = mul(x1, x4);
-    let l_8 = x3;
-    let x3 = l_24;
-    let x3 = mul(x3, x4);
-    let x0 = x3;
-    let x0 = add(x0, l_c);
-    let x0 = add(x0, x2);
-    let x0 = add(x0, x1);
-    let l_38 = x0;
-    let x0 = l_c;
-    let x0 = mul(x0, x4);
-    let x4 = l_24;
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let l_c = x0;
-    let x4 = add(x4, x0);
-    let x0 = x7;
-    let x0 = mul(x0, x6);
-    let x7 = mul(x7, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x4 = add(x4, x0);
-    let x0 = l_24;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x4 = add(x4, x1);
-    let l_20 = x4;
-    let x4 = l_c;
-    let x0 = add(x0, x4);
-    let x4 = add(x4, x3);
-    let x0 = add(x0, x7);
-    let x4 = add(x4, x2);
-    let x7 = l_40;
-    let x0 = add(x0, x1);
-    let x4 = add(x4, x5);
-    let x5 = l_3c;
-    let x1 = x7;
-    let x2 = x5;
-    let l_24 = x0;
-    let l_c = x4;
-    let x4 = l_18;
-    let x3 = x4;
-    let x0 = 0.0f32;
-    let x3 = mul(x3, x0);
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x1 = mul(x1, x0);
-    let x2 = mul(x2, x0);
-    let x0 = x3;
-    let x0 = add(x0, l_1c);
-    let x0 = add(x0, x2);
-    let x0 = add(x0, x1);
-    let l_40 = x0;
-    let x0 = l_1c;
-    let x0 = mul(x0, f32_at(g, w(0x35a)));
-    let x4 = add(x4, x0);
-    let l_1c = x0;
-    let x0 = x5;
-    let x0 = mul(x0, x6);
-    let x6 = l_1c;
-    let x5 = mul(x5, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x4 = add(x4, x0);
-    let x4 = add(x4, x1);
-    let l_3c = x4;
-    let x4 = l_18;
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x4 = add(x4, x6);
-    let x6 = add(x6, x3);
-    let x4 = add(x4, x5);
-    let x5 = l_44;
-    let x6 = add(x6, x2);
-    let x2 = x5;
-    let x0 = x5;
-    let x4 = add(x4, x1);
-    let x6 = add(x6, x7);
-    let x7 = 0.0f32;
-    let x2 = mul(x2, x7);
-    let l_18 = x4;
-    let x4 = l_30;
-    let l_1c = x6;
-    let x6 = l_10;
-    let x3 = x6;
-    let x6 = mul(x6, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x3 = mul(x3, x7);
-    let x1 = x4;
-    let x4 = l_28;
-    let x1 = mul(x1, x7);
-    let x7 = x4;
-    let x7 = add(x7, x3);
-    let x7 = add(x7, x2);
-    let x7 = add(x7, x1);
-    let l_44 = x7;
-    let x7 = 0.0f32;
-    let x4 = mul(x4, x7);
-    let l_28 = x4;
-    let x6 = add(x6, x4);
-    let x0 = mul(x0, l_34);
-    let x5 = mul(x5, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x6 = add(x6, x0);
-    let x0 = l_10;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let x6 = add(x6, x1);
-    let x0 = add(x0, x4);
-    let x4 = x0;
-    let x4 = add(x4, x5);
-    let x5 = x4;
-    let x5 = add(x5, x1);
-    let x1 = l_28;
-    let x1 = add(x1, x3);
-    let x4 = l_2c;
-    let x3 = x4;
-    let x4 = mul(x4, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x1 = add(x1, x2);
-    let x2 = l_8;
-    let x3 = mul(x3, x7);
-    let x2 = mul(x2, x7);
-    let x1 = add(x1, l_30);
-    let l_10 = x5;
-    let x5 = l_14;
-    let x5 = add(x5, x3);
-    let l_28 = x1;
-    let x1 = l_4;
-    let x1 = mul(x1, x7);
-    let x7 = l_14;
-    let x7 = mul(x7, f32_at(g, w(0x494)));
-    let x5 = add(x5, x2);
-    let x4 = add(x4, x7);
-    let l_14 = x7;
-    let x7 = l_8;
-    let x0 = x7;
-    let x0 = mul(x0, l_34);
-    let x7 = mul(x7, f32_at(g, edi.wrapping_add(ecx.wrapping_mul(4))));
-    let x4 = add(x4, x0);
-    let x0 = l_2c;
-    let x0 = mul(x0, f32_at(g, edi.wrapping_add(eax.wrapping_mul(4))));
-    let eax = l_48;
-    let x4 = add(x4, x1);
-    let x0 = add(x0, l_14);
-    let x5 = add(x5, x1);
-    set_f32(g, eax.wrapping_add(0x24), x6);
-    set_f32(g, eax.wrapping_add(0x34), x4);
-    let x0 = add(x0, x7);
-    let x7 = l_44;
-    set_f32(g, eax.wrapping_add(0x20), x7);
-    set_f32(g, eax.wrapping_add(0x30), x5);
-    let x0 = add(x0, x1);
-    let x1 = l_14;
-    let x1 = add(x1, x3);
-    let l_2c = x0;
-    let x0 = l_38;
-    set_f32(g, eax, x0);
-    let x0 = l_20;
-    let x4 = l_2c;
-    set_f32(g, eax.wrapping_add(0x4), x0);
-    let x0 = l_24;
-    set_f32(g, eax.wrapping_add(0x8), x0);
-    let x0 = l_c;
-    set_f32(g, eax.wrapping_add(0xc), x0);
-    let x0 = l_40;
-    set_f32(g, eax.wrapping_add(0x10), x0);
-    let x0 = l_3c;
-    set_f32(g, eax.wrapping_add(0x14), x0);
-    let x0 = l_18;
-    let x1 = add(x1, x2);
-    set_f32(g, eax.wrapping_add(0x18), x0);
-    let x0 = l_1c;
-    set_f32(g, eax.wrapping_add(0x1c), x0);
-    let x0 = l_10;
-    let x1 = add(x1, l_4);
-    set_f32(g, eax.wrapping_add(0x28), x0);
-    let x0 = l_28;
-    set_f32(g, eax.wrapping_add(0x2c), x0);
-    set_f32(g, eax.wrapping_add(0x38), x4);
-    set_f32(g, eax.wrapping_add(0x3c), x1);
-    eax
+    let ([s0, s1, s2], [c0, c1, c2]) = sines(g, img, f, 0x17, edx);
+    let zr = [
+        [c2, s2, 0.0, 0.0],
+        [-s2, c2, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        E3,
+    ];
+    // a row times Y * S = [0 c1 -s1 0; 1 0 0 0; 0 s1 c1 0; 0 0 0 1]
+    let times_ys = |[r0, r1, r2, r3]: [f32; 4]| {
+        [
+            sum([z(r0), r1, z(r2), z(r3)]),
+            sum([mul(r0, c1), z(r1), mul(r2, s1), z(r3)]),
+            sum([mul(-s1, r0), z(r1), mul(c1, r2), z(r3)]),
+            sum([z(r0), z(r1), z(r2), r3]),
+        ]
+    };
+    let m = zr.map(times_ys).map(|r| times_sx(r, s0, c0));
+    store(g, ecx, &m);
+    ecx
 }
 
 /// [`rotation_19d0`].
