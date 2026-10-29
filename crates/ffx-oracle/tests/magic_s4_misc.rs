@@ -919,3 +919,89 @@ fn fam446_start_up() {
         }
     }
 }
+
+/// The `magic_0446` family's load step (busy, asking, waiting, loaded)
+/// and mode object (no mode; the previous object listed or not).
+#[test]
+fn fam446_load_and_mode_object() {
+    let Some(mut t) = twin(446) else { return };
+    let ls = t.at(0x1240);
+    let su = t.img.rel32_target(ls + 0x5b);
+    let take = t.img.rel32_target(su + 0x7c);
+    let ps = t.img.rel32_target(su + 0x56);
+    t.set_u32(t.img.word(ps + 0x04), SCRATCH + 0x800);
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+    for (s, n) in [
+        (711u32, 3usize),
+        (710, 4),
+        (271, 1),
+        (219, 2),
+        (357, 3),
+        (356, 3),
+        (362, 4),
+        (262, 4),
+        (226, 2),
+        (713, 1),
+    ] {
+        rec(&mut t, s, n, move |_, _| s);
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 1.25);
+    let answers = SCRATCH + 0x8c0;
+    rec(&mut t, 225, 1, move |m, _| m.r32(answers));
+    rec(&mut t, 227, 1, move |m, _| m.r32(answers + 4));
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[3] + 4 * i, a[0].wrapping_add(i));
+        }
+        0x237
+    });
+    let asked = t.img.word(ls + 0x18);
+    for (busy, state, there) in [
+        (1u32, 0u32, 0u32),
+        (0, 0, 0),
+        (0, 1, 0xffff_ffff),
+        (0, 1, 1),
+        (0, 0, 2),
+    ] {
+        free_ring(&mut t, take, SCRATCH + 0x1000, 4);
+        t.set_u32(answers, busy);
+        t.set_u32(answers + 4, there);
+        t.set_u32(asked, state);
+        t.check_entry(ls, Call::default(), &[], Eax::Checked);
+    }
+    // the mode object, with the block the start-up set
+    let mo = t.at(0x20c0);
+    let soa = t.img.rel32_target(mo + 0x78);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    t.set_u32(t.img.word(mo + 0x29), SCRATCH + 0x8e0);
+    let block = t.u32(t.img.word(mo + 0x3));
+    let list = t.img.word(mo + 0x1b);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let old = block + 0x130 * 3;
+    for (mode, listed) in [(0u32, false), (1, false), (1, true), (2, true)] {
+        t.set_u16(free, 2);
+        t.set_u32(block + 0x5c04, mode);
+        t.set_u32(block + 0x5bfc, old);
+        t.set_u16(old + 0x124, 0xffff);
+        let node = SCRATCH + 0x1800;
+        t.write(node, &[0; 0x10]);
+        t.set_u32(node + 8, old);
+        t.write(list, &[0; 0x10]);
+        if listed {
+            t.set_u32(list, node);
+            t.set_u32(list + 4, node);
+            t.set_u32(list + 0xc, 1);
+        }
+        t.check_entry(mo, Call::default(), &[], Eax::Checked);
+    }
+}

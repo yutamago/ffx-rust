@@ -8,6 +8,7 @@
 //! operands. Each doc names the DLL and address it was ported from, its
 //! size and how many DLLs carry it.
 
+use crate::l5_objhost::{LIST_REMOVE, list_remove};
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
 use crate::s3_misc::append_task;
@@ -516,6 +517,110 @@ pub const MODE_SETUP: Sig = Sig {
     calls: &[
         (0x21, Callee::Sig(&crate::sb_misc::SPRITE_INIT)),
         (0x64, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
+
+/// The family's load step (a table entry, no arguments): while slot 225
+/// `(1)` answers non-zero nothing happens; the resource `*G_RES` (operand
+/// `+0x26`) is requested once (slot 226 `(res, 0)`, `G_ASKED` 1, operand
+/// `+0x37`); once slot 227 says it is there (1 or more) the effect starts
+/// ([`start_up`]) and two table entries (operands `+0x61`, `+0x6b`) get
+/// their next functions (`+0x65`, `+0x6f`). Returns 0.
+///
+/// `magic_0446` 0x10001240 (118 bytes; 10 DLLs).
+pub fn load_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = slot_target(g, w(0x1), 225);
+    if g.call(t, 0, &[1]).eax != 0 {
+        return Ret::eax(0);
+    }
+    if g.read::<u32>(w(0x18)) == 0 {
+        let t = slot_target(g, w(0x20), 226);
+        let res = g.read::<u32>(w(0x26));
+        g.call(t, 0, &[res, 0]);
+        g.write::<u32>(w(0x37), 1);
+    }
+    let t = slot_target(g, w(0x40), 227);
+    let res = g.read::<u32>(w(0x46));
+    if g.call(t, 0, &[res]).eax.cast_signed() < 1 {
+        return Ret::eax(0);
+    }
+    let callee = Frame {
+        at: img.rel32_target(f + 0x5b),
+        esp: fr.esp.wrapping_sub(4),
+        ..*fr
+    };
+    start_up(g, img, &callee);
+    g.write::<u32>(w(0x61), w(0x65));
+    g.write::<u32>(w(0x6b), w(0x6f));
+    Ret::eax(0)
+}
+
+/// [`load_step`].
+pub const LOAD_STEP: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP))],
+    imports: &[],
+};
+
+/// The mode's object (a table entry, no arguments): with a mode (`G +
+/// 0x5c04`) the previous object (`G + 0x5bfc`) leaves the list (operand
+/// `+0x1b`, [`list_remove`]); when it was there, `*G_P` = `ITEM`
+/// (operands `+0x29`, `+0x30`), slot 713 frees its part and its flag
+/// bit 15 (`u16 +0x124`) is cleared. Then the mode's object `G + 0x130
+/// part` (part from the table at `+0x61`, the scale at `+0x5a`) starts,
+/// slot 219 `(*G_A, 0)` gives an element whose position slot 237 writes
+/// into its `+0xd0` (`w` 1.0); its `+0xc4` the clock, `+0xe4` 3.0,
+/// `+0xe8` -3.0. Returns the clock.
+///
+/// `magic_0446` 0x100020c0 (216 bytes; 10 DLLs).
+pub fn mode_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let block = g.read::<u32>(w(0x3));
+    if g.read::<u32>(block + 0x5c04) != 0 {
+        let old = g.read::<u32>(block + 0x5bfc);
+        if list_remove(g, img, img.rel32_target(f + 0x20), w(0x1b), old) != 0 {
+            let p = g.read::<u32>(w(0x29));
+            g.write::<u32>(p, w(0x30));
+            let t = slot_target(g, w(0x35), 713);
+            g.call(t, 0, &[old]);
+            let flags = g.read::<u16>(old + 0x124) & 0x7fff;
+            g.write::<u16>(old + 0x124, flags);
+        }
+    }
+    let mode = g.read::<u32>(block + 0x5c04);
+    let part = g.read::<u32>(w(0x61).wrapping_add(mode.wrapping_mul(4)));
+    let obj = block.wrapping_add(part.wrapping_mul(0x130));
+    start(g, img, f, 0x78, obj, 0x5a, part, (0, 0));
+    // start_object_at's words stay below (the ones above `ecx`, which is
+    // what list_remove left there)
+    let mut s = Pushes::default();
+    s.push_all(&[0, part]);
+    let x = g.read::<u32>(w(0x85));
+    s.push_all(&[0, x]);
+    let elem = s.call(g, slot_target(g, w(0x7d), 219), 0).eax;
+    let pos = obj + 0xd0;
+    s.push_all(&[pos, 0, 0, elem]);
+    s.call(g, slot_target(g, w(0x9e), 237), 0);
+    g.write::<u32>(pos + 0xc, 0x3f80_0000);
+    let clock = g.read::<u32>(block + 0xebf0);
+    g.write::<u32>(obj + 0xc4, clock);
+    g.write::<u32>(obj + 0xe4, 0x4040_0000);
+    g.write::<u32>(obj + 0xe8, 0xc040_0000);
+    Ret::eax(clock)
+}
+
+/// [`mode_object`].
+pub const MODE_OBJECT: Sig = Sig {
+    len: 216,
+    hash: 0xde99_8eb0_0830_052d,
+    calls: &[
+        (0x20, Callee::Sig(&LIST_REMOVE)),
+        (0x78, Callee::Sig(&START_OBJECT_AT)),
     ],
     imports: &[],
 };
