@@ -11,6 +11,15 @@ const CAVE_LEN: u32 = 1800;
 /// callee so a callee leaving `eax` alone shows the poison.
 const POISON_AT: u32 = CAVE + CAVE_LEN;
 const POISON: u32 = 0xdead_beef;
+/// After the poison: `fld qword [esp+4]; call [esp+0xc]; ret`, and at
+/// `+16` `fstp st0; ret`, for [`Host::call_intrinsic`] (a CRT intrinsic
+/// with its argument in `ST0`; the cave function is 2438 bytes long).
+/// The same code as `tests/h3f_glue_render.rs` has.
+const TRAMPOLINE_AT: u32 = POISON_AT + 8;
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -124,6 +133,20 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         self.0.call(addr, Conv::Cdecl, args).unwrap().eax
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        // the trampoline sits a fixed distance past the poison
+        let at = self.1 + (TRAMPOLINE_AT - POISON_AT);
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -189,6 +212,8 @@ impl Twins {
         code.extend(POISON.to_le_bytes());
         code.push(0xc3);
         t.write(at, &code);
+        let tramp = t.rebase(TRAMPOLINE_AT);
+        t.write(tramp, &TRAMPOLINE_CODE);
         // the return sentinel: what a call leaves at its top - 4
         for o in [&mut t.a, &mut t.b] {
             o.call(at, Conv::Cdecl, &[]).unwrap();

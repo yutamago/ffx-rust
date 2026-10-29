@@ -13,6 +13,7 @@ use ffx_prender::m5p_render_a4::bridge as d;
 use ffx_prender::m5p_render_a5::{self as me, bridge as e};
 use ffx_prender::m5p_render_a6::bridge as f;
 use ffx_prender::m5p_render_a7::bridge as g;
+use ffx_prender::m5p_render_a8::bridge as h;
 
 ported! {
     // ---- batch 1 ----
@@ -1318,5 +1319,20 @@ ported! {
     PGameplay_updateObject_0055b670 @ 0x0055_b670 => extern "thiscall" fn update_object(this: u32) {
         let mut frame = StackFrame::<32>::new();
         g::update_object(&mut mem(), this, frame.at());
+    }
+    // ---- batch 7 ----
+    /// `(this; frame, angle)` (float bits) -> status.
+    PSpriteCollection_setFrameRotation_0056e730 @ 0x0056_e730 => extern "thiscall" fn sprite_rotation(this: u32, frame: u32, angle: u32) -> u32 {
+        h::sprite_rotation(&mut mem(), this, frame, angle)
+    }
+    /// `(this)` -> status (the description and the lock in this frame).
+    PTexture3DD3D11_createViews_0058f880 @ 0x0058_f880 => extern "thiscall" fn create_views(this: u32) -> u32 {
+        let mut f = StackFrame::<{ ffx_prender::m5p_render_a8::bridge::VIEWS_FRAME as usize / 4 }>::new();
+        h::create_views(&mut mem(), this, f.at())
+    }
+    /// `(this)` -> status (the data pointer and the bounds in this frame).
+    PSpriteCollection_flush_0056ee50 @ 0x0056_ee50 => extern "thiscall" fn flush(this: u32) -> u32 {
+        let mut f = StackFrame::<18>::new();
+        h::flush(&mut mem(), this, f.at())
     }
 }
