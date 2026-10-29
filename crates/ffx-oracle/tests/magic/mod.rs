@@ -352,8 +352,8 @@ impl Mem for PortGame {
 impl Game for PortGame {
     fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
-        let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
         let edx = answer_edx(&self.shared, &mut self.mem, target, args).unwrap_or(0);
+        let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
         self.calls.push(CallOut {
             target,
             slot: slot_of(target),

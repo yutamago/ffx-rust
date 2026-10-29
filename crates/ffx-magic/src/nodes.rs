@@ -52,7 +52,7 @@ pub(crate) fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, O
 /// `+0x14` branch): the parent's count `+0x18` drops by one, the links
 /// around the node are joined and the node's own links and `+0x14` are
 /// cleared. Returns the node's previous link as it was last read.
-fn leave_parent<G: Game>(g: &mut G, node: u32, parent: u32) -> u32 {
+pub(crate) fn leave_parent<G: Game>(g: &mut G, node: u32, parent: u32) -> u32 {
     let count = g.read::<u16>(parent + 0x18).wrapping_add(0xffff);
     g.write::<u16>(parent + 0x18, count);
     let next = g.read::<u32>(node + 8);

@@ -49,6 +49,13 @@ pub mod pe;
 pub mod pushes;
 pub mod rcef;
 pub mod runtime;
+// the shared work list's chunk A (functions used by 2 or more overlays):
+// the node pool, the summon family's handlers, the magic_0162 family's
+// script commands and helpers without a family yet
+pub mod sa_misc;
+pub mod sa_pool;
+pub mod sa_script;
+pub mod sa_summon;
 pub mod sb_common;
 pub mod sb_matrix;
 pub mod sb_misc;
@@ -732,6 +739,64 @@ ports! {
     "m0447 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0447, ob_summon::afterimage_fade;
     "m0448 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0448, ob_summon::afterimage_fade;
     "m0394 flight" => m0394::FLIGHT, m0394::flight;
+    "summon aim handler" => sa_summon::AIM, sa_summon::aim;
+    "script wait off" => sa_script::WAIT_OFF, sa_script::wait_off;
+    "script ret" => sa_script::RET, sa_script::ret;
+    "script call" => sa_script::CALL, sa_script::call;
+    "script wait word" => sa_script::WAIT_WORD, sa_script::wait_word;
+    "script wait short" => sa_script::WAIT_SHORT, sa_script::wait_short;
+    "script branch on" => sa_script::BRANCH_ON, sa_script::branch_on;
+    "script record clear" => sa_script::RECORD_CLEAR, sa_script::record_clear;
+    "script record set" => sa_script::RECORD_SET, sa_script::record_set;
+    "script record vector" => sa_script::RECORD_VECTOR, sa_script::record_vector;
+    "script record ramp" => sa_script::RECORD_RAMP, sa_script::record_ramp;
+    "script record fade" => sa_script::RECORD_FADE, sa_script::record_fade;
+    "script record fade to" => sa_script::RECORD_FADE_TO, sa_script::record_fade_to;
+    "script flag bit" => sa_script::FLAG_BIT, sa_script::flag_bit;
+    "script check then" => sa_script::CHECK_THEN, sa_script::check_then;
+    "script actor call" => sa_script::ACTOR_CALL, sa_script::actor_call;
+    "script effect start" => sa_script::EFFECT_START, sa_script::effect_start;
+    "script effect pair" => sa_script::EFFECT_PAIR, sa_script::effect_pair;
+    "script actor 546" => sa_script::ACTOR_546, sa_script::actor_546;
+    "script actor 525" => sa_script::ACTOR_525, sa_script::actor_525;
+    "script actor show" => sa_script::ACTOR_SHOW, sa_script::actor_show;
+    "script actor visible" => sa_script::ACTOR_VISIBLE, sa_script::actor_visible;
+    "script actor scaled" => sa_script::ACTOR_SCALED, sa_script::actor_scaled;
+    "set bit 2" => sa_misc::SET_BIT2, sa_misc::set_bit2;
+    "handle slot 435" => sa_misc::HANDLE_435, sa_misc::handle_435;
+    "handle slot 437" => sa_misc::HANDLE_437, sa_misc::handle_437;
+    "handle slot 804" => sa_misc::HANDLE_804, sa_misc::handle_804;
+    "block reset" => sa_misc::BLOCK_RESET, sa_misc::block_reset;
+    "host start" => sa_misc::HOST_START, sa_misc::host_start;
+    "fade step" => sa_misc::FADE_STEP, sa_misc::fade_step;
+    "host start (b)" => sa_misc::HOST_START_B, sa_misc::host_start_b;
+    "part refresh (a)" => sa_misc::PART_REFRESH_A, sa_misc::part_refresh_a;
+    "hook callback" => sa_misc::HOOK_CALLBACK, sa_misc::hook_callback;
+    "wait pair d74c" => sa_script::WAIT_PAIR_D74C, sa_script::wait_pair_d74c;
+    "wait pair 5c08" => sa_script::WAIT_PAIR_5C08, sa_script::wait_pair_5c08;
+    "release part" => sa_misc::RELEASE_PART, sa_misc::release_part;
+    "slot 250 (0, 0)" => sa_misc::SLOT250_ZERO, sa_misc::slot250_zero;
+    "effect 0x78" => sa_misc::EFFECT_78, sa_misc::effect_78;
+    "handle close" => sa_misc::HANDLE_CLOSE, sa_misc::handle_close;
+    "part show" => sa_misc::PART_SHOW, sa_misc::part_show;
+    "follow object" => sa_misc::FOLLOW_OBJECT, sa_misc::follow_object;
+    "host start (c)" => sa_misc::HOST_START_C, sa_misc::host_start_c;
+    "fx flag" => sa_misc::FX_FLAG, sa_misc::fx_flag;
+    "handle 0x3015" => sa_misc::HANDLE_3015, sa_misc::handle_3015;
+    "handle swap" => sa_misc::HANDLE_SWAP, sa_misc::handle_swap;
+    "load wait" => sa_misc::LOAD_WAIT, sa_misc::load_wait;
+    "fade states" => sa_misc::FADE_STATES, sa_misc::fade_states;
+    "fx flag d618" => sa_misc::FX_FLAG_D618, sa_misc::fx_flag_d618;
+    "wait pair 83f8" => sa_script::WAIT_PAIR_83F8, sa_script::wait_pair_83f8;
+    "wait pair eab0" => sa_script::WAIT_PAIR_EAB0, sa_script::wait_pair_eab0;
+    "release fx object" => sa_misc::RELEASE_FX_OBJECT, sa_misc::release_fx_object;
+    "mem open" => sa_misc::MEM_OPEN, sa_misc::mem_open;
+    "fade table" => sa_misc::FADE_TABLE, sa_misc::fade_table;
+    "host start (d)" => sa_misc::HOST_START_D, sa_misc::host_start_d;
+    "slot 239 pair" => sa_misc::SLOT239_PAIR, sa_misc::slot239_pair;
+    "slot 399, done" => sa_misc::SLOT399_DONE, sa_misc::slot399_done;
+    "hook pair" => sa_misc::HOOK_PAIR, sa_misc::hook_pair;
+    "anim step" => sa_misc::ANIM_STEP, sa_misc::anim_step;
     // shared-B list
     "node children visit (+0x20)" => sb_nodes::VISIT_CHILDREN_20, sb_nodes::visit_children_20;
     "node visit, slot 668" => sb_nodes::VISIT_668, sb_nodes::visit_668;
@@ -861,6 +926,93 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0396 aim", &m0396::AIM),
     ("m0396 refresh", &m0396::REFRESH),
     ("m0395 resets", &m0395::RESETS),
+    ("pool take", &sa_pool::TAKE),
+    ("pool give back", &sa_pool::GIVE_BACK),
+    ("summon place", &sa_summon::PLACE),
+    ("summon model setup", &sa_summon::MODEL_SETUP),
+    ("summon sub walk", &sa_summon::SUB_WALK),
+    ("summon scaled place", &sa_summon::SCALED_PLACE),
+    ("summon model node init", &sa_summon::MODEL_NODE_INIT),
+    ("summon bind models", &sa_summon::BIND_MODELS),
+    ("summon vector op", &sa_summon::VECTOR_OP),
+    ("summon bounce", &sa_summon::BOUNCE),
+    ("summon pair aim", &sa_summon::PAIR_AIM),
+    ("summon bone", &sa_summon::BONE),
+    ("summon bone (scaled)", &sa_summon::BONE_SCALED),
+    ("summon statics init", &sa_summon::STATICS_INIT),
+    ("script each actor", &sa_script::EACH_ACTOR),
+    ("script show all", &sa_script::SHOW_ALL),
+    ("script actor block", &sa_script::ACTOR_BLOCK),
+    ("set four", &sa_misc::SET_FOUR),
+    ("reset transform", &sa_misc::RESET_TRANSFORM),
+    ("unit block", &sa_misc::UNIT_BLOCK),
+    ("node leave", &sa_misc::LEAVE),
+    ("register parts", &sa_misc::REGISTER_PARTS),
+    ("records init", &sa_misc::RECORDS_INIT),
+    ("me block", &sa_misc::ME_BLOCK),
+    ("/GS epilogue", &sa_misc::GS_EPILOGUE),
+    ("script run", &sa_script::RUN),
+    ("link part", &sa_misc::LINK_PART),
+    ("timeline", &sa_misc::TIMELINE),
+    ("drift", &sa_misc::DRIFT),
+    ("reset transform (0)", &sa_misc::RESET_TRANSFORM_0),
+    ("node append", &sa_misc::NODE_APPEND),
+    ("reset transform (3)", &sa_misc::RESET_TRANSFORM_3),
+    ("part refresh (b)", &sa_misc::PART_REFRESH_B),
+    ("actor vector", &sa_script::ACTOR_VECTOR),
+    ("add to parent", &sa_misc::ADD_TO_PARENT),
+    ("node append (owned)", &sa_misc::NODE_APPEND_OWNED),
+    ("reset transform (0x14)", &sa_misc::RESET_TRANSFORM_14),
+    ("insert with", &sa_misc::INSERT_WITH),
+    ("records init (0x400)", &sa_misc::RECORDS_INIT_400),
+    ("ring take (0x50)", &sa_misc::RING_TAKE),
+    ("move start", &sa_misc::MOVE_START),
+    ("sprite init", &sa_misc::SPRITE_INIT),
+    ("sprite fade", &sa_misc::SPRITE_FADE),
+    ("timers reset", &sa_misc::TIMERS_RESET),
+    ("part ranges", &sa_misc::PART_RANGES),
+    ("camera target", &sa_misc::CAMERA_TARGET),
+    ("colour node init", &sa_misc::COLOUR_NODE_INIT),
+    ("register 16", &sa_misc::REGISTER_16),
+    ("facing int", &sa_misc::FACING_INT),
+    ("model id", &sa_misc::MODEL_ID),
+    ("actor kind check", &sa_misc::ACTOR_KIND_CHECK),
+    ("scale rotate", &sa_misc::SCALE_ROTATE),
+    ("sound start", &sa_misc::SOUND_START),
+    ("actor scale", &sa_misc::ACTOR_SCALE),
+    ("actor mode", &sa_script::ACTOR_MODE),
+    ("blur setup", &sa_misc::BLUR_SETUP),
+    ("model position", &sa_misc::MODEL_POSITION),
+    ("actor slot 256", &sa_script::ACTOR_SLOT256),
+    ("records init (0x100)", &sa_misc::RECORDS_INIT_100),
+    ("ring reserve", &sa_misc::RING_RESERVE),
+    ("part matrix", &sa_misc::PART_MATRIX),
+    ("fx reset d74c", &sa_misc::FX_RESET_D74C),
+    ("static child", &sa_misc::STATIC_CHILD),
+    ("reels match", &sa_misc::REELS_MATCH),
+    ("camera target (b)", &sa_misc::CAMERA_TARGET_B),
+    ("register grid", &sa_misc::REGISTER_GRID),
+    ("place me", &sa_misc::PLACE_ME),
+    ("kind records", &sa_misc::KIND_RECORDS),
+    ("jitter", &sa_misc::JITTER),
+    ("block 331", &sa_misc::BLOCK_331),
+    ("slot 306", &sa_misc::SLOT306),
+    ("record 296", &sa_misc::RECORD_296),
+    ("records clear", &sa_misc::RECORDS_CLEAR),
+    ("record free", &sa_misc::RECORD_FREE),
+    ("spread set", &sa_misc::SPREAD_SET),
+    ("repeat 309", &sa_misc::REPEAT_309),
+    ("register one", &sa_misc::REGISTER_ONE),
+    ("object to node", &sa_misc::OBJECT_TO_NODE),
+    ("node start", &sa_misc::NODE_START),
+    ("register 8", &sa_misc::REGISTER_8),
+    ("register records", &sa_misc::REGISTER_RECORDS),
+    ("register counted", &sa_misc::REGISTER_COUNTED),
+    ("place records", &sa_misc::PLACE_RECORDS),
+    ("records 295", &sa_misc::RECORDS_295),
+    ("ring take (0x68)", &sa_misc::RING_TAKE_68),
+    ("turn matrix", &sa_misc::TURN_MATRIX),
+    ("static node", &sa_misc::STATIC_NODE),
     // shared-B list
     ("set speed", &sb_common::SET_SPEED),
     ("float of slot 289", &sb_nodes::FLOAT_289),

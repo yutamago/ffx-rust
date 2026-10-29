@@ -304,7 +304,10 @@ rule (the larger significand), not the CPU's (the destination's), so
 tests avoid inputs where two different NaNs meet; ports of SSE code use
 `ffx_magic::sb_sse` (`add`, `sub`, `mul`, `div`: the CPU's NaN results,
 whatever the compiler or target). A call-out
-logs 16 words of the original's stack. Mutants go through
+logs 16 words of the original's stack; the port's words are compared as
+a prefix of them, so a port that drops trailing words the callee never
+reads (an earlier call's words the original leaves on the stack) still
+passes. Mutants go through
 `tools/mutants.py` as for every port (`MUT_TEST=magic_NNNN MUT_SNAPS=`,
 no snapshots).
 
