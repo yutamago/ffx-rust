@@ -5021,3 +5021,240 @@ impl Twins {
         self.jump(sym, addr);
     }
 }
+
+// ---- round 3, batch 4: small menu wrappers, disk checks, sector reads, the install wall ----
+
+#[test]
+fn r3b4_menu_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a01);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::WAIT_WIN_MAIN, 1),
+                (mnc::MENU_ICON, 4),
+                (mnc::MOVIE_MESSAGE_IMAGE, 6),
+                (mnc::FONT_8EBC00, 8),
+                (mnc::MES_FONT_1612, 9),
+                (mnc::FONT_8EA680, 10),
+                (mnc::DAPS_STRING, 1),
+                (mnc::GS_TEST, 8),
+                (mnc::GS_WORDS4, 4),
+                (mnc::DRAW_KICK, 0),
+                (mnc::SET_STORE_IMAGE, 8),
+                (mnc::GS_FLUSH_CACHE, 1),
+                (mnc::EXEC_STORE_IMAGE, 2),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x10101));
+            }
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 0x55, r ^ 0x66]);
+            t.stub_seq(mnc::GS_SYNC_PATH, 2, 0, &[r ^ 0x77, r ^ 0x88]);
+            let w: [u32; 8] = std::array::from_fn(|_| rng.word());
+            let win = t.zeros(0x90);
+            t.check("wait win start", 0x008a_8750, Conv::Cdecl, &[win], |m| {
+                Out::U32(mnb::wait_win_start(m, win))
+            });
+            let buf = t.zeros(0x40);
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, r ^ 0x10101);
+            let w3 = [w[0], w[1], w[2]];
+            t.check("menu icon", 0x008f_d4d0, Conv::Cdecl, &w3, |m| {
+                Out::U32(mnb::menu_icon(m, w3))
+            });
+            let w5 = [w[0], w[1], w[2], w[3], w[4]];
+            t.check("movie image", 0x0090_2840, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::movie_message_image(m, w5))
+            });
+            let w4 = [w[0], w[1], w[2], w[3]];
+            t.check("font 8ebc00", 0x008e_bbd0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::font_8ebc00(m, w4))
+            });
+            t.check("mes font 1612", 0x008e_9fd0, Conv::Cdecl, &w4, |m| {
+                Out::U32(mnb::mes_font_1612(m, w4))
+            });
+            t.check("font 8ea680", 0x008e_a5c0, Conv::Cdecl, &w5, |m| {
+                Out::U32(mnb::font_8ea680(m, w5))
+            });
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, r ^ 0x66);
+            t.check("flat rect", 0x008f_c6a0, Conv::Cdecl, &w, |m| {
+                Out::U32(mnb::flat_rect(m, w))
+            });
+            // the message width: TOGetMessageWH writes the float width;
+            // and the height word (its low half signed)
+            let width = [0.0f32, 13.5, -7.25, 70000.0, 1e10][(case % 5) as usize];
+            let height = [0x0000_0010u32, 0xfffe_8123, 0x7fff][(case % 3) as usize];
+            t.stub_store2(mnc::MESSAGE_WH, [width.to_bits(), height], 6, r ^ 1);
+            // 1e10 (case 4) under SSE, past i32 under both rules
+            t.g32(0x0193_ed20, (case >> 2) & 1); // __sse2_available
+            let w2 = [w[0], w[1]];
+            t.check_fs("width ext", 0x008b_8070, &w2, 8, 0, |m, ebp, _| {
+                Out::U32(mnb::width_ext_mes_1612(m, ebp, w2[0], w2[1]))
+            });
+            // TODapsPrintf: vsprintf gets the caller's word list
+            imp(t, mnc::VSPRINTF_IAT, 3, false, r ^ 2);
+            let daps = [w[0], w[1], w[2], w[3]];
+            t.check_fs("daps printf", 0x0089_dde0, &daps, 0x104, 4, |m, ebp, s| {
+                Out::U32(mnb::daps_printf(m, ebp, daps[0], s + 4))
+            });
+            // TOTransImageLH: its frame is aligned to 16 bytes
+            let a5 = [0u32, 64, 100, 0xffff_ffc1, 0x8000_0000][(case % 5) as usize];
+            let lh = [w[0], w[1], w[2], w[3], w[4], a5, w[5]];
+            let entry = t.frame_ebp(lh.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs("trans image lh", 0x008b_0da0, &lh, 0, 0, |m, _, _| {
+                Out::U32(mnb::trans_image_lh(m, ebp, lh))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3b4_disk_stream_and_wall_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a02);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            // the cached disk check
+            let ctx = t.zeros(0x5_0760);
+            t.write(ctx + 0x5_075d, &[u8::from(case & 1 != 0)]);
+            t.write(
+                t.rebase(hdc::DISK_RESULT),
+                &[[0x80u8, 1, 0xff, 0][((case >> 1) % 4) as usize]],
+            );
+            t.stub(
+                hdc::DISK_CHANGED,
+                false,
+                0,
+                0,
+                [0, 1, 0, 0x100][(case / 2 % 4) as usize],
+            );
+            t.check("disk changed", 0x0077_75e0, Conv::Cdecl, &[ctx], |m| {
+                Out::U32(hdb::disk_changed_cached(m, ctx))
+            });
+            // the sector stream: used bytes and offsets around sector ends
+            let used = [0u32, 1, 0x7ff, 0x400][(case % 4) as usize];
+            let offset = [0u32, 0x800, 0x801, 0x7ff, 0xffff_f000, 0x1234][(case % 6) as usize];
+            t.g32(hdc::STREAM_USED, used);
+            t.g32(hdc::STREAM_SECTOR, 0x100 + case);
+            t.stub(hdc::READ_SECTORS, false, 5, 0, r);
+            let skip = t.words(&[0xa5a5_a5a5]);
+            let args = [offset, rng.next(), skip, rng.next()];
+            t.check("stream read", 0x0077_7380, Conv::Cdecl, &args, |m| {
+                Out::U32(hdb::stream_read(m, args))
+            });
+            t.stub(hdc::READ_MODULE_FILES, false, 0, 0, r ^ 1);
+            t.check("read module files", 0x0077_7970, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::read_module_files(m))
+            });
+            // the wall: progress at, past and before the mark
+            let (done, total) =
+                [(0u32, 0u32), (5, 10), (10, 10), (0xffff_fff0, 3)][(case % 4) as usize];
+            t.g32(hdc::DONE, done);
+            t.g32(hdc::TOTAL, total);
+            let progress = if total == 0 {
+                0
+            } else {
+                ((done << 6) as i32 / total as i32) as u32
+            };
+            let mark = if case & 4 == 0 {
+                progress
+            } else {
+                progress + 1
+            };
+            t.g32(hdc::WALL_MARK, mark);
+            t.g32(
+                hdc::WALL_FRAME,
+                [0u32, 3, 4, 0xffff_fffe][(case % 4) as usize],
+            );
+            t.g32(hdc::MENU_WORK, rng.next());
+            t.stub(hdc::WALL_DRAW, false, 2, 0, r ^ 2);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 3);
+            t.stub(hdc::WALL_SPRITE, false, 0, 0, r ^ 4);
+            t.check("kabe disp", 0x0077_93c0, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::kabe_disp(m))
+            });
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, `n` words) that first writes
+    /// `v[0]` through its third word and `v[1]` through its fourth (the
+    /// `&w`, `&h` of `TOGetMessageWH`); returns `ret`.
+    fn stub_store2(&mut self, sym: u32, v: [u32; 2], n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c]; // mov eax, [esp+0xc]
+        c.extend([0xc7, 0x00]);
+        c.extend(v[0].to_le_bytes()); // mov dword [eax], v0
+        c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+        c.extend([0xc7, 0x00]);
+        c.extend(v[1].to_le_bytes()); // mov dword [eax], v1
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b4_frame_buffer_install_mount_main_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0a03);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::FRAME_BUFFER_ARG, false, 0, 0, r);
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r ^ 1);
+            t.g32(mnc::FRAME_BUFFER_RGB, rng.next());
+            t.check_fs("frame buffer", 0x008a_92a0, &[], 0x9c, 4, |m, ebp, _| {
+                Out::U32(mnb::real_frame_buffer(m, ebp))
+            });
+            // the install mode: each kind, negative ones, 0x0112a514
+            let kind = [0u32, 1, 2, 3, 4, 0xffff_fffe, 0x8000_0000, 0x13][(case % 8) as usize];
+            t.stub(hdc::INSTALL_KIND, false, 0, 0, kind);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 0x200);
+            t.g32(hdc::WORD_A514, [0u32, 0xffff_ffff][(case / 4 % 2) as usize]);
+            t.write(t.rebase(hdc::HDD_MODE), &[[0x80u8, 1][(case & 1) as usize]]);
+            t.g32(hdc::WORD_A518, 0x77);
+            t.check("install init", 0x0077_92e0, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::install_init(m))
+            });
+            // the mount: mounted, failing, succeeding
+            t.write(t.rebase(hdc::HDD_MOUNTED), &[u8::from(case % 3 == 0)]);
+            t.stub(hdc::MOUNT_PREPARE, false, 0, 0, r ^ 2);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, r ^ 3);
+            imp(t, hdc::SPRINTF_IAT, 4, false, r ^ 4);
+            t.stub(hdc::MOUNT_PRE2, false, 0, 0, r ^ 5);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r ^ 6);
+            t.stub_two(hdc::DBG_PRINTF, 1, 2, r ^ 7);
+            t.stub(
+                hdc::SCE_MOUNT,
+                false,
+                5,
+                0,
+                [0u32, 0xffff_fffb, 7][(case % 3) as usize],
+            );
+            t.check_fs("mount", 0x0077_9490, &[], 0x84, 4, |m, ebp, _| {
+                Out::U32(hdb::mount(m, ebp))
+            });
+            // main: count 0..2, "debug", "DEBUG", "debu", "debugs"
+            let words = [&b"debug\0"[..], b"DEBUG\0", b"debu\0", b"debugs\0"];
+            let arg = t.alloc(words[((case / 2 + case) % 4) as usize]);
+            let argv = t.words(&[rng.next(), arg]);
+            let count = [2u32, 1, 3, 0xffff_ffff][(case / 2 % 4) as usize];
+            t.stub(pcs::MAIN_PREPARE, false, 0, 0, r ^ 8);
+            t.stub(pcs::MAIN_INIT, false, 2, 0, r ^ 9);
+            t.stub(pcs::MAIN_LOOP, false, 2, 0, r ^ 0xa);
+            t.check("main", 0x0082_2490, Conv::Cdecl, &[count, argv], |m| {
+                Out::U32(pcb::game_main(m, count, argv))
+            });
+        }
+    });
+}

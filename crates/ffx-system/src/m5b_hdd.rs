@@ -172,6 +172,49 @@ pub const READ_FUNCS_SHARED: [(u32, u32); 11] = [
     (0x0231_0cac, 0x0076_c270),
 ];
 
+/// Round 3, batch 4: the disk-change result `0x0112a4ec`; the sector
+/// stream (`0x0112a4b4` sector, `0x0112a4d8` bytes used, the read mode
+/// `0x00c41748`, `CdReadSectors_00777080`); `hdd_ReadModuleFiles`; the
+/// install wall (`0x02310c18` mark, `0x02310c14` frame, its draw
+/// `0x007798b0`, message, `hdd_DrawWallSprite_00776740`).
+pub const DISK_RESULT: u32 = 0x0112_a4ec;
+pub const STREAM_SECTOR: u32 = 0x0112_a4b4;
+pub const STREAM_USED: u32 = 0x0112_a4d8;
+pub const STREAM_MODE: u32 = 0x00c4_1748;
+pub const READ_SECTORS: u32 = 0x0077_7080;
+pub const READ_MODULE_FILES: u32 = 0x0077_7f00;
+pub const WALL_MARK: u32 = 0x0231_0c18;
+pub const WALL_FRAME: u32 = 0x0231_0c14;
+pub const WALL_DRAW: u32 = 0x0077_98b0;
+pub const WALL_MSG: u32 = 0x00b5_3d84;
+pub const WALL_SPRITE: u32 = 0x0077_6740;
+
+/// `hdd_install_init`'s: the saved mode byte `0x0112a808`, `0x00778980`,
+/// the word `0x0112a514`, its message; `hdd_mount`'s: `0x00779a80`, the
+/// device `0x00c41758` and its partition name `0x00779ca0`, the CRT's
+/// `sprintf` (import slot), `0x00777940`, the message call `0x00777680`,
+/// "pfs0:", the mount `0x0062fa20`, its six messages.
+pub const HDD_MODE_SAVE: u32 = 0x0112_a808;
+pub const INSTALL_KIND: u32 = 0x0077_8980;
+pub const WORD_A514: u32 = 0x0112_a514;
+pub const INSTALL_MODE_MSG: u32 = 0x00b5_3b7c;
+pub const MOUNT_PREPARE: u32 = 0x0077_9a80;
+pub const MOUNT_DEVICE: u32 = 0x00c4_1758;
+pub const PARTITION_NAME: u32 = 0x0077_9ca0;
+pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+pub const MOUNT_PRE2: u32 = 0x0077_7940;
+pub const MOUNT_LOG: u32 = 0x0077_7680;
+pub const PFS: u32 = 0x00b5_3618;
+pub const SCE_MOUNT: u32 = 0x0062_fa20;
+pub const MOUNT_MSG: [u32; 6] = [
+    0x00b5_35f0,
+    0x00b5_35fc,
+    0x00b5_3608,
+    0x00b5_3620,
+    0x00b5_3634,
+    0x00b5_3650,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -755,5 +798,184 @@ pub mod bridge {
             h.write(cell, f);
         }
         r
+    }
+    // ---- round 3, batch 4: the disk checks, sector reads, the install wall ----
+
+    /// `FUN_007775e0(ctx)`: with the context's flag `+0x5075d` set, the
+    /// remembered result (`i8 0x0112a4ec`, sign-extended); else
+    /// `0x00777310()`: 1 when it reports a change, else the result
+    /// cleared and 0.
+    pub fn disk_changed_cached(h: &mut impl Host, ctx: u32) -> u32 {
+        let cell = h.rebase(super::DISK_RESULT);
+        if h.read::<u8>(ctx.wrapping_add(0x5_075d)) != 0 {
+            return i32::from(h.read::<i8>(cell)).cast_unsigned();
+        }
+        if cdecl(h, DISK_CHANGED, &[]) != 0 {
+            return 1;
+        }
+        h.write(cell, 0u8);
+        0
+    }
+
+    /// `FUN_00777380(offset, buf, &skip, ctx)`: a read from byte `offset`
+    /// of the stream at sector `0x0112a4b4` (with `0x0112a4d8` bytes of
+    /// its sector already used): `*skip` = the bytes left in that sector
+    /// (or 0), the sectors `offset` spans (rounded up; the remainder
+    /// kept in `0x0112a4d8`) read by `CdReadSectors_00777080(sector,
+    /// count, buf, 0x00c41748, ctx)`, the stream moved on. Returns 1.
+    pub fn stream_read(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [offset, buf, skip, ctx] = args;
+        let used_at = h.rebase(super::STREAM_USED);
+        let sector_at = h.rebase(super::STREAM_SECTOR);
+        let used: u32 = h.read(used_at);
+        let mut sector: u32 = h.read(sector_at);
+        let mut bytes = offset;
+        if used == 0 {
+            h.write(skip, 0u32);
+        } else {
+            let left = 0x800u32.wrapping_sub(used);
+            h.write(skip, left);
+            bytes = offset.wrapping_add(left);
+            sector = sector.wrapping_sub(1);
+            h.write(sector_at, sector);
+        }
+        let signed = bytes.cast_signed();
+        let mut count = signed.wrapping_div(0x800).cast_unsigned();
+        let rest = signed.wrapping_rem(0x800);
+        if rest == 0 {
+            h.write(used_at, 0u32);
+        } else {
+            h.write(used_at, 0x800i32.wrapping_sub(rest).cast_unsigned());
+            count = count.wrapping_add(1);
+        }
+        let mode = h.rebase(super::STREAM_MODE);
+        cdecl(h, super::READ_SECTORS, &[sector, count, buf, mode, ctx]);
+        let s: u32 = h.read(sector_at);
+        h.write(sector_at, s.wrapping_add(count));
+        1
+    }
+
+    /// `code_00777970()`: `jmp hdd_ReadModuleFiles_00777f00` (no stack
+    /// words).
+    pub fn read_module_files(h: &mut impl Host) -> u32 {
+        cdecl(h, super::READ_MODULE_FILES, &[])
+    }
+
+    /// `hdd_kabe_disp()`: the install progress in 64ths (`0x0112a7ac << 6 /
+    /// 0x0112a524`, signed, 0 without a total); when the next frame's
+    /// mark (`0x02310c18`) is reached, the mark moves 14 on, frame
+    /// `0x02310c14` of the wall is drawn (`0x007798b0(frame, work +
+    /// 0x44)`) and counted (past 4 the mark goes to 9999), logged. Then
+    /// the tail jump to `hdd_DrawWallSprite_00776740`.
+    pub fn kabe_disp(h: &mut impl Host) -> u32 {
+        let total = global(h, TOTAL);
+        let progress = if total == 0 {
+            0
+        } else {
+            (global(h, DONE) << 6)
+                .cast_signed()
+                .wrapping_div(total.cast_signed())
+                .cast_unsigned()
+        };
+        let mark_at = h.rebase(super::WALL_MARK);
+        let mark: u32 = h.read(mark_at);
+        if mark == progress {
+            let work = global(h, MENU_WORK);
+            let frame_at = h.rebase(super::WALL_FRAME);
+            let frame: u32 = h.read(frame_at);
+            h.write(mark_at, mark.wrapping_add(0xe));
+            cdecl(h, super::WALL_DRAW, &[frame, work.wrapping_add(0x44)]);
+            let frame = h.read::<u32>(frame_at).wrapping_add(1);
+            h.write(frame_at, frame);
+            let fmt = h.rebase(super::WALL_MSG);
+            if frame.cast_signed() > 4 {
+                h.write(mark_at, 9999u32);
+                cdecl(h, DBG_PRINTF, &[fmt, 9999]);
+            } else {
+                let mark: u32 = h.read(mark_at);
+                cdecl(h, DBG_PRINTF, &[fmt, mark]);
+            }
+        }
+        cdecl(h, super::WALL_SPRITE, &[])
+    }
+    /// `hdd_install_init()`: the install state cleared (`0x0112a50b`,
+    /// total, done, the mode `0x0112a518`; the HDD mode byte
+    /// `0x0133c913` saved to `0x0112a808` and cleared meanwhile), the mode
+    /// from `|0x00778980()| & 0xf`: 0 gives 5 when `0x0112a514` is
+    /// negative, 1..3 themselves, others keep 0; logged (`dbgPrintf`) and
+    /// the mode byte put back. Returns `dbgPrintf`'s `eax` with the byte
+    /// in `al`.
+    pub fn install_init(h: &mut impl Host) -> u32 {
+        let mode_at = h.rebase(HDD_MODE);
+        let saved = i32::from(h.read::<i8>(mode_at)).cast_unsigned();
+        let save_at = h.rebase(super::HDD_MODE_SAVE);
+        h.write(save_at, saved);
+        h.write(mode_at, 0u8);
+        let state = h.rebase(INSTALL_STATE);
+        h.write(state, 0u8);
+        for sym in [TOTAL, DONE, WORD_A518] {
+            let at = h.rebase(sym);
+            h.write(at, 0u32);
+        }
+        let r = cdecl(h, super::INSTALL_KIND, &[]);
+        let kind = r.cast_signed().unsigned_abs() & 0xf;
+        let set = match kind {
+            0 if global(h, super::WORD_A514).cast_signed() < 0 => Some(5),
+            1..=3 => Some(kind),
+            _ => None,
+        };
+        let mode = match set {
+            Some(m) => {
+                let at = h.rebase(WORD_A518);
+                h.write(at, m);
+                m
+            }
+            None => global(h, WORD_A518),
+        };
+        let fmt = h.rebase(super::INSTALL_MODE_MSG);
+        let eax = cdecl(h, DBG_PRINTF, &[fmt, mode]);
+        let b: u8 = h.read(save_at);
+        h.write(mode_at, b);
+        (eax & !0xff) | u32::from(b)
+    }
+
+    /// `hdd_mount()` with its frame at `ebp`: once (`0x0112a508`), the HDD
+    /// partition mounted: `0x00779a80()`, a log line, the device name
+    /// `sprintf(ebp - 0x84, "hdd0:%s,%s", 0x00779ca0(0x00c41758), and the
+    /// word the original leaves on its stack there, 0x00c41758)`,
+    /// `0x00777940()`, messages through `0x00777680`, then
+    /// `0x0062fa20("pfs0:", name, 0, 0, 0)`: negative logs the error and
+    /// returns 1; else the flag set. Returns 0.
+    pub fn mount(h: &mut impl Host, ebp: u32) -> u32 {
+        let flag = h.rebase(HDD_MOUNTED);
+        if h.read::<u8>(flag) != 0 {
+            return 0;
+        }
+        cdecl(h, super::MOUNT_PREPARE, &[]);
+        let [m0, m1, m2, m3, m4, m5] = super::MOUNT_MSG;
+        let fmt = h.rebase(m0);
+        cdecl(h, DBG_PRINTF, &[fmt]);
+        let dev = h.rebase(super::MOUNT_DEVICE);
+        let part = cdecl(h, super::PARTITION_NAME, &[dev]);
+        let buf = ebp.wrapping_sub(0x84);
+        let fmt = h.rebase(m1);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[buf, fmt, part, dev]);
+        cdecl(h, super::MOUNT_PRE2, &[]);
+        let msg = h.rebase(m2);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        let pfs = h.rebase(super::PFS);
+        let r = cdecl(h, super::SCE_MOUNT, &[pfs, buf, 0, 0, 0]);
+        if r.cast_signed() < 0 {
+            let msg = h.rebase(m3);
+            cdecl(h, super::MOUNT_LOG, &[msg]);
+            let fmt = h.rebase(m4);
+            cdecl(h, DBG_PRINTF, &[fmt, r]);
+            return 1;
+        }
+        let msg = h.rebase(m5);
+        cdecl(h, super::MOUNT_LOG, &[msg]);
+        h.write(flag, 1u8);
+        0
     }
 }

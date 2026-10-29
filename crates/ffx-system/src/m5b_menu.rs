@@ -241,6 +241,34 @@ pub const COPY16_TO_B: u32 = 0x0072_f3c0;
 pub const VU0_MUL_X: u32 = 0x0075_00d0;
 pub const COPY16_TO_SYM: u32 = 0x0071_0e70;
 
+/// Round 3, batch 4: `TOWaitBtlWinMain`, `TOAddPktMenuIcon`,
+/// `FUN_008f2e10`, `FUN_008ebc00`, `TOAddPktMesFont1612_008ea060`,
+/// `FUN_008ea680`, the CRT's `vsprintf` (import slot), `TODapsString`,
+/// `TOGsTEST`; `sceGsSetDefStoreImage`, `FlushCache`, `sceGsSyncPath`,
+/// `sceGsExecStoreImage` (cdecl).
+pub const WAIT_WIN_MAIN: u32 = 0x008a_8a70;
+pub const MENU_ICON: u32 = 0x008e_b240;
+pub const MOVIE_MESSAGE_IMAGE: u32 = 0x008f_2e10;
+pub const FONT_8EBC00: u32 = 0x008e_bc00;
+pub const MES_FONT_1612: u32 = 0x008e_a060;
+pub const FONT_8EA680: u32 = 0x008e_a680;
+pub const VSPRINTF_IAT: u32 = 0x00b0_c430;
+pub const DAPS_STRING: u32 = 0x0089_dec0;
+pub const GS_TEST: u32 = 0x008f_abe0;
+pub const SET_STORE_IMAGE: u32 = 0x0062_f830;
+pub const GS_FLUSH_CACHE: u32 = 0x0062_f4c0;
+pub const GS_SYNC_PATH: u32 = 0x0062_f880;
+pub const EXEC_STORE_IMAGE: u32 = 0x0062_f7b0;
+
+/// `FUN_008a92a0`'s: `0x00641350`, the colour words `0x00c59548`/`0x00c5954c`,
+/// the screen size floats `0x00b41d9c`/`0x00b41d98`, `RealFrameBuffer`.
+pub const FRAME_BUFFER_ARG: u32 = 0x0064_1350;
+pub const FRAME_BUFFER_RGB: u32 = 0x00c5_9548;
+pub const FRAME_BUFFER_ALPHA: u32 = 0x00c5_954c;
+pub const FRAME_BUFFER_W: u32 = 0x00b4_1d9c;
+pub const FRAME_BUFFER_H: u32 = 0x00b4_1d98;
+pub const FRAME_BUFFER_NAME: u32 = 0x00b4_5b2c;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -1622,5 +1650,147 @@ pub mod bridge {
         }
         cdecl(h, super::VU0_MUL_X, &[cell, cell, w[0], w[1], w[2], w[3]]);
         cdecl(h, super::COPY16_TO_SYM, &[cell, dst])
+    }
+    // ---- round 3, batch 4: small wrappers ----
+
+    /// `FUN_008a8750(win)`: the wait window's state (`+1` = 4) and its
+    /// handler (`+0x8c` = `TOWaitBtlWinMain`), which then runs once
+    /// (`TOWaitBtlWinMain(win)`). Returns 0.
+    pub fn wait_win_start(h: &mut impl Host, win: u32) -> u32 {
+        h.write(win.wrapping_add(1), 4u8);
+        let main = h.rebase(super::WAIT_WIN_MAIN);
+        h.write(win.wrapping_add(0x8c), main);
+        cdecl(h, super::WAIT_WIN_MAIN, &[win]);
+        0
+    }
+
+    /// `FUN_008fd4d0(a, b, c)`: `g_TOPktCursor` through `TOAddPktMenuIcon`,
+    /// then the tail jump to `TOCtrlPkt`.
+    pub fn menu_icon(h: &mut impl Host, args: [u32; 3]) -> u32 {
+        wrap_ctrl(h, super::MENU_ICON, &args)
+    }
+
+    /// `TOMkpMovieMessageImage(a, b, c, d, e)`: `g_TOPktCursor` through
+    /// `FUN_008f2e10`; the new cursor.
+    pub fn movie_message_image(h: &mut impl Host, args: [u32; 5]) -> u32 {
+        wrap(h, super::MOVIE_MESSAGE_IMAGE, &args)
+    }
+
+    /// `FUN_008ebbd0(a, b, c, d)`: `FUN_008ebc00(a, b, c, d, 0x80 x4)`.
+    pub fn font_8ebc00(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [a, b, c, d] = args;
+        cdecl(h, super::FONT_8EBC00, &[a, b, c, d, 0x80, 0x80, 0x80, 0x80])
+    }
+
+    /// `FUN_008e9fd0(cursor, text, x, y)`:
+    /// `TOAddPktMesFont1612_008ea060(cursor, text, x, y, 0, 0x80 x4)`.
+    pub fn mes_font_1612(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [a, b, c, d] = args;
+        cdecl(
+            h,
+            super::MES_FONT_1612,
+            &[a, b, c, d, 0, 0x80, 0x80, 0x80, 0x80],
+        )
+    }
+
+    /// `FUN_008ea5c0(a, b, c, d, e)`: `FUN_008ea680(a, b, c, d, e, 0, 0x80
+    /// x4)`.
+    pub fn font_8ea680(h: &mut impl Host, args: [u32; 5]) -> u32 {
+        let [a, b, c, d, e] = args;
+        cdecl(
+            h,
+            super::FONT_8EA680,
+            &[a, b, c, d, e, 0, 0x80, 0x80, 0x80, 0x80],
+        )
+    }
+
+    /// `TOGetWidthExtMes1612(a, text)` with its frame at `ebp`: the message
+    /// size (`TOGetMessageWH(a, text, ebp - 8, ebp - 4, 0, 0)`), returned
+    /// as `i16 [ebp - 4] << 16 | (ftol(f32 width) as i16)`.
+    pub fn width_ext_mes_1612(h: &mut impl Host, ebp: u32, a: u32, text: u32) -> u32 {
+        let (w_at, h_at) = (ebp.wrapping_sub(8), ebp.wrapping_sub(4));
+        cdecl(h, super::MESSAGE_WH, &[a, text, w_at, h_at, 0, 0]);
+        let width = ffx_bridge::x87::load(h.read(w_at));
+        let high = i32::from(h.read::<i16>(h_at)).cast_unsigned() << 16;
+        let low = ffx_bridge::x87::ftol(h, width);
+        #[allow(clippy::cast_possible_truncation)] // movsx ax
+        let low = i32::from((low as u16).cast_signed()).cast_unsigned();
+        low | high
+    }
+
+    /// `TODapsPrintf(fmt, ...; args)` with its frame at `ebp`: the text
+    /// formatted into `ebp - 0x104` (the CRT's `vsprintf` with the
+    /// caller's words from `args`) and shown by `TODapsString`; its `eax`.
+    pub fn daps_printf(h: &mut impl Host, ebp: u32, fmt: u32, args: u32) -> u32 {
+        let buf = ebp.wrapping_sub(0x104);
+        crt(h, super::VSPRINTF_IAT, &[buf, fmt, args]);
+        cdecl(h, super::DAPS_STRING, &[buf])
+    }
+
+    /// `FUN_008fc6a0(x, y, w, h, r, g, b, a)`: a flat rectangle at
+    /// `g_TOPktCursor`: a GS tag (`0x8001`, `0x40034000`, `0x441e`, 0),
+    /// `TOGsTEST(1, 1, 0 x6)`, the colour (`TOGsWords4(r, g, b, a)`) and
+    /// the corners `(x, y)`, `(x + w, y + h)` (`TOGsXYZ2Offset`), then
+    /// the tail jump to `TOCtrlPkt`.
+    pub fn flat_rect(h: &mut impl Host, args: [u32; 8]) -> u32 {
+        let [x, y, w, hh, r, g, b, a] = args;
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let p = put_words(h, p, &[0x8001, 0x4003_4000, 0x441e, 0]);
+        h.write(cell, p);
+        cdecl(h, super::GS_TEST, &[1, 1, 0, 0, 0, 0, 0, 0]);
+        cdecl(h, super::GS_WORDS4, &[r, g, b, a]);
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        let last = cdecl(
+            h,
+            super::GS_XYZ2_OFFSET,
+            &[w.wrapping_add(x), hh.wrapping_add(y)],
+        );
+        ctrl_pkt(h, last)
+    }
+
+    /// `TOTransImageLH(page, a1, a2, a3, a4, a5, a6)` with its (16-byte
+    /// aligned) frame at `ebp`: a store-image transfer set up at `ebp -
+    /// 0x70` (`sceGsSetDefStoreImage(buf, a1, a5 / 64, a2, a3, a4, a5,
+    /// a6)`, signed division), `FlushCache(0)`, `sceGsSyncPath(0, 0)`,
+    /// `sceGsExecStoreImage(buf, page)`, `sceGsSyncPath(0, 0)`; its `eax`.
+    pub fn trans_image_lh(h: &mut impl Host, ebp: u32, args: [u32; 7]) -> u32 {
+        let [page, a1, a2, a3, a4, a5, a6] = args;
+        let buf = ebp.wrapping_sub(0x70);
+        let blocks = a5.cast_signed().wrapping_div(64).cast_unsigned();
+        cdecl(
+            h,
+            super::SET_STORE_IMAGE,
+            &[buf, a1, blocks, a2, a3, a4, a5, a6],
+        );
+        cdecl(h, super::GS_FLUSH_CACHE, &[0]);
+        cdecl(h, super::GS_SYNC_PATH, &[0, 0]);
+        cdecl(h, super::EXEC_STORE_IMAGE, &[buf, page]);
+        cdecl(h, super::GS_SYNC_PATH, &[0, 0])
+    }
+    /// `FUN_008a92a0()` with its frame at `ebp`: the `RealFrameBuffer`
+    /// picture as a full-screen quad (`(0, 0)`, `(512, 416)` from
+    /// `0x00b41d9c`/`0x00b41d98`, UVs (0, 1), (1, 0), the colour words
+    /// `0x00c59548` (rgb) and `0x00c5954c` (alpha), `+0x80` =
+    /// `0x00641350()`), drawn by `graphicDrawUIElement(quad, name, 1, 0,
+    /// 0)`; its `eax`.
+    /// junk read: the quad's vertices 2-3 and +0x84.. never written; 0
+    /// (brief 2026-10-24)
+    pub fn real_frame_buffer(h: &mut impl Host, ebp: u32) -> u32 {
+        use ffx_bridge::x87;
+        let extra = cdecl(h, super::FRAME_BUFFER_ARG, &[]);
+        let rgb = global(h, super::FRAME_BUFFER_RGB);
+        let q = ebp.wrapping_sub(QUAD);
+        let one = 1.0f32.to_bits();
+        put_words(h, q, &[0, 0, 0, one]);
+        h.write(ebp.wrapping_sub(0x1c), extra);
+        let alpha = global(h, super::FRAME_BUFFER_ALPHA);
+        let right = x87::store(x87::load(global(h, super::FRAME_BUFFER_W)));
+        let bottom = x87::store(x87::load(global(h, super::FRAME_BUFFER_H)));
+        put_words(h, q.wrapping_add(0x20), &[right, bottom, one, 0]);
+        put_words(h, q.wrapping_add(0x10), &[rgb, rgb, rgb, alpha]);
+        put_words(h, q.wrapping_add(0x30), &[rgb, rgb, rgb, alpha]);
+        let name = h.rebase(super::FRAME_BUFFER_NAME);
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, name, 1, 0, 0])
     }
 }

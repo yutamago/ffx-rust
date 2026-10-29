@@ -148,6 +148,14 @@ pub const FOR_EACH_NODE: u32 = 0x00a5_9710;
 pub const FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
 pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
 
+/// The game's `main` (`0x00822490`): "debug"/"DEBUG", the flag
+/// `0x0133c910`, `0x0083c200`, `0x00820310`, `0x00820860`.
+pub const DEBUG_WORDS: [u32; 2] = [0x00b5_9148, 0x00b5_9150];
+pub const DEBUG_FLAG: u32 = 0x0133_c910;
+pub const MAIN_PREPARE: u32 = 0x0083_c200;
+pub const MAIN_INIT: u32 = 0x0082_0310;
+pub const MAIN_LOOP: u32 = 0x0082_0860;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -838,5 +846,37 @@ pub mod bridge {
         h.write(pad.wrapping_add(0x1a1e), 0u16);
         cdecl(h, super::FILL_USE_ITEM_MENU, &[8, 3]);
         Some(abmap_item_usable(h, ebp))
+    }
+    /// `strcmp` as the inlined loop: equal or not.
+    fn str_eq(h: &impl Host, first: u32, second: u32) -> bool {
+        let mut at = 0u32;
+        loop {
+            let c: u8 = h.read(first.wrapping_add(at));
+            if c != h.read::<u8>(second.wrapping_add(at)) {
+                return false;
+            }
+            if c == 0 {
+                return true;
+            }
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// `FUN_00822490(argc, argv)` (the game's `main`): the debug flag
+    /// `0x0133c910` = `argv[1]` is "debug" or "DEBUG" (with an argument),
+    /// then `0x0083c200()`, `0x00820310(argc, argv)` and
+    /// `0x00820860(argc, argv)`; returns 1.
+    pub fn game_main(h: &mut impl Host, count: u32, words: u32) -> u32 {
+        let debug = count.cast_signed() > 1 && {
+            let arg: u32 = h.read(words.wrapping_add(4));
+            let [lower, upper] = super::DEBUG_WORDS.map(|s| h.rebase(s));
+            str_eq(h, lower, arg) || str_eq(h, upper, arg)
+        };
+        let at = h.rebase(super::DEBUG_FLAG);
+        h.write(at, u8::from(debug));
+        cdecl(h, super::MAIN_PREPARE, &[]);
+        cdecl(h, super::MAIN_INIT, &[count, words]);
+        cdecl(h, super::MAIN_LOOP, &[count, words]);
+        1
     }
 }

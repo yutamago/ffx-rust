@@ -1019,6 +1019,90 @@ ported! {
         let mut f = StackFrame::<9>::new();
         let _ = pc::abmap_refresh_items(&mut mem(), f.at() + 0x24);
     }
+
+    // ---- round 3, batch 4: small menu wrappers ----
+    /// `(win)`.
+    TOWaitBtlWinStart_008a8750 @ 0x008a_8750 => extern "C" fn wait_win_start(win: u32) -> u32 {
+        mn::wait_win_start(&mut mem(), win)
+    }
+    /// `(a, b, c)`.
+    TOMkpMenuIcon_008fd4d0 @ 0x008f_d4d0 => extern "C" fn menu_icon(a: u32, b: u32, c: u32) -> u32 {
+        mn::menu_icon(&mut mem(), [a, b, c])
+    }
+    /// `(a, b, c, d, e)`.
+    TOMkpMovieMessageImage @ 0x0090_2840 => extern "C" fn movie_message_image(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::movie_message_image(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(a, b, c, d)`.
+    TOAdpFont8ebc00_008ebbd0 @ 0x008e_bbd0 => extern "C" fn font_8ebc00(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::font_8ebc00(&mut mem(), [a, b, c, d])
+    }
+    /// `(cursor, text, x, y)`.
+    TOAdpMesFont1612_008e9fd0 @ 0x008e_9fd0 => extern "C" fn mes_font_1612(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mn::mes_font_1612(&mut mem(), [a, b, c, d])
+    }
+    /// `(a, b, c, d, e)`.
+    TOAdpFont8ea680_008ea5c0 @ 0x008e_a5c0 => extern "C" fn font_8ea680(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+        mn::font_8ea680(&mut mem(), [a, b, c, d, e])
+    }
+    /// `(a, text)`: frame `ebp - 8`.
+    TOGetWidthExtMes1612 @ 0x008b_8070 => extern "C" fn width_ext_mes_1612(a: u32, text: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::width_ext_mes_1612(&mut mem(), f.at() + 8, a, text)
+    }
+    /// `(fmt, ...)`: the variable words stay the caller's (`vsprintf`
+    /// reads them from `slots + 4`); frame `ebp - 0x104`.
+    TODapsPrintf @ 0x0089_dde0 => extern "C" fn daps_printf(fmt: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x41>::new();
+        mn::daps_printf(&mut mem(), f.at() + 0x104, fmt, slots.wrapping_add(4))
+    }
+    /// `(x, y, w, h, r, g, b, a)`.
+    TOMkpFlatRect_008fc6a0 @ 0x008f_c6a0 => extern "C" fn flat_rect(x: u32, y: u32, w: u32, h: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        mn::flat_rect(&mut mem(), [x, y, w, h, r, g, b, a])
+    }
+    /// `(page, a1, a2, a3, a4, a5, a6)`: frame `ebp - 0x70`.
+    TOTransImageLH @ 0x008b_0da0 => extern "C" fn trans_image_lh(page: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) -> u32 {
+        let mut f = StackFrame::<0x1c>::new();
+        mn::trans_image_lh(&mut mem(), f.at() + 0x70, [page, a1, a2, a3, a4, a5, a6])
+    }
+
+    // ---- round 3, batch 4: the disk checks, sector reads, the install wall ----
+    /// `(ctx)`.
+    hdd_DiskChangedCached_007775e0 @ 0x0077_75e0 => extern "C" fn disk_changed_cached(ctx: u32) -> u32 {
+        hd::disk_changed_cached(&mut mem(), ctx)
+    }
+    /// `(offset, buf, skip, ctx)`.
+    hdd_StreamRead_00777380 @ 0x0077_7380 => extern "C" fn stream_read(offset: u32, buf: u32, skip: u32, ctx: u32) -> u32 {
+        hd::stream_read(&mut mem(), [offset, buf, skip, ctx])
+    }
+    /// `()`: `jmp hdd_ReadModuleFiles_00777f00`.
+    Thunk_hdd_ReadModuleFiles_00777970 @ 0x0077_7970 => extern "C" fn read_module_files() -> u32 {
+        hd::read_module_files(&mut mem())
+    }
+    /// `()`.
+    hdd_kabe_disp @ 0x0077_93c0 => extern "C" fn kabe_disp() -> u32 {
+        hd::kabe_disp(&mut mem())
+    }
+
+    // ---- round 3, batch 4: the frame-buffer quad, the HDD install mode and mount, main ----
+    /// `()`: frame `ebp - 0x9c`.
+    TODrawRealFrameBuffer_008a92a0 @ 0x008a_92a0 => extern "C" fn real_frame_buffer() -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::real_frame_buffer(&mut mem(), f.at() + 0x9c)
+    }
+    /// `()`.
+    hdd_install_init @ 0x0077_92e0 => extern "C" fn install_init() -> u32 {
+        hd::install_init(&mut mem())
+    }
+    /// `()`: frame `ebp - 0x84`.
+    hdd_mount @ 0x0077_9490 => extern "C" fn mount() -> u32 {
+        let mut f = StackFrame::<0x21>::new();
+        hd::mount(&mut mem(), f.at() + 0x84)
+    }
+    /// `(argc, argv)`: the game's `main`.
+    GameMain_00822490 @ 0x0082_2490 => extern "C" fn game_main(argc: u32, argv: u32) -> u32 {
+        pc::game_main(&mut mem(), argc, argv)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
