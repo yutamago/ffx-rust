@@ -18,6 +18,7 @@ use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
 use ffx_pcui::m5u_j::bridge as jj;
+use ffx_pcui::m5u_k::bridge as kk;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -811,5 +812,18 @@ ported! {
     /// `PageStats_update_00947cc0()`.
     PageStats_update_00947cc0 @ 0x0094_7cc0 => extern "C" fn stats_update() -> u32 {
         jj::stats_update(&mut mem())
+    }
+    // ---- render-pcui batch 6 (ffx_pcui::m5u_k) ----
+    /// `PageHeap_initBuckets_00946060(heap)`.
+    PageHeap_initBuckets_00946060 @ 0x0094_6060 => extern "thiscall" fn init_buckets(this: u32) -> u32 {
+        kk::init_buckets(&mut mem(), this)
+    }
+    /// `PageHash_ctor_00945630(this; n, owner)`.
+    PageHash_ctor_00945630 @ 0x0094_5630 => extern "thiscall" fn hash_ctor(this: u32, n: u32, owner: u32) -> u32 {
+        kk::hash_ctor(&mut mem(), this, n, owner)
+    }
+    /// `PageHash_release_009474f0(this)`.
+    PageHash_release_009474f0 @ 0x0094_74f0 => extern "thiscall" fn hash_release(this: u32) {
+        kk::hash_release(&mut mem(), this);
     }
 }

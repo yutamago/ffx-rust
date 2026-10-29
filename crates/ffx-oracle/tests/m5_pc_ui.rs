@@ -36,6 +36,7 @@ use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
 use ffx_pcui::m5u_j::bridge as jj;
+use ffx_pcui::m5u_k::bridge as kk;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -3937,6 +3938,80 @@ fn rp5_functions_match_the_original() {
                 Conv::Cdecl,
                 &[],
                 |g| Out::U32(jj::stats_update(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- render-pcui batch 6 (ffx_pcui::m5u_k) ----
+
+#[test]
+fn rp6_page_hash_matches_the_original() {
+    // The bucket table's thirteen fills; the hash constructor without a
+    // count, with small counts (the minimum of 2 slots) and larger ones
+    // (one or more doublings, tables of one and several pages; the
+    // reserve stub returns a real buffer for the memset); the release
+    // with 0..3 overflow pages.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b61);
+        for case in 0..30u32 {
+            let heap = t.zeros(0x100);
+            t.stub(kk::PAGE_BUCKET_FILL, true, 2, 2, rng.word());
+            t.check(
+                "PageHeap_initBuckets_00946060",
+                0x0094_6060,
+                Conv::Thiscall(heap),
+                &[],
+                |g| Out::U32(kk::init_buckets(g, heap)),
+            );
+            let this = t.words(&[rng.next(); 8]);
+            let n = match case % 5 {
+                0 => 0,
+                1 => rng.below(2),
+                2 => rng.below(8),
+                // 13 * 256 / 102 is 32 exactly: the doubling stops there
+                3 if case % 2 == 0 => 13,
+                3 => rng.below(200),
+                _ => 1000 + rng.below(3000),
+            };
+            // dirty: the memset clears the slots, not the whole pages
+            let dirty: Vec<u8> = (0..0x1_1000).map(|_| rng.next() as u8 | 1).collect();
+            let table = t.alloc(&dirty);
+            t.stub(kk::RESERVE, false, 1, 0, table);
+            t.stub(kk::COMMIT, false, 2, 0, rng.word());
+            let owner = rng.word();
+            t.check(
+                "PageHash_ctor_00945630",
+                0x0094_5630,
+                Conv::Thiscall(this),
+                &[n, owner],
+                |g| Out::U32(kk::hash_ctor(g, this, n, owner)),
+            );
+            let mut next = 0;
+            for _ in 0..rng.below(4) {
+                next = t.words(&[next, 0]);
+            }
+            let hash = t.words(&[
+                rng.below(0x2000),
+                rng.next(),
+                rng.next(),
+                0,
+                next,
+                rng.next(),
+                rng.next(),
+            ]);
+            t.stub(kk::DECOMMIT, false, 2, 0, 0);
+            t.stub(kk::RELEASE, false, 2, 0, 0x1000);
+            t.check(
+                "PageHash_release_009474f0",
+                0x0094_74f0,
+                Conv::Thiscall(hash),
+                &[],
+                |g| {
+                    kk::hash_release(g, hash);
+                    Out::None
+                },
             );
             t.reset();
         }
