@@ -150,7 +150,7 @@ fn game_threads_run_in_parallel_under_the_games_own_critical_section() {
 }
 
 #[test]
-fn boots_past_the_window_to_the_d3d11_device() {
+fn boots_past_the_window_to_the_d3d11_device_and_swap_chain() {
     let Some(exe) = exe() else { return };
     let opts = ffx_host::Options {
         documents: Some(documents("boot")),
@@ -175,12 +175,14 @@ fn boots_past_the_window_to_the_d3d11_device() {
         .unwrap()
         .join("Square Enix/FINAL FANTASY X&X-2 HD Remaster/GameSetting.ini");
     assert!(ini.is_file(), "{report}");
-    // the window, then the device: the Linux check's stop
+    // the window, the feature level probe, then the device and swap
+    // chain: the Linux check's stop
     assert_eq!(
         exec.stats.milestones,
         [
             "first window (CreateWindowExA)",
-            "D3D11 device (D3D11CreateDevice*)"
+            "D3D11 feature level probe (11_0)",
+            "D3D11 device and swap chain (D3D11CreateDeviceAndSwapChain)"
         ],
         "{report}"
     );

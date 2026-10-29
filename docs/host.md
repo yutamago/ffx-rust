@@ -219,10 +219,12 @@ convention, stack words and Rust side.
   milestone; `ShowWindow`, `SetWindowPos`, `GetClientRect` (1920 x 1080),
   `PeekMessage` (no messages) and the rest of the window calls on the way
   to the device are stand-ins.
-- **Milestones.** `D3D11CreateDevice*` ends the run (the Linux check can't
-  go past it without COM stand-ins for the device, the context and the
-  swap chain); `--stop-at DLL!name` stops at any import, the window
-  included.
+- **Milestones.** The renderer's start-up first calls `D3D11CreateDevice`
+  for the feature level only (no device, no context): `S_OK` and 11_0,
+  recorded. `D3D11CreateDeviceAndSwapChain` (or `D3D11CreateDevice` asked
+  for a device) ends the run: the Linux check can't go past it without COM
+  stand-ins for the device, the context and the swap chain. `--stop-at
+  DLL!name` stops at any import, the window included.
 
 ## The C runtime DLLs
 
@@ -341,10 +343,11 @@ through the harness's background mode. This round did not launch it.
   → Rust), once with an empty table (all Unicorn); the results match;
 - `game_threads_run_in_parallel_under_the_games_own_critical_section`:
   above, "Threads";
-- `boots_past_the_window_to_the_d3d11_device`: with an empty documents
-  folder, the DLLs start, the CRT start-up and `Game_Main` run, the game
-  writes its default `GameSetting.ini`, creates the window and stops at
-  `D3D11CreateDevice`; the heap's decommit thread started on the way;
+- `boots_past_the_window_to_the_d3d11_device_and_swap_chain`: with an
+  empty documents folder, the DLLs start, the CRT start-up and `Game_Main`
+  run, the game writes its default `GameSetting.ini`, creates the window,
+  probes the feature level and stops at `D3D11CreateDeviceAndSwapChain`;
+  the heap's decommit thread started on the way;
 - `without_the_dlls_the_stl_is_the_wall`: `--no-dlls` still stops at the
   first `MSVCP110` import.
 
@@ -372,8 +375,10 @@ use the upper 2 GB.
   game writes its default one (through MSVCP110's streams and MSVCR110's
   `fopen`/`fwrite` into the documents folder), Steam is absent, the Phyre
   framework registers its classes, Iggy initialises (null stand-ins),
-  `CreateWindowExA` gets the fake window, and the run stops at
-  `D3D11CreateDevice`, the first stop point the Linux check can't pass;
+  `CreateWindowExA` gets the fake window, the renderer probes the feature
+  level (`D3D11CreateDevice` without a device: 11_0), and the run stops at
+  `D3D11CreateDeviceAndSwapChain`, the first stop point the Linux check
+  can't pass;
 - 1,875 `FFX.exe` functions ran in Unicorn and 0 in Rust (no port on this
   path: the hand-registered ones aren't reached and the `ported!` lists
   aren't in the table yet), plus code in about 120 regions of the DLLs
@@ -403,7 +408,7 @@ use the upper 2 GB.
 
 ### What blocks the next step
 
-1. **The D3D11 device.** Going past `D3D11CreateDevice` needs the COM
+1. **The D3D11 device.** Going past `D3D11CreateDeviceAndSwapChain` needs the COM
    stand-ins of "Imports" (handles with stub vtables): on Windows
    forwarding to the real device, on Linux recorded ones (the device, the
    immediate context, the swap chain, DXGI; the renderer's start-up right

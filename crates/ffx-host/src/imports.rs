@@ -1024,9 +1024,33 @@ fn peek_message(_: &mut Exec, _: &Args) -> Ret {
     Ret::eax(0)
 }
 
+/// `D3D11CreateDeviceAndSwapChain`, or `D3D11CreateDevice` asked for a
+/// device: the Linux check's stop (no COM stand-ins yet).
 fn device_milestone(e: &mut Exec, _: &Args) -> Ret {
-    e.end(Stop::Milestone("D3D11 device (D3D11CreateDevice*)".into()));
+    e.end(Stop::Milestone(
+        "D3D11 device and swap chain (D3D11CreateDeviceAndSwapChain)".into(),
+    ));
     Ret::eax(0x8000_4005)
+}
+
+/// `D3D11CreateDevice(adapter, driver, software, flags, levels, n, sdk,
+/// &device, &level, &context)`. The renderer's start-up first asks only
+/// for the feature level (no device, no context): `S_OK` and `11_0`
+/// (`0xb000`, the highest of the default levels), recorded as a
+/// milestone. Asked for a device, it is the stop.
+fn create_device(e: &mut Exec, args: &Args) -> Ret {
+    if a(args, 7) != 0 || a(args, 9) != 0 {
+        e.end(Stop::Milestone("D3D11 device (D3D11CreateDevice)".into()));
+        return Ret::eax(0x8000_4005);
+    }
+    if a(args, 8) != 0 {
+        let mut mem = e.mem();
+        mem.write(a(args, 8), 0xb000u32);
+    }
+    e.stats
+        .milestones
+        .push("D3D11 feature level probe (11_0)".into());
+    Ret::eax(0)
 }
 
 const K32: &str = "KERNEL32.dll";
@@ -1234,7 +1258,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         "D3D11CreateDevice",
         Conv::Stdcall,
         10,
-        device_milestone,
+        create_device,
     ),
     (
         "d3d11.dll",
