@@ -10,17 +10,47 @@ use super::{mem, ported};
 use ffx_pload::m5p_tmpl_fortype::{self as ft, bridge as t};
 
 ported! {
+    /// `Phyre_PClassDescriptorForType_Phyre_PTimer__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_Phyre_PTimer__destroyInstance @ 0x0043_1300 => extern "thiscall" fn ft_00431300(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0043_1300) };
+        1
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PBase__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PBase__scalarDeletingDtor @ 0x0043_55e0 => extern "thiscall" fn ft_004355e0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0043_55e0) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PBase__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_Phyre_PBase__destroyInstance @ 0x0043_5810 => extern "thiscall" fn ft_00435810(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0043_5810) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsRigidBodyBase__getPointerFromScriptContext`: `getPointerFromScriptContext(L, out)`: `*out` = the accessor's object.
+    Phyre_PClassDescriptorForType_Phyre_PPhysics_PPhysicsRigidBodyBase__getPointerFromScriptContext @ 0x0043_5820 => extern "thiscall" fn ft_00435820(_descriptor: u32, l: u32, out: u32) -> u32 {
+        t::get_pointer(&mut mem(), const { ft::word_of(ft::GET_POINTER, 0x0043_5820) }, l, out)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PBase__putPointerToScriptContext`: `putPointerToScriptContext(L, pp)`: the object pushed, or nil.
+    Phyre_PClassDescriptorForType_Phyre_PBase__putPointerToScriptContext @ 0x0043_5840 => extern "thiscall" fn ft_00435840(_descriptor: u32, l: u32, pp: u32) -> u32 {
+        t::put_pointer(&mut mem(), const { ft::pair_of(ft::PUT_POINTER, 0x0043_5840) }, l, pp)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PBase__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PBase__swapEndianness @ 0x0043_5880 => extern "thiscall" fn ft_00435880(_descriptor: u32, p: u32, flag: u32) -> u32 {
         t::swap(&mut mem(), const { ft::word_of(ft::SWAP, 0x0043_5880) }, p, flag)
     }
+    /// `Phyre_PType_getValueFromScriptContext`: the "not implemented" print with the type's name.
+    Phyre_PType_getValueFromScriptContext @ 0x0043_7910 => extern "thiscall" fn ft_00437910(this: u32, _l: u32, _value: u32) -> u32 {
+        t::script_value(&mut mem(), this, const { ft::word_of(ft::SCRIPT_VALUE, 0x0043_7910) })
+    }
+    /// `Phyre_PType_putValueToScriptContext`: the "not implemented" print with the type's name.
+    Phyre_PType_putValueToScriptContext @ 0x0043_7960 => extern "thiscall" fn ft_00437960(this: u32, _l: u32, _value: u32) -> u32 {
+        t::script_value(&mut mem(), this, const { ft::word_of(ft::SCRIPT_VALUE, 0x0043_7960) })
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PClassMember__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PClassMember__scalarDeletingDtor @ 0x0043_a150 => extern "thiscall" fn ft_0043a150(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0043_a150) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClassMember__destroyInstance`: `destroyInstance(p)`: frees the owned name.
+    Phyre_PClassDescriptorForType_Phyre_PClassMember__destroyInstance @ 0x0043_a550 => extern "thiscall" fn ft_0043a550(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_owned_name(&mut mem(), p)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PClassMember__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PClassMember__swapEndianness @ 0x0043_a640 => extern "thiscall" fn ft_0043a640(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -30,9 +60,37 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__scalarDeletingDtor @ 0x0043_b730 => extern "thiscall" fn ft_0043b730(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0043_b730) })
     }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__destroyInstance`: `destroyInstance(p)`: the object's virtual deleting destructor (flags 0).
+    Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__destroyInstance @ 0x0043_ca90 => extern "thiscall" fn ft_0043ca90(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_virtual(&mut mem(), const { ft::pair_of(ft::DESTROY_VIRTUAL, 0x0043_ca90) }, p)
+    }
+    /// `Phyre_PClassDescriptorForType_slot13_0043cc10`: slot 13: -1.
+    Phyre_PClassDescriptorForType_slot13_0043cc10 @ 0x0043_cc10 => extern "thiscall" fn ft_0043cc10(_descriptor: u32, _a: u32, _b: u32, _c: u32) -> u32 {
+        t::minus_one()
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__getPointerFromScriptContext`: `getPointerFromScriptContext(L, out)`: `*out` = the accessor's object.
+    Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__getPointerFromScriptContext @ 0x0043_ccf0 => extern "thiscall" fn ft_0043ccf0(_descriptor: u32, l: u32, out: u32) -> u32 {
+        t::get_pointer(&mut mem(), const { ft::word_of(ft::GET_POINTER, 0x0043_ccf0) }, l, out)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__putPointerToScriptContext`: `putPointerToScriptContext(L, pp)`: the object pushed, or nil.
+    Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__putPointerToScriptContext @ 0x0043_d2f0 => extern "thiscall" fn ft_0043d2f0(_descriptor: u32, l: u32, pp: u32) -> u32 {
+        t::put_pointer(&mut mem(), const { ft::pair_of(ft::PUT_POINTER, 0x0043_d2f0) }, l, pp)
+    }
+    /// `Phyre_PClassDescriptor_unlink`: unlinks the descriptor's list node at `+4` and makes it point at itself.
+    Phyre_PClassDescriptor_unlink @ 0x0043_d400 => extern "thiscall" fn ft_0043d400(_descriptor: u32, p: u32) -> u32 {
+        t::unlink(&mut mem(), p)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__swapEndianness`: `swapEndianness(p, toNative)` of `PClassDescriptor` objects (the visitor inlined).
+    Phyre_PClassDescriptorForType_Phyre_PClassDescriptor__swapEndianness @ 0x0043_d5d0 => extern "thiscall" fn ft_0043d5d0(_descriptor: u32, p: u32, flag: u32) -> u32 {
+        t::swap_class_descriptor(&mut mem(), p, flag)
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PNamespace__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PNamespace__scalarDeletingDtor @ 0x0043_df40 => extern "thiscall" fn ft_0043df40(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0043_df40) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PNamespace__destroyInstance`: `destroyInstance(p)` of a `PNamespace`: its owned descriptors released.
+    Phyre_PClassDescriptorForType_Phyre_PNamespace__destroyInstance @ 0x0043_e880 => extern "thiscall" fn ft_0043e880(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_namespace(&mut mem(), p)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PNamespace__swapEndianness`: `swapEndianness(p, toNative)`: `swapEndiannessOfObject` on the `PBase` inside `p`.
     Phyre_PClassDescriptorForType_Phyre_PNamespace__swapEndianness @ 0x0043_ece0 => extern "thiscall" fn ft_0043ece0(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -41,6 +99,10 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_PCluster__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PCluster__scalarDeletingDtor @ 0x0043_fde0 => extern "thiscall" fn ft_0043fde0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0043_fde0) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PCluster__destroyInstance`: `destroyInstance(p)`: two destructors with the `+0x40` owner released between.
+    Phyre_PClassDescriptorForType_Phyre_PCluster__destroyInstance @ 0x0044_15a0 => extern "thiscall" fn ft_004415a0(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_with_owner(&mut mem(), p)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PCluster__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PCluster__swapEndianness @ 0x0044_20b0 => extern "thiscall" fn ft_004420b0(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -102,6 +164,10 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PClusterDependencyList__scalarDeletingDtor @ 0x0044_b220 => extern "thiscall" fn ft_0044b220(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0044_b220) })
     }
+    /// `Phyre_PClassDescriptorForType_Phyre_PClusterDependencyList__getPointerFromScriptContext`: `getPointerFromScriptContext(L, out)`: `*out` = the accessor's object.
+    Phyre_PClassDescriptorForType_Phyre_PClusterDependencyList__getPointerFromScriptContext @ 0x0044_c510 => extern "thiscall" fn ft_0044c510(_descriptor: u32, l: u32, out: u32) -> u32 {
+        t::get_pointer(&mut mem(), const { ft::word_of(ft::GET_POINTER, 0x0044_c510) }, l, out)
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PString__swapEndianness`: `swapEndianness(p, toNative)`: one of two cdecl helpers by the flag.
     Phyre_PClassDescriptorForType_Phyre_PSharray_Phyre_PString__swapEndianness @ 0x0044_cb50 => extern "thiscall" fn ft_0044cb50(_descriptor: u32, p: u32, flag: u32) -> u32 {
         t::swap_pair(&mut mem(), const { ft::pair_of(ft::SWAP_PAIR, 0x0044_cb50) }, p, flag)
@@ -141,6 +207,10 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_PCameraProjection__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PCameraProjection__scalarDeletingDtor @ 0x0045_36e0 => extern "thiscall" fn ft_004536e0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0045_36e0) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PCameraProjection__destroyInstance`: `destroyInstance(p)`: the object's virtual deleting destructor (flags 0).
+    Phyre_PClassDescriptorForType_Phyre_PCameraProjection__destroyInstance @ 0x0045_49b0 => extern "thiscall" fn ft_004549b0(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_virtual(&mut mem(), const { ft::pair_of(ft::DESTROY_VIRTUAL, 0x0045_49b0) }, p)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PCamera__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PCamera__swapEndianness @ 0x0045_4e80 => extern "thiscall" fn ft_00454e80(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -202,6 +272,11 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PRandom_PRandomGenerator__scalarDeletingDtor @ 0x0045_e8c0 => extern "thiscall" fn ft_0045e8c0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0045_e8c0) })
     }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRandom_PRandomGenerator__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_Phyre_PRandom_PRandomGenerator__destroyInstance @ 0x0045_edf0 => extern "thiscall" fn ft_0045edf0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0045_edf0) };
+        1
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PRandom_PRandomGenerator__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PRandom_PRandomGenerator__swapEndianness @ 0x0045_eef0 => extern "thiscall" fn ft_0045eef0(_descriptor: u32, p: u32, flag: u32) -> u32 {
         t::swap(&mut mem(), const { ft::word_of(ft::SWAP, 0x0045_eef0) }, p, flag)
@@ -225,6 +300,41 @@ ported! {
     /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector4__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector4__scalarDeletingDtor @ 0x0046_13c0 => extern "thiscall" fn ft_004613c0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0046_13c0) })
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix3__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix3__destroyInstance @ 0x0046_1da0 => extern "thiscall" fn ft_00461da0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1da0) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix4__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix4__destroyInstance @ 0x0046_1db0 => extern "thiscall" fn ft_00461db0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1db0) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Point3__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Point3__destroyInstance @ 0x0046_1dd0 => extern "thiscall" fn ft_00461dd0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1dd0) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Quat__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Quat__destroyInstance @ 0x0046_1de0 => extern "thiscall" fn ft_00461de0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1de0) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector2__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector2__destroyInstance @ 0x0046_1df0 => extern "thiscall" fn ft_00461df0(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1df0) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector3__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector3__destroyInstance @ 0x0046_1e00 => extern "thiscall" fn ft_00461e00(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1e00) };
+        1
+    }
+    /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector4__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Vector4__destroyInstance @ 0x0046_1e10 => extern "thiscall" fn ft_00461e10(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x0046_1e10) };
+        1
     }
     /// `Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix4__swapEndianness`: `swapEndianness(p, toNative)`: through the descriptor its getter returns.
     Phyre_PClassDescriptorForType_sce_Vectormath_Scalar_Aos_Matrix4__swapEndianness @ 0x0046_2700 => extern "thiscall" fn ft_00462700(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -505,6 +615,10 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc__scalarDeletingDtor @ 0x0049_6d60 => extern "thiscall" fn ft_00496d60(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x0049_6d60) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PGeometry_PDynamicMesh__destroyInstance`: `destroyInstance(p)`: the object's virtual deleting destructor (flags 0).
+    Phyre_PClassDescriptorForType_Phyre_PGeometry_PDynamicMesh__destroyInstance @ 0x0049_84c0 => extern "thiscall" fn ft_004984c0(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_virtual(&mut mem(), const { ft::pair_of(ft::DESTROY_VIRTUAL, 0x0049_84c0) }, p)
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4__swapEndianness`: `swapEndianness(p, toNative)`: one of two cdecl helpers by the flag.
     Phyre_PClassDescriptorForType_Phyre_PArray_Phyre_PGeometry_PDynamicMesh_PDynamicSegmentDesc_4__swapEndianness @ 0x0049_9310 => extern "thiscall" fn ft_00499310(_descriptor: u32, p: u32, flag: u32) -> u32 {
@@ -878,6 +992,10 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PRendering_PRenderTarget__scalarDeletingDtor @ 0x004c_7a60 => extern "thiscall" fn ft_004c7a60(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x004c_7a60) })
     }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PRenderTargetBase__destroyInstance`: `destroyInstance(p)`: the destructor.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PRenderTargetBase__destroyInstance @ 0x004c_81c0 => extern "thiscall" fn ft_004c81c0(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_call(&mut mem(), const { ft::word_of(ft::DESTROY_CALL, 0x004c_81c0) }, p)
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PRenderTarget__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PRendering_PRenderTarget__swapEndianness @ 0x004c_83e0 => extern "thiscall" fn ft_004c83e0(_descriptor: u32, p: u32, flag: u32) -> u32 {
         t::swap(&mut mem(), const { ft::word_of(ft::SWAP, 0x004c_83e0) }, p, flag)
@@ -906,6 +1024,10 @@ ported! {
     Phyre_PClassDescriptorForType_Phyre_PRendering_PNodeContext__scalarDeletingDtor @ 0x004c_f6d0 => extern "thiscall" fn ft_004cf6d0(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x004c_f6d0) })
     }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PNodeContext__getPointerFromScriptContext`: `getPointerFromScriptContext(L, out)`: `*out` = the accessor's object.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PNodeContext__getPointerFromScriptContext @ 0x004d_0800 => extern "thiscall" fn ft_004d0800(_descriptor: u32, l: u32, out: u32) -> u32 {
+        t::get_pointer(&mut mem(), const { ft::word_of(ft::GET_POINTER, 0x004d_0800) }, l, out)
+    }
     /// `Phyre_PClassDescriptorForType_Phyre_PSharray_unsigned_int__swapEndianness`: `swapEndianness(p, toNative)`: one of two cdecl helpers by the flag.
     Phyre_PClassDescriptorForType_Phyre_PSharray_unsigned_int__swapEndianness @ 0x004d_0c50 => extern "thiscall" fn ft_004d0c50(_descriptor: u32, p: u32, flag: u32) -> u32 {
         t::swap_pair(&mut mem(), const { ft::pair_of(ft::SWAP_PAIR, 0x004d_0c50) }, p, flag)
@@ -929,6 +1051,15 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBufferBase__scalarDeletingDtor`: scalar deleting destructor: the vtable, `PClassDescriptor` destructor, free when `flags & 1`; `this`.
     Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBufferBase__scalarDeletingDtor @ 0x004d_6390 => extern "thiscall" fn ft_004d6390(this: u32, flags: u32) -> u32 {
         t::delete(&mut mem(), this, flags, const { ft::word_of(ft::DELETE, 0x004d_6390) })
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBuffer__destroyInstance`: `destroyInstance(p)`: the owned array at `+8` released, the header zeroed.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBuffer__destroyInstance @ 0x004d_7140 => extern "thiscall" fn ft_004d7140(_descriptor: u32, p: u32) -> u32 {
+        t::destroy_array_elements(&mut mem(), p)
+    }
+    /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBufferBase__destroyInstance`: `destroyInstance(p)`: nothing to do; `al = 1`.
+    Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBufferBase__destroyInstance @ 0x004d_7180 => extern "thiscall" fn ft_004d7180(_descriptor: u32, _p: u32) -> u8 {
+        const { ft::listed(ft::TRUE, 0x004d_7180) };
+        1
     }
     /// `Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBuffer__swapEndianness`: `swapEndianness(p, toNative)`: the class descriptor's `swapEndiannessOfObject`.
     Phyre_PClassDescriptorForType_Phyre_PRendering_PParameterBuffer__swapEndianness @ 0x004d_7460 => extern "thiscall" fn ft_004d7460(_descriptor: u32, p: u32, flag: u32) -> u32 {

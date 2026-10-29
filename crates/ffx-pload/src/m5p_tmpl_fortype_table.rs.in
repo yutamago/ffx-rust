@@ -357,14 +357,32 @@ pub const SWAP_LAZY: &[(u32, Lazy)] = &[
 
 /// `destroyInstance` copies with nothing to do (`mov al, 1; ret 4`).
 pub const TRUE: &[u32] = &[
+    0x0043_1300,
+    0x0043_5810,
+    0x0045_edf0,
+    0x0046_1da0,
+    0x0046_1db0,
+    0x0046_1dd0,
+    0x0046_1de0,
+    0x0046_1df0,
+    0x0046_1e00,
+    0x0046_1e10,
+    0x004d_7180,
 ];
 
 /// `destroyInstance` by the virtual deleting destructor: `(copy, [adjust, vtable offset])`.
 pub const DESTROY_VIRTUAL: &[(u32, [u32; 2])] = &[
+    (0x0043_ca90, [0x18, 0x1c]),
+    (0x0045_49b0, [0x4, 0x0]),
+    (0x0049_84c0, [0x4, 0x0]),
 ];
 
 /// `getPointerFromScriptContext`: `(copy, the accessor)`.
 pub const GET_POINTER: &[(u32, u32)] = &[
+    (0x0043_5820, 0x0043_5650),
+    (0x0043_ccf0, 0x0043_bad0),
+    (0x0044_c510, 0x0044_b970),
+    (0x004d_0800, 0x004c_fe80),
 ];
 
 /// `destroyInstance` of a member and the object: `(copy, [destructor, member offset])`.
@@ -373,12 +391,17 @@ pub const DESTROY_PAIR: &[(u32, [u32; 2])] = &[
 
 /// `destroyInstance` by the destructor: `(copy, destructor)`.
 pub const DESTROY_CALL: &[(u32, u32)] = &[
+    (0x004c_81c0, 0x004c_29b0),
 ];
 
 /// `get`/`putValueToScriptContext` "not implemented": `(copy, format)`.
 pub const SCRIPT_VALUE: &[(u32, u32)] = &[
+    (0x0043_7910, 0x00b0_e590),
+    (0x0043_7960, 0x00b0_e5d0),
 ];
 
 /// `putPointerToScriptContext`: `(copy, [offset of the PBase, its class])`.
 pub const PUT_POINTER: &[(u32, [u32; 2])] = &[
+    (0x0043_5840, [0, 0x00c9_02e8]),
+    (0x0043_d2f0, [0x18, 0x00c9_0760]),
 ];
