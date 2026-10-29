@@ -35,6 +35,7 @@ mod h4b_glue_other;
 mod kernel;
 mod m4_rest;
 mod m5_battle;
+mod m5_main;
 mod m5_map;
 mod m5_menu;
 mod m5_movie;
@@ -82,6 +83,9 @@ mod vfx_ppp;
 mod vfx_shape;
 
 pub(crate) use battle::ms_screen_process;
+pub(crate) use m5_main::{
+    animate as ffx_application_animate, animate_on as ffx_application_animate_on,
+};
 pub(crate) use m5_system_b::{loader_thread_main, loader_thread_main_on};
 pub(crate) use map::rcbg_guide_update_ex;
 pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
@@ -102,6 +106,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m4_rest::hooks());
     all.extend(m5_battle::hooks());
     all.extend(m5_map::hooks());
+    all.extend(m5_main::hooks());
     all.extend(m5_pc_ui::hooks());
     all.extend(m5_menu::hooks());
     all.extend(m5_render::hooks());

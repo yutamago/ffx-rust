@@ -1769,11 +1769,18 @@ pub unsafe extern "thiscall" fn animate(app: *mut c_void) -> u32 {
     // this frame's game time (crate::audio_wav).
     crate::audio_wav::boundary_turn();
     run_update_calls();
-    // SAFETY: the trampoline runs the original with the same `this`.
-    let r = unsafe {
-        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
-            std::mem::transmute(ANIMATE_ORIGINAL.load(Ordering::Acquire));
-        original(app)
+    // The port of `FFXApplication::animate` (M5 `main`, ported/m5_main.rs)
+    // runs here, behind its own name: this wrapper owns the address.
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let r = if crate::ported::ffx_application_animate_on() {
+        crate::ported::ffx_application_animate(app as usize as u32)
+    } else {
+        // SAFETY: the trampoline runs the original with the same `this`.
+        unsafe {
+            let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+                std::mem::transmute(ANIMATE_ORIGINAL.load(Ordering::Acquire));
+            original(app)
+        }
     };
     FRAME.store(frame + 1, Ordering::Release);
     r
@@ -2996,6 +3003,39 @@ fn serve(port: u16) {
     }
 }
 
+/// `FFXApplication::animate`'s port (M5 `main`, `ported/m5_main.rs`)
+/// without the harness: the plain replacement at the address the
+/// harness's [`animate`] wrapper takes otherwise.
+///
+/// # Safety
+/// Called by the game, on the main thread.
+unsafe extern "thiscall" fn animate_port(app: *mut c_void) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    crate::ported::ffx_application_animate(app as usize as u32)
+}
+
+/// Installs [`animate_port`] when the harness is off and the port is on.
+///
+/// # Safety
+/// `module` must be the main module, before other threads run game code.
+unsafe fn install_animate_port(module: usize) {
+    if !crate::ported::ffx_application_animate_on() {
+        return;
+    }
+    let hooks = [crate::Hook {
+        name: "FFXApplication_animate_port",
+        address: 0x0042_f520,
+        // cmp byte [abs32], 0 (relocated: only its opcode is checked)
+        prologue: &[0x80, 0x3d],
+        replacement: animate_port as *const () as usize,
+        original: None,
+        steal: 0,
+    }];
+    // SAFETY: forwarded from the caller.
+    let r = unsafe { crate::install(module, &hooks, &[]) };
+    log(&format!("  FFXApplication::animate port {r:?}"));
+}
+
 /// Turns the harness on when `FFX_HARNESS` names a port.
 ///
 /// # Safety
@@ -3007,6 +3047,8 @@ pub unsafe fn install(module: usize) {
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
     else {
+        // SAFETY: forwarded from the caller.
+        unsafe { install_animate_port(module) };
         return;
     };
     if ONCE.set(()).is_err() {
