@@ -413,7 +413,12 @@ git, so every worktree writes the same page. From the top:
   with the projections;
 - "Speed and time": ports per 6 h by kind, the finished agent runs in
   `metrics.tsv`, and where the machine's command time goes (the timing log
-  below, by kind, per hour);
+  below, by kind: time, how many ran at once, runs, mean run, failures,
+  per hour); "Agents' time": where the agents' own time goes, from their
+  Claude Code transcripts (thinking, writing, Bash, reading and editing,
+  waiting), with calls, mean call and tokens. Both over the last 1, 3 or
+  24 h, with arrows against the last 24 h (or, for 24 h, the 24 h before),
+  to tell whether a change to the tooling helped;
 - the pulse (ports per module per time bucket), the binary as a
   Hilbert-curve map (porting, the M5 lists or naming), the modules, the
   share replaced at every commit, the latest ports, and in-game coverage
