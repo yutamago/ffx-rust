@@ -6,6 +6,7 @@
 //! shims keep no state.
 
 use super::{StackFrame, mem, ported};
+use ffx_graphic::host::Conv;
 use ffx_prender::m5r_a::bridge as a;
 use ffx_prender::m5r_b::bridge as b;
 use ffx_prender::m5r_c::bridge as c;
@@ -17,6 +18,8 @@ use ffx_prender::m5r_h::bridge as h;
 use ffx_prender::m5r_i::bridge as i;
 use ffx_prender::m5r_j::bridge as j;
 use ffx_prender::m5r_k::bridge as k;
+use ffx_prender::m5r_l::{self as ml, bridge as l};
+use ffx_prender::m5r_m::bridge as m;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1214,5 +1217,150 @@ ported! {
     /// `DebugTextPanel_ctor_006b53b0(this)`.
     DebugTextPanel_ctor_006b53b0 @ 0x006b_53b0 => extern "thiscall" fn debug_text_panel_ctor(this: u32) -> u32 {
         k::debug_text_panel_ctor(&mut mem(), this)
+    }
+    // ---- render-pcui batch 1 (ffx_prender::m5r_l) ----
+    /// `graphicRemoveDelegations_0063dab0()`: `jmp RenderDelegationHelper_removeFlag1000_006ae530`.
+    graphicRemoveDelegations_0063dab0 @ 0x0063_dab0 => extern "C" fn remove_delegations() -> u32 {
+        a::remove_delegations(&mut mem())
+    }
+    /// `RadialLine_destroyRadialLine_thunk_006f7b10(this)`.
+    RadialLine_destroyRadialLine_thunk_006f7b10 @ 0x006f_7b10 => extern "thiscall" fn radial_line_destroy_thunk(this: u32) {
+        l::forward(&mut mem(), ml::RADIAL_LINE_DESTROY, Conv::Thiscall(this), &[]);
+    }
+    /// `MsGetEncountType_thunk_00638e20()`.
+    MsGetEncountType_thunk_00638e20 @ 0x0063_8e20 => extern "C" fn ms_get_encount_type_thunk() -> u32 {
+        l::forward(&mut mem(), ml::MS_GET_ENCOUNT_TYPE, Conv::Cdecl, &[])
+    }
+    /// `MsBattleCheck_thunk_00638e60()`.
+    MsBattleCheck_thunk_00638e60 @ 0x0063_8e60 => extern "C" fn ms_battle_check_thunk() -> u32 {
+        l::forward(&mut mem(), ml::MS_BATTLE_CHECK, Conv::Cdecl, &[])
+    }
+    /// `graphicAttachChrClusterTo3DWorld_00639350()`.
+    graphicAttachChrClusterTo3DWorld_00639350 @ 0x0063_9350 => extern "C" fn attach_chr_cluster_thunk() {
+        l::scene_forward(&mut mem(), ml::ATTACH_CHR_CLUSTER);
+    }
+    /// `graphicCharacterUnloadTask_thunk_0063d9a0(chr)`.
+    graphicCharacterUnloadTask_thunk_0063d9a0 @ 0x0063_d9a0 => extern "C" fn character_unload_task_thunk(chr: u32) {
+        l::forward(&mut mem(), ml::CHARACTER_UNLOAD_TASK, Conv::Cdecl, &[chr]);
+    }
+    /// `graphicGetVideoEndTime()`.
+    graphicGetVideoEndTime @ 0x0064_1140 => extern "C" fn video_end_time() -> u32 {
+        l::video_end_time(&mut mem())
+    }
+    /// `graphicGetAppFloat78_006411a0()` (`ST0`).
+    graphicGetAppFloat78_006411a0 @ 0x0064_11a0 => extern "C" fn app_float_78() -> f32 {
+        l::app_float(&mut mem(), 0x78)
+    }
+    /// `graphicGetAppFloatD8_00641270()` (`ST0`).
+    graphicGetAppFloatD8_00641270 @ 0x0064_1270 => extern "C" fn app_float_d8() -> f32 {
+        l::app_float(&mut mem(), 0xd8)
+    }
+    /// `graphicGetAppFloatD4_00641280()` (`ST0`).
+    graphicGetAppFloatD4_00641280 @ 0x0064_1280 => extern "C" fn app_float_d4() -> f32 {
+        l::app_float(&mut mem(), 0xd4)
+    }
+    /// `graphicGetAppFloatDC_00641290()` (`ST0`).
+    graphicGetAppFloatDC_00641290 @ 0x0064_1290 => extern "C" fn app_float_dc() -> f32 {
+        l::app_float(&mut mem(), 0xdc)
+    }
+    /// `graphicGetAppFloatD0_006412a0()` (`ST0`).
+    graphicGetAppFloatD0_006412a0 @ 0x0064_12a0 => extern "C" fn app_float_d0() -> f32 {
+        l::app_float(&mut mem(), 0xd0)
+    }
+    /// `graphicSegmentsAllReady_thunk_006420d0()`.
+    graphicSegmentsAllReady_thunk_006420d0 @ 0x0064_20d0 => extern "C" fn segments_all_ready_thunk() -> u32 {
+        l::forward(&mut mem(), ml::SEGMENTS_ALL_READY, Conv::Cdecl, &[])
+    }
+    /// `graphicVideoClearPlaying_00643e50()`.
+    graphicVideoClearPlaying_00643e50 @ 0x0064_3e50 => extern "C" fn video_clear_playing() -> u32 {
+        l::video_clear_playing(&mut mem())
+    }
+    /// `graphicUpdateMapYIQ_thunk_006449c0()`.
+    graphicUpdateMapYIQ_thunk_006449c0 @ 0x0064_49c0 => extern "C" fn update_map_yiq_thunk() {
+        l::scene_forward(&mut mem(), ml::SCENE_UPDATE_MAP_YIQ);
+    }
+    /// `graphicVideoState_00645dc0()`.
+    graphicVideoState_00645dc0 @ 0x0064_5dc0 => extern "C" fn video_state() -> u32 {
+        l::video_state(&mut mem())
+    }
+    /// `graphicisVideoAtEndFrame()`.
+    graphicisVideoAtEndFrame @ 0x0064_5e50 => extern "C" fn video_at_end_frame() -> u32 {
+        l::video_at_end_frame(&mut mem())
+    }
+    /// `graphicVideoIsPlaying_00660410()`.
+    graphicVideoIsPlaying_00660410 @ 0x0066_0410 => extern "C" fn video_is_playing() -> u32 {
+        l::video_is_playing(&mut mem())
+    }
+    /// `graphicPostProcessSetFlag_00699080()`.
+    graphicPostProcessSetFlag_00699080 @ 0x0069_9080 => extern "C" fn post_set_flag() -> u32 {
+        l::post_set_flag(&mut mem())
+    }
+    /// `FloatSwap_006c7c80(a, b)`.
+    FloatSwap_006c7c80 @ 0x006c_7c80 => extern "C" fn float_swap(a: u32, b: u32; slots: u32) -> u32 {
+        l::float_swap(&mut mem(), slots, a, b)
+    }
+    /// `BrokenScreenEffect_releaseObjects_thunk_006d3600(this)`.
+    BrokenScreenEffect_releaseObjects_thunk_006d3600 @ 0x006d_3600 => extern "thiscall" fn broken_screen_release_thunk(this: u32) {
+        l::forward(&mut mem(), ml::BROKEN_SCREEN_RELEASE, Conv::Thiscall(this), &[]);
+    }
+    // ---- render-pcui batch 2 (ffx_prender::m5r_m) ----
+    /// `PhyreScene_resetMapObjects_0065f0e0(scene)` (cursor frame).
+    PhyreScene_resetMapObjects_0065f0e0 @ 0x0065_f0e0 => extern "thiscall" fn map_objects_reset(this: u32) {
+        let mut f = StackFrame::<9>::new();
+        m::map_objects_reset(&mut mem(), f.at() + 0x24, this);
+    }
+    /// `SpecularMapParamsManager_AddSpecularEvent(x)` (stdcall; event frame).
+    SpecularMapParamsManager_AddSpecularEvent @ 0x006c_56f0 => extern "stdcall" fn add_specular_event(x: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        m::add_specular_event(&mut mem(), f.at(), x)
+    }
+    /// `SpecularMapParamsManager_setAkazaNoLight_006c5b80(this; id, a, b, f0..f3, v, kind)`.
+    SpecularMapParamsManager_setAkazaNoLight_006c5b80 @ 0x006c_5b80 => extern "thiscall" fn set_akaza_no_light(this: u32, id: u32, a: u32, b: u32, f0: u32, f1: u32, f2: u32, f3: u32, v: u32, kind: u32) {
+        m::set_akaza_no_light(&mut mem(), this, id, a, b, [f0, f1, f2, f3], v, kind);
+    }
+    /// `SpecularMapParamsManager_setAkaza_006c5c90(this; id, a, b, f0..f3, v, last, lv, lc, event)`.
+    SpecularMapParamsManager_setAkaza_006c5c90 @ 0x006c_5c90 => extern "thiscall" fn set_akaza(this: u32, id: u32, a: u32, b: u32, f0: u32, f1: u32, f2: u32, f3: u32, v: u32, last: u32, lv: u32, lc: u32, event: u32) {
+        m::set_akaza(&mut mem(), this, id, a, b, [f0, f1, f2, f3], v, last, lv, lc, event);
+    }
+    /// `SpecularMapParamsManager_setNoLight_006c5e30(this; id, w0, f0, f1, w1, f2, w2, f3, f4, f5)`.
+    SpecularMapParamsManager_setNoLight_006c5e30 @ 0x006c_5e30 => extern "thiscall" fn set_no_light(this: u32, id: u32, w0: u32, f0: u32, f1: u32, w1: u32, f2: u32, w2: u32, f3: u32, f4: u32, f5: u32) {
+        m::set_no_light(&mut mem(), this, [id, w0, f0, f1, w1, f2, w2, f3, f4, f5]);
+    }
+    /// `PhyreScene_addCopyBufferEvent_006568a0(scene; b0, b1, x, h)`.
+    PhyreScene_addCopyBufferEvent_006568a0 @ 0x0065_68a0 => extern "thiscall" fn add_copy_buffer_event(this: u32, b0: u32, b1: u32, x: u32, hw: u32) -> u32 {
+        m::add_copy_buffer_event(&mut mem(), this, b0, b1, x, hw)
+    }
+    /// `PhyreScene_AddVFXToAfterPostList(scene; vfx)`.
+    PhyreScene_AddVFXToAfterPostList @ 0x0065_67e0 => extern "thiscall" fn add_vfx_after_post(this: u32, vfx: u32) {
+        m::add_vfx_after_post(&mut mem(), this, vfx);
+    }
+    /// `PArray44_pushInto_0065fbe0(array; block, item)`.
+    PArray44_pushInto_0065fbe0 @ 0x0065_fbe0 => extern "thiscall" fn push_into_44(this: u32, block: u32, item: u32) -> u32 {
+        m::push_into_44(&mut mem(), this, block, item)
+    }
+    /// `PArray4_pushInto_006add90(array; block, item)`.
+    PArray4_pushInto_006add90 @ 0x006a_dd90 => extern "thiscall" fn push_into_4(this: u32, block: u32, item: u32) -> u32 {
+        m::push_into_4(&mut mem(), this, block, item)
+    }
+    /// `ShadowMeshDescriptor_newInstance_00678940(this; cluster, existing)` (argument slots).
+    ShadowMeshDescriptor_newInstance_00678940 @ 0x0067_8940 => extern "thiscall" fn shadow_instance(this: u32, cluster: u32, existing: u32; slots: u32) -> u32 {
+        m::shadow_instance(&mut mem(), slots, this, cluster, existing)
+    }
+    /// `TreePair_clear_006df080(this)`.
+    TreePair_clear_006df080 @ 0x006d_f080 => extern "thiscall" fn tree_clear_twice(this: u32) -> u32 {
+        m::tree_clear_twice(&mut mem(), this)
+    }
+    /// `TextureAnimationManager_dtor_006af8a0(this)`.
+    TextureAnimationManager_dtor_006af8a0 @ 0x006a_f8a0 => extern "thiscall" fn texanim_manager_dtor(this: u32) -> u32 {
+        m::texanim_manager_dtor(&mut mem(), this)
+    }
+    /// `TexAnim_setTag_0077eb00(q, a, b, c, flag)`.
+    TexAnim_setTag_0077eb00 @ 0x0077_eb00 => extern "C" fn set_tag(q: u32, a: u32, b: u32, c: u32, flag: u32) -> u32 {
+        m::set_tag(&mut mem(), q, a, b, c, flag)
+    }
+    /// `FloatSort_introsortLoop_006c77a0(first, last, depth, less)` (argument slots; the pair frame).
+    FloatSort_introsortLoop_006c77a0 @ 0x006c_77a0 => extern "C" fn introsort(first: u32, last: u32, depth: u32, less: u32; slots: u32) {
+        let mut f = StackFrame::<2>::new();
+        m::introsort(&mut mem(), slots, f.at(), first, last, depth, less);
     }
 }

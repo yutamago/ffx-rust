@@ -32,6 +32,9 @@ use ffx_menu::m5m_d::bridge as md;
 use ffx_menu::m5m_e::bridge as me;
 use ffx_menu::m5m_f::bridge as mf;
 use ffx_menu::m5m_g::bridge as mg;
+use ffx_menu::m5m_h::bridge as mh;
+use ffx_menu::m5m_i::bridge as mi;
+use ffx_menu::m5m_j::bridge as mj;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -107,6 +110,33 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f32().expect("the callee leaves ST0 set")
+    }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f64().expect("the callee leaves ST0 set")
+    }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        self.0.call(addr, Conv::Cdecl, args).unwrap().eax
+    }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        ffx_oracle::check_width(
+            "Host::call_u64",
+            addr,
+            args.len(),
+            host::max_words(c, false),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        u64::from(r.eax) | u64::from(r.edx) << 32
     }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
@@ -2502,6 +2532,727 @@ fn gui_eve_buttonup_matches_the_original() {
                 Conv::Cdecl,
                 &[w],
                 |m| Out::U32(mg::eve_gwm_buttonup(m, w)),
+            );
+        }
+    });
+}
+
+// ---- round 3, batch 1 (ffx_menu::m5m_h) ----
+
+impl Twins {
+    /// A recording stub over `sym` (cdecl, `n` words) that returns
+    /// `value` in `ST0` (`fld dword`) after logging.
+    fn stub_float_logged(&mut self, sym: u32, n: u32, value: f32) {
+        let cell = self.words(&[value.to_bits()]);
+        let addr = self.stub_code(sym, false, n, 0, 0);
+        // the final `ret` becomes `fld dword [cell]; ret`
+        self.cave_next -= 1;
+        let mut c = vec![0xd9, 0x05];
+        c.extend(cell.to_le_bytes());
+        c.push(0xc3);
+        self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+/// The 5-byte jump thunks: each target stubbed (logging the words the
+/// thunk forwards); the thunk's `eax` is the target's.
+#[test]
+fn r3_jump_thunks_match_the_original() {
+    type Bridge = fn(&mut G, &[u32]) -> u32;
+    let list: &[(u32, u32, u32, Bridge)] = &[
+        (0x0088_d500, mh::ATEL_DRAW_SEMI_TRANS, 0, |m, _| {
+            mh::atel_draw_semi_trans_thunk(m)
+        }),
+        (0x0088_7ae0, mh::TK_SND_IS_READ, 0, |m, _| {
+            mh::tk_snd_is_read_thunk(m)
+        }),
+        (0x0088_7c30, mh::TK_GET_LANG, 0, |m, _| {
+            mh::tk_get_lang_thunk(m)
+        }),
+        (0x0086_c1f0, mh::TK_GET_NOW_EVENT_JUMP_MAP_NO, 0, |m, _| {
+            mh::tk_get_now_event_jump_map_no_thunk(m)
+        }),
+        (0x0086_c1d0, mh::TK_GET_NOW_EVENT_JUMP_INDEX, 0, |m, _| {
+            mh::tk_get_now_event_jump_index_thunk(m)
+        }),
+        (0x0088_c830, mh::MS_GET_SAVE_EVENT_ADDRESS, 0, |m, _| {
+            mh::tk_get_save_event_address(m)
+        }),
+        (0x0088_e780, mh::MS_IMPORTANT_RESET, 1, |m, a| {
+            mh::ms_important_reset_thunk(m, a[0])
+        }),
+        (0x008c_1790, mh::TK_VU1_SYNC_PATH, 0, |m, _| {
+            mh::tk_vu1_sync_path_thunk(m)
+        }),
+        (0x008a_98b0, mh::MS_GET_GIL, 0, |m, _| {
+            mh::ms_get_gil_thunk(m)
+        }),
+        (0x008b_da30, mh::MS_GET_GIL, 0, |m, _| {
+            mh::ms_get_gil_thunk(m)
+        }),
+        (0x008c_1390, mh::TO_DRAW_SCISSOR_XYWH, 4, |m, a| {
+            mh::draw_scissor_rect_thunk(m, a[0], a[1], a[2], a[3])
+        }),
+        (
+            0x008c_1b10,
+            mh::TO_MENU_GET_ABILITYMAP_WORK_ADRS,
+            0,
+            |m, _| mh::get_abilitymap_work_thunk(m),
+        ),
+        (0x008c_2380, mh::TK_MN2_BUILD_ITEM_LIST, 2, |m, a| {
+            mh::build_item_list_thunk(m, a[0], a[1])
+        }),
+        (0x008c_30d0, mh::MS_SET_SAVE_PARAM_ALL, 0, |m, _| {
+            mh::tk_ms_set_save_param_all(m)
+        }),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0001);
+        for &(thunk, target, n, bridge) in list {
+            for i in 0..3 {
+                t.reset();
+                let ret = rng.word();
+                t.stub(target, false, n, 0, ret);
+                let args: Vec<u32> = (0..n).map(|_| rng.word()).collect();
+                let what = format!("thunk {thunk:#x} #{i}");
+                t.check(&what, thunk, Conv::Cdecl, &args, |m| {
+                    Out::U32(bridge(m, &args))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn r3_constants_and_flags_match_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        t.check("0x0087aa30", 0x0087_aa30, Conv::Cdecl, &[], |m| {
+            Out::U32(mh::vibrate_curve_0087aa30(m))
+        });
+        t.check("0x008a9850", 0x008a_9850, Conv::Cdecl, &[], |m| {
+            Out::U32(mh::vibrate_curve_008a9850(m))
+        });
+        for (sym, on) in [(0x008c_3380, 1), (0x008c_33e0, 0)] {
+            for old in [0, 1, 0xdead_0001] {
+                t.g32(0x0187_1538, old);
+                t.check(&format!("help flag {sym:#x}"), sym, Conv::Cdecl, &[], |m| {
+                    mh::set_help_flag(m, on);
+                    Out::None
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn r3_set_near_plane_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0002);
+        let values = [
+            0f32.to_bits(),
+            1f32.to_bits(),
+            (-0.5f32).to_bits(),
+            (-0.0f32).to_bits(),
+            f32::INFINITY.to_bits(),
+            0x7fc0_1234, // a quiet NaN (signalling NaNs are left out)
+            0x0000_0001, // a denormal
+        ];
+        for (i, &near) in values.iter().enumerate() {
+            t.reset();
+            let ret = rng.word();
+            // a camera of 0xc0 bytes whose vtable's slot 1 logs `ecx`
+            let fake = t.object(&[(0, 0x11), (0, ret)]);
+            let vt = t.r32(fake);
+            let camera = t.zeros(0xc0);
+            t.w32(camera, vt);
+            let scene = t.zeros(0x100);
+            t.w32(scene + 0xdc, camera);
+            t.g32(0x00cc_b9d8, scene);
+            let what = format!("setNearPlane #{i}");
+            t.check(&what, 0x0064_5f00, Conv::Cdecl, &[near], |m| {
+                Out::U32(mh::set_near_plane(m, near))
+            });
+        }
+    });
+}
+
+#[test]
+fn r3_tk_boot_steps_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0003);
+        for i in 0..8 {
+            t.reset();
+            let ret = rng.word();
+            let data = if i % 3 == 2 { 0 } else { rng.word() | 1 };
+            let hook10 = t.stub_code(0x10, false, 1, 0, 0x91);
+            let hook14 = t.stub_code(0x14, false, 1, 0, rng.word());
+            let cd = t.zeros(0x20);
+            t.w32(cd + 0x10, hook10);
+            t.w32(cd + 0x14, hook14);
+            t.stubs(&[
+                (mh::TK_MC_SET_EXEC_PORT, false, 1, 0, 0x81),
+                (mh::TK_MC_SET_DEBUG_LOCK, false, 1, 0, ret),
+                (mh::TK_SYNC_VDI, false, 0, 0, 0x82),
+                (mh::TK_SYNC_VEI, false, 0, 0, 0x83),
+                (mh::TK_SET_VSYNC_HANDLER, false, 1, 0, ret ^ 1),
+                (mh::GET_CD, false, 0, 0, cd),
+                (mh::TK_CD_READ_WITH_MALLOC, false, 2, 0, data),
+                (mh::SND_STANDBY_SHOUT_STREAM, false, 1, 0, 0x84),
+                (mh::SND_DATA_SEND_SYNC, false, 1, 0, ret ^ 2),
+                (mh::SQS_REPORT_STANDBY_STATUS, false, 1, 0, 0x85),
+                (mh::SQS_SHOUT_STREAMING_DATA_SEND_THUNK, false, 2, 0, 0x86),
+                (mh::USER_FREE, false, 1, 0, 0x87),
+                (mh::SG_MEM_CHECK, false, 3, 0, ret ^ 3),
+            ]);
+            t.g32(0x0133_022c, rng.word());
+            t.check(
+                &format!("0x00888310 #{i}"),
+                0x0088_8310,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mh::mc_reset_ports(m)),
+            );
+            t.check(
+                &format!("0x00888760 #{i}"),
+                0x0088_8760,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mh::sync_and_clear_vsync(m)),
+            );
+            t.check(
+                &format!("0x0088de60 #{i}"),
+                0x0088_de60,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mh::load_shout_stream(m)),
+            );
+            t.check(
+                &format!("0x0088ded0 #{i}"),
+                0x0088_ded0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mh::send_shout_stream(m)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_pause_leave_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0004);
+        for i in 0..12 {
+            t.reset();
+            let now = u64::from(rng.next()) << 32 | u64::from(rng.next());
+            // mov eax, lo; mov edx, hi; ret
+            let mut c = vec![0xb8];
+            c.extend((now as u32).to_le_bytes());
+            c.push(0xba);
+            c.extend(((now >> 32) as u32).to_le_bytes());
+            c.push(0xc3);
+            let clock = t.cave_code(&c);
+            t.jump(mh::GRAPHIC_GET_TIME_US, clock);
+            let movie = [0, 1, 0x48][i % 3];
+            let ret = rng.word();
+            t.stubs(&[
+                (mh::GRAPHIC_SET_FREE_CAMERA_MODE, false, 1, 0, 0x81),
+                (mh::SG_SET_PAUSE_ALL_SOUNDS, false, 1, 0, 0x82),
+                (mh::PAUSE_INPUT_RESUME, false, 0, 0, 0x83),
+                (mh::INPUT_UPDATE_ALL, false, 0, 0, 0x84),
+                (mh::MOVIE_WITH_3D_SCENE, false, 0, 0, movie),
+                (mh::GRAPHIC_VIDEO_PAUSE, false, 0, 0, ret),
+            ]);
+            for (g, v) in [
+                (0x0134_084c, 1),
+                (0x0134_0850, 1),
+                (0x0134_0828, 1),
+                (0x012f_b818, rng.next()),
+                (0x012f_b81c, rng.next()),
+                (0x012f_b820, rng.next()),
+                (0x012f_b824, rng.next()),
+                (0x0112_a00c, u32::from((i / 3) % 2 == 1)),
+            ] {
+                t.g32(g, v);
+            }
+            t.check(
+                &format!("Pause_Leave #{i}"),
+                0x008a_b2d0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mh::pause_leave(m)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_btl_end_steps_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0005);
+        for i in 0..40 {
+            t.reset();
+            let (sin, cos) = (rng.next(), rng.next());
+            t.stubs(&[
+                (mh::MATH_SIN_LOOKUP, false, 1, 0, sin),
+                (mh::MATH_COS_LOOKUP, false, 1, 0, cos),
+                (mh::BTL_END_DRAW_ITEM_PAGE, false, 1, 0, 0x81),
+                (mh::BTL_END_DRAW_WEAPON_PAGE, false, 1, 0, 0x82),
+                (mh::BTL_END_DRAW_GIL_PAGE, false, 1, 0, 0x83),
+                (mh::BTL_END_DRAW_SPOIL_LIST_PAGE, false, 1, 0, 0x84),
+                (mh::BTL_END_DRAW_EXCHANGE_PAGE, false, 1, 0, 0x85),
+                (mh::BTL_END_DRAW_SPOIL_PAGE, false, 1, 0, 0x86),
+                (mh::MS_SAVE_ITEM_USE, false, 2, 0, 0x87),
+            ]);
+            let fade = match i % 5 {
+                0 => 0,
+                1 => 0x1000,
+                2 => rng.below(0x1000),
+                _ => rng.next() & 0xffff,
+            };
+            // the two fades get opposite speeds (each reads its own)
+            let speed = [0x80, 0xff80, 0, rng.next() & 0xffff][i % 4];
+            for (k, (f, s)) in [(0x0186_a160, 0x0186_a164), (0x0186_a168, 0x0186_a16c)]
+                .into_iter()
+                .enumerate()
+            {
+                t.g32(f, fade | (rng.next() & 0xffff_0000));
+                t.g32(s, if k == 0 { speed } else { speed ^ 0xff00 });
+            }
+            t.check(
+                &format!("0x008bc080 #{i}"),
+                0x008b_c080,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    mh::draw_gil_pages(m);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("0x008bd940 #{i}"),
+                0x008b_d940,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    mh::draw_spoil_pages(m);
+                    Out::None
+                },
+            );
+            let count = [0u8, 1, 3, 9, 0x80, 0xff][i % 6];
+            let spoils: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+            let at = t.rebase(0x0231_0f74);
+            t.write(at, &spoils);
+            let at = t.rebase(0x0231_0f70);
+            t.write(at, &[count]);
+            t.check(
+                &format!("0x008bd9c0 #{i}"),
+                0x008b_d9c0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    mh::take_spoils(m);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn r3_menu_screen_steps_match_the_original() {
+    type Step = fn(&mut G) -> u32;
+    let steps: &[(u32, Step)] = &[
+        (0x008b_eff0, |m| mh::help_draw(m)),
+        (0x008c_3340, |m| mh::help_close(m)),
+        (0x008c_3360, |m| mh::draw_empty_screen(m)),
+        (0x008c_5ee0, |m| mh::item_step_draw_bg(m)),
+        (0x008c_5ef0, |m| mh::item_open(m)),
+        (0x008c_6050, |m| mh::item_close(m)),
+        (0x008c_60a0, |m| mh::screen_x2_off(m)),
+        (0x008c_64a0, |m| mh::item_draw_plate(m)),
+        (0x008c_64f0, |m| mh::shop_open_rect(m)),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3a_0006);
+        for i in 0..6 {
+            t.reset();
+            let ret = rng.word();
+            let list = t.stub_code(0x00c4_16b0, false, 0, 0, 0x90);
+            let slot = t.rebase(0x00c4_16b0);
+            t.patch(slot, &list.to_le_bytes());
+            let who = rng.below(8);
+            t.stubs(&[
+                (mh::TK_VU1_SYNC_PATH, false, 0, 0, 0x81),
+                (mh::HELP_DRAW_PREPARE, false, 0, 0, 0x82),
+                (mh::TO_DRAW_SCISSOR_XYWH, false, 4, 0, 0x83),
+                (mh::TO_DRAW_BOX_XYWHC2, false, 6, 0, 0x84),
+                (mh::TO_MENU_DRAW_KICK_TMP, false, 0, 0, 0x85),
+                (mh::TO_DAPS_DRAW, false, 0, 0, ret),
+                (mh::TK_MENU_MAIN_SLEEP_MENU, false, 1, 0, 0x86),
+                (mh::TO_MENU_INIT_BRUSH, false, 0, 0, ret ^ 1),
+                (mh::TK_MENU_DRAW_KICK, false, 0, 0, 0x87),
+                (mh::TK_VU1_SYNC_PATH_THUNK, false, 0, 0, 0x88),
+                (mh::TK_MN2_DRAW_INIT_PACKET, false, 0, 0, 0x89),
+                (mh::TK_MN2_DRAW_KICK_SYNC_PACKET, false, 0, 0, 0x8a),
+                (mh::TO_DRAW_MENU_BG, false, 0, 0, ret ^ 2),
+                (mh::TK_MENU_SET_SCREEN_X2_FLAG, false, 1, 0, ret ^ 3),
+                (mh::MENU_ITEM_GET_LINE_POS, false, 0, 0, 0x8b),
+                (mh::TO_SEQ_GET_RECT, false, 6, 0, ret ^ 4),
+                (mh::TK_MENU_ITEM_CLOSE_WINDOW, false, 0, 0, 0x8c),
+                (mh::TK_MENU_ITEM_CLOSE_WINDOW2, false, 0, 0, 0x8d),
+                (mh::TK_MENU_ITEM_CLOSE_WINDOW3, false, 0, 0, 0x8e),
+                (mh::TK_MENU_ITEM_CLOSE_WINDOW4, false, 0, 0, 0x8f),
+                (mh::TO_SEQ_STOP_SCENE, false, 2, 0, 0x90),
+                (mh::TK_MENU_CLOSE_SUB_CMD_WINDOW, false, 0, 0, ret ^ 5),
+                (mh::TK_MENU_GET_CURRENT_PLAYER, false, 0, 0, who),
+                (mh::TO_MENU_DRAW_CHR_STATUS_PLATE, false, 3, 0, ret ^ 6),
+                (mh::TK_MN2_GET_WSHOP_POS, false, 0, 0, 0x91),
+                (mh::TK_MN2_GET_ISHOP_POS, false, 0, 0, 0x92),
+            ]);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_X2, 1, 1.25 + i as f32);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_Y2, 1, -3.5 * i as f32);
+            let w = t.zeros(0x40);
+            let busy = [0u16, 1, 0x8000][i % 3];
+            t.write(w + 0x30, &busy.to_le_bytes());
+            t.g32(0x0186_a278, w);
+            let at = t.rebase(0x0186_a390);
+            t.write(at, &[rng.next() as u8]);
+            for &(sym, step) in steps {
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(step(m))
+                });
+            }
+        }
+    });
+}
+
+// ---- round 3, batch 2 (ffx_menu::m5m_i) ----
+
+#[test]
+fn r3b2_jump_thunks_match_the_original() {
+    type Bridge = fn(&mut G, &[u32]) -> u32;
+    let list: &[(u32, u32, u32, Bridge)] = &[
+        (0x008c_a470, mi::TK_SND_UPDATE, 0, |m, _| {
+            mi::tk_snd_update_thunk(m)
+        }),
+        (0x008c_c1a0, mi::SUMMON_INIT, 0, |m, _| {
+            mi::summon_init_thunk(m)
+        }),
+        (0x008c_f820, mi::WEAPON_INIT, 0, |m, _| {
+            mi::weapon_init_thunk(m)
+        }),
+        (0x008d_0a10, mi::LIMIT_INIT, 0, |m, _| {
+            mi::limit_init_thunk(m)
+        }),
+        (0x008d_55d0, mi::KAIZOU_INIT, 0, |m, _| {
+            mi::kaizou_init_thunk(m)
+        }),
+        (0x008d_d460, mh::TO_DRAW_SCISSOR_XYWH, 4, |m, a| {
+            mi::menu_draw_scissor_rect(m, a[0], a[1], a[2], a[3])
+        }),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0001);
+        for &(thunk, target, n, bridge) in list {
+            for i in 0..3 {
+                t.reset();
+                let ret = rng.word();
+                t.stub(target, false, n, 0, ret);
+                let args: Vec<u32> = (0..n).map(|_| rng.word()).collect();
+                let what = format!("thunk {thunk:#x} #{i}");
+                t.check(&what, thunk, Conv::Cdecl, &args, |m| {
+                    Out::U32(bridge(m, &args))
+                });
+            }
+        }
+        t.reset();
+        t.check("0x008dde90", 0x008d_de90, Conv::Cdecl, &[], |m| {
+            Out::U32(mi::vibrate_curve_008dde90(m))
+        });
+        for old in [0, 1, 0xdead_0001] {
+            t.g32(0x025d_16bc, old);
+            t.check("0x008db7d0", 0x008d_b7d0, Conv::Cdecl, &[], |m| {
+                mi::tuto_clear(m);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn r3b2_menu_screen_steps_match_the_original() {
+    type Step = fn(&mut G) -> u32;
+    let steps: &[(u32, Step)] = &[
+        (0x008c_b350, |m| mi::config_open(m)),
+        (0x008c_c300, |m| mi::summon_close(m)),
+        (0x008c_f910, |m| mi::weapon_stop_scenes(m)),
+        (0x008d_09b0, |m| mi::limit_draw(m)),
+        (0x008d_0c70, |m| mi::limit_close(m)),
+        (0x008d_1d30, |m| mi::status_open(m)),
+        (0x008d_1dd0, |m| mi::status_close(m)),
+        (0x008d_55c0, |m| mi::draw_sync_only(m)),
+        (0x008d_5650, |m| mi::kaizou_close(m)),
+        (0x008d_7560, |m| mh::draw_empty_screen(m)),
+        (0x008d_7580, |m| mi::shop_get_pos(m)),
+        (0x008d_75b0, |m| mi::wshop_close(m)),
+        (0x008d_9aa0, |m| mh::draw_empty_screen(m)),
+        (0x008d_9ac0, |m| mi::shop_get_pos(m)),
+        (0x008d_9ae0, |m| mi::wshop_close3(m)),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0002);
+        for i in 0..8 {
+            t.reset();
+            let ret = rng.word();
+            let who = rng.below(8);
+            let lang = [0, 1, 0xb][i % 3];
+            let layout = [1, 0, 2, 1][i % 4];
+            t.stubs(&[
+                (mi::TO_GET_FFX_LANG_JMP, false, 0, 0, lang),
+                (mi::GET_U32_023CBEB0, false, 0, 0, layout),
+                (mi::CONFIG_OPEN, false, 0, 0, ret),
+                (mh::TK_MENU_CLOSE_SUB_CMD_WINDOW, false, 0, 0, 0x81),
+                (mi::TK_MENU_SUMMON_CLOSE_WINDOW, false, 0, 0, ret ^ 1),
+                (mi::TK_MN2_SEQ_STOP_SCENE, false, 1, 0, ret ^ 2),
+                (mh::TK_MENU_GET_CURRENT_PLAYER, false, 0, 0, who),
+                (mh::TK_MENU_DRAW_KICK, false, 0, 0, 0x82),
+                (mh::TK_VU1_SYNC_PATH_THUNK, false, 0, 0, 0x83),
+                (mh::TK_MN2_DRAW_INIT_PACKET, false, 0, 0, 0x84),
+                (mh::TO_DRAW_MENU_BG, false, 0, 0, 0x85),
+                (mi::MENU_DRAW_DIVIDER_SHAPES, false, 1, 0, 0x86),
+                (mh::TO_MENU_DRAW_CHR_STATUS_PLATE, false, 3, 0, 0x87),
+                (mi::DRAW_LIMIT_PAGE_OVER_DRIVE, false, 1, 0, 0x88),
+                (mh::TK_MN2_DRAW_KICK_SYNC_PACKET, false, 0, 0, ret ^ 3),
+                (mi::TK_MENU_LIMIT_CLOSE_WINDOW, false, 0, 0, 0x89),
+                (mi::TK_MENU_LIMIT_CLOSE_WINDOW2, false, 0, 0, ret ^ 4),
+                (mi::TK_MN2_GET_STATUS_POS, false, 0, 0, ret ^ 5),
+                (mi::MENU_STATUS_CLOSE_WINDOW, false, 1, 0, 0x8a),
+                (mi::TK_MN2_INIT_STATUS_BG, false, 0, 0, ret ^ 6),
+                (mi::TK_MS_SET_SAVE_PARAM_ALL, false, 0, 0, 0x8b),
+                (mi::TK_MENU_KAIZOU_CLOSE_WINDOW, false, 0, 0, 0x8c),
+                (mi::ATEL_REGIST_CALLBACK_QUE2, false, 3, 0, ret ^ 7),
+                (mh::TK_MN2_GET_ISHOP_POS, false, 0, 0, 0x8d),
+                (mh::TK_MN2_GET_WSHOP_POS, false, 0, 0, 0x8e),
+                (mi::MENU_WSHOP_CLOSE_SUB_WINDOW4, false, 0, 0, 0x8f),
+                (mi::TK_MENU_WSHOP_CLOSE_WINDOW3, false, 0, 0, 0x90),
+            ]);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_X2, 1, 2.75 * i as f32);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_Y2, 1, 0.5 - i as f32);
+            let restart = [0, 1, 2, 0xffff_ffff, 7][i % 5];
+            t.g32(0x0186_a5fc, restart);
+            for k in 0..6 {
+                t.g32(0x0186_a820 + 4 * k, rng.word());
+            }
+            t.g32(0x0186_a448, rng.word());
+            t.g32(0x0186_a44c, rng.word());
+            for &(sym, step) in steps {
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(step(m))
+                });
+            }
+        }
+    });
+}
+
+/// The x87 row and cursor drawers: the remaps stubbed with awkward
+/// floats (so every product and sum rounds), both `ftol` paths
+/// (`__sse2_available` 0 and 1), rows in and out of range, the row table
+/// random.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r3b2_menu_row_drawers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0003);
+        for i in 0..48u32 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mi::TK_MN2_DRAW_CROSS_CMD_CURSOR, false, 3, 0, ret),
+                (mi::TK_MN2_DRAW_CROSS_CURSOR, false, 3, 0, ret ^ 1),
+                (mi::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x81),
+                (mi::TO_DRAW_CROSS_MENU_ICON_COMMAND_NAME, false, 4, 0, 0x82),
+                (mi::TO_DRAW_CROSS_MENU_ICON_ABILITY_NAME, false, 4, 0, 0x83),
+            ]);
+            let big = if i % 11 == 10 { 3.0e9 } else { 1.0 };
+            let rx = (rng.below(2000) as f32 - 300.0) / 7.0 * big;
+            let ry = (rng.below(1200) as f32 - 100.0) / 3.0;
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_X2, 1, rx);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_Y2, 1, ry);
+            t.g32(0x0193_ed20, i % 2);
+            let w = t.zeros(0x60);
+            let rows = rng.below(14) as u16;
+            t.write(w + 0x30, &rows.to_le_bytes());
+            for off in [0x32, 0x46, 0x48] {
+                let v = (rng.next() as i16) >> (rng.below(12) as i16);
+                t.write(w + off, &v.to_le_bytes());
+            }
+            let table: Vec<u8> = (0..0x40)
+                .map(|k| match rng.below(4) {
+                    0 => 0,
+                    1 => [4u8, 0xb, 0xff][k % 3],
+                    _ => rng.next() as u8,
+                })
+                .collect();
+            let at = t.rebase(mi::ROW_TABLE);
+            t.write(at, &table);
+            // past 2^24 some integers don't fit an f32 (fild/fstp rounds)
+            let wide = |r: &mut Rng| match r.below(3) {
+                0 => r.next() | 0x0100_0001,
+                _ => (r.next() % 2000).wrapping_sub(500),
+            };
+            let x = wide(&mut rng);
+            let y = wide(&mut rng);
+            for sym in [0x008d_5df0, 0x008d_65f0] {
+                t.check(
+                    &format!("{sym:#x} #{i}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[w, x, y],
+                    |m| Out::U32(mi::row_cursor(m, w, x, y)),
+                );
+            }
+            t.check(
+                &format!("0x008c9940 #{i}"),
+                0x008c_9940,
+                Conv::Cdecl,
+                &[w, x, y],
+                |m| Out::U32(mi::list_cursor(m, w, x, y)),
+            );
+            t.check(
+                &format!("0x008cda20 #{i}"),
+                0x008c_da20,
+                Conv::Cdecl,
+                &[w, x, y],
+                |m| Out::U32(mi::summon_cursor(m, w)),
+            );
+            let fx = ((rng.below(4000) as f32 - 1000.0) / 9.0).to_bits();
+            let fy = ((rng.below(4000) as f32 - 1000.0) / 13.0).to_bits();
+            let row = [0, 1, 5, 13, 0xffff_ffff, rng.below(16)][i as usize % 6];
+            let fixed = i / 2 % 2;
+            for (sym, which) in [
+                (0x008c_dab0, mi::Rows::Summon),
+                (0x008d_5e60, mi::Rows::Kaizou),
+            ] {
+                let args = [w, fx, fy, row, fixed];
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &args, |m| {
+                    mi::row_draw(m, which, w, fx, fy, row, fixed);
+                    Out::None
+                });
+            }
+            // the lists: their row drawers run as they are, then stubbed
+            let b = rng.below(6);
+            for stub_rows in [false, true] {
+                if stub_rows {
+                    t.stubs(&[
+                        (mi::SUMMON_ROW_DRAW, false, 5, 0, 0x84),
+                        (mi::KAIZOU_ROW_DRAW, false, 5, 0, 0x85),
+                    ]);
+                }
+                let s = [w, fixed, b, fx, fy];
+                t.check(
+                    &format!("0x008cd990 #{i}"),
+                    0x008c_d990,
+                    Conv::Cdecl,
+                    &s,
+                    |m| {
+                        mi::list_draw(m, mi::Rows::Summon, w, fixed, b, fx, fy);
+                        Out::None
+                    },
+                );
+                let k = [w, fixed, b, x, y];
+                t.check(
+                    &format!("0x008d5d50 #{i}"),
+                    0x008d_5d50,
+                    Conv::Cdecl,
+                    &k,
+                    |m| {
+                        mi::list_draw(m, mi::Rows::Kaizou, w, fixed, b, x, y);
+                        Out::None
+                    },
+                );
+            }
+        }
+    });
+}
+
+// ---- round 3, batch 3 (ffx_menu::m5m_j) ----
+
+#[test]
+fn r3b3_malloc_and_read_gamecode_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        let mut rng = Rng(0x7e3c_0001);
+        let langs = [0u32, 1, 2, 5, 6, 8, 9, 10, 11, 0x12, 0x13, 0xffff_ffff];
+        let ends = [
+            0u32,
+            1,
+            15,
+            16,
+            0x1e1,
+            0xffff_ffff,
+            0u32.wrapping_sub(20),
+            0u32.wrapping_sub(100),
+        ];
+        for (i, &lang) in langs.iter().enumerate() {
+            for (k, &end) in ends.iter().enumerate() {
+                t.reset();
+                // a negative descriptor counts as open (only 0 fails)
+                let fd = match (i + k) % 5 {
+                    4 => 0,
+                    3 => 0xffff_fff0,
+                    _ => 7 + rng.below(4),
+                };
+                let pad = t.zeros(0x80);
+                // 0xff fill: the cleared first word and the 0 byte after the data show
+                let data = t.alloc(&[0xff; 0x400]) + 0x100;
+                let _ = pad;
+                t.stub_import(mj::SPRINTF_IAT, false, 3, 0, 0x20);
+                t.stubs(&[
+                    (mj::SCE_OPEN, false, 2, 0, fd),
+                    (mj::SCE_LSEEK, false, 3, 0, end),
+                    (mj::SCE_READ, false, 3, 0, 0x31),
+                    (mj::SCE_CLOSE, false, 1, 0, 0),
+                    (mj::DBG_PRINTF, false, 2, 0, 0x32),
+                    (mj::TK_MALLOC, false, 1, 0, data),
+                    (mj::TK_FREE, false, 1, 0, 0x33),
+                ]);
+                for g in [0x00cc_b95c, 0x00cc_b960] {
+                    let old = if rng.chance(2) { 0 } else { rng.word() | 1 };
+                    t.g32(g, old);
+                }
+                let what = format!("MallocAndReadGamecode {lang:#x} end {end:#x}");
+                t.check_framed(&what, 0x0064_6920, Conv::Cdecl, &[lang], 0x88, |m, ebp| {
+                    Out::U32(mj::malloc_and_read_gamecode(m, ebp, lang))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn r3b3_kaizou_fade_band_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3c_0002);
+        for i in 0..400 {
+            t.reset();
+            let ret = rng.word();
+            t.stub(mj::TO_MKP_SHAPE_XYWHUVC2, false, 11, 0, ret);
+            let c = match i % 4 {
+                0 => rng.below(0x20),
+                1 => 0x20 << rng.below(8),
+                _ => rng.next(),
+            };
+            let y = (rng.next() as i16) >> rng.below(14);
+            let at = t.rebase(0x0186_aa42);
+            t.write(at, &y.to_le_bytes());
+            t.check(
+                &format!("0x008d6340 #{i}"),
+                0x008d_6340,
+                Conv::Cdecl,
+                &[c],
+                |m| Out::U32(mj::kaizou_fade_band(m, c)),
             );
         }
     });

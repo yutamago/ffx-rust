@@ -9,7 +9,10 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
+use ffx_system::m5b_hdd::bridge as hd;
 use ffx_system::m5b_misc::{self as ms, bridge as mb};
+use ffx_system::m5b_movie::bridge as mv;
+use ffx_system::m5b_pc::bridge as pc;
 use ffx_system::m5b_stackwalker::bridge as sw;
 use ffx_system::m5b_steam::{self as steam, bridge as sm};
 use ffx_system::m5b_stl::{self as stl, bridge as st};
@@ -340,6 +343,316 @@ ported! {
     /// `JobWorker_start_00703a50(this; queue, arg)`.
     JobWorker_start_00703a50 @ 0x0070_3a50 => extern "thiscall" fn job_worker_start(this: u32, queue: u32, arg: u32) -> u32 {
         mb::job_worker_start(&mut mem(), this, queue, arg)
+    }
+
+    // ---- round 2: the movie frame queue and its reader ----
+    /// `SetFields_00a3dd00(this; a, b, c, d)`.
+    SetFields_00a3dd00 @ 0x00a3_dd00 => extern "thiscall" fn set_fields_00a3dd00(this: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mv::set_fields(&mut mem(), this, [a, b, c, d])
+    }
+    /// `CDataFrameQueue::CDataFrameQueue(this)`.
+    CDataFrameQueue_ctor @ 0x00a3_dd20 => extern "thiscall" fn data_frame_queue_ctor(this: u32) -> u32 {
+        mv::queue_construct(&mut mem(), this)
+    }
+    /// The deleting destructor `(this; flags)`.
+    CDataFrameQueue_deletingDtor_00a3dd60 @ 0x00a3_dd60 => extern "thiscall" fn data_frame_queue_delete(this: u32, flags: u32) -> u32 {
+        mv::queue_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// `Front(this)`.
+    CDataFrameQueue_Front @ 0x00a3_dd90 => extern "thiscall" fn data_frame_queue_front(this: u32) -> u32 {
+        mv::queue_front(&mut mem(), this)
+    }
+    /// `Pop(this)`: `eax` untouched when no writer is woken.
+    CDataFrameQueue_Pop @ 0x00a3_ddc0 => extern "thiscall" fn data_frame_queue_pop(this: u32) {
+        let _ = mv::queue_pop(&mut mem(), this);
+    }
+    /// `Count(this)`.
+    CDataFrameQueue_Count @ 0x00a3_dde0 => extern "thiscall" fn data_frame_queue_count(this: u32) -> u32 {
+        mv::queue_count(&mut mem(), this)
+    }
+    /// `Init(this; capacity, extra, alloc, free)`.
+    CDataFrameQueue_Init @ 0x00a3_ddf0 => extern "thiscall" fn data_frame_queue_init(this: u32, capacity: u32, extra: u32, alloc: u32, free: u32) -> u32 {
+        mv::queue_init(&mut mem(), this, capacity, extra, alloc, free)
+    }
+    /// `Close(this)`.
+    CDataFrameQueue_Close @ 0x00a3_dea0 => extern "thiscall" fn data_frame_queue_close(this: u32) -> u32 {
+        mv::queue_close(&mut mem(), this)
+    }
+    /// `Reserve(this; len)`.
+    CDataFrameQueue_Reserve @ 0x00a3_dec0 => extern "thiscall" fn data_frame_queue_reserve(this: u32, len: u32) -> u32 {
+        mv::queue_reserve(&mut mem(), this, len)
+    }
+    /// `Commit(this)`.
+    CDataFrameQueue_Commit @ 0x00a3_df00 => extern "thiscall" fn data_frame_queue_commit(this: u32) -> u32 {
+        mv::queue_commit(&mut mem(), this)
+    }
+    /// `Destroy(this)`: `eax` untouched when closed already.
+    CDataFrameQueue_Destroy @ 0x00a3_df20 => extern "thiscall" fn data_frame_queue_destroy(this: u32) {
+        let _ = mv::queue_destroy(&mut mem(), this);
+    }
+    /// `0x00a3dfb0(this; out, start, len, limit, event)`.
+    CDataFrameQueue_waitSpace_00a3dfb0 @ 0x00a3_dfb0 => extern "thiscall" fn data_frame_queue_wait_space(this: u32, out: u32, start: u32, len: u32, limit: u32, event: u32) -> u32 {
+        mv::queue_wait_space(&mut mem(), this, out, start, len, limit, event)
+    }
+    /// `VbfMkvReader::VbfMkvReader(this)`.
+    VbfMkvReader_ctor @ 0x00a3_e030 => extern "thiscall" fn vbf_mkv_reader_ctor(this: u32) -> u32 {
+        mv::reader_construct(&mut mem(), this)
+    }
+    /// The deleting destructor `(this; flags)`.
+    VbfMkvReader_deletingDtor_00a3e0c0 @ 0x00a3_e0c0 => extern "thiscall" fn vbf_mkv_reader_delete(this: u32, flags: u32) -> u32 {
+        mv::reader_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// `Close(this)`.
+    VbfMkvReader_Close @ 0x00a3_e150 => extern "thiscall" fn vbf_mkv_reader_close(this: u32) {
+        mv::reader_close(&mut mem(), this);
+    }
+    /// `Length(this; total, available)`.
+    VbfMkvReader_Length @ 0x00a3_e1b0 => extern "thiscall" fn vbf_mkv_reader_length(this: u32, total: u32, available: u32) -> u32 {
+        mv::reader_length(&mut mem(), this, total, available)
+    }
+    /// `Open(this; name)`.
+    VbfMkvReader_Open @ 0x00a3_e1f0 => extern "thiscall" fn vbf_mkv_reader_open(this: u32, name: u32) -> u32 {
+        mv::reader_open(&mut mem(), this, name)
+    }
+
+    // ---- round 2: the occluder class descriptors' methods (`this` unused) ----
+    /// Slot 5 `(value, out)`.
+    OccluderDescriptor_get_00a424b0 @ 0x00a4_24b0 => extern "stdcall" fn occluder_get(value: u32, out: u32) -> u32 {
+        pc::occluder_get(&mut mem(), value, out)
+    }
+    /// The abstract descriptor's slot 3 `(a, b)`: a message only.
+    OccluderDescriptor_notSupported_00a424e0 @ 0x00a4_24e0 => extern "stdcall" fn occluder_not_supported(_a: u32, _b: u32) -> u32 {
+        pc::not_supported(&mut mem())
+    }
+    /// Slot 6 `(L, slot)`.
+    OccluderDescriptor_pushSlot_00a42700 @ 0x00a4_2700 => extern "stdcall" fn occluder_push_slot(l: u32, slot: u32) -> u32 {
+        pc::push_slot(&mut mem(), l, slot)
+    }
+    /// The abstract descriptor's slot 4 `(L, value)`.
+    OccluderDescriptor_push_00a42740 @ 0x00a4_2740 => extern "stdcall" fn occluder_push_00a42740(l: u32, v: u32) -> u32 {
+        pc::push_value(&mut mem(), l, v)
+    }
+    /// The header descriptors' slot 4 `(L, value)`.
+    OccluderDescriptor_push_00a42760 @ 0x00a4_2760 => extern "stdcall" fn occluder_push_00a42760(l: u32, v: u32) -> u32 {
+        pc::push_value(&mut mem(), l, v)
+    }
+    /// Slot 0 `(a, flag)`.
+    OccluderDescriptor_registrySet_00a427e0 @ 0x00a4_27e0 => extern "stdcall" fn occluder_registry_set(a: u32, flag: u32) -> u32 {
+        pc::registry_set(&mut mem(), a, flag)
+    }
+    /// The header descriptors' slot 15 `(this; a, b)`.
+    OccluderDescriptor_callField_00a42810 @ 0x00a4_2810 => extern "thiscall" fn occluder_call_field(this: u32, a: u32, b: u32) -> u32 {
+        pc::call_field(&mut mem(), this, a, b)
+    }
+
+    // ---- round 2: the PC read hooks, the focus handler, jobs ----
+    /// `PcReadFunc_set`'s sector read: a tail jump to
+    /// `CDfileReadSector_CD`.
+    PcRead_readSector_00a42870 @ 0x00a4_2870 => extern "C" fn pc_read_sector(sector: u32, buffer: u32, size: u32, callback: u32, opts: u32) -> u32 {
+        pc::read_sector(&mut mem(), sector, buffer, size, callback, opts)
+    }
+    /// `PcReadFunc_set`'s file sector `(file)`: rebased into its slot.
+    PcRead_fileSector_00a42880 @ 0x00a4_2880 => extern "C" fn pc_file_sector(file: u32; slots: u32) -> u32 {
+        pc::file_sector(&mut mem(), file, slots)
+    }
+    /// `pc_ReadWholeFile(name, size_out)`.
+    pc_ReadWholeFile_00a42a00 @ 0x00a4_2a00 => extern "C" fn pc_read_whole_file(name: u32, size_out: u32) -> u32 {
+        pc::read_whole_file(&mut mem(), name, size_out)
+    }
+    /// `CWindowEventHandler` slot 0 `(this)`: the focus lost.
+    WindowEventHandler_focusLost_00a44890 @ 0x00a4_4890 => extern "thiscall" fn focus_lost(this: u32) -> u32 {
+        pc::focus_lost(&mut mem(), this)
+    }
+    /// `CWindowEventHandler` slot 1 `(this)`: the focus back.
+    WindowEventHandler_focusGained_00a44960 @ 0x00a4_4960 => extern "thiscall" fn focus_gained(this: u32) -> u32 {
+        pc::focus_gained(&mut mem(), this)
+    }
+    /// `()`: the focus handler registered.
+    WindowEventHandler_Register_00a44a30 @ 0x00a4_4a30 => extern "C" fn register_focus_handler() -> u32 {
+        pc::register_focus_handler(&mut mem())
+    }
+    /// `(this; func, a, b, queue)`: a two-word job pushed.
+    JobScheduler_pushJob2_00a44a50 @ 0x00a4_4a50 => extern "thiscall" fn push_job2(this: u32, func: u32, a: u32, b: u32, queue: u32; slots: u32) -> u32 {
+        pc::push_job(&mut mem(), this, func, &[a, b], queue, slots.wrapping_add(12))
+    }
+    /// `(chars, count)`.
+    JobSchedule_Ch_Cloth_PerCharacter @ 0x00a4_4b40 => extern "C" fn schedule_cloth(chars: u32, count: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        let mut m = mem();
+        // the job as the original pushes it: the harness may have pointed
+        // that operand at its seeded wrapper
+        let job: u32 = ffx_bridge::Mem::read(&m, ffx_bridge::Mem::rebase(&m, ffx_system::m5b_pc::CLOTH_JOB_PUSH));
+        pc::schedule_cloth(&mut m, chars, count, job, f.at())
+    }
+    /// `()`: the same code as `JobScheduleWait_Ch_Cloth_PerCharacter`.
+    JobScheduleWait_Ch_CalcMiddle_Batch @ 0x00a4_4b80 => extern "C" fn wait_calc_middle() {
+        ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());
+    }
+    /// `(chars, pass, count)`.
+    JobSchedule_Ch_CalcMiddle_Batch @ 0x00a4_4b90 => extern "C" fn schedule_calc_middle(chars: u32, pass: u32, count: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        let mut m = mem();
+        // the job as the original pushes it (see `schedule_cloth`)
+        let job: u32 = ffx_bridge::Mem::read(&m, ffx_bridge::Mem::rebase(&m, ffx_system::m5b_pc::CALC_MIDDLE_JOB_PUSH));
+        pc::schedule_calc_middle(&mut m, [chars, pass, count], job, f.at())
+    }
+    /// `(this; func, a, b, c, queue)`: a three-word job pushed.
+    JobScheduler_pushJob3_0071e720 @ 0x0071_e720 => extern "thiscall" fn push_job3(this: u32, func: u32, a: u32, b: u32, c: u32, queue: u32; slots: u32) -> u32 {
+        pc::push_job(&mut mem(), this, func, &[a, b, c], queue, slots.wrapping_add(16))
+    }
+    /// `str_replace(s, what, with)`.
+    str_replace @ 0x00a4_4bd0 => extern "C" fn str_replace(s: u32, what: u32, with: u32) -> u32 {
+        pc::str_replace(&mut mem(), s, what, with)
+    }
+
+    // ---- round 2: the HDD layer and one-jump thunks ----
+    /// `()`: `jmp AtelGetScenarioFlag`.
+    Thunk_AtelGetScenarioFlag_007726d0 @ 0x0077_26d0 => extern "C" fn scenario_flag() -> u32 {
+        hd::scenario_flag(&mut mem())
+    }
+    /// `()`: the sphere monitor word, zero-extended.
+    Thunk_AtelGetSphereMonitor_00772730 @ 0x0077_2730 => extern "C" fn sphere_monitor() -> u32 {
+        hd::sphere_monitor(&mut mem())
+    }
+    /// `(i)`: `jmp hdd_rmode_get`.
+    Thunk_hdd_rmode_get_007727f0 @ 0x0077_27f0 => extern "C" fn rmode_get(i: u32) -> u32 {
+        hd::rmode_get(&mut mem(), i)
+    }
+    /// `()`: bit 5 of the buttons byte.
+    PadButtonBit5_00772800 @ 0x0077_2800 => extern "C" fn pad_bit5() -> u32 {
+        hd::pad_bit(&mut mem(), 5)
+    }
+    /// `()`: bits 12..15 of the buttons or held word, pad on.
+    PadShoulderHeld_00772860 @ 0x0077_2860 => extern "C" fn pad_shoulder() -> u32 {
+        hd::pad_any_shoulder(&mut mem())
+    }
+    /// `()`: bit 6 of the buttons byte.
+    PadButtonBit6_00772970 @ 0x0077_2970 => extern "C" fn pad_bit6() -> u32 {
+        hd::pad_bit(&mut mem(), 6)
+    }
+    /// `()`: the word at `0x0112a078`.
+    GetGlobal_0112a078_007729d0 @ 0x0077_29d0 => extern "C" fn pad_word() -> u32 {
+        hd::pad_word(&mut mem())
+    }
+    /// `(i)`: `jmp hdd_head_sectors`.
+    Thunk_hdd_head_sectors_00773530 @ 0x0077_3530 => extern "C" fn head_sectors(i: u32) -> u32 {
+        hd::head_sectors(&mut mem(), i)
+    }
+    /// `(i, v)`: `jmp SetTableEntry_00779590`.
+    Thunk_SetTableEntry_00773940 @ 0x0077_3940 => extern "C" fn set_rmode(i: u32, v: u32) -> u32 {
+        hd::set_rmode(&mut mem(), i, v)
+    }
+    /// `(n)`: `jmp MsPayGIL`.
+    Thunk_MsPayGIL_00773990 @ 0x0077_3990 => extern "C" fn pay_gil(n: u32) -> u32 {
+        hd::pay_gil(&mut mem(), n)
+    }
+    /// `()`: `jmp get_hdd_status`.
+    Thunk_get_hdd_status_00773b80 @ 0x0077_3b80 => extern "C" fn hdd_status() -> u32 {
+        hd::hdd_status(&mut mem())
+    }
+    /// `(on)`.
+    hdd_SetMode_00773c60 @ 0x0077_3c60 => extern "C" fn set_hdd_mode(on: u32) -> u32 {
+        hd::set_hdd_mode(&mut mem(), on)
+    }
+    /// `()`.
+    hdd_head_init @ 0x0077_89d0 => extern "C" fn head_init() -> u32 {
+        hd::head_init(&mut mem())
+    }
+    /// `()`.
+    hdd_HeadsAssert_00778980 @ 0x0077_8980 => extern "C" fn heads_assert() -> u32 {
+        hd::heads_assert(&mut mem())
+    }
+    /// `(module, n)`.
+    cd_QueueModuleRead_0076cf60 @ 0x0076_cf60 => extern "C" fn queue_module_read(module: u32, n: u32) -> u32 {
+        hd::queue_module_read(&mut mem(), module, n)
+    }
+    /// `()`.
+    hdd_unmount @ 0x0077_9730 => extern "C" fn hdd_unmount() -> u32 {
+        hd::unmount(&mut mem())
+    }
+    /// `()`.
+    hdd_InstalledMb_00778f60 @ 0x0077_8f60 => extern "C" fn installed_mb() -> u32 {
+        hd::installed_mb(&mut mem(), 1)
+    }
+    /// `()`.
+    hdd_InstalledMb2_00778fb0 @ 0x0077_8fb0 => extern "C" fn installed_mb2() -> u32 {
+        hd::installed_mb(&mut mem(), 2)
+    }
+    /// `()`.
+    hdd_InstallPercent_00779290 @ 0x0077_9290 => extern "C" fn install_percent() -> u32 {
+        hd::install_percent(&mut mem())
+    }
+    /// `()`.
+    hdd_install_end @ 0x0077_92c0 => extern "C" fn install_end() -> u32 {
+        hd::install_end(&mut mem())
+    }
+    /// `()`: the word at `0x0112a518`.
+    GetGlobal_0112a518_007793a0 @ 0x0077_93a0 => extern "C" fn word_a518() -> u32 {
+        hd::word_a518(&mut mem())
+    }
+    /// `()`.
+    hdd_InstallResult_00779880 @ 0x0077_9880 => extern "C" fn install_result() -> u32 {
+        hd::install_result(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawProgress_00779450 @ 0x0077_9450 => extern "C" fn draw_progress() -> u32 {
+        hd::draw_progress(&mut mem())
+    }
+    /// `()`.
+    hdd_Format_007789a0 @ 0x0077_89a0 => extern "C" fn hdd_format() -> u32 {
+        hd::format(&mut mem())
+    }
+    /// `()`.
+    TrophyManager_DestroyInstance @ 0x007a_0cb0 => extern "C" fn trophy_destroy() -> u32 {
+        hd::trophy_destroy(&mut mem())
+    }
+    /// `(lang)`: `jmp FFXSetLang`.
+    Thunk_FFXSetLang_00887ca0 @ 0x0088_7ca0 => extern "C" fn set_lang(lang: u32) -> u32 {
+        hd::set_lang(&mut mem(), lang)
+    }
+    /// `()`: `jmp SaveDataIsAlbhedLoaded`.
+    Thunk_SaveDataIsAlbhedLoaded_00822540 @ 0x0082_2540 => extern "C" fn albhed_loaded() -> u32 {
+        hd::albhed_loaded(&mut mem())
+    }
+    /// `()`: `jmp SaveDataIsBusy`.
+    SaveDataIsBusy_thunk @ 0x0082_2560 => extern "C" fn save_busy() -> u32 {
+        hd::save_busy(&mut mem())
+    }
+    /// `(_, buf, size, head, file)`.
+    hd_file_read_no_wait @ 0x0077_85e0 => extern "C" fn read_no_wait(_a: u32, buf: u32, size: u32, head: u32, file: u32) -> u32 {
+        hd::read_no_wait(&mut mem(), buf, size, head, file)
+    }
+    /// `()`.
+    cd_CheckDisk_0076d5a0 @ 0x0076_d5a0 => extern "C" fn check_disk() -> u32 {
+        hd::check_disk(&mut mem())
+    }
+    /// `()`.
+    cd_AllocReadBuffer_0076dc70 @ 0x0076_dc70 => extern "C" fn alloc_read_buffer() -> u32 {
+        hd::alloc_read_buffer(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawBarSprite_007766e0 @ 0x0077_66e0 => extern "C" fn draw_bar_sprite() -> u32 {
+        hd::draw_background(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawWallSprite_00776740 @ 0x0077_6740 => extern "C" fn draw_wall_sprite() -> u32 {
+        hd::draw_wall(&mut mem())
+    }
+    /// `TkyiAssert(msg)`: `eax` untouched.
+    TkyiAssert @ 0x0077_7680 => extern "C" fn tkyi_assert(msg: u32) {
+        hd::assert(&mut mem(), msg);
+    }
+    /// `(n)`: the slot decremented, the block's flag set.
+    cd_SetBlockFlag_0076cf80 @ 0x0076_cf80 => extern "C" fn set_block_flag(n: u32; slots: u32) -> u32 {
+        hd::set_block_flag(&mut mem(), n, slots)
+    }
+    /// `()`: started already, the original leaves `eax` untouched; its
+    /// callers reach it through `call eax` (`MsgExpandCodes_00776940`'s
+    /// `[0x00c416dc]` table), so that `eax` is its own address.
+    hdd_InstallStart_00779120 @ 0x0077_9120 => extern "C" fn install_start() -> u32 {
+        let mut m = mem();
+        let own = ffx_bridge::Mem::rebase(&m, 0x0077_9120);
+        hd::install_start(&mut m).unwrap_or(own)
     }
 }
 

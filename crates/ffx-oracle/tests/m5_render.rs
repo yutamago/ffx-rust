@@ -45,6 +45,8 @@ use ffx_prender::m5r_h::{self as mh, bridge as h};
 use ffx_prender::m5r_i::{self as mi, bridge as i};
 use ffx_prender::m5r_j::{self as mj, bridge as j};
 use ffx_prender::m5r_k::{self as mk, bridge as k};
+use ffx_prender::m5r_l::{self as ml, bridge as lb};
+use ffx_prender::m5r_m::{self as mm, bridge as mb2};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -181,6 +183,8 @@ enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// `ST0`, a float the original loads with `fld dword`.
+    F32(f32),
 }
 
 struct Twins {
@@ -505,15 +509,23 @@ impl Twins {
         self.b.set_call_top(self.b_top);
         let out = bridge(&mut G(&mut self.b, poison, top));
         self.b.set_call_top(None);
-        assert!(
-            ra.st0_raw.is_none(),
-            "{what}: the original leaves ST0 set ({:?})",
-            ra.st0
-        );
+        if let Out::F32(v) = out {
+            let st0 = ra.st0.unwrap_or_else(|| panic!("{what}: no float in ST0"));
+            assert!(
+                ffx_oracle::same_float(st0, f64::from(v)),
+                "{what}: st0 {st0} vs {v}"
+            );
+        } else {
+            assert!(
+                ra.st0_raw.is_none(),
+                "{what}: the original leaves ST0 set ({:?})",
+                ra.st0
+            );
+        }
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
-            Out::None => {}
+            Out::None | Out::F32(_) => {}
         }
         self.diff(what);
     }
@@ -5370,6 +5382,784 @@ fn batch11_functions_match_the_original() {
                 &[],
                 |g| Out::U32(k::debug_text_panel_ctor(g, this)),
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- render-pcui batch 1 (ffx_prender::m5r_l) ----
+
+#[test]
+fn rp1_thunks_match_the_original() {
+    // Every thunk's target is a recording stub: the diff shows the
+    // target was called with the thunk's `ecx` and words, and its `eax`
+    // comes back.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b01);
+        for case in 0..8 {
+            let this = t.zeros(0x40);
+            let scene = t.zeros(0x40);
+            t.global(ml::SCENE.sym, scene);
+            let r = rng.word();
+            t.stub_sym(ml::RADIAL_LINE_DESTROY, 1, true, 0, 0, Ret::Val(r));
+            t.check(
+                "RadialLine_destroyRadialLine_thunk_006f7b10",
+                0x006f_7b10,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::RADIAL_LINE_DESTROY,
+                        host::Conv::Thiscall(this),
+                        &[],
+                    ))
+                },
+            );
+            t.stub_sym(ml::BROKEN_SCREEN_RELEASE, 2, true, 0, 0, Ret::Val(r ^ 1));
+            t.check(
+                "BrokenScreenEffect_releaseObjects_thunk_006d3600",
+                0x006d_3600,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::BROKEN_SCREEN_RELEASE,
+                        host::Conv::Thiscall(this),
+                        &[],
+                    ))
+                },
+            );
+            for (k, (sym, target)) in [
+                (0x0063_8e20, ml::MS_GET_ENCOUNT_TYPE),
+                (0x0063_8e60, ml::MS_BATTLE_CHECK),
+                (0x0064_20d0, ml::SEGMENTS_ALL_READY),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let k = k as u32;
+                t.stub_sym(target, 3 + k, false, 0, 0, Ret::Val(r.wrapping_add(k)));
+                t.check("cdecl thunk", sym, Conv::Cdecl, &[], |g| {
+                    Out::U32(lb::forward(g, target, host::Conv::Cdecl, &[]))
+                });
+            }
+            let chr = if case % 3 == 0 { 0 } else { this };
+            t.stub_sym(ml::CHARACTER_UNLOAD_TASK, 6, false, 1, 0, Ret::Val(r));
+            t.check(
+                "graphicCharacterUnloadTask_thunk_0063d9a0",
+                0x0063_d9a0,
+                Conv::Cdecl,
+                &[chr],
+                |g| {
+                    Out::U32(lb::forward(
+                        g,
+                        ml::CHARACTER_UNLOAD_TASK,
+                        host::Conv::Cdecl,
+                        &[chr],
+                    ))
+                },
+            );
+            for (k, (sym, target)) in [
+                (0x0063_9350, ml::ATTACH_CHR_CLUSTER),
+                (0x0064_49c0, ml::SCENE_UPDATE_MAP_YIQ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub_sym(target, 7 + k as u32, true, 0, 0, Ret::Val(r ^ 0x55));
+                t.check("scene thunk", sym, Conv::Cdecl, &[], |g| {
+                    Out::U32(lb::scene_forward(g, target))
+                });
+            }
+            assert_eq!(t.calls(), 8);
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp1_video_accessors_match_the_original() {
+    // A synthetic FMV manager from a stubbed GetInstance: the playing and
+    // state bytes in every combination, getEndTimeMs and
+    // isVideoAtEndFrame stubs returning words with upper bytes set. The
+    // snapshots run the game's own manager too (GetInstance original).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b02);
+        for case in 0..24 {
+            let m = t.zeros(0x800) + 4 * rng.below(64);
+            let playing = [0, 1, 0x80, rng.next() as u8][case % 4];
+            let state = [0, 1, 0xff, rng.next() as u8][(case / 4) % 4];
+            t.w8(m + ml::FMV_PLAYING, playing);
+            t.w8(m + ml::FMV_STATE, state);
+            let real = t.snapshot && case >= 20;
+            if !real {
+                t.stub_sym(ml::FMV_MANAGER, 1, false, 0, 0, Ret::Val(m));
+            }
+            let r = rng.word();
+            t.stub_sym(ml::FMV_END_TIME_MS, 2, true, 0, 0, Ret::Val(r));
+            t.check(
+                "graphicGetVideoEndTime",
+                0x0064_1140,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_end_time(g)),
+            );
+            t.stub_sym(
+                ml::FMV_AT_END_FRAME,
+                3,
+                true,
+                0,
+                0,
+                Ret::Val(r ^ 0xffff_ff00),
+            );
+            t.check(
+                "graphicisVideoAtEndFrame",
+                0x0064_5e50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_at_end_frame(g)),
+            );
+            t.check(
+                "graphicVideoState_00645dc0",
+                0x0064_5dc0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_state(g)),
+            );
+            t.check(
+                "graphicVideoIsPlaying_00660410",
+                0x0066_0410,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_is_playing(g)),
+            );
+            t.check(
+                "graphicVideoClearPlaying_00643e50",
+                0x0064_3e50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(lb::video_clear_playing(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp1_app_floats_and_flags_match_the_original() {
+    // The application's floats from a stubbed GetApplication (any float
+    // but a signalling NaN; the snapshots also read the game's own
+    // application), the post-process flag on a synthetic manager and on
+    // the game's, and the float swap on distinct and equal cells.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b03);
+        for case in 0..24 {
+            let app = t.zeros(0x100);
+            for k in 0..0x40 {
+                let v = float_word(&mut rng);
+                t.w32(app + 4 * k, v);
+            }
+            let real = t.snapshot && case >= 20;
+            if !real {
+                t.stub_sym(ml::GET_APPLICATION, 1, false, 0, 0, Ret::Val(app));
+            }
+            for (sym, off) in [
+                (0x0064_11a0, 0x78),
+                (0x0064_1270, 0xd8),
+                (0x0064_1280, 0xd4),
+                (0x0064_1290, 0xdc),
+                (0x0064_12a0, 0xd0),
+            ] {
+                t.check("app float", sym, Conv::Cdecl, &[], |g| {
+                    Out::F32(lb::app_float(g, off))
+                });
+            }
+            if !real {
+                let p = t.zeros(0x1_2400);
+                let v = rng.next() as u8;
+                t.w8(p + ml::POST_FLAG, v);
+                t.global(ml::POST_PROCESS.sym, p);
+            }
+            if ml::POST_PROCESS.get(&t.b) != 0 {
+                t.check(
+                    "graphicPostProcessSetFlag_00699080",
+                    0x0069_9080,
+                    Conv::Cdecl,
+                    &[],
+                    |g| Out::U32(lb::post_set_flag(g)),
+                );
+            }
+            let cells = t.zeros(8);
+            let (a, b) = if case % 5 == 0 {
+                (cells, cells)
+            } else {
+                (cells, cells + 4)
+            };
+            let x = float_word(&mut rng);
+            let y = float_word(&mut rng);
+            t.w32(cells, x);
+            t.w32(cells + 4, y);
+            let slot = first_slot(&t.a, 2);
+            t.check(
+                "FloatSwap_006c7c80",
+                0x006c_7c80,
+                Conv::Cdecl,
+                &[a, b],
+                |g| Out::U32(lb::float_swap(g, slot, a, b)),
+            );
+            assert_eq!(
+                Mem::read::<u32>(&t.a, slot),
+                Mem::read::<u32>(&t.b, slot),
+                "FloatSwap_006c7c80: the parked word"
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- render-pcui batch 2 (ffx_prender::m5r_m) ----
+
+/// A cursor script word the stub leaves alone.
+const RP_KEEP: u32 = 0x5e5e_5e5e;
+
+impl Twins {
+    /// Stubs for a cursor's first step and its next: each call copies the
+    /// next five words of `steps` (base, block, stride, count, offset)
+    /// into the cursor (`ecx`), but for [`RP_KEEP`] words, then logs its
+    /// tag and `ecx`.
+    fn cursor_script(&mut self, first: u32, next: u32, steps: &[[u32; 5]]) {
+        let words: Vec<u32> = steps.iter().flatten().copied().collect();
+        let table = self.words(&words);
+        let ptr = self.words(&[table]);
+        for (tag, sym) in [(0x60, first), (0x61, next)] {
+            let log = self.stub_code(tag, true, 0, 0, Ret::Keep, false);
+            let mut c = vec![0xa1];
+            c.extend(ptr.to_le_bytes()); // mov eax, [ptr]
+            for i in 0..5u8 {
+                c.extend([0x8b, 0x50, 4 * i]); // mov edx, [eax+4i]
+                c.extend([0x81, 0xfa]);
+                c.extend(RP_KEEP.to_le_bytes()); // cmp edx, KEEP
+                c.extend([0x74, 0x03]); // je +3
+                c.extend([0x89, 0x51, 4 * i]); // mov [ecx+4i], edx
+            }
+            c.extend([0x83, 0xc0, 0x14]); // add eax, 20
+            c.push(0xa3);
+            c.extend(ptr.to_le_bytes()); // mov [ptr], eax
+            c.push(0xe9);
+            c.extend([0; 4]);
+            // the jmp's displacement needs the code's own address
+            let at = self.a.alloc_code(&c).unwrap();
+            assert_eq!(self.b.alloc_code(&c).unwrap(), at);
+            let end = at + c.len() as u32;
+            self.write(end - 4, &log.wrapping_sub(end).to_le_bytes());
+            self.jump(sym, at);
+        }
+    }
+
+    /// Zeroes `n` bytes below `top` in both oracles' stacks.
+    fn clear_stack(&mut self, top: u32, n: u32) {
+        let z = vec![0; n as usize];
+        self.write(top - n, &z);
+    }
+}
+
+/// One object's cursor steps over elements at `area + 0x100 k` (each
+/// element's object word at `+4 + 0x1c`): a lone empty first step, or
+/// one to three runs of 1..4 elements (a block word that may equal an
+/// element) and the end.
+fn rp_cursor_steps(t: &mut Twins, rng: &mut Rng) -> Vec<[u32; 5]> {
+    let area = t.zeros(0x600);
+    for k in 0..6 {
+        let o = if rng.chance(4) { 0 } else { t.zeros(0x40) };
+        if o != 0 {
+            let v = rng.next() | 1;
+            t.w32(o + 0x1c, v);
+        }
+        t.w32(area + 0x100 * k + 0x20, o);
+    }
+    if rng.chance(5) {
+        return vec![[area, 0, 0x100, 0, 4]];
+    }
+    let mut steps = vec![];
+    for _ in 0..=rng.below(3) {
+        let base = area + 0x100 * rng.below(2);
+        let count = 1 + rng.below(4);
+        let block = if rng.chance(2) {
+            base + 0x100 * (1 + rng.below(2))
+        } else {
+            rng.next() | 3
+        };
+        if block % 4 == 0 {
+            let next = rng.next() | 3;
+            t.w32(block, next);
+        }
+        steps.push([base, block, 0x100, count, 4]);
+    }
+    steps.push([RP_KEEP; 5]);
+    steps
+}
+
+#[test]
+fn rp2_map_objects_reset_matches_the_original() {
+    // The flag or the map missing, no objects, and up to four objects
+    // with scripted cursor walks (empty, several runs, block skips,
+    // elements without an object). Synthetic data only: the snapshots'
+    // field map runs through the same code with the game's cursor.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b21);
+        for case in 0..60 {
+            let scene = t.zeros(0x1200);
+            t.w8(scene + 0x93c, u8::from(!rng.chance(6)));
+            t.w32(
+                scene + 0x1128,
+                if rng.chance(6) { 0 } else { scene + 0x100 },
+            );
+            let n = if case % 7 == 0 { 0 } else { 1 + rng.below(4) };
+            let objects = t.zeros(0x20);
+            let mut steps = vec![];
+            for k in 0..n {
+                let o = t.zeros(0x40);
+                t.w32(o + 0x1c, rng.next());
+                t.w32(objects + 4 * k, o);
+                steps.extend(rp_cursor_steps(t, &mut rng));
+            }
+            t.w32(scene + 0x112c, n);
+            t.w32(scene + 0x1134, objects);
+            t.cursor_script(mm::CURSOR_BEGIN, mm::CURSOR_NEXT, &steps);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "PhyreScene_resetMapObjects_0065f0e0",
+                0x0065_f0e0,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    mb2::map_objects_reset(g, ebp, scene);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp2_specular_events_match_the_original() {
+    // AddSpecularEvent: each excluded magic id in turn and none (the
+    // event frame compared, its never-written words 0 in both); the
+    // three slot setters with the skip flag, full and free slots, the id
+    // already present, kind 0x10 or not, the event flag; floats any but
+    // signalling NaNs.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b22);
+        for case in 0..40 {
+            let scene = t.zeros(0x10);
+            t.global(mm::SCENE.sym, scene);
+            let hit = case % 5;
+            let ids: Vec<u32> = (0..4)
+                .map(|k| {
+                    if k == hit {
+                        mm::NO_SPECULAR_MAGIC[k as usize]
+                    } else {
+                        rng.below(0x300) | 0x1000
+                    }
+                })
+                .collect();
+            let seq = t.seq(&ids);
+            t.stub_sym(mm::MAGIC_ID, 1, false, 0, 0, seq);
+            t.stub_sym(mm::ADD_VFX_DRAW_EVENT, 2, true, 1, 1, Ret::Val(rng.word()));
+            let ebp = frame_ebp(&t.a, 1);
+            t.clear_stack(ebp + 0x20, 0x100);
+            t.b_top = Some(ebp - 0x80);
+            let x = rng.word();
+            let ev = ebp - 0x14;
+            t.check(
+                "SpecularMapParamsManager_AddSpecularEvent",
+                0x006c_56f0,
+                Conv::Stdcall,
+                &[x],
+                |g| Out::U32(mb2::add_specular_event(g, ev, x)),
+            );
+            for k in 0..4 {
+                let (wa, wb): (u32, u32) =
+                    (Mem::read(&t.a, ev + 4 * k), Mem::read(&t.b, ev + 4 * k));
+                assert_eq!(wa, wb, "AddSpecularEvent: event word {k}");
+            }
+            t.b_top = None;
+            t.reset();
+        }
+        for case in 0..80 {
+            t.global(mm::SKIP_FRAME.sym, u32::from(rng.chance(6)));
+            let this = t.zeros(0x800);
+            let id = rng.word() | 1;
+            for k in 0..4 {
+                let v = match rng.below(4) {
+                    0 => 0,
+                    1 if case % 3 == 0 => id,
+                    _ => rng.next() | 1,
+                };
+                t.w32(this + 4 * k, v);
+                let s = rng.next();
+                t.w32(this + 0x5a0 + 4 * k, s);
+            }
+            let a: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            let a = t.words(&a);
+            let b: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            let b = t.words(&b);
+            let v: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            let v = t.words(&v);
+            let f = [
+                float_word(&mut rng),
+                float_word(&mut rng),
+                float_word(&mut rng),
+                float_word(&mut rng),
+            ];
+            t.stub_sym(mm::ADD_SPECULAR_EVENT, 3, false, 1, 1, Ret::Val(rng.word()));
+            t.stub_sym(
+                mm::SET_SPECULAR_PARAMS,
+                4,
+                true,
+                10,
+                10,
+                Ret::Val(rng.word()),
+            );
+            t.stub_sym(mm::SHADER_PARAM_WRITE, 5, false, 3, 0, Ret::Val(rng.word()));
+            let kind = if rng.chance(2) { 0x10 } else { rng.word() };
+            let mut args = vec![id, a, b];
+            args.extend(f);
+            args.extend([v, kind]);
+            t.check(
+                "SpecularMapParamsManager_setAkazaNoLight_006c5b80",
+                0x006c_5b80,
+                Conv::Thiscall(this),
+                &args,
+                |g| {
+                    mb2::set_akaza_no_light(g, this, id, a, b, f, v, kind);
+                    Out::None
+                },
+            );
+            for k in 0..4 {
+                let w = if rng.chance(3) { 0 } else { rng.next() | 1 };
+                t.w32(this + 4 * k, w);
+            }
+            let (last, lv, lc) = (rng.next(), rng.next(), rng.next());
+            let event = u32::from(rng.chance(2));
+            let mut args = vec![id, a, b];
+            args.extend(f);
+            args.extend([v, last, lv, lc, event]);
+            t.check(
+                "SpecularMapParamsManager_setAkaza_006c5c90",
+                0x006c_5c90,
+                Conv::Thiscall(this),
+                &args,
+                |g| {
+                    mb2::set_akaza(g, this, id, a, b, f, v, last, lv, lc, event);
+                    Out::None
+                },
+            );
+            for k in 0..4 {
+                let w = match rng.below(3) {
+                    0 => 0,
+                    1 => id,
+                    _ => rng.next() | 1,
+                };
+                t.w32(this + 4 * k, w);
+            }
+            let mut w = [0; 10];
+            for (k, x) in w.iter_mut().enumerate() {
+                // the plain words may look like signalling NaNs: they
+                // pass without the x87
+                *x = if matches!(k, 0 | 1 | 4 | 6) {
+                    if rng.chance(2) {
+                        0x7f80_0001 | rng.below(0x100)
+                    } else {
+                        rng.word()
+                    }
+                } else {
+                    float_word(&mut rng)
+                };
+            }
+            w[0] = id;
+            t.check(
+                "SpecularMapParamsManager_setNoLight_006c5e30",
+                0x006c_5e30,
+                Conv::Thiscall(this),
+                &w,
+                |g| {
+                    mb2::set_no_light(g, this, w);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp2_scene_lists_match_the_original() {
+    // The copy-buffer event: layers below, at and above 0, the count
+    // passing the capacity (reserve stubbed, the buffer big enough), no
+    // data (the slot at 0 is skipped). The after-post list: the vfx
+    // found, room left, the capacity reached with the alloc failing or
+    // not, owned or not. The two pushes: no block, empty and full
+    // arrays, owned or not, the block the old one. A slot address of 0
+    // in the middle or at the end would need writes at page 0 (left
+    // out).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b23);
+        for case in 0..80 {
+            let scene = t.zeros(0xfc00);
+            t.w32(scene + 0xf8cc, rng.next());
+            let layer = [0u32, 1, 2, 3, 0xffff_ffff, 0x8000_0000][(case % 6) as usize];
+            t.w32(scene + 0xf954, layer);
+            // layer 0's word set too: only a layer above 0 adds it
+            let at = scene + 0xf910 + 4 * if (layer as i32) > 0 { layer } else { 0 };
+            let off = rng.next() | 1;
+            t.w32(at, off);
+            let cap = rng.below(6);
+            let count = if rng.chance(2) {
+                cap
+            } else {
+                rng.below(cap + 1)
+            };
+            let data = if case % 9 == 0 && count == 0 {
+                0
+            } else {
+                t.zeros(16 * (cap as usize + 4))
+            };
+            t.w32(scene + 0xfb54, count);
+            t.w32(scene + 0xfb58, cap);
+            t.w32(scene + 0xfb5c, data);
+            t.w32(scene + 0xfb64, rng.next());
+            t.stub_sym(mm::RESERVE_16, 1, true, 1, 1, Ret::Val(rng.word()));
+            let (b0, b1, x, hw) = (rng.word(), rng.word(), rng.word(), rng.word());
+            t.check(
+                "PhyreScene_addCopyBufferEvent_006568a0",
+                0x0065_68a0,
+                Conv::Thiscall(scene),
+                &[b0, b1, x, hw],
+                |g| Out::U32(mb2::add_copy_buffer_event(g, scene, b0, b1, x, hw)),
+            );
+            // after-post list
+            let cap = [0u32, 1, 4, 0x400][rng.below(4) as usize];
+            let count = if rng.chance(2) {
+                cap.saturating_sub(1)
+            } else {
+                rng.below(cap + 1)
+            };
+            let list: Vec<u32> = (0..=cap).map(|_| rng.next() | 1).collect();
+            let list = t.words(&list);
+            let owner = if rng.chance(2) { 0x8000_0000 } else { 0 };
+            t.w32(scene + 0x3884, cap | owner);
+            t.w32(scene + 0x3888, list);
+            t.w32(scene + 0x388c, count);
+            let vfx = if count > 0 && rng.chance(4) {
+                t.r32(list + 4 * rng.below(count))
+            } else {
+                rng.next() & !1
+            };
+            let block = if rng.chance(4) { 0 } else { t.zeros(16) };
+            t.stub_sym(mm::WORD_ARRAY_ALLOC, 2, false, 3, 0, Ret::Val(block));
+            t.stub_sym(mm::PHYRE_FREE, 3, false, 1, 0, Ret::Val(0));
+            t.check(
+                "PhyreScene_AddVFXToAfterPostList",
+                0x0065_67e0,
+                Conv::Thiscall(scene),
+                &[vfx],
+                |g| {
+                    mb2::add_vfx_after_post(g, scene, vfx);
+                    Out::None
+                },
+            );
+            // the two pushes
+            for (sym, words) in [(0x0065_fbe0_u32, 0x11_u32), (0x006a_dd90, 1)] {
+                let arr = t.zeros(8);
+                let n = rng.below(4);
+                let n = if rng.chance(5) { 0 } else { n };
+                let old = if n == 0 && rng.chance(2) {
+                    0
+                } else {
+                    let w: Vec<u32> = (0..n * words).map(|_| rng.next()).collect();
+                    t.words(&w)
+                };
+                let owner = if rng.chance(2) { 0x8000_0000 } else { 0 };
+                t.w32(arr, n | owner);
+                t.w32(arr + 4, old);
+                let item: Vec<u32> = (0..words).map(|_| rng.next()).collect();
+                let item = t.words(&item);
+                let block = match rng.below(5) {
+                    0 => 0,
+                    1 if old != 0 => old,
+                    _ => t.zeros((4 * words * (n + 1)) as usize),
+                };
+                t.stub_sym(mm::PHYRE_FREE, 4, false, 1, 0, Ret::Val(0));
+                t.check("push into", sym, Conv::Thiscall(arr), &[block, item], |g| {
+                    Out::U32(if words == 1 {
+                        mb2::push_into_4(g, arr, block, item)
+                    } else {
+                        mb2::push_into_44(g, arr, block, item)
+                    })
+                });
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp2_small_methods_match_the_original() {
+    // The shadow instance factory (an existing instance, no list, a list
+    // without an instance, one with; the argument slots compared), the
+    // tree pair's clear, the texture animation manager's destructor body
+    // (owned or not, data or none), the tag packer both ways.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b24);
+        for case in 0..40 {
+            let this = t.zeros(0x100);
+            let cluster = t.zeros(0x10);
+            let existing = if case % 4 == 0 { rng.next() | 1 } else { 0 };
+            let list = match case % 3 {
+                0 => 0,
+                _ => {
+                    let l = t.zeros(0x40);
+                    let inst = if case % 3 == 1 { 0 } else { t.zeros(0x40) };
+                    t.w32(l + 0x34, inst);
+                    l
+                }
+            };
+            t.stub_sym(mm::ALLOCATE_INSTANCE_LIST, 1, true, 3, 3, Ret::Val(list));
+            t.stub_sym(
+                mm::SHADOW_INSTANCE_CTOR,
+                2,
+                true,
+                1,
+                1,
+                Ret::Val(rng.word()),
+            );
+            let slot = first_slot(&t.a, 2);
+            // the bridge pushes nothing: its slots start as the call's
+            t.w32(slot, cluster);
+            t.w32(slot + 4, existing);
+            t.b_top = Some(slot - 0x40);
+            t.check(
+                "ShadowMeshDescriptor_newInstance_00678940",
+                0x0067_8940,
+                Conv::Thiscall(this),
+                &[cluster, existing],
+                |g| Out::U32(mb2::shadow_instance(g, slot, this, cluster, existing)),
+            );
+            for k in 0..2 {
+                let (wa, wb): (u32, u32) =
+                    (Mem::read(&t.a, slot + 4 * k), Mem::read(&t.b, slot + 4 * k));
+                assert_eq!(wa, wb, "newInstance: slot {k}");
+            }
+            t.b_top = None;
+            let seq = t.seq(&[rng.word(), rng.word()]);
+            t.stub_sym(mm::TREE_CLEAR, 3, true, 0, 0, seq);
+            t.check(
+                "TreePair_clear_006df080",
+                0x006d_f080,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(mb2::tree_clear_twice(g, this)),
+            );
+            for off in [0x5c_u32, 0x6c, 0x74] {
+                let owner = if rng.chance(2) { 0x8000_0000 } else { 0 };
+                t.w32(this + off, owner | rng.below(8));
+                let data = if rng.chance(3) { 0 } else { rng.next() | 1 };
+                t.w32(this + off + 4, data);
+            }
+            t.stub_sym(mm::DESTROY_OBJECTS_20, 4, true, 0, 0, Ret::Val(rng.word()));
+            t.stub_sym(mm::RELEASE_20, 5, true, 0, 0, Ret::Val(rng.word()));
+            t.stub_sym(mm::PHYRE_FREE, 6, false, 1, 0, Ret::Val(rng.word()));
+            let seq = t.seq(&[rng.word(), rng.word()]);
+            t.stub_sym(mm::SAMPLER_DTOR, 7, true, 0, 0, seq);
+            t.check(
+                "TextureAnimationManager_dtor_006af8a0",
+                0x006a_f8a0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(mb2::texanim_manager_dtor(g, this)),
+            );
+            t.stub_sym(mm::TEXANIM_SET_QWORD, 8, false, 4, 0, Ret::Val(rng.word()));
+            let (q, a, b, c) = (rng.word(), rng.word(), rng.word(), rng.word());
+            let flag = if case % 2 == 0 { 0 } else { rng.word() | 1 };
+            t.check(
+                "TexAnim_setTag_0077eb00",
+                0x0077_eb00,
+                Conv::Cdecl,
+                &[q, a, b, c, flag],
+                |g| Out::U32(mb2::set_tag(g, q, a, b, c, flag)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp2_introsort_matches_the_original() {
+    // The original callees (partition, the recursion, the heap and
+    // insertion sorts) on float arrays of 0..300 elements with depths 0
+    // (the heap path), small and large; the sorted arrays and the two
+    // argument slots compared.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b25);
+        for case in 0..120 {
+            // 33 exactly, and long arrays for loops deep enough that the
+            // depth runs out (depth 6: 4, 3, 1, 0)
+            let n = match case % 10 {
+                8 => 33,
+                9 => 1000 + rng.below(200),
+                k => [0u32, 1, 2, 33, 40, 64, 100, 300][k as usize] + rng.below(4),
+            };
+            // all-equal arrays partition into equal halves
+            let same = case % 7 == 0;
+            let v: Vec<u32> = (0..n)
+                .map(|_| {
+                    if same || rng.chance(8) {
+                        0x3f80_0000
+                    } else {
+                        (rng.below(2000) as f32 - 1000.0).to_bits()
+                    }
+                })
+                .collect();
+            let first = t.words(&v);
+            let last = first + 4 * n;
+            let depth = [0u32, 1, 3, 6, 9, 40, 0xffff_ffff][rng.below(7) as usize];
+            // a float `less` (cdecl, `al = a < b`)
+            let code = [
+                0xd9, 0x44, 0x24, 0x04, 0xd8, 0x5c, 0x24, 0x08, 0xdf, 0xe0, 0xf6, 0xc4, 0x01, 0x0f,
+                0x95, 0xc0, 0xc3,
+            ];
+            let less = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), less);
+            let ebp = frame_ebp(&t.a, 4);
+            let slots = first_slot(&t.a, 4);
+            // the bridge pushes nothing: its slots start as the call's
+            t.w32(slots, first);
+            t.w32(slots + 4, last);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "FloatSort_introsortLoop_006c77a0",
+                0x006c_77a0,
+                Conv::Cdecl,
+                &[first, last, depth, less],
+                |g| {
+                    mb2::introsort(g, slots, ebp - 8, first, last, depth, less);
+                    Out::None
+                },
+            );
+            for k in 0..2 {
+                let (wa, wb): (u32, u32) = (
+                    Mem::read(&t.a, slots + 4 * k),
+                    Mem::read(&t.b, slots + 4 * k),
+                );
+                assert_eq!(wa, wb, "introsort: slot {k}");
+            }
+            t.b_top = None;
             t.reset();
         }
     });

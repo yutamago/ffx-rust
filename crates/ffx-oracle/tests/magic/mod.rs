@@ -186,14 +186,15 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-// 24: m0052::scaled_camera passes 13, m0020::e1a10 16, m0045::e1c10 17 (their
-// earlier calls' words stay on the stack)
+// 24: m0052::scaled_camera passes 13, m0020::e1a10 16, m0045::e1c10 and
+// m0396's start 17 (their earlier calls' words stay on the stack)
 const LOGGED: usize = 24;
 
 #[derive(Default)]
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
     floats: HashMap<u32, FloatStub>,
+    edxs: HashMap<u32, Stub>,
     rand: u32,
 }
 
@@ -231,6 +232,13 @@ fn answer_st0(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -
         .map(|f| f(m, args))
 }
 
+/// The `edx` a slot's `edx` stub answers (after its `eax` stub ran).
+fn answer_edx(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> Option<u32> {
+    slot_of(target)
+        .and_then(|s| shared.edxs.get(&s))
+        .map(|f| f(m, args))
+}
+
 fn answer(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> u32 {
     match slot_of(target).and_then(|s| shared.stubs.get(&s)) {
         Some(f) => f(m, args),
@@ -254,6 +262,9 @@ impl Host for OrigHost<'_> {
             .collect();
         let mut mm = ArenaMem;
         regs.eax = answer(self.shared, &mut mm, target, &args);
+        if let Some(v) = answer_edx(self.shared, &mut mm, target, &args) {
+            regs.edx = v;
+        }
         if let Some(v) = answer_st0(self.shared, &mut mm, target, &args) {
             regs.st[0] = f64_to_f80(v);
             regs.st_len = 1;
@@ -285,6 +296,15 @@ impl Host for OrigHost<'_> {
         if let Some(f) = libm {
             let x = f64::from_le_bytes(regs.xmm0[..8].try_into().unwrap());
             regs.xmm0[..8].copy_from_slice(&f(x).to_le_bytes());
+            regs.esp += 4;
+            return Some(Ok(()));
+        }
+        if name == "_CIatan2" {
+            // ST1 = y, ST0 = x; the same Rust function as `PortGame::atan2`
+            let x = ffx_oracle::f80_to_f64(&regs.st[0]);
+            let y = ffx_oracle::f80_to_f64(&regs.st[1]);
+            regs.st[0] = f64_to_f80(y.atan2(x));
+            regs.st_len = 1;
             regs.esp += 4;
             return Some(Ok(()));
         }
@@ -333,6 +353,7 @@ impl Game for PortGame {
     fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
         let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
+        let edx = answer_edx(&self.shared, &mut self.mem, target, args).unwrap_or(0);
         self.calls.push(CallOut {
             target,
             slot: slot_of(target),
@@ -341,6 +362,7 @@ impl Game for PortGame {
         });
         Out {
             eax,
+            edx,
             st0,
             ..Out::default()
         }
@@ -529,6 +551,7 @@ impl Twin {
             shared: Shared {
                 stubs: HashMap::new(),
                 floats: HashMap::new(),
+                edxs: HashMap::new(),
                 rand: 1,
             },
             functions,
@@ -708,6 +731,13 @@ impl Twin {
         self.shared.floats.insert(slot, Box::new(f));
     }
 
+    /// Makes `slot` return `edx` too (a 64-bit result's high word), on
+    /// both sides (without one the port sees 0 and the original whatever
+    /// `edx` held).
+    pub fn stub_edx(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static) {
+        self.shared.edxs.insert(slot, Box::new(f));
+    }
+
     /// The original's `xmm0` low word after the last [`Twin::check`].
     #[must_use]
     pub fn xmm0_f32(&self) -> u32 {
@@ -756,7 +786,11 @@ impl Twin {
         for (i, w) in (0u32..).zip(args) {
             self.port.write::<u32>(ENTRY_ESP + 4 + 4 * i, *w);
         }
+        // both sides draw `rand` from the same state; the original's end
+        // state is compared with the port's after
+        let rand0 = self.shared.rand;
         let (o, ocalls) = self.orig(at, c, args);
+        let orand = std::mem::replace(&mut self.shared.rand, rand0);
         self.last = o;
         let frame = Frame {
             at,
@@ -786,6 +820,11 @@ impl Twin {
         let pcalls = std::mem::take(&mut g.calls);
         self.port = std::mem::take(&mut g.mem);
         self.shared = std::mem::take(&mut g.shared);
+        assert_eq!(
+            self.shared.rand, orand,
+            "{}: {at:#010x} rand draws",
+            self.name
+        );
         self.compare_calls(at, &ocalls, &pcalls);
         let opops = o.esp - (ENTRY_ESP + 4);
         assert_eq!(r.pops, opops, "{}: {at:#010x} pops", self.name);

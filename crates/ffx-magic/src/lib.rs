@@ -42,12 +42,21 @@ pub mod l5_objhost;
 pub mod l5_opu_boot;
 pub mod nodes;
 pub mod objcb;
+pub mod ob_model;
+pub mod ob_summon;
 pub mod opu;
 pub mod opu_parts;
 pub mod pe;
 pub mod pushes;
 pub mod rcef;
 pub mod runtime;
+pub mod sb_common;
+pub mod sb_matrix;
+pub mod sb_misc;
+pub mod sb_nodes;
+pub mod sb_ppp;
+pub mod sb_sse;
+pub mod sb_vm;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -75,6 +84,12 @@ pub mod m0194;
 pub mod m0196;
 pub mod m0219;
 pub mod m0390;
+pub mod m0393;
+pub mod m0394;
+pub mod m0395;
+pub mod m0396;
+pub mod m0481;
+pub mod m0596;
 pub mod m0604;
 
 pub use ffx_bridge::Mem;
@@ -698,6 +713,102 @@ ports! {
     "m0390 object callback 15f0" => m0390::E15F0, m0390::e15f0;
     "m0390 entry 1be0 (curve)" => m0390::E1BE0, m0390::e1be0;
     "m0390 entry 2100" => m0390::E2100, m0390::e2100;
+    "m0481 start" => m0481::START, m0481::start;
+    "m0481 end" => m0481::END, m0481::end;
+    "m0596 start" => m0596::START, m0596::start;
+    "m0596 copy height" => m0596::COPY_HEIGHT, m0596::copy_height;
+    "m0393 task step" => m0393::STEP, m0393::step;
+    "m0393 models" => m0393::MODELS, m0393::models;
+    "m0393 attach" => m0393::ATTACH, m0393::attach;
+    "m0393 camera above" => m0393::CAMERA_ABOVE, m0393::camera_above;
+    "m0393 no target" => m0393::NO_TARGET, m0393::no_target;
+    "m0393 place" => m0393::PLACE, m0393::place;
+    "m0393 update" => m0393::UPDATE, m0393::update;
+    "m0393 cue" => m0393::CUE, m0393::cue;
+    "m0393 frame" => m0393::FRAME, m0393::frame;
+    "m0393 eye" => m0393::EYE, m0393::eye;
+    "m0395 vibrate" => m0395::VIBRATE, m0395::vibrate;
+    "m0396 start" => m0396::START, m0396::start;
+    "m0396 vibrate" => m0396::VIBRATE, m0396::vibrate;
+    "m0396 cue" => m0396::CUE, m0396::cue;
+    "m0396 fade" => m0396::FADE, m0396::fade;
+    "m0396 fade start" => m0396::FADE_START, m0396::fade_start;
+    "m0396 weapon frame" => m0396::WEAPON_FRAME, m0396::weapon_frame;
+    "m0394 task step" => ob_summon::STEP_0394, ob_summon::step;
+    "m0395 task step" => ob_summon::STEP_0395, ob_summon::step;
+    "m0396 task step" => ob_summon::STEP_0396, ob_summon::step;
+    "m0397 task step" => ob_summon::STEP_0397, ob_summon::step;
+    "m0596 task step (no pause)" => ob_summon::STEP_PLAIN_0596, ob_summon::step_plain;
+    "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
+    "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
+    "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
+    "m0434 task step (no pause)" => ob_summon::STEP_PLAIN_0434, ob_summon::step_plain;
+    "m0447 task step (no pause)" => ob_summon::STEP_PLAIN_0447, ob_summon::step_plain;
+    "m0511 task step (no pause)" => ob_summon::STEP_PLAIN_0511, ob_summon::step_plain;
+    "m0586 task step (no pause)" => ob_summon::STEP_PLAIN_0586, ob_summon::step_plain;
+    "m0587 task step (no pause)" => ob_summon::STEP_PLAIN_0587, ob_summon::step_plain;
+    "m0588 task step (no pause)" => ob_summon::STEP_PLAIN_0588, ob_summon::step_plain;
+    "m0589 task step (no pause)" => ob_summon::STEP_PLAIN_0589, ob_summon::step_plain;
+    "m0598 task step (no pause)" => ob_summon::STEP_PLAIN_0598, ob_summon::step_plain;
+    "m0599 task step (no pause)" => ob_summon::STEP_PLAIN_0599, ob_summon::step_plain;
+    "m0610 task step (no pause)" => ob_summon::STEP_PLAIN_0610, ob_summon::step_plain;
+    "m0638 task step (no pause)" => ob_summon::STEP_PLAIN_0638, ob_summon::step_plain;
+    "m0673 task step (no pause)" => ob_summon::STEP_PLAIN_0673, ob_summon::step_plain;
+    "m0689 task step (no pause)" => ob_summon::STEP_PLAIN_0689, ob_summon::step_plain;
+    "m0394 afterimage" => ob_summon::AFTERIMAGE_0394, ob_summon::afterimage;
+    "m0395 afterimage" => ob_summon::AFTERIMAGE_0395, ob_summon::afterimage;
+    "m0396 afterimage" => ob_summon::AFTERIMAGE_0396, ob_summon::afterimage;
+    "m0397 afterimage" => ob_summon::AFTERIMAGE_0397, ob_summon::afterimage;
+    "m0448 afterimage" => ob_summon::AFTERIMAGE_0448, ob_summon::afterimage;
+    "m0394 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0394, ob_summon::afterimage_fade;
+    "m0395 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0395, ob_summon::afterimage_fade;
+    "m0396 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0396, ob_summon::afterimage_fade;
+    "m0397 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0397, ob_summon::afterimage_fade;
+    "m0447 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0447, ob_summon::afterimage_fade;
+    "m0448 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0448, ob_summon::afterimage_fade;
+    "m0394 flight" => m0394::FLIGHT, m0394::flight;
+    // shared-B list
+    "node children visit (+0x20)" => sb_nodes::VISIT_CHILDREN_20, sb_nodes::visit_children_20;
+    "node visit, slot 668" => sb_nodes::VISIT_668, sb_nodes::visit_668;
+    "node slot 779, flagged" => sb_nodes::CALL_779_FLAGGED, sb_nodes::call_779_flagged;
+    "vm jump" => sb_vm::OP_JUMP, sb_vm::op_jump;
+    "vm jump reg" => sb_vm::OP_JUMP_REG, sb_vm::op_jump_reg;
+    "vm set 28" => sb_vm::OP_SET_28, sb_vm::op_set_28;
+    "vm label" => sb_vm::OP_LABEL, sb_vm::op_label;
+    "vm call" => sb_vm::OP_CALL, sb_vm::op_call;
+    "vm set reg" => sb_vm::OP_SET_REG, sb_vm::op_set_reg;
+    "vm 543" => sb_vm::OP_543, sb_vm::op_543;
+    "vm 371" => sb_vm::OP_371, sb_vm::op_371;
+    "vm loop" => sb_vm::OP_LOOP, sb_vm::op_loop;
+    "vm 222" => sb_vm::OP_222, sb_vm::op_222;
+    "vm 549 550" => sb_vm::OP_549_550, sb_vm::op_549_550;
+    "vm 271 267" => sb_vm::OP_271_267, sb_vm::op_271_267;
+    "vm select" => sb_vm::OP_SELECT, sb_vm::op_select;
+    "vm 306" => sb_vm::OP_306, sb_vm::op_306;
+    "vm loop end" => sb_vm::OP_LOOP_END, sb_vm::op_loop_end;
+    "vm set vector" => sb_vm::OP_SET_VECTOR, sb_vm::op_set_vector;
+    "vm hide" => sb_vm::OP_HIDE, sb_vm::op_hide;
+    "vm show group" => sb_vm::OP_SHOW_GROUP, sb_vm::op_show_group;
+    "vm timer" => sb_vm::OP_TIMER, sb_vm::op_timer;
+    "vm set scaled" => sb_vm::OP_SET_SCALED, sb_vm::op_set_scaled;
+    "vm fade 4" => sb_vm::OP_FADE_4, sb_vm::op_fade_4;
+    "vm 256" => sb_vm::OP_256, sb_vm::op_256;
+    "vm fade 6" => sb_vm::OP_FADE_6, sb_vm::op_fade_6;
+    "slot 239 callback" => sb_common::CALL_239, sb_common::call_239;
+    "start steps (225, 313, 549)" => sb_misc::START_STEPS, sb_misc::start_steps;
+    "slot 439 entry" => sb_misc::CALL_439, sb_misc::call_439;
+    "slot 438 entry" => sb_misc::CALL_438, sb_misc::call_438;
+    "free part, 1" => sb_misc::FREE_PART_1, sb_misc::free_part_1;
+    "load step" => sb_misc::LOAD_STEP, sb_misc::load_step;
+    "op free part" => sb_misc::OP_FREE_PART, sb_misc::op_free_part;
+    "place model" => sb_misc::PLACE_MODEL, sb_misc::place_model;
+    "place model unscaled" => sb_misc::PLACE_MODEL_UNSCALED, sb_misc::place_model_unscaled;
+    "state match (0x8528)" => sb_misc::STATE_MATCH_8528, sb_misc::state_match;
+    "state match (0xebe0)" => sb_misc::STATE_MATCH_EBE0, sb_misc::state_match;
+    "objhost start with 551" => sb_misc::START_551, sb_misc::start_551;
+    "show 219" => sb_misc::SHOW_219, sb_misc::show_219;
+    "free own part" => sb_misc::FREE_OWN_PART, sb_misc::free_own_part;
+    "start seq" => sb_misc::START_SEQ, sb_misc::start_seq;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -775,6 +886,76 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0020 bars", &m0020::BARS),
     ("m0042 build", &m0042::BUILD),
     ("m0046 start object", &m0046::START_OBJECT),
+    ("m0481 free record", &m0481::FREE_RECORD),
+    ("m0481 draw records", &m0481::DRAW_RECORDS),
+    ("m0481 facing", &m0481::FACING),
+    ("m0596 part init", &m0596::PART_INIT),
+    ("m0596 object init", &m0596::OBJECT_INIT),
+    ("m0596 place pair", &m0596::PLACE_PAIR),
+    ("m0393 face", &m0393::FACE),
+    ("m0394 root", &m0394::ROOT),
+    ("m0394 scaled", &m0394::SCALED),
+    ("m0394 place", &m0394::PLACE),
+    ("m0395 face", &ob_summon::FACE_0395),
+    ("m0396 face", &ob_summon::FACE_0396),
+    ("m0396 aim", &m0396::AIM),
+    ("m0396 refresh", &m0396::REFRESH),
+    ("m0395 resets", &m0395::RESETS),
+    // shared-B list
+    ("set speed", &sb_common::SET_SPEED),
+    ("float of slot 289", &sb_nodes::FLOAT_289),
+    ("node visit pair, slot 229", &sb_nodes::VISIT_PAIR_229),
+    ("node visit add vector", &sb_nodes::VISIT_ADD_VECTOR),
+    ("node visit offset (int)", &sb_nodes::VISIT_OFFSET_INT),
+    ("node visit offset (float)", &sb_nodes::VISIT_OFFSET_FLOAT),
+    ("scale ratio, slot 801", &sb_nodes::SCALE_RATIO_801),
+    ("particle node", &sb_nodes::PARTICLE_NODE),
+    ("effect node (slot 719)", &sb_nodes::EFFECT_NODE),
+    ("node axis sprites", &sb_nodes::AXIS_SPRITES),
+    ("node bounce", &sb_nodes::BOUNCE),
+    ("node draw model", &sb_nodes::DRAW_MODEL),
+    ("rotation matrix (0x52a0)", &sb_matrix::ROTATION_52A0),
+    ("rotation matrix (0x19d0)", &sb_matrix::ROTATION_19D0),
+    ("node run part", &sb_ppp::RUN_PART),
+    ("vm show others", &sb_vm::SHOW_OTHERS),
+    ("vm actor record", &sb_vm::ACTOR_RECORD),
+    ("anim step", &sb_common::ANIM_STEP),
+    ("mean position", &sb_misc::MEAN_POSITION),
+    ("pool take (0x74)", &sb_misc::POOL_TAKE),
+    ("node append", &sb_misc::NODE_APPEND),
+    ("part setup", &sb_misc::PART_SETUP),
+    ("rotate offset, list pop", &sb_misc::ROTATE_OFFSET),
+    ("move start", &sb_misc::MOVE_START),
+    ("move start 2", &sb_misc::MOVE_START_2),
+    ("ease sample", &sb_misc::EASE_SAMPLE),
+    ("ease angle", &sb_misc::EASE_ANGLE),
+    ("anim reset", &sb_misc::ANIM_RESET),
+    ("script run", &sb_misc::SCRIPT_RUN),
+    ("timeline run", &sb_misc::TIMELINE_RUN),
+    ("sprite init", &sb_misc::SPRITE_INIT),
+    ("actor scale", &sb_misc::ACTOR_SCALE),
+    ("lookup actors", &sb_misc::LOOKUP_ACTORS),
+    ("effect reset", &sb_misc::EFFECT_RESET),
+    ("draw frame", &sb_misc::DRAW_FRAME),
+    ("pool take (0x140)", &sb_misc::POOL_TAKE_140),
+    ("sprite init colour", &sb_misc::SPRITE_INIT_COLOUR),
+    ("timeline stop", &sb_misc::TIMELINE_STOP),
+    ("timeline stop (globals)", &sb_misc::TIMELINE_STOP_GLOBAL),
+    (
+        "timeline stop (globals, CRT tail)",
+        &sb_misc::TIMELINE_STOP_GLOBAL_CRT,
+    ),
+    ("static nodes init", &sb_misc::STATIC_NODES_INIT),
+    ("draw all", &sb_misc::DRAW_ALL),
+    ("deal", &sb_misc::DEAL),
+    ("draw grid", &sb_misc::DRAW_GRID),
+    ("anim reset 2", &sb_misc::ANIM_RESET_2),
+    ("call 220", &sb_misc::CALL_220),
+    ("call 628, 213", &sb_misc::CALL_628_213),
+    ("light ranges", &sb_misc::LIGHT_RANGES),
+    ("aim parent", &sb_misc::AIM_PARENT),
+    ("pick variant", &sb_misc::PICK_VARIANT),
+    ("read pads", &sb_misc::READ_PADS),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

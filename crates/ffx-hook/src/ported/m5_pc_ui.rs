@@ -7,6 +7,7 @@
 //! state, frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_graphic::host::Conv;
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
@@ -14,6 +15,10 @@ use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
+use ffx_pcui::m5u_h::bridge as hh;
+use ffx_pcui::m5u_i::bridge as ii;
+use ffx_pcui::m5u_j::bridge as jj;
+use ffx_pcui::m5u_k::bridge as kk;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -626,5 +631,199 @@ ported! {
     /// `Gu_HelpWindow_00855360(text)`.
     Gu_HelpWindow_00855360 @ 0x0085_5360 => extern "C" fn help_window(text: u32) -> u32 {
         gg::help_window(&mut mem(), text)
+    }
+    // ---- render-pcui batch 3 (ffx_pcui::m5u_h) ----
+    /// `Gu_WindowControlSetText_thunk_009411f0(window, id, s)`.
+    Gu_WindowControlSetText_thunk_009411f0 @ 0x0094_11f0 => extern "C" fn window_control_set_text_thunk(window: u32, id: u32, s: u32) {
+        hh::forward(&mut mem(), hh::WINDOW_CONTROL_SET_TEXT, Conv::Cdecl, &[window, id, s]);
+    }
+    /// `LeaveCriticalSection_ecx_009453c0(cs)`.
+    LeaveCriticalSection_ecx_009453c0 @ 0x0094_53c0 => extern "thiscall" fn leave_ecx(cs: u32) -> u32 {
+        hh::leave(&mut mem(), cs)
+    }
+    /// `PtrArray_isSet_00947da0(this; i)`.
+    PtrArray_isSet_00947da0 @ 0x0094_7da0 => extern "thiscall" fn is_set(this: u32, i: u32) -> u32 {
+        hh::is_set(&mem(), this, i)
+    }
+    /// `PageManager_unlock_00947ea0()`.
+    PageManager_unlock_00947ea0 @ 0x0094_7ea0 => extern "C" fn page_unlock() -> u32 {
+        hh::page_unlock(&mut mem())
+    }
+    /// `Thread_create_00948c10(arg)`.
+    Thread_create_00948c10 @ 0x0094_8c10 => extern "C" fn create_thread(arg: u32) -> u32 {
+        hh::create_thread(&mut mem(), arg)
+    }
+    /// `PageManager_startThread_00947630()`.
+    PageManager_startThread_00947630 @ 0x0094_7630 => extern "C" fn page_start_thread() -> u32 {
+        hh::page_start_thread(&mut mem())
+    }
+    /// `List_walkToEnd_00948a80(this)`.
+    List_walkToEnd_00948a80 @ 0x0094_8a80 => extern "thiscall" fn walk_to_end(this: u32) -> u32 {
+        hh::walk_to_end(&mem(), this)
+    }
+    /// `Thread_entry_00948c30(f)` (stdcall).
+    Thread_entry_00948c30 @ 0x0094_8c30 => extern "stdcall" fn thread_entry(f: u32) -> u32 {
+        hh::thread_entry(&mut mem(), f)
+    }
+    /// `PVideoPlaybackWin32_memcpy_00a26fb0(dst, src, n)`.
+    PVideoPlaybackWin32_memcpy_00a26fb0 @ 0x00a2_6fb0 => extern "C" fn video_memcpy(dst: u32, src: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMCPY_THUNK, dst, src, n)
+    }
+    /// `PVideoPlaybackWin32_memmove_00a26fc0(dst, src, n)`.
+    PVideoPlaybackWin32_memmove_00a26fc0 @ 0x00a2_6fc0 => extern "C" fn video_memmove(dst: u32, src: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMMOVE_IAT, dst, src, n)
+    }
+    /// `PVideoPlaybackWin32_memset_00a26fd0(dst, c, n)`.
+    PVideoPlaybackWin32_memset_00a26fd0 @ 0x00a2_6fd0 => extern "C" fn video_memset(dst: u32, c: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMSET_THUNK, dst, c, n)
+    }
+    /// `IggyPlayer_replay_00a3db30(this)`.
+    IggyPlayer_replay_00a3db30 @ 0x00a3_db30 => extern "thiscall" fn iggy_replay(this: u32) -> u32 {
+        hh::iggy_replay(&mut mem(), this)
+    }
+    /// `IggyMenu_replay(menu)`.
+    IggyMenu_replay @ 0x00a2_8ee0 => extern "thiscall" fn iggy_menu_replay(this: u32) -> u32 {
+        hh::iggy_menu_replay(&mut mem(), this)
+    }
+    /// `GDraw_releaseHandle_00a362c0(handle)`.
+    GDraw_releaseHandle_00a362c0 @ 0x00a3_62c0 => extern "C" fn gdraw_release_handle(handle: u32) -> u32 {
+        hh::gdraw_release_handle(&mut mem(), handle)
+    }
+    /// `GDraw_callbackIf_00a398e0(a, key, x)` (stdcall).
+    GDraw_callbackIf_00a398e0 @ 0x00a3_98e0 => extern "stdcall" fn callback_if(a: u32, key: u32, x: u32) -> u32 {
+        hh::callback_if(&mut mem(), a, key, x)
+    }
+    /// `GDraw_releaseThis_00a3d3c0(this)`.
+    GDraw_releaseThis_00a3d3c0 @ 0x00a3_d3c0 => extern "thiscall" fn release_this(this: u32) -> u32 {
+        hh::release_this(&mut mem(), this)
+    }
+    /// `GDraw_teardown_thunk_00a3d4d0(this)`.
+    GDraw_teardown_thunk_00a3d4d0 @ 0x00a3_d4d0 => extern "thiscall" fn gdraw_teardown_thunk(this: u32) -> u32 {
+        hh::forward(&mut mem(), hh::GDRAW_TEARDOWN, Conv::Thiscall(this), &[])
+    }
+    /// `Callback_invoke_00a3d6d0(p)`.
+    Callback_invoke_00a3d6d0 @ 0x00a3_d6d0 => extern "C" fn invoke(p: u32) -> u32 {
+        hh::invoke(&mut mem(), p)
+    }
+    /// `IggyPlayerHolder_destroy_00a3d780(this; x)` (`x` unread).
+    IggyPlayerHolder_destroy_00a3d780 @ 0x00a3_d780 => extern "thiscall" fn iggy_destroy(this: u32, _x: u32) -> u32 {
+        hh::iggy_destroy(&mut mem(), this)
+    }
+    /// `AddrOfGlobal01a858cc_00a3d7c0()`.
+    AddrOfGlobal01a858cc_00a3d7c0 @ 0x00a3_d7c0 => extern "C" fn gdraw_block() -> u32 {
+        hh::gdraw_block(&mem())
+    }
+    // ---- render-pcui batch 4 (ffx_pcui::m5u_i) ----
+    /// `PArray_release_00a25e50(array)`.
+    PArray_release_00a25e50 @ 0x00a2_5e50 => extern "thiscall" fn array_release_00a25e50(this: u32) {
+        ii::array_release(&mut mem(), this, false);
+    }
+    /// `PArray_releaseChecked_00a25e80(array)`.
+    PArray_releaseChecked_00a25e80 @ 0x00a2_5e80 => extern "thiscall" fn array_release_00a25e80(this: u32) {
+        ii::array_release(&mut mem(), this, true);
+    }
+    /// `PArray_releaseChecked_00a3d3d0(array)`.
+    PArray_releaseChecked_00a3d3d0 @ 0x00a3_d3d0 => extern "thiscall" fn array_release_00a3d3d0(this: u32) {
+        ii::array_release(&mut mem(), this, true);
+    }
+    /// `GDraw_rectCall_00a36040(rect, a, b)` (argument slots).
+    GDraw_rectCall_00a36040 @ 0x00a3_6040 => extern "C" fn rect_call(rect: u32, a: u32, b: u32; slots: u32) -> u32 {
+        ii::rect_call(&mut mem(), slots, rect, a, b)
+    }
+    /// `IggyPlayerHolder_queueDestroy_00a3d720(this; renderer)` (the block pointer's frame).
+    IggyPlayerHolder_queueDestroy_00a3d720 @ 0x00a3_d720 => extern "thiscall" fn queue_destroy(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ii::queue_destroy(&mut mem(), f.at(), this, renderer)
+    }
+    /// `IggyPlayer_QueueDraw_00a3d9b0(this; renderer)` (the block pointer's frame).
+    IggyPlayer_QueueDraw_00a3d9b0 @ 0x00a3_d9b0 => extern "thiscall" fn queue_draw(this: u32, renderer: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ii::queue_draw(&mut mem(), f.at(), this, renderer)
+    }
+    /// `GDraw_releaseIf_00a398a0(node, key, x)` (stdcall).
+    GDraw_releaseIf_00a398a0 @ 0x00a3_98a0 => extern "stdcall" fn release_if(node: u32, key: u32, x: u32) -> u32 {
+        ii::release_if(&mut mem(), node, key, x)
+    }
+    /// `PageHeap_fillBuckets_00946100(heap)`.
+    PageHeap_fillBuckets_00946100 @ 0x0094_6100 => extern "thiscall" fn fill_buckets(this: u32) {
+        ii::fill_buckets(&mut mem(), this);
+    }
+    /// `PageList_free_009470f0(list)`.
+    PageList_free_009470f0 @ 0x0094_70f0 => extern "thiscall" fn free_pages(this: u32) {
+        ii::free_pages(&mut mem(), this);
+    }
+    /// `PageBits_ctor_00946520(this; owner, n)`.
+    PageBits_ctor_00946520 @ 0x0094_6520 => extern "thiscall" fn page_bits_ctor(this: u32, owner: u32, n: u32) -> u32 {
+        ii::page_bits_ctor(&mut mem(), this, owner, n)
+    }
+    /// `PVideoPlaybackWin32_CopyPlane_00a26fe0(dst, dpitch, src, spitch, w, rows)`.
+    PVideoPlaybackWin32_CopyPlane_00a26fe0 @ 0x00a2_6fe0 => extern "C" fn copy_plane(dst: u32, dpitch: u32, src: u32, spitch: u32, w: u32, rows: u32) {
+        ii::copy_plane(&mut mem(), dst, dpitch, src, spitch, w, rows);
+    }
+    /// `GDraw_freeResources_00a36300(stats)`.
+    GDraw_freeResources_00a36300 @ 0x00a3_6300 => extern "C" fn free_resources(stats: u32) {
+        ii::free_resources(&mut mem(), stats);
+    }
+    /// `GDraw_releaseSlots_00a3cfc0()`.
+    GDraw_releaseSlots_00a3cfc0 @ 0x00a3_cfc0 => extern "C" fn release_slots() {
+        ii::release_slots(&mut mem());
+    }
+    /// `PageHeap_lockAll_00946c40(heap)`.
+    PageHeap_lockAll_00946c40 @ 0x0094_6c40 => extern "thiscall" fn lock_all(this: u32) -> u32 {
+        ii::lock_all(&mut mem(), this, ii::ENTER_CRITICAL_SECTION_IAT)
+    }
+    /// `PageHeap_unlockAll_00946cc0(heap)`.
+    PageHeap_unlockAll_00946cc0 @ 0x0094_6cc0 => extern "thiscall" fn unlock_all(this: u32) -> u32 {
+        ii::lock_all(&mut mem(), this, ii::LEAVE_CRITICAL_SECTION_IAT)
+    }
+    /// `PageBucket_init_00948900(this; size, align, heap)`.
+    PageBucket_init_00948900 @ 0x0094_8900 => extern "thiscall" fn bucket_init(this: u32, size: u32, align: u32, heap: u32) -> u32 {
+        ii::bucket_init(&mut mem(), this, size, align, heap)
+    }
+    /// `PageHash_find_009455d0(table; key, out)` -> `al`.
+    PageHash_find_009455d0 @ 0x0094_55d0 => extern "thiscall" fn hash_find(this: u32, key: u32, out: u32) -> bool {
+        ii::hash_find(&mut mem(), this, key, out)
+    }
+    /// `IggyValue_readClass_00a25860(reader; v, class, out, cursor)`.
+    IggyValue_readClass_00a25860 @ 0x00a2_5860 => extern "thiscall" fn value_read_00a25860(this: u32, v: u32, class: u32, out: u32, cursor: u32) -> u32 {
+        ii::value_read(&mut mem(), this, v, class, out, cursor, true)
+    }
+    /// `IggyValue_read_00a258c0(reader; v, class, out, cursor)`.
+    IggyValue_read_00a258c0 @ 0x00a2_58c0 => extern "thiscall" fn value_read_00a258c0(this: u32, v: u32, class: u32, out: u32, cursor: u32) -> u32 {
+        ii::value_read(&mut mem(), this, v, class, out, cursor, false)
+    }
+    // ---- render-pcui batch 5 (ffx_pcui::m5u_j) ----
+    /// `Gu_ChrSelectorProc_00853d40(window, message)`.
+    Gu_ChrSelectorProc_00853d40 @ 0x0085_3d40 => extern "C" fn chr_selector_proc(window: u32, message: u32) -> u32 {
+        jj::chr_selector_proc(&mut mem(), window, message)
+    }
+    /// `PUtility_scalarDeletingDtor_00a3e3e0(this; flags)`.
+    PUtility_scalarDeletingDtor_00a3e3e0 @ 0x00a3_e3e0 => extern "thiscall" fn utility_delete(this: u32, flags: u32) -> u32 {
+        jj::utility_delete(&mut mem(), this, flags)
+    }
+    /// `PageBucket_lockedCall_00948820(this)`.
+    PageBucket_lockedCall_00948820 @ 0x0094_8820 => extern "thiscall" fn locked_call(this: u32) -> u32 {
+        jj::locked_call(&mut mem(), this)
+    }
+    /// `PageLock_ctor_009488a0(lock)`.
+    PageLock_ctor_009488a0 @ 0x0094_88a0 => extern "thiscall" fn lock_ctor(this: u32) -> u32 {
+        jj::lock_ctor(&mut mem(), this)
+    }
+    /// `PageStats_update_00947cc0()`.
+    PageStats_update_00947cc0 @ 0x0094_7cc0 => extern "C" fn stats_update() -> u32 {
+        jj::stats_update(&mut mem())
+    }
+    // ---- render-pcui batch 6 (ffx_pcui::m5u_k) ----
+    /// `PageHeap_initBuckets_00946060(heap)`.
+    PageHeap_initBuckets_00946060 @ 0x0094_6060 => extern "thiscall" fn init_buckets(this: u32) -> u32 {
+        kk::init_buckets(&mut mem(), this)
+    }
+    /// `PageHash_ctor_00945630(this; n, owner)`.
+    PageHash_ctor_00945630 @ 0x0094_5630 => extern "thiscall" fn hash_ctor(this: u32, n: u32, owner: u32) -> u32 {
+        kk::hash_ctor(&mut mem(), this, n, owner)
+    }
+    /// `PageHash_release_009474f0(this)`.
+    PageHash_release_009474f0 @ 0x0094_74f0 => extern "thiscall" fn hash_release(this: u32) {
+        kk::hash_release(&mut mem(), this);
     }
 }

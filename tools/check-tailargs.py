@@ -100,7 +100,10 @@ ALLOW = {
     "Phyre_CharacterLighting_setShadeCoeff": "`coeff`'s slot is scratch: the original stores its own "
                                              "float there (fstp [ebp+0xc] at 0x006aaf19) before it "
                                              "passes the slot's address to memcpy (0x006aaf6a)",
-    "AtelPopStackFloat": "the worker (word 0) is read only on the empty-stack path (0x0086de67), "
+    "MenuSummon_DrawGrowCursor_008cda20": "words 1 and 2 are scratch: the original stores ftol's "
+                                          "results there (0x008cda43, 0x008cda80) before its fild "
+                                          "reads them back; the callers' values are never read",
+    "AtelPopStackFloat":"the worker (word 0) is read only on the empty-stack path (0x0086de67), "
                          "for the arguments of dbgPrintf (0x0062f500, a bare `ret`); the port "
                          "returns 0.0 and clears the error word there as the original does",
 }
