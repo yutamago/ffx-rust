@@ -5,6 +5,7 @@
 //! other overlay.
 
 use crate::l5_objhost::{self as host, ONE};
+use crate::m0032;
 use crate::opu_parts;
 use crate::runtime::slot_target;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -83,7 +84,7 @@ pub fn boot<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     g.write::<u32>(w(0xe5), 0);
     g.write::<u16>(w(0xef), 0);
     g.write::<u32>(w(0xf5), w(0xf9));
-    let task = host::task_alloc(g, img, img.rel32_target(f + 0xfe));
+    let task = m0032::pop_node(g, img, img.rel32_target(f + 0xfe));
     let head = g.read::<u32>(w(0x104));
     g.write::<u32>(task + 4, 0);
     if head == 0 {
@@ -106,7 +107,7 @@ pub const BOOT: Sig = Sig {
     calls: &[
         (0x34, Callee::Sig(&host::PART_INIT)),
         (0x49, Callee::Sig(&MAKE_OBJECT)),
-        (0xfe, Callee::Sig(&host::TASK_ALLOC)),
+        (0xfe, Callee::Sig(&m0032::POP_NODE)),
     ],
     imports: &[],
 };

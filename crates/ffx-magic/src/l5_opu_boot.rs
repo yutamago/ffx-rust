@@ -3,8 +3,9 @@
 //! ([`crate::m0604`]): the battle mode is a byte global of the DLL (not
 //! the control block's word), and the start-up returns what the OPU
 //! set-up ([`opu::setup`]) returns, or tail-jumps to slot 816 after it.
-//! Ported by list 5 from `magic_0208`, `0261`, `0279` and `0283`;
-//! addresses in the comments are those DLLs'.
+//! Ported by list 5 from `magic_0208`, `0261` and `0283`; addresses in
+//! the comments are those DLLs'. `magic_0279`'s start-up (set-up, then
+//! slot 816; 169 bytes, 13 overlays) is [`crate::l3_opu::start_up`].
 
 use crate::opu;
 use crate::runtime::slot_target;
@@ -180,39 +181,6 @@ pub const BOOT_C: Sig = Sig {
     len: 175,
     hash: 0x5e89_a98e_57b1_f972,
     calls: &[(0xab, Callee::Sig(&opu::SETUP))],
-    imports: &[],
-};
-
-/// Table `+0x0` (`magic_0279` 0x10001660): [`boot_a`], then the
-/// set-up called and a tail jump to slot 816 with the caller's stack.
-/// (Owned by list 3 in the work list; ported here because no port of it
-/// existed on list 5's base.)
-pub fn boot_d<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    boot(
-        g,
-        img,
-        fr,
-        &Boot {
-            table: 0x04,
-            size: 0x13,
-            flags: 0x1b,
-            slots: 0x21,
-            obj: 0x2c,
-            mode: 0x3b,
-            data: 0x43,
-            default: 0x4d,
-            extra: None,
-            setup: 0x95,
-            then_816: Some(0x9a),
-        },
-    )
-}
-
-/// `boot_d` (169 bytes, 13 overlays).
-pub const BOOT_D: Sig = Sig {
-    len: 169,
-    hash: 0x899b_65ad_801a_2f2d,
-    calls: &[(0x95, Callee::Sig(&opu::SETUP))],
     imports: &[],
 };
 

@@ -147,52 +147,8 @@ pub const CHR_SHOW: Sig = Sig {
     imports: &[],
 };
 
-/// Takes a node from a free list (count `G_N`, a word at operand `+0x04`;
-/// head `G_FREE`, `+0x13`): unlinks the head from its ring (`+0x0` next,
-/// `+0x4` previous), moves `G_FREE` to the previous node (or 0 for the
-/// last one), decrements the count and resets the node: `+0x0`, `+0x4`,
-/// `+0xc`, `+0x14` cleared, `+0x8` itself, `+0x10` the callback at
-/// operand `+0x70`, byte `+0x18` cleared. Returns the node, or 0 when the
-/// list is empty.
-///
-/// `magic_0166` 0x10002680 (124 bytes, 2 overlays).
-pub fn pool_take<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
-    let w = |off: u32| img.word(f + off);
-    let n = g.read::<u16>(w(0x04));
-    if n == 0 {
-        return 0;
-    }
-    let node = g.read::<u32>(w(0x13));
-    let next = g.read::<u32>(node);
-    let prev = g.read::<u32>(node + 4);
-    g.write::<u32>(next + 4, prev);
-    let prev = g.read::<u32>(node + 4);
-    let next = g.read::<u32>(node);
-    g.write::<u32>(prev, next);
-    if n > 1 {
-        let prev = g.read::<u32>(node + 4);
-        g.write::<u32>(w(0x30), prev);
-    } else {
-        g.write::<u32>(w(0x38), 0);
-    }
-    g.write::<u16>(w(0x4b), n.wrapping_add(0xffff));
-    g.write::<u32>(node, 0);
-    g.write::<u32>(node + 4, 0);
-    g.write::<u32>(node + 0xc, 0);
-    g.write::<u32>(node + 0x14, 0);
-    g.write::<u32>(node + 8, node);
-    g.write::<u32>(node + 0x10, w(0x70));
-    g.write::<u8>(node + 0x18, 0);
-    node
-}
-
-/// [`pool_take`].
-pub const POOL_TAKE: Sig = Sig {
-    len: 124,
-    hash: 0xe49b_1b56_333b_21b3,
-    calls: &[],
-    imports: &[],
-};
+// The free-list take (`magic_0166` 0x10002680, 124 bytes) is
+// `crate::m0032::pop_node` (list 1's, the same code).
 
 /// Where a node list's words are: the last node (read twice, written
 /// once: three operands in the static lists), the sentinel the last

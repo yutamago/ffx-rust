@@ -261,47 +261,9 @@ pub const TASKS_INIT: Sig = Sig {
     imports: &[],
 };
 
-/// Takes a task node from the ring (0x10002200, no arguments): unlinks
-/// the free head, cleared, `self` = the node, `step` = the operand at
-/// `+0x70` (0x10001340, [`task_step`]); 0 when none is free.
-pub fn task_alloc<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
-    let w = |off: u32| img.word(f + off);
-    let free = g.read::<u16>(w(0x04));
-    if free == 0 {
-        return 0;
-    }
-    let node = g.read::<u32>(w(0x13));
-    let prev = g.read::<u32>(node);
-    let next = g.read::<u32>(node + 4);
-    g.write::<u32>(prev + 4, next);
-    let next = g.read::<u32>(node + 4);
-    let prev = g.read::<u32>(node);
-    g.write::<u32>(next, prev);
-    if free > 1 {
-        let next = g.read::<u32>(node + 4);
-        g.write::<u32>(w(0x30), next);
-    } else {
-        g.write::<u32>(w(0x38), 0);
-    }
-    g.write::<u16>(w(0x4b), free.wrapping_sub(1));
-    g.write::<u32>(node, 0);
-    g.write::<u32>(node + 4, 0);
-    g.write::<u32>(node + 0xc, 0);
-    g.write::<u32>(node + 0x14, 0);
-    g.write::<u32>(node + 8, node);
-    g.write::<u32>(node + 0x10, w(0x70));
-    g.write::<u8>(node + 0x18, 0);
-    node
-}
-
-/// `task_alloc` (124 bytes, 15 overlays; list 1's in the work list,
-/// ported here because list 5's functions call it).
-pub const TASK_ALLOC: Sig = Sig {
-    len: 124,
-    hash: 0xe49b_1b56_333b_21b3,
-    calls: &[],
-    imports: &[],
-};
+// Task nodes (0x10002200, no arguments) come from the free ring through
+// `crate::m0032::pop_node` (the same function, list 1's; `+0x70`, the
+// node's step, is 0x10001340 here: `task_step`).
 
 /// Runs every task of `group` (0x100021a0, `cl` = the group; `esp` its
 /// stack pointer at the return address): `[[task + 8] + 0x10](task)`,
@@ -341,20 +303,9 @@ pub const RUN_GROUP: Sig = Sig {
 };
 
 // ---- the entries ----
-
-/// `xor eax, eax; ret` (0x10001300, the table's empty entries; 402
-/// overlays, list 2's in the work list).
-pub fn ret0<G: Game>(_g: &mut G, _img: &Image, _fr: &Frame) -> Ret {
-    Ret::eax(0)
-}
-
-/// `ret0` (3 bytes).
-pub const RET0: Sig = Sig {
-    len: 3,
-    hash: 0x5838_9c18_2330_78ff,
-    calls: &[],
-    imports: &[],
-};
+//
+// (The table's empty entries, `xor eax, eax; ret` at 0x10001300, bind to
+// `runtime::zero_ret`.)
 
 /// Table `+0x0` (0x10001000, cdecl `(arg)`): keeps `arg`, sets the
 /// object block up ([`obj_block_init`]), three registrations (slots 556,

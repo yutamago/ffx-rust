@@ -226,27 +226,6 @@ fn answer_st0(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -
         .map(|f| f(m, args))
 }
 
-/// An x87 80-bit value from an `f64` (exact).
-fn f64_to_f80(x: f64) -> [u8; 10] {
-    let b = x.to_bits();
-    let sign = ((b >> 63) as u16) << 15;
-    let exp = ((b >> 52) & 0x7ff) as u16;
-    let frac = b & ((1 << 52) - 1);
-    let (e, m): (u16, u64) = match exp {
-        0 if frac == 0 => (0, 0),
-        0 => {
-            let shift = frac.leading_zeros() - 11;
-            (15361 - shift as u16, frac << (shift + 11))
-        }
-        0x7ff => (0x7fff, (1 << 63) | (frac << 11)),
-        _ => (exp - 1023 + 16383, (1 << 63) | (frac << 11)),
-    };
-    let mut out = [0u8; 10];
-    out[..8].copy_from_slice(&m.to_le_bytes());
-    out[8..].copy_from_slice(&(sign | e).to_le_bytes());
-    out
-}
-
 fn answer(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> u32 {
     match slot_of(target).and_then(|s| shared.stubs.get(&s)) {
         Some(f) => f(m, args),
@@ -551,9 +530,24 @@ impl Twin {
                 .unwrap_or_else(|| panic!("{}: nothing binds at {a:#010x}", self.name));
             fns.push((a, ffx_magic::PORTS[i].1.len));
         }
-        let operands: Vec<u32> = fns
+        // (operand, the function using it); the /GS cookie the CRT sets
+        // is left out: a function's `mov eax, [__security_cookie]; xor
+        // eax, ebp` (a1 <cookie> 33 c5) only guards its own frame, which
+        // the ports don't model (the check always passes)
+        let img = &self.img;
+        let cookies: Vec<u32> = fns
             .iter()
-            .flat_map(|&(a, n)| self.img.operands(a, n))
+            .flat_map(|&(a, n)| {
+                (a..a + n.saturating_sub(6)).filter_map(move |p| {
+                    let b = |q: u32| img.word(q) as u8;
+                    (b(p) == 0xa1 && b(p + 5) == 0x33 && b(p + 6) == 0xc5).then(|| img.word(p + 1))
+                })
+            })
+            .collect();
+        let operands: Vec<(u32, u32)> = fns
+            .iter()
+            .flat_map(|&(a, n)| self.img.operands(a, n).into_iter().map(move |o| (o, a)))
+            .filter(|(o, _)| !cookies.contains(o))
             .collect();
         for reason in [1, 0] {
             let entry = self.ov.entry_point();
@@ -571,11 +565,14 @@ impl Twin {
                 })
                 .collect();
             for w in &written {
-                assert!(
-                    !operands.iter().any(|o| o & !3 == *w),
-                    "{}: DllMain({reason}) writes {w:#010x}, which a ported function uses",
-                    self.name
-                );
+                if let Some((_, f)) = operands.iter().find(|o| o.0 & !3 == *w) {
+                    let port = ffx_magic::covered(&self.img, *f).unwrap_or("?");
+                    panic!(
+                        "{}: DllMain({reason}) writes {w:#010x}, which the ported function at \
+                         {f:#010x} ({port}) uses",
+                        self.name
+                    );
+                }
             }
             eprintln!(
                 "{}: DllMain({reason}) writes {} CRT words",

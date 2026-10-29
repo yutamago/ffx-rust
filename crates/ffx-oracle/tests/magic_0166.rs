@@ -4,7 +4,7 @@
 mod magic;
 mod magic_l3;
 
-use ffx_magic::{Ret, l3_common, m0166};
+use ffx_magic::{Ret, m0032, m0166};
 use magic::{Call, Eax, SCRATCH};
 
 const N: u16 = 166;
@@ -61,7 +61,7 @@ fn pool_take() {
             },
             &[],
             Eax::Checked,
-            |g, img, fr| Ret::eax(l3_common::pool_take(g, img, fr.at)),
+            |g, img, fr| Ret::eax(m0032::pop_node(g, img, fr.at)),
         );
     }
 }

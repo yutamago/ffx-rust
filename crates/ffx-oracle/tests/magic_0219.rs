@@ -465,7 +465,7 @@ fn list_primitives() {
 }
 
 /// `pool_alloc` with busy nodes from the rover on and with none free;
-/// `task_alloc` with 2, 1 and 0 free.
+/// The task free-list take (`m0032::pop_node`) with 2, 1 and 0 free.
 #[test]
 fn pools() {
     let Some(mut t) = l5::twin(N) else { return };
@@ -494,7 +494,7 @@ fn pools() {
     for n in [2u16, 1, 0] {
         t.set_u16(tfree, n);
         t.check(ta, Call::default(), &[], Eax::Checked, |g, img, fr| {
-            ffx_magic::Ret::eax(ffx_magic::l5_objhost::task_alloc(g, img, fr.at))
+            ffx_magic::Ret::eax(ffx_magic::m0032::pop_node(g, img, fr.at))
         });
     }
 }

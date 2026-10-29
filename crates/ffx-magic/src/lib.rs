@@ -34,19 +34,21 @@
 // every port names the game `g`, its address `f` and its operand reader `w`
 #![allow(clippy::many_single_char_names)]
 
+// the runtime and code shared by many overlays
+pub mod l1_opu;
+pub mod l3_common;
+pub mod l3_opu;
+pub mod l5_objhost;
+pub mod l5_opu_boot;
+pub mod nodes;
 pub mod opu;
 pub mod opu_parts;
 pub mod pe;
+pub mod pushes;
+pub mod rcef;
 pub mod runtime;
 
-pub mod m0170;
-pub mod m0187;
-pub mod m0194;
-pub mod m0196;
-pub mod m0604;
-pub mod nodes;
-
-pub mod l1_opu;
+// named after the DLL they were ported from (some bind in many)
 pub mod m0003;
 pub mod m0032;
 pub mod m0042;
@@ -55,20 +57,17 @@ pub mod m0054;
 pub mod m0070;
 pub mod m0074;
 pub mod m0078;
-
-pub mod l3_common;
-pub mod l3_opu;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
 pub mod m0163;
 pub mod m0166;
-pub mod pushes;
-
-pub mod l5_objhost;
-pub mod l5_opu_boot;
+pub mod m0170;
+pub mod m0187;
+pub mod m0194;
+pub mod m0196;
 pub mod m0219;
-pub mod rcef;
+pub mod m0604;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -403,11 +402,111 @@ impl Image {
     }
 }
 
-/// Every port: its name, signature and a dispatcher index.
+const fn same_str(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Whether one callee check can accept what the other does (`Any`
+/// accepts everything).
+const fn callees_overlap(a: &Callee, b: &Callee) -> bool {
+    match (a, b) {
+        (Callee::Any, _) | (_, Callee::Any) => true,
+        (Callee::Sig(x), Callee::Sig(y)) => sigs_overlap(x, y),
+        (Callee::Import(x), Callee::Import(y)) => same_str(x, y),
+        _ => false,
+    }
+}
+
+/// Whether some code could match both signatures: the same length and
+/// masked hash (the `magic-sig` code identity), the same `rel32` fields
+/// with overlapping callees, and the same imports. Two such ports would
+/// both bind at one address, and [`bind`] would silently take the first.
+#[must_use]
+pub const fn sigs_overlap(a: &Sig, b: &Sig) -> bool {
+    if a.len != b.len
+        || a.hash != b.hash
+        || a.calls.len() != b.calls.len()
+        || a.imports.len() != b.imports.len()
+    {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.calls.len() {
+        if a.calls[i].0 != b.calls[i].0 || !callees_overlap(&a.calls[i].1, &b.calls[i].1) {
+            return false;
+        }
+        i += 1;
+    }
+    let mut i = 0;
+    while i < a.imports.len() {
+        if a.imports[i].0 != b.imports[i].0 || !same_str(a.imports[i].1, b.imports[i].1) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// The first pair `(i, j)`, `i < j`, of entries of `sigs` that could bind
+/// at the same address ([`sigs_overlap`]); indices past `a.len()` are in
+/// `b`. [`PORTS`] and [`INTERNAL`] are checked with it when the crate
+/// builds, so a second registration of one identity does not compile:
+///
+/// ```compile_fail
+/// use ffx_magic::{first_overlap, runtime::ZERO_RET};
+/// const _: () = assert!(first_overlap(&[("a", &ZERO_RET)], &[("b", &ZERO_RET)]).is_none());
+/// ```
+#[must_use]
+pub const fn first_overlap(a: &[(&str, &Sig)], b: &[(&str, &Sig)]) -> Option<(usize, usize)> {
+    let n = a.len() + b.len();
+    let mut i = 0;
+    while i < n {
+        let x = if i < a.len() {
+            a[i].1
+        } else {
+            b[i - a.len()].1
+        };
+        let mut j = i + 1;
+        while j < n {
+            let y = if j < a.len() {
+                a[j].1
+            } else {
+                b[j - a.len()].1
+            };
+            if sigs_overlap(x, y) {
+                return Some((i, j));
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Every port: its name, signature and a dispatcher index. A signature
+/// registered twice (here or in [`INTERNAL`]) does not build: one port
+/// per code identity.
 macro_rules! ports {
     ($($name:literal => $sig:path, $m:ident :: $f:ident;)*) => {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
+
+        const _: () = assert!(
+            first_overlap(PORTS, INTERNAL).is_none(),
+            "two ports (PORTS or INTERNAL) with the same code identity: \
+             keep one (cargo test -p ffx-magic one_port_per_identity names them)"
+        );
 
         /// The port at `PORTS[i]` for a game type.
         #[must_use]
@@ -467,23 +566,15 @@ ports! {
     "m0187 wrapper 1000" => m0187::E1000, m0187::e1000;
     "m0187 wrapper 1050" => m0187::E1050, m0187::e1050;
     "m0187 wrapper 10a0" => m0187::E10A0, m0187::e10a0;
-    "m0187 wrapper 1210" => m0187::E1210, m0187::e1210;
     "m0187 wrapper 1170" => m0187::E1170, m0187::e1170;
     "m0187 wrapper 10f0" => m0187::E10F0, m0187::e10f0;
-    "m0187 wrapper 1420" => m0187::E1420, m0187::e1420;
     "m0194 effect wrapper 1230" => m0194::E1230, m0194::e1230;
-    "m0196 effect wrapper 1040" => m0196::E1040, m0196::e1040;
-    "m0196 effect wrapper 1090" => m0196::E1090, m0196::e1090;
-    "m0196 effect wrapper 10f0" => m0196::E10F0, m0196::e10f0;
-    "m0196 effect wrapper 1140" => m0196::E1140, m0196::e1140;
     "m0196 effect wrapper 11d0" => m0196::E11D0, m0196::e11d0;
     "opu part init data (mode 1)" => opu_parts::INIT_DATA_1, opu_parts::init_data;
     "opu boot a" => l5_opu_boot::BOOT_A, l5_opu_boot::boot_a;
     "opu boot b" => l5_opu_boot::BOOT_B, l5_opu_boot::boot_b;
     "opu boot c" => l5_opu_boot::BOOT_C, l5_opu_boot::boot_c;
-    "opu boot d" => l5_opu_boot::BOOT_D, l5_opu_boot::boot_d;
     "opu shutdown" => l5_opu_boot::SHUTDOWN, l5_opu_boot::shutdown;
-    "objhost ret0" => l5_objhost::RET0, l5_objhost::ret0;
     "objhost start" => l5_objhost::START, l5_objhost::start;
     "objhost end" => l5_objhost::END, l5_objhost::end;
     "objhost draw" => l5_objhost::DRAW, l5_objhost::draw;
@@ -548,7 +639,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("character fade", &l3_common::CHR_FADE),
     ("list unlink current", &l3_common::LIST_UNLINK_CURRENT),
     ("character show", &l3_common::CHR_SHOW),
-    ("pool take", &l3_common::POOL_TAKE),
     ("m0159 facing angle", &m0159::FACING_ANGLE),
     ("m0163 target angle", &m0163::TARGET_ANGLE),
     ("m0166 reset record", &m0166::RESET_RECORD),
@@ -567,7 +657,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("objhost list_remove", &l5_objhost::LIST_REMOVE),
     ("objhost pool_alloc", &l5_objhost::POOL_ALLOC),
     ("objhost tasks_init", &l5_objhost::TASKS_INIT),
-    ("objhost task_alloc", &l5_objhost::TASK_ALLOC),
     ("objhost run_group", &l5_objhost::RUN_GROUP),
     ("objhost obj_block_init", &l5_objhost::OBJ_BLOCK_INIT),
     ("objhost obj_block_fill", &l5_objhost::OBJ_BLOCK_FILL),
@@ -610,4 +699,101 @@ pub fn bind(img: &Image, addr: u32) -> Option<usize> {
         .skip(1)
         .position(|(_, sig)| img.matches(addr, sig))
         .map(|i| i + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Callee, INTERNAL, PORTS, Sig, first_overlap, sigs_overlap};
+
+    /// Every pair of registered signatures that could bind at one address.
+    fn overlaps() -> Vec<String> {
+        let all: Vec<&(&str, &Sig)> = PORTS.iter().chain(INTERNAL).collect();
+        let mut out = Vec::new();
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                if sigs_overlap(a.1, b.1) {
+                    out.push(format!(
+                        "{:?} and {:?} ({} bytes, {:#018x})",
+                        a.0, b.0, a.1.len, a.1.hash
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn one_port_per_identity() {
+        let o = overlaps();
+        assert!(
+            o.is_empty(),
+            "{} overlapping signatures:\n{}",
+            o.len(),
+            o.join("\n")
+        );
+    }
+
+    const A: Sig = Sig {
+        len: 12,
+        hash: 1,
+        calls: &[],
+        imports: &[],
+    };
+    const B: Sig = Sig {
+        len: 12,
+        hash: 2,
+        calls: &[],
+        imports: &[],
+    };
+    const TA: Sig = Sig {
+        len: 5,
+        hash: 9,
+        calls: &[(1, Callee::Sig(&A))],
+        imports: &[],
+    };
+    const TB: Sig = Sig {
+        len: 5,
+        hash: 9,
+        calls: &[(1, Callee::Sig(&B))],
+        imports: &[],
+    };
+    const TANY: Sig = Sig {
+        len: 5,
+        hash: 9,
+        calls: &[(1, Callee::Any)],
+        imports: &[],
+    };
+    const IA: Sig = Sig {
+        len: 6,
+        hash: 3,
+        calls: &[],
+        imports: &[(2, "rand")],
+    };
+    const IB: Sig = Sig {
+        len: 6,
+        hash: 3,
+        calls: &[],
+        imports: &[(2, "free")],
+    };
+
+    #[test]
+    fn duplicates_are_refused() {
+        // the same identity registered twice, across the two lists too
+        let a_twice: &[(&str, &Sig)] = &[("a", &A), ("b", &B), ("a again", &A)];
+        assert_eq!(first_overlap(a_twice, &[]), Some((0, 2)));
+        assert_eq!(
+            first_overlap(&[("a", &A)], &[("b", &B), ("a", &A)]),
+            Some((0, 2))
+        );
+        // the same bytes with other callees: distinct functions (the thunks)
+        assert_eq!(first_overlap(&[("ta", &TA), ("tb", &TB)], &[]), None);
+        // a callee left unchecked accepts the other's code
+        assert_eq!(
+            first_overlap(&[("ta", &TA), ("tany", &TANY)], &[]),
+            Some((0, 1))
+        );
+        // the same bytes with other imports
+        assert_eq!(first_overlap(&[("ia", &IA), ("ib", &IB)], &[]), None);
+        assert_eq!(first_overlap(&[("a", &A), ("b", &B)], &[("ta", &TA)]), None);
+    }
 }
