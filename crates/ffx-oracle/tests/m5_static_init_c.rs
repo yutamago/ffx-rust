@@ -541,3 +541,197 @@ fn static_init_c_dtor_stores_and_imports() {
         }
     }
 }
+
+// ---- the destructors (batch 3) ----
+
+/// `SendMessageW`, the import `FFXApplication_atexit_dtor` calls (a
+/// recording stub, stdcall, four words).
+const SEND_MESSAGE_W: &str = "SendMessageW";
+
+#[test]
+fn static_init_c_dtor_chain_unlinks() {
+    for (what, mut t) in Twins::all() {
+        let b0 = t.zeros(0x10);
+        let b1 = t.zeros(0x10);
+        for r in si::CHAIN_UNLINKS {
+            let label = format!("{what} unlink {:#x}", r.addr);
+            let obj = t.rebase(r.obj);
+            // the snapshot's own chain (or the image's)
+            t.run_logged(&label, r.addr, true, false, |g| si::chain_unlink(g, r));
+            // an empty chain
+            t.set_global(CHAIN_HEAD, 0);
+            t.run_logged(&format!("{label} (empty)"), r.addr, true, false, |g| {
+                si::chain_unlink(g, r)
+            });
+            // the object at the head: the head takes its next link
+            t.set_global(CHAIN_HEAD, obj);
+            t.w32(obj + 4, b1);
+            t.w32(b1 + 4, 0);
+            t.run_logged(&format!("{label} (head)"), r.addr, true, false, |g| {
+                si::chain_unlink(g, r)
+            });
+            // the object second: the first block's link takes its next
+            t.set_global(CHAIN_HEAD, b0);
+            t.w32(b0 + 4, obj);
+            t.w32(obj + 4, 0x0bad_0004);
+            t.run_logged(&format!("{label} (second)"), r.addr, true, false, |g| {
+                si::chain_unlink(g, r)
+            });
+            // the object not in the chain: the walk ends at the last link
+            t.set_global(CHAIN_HEAD, b0);
+            t.w32(b0 + 4, b1);
+            t.w32(b1 + 4, 0);
+            t.run_logged(&format!("{label} (absent)"), r.addr, true, false, |g| {
+                si::chain_unlink(g, r)
+            });
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_detaches_and_counts() {
+    for (what, mut t) in Twins::all() {
+        t.stub_callees(false, 1, si::COND_DETACHES.iter().map(|r| r.func));
+        t.stub_callees(false, 1, si::SUB_COUNTS.iter().map(|r| r.func));
+        for r in si::COND_DETACHES {
+            // the key clear: only the vtable; the original returns with its
+            // caller's eax (not compared)
+            t.set_global(r.key, 0);
+            t.run_logged(
+                &format!("{what} detach {:#x} (clear)", r.addr),
+                r.addr,
+                false,
+                false,
+                |g| si::cond_detach(g, r),
+            );
+            for index in [0, 3, 0x1f] {
+                t.set_global(r.key, 1);
+                t.set_global(r.index, index);
+                t.run(
+                    &format!("{what} detach {:#x} (index {index})", r.addr),
+                    r.addr,
+                    |g| si::cond_detach(g, r),
+                );
+            }
+        }
+        for r in si::SUB_COUNTS {
+            for (count, total) in [(5, 7), (9, 2), (0, 0)] {
+                t.set_global(r.count, count);
+                t.set_global(r.total, total);
+                t.run(
+                    &format!("{what} count {:#x} ({count}, {total})", r.addr),
+                    r.addr,
+                    |g| si::sub_count(g, r),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_frees() {
+    for (what, mut t) in Twins::all() {
+        t.stub_callees(false, 1, si::FREE_IF_OWNED.iter().map(|r| r.func));
+        t.stub_callees(false, 1, si::FREE_IF_NONZERO.iter().map(|r| r.func));
+        for r in si::FREE_IF_OWNED {
+            for (flags, block) in [
+                (0x8000_0010, 0x0bad_b10c),
+                (0x10, 0),
+                (0x10, 0x0bad_b10c),
+                (0x7fff_ffff, 0x0bad_b10c),
+            ] {
+                t.set_global(r.flags, flags);
+                t.set_global(r.block, block);
+                t.run_logged(
+                    &format!("{what} owned {:#x} ({flags:#x}, {block:#x})", r.addr),
+                    r.addr,
+                    true,
+                    false,
+                    |g| si::free_if_owned(g, r),
+                );
+            }
+        }
+        for r in si::FREE_IF_NONZERO {
+            for w in [0, 0x0bad_b10c] {
+                t.set_global(r.g, w);
+                t.run_logged(
+                    &format!("{what} nonzero {:#x} ({w:#x})", r.addr),
+                    r.addr,
+                    true,
+                    w != 0,
+                    |g| si::free_if_nonzero(g, r),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_sequences() {
+    for (what, mut t) in Twins::all() {
+        t.stub_callees(
+            true,
+            0,
+            si::THISCALL_SEQS
+                .iter()
+                .flat_map(|r| r.calls.iter().map(|&(f, _)| f)),
+        );
+        for r in si::THISCALL_SEQS {
+            t.run(&format!("{what} seq {:#x}", r.addr), r.addr, |g| {
+                si::thiscall_seq(g, r)
+            });
+            assert_eq!(t.log_entries() as usize, r.calls.len(), "{what} seq calls");
+        }
+    }
+}
+
+#[test]
+fn static_init_c_dtor_singles() {
+    for (what, mut t) in Twins::all() {
+        let send = t.stub_code(0x0c7e_0003, false, 4, 4, 0x5e4d);
+        t.a.bind_import(SEND_MESSAGE_W, Some(send)).unwrap();
+        t.b.bind_import(SEND_MESSAGE_W, Some(send)).unwrap();
+        // the thiscalls without stack words and the cdecl callees
+        t.stub_callees(true, 0, [0x0062_0bc0, 0x0045_c1d0, 0x004f_d160]);
+        t.stub_callees(false, 0, [0x0068_9830, 0x0068_bba0, 0x00a2_59f0]);
+        t.stub_callees(false, 2, [0x004a_b4d0]);
+        t.stub_callees(false, 1, [si::PHYRE_FREE, si::USER_FREE]);
+        t.stub(si::EH_VECTOR_DTOR, false, 4, 4, 0xe4ec);
+        // FFXApplication_atexit_dtor: the window flag 1 (WM_CLOSE) and not
+        for flag in [1, 0, 2] {
+            t.set_global(0x00c8_fae4, flag);
+            t.set_global(0x00cc_9ce8, 0x0000_1234);
+            t.run(
+                &format!("{what} app dtor (flag {flag})"),
+                0x00af_9ba0,
+                |g| si::ffx_application_dtor(g),
+            );
+        }
+        // 0x00aff8a0: owned and not
+        for w in [0x8000_0003, 0x0000_0003] {
+            t.set_global(0x00ca_8510, w);
+            t.set_global(0x00ca_8514, 0x0bad_b10c);
+            t.run(&format!("{what} 0xaff8a0 ({w:#x})"), 0x00af_f8a0, |g| {
+                si::dtor_00aff8a0(g)
+            });
+        }
+        t.run(&format!("{what} 0xaff930"), 0x00af_f930, |g| {
+            si::dtor_00aff930(g)
+        });
+        for (flags, block) in [(0x8000_0000, 0x0bad_b10c), (0, 0), (0, 0x0bad_b10c)] {
+            t.set_global(0x00cc_142c, flags);
+            t.set_global(0x00cc_1430, block);
+            t.run(
+                &format!("{what} 0xb050d0 ({flags:#x}, {block:#x})"),
+                0x00b0_50d0,
+                |g| si::dtor_00b050d0(g),
+            );
+        }
+        for w in [0, 0x0bad_b10c] {
+            t.set_global(0x00cc_b214, w);
+            t.run(&format!("{what} 0xb066e0 ({w:#x})"), 0x00b0_66e0, |g| {
+                si::dtor_00b066e0(g)
+            });
+        }
+    }
+}

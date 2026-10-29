@@ -14,10 +14,10 @@
 use ffx_graphic::host::{Conv, Host};
 
 pub use crate::m5_static_init_b::{
-    Base, CLASS_CTOR, ClassDecl, Ctor0AtExit, GET_CLASS_DESCRIPTOR, GET_GLOBAL_NAMESPACE,
-    ListAppend, NamedType, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER, SET_WRITE_MASK_BUFFER, Tail,
-    TailThiscall, TypeEnum, at_exit, class_decl, ctor0_at_exit, list_append, named_type,
-    tail_thiscall, type_enum,
+    Base, CHAIN_HEAD, CLASS_CTOR, ClassDecl, Ctor0AtExit, GET_CLASS_DESCRIPTOR,
+    GET_GLOBAL_NAMESPACE, ListAppend, NamedType, SET_DEFAULT_BUFFER, SET_VALIDATION_BUFFER,
+    SET_WRITE_MASK_BUFFER, Tail, TailThiscall, TypeEnum, at_exit, class_decl, ctor0_at_exit,
+    list_append, named_type, tail_thiscall, type_enum,
 };
 
 /// A `ZeroWords` row (1): the globals `words` are set to 0, in order. The
@@ -2849,3 +2849,601 @@ pub const FREE_UNLESS_BIT0: &[FreeUnlessBit0] = &[
         func: 0x0042_fb20,
     },
 ];
+
+// ---- the destructors (batch 3) ----
+
+/// A `ChainUnlink` row: the inverse of [`ListAppend`]. The vtable `vt` goes
+/// into `obj`; when the chain at [`CHAIN_HEAD`] is not empty, the walk
+/// follows the links (`next` at `+4`) until the link that holds `obj` or the
+/// last link; a link holding `obj` takes the word at `save` and `save` is
+/// cleared. Returns the address of the link the walk stopped at (the
+/// head's when the chain is empty), which the original leaves in `eax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChainUnlink {
+    pub addr: u32,
+    pub obj: u32,
+    pub vt: u32,
+    pub save: u32,
+}
+
+/// The `ChainUnlink` shims' body.
+pub fn chain_unlink(h: &mut impl Host, r: &ChainUnlink) -> u32 {
+    let head = h.rebase(CHAIN_HEAD);
+    let first: u32 = h.read(head);
+    let obj = h.rebase(r.obj);
+    let vt = h.rebase(r.vt);
+    h.write(obj, vt);
+    let mut slot = head;
+    if first == 0 {
+        return slot;
+    }
+    loop {
+        let cur: u32 = h.read(slot);
+        if cur == obj {
+            break;
+        }
+        let next: u32 = h.read(cur + 4);
+        slot = cur + 4;
+        if next == 0 {
+            break;
+        }
+    }
+    if h.read::<u32>(slot) != 0 {
+        let save = h.rebase(r.save);
+        let s: u32 = h.read(save);
+        h.write(slot, s);
+        h.write(save, 0u32);
+    }
+    slot
+}
+
+/// A `CondDetach` row: the vtable `vt` goes into `obj`; when the word at
+/// `key` is not zero, `func(obj)` (cdecl), then the entry of the word table
+/// `table` at the index in `index` is cleared, and the index is returned.
+/// When `key` is zero the original returns with its caller's `eax`, which
+/// no caller reads (the CRT's `atexit` loop): 0 here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CondDetach {
+    pub addr: u32,
+    pub key: u32,
+    pub obj: u32,
+    pub vt: u32,
+    pub func: u32,
+    pub index: u32,
+    pub table: u32,
+}
+
+/// The `CondDetach` shims' body.
+pub fn cond_detach(h: &mut impl Host, r: &CondDetach) -> u32 {
+    let key = h.rebase(r.key);
+    let k: u32 = h.read(key);
+    let obj = h.rebase(r.obj);
+    let vt = h.rebase(r.vt);
+    h.write(obj, vt);
+    if k == 0 {
+        return 0;
+    }
+    h.call_sym(r.func, Conv::Cdecl, &[obj]);
+    let index = h.rebase(r.index);
+    let i: u32 = h.read(index);
+    let table = h.rebase(r.table);
+    h.write(table.wrapping_add(i.wrapping_mul(4)), 0u32);
+    i
+}
+
+/// A `SubCount` row: the vtable `vt` goes into `obj`, `func(obj)` (cdecl),
+/// then the word at `count` is taken off the word at `total`; it is
+/// returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SubCount {
+    pub addr: u32,
+    pub obj: u32,
+    pub vt: u32,
+    pub func: u32,
+    pub count: u32,
+    pub total: u32,
+}
+
+/// The `SubCount` shims' body.
+pub fn sub_count(h: &mut impl Host, r: &SubCount) -> u32 {
+    let obj = h.rebase(r.obj);
+    let vt = h.rebase(r.vt);
+    h.write(obj, vt);
+    h.call_sym(r.func, Conv::Cdecl, &[obj]);
+    let count = h.rebase(r.count);
+    let c: u32 = h.read(count);
+    let total = h.rebase(r.total);
+    let t: u32 = h.read(total);
+    h.write(total, t.wrapping_sub(c));
+    c
+}
+
+/// What `mov eax, w; shr eax, 31; not al` leaves in `eax` when the sign bit
+/// of `w` is set (the "not owned" exit of the `FreeIfOwned` shapes).
+const NOT_OWNED_EAX: u32 = 0xfe;
+
+/// A `FreeIfOwned` row: a buffer word pair, `flags` (bit 31 set: not owned)
+/// and the block at `block`. When owned and (with `null_check`) the block
+/// is not 0, `func(block)` (cdecl, the free); both words are cleared
+/// (`block` first, then `flags`, or the other way round with
+/// `flags_first`). Returns the original's `eax`: the free's result, 0 for
+/// a null block, [`NOT_OWNED_EAX`] when not owned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FreeIfOwned {
+    pub addr: u32,
+    pub flags: u32,
+    pub block: u32,
+    pub func: u32,
+    pub null_check: bool,
+    pub flags_first: bool,
+}
+
+/// The `FreeIfOwned` shims' body.
+pub fn free_if_owned(h: &mut impl Host, r: &FreeIfOwned) -> u32 {
+    let flags = h.rebase(r.flags);
+    let block = h.rebase(r.block);
+    let eax = free_owned(h, flags, block, r.func, r.null_check);
+    if r.flags_first {
+        h.write(flags, 0u32);
+        h.write(block, 0u32);
+    } else {
+        h.write(block, 0u32);
+        h.write(flags, 0u32);
+    }
+    eax
+}
+
+/// The test and the free of [`free_if_owned`] (the words already rebased);
+/// the `eax` it leaves.
+fn free_owned(h: &mut impl Host, flags: u32, block: u32, func: u32, null_check: bool) -> u32 {
+    let f: u32 = h.read(flags);
+    if f >> 31 != 0 {
+        return NOT_OWNED_EAX;
+    }
+    let b: u32 = h.read(block);
+    if null_check && b == 0 {
+        return 0;
+    }
+    h.call_sym(func, Conv::Cdecl, &[b])
+}
+
+/// A `ThiscallSeq` row: thiscalls without stack words on globals, in order
+/// (`(func, obj)`), inside an exception frame the port does not need;
+/// the last call's `eax`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThiscallSeq {
+    pub addr: u32,
+    pub calls: &'static [(u32, u32)],
+}
+
+/// The `ThiscallSeq` shims' body.
+pub fn thiscall_seq(h: &mut impl Host, r: &ThiscallSeq) -> u32 {
+    let mut eax = 0;
+    for &(func, obj) in r.calls {
+        let obj = h.rebase(obj);
+        eax = h.call_sym(func, Conv::Thiscall(obj), &[]);
+    }
+    eax
+}
+
+/// A `FreeIfNonzero` row: the word at `g`; when it is not 0, `func(word)`
+/// (cdecl) and its `eax`; else 0 (the word, which the original returns).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FreeIfNonzero {
+    pub addr: u32,
+    pub g: u32,
+    pub func: u32,
+}
+
+/// The `FreeIfNonzero` shims' body.
+pub fn free_if_nonzero(h: &mut impl Host, r: &FreeIfNonzero) -> u32 {
+    let g = h.rebase(r.g);
+    let w: u32 = h.read(g);
+    if w == 0 {
+        return 0;
+    }
+    h.call_sym(r.func, Conv::Cdecl, &[w])
+}
+
+/// `eh_vector_destructor_iterator(ptr, size, count, dtor)`, stdcall
+/// (`ret 0x10`).
+pub const EH_VECTOR_DTOR: u32 = 0x0094_96d2;
+/// `PhyreFree(block)`, cdecl.
+pub const PHYRE_FREE: u32 = 0x0042_fb20;
+/// `user_free_thunk`, cdecl (a jump thunk to the CRT's `free`).
+pub const USER_FREE: u32 = 0x0068_7010;
+/// `SendMessageW`'s import slot.
+pub const SEND_MESSAGE_W_IAT: u32 = 0x00b0_c67c;
+
+/// `FFXApplication_atexit_dtor` (0x00af9ba0), the static `FFXApplication`'s
+/// destructor: its vtable; when the window flag `0x00c8fae4` is 1,
+/// `SendMessageW([0x00cc9ce8], WM_CLOSE, 0, 0)`; then tail-jumps to the
+/// `PApplication` destructor on it; that `eax`.
+pub fn ffx_application_dtor(h: &mut impl Host) -> u32 {
+    let flag = h.rebase(0x00c8_fae4);
+    let f: u32 = h.read(flag);
+    let app = h.rebase(0x00c8_fb78);
+    let vt = h.rebase(0x00b0_d998);
+    h.write(app, vt);
+    if f == 1 {
+        let hwnd_at = h.rebase(0x00cc_9ce8);
+        let hwnd: u32 = h.read(hwnd_at);
+        let slot = h.rebase(SEND_MESSAGE_W_IAT);
+        let send: u32 = h.read(slot);
+        h.call(send, Conv::Stdcall, &[hwnd, 0x10, 0, 0]); // call width: 4
+    }
+    h.call_sym(0x0062_0bc0, Conv::Thiscall(app), &[])
+}
+
+/// `0x00aff8a0`: the destructor of the static at `0x00ca8510`: thiscalls
+/// `0x0045c1d0` on `0x00ca852c` and `0x004fd160` on `0x00ca8524`; when bit
+/// 31 of the word at `0x00ca8510` is clear, `0x004ab4d0([0x00ca8514], word
+/// & 0x7fffffff)` (cdecl); both words cleared. The `eax` as the
+/// `FreeIfOwned` shapes leave it (no null check).
+pub fn dtor_00aff8a0(h: &mut impl Host) -> u32 {
+    let a = h.rebase(0x00ca_852c);
+    h.call_sym(0x0045_c1d0, Conv::Thiscall(a), &[]);
+    let b = h.rebase(0x00ca_8524);
+    h.call_sym(0x004f_d160, Conv::Thiscall(b), &[]);
+    let flags = h.rebase(0x00ca_8510);
+    let block = h.rebase(0x00ca_8514);
+    let w: u32 = h.read(flags);
+    let eax = if w >> 31 != 0 {
+        NOT_OWNED_EAX
+    } else {
+        let p: u32 = h.read(block);
+        h.call_sym(0x004a_b4d0, Conv::Cdecl, &[p, w & 0x7fff_ffff])
+    };
+    h.write(flags, 0u32);
+    h.write(block, 0u32);
+    eax
+}
+
+/// `0x00aff930`: `eh_vector_destructor_iterator(0x00ca8330, 0x10, 0x1e,
+/// 0x004a1770)`; its `eax`.
+pub fn dtor_00aff930(h: &mut impl Host) -> u32 {
+    let p = h.rebase(0x00ca_8330);
+    let d = h.rebase(0x004a_1770);
+    h.call_sym(EH_VECTOR_DTOR, Conv::Stdcall, &[p, 0x10, 0x1e, d])
+}
+
+/// `0x00b050d0`: frees the block of the pair `0x00cc142c`/`0x00cc1430`
+/// when owned (with a null check), clears both, then
+/// `eh_vector_destructor_iterator(0x00cc13ec, 0x20, 2, 0x005e1e80)` and
+/// the vtable `0x00b3c60c` at `0x00cc13e8`; the iterator's `eax`.
+pub fn dtor_00b050d0(h: &mut impl Host) -> u32 {
+    let flags = h.rebase(0x00cc_142c);
+    let block = h.rebase(0x00cc_1430);
+    free_owned(h, flags, block, PHYRE_FREE, true);
+    h.write(block, 0u32);
+    h.write(flags, 0u32);
+    let p = h.rebase(0x00cc_13ec);
+    let d = h.rebase(0x005e_1e80);
+    let eax = h.call_sym(EH_VECTOR_DTOR, Conv::Stdcall, &[p, 0x20, 2, d]);
+    let obj = h.rebase(0x00cc_13e8);
+    let vt = h.rebase(0x00b3_c60c);
+    h.write(obj, vt);
+    eax
+}
+
+/// `0x00b066e0`: `0x00689830()`, `0x0068bba0()`, `0x00a259f0()` (cdecl),
+/// then frees the word at `0x00ccb214` when it is not 0 (`user_free`); the
+/// `eax` as [`free_if_nonzero`].
+pub fn dtor_00b066e0(h: &mut impl Host) -> u32 {
+    h.call_sym(0x0068_9830, Conv::Cdecl, &[]);
+    h.call_sym(0x0068_bba0, Conv::Cdecl, &[]);
+    h.call_sym(0x00a2_59f0, Conv::Cdecl, &[]);
+    free_if_nonzero(
+        h,
+        &FreeIfNonzero {
+            addr: 0x00b0_66e0,
+            g: 0x00cc_b214,
+            func: USER_FREE,
+        },
+    )
+}
+
+// ---- batch 3: generated by static-init-c-work/gen_b3.py ----
+
+/// The chain unlinks (10).
+pub const CHAIN_UNLINKS: &[ChainUnlink] = &[
+    ChainUnlink {
+        addr: 0x00af_9c30,
+        obj: 0x00c0_a2d0,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a2d4,
+    },
+    ChainUnlink {
+        addr: 0x00af_9c80,
+        obj: 0x00c0_a33c,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a340,
+    },
+    ChainUnlink {
+        addr: 0x00af_9cd0,
+        obj: 0x00c0_a37c,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a380,
+    },
+    ChainUnlink {
+        addr: 0x00af_9d20,
+        obj: 0x00c0_a3c0,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a3c4,
+    },
+    ChainUnlink {
+        addr: 0x00af_9d70,
+        obj: 0x00c0_a3fc,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a400,
+    },
+    ChainUnlink {
+        addr: 0x00af_9dc0,
+        obj: 0x00c0_a440,
+        vt: 0x00b0_e078,
+        save: 0x00c0_a444,
+    },
+    ChainUnlink {
+        addr: 0x00af_fae0,
+        obj: 0x00c1_a300,
+        vt: 0x00b0_e078,
+        save: 0x00c1_a304,
+    },
+    ChainUnlink {
+        addr: 0x00af_fb30,
+        obj: 0x00c1_a350,
+        vt: 0x00b0_e078,
+        save: 0x00c1_a354,
+    },
+    ChainUnlink {
+        addr: 0x00b0_4b80,
+        obj: 0x00c2_a054,
+        vt: 0x00b0_e078,
+        save: 0x00c2_a058,
+    },
+    ChainUnlink {
+        addr: 0x00b0_5ef0,
+        obj: 0x00c2_a0f4,
+        vt: 0x00b0_e078,
+        save: 0x00c2_a0f8,
+    },
+];
+
+/// The conditional detaches (8).
+pub const COND_DETACHES: &[CondDetach] = &[
+    CondDetach {
+        addr: 0x00af_ce00,
+        key: 0x00c1_0848,
+        obj: 0x00c1_083c,
+        vt: 0x00b1_70e8,
+        func: 0x0049_e920,
+        index: 0x00c1_084c,
+        table: 0x00c9_af00,
+    },
+    CondDetach {
+        addr: 0x00af_ce40,
+        key: 0x00c1_0834,
+        obj: 0x00c1_0828,
+        vt: 0x00b1_70e8,
+        func: 0x0049_e920,
+        index: 0x00c1_0838,
+        table: 0x00c9_af00,
+    },
+    CondDetach {
+        addr: 0x00af_ce80,
+        key: 0x00c1_0820,
+        obj: 0x00c1_0814,
+        vt: 0x00b1_70e8,
+        func: 0x0049_e920,
+        index: 0x00c1_0824,
+        table: 0x00c9_af00,
+    },
+    CondDetach {
+        addr: 0x00af_cec0,
+        key: 0x00c1_085c,
+        obj: 0x00c1_0850,
+        vt: 0x00b1_70e8,
+        func: 0x0049_e920,
+        index: 0x00c1_0860,
+        table: 0x00c9_af00,
+    },
+    CondDetach {
+        addr: 0x00af_e4e0,
+        key: 0x00c1_58e4,
+        obj: 0x00c1_58d8,
+        vt: 0x00b1_eb90,
+        func: 0x004c_c050,
+        index: 0x00c1_58e8,
+        table: 0x00ca_43b0,
+    },
+    CondDetach {
+        addr: 0x00af_e520,
+        key: 0x00c1_58f8,
+        obj: 0x00c1_58ec,
+        vt: 0x00b1_eb90,
+        func: 0x004c_c050,
+        index: 0x00c1_58fc,
+        table: 0x00ca_43b0,
+    },
+    CondDetach {
+        addr: 0x00af_e560,
+        key: 0x00c1_58bc,
+        obj: 0x00c1_58b0,
+        vt: 0x00b1_eb90,
+        func: 0x004c_c050,
+        index: 0x00c1_58c0,
+        table: 0x00ca_43b0,
+    },
+    CondDetach {
+        addr: 0x00af_e5a0,
+        key: 0x00c1_58d0,
+        obj: 0x00c1_58c4,
+        vt: 0x00b1_eb90,
+        func: 0x004c_c050,
+        index: 0x00c1_58d4,
+        table: 0x00ca_43b0,
+    },
+];
+
+/// The counted destructors (6).
+pub const SUB_COUNTS: &[SubCount] = &[
+    SubCount {
+        addr: 0x00af_e740,
+        obj: 0x00c1_6108,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00c1_6118,
+        total: 0x00ca_4e20,
+    },
+    SubCount {
+        addr: 0x00af_e770,
+        obj: 0x00c1_60f0,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00c1_6100,
+        total: 0x00ca_4e20,
+    },
+    SubCount {
+        addr: 0x00af_e7a0,
+        obj: 0x00ca_4ec4,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00ca_4ed4,
+        total: 0x00ca_4e20,
+    },
+    SubCount {
+        addr: 0x00af_e7d0,
+        obj: 0x00c1_6150,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00c1_6160,
+        total: 0x00ca_4e20,
+    },
+    SubCount {
+        addr: 0x00af_e800,
+        obj: 0x00c1_6120,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00c1_6130,
+        total: 0x00ca_4e20,
+    },
+    SubCount {
+        addr: 0x00af_e830,
+        obj: 0x00c1_6138,
+        vt: 0x00b1_f7ac,
+        func: 0x0043_2760,
+        count: 0x00c1_6148,
+        total: 0x00ca_4e20,
+    },
+];
+
+/// The owned-buffer frees (6).
+pub const FREE_IF_OWNED: &[FreeIfOwned] = &[
+    FreeIfOwned {
+        addr: 0x00af_e870,
+        flags: 0x00ca_4ebc,
+        block: 0x00ca_4ec0,
+        func: 0x0042_fb20,
+        null_check: true,
+        flags_first: false,
+    },
+    FreeIfOwned {
+        addr: 0x00b0_0fd0,
+        flags: 0x00ca_cedc,
+        block: 0x00ca_cee0,
+        func: 0x0042_fb20,
+        null_check: true,
+        flags_first: false,
+    },
+    FreeIfOwned {
+        addr: 0x00b0_4b40,
+        flags: 0x00cb_e6d8,
+        block: 0x00cb_e6dc,
+        func: 0x0042_fb20,
+        null_check: true,
+        flags_first: false,
+    },
+    FreeIfOwned {
+        addr: 0x00b0_5f50,
+        flags: 0x00cc_96e0,
+        block: 0x00cc_96e4,
+        func: 0x0042_fb20,
+        null_check: true,
+        flags_first: false,
+    },
+    FreeIfOwned {
+        addr: 0x00b0_6130,
+        flags: 0x00cc_9d14,
+        block: 0x00cc_9d18,
+        func: 0x0042_fb20,
+        null_check: true,
+        flags_first: false,
+    },
+    FreeIfOwned {
+        addr: 0x00b0_67b0,
+        flags: 0x00cc_b6d4,
+        block: 0x00cc_b6d8,
+        func: 0x0042_fb20,
+        null_check: false,
+        flags_first: true,
+    },
+];
+
+/// The thiscall sequences in an exception frame (6).
+pub const THISCALL_SEQS: &[ThiscallSeq] = &[
+    ThiscallSeq {
+        addr: 0x00af_a690,
+        calls: &[(0x0057_4760, 0x00c0_bb70), (0x0057_4760, 0x00c0_bb70)],
+    },
+    ThiscallSeq {
+        addr: 0x00af_b980,
+        calls: &[(0x0057_4760, 0x00c0_e2f0), (0x0057_4760, 0x00c0_e2f0)],
+    },
+    ThiscallSeq {
+        addr: 0x00b0_35b0,
+        calls: &[
+            (0x0057_4970, 0x00c2_4f0c),
+            (0x0049_cc10, 0x00c2_4f24),
+            (0x0049_c5b0, 0x00c2_4f24),
+            (0x0057_4760, 0x00c2_4f0c),
+            (0x0057_4760, 0x00c2_4f0c),
+        ],
+    },
+    ThiscallSeq {
+        addr: 0x00b0_3690,
+        calls: &[
+            (0x0057_4970, 0x00c2_5374),
+            (0x0049_cc10, 0x00c2_538c),
+            (0x0049_c5b0, 0x00c2_538c),
+            (0x0057_4760, 0x00c2_5374),
+            (0x0057_4760, 0x00c2_5374),
+        ],
+    },
+    ThiscallSeq {
+        addr: 0x00b0_6630,
+        calls: &[
+            (0x0057_4970, 0x00c3_1e9c),
+            (0x0049_cc10, 0x00c3_1eb4),
+            (0x0049_c5b0, 0x00c3_1eb4),
+            (0x0057_4760, 0x00c3_1e9c),
+            (0x0057_4760, 0x00c3_1e9c),
+        ],
+    },
+    ThiscallSeq {
+        addr: 0x00b0_7000,
+        calls: &[
+            (0x0057_4970, 0x00c3_419c),
+            (0x0049_cc10, 0x00c3_41b4),
+            (0x0049_c5b0, 0x00c3_41b4),
+            (0x0057_4760, 0x00c3_419c),
+            (0x0057_4760, 0x00c3_419c),
+        ],
+    },
+];
+
+/// The frees of a nonzero word (1).
+pub const FREE_IF_NONZERO: &[FreeIfNonzero] = &[FreeIfNonzero {
+    addr: 0x00b0_67f0,
+    g: 0x00cc_b6e8,
+    func: 0x0068_7010,
+}];

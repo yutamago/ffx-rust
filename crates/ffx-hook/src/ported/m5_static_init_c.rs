@@ -1465,4 +1465,172 @@ ported! {
     StaticDtor_Thiscall_00b073b0 @ 0x00b0_73b0 => extern "C" fn s_00b073b0() -> u32 {
         si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[81])
     }
+    /// `FFXApplication_atexit_dtor`: atexit destructor: the static `FFXApplication`'s destructor (`0x00c8fb78`): its vtable, `WM_CLOSE` when `0x00c8fae4` is 1, tail-jumps to the `PApplication` destructor; its eax.
+    FFXApplication_atexit_dtor @ 0x00af_9ba0 => extern "C" fn s_00af9ba0() -> u32 {
+        si::ffx_application_dtor(&mut mem())
+    }
+    /// `StaticDtor_ChainUnlink_00af9c30`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a2d0` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a2d4`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9c30 @ 0x00af_9c30 => extern "C" fn s_00af9c30() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[0])
+    }
+    /// `StaticDtor_ChainUnlink_00af9c80`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a33c` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a340`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9c80 @ 0x00af_9c80 => extern "C" fn s_00af9c80() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[1])
+    }
+    /// `StaticDtor_ChainUnlink_00af9cd0`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a37c` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a380`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9cd0 @ 0x00af_9cd0 => extern "C" fn s_00af9cd0() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[2])
+    }
+    /// `StaticDtor_ChainUnlink_00af9d20`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a3c0` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a3c4`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9d20 @ 0x00af_9d20 => extern "C" fn s_00af9d20() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[3])
+    }
+    /// `StaticDtor_ChainUnlink_00af9d70`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a3fc` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a400`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9d70 @ 0x00af_9d70 => extern "C" fn s_00af9d70() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[4])
+    }
+    /// `StaticDtor_ChainUnlink_00af9dc0`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c0a440` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c0a444`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00af9dc0 @ 0x00af_9dc0 => extern "C" fn s_00af9dc0() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[5])
+    }
+    /// `StaticDtor_Seq_00afa690`: atexit destructor: thiscalls `Phyre_PRedBlackTree_clear` on `0x00c0bb70`, `Phyre_PRedBlackTree_clear` on `0x00c0bb70`; the last one's eax.
+    StaticDtor_Seq_00afa690 @ 0x00af_a690 => extern "C" fn s_00afa690() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[0])
+    }
+    /// `StaticDtor_Seq_00afb980`: atexit destructor: thiscalls `Phyre_PRedBlackTree_clear` on `0x00c0e2f0`, `Phyre_PRedBlackTree_clear` on `0x00c0e2f0`; the last one's eax.
+    StaticDtor_Seq_00afb980 @ 0x00af_b980 => extern "C" fn s_00afb980() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[1])
+    }
+    /// `StaticDtor_Detach_00afce00`: atexit destructor: stores the vtable `0x00b170e8` in `0x00c1083c`; when the word at `0x00c10848` is set, `0x0049e920`(`0x00c1083c`) (cdecl) and the entry [`0x00c1084c`] of the table `0x00c9af00` is cleared; that index.
+    StaticDtor_Detach_00afce00 @ 0x00af_ce00 => extern "C" fn s_00afce00() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[0])
+    }
+    /// `StaticDtor_Detach_00afce40`: atexit destructor: stores the vtable `0x00b170e8` in `0x00c10828`; when the word at `0x00c10834` is set, `0x0049e920`(`0x00c10828`) (cdecl) and the entry [`0x00c10838`] of the table `0x00c9af00` is cleared; that index.
+    StaticDtor_Detach_00afce40 @ 0x00af_ce40 => extern "C" fn s_00afce40() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[1])
+    }
+    /// `StaticDtor_Detach_00afce80`: atexit destructor: stores the vtable `0x00b170e8` in `0x00c10814`; when the word at `0x00c10820` is set, `0x0049e920`(`0x00c10814`) (cdecl) and the entry [`0x00c10824`] of the table `0x00c9af00` is cleared; that index.
+    StaticDtor_Detach_00afce80 @ 0x00af_ce80 => extern "C" fn s_00afce80() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[2])
+    }
+    /// `StaticDtor_Detach_00afcec0`: atexit destructor: stores the vtable `0x00b170e8` in `0x00c10850`; when the word at `0x00c1085c` is set, `0x0049e920`(`0x00c10850`) (cdecl) and the entry [`0x00c10860`] of the table `0x00c9af00` is cleared; that index.
+    StaticDtor_Detach_00afcec0 @ 0x00af_cec0 => extern "C" fn s_00afcec0() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[3])
+    }
+    /// `StaticDtor_Detach_00afe4e0`: atexit destructor: stores the vtable `0x00b1eb90` in `0x00c158d8`; when the word at `0x00c158e4` is set, `0x004cc050`(`0x00c158d8`) (cdecl) and the entry [`0x00c158e8`] of the table `0x00ca43b0` is cleared; that index.
+    StaticDtor_Detach_00afe4e0 @ 0x00af_e4e0 => extern "C" fn s_00afe4e0() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[4])
+    }
+    /// `StaticDtor_Detach_00afe520`: atexit destructor: stores the vtable `0x00b1eb90` in `0x00c158ec`; when the word at `0x00c158f8` is set, `0x004cc050`(`0x00c158ec`) (cdecl) and the entry [`0x00c158fc`] of the table `0x00ca43b0` is cleared; that index.
+    StaticDtor_Detach_00afe520 @ 0x00af_e520 => extern "C" fn s_00afe520() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[5])
+    }
+    /// `StaticDtor_Detach_00afe560`: atexit destructor: stores the vtable `0x00b1eb90` in `0x00c158b0`; when the word at `0x00c158bc` is set, `0x004cc050`(`0x00c158b0`) (cdecl) and the entry [`0x00c158c0`] of the table `0x00ca43b0` is cleared; that index.
+    StaticDtor_Detach_00afe560 @ 0x00af_e560 => extern "C" fn s_00afe560() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[6])
+    }
+    /// `StaticDtor_Detach_00afe5a0`: atexit destructor: stores the vtable `0x00b1eb90` in `0x00c158c4`; when the word at `0x00c158d0` is set, `0x004cc050`(`0x00c158c4`) (cdecl) and the entry [`0x00c158d4`] of the table `0x00ca43b0` is cleared; that index.
+    StaticDtor_Detach_00afe5a0 @ 0x00af_e5a0 => extern "C" fn s_00afe5a0() -> u32 {
+        si::cond_detach(&mut mem(), &si::COND_DETACHES[7])
+    }
+    /// `StaticDtor_SubCount_00afe740`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00c16108`, `0x00432760`(`0x00c16108`) (cdecl), then takes the word at `0x00c16118` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe740 @ 0x00af_e740 => extern "C" fn s_00afe740() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[0])
+    }
+    /// `StaticDtor_SubCount_00afe770`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00c160f0`, `0x00432760`(`0x00c160f0`) (cdecl), then takes the word at `0x00c16100` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe770 @ 0x00af_e770 => extern "C" fn s_00afe770() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[1])
+    }
+    /// `StaticDtor_SubCount_00afe7a0`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00ca4ec4`, `0x00432760`(`0x00ca4ec4`) (cdecl), then takes the word at `0x00ca4ed4` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe7a0 @ 0x00af_e7a0 => extern "C" fn s_00afe7a0() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[2])
+    }
+    /// `StaticDtor_SubCount_00afe7d0`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00c16150`, `0x00432760`(`0x00c16150`) (cdecl), then takes the word at `0x00c16160` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe7d0 @ 0x00af_e7d0 => extern "C" fn s_00afe7d0() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[3])
+    }
+    /// `StaticDtor_SubCount_00afe800`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00c16120`, `0x00432760`(`0x00c16120`) (cdecl), then takes the word at `0x00c16130` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe800 @ 0x00af_e800 => extern "C" fn s_00afe800() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[4])
+    }
+    /// `StaticDtor_SubCount_00afe830`: atexit destructor: stores the vtable `0x00b1f7ac` in `0x00c16138`, `0x00432760`(`0x00c16138`) (cdecl), then takes the word at `0x00c16148` off the total at `0x00ca4e20`; that word.
+    StaticDtor_SubCount_00afe830 @ 0x00af_e830 => extern "C" fn s_00afe830() -> u32 {
+        si::sub_count(&mut mem(), &si::SUB_COUNTS[5])
+    }
+    /// `StaticDtor_FreeOwned_00afe870`: atexit destructor: when bit 31 of the word at `0x00ca4ebc` is clear, `Phyre_PhyreFree(the block at 0x00ca4ec0)` unless it is 0 (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00afe870 @ 0x00af_e870 => extern "C" fn s_00afe870() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[0])
+    }
+    /// `StaticDtor_Owned_00aff8a0`: atexit destructor: thiscalls `0x0045c1d0` on `0x00ca852c` and `0x004fd160` on `0x00ca8524`; when bit 31 of `0x00ca8510` is clear, `0x004ab4d0`([`0x00ca8514`], the word & `0x7fffffff`); both words cleared.
+    StaticDtor_Owned_00aff8a0 @ 0x00af_f8a0 => extern "C" fn s_00aff8a0() -> u32 {
+        si::dtor_00aff8a0(&mut mem())
+    }
+    /// `StaticDtor_EhVector_00aff930`: atexit destructor: `eh_vector_destructor_iterator(0x00ca8330, 0x10, 0x1e, 0x004a1770)`; its eax.
+    StaticDtor_EhVector_00aff930 @ 0x00af_f930 => extern "C" fn s_00aff930() -> u32 {
+        si::dtor_00aff930(&mut mem())
+    }
+    /// `StaticDtor_ChainUnlink_00affae0`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c1a300` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c1a304`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00affae0 @ 0x00af_fae0 => extern "C" fn s_00affae0() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[6])
+    }
+    /// `StaticDtor_ChainUnlink_00affb30`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c1a350` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c1a354`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00affb30 @ 0x00af_fb30 => extern "C" fn s_00affb30() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[7])
+    }
+    /// `StaticDtor_FreeOwned_00b00fd0`: atexit destructor: when bit 31 of the word at `0x00cacedc` is clear, `Phyre_PhyreFree(the block at 0x00cacee0)` unless it is 0 (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00b00fd0 @ 0x00b0_0fd0 => extern "C" fn s_00b00fd0() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[1])
+    }
+    /// `StaticDtor_Seq_00b035b0`: atexit destructor: thiscalls `Phyre_PRedBlackTree_orphanAllContents` on `0x00c24f0c`, `Phyre_PFreeList_reset` on `0x00c24f24`, `Phyre_PFreeList_dtor_PFreeList` on `0x00c24f24`, `Phyre_PRedBlackTree_clear` on `0x00c24f0c`, `Phyre_PRedBlackTree_clear` on `0x00c24f0c`; the last one's eax.
+    StaticDtor_Seq_00b035b0 @ 0x00b0_35b0 => extern "C" fn s_00b035b0() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[2])
+    }
+    /// `StaticDtor_Seq_00b03690`: atexit destructor: thiscalls `Phyre_PRedBlackTree_orphanAllContents` on `0x00c25374`, `Phyre_PFreeList_reset` on `0x00c2538c`, `Phyre_PFreeList_dtor_PFreeList` on `0x00c2538c`, `Phyre_PRedBlackTree_clear` on `0x00c25374`, `Phyre_PRedBlackTree_clear` on `0x00c25374`; the last one's eax.
+    StaticDtor_Seq_00b03690 @ 0x00b0_3690 => extern "C" fn s_00b03690() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[3])
+    }
+    /// `StaticDtor_FreeOwned_00b04b40`: atexit destructor: when bit 31 of the word at `0x00cbe6d8` is clear, `Phyre_PhyreFree(the block at 0x00cbe6dc)` unless it is 0 (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00b04b40 @ 0x00b0_4b40 => extern "C" fn s_00b04b40() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[2])
+    }
+    /// `StaticDtor_ChainUnlink_00b04b80`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c2a054` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c2a058`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00b04b80 @ 0x00b0_4b80 => extern "C" fn s_00b04b80() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[8])
+    }
+    /// `StaticDtor_EhVector_00b050d0`: atexit destructor: frees the owned block `0x00cc1430` (flags `0x00cc142c`), `eh_vector_destructor_iterator(0x00cc13ec, 0x20, 2, 0x005e1e80)`, the vtable `0x00b3c60c` at `0x00cc13e8`; the iterator's eax.
+    StaticDtor_EhVector_00b050d0 @ 0x00b0_50d0 => extern "C" fn s_00b050d0() -> u32 {
+        si::dtor_00b050d0(&mut mem())
+    }
+    /// `StaticDtor_ChainUnlink_00b05ef0`: atexit destructor: stores the vtable `0x00b0e078` in `0x00c2a0f4` and unlinks it from the chain at `0x00c901a8` (its link takes the word at `0x00c2a0f8`, which is cleared); the link address.
+    StaticDtor_ChainUnlink_00b05ef0 @ 0x00b0_5ef0 => extern "C" fn s_00b05ef0() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[9])
+    }
+    /// `StaticDtor_FreeOwned_00b05f50`: atexit destructor: when bit 31 of the word at `0x00cc96e0` is clear, `Phyre_PhyreFree(the block at 0x00cc96e4)` unless it is 0 (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00b05f50 @ 0x00b0_5f50 => extern "C" fn s_00b05f50() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[3])
+    }
+    /// `StaticDtor_FreeOwned_00b06130`: atexit destructor: when bit 31 of the word at `0x00cc9d14` is clear, `Phyre_PhyreFree(the block at 0x00cc9d18)` unless it is 0 (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00b06130 @ 0x00b0_6130 => extern "C" fn s_00b06130() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[4])
+    }
+    /// `StaticDtor_Seq_00b06630`: atexit destructor: thiscalls `Phyre_PRedBlackTree_orphanAllContents` on `0x00c31e9c`, `Phyre_PFreeList_reset` on `0x00c31eb4`, `Phyre_PFreeList_dtor_PFreeList` on `0x00c31eb4`, `Phyre_PRedBlackTree_clear` on `0x00c31e9c`, `Phyre_PRedBlackTree_clear` on `0x00c31e9c`; the last one's eax.
+    StaticDtor_Seq_00b06630 @ 0x00b0_6630 => extern "C" fn s_00b06630() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[4])
+    }
+    /// `StaticDtor_Shutdown_00b066e0`: atexit destructor: `0x00689830`(), `0x0068bba0`(), `0x00a259f0`(), then `user_free` the word at `0x00ccb214` when it is not 0.
+    StaticDtor_Shutdown_00b066e0 @ 0x00b0_66e0 => extern "C" fn s_00b066e0() -> u32 {
+        si::dtor_00b066e0(&mut mem())
+    }
+    /// `StaticDtor_FreeOwned_00b067b0`: atexit destructor: when bit 31 of the word at `0x00ccb6d4` is clear, `Phyre_PhyreFree(the block at 0x00ccb6d8)` (cdecl); both words cleared.
+    StaticDtor_FreeOwned_00b067b0 @ 0x00b0_67b0 => extern "C" fn s_00b067b0() -> u32 {
+        si::free_if_owned(&mut mem(), &si::FREE_IF_OWNED[5])
+    }
+    /// `StaticDtor_FreeNonzero_00b067f0`: atexit destructor: when the word at `0x00ccb6e8` is not 0, `user_free_thunk(it)` (cdecl) and its eax; else 0.
+    StaticDtor_FreeNonzero_00b067f0 @ 0x00b0_67f0 => extern "C" fn s_00b067f0() -> u32 {
+        si::free_if_nonzero(&mut mem(), &si::FREE_IF_NONZERO[0])
+    }
+    /// `StaticDtor_Seq_00b07000`: atexit destructor: thiscalls `Phyre_PRedBlackTree_orphanAllContents` on `0x00c3419c`, `Phyre_PFreeList_reset` on `0x00c341b4`, `Phyre_PFreeList_dtor_PFreeList` on `0x00c341b4`, `Phyre_PRedBlackTree_clear` on `0x00c3419c`, `Phyre_PRedBlackTree_clear` on `0x00c3419c`; the last one's eax.
+    StaticDtor_Seq_00b07000 @ 0x00b0_7000 => extern "C" fn s_00b07000() -> u32 {
+        si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[5])
+    }
 }
