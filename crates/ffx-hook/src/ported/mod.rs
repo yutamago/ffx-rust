@@ -140,6 +140,8 @@ pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
 
 /// Every replacement, for the hook table.
 #[must_use]
+// one line per module: it grows with every merged port list
+#[allow(clippy::too_many_lines)]
 pub fn hooks() -> Vec<Hook> {
     let mut all = Vec::new();
     all.extend(auto::hooks());
