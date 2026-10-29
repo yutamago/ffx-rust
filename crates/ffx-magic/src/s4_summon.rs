@@ -28,7 +28,7 @@ fn set_f32<G: Game>(g: &mut G, a: u32, x: f32) {
 }
 
 /// `cvttss2si`: truncated, `0x80000000` when out of range or NaN.
-fn trunc(x: f32) -> u32 {
+pub(crate) fn trunc(x: f32) -> u32 {
     cvttsd2si(f64::from(x))
 }
 

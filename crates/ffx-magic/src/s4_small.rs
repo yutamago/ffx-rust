@@ -5,9 +5,12 @@
 
 use crate::l5_objhost::{LIST_REMOVE, RUN_OBJECTS, list_remove, run_objects};
 use crate::runtime::slot_target;
+use crate::s4_misc::{REGISTER_80, SCALE_TASK, register_80, scale_task};
+use crate::s4_summon::trunc;
 use crate::sa_misc::{REGISTER_PARTS, register_parts};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sa_summon::{BONE, MODEL_SETUP, bone_plain, model_setup, st0_f32};
+use crate::sb_misc::{DRAW_ALL, draw_all};
 use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
@@ -2068,5 +2071,479 @@ pub const THREE_448: Sig = Sig {
     len: 77,
     hash: 0x2800_239b_b843_9caa,
     calls: &[],
+    imports: &[],
+};
+
+/// While `G_DONE` is 0 and the count `G_N` below 32 (signed): slot 541
+/// `(n, 1.0, 10)`; else slot 38 `(*G_PART, 1.0, 10)` (no arguments; the
+/// `push ecx` that makes the float's room leaves no junk). Returns the
+/// slot's `eax`.
+///
+/// `magic_0168` 0x10003670 (80 bytes; 2 DLLs).
+pub fn fade_541_or_38<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let one = 0x3f80_0000;
+    if g.read::<u32>(op(img, f, 0x2)) == 0 {
+        let n = g.read::<u32>(op(img, f, 0xa));
+        if n.cast_signed() < 0x20 {
+            return through(slot_call(g, img, f, (0x1f, 541), &[n, one, 10]));
+        }
+    }
+    let part = g.read::<u32>(op(img, f, 0x46));
+    through(slot_call(g, img, f, (0x30, 38), &[part, one, 10]))
+}
+
+/// [`fade_541_or_38`].
+pub const FADE_541_OR_38: Sig = Sig {
+    len: 80,
+    hash: 0x62d7_ae31_3a87_1513,
+    calls: &[],
+    imports: &[],
+};
+
+/// While `G_DONE` is 0 and the byte `*G_K` below 32: slot 541 `(k,
+/// xmm1, 10)`; else slot 38 `(T[k], xmm1, 10)` (`T` operand `+0x3f`)
+/// (internal, `xmm1` the rate). Returns the slot's `eax`.
+///
+/// `magic_0055` 0x10002320 (84 bytes; 3 DLLs).
+pub fn fade_541_or_38_by<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rate = fr.xmm_f32(1).to_bits();
+    let p = g.read::<u32>(op(img, f, 0x9));
+    let k = u32::from(g.read::<u8>(p));
+    if g.read::<u32>(op(img, f, 0x2)) == 0 && k < 0x20 {
+        return through(slot_call(g, img, f, (0x21, 541), &[k, rate, 10]));
+    }
+    let part = g.read::<u32>(op(img, f, 0x3f).wrapping_add(4 * k));
+    through(slot_call(g, img, f, (0x44, 38), &[part, rate, 10]))
+}
+
+/// [`fade_541_or_38_by`].
+pub const FADE_541_OR_38_BY: Sig = Sig {
+    len: 84,
+    hash: 0x839a_37c2_5065_66ca,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 371 `(0, 0x8000)` then `(1, 0x10000)` (the first call's words
+/// stay under the second's), then the block's scale task (`*G + 0x1768`,
+/// [`scale_task`] with the two scales of operands `+0x3b`, `+0x33` and
+/// the count 0; no arguments). Returns the task's result.
+///
+/// `magic_0434` 0x10006890 (81 bytes; 2 DLLs).
+pub fn scales_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0xe));
+    slot_call(g, img, f, (0x1, 371), &[0, 0x8000]);
+    slot_call(g, img, f, (0x1c, 371), &[1, 0x1_0000, 0, 0x8000]);
+    // push esi, the five words, then the count: the task's frame
+    let esp = fr.esp.wrapping_sub(28);
+    for (i, w) in (1u32..).zip([0, 1, 0x1_0000, 0, 0x8000]) {
+        g.write::<u32>(esp + 4 * i, w);
+    }
+    let k = |g: &G, o: u32| u128::from(g.read::<u32>(op(img, f, o)));
+    let mut xmm = fr.xmm;
+    xmm[1] = k(g, 0x3b);
+    xmm[2] = k(g, 0x33);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x48),
+        esp,
+        ecx: block.wrapping_add(0x1768),
+        xmm,
+        ..*fr
+    };
+    scale_task(g, img, &callee)
+}
+
+/// [`scales_task`].
+pub const SCALES_TASK: Sig = Sig {
+    len: 81,
+    hash: 0xc018_8207_e380_ee1f,
+    calls: &[(0x48, Callee::Sig(&SCALE_TASK))],
+    imports: &[],
+};
+
+/// The level `G_L` stepped down by `K` (operand `+0xf`; `cvttss2si`,
+/// negative to 0, capped at 128) and slot 391 `(0x60, 0x60, 0x60, L)`
+/// (no arguments). Returns 1 while the level is not 0.
+///
+/// `magic_0530` 0x10001010 (81 bytes; 2 DLLs).
+pub fn level_down<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let x = crate::sb_sse::cvt(g.read::<u32>(op(img, f, 0x4)));
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0xf)));
+    let l = trunc(crate::sb_sse::sub(x, k)).cast_signed();
+    let l = if l < 0 { 0 } else { l.min(0x80) }.cast_unsigned();
+    g.write::<u32>(op(img, f, 0x2b), l);
+    slot_call(g, img, f, (0x30, 391), &[0x60, 0x60, 0x60, l]);
+    Ret::eax(u32::from(g.read::<u32>(op(img, f, 0x49)) != 0))
+}
+
+/// [`level_down`].
+pub const LEVEL_DOWN: Sig = Sig {
+    len: 81,
+    hash: 0x5975_d953_583a_f5bd,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 10 `(*G_A, 1)`, then slot 804 for the handles `G_B` and `G_C`,
+/// each cleared (each call seeing the words the earlier ones left; no
+/// arguments). Returns 0.
+///
+/// `magic_0150` 0x1000ddf0 (82 bytes; 2 DLLs).
+pub fn release_804<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = g.read::<u32>(op(img, f, 0x9));
+    slot_call(g, img, f, (0x1, 10), &[a, 1]);
+    let b = g.read::<u32>(op(img, f, 0x19));
+    slot_call(g, img, f, (0x13, 804), &[b, a, 1]);
+    let c = g.read::<u32>(op(img, f, 0x2c));
+    g.write::<u32>(op(img, f, 0x38), 0);
+    slot_call(g, img, f, (0x26, 804), &[c, b, a, 1]);
+    g.write::<u32>(op(img, f, 0x47), 0);
+    Ret::eax(0)
+}
+
+/// [`release_804`].
+pub const RELEASE_804: Sig = Sig {
+    len: 82,
+    hash: 0x54f0_9519_b68c_1bf8,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slots 4 `(s)` and 27 `(s, 1)` for the state 0x4029, then for the
+/// block's handle `*G + 0x1eec` unless it is -1 (no arguments). Returns
+/// the last slot's `eax`.
+///
+/// `magic_0393` 0x10001990 (82 bytes; 2 DLLs).
+pub fn states_4029<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0xb));
+    let s = 0x4029;
+    slot_call(g, img, f, (0x1, 4), &[s]);
+    let mut ret = through(slot_call(g, img, f, (0x17, 27), &[s, 1, s]));
+    let h = g.read::<u32>(block.wrapping_add(0x1eec));
+    if h != u32::MAX {
+        slot_call(g, img, f, (0x36, 4), &[h]);
+        ret = through(slot_call(g, img, f, (0x41, 27), &[h, 1, h]));
+    }
+    ret
+}
+
+/// [`states_4029`].
+pub const STATES_4029: Sig = Sig {
+    len: 82,
+    hash: 0xb488_4754_2e96_1d5a,
+    calls: &[],
+    imports: &[],
+};
+
+/// Where a node-link function finds its list (operands): the parent
+/// (`+0x14` and `+0x4`), the last node (read for `+0x8` and for the
+/// test), the parent again (the empty list's last), the first-node, count
+/// and last-node fields.
+struct LinkOps {
+    parent: (u32, u32),
+    last: (u32, u32),
+    empty: u32,
+    first: u32,
+    count: u32,
+    tail: u32,
+}
+
+/// A fresh node `n` (pass `u16 +0x1a` 0xff, no children) put last in a
+/// list (`+0x14`, `+0x4` the parent, `+0x8` the old last; the old last's
+/// `+0x4`, or the list's first, becomes `n`; the count up). Returns the
+/// old last.
+fn link_last<G: Game>(g: &mut G, img: &Image, f: u32, n: u32, o: &LinkOps) -> u32 {
+    g.write::<u16>(n.wrapping_add(0x1a), 0xff);
+    g.write::<u32>(n.wrapping_add(0x10), n);
+    g.write::<u32>(n.wrapping_add(0xc), n);
+    g.write::<u32>(n.wrapping_add(0x14), op(img, f, o.parent.0));
+    g.write::<u32>(n.wrapping_add(0x4), op(img, f, o.parent.1));
+    let last = g.read::<u32>(op(img, f, o.last.0));
+    g.write::<u32>(n.wrapping_add(0x8), last);
+    let last = g.read::<u32>(op(img, f, o.last.1));
+    if last == op(img, f, o.empty) {
+        g.write::<u32>(op(img, f, o.first), n);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), n);
+    }
+    let count = op(img, f, o.count);
+    let c = g.read::<u16>(count).wrapping_add(1);
+    g.write::<u16>(count, c);
+    g.write::<u32>(op(img, f, o.tail), n);
+    last
+}
+
+/// A node with its handler table (operand `+0x2`) put last in the DLL's
+/// list ([`link_last`]), `+0x24` 0 (internal, `ecx` = the node). Returns
+/// the old last.
+///
+/// `magic_0152` 0x100083e0 (84 bytes; 3 DLLs).
+pub fn link_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    g.write::<u32>(n, op(img, f, 0x2));
+    let o = LinkOps {
+        parent: (0x15, 0x1c),
+        last: (0x21, 0x29),
+        empty: 0x2e,
+        first: 0x36,
+        count: 0x42,
+        tail: 0x48,
+    };
+    let last = link_last(g, img, f, n, &o);
+    g.write::<u32>(n.wrapping_add(0x24), 0);
+    Ret::eax(last)
+}
+
+/// [`link_node`].
+pub const LINK_NODE: Sig = Sig {
+    len: 84,
+    hash: 0xe350_0b0d_1ffd_5846,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`link_node`]'s list with the handler table (operand `+0x5`) first and
+/// `+0x1c` = x (internal, `ecx` = the node, cdecl `(x)`). Returns x.
+///
+/// `magic_0042` 0x10008360 (87 bytes; 3 DLLs).
+pub fn link_node_x<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    g.write::<u32>(n, op(img, f, 0x5));
+    let o = LinkOps {
+        parent: (0x18, 0x1f),
+        last: (0x24, 0x2c),
+        empty: 0x31,
+        first: 0x39,
+        count: 0x48,
+        tail: 0x4e,
+    };
+    link_last(g, img, f, n, &o);
+    let x = fr.arg(g, 0);
+    g.write::<u32>(n.wrapping_add(0x1c), x);
+    Ret::eax(x)
+}
+
+/// [`link_node_x`].
+pub const LINK_NODE_X: Sig = Sig {
+    len: 87,
+    hash: 0xd545_f20d_880b_86ff,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node put last in the DLL's list ([`link_last`]), `+0x38` = x, then
+/// its handler table (operand `+0x51`) (internal, `ecx` = the node, cdecl
+/// `(x)`). Returns x.
+///
+/// `magic_0262` 0x10006cc0 (87 bytes; 2 DLLs).
+pub fn link_node_38<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    let o = LinkOps {
+        parent: (0x12, 0x19),
+        last: (0x1e, 0x26),
+        empty: 0x2b,
+        first: 0x33,
+        count: 0x3f,
+        tail: 0x48,
+    };
+    link_last(g, img, f, n, &o);
+    let x = fr.arg(g, 0);
+    g.write::<u32>(n.wrapping_add(0x38), x);
+    g.write::<u32>(n, op(img, f, 0x51));
+    Ret::eax(x)
+}
+
+/// [`link_node_38`].
+pub const LINK_NODE_38: Sig = Sig {
+    len: 87,
+    hash: 0xcc54_1a2c_3700_9ebf,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node put last in the DLL's list ([`link_last`]), `+0x2c` = x,
+/// `+0x30` = y, then its handler table (operand `+0x57`) (internal, `ecx`
+/// = the node, cdecl `(x, y)`). Returns y.
+///
+/// `magic_0042` 0x100081a0 (93 bytes; 3 DLLs).
+pub fn link_node_xy<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    let o = LinkOps {
+        parent: (0x12, 0x19),
+        last: (0x1e, 0x26),
+        empty: 0x2b,
+        first: 0x33,
+        count: 0x3f,
+        tail: 0x48,
+    };
+    link_last(g, img, f, n, &o);
+    let (x, y) = (fr.arg(g, 0), fr.arg(g, 1));
+    g.write::<u32>(n.wrapping_add(0x2c), x);
+    g.write::<u32>(n.wrapping_add(0x30), y);
+    g.write::<u32>(n, op(img, f, 0x57));
+    Ret::eax(y)
+}
+
+/// [`link_node_xy`].
+pub const LINK_NODE_XY: Sig = Sig {
+    len: 93,
+    hash: 0xf26b_d506_299d_67d1,
+    calls: &[],
+    imports: &[],
+};
+
+/// The object's `+0x180..+0x188` cleared and `+0x18c` the code's float
+/// (operand `+0x3c`), slot 450 `(obj, callback)` (operand `+0x13`), then
+/// slot 451 `(obj, n)` with the code's 8-bit `n` (operand `+0x48`; the
+/// first call's words stay under the second's; cdecl `(obj)`). Returns
+/// slot 451's `eax`.
+///
+/// `magic_0191` 0x10001b50 (-0.16, 6) and 0x10001940 (-0.08, 12) (88
+/// bytes; 3 DLLs each).
+pub fn drift_and_count<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let cb = op(img, f, 0x13);
+    for off in [0x180, 0x184, 0x188] {
+        g.write::<u32>(obj.wrapping_add(off), 0);
+    }
+    g.write::<u32>(obj.wrapping_add(0x18c), op(img, f, 0x3c));
+    slot_call(g, img, f, (0x4, 450), &[obj, cb]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x43, 451),
+        &[obj, imm8(img, f, 0x48), obj, cb],
+    ))
+}
+
+/// [`drift_and_count`] with -0.16 and 6.
+pub const DRIFT_AND_6: Sig = Sig {
+    len: 88,
+    hash: 0x8b9a_8385_557d_608e,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`drift_and_count`] with -0.08 and 12.
+pub const DRIFT_AND_12: Sig = Sig {
+    len: 88,
+    hash: 0x1d59_4f2c_551b_23fd,
+    calls: &[],
+    imports: &[],
+};
+
+/// A header (`ecx`: 0x5c bytes cleared, then `+0x0` 100, `+0x4` the
+/// records, `+0x8`, `+0x10`, `+0x18` 0) and its 100 records of 0x94 bytes
+/// (`edx`; each cleared, its first word 0 again) (internal; `memset`).
+/// Returns the last record (`memset`'s result).
+///
+/// `magic_0376` 0x10003a30 (88 bytes; 2 DLLs).
+pub fn records_clear_100<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let (head, mut rec) = (fr.ecx, fr.edx);
+    g.write_bytes(head, &[0; 0x5c]);
+    g.write::<u32>(head, 0x64);
+    g.write::<u32>(head.wrapping_add(4), rec);
+    for off in [0x8, 0x10, 0x18] {
+        g.write::<u32>(head.wrapping_add(off), 0);
+    }
+    let mut last = rec;
+    for _ in 0..0x64 {
+        g.write_bytes(rec, &[0; 0x94]);
+        g.write::<u32>(rec, 0);
+        last = rec;
+        rec = rec.wrapping_add(0x94);
+    }
+    Ret::eax(last)
+}
+
+/// [`records_clear_100`].
+pub const RECORDS_CLEAR_100: Sig = Sig {
+    len: 88,
+    hash: 0xe9b6_3fa8_86fc_318a,
+    calls: &[
+        (0xc, Callee::Import("memset")),
+        (0x3f, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
+
+/// The 320 part handles of `this` registered: slot 772 `(this, i)` gives
+/// a 64-bit handle, slot 779 `(handle, this, i)` registers it with
+/// `**G_LOCK` 1 around the call (internal, `ecx` = this; an aligned
+/// frame). Returns the lock's address.
+///
+/// `magic_0511` 0x10005c80 (86 bytes; 2 DLLs).
+pub fn register_320<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let this = fr.ecx;
+    let mut lock = 0;
+    for i in 0..0x140u32 {
+        let h = slot_call(g, img, f, (0x11, 772), &[this, i]);
+        lock = g.read::<u32>(op(img, f, 0x21));
+        let saved = g.read::<u32>(lock);
+        g.write::<u32>(lock, 1);
+        slot_call(g, img, f, (0x2a, 779), &[h.eax, h.edx, this, i]);
+        lock = g.read::<u32>(op(img, f, 0x3d));
+        g.write::<u32>(lock, saved);
+    }
+    Ret::eax(lock)
+}
+
+/// [`register_320`].
+pub const REGISTER_320: Sig = Sig {
+    len: 86,
+    hash: 0x6b3e_fcd5_eb1a_b152,
+    calls: &[],
+    imports: &[],
+};
+
+/// The objects run ([`run_objects`], an aligned frame); when they are all
+/// done, `G_WAIT` not above 0 and `G_BUSY` 0: the task's state 3 and next
+/// function (operand `+0x32`), everything drawn ([`draw_all`]) and the
+/// block's parts registered ([`register_80`] on `*G + 0x260`) (cdecl
+/// `(task)`). Returns the registration's result, or the objects'.
+///
+/// `magic_0132` 0x10001930 (80 bytes; 4 DLLs).
+pub fn run_draw_register<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // push ebp; and esp, -8; call: the callees' return address
+    let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(4);
+    let b = run_objects(g, img, img.rel32_target(f + 0x7), esp);
+    if b != 1 || g.read::<i32>(op(img, f, 0x12)) > 0 || g.read::<u32>(op(img, f, 0x1b)) != 0 {
+        return Ret::eax(b);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), op(img, f, 0x32));
+    let eax = draw_all(g, img, img.rel32_target(f + 0x37), rec);
+    let block = g.read::<u32>(op(img, f, 0x3d));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x48),
+        esp,
+        eax,
+        ecx: block.wrapping_add(0x260),
+        ..*fr
+    };
+    register_80(g, img, &callee)
+}
+
+/// [`run_draw_register`].
+pub const RUN_DRAW_REGISTER: Sig = Sig {
+    len: 80,
+    hash: 0x662e_af87_de80_fb6a,
+    calls: &[
+        (0x7, Callee::Sig(&RUN_OBJECTS)),
+        (0x37, Callee::Sig(&DRAW_ALL)),
+        (0x48, Callee::Sig(&REGISTER_80)),
+    ],
     imports: &[],
 };

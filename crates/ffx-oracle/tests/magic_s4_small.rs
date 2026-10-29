@@ -955,3 +955,192 @@ fn motion_register() {
         t.check_entry(f, c, &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn fades_and_levels() {
+    let Some(mut t) = twin(168) else { return };
+    recs(&mut t, &[(541, 3), (38, 3)]);
+    let f = t.at(0x3670);
+    t.set_u32(op(&t, f, 0x46), 0x0038_0038);
+    for (done, n) in [(0u32, 0u32), (0, 0x1f), (0, 0x20), (0, u32::MAX), (1, 3)] {
+        t.set_u32(op(&t, f, 0x2), done);
+        t.set_u32(op(&t, f, 0xa), n);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(55) else { return };
+    recs(&mut t, &[(541, 3), (38, 3)]);
+    let f = t.at(0x2320);
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x9), p);
+    for i in 0..0x21 {
+        t.set_u32(op(&t, f, 0x3f) + 4 * i, 0x0038_0000 + i);
+    }
+    for (done, k) in [(0u32, 3u8), (0, 0x1f), (0, 0x20), (1, 3)] {
+        t.set_u32(op(&t, f, 0x2), done);
+        t.set_u8(p, k);
+        let c = Call::default().with_xmm(&[Xmm::F32(0), Xmm::F32(0.4f32.to_bits())]);
+        t.check(f, c, &[], Eax::Checked, s4_small::fade_541_or_38_by);
+    }
+    drop(t);
+    let Some(mut t) = twin(530) else { return };
+    recs(&mut t, &[(391, 4)]);
+    let f = t.at(0x1010);
+    for l in [0u32, 1, 5, 0x40, 0x200, 0xffff_fff0, 0x7fff_ffff] {
+        t.set_u32(op(&t, f, 0x4), l);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    recs(&mut t, &[(10, 2), (804, 3)]);
+    let f = t.at(0xddf0);
+    t.set_u32(op(&t, f, 0x9), 0x0010_0001);
+    t.set_u32(op(&t, f, 0x19), 0x0804_0001);
+    t.set_u32(op(&t, f, 0x2c), 0x0804_0002);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(393) else { return };
+    recs(&mut t, &[(4, 1), (27, 3)]);
+    let f = t.at(0x1990);
+    let block = SCRATCH + 0x400;
+    t.set_u32(op(&t, f, 0xb), block);
+    for h in [u32::MAX, 7] {
+        t.set_u32(block + 0x1eec, h);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(191) else { return };
+    recs(&mut t, &[(450, 2), (451, 4)]);
+    let obj = SCRATCH + 0x100;
+    for rva in [0x1b50u32, 0x1940] {
+        t.write(obj, &[0x55; 0x200]);
+        t.check_entry(t.at(rva), Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+#[test]
+fn scale_task_through() {
+    let Some(mut t) = twin(434) else { return };
+    recs(&mut t, &[(371, 2)]);
+    let f = t.at(0x6890);
+    let st = t.img.rel32_target(f + 0x48);
+    let take = t.img.rel32_target(st + 0x7d);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xe), block);
+    let head = t.img.word(st + 0x83);
+    for listed in [false, true] {
+        let node = |i: u32| SCRATCH + 0x4000 + 0x40 * i;
+        for i in 1..=3u32 {
+            t.write(node(i), &[0x5a; 0x1c]);
+            t.set_u32(node(i), node(if i == 1 { 3 } else { i - 1 }));
+            t.set_u32(node(i) + 4, node(if i == 3 { 1 } else { i + 1 }));
+        }
+        t.set_u32(t.img.word(take + 0x17), node(1));
+        t.set_u16(t.img.word(take + 0x04), 3);
+        t.write(block + 0x1768, &[0x11; 0x40]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(head, SCRATCH + 0x5000);
+            t.set_u32(t.img.word(st + 0x9b), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(head, 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn node_links() {
+    for (n, rva, args, port) in [
+        (152u16, 0x83e0u32, &[][..], s4_small::link_node as Port),
+        (42, 0x8360, &[0x0001_001c][..], s4_small::link_node_x),
+        (262, 0x6cc0, &[0x0001_0038][..], s4_small::link_node_38),
+        (
+            42,
+            0x81a0,
+            &[0x0001_002c, 0x0001_0030][..],
+            s4_small::link_node_xy,
+        ),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let node = SCRATCH + 0x100;
+        // the list's last word: read through two operands, the same word
+        let last_at = match rva {
+            0x83e0 => op(&t, f, 0x29),
+            0x8360 => op(&t, f, 0x2c),
+            _ => op(&t, f, 0x26),
+        };
+        let parent = match rva {
+            0x83e0 => op(&t, f, 0x2e),
+            0x8360 => op(&t, f, 0x31),
+            _ => op(&t, f, 0x2b),
+        };
+        for empty in [true, false] {
+            t.write(node, &[0x66; 0x40]);
+            t.write(SCRATCH + 0x300, &[0x77; 0x10]);
+            t.set_u32(last_at, if empty { parent } else { SCRATCH + 0x300 });
+            t.check(f, Call::this(node), args, Eax::Checked, port);
+        }
+    }
+}
+
+#[test]
+fn clears_and_registers() {
+    let Some(mut t) = twin(376) else { return };
+    let f = t.at(0x3a30);
+    let (head, recs_at) = (SCRATCH + 0x100, SCRATCH + 0x1000);
+    t.write(head, &[0x99; 0x60]);
+    t.write(recs_at, &[0x99; 0x3a00]);
+    let c = Call {
+        ecx: head,
+        edx: recs_at,
+        ..Call::default()
+    };
+    t.check(f, c, &[], Eax::Checked, s4_small::records_clear_100);
+    drop(t);
+    let Some(mut t) = twin(511) else { return };
+    let f = t.at(0x5c80);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    recs(&mut t, &[(779, 4)]);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x21), lock);
+    t.set_u32(lock, 5);
+    t.check(
+        f,
+        Call::this(0x0511_0511),
+        &[],
+        Eax::Checked,
+        s4_small::register_320,
+    );
+    drop(t);
+    let Some(mut t) = twin(132) else { return };
+    let f = t.at(0x1930);
+    let ro = t.img.rel32_target(f + 0x7);
+    let da = t.img.rel32_target(f + 0x37);
+    let r80 = t.img.rel32_target(f + 0x48);
+    recs(&mut t, &[(723, 1), (724, 2), (235, 3), (779, 4)]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    t.set_u32(t.img.word(da + 0x0b), 0);
+    t.set_u32(t.img.word(da + 0x76), 0);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(t.img.word(r80 + 0x21), lock);
+    let block = SCRATCH + 0x2000;
+    t.set_u32(op(&t, f, 0x3d), block);
+    let task = SCRATCH + 0x100;
+    for (one, wait, busy) in [
+        (false, 0u32, 0u32),
+        (true, 0, 0),
+        (false, 1, 0),
+        (false, 0, 1),
+    ] {
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, SCRATCH + 0x200);
+        t.set_u32(op(&t, f, 0x12), wait);
+        t.set_u32(op(&t, f, 0x1b), busy);
+        objects(&mut t, ro, one);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

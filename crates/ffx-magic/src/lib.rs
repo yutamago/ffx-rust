@@ -1057,6 +1057,14 @@ ports! {
     "two callbacks, entry" => s4_small::TWO_CALLBACKS_ENTRY, s4_small::two_callbacks_entry;
     "callback and 90" => s4_small::CALLBACK_451_90, s4_small::callback_451_90;
     "three with slot 448" => s4_small::THREE_448, s4_small::three_448;
+    "fade 541 or 38" => s4_small::FADE_541_OR_38, s4_small::fade_541_or_38;
+    "scales task" => s4_small::SCALES_TASK, s4_small::scales_task;
+    "level down" => s4_small::LEVEL_DOWN, s4_small::level_down;
+    "release slot 804" => s4_small::RELEASE_804, s4_small::release_804;
+    "states 0x4029" => s4_small::STATES_4029, s4_small::states_4029;
+    "drift and 6" => s4_small::DRIFT_AND_6, s4_small::drift_and_count;
+    "drift and 12" => s4_small::DRIFT_AND_12, s4_small::drift_and_count;
+    "run, draw, register" => s4_small::RUN_DRAW_REGISTER, s4_small::run_draw_register;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1401,6 +1409,13 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("light set", &s4_small::LIGHT_SET),
     ("light on", &s4_small::LIGHT_ON),
     ("actor index", &s4_small::ACTOR_INDEX),
+    ("fade 541 or 38 (xmm1)", &s4_small::FADE_541_OR_38_BY),
+    ("link node", &s4_small::LINK_NODE),
+    ("link node, x", &s4_small::LINK_NODE_X),
+    ("link node, +0x38", &s4_small::LINK_NODE_38),
+    ("link node, x y", &s4_small::LINK_NODE_XY),
+    ("records clear 100", &s4_small::RECORDS_CLEAR_100),
+    ("register 320", &s4_small::REGISTER_320),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
