@@ -1837,3 +1837,230 @@ pub const STATE_TASK: Sig = Sig {
     calls: &[(0x54, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
+
+/// Slot 307's float (ST0, stored as an `f32`), returned in `xmm0` with
+/// the slot's `eax` (internal, no arguments).
+///
+/// `magic_0042` 0x1000be30 (29 bytes; 7 DLLs).
+pub fn float_307<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let t = slot_target(g, img.word(fr.at + 0x5), 307);
+    let out = g.call(t, 0, &[]);
+    let x = crate::sa_summon::st0_f32(out);
+    Ret::xmm0(crate::Xmm::F32(x), out.eax)
+}
+
+/// [`float_307`].
+pub const FLOAT_307: Sig = Sig {
+    len: 29,
+    hash: 0x7028_d161_3673_a90c,
+    calls: &[],
+    imports: &[],
+};
+
+/// Starts a task's motion (cdecl `(task)`): slot 239 `(*G, the task's
+/// +0x120, 8)` (`G` operand `+0x15`). Returns the slot's `eax`.
+///
+/// `magic_0200` 0x10003210 (38 bytes; 6 DLLs).
+pub fn task_motion<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let task = fr.arg(g, 0);
+    let t = slot_target(g, w(0xf), 239);
+    let x = g.read::<u32>(w(0x15));
+    Ret::eax(g.call(t, 0, &[x, g.read::<u32>(task + 0x120), 8]).eax)
+}
+
+/// [`task_motion`].
+pub const TASK_MOTION: Sig = Sig {
+    len: 38,
+    hash: 0x6f4a_c121_1fee_8110,
+    calls: &[],
+    imports: &[],
+};
+
+/// Registers the effect's callback (a table entry, no arguments): `G_A`
+/// 0xa, `G_B` and `G_C` 0 (operands `+0x18`, `+0x22`, `+0x2c`), slot 312
+/// `(CB, 0, 0, 0)` (`+0x12`) gives the handle kept in `G_H` (`+0x3a`).
+/// Returns it.
+///
+/// `magic_0393` 0x100014b0 (63 bytes; 6 DLLs).
+pub fn register_callback<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    g.write::<u32>(w(0x18), 0xa);
+    g.write::<u32>(w(0x22), 0);
+    g.write::<u32>(w(0x2c), 0);
+    let t = slot_target(g, w(0x1), 312);
+    let h = g.call(t, 0, &[w(0x12), 0, 0, 0]).eax;
+    g.write::<u32>(w(0x3a), h);
+    Ret::eax(h)
+}
+
+/// [`register_callback`].
+pub const REGISTER_CALLBACK: Sig = Sig {
+    len: 63,
+    hash: 0xcf95_a686_110c_ee59,
+    calls: &[],
+    imports: &[],
+};
+
+/// Takes an object out of its owner's list and frees its part (internal,
+/// `ecx` = the owner, `edx` = the object): when the list (`+0x30`) held
+/// it ([`crate::l5_objhost::list_remove`]), `*G_P` = the owner (operand
+/// `+0x16`), slot 713 frees the object's part and its flag bit 15 (`u16
+/// +0x124`) is cleared. Returns 1, or 0 when it was not listed.
+///
+/// `magic_0018` 0x10004020 (65 bytes; 6 DLLs).
+pub fn unlist_free<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (owner, obj) = (fr.ecx, fr.edx);
+    let listed =
+        crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0xa), owner + 0x30, obj);
+    if listed == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(w(0x16));
+    g.write::<u32>(p, owner);
+    let t = slot_target(g, w(0x1e), 713);
+    g.call(t, 0, &[obj]);
+    let flags = g.read::<u16>(obj + 0x124) & 0x7fff;
+    g.write::<u16>(obj + 0x124, flags);
+    Ret::eax(1)
+}
+
+/// [`unlist_free`].
+pub const UNLIST_FREE: Sig = Sig {
+    len: 65,
+    hash: 0x9687_56f1_78fe_0620,
+    calls: &[(0xa, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))],
+    imports: &[],
+};
+
+/// Registers a key's handle (cdecl `(key)`; an 8-aligned frame): slot
+/// 771 `(*key)` gives a 64-bit handle, slot 779 registers it with
+/// `**G_LOCK` 1 around the call (operands `+0x1c`, `+0x3b`). Returns the
+/// lock pointer.
+///
+/// `magic_0155` 0x100082f0 (73 bytes; 6 DLLs).
+pub fn register_key<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let key = fr.arg(g, 0);
+    let t = slot_target(g, w(0xe), 771);
+    let h = g.call(t, 0, &[g.read::<u32>(key)]);
+    let lock = g.read::<u32>(w(0x1c));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0x28), 779);
+    g.call(t, 0, &[h.eax, h.edx]);
+    let lock = g.read::<u32>(w(0x3b));
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`register_key`].
+pub const REGISTER_KEY: Sig = Sig {
+    len: 73,
+    hash: 0xfa65_1119_cb54_d0c3,
+    calls: &[],
+    imports: &[],
+};
+
+/// Whether the actor's battle state is one of the DLL's list (a table
+/// entry, no arguments): slot 390 of the actor byte (`*G_A`, operand
+/// `+0x1`) against the words of the list (`+0x20`) up to -1: a match
+/// returns 1; else slot 534 of the actor byte (`+0x40`) answers.
+///
+/// `magic_0084` 0x10001a40 (95 bytes; 6 DLLs).
+pub fn state_listed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let actor = u32::from(g.read::<u8>(g.read::<u32>(w(0x1))));
+    let t = slot_target(g, w(0xa), 390);
+    let state = g.call(t, 0, &[actor]).eax;
+    let mut at = w(0x20);
+    loop {
+        let x = g.read::<u32>(at);
+        if x == u32::MAX {
+            break;
+        }
+        if x == state {
+            return Ret::eax(1);
+        }
+        at += 4;
+    }
+    let actor = u32::from(g.read::<u8>(g.read::<u32>(w(0x40))));
+    let t = slot_target(g, w(0x49), 534);
+    Ret::eax(g.call(t, 0, &[actor]).eax)
+}
+
+/// [`state_listed`].
+pub const STATE_LISTED: Sig = Sig {
+    len: 95,
+    hash: 0x0c16_b989_d7e5_4d92,
+    calls: &[],
+    imports: &[],
+};
+
+/// Frees the DLL's part (a table entry, no arguments): `*G_P = ITEM`
+/// (operands `+0x1`, `+0xc`), slot 713 `(PART)` (`+0x6`). Returns 0.
+///
+/// `magic_0198` 0x10001320 (35 bytes; 5 DLLs).
+pub fn free_part_item<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let p = g.read::<u32>(w(0x1));
+    g.write::<u32>(p, w(0xc));
+    let t = slot_target(g, w(0x11), 713);
+    g.call(t, 0, &[w(0x6)]);
+    Ret::eax(0)
+}
+
+/// [`free_part_item`].
+pub const FREE_PART_ITEM: Sig = Sig {
+    len: 35,
+    hash: 0x4e13_4d1c_632e_8eac,
+    calls: &[],
+    imports: &[],
+};
+
+/// A counter reaching its end marks the task (cdecl `(task)`): when the
+/// block's (`*G`, operand `+0x5`) count `+a` equals `+b`, `+c` is 1 and
+/// the task's byte `+0x56` 1. Returns the task, or the count.
+fn count_done<G: Game>(g: &mut G, img: &Image, fr: &Frame, [a, b, c]: [u32; 3]) -> Ret {
+    let block = g.read::<u32>(img.word(fr.at + 0x5));
+    let n = g.read::<u32>(block + a);
+    if n != g.read::<u32>(block + b) {
+        return Ret::eax(n);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(block + c, 1);
+    g.write::<u8>(task + 0x56, 1);
+    Ret::eax(task)
+}
+
+/// [`count_done`] on `+0xd61c`/`+0xd620`/`+0xd624`.
+///
+/// `magic_0644` 0x10009f10 (42 bytes; 5 DLLs).
+pub fn count_done_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    count_done(g, img, fr, [0xd61c, 0xd620, 0xd624])
+}
+
+/// [`count_done_a`].
+pub const COUNT_DONE_A: Sig = Sig {
+    len: 42,
+    hash: 0x8279_d19a_0854_8637,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`count_done`] on `+0x5ad8`/`+0x5adc`/`+0x5ae0`.
+///
+/// `magic_0644` 0x10008560 (42 bytes; 5 DLLs).
+pub fn count_done_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    count_done(g, img, fr, [0x5ad8, 0x5adc, 0x5ae0])
+}
+
+/// [`count_done_b`].
+pub const COUNT_DONE_B: Sig = Sig {
+    len: 42,
+    hash: 0xf0e6_12d9_730a_375f,
+    calls: &[],
+    imports: &[],
+};

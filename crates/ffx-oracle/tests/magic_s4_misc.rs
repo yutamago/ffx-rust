@@ -1755,3 +1755,108 @@ fn glyph_quad() {
         });
     }
 }
+
+/// The small entries: slot 307's float, a task's motion, the callback
+/// registration, the unlisting, the key registration, the state list,
+/// the part freed and the two counters.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per DLL
+fn small_entries() {
+    if let Some(mut t) = twin(42) {
+        let f = t.at(0xbe30);
+        rec(&mut t, 307, 0, |_, _| 0x307);
+        t.stub_st0(307, |_, _| 1.0 / 3.0);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            s4_misc::float_307(g, img, fr)
+        });
+    }
+    if let Some(mut t) = twin(200) {
+        let f = t.at(0x3210);
+        rec(&mut t, 239, 3, |_, _| 0x239);
+        t.set_u32(t.img.word(f + 0x15), 0x0aaa_0001);
+        let task = SCRATCH + 0x100;
+        t.set_u32(task + 0x120, 0x120);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+    if let Some(mut t) = twin(393) {
+        let f = t.at(0x14b0);
+        rec(&mut t, 312, 4, |_, _| 0x0312_0312);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    if let Some(mut t) = twin(18) {
+        let f = t.at(0x4020);
+        rec(&mut t, 713, 1, |_, _| 0x713);
+        t.set_u32(t.img.word(f + 0x16), SCRATCH + 0x80);
+        let (owner, obj) = (SCRATCH + 0x100, SCRATCH + 0x400);
+        let node = SCRATCH + 0x300;
+        for listed in [false, true] {
+            t.write(owner, &[0; 0x50]);
+            t.write(node, &[0; 0x10]);
+            t.set_u32(node + 8, obj);
+            if listed {
+                t.set_u32(owner + 0x30, node);
+                t.set_u32(owner + 0x34, node);
+                t.set_u32(owner + 0x3c, 1);
+            }
+            t.set_u16(obj + 0x124, 0xffff);
+            let c = Call {
+                ecx: owner,
+                edx: obj,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::unlist_free(g, img, fr)
+            });
+        }
+    }
+    if let Some(mut t) = twin(155) {
+        let f = t.at(0x82f0);
+        let lock = SCRATCH + 0x80;
+        t.set_u32(t.img.word(f + 0x1c), lock);
+        t.set_u32(lock, 7);
+        rec(&mut t, 771, 1, |_, a| 0x7710_0000 ^ a[0]);
+        t.stub_edx(771, |_, a| 0x0edd_0000 ^ a[0]);
+        rec(&mut t, 779, 2, move |m, _| {
+            let l = m.r32(lock);
+            m.w32(SCRATCH + 0x84, l);
+            0x779
+        });
+        let key = SCRATCH + 0x100;
+        t.set_u32(key, 0x4242);
+        t.check_entry(f, Call::default(), &[key], Eax::Checked);
+    }
+    if let Some(mut t) = twin(84) {
+        let f = t.at(0x1a40);
+        let actor = SCRATCH + 0x80;
+        t.set_u32(t.img.word(f + 0x1), actor);
+        rec(&mut t, 390, 1, |m, _| m.r32(SCRATCH + 0x90));
+        rec(&mut t, 534, 1, |_, a| 0x5340 + a[0]);
+        let list = t.img.word(f + 0x20);
+        for state in [t.u32(list), t.u32(list + 4), 0x7777_7777] {
+            t.set_u8(actor, 3);
+            t.set_u32(SCRATCH + 0x90, state);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(198) {
+        let f = t.at(0x1320);
+        t.set_u32(t.img.word(f + 0x1), SCRATCH + 0x80);
+        rec(&mut t, 713, 1, |_, _| 0x713);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    if let Some(mut t) = twin(644) {
+        let block = SCRATCH + 0x1_0000;
+        let task = SCRATCH + 0x100;
+        for (rva, a) in [(0x9f10u32, 0xd61cu32), (0x8560, 0x5ad8)] {
+            let f = t.at(rva);
+            t.set_u32(t.img.word(f + 0x5), block);
+            for (n, end) in [(3u32, 3u32), (2, 3)] {
+                t.set_u32(block + a, n);
+                t.set_u32(block + a + 4, end);
+                t.set_u32(block + a + 8, 0);
+                t.set_u8(task + 0x56, 0);
+                t.check_entry(f, Call::default(), &[task], Eax::Checked);
+            }
+        }
+    }
+}

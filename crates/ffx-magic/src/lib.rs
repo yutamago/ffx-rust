@@ -955,6 +955,13 @@ ports! {
     "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
     "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
     "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
+    "task motion" => s4_misc::TASK_MOTION, s4_misc::task_motion;
+    "register callback" => s4_misc::REGISTER_CALLBACK, s4_misc::register_callback;
+    "register key" => s4_misc::REGISTER_KEY, s4_misc::register_key;
+    "state listed" => s4_misc::STATE_LISTED, s4_misc::state_listed;
+    "free part item" => s4_misc::FREE_PART_ITEM, s4_misc::free_part_item;
+    "count done (a)" => s4_misc::COUNT_DONE_A, s4_misc::count_done_a;
+    "count done (b)" => s4_misc::COUNT_DONE_B, s4_misc::count_done_b;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
@@ -1258,6 +1265,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("actor point", &s4_misc::ACTOR_POINT),
     ("screen place", &s4_misc::SCREEN_PLACE),
     ("scale task", &s4_misc::SCALE_TASK),
+    ("float of slot 307", &s4_misc::FLOAT_307),
+    ("unlist and free", &s4_misc::UNLIST_FREE),
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
