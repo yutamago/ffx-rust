@@ -63,6 +63,7 @@ pub mod bridge {
         CI_SQRT, Conv, DUMP_ENABLED, DUMP_PATH, DUMP_SLOTS, DUMP_TYPE, G_APPLICATION, G_HWND,
         G_ICON, G_SCREEN_SETTINGS, Host, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, SCREEN_SLOTS,
     };
+    use ffx_bridge::x87::Reg;
 
     fn import(h: &impl Mem, slot: u32) -> u32 {
         h.read(h.rebase(slot))
@@ -70,20 +71,20 @@ pub mod bridge {
 
     /// `0x0062a0d0` (cdecl `(out, v)`): `v`'s two floats divided by their
     /// length, the length `_CIsqrt(f32(f32(x * x) + y * y))` rounded to a
-    /// float as the original stores each step; `out`.
+    /// float as the original stores each step (x87 model,
+    /// `ffx_bridge::x87`); `out`.
     pub fn normalize2(h: &mut impl Host, out: u32, v: u32) -> u32 {
-        let x = f64::from(f32::from_bits(h.read(v)));
-        let y = f64::from(f32::from_bits(h.read(v + 4)));
-        #[allow(clippy::cast_possible_truncation)] // the original's f32 stores
-        let xx = (x * x) as f32;
-        #[allow(clippy::cast_possible_truncation)]
-        let sum = (f64::from(xx) + y * y) as f32;
+        let x = f32::from_bits(h.read(v));
+        let y = f32::from_bits(h.read(v + 4));
+        let rx = Reg::load(x);
+        let xx = (rx * rx).store();
+        let ry = Reg::load(y);
+        let sum = (Reg::load(xx) + ry * ry).store();
         let addr = h.rebase(CI_SQRT);
-        let len = f64::from(h.call_intrinsic(addr, f64::from(sum)));
-        #[allow(clippy::cast_possible_truncation)]
-        let nx = (x / len) as f32;
-        #[allow(clippy::cast_possible_truncation)]
-        let ny = (y / len) as f32;
+        let len = h.call_intrinsic(addr, Reg::load(sum).value());
+        let len = Reg::load(len);
+        let nx = (Reg::load(x) / len).store();
+        let ny = len.divr_m32(y).store();
         h.write(out, nx.to_bits());
         h.write(out + 4, ny.to_bits());
         out
