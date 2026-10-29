@@ -963,6 +963,8 @@ ports! {
     "0446 mode set-up" => s4_fam446::MODE_SETUP, s4_fam446::mode_setup;
     "0446 load step" => s4_fam446::LOAD_STEP, s4_fam446::load_step;
     "0446 mode object" => s4_fam446::MODE_OBJECT, s4_fam446::mode_object;
+    "0446 start child, sound" => s4_fam446::START_CHILD_SOUND_A, s4_fam446::start_child_sound_a;
+    "0446 start child (scaled), sound" => s4_fam446::START_CHILD_SOUND_B, s4_fam446::start_child_sound_b;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

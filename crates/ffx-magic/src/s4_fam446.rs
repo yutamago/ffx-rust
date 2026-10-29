@@ -624,3 +624,73 @@ pub const MODE_OBJECT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`start_child`], then, unless the container's `+0x518` is set, the
+/// child's sound: slot 719 `(SOUND, 6, table[kind])` finds it and slot
+/// 393 plays it at the child's place (`+0xd0`, 0x100); then slot 719
+/// `(FX, 9, 1)` and slot 306 `(7, 1, it)`. `k` shifts the operands by one
+/// byte (the scale by kind takes one more). Returns slot 306's `eax`.
+fn start_child_sound<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &ChildOps, k: u32) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off + k);
+    let (this, kind) = (fr.ecx, fr.arg(g, 0));
+    start_child(g, img, f, (this, fr.edx), kind, o);
+    if g.read::<u32>(this + 0x518) == 0 {
+        let obj = this + 0x130;
+        let id = g.read::<u32>(w(0xa5).wrapping_add(kind.wrapping_mul(4)));
+        let t = slot_target(g, w(0xaa), 719);
+        let h = g.call(t, 0, &[w(0xb7), 6, id]).eax;
+        let t = slot_target(g, w(0xcb), 393);
+        g.call(t, 0, &[h, obj + 0xd0, 0x100, w(0xb7), 6, id]);
+    }
+    let t = slot_target(g, w(0xdb), 719);
+    let h = g.call(t, 0, &[w(0xea), 9, 1]).eax;
+    let t = slot_target(g, w(0xf2), 306);
+    Ret::eax(g.call(t, 0, &[7, 1, h, w(0xea), 9, 1]).eax)
+}
+
+/// [`start_child_sound`] with a fixed scale (operand `+0xa`).
+///
+/// `magic_0565` 0x10003d30 (266 bytes, `ecx`/`edx` and the kind; 10
+/// DLLs).
+pub fn start_child_sound_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = ChildOps {
+        scale: Scale::Fixed(0xa),
+        parts: 0x1e,
+        callback: 0x12,
+        call: 0x2d,
+        globals: (0x81, 0x88),
+    };
+    start_child_sound(g, img, fr, &o, 0)
+}
+
+/// [`start_child_sound_a`].
+pub const START_CHILD_SOUND_A: Sig = Sig {
+    len: 266,
+    hash: 0x6c88_94e0_e0c6_f45b,
+    calls: &[(0x2d, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// [`start_child_sound`] with the scale by kind (operand `+0xc`).
+///
+/// `magic_0565` 0x10004640 (267 bytes, `ecx`/`edx` and the kind; 10
+/// DLLs).
+pub fn start_child_sound_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let o = ChildOps {
+        scale: Scale::Table(0xc),
+        parts: 0x1f,
+        callback: 0x13,
+        call: 0x2e,
+        globals: (0x82, 0x89),
+    };
+    start_child_sound(g, img, fr, &o, 1)
+}
+
+/// [`start_child_sound_b`].
+pub const START_CHILD_SOUND_B: Sig = Sig {
+    len: 267,
+    hash: 0x8ef0_ff8a_8613_8e6d,
+    calls: &[(0x2e, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};

@@ -1005,3 +1005,59 @@ fn fam446_load_and_mode_object() {
         t.check_entry(mo, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0565`'s child starts with their sound: each kind, the sound on
+/// and off, the container's index -1 and not.
+#[test]
+fn fam446_children_sound() {
+    let Some(mut t) = twin(565) else { return };
+    let soa = t.img.rel32_target(t.at(0x3d30) + 0x2d);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1] ^ a[2]);
+    rec(&mut t, 393, 3, |m, a| {
+        let x = m.r32(a[1]);
+        m.w32(SCRATCH + 0x8f0, x);
+        0x393
+    });
+    rec(&mut t, 306, 3, |_, a| 0x3060_0000 ^ a[2]);
+    let map = SCRATCH + 0x5000;
+    t.write(map, &[0x21, 0x22, 0x23, 0x24]);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let (this, pair) = (SCRATCH + 0x1000, SCRATCH + 0x900);
+    t.set_u32(pair, 0x0aaa_0001);
+    t.set_u32(pair + 4, 0x0bbb_0002);
+    for (rva, ga, gb) in [(0x3d30u32, 0x81u32, 0x88u32), (0x4640, 0x82, 0x89)] {
+        let f = t.at(rva);
+        t.set_u32(t.img.word(f + ga), 0x00a0_0000u32.wrapping_add(rva));
+        t.set_u32(t.img.word(f + gb), map);
+        for kind in [0u32, 1, 2] {
+            for (index, count, quiet) in [(u32::MAX, 3u16, 0u32), (2, 0, 1), (1, 2, 0)] {
+                t.write(this, &[0x3c; 0x520]);
+                for i in 0..4 {
+                    set_f(&mut t, this + 0x270 + 4 * i, 2.5 * i as f32);
+                }
+                t.set_u32(this + 0x514, index);
+                t.set_u32(this + 0x518, quiet);
+                t.set_u16(free, count);
+                let c = Call {
+                    ecx: this,
+                    edx: pair,
+                    ..Call::default()
+                };
+                t.check_entry(f, c, &[kind], Eax::Checked);
+            }
+        }
+    }
+}
