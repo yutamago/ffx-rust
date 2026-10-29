@@ -709,6 +709,13 @@ fn thread_times(e: &mut Exec, args: &Args) -> Ret {
 /// `RaiseException(code, flags, n, args)`: no SEH dispatch yet; a C++
 /// `throw` (`0xe06d7363`) ends the thread with its code.
 fn raise_exception(e: &mut Exec, args: &Args) -> Ret {
+    // MSVC's thread-naming exception (`0x406d1388`, a debugger reads the
+    // name): the game's filter answers EXCEPTION_CONTINUE_EXECUTION
+    // (Phyre_PSemaphoreWin32_initialize, `or eax, -1` at 0x0043015c), so
+    // without a debugger RaiseException just returns
+    if a(args, 0) == 0x406d_1388 {
+        return Ret::VOID;
+    }
     e.end(Stop::Failed(
         format!(
             "RaiseException({:#010x}): no exception dispatch yet",

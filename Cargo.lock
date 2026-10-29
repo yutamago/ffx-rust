@@ -1015,11 +1015,14 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-core",
+ "ffx-gfx",
  "ffx-kernel",
  "goblin",
  "libc",
+ "md-5",
  "thiserror",
  "unicorn-engine",
+ "windows",
  "windows-sys",
 ]
 

@@ -62,6 +62,8 @@ impl Imports {
         let found = crate::win32::TABLE
             .iter()
             .chain(TABLE)
+            .chain(crate::crypt::TABLE)
+            .chain(crate::stand_ins::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
             Some(&(_, _, conv, words, run)) => Bound {
@@ -1024,24 +1026,14 @@ fn peek_message(_: &mut Exec, _: &Args) -> Ret {
     Ret::eax(0)
 }
 
-/// `D3D11CreateDeviceAndSwapChain`, or `D3D11CreateDevice` asked for a
-/// device: the Linux check's stop (no COM stand-ins yet).
-fn device_milestone(e: &mut Exec, _: &Args) -> Ret {
-    e.end(Stop::Milestone(
-        "D3D11 device and swap chain (D3D11CreateDeviceAndSwapChain)".into(),
-    ));
-    Ret::eax(0x8000_4005)
-}
-
 /// `D3D11CreateDevice(adapter, driver, software, flags, levels, n, sdk,
 /// &device, &level, &context)`. The renderer's start-up first asks only
 /// for the feature level (no device, no context): `S_OK` and `11_0`
 /// (`0xb000`, the highest of the default levels), recorded as a
-/// milestone. Asked for a device, it is the stop.
+/// milestone. Asked for a device, it is `crate::gfx`'s.
 fn create_device(e: &mut Exec, args: &Args) -> Ret {
     if a(args, 7) != 0 || a(args, 9) != 0 {
-        e.end(Stop::Milestone("D3D11 device (D3D11CreateDevice)".into()));
-        return Ret::eax(0x8000_4005);
+        return crate::gfx::create_device(e, args);
     }
     if a(args, 8) != 0 {
         let mut mem = e.mem();
@@ -1265,7 +1257,14 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         "D3D11CreateDeviceAndSwapChain",
         Conv::Stdcall,
         12,
-        device_milestone,
+        crate::gfx::create_device_and_swap_chain,
+    ),
+    (
+        "DINPUT8.dll",
+        "DirectInput8Create",
+        Conv::Stdcall,
+        5,
+        crate::gfx::direct_input8_create,
     ),
     // Steam, absent: `SteamAPI_Init` fails, so the game runs without
     // achievements and never asks for the interfaces (Steam_Init)
