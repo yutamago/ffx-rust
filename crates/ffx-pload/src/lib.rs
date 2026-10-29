@@ -31,7 +31,6 @@
 //! - [`p1_textures`]: `PBinary::loadClusterTextures` (round 5).
 //! - [`m5p_tmpl_abstract_ab`]: the `PClassDescriptorAbstract<T>` slots 7, 12, 13, 14 (M5 lists tmpl-abstract-a, -b).
 //! - [`m5p_tmpl_abstract_cd`]: the same slots for M5 lists tmpl-abstract-c, -d (the ab ports, one more for slot 4).
-//! - [`p1_textures`]: `PBinary::loadClusterTextures` (round 5);
 //! - [`m5p_tmpl_fortype`]: `PClassDescriptorForType<T>`'s slots, one port per shape with per-copy tables (M5 stage 1).
 //!
 //! Everything this crate does not port is called at its address through
