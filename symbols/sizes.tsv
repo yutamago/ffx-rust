@@ -143,6 +143,7 @@
 0x0083a570	11	0	code_0083a570
 0x0083f2d0	5	0	Sg_CameraGetYaw
 0x00845000	5	0	Sg_IdFixupAndSetThunk
+0x0084eee0	42	0	code_0084eee0
 0x00856520	65	0	Native_023d
 0x008565f0	5	0	Native_000d_GetLastEventJumpId
 0x00856630	6	1	Native_AlwaysTrue019c

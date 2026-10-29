@@ -2787,3 +2787,600 @@ fn heap_blocks_match_the_original() {
         }
     });
 }
+
+// ---- round 2: the Sg_Mem debug side, the host files, small wrappers ----
+
+use ffx_sg::m5main_mem2::bridge as sgm2;
+
+/// Recording stubs for a varargs function, picked by the word at `[esp +
+/// key]` (a format): `fmts` gives the words each logs (format included),
+/// `other` the rest's. Returns the dispatcher's address.
+fn keyed_code(t: &mut Twins, tag: u32, key: u8, fmts: &[(u32, u32)], other: u32) -> u32 {
+    let mut c = vec![0x8b, 0x54, 0x24, key]; // mov edx, [esp + key]
+    for &(fmt, n) in fmts {
+        let to = t.stub_code(tag, false, n, 0, &Ret::Fixed(0x21), &[]);
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(fmt).to_le_bytes()); // cmp edx, fmt
+        c.extend([0x75, 7]); // jne next
+        c.push(0xb8);
+        c.extend(to.to_le_bytes()); // mov eax, to
+        c.extend([0xff, 0xe0]); // jmp eax
+    }
+    let rest = t.stub_code(tag, false, other, 0, &Ret::Fixed(0x21), &[]);
+    c.push(0xb8);
+    c.extend(rest.to_le_bytes());
+    c.extend([0xff, 0xe0]);
+    t.code(&c)
+}
+
+/// `dbgPrintf` bound to [`keyed_code`] on its format.
+fn dbg_stub(t: &mut Twins, fmts: &[(u32, u32)]) {
+    let at = keyed_code(t, sgm2::DBG_PRINTF, 4, fmts, 1);
+    t.jump(sgm2::DBG_PRINTF, at);
+}
+
+#[test]
+fn host_files_match_the_original() {
+    Twins::each(|t| {
+        for on in [0u8, 1] {
+            for fd in [0, 7] {
+                t.reset();
+                varargs_stub(t, sgm2::SPRINTF_IAT, &[(sgm2::FMT_CONCAT, 4)], 2);
+                t.stubs(&[
+                    (sgm2::SCE_OPEN, 2, fd),
+                    (sgm2::YI_ASSERT, 4, 0x41),
+                    (sgm2::SCE_WRITE, 3, 0x42),
+                    (sgm2::SCE_CLOSE, 1, 0x43),
+                ]);
+                t.g8(sgm2::HOST_WRITE_ON, on);
+                let name = t.alloc(b"out.bin\0");
+                let what = format!("Sg_PcWrite on {on} fd {fd}");
+                t.check_framed(
+                    &what,
+                    0x0083_afe0,
+                    Conv::Cdecl,
+                    &[0x1000, 0x20, name],
+                    sgm2::PC_WRITE_FRAME,
+                    |m, ebp| {
+                        let r = sgm2::pc_write(m, ebp, 0x1000, 0x20, name);
+                        if on == 0 { Out::None } else { Out::U32(r) }
+                    },
+                );
+            }
+        }
+        for mode in [0, 1, 2, 3] {
+            for fd in [0, 5] {
+                for seen in [0, 1] {
+                    t.reset();
+                    dbg_stub(t, &[(sgm2::MSG_PC_READ, 3), (sgm2::MSG_PC_READ_SIZE, 3)]);
+                    t.stub_import(sgm2::SPRINTF_IAT, 3, 0, 1);
+                    t.stubs(&[
+                        (sgm2::SCE_OPEN, 2, fd),
+                        (sgm2::YI_ASSERT, 4, 0x41),
+                        (sgm2::USER_MALLOC, 1, 0x0070_0000),
+                        (sgm2::SCE_READ, 3, 0x30),
+                        (sgm2::SCE_CLOSE, 1, 0),
+                    ]);
+                    t.stub_ex(sgm2::SCE_LSEEK, false, 3, 0, &Ret::Seq(vec![0x30, 0]), &[]);
+                    t.g32(sgm2::PC_READ_SEEN, seen);
+                    let name = t.alloc(b"data/x\0");
+                    let what = format!("Sg_PcRead mode {mode} fd {fd} seen {seen}");
+                    t.check_framed(
+                        &what,
+                        0x0083_b1d0,
+                        Conv::Cdecl,
+                        &[name, mode],
+                        sgm2::PC_READ_FRAME,
+                        |m, ebp| Out::U32(sgm2::pc_read(m, ebp, name, mode)),
+                    );
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn block_checks_and_dumps_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_b960);
+        let mcb: Vec<(u32, u32)> = sgm2::MSG_MCB
+            .iter()
+            .zip([3, 4, 3, 3, 6, 3])
+            .map(|(&f, n)| (f, n))
+            .collect();
+        for i in 0..80 {
+            t.reset();
+            dbg_stub(t, &mcb);
+            let area = t.zeros(0x200);
+            let heap = rng.below(4);
+            let rec = t.rebase(sgm2::HEAPS) + 0x18 * heap;
+            let (first, end) = (area + 0x40, area + 0x180);
+            t.w32(rec + 0xc, first);
+            t.w32(rec + 0x10, end);
+            let spots = [first - 0x10, first, area + 0x100, end, end + 0x10, 0];
+            let b = if i % 4 == 0 {
+                rng.pick(&spots)
+            } else {
+                area + 0x100
+            };
+            let b = if b == 0 { area + 0x80 } else { b };
+            let state = rng.pick(&[0, 1, 0xf]);
+            t.w32(b, rng.pick(&spots));
+            t.w32(b + 4, rng.pick(&spots));
+            t.w32(b + 0xc, (heap << 27) | state | (rng.next() & 0x0400_0ff0));
+            let what = format!("Sg_MemCheckMCB #{i}");
+            t.check(&what, 0x0083_b960, Conv::Cdecl, &[b], |m| {
+                Out::U32(sgm2::check_mcb(m, b))
+            });
+        }
+        for state in [0, 1, 5, 0xf] {
+            for checked in [0, 0x0400_0000] {
+                for name in [0, 0x0bb0] {
+                    t.reset();
+                    dbg_stub(
+                        t,
+                        &[
+                            (sgm2::FMT_DUMP_HEAD, 3),
+                            (sgm2::FMT_DUMP_SIZE, 3),
+                            (sgm2::FMT_DUMP_FUNC, 3),
+                            (sgm2::FMT_DUMP_NAME, 2),
+                        ],
+                    );
+                    t.stubs(&[
+                        (sgm2::FUNC_BASE, 0, 0x0040_0000),
+                        (sgm2::GET_FUNC_NAME, 1, 0x0bf0),
+                        (sgm2::MEM_GET_STR, 1, name),
+                    ]);
+                    let b = t.zeros(0x40);
+                    t.w32(b, b + 0x30);
+                    t.w32(b + 0xc, state | checked | (0x0312_3450 & 0x03ff_fff0));
+                    let what =
+                        format!("Sg_MemDumpMCB state {state} checked {checked:#x} name {name:#x}");
+                    t.check(&what, 0x0083_bbc0, Conv::Cdecl, &[b, 7], |m| {
+                        Out::U32(sgm2::dump_mcb(m, b, 7))
+                    });
+                }
+            }
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one test per group of functions
+fn heap_dumps_and_checks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_c630);
+        for i in 0..20 {
+            t.reset();
+            dbg_stub(t, &[]);
+            t.stubs(&[(sgm2::RELINK_BACK, 1, 0), (sgm2::DUMP_MCB, 2, 0)]);
+            let n = 2 + rng.below(5) as usize;
+            let states: Vec<u32> = (0..n).map(|_| rng.pick(&[0, 0, 1])).collect();
+            let sizes: Vec<u32> = (0..n)
+                .map(|_| rng.pick(&[0x10, 0x30, 0x40, 0x80]))
+                .collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            // the end block links nowhere (0 ends the walk)
+            let rec = t.zeros(0x18);
+            t.w8(rec, (i % 2) as u8);
+            t.w32(rec + 0xc, at[0]);
+            let what = format!("Sg_MemDump_0083c630 #{i}");
+            let slot = t.frame_ebp(1) + 8;
+            t.check_framed(&what, 0x0083_c630, Conv::Cdecl, &[rec], 4, |m, ebp| {
+                Out::U32(sgm2::heap_dump(m, rec, ebp + 8))
+            });
+            let a: u32 = Mem::read(&t.a, slot);
+            let b: u32 = Mem::read(&t.b, slot);
+            assert_eq!(a, b, "{what}: the argument slot");
+        }
+        for i in 0..30 {
+            t.reset();
+            dbg_stub(
+                t,
+                &[
+                    (sgm2::FMT_SUM_AT, 3),
+                    (sgm2::FMT_SUM_AT2, 3),
+                    (sgm2::FMT_LINK_AT, 3),
+                    (sgm2::FMT_LINK_CODE, 2),
+                ],
+            );
+            let n = 2 + rng.below(4) as usize;
+            let states: Vec<u32> = (0..n)
+                .map(|_| 1 | (u32::from(rng.chance(2)) << 26))
+                .collect();
+            let sizes: Vec<u32> = (0..n).map(|_| 0x20).collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            for &b in &at {
+                t.write(b + 8, &(rng.below(3) as u16).to_le_bytes());
+            }
+            let sums: Vec<u32> = (0..=n as u32).map(|_| 0xabcd_0000 | rng.below(3)).collect();
+            t.stub_ex(sgm2::MEM_GET_SUM, false, 1, 0, &Ret::Seq(sums), &[]);
+            let codes: Vec<u32> = (0..=n as u32)
+                .map(|_| if rng.chance(3) { 0xffff_fffd } else { 0 })
+                .collect();
+            t.stub_ex(sgm2::CHECK_MCB, false, 1, 0, &Ret::Seq(codes), &[]);
+            t.stubs(&[
+                (sgm2::HISTORY_DUMP, 0, 0),
+                (sgm2::HEAP_DUMP, 1, 0),
+                (sgm2::DUMP_MCB, 2, 0),
+                (sgm2::YI_ASSERT, 3, 0),
+            ]);
+            let rec = t.zeros(0x18);
+            t.w8(rec + 1, u8::from(i % 5 != 0));
+            t.w32(rec + 0xc, if i % 7 == 0 { 0 } else { at[0] });
+            let what = format!("Sg_MemCheckHeap #{i}");
+            t.check(
+                &what,
+                0x0083_b7d0,
+                Conv::Cdecl,
+                &[rec, 0x00b0_1234, 99],
+                |m| {
+                    sgm2::check_heap(m, rec, 0x00b0_1234, 99);
+                    Out::None
+                },
+            );
+        }
+        for id in [0, 1, 3, 9] {
+            t.reset();
+            t.stub(sgm2::CHECK_HEAP, false, 3, 0, 0x51);
+            let slot = t.frame_ebp(3) + 8;
+            let what = format!("Sg_MemCheck {id}");
+            t.check_framed(
+                &what,
+                0x0083_b7b0,
+                Conv::Cdecl,
+                &[id, 0x00b0_0000, 7],
+                4,
+                |m, ebp| Out::U32(sgm2::mem_check(m, id, 0x00b0_0000, 7, ebp + 8)),
+            );
+            let a: u32 = Mem::read(&t.a, slot);
+            let b: u32 = Mem::read(&t.b, slot);
+            assert_eq!(a, b, "{what}: the argument slot");
+        }
+        for p in [0, 0x1230] {
+            t.reset();
+            t.stub(sgm2::USER_MEM_SIZE, false, 1, 0, 0x52);
+            t.check("Sg_MemGetSize", 0x0083_c050, Conv::Cdecl, &[p], |m| {
+                Out::U32(sgm2::mem_get_size(m, p))
+            });
+        }
+        for heap in [0, 1, 2, 3] {
+            t.reset();
+            t.stubs(&[(sgm2::HEAP_DUMP, 1, 0), (sgm2::CACHE_DUMP, 1, 0x53)]);
+            let slot = t.frame_ebp(1) + 8;
+            let what = format!("Sg_MemDump {heap}");
+            t.check_framed(&what, 0x0083_bb50, Conv::Cdecl, &[heap], 4, |m, ebp| {
+                Out::U32(sgm2::mem_dump(m, heap, ebp + 8))
+            });
+            let a: u32 = Mem::read(&t.a, slot);
+            let b: u32 = Mem::read(&t.b, slot);
+            assert_eq!(a, b, "{what}: the argument slot");
+        }
+        t.reset();
+        t.stub(sgm2::RELINK_BACK, false, 1, 0, 0x54);
+        t.check("make_yi_font16", 0x0083_c5a0, Conv::Cdecl, &[], |m| {
+            Out::U32(sgm2::relink_heap0(m))
+        });
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one test per group of functions
+fn resource_dump_and_heap_queries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_ff20);
+        for i in 0..24 {
+            t.reset();
+            let mut fmts = vec![(sgm2::FMT_RES_MEM, 5), (sgm2::FMT_RES_INFO, 5)];
+            fmts.extend(sgm2::RES_KIND_NAMES.iter().map(|&k| (k, 1)));
+            dbg_stub(t, &fmts);
+            t.stubs(&[(sgm2::MEM_GET_SIZE, 1, 0x61), (sgm2::CREATE_NAME, 1, 0x62)]);
+            let w: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            let res = t.words(&w);
+            t.w32(res + 0xc, if i % 6 == 0 { 0 } else { 0x0077_0000 });
+            t.w8(res + 4, rng.pick(&[0u8, 1, 2, 3, 4, 5, 0xff]));
+            let slot = t.frame_ebp(1) + 8;
+            let what = format!("resource dump #{i}");
+            t.check_framed(&what, 0x0083_ff20, Conv::Cdecl, &[res], 4, |m, ebp| {
+                let r = sgm2::resource_dump(m, res, ebp + 8);
+                if i % 6 == 0 { Out::None } else { Out::U32(r) }
+            });
+            // without memory the slot keeps the caller's word
+            if i % 6 != 0 {
+                let a: u32 = Mem::read(&t.a, slot);
+                let b: u32 = Mem::read(&t.b, slot);
+                assert_eq!(a, b, "{what}: the argument slot");
+            }
+        }
+        for i in 0..16 {
+            t.reset();
+            let n = 2 + rng.below(5) as usize;
+            let states: Vec<u32> = (0..n).map(|_| rng.pick(&[0, 1, 8])).collect();
+            let sizes: Vec<u32> = (0..n).map(|_| 0x10 * (1 + rng.below(6))).collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            // the walk ends at a 0 link
+            t.w32(at[n], 0);
+            t.g32(sgm2::HEAPS + 0xc, at[0]);
+            t.stub(sgm2::RELINK_HEAP0, false, 0, 0, 0);
+            t.stub_ex(
+                sgm2::MEM_MOVE_OVER,
+                false,
+                0,
+                0,
+                &Ret::Seq(vec![1, 1, 0]),
+                &[],
+            );
+            t.stub_ex(
+                sgm2::CACHE_OVERFLOW,
+                false,
+                0,
+                0,
+                &Ret::Seq(vec![0, 0, 1]),
+                &[],
+            );
+            let mode = i % 4;
+            let what = format!("Sg_MemGet #{i} mode {mode}");
+            t.check(&what, 0x0083_bff0, Conv::Cdecl, &[mode], |m| {
+                Out::U32(sgm2::mem_get(m, mode))
+            });
+        }
+        for i in 0..30 {
+            t.reset();
+            let n = 3 + rng.below(8) as usize;
+            let states: Vec<u32> = (0..n).map(|_| rng.below(16)).collect();
+            let sizes: Vec<u32> = (0..n).map(|_| 0x10 * (1 + rng.below(4))).collect();
+            let at = build_heap(t, &mut rng, &states, &sizes);
+            t.w32(at[n], 0);
+            for &b in &at {
+                t.write(b + 0xa, &((rng.below(8) as u16) << 11).to_le_bytes());
+            }
+            t.g32(sgm2::HEAPS + 0xc, at[0]);
+            t.g32(sgm2::HEAPS + 8, 0x1100_0000);
+            t.stub(sgm2::MEM_CHECK, false, 3, 0, 0);
+            let out = t.words(&[0x0101_0101; 9]);
+            let what = format!("Sg_MemUsage #{i} states {states:?}");
+            t.check(&what, 0x0083_c0f0, Conv::Cdecl, &[out], |m| {
+                Out::U32(sgm2::mem_usage(m, out))
+            });
+        }
+        for p in [0, 1] {
+            t.reset();
+            let extra = set_word(t.rebase(sgm2::RT_ADDR), 0x0012_3456);
+            t.stub_ex(sgm2::SET_RT_ADDR, false, 1, 0, &Ret::Fixed(0), &extra);
+            t.g32(sgm2::RT_ADDR_SOURCE, 0x0050_0000);
+            let b = t.words(&[0, 0, 0, 0xffff_ffff, 0]);
+            let p = if p == 0 { 0 } else { b + 0x10 };
+            t.check(
+                "Sg_MemSetCurrentAddr",
+                0x0083_c4e0,
+                Conv::Cdecl,
+                &[p],
+                |m| {
+                    sgm2::set_current_addr(m, p);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+        t.stubs(&[
+            (sgm2::ALIGNED_FREE, 1, 0x71),
+            (sgm2::ALIGNED_MALLOC, 2, 0x72),
+            (sgm2::CACHE_CLEAR, 0, 0x73),
+            (sgm2::CACHE_CLEAR_FAST, 0, 0x74),
+        ]);
+        t.check("Sg_FreeA", 0x0083_f090, Conv::Cdecl, &[0x40], |m| {
+            Out::U32(sgm2::free_a(m, 0x40))
+        });
+        t.check("Sg_MallocA", 0x0083_f0a0, Conv::Cdecl, &[0x40, 0x10], |m| {
+            Out::U32(sgm2::malloc_a(m, 0x40, 0x10))
+        });
+        t.check("cache clear thunk", 0x0084_0e40, Conv::Cdecl, &[], |m| {
+            Out::U32(sgm2::cache_thunk(m, sgm2::CACHE_CLEAR))
+        });
+        t.check(
+            "cache clear fast thunk",
+            0x0084_0e50,
+            Conv::Cdecl,
+            &[],
+            |m| Out::U32(sgm2::cache_thunk(m, sgm2::CACHE_CLEAR_FAST)),
+        );
+    });
+}
+
+#[test]
+fn db_tables_and_clock_match_the_original() {
+    Twins::each(|t| {
+        // cosf/sinf left original (they are ported: their own tests)
+        t.reset();
+        t.check("Sg_DbInitTables", 0x0084_1100, Conv::Cdecl, &[], |m| {
+            sgm2::db_init_tables(m);
+            Out::None
+        });
+        for on in [0u8, 1] {
+            t.reset();
+            t.stubs(&[
+                (sgm2::USER_MALLOC, 1, 0x0066_0000),
+                (sgm2::DB_INIT_TABLES, 0, 0),
+            ]);
+            t.g8(sgm2::HOST_WRITE_ON, on);
+            t.check("Sg_DbInitAll", 0x0084_1440, Conv::Cdecl, &[], |m| {
+                sgm2::db_init_all(m);
+                Out::None
+            });
+        }
+        for (a, b) in [(3, 0), (4, 0), (0, 1), (0xffff_ffff, 0)] {
+            t.reset();
+            dbg_stub(t, &[(sgm2::FMT_DB_COUNTS, 3)]);
+            t.g32(sgm2::DB_COUNT_A, a);
+            t.g32(sgm2::DB_COUNT_B, b);
+            t.check("Sg_DbReport", 0x0084_3560, Conv::Cdecl, &[], |m| {
+                sgm2::db_report(m);
+                Out::None
+            });
+        }
+        t.reset();
+        t.stub(sgm2::ID_FIXUP_AND_SET, false, 1, 0, 0x81);
+        t.stub(sgm2::IVEC4_TO_FVEC4, false, 2, 0, 0x82);
+        t.check("id fixup thunk", 0x0084_5000, Conv::Cdecl, &[0x40], |m| {
+            Out::U32(sgm2::id_fixup_and_set_thunk(m, 0x40))
+        });
+        t.check(
+            "ivec4 thunk",
+            0x0084_5de0,
+            Conv::Cdecl,
+            &[0x40, 0x50],
+            |m| Out::U32(sgm2::ivec4_to_fvec4_thunk(m, 0x40, 0x50)),
+        );
+        for s in [0, 5, 0xffff_ffff] {
+            t.reset();
+            t.stub(sgm2::DECI2_OPEN, false, 3, 0, s);
+            t.check("deci2 open", 0x0084_eee0, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm2::deci2_open(m))
+            });
+        }
+        for r in [0xffff_fff0, 0, 12] {
+            t.reset();
+            t.stub(sgm2::SYSTEM_ON_HOST, false, 2, 0, r);
+            t.stub_import(sgm2::SSCANF_IAT, 8, 0, 6);
+            let what = format!("clock from host {r:#x}");
+            t.check_framed(
+                &what,
+                0x0084_f080,
+                Conv::Cdecl,
+                &[],
+                sgm2::CLOCK_FRAME,
+                |m, ebp| Out::U32(sgm2::clock_from_host(m, ebp)),
+            );
+        }
+        let mut rng = Rng(0x0084_ef10);
+        for i in 0..60 {
+            t.reset();
+            let roll = |rng: &mut Rng, top: u32| {
+                if rng.chance(2) {
+                    top - 1
+                } else {
+                    rng.below(top)
+                }
+            };
+            t.g32(sgm2::CLOCK_FRAMES, roll(&mut rng, 0x3c));
+            t.g32(sgm2::CLOCK_SEC, roll(&mut rng, 0x3c));
+            t.g32(sgm2::CLOCK_MIN, roll(&mut rng, 0x3c));
+            t.g32(sgm2::CLOCK_HOUR, roll(&mut rng, 0x18));
+            t.g32(sgm2::CLOCK_WEEKDAY, rng.below(7));
+            t.g32(sgm2::CLOCK_DAY, rng.below(31));
+            t.g32(sgm2::CLOCK_RATE, 7);
+            let what = format!("clock tick #{i}");
+            t.check(&what, 0x0084_ef10, Conv::Cdecl, &[], |m| {
+                Out::U32(sgm2::clock_tick(m))
+            });
+        }
+    });
+}
+
+// ---- round 2: the debug GUI's menu helpers, small thunks ----
+
+use ffx_sg::m5main_gui::bridge as gui;
+
+#[test]
+fn debug_menu_helpers_match_the_original() {
+    Twins::each(|t| {
+        for (addr, height, step) in [
+            (0x0085_0850, 0xa, 0xb),
+            (0x0085_08a0, 9, 0xa),
+            (0x0085_08f0, 0xa, 0xa),
+        ] {
+            t.reset();
+            t.stubs(&[
+                (gui::ADD_BUTTON, 7, 0x31),
+                (gui::ADD_STATIC, 7, 0x32),
+                (gui::SET_HIDE, 3, 0x33),
+            ]);
+            let list = t.words(&[3, 1, 2, 3, 0, 0]);
+            t.g32(gui::MENU_LIST, list);
+            t.g32(gui::MENU_Y, 0x20);
+            let what = format!("menu helper {addr:#x}");
+            t.check(
+                &what,
+                addr,
+                Conv::Cdecl,
+                &[0x0055_0000, 0x77, 0x00b0_0000],
+                |m| {
+                    Out::U32(if addr == 0x0085_08f0 {
+                        gui::add_static(m, 0x0055_0000, 0x77, 0x00b0_0000)
+                    } else {
+                        gui::add_button(m, 0x0055_0000, 0x77, 0x00b0_0000, height, step)
+                    })
+                },
+            );
+        }
+        for (addr, w) in gui::WINDOWS {
+            for open in [0u8, 1] {
+                t.reset();
+                t.stub(gui::WINDOW_CREATE, false, 6, 0, 0x34);
+                t.g8(w.open, open);
+                let what = format!("window {addr:#x} open {open}");
+                t.check(&what, addr, Conv::Cdecl, &[], |m| {
+                    gui::open_once(m, &w);
+                    Out::None
+                });
+            }
+        }
+        for (n, c) in [(0, 0x41), (5, 0x1ff), (0x10, 0)] {
+            t.reset();
+            t.g32(gui::TEXT_LEN, n);
+            t.check("text put", 0x0085_0b50, Conv::Cdecl, &[c], |m| {
+                gui::text_put(m, c);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn gui_thunks_and_string_helpers_match_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        t.stubs(&[
+            (gui::EVENTJUMP_DISPOSE, 0, 0x41),
+            (gui::ABM_PARA_GET, 0, 0x42),
+            (gui::TARGET_00947CC0, 0, 0x43),
+            (gui::USER_FREE, 1, 0),
+            (gui::ABMAP_DESTROY, 0, 0),
+            (gui::SET_FLIP_VSYNC, 1, 0),
+            (gui::LOADING_SCREEN, 0, 0x44),
+        ]);
+        t.check("eventjump thunk", 0x0087_5940, Conv::Cdecl, &[], |m| {
+            Out::U32(gui::thunk(m, gui::EVENTJUMP_DISPOSE))
+        });
+        t.check("abm para thunk", 0x008a_97e0, Conv::Cdecl, &[], |m| {
+            Out::U32(gui::thunk(m, gui::ABM_PARA_GET))
+        });
+        t.check("0x009436b0", 0x0094_36b0, Conv::Cdecl, &[], |m| {
+            Out::U32(gui::thunk(m, gui::TARGET_00947CC0))
+        });
+        t.g32(gui::ABM_BUF_A, 0x1111);
+        t.g32(gui::ABM_BUF_B, 0x2222);
+        t.check("eiAbmExit", 0x00a5_4720, Conv::Cdecl, &[], |m| {
+            Out::U32(gui::abm_exit(m))
+        });
+        for s in [&b"\0"[..], b"a\0", b"hello\0"] {
+            t.reset();
+            let src = t.alloc(s);
+            let dst = t.zeros(0x10);
+            t.check("strcpy", 0x0094_2030, Conv::Cdecl, &[dst, src], |m| {
+                Out::U32(gui::str_copy(m, dst, src))
+            });
+        }
+        for (list, n) in [(0, 3), (1, 0), (2, 0xffff_ffff), (1, 5)] {
+            t.reset();
+            let entries = t.words(&[0xffff_ffff; 0x20]);
+            t.g32(gui::NAME_LIST, list);
+            t.g32(gui::NAME_ENTRIES + 4 * list, entries);
+            t.g32(gui::NAME_COUNTS + 4 * list, n);
+            let what = format!("name list clear {list} {n:#x}");
+            t.check(&what, 0x0094_2320, Conv::Cdecl, &[], |m| {
+                Out::U32(gui::name_list_clear(m))
+            });
+        }
+    });
+}

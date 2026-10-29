@@ -11380,11 +11380,11 @@
 0x0083ae80 function Sg_PcReadH                   # layout: alphabetical run between Sg_PcReadGetLen and Sg_PcReadL (1 unnamed in the gap); Switch 0x7100434660 Sg_PcReadH is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083aea0 function Sg_PcReadL                   # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'Sg_PcReadL:%s seek=%xh size=%xh '; Switch 0x7100434350 Sg_PcReadL (symbols from Fahrenheit's server export)
 0x0083afd0 function Sg_PcReadSetErrIgnore        # layout: alphabetical run between Sg_PcReadL and Sg_PcWrite (1 unnamed in the gap); Switch 0x7100434330 Sg_PcReadSetErrIgnore is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0083afe0 function Sg_PcWrite                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. "SG write file open error '%s'"; Switch 0x7100434690 Sg_PcWrite (symbols from Fahrenheit's server export)
+0x0083afe0 function Sg_PcWrite                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. "SG write file open error '%s'"; Switch 0x7100434690 Sg_PcWrite (symbols from Fahrenheit's server export); cdecl(p, n, name) -> sceClose's (or yiAssert's) eax: with 0x0133c910, sprintf "%s%s" host0: name into ebp-0x104, sceOpen 0x602, sceWrite; eax junk (cookie) when off; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083b080 function Sg_Printf                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'fix dbgPrintf : %s'; Switch 0x7100435670 Sg_Printf (symbols from Fahrenheit's server export)
 0x0083b100 function Sg_ToggleEnableTkAnti     # (): flips 0x0130181e (Sg_EnableTkAnti_0083add0's switch); the debug menu (FUN_00854c60 case 0x2f)
 0x0083b110 function Sg_SetTkAntiXYB           # fh v3:bsim1.00 0x0083b190
-0x0083b1d0 function Sg_PcRead_0083b1d0        # fh v3:exact 0x0083b250 _Sg_PcRead
+0x0083b1d0 function Sg_PcRead_0083b1d0        # fh v3:exact 0x0083b250 _Sg_PcRead; cdecl(name, mode) -> buffer: path via sprintf 0x00b546c0 into ebp-0x84, sceOpen(1); missing: 0 when 0x00c49798 set, else yiAssert and reads fd 0; size to 0x01301818, user_malloc for modes 0..2 (others read into 0); 0x00c49798 = 1 at the end; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083b420 function Sg_EventjumpDispose       # fh v3:exact 0x0083b4a0; dbgPrintf, Sg_MemSetFast(0), Ch_DisposeAll, Ch_BlkDisposeAll, Ch_DisposeAllMGRP, Sg_PLightDispose, dbgPrintf; ported (ffx_sg::state, chara-main-map round 1)
 0x0083b460 function Sg_EventjumpInit          # fh v3:exact 0x0083b4e0; ported in ffx_sg::state (chara-main-map round 2): graphicGetScreenFadeColor writes blue into its own argument slot (callers do not read it)
 0x0083b5f0 function Sg_InitAll                # fh v3:exact 0x0083b670; (): Sg_LoadVramResource, g_GsRegisterSink 0x83 twice, user_malloc(1 MB) into 0x00c498dc, Sg_InitFilter, Sg_DbInitAll, Sg_Dmy, 0x00839ca0(1), Ch_FunctionHistoryInit, Ch_TextureSpecInitAll, Ch_DrawSetShadowMode(0) (its eax); ported (ffx_sg::state, main round 17)
@@ -11392,22 +11392,23 @@
 0x0083b670 function Sg_EventjumpCacheChrs_0083b670 # (caller Sg_EventjumpInit) AtelGetBindpList(0) ids (u16 count, walked from the last): Cache_ClearCheck, Cache_ToTop(1/2, id), Ch_RegMotionToTop, Cache_DisposeCheck, 0x00840ab0, Ch_RegMotionUse, Ch_DataRead(id) + Ch_MgrpRead(id, 0), Ch_ReadSync(0); name ours; ported (ffx_sg::state, chara-main-map round 1)
 0x0083b700 function Sg_MemCache               # fh switch:bsim1.00 0x7100431260
 0x0083b770 function Sg_MemCache_SerchFree     # (p) -> data of the first free block before p's that is bigger, 0 else; Switch name
-0x0083b7b0 function Sg_MemCheck               # fh v3:exact 0x0083b830
-0x0083b7d0 function Sg_MemCheckHeap           # fh v3:exact 0x0083b850
-0x0083b960 function Sg_MemCheckMCB               # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'code=-1 mcb=%x < top=%x\\n'; Switch 0x71004303f0 Sg_MemCheckMCB (symbols from Fahrenheit's server export)
+0x0083b7b0 function Sg_MemCheck               # fh v3:exact 0x0083b830; ported ffx_sg::m5main_mem2 (m5 main r2): cdecl(id, file, line): its first slot = g_SgMemHeaps + id * 0x18, tail jmp Sg_MemCheckHeap
+0x0083b7d0 function Sg_MemCheckHeap           # fh v3:exact 0x0083b850; cdecl(heap, file, line): with heap +1 set, per block: bit 26 blocks whose u16 +8 != Sg_MemGetSum's ax, and next blocks failing Sg_MemCheckMCB, reported (dumps, Ch_FunctionHistoryDump, yiAssert); eax junk; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x0083b960 function Sg_MemCheckMCB               # str-match switch: only user of 6 string(s) held once by both builds, e.g. 'code=-1 mcb=%x < top=%x\\n'; Switch 0x71004303f0 Sg_MemCheckMCB (symbols from Fahrenheit's server export); cdecl(block) -> 0 or -1..-6 (block below first / above end; next below first unless the end block, above end; prev below first when set, above end; unsigned) with a dbgPrintf line; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083ba50 function Sg_MemCheckPtr               # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'code=-10 ptr=%x < top=%x\\n'; Switch 0x7100430550 Sg_MemCheckPtr (symbols from Fahrenheit's server export)
 0x0083bab0 function Sg_MemClearStr            # (p): empties the block's debug name slot (0x05fb0000 + id * 32) and drops the id (u16 at p-6); Switch name
 0x0083baf0 function Sg_MemCreateFree             # layout: alphabetical run between Sg_MemClearStr and Sg_MemDump (1 unnamed in the gap); Switch 0x7100431040 Sg_MemCreateFree is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(heap, block, prev, next) -> heap * 3 (lea after the calls): block zeroed with heap bits 27..28, linked, Sg_MemSetFree, Sg_MemMergeFree_0083c5b0, g_SgMemHeaps[heap] byte 0 = 0; ported ffx_sg::m5main_mem (m5 main r2)
-0x0083bb50 function Sg_MemDump                # fh v3:exact 0x0083bbd0
+0x0083bb50 function Sg_MemDump                # fh v3:exact 0x0083bbd0; cdecl(heap) -> Cache_Dump's eax: heap 1 (0x01301980), 2 (0x01301998) or else 0 dumped, then 0x00b5a3a0 into its slot and tail jmp Cache_Dump; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083bb90 function Sg_MemDumpFile               # layout: alphabetical run between Sg_MemDump and Sg_MemDumpMCB (1 unnamed in the gap); Switch 0x7100431160 Sg_MemDumpFile is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0083bbc0 function Sg_MemDumpMCB             # fh v3:exact 0x0083bc40
+0x0083bbc0 function Sg_MemDumpMCB             # fh v3:exact 0x0083bc40; cdecl(block, index) -> the last dbgPrintf's eax: head, size and '*' (0x2a) for bit 26, state name from 0x00c498e0, allocator (bits 4..25 * 4 via Sg_GetFuncName, offset from 0x008456d0) and Sg_MemGetStr name for used blocks; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083bcd0 function Sg_MemDumpMCBPtr             # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%10s mcb=%x prev=%8x next=%8x size=%8x own=%d\\n'; Switch 0x7100430c20 Sg_MemDumpMCBPtr (symbols from Fahrenheit's server export)
 0x0083bd20 function Sg_MemErrMCB                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:----------------------------------\\n'; Switch 0x7100430610 Sg_MemErrMCB (symbols from Fahrenheit's server export)
 0x0083bdb0 function Sg_MemSetFree            # (block) -> heap * 3: header +8 = 0, +0xc &= 0x18000000 (heap bits 27..28), g_SgMemHeaps[heap] byte 0 = 1 and +0x14 = min(+0x14, block); callers Sg_MemCreateFree, Sg_MemMoveWork, 0x0083b720; between Sg_MemErrMCB and Sg_MemGet; name ours; ported (field round 33)
-0x0083bff0 function Sg_MemGet                    # layout+callees: sorts between Sg_MemErrMCB and Sg_MemGetSize, and its named callees match the Switch 0x7100430cc0 Sg_MemGet's (similarity 1.00: Cache_OverFlow, Ch_MemMove_Over); symbols from Fahrenheit's server export
-0x0083c050 function Sg_MemGetSize             # fh v3:exact 0x0083c0d0
+0x0083bff0 function Sg_MemGet                    # layout+callees: sorts between Sg_MemErrMCB and Sg_MemGetSize, and its named callees match the Switch 0x7100430cc0 Sg_MemGet's (similarity 1.00: Cache_OverFlow, Ch_MemMove_Over); symbols from Fahrenheit's server export; cdecl(mode) -> the largest free block's size in heap 0 (list from its first block read on entry): mode 1 make_yi_font16 first, mode 2 Ch_MemMove_Over until 0 then Cache_OverFlow until nonzero; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x0083c050 function Sg_MemGetSize             # fh v3:exact 0x0083c0d0; cdecl(p) -> 0 for null, else tail jmp user_mem_size; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083c070 function Sg_MemGetStr              # (p) -> the block's debug name slot, "" without one or outside debug builds; Switch name
 0x0083c0b0 function Sg_MemGetSum              # (header) -> 16-bit sum of the block's data halfwords (AX); Switch name
+0x0083c0f0 function Sg_MemUsage_0083c0f0 # cdecl(out) -> heap 0 size + 0x10: Sg_MemCheck(0, 0x00b5a3dc, 0x3c1), nine counters zeroed, block sizes (with headers) summed by state (byte map 0x0083c1d8, kind switch on u16 +0xa >> 11 for state 7, the previous counter for kinds > 5; state 15 none); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083c200 function Sg_MemSetup_0083c200 # cdecl() -> Sg_MemSetMoveHeapStartAddr's eax: bytes 0x01301969/81 and 0x01301964 cleared, Sg_MemSetCheck(1), Sg_MemSetFast(0), heap 0 over user_aligned_malloc(0x1100000, 0x10) (kept at 0x01301960); name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c260 function Sg_MemInit                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'heap=%x-%x\\n'; Switch 0x71004301f0 Sg_MemInit (symbols from Fahrenheit's server export); cdecl(id, start, end) -> the first block (start & ~3): end & ~3, end block at end - 0x10 (state 0xf, prev the first), the heap record (+4 id, +8 size, +0xc first, +0x10 end block, +0x14 first, u16 +0 = 0x100), heap bits (id & 3) << 27; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c320 function Sg_MemIsFree              # (p) -> 1 when the block's owner nibble (+0xc of the header) is 0; Switch name (28 bytes there)
@@ -11415,16 +11416,17 @@
 0x0083c480 function Sg_MemRealloc             # fh v3:bsim1.00 0x0083c500; cdecl(heap, kind, p, size) -> user_realloc(p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c4a0 function Sg_MemSetAlign            # fh v3:exact 0x0083c520
 0x0083c4d0 function Sg_MemSetCheck            # fh v3:bsim1.00 0x0083c550
-0x0083c4e0 function Sg_MemSetCurrentAddr      # fh v3:exact 0x0083c560
+0x0083c4e0 function Sg_MemSetCurrentAddr      # fh v3:exact 0x0083c560; cdecl(p): Sg_MemSetRtAddr([0x00c8f6f8]), then bits 4..25 of [p - 4] = 0x013019b0 << 4; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083c510 function Sg_MemSetErrorIgnore      # (v): 0x01301958 = v; Fahrenheit Switch BSim 1.00 0x7100430370
 0x0083c520 function Sg_MemSetFast             # fh v3:bsim1.00 0x0083c5a0
 0x0083c530 function Sg_MemSetMoveHeapStartAddr # fh v3:exact 0x0083c5b0
 0x0083c560 function Sg_MemSetRtAddr           # (a): 0x013019b0 = ((a - 8) >> 2) & 0x7fffff; called by Sg_MemSetCurrentAddr; Switch name (24 bytes there too)
 0x0083c580 function Sg_MemSetStr              # fh v3:bsim1.00 0x0083c600
 0x0083c590 function Sg_MemSetType             # fh v3:bsim1.00 0x0083c610
+0x0083c5a0 function make_yi_font16 # cdecl() -> Ch_MemRelinkBack(heap 0)'s eax (a misattributed name: it relinks heap 0); ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083c5b0 function Sg_MemMergeFree_0083c5b0 # cdecl(block) -> the merged block (or block when in use): walks back over free previous blocks, absorbs the free ones after, relinks next's prev; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083c600 function Sg_MemCheckMCBerr            # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'the MCB broken maybe.code=%d\\n'; Switch 0x71004305d0 _Sg_MemCheckMCBerr (symbols from Fahrenheit's server export)
-0x0083c630 function Sg_MemDump_0083c630       # fh v3:exact 0x0083c6b0 _Sg_MemDump
+0x0083c630 function Sg_MemDump_0083c630       # fh v3:exact 0x0083c6b0 _Sg_MemDump; cdecl(heap) -> dbgPrintf's eax: relink when byte +0 set, every used block and free blocks of 0x40+ dumped with their index, 0x00b5a388 into its slot, tail jmp dbgPrintf; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083c6a0 function Ch_MemRelinkBack         # ours: (heap) block list from +0xc: free blocks (kind 0) absorb free successors, each next's previous (+4) set; heap byte 0 cleared
 0x0083c6f0 function Ch_CalcLight              # fh v3:exact 0x0083c770
 0x0083c710 function Ch_ClutCreate             # fh v3:exact 0x0083c790
@@ -11492,8 +11494,8 @@
 0x0083f010 function SgRealloc                 # fh v3:bsim1.00 0x0083f010; cdecl(p, size) -> Sg_MemRealloc(0, 6, p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083f030 function SgReallocD                # fh switch:bsim1.00 0x7100431a00; cdecl(p, size) -> Sg_MemRealloc(1, 6, p, size)'s eax; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083f050 function SgStrdupD                    # layout: alphabetical run between SgReallocD and Sg_FreeA (1 unnamed in the gap); Switch 0x7100431a40 SgStrdupD is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(s) -> a copy from user_malloc_thunk_0083f100(strlen + 1); ported ffx_sg::m5main_mem (m5 main r2)
-0x0083f090 function Sg_FreeA                  # fh v3:bsim1.00 0x0083f090
-0x0083f0a0 function Sg_MallocA                # fh v3:bsim1.00 0x0083f0a0
+0x0083f090 function Sg_FreeA                  # fh v3:bsim1.00 0x0083f090; cdecl(p) -> user_aligned_free's eax; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x0083f0a0 function Sg_MallocA                # fh v3:bsim1.00 0x0083f0a0; cdecl(size, align) -> user_aligned_malloc's eax; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083f0c0 function virtuos_realloc           # fh switch:bsim1.00 0x7100431a80
 0x0083f100 function user_malloc_thunk_0083f100 # cdecl(size): empty frame, jmp user_malloc; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0083f130 function Sg_CameraPutRects         # cdecl() -> eax: MsCameraGet(6, 0, 0), then MsCameraSetRect(cam, 0, 0x00c4ded0 the camera ref point) and MsCameraSetRect(cam, 1, 0x00c4dec0 the camera position), the last eax returned; callers Sg_MainLoop, Sg_CameraSetPlayer; name ours; ported in ffx_sg::camera (main round 15)
@@ -11520,6 +11522,7 @@
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
 0x0083fe60 function Sg_SetResourceSTR         # fh v3:exact 0x0083fe60
 0x0083ff00 function Sg_SetResource9_0083ff00 # cdecl(on) -> Sg_SetResource(9, 1 - on)'s eax; name ours; ported ffx_sg::m5main_mem (m5 main r2)
+0x0083ff20 function Sg_ResourceDump_0083ff20 # cdecl(res) -> dbgPrintf's eax: memory/size/bytes +5 and +8&7, +8>>3, (i8)+6, ch_create_name(+0), +0 sar 16, kind name for (i8)+4 in 1..4 (jump table 0x0083ffcc), newline into its slot and tail jmp; nothing without +0xc; name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0083ffe0 function Cache_CheckYet            # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); was ChrData_State
 0x00840030 function Cache_Clear               # fh v3:exact 0x00840030; cdecl(): every live entry not in use: +0x24 = 1 while unread, else freed with its render data (models unless Cache_IsPersistentChr, user_free_thunk +0x18/+0x1c, Cache_FreeClothVertexBuff on +0x20, Cache_FreeEntry); tail jmp Cache_Empty; ported (render r23, cache::bridge::clear)
 0x00840120 function Cache_ClearCheck             # layout: alphabetical run between Cache_Clear and Cache_Dispose (2 unnamed in the gap); Switch 0x71004361b0 Cache_ClearCheck is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11550,18 +11553,21 @@
 0x00840cf0 function Cache_ToTop                  # layout: alphabetical run between Cache_SweepBG and Cache_Unuse (1 unnamed in the gap); Switch 0x7100436000 Cache_ToTop is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00840d70 function Cache_Unuse               # fh v3:exact 0x00840d70
 0x00840dd0 function Cache_Use                 # fh v3:exact 0x00840dd0
+0x00840e40 function Cache_Clear_thunk_00840e40 # jmp Cache_Clear (data ref 0x00c88f84, Native_401f_CacheClear); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x00840e50 function Cache_ClearFast_thunk_00840e50 # jmp Cache_ClearFast (data ref 0x00c88f94, Native_4020); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x00840e60 function Sg_CacheDisposeChr        # fh v3:exact 0x00840e60; (id): Cache_Dispose(2, id | n << 16, 1) for n 0..3, Cache_Dispose(1, id, 1); ported (ffx_sg::state, chara-main-map round 1)
 0x00840ec0 function Cache_FreeEntry           # cdecl(e) -> eax: g_ChrTidus = 0 when it is e's block (+0xc, neg/sbb/and: written either way); kind +0 0x903e7: Sg_FreeA(block, 0), else user_free_thunk(block); then +0 = -1, +0xc = 0; returns the free's eax; callers Cache_Clear, Cache_ClearFast, Cache_Dispose, Cache_DisposeAll, Cache_DisposeCheck, Cache_OverFlow; name ours; ported in ffx_sg::cache (main round 15)
 0x00840fc0 function Sg_Db2DVertex             # (x, y): debug line record (u16 4, x, y) while g_FFXIsDebug; Switch name
 0x00841000 function Sg_DbBox                     # layout: alphabetical run between Sg_Db2DVertex and Sg_DbCircle (2 unnamed in the gap); Switch 0x7100432770 Sg_DbBox is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00841050 function Sg_DbBoxX                    # layout: alphabetical run between Sg_Db2DVertex and Sg_DbCircle (2 unnamed in the gap); Switch 0x7100432810 Sg_DbBoxX is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008410a0 function Sg_DbCircle               # (c, r): debug line strip of 13 vertices around c in the x-z plane; Switch name (Sg_DbCircle, XY, YZ)
+0x00841100 function Sg_DbInitTables_00841100 # cdecl(): for i in 0..13 a = f32(i * qword 0x00b59638 / qword 0x00b4b468), cos table 0x01303308 = cosf(a), sin table 0x013032d4 = sinf(a); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x00841170 function Sg_DbCircleXY             # (c, r): the same in the x-y plane
 0x008411d0 function Sg_DbCircleYZ             # (c, r): the same in the y-z plane
 0x00841230 function Sg_DbColor                # (r, g, b): debug line record (2, r, g, b) while g_FFXIsDebug; Switch name
 0x00841270 function Sg_DbColor8               # (c): Sg_DbColor(c & 2 ? 255 : 0, c & 4 ? .., c & 1 ? ..); Switch name
 0x008412c0 function Sg_DbDraw                 # fh v3:exact 0x008412c0; cdecl(): with byte 0x0133c910, debug draw list 0x013032cc (1 PRIM, 2 RGBAQ, 3 point projected with w 1.0 (the loop's fld1), 4 screen point; unknown commands loop forever logging); frame ebp-0x44 matrix, -0x54 vector, -0x64 point; ported ffx_sg::m5main_dbg (m5 main b1)
-0x00841440 function Sg_DbInitAll              # fh v3:exact 0x00841440
+0x00841440 function Sg_DbInitAll              # fh v3:exact 0x00841440; cdecl(): with 0x0133c910, user_malloc(0x10000) to 0x013032cc/d0 and tail jmp Sg_DbInitTables_00841100; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x00841470 function Sg_DbLine                 # fh switch:bsim1.00 0x7100432680
 0x00841490 function Sg_DbLineStrip           # (): debug line buffer word 0x20001 (Sg_DbLine writes 0x10001); Switch name order Sg_DbLine, Sg_DbLineStrip
 0x008414b0 function Sg_DbNull                 # (c, s): a locator, three debug lines of length 2s through c; Switch name
@@ -11625,6 +11631,7 @@
 0x008432d0 function Sg_MFIFOSpadSync          # fh v3:exact 0x008432d0; ported (ffx_glue_other::misc, m4 h4 r1): spins while g_GsRegisterSink & 0x100; returns the word last read
 0x008432e0 function Sg_MFIFOReset_008432e0 # cdecl(): waits twice while g_GsRegisterSink & 0x100, then the sink: (& ~4) | 8, 0x800000, 0x1ffff0, 0x800000, 0x800000, 0, 0, 0x1c5; SetGlobals_008431d0(0x800000)'s eax; caller Sg_MainLoop; name ours; ported (ffx_glue_other::misc, m4 h4 r1)
 0x00843360 function Sg_MFIFOSync              # fh v3:exact 0x00843360; ported (ffx_glue_other::h4b_a, m4 h4b): the 0x1234 x 0x4d3 wait on bit 8 of g_GsRegisterSink, the timeout report reads the PS2 VIF1 registers at 0x10003c00 (unmapped on the PC)
+0x00843560 function Sg_DbReport_00843560 # cdecl(): dbgPrintf(0x00b5a6c8, [0x0130334c], [0x01303350]) when the first > 3 (signed) or the second != 0; name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x00843590 function StoreComputedToGlobal_00843590 # auto-port shape (store computed to global, cdecl): t0 = u32[&0x00c4df4c]; u32[&0x00c4df4c] = ((t0 + 0xffffffff) & 0x1); return ((t0 + 0xffffffff) & 0x1); callers: ; name ours
 0x008435a0 function Sg_MatrixFromDir          # (m, dir, rows): d = |dir|, s = |(0,0,1) x d|, u = |s x d| (FFXVu0Normalize, Sg_VecCross), m = identity, then s, u, d into the rows in nibbles 2, 1, 0 of rows (0x12 from Ch_DrawMain and 0x008440f0); name ours; ported (ffx_sg::vec)
 0x00844370 function Ch_EffectPacketStoreStrip # (v): next vertex (u16 x, y, u, v) of an effect triangle strip into the ring 0x01303354 (slot count % 3); x/y with bit 15 refer back ((x & 0x7fff) * 4 / 3 words before); from the third vertex each makes a triangle with the two before (winding alternating) for Ch_EffectPacketStorePoly; null resets the count; name ours; ported (ffx_sg::control)
@@ -11642,7 +11649,7 @@
 0x00844f90 function Sg_MapSetDirSelect        # fh v3:bsim1.00 0x00844f90
 0x00844fa0 function Sg_MapSetEnableShade      # (v): byte 0x013034b9 = v; partner of Sg_MapGetEnableShade
 0x00844fb0 function Sg_MapSetName             # fh v3:exact 0x00844fb0
-0x00845000 function Sg_IdFixupAndSetThunk    # jmp 0x00844bc0 (Sg_IdFixupAndSet_00844bc0), the target the yi map code calls: yiSetIDPage, yiSetPreBgPage, yiReset, yiResetObj, yiObjReadCallback, yiMapReadMaster, yiMapSetup; was called TkClearAlarm in yi.rs (that is 0x0088c7d0); name ours
+0x00845000 function Sg_IdFixupAndSetThunk    # jmp 0x00844bc0 (Sg_IdFixupAndSet_00844bc0), the target the yi map code calls: yiSetIDPage, yiSetPreBgPage, yiReset, yiResetObj, yiObjReadCallback, yiMapReadMaster, yiMapSetup; was called TkClearAlarm in yi.rs (that is 0x0088c7d0); name ours; ported ffx_sg::m5main_mem2 (m5 main r2): jmp Sg_IdFixupAndSet_00844bc0 (one word)
 0x00845010 function Sg_SwitchDrawId           # (): 0x013034b4 (Sg_IdDrawMain's mode) cycles 0..=3; Switch name (24 bytes there too)
 0x00845030 function Sg_IdProject_00845030 # cdecl(out, v, m) -> 0/1: FFXVu0RotTransPers(ebp-0x14, m, v, 0); 0 and out = (x, y, z, 0) when z >= 0, x in 0x6600..=0x9a00 and y in 0x7000..=0x9000 (signed); callers FUN_00844490's ID draw; name ours; ported ffx_sg::m5main_dbg (m5 main b1)
 0x008450d0 function Sg_CreateVectorFromHV     # (out, h, v): (sin h cos v, sin v, cos h cos v, 1), degrees wrapped; Switch name
@@ -11671,6 +11678,7 @@
 0x00845d60 function sg_CopyField0_00845d60       # auto-port shape (store copy to field, cdecl): t0 = u32[a0]; u32[a1] = t0; return a1; callers: sg_calcenvelope_normW; name ours
 0x00845d70 function sg_Sll                    # (dst, src, n): dst = src << (n & 31) (MIPS sll), eax dst; sg_calcenvelope_normW; name ours
 0x00845d90 function Sg_IntVecToFloat          # (out, v): three i32 to f32; returns v[3] in eax; caller sg_calcenvelope_normW; name ours; ported (ffx_sg::vec)
+0x00845de0 function op_ivec4_to_fvec4_thunk_00845de0 # jmp op_ivec4_to_fvec4_007e3100 (dst, src); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x00845df0 function sg_VmaddaScalar           # (-, v, -, s): VU0 ACC (0x00c8f790) += v.xyz * s, eax v; sg_calcenvelope_normW; name ours
 0x00845e40 function sg_VmaddScalar            # (dst, v, -, -, s): dst.xyz = ACC + v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
 0x00845e80 function sg_VmulScalar             # (dst, v, s): dst.xyz = v.xyz * s, eax dst; sg_calcenvelope_normW; name ours
@@ -11834,6 +11842,9 @@
 0x0084eb10 function Light_SeveralStoresSetTableConstantsArgumentsAddresses_0084eb10 # auto-port shape (several stores: set table (constants, arguments, addresses), cdecl): u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c20)] = a1; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c24)] = a2; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c28)] = a3; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c30)] = a4; u32[((((a0 * 0x8) - a0) * 0x4) + &0x01303c34)] = a5; return a5; callers: Light_Set; name ours
 0x0084eb60 function Angle_Wrap_0084eb60       # the same code as Angle_Wrap; a copy
 0x0084ede0 function SystemOnHost              # fh v3:exact 0x0084ede0; cdecl(command, out) -> i32: DECI2 "EH" request in the uncached mirror (| 0x20000000) of 0x01303d40, reply from 0x01313d40 after spinning on 0x01303d14; faults on the PC (outside the image) as the original; ported ffx_sg::m5main_dbg (m5 main b1)
+0x0084eee0 function Sg_Deci2Open_0084eee0 # cdecl() -> [0x01303d00] >= 0 after it = sceDeci2Open(0xe000, 0x01303d00, 0x0084ed10); name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x0084ef10 function Sg_ClockTick_0084ef10 # cdecl() -> the hours (or the new weekday at midnight): debug clock 0x01323d40 frames, 0x023cbc28 s, 2c min, 30 h, 1c weekday (wraps after 6), 20 day; 0x01323d44 = 0x96 at midnight; name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
+0x0084f080 function Sg_ClockFromHost_0084f080 # cdecl() -> SystemOnHost's eax when negative, else sscanf's: host date (0x00b5af9c) scanned with 0x00b5afb8 into month 0x023cbc24, day, weekday, h, min, s; frames 30, 0x01323d44 = 0xd2f0; name ours; ported ffx_sg::m5main_mem2 (m5 main r2)
 0x0084f1c0 function Sg_ReadWholeFile_0084f1c0 # cdecl(name, &size) -> buffer: sceOpen(name, 1), sceLseek end/start, user_malloc(size + 3 rounded to 4 toward zero, cdq), sceRead, sceClose, FlushCache(0) around; name ours; ported ffx_sg::m5main_mem (m5 main r2)
 0x0084f270 function Sg_SelectMainMenu         # fh v3:exact 0x0084f270
 0x0084f320 function Sg_SelectMainMenu2        # fh switch:bsim1.00 0x7100438600
@@ -11845,11 +11856,12 @@
 0x00850820 function sg_AddY                   # fh v3:exact 0x00850820
 0x00850830 function sg_GetY                   # fh v3:bsim1.00 0x00850830
 0x00850840 function sg_SetY                      # layout: alphabetical run between sg_GetY and sg_addButton (1 unnamed in the gap); Switch 0x7100438350 sg_SetY is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00850850 function sg_addButton              # fh v3:bsim1.00 0x00850850
-0x008508a0 function sg_addButtonS             # fh v3:bsim1.00 0x008508a0
-0x008508f0 function sg_addStatic              # fh v3:exact 0x008508f0
+0x00850850 function sg_addButton              # fh v3:bsim1.00 0x00850850; cdecl(window, id, text) -> Gu_WindowControlSetHide's eax: button (0, y 0x0132412c, 0x46, 0xa), y += 0xb, id listed at 0x01323d6c; ported ffx_sg::m5main_gui (m5 main r2)
+0x008508a0 function sg_addButtonS             # fh v3:bsim1.00 0x008508a0; cdecl(window, id, text) -> as sg_addButton with height 9, y += 0xa; ported ffx_sg::m5main_gui (m5 main r2)
+0x008508f0 function sg_addStatic              # fh v3:exact 0x008508f0; cdecl(window, id, text) -> the list's old count: Gu_WindowAddStatic (height 0xa), y += 0xa, shown, then listed; ported ffx_sg::m5main_gui (m5 main r2)
 0x00850940 function sg_mainmenu_mapname       # fh v3:exact 0x00850940
 0x008509e0 function sg_make_filelist          # fh v3:exact 0x008509e0; cdecl(list, path, filter) -> user_free's eax: 64 KB text from Sg_ReadWholeFile_0084f1c0(0x00b5b004) when size < 0x10000 (signed), host probes, old list freed, array of LF-count words zeroed, list[0] = sg_split_lines_00850590; ported ffx_sg::m5main_mem (m5 main r2)
+0x00850b50 function Sg_DbgTextPut_00850b50 # cdecl(c): byte 0x01324150[len] = c, len 0x0132414c += 1 (data ref 0x00c4dfb0); name ours; ported ffx_sg::m5main_gui (m5 main r2)
 0x008510b0 function Send_DebugFont            # fh v3:bsim1.00 0x008510b0; ported ffx_sg::m5main_dbg (m5 main b1): Load1TIM(0x01325170)
 0x008510c0 function SetPrintfFunc             # fh switch:bsim1.00 0x7100449f80
 0x008510e0 function SgPrint                      # layout+callees: sorts between SetPrintfFunc and Sg_SetDebugTEX_0, and its named callees match the Switch 0x710044a680 SgPrint's (similarity 1.00: sg_vfprintf); symbols from Fahrenheit's server export
@@ -11859,6 +11871,10 @@
 0x00851910 function Sg_MouseGetMove           # fh v3:bsim1.00 0x00851910
 0x00851920 function Sg_MouseMain                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'USB mouse error.\\n'; Switch 0x71004493f0 Sg_MouseMain (symbols from Fahrenheit's server export)
 0x00851ae0 function Sg_SetMouse               # fh v3:exact 0x00851ae0
+0x00851db0 function Sg_DbgWindow_00851db0 # cdecl(): once (0x013252c9): Gu_WindowCreate(0x78, 0xa, 0x46, 0x41, 6, 0x00851e70); name ours; ported ffx_sg::m5main_gui (m5 main r2)
+0x00851de0 function Sg_DbgWindow_00851de0 # cdecl(): once (0x013252c8): Gu_WindowCreate(0x78, 0xa, 0x78, 0x46, 6, 0x00852080); name ours; ported ffx_sg::m5main_gui (m5 main r2)
+0x00851e10 function Sg_DbgWindow_00851e10 # cdecl(): once (0x013252d0): Gu_WindowCreate(0x78, 0xa, 0x96, 0x50, 6, 0x008523e0); name ours; ported ffx_sg::m5main_gui (m5 main r2)
+0x00851e40 function Sg_DbgWindow_00851e40 # cdecl(): once (0x013252cb): Gu_WindowCreate(0x78, 0xa, 0x78, 0x5a, 6, 0x00852a30); name ours; ported ffx_sg::m5main_gui (m5 main r2)
 0x00853000 function Gu_WrapAngle_00853000 # as Gu_WrapAngle_0084d330; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b10)
 0x00853140 function Gu_PacketArg_00853140 # cdecl(i) -> Sg_PacketGetPtr()[i], "" (0x00b8fbeb) from i >= *0x01325910 (signed); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x00853170 function Gu_PacketArgInt_00853170 # cdecl(i): atoi(Gu_PacketArg_00853140(i)) as a tail jump with its argument slot replaced; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
@@ -13110,7 +13126,7 @@
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts; ported in helpers (small round 5 a): AtelCommonSetUp's twin for ctrl work 0 (+0x38 = x38 or x34, +0x4c = AtelExecCtrlEvent, +0x50 = 0, AtelRequireCtrlWork's 4th word is arg 7), then Sg_EventjumpInit(max(0x24, +0xc - +0x18 - +0x16 - +0x14 + 8 + AtelGetBinHdrExpandAddChr(block))), the map camera, save dic 0, battle scene group 0; EAX AtelInitActor's
 0x008756b0 function GetFieldPtrb8_008756b0       # auto-port shape (return address of a field's target, cdecl): t0 = u32[(a0 + 0xb8)]; return (t0 + a1); callers: no direct caller; name ours
 0x008756d0 function AtelBattleSetUp # (blocks, x8s, n, x30, work, a, ctrl, callback): AtelRequireCtrlWork(ctrl, 0, a, -1); +0x34 0, +0x54 GetFieldPtrb8_008756b0, block sums into +0x0c actors/+0x14/+0x18/+0x16/+0x10 namespaces, +0x1f8 blocks, +0x1fc x8s, +0x30, +0x4c callback; set up and current; every block's actors AtelInitBasicWork(record (1, index, ctrl, k, i, AtelGetIndexWork, block, x8s[k] or 0), 0) with AtelSetMyWorkAdrs(index, work) and work += AtelGetMyWorkSize, then the other namespace entries (active 0); MsAtelChrInit(ctrl), AtelInitActor, AtelChangeCurrentCtrl(0) (EAX); caller MsAtelSetUp; ported in helpers (script round 27 c); fh v3:exact 0x00875650
-0x00875940 function Sg_EventjumpDispose_thunk_00875940 # (script r28) jmp Sg_EventjumpDispose (0x0083b420); AtelEventRemove tail-jumps here; own name
+0x00875940 function Sg_EventjumpDispose_thunk_00875940 # (script r28) jmp Sg_EventjumpDispose (0x0083b420); AtelEventRemove tail-jumps here; own name; ported ffx_sg::m5main_gui (m5 main r2)
 0x00875950 function AtelCharSetUp                # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f2d0 AtelCharSetUp's (similarity 1.00: AtelGetBinHdrExpandAddChr, AtelGetCtrlWork, AtelPs2DebugString, Sg_EventjumpInit); symbols from Fahrenheit's server export
 0x008759b0 function AtelCommonSetUp # (ctrl, a, block, x34, x8, debug): debug sources (count + 3 words each: AtelSetUpSourceDebug(e1, e2, x8, e0, 0x100000 for ctrl 0 else 0x20000)), AtelRequireCtrlWork(ctrl, block, a, -1) (+0x34 = x34), set up and current, then AtelInitBasicWork(record (active, i, ctrl, 0, i, AtelGetIndexWork(block, i), block, x8), clear) for the actors (active) and the other namespace entries, each with AtelInitSourceCodeDebugWork(i, debug); AtelInitActor's EAX; caller TOMenuAtelStart; ported in helpers (script round 27 c); layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f0b0 AtelCommonSetUp's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetActorNumber, AtelGetIndexWork, AtelGetNamespaceNumber, AtelInitActor); symbols from Fahrenheit's server export
 0x00875ad0 function AtelRemoveCtrlWork_thunk_00875ad0 # jmp AtelRemoveCtrlWork (0x0086ed40); 1 word(s) passed on; 5 bytes, Ghidra left it a label (not in the dump; symbols/sizes.tsv); ported in m5_script (M5 script list); name ours
@@ -14034,7 +14050,7 @@
 0x008a9680 function TkMenuSetDrawShadeRatioStep# (v) 0x01840880, added to g_TkMenuDrawShadeRatio each draw; own name
 0x008a9690 function TkMenuDrawLayer           # (layer): nothing when 0x0134085c == 1 and layer >= 6 (signed); else TkVU1SyncPath, TOMenuOpenPktBuffTmp, TODrawScissorXYWH(0, 0, 512, 416), TOSeqDrawLayer(1, layer), TOMenuDrawKickTmp, TkVU1SyncPath, then +0x10(w) of each of the 16 g_TkMenuWindows with u8 +0x3e == layer; caller 0x008aa290; ported in menu round 23; name ours
 0x008a9720 function TkMenuExchangePlayerPos   # fh v3:exact 0x008a96d0; cdecl(a, b): swaps menu party slots a and b (g_TkMenuPlayers) and the save party: b >= g_TkMenuPlayerPartyMask (signed) looks players[b] up in MsGetSaveOutParty(&n) (found at j: save slot j+3, else no swap), otherwise slot b (MsGetSaveInParty called, list unused; negative: no swap); MsExchangeSaveParty(players[a], slot), bytes swapped; MenuParty_RefreshMask() always; the count goes into its b argument slot; ported in menu round 23
-0x008a97e0 function eiAbmParaGet               # (), the sphere grid's save data reread after a load (TkMenuCtrlSaveLoad states 0x25/0x68); no dump row; name from Ghidra's call
+0x008a97e0 function eiAbmParaGet               # (), the sphere grid's save data reread after a load (TkMenuCtrlSaveLoad states 0x25/0x68); no dump row; name from Ghidra's call; jmp 0x00a54860 (the other eiAbmParaGet); ported ffx_sg::m5main_gui (m5 main r2)
 0x008a9820 function TkMenuGetArmor            # (chr) ply_save u8 +0x2e; Switch name, alphabetical slot (pairs with TkMenuGetWeapon +0x2d)
 0x008a9840 function TkMenuGetPlayerStep       # () -> i8 g_TkMenuPlayerStep, sign-extended
 0x008a9860 function TkMenuGetCurrentPlayer    # fh v3:bsim1.00+call.cs 0x008a9810 stdcall
@@ -16584,7 +16600,9 @@
 0x00941820 function Gui_AddrOfGlobal025d5fa0_00941820 # auto-port shape (return address of global, cdecl): return &0x025d5fa0; callers: Gui_MovieDebugProc; name ours
 0x00941830 function movie_view # layout+callees: sorts between Gui_NameinputProc and sasa_menu, and its named callees match the Switch 0x7100565680 movie_view's (similarity 1.00: Gu_WindowCreate); symbols from Fahrenheit's server export; ported (ffx_movie::m5_movie, m5 small b5): unless byte 0x0193c151: Gu_WindowCreate(0x64, 0x1e, 0xdc, 0xbe, 0xe, 0x0093dc00)
 0x00941c00 function sa_camera_disp_sub           # layout+callees: sorts between movie_view and sasa_menu, and its named callees match the Switch 0x7100567210 sa_camera_disp_sub's (similarity 0.62: FFXSamp0TransMatrix, FFXSamp0UnitMatrix, FlushCache, MsMulMatrix, sceGsSyncPath); symbols from Fahrenheit's server export
-0x00942110 function sasa_menu                 # fh v3:exact 0x00942110
+0x00942030 function Sg_StrCopy_00942030 # cdecl(dst, src) -> the address of src's 0: strcpy; name ours; ported ffx_sg::m5main_gui (m5 main r2)
+0x00942110 function sasa_menu                 # fh v3:exact 0x00942110; cdecl(): Gu_WindowCreate(0x64, 0x40, 0xf0, 0x6a, 0xe, 0x0093ee10) unless 0x0193c150 (its window sets it); ported ffx_sg::m5main_gui (m5 main r2)
+0x00942320 function Sg_NameListClear_00942320 # cdecl() -> the entry past the last: and dword 0xfd (imm32) on each 12-byte entry of list [0x025d5f90] (entries 0x025d5f44[], signed counts 0x025d5f4c[]), 0x025d5f7c = -1; name ours; ported ffx_sg::m5main_gui (m5 main r2)
 0x00942360 function set_path_name                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'ms->filename != NULL'; Switch 0x7100564650 set_path_name (symbols from Fahrenheit's server export)
 0x009428a0 function MemSystem_Ensure # (): 0x009428b0 (sets g_MemSystem = 0x0193c390) unless g_MemSystem is set; called first by malloc_pool_init; name ours
 0x00942a40 function UserHeap_Init # thiscall(heap; arena, a, b), ret 0xc -> heap: +0 arena rounded up to 4 KiB, +4 a, +8 b, +0xc 0 (arenas), +0x10 0x10, +0x14 0; malloc_pool_init passes (0x30000000, 0, 0x2ff00000); name ours
@@ -16597,6 +16615,7 @@
 0x00943480 function UserHeap_BlockSize        # thiscall(heap, p), ret 4: the block's size - 16, or -1 outside every arena; name ours
 0x009434c0 function UserHeap_InsertFree       # thiscall(heap, node, arena), ret 8: node into arena's bin (16-byte heads at arena + 16 bin): by size then address, bin 254 by address; name ours
 0x009435a0 function UserHeap_RemoveFree       # thiscall(heap, node), ret 4: unlinks a free node (+4 prev, +8 next), clears them; leaves node in eax; name ours
+0x009436b0 function jmp_00947cc0_009436b0 # jmp 0x00947cc0 (no words; entry > Game_Main > MemSystem_Ensure); name ours; ported ffx_sg::m5main_gui (m5 main r2)
 0x009437f0 function Get_g_CommittedBytes_009437f0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0193cd48]; return t0; callers: ; name ours
 0x00943800 function Get_g_ReservedBytes_00943800 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0193cd44]; return t0; callers: ; name ours
 0x009438b0 function VirtualAlloc_Commit_RW    # fh v3:exact+call.cs 0x009438b0 cdecl _VirtualAlloc_Commit_RW
@@ -17602,7 +17621,7 @@
 0x00a54560 function eiAbmDrawFrame_00a54560 # (), from 0x008e2720 (the sphere grid menu's draw): nothing while byte g_Abmap+0x115ba; else eiAbmDrawImmediate_00a54660 when byte +0x115bb (one-shot, then cleared) or eiAbmDraw; eax = g_Abmap (reread); name ours; ported (ffx_sg::abmap::bridge::ei_abm_draw_frame, pc round 4)
 0x00a545a0 function eiAbmDraw                 # fh v3:exact 0x00a545a0; (): g_PppPacketPos = 0x01760870; unless g_GraphicSkipFrame: renderer submits 0x00a8ecf0/ed60/ed40/ed00/ed20, AbmapGridMarkUVs, fade overlay 0x00a4c460(ftol((1 - f32 +0x115e8) * 128), 0x4300) when the fade != 1 (NaN too), AbmapDrawChrPanel, AbmapDrawChrLabels, AbmapDrawPanels, 0x00a8ecf0 again, the +0x115ac callback while i16 g_AbmapPad+0x2700 < 0, +0x116a8 = -2; eax g_Abmap (skipped: the caller's); ported (ffx_sg::abmap::bridge::ei_abm_draw, pc round 4)
 0x00a54660 function eiAbmDrawImmediate_00a54660 # (), from eiAbmDrawFrame_00a54560: g_GraphicSkipFrame saved and cleared around it; g_PppPacketPos = 0x01760870, the 10 passes AbmapProjectGrid, 0x00a497b0, AbmapDrawMap, AbmapDrawNodesEamap, AbmapDrawBoard, AbmapDrawLinks, AbmapDrawGridMarks, AbmapDrawNodeSpheres, AbmapDrawNodeHalos, AbmapDrawChrRings, the fade overlay and chr panel/labels as eiAbmDraw, the pad callback, then AbmapDrawPanels (its eax returned); name ours; ported (ffx_sg::abmap::bridge::ei_abm_draw_immediate, pc round 4)
-0x00a54720 function eiAbmExit                 # fh v3:exact 0x00a54720
+0x00a54720 function eiAbmExit                 # fh v3:exact 0x00a54720; cdecl() -> graphicActivateLoadingScreen's eax: user_free of 0x01a860ec and 0x01a860f0, graphicAbmapDestory, graphicSetFlipVsnc(1), tail jmp; ported ffx_sg::m5main_gui (m5 main r2)
 0x00a54750 function ReturnConst2_00a54750        # auto-port shape (return constant, cdecl): return 0x2; callers: ; name ours
 0x00a547e0 function GetGlobal01a85f70_00a547e0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01a85f70]; return t0; callers: ; name ours
 0x00a54810 function eiAbmLoad                 # fh v3:exact 0x00a54810; (): sphere/panel .bin sizes by getExcelBinSize into a 0x25800 user_malloc block (freed), blocks of those sizes into 0x01a860e4 / g_AbmapNodeKinds, then tail-jumps to eiAbmSetLang; ported (ffx_sg::abmap, main round 17)

@@ -11,9 +11,11 @@ use super::{StackFrame, mem, ported};
 use ffx_sg::m5main_app::bridge as app;
 use ffx_sg::m5main_dbg::bridge as dbg;
 use ffx_sg::m5main_dbg2::bridge as dbg2;
+use ffx_sg::m5main_gui::bridge as gui;
 use ffx_sg::m5main_init::bridge as init;
 use ffx_sg::m5main_loop::{self as lp, bridge as main_loop};
 use ffx_sg::m5main_mem::bridge as sgmem;
+use ffx_sg::m5main_mem2::bridge as mem2;
 use ffx_sg::m5main_task::bridge as task;
 
 ported! {
@@ -517,6 +519,182 @@ ported! {
     /// `Sg_CaptureSetMode(on)`.
     Sg_CaptureSetMode @ 0x0083_a670 => extern "C" fn capture_set_mode(on: u32) {
         sgmem::capture_set(&mut mem(), sgmem::CAPTURE_INTERLACED, on);
+    }
+
+    // ---- the Sg_Mem debug side, the host files, small wrappers (round 2) ----
+    /// `Sg_PcWrite(p, n, name)`: the name in this frame.
+    Sg_PcWrite @ 0x0083_afe0 => extern "C" fn pc_write(p: u32, n: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<{ mem2::PC_WRITE_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + mem2::PC_WRITE_FRAME;
+        mem2::pc_write(&mut mem(), ebp, p, n, name)
+    }
+    /// `Sg_PcRead_0083b1d0(name, mode)`: the path in this frame.
+    Sg_PcRead_0083b1d0 @ 0x0083_b1d0 => extern "C" fn pc_read(name: u32, mode: u32) -> u32 {
+        let mut f = StackFrame::<{ mem2::PC_READ_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + mem2::PC_READ_FRAME;
+        mem2::pc_read(&mut mem(), ebp, name, mode)
+    }
+    /// `Sg_MemCheckMCB(block)`.
+    Sg_MemCheckMCB @ 0x0083_b960 => extern "C" fn check_mcb(block: u32) -> u32 {
+        mem2::check_mcb(&mut mem(), block)
+    }
+    /// `Sg_MemDumpMCB(block, index)`.
+    Sg_MemDumpMCB @ 0x0083_bbc0 => extern "C" fn dump_mcb(block: u32, index: u32) -> u32 {
+        mem2::dump_mcb(&mut mem(), block, index)
+    }
+    /// `Sg_MemDump_0083c630(heap)`: the closing line in the argument
+    /// slot, as the original leaves it.
+    Sg_MemDump_0083c630 @ 0x0083_c630 => extern "C" fn heap_dump(heap: u32; slots: u32) -> u32 {
+        mem2::heap_dump(&mut mem(), heap, slots)
+    }
+    /// `Sg_MemCheckHeap(heap, file, line)`.
+    Sg_MemCheckHeap @ 0x0083_b7d0 => extern "C" fn check_heap(heap: u32, file: u32, line: u32) {
+        mem2::check_heap(&mut mem(), heap, file, line);
+    }
+    /// `Sg_MemCheck(id, file, line)`: the heap's record in the first
+    /// argument slot, as the original leaves it.
+    Sg_MemCheck @ 0x0083_b7b0 => extern "C" fn mem_check(id: u32, file: u32, line: u32; slots: u32) -> u32 {
+        mem2::mem_check(&mut mem(), id, file, line, slots)
+    }
+    /// `Sg_MemGetSize(p)`.
+    Sg_MemGetSize @ 0x0083_c050 => extern "C" fn mem_get_size(p: u32) -> u32 {
+        mem2::mem_get_size(&mut mem(), p)
+    }
+    /// `Sg_ResourceDump_0083ff20(res)`: the newline in the argument slot.
+    Sg_ResourceDump_0083ff20 @ 0x0083_ff20 => extern "C" fn resource_dump(res: u32; slots: u32) -> u32 {
+        mem2::resource_dump(&mut mem(), res, slots)
+    }
+    /// `Sg_MemDump(heap)`: the cache line in the argument slot.
+    Sg_MemDump @ 0x0083_bb50 => extern "C" fn mem_dump(heap: u32; slots: u32) -> u32 {
+        mem2::mem_dump(&mut mem(), heap, slots)
+    }
+    /// `make_yi_font16()` (heap 0 relinked).
+    make_yi_font16 @ 0x0083_c5a0 => extern "C" fn relink_heap0() -> u32 {
+        mem2::relink_heap0(&mut mem())
+    }
+    /// `Sg_MemGet(mode)`.
+    Sg_MemGet @ 0x0083_bff0 => extern "C" fn mem_get(mode: u32) -> u32 {
+        mem2::mem_get(&mut mem(), mode)
+    }
+    /// `Sg_MemUsage_0083c0f0(out)`.
+    Sg_MemUsage_0083c0f0 @ 0x0083_c0f0 => extern "C" fn mem_usage(out: u32) -> u32 {
+        mem2::mem_usage(&mut mem(), out)
+    }
+    /// `Sg_MemSetCurrentAddr(p)`.
+    Sg_MemSetCurrentAddr @ 0x0083_c4e0 => extern "C" fn set_current_addr(p: u32) {
+        mem2::set_current_addr(&mut mem(), p);
+    }
+    /// `Sg_FreeA(p)`.
+    Sg_FreeA @ 0x0083_f090 => extern "C" fn free_a(p: u32) -> u32 {
+        mem2::free_a(&mut mem(), p)
+    }
+    /// `Sg_MallocA(size, align)`.
+    Sg_MallocA @ 0x0083_f0a0 => extern "C" fn malloc_a(size: u32, align: u32) -> u32 {
+        mem2::malloc_a(&mut mem(), size, align)
+    }
+    /// `jmp Cache_Clear`.
+    Cache_Clear_thunk_00840e40 @ 0x0084_0e40 => extern "C" fn cache_clear_thunk() -> u32 {
+        mem2::cache_thunk(&mut mem(), mem2::CACHE_CLEAR)
+    }
+    /// `jmp Cache_ClearFast`.
+    Cache_ClearFast_thunk_00840e50 @ 0x0084_0e50 => extern "C" fn cache_clear_fast_thunk() -> u32 {
+        mem2::cache_thunk(&mut mem(), mem2::CACHE_CLEAR_FAST)
+    }
+    /// `Sg_DbInitTables_00841100()`.
+    Sg_DbInitTables_00841100 @ 0x0084_1100 => extern "C" fn db_init_tables() {
+        mem2::db_init_tables(&mut mem());
+    }
+    /// `Sg_DbInitAll()`.
+    Sg_DbInitAll @ 0x0084_1440 => extern "C" fn db_init_all() {
+        mem2::db_init_all(&mut mem());
+    }
+    /// `Sg_DbReport_00843560()`.
+    Sg_DbReport_00843560 @ 0x0084_3560 => extern "C" fn db_report() {
+        mem2::db_report(&mut mem());
+    }
+    /// `jmp Sg_IdFixupAndSet_00844bc0`.
+    Sg_IdFixupAndSetThunk @ 0x0084_5000 => extern "C" fn id_fixup_and_set_thunk(map: u32) -> u32 {
+        mem2::id_fixup_and_set_thunk(&mut mem(), map)
+    }
+    /// `jmp op_ivec4_to_fvec4_007e3100`.
+    op_ivec4_to_fvec4_thunk_00845de0 @ 0x0084_5de0 => extern "C" fn ivec4_to_fvec4_thunk(dst: u32, src: u32) -> u32 {
+        mem2::ivec4_to_fvec4_thunk(&mut mem(), dst, src)
+    }
+    /// `Sg_Deci2Open_0084eee0()`.
+    Sg_Deci2Open_0084eee0 @ 0x0084_eee0 => extern "C" fn deci2_open() -> u32 {
+        mem2::deci2_open(&mut mem())
+    }
+    /// `Sg_ClockFromHost_0084f080()`: the reply in this frame.
+    Sg_ClockFromHost_0084f080 @ 0x0084_f080 => extern "C" fn clock_from_host() -> u32 {
+        let mut f = StackFrame::<{ mem2::CLOCK_FRAME as usize / 4 }>::new();
+        let ebp = f.at() + mem2::CLOCK_FRAME;
+        mem2::clock_from_host(&mut mem(), ebp)
+    }
+    /// `Sg_ClockTick_0084ef10()`.
+    Sg_ClockTick_0084ef10 @ 0x0084_ef10 => extern "C" fn clock_tick() -> u32 {
+        mem2::clock_tick(&mut mem())
+    }
+
+    // ---- the debug GUI's menu helpers, small thunks (round 2) ----
+    /// `sg_addButton(window, id, text)`.
+    sg_addButton @ 0x0085_0850 => extern "C" fn add_button(window: u32, id: u32, text: u32) -> u32 {
+        gui::add_button(&mut mem(), window, id, text, 0xa, 0xb)
+    }
+    /// `sg_addButtonS(window, id, text)`.
+    sg_addButtonS @ 0x0085_08a0 => extern "C" fn add_button_s(window: u32, id: u32, text: u32) -> u32 {
+        gui::add_button(&mut mem(), window, id, text, 9, 0xa)
+    }
+    /// `sg_addStatic(window, id, text)`.
+    sg_addStatic @ 0x0085_08f0 => extern "C" fn add_static(window: u32, id: u32, text: u32) -> u32 {
+        gui::add_static(&mut mem(), window, id, text)
+    }
+    /// `Sg_DbgWindow_00851db0()`.
+    Sg_DbgWindow_00851db0 @ 0x0085_1db0 => extern "C" fn window_00851db0() {
+        gui::open_once(&mut mem(), &gui::WINDOWS[0].1);
+    }
+    /// `Sg_DbgWindow_00851de0()`.
+    Sg_DbgWindow_00851de0 @ 0x0085_1de0 => extern "C" fn window_00851de0() {
+        gui::open_once(&mut mem(), &gui::WINDOWS[1].1);
+    }
+    /// `Sg_DbgWindow_00851e10()`.
+    Sg_DbgWindow_00851e10 @ 0x0085_1e10 => extern "C" fn window_00851e10() {
+        gui::open_once(&mut mem(), &gui::WINDOWS[2].1);
+    }
+    /// `Sg_DbgWindow_00851e40()`.
+    Sg_DbgWindow_00851e40 @ 0x0085_1e40 => extern "C" fn window_00851e40() {
+        gui::open_once(&mut mem(), &gui::WINDOWS[3].1);
+    }
+    /// `sasa_menu()`.
+    sasa_menu @ 0x0094_2110 => extern "C" fn sasa_menu() {
+        gui::open_once(&mut mem(), &gui::WINDOWS[4].1);
+    }
+    /// `Sg_DbgTextPut_00850b50(c)`.
+    Sg_DbgTextPut_00850b50 @ 0x0085_0b50 => extern "C" fn text_put(c: u32) {
+        gui::text_put(&mut mem(), c);
+    }
+    /// `jmp Sg_EventjumpDispose`.
+    Sg_EventjumpDispose_thunk_00875940 @ 0x0087_5940 => extern "C" fn eventjump_dispose_thunk() -> u32 {
+        gui::thunk(&mut mem(), gui::EVENTJUMP_DISPOSE)
+    }
+    /// `jmp eiAbmParaGet` (`0x00a54860`).
+    eiAbmParaGet @ 0x008a_97e0 => extern "C" fn abm_para_get_thunk() -> u32 {
+        gui::thunk(&mut mem(), gui::ABM_PARA_GET)
+    }
+    /// `jmp 0x00947cc0`.
+    jmp_00947cc0_009436b0 @ 0x0094_36b0 => extern "C" fn thunk_009436b0() -> u32 {
+        gui::thunk(&mut mem(), gui::TARGET_00947CC0)
+    }
+    /// `eiAbmExit()`.
+    eiAbmExit @ 0x00a5_4720 => extern "C" fn abm_exit() -> u32 {
+        gui::abm_exit(&mut mem())
+    }
+    /// `Sg_StrCopy_00942030(dst, src)`.
+    Sg_StrCopy_00942030 @ 0x0094_2030 => extern "C" fn str_copy(dst: u32, src: u32) -> u32 {
+        gui::str_copy(&mut mem(), dst, src)
+    }
+    /// `Sg_NameListClear_00942320()`.
+    Sg_NameListClear_00942320 @ 0x0094_2320 => extern "C" fn name_list_clear() -> u32 {
+        gui::name_list_clear(&mut mem())
     }
 }
 
