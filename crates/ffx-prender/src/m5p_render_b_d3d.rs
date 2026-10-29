@@ -490,3 +490,81 @@ pub mod job {
         b
     }
 }
+
+/// The texture parameter set's callees: `ClusterManager_GetInstance`
+/// (cdecl), `ClusterManager_getPClusterByName(manager; name)`,
+/// `Phyre_PClusterHeader_iterSeek_00464f30(iterator)`, `PArray_Data_004d45a0`,
+/// `ShaderParams_FindByName(shader; name)`,
+/// `Phyre_PParameterBuffer_setTextureChecked_0056e670(buffer; desc, &value)`
+/// and `g_ClassDesc_PTexture2D_00ca37d0`.
+pub const CLUSTERS: u32 = 0x0069_a1a0;
+pub const CLUSTER_BY_NAME: u32 = 0x0069_b4b0;
+pub const ITER_SEEK: u32 = 0x0046_4f30;
+pub const ARRAY_DATA: u32 = 0x004d_45a0;
+pub const FIND_PARAM: u32 = 0x0056_cbf0;
+pub const SET_TEXTURE: u32 = 0x0056_e670;
+pub const TEXTURE_2D_CLASS: u32 = 0x00ca_37d0;
+
+pub mod texture {
+    //! `0x006df950` over game memory.
+
+    use super::{
+        ARRAY_DATA, CLUSTER_BY_NAME, CLUSTERS, FIND_PARAM, ITER_SEEK, SET_TEXTURE, TEXTURE_2D_CLASS,
+    };
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `Phyre_CharacterShaderManager_setShaderParameterTexture(manager,
+    /// param, cluster)` (cdecl; its one caller reads no `eax`): the first
+    /// 2D texture of the cluster named `cluster` (a texture iterator over
+    /// the cluster's object list `+0x1c` in the frame `ebp - 0x28`: five
+    /// result words 0, the list, its first node or 0, the class) set as
+    /// the parameter `param` of every shader of the array `manager + 0x10`
+    /// that has it, the value `{0x42, 0, 0, texture}` at `ebp - 0x18`
+    /// (`ebp - 4` holds the texture: result words 4 + 0, `ebp - 8` the
+    /// array); nothing without the cluster or a texture.
+    pub fn set_texture(h: &mut impl Host, ebp: u32, manager: u32, param: u32, cluster: u32) {
+        let clusters = h.call_sym(CLUSTERS, Conv::Cdecl, &[]);
+        let c = h.call_sym(CLUSTER_BY_NAME, Conv::Thiscall(clusters), &[cluster]);
+        if c == 0 {
+            return;
+        }
+        let list = c.wrapping_add(0x1c);
+        let first: u32 = h.read(list);
+        let class = h.rebase(TEXTURE_2D_CLASS);
+        let it = ebp - 0x28;
+        h.write(
+            it,
+            [
+                0u32,
+                0,
+                0,
+                0,
+                0,
+                list,
+                if first == list { 0 } else { first },
+                class,
+            ],
+        );
+        h.call_sym(ITER_SEEK, Conv::Thiscall(it), &[]);
+        if h.read::<u32>(ebp - 0x1c) == 0 {
+            return;
+        }
+        let tex = h.read::<u32>(ebp - 0x18).wrapping_add(h.read(ebp - 0x28));
+        h.write(ebp - 4, tex);
+        let arr: u32 = h.read(manager + 0x10);
+        h.write(ebp - 8, arr);
+        let n = h.read::<u32>(arr) & 0x7fff_ffff;
+        for i in 0..n {
+            let data = h.call_sym(ARRAY_DATA, Conv::Thiscall(arr), &[]);
+            let e: u32 = h.read(data.wrapping_add(4 * i));
+            let shader: u32 = h.read(e);
+            let p = h.call_sym(FIND_PARAM, Conv::Thiscall(shader), &[param]);
+            if p != 0 {
+                let tex: u32 = h.read(ebp - 4);
+                h.write(ebp - 0x18, [0x42u32, 0, 0, tex]);
+                let buffer: u32 = h.read(e + 4);
+                h.call_sym(SET_TEXTURE, Conv::Thiscall(buffer), &[p, ebp - 0x18]);
+            }
+        }
+    }
+}

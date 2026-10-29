@@ -4538,3 +4538,78 @@ fn renderer_job_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn shader_texture_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // no cluster; no texture; an empty cluster list; two shaders with
+        // the parameter (count bit 31 set); shaders without it; no shaders
+        for (case, cluster, found, empty, count, param) in [
+            (0u32, false, true, false, 2u32, 0x77u32),
+            (1, true, false, false, 2, 0x77),
+            (2, true, false, true, 2, 0x77),
+            (5, true, true, false, 0x8000_0002, 0x77),
+            (3, true, true, false, 2, 0),
+            (4, true, true, false, 0, 0x77),
+        ] {
+            let c = t.junk(0x40, 11);
+            if empty {
+                t.w32(c + 0x1c, c + 0x1c);
+            }
+            t.stub(d3d::CLUSTERS, false, 0, 0, 0x6600);
+            t.stub(
+                d3d::CLUSTER_BY_NAME,
+                true,
+                1,
+                1,
+                if cluster { c } else { 0 },
+            );
+            // the iterator: result word 3 (found), word 4 and word 0 (the
+            // texture's parts), then ret
+            let mut code = vec![0xc7, 0x41, 0x0c];
+            code.extend(u32::from(found).to_le_bytes());
+            code.extend([0xc7, 0x41, 0x10]);
+            code.extend(0x3000u32.to_le_bytes());
+            code.extend([0xc7, 0x01]);
+            code.extend(0x0123u32.to_le_bytes());
+            code.push(0xc3);
+            let at_code = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), at_code);
+            let at = t.rebase(d3d::ITER_SEEK);
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            let mut j = vec![0xe9];
+            j.extend(at_code.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+            let data = t.zeros(8);
+            for k in 0..2 {
+                let e = t.zeros(8);
+                t.w32(e, 0x100 + k);
+                t.w32(e + 4, 0x200 + k);
+                t.w32(data + 4 * k, e);
+            }
+            t.stub(d3d::ARRAY_DATA, true, 0, 0, data);
+            t.stub(d3d::FIND_PARAM, true, 1, 1, param);
+            t.stub(d3d::SET_TEXTURE, true, 2, 2, 0x45);
+            let arr = t.zeros(8);
+            t.w32(arr, count);
+            let mgr = t.junk(0x20, 12);
+            t.w32(mgr + 0x10, arr);
+            let ebp = t.ebp_for(3);
+            t.check_frame(
+                &format!("{label}: texture {case}"),
+                0x006d_f950,
+                Conv::Cdecl,
+                &[mgr, 0x5a5a, 0x6b6b],
+                ebp,
+                0x40,
+                (0x28, 0),
+                |g| {
+                    d3d::texture::set_texture(g, ebp, mgr, 0x5a5a, 0x6b6b);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}

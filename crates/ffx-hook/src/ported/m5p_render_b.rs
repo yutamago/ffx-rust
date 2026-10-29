@@ -1294,4 +1294,10 @@ ported! {
         let ebp = f.at() + 0x14;
         ffx_prender::m5p_render_b_d3d::job::run(&mut mem(), ebp, slots + 8, this, index)
     }
+    /// `Phyre_CharacterShaderManager_setShaderParameterTexture`: the iterator and the value in this frame.
+    Phyre_CharacterShaderManager_setShaderParameterTexture @ 0x006d_f950 => extern "C" fn e_006df950(manager: u32, param: u32, cluster: u32) {
+        let mut f = super::StackFrame::<10>::new();
+        let ebp = f.at() + 0x28;
+        ffx_prender::m5p_render_b_d3d::texture::set_texture(&mut mem(), ebp, manager, param, cluster);
+    }
 }
