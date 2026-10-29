@@ -204,6 +204,43 @@ pub const EVENT_FONTS: FontPaths = FontPaths {
 /// The other languages' replacement (`what`, `with`).
 pub const FONT_OTHER: (u32, u32) = (0x00b6_2ebc, 0x00b4_3b18);
 
+/// Round 3, batch 3: the glyph packets. `TOGsXY2`; the doubles
+/// `0x00b92270` (2.0), `0x00b41d20` (5.0), `0x00b922a0` (7.0),
+/// `0x00b41d00` (1.5); the floats `0x00b47de8` (12.0), `0x00b92314`,
+/// `0x00b54f90`, `0x00b9231c` (a glyph's size and UV box); the movie
+/// fonts' `TOMakePktFontLItalicEdge`/`Font` and
+/// `TOMakePktMovieFont1612Edge`/`Font` (cdecl, two words).
+pub const GS_XY2: u32 = 0x008f_aca0;
+pub const D_2: u32 = 0x00b9_2270;
+pub const D_5: u32 = 0x00b4_1d20;
+pub const D_7: u32 = 0x00b9_22a0;
+pub const D_1_5: u32 = 0x00b4_1d00;
+pub const F_12: u32 = 0x00b4_7de8;
+pub const GLYPH_BOX: [u32; 3] = [0x00b9_2314, 0x00b5_4f90, 0x00b9_231c];
+pub const ITALIC_EDGE: u32 = 0x008f_ce90;
+pub const ITALIC_FONT: u32 = 0x008f_d0a0;
+pub const MOVIE_EDGE: u32 = 0x008f_d9f0;
+pub const MOVIE_FONT: u32 = 0x008f_dc00;
+/// The UI quads: `graphicDrawUIElement`, `BeginScissor_XY`,
+/// `TOGetShapTextureName`, `TOGetImageWH`, the doubles 512.0
+/// (`0x00b41d38`) and 416.0 (`0x00b41d30`); the scroll bar's
+/// `FUN_008fb090`; `FUN_0092cc40`'s cells `0x00c8f980`/`0x00c8f970`,
+/// `VFX_Copy16From`, `VFX_Copy16To_0072f3c0`, `pppVu0MulX_007500d0`,
+/// `VFX_Copy16To` (cdecl).
+pub const DRAW_UI_ELEMENT: u32 = 0x0063_eee0;
+pub const BEGIN_SCISSOR: u32 = 0x008e_58e0;
+pub const SHAP_TEXTURE_NAME: u32 = 0x008a_c8c0;
+pub const IMAGE_WH: u32 = 0x008a_c400;
+pub const D_512: u32 = 0x00b4_1d38;
+pub const D_416: u32 = 0x00b4_1d30;
+pub const UI_RECT: u32 = 0x008f_b090;
+pub const VEC_CELL: u32 = 0x00c8_f980;
+pub const VEC_CELL_V: u32 = 0x00c8_f970;
+pub const COPY16_FROM_SYM: u32 = 0x0071_0e30;
+pub const COPY16_TO_B: u32 = 0x0072_f3c0;
+pub const VU0_MUL_X: u32 = 0x0075_00d0;
+pub const COPY16_TO_SYM: u32 = 0x0071_0e70;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -1184,5 +1221,406 @@ pub mod bridge {
             }
         }
         cdecl(h, super::USER_FREE, &[s])
+    }
+    // ---- round 3, batch 3: glyph packets ----
+
+    use ffx_bridge::x87;
+
+    /// The f32 at `p`, widened (`fld dword`).
+    fn f32_at(h: &impl Host, p: u32) -> f64 {
+        x87::load(h.read(p))
+    }
+
+    /// The f64 at the `ffx.sym` address `sym` (`fadd qword`).
+    fn f64_global(h: &impl Host, sym: u32) -> f64 {
+        f64::from_bits(h.read::<u64>(h.rebase(sym)))
+    }
+
+    /// `ftol2_sse` of `x`.
+    fn ftol(h: &impl Host, x: f64) -> u32 {
+        ffx_bridge::x87::ftol(h, x)
+    }
+
+    /// The four header words both glyph passes start with (a GS tag and
+    /// the alpha/test registers 0x44, 0x42, 0x47).
+    const GLYPH_HEAD: [u32; 12] = [
+        0x8001,
+        0x90ab_4000,
+        0x3431_eeee,
+        4,
+        0x44,
+        0x80,
+        0x42,
+        0,
+        0x0003_000f,
+        0,
+        0x47,
+        0,
+    ];
+
+    /// `FUN_00905ef0(pos, glyph)`: a glyph's edge pass at `g_TOPktCursor`
+    /// (20 words: the header, TEX0 `0xa1313d80`/`0x2005d705` and a CLUT
+    /// word pair built from the glyph's `i16 +4` (plus twice the low
+    /// nibble of `pos + 0x1b`) and `i16 +2`), then `TOGsWords4` of the
+    /// colour bytes `pos[0..4]`, the UV and screen corners
+    /// (`TOGsXY2(ftol(glyph +8), ftol(+0xc))`, `TOGsXYZ2Offset(ftol(pos
+    /// +4), ftol(+8))`, `TOGsXY2(ftol(+0x10), ftol(+0x14))`,
+    /// `TOGsXYZ2Offset(ftol(+0x1c + pos.x), ftol(+0x20 + pos.y))`) and the
+    /// tail jump to `TOCtrlPkt`.
+    pub fn glyph_edge(h: &mut impl Host, pos: u32, glyph: u32) -> u32 {
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let at = put_words(h, p, &GLYPH_HEAD);
+        let at = put_words(h, at, &[0xa131_3d80, 0x2005_d705, 6, 0]);
+        let nibble = u32::from(h.read::<u8>(pos.wrapping_add(0x1b))) & 0xf;
+        let page = i32::from(h.read::<i16>(glyph.wrapping_add(4)))
+            .cast_unsigned()
+            .wrapping_add(nibble * 2);
+        let base = i32::from(h.read::<i16>(glyph.wrapping_add(2)));
+        let sign = if base < 0 { u32::MAX } else { 0 };
+        let low = base.cast_unsigned() | 0x5d70_0000;
+        // the 64-bit word (page << 4 | sign) : low, shifted left by 20
+        let high = (((page << 4) | sign) << 20) | (low >> 12);
+        h.write(cell, at.wrapping_add(0x10));
+        put_words(h, at, &[low << 20, high, 0x16, 0]);
+        let mut colour = [0u32; 4];
+        for (k, c) in (0u32..).zip(&mut colour) {
+            *c = u32::from(h.read::<u8>(pos.wrapping_add(k)));
+        }
+        cdecl(h, super::GS_WORDS4, &colour);
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(8)),
+            f32_at(h, glyph.wrapping_add(0xc)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let (x, y) = (
+            f32_at(h, pos.wrapping_add(4)),
+            f32_at(h, pos.wrapping_add(8)),
+        );
+        let (x, y) = (ftol(h, x), ftol(h, y));
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(0x10)),
+            f32_at(h, glyph.wrapping_add(0x14)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let x = x87::add(
+            f32_at(h, glyph.wrapping_add(0x1c)),
+            f32_at(h, pos.wrapping_add(4)),
+        );
+        let y = x87::add(
+            f32_at(h, glyph.wrapping_add(0x20)),
+            f32_at(h, pos.wrapping_add(8)),
+        );
+        let (x, y) = (ftol(h, x), ftol(h, y));
+        let r = cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        ctrl_pkt(h, r)
+    }
+
+    /// `FUN_009060f0(pos, glyph)`: the glyph's fill pass: the header, TEX0
+    /// `0xa1313d80`/`0x4005d785` and `0xa1413d80`/`page << 24 | 0x5d785`
+    /// (page: `i16 glyph +4` plus twice the high nibble of the byte `pos +
+    /// 0x1b`) at `g_TOPktCursor`, `TOGsWords4(0x80 x4)`, the UV and
+    /// screen corners (offset by 2.0 and 1.0: the shadow) and the tail
+    /// jump to `TOCtrlPkt`.
+    pub fn glyph_fill(h: &mut impl Host, pos: u32, glyph: u32) -> u32 {
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let at = put_words(h, p, &GLYPH_HEAD);
+        let at = put_words(h, at, &[0xa131_3d80, 0x4005_d785, 6, 0]);
+        let nibble = u32::from(h.read::<u8>(pos.wrapping_add(0x1b))) >> 4;
+        let page = i32::from(h.read::<i16>(glyph.wrapping_add(4)))
+            .cast_unsigned()
+            .wrapping_add(nibble * 2);
+        let at = put_words(h, at, &[0xa141_3d80, (page << 24) | 0x5_d785, 6, 0]);
+        h.write(cell, at);
+        cdecl(h, super::GS_WORDS4, &[0x80, 0x80, 0x80, 0x80]);
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(8)),
+            f32_at(h, glyph.wrapping_add(0xc)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let two = f64_global(h, super::D_2);
+        let x = x87::add(f32_at(h, pos.wrapping_add(4)), two);
+        let y = x87::add(f32_at(h, pos.wrapping_add(8)), 1.0);
+        let (x, y) = (ftol(h, x), ftol(h, y));
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(0x10)),
+            f32_at(h, glyph.wrapping_add(0x14)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let x = x87::add(
+            f32_at(h, glyph.wrapping_add(0x1c)),
+            f32_at(h, pos.wrapping_add(4)),
+        );
+        let x = x87::add(x, two);
+        let y = x87::add(
+            f32_at(h, glyph.wrapping_add(0x20)),
+            f32_at(h, pos.wrapping_add(8)),
+        );
+        let y = x87::add(y, 1.0);
+        let (x, y) = (ftol(h, x), ftol(h, y));
+        let r = cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        ctrl_pkt(h, r)
+    }
+
+    /// Rounds `x` to `f32` as `fstp dword` does.
+    fn to_f32(x: f64) -> u32 {
+        x87::store(x)
+    }
+
+    /// `FUN_00906050(pos, glyph)` with its frame at `ebp`: the glyph's
+    /// box set (size 12, UVs from the three floats at `0x00b92314..`),
+    /// its flag `+4` = 1 unless bit 0 of `+0x26`; a copy of `pos` at `ebp -
+    /// 0x1c` moved by (5.0, -7.0) draws the fill pass (`0x009060f0`), then
+    /// the edge pass (`0x00905ef0`); `pos.x` += 5.0. The edge pass's
+    /// `eax`.
+    pub fn glyph_draw(h: &mut impl Host, ebp: u32, pos: u32, glyph: u32) -> u32 {
+        let local = ebp.wrapping_sub(0x1c);
+        for i in 0..7u32 {
+            let w: u32 = h.read(pos.wrapping_add(4 * i));
+            h.write(local.wrapping_add(4 * i), w);
+        }
+        let flag = h.read::<u8>(glyph.wrapping_add(0x26)) & 1;
+        let twelve: u32 = global(h, super::F_12);
+        h.write(glyph.wrapping_add(8), twelve);
+        for (at, sym) in (0xcu32..).step_by(4).zip(super::GLYPH_BOX) {
+            let v: u32 = global(h, sym);
+            h.write(glyph.wrapping_add(at), v);
+        }
+        h.write(glyph.wrapping_add(0x1c), twelve);
+        let y = x87::sub(f32_at(h, local.wrapping_add(8)), f64_global(h, super::D_7));
+        h.write(local.wrapping_add(8), to_f32(y));
+        let five = f64_global(h, super::D_5);
+        let x = x87::add(f32_at(h, local.wrapping_add(4)), five);
+        h.write(local.wrapping_add(4), to_f32(x));
+        h.write(glyph.wrapping_add(4), u16::from(flag == 0));
+        cdecl(h, super::GLYPH_A, &[local, glyph]);
+        let r = cdecl(h, super::GLYPH_B, &[local, glyph]);
+        let x = x87::add(f32_at(h, pos.wrapping_add(4)), five);
+        h.write(pos.wrapping_add(4), to_f32(x));
+        r
+    }
+
+    /// `TOMakePktMovieFont1612(pos, glyph)` with its frame at `ebp`: a
+    /// copy of `pos` at `ebp - 0x1c` one pixel lower; type 3 (`pos +
+    /// 0x1a`) draws the italic edge and font passes, any other the movie
+    /// font's, each for `pos` then the copy; then `pos.x` += the glyph's
+    /// advance (`+0x1c`) plus 1.5. The last pass's `eax`.
+    pub fn movie_font_1612(h: &mut impl Host, ebp: u32, pos: u32, glyph: u32) -> u32 {
+        let local = ebp.wrapping_sub(0x1c);
+        let kind = h.read::<u8>(pos.wrapping_add(0x1a));
+        for i in 0..7u32 {
+            let w: u32 = h.read(pos.wrapping_add(4 * i));
+            h.write(local.wrapping_add(4 * i), w);
+        }
+        let y = x87::add(
+            f32_at(h, local.wrapping_add(8)),
+            f64_global(h, super::ADVANCE_PAD),
+        );
+        h.write(local.wrapping_add(8), to_f32(y));
+        let (edge, font) = if kind == 3 {
+            (super::ITALIC_EDGE, super::ITALIC_FONT)
+        } else {
+            (super::MOVIE_EDGE, super::MOVIE_FONT)
+        };
+        cdecl(h, edge, &[pos, glyph]);
+        cdecl(h, edge, &[local, glyph]);
+        cdecl(h, font, &[pos, glyph]);
+        let r = cdecl(h, font, &[local, glyph]);
+        let x = x87::add(
+            f32_at(h, glyph.wrapping_add(0x1c)),
+            f64_global(h, super::D_1_5),
+        );
+        let x = x87::add(x, f32_at(h, pos.wrapping_add(4)));
+        h.write(pos.wrapping_add(4), to_f32(x));
+        r
+    }
+
+    // ---- round 3, batch 3: UI quads (`graphicDrawUIElement`) ----
+    //
+    // These build a quad on their own frame (base `ebp - 0x9c`: vertex 0
+    // at +0, vertex 1 at +0x20, each x, y, u, v, r, g, b, a; more fields
+    // at +0x80..) and hand it to `graphicDrawUIElement`. The words they
+    // never write (the rest of the quad) are junk reads where the callee
+    // reads them: the port leaves them 0 (StackFrame), brief 2026-10-24.
+
+    /// The quad's base below `ebp`.
+    const QUAD: u32 = 0x9c;
+
+    /// The colour bytes of `c` (low first) into the vertex at `at`'s
+    /// r, g, b, a words (`+0x10`..).
+    fn quad_colour(h: &mut impl Host, at: u32, c: u32) {
+        for k in 0..4u32 {
+            h.write(at.wrapping_add(0x10 + 4 * k), (c >> (8 * k)) & 0xff);
+        }
+    }
+
+    /// `FUN_008fd390(x, y, w, h, c0, c1)` with its frame at `ebp`: a plain
+    /// quad `(x, y)`, `(x + w, y + h)` (ints as floats), vertex colours
+    /// `c0` and `c1` (bytes), `+0x80` = 1000, `+0x88`, `+0x90`, `+0x94` 0,
+    /// drawn by `graphicDrawUIElement(quad, 0, 1, 0, 0)`; its `eax`.
+    /// junk read: [ebp-0x94], [ebp-0x90], [ebp-0x74], [ebp-0x70] (the UVs)
+    /// and vertices 2-3 never written; 0 (brief 2026-10-24)
+    pub fn ui_box(h: &mut impl Host, ebp: u32, args: [u32; 6]) -> u32 {
+        let [x, y, w, hh, c0, c1] = args;
+        let q = ebp.wrapping_sub(QUAD);
+        h.write(q, int_f32(x).to_bits());
+        h.write(q.wrapping_add(4), int_f32(y).to_bits());
+        quad_colour(h, q, c0);
+        let (x1, y1) = (x.wrapping_add(w), y.wrapping_add(hh));
+        h.write(ebp.wrapping_sub(0xa0), y1);
+        h.write(q.wrapping_add(0x20), int_f32(x1).to_bits());
+        h.write(q.wrapping_add(0x24), int_f32(y1).to_bits());
+        quad_colour(h, q.wrapping_add(0x20), c1);
+        for (off, v) in [(0xc, 0), (8, 0), (0x1c, 0x3e8), (0x14, 0)] {
+            h.write(ebp.wrapping_sub(off), v);
+        }
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 0, 0])
+    }
+
+    /// `FUN_008fb090(x0, y0, x1, y1, r, g, b, a)` with its frame at `ebp`:
+    /// a plain quad in one colour, clipped by `BeginScissor_XY(&x0, &y0,
+    /// &x1, &y1)` (floats in the quad); drawn by
+    /// `graphicDrawUIElement(quad, 0, 1, 0, 0)` unless that returns 0.
+    /// Returns the last call's `eax`.
+    /// junk read: the quad's UVs ([ebp-0x94], [ebp-0x90], [ebp-0x74],
+    /// [ebp-0x70]), +0x80 and vertices 2-3 never written; 0 (brief
+    /// 2026-10-24)
+    pub fn ui_rect(h: &mut impl Host, ebp: u32, args: [u32; 8]) -> u32 {
+        let [x0, y0, x1, y1, r, g, b, a] = args;
+        let q = ebp.wrapping_sub(QUAD);
+        h.write(q, int_f32(x0).to_bits());
+        h.write(q.wrapping_add(4), int_f32(y0).to_bits());
+        h.write(q.wrapping_add(0x20), int_f32(x1).to_bits());
+        h.write(q.wrapping_add(0x24), int_f32(y1).to_bits());
+        for v in [q, q.wrapping_add(0x20)] {
+            for (at, c) in (0x10u32..).step_by(4).zip([r, g, b, a]) {
+                h.write(v.wrapping_add(at), c);
+            }
+        }
+        for off in [0xc, 8, 0x14] {
+            h.write(ebp.wrapping_sub(off), 0u32);
+        }
+        let ptrs = [
+            q,
+            q.wrapping_add(4),
+            q.wrapping_add(0x20),
+            q.wrapping_add(0x24),
+        ];
+        let shown = cdecl(h, super::BEGIN_SCISSOR, &ptrs);
+        if shown == 0 {
+            return shown;
+        }
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 0, 0])
+    }
+
+    /// `FUN_008f2bf0(cursor, x, y, c0, c1)` with its frame at `ebp`: the
+    /// full-screen picture 0x2eac (`TOGetShapTextureName`, its size from
+    /// `TOGetImageWH(0x2eac, ebp - 0xa8, ebp - 0xa4)`) as a quad `(x,
+    /// y)`, `(x + 0x200, y + 0x1a0)`, UVs `0 / w`, `0 / h`, `512 / w`, `416 /
+    /// h` (x87 division), colours `c0`, `c1`; drawn by
+    /// `graphicDrawUIElement(quad, name, 1, 0, 0)`. Returns `cursor`.
+    /// junk read: the quad's +0x80, +0x88 ([ebp-0x1c], [ebp-0x14]) and
+    /// vertices 2-3 never written; 0 (brief 2026-10-24)
+    pub fn ui_picture(h: &mut impl Host, ebp: u32, args: [u32; 5]) -> u32 {
+        use ffx_bridge::x87;
+        let [cursor, x, y, c0, c1] = args;
+        h.write(ebp.wrapping_sub(0xc), 0u32);
+        h.write(ebp.wrapping_sub(8), 0u32);
+        let name = cdecl(h, super::SHAP_TEXTURE_NAME, &[0x2eac]);
+        let (w_at, h_at) = (ebp.wrapping_sub(0xa8), ebp.wrapping_sub(0xa4));
+        cdecl(h, super::IMAGE_WH, &[0x2eac, w_at, h_at]);
+        let q = ebp.wrapping_sub(QUAD);
+        h.write(q, int_f32(x).to_bits());
+        h.write(q.wrapping_add(4), int_f32(y).to_bits());
+        quad_colour(h, q, c0);
+        let width = x87::load(h.read(w_at));
+        h.write(q.wrapping_add(8), x87::store(x87::div(0.0, width)));
+        let height = x87::load(h.read(h_at));
+        h.write(q.wrapping_add(0xc), x87::store(x87::div(0.0, height)));
+        let (x1, y1) = (x.wrapping_add(0x200), y.wrapping_add(0x1a0));
+        h.write(q.wrapping_add(0x20), int_f32(x1).to_bits());
+        h.write(ebp.wrapping_sub(0xa0), y1);
+        h.write(q.wrapping_add(0x24), int_f32(y1).to_bits());
+        quad_colour(h, q.wrapping_add(0x20), c1);
+        let right = x87::div(f64_global(h, super::D_512), width);
+        h.write(q.wrapping_add(0x28), x87::store(right));
+        let bottom = x87::div(f64_global(h, super::D_416), height);
+        h.write(q.wrapping_add(0x2c), x87::store(bottom));
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, name, 1, 0, 0]);
+        cursor
+    }
+
+    /// `FUN_00902700(x, y, w, h, first, count, total; slots)`: a scroll
+    /// bar: when `total > count` (signed), the track
+    /// (`0x008fb090(x, y, x + w, y + h, 0x11 x3, 0x80)`) and the thumb
+    /// (`0x008fb090(x + 1, top, x + w - 1, bottom, 0xf0 x3, 0x80)`, the
+    /// ends through `ftol`): per = `(f64(y + h) - y) / total`, top =
+    /// `y + first * per` (`y` when `first` is 0), bottom =
+    /// `top + count * per` (`y + h` when `first + count >= total`); then
+    /// `TOCtrlPkt`. The original keeps `x + 1`, then
+    /// `x + w - 1` in its `h` argument slot (`slots + 0xc`). Else it
+    /// returns `count`.
+    pub fn scroll_bar(h: &mut impl Host, args: [u32; 7], slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let [x, y, w, hh, first, count, total] = args;
+        let bottom_edge = y.wrapping_add(hh);
+        let left = x.wrapping_add(1);
+        let right_edge = w.wrapping_add(x);
+        let right = right_edge.wrapping_sub(1);
+        h.write(slots.wrapping_add(0xc), right);
+        if total.cast_signed() <= count.cast_signed() {
+            return count;
+        }
+        let as_f64 = |v: u32| f64::from(v.cast_signed());
+        let (yf, y2) = (as_f64(y), as_f64(bottom_edge));
+        let per = x87::div(x87::sub(y2, yf), as_f64(total));
+        let start = x87::add(x87::mul(as_f64(first), per), yf);
+        let end = x87::add(start, x87::mul(as_f64(count), per));
+        let top = if first == 0 { yf } else { start };
+        let full = first.wrapping_add(count).cast_signed() >= total.cast_signed();
+        let bottom = if full { y2 } else { end };
+        let track = super::UI_RECT;
+        cdecl(
+            h,
+            track,
+            &[x, y, right_edge, bottom_edge, 0x11, 0x11, 0x11, 0x80],
+        );
+        let thumb = [
+            ftol(h, as_f64(left)),
+            ftol(h, top),
+            ftol(h, as_f64(right)),
+            ftol(h, bottom),
+            0xf0,
+            0xf0,
+            0xf0,
+            0x80,
+        ];
+        let r = cdecl(h, track, &thumb);
+        ctrl_pkt(h, r)
+    }
+
+    /// `FUN_0092cc40(dst, src, v0, v1, v2, v3; slots)`: `src` into the cell
+    /// `0x00c8f980` (`VFX_Copy16From`), the by-value vector (its argument
+    /// slots, `slots + 8`) into `0x00c8f970` (`VFX_Copy16To_0072f3c0`),
+    /// `pppVu0MulX_007500d0(cell, cell, that vector by value)`, then the
+    /// cell into `dst` (`VFX_Copy16To`); its `eax`.
+    pub fn vec_mul_x(h: &mut impl Host, dst: u32, src: u32, slots: u32) -> u32 {
+        let cell = h.rebase(super::VEC_CELL);
+        let v = h.rebase(super::VEC_CELL_V);
+        cdecl(h, super::COPY16_FROM_SYM, &[cell, src]);
+        cdecl(h, super::COPY16_TO_B, &[slots.wrapping_add(8), v]);
+        let mut w = [0u32; 4];
+        for (k, x) in (0u32..).zip(&mut w) {
+            *x = h.read(v.wrapping_add(4 * k));
+        }
+        cdecl(h, super::VU0_MUL_X, &[cell, cell, w[0], w[1], w[2], w[3]]);
+        cdecl(h, super::COPY16_TO_SYM, &[cell, dst])
     }
 }

@@ -4440,3 +4440,584 @@ fn r3b2_string_wrappers_match_the_original() {
         }
     });
 }
+
+// ---- round 3, batch 3: glyph packets, UI quads (`ffx_system::m5b_menu`) ----
+
+/// A glyph position record (7 words: colour bytes, x, y, ..., the
+/// nibbles at `+0x1b`) and a glyph (UV and size floats, `i16 +2`, `+4`,
+/// the flags at `+0x26`) from `rng`, with some awkward floats.
+fn glyph_pair(t: &mut Twins, rng: &mut Rng, case: u32) -> (u32, u32) {
+    let fl = [0.0f32, 1.5, -2.75, 300.25, 1e10, -0.0, 7.0, 0.49];
+    let mut pos = [0u32; 7];
+    pos[0] = rng.next();
+    pos[1] = fl[(case % 8) as usize].to_bits();
+    pos[2] = fl[((case + 3) % 8) as usize].to_bits();
+    pos[6] = rng.next();
+    let pos = t.words(&pos);
+    let mut g = [0u32; 10];
+    g[0] = rng.next();
+    g[1] = [0x8000_7fff, 0x0001_fffe, 0, rng.next()][(case % 4) as usize];
+    for k in 2..9 {
+        g[k] = fl[((case as usize) + k) % 8].to_bits();
+    }
+    g[9] = u32::from([0u16, 1, 2, 0xffff][(case / 2 % 4) as usize]) << 16;
+    let glyph = t.words(&g);
+    (pos, glyph)
+}
+
+#[test]
+fn r3b3_glyph_packets_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0701);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x80);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 1);
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3]);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 4);
+            ctrl_state(t, case, buf + 0x50);
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.check(
+                &format!("glyph edge #{case}"),
+                0x0090_5ef0,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_edge(m, pos, glyph)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3]);
+            t.check(
+                &format!("glyph fill #{case}"),
+                0x0090_60f0,
+                Conv::Cdecl,
+                &[pos, glyph],
+                |m| Out::U32(mnb::glyph_fill(m, pos, glyph)),
+            );
+            // the two passes as stubs: the copy they get is on the frame
+            t.stub(mnc::GLYPH_A, false, 2, 0, r ^ 5);
+            t.stub(mnc::GLYPH_B, false, 2, 0, r ^ 6);
+            t.check_fs(
+                &format!("glyph draw #{case}"),
+                0x0090_6050,
+                &[pos, glyph],
+                0x1c,
+                0,
+                |m, ebp, _| Out::U32(mnb::glyph_draw(m, ebp, pos, glyph)),
+            );
+            for sym in [
+                mnc::ITALIC_EDGE,
+                mnc::ITALIC_FONT,
+                mnc::MOVIE_EDGE,
+                mnc::MOVIE_FONT,
+            ] {
+                t.stub(sym, false, 2, 0, r ^ sym);
+            }
+            let kind = [0u8, 1, 3, 2, 0xff, 3, 4, 3][(case % 8) as usize];
+            t.write(pos + 0x1a, &[kind]);
+            t.check_fs(
+                &format!("movie font #{case}"),
+                0x008f_d960,
+                &[pos, glyph],
+                0x1c,
+                0,
+                |m, ebp, _| Out::U32(mnb::movie_font_1612(m, ebp, pos, glyph)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_ui_quads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0702);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            t.stub(
+                mnc::BEGIN_SCISSOR,
+                false,
+                4,
+                0,
+                [0, 1, 0xffff_ffff][(case % 3) as usize],
+            );
+            let w6: [u32; 6] = std::array::from_fn(|_| rng.word());
+            t.check_fs(
+                &format!("ui box #{case}"),
+                0x008f_d390,
+                &w6,
+                0xa0,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_box(m, ebp, w6)),
+            );
+            let w8: [u32; 8] = std::array::from_fn(|_| rng.word());
+            t.check_fs(
+                &format!("ui rect #{case}"),
+                0x008f_b090,
+                &w8,
+                0x9c,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_rect(m, ebp, w8)),
+            );
+            // the picture: its size as TOGetImageWH writes it (0 and
+            // negatives for the x87 division's NaN and sign rules)
+            let wh =
+                [(512.0f32, 416.0f32), (0.0, 2.0), (-3.5, 0.0), (1e-30, 7.0)][(case % 4) as usize];
+            t.stub(mnc::SHAP_TEXTURE_NAME, false, 1, 0, r ^ 1);
+            image_wh_stub(t, wh.0.to_bits(), wh.1.to_bits(), r ^ 2);
+            let w5 = [rng.next(), rng.word(), rng.word(), rng.next(), rng.next()];
+            t.check_fs(
+                &format!("ui picture #{case}"),
+                0x008f_2bf0,
+                &w5,
+                0xa8,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_picture(m, ebp, w5)),
+            );
+        }
+    });
+}
+
+/// A `TOGetImageWH(id, &w, &h)` stub: writes `w` and `h`, logs the three
+/// words, returns `ret`.
+fn image_wh_stub(t: &mut Twins, w: u32, h: u32, ret: u32) {
+    let log_stub = t.stub_code(mnc::IMAGE_WH, false, 3, 0, ret);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    c.extend([0xc7, 0x00]);
+    c.extend(w.to_le_bytes()); // mov dword [eax], w
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+    c.extend([0xc7, 0x00]);
+    c.extend(h.to_le_bytes()); // mov dword [eax], h
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let addr = t.cave_code(&c);
+    t.jump(mnc::IMAGE_WH, addr);
+}
+
+#[test]
+fn r3b3_scroll_bar_and_vector_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0703);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            t.stub_seq(mnc::UI_RECT, 8, 0, &[r, r ^ 1]);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 2);
+            ctrl_state(t, case, 0);
+            // first, count, total: empty, partial, to the end, past it,
+            // count >= total, a zero total under a negative count
+            let (first, count, total) = [
+                (0u32, 3u32, 10u32),
+                (2, 3, 10),
+                (7, 3, 10),
+                (9, 5, 10),
+                (0, 10, 10),
+                (0, 0xffff_fffe, 0),
+                (1, 5, 6),
+                (0x7fff_ffff, 1, 0x7fff_fff0),
+            ][(case % 8) as usize];
+            let mut args = [
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                first,
+                count,
+                total,
+            ];
+            if total == 6 {
+                // y 0, h 1: the thumb's end sums to 0.9999999999999999,
+                // so only the full-length rule gives 1
+                args[1] = 0;
+                args[3] = 1;
+            }
+            t.check_fs(
+                &format!("scroll bar #{case}"),
+                0x0090_2700,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::scroll_bar(m, args, s)),
+            );
+            // the by-value vector
+            t.stub(mnc::COPY16_FROM_SYM, false, 2, 0, r ^ 3);
+            t.stub_copy16(mnc::COPY16_TO_B, r ^ 4);
+            t.stub(mnc::VU0_MUL_X, false, 6, 0, r ^ 5);
+            t.stub(mnc::COPY16_TO_SYM, false, 2, 0, r ^ 6);
+            let args = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("vec mul x #{case}"),
+                0x0092_cc40,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::vec_mul_x(m, args[0], args[1], s)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A `(src, dst)` 16-byte copy stub over `sym` that logs both words;
+    /// returns `ret`.
+    fn stub_copy16(&mut self, sym: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 2, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x74, 0x24, 0x0c]); // mov esi, [esp+0xc] (src)
+        c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10] (dst)
+        c.extend([0xb9, 4, 0, 0, 0]); // mov ecx, 4
+        c.extend([0xf3, 0xa5]); // rep movsd
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+// ---- round 3, batch 3: the HDD reader's requests (`ffx_system::m5b_hdd`) ----
+
+const BG_STATE: u32 = 0x0112_8aad;
+const TASK_WAIT: u32 = 0x0077_a4e0;
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that first clears the byte
+    /// at the `ffx.sym` address `at`; returns `ret`.
+    fn stub_clear_byte(&mut self, sym: u32, at: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xc6, 0x05];
+        c.extend(self.rebase(at).to_le_bytes());
+        c.push(0); // mov byte [at], 0
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (`n` words) that first decrements the
+    /// byte at the `ffx.sym` address `at`; returns `ret`.
+    fn stub_dec_byte(&mut self, sym: u32, at: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xfe, 0x0d];
+        c.extend(self.rebase(at).to_le_bytes()); // dec byte [at]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+#[test]
+fn r3b3_hdd_requests_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0801);
+        let name = t.alloc(b"/hdd0/ffx/data0\0");
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_two(hdc::DBG_PRINTF, 2, 5, r);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            // the waits clear the state; the signal does in some cases
+            // each wait takes the state one step down: 3 after the signal
+            // needs three
+            t.stub_dec_byte(TASK_WAIT, BG_STATE, 1, r ^ 1);
+            if case & 2 == 0 {
+                t.stub(hdc::SIGNAL_BG_THREAD, false, 0, 0, r ^ 2);
+            } else {
+                t.stub_clear_byte(hdc::SIGNAL_BG_THREAD, BG_STATE, 0, r ^ 2);
+            }
+            let head = case % 3;
+            let heads = t.rebase(hdc::HEADS);
+            t.put(heads + 12 * head, &[0x100, u32::from(case & 4 == 0), 7]);
+            t.write(t.rebase(BG_STATE), &[[0, 2][(case & 1) as usize]]);
+            // the path's old bytes: the copy's NUL must land
+            t.write(t.rebase(0x0112_a7b0), &[0xa5; 0x20]);
+            let args = [0x100 + rng.below(0x40), rng.next(), rng.next(), head];
+            t.check(
+                &format!("read th #{case}"),
+                0x0077_8610,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::read_th(m, args[0], args[1], args[2], args[3])),
+            );
+            t.write(t.rebase(BG_STATE), &[[0, 2][(case & 1) as usize]]);
+            t.write(t.rebase(0x0112_a7b0), &[0xa5; 0x20]);
+            let args = [name, rng.next(), rng.next(), rng.next()];
+            t.check(
+                &format!("read ex th #{case}"),
+                0x0077_8550,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::read_ex_th(m, args[0], args[1], args[2], args[3])),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_hdd_read_main_and_space_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0802);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r);
+            // open fails, seek fails, read fails, all fine; under and
+            // over 2 GB
+            let (open, seek, read) = [
+                (0xffff_ffffu32, 0u32, 0u32),
+                (3, 0xffff_fffe, 0),
+                (4, 0, 0x8000_0000),
+                (5, 0x10, 0x20),
+            ][(case % 4) as usize];
+            t.stub(hdc::SCE_OPEN, false, 2, 0, open);
+            t.stub(hdc::SCE_LSEEK, false, 3, 0, seek);
+            t.stub(hdc::SCE_LSEEK64, false, 3, 0, seek);
+            t.stub(hdc::SCE_READ, false, 3, 0, read);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 1);
+            t.write(t.rebase(hdc::HDD_ERR), &[0]);
+            let offset = [0x800u32, 0x7fff_ffff, 0x8000_0000, 0xffff_f800][(case / 4) as usize];
+            t.put(t.rebase(0x0112_a7f0), &[rng.next(), rng.next(), offset]);
+            t.check(
+                &format!("read th main #{case}"),
+                0x0077_86f0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::read_th_main(m)),
+            );
+            // free space: devctl fails or writes the free sectors
+            let free = [0u32, 0x8_0000, 0x7f_ffff, 0xffff_ffff][(case % 4) as usize];
+            let fails = case & 4 != 0;
+            t.stub_store(
+                hdc::SCE_DEVCTL,
+                None,
+                4,
+                free,
+                false,
+                6,
+                0,
+                if fails { 0x8000_0002 } else { 0 },
+            );
+            let need = [0u32, 1, 2, 0xffff_ffff][(case / 4 % 4) as usize];
+            let args = [rng.next(), need];
+            t.check_fs(
+                &format!("free space #{case}"),
+                0x0077_7610,
+                &args,
+                4,
+                0,
+                |m, ebp, _| Out::U32(hdb::free_space_ok(m, ebp, args[0], args[1])),
+            );
+            // the read-function table
+            t.stub(hdc::PC_READ_FUNC_SET, false, 0, 0, r ^ 2);
+            let cd = [0u32, 1, 0xffff_ffff, 0x100][(case % 4) as usize];
+            t.check(
+                &format!("read funcs #{case}"),
+                0x0076_cff0,
+                Conv::Cdecl,
+                &[cd],
+                |m| Out::U32(hdb::set_read_funcs(m, cd)),
+            );
+        }
+    });
+}
+
+// ---- round 3, batch 3: RadialBlur's draws, the sphere grid's item check (`ffx_system::m5b_pc`) ----
+
+#[test]
+fn r3b3_blur_draws_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0901);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(pcs::SET_PARAM58, true, 4, 4, r);
+            t.stub(pcs::SET_TEXTURE_PARAM, true, 2, 2, r ^ 1);
+            t.stub(pcs::SET_PARAM5C, true, 4, 4, r ^ 2);
+            t.stub(pcs::SET_COLOR_TARGET, true, 2, 2, r ^ 3);
+            t.stub(pcs::SET_DEPTH_TARGET, true, 1, 1, r ^ 4);
+            t.stub(pcs::BEGIN_SCENE, true, 1, 1, [0, 7][(case & 1) as usize]);
+            t.stub(pcs::RENDER_MESH_INSTANCE, true, 4, 4, r ^ 5);
+            t.stub(pcs::END_SCENE, true, 1, 1, r ^ 6);
+            let words: Vec<u32> = (0..0x50).map(|i| 0x5a5a_0000 + i).collect();
+            let renderer = t.words(&words);
+            let mesh = t.words(&[1, 2, 3, 4, rng.next()]);
+            // the scales: plain, zero (x87 division by zero), negative,
+            // a NaN
+            let (sx, sy) = [
+                (2.0f32.to_bits(), 4.0f32.to_bits()),
+                (0, 1.5f32.to_bits()),
+                ((-3.0f32).to_bits(), 0x8000_0000),
+                (0x7fc0_1234, 0.1f32.to_bits()),
+            ][(case / 2 % 4) as usize];
+            let mut this = [0u32; 0x1c];
+            this[0] = u32::from(case % 6 != 5);
+            for w in &mut this[1..5] {
+                *w = rng.next();
+            }
+            this[5] = sx;
+            this[6] = sy;
+            this[7] = renderer;
+            this[0x19] = rng.next();
+            this[0x1a] = rng.next();
+            this[0x1b] = mesh;
+            let this = t.words(&this);
+            let tex = rng.next();
+            let check = |t: &mut Twins,
+                         what: &str,
+                         sym: u32,
+                         args: &[u32],
+                         low: u32,
+                         bridge: &dyn Fn(&mut G, u32) -> u32| {
+                let ebp = t.frame_ebp(args.len());
+                let lo = ebp - low;
+                t.write(lo, &vec![0; low as usize]);
+                t.b.set_call_top(Some(lo - 0x100));
+                t.check(what, sym, Conv::Thiscall(this), args, |m| {
+                    Out::U32(bridge(m, ebp))
+                });
+                t.b.set_call_top(None);
+                let n = (low - 0xc) as usize;
+                let mut x = vec![0; n];
+                let mut y = vec![0; n];
+                Mem::read_bytes(&t.a, lo, &mut x);
+                Mem::read_bytes(&t.b, lo, &mut y);
+                assert_eq!(x, y, "{what}: frame");
+            };
+            check(
+                t,
+                &format!("blur draw #{case}"),
+                0x0070_30e0,
+                &[tex, rng.next()],
+                0x2c,
+                &|m, ebp| pcb::blur_draw(m, ebp, this, tex),
+            );
+            check(
+                t,
+                &format!("blur draw scaled #{case}"),
+                0x0070_3480,
+                &[tex],
+                0x3c,
+                &|m, ebp| pcb::blur_draw_scaled(m, ebp, this, tex),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b3_abmap_item_check_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0902);
+        for case in 0..10u32 {
+            t.reset();
+            let r = rng.next();
+            // the grid: the character byte, its node table
+            let abmap = t.zeros(0x11600);
+            let chr = [0u8, 2, 6, 0x21][(case % 4) as usize];
+            t.write(abmap + 0x115bc, &[chr]);
+            t.write(
+                abmap + u32::from(chr) * 80 + 0x110cc,
+                &(0x1234u16 + case as u16).to_le_bytes(),
+            );
+            t.g32(pcs::ABMAP, abmap);
+            let count = [0i16, 1, 3, 5, -1][(case % 5) as usize];
+            let pad = t.zeros(0x1a44 + 12 * 6);
+            t.write(pad + 0x1a1e, &count.to_le_bytes());
+            for k in 0..6u32 {
+                t.write(pad + 0x1a44 + 12 * k, &[0xa5, 0, 0, 0]);
+                t.write(pad + 0x1a48 + 12 * k, &(0x2000u16 + k as u16).to_le_bytes());
+            }
+            t.g32(pcs::ABMAP_PAD, pad);
+            t.g32(pcs::ABMAP_RUNNING, u32::from(case != 9));
+            // stock, the item's ability byte, its record's kind
+            t.stub_seq(pcs::SAVE_ITEM_NUM, 1, 0, &[1, 0, 3, 2, 1, 1]);
+            let rom = t.zeros(0x60);
+            t.write(rom + 0x5d, &[[0xff, 3][(case & 1) as usize]]);
+            t.stub(pcs::ROM_ITEM, false, 2, 0, rom);
+            let rec = t.zeros(0x10);
+            t.write(rec + 0xc, &[[0x20, 1][((case / 2) & 1) as usize]]);
+            t.stub_seq(pcs::EXCEL_DATA, 3, 0, &[rec, 0, rec, rec, 0, rec]);
+            // the walks set the found flag (ctx + 0xc), one of them not
+            let found = u32::from(case % 3 != 0);
+            t.stub_store_into(pcs::FOR_EACH_NODE, 1, 0xc, found, 2, r ^ 7);
+            t.stub_store_into(pcs::FOR_NODE_AND_LINKED, 2, 0xc, 1 - found, 3, r ^ 8);
+            // the menu refill puts the count back, or leaves it emptied
+            if case & 1 == 0 {
+                t.stub_store_abs(
+                    pcs::FILL_USE_ITEM_MENU,
+                    pad + 0x1a1e,
+                    u32::from(count.cast_unsigned()),
+                    2,
+                    r ^ 9,
+                );
+            } else {
+                t.stub(pcs::FILL_USE_ITEM_MENU, false, 2, 0, r ^ 9);
+            }
+            t.check_fs(
+                &format!("item usable #{case}"),
+                0x00a4_4d30,
+                &[],
+                0x24,
+                0,
+                |m, ebp, _| Out::U32(pcb::abmap_item_usable(m, ebp)),
+            );
+            t.write(pad + 0x1a1e, &count.to_le_bytes());
+            t.check_fs(
+                &format!("refresh items #{case}"),
+                0x00a4_4ea0,
+                &[],
+                // the frame holds AbmapFillUseItemMenu's call words in the original: not compared
+                0,
+                0,
+                |m, ebp, _| pcb::abmap_refresh_items(m, ebp).map_or(Out::None, Out::U32),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (`n` words) that first stores `value`
+    /// at `[word + off]` (its stack word `word` a pointer); returns `ret`.
+    fn stub_store_into(&mut self, sym: u32, word: u8, off: u8, value: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * word]; // mov eax, [esp+4+4word]
+        c.extend([0xc7, 0x40, off]);
+        c.extend(value.to_le_bytes()); // mov dword [eax+off], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// A recording stub over `sym` (`n` words) that first stores the word
+    /// `value` at the absolute address `at`; returns `ret`.
+    fn stub_store_abs(&mut self, sym: u32, at: u32, value: u32, n: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, n, 0, ret);
+        let mut c = vec![0xc7, 0x05];
+        c.extend(at.to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [at], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}

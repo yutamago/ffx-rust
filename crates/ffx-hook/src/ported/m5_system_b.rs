@@ -929,6 +929,96 @@ ported! {
         let mut f = StackFrame::<0x81>::new();
         mn::init_font_path(&mut mem(), f.at() + 0x204, path, &ffx_system::m5b_menu::EVENT_FONTS)
     }
+
+    // ---- round 3, batch 3: glyph packets, UI quads ----
+    /// `(pos, glyph)`.
+    TOAdpGlyphEdge_00905ef0 @ 0x0090_5ef0 => extern "C" fn glyph_edge(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_edge(&mut mem(), pos, glyph)
+    }
+    /// `(pos, glyph)`.
+    TOAdpGlyphFill_009060f0 @ 0x0090_60f0 => extern "C" fn glyph_fill(pos: u32, glyph: u32) -> u32 {
+        mn::glyph_fill(&mut mem(), pos, glyph)
+    }
+    /// `(pos, glyph)`: frame `ebp - 0x1c`.
+    TOAdpGlyphDraw_00906050 @ 0x0090_6050 => extern "C" fn glyph_draw(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        mn::glyph_draw(&mut mem(), f.at() + 0x1c, pos, glyph)
+    }
+    /// `(pos, glyph)`: frame `ebp - 0x1c`.
+    TOMakePktMovieFont1612 @ 0x008f_d960 => extern "C" fn movie_font_1612(pos: u32, glyph: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        mn::movie_font_1612(&mut mem(), f.at() + 0x1c, pos, glyph)
+    }
+    /// `(x, y, w, h, c0, c1)`: frame `ebp - 0xa0`.
+    TODrawUIBox_008fd390 @ 0x008f_d390 => extern "C" fn ui_box(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        mn::ui_box(&mut mem(), f.at() + 0xa0, [x, y, w, h, c0, c1])
+    }
+    /// `(x0, y0, x1, y1, r, g, b, a)`: frame `ebp - 0x9c`.
+    TODrawUIRect_008fb090 @ 0x008f_b090 => extern "C" fn ui_rect(x0: u32, y0: u32, x1: u32, y1: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        let mut f = StackFrame::<0x27>::new();
+        mn::ui_rect(&mut mem(), f.at() + 0x9c, [x0, y0, x1, y1, r, g, b, a])
+    }
+    /// `(cursor, x, y, c0, c1)`: frame `ebp - 0xa8`.
+    TODrawUIPicture_008f2bf0 @ 0x008f_2bf0 => extern "C" fn ui_picture(cursor: u32, x: u32, y: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x2a>::new();
+        mn::ui_picture(&mut mem(), f.at() + 0xa8, [cursor, x, y, c0, c1])
+    }
+    /// `(x, y, w, h, first, count, total)`: `x + w - 1` left in the `h`
+    /// argument slot.
+    TODrawScrollBar_00902700 @ 0x0090_2700 => extern "C" fn scroll_bar(x: u32, y: u32, w: u32, h: u32, first: u32, count: u32, total: u32; slots: u32) -> u32 {
+        mn::scroll_bar(&mut mem(), [x, y, w, h, first, count, total], slots)
+    }
+    /// `(dst, src, v0, v1, v2, v3)`: the vector is read in its argument
+    /// slots.
+    VFX_MulXByValue_0092cc40 @ 0x0092_cc40 => extern "C" fn vec_mul_x(dst: u32, src: u32, _v0: u32, _v1: u32, _v2: u32, _v3: u32; slots: u32) -> u32 {
+        mn::vec_mul_x(&mut mem(), dst, src, slots)
+    }
+
+    // ---- round 3, batch 3: the HDD reader's requests ----
+    /// `(sector, buf, size, head)`.
+    hd_file_read_th @ 0x0077_8610 => extern "C" fn read_th(sector: u32, buf: u32, size: u32, head: u32) -> u32 {
+        hd::read_th(&mut mem(), sector, buf, size, head)
+    }
+    /// `(path, buf, size, offset)`.
+    hd_file_read_ex_th_main @ 0x0077_8550 => extern "C" fn read_ex_th(path: u32, buf: u32, size: u32, offset: u32) -> u32 {
+        hd::read_ex_th(&mut mem(), path, buf, size, offset)
+    }
+    /// `()`: the background thread's read.
+    hd_file_read_th_main @ 0x0077_86f0 => extern "C" fn read_th_main() -> u32 {
+        hd::read_th_main(&mut mem())
+    }
+    /// `(device, need)`: frame `ebp - 4`.
+    hdd_FreeSpaceOk_00777610 @ 0x0077_7610 => extern "C" fn free_space_ok(device: u32, need: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        hd::free_space_ok(&mut mem(), f.at() + 4, device, need)
+    }
+    /// `(cd)`.
+    CdSetReadFuncs_0076cff0 @ 0x0076_cff0 => extern "C" fn set_read_funcs(cd: u32) -> u32 {
+        hd::set_read_funcs(&mut mem(), cd)
+    }
+
+    // ---- round 3, batch 3: RadialBlur's draws, the sphere grid's item check ----
+    /// `(this; texture, _)` (`ret 8`): frame `ebp - 0x2c`.
+    RadialBlur_draw_007030e0 @ 0x0070_30e0 => extern "thiscall" fn radial_blur_draw(this: u32, texture: u32, _unused: u32) -> u32 {
+        let mut f = StackFrame::<0xb>::new();
+        pc::blur_draw(&mut mem(), f.at() + 0x2c, this, texture)
+    }
+    /// `(this; target)` (`ret 4`): frame `ebp - 0x3c`.
+    RadialBlur_drawScaled_00703480 @ 0x0070_3480 => extern "thiscall" fn radial_blur_draw_scaled(this: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<0xf>::new();
+        pc::blur_draw_scaled(&mut mem(), f.at() + 0x3c, this, target)
+    }
+    /// `()`: frame `ebp - 0x24`.
+    AbmapItemUsable_00a44d30 @ 0x00a4_4d30 => extern "C" fn abmap_item_usable() -> u32 {
+        let mut f = StackFrame::<9>::new();
+        pc::abmap_item_usable(&mut mem(), f.at() + 0x24)
+    }
+    /// `()`: not running, `eax` untouched.
+    AbmapRefreshItems_00a44ea0 @ 0x00a4_4ea0 => extern "C" fn abmap_refresh_items() {
+        let mut f = StackFrame::<9>::new();
+        let _ = pc::abmap_refresh_items(&mut mem(), f.at() + 0x24);
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

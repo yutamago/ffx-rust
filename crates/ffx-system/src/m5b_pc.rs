@@ -112,6 +112,42 @@ pub const VEC_C8F980: u32 = 0x00c8_f980;
 pub const COPY16_TO: u32 = 0x0071_0e70;
 pub const COPY16_FROM: u32 = 0x0071_0e30;
 
+/// Round 3: `RadialBlur`'s two draws (`0x007030e0`, `0x00703480`): its
+/// parameter setters (thiscall), `PRenderSurface`'s constructor and
+/// (empty) destructor, `PRenderer`'s `setColorTarget`,
+/// `setDepthStencilTarget`, `beginScene`, `renderMeshInstance` (4 words),
+/// `endScene` (thiscall), the two shader cells `0x00cdeba8`/`0x00cdebc8`
+/// put at the renderer's `+0x48`, `g_Vu0FixedRound` (0.5).
+pub const SET_PARAM58: u32 = 0x0070_3780;
+pub const SET_TEXTURE_PARAM: u32 = 0x0070_3610;
+pub const SET_PARAM5C: u32 = 0x0070_3820;
+pub const SURFACE_CTOR: u32 = 0x005b_35c0;
+pub const SURFACE_DTOR: u32 = 0x005b_3640;
+pub const SET_COLOR_TARGET: u32 = 0x005b_b130;
+pub const SET_DEPTH_TARGET: u32 = 0x005b_b5b0;
+pub const BEGIN_SCENE: u32 = 0x005b_5e30;
+pub const RENDER_MESH_INSTANCE: u32 = 0x005b_9a90;
+pub const END_SCENE: u32 = 0x005b_6950;
+pub const BLUR_SHADER: [u32; 2] = [0x00cd_eba8, 0x00cd_ebc8];
+pub const HALF: u32 = 0x00b9_2220;
+/// The sphere grid's item check (`0x00a44d30`, `0x00a44ea0`):
+/// `g_AbmapRunning`, `g_Abmap`, `g_AbmapPad` (its node list: count `i16
+/// +0x1a1e`, 12-byte entries from `+0x1a44`), `AbmapFillUseItemMenu`,
+/// `MsGetSaveItemNum`, `MsGetRomItem`, `MsGetExcelData` and its table
+/// `0x01a860e4`, `AbmapForEachNode`, `AbmapForNodeAndLinked` and their
+/// callback `AbmapItemNodeEffect`.
+pub const ABMAP_RUNNING: u32 = 0x01a8_5f70;
+pub const ABMAP: u32 = 0x0230_5834;
+pub const ABMAP_PAD: u32 = 0x01a8_6108;
+pub const FILL_USE_ITEM_MENU: u32 = 0x00a4_5fd0;
+pub const SAVE_ITEM_NUM: u32 = 0x0079_04b0;
+pub const ROM_ITEM: u32 = 0x0079_09f0;
+pub const EXCEL_DATA: u32 = 0x007a_b870;
+pub const ABILITY_TABLE: u32 = 0x01a8_60e4;
+pub const FOR_EACH_NODE: u32 = 0x00a5_9710;
+pub const FOR_NODE_AND_LINKED: u32 = 0x00a5_9760;
+pub const ITEM_NODE_EFFECT: u32 = 0x00a4_9440;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -585,5 +621,222 @@ pub mod bridge {
         let cell = h.rebase(super::VEC_C8F980);
         h.call_sym(super::COPY16_FROM, Conv::Cdecl, &[cell, src]);
         h.call_sym(super::COPY16_TO, Conv::Cdecl, &[cell, dst])
+    }
+    // ---- round 3: RadialBlur's draws, the sphere grid's item check ----
+
+    fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+        h.call_sym(sym, Conv::Cdecl, args)
+    }
+
+    /// Writes `words` from `p` on.
+    fn put_words(h: &mut impl Host, p: u32, words: &[u32]) {
+        for (k, &w) in (0u32..).zip(words) {
+            h.write(p.wrapping_add(4 * k), w);
+        }
+    }
+
+    /// `1.0f32`'s bits.
+    const ONE: u32 = 0x3f80_0000;
+
+    /// The scene both blur draws render: the surface at `surface`
+    /// (`PRenderSurface(surface; target, 0)`) set as the colour target of
+    /// the renderer `[this + 0x1c]` (`depth`: no depth target), the scene
+    /// begun (`begin`), and when that returns 0 the shader cell put at
+    /// the renderer's `+0x48` and the blur mesh (`[this + 0x6c]`) drawn,
+    /// the scene ended. The surface's (empty) destructor; returns the
+    /// scene's result.
+    fn blur_scene(
+        h: &mut impl Host,
+        this: u32,
+        surface: u32,
+        target: u32,
+        depth: bool,
+        begin: u32,
+        shader: u32,
+    ) -> u32 {
+        h.call_sym(super::SURFACE_CTOR, Conv::Thiscall(surface), &[target, 0]);
+        let renderer: u32 = h.read(this.wrapping_add(0x1c));
+        h.call_sym(
+            super::SET_COLOR_TARGET,
+            Conv::Thiscall(renderer),
+            &[surface, 0],
+        );
+        if depth {
+            let renderer: u32 = h.read(this.wrapping_add(0x1c));
+            h.call_sym(super::SET_DEPTH_TARGET, Conv::Thiscall(renderer), &[0]);
+        }
+        let renderer: u32 = h.read(this.wrapping_add(0x1c));
+        let mut r = h.call_sym(super::BEGIN_SCENE, Conv::Thiscall(renderer), &[begin]);
+        if r == 0 {
+            let renderer: u32 = h.read(this.wrapping_add(0x1c));
+            let shader = h.rebase(shader);
+            h.write(renderer.wrapping_add(0x48), shader);
+            let renderer: u32 = h.read(this.wrapping_add(0x1c));
+            let mesh: u32 = h.read(this.wrapping_add(0x6c));
+            let args = [
+                mesh,
+                h.read(mesh.wrapping_add(0x10)),
+                0,
+                h.read(renderer.wrapping_add(0x13c)),
+            ];
+            h.call_sym(super::RENDER_MESH_INSTANCE, Conv::Thiscall(renderer), &args);
+            let renderer: u32 = h.read(this.wrapping_add(0x1c));
+            r = h.call_sym(super::END_SCENE, Conv::Thiscall(renderer), &[1]);
+        }
+        h.call_sym(super::SURFACE_DTOR, Conv::Thiscall(surface), &[]);
+        r
+    }
+
+    /// `FUN_007030e0(this; texture, _)` (thiscall, `ret 8`) with its frame
+    /// at `ebp`: off (`byte this` 0) 0; else the blur's parameters
+    /// (`+0x58` = (1, 1, 1, 1), the texture with `this + 0x30`, `+0x5c` =
+    /// (1, 1, 0, 0); the floats passed by value also left at `ebp -
+    /// 0x1c..`) and [`blur_scene`] into `[this + 0x68]` with no depth
+    /// target, `beginScene(1)`, shader `0x00cdeba8`; the surface at `ebp -
+    /// 0x2c`.
+    pub fn blur_draw(h: &mut impl Host, ebp: u32, this: u32, texture: u32) -> u32 {
+        if h.read::<u8>(this) == 0 {
+            return 0;
+        }
+        let tmp = ebp.wrapping_sub(0x1c);
+        put_words(h, tmp, &[ONE; 4]);
+        h.call_sym(super::SET_PARAM58, Conv::Thiscall(this), &[ONE; 4]);
+        let sampler = this.wrapping_add(0x30);
+        h.call_sym(
+            super::SET_TEXTURE_PARAM,
+            Conv::Thiscall(this),
+            &[texture, sampler],
+        );
+        put_words(h, tmp, &[ONE, ONE, 0, 0]);
+        h.call_sym(super::SET_PARAM5C, Conv::Thiscall(this), &[ONE, ONE, 0, 0]);
+        let target: u32 = h.read(this.wrapping_add(0x68));
+        let surface = ebp.wrapping_sub(0x2c);
+        blur_scene(h, this, surface, target, true, 1, super::BLUR_SHADER[0])
+    }
+
+    /// `FUN_00703480(this; target)` (thiscall, `ret 4`) with its frame at
+    /// `ebp`: off 0; else `+0x58` from `this + 4..0x14`, the texture
+    /// `[this + 0x64]` with `this + 0x30`, `+0x5c` = (1/sx, 1/sy, (1 -
+    /// 1/sx) * 0.5, (1 - 1/sy) * 0.5) of the scales `sx` `+0x14`, `sy`
+    /// `+0x18` (x87, each quotient recomputed in the register; the values
+    /// passed also left at `ebp - 0x2c..`, the scales at `ebp - 0x1c..`),
+    /// and [`blur_scene`] into `target`, `beginScene(0)`, shader
+    /// `0x00cdebc8`; the surface at `ebp - 0x3c`.
+    pub fn blur_draw_scaled(h: &mut impl Host, ebp: u32, this: u32, target: u32) -> u32 {
+        use ffx_bridge::x87;
+        if h.read::<u8>(this) == 0 {
+            return 0;
+        }
+        let mut p58 = [0u32; 4];
+        for (k, x) in (0u32..).zip(&mut p58) {
+            *x = h.read(this.wrapping_add(4 + 4 * k));
+        }
+        h.call_sym(super::SET_PARAM58, Conv::Thiscall(this), &p58);
+        let texture: u32 = h.read(this.wrapping_add(0x64));
+        let sampler = this.wrapping_add(0x30);
+        h.call_sym(
+            super::SET_TEXTURE_PARAM,
+            Conv::Thiscall(this),
+            &[texture, sampler],
+        );
+        let sy = x87::store(x87::load(h.read(this.wrapping_add(0x18))));
+        let sx = x87::store(x87::load(h.read(this.wrapping_add(0x14))));
+        put_words(h, ebp.wrapping_sub(0x1c), &[sy, sx, sy, sx]);
+        let (fx, fy) = (x87::load(sx), x87::load(sy));
+        let half = f64::from_bits(h.read::<u64>(h.rebase(super::HALF)));
+        let inv_x = x87::div(1.0, fx);
+        let inv_y = x87::div(1.0, fy);
+        let off_x = x87::mul(x87::sub(1.0, x87::div(1.0, fx)), half);
+        let off_y = x87::mul(x87::sub(1.0, x87::div(1.0, fy)), half);
+        let p5c = [inv_x, inv_y, off_x, off_y].map(x87::store);
+        put_words(h, ebp.wrapping_sub(0x2c), &p5c);
+        h.call_sym(super::SET_PARAM5C, Conv::Thiscall(this), &p5c);
+        let surface = ebp.wrapping_sub(0x3c);
+        blur_scene(h, this, surface, target, false, 0, super::BLUR_SHADER[1])
+    }
+
+    /// The sphere grid list's node count, `i16 pad + 0x1a1e`.
+    fn node_count(h: &impl Host, pad: u32) -> i32 {
+        i32::from(h.read::<i16>(pad.wrapping_add(0x1a1e)))
+    }
+
+    /// `FUN_00a44d30()` with its frame at `ebp`: for each node of the
+    /// sphere grid's list (`g_AbmapPad`, count `i16 +0x1a1e`, 12-byte
+    /// entries from `+0x1a44`), whether the item `u16 +4` is usable
+    /// there: none in stock (`MsGetSaveItemNum`) marks it 1; else the
+    /// item's ability (`MsGetExcelData(byte +0x5d of MsGetRomItem(item,
+    /// ebp - 8), table, ebp - 8)`, none for 0xff) is tried by
+    /// `AbmapItemNodeEffect` over every node (kind 0x20:
+    /// `AbmapForEachNode`) or the current node and its links
+    /// (`AbmapForNodeAndLinked(node)`), with the context at `ebp - 0x24`
+    /// (the ability, the character `byte g_Abmap + 0x115bc`, its bit, a
+    /// found flag); marked 0 when found, else 1. Returns the count read
+    /// last (0 for none).
+    pub fn abmap_item_usable(h: &mut impl Host, ebp: u32) -> u32 {
+        let abmap: u32 = h.read(h.rebase(super::ABMAP));
+        let chr = u32::from(h.read::<u8>(abmap.wrapping_add(0x115bc)));
+        let node = u32::from(h.read::<u16>(abmap.wrapping_add(chr * 80 + 0x110cc)));
+        h.write(ebp.wrapping_sub(0xc), node);
+        let pad: u32 = h.read(h.rebase(super::ABMAP_PAD));
+        h.write(ebp.wrapping_sub(0x10), pad);
+        if node_count(h, pad) <= 0 {
+            return 0;
+        }
+        let ctx = ebp.wrapping_sub(0x24);
+        let out = ebp.wrapping_sub(8);
+        let mut i = 0i32;
+        let mut entry = pad.wrapping_add(0x1a44);
+        loop {
+            let item = u32::from(h.read::<u16>(entry.wrapping_add(4)));
+            let abmap: u32 = h.read(h.rebase(super::ABMAP));
+            let chr = u32::from(h.read::<u8>(abmap.wrapping_add(0x115bc)));
+            h.write(ebp.wrapping_sub(4), chr);
+            let mut usable = false;
+            if cdecl(h, super::SAVE_ITEM_NUM, &[item]) != 0 {
+                h.write(ctx.wrapping_add(4), chr);
+                h.write(ctx.wrapping_add(0xc), 0u32);
+                h.write(ctx.wrapping_add(8), 1u32.wrapping_shl(chr));
+                let rom = cdecl(h, super::ROM_ITEM, &[item, out]);
+                let ability = h.read::<u8>(rom.wrapping_add(0x5d));
+                let data = if ability == 0xff {
+                    0
+                } else {
+                    let table: u32 = h.read(h.rebase(super::ABILITY_TABLE));
+                    cdecl(h, super::EXCEL_DATA, &[u32::from(ability), table, out])
+                };
+                h.write(ctx, data);
+                if data != 0 {
+                    let effect = h.rebase(super::ITEM_NODE_EFFECT);
+                    if h.read::<u8>(data.wrapping_add(0xc)) == 0x20 {
+                        cdecl(h, super::FOR_EACH_NODE, &[effect, ctx]);
+                    } else {
+                        let node: u32 = h.read(ebp.wrapping_sub(0xc));
+                        cdecl(h, super::FOR_NODE_AND_LINKED, &[node, effect, ctx]);
+                    }
+                }
+                usable = h.read::<u32>(ctx.wrapping_add(0xc)) != 0;
+            }
+            h.write(entry, u8::from(!usable));
+            i += 1;
+            entry = entry.wrapping_add(12);
+            let n = node_count(h, pad);
+            if i >= n {
+                return n.cast_unsigned();
+            }
+        }
+    }
+
+    /// `FUN_00a44ea0()`: while the sphere grid runs (`g_AbmapRunning`),
+    /// its node list emptied, `AbmapFillUseItemMenu(8, 3)` and the jump to
+    /// [`abmap_item_usable`] (its `eax`). Else `eax` is left alone
+    /// (`None`).
+    pub fn abmap_refresh_items(h: &mut impl Host, ebp: u32) -> Option<u32> {
+        if h.read::<u32>(h.rebase(super::ABMAP_RUNNING)) == 0 {
+            return None;
+        }
+        let pad: u32 = h.read(h.rebase(super::ABMAP_PAD));
+        h.write(pad.wrapping_add(0x1a1e), 0u16);
+        cdecl(h, super::FILL_USE_ITEM_MENU, &[8, 3]);
+        Some(abmap_item_usable(h, ebp))
     }
 }

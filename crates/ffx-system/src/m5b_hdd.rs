@@ -128,6 +128,50 @@ pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
 pub const DMA_SEND: u32 = 0x0062_f710;
 pub const GS_SYNC_PATH: u32 = 0x0062_f880;
 
+/// Round 3: the HDD reader's requests. `get_hdd_name`, `hd_file_read_th`'s
+/// two messages; `sceOpen`, `sceLseek64`, `sceLseek`, `sceClose`, the
+/// descriptor cell `0x02310c9c`, `hd_file_read_th_main`'s two messages;
+/// `sceDevctl` (`0x0062f6d0`) and `FUN_00777610`'s three messages.
+pub const HDD_NAME: u32 = 0x0077_7eb0;
+pub const READ_TH_MSG: [u32; 2] = [0x00b5_36c0, 0x00b5_36d8];
+pub const SCE_OPEN: u32 = 0x0062_fa30;
+pub const SCE_LSEEK64: u32 = 0x0062_f8f0;
+pub const SCE_LSEEK: u32 = 0x0062_f8e0;
+pub const SCE_CLOSE: u32 = 0x0062_f610;
+pub const READ_FD: u32 = 0x0231_0c9c;
+pub const READ_TH_MAIN_MSG: [u32; 2] = [0x00b5_3700, 0x00b5_3718];
+pub const SCE_DEVCTL: u32 = 0x0062_f6d0;
+pub const FREE_SPACE_MSG: [u32; 3] = [0x00b5_3aec, 0x00b5_3af8, 0x00b5_3b04];
+/// `FUN_0076cff0`: the CD flag `0x02310c58`, `PcReadFunc_set`, and the
+/// file layer's function table entries (cell, function) for the CD and
+/// for both.
+pub const READ_FUNCS_CD: u32 = 0x0231_0c58;
+pub const PC_READ_FUNC_SET: u32 = 0x00a4_2ba0;
+pub const READ_FUNCS_CD_TABLE: [(u32, u32); 9] = [
+    (0x0231_0c54, 0x0076_c320),
+    (0x0231_0c98, 0x0076_b960),
+    (0x0231_0ca8, 0x0076_e780),
+    (0x0231_0c94, 0x0076_b940),
+    (0x0231_0ca0, 0x0076_b920),
+    (0x0231_0c44, 0x0076_c250),
+    (0x0231_0cb8, 0x0076_bdd0),
+    (0x0231_0cc8, 0x0076_cf60),
+    (0x0231_0ccc, 0x0076_ce20),
+];
+pub const READ_FUNCS_SHARED: [(u32, u32); 11] = [
+    (0x0231_0c48, 0x0076_c490),
+    (0x0231_0c5c, 0x0076_e130),
+    (0x0231_0c40, 0x0076_b970),
+    (0x0231_0cd0, 0x0076_bf70),
+    (0x0231_0ca4, 0x0076_dcb0),
+    (0x0231_0c4c, 0x0076_cff0),
+    (0x0231_0c50, 0x0076_c510),
+    (0x0231_0cbc, 0x0076_cfa0),
+    (0x0231_0cc4, 0x0076_cf80),
+    (0x0231_0cc0, 0x0076_d0e0),
+    (0x0231_0cac, 0x0076_c270),
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -535,5 +579,181 @@ pub mod bridge {
             [work.wrapping_add(0x48), work.wrapping_add(0x44)],
             [0, 0, 0x200, 0x200],
         )
+    }
+    // ---- round 3: the HDD reader's requests ----
+
+    /// The request block (`0x0112a7b0`: the path, 0x40 bytes; `+0x40` the
+    /// buffer, `+0x44` the size, `+0x48` the offset), the background
+    /// thread's state byte `0x01128aad` (3 = read pending) and its wait
+    /// `task_wait(1)`.
+    const REQUEST_PATH: u32 = 0x0112_a7b0;
+    const REQUEST_BUFFER: u32 = 0x0112_a7f0;
+    const REQUEST_SIZE: u32 = 0x0112_a7f4;
+    const REQUEST_OFFSET: u32 = 0x0112_a7f8;
+    const BG_STATE: u32 = 0x0112_8aad;
+    const TASK_WAIT: u32 = 0x0077_a4e0;
+
+    /// Copies the string at `s` with its NUL to `dest`.
+    fn strcpy(h: &mut impl Host, dest: u32, s: u32) {
+        let mut i = 0u32;
+        loop {
+            let b: u8 = h.read(s.wrapping_add(i));
+            h.write(dest.wrapping_add(i), b);
+            if b == 0 {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `task_wait(1)` until the background thread's state is 0; `eax`
+    /// stays `eax` when it already is.
+    fn wait_idle(h: &mut impl Host, mut eax: u32) -> u32 {
+        while h.read::<u8>(h.rebase(BG_STATE)) != 0 {
+            eax = cdecl(h, TASK_WAIT, &[1]);
+        }
+        eax
+    }
+
+    /// Hands the request to the background thread and waits for it: idle,
+    /// state 3, `TkSignalSemaBGThread()`, idle again. The `eax` left (the
+    /// signal's or the last wait's).
+    fn run_request(h: &mut impl Host) -> u32 {
+        wait_idle(h, 0);
+        let at = h.rebase(BG_STATE);
+        h.write(at, 3u8);
+        let r = cdecl(h, SIGNAL_BG_THREAD, &[]);
+        wait_idle(h, r)
+    }
+
+    /// `hd_file_read_th(sector, buf, size, head)`: for an installed head
+    /// (`+4` of its 12-byte entry set), the read of `buf`/`size` from the
+    /// head's file (`get_hdd_name(head)`) at `(sector - its first
+    /// sector) << 11`, logged (`dbgPrintf`), done by the background
+    /// thread. Returns 0.
+    pub fn read_th(h: &mut impl Host, sector: u32, buf: u32, size: u32, head: u32) -> u32 {
+        let entry = h.rebase(HEADS).wrapping_add(head.wrapping_mul(12));
+        if h.read::<u32>(entry.wrapping_add(4)) == 0 {
+            return 0;
+        }
+        let name = cdecl(h, super::HDD_NAME, &[head]);
+        let fmt = h.rebase(super::READ_TH_MSG[0]);
+        cdecl(h, DBG_PRINTF, &[fmt, name]);
+        let first: u32 = h.read(entry);
+        let offset = sector.wrapping_sub(first) << 11;
+        let at = h.rebase(REQUEST_OFFSET);
+        h.write(at, offset);
+        let fmt = h.rebase(super::READ_TH_MSG[1]);
+        cdecl(h, DBG_PRINTF, &[fmt, sector, buf, size, offset]);
+        let path = h.rebase(REQUEST_PATH);
+        strcpy(h, path, name);
+        let at = h.rebase(REQUEST_BUFFER);
+        h.write(at, buf);
+        let at = h.rebase(REQUEST_SIZE);
+        h.write(at, size);
+        run_request(h);
+        0
+    }
+
+    /// `hd_file_read_ex_th_main(path, buf, size, offset)`: the request
+    /// (path copied) done by the background thread; the `eax` left (the
+    /// signal's or the last wait's).
+    pub fn read_ex_th(h: &mut impl Host, path: u32, buf: u32, size: u32, offset: u32) -> u32 {
+        let dest = h.rebase(REQUEST_PATH);
+        strcpy(h, dest, path);
+        for (sym, v) in [
+            (REQUEST_BUFFER, buf),
+            (REQUEST_SIZE, size),
+            (REQUEST_OFFSET, offset),
+        ] {
+            let at = h.rebase(sym);
+            h.write(at, v);
+        }
+        run_request(h)
+    }
+
+    /// `hd_file_read_th_main()` (the background thread's read): the
+    /// request's file opened (`sceOpen(path, 1)`, the descriptor in
+    /// `0x02310c9c`), sought (`sceLseek64` from 2 GB up, else `sceLseek`),
+    /// read and closed (the cell -1); an error sets `g_Hdd_Err` (an open
+    /// error returns there, `dbgPrintf`'s `eax`). Else `sceClose`'s.
+    pub fn read_th_main(h: &mut impl Host) -> u32 {
+        let size = global(h, REQUEST_SIZE);
+        let offset = global(h, REQUEST_OFFSET);
+        let buf = global(h, REQUEST_BUFFER);
+        let path = h.rebase(REQUEST_PATH);
+        let fd = cdecl(h, super::SCE_OPEN, &[path, 1]);
+        let cell = h.rebase(super::READ_FD);
+        h.write(cell, fd);
+        let err = h.rebase(HDD_ERR);
+        if fd.cast_signed() < 0 {
+            let fmt = h.rebase(super::READ_TH_MAIN_MSG[0]);
+            let r = cdecl(h, DBG_PRINTF, &[fmt, path]);
+            h.write(err, 1u8);
+            return r;
+        }
+        let seek = if offset >= 0x8000_0000 {
+            super::SCE_LSEEK64
+        } else {
+            super::SCE_LSEEK
+        };
+        if cdecl(h, seek, &[fd, offset, 0]).cast_signed() < 0 {
+            let fmt = h.rebase(super::READ_TH_MAIN_MSG[1]);
+            cdecl(h, DBG_PRINTF, &[fmt, path]);
+            h.write(err, 1u8);
+        } else {
+            let fd: u32 = h.read(cell);
+            if cdecl(h, SCE_READ, &[fd, buf, size]).cast_signed() < 0 {
+                h.write(err, 1u8);
+            }
+        }
+        let fd: u32 = h.read(cell);
+        let r = cdecl(h, super::SCE_CLOSE, &[fd]);
+        h.write(cell, u32::MAX);
+        r
+    }
+
+    /// `FUN_00777610(device, need)` with its frame at `ebp`: the device's
+    /// free space (`sceDevctl(device, 0x480a, 0, 0, ebp - 4, 4)`; a
+    /// failure returns 0) in megabytes (`free * 2 >> 19`, sectors), logged
+    /// with `need`; 1 when it is at least `need` (unsigned).
+    pub fn free_space_ok(h: &mut impl Host, ebp: u32, device: u32, need: u32) -> u32 {
+        let out = ebp.wrapping_sub(4);
+        if cdecl(h, super::SCE_DEVCTL, &[device, 0x480a, 0, 0, out, 4]) != 0 {
+            return 0;
+        }
+        let free: u32 = h.read(out);
+        let mb = free.wrapping_mul(2) >> 19;
+        let [m0, m1, m2] = super::FREE_SPACE_MSG;
+        let fmt = h.rebase(m0);
+        cdecl(h, DBG_PRINTF, &[fmt, free]);
+        let fmt = h.rebase(m1);
+        cdecl(h, DBG_PRINTF, &[fmt, need]);
+        let fmt = h.rebase(m2);
+        cdecl(h, DBG_PRINTF, &[fmt, mb]);
+        u32::from(mb >= need)
+    }
+
+    /// `FUN_0076cff0(cd)`: the file layer's function table (`0x02310c40`..)
+    /// filled for the CD (`cd` set: nine CD entries) or the PC
+    /// (`PcReadFunc_set()`), then the eleven shared entries; `cd` kept in
+    /// `0x02310c58`. Returns `cd`, or `PcReadFunc_set`'s `eax`.
+    pub fn set_read_funcs(h: &mut impl Host, cd: u32) -> u32 {
+        let at = h.rebase(super::READ_FUNCS_CD);
+        h.write(at, cd);
+        let r = if cd != 0 {
+            for (cell, f) in super::READ_FUNCS_CD_TABLE {
+                let (cell, f) = (h.rebase(cell), h.rebase(f));
+                h.write(cell, f);
+            }
+            cd
+        } else {
+            cdecl(h, super::PC_READ_FUNC_SET, &[])
+        };
+        for (cell, f) in super::READ_FUNCS_SHARED {
+            let (cell, f) = (h.rebase(cell), h.rebase(f));
+            h.write(cell, f);
+        }
+        r
     }
 }
