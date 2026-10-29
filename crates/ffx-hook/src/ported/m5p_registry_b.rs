@@ -995,4 +995,8 @@ ported! {
     Phyre_PDynamicGeometry_skin4BonesTangents_005c8e90 @ 0x005c_8e90 => extern "C" fn sk_005c8e90(bones: u32, n: u32, src: u32, dst: u32) {
         sk::bridge::skin4_tangents(&mut mem(), bones, n, src, dst);
     }
+    /// `Phyre_PGame_PUtilityGame_scalarDeletingDtor_009f4c20(this, flags)`: the `0x00a3e3e0` shape.
+    Phyre_PGame_PUtilityGame_scalarDeletingDtor_009f4c20 @ 0x009f_4c20 => extern "thiscall" fn utility_delete_009f4c20(this: u32, flags: u32) -> u32 {
+        ffx_pcui::m5u_j::bridge::utility_delete(&mut mem(), this, flags)
+    }
 }

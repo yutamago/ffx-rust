@@ -3044,3 +3044,38 @@ fn batch11_skin_tangents_match_the_original() {
         }
     }
 }
+
+#[test]
+fn batch12_utility_delete_matches_the_original() {
+    use ffx_pcui::m5u_j::bridge as jj;
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x1212_3434);
+        t.stub(0x0063_0390, false, 1, 0, RET);
+        for n in 0..4u32 {
+            for at in 0..=n {
+                for flags in [0u32, 1, 0xff] {
+                    let nodes: Vec<u32> = (0..n).map(|_| t.zeros(8)).collect();
+                    for (k, &node) in nodes.iter().enumerate() {
+                        let next = nodes.get(k + 1).copied().unwrap_or(0);
+                        t.w32(node + 4, next);
+                    }
+                    let this = if at < n {
+                        nodes[at as usize]
+                    } else {
+                        t.zeros(8)
+                    };
+                    t.w32(this, rng.next());
+                    let head = t.rebase(0x00c9_01a8);
+                    t.w32(head, nodes.first().copied().unwrap_or(0));
+                    t.check(
+                        &format!("{name} 0x9f4c20 {n} {at} {flags}"),
+                        0x009f_4c20,
+                        Conv::Thiscall(this),
+                        &[flags],
+                        |g| Out::U32(jj::utility_delete(g, this, flags)),
+                    );
+                }
+            }
+        }
+    }
+}
