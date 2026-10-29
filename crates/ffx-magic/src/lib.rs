@@ -52,6 +52,14 @@ pub mod m0070;
 pub mod m0074;
 pub mod m0078;
 
+pub mod l3_common;
+pub mod l3_opu;
+pub mod m0153;
+pub mod m0154;
+pub mod m0159;
+pub mod m0163;
+pub mod m0166;
+
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
 use ffx_core as _;
@@ -441,6 +449,10 @@ ports! {
     "node free then unlink" => nodes::FREE_THEN_UNLINK, nodes::free_then_unlink;
     "node insert" => nodes::INSERT, nodes::node_insert;
     "node unlink" => nodes::UNLINK, nodes::unlink;
+    "opu start-up (byte flag)" => l3_opu::START_UP, l3_opu::start_up;
+    "m0154 start-up" => m0154::E1690, m0154::e1690;
+    "m0163 particle step" => m0163::E1D10, m0163::e1d10;
+    "m0153 data wait" => m0153::E8920, m0153::e8920;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -483,6 +495,23 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("node visit (vu0)", &nodes::VISIT_VU0),
     ("node visit (slot 268)", &nodes::VISIT_268),
     ("node visit (children)", &nodes::VISIT_CHILDREN),
+    ("character fade", &l3_common::CHR_FADE),
+    ("list unlink current", &l3_common::LIST_UNLINK_CURRENT),
+    ("character show", &l3_common::CHR_SHOW),
+    ("pool take", &l3_common::POOL_TAKE),
+    ("m0159 facing angle", &m0159::FACING_ANGLE),
+    ("m0163 target angle", &m0163::TARGET_ANGLE),
+    ("m0166 reset record", &m0166::RESET_RECORD),
+    ("scale node", &l3_common::SCALE_NODE),
+    ("record node", &l3_common::RECORD_NODE),
+    ("m0153 particle node", &m0153::PARTICLE_NODE),
+    ("m0153 timed node", &m0153::TIMED_NODE),
+    ("m0153 node drop", &m0153::NODE_DROP),
+    ("m0153 owner node", &m0153::OWNER_NODE),
+    ("m0153 release effects", &m0153::RELEASE_EFFECTS),
+    ("m0153 ambient node", &m0153::AMBIENT_NODE),
+    ("m0153 vector angle (+0x0, +0x8)", &m0153::VECTOR_ANGLE_XZ),
+    ("m0153 vector angle (+0xc, +0x4)", &m0153::VECTOR_ANGLE_WY),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

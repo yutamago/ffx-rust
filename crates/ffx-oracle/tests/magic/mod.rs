@@ -255,6 +255,22 @@ impl Host for OrigHost<'_> {
     }
 
     fn import(&mut self, name: &str, regs: &mut Regs) -> Option<Result<(), String>> {
+        // the libm imports: the same Rust functions as `PortGame::libm`
+        // (MSVCR110's own results are the game's; here both sides only
+        // need to agree)
+        let libm: Option<fn(f64) -> f64> = match name {
+            "_libm_sse2_sin_precise" => Some(f64::sin),
+            "_libm_sse2_cos_precise" => Some(f64::cos),
+            "_libm_sse2_atan_precise" => Some(f64::atan),
+            "_libm_sse2_acos_precise" => Some(f64::acos),
+            _ => None,
+        };
+        if let Some(f) = libm {
+            let x = f64::from_le_bytes(regs.xmm0[..8].try_into().unwrap());
+            regs.xmm0[..8].copy_from_slice(&f(x).to_le_bytes());
+            regs.esp += 4;
+            return Some(Ok(()));
+        }
         if name == "rand" {
             self.shared.rand = self
                 .shared
@@ -362,6 +378,9 @@ pub struct Twin {
     heap: u32,
     /// Words the next comparison leaves out (the CRT's own state).
     ignore: Vec<u32>,
+    /// The original's registers after the last [`Twin::check`] (for
+    /// results outside `eax`/ST0, such as an internal function's `xmm0`).
+    pub last: Regs,
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -470,6 +489,7 @@ impl Twin {
             functions,
             heap: HEAP,
             ignore: Vec::new(),
+            last: Regs::default(),
         };
         // this thread's Unicorn engine (its thread block comes from the
         // heap) before any snapshot: GetEffectOverlayTable(1)
@@ -625,6 +645,12 @@ impl Twin {
         self.shared.floats.insert(slot, Box::new(f));
     }
 
+    /// The original's `xmm0` low word after the last [`Twin::check`].
+    #[must_use]
+    pub fn xmm0_f32(&self) -> u32 {
+        u32::from_le_bytes(self.last.xmm0[..4].try_into().unwrap())
+    }
+
     fn orig(&mut self, at: u32, c: Call, args: &[u32]) -> (Regs, Vec<CallOut>) {
         let mut a = ArenaMem;
         let sp = ENTRY_ESP;
@@ -664,6 +690,7 @@ impl Twin {
             self.port.write::<u32>(ENTRY_ESP + 4 + 4 * i, *w);
         }
         let (o, ocalls) = self.orig(at, c, args);
+        self.last = o;
         let frame = Frame {
             at,
             esp: ENTRY_ESP,
