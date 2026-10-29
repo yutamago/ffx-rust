@@ -11,7 +11,7 @@ mod magic;
 #[path = "magic/sa.rs"]
 mod sa;
 
-use ffx_magic::{Ret, Xmm, s4_misc};
+use ffx_magic::{Ret, Xmm, s4_fam446, s4_misc};
 use magic::{Call, Eax, SCRATCH, Twin};
 use sa::rec;
 
@@ -1494,5 +1494,57 @@ fn fam565_screen_bars() {
         t.set_u32(t.img.word(f + 0x22f), m);
         t.set_u32(LOG, 0);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// The family's two sparks (`magic_0446` 0x100015d0, `magic_0565`
+/// 0x10003170): both made, the second held back by the flags, and the
+/// pool full.
+#[test]
+fn fam446_sparks() {
+    for (n, rva) in [(446u16, 0x15d0u32), (565, 0x3170)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let take = t.img.rel32_target(f + 0x9);
+        let recs = SCRATCH + 0x4000;
+        t.set_u32(t.img.word(take + 0x37), recs);
+        t.set_u32(t.img.word(take + 0x61), recs);
+        let gf = SCRATCH + 0x800;
+        t.set_u32(t.img.word(f + 0x150), gf);
+        let r2 = SCRATCH + 0x880;
+        t.set_u32(t.img.word(f + 0x190), r2);
+        for i in 0..8 {
+            t.set_u32(r2 + 4 * i, 0x0e00_0000 + i);
+        }
+        rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+        rec(&mut t, 941, 1, |_, a| 0x9410_0000 ^ a[0]);
+        for s in [314u32, 404] {
+            rec(&mut t, s, 1, move |_, a| s ^ a[0]);
+            t.stub_st0(s, move |_, a| {
+                f64::from(f32::from_bits(a[0])) * if s == 404 { 0.75 } else { 0.5 }
+            });
+        }
+        let pos = SCRATCH + 0x900;
+        for (i, x) in [1.5f32, -2.0, 3.25, 1.0].into_iter().enumerate() {
+            set_f(&mut t, pos + 4 * i as u32, x);
+        }
+        for (flags, count, taken) in [(0u8, 8u32, 0u32), (2, 8, 0), (0, 2, 1), (4, 8, 0)] {
+            t.set_u8(gf, flags);
+            t.set_u32(t.img.word(take + 0x08), 0);
+            t.set_u32(t.img.word(take + 0x0f), count);
+            t.set_u32(t.img.word(take + 0x97), count);
+            t.set_u32(t.img.word(take + 0x2b), 0);
+            for i in 0..8 {
+                t.write(recs + 0x74 * i, &[0x22; 0x74]);
+                t.set_u32(recs + 0x74 * i + 0x6c, taken);
+            }
+            t.check(f, Call::this(pos), &[], Eax::Checked, |g, img, fr| {
+                if n == 446 {
+                    s4_fam446::sparks_a(g, img, fr)
+                } else {
+                    s4_fam446::sparks_b(g, img, fr)
+                }
+            });
+        }
     }
 }

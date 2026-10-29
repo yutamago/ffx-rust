@@ -14,6 +14,7 @@ use crate::runtime::slot_target;
 use crate::s3_misc::append_task;
 use crate::s4_misc::{START_OBJECT_AT, start_object_at};
 use crate::sa_pool::{TAKE, take};
+use crate::sb_sse::{add, mul};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// [`start_object_at`] through the `rel32` at `f + call`: the object
@@ -916,5 +917,169 @@ pub const SCREEN_BARS: Sig = Sig {
     len: 605,
     hash: 0xa460_a890_153b_a0e9,
     calls: &[],
+    imports: &[],
+};
+
+/// `f32` bits of 2.0, 0.25, 0.1, 0.2, 0.5, 1.0, 0.01 and pi.
+const TWO: u32 = 0x4000_0000;
+const QUARTER: u32 = 0x3e80_0000;
+const TENTH: u32 = 0x3dcc_cccd;
+const FIFTH: u32 = 0x3e4c_cccd;
+const HALF: u32 = 0x3f00_0000;
+const ONE: u32 = 0x3f80_0000;
+const HUNDREDTH: u32 = 0x3c23_d70a;
+const PI: u32 = 0x4049_0fdb;
+
+/// One spark's numbers in [`sparks`]: the spread of `+0x10` and `+0x18`
+/// (slot 314) and of the negated `+0x14` (slot 404), the scale operand of
+/// `+0x3c`, and `+0x4c`/`+0x50`.
+struct Spark {
+    spread: (u32, u32, u32),
+    scale: u32,
+    life: (u32, u32),
+}
+
+/// A spark from the sprite pool ([`crate::sb_misc::pool_take`], its
+/// `rel32` at `take`) at the position `pos` (`x` and `z` jittered by
+/// slot 314 `(2.0)`, `y` as it is), its resource `res`, frame -1, time
+/// 0x200, on; `+0x10..+0x1c` random (slots 314 and 404, the operand
+/// offsets of their tables in `t`, then the sign mask's), `+0x20..+0x2c` (0, 0.01, 0, 1), the
+/// size `(rand 0.2 + K1) * K2` (`K1` the operand at `k1`) and the two
+/// words of [`Spark::life`]. Returns the spark (0 when the pool is empty)
+/// and the last slot 314's `eax`.
+fn spark<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    (take, t, k1): (u32, [u32; 8], u32),
+    pos: u32,
+    res: impl FnOnce(&mut G) -> u32,
+    sp: &Spark,
+) -> (u32, u32) {
+    let w = |o: u32| img.word(f + o);
+    let p = crate::sb_misc::pool_take(g, img, img.rel32_target(f + take));
+    if p == 0 {
+        return (0, 0);
+    }
+    let r = res(g);
+    g.write::<u32>(p + 0x30, r);
+    g.write::<u16>(p + 0x38, 0xffff);
+    g.write::<u16>(p + 0x3a, 0x200);
+    g.write::<u32>(p + 0x34, 1);
+    let rand = |g: &mut G, op: u32, slot: u32, x: u32| {
+        let target = slot_target(g, w(op), slot);
+        let out = g.call(target, 0, &[x]);
+        (f32::from_bits(crate::sa_summon::st0_f32(out)), out.eax)
+    };
+    let (dx, _) = rand(g, t[0], 314, TWO);
+    set_f32(g, p, add(f32_at(g, pos), dx));
+    g.write::<u32>(p + 4, g.read::<u32>(pos + 4));
+    let (dz, _) = rand(g, t[1], 314, TWO);
+    g.write::<u32>(p + 0xc, ONE);
+    set_f32(g, p + 8, add(dz, f32_at(g, pos + 8)));
+    let (a, _) = rand(g, t[2], 314, sp.spread.0);
+    set_f32(g, p + 0x10, a);
+    let (b, _) = rand(g, t[3], 404, sp.spread.1);
+    // xorps with the DLL's sign mask
+    let mask = g.read::<u32>(w(t[7]));
+    set_f32(g, p + 0x14, f32::from_bits(b.to_bits() ^ mask));
+    let (c, _) = rand(g, t[4], 314, sp.spread.2);
+    set_f32(g, p + 0x18, c);
+    let (d, _) = rand(g, t[5], 314, PI);
+    set_f32(g, p + 0x1c, d);
+    for (o, v) in [(0x20, 0), (0x24, HUNDREDTH), (0x28, 0), (0x2c, ONE)] {
+        g.write::<u32>(p + o, v);
+    }
+    let (e, eax) = rand(g, t[6], 314, FIFTH);
+    g.write::<u32>(p + 0x4c, sp.life.0);
+    g.write::<u32>(p + 0x50, sp.life.1);
+    set_f32(
+        g,
+        p + 0x3c,
+        mul(add(e, f32_at(g, w(k1))), f32_at(g, w(sp.scale))),
+    );
+    (p, eax)
+}
+
+fn f32_at<G: Game>(g: &G, a: u32) -> f32 {
+    f32::from_bits(g.read::<u32>(a))
+}
+
+fn set_f32<G: Game>(g: &mut G, a: u32, x: f32) {
+    g.write::<u32>(a, x.to_bits());
+}
+
+/// Two sparks at a position (internal, `ecx` = the position): the first
+/// with the resource slot 719 `(R, 9, 0)` finds (operand `+0x28`), the
+/// second (unless `**G_F & 3`, operand `+0x150`) with the word `res_off`
+/// of `*R2` (`+0x190`). Returns the last slot 314's `eax`, `*G_F`'s
+/// pointer, or 0 when the pool is empty.
+fn sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame, res_off: u32) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let pos = fr.ecx;
+    let first = Spark {
+        spread: (TENTH, HALF, TENTH),
+        scale: 0x169,
+        life: (0x20, 0x20),
+    };
+    let res = |g: &mut G| {
+        let t = slot_target(g, w(0x19), 719);
+        g.call(t, 0, &[w(0x28), 9, 0]).eax
+    };
+    let t1 = [0x42, 0x7d, 0x97, 0xba, 0xdd, 0xf9, 0x110, 0xd8];
+    let (p, _) = spark(g, img, f, (0x9, t1, 0x14b), pos, res, &first);
+    if p == 0 {
+        return Ret::eax(0);
+    }
+    g.write::<u8>(p + 0x6b, 0);
+    let flags = g.read::<u32>(w(0x150));
+    if g.read::<u8>(flags) & 3 != 0 {
+        return Ret::eax(flags);
+    }
+    let second = Spark {
+        spread: (QUARTER, QUARTER, QUARTER),
+        scale: 0x2cb,
+        life: (0xffff_ffff, 0),
+    };
+    let res = |g: &mut G| g.read::<u32>(g.read::<u32>(w(0x190)).wrapping_add(res_off));
+    let t2 = [0x1a8, 0x1e4, 0x1fe, 0x221, 0x244, 0x260, 0x277, 0x23f];
+    let (_, eax) = spark(g, img, f, (0x180, t2, 0x2b2), pos, res, &second);
+    Ret::eax(eax)
+}
+
+/// [`sparks`] with the second resource at `*R2 + 0x20`.
+///
+/// `magic_0446` 0x100015d0 (730 bytes, `ecx`; 10 DLLs).
+pub fn sparks_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    sparks(g, img, fr, 0x20)
+}
+
+/// [`sparks_a`].
+pub const SPARKS_A: Sig = Sig {
+    len: 730,
+    hash: 0x3913_a026_843b_1a5e,
+    calls: &[
+        (0x9, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x180, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+    ],
+    imports: &[],
+};
+
+/// [`sparks`] with the second resource at `*R2 + 0x18`.
+///
+/// `magic_0565` 0x10003170 (730 bytes, `ecx`; 10 DLLs).
+pub fn sparks_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    sparks(g, img, fr, 0x18)
+}
+
+/// [`sparks_b`].
+pub const SPARKS_B: Sig = Sig {
+    len: 730,
+    hash: 0x6787_ea3f_2011_eb16,
+    calls: &[
+        (0x9, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+        (0x180, Callee::Sig(&crate::sb_misc::POOL_TAKE)),
+    ],
     imports: &[],
 };
