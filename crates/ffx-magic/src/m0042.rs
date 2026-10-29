@@ -4,7 +4,7 @@
 //! `magic_0042`'s.
 
 use crate::runtime::slot_target;
-use crate::{Game, Image, Mem, Sig};
+use crate::{Callee, Frame, Game, Image, Mem, Ret, Sig};
 
 /// 0x100034d0 (internal; `ecx` = `[node, parent, a, b]`): the
 /// [`crate::m0003::node_init`] of this family: pass byte `+0x1a` 0xff (as
@@ -243,5 +243,127 @@ pub const TIME_LEFT: Sig = Sig {
     len: 125,
     hash: 0x58c1_32f9_d5c6_02d1,
     calls: &[],
+    imports: &[],
+};
+
+/// A group's visit (0x10001000; `ecx` = the group, as a vtable method or
+/// through the thunk at 0x100010b0): the node walk
+/// ([`crate::nodes::walk`]); then, when the owner's byte `+0x1c` is set,
+/// slot 245 `(&t)` (a local, `ebp - 4`) and slot 581 `(G_POOL, 0, 0x1000,
+/// 0, &t)` before `G_POOL` (operand `+0x5e`) moves on by 8. Returns slot
+/// 581's result, or the owner.
+pub fn visit_pool<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let this = fr.ecx;
+    let _ = crate::nodes::walk(g, this, this, fr.eax);
+    let owner = g.read::<u32>(this);
+    if g.read::<u8>(owner + 0x1c) == 0 {
+        return Ret::eax(owner);
+    }
+    let t = fr.esp - 8;
+    let s245 = slot_target(g, w(0x50), 245);
+    g.call(s245, this, &[t]);
+    let pool = g.read::<u32>(w(0x5e));
+    let next = pool.wrapping_add(8);
+    let s581 = slot_target(g, w(0x75), 581);
+    // (next - pool) >> 4: always 0
+    // call width: 5 (four words and slot 245's)
+    let r = g
+        .call(s581, pool, &[pool, (next - pool) >> 4, 0x1000, 0, t])
+        .eax;
+    g.write::<u32>(w(0x87), next);
+    Ret::eax(r)
+}
+
+/// `visit_pool` (145 bytes, 1 overlay).
+pub const VISIT_POOL: Sig = Sig {
+    len: 145,
+    hash: 0xaed3_58bf_e89b_31f2,
+    calls: &[],
+    imports: &[],
+};
+
+/// Builds an effect node's three children (0x10003960, internal: `ecx`
+/// = `[node, parent, d, _, _, _, a, b, c, e]`, the [`node_init_big`]
+/// arguments and four more words): the children at `node + 0x1d4` (table
+/// `T1`, operand `+0x0f`), `+0x1a8` and `+0x17c` (table `T2`, `+0x67`,
+/// `+0x8c`) start as empty lists with pass byte 0xff; `args[3..6]` get
+/// their addresses; then [`node_init_big`], the three linked under the
+/// node in that order, the node's words from `args[6..10]`, its fixed
+/// words, slot 281 `(1)`, slot 869 `(0)` into `+0x170` and the handler
+/// table `T3` (`+0x1bf`) into the node. Returns the node.
+pub fn build<G: Game>(g: &mut G, img: &Image, f: u32, args: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let node = g.read::<u32>(args);
+    let (c1, c2, c3) = (node + 0x1d4, node + 0x1a8, node + 0x17c);
+    g.write::<u32>(c1, w(0x0f));
+    g.write::<u16>(node + 0x1ee, 0xff);
+    g.write::<u32>(node + 0x1e8, 0);
+    g.write::<u32>(c1 + 0x10, c1);
+    g.write::<u32>(c1 + 0xc, c1);
+    g.write::<u32>(args + 0xc, c3);
+    g.write::<u32>(args + 0x10, c1);
+    for (c, t) in [(c2, 0x67u32), (c3, 0x8c)] {
+        g.write::<u16>(c + 0x1a, 0xff);
+        g.write::<u32>(c + 0x10, c);
+        g.write::<u32>(c + 0xc, c);
+        g.write::<u32>(c + 0x14, 0);
+        g.write::<u32>(c, w(t));
+    }
+    g.write::<u32>(args + 0x14, c2);
+    node_init_big(g, args);
+    for c in [c1, c2, c3] {
+        g.write::<u32>(c + 4, node);
+        let last = g.read::<u32>(node + 0x10);
+        g.write::<u32>(c + 8, last);
+        let last = g.read::<u32>(node + 0x10);
+        g.write::<u32>(last + 4, c);
+        g.write::<u32>(node + 0x10, c);
+        g.write::<u32>(c + 0x14, node);
+        let n = g.read::<u16>(node + 0x18).wrapping_add(1);
+        g.write::<u16>(node + 0x18, n);
+    }
+    for (dst, src) in [
+        (0x15cu32, 0x1cu32),
+        (0x164, 0x18),
+        (0x160, 0x24),
+        (0x168, 0x20),
+    ] {
+        let v = g.read::<u32>(args + src);
+        g.write::<u32>(node + dst, v);
+    }
+    for (o, v) in [
+        (0x1f8u32, 0u32),
+        (0x1f4, 0),
+        (0x1f0, 0),
+        (0x1fc, 1),
+        (0x1a0, 0),
+        (0x19c, 0),
+        (0x198, 0),
+        (0x1a4, 0x3f80_0000),
+        (0x1d0, 0x3f80_0000),
+        (0x1cc, 0x3f80_0000),
+        (0x1c8, 0x3f80_0000),
+        (0x1c4, 0x3f80_0000),
+    ] {
+        g.write::<u32>(node + o, v);
+    }
+    g.write::<u8>(node + 0x178, 0);
+    let s281 = slot_target(g, w(0x110), 281);
+    g.call(s281, node, &[1]);
+    let s869 = slot_target(g, w(0x19c), 869);
+    let r = g.call(s869, node, &[0]).eax;
+    g.write::<u32>(node + 0x170, r);
+    let node = g.read::<u32>(args);
+    g.write::<u32>(node, w(0x1bf));
+    node
+}
+
+/// `build` (456 bytes, 1 overlay).
+pub const BUILD: Sig = Sig {
+    len: 456,
+    hash: 0x3331_043d_57eb_6c8f,
+    calls: &[(0x94, Callee::Sig(&NODE_INIT_BIG))],
     imports: &[],
 };

@@ -2,6 +2,7 @@
 //! `FFX_GAME_DIR`.
 
 mod magic;
+mod magic_l3;
 
 use ffx_magic::{Ret, m0042};
 use magic::{Call, Eax, SCRATCH, Twin};
@@ -321,4 +322,96 @@ fn node_init_big_and_time_left() {
             );
         }
     }
+}
+
+/// The group visit with the pool step (0x10001000): the walk over two
+/// children (their methods are slots 950/951), the mode already equal,
+/// the owner's byte `+0x1c` clear and set.
+#[test]
+fn visit_pool() {
+    let Some(mut t) = twin() else { return };
+    let f = t.at(0x1000);
+    let this = SCRATCH + 0x100;
+    let owner = SCRATCH + 0x200;
+    let kids = [SCRATCH + 0x300, SCRATCH + 0x380];
+    let vt = SCRATCH + 0x500;
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * 950);
+    let pool = t.img.word(f + 0x5e);
+    for slot in [950u32, 245, 581] {
+        let row = SCRATCH + 0x800 + 0x40 * (slot - 240);
+        t.stub(slot, move |m, a| {
+            let k = m.r32(row);
+            m.w32(row, k + 1);
+            for (i, w) in (0u32..).zip(&a[..if slot == 581 { 5 } else { 1 }]) {
+                m.w32(row + 4 + 4 * i, *w ^ k);
+            }
+            slot
+        });
+    }
+    for (mode, flag) in [(1u8, 0u8), (1, 1), (2, 1), (2, 0)] {
+        t.set_u32(this, owner);
+        t.set_u8(this + 4, 0x55);
+        t.set_u8(this + 5, mode);
+        t.set_u8(owner + 0x1a, 2);
+        t.set_u8(owner + 0x1c, flag);
+        t.set_u32(owner + 0x10, kids[0]);
+        t.set_u32(kids[0], vt);
+        t.set_u32(kids[0] + 8, kids[1]);
+        t.set_u32(kids[1], vt);
+        t.set_u32(kids[1] + 8, owner);
+        t.set_u32(pool, SCRATCH + 0x4000);
+        let c = Call {
+            eax: 0x1234_5678,
+            ecx: this,
+            edx: 0,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[this], Eax::Checked);
+    }
+}
+
+/// The node with its three children (0x10003960, internal): under no
+/// parent and under one with a child already.
+#[test]
+fn build() {
+    let Some(mut t) = twin() else { return };
+    let f = t.at(0x3960);
+    let args = SCRATCH;
+    let node = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x400;
+    let last = SCRATCH + 0x600;
+    t.stub(281, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        0x0281
+    });
+    t.stub(869, |m, a| {
+        m.w32(SCRATCH + 0x904, a[0]);
+        0x0869
+    });
+    for (p, l) in [(0, 0), (parent, last)] {
+        t.write(node, &[0xc3; 0x200]);
+        t.write(parent, &[0x3c; 0x20]);
+        t.write(last, &[0x5a; 0x10]);
+        t.set_u32(parent + 0x10, l);
+        for (i, v) in (0u32..).zip([node, p, 0xd, 0xa, 0xb, 0xc, 0x61, 0x62, 0x63, 0x64]) {
+            t.set_u32(args + 4 * i, v);
+        }
+        t.check(
+            f,
+            Call {
+                eax: 0,
+                ecx: args,
+                edx: 0,
+                ..Call::default()
+            },
+            &[],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(m0042::build(g, img, fr.at, fr.ecx)),
+        );
+    }
+}
+
+#[test]
+fn dll_main_writes_only_crt_state() {
+    magic_l3::dll_main(N);
 }

@@ -41,6 +41,7 @@ pub mod l3_opu;
 pub mod l5_objhost;
 pub mod l5_opu_boot;
 pub mod nodes;
+pub mod objcb;
 pub mod opu;
 pub mod opu_parts;
 pub mod pe;
@@ -50,8 +51,14 @@ pub mod runtime;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
+pub mod m0009;
+pub mod m0018;
+pub mod m0019;
+pub mod m0020;
 pub mod m0032;
 pub mod m0042;
+pub mod m0045;
+pub mod m0046;
 pub mod m0052;
 pub mod m0054;
 pub mod m0070;
@@ -67,6 +74,7 @@ pub mod m0187;
 pub mod m0194;
 pub mod m0196;
 pub mod m0219;
+pub mod m0390;
 pub mod m0604;
 
 pub use ffx_bridge::Mem;
@@ -663,6 +671,33 @@ ports! {
     "m0337 obj attach, set par B" => rcef::OBJ_ATTACH_SET_PAR_B, rcef::obj_attach_set_par_b;
     "m0339 task seq, no args" => rcef::TASK_SEQ_NO_ARGS, rcef::task_seq_no_args;
     "m0339 obj attach, set par" => rcef::OBJ_ATTACH_SET_PAR, rcef::obj_attach_set_par;
+    "m0018 bounce step" => m0018::BOUNCE_STEP, m0018::bounce_step;
+    "m0019 spin step" => m0019::SPIN_STEP, m0019::spin_step;
+    "m0020 step 1000" => m0020::E1000, m0020::e1000;
+    "m0020 step 1030" => m0020::E1030, m0020::e1030;
+    "m0020 step 1060" => m0020::E1060, m0020::e1060;
+    "m0020 step 1080" => m0020::E1080, m0020::e1080;
+    "m0020 step 10d0 (fade)" => m0020::E10D0, m0020::e10d0;
+    "m0020 object 13d0" => m0020::E13D0, m0020::e13d0;
+    "m0020 object 1470" => m0020::E1470, m0020::e1470;
+    "m0020 object 16e0" => m0020::E16E0, m0020::e16e0;
+    "m0020 object 17b0" => m0020::E17B0, m0020::e17b0;
+    "m0020 start-up 1a10" => m0020::E1A10, m0020::e1a10;
+    "m0020 frame 1e00" => m0020::E1E00, m0020::e1e00;
+    "m0042 visit, pool" => m0042::VISIT_POOL, m0042::visit_pool;
+    "m0045 object 1250" => m0045::E1250, m0045::e1250;
+    "m0045 object 1470" => m0045::E1470, m0045::e1470;
+    "m0045 object 15a0" => m0045::E15A0, m0045::e15a0;
+    "m0045 object 16b0" => m0045::E16B0, m0045::e16b0;
+    "m0045 object 18b0" => m0045::E18B0, m0045::e18b0;
+    "m0045 object 19c0" => m0045::E19C0, m0045::e19c0;
+    "m0045 start-up" => m0045::E1C10, m0045::e1c10;
+    "m0020 step 1d90" => m0020::E1D90, m0020::e1d90;
+    "m0390 task step" => m0390::E13F0, m0390::e13f0;
+    "m0390 entry 15b0" => m0390::E15B0, m0390::e15b0;
+    "m0390 object callback 15f0" => m0390::E15F0, m0390::e15f0;
+    "m0390 entry 1be0 (curve)" => m0390::E1BE0, m0390::e1be0;
+    "m0390 entry 2100" => m0390::E2100, m0390::e2100;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -735,6 +770,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0219 boot", &m0219::BOOT),
     ("m0219 make_object", &m0219::MAKE_OBJECT),
     ("m0219 object_init", &m0219::OBJECT_INIT),
+    ("m0009 set-up", &m0009::SETUP),
+    ("m0009 fill", &m0009::FILL),
+    ("m0020 bars", &m0020::BARS),
+    ("m0042 build", &m0042::BUILD),
+    ("m0046 start object", &m0046::START_OBJECT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

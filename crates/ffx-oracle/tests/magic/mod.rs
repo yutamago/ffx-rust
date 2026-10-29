@@ -186,8 +186,9 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-// 16: m0052::scaled_camera passes 13 (its earlier calls' words stay on the stack)
-const LOGGED: usize = 16;
+// 24: m0052::scaled_camera passes 13, m0020::e1a10 16, m0045::e1c10 17 (their
+// earlier calls' words stay on the stack)
+const LOGGED: usize = 24;
 
 #[derive(Default)]
 pub struct Shared {
