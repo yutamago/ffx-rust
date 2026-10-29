@@ -1,0 +1,15 @@
+[package]
+name = "ffx-overlay"
+description = "Runs the player's own spell overlays (magic_*.dll) in Unicorn inside a 32-bit address space"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+thiserror.workspace = true
+unicorn-engine.workspace = true
+
+[lints]
+workspace = true

@@ -60,6 +60,132 @@ naming them is enough:
   overlay uses and which has the same aligned-stack prologue as
   `pppKeMatSN`.
 
+## Running the original overlays
+
+The overlays are not ported on M5's path (user, 2026-10-28): the 64-bit
+program runs the player's own DLLs in Unicorn inside its arena, which
+makes them identical by construction. `crates/ffx-overlay` does it, and
+`ffx-host` embeds it unchanged. Unicorn is C, the one exception to "pure
+Rust", for the overlays only. Unicorn is GPL-2.0 (`unicorn-engine` and
+`unicorn-engine-sys` both say so), so a binary that links it is GPL-2.0
+as a whole; the sources stay MIT OR Apache-2.0.
+
+**What the 581 DLLs need.** Every one has the same five sections (`.text`,
+`.rdata`, `.data`, `.rsrc`, `.reloc`), a preferred base of `0x10000000`,
+base relocations, no TLS directory, and the same 25 imports for the CRT's
+start-up: `MSVCR110` `_lock`, `_unlock`, `_malloc_crt`, `_calloc_crt`,
+`free`, `__dllonexit`, `_onexit`, `_initterm`, `_initterm_e`,
+`__clean_type_info_names_internal`, `_amsg_exit`, `_except_handler4_common`,
+`__CppXcptFilter`, `__crtTerminateProcess`, `__crtUnhandledException`,
+`_crt_debugger_hook`, and `KERNEL32` `GetTickCount64`,
+`GetSystemTimeAsFileTime`, `GetCurrentThreadId`, `QueryPerformanceCounter`,
+`IsProcessorFeaturePresent`, `IsDebuggerPresent`, `EncodePointer`,
+`DecodePointer`, `DisableThreadLibraryCalls`. Some import more: `memset`
+(281 DLLs), `_libm_sse2_sqrt_precise` (121), `_CIatan2` (90), `rand` (81),
+`_libm_sse2_atan_precise` (18), `_libm_sse2_sin_precise` (6),
+`_libm_sse2_cos_precise` (4), `memcpy` (2) and `_libm_sse2_acos_precise`
+(1). Everything else goes through `g_MagicImports`. `GetEffectOverlayTable(0)`
+returns a table in `.data` whose first 7 words point into `.text`
+(`magic_0003`, `magic_0150`, `magic_0481`); the battle code calls them by
+offset (`+0x4`, `+0xc`, `+0x10`, ...).
+
+**The crate (`ffx_overlay`).**
+- `configure(Config { base, service, import_table })` once per process.
+  Guest address `a` lives at host address `base + a`: 0 in the 32-bit
+  game, the arena's start in `ffx-host`. `service` is a 64 KiB guest range
+  nothing else uses (the import traps; its last 16 bytes are the return
+  sentinel). `import_table` is `g_MagicImports` (address, 744), so a
+  call-out to one of its entries reports the slot.
+- `Pe::parse(file)` reads a DLL as data. The embedder reserves
+  `pe.span()` bytes at a 64 KiB-aligned base, makes everything writable
+  except `pe.text_range()`, and calls `Overlay::load(name, file, &pe, base)`:
+  headers and data sections are written there, relocated, with the import
+  address table pointing at the traps. The code itself is kept in a
+  private relocated copy that Unicorn runs; nothing writes the real
+  `.text` range.
+- `Overlay::entry_point()` (`DllMain`), `export("InitMagicPRX")`,
+  `export("GetEffectOverlayTable")`, `table_entries(table)` give
+  addresses. `OverlayFn(addr).call(host, stack_top, ecx, &args)` runs one
+  on a stack the embedder owns; `ffx_overlay::call(host, pc, &regs)` runs
+  from any state (`regs.esp` at the return address). `Overlay::unload()`
+  forgets one; the embedder runs `DllMain(base, 0, 0)` first and frees the
+  memory after.
+- The embedder implements `Host`:
+  - `call_out(target, slot, &mut regs)`: overlay code jumped to `target`,
+    outside every overlay's code. `regs.esp` points at the return address,
+    the arguments above it. Run the function and leave the state after its
+    `ret` in `regs`: `esp` past the return address and the bytes it
+    popped, `eax`/`edx`, and `st[0]` with `st_len` 1 for a float result.
+    In `ffx-host` this is the function table, by address.
+  - `import(name, &mut regs)`: the imports whose results must be the
+    game's own: `rand` (the game's sequence, shared with `FFX.exe`'s
+    calls), `_CIatan2` (x87: two values in `regs.st`), and the four
+    `_libm_sse2_*_precise` without a stand-in (`xmm0` in and out). The
+    others have stand-ins in the crate: the CRT start-up ones, `memset`,
+    `memcpy`, `sqrt` (exact on both sides), and fixed `KERNEL32` answers
+    (they only feed the security cookie).
+  - `alloc`/`free`: zeroed guest memory for the overlays' CRT and each
+    thread's Unicorn bookkeeping (8 KiB: a descriptor table and the
+    `fs` block).
+- Memory: Unicorn maps guest memory the first time overlay code touches
+  it, in 1 MiB blocks (64 KiB next to an overlay's image), read-write and
+  never executable, from `base + a`. The first 64 KiB stay unmapped. Only
+  overlay code is executable, so any jump elsewhere stops Unicorn and
+  becomes an import, a call-out, or the return to the caller. An
+  overlay's `fs` points at a private thread block, so its exception frames
+  never enter the real thread's chain.
+- Threads: one Unicorn instance per thread that runs overlay code, made on
+  first use (the async loader runs `DllMain`, the main thread the rest).
+  Calls nest: a call-out may run code that calls back into an overlay on
+  the same thread (the instance's registers are saved around it). Loading
+  or unloading an overlay bumps a generation; each instance drops stale
+  mappings and translated code the next time it runs.
+
+**What `ffx-host` provides at stage 3.** The arena as `base`; a service
+range and 8 KiB per thread from its heap; `g_MagicImports` mapped from the
+player's `FFX.exe` like the other data; `call_out` through the function
+table (every slot is a ported function's address); `rand` and the libm
+functions through the CRT ports (`rand`'s sequence and MSVCR110's results,
+`crates/ffx-oracle/tests/runtime.rs`); `LoadLibraryA`/`GetProcAddress`/
+`FreeLibrary` of `PhyreFIOS_LoadsPrx`, `MagicDLLAsyncLoad`,
+`onMagicDLLLoaded` and `PhyreFIOS_UnloadPrx` answered with
+`Overlay::load`/`export`/`unload` and the image base as the module handle;
+and a call of a function-table address inside an overlay's code (the
+overlay table's entries, `InitMagicPRX` through `0x022fb6a0`, callbacks
+an overlay stored) answered with `ffx_overlay::call` on the caller's stack.
+
+**The gate in the 32-bit game (`FFX_MAGIC_EMU=1`).**
+`crates/ffx-hook/src/overlay_emu.rs` wraps `FFX.exe`'s `LoadLibraryA`,
+`GetProcAddress` and `FreeLibrary` imports. A `magicFiles\...\magic_*.dll`
+is loaded by `ffx-overlay` into memory reserved at its preferred base;
+its `.text` pages stay reserved, so any native jump into them faults, and
+a vectored handler continues the fault in a thunk that runs the call in
+Unicorn (identity mapping: `base` 0, the game's own memory, the caller's
+own stack, with the driver 64 KiB below it). Call-outs call the real
+address natively with the overlay's registers, its x87/SSE state and 32
+argument words copied below the driver (words the callee changed are
+copied back); `rand` and the libm imports call the game's `MSVCR110`. The
+cost goes to `ffx-hook.log` when an overlay is unloaded (`overlay-emu:`
+lines: per entry point, calls, time, time in native call-outs).
+`tools/run-game.sh` passes `FFX_MAGIC_EMU` on.
+
+With it, `battle-magic`, `battle-overdrive` and `battle-ifrit` match the
+originals (traces and screenshots; 2026-10-29). Measured cost (lockstep
+replays, the busy shared machine): time in Unicorn itself is 0.08 to
+0.9 ms per frame for the per-frame entry point (`magic_0481` 0.32 ms,
+`magic_0390` 0.87 ms, `magic_0604` 0.08 ms). The native call-outs those
+entries make take far longer (`magic_0481`: about 1,000 per frame, 10 ms;
+`magic_0604`: 840 per frame, 9.7 ms; about 10 µs each), but that is the
+called game code (ported functions, `op_shape_draw`) plus the boundary;
+how much of it a native run spends too is not measured yet.
+
+Building Unicorn for the hook (`i686-pc-windows-msvc` under `cargo xwin`)
+needs CMake, Ninja and `llvm-lib` (`tools/shims/cmake`, `ninja`,
+`llvm-lib`), and `tools/xwin-unicorn.cmake` (set in `.cargo/config.toml`):
+cargo-xwin's toolchain file sets `CMAKE_MSVC_RUNTIME_LIBRARY` while the
+`cmake` crate passes `-MT`, which Unicorn's `CMakeLists.txt` refuses. The
+first build of a target directory compiles Unicorn (about 3 minutes).
+
 ## The slots
 
 | slot | offset | address | name | module | overlays | refs |

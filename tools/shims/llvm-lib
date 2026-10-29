@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Ubuntu ships the MSVC-style librarian as llvm-lib-18; unicorn-engine-sys's
+# CMake build (ffx-overlay under cargo xwin) archives its objects with it.
+exec llvm-lib-18 "$@"

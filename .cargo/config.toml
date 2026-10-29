@@ -1,6 +1,9 @@
 [env]
 # unicorn-engine-sys declares an old cmake minimum that cmake 4 rejects.
 CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+# unicorn-engine-sys for the 32-bit hook (ffx-overlay under cargo xwin): see
+# the file for why cargo-xwin's own toolchain file needs wrapping.
+"CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc" = { value = "tools/xwin-unicorn.cmake", relative = true }
 
 [target.i686-pc-windows-msvc]
 # Link the CRT statically so dinput8.dll needs no VC++ redistributable.

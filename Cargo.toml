@@ -28,6 +28,7 @@ ffx-kernel = { path = "crates/ffx-kernel" }
 ffx-menu = { path = "crates/ffx-menu" }
 ffx-monster = { path = "crates/ffx-monster" }
 ffx-motion = { path = "crates/ffx-motion" }
+ffx-overlay = { path = "crates/ffx-overlay" }
 ffx-movie = { path = "crates/ffx-movie" }
 ffx-pcui = { path = "crates/ffx-pcui" }
 ffx-pother-b = { path = "crates/ffx-pother-b" }
