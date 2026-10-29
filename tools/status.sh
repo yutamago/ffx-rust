@@ -12,8 +12,11 @@
 #   --wait   run in the foreground (still behind the lock)
 #   --watch  keep the page live: a detached loop that writes live.js (agents,
 #            queue, machine, timing; status.py --live) every SECONDS (60) and
-#            the whole page when main moves. One loop at a time; stop it with
-#            pkill -f 'status.sh --watch-loop'.
+#            the whole page when main moves. One loop at a time. It runs as
+#            the systemd user unit ffx-status-watch where there is one (a
+#            process started from a session's shell dies with the session's
+#            scope when the session restarts); stop it with
+#            systemctl --user stop ffx-status-watch (or pkill -f 'status.sh --watch-loop').
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -61,8 +64,17 @@ case "${1:-}" in
         watch "${2:-60}"
         ;;
     --watch)
-        setsid -f "$here/status.sh" --watch-loop "${2:-60}" </dev/null >/dev/null 2>&1
-        echo "status page: live every ${2:-60} s -> $out/index.html (stop: pkill -f 'status.sh --watch-loop')"
+        if systemctl --user is-active -q ffx-status-watch 2>/dev/null; then
+            echo "status page: ffx-status-watch already runs -> $out/index.html"
+        elif command -v systemd-run >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+            systemctl --user reset-failed ffx-status-watch 2>/dev/null || true
+            systemd-run --user -q --collect --unit=ffx-status-watch --setenv=PATH="$PATH" \
+                ${FFX_WORK:+--setenv=FFX_WORK="$FFX_WORK"} "$here/status.sh" --watch-loop "${2:-60}"
+            echo "status page: live every ${2:-60} s -> $out/index.html (stop: systemctl --user stop ffx-status-watch)"
+        else
+            setsid -f "$here/status.sh" --watch-loop "${2:-60}" </dev/null >/dev/null 2>&1
+            echo "status page: live every ${2:-60} s -> $out/index.html (stop: pkill -f 'status.sh --watch-loop')"
+        fi
         ;;
     --run)  # the detached copy below
         shift
