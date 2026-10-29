@@ -180,6 +180,7 @@ pub mod m5p_scene_f;
 pub mod m5p_scene_g;
 pub mod m5p_scene_h;
 pub mod m5p_scene_i;
+pub mod m5p_scene_j;
 pub mod m5r_a;
 pub mod m5r_b;
 pub mod m5r_c;

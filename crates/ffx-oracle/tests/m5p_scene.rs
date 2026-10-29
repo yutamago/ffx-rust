@@ -3115,3 +3115,90 @@ fn m5p_scene_i_partitions() {
         }
     }
 }
+
+// ---- batch 10 (ffx_prender::m5p_scene_j) ----
+
+use ffx_prender::m5p_scene_j as sj;
+
+/// The heap sort step over random heaps of 8-byte records (0 to 40; the
+/// real `_Adjust_heap` and a by-pointer comparator), the port's frame on
+/// the stack.
+#[test]
+fn m5p_scene_j_sort_heap() {
+    for (what, mut tw) in Twins::all() {
+        // mov eax,[esp+4]; mov eax,[eax]; mov ecx,[esp+8]; cmp eax,[ecx]; setb al; ret
+        let c = [
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x8b, 0x4c, 0x24, 0x08, 0x3b, 0x01, 0x0f, 0x92,
+            0xc0, 0xc3,
+        ];
+        let pred = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), pred);
+        let frame = tw.b.stack_range().start + 0x1000;
+        let mut rng = Rng(61);
+        for round in 0..30u32 {
+            let n = rng.next() % 41;
+            let mut bytes = Vec::new();
+            for i in 0..n {
+                bytes.extend((rng.next() % 50).to_le_bytes());
+                bytes.extend((0x7700_0000 + i).to_le_bytes());
+            }
+            let first = tw.alloc(&bytes);
+            let last = first + 8 * n;
+            let label = format!("{what} sort heap round {round} ({n})");
+            tw.run_void(
+                &label,
+                0x004d_2360,
+                Conv::Cdecl,
+                &[first, last, pred],
+                |g| {
+                    sj::bridge::sort_heap(g, first, last, pred, frame);
+                },
+            );
+        }
+    }
+}
+
+/// The occluder job: entry counts 0, 3 and negative, an old entry buffer
+/// owned, external, the job's own, the camera from `+0x34` or `+0`; the
+/// ring buffer and the fill stubbed.
+#[test]
+fn m5p_scene_j_occluder_job() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sj::RING, false, 0, 0, 0x00ab_0000);
+        tw.stub(sj::OCCLUDER_FILL, false, 6, 0, 0x0bad_0026);
+        tw.stub(sj::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let block = tw.zeros(0x80);
+        tw.stub(sj::RING_ALLOCATE, true, 1, 1, block);
+        let this = tw.zeros(0x40);
+        let tail = tw.zeros(4);
+        for n in [0, 3, 0x8000_0001] {
+            for (old_header, old) in [
+                (0, 0),
+                (2, 0x0012_3000),
+                (0x8000_0002, 0x0012_3000),
+                (2, block + 0x20),
+            ] {
+                for camera in [0, 0x00cc_0000] {
+                    tw.write(block, &[0xee; 0x80]);
+                    tw.w32(block + 0x18, old_header);
+                    tw.w32(block + 0x1c, old);
+                    tw.w32(this, 0x00dd_0000);
+                    tw.w32(this + 0x34, camera);
+                    tw.w32(this + 0x30, 0x4444);
+                    tw.w32(this + 0x2c, tail);
+                    let label = format!(
+                        "{what} occluder job {n:#x} old ({old_header:#x}, {old:#x}) camera {camera:#x}"
+                    );
+                    tw.run(
+                        &label,
+                        0x009f_2f20,
+                        Conv::Thiscall(this),
+                        &[0x5555, n, 0x6666],
+                        |g| sj::bridge::occluder_job(g, this, 0x5555, n, 0x6666),
+                    );
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
