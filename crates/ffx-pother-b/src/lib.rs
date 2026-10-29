@@ -31,6 +31,7 @@
 
 pub mod m4r_dynblocks;
 pub mod m4r_mesh;
+pub mod m5p_framework_input_small;
 pub mod methods;
 pub mod object;
 pub mod p4_abmap;
