@@ -144,6 +144,177 @@ pub fn native_c022<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     1
 }
 
+// ---- round 4 (menu-battle-script 2): the host-file and capture natives ----
+
+/// `MSVCR110` `sprintf`'s import slot.
+const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+
+/// `Native_c057_CopyToSaveRam` (`0x008781f0`): `(event)`: the event's
+/// save data (`event + 0x40`, 0x68c0 bytes) copied over the save RAM
+/// (`0x0112ca90`, the CRT's `memcpy`), then `0x00a44640()`; 1.
+pub fn native_c057<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let p = pop(h, s);
+    let ram = h.rebase(0x0112_ca90);
+    call(h, 0x0094_9256, &[ram, p.wrapping_add(0x40), 0x68c0]);
+    call(h, 0x00a4_4640, &[]);
+    1
+}
+
+/// `Native_c056_CdRead` (`0x00878230`): `(file, sector, buf)` (popped
+/// `buf`, `sector`, `file`): `TkCdRead(file, sector, buf)`; 1.
+pub fn native_c056<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let buf = pop(h, s);
+    let sector = pop(h, s);
+    let file = pop(h, s);
+    call(h, 0x0088_d140, &[file, sector, buf]);
+    1
+}
+
+/// `Native_c05b_DebugPs2String` / `Native_c05c_...` (`0x00878330` /
+/// `0x008783c0`): `(v)`: `sprintf(buf, fmt, worker u16 +0x2e, v)` (the
+/// two formats `0x00b5c0f4` / `0x00b5c100`), `AtelPs2DebugString2(buf)`;
+/// `v`. The buffer is the original's `ebp - 0x24` (the host's scratch).
+fn debug_ps2_string<H: NativeHost>(h: &mut H, w: u32, s: u32, fmt: u32) -> u32 {
+    let v = pop(h, s);
+    let buf = h.scratch();
+    let id = u32::from(h.read::<u16>(w.wrapping_add(0x2e)));
+    let fmt = h.rebase(fmt);
+    let f: u32 = h.read(h.rebase(SPRINTF_IAT));
+    h.call_n(f, &[buf, fmt, id, v]);
+    call(h, 0x0087_3c80, &[buf]);
+    v
+}
+
+pub fn native_c05b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    debug_ps2_string(h, w, s, 0x00b5_c0f4)
+}
+
+pub fn native_c05c<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    debug_ps2_string(h, w, s, 0x00b5_c100)
+}
+
+/// `Native_c000_SaveEventToHost` / `Native_c001_SaveEventFromHost`
+/// (`0x00878420` / `0x00878490`): in debug mode the save event
+/// (`TkGetSaveEventAddress`, 0x21ec bytes) written to / read from the
+/// host file `0x00c52dc0` (`AtelPCCreate` + `AtelPCWrite` / `AtelPCOpen`
+/// + `AtelPCRead`, then `AtelPCClose`); 1 when it opened, else 0.
+fn save_event_host<H: NativeHost>(h: &mut H, write: bool) -> u32 {
+    if !debug(h) {
+        return 0;
+    }
+    let ev = call(h, 0x0088_c830, &[]);
+    let name = h.rebase(0x00c5_2dc0);
+    let fd = call(h, if write { 0x0087_9c60 } else { 0x0087_9cf0 }, &[name]);
+    if fd.cast_signed() < 0 {
+        return 0;
+    }
+    call(
+        h,
+        if write { 0x0087_9e50 } else { 0x0087_9de0 },
+        &[fd, ev, 0x21ec],
+    );
+    call(h, 0x0087_9c30, &[fd]);
+    1
+}
+
+pub fn native_c000<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    save_event_host(h, true)
+}
+
+pub fn native_c001<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    save_event_host(h, false)
+}
+
+/// `Native_c004_CaptureEnableKari` (`0x00878570`): `(mode, on)` (popped
+/// `on`, `mode`): `Sg_CaptureEnable_Kari(mode, on)` in debug mode; 1.
+pub fn native_c004<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let on = pop(h, s);
+    let mode = pop(h, s);
+    if debug(h) {
+        call(h, 0x0083_a4f0, &[mode, on]);
+    }
+    1
+}
+
+/// `Native_c005_CaptureEnableKariOn` (`0x008785b0`): `(mode)`:
+/// `Sg_CaptureEnable_KariOn(mode)` in debug mode; 1.
+pub fn native_c005<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let mode = pop(h, s);
+    if debug(h) {
+        call(h, 0x0083_a580, &[mode]);
+    }
+    1
+}
+
+/// `Native_c00c_LoadFieldParticle` / `Native_c00b_LoadBtlFieldParticle`
+/// (`0x00878650` / `0x00878690`): `(n)`: in debug mode
+/// `yiLoadFieldParticleNo(n)` / `yiLoadBattleFieldParticleNo(n)`'s `eax`
+/// (after an empty `dbgPrintf`), else 1.
+pub fn native_c00c<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let n = pop(h, s);
+    if debug(h) {
+        return call(h, 0x0090_92e0, &[n]);
+    }
+    1
+}
+
+pub fn native_c00b<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let n = pop(h, s);
+    if debug(h) {
+        return call(h, 0x0090_9120, &[n]);
+    }
+    1
+}
+
+/// `Native_c015_SepTransFromHost` (`0x008787d0`): `(var)`: in debug mode
+/// the host file named by the variable (`AtelGetRealVarAdrs`) read into
+/// a 64-byte aligned `TkMalloc` block and handed to `SndSepTrans`, the
+/// block freed; 1.
+pub fn native_c015<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let name = call(h, 0x0086_c2e0, &[w, v]);
+    if !debug(h) {
+        return 1;
+    }
+    let fd = call(h, 0x0087_9cf0, &[name]);
+    if fd.cast_signed() < 0 {
+        return 1;
+    }
+    let n = call(h, 0x0087_9e10, &[fd]);
+    let m = call(h, 0x0088_e650, &[n.wrapping_add(0x40)]);
+    let p = call(h, 0x0088_d120, &[m, 0x40]);
+    call(h, 0x0087_9de0, &[fd, p, n]);
+    call(h, 0x0087_9c30, &[fd]);
+    call(h, 0x0088_6ee0, &[p, n]);
+    call(h, 0x0088_d520, &[m]);
+    1
+}
+
+/// `Native_c018_SqsSetProjectBase` (`0x008788a0`): `(var)`: in debug mode
+/// `SqsSetProjectBase(AtelGetRealVarAdrs(w, var))`'s `eax`, else 1.
+pub fn native_c018<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let p = call(h, 0x0086_c2e0, &[w, v]);
+    if debug(h) {
+        return call(h, 0x0081_eab0, &[p]);
+    }
+    1
+}
+
+/// `Native_c02a_OutputEncountStart` (`0x00878e10`): `(on)`: in debug mode
+/// `TkSetOutputEncount(on)` and, still in debug mode with `on`,
+/// `AtelOutputEncountStart()`; `on`.
+pub fn native_c02a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
+    let on = pop(h, s);
+    if debug(h) {
+        call(h, 0x0088_ebe0, &[on]);
+        if debug(h) && on != 0 {
+            call(h, 0x0088_5a80, &[]);
+        }
+    }
+    on
+}
+
 /// The Rust version of the native at `sym`, if this module has it.
 pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
     use Native::Int;
@@ -161,12 +332,25 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x00a7_82c0 => Int(native_401e),
         0x0087_8f20 => Int(native_c034),
         0x0087_8b00 => Int(native_c022),
+        0x0087_81f0 => Int(native_c057),
+        0x0087_8230 => Int(native_c056),
+        0x0087_8330 => Int(native_c05b),
+        0x0087_83c0 => Int(native_c05c),
+        0x0087_8420 => Int(native_c000),
+        0x0087_8490 => Int(native_c001),
+        0x0087_8570 => Int(native_c004),
+        0x0087_85b0 => Int(native_c005),
+        0x0087_8650 => Int(native_c00c),
+        0x0087_8690 => Int(native_c00b),
+        0x0087_87d0 => Int(native_c015),
+        0x0087_88a0 => Int(native_c018),
+        0x0087_8e10 => Int(native_c02a),
         _ => return None,
     })
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 13] = [
+pub const PORTED: [(u32, bool); 26] = [
     (0x0076_ea30, false),
     (0x007a_4a60, false),
     (0x007a_4c30, false),
@@ -180,4 +364,17 @@ pub const PORTED: [(u32, bool); 13] = [
     (0x00a7_82c0, false),
     (0x0087_8f20, false),
     (0x0087_8b00, false),
+    (0x0087_81f0, false),
+    (0x0087_8230, false),
+    (0x0087_8330, false),
+    (0x0087_83c0, false),
+    (0x0087_8420, false),
+    (0x0087_8490, false),
+    (0x0087_8570, false),
+    (0x0087_85b0, false),
+    (0x0087_8650, false),
+    (0x0087_8690, false),
+    (0x0087_87d0, false),
+    (0x0087_88a0, false),
+    (0x0087_8e10, false),
 ];

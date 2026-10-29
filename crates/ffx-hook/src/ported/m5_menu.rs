@@ -16,6 +16,7 @@ use ffx_menu::m5m_g::bridge as g;
 use ffx_menu::m5m_h::bridge as h;
 use ffx_menu::m5m_i::bridge as i;
 use ffx_menu::m5m_j::bridge as j;
+use ffx_menu::m5m_k::bridge as k;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -775,5 +776,134 @@ ported! {
     /// `(c)`: the customize screen's fade band.
     MenuKaizou_DrawFadeBand_008d6340 @ 0x008d_6340 => extern "C" fn menu_kaizou_draw_fade_band(c: u32) -> u32 {
         j::kaizou_fade_band(&mut mem(), c)
+    }
+    // ---- round 4, batch 1 (ffx_menu::m5m_k) ----
+    /// `Gu_DrawClient(client, x, y)` -> the tag merge's `eax`.
+    Gu_DrawClient @ 0x0084_7b50 => extern "C" fn gu_draw_client(client: u32, x: u32, y: u32) -> u32 {
+        k::draw_client(&mut mem(), client, x, y)
+    }
+    /// `Gu_Printf(fmt, ...)`: the variable arguments are the caller's
+    /// (`slots + 4`); the parsers' out word in a frame.
+    Gu_Printf @ 0x0084_8880 => extern "C" fn gu_printf(fmt: u32; slots: u32) -> u32 {
+        let mut cell = StackFrame::<1>::new();
+        let cell = cell.at();
+        k::gu_printf(&mut mem(), cell, fmt, slots.wrapping_add(4))
+    }
+    /// `debugLoad_00646b30(slot, buf, size)` -> 0 / -1.
+    debugLoad_00646b30 @ 0x0064_6b30 => extern "C" fn debug_load_00646b30(slot: u32, buf: u32, size: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x40c / 4 }>::new();
+        let ebp = fr.at() + 0x40c;
+        k::slot_file(&mut mem(), ebp, k::SlotFile::Load, slot, buf, size)
+    }
+    /// `debugLoad_00646ca0(slot, buf, size)` -> 0 / -1.
+    debugLoad_00646ca0 @ 0x0064_6ca0 => extern "C" fn debug_load_00646ca0(slot: u32, buf: u32, size: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x40c / 4 }>::new();
+        let ebp = fr.at() + 0x40c;
+        k::slot_file(&mut mem(), ebp, k::SlotFile::LoadBare, slot, buf, size)
+    }
+    /// `debugSave(slot, buf, size)` -> 0 / -1.
+    debugSave @ 0x0064_6df0 => extern "C" fn debug_save(slot: u32, buf: u32, size: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x408 / 4 }>::new();
+        let ebp = fr.at() + 0x408;
+        k::slot_file(&mut mem(), ebp, k::SlotFile::Save, slot, buf, size)
+    }
+    /// `(pkt, x, y, w, h)` -> 0.
+    HddKabe_FramePacket_00775330 @ 0x0077_5330 => extern "C" fn hdd_kabe_frame_packet(p: u32, x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        k::frame_packet(&mut mem(), p, x, y, w, hh)
+    }
+    /// `(pkt, tbp, psm, x, y, w, h)` -> 0.
+    GsPkt_TexturedSprite_00774ff0 @ 0x0077_4ff0 => extern "C" fn gs_pkt_textured_sprite(p: u32, tbp: u32, psm: u32, x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        k::textured_sprite(&mut mem(), p, tbp, psm, x, y, w, hh)
+    }
+    /// `(img, out_w, out_h)`: the load-image descriptor in a frame.
+    HddKabe_LoadImage_00775720 @ 0x0077_5720 => extern "C" fn hdd_kabe_load_image(img: u32, out_w: u32, out_h: u32) -> u32 {
+        let mut desc = StackFrame::<{ 0x60 / 4 }>::new();
+        let desc = desc.at();
+        k::kabe_load_image(&mut mem(), desc, img, out_w, out_h)
+    }
+    /// `TKMallocAndReadEventFTC(name)` -> the buffer or 0.
+    TKMallocAndReadEventFTC @ 0x0088_c860 => extern "C" fn tk_malloc_and_read_event_ftc(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x1c4 / 4 }>::new();
+        let ebp = fr.at() + 0x1c4;
+        k::event_file(&mut mem(), ebp, k::EventFile::Ftc, name)
+    }
+    /// `TKMallocAndReadEventMessage(name)` -> the buffer or 0.
+    TKMallocAndReadEventMessage @ 0x0088_cac0 => extern "C" fn tk_malloc_and_read_event_message(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x1c4 / 4 }>::new();
+        let ebp = fr.at() + 0x1c4;
+        k::event_file(&mut mem(), ebp, k::EventFile::Message, name)
+    }
+    /// `ChrViewMotionCtlProc(window, msg, id)` -> 0.
+    ChrViewMotionCtlProc @ 0x0084_bc00 => extern "C" fn chr_view_motion_ctl_proc(window: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x44 / 4 }>::new();
+        let ebp = fr.at() + 0x44;
+        k::chr_view_motion(&mut mem(), ebp, window, msg, id)
+    }
+    /// `(window, id)`: writes the caller's words after `window` on 0x6b.
+    Gu_DebugMenuCommand_00854c60 @ 0x0085_4c60 => extern "C" fn gu_debug_menu_command(window: u32, id: u32; slots: u32) -> u32 {
+        k::debug_menu_command(&mut mem(), window, id, slots)
+    }
+    /// `(window, msg, id)` -> 0.
+    Gu_FocusProc_00854980 @ 0x0085_4980 => extern "C" fn gu_focus_proc(window: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x18 / 4 }>::new();
+        let ebp = fr.at() + 0x18;
+        k::focus_proc(&mut mem(), ebp, window, msg, id)
+    }
+    /// `(prop, colour, scale, s)` -> the page mask (or `s`).
+    TkPutDebugFontStringCore_0088f240 @ 0x0088_f240 => extern "C" fn tk_put_debug_font_string_core(prop: u32, colour: u32, scale: u32, s: u32) -> u32 {
+        k::put_string_core(&mut mem(), prop, colour, scale, s)
+    }
+    /// `(op, size, req)` -> `eax` as the original leaves it.
+    TkMcCallback_008852a0 @ 0x0088_52a0 => extern "C" fn tk_mc_callback(op: u32, size: u32, req: u32) -> u32 {
+        k::mc_callback(&mut mem(), op, size, req)
+    }
+    // ---- round 4, batch 2 (ffx_menu::m5m_k) ----
+    /// `()`: the battle-end screen's draw.
+    BtlEnd_Draw_008bb7a0 @ 0x008b_b7a0 => extern "C" fn btl_end_draw() -> u32 {
+        k::btl_end_draw(&mut mem())
+    }
+    /// `()`: the battle-end cursor.
+    BtlEnd_DrawCursor_008bb8c0 @ 0x008b_b8c0 => extern "C" fn btl_end_draw_cursor() -> u32 {
+        k::btl_end_draw_cursor(&mut mem())
+    }
+    /// `()`: the battle-end window.
+    BtlEnd_DrawFrame_008bb9c0 @ 0x008b_b9c0 => extern "C" fn btl_end_draw_frame() -> u32 {
+        k::btl_end_draw_frame(&mut mem())
+    }
+    /// `(x)`: the weapon lookup's out word in a frame.
+    BtlEnd_DrawWeaponAbilities_008bd020 @ 0x008b_d020 => extern "C" fn btl_end_weapon_abilities(x: u32) -> u32 {
+        let mut fr = StackFrame::<4>::new();
+        let ebp = fr.at() + 0x10;
+        k::btl_end_weapon_abilities(&mut mem(), ebp, x)
+    }
+    /// `()`: the equipment screen's draw.
+    MenuEquip_Draw_008cf670 @ 0x008c_f670 => extern "C" fn menu_equip_draw() -> u32 {
+        k::equip_draw(&mut mem())
+    }
+    /// `(row)`: the weapon lookup's out word in a frame.
+    MenuKaizou_DrawWeaponAbilities_008d63f0 @ 0x008d_63f0 => extern "C" fn kaizou_weapon_abilities(row: u32) -> u32 {
+        let mut fr = StackFrame::<4>::new();
+        let ebp = fr.at() + 0x10;
+        k::kaizou_weapon_abilities(&mut mem(), ebp, row)
+    }
+    /// `(win)`: the text word, font info and pen in a frame.
+    TODrawMessageText_008dea40 @ 0x008d_ea40 => extern "C" fn to_draw_message_text(win: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x68 / 4 }>::new();
+        let ebp = fr.at() + 0x68;
+        k::message_text(&mut mem(), ebp, win)
+    }
+    /// `TkMenuCtrlAskYesNoWindow(win)`.
+    TkMenuCtrlAskYesNoWindow @ 0x008e_3730 => extern "C" fn tk_menu_ctrl_ask_yes_no(win: u32) -> u32 {
+        k::ask_yes_no(&mut mem(), win)
+    }
+    /// `(win)`: the yes/no prompt's window.
+    TkMenuDrawAskYesNoWindow_008e3bc0 @ 0x008e_3bc0 => extern "C" fn tk_menu_draw_ask_yes_no(win: u32) -> u32 {
+        k::ask_yes_no_draw(&mut mem(), win)
+    }
+    /// `()`: the quad in a frame.
+    MenuDrawUiElement_008e5f60 @ 0x008e_5f60 => extern "C" fn menu_draw_ui_element_008e5f60() -> u32 {
+        let mut fr = StackFrame::<{ 0x9c / 4 }>::new();
+        let ebp = fr.at() + 0x9c;
+        k::draw_ui_element_008e5f60(&mut mem(), ebp)
     }
 }

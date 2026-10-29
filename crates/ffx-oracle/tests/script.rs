@@ -19157,3 +19157,183 @@ fn m5_script_synthetic_4_match_the_original() {
     }
     eprintln!("{cases} synthetic cases");
 }
+
+/// Round 4 (menu-battle-script 2): the host-file, capture and particle
+/// debug natives (their debug paths through `TkIsDebug`'s stub returning
+/// non-zero; the host-file calls stubbed one at a time).
+const M5_NATIVES_5: [M5Native; 13] = [
+    (0x0087_81f0, &[], &[0x0086_df00, 0x0094_9256, 0x00a4_4640]),
+    (0x0087_8230, &[], &[0x0086_df00, 0x0088_d140]),
+    (
+        0x0087_8330,
+        &[(0x0132_70d8, 4)],
+        &[0x0086_df00, 0x0087_3c80],
+    ),
+    (
+        0x0087_83c0,
+        &[(0x0132_70d8, 4)],
+        &[0x0086_df00, 0x0087_3c80],
+    ),
+    (
+        0x0087_8420,
+        &[],
+        &[
+            0x0088_7d10,
+            0x0088_c830,
+            0x0087_9c60,
+            0x0087_9e50,
+            0x0087_9c30,
+        ],
+    ),
+    (
+        0x0087_8490,
+        &[],
+        &[
+            0x0088_7d10,
+            0x0088_c830,
+            0x0087_9cf0,
+            0x0087_9de0,
+            0x0087_9c30,
+        ],
+    ),
+    (0x0087_8570, &[], &[0x0086_df00, 0x0088_7d10, 0x0083_a4f0]),
+    (0x0087_85b0, &[], &[0x0086_df00, 0x0088_7d10, 0x0083_a580]),
+    (0x0087_8650, &[], &[0x0086_df00, 0x0088_7d10, 0x0090_92e0]),
+    (0x0087_8690, &[], &[0x0086_df00, 0x0088_7d10, 0x0090_9120]),
+    (
+        0x0087_87d0,
+        &[],
+        &[
+            0x0086_df00,
+            0x0086_c2e0,
+            0x0088_7d10,
+            0x0087_9cf0,
+            0x0087_9e10,
+            0x0088_e650,
+            0x0088_d120,
+            0x0087_9de0,
+            0x0087_9c30,
+            0x0088_6ee0,
+            0x0088_d520,
+        ],
+    ),
+    (
+        0x0087_88a0,
+        &[],
+        &[0x0086_df00, 0x0086_c2e0, 0x0088_7d10, 0x0081_eab0],
+    ),
+    (
+        0x0087_8e10,
+        &[(0x0133_0871, 1)],
+        &[0x0086_df00, 0x0088_7d10, 0x0088_ebe0, 0x0088_5a80],
+    ),
+];
+
+#[test]
+fn m5_script_natives_5_match_the_original() {
+    m5_natives_match(&M5_NATIVES_5);
+}
+
+/// Round 4's debug natives with their callees' words logged (stand-ins
+/// that write each call's arguments, or the string a pointer names, into
+/// memory both oracles share): `TkIsDebug` answering 1 and non-zero
+/// integers pushed for the pops, which [`m5_natives_match`]'s cases leave
+/// at 0. A snapshot is needed for the worker's stack.
+#[test]
+fn m5_script_natives_5_words_match_the_original() {
+    type Case = (u32, &'static [u32], &'static [(u32, u32, bool)]);
+    // (native, pushes (last on top), callees (address, words, string))
+    const CASES: [Case; 12] = [
+        (
+            0x0087_81f0,
+            &[0],
+            &[(0x0094_9256, 3, false), (0x00a4_4640, 0, false)],
+        ),
+        (0x0087_8230, &[0x11, 0x22, 0x33], &[(0x0088_d140, 3, false)]),
+        (0x0087_8330, &[0x1234], &[(0x0087_3c80, 1, true)]),
+        (0x0087_83c0, &[0x4321], &[(0x0087_3c80, 1, true)]),
+        (0x0087_8570, &[5, 1], &[(0x0083_a4f0, 2, false)]),
+        (0x0087_85b0, &[3], &[(0x0083_a580, 1, false)]),
+        (0x0087_8650, &[7], &[(0x0090_92e0, 1, false)]),
+        (0x0087_8690, &[9], &[(0x0090_9120, 1, false)]),
+        (
+            0x0087_8e10,
+            &[1],
+            &[(0x0088_ebe0, 1, false), (0x0088_5a80, 0, false)],
+        ),
+        (
+            0x0087_8e10,
+            &[0],
+            &[(0x0088_ebe0, 1, false), (0x0088_5a80, 0, false)],
+        ),
+        (
+            0x0087_8e10,
+            &[0x80],
+            &[(0x0088_ebe0, 1, false), (0x0088_5a80, 0, false)],
+        ),
+        (
+            0x0087_8230,
+            &[0, 0x7fff_ffff, 0xffff_ffff],
+            &[(0x0088_d140, 3, false)],
+        ),
+    ];
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; skipping (the pops need a worker)");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut env = M5Env {
+        exe: &exe,
+        pages: Some(Pages::read(PathBuf::from(snap)).unwrap()),
+        args: [0; 3],
+    };
+    env.args = env.lookup(&mut env.pair().1);
+    for (n, &(sym, push, callees)) in CASES.iter().enumerate() {
+        let mut pair = env.pair();
+        let size = 0x40 * (callees.len() + 1);
+        let log = pair.0.alloc(size).unwrap();
+        assert_eq!(pair.1.alloc(size).unwrap(), log);
+        let data = pair.0.alloc(0x7000).unwrap();
+        assert_eq!(pair.1.alloc(0x7000).unwrap(), data);
+        let push: Vec<u32> = if sym == 0x0087_81f0 {
+            vec![data]
+        } else {
+            push.to_vec()
+        };
+        for o in [&mut pair.0, &mut pair.1] {
+            let at = o.rebase(0x0088_7d10);
+            o.stub_return(at, 1).unwrap();
+            for (k, &(callee, words, string)) in callees.iter().enumerate() {
+                let at = o.rebase(callee);
+                let rec = log + 0x40 * u32::try_from(k).unwrap();
+                let cell = log + u32::try_from(size).unwrap() - 8;
+                o.stand_in(at, ffx_oracle::Returns::Eax, cell, move |s| {
+                    let calls: u32 = Mem::read(s, rec);
+                    Mem::write(s, rec, calls + 1);
+                    for j in 0..words {
+                        let v = s.arg(j);
+                        if string {
+                            // the text, not where it is (a frame or scratch)
+                            let mut b = [0u8; 0x20];
+                            Mem::read_bytes(s, v, &mut b);
+                            Mem::write_bytes(s, rec + 0x10, &b);
+                        } else {
+                            Mem::write(s, rec + 4 + 4 * j, v);
+                        }
+                    }
+                    u64::from(0x100 + callee % 0x100)
+                })
+                .unwrap();
+            }
+        }
+        let what = format!("{sym:#x} words case {n}");
+        assert!(
+            m5_native_case_with(&env, &mut pair, sym, &push, &what),
+            "{what}: stopped"
+        );
+    }
+}

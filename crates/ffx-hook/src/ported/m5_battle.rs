@@ -8,6 +8,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_battle::m5_battle::bridge as mb;
+use ffx_menu::m5m_m::bridge as mm;
 
 /// Calls the game's cdecl code at a run-time address (`mb::Call`).
 fn call<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
@@ -402,5 +403,83 @@ ported! {
     MsPlySave @ 0x007d_d5e0 => extern "C" fn ms_ply_save(name: u32) -> u32 {
         let mut f = StackFrame::<0x105>::new();
         mb::ms_ply_save(&mut mem(), &mut call, f.at(), name)
+    }
+    // ---- round 4 (menu-battle-script 2) (ffx_menu::m5m_m) ----
+    /// `()`: the address `0x00b546a0`.
+    BtlRdata_007829a0 @ 0x0078_29a0 => extern "C" fn btl_rdata_007829a0() -> u32 {
+        mm::rdata_address(&mem(), 0x00b5_46a0)
+    }
+    /// `MsBtlReadFileDone_00782fe0()`.
+    MsBtlReadFileDone_00782fe0 @ 0x0078_2fe0 => extern "C" fn ms_btl_read_file_done() {
+        mm::btl_read_file_done(&mut mem());
+    }
+    /// `MsBtlReadAsyncTask_00784500()`.
+    MsBtlReadAsyncTask_00784500 @ 0x0078_4500 => extern "C" fn ms_btl_read_async_task() -> u32 {
+        mm::btl_read_async(&mut mem())
+    }
+    /// `()`: `Native_70a4`'s body.
+    ChnSystemMgrpReset_0079cca0 @ 0x0079_cca0 => extern "C" fn chn_system_mgrp_reset() {
+        mm::chn_system_mgrp_reset(&mut mem());
+    }
+    // ---- round 4 (menu-battle-script 2), batch 4 (ffx_menu::m5m_m) ----
+    /// `()`: the debug camera's keep.
+    MsDebugCameraKeepAdd_007d0ee0 @ 0x007d_0ee0 => extern "C" fn ms_debug_camera_keep_add() -> u32 {
+        mm::debug_camera_keep_add(&mut mem())
+    }
+    /// `()`: the debug camera's state.
+    MsDebugCameraInit_007d62c0 @ 0x007d_62c0 => extern "C" fn ms_debug_camera_init() -> u32 {
+        mm::debug_camera_init(&mut mem())
+    }
+    /// `()`: the 32 debug windows.
+    MsDebugWinAllocAll_007d6440 @ 0x007d_6440 => extern "C" fn ms_debug_win_alloc_all() -> u32 {
+        mm::debug_win_alloc_all(&mut mem())
+    }
+    /// `()`: the window state block cleared.
+    MsDebugWinStateClear_007d7a20 @ 0x007d_7a20 => extern "C" fn ms_debug_win_state_clear() -> u32 {
+        mm::debug_win_state_clear(&mut mem())
+    }
+    /// `()`: the battle-end menu's step.
+    MenuBtlEnd_Step_008be1d0 @ 0x008b_e1d0 => extern "C" fn menu_btl_end_step() -> u32 {
+        mm::btl_end_menu_step(&mut mem())
+    }
+    // ---- round 4 (menu-battle-script 2), batch 5 (ffx_menu::m5m_m) ----
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderCamera_007d0af0 @ 0x007d_0af0 => extern "C" fn ms_debug_slider_camera(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_camera(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word.
+    MsDebugSliderKeepAngle_007d6470 @ 0x007d_6470 => extern "C" fn ms_debug_slider_keep_angle(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_keep_angle(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderXyz_007d6dc0 @ 0x007d_6dc0 => extern "C" fn ms_debug_slider_xyz_6dc0(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_xyz(&mut mem(), obj, id, p, slots)
+    }
+    /// `(all)`: the keep windows.
+    MsDebugKeepWindows_007d71d0 @ 0x007d_71d0 => extern "C" fn ms_debug_keep_windows(all: u32) -> u32 {
+        mm::debug_keep_windows(&mut mem(), all)
+    }
+    /// `(obj, id, p, flags)`: writes the caller's `flags` word on 0x33.
+    MsDebugSliderActors_007d95e0 @ 0x007d_95e0 => extern "C" fn ms_debug_slider_actors(obj: u32, id: u32, p: u32, flags: u32; slots: u32) -> u32 {
+        mm::slider_actors(&mut mem(), obj, id, p, flags, slots)
+    }
+    /// `(obj, id, p)`: as 0x007d6dc0.
+    MsDebugSliderXyz_007dabc0 @ 0x007d_abc0 => extern "C" fn ms_debug_slider_xyz_abc0(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_xyz(&mut mem(), obj, id, p, slots)
+    }
+    // ---- round 4 (menu-battle-script 2), batch 6 (ffx_menu::m5m_m) ----
+    /// `(obj, id, p)`: writes the caller's `id` word.
+    MsDebugSliderKeepXz_007d66d0 @ 0x007d_66d0 => extern "C" fn ms_debug_slider_keep_xz(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_keep_xz(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderCamera3_007d6a50 @ 0x007d_6a50 => extern "C" fn ms_debug_slider_camera3(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_camera3(&mut mem(), obj, id, p, slots)
+    }
+    /// `(y)`: the line buffer in a frame.
+    MsDebugPrintDashes_007d9950 @ 0x007d_9950 => extern "C" fn ms_debug_print_dashes(y: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mm::debug_print_dashes(&mut mem(), buf, y)
     }
 }
