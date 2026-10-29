@@ -49,6 +49,7 @@ use ffx_prender::m5r_l::{self as ml, bridge as lb};
 use ffx_prender::m5r_m::{self as mm, bridge as mb2};
 use ffx_prender::m5r_n::{self as mn, bridge as nb};
 use ffx_prender::m5r_o::{self as mo, bridge as ob};
+use ffx_prender::m5r_p::bridge as pb;
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -7660,6 +7661,110 @@ fn rp3_scene_layers_and_sort_match_the_original() {
                 Conv::Thiscall(scene),
                 &[],
                 |g| Out::U32(ob::vfx_sort_mode(g, scene)),
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 (render-pcui3) batch 3: ffx_prender::m5r_p ----
+
+#[test]
+fn rp3_radial_line_update_matches_the_original() {
+    // Line counts (sums 0, 1, 2, and one whose << 2 wraps to 0), hold or
+    // not; times before the start, at it, past it with progress below,
+    // at and above 16; speeds of 0 (infinities and NaNs), negative; a, b
+    // around 1 (the clamps), NaNs.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c10);
+        for case in 0..80 {
+            let this = t.zeros(0x80);
+            let (s0, s1) = match case % 6 {
+                0 => (0, 0),
+                1 => (1, 0),
+                2 => (0x4000_0000, 0),
+                3 => (1, 1),
+                // << 2 drops the top bits: 2 lines, not 0x8000_0002
+                4 if rng.chance(2) => (0x4000_0001, 0),
+                _ => (rng.below(3), rng.below(2)),
+            };
+            t.w32(this + 0x30, s0);
+            t.w32(this + 0x34, s1);
+            let n = s0.wrapping_add(s1).wrapping_shl(2) >> 1;
+            let n = n.clamp(1, 8);
+            let time = |rng: &mut Rng| -> u32 {
+                match rng.below(9) {
+                    0 => 0x3e99_999a, // 0.3f
+                    1 => 0,
+                    2 => (rng.below(100) as f32 / 10.0).to_bits(),
+                    3 => (rng.below(100) as f32 / 1000.0).to_bits(),
+                    4 => 0x7fc0_0001,
+                    5 => (-(rng.below(10) as f32)).to_bits(),
+                    _ => (rng.below(4000) as f32 / 100.0).to_bits(),
+                }
+            };
+            let speed = |rng: &mut Rng| -> u32 {
+                match rng.below(6) {
+                    0 => 0,
+                    1 => (-0.05_f32).to_bits(),
+                    _ => (rng.below(100) as f32 / 1000.0 + 0.001).to_bits(),
+                }
+            };
+            let mut states: Vec<u32> = (0..8 * n)
+                .map(|k| match k % 8 {
+                    0 => time(&mut rng),
+                    1 => speed(&mut rng),
+                    _ => float_word(&mut rng),
+                })
+                .collect();
+            // progress exactly 16, past the start and before it (held)
+            let exact = rng.chance(3);
+            if exact {
+                let (t0, sp) = if rng.chance(2) {
+                    // store(1.0 - 0.3) / (that / 16) is exactly 16
+                    (
+                        1.0_f32,
+                        ((1.0_f64 - 0.300_000_011_920_928_96) as f32) / 16.0,
+                    )
+                } else {
+                    (0.25, 0.015_625)
+                };
+                states[0] = t0.to_bits();
+                states[1] = sp.to_bits();
+            }
+            let states = t.words(&states);
+            t.w32(this + 0x64, states);
+            let v = t.zeros(0x20 * n as usize);
+            t.w32(this + 0x54, v);
+            let r = t.zeros(0x10 * n as usize + 8);
+            t.w32(this + 0x58, r);
+            let q: Vec<u32> = (0..4 * n).map(|_| float_word(&mut rng)).collect();
+            let q = t.words(&q);
+            t.w32(this + 0x5c, q);
+            let c: Vec<u32> = (0..3).map(|_| float_word(&mut rng)).collect();
+            let color = t.words(&c);
+            let hold = if exact {
+                0x101
+            } else if rng.chance(2) {
+                0
+            } else {
+                0x100 | rng.below(2)
+            };
+            let ab = |rng: &mut Rng| match rng.below(4) {
+                0 => 1.0_f32.to_bits(),
+                1 => (rng.below(300) as f32 / 100.0).to_bits(),
+                _ => float_word(rng),
+            };
+            let (a, b) = (ab(&mut rng), ab(&mut rng));
+            t.check(
+                "RadialLine_update_006f8f00",
+                0x006f_8f00,
+                Conv::Thiscall(this),
+                &[hold, color, a, b],
+                |g| {
+                    pb::radial_update(g, this, hold as u8, color, a, b);
+                    Out::None
+                },
             );
             t.reset();
         }

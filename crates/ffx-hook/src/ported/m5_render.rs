@@ -22,6 +22,7 @@ use ffx_prender::m5r_l::{self as ml, bridge as l};
 use ffx_prender::m5r_m::bridge as m;
 use ffx_prender::m5r_n::bridge as n;
 use ffx_prender::m5r_o::bridge as o;
+use ffx_prender::m5r_p::bridge as p;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1475,5 +1476,10 @@ ported! {
     /// `PhyreScene_GetVFXSortMode(scene)`.
     PhyreScene_GetVFXSortMode @ 0x0067_21b0 => extern "thiscall" fn vfx_sort_mode(this: u32) -> u32 {
         o::vfx_sort_mode(&mut mem(), this)
+    }
+    // ---- round 5 batch 3 (ffx_prender::m5r_p) ----
+    /// `RadialLine_update_006f8f00(this; hold, color, a, b)`.
+    RadialLine_update_006f8f00 @ 0x006f_8f00 => extern "thiscall" fn radial_update(this: u32, hold: u32, color: u32, a: u32, b: u32) {
+        p::radial_update(&mut mem(), this, hold as u8, color, a, b);
     }
 }
