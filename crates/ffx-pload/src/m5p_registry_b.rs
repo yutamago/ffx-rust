@@ -2835,3 +2835,166 @@ pub mod contacts {
         }
     }
 }
+
+/// Batch 9: the skin modifier's CPU kernel for four bones per vertex.
+pub mod skin {
+    use ffx_bridge::x87;
+    use ffx_graphic::host::Host;
+    use ffx_magic::sb_sse;
+
+    /// Four `f32` lanes.
+    type Lanes = [f32; 4];
+
+    /// `mulps a, b` lane by lane.
+    fn mul4(a: Lanes, b: Lanes) -> Lanes {
+        core::array::from_fn(|i| sb_sse::mul(a[i], b[i]))
+    }
+
+    /// `addps a, b` lane by lane.
+    fn add4(a: Lanes, b: Lanes) -> Lanes {
+        core::array::from_fn(|i| sb_sse::add(a[i], b[i]))
+    }
+
+    /// One lane value in all four (`movss` + `shufps 0`).
+    fn splat(x: f32) -> Lanes {
+        [x; 4]
+    }
+
+    fn lanes(h: &impl Host, at: u32) -> Lanes {
+        core::array::from_fn(|i| f32::from_bits(h.read(at.wrapping_add(4 * i as u32))))
+    }
+
+    fn put4(h: &mut impl Host, at: u32, v: Lanes) {
+        for (i, x) in v.iter().enumerate() {
+            h.write(at.wrapping_add(4 * i as u32), x.to_bits());
+        }
+    }
+
+    fn scalar(h: &impl Host, at: u32) -> f32 {
+        f32::from_bits(h.read(at))
+    }
+
+    /// A bone matrix's column `j` (16 bytes at `bone + 16j`).
+    fn column(h: &impl Host, bone: u32, j: u32) -> Lanes {
+        lanes(h, bone.wrapping_add(16 * j))
+    }
+
+    /// The x87 tail's `((c0 x + c1 y) + c2 z) [+ c3]` for component `k`
+    /// of the bone at `m`, stored as a float.
+    fn transform_x87(h: &impl Host, m: u32, k: u32, v: [f64; 3], translate: bool) -> f64 {
+        let c = |j: u32| x87::load(h.read(m.wrapping_add(16 * j + 4 * k)));
+        let s = x87::add(x87::mul(c(0), v[0]), x87::mul(c(1), v[1]));
+        let s = x87::add(s, x87::mul(c(2), v[2]));
+        let s = if translate { x87::add(s, c(3)) } else { s };
+        x87::load(x87::store(s))
+    }
+
+    pub mod bridge {
+        use super::{Host, add4, column, mul4, put4, scalar, splat, transform_x87, x87};
+
+        /// The four-bone skinning kernel `(bones, n, &src, &dst)`
+        /// (`0x005c8930`, cdecl; `src = {positions, normals, weights,
+        /// indices}`, `dst = {positions, normals}`, 12-byte vectors, four
+        /// weights and four byte indices per vertex, 64-byte bone matrices
+        /// by column): the normal through bone 0's 3x3, the position
+        /// through each bone weighted, summed. All vertices but a last one
+        /// when `n` is a multiple of 4 run on SSE and store 16 bytes each
+        /// (the fourth lane spills into the next vector); that last one
+        /// runs on the x87 and stores 12.
+        pub fn skin4(h: &mut impl Host, bones: u32, n: u32, src: u32, dst: u32) {
+            if n == 0 {
+                return;
+            }
+            let mut pos: u32 = h.read(src);
+            let mut nrm: u32 = h.read(src.wrapping_add(4));
+            let mut w: u32 = h.read(src.wrapping_add(8));
+            let mut idx: u32 = h.read(src.wrapping_add(0xc));
+            let mut pout: u32 = h.read(dst);
+            let mut nout: u32 = h.read(dst.wrapping_add(4));
+            let simd = if n & 3 != 0 { n } else { n - 1 };
+            for _ in 0..simd {
+                let ny = scalar(h, nrm.wrapping_add(4));
+                let nx = scalar(h, nrm);
+                let b0 = bones.wrapping_add(u32::from(h.read::<u8>(idx)) << 6);
+                let px = scalar(h, pos);
+                let py = scalar(h, pos.wrapping_add(4));
+                let nz = scalar(h, nrm.wrapping_add(8));
+                // the normal: bone 0's rotation
+                let xn = mul4(splat(nx), column(h, b0, 0));
+                let yn = mul4(splat(ny), column(h, b0, 1));
+                let normal = add4(add4(yn, xn), mul4(splat(nz), column(h, b0, 2)));
+                put4(h, nout, normal);
+                let b1 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(1))) << 6);
+                let pz = scalar(h, pos.wrapping_add(8));
+                let (x, y, z) = (splat(px), splat(py), splat(pz));
+                // bone 1: ((c0 x + c3) + c1 y) + c2 z, weighted
+                let p1 = add4(
+                    add4(
+                        add4(mul4(column(h, b1, 0), x), column(h, b1, 3)),
+                        mul4(column(h, b1, 1), y),
+                    ),
+                    mul4(column(h, b1, 2), z),
+                );
+                let w1 = splat(scalar(h, w.wrapping_add(4)));
+                let mut acc = mul4(p1, w1);
+                let b2 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(2))) << 6);
+                let b3 = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(3))) << 6);
+                // bone 0: ((c3 + x c0) + y c1) + z c2, weighted
+                let p0 = add4(
+                    add4(
+                        add4(column(h, b0, 3), mul4(x, column(h, b0, 0))),
+                        mul4(y, column(h, b0, 1)),
+                    ),
+                    mul4(z, column(h, b0, 2)),
+                );
+                acc = add4(acc, mul4(p0, splat(scalar(h, w))));
+                // bones 2 and 3: ((c0 x + c3) + c1 y) + c2 z, weighted
+                for (b, k) in [(b2, 2u32), (b3, 3)] {
+                    let c1y = mul4(column(h, b, 1), y);
+                    let p = add4(
+                        add4(add4(mul4(column(h, b, 0), x), column(h, b, 3)), c1y),
+                        mul4(column(h, b, 2), z),
+                    );
+                    acc = add4(acc, mul4(p, splat(scalar(h, w.wrapping_add(4 * k)))));
+                }
+                put4(h, pout, acc);
+                pos = pos.wrapping_add(0xc);
+                nrm = nrm.wrapping_add(0xc);
+                pout = pout.wrapping_add(0xc);
+                nout = nout.wrapping_add(0xc);
+                w = w.wrapping_add(0x10);
+                idx = idx.wrapping_add(4);
+            }
+            if simd == n {
+                return;
+            }
+            // the last vertex on the x87
+            let p: [f64; 3] =
+                core::array::from_fn(|k| x87::load(h.read(pos.wrapping_add(4 * k as u32))));
+            let mut acc: [f64; 3] = [0.0; 3];
+            for k in 0..4u32 {
+                let b = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(k))) << 6);
+                let r: [f64; 3] = core::array::from_fn(|c| transform_x87(h, b, c as u32, p, true));
+                let wk = x87::load(h.read(w.wrapping_add(4 * k)));
+                for c in 0..3 {
+                    let t = x87::load(x87::store(x87::mul(wk, r[c])));
+                    acc[c] = if k == 0 {
+                        t
+                    } else {
+                        x87::load(x87::store(x87::add(acc[c], t)))
+                    };
+                }
+            }
+            for (c, v) in acc.iter().enumerate() {
+                h.write(pout.wrapping_add(4 * c as u32), x87::store(*v));
+            }
+            let nv: [f64; 3] =
+                core::array::from_fn(|k| x87::load(h.read(nrm.wrapping_add(4 * k as u32))));
+            let b0 = bones.wrapping_add(u32::from(h.read::<u8>(idx)) << 6);
+            let r: [f64; 3] = core::array::from_fn(|c| transform_x87(h, b0, c as u32, nv, false));
+            for (c, v) in r.iter().enumerate() {
+                h.write(nout.wrapping_add(4 * c as u32), x87::store(*v));
+            }
+        }
+    }
+}

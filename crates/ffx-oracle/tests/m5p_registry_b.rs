@@ -37,7 +37,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_b::{
     self as rb, bridge as b, contacts as ct, geometry as gm, helpers as h, mapping as mp,
-    more as m, rest as r, swap as s,
+    more as m, rest as r, skin as sk, swap as s,
 };
 use ffx_pload::m5p_tmpl_fortype as ft;
 
@@ -2795,5 +2795,107 @@ fn batch8_contact_arrays_match_the_original() {
                 |g| Out::U32(ct::bridge::add_contact(g, frame, this2, a, b, c)),
             );
         }
+    }
+}
+
+#[test]
+fn batch9_skin_kernel_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0f0f_0f0f);
+        // Two value sets that never let two different NaNs meet: the
+        // emulator picks between two NaN operands of SSE code as the x87
+        // does (larger significand, then positive), the CPU takes the
+        // destination's, so tests keep to one NaN at a time: overflow and
+        // invalid operations (the indefinite NaN), or quiet NaN inputs.
+        let invalid = [
+            0.0f32,
+            -0.0,
+            1.0,
+            f32::INFINITY,
+            f32::from_bits(0x0001_0000),
+            -3.0e38,
+        ];
+        let quiet = [0.0f32, -0.0, 1.0, f32::NAN, f32::from_bits(0x0001_0000)];
+        for n in [0u32, 1, 2, 3, 4, 5, 8] {
+            for special in [0u32, 1, 2] {
+                let specials: &[f32] = if special == 1 { &invalid } else { &quiet };
+                // 16-byte aligned bones (the SSE loop's movaps)
+                let raw = t.zeros(64 * 6 + 16);
+                let bones = (raw + 15) & !15;
+                for k in 0..(16 * 6) {
+                    let v = if special != 0 && rng.next() % 9 == 0 {
+                        specials[(rng.next() % specials.len() as u32) as usize]
+                    } else {
+                        (rng.next() % 4000) as f32 / 1000.0 - 2.0
+                    };
+                    t.w32(bones + 4 * k, v.to_bits());
+                }
+                let rnd = |t: &mut Twins, rng: &mut Rng, words: u32| {
+                    let at = t.zeros(4 * words as usize + 16);
+                    for k in 0..words {
+                        let v = (rng.next() % 2000) as f32 / 700.0 - 1.0;
+                        t.w32(at + 4 * k, v.to_bits());
+                    }
+                    at
+                };
+                let pos = rnd(&mut t, &mut rng, 3 * n);
+                let nrm = rnd(&mut t, &mut rng, 3 * n);
+                let w = rnd(&mut t, &mut rng, 4 * n);
+                let idx = t.zeros(4 * n as usize + 4);
+                for k in 0..(4 * n) {
+                    t.write(idx + k, &[(rng.next() % 6) as u8]);
+                }
+                let src = t.zeros(16);
+                t.w32(src, pos);
+                t.w32(src + 4, nrm);
+                t.w32(src + 8, w);
+                t.w32(src + 0xc, idx);
+                let pout = t.object(&mut rng, 12 * n as usize + 16);
+                let nout = t.object(&mut rng, 12 * n as usize + 16);
+                let dst = t.zeros(8);
+                t.w32(dst, pout);
+                t.w32(dst + 4, nout);
+                t.check(
+                    &format!("{name} 0x5c8930 {n} {special} pout {pout:#x} nout {nout:#x}"),
+                    0x005c_8930,
+                    Conv::Cdecl,
+                    &[bones, n, src, dst],
+                    |g| {
+                        sk::bridge::skin4(g, bones, n, src, dst);
+                        Out::Void
+                    },
+                );
+            }
+        }
+        // positions and normals in one buffer: the reads after the normal store
+        let raw = t.zeros(64 * 6 + 16);
+        let bones = (raw + 15) & !15;
+        for k in 0..(16 * 6) {
+            t.w32(
+                bones + 4 * k,
+                ((rng.next() % 400) as f32 / 100.0 - 2.0).to_bits(),
+            );
+        }
+        let shared = t.object(&mut rng, 12 * 6 + 16);
+        let w = t.object(&mut rng, 16 * 5);
+        let idx = t.zeros(24);
+        let src = t.zeros(16);
+        t.w32(src, shared);
+        t.w32(src + 4, shared);
+        t.w32(src + 8, w);
+        t.w32(src + 0xc, idx);
+        let dst = t.zeros(8);
+        t.w32(dst, shared + 4);
+        t.w32(dst + 4, shared);
+        t.check(
+            &format!("{name} 0x5c8930 aliased"),
+            0x005c_8930,
+            Conv::Cdecl,
+            &[bones, 5, src, dst],
+            |g| {
+                sk::bridge::skin4(g, bones, 5, src, dst);
+                Out::Void
+            },
+        );
     }
 }

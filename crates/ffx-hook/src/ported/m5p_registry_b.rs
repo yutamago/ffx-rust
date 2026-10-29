@@ -13,6 +13,7 @@ use ffx_pload::m5p_registry_b::helpers as h;
 use ffx_pload::m5p_registry_b::mapping as mp;
 use ffx_pload::m5p_registry_b::more as m;
 use ffx_pload::m5p_registry_b::rest as r;
+use ffx_pload::m5p_registry_b::skin as sk;
 use ffx_pload::m5p_registry_b::swap as s;
 use ffx_pload::m5p_registry_b::{self as rb, bridge as b};
 use ffx_pload::m5p_tmpl_fortype as ft;
@@ -981,5 +982,9 @@ ported! {
     /// `Phyre_PArray_resize40_00602a60`.
     Phyre_PArray_resize40_00602a60 @ 0x0060_2a60 => extern "thiscall" fn ct_00602a60(this: u32, n: u32) -> u32 {
         { let (_, w, copy, ctor) = const { ct::resize_of(0x0060_2a60) }; ct::bridge::resize(&mut mem(), w, copy, ctor, this, n) }
+    }
+    /// `Phyre_PDynamicGeometry_skin4Bones_005c8930`.
+    Phyre_PDynamicGeometry_skin4Bones_005c8930 @ 0x005c_8930 => extern "C" fn sk_005c8930(bones: u32, n: u32, src: u32, dst: u32) {
+        sk::bridge::skin4(&mut mem(), bones, n, src, dst);
     }
 }
