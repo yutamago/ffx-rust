@@ -1208,6 +1208,25 @@ ported! {
     TOAdpShapeByKind_008f1b50 @ 0x008f_1b50 => extern "C" fn shape_by_kind(cursor: u32, x: u32, y: u32, kind: u32) -> u32 {
         mn::shape_by_kind(&mut mem(), [cursor, x, y, kind])
     }
+
+    /// `(x, y, w, h, c0, c1, full)` (`x`..`h` floats): frame `ebp - 0xb0`.
+    TODrawCrossBoxXYWHC2FW @ 0x008f_4c40 => extern "C" fn cross_box_fill_width(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32, full: u32) -> u32 {
+        let mut f = StackFrame::<0x2c>::new();
+        mn::cross_box_fill_width(&mut mem(), f.at() + 0xb0, [x, y, w, h, c0, c1, full])
+    }
+
+    /// `(item, x, y, colour)` (`x`, `y` floats): frame `ebp - 8`; the `y`
+    /// argument slot ends holding the name's `x`.
+    TODrawCrossMenuIconImportantName @ 0x008f_50f0 => extern "C" fn important_icon_name(item: u32, x: u32, y: u32, colour: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::important_icon_name(&mut mem(), f.at() + 8, [item, x, y, colour], slots)
+    }
+
+    /// `(list)`: frame `ebp - 0x120`.
+    hdd_ins_check @ 0x0077_8d70 => extern "C" fn ins_check(list: u32) -> u32 {
+        let mut f = StackFrame::<0x48>::new();
+        hd::ins_check(&mut mem(), f.at() + 0x120, list)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

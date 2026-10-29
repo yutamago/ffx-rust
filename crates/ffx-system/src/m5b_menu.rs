@@ -357,6 +357,24 @@ pub const GS_XYZ_OFFSET: u32 = 0x008f_ad50;
 pub const KIND_COLOURS: [u32; 4] = [0x025d_16a0, 0x025d_1698, 0x025d_1690, 0x025d_1688];
 pub const KIND_SHAPES: [u32; 4] = [0x008f_1af0, 0x008f_1a90, 0x008f_1990, 0x008f_1a10];
 
+/// `TODrawCrossMenuIconImportantName`'s: `MsImportantPtr`,
+/// `graphicUiRemapY2`/`graphicUiRemapX2` (float results), its seven
+/// float constants, `DrawCrossMenuIconXYWHRGBA`, `ToMakeBtlEasyFont`.
+pub const IMPORTANT_PTR: u32 = 0x0079_08a0;
+pub const REMAP_Y2: u32 = 0x0064_4820;
+pub const REMAP_X2: u32 = 0x0064_47e0;
+pub const ICON_CONSTS: [u32; 7] = [
+    0x00b5_f304,
+    0x00b5_9830,
+    0x00b5_f2e8,
+    0x00b5_a480,
+    0x00b5_ee10,
+    0x00b9_2314,
+    0x00b5_ef30,
+];
+pub const CROSS_MENU_ICON: u32 = 0x008e_6af0;
+pub const BTL_EASY_FONT: u32 = 0x0090_5ab0;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2537,5 +2555,105 @@ pub mod bridge {
         let first: u32 = h.read(pair);
         let shape = super::KIND_SHAPES[(kind & 3) as usize];
         cdecl(h, shape, &[cursor, x, y, 0xd1, first, second])
+    }
+    /// `TODrawCrossBoxXYWHC2FW(x, y, w, h, c0, c1, full)` (floats `x`, `y`,
+    /// `w`, `h`) with its frame at `ebp`: as `TODrawBoxXYWHC2FW` in float
+    /// coordinates: vertex 1's r, g, b = `ftol((c1 - c0) * w / f32(full) +
+    /// c0)` per channel (each difference and base as `f32`, x87), alpha
+    /// 0x80; the corners `(x, y)`, `(x + w, y + h)`. The temporaries the
+    /// original leaves in its frame (`ebp - 0xa0..0xb0`) are written too.
+    /// Its `eax`.
+    /// junk read: the quad's UVs and vertices 2-3 never written; 0 (brief
+    /// 2026-10-24)
+    pub fn cross_box_fill_width(h: &mut impl Host, ebp: u32, args: [u32; 7]) -> u32 {
+        use ffx_bridge::x87;
+        let [x, y, w, hh, c0, c1, full] = args;
+        let q = ebp.wrapping_sub(QUAD);
+        let (fx, fy) = (x87::load(x), x87::load(y));
+        h.write(q, x87::store(fx));
+        h.write(q.wrapping_add(4), x87::store(fy));
+        let channel = |c: u32, k: u32| (c >> (8 * k)) & 0xff;
+        h.write(q.wrapping_add(0x1c), c0 >> 24);
+        for off in [0x14u32, 0xc, 8] {
+            h.write(ebp.wrapping_sub(off), 0u32);
+        }
+        let span_bits = int_f32(full).to_bits();
+        let span = x87::load(span_bits);
+        let width = x87::load(w);
+        let mut bases = [0u32; 3];
+        let mut diffs = [0u32; 3];
+        let mut out = [0u32; 3];
+        for k in 0..3u32 {
+            let base = channel(c0, k);
+            h.write(q.wrapping_add(0x10 + 4 * k), base);
+            let i = k as usize;
+            bases[i] = int_f32(base).to_bits();
+            diffs[i] = int_f32(channel(c1, k).wrapping_sub(base)).to_bits();
+            let scaled = x87::div(x87::mul(x87::load(diffs[i]), width), span);
+            out[i] = ftol(h, x87::add(scaled, x87::load(bases[i])));
+        }
+        // the frame's temporaries as the original leaves them
+        for (off, v) in [
+            (0xb0u32, span_bits),
+            (0xa8, diffs[0]),
+            (0xa0, diffs[1]),
+            (0xa4, diffs[2]),
+            (0xac, bases[2]),
+        ] {
+            h.write(ebp.wrapping_sub(off), v);
+        }
+        put_words(h, q.wrapping_add(0x30), &[out[0], out[1], out[2], 0x80]);
+        h.write(q.wrapping_add(0x20), x87::store(x87::add(fx, width)));
+        h.write(
+            q.wrapping_add(0x24),
+            x87::store(x87::add(fy, x87::load(hh))),
+        );
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 0, 0])
+    }
+    /// A UI remap (`graphicUiRemapX2`/`Y2`) of the float `c`: its `ST0`.
+    fn remap(h: &mut impl Host, f: u32, c: u32) -> f64 {
+        h.call_sym_st0_f64(f, Conv::Cdecl, &[c])
+    }
+
+    /// `TODrawCrossMenuIconImportantName(item, x, y, colour; slots)` (`x`,
+    /// `y` floats) with its frame at `ebp`: the key item's icon and name.
+    /// The record (`MsImportantPtr(item, ebp - 4)`; name `u16 +0 + [ebp -
+    /// 4]`, icon byte `+0x12`); the icon by `DrawCrossMenuIconXYWHRGBA(x +
+    /// remapX(k4), y + remapY(k3), remapX(k2), remapY(k1), icon, 0x80
+    /// x4)`, the name by `ToMakeBtlEasyFont(name, x + remapX(k7), y +
+    /// remapY(k6), colour, k5, 1.0)` (`graphicUiRemapX2`/`Y2` of the
+    /// constants, sums rounded to `f32`; both of the last two go through
+    /// the `y` argument slot, which keeps the name's `x`; the icon's `x`
+    /// stays at `ebp - 8`). The name call's
+    /// `eax`.
+    pub fn important_icon_name(h: &mut impl Host, ebp: u32, args: [u32; 4], slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let [item, x, y, colour] = args;
+        let out = ebp.wrapping_sub(4);
+        let record = cdecl(h, super::IMPORTANT_PTR, &[item, out]);
+        let k = super::ICON_CONSTS.map(|s| global(h, s));
+        let name = u32::from(h.read::<u16>(record)).wrapping_add(h.read::<u32>(out));
+        let icon = u32::from(h.read::<u8>(record.wrapping_add(0x12)));
+        let h1 = x87::store(remap(h, super::REMAP_Y2, k[0]));
+        let w2 = x87::store(remap(h, super::REMAP_X2, k[1]));
+        let y3 = x87::store(x87::add(remap(h, super::REMAP_Y2, k[2]), x87::load(y)));
+        h.write(ebp.wrapping_sub(8), y3);
+        let x4 = x87::store(x87::add(remap(h, super::REMAP_X2, k[3]), x87::load(x)));
+        h.write(ebp.wrapping_sub(8), x4);
+        cdecl(
+            h,
+            super::CROSS_MENU_ICON,
+            &[x4, y3, w2, h1, icon, 0x80, 0x80, 0x80, 0x80],
+        );
+        let yy = x87::store(x87::add(remap(h, super::REMAP_Y2, k[5]), x87::load(y)));
+        h.write(slots.wrapping_add(8), yy);
+        let xx = x87::store(x87::add(remap(h, super::REMAP_X2, k[6]), x87::load(x)));
+        h.write(slots.wrapping_add(8), xx);
+        let scale = x87::store(x87::load(k[4]));
+        cdecl(
+            h,
+            super::BTL_EASY_FONT,
+            &[name, xx, yy, colour, scale, 1.0f32.to_bits()],
+        )
     }
 }

@@ -308,6 +308,21 @@ pub const WALL_WIDTHS: u32 = 0x00c4_190c;
 pub const WALL_HEIGHTS: u32 = 0x00c4_1918;
 pub const WALL_PICTURES: u32 = 0x0112_a04c;
 
+/// `hdd_ins_check`'s: the list reader `0x007776a0`, `crt_memcpy_thunk`,
+/// the path format `pfs0:/ex/%s`, its messages.
+pub const READ_LIST: u32 = 0x0077_76a0;
+pub const MEMCPY: u32 = 0x0094_9256;
+pub const EX_PATH_FMT: u32 = 0x00b5_1ee0;
+pub const INS_CHECK_MSG: [u32; 7] = [
+    0x00b5_3784,
+    0x00b5_3798,
+    0x00b5_37ac,
+    0x00b5_37b8,
+    0x00b5_37cc,
+    0x00b5_37dc,
+    0x00b5_37f8,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1546,5 +1561,75 @@ pub mod bridge {
         let picture = global(h, super::HELP_PICTURE);
         cdecl(h, super::EXEC_LOAD_IMAGE, &[image, picture]);
         cdecl(h, GS_SYNC_PATH, &[0, 0])
+    }
+    /// `hdd_ins_check(list)` with its frame at `ebp`: the installed list
+    /// read (`0x007776a0(fmt, ebp - 0x108, list)` gives the count), copied
+    /// (`user_malloc`, `memcpy`, 0x34-byte entries), and each copied
+    /// entry's file (`sprintf(ebp - 0x104, "pfs0:/ex/%s", name +0x24)`,
+    /// `sceOpen(path, 1)`) read back: a count word (`sceRead(fd, ebp -
+    /// 0x118, 4)`), then that many 0x24-byte entries into `list` from the
+    /// running total on, each with the file's name (16 bytes cleared, then
+    /// copied) at `+0x24`. The copy freed; returns the total (0 for an
+    /// empty list).
+    pub fn ins_check(h: &mut impl Host, ebp: u32, list: u32) -> u32 {
+        let [m0, m1, m2, m3, m4, m5, m6] = super::INS_CHECK_MSG.map(|s| h.rebase(s));
+        let n_at = ebp.wrapping_sub(0x108);
+        h.write(ebp.wrapping_sub(0x120), list);
+        h.write(ebp.wrapping_sub(0x10c), 0u32);
+        cdecl(h, super::MOUNT_LOG, &[m0]);
+        h.write(n_at, 0u32);
+        cdecl(h, super::MOUNT_LOG, &[m1]);
+        cdecl(h, super::READ_LIST, &[m2, n_at, list]);
+        cdecl(h, super::MOUNT_LOG, &[m3]);
+        let n: u32 = h.read(n_at);
+        if n == 0 {
+            return 0;
+        }
+        let copy = cdecl(h, USER_MALLOC, &[n.wrapping_mul(0x34)]);
+        h.write(ebp.wrapping_sub(0x114), copy);
+        let n: u32 = h.read(n_at);
+        cdecl(h, super::MEMCPY, &[copy, list, n.wrapping_mul(0x34)]);
+        let mut total = 0u32;
+        let path = ebp.wrapping_sub(0x104);
+        let count_at = ebp.wrapping_sub(0x118);
+        let fmt = h.rebase(super::EX_PATH_FMT);
+        let mut i = 0u32;
+        h.write(ebp.wrapping_sub(0x11c), i);
+        while i.cast_signed() < h.read::<u32>(n_at).cast_signed() {
+            let name = copy.wrapping_add(0x34 * i + 0x24);
+            cdecl(h, DBG_PRINTF, &[m4, name]);
+            let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+            h.call(sprintf, Conv::Cdecl, &[path, fmt, name]);
+            let fd = cdecl(h, super::SCE_OPEN, &[path, 1]);
+            h.write(ebp.wrapping_sub(0x110), fd);
+            if fd.cast_signed() < 0 {
+                cdecl(h, DBG_PRINTF, &[m5, path]);
+            } else {
+                cdecl(h, SCE_READ, &[fd, count_at, 4]);
+                let mut k = 0u32;
+                while k.cast_signed() < h.read::<u32>(count_at).cast_signed() {
+                    let dst = list.wrapping_add(0x34 * total + 0x24);
+                    cdecl(h, SCE_READ, &[fd, dst.wrapping_sub(0x24), 0x24]);
+                    put_words(h, dst, &[0, 0, 0, 0]);
+                    strcpy(h, dst, name);
+                    total = total.wrapping_add(1);
+                    h.write(ebp.wrapping_sub(0x10c), total);
+                    k = k.wrapping_add(1);
+                }
+                cdecl(h, super::SCE_CLOSE, &[fd]);
+            }
+            i = i.wrapping_add(1);
+            h.write(ebp.wrapping_sub(0x11c), i);
+        }
+        cdecl(h, USER_FREE, &[copy]);
+        cdecl(h, super::MOUNT_LOG, &[m6]);
+        total
+    }
+
+    /// Writes `words` from `p` on.
+    fn put_words(h: &mut impl Host, p: u32, words: &[u32]) {
+        for (k, &w) in (0u32..).zip(words) {
+            h.write(p.wrapping_add(4 * k), w);
+        }
     }
 }

@@ -6022,3 +6022,143 @@ fn r3b7_shape_by_kind_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b8_cross_box_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e01);
+        for case in 0..13u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            let fl = [0.0f32, 12.5, -3.25, 1e9, 640.0, 0.1];
+            let full = [1u32, 0x40, 3, 0xffff_ffff, 0][(case % 5) as usize];
+            let mut args = [
+                fl[(case % 6) as usize].to_bits(),
+                fl[((case + 1) % 6) as usize].to_bits(),
+                fl[((case + 2) % 6) as usize].to_bits(),
+                fl[((case + 3) % 6) as usize].to_bits(),
+                rng.next(),
+                rng.next(),
+                full,
+            ];
+            if case == 12 {
+                // (1 * 49) / 49 is 1, (1 / 49) * 49 just under: the order shows
+                args = [0, 0, 49.0f32.to_bits(), 0, 0, 1, 49];
+            }
+            t.check_fs(
+                &format!("cross box #{case}"),
+                0x008f_4c40,
+                &args,
+                0xb0,
+                4,
+                |m, ebp, _| Out::U32(mnb::cross_box_fill_width(m, ebp, args)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b8_important_icon_name_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e02);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let record = t.zeros(0x20);
+            t.write(record, &(0x120u16 + case as u16).to_le_bytes());
+            t.write(record + 0x12, &[case as u8 * 7]);
+            t.stub_store(
+                mnc::IMPORTANT_PTR,
+                None,
+                1,
+                0x1000 * case,
+                false,
+                2,
+                0,
+                record,
+            );
+            t.stub_float(
+                mnc::REMAP_Y2,
+                [0.5f32, -12.25, 3e6, 0.0][(case % 4) as usize],
+            );
+            t.stub_float(
+                mnc::REMAP_X2,
+                [1.75f32, 7.0, -0.125, 1e-3][(case / 2 % 4) as usize],
+            );
+            t.stub(mnc::CROSS_MENU_ICON, false, 9, 0, r);
+            t.stub(mnc::BTL_EASY_FONT, false, 6, 0, r ^ 1);
+            let fl = [0.0f32, 100.5, -33.25, 1e7];
+            let args = [
+                rng.next(),
+                fl[(case % 4) as usize].to_bits(),
+                fl[((case + 1) % 4) as usize].to_bits(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("important icon #{case}"),
+                0x008f_50f0,
+                &args,
+                8,
+                0,
+                |m, ebp, s| Out::U32(mnb::important_icon_name(m, ebp, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b8_hdd_ins_check_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0e03);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let n = [0u32, 1, 3, 2][(case % 4) as usize];
+            let mut list = vec![0u8; 0x34 * 8];
+            for (k, e) in list.chunks_mut(0x34).enumerate() {
+                e[..0x24].fill(0x10 + k as u8);
+                e[0x24..].fill(0xee);
+                let name = format!("file{k}.bin");
+                e[0x24..0x24 + name.len()].copy_from_slice(name.as_bytes());
+                e[0x24 + name.len()] = 0;
+            }
+            let list = t.alloc(&list);
+            let copy = t.zeros(0x34 * 8);
+            t.stub(hdc::MOUNT_LOG, false, 1, 0, r);
+            t.stub_store(hdc::READ_LIST, None, 1, n, false, 3, 0, r ^ 1);
+            t.stub(hdc::USER_MALLOC, false, 1, 0, copy);
+            t.stub_copy(hdc::MEMCPY);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 2);
+            imp(t, hdc::SPRINTF_IAT, 3, false, r ^ 3);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                2,
+                0,
+                &[3, [0xffff_ffff, 4][(case / 4) as usize], 5],
+            );
+            // the count word, and the entries' first words (both sides alike)
+            t.stub_store(
+                hdc::SCE_READ,
+                None,
+                1,
+                [2u32, 0, 1, 0xffff_ffff][(case % 4) as usize],
+                false,
+                3,
+                0,
+                r ^ 4,
+            );
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 5);
+            t.stub(hdc::USER_FREE, false, 1, 0, r ^ 6);
+            t.check_fs(
+                &format!("ins check #{case}"),
+                0x0077_8d70,
+                &[list],
+                0x120,
+                4,
+                |m, ebp, _| Out::U32(hdb::ins_check(m, ebp, list)),
+            );
+        }
+    });
+}
