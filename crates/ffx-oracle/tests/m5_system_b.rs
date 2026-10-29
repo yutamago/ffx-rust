@@ -5689,3 +5689,143 @@ impl Twins {
         self.jump(sym, addr);
     }
 }
+
+#[test]
+fn r3b6_box_textured_wall_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c01);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::DRAW_UI_ELEMENT, false, 5, 0, r);
+            let full = [1u32, 0x40, 3, 0xffff_ffff][(case % 4) as usize];
+            let w = [0u32, 0x20, 0x40, 0xffff_fff0][(case / 4 % 3) as usize];
+            let args = [
+                rng.word(),
+                rng.word(),
+                w,
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                full,
+            ];
+            t.check_fs(
+                &format!("box fw #{case}"),
+                0x008f_3eb0,
+                &args,
+                0xa4,
+                4,
+                |m, ebp, _| Out::U32(mnb::box_fill_width(m, ebp, args)),
+            );
+            let size = [1u32, 0x10, 0xffff_ffff, 0x7fff_ffff][(case % 4) as usize];
+            let args = [
+                rng.word(),
+                rng.word(),
+                size,
+                [3u32, 1, 0x8000_0000][(case % 3) as usize],
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("ui textured #{case}"),
+                0x0077_4520,
+                &args,
+                0xa0,
+                4,
+                |m, ebp, _| Out::U32(mnb::ui_textured(m, ebp, args)),
+            );
+            // the wall: 6 frames of small sizes
+            let widths = [4i16, 3, 5, 2, 1, 6];
+            let heights = [2i16, 3, 1, 4, 0, 2];
+            for k in 0..6u32 {
+                t.write(
+                    t.rebase(hdc::WALL_WIDTHS) + 2 * k,
+                    &widths[k as usize].to_le_bytes(),
+                );
+                t.write(
+                    t.rebase(hdc::WALL_HEIGHTS) + 2 * k,
+                    &heights[k as usize].to_le_bytes(),
+                );
+            }
+            let bytes: Vec<u8> = (0..0x1500).map(|_| rng.next() as u8).collect();
+            let pictures = t.alloc(&bytes);
+            t.g32(hdc::WALL_PICTURES, pictures);
+            let picture = t.alloc(&vec![0xa5; 0x4_0000]);
+            t.g32(hdc::HELP_PICTURE, picture);
+            t.stub_copy_fill(hdc::MEMSET);
+            t.stub(hdc::SET_LOAD_IMAGE, false, 8, 0, r ^ 1);
+            t.stub(hdc::FLUSH_CACHE, false, 1, 0, r ^ 2);
+            t.stub(hdc::EXEC_LOAD_IMAGE, false, 2, 0, r ^ 3);
+            t.stub_seq(hdc::GS_SYNC_PATH, 2, 0, &[r ^ 4, r ^ 5]);
+            let args = [case % 6, rng.next()];
+            let entry = t.frame_ebp(args.len()) + 4;
+            let ebp = (entry - 0xc) & !0xf;
+            t.check_fs(
+                &format!("wall frame #{case}"),
+                0x0077_98b0,
+                &args,
+                0,
+                0,
+                |m, _, _| Out::U32(hdb::wall_frame(m, ebp, args[0], args[1])),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b6_limit_gauge_param_plate_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c02);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let layout: Vec<u8> = (0..0x30).map(|_| rng.next() as u8).collect();
+            t.write(t.rebase(mnc::PLATE_LAYOUT), &layout);
+            t.stub_seq(mnc::BOX_RGBA, 8, 0, &[r, r ^ 1]);
+            t.stub(mnc::BOX_FILL_WIDTH, false, 7, 0, r ^ 2);
+            // max, value: zero ones, full, past full, partial
+            let (max, now) = [
+                (0u32, 5u32),
+                (7, 0),
+                (7, 7),
+                (7, 9),
+                (9, 4),
+                (0x7fff_ffff, 3),
+            ][(case % 6) as usize];
+            t.stub(mnc::LIMIT_MAX, false, 1, 0, max);
+            t.stub(mnc::LIMIT_NOW, false, 1, 0, now);
+            t.g32(0x0193_ed20, (case / 6) & 1); // __sse2_available
+            let args = [rng.next(), rng.next(), rng.next()];
+            t.check_fs(
+                &format!("limit gauge #{case}"),
+                0x0089_5480,
+                &args,
+                0,
+                0,
+                |m, _, s| {
+                    mnb::limit_gauge(m, args[0], args[1], args[2], s).map_or(Out::None, Out::U32)
+                },
+            );
+            t.stub(mnc::MKP_SHAPE_XY, false, 3, 0, r ^ 3);
+            t.stub(mnc::HP_MAX, false, 1, 0, r ^ 4);
+            t.stub(mnc::HP_NOW, false, 1, 0, r ^ 5);
+            t.stub(
+                mnc::WEAK_LEVEL,
+                false,
+                2,
+                0,
+                [0u32, 1, 2, 3, 4, 0xffff_ffff][(case % 6) as usize],
+            );
+            t.stub(mnc::MP_NOW, false, 1, 0, r ^ 6);
+            t.stub(mnc::VALUE_FONT_M_CLUT_RIGHT, false, 4, 0, r ^ 7);
+            t.stub(mnc::LIMIT_GAUGE, false, 3, 0, r ^ 8);
+            t.check_fs(
+                &format!("param plate #{case}"),
+                0x0089_5940,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::param_plate(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}

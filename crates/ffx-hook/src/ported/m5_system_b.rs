@@ -1155,6 +1155,33 @@ ported! {
     CdWaitDisc_0076ccb0 @ 0x0076_ccb0 => extern "C" fn wait_disc() -> u32 {
         hd::wait_disc(&mut mem())
     }
+
+    // ---- round 3, batch 6: the gradient box, the textured quad, the wall frame ----
+    /// `(x, y, w, h, c0, c1, full)`: frame `ebp - 0xa4`.
+    TODrawBoxXYWHC2FW @ 0x008f_3eb0 => extern "C" fn box_fill_width(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32, full: u32) -> u32 {
+        let mut f = StackFrame::<0x29>::new();
+        mn::box_fill_width(&mut mem(), f.at() + 0xa4, [x, y, w, h, c0, c1, full])
+    }
+    /// `(x, y, w, h, texture)`: frame `ebp - 0xa0`.
+    TODrawUITextured_00774520 @ 0x0077_4520 => extern "C" fn ui_textured(x: u32, y: u32, w: u32, h: u32, texture: u32) -> u32 {
+        let mut f = StackFrame::<0x28>::new();
+        mn::ui_textured(&mut mem(), f.at() + 0xa0, [x, y, w, h, texture])
+    }
+    /// `(frame, clut)`: frame `ebp - 0x6c` (16-byte aligned).
+    hdd_WallFrame_007798b0 @ 0x0077_98b0 => extern "C" fn wall_frame(frame: u32, clut: u32) -> u32 {
+        let mut f = StackFrame::<0x1b>::new();
+        hd::wall_frame(&mut mem(), f.at() + 0x6c, frame, clut)
+    }
+
+    /// `(chr, x, y)`: 16-bit sums in the argument slots; without a bar
+    /// `eax` is the FPU status word (the shim leaves the caller's).
+    TOBtlDrawLimitGauge @ 0x0089_5480 => extern "C" fn limit_gauge(chr: u32, x: u32, y: u32; slots: u32) {
+        let _ = mn::limit_gauge(&mut mem(), chr, x, y, slots);
+    }
+    /// `(chr, x, y)`: the HP's `y` in the high half of `y`'s slot.
+    TOBtlDrawParamPlate @ 0x0089_5940 => extern "C" fn param_plate(chr: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::param_plate(&mut mem(), chr, x, y, slots)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

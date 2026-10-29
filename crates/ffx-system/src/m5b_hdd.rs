@@ -302,6 +302,12 @@ pub const DISK_WAIT_MSG: [u32; 5] = [
     0x00b5_1e64,
 ];
 
+/// `FUN_007798b0`'s: the install wall's frame sizes (`i16` widths
+/// `0x00c4190c`, heights `0x00c41918`) and its pictures `0x0112a04c`.
+pub const WALL_WIDTHS: u32 = 0x00c4_190c;
+pub const WALL_HEIGHTS: u32 = 0x00c4_1918;
+pub const WALL_PICTURES: u32 = 0x0112_a04c;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1463,5 +1469,82 @@ pub mod bridge {
             // else straight to the check
             log_wait = cdecl(h, super::CD_STATUS, &[]) == 1;
         }
+    }
+    /// Install-wall frame `k`'s size, `w * h` of the `i16` tables.
+    fn wall_size(h: &impl Host, k: u32) -> u32 {
+        let w = i32::from(h.read::<i16>(h.rebase(super::WALL_WIDTHS).wrapping_add(2 * k)));
+        let t = i32::from(h.read::<i16>(h.rebase(super::WALL_HEIGHTS).wrapping_add(2 * k)));
+        w.wrapping_mul(t).cast_unsigned()
+    }
+
+    /// `FUN_007798b0(frame, clut)` with its (16-byte aligned) frame at
+    /// `ebp`: install-wall frame `frame`: the picture buffer cleared
+    /// (0x40000 bytes) and filled with its rows (`h` rows of `w` bytes,
+    /// 0x200 apart; `w`, `h` from the `i16` tables) from the pictures
+    /// `0x0112a04c` past the earlier frames (the sum of their `w * h`,
+    /// summed in pairs as the original does) and 0x1400; then the palette
+    /// (`pictures + frame << 10`, 16 x 16 at `clut`) and the picture
+    /// (0x200 x 0x200 at `clut + 4`, `PSM` 0x13) uploaded through the
+    /// transfer at `ebp - 0x60`. The last sync's `eax`.
+    pub fn wall_frame(h: &mut impl Host, ebp: u32, frame: u32, clut: u32) -> u32 {
+        let (mut even, mut odd, mut last) = (0u32, 0u32, 0u32);
+        let mut k = 0u32;
+        if frame.cast_signed() >= 2 {
+            while k.cast_signed() < frame.wrapping_sub(1).cast_signed() {
+                even = even.wrapping_add(wall_size(h, k));
+                odd = odd.wrapping_add(wall_size(h, k + 1));
+                k += 2;
+            }
+        }
+        if k.cast_signed() < frame.cast_signed() {
+            last = wall_size(h, k);
+        }
+        let pictures = global(h, super::WALL_PICTURES);
+        let palette = (frame << 10).wrapping_add(pictures);
+        let mut src = odd
+            .wrapping_add(even)
+            .wrapping_add(pictures)
+            .wrapping_add(last)
+            .wrapping_add(0x1400);
+        let dst = global(h, super::HELP_PICTURE);
+        cdecl(h, MEMSET, &[dst, 0, 0x4_0000]);
+        let widths = h.rebase(super::WALL_WIDTHS).wrapping_add(2 * frame);
+        let heights = h.rebase(super::WALL_HEIGHTS).wrapping_add(2 * frame);
+        let mut row = 0i32;
+        let mut offset = 0u32;
+        while row < i32::from(h.read::<i16>(heights)) {
+            let mut col = 0i32;
+            while col < i32::from(h.read::<i16>(widths)) {
+                let b: u8 = h.read(src);
+                let dst = global(h, super::HELP_PICTURE);
+                h.write(
+                    dst.wrapping_add(offset).wrapping_add(col.cast_unsigned()),
+                    b,
+                );
+                src = src.wrapping_add(1);
+                col += 1;
+            }
+            row += 1;
+            offset = offset.wrapping_add(0x200);
+        }
+        let image = ebp.wrapping_sub(0x60);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, clut, 1, 0, 0, 0, 0x10, 0x10],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, palette]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0]);
+        let at = clut.wrapping_add(4);
+        cdecl(
+            h,
+            super::SET_LOAD_IMAGE,
+            &[image, at, 8, 0x13, 0, 0, 0x200, 0x200],
+        );
+        cdecl(h, FLUSH_CACHE, &[0]);
+        let picture = global(h, super::HELP_PICTURE);
+        cdecl(h, super::EXEC_LOAD_IMAGE, &[image, picture]);
+        cdecl(h, GS_SYNC_PATH, &[0, 0])
     }
 }

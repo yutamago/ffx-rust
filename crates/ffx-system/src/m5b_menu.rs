@@ -308,6 +308,27 @@ pub const LOG_SEND_TAG: u32 = 0x00b5_21dc;
 pub const LOG_DUMP: u32 = 0x0076_e890;
 pub const LOG_WRITTEN: u32 = 0x0112_8aae;
 
+/// Round 3, batch 6: `TODrawBoxXYWHC2FW`'s and `FUN_00774520`'s quads;
+/// the latter's UV inset (f64 `0x00b4c168`).
+pub const UV_INSET: u32 = 0x00b4_c168;
+
+/// The battle plate's layout (`i16` from `0x025d0aa2`, the frame colour
+/// bytes `0x025d0ac8..cb`), `TOMakePktBoxXYWHRGBA`, `MsGetChrLimitGaugeMax`,
+/// `MsGetChrLimitGauge`, `MsGetRamChrHPmax`, `MsGetRamChrHP`,
+/// `MsCalcWeakLevel`, `MsGetRamChrMP`, `TOBtlDrawLimitGauge`,
+/// `TOMkpValueFontMClutRight`, `TODrawBoxXYWHC2FW`.
+pub const PLATE_LAYOUT: u32 = 0x025d_0aa2;
+pub const BOX_RGBA: u32 = 0x008f_b150;
+pub const LIMIT_MAX: u32 = 0x0079_5590;
+pub const LIMIT_NOW: u32 = 0x0079_5550;
+pub const HP_MAX: u32 = 0x0079_adf0;
+pub const HP_NOW: u32 = 0x0079_add0;
+pub const WEAK_LEVEL: u32 = 0x0078_bf00;
+pub const MP_NOW: u32 = 0x0079_ae50;
+pub const LIMIT_GAUGE: u32 = 0x0089_5480;
+pub const VALUE_FONT_M_CLUT_RIGHT: u32 = 0x0090_42e0;
+pub const BOX_FILL_WIDTH: u32 = 0x008f_3eb0;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -1965,5 +1986,238 @@ pub mod bridge {
                 return false;
             }
         }
+    }
+    /// `i32` division as `idiv` does it; the original faults on a zero
+    /// divisor, the port gives 0 there.
+    fn idiv(a: u32, b: u32) -> u32 {
+        a.cast_signed()
+            .checked_div(b.cast_signed())
+            .map_or(0, i32::cast_unsigned)
+    }
+
+    /// `TODrawBoxXYWHC2FW(x, y, w, h, c0, c1, full)` with its frame at
+    /// `ebp`: a box `(x, y)`..`(x + w, y + h)` shaded from `c0` (its alpha
+    /// byte too) to the colour `w / full` of the way to `c1` (each of r,
+    /// g, b: `c0 + (c1 - c0) * w / full`, signed; alpha 0x80), drawn by
+    /// `graphicDrawUIElement(quad, 0, 1, 0, 0)`. Its `eax`.
+    /// junk read: the quad's UVs and vertices 2-3 never written; 0 (brief
+    /// 2026-10-24)
+    pub fn box_fill_width(h: &mut impl Host, ebp: u32, args: [u32; 7]) -> u32 {
+        let [x, y, w, hh, c0, c1, full] = args;
+        let q = ebp.wrapping_sub(QUAD);
+        let channel = |c: u32, k: u32| (c >> (8 * k)) & 0xff;
+        h.write(q, int_f32(x).to_bits());
+        h.write(q.wrapping_add(4), int_f32(y).to_bits());
+        h.write(q.wrapping_add(0x1c), c0 >> 24);
+        let [r0, g0, b0] = [0, 1, 2].map(|k| channel(c0, k));
+        h.write(ebp.wrapping_sub(0xa0), b0);
+        h.write(q.wrapping_add(0x18), b0);
+        h.write(ebp.wrapping_sub(0xa4), g0);
+        h.write(q.wrapping_add(0x14), g0);
+        for off in [0x14u32, 0xc, 8] {
+            h.write(ebp.wrapping_sub(off), 0u32);
+        }
+        h.write(q.wrapping_add(0x10), r0);
+        h.write(q.wrapping_add(0x3c), 0x80u32);
+        for (k, base) in [(0u32, r0), (1, g0), (2, b0)] {
+            let to = channel(c1, k);
+            let v = idiv(to.wrapping_sub(base).wrapping_mul(w), full).wrapping_add(base);
+            h.write(q.wrapping_add(0x30 + 4 * k), v);
+        }
+        h.write(ebp.wrapping_sub(0xa0), x.wrapping_add(w));
+        h.write(q.wrapping_add(0x20), int_f32(x.wrapping_add(w)).to_bits());
+        let bottom = y.wrapping_add(hh);
+        h.write(ebp.wrapping_sub(0xa0), bottom);
+        h.write(q.wrapping_add(0x24), int_f32(bottom).to_bits());
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 0, 0])
+    }
+
+    /// `FUN_00774520(x, y, w, h, texture)` with its frame at `ebp`: a
+    /// textured quad `(x, y)`..`(x + w, y + h)` in grey (0x80 x4), UVs
+    /// `0 / w`, `0 / h` and `w / w - inset`, `h / h - inset` (`idiv`, as
+    /// floats; the inset f64 `0x00b4c168`), drawn by
+    /// `graphicDrawUIElement(quad, texture, 1, 0, 0)`. Its `eax`.
+    /// junk read: vertices 2-3 never written; 0 (brief 2026-10-24)
+    pub fn ui_textured(h: &mut impl Host, ebp: u32, args: [u32; 5]) -> u32 {
+        use ffx_bridge::x87;
+        let [x, y, w, hh, texture] = args;
+        let q = ebp.wrapping_sub(QUAD);
+        let tmp = ebp.wrapping_sub(0xa0);
+        h.write(q, int_f32(x).to_bits());
+        h.write(q.wrapping_add(4), int_f32(y).to_bits());
+        for off in [0xcu32, 8, 0x14] {
+            h.write(ebp.wrapping_sub(off), 0u32);
+        }
+        put_words(h, q.wrapping_add(0x10), &[0x80; 4]);
+        let u0 = idiv(0, w);
+        h.write(tmp, u0);
+        h.write(q.wrapping_add(8), int_f32(u0).to_bits());
+        let v0 = idiv(0, hh);
+        h.write(tmp, v0);
+        h.write(q.wrapping_add(0xc), int_f32(v0).to_bits());
+        let x1 = x.wrapping_add(w);
+        h.write(tmp, x1);
+        h.write(q.wrapping_add(0x20), int_f32(x1).to_bits());
+        let y1 = y.wrapping_add(hh);
+        h.write(tmp, y1);
+        h.write(q.wrapping_add(0x24), int_f32(y1).to_bits());
+        let inset = f64_global(h, super::UV_INSET);
+        let u1 = int_f32(idiv(w, w)).to_bits();
+        h.write(tmp, u1);
+        h.write(
+            q.wrapping_add(0x28),
+            x87::store(x87::sub(x87::load(u1), inset)),
+        );
+        let v1 = int_f32(idiv(hh, hh)).to_bits();
+        h.write(tmp, v1);
+        h.write(
+            q.wrapping_add(0x2c),
+            x87::store(x87::sub(x87::load(v1), inset)),
+        );
+        put_words(h, q.wrapping_add(0x30), &[0x80; 4]);
+        cdecl(h, super::DRAW_UI_ELEMENT, &[q, texture, 1, 0, 0])
+    }
+    /// The battle plate's layout halfword at `0x025d0aa2 + off`.
+    fn plate(h: &impl Host, off: u32) -> u16 {
+        h.read(h.rebase(super::PLATE_LAYOUT).wrapping_add(off))
+    }
+
+    /// A 16-bit value sign-extended, as `movsx`/`cwde` push it.
+    fn sx(v: u16) -> u32 {
+        i32::from(v.cast_signed()).cast_unsigned()
+    }
+
+    /// `TOBtlDrawLimitGauge(chr, x, y; slots)`: the gauge's frame
+    /// (`TOMakePktBoxXYWHRGBA(x, y, +0x10, +0xe, 0, 0, 0, 0x80)` of the
+    /// layout) and, unless the gauge's maximum or value is 0, its bar at
+    /// `(x + layout[6] - 1, y + layout[4])`: full
+    /// (`TOMakePktBoxXYWHRGBA(.., layout[2], layout[0], 0xf7, 0x79, 0x2e,
+    /// 0x80)`) when the value reaches the maximum, else
+    /// `TODrawBoxXYWHC2FW` with the width `ftol(value * layout[2] / max)`
+    /// (x87) shaded over the full width `layout[2]`. The original keeps
+    /// 16-bit sums in its argument slots (`x`'s high half the layout's
+    /// `+0`, `y`'s the bar's `y`; the shaded bar overwrites `y`'s slot
+    /// with `layout[2]`). Returns the bar's `eax`; without a bar the
+    /// original returns the FPU status word in `ax` (`None`).
+    pub fn limit_gauge(h: &mut impl Host, chr: u32, x: u32, y: u32, slots: u32) -> Option<u32> {
+        #[allow(clippy::cast_possible_truncation)] // the 16-bit coordinates
+        let (x16, y16) = (x as u16, y as u16);
+        let [l0, l2, l4, l6, le, l10] = [0, 2, 4, 6, 0xe, 0x10].map(|off| plate(h, off));
+        cdecl(
+            h,
+            super::BOX_RGBA,
+            &[sx(x16), sx(y16), sx(l10), sx(le), 0, 0, 0, 0x80],
+        );
+        let bar_y = l4.wrapping_add(y16);
+        let bar_x = l6.wrapping_sub(1).wrapping_add(x16);
+        h.write(slots.wrapping_add(0xa), bar_y);
+        h.write(slots.wrapping_add(6), l0);
+        let max = cdecl(h, super::LIMIT_MAX, &[chr]).cast_signed();
+        let now = cdecl(h, super::LIMIT_NOW, &[chr]).cast_signed();
+        if max == 0 || now == 0 {
+            return None;
+        }
+        if max <= now {
+            return Some(cdecl(
+                h,
+                super::BOX_RGBA,
+                &[sx(bar_x), sx(bar_y), sx(l2), sx(l0), 0xf7, 0x79, 0x2e, 0x80],
+            ));
+        }
+        let full = sx(l2);
+        h.write(slots.wrapping_add(8), full);
+        let width = ffx_bridge::x87::div(
+            ffx_bridge::x87::mul(f64::from(now), f64::from(full.cast_signed())),
+            f64::from(max),
+        );
+        let width = ffx_bridge::x87::ftol(h, width);
+        Some(cdecl(
+            h,
+            super::BOX_FILL_WIDTH,
+            &[
+                sx(bar_x),
+                sx(bar_y),
+                width,
+                sx(l0),
+                0x808a_f8ff,
+                0x8017_77e3,
+                full,
+            ],
+        ))
+    }
+
+    /// `TOBtlDrawParamPlate(chr, x, y; slots)`: the plate's frame
+    /// (`TOMakePktBoxXYWHRGBA` with the layout's size and colour bytes),
+    /// the HP icon `0xe9`, the HP (`TOMkpValueFontMClutRight`, its colour
+    /// from `MsCalcWeakLevel(hp, max)`: 1-2 give 2, 3 gives 0x53, others
+    /// 0), the MP icon `0xea` and value, then `TOBtlDrawLimitGauge`; all
+    /// at the layout's offsets (16-bit sums; the HP's `y` kept in the high
+    /// half of `y`'s argument slot). The gauge's `eax`.
+    pub fn param_plate(h: &mut impl Host, chr: u32, x: u32, y: u32, slots: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the 16-bit coordinates
+        let (x16, y16) = (x as u16, y as u16);
+        let colours = [0x26u32, 0x27, 0x28, 0x29]
+            .map(|k| u32::from(h.read::<u8>(h.rebase(super::PLATE_LAYOUT).wrapping_add(k))));
+        let (w, hh) = (plate(h, 0x2c), plate(h, 0x2a));
+        cdecl(
+            h,
+            super::BOX_RGBA,
+            &[
+                sx(x16),
+                sx(y16),
+                sx(w),
+                sx(hh),
+                colours[3],
+                colours[2],
+                colours[1],
+                colours[0],
+            ],
+        );
+        let hp_x = plate(h, 0x20).wrapping_add(x16);
+        let hp_y = plate(h, 0x1e).wrapping_add(y16);
+        h.write(slots.wrapping_add(0xa), hp_y);
+        let icon = [
+            plate(h, 0x24).wrapping_add(x16),
+            plate(h, 0x22).wrapping_add(y16),
+        ];
+        cdecl(h, super::MKP_SHAPE_XY, &[0xe9, sx(icon[0]), sx(icon[1])]);
+        let hp_max = cdecl(h, super::HP_MAX, &[chr]);
+        let hp = cdecl(h, super::HP_NOW, &[chr]);
+        let colour = match cdecl(h, super::WEAK_LEVEL, &[hp, hp_max]) {
+            1 | 2 => 2,
+            3 => 0x53,
+            _ => 0,
+        };
+        let hp = cdecl(h, super::HP_NOW, &[chr]);
+        let hp_y: u16 = h.read(slots.wrapping_add(0xa));
+        cdecl(
+            h,
+            super::VALUE_FONT_M_CLUT_RIGHT,
+            &[hp, sx(hp_x), sx(hp_y), colour],
+        );
+        let mp_icon = [
+            plate(h, 0x1c).wrapping_add(x16),
+            plate(h, 0x1a).wrapping_add(y16),
+        ];
+        cdecl(
+            h,
+            super::MKP_SHAPE_XY,
+            &[0xea, sx(mp_icon[0]), sx(mp_icon[1])],
+        );
+        let mp = cdecl(h, super::MP_NOW, &[chr]);
+        let mp_at = [
+            plate(h, 0x18).wrapping_add(x16),
+            plate(h, 0x16).wrapping_add(y16),
+        ];
+        cdecl(
+            h,
+            super::VALUE_FONT_M_CLUT_RIGHT,
+            &[mp, sx(mp_at[0]), sx(mp_at[1]), 0],
+        );
+        let gauge = [
+            plate(h, 0x14).wrapping_add(x16),
+            plate(h, 0x12).wrapping_add(y16),
+        ];
+        cdecl(h, super::LIMIT_GAUGE, &[chr, sx(gauge[0]), sx(gauge[1])])
     }
 }
