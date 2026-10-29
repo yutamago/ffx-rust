@@ -94,6 +94,14 @@ impl Files {
             o.open(&p).ok()
         });
         self.log.push((name.to_string(), found.is_some()));
+        if found.is_none() && write {
+            // a write the game expects to work (its save writer crashes on
+            // purpose when `_wfopen` fails): noted at once
+            crate::log::note(&format!(
+                "files: {name} not opened for writing (disposition {disposition}; host path {:?})",
+                self.resolve(name).map(|(p, _)| p)
+            ));
+        }
         let f = found?;
         self.next += 4;
         self.open.insert(self.next, f);
