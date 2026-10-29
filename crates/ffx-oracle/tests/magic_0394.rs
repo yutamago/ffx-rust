@@ -16,7 +16,7 @@ mod ownb;
 
 use ffx_magic::{Ret, m0394};
 use magic::{Call, Eax, SCRATCH, Twin};
-use ownb::{dirty_stack, fill, floats, rec, rec_all};
+use ownb::{dirty_stack, fill, floats, rec, rec_all, rotations};
 
 const N: u16 = 394;
 
@@ -85,6 +85,9 @@ fn twin() -> Option<Twin> {
         for i in 0..4 {
             let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i).rotate_left(7);
             m.w32(a[0] + 4 * i, v);
+            // (kept where the comparison sees it: the place writes the
+            // target's `w` again after the call)
+            m.w32(SCRATCH + 0x3d0 + 4 * i, v);
         }
         0x248
     });
@@ -146,8 +149,10 @@ fn place() {
     t.stub_st0(19, |_, a| 0.25 + f64::from(a[0] & 0xff));
     let off = t.img.word(f + 0xde);
     let flags = [0x205, 0x20f].map(|o| t.img.word(f + o));
-    let a = f32::from_bits(t.u32(t.img.word(f + 0x5c)));
-    for (k, rot) in [0.0f32, a, a + 4.0, -2.0, f32::NAN].into_iter().enumerate() {
+    // the facing `A - rot` below, inside and above the wrap, and on
+    // either limit
+    for (k, rot) in rotations(&t, f, 0x5c, 0x6b, 0x7f).into_iter().enumerate() {
+        let k = k % 5;
         t.set_u32(CFG, rot.to_bits());
         t.set_u32(off, u32::from(k == 2));
         t.set_u8(SEL, [2u8, 0x1f, 2, 0x20, 0][k]);

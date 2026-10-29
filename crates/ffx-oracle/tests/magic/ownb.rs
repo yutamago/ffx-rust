@@ -112,3 +112,22 @@ pub fn dirty_stack(t: &mut Twin, seed: u32, zero: &[u32]) {
         t.set_u32(ENTRY_ESP - z, 0);
     }
 }
+
+/// Rotations whose angle `A - rot` (operands `a`, `hi`, `lo` of `f`)
+/// wraps down, stays, wraps up, lands on either limit, or is NaN.
+pub fn rotations(t: &Twin, f: u32, a: u32, hi: u32, lo: u32) -> Vec<f32> {
+    let k = |op: u32| f32::from_bits(t.u32(t.img.word(f + op)));
+    let (a, hi, lo) = (k(a), k(hi), k(lo));
+    let mut v = vec![0.0f32, a, a + 4.0, -2.0, f32::NAN];
+    for limit in [hi, lo] {
+        let guess = (a - limit).to_bits();
+        if let Some(r) = (0..256u32)
+            .flat_map(|d| [guess.wrapping_add(d), guess.wrapping_sub(d)])
+            .map(f32::from_bits)
+            .find(|&r| (a - r).to_bits() == limit.to_bits())
+        {
+            v.push(r);
+        }
+    }
+    v
+}

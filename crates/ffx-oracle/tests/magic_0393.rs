@@ -16,7 +16,7 @@ mod ownb;
 
 use ffx_magic::{Ret, m0393};
 use magic::{Call, Eax, SCRATCH, Twin};
-use ownb::{dirty_stack, fill, floats, rec, rec_all, reset_counters};
+use ownb::{dirty_stack, fill, floats, rec, rec_all, reset_counters, rotations};
 
 const N: u16 = 393;
 
@@ -110,25 +110,6 @@ fn scale_logs(t: &mut Twin, base: usize) {
     }
 }
 
-/// Rotations whose angle `A - rot` (operands `a`, `hi`, `lo` of `f`)
-/// wraps down, stays, wraps up, lands on either limit, or is NaN.
-fn rotations(t: &Twin, f: u32, a: u32, hi: u32, lo: u32) -> Vec<f32> {
-    let k = |op: u32| f32::from_bits(t.u32(t.img.word(f + op)));
-    let (a, hi, lo) = (k(a), k(hi), k(lo));
-    let mut v = vec![0.0f32, a, a + 4.0, -2.0, f32::NAN];
-    for limit in [hi, lo] {
-        let guess = (a - limit).to_bits();
-        if let Some(r) = (0..256u32)
-            .flat_map(|d| [guess.wrapping_add(d), guess.wrapping_sub(d)])
-            .map(f32::from_bits)
-            .find(|&r| (a - r).to_bits() == limit.to_bits())
-        {
-            v.push(r);
-        }
-    }
-    v
-}
-
 #[test]
 fn face() {
     let Some(mut t) = twin() else { return };
@@ -146,6 +127,10 @@ fn face() {
         for g in flags {
             t.set_u32(g, 0x77);
         }
+        // the words face sets, not yet what it sets them to: the
+        // position's `w` and the done word
+        t.set_u32(STATE + 0x1c1c, 0x77);
+        t.set_u32(STATE + 0x1f00, 0x77);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0393::face(g, img, fr.at))
         });
@@ -229,6 +214,9 @@ fn place() {
     let Some(mut t) = twin() else { return };
     let f = t.at(0x24d0);
     scale_logs(&mut t, 9);
+    // words below the state block, so that turns read from the wrong
+    // side of it differ from the zeros place writes
+    fill(&mut t, STATE - 0x1c00, 0x10, 0x1c00);
     // the facing -rot: facing + K = K - rot hits each case
     for rot in rotations(&t, f, 0x30, 0x51, 0x7f) {
         t.set_u32(STATE + 0x1ee0, (-rot).to_bits());
