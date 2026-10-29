@@ -114,6 +114,7 @@
 0x0042c880 function mkvparser_Cluster_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042c9d0 function mkvparser_Cluster_GetNext # "Error parsing next block of cluster" on < 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x0042d050 function mkvparser_BlockEntry_EOS # GetKind() == 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x0042d370 function OggPage_end_0042d370 # thiscall(state) -> eax: 0x0042d470(+0x10; +4); when it returns 0, +0x2a bit 7 = (i64 +0x40 > 0 && i64 +0x48 <= 0), then 0; name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x0042d3c0 function ReturnConst2_0042d3c0        # auto-port shape (return constant, cdecl): return 0x2; callers: no direct caller; name ours
 0x0042e060 function ReturnFieldU32PointerChain_0042e060 # auto-port shape (return field u32 (pointer chain), thiscall): t0 = u32[(a0 + 0x10)]; t1 = u32[(a0 + 0x14)]; return t0; callers: ; name ours
 0x0042e0c0 function mkvparser_Block_GetFrameCount # (platform census 2026-10-25, docs/formats/platform.md; movie)
@@ -5781,10 +5782,10 @@
 0x006ed370 function FFXVu0CopyVector          # fh v3:bsim1.00 0x006ed4b0
 0x006ed3a0 function FFXVu0DivVector           # fh v3:exact 0x006ed4e0
 0x006ed420 function FFXVu0DivVectorXYZ        # fh v3:exact 0x006ed560
-0x006ed450 function FFXVu0InversMatrix        # g_MagicImports slot 327 (40 overlays), between FFXVu0InterVectorXYZ and FFXVu0RotMatrixX in the slot order: jmp cdc_OrthonormalInverse3x4 (0x00705db0); hidden from the dump (no function at the address)
+0x006ed450 function FFXVu0InversMatrix # g_MagicImports slot 327 (40 overlays), between FFXVu0InterVectorXYZ and FFXVu0RotMatrixX in the slot order: jmp cdc_OrthonormalInverse3x4 (0x00705db0); hidden from the dump (no function at the address); ported (ffx_ps2::m5_ps2, m5 small b7): cdecl(dst, src)
 0x006ed460 function sceVu0InversMatrix4x4     # cdecl(dst, m): the identity when a row of m is all ±0 (returns dst), else cdc_Inverse4x4 (returns dst+0x48); fh v3:exact 0x006ed5a0
 0x006ed4f0 function FFXVu0LightColorMatrix    # fh v3:exact 0x006ed630
-0x006ed5c0 function FFXVu0MulMatrix           # g_MagicImports slot 231 (408 overlays), between FFXVu0CopyMatrix and FFXVu0Normalize: jmp cdc_Mul4x4_007059b0; hidden from the dump
+0x006ed5c0 function FFXVu0MulMatrix # g_MagicImports slot 231 (408 overlays), between FFXVu0CopyMatrix and FFXVu0Normalize: jmp cdc_Mul4x4_007059b0; hidden from the dump; ported (ffx_ps2::m5_ps2, m5 small b7): cdecl(dst, a, b): jmp cdc_Mul4x4_007059b0
 0x006ed5d0 function FFXVu0MulVector           # fh v3:exact 0x006ed710
 0x006ed620 function FFXVu0NormalLightMatrix   # fh v3:exact 0x006ed760
 0x006ed6f0 function FFXVu0Normalize           # fh v3:exact 0x006ed830
@@ -5795,6 +5796,7 @@
 0x006ed840 function FFXVu0RotTransPers        # fh v3:exact 0x006ed980
 0x006ed8f0 function FFXVu0ScaleVector         # fh v3:exact 0x006eda30
 0x006ed940 function FFXVu0SubVector           # fh v3:exact 0x006eda80
+0x006ed990 function cdc_Transpose_thunk_006ed990 # cdecl(dst, src): a 5-byte jmp cdc_Transpose; name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x006ed9a0 function FFXVu0UnitMatrix          # fh v3:bsim1.00 0x006edae0
 0x006ed9b0 function sceVu0VectorLengthSquared # fh v3:exact 0x006edaf0
 0x006ed9e0 function sg_calcenvelopeW_asm      # fh v3:exact 0x006edb20
@@ -16566,17 +16568,23 @@
 0x009dafd0 function SetGlobal_0193fdac # cdecl(v): *0x0193fdac = v, returns v; name ours
 0x009dafe0 function MagicFile_SetAsyncLoad    # (): graphicSetMagicFileAsyncLoadEnable(1 for magic 0x26e..0x274/0x15c/0x277/0x27b, 3 for 0x15e, else 2); name ours
 0x009db110 function onMagicDLLLoaded          # fh v3:exact 0x009db0f0
+0x009db170 function code_009db170 # cdecl() -> the word at 0x012fbc40; ported (ffx_ps2::m5_ps2, m5 small b7)
+0x009db180 function memcpy_thunk_009db180 # cdecl(dst, src, n): a 5-byte jmp memcpy (0x00949256); name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x009db190 function magic_ret0_009db190       # g_MagicImports slot 301: xor eax, eax; ret; hidden from the dump
 0x009db230 function PppCurrentProgramKey_009db230 # cdecl(high) -> edx:eax = (high << 32) + sign-extended pppCurrentProgram; name ours; ported (system round 32)
 0x009db250 function WideKey_009db250 # cdecl(high, low) -> edx:eax = (high << 32) + sign-extended low; name ours; ported (system round 32)
 0x009db270 function FFXVu0ApplyPoint_009db270 # g_MagicImports slot 297 (after MsSetChrVisible, before CopyFields_009db490): cdecl(out, m, v) -> w bits: v and m copied to the VU0 registers 0x00c8f940/0x00c8f950 (m+0x30 = g_Vu0_VfMove), out = m0 x + m1 y + m2 z + m3 vf00.w (0x00c0a010), sums in g_Vu0Acc rounded to f32 each step, result 0x00c8f930; ported (system r39, math::bridge::vu0_apply_point); name ours
 0x009db490 function CopyFields_009db490          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15; callers: no direct caller; name ours
-0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
+0x009dba10 function FFXVu0MulMatrix_thunk # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump; ported (ffx_ps2::m5_ps2, m5 small b7): cdecl(dst, a, b)
 0x009dbaf0 function MagicNormalizeLen_009dbaf0 # g_MagicImports slot 358 (data ref 0x00c65280 only): cdecl(v, out, len) -> out: *len = f32 sqrt((x*x + y*y) + z*z) (_CIsqrt), out.x = v.x / len (register), out.y/z = v.y/z / *len (read back), w untouched; keeps the length in its own v arg slot; name ours; ported (ffx_ps2::vu0::bridge::normalize_len, pc round 4)
 0x009dbb40 function MagicRandFloat_009dbb40 # g_MagicImports slot 241 (data ref 0x00c650ac only): cdecl(out) -> draw bits: the rand programs' VU0 draw (t0 = r0 - 1 into g_Ee_GprMove and 0x00c8f7b0, R ^= t0 & 0x7fffff, srand(R & 0x7fffff), vrnext unless unseeded -> 1.0, sum into 0x00c8f7a0) = KeVu0RndI's first half, stored to out; does not set g_Vu0_RSeeded; name ours; ported (ffx_ps2::vu0::bridge::rand_float over ffx_vfx::rand::bridge::draw, pc round 4)
 0x009dbd90 function Vu0ScaleXyz_009dbd90 # cdecl(out, s, v) -> w bits: VU0 regs 0x00c8f820 = s, 0x00c8f830 = v with xyz *= s (f32), copied to out; no direct caller; name ours; ported (system round 32)
 0x009dbe10 function MagicSqrt_009dbe10        # g_MagicImports slot 300 (after FFXVu0MulMatrix_thunk): cdecl(src, dst) -> dst: *dst = (f32) _CIsqrt(*src); hidden from the dump; name ours; ported (system r38, math::bridge::magic_sqrt)
+0x009dbe80 function AlignedFree_thunk_009dbe80 # cdecl(p): a 5-byte jmp code_00686fe0 (user_aligned_free); name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
+0x009dbe90 function AlignedMalloc_thunk_009dbe90 # cdecl(size, align): push ebp; mov ebp, esp; pop ebp; jmp user_aligned_malloc; name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump
+0x009dc580 function PArrayInputAction_descriptor_009dc580 # cdecl() -> getDefaultInstance's eax: the PClassDescriptorConcrete<PArray<PInputAction>> singleton 0x01941e98 built once (guard 0x01941f2c bit 1: ctor 0x009dfb30, +0x90 &= ~2, vtable 0x00b73abc, atexit(0x00b08120)), then Phyre_PClassDescriptor_getDefaultInstance_0043cbb0; name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
+0x009dc610 function PArrayInputSource_descriptor_009dc610 # cdecl(): as 0x009dc580 for PArray<PInputSource> (0x01941d78, guard 0x01941e0c, ctor 0x009dfbd0, vtable 0x00b73984, atexit 0x00b08140); name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x009ddb30 function Difference_009ddb30 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x009ddb40 function Difference_009ddb40 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x009ddb50 function Difference_009ddb50 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
