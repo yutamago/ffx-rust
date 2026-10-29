@@ -24,6 +24,7 @@ pub mod array;
 pub mod controller;
 pub mod descriptor;
 pub mod m5p_anim_arrays;
+pub mod m5p_anim_left_a;
 pub mod m5p_anim_misc;
 pub mod m5p_anim_small;
 pub mod network;
