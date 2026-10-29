@@ -3050,3 +3050,68 @@ fn m5p_scene_h_time_range() {
         tw.unstub();
     }
 }
+
+// ---- batch 9 (ffx_prender::m5p_scene_i) ----
+
+use ffx_prender::m5p_scene_i as si;
+
+/// The partition step over random arrays (2 to 60 elements, few distinct
+/// keys so runs of equal ones form, and many), with the real medians and
+/// comparators that count their calls (by value and by pointer, the
+/// second ordering 8-byte records by their first word).
+#[test]
+fn m5p_scene_i_partitions() {
+    for (what, mut tw) in Twins::all() {
+        let counter = tw.zeros(4);
+        // by value: inc [counter]; mov eax,[esp+4]; cmp eax,[esp+8]; setb al; ret
+        let mut c = vec![0xff, 0x05];
+        c.extend(counter.to_le_bytes());
+        c.extend([
+            0x8b, 0x44, 0x24, 0x04, 0x3b, 0x44, 0x24, 0x08, 0x0f, 0x92, 0xc0, 0xc3,
+        ]);
+        let by_value = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), by_value);
+        // by pointer: inc [counter]; mov eax,[esp+4]; mov eax,[eax];
+        // mov ecx,[esp+8]; cmp eax,[ecx]; setb al; ret
+        let mut c = vec![0xff, 0x05];
+        c.extend(counter.to_le_bytes());
+        c.extend([
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0x8b, 0x4c, 0x24, 0x08, 0x3b, 0x01, 0x0f, 0x92,
+            0xc0, 0xc3,
+        ]);
+        let by_pointer = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), by_pointer);
+        let out = tw.zeros(8);
+        let mut rng = Rng(51);
+        for round in 0..60u32 {
+            let n = 2 + rng.next() % 59;
+            let keys = if round % 3 == 0 { 3 } else { 1000 };
+            for (f, order) in [
+                (0x004d_2400, si::Order::Below),
+                (0x004d_2560, si::Order::ByValue(by_value)),
+                (0x004d_2740, si::Order::ByPointer(by_pointer)),
+            ] {
+                let size = order.size();
+                let mut bytes = Vec::new();
+                for i in 0..n {
+                    bytes.extend((rng.next() % keys).to_le_bytes());
+                    if size == 8 {
+                        bytes.extend((0x7700_0000 + i).to_le_bytes());
+                    }
+                }
+                let first = tw.alloc(&bytes);
+                let last = first + n * size;
+                tw.w32(counter, 0);
+                let mut args = vec![out, first, last];
+                match order {
+                    si::Order::ByValue(p) | si::Order::ByPointer(p) => args.push(p),
+                    si::Order::Below => {}
+                }
+                let label = format!("{what} partition {f:#x} round {round} ({n} of {keys})");
+                tw.run(&label, f, Conv::Cdecl, &args, |g| {
+                    si::bridge::partition(g, order, out, first, last)
+                });
+            }
+        }
+    }
+}
