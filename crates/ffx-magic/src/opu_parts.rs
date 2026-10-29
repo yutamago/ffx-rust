@@ -29,6 +29,7 @@ fn matrices<G: Game>(g: &mut G, img: &Image, f: u32, data: u32, ops: [(u32, u32)
         w[k] = g.read::<u32>(data + 0x14 + 4 * k as u32);
         let mut args = vec![w[k]];
         args.extend(w[..k].iter().rev());
+        // call width: 3 (the words this call leaves on the stack at most)
         let r = g.call(slot, 0, &args).eax;
         g.write::<u32>(img.word(f + dst), r);
     }

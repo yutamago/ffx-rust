@@ -74,10 +74,12 @@ fn boot<G: Game>(g: &mut G, img: &Image, fr: &Frame, b: &Boot) -> Ret {
     let slot719 = slot_target(g, table, 719);
     let mut args = vec![data, 1, 0];
     args.extend(&stack);
+    // call width: 6 (the words this call leaves on the stack at most)
     let entry = g.call(slot719, fr.ecx, &args).eax;
     let slot715 = slot_target(g, table, 715);
     let mut args = vec![1, entry, data, buffer, 0x200, 0, arg, data, 1, 0];
-    args.extend(&stack);
+    args.extend(&stack[..stack.len().min(2)]);
+    // call width: 12 (the words this call leaves on the stack at most)
     let obj = g.call(slot715, fr.ecx, &args).eax;
     let end = opu::setup(g, img, img.rel32_target(f + b.setup), obj);
     match b.then_816 {

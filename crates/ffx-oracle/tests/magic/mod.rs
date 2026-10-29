@@ -182,7 +182,31 @@ const LOGGED: usize = 16;
 #[derive(Default)]
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
+    /// Slots that also leave a float in ST0 ([`Twin::stub_st0`]).
+    floats: HashMap<u32, f64>,
     rand: u32,
+}
+
+/// `fld qword` of `x`: the 80-bit value (exact for every finite f64).
+fn f64_to_f80(x: f64) -> [u8; 10] {
+    let b = x.to_bits();
+    let sign = ((b >> 63) as u16) << 15;
+    let e = ((b >> 52) & 0x7ff) as u16;
+    let m = b & ((1 << 52) - 1);
+    let (e80, m80) = match e {
+        0 if m == 0 => (0, 0),
+        0 => {
+            // subnormal: normalise
+            let lz = m.leading_zeros() - 11;
+            (15_361 - lz as u16, m << (11 + lz))
+        }
+        0x7ff => (0x7fff, (1 << 63) | (m << 11)),
+        _ => (e + (16_383 - 1023), (1 << 63) | (m << 11)),
+    };
+    let mut out = [0u8; 10];
+    out[..8].copy_from_slice(&m80.to_le_bytes());
+    out[8..].copy_from_slice(&(sign | e80).to_le_bytes());
+    out
 }
 
 fn slot_of(target: u32) -> Option<u32> {
@@ -213,6 +237,13 @@ impl Host for OrigHost<'_> {
             .collect();
         let mut mm = ArenaMem;
         regs.eax = answer(self.shared, &mut mm, target, &args);
+        if let Some(x) = slot_of(target).and_then(|s| self.shared.floats.get(&s)) {
+            regs.st[0] = f64_to_f80(*x);
+            regs.st_len = 1;
+        }
+        // a trap reached through a stored pointer (not the table) is
+        // still its slot, as on the port's side
+        let slot = slot.or_else(|| slot_of(target));
         self.calls.push(CallOut { target, slot, args });
         regs.esp += 4;
         Ok(())
@@ -270,6 +301,7 @@ impl Game for PortGame {
         });
         Out {
             eax,
+            st0: slot_of(target).and_then(|s| self.shared.floats.get(&s).copied()),
             ..Out::default()
         }
     }
@@ -426,6 +458,7 @@ impl Twin {
             port: PageMem::default(),
             shared: Shared {
                 stubs: HashMap::new(),
+                floats: HashMap::new(),
                 rand: 1,
             },
             functions,
@@ -577,6 +610,11 @@ impl Twin {
     /// Answers `slot` for both sides.
     pub fn stub(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static) {
         self.shared.stubs.insert(slot, Box::new(f));
+    }
+
+    /// Makes `slot` also leave `x` in ST0 (a float function).
+    pub fn stub_st0(&mut self, slot: u32, x: f64) {
+        self.shared.floats.insert(slot, x);
     }
 
     fn orig(&mut self, at: u32, c: Call, args: &[u32]) -> (Regs, Vec<CallOut>) {
