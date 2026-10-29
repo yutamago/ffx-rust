@@ -2191,3 +2191,278 @@ pub mod swap {
         }
     }
 }
+
+/// Batch 6: the namespace mapping's conversion set-up and the conversion
+/// driver.
+pub mod mapping {
+    use ffx_graphic::host::{Conv, Host};
+
+    /// The mapping's current generation (`0x0047c080` compares the
+    /// mapping's `+0x1c` with it).
+    pub const GENERATION: u32 = 0x00c9_75e8;
+    /// The kernels: no conversion (`0x0047a670`), the memory copy
+    /// (`0x0047a510`), the one-byte copy (`0x00476c20`).
+    pub const NO_KERNEL: u32 = 0x0047_a670;
+    pub const COPY_KERNEL: u32 = 0x0047_a510;
+    pub const BYTE_KERNEL: u32 = 0x0047_6c20;
+    /// The registry lookup `(from, to)` (cdecl) -> a kernel or 0.
+    pub const FIND_KERNEL: u32 = 0x0047_b630;
+    /// The member's element count (`[member+0x34]`, thiscall).
+    pub const MEMBER_COUNT: u32 = 0x0057_6050;
+    /// The conversion driver (`0x0047c610`, this list).
+    pub const DRIVER: u32 = 0x0047_c610;
+
+    /// A member's element size as the copies see it: 4 for a pointer
+    /// member (`+0x14` bit 1) or a class array stored by reference (its
+    /// descriptor kind `+0x30` 2 without `+0x14` bit 6), else its type's
+    /// size (`[[member+0x18]+0x1c]`).
+    fn element_size(h: &mut impl Host, member: u32) -> u32 {
+        let ty: u32 = h.read(member.wrapping_add(0x18));
+        let size: u32 = h.read(ty.wrapping_add(0x1c));
+        let desc = h.call_virtual(member, 1, &[]);
+        let flags: u32 = h.read(member.wrapping_add(0x14));
+        let by_ref = desc != 0 && h.read::<u32>(desc.wrapping_add(0x30)) == 2;
+        let pointer = (!(flags >> 6) & u32::from(by_ref)) | (flags >> 1);
+        if pointer & 1 != 0 { 4 } else { size }
+    }
+
+    pub mod bridge {
+        use super::{
+            BYTE_KERNEL, COPY_KERNEL, Conv, DRIVER, FIND_KERNEL, GENERATION, Host, MEMBER_COUNT,
+            NO_KERNEL, element_size,
+        };
+        use crate::m5p_registry_b::swap::bridge::needs_conversion;
+
+        /// `0x0047c080(mapping)` (thiscall): when the mapping's `+0x1c` is
+        /// the current generation, every entry's `+0x1c` gets it; else
+        /// every entry's flags cache is reset (-1) and recomputed
+        /// ([`needs_conversion`]).
+        pub fn update_flags(h: &mut impl Host, mapping: u32) {
+            let n = h.read::<u32>(mapping.wrapping_add(0xc)) & 0x7fff_ffff;
+            let g = h.rebase(GENERATION);
+            let generation: u32 = h.read(g);
+            if h.read::<u32>(mapping.wrapping_add(0x1c)) == generation {
+                for i in 0..n {
+                    let entries: u32 = h.read(mapping.wrapping_add(0x10));
+                    let v: u32 = h.read(g);
+                    h.write(entries.wrapping_add(32 * i + 0x1c), v);
+                }
+                return;
+            }
+            for i in 0..n {
+                let entries: u32 = h.read(mapping.wrapping_add(0x10));
+                h.write(entries.wrapping_add(32 * i + 0x1c), u32::MAX);
+            }
+            for i in 0..n {
+                let entries: u32 = h.read(mapping.wrapping_add(0x10));
+                needs_conversion(h, entries.wrapping_add(32 * i));
+            }
+        }
+
+        /// `0x0047e180(entry; to_runtime)` (thiscall, `ret 4`): the next
+        /// entry (`[+0]`) first, then a kernel for each member of the
+        /// class (`[+4]`'s `+0xc` members, 32-byte records at `[+0x10]`,
+        /// the kernel at `+0x1c`): none without a runtime member (`+8`);
+        /// for different types (`[rt+0x18]` vs `+0x10`) the registry's
+        /// `(stored, runtime)` pair (swapped unless `to_runtime`), none
+        /// when missing; for the same type none when the element sizes
+        /// differ or a fixed-count class array's counts do, else the
+        /// memory copy, or the one-byte copy for one byte of a plain type.
+        pub fn assign_kernels(h: &mut impl Host, entry: u32, to_runtime: u32) {
+            let next: u32 = h.read(entry);
+            if next != 0 {
+                assign_kernels(h, next, to_runtime);
+            }
+            let class: u32 = h.read(entry.wrapping_add(4));
+            if class == 0 {
+                return;
+            }
+            let n: u32 = h.read(class.wrapping_add(0xc));
+            let members: u32 = h.read(entry.wrapping_add(0x10));
+            let none = h.rebase(NO_KERNEL);
+            for i in 0..n {
+                let e = members.wrapping_add(32 * i);
+                let slot = e.wrapping_add(0x1c);
+                let rt: u32 = h.read(e.wrapping_add(8));
+                if rt == 0 {
+                    h.write(slot, none);
+                    continue;
+                }
+                let st: u32 = h.read(e.wrapping_add(4));
+                let size: u32 = h.read(st.wrapping_add(0xc));
+                let rtype: u32 = h.read(rt.wrapping_add(0x18));
+                let stype: u32 = h.read(e.wrapping_add(0x10));
+                let flags = h.read::<u32>(rt.wrapping_add(0x14)) & !1;
+                let desc = h.call_virtual(rt, 1, &[]);
+                let kind: u32 = if desc == 0 {
+                    0
+                } else {
+                    h.read(desc.wrapping_add(0x30))
+                };
+                let fixed = if kind == 1 { rt } else { 0 };
+                if rtype != stype {
+                    let (a, b) = if to_runtime & 0xff != 0 {
+                        (stype, rtype)
+                    } else {
+                        (rtype, stype)
+                    };
+                    let k = h.call_sym(FIND_KERNEL, Conv::Cdecl, &[a, b]);
+                    h.write(slot, if k == 0 { none } else { k });
+                    continue;
+                }
+                if element_size(h, rt) != size {
+                    h.write(slot, none);
+                    continue;
+                }
+                let st_offset: u32 = h.read(st.wrapping_add(8));
+                let st_flags: u32 = h.read(st.wrapping_add(0x10));
+                if h.read::<u32>(rt.wrapping_add(0x24)) == st_offset
+                    && flags == st_flags
+                    && fixed != 0
+                {
+                    let count: u32 = h.read(st.wrapping_add(0x14));
+                    if h.call_sym(MEMBER_COUNT, Conv::Thiscall(fixed), &[]) != count {
+                        h.write(slot, none);
+                        continue;
+                    }
+                }
+                let k = if desc == 0 && size.wrapping_sub(1) == 0 {
+                    BYTE_KERNEL
+                } else {
+                    COPY_KERNEL
+                };
+                let k = h.rebase(k);
+                h.write(slot, k);
+            }
+        }
+
+        /// One member's conversion in the driver: the children's mapping
+        /// recursively per element for a nested class, else its kernel.
+        fn convert_member(h: &mut impl Host, e: u32, counts: u32, src: u32, dst: u32, dir: bool) {
+            let rt: u32 = h.read(e.wrapping_add(8));
+            let st: u32 = h.read(e.wrapping_add(4));
+            if rt == 0 || st == 0 {
+                return;
+            }
+            let sub: u32 = h.read(e.wrapping_add(0x10));
+            if sub == 0 {
+                return;
+            }
+            let rtype: u32 = h.read(rt.wrapping_add(0x18));
+            let t1 = h.call_virtual(rtype, 1, &[]);
+            let t2 = h.call_virtual(sub, 1, &[]);
+            if t1 != t2 {
+                return;
+            }
+            let flags: u32 = h.read(rt.wrapping_add(0x14));
+            let ptr_bit = (flags >> 1) & 1;
+            let by_value = (flags >> 6) & 1;
+            let desc = h.call_virtual(rt, 1, &[]);
+            let kind: u32 = if desc == 0 {
+                0
+            } else {
+                h.read(desc.wrapping_add(0x30))
+            };
+            let as_pointer = (u32::from(kind == 2) & u32::from(by_value == 0)) | ptr_bit != 0;
+            if dir && as_pointer {
+                return;
+            }
+            let count = if kind == 1 {
+                h.call_sym(MEMBER_COUNT, Conv::Thiscall(rt), &[])
+            } else {
+                1
+            };
+            let child: u32 = h.read(e.wrapping_add(0x14));
+            if child == 0 || as_pointer {
+                let mut k: u32 = h.read(e.wrapping_add(0x1c));
+                if k == 0 {
+                    let mut size = element_size(h, rt);
+                    k = h.rebase(COPY_KERNEL);
+                    if desc == 0 {
+                        size = size.wrapping_sub(1);
+                        if size == 0 {
+                            k = h.rebase(BYTE_KERNEL);
+                        }
+                    }
+                }
+                h.call(k, Conv::Cdecl, &[src, dst, counts, e]);
+                return;
+            }
+            let size = element_size(h, rt);
+            let st_offset: u32 = h.read(st.wrapping_add(8));
+            let rt_offset: u32 = h.read(rt.wrapping_add(0x24));
+            let (so, d_o) = if dir {
+                (st_offset, rt_offset)
+            } else {
+                (rt_offset, st_offset)
+            };
+            let mut s = src.wrapping_add(so);
+            let delta = dst.wrapping_add(d_o).wrapping_sub(s);
+            for _ in 0..count {
+                h.call_sym(
+                    DRIVER,
+                    Conv::Thiscall(child),
+                    &[counts, s, s.wrapping_add(delta)],
+                );
+                s = s.wrapping_add(size);
+            }
+        }
+
+        /// The conversion driver `(mapping; &counts, src, dst)`
+        /// (`0x0047c610`, `ret 0xc`; `counts` as the kernels', its byte
+        /// `+0xc` the direction): for this mapping and each base class's
+        /// (the chain from `[+0]`, skipping a base whose class `+8` is the
+        /// header's `+0x40` ... kept), every member entry with both members
+        /// and a matching sub-type converts ([`convert_member`]); `src` and
+        /// `dst` then advance by the stored (`[m8+0x84]`) and runtime
+        /// (`[m4+0x10]`) base offsets. `eax`: the last `dst` advance.
+        pub fn driver(h: &mut impl Host, mapping: u32, counts: u32, src: u32, dst: u32) -> u32 {
+            let dir = h.read::<u8>(counts.wrapping_add(0xc)) != 0;
+            let mut map = mapping;
+            let mut m8: u32 = h.read(map.wrapping_add(8));
+            let mut m4: u32 = h.read(map.wrapping_add(4));
+            let (mut src, mut dst) = (src, dst);
+            let mut process = true;
+            loop {
+                if process {
+                    let entries: u32 = h.read(map.wrapping_add(0x10));
+                    let n: u32 = if m4 == 0 {
+                        0
+                    } else {
+                        h.read(m4.wrapping_add(0xc))
+                    };
+                    let end = entries.wrapping_add(n.wrapping_shl(5));
+                    let mut e = entries;
+                    while e < end {
+                        convert_member(h, e, counts, src, dst, dir);
+                        e = e.wrapping_add(0x20);
+                    }
+                }
+                let next: u32 = h.read(map);
+                let skip = next != 0
+                    && m8 != 0
+                    && h.read::<u32>(next.wrapping_add(8)) != h.read::<u32>(m8.wrapping_add(0x40));
+                let a: u32 = if m8 == 0 {
+                    0
+                } else {
+                    h.read(m8.wrapping_add(0x84))
+                };
+                let c: u32 = if m4 == 0 {
+                    0
+                } else {
+                    h.read(m4.wrapping_add(0x10))
+                };
+                let (sa, da) = if dir { (c, a) } else { (a, c) };
+                src = src.wrapping_add(sa);
+                dst = dst.wrapping_add(da);
+                if next == 0 {
+                    return da;
+                }
+                map = next;
+                m4 = h.read(map.wrapping_add(4));
+                m8 = h.read(map.wrapping_add(8));
+                process = !skip;
+            }
+        }
+    }
+}

@@ -36,7 +36,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_b::{
-    self as rb, bridge as b, helpers as h, more as m, rest as r, swap as s,
+    self as rb, bridge as b, helpers as h, mapping as mp, more as m, rest as r, swap as s,
 };
 use ffx_pload::m5p_tmpl_fortype as ft;
 
@@ -2193,6 +2193,289 @@ fn batch5_bind_and_bounds_match_the_original() {
                         |g| Out::U32(s::bridge::min_max(g, max, out, a, b)),
                     );
                 }
+            }
+        }
+    }
+}
+
+/// An object whose virtual slot 1 returns `ret` (a recording stub tagged
+/// `tag`), with `extra` zeroed bytes after the vtable word.
+fn slot1_object(t: &mut Twins, tag: u32, ret: u32, extra: usize) -> u32 {
+    let f = t.stub_code(tag, true, 0, 0, ret, Log::Words);
+    let vtable = t.zeros(0x10);
+    t.w32(vtable + 4, f);
+    let obj = t.zeros(4 + extra);
+    t.w32(obj, vtable);
+    obj
+}
+
+/// A runtime member: slot 1 returns a class descriptor of `kind` (none for
+/// `None`), flags, its type object (slot 1 returns `ty`, size at `+0x1c`),
+/// its offset.
+fn runtime_member(
+    t: &mut Twins,
+    kind: Option<u32>,
+    flags: u32,
+    ty: u32,
+    size: u32,
+    offset: u32,
+) -> u32 {
+    let desc = match kind {
+        None => 0,
+        Some(k) => {
+            let d = t.zeros(0x40);
+            t.w32(d + 0x30, k);
+            d
+        }
+    };
+    let rt = slot1_object(t, 0xb1, desc, 0x40);
+    let tyo = slot1_object(t, 0xb2, ty, 0x20);
+    t.w32(tyo + 0x1c, size);
+    t.w32(rt + 0x14, flags);
+    t.w32(rt + 0x18, tyo);
+    t.w32(rt + 0x24, offset);
+    t.w32(rt + 0x34, 3);
+    rt
+}
+
+#[test]
+fn batch6_mapping_flags_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0606_0606);
+        for same_gen in [false, true] {
+            for n in [0u32, 1, 3] {
+                let entries = t.zeros(32 * 4);
+                for i in 0..n {
+                    let e = entries + 32 * i;
+                    t.w32(e + 0x14, 1 << i);
+                    t.w32(e + 0x1c, rng.next());
+                    // entry 1's child list: entry 2
+                    if i == 1 && n == 3 {
+                        t.w32(e, entries + 64);
+                    }
+                }
+                let mapping = t.object(&mut rng, 0x20);
+                t.w32(mapping + 0xc, n | 0x8000_0000);
+                t.w32(mapping + 0x10, entries);
+                let g = t.rebase(mp::GENERATION);
+                let generation = rng.next();
+                t.w32(g, generation);
+                t.w32(
+                    mapping + 0x1c,
+                    if same_gen { generation } else { generation ^ 1 },
+                );
+                t.check(
+                    &format!("{name} 0x47c080 {same_gen} {n}"),
+                    0x0047_c080,
+                    Conv::Thiscall(mapping),
+                    &[],
+                    |g| {
+                        mp::bridge::update_flags(g, mapping);
+                        Out::Void
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// A member record case: runtime member present, its type (0x222: the
+/// record's), descriptor kind, flags, runtime size, stored size, stored
+/// count.
+type Case = (bool, u32, Option<u32>, u32, u32, u32, u32);
+
+#[test]
+fn batch6_kernel_assignment_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        t.stub(mp::MEMBER_COUNT, true, 0, 0, 3);
+        for found in [0u32, 0x0047_4210] {
+            restub(&mut t, mp::FIND_KERNEL, false, 2, 0, found);
+            for dir in [0u32, 1, 0x100] {
+                // records: no runtime member; other type; same type with a
+                // size mismatch, pointer flags, by-reference arrays, fixed
+                // arrays with equal and different counts, one-byte types
+                let cases: [Case; 11] = [
+                    // (runtime, type, kind, flags, rsize, stored size, stored count)
+                    (false, 0, None, 0, 4, 4, 0),
+                    (true, 0x111, Some(0), 0, 4, 4, 0),
+                    (true, 0x222, Some(0), 0, 8, 4, 0),
+                    (true, 0x222, None, 2, 8, 4, 0),
+                    (true, 0x222, Some(2), 0, 8, 4, 0),
+                    (true, 0x222, Some(2), 0x40, 8, 8, 0),
+                    (true, 0x222, Some(1), 0, 4, 4, 3),
+                    (true, 0x222, Some(1), 1, 4, 4, 5),
+                    (true, 0x222, None, 0, 1, 1, 0),
+                    (true, 0x222, Some(0), 0, 1, 1, 0),
+                    (true, 0x222, Some(1), 0, 4, 4, 5),
+                ];
+                let records = t.zeros(32 * cases.len());
+                for (i, &(has_rt, ty, kind, flags, rsize, ssize, scount)) in
+                    cases.iter().enumerate()
+                {
+                    let e = records + 32 * i as u32;
+                    let st = t.zeros(0x20);
+                    t.w32(st + 8, 0x10);
+                    t.w32(st + 0xc, ssize);
+                    t.w32(st + 0x10, flags & !1);
+                    t.w32(st + 0x14, scount);
+                    if i == 10 {
+                        // offsets differ: the count check is skipped
+                        t.w32(st + 8, 0x14);
+                    }
+                    t.w32(e + 4, st);
+                    t.w32(e + 0x10, 0x222);
+                    if has_rt {
+                        let rt = runtime_member(&mut t, kind, flags, ty, rsize, 0x10);
+                        if ty == 0x222 {
+                            // same type: the record's type is the runtime's
+                            let tyo: u32 = Mem::read(&t.b, rt + 0x18);
+                            t.w32(e + 0x10, tyo);
+                        }
+                        t.w32(e + 8, rt);
+                    }
+                }
+                let class = t.zeros(0x10);
+                t.w32(class + 0xc, cases.len() as u32);
+                let entry = t.zeros(0x20);
+                t.w32(entry + 4, class);
+                t.w32(entry + 0x10, records);
+                // a chained entry: one record without a runtime member
+                let next = t.zeros(0x20);
+                let nclass = t.zeros(0x10);
+                t.w32(nclass + 0xc, 1);
+                t.w32(next + 4, nclass);
+                let nrec = t.zeros(0x20);
+                t.w32(next + 0x10, nrec);
+                t.w32(entry, next);
+                t.check(
+                    &format!("{name} 0x47e180 {found:#x} {dir:#x}"),
+                    0x0047_e180,
+                    Conv::Thiscall(entry),
+                    &[dir],
+                    |g| {
+                        mp::bridge::assign_kernels(g, entry, dir);
+                        Out::Void
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn batch6_driver_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0808_0808);
+        t.stub(mp::MEMBER_COUNT, true, 0, 0, 2);
+        t.stub(mp::COPY_KERNEL, false, 4, 0, RET);
+        t.stub(mp::BYTE_KERNEL, false, 4, 0, RET ^ 1);
+        let own = t.stub_code(0xc0, false, 4, 0, RET ^ 2, Log::Words);
+        for dir in [0u32, 1] {
+            for variant in 0..4u32 {
+                // the child mapping: one plain member with its own kernel
+                let child = t.zeros(0x20);
+                let c4 = t.zeros(0x20);
+                t.w32(c4 + 0xc, 1);
+                t.w32(c4 + 0x10, 0x30);
+                let c8 = t.zeros(0x90);
+                t.w32(c8 + 0x84, 0x40);
+                t.w32(child + 4, c4);
+                t.w32(child + 8, c8);
+                let crec = t.zeros(0x20);
+                let cty = 0x0033_0000;
+                let crt = runtime_member(&mut t, Some(0), 0, cty, 4, 0x8);
+                let cst = t.zeros(0x20);
+                t.w32(cst + 8, 0xc);
+                let csub = slot1_object(&mut t, 0xb3, cty, 0);
+                t.w32(crec + 4, cst);
+                t.w32(crec + 8, crt);
+                t.w32(crec + 0x10, csub);
+                t.w32(crec + 0x1c, own);
+                t.w32(child + 0x10, crec);
+                // the mapping: records of each kind
+                let ty = 0x0044_0000 + variant;
+                let kinds: [(Option<u32>, u32, u32, bool); 8] = [
+                    // (desc kind, flags, size, with a child mapping)
+                    (Some(0), 0, 4, false),
+                    (None, 0, 1, false),
+                    (Some(1), 0, 8, true),
+                    (Some(2), 0, 8, true),
+                    (Some(2), 0x40, 8, true),
+                    (Some(0), 2, 8, true),
+                    (Some(0), 0, 4, true),
+                    (Some(0), 0, 1, false),
+                ];
+                let recs = t.zeros(32 * (kinds.len() + 3));
+                for (i, &(kind, flags, size, with_child)) in kinds.iter().enumerate() {
+                    let e = recs + 32 * i as u32;
+                    let rt = runtime_member(&mut t, kind, flags, ty, size, 0x10 + 4 * i as u32);
+                    let st = t.zeros(0x20);
+                    t.w32(st + 8, 0x20 + 4 * i as u32);
+                    let sub = slot1_object(&mut t, 0xb4, ty, 0);
+                    t.w32(e + 4, st);
+                    t.w32(e + 8, rt);
+                    t.w32(e + 0x10, sub);
+                    if with_child {
+                        t.w32(e + 0x14, child);
+                    }
+                    if i == 0 && variant % 2 == 1 {
+                        t.w32(e + 0x1c, own);
+                    }
+                }
+                // a record with a different sub-type, one without a stored
+                // member, one without a sub-type
+                let base = recs + 32 * kinds.len() as u32;
+                let rt = runtime_member(&mut t, Some(0), 0, ty, 4, 0);
+                let st = t.zeros(0x20);
+                let other = slot1_object(&mut t, 0xb5, ty ^ 0x100, 0);
+                t.w32(base + 4, st);
+                t.w32(base + 8, rt);
+                t.w32(base + 0x10, other);
+                t.w32(base + 32 + 8, rt);
+                t.w32(base + 64 + 4, st);
+                t.w32(base + 64 + 8, rt);
+                let m4 = t.zeros(0x20);
+                t.w32(m4 + 0xc, kinds.len() as u32 + 3);
+                t.w32(m4 + 0x10, 0x100);
+                let m8 = t.zeros(0x90);
+                t.w32(m8 + 0x84, 0x200);
+                t.w32(m8 + 0x40, 0x5555);
+                let mapping = t.zeros(0x20);
+                t.w32(mapping + 4, m4);
+                t.w32(mapping + 8, m8);
+                t.w32(mapping + 0x10, recs);
+                // a base mapping: kept (its +8 the stored class's +0x40)
+                // or skipped (variant 2, 3), with no entries itself
+                if variant >= 1 {
+                    let basem = t.zeros(0x20);
+                    let b4 = t.zeros(0x20);
+                    t.w32(b4 + 0x10, 0x8);
+                    t.w32(b4 + 0xc, 2);
+                    let b8 = t.zeros(0x90);
+                    t.w32(b8 + 0x84, 0x4);
+                    t.w32(basem + 4, if variant == 3 { 0 } else { b4 });
+                    t.w32(basem + 8, b8);
+                    t.w32(basem + 0x10, recs);
+                    t.w32(mapping, basem);
+                    // kept when the base's +8 is the stored class's +0x40
+                    t.w32(m8 + 0x40, if variant == 2 { 0x5555 } else { b8 });
+                }
+                let counts = t.zeros(16);
+                t.w32(counts, 2);
+                t.w32(counts + 4, 0x40);
+                t.w32(counts + 8, 0x50);
+                t.w32(counts + 0xc, dir);
+                let (src, dst) = (
+                    0x0100_0000 + rng.next() % 0x1000,
+                    0x0200_0000 + rng.next() % 0x1000,
+                );
+                t.check(
+                    &format!("{name} 0x47c610 {dir} {variant}"),
+                    mp::DRIVER,
+                    Conv::Thiscall(mapping),
+                    &[counts, src, dst],
+                    |g| Out::U32(mp::bridge::driver(g, mapping, counts, src, dst)),
+                );
             }
         }
     }

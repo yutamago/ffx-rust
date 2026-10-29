@@ -7,6 +7,7 @@
 #[allow(unused_imports)]
 use super::{call_cdecl, mem, ported};
 use ffx_pload::m5p_registry_b::helpers as h;
+use ffx_pload::m5p_registry_b::mapping as mp;
 use ffx_pload::m5p_registry_b::more as m;
 use ffx_pload::m5p_registry_b::rest as r;
 use ffx_pload::m5p_registry_b::swap as s;
@@ -921,5 +922,17 @@ ported! {
     /// `FFXApplication_vectorMin_00a1b620`.
     FFXApplication_vectorMin_00a1b620 @ 0x00a1_b620 => extern "C" fn s_00a1b620(out: u32, a: u32, b: u32) -> u32 {
         s::bridge::min_max(&mut mem(), false, out, a, b)
+    }
+    /// `Phyre_PSerialization_PNamespaceMapping_updateConversionFlags_0047c080`.
+    Phyre_PSerialization_PNamespaceMapping_updateConversionFlags_0047c080 @ 0x0047_c080 => extern "thiscall" fn mp_0047c080(this: u32) {
+        mp::bridge::update_flags(&mut mem(), this);
+    }
+    /// `Phyre_PSerialization_PMappingEntry_assignKernels_0047e180`.
+    Phyre_PSerialization_PMappingEntry_assignKernels_0047e180 @ 0x0047_e180 => extern "thiscall" fn mp_0047e180(this: u32, to_runtime: u32) {
+        mp::bridge::assign_kernels(&mut mem(), this, to_runtime);
+    }
+    /// `Phyre_PSerialization_PNamespaceMapping_convert_0047c610`.
+    Phyre_PSerialization_PNamespaceMapping_convert_0047c610 @ 0x0047_c610 => extern "thiscall" fn mp_0047c610(this: u32, counts: u32, src: u32, dst: u32) -> u32 {
+        mp::bridge::driver(&mut mem(), this, counts, src, dst)
     }
 }
