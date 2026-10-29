@@ -34,7 +34,8 @@ same memory. The release runs no `FFX.exe` code.
 | `src/iggy.rs`, `src/iggy/swf.rs` | Iggy's imports: players, fast names, AS3 calls both ways; Ruffle with feature `swf`: below, "Iggy" |
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
-| `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes") |
+| `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
+| `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
 | `src/relaunch.rs` | i686 Windows: the game in a child process whose `FFX.exe` range was reserved before it ran (below, "The arena") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
@@ -69,7 +70,9 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   twice as slow; the report gives instructions per second).
 - `--gfx-out DIR`: writes the D3D11 layer's recording there:
   `capture.ffxgfx` (the stream `drawdiff` reads) and `calls.txt` (every
-  COM call, the first 50,000).
+  COM call, the first 50,000). Without it (or `FFX_HOST_GFX_RECORD=1`,
+  for the harness's `gfxcapture`) the layer keeps no recording: it grows
+  by every frame's draws (about 6 GB of a 2,000-update harness run).
 - `--gfx-null`: the recording null device on Windows too (the default
   there is the real device).
 - `--presents N`: ends the run (a milestone) at the `N`-th `Present`.
@@ -83,8 +86,9 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
 - `cargo build --features swf`: Iggy's players on Ruffle (below, "Iggy").
-- `FFX_HOST_NOTES=1`: the run's notes (turns, Iggy calls, FMOD loads) on
-  stderr as they happen; `FFX_HOST_IGGY_OUT=DIR` (feature `swf`): every
+- `FFX_HOST_NOTES=1`: the run's notes (turns, Iggy calls, FMOD loads, a
+  game thread that failed) on stderr as they happen (the harness's
+  `notes` lists them too); `FFX_HOST_IGGY_OUT=DIR` (feature `swf`): every
   30th image of each Flash player.
 
 ## The arena
@@ -511,8 +515,10 @@ advances the same way whatever the host's (or the emulator's) speed:
   clock registers after the `ported!` entries, so its own ports at the
   vsync thread's and `SleepThreadInMillisecond`'s addresses replace
   theirs. Boundary `n` (`n` updates done) runs the
-  replay script, the loader's turn, the vsyncs and FMOD's turn, in that
-  order, as the hook's `animate` does.
+  replay script, the harness (its trace, jobs and lockstep hold:
+  `docs/harness.md`, "Two processes"), the loader's turn, the vsyncs,
+  FMOD's turn and the harness's `callnext` calls, in that order, as the
+  hook's `animate` does.
 - **Lockstep** holds from the main loop's first boundary on (before it, the
   start-up loop's loads run free, as before the replays' `lockstep on`).
   Every boundary is a hold: the script decides there and the next update
@@ -975,7 +981,121 @@ of the stack):
   violation inside `SophosED.dll` (the endpoint-security product's hook
   DLL) while Unicorn initialises its translator (`tcg_exec_init`,
   `tcg_prologue_init`), with the default 1 GB translation buffer and with
-  64 MB (`TCG_BUFFER`) alike.
+  64 MB (`TCG_BUFFER`) alike. (Found and fixed in the next round: Unicorn
+  commits its buffers from a vectored exception handler; below, "The
+  64-bit build on PC2".)
+
+#### The 64-bit build on PC2 (2026-10-29, host-pc2)
+
+PC2 (the second machine: Windows Defender only, no endpoint-security
+hook) runs the x86_64 `ffx-rust.exe` (`FFX_HOST_TARGET=x86_64-pc-windows-msvc
+tools/build-host.sh`) through the harness's game slots in background mode,
+muted:
+
+- **Unicorn's translator starts** there, where on the main machine the
+  same build crashed inside its endpoint-security DLL at `tcg_exec_init`.
+- **Then it crashed after about 200 s** (`0xc0000005`, a write in
+  `VCRUNTIME140!memcpy` from `tcg_gen_code`, at a page of the main
+  thread's translation buffer). Unicorn 2.1.5 on Windows only reserves each
+  instance's buffer and commits it from a vectored exception handler, 4 MB
+  from each faulting address (`qemu/accel/tcg/translate-all.c`,
+  `code_gen_buffer_handler`); in the buffer's last 4 MB it still asks for
+  4 MB (`size = base_end - base` where `right - base` was meant), past the
+  reservation, `VirtualAlloc` refuses, and the fault is unhandled. The
+  faults come at unaligned addresses (translated code is written block
+  after block), so every thread whose 64 MB buffer filled that far hit
+  it. `src/tcg_commit.rs` registers a handler of our own in front of
+  Unicorn's that commits such a fault's page run (at most 4 MB, never past
+  the reservation); only `PAGE_EXECUTE_READWRITE` reservations, which only
+  Unicorn makes, are touched.
+- **With that**, a 1,200 s run (the old present-counting harness: `wait`,
+  `stats`, `shot`) reached 3,018 presents without a failure: the memochek
+  logo, the opening's credits and the campfire scene drawn by the real
+  device on PC2's GPU (`shot` images of the opening at updates 1217, 2118,
+  3019), 2.2 GB private memory at the end. The opening runs at about 2
+  presents a second in the campfire scene (217 draws a frame), faster on
+  the screens before it.
+- **The main machine's crash was the same fault.** `tcg_prologue_init`
+  writes the prologue into the reserved buffer, so the very first commit
+  goes through the vectored handlers, and the security product's own
+  handler (`SophosED.dll`) crashed on it before Unicorn's could commit.
+  With our handler in front of both, the same 64-bit build (PC2's)
+  starts on the main machine too: 60 updates and 417 presents in a short
+  probe through a game slot (background mode), the memochek logo drawn.
+- **field-walk passes** on the 64-bit `ffx-rust.exe` against PC2's own
+  original recording (the harness on the clock's boundary, below and
+  `docs/harness.md`, "Two processes"): `load direct 1 cdsp0000 lockstep`
+  (the title by Start, `loadsave 1` at update 152), `pin`, the `waitfor`
+  on ctrl work 0's event count, the walk; the trace (4 ranges, 358 lines)
+  has the same events as both recordings, and the two shots score 0.0 and
+  0.1 (`shot-compare.py --coarse`, limits 30.3 and 42.9) at event frames
+  101 and 459, the recording's. 226 s from launch to the end, 3.3 GB
+  private memory.
+- **So item 6(a) is settled for stage 4**: the 64-bit build runs on both
+  machines, and the i686 TCG abort no longer blocks the Windows runs. The
+  i686 abort was left alone.
+
+#### The main replay list on PC2 (2026-10-29, host-pc2)
+
+The 64-bit build through the harness (`FFX_HARNESS_EXE=rust`,
+`FFX_HOST_TARGET=x86_64-pc-windows-msvc`), one replay at a time, each
+compared with PC2's own original recordings (`replay-compare.py`,
+`shot-compare.py`, as `run-all.sh` does):
+
+| Replay | Trace events | Screenshots | Wall |
+|---|---|---|---|
+| field-walk (four runs) | same (4 ranges) | 0.0-0.1 (coarse) | 218-226 s |
+| menu-browse (two runs) | same (2 ranges) | 5 of 5, 0 pixels | 213-225 s |
+| menu-shop | same (7 ranges) | 8 of 8 (one cursor-glow pixel, allowed) | 998 s |
+| menu-grid | same (6 ranges) | 9 of 9, 0 pixels | 1,128 s |
+| menu-save (after two fixes, below) | same (14 ranges) | 4 of 6; shots 4 and 6 differ in the cursor glow's phase (520 and 574 pixels) | 1,605 s |
+| battle-attack | no battle | none | (timeout) |
+
+Not run: battle-magic, battle-overdrive and event-besaid (after the
+battle-attack finding), boot and event-cliff (`realtime`: ffx-rust has only
+the virtual clock).
+
+- **menu-save** first stopped at the save: the save machine
+  (`g_SaveMachineState` `0x00ce72e8`) stayed in state 4,
+  `SaveDataMachine_WriteFile`, every frame:
+  `_wfopen` was asked for the path `000`. The port names the file through
+  `wsprintfW`'s IAT slot (`%s%s%03d`: folder, prefix, slot), and an import
+  called from Rust got no words on the game stack (`slots` 0), so
+  `wsprintfW`, which reads its varargs through `slots`, read zeros. Fixed:
+  `Exec::call` puts the words of an import called from Rust on the game
+  stack, as for a routed port (`tests/boot.rs`,
+  `a_varargs_import_called_from_rust_reads_its_words`). (The original
+  stores to address 0 when the file doesn't open, a deliberate crash; the
+  port's store went to the arena's unmapped page 0 and was dropped, so the
+  state machine retried each frame instead.) Then the save was written,
+  but the Load list's entry 1 was another save (map 71 opened, not 263):
+  the list sorts by `GetFileTime`, which gave every file the fixed clock.
+  It now gives the file's own times (`Files::times`), and the replay's
+  trace has the original's events. Its shots 4 (the title's Load cursor)
+  and 6 (the menu after the load) differ from the recording in the
+  cursor glow's phase and, in 6, a band of the header's animated
+  background. Shot 4 is the title, which differs between original runs
+  too ("Pinned state" in `docs/harness.md`); whether shot 6's difference
+  follows from it (an animation phase carried over from the title) or is
+  the host's was not checked.
+- **battle-attack**: the battle never starts. `g_BtlStatus` (`0x0112a8e0`)
+  stays at `0x16`, whose step waits for the message window, the sound
+  transfers, the actors' loads and the read hold (`MsBtlReadManage`,
+  `docs/formats/battle.md`); all are clear but the actors' loads: monsters
+  `0x14` and `0x15` keep `+0x433` set (`MsGetRamChrCTBbasic`), so their
+  models or motions never finish. No game thread failed (the run's notes)
+  and no access left the arena. In the first of three runs the main
+  thread also stopped advancing at update 197 (one core busy, every flip
+  presented); the other two ran on to the `waitfor`'s 4,000-update limit.
+  Not found yet.
+- **Memory**: the layer's draw recording grew to 6-9 GB in the longer
+  runs (menu-grid); it is now kept only with `--gfx-out` or
+  `FFX_HOST_GFX_RECORD=1` (above, the options). The other runs stayed near
+  3 GB.
+- **The harness client** does not see the game's end when the game is
+  ended from outside (`quit` from a second connection): over WSL's mirrored
+  network the open connection gets no reset, and the client waits for its
+  reply timeout (`FFX_HARNESS_REPLY_TIMEOUT`).
 
 #### The first comparison
 
@@ -1038,15 +1158,20 @@ runs past the third frame (the Unicorn abort).
 6. **Windows.** Done: the window, message, cursor and timer imports
    forward, the real device presents on the real window, the harness
    starts `ffx-rust.exe` in background mode (above, "Windows" and
-   "Status on Windows"). Left: (a) the i686 abort in Unicorn's 32-bit
-   TCG backend (`tcg_reg_alloc`) a few seconds past the third frame,
-   which ends every Windows run; the 64-bit build avoids that backend
-   but crashes inside the endpoint-security DLL on this machine, so one
-   of the two needs a fix or a workaround (a Unicorn patch for the
-   register pressure, or the security product's exclusion for the 64-bit
-   build); (b) the harness's frame commands on the clock's boundary
-   (`frame`, `waitfor`, lockstep, `call`, the trace): the boundary is in
-   (`src/clock.rs`, which plays `--replay` scripts there), but
-   `src/harness.rs` still counts `Present`s; (c) FMOD's device output
+   "Status on Windows"). (a) Settled for stage 4 (2026-10-29, host-pc2):
+   the 64-bit build runs on PC2 and on the main machine once our handler
+   commits Unicorn's translation buffers ("The 64-bit build on PC2"); the
+   i686 abort in Unicorn's 32-bit TCG backend (`tcg_reg_alloc`) a few
+   seconds past the third frame is still there and only matters if
+   stage 3 needs i686 runs. (b) Done (host-pc2): the harness's frame
+   commands run on the clock's boundary (`docs/harness.md`, "Two
+   processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
    yet; the movie's audio stream is silent.
+7. **Battles in `ffx-rust.exe`** (host-pc2, 2026-10-29). A battle started
+   from the field never gets past `g_BtlStatus` `0x16`: monsters `0x14`
+   and `0x15` keep `+0x433` set, which `MsBtlReadMonsterProcess`
+   (`0x007839b0`) sets with their appear motion (`0x31`) when `+0x43d`
+   bit 1 is set; nothing clears it (what should, presumably the motion's
+   end, was not traced yet; "The main replay list on PC2"). battle-attack, battle-magic and battle-overdrive need it. The
+   menu replays, field-walk and menu-save pass.

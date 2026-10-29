@@ -354,7 +354,7 @@ const HOLDRAND: u32 = 0x14;
 /// The harness's `pin` (`crates/ffx-hook/src/harness.rs`,
 /// `pin_carried_state`): the time, the shaders' time, `Sg_FrameSync`'s
 /// carries, `g_Vu0_R`, the title's water and the main thread's CRT seed.
-fn pin(e: &mut Exec) -> String {
+pub(crate) fn pin(e: &mut Exec) -> String {
     let mut pinned = vec!["frame sync", "vu0 R", "title water"];
     let app = e.shared().clock.app.load(Ordering::Acquire);
     {

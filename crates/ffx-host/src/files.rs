@@ -94,6 +94,14 @@ impl Files {
             o.open(&p).ok()
         });
         self.log.push((name.to_string(), found.is_some()));
+        if found.is_none() && write {
+            // a write the game expects to work (its save writer crashes on
+            // purpose when `_wfopen` fails): noted at once
+            crate::log::note(&format!(
+                "files: {name} not opened for writing (disposition {disposition}; host path {:?})",
+                self.resolve(name).map(|(p, _)| p)
+            ));
+        }
         let f = found?;
         self.next += 4;
         self.open.insert(self.next, f);
@@ -148,6 +156,28 @@ impl Files {
             _ => SeekFrom::End(to),
         };
         f.seek(from).ok()
+    }
+
+    /// The file's creation, last access and last write times as FILETIMEs
+    /// (100 ns since 1601-01-01), the real ones (`GetFileTime`): the save
+    /// list sorts by them, newest first, so the save just written is the
+    /// first manual entry, as in the original. A time the host can't give
+    /// is the write time.
+    #[must_use]
+    pub fn times(&self, h: u32) -> Option<[u64; 3]> {
+        let m = self.open.get(&h)?.metadata().ok()?;
+        let ft = |t: std::io::Result<std::time::SystemTime>| -> Option<u64> {
+            let d = t.ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
+            u64::try_from(d.as_nanos() / 100)
+                .ok()
+                .map(|n| n + 116_444_736_000_000_000)
+        };
+        let written = ft(m.modified())?;
+        Some([
+            ft(m.created()).unwrap_or(written),
+            ft(m.accessed()).unwrap_or(written),
+            written,
+        ])
     }
 
     /// Closes a handle (unknown handles are fine: events, threads).

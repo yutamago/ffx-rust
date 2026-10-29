@@ -157,6 +157,7 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
             stop_after_presents: Some(3),
+            ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()
     };
@@ -245,4 +246,41 @@ fn without_the_dlls_the_stl_is_the_wall() {
         Stop::Failed(why, _) => assert!(why.starts_with("unstubbed import MSVCP110.dll!"), "{why}"),
         other => panic!("unexpected stop {other:?}"),
     }
+}
+
+/// A port calling `wsprintfW` through its IAT slot (Rust → import, as
+/// `SaveDataMachine_WriteFile`'s port names the save file): the varargs
+/// are read through `slots`, so the words must be on the game stack. They
+/// were not, and the save's path came out "000".
+#[test]
+fn a_varargs_import_called_from_rust_reads_its_words() {
+    use ffx_bridge::Mem as _;
+    let Some(exe) = exe() else { return };
+    let mut exec = ffx_host::boot(&exe).unwrap();
+    let stub: u32 = exec.mem().read(slot(&exec, "USER32.dll", "wsprintfW"));
+    let wide = |s: &str| -> Vec<u8> {
+        s.encode_utf16()
+            .chain([0])
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    };
+    let put = |exec: &mut Exec, bytes: &[u8]| -> u32 {
+        let at = exec.alloc(u32::try_from(bytes.len()).unwrap());
+        exec.mem().write_bytes(at, bytes);
+        at
+    };
+    let fmt = put(&mut exec, &wide("%s%s%03d"));
+    let dir = put(&mut exec, &wide("C:\\saves\\"));
+    let prefix = put(&mut exec, &wide("ffx_"));
+    let out = put(&mut exec, &[0; 256]);
+    let n = exec.call_cdecl(stub, &[out, fmt, dir, prefix, 7]).unwrap();
+    let mut got = vec![0u8; 2 * n as usize];
+    exec.mem().read_bytes(out, &mut got);
+    let text: Vec<u16> = got
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&c| u16::from_le_bytes(c))
+        .collect();
+    assert_eq!(String::from_utf16_lossy(&text), "C:\\saves\\ffx_007");
 }

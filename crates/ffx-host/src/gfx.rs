@@ -99,6 +99,11 @@ pub struct Config {
     pub backend: Choice,
     /// End the run (a milestone) after this many `Present` calls.
     pub stop_after_presents: Option<u32>,
+    /// Keep no recording (`capture.ffxgfx`): `ffx-rust` without
+    /// `--gfx-out` or `FFX_HOST_GFX_RECORD=1`. The recording grows by every
+    /// frame's draws (1.8 GB on the boot to the title, about 6 GB of the
+    /// process in menu-grid's harness run).
+    pub no_record: bool,
 }
 
 /// `DXGI_SWAP_CHAIN_DESC`, word by word as the game passes it.
@@ -648,6 +653,12 @@ impl Gfx {
         out
     }
 
+    /// The back buffer as BGRA rows (`None` on the null device): the
+    /// harness's screenshots between two `Present`s (`crate::harness`).
+    pub fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        self.backend.back_buffer_image()
+    }
+
     /// The text log: one line per call (the first [`LOG_LINES`]).
     #[must_use]
     pub fn log(&self) -> &[String] {
@@ -670,7 +681,15 @@ impl Gfx {
     }
 
     fn emit(&mut self, m: &Msg) {
-        m.write(&mut self.stream);
+        if !self.config.no_record {
+            m.write(&mut self.stream);
+        }
+    }
+
+    /// Whether the layer keeps its recording ([`Config::no_record`]).
+    #[must_use]
+    pub fn records(&self) -> bool {
+        !self.config.no_record
     }
 
     /// Hands `h` out through `out` with a reference (`GetDevice`,

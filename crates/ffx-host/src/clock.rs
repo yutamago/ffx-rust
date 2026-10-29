@@ -37,6 +37,11 @@
 //!   (`0x00ccb9c2`).
 //! - **Input**: `Input_KeyHeld` (`0x00629d50`) is wrapped so the buttons
 //!   the script holds read as their first keyboard binding.
+//! - **The harness** ([`crate::harness`]): its jobs, trace and lockstep
+//!   hold run at the boundary (after the replay script's turn), its
+//!   `callnext` calls just before the update, and the render thread's flip
+//!   waits there in lockstep; its wrappers (flip labels, file opens, the
+//!   seed) register with these.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
@@ -345,9 +350,11 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
     c.at_boundary.store(true, Ordering::Release);
     c.notify();
     crate::replay::boundary(e, frame);
+    crate::harness::boundary(e, frame);
     loader_turn(e, frame);
     run_vsync(e);
     fmod_turn(e);
+    crate::harness::update_calls(e);
     let c = clock(e);
     c.at_boundary.store(false, Ordering::Release);
     if let Ok(mut s) = c.update_started.lock() {
@@ -365,7 +372,9 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
 fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
     c.render.store(e.id, Ordering::Release);
+    crate::harness::before_present_flip(e.shared());
     let r = e.call_original(0x0059_3760, Conv::Thiscall, args);
+    crate::harness::after_present_flip();
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);
     let mut mem = e.mem();
@@ -738,4 +747,5 @@ pub fn register(t: &mut Table) {
         entry("Input_KeyHeld", Conv::Thiscall, 2, key_held),
         &[0x55, 0x8b, 0xec, 0x8b, 0x81, 0xb8, 0x02, 0x00, 0x00],
     );
+    crate::harness::register(t);
 }

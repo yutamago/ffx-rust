@@ -259,12 +259,18 @@ fn time_zone(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(0)
 }
 
-/// `GetFileTime(h, &created, &accessed, &written)`: the fixed clock.
+/// `GetFileTime(h, &created, &accessed, &written)`: the file's own times
+/// ([`crate::files::Files::times`]; the save list sorts by them), the
+/// fixed clock for a handle that is no file.
 fn file_time(e: &mut Exec, args: &Args) -> Ret {
-    for i in 1..4 {
+    let times = e
+        .files()
+        .times(a(args, 0))
+        .unwrap_or([0x01d0_0000_0000_0000; 3]);
+    for (i, t) in (1..4).zip(times) {
         let p = a(args, i);
         if p != 0 {
-            e.mem().write(p, 0x01d0_0000_0000_0000u64);
+            e.mem().write(p, t);
         }
     }
     Ret::eax(1)

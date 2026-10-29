@@ -736,7 +736,13 @@ impl Game {
             .next()
             .map(|a| TcpStream::connect_timeout(&a, Duration::from_secs(2)))
             .ok_or_else(|| Error::Launch("no address".into()))??;
-        stream.set_read_timeout(Some(Duration::from_secs(600)))?;
+        // FFX_HARNESS_REPLY_TIMEOUT (seconds): longer for ffx-rust.exe,
+        // whose emulated updates can make one `waitfor` outlast 600 s
+        let reply = std::env::var("FFX_HARNESS_REPLY_TIMEOUT")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(600);
+        stream.set_read_timeout(Some(Duration::from_secs(reply)))?;
         // Each command goes out at once as one segment (see the hook's
         // `serve`; `docs/harness.md`, "Command latency").
         stream.set_nodelay(true)?;

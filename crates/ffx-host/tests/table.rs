@@ -310,6 +310,7 @@ fn boot_runs_ports_from_the_table() {
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
             stop_after_presents: Some(3),
+            ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()
     };
