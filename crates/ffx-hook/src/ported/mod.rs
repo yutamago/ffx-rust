@@ -68,6 +68,7 @@ mod m5p_core_d;
 mod m5p_core_e;
 mod m5p_core_f;
 mod m5p_core_g;
+mod m5p_framework_input;
 mod m5p_physics;
 mod m5p_physics_stubs;
 mod m5p_registry_b;
@@ -171,6 +172,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_system_b::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5p_anim::hooks());
+    all.extend(m5p_framework_input::hooks());
     all.extend(m5p_registry_load_a::hooks());
     all.extend(m5p_core::hooks());
     all.extend(m5p_core_b::hooks());

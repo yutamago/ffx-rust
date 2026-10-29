@@ -9,6 +9,7 @@ rust-version.workspace = true
 [dependencies]
 ffx-bridge.workspace = true
 ffx-graphic.workspace = true
+ffx-pload.workspace = true
 
 [lints]
 workspace = true
