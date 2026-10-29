@@ -690,6 +690,16 @@ heap (behind a lock), the files, the synchronisation objects.
 - Emulated `lock`-prefixed instructions are atomic within one Unicorn
   instance only; the game's own synchronisation goes through the imports
   above, which is what keeps the threads apart.
+- Job entry points come from the code, not from constants. The cloth and
+  middle-calc job pushes (`JobSchedule_Ch_Cloth_PerCharacter` and
+  `_CalcMiddle_Batch`, `ffx_system::m5b_pc::bridge::schedule_cloth` /
+  `schedule_calc_middle`) read the job routine from the original's `push`
+  operand (`0x00a44b52`, `0x00a44ba5`): the harness patches those operands
+  to its wrappers that seed the CRT per job (the cloth uses `rand`; the
+  game itself does not seed), and a port that pushed the constant routine
+  ran cloth unseeded (system-b round 2: event-besaid-2 differed by 10
+  pixels). The 64-bit program has no patched operand: for replays to
+  compare, its harness must seed the same way where these jobs start.
 
 `tests/boot.rs`'s
 `game_threads_run_in_parallel_under_the_games_own_critical_section`

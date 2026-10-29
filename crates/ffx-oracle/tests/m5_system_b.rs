@@ -5829,3 +5829,196 @@ fn r3b6_limit_gauge_param_plate_match_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b6_movie_image_bar_caps_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c03);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            let p = t.zeros(0x80);
+            t.stub(mnc::ADP_TEX0, false, 13, 0, p + 0x40);
+            t.stub_seq(mnc::ADP_WORDS4, 5, 0, &[r, r ^ 1, r ^ 2, r ^ 3]);
+            t.stub_seq(mnc::ADP_XY2, 3, 0, &[r ^ 4, r ^ 5, r ^ 6, r ^ 7]);
+            t.stub_seq(
+                mnc::ADP_XYZ2_OFFSET,
+                3,
+                0,
+                &[r ^ 8, r ^ 9, r ^ 0xa, r ^ 0xb],
+            );
+            let args = [
+                p,
+                rng.next(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.word(),
+            ];
+            t.check(
+                &format!("movie image #{case}"),
+                0x008f_2e10,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::movie_image(m, args)),
+            );
+            // the bar: the alpha call moves the cursor in some cases
+            let q = t.zeros(0x80);
+            if case & 1 == 0 {
+                t.stub(mnc::GS_ALPHA, false, 5, 0, r ^ 0xc);
+            } else {
+                t.stub_store_global(mnc::GS_ALPHA, mnc::PKT_CURSOR, q + 0x40, r ^ 0xc);
+            }
+            t.stub(mnc::GS_WORDS4, false, 4, 0, r ^ 0xd);
+            // the real TOGs* calls move the cursor: odd cases
+            if case & 1 == 0 {
+                t.stub(mnc::GS_XY2, false, 2, 0, r ^ 0xe);
+            } else {
+                t.stub_store_global(mnc::GS_XY2, mnc::PKT_CURSOR, r, r ^ 0xe);
+            }
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 0xf);
+            let args = [
+                q,
+                rng.word(),
+                rng.word(),
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("bar caps #{case}"),
+                0x008e_bc00,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::bar_caps(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b6_mes_font_inter_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c04);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            let scale_x = [1.0f32, 0.75, 2.5, 0.0][(case % 4) as usize];
+            t.stub_store_into(mnc::GLYPH_LOOKUP, 1, 0x1c, scale_x.to_bits(), 3, r);
+            t.stub(mnc::PASS_EDGE, false, 3, 0, r ^ 1);
+            // the real passes move the cursor: odd cases
+            if case & 1 == 0 {
+                t.stub(mnc::PASS_FONT, false, 3, 0, r ^ 2);
+            } else {
+                t.stub_store_global(mnc::PASS_FONT, mnc::PKT_CURSOR, r ^ 3, r ^ 2);
+            }
+            let text = t.alloc(&[[0u8, b'A'][usize::from(case != 0)], b'B', b'C', 0]);
+            t.stub_seq(mnc::NEXT_CHAR, 1, 0, &[text + 1, text + 2, text + 3]);
+            t.g32(
+                mnc::FONT_SPACING,
+                [0.0f32, 1.5, -2.0, 3.25][(case % 4) as usize].to_bits(),
+            );
+            t.g32(
+                mnc::WIDTH_FACTOR,
+                [12.0f32, 7.0, 0.5, 9.75][(case / 2 % 4) as usize].to_bits(),
+            );
+            let scale = [0u32, 0x10, 0xffff_ffff, 7][(case % 4) as usize];
+            let args = [
+                rng.next(),
+                text,
+                rng.word(),
+                rng.word(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.word(),
+                scale,
+            ];
+            t.check_fs(
+                &format!("mes font inter #{case}"),
+                0x008e_d190,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::mes_font_inter(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b7_movie_font_glyph_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0d01);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x40);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.g32(0x0193_ed20, (case >> 3) & 1); // __sse2_available
+            for (sym, n) in [
+                (mnc::GS_TEST, 8),
+                (mnc::GS_ALPHA, 5),
+                (mnc::GS_WORDS4, 4),
+                (mnc::DRAW_KICK, 0),
+            ] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            t.stub(mnc::GS_TEX0, false, 12, 0, r ^ 1);
+            t.stub(mnc::GS_XY2, false, 2, 0, r ^ 2);
+            t.stub(mnc::GS_XYZ_OFFSET, false, 3, 0, r ^ 3);
+            t.stub(mnc::GS_XYZ2_OFFSET, false, 2, 0, r ^ 4);
+            ctrl_state(t, case, r ^ 4);
+            let (pos, glyph) = glyph_pair(t, &mut rng, case);
+            t.write(
+                pos + 0x1b,
+                &[[0u8, 7, 8, 0x1f, 0xff, 0x9a][(case % 6) as usize]],
+            );
+            t.check_fs(
+                &format!("movie font glyph #{case}"),
+                0x008f_dc00,
+                &[pos, glyph],
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::movie_font_glyph(m, pos, glyph, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b7_shape_by_kind_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0d02);
+        for kind in 0..0x22u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, sym) in mnc::KIND_SHAPES.into_iter().enumerate() {
+                t.stub(sym, false, 6, 0, r ^ k as u32);
+            }
+            for sym in mnc::KIND_COLOURS {
+                t.g32(sym, rng.next());
+                t.g32(sym - 4, rng.next());
+            }
+            let args = [
+                rng.next(),
+                rng.word(),
+                rng.word(),
+                if kind == 0x21 { 0xffff_ffff } else { kind },
+            ];
+            t.check(
+                &format!("shape by kind {kind:#x}"),
+                0x008f_1b50,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(mnb::shape_by_kind(m, args)),
+            );
+        }
+    });
+}

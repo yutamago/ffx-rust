@@ -329,6 +329,34 @@ pub const LIMIT_GAUGE: u32 = 0x0089_5480;
 pub const VALUE_FONT_M_CLUT_RIGHT: u32 = 0x0090_42e0;
 pub const BOX_FILL_WIDTH: u32 = 0x008f_3eb0;
 
+/// `TOAdpEasyMesFontLClutRGBAInterMode`'s: the glyph record `0x01841d50`
+/// (0x40 bytes; its scales `+0x1c`/`+0x20`), the pen `0x025d09a0`
+/// (colour bytes, x `+4`, y `+8`, flags `+0x1a`/`+0x1b`), the glyph
+/// lookup `0x008b78b0`, the two passes `0x008fcca0`/`0x008fcad0`, the
+/// next character `0x008dfd80`, the font spacing `0x018716d8`, the width
+/// factor `0x00c5d778` and the doubles `0x00b922e0`, `0x00b48320`.
+pub const GLYPH_RECORD: u32 = 0x0184_1d50;
+pub const PEN: u32 = 0x025d_09a0;
+pub const GLYPH_LOOKUP: u32 = 0x008b_78b0;
+pub const PASS_EDGE: u32 = 0x008f_cca0;
+pub const PASS_FONT: u32 = 0x008f_cad0;
+pub const NEXT_CHAR: u32 = 0x008d_fd80;
+pub const FONT_SPACING: u32 = 0x0187_16d8;
+pub const WIDTH_FACTOR: u32 = 0x00c5_d778;
+pub const SCALE_BASE: u32 = 0x00b9_22e0;
+pub const ADVANCE_FACTOR: u32 = 0x00b4_8320;
+pub const CRT_MEMSET: u32 = 0x0094_964c;
+
+/// `TOMakePktMovieFont1612Font`'s: `TOGsTEX0` (12 words), `TOGsXYZOffset`,
+/// its two font pages 0x2eb8/0x2ebc.
+pub const GS_TEX0: u32 = 0x008f_ac10;
+pub const GS_XYZ_OFFSET: u32 = 0x008f_ad50;
+
+/// `FUN_008f1b50`'s window colour pairs (`0x025d16a0`/`9c`, `98`/`94`,
+/// `90`/`8c`, `88`/`84`) and its four shape builders.
+pub const KIND_COLOURS: [u32; 4] = [0x025d_16a0, 0x025d_1698, 0x025d_1690, 0x025d_1688];
+pub const KIND_SHAPES: [u32; 4] = [0x008f_1af0, 0x008f_1a90, 0x008f_1990, 0x008f_1a10];
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2219,5 +2247,295 @@ pub mod bridge {
             plate(h, 0x12).wrapping_add(y16),
         ];
         cdecl(h, super::LIMIT_GAUGE, &[chr, sx(gauge[0]), sx(gauge[1])])
+    }
+    /// `FUN_008f2e10(cursor, page, x, y, w, h)`: a textured sprite packet
+    /// at `cursor` (a GS tag with the alpha/test registers, `TOAdpTEX0(..,
+    /// page, 8, 0, 9, 7, 1, 0 x5, 2)`), then four corners, each grey
+    /// (`TOAdpWords4(0x80 x4)`), its UV (`TOAdpXY2`: (0, 0), (0x200, 0),
+    /// (0, 0x80), (0x200, 0x80)) and screen point (`TOAdpXYZ2Offset`: `(x,
+    /// y)`, `(x + w, y)`, `(x, y + h)`, `(x + w, y + h)`). Returns the
+    /// packet's end.
+    pub fn movie_image(h: &mut impl Host, args: [u32; 6]) -> u32 {
+        let [cursor, page, x, y, w, hh] = args;
+        let q = put_words(
+            h,
+            cursor,
+            &[
+                0x8001,
+                0xf08e_4000,
+                0x3143_1eee,
+                0x0431_4314,
+                0x44,
+                0x80,
+                0x42,
+                0,
+                0xf,
+                0,
+                0x47,
+                0,
+            ],
+        );
+        let mut q = h.call_sym_wide(super::ADP_TEX0, &[q, page, 8, 0, 9, 7, 1, 0, 0, 0, 0, 0, 2]);
+        let (right, bottom) = (w.wrapping_add(x), y.wrapping_add(hh));
+        for (uv, at) in [
+            ([0, 0], [x, y]),
+            ([0x200, 0], [right, y]),
+            ([0, 0x80], [x, bottom]),
+            ([0x200, 0x80], [right, bottom]),
+        ] {
+            q = cdecl(h, super::ADP_WORDS4, &[q, 0x80, 0x80, 0x80, 0x80]);
+            q = cdecl(h, super::ADP_XY2, &[q, uv[0], uv[1]]);
+            q = cdecl(h, super::ADP_XYZ2_OFFSET, &[q, at[0], at[1]]);
+        }
+        q
+    }
+
+    /// `FUN_008ebc00(cursor, x, y, w, r, g, b, a; slots)`: a three-piece
+    /// bar at `cursor` / `g_TOPktCursor`: a GS tag,
+    /// `TOGsALPHA(0, 1, 0, 1, 0x80)`, the test/texture registers and a
+    /// sprite tag, then the left cap, the middle and the right cap (each
+    /// `TOGsWords4` of the colour bytes, `TOGsXY2`/`TOGsXYZ2Offset`
+    /// corners: UVs 0x67..0x75, 0x75..0x78, 0x79..0x85 by 0..0x13; screen
+    /// x from `x - 0xe` to `x`, `x` to `x + w`, `x + w` to `x + w + 0xc`,
+    /// y from `y - 3` to `y + 0x10`). The colour bytes go back into their
+    /// argument slots zero-extended, `y - 3` into the cursor's. Returns
+    /// `g_TOPktCursor`.
+    pub fn bar_caps(h: &mut impl Host, args: [u32; 8], slots: u32) -> u32 {
+        let [cursor, x, y, w, ..] = args;
+        let cell = h.rebase(PKT_CURSOR);
+        let p = put_words(h, cursor, &[1, 0x3000_0000, 0xeee, 0]);
+        h.write(cell, p);
+        cdecl(h, super::GS_ALPHA, &[0, 1, 0, 1, 0x80]);
+        let q: u32 = h.read(cell);
+        let colour = [
+            args[4] & 0xff,
+            args[5] & 0xff,
+            args[6] & 0xff,
+            args[7] & 0xff,
+        ];
+        let q = put_words(
+            h,
+            q,
+            &[
+                0xf,
+                0,
+                0x47,
+                0,
+                0x2131_3e00,
+                0x4005_d406,
+                6,
+                0,
+                0x8003,
+                0x50af_4000,
+                0x0004_3431,
+                0,
+            ],
+        );
+        h.write(cell, q);
+        for (k, c) in [4u32, 5, 6, 7].into_iter().zip(colour) {
+            h.write(slots.wrapping_add(4 * k), c);
+        }
+        let top = y.wrapping_sub(3);
+        let low = y.wrapping_add(0x10);
+        let right = w.wrapping_add(x);
+        let pieces = [
+            ([0x67, 0x75], [x.wrapping_sub(0xe), x]),
+            ([0x75, 0x78], [x, right]),
+            ([0x79, 0x85], [right, right.wrapping_add(0xc)]),
+        ];
+        for (i, (u, sx)) in pieces.into_iter().enumerate() {
+            let colour =
+                [0x10u32, 0x14, 0x18, 0x1c].map(|off| h.read::<u32>(slots.wrapping_add(off)));
+            cdecl(h, super::GS_WORDS4, &colour);
+            cdecl(h, super::GS_XY2, &[u[0], 0]);
+            if i == 0 {
+                h.write(slots, top);
+            }
+            let top: u32 = h.read(slots);
+            cdecl(h, super::GS_XYZ2_OFFSET, &[sx[0], top]);
+            cdecl(h, super::GS_XY2, &[u[1], 0x13]);
+            cdecl(h, super::GS_XYZ2_OFFSET, &[sx[1], low]);
+        }
+        h.read(cell)
+    }
+    /// `TOAdpEasyMesFontLClutRGBAInterMode(cursor, text, x, y, flag, r, g,
+    /// b, a, kind, scale; slots)`: the glyph record cleared, the pen set
+    /// (`(x, y)` as floats, the colour bytes, flags 0 and `flag`),
+    /// `g_TOPktCursor` = `cursor`; then per character of `text`: its glyph
+    /// (`0x008b78b0(text, record, kind)`), with a positive `scale` the
+    /// record's scales multiplied by `base / scale` (`0x00b922e0`) and the
+    /// passes drawn with 4 and 5, else both with `scale`; the pen moved on
+    /// (positive scale: `(spacing + 1) * base / scale + scale_x * width *
+    /// 0x00b48320`; else `scale_x * width + 1 + spacing`), x87. `f32
+    /// scale` goes into the cursor's argument slot. Returns
+    /// `g_TOPktCursor`.
+    pub fn mes_font_inter(h: &mut impl Host, args: [u32; 11], slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let [cursor, text, x, y, flag, r, g, b, a, kind, scale] = args;
+        let record = h.rebase(super::GLYPH_RECORD);
+        cdecl(h, super::CRT_MEMSET, &[record, 0, 0x40]);
+        let pen = h.rebase(super::PEN);
+        for off in [0u32, 0x18, 4] {
+            h.write(pen.wrapping_add(off), 0u32);
+        }
+        h.write(pen.wrapping_add(4), int_f32(x).to_bits());
+        for off in [8u32, 0xc, 0x10, 0x14] {
+            h.write(pen.wrapping_add(off), 0u32);
+        }
+        h.write(pen.wrapping_add(8), int_f32(y).to_bits());
+        for (off, c) in [(0u32, r), (1, g), (2, b), (3, a), (0x1b, flag)] {
+            h.write(pen.wrapping_add(off), c.to_le_bytes()[0]);
+        }
+        h.write(pen.wrapping_add(0x1a), 0u8);
+        let cell = h.rebase(PKT_CURSOR);
+        h.write(cell, cursor);
+        if h.read::<u8>(text) == 0 {
+            return cursor;
+        }
+        let base = f64_global(h, super::SCALE_BASE);
+        let scaled = scale.cast_signed() > 0;
+        let mut text = text;
+        loop {
+            cdecl(h, super::GLYPH_LOOKUP, &[text, record, kind]);
+            if scaled {
+                let sf = int_f32(scale).to_bits();
+                h.write(slots, sf);
+                let k = x87::div(base, x87::load(sf));
+                let sx = record.wrapping_add(0x1c);
+                let v = x87::mul(x87::load(h.read(sx)), k);
+                h.write(sx, x87::store(v));
+                let sy = record.wrapping_add(0x20);
+                let v = x87::mul(k, x87::load(h.read(sy)));
+                h.write(sy, x87::store(v));
+                cdecl(h, super::PASS_EDGE, &[pen, record, 4]);
+                cdecl(h, super::PASS_FONT, &[pen, record, 5]);
+            } else {
+                cdecl(h, super::PASS_EDGE, &[pen, record, scale]);
+                cdecl(h, super::PASS_FONT, &[pen, record, scale]);
+            }
+            let spacing = x87::load(global(h, super::FONT_SPACING));
+            let width = x87::load(global(h, super::WIDTH_FACTOR));
+            let advance = if scaled {
+                let sf = int_f32(scale).to_bits();
+                h.write(slots, sf);
+                let k = x87::div(base, x87::load(sf));
+                let lead = x87::mul(x87::add(spacing, 1.0), k);
+                let scale_x = x87::load(h.read(record.wrapping_add(0x1c)));
+                let wide = x87::mul(
+                    x87::mul(scale_x, width),
+                    f64_global(h, super::ADVANCE_FACTOR),
+                );
+                x87::add(lead, wide)
+            } else {
+                let scale_x = x87::load(h.read(record.wrapping_add(0x1c)));
+                x87::add(x87::add(x87::mul(scale_x, width), 1.0), spacing)
+            };
+            let px = pen.wrapping_add(4);
+            let v = x87::add(advance, x87::load(h.read(px)));
+            h.write(px, x87::store(v));
+            text = cdecl(h, super::NEXT_CHAR, &[text]);
+            if h.read::<u8>(text) == 0 {
+                return h.read(cell);
+            }
+        }
+    }
+    /// `TOMakePktMovieFont1612Font(pos, glyph; slots)`: a glyph of the
+    /// movie font at `g_TOPktCursor`: a GS tag, `TOGsTEST(1, 7, 0 x6)`,
+    /// `TOGsALPHA(0, 1, 0, 1, 0x80)`, two `TOGsTEX0` (the page 0x2eb8 or,
+    /// for the low nibble of `pos + 0x1b` from 8, 0x2ebc with the nibble
+    /// less 8; the CLUT row `i16 glyph +4` plus twice the nibble), the
+    /// colour (`pos` bytes 0..3, alpha 0x60) and the corners (UVs from
+    /// the glyph's floats, screen `pos` plus the glyph's offsets, the
+    /// first with Z 1), then the tail jump to `TOCtrlPkt`. The page goes
+    /// into `pos`'s argument slot.
+    pub fn movie_font_glyph(h: &mut impl Host, pos: u32, glyph: u32, slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let p = put_words(h, p, &[0x8001, 0x90ab_4000, 0x3431_eeee, 4]);
+        h.write(cell, p);
+        let mut nibble = u32::from(h.read::<u8>(pos.wrapping_add(0x1b))) & 0xf;
+        let page = if nibble < 8 {
+            0x2eb8
+        } else {
+            nibble -= 8;
+            0x2ebc
+        };
+        h.write(slots, page);
+        cdecl(h, super::GS_TEST, &[1, 7, 0, 0, 0, 0, 0, 0]);
+        cdecl(h, super::GS_ALPHA, &[0, 1, 0, 1, 0x80]);
+        let g0 = i16_at(h, glyph, 0);
+        cdecl(
+            h,
+            super::GS_TEX0,
+            &[g0, 2, 0x13, 7, 0xa, 1, 0, page, 0, 0, 0, 1],
+        );
+        let row = i16_at(h, glyph, 4).wrapping_add(nibble * 2);
+        let g2 = i16_at(h, glyph, 2);
+        let page: u32 = h.read(slots);
+        let g0 = i16_at(h, glyph, 0);
+        cdecl(
+            h,
+            super::GS_TEX0,
+            &[g0, 2, g2, 7, 0xa, 1, 0, page, 0, 0, row, 0],
+        );
+        let colour = [0u32, 1, 2].map(|k| u32::from(h.read::<u8>(pos.wrapping_add(k))));
+        cdecl(
+            h,
+            super::GS_WORDS4,
+            &[colour[0], colour[1], colour[2], 0x60],
+        );
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(8)),
+            f32_at(h, glyph.wrapping_add(0xc)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let y = x87::add(
+            f32_at(h, pos.wrapping_add(8)),
+            f32_at(h, glyph.wrapping_add(0x18)),
+        );
+        let y = ftol(h, y);
+        let x = ftol(h, f32_at(h, pos.wrapping_add(4)));
+        cdecl(h, super::GS_XYZ_OFFSET, &[x, y, 1]);
+        let (u, v) = (
+            f32_at(h, glyph.wrapping_add(0x10)),
+            f32_at(h, glyph.wrapping_add(0x14)),
+        );
+        let (u, v) = (ftol(h, u), ftol(h, v));
+        cdecl(h, super::GS_XY2, &[u, v]);
+        let y = x87::add(
+            x87::add(
+                f32_at(h, pos.wrapping_add(8)),
+                f32_at(h, glyph.wrapping_add(0x18)),
+            ),
+            f32_at(h, glyph.wrapping_add(0x20)),
+        );
+        let y = ftol(h, y);
+        let x = ftol(
+            h,
+            x87::add(
+                f32_at(h, glyph.wrapping_add(0x1c)),
+                f32_at(h, pos.wrapping_add(4)),
+            ),
+        );
+        let r = cdecl(h, super::GS_XYZ2_OFFSET, &[x, y]);
+        ctrl_pkt(h, r)
+    }
+    /// `FUN_008f1b50(cursor, x, y, kind)`: for kinds 0..3, 8..11, 16..19
+    /// and 24..27 (the original's switch), the shape builder `kind & 3`
+    /// (`0x008f1af0`, `0x008f1a90`, `0x008f1990`, `0x008f1a10`) called
+    /// with `(cursor, x, y, 0xd1)` and colour pair `kind >> 3`; its
+    /// cursor. Other kinds return `cursor`.
+    pub fn shape_by_kind(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [cursor, x, y, kind] = args;
+        if kind > 0x1b || kind & 4 != 0 {
+            return cursor;
+        }
+        let pair = h.rebase(super::KIND_COLOURS[(kind >> 3) as usize]);
+        let second: u32 = h.read(pair.wrapping_sub(4));
+        let first: u32 = h.read(pair);
+        let shape = super::KIND_SHAPES[(kind & 3) as usize];
+        cdecl(h, shape, &[cursor, x, y, 0xd1, first, second])
     }
 }

@@ -1182,6 +1182,32 @@ ported! {
     TOBtlDrawParamPlate @ 0x0089_5940 => extern "C" fn param_plate(chr: u32, x: u32, y: u32; slots: u32) -> u32 {
         mn::param_plate(&mut mem(), chr, x, y, slots)
     }
+
+    /// `(cursor, page, x, y, w, h)`.
+    TOAdpMovieImage_008f2e10 @ 0x008f_2e10 => extern "C" fn movie_image(cursor: u32, page: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        mn::movie_image(&mut mem(), [cursor, page, x, y, w, h])
+    }
+    /// `(cursor, x, y, w, r, g, b, a)`: the colour bytes and `y - 3` left in
+    /// the argument slots.
+    TOAdpBarCaps_008ebc00 @ 0x008e_bc00 => extern "C" fn bar_caps(cursor: u32, x: u32, y: u32, w: u32, r: u32, g: u32, b: u32, a: u32; slots: u32) -> u32 {
+        mn::bar_caps(&mut mem(), [cursor, x, y, w, r, g, b, a], slots)
+    }
+
+    /// `(cursor, text, x, y, flag, r, g, b, a, kind, scale)`: `f32 scale`
+    /// left in the cursor's argument slot.
+    TOAdpEasyMesFontLClutRGBAInterMode @ 0x008e_d190 => extern "C" fn mes_font_inter(cursor: u32, text: u32, x: u32, y: u32, flag: u32, r: u32, g: u32, b: u32, a: u32, kind: u32, scale: u32; slots: u32) -> u32 {
+        mn::mes_font_inter(&mut mem(), [cursor, text, x, y, flag, r, g, b, a, kind, scale], slots)
+    }
+
+    /// `(pos, glyph)`: the font page left in `pos`'s argument slot.
+    TOMakePktMovieFont1612Font @ 0x008f_dc00 => extern "C" fn movie_font_glyph(pos: u32, glyph: u32; slots: u32) -> u32 {
+        mn::movie_font_glyph(&mut mem(), pos, glyph, slots)
+    }
+
+    /// `(cursor, x, y, kind)`.
+    TOAdpShapeByKind_008f1b50 @ 0x008f_1b50 => extern "C" fn shape_by_kind(cursor: u32, x: u32, y: u32, kind: u32) -> u32 {
+        mn::shape_by_kind(&mut mem(), [cursor, x, y, kind])
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
