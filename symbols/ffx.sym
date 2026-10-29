@@ -7404,6 +7404,8 @@
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
 0x0076ce20 function CdQueueSector_0076ce20       # (sector) -> CdQueueSectorRead_0076ce40(sector, 0, 0); g_CdLib slot +0x8c (CdEnvInit, _DAT_02310ccc); ported (system round 33); name ours
 0x0076ce40 function CdQueueSectorRead_0076ce40   # (sector, a, b) -> id: the first free g_CdChannels request (+0x31 busy): +0x1c sector, +0x28 a, +8 b, +0x30/+0x31 set, the rest zeroed, +0x24 the next g_CdReadId (1 past 0xffff); all 64 busy: movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d) and request 64 written anyway; Ghidra's void is wrong (eax is the id); ported (system round 33); name ours
+0x0076cf60 function cd_QueueModuleRead_0076cf60 # g_CdLib slot (CdEnvInit 0x0076d04b): cdecl(module, n) -> CdQueueSectorRead_0076ce40(cd_module_file_sector(module, n), module, n); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x0076cf80 function cd_SetBlockFlag_0076cf80 # g_CdLib slot (CdEnvInit 0x0076d0b6): cdecl(n): its argument slot decremented, ReturnAddress_00777230()'s byte +1 = (n - 1 != 0), returns that block; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x0076cfa0 function CdSetC40e19_0076cfa0 # cdecl(n): byte 0x00c40e19 = (n != 1); caller CdEnvInit; name ours
 0x0076cfc0 function SetGlobal_01128ac4 # cdecl(v): *0x01128ac4 = v, returns v; caller 0x0088e880; name ours
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
@@ -7414,6 +7416,7 @@
 0x0076d440 function cd_decode_data               # layout+callees: sorts between Sa_CdRead_task and cd_file_sector, and its named callees match the Switch 0x710031eec0 cd_decode_data's (similarity 1.00: sa_decode, sa_meth01dec2_ex, sa_meth01dec_ex); symbols from Fahrenheit's server export; cdecl(req) -> eax: req +4 data, +0x2c size, unpacked size = unaligned u32 at data+1; <= 0x1800: memcpy to [0x01128ac8], sa_decode(data, buf); else last 0x1800 bytes to the buffer, head (size-0x1800) moved up byte-wise to end at data+unpacked, method byte 1/2 -> sa_meth01dec_ex/2_ex(block, data, n, buf), other: eax = byte-2; ported (system round 31)
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
 0x0076d530 function cd_channel_clear # cdecl(n): unless g_CdChannelKeepNames, zero the first byte of name n in g_CdChannelNames (0x80 each); then words +8,+4,+0,+0x30,+0x24 and byte +0x34 of channel n in g_CdChannels (0x38 each); name ours
+0x0076d5a0 function cd_CheckDisk_0076d5a0 # cdecl(): 0x00777310() (returns 0): 0 -> 0; -1 -> 1; else sceCdDiskReady(1) == 2: 0x00a447a0(), dbgPrintf(0x00b51ecc), CdReadDirect_0076d140([0x01128acc], [0x01128ad0], [0x01128ad4], 0x01128aa8), 1; else -1; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x0076d600 function hdd_install_find # cdecl(archive, n): the HDD-install entry (0x34 bytes) whose archive byte (+0) and file number (+8) match, or 0 (also for -1 in either or an empty table); name ours
 0x0076d660 function check_ex_file_size        # fh v4:imported+call.cs cdecl
 0x0076d6b0 function disk_open_check_set       # fh v3:bsim1.00 0x0076d7c0
@@ -7430,6 +7433,7 @@
 0x0076dc20 function cd_size_from_table # cdecl(n): 1 when entry n + g_CdLib+0x20 of the sector table has bit 23 clear and bit 22 set (size from sizetbl.bin), else 0; name ours
 0x0076dc50 function get_read_buffer           # () -> the CD reader's buffer (0x01128ac8); Fahrenheit Switch BSim 1.00 0x710031e670
 0x0076dc60 function SetByte_01128ac0 # cdecl(v): byte 0x01128ac0 = v; caller 0x00a7aee0; name ours
+0x0076dc70 function cd_AllocReadBuffer_0076dc70 # cdecl(): 0x01128ab8 = 0, dbgPrintf(0x00b51d18, 0x6800), user_malloc(0x6800) into 0x01128ae4, memset it; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x0076dd10 function printf2                      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'FFXDEBUG'; Switch 0x710031ff70 printf2 (symbols from Fahrenheit's server export)
 0x0076de90 function printf_cut                # fh switch:bsim1.00 0x71003202d0
 0x0076dec0 function printf_init_over             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'pach dbgPrintf(%d)\\n'; Switch 0x7100320220 printf_init_over (symbols from Fahrenheit's server export)
@@ -7712,23 +7716,30 @@
 0x00772660 function KernelSaveCommand_30d8_00772660# cdecl(chr): MsGetSaveCommand(chr, 0x30d8); kernel menu accessor (table entry); name ours
 0x00772680 function KernelSlotAbilityName_154_00772680# cdecl(i): Kernel_GetAbilityName(u16 +0x154 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007726b0 function KernelSaveCommand_30d9_007726b0# cdecl(chr): MsGetSaveCommand(chr, 0x30d9); kernel menu accessor (table entry); name ours
+0x007726d0 function Thunk_AtelGetScenarioFlag_007726d0 # native table 0x00c40f58: jmp AtelGetScenarioFlag (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007726e0 function KernelSlotAbilityName_156_007726e0# cdecl(i): Kernel_GetAbilityName(u16 +0x156 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772710 function KernelSaveCommand_30da_00772710# cdecl(chr): MsGetSaveCommand(chr, 0x30da); kernel menu accessor (table entry); name ours
+0x00772730 function Thunk_AtelGetSphereMonitor_00772730 # native table 0x00c40f5c: AtelGetSphereMonitor's ax zero-extended (not in the dump, 9 bytes); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00772740 function KernelSlotAbilityName_158_00772740# cdecl(i): Kernel_GetAbilityName(u16 +0x158 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772770 function KernelSaveCommand_30db_00772770# cdecl(chr): MsGetSaveCommand(chr, 0x30db); kernel menu accessor (table entry); name ours
 0x00772790 function KernelMonsterCapture_00772790# cdecl(id): tail call MsGetMonsterCapture(id); kernel menu accessor; name ours
 0x007727a0 function KernelSlotAbilityName_15a_007727a0# cdecl(i): Kernel_GetAbilityName(u16 +0x15a of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007727d0 function KernelSaveCommand_30dc_007727d0# cdecl(chr): MsGetSaveCommand(chr, 0x30dc); kernel menu accessor (table entry); name ours
+0x007727f0 function Thunk_hdd_rmode_get_007727f0 # native table 0x00c40f64: cdecl(i): jmp hdd_rmode_get; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x00772800 function PadButtonBit5_00772800 # table 0x00c413a0: (u8 [0x0112a08c] >> 5) & 1 (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00772810 function KernelSaveCommand_30dd_00772810# cdecl(chr): MsGetSaveCommand(chr, 0x30dd); kernel menu accessor (table entry); name ours
 0x00772830 function KernelSlotAbilityName_15c_00772830# cdecl(i): Kernel_GetAbilityName(u16 +0x15c of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
+0x00772860 function PadShoulderHeld_00772860 # table 0x00c413a4: u8 [0x0112a039] and ([0x0112a094] | [0x0112a08c]) & 0xf000 -> 1, else 0 (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00772890 function KernelSaveCommand_30de_00772890# cdecl(chr): MsGetSaveCommand(chr, 0x30de); kernel menu accessor (table entry); name ours
 0x007728b0 function KernelSlotAbilityName_15e_007728b0# cdecl(i): Kernel_GetAbilityName(u16 +0x15e of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007728e0 function KernelSaveCommand_30df_007728e0# cdecl(chr): MsGetSaveCommand(chr, 0x30df); kernel menu accessor (table entry); name ours
 0x00772900 function KernelJoined_00772900     # cdecl(chr): MsGetSavePlyJoin(chr) == 1; name ours
 0x00772920 function KernelSlotAbilityName_160_00772920# cdecl(i): Kernel_GetAbilityName(u16 +0x160 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772950 function KernelSaveCommand_30e0_00772950# cdecl(chr): MsGetSaveCommand(chr, 0x30e0); kernel menu accessor (table entry); name ours
+0x00772970 function PadButtonBit6_00772970 # native table 0x00c410cc: (u8 [0x0112a08c] >> 6) & 1 (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00772980 function KernelSlotAbilityName_162_00772980# cdecl(i): Kernel_GetAbilityName(u16 +0x162 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007729b0 function KernelSaveCommand_30e1_007729b0# cdecl(chr): MsGetSaveCommand(chr, 0x30e1); kernel menu accessor (table entry); name ours
+0x007729d0 function GetGlobal_0112a078_007729d0 # native table 0x00c41018: [0x0112a078] (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007729e0 function KernelSaveCommand_3000_007729e0# cdecl(chr): MsGetSaveCommand(chr, 0x3000); kernel menu accessor (table entry); name ours
 0x00772a00 function KernelSlotAbilityName_164_00772a00# cdecl(i): Kernel_GetAbilityName(u16 +0x164 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x00772a30 function KernelSaveCommand_30e2_00772a30# cdecl(chr): MsGetSaveCommand(chr, 0x30e2); kernel menu accessor (table entry); name ours
@@ -7807,6 +7818,7 @@
 0x007734c0 function KernelSlotAbilityName_190_007734c0# cdecl(i): Kernel_GetAbilityName(u16 +0x190 of record i (0x1d8 bytes) of *0x0112a034); kernel menu accessor; name ours
 0x007734f0 function KernelSaveCommand_3115_007734f0# cdecl(chr): MsGetSaveCommand(chr, 0x3115); kernel menu accessor (table entry); name ours
 0x00773510 function KernelSaveCommand_301b_00773510# cdecl(chr): MsGetSaveCommand(chr, 0x301b); kernel menu accessor (table entry); name ours
+0x00773530 function Thunk_hdd_head_sectors_00773530 # native table 0x00c41158: cdecl(i): jmp hdd_head_sectors; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00773540 function KernelSaveCommand_3116_00773540# cdecl(chr): MsGetSaveCommand(chr, 0x3116); kernel menu accessor (table entry); name ours
 0x00773560 function KernelSaveCommand_301c_00773560# cdecl(chr): MsGetSaveCommand(chr, 0x301c); kernel menu accessor (table entry); name ours
 0x00773580 function KernelSaveCommand_3117_00773580# cdecl(chr): MsGetSaveCommand(chr, 0x3117); kernel menu accessor (table entry); name ours
@@ -7837,8 +7849,10 @@
 0x007738e0 function GetDerefU8_007738e0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x22)]; return t1; callers: no direct caller; name ours
 0x00773900 function KernelSaveCommand_3029_00773900# cdecl(chr): MsGetSaveCommand(chr, 0x3029); kernel menu accessor (table entry); name ours
 0x00773920 function GetDerefU8_00773920          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2b)]; return t1; callers: no direct caller; name ours
+0x00773940 function Thunk_SetTableEntry_00773940 # table 0x00c41714: jmp SetTableEntry_00779590 (i, v) (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00773950 function KernelSaveCommand_302b_00773950# cdecl(chr): MsGetSaveCommand(chr, 0x302b); kernel menu accessor (table entry); name ours
 0x00773970 function GetDerefU8_00773970          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2c)]; return t1; callers: no direct caller; name ours
+0x00773990 function Thunk_MsPayGIL_00773990 # table 0x00c41728: jmp MsPayGIL (n) (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007739a0 function KernelSaveCommand_302c_007739a0# cdecl(chr): MsGetSaveCommand(chr, 0x302c); kernel menu accessor (table entry); name ours
 0x007739c0 function KernelPostRequest1_007739c0 # cdecl(v): unless byte 0x0112a038: 0x0112a058 = 1, 0x0112a054 = v, 0x0112a038 = 1; kernel menu accessor; name ours
 0x007739f0 function GetDerefU8_007739f0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x2d)]; return t1; callers: no direct caller; name ours
@@ -7853,12 +7867,14 @@
 0x00773b20 function GetDerefU8_00773b20          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x30)]; return t1; callers: no direct caller; name ours
 0x00773b40 function KernelSaveCommand_3030_00773b40# cdecl(chr): MsGetSaveCommand(chr, 0x3030); kernel menu accessor (table entry); name ours
 0x00773b60 function GetDerefU8_00773b60          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x31)]; return t1; callers: no direct caller; name ours
+0x00773b80 function Thunk_get_hdd_status_00773b80 # native table 0x00c41164: jmp get_hdd_status (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00773ba0 function KernelSaveCommand_3031_00773ba0# cdecl(chr): MsGetSaveCommand(chr, 0x3031); kernel menu accessor (table entry); name ours
 0x00773bc0 function GetDerefU8_00773bc0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x32)]; return t1; callers: no direct caller; name ours
 0x00773be0 function KernelSaveCommand_3032_00773be0# cdecl(chr): MsGetSaveCommand(chr, 0x3032); kernel menu accessor (table entry); name ours
 0x00773c00 function GetDerefU8_00773c00          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x33)]; return t1; callers: no direct caller; name ours
 0x00773c20 function KernelSaveCommand_3033_00773c20# cdecl(chr): MsGetSaveCommand(chr, 0x3033); kernel menu accessor (table entry); name ours
 0x00773c40 function GetDerefU8_00773c40          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x34)]; return t1; callers: no direct caller; name ours
+0x00773c60 function hdd_SetMode_00773c60 # table 0x00c41744: cdecl(on): g_FFXHddMode = on != 0, hdd_mount() when on, jmp TkRefreshHDDMode; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00773c90 function KernelSaveCommand_3034_00773c90# cdecl(chr): MsGetSaveCommand(chr, 0x3034); kernel menu accessor (table entry); name ours
 0x00773cb0 function GetDerefU8_00773cb0          # auto-port shape (return deref u8 (pointer chain), cdecl): t0 = u32[&0x0112a034]; t1 = u8[(((a0 * 0x1d8) + t0) + 0x35)]; return t1; callers: no direct caller; name ours
 0x00773cd0 function KernelSaveCommand_3035_00773cd0# cdecl(chr): MsGetSaveCommand(chr, 0x3035); kernel menu accessor (table entry); name ours
@@ -7944,6 +7960,8 @@
 0x00775de0 function FindRecordFlagged_00775de0 # (): as FindRecordAt_00775ce0 for the first record with +1 bit 0; name ours
 0x00775ed0 function SaMenu_loadSbinTextures_00775ed0 # cdecl(sbin) -> next GS address (Ghidra: void; mov eax, edi at the end): from [0x00c416c8], [sbin+4] palettes (16x16 PSMCT32, records 0x0112a0ac) then images (psm by bit depth 4/8/16/24 -> 0x14/0x13/2/1, records 0x0112a0a8), aligned frame (ebp-0x60 load image), debug prints; from sa_menu_start+0x1ca; ported (ffx_glue_other::h4_i4, m4 h4 i); name ours
 0x00776110 function MenuCursorStep_00776110 # (&result): one cursor step of the menu record list: hands a pending request (0x0112a038 == 1) to TOMenuHelpSetExtMode/TOMenuTermHelp; else follows the pad direction to its target record (condition passes when cond < 0 or result != +4 flag; sounds +0xf0/+0xf6/+0xf8 via SndSepPlaySimple, ResetRecords on page change, value pairs copied) -> *result 1, or chooses the entry (+0xfb kind 1 pad 0x40 / kind 2 pad 0x20; cond +0x100/+0x102 vs +0xfc; request kind +0xfa, value +0xfe; sounds +0xf2/+0xf4) -> *result 2; name ours
+0x007766e0 function hdd_DrawBarSprite_007766e0 # cdecl(): GsPkt_TexturedSprite_00774ff0(Sg_PacketGetPtr(), w + 4, w, 0x170, 0xf6, 0x80, 0x80) with w = [0x00c416cc], FlushCache(0), sceDmaSend(sceDmaGetChan(2), pkt), sceGsSyncPath(0, 0); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x00776740 function hdd_DrawWallSprite_00776740 # cdecl(): as 0x007766e0 with (w + 0x48, w + 0x44, 0, 0, 0x200, 0x200); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007767a0 function Kernel_GetItemName        # (id) -> char*: g_EmptyName for 0, else MsGetRomItem's strings + the record's first u16; name ours
 0x007767d0 function PatchMenuRecords_007767d0 # (): screen 5 page 0: records 3/4 +6 = 0x53/0x83, 5 unlinked, 7 +1 = 0 and unlinked, 8 +1 |= 1 +6 = 0x56, 9 +6 = 0x86; screen 0xb pages 13/14: unlink and +6 edits; name ours
 0x00776910 function UnlinkRecord_00776910 # cdecl(rec): unlinks rec from the offset list in *0x0112a03c (+0x38 next, +0x44 previous) and marks it 7; caller 0x007767d0; name ours
@@ -7957,7 +7975,7 @@
 0x00777240 function movieOpenCd                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'movieOpenCd() hdd_mode=%d\\n'; Switch 0x7100322db0 movieOpenCd (symbols from Fahrenheit's server export)
 0x00777320 function MovieCdRead_00777320 # cdecl(sector, size, buf, mode) -> 1: ceil(size / 2048) (signed) sectors by CdReadSectors_00777080(sector, n, buf, 0x00c41748, mode), byte 0x0112a4ec = 1, then 0x00777440(0, mode); name ours; ported (ffx_movie::m5_movie, m5 small b6)
 0x00777420 function hdd_state_clear           # (): zeroes the two words at 0x0112a4fc (before g_Hdd_Mounted); name ours
-0x00777680 function TkyiAssert                # fh v3:exact 0x00777780
+0x00777680 function TkyiAssert # fh v3:exact 0x00777780; cdecl(msg): unless [0x0112a520], jmp 0x0088ec80 (a bare ret); eax untouched; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00777940 function hdd_set_pass_names        # (): "ffxpassf" at 0x00c41758 and "ffxpassr" at 0x00c41764 (four word stores); name ours
 0x00777e80 function get_hdd_err               # () -> (i8) g_Hdd_Err, sign-extended; fh switch:bsim1.00 0x7100332e00
 0x00777e90 function get_hdd_status            # () -> 2 when g_Hdd_Err, else (i8) g_Hdd_Status; name ours, after get_hdd_err
@@ -7965,25 +7983,34 @@
 0x00777f00 function hdd_ReadModuleFiles_00777f00 # (): hdd_mount, a table of 16-byte entries (count 0x0112a51c), each module file opened from the HDD or by name (get_hdd_name), read whole (sceLseek/sceRead), "read module file : %s", "size err", "sceRead() err", "cmp err"; own name
 0x007783f0 function hd_file_read                 # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x71003334d0 hd_file_read's (similarity 0.88: sceClose, sceIoctl, sceLseek, sceLseek64, sceOpen); symbols from Fahrenheit's server export
 0x00778550 function hd_file_read_ex_th_main      # layout+callees: sorts between hd_file_read and hd_file_read_no_wait, and its named callees match the Switch 0x7100333790 hd_file_read_ex_th_main's (similarity 1.00: TkSignalSemaBGThread, task_wait); symbols from Fahrenheit's server export
-0x007785e0 function hd_file_read_no_wait         # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x7100333910 hd_file_read_no_wait's (similarity 1.00: sceRead); symbols from Fahrenheit's server export
+0x007785e0 function hd_file_read_no_wait # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x7100333910 hd_file_read_no_wait's (similarity 1.00: sceRead); symbols from Fahrenheit's server export; cdecl(_, buf, size, head, file) -> 0: sceRead(file, buf, size) when g_Hdd_Heads[head] +4 is set; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00778610 function hd_file_read_th              # layout+callees: sorts between hd_file_read_no_wait and hd_file_read_th_main, and its named callees match the Switch 0x7100333680 hd_file_read_th's (similarity 0.67: TkSignalSemaBGThread, task_wait); symbols from Fahrenheit's server export
 0x007786f0 function hd_file_read_th_main         # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x7100333820 hd_file_read_th_main's (similarity 1.00: sceClose, sceLseek, sceLseek64, sceOpen, sceRead); symbols from Fahrenheit's server export
 0x007787b0 function get_hdd_word_518          # () -> [0x0112a518]; TkRefreshHdd reads it; name ours
 0x00778960 function hdd_head_sectors # cdecl(i): word 1 of g_Hdd_Heads entry i (0x0112a52c + 12 i) / 2048, toward zero; caller 0x00773530; name ours
-0x007789d0 function hdd_head_init                # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x71003330d0 hdd_head_init's (similarity 1.00: TkGetFFXCofingAdrs); symbols from Fahrenheit's server export
+0x00778980 function hdd_HeadsAssert_00778980 # table 0x00c41720 (hdd_install_init): TkyiAssert(0x00b5380c), TkyiAssert(0x00b53820), returns 3; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x007789a0 function hdd_Format_007789a0 # table 0x00c41738: dbgPrintf(0x00b53ba8), sceFormat(0x00b53b74, 0, 0, 0); negative: dbgPrintf(0x00b53bb8, r) (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x007789d0 function hdd_head_init # layout+callees: sorts between get_hdd_name and hdd_head_reset, and its named callees match the Switch 0x71003330d0 hdd_head_init's (similarity 1.00: TkGetFFXCofingAdrs); symbols from Fahrenheit's server export; TkGetFFXCofingAdrs(), returns 0; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007789e0 function hdd_head_reset            # fh v3:exact 0x00778ad0
 0x00778d70 function hdd_ins_check                # str-match switch: only user of 7 string(s) held once by both builds, e.g. 'hdd_ins_check_in'; Switch 0x7100333a40 hdd_ins_check (symbols from Fahrenheit's server export)
+0x00778f60 function hdd_InstalledMb_00778f60 # cdecl(): the g_Hdd_Heads +4 sizes of the heads hdd_rmode_get reports (count 0x0112a51c, signed), (sum >> 20 + 0xff) >> 7, + 1, << 7; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x00778fb0 function hdd_InstalledMb2_00778fb0 # cdecl(): as 0x00778f60 with + 2; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00779000 function hdd_OpenFfxPartition_00779000 # (): remounts the HDD (hdd_unmount/hdd_mount) and opens the FFX partition named from GetSaveProductCode (hdd0:%s,,%s, sceIoctl2), "open err ffx partition", "HIOCNSUB err"; own name
+0x00779120 function hdd_InstallStart_00779120 # table 0x00c4173c: unless 0x0112a50b: g_Hdd_Err, 0x0112a7ac, 0x0112a524, 0x0112a7fc cleared, two 0x100800-byte buffers (Sg_MemSetAlign(0x40) each) into 0x0112a50c/0x0112a510, SetGlobal_0112a018(0x007797a0), TkRegistBGThreadFunc(hdd_thread_main), jmp TkSignalSemaBGThread; started: eax untouched (not in the dump, 116 bytes); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007791a0 function hdd_install_check         # fh v3:exact 0x00779290
-0x007792c0 function hdd_install_end              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'hdd_install_end()\\n'; Switch 0x7100334310 hdd_install_end (symbols from Fahrenheit's server export)
+0x00779290 function hdd_InstallPercent_00779290 # native table 0x00c41154: 0x0112a524 ? min(0x0112a7ac * 100 / 0x0112a524 (idiv), 100 signed) : 0 (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x007792c0 function hdd_install_end # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'hdd_install_end()\\n'; Switch 0x7100334310 hdd_install_end (symbols from Fahrenheit's server export); cdecl(): dbgPrintf(0x00b53b94), disk_open_check_set(0), SetGlobal_0112a018(0), jmp read_thread_init; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007792e0 function hdd_install_init          # fh v3:exact 0x007793d0
+0x007793a0 function GetGlobal_0112a518_007793a0 # native table 0x00c41150: [0x0112a518] (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007793c0 function hdd_kabe_disp                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'kabe_no_old=%d\\n'; Switch 0x7100335430 hdd_kabe_disp (symbols from Fahrenheit's server export)
+0x00779450 function hdd_DrawProgress_00779450 # cdecl(): progress = 0x0112a524 ? 0x0112a7ac << 6 / 0x0112a524 (idiv) : 0; changed from 0x02310c1c: stored, 0x00779ad0(progress, [0x00c416cc]); jmp 0x007766e0; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00779490 function hdd_mount                 # fh v3:exact 0x00779580
 0x00779560 function hdd_mount_flg_get         # fh v3:bsim1.00 0x00779650
 0x00779570 function hdd_rmode_get             # fh v3:exact 0x00779660
 0x00779590 function SetTableEntry_00779590       # auto-port shape (store argument to table, cdecl): u8[(((a0 + (a0 * 0x2)) * 0x4) + &0x0112a530)] = (a1 & 0xff); return ((a0 & 0xffffff00) | (a1 & 0xff)); callers: no direct caller; name ours
 0x007795b0 function hdd_thread_main           # fh v3:exact 0x007796a0
-0x00779730 function hdd_unmount               # fh v3:exact 0x00779820
+0x00779730 function hdd_unmount # fh v3:exact 0x00779820; cdecl() -> 1 not mounted; else TkyiAssert, umount(0x00b53618): 0 -> TkyiAssert, message, g_Hdd_Mounted = 0, 0; else TkyiAssert, message, its result; ported ffx_system::m5b_hdd (m5 system-b r2)
+0x00779880 function hdd_InstallResult_00779880 # the install state byte 0x0112a50b: 2 -> 1, 0xff -> 2, 0xfe -> 3, else 0 (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00779a80 function hdd_set_pass_names_x      # (): the two names at g_HddPassNames from scrambled words, byte i raised by 0xcd - i; name ours
 0x00779be0 function movie_hdd_file_open          # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'DVD FILE OPEN ERR %s\\n'; Switch 0x7100333950 movie_hdd_file_open (symbols from Fahrenheit's server export)
 0x00779ca0 function GetSaveProductCode # () -> PS2 product code string by TkGetLang (SLUS-20312, SCES-5049x, SLPS-25088); name ours
@@ -8942,7 +8969,7 @@
 0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
 0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name; ported (battle round 22, ffx_battle::gear)
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
-0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
+0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance; cdecl(): the instance [0x011363b4] user_free_thunk'ed and cleared when set (eax its result, else 0); ported ffx_system::m5b_hdd (m5 system-b r2)
 0x007a0cd0 function MsBtlInitItemMem_007a0cd0 # fh switch:bsim1.00 0x7100367af0
 0x007a0cf0 function MsWeaponNameNum           # fh v3:exact+call.cs 0x007a0d10 cdecl; ported (battle round 22, ffx_battle::gear)
 0x007a0d10 function MsWeaponNameNum_Armor_007a0d10 # (gear) -> armour's name id (0x504a-0x509e) from its auto-abilities; MsWeaponNameNum calls it for gear with +5 set (the Switch's 14332-byte MsWeaponNameNum inlines both halves); armour, not a weapon (round 22, was MsWeaponNameNum_Weapon): it tests only armour abilities by the kernel's a_ability.bin names (Ribbon 0x8080, Break HP/MP Limit 0x8017/0x8018, Auto-Phoenix/Med/Potion 0x800a-0x8008, the eaters/proofs 0x8020-0x802d, Defense/Magic Def/HP/MP +x% 0x806a-0x8079, SOS 0x8059-0x8061); own name; ported (battle round 22, ffx_battle::gear)
@@ -10725,8 +10752,9 @@
 0x00822410 function dreamParamReset           # fh switch:cg2 0x710042da00
 0x00822460 function getUCStatus               # fh v3:exact 0x008224f0
 0x00822480 function HandleReturnConst2_00822480  # auto-port shape (return constant, cdecl): return 0x2; callers: HandleSaveDataScreen; name ours
+0x00822540 function Thunk_SaveDataIsAlbhedLoaded_00822540 # jmp SaveDataIsAlbhedLoaded (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00822550 function isDebugMode               # () -> g_FFXIsDebug in AL; Fahrenheit Switch BSim 1.00 0x710042ff60
-0x00822560 function SaveDataIsBusy_thunk     # jmp SaveDataIsBusy (0x00648040); called by TkScanControler; name ours
+0x00822560 function SaveDataIsBusy_thunk # jmp SaveDataIsBusy (0x00648040); called by TkScanControler; name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00822580 function recallSceneEffect         # fh switch:cg4 0x710042da60
 0x00822620 function recallSceneEffect2        # fh v3:exact 0x008226b0
 0x00822720 function setFramSync                  # layout+callees: sorts between recallSceneEffect2 and trophyCheckDefeatMonster, and its named callees match the Switch 0x710042cbd0 setFramSync's (similarity 1.00: MagicFile_GetMagicId, MsBattleCheck, getScenerioFlag); symbols from Fahrenheit's server export
@@ -13498,6 +13526,7 @@
 0x00887c50 function FFXIsDebug                # fh v3:bsim1.00 0x00887bc0
 0x00887c60 function sceGsSetDefDrawEnv2       # () -> (i8) 0x00b5ec4f sign-extended (1 in the image), sets nothing; fh switch:bsim1.00 0x71001c2920
 0x00887c70 function FFXSetAsiaMode            # fh v3:bsim1.00 0x00887be0
+0x00887ca0 function Thunk_FFXSetLang_00887ca0 # jmp FFXSetLang (lang) (not in the dump); name ours; ported ffx_system::m5b_hdd (m5 system-b r2)
 0x00887d00 function TkGetLang                 # fh v3:bsim1.00 0x00887c70
 0x00887d10 function TkIsDebug                 # fh v3:bsim1.00 0x00887c80
 0x00887d20 function FFXSetLang                # fh v3:bsim1.00 0x00887c90

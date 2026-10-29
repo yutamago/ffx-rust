@@ -3107,3 +3107,392 @@ fn r2_str_replace_matches_the_original() {
         }
     });
 }
+
+// ---- round 2: the HDD layer and one-jump thunks (`ffx_system::m5b_hdd`) ----
+//
+// The PS2 HDD-install screens never ran in a coverage run (the PC build
+// installs nothing): every branch runs on synthetic globals, the
+// snapshots repeat the cases over their memory.
+
+use ffx_system::m5b_hdd::{self as hdc, bridge as hdb};
+
+type Thunk0 = fn(&mut G) -> u32;
+type Thunk1 = fn(&mut G, u32) -> u32;
+
+/// The callees in `only` the thunks and the HDD layer reach, as
+/// recording cdecl stubs returning `r ^ k` (the cave holds about 30).
+fn hdd_stubs(t: &mut Twins, r: u32, only: &[u32]) {
+    let list = [
+        (hdc::SCENARIO_FLAG, 0),
+        (hdc::SPHERE_MONITOR, 0),
+        (hdc::RMODE_GET, 1),
+        (hdc::HEAD_SECTORS, 1),
+        (hdc::SET_RMODE, 2),
+        (hdc::PAY_GIL, 1),
+        (hdc::HDD_STATUS, 0),
+        (hdc::SET_LANG, 1),
+        (hdc::ALBHED_LOADED, 0),
+        (hdc::SAVE_BUSY, 0),
+        (hdc::HDD_MOUNT, 0),
+        (hdc::REFRESH_HDD_MODE, 0),
+        (hdc::CONFIG_ADDRESS, 0),
+        (hdc::ASSERT_TARGET, 1),
+        (hdc::MODULE_FILE_SECTOR, 2),
+        (hdc::QUEUE_SECTOR_READ, 3),
+        (hdc::MEM_SET_ALIGN, 1),
+        (hdc::SET_GLOBAL_A018, 1),
+        (hdc::REGIST_BG_THREAD, 1),
+        (hdc::SIGNAL_BG_THREAD, 0),
+        (hdc::DISK_OPEN_CHECK_SET, 1),
+        (hdc::READ_THREAD_INIT, 0),
+        (hdc::DRAW_BAR, 2),
+        (hdc::USER_FREE, 1),
+        (hdc::SCE_READ, 3),
+        (hdc::CD_RESET, 0),
+        (hdc::READ_DIRECT, 4),
+        (hdc::MEMSET, 3),
+        (hdc::PACKET_PTR, 0),
+        (hdc::DMA_GET_CHAN, 1),
+        (hdc::TEXTURED_SPRITE, 7),
+        (hdc::FLUSH_CACHE, 1),
+        (hdc::DMA_SEND, 2),
+        (hdc::GS_SYNC_PATH, 2),
+        (hdc::USER_MALLOC, 1),
+        (hdc::DBG_PRINTF, 1),
+    ];
+    for (k, (sym, n)) in list.into_iter().enumerate() {
+        if only.contains(&sym) {
+            t.stub(sym, false, n, 0, r ^ (k as u32));
+        }
+    }
+}
+
+#[test]
+fn r2_hdd_thunks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0301);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            hdd_stubs(
+                t,
+                r,
+                &[
+                    hdc::SCENARIO_FLAG,
+                    hdc::SPHERE_MONITOR,
+                    hdc::RMODE_GET,
+                    hdc::HEAD_SECTORS,
+                    hdc::SET_RMODE,
+                    hdc::PAY_GIL,
+                    hdc::HDD_STATUS,
+                    hdc::SET_LANG,
+                    hdc::ALBHED_LOADED,
+                    hdc::SAVE_BUSY,
+                    hdc::HDD_MOUNT,
+                    hdc::REFRESH_HDD_MODE,
+                    hdc::CONFIG_ADDRESS,
+                    hdc::ASSERT_TARGET,
+                    hdc::MODULE_FILE_SECTOR,
+                    hdc::QUEUE_SECTOR_READ,
+                    hdc::DISK_OPEN_CHECK_SET,
+                    hdc::SET_GLOBAL_A018,
+                    hdc::READ_THREAD_INIT,
+                    hdc::DBG_PRINTF,
+                    hdc::PACKET_PTR,
+                    hdc::DMA_GET_CHAN,
+                    hdc::TEXTURED_SPRITE,
+                    hdc::FLUSH_CACHE,
+                    hdc::DMA_SEND,
+                    hdc::GS_SYNC_PATH,
+                ],
+            );
+            let (a, b) = (rng.word(), rng.word());
+            let none: [(u32, Thunk0); 9] = [
+                (0x0077_26d0, |m| hdb::scenario_flag(m)),
+                (0x0077_2730, |m| hdb::sphere_monitor(m)),
+                (0x0077_3b80, |m| hdb::hdd_status(m)),
+                (0x0082_2540, |m| hdb::albhed_loaded(m)),
+                (0x0082_2560, |m| hdb::save_busy(m)),
+                (0x0077_89d0, |m| hdb::head_init(m)),
+                (0x0077_92c0, |m| hdb::install_end(m)),
+                (0x0077_66e0, |m| hdb::draw_background(m)),
+                (0x0077_6740, |m| hdb::draw_wall(m)),
+            ];
+            let work = t.zeros(0x50);
+            let cell = t.rebase(hdc::MENU_WORK);
+            t.w32(cell, if case & 1 == 0 { work } else { rng.next() });
+            for (sym, f) in none {
+                t.check(
+                    &format!("thunk {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(f(m)),
+                );
+            }
+            let one: [(u32, Thunk1); 4] = [
+                (0x0077_27f0, |m, x| hdb::rmode_get(m, x)),
+                (0x0077_3530, |m, x| hdb::head_sectors(m, x)),
+                (0x0077_3990, |m, x| hdb::pay_gil(m, x)),
+                (0x0088_7ca0, |m, x| hdb::set_lang(m, x)),
+            ];
+            for (sym, f) in one {
+                t.check(
+                    &format!("thunk {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[a],
+                    |m| Out::U32(f(m, a)),
+                );
+            }
+            t.check("set rmode", 0x0077_3940, Conv::Cdecl, &[a, b], |m| {
+                Out::U32(hdb::set_rmode(m, a, b))
+            });
+            t.check(
+                "queue module read",
+                0x0076_cf60,
+                Conv::Cdecl,
+                &[a, b],
+                |m| Out::U32(hdb::queue_module_read(m, a, b)),
+            );
+            let on = [0, 1, 0x100, a][(case % 4) as usize];
+            t.check("set hdd mode", 0x0077_3c60, Conv::Cdecl, &[on], |m| {
+                Out::U32(hdb::set_hdd_mode(m, on))
+            });
+            // TkyiAssert's target is a bare `ret`: both paths leave `eax`
+            let off = t.rebase(hdc::ASSERT_OFF);
+            t.w32(off, u32::from(case & 2 == 0));
+            t.check("TkyiAssert", 0x0077_7680, Conv::Cdecl, &[a], |m| {
+                hdb::assert(m, a);
+                Out::None
+            });
+            t.check("heads assert", 0x0077_8980, Conv::Cdecl, &[], |m| {
+                Out::U32(hdb::heads_assert(m))
+            });
+            let block = t.zeros(4);
+            t.stub(hdc::RETURN_ADDRESS, false, 0, 0, block);
+            let n = [0, 1, 2, a][(case % 4) as usize];
+            let slot = t.b_stack(0x40);
+            t.check("set block flag", 0x0076_cf80, Conv::Cdecl, &[n], |m| {
+                Out::U32(hdb::set_block_flag(m, n, slot))
+            });
+        }
+    });
+}
+
+#[test]
+fn r2_hdd_state_readers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0302);
+        for case in 0..48u32 {
+            t.reset();
+            let r = rng.next();
+            hdd_stubs(
+                t,
+                r,
+                &[
+                    hdc::DRAW_BAR,
+                    hdc::PACKET_PTR,
+                    hdc::DMA_GET_CHAN,
+                    hdc::TEXTURED_SPRITE,
+                    hdc::FLUSH_CACHE,
+                    hdc::DMA_SEND,
+                    hdc::GS_SYNC_PATH,
+                    hdc::MEM_SET_ALIGN,
+                    hdc::USER_MALLOC,
+                    hdc::SET_GLOBAL_A018,
+                    hdc::REGIST_BG_THREAD,
+                    hdc::SIGNAL_BG_THREAD,
+                ],
+            );
+            let buttons = t.rebase(hdc::PAD_BUTTONS);
+            t.w32(buttons, rng.next());
+            let held = t.rebase(hdc::PAD_HELD);
+            t.w32(held, if case & 1 == 0 { 0 } else { rng.next() });
+            if case & 2 == 0 {
+                t.w32(buttons, rng.next() & 0xffff_0fff);
+            }
+            if case % 16 == 6 {
+                // bit 15 alone
+                t.w32(buttons, 0x8000);
+            }
+            let on = t.rebase(hdc::PAD_ON);
+            t.write(on, &[u8::from(case & 4 != 0)]);
+            let w78 = t.rebase(hdc::PAD_WORD_78);
+            t.w32(w78, rng.next());
+            let w518 = t.rebase(hdc::WORD_A518);
+            t.w32(w518, rng.next());
+            let state = t.rebase(hdc::INSTALL_STATE);
+            t.write(state, &[[0, 1, 2, 0xfe, 0xff, 0x80][(case % 6) as usize]]);
+            let total = t.rebase(hdc::TOTAL);
+            let done = t.rebase(hdc::DONE);
+            let tot = [0, 1000, 0xffff_fff0, 7][(case / 6 % 4) as usize];
+            t.w32(total, tot);
+            t.w32(
+                done,
+                [0, 500, 1000, 3000, 0x0100_0000, 0xffff_fffe][(case % 6) as usize],
+            );
+            let last = t.rebase(hdc::LAST_PROGRESS);
+            t.w32(last, if case & 8 == 0 { 0 } else { 32 });
+            let readers: [(u32, &str, Thunk0); 7] = [
+                (0x0077_2800, "bit 5", |m| hdb::pad_bit(m, 5)),
+                (0x0077_2970, "bit 6", |m| hdb::pad_bit(m, 6)),
+                (0x0077_2860, "shoulder", |m| hdb::pad_any_shoulder(m)),
+                (0x0077_29d0, "word 78", |m| hdb::pad_word(m)),
+                (0x0077_93a0, "word a518", |m| hdb::word_a518(m)),
+                (0x0077_9880, "install result", |m| hdb::install_result(m)),
+                (0x0077_9290, "install percent", |m| hdb::install_percent(m)),
+            ];
+            for (sym, what, f) in readers {
+                t.check(&format!("{what} #{case}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(f(m))
+                });
+            }
+            t.check(
+                &format!("draw progress #{case}"),
+                0x0077_9450,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::draw_progress(m)),
+            );
+            let err = t.rebase(hdc::HDD_ERR);
+            t.write(err, &[0x5a]);
+            let started = case % 6 != 0;
+            t.write(state, &[u8::from(started)]);
+            t.check(
+                &format!("install start #{case}"),
+                0x0077_9120,
+                Conv::Cdecl,
+                &[],
+                |m| hdb::install_start(m).map_or(Out::None, Out::U32),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_hdd_mount_and_heads_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0303);
+        for case in 0..24u32 {
+            t.reset();
+            let r = rng.next();
+            hdd_stubs(
+                t,
+                r,
+                &[
+                    hdc::ASSERT_TARGET,
+                    hdc::DBG_PRINTF,
+                    hdc::USER_FREE,
+                    hdc::SCE_READ,
+                    hdc::CD_RESET,
+                    hdc::READ_DIRECT,
+                    hdc::MEMSET,
+                ],
+            );
+            // umount's result and the asserts' switch
+            t.stub(
+                hdc::UMOUNT,
+                false,
+                1,
+                0,
+                if case & 1 == 0 { 0 } else { r | 1 },
+            );
+            let mounted = t.rebase(hdc::HDD_MOUNTED);
+            t.write(mounted, &[u8::from(case & 2 == 0)]);
+            t.check(
+                &format!("unmount #{case}"),
+                0x0077_9730,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::unmount(m)),
+            );
+            // the heads: sizes, a count (negative too), which are installed
+            let heads = t.rebase(hdc::HEADS);
+            for i in 0..8 {
+                t.w32(heads + 4 + 12 * i, rng.next() >> (case % 8));
+            }
+            let count = t.rebase(hdc::HEAD_COUNT);
+            t.w32(count, [0, 1, 5, 8, 0xffff_ffff, 3][(case % 6) as usize]);
+            let installed: Vec<u32> = (0..8).map(|_| rng.below(2)).collect();
+            t.stub_seq(hdc::RMODE_GET, 1, 0, &installed);
+            t.check(
+                &format!("installed MB #{case}"),
+                0x0077_8f60,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::installed_mb(m, 1)),
+            );
+            t.stub_seq(hdc::RMODE_GET, 1, 0, &installed);
+            t.check(
+                &format!("installed MB 2 #{case}"),
+                0x0077_8fb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::installed_mb(m, 2)),
+            );
+            // the format: a negative result printed
+            let fr = [0, 1, 0xffff_fffb, 0x8000_0000][(case % 4) as usize];
+            t.stub(hdc::SCE_FORMAT, false, 4, 0, fr);
+            // the message takes one word, the failure two
+            t.stub_two(hdc::DBG_PRINTF, 1, 2, r ^ 0x56);
+            t.check(
+                &format!("format #{case}"),
+                0x0077_89a0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::format(m)),
+            );
+            // the trophy manager
+            let cell = t.rebase(hdc::TROPHY_MANAGER);
+            t.w32(cell, if case & 1 == 0 { 0 } else { rng.next() });
+            t.check(
+                &format!("trophy destroy #{case}"),
+                0x007a_0cb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::trophy_destroy(m)),
+            );
+            let head = rng.below(8);
+            let args = [rng.word(), rng.next(), rng.next(), head, rng.next()];
+            t.check(
+                &format!("read no wait #{case}"),
+                0x0077_85e0,
+                Conv::Cdecl,
+                &args,
+                |m| Out::U32(hdb::read_no_wait(m, args[1], args[2], args[3], args[4])),
+            );
+            // the disk check: changed state 0, -1 or other; ready or not
+            let changed = [0, u32::MAX, 1, 5][(case % 4) as usize];
+            t.stub(hdc::DISK_CHANGED, false, 0, 0, changed);
+            t.stub(
+                hdc::DISK_READY,
+                false,
+                1,
+                0,
+                if case & 4 == 0 { 2 } else { 1 },
+            );
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 0x57);
+            let pend = t.rebase(hdc::PENDING_READ);
+            t.put(pend, &[rng.next(), rng.next(), rng.next()]);
+            t.check(
+                &format!("check disk #{case}"),
+                0x0076_d5a0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::check_disk(m)),
+            );
+            t.stub(hdc::USER_MALLOC, false, 1, 0, rng.next());
+            let w = t.rebase(hdc::WORD_8AB8);
+            t.w32(w, 0x5a5a_5a5a);
+            t.stub(hdc::DBG_PRINTF, false, 2, 0, r ^ 0x58);
+            t.check(
+                &format!("read buffer #{case}"),
+                0x0076_dc70,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(hdb::alloc_read_buffer(m)),
+            );
+        }
+    });
+}

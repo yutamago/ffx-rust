@@ -9,6 +9,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
+use ffx_system::m5b_hdd::bridge as hd;
 use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_movie::bridge as mv;
 use ffx_system::m5b_pc::bridge as pc;
@@ -495,6 +496,156 @@ ported! {
     /// `str_replace(s, what, with)`.
     str_replace @ 0x00a4_4bd0 => extern "C" fn str_replace(s: u32, what: u32, with: u32) -> u32 {
         pc::str_replace(&mut mem(), s, what, with)
+    }
+
+    // ---- round 2: the HDD layer and one-jump thunks ----
+    /// `()`: `jmp AtelGetScenarioFlag`.
+    Thunk_AtelGetScenarioFlag_007726d0 @ 0x0077_26d0 => extern "C" fn scenario_flag() -> u32 {
+        hd::scenario_flag(&mut mem())
+    }
+    /// `()`: the sphere monitor word, zero-extended.
+    Thunk_AtelGetSphereMonitor_00772730 @ 0x0077_2730 => extern "C" fn sphere_monitor() -> u32 {
+        hd::sphere_monitor(&mut mem())
+    }
+    /// `(i)`: `jmp hdd_rmode_get`.
+    Thunk_hdd_rmode_get_007727f0 @ 0x0077_27f0 => extern "C" fn rmode_get(i: u32) -> u32 {
+        hd::rmode_get(&mut mem(), i)
+    }
+    /// `()`: bit 5 of the buttons byte.
+    PadButtonBit5_00772800 @ 0x0077_2800 => extern "C" fn pad_bit5() -> u32 {
+        hd::pad_bit(&mut mem(), 5)
+    }
+    /// `()`: bits 12..15 of the buttons or held word, pad on.
+    PadShoulderHeld_00772860 @ 0x0077_2860 => extern "C" fn pad_shoulder() -> u32 {
+        hd::pad_any_shoulder(&mut mem())
+    }
+    /// `()`: bit 6 of the buttons byte.
+    PadButtonBit6_00772970 @ 0x0077_2970 => extern "C" fn pad_bit6() -> u32 {
+        hd::pad_bit(&mut mem(), 6)
+    }
+    /// `()`: the word at `0x0112a078`.
+    GetGlobal_0112a078_007729d0 @ 0x0077_29d0 => extern "C" fn pad_word() -> u32 {
+        hd::pad_word(&mut mem())
+    }
+    /// `(i)`: `jmp hdd_head_sectors`.
+    Thunk_hdd_head_sectors_00773530 @ 0x0077_3530 => extern "C" fn head_sectors(i: u32) -> u32 {
+        hd::head_sectors(&mut mem(), i)
+    }
+    /// `(i, v)`: `jmp SetTableEntry_00779590`.
+    Thunk_SetTableEntry_00773940 @ 0x0077_3940 => extern "C" fn set_rmode(i: u32, v: u32) -> u32 {
+        hd::set_rmode(&mut mem(), i, v)
+    }
+    /// `(n)`: `jmp MsPayGIL`.
+    Thunk_MsPayGIL_00773990 @ 0x0077_3990 => extern "C" fn pay_gil(n: u32) -> u32 {
+        hd::pay_gil(&mut mem(), n)
+    }
+    /// `()`: `jmp get_hdd_status`.
+    Thunk_get_hdd_status_00773b80 @ 0x0077_3b80 => extern "C" fn hdd_status() -> u32 {
+        hd::hdd_status(&mut mem())
+    }
+    /// `(on)`.
+    hdd_SetMode_00773c60 @ 0x0077_3c60 => extern "C" fn set_hdd_mode(on: u32) -> u32 {
+        hd::set_hdd_mode(&mut mem(), on)
+    }
+    /// `()`.
+    hdd_head_init @ 0x0077_89d0 => extern "C" fn head_init() -> u32 {
+        hd::head_init(&mut mem())
+    }
+    /// `()`.
+    hdd_HeadsAssert_00778980 @ 0x0077_8980 => extern "C" fn heads_assert() -> u32 {
+        hd::heads_assert(&mut mem())
+    }
+    /// `(module, n)`.
+    cd_QueueModuleRead_0076cf60 @ 0x0076_cf60 => extern "C" fn queue_module_read(module: u32, n: u32) -> u32 {
+        hd::queue_module_read(&mut mem(), module, n)
+    }
+    /// `()`.
+    hdd_unmount @ 0x0077_9730 => extern "C" fn hdd_unmount() -> u32 {
+        hd::unmount(&mut mem())
+    }
+    /// `()`.
+    hdd_InstalledMb_00778f60 @ 0x0077_8f60 => extern "C" fn installed_mb() -> u32 {
+        hd::installed_mb(&mut mem(), 1)
+    }
+    /// `()`.
+    hdd_InstalledMb2_00778fb0 @ 0x0077_8fb0 => extern "C" fn installed_mb2() -> u32 {
+        hd::installed_mb(&mut mem(), 2)
+    }
+    /// `()`.
+    hdd_InstallPercent_00779290 @ 0x0077_9290 => extern "C" fn install_percent() -> u32 {
+        hd::install_percent(&mut mem())
+    }
+    /// `()`.
+    hdd_install_end @ 0x0077_92c0 => extern "C" fn install_end() -> u32 {
+        hd::install_end(&mut mem())
+    }
+    /// `()`: the word at `0x0112a518`.
+    GetGlobal_0112a518_007793a0 @ 0x0077_93a0 => extern "C" fn word_a518() -> u32 {
+        hd::word_a518(&mut mem())
+    }
+    /// `()`.
+    hdd_InstallResult_00779880 @ 0x0077_9880 => extern "C" fn install_result() -> u32 {
+        hd::install_result(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawProgress_00779450 @ 0x0077_9450 => extern "C" fn draw_progress() -> u32 {
+        hd::draw_progress(&mut mem())
+    }
+    /// `()`.
+    hdd_Format_007789a0 @ 0x0077_89a0 => extern "C" fn hdd_format() -> u32 {
+        hd::format(&mut mem())
+    }
+    /// `()`.
+    TrophyManager_DestroyInstance @ 0x007a_0cb0 => extern "C" fn trophy_destroy() -> u32 {
+        hd::trophy_destroy(&mut mem())
+    }
+    /// `(lang)`: `jmp FFXSetLang`.
+    Thunk_FFXSetLang_00887ca0 @ 0x0088_7ca0 => extern "C" fn set_lang(lang: u32) -> u32 {
+        hd::set_lang(&mut mem(), lang)
+    }
+    /// `()`: `jmp SaveDataIsAlbhedLoaded`.
+    Thunk_SaveDataIsAlbhedLoaded_00822540 @ 0x0082_2540 => extern "C" fn albhed_loaded() -> u32 {
+        hd::albhed_loaded(&mut mem())
+    }
+    /// `()`: `jmp SaveDataIsBusy`.
+    SaveDataIsBusy_thunk @ 0x0082_2560 => extern "C" fn save_busy() -> u32 {
+        hd::save_busy(&mut mem())
+    }
+    /// `(_, buf, size, head, file)`.
+    hd_file_read_no_wait @ 0x0077_85e0 => extern "C" fn read_no_wait(_a: u32, buf: u32, size: u32, head: u32, file: u32) -> u32 {
+        hd::read_no_wait(&mut mem(), buf, size, head, file)
+    }
+    /// `()`.
+    cd_CheckDisk_0076d5a0 @ 0x0076_d5a0 => extern "C" fn check_disk() -> u32 {
+        hd::check_disk(&mut mem())
+    }
+    /// `()`.
+    cd_AllocReadBuffer_0076dc70 @ 0x0076_dc70 => extern "C" fn alloc_read_buffer() -> u32 {
+        hd::alloc_read_buffer(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawBarSprite_007766e0 @ 0x0077_66e0 => extern "C" fn draw_bar_sprite() -> u32 {
+        hd::draw_background(&mut mem())
+    }
+    /// `()`.
+    hdd_DrawWallSprite_00776740 @ 0x0077_6740 => extern "C" fn draw_wall_sprite() -> u32 {
+        hd::draw_wall(&mut mem())
+    }
+    /// `TkyiAssert(msg)`: `eax` untouched.
+    TkyiAssert @ 0x0077_7680 => extern "C" fn tkyi_assert(msg: u32) {
+        hd::assert(&mut mem(), msg);
+    }
+    /// `(n)`: the slot decremented, the block's flag set.
+    cd_SetBlockFlag_0076cf80 @ 0x0076_cf80 => extern "C" fn set_block_flag(n: u32; slots: u32) -> u32 {
+        hd::set_block_flag(&mut mem(), n, slots)
+    }
+    /// `()`: started already, the original leaves `eax` untouched; its
+    /// callers reach it through `call eax` (`MsgExpandCodes_00776940`'s
+    /// `[0x00c416dc]` table), so that `eax` is its own address.
+    hdd_InstallStart_00779120 @ 0x0077_9120 => extern "C" fn install_start() -> u32 {
+        let mut m = mem();
+        let own = ffx_bridge::Mem::rebase(&m, 0x0077_9120);
+        hd::install_start(&mut m).unwrap_or(own)
     }
 }
 
