@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- The status page (tools/status.py copies it next to data.js). -->
+<!-- The status page (tools/status.py copies it next to data.js and live.js). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -22,6 +22,11 @@
   --unnamed: #34342f;
   --library: #262624;
   --live: #0ca30c;
+  /* the categorical slots, in order (dataviz reference palette, dark steps) */
+  --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+  --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
+  /* status: never a series colour, always with a label */
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
   --seq-0: #242423;
   --seq-1: #104281;
   --seq-2: #1c5cab;
@@ -40,7 +45,7 @@ body {
     var(--page);
   min-height: 100vh;
 }
-.wrap { max-width: 1320px; margin: 0 auto; padding: 28px 28px 60px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 28px 28px 60px; }
 header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 22px; }
 h1 { font-size: 22px; font-weight: 650; letter-spacing: .2px; margin: 0; }
 h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
@@ -51,12 +56,19 @@ h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
 .live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(12, 163, 12, .6); animation: ping 2.4s infinite; }
 .live.stale .dot { background: var(--text-muted); animation: none; }
 @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(12, 163, 12, 0); } }
+nav.jump { display: flex; gap: 6px; flex-wrap: wrap; margin: -8px 0 16px; }
+nav.jump a { color: var(--text-muted); font-size: 12.5px; text-decoration: none; padding: 2px 9px; border: 1px solid var(--hairline); border-radius: 999px; }
+nav.jump a:hover { color: var(--text-primary); border-color: #3a3a37; }
 
-.card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; }
+.card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; min-width: 0; }
 .card h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .9px; color: var(--text-secondary); margin: 0 0 4px; }
+.card h3 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .7px; color: var(--text-muted); margin: 16px 0 8px; }
+.card h3:first-child { margin-top: 0; }
 .card .hint { color: var(--text-muted); font-size: 12.5px; margin: 0 0 14px; }
+.card .hint code, .empty code, .note code { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
+section { margin-bottom: 14px; scroll-margin-top: 12px; }
 
-.tiles { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
+.tiles { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 14px; }
 .tile .label { color: var(--text-secondary); font-size: 12.5px; }
 .tile .value { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.5px; margin-top: 2px; }
 .tile .value small { font-size: 15px; color: var(--text-muted); font-weight: 500; letter-spacing: 0; }
@@ -66,10 +78,14 @@ h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
 .meter > span { display: block; height: 100%; }
 .meter > span:first-child { border-radius: 4px 0 0 4px; }
 .meter > span:last-child { border-radius: 0 4px 4px 0; }
+.up { color: var(--text-secondary); }
 
-.grid-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px; margin-bottom: 14px; }
-.grid-two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
-@media (max-width: 1050px) { .grid-main, .grid-two { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, 1fr); } }
+.grid-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; }
+.grid-half { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.phases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.checks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 1100px) { .grid-main, .grid-two, .grid-half, .phases { grid-template-columns: 1fr; } .tiles, .checks { grid-template-columns: repeat(2, 1fr); } }
 
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; padding: 2px; }
@@ -78,6 +94,7 @@ h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
 .seg button:focus-visible { outline: 2px solid var(--replaced); }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12.5px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend i.dash { height: 0; border-top: 2px dashed var(--text-secondary); border-radius: 0; width: 16px; vertical-align: 3px; }
 
 #mapBox { position: relative; width: 100%; aspect-ratio: 1; }
 #mapBox canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; }
@@ -89,15 +106,16 @@ h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
 .mods td.num, .mods th { white-space: nowrap; }
 .mods td { padding: 7px 8px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
 .mods tr:last-child td { border-bottom: 0; }
-.mods tbody tr { cursor: pointer; transition: background .12s; }
+#mods tbody tr { cursor: pointer; transition: background .12s; }
 .mods tbody tr:hover { background: rgba(255, 255, 255, .025); }
 .mods tbody tr.focus { background: rgba(57, 135, 229, .09); }
 .mods .name { font-weight: 600; white-space: nowrap; }
 .mods .kb { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
-.bar { display: flex; gap: 2px; height: 10px; width: 100%; min-width: 120px; }
+.bar { display: flex; gap: 2px; height: 10px; width: 100%; min-width: 80px; background: var(--surface-2); border-radius: 4px; }
 .bar span { height: 100%; }
 .bar span:first-child { border-radius: 4px 0 0 4px; }
 .bar span:last-child { border-radius: 0 4px 4px 0; }
+.bar.thin { height: 6px; min-width: 60px; }
 .pct { font-weight: 600; }
 .delta { color: var(--text-muted); font-size: 12px; }
 svg text { font-family: inherit; }
@@ -116,46 +134,75 @@ svg text { font-family: inherit; }
 .chip b { color: var(--text-muted); font-weight: 400; margin-right: 5px; }
 .more { color: var(--text-muted); font-size: 12px; align-self: center; }
 
-.lib td { color: var(--text-secondary); }
 footer { color: var(--text-muted); font-size: 12.5px; margin-top: 22px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 footer code { font-family: var(--mono); color: var(--text-secondary); }
 
-#tip { position: fixed; pointer-events: none; z-index: 10; background: #0b0b0a; border: 1px solid #3a3a37; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: var(--text-secondary); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); max-width: 340px; opacity: 0; transition: opacity .08s; font-variant-numeric: tabular-nums; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: #0b0b0a; border: 1px solid #3a3a37; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: var(--text-secondary); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); max-width: 380px; opacity: 0; transition: opacity .08s; font-variant-numeric: tabular-nums; }
 #tip.on { opacity: 1; }
 #tip .t { color: var(--text-primary); font-weight: 600; font-family: var(--mono); word-break: break-all; }
 #tip .r { display: flex; justify-content: space-between; gap: 18px; }
 #tip .r span:last-child { color: var(--text-primary); }
 #tip i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
-.empty { color: var(--text-muted); padding: 40px; text-align: center; }
+.empty { color: var(--text-muted); padding: 30px; text-align: center; }
+.note { color: var(--text-muted); font-size: 12.5px; }
+.warn { border-left: 3px solid var(--warning); background: rgba(250, 178, 25, .06); padding: 8px 12px; border-radius: 0 8px 8px 0; color: var(--text-secondary); font-size: 12.5px; margin-bottom: 12px; }
+.warn b { color: var(--text-primary); }
 
-/* current work */
-.phase { font-size: 20px; font-weight: 650; margin: 2px 0 2px; }
+/* now */
+.phase { font-size: 19px; font-weight: 650; margin: 2px 0 2px; }
 .phase-sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 14px; }
 .phase-sub b { color: var(--text-primary); font-weight: 600; }
-.mods.tasks tbody tr, #covMods tbody tr { cursor: default; }
-.card .hint code, .empty code { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); }
-.mods.tasks td { vertical-align: top; }
-.mods.tasks .branch { font-family: var(--mono); font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
-.mods.tasks .title { color: var(--text-secondary); font-size: 12.5px; }
-.mods.tasks .result { color: var(--text-secondary); font-size: 12.5px; }
-.mods.tasks .dates { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--hairline); background: var(--surface-2); color: var(--text-primary); white-space: nowrap; }
-.pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-.pill.running i { animation: ping 2.4s infinite; }
-.past { display: flex; flex-direction: column; gap: 4px; margin-top: 14px; color: var(--text-secondary); font-size: 12.5px; }
+.pill i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; }
+.pill.on i { animation: ping 2.4s infinite; }
+.agents td { vertical-align: top; }
+.agents .branch { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.agents .task { color: var(--text-secondary); font-size: 12.5px; }
+.agents .cmd { font-family: var(--mono); font-size: 11.5px; color: var(--text-secondary); word-break: break-all; }
+.agents .sm { color: var(--text-muted); font-size: 12px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+.dot.on { animation: ping 2.4s infinite; }
+.qlist { display: flex; flex-direction: column; gap: 7px; }
+.qlist .q { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 12.5px; }
+.qlist .q .id { font-family: var(--mono); color: var(--text-primary); }
+.qlist .q .r { color: var(--text-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qlist .q .t { color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gauge { display: grid; grid-template-columns: 64px minmax(0, 1fr) 170px; gap: 10px; align-items: center; font-size: 12.5px; margin-bottom: 6px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.gauge .bar { min-width: 0; }
+.gauge span:last-child { text-align: right; }
+details summary { cursor: pointer; color: var(--text-secondary); font-size: 12.5px; margin-top: 12px; }
+details summary:hover { color: var(--text-primary); }
+.past { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; color: var(--text-secondary); font-size: 12.5px; }
 .past b { color: var(--text-primary); font-weight: 600; }
-.stats { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 14px; }
-.col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.groups { display: flex; flex-direction: column; gap: 10px; }
-.groups .g { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-.groups .g .n { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.groups .g .n small { color: var(--text-muted); font-size: 12px; margin-left: 6px; }
-.groups .chips { margin: 4px 0 0 16px; }
-.rlist { display: flex; flex-direction: column; gap: 8px; }
-.rlist .r { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 10px; align-items: baseline; }
-.rlist .r code { font-family: var(--mono); font-size: 12.5px; color: var(--text-primary); }
-.rlist .r span { color: var(--text-secondary); font-size: 12.5px; }
-.badge { font-size: 11px; color: var(--text-muted); border: 1px solid var(--hairline); border-radius: 5px; padding: 0 5px; margin-left: 6px; }
+
+/* roadmap */
+.road { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; margin-bottom: 16px; }
+.ms { flex: 1 1 0; min-width: 92px; border: 1px solid var(--hairline); border-radius: 10px; padding: 7px 10px; background: var(--surface-2); }
+.ms .id { font-weight: 650; font-size: 13px; }
+.ms .tt { color: var(--text-muted); font-size: 11.5px; line-height: 1.3; }
+.ms.done { border-color: #1c4a80; background: rgba(57, 135, 229, .12); }
+.ms.done .id::after { content: " ✓"; color: var(--replaced); }
+.ms.running { border-color: var(--replaced); box-shadow: inset 0 0 0 1px var(--replaced); flex-grow: 3.2; }
+.stages { display: flex; gap: 4px; margin-top: 6px; }
+.stage { flex: 1; font-size: 11px; color: var(--text-secondary); }
+.stage .bar { height: 5px; min-width: 0; margin-top: 2px; }
+.ph .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.4px; }
+.ph .big small { font-size: 13px; color: var(--text-muted); font-weight: 500; letter-spacing: 0; }
+.ph .stg { float: right; font-size: 11.5px; color: var(--text-muted); border: 1px solid var(--hairline); border-radius: 6px; padding: 0 6px; }
+.ph .eta { margin-top: 12px; font-size: 13px; color: var(--text-secondary); }
+.ph .eta b { color: var(--text-primary); font-size: 16px; font-weight: 650; }
+.paces { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.paces th { color: var(--text-muted); font-weight: 500; text-align: right; padding: 2px 4px; }
+.paces td { text-align: right; padding: 2px 4px; border-top: 1px solid var(--hairline); white-space: nowrap; }
+.paces th:first-child, .paces td:first-child { text-align: left; }
+.lists { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.lists .l { display: grid; grid-template-columns: 150px minmax(0, 1fr) 76px; gap: 8px; align-items: center; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.lists .l code { font-family: var(--mono); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lists .l span:last-child { text-align: right; }
+.items { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+.items .it { font-size: 12.5px; color: var(--text-secondary); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.items .it .n { color: var(--text-muted); font-size: 12px; }
+.runs td { font-size: 12.5px; }
 </style>
 </head>
 <body>
@@ -163,21 +210,26 @@ footer code { font-family: var(--mono); color: var(--text-secondary); }
   <header>
     <div>
       <h1>FFX.exe<span class="arrow">→</span>Rust</h1>
-      <div class="sub">Decompilation and porting status, per module</div>
+      <div class="sub">What runs now, how fast it goes, where the time goes, when each phase is done</div>
     </div>
     <div class="head-meta">
       <div class="live" id="live"><span class="dot"></span><span id="liveText">loading</span></div>
       <div id="headInfo"></div>
     </div>
   </header>
+  <nav class="jump">
+    <a href="#now">Now</a><a href="#roadmap">Phases and forecast</a><a href="#speed">Speed and time</a>
+    <a href="#pulseCard">Pulse</a><a href="#binary">Binary and modules</a><a href="#ports">Recent ports</a><a href="#coverage">In-game coverage</a>
+  </nav>
   <div id="app"><div class="card empty">No data yet: run <code>tools/status.sh</code>.</div></div>
   <footer>
-    <span>Update: <code>tools/status.sh</code> (background) or <code>tools/status.sh --wait</code>. Numbers: <code>tools/progress.py</code>.</span>
+    <span>Update: <code>tools/status.sh</code> (background), <code>--wait</code>, or <code>--watch</code> (live part every minute). Phases: <code>~/ffx-work/agents/phases.json</code>; work: <code>tasks.json</code> (format: <code>tools/status.py</code>).</span>
     <span id="took"></span>
   </footer>
 </div>
 <div id="tip"></div>
 <script src="data.js"></script>
+<script src="live.js"></script>
 <script>
 "use strict";
 const C = (() => {
@@ -186,25 +238,47 @@ const C = (() => {
   return {
     replaced: v("--replaced"), toPort: v("--to-port"), named: v("--named"), rest: v("--rest"),
     unnamed: v("--unnamed"), library: v("--library"), hair: v("--hairline"), muted: v("--text-muted"),
-    secondary: v("--text-secondary"), primary: v("--text-primary"), surface: v("--surface-1"),
+    secondary: v("--text-secondary"), primary: v("--text-primary"), surface: v("--surface-1"), surface2: v("--surface-2"),
     seq: [0, 1, 2, 3, 4, 5].map(i => v("--seq-" + i)),
+    cat: [1, 2, 3, 4, 5, 6, 7, 8].map(i => v("--cat-" + i)),
+    good: v("--good"), warning: v("--warning"), serious: v("--serious"), critical: v("--critical"),
   };
 })();
 const $ = id => document.getElementById(id);
-const fmt = n => n.toLocaleString("en-US");
+const fmt = n => n == null ? "–" : Math.round(n).toLocaleString("en-US");
 const kb = b => b >= 1024 * 1024 ? (b / 1048576).toFixed(2) + " MB" : Math.round(b / 1024) + " KB";
+const gb = b => (b / 1073741824).toFixed(b < 10 * 1073741824 ? 1 : 0) + " GB";
 const pct = (a, b, d = 1) => b ? (100 * a / b).toFixed(d) + "%" : "–";
 const hex = a => "0x" + a.toString(16).padStart(8, "0");
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const now = () => Date.now() / 1000;
+function dur(s) {
+  s = Math.max(0, s);
+  if (s < 60) return Math.round(s) + " s";
+  if (s < 3600) return Math.round(s / 60) + " min";
+  if (s < 86400) return Math.floor(s / 3600) + " h " + String(Math.round(s % 3600 / 60)).padStart(2, "0");
+  return (s / 86400).toFixed(1) + " d";
+}
+const hrs = s => (s / 3600).toFixed(s < 36000 ? 1 : 0) + " h";
 function ago(t) {
-  const s = Math.max(0, Date.now() / 1000 - t);
+  const s = Math.max(0, now() - t);
   if (s < 60) return "just now";
   if (s < 3600) return Math.floor(s / 60) + " min ago";
   if (s < 86400) return Math.floor(s / 3600) + " h ago";
   return Math.floor(s / 86400) + " d ago";
 }
 const when = t => new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const whenDay = t => new Date(t * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+// a forecast date: the time while it is close, the day once it is far
+function etaText(t) {
+  if (!t) return "–";
+  const d = t - now();
+  if (d < 86400 * 2) return whenDay(t);
+  if (d < 86400 * 60) return new Date(t * 1000).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return new Date(t * 1000).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
+const inDays = t => { const d = (t - now()) / 86400; return d < 1 ? `in ${Math.max(1, Math.round(d * 24))} h` : `in ${d.toFixed(d < 10 ? 1 : 0)} d`; };
 
 // ---- tooltip -----------------------------------------------------------
 const tip = $("tip");
@@ -220,9 +294,15 @@ function showTip(html, ev) {
 }
 const hideTip = () => tip.classList.remove("on");
 const row = (k, v) => `<div class="r"><span>${k}</span><span>${v}</span></div>`;
+// title attributes become the shared tooltip
+document.addEventListener("mousemove", e => {
+  const el = e.target.closest && e.target.closest("[data-tip]");
+  if (el) showTip(el.dataset.tip, e); else if (tip.dataset.owner === "attr") hideTip();
+  tip.dataset.owner = el ? "attr" : "";
+});
 
 // ---- state ---------------------------------------------------------------
-let D = null, current = 0;
+let D = null, L = null, current = 0, currentLive = 0;
 const ui = { mapMode: "port", scope: "game", focus: null };
 
 function gameTotals(counts) {
@@ -233,68 +313,85 @@ function gameTotals(counts) {
   }
   return t;
 }
+const measured = () => Array.isArray(D.phases) ? D.phases.filter(p => !p.error && (p.kind === "lists" || p.kind === "magic")) : [];
+const phaseColor = p => C.cat[measured().indexOf(p) % 8];
 
 function render() {
   D = window.FFX_STATUS;
+  L = window.FFX_LIVE || null;
   if (!D || !D.history.length) return;
   current = D.generated;
-  const last = D.history[D.history.length - 1];
+  currentLive = L ? L.generated : 0;
   $("headInfo").innerHTML = `<code>${esc(D.ref)}</code> @ <code>${esc(D.head)}</code> · ${esc(D.head_subject.slice(0, 70))}`;
   $("took").textContent = `generated ${when(D.generated)} in ${D.took} s · ${D.history.length} snapshots`;
-  updateLive();
   $("app").innerHTML = `
-    <section class="card" id="now" style="margin-bottom:14px"></section>
-    <section class="grid-two">
-      <div class="card">
-        <h2>In-game coverage</h2>
-        <p class="hint">Ported functions whose hook the game entered in a replay or the coverage session (hook-hit mode: <code>tools/replays/run-all.sh --hits</code> → <code>symbols/hook-hits.txt</code>). A port that runs only through Rust callers is not counted.</p>
-        <div id="cov"></div>
-      </div>
-      <div class="col">
-        <div class="card">
-          <h2>Left to port</h2>
-          <p class="hint">Game functions not replaced yet and not glue, platform, debug or dead code (<code>symbols/classes.tsv</code>), by why they are left.</p>
-          <div id="left"></div>
-        </div>
-        <div class="card">
-          <h2>Replays</h2>
-          <p class="hint">What <code>tools/replays/run-all.sh</code> plays, original against Rust (<code>docs/harness.md</code>).</p>
-          <div id="replays"></div>
-        </div>
-      </div>
-    </section>
     <section class="tiles" id="tiles"></section>
-    <section class="grid-main">
+    <section class="card" id="now"></section>
+    <section class="card" id="roadmap">
+      <div class="toolbar" style="margin-bottom:6px"><h2>Phases and forecast</h2><span class="delta" id="phasesFile"></span></div>
+      <p class="hint">Each measured phase is a fixed work list, counted against the hooks on ${esc(D.ref)}; the forecast divides what is left by the pace over the last 6, 24 and 72 hours. The headline date is the 24 h pace by bytes: the small functions go first, so the count alone runs ahead.</p>
+      <div class="road" id="road"></div>
+      <div class="phases" id="phaseCards"></div>
+      <div class="checks" id="checkCards" style="margin-top:14px"></div>
+      <h3 style="margin-top:22px">Burn-down and projection</h3>
+      <p class="hint">Share of each list still left, at every merge; dashed: where the last 24 h's pace (by bytes) lands it.</p>
+      <div id="burn"></div>
+      <div class="legend" id="burnLegend" style="margin-top:6px"></div>
+    </section>
+    <section class="grid-half" id="speed">
       <div class="card">
-        <div class="toolbar">
-          <div><h2>The binary</h2></div>
-          <div style="display:flex;gap:8px">
-            <div class="seg" id="mapMode"><button data-v="port">Porting</button><button data-v="names">Naming</button></div>
-            <div class="seg" id="scope"><button data-v="game">Game code</button><button data-v="all">Whole exe</button></div>
-          </div>
+        <h2>Throughput</h2>
+        <p class="hint" id="thruHint"></p>
+        <div id="thru"></div>
+        <div class="legend" style="margin-top:6px">
+          <span><i style="background:${C.cat[0]}"></i>Game code</span>
+          <span><i style="background:${C.cat[1]}"></i>PhyreEngine</span>
+          <span><i style="background:${C.cat[2]}"></i>Other libraries</span>
         </div>
-        <p class="hint">Every function of FFX.exe in address order along a Hilbert curve; neighbours in the binary stay neighbours on the map. Lines separate modules.</p>
-        <div id="mapBox"><canvas class="base" id="mapBase"></canvas><canvas id="mapOver"></canvas></div>
-        <div class="legend" id="mapLegend" style="margin-top:12px"></div>
+        <h3 style="margin-top:20px">Finished agent runs</h3>
+        <p class="hint">From <code>~/ffx-work/agents/metrics.tsv</code>: what each run reported (functions, rows or units), its minutes and tokens.</p>
+        <div id="runs"></div>
       </div>
       <div class="card">
-        <h2>Modules</h2>
-        <p class="hint">Share of each module's code, by bytes; the change over the last 24 h under each share. Click a module to find it on the map.</p>
-        <table class="mods" id="mods"></table>
-        <div class="legend" style="margin-top:12px">
-          <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
-          <span><i style="background:${C.toPort}"></i>Logic left to port</span>
-          <span><i style="background:${C.rest}"></i>Glue, platform, debug, dead</span>
-        </div>
+        <h2>Where the machine's time goes</h2>
+        <p class="hint">Command time from <code>~/ffx-work/timing/*.tsv</code>, top-level commands only (a cargo run by mutants.py is in mutants.py's time). Agents run side by side, so the hours add up to more than the clock's.</p>
+        <div id="timeGroups"></div>
+        <h3 style="margin-top:18px">Per hour, last 48 h</h3>
+        <div id="timeHours"></div>
+        <div class="legend" id="timeLegend" style="margin-top:6px"></div>
       </div>
     </section>
-    <section class="card" style="margin-bottom:14px">
+    <section class="card" id="pulseCard">
       <h2>Pulse</h2>
       <p class="hint" id="pulseHint"></p>
       <div id="pulse"></div>
       <div class="pulse-legend">Less ${C.seq.map(c => `<i style="background:${c}"></i>`).join("")} More</div>
     </section>
-    <section class="grid-two">
+    <section class="grid-main" id="binary">
+      <div class="card">
+        <div class="toolbar">
+          <div><h2>The binary</h2></div>
+          <div style="display:flex;gap:8px">
+            <div class="seg" id="mapMode"><button data-v="port">Porting</button><button data-v="m5">M5 lists</button><button data-v="names">Naming</button></div>
+            <div class="seg" id="scope"><button data-v="game">Game code</button><button data-v="all">Whole exe</button></div>
+          </div>
+        </div>
+        <p class="hint">Every function of FFX.exe in address order along a Hilbert curve; neighbours in the binary stay neighbours on the map. Lines separate modules. PhyreEngine shows under “Whole exe”.</p>
+        <div id="mapBox"><canvas class="base" id="mapBase"></canvas><canvas id="mapOver"></canvas></div>
+        <div class="legend" id="mapLegend" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h2>Modules</h2>
+        <p class="hint">Share of each module's code, by bytes; the change over the last 24 h under each share. “M5 left”: functions of the phases' lists not done yet. Click a module to find it on the map.</p>
+        <table class="mods" id="mods"></table>
+        <div class="legend" style="margin-top:12px">
+          <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
+          <span><i style="background:${C.toPort}"></i>In an M5 list, left</span>
+          <span><i style="background:${C.rest}"></i>Not ported 1:1 or not reached</span>
+        </div>
+      </div>
+    </section>
+    <section class="grid-two" id="ports">
       <div class="card">
         <h2>Trajectory</h2>
         <p class="hint">Share of the game's code, by bytes, at every commit to ${esc(D.ref)}.</p>
@@ -303,9 +400,6 @@ function render() {
           <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
           <span><i style="background:${C.named}"></i>Named</span>
         </div>
-        <h2 style="margin-top:22px">Logic left to port</h2>
-        <p class="hint" id="burnHint"></p>
-        <div id="burn"></div>
       </div>
       <div class="card">
         <h2>Recent ports</h2>
@@ -313,17 +407,14 @@ function render() {
         <div class="feed" id="feed"></div>
       </div>
     </section>
-    <section class="card">
-      <h2>Libraries</h2>
-      <p class="hint">Replaced at the boundary the game uses, not function by function.</p>
-      <table class="mods lib" id="libs"></table>
+    <section class="card" id="coverage">
+      <h2>In-game coverage</h2>
+      <div id="cov"></div>
     </section>`;
-  renderNow();
-  renderCoverage(last);
-  renderLeft();
-  renderReplays();
-  renderTiles(last);
-  renderModules(last);
+  renderLive();
+  renderRoadmap();
+  renderThroughput();
+  renderModules(D.history[D.history.length - 1]);
   bindSeg("mapMode", "mapMode", drawMap);
   bindSeg("scope", "scope", () => { layoutMap(); drawMap(); });
   layoutMap();
@@ -331,7 +422,18 @@ function render() {
   renderPulse();
   renderTrajectory();
   renderFeed();
-  renderLibs(last);
+  renderCoverage();
+}
+
+// the parts that come from live.js (redrawn on their own every 30 s)
+function renderLive() {
+  L = window.FFX_LIVE || null;
+  currentLive = L ? L.generated : 0;
+  updateLive();
+  renderTiles(D.history[D.history.length - 1]);
+  renderNow();
+  renderTime();
+  renderRuns();
 }
 
 function bindSeg(id, key, cb) {
@@ -347,121 +449,6 @@ function bindSeg(id, key, cb) {
   sync();
 }
 
-// ---- current work: ~/ffx-work/agents/tasks.json (format in tools/status.py) ----
-const STATE_COLOR = () => ({ running: C.toPort, merged: C.named, verified: C.replaced, pushed: C.seq[5] });
-const day = s => s ? esc(String(s).replace("T", " ").slice(0, 16)) : "–";
-function renderNow() {
-  const T = D.tasks;
-  if (!T || T.error) {
-    $("now").innerHTML = `<h2>Current work</h2><div class="empty" style="padding:20px">No task list: ${esc(T ? T.error : "this data.js predates it")}. The coordinator keeps <code>~/ffx-work/agents/tasks.json</code> (format: <code>tools/status.py</code>).</div>`;
-    return;
-  }
-  const sc = STATE_COLOR();
-  const counts = {};
-  for (const t of T.tasks) counts[t.state || "?"] = (counts[t.state || "?"] || 0) + 1;
-  const order = ["running", "merged", "verified", "pushed"];
-  const rank = s => order.includes(s) ? order.indexOf(s) : order.length;
-  const summary = Object.keys(counts).sort((a, b) => rank(a) - rank(b)).map(s => `${counts[s]} ${esc(s)}`).join(", ");
-  $("now").innerHTML = `
-    <div class="toolbar" style="margin-bottom:0"><h2>Current work</h2><span class="delta">tasks.json ${T.updated ? "updated " + day(T.updated) : ""} · edited ${ago(T.mtime)}</span></div>
-    <div class="phase">${esc(T.phase || "phase not set")}</div>
-    <div class="phase-sub">Round <b>${esc(T.round || "–")}</b>${T.next ? ` · next: ${esc(T.next)}` : ""}${summary ? ` · ${summary}` : ""}</div>
-    ${T.tasks.length ? `<table class="mods tasks"><thead><tr><th>Task</th><th>Owner</th><th>State</th><th>Started → finished</th><th>Result</th></tr></thead><tbody>${T.tasks.map(t => `<tr>
-        <td style="width:28%"><div class="name">${esc(t.id || "")}</div><div class="title">${esc(t.title || "")}</div></td>
-        <td class="branch">${esc(t.branch || "–")}</td>
-        <td><span class="pill ${esc(t.state || "")}"><i style="background:${sc[t.state] || C.muted}"></i>${esc(t.state || "?")}</span></td>
-        <td class="dates">${day(t.started)} → ${t.finished ? day(t.finished) : "…"}</td>
-        <td class="result">${t.result ? esc(t.result) : `<span style="color:var(--text-muted)">${t.state === "running" ? "in progress" : "–"}</span>`}</td>
-      </tr>`).join("")}</tbody></table>` : `<div class="hint">No tasks in this round yet.</div>`}
-    ${T.history.length ? `<div class="past"><div style="color:var(--text-muted)">Earlier rounds</div>${T.history.map(h => `<div><b>${esc(h.round || "")}</b> · ${h.finished ? "finished " + day(h.finished) : "unfinished"}${h.result ? " · " + esc(h.result) : ""}</div>`).join("")}</div>` : ""}`;
-}
-
-// ---- in-game coverage (hook-hit mode) ------------------------------------------
-function allTotals(counts) {
-  const t = {};
-  for (const c of Object.values(counts)) for (const [k, v] of Object.entries(c)) t[k] = (t[k] || 0) + v;
-  return t;
-}
-function renderCoverage(last) {
-  const H = D.hook_hits;
-  if (!H || !Object.keys(H).length) { $("cov").innerHTML = `<div class="empty" style="padding:20px">No hook-hit data yet.</div>`; return; }
-  const sum = i => Object.values(H).reduce((n, v) => n + v[i], 0);
-  const [rep, ran, repB, ranB] = [0, 1, 2, 3].map(sum);
-  // game modules by ported bytes; the libraries in one row
-  const rows = Object.keys(H).filter(m => D.kinds[m] === "game").sort((a, b) => H[b][2] - H[a][2]).map(m => [m, H[m]]);
-  const libs = Object.keys(H).filter(m => D.kinds[m] !== "game");
-  if (libs.length) rows.push(["libraries", [0, 1, 2, 3].map(i => libs.reduce((n, m) => n + H[m][i], 0)), libs.join(", ")]);
-  $("cov").innerHTML = `
-    <div class="stats">
-      <div class="tile"><div class="label">Ported hooks that ran</div><div class="value">${pct(ran, rep)}</div><div class="foot">${fmt(ran)} of ${fmt(rep)} functions</div></div>
-      <div class="tile"><div class="label">By bytes</div><div class="value">${pct(ranB, repB)}</div><div class="foot">${kb(ranB)} of ${kb(repB)}</div></div>
-    </div>
-    <table class="mods" id="covMods"><thead><tr><th>Module</th><th>Ported code</th><th class="num">Ran</th><th class="num">By bytes</th></tr></thead><tbody>${rows.map(([m, v, title]) => `<tr data-m="${esc(m)}" ${title ? `title="${esc(title)}"` : ""}>
-        <td><div class="name">${esc(m)}</div><div class="kb">${kb(v[2])} · ${fmt(v[0])} fn</div></td>
-        <td style="width:45%"><div class="bar">
-          ${v[3] ? `<span style="width:${100 * v[3] / v[2]}%;background:${C.replaced}"></span>` : ""}
-          ${v[2] - v[3] ? `<span style="width:${100 * (v[2] - v[3]) / v[2]}%;background:${C.seq[1]}"></span>` : ""}
-        </div></td>
-        <td class="num">${fmt(v[1])}<div class="delta">of ${fmt(v[0])}</div></td>
-        <td class="num"><span class="pct">${pct(v[3], v[2], 0)}</span></td>
-      </tr>`).join("")}</tbody></table>
-    <div class="legend" style="margin-top:12px">
-      <span><i style="background:${C.replaced}"></i>Ran in-game</span>
-      <span><i style="background:${C.seq[1]}"></i>Ported, not seen running</span>
-    </div>
-    <h2 style="margin-top:22px">Over time</h2>
-    <p class="hint" id="covHint"></p>
-    <div id="covTraj"></div>`;
-  const P = D.history.filter(e => Object.values(e.counts).some(c => c.ran)).map(e => ({ e, a: allTotals(e.counts) }));
-  if (P.length < 2) { $("covHint").textContent = "Share of the ported code that ran in-game at each commit to " + D.ref + "; it starts with symbols/hook-hits.txt and has " + P.length + " point so far."; return; }
-  $("covHint").textContent = `Share of the ported code that ran in-game at each commit to ${D.ref}, since symbols/hook-hits.txt exists. It moves when a hits run is merged and when ports are added.`;
-  lineChart($("covTraj"), [
-    { name: "Functions", color: C.named, area: false, points: P.map(({ e, a }) => ({ t: e.t, v: 100 * a.ran / a.replaced, e })) },
-    { name: "Bytes", color: C.replaced, area: true, points: P.map(({ e, a }) => ({ t: e.t, v: 100 * a.ran_bytes / a.replaced_bytes, e })) },
-  ], { label: "Share of ported code that ran in-game over time", height: 170, ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%" });
-}
-
-// ---- left to port, by group (status.py left_to_port) --------------------------
-function leftColor(key) {
-  return { logic: C.toPort, held: C.seq[4], "held-m5": C.seq[2], stub: C.rest }[key] || C.muted;
-}
-function toPortOf(m, c) {
-  if (!D.left) return [c.to_port, c.to_port_bytes];
-  const g = D.left.find(x => x.key === "logic");
-  return g && g.modules[m] ? g.modules[m] : [0, 0];
-}
-function leftTile(g) {
-  if (!D.left) return `<div class="value">${fmt(g.to_port)}</div><div class="foot">logic functions · ${kb(g.to_port_bytes)}</div>`;
-  const total = D.left.reduce((n, x) => n + x.functions, 0);
-  const lg = D.left.find(x => x.key === "logic") || { functions: 0, bytes: 0 };
-  return `<div class="value">${fmt(lg.functions)}</div>
-    <div class="foot">functions · ${fmt(lg.bytes)} B; ${fmt(total - lg.functions)} more held or stubs</div>
-    <div class="meter">${D.left.map(x => `<span title="${esc(x.label)}: ${fmt(x.functions)}" style="width:${100 * x.functions / Math.max(1, total)}%;background:${leftColor(x.key)}"></span>`).join("")}</div>`;
-}
-function renderLeft() {
-  const L = D.left;
-  if (!L) { $("left").innerHTML = `<div class="empty" style="padding:20px">This data.js predates the breakdown.</div>`; return; }
-  if (!L.length) { $("left").innerHTML = `<div class="empty" style="padding:20px">Nothing left.</div>`; return; }
-  const total = L.reduce((n, x) => n + x.functions, 0);
-  $("left").innerHTML = `
-    <div class="meter" style="margin:0 0 14px">${L.map(x => `<span style="width:${100 * x.functions / total}%;background:${leftColor(x.key)}"></span>`).join("")}</div>
-    <div class="groups">${L.map(x => `<div>
-      <div class="g"><span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;background:${leftColor(x.key)}"></i>${esc(x.label)}</span>
-        <span class="n"><b>${fmt(x.functions)}</b><small>${fmt(x.bytes)} B</small></span></div>
-      ${x.items.length ? `<div class="chips">${x.items.map(it => `<span class="chip" title="${hex(it[0])} · ${fmt(it[2])} bytes${it[3] ? " · " + esc(it[3]) : ""}">${esc(it[1])}</span>`).join("")}</div>` : ""}
-    </div>`).join("")}</div>
-    <p class="hint" style="margin:12px 0 0">${fmt(total)} in all; only “${esc((L.find(x => x.key === "logic") || { label: "To port" }).label)}” is porting work. Hover a name for its address and why.</p>`;
-}
-
-// ---- replays ------------------------------------------------------------------
-function renderReplays() {
-  const R = D.replays;
-  if (!R || !R.length) { $("replays").innerHTML = `<div class="empty" style="padding:20px">No replay list.</div>`; return; }
-  $("replays").innerHTML = `<div class="rlist">${R.map(r => `<div class="r">
-      <div><code>${esc(r.name)}</code>${r.eye ? `<span class="badge" title="screenshots are looked at, not compared (random effects)">eye</span>` : ""}${r.parity ? "" : `<span class="badge" title="played for hook hits and coverage only, not compared">hits</span>`}</div>
-      <span>${esc(r.about || "")}</span></div>`).join("")}</div>`;
-}
-
 // ---- tiles ---------------------------------------------------------------
 function since(hours) {
   const t0 = D.history[D.history.length - 1].t - hours * 3600;
@@ -469,41 +456,449 @@ function since(hours) {
   for (const e of D.history) { if (e.t <= t0) base = e; else break; }
   return base;
 }
+const portedBetween = (a, b) => D.history.filter(e => e.t > a && e.t <= b).reduce((n, e) => n + e.added.length, 0);
+function busyAgents() {
+  if (!L) return null;
+  const ws = L.worktrees.filter(w => w.path !== L.repo);
+  return { busy: ws.filter(w => w.procs > 0), all: ws.filter(w => w.locked || w.procs > 0 || recent(w, 7200)) };
+}
+const recent = (w, s) => w.timing && w.timing.last && now() - w.timing.last.end < s;
 function renderTiles(last) {
   const g = gameTotals(last.counts);
   const g24 = gameTotals(since(24).counts);
-  const ported24 = D.history.filter(e => e.t > last.t - 86400).reduce((n, e) => n + e.added.filter(a => D.kinds[a[2]] === "game").length, 0);
-  const rest = g.bytes - g.replaced_bytes - g.to_port_bytes;
+  const t = now();
+  const p24 = portedBetween(t - 86400, t), p48 = portedBetween(t - 2 * 86400, t - 86400);
+  const rest = g.bytes - g.replaced_bytes;
   const dp = 100 * (g.replaced_bytes / g.bytes - g24.replaced_bytes / g24.bytes);
+  const M = measured().filter(p => p.kind === "lists");
+  const left = M.reduce((n, p) => n + p.left, 0), total = M.reduce((n, p) => n + p.total, 0);
+  const leftB = M.reduce((n, p) => n + p.bytes - p.done_bytes, 0);
+  const magic = measured().find(p => p.kind === "magic");
+  const etas = M.map(p => p.pace_bytes && p.pace_bytes[1].eta);
+  const lastEta = etas.every(Boolean) && etas.length ? Math.max(...etas) : null;
+  const A = busyAgents();
+  const V = L && L.verify ? L.verify.find(v => v.state) : null;
   $("tiles").innerHTML = `
     <div class="card tile hero">
       <div class="label">Game code replaced by Rust</div>
       <div class="value">${pct(g.replaced_bytes, g.bytes)}</div>
-      <div class="foot">${kb(g.replaced_bytes)} of ${kb(g.bytes)} · ${dp >= 0 ? "+" : ""}${dp.toFixed(1)} pts in 24 h</div>
+      <div class="foot">${kb(g.replaced_bytes)} of ${kb(g.bytes)} · ${fmt(g.replaced)} of ${fmt(g.functions)} functions · ${dp >= 0 ? "+" : ""}${dp.toFixed(1)} pts in 24 h</div>
       <div class="meter">
         <span style="width:${100 * g.replaced_bytes / g.bytes}%;background:${C.replaced}"></span>
-        <span style="width:${100 * g.to_port_bytes / g.bytes}%;background:${C.toPort}"></span>
         <span style="width:${100 * rest / g.bytes}%;background:${C.rest}"></span>
       </div>
     </div>
     <div class="card tile">
-      <div class="label">Functions replaced</div>
-      <div class="value">${fmt(g.replaced)}</div>
-      <div class="foot">of ${fmt(g.functions)} game functions</div>
-    </div>
-    <div class="card tile">
-      <div class="label">Left to port</div>
-      ${leftTile(g)}
-    </div>
-    <div class="card tile">
-      <div class="label">Functions named</div>
-      <div class="value">${pct(g.named, g.functions, 0)}</div>
-      <div class="foot">${fmt(g.named)} in symbols/ffx.sym</div>
-    </div>
-    <div class="card tile">
       <div class="label">Ported in the last 24 h</div>
-      <div class="value">${fmt(ported24)}</div>
-      <div class="foot">functions, over ${D.history.filter(e => e.t > last.t - 86400).length} commits</div>
+      <div class="value">${fmt(p24)}</div>
+      <div class="foot">functions, all modules · ${fmt(p48)} the 24 h before${p48 ? ` (<span class="up">${p24 >= 3 * p48 ? "×" + (p24 / p48).toFixed(p24 >= 10 * p48 ? 0 : 1) : (p24 >= p48 ? "+" : "") + Math.round(100 * (p24 - p48) / p48) + "%"}</span>)` : ""}</div>
+    </div>
+    <div class="card tile">
+      <div class="label">M5 stage 1 lists left</div>
+      <div class="value">${fmt(left)}<small> fn</small></div>
+      <div class="foot">${kb(leftB)}${magic ? ` · overlays ${fmt(magic.left)} units` : ""}${lastEta ? `<br>all lists ~${etaText(lastEta)}` : ""}</div>
+      <div class="meter">${M.map(p => `<span data-tip="${esc(p.title)}: ${fmt(p.done)} of ${fmt(p.total)} done" style="width:${100 * p.done / Math.max(1, total)}%;background:${phaseColor(p)}"></span>`).join("")}<span style="flex:1"></span></div>
+    </div>
+    <div class="card tile">
+      <div class="label">Agents working now</div>
+      ${A ? `<div class="value">${A.busy.length}<small> of ${A.all.length}</small></div>
+      <div class="foot">load ${L.machine.load[0].toFixed(1)} on ${L.machine.nproc} cores · ${gb(L.machine.mem_avail)} RAM free</div>
+      <div class="meter"><span style="width:${Math.min(100, 100 * L.machine.load[0] / L.machine.nproc)}%;background:${L.machine.load[0] > L.machine.nproc ? C.serious : C.cat[0]}"></span></div>`
+      : `<div class="value">–</div><div class="foot">no live.js yet</div>`}
+    </div>
+    <div class="card tile">
+      <div class="label">${esc(D.ref)}: not pushed</div>
+      ${L ? `<div class="value">${L.unpushed ?? "–"}<small> commits</small></div>
+      <div class="foot">${V ? `PC2 replays: <b style="color:${V.state === "passed" ? C.good : V.state === "failed" ? C.critical : C.warning}">${V.state}</b> at <code>${esc(V.sha.slice(0, 8))}</code> ${ago(V.t)}` : "no PC2 run seen"}</div>` : `<div class="value">–</div>`}
+    </div>`;
+}
+
+// ---- now: live.js -----------------------------------------------------------
+const KIND_COLOR = () => ({ running: C.good, paused: C.muted, "awaiting merge": C.warning, verifying: C.cat[0], merged: C.named, pushed: C.seq[5], done: C.secondary, other: C.muted });
+const pill = (kind, label, on) => `<span class="pill ${on ? "on" : ""}"><i style="background:${KIND_COLOR()[kind] || C.muted}"></i>${esc(label || kind)}</span>`;
+function globRe(g) { return new RegExp("^" + g.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$"); }
+function taskFor(branch, tasks) {
+  if (!branch) return null;
+  const open = tasks.filter(t => ["running", "paused", "awaiting merge", "verifying"].includes(t.kind));
+  return open.find(t => t.branch && globRe(t.branch).test(branch))
+    || open.find(t => t.branch && branch.startsWith(t.branch))
+    || open.find(t => t.id && branch.includes(t.id)) || null;
+}
+const shortCmd = c => c.replace(/\S*\/bin\/(cargo|rustc|python3?)\b/g, "$1").replace(/\/home\/[^/ ]+\/workspaces\/oss_ws\/ffx-decomp\/\.claude\/worktrees\/[^/ ]+/g, ".")
+  .replace(/\/home\/[^/ ]+/g, "~").replace(/^(\S*\/)?(python3?|bash) (-I )?/, "").slice(0, 120);
+function renderNow() {
+  const el = $("now");
+  if (!L) { el.innerHTML = `<h2>Now</h2><div class="empty">No live.js yet: <code>tools/status.sh --wait</code>.</div>`; return; }
+  const T = L.tasks.error ? null : L.tasks;
+  const tasks = T ? T.tasks : [];
+  const ws = L.worktrees.filter(w => w.procs > 0 || w.locked || recent(w, 7200) || w.session);
+  const hidden = L.worktrees.length - ws.length;
+  const state = w => w.procs > 0 ? ["busy", C.good, true] : recent(w, 900) ? ["between commands", C.cat[0], false] : w.session ? ["session open", C.cat[6], false] : ["idle", C.muted, false];
+  ws.sort((a, b) => (b.procs > 0) - (a.procs > 0) || ((b.timing && b.timing.last ? b.timing.last.end : 0) - (a.timing && a.timing.last ? a.timing.last.end : 0)));
+  const seen = new Set();
+  const agentRows = ws.map(w => {
+    const t = taskFor(w.branch, tasks);
+    if (t) seen.add(t);
+    const [label, color, on] = state(w);
+    const lt = w.timing && w.timing.last;
+    const doing = w.now
+      ? `<div class="cmd">${esc(shortCmd(w.now.cmd))}</div><div class="sm">for ${dur(now() - w.now.since)}${w.procs > 1 ? ` · ${w.procs} processes` : ""}</div>`
+      : lt ? `<div class="sm">last: <span class="cmd">${esc(shortCmd(lt.cmd))}</span></div><div class="sm">ended ${ago(lt.end)}${lt.code !== "0" ? ` · <b style="color:${C.critical}">exit ${esc(lt.code)}</b>` : ""}</div>`
+      : `<div class="sm">no commands logged</div>`;
+    const name = w.branch || w.path.split("/").pop();
+    return `<tr>
+      <td><span class="dot ${on ? "on" : ""}" style="background:${color}" data-tip="${esc(label)}"></span><span class="branch">${esc(name)}</span>
+        <div class="task">${t ? esc(t.title || t.id) : `<span class="sm">${esc(w.path === L.repo ? "main checkout" : w.path.split("/").pop())}</span>`}</div></td>
+      <td>${doing}</td>
+      <td class="num">${w.ahead ? `<b>${fmt(w.ahead)}</b>` : "0"}<div class="sm">${w.commit_t ? ago(w.commit_t) : ""}</div></td>
+      <td class="num">${w.timing ? `${dur(w.timing.h1)}<div class="sm">${hrs(w.timing.h24)} / 24 h</div>` : "–"}</td>
+    </tr>`;
+  }).join("");
+  const byKind = k => tasks.filter(t => t.kind === k);
+  const qItem = (t, right) => `<div class="q"><div><span class="id">${esc(t.id)}</span>${t.result ? `<span class="r" data-tip="${esc(t.result)}">${esc(t.result)}</span>` : t.title ? `<span class="r">${esc(t.title)}</span>` : ""}</div><span class="t">${right || ""}</span></div>`;
+  const orphan = byKind("running").filter(t => !seen.has(t));
+  const groups = [
+    ["awaiting merge", byKind("awaiting merge")], ["verifying", byKind("verifying")],
+    ["running, no worktree seen", orphan], ["paused", byKind("paused")],
+  ].filter(([, l]) => l.length);
+  const queued = T ? T.queued.filter(q => typeof q === "string") : [];
+  const day = 86400, t0 = now() - day;
+  const finished = tasks.filter(t => ["merged", "pushed", "done"].includes(t.kind) && (Date.parse(t.finished || t.started || 0) / 1000 >= t0 - day));
+  const m = L.machine, V = L.verify;
+  const gauge = (label, used, total, text, warn) => `<div class="gauge"><span>${label}</span><div class="bar thin"><span style="width:${Math.min(100, 100 * used / total)}%;background:${warn ? C.serious : C.cat[0]}"></span></div><span>${text}</span></div>`;
+  el.innerHTML = `
+    <div class="toolbar" style="margin-bottom:0"><h2>Now</h2><span class="delta">${T ? `tasks.json edited ${ago(T.mtime)}` : esc(L.tasks.error)} · live data ${ago(L.generated)}</span></div>
+    ${T ? `<div class="phase">${esc(T.phase || "phase not set")}</div>
+    <div class="phase-sub">Round: <b>${esc(T.round || "–")}</b>${T.next ? `<br>Next: ${esc(T.next)}` : ""}</div>` : ""}
+    <div class="grid-two">
+      <div>
+        <h3>Agents and worktrees</h3>
+        <table class="mods agents"><thead><tr><th>Branch and task</th><th>Doing</th><th class="num" data-tip="commits not on ${esc(L.ref)} yet; the last one's age">Ahead</th><th class="num" data-tip="command time in the last hour (top-level commands) and the last 24 h">Machine</th></tr></thead>
+        <tbody>${agentRows || `<tr><td colspan="4" class="sm">No worktree is busy.</td></tr>`}</tbody></table>
+        ${hidden ? `<div class="note" style="margin-top:8px">${hidden} idle worktree${hidden > 1 ? "s" : ""} not shown.</div>` : ""}
+      </div>
+      <div>
+        <h3>Queue</h3>
+        ${groups.length || queued.length ? `<div class="qlist">${groups.map(([k, l]) => `<div style="margin-top:4px">${pill(k.startsWith("running") ? "running" : k, `${k} · ${l.length}`)}</div>${(items => items.length > 5 ? items.slice(0, 4).join("") + `<details style="margin:0"><summary style="margin:0">${items.length - 4} more</summary><div class="qlist" style="margin-top:7px">${items.slice(4).join("")}</div></details>` : items.join(""))(l.map(t => qItem(t, t.started ? esc(String(t.started).slice(5, 16).replace("T", " ")) : "")))}`).join("")}
+          ${queued.length ? `<div style="margin-top:4px">${pill("other", `queued · ${queued.length}`)}</div>${queued.map(q => `<div class="q"><span class="r" style="color:var(--text-secondary)">${esc(q)}</span></div>`).join("")}` : ""}</div>` : `<div class="note">Nothing waiting.</div>`}
+        <h3>${esc(L.ref)} and PC2 verification</h3>
+        <div class="qlist">${V.slice(0, 7).map(v => {
+          const st = v.state || "none";
+          const col = { passed: C.good, failed: C.critical, running: C.warning, none: C.rest }[st];
+          const sym = { passed: "✓", failed: "✗", running: "…", none: "–" }[st];
+          const tipText = v.state ? `${v.replays} replays${v.bad.length ? "; differ: " + v.bad.join(", ") : ", same events"}${v.exits ? `; ${v.exits} non-zero exits` : ""}<br>${esc(v.log)}` : "no pc2-&lt;sha&gt;.log for this commit";
+          return `<div class="q" data-tip="${esc(tipText)}"><div><b style="color:${col};display:inline-block;width:14px">${sym}</b><code class="id">${esc(v.sha.slice(0, 8))}</code> <span style="color:var(--text-secondary)">${esc(v.subject.replace(/^Merge branch '([^']+)'.*/, "merge $1"))}</span></div><span class="t">${ago(v.t)}</span></div>`;
+        }).join("")}</div>
+        <div class="note" style="margin-top:6px">${L.unpushed != null ? `${L.unpushed} commit${L.unpushed === 1 ? "" : "s"} on ${esc(L.ref)} not on origin.` : ""}</div>
+        <h3>Machine</h3>
+        ${gauge("Load", m.load[0], m.nproc, `${m.load[0].toFixed(1)} on ${m.nproc} cores · 15 min: ${m.load[2].toFixed(1)}`, m.load[0] > m.nproc)}
+        ${gauge("Memory", m.mem_total - m.mem_avail, m.mem_total, `${gb(m.mem_avail)} free`, m.mem_avail < 6 * 1073741824)}
+        ${gauge("Disk", m.disk_total - m.disk_free, m.disk_total, `${gb(m.disk_free)} free`, m.disk_free < 10 * 1073741824)}
+        <div class="qlist" style="margin-top:8px">${L.guards.map(g => `<div class="q"><div><span class="dot" style="background:${g.running ? C.good : g.name === "status watch" ? C.rest : C.critical}"></span>${esc(g.name)} <span class="sm" style="color:var(--text-muted)">${g.running ? "running" : "not running"}</span></div><span class="t" data-tip="${esc(g.last)}">${g.t ? ago(g.t) : ""}</span></div>`).join("")}</div>
+      </div>
+    </div>
+    ${finished.length ? `<details><summary>Finished since yesterday: ${finished.length}</summary><div class="qlist" style="margin-top:8px">${finished.map(t => qItem(t, pill(t.kind))).join("")}</div></details>` : ""}
+    ${T && T.history.length ? `<details><summary>Earlier rounds: ${T.history.length}</summary><div class="past">${T.history.map(h => `<div><b>${esc(h.round || "")}</b> · ${h.finished ? "finished " + esc(h.finished) : "unfinished"}${h.result ? " · " + esc(h.result) : ""}</div>`).join("")}</div></details>` : ""}`;
+}
+
+// ---- phases and forecast -------------------------------------------------------
+// a date short enough for a table cell
+function etaShort(t) {
+  if (!t) return "–";
+  const d = new Date(t * 1000), days = (t - now()) / 86400;
+  if (days < 6) return d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: days > 300 ? "numeric" : undefined });
+}
+function paceTable(p) {
+  const rows = p.pace.map((x, i) => {
+    const b = p.pace_bytes ? p.pace_bytes[i] : null;
+    return `<tr><td>${x.span < x.hours ? `<span data-tip="only ${x.span} h of data so far">${x.hours} h*</span>` : x.hours + " h"}</td><td>${fmt(x.per_day)}</td>${b ? `<td>${kb(b.per_day)}</td>` : ""}<td>${etaShort(x.eta)}</td>${b ? `<td>${etaShort(b.eta)}</td>` : ""}</tr>`;
+  }).join("");
+  return `<table class="paces"><thead><tr><th>Pace over</th><th>${p.kind === "magic" ? "units" : "fn"}/day</th>${p.pace_bytes ? "<th>/day</th>" : ""}<th>done${p.pace_bytes ? ", fn" : ""}</th>${p.pace_bytes ? "<th>by bytes</th>" : ""}</tr></thead><tbody>${rows}</tbody></table>`;
+}
+function headline(p) {
+  const x = (p.pace_bytes || p.pace)[1];
+  const early = x.span < 12;
+  if (!x.eta) return `<div class="eta">No progress in the last 24 h: <b>no forecast</b></div>`;
+  const all = [...p.pace, ...(p.pace_bytes || [])].map(y => y.eta).filter(Boolean);
+  const lo = Math.min(...all), hi = Math.max(...all);
+  return `<div class="eta">${early ? `<span style="color:${C.warning}">Early: ${x.span} h of data.</span> ` : ""}At the last 24 h's pace: <b>${etaText(x.eta)}</b> <span class="delta">${inDays(x.eta)}</span>
+    ${all.length > 1 ? `<div class="delta">range over the paces: ${etaText(lo)} – ${etaText(hi)}</div>` : ""}</div>`;
+}
+function spark(series, color, w = 120, h = 30) {
+  if (series.length < 2) return "";
+  const t0 = series[0][0], t1 = series[series.length - 1][0], v0 = Math.max(...series.map(s => s[1])) || 1;
+  const x = t => 2 + (w - 4) * (t - t0) / Math.max(1, t1 - t0), y = v => h - 2 - (h - 4) * v / v0;
+  let d = "";
+  series.forEach((s, i) => { d += i ? `H${x(s[0]).toFixed(1)}V${y(s[1]).toFixed(1)}` : `M${x(s[0]).toFixed(1)},${y(s[1]).toFixed(1)}`; });
+  return `<svg width="${w}" height="${h}" aria-hidden="true" style="float:right"><path d="${d}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+function renderRoadmap() {
+  const P = D.phases;
+  $("phasesFile").textContent = D.phases_file ? `phases.json edited ${ago(D.phases_file.mtime)}` : "";
+  if (!Array.isArray(P)) {
+    $("road").innerHTML = "";
+    $("phaseCards").innerHTML = `<div class="empty" style="grid-column:1/-1">No phases: ${esc(P ? P.error : "this data.js predates them")}. The coordinator keeps <code>~/ffx-work/agents/phases.json</code> (format: <code>tools/status.py</code>).</div>`;
+    return;
+  }
+  // a stage's share done: functions for lists, DLL functions for the overlays, items for checklists
+  const share = p => p.error ? 0 : p.kind === "magic" ? (p.instances ? p.covered / p.instances : 0) : p.total ? p.done / p.total : 0;
+  const stages = {};
+  for (const p of P) (stages[p.stage || "?"] = stages[p.stage || "?"] || []).push(p);
+  $("road").innerHTML = (D.milestones || []).map(m => {
+    const st = Object.entries(stages).filter(([s]) => s.startsWith(m.id + "."));
+    return `<div class="ms ${esc(m.state)}" data-tip="<b>${esc(m.id)}</b> ${esc(m.title)}<br>${esc(m.state)}${m.started ? " · started " + esc(m.started) : ""}${m.finished ? " · finished " + esc(m.finished) : ""}">
+      <div class="id">${esc(m.id)}</div><div class="tt">${esc(m.title)}</div>
+      ${st.length ? `<div class="stages">${st.map(([s, ps]) => {
+        const v = ps.reduce((n, p) => n + share(p), 0) / ps.length;
+        return `<div class="stage" data-tip="${esc(s)}: ${ps.map(p => esc(p.title) + " " + Math.round(100 * share(p)) + "%").join("<br>")}">${esc(s.split(".")[1] ? "Stage " + s.split(".")[1] : s)}<div class="bar"><span style="width:${100 * v}%;background:${C.replaced}"></span></div></div>`;
+      }).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+  $("phaseCards").innerHTML = measured().map(p => {
+    const col = phaseColor(p);
+    if (p.kind === "magic") {
+      return `<div class="card ph" style="background:var(--surface-2)">
+        <span class="stg">${esc(p.stage)}</span><h2><i class="dot" style="background:${col}"></i>${esc(p.title)}</h2>
+        ${spark(p.series, col)}<div class="big">${fmt(p.left)}<small> units left</small></div>
+        <div class="delta">${p.dlls != null ? `${fmt(p.dlls_done)} of ${fmt(p.dlls)} DLLs fully ported · ${pct(p.covered, p.instances, 0)} of their functions covered` : ""}</div>
+        <div class="bar" style="margin-top:10px"><span style="width:${100 * (p.covered || 0) / Math.max(1, p.instances || 1)}%;background:${col}"></span></div>
+        ${headline(p)}
+        ${paceTable(p)}
+        <div class="note" style="margin-top:8px">Measured by <code>tools/magic-worklist.py</code> runs only (${p.snapshots}; the last ${ago(p.measured)}): between runs it stands still.</div>
+      </div>`;
+    }
+    const lists = [...p.lists].sort((a, b) => (a.done / a.total) - (b.done / b.total) || b.total - a.total);
+    return `<div class="card ph" style="background:var(--surface-2)">
+      <span class="stg">${esc(p.stage)}</span><h2><i class="dot" style="background:${col}"></i>${esc(p.title)}</h2>
+      ${spark(p.series, col)}<div class="big">${fmt(p.left)}<small> of ${fmt(p.total)} left</small></div>
+      <div class="delta">${kb(p.bytes - p.done_bytes)} of ${kb(p.bytes)} left · ${pct(p.done, p.total, 0)} done by count, ${pct(p.done_bytes, p.bytes, 0)} by bytes</div>
+      <div class="bar" style="margin-top:10px" data-tip="by bytes"><span style="width:${100 * p.done_bytes / p.bytes}%;background:${col}"></span></div>
+      ${headline(p)}
+      ${paceTable(p)}
+      <details><summary>${lists.length} lists, least done first</summary><div class="lists">${lists.map(l => `<div class="l"><code data-tip="${esc(l.name)}: ${fmt(l.done)} of ${fmt(l.total)} functions, ${kb(l.done_bytes)} of ${kb(l.bytes)}">${esc(l.name)}</code>
+        <div class="bar thin"><span style="width:${100 * l.done / l.total}%;background:${col}"></span></div><span>${fmt(l.done)}/${fmt(l.total)}</span></div>`).join("")}</div></details>
+    </div>`;
+  }).join("") + P.filter(p => p.error).map(p => `<div class="card ph" style="background:var(--surface-2)"><h2>${esc(p.title)}</h2><div class="note">${esc(p.error)}</div></div>`).join("");
+  const SC = { done: C.good, running: C.cat[0], verifying: C.warning, todo: C.rest };
+  $("checkCards").innerHTML = P.filter(p => p.kind === "checklist").map(p => `<div class="card ph" style="background:var(--surface-2)">
+      <span class="stg">${esc(p.stage)}</span><h2>${esc(p.title)}</h2>
+      <div class="delta">${p.done} of ${p.total} done</div>
+      <div class="items">${p.items.map(i => `<div class="it"><span class="pill"><i style="background:${SC[i.state] || C.muted}"></i>${esc(i.state || "?")}</span><div>${esc(i.title)}${i.note ? `<div class="n">${esc(i.note)}</div>` : ""}</div></div>`).join("")}</div>
+    </div>`).join("");
+  renderBurn();
+}
+function renderBurn() {
+  const el = $("burn");
+  const M = measured().filter(p => p.series.length > 1);
+  if (!M.length) { el.innerHTML = `<div class="note">Nothing to draw yet.</div>`; return; }
+  const W = el.clientWidth || 800, H = 250, Lm = 48, Rm = 24, Tm = 10, Bm = 26;
+  const t1 = now(), tStart = Math.min(...M.map(p => p.series[0][0]));
+  const base = p => p.kind === "magic" ? p.series[0][1] : p.total;
+  const proj = M.map(p => {
+    const x = (p.pace_bytes || p.pace)[1];
+    const last = p.series[p.series.length - 1];
+    return x.eta ? { p, t: Math.min(x.eta, t1 + 30 * 86400), cut: x.eta > t1 + 30 * 86400, from: last } : null;
+  }).filter(Boolean);
+  const tEnd = Math.max(t1 + 86400, ...proj.map(q => q.t));
+  const x = t => Lm + (W - Lm - Rm) * (t - tStart) / (tEnd - tStart), y = v => Tm + (H - Tm - Bm) * (1 - v / 100);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Share of each list left over time, with projections">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = 25 * i;
+    s += `<line x1="${Lm}" x2="${W - Rm}" y1="${y(v)}" y2="${y(v)}" stroke="${C.hair}"/><text x="${Lm - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${v}%</text>`;
+  }
+  const d0 = new Date(tStart * 1000); d0.setHours(24, 0, 0, 0);
+  const days = (tEnd - tStart) / 86400, every = Math.max(1, Math.ceil(days / 9));
+  for (let t = d0.getTime() / 1000, i = 0; t < tEnd; t += 86400, i++) {
+    if (i % every) continue;
+    s += `<line x1="${x(t)}" x2="${x(t)}" y1="${H - Bm}" y2="${H - Bm + 4}" stroke="${C.muted}"/><text x="${x(t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${C.muted}">${new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
+  }
+  s += `<line x1="${x(t1)}" x2="${x(t1)}" y1="${Tm}" y2="${H - Bm}" stroke="${C.secondary}" stroke-opacity=".4" stroke-dasharray="2 3"/><text x="${x(t1) + 4}" y="${Tm + 10}" font-size="11" fill="${C.muted}">now</text>`;
+  s += `<line x1="${Lm}" x2="${W - Rm}" y1="${H - Bm}" y2="${H - Bm}" stroke="${C.muted}" stroke-opacity=".5"/>`;
+  const labels = [];
+  for (const p of M) {
+    const col = phaseColor(p), b = base(p);
+    let path = "";
+    p.series.forEach((q, i) => { const yy = y(100 * q[1] / b).toFixed(1); path += i ? `H${x(q[0]).toFixed(1)}V${yy}` : `M${x(q[0]).toFixed(1)},${yy}`; });
+    s += `<path d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+    const last = p.series[p.series.length - 1];
+    s += `<circle cx="${x(last[0])}" cy="${y(100 * last[1] / b)}" r="4" fill="${col}" stroke="${C.surface}" stroke-width="2"/>`;
+    const q = proj.find(z => z.p === p);
+    if (q) {
+      const v1 = q.cut ? 100 * last[1] / b * (1 - (q.t - last[0]) / ((p.pace_bytes || p.pace)[1].eta - last[0])) : 0;
+      s += `<line x1="${x(last[0])}" y1="${y(100 * last[1] / b)}" x2="${x(q.t)}" y2="${y(v1)}" stroke="${col}" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>`;
+      if (!q.cut) s += `<circle cx="${x(q.t)}" cy="${y(0)}" r="4" fill="${C.surface}" stroke="${col}" stroke-width="2"/>`;
+      labels.push({ x: x(q.t), y: q.cut ? y(v1) : y(0), color: col, text: q.cut ? "beyond 30 days" : etaShort((p.pace_bytes || p.pace)[1].eta) });
+    }
+  }
+  // each projection's date above its end, stacked where ends meet
+  labels.sort((a, b) => a.x - b.x);
+  labels.forEach((l, i) => {
+    const near = labels.slice(0, i).filter(o => Math.abs(o.x - l.x) < 90 && Math.abs(o.y - l.y) < 30).length;
+    const tx = Math.min(W - 4, Math.max(Lm + 40, l.x)), anchor = l.x > W - 60 ? "end" : "middle";
+    s += `<text x="${tx}" y="${l.y - 10 - near * 14}" text-anchor="${anchor}" font-size="11.5" font-weight="600" fill="${C.primary}"><tspan fill="${l.color}">●</tspan> ${esc(l.text)}</text>`;
+  });
+  s += `<g class="hover" style="display:none"><line y1="${Tm}" y2="${H - Bm}" stroke="${C.secondary}" stroke-opacity=".5"/></g>`;
+  s += `<rect x="${Lm}" y="${Tm}" width="${W - Lm - Rm}" height="${H - Tm - Bm}" fill="transparent"/></svg>`;
+  el.innerHTML = s;
+  $("burnLegend").innerHTML = M.map(p => `<span><i style="background:${phaseColor(p)}"></i>${esc(p.title)}${p.kind === "magic" ? " (share of the first worklist run's units)" : ""}</span>`).join("") + `<span><i class="dash"></i>projection at the 24 h pace</span>`;
+  const svg = el.querySelector("svg"), hov = svg.querySelector(".hover line");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect(), mx = e.clientX - r.left;
+    if (mx < Lm || mx > W - Rm) { hov.parentNode.style.display = "none"; return hideTip(); }
+    const t = tStart + (mx - Lm) / (W - Lm - Rm) * (tEnd - tStart);
+    hov.parentNode.style.display = "";
+    hov.setAttribute("x1", mx); hov.setAttribute("x2", mx);
+    const rows = M.map(p => {
+      let q = null;
+      for (const z of p.series) { if (z[0] <= t) q = z; else break; }
+      if (t > t1) return row(`<i style="background:${phaseColor(p)}"></i>${esc(p.title)}`, "future");
+      return q ? row(`<i style="background:${phaseColor(p)}"></i>${esc(p.title)}`, `${fmt(q[1])} left · ${(100 * q[1] / base(p)).toFixed(1)}%`) : "";
+    }).join("");
+    showTip(`<div style="margin-bottom:4px">${whenDay(t)}</div>${rows}`, e);
+  };
+  svg.onmouseleave = () => { hov.parentNode.style.display = "none"; hideTip(); };
+}
+
+// ---- speed: throughput, agent runs, machine time ---------------------------------
+function renderThroughput() {
+  const el = $("thru");
+  const step = 6 * 3600, n = 28;
+  const end = Math.ceil(now() / step) * step, start = end - n * step;
+  const bins = Array.from({ length: n }, () => [0, 0, 0, []]);
+  for (const e of D.history) {
+    if (e.t < start || e === D.history[0]) continue;
+    const b = bins[Math.min(n - 1, Math.floor((e.t - start) / step))];
+    for (const a of e.added) {
+      const k = D.kinds[a[2]] === "game" ? 0 : a[2] === "phyre" ? 1 : 2;
+      b[k]++;
+      b[3].push(a);
+    }
+  }
+  const W = el.clientWidth || 600, H = 190, Lm = 44, Rm = 8, Tm = 8, Bm = 24;
+  const max = Math.max(10, ...bins.map(b => b[0] + b[1] + b[2]));
+  const nice = Math.pow(10, Math.floor(Math.log10(max))), top = Math.ceil(max / nice) * nice;
+  const bw = (W - Lm - Rm) / n, y = v => Tm + (H - Tm - Bm) * (1 - v / top);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Functions ported per 6 hours">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = top * i / 4;
+    s += `<line x1="${Lm}" x2="${W - Rm}" y1="${y(v)}" y2="${y(v)}" stroke="${C.hair}"/><text x="${Lm - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${fmt(v)}</text>`;
+  }
+  bins.forEach((b, i) => {
+    const x0 = Lm + i * bw + 1, w = Math.max(2, bw - 3);
+    let acc = 0;
+    [0, 1, 2].forEach(k => {
+      if (!b[k]) return;
+      const y1 = y(acc), y2 = y(acc + b[k]);
+      s += `<rect x="${x0}" y="${y2}" width="${w}" height="${Math.max(1, y1 - y2 - (acc ? 2 : 0))}" rx="2" fill="${C.cat[k]}"/>`;
+      acc += b[k];
+    });
+    s += `<rect data-i="${i}" x="${x0 - 1}" y="${Tm}" width="${bw}" height="${H - Tm - Bm}" fill="transparent"/>`;
+    const t = start + i * step, d = new Date(t * 1000);
+    if (d.getHours() < 6) s += `<text x="${x0}" y="${H - 8}" font-size="11" fill="${C.muted}">${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
+  });
+  s += `<line x1="${Lm}" x2="${W - Rm}" y1="${H - Bm}" y2="${H - Bm}" stroke="${C.muted}" stroke-opacity=".5"/></svg>`;
+  el.innerHTML = s;
+  el.onmousemove = e => {
+    const r = e.target.closest("rect[data-i]");
+    if (!r) return hideTip();
+    const b = bins[+r.dataset.i], t = start + +r.dataset.i * step;
+    showTip(`<div style="margin-bottom:4px">${whenDay(t)} – ${new Date((t + step) * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</div>
+      ${row(`<i style="background:${C.cat[0]}"></i>Game code`, fmt(b[0]))}${row(`<i style="background:${C.cat[1]}"></i>PhyreEngine`, fmt(b[1]))}${row(`<i style="background:${C.cat[2]}"></i>Other libraries`, fmt(b[2]))}`, e);
+  };
+  el.onmouseleave = hideTip;
+  const tot = bins.reduce((n, b) => n + b[0] + b[1] + b[2], 0);
+  const per = d => { const k = d * 4; return bins.slice(-k).reduce((n, b) => n + b[0] + b[1] + b[2], 0) / d; };
+  $("thruHint").textContent = `Functions that became Rust on ${D.ref}, per 6 hours, last 7 days (${fmt(tot)} in all). Per day: ${fmt(per(1))} over the last day, ${fmt(per(3))} over 3 days, ${fmt(per(7))} over 7.`;
+}
+function renderRuns() {
+  const el = $("runs");
+  if (!el) return;
+  const R = L && L.runs ? L.runs.slice().reverse() : [];
+  if (!R.length) { el.innerHTML = `<div class="note">No runs.</div>`; return; }
+  const rate = r => r.functions && r.minutes ? 60 * r.functions / r.minutes : null;
+  const med = a => { a = a.filter(v => v != null).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : null; };
+  const last = R.slice(0, 20);
+  el.innerHTML = `<div class="note" style="margin-bottom:8px">Median over the last ${last.length}: <b style="color:var(--text-primary)">${fmt(med(last.map(rate)))} per hour</b> of an agent, ${fmt(med(last.map(r => r.minutes)))} min a run, ${fmt(med(last.map(r => r.ktokens && r.functions ? 1000 * r.ktokens / r.functions : null)))} tokens per item.</div>
+    <div style="max-height:300px;overflow-y:auto"><table class="mods runs"><thead><tr><th>Run</th><th class="num">Items</th><th class="num">Min</th><th class="num">Per h</th><th class="num">k tokens</th></tr></thead><tbody>${R.slice(0, 30).map(r => `<tr data-tip="${esc(r.date + ": " + r.text)}">
+      <td><span class="branch" style="font-family:var(--mono);font-size:12px">${esc(r.name)}</span> <span class="delta">${esc(r.date.slice(5))}</span></td>
+      <td class="num">${fmt(r.functions)}</td><td class="num">${fmt(r.minutes)}</td><td class="num">${rate(r) ? fmt(rate(r)) : "–"}</td><td class="num">${fmt(r.ktokens)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function renderTime() {
+  const el = $("timeGroups");
+  if (!el) return;
+  if (!L || !L.timing) { el.innerHTML = `<div class="note">No timing data.</div>`; return; }
+  const T = L.timing, G = T.groups.filter(g => g.runs);
+  const colorOf = name => C.cat[T.names.indexOf(name) % 8];
+  const total = G.reduce((n, g) => n + g.seconds, 0), max = Math.max(1, ...G.map(g => g.seconds));
+  el.innerHTML = `<table class="mods"><thead><tr><th>Last 24 h</th><th></th><th class="num">Hours</th><th class="num">Runs</th><th class="num" data-tip="runs that exited non-zero (a failing test while porting counts)">Failed</th><th class="num" data-tip="time spent while the 1-minute load was above the core count">Overloaded</th></tr></thead>
+    <tbody>${G.sort((a, b) => b.seconds - a.seconds).map(g => `<tr>
+      <td class="name"><i class="dot" style="background:${colorOf(g.group)};border-radius:3px"></i>${esc(g.group)}</td>
+      <td style="width:34%"><div class="bar thin" style="background:transparent"><span style="width:${100 * g.seconds / max}%;background:${colorOf(g.group)};border-radius:4px"></span></div></td>
+      <td class="num">${hrs(g.seconds)}<div class="delta">${pct(g.seconds, total, 0)}</div></td>
+      <td class="num">${fmt(g.runs)}</td><td class="num">${pct(g.failed, g.runs, 0)}</td><td class="num">${pct(g.busy, g.seconds, 0)}</td></tr>`).join("")}</tbody></table>
+    <div class="note" style="margin-top:6px">${hrs(total)} of command time in 24 h: ${(total / 86400).toFixed(1)} commands running on average.</div>`;
+  // per hour, stacked
+  const box = $("timeHours"), W = box.clientWidth || 600, H = 150, Lm = 44, Rm = 8, Tm = 8, Bm = 22;
+  const hours = T.hours, n = hours.length, end = T.hours_end;
+  const sums = hours.map(h => h.reduce((a, b) => a + b, 0) / 3600);
+  const top = Math.max(1, Math.ceil(Math.max(...sums)));
+  const bw = (W - Lm - Rm) / n, y = v => Tm + (H - Tm - Bm) * (1 - v / top);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="Command time per hour by kind">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = top * i / 4;
+    s += `<line x1="${Lm}" x2="${W - Rm}" y1="${y(v)}" y2="${y(v)}" stroke="${C.hair}"/><text x="${Lm - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${v.toFixed(v % 1 ? 1 : 0)} h</text>`;
+  }
+  hours.forEach((h, i) => {
+    let acc = 0;
+    const x0 = Lm + i * bw + 1, w = Math.max(1.5, bw - 2);
+    h.forEach((sec, k) => {
+      if (!sec) return;
+      const v = sec / 3600, y1 = y(acc), y2 = y(acc + v);
+      s += `<rect x="${x0}" y="${y2}" width="${w}" height="${Math.max(.8, y1 - y2 - (acc ? 1 : 0))}" fill="${C.cat[k % 8]}"/>`;
+      acc += v;
+    });
+    s += `<rect data-i="${i}" x="${x0 - 1}" y="${Tm}" width="${bw}" height="${H - Tm - Bm}" fill="transparent"/>`;
+    const t = end - (n - i) * 3600, d = new Date(t * 1000);
+    if (d.getHours() % 6 === 0) s += `<text x="${x0}" y="${H - 7}" font-size="10.5" fill="${C.muted}">${d.getHours() ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
+  });
+  s += `<line x1="${Lm}" x2="${W - Rm}" y1="${H - Bm}" y2="${H - Bm}" stroke="${C.muted}" stroke-opacity=".5"/></svg>`;
+  box.innerHTML = s;
+  box.onmousemove = e => {
+    const r = e.target.closest("rect[data-i]");
+    if (!r) return hideTip();
+    const i = +r.dataset.i, t = end - (n - i) * 3600;
+    showTip(`<div style="margin-bottom:4px">${whenDay(t)}</div>${hours[i].map((sec, k) => sec ? row(`<i style="background:${C.cat[k % 8]}"></i>${esc(T.names[k])}`, dur(sec)) : "").join("")}${row("All", dur(hours[i].reduce((a, b) => a + b, 0)))}`, e);
+  };
+  box.onmouseleave = hideTip;
+  $("timeLegend").innerHTML = T.names.filter((_, k) => hours.some(h => h[k])).map(nm => `<span><i style="background:${colorOf(nm)}"></i>${esc(nm)}</span>`).join("");
+}
+
+// ---- in-game coverage (hook-hit mode) ------------------------------------------
+function renderCoverage() {
+  const H = D.hook_hits, M = D.hits_meta;
+  if (!H || !M || !Object.keys(H).length) { $("cov").innerHTML = `<div class="empty">No hook-hit data yet.</div>`; return; }
+  const sum = i => Object.values(H).reduce((n, v) => n + v[i], 0);
+  const [then, ran, thenB, ranB, nowN] = [0, 1, 2, 3, 4].map(sum);
+  const rows = Object.keys(H).filter(m => D.kinds[m] === "game" && H[m][0]).sort((a, b) => H[b][2] - H[a][2]);
+  const age = (now() - M.t) / 86400;
+  $("cov").innerHTML = `
+    ${age > 2 ? `<div class="warn"><b>Stale: recorded ${ago(M.t)}</b> (${when(M.t)}, <code>${esc(M.sha)}</code>, <code>symbols/hook-hits.txt</code>). ${fmt(nowN - then)} of today's ${fmt(nowN)} ports came after it and are not measured; the shares below are of the ${fmt(then)} that existed then. Refresh: <code>tools/replays/run-all.sh --hits</code>, then <code>tools/hook-hits.py</code>.</div>` : ""}
+    <p class="hint">Ported functions whose hook the game entered in a replay or the coverage session. A port that runs only through Rust callers is not counted.</p>
+    <div class="grid-two" style="gap:24px">
+      <div>
+        <table class="mods"><thead><tr><th>Module</th><th>Ported code then</th><th class="num">Ran</th><th class="num">By bytes</th></tr></thead><tbody>${rows.map(m => { const v = H[m]; return `<tr>
+          <td><div class="name">${esc(m)}</div><div class="kb">${kb(v[2])} · ${fmt(v[0])} fn${v[4] > v[0] ? ` · +${fmt(v[4] - v[0])} since` : ""}</div></td>
+          <td style="width:40%"><div class="bar">${v[3] ? `<span style="width:${100 * v[3] / v[2]}%;background:${C.replaced}"></span>` : ""}${v[2] - v[3] ? `<span style="width:${100 * (v[2] - v[3]) / v[2]}%;background:${C.seq[1]}"></span>` : ""}</div></td>
+          <td class="num">${fmt(v[1])}<div class="delta">of ${fmt(v[0])}</div></td>
+          <td class="num"><span class="pct">${pct(v[3], v[2], 0)}</span></td></tr>`; }).join("")}</tbody></table>
+        <div class="legend" style="margin-top:12px"><span><i style="background:${C.replaced}"></i>Ran in-game</span><span><i style="background:${C.seq[1]}"></i>Ported then, not seen running</span></div>
+      </div>
+      <div>
+        <div class="tile"><div class="label">Ports that ran, at the last hits run</div><div class="value">${pct(ran, then)}</div><div class="foot">${fmt(ran)} of ${fmt(then)} functions · ${pct(ranB, thenB)} by bytes</div></div>
+        <div class="tile" style="margin-top:16px"><div class="label">Ported since, not measured</div><div class="value">${fmt(nowN - then)}</div><div class="foot">of ${fmt(nowN)} ported functions now (all modules)</div></div>
+        <p class="note" style="margin-top:16px">Most M5 ports are code no replay reaches (they are reachable only statically), so a fresh run is expected to show a lower share; their parity tests use synthetic inputs instead.</p>
+      </div>
     </div>`;
 }
 
@@ -526,20 +921,21 @@ function sparkline(pts, w = 90, h = 24) {
 function renderModules(last) {
   const base = since(24).counts;
   const mods = gameModules(last.counts);
-  $("mods").innerHTML = `<thead><tr><th>Module</th><th>Code</th><th class="num" title="change over the last 24 h below">Replaced</th><th class="num">To port</th><th class="num">Named</th><th>Over time</th></tr></thead><tbody>${mods.map(m => {
-    const c = last.counts[m], b = c.bytes;
-    const restB = Math.max(0, b - c.replaced_bytes - c.to_port_bytes);
+  const left = m => (D.m5_left || {})[m] || [0, 0];
+  $("mods").innerHTML = `<thead><tr><th>Module</th><th>Code</th><th class="num" title="change over the last 24 h below">Replaced</th><th class="num">M5 left</th><th class="num">Named</th><th>Over time</th></tr></thead><tbody>${mods.map(m => {
+    const c = last.counts[m], b = c.bytes, [ln, lb] = left(m);
+    const restB = Math.max(0, b - c.replaced_bytes - lb);
     const prev = base[m] ? 100 * base[m].replaced_bytes / base[m].bytes : 0;
     const dp = 100 * c.replaced_bytes / b - prev;
     return `<tr data-m="${m}" class="${ui.focus === m ? "focus" : ""}">
       <td><div class="name">${m}</div><div class="kb">${kb(b)} · ${fmt(c.functions)} fn</div></td>
       <td style="width:30%"><div class="bar">
         ${c.replaced_bytes ? `<span style="width:${100 * c.replaced_bytes / b}%;background:${C.replaced}"></span>` : ""}
-        ${c.to_port_bytes ? `<span style="width:${100 * c.to_port_bytes / b}%;background:${C.toPort}"></span>` : ""}
+        ${lb ? `<span style="width:${100 * lb / b}%;background:${C.toPort}"></span>` : ""}
         ${restB ? `<span style="width:${100 * restB / b}%;background:${C.rest}"></span>` : ""}
       </div></td>
       <td class="num"><span class="pct">${pct(c.replaced_bytes, b, 0)}</span><div class="delta">${Math.abs(dp) >= .05 ? (dp > 0 ? "+" : "") + dp.toFixed(1) + " pts" : "&nbsp;"}</div></td>
-      <td class="num">${(([n, by]) => `${fmt(n)}<div class="delta">${kb(by)}</div>`)(toPortOf(m, c))}</td>
+      <td class="num">${fmt(ln)}<div class="delta">${kb(lb)}</div></td>
       <td class="num">${pct(c.named, c.functions, 0)}</td>
       <td>${sparkline(seriesOf(m))}</td>
     </tr>`;
@@ -555,12 +951,10 @@ function renderModules(last) {
   $("mods").onmousemove = e => {
     const tr = e.target.closest("tr[data-m]");
     if (!tr) return hideTip();
-    const c = last.counts[tr.dataset.m];
-    showTip(`<div class="t">${tr.dataset.m}</div>
+    const m = tr.dataset.m, c = last.counts[m], [ln, lb] = left(m);
+    showTip(`<div class="t">${m}</div>
       ${row(`<i style="background:${C.replaced}"></i>Replaced`, `${fmt(c.replaced)} fn · ${kb(c.replaced_bytes)}`)}
-      ${(D.left || []).filter(gr => gr.modules[tr.dataset.m]).map(gr => row(`<i style="background:${leftColor(gr.key)}"></i>${esc(gr.label)}`, `${fmt(gr.modules[tr.dataset.m][0])} fn · ${fmt(gr.modules[tr.dataset.m][1])} B`)).join("")
-        || row(`<i style="background:${C.toPort}"></i>Logic to port`, `${fmt(c.to_port)} fn · ${kb(c.to_port_bytes)}`)}
-      ${D.hook_hits && D.hook_hits[tr.dataset.m] ? row("Ran in-game", `${fmt(D.hook_hits[tr.dataset.m][1])} of ${fmt(D.hook_hits[tr.dataset.m][0])} ported`) : ""}
+      ${row(`<i style="background:${C.toPort}"></i>In an M5 list, left`, `${fmt(ln)} fn · ${kb(lb)}`)}
       ${row("Wrapped", fmt(c.wrapped))}
       ${row("Named", `${fmt(c.named)} of ${fmt(c.functions)}`)}`, e);
   };
@@ -602,6 +996,7 @@ function stateColor(i, mode) {
   const F = D.map;
   const game = F.kinds[F.module[i]] === "game";
   if (mode === "names") return !game ? C.library : F.named[i] ? C.named : C.unnamed;
+  if (mode === "m5") return F.m5 && F.m5[i] === 2 ? C.replaced : F.m5 && F.m5[i] === 1 ? C.toPort : game ? C.unnamed : C.library;
   const st = F.states[F.state[i]];
   if (st === "replaced") return C.replaced;
   if (!game) return C.library;
@@ -674,7 +1069,9 @@ function drawMap() {
   }
   M.k = k / dpr;
 
-  $("mapLegend").innerHTML = ui.mapMode === "port"
+  $("mapLegend").innerHTML = ui.mapMode === "m5"
+    ? `<span><i style="background:${C.replaced}"></i>In an M5 list, done</span><span><i style="background:${C.toPort}"></i>In an M5 list, left</span><span><i style="background:${C.unnamed}"></i>In no list</span>`
+    : ui.mapMode === "port"
     ? `<span><i style="background:${C.replaced}"></i>Replaced by Rust</span><span><i style="background:${C.toPort}"></i>Logic left to port</span><span><i style="background:${C.rest}"></i>Glue, platform, debug, dead</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`
     : `<span><i style="background:${C.named}"></i>Named</span><span><i style="background:${C.unnamed}"></i>Unnamed</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`;
 
@@ -685,7 +1082,7 @@ function drawMap() {
     const j = M.at[HD[y * SIDE + x]], i = M.idx[j];
     const st = F.states[F.state[i]], cat = F.categories[F.category[i]];
     const label = st === "replaced" ? "replaced by Rust" : st === "wrapped" ? "wrapped (original still runs)"
-      : F.kinds[F.module[i]] === "library" ? "library" : cat === "logic" ? "logic, to port" : "not ported 1:1";
+      : F.kinds[F.module[i]] === "library" ? "library" : F.m5 && F.m5[i] === 1 ? "in an M5 list, left" : cat === "logic" ? "logic, to port" : "not ported 1:1";
     showTip(`<div class="t">${esc(F.names[i] || "sub_" + F.addr[i].toString(16).padStart(8, "0"))}</div>
       ${row("Address", hex(F.addr[i]))}
       ${row("Size", fmt(F.size[i]) + " bytes")}
@@ -741,8 +1138,8 @@ function renderPulse() {
   const lvTotal = levels([grid[0]]), lvMods = levels(grid.slice(1));
   const level = (n, lv) => !n ? 0 : n <= lv[0] ? 1 : n <= lv[1] ? 2 : n <= lv[2] ? 3 : n <= lv[3] ? 4 : 5;
   const cell = Math.max(6, Math.min(cellMax, Math.floor((width - labelW) / cols) - gap));
-  const pitch = cell + gap, top = 22, totalGap = 8;
-  const W = labelW + cols * pitch, Hh = top + mods.length * pitch + totalGap;
+  const pitch = cell + gap, rowH = Math.max(pitch, 15), top = 22, totalGap = 8;
+  const W = labelW + cols * pitch, Hh = top + mods.length * rowH + totalGap;
   const hours = step / 3600;
   $("pulseHint").textContent = `Functions ported per ${hours >= 24 ? (hours / 24) + " day" + (hours > 24 ? "s" : "") : hours + " hour" + (hours > 1 ? "s" : "")}, per module. The top row is the whole game on its own scale.`;
   let s = `<svg width="${W}" height="${Hh}" role="img" aria-label="Ports per module over time">`;
@@ -758,14 +1155,14 @@ function renderPulse() {
     if (c) s += `<line x1="${x - gap / 2}" x2="${x - gap / 2}" y1="16" y2="${Hh}" stroke="${C.hair}"/>`;
   });
   mods.forEach((m, r) => {
-    const y = top + r * pitch + (r ? totalGap : 0);
+    const y = top + r * rowH + (r ? totalGap : 0);
     const dim = ui.focus && r && m !== ui.focus;
-    s += `<text x="${labelW - 10}" y="${y + cell / 2 + 4}" text-anchor="end" font-size="12" fill="${r === 0 || m === ui.focus ? C.primary : dim ? C.muted : C.secondary}" font-weight="${r === 0 || m === ui.focus ? 600 : 400}">${m === "all game code" ? "all" : m}</text>`;
+    s += `<text x="${labelW - 10}" y="${y + (rowH - gap) / 2 + 4}" text-anchor="end" font-size="12" fill="${r === 0 || m === ui.focus ? C.primary : dim ? C.muted : C.secondary}" font-weight="${r === 0 || m === ui.focus ? 600 : 400}">${m === "all game code" ? "all" : m}</text>`;
     for (let c = 0; c < cols; c++) {
       const n = grid[r][c].length;
       const lv = level(n, r ? lvMods : lvTotal);
       const future = t0 + c * step > t1;
-      s += `<rect data-r="${r}" data-c="${c}" x="${labelW + c * pitch}" y="${y}" width="${cell}" height="${cell}" rx="2.5" fill="${C.seq[lv]}" opacity="${future ? 0 : dim ? .35 : 1}"/>`;
+      s += `<rect data-r="${r}" data-c="${c}" x="${labelW + c * pitch}" y="${y}" width="${cell}" height="${rowH - gap}" rx="2.5" fill="${C.seq[lv]}" opacity="${future ? 0 : dim ? .35 : 1}"/>`;
     }
   });
   s += "</svg>";
@@ -848,21 +1245,9 @@ function renderTrajectory() {
     { name: "Named", color: C.named, area: false, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.named_bytes / g.bytes, e })) },
     { name: "Replaced", color: C.replaced, area: true, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.replaced_bytes / g.bytes, e })) },
   ], { label: "Share of game code replaced and named over time", ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%" });
-  // the burn-down starts with symbols/classes.tsv
-  const B = H.filter(({ g }) => g.logic_bytes > 0);
-  if (B.length < 2) { $("burnHint").textContent = "Starts once symbols/classes.tsv exists."; return; }
-  lineChart($("burn"), [
-    { name: "Logic to port", color: C.toPort, area: true, points: B.map(({ e, g }) => ({ t: e.t, v: g.to_port_bytes / 1024, e })) },
-  ], { label: "Logic left to port over time", height: 170, fmtY: v => Math.round(v) + " KB", fmtV: v => Math.round(v) + " KB" });
-  const now = B[B.length - 1], ago2 = B.find(({ e }) => e.t >= now.e.t - 2 * 86400) || B[0];
-  const days = (now.e.t - ago2.e.t) / 86400;
-  const rate = days > 0 ? (ago2.g.to_port_bytes - now.g.to_port_bytes) / days : 0;
-  $("burnHint").textContent = `Logic functions (symbols/classes.tsv) not replaced yet, in KB, held ones and stubs included (Left to port above splits them). ` + (rate > 0
-    ? `Over the last ${days.toFixed(1)} days it went down ${kb(rate)} a day; at that pace the rest takes about ${Math.ceil(now.g.to_port_bytes / rate)} days.`
-    : `It has not gone down over the last two days.`);
 }
 
-// ---- feed and libraries ---------------------------------------------------------
+// ---- feed ---------------------------------------------------------------------
 function renderFeed() {
   const items = D.history.filter(e => e.added.length && e !== D.history[0]).slice(-25).reverse();
   $("feed").innerHTML = items.map(e => `<div class="item">
@@ -871,27 +1256,27 @@ function renderFeed() {
       <div class="chips">${e.added.slice(0, 10).map(a => `<span class="chip" title="${hex(a[0])}"><b>${a[2]}</b>${esc(a[1])}</span>`).join("")}${e.added.length > 10 ? `<span class="more">+${e.added.length - 10} more</span>` : ""}</div>
     </div>`).join("") || `<div class="empty">Nothing yet.</div>`;
 }
-function renderLibs(last) {
-  const libs = Object.keys(last.counts).filter(m => D.kinds[m] === "library").sort((a, b) => last.counts[b].bytes - last.counts[a].bytes);
-  $("libs").innerHTML = `<thead><tr><th>Library</th><th class="num">Functions</th><th class="num">Code</th><th class="num">Named</th><th class="num" title="change over the last 24 h below">Replaced</th><th class="num">Wrapped</th></tr></thead><tbody>${libs.map(m => {
-    const c = last.counts[m];
-    return `<tr><td class="name">${m}</td><td class="num">${fmt(c.functions)}</td><td class="num">${kb(c.bytes)}</td><td class="num">${pct(c.named, c.functions)}</td><td class="num">${fmt(c.replaced)}</td><td class="num">${fmt(c.wrapped)}</td></tr>`;
-  }).join("")}</tbody>`;
-}
 
-// ---- live updates: data.js is reloaded every 30 s (works from file:// too) ----------
+// ---- live updates: data.js and live.js are reloaded every 30 s (works from file:// too) ----
 function updateLive() {
   if (!D) return;
-  const fresh = Date.now() / 1000 - D.head_time < 6 * 3600;
+  const t = L ? L.generated : D.generated;
+  const fresh = now() - t < 600;
   $("live").classList.toggle("stale", !fresh);
-  $("liveText").textContent = `updated ${ago(D.generated)} · last commit ${ago(D.head_time)}`;
+  $("liveText").textContent = `live ${ago(t)} · numbers ${ago(D.generated)} · last commit ${ago(D.head_time)}`;
 }
-function poll() {
+function load(src, done) {
   const s = document.createElement("script");
-  s.src = "data.js?" + Date.now();
-  s.onload = () => { s.remove(); if (window.FFX_STATUS && window.FFX_STATUS.generated !== current) render(); else updateLive(); };
+  s.src = src + "?" + Date.now();
+  s.onload = () => { s.remove(); done(); };
   s.onerror = () => s.remove();
   document.head.appendChild(s);
+}
+function poll() {
+  load("data.js", () => {
+    if (window.FFX_STATUS && window.FFX_STATUS.generated !== current) return render();
+    load("live.js", () => { if (window.FFX_LIVE && window.FFX_LIVE.generated !== currentLive) renderLive(); else updateLive(); });
+  });
 }
 setInterval(poll, 30000);
 let rt;
