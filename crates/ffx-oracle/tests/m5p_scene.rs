@@ -2850,3 +2850,203 @@ fn m5p_scene_g_attach_joint() {
         tw.unstub();
     }
 }
+
+// ---- batch 8 (ffx_prender::m5p_scene_h) ----
+
+use ffx_prender::m5p_scene_h as sh;
+
+/// The render passes' copy construction: arrays empty and not (counts with
+/// bit 31), the allocation failing, a null destination slot (the copies
+/// and the allocator stubbed).
+#[test]
+fn m5p_scene_h_render_passes() {
+    for (what, mut tw) in Twins::all() {
+        for &(copy, _) in &sh::PASS_ARRAYS {
+            tw.stub(copy, false, 3, 0, copy);
+        }
+        let src = tw.zeros(0x28 * 3);
+        for i in 0..3u32 {
+            let s = src + 0x28 * i;
+            tw.w32(s, 0x100 + i);
+            for k in 0..4u32 {
+                let count = [0, 2, 0x8000_0003, 1][((i + k) % 4) as usize];
+                tw.w32(s + 4 + 8 * k, count);
+                tw.w32(s + 8 + 8 * k, 0x0050_0000 + 0x100 * k);
+            }
+            tw.write(s + 0x24, &[0x80 | i as u8]);
+        }
+        let dst = tw.zeros(0x28 * 3);
+        for ret in [0x0066_0000, 0] {
+            tw.stub(sh::PHYRE_MALLOC, false, 2, 0, ret);
+            for (d, n) in [(dst, 3), (dst, 0), (0, 1)] {
+                tw.write(dst, &[0xee; 0x28 * 3]);
+                let label = format!("{what} render passes copy {d:#x} {n} alloc {ret:#x}");
+                tw.run_void(&label, 0x004e_1ae0, Conv::Cdecl, &[d, src, n], |g| {
+                    sh::bridge::render_passes_copy(g, d, src, n);
+                });
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The rendering utility's teardown over its globals: tagged arrays
+/// owned, external, null; constant buffers bound and not, owned,
+/// external, null (the callees stubbed; `isBound` answers from the
+/// buffer's `+0x38` as the original does).
+#[test]
+fn m5p_scene_h_render_resources() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sh::LOCK_RELEASE, true, 0, 0, 0);
+        tw.stub(sh::RELEASE_TAGGED, false, 2, 0, 0x0bad_0023);
+        tw.stub(sh::CB_RELEASE, true, 0, 0, 0x0bad_0024);
+        tw.stub(sh::CONSTANT_BUFFER_DTOR, true, 0, 0, 0x0bad_0025);
+        tw.stub(sh::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let tagged = tw.rebase(sh::TAGGED);
+        let cbs = tw.rebase(sh::CONSTANT_BUFFERS);
+        let scratch = tw.rebase(sh::SCRATCH[0]);
+        let saved: Vec<u8> = Oracle::read(&mut tw.a, tagged, 0x20).unwrap();
+        let buffers = tw.zeros(0x3c * 3);
+        tw.w32(buffers + 0x38, 1);
+        tw.w32(buffers + 0x3c * 2 + 0x38, 7);
+        for (tc, tb) in [(0, 0), (3, 0x0012_3000), (0x8000_0002, 0x0012_3000), (2, 0)] {
+            for (cc, cb) in [
+                (0, 0),
+                (0, buffers),
+                (3, buffers),
+                (0x8000_0003, buffers),
+                (0x8000_0000, 0),
+            ] {
+                tw.w32(tagged, tc);
+                tw.w32(tagged + 4, tb);
+                tw.write(scratch, &[0x11, 0x22, 0x33, 0x44]);
+                tw.w32(scratch + 4, 0x0014_0000);
+                tw.w32(scratch + 8, 0x3333);
+                tw.w32(cbs, cc);
+                tw.w32(cbs + 4, cb);
+                let label =
+                    format!("{what} render resources ({tc:#x}, {tb:#x}) ({cc:#x}, {cb:#x})");
+                tw.run(&label, 0x004f_dca0, Conv::Cdecl, &[], |g| {
+                    sh::bridge::render_resources_release(g)
+                });
+            }
+        }
+        tw.write(tagged, &saved);
+        tw.unstub();
+    }
+}
+
+/// The animation's time range: clips' ranges from a stand-in that writes
+/// the next pair of a table (or fails), own ranges ordered, reversed and
+/// NaN, no clips, a missing controller.
+#[test]
+fn m5p_scene_h_time_range() {
+    for (what, mut tw) in Twins::all() {
+        let frame = tw.b.stack_range().start + 0x1000;
+        // the stand-in: k = [table]; *start = table[1 + 2k]; *end =
+        // table[2 + 2k]; [table] = k + 1; eax = [table + 0x40]
+        let table = tw.zeros(0x44);
+        let mut c = vec![0x53]; // push ebx
+        c.extend([0x8b, 0x1d]);
+        c.extend(table.to_le_bytes()); // mov ebx, [table]
+        c.extend([0x8b, 0x04, 0xdd]);
+        c.extend((table + 4).to_le_bytes()); // mov eax, [table + 4 + ebx*8]
+        c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+        c.extend([0x89, 0x02]); // mov [edx], eax
+        c.extend([0x8b, 0x04, 0xdd]);
+        c.extend((table + 8).to_le_bytes()); // mov eax, [table + 8 + ebx*8]
+        c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+        c.extend([0x89, 0x02]); // mov [edx], eax
+        c.extend([0xff, 0x05]);
+        c.extend(table.to_le_bytes()); // inc dword [table]
+        c.push(0xa1);
+        c.extend((table + 0x40).to_le_bytes()); // mov eax, [table + 0x40]
+        c.push(0x5b); // pop ebx
+        c.extend([0xc2, 0x08, 0x00]); // ret 8
+        let code = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), code);
+        let at = tw.rebase(sh::CLIP_RANGE);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        tw.write(at, &j);
+        // two tables of clip ranges: ordinary ones, and ties of signed
+        // zeros and NaNs (which the compares keep or drop as the original)
+        let tables: [[(f32, f32); 3]; 2] = [
+            [(1.0, 5.0), (0.5, 3.0), (2.0, 9.0)],
+            [(0.0, 5.0), (-0.0, f32::NAN), (f32::NAN, 5.0)],
+        ];
+        let ctrls: Vec<u32> = (0..3).map(|_| tw.zeros(0x30)).collect();
+        let clips = tw.zeros(0x10);
+        for (i, &ctl) in ctrls.iter().enumerate() {
+            let clip = tw.zeros(0x30);
+            tw.w32(clip + 0x24, ctl);
+            tw.w32(clips + 4 * i as u32, clip);
+        }
+        let anim = tw.zeros(0x20);
+        tw.w32(anim + 8, clips);
+        let out = tw.zeros(8);
+        for (t, pairs) in tables.iter().enumerate() {
+            let mut words = Vec::new();
+            for (a, b) in pairs {
+                words.extend(a.to_le_bytes());
+                words.extend(b.to_le_bytes());
+            }
+            for count in [0, 1, 3, 0x8000_0002] {
+                for (own_lo, own_hi) in [
+                    (0.0f32, 10.0f32),
+                    (4.0, 2.0),
+                    (f32::NAN, 1.0),
+                    (0.25, 0.25),
+                    (-1.0, 4.0),
+                ] {
+                    for fail in [0, 3] {
+                        tw.write(table + 4, &words);
+                        tw.w32(table, 0);
+                        tw.w32(table + 0x40, fail);
+                        tw.w32(anim + 4, count);
+                        tw.write(anim + 0x14, &own_lo.to_le_bytes());
+                        tw.write(anim + 0x18, &own_hi.to_le_bytes());
+                        tw.w32(out, 0x5555_5555);
+                        tw.w32(out + 4, 0x6666_6666);
+                        let label = format!(
+                            "{what} time range table {t} {count:#x} own ({own_lo}, {own_hi}) fail {fail}"
+                        );
+                        tw.run(
+                            &label,
+                            0x0051_6a20,
+                            Conv::Thiscall(anim),
+                            &[out, out + 4],
+                            |g| sh::bridge::time_range(g, anim, out, out + 4, frame),
+                        );
+                    }
+                }
+            }
+        }
+        // a missing controller (second clip)
+        let second_clip = tw.r32(clips + 4);
+        tw.w32(second_clip + 0x24, 0);
+        tw.w32(anim + 4, 3);
+        tw.w32(table, 0);
+        tw.w32(table + 0x40, 0);
+        let label = format!("{what} time range, no controller");
+        tw.run(
+            &label,
+            0x0051_6a20,
+            Conv::Thiscall(anim),
+            &[out, out + 4],
+            |g| sh::bridge::time_range(g, anim, out, out + 4, frame),
+        );
+        // and the first clip's
+        let first_clip = tw.r32(clips);
+        tw.w32(first_clip + 0x24, 0);
+        let label = format!("{what} time range, no first controller");
+        tw.run(
+            &label,
+            0x0051_6a20,
+            Conv::Thiscall(anim),
+            &[out, out + 4],
+            |g| sh::bridge::time_range(g, anim, out, out + 4, frame),
+        );
+        tw.unstub();
+    }
+}
