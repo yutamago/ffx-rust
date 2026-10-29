@@ -1583,3 +1583,659 @@ fn builders_and_records_match_the_original() {
         }
     }
 }
+
+// ---- batch 3 (ffx_pcore::m5p_core_c) ----
+
+use ffx_pcore::m5p_core_c::{self as cc, bridge as bc};
+
+/// A bump allocator in place of `PhyreMalloc(size, align)`: 16-byte
+/// steps from the block in `cell`; `left` allocations succeed, then 0
+/// (`u32::MAX`: always).
+fn bump_malloc(t: &mut Twins, size: usize) -> (u32, u32) {
+    // junk in the pool: the callers' own stores must show
+    let junk: Vec<u8> = (0..size).map(|i| (i * 37 + 11) as u8).collect();
+    let pool = t.alloc(&junk);
+    let cell = t.alloc(&pool.to_le_bytes());
+    let left = t.alloc(&u32::MAX.to_le_bytes());
+    let mut c = vec![0xa1];
+    c.extend(left.to_le_bytes()); // mov eax, [left]
+    c.extend([0x85, 0xc0, 0x74, 0x1c]); // test eax, eax; je fail
+    c.extend([0xff, 0x0d]);
+    c.extend(left.to_le_bytes()); // dec dword [left]
+    c.push(0xa1);
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    c.extend([0x83, 0xc2, 0x0f, 0x83, 0xe2, 0xf0]); // round up to 16
+    c.extend([0x01, 0x15]);
+    c.extend(cell.to_le_bytes()); // add [cell], edx
+    c.push(0xc3);
+    c.extend([0x31, 0xc0, 0xc3]); // fail: xor eax, eax; ret
+    let code = t.code(&c);
+    let at = t.rebase(cc::PHYRE_MALLOC);
+    t.jump(at, code);
+    (cell, left)
+}
+
+#[test]
+fn lookups_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d201);
+        // the tree lookup by name over real trees (the successor copy runs)
+        let names: Vec<u32> = ["", "alpha", "beta", "gamma", "alphabet"]
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        for _ in 0..16 {
+            let n = rng.below(7) as usize;
+            let tr = t.zeros(0x20);
+            if n == 0 {
+                t.w32(tr + 0xc, tr);
+            } else {
+                let nodes = build_tree(&mut t, &mut rng, tr, n);
+                for &x in &nodes {
+                    let obj = if rng.chance(4) {
+                        0
+                    } else {
+                        let o = t.random(&mut rng, 0x20);
+                        t.w32(o + 0x18, names[rng.below(5) as usize]);
+                        o
+                    };
+                    t.w32(x + 0xc, obj);
+                }
+            }
+            for k in 0..3 {
+                let name = if k == 0 {
+                    0
+                } else {
+                    names[rng.below(5) as usize]
+                };
+                t.check(
+                    "find by name",
+                    0x0047_d330,
+                    Conv::Thiscall(tr),
+                    &[name],
+                    ALL,
+                    |g| bc::find_by_name(g, tr, name),
+                );
+            }
+        }
+        // 16-bit indices widened through the real resize on a stubbed allocator
+        let (cell, left) = bump_malloc(&mut t, 0x4000);
+        t.stub(c::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        for case in 0..16u32 {
+            let this = t.random(&mut rng, 0x20);
+            let n = rng.below(6);
+            t.w32(this, n);
+            let fmt = match case % 4 {
+                0 => 8,
+                1 => rng.next() as u8,
+                _ => 0xc,
+            };
+            t.w8(this + 0x19, fmt);
+            let src = t.random(&mut rng, 16);
+            t.w32(this + 8, src);
+            let out = if case % 5 == 0 { 0 } else { t.zeros(8) };
+            t.w32(left, if case % 7 == 3 { 0 } else { u32::MAX });
+            t.check(
+                "indices32",
+                0x0049_bd10,
+                Conv::Thiscall(this),
+                &[out],
+                ALL,
+                |g| bc::indices32(g, this, out),
+            );
+        }
+        let _ = cell;
+        // free-list merges: chains of 0..3 nodes, sizes equal or not
+        for case in 0..8u32 {
+            let this = t.random(&mut rng, 0x20);
+            let other = t.random(&mut rng, 0x20);
+            let size = rng.next();
+            t.w32(this + 4, size);
+            t.w32(other + 4, if case % 4 == 0 { size ^ 1 } else { size });
+            for at in [0u32, 0x14] {
+                for list in [this, other] {
+                    let mut head = 0u32;
+                    for _ in 0..rng.below(4) {
+                        let node = t.alloc(&head.to_le_bytes());
+                        head = node;
+                    }
+                    t.w32(list + at, head);
+                }
+            }
+            t.check(
+                "free list merge",
+                0x0049_c730,
+                Conv::Thiscall(this),
+                &[other],
+                ALL,
+                |g| bc::free_list_merge(g, this, other),
+            );
+        }
+    }
+}
+
+#[test]
+fn shader_passes_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d202);
+        let cell = t.zeros(4);
+        let fresh = t.zeros(0x400);
+        t.stub(cc::PHYRE_MALLOC, false, 2, 0, Ret::Cell(cell));
+        t.stub(cc::COPY2, false, 3, 0, Ret::Imm(0x2d00_0000));
+        t.stub(cc::COPY16, false, 3, 0, Ret::Imm(0x2d70_0000));
+        for case in 0..12u32 {
+            let src = t.random(&mut rng, 0x18);
+            t.w32(src + 0x10, count_word(&mut rng));
+            let this = t.random(&mut rng, 0x18);
+            t.w32(cell, if case % 4 == 0 { 0 } else { fresh });
+            t.check(
+                "pass array2",
+                0x004b_bc30,
+                Conv::Thiscall(this),
+                &[src],
+                ALL,
+                |g| bc::pass_array_copy(g, this, src, 2, 2, cc::COPY2),
+            );
+            t.check(
+                "pass array16",
+                0x004b_bdc0,
+                Conv::Thiscall(this),
+                &[src],
+                ALL,
+                |g| bc::pass_array_copy(g, this, src, 16, 4, cc::COPY16),
+            );
+        }
+        t.stub(cc::PASS_ARRAY2_COPY, true, 1, 1, Ret::Imm(0xbc30_0000));
+        t.stub(cc::PASS_ARRAY16_COPY, true, 1, 1, Ret::Imm(0xbdc0_0000));
+        for _ in 0..3 {
+            let src = t.random(&mut rng, 0x254);
+            let this = t.random(&mut rng, 0x254);
+            t.check(
+                "shader pass",
+                0x004b_bcb0,
+                Conv::Thiscall(this),
+                &[src],
+                ALL,
+                |g| bc::shader_pass_copy(g, this, src),
+            );
+        }
+    }
+}
+
+#[test]
+fn evaluators_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d203);
+        // the LOD level: no level, below or at the cap, no levels
+        for case in 0..16u32 {
+            let shader = t.random(&mut rng, 0x40);
+            t.w32(shader + 0x3c, rng.below(4));
+            let segment = t.random(&mut rng, 0x24);
+            if case % 4 == 0 {
+                t.w32(segment + 0x20, 0);
+            } else {
+                let q = t.random(&mut rng, 0x34);
+                t.w32(q + 0x30, rng.below(5));
+                let p = t.alloc(&q.to_le_bytes());
+                t.w32(segment + 0x20, p);
+            }
+            let cursor = t.zeros(4);
+            let at = if case == 5 {
+                cursor
+            } else {
+                t.random(&mut rng, 8)
+            };
+            t.w32(cursor, at);
+            let args = [
+                shader,
+                segment,
+                rng.next(),
+                cursor,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check("lod level", 0x004d_4430, Conv::Stdcall, &args, ALL, |g| {
+                bc::lod_level(g, shader, segment, cursor)
+            });
+        }
+        // the orthographic camera test: no pointer, no camera, the float
+        for case in 0..40u32 {
+            let camera = match case % 8 {
+                0 => 0,
+                1 => t.zeros(4),
+                _ => {
+                    let cam = t.random(&mut rng, 0x70);
+                    let w = if case % 3 == 0 {
+                        t.r32(t.rebase(cc::ORTHO_THRESHOLD))
+                    } else if case % 8 == 7 {
+                        // unordered counts as at least
+                        0x7fc0_1234 | (rng.next() & 0x8000_0000)
+                    } else {
+                        float_word(&mut rng)
+                    };
+                    t.w32(cam + 0x6c, w);
+                    t.alloc(&cam.to_le_bytes())
+                }
+            };
+            let cursor = t.zeros(4);
+            let at = t.random(&mut rng, 8);
+            t.w32(cursor, at);
+            let args = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                cursor,
+                rng.next(),
+                camera,
+            ];
+            t.check(
+                "ortho camera",
+                0x004d_4480,
+                Conv::Stdcall,
+                &args,
+                ALL,
+                |g| bc::ortho_camera(g, cursor, camera),
+            );
+        }
+        // the LOD level's per-segment arrays
+        let (cell, left) = bump_malloc(&mut t, 0x8000);
+        t.stub(cc::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        t.stub(
+            cc::SEGMENT_ARRAYS_RELEASE,
+            false,
+            2,
+            0,
+            Ret::Imm(0x3720_0000),
+        );
+        for case in 0..32u32 {
+            let shader = t.random(&mut rng, 0x40);
+            let n = rng.below(4);
+            t.w32(shader + 0x3c, n);
+            let arrays = t.zeros(8);
+            match case % 4 {
+                0 => {}
+                1 => {
+                    // already n headers, some with one word
+                    let block = t.zeros(8 * 4);
+                    for k in 0..n {
+                        let e = block + 8 * k;
+                        if rng.chance(3) {
+                            t.w32(e, 1);
+                            let w = t.random(&mut rng, 4);
+                            t.w32(e + 4, w);
+                        } else {
+                            // not exactly 1 (one word, read as the index slot)
+                            let c = count_word(&mut rng);
+                            let c = if c == 1 { 2 } else { c };
+                            // external every other one: kept, not freed
+                            t.w32(e, if k % 2 == 1 { c | 0x8000_0000 } else { c });
+                            let w = if rng.chance(3) {
+                                0
+                            } else {
+                                t.random(&mut rng, 4)
+                            };
+                            t.w32(e + 4, w);
+                        }
+                    }
+                    t.w32(arrays, n);
+                    t.w32(arrays + 4, block);
+                }
+                _ => {
+                    t.w32(arrays, count_word(&mut rng));
+                    let d = t.random(&mut rng, 8);
+                    t.w32(arrays + 4, d);
+                }
+            }
+            t.w32(
+                left,
+                if case % 4 == 3 {
+                    case / 4 % 3
+                } else {
+                    u32::MAX
+                },
+            );
+            t.check(
+                "segment arrays",
+                0x004d_5400,
+                Conv::Stdcall,
+                &[shader, arrays],
+                ALL,
+                |g| bc::lod_segment_arrays(g, shader, arrays),
+            );
+        }
+        let _ = cell;
+        // the light-type define, built by the real PStringBuilder members
+        t.stub(cc::RELEASE_TAGGED_WORDS, false, 2, 0, Ret::Imm(0x4360_0000));
+        let names: Vec<u32> = ["LIGHT", "", "SPOT_SHADOW"]
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        for case in 0..24u32 {
+            let this = t.random(&mut rng, 8);
+            t.w32(this + 4, names[case as usize % 3]);
+            let values = t.random(&mut rng, 8);
+            if case % 4 == 0 {
+                t.w32(values, 0);
+            }
+            let cursor = t.alloc(&values.to_le_bytes());
+            let defines = t.zeros(8);
+            if case % 3 == 1 {
+                t.w32(defines, 1);
+                let s = t.zeros(4);
+                t.w32(
+                    s,
+                    if case % 2 == 0 {
+                        0x0bad_0001
+                    } else {
+                        0x0bad_0000
+                    },
+                );
+                t.w32(defines + 4, s);
+            } else {
+                t.w32(defines, count_word(&mut rng));
+                let d = t.random(&mut rng, 8);
+                t.w32(defines + 4, d);
+            }
+            // the defines word or the final copy fails (the builder's own
+            // allocation failing would crash the original too)
+            let needs = t.r32(defines) != 1;
+            let fail = match (case % 4, case / 4 % 2, needs) {
+                (2, 0, true) => 0,
+                (2, _, false) => 1,
+                (2, _, true) => 2,
+                _ => u32::MAX,
+            };
+            t.w32(left, fail);
+            let local = t.b.stack_range().start + 0x300;
+            let a1 = rng.next();
+            t.check(
+                "light define",
+                0x004d_46a0,
+                Conv::Thiscall(this),
+                &[cursor, a1, defines],
+                ALL,
+                |g| bc::light_define(g, this, cursor, defines, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn registers_and_validations_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d204);
+        t.stub(cc::CLASS_REGISTER, true, 2, 2, Ret::Imm(0x3d6a_0000));
+        t.stub(cc::ATEXIT, false, 1, 0, Ret::Imm(0));
+        let mut ctors: Vec<u32> = Vec::new();
+        for &(_, l) in cc::LAZY {
+            if !ctors.contains(&l.ctor) {
+                ctors.push(l.ctor);
+                t.stub(l.ctor, true, 0, 0, Ret::Imm(0x0c70_0000));
+            }
+        }
+        for &(f, l) in cc::LAZY {
+            assert_eq!(format!("{:?}", cc::lazy_of(f)), format!("{l:?}"));
+            for first in [true, false] {
+                let guard = t.rebase(l.guard);
+                let g = t.r32(guard);
+                t.w32(guard, if first { g & !1 } else { g | 1 });
+                // flag bits the build clears (bit 1 only)
+                let flags = t.rebase(l.descriptor) + 0x90;
+                t.w32(flags, rng.next() | 3);
+                let p = rng.next();
+                t.check("lazy register", f, Conv::Cdecl, &[p], ALL, |g| {
+                    bc::lazy_register(g, p, l)
+                });
+            }
+        }
+        // the external buffer with its destroy
+        t.stub(cc::SLOT_FILTER_FREE, false, 2, 0, Ret::Imm(0x8a30_0000));
+        for case in 0..12u32 {
+            let this = array_header(&mut t, &mut rng, 0x20);
+            let data = if case % 3 == 0 {
+                t.r32(this + 4)
+            } else {
+                rng.next()
+            };
+            let n = if case % 4 == 0 {
+                0x8000_0001
+            } else {
+                rng.below(9)
+            };
+            t.check(
+                "set external",
+                0x0052_ab30,
+                Conv::Thiscall(this),
+                &[data, n],
+                ALL,
+                |g| bc::slot_filters_set_external(g, this, data, n),
+            );
+        }
+        // the two-stage validation: each check yes or no, with or without
+        // a target
+        let yes = t.zeros(4);
+        for case in 0..16u32 {
+            let code1 = t.stub_code(0x531b_0004, true, 2, 2, Ret::Cell(yes));
+            let code3 = t.stub_code(0x531b_000c, true, 2, 2, Ret::Imm(0x5555_5502));
+            let vt = t.alloc(
+                &[0, code1, 0, code3]
+                    .iter()
+                    .flat_map(|w: &u32| w.to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let a = t.random(&mut rng, 8);
+            t.w32(a, vt);
+            let this = t.random(&mut rng, 0x10);
+            let target = if case % 2 == 0 {
+                0
+            } else {
+                let tc = t.stub_code(
+                    0x531b_100c,
+                    true,
+                    2,
+                    2,
+                    Ret::Imm(0x6666_6600 | (case >> 2 & 1)),
+                );
+                let tvt = t.alloc(
+                    &[0, 0, 0, tc]
+                        .iter()
+                        .flat_map(|w: &u32| w.to_le_bytes())
+                        .collect::<Vec<u8>>(),
+                );
+                let o = t.random(&mut rng, 8);
+                t.w32(o, tvt);
+                o
+            };
+            t.w32(this + 0xc, target);
+            t.w32(yes, 0x7777_7700 | (case >> 1 & 1));
+            let v = rng.next();
+            t.check(
+                "validate",
+                0x0053_1b40,
+                Conv::Thiscall(this),
+                &[a, v],
+                ALL,
+                |g| bc::validate_pair(g, this, a, v),
+            );
+        }
+    }
+}
+
+#[test]
+fn animatable_elements_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d205);
+        // the element key: its first word, through a stub that reads it
+        let mut key_code = vec![0x8b, 0x01]; // mov eax, [ecx]
+        key_code.push(0xc3);
+        let key_fn = t.code(&key_code);
+        let at = t.rebase(cc::ELEMENT_KEY);
+        t.jump(at, key_fn);
+        t.stub(cc::ELEMENT_SET, true, 1, 1, Ret::Imm(0x69e0_0000));
+        t.stub(cc::ELEMENT_GET, true, 0, 0, Ret::Imm(0x6a20_0000));
+        t.stub(cc::ELEMENT_SET_B, true, 1, 1, Ret::Imm(0x6a40_0000));
+        for case in 0..12u32 {
+            let n = rng.below(4);
+            let elems = t.random(&mut rng, (0x11c * 4) as usize);
+            for k in 0..n {
+                t.w32(elems + 0x11c * k, 100 + k);
+            }
+            let this = t.zeros(8);
+            t.w32(this, elems);
+            t.w32(this + 4, n);
+            let key = if case % 3 == 0 { 7 } else { 100 + rng.below(4) };
+            let v = rng.next();
+            t.check(
+                "set by key",
+                0x005c_d660,
+                Conv::Thiscall(this),
+                &[key, v],
+                ALL,
+                |g| bc::element_set(g, this, key, v),
+            );
+            t.check(
+                "get by key",
+                0x005c_d6b0,
+                Conv::Thiscall(this),
+                &[key],
+                ALL,
+                |g| bc::element_get(g, this, key),
+            );
+            t.check(
+                "set by key b",
+                0x005c_d700,
+                Conv::Thiscall(this),
+                &[key, v],
+                ALL,
+                |g| bc::element_set_b(g, this, key, v),
+            );
+        }
+        // the element destructor's three arrays
+        t.stub(cc::PHYRE_FREE, false, 1, 0, Ret::Imm(0x0f7e_e000));
+        for _ in 0..12 {
+            let e = t.random(&mut rng, 0x11c);
+            for off in [0x100u32, 0x108, 0x110] {
+                t.w32(e + off, count_word(&mut rng));
+                if rng.chance(3) {
+                    t.w32(e + off + 4, 0);
+                }
+            }
+            t.check(
+                "element dtor",
+                0x005c_d4c0,
+                Conv::Thiscall(e),
+                &[],
+                ALL,
+                |g| bc::element_dtor(g, e),
+            );
+        }
+        // the key hash: a name (tagged or not) or none
+        let names: Vec<u32> = ["", "Bip01", "root_joint", "\x7f\x01zz"]
+            .iter()
+            .map(|s| {
+                let mut v = s.as_bytes().to_vec();
+                v.push(0);
+                t.alloc(&v)
+            })
+            .collect();
+        let keys: Vec<u32> = (0..8)
+            .map(|k| {
+                let key = t.random(&mut rng, 0x1c);
+                let s = match k % 4 {
+                    0 => 0,
+                    1 => 1,
+                    _ => names[rng.below(4) as usize] | (rng.next() & 1),
+                };
+                t.w32(key + 0x14, s);
+                key
+            })
+            .collect();
+        for &key in &keys {
+            t.check("key hash", 0x005c_cd70, Conv::Cdecl, &[key], ALL, |g| {
+                bc::key_hash(g, key)
+            });
+        }
+        assert_eq!(cc::name_hash(b""), 0x7b5);
+        // the map lookup: no map (the owner's fallback), found or not; the
+        // stub copies the key it gets into `seen`
+        let seen = t.zeros(0x20);
+        let found = t.zeros(4);
+        let rec = t.stub_code(cc::MAP_FIND, true, 0, 1, Ret::Cell(found));
+        let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+        c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10]
+        c.push(0xbf);
+        c.extend(seen.to_le_bytes()); // mov edi, seen
+        c.extend([0xb9, 8, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 8; rep movsd
+        c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+        c.extend([0x90; 5]);
+        let code = t.code(&c);
+        t.jump(code + c.len() as u32 - 5, rec);
+        let at = t.rebase(cc::MAP_FIND);
+        t.jump(at, code);
+        t.stub(cc::KEY_FALLBACK, true, 1, 1, Ret::Imm(0xcbb0_0000));
+        for (i, &key) in keys.iter().enumerate() {
+            let this = t.random(&mut rng, 0x10);
+            let base = rng.next() & !3;
+            t.w32(this + 4, if i % 4 == 0 { 0 } else { base });
+            let entry = match i % 3 {
+                0 => 0,
+                1 => base.wrapping_add(0x2c * rng.below(9)),
+                _ => base.wrapping_sub(0x2c * rng.below(9)),
+            };
+            t.w32(found, entry);
+            let local = t.b.stack_range().start + 0x300;
+            t.check(
+                "key index",
+                0x005c_ce50,
+                Conv::Thiscall(this),
+                &[key],
+                ALL,
+                |g| bc::key_index(g, this, key, local),
+            );
+        }
+        // the rigid body's other forward
+        let other = t.rebase(cc::RIGID_BODY_OTHER_CLASS);
+        let want = t.rebase(cc::RIGID_BODY_CLASS);
+        for case in 0..16u32 {
+            let this = t.random(&mut rng, 0x10);
+            let mut chain = 0;
+            for k in 0..rng.below(4) {
+                let cls = match (k, case % 4) {
+                    (0, 1) => other,
+                    (0, 2) => want,
+                    _ => t.random(&mut rng, 0x44),
+                };
+                if cls != other && cls != want {
+                    t.w32(cls + 0x40, chain);
+                }
+                chain = cls;
+            }
+            t.w32(this + 8, chain);
+            let obj = t.object(&mut rng, 0x7005_0000, &[0, 0, 0, 0, 0, 0, 0], 0x10);
+            let p = match case % 5 {
+                0 => 0,
+                1 => 4,
+                _ => obj + 4,
+            };
+            t.w32(this + 4, p);
+            t.check(
+                "rigid body 18",
+                0x005d_3e30,
+                Conv::Thiscall(this),
+                &[],
+                ALL,
+                |g| bc::rigid_body_slot6(g, this),
+            );
+        }
+    }
+}
