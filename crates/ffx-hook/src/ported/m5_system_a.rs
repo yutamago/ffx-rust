@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::bridge as pf;
@@ -1092,6 +1093,70 @@ ported! {
     Fixup_UnpackList @ 0x0060_a750 => extern "C" fn unpack_list(cursor: u32, records: u32, n: u32, count: u32; slots: u32) {
         let mut f = StackFrame::<{ (fx::LIST_FRAME / 4) as usize }>::new();
         fx::unpack_list(&mut mem(), f.at() + fx::LIST_FRAME, cursor, records, slots + 4, n, count);
+    }
+
+    // ---- round 3: archive read requests, VFile, member caches, tree dtors ----
+    /// `0x00573b70(L)`: the Lua vector's negation.
+    PVector4_luaUnm_00573b70 @ 0x0057_3b70 => extern "C" fn lua_vector_negate(lua: u32) -> u32 {
+        fl::lua_vector_negate(&mut mem(), lua)
+    }
+    /// `0x0057a200(this; &cursor, a, b, c)`.
+    MemberCache_findMember_0057a200 @ 0x0057_a200 => extern "thiscall" fn cached_find_member(this: u32, cursor: u32, a: u32, b: u32, c: u32) -> u32 {
+        fl::cached_find_member(&mut mem(), this, cursor, a, b, c)
+    }
+    /// `Fixup_FindMember(this; index, &cursor, a, &element, b)`.
+    Fixup_FindMember @ 0x0057_a280 => extern "thiscall" fn fixup_find_member(this: u32, index: u32, cursor: u32, a: u32, element: u32, b: u32) -> u32 {
+        fl::fixup_find_member(&mut mem(), this, index, cursor, a, element, b)
+    }
+    /// `0x0060ac50(a, b)`: a sort predicate.
+    FixupRecord_less_0060ac50 @ 0x0060_ac50 => extern "C" fn record_less_60ac50(a: u32, b: u32) -> u32 {
+        fl::record_less(&mem(), &fl::LESS_60AC50, a, b)
+    }
+    /// `0x0060ad00(a, b)`: a sort predicate.
+    FixupRecord_less_0060ad00 @ 0x0060_ad00 => extern "C" fn record_less_60ad00(a: u32, b: u32) -> u32 {
+        fl::record_less(&mem(), &fl::LESS_60AD00, a, b)
+    }
+    /// `0x0060d460` (`ecx`; unwinding).
+    PRedBlackTree_dtor_0060d460 @ 0x0060_d460 => extern "thiscall" fn tree_dtor_60d460(this: u32) {
+        fl::tree_dtor(&mut mem(), this);
+    }
+    /// `0x0060d550` (`ecx`; unwinding).
+    PooledTree_dtor_0060d550 @ 0x0060_d550 => extern "thiscall" fn pooled_tree_dtor(this: u32) {
+        fl::pooled_tree_dtor(&mut mem(), this);
+    }
+    /// `0x0060d5d0` (`ecx`; unwinding).
+    OwnedArrayTree_dtor_0060d5d0 @ 0x0060_d5d0 => extern "thiscall" fn owned_array_dtor(this: u32) {
+        fl::owned_array_dtor(&mut mem(), this);
+    }
+    /// `0x0061a690(this)`: frame `ebp - 0x40` (the identity it converts).
+    Phyre_PWorldMatrixController_ctor_0061a690 @ 0x0061_a690 => extern "thiscall" fn world_matrix_controller_ctor(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (fl::MATRIX_FRAME / 4) as usize }>::new();
+        fl::controller_ctor(&mut mem(), f.at() + fl::MATRIX_FRAME, this)
+    }
+    /// `0x0061a770(this; out)` (vtable slot 4): frame `ebp - 0x44`.
+    Phyre_PWorldMatrixController_getAxis_0061a770 @ 0x0061_a770 => extern "thiscall" fn world_matrix_controller_axis(this: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<{ (fl::AXIS_FRAME / 4) as usize }>::new();
+        fl::controller_axis(&mut mem(), f.at() + fl::AXIS_FRAME, this, out)
+    }
+    /// `VFile_VFile(this)`.
+    VFile_VFile @ 0x0061_a860 => extern "thiscall" fn vfile_ctor(this: u32) -> u32 {
+        fl::vfile_ctor(&mut mem(), this)
+    }
+    /// `0x0061b030(this)`.
+    VFile_freeBuffers_0061b030 @ 0x0061_b030 => extern "thiscall" fn vfile_free_buffers(this: u32) {
+        fl::vfile_free_buffers(&mut mem(), this);
+    }
+    /// `0x0061b270(id)`.
+    AtlFindStringResource_0061b270 @ 0x0061_b270 => extern "C" fn find_string_resource(id: u32) -> u32 {
+        fl::find_string_resource(&mut mem(), id)
+    }
+    /// `0x0061b740(this; lo, hi, size, total)`.
+    BigFileStream_setUpSlot_0061b740 @ 0x0061_b740 => extern "thiscall" fn set_up_slot(this: u32, lo: u32, hi: u32, size: u32, total: u32) -> u32 {
+        fl::set_up_slot(&mut mem(), this, lo, hi, size, total)
+    }
+    /// `FileSys_NewReadRequest(this; file, length, req, lo, hi, info)`.
+    FileSys_NewReadRequest @ 0x0061_b7e0 => extern "thiscall" fn new_read_request(this: u32, file: u32, length: u32, req: u32, lo: u32, hi: u32, info: u32) -> u32 {
+        fl::new_read_request(&mut mem(), this, file, length, req, lo, hi, info)
     }
 }
 

@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
@@ -4949,6 +4950,384 @@ fn fixup_unpack_lists_match_the_original() {
                 let y: u32 = Mem::read(&t.b, slots + 4);
                 assert_eq!(x, y, "{what}: the records slot");
             }
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_files) ----
+
+/// Code that copies `len` bytes from `src` to the pointer in stack word
+/// `arg` (as the caller pushed it), then jumps to `next` (a stub from
+/// [`Twins::stub_code_writes`] or [`Twins::stub_code`]). Returns its
+/// address.
+fn write_then(t: &mut Twins, arg: u32, src: u32, len: u32, next: u32) -> u32 {
+    let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+    c.extend([0x8b, 0x7c, 0x24, (0x10 + 4 * arg) as u8]); // mov edi, [esp+0x10+4arg]
+    c.push(0xb9);
+    c.extend(len.to_le_bytes()); // mov ecx, len
+    c.push(0xbe);
+    c.extend(src.to_le_bytes()); // mov esi, src
+    c.extend([0xf3, 0xa4]); // rep movsb
+    c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(next.wrapping_sub(here).to_le_bytes()); // jmp next
+    t.cave_code(&c)
+}
+
+/// The member caches `0x0057a200` and `Fixup_FindMember`: hits, misses
+/// (the lookup found or not, moving the cursor and writing the element),
+/// indices inside and outside the class's member table.
+#[test]
+fn files_member_caches_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0301);
+        for case in 0..80 {
+            t.reset();
+            let small = |rng: &mut Rng| rng.below(3);
+            let class = t.words(&[0, 0, 0, 0, rng.below(6)]);
+            let members = if rng.chance(5) { 0 } else { rng.next() & !0x1f };
+            let view = t.words(&[class, 0, 0, 0, 0, 0, members]);
+            let cache: Vec<u32> = (0..9)
+                .map(|k| match k {
+                    0 => view,
+                    1..=3 => small(&mut rng),
+                    _ => rng.next(),
+                })
+                .collect();
+            let cache = t.words(&cache);
+            let cursor = t.words(&[rng.next()]);
+            let moved = t.words(&[rng.next()]);
+            let element = t.words(&[rng.next()]);
+            let elem = t.words(&[rng.next()]);
+            let found = if rng.chance(3) { 0 } else { rng.next() };
+            // the lookups move the cursor (arg 1) and the second writes the
+            // element (arg 3)
+            let next = t.stub_code(fl::FIND_MEMBER, true, 4, 4, found);
+            let at = write_then(t, 1, moved, 4, next);
+            t.jump(fl::FIND_MEMBER, at);
+            let found2 = if rng.chance(3) { 0 } else { rng.next() };
+            let next = t.stub_code(fl::FIND_MEMBER_BY_OFFSET, true, 4, 4, found2);
+            let next = write_then(t, 3, elem, 4, next);
+            let at = write_then(t, 1, moved, 4, next);
+            t.jump(fl::FIND_MEMBER_BY_OFFSET, at);
+            let (a, b, c) = (small(&mut rng), small(&mut rng), small(&mut rng));
+            let what = format!("0x0057a200 #{case} {a} {b} {c}");
+            t.check(
+                &what,
+                0x0057_a200,
+                Conv::Thiscall(cache),
+                &[cursor, a, b, c],
+                |m| Out::U32(fl::cached_find_member(m, cache, cursor, a, b, c)),
+            );
+            let index = [rng.below(8), 0xffff_ffff, rng.next()][rng.below(3) as usize];
+            let what = format!("Fixup_FindMember #{case} index {index:#x} {a} {b}");
+            t.check(
+                &what,
+                0x0057_a280,
+                Conv::Thiscall(cache),
+                &[index, cursor, a, element, b],
+                |m| {
+                    Out::U32(fl::fixup_find_member(
+                        m, cache, index, cursor, a, element, b,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+/// The sort predicates `0x0060ac50` and `0x0060ad00` on records of small
+/// words (ties down to the last field) and top bits set or not; the tree
+/// set destructors `0x0060d460`, `0x0060d550`, `0x0060d5d0` (array owned
+/// or not, set or not), `VFile_VFile` (the record allocation failing or
+/// not) and `0x0061b030` (each record and block there or not).
+#[test]
+fn files_small_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0302);
+        for case in 0..300 {
+            t.reset();
+            let word = |rng: &mut Rng| rng.below(2) | (rng.below(2) << 31);
+            let a: Vec<u32> = (0..7).map(|_| word(&mut rng)).collect();
+            // b a copy of a with two fields changed (late ties), or
+            // anything
+            let mut b = a.clone();
+            for _ in 0..2 {
+                let k = rng.below(7) as usize;
+                b[k] = word(&mut rng);
+            }
+            if rng.chance(3) {
+                b = (0..7).map(|_| word(&mut rng)).collect();
+            }
+            let (a, b) = (t.words(&a), t.words(&b));
+            for (sym, fields) in [
+                (0x0060_ac50u32, &fl::LESS_60AC50[..]),
+                (0x0060_ad00, &fl::LESS_60AD00[..]),
+            ] {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[a, b], |m| {
+                    Out::U32(fl::record_less(m, fields, a, b))
+                });
+            }
+            t.stubs(&[
+                (fl::TREE_CLEAR, true, 0, 0, rng.next()),
+                (fl::TREE_ORPHAN_ALL, true, 0, 0, rng.next()),
+                (fl::FREE_LIST_RESET, true, 0, 0, rng.next()),
+                (fl::FREE_LIST_DTOR, true, 0, 0, rng.next()),
+                (fl::PHYRE_FREE, false, 1, 0, rng.next()),
+                (fl::DELETE_ARRAY, false, 1, 0, rng.next()),
+                (fl::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let mut w: Vec<u32> = (0..0x20).map(|_| rng.next()).collect();
+            w[3] = match rng.below(3) {
+                0 => rng.below(0x100),
+                1 => 0x4000_0000 | rng.below(0x100),
+                _ => 0x8000_0000 | rng.next(),
+            };
+            w[4] = if rng.chance(4) { 0 } else { rng.next() };
+            let this = t.words(&w);
+            for (k, sym) in [0x0060_d460u32, 0x0060_d550, 0x0060_d5d0]
+                .into_iter()
+                .enumerate()
+            {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Thiscall(this), &[], |m| {
+                    match k {
+                        0 => fl::tree_dtor(m, this),
+                        1 => fl::pooled_tree_dtor(m, this),
+                        _ => fl::owned_array_dtor(m, this),
+                    }
+                    Out::None
+                });
+            }
+            let rec = if rng.chance(4) {
+                0
+            } else {
+                t.words(&(0..6).map(|_| rng.next() | 1).collect::<Vec<_>>())
+            };
+            let block = rng.next();
+            t.stub(fl::OPERATOR_NEW, false, 1, 0, rec);
+            t.stub(fl::NEW_ARRAY, false, 1, 0, block);
+            let vfile = t.words(&(0..8).map(|_| rng.next()).collect::<Vec<_>>());
+            let what = format!("VFile_VFile #{case}");
+            t.check(&what, 0x0061_a860, Conv::Thiscall(vfile), &[], |m| {
+                Out::U32(fl::vfile_ctor(m, vfile))
+            });
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let r = if rng.chance(4) {
+                    0
+                } else {
+                    let blk = if rng.chance(3) { 0 } else { rng.next() };
+                    t.words(&[rng.next(), blk])
+                };
+                recs.push(r);
+            }
+            let v = t.words(&[0, 0, recs[0], recs[1], recs[2]]);
+            let what = format!("0x0061b030 #{case}");
+            t.check(&what, 0x0061_b030, Conv::Thiscall(v), &[], |m| {
+                fl::vfile_free_buffers(m, v);
+                Out::None
+            });
+        }
+    });
+}
+
+/// `0x0061a690` (the world-matrix controller's constructor, the real
+/// `PMatrix4_toWorldMatrix3x4` on the identity in its frame) and the
+/// controller's `0x0061a770` (the real `PMatrix4_FromMatrix3x4` into its
+/// frame, then the normalised axis): random finite 3x4 matrices, zero
+/// axes (an infinite inverse, NaN products) now and then.
+#[test]
+fn files_world_matrix_controller_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0303);
+        for case in 0..60 {
+            t.reset();
+            let this = t.alloc(&(0..0x80).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("0x0061a690 #{case}");
+            t.check_framed(
+                &what,
+                0x0061_a690,
+                Conv::Thiscall(this),
+                &[],
+                fl::MATRIX_FRAME,
+                |m, ebp| Out::U32(fl::controller_ctor(m, ebp, this)),
+            );
+            let zero = rng.chance(6);
+            for k in 0..12u32 {
+                let v = if zero && (8..11).contains(&k) {
+                    0.0f32
+                } else {
+                    f32::from(rng.next() as i16) / 16.0
+                };
+                t.write(this + 4 + 4 * k, &v.to_le_bytes());
+            }
+            let out = t.zeros(12);
+            // the original's float temporary at ebp - 4 has no counterpart
+            t.skip = 4;
+            let what = format!("0x0061a770 #{case} zero {zero}");
+            t.check_framed(
+                &what,
+                0x0061_a770,
+                Conv::Thiscall(this),
+                &[out],
+                fl::AXIS_FRAME,
+                |m, ebp| Out::U32(fl::controller_axis(m, ebp, this, out)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `0x0061b270` (no module, a module without the block, the second
+/// module's string), `0x0061b740` (offsets 0, inside and past the first
+/// block, 64-bit ones; totals around the block size) and
+/// `FileSys_NewReadRequest` (offsets of 0..4 blocks, packed sizes of 0
+/// and others, 64-bit stored offsets), the callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // three functions, one case setup
+fn files_read_requests_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0304);
+        for case in 0..80 {
+            t.reset();
+            let mods: Vec<u32> = (0..4)
+                .map(|k| if k >= rng.below(4) { 0 } else { rng.next() | 1 })
+                .collect();
+            stub_seq(t, fl::RESOURCE_MODULE, true, 1, 1, &mods);
+            let infos: Vec<u32> = (0..4)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            t.stub_import_seq(fl::FIND_RESOURCE_IAT, 3, 3, &infos);
+            let strs: Vec<u32> = (0..4)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, fl::STRING_RESOURCE, false, 3, 0, &strs);
+            let id = [rng.next() & 0xf_ffff, 0xffff0 | rng.below(0x10), rng.next()]
+                [rng.below(3) as usize];
+            let what = format!("0x0061b270 #{case}");
+            t.check(&what, 0x0061_b270, Conv::Cdecl, &[id], |m| {
+                Out::U32(fl::find_string_resource(m, id))
+            });
+            // 0x0061b740
+            t.reset();
+            let recs: Vec<u32> = (0..3).map(|_| t.zeros(0x10)).collect();
+            let mut slot: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            slot[2] = recs[0];
+            slot[3] = recs[1];
+            slot[4] = recs[2];
+            slot[9] = rng.below(5);
+            let slot = t.words(&slot);
+            t.stub(fl::CLAIM_SLOT, true, 1, 1, slot);
+            let size = [0x10000, 0x10, 1, 0x7fff_ffff, 0xffff_ff00][rng.below(5) as usize];
+            let lo = [0, 1, size / 2, size, size + 1, rng.next()][rng.below(6) as usize];
+            let hi = [0, 0, 0, 1, 0xffff_ffff][rng.below(5) as usize];
+            let total = [
+                0,
+                1,
+                size - 1,
+                size,
+                size + 1,
+                size.wrapping_mul(3).wrapping_add(5),
+                rng.next(),
+            ][rng.below(7) as usize];
+            let stream = rng.next();
+            let what =
+                format!("0x0061b740 #{case} lo {lo:#x} hi {hi:#x} size {size:#x} total {total:#x}");
+            t.check(
+                &what,
+                0x0061_b740,
+                Conv::Thiscall(stream),
+                &[lo, hi, size, total],
+                |m| Out::U32(fl::set_up_slot(m, stream, lo, hi, size, total)),
+            );
+            // FileSys_NewReadRequest
+            t.reset();
+            let slot = t.zeros(0x60);
+            t.stub(fl::SET_UP_SLOT, true, 4, 4, slot);
+            let sizes: Vec<u8> = (0..0x20)
+                .flat_map(|_| {
+                    let n = if rng.chance(3) {
+                        0
+                    } else {
+                        rng.below(0x10000) as u16
+                    };
+                    n.to_le_bytes()
+                })
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            let entry = t.words(&[
+                rng.below(8),
+                0,
+                0,
+                0,
+                rng.next(),
+                [0, 1, 0xffff_ffff][rng.below(3) as usize],
+            ]);
+            let req = t.words(&[0, rng.next(), 0, entry, 0, 0, rng.next()]);
+            let lo =
+                rng.below(5) * 0x10000 + [0, 1, 0xffff, rng.below(0x10000)][rng.below(4) as usize];
+            let hi = 0;
+            let (file, length) = (rng.next(), rng.next());
+            let what = format!("FileSys_NewReadRequest #{case} lo {lo:#x}");
+            t.check(
+                &what,
+                0x0061_b7e0,
+                Conv::Thiscall(stream),
+                &[file, length, req, lo, hi, info],
+                |m| {
+                    Out::U32(fl::new_read_request(
+                        m, stream, file, length, req, lo, hi, info,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+/// `0x00573b70` (the Lua vector negation): not userdata, the wrong type,
+/// a vector (signs, zeros, infinities, quiet NaNs), the Lua API stubbed.
+#[test]
+fn files_lua_vector_negate_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0305);
+        for case in 0..60 {
+            t.reset();
+            let comps: Vec<u32> = (0..4)
+                .map(|_| match rng.below(6) {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => 0x7f80_0000,
+                    3 => 0xffc0_0001,
+                    _ => rng.next() & 0xbfff_ffff,
+                })
+                .collect();
+            let v = t.words(&comps);
+            let ud = t.zeros(0x10);
+            t.stubs(&[
+                (
+                    fl::LUA_TOUSERDATA,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(5) { 0 } else { v },
+                ),
+                (fl::LUA_IS_USERDATA, false, 2, 0, u32::from(!rng.chance(5))),
+                (fl::LUA_GETFIELD, false, 3, 0, rng.next()),
+                (fl::LUA_COMPARE, false, 3, 0, u32::from(!rng.chance(4))),
+                (fl::LUA_SETTOP, false, 2, 0, rng.next()),
+                (fl::LUA_NEWUSERDATA, false, 2, 0, ud),
+                (fl::LUA_SETMETATABLE, false, 2, 0, rng.next()),
+            ]);
+            let lua = rng.next();
+            let what = format!("0x00573b70 #{case}");
+            t.check(&what, 0x0057_3b70, Conv::Cdecl, &[lua], |m| {
+                Out::U32(fl::lua_vector_negate(m, lua))
+            });
         }
     });
 }
