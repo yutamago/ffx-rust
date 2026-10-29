@@ -116,13 +116,16 @@ tools/build-hook.sh >/dev/null || exit 1
 cargo build -q --release -p ffx-harness --example replay || exit 1
 replay="$repo/target/release/examples/replay"
 
+# Each replay gets 900 s from its game's start (FFX_REPLAY_TIMEOUT, counted
+# by the replay itself once it holds a game slot); the outer `timeout` only
+# bounds the wait for a slot as well (4 h), so a queue doesn't kill replays.
 run() { # replay, tag, [original]
     local dir="$runs/$2"
     mkdir -p "$dir"
     ${audio:+env FFX_AUDIO_WAV="$dir/$1-$2.wav"} \
     ${hits:+env FFX_HOOK_HITS="$hits/$1-$2.hits"} \
     ${iggy:+env FFX_IGGY_LOG="$iggy/$1-$2.iggy"} \
-        timeout 900 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
+        FFX_REPLAY_TIMEOUT=900 timeout 14400 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
         > "$dir/$1.out" 2>&1
     echo "$1 $2: exit $?" >> "$dir/$1.out"
     grep '^hook log:' "$dir/$1.out" | head -6
