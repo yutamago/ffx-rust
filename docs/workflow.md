@@ -391,29 +391,49 @@ tools/ownership.py shared 40  # the globals the most modules touch
 tools/ownership.py function MsCalcDamageCommand
 tools/ownership.py global 0x00c8f508
 tools/status.sh               # the status page, regenerated in the background
+tools/status.sh --watch       # and kept live: agents, queue, machine every minute
 ```
 
-The status page (`$FFX_WORK/status/index.html`) shows the progress.py
-numbers for `main`, read through git, so every worktree writes the same page:
-the binary as a Hilbert-curve map (each function in address order, coloured
-replaced / logic to port / the rest), the modules, the ports per module per
-time bucket, the share replaced at every commit, the logic left to port and
-the latest ports. `tools/status.sh` returns at once and runs
-`tools/status.py` behind a lock; calls during a run fold into one more run.
-`tools/verify-batch.py` calls it when a batch passes. The first run replays
-the whole history (about a minute); later ones reuse `history.json` and take
-under a second. The open page reloads `data.js` every 30 s.
+The status page (`$FFX_WORK/status/index.html`) is for following the work as
+it happens. The porting numbers are progress.py's for `main`, read through
+git, so every worktree writes the same page. From the top:
 
-The page opens with "Current work": the phase, the current round's tasks
-(owner branch, state, one-line result) and the past rounds, from
-`~/ffx-work/agents/tasks.json`. The coordinator keeps that file by hand
-(format at the top of `tools/status.py`): update it when a round starts,
-a task changes state (running, merged, verified, pushed) or a round ends,
-then run `tools/status.sh`. Below it: in-game coverage (the ported hooks
-that ran, from `symbols/hook-hits.txt`, per module and over time), "left to
-port" split by why (to port, held unhooked on purpose, held for M5, too
-short to hook; a new `symbols/classes.tsv` category shows up as its own
-group) and the replays `tools/replays/run-all.sh` plays.
+- number cards: game code replaced, ports in the last 24 h, what the M5
+  lists still hold, agents at work, commits not pushed and the last PC2
+  verification;
+- "Now": the phase and round from `~/ffx-work/agents/tasks.json`; every
+  worktree with what runs in it (processes started by a session's Bash
+  tool or detached, not its MCP helpers), commits ahead of `main` and its
+  command time; the queue (awaiting merge, verifying, paused, queued; the
+  task's free-text state is sorted into these); `main`'s last merges with
+  their `pc2-<sha>.log` result; load, memory, disk and the guards;
+- "Phases and forecast": the milestones and, per phase in
+  `~/ffx-work/agents/phases.json`, what is left, the pace over 6, 24 and
+  72 h (by count and by bytes) and the date each pace gives; a burn-down
+  with the projections;
+- "Speed and time": ports per 6 h by kind, the finished agent runs in
+  `metrics.tsv`, and where the machine's command time goes (the timing log
+  below, by kind, per hour);
+- the pulse (ports per module per time bucket), the binary as a
+  Hilbert-curve map (porting, the M5 lists or naming), the modules, the
+  share replaced at every commit, the latest ports, and in-game coverage
+  (`symbols/hook-hits.txt`, against the ports that existed when it was
+  recorded, with its age).
+
+`tools/status.sh` returns at once and runs `tools/status.py` behind a lock;
+calls during a run fold into one more run. `tools/verify-batch.py` calls it
+when a batch passes. The first run replays the whole history (about a
+minute); later ones reuse `history.json` and take under a second.
+`tools/status.sh --watch` starts one detached loop that writes `live.js`
+every minute and the whole page when `main` moves; the open page reloads
+`data.js` and `live.js` every 30 s.
+
+The coordinator keeps `tasks.json` and `phases.json` by hand (formats at the
+top of `tools/status.py`): update tasks.json when a round starts, a task
+changes state or a round ends; phases.json when a work list is written or a
+stage's item changes state. A phase of kind `lists` counts the addresses in
+its list files against the hooks on `main` (plus the not-portable and
+dropped lists), so a new list only needs its glob added.
 
 Both progress.py and ownership.py read the dump below (`functions.tsv`, `data_refs.tsv`). Modules come
 from name prefixes (the original PS2 ones the Switch symbols carry, listed in

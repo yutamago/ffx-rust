@@ -1,60 +1,62 @@
 #!/usr/bin/env python3
-"""Writes the status page: how far the rewrite is, per module, and how it got
-there. Agents run it through tools/status.sh, which returns at once.
+"""Writes the status page: what is going on now, how fast, where the time
+goes, and when each phase is likely done. Agents run it through
+tools/status.sh, which returns at once.
 
-The numbers are tools/progress.py's, taken from a branch (main by default)
-through git rather than from the checkout, so every worktree writes the same
-page. The history replays the branch's first-parent commits; each commit's
-counts are cached by the files they come from, so a run only computes the
-commits it has not seen.
+The porting numbers are tools/progress.py's, taken from a branch (main by
+default) through git rather than from the checkout, so every worktree writes
+the same page. The history replays the branch's first-parent commits; each
+commit's counts are cached by the files they come from, so a run only
+computes the commits it has not seen.
 
 Output ($FFX_WORK/status): index.html (tools/status.html), data.js (the
-numbers; the open page reloads it every 30 s) and history.json (the cache).
+numbers), live.js (the "now" part; --live writes only that, in well under a
+second) and history.json (the cache). The open page reloads both scripts
+every 30 s; `tools/status.sh --watch` keeps live.js fresh.
 
-The "Current work" section comes from $FFX_WORK/agents/tasks.json, which
-the coordinator keeps by hand (read from the file system, not git; missing
-or broken, the section says so). Update it when a round starts, when a task
-changes state and when a round ends, then run tools/status.sh:
+Read from the file system, not git (missing or broken, the section says so):
 
-    {
-      "updated": "2026-10-24",            # when the file was last edited
-      "phase": "M3 close-out: coverage push and naming",
-      "next": "naming pass, then M4",     # optional: what follows the phase
-      "round": "coverage 1",
-      "tasks": [                          # the current round, in any order
-        {"id": "cov-hooks",               # short, unique in the round
-         "title": "Hook-hit mode and report",
-         "branch": "cov-hooks",           # the agent's branch (its owner)
-         "state": "running",              # running | merged | verified | pushed
-                                          # (anything else is shown as is)
-         "started": "2026-10-24",         # date or ISO time
-         "finished": null,                # set when merged
-         "result": "one line"}            # empty while running
-      ],
-      "history": [                        # past rounds, newest first
-        {"round": "M3 logic porting", "finished": "2026-10-24",
-         "result": "10,263 ported"}
-      ]
-    }
+- $FFX_WORK/agents/phases.json (--phases): the milestones and the phases
+  the forecasts are for. Each phase is one of
+    {"id", "stage", "title", "kind": "lists", "lists": [glob], "exclude": [glob]}
+        the addresses in the files (paths relative to $FFX_WORK; the first
+        0x... word of each line), less functions under 5 bytes. Done is
+        hooked on the branch, or listed in symbols/m4-not-portable.tsv,
+        m5-not-portable.tsv or m5-dropped.tsv;
+    {"id", "stage", "title", "kind": "magic", "dir": "m5/magic"}
+        tools/magic-worklist.py's runs: units left in each worklistN.tsv,
+        DLLs covered in the newest worklistN-dlls.tsv;
+    {"id", "stage", "title", "kind": "checklist",
+     "items": [{"title", "state": "todo|running|verifying|done", "note"}]}
+        kept by hand.
+  "milestones": [{"id", "title", "state", "started", "finished"}].
+- $FFX_WORK/agents/tasks.json (--tasks): the coordinator's task list:
+    {"updated", "phase", "round", "next", "queued": [str],
+     "tasks": [{"id", "title", "branch", "state", "started", "finished",
+                "result"}],          # state is free text: running, paused,
+                                     # done (merge pending), merged
+                                     # (verifying), pushed, ... (task_state())
+     "history": [{"round", "finished", "result"}]}
+- the worktrees of the repository and the processes running in them
+  (/proc), for which agents are busy and with what;
+- $FFX_WORK/timing/*.tsv (docs/workflow.md, "Build and test timing"), for
+  where the machine's time goes; $FFX_WORK/agents/metrics.tsv for finished
+  agent runs (functions, tokens, minutes);
+- $FFX_WORK/agents/pc2-<sha>.log, the second machine's replay runs of a
+  merge, for what main has been verified at.
 
-At the end of a round, add it to the top of "history" (round, finished,
-result) and replace "round" and "tasks" with the next one's.
-
-"Left to port" is broken down by symbols/classes.tsv's category: every game
-function that is not replaced and whose category is not one of NOT_PORTED
-(glue, platform, debug, dead: not ported 1:1) counts, grouped by category,
-so a new category shows up as its own group (`stub`: too short to hook,
-from tools/classify.py). Within "logic", HELD_M5 and HELD count apart; see
-left_to_port().
-
-Usage: tools/status.py [--ref main] [--out DIR] [--tasks FILE]
+Usage: tools/status.py [--ref main] [--out DIR] [--tasks FILE] [--phases FILE] [--live]
 """
 import argparse
 import datetime
+import fnmatch
+import glob
+import importlib.util
 import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -63,48 +65,41 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
 
 REPO = progress.REPO
+WORK = progress.WORK
 # a commit's counts change only when one of these does
 SOURCES = ["symbols/ffx.sym", "symbols/classes.tsv", "crates/ffx-hook/src/lib.rs", "crates/ffx-hook/src/ported",
            "symbols/hook-hits.txt"]
 CACHE_VERSION = 4
 STATES = ["library", "unnamed", "named", "wrapped", "replaced"]
+# listed there, a function counts as done for a phase: not ported on purpose
+RESOLVED_FILES = ["symbols/m4-not-portable.tsv", "symbols/m5-not-portable.tsv", "symbols/m5-dropped.tsv"]
+# the forecast's paces: functions per day over the last N hours
+PACES = [6, 24, 72]
+# the timing log's top-level commands, by what they are for
+TIME_GROUPS = [
+    ("Parity tests", lambda k: k == "cargo test"),
+    ("Clippy", lambda k: k in ("cargo clippy", "cargo xwin clippy")),
+    ("32-bit builds", lambda k: k.startswith("cargo xwin")),
+    ("Host builds", lambda k: k.startswith("cargo")),
+    ("Replays", lambda k: k.startswith("run-all")),
+    ("Mutants", lambda k: k.startswith("mutants")),
+    ("Batch verify", lambda k: k.startswith("verify-batch")),
+    ("Port checks", lambda k: k.startswith("check-")),
+]
+# processes that say nothing about what an agent is doing
+QUIET = {"claude", "node", "codex", "bash", "sh", "zsh", "sleep", "timeout", "tee", "cat", "flock", "setsid",
+         "nice", "env", "head", "tail", "grep", "sed", "awk", "sort", "xargs", "git", "less", "wc", "tr", "cut"}
 
-# "left to port": categories that are not ported 1:1 (docs/rewrite-plan.md)
-NOT_PORTED = {"glue", "platform", "debug", "dead"}
-# logic held for M5, the main loop (docs/rewrite-plan.md)
-HELD_M5 = {
-    0x00820ae0: "the main loop",
-    0x00822490: "the start-up that runs Sg_MainLoop",
-    0x00822840: "the per-frame update",
-}
-# ported, parity-tested and deliberately not hooked (symbols/ffx.sym says why)
-HELD = {
-    0x0075b230: "pppKeLnsLpTOtDraw: its in-game result comes from stale memory",
-    0x00819c90: "opu_v_u2: never-written locals, an AV risk as a hook",
-}
-# the groups' order and labels on the page; others show by category name
-LEFT_GROUPS = {
-    "logic": "To port",
-    "held": "Ported, held unhooked on purpose",
-    "held-m5": "Held for M5 (the main loop)",
-    "stub": "Too short to hook (1-4 bytes)",
-}
-# one line per replay, from docs/harness.md; a replay missing here shows the
-# first line of its script's header
-REPLAYS = {
-    "field-walk": "Save 1 on the salvage ship deck: walk about and talk; random generators, party records, pad; "
-                  "shots before and after",
-    "battle-attack": "The deck's first battle (cdsp00): wait for the battle proper, attack twice; actor HP, generators",
-    "menu-browse": "Main menu: items, abilities, status, config, back out; pad and party records; "
-                   "shots at fixed frames",
-    "boot": "Boot before any load, at the game's own rate: logo, the in-engine opening, the title menu; shots only",
-    "battle-magic": "Magic 481 (magic_0481.dll), the one overlay that reaches op_shape_draw, its event effect flags "
-                    "set by hand",
-    "battle-overdrive": "Save 5, Djose highroad: Spiral Cut with the timing bar, Valefor summoned, Energy Blast, "
-                        "dismissed, Wakka's menu",
-    "coverage-session": "Hook-hit and coverage runs only (no parity), on saves 0 1 2 3 5: boot, walk and talk, "
-                        "a battle, every menu, the PC menu",
-}
+
+# helpers that are no agent's work: MCP and language servers, the guards, this tool
+NOISE = re.compile(r"\bmcp\b|-mcp\b|mcp-server|language-?server|\blsp\b|tsserver|status\.py|guard\.sh")
+
+
+def _timing_report():
+    spec = importlib.util.spec_from_file_location("timing_report", pathlib.Path(__file__).with_name("timing-report.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def git(*args):
@@ -252,89 +247,457 @@ def functions_map(rows, names, hooked, module, category):
     return out
 
 
-def left_to_port(fmap):
-    """The game's functions not replaced yet that count as left, by group:
-    [{key, label, functions, bytes, modules: {m: [fn, bytes]}, items}],
-    items ([addr, name, size, why]) only for groups of 20 or fewer."""
-    groups = {}
-    replaced = STATES.index("replaced")
-    for i, a in enumerate(fmap["addr"]):
-        m = fmap["module"][i]
-        cat = fmap["categories"][fmap["category"][i]]
-        if fmap["kinds"][m] != "game" or fmap["state"][i] == replaced or not cat or cat in NOT_PORTED:
-            continue
-        key, why = cat, ""
-        if cat == "logic":
-            if a in HELD_M5:
-                key, why = "held-m5", HELD_M5[a]
-            elif a in HELD:
-                key, why = "held", HELD[a]
-        g = groups.setdefault(key, {"key": key, "label": LEFT_GROUPS.get(key, key), "functions": 0, "bytes": 0,
-                                    "modules": {}, "items": []})
-        size = fmap["size"][i]
-        g["functions"] += 1
-        g["bytes"] += size
-        per = g["modules"].setdefault(fmap["modules"][m], [0, 0])
-        per[0] += 1
-        per[1] += size
-        g["items"].append([a, fmap["names"].get(i, f"sub_{a:08x}"), size, why])
-    order = list(LEFT_GROUPS)
-    out = sorted(groups.values(), key=lambda g: (order.index(g["key"]) if g["key"] in order else len(order), g["key"]))
-    for g in out:
-        g["items"] = sorted(g["items"], key=lambda x: -x[2]) if len(g["items"]) <= 20 else []
-    return out
+# ---- phases and forecasts ------------------------------------------------------
 
-
-def load_tasks(path):
-    """tasks.json (the module docstring), or {"error": why}."""
+def read_json(path):
+    """(data, None) or (None, why)."""
     path = pathlib.Path(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        mtime = int(path.stat().st_mtime)
     except FileNotFoundError:
-        return {"error": f"{path} does not exist"}
+        return None, f"{path} does not exist"
     except (OSError, ValueError) as e:
-        return {"error": f"{path}: {e}"}
+        return None, f"{path}: {e}"
     if not isinstance(data, dict):
-        return {"error": f"{path}: not a JSON object"}
-    for key in ("tasks", "history"):
-        items = data.get(key)
-        data[key] = [t for t in items if isinstance(t, dict)] if isinstance(items, list) else []
-    data["path"], data["mtime"] = str(path), mtime
-    return data
+        return None, f"{path}: not a JSON object"
+    data["path"], data["mtime"] = str(path), int(path.stat().st_mtime)
+    return data, None
 
 
-def replays(tree):
-    """The replays run-all.sh runs, with its eye list and a line each."""
-    script = tree.read("tools/replays/run-all.sh") or ""
-
-    def array(name):
-        m = re.search(rf"^{name}=\(([^)]*)\)", script, re.M)
-        return m.group(1).split() if m else []
-
-    eye = set(array("eye"))
-    names = array("replays")
-    if tree.read("tools/replays/coverage-session.txt") is not None:
-        names.append("coverage-session")
+def addresses(text):
+    """The first 0x... word of every line that has one."""
     out = []
-    for n in names:
-        about = REPLAYS.get(n)
-        if about is None:
-            head = (tree.read(f"tools/replays/{n}.txt") or "").splitlines()
-            about = head[0].lstrip("# ").strip() if head and head[0].startswith("#") else ""
-        out.append({"name": n, "eye": n in eye, "parity": n != "coverage-session", "about": about})
+    for line in text.splitlines():
+        m = re.match(r"\s*(0x[0-9a-fA-F]+)", line)
+        if m:
+            out.append(int(m[1], 16))
     return out
+
+
+def forecast(series, now, col=1):
+    """series: [[t, left, ...]] oldest first, col the column to use. The pace
+    over each of PACES (left gone per day; a window reaching before the
+    series counts from its start) and when the rest is done at it."""
+    out, left_now = [], series[-1][col]
+    for h in PACES:
+        t0 = max(now - h * 3600, series[0][0])
+        before = series[0][col]
+        for point in series:
+            if point[0] <= t0:
+                before = point[col]
+        span = (now - t0) / 86400
+        rate = (before - left_now) / span if span > 1 / 24 else 0
+        out.append({"hours": h, "span": round(span * 24, 1), "per_day": round(rate, 1),
+                    "eta": int(now + left_now / rate * 86400) if rate > 0 and left_now else None})
+    return out
+
+
+def list_phase(p, hooked, resolved, history, size_of, now):
+    target, per_list = {}, []
+    t_start = None
+    files = sorted({f for g in p.get("lists", []) for f in glob.glob(str(WORK / g))})
+    skip = {str(WORK / g) for g in p.get("exclude", [])}
+    files = [f for f in files if not any(fnmatch.fnmatch(f, s) for s in skip)]
+    for f in files:
+        try:
+            text = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        t_start = min(t_start or now, int(os.stat(f).st_mtime))
+        name = pathlib.Path(f).stem
+        mine = [a for a in dict.fromkeys(addresses(text)) if size_of.get(a, 5) >= 5 and a not in target]
+        for a in mine:
+            target[a] = name
+        per_list.append([name, mine])
+    if not target:
+        return {"error": "no addresses in " + ", ".join(p.get("lists", []))}
+    done_now = {a for a in target if a in hooked or a in resolved}
+    # the series: replaced over the branch's history (the commits' added
+    # sets), from when the lists were written, ending with the head's count
+    total_bytes = sum(size_of.get(a, 0) for a in target)
+    pre = [a for a in target if a in resolved]
+    seen, done, done_b, series, start = set(), len(pre), sum(size_of.get(a, 0) for a in pre), [], None
+    for e in history:
+        if e["t"] >= t_start and start is None:
+            start = [t_start, len(target) - done, total_bytes - done_b]
+        new = [a for a in e["added"] if a in target and a not in seen and a not in resolved]
+        seen.update(new)
+        done += len(new)
+        done_b += sum(size_of.get(a, 0) for a in new)
+        if e["t"] >= t_start and new:
+            series.append([e["t"], len(target) - done, total_bytes - done_b])
+    series.insert(0, start or [t_start, len(target) - done, total_bytes - done_b])
+    left = len(target) - len(done_now)
+    done_bytes = sum(size_of.get(a, 0) for a in done_now)
+    series.append([int(now), left, total_bytes - done_bytes])
+    lists = []
+    for name, mine in per_list:
+        if not mine:
+            continue
+        d = [a for a in mine if a in done_now]
+        lists.append({"name": name, "total": len(mine), "done": len(d),
+                      "bytes": sum(size_of.get(a, 0) for a in mine),
+                      "done_bytes": sum(size_of.get(a, 0) for a in d)})
+    return {"unit": "functions", "total": len(target), "done": len(done_now), "left": left,
+            "bytes": total_bytes, "done_bytes": done_bytes, "series": series,
+            "pace": forecast(series, now), "pace_bytes": forecast(series, now, 2), "lists": lists,
+            "targets": {a: (1 if a in done_now else 0) for a in target}}
+
+
+def magic_phase(p, now):
+    d = WORK / p.get("dir", "m5/magic")
+    snaps = []
+    for f in sorted(d.glob("worklist*.tsv")):
+        if f.name.endswith("-dlls.tsv"):
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        if "identity" not in text.split("\n", 1)[0]:
+            continue  # the first file is the DLL -> list map
+        units = sum(1 for line in text.splitlines() if line and not line.startswith("#"))
+        snaps.append([int(f.stat().st_mtime), units, f])
+    if not snaps:
+        return {"error": f"no worklistN.tsv in {d}"}
+    snaps.sort()
+    out = {"unit": "code identities", "left": snaps[-1][1], "source": str(snaps[-1][2])}
+    dlls = snaps[-1][2].with_name(snaps[-1][2].stem + "-dlls.tsv")
+    if dlls.exists():
+        n = done = fns = covered = 0
+        for line in dlls.read_text(encoding="utf-8").splitlines():
+            f = line.split("\t")
+            if line.startswith("#") or len(f) < 7:
+                continue
+            n += 1
+            fns += int(f[2]) - int(f[3])
+            covered += int(f[4])
+            done += f[5] == "0" and f[6] == "0"
+        out.update(dlls=n, dlls_done=done, instances=fns, covered=covered)
+    # the units' total is not in the files: the first run's left plus what
+    # the ports covered by then is unknown, so the bar is the DLLs' functions
+    # paced at the last run: between runs nothing is measured
+    series = [[t, units] for t, units, _ in snaps]
+    out.update(series=series, pace=forecast(series, series[-1][0]),
+               snapshots=len(snaps), measured=snaps[-1][0])
+    return out
+
+
+def phases(cfg, hooked, resolved, history, size_of, now):
+    out = []
+    for p in cfg.get("phases", []):
+        if not isinstance(p, dict):
+            continue
+        base = {k: p.get(k) for k in ("id", "stage", "title", "kind")}
+        try:
+            if p.get("kind") == "lists":
+                base.update(list_phase(p, hooked, resolved, history, size_of, now))
+            elif p.get("kind") == "magic":
+                base.update(magic_phase(p, now))
+            else:
+                items = [i for i in p.get("items", []) if isinstance(i, dict)]
+                base.update(items=items, total=len(items), done=sum(i.get("state") == "done" for i in items))
+        except (OSError, ValueError) as e:
+            base["error"] = str(e)
+        out.append(base)
+    return out
+
+
+# ---- now: agents, the machine, the queue -----------------------------------------
+
+def task_state(s):
+    """tasks.json's free-text state -> running | paused | awaiting merge |
+    verifying | merged | pushed | done | other."""
+    s = (s or "").lower()
+    if s.startswith("running"):
+        return "running"
+    if s.startswith("paused"):
+        return "paused"
+    if re.search(r"merge pending|to merge|not merged|merge after|merge queue", s):
+        return "awaiting merge"
+    if re.search(r"verifying|verify pending", s):
+        return "verifying"
+    if "pushed" in s:
+        return "pushed"
+    if "merged" in s:
+        return "merged"
+    if "done" in s:
+        return "done"
+    return "other"
+
+
+def processes(paths):
+    """path -> [(start, comm, cmdline)] of the processes doing work whose cwd
+    is in it (the deepest path wins: agent worktrees sit inside the main
+    checkout), and the paths an interactive session (claude, codex) sits in.
+
+    Work is what a session's shell tool runs (a descendant of a Bash call,
+    whose shell sources ~/.claude/shell-snapshots) or what runs on its own
+    (detached replays, verify runs); a session's helpers (MCP servers,
+    language servers) and its launcher are not."""
+    btime = 0
+    with open("/proc/stat") as f:
+        for line in f:
+            if line.startswith("btime"):
+                btime = int(line.split()[1])
+    hz = os.sysconf("SC_CLK_TCK")
+    me = os.getpid()
+    info = {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                stat = f.read()
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+        except OSError:
+            continue
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            cwd = ""
+        rest = stat[stat.rindex(")") + 2:].split()
+        info[int(pid)] = (stat[stat.index("(") + 1:stat.rindex(")")], cmd, cwd, int(rest[1]), btime + int(rest[19]) / hz)
+    sessions = {p for p, (comm, *_) in info.items() if comm in ("claude", "codex")}
+    launchers = set()
+    for p in sessions:
+        q = info[p][3]
+        while q in info and q not in launchers:
+            launchers.add(q)
+            q = info[q][3]
+
+    def is_work(pid):
+        while pid in info:
+            comm, cmd, _, ppid, _ = info[pid]
+            if "shell-snapshots" in cmd:
+                return True
+            if pid in sessions:
+                return False
+            pid = ppid
+        return True
+
+    roots = sorted(paths, key=len, reverse=True)
+    out = {p: [] for p in paths}
+    seated = set()
+    for pid, (comm, cmd, cwd, _, start) in info.items():
+        root = next((r for r in roots if cwd == r or cwd.startswith(r + "/")), None)
+        if root is None:
+            continue
+        if pid in sessions:
+            seated.add(root)
+        elif pid != me and pid not in launchers and is_work(pid) and not NOISE.search(cmd):
+            out[root].append((start, comm, cmd))
+    return out, seated
+
+
+def worktrees(ref):
+    """The repository's worktrees: path, branch, head, locked."""
+    out, cur = [], None
+    for line in git("worktree", "list", "--porcelain").splitlines() + [""]:
+        if line.startswith("worktree "):
+            cur = {"path": line[9:], "branch": "", "head": "", "locked": False}
+        elif cur is None:
+            continue
+        elif line.startswith("HEAD "):
+            cur["head"] = line[5:]
+        elif line.startswith("branch "):
+            cur["branch"] = line[7:].removeprefix("refs/heads/")
+        elif line.startswith("locked"):
+            cur["locked"] = True
+        elif not line:
+            out.append(cur)
+            cur = None
+    heads = [w["head"] for w in out if w["head"]]
+    info = dict((h, (int(t), s)) for h, t, s in (line.split("\t", 2) for line in git(
+        "log", "--no-walk=unsorted", "--format=%H%x09%ct%x09%s", *heads).splitlines())) if heads else {}
+    for w in out:
+        w["commit_t"], w["subject"] = info.get(w["head"], (0, ""))
+        w["subject"] = w["subject"][:100]
+        try:
+            w["ahead"] = int(git("rev-list", "--count", f"{ref}..{w['head']}").strip()) if w["head"] else 0
+        except subprocess.CalledProcessError:
+            w["ahead"] = 0
+    return out
+
+
+def timing(now, nproc):
+    """The timing log of the last 48 h: per group (TIME_GROUPS) the seconds
+    of the last 24 h, runs, failures and time at load > nproc; per hour and
+    group; per worktree the last command and seconds in the last 1 and 24 h.
+    Top-level commands only for the groups (a cargo run by mutants.py is in
+    mutants.py's time); every command for the worktrees' last one."""
+    tr = _timing_report()
+    since = datetime.datetime.fromtimestamp(now - 48 * 3600).astimezone()
+    paths = [p for p in (WORK / "timing").glob("*.tsv") if p.stat().st_mtime >= now - 48 * 3600]
+    rows = tr.load(paths, since)
+    names = [g for g, _ in TIME_GROUPS] + ["Other"]
+    groups = {g: {"group": g, "seconds": 0, "runs": 0, "failed": 0, "busy": 0} for g in names}
+    hours = [[0] * len(names) for _ in range(48)]
+    trees = {}
+    for r in rows:
+        t = r["t"].timestamp()
+        w = trees.setdefault(r["worktree"], {"last": None, "h1": 0, "h24": 0, "first": t})
+        end = t + r["wall"]
+        if w["last"] is None or end > w["last"]["end"]:
+            w["last"] = {"t": int(t), "end": int(end), "wall": round(r["wall"], 1), "code": r["code"],
+                         "cmd": r["cmd"][:140]}
+        w["first"] = min(w["first"], t)
+        if r.get("parent", "-") != "-":
+            continue
+        if t >= now - 3600:
+            w["h1"] += r["wall"]
+        if t >= now - 86400:
+            w["h24"] += r["wall"]
+        g = next((g for g, test in TIME_GROUPS if test(r["kind"])), "Other")
+        h = int((now - t) // 3600)
+        if 0 <= h < 48:
+            hours[47 - h][names.index(g)] += r["wall"]
+        if t >= now - 86400:
+            s = groups[g]
+            s["seconds"] += r["wall"]
+            s["runs"] += 1
+            s["failed"] += r["code"] not in ("0", "")
+            s["busy"] += r["wall"] if tr.busy(r, nproc) else 0
+    for w in trees.values():
+        w["h1"], w["h24"], w["first"] = round(w["h1"]), round(w["h24"]), int(w["first"])
+    return {"groups": [{k: round(v) if isinstance(v, float) else v for k, v in g.items()} for g in groups.values()],
+            "names": names, "hours": [[round(x) for x in h] for h in hours],
+            "hours_end": int(now // 3600 * 3600 + 3600), "trees": trees}
+
+
+def agent_runs(path):
+    """Finished agent runs from metrics.tsv (rows "date, name, done, text"):
+    functions, k tokens and minutes as the text gives them."""
+    out = []
+    try:
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines[1:]:
+        f = line.split("\t")
+        if len(f) < 4 or f[2] != "done":
+            continue
+        text = " ".join(f[3:])
+        num = lambda pat: (lambda m: int(m[1].replace(",", "")) if m else None)(re.search(pat, text))  # noqa: E731
+        fns = (num(r"(\d[\d,]*)\s*(?:more\s+)?(?:fns|rows|functions|units|code identities)\b")
+               or num(r"^(\d[\d,]*)\s*(?:\(|;|$)"))
+        out.append({"date": f[0], "name": f[1], "functions": fns, "ktokens": num(r"(\d+)k tokens"),
+                    "minutes": num(r"(\d+) min"), "text": text[:160]})
+    return out[-40:]
+
+
+def machine():
+    load = os.getloadavg()
+    mem = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            k, v = line.split(":")
+            mem[k] = int(v.split()[0]) * 1024
+    disk = shutil.disk_usage(WORK)
+    return {"nproc": os.cpu_count(), "load": [round(x, 2) for x in load], "mem_total": mem.get("MemTotal", 0),
+            "mem_avail": mem.get("MemAvailable", 0), "disk_free": disk.free, "disk_total": disk.total}
+
+
+def guards():
+    """The background guards (ffx-cleanup policy): running or not, and the
+    last line of their logs."""
+    cmds = []
+    for pid in os.listdir("/proc"):
+        if pid.isdigit():
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmds.append(f.read().replace(b"\0", b" ").decode("utf-8", "replace"))
+            except OSError:
+                pass
+    out = []
+    for name, pat, log in [("memguard", "memguard.sh", WORK / "agents/memguard.log"),
+                           ("diskguard", "diskguard.sh", WORK / "agents/diskguard.log"),
+                           ("status watch", "status.sh --watch", WORK / "status/status.log")]:
+        last, t = "", 0
+        try:
+            last = log.read_text(encoding="utf-8", errors="replace").rstrip("\n").rsplit("\n", 1)[-1][:160]
+            t = int(log.stat().st_mtime)
+        except OSError:
+            pass
+        out.append({"name": name, "running": any(pat in c for c in cmds), "last": last, "t": t})
+    return out
+
+
+def verification(ref):
+    """The last first-parent commits of ref with the second machine's replay
+    run of each ($FFX_WORK/agents/pc2-<sha>.log), when there is one."""
+    logs = {p.stem[4:]: p for p in (WORK / "agents").glob("pc2-*.log") if re.fullmatch(r"[0-9a-f]{7,40}", p.stem[4:])}
+    out = []
+    for line in git("log", "--first-parent", "-12", "--format=%H%x09%ct%x09%s", ref).splitlines():
+        sha, ct, subject = line.split("\t", 2)
+        e = {"sha": sha[:9], "t": int(ct), "subject": subject[:100]}
+        log = next((p for k, p in logs.items() if sha.startswith(k)), None)
+        if log:
+            text = log.read_text(encoding="utf-8", errors="replace")
+            runs = re.findall(r"^== ([\w.-]+): traces: (.*)$", text, re.M)
+            bad = [n for n, r in runs if "same events" not in r]
+            exits = [c for c in re.findall(r"\bexit (\d+)\b", text) if c != "0"]
+            mtime = int(log.stat().st_mtime)
+            e.update(log=str(log), log_t=mtime, replays=len(runs), bad=bad, exits=len(exits),
+                     state="running" if time.time() - mtime < 180 else "failed" if bad or exits else "passed")
+        out.append(e)
+    return out
+
+
+def live(args, now):
+    tasks, why = read_json(args.tasks)
+    if tasks is not None:
+        for key in ("tasks", "history", "queued"):
+            items = tasks.get(key)
+            tasks[key] = [t for t in items if isinstance(t, (dict, str))] if isinstance(items, list) else []
+        for t in tasks["tasks"]:
+            if isinstance(t, dict):
+                t["kind"] = task_state(t.get("state"))
+    trees = worktrees(args.ref)
+    procs, seated = processes([w["path"] for w in trees])
+    tm = timing(now, os.cpu_count() or 1)
+    for w in trees:
+        mine = [p for p in procs[w["path"]] if p[1] not in QUIET]
+        top = min(mine) if mine else None
+        w["procs"] = len(mine)
+        # an interactive session (Claude Code, T3) sitting in it
+        w["session"] = w["path"] in seated
+        w["now"] = {"since": int(top[0]), "comm": top[1], "cmd": top[2][:160]} if top else None
+        w["timing"] = tm["trees"].get(os.path.basename(w["path"]))
+    try:
+        unpushed = int(git("rev-list", "--count", f"origin/{args.ref}..{args.ref}").strip())
+    except subprocess.CalledProcessError:
+        unpushed = None
+    del tm["trees"]
+    # the main checkout: the common git directory's parent
+    common = pathlib.Path(git("rev-parse", "--path-format=absolute", "--git-common-dir").strip())
+    return {"generated": int(now), "ref": args.ref, "repo": str(common.parent),
+            "tasks": tasks if tasks is not None else {"error": why},
+            "worktrees": trees, "machine": machine(), "guards": guards(), "timing": tm,
+            "runs": agent_runs(WORK / "agents" / "metrics.tsv"), "verify": verification(args.ref),
+            "unpushed": unpushed}
+
+
+def write_js(path, var, data):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(f"window.{var} = " + json.dumps(data, separators=(",", ":")) + ";\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ref", default="main")
-    ap.add_argument("--out", default=str(progress.WORK / "status"))
-    ap.add_argument("--tasks", default=str(progress.WORK / "agents" / "tasks.json"))
+    ap.add_argument("--out", default=str(WORK / "status"))
+    ap.add_argument("--tasks", default=str(WORK / "agents" / "tasks.json"))
+    ap.add_argument("--phases", default=str(WORK / "agents" / "phases.json"))
+    ap.add_argument("--live", action="store_true", help="write live.js only")
     args = ap.parse_args()
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
+    page = (pathlib.Path(__file__).resolve().parent / "status.html").read_text(encoding="utf-8")
+    if args.live:
+        write_js(out / "live.js", "FFX_LIVE", live(args, started))
+        (out / "index.html").write_text(page, encoding="utf-8")
+        return
 
     rows = progress.functions()
     cache_path = out / "history.json"
@@ -358,25 +721,56 @@ def main():
     module = progress.placement(rows, names)
     category = progress.classes(tree)
     fmap = functions_map(rows, names, hooked, module, category)
-
-    # name and module of each newly replaced function, for the feed
     where = {a: i for i, a in enumerate(fmap["addr"])}
-    for e in entries:
-        e["added"] = [[a, fmap["names"].get(where.get(a), f"sub_{a:08x}"), fmap["modules"][fmap["module"][where[a]]]]
-                      for a in e["added"] if a in where]
+    size_of = {a: s for a, _, s in rows}
 
-    # hook-hit mode's union (tools/hook-hits.py): per module, the replaced
-    # functions and bytes that ran in a replay or the coverage session
+    # the phases, on the commits' added sets as addresses (before the names go in)
+    cfg, why = read_json(args.phases)
+    resolved = {a for f in RESOLVED_FILES for a in addresses(tree.read(f) or "")}
+    plist = phases(cfg, hooked, resolved, entries, size_of, started) if cfg else None
+    # per function on the map: 0 in no list, 1 left, 2 done; per module, left
+    fmap["m5"] = [0] * len(fmap["addr"])
+    m5_left = {}
+    for p in plist or []:
+        for a, done in p.pop("targets", {}).items():
+            i = where.get(a)
+            if i is None:
+                continue
+            fmap["m5"][i] = 2 if done else 1
+            if not done:
+                m = fmap["modules"][fmap["module"][i]]
+                per = m5_left.setdefault(m, [0, 0])
+                per[0] += 1
+                per[1] += fmap["size"][i]
+
+    # in-game coverage: hook-hit mode's union (symbols/hook-hits.txt, tools/hook-hits.py)
+    # against the ports that existed when it was recorded
     ran = {int(x, 16) for x in (tree.read("symbols/hook-hits.txt") or "").split()}
+    rec = git("log", "-1", "--format=%H%x09%ct", head, "--", "symbols/hook-hits.txt").strip().split("\t")
+    rec_t = int(rec[1]) if len(rec) == 2 else 0
+    then = set()
+    for e in entries:
+        if e["t"] <= rec_t:
+            then.update(e["added"])
     hits = {}
+    replaced = STATES.index("replaced")
     for i, a in enumerate(fmap["addr"]):
-        if fmap["state"][i] == STATES.index("replaced"):
-            h = hits.setdefault(fmap["modules"][fmap["module"][i]], [0, 0, 0, 0])
+        if fmap["state"][i] != replaced:
+            continue
+        # module -> [ported then, of them ran, bytes then, bytes ran, ported now]
+        h = hits.setdefault(fmap["modules"][fmap["module"][i]], [0, 0, 0, 0, 0])
+        h[4] += 1
+        if a in then:
             h[0] += 1
             h[2] += fmap["size"][i]
             if a in ran:
                 h[1] += 1
                 h[3] += fmap["size"][i]
+
+    # name and module of each newly replaced function, for the feed
+    for e in entries:
+        e["added"] = [[a, fmap["names"].get(where.get(a), f"sub_{a:08x}"), fmap["modules"][fmap["module"][where[a]]]]
+                      for a in e["added"] if a in where]
 
     data = {
         "generated": int(time.time()),
@@ -387,19 +781,17 @@ def main():
         "kinds": progress.KIND,
         "history": entries,
         "map": fmap,
-        # module -> [replaced, of them ran, replaced bytes, ran bytes]
         "hook_hits": hits,
-        "left": left_to_port(fmap),
-        "tasks": load_tasks(args.tasks),
-        "replays": replays(tree),
+        "hits_meta": {"sha": rec[0][:8], "t": rec_t, "hits": len(ran)} if rec_t else None,
+        "milestones": cfg.get("milestones", []) if cfg else [],
+        "phases": plist if cfg else {"error": why},
+        "phases_file": {"path": args.phases, "mtime": cfg["mtime"]} if cfg else None,
+        "m5_left": m5_left,
         "took": 0,
     }
     data["took"] = round(time.time() - started, 1)
-    js = out / "data.js"
-    tmp = js.with_suffix(".tmp")
-    tmp.write_text("window.FFX_STATUS = " + json.dumps(data, separators=(",", ":")) + ";\n", encoding="utf-8")
-    tmp.replace(js)
-    page = (pathlib.Path(__file__).resolve().parent / "status.html").read_text(encoding="utf-8")
+    write_js(out / "data.js", "FFX_STATUS", data)
+    write_js(out / "live.js", "FFX_LIVE", live(args, time.time()))
     (out / "index.html").write_text(page, encoding="utf-8")
     stamp = datetime.datetime.now().strftime("%H:%M:%S")
     print(f"{stamp} status: {args.ref} {head[:8]}, {len(entries)} snapshots, {data['took']} s -> {out / 'index.html'}")

@@ -8,7 +8,12 @@
 # to the page.
 #
 # Usage: tools/status.sh [--wait] [status.py args]
-#   --wait  run in the foreground (still behind the lock)
+#        tools/status.sh --watch [SECONDS]
+#   --wait   run in the foreground (still behind the lock)
+#   --watch  keep the page live: a detached loop that writes live.js (agents,
+#            queue, machine, timing; status.py --live) every SECONDS (60) and
+#            the whole page when main moves. One loop at a time; stop it with
+#            pkill -f 'status.sh --watch-loop'.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -31,7 +36,34 @@ run() {
     done
 }
 
+watch() {
+    exec 8>"$out/.watch.lock"
+    flock -n 8 || { echo "status watch: already running" >>"$log"; return 0; }
+    echo "$(date +%T) status watch: every ${1}s" >>"$log"
+    local head last=""
+    while true; do
+        head=$(git -C "$here/.." rev-parse main 2>/dev/null || true)
+        # main moved, or an older status.py (a worktree branched before this
+        # page) wrote data.js without the phases: write it again
+        if [ "$head" != "$last" ] || ! grep -q '"milestones"' "$out/data.js" 2>/dev/null; then
+            touch "$pending"
+            run
+            # still pending: another run holds the lock; try again next round
+            [ -e "$pending" ] || last=$head
+        fi
+        python3 "$here/status.py" --live >>"$log" 2>&1 || echo "$(date +%T) status.py --live failed" >>"$log"
+        sleep "$1"
+    done
+}
+
 case "${1:-}" in
+    --watch-loop)  # the detached copy below
+        watch "${2:-60}"
+        ;;
+    --watch)
+        setsid -f "$here/status.sh" --watch-loop "${2:-60}" </dev/null >/dev/null 2>&1
+        echo "status page: live every ${2:-60} s -> $out/index.html (stop: pkill -f 'status.sh --watch-loop')"
+        ;;
     --run)  # the detached copy below
         shift
         run "$@"
