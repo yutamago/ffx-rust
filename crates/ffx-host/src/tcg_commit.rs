@@ -14,6 +14,10 @@
 //! the 4 MB steps drift off the buffer's 4 MB grid: every thread whose
 //! buffer filled that far crashed there (64-bit `ffx-rust.exe` on PC2, about
 //! 200 s into the boot, inside `tcg_gen_code`'s copy of a constant pool).
+//! And every commit is a fault that goes through the process's vectored
+//! handlers in order: on the main machine an endpoint-security product's
+//! handler, ahead of Unicorn's, crashed on the very first one
+//! (`tcg_prologue_init`'s).
 //!
 //! This handler runs first (`AddVectoredExceptionHandler(1, …)`): a write
 //! fault in a reserved, uncommitted run of a `PAGE_EXECUTE_READWRITE`

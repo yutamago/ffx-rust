@@ -978,7 +978,9 @@ of the stack):
   violation inside `SophosED.dll` (the endpoint-security product's hook
   DLL) while Unicorn initialises its translator (`tcg_exec_init`,
   `tcg_prologue_init`), with the default 1 GB translation buffer and with
-  64 MB (`TCG_BUFFER`) alike.
+  64 MB (`TCG_BUFFER`) alike. (Found and fixed in the next round: Unicorn
+  commits its buffers from a vectored exception handler; below, "The
+  64-bit build on PC2".)
 
 #### The 64-bit build on PC2 (2026-10-29, host-pc2)
 
@@ -987,8 +989,8 @@ hook) runs the x86_64 `ffx-rust.exe` (`FFX_HOST_TARGET=x86_64-pc-windows-msvc
 tools/build-host.sh`) through the harness's game slots in background mode,
 muted:
 
-- **Unicorn's translator starts**: the crash at `tcg_exec_init` on the
-  main machine is its security product's DLL, not the program.
+- **Unicorn's translator starts** there, where on the main machine the
+  same build crashed inside its endpoint-security DLL at `tcg_exec_init`.
 - **Then it crashed after about 200 s** (`0xc0000005`, a write in
   `VCRUNTIME140!memcpy` from `tcg_gen_code`, at a page of the main
   thread's translation buffer). Unicorn 2.1.5 on Windows only reserves each
@@ -1010,9 +1012,25 @@ muted:
   3019), 2.2 GB private memory at the end. The opening runs at about 2
   presents a second in the campfire scene (217 draws a frame), faster on
   the screens before it.
-- **So item 6(a) is settled for stage 4**: the 64-bit build runs on a
-  machine without the security product, and the i686 TCG abort no longer
-  blocks the Windows runs. The i686 abort was left alone.
+- **The main machine's crash was the same fault.** `tcg_prologue_init`
+  writes the prologue into the reserved buffer, so the very first commit
+  goes through the vectored handlers, and the security product's own
+  handler (`SophosED.dll`) crashed on it before Unicorn's could commit.
+  With our handler in front of both, the same 64-bit build (PC2's)
+  starts on the main machine too: 60 updates and 417 presents in a short
+  probe through a game slot (background mode), the memochek logo drawn.
+- **field-walk passes** on the 64-bit `ffx-rust.exe` against PC2's own
+  original recording (the harness on the clock's boundary, below and
+  `docs/harness.md`, "Two processes"): `load direct 1 cdsp0000 lockstep`
+  (the title by Start, `loadsave 1` at update 152), `pin`, the `waitfor`
+  on ctrl work 0's event count, the walk; the trace (4 ranges, 358 lines)
+  has the same events as both recordings, and the two shots score 0.0 and
+  0.1 (`shot-compare.py --coarse`, limits 30.3 and 42.9) at event frames
+  101 and 459, the recording's. 226 s from launch to the end, 3.3 GB
+  private memory.
+- **So item 6(a) is settled for stage 4**: the 64-bit build runs on both
+  machines, and the i686 TCG abort no longer blocks the Windows runs. The
+  i686 abort was left alone.
 
 #### The first comparison
 
@@ -1075,15 +1093,13 @@ runs past the third frame (the Unicorn abort).
 6. **Windows.** Done: the window, message, cursor and timer imports
    forward, the real device presents on the real window, the harness
    starts `ffx-rust.exe` in background mode (above, "Windows" and
-   "Status on Windows"). Left: (a) the i686 abort in Unicorn's 32-bit
-   TCG backend (`tcg_reg_alloc`) a few seconds past the third frame,
-   which ends every Windows run; the 64-bit build avoids that backend
-   but crashes inside the endpoint-security DLL on this machine, so one
-   of the two needs a fix or a workaround (a Unicorn patch for the
-   register pressure, or the security product's exclusion for the 64-bit
-   build); (b) the harness's frame commands on the clock's boundary
-   (`frame`, `waitfor`, lockstep, `call`, the trace): the boundary is in
-   (`src/clock.rs`, which plays `--replay` scripts there), but
-   `src/harness.rs` still counts `Present`s; (c) FMOD's device output
+   "Status on Windows"). (a) Settled for stage 4 (2026-10-29, host-pc2):
+   the 64-bit build runs on PC2 and on the main machine once our handler
+   commits Unicorn's translation buffers ("The 64-bit build on PC2"); the
+   i686 abort in Unicorn's 32-bit TCG backend (`tcg_reg_alloc`) a few
+   seconds past the third frame is still there and only matters if
+   stage 3 needs i686 runs. (b) Done (host-pc2): the harness's frame
+   commands run on the clock's boundary (`docs/harness.md`, "Two
+   processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
    yet; the movie's audio stream is silent.

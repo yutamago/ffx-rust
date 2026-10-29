@@ -38,7 +38,8 @@
 //! | `gfxcapture <dir>` | the layer's recording so far (`capture.ffxgfx`, `calls.txt`) |
 //! | `quit` | ends the process |
 //!
-//! Not served (answered `err`): `snapshot`, `fpucw`, `audiomark`, the
+//! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
+//! (answered `err`): `snapshot`, `fpucw`, the
 //! overlay and live-editor commands, `cursor`, `threads`, `stacks`.
 
 use std::collections::VecDeque;
@@ -1220,6 +1221,9 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         }
         // the replay player's closing line: no call log here
         "calllog" if words.get(1) == Some(&"off") => Ok("ok".into()),
+        // no FFX_AUDIO_WAV capture here (`--audio-wav` writes the whole
+        // mix): the hook's answer without one
+        "audiomark" => Ok("ok off".into()),
         other => Err(format!("{other}: not served by ffx-rust yet")),
     }
 }
