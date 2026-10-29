@@ -24,6 +24,8 @@ pub mod m5a_settings;
 pub mod m5a_std;
 pub mod m5b_async;
 pub mod m5b_misc;
+pub mod m5b_movie;
+pub mod m5b_pc;
 pub mod m5b_stackwalker;
 pub mod m5b_steam;
 pub mod m5b_stl;

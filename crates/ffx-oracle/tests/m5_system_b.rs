@@ -2473,3 +2473,637 @@ fn sync_data_change_task_matches_the_original() {
         }
     });
 }
+
+// ---- round 2: the movie frame queue (`ffx_system::m5b_movie`) ----
+//
+// The movie player's queue and reader never ran in a coverage run: every
+// branch runs on synthetic queues, and the snapshots repeat the cases over
+// their memory.
+
+use ffx_system::m5b_movie::{self as mov, bridge as mv};
+use ffx_system::m5b_pc::{self as pcs, bridge as pcb};
+
+/// The event methods as recording thiscall stubs (signal/close return 0
+/// like the originals; initialize pops its flags word).
+fn event_stubs(t: &mut Twins) {
+    t.stub(mov::EVENT_CTOR, true, 0, 0, 0x0e00_0001);
+    t.stub(mov::EVENT_INITIALIZE, true, 1, 1, 0x0e00_0002);
+    t.stub(mov::EVENT_SIGNAL, true, 0, 0, 0);
+    t.stub(mov::EVENT_CLOSE, true, 0, 0, 0);
+    t.stub(mov::OPERATOR_DELETE, false, 1, 0, 0x0e00_0003);
+}
+
+/// `PEventFlagWin32_wait` as a stub that logs `ecx`, adds `step` to the
+/// word at `limit` and after `calls` calls clears the running byte `run`.
+fn wait_stub(t: &mut Twins, limit: u32, step: u32, calls: u32, run: u32) {
+    let log_stub = t.stub_code(mov::EVENT_WAIT, true, 0, 0, 0);
+    let ctr = t.words(&[calls]);
+    let mut c = vec![0x81, 0x05];
+    c.extend(limit.to_le_bytes());
+    c.extend(step.to_le_bytes()); // add dword [limit], step
+    c.extend([0xff, 0x0d]);
+    c.extend(ctr.to_le_bytes()); // dec dword [ctr]
+    c.extend([0x75, 0x07]); // jnz +7
+    c.extend([0xc6, 0x05]);
+    c.extend(run.to_le_bytes());
+    c.push(0); // mov byte [run], 0
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let addr = t.cave_code(&c);
+    t.jump(mov::EVENT_WAIT, addr);
+}
+
+/// A queue with ring size `size`, read index `r`, write index `w`, the
+/// open and running bytes, random counters and a size word at `r`.
+fn queue(t: &mut Twins, rng: &mut Rng, size: u32, r: u32, w: u32, open: bool, run: bool) -> u32 {
+    let buf = t.zeros(size as usize + 0x20);
+    let q = t.zeros(0x40);
+    let words = [
+        0x00b7_a9e4,
+        buf,
+        r,
+        w,
+        rng.word(),
+        rng.word(),
+        u32::from(open),
+        0x0e1e_0001,
+        1,
+        0x0e1e_0002,
+        1,
+        u32::from(run),
+        size,
+        rng.below(9),
+        rng.below(9) + 9,
+        0,
+    ];
+    t.put(q, &words);
+    let len = rng.below(size / 2 + 1);
+    t.w32(buf + r, len);
+    q
+}
+
+fn out_opt(v: Option<u32>) -> Out {
+    v.map_or(Out::None, Out::U32)
+}
+
+#[test]
+fn r2_data_frame_queue_simple_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0201);
+        for case in 0..40u32 {
+            t.reset();
+            event_stubs(t);
+            let size = 0x40 + rng.below(4) * 0x10;
+            let (r, w) = (rng.below(size) & !3, rng.below(size) & !3);
+            let q = queue(t, &mut rng, size, r, w, case & 1 == 0, case & 2 == 0);
+            let what = format!("queue #{case}");
+            let (a, b, c, d) = (rng.word(), rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("{what} SetFields"),
+                0x00a3_dd00,
+                Conv::Thiscall(q),
+                &[a, b, c, d],
+                |m| Out::U32(mv::set_fields(m, q, [a, b, c, d])),
+            );
+            t.check(
+                &format!("{what} Count"),
+                0x00a3_dde0,
+                Conv::Thiscall(q),
+                &[],
+                |m| Out::U32(mv::queue_count(m, q)),
+            );
+            // the reserve end and the front end around the indices, and
+            // on them (the comparisons' equal cases)
+            let fe = match case % 4 {
+                0 => w,
+                1 => w + size,
+                _ => rng.below(size + 8),
+            };
+            let re = match case / 4 % 3 {
+                0 => fe,
+                1 if w > fe => fe + size,
+                _ => rng.below(size + 8),
+            };
+            // (SetFields wrote over the write index)
+            t.w32(q + 0xc, w);
+            t.w32(q + 0x10, re);
+            t.w32(q + 0x14, fe);
+            t.check(
+                &format!("{what} Pop"),
+                0x00a3_ddc0,
+                Conv::Thiscall(q),
+                &[],
+                |m| out_opt(mv::queue_pop(m, q)),
+            );
+            t.check(
+                &format!("{what} Commit"),
+                0x00a3_df00,
+                Conv::Thiscall(q),
+                &[],
+                |m| Out::U32(mv::queue_commit(m, q)),
+            );
+            t.check(
+                &format!("{what} Close"),
+                0x00a3_dea0,
+                Conv::Thiscall(q),
+                &[],
+                |m| Out::U32(mv::queue_close(m, q)),
+            );
+            let free = t.stub_code(0x0e0f_0001, false, 1, 0, 0x0e00_0004);
+            t.w32(q + 0x3c, free);
+            t.check(
+                &format!("{what} Destroy"),
+                0x00a3_df20,
+                Conv::Thiscall(q),
+                &[],
+                |m| out_opt(mv::queue_destroy(m, q)),
+            );
+            let flags = case & 3;
+            t.check(
+                &format!("{what} delete"),
+                0x00a3_dd60,
+                Conv::Thiscall(q),
+                &[flags],
+                |m| Out::U32(mv::queue_deleting_dtor(m, q, flags)),
+            );
+            let fresh = t.alloc(&[0xa5; 0x40]);
+            t.check(
+                &format!("{what} ctor"),
+                0x00a3_dd20,
+                Conv::Thiscall(fresh),
+                &[],
+                |m| Out::U32(mv::queue_construct(m, fresh)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_data_frame_queue_init_matches_the_original() {
+    // A failed allocation is left out: the original then stores at
+    // `size - 4` (no buffer) and faults there, as the port does.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0202);
+        for case in 0..16u32 {
+            t.reset();
+            event_stubs(t);
+            let block = t.alloc(&[0xa5; 0x200]);
+            t.stub(mov::PHYRE_MALLOC, false, 1, 0, block);
+            let mine = t.stub_code(0x0e0f_0002, false, 1, 0, block);
+            let alloc = if case & 1 == 0 { 0 } else { mine };
+            let free = if case & 2 == 0 { 0 } else { 0x0012_3450 };
+            let q = t.zeros(0x40);
+            let capacity = rng.below(0x100);
+            let extra = rng.below(0x40);
+            t.check(
+                &format!("Init #{case}"),
+                0x00a3_ddf0,
+                Conv::Thiscall(q),
+                &[capacity, extra, alloc, free],
+                |m| Out::U32(mv::queue_init(m, q, capacity, extra, alloc, free)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_data_frame_queue_front_and_reserve_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0203);
+        for case in 0..120u32 {
+            t.reset();
+            event_stubs(t);
+            let size = 0x40 + rng.below(4) * 0x10;
+            let (r, w) = (rng.below(size - 4) & !3, rng.below(size - 4) & !3);
+            let q = queue(t, &mut rng, size, r, w, true, case % 5 != 0);
+            let reserve = case & 1 == 1;
+            // waits move the other side's index on, or stop the queue
+            let limit = q + if reserve { 8 } else { 0xc };
+            let step = rng.below(3) * 0x10;
+            let calls = 1 + rng.below(4);
+            wait_stub(t, limit, step, calls, q + 0x2c);
+            let what = format!("{} #{case}", if reserve { "Reserve" } else { "Front" });
+            if reserve {
+                let len = rng.below(size);
+                t.check(&what, 0x00a3_dec0, Conv::Thiscall(q), &[len], |m| {
+                    Out::U32(mv::queue_reserve(m, q, len))
+                });
+            } else {
+                t.check(&what, 0x00a3_dd90, Conv::Thiscall(q), &[], |m| {
+                    Out::U32(mv::queue_front(m, q))
+                });
+            }
+            // the helper itself, with its own arguments
+            t.reset();
+            let out = t.zeros(4);
+            // high bits on the indices: they show in `eax`
+            let high = (case % 3) * 0x1234_5600;
+            let lim = t.words(&[rng.below(size + 0x10) + high]);
+            let start = rng.below(size + 0x10) + high;
+            let len = rng.below(size);
+            let ev = t.zeros(4);
+            t.write(q + 0x2c, &[u8::from(case % 3 != 0)]);
+            let step = rng.below(3) * 8;
+            let calls = 1 + rng.below(3);
+            wait_stub(t, lim, step, calls, q + 0x2c);
+            let args = [out, start, len, lim, ev];
+            t.check(
+                &format!("{what} waitSpace"),
+                0x00a3_dfb0,
+                Conv::Thiscall(q),
+                &args,
+                |m| Out::U32(mv::queue_wait_space(m, q, out, start, len, lim, ev)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_vbf_mkv_reader_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0204);
+        for case in 0..24u32 {
+            t.reset();
+            t.stub(mov::STREAM_FILE_DTOR, true, 0, 0, 0x0e00_0011);
+            t.stub(mov::OPERATOR_DELETE, false, 1, 0, 0x0e00_0012);
+            t.stub(mov::MKV_READER_BASE_DTOR, true, 0, 0, 0x0e00_0013);
+            let file = t.zeros(8);
+            let block = if case % 4 == 1 { 0 } else { t.zeros(8) };
+            t.stub(mov::OPERATOR_NEW, false, 1, 0, block);
+            let made = if case % 8 == 2 { 0 } else { block };
+            t.stub(mov::STREAM_FILE_CTOR, true, 5, 5, made);
+            let size = rng.next();
+            t.stub(mov::STREAM_FILE_SIZE, true, 0, 0, size);
+            let has = case & 2 == 0;
+            let this = t.words(&[0, 1, rng.next(), rng.next(), if has { file } else { 0 }]);
+            let what = format!("reader #{case}");
+            let a = if case & 4 == 0 { t.zeros(8) } else { 0 };
+            let b = if case & 8 == 0 { t.zeros(8) } else { 0 };
+            t.check(
+                &format!("{what} Length"),
+                0x00a3_e1b0,
+                Conv::Thiscall(this),
+                &[a, b],
+                |m| Out::U32(mv::reader_length(m, this, a, b)),
+            );
+            let name = if case % 6 == 5 {
+                0
+            } else {
+                t.alloc(b"movie.vbf\0")
+            };
+            t.check(
+                &format!("{what} Open"),
+                0x00a3_e1f0,
+                Conv::Thiscall(this),
+                &[name],
+                |m| Out::U32(mv::reader_open(m, this, name)),
+            );
+            t.check(
+                &format!("{what} Close"),
+                0x00a3_e150,
+                Conv::Thiscall(this),
+                &[],
+                |m| {
+                    mv::reader_close(m, this);
+                    Out::None
+                },
+            );
+            t.w32(this + 0x10, if case & 1 == 0 { file } else { 0 });
+            let flags = case & 3;
+            t.check(
+                &format!("{what} delete"),
+                0x00a3_e0c0,
+                Conv::Thiscall(this),
+                &[flags],
+                |m| Out::U32(mv::reader_deleting_dtor(m, this, flags)),
+            );
+            t.w32(this + 0x10, 0x0e1e_2001);
+            t.check(
+                &format!("{what} ctor"),
+                0x00a3_e030,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(mv::reader_construct(m, this)),
+            );
+        }
+    });
+}
+
+// ---- round 2: PC glue (`ffx_system::m5b_pc`) ----
+//
+// None of these ran in a coverage run except the job pushes and the focus
+// handler's registration; synthetic objects reach every branch.
+
+#[test]
+fn r2_occluder_descriptor_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0205);
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(pcs::OCCLUDER_GET, false, 1, 0, r);
+            t.stub(pcs::PHYRE_PRINTF, false, 2, 0, r ^ 1);
+            t.stub(pcs::PUSH_OBJECT, false, 3, 0, r ^ 2);
+            t.stub(pcs::LUA_94AC00, false, 2, 0, r ^ 3);
+            t.stub(pcs::LUA_PUSHNIL, false, 1, 0, r ^ 4);
+            t.stub(pcs::REGISTRY_SET, true, 2, 2, r ^ 5);
+            let (l, v) = (rng.word(), rng.word());
+            let out = t.zeros(4);
+            t.check("get", 0x00a4_24b0, Conv::Stdcall, &[v, out], |m| {
+                Out::U32(pcb::occluder_get(m, v, out))
+            });
+            t.check("not supported", 0x00a4_24e0, Conv::Stdcall, &[l, v], |m| {
+                Out::U32(pcb::not_supported(m))
+            });
+            let slot = t.words(&[if case & 1 == 0 { 0 } else { v | 1 }]);
+            t.check("push slot", 0x00a4_2700, Conv::Stdcall, &[l, slot], |m| {
+                Out::U32(pcb::push_slot(m, l, slot))
+            });
+            for sym in [0x00a4_2740u32, 0x00a4_2760] {
+                t.check("push", sym, Conv::Stdcall, &[l, v], |m| {
+                    Out::U32(pcb::push_value(m, l, v))
+                });
+            }
+            let flag = match case % 4 {
+                0 => 0,
+                1 => 1,
+                2 => 0x100,
+                _ => rng.next(),
+            };
+            t.check(
+                "registry set",
+                0x00a4_27e0,
+                Conv::Stdcall,
+                &[v, flag],
+                |m| Out::U32(pcb::registry_set(m, v, flag)),
+            );
+            let f = t.stub_code(0x0e0f_0003, false, 2, 0, r ^ 6);
+            let this = t.zeros(0xa0);
+            t.w32(this + 0x94, f);
+            t.check(
+                "call field",
+                0x00a4_2810,
+                Conv::Thiscall(this),
+                &[l, v],
+                |m| Out::U32(pcb::call_field(m, this, l, v)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_pc_read_hooks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0206);
+        for case in 0..8u32 {
+            t.reset();
+            let (r1, r2) = (rng.next(), rng.next());
+            t.stub(pcs::CD_READ_SECTOR, false, 5, 0, r1);
+            t.stub(pcs::CD_FILE_SECTOR, false, 1, 0, r2);
+            let base = t.rebase(pcs::CD_FILE_BASE);
+            let b0 = rng.below(0x1000);
+            t.w32(base, b0);
+            let w: Vec<u32> = (0..5).map(|_| rng.word()).collect();
+            t.check("read sector", 0x00a4_2870, Conv::Cdecl, &w, |m| {
+                Out::U32(pcb::read_sector(m, w[0], w[1], w[2], w[3], w[4]))
+            });
+            let file = rng.below(0x4000) + case;
+            let slot = t.b_stack(0x40);
+            t.check("file sector", 0x00a4_2880, Conv::Cdecl, &[file], |m| {
+                Out::U32(pcb::file_sector(m, file, slot))
+            });
+        }
+    });
+}
+
+#[test]
+fn r2_read_whole_file_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0207);
+        for case in 0..16u32 {
+            t.reset();
+            let opened = case % 3 != 0;
+            t.stub(pcs::SCE_OPEN, false, 2, 0, if opened { 7 } else { 0 });
+            // the empty name's message takes one word
+            t.stub(
+                pcs::DBG_PRINTF,
+                false,
+                if case & 4 == 0 { 1 } else { 2 },
+                0,
+                1,
+            );
+            t.stub(pcs::MOVIE_ERR, false, 3, 0, 2);
+            let size = match case % 4 {
+                0 => 0,
+                1 => rng.below(0x100),
+                2 => 0xffff_fffb,
+                _ => 0x8000_0001,
+            };
+            t.stub_seq(pcs::SCE_LSEEK, 3, 0, &[size, 0]);
+            t.stub(pcs::USER_MALLOC, false, 1, 0, 0x0e00_0100);
+            t.stub(pcs::FLUSH_CACHE, false, 1, 0, 3);
+            t.stub(pcs::SCE_READ, false, 3, 0, size);
+            t.stub(pcs::SCE_CLOSE, false, 1, 0, 0);
+            let name = t.alloc(if case & 4 == 0 { b"\0" } else { b"map.bin\0" });
+            let out = if case & 8 == 0 { t.zeros(4) } else { 0 };
+            t.check(
+                &format!("read whole file #{case}"),
+                0x00a4_2a00,
+                Conv::Cdecl,
+                &[name, out],
+                |m| Out::U32(pcb::read_whole_file(m, name, out)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r2_focus_handler_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..96u32 {
+            t.reset();
+            let cam = t.zeros(0x340);
+            t.w32(cam, [0, 1, 2][(case % 3) as usize]);
+            t.write(cam + 0x338, &[u8::from(case / 3 % 4 == 1)]);
+            t.write(cam + 0x33c, &[u8::from(case / 3 % 4 == 2)]);
+            let made = t.zeros(0x340);
+            // without a camera it is made on demand; a failed `new` makes
+            // the original read through 0 and fault, so only the
+            // successful one runs
+            let have = case / 12 % 2 == 0;
+            t.stub(pcs::OPERATOR_NEW, false, 1, 0, made);
+            t.stub(pcs::FREE_CAMERA_CTOR, true, 0, 0, made);
+            let cell = t.rebase(pcs::FREE_CAMERA);
+            t.w32(cell, if have { cam } else { 0 });
+            let esc = t.zeros(0x80);
+            t.write(esc + 0x70, &[u8::from(case / 24 % 2 == 1)]);
+            let esc_cell = t.rebase(pcs::ESC_MENU);
+            t.w32(esc_cell, if case % 5 == 0 { 0 } else { esc });
+            let fmv = t.zeros(0x700);
+            t.write(fmv + 0x6fc, &[u8::from(case % 7 == 3)]);
+            let manager = if case % 11 == 4 { 0 } else { fmv };
+            t.stub(pcs::FMV_MANAGER, false, 0, 0, manager);
+            t.stub(pcs::FMV_PAUSE, true, 0, 0, 0x0e00_0200);
+            t.stub(pcs::PAUSE_ALL_SOUNDS, false, 1, 0, 0x0e00_0201);
+            let this = t.words(&[0x00b7_af94, if case / 48 == 0 { 0 } else { 0x0101 }]);
+            let what = format!("focus #{case}");
+            if case & 1 == 0 {
+                t.check(
+                    &format!("{what} lost"),
+                    0x00a4_4890,
+                    Conv::Thiscall(this),
+                    &[],
+                    |m| Out::U32(pcb::focus_lost(m, this)),
+                );
+            } else {
+                t.check(
+                    &format!("{what} gained"),
+                    0x00a4_4960,
+                    Conv::Thiscall(this),
+                    &[],
+                    |m| Out::U32(pcb::focus_gained(m, this)),
+                );
+            }
+        }
+        t.reset();
+        t.stub(pcs::HANDLER_INSERT, false, 1, 0, 0x0e00_0202);
+        let h = t.rebase(pcs::FOCUS_HANDLER);
+        t.write(h + 4, &[1]);
+        t.check("register", 0x00a4_4a30, Conv::Cdecl, &[], |m| {
+            Out::U32(pcb::register_focus_handler(m))
+        });
+    });
+}
+
+/// A scheduler with queue `queue` set up: handles, a free ring of entries
+/// and a run ring. The indices stay 0..=15: the game keeps them in 0..=7,
+/// and a negative one (the signed modulo's other branch) would index
+/// before the ring in the original as in the port.
+fn scheduler(t: &mut Twins, rng: &mut Rng, queue: u32) -> u32 {
+    let s = t.zeros(0x1e8 * 2 + 0x40);
+    let q = s + queue * 0x1e8;
+    for i in 0..8 {
+        let e = t.zeros(0x30);
+        t.w32(q + 0x1d0 + 4 * i, e);
+    }
+    let free = rng.below(16);
+    t.w32(q + 0x1f0, free);
+    let words = [
+        (0x1f8, rng.below(9)),
+        (0x1fc, 0x0e1e_1001),
+        (
+            0x224,
+            rng.below(8) + if rng.chance(3) { 0xffff_fff0 } else { 0 },
+        ),
+        (0x228, rng.below(8)),
+        (0x22c, 0x0e1e_1002),
+        (0x230, 0x0e1e_1003),
+        (0x234, 0x0e1e_1004),
+    ];
+    for (off, v) in words {
+        t.w32(q + off, v);
+    }
+    s
+}
+
+#[test]
+fn r2_job_pushes_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0208);
+        for case in 0..24u32 {
+            t.reset();
+            imp(t, pcs::WAIT_FOR_SINGLE_OBJECT_IAT, 2, true, 0);
+            imp(t, pcs::RELEASE_SEMAPHORE_IAT, 3, true, 0x0e00_0300 + case);
+            let queue = case % 2;
+            let s = scheduler(t, &mut rng, queue);
+            let (f, a, b, c) = (rng.next(), rng.word(), rng.word(), rng.word());
+            let slot = t.b_stack(0x40);
+            if case & 2 == 0 {
+                t.check(
+                    "push job 2",
+                    0x00a4_4a50,
+                    Conv::Thiscall(s),
+                    &[f, a, b, queue],
+                    |m| Out::U32(pcb::push_job(m, s, f, &[a, b], queue, slot)),
+                );
+            } else {
+                t.check(
+                    "push job 3",
+                    0x0071_e720,
+                    Conv::Thiscall(s),
+                    &[f, a, b, c, queue],
+                    |m| Out::U32(pcb::push_job(m, s, f, &[a, b, c], queue, slot)),
+                );
+            }
+            let s = scheduler(t, &mut rng, 0);
+            let cell = t.rebase(pcs::SCHEDULER);
+            t.w32(cell, s);
+            t.check("schedule cloth", 0x00a4_4b40, Conv::Cdecl, &[a, b], |m| {
+                Out::U32(pcb::schedule_cloth(m, a, b, slot))
+            });
+            t.check(
+                "schedule calc middle",
+                0x00a4_4b90,
+                Conv::Cdecl,
+                &[a, b, c],
+                |m| Out::U32(pcb::schedule_calc_middle(m, a, b, c, slot)),
+            );
+            t.check("wait calc middle", 0x00a4_4b80, Conv::Cdecl, &[], |m| {
+                ffx_system::m5a_platform::bridge::wait_cloth(m);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn r2_str_replace_matches_the_original() {
+    let cases: &[(&[u8], &[u8], &[u8])] = &[
+        (b"", b"a", b"b"),
+        (b"abc", b"x", b"yy"),
+        (b"abc", b"b", b"XYZ"),
+        (b"aaaa", b"a", b""),
+        (b"aaaa", b"aa", b"b"),
+        (b"%s/%s.bin", b"%s", b"field"),
+        (b"host0:/ffx/master/", b"/", b"\\\\"),
+        (b"abab", b"ab", b"ab"),
+    ];
+    let z = |b: &[u8]| {
+        let mut v = b.to_vec();
+        v.push(0);
+        v
+    };
+    Twins::each(|t| {
+        for (i, &(s, what, with)) in cases.iter().enumerate() {
+            for fail in 0..3u32 {
+                t.reset();
+                let buf = t.zeros(0x100);
+                let grown = t.zeros(0x100);
+                t.stub(
+                    pcs::USER_MALLOC,
+                    false,
+                    1,
+                    0,
+                    if fail == 1 { 0 } else { buf },
+                );
+                t.stub(
+                    pcs::USER_REALLOC,
+                    false,
+                    2,
+                    0,
+                    if fail == 2 { 0 } else { grown },
+                );
+                t.stub(pcs::USER_FREE, false, 1, 0, 0);
+                let (ps, pw, pt) = (t.alloc(&z(s)), t.alloc(&z(what)), t.alloc(&z(with)));
+                t.check(
+                    &format!("str_replace #{i}/{fail}"),
+                    0x00a4_4bd0,
+                    Conv::Cdecl,
+                    &[ps, pw, pt],
+                    |m| Out::U32(pcb::str_replace(m, ps, pw, pt)),
+                );
+            }
+        }
+    });
+}

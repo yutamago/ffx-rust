@@ -10,6 +10,8 @@
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
 use ffx_system::m5b_misc::{self as ms, bridge as mb};
+use ffx_system::m5b_movie::bridge as mv;
+use ffx_system::m5b_pc::bridge as pc;
 use ffx_system::m5b_stackwalker::bridge as sw;
 use ffx_system::m5b_steam::{self as steam, bridge as sm};
 use ffx_system::m5b_stl::{self as stl, bridge as st};
@@ -340,6 +342,159 @@ ported! {
     /// `JobWorker_start_00703a50(this; queue, arg)`.
     JobWorker_start_00703a50 @ 0x0070_3a50 => extern "thiscall" fn job_worker_start(this: u32, queue: u32, arg: u32) -> u32 {
         mb::job_worker_start(&mut mem(), this, queue, arg)
+    }
+
+    // ---- round 2: the movie frame queue and its reader ----
+    /// `SetFields_00a3dd00(this; a, b, c, d)`.
+    SetFields_00a3dd00 @ 0x00a3_dd00 => extern "thiscall" fn set_fields_00a3dd00(this: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
+        mv::set_fields(&mut mem(), this, [a, b, c, d])
+    }
+    /// `CDataFrameQueue::CDataFrameQueue(this)`.
+    CDataFrameQueue_ctor @ 0x00a3_dd20 => extern "thiscall" fn data_frame_queue_ctor(this: u32) -> u32 {
+        mv::queue_construct(&mut mem(), this)
+    }
+    /// The deleting destructor `(this; flags)`.
+    CDataFrameQueue_deletingDtor_00a3dd60 @ 0x00a3_dd60 => extern "thiscall" fn data_frame_queue_delete(this: u32, flags: u32) -> u32 {
+        mv::queue_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// `Front(this)`.
+    CDataFrameQueue_Front @ 0x00a3_dd90 => extern "thiscall" fn data_frame_queue_front(this: u32) -> u32 {
+        mv::queue_front(&mut mem(), this)
+    }
+    /// `Pop(this)`: `eax` untouched when no writer is woken.
+    CDataFrameQueue_Pop @ 0x00a3_ddc0 => extern "thiscall" fn data_frame_queue_pop(this: u32) {
+        let _ = mv::queue_pop(&mut mem(), this);
+    }
+    /// `Count(this)`.
+    CDataFrameQueue_Count @ 0x00a3_dde0 => extern "thiscall" fn data_frame_queue_count(this: u32) -> u32 {
+        mv::queue_count(&mut mem(), this)
+    }
+    /// `Init(this; capacity, extra, alloc, free)`.
+    CDataFrameQueue_Init @ 0x00a3_ddf0 => extern "thiscall" fn data_frame_queue_init(this: u32, capacity: u32, extra: u32, alloc: u32, free: u32) -> u32 {
+        mv::queue_init(&mut mem(), this, capacity, extra, alloc, free)
+    }
+    /// `Close(this)`.
+    CDataFrameQueue_Close @ 0x00a3_dea0 => extern "thiscall" fn data_frame_queue_close(this: u32) -> u32 {
+        mv::queue_close(&mut mem(), this)
+    }
+    /// `Reserve(this; len)`.
+    CDataFrameQueue_Reserve @ 0x00a3_dec0 => extern "thiscall" fn data_frame_queue_reserve(this: u32, len: u32) -> u32 {
+        mv::queue_reserve(&mut mem(), this, len)
+    }
+    /// `Commit(this)`.
+    CDataFrameQueue_Commit @ 0x00a3_df00 => extern "thiscall" fn data_frame_queue_commit(this: u32) -> u32 {
+        mv::queue_commit(&mut mem(), this)
+    }
+    /// `Destroy(this)`: `eax` untouched when closed already.
+    CDataFrameQueue_Destroy @ 0x00a3_df20 => extern "thiscall" fn data_frame_queue_destroy(this: u32) {
+        let _ = mv::queue_destroy(&mut mem(), this);
+    }
+    /// `0x00a3dfb0(this; out, start, len, limit, event)`.
+    CDataFrameQueue_waitSpace_00a3dfb0 @ 0x00a3_dfb0 => extern "thiscall" fn data_frame_queue_wait_space(this: u32, out: u32, start: u32, len: u32, limit: u32, event: u32) -> u32 {
+        mv::queue_wait_space(&mut mem(), this, out, start, len, limit, event)
+    }
+    /// `VbfMkvReader::VbfMkvReader(this)`.
+    VbfMkvReader_ctor @ 0x00a3_e030 => extern "thiscall" fn vbf_mkv_reader_ctor(this: u32) -> u32 {
+        mv::reader_construct(&mut mem(), this)
+    }
+    /// The deleting destructor `(this; flags)`.
+    VbfMkvReader_deletingDtor_00a3e0c0 @ 0x00a3_e0c0 => extern "thiscall" fn vbf_mkv_reader_delete(this: u32, flags: u32) -> u32 {
+        mv::reader_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// `Close(this)`.
+    VbfMkvReader_Close @ 0x00a3_e150 => extern "thiscall" fn vbf_mkv_reader_close(this: u32) {
+        mv::reader_close(&mut mem(), this);
+    }
+    /// `Length(this; total, available)`.
+    VbfMkvReader_Length @ 0x00a3_e1b0 => extern "thiscall" fn vbf_mkv_reader_length(this: u32, total: u32, available: u32) -> u32 {
+        mv::reader_length(&mut mem(), this, total, available)
+    }
+    /// `Open(this; name)`.
+    VbfMkvReader_Open @ 0x00a3_e1f0 => extern "thiscall" fn vbf_mkv_reader_open(this: u32, name: u32) -> u32 {
+        mv::reader_open(&mut mem(), this, name)
+    }
+
+    // ---- round 2: the occluder class descriptors' methods (`this` unused) ----
+    /// Slot 5 `(value, out)`.
+    OccluderDescriptor_get_00a424b0 @ 0x00a4_24b0 => extern "stdcall" fn occluder_get(value: u32, out: u32) -> u32 {
+        pc::occluder_get(&mut mem(), value, out)
+    }
+    /// The abstract descriptor's slot 3 `(a, b)`: a message only.
+    OccluderDescriptor_notSupported_00a424e0 @ 0x00a4_24e0 => extern "stdcall" fn occluder_not_supported(_a: u32, _b: u32) -> u32 {
+        pc::not_supported(&mut mem())
+    }
+    /// Slot 6 `(L, slot)`.
+    OccluderDescriptor_pushSlot_00a42700 @ 0x00a4_2700 => extern "stdcall" fn occluder_push_slot(l: u32, slot: u32) -> u32 {
+        pc::push_slot(&mut mem(), l, slot)
+    }
+    /// The abstract descriptor's slot 4 `(L, value)`.
+    OccluderDescriptor_push_00a42740 @ 0x00a4_2740 => extern "stdcall" fn occluder_push_00a42740(l: u32, v: u32) -> u32 {
+        pc::push_value(&mut mem(), l, v)
+    }
+    /// The header descriptors' slot 4 `(L, value)`.
+    OccluderDescriptor_push_00a42760 @ 0x00a4_2760 => extern "stdcall" fn occluder_push_00a42760(l: u32, v: u32) -> u32 {
+        pc::push_value(&mut mem(), l, v)
+    }
+    /// Slot 0 `(a, flag)`.
+    OccluderDescriptor_registrySet_00a427e0 @ 0x00a4_27e0 => extern "stdcall" fn occluder_registry_set(a: u32, flag: u32) -> u32 {
+        pc::registry_set(&mut mem(), a, flag)
+    }
+    /// The header descriptors' slot 15 `(this; a, b)`.
+    OccluderDescriptor_callField_00a42810 @ 0x00a4_2810 => extern "thiscall" fn occluder_call_field(this: u32, a: u32, b: u32) -> u32 {
+        pc::call_field(&mut mem(), this, a, b)
+    }
+
+    // ---- round 2: the PC read hooks, the focus handler, jobs ----
+    /// `PcReadFunc_set`'s sector read: a tail jump to
+    /// `CDfileReadSector_CD`.
+    PcRead_readSector_00a42870 @ 0x00a4_2870 => extern "C" fn pc_read_sector(sector: u32, buffer: u32, size: u32, callback: u32, opts: u32) -> u32 {
+        pc::read_sector(&mut mem(), sector, buffer, size, callback, opts)
+    }
+    /// `PcReadFunc_set`'s file sector `(file)`: rebased into its slot.
+    PcRead_fileSector_00a42880 @ 0x00a4_2880 => extern "C" fn pc_file_sector(file: u32; slots: u32) -> u32 {
+        pc::file_sector(&mut mem(), file, slots)
+    }
+    /// `pc_ReadWholeFile(name, size_out)`.
+    pc_ReadWholeFile_00a42a00 @ 0x00a4_2a00 => extern "C" fn pc_read_whole_file(name: u32, size_out: u32) -> u32 {
+        pc::read_whole_file(&mut mem(), name, size_out)
+    }
+    /// `CWindowEventHandler` slot 0 `(this)`: the focus lost.
+    WindowEventHandler_focusLost_00a44890 @ 0x00a4_4890 => extern "thiscall" fn focus_lost(this: u32) -> u32 {
+        pc::focus_lost(&mut mem(), this)
+    }
+    /// `CWindowEventHandler` slot 1 `(this)`: the focus back.
+    WindowEventHandler_focusGained_00a44960 @ 0x00a4_4960 => extern "thiscall" fn focus_gained(this: u32) -> u32 {
+        pc::focus_gained(&mut mem(), this)
+    }
+    /// `()`: the focus handler registered.
+    WindowEventHandler_Register_00a44a30 @ 0x00a4_4a30 => extern "C" fn register_focus_handler() -> u32 {
+        pc::register_focus_handler(&mut mem())
+    }
+    /// `(this; func, a, b, queue)`: a two-word job pushed.
+    JobScheduler_pushJob2_00a44a50 @ 0x00a4_4a50 => extern "thiscall" fn push_job2(this: u32, func: u32, a: u32, b: u32, queue: u32; slots: u32) -> u32 {
+        pc::push_job(&mut mem(), this, func, &[a, b], queue, slots.wrapping_add(12))
+    }
+    /// `(chars, count)`.
+    JobSchedule_Ch_Cloth_PerCharacter @ 0x00a4_4b40 => extern "C" fn schedule_cloth(chars: u32, count: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        pc::schedule_cloth(&mut mem(), chars, count, f.at())
+    }
+    /// `()`: the same code as `JobScheduleWait_Ch_Cloth_PerCharacter`.
+    JobScheduleWait_Ch_CalcMiddle_Batch @ 0x00a4_4b80 => extern "C" fn wait_calc_middle() {
+        ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());
+    }
+    /// `(chars, pass, count)`.
+    JobSchedule_Ch_CalcMiddle_Batch @ 0x00a4_4b90 => extern "C" fn schedule_calc_middle(chars: u32, pass: u32, count: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        pc::schedule_calc_middle(&mut mem(), chars, pass, count, f.at())
+    }
+    /// `(this; func, a, b, c, queue)`: a three-word job pushed.
+    JobScheduler_pushJob3_0071e720 @ 0x0071_e720 => extern "thiscall" fn push_job3(this: u32, func: u32, a: u32, b: u32, c: u32, queue: u32; slots: u32) -> u32 {
+        pc::push_job(&mut mem(), this, func, &[a, b, c], queue, slots.wrapping_add(16))
+    }
+    /// `str_replace(s, what, with)`.
+    str_replace @ 0x00a4_4bd0 => extern "C" fn str_replace(s: u32, what: u32, with: u32) -> u32 {
+        pc::str_replace(&mut mem(), s, what, with)
     }
 }
 
