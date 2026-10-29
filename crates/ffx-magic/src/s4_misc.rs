@@ -11,8 +11,8 @@ use crate::sa_misc::{RESET_TRANSFORM, reset_transform};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
 use crate::sb_misc::{
-    EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, ease_angle, ease_sample, mean_position,
-    rotate_offset,
+    ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, anim_reset, ease_angle,
+    ease_sample, mean_position, rotate_offset,
 };
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -63,25 +63,24 @@ fn append_object<G: Game>(
     g.write::<u32>(w(count), n.wrapping_add(1));
 }
 
-/// Starts an effect object (internal: `edx` = the object, `xmm3` its
-/// scale, the stack `(index, owner, -, owner_b)`): the model words (scale
-/// `+0x60..+0x6c`), `*G_P = ITEM` (operands `+0x04`, `+0x59`), the part
-/// `list[index]` of slot 941 `(*G_D + 0x10)` started on it
-/// ([`start_part`], `0x1000`, 1), its transform reset with the two owners
-/// ([`reset_transform`]: `edx` = `owner`, `+0x100` = `owner_b`), then a
-/// pool node holding it appended to the object list. Returns the object.
-///
-/// `magic_0018` 0x10003a10 (241 bytes; 76 DLLs).
-#[allow(clippy::too_many_arguments)] // the original's registers and stack words
-pub fn start_object_at<G: Game>(
+/// The object start shared by [`start_object_at`] and
+/// [`start_object_anim`]: the model words (scale `+0x60..+0x6c`), `*G_P
+/// = ITEM` (operands `+0x04`, `+0x59`), the part `list[index]` of slot
+/// 941 `(*G_D + 0x10)` (operands `+0x5e`, `+0x66`) started on it
+/// ([`start_part`], `0x1000`, 1; its `rel32` at `part`), `reset` on the
+/// object, then a pool node holding it appended to the object list
+/// ([`pool_alloc`]'s `rel32` at `pool`, the list's operands `list`).
+/// Returns the object.
+#[allow(clippy::too_many_arguments)] // the original's registers, stack words and operands
+fn start_object<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
     obj: u32,
     scale: f32,
     index: u32,
-    owner: u32,
-    owner_b: u32,
+    reset: impl FnOnce(&mut G),
+    (part, pool, list): (u32, u32, [u32; 7]),
 ) -> u32 {
     let w = |off: u32| img.word(f + off);
     let p = g.read::<u32>(w(0x04));
@@ -98,20 +97,37 @@ pub fn start_object_at<G: Game>(
     g.write::<u32>(p, w(0x59));
     let d = g.read::<u32>(g.read::<u32>(w(0x5e)).wrapping_add(0x10));
     let s941 = slot_target(g, w(0x66), 941);
-    let list = g.call(s941, 0, &[d]).eax;
-    let program = g.read::<u32>(list.wrapping_add(index.wrapping_mul(4)));
-    start_part(g, img, img.rel32_target(f + 0x84), obj, 0x1000, program, 1);
-    // push owner_b; push ecx (not read); call with `edx` = owner
-    reset_transform(g, obj, owner, owner_b);
-    append_object(
-        g,
-        img,
-        f,
-        img.rel32_target(f + 0x9d),
-        obj,
-        [0xa8, 0xbb, 0xc1, 0xca, 0xd6, 0xdf, 0xe8],
-    );
+    let table = g.call(s941, 0, &[d]).eax;
+    let program = g.read::<u32>(table.wrapping_add(index.wrapping_mul(4)));
+    start_part(g, img, img.rel32_target(f + part), obj, 0x1000, program, 1);
+    reset(g);
+    append_object(g, img, f, img.rel32_target(f + pool), obj, list);
     obj
+}
+
+/// Starts an effect object (internal: `edx` = the object, `xmm3` its
+/// scale, the stack `(index, owner, -, owner_b)`): [`start_object`] with
+/// its transform reset with the two owners ([`reset_transform`]: `edx` =
+/// `owner`, `+0x100` = `owner_b`). Returns the object.
+///
+/// `magic_0018` 0x10003a10 (241 bytes; 76 DLLs).
+#[allow(clippy::too_many_arguments)] // the original's registers and stack words
+pub fn start_object_at<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    index: u32,
+    owner: u32,
+    owner_b: u32,
+) -> u32 {
+    // push owner_b; push ecx (not read); call with `edx` = owner
+    let reset = |g: &mut G| {
+        reset_transform(g, obj, owner, owner_b);
+    };
+    let list = [0xa8, 0xbb, 0xc1, 0xca, 0xd6, 0xdf, 0xe8];
+    start_object(g, img, f, obj, scale, index, reset, (0x84, 0x9d, list))
 }
 
 /// [`start_object_at`].
@@ -122,6 +138,40 @@ pub const START_OBJECT_AT: Sig = Sig {
         (0x84, Callee::Sig(&START_PART)),
         (0x95, Callee::Sig(&RESET_TRANSFORM)),
         (0x9d, Callee::Sig(&POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// Starts an effect object (internal: `edx` = the object, `xmm3` its
+/// scale, the stack `(index, value)`): [`start_object`] with its
+/// animation block reset ([`anim_reset`], `+0x114` = `value`). Returns
+/// the object.
+///
+/// `magic_0054` 0x10001b80 (237 bytes; 23 DLLs).
+pub fn start_object_anim<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    index: u32,
+    value: u32,
+) -> u32 {
+    let reset = |g: &mut G| {
+        anim_reset(g, obj, value);
+    };
+    let list = [0xa4, 0xb7, 0xbd, 0xc6, 0xd2, 0xdb, 0xe4];
+    start_object(g, img, f, obj, scale, index, reset, (0x84, 0x99, list))
+}
+
+/// [`start_object_anim`].
+pub const START_OBJECT_ANIM: Sig = Sig {
+    len: 237,
+    hash: 0x8bc5_2ce5_0a68_533f,
+    calls: &[
+        (0x84, Callee::Sig(&START_PART)),
+        (0x91, Callee::Sig(&ANIM_RESET)),
+        (0x99, Callee::Sig(&POOL_ALLOC)),
     ],
     imports: &[],
 };

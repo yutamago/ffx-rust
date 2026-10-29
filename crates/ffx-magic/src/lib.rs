@@ -1213,6 +1213,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("colour node fade", &s4_summon::COLOUR_NODE_FADE),
     ("motion state", &s4_summon::MOTION_STATE),
     ("start object at", &s4_misc::START_OBJECT_AT),
+    ("start object (anim)", &s4_misc::START_OBJECT_ANIM),
     ("targets init", &s4_summon::TARGETS_INIT),
     ("angle step", &s4_misc::ANGLE_STEP),
     ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),

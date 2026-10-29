@@ -175,9 +175,10 @@ fn sprites_run() {
 /// an empty list, to a list with a tail, and with the pool empty.
 #[test]
 fn start_object_at() {
-    for (n, rva) in [(18u16, 0x3a10u32), (446, 0x8090)] {
+    for (n, rva, anim) in [(18u16, 0x3a10u32, false), (446, 0x8090, false), (54, 0x1b80, true)] {
         let Some(mut t) = twin(n) else { return };
         let at = t.at(rva);
+        let (pool_op, tail_op) = if anim { (0x99, 0xa4) } else { (0x9d, 0xa8) };
         t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
         t.set_u32(t.img.word(at + 0x5e), SCRATCH + 0x300);
         t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
@@ -194,7 +195,7 @@ fn start_object_at() {
             }
             0x714
         });
-        let pa = t.img.rel32_target(at + 0x9d);
+        let pa = t.img.rel32_target(at + pool_op);
         let free = t.img.word(pa + 0x04);
         // the pool's nodes: free (payload 0), their links old words
         let nodes = t.img.word(pa + 0x27) - 8;
@@ -203,7 +204,7 @@ fn start_object_at() {
             t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
             t.set_u32(nodes + 12 * i + 8, 0);
         }
-        let tail = t.img.word(at + 0xa8);
+        let tail = t.img.word(at + tail_op);
         let obj = SCRATCH + 0x1000;
         for (k, (count, scale, tl)) in [
             (3u16, 0.5f32, 0u32),
@@ -230,16 +231,21 @@ fn start_object_at() {
             ]);
             let args = [k as u32 * 2 + 1, 0x0a00 + k as u32, 0xdead, 0x0b00 + k as u32];
             t.check(at, c, &args, Eax::Checked, |g, img, fr| {
-                Ret::eax(s4_misc::start_object_at(
-                    g,
-                    img,
-                    fr.at,
-                    fr.edx,
-                    fr.xmm_f32(3),
-                    fr.arg(g, 0),
-                    fr.arg(g, 1),
-                    fr.arg(g, 3),
-                ))
+                let (obj, scale, index) = (fr.edx, fr.xmm_f32(3), fr.arg(g, 0));
+                Ret::eax(if anim {
+                    s4_misc::start_object_anim(g, img, fr.at, obj, scale, index, fr.arg(g, 1))
+                } else {
+                    s4_misc::start_object_at(
+                        g,
+                        img,
+                        fr.at,
+                        obj,
+                        scale,
+                        index,
+                        fr.arg(g, 1),
+                        fr.arg(g, 3),
+                    )
+                })
             });
         }
     }
