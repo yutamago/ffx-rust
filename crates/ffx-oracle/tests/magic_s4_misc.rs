@@ -1922,3 +1922,55 @@ fn object_frames() {
         }
     }
 }
+
+/// The sprite take (`magic_0370`), the counter set-up (`magic_0644`) and
+/// the part start (`magic_0700`).
+#[test]
+fn takes_and_starts() {
+    if let Some(mut t) = twin(370) {
+        let f = t.at(0x2f00);
+        for s in [942u32, 941] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        let pool = SCRATCH + 0x100;
+        let sprites = SCRATCH + 0x1000;
+        for (n, busy) in [(0u32, 0usize), (3, 0), (3, 2), (2, 2)] {
+            t.write(sprites, &[0x5a; 0x94 * 3]);
+            for i in 0..3u32 {
+                t.set_u32(sprites + 0x94 * i, u32::from((i as usize) < busy));
+            }
+            t.set_u32(pool, n);
+            t.set_u32(pool + 4, sprites);
+            let c = Call {
+                ecx: pool,
+                edx: 0x0e5e_0001,
+                ..Call::default()
+            };
+            t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+                s4_misc::sprite_take(g, img, fr)
+            });
+        }
+    }
+    if let Some(mut t) = twin(644) {
+        let f = t.at(0x9940);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(f + 0x3), block);
+        rec(&mut t, 219, 2, |_, a| 0x0219_0000 ^ a[0]);
+        rec(&mut t, 257, 2, |_, _| 0x257);
+        let rec4 = SCRATCH + 0x200;
+        t.set_u32(block + 0xeb64, rec4);
+        t.set_u32(rec4 + 4, 0x44);
+        for on in [0u32, 1] {
+            t.set_u32(block + 0xd618, on);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(700) {
+        let f = t.at(0x1000);
+        for s in [718u32, 222, 221] {
+            rec(&mut t, s, 1, move |_, _| s);
+        }
+        rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

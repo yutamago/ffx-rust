@@ -2204,3 +2204,115 @@ pub const OBJECTS_END_B: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A free sprite of a pool (internal, `ecx` = the pool: `+0x0` the count,
+/// `+0x4` the sprites, 0x94 bytes each; `edx` = the resource, passed on):
+/// the first whose `+0x0` is 0 is taken (1), its time `+0x28` 0x3c, its
+/// sprite block `+0x30` set up ([`crate::sa_misc::sprite_init`] with the
+/// resource), its `+0x4..+0x20` the identity rotation `(0, 0, 0, 1)` and
+/// zeros. Returns it, or 0 when all are taken.
+///
+/// `magic_0370` 0x10002f00 (117 bytes; 6 DLLs).
+pub fn sprite_take<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (pool, res) = (fr.ecx, fr.edx);
+    let n = g.read::<i32>(pool);
+    let mut sp = g.read::<u32>(pool + 4);
+    let mut i = 0;
+    while i < n {
+        if g.read::<u32>(sp) == 0 {
+            g.write::<u32>(sp, 1);
+            g.write::<u32>(sp + 0x28, 0x3c);
+            crate::sa_misc::sprite_init(g, img, img.rel32_target(fr.at + 0x35), sp + 0x30, res);
+            for (o, v) in [
+                (4, 0),
+                (8, 0),
+                (0xc, 0),
+                (0x10, 0x3f80_0000),
+                (0x14, 0),
+                (0x18, 0),
+                (0x1c, 0),
+                (0x20, 0),
+            ] {
+                g.write::<u32>(sp + o, v);
+            }
+            return Ret::eax(sp);
+        }
+        i += 1;
+        sp = sp.wrapping_add(0x94);
+    }
+    Ret::eax(0)
+}
+
+/// [`sprite_take`].
+pub const SPRITE_TAKE: Sig = Sig {
+    len: 117,
+    hash: 0x132d_66b7_3a99_17bb,
+    calls: &[(0x35, Callee::Sig(&crate::sa_misc::SPRITE_INIT))],
+    imports: &[],
+};
+
+/// The block's counter set up (a table entry, no arguments): with the
+/// block's (`*G`, operand `+0x3`) `+0xd618` 1, slot 257 shows the
+/// element slot 219 `(*G_A, 0)` gives (`+0x19`); then `+0xd610`,
+/// `+0xd614`, `+0xd620` are cleared and `+0xd61c` takes the word `+0x4`
+/// of `+0xeb64`. Returns it.
+///
+/// `magic_0644` 0x10009940 (103 bytes; 5 DLLs).
+pub fn counter_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let block = g.read::<u32>(w(0x3));
+    if g.read::<u32>(block + 0xd618) == 1 {
+        let a = g.read::<u32>(w(0x19));
+        let t = slot_target(g, w(0x11), 219);
+        let elem = g.call(t, 0, &[a, 0]).eax;
+        let t = slot_target(g, w(0x29), 257);
+        g.call(t, 0, &[elem, 1, a, 0]);
+    }
+    g.write::<u32>(block + 0xd610, 0);
+    g.write::<u32>(block + 0xd614, 0);
+    let n = g.read::<u32>(g.read::<u32>(block + 0xeb64).wrapping_add(4));
+    g.write::<u32>(block + 0xd61c, n);
+    g.write::<u32>(block + 0xd620, 0);
+    Ret::eax(n)
+}
+
+/// [`counter_setup`].
+pub const COUNTER_SETUP: Sig = Sig {
+    len: 103,
+    hash: 0x195b_e399_9f0a_74f1,
+    calls: &[],
+    imports: &[],
+};
+
+/// The part started (a table entry, no arguments): slot 718 on the part
+/// (operand `+0x6`), slots 222 and 221 `(part, 0, 1000, 0x100)`, and slot
+/// 719 `(part, 6, 0)` gives the handle kept in `G_H` (`+0x68`). Each
+/// call sees the words the earlier ones left. Returns the handle.
+///
+/// `magic_0700` 0x10001000 (109 bytes; 5 DLLs).
+pub fn part_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut s = Pushes::default();
+    s.push(w(0x6));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x1), 718), 0);
+    s.push_all(&[0x100, 1000, 0, w(0x2a)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x13), 222), 0);
+    s.push_all(&[0x100, 1000, 0, w(0x48)]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x31), 221), 0);
+    s.push_all(&[0, 6, w(0x5e)]);
+    // call width: 12 (Pushes caps the words at 12)
+    let h = s.call(g, slot_target(g, w(0x4f), 719), 0).eax;
+    g.write::<u32>(w(0x68), h);
+    Ret::eax(h)
+}
+
+/// [`part_start`].
+pub const PART_START: Sig = Sig {
+    len: 109,
+    hash: 0xd3eb_1b38_6aa3_790a,
+    calls: &[],
+    imports: &[],
+};

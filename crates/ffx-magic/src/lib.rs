@@ -966,6 +966,8 @@ ports! {
     "free block object" => s4_misc::FREE_BLOCK_OBJECT, s4_misc::free_block_object;
     "objects end (a)" => s4_misc::OBJECTS_END_A, s4_misc::objects_end_a;
     "objects end (b)" => s4_misc::OBJECTS_END_B, s4_misc::objects_end_b;
+    "counter set-up" => s4_misc::COUNTER_SETUP, s4_misc::counter_setup;
+    "part start (0700)" => s4_misc::PART_START, s4_misc::part_start;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
@@ -1271,6 +1273,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("scale task", &s4_misc::SCALE_TASK),
     ("float of slot 307", &s4_misc::FLOAT_307),
     ("unlist and free", &s4_misc::UNLIST_FREE),
+    ("sprite take", &s4_misc::SPRITE_TAKE),
     ("state task", &s4_misc::STATE_TASK),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
