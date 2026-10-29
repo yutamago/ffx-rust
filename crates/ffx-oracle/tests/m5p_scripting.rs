@@ -23,6 +23,7 @@ mod m5p_scripting_twins;
 
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
+use ffx_pother_a::m5p_scripting_more::{self as mo_, bridge as mo};
 use ffx_pother_a::m5p_scripting_sched::{self as sc_, bridge as sc};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::{self as st_, bridge as st};
@@ -2213,6 +2214,167 @@ fn b5_execute_matches_the_original() {
             t.this(&what, 0x0061_8490, o, &[0], |g| {
                 Some(st::execute_persistent(g, o, 0))
             });
+        }
+        t.unstub();
+    }
+}
+
+// ---- batch 6: scheduler removal, Vector constructor, type queries ----
+
+/// A scheduler whose live list (+0x24) holds `n` entries of `owner` with
+/// keys `key0 + i`, name indices `i`, step 3 and phase `i`; the owner's
+/// name table names entry 1 "tick" (by a tagged pointer) and entry 2 by
+/// the same pointer as `same`.
+fn sched_with(t: &mut Twins, owner: u32, n: u32, same: u32) -> (u32, Vec<u32>) {
+    let s_ = scheduler(t, 0);
+    let names = t.zeros(0x10);
+    let tick = t.cstr("tick");
+    t.w32(names + 4, tick + 1);
+    t.w32(names + 8, same);
+    t.w32(owner + 0xc, names);
+    let es: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+    for (i, &e) in es.iter().enumerate() {
+        let i = i as u32;
+        t.w32(e, es.get(i as usize + 1).copied().unwrap_or(0));
+        t.w32(e + 4, owner);
+        t.w32(e + 8, 0x10 + (i & 1));
+        t.w32(e + 0x10, i);
+        t.write(e + 0x14, &3u16.to_le_bytes());
+        t.write(e + 0x16, &(i as u16).to_le_bytes());
+    }
+    t.w32(s_ + 0x24, es.first().copied().unwrap_or(0));
+    (s_, es)
+}
+
+#[test]
+fn b6_scheduler_entries_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(mo_::FREELIST_DEALLOCATE, true, 1, 1, 0xfee);
+        let running = t.rebase(mo_::SCHEDULER_RUNNING);
+        let old = t.r32(running);
+        let same = t.cstr("same");
+        let tick = t.cstr("tick");
+        let empty = t.cstr("");
+        let other = t.cstr("tock");
+        for run in [0u32, 0x00c9_1000] {
+            t.w32(running, run);
+            for (owner_ok, key, name) in [
+                (true, 0x10u32, 0u32),
+                (true, 0x11, 0),
+                (true, 0x12, 0),
+                (false, 0x10, 0),
+                (true, 0x11, tick),
+                (true, 0x10, same),
+                (true, 0x10, empty),
+                (true, 0x10, other),
+            ] {
+                let owner = t.zeros(0x10);
+                let (s_, _) = sched_with(&mut t, owner, 4, same);
+                let o = if owner_ok { owner } else { 0x55 };
+                let what = format!("{label}: remove {run:#x} {owner_ok} {key:#x} {name:#x}");
+                t.this(&what, 0x005d_1370, s_, &[o, key, name], |g| {
+                    Some(mo::scheduler_remove(g, s_, o, key, name))
+                });
+                if run == 0 {
+                    let (s_, _) = sched_with(&mut t, owner, 4, same);
+                    for step in [0u32, 1, 5, 0xffff_0002, 0x0103] {
+                        let what =
+                            format!("{label}: set step {owner_ok} {key:#x} {name:#x} {step:#x}");
+                        t.this(&what, 0x005d_1670, s_, &[o, key, name, step], |g| {
+                            Some(mo::scheduler_set_step(g, s_, o, key, name, step))
+                        });
+                    }
+                }
+            }
+        }
+        let owner = t.zeros(0x10);
+        let (s_, _) = sched_with(&mut t, owner, 0, same);
+        t.this(
+            &format!("{label}: remove empty"),
+            0x005d_1370,
+            s_,
+            &[owner, 0x10, 0],
+            |g| Some(mo::scheduler_remove(g, s_, owner, 0x10, 0)),
+        );
+        t.w32(running, old);
+        t.unstub();
+    }
+}
+
+#[test]
+fn b6_lua_objects_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let table = t.alloc(
+            &[0u32, 0x3f80_0000, 0xc020_0000, 0x4049_0fdb, 0x7fc0_0001]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for top in [0u32, 1, 2, 4, 6, 0xffff_ffff] {
+            for ok in [false, true] {
+                lua_b3(&mut t, 0, 1, 1, 0, 3);
+                let u = if ok { t.junk(0x10, 1) } else { 0 };
+                t.stub(s::LUA_NEWUSERDATA, false, 2, 0, u);
+                t.stub(lb::LUA_GETTOP, false, 1, 0, top);
+                t.stub_float_table(lb::LUA_CHECKNUMBER, 2, 1, table);
+                let what = format!("{label}: vector new {top:#x} {ok}");
+                t.cdecl(&what, 0x0057_0f80, &[l], |g| Some(mo::vector_new(g, l)));
+            }
+        }
+        t.stub(s::LUA_CHECKSTACK, false, 2, 0, 0x0c5);
+        for (u, d, ud) in [
+            (false, 0u32, true),
+            (true, 0, true),
+            (true, 0x00c9_2200, true),
+            (true, 0x00c9_2200, false),
+        ] {
+            let p = if u {
+                let p = t.zeros(8);
+                t.w32(p, d);
+                t.w32(p + 4, 0x00c9_3300);
+                p
+            } else {
+                0
+            };
+            lua_b3(&mut t, p, 1, 1, 0, 2);
+            let out = if ud { t.junk(8, 1) } else { 0 };
+            t.stub(s::LUA_NEWUSERDATA, false, 2, 0, out);
+            let what = format!("{label}: type of {u} {d:#x} {ud}");
+            t.cdecl(&what, 0x0043_6b90, &[l], |g| Some(mo::get_type_of(g, l)));
+        }
+        // equality: neither, one, both with the same and other objects
+        t.stub(mo_::LUA_PUSHBOOLEAN, false, 2, 0, 0xb0);
+        let ud = |t: &mut Twins, obj: u32| {
+            let p = t.zeros(8);
+            t.w32(p, 0x00c9_2200);
+            t.w32(p + 4, obj);
+            p
+        };
+        for (a, b_) in [(0u32, 0u32), (1, 0), (0, 1), (1, 1), (1, 2)] {
+            let pa = if a == 0 { 0 } else { ud(&mut t, 0x00c9_3300) };
+            let pb = match b_ {
+                0 => 0,
+                1 => ud(&mut t, 0x00c9_3300),
+                _ => ud(&mut t, 0x00c9_4400),
+            };
+            lua_b3(&mut t, 0, 1, 1, 0, 3);
+            // lua_touserdata answers argument 1's, then argument 2's
+            let cell = t.zeros(4);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8] (the index)
+            c.extend([0x83, 0xf8, 0x01]); // cmp eax, 1
+            c.push(0xb8);
+            c.extend(pa.to_le_bytes()); // mov eax, pa
+            c.extend([0x74, 0x05]); // je +5
+            c.push(0xb8);
+            c.extend(pb.to_le_bytes()); // mov eax, pb
+            c.extend([0xff, 0x05]);
+            c.extend(cell.to_le_bytes()); // inc dword [cell]
+            c.push(0xc3);
+            let code = t.code(&c);
+            t.place(s::LUA_TOUSERDATA, code);
+            let what = format!("{label}: objects equal {a} {b_}");
+            t.cdecl(&what, 0x0043_6aa0, &[l], |g| Some(mo::objects_equal(g, l)));
         }
         t.unstub();
     }

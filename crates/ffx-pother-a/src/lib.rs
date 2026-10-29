@@ -12,7 +12,8 @@
 //! - [`m5p_scripting_mid`]: M5 phyre-scripting batch 2, middle-sized Lua glue and fixups;
 //! - [`m5p_scripting_lua`]: M5 phyre-scripting batch 3, object accessors, Vector and Matrix functions;
 //! - [`m5p_scripting_sched`]: M5 phyre-scripting batch 4, the scheduler, scripted components, fixups;
-//! - [`m5p_scripting_state`]: M5 phyre-scripting batch 5, script states and runs, member setters.
+//! - [`m5p_scripting_state`]: M5 phyre-scripting batch 5, script states and runs, member setters;
+//! - [`m5p_scripting_more`]: M5 phyre-scripting batch 6, scheduler removal, Vector constructor, type queries.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -32,6 +33,7 @@ use ffx_graphic::host::{Conv, Host};
 pub mod class;
 pub mod m5p_scripting_lua;
 pub mod m5p_scripting_mid;
+pub mod m5p_scripting_more;
 pub mod m5p_scripting_sched;
 pub mod m5p_scripting_small;
 pub mod m5p_scripting_state;

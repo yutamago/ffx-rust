@@ -8,6 +8,7 @@
 
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
+use ffx_pother_a::m5p_scripting_more::bridge as mo;
 use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::bridge as st;
@@ -761,5 +762,26 @@ ported! {
     /// `Phyre_PScripting_PScheduledScript_executePersistent`.
     Phyre_PScripting_PScheduledScript_executePersistent @ 0x0061_8490 => extern "thiscall" fn s_00618490(this: u32, function: u32) -> u32 {
         st::execute_persistent(&mut mem(), this, function)
+    }
+    // ---- batch 6: scheduler removal, Vector constructor, type queries ----
+    /// `Phyre_PScripting_PScheduler_removeEntry_005d1370`.
+    Phyre_PScripting_PScheduler_removeEntry_005d1370 @ 0x005d_1370 => extern "thiscall" fn s_005d1370(this: u32, owner: u32, key: u32, name: u32) -> u32 {
+        mo::scheduler_remove(&mut mem(), this, owner, key, name)
+    }
+    /// `Phyre_PScripting_PScheduler_setEntryStep_005d1670`.
+    Phyre_PScripting_PScheduler_setEntryStep_005d1670 @ 0x005d_1670 => extern "thiscall" fn s_005d1670(this: u32, owner: u32, key: u32, name: u32, step: u32) -> u32 {
+        mo::scheduler_set_step(&mut mem(), this, owner, key, name, step)
+    }
+    /// `Phyre_PScripting_Vector_new_00570f80`.
+    Phyre_PScripting_Vector_new_00570f80 @ 0x0057_0f80 => extern "C" fn s_00570f80(l: u32) -> u32 {
+        mo::vector_new(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_PhyreGetTypeOf`.
+    Phyre_PScripting_PhyreGetTypeOf @ 0x0043_6b90 => extern "C" fn s_00436b90(l: u32) -> u32 {
+        mo::get_type_of(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_objectsEqual_00436aa0`.
+    Phyre_PScripting_objectsEqual_00436aa0 @ 0x0043_6aa0 => extern "C" fn s_00436aa0(l: u32) -> u32 {
+        mo::objects_equal(&mut mem(), l)
     }
 }
