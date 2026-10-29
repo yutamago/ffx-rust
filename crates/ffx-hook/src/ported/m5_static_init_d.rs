@@ -211,4 +211,204 @@ ported! {
     StaticDtor_Tail_00b086a0 @ 0x00b0_86a0 => extern "C" fn s_00b086a0() -> u32 {
         si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[13])
     }
+    /// `StaticDtor_Tail_00b08ab0`: `ecx = 0x0194_4d04`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ab0 @ 0x00b0_8ab0 => extern "C" fn s_00b08ab0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[14])
+    }
+    /// `StaticDtor_Tail_00b08ac0`: `ecx = 0x0194_4d44`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ac0 @ 0x00b0_8ac0 => extern "C" fn s_00b08ac0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[15])
+    }
+    /// `StaticDtor_Tail_00b08ad0`: `ecx = 0x0194_4d14`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ad0 @ 0x00b0_8ad0 => extern "C" fn s_00b08ad0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[16])
+    }
+    /// `StaticDtor_Tail_00b08ae0`: `ecx = 0x0194_4f28`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ae0 @ 0x00b0_8ae0 => extern "C" fn s_00b08ae0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[17])
+    }
+    /// `StaticDtor_Tail_00b08af0`: `ecx = 0x0194_4c0c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08af0 @ 0x00b0_8af0 => extern "C" fn s_00b08af0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[18])
+    }
+    /// `StaticDtor_Tail_00b08b00`: `ecx = 0x0194_4bfc`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b00 @ 0x00b0_8b00 => extern "C" fn s_00b08b00() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[19])
+    }
+    /// `StaticDtor_Tail_00b08b10`: `ecx = 0x0194_4d34`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b10 @ 0x00b0_8b10 => extern "C" fn s_00b08b10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[20])
+    }
+    /// `StaticDtor_Tail_00b08b20`: `ecx = 0x0194_4b88`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b20 @ 0x00b0_8b20 => extern "C" fn s_00b08b20() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[21])
+    }
+    /// `StaticDtor_Tail_00b08b30`: `ecx = 0x0194_4e7c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b30 @ 0x00b0_8b30 => extern "C" fn s_00b08b30() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[22])
+    }
+    /// `StaticDtor_Tail_00b08b40`: `ecx = 0x0194_4db4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b40 @ 0x00b0_8b40 => extern "C" fn s_00b08b40() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[23])
+    }
+    /// `StaticDtor_Tail_00b08b50`: `ecx = 0x0194_4934`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b50 @ 0x00b0_8b50 => extern "C" fn s_00b08b50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[24])
+    }
+    /// `StaticDtor_Tail_00b08b60`: `ecx = 0x0194_4f18`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b60 @ 0x00b0_8b60 => extern "C" fn s_00b08b60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[25])
+    }
+    /// `StaticDtor_Tail_00b08b70`: `ecx = 0x0194_4cf4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b70 @ 0x00b0_8b70 => extern "C" fn s_00b08b70() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[26])
+    }
+    /// `StaticDtor_Tail_00b08b80`: `ecx = 0x0194_4d24`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b80 @ 0x00b0_8b80 => extern "C" fn s_00b08b80() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[27])
+    }
+    /// `StaticDtor_Tail_00b08b90`: `ecx = 0x0194_35d8`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08b90 @ 0x00b0_8b90 => extern "C" fn s_00b08b90() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[28])
+    }
+    /// `StaticDtor_Tail_00b08ba0`: `ecx = 0x0194_49b4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ba0 @ 0x00b0_8ba0 => extern "C" fn s_00b08ba0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[29])
+    }
+    /// `StaticDtor_Tail_00b08bb0`: `ecx = 0x0194_4c4c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08bb0 @ 0x00b0_8bb0 => extern "C" fn s_00b08bb0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[30])
+    }
+    /// `StaticDtor_Tail_00b08bc0`: `ecx = 0x0194_4c2c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08bc0 @ 0x00b0_8bc0 => extern "C" fn s_00b08bc0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[31])
+    }
+    /// `StaticDtor_Tail_00b08bd0`: `ecx = 0x0194_4c3c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08bd0 @ 0x00b0_8bd0 => extern "C" fn s_00b08bd0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[32])
+    }
+    /// `StaticDtor_Tail_00b08be0`: `ecx = 0x0194_4c1c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08be0 @ 0x00b0_8be0 => extern "C" fn s_00b08be0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[33])
+    }
+    /// `StaticDtor_Tail_00b08bf0`: `ecx = 0x0194_4d94`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08bf0 @ 0x00b0_8bf0 => extern "C" fn s_00b08bf0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[34])
+    }
+    /// `StaticDtor_Tail_00b08c00`: `ecx = 0x0194_4ce4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c00 @ 0x00b0_8c00 => extern "C" fn s_00b08c00() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[35])
+    }
+    /// `StaticDtor_Tail_00b08c10`: `ecx = 0x0194_4d84`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c10 @ 0x00b0_8c10 => extern "C" fn s_00b08c10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[36])
+    }
+    /// `StaticDtor_Tail_00b08c20`: `ecx = 0x0194_4bec`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c20 @ 0x00b0_8c20 => extern "C" fn s_00b08c20() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[37])
+    }
+    /// `StaticDtor_Tail_00b08c30`: `ecx = 0x0194_4954`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c30 @ 0x00b0_8c30 => extern "C" fn s_00b08c30() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[38])
+    }
+    /// `StaticDtor_Tail_00b08c40`: `ecx = 0x0194_4964`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c40 @ 0x00b0_8c40 => extern "C" fn s_00b08c40() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[39])
+    }
+    /// `StaticDtor_Tail_00b08c50`: `ecx = 0x0194_4974`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c50 @ 0x00b0_8c50 => extern "C" fn s_00b08c50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[40])
+    }
+    /// `StaticDtor_Tail_00b08c60`: `ecx = 0x0194_49c4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c60 @ 0x00b0_8c60 => extern "C" fn s_00b08c60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[41])
+    }
+    /// `StaticDtor_Tail_00b08c70`: `ecx = 0x0194_4e4c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c70 @ 0x00b0_8c70 => extern "C" fn s_00b08c70() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[42])
+    }
+    /// `StaticDtor_Tail_00b08c80`: `ecx = 0x0194_4e9c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c80 @ 0x00b0_8c80 => extern "C" fn s_00b08c80() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[43])
+    }
+    /// `StaticDtor_Tail_00b08c90`: `ecx = 0x0194_4e8c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08c90 @ 0x00b0_8c90 => extern "C" fn s_00b08c90() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[44])
+    }
+    /// `StaticDtor_Tail_00b08ca0`: `ecx = 0x0194_4e6c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ca0 @ 0x00b0_8ca0 => extern "C" fn s_00b08ca0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[45])
+    }
+    /// `StaticDtor_Tail_00b08cb0`: `ecx = 0x0194_4e5c`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08cb0 @ 0x00b0_8cb0 => extern "C" fn s_00b08cb0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[46])
+    }
+    /// `StaticDtor_Tail_00b08cc0`: `ecx = 0x0194_4994`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08cc0 @ 0x00b0_8cc0 => extern "C" fn s_00b08cc0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[47])
+    }
+    /// `StaticDtor_Tail_00b08cd0`: `ecx = 0x0194_4984`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08cd0 @ 0x00b0_8cd0 => extern "C" fn s_00b08cd0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[48])
+    }
+    /// `StaticDtor_Tail_00b08ce0`: `ecx = 0x0194_4944`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08ce0 @ 0x00b0_8ce0 => extern "C" fn s_00b08ce0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[49])
+    }
+    /// `StaticDtor_Tail_00b08cf0`: `ecx = 0x0194_49a4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08cf0 @ 0x00b0_8cf0 => extern "C" fn s_00b08cf0() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[50])
+    }
+    /// `StaticDtor_Tail_00b08d00`: `ecx = 0x0194_4bcc`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d00 @ 0x00b0_8d00 => extern "C" fn s_00b08d00() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[51])
+    }
+    /// `StaticDtor_Tail_00b08d10`: `ecx = 0x0194_49d4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d10 @ 0x00b0_8d10 => extern "C" fn s_00b08d10() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[52])
+    }
+    /// `StaticDtor_Tail_00b08d20`: `ecx = 0x0194_49e4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d20 @ 0x00b0_8d20 => extern "C" fn s_00b08d20() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[53])
+    }
+    /// `StaticDtor_Tail_00b08d30`: `ecx = 0x0194_4bdc`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d30 @ 0x00b0_8d30 => extern "C" fn s_00b08d30() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[54])
+    }
+    /// `StaticDtor_Tail_00b08d40`: `ecx = 0x0194_4da4`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d40 @ 0x00b0_8d40 => extern "C" fn s_00b08d40() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[55])
+    }
+    /// `StaticDtor_Tail_00b08d50`: `ecx = 0x0194_4f08`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d50 @ 0x00b0_8d50 => extern "C" fn s_00b08d50() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[56])
+    }
+    /// `StaticDtor_Tail_00b08d60`: `ecx = 0x0194_4bb8`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d60 @ 0x00b0_8d60 => extern "C" fn s_00b08d60() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[57])
+    }
+    /// `StaticDtor_Tail_00b08d70`: `ecx = 0x0194_4b98`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d70 @ 0x00b0_8d70 => extern "C" fn s_00b08d70() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[58])
+    }
+    /// `StaticDtor_Tail_00b08d80`: `ecx = 0x0194_4ba8`, then a tail-jump to `0x004d_bab0`.
+    StaticDtor_Tail_00b08d80 @ 0x00b0_8d80 => extern "C" fn s_00b08d80() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[59])
+    }
+    /// `StaticDtor_ChainUnlink_00b09010`: the object at `0x00c6_8494` gets `Phyre_PUtility_vftable` back and leaves the chain at `0x00c9_01a8`.
+    StaticDtor_ChainUnlink_00b09010 @ 0x00b0_9010 => extern "C" fn s_00b09010() -> u32 {
+        si::chain_unlink(&mut mem(), &si::CHAIN_UNLINKS[3])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09220`: the `PInputAxisSemantic` value at `0x00c6_b6b4` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09220 @ 0x00b0_9220 => extern "C" fn s_00b09220() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[22])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09240`: the `PInputAxisSemantic` value at `0x00c6_b744` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09240 @ 0x00b0_9240 => extern "C" fn s_00b09240() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[23])
+    }
+    /// `StaticDtor_PInputAxisSemantic_00b09260`: the `PInputAxisSemantic` value at `0x00c6_b714` gets its vtable back, then `0x00a2_dfa0(obj)` unlinks it.
+    StaticDtor_PInputAxisSemantic_00b09260 @ 0x00b0_9260 => extern "C" fn s_00b09260() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[24])
+    }
 }

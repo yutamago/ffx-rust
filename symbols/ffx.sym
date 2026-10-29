@@ -18415,6 +18415,56 @@
 0x00b08620 function StaticDtor_PInputTypeSemantic_00b08620 # atexit destructor of the PInputTypeSemantic enum value 0x00c68294: [obj] = 0x00b73da4 (Phyre_PInputs_PInputTypeSemantic_vftable), then 0x009f49f0(obj) (cdecl) unlinks it; returns its eax; static-init-d
 0x00b08650 function StaticDtor_ChainUnlink_00b08650 # atexit destructor of the chain object 0x00c6845c (static-init-b ChainAppend): [obj] = 0x00b0e078 (Phyre_PUtility_vftable), then the link of the chain at 0x00c901a8 that holds it takes [obj+4], [obj+4] = 0; returns the link's address; static-init-d
 0x00b086a0 function StaticDtor_Tail_00b086a0 # atexit destructor: mov ecx, 0x01943da0; jmp 0x0043fa30 (thiscall, no stack words; its eax); static-init-d
+0x00b08ab0 function StaticDtor_Tail_00b08ab0 # atexit destructor: mov ecx, 0x01944d04; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ac0 function StaticDtor_Tail_00b08ac0 # atexit destructor: mov ecx, 0x01944d44; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ad0 function StaticDtor_Tail_00b08ad0 # atexit destructor: mov ecx, 0x01944d14; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ae0 function StaticDtor_Tail_00b08ae0 # atexit destructor: mov ecx, 0x01944f28; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08af0 function StaticDtor_Tail_00b08af0 # atexit destructor: mov ecx, 0x01944c0c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b00 function StaticDtor_Tail_00b08b00 # atexit destructor: mov ecx, 0x01944bfc; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b10 function StaticDtor_Tail_00b08b10 # atexit destructor: mov ecx, 0x01944d34; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b20 function StaticDtor_Tail_00b08b20 # atexit destructor: mov ecx, 0x01944b88; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b30 function StaticDtor_Tail_00b08b30 # atexit destructor: mov ecx, 0x01944e7c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b40 function StaticDtor_Tail_00b08b40 # atexit destructor: mov ecx, 0x01944db4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b50 function StaticDtor_Tail_00b08b50 # atexit destructor: mov ecx, 0x01944934; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b60 function StaticDtor_Tail_00b08b60 # atexit destructor: mov ecx, 0x01944f18; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b70 function StaticDtor_Tail_00b08b70 # atexit destructor: mov ecx, 0x01944cf4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b80 function StaticDtor_Tail_00b08b80 # atexit destructor: mov ecx, 0x01944d24; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08b90 function StaticDtor_Tail_00b08b90 # atexit destructor: mov ecx, 0x019435d8; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ba0 function StaticDtor_Tail_00b08ba0 # atexit destructor: mov ecx, 0x019449b4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08bb0 function StaticDtor_Tail_00b08bb0 # atexit destructor: mov ecx, 0x01944c4c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08bc0 function StaticDtor_Tail_00b08bc0 # atexit destructor: mov ecx, 0x01944c2c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08bd0 function StaticDtor_Tail_00b08bd0 # atexit destructor: mov ecx, 0x01944c3c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08be0 function StaticDtor_Tail_00b08be0 # atexit destructor: mov ecx, 0x01944c1c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08bf0 function StaticDtor_Tail_00b08bf0 # atexit destructor: mov ecx, 0x01944d94; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c00 function StaticDtor_Tail_00b08c00 # atexit destructor: mov ecx, 0x01944ce4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c10 function StaticDtor_Tail_00b08c10 # atexit destructor: mov ecx, 0x01944d84; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c20 function StaticDtor_Tail_00b08c20 # atexit destructor: mov ecx, 0x01944bec; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c30 function StaticDtor_Tail_00b08c30 # atexit destructor: mov ecx, 0x01944954; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c40 function StaticDtor_Tail_00b08c40 # atexit destructor: mov ecx, 0x01944964; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c50 function StaticDtor_Tail_00b08c50 # atexit destructor: mov ecx, 0x01944974; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c60 function StaticDtor_Tail_00b08c60 # atexit destructor: mov ecx, 0x019449c4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c70 function StaticDtor_Tail_00b08c70 # atexit destructor: mov ecx, 0x01944e4c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c80 function StaticDtor_Tail_00b08c80 # atexit destructor: mov ecx, 0x01944e9c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08c90 function StaticDtor_Tail_00b08c90 # atexit destructor: mov ecx, 0x01944e8c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ca0 function StaticDtor_Tail_00b08ca0 # atexit destructor: mov ecx, 0x01944e6c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08cb0 function StaticDtor_Tail_00b08cb0 # atexit destructor: mov ecx, 0x01944e5c; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08cc0 function StaticDtor_Tail_00b08cc0 # atexit destructor: mov ecx, 0x01944994; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08cd0 function StaticDtor_Tail_00b08cd0 # atexit destructor: mov ecx, 0x01944984; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08ce0 function StaticDtor_Tail_00b08ce0 # atexit destructor: mov ecx, 0x01944944; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08cf0 function StaticDtor_Tail_00b08cf0 # atexit destructor: mov ecx, 0x019449a4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d00 function StaticDtor_Tail_00b08d00 # atexit destructor: mov ecx, 0x01944bcc; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d10 function StaticDtor_Tail_00b08d10 # atexit destructor: mov ecx, 0x019449d4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d20 function StaticDtor_Tail_00b08d20 # atexit destructor: mov ecx, 0x019449e4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d30 function StaticDtor_Tail_00b08d30 # atexit destructor: mov ecx, 0x01944bdc; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d40 function StaticDtor_Tail_00b08d40 # atexit destructor: mov ecx, 0x01944da4; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d50 function StaticDtor_Tail_00b08d50 # atexit destructor: mov ecx, 0x01944f08; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d60 function StaticDtor_Tail_00b08d60 # atexit destructor: mov ecx, 0x01944bb8; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d70 function StaticDtor_Tail_00b08d70 # atexit destructor: mov ecx, 0x01944b98; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b08d80 function StaticDtor_Tail_00b08d80 # atexit destructor: mov ecx, 0x01944ba8; jmp 0x004dbab0 (thiscall, no stack words; its eax); static-init-d
+0x00b09010 function StaticDtor_ChainUnlink_00b09010 # atexit destructor of the chain object 0x00c68494 (static-init-b ChainAppend): [obj] = 0x00b0e078 (Phyre_PUtility_vftable), then the link of the chain at 0x00c901a8 that holds it takes [obj+4], [obj+4] = 0; returns the link's address; static-init-d
+0x00b09220 function StaticDtor_PInputAxisSemantic_00b09220 # atexit destructor of the PInputAxisSemantic enum value 0x00c6b6b4: [obj] = 0x00b793e0 (Phyre_PInputs_PInputAxisSemantic_vftable), then 0x00a2dfa0(obj) (cdecl) unlinks it; returns its eax; static-init-d
+0x00b09240 function StaticDtor_PInputAxisSemantic_00b09240 # atexit destructor of the PInputAxisSemantic enum value 0x00c6b744: [obj] = 0x00b793e0 (Phyre_PInputs_PInputAxisSemantic_vftable), then 0x00a2dfa0(obj) (cdecl) unlinks it; returns its eax; static-init-d
+0x00b09260 function StaticDtor_PInputAxisSemantic_00b09260 # atexit destructor of the PInputAxisSemantic enum value 0x00c6b714: [obj] = 0x00b793e0 (Phyre_PInputs_PInputAxisSemantic_vftable), then 0x00a2dfa0(obj) (cdecl) unlinks it; returns its eax; static-init-d
 0x00b0d998 label FFXApplication_vftable       # fh v4:imported FFXApplication::vftable
 0x00b0d9cc label std_error_category_vftable   # fh v4:imported std::error_category::vftable
 0x00b0d9e8 label std__Generic_error_category_vftable # fh v4:imported std::_Generic_error_category::vftable
