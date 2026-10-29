@@ -440,6 +440,13 @@ fn static_init_b_chain_appends() {
             t.run(&format!("{label} (empty block)"), r.addr, true, |g| {
                 si::list_append(g, r)
             });
+            // one block a slot short of full (0xfe): not full, the walk
+            // ends at its link
+            t.set_block(b0, 0xfe, 0);
+            t.set_head(si::CHAIN_HEAD, b0);
+            t.run(&format!("{label} (0xfe block)"), r.addr, true, |g| {
+                si::list_append(g, r)
+            });
             // an empty block, then a full one: the walk stops at the second
             t.set_block(b0, 0, b1);
             t.set_block(b1, 0xff, 0);

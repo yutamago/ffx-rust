@@ -1209,4 +1209,436 @@ ported! {
     StaticInit_Key_P_00af6c10 @ 0x00af_6c10 => extern "C" fn s_00af6c10() -> u32 {
         si::type_enum(&mut mem(), &si::TYPE_ENUMS[149])
     }
+    /// `StaticInit_PInputSource_00af14e0`: class descriptor `PInputSource` (`cd_desc_keep`): constructor, buffers, keep; atexit.
+    StaticInit_PInputSource_00af14e0 @ 0x00af_14e0 => extern "C" fn s_00af14e0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[52])
+    }
+    /// `StaticInit_PInputSourceJoypadAxis_00af1590`: class descriptor `PInputSourceJoypadAxis` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceJoypadAxis_00af1590 @ 0x00af_1590 => extern "C" fn s_00af1590() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[53])
+    }
+    /// `StaticInit_PInputSourceJoypadButton_00af1650`: class descriptor `PInputSourceJoypadButton` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceJoypadButton_00af1650 @ 0x00af_1650 => extern "C" fn s_00af1650() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[54])
+    }
+    /// `StaticInit_PInputSourceKey_00af1710`: class descriptor `PInputSourceKey` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceKey_00af1710 @ 0x00af_1710 => extern "C" fn s_00af1710() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[55])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityX_00af17d0`: class descriptor `PInputSourceMotionAngularVelocityX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityX_00af17d0 @ 0x00af_17d0 => extern "C" fn s_00af17d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[56])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityY_00af1890`: class descriptor `PInputSourceMotionAngularVelocityY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityY_00af1890 @ 0x00af_1890 => extern "C" fn s_00af1890() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[57])
+    }
+    /// `StaticInit_PInputSourceMotionAngularVelocityZ_00af1950`: class descriptor `PInputSourceMotionAngularVelocityZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionAngularVelocityZ_00af1950 @ 0x00af_1950 => extern "C" fn s_00af1950() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[58])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationX_00af1a10`: class descriptor `PInputSourceMotionLinearAccelerationX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationX_00af1a10 @ 0x00af_1a10 => extern "C" fn s_00af1a10() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[59])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationY_00af1ad0`: class descriptor `PInputSourceMotionLinearAccelerationY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationY_00af1ad0 @ 0x00af_1ad0 => extern "C" fn s_00af1ad0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[60])
+    }
+    /// `StaticInit_PInputSourceMotionLinearAccelerationZ_00af1b90`: class descriptor `PInputSourceMotionLinearAccelerationZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionLinearAccelerationZ_00af1b90 @ 0x00af_1b90 => extern "C" fn s_00af1b90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[61])
+    }
+    /// `StaticInit_PInputSourceMotionQuatW_00af1c50`: class descriptor `PInputSourceMotionQuatW` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatW_00af1c50 @ 0x00af_1c50 => extern "C" fn s_00af1c50() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[62])
+    }
+    /// `StaticInit_PInputSourceMotionQuatX_00af1d10`: class descriptor `PInputSourceMotionQuatX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatX_00af1d10 @ 0x00af_1d10 => extern "C" fn s_00af1d10() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[63])
+    }
+    /// `StaticInit_PInputSourceMotionQuatY_00af1dd0`: class descriptor `PInputSourceMotionQuatY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatY_00af1dd0 @ 0x00af_1dd0 => extern "C" fn s_00af1dd0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[64])
+    }
+    /// `StaticInit_PInputSourceMotionQuatZ_00af1e90`: class descriptor `PInputSourceMotionQuatZ` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMotionQuatZ_00af1e90 @ 0x00af_1e90 => extern "C" fn s_00af1e90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[65])
+    }
+    /// `StaticInit_PInputSourceMouseButton_00af1f50`: class descriptor `PInputSourceMouseButton` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseButton_00af1f50 @ 0x00af_1f50 => extern "C" fn s_00af1f50() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[66])
+    }
+    /// `StaticInit_PInputSourceMouseDeltaX_00af2010`: class descriptor `PInputSourceMouseDeltaX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseDeltaX_00af2010 @ 0x00af_2010 => extern "C" fn s_00af2010() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[67])
+    }
+    /// `StaticInit_PInputSourceMouseDeltaY_00af20d0`: class descriptor `PInputSourceMouseDeltaY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceMouseDeltaY_00af20d0 @ 0x00af_20d0 => extern "C" fn s_00af20d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[68])
+    }
+    /// `StaticInit_PInputSourceTouchDragX_00af2190`: class descriptor `PInputSourceTouchDragX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchDragX_00af2190 @ 0x00af_2190 => extern "C" fn s_00af2190() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[69])
+    }
+    /// `StaticInit_PInputSourceTouchDragY_00af2250`: class descriptor `PInputSourceTouchDragY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchDragY_00af2250 @ 0x00af_2250 => extern "C" fn s_00af2250() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[70])
+    }
+    /// `StaticInit_PInputSourceTouchPinch_00af2310`: class descriptor `PInputSourceTouchPinch` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchPinch_00af2310 @ 0x00af_2310 => extern "C" fn s_00af2310() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[71])
+    }
+    /// `StaticInit_PInputSourceTouchRotate_00af23d0`: class descriptor `PInputSourceTouchRotate` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchRotate_00af23d0 @ 0x00af_23d0 => extern "C" fn s_00af23d0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[72])
+    }
+    /// `StaticInit_PInputSourceTouchTwoFingerDragX_00af2490`: class descriptor `PInputSourceTouchTwoFingerDragX` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchTwoFingerDragX_00af2490 @ 0x00af_2490 => extern "C" fn s_00af2490() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[73])
+    }
+    /// `StaticInit_PInputSourceTouchTwoFingerDragY_00af2550`: class descriptor `PInputSourceTouchTwoFingerDragY` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PInputSourceTouchTwoFingerDragY_00af2550 @ 0x00af_2550 => extern "C" fn s_00af2550() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[74])
+    }
+    /// `StaticInit_TailThiscall_00af2610`: ecx = `0x0194_2998`, then a tail jump to 0x009f2510 (thiscall, no stack words), whose eax is returned.
+    StaticInit_TailThiscall_00af2610 @ 0x00af_2610 => extern "C" fn s_00af2610() -> u32 {
+        si::tail_thiscall(&mut mem(), &si::TAIL_THISCALLS[0])
+    }
+    /// `StaticInit_ChainAppend_00af2620`: appends the object at `0x00c6_81ec` (vtable 0x00b73d8c) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b08330).
+    StaticInit_ChainAppend_00af2620 @ 0x00af_2620 => extern "C" fn s_00af2620() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[2])
+    }
+    /// `StaticInit_ChainAppend_00af2bf0`: appends the object at `0x00c6_845c` (vtable 0x00b73f58) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b08650).
+    StaticInit_ChainAppend_00af2bf0 @ 0x00af_2bf0 => extern "C" fn s_00af2bf0() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[3])
+    }
+    /// `StaticInit_Sentinel_00af2c40`: list object `0x0194_3da0` constructed, then its sentinel `0x0194_3de8` links to itself; atexit(0x00b086a0).
+    StaticInit_Sentinel_00af2c40 @ 0x00af_2c40 => extern "C" fn s_00af2c40() -> u32 {
+        si::sentinel(&mut mem(), &si::SENTINELS[2])
+    }
+    /// `StaticInit_PDeferredLighting_00af2c70`: class descriptor `PDeferredLighting` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLighting_00af2c70 @ 0x00af_2c70 => extern "C" fn s_00af2c70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[75])
+    }
+    /// `StaticInit_PDeferredLightingBase_00af2d30`: class descriptor `PDeferredLightingBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLightingBase_00af2d30 @ 0x00af_2d30 => extern "C" fn s_00af2d30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[76])
+    }
+    /// `StaticInit_PDeferredLightingD3D11_00af2df0`: class descriptor `PDeferredLightingD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDeferredLightingD3D11_00af2df0 @ 0x00af_2df0 => extern "C" fn s_00af2df0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[77])
+    }
+    /// `StaticInit_PDepthOfField_00af2eb0`: class descriptor `PDepthOfField` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfField_00af2eb0 @ 0x00af_2eb0 => extern "C" fn s_00af2eb0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[78])
+    }
+    /// `StaticInit_PDepthOfFieldBase_00af2f70`: class descriptor `PDepthOfFieldBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfFieldBase_00af2f70 @ 0x00af_2f70 => extern "C" fn s_00af2f70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[79])
+    }
+    /// `StaticInit_PDepthOfFieldD3D11_00af3030`: class descriptor `PDepthOfFieldD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PDepthOfFieldD3D11_00af3030 @ 0x00af_3030 => extern "C" fn s_00af3030() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[80])
+    }
+    /// `StaticInit_PFXAA_00af30f0`: class descriptor `PFXAA` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAA_00af30f0 @ 0x00af_30f0 => extern "C" fn s_00af30f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[81])
+    }
+    /// `StaticInit_PFXAABase_00af31b0`: class descriptor `PFXAABase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAABase_00af31b0 @ 0x00af_31b0 => extern "C" fn s_00af31b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[82])
+    }
+    /// `StaticInit_PFXAAD3D11_00af3270`: class descriptor `PFXAAD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PFXAAD3D11_00af3270 @ 0x00af_3270 => extern "C" fn s_00af3270() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[83])
+    }
+    /// `StaticInit_PGlow_00af3330`: class descriptor `PGlow` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlow_00af3330 @ 0x00af_3330 => extern "C" fn s_00af3330() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[84])
+    }
+    /// `StaticInit_PGlowBase_00af33f0`: class descriptor `PGlowBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowBase_00af33f0 @ 0x00af_33f0 => extern "C" fn s_00af33f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[85])
+    }
+    /// `StaticInit_PGlowD3D11_00af34b0`: class descriptor `PGlowD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowD3D11_00af34b0 @ 0x00af_34b0 => extern "C" fn s_00af34b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[86])
+    }
+    /// `StaticInit_PGlowGPUBase_00af3570`: class descriptor `PGlowGPUBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PGlowGPUBase_00af3570 @ 0x00af_3570 => extern "C" fn s_00af3570() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[87])
+    }
+    /// `StaticInit_PLegacyGlow_00af3630`: class descriptor `PLegacyGlow` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlow_00af3630 @ 0x00af_3630 => extern "C" fn s_00af3630() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[88])
+    }
+    /// `StaticInit_PLegacyGlowBase_00af36f0`: class descriptor `PLegacyGlowBase` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowBase_00af36f0 @ 0x00af_36f0 => extern "C" fn s_00af36f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[89])
+    }
+    /// `StaticInit_PLegacyGlowD3D11_00af37b0`: class descriptor `PLegacyGlowD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowD3D11_00af37b0 @ 0x00af_37b0 => extern "C" fn s_00af37b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[90])
+    }
+    /// `StaticInit_PLegacyGlowGPUBase_00af3870`: class descriptor `PLegacyGlowGPUBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PLegacyGlowGPUBase_00af3870 @ 0x00af_3870 => extern "C" fn s_00af3870() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[91])
+    }
+    /// `StaticInit_PMLAA_00af3930`: class descriptor `PMLAA` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAA_00af3930 @ 0x00af_3930 => extern "C" fn s_00af3930() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[92])
+    }
+    /// `StaticInit_PMLAABase_00af39f0`: class descriptor `PMLAABase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAABase_00af39f0 @ 0x00af_39f0 => extern "C" fn s_00af39f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[93])
+    }
+    /// `StaticInit_PMLAAD3D11_00af3ab0`: class descriptor `PMLAAD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMLAAD3D11_00af3ab0 @ 0x00af_3ab0 => extern "C" fn s_00af3ab0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[94])
+    }
+    /// `StaticInit_PMeshParticleSystemBase_00af3b70`: class descriptor `PMeshParticleSystemBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMeshParticleSystemBase_00af3b70 @ 0x00af_3b70 => extern "C" fn s_00af3b70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[95])
+    }
+    /// `StaticInit_PMotionBlur_00af3c30`: class descriptor `PMotionBlur` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlur_00af3c30 @ 0x00af_3c30 => extern "C" fn s_00af3c30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[96])
+    }
+    /// `StaticInit_PMotionBlurBase_00af3cf0`: class descriptor `PMotionBlurBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlurBase_00af3cf0 @ 0x00af_3cf0 => extern "C" fn s_00af3cf0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[97])
+    }
+    /// `StaticInit_PMotionBlurD3D11_00af3db0`: class descriptor `PMotionBlurD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PMotionBlurD3D11_00af3db0 @ 0x00af_3db0 => extern "C" fn s_00af3db0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[98])
+    }
+    /// `StaticInit_PPostEffectBase_00af3e70`: class descriptor `PPostEffectBase` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PPostEffectBase_00af3e70 @ 0x00af_3e70 => extern "C" fn s_00af3e70() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[99])
+    }
+    /// `StaticInit_PPostEffectManager_00af3f30`: class descriptor `PPostEffectManager` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PPostEffectManager_00af3f30 @ 0x00af_3f30 => extern "C" fn s_00af3f30() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[100])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusion_00af3ff0`: class descriptor `PScreenSpaceAmbientOcclusion` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusion_00af3ff0 @ 0x00af_3ff0 => extern "C" fn s_00af3ff0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[101])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusionBase_00af40b0`: class descriptor `PScreenSpaceAmbientOcclusionBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusionBase_00af40b0 @ 0x00af_40b0 => extern "C" fn s_00af40b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[102])
+    }
+    /// `StaticInit_PScreenSpaceAmbientOcclusionD3D11_00af4170`: class descriptor `PScreenSpaceAmbientOcclusionD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceAmbientOcclusionD3D11_00af4170 @ 0x00af_4170 => extern "C" fn s_00af4170() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[103])
+    }
+    /// `StaticInit_PScreenSpaceReflection_00af4230`: class descriptor `PScreenSpaceReflection` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflection_00af4230 @ 0x00af_4230 => extern "C" fn s_00af4230() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[104])
+    }
+    /// `StaticInit_PScreenSpaceReflectionBase_00af42f0`: class descriptor `PScreenSpaceReflectionBase` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflectionBase_00af42f0 @ 0x00af_42f0 => extern "C" fn s_00af42f0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[105])
+    }
+    /// `StaticInit_PScreenSpaceReflectionD3D11_00af43b0`: class descriptor `PScreenSpaceReflectionD3D11` (`cd_const_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PScreenSpaceReflectionD3D11_00af43b0 @ 0x00af_43b0 => extern "C" fn s_00af43b0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[106])
+    }
+    /// `StaticInit_BetweenBlurTiledPass_00af4470`: render pass type `BetweenBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_BetweenBlurTiledPass_00af4470 @ 0x00af_4470 => extern "C" fn s_00af4470() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[51])
+    }
+    /// `StaticInit_BlockerSearch_00af4490`: render pass type `BlockerSearch` built on its global (name, flag 0); atexit.
+    StaticInit_BlockerSearch_00af4490 @ 0x00af_4490 => extern "C" fn s_00af4490() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[52])
+    }
+    /// `StaticInit_CalculateFocusDistance_00af44b0`: render pass type `CalculateFocusDistance` built on its global (name, flag 0); atexit.
+    StaticInit_CalculateFocusDistance_00af44b0 @ 0x00af_44b0 => extern "C" fn s_00af44b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[53])
+    }
+    /// `StaticInit_CompositeScreenSpaceReflection_00af44d0`: render pass type `CompositeScreenSpaceReflection` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeScreenSpaceReflection_00af44d0 @ 0x00af_44d0 => extern "C" fn s_00af44d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[54])
+    }
+    /// `StaticInit_CompositeToScreenTiled_00af44f0`: render pass type `CompositeToScreenTiled` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeToScreenTiled_00af44f0 @ 0x00af_44f0 => extern "C" fn s_00af44f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[55])
+    }
+    /// `StaticInit_CompositeToScreen_00af4510`: render pass type `CompositeToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CompositeToScreen_00af4510 @ 0x00af_4510 => extern "C" fn s_00af4510() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[56])
+    }
+    /// `StaticInit_ConvertShadowToExponential_00af4530`: render pass type `ConvertShadowToExponential` built on its global (name, flag 0); atexit.
+    StaticInit_ConvertShadowToExponential_00af4530 @ 0x00af_4530 => extern "C" fn s_00af4530() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[57])
+    }
+    /// `StaticInit_CopyCompositedOutputToScreen_00af4550`: render pass type `CopyCompositedOutputToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CopyCompositedOutputToScreen_00af4550 @ 0x00af_4550 => extern "C" fn s_00af4550() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[58])
+    }
+    /// `StaticInit_CopyGaussianBlurToScreen_00af4570`: render pass type `CopyGaussianBlurToScreen` built on its global (name, flag 0); atexit.
+    StaticInit_CopyGaussianBlurToScreen_00af4570 @ 0x00af_4570 => extern "C" fn s_00af4570() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[59])
+    }
+    /// `StaticInit_CopyNoMLAA_00af4590`: render pass type `CopyNoMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_CopyNoMLAA_00af4590 @ 0x00af_4590 => extern "C" fn s_00af4590() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[60])
+    }
+    /// `StaticInit_DownsampleColorBuffer_00af45b0`: render pass type `DownsampleColorBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_DownsampleColorBuffer_00af45b0 @ 0x00af_45b0 => extern "C" fn s_00af45b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[61])
+    }
+    /// `StaticInit_DownsampleScreenSpaceReflectionDepth_00af45d0`: render pass type `DownsampleScreenSpaceReflectionDepth` built on its global (name, flag 0); atexit.
+    StaticInit_DownsampleScreenSpaceReflectionDepth_00af45d0 @ 0x00af_45d0 => extern "C" fn s_00af45d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[62])
+    }
+    /// `StaticInit_FullBlurTiledPass_00af45f0`: render pass type `FullBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_FullBlurTiledPass_00af45f0 @ 0x00af_45f0 => extern "C" fn s_00af45f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[63])
+    }
+    /// `StaticInit_FullDofGPU_00af4610`: render pass type `FullDofGPU` built on its global (name, flag 0); atexit.
+    StaticInit_FullDofGPU_00af4610 @ 0x00af_4610 => extern "C" fn s_00af4610() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[64])
+    }
+    /// `StaticInit_GaussianBlur_00af4630`: render pass type `GaussianBlur` built on its global (name, flag 0); atexit.
+    StaticInit_GaussianBlur_00af4630 @ 0x00af_4630 => extern "C" fn s_00af4630() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[65])
+    }
+    /// `StaticInit_GenerateGlowBuffer_00af4650`: render pass type `GenerateGlowBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateGlowBuffer_00af4650 @ 0x00af_4650 => extern "C" fn s_00af4650() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[66])
+    }
+    /// `StaticInit_GenerateLightScatteringInstantLights_00af4670`: render pass type `GenerateLightScatteringInstantLights` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightScatteringInstantLights_00af4670 @ 0x00af_4670 => extern "C" fn s_00af4670() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[67])
+    }
+    /// `StaticInit_GenerateLightScattering_00af4690`: render pass type `GenerateLightScattering` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightScattering_00af4690 @ 0x00af_4690 => extern "C" fn s_00af4690() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[68])
+    }
+    /// `StaticInit_GenerateLightingInstantLightsTiled_00af46b0`: render pass type `GenerateLightingInstantLightsTiled` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightingInstantLightsTiled_00af46b0 @ 0x00af_46b0 => extern "C" fn s_00af46b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[69])
+    }
+    /// `StaticInit_GenerateLightingTiled_00af46d0`: render pass type `GenerateLightingTiled` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateLightingTiled_00af46d0 @ 0x00af_46d0 => extern "C" fn s_00af46d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[70])
+    }
+    /// `StaticInit_GenerateVelocityBuffer_00af46f0`: render pass type `GenerateVelocityBuffer` built on its global (name, flag 0); atexit.
+    StaticInit_GenerateVelocityBuffer_00af46f0 @ 0x00af_46f0 => extern "C" fn s_00af46f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[71])
+    }
+    /// `StaticInit_NoBlurTiledPass_00af4710`: render pass type `NoBlurTiledPass` built on its global (name, flag 0); atexit.
+    StaticInit_NoBlurTiledPass_00af4710 @ 0x00af_4710 => extern "C" fn s_00af4710() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[72])
+    }
+    /// `StaticInit_RenderCameraMotionBlur_00af4730`: render pass type `RenderCameraMotionBlur` built on its global (name, flag 0); atexit.
+    StaticInit_RenderCameraMotionBlur_00af4730 @ 0x00af_4730 => extern "C" fn s_00af4730() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[73])
+    }
+    /// `StaticInit_RenderDirectionalLight_00af4750`: render pass type `RenderDirectionalLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderDirectionalLight_00af4750 @ 0x00af_4750 => extern "C" fn s_00af4750() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[74])
+    }
+    /// `StaticInit_RenderEdgeDetect_00af4770`: render pass type `RenderEdgeDetect` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeDetect_00af4770 @ 0x00af_4770 => extern "C" fn s_00af4770() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[75])
+    }
+    /// `StaticInit_RenderEdgeLength0_00af4790`: render pass type `RenderEdgeLength0` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeLength0_00af4790 @ 0x00af_4790 => extern "C" fn s_00af4790() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[76])
+    }
+    /// `StaticInit_RenderEdgeLength_00af47b0`: render pass type `RenderEdgeLength` built on its global (name, flag 0); atexit.
+    StaticInit_RenderEdgeLength_00af47b0 @ 0x00af_47b0 => extern "C" fn s_00af47b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[77])
+    }
+    /// `StaticInit_RenderFXAA_00af47d0`: render pass type `RenderFXAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderFXAA_00af47d0 @ 0x00af_47d0 => extern "C" fn s_00af47d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[78])
+    }
+    /// `StaticInit_RenderGaussianBlurX_00af47f0`: render pass type `RenderGaussianBlurX` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurX_00af47f0 @ 0x00af_47f0 => extern "C" fn s_00af47f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[79])
+    }
+    /// `StaticInit_RenderGaussianBlurYAdditive_00af4810`: render pass type `RenderGaussianBlurYAdditive` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYAdditive_00af4810 @ 0x00af_4810 => extern "C" fn s_00af4810() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[80])
+    }
+    /// `StaticInit_RenderGaussianBlurYCompositeCombine_00af4830`: render pass type `RenderGaussianBlurYCompositeCombine` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYCompositeCombine_00af4830 @ 0x00af_4830 => extern "C" fn s_00af4830() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[81])
+    }
+    /// `StaticInit_RenderGaussianBlurYComposite_00af4850`: render pass type `RenderGaussianBlurYComposite` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurYComposite_00af4850 @ 0x00af_4850 => extern "C" fn s_00af4850() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[82])
+    }
+    /// `StaticInit_RenderGaussianBlurY_00af4870`: render pass type `RenderGaussianBlurY` built on its global (name, flag 0); atexit.
+    StaticInit_RenderGaussianBlurY_00af4870 @ 0x00af_4870 => extern "C" fn s_00af4870() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[83])
+    }
+    /// `StaticInit_RenderHorizVertMLAA_00af4890`: render pass type `RenderHorizVertMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderHorizVertMLAA_00af4890 @ 0x00af_4890 => extern "C" fn s_00af4890() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[84])
+    }
+    /// `StaticInit_RenderMLAA_00af48b0`: render pass type `RenderMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderMLAA_00af48b0 @ 0x00af_48b0 => extern "C" fn s_00af48b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[85])
+    }
+    /// `StaticInit_RenderMotionBlur_00af48d0`: render pass type `RenderMotionBlur` built on its global (name, flag 0); atexit.
+    StaticInit_RenderMotionBlur_00af48d0 @ 0x00af_48d0 => extern "C" fn s_00af48d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[86])
+    }
+    /// `StaticInit_RenderNoMLAA_00af48f0`: render pass type `RenderNoMLAA` built on its global (name, flag 0); atexit.
+    StaticInit_RenderNoMLAA_00af48f0 @ 0x00af_48f0 => extern "C" fn s_00af48f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[87])
+    }
+    /// `StaticInit_RenderPointLight_00af4910`: render pass type `RenderPointLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderPointLight_00af4910 @ 0x00af_4910 => extern "C" fn s_00af4910() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[88])
+    }
+    /// `StaticInit_RenderRGBL_00af4930`: render pass type `RenderRGBL` built on its global (name, flag 0); atexit.
+    StaticInit_RenderRGBL_00af4930 @ 0x00af_4930 => extern "C" fn s_00af4930() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[89])
+    }
+    /// `StaticInit_RenderScreenSpaceReflection_00af4950`: render pass type `RenderScreenSpaceReflection` built on its global (name, flag 0); atexit.
+    StaticInit_RenderScreenSpaceReflection_00af4950 @ 0x00af_4950 => extern "C" fn s_00af4950() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[90])
+    }
+    /// `StaticInit_RenderSpotLight_00af4970`: render pass type `RenderSpotLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderSpotLight_00af4970 @ 0x00af_4970 => extern "C" fn s_00af4970() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[91])
+    }
+    /// `StaticInit_RenderVolumetricLight_00af4990`: render pass type `RenderVolumetricLight` built on its global (name, flag 0); atexit.
+    StaticInit_RenderVolumetricLight_00af4990 @ 0x00af_4990 => extern "C" fn s_00af4990() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[92])
+    }
+    /// `StaticInit_ScreenSpaceReflectionPrePass_00af49b0`: render pass type `ScreenSpaceReflectionPrePass` built on its global (name, flag 0); atexit.
+    StaticInit_ScreenSpaceReflectionPrePass_00af49b0 @ 0x00af_49b0 => extern "C" fn s_00af49b0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[93])
+    }
+    /// `StaticInit_ShadowDirectionalLight_00af49d0`: render pass type `ShadowDirectionalLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowDirectionalLight_00af49d0 @ 0x00af_49d0 => extern "C" fn s_00af49d0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[94])
+    }
+    /// `StaticInit_ShadowPointLight_00af49f0`: render pass type `ShadowPointLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowPointLight_00af49f0 @ 0x00af_49f0 => extern "C" fn s_00af49f0() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[95])
+    }
+    /// `StaticInit_ShadowSpotLight_00af4a10`: render pass type `ShadowSpotLight` built on its global (name, flag 0); atexit.
+    StaticInit_ShadowSpotLight_00af4a10 @ 0x00af_4a10 => extern "C" fn s_00af4a10() -> u32 {
+        si::named_type(&mut mem(), &si::NAMED_TYPES[96])
+    }
+    /// `StaticInit_ChainAppend_00af4a30`: appends the object at `0x00c6_8494` (vtable 0x00b73f70) to the chain at 0xc901a8 (before the first block at least 0xff full); atexit(0x00b09010).
+    StaticInit_ChainAppend_00af4a30 @ 0x00af_4a30 => extern "C" fn s_00af4a30() -> u32 {
+        si::list_append(&mut mem(), &si::LIST_APPENDS[4])
+    }
+    /// `StaticInit_PBitmapFont_00af4ad0`: class descriptor `PBitmapFont` (`cd_desc_set8`): constructor, buffers, set8; atexit.
+    StaticInit_PBitmapFont_00af4ad0 @ 0x00af_4ad0 => extern "C" fn s_00af4ad0() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[107])
+    }
+    /// `StaticInit_PBitmapFontCharInfo_00af4b90`: class descriptor `PBitmapFontCharInfo` (`cd_desc_clear`): constructor, buffers, clear; atexit.
+    StaticInit_PBitmapFontCharInfo_00af4b90 @ 0x00af_4b90 => extern "C" fn s_00af4b90() -> u32 {
+        si::class_decl(&mut mem(), &si::CLASS_DECLS[108])
+    }
 }
