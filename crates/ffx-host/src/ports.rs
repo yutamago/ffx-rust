@@ -44,12 +44,40 @@ fn ms_check_range(_: &mut Exec, args: &Args) -> Ret {
     Ret::eax(ffx_kernel::bridge::ms_check_range(x, lo, hi).cast_unsigned())
 }
 
+/// `zlib_uncompress(dst, &dst_len, src, src_len)` (`0x00405e20`):
+/// `ffx_core::zlib`, as the hook's hand-written replacement; `*dst_len` is
+/// updated only on success. The loads' hot spot under Unicorn (every
+/// compressed block of `FFX_Data.vbf`).
+fn zlib_uncompress(e: &mut Exec, args: &Args) -> Ret {
+    let [dst, dst_len, src, src_len] = [0, 1, 2, 3].map(|i| args.arg(Conv::Cdecl, i));
+    let mut mem = e.mem();
+    let capacity: u32 = mem.read(dst_len);
+    let mut input = vec![0u8; src_len as usize];
+    mem.read_bytes(src, &mut input);
+    let mut out = vec![0u8; capacity as usize];
+    match ffx_core::zlib::uncompress(&mut out, &input) {
+        Ok(written) => {
+            mem.write_bytes(dst, &out[..written]);
+            mem.write(dst_len, u32::try_from(written).unwrap_or(u32::MAX));
+            Ret::eax(0)
+        }
+        Err(code) => Ret::eax(code.cast_unsigned()),
+    }
+}
+
 /// A hand-written port.
 pub type HandPort = fn(&mut Exec, &Args) -> Ret;
 
 /// The hand-registered ports: address, `ffx.sym` name, convention, stack
 /// words, port.
-pub const HAND: [(u32, &str, Conv, usize, HandPort); 2] = [
+pub const HAND: [(u32, &str, Conv, usize, HandPort); 3] = [
+    (
+        0x0040_5e20,
+        "zlib_uncompress",
+        Conv::Cdecl,
+        4,
+        zlib_uncompress,
+    ),
     (
         0x0060_7d50,
         "Path_ToLowerAscii",
@@ -127,12 +155,15 @@ pub fn ported() -> Table {
 }
 
 /// Every port of this build: the hand-written ones, then the `ported!`
-/// entries over them.
+/// entries over them, then the clock's ports and wrappers over both
+/// (`crate::clock::register`; a wrapper over a `ported!` entry calls that
+/// port as its original).
 #[must_use]
 pub fn table() -> Table {
     let mut t = hand();
     for (addr, e) in ported().entries() {
         t.register(addr, e);
     }
+    crate::clock::register(&mut t);
     t
 }

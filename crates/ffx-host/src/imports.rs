@@ -19,6 +19,7 @@ use ffx_bridge::Mem;
 
 use crate::Result;
 use crate::arena::{Arena, PAGE};
+use crate::clock;
 use crate::exec::{Exec, Stop};
 use crate::files;
 use crate::table::{Args, Conv, Ret};
@@ -64,6 +65,8 @@ impl Imports {
             .chain(TABLE)
             .chain(crate::crypt::TABLE)
             .chain(crate::stand_ins::TABLE)
+            .chain(crate::iggy::TABLE)
+            .chain(crate::audio::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
             Some(&(_, _, conv, words, run)) => Bound {
@@ -406,13 +409,6 @@ fn system_time(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
     mem.write(a(args, 0), 0x01d0_0000_0000_0000u64);
     Ret::VOID
-}
-
-/// `QueryPerformanceCounter(&n)` / `QueryPerformanceFrequency(&n)`.
-fn perf_counter(e: &mut Exec, args: &Args) -> Ret {
-    let mut mem = e.mem();
-    mem.write(a(args, 0), 10_000_000u64);
-    Ret::eax(1)
 }
 
 /// `GetStartupInfoW(&si)`: zeroed, `cb` set.
@@ -995,11 +991,6 @@ fn fopen(e: &mut Exec, args: &Args) -> Ret {
     fopen_missing(e, args, false)
 }
 
-/// `GetTickCount64()`.
-fn tick_count64(_: &mut Exec, _: &Args) -> Ret {
-    Ret::u64(1_000_000)
-}
-
 /// The fake window handle (`CreateWindowExA`).
 pub const HWND: u32 = 0x0001_0010;
 
@@ -1106,23 +1097,22 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "GetCurrentThread", Conv::Stdcall, 0, |_, _| {
         Ret::eax(u32::MAX - 1)
     }),
-    (K32, "GetTickCount", Conv::Stdcall, 0, |_, _| {
-        Ret::eax(1_000_000)
-    }),
-    (K32, "GetTickCount64", Conv::Stdcall, 0, tick_count64),
+    // the virtual clock (crate::clock)
+    (K32, "GetTickCount", Conv::Stdcall, 0, clock::tick_count),
+    (K32, "GetTickCount64", Conv::Stdcall, 0, clock::tick_count64),
     (
         K32,
         "QueryPerformanceCounter",
         Conv::Stdcall,
         1,
-        perf_counter,
+        clock::perf_counter,
     ),
     (
         K32,
         "QueryPerformanceFrequency",
         Conv::Stdcall,
         1,
-        perf_counter,
+        clock::perf_frequency,
     ),
     (K32, "SetUnhandledExceptionFilter", Conv::Stdcall, 1, zero),
     (K32, "GetProcessHeap", Conv::Stdcall, 0, |_, _| {
@@ -1337,7 +1327,11 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     // timers
     ("WINMM.dll", "timeBeginPeriod", Conv::Stdcall, 1, zero),
     ("WINMM.dll", "timeEndPeriod", Conv::Stdcall, 1, zero),
-    ("WINMM.dll", "timeGetTime", Conv::Stdcall, 0, |_, _| {
-        Ret::eax(1_000_000)
-    }),
+    (
+        "WINMM.dll",
+        "timeGetTime",
+        Conv::Stdcall,
+        0,
+        clock::tick_count,
+    ),
 ];

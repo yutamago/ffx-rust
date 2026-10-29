@@ -4,7 +4,8 @@
 //! ffx-rust [--game-dir DIR] [--sym FILE] [--budget SECONDS] [--cover]
 //!          [--lenient] [--count] [--stop-at DLL!name]... [--no-dlls]
 //!          [--documents DIR] [--profile FILE] [--routes FILE] [--ports FILE]
-//!          [--gfx-out DIR] [--gfx-null] [--presents N]
+//!          [--gfx-out DIR] [--gfx-null] [--presents N] [--replay FILE]
+//!          [--audio-wav FILE]
 //! ```
 //!
 //! `--documents` is the folder the game sees as its documents folder
@@ -36,6 +37,8 @@ fn main() -> ExitCode {
     let mut routes: Option<PathBuf> = None;
     let mut ports: Option<PathBuf> = None;
     let mut gfx_out: Option<PathBuf> = None;
+    let mut replay: Option<PathBuf> = None;
+    let mut audio_wav: Option<PathBuf> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--game-dir" => game = args.next().map(PathBuf::from),
@@ -59,6 +62,8 @@ fn main() -> ExitCode {
             "--routes" => routes = args.next().map(PathBuf::from),
             "--ports" => ports = args.next().map(PathBuf::from),
             "--gfx-out" => gfx_out = args.next().map(PathBuf::from),
+            "--replay" => replay = args.next().map(PathBuf::from),
+            "--audio-wav" => audio_wav = args.next().map(PathBuf::from),
             "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
             "--presents" => {
                 opts.gfx.stop_after_presents = args.next().and_then(|s| s.parse().ok());
@@ -94,6 +99,24 @@ fn main() -> ExitCode {
         exec.stop_at(s);
     }
     exec.set_budget(budget);
+    if let Ok(mut w) = exec.shared().audio.wav.lock() {
+        w.clone_from(&audio_wav);
+    }
+    if let Some(p) = &replay {
+        match std::fs::read_to_string(p) {
+            Ok(text) => {
+                let mut script = ffx_host::replay::Script::new(&text);
+                script.stop_when_done = true;
+                if let Ok(mut s) = exec.shared().clock.script.lock() {
+                    *s = Some(script);
+                }
+            }
+            Err(e) => {
+                eprintln!("replay {}: {e}", p.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
     exec.set_lenient(lenient);
     if count && let Err(e) = exec.count_instructions() {
         eprintln!("count: {e}");

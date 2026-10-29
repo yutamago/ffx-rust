@@ -367,7 +367,11 @@ fn boot_with_the_table_ends_where_unicorn_alone_ends() {
         ..ffx_host::Options::default()
     };
     let mut ported = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts("same-a")).unwrap();
-    let mut original = ffx_host::boot_opts(&exe, Table::new(), &opts("same-b")).unwrap();
+    // the all-Unicorn side keeps the clock's ports and wrappers, which the
+    // full table has over the ported! entries
+    let mut clock = Table::new();
+    ffx_host::clock::register(&mut clock);
+    let mut original = ffx_host::boot_opts(&exe, clock, &opts("same-b")).unwrap();
     ported.set_budget(Duration::from_secs(60));
     original.set_budget(Duration::from_secs(60));
     let a = ported.run_entry().unwrap();

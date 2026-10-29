@@ -25,6 +25,8 @@ use crate::sync::{INFINITE, Obj, SLICE, WAIT_FAILED};
 use crate::table::{Args, Conv, Ret};
 
 const K32: &str = "KERNEL32.dll";
+/// The longest real sleep (`Sleep`, `SleepThreadInMillisecond`).
+const REAL_SLEEP_CAP: Duration = Duration::from_millis(5);
 
 // ---- threads -------------------------------------------------------------
 
@@ -185,18 +187,32 @@ fn close_handle(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(1)
 }
 
-/// `Sleep(ms)`: a real sleep (other threads run meanwhile), cut short when
-/// the run ends.
+/// `Sleep(ms)`: the frame limiter's moves the virtual clock
+/// ([`crate::clock::sleep`]); any other is a real sleep (other threads run
+/// meanwhile), cut short when the run ends.
 fn sleep(e: &mut Exec, args: &Args) -> Ret {
+    if crate::clock::sleep(e, args) {
+        return Ret::VOID;
+    }
+    real_sleep(e, args);
+    crate::clock::woke(e);
+    Ret::VOID
+}
+
+/// A real `Sleep(ms)` (the virtual clock stays).
+pub(crate) fn real_sleep(e: &mut Exec, args: &Args) -> Ret {
     let ms = a(args, 0);
     if ms == 0 {
         std::thread::yield_now();
         return Ret::VOID;
     }
+    // at most REAL_SLEEP_CAP: the game's sleeps only yield (the clock
+    // that times it is the virtual one), and under the emulator a long
+    // one only stretches the run
     let mut left = if ms == INFINITE {
         Duration::MAX
     } else {
-        Duration::from_millis(ms.into())
+        Duration::from_millis(ms.into()).min(REAL_SLEEP_CAP)
     };
     while !left.is_zero() && !e.shared().sync.stopping() {
         let step = left.min(SLICE);

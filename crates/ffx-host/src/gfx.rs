@@ -1585,9 +1585,8 @@ impl Gfx {
                 }
                 S_OK
             }
-            // DirectInput: no devices attached; a keyboard or mouse made
-            // by GUID reads as untouched
-            ("IDirectInput8A", "EnumDevices") => S_OK,
+            // DirectInput: a keyboard and a mouse (EnumDevices: in
+            // `method`), untouched
             ("IDirectInput8A", "CreateDevice") => {
                 if a[2] == 0 {
                     return Some(E_POINTER);
@@ -1864,8 +1863,14 @@ impl Gfx {
             }
             "Flush" => self.backend.op(&Op::Flush),
             "GetType" | "GetContextFlags" => return Some(0),
-            "SetPredication" | "SetResourceMinLOD" | "DiscardResource" | "DiscardView"
-            | "SOSetTargets" | "Dispatch" | "DispatchIndirect" => {}
+            "SetPredication"
+            | "SetResourceMinLOD"
+            | "DiscardResource"
+            | "DiscardView"
+            | "SOSetTargets"
+            | "Dispatch"
+            | "DispatchIndirect"
+            | "CSSetUnorderedAccessViews" => {}
             "GetResourceMinLOD" => return Some(0),
             m if m.contains("Get") => {
                 // a getter the layer doesn't answer yet: listed
@@ -1963,6 +1968,11 @@ pub fn method(e: &mut Exec, tag: u32, args: &Args) -> Ret {
     let Some((class, _, &(iface, name, _, returns))) = com::method(tag) else {
         return Ret::eax(E_NOTIMPL);
     };
+    if (iface, name) == ("IDirectInput8A", "EnumDevices") {
+        // calls back into the game, which creates the devices: outside
+        // the layer's lock
+        return crate::stand_ins::dinput_enum_devices(e, args);
+    }
     let shared = Arc::clone(e.shared());
     let mut slot = shared.gfx.lock();
     let Some(g) = slot.as_mut() else {

@@ -18,8 +18,12 @@ ffx-fpu = { workspace = true, features = ["unicorn"] }
 ffx-gfx.workspace = true
 ffx-host-ports.workspace = true
 ffx-kernel.workspace = true
+ffx-sound.workspace = true
+# The Flash screens on Ruffle (src/iggy/swf.rs): heavy (wgpu), so a feature.
+ffx-swf = { workspace = true, optional = true }
 goblin.workspace = true
 md-5.workspace = true
+miniz_oxide.workspace = true
 thiserror.workspace = true
 # Development only: runs FFX.exe's functions that have no port yet
 # (docs/host.md, "Rust and Unicorn"); gone before the stage 4 gate.
@@ -39,6 +43,10 @@ windows = { version = "0.62.2", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
 ] }
+
+[features]
+# Iggy's players on Ruffle (ffx-swf); without it the players are null.
+swf = ["dep:ffx-swf"]
 
 [lints]
 workspace = true

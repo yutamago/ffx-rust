@@ -11,6 +11,8 @@
 //! - [`report`]: what a run reached, for the log and the tests.
 
 pub mod arena;
+pub mod audio;
+pub mod clock;
 pub mod com;
 pub mod com_methods;
 pub mod crypt;
@@ -20,10 +22,12 @@ pub mod dll;
 pub mod exec;
 pub mod files;
 pub mod gfx;
+pub mod iggy;
 pub mod image;
 pub mod imports;
 pub mod log;
 pub mod ports;
+pub mod replay;
 pub mod report;
 pub mod stand_ins;
 pub mod sync;
