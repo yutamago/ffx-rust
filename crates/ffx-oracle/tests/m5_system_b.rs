@@ -31,8 +31,10 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::m5b_async::{self as al, bridge as ab};
-use ffx_system::m5b_misc::{self as misc, bridge as mb};
+use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_stackwalker::{self as swk, bridge as sw};
+use ffx_system::m5b_steam::{self as steam, bridge as sm};
+use ffx_system::m5b_stl::{self as stl, bridge as st};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -861,8 +863,8 @@ fn stack_walker_printers_match_the_original() {
 fn esc_menu_dtor_matches_the_original() {
     Twins::each(|t| {
         t.reset();
-        t.stub(misc::REMOVE_LISTENER, false, 1, 0, 0x12);
-        t.stub(misc::IGGY_MENU_DTOR, true, 0, 0, 0x31);
+        t.stub(ms::REMOVE_LISTENER, false, 1, 0, 0x12);
+        t.stub(ms::IGGY_MENU_DTOR, true, 0, 0, 0x31);
         let this = t.zeros(0xa0);
         t.check(
             "FFEscMenu dtor",
@@ -1421,6 +1423,669 @@ fn platform_specific_path_matches_the_original() {
             t.check(&what, 0x0069_0590, Conv::Cdecl, &args, |h| {
                 Out::U32(ab::platform_specific_path(h, out, arg))
             });
+        }
+    });
+}
+
+// ---- batch 2: std::_Tree, strings, vectors, the asset map, Steam ----
+
+impl Twins {
+    /// A recording stub over `sym` that first stores `value` at `[ecx +
+    /// off]` (when `ecx_off`) or at `*[esp + 4 + 4 * word]`.
+    #[allow(clippy::too_many_arguments)]
+    fn stub_store(
+        &mut self,
+        sym: u32,
+        ecx_off: Option<u8>,
+        word: u8,
+        value: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+    ) {
+        let log_stub = self.stub_code(sym, this, n, pops, ret);
+        let mut c = Vec::new();
+        if let Some(off) = ecx_off {
+            c.extend([0xc7, 0x41, off]); // mov dword [ecx + off], value
+            c.extend(value.to_le_bytes());
+        } else {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * word]); // mov eax, [esp + 4 + 4w]
+            c.extend([0xc7, 0x00]); // mov dword [eax], value
+            c.extend(value.to_le_bytes());
+        }
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes());
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+/// A tree head (nil, black, its links at itself) and the tree object
+/// `{head, size}`.
+fn tree(t: &mut Twins) -> (u32, u32) {
+    let head = t.zeros(0x30);
+    t.put(head, &[head, head, head]);
+    t.write(head + 0xc, &[1, 1]);
+    let this = t.words(&[head, 0]);
+    (this, head)
+}
+
+/// Where a key goes in the tree (the BST search the callers do):
+/// `(where, addLeft)`.
+fn insert_site(t: &Twins, head: u32, key: u32) -> (u32, u32) {
+    let mut at = head;
+    let mut left = true;
+    let mut n = t.r32(head + 4);
+    while Mem::read::<u8>(&t.a, n + 0xd) == 0 {
+        at = n;
+        left = key < t.r32(n + 0x10);
+        n = t.r32(n + if left { 0 } else { 8 });
+    }
+    (at, u32::from(left))
+}
+
+/// Inserts `keys` with the original in `a` and the port in `b`, each
+/// insert checked; returns the tree, its head and the nodes.
+fn build_tree(t: &mut Twins, keys: &[u32]) -> (u32, u32, Vec<u32>) {
+    let (this, head) = tree(t);
+    let out = t.zeros(4);
+    let mut nodes = Vec::new();
+    for (i, &k) in keys.iter().enumerate() {
+        // as _Buynode leaves it: both children the head, red, not nil
+        let node = t.zeros(0x18);
+        t.put(node, &[head, 0, head, 0, k]);
+        let (at, left) = insert_site(t, head, k);
+        let what = format!("tree insert #{i} ({k})");
+        t.check(
+            &what,
+            0x0069_93d0,
+            Conv::Thiscall(this),
+            &[out, left, at, 0x1234, node],
+            |m| Out::U32(st::tree_insert_at(m, this, out, left, at, node)),
+        );
+        nodes.push(node);
+    }
+    (this, head, nodes)
+}
+
+#[test]
+fn tree_insert_and_erase_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7ee5_0001);
+        for round in 0..6u32 {
+            t.reset();
+            t.stub(stl::OPERATOR_DELETE, false, 1, 0, 0x1d);
+            let n = [1usize, 2, 5, 17, 40, 64][round as usize];
+            let keys: Vec<u32> = (0..n)
+                .map(|i| match round {
+                    // ascending and descending runs, then random
+                    2 => i as u32,
+                    3 => 1000 - i as u32,
+                    _ => rng.below(500),
+                })
+                .collect();
+            let (this, head, mut nodes) = build_tree(t, &keys);
+            let out = t.zeros(4);
+            let slot = t.b_stack(0x3000);
+            while !nodes.is_empty() {
+                let k = rng.below(nodes.len() as u32) as usize;
+                let node = nodes.swap_remove(k);
+                Mem::write_bytes(&mut t.b, slot, &node.to_le_bytes());
+                let what = format!("tree erase round {round} ({} left)", nodes.len());
+                t.check(
+                    &what,
+                    0x0069_b010,
+                    Conv::Thiscall(this),
+                    &[out, node],
+                    |m| Out::U32(st::tree_erase(m, this, out, slot)),
+                );
+            }
+            assert_eq!(t.r32(head + 4), head, "round {round}: the tree is empty");
+        }
+    });
+}
+
+#[test]
+fn hash_set_contains_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x4a54_0002);
+        t.reset();
+        t.stub(stl::OPERATOR_DELETE, false, 1, 0, 0x1d);
+        let keys: Vec<u32> = (0..20).map(|_| rng.next()).collect();
+        let (_, head, _) = build_tree(t, &keys);
+        let lock = t.words(&[0x0bad_0a11]);
+        let this = t.zeros(0x20);
+        t.put(this + 0x10, &[head]);
+        t.put(this + 0x18, &[lock]);
+        let probes: Vec<u32> = keys
+            .iter()
+            .copied()
+            .chain([
+                0,
+                1,
+                0xffff_ffff,
+                keys[0].wrapping_add(1),
+                keys[3].wrapping_sub(1),
+            ])
+            .collect();
+        for (i, key) in probes.into_iter().enumerate() {
+            t.reset();
+            t.stub(stl::DJB_HASH, false, 1, 0, key);
+            imp(t, stl::WAIT_IAT, 2, true, 0);
+            imp(t, stl::RELEASE_MUTEX_IAT, 1, true, 0x78);
+            let what = format!("hash set contains #{i}");
+            t.check(
+                &what,
+                0x0069_b7c0,
+                Conv::Thiscall(this),
+                &[0x00b4_6fb8],
+                |m| Out::U32(st::hash_set_contains(m, this, 0x00b4_6fb8)),
+            );
+        }
+    });
+}
+
+#[test]
+fn string_move_with_word_matches_the_original() {
+    Twins::each(|t| {
+        for (case, (size, cap)) in [
+            (0u32, 15u32),
+            (5, 15),
+            (15, 15),
+            (20, 31),
+            (0xffff_ffff, 3),
+            (3, 16),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.reset();
+            t.stub_import_copy(stl::MEMMOVE_IAT);
+            let src = t.words(&[
+                0x6c69_7362,
+                0x3030_3030,
+                0x0063_6261,
+                0x0102_0304,
+                size,
+                cap,
+                0x5eed,
+            ]);
+            let this = t.words(&[0x9999_9999; 8]);
+            let what = format!("string move #{case}");
+            t.check(&what, 0x0069_c200, Conv::Thiscall(this), &[src, 7], |m| {
+                Out::U32(st::string_move_with_word(m, this, src))
+            });
+        }
+    });
+}
+
+#[test]
+fn wait_ppp_part_matches_the_original() {
+    use ffx_system::m5a_platform::bridge as pf;
+    Twins::each(|t| {
+        let mut rng = Rng(0x71e8_1004);
+        for case in 0..20 {
+            t.reset();
+            t.stub_import(pf::WAIT_FOR_SINGLE_OBJECT_IAT, false, 2, 2, 0);
+            t.stub_import(pf::RELEASE_SEMAPHORE_IAT, false, 3, 3, 1);
+            let this = t.alloc(
+                &(0..0x1e8 * 3 + 0x300)
+                    .map(|_| rng.next() as u8)
+                    .collect::<Vec<_>>(),
+            );
+            let count = [0u32, 7, 8, 9, 0xffff_ffff][rng.below(5) as usize];
+            t.w32(this + 0x1f8, count);
+            t.g32(pf::CLOTH_SCHEDULER, this);
+            let what = format!("JobScheduleWait_pppPart #{case}");
+            t.check(&what, 0x0071_e810, Conv::Cdecl, &[], |m| {
+                pf::wait_cloth(m);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn read_localization_kit_matches_the_original() {
+    Twins::each(|t| {
+        t.skip = 4;
+        for lang in 0..13u32 {
+            for case in 0..3u32 {
+                t.reset();
+                t.stub(ms::MEMSET, false, 3, 0, 0);
+                imp(t, ms::SPRINTF_IAT, 4, false, 9);
+                imp(t, ms::PRINTF_IAT, 2, false, 9);
+                t.stub(ms::FIOS_UNIFY, false, 3, 0, 0);
+                t.stub(
+                    ms::FIOS_OPEN,
+                    false,
+                    2,
+                    0,
+                    if case == 0 { 0 } else { 0x0f11_e000 },
+                );
+                t.stub_seq(ms::FIOS_LSEEK, 3, 0, &[0x40, 0]);
+                let buf = t.zeros(0x40);
+                t.stub(ms::NEW_ARRAY, false, 1, 0, buf);
+                let reads: &[u32] = if case == 2 { &[3, 0x3f, 0x40] } else { &[0x41] };
+                t.stub_seq(ms::FIOS_READ, 3, 0, reads);
+                t.stub(ms::FIOS_CLOSE, false, 1, 0, 0);
+                let this = t.words(&[0, lang, 0, 0, 0, 0x77, 0x88]);
+                let what = format!("readLocalizationKit lang {lang} #{case}");
+                t.check_framed(
+                    &what,
+                    0x006d_b2f0,
+                    Conv::Thiscall(this),
+                    &[],
+                    ms::LOC_KIT_FRAME,
+                    |m, ebp| {
+                        mb::read_localization_kit(m, ebp, this);
+                        Out::None
+                    },
+                );
+            }
+        }
+        t.skip = 0;
+    });
+}
+
+#[test]
+fn depth_bias_on_scene_loaded_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..8u32 {
+            t.reset();
+            let level = t.alloc(b"djyt04\0");
+            t.stub(ms::LEVEL_NAME, true, 0, 0, level);
+            let hits: Vec<u32> = (0..6)
+                .map(|i| u32::from((case >> (i % 3)) & 1 != 0) * (level + 1))
+                .collect();
+            t.stub_import_seq(ms::STRSTR_IAT, 2, 0, &hits);
+            t.stub(ms::SET_MAP_ALPHA_FAST, false, 1, 0, 0);
+            t.stub(ms::ASSET_LIST_DTOR, true, 0, 0, 0);
+            t.stub(ms::USER_FREE, false, 1, 0, 0);
+            t.g32(ms::PHYRE_SCENE, 0x0c0c_0000 + case);
+            let mut args = vec![0x5151_5151u32];
+            args.extend((0..40).map(|i| 0x100 + i));
+            args[0x50 / 4] = if case & 1 == 0 { 0 } else { 0x0b10_c000 };
+            args[0xa0 / 4] = if case & 2 == 0 { 0 } else { 0x0b10_c001 };
+            // the port's view of the argument words: where the original's are
+            let ebp = t.frame_ebp(args.len());
+            let slots = ebp + 8;
+            let bytes: Vec<u8> = args.iter().flat_map(|v| v.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            t.b.set_call_top(Some(slots - 0x200));
+            let what = format!("DepthBias onSceneLoaded #{case}");
+            t.check(&what, 0x006e_4470, Conv::Cdecl, &args, |m| {
+                mb::depth_bias_on_scene_loaded(m, slots);
+                Out::None
+            });
+            t.b.set_call_top(None);
+        }
+    });
+}
+
+#[test]
+fn steam_callbacks_match_the_original() {
+    Twins::each(|t| {
+        for flags in [0u32, 1, 2, 3] {
+            for (sym, vft) in [
+                (0x006f_1310u32, steam::ACHIEVEMENT_STORED_VFTABLE),
+                (0x006f_1330, steam::STATS_RECEIVED_VFTABLE),
+                (0x006f_1350, steam::STATS_STORED_VFTABLE),
+            ] {
+                t.reset();
+                imp(t, steam::UNREGISTER_IAT, 1, false, 0x31);
+                let this = t.words(&[0, flags, 0, 0, 0]);
+                let what = format!("CCallback dtor {sym:#x} {flags}");
+                t.check(&what, sym, Conv::Thiscall(this), &[], |m| {
+                    sm::callback_dtor(m, this, vft);
+                    Out::None
+                });
+            }
+        }
+        for sym in [0x006f_1820u32, 0x006f_1850, 0x006f_1880] {
+            t.reset();
+            let target = t.stub_code(0x7a46, true, 1, 1, 0x61);
+            let this = t.words(&[0, 0, 0, 0x0b1e_c700, target]);
+            let what = format!("CCallback run {sym:#x}");
+            t.check(&what, sym, Conv::Thiscall(this), &[0x9a9a], |m| {
+                Out::U32(sm::callback_run(m, this, 0x9a9a))
+            });
+            let what = format!("CCallback run call {:#x}", sym + 0x10);
+            t.check(
+                &what,
+                sym + 0x10,
+                Conv::Thiscall(this),
+                &[0x9b9b, 1, 2, 3],
+                |m| Out::U32(sm::callback_run_call(m, this, 0x9b9b)),
+            );
+        }
+    });
+}
+
+#[test]
+fn on_user_stats_received_matches_the_original() {
+    Twins::each(|t| {
+        for case in 0..8u32 {
+            t.reset();
+            let text = t.alloc(b"Sphere Grid\0");
+            let mut slots = vec![(0u32, 0u32); 13];
+            slots[6] = (2, 1);
+            slots[12] = (2, text);
+            let stats = t.object(&slots);
+            imp(t, steam::USER_STATS_IAT, 0, false, stats);
+            imp(t, steam::SNPRINTF_IAT, 4, false, 0);
+            let count = [0u32, 1, 3, 0xffff_ffff][(case % 4) as usize];
+            let records = t.zeros(0x190 * 3);
+            for i in 0..3 {
+                t.put(records + 0x190 * i + 4, &[0x00b4_1000 + i]);
+            }
+            let this = t.zeros(0x50);
+            t.put(this + 0x3c, &[0x1111, 0x2222, records, count]);
+            let id = if case & 4 == 0 {
+                [0x1111u32, 0x2222]
+            } else {
+                [0x1111, 0x2223]
+            };
+            let result = [1u32, 1, 1, 2][(case % 4) as usize];
+            let cb = t.words(&[id[0], id[1], result]);
+            let what = format!("OnUserStatsReceived #{case}");
+            t.check(&what, 0x006f_15f0, Conv::Thiscall(this), &[cb], |m| {
+                sm::on_user_stats_received(m, this, cb);
+                Out::None
+            });
+        }
+    });
+}
+
+/// A `std::string` in a node at `at + 0x10` (inline below 16 characters).
+fn put_string(t: &mut Twins, at: u32, s: &[u8]) {
+    let len = s.len() as u32;
+    if s.len() < 16 {
+        let mut b = s.to_vec();
+        b.resize(16, 0);
+        t.write(at, &b);
+        t.put(at + 0x10, &[len, 15]);
+    } else {
+        let mut b = s.to_vec();
+        b.push(0);
+        let p = t.alloc(&b);
+        t.put(at, &[p]);
+        t.put(at + 0x10, &[len, len.max(16)]);
+    }
+}
+
+/// A balanced search tree of string-keyed nodes (`keys` sorted), its
+/// head; colours are not read by these functions.
+fn string_tree(t: &mut Twins, keys: &[Vec<u8>]) -> (u32, u32) {
+    fn build(t: &mut Twins, head: u32, parent: u32, keys: &[Vec<u8>]) -> u32 {
+        if keys.is_empty() {
+            return head;
+        }
+        let mid = keys.len() / 2;
+        let node = t.zeros(0x30);
+        put_string(t, node + 0x10, &keys[mid]);
+        t.write(node + 0xc, &[1, 0]);
+        let left = build(t, head, node, &keys[..mid]);
+        let right = build(t, head, node, &keys[mid + 1..]);
+        t.put(node, &[left, parent, right]);
+        node
+    }
+    let (this, head) = tree(t);
+    let root = build(t, head, head, keys);
+    t.put(head + 4, &[root]);
+    t.put(this + 4, &[keys.len() as u32]);
+    (this, head)
+}
+
+fn string_keys() -> Vec<Vec<u8>> {
+    let mut keys: Vec<Vec<u8>> = [
+        &b"a"[..],
+        b"ab",
+        b"abc",
+        b"b",
+        b"bsil0000",
+        b"bsil0300",
+        b"kami0100",
+        b"kami0100_long_name_here",
+        b"sixteen_chars_ab",
+        b"z",
+        b"\xff",
+        b"",
+    ]
+    .iter()
+    .map(|s| s.to_vec())
+    .collect();
+    keys.sort();
+    keys
+}
+
+#[test]
+fn string_map_equal_range_and_erase_match_the_original() {
+    Twins::each(|t| {
+        let probes: Vec<&[u8]> = vec![
+            b"",
+            b"a",
+            b"aa",
+            b"abc",
+            b"abcd",
+            b"b",
+            b"bsil",
+            b"bsil0000",
+            b"bsil0200",
+            b"kami0100_long_name_here",
+            b"kami0100_long_name_herf",
+            b"zz",
+            b"\xff",
+            b"\xff\xff",
+        ];
+        for (i, p) in probes.iter().enumerate() {
+            for keys in [string_keys(), Vec::new(), string_keys()[..1].to_vec()] {
+                t.reset();
+                let (this, _) = string_tree(t, &keys);
+                let key = t.zeros(0x18);
+                put_string(t, key, p);
+                let out = t.zeros(8);
+                let what = format!("equal_range #{i} ({} keys)", keys.len());
+                t.check(&what, 0x006f_3c60, Conv::Thiscall(this), &[out, key], |m| {
+                    Out::U32(st::string_map_equal_range(m, this, out, key))
+                });
+                if i % 2 == 0 {
+                    t.stub_store(stl::RANGE_COUNT, None, 2, 7, false, 4, 0, 0);
+                } else {
+                    // stores nothing: the 0 the erase writes first comes back
+                    t.stub(stl::RANGE_COUNT, false, 4, 0, 0);
+                    let ebp = t.frame_ebp(1);
+                    Mem::write_bytes(&mut t.b, ebp + 8, &0x5555_u32.to_le_bytes());
+                }
+                t.stub(stl::TREE_ERASE_RANGE, true, 3, 3, 0);
+                let what = format!("erase key #{i} ({} keys)", keys.len());
+                t.check_framed(
+                    &what,
+                    0x006f_40e0,
+                    Conv::Thiscall(this),
+                    &[key],
+                    8,
+                    |m, ebp| {
+                        Out::U32(st::string_map_erase_key(
+                            m,
+                            ebp - 8,
+                            ebp - 4,
+                            ebp + 8,
+                            this,
+                            key,
+                        ))
+                    },
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn vector_growth_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7ec7_0003);
+        for case in 0..40u32 {
+            t.reset();
+            let fail = case % 9 == 4;
+            let block = if fail { 0 } else { t.zeros(0x400) };
+            t.stub(stl::OPERATOR_NEW, false, 1, 0, block);
+            // a freed block's first word changes (a value inside is re-read)
+            t.stub_store(
+                stl::OPERATOR_DELETE,
+                None,
+                0,
+                0xdead_beef,
+                false,
+                1,
+                0,
+                0x1d,
+            );
+            imp(t, stl::XBAD_ALLOC_IAT, 0, false, 0);
+            imp(t, stl::XLENGTH_IAT, 1, false, 0);
+            t.stub_import_copy(stl::MEMMOVE_IAT);
+            let size = rng.below(6);
+            let cap = size + rng.below(3);
+            let data = if size == 0 && rng.chance(2) {
+                0
+            } else {
+                let w: Vec<u32> = (0..cap.max(1)).map(|i| 0xd000 + i).collect();
+                t.words(&w)
+            };
+            let v = t.words(&[data, data + 4 * size, data + 4 * cap]);
+            let n = [0u32, 1, 3, 0x4000_0000, 0x3fff_ffff, 7][(case % 6) as usize];
+            // (a block of 0 for a vector with words makes the original copy
+            // to address 0)
+            if (n != 0 && !fail || size == 0) && (n < 0x100 || n == 0x3fff_ffff && !fail) {
+                let what = format!("vector reallocate #{case}");
+                t.check(&what, 0x006f_3ee0, Conv::Thiscall(v), &[n], |m| {
+                    Out::U32(st::vector_reallocate(m, v, n))
+                });
+            }
+            t.put(v, &[data, data + 4 * size, data + 4 * cap]);
+            // (past the limit the original calls _Xlength_error without
+            // popping its argument: it never returns, and after a stub's
+            // return the stack is off, so that path is left out)
+            if !fail && n < 0x100 {
+                let what = format!("vector reserve #{case}");
+                t.check(&what, 0x006f_3f60, Conv::Thiscall(v), &[n], |m| {
+                    Out::U32(st::vector_reserve(m, v, n))
+                });
+            }
+            if !fail {
+                t.put(v, &[data, data + 4 * size, data + 4 * cap]);
+                let inside = size > 0 && rng.chance(2);
+                let value = if inside {
+                    data + 4 * rng.below(size)
+                } else {
+                    t.words(&[0xabcd_0000 + case])
+                };
+                let what = format!("vector push_back #{case}");
+                t.check(&what, 0x006f_4890, Conv::Thiscall(v), &[value], |m| {
+                    st::vector_push_back(m, v, value);
+                    Out::None
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn asset_list_clear_matches_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        t.stub(stl::VECTOR_DESTROY, true, 2, 2, 0);
+        t.stub(stl::TREE_ERASE_SUBTREE, true, 1, 1, 0);
+        let (map, head) = tree(t);
+        let root = t.zeros(0x18);
+        t.put(head + 4, &[root]);
+        let mapw = t.r32(map);
+        let this = t.words(&[
+            mapw, 5, 0x111, 0x222, 0x333, 0x444, 0x555, 0x666, 0x777, 0x888,
+        ]);
+        t.check(
+            "AssetListReader clear",
+            0x006f_4030,
+            Conv::Thiscall(this),
+            &[],
+            |m| Out::U32(st::asset_list_clear(m, this)),
+        );
+    });
+}
+
+#[test]
+fn has_key_and_symbol_id_match_the_original() {
+    Twins::each(|t| {
+        for case in 0..16u32 {
+            t.reset();
+            let (this, head) = tree(t);
+            let node = t.zeros(0x40);
+            put_string(
+                t,
+                node + 0x10,
+                if case & 8 == 0 {
+                    b"bsil"
+                } else {
+                    b"a_long_key_name_over_16"
+                },
+            );
+            t.stub(stl::OPERATOR_DELETE, false, 1, 0, 0x1d);
+            // the assign leaves capacity 15 or a heap buffer's
+            t.stub_store(
+                stl::STRING_ASSIGN,
+                Some(0x14),
+                0,
+                [15, 0x1f, 15, 0x10][(case % 4) as usize],
+                true,
+                2,
+                2,
+                0,
+            );
+            t.stub(
+                stl::LOWER_BOUND,
+                true,
+                1,
+                1,
+                if case & 2 == 0 { head } else { node },
+            );
+            t.stub(
+                stl::STRING_COMPARE,
+                true,
+                4,
+                4,
+                if case & 4 == 0 { 0 } else { 0xffff_ffff },
+            );
+            let value = t.words(&[0x5150_0000 + case]);
+            t.stub(stl::MAP_INDEX, true, 1, 1, value);
+            let name = t.alloc(if case % 3 == 0 { b"\0" } else { b"bsil\0" });
+            t.skip = 0x10;
+            let what = format!("hasKey #{case}");
+            t.check_framed(
+                &what,
+                0x006f_4410,
+                Conv::Thiscall(this),
+                &[name],
+                stl::HAS_KEY_FRAME,
+                |m, ebp| Out::U8(st::string_map_has_key(m, ebp, this, name)),
+            );
+            // (a heap capacity would make the nested hasKey free its
+            // string's first word, which the stub leaves as stack junk)
+            if case & 1 != 0 {
+                t.skip = 0;
+                continue;
+            }
+            let what = format!("getSymbolId #{case}");
+            t.check_framed(
+                &what,
+                0x006f_4350,
+                Conv::Thiscall(this),
+                &[name],
+                stl::SYMBOL_FRAME,
+                |m, ebp| Out::U32(st::get_symbol_id(m, ebp, this, name)),
+            );
+            t.skip = 0;
         }
     });
 }

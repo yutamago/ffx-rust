@@ -9,8 +9,10 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_system::m5b_async::{self as al, bridge as ab};
-use ffx_system::m5b_misc::bridge as mb;
+use ffx_system::m5b_misc::{self as ms, bridge as mb};
 use ffx_system::m5b_stackwalker::bridge as sw;
+use ffx_system::m5b_steam::{self as steam, bridge as sm};
+use ffx_system::m5b_stl::{self as stl, bridge as st};
 
 ported! {
     // ---- StackWalker ----
@@ -159,6 +161,121 @@ ported! {
     AsyncLoadManager_registAsyncLoadTask @ 0x0069_18b0 => extern "C" fn regist_task(manager: u32, task: u32, count: u32; slots: u32) -> u32 {
         let mut f = StackFrame::<{ al::ARGS_WORDS as usize }>::new();
         ab::regist_task(&mut mem(), f.at(), manager, task, count, slots.wrapping_add(12))
+    }
+    // ---- std::_Tree, std::string, std::vector ----
+    /// `std::_Tree::_Insert_at(this; &out, addLeft, where, value, node)`.
+    StdTree_insertAt_006993d0 @ 0x0069_93d0 => extern "thiscall" fn tree_insert_at(this: u32, out: u32, add_left: u32, at: u32, _value: u32, node: u32) -> u32 {
+        st::tree_insert_at(&mut mem(), this, out, add_left, at, node)
+    }
+    /// `std::_Tree::erase(this; &out, where)`: advances its own `where`
+    /// slot, as the original.
+    ClusterMap_erase_0069b010 @ 0x0069_b010 => extern "thiscall" fn tree_erase(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        st::tree_erase(&mut mem(), this, out, slots.wrapping_add(4))
+    }
+    /// `(this; name)`: the hash set holds `DJB_hash(name)`.
+    HashSet_containsName_0069b7c0 @ 0x0069_b7c0 => extern "thiscall" fn hash_set_contains(this: u32, name: u32) -> u32 {
+        st::hash_set_contains(&mut mem(), this, name)
+    }
+    /// `(this; src, _)`: a string move plus the word after it.
+    StdString_moveWithWord_0069c200 @ 0x0069_c200 => extern "thiscall" fn string_move_with_word(this: u32, src: u32, _unused: u32) -> u32 {
+        st::string_move_with_word(&mut mem(), this, src)
+    }
+    /// `()`: queue 0 of the job scheduler (the code of
+    /// `JobScheduleWait_Ch_Cloth_PerCharacter`).
+    JobScheduleWait_pppPart_fillBuffer @ 0x0071_e810 => extern "C" fn wait_ppp_part() {
+        ffx_system::m5a_platform::bridge::wait_cloth(&mut mem());
+    }
+    /// `LocalizationManager::readLocalizationKit(this)`: frame `ebp - 0x304`.
+    LocalizationManager_readLocalizationKit @ 0x006d_b2f0 => extern "thiscall" fn read_localization_kit(this: u32) {
+        let mut f = StackFrame::<{ (ms::LOC_KIT_FRAME / 4) as usize }>::new();
+        mb::read_localization_kit(&mut mem(), f.at() + ms::LOC_KIT_FRAME, this);
+    }
+    /// `DepthBiasHooks_onSceneLoaded(_, a, b)`: the two 0x50-byte objects
+    /// are the caller's argument words; the callee destroys them.
+    DepthBiasHooks_onSceneLoaded @ 0x006e_4470 => extern "C" fn depth_bias_on_scene_loaded(_word: u32; slots: u32) {
+        mb::depth_bias_on_scene_loaded(&mut mem(), slots);
+    }
+
+    // ---- Steam callbacks ----
+    /// `CCallback<UserAchievementStored_t>`'s destructor.
+    CCallback_UserAchievementStored_dtor @ 0x006f_1310 => extern "thiscall" fn cb_achievement_stored_dtor(this: u32) {
+        sm::callback_dtor(&mut mem(), this, steam::ACHIEVEMENT_STORED_VFTABLE);
+    }
+    /// `CCallback<UserStatsReceived_t>`'s destructor.
+    CCallback_UserStatsReceived_dtor @ 0x006f_1330 => extern "thiscall" fn cb_stats_received_dtor(this: u32) {
+        sm::callback_dtor(&mut mem(), this, steam::STATS_RECEIVED_VFTABLE);
+    }
+    /// `CCallback<UserStatsStored_t>`'s destructor.
+    CCallback_UserStatsStored_dtor @ 0x006f_1350 => extern "thiscall" fn cb_stats_stored_dtor(this: u32) {
+        sm::callback_dtor(&mut mem(), this, steam::STATS_STORED_VFTABLE);
+    }
+    /// `StatsAndAchievements::OnUserStatsReceived(this; cb)`.
+    StatsAndAchievements_OnUserStatsReceived @ 0x006f_15f0 => extern "thiscall" fn on_user_stats_received(this: u32, cb: u32) {
+        sm::on_user_stats_received(&mut mem(), this, cb);
+    }
+    /// `CCallback<UserAchievementStored_t>::Run(this; param)`.
+    CCallback_UserAchievementStored_run_006f1820 @ 0x006f_1820 => extern "thiscall" fn cb_run_006f1820(this: u32, param: u32) -> u32 {
+        sm::callback_run(&mut mem(), this, param)
+    }
+    /// `CCallback<UserAchievementStored_t>::Run(this; param, ioFailure, call)`.
+    CCallback_UserAchievementStored_runCall_006f1830 @ 0x006f_1830 => extern "thiscall" fn cb_run_call_006f1830(this: u32, param: u32, _io: u32, _call_lo: u32, _call_hi: u32) -> u32 {
+        sm::callback_run_call(&mut mem(), this, param)
+    }
+    /// `CCallback<UserStatsReceived_t>::Run(this; param)`.
+    CCallback_UserStatsReceived_run_006f1850 @ 0x006f_1850 => extern "thiscall" fn cb_run_006f1850(this: u32, param: u32) -> u32 {
+        sm::callback_run(&mut mem(), this, param)
+    }
+    /// `CCallback<UserStatsReceived_t>::Run(this; param, ioFailure, call)`.
+    CCallback_UserStatsReceived_runCall_006f1860 @ 0x006f_1860 => extern "thiscall" fn cb_run_call_006f1860(this: u32, param: u32, _io: u32, _call_lo: u32, _call_hi: u32) -> u32 {
+        sm::callback_run_call(&mut mem(), this, param)
+    }
+    /// `CCallback<UserStatsStored_t>::Run(this; param)`.
+    CCallback_UserStatsStored_run_006f1880 @ 0x006f_1880 => extern "thiscall" fn cb_run_006f1880(this: u32, param: u32) -> u32 {
+        sm::callback_run(&mut mem(), this, param)
+    }
+    /// `CCallback<UserStatsStored_t>::Run(this; param, ioFailure, call)`.
+    CCallback_UserStatsStored_runCall_006f1890 @ 0x006f_1890 => extern "thiscall" fn cb_run_call_006f1890(this: u32, param: u32, _io: u32, _call_lo: u32, _call_hi: u32) -> u32 {
+        sm::callback_run_call(&mut mem(), this, param)
+    }
+
+    // ---- AssetListReader's symbol map ----
+    /// `std::map<std::string, ...>::equal_range(this; &out, key)`.
+    AssetListReader_equalRange_006f3c60 @ 0x006f_3c60 => extern "thiscall" fn string_map_equal_range(this: u32, out: u32, key: u32) -> u32 {
+        st::string_map_equal_range(&mut mem(), this, out, key)
+    }
+    /// `std::vector<word>::_Reallocate(this; capacity)`.
+    StdVector_reallocate_006f3ee0 @ 0x006f_3ee0 => extern "thiscall" fn vector_reallocate(this: u32, capacity: u32) -> u32 {
+        st::vector_reallocate(&mut mem(), this, capacity)
+    }
+    /// `std::vector<word>::_Reserve(this; more)`.
+    StdVector_reserve_006f3f60 @ 0x006f_3f60 => extern "thiscall" fn vector_reserve(this: u32, more: u32) -> u32 {
+        st::vector_reserve(&mut mem(), this, more)
+    }
+    /// `AssetListReader::clear(this)`.
+    AssetListReader_clear @ 0x006f_4030 => extern "thiscall" fn asset_list_clear(this: u32) -> u32 {
+        st::asset_list_clear(&mut mem(), this)
+    }
+    /// `erase(this; key)`: the range (`ebp - 8`) and the erase's result
+    /// (`ebp - 4`, over the range's second word) in a frame,
+    /// the count in its own argument slot as the original.
+    AssetListReader_eraseKey_006f40e0 @ 0x006f_40e0 => extern "thiscall" fn string_map_erase_key(this: u32, key: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        st::string_map_erase_key(&mut mem(), f.at(), f.at() + 4, slots, this, key)
+    }
+    /// `hasKey(this; name)`: frame `ebp - 0x2c`.
+    AssetListReader_hasKey_006f4410 @ 0x006f_4410 => extern "thiscall" fn string_map_has_key(this: u32, name: u32) -> u8 {
+        let mut f = StackFrame::<{ (stl::HAS_KEY_FRAME / 4) as usize }>::new();
+        st::string_map_has_key(&mut mem(), f.at() + stl::HAS_KEY_FRAME, this, name)
+    }
+    /// `AssetListReader::getSymbolId(this; name)`: its frame and
+    /// `hasKey`'s below it.
+    AssetListReader_getSymbolId @ 0x006f_4350 => extern "thiscall" fn get_symbol_id(this: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<{ ((stl::SYMBOL_HAS_KEY_EBP + stl::HAS_KEY_FRAME) / 4) as usize }>::new();
+        st::get_symbol_id(&mut mem(), f.at() + stl::SYMBOL_HAS_KEY_EBP + stl::HAS_KEY_FRAME, this, name)
+    }
+    /// `std::vector<word>::push_back(this; &value)`.
+    StdVector_pushBack_006f4890 @ 0x006f_4890 => extern "thiscall" fn vector_push_back(this: u32, value: u32) {
+        st::vector_push_back(&mut mem(), this, value);
     }
 }
 

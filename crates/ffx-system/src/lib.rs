@@ -25,6 +25,8 @@ pub mod m5a_std;
 pub mod m5b_async;
 pub mod m5b_misc;
 pub mod m5b_stackwalker;
+pub mod m5b_steam;
+pub mod m5b_stl;
 pub mod magic;
 pub mod math;
 pub mod menu;
