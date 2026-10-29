@@ -735,3 +735,40 @@ fn static_init_c_dtor_singles() {
         }
     }
 }
+
+// ---- the destructors with a stack local (batch 4) ----
+
+#[test]
+fn static_init_c_dtor_tree_and_list() {
+    for (what, mut t) in Twins::all() {
+        // the erase (thiscall, three words, ret 0xc), operator delete and the
+        // list clear are recording stubs
+        t.stub(si::TREE_ERASE, true, 3, 3, 0x0e7a_5e00);
+        t.stub(si::OPERATOR_DELETE, false, 1, 0, 0x0de1_e7e0);
+        t.stub(si::STRING_LIST_CLEAR, true, 0, 0, 0x0c1e_a700);
+        // a head node whose first word (the leftmost node) is a marker
+        let head = t.zeros(0x10);
+        t.w32(head, 0x0bad_1ef7);
+        let tree = t.rebase(0x00cc_9ee4);
+        t.w32(tree, head);
+        // the original's result word is in its frame: run it first, read
+        // the address it handed the erase from the log (entry 0, word 1),
+        // and give the port the same one, so the logs compare
+        let log = t.log;
+        t.w32(log, 0);
+        let addr = t.rebase(0x00b0_6050);
+        let ra = t.a.call(addr, Conv::Cdecl, &[]).unwrap();
+        let out: u32 = Mem::read(&t.a, log + 4 + 8);
+        let eb = si::dtor_00b06050(&mut G(&mut t.b), out);
+        assert_eq!(ra.eax, eb, "{what} tree: eax");
+        // the original's frame is on the stack, which diff leaves out
+        t.diff(&format!("{what} tree"));
+        assert_eq!(t.log_entries(), 2, "{what} tree: erase and delete");
+        let list = t.rebase(0x00cc_c840);
+        t.w32(list, 0x0bad_115e);
+        t.run(&format!("{what} string list"), 0x00b0_6cb0, |g| {
+            si::dtor_00b06cb0(g)
+        });
+        assert_eq!(t.log_entries(), 2, "{what} list: clear and delete");
+    }
+}

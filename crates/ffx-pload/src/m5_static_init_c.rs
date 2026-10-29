@@ -3447,3 +3447,41 @@ pub const FREE_IF_NONZERO: &[FreeIfNonzero] = &[FreeIfNonzero {
     g: 0x00cc_b6e8,
     func: 0x0068_7010,
 }];
+
+// ---- the destructors with a stack local (batch 4) ----
+
+/// `operator delete(block)`, cdecl.
+pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+/// The tree's `erase(&result, first, last)`, thiscall, `ret 0xc`.
+pub const TREE_ERASE: u32 = 0x0062_7130;
+/// `StdStringList_Clear`, thiscall without stack words.
+pub const STRING_LIST_CLEAR: u32 = 0x0068_6da0;
+
+/// `0x00b06050`: the destructor of the tree at `0x00cc9ee4` (a `std::set`
+/// or `std::map`: the word is its head node, whose first word is the
+/// leftmost node): `erase(&result, head->left, head)` with the result
+/// iterator in the caller's frame word `out`, then `operator delete` of
+/// the head (read again after the erase); that `eax`. The original also
+/// calls its empty allocator's rebind (`0x0061f7c0`, returns `ecx`) and
+/// destroy (`0x0061f0c0`, `ret 4`, no body) on a stack byte for the three
+/// head links; they read and write nothing, so the port leaves them out.
+pub fn dtor_00b06050(h: &mut impl Host, out: u32) -> u32 {
+    let tree = h.rebase(0x00cc_9ee4);
+    let head: u32 = h.read(tree);
+    let first: u32 = h.read(head);
+    h.call_sym(TREE_ERASE, Conv::Thiscall(tree), &[out, first, head]);
+    let head: u32 = h.read(tree);
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[head])
+}
+
+/// `0x00b06cb0`: the destructor of the string list at `0x00ccc840`:
+/// `StdStringList_Clear` on it, then `operator delete` of its head node
+/// (the word, read after the clear); that `eax`. As in [`dtor_00b06050`],
+/// the empty allocator's calls (`0x00680920`, `0x00680760`) do nothing and
+/// are left out.
+pub fn dtor_00b06cb0(h: &mut impl Host) -> u32 {
+    let list = h.rebase(0x00cc_c840);
+    h.call_sym(STRING_LIST_CLEAR, Conv::Thiscall(list), &[]);
+    let head: u32 = h.read(list);
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[head])
+}

@@ -6,7 +6,7 @@
 
 use ffx_pload::m5_static_init_c as si;
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     /// `StaticInit_Key_PageDown_00af6c50`: type-enum value `"Key_PageDown"`: when `0x00a2e780` finds no such name, the node `0x00c6be34` goes on the head of its list `0x01a85390`; `atexit(0x00b0a240)`.
@@ -1632,5 +1632,14 @@ ported! {
     /// `StaticDtor_Seq_00b07000`: atexit destructor: thiscalls `Phyre_PRedBlackTree_orphanAllContents` on `0x00c3419c`, `Phyre_PFreeList_reset` on `0x00c341b4`, `Phyre_PFreeList_dtor_PFreeList` on `0x00c341b4`, `Phyre_PRedBlackTree_clear` on `0x00c3419c`, `Phyre_PRedBlackTree_clear` on `0x00c3419c`; the last one's eax.
     StaticDtor_Seq_00b07000 @ 0x00b0_7000 => extern "C" fn s_00b07000() -> u32 {
         si::thiscall_seq(&mut mem(), &si::THISCALL_SEQS[5])
+    }
+    /// `StaticDtor_Tree_00b06050`: atexit destructor: erases the tree at `0x00cc9ee4` (result iterator in a frame word) and deletes its head node; `operator_delete`'s eax.
+    StaticDtor_Tree_00b06050 @ 0x00b0_6050 => extern "C" fn s_00b06050() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        si::dtor_00b06050(&mut mem(), f.at())
+    }
+    /// `StaticDtor_StringList_00b06cb0`: atexit destructor: `StdStringList_Clear` on `0x00ccc840`, then deletes its head node; `operator_delete`'s eax.
+    StaticDtor_StringList_00b06cb0 @ 0x00b0_6cb0 => extern "C" fn s_00b06cb0() -> u32 {
+        si::dtor_00b06cb0(&mut mem())
     }
 }
