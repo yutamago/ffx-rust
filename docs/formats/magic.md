@@ -281,8 +281,21 @@ args| eax)`) answer a slot for both sides alike and may read and write
 memory; make them read every argument word the original passes and write
 what they see (a stub that ignores an argument cannot catch a port that
 drops it), and fill the tables a function clears with non-zero bytes
-first. Mutants go through `tools/mutants.py` as for every port
-(`MUT_TEST=magic_NNNN MUT_SNAPS=`, no snapshots).
+first. `Twin::stub_st0(slot, |m, args| f64)` makes a slot also return
+a float in ST0 (the game's float functions), on both sides. A call-out
+logs 16 words of the original's stack. Mutants go through
+`tools/mutants.py` as for every port (`MUT_TEST=magic_NNNN MUT_SNAPS=`,
+no snapshots).
+
+**Locals.** A function that hands the address of a local to the game
+(`lea eax, [ebp - 0x44]; push eax`) is ported with the local where the
+original's frame has it, below the entry `esp` (`m0052::scaled_camera`,
+`m0003::tick`), so the game sees the same pointers and the parity test
+the same words. The space is the port's: the 32-bit hook runs ports 64
+KiB below the caller's stack (`overlay_emu.rs`, `GAP`); other hosts
+must leave the same room. The memory comparison skips the stack below
+the entry, so a stub that receives such a pointer reads what is there
+(`magic_0052.rs`).
 
 **The gate in the game.** `FFX_MAGIC_RUST=1` (every DLL) or a comma list
 of numbers (`FFX_MAGIC_RUST=604,309`) makes `overlay_emu.rs` answer each

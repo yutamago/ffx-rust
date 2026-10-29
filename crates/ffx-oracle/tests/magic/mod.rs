@@ -166,6 +166,8 @@ impl<M: Mem> StubMem for M {
 }
 
 type Stub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> u32>;
+/// A stub's float result (ST0).
+type FloatStub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> f64>;
 
 /// One call-out: the target, its slot, the argument words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,17 +179,47 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-const LOGGED: usize = 12;
+// 16: m0052::scaled_camera passes 13 (its earlier calls' words stay on the stack)
+const LOGGED: usize = 16;
 
 #[derive(Default)]
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
+    floats: HashMap<u32, FloatStub>,
     rand: u32,
 }
 
 fn slot_of(target: u32) -> Option<u32> {
     ((TRAPS..TRAPS + 16 * SLOTS).contains(&target) && (target - TRAPS).is_multiple_of(16))
         .then(|| (target - TRAPS) / 16)
+}
+
+/// The ST0 a slot's float stub answers (after its `eax` stub ran).
+fn answer_st0(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> Option<f64> {
+    slot_of(target)
+        .and_then(|s| shared.floats.get(&s))
+        .map(|f| f(m, args))
+}
+
+/// An x87 80-bit value from an `f64` (exact).
+fn f64_to_f80(x: f64) -> [u8; 10] {
+    let b = x.to_bits();
+    let sign = ((b >> 63) as u16) << 15;
+    let exp = ((b >> 52) & 0x7ff) as u16;
+    let frac = b & ((1 << 52) - 1);
+    let (e, m): (u16, u64) = match exp {
+        0 if frac == 0 => (0, 0),
+        0 => {
+            let shift = frac.leading_zeros() - 11;
+            (15361 - shift as u16, frac << (shift + 11))
+        }
+        0x7ff => (0x7fff, (1 << 63) | (frac << 11)),
+        _ => (exp - 1023 + 16383, (1 << 63) | (frac << 11)),
+    };
+    let mut out = [0u8; 10];
+    out[..8].copy_from_slice(&m.to_le_bytes());
+    out[8..].copy_from_slice(&(sign | e).to_le_bytes());
+    out
 }
 
 fn answer(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> u32 {
@@ -213,6 +245,10 @@ impl Host for OrigHost<'_> {
             .collect();
         let mut mm = ArenaMem;
         regs.eax = answer(self.shared, &mut mm, target, &args);
+        if let Some(v) = answer_st0(self.shared, &mut mm, target, &args) {
+            regs.st[0] = f64_to_f80(v);
+            regs.st_len = 1;
+        }
         self.calls.push(CallOut { target, slot, args });
         regs.esp += 4;
         Ok(())
@@ -263,6 +299,7 @@ impl Mem for PortGame {
 impl Game for PortGame {
     fn call(&mut self, target: u32, _ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
+        let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
         self.calls.push(CallOut {
             target,
             slot: slot_of(target),
@@ -270,6 +307,7 @@ impl Game for PortGame {
         });
         Out {
             eax,
+            st0,
             ..Out::default()
         }
     }
@@ -426,6 +464,7 @@ impl Twin {
             port: PageMem::default(),
             shared: Shared {
                 stubs: HashMap::new(),
+                floats: HashMap::new(),
                 rand: 1,
             },
             functions,
@@ -577,6 +616,13 @@ impl Twin {
     /// Answers `slot` for both sides.
     pub fn stub(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static) {
         self.shared.stubs.insert(slot, Box::new(f));
+    }
+
+    /// Makes `slot` return a float in ST0 on both sides (as the game's
+    /// float functions do), besides the `eax` its [`Twin::stub`] gives
+    /// (0 without one; that stub runs first).
+    pub fn stub_st0(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> f64 + 'static) {
+        self.shared.floats.insert(slot, Box::new(f));
     }
 
     fn orig(&mut self, at: u32, c: Call, args: &[u32]) -> (Regs, Vec<CallOut>) {
