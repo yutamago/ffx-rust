@@ -2398,3 +2398,259 @@ pub const NODES_RESET: Sig = Sig {
     calls: &[(0x63, Callee::Sig(&crate::sa_summon::MODEL_SETUP))],
     imports: &[],
 };
+
+/// Slot 220 `(ecx, 0x40, 0x100)` (internal, `ecx`). Returns its `eax`.
+///
+/// `magic_0515` 0x10009d20 (25 bytes; 4 DLLs).
+pub fn call_220<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let t = slot_target(g, img.word(fr.at + 0x1), 220);
+    Ret::eax(g.call(t, 0, &[fr.ecx, 0x40, 0x100]).eax)
+}
+
+/// [`call_220`].
+pub const CALL_220: Sig = Sig {
+    len: 25,
+    hash: 0xc161_88af_b3fc_6483,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 239 `(*G, edx, 0)` (internal, `edx`; `G` operand `+0x10`).
+/// Returns its `eax`.
+///
+/// `magic_0515` 0x10009d40 (26 bytes; 4 DLLs).
+pub fn call_239<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let t = slot_target(g, w(0x1), 239);
+    let x = g.read::<u32>(w(0x10));
+    Ret::eax(g.call(t, 0, &[x, fr.edx, 0]).eax)
+}
+
+/// [`call_239`].
+pub const CALL_239: Sig = Sig {
+    len: 26,
+    hash: 0xef66_30f7_a33f_14db,
+    calls: &[],
+    imports: &[],
+};
+
+/// The first free record of the DLL's 0x100 (0x4c bytes each from the
+/// immediate `+0x6`; free when `+0x28` is 0), or 0 (internal, no
+/// arguments).
+///
+/// `magic_0515` 0x10003d70 (31 bytes; 4 DLLs).
+pub fn free_record<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let mut r = img.word(fr.at + 0x6);
+    for _ in 0..0x100 {
+        if g.read::<u32>(r + 0x28) == 0 {
+            return Ret::eax(r);
+        }
+        r = r.wrapping_add(0x4c);
+    }
+    Ret::eax(0)
+}
+
+/// [`free_record`].
+pub const FREE_RECORD: Sig = Sig {
+    len: 31,
+    hash: 0xe6fb_bcae_087f_de8d,
+    calls: &[],
+    imports: &[],
+};
+
+/// A model node (`ecx`) set up from a record on the frame (`[ebp -
+/// 0x10]`: the node, its parent `edx`, the object arg 0, flags 0) with
+/// [`crate::sa_summon::model_node_init`], after taking its vtable
+/// (operand `+0xe`). Returns the set-up's `eax`.
+///
+/// `magic_0070` 0x100094d0 (40 bytes, `ecx`/`edx` and one stack word; 4
+/// DLLs).
+pub fn model_node_with<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    // push ebp; sub esp, 0x10
+    let rec = fr.esp.wrapping_sub(0x14);
+    let obj = fr.arg(g, 0);
+    g.write::<u32>(rec, fr.ecx);
+    g.write::<u32>(fr.ecx, img.word(fr.at + 0xe));
+    g.write::<u32>(rec + 4, fr.edx);
+    g.write::<u32>(rec + 8, obj);
+    g.write::<u8>(rec + 0xc, 0);
+    let f = img.rel32_target(fr.at + 0x20);
+    Ret::eax(crate::sa_summon::model_node_init(g, img, f, rec))
+}
+
+/// [`model_node_with`].
+pub const MODEL_NODE_WITH: Sig = Sig {
+    len: 40,
+    hash: 0xd1c3_2140_1c92_1b1b,
+    calls: &[(0x20, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT))],
+    imports: &[],
+};
+
+/// Clears two words of each of the DLL's records (internal, no
+/// arguments): 0xa8 bytes each from the immediate `+0x1` to `+0x23`, the
+/// words at `-0x24` and `+0x0` of each. Returns the end.
+///
+/// `magic_0515` 0x10002d70 (42 bytes; 4 DLLs).
+pub fn records_clear<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut p = w(0x1);
+    loop {
+        g.write::<u32>(p.wrapping_sub(0x24), 0);
+        g.write::<u32>(p, 0);
+        p = p.wrapping_add(0xa8);
+        if p.cast_signed() >= w(0x23).cast_signed() {
+            break;
+        }
+    }
+    Ret::eax(p)
+}
+
+/// [`records_clear`].
+pub const RECORDS_CLEAR: Sig = Sig {
+    len: 42,
+    hash: 0xb693_4c33_a65b_1cd2,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 664's float of `ecx` (ST0, stored as an `f32`), returned in
+/// `xmm0` with the slot's `eax` (internal).
+///
+/// `magic_0164` 0x1000d070 (33 bytes; 4 DLLs).
+pub fn float_664<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let t = slot_target(g, img.word(fr.at + 0x5), 664);
+    let out = g.call(t, 0, &[fr.ecx]);
+    Ret::xmm0(crate::Xmm::F32(crate::sa_summon::st0_f32(out)), out.eax)
+}
+
+/// [`float_664`].
+pub const FLOAT_664: Sig = Sig {
+    len: 33,
+    hash: 0x05ba_34d1_2362_2e78,
+    calls: &[],
+    imports: &[],
+};
+
+/// An effect's frame (cdecl `(task)`): the motion steps
+/// ([`crate::s3_motion::motion_step`]) and the objects run
+/// ([`crate::l5_objhost::run_objects`]); when both are done (1) the task
+/// ends (`+0x14` 3, its owner's callback the next function, operand
+/// `+0x29`). Returns the objects' answer, or the owner.
+///
+/// `magic_0248` 0x10001650, `magic_0177` 0x10003460 (48 bytes; 4 DLLs
+/// each).
+pub fn effect_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x5));
+    // push ebp; push esi; call
+    let r =
+        crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0xc), fr.esp.wrapping_sub(12));
+    if r != 1 || a != 1 {
+        return Ret::eax(r);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let owner = g.read::<u32>(task + 8);
+    g.write::<u32>(owner + 0x10, img.word(f + 0x29));
+    Ret::eax(owner)
+}
+
+/// [`effect_frame`].
+pub const EFFECT_FRAME: Sig = Sig {
+    len: 48,
+    hash: 0x98ce_01e7_f9a5_0997,
+    calls: &[
+        (0x5, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xc, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+    ],
+    imports: &[],
+};
+
+/// Slot 276 `(model, 0)` on each of the DLL's `G_N` models (operand
+/// `+0x5`; 0xcc bytes apart from the immediate `+0xd`). Returns the last
+/// call's `eax`, or `eax` as it came.
+///
+/// `magic_0515` 0x10002960 (55 bytes; 4 DLLs).
+pub fn models_276<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut eax = fr.eax;
+    if g.read::<i32>(w(0x5)) > 0 {
+        let mut m = w(0xd);
+        let mut i = 0u32;
+        loop {
+            let t = slot_target(g, w(0x12), 276);
+            eax = g.call(t, 0, &[g.read::<u32>(m), 0]).eax;
+            i += 1;
+            m = m.wrapping_add(0xcc);
+            if i.cast_signed() >= g.read::<i32>(w(0x2e)) {
+                break;
+            }
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`models_276`].
+pub const MODELS_276: Sig = Sig {
+    len: 55,
+    hash: 0xd852_5e08_d8ed_54e3,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 310 `(*G_X)` (operand `+0x24`) `G_N` times (`+0x7`), unless the
+/// state byte word `G_S` (`+0x13`) is 0xff. Returns the last call's
+/// `eax`, or `eax` as it came.
+///
+/// `magic_0515` 0x100024d0 (60 bytes; 4 DLLs).
+pub fn repeat_310<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let mut eax = fr.eax;
+    let mut n = g.read::<u32>(w(0x7));
+    while n != 0 {
+        n -= 1;
+        if g.read::<u32>(w(0x13)) != 0xff {
+            let t = slot_target(g, w(0x1e), 310);
+            eax = g.call(t, 0, &[g.read::<u32>(w(0x24))]).eax;
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`repeat_310`].
+pub const REPEAT_310: Sig = Sig {
+    len: 60,
+    hash: 0x5d54_79bb_b0dd_b443,
+    calls: &[],
+    imports: &[],
+};
+
+/// Stops an object out of range (cdecl `(object)`): when its `+0xc` is at
+/// or below `K1` (operand `+0xa`) or at or above `K2` (`+0x1b`), or its
+/// `+0x14` is at or above `K3` (`+0x25`), bit 0 of `u16 +0x64` is set
+/// and `+0x1c` cleared. Returns the object.
+///
+/// `magic_0284` 0x100021e0 (61 bytes; 4 DLLs).
+pub fn range_stop<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let w = |o: u32| img.word(fr.at + o);
+    let p = fr.arg(g, 0);
+    let x = f32_at(g, p + 0xc);
+    // comiss k, x; jae / comiss x, k; jae / comiss k, y; jb
+    let out = f32_at(g, w(0xa)) >= x
+        || x >= f32_at(g, w(0x1b))
+        || f32_at(g, w(0x25)) >= f32_at(g, p + 0x14);
+    if out {
+        let flags = g.read::<u16>(p + 0x64) | 1;
+        g.write::<u16>(p + 0x64, flags);
+        g.write::<u32>(p + 0x1c, 0);
+    }
+    Ret::eax(p)
+}
+
+/// [`range_stop`].
+pub const RANGE_STOP: Sig = Sig {
+    len: 61,
+    hash: 0x559b_6a1b_1925_9dd1,
+    calls: &[],
+    imports: &[],
+};

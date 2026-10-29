@@ -2036,3 +2036,124 @@ fn part_toggle_and_nodes_reset() {
         }
     }
 }
+
+/// The small `magic_0515` functions, the float of slot 664, the model
+/// node with its record, the effect frames and the range stop.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per function
+fn small_internals() {
+    if let Some(mut t) = twin(515) {
+        rec(&mut t, 220, 3, |_, _| 0x220);
+        rec(&mut t, 239, 3, |_, _| 0x239);
+        rec(&mut t, 276, 2, |_, a| 0x0276_0000 ^ a[0]);
+        rec(&mut t, 310, 1, |_, a| 0x0310_0000 ^ a[0]);
+        let f = t.at(0x9d20);
+        t.check(f, Call::this(0x1234), &[], Eax::Checked, |g, img, fr| {
+            s4_misc::call_220(g, img, fr)
+        });
+        let f = t.at(0x9d40);
+        t.set_u32(t.img.word(f + 0x10), 0x0aaa_0001);
+        let c = Call {
+            edx: 0x5678,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            s4_misc::call_239(g, img, fr)
+        });
+        let f = t.at(0x3d70);
+        let recs = t.img.word(f + 0x6);
+        for free in [0u32, 7, 0x100] {
+            for i in 0..0x100 {
+                t.set_u32(recs + 0x4c * i + 0x28, u32::from(i != free));
+            }
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                s4_misc::free_record(g, img, fr)
+            });
+        }
+        let f = t.at(0x2d70);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            s4_misc::records_clear(g, img, fr)
+        });
+        let f = t.at(0x2960);
+        let n = t.img.word(f + 0x5);
+        for count in [0u32, 3] {
+            t.set_u32(n, count);
+            let c = Call {
+                eax: 0x00ea,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[], Eax::Checked);
+        }
+        let f = t.at(0x24d0);
+        for (count, state) in [(0u32, 0u32), (2, 0), (3, 0xff)] {
+            t.set_u32(t.img.word(f + 0x7), count);
+            t.set_u32(t.img.word(f + 0x13), state);
+            t.set_u32(t.img.word(f + 0x24), 0x0bbb_0002);
+            let c = Call {
+                eax: 0x00eb,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(164) {
+        let f = t.at(0xd070);
+        rec(&mut t, 664, 1, |_, _| 0x664);
+        t.stub_st0(664, |_, a| f64::from(a[0]) * 0.5);
+        t.check(f, Call::this(7), &[], Eax::Checked, |g, img, fr| {
+            s4_misc::float_664(g, img, fr)
+        });
+    }
+    if let Some(mut t) = twin(70) {
+        let f = t.at(0x94d0);
+        for s in [413u32, 215, 14, 333] {
+            rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+        let (node, parent) = (SCRATCH + 0x1000, SCRATCH + 0x2000);
+        for p in [0u32, parent] {
+            t.write(node, &[0x66; 0x100]);
+            t.write(parent, &[0x77; 0x40]);
+            t.set_u32(parent + 0x10, parent);
+            let c = Call {
+                ecx: node,
+                edx: p,
+                ..Call::default()
+            };
+            t.check(f, c, &[0x0b0b], Eax::Checked, |g, img, fr| {
+                s4_misc::model_node_with(g, img, fr)
+            });
+        }
+    }
+    for n in [248u16, 177] {
+        if let Some(mut t) = twin(n) {
+            for s in [
+                941u32, 772, 779, 552, 230, 554, 229, 231, 712, 713, 330, 328, 329,
+            ] {
+                rec(&mut t, s, 1, move |_, _| s);
+            }
+            let f = t.at(if n == 248 { 0x1650 } else { 0x3460 });
+            let task = SCRATCH + 0x800;
+            t.set_u32(task + 8, SCRATCH + 0x900);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(284) {
+        let f = t.at(0x21e0);
+        let k = |t: &Twin, o: u32| f32::from_bits(t.u32(t.img.word(f + o)));
+        let (k1, k2, k3) = (k(&t, 0xa), k(&t, 0x1b), k(&t, 0x25));
+        let p = SCRATCH + 0x100;
+        for (x, y) in [
+            (k1, 0.0),
+            (k2, k3 - 1.0),
+            ((k1 + k2) * 0.5, k3),
+            ((k1 + k2) * 0.5, k3 + 1.0),
+            (f32::NAN, f32::NAN),
+        ] {
+            t.write(p, &[0x11; 0x70]);
+            set_f(&mut t, p + 0xc, x);
+            set_f(&mut t, p + 0x14, y);
+            t.check_entry(f, Call::default(), &[p], Eax::Checked);
+        }
+    }
+}
