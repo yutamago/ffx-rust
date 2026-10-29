@@ -3163,3 +3163,187 @@ fn worker_thread_matches_the_original() {
         }
     }
 }
+
+// ---- batch 7 (ffx_pcore::m5p_core_g) ----
+
+use ffx_pcore::m5p_core_g::{self as cg, bridge as bg};
+
+/// Plain floats in `[-r, r)` (no NaN or infinity).
+fn plain3(t: &mut Twins, rng: &mut Rng, n: usize, range: f32) -> u32 {
+    let v: Vec<u8> = (0..n)
+        .flat_map(|_| {
+            ((f32::from((rng.next() % 4000) as u16) / 2000.0 - 1.0) * range).to_le_bytes()
+        })
+        .collect();
+    t.alloc(&v)
+}
+
+/// A spline: the control point callee replaced by a table lookup (point
+/// `i & 7` of 16-byte points), tension `+0x1c`, length `+0x20`, the
+/// segment table `+0x24`/`+0x28`, the world matrix `+0x14`.
+fn spline(t: &mut Twins, rng: &mut Rng, segments: u32) -> u32 {
+    let this = t.random(rng, 0x30);
+    let tension = f32::from((rng.next() % 100) as u16) / 100.0;
+    t.w32(this + 0x1c, tension.to_bits());
+    let length = 1.0 + f32::from((rng.next() % 900) as u16) / 10.0;
+    t.w32(this + 0x20, length.to_bits());
+    t.w32(this + 0x24, segments | (rng.next() & 0x8000_0000));
+    let table: Vec<u8> = (0..=segments)
+        .flat_map(|_| {
+            let seg = rng.below(6);
+            let tt = f32::from((rng.next() % 1000) as u16) / 1000.0;
+            let mut e = seg.to_le_bytes().to_vec();
+            e.extend(tt.to_le_bytes());
+            e.extend([0; 20]);
+            e
+        })
+        .collect();
+    let table = t.alloc(&table);
+    t.w32(this + 0x28, table);
+    let m = plain3(t, rng, 12, 2.0);
+    t.w32(this + 0x14, m);
+    this
+}
+
+/// `0x0054b080` replaced: `[out]` = point `i & 7` of `table` (16 bytes),
+/// `ret 8`.
+fn control_points(t: &mut Twins, rng: &mut Rng) {
+    let table = plain3(t, rng, 32, 20.0);
+    let mut c = vec![0x56, 0x57]; // push esi; push edi
+    c.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10] (i)
+    c.extend([0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x04]); // and eax, 7; shl eax, 4
+    c.push(0x05);
+    c.extend(table.to_le_bytes()); // add eax, table
+    c.extend([0x89, 0xc6, 0x8b, 0x7c, 0x24, 0x0c]); // mov esi, eax; mov edi, [esp+0xc]
+    c.extend([0xa5, 0xa5, 0xa5, 0xa5]); // movsd x4
+    c.extend([0x5f, 0x5e, 0x8b, 0x44, 0x24, 0x04, 0xc2, 0x08, 0x00]); // pop; pop; mov eax, [esp+4]; ret 8
+    let code = t.code(&c);
+    let at = t.rebase(cg::CONTROL_POINT);
+    t.jump(at, code);
+}
+
+#[test]
+fn spline_points_match_the_original() {
+    assert_eq!(cg::chop(2.75), 2);
+    assert_eq!(cg::chop(-1.5), u32::MAX);
+    assert_eq!(cg::chop(f64::NAN), 0);
+    assert_eq!(cg::chop(1e300), 0);
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d601);
+        control_points(&mut t, &mut rng);
+        for case in 0..40u32 {
+            // coincident points once in a while (a zero tangent)
+            let p = if case % 8 == 0 {
+                let one = plain3(&mut t, &mut rng, 3, 5.0);
+                let v = Oracle::read(&mut t.a, one, 12).unwrap();
+                t.alloc(&[v.clone(), v.clone(), v.clone(), v].concat())
+            } else {
+                plain3(&mut t, &mut rng, 12, 10.0)
+            };
+            let out = t.random(&mut rng, 12);
+            let tension = float_word(&mut rng);
+            t.check(
+                "tangent",
+                0x0054_8980,
+                Conv::Cdecl,
+                &[out, p, p + 12, p + 24, tension],
+                ALL,
+                |g| bg::tangent(g, out, p, p + 12, p + 24, tension),
+            );
+            let tt = if case % 5 == 0 {
+                float_word(&mut rng)
+            } else {
+                (f32::from((rng.next() % 1000) as u16) / 1000.0).to_bits()
+            };
+            let args = [out, p, p + 12, p + 24, p + 36, tt, tension];
+            t.check("hermite", 0x0054_87d0, Conv::Cdecl, &args, ALL, |g| {
+                bg::hermite(g, out, p, p + 12, p + 24, p + 36, tt, tension)
+            });
+            let v = if case % 9 == 0 {
+                t.zeros(12)
+            } else {
+                plain3(&mut t, &mut rng, 3, 50.0)
+            };
+            t.check("length", 0x0054_bd60, Conv::Cdecl, &[out, v], ALL, |g| {
+                bg::length_of(g, out, v)
+            });
+        }
+        for _ in 0..24 {
+            let this = spline(&mut t, &mut rng, 4);
+            let out = t.random(&mut rng, 12);
+            let i = rng.below(10);
+            let tt = (f32::from((rng.next() % 1000) as u16) / 1000.0).to_bits();
+            let local = t.b.stack_range().start + 0x300;
+            t.check(
+                "evaluate",
+                0x0054_9920,
+                Conv::Thiscall(this),
+                &[out, i, tt],
+                ALL,
+                |g| bg::eval(g, this, out, i, tt, local),
+            );
+            t.check(
+                "direction",
+                0x0054_9a60,
+                Conv::Thiscall(this),
+                &[out, i, tt],
+                ALL,
+                |g| bg::direction(g, this, out, i, tt, local),
+            );
+        }
+    }
+}
+
+#[test]
+fn spline_distances_match_the_original() {
+    for mut t in Twins::all() {
+        let mut rng = Rng(0x5eed_d602);
+        control_points(&mut t, &mut rng);
+        for case in 0..40u32 {
+            let segments = if case % 6 == 0 { 0 } else { 1 + rng.below(5) };
+            let this = spline(&mut t, &mut rng, segments);
+            let out = t.random(&mut rng, 12);
+            let length = f32::from_bits(t.r32(this + 0x20));
+            // along the spline, at its ends, a little outside (index 0's
+            // neighbour), never past the table
+            let d = match case % 5 {
+                0 => 0.0,
+                1 => length * 0.999,
+                // before the start: index -1 (the entry before the table)
+                3 if segments > 0 => -length * 1.5 / f32::from(segments as u16),
+                _ => length * f32::from((rng.next() % 1000) as u16) / 1000.0,
+            };
+            let d = d.to_bits();
+            let local = t.b.stack_range().start + 0x300;
+            let what = if case % 2 == 0 {
+                cg::Along::Direction
+            } else {
+                cg::Along::Position
+            };
+            let f = if what == cg::Along::Direction {
+                0x0054_b710
+            } else {
+                0x0054_b8f0
+            };
+            t.check("at", f, Conv::Thiscall(this), &[out, d], ALL, |g| {
+                bg::at(g, this, out, d, what, local)
+            });
+            t.check(
+                "world direction",
+                0x0054_b860,
+                Conv::Thiscall(this),
+                &[out, d],
+                ALL,
+                |g| bg::world_direction(g, this, out, d, local),
+            );
+            t.check(
+                "world position",
+                0x0054_ba40,
+                Conv::Thiscall(this),
+                &[out, d],
+                ALL,
+                |g| bg::world_position(g, this, out, d, local),
+            );
+        }
+    }
+}
