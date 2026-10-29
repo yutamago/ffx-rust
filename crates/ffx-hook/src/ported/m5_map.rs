@@ -9,6 +9,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
+use ffx_prender::m5m_c::{self as mc, bridge as c};
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -277,5 +278,89 @@ ported! {
     /// `rcefTaskRetSeqCont_thunk(t)`.
     rcefTaskRetSeqCont_thunk @ 0x0093_04d0 => extern "C" fn task_ret_seq_cont_thunk(t: u32) -> u32 {
         b::thunk(&mut mem(), mb::TASK_RET_SEQ_CONT_THUNK, &[t])
+    }
+
+    // ---- batch 3 (ffx_prender::m5m_c) ----
+    /// `rcdtTm2LoadEx_009232a0(pic, path, ps2_alpha)`.
+    rcdtTm2LoadEx_009232a0 @ 0x0092_32a0 => extern "C" fn tm2_load(pic: u32, path: u32, ps2_alpha: u32) -> u32 {
+        c::tm2_load(&mut mem(), pic, path, ps2_alpha)
+    }
+    /// `rcdtTm2OpaqueBounds_009234d0(pic, &x, &y, &w, &h)`.
+    rcdtTm2OpaqueBounds_009234d0 @ 0x0092_34d0 => extern "C" fn tm2_opaque_bounds(pic: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        c::tm2_bounds(&mut mem(), mc::Opaque::Alpha, pic, [x, y, w, h])
+    }
+    /// `rcdtTm2KeyBounds_00923660(pic, &x, &y, &w, &h)`.
+    rcdtTm2KeyBounds_00923660 @ 0x0092_3660 => extern "C" fn tm2_key_bounds(pic: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        c::tm2_bounds(&mut mem(), mc::Opaque::Black, pic, [x, y, w, h])
+    }
+    /// `rcdtTm2Load(pic, path)`.
+    rcdtTm2Load @ 0x0092_3800 => extern "C" fn tm2_load_ps2(pic: u32, path: u32) -> u32 {
+        c::tm2_load_ps2(&mut mem(), pic, path)
+    }
+    /// `rcdtRsdLoad_LoadMat_00923b60(model, path)`.
+    rcdtRsdLoad_LoadMat_00923b60 @ 0x0092_3b60 => extern "C" fn load_mat(model: u32, path: u32) -> u32 {
+        c::load_mat(&mut mem(), model, path)
+    }
+    /// `rcbgIDLoad()`: the path in the shim's frame.
+    rcbgIDLoad @ 0x0092_5730 => extern "C" fn id_load() -> u32 {
+        let mut f = StackFrame::<0x42>::new();
+        c::id_load(&mut mem(), f.at() + 0x104)
+    }
+    /// `rcPacketRect_00927630(pkt, x, y, w, h, rgba)`.
+    rcPacketRect_00927630 @ 0x0092_7630 => extern "C" fn packet_rect(pkt: u32, x: u32, y: u32, w: u32, h: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_rect(&mut mem(), f.at() + 0x20, pkt, [x, y, w, h, rgba])
+    }
+    /// `rcPacketCircle_00927720(pkt, x, y, r, rgba)`.
+    rcPacketCircle_00927720 @ 0x0092_7720 => extern "C" fn packet_circle(pkt: u32, x: u32, y: u32, r: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_circle(&mut mem(), f.at() + 0x20, pkt, [x, y, r, rgba])
+    }
+    /// `rcPacketLine_00927810(pkt, x0, y0, x1, y1, rgba)`.
+    rcPacketLine_00927810 @ 0x0092_7810 => extern "C" fn packet_line(pkt: u32, x0: u32, y0: u32, x1: u32, y1: u32, rgba: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        c::packet_line(&mut mem(), f.at() + 0x20, pkt, [x0, y0, x1, y1, rgba])
+    }
+    /// `rcdtRsdLoad_LoadMatRsd(model, path)`: the type byte in the shim's
+    /// frame.
+    rcdtRsdLoad_LoadMatRsd @ 0x0092_3bc0 => extern "C" fn load_mat_rsd(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        c::load_mat_rsd(&mut mem(), f.at() + 0x14, model, path)
+    }
+    /// `rcdtRsdLoad_LoadMatRsd2(model, path)`: the type byte in the
+    /// shim's frame.
+    rcdtRsdLoad_LoadMatRsd2 @ 0x0092_3ed0 => extern "C" fn load_mat_rsd2(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<6>::new();
+        c::load_mat_rsd2(&mut mem(), f.at() + 0x14, model, path)
+    }
+    /// `rcdtRsdLoad_LoadPly(model, path)`.
+    rcdtRsdLoad_LoadPly @ 0x0092_4090 => extern "C" fn load_ply(model: u32, path: u32) -> u32 {
+        c::load_ply(&mut mem(), model, path)
+    }
+    /// `rcdtRsdLoad_009243c0(model, path)`: the keyword table and the
+    /// path buffers in the shim's frame (`ebp - 0x328..`).
+    rcdtRsdLoad_009243c0 @ 0x0092_43c0 => extern "C" fn rsd_load(model: u32, path: u32) -> u32 {
+        let mut f = StackFrame::<0xcc>::new();
+        c::rsd_load(&mut mem(), f.at() + 0x330, model, path)
+    }
+    /// `Wrap_0092c600_0092c5e0(a, b)`.
+    Wrap_0092c600_0092c5e0 @ 0x0092_c5e0 => extern "C" fn wrap_0092c600(x: u32, y: u32) -> u32 {
+        c::wrap_0092c600(&mut mem(), x, y)
+    }
+    /// `rcuiGetStageName(a, b)`.
+    rcuiGetStageName @ 0x0093_7940 => extern "C" fn stage_name(x: u32, y: u32) -> u32 {
+        c::stage_name(&mut mem(), x, y)
+    }
+    /// `rcbgFpSaveCurrent_00938340()`.
+    rcbgFpSaveCurrent_00938340 @ 0x0093_8340 => extern "C" fn fp_save_current() -> u32 {
+        c::fp_save_current(&mut mem())
+    }
+    /// `rcbgGuideMapConvCurrent_00938570()`.
+    rcbgGuideMapConvCurrent_00938570 @ 0x0093_8570 => extern "C" fn guide_map_conv_current() -> u32 {
+        c::guide_map_conv_current(&mut mem())
+    }
+    /// `rcbgFpLoadTextCurrent_0093a7e0()`.
+    rcbgFpLoadTextCurrent_0093a7e0 @ 0x0093_a7e0 => extern "C" fn fp_load_text_current() -> u32 {
+        c::fp_load_text_current(&mut mem())
     }
 }

@@ -23,6 +23,7 @@
     clippy::similar_names,
     clippy::many_single_char_names,
     clippy::items_after_statements,
+    clippy::format_push_string, // the generated test files
     dead_code // the harness is shared by every batch; not each uses every helper
 )]
 
@@ -33,6 +34,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
+use ffx_prender::m5m_c::{self as mc, bridge as c};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -144,6 +146,11 @@ impl Host for G<'_> {
             .call(addr, conv(c), args)
             .unwrap_or_else(|e| panic!("{addr:#x}: {e}"))
             .eax
+    }
+    fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f32().unwrap_or_else(|| panic!("{addr:#x}: no ST0"))
     }
     fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -1604,4 +1611,740 @@ fn jump_thunks_match_the_original() {
             t.reset();
         }
     });
+}
+
+// ---- batch 3: the TIM2 loader and bounds, the rc packets, wrappers ----
+
+/// A TIM2 picture record (0x4c bytes) whose stored pointers
+/// (`get_ptr32_func` is stubbed to the identity) lead to a palette and an
+/// 8-bit image of `w` x `h`.
+fn tm2_picture(t: &mut Twins, rng: &mut Rng, w: u16, h: u16) -> u32 {
+    let pic = t.zeros(0x4c);
+    let clut: Vec<u32> = (0..256)
+        .map(|_| match rng.below(6) {
+            0 => 0,
+            1 => 0xff00_0000,
+            2 => rng.next() & 0x00ff_ffff,
+            // the masks' edges: the alpha's top bit alone, a colour only
+            // in its third byte
+            3 => 0x8000_0000,
+            4 => 0x00ab_0000,
+            _ => rng.next(),
+        })
+        .collect();
+    let clut = t.words(&clut);
+    let n = usize::from(w) * usize::from(h);
+    let sparse = rng.chance(2);
+    let img: Vec<u8> = (0..n.max(1))
+        .map(|_| {
+            if sparse && !rng.chance(8) {
+                0
+            } else {
+                rng.next() as u8
+            }
+        })
+        .collect();
+    let img = t.alloc(&img);
+    t.w32(pic + 0x40, img);
+    t.w32(pic + 0x44, clut);
+    t.write(pic + 0x24, &w.to_le_bytes());
+    t.write(pic + 0x26, &h.to_le_bytes());
+    pic
+}
+
+/// `get_ptr32_func` as the identity (the first argument back), popping
+/// nothing.
+fn identity_ptr32(t: &mut Twins) {
+    let code = [0x8b, 0x44, 0x24, 0x04, 0xc3]; // mov eax, [esp+4]; ret
+    let x = t.a.alloc_code(&code).unwrap();
+    assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+    t.jump(mc::GET_PTR32, x);
+}
+
+#[test]
+fn tm2_bounds_match_the_original() {
+    // both kinds; pictures with no counted pixel, odd and even corners,
+    // empty sizes; the palette rules (alpha, black key).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a301);
+        for case in 0..60 {
+            identity_ptr32(t);
+            let (w, h) = match case % 6 {
+                0 => (0, 4),
+                1 => (5, 0),
+                _ => (1 + rng.below(40) as u16, 1 + rng.below(40) as u16),
+            };
+            let pic = tm2_picture(t, &mut rng, w, h);
+            if case % 5 == 4 {
+                // nothing counted
+                let clut = t.r32(pic + 0x44);
+                let fill = if case % 2 == 0 {
+                    0x0012_3456_u32
+                } else {
+                    0x0100_0000
+                };
+                for k in 0..256 {
+                    t.w32(clut + 4 * k, fill);
+                }
+            }
+            let out = t.zeros(0x10);
+            let o = [out, out + 4, out + 8, out + 12];
+            let (sym, kind, what) = if case % 2 == 0 {
+                (
+                    0x0092_34d0,
+                    mc::Opaque::Alpha,
+                    "rcdtTm2OpaqueBounds_009234d0",
+                )
+            } else {
+                (0x0092_3660, mc::Opaque::Black, "rcdtTm2KeyBounds_00923660")
+            };
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - 0x440);
+            t.check(
+                what,
+                sym,
+                Conv::Cdecl,
+                &[pic, o[0], o[1], o[2], o[3]],
+                |g| Out::U32(c::tm2_bounds(g, kind, pic, o)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn tm2_load_matches_the_original() {
+    // no file (with and without a chunk), image types 4, 5 and others,
+    // the PS2 alpha conversion or not, parse and chunk freed.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a302);
+        for case in 0..40 {
+            let pic = t.zeros(0x4c);
+            let chunk = if case % 7 == 0 { 0 } else { rng.next() | 1 };
+            t.stub_sym(mc::CHUNK_NEW, 1, false, 0, 0, Ret::Val(chunk));
+            let loaded = u32::from(case % 5 != 1);
+            t.stub_sym(mc::CHUNK_LOAD_FROM_FILE, 2, false, 2, 0, Ret::Val(loaded));
+            t.stub_sym(mc::CHUNK_DELETE, 3, false, 1, 0, Ret::Val(rng.next()));
+            // rcPrint is varargs: the second call passes one word (the
+            // words after it are the first call's, left on the stack)
+            t.stub_sym(mc::RC_PRINT, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::TM2_FINI, 5, false, 1, 0, Ret::Val(rng.next()));
+            let parse = if case % 9 == 3 { 0 } else { rng.next() | 1 };
+            t.stub_sym(mc::PARSE_NEW, 6, false, 0, 0, Ret::Val(parse));
+            t.stub_sym(mc::PARSE_SET, 7, false, 2, 0, Ret::Val(rng.next()));
+            // the header reads fill the picture: the first two calls write
+            // 0x10 and 0x30 bytes at their destination
+            let kind = [4_u8, 5, 3, 0][rng.below(4) as usize];
+            let mut head = vec![0_u8; 0x40];
+            for b in &mut head {
+                *b = rng.next() as u8;
+            }
+            head[0x10 + 0x13] = kind;
+            t.write(pic, &head);
+            t.stub_sym(mc::PARSE_GET_BIN, 8, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::PARSE_SET_POS, 9, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::TM2_GET_PSM, 10, false, 1, 0, Ret::Val(rng.next()));
+            let allocs = t.seq(&[rng.next(), rng.next()]);
+            t.stub_sym(mc::RC_ALLOC, 11, false, 3, 0, allocs);
+            t.stub_sym(mc::SET_PTR32, 12, false, 1, 0, Ret::Val(rng.next()));
+            // the third call passes one word (stale ones follow it)
+            t.stub_sym(mc::GET_PTR32, 13, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(
+                mc::TM2_CLUT_ALPHA_TO_PS2,
+                14,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(mc::RC_FREE_THUNK, 15, false, 1, 0, Ret::Val(rng.next()));
+            let path = rng.next();
+            let alpha = rng.below(2);
+            t.check(
+                "rcdtTm2LoadEx_009232a0",
+                0x0092_32a0,
+                Conv::Cdecl,
+                &[pic, path, alpha],
+                |g| Out::U32(c::tm2_load(g, pic, path, alpha)),
+            );
+            t.reset();
+            t.stub_sym(mc::TM2_LOAD, 16, false, 3, 0, Ret::Val(rng.next()));
+            t.check("rcdtTm2Load", 0x0092_3800, Conv::Cdecl, &[pic, path], |g| {
+                Out::U32(c::tm2_load_ps2(g, pic, path))
+            });
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn load_mat_and_id_load_match_the_original() {
+    // no extension, "mat", "MA2" (the real _stricmp), others; the ID file
+    // (no file, read).
+    let paths: [&[u8]; 6] = [
+        b"model\0",
+        b"a/b.mat\0",
+        b"a.b/c.MA2\0",
+        b"x.ma3\0",
+        b"x.\0",
+        b"x.mat.ma2\0",
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a303);
+        for case in 0..24 {
+            let path = t.alloc(paths[case % 6]);
+            let model = rng.next();
+            t.stub_sym(mc::LOAD_MAT_RSD, 1, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::LOAD_MAT_RSD2, 2, false, 2, 0, Ret::Val(rng.next()));
+            t.check(
+                "rcdtRsdLoad_LoadMat_00923b60",
+                0x0092_3b60,
+                Conv::Cdecl,
+                &[model, path],
+                |g| Out::U32(c::load_mat(g, model, path)),
+            );
+            t.reset();
+
+            let work = t.zeros(0x200);
+            t.write(work + 0x174, b"c:/ffx\0");
+            t.global(mc::RCUI_WORK.sym, work);
+            let f = if case % 3 == 0 { 0 } else { rng.next() | 1 };
+            t.copy_sym(mc::SCE_OPEN, 3, 6, 0, f);
+            let sizes = t.seq(&[rng.below(0x1000), rng.next()]);
+            t.stub_sym(mc::SCE_LSEEK, 4, false, 3, 0, sizes);
+            t.stub_sym(mc::USER_MALLOC, 5, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::SCE_READ, 6, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::SCE_CLOSE, 7, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::ID_FIXUP, 8, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::GET_PLAYER, 9, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::EN_MAP_ID, 10, false, 2, 0, Ret::Val(rng.next()));
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x120);
+            t.check("rcbgIDLoad", 0x0092_5730, Conv::Cdecl, &[], |g| {
+                Out::U32(c::id_load(g, ebp))
+            });
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// `rcVectorToFixed_00927ac0` as a stub: logs both pointers and the four
+/// input floats, writes four words derived from them to `out`.
+fn to_fixed_stub(t: &mut Twins) {
+    let log = t.log;
+    let mut c = vec![0x56, 0x57]; // push esi; push edi
+    c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10] (in)
+    c.extend([0x8b, 0x7c, 0x24, 0x0c]); // mov edi, [esp+0xc] (out)
+    c.push(0xa1);
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00, 0x77, 0, 0, 0]); // mov [eax], 0x77
+    c.extend([0x89, 0x78, 0x04]); // mov [eax+4], edi
+    c.extend([0x89, 0x70, 0x08]); // mov [eax+8], esi
+    for k in 0..4_u8 {
+        c.extend([0x8b, 0x4e, 4 * k]); // mov ecx, [esi+4k]
+        c.extend([0x89, 0x48, 0x0c + 4 * k]); // mov [eax+0xc+4k], ecx
+        c.extend([0x81, 0xf1, 0x5a, 0x5a, 0x00, 0x00]); // xor ecx, 0x5a5a
+        c.extend([0x89, 0x4f, 4 * k]); // mov [edi+4k], ecx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.extend([0x5f, 0x5e, 0xc3]); // pop edi; pop esi; ret
+    let x = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), x);
+    t.jump(mc::TO_FIXED, x);
+}
+
+#[test]
+fn rc_packets_match_the_original() {
+    // the rect, circle and line packets: colours (fractions, negatives,
+    // NaN, out of range), positions and sizes; the frame's never-written
+    // words are 0 in the original's frame too.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a304);
+        for case in 0..36 {
+            to_fixed_stub(t);
+            let buf = t.zeros(0x200);
+            let pkt = t.words(&[0, buf]);
+            let rgba: Vec<u32> = (0..4)
+                .map(|_| match rng.below(4) {
+                    0 => (rng.below(512) as f32 / 3.0).to_bits(),
+                    1 => 3.0e9_f32.to_bits(),
+                    _ => float_word(&mut rng),
+                })
+                .collect();
+            let rgba = t.words(&rgba);
+            let f: Vec<u32> = (0..4).map(|_| float_word(&mut rng)).collect();
+            let ebp = frame_ebp(&t.a, if case % 3 == 1 { 5 } else { 6 });
+            t.write(ebp - 0x20, &[0; 0x20]);
+            t.b_top = Some(ebp - 0x40);
+            match case % 3 {
+                0 => t.check(
+                    "rcPacketRect_00927630",
+                    0x0092_7630,
+                    Conv::Cdecl,
+                    &[pkt, f[0], f[1], f[2], f[3], rgba],
+                    |g| Out::U32(c::packet_rect(g, ebp, pkt, [f[0], f[1], f[2], f[3], rgba])),
+                ),
+                1 => t.check(
+                    "rcPacketCircle_00927720",
+                    0x0092_7720,
+                    Conv::Cdecl,
+                    &[pkt, f[0], f[1], f[2], rgba],
+                    |g| Out::U32(c::packet_circle(g, ebp, pkt, [f[0], f[1], f[2], rgba])),
+                ),
+                _ => t.check(
+                    "rcPacketLine_00927810",
+                    0x0092_7810,
+                    Conv::Cdecl,
+                    &[pkt, f[0], f[1], f[2], f[3], rgba],
+                    |g| Out::U32(c::packet_line(g, ebp, pkt, [f[0], f[1], f[2], f[3], rgba])),
+                ),
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn map_wrappers_match_the_original() {
+    // the arguments passed on, the jump map present or not, the render
+    // status bit.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a305);
+        for case in 0..16 {
+            let (x, y) = (rng.next(), rng.next());
+            t.stub_sym(mc::FUN_0092C600, 1, false, 3, 0, Ret::Val(rng.next()));
+            t.check(
+                "Wrap_0092c600_0092c5e0",
+                0x0092_c5e0,
+                Conv::Cdecl,
+                &[x, y],
+                |g| Out::U32(c::wrap_0092c600(g, x, y)),
+            );
+            t.stub_sym(mc::STAGE_NAME2, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.check("rcuiGetStageName", 0x0093_7940, Conv::Cdecl, &[x, y], |g| {
+                Out::U32(c::stage_name(g, x, y))
+            });
+            let map = if case % 3 == 0 { 0 } else { rng.next() };
+            t.stub_sym(mc::JUMP_MAP_NO, 3, false, 0, 0, Ret::Val(map));
+            t.stub_sym(mc::FP_SAVE_SUB, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::GUIDE_MAP_CONV, 5, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RENDER_STATUS, 6, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::FP_LOAD_TEXT_SUB, 7, false, 2, 0, Ret::Val(rng.next()));
+            t.check(
+                "rcbgFpSaveCurrent_00938340",
+                0x0093_8340,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::fp_save_current(g)),
+            );
+            t.check(
+                "rcbgGuideMapConvCurrent_00938570",
+                0x0093_8570,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::guide_map_conv_current(g)),
+            );
+            t.check(
+                "rcbgFpLoadTextCurrent_0093a7e0",
+                0x0093_a7e0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(c::fp_load_text_current(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn load_mat_rsd_matches_the_original() {
+    // no file (with and without a chunk); comment lines; the count equal
+    // to the model's or not (the assertion message), 0 and negative;
+    // every polygon type and an unknown one (the real text parse over a
+    // generated file: its chunk and parse code run in both oracles).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a306);
+        for case in 0..30 {
+            let n = [0_i32, 1, 3, 5, -1][case % 5];
+            let mut text = String::new();
+            for _ in 0..rng.below(3) {
+                text.push_str(if rng.chance(2) {
+                    "@ header\n"
+                } else {
+                    "# note\n"
+                });
+            }
+            text.push_str(&format!("{n}\n"));
+            for _ in 0..n.max(0) {
+                let kind = ['C', 'D', 'G', 'H', 'T', 'X'][rng.below(6) as usize];
+                text.push_str(&format!("1 2 3 {kind}"));
+                for _ in 0..16 {
+                    text.push_str(&format!(" {}", rng.below(300) as i32 - 20));
+                }
+                text.push('\n');
+            }
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            let size = bytes.len() as u32;
+            let data = t.alloc(&bytes);
+            let polys = t.alloc(&vec![0x5a; 0x58 * 6]);
+            let model = t.zeros(0x20);
+            let declared = if case % 4 == 3 {
+                n as u32 + 1
+            } else {
+                n as u32
+            };
+            t.w32(model + 0x10, declared);
+            t.w32(model + 0x14, polys);
+            let loads = case % 6 != 5;
+            // the chunk holds the generated file
+            let chunk = if case % 7 == 6 && !loads {
+                0
+            } else {
+                t.words(&[data, size])
+            };
+            t.stub_sym(mc::CHUNK_NEW, 1, false, 0, 0, Ret::Val(chunk));
+            t.stub_sym(
+                mc::CHUNK_LOAD_FROM_FILE,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(loads)),
+            );
+            t.stub_sym(mc::CHUNK_DELETE, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_PRINT, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_FREE_THUNK, 5, false, 1, 0, Ret::Val(rng.next()));
+            // rcdtParseNew without the heap: a zeroed block through the
+            // real rcdtParseInit
+            let block = t.zeros(0x8c);
+            let init = t.rebase(0x0092_bf50);
+            let mut code = vec![0x68];
+            code.extend(block.to_le_bytes()); // push block
+            code.push(0xb8);
+            code.extend(init.to_le_bytes()); // mov eax, rcdtParseInit
+            code.extend([0xff, 0xd0, 0x83, 0xc4, 0x04]); // call eax; add esp, 4
+            code.push(0xb8);
+            code.extend(block.to_le_bytes()); // mov eax, block
+            code.push(0xc3);
+            let x = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+            t.jump(mc::PARSE_NEW, x);
+            let path = rng.next();
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "rcdtRsdLoad_LoadMatRsd",
+                0x0092_3bc0,
+                Conv::Cdecl,
+                &[model, path],
+                |g| Out::U32(c::load_mat_rsd(g, ebp, model, path)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn load_mat_rsd2_matches_the_original() {
+    // no file (with and without a chunk); comment lines; the count equal
+    // to the model's or not (the assertion message), 0 and negative;
+    // every polygon type and an unknown one (the real text parse over a
+    // generated file: its chunk and parse code run in both oracles).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a307);
+        for case in 0..30 {
+            let n = [0_i32, 1, 3, 5, -1][case % 5];
+            let mut text = String::new();
+            for _ in 0..rng.below(3) {
+                text.push_str(if rng.chance(2) {
+                    "@ header\n"
+                } else {
+                    "# note\n"
+                });
+            }
+            text.push_str(&format!("{n}\n"));
+            for _ in 0..n.max(0) {
+                let kind = ['H', 'X', 'C'][rng.below(3) as usize];
+                text.push_str(&format!("1 2 3 4 5 6 7 8 {kind}"));
+                for _ in 0..25 {
+                    text.push_str(&format!(" {}", rng.below(300) as i32 - 20));
+                }
+                text.push('\n');
+            }
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            let size = bytes.len() as u32;
+            let data = t.alloc(&bytes);
+            let polys = t.alloc(&vec![0x5a; 0x58 * 6]);
+            let model = t.zeros(0x20);
+            let declared = if case % 4 == 3 {
+                n as u32 + 1
+            } else {
+                n as u32
+            };
+            t.w32(model + 0x10, declared);
+            t.w32(model + 0x14, polys);
+            let loads = case % 6 != 5;
+            // the chunk holds the generated file
+            let chunk = if case % 7 == 6 && !loads {
+                0
+            } else {
+                t.words(&[data, size])
+            };
+            t.stub_sym(mc::CHUNK_NEW, 1, false, 0, 0, Ret::Val(chunk));
+            t.stub_sym(
+                mc::CHUNK_LOAD_FROM_FILE,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(loads)),
+            );
+            t.stub_sym(mc::CHUNK_DELETE, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_PRINT, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_FREE_THUNK, 5, false, 1, 0, Ret::Val(rng.next()));
+            // rcdtParseNew without the heap: a zeroed block through the
+            // real rcdtParseInit
+            let block = t.zeros(0x8c);
+            let init = t.rebase(0x0092_bf50);
+            let mut code = vec![0x68];
+            code.extend(block.to_le_bytes()); // push block
+            code.push(0xb8);
+            code.extend(init.to_le_bytes()); // mov eax, rcdtParseInit
+            code.extend([0xff, 0xd0, 0x83, 0xc4, 0x04]); // call eax; add esp, 4
+            code.push(0xb8);
+            code.extend(block.to_le_bytes()); // mov eax, block
+            code.push(0xc3);
+            let x = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+            t.jump(mc::PARSE_NEW, x);
+            let path = rng.next();
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "rcdtRsdLoad_LoadMatRsd2",
+                0x0092_3ed0,
+                Conv::Cdecl,
+                &[model, path],
+                |g| Out::U32(c::load_mat_rsd2(g, ebp, model, path)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn load_ply_matches_the_original() {
+    // no file; comment lines; zero, one and several vertices, normals and
+    // polygons (negative counts too); float text the real atof reads
+    // (fractions, exponents, signs); polygon flags and indices past 16
+    // bits.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a308);
+        for case in 0..30 {
+            let counts = [[0_i32, 0, 0], [1, 1, 1], [3, 2, 4], [-1, 2, 0], [2, -3, 1]][case % 5];
+            let mut text = String::new();
+            for _ in 0..rng.below(3) {
+                text.push_str(if rng.chance(2) { "@ ply\n" } else { "# note\n" });
+            }
+            text.push_str(&format!("{} {} {}\n", counts[0], counts[1], counts[2]));
+            // each block follows a label line (rcdtParseAdvanceLine skips
+            // the line the cursor is on)
+            for &n in &counts[..2] {
+                text.push_str("vectors\n");
+                for _ in 0..n.max(0) {
+                    for _ in 0..3 {
+                        let x = match rng.below(4) {
+                            0 => format!("{}", rng.below(1000) as i32 - 500),
+                            1 => format!("{}.{}", rng.below(100) as i32 - 50, rng.below(1000)),
+                            2 => format!("{}e{}", rng.below(9) + 1, rng.below(20) as i32 - 10),
+                            _ => format!("-0.{}", rng.below(100_000)),
+                        };
+                        text.push_str(&x);
+                        text.push(' ');
+                    }
+                }
+                text.push('\n');
+            }
+            text.push_str("polygons\n");
+            for _ in 0..counts[2].max(0) {
+                text.push_str(&format!("{}", rng.below(2)));
+                for _ in 0..8 {
+                    text.push_str(&format!(" {}", rng.below(0x2_0000)));
+                }
+                text.push(' ');
+            }
+            text.push('\n');
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            let size = bytes.len() as u32;
+            let data = t.alloc(&bytes);
+            let model = t.zeros(0x20);
+            let loads = case % 6 != 5;
+            let chunk = if case % 7 == 6 && !loads {
+                0
+            } else {
+                t.words(&[data, size])
+            };
+            t.stub_sym(mc::CHUNK_NEW, 1, false, 0, 0, Ret::Val(chunk));
+            t.stub_sym(
+                mc::CHUNK_LOAD_FROM_FILE,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(loads)),
+            );
+            t.stub_sym(mc::CHUNK_DELETE, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_PRINT, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_FREE_THUNK, 5, false, 1, 0, Ret::Val(rng.next()));
+            let blocks: Vec<u32> = (0..3).map(|_| t.alloc(&[0x5a; 0x58 * 5])).collect();
+            let allocs = t.seq(&blocks);
+            t.stub_sym(mc::RC_ALLOC, 6, false, 3, 0, allocs);
+            let block = t.zeros(0x8c);
+            let init = t.rebase(0x0092_bf50);
+            let mut code = vec![0x68];
+            code.extend(block.to_le_bytes()); // push block
+            code.push(0xb8);
+            code.extend(init.to_le_bytes()); // mov eax, rcdtParseInit
+            code.extend([0xff, 0xd0, 0x83, 0xc4, 0x04]); // call eax; add esp, 4
+            code.push(0xb8);
+            code.extend(block.to_le_bytes()); // mov eax, block
+            code.push(0xc3);
+            let x = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+            t.jump(mc::PARSE_NEW, x);
+            let path = rng.next();
+            t.check(
+                "rcdtRsdLoad_LoadPly",
+                0x0092_4090,
+                Conv::Cdecl,
+                &[model, path],
+                |g| Out::U32(c::load_ply(g, model, path)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rsd_load_matches_the_original() {
+    // no file; a path with and without a directory; every keyword
+    // (mixed case, the real keyword match), comment lines, unknown
+    // words; the file names the loaders get (their stubs log the text).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_a309);
+        for case in 0..30 {
+            let mut text = String::new();
+            let mut ntex = 0;
+            for _ in 0..=rng.below(8) {
+                match rng.below(8) {
+                    0 => text.push_str("# comment line\n"),
+                    1 => text.push_str(&format!("PLY = Model{}.PLY\n", rng.below(9))),
+                    2 => text.push_str(&format!("mat=[Mat{}.Mat]\n", rng.below(9))),
+                    3 => text.push_str("GRP = GroupName\n"),
+                    4 => {
+                        ntex = rng.below(3);
+                        text.push_str(&format!("NTEX = {ntex}\n"));
+                    }
+                    5 if ntex > 0 => {
+                        text.push_str(&format!(
+                            "TEX[{}] = tex{}.tm2\n",
+                            rng.below(ntex),
+                            rng.below(99)
+                        ));
+                    }
+                    // a VGR value or a comment that reads as a keyword
+                    6 => text.push_str("VGR = MAT x.mat\n"),
+                    _ => text.push_str("@ PLY header.ply\n"),
+                }
+            }
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            let size = bytes.len() as u32;
+            let data = t.alloc(&bytes);
+            let model = t.zeros(0x20);
+            let path: &[u8] =
+                [&b"host:/ffx/map/test.rsd\0"[..], b"plain.rsd\0", b"a/b/\0"][case % 3];
+            let path = t.alloc(path);
+            let loads = case % 6 != 5;
+            let chunk = if case % 7 == 6 && !loads {
+                0
+            } else {
+                t.words(&[data, size])
+            };
+            t.stub_sym(mc::CHUNK_NEW, 1, false, 0, 0, Ret::Val(chunk));
+            t.stub_sym(
+                mc::CHUNK_LOAD_FROM_FILE,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(loads)),
+            );
+            t.stub_sym(mc::CHUNK_DELETE, 3, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_PRINT, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mc::RC_FREE_THUNK, 5, false, 1, 0, Ret::Val(rng.next()));
+            let blocks: Vec<u32> = (0..12).map(|_| t.alloc(&[0x5a; 0x40])).collect();
+            let allocs = t.seq(&blocks);
+            t.stub_sym(mc::RC_ALLOC, 6, false, 3, 0, allocs);
+            let s = t.copy_stub_arg(7, 1, 12, 0, rng.next());
+            t.jump(mc::LOAD_PLY, s);
+            let s = t.copy_stub_arg(8, 1, 12, 0, rng.next());
+            t.jump(mc::LOAD_MAT, s);
+            let block = t.zeros(0x8c);
+            let init = t.rebase(0x0092_bf50);
+            let mut code = vec![0x68];
+            code.extend(block.to_le_bytes()); // push block
+            code.push(0xb8);
+            code.extend(init.to_le_bytes()); // mov eax, rcdtParseInit
+            code.extend([0xff, 0xd0, 0x83, 0xc4, 0x04]); // call eax; add esp, 4
+            code.push(0xb8);
+            code.extend(block.to_le_bytes()); // mov eax, block
+            code.push(0xc3);
+            let x = t.a.alloc_code(&code).unwrap();
+            assert_eq!(t.b.alloc_code(&code).unwrap(), x);
+            t.jump(mc::PARSE_NEW, x);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x340);
+            t.check(
+                "rcdtRsdLoad_009243c0",
+                0x0092_43c0,
+                Conv::Cdecl,
+                &[model, path],
+                |g| Out::U32(c::rsd_load(g, ebp, model, path)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+impl Twins {
+    /// As [`Twins::copy_stub`] for a cdecl callee (`ecx` not logged),
+    /// copying the string argument `arg` (0 the first) instead of the
+    /// first.
+    fn copy_stub_arg(&mut self, tag: u32, arg: u8, words: u32, pops: u32, ret: u32) -> u32 {
+        let s = self.copy_stub(tag, words, pops, ret);
+        // the stub's `mov esi, [esp+0x10]` is at a fixed place: patch its
+        // displacement
+        let disp_at = s + 5 + 3 + 5 + 6 + 3 + 3 + 3;
+        assert_eq!(Mem::read::<u8>(&self.a, disp_at), 0x10);
+        self.write(disp_at, &[0x10 + 4 * arg]);
+        // `mov [eax+4], ecx` -> nops
+        let ecx_at = s + 5 + 3 + 5 + 6;
+        assert_eq!(Mem::read::<u8>(&self.a, ecx_at), 0x89);
+        self.write(ecx_at, &[0x90; 3]);
+        s
+    }
 }

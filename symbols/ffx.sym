@@ -15887,19 +15887,24 @@
 0x00923190 function rcbgFPmGetPartData        # (id, n, part, k): pppFpGetMngPtr data, +0x30 chain n times, +8 table, part (0x10 from +0x28), +0xc offsets[k] + 0xa0 + node; 0 when missing
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
 0x00923280 function rcdtTm2GetPsm                # (picture header) -> GS PSM of its image type (+0x13) from 0x00c5e754 (1 CT16, 2 CT24, 3 CT32, 4 T4, 5 T8), 0 for 0
+0x009232a0 function rcdtTm2LoadEx_009232a0 # cdecl(pic, path, ps2_alpha) -> 1 when loaded: rcdtChunkNew, rcdtChunkLoadFromFile (none: chunk deleted, rcPrint "File not found" (rcdtTm2.c line 0x4d), 0); rcdtTm2Fini(pic), a new parse reads the 0x10-byte file header and the 0x30-byte picture header (+0x10); +0x48 = rcdtTm2GetPsm; type +0x23 4 (w*h/2 bytes, signed) or 5 (w*h), else "Image Type Error" (line 0x66) and 0 (parse and chunk kept); image at header size (u16 +0x1c) + 0x10 and palette (+0x18 further, +0x14 bytes) into rcAlloc buffers stored by set_ptr32 in +0x40/+0x44; ps2_alpha -> rcdtTm2ClutAlphaToPs2; parse freed (0x0092ba50), chunk deleted; reads ecx (= pic + 0x10) after rcdtTm2GetPsm, which leaves it; Ghidra's FUN_009232a0; name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x00923450 function rcdtTm2Delete             # (tm2): rcdtTm2Fini + rcFree; rcbgSceneLoadTexture*
 0x00923470 function rcdtTm2Fini               # fh switch:bsim0.91 0x710054b060
+0x009234d0 function rcdtTm2OpaqueBounds_009234d0 # cdecl(pic, &x, &y, &w, &h) -> &h: the bounds of the 8-bit pixels (get_ptr32_func(+0x40), u16 +0x24 x +0x26) whose palette entry (get_ptr32_func(+0x44)) has alpha (& 0xff000000); from (w-1, h-1, 0, 0); x made even (width + 1), width made even; 0x400-byte flag table in the frame; name ours; ported ffx_prender::m5m_c (m5 map b3)
+0x00923660 function rcdtTm2KeyBounds_00923660 # as rcdtTm2OpaqueBounds_009234d0 for entries whose colour (& 0xffffff) is 0, without the even rounding; name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x009237e0 function rcdtTm2Init               # fh switch:bsim1.00 0x710054aff0
-0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0
+0x00923800 function rcdtTm2Load               # fh switch:bsim1.00 0x710054b0c0; ported ffx_prender::m5m_c (m5 map b3): rcdtTm2LoadEx_009232a0(pic, path, 1)
 0x00923960 function rcdtTm2LoadEff            # fh switch:bsim1.00 0x710054b330
 0x00923ae0 function rcdtTm2CopyRect           # (tm2, dst, x, y, n, rows): copies a rectangle of a TIM2 image's pixels
 0x00923b40 function rcdtTm2New                # (): rcAlloc(0x50, rcdtTm2.c 0x26) + rcdtTm2Init
-0x00923bc0 function rcdtRsdLoad_LoadMatRsd       # str: its error message names it: "rcdtRsdLoad::LoadMatRsd : File not found."
-0x00923ed0 function rcdtRsdLoad_LoadMatRsd2      # str: its error message names it: "rcdtRsdLoad::LoadMatRsd2 : File not found."
-0x00924090 function rcdtRsdLoad_LoadPly          # str: its error message names it: "rcdtRsdLoad::LoadPly : File not found."
+0x00923b60 function rcdtRsdLoad_LoadMat_00923b60 # cdecl(model, path): strrchr(path, '.') (none -> 0); _stricmp (0x00949664) of the extension with "mat" -> rcdtRsdLoad_LoadMatRsd, "ma2" -> rcdtRsdLoad_LoadMatRsd2 (their eax), else the compare's; name ours; ported ffx_prender::m5m_c (m5 map b3)
+0x00923bc0 function rcdtRsdLoad_LoadMatRsd       # str: its error message names it: "rcdtRsdLoad::LoadMatRsd : File not found."; ported ffx_prender::m5m_c (m5 map b3): cdecl(model, path) (frame: the type char at ebp-1): the .mat file into a chunk (not found: chunk deleted, rcPrint error (rcdtRsd2.c 0x138) -> rcPrint eax); text parse (rcdtParseSetMode 1), @/# lines skipped, count (assertion print "cnt == self->m_cntPolygon" when != model +0x10), per 0x58-byte polygon of +0x14: 3 ints skipped, type char: C flat colour (bytes +0x48..+0x4a, 0x80, copied to the 4 vertices), D uv (flag 2, +0x24 id, 4 pairs at +0x28) + flat, G 4 colours, H uv + 4 colours, T uv with 0x80808080 colours; parse freed (0x0092ba50), chunk deleted -> its eax (0 without a chunk)
+0x00923ed0 function rcdtRsdLoad_LoadMatRsd2      # str: its error message names it: "rcdtRsdLoad::LoadMatRsd2 : File not found."; ported ffx_prender::m5m_c (m5 map b3): as rcdtRsdLoad_LoadMatRsd (lines 0x1bf, 0x1cd, "LoadMatRsd2 : File not found."), per polygon 8 ints skipped and the type char; H: +0x24 id, 4 uv pairs at +0x28; else +0x24 = -1; then 16 colour bytes (4 RGBA ints each) at +0x48; no flag bit
+0x00924090 function rcdtRsdLoad_LoadPly          # str: its error message names it: "rcdtRsdLoad::LoadPly : File not found."; ported ffx_prender::m5m_c (m5 map b3): cdecl(model, path): .ply not found as LoadMatRsd (line 0xbd, "LoadPly" message 0x00b6799c); after @/# lines the counts +0 (vertices), +8 (normals), +0x10 (polygons), each block after rcdtParseAdvanceLine; vertices (+4, rcAlloc(n << 4, line 0xd1)) and normals (+0xc, line 0xdf) as 3 rcdtParseGetFloat f32 + 1.0; polygons (+0x14, rcAlloc(n * 0x58, line 0xec), memset 0): flag int (non-zero -> bit 0), 4 vertex + 4 normal indices (& 0xffff) at +4..+0x20; parse freed, chunk deleted -> its eax; a negative polygon count faults in the memset first
 0x009242d0 function rcdtListsDelete           # (l): rcdtListsFini + rcFree; rcbgModelCreateFromFile
 0x009242f0 function rcdtListsFini             # (l): rcFree +0x4, +0xc, +0x14, the +0x18 entries of +0x1c and the table
 0x00924390 function rcdtRsd2Init                 # (rsd): 8 words cleared (rcdtRsd2.c, 0x00924750)
+0x009243c0 function rcdtRsdLoad_009243c0 # cdecl(model, path) -> 1 (0 when the .rsd is not found: chunk deleted, rcPrint line 0x69 "rcdtRsdLoad : File not found."); frame: keyword table ebp-0x328 (PLY MAT GRP NTEX TEX VGR 0), directory ebp-0x304 (path up to its last /), file path ebp-0x204, token ebp-0x104; text parse with "[]=" separators until its end: @/# lines skipped; PLY/MAT: token _strlwr, dir + token -> rcdtRsdLoad_LoadPly / rcdtRsdLoad_LoadMat_00923b60; GRP: token (lowercased), VGR: token; NTEX n > 0: +0x1c = rcAlloc(4n, line 0x94); TEX i: slot i = rcAlloc(token length + 1, line 0x9b), the name read into it; parse freed, chunk deleted; rcbgModelCreateFromFile calls it; Ghidra FUN_009243c0; name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x00924750 function rcdtRsd2New               # (): rcAlloc 0x20 (rcdtRsd2.c), rcdtRsd2Init
 0x00924770 function rcVu0Add_00924770        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00924a20; name ours; ported (field round 45)
 0x009247d0 function rcbgScaleVector_009247d0  # the same code as rcbgScaleVector 0x009200a0
@@ -15939,7 +15944,7 @@
 0x00925690 function rcefObjSetupDraw          # (env, obj, id): rcefSetupDraw(obj +0x3c0, op_oef2_a_get(env +8, 4, id), obj +0x1f0, obj +0x170); g_MagicImports; name ours
 0x009256d0 function rcefMainSetPar            # fh v3:exact 0x009256d0
 0x00925710 function rcefSetStream             # (s) -> s: 0x025d5c14 = s, with s 0x025d5be0 = 3; entry of the table at 0x00c65500; ?meaning
-0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0
+0x00925730 function rcbgIDLoad                # fh switch:cg2 0x71005537a0; ported ffx_prender::m5m_c (m5 map b3): sprintf(ebp-0x104, "host:%s/bin/ffxmap.id", g_RcuiWork + 0x174), sceOpen(path, 1) (0 -> 0), sceLseek size, user_malloc, sceRead, sceClose, Sg_IdFixupAndSetThunk(mem), Ch_EnMapID(Sg_GetPlayer(1)); -> mem
 0x009257f0 function rcMat4fSetScale           # fh v3:exact 0x009257f0
 0x00925820 function rcMat4fSetScaleVec3f      # fh v3:bsim1.00 0x00925820
 0x00925850 function rcMat4fSetTranslate       # fh v3:bsim1.00 0x00925850
@@ -15964,6 +15969,9 @@
 0x00927570 function rcPacketDataAlloc         # fh switch:bsim1.00 0x71005506b0
 0x009275b0 function rcPacketDataCloseAdr      # fh v3:exact 0x009275b0
 0x00927600 function rcPacketDataDraw          # fh v3:exact 0x00927600; ported (ffx_glue_other::misc, m4 h4 r1): c = sceDmaGetChan(2); FlushCache(0); sceDmaSend(c, *p); sceDmaSync(c, 0, 0)'s eax
+0x00927630 function rcPacketRect_00927630 # cdecl(pkt, x, y, w, h, rgba) -> the new write position: at [pkt + 4]: four ftol2_sse colour words; rect (x - w k, y - h k, x + w k, y + h k) (k f64 0x00b92220) as f32 at ebp-0x10, rcVectorToFixed_00927ac0(ebp-0x20, ebp-0x10), four corner quads (x, y, 0, 0); [pkt + 4] += 0x50; name ours; ported ffx_prender::m5m_c (m5 map b3)
+0x00927720 function rcPacketCircle_00927720 # cdecl(pkt, x, y, r, rgba) -> the last y word: the colour, then 17 points (angle i*0x1000, sine table 0x00c44bf0 indexed (a >> 4) & 0xfff, cosine + 0x4000): (x + sin r, y + r cos k) (k f64 0x00b67698), each through rcVectorToFixed_00927ac0 into a quad; junk read: [ebp-0x8], [ebp-0x4] never written (the conversion's z/w inputs, outputs unused); name ours; ported ffx_prender::m5m_c (m5 map b3)
+0x00927810 function rcPacketLine_00927810 # cdecl(pkt, x0, y0, x1, y1, rgba) -> the new write position: the colour, both ends through rcVectorToFixed_00927ac0 into quads, [pkt + 4] += 0x30; junk read: [ebp-0x8], [ebp-0x4] never written (as rcPacketCircle_00927720); name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x00927a20 function rcPacketDataInit          # fh v3:exact 0x00927a20
 0x00927a40 function rcPacketDataSetAdr           # (packet, at): start = cursor = at (no tag quadword)
 0x00927a50 function rcPacketDataOpen             # (packet, buffer): rcPacketDataOpenAdr on buffer +4
@@ -16118,6 +16126,7 @@
 0x0092c0c0 function rcdtParseSetMode          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
+0x0092c5e0 function Wrap_0092c600_0092c5e0 # cdecl(a, b) -> FUN_0092c600(a, b, 1); name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0; (trx) -> sceDmaSync's eax: the upload packet at *0x00c498dc: A+D GIF tag 0x10000005, BITBLTBUF (+0x18/+0x1c), TRXPOS (+0x20/+0x24), TRXREG (+0x28/+0x2c), TRXDIR 0, image tag of +0x34/16 quads at rcbgTrxGetEntry(trx, +0x3c); sceDmaGetChan(2), FlushCache(0), sceDmaSend, sceDmaSync(chan, 0, 0); ported (field r13, ffx_field::model)
 0x0092d320 function rcbgTrxSetRegsAlloc       # (t, a..g, n): rcbgTrxSetRegs + rcbgTrxAllocEntries(t, c, f, g, n); rcbgPalAlloc
 0x0092d360 function rcbgTrxSetRegs               # (t, a..g i16) -> g: +0x1c = ((c << 8 | b) << 16) | a, +0x24 = e << 16 | d, +0x28 = f, +0x2c = g | f >> 31, +0x18 = +0x20 = 0 (sign-extended); 0x0092d320 (rcbgPalAlloc)
@@ -16309,7 +16318,7 @@
 0x009376b0 function rcuiVu0SubVector          # (dst, a, b): dst = (a.xyz - b.xyz, a.w) through the VU0 registers 0x00c8f980/0x00c8f970, vf00 restored first; rcuiResetChrPos; name ours (cf. rcuiVu0AddVector)
 0x00937780 function rcuiAddItems                 # structure: (window, items): walks a 0-terminated item table, type 1 -> Gu_WindowAddButton, type 2 -> Gu_WindowAddStatic; callers are the rcui*Proc debug windows (rcuiAlphaProc, rcuiAnimeProc, rcuiCameraProc, rcuiLayerProc); Switch rcuiAddItems (148 bytes) is the rcui file's name sorting here
 0x009377e0 function rcuiGetMapNo                 # layout+callees: sorts between rcuiAddItems and rcuiGetStageName, and its named callees match the Switch 0x71005638e0 rcuiGetMapNo's (similarity 0.77: rcdtChunkFini, rcdtChunkInit, rcdtChunkLoadFromFile, rcdtParseAdvanceLine, rcdtParseFini); symbols from Fahrenheit's server export
-0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00
+0x00937940 function rcuiGetStageName          # fh switch:bsim1.00 0x7100563a00; ported ffx_prender::m5m_c (m5 map b3): rcuiGetStageName2(a, b, 0)
 0x00937960 function rcuiGetStageName2            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/btlmaster/info/btlmap.csv'; Switch 0x7100563a10 rcuiGetStageName2 (symbols from Fahrenheit's server export)
 0x00937af0 function rcuiMakeBasePath             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '/ffx/proj/map/%s/'; Switch 0x7100563850 rcuiMakeBasePath (symbols from Fahrenheit's server export)
 0x00937b20 function rcuiMakeFullPath          # fh switch:bsim1.00 0x7100563880
@@ -16319,7 +16328,9 @@
 0x00937f70 function rcuiSetNumber             # (n): two decimal digits over the last two characters of the work's strings +0x174 and +0x27c; rcbgGuideMapSaveSub
 0x00938080 function rcbgGuideMapConvSub          # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/master/%c%c%c%c/%s/guid/rsd/guid%02d.rsd'; Switch 0x71005629f0 rcbgGuideMapConvSub (symbols from Fahrenheit's server export)
 0x009382e0 function rcuiVu0CopyVector            # (dst, src): through the VU0 register at 0x00c8f980, which keeps the copy
+0x00938340 function rcbgFpSaveCurrent_00938340 # cdecl() -> rcbgFpSaveSub(TkGetNowEventJumpMapNo_0086c1f0()); leaves ecx = the map (pop ecx); name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x00938350 function rcbgFpSaveSub                # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host:/ffx/proj/map/f_particle/b%03d.fpd'; Switch 0x71005627c0 rcbgFpSaveSub (symbols from Fahrenheit's server export)
+0x00938570 function rcbgGuideMapConvCurrent_00938570 # cdecl() -> FUN_00938590(the jump map) when non-zero, else 0; name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x00939040 function rcbgSaveBinNormal            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Save(Bin.) Failed.'; Switch 0x7100561c10 rcbgSaveBinNormal (symbols from Fahrenheit's server export)
 0x009391d0 function rcbgGuideMapSaveSub          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100562eb0 rcbgGuideMapSaveSub, 6 votes, round 1
 0x00939480 function rcbgSaveChkPackList          # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host:%s'; Switch 0x71005616f0 rcbgSaveChkPackList (symbols from Fahrenheit's server export)
@@ -16328,6 +16339,7 @@
 0x00939b10 function rcbgSaveText                 # str-match switch: only user of 19 string(s) held once by both builds, e.g. 'Save(Text) Failed.'; Switch 0x7100563100 rcbgSaveText (symbols from Fahrenheit's server export)
 0x0093a280 function rcbgModelCreateFromFile   # fh switch:cg3 0x7100560ba0
 0x0093a650 function rcbgAnimeLoadConfig       # (anime, parse): keywords 0x00c60e84: DataCnt (rcbgAnimeSetDataCnt), the frames (four byte integers each into +0xc), stop; name ours (cf. rcbgPalLoadConfig)
+0x0093a7e0 function rcbgFpLoadTextCurrent_0093a7e0 # cdecl() -> rcbgFpLoadTextSub(the jump map, yiGetRenderStatus() bit 12); name ours; ported ffx_prender::m5m_c (m5 map b3)
 0x0093a800 function rcbgFpLoadTextSub            # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/ffx/proj/map/btlmaster/%c%c%c%c/%s/3d/eff/'; Switch 0x71005610f0 rcbgFpLoadTextSub (symbols from Fahrenheit's server export)
 0x0093a910 function rcbgFpTrxTexLoadTextGetTrxCnt # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s%d_00.tm2'; Switch 0x7100561290 rcbgFpTrxTexLoadTextGetTrxCnt (symbols from Fahrenheit's server export)
 0x0093aa60 function rcbgGuideMapLoadTextSub      # layout+callees: sorts between rcbgFpTrxTexLoadTextGetTrxCnt and rcbgSceneLoadTextCameraCalcRef, and its named callees match the Switch 0x7100561570 rcbgGuideMapLoadTextSub's (similarity 0.75: rcbgModelDelete, rcbgModelNew, rcuiGetStageName); symbols from Fahrenheit's server export

@@ -59,6 +59,9 @@ IMAGE_LO, IMAGE_HI = 0x00401000, 0x00b00000  # .text
 
 # (file, callee address) -> why the port's call without ecx is right
 REVIEWED = {
+    # Ch_EnMapID's first ecx use is `or ecx, 0xffffffff`, which sets it
+    # whatever it held (m5 map b3, rcbgIDLoad)
+    ("crates/ffx-prender/src/m5m_c.rs", 0x0082_AA70): "or ecx, -1 overwrites ecx",
 }
 
 # --- 1. which originals take ecx ---
