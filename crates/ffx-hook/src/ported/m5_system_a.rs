@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
@@ -1045,6 +1046,52 @@ ported! {
     /// `WaterWaveController_setSineWaveStrength(c, a, b)`.
     WaterWaveController_setSineWaveStrength @ 0x006f_59a0 => extern "stdcall" fn set_sine_wave(c: u32, a: u32, b: u32) {
         s2b::set_two(&mut mem(), s2::SINE_WAVE, c, a, b);
+    }
+
+    // ---- round 3: the cluster pointer-fixup unpackers and their runs ----
+    /// `Fixup_RunBitmask16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunBitmask16 @ 0x0060_cac0 => extern "thiscall" fn run_bitmask16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) {
+        fx::run_bitmask(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 });
+    }
+    /// `Fixup_RunExcept16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunExcept16 @ 0x0060_cc20 => extern "thiscall" fn run_except16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_except(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunListed16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunListed16 @ 0x0060_ce70 => extern "thiscall" fn run_listed16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_listed(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunArithmetic16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunArithmetic16 @ 0x0060_d000 => extern "thiscall" fn run_arithmetic16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_arithmetic(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunBitmask(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunBitmask @ 0x0060_cb70 => extern "thiscall" fn run_bitmask(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) {
+        fx::run_bitmask(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c });
+    }
+    /// `Fixup_RunExcept(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunExcept @ 0x0060_cd50 => extern "thiscall" fn run_except(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_except(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_RunListed(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunListed @ 0x0060_cf40 => extern "thiscall" fn run_listed(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_listed(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_RunArithmetic(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunArithmetic @ 0x0060_d080 => extern "thiscall" fn run_arithmetic(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_arithmetic(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_UnpackArrayList(&cursor, records, n, count)`: frame `ebp -
+    /// 0x44`; the output cursor is the caller's `records` slot.
+    Fixup_UnpackArrayList @ 0x0060_a340 => extern "C" fn unpack_array_list(cursor: u32, records: u32, n: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<{ (fx::ARRAY_FRAME / 4) as usize }>::new();
+        fx::unpack_array_list(&mut mem(), f.at() + fx::ARRAY_FRAME, cursor, records, slots + 4, n, count);
+    }
+    /// `Fixup_UnpackList(&cursor, records, n, count)`: frame `ebp -
+    /// 0x58`; the output cursor is the caller's `records` slot.
+    Fixup_UnpackList @ 0x0060_a750 => extern "C" fn unpack_list(cursor: u32, records: u32, n: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<{ (fx::LIST_FRAME / 4) as usize }>::new();
+        fx::unpack_list(&mut mem(), f.at() + fx::LIST_FRAME, cursor, records, slots + 4, n, count);
     }
 }
 

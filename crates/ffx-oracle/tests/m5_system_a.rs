@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
@@ -4610,6 +4611,344 @@ fn save2_water_wave_setters_match_the_original() {
             Mem::read_bytes(&t.a, slots, &mut x);
             Mem::read_bytes(&t.b, slots, &mut y);
             assert_eq!(x, y, "setScrollSpeed #{case}: the argument slots");
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_fixup) ----
+
+/// `v` as LEB128, now and then padded with empty continuation bytes (the
+/// decoder's shift past 31 bits included).
+fn leb_bytes(rng: &mut Rng, v: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut x = v;
+    loop {
+        let b = (x & 0x7f) as u8;
+        x >>= 7;
+        if x == 0 {
+            if rng.chance(6) {
+                out.push(b | 0x80);
+                let pad = rng.below(5) as usize;
+                out.extend(std::iter::repeat_n(0x80, pad));
+                out.push(0);
+            } else {
+                out.push(b);
+            }
+            return out;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// The record runs on synthetic streams, both record sizes: bitmasks of
+/// 0..40 bits, except/listed counts with byte indices (`N < 0x100`) and
+/// LEB128 ones (`N` 0x100..0x120, a null cursor now and then: count 0),
+/// indices out of order and out of range, arithmetic progressions; the
+/// callback a recording stub.
+#[test]
+#[allow(clippy::too_many_lines)] // eight runs, one case setup
+fn fixup_runs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0201);
+        for case in 0..40 {
+            for (size, syms) in [
+                (
+                    16u32,
+                    [0x0060_cac0u32, 0x0060_cc20, 0x0060_ce70, 0x0060_d000],
+                ),
+                (28, [0x0060_cb70, 0x0060_cd50, 0x0060_cf40, 0x0060_d080]),
+            ] {
+                for (which, sym) in syms.into_iter().enumerate() {
+                    t.reset();
+                    let big = which != 0 && rng.chance(3);
+                    let n = if big {
+                        0x100 + rng.below(0x20) * u32::from(rng.chance(2))
+                    } else if rng.chance(8) {
+                        0xff
+                    } else {
+                        rng.below(40)
+                    };
+                    let desc = t.words(&[rng.next(), n]);
+                    let r = rng.next();
+                    let cb = t.stub_code(0x7700, false, 4, 0, r);
+                    let tmpl: Vec<u32> = (0..7).map(|_| rng.next()).collect();
+                    let tmpl = t.words(&tmpl);
+                    let mut stream = Vec::new();
+                    match which {
+                        0 => stream.extend((0..n / 8 + 2).map(|_| rng.next() as u8)),
+                        1 | 2 => {
+                            let count = rng.below(6);
+                            stream.extend(leb_bytes(&mut rng, count));
+                            // ascending, one pair out of order now and then
+                            // (the except run's records stay under 2N)
+                            let mut idx: Vec<u32> = (0..count).map(|_| rng.below(n + 3)).collect();
+                            idx.sort_unstable();
+                            if count > 1 && rng.chance(3) {
+                                idx.swap(0, 1);
+                            }
+                            for i in idx {
+                                if big {
+                                    stream.extend(leb_bytes(&mut rng, i));
+                                } else {
+                                    stream.push(i as u8);
+                                }
+                            }
+                        }
+                        _ => {
+                            let start = rng.below(n + 5);
+                            let step = [0, 1, 2, 0xffff_ffff, rng.next()][rng.below(5) as usize];
+                            let count = rng.below(6);
+                            for v in [start, step, count] {
+                                stream.extend(leb_bytes(&mut rng, v));
+                            }
+                        }
+                    }
+                    stream.extend([0; 8]);
+                    let stream = t.alloc(&stream);
+                    let null = which != 0 && big && rng.chance(4);
+                    let cursor = t.words(&[if null { 0 } else { stream }]);
+                    let max = if which == 1 { 2 * n + 16 } else { n.max(8) };
+                    let buf = t.zeros((max * size) as usize);
+                    let out = t.words(&[buf]);
+                    let run = fx::Run {
+                        desc,
+                        cb,
+                        tmpl,
+                        cursor,
+                        out,
+                        size,
+                    };
+                    let what = format!("{sym:#x} #{case} n {n:#x} null {null}");
+                    t.check(
+                        &what,
+                        sym,
+                        Conv::Thiscall(desc),
+                        &[cb, tmpl, cursor, out],
+                        |m| match which {
+                            0 => {
+                                fx::run_bitmask(m, run);
+                                Out::None
+                            }
+                            1 => Out::U32(fx::run_except(m, run)),
+                            2 => Out::U32(fx::run_listed(m, run)),
+                            _ => Out::U32(fx::run_arithmetic(m, run)),
+                        },
+                    );
+                }
+            }
+        }
+    });
+}
+
+/// A run stub over `sym` (thiscall, 4 words, `ret 0x10`): moves the
+/// output cursor (`*arg 3`) on by `advance` bytes, logs, returns `ret`.
+fn stub_run(t: &mut Twins, sym: u32, advance: u32, ret: u32) {
+    let log = t.stub_code(sym, true, 4, 4, ret);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x10]; // mov eax, [esp+0x10]
+    c.extend([0x81, 0x00]);
+    c.extend(advance.to_le_bytes()); // add dword [eax], advance
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+    let at = t.cave_code(&c);
+    t.jump(sym, at);
+}
+
+/// A synthetic fixup stream for `Fixup_UnpackList` (`array` false) or
+/// `Fixup_UnpackArrayList`: `lists` lists for `count` objects with the
+/// runs stubbed to make one record each ([`stub_run`]); returns the
+/// stream and the number of records it makes.
+#[allow(clippy::too_many_lines)] // every list kind's stream
+fn fixup_stream(rng: &mut Rng, array: bool, count: u32, lists: u32, k: u32) -> (Vec<u8>, u32) {
+    let mut s = Vec::new();
+    let mut made = 0;
+    for _ in 0..lists {
+        // a nested list only with objects to fill
+        let kind = loop {
+            let k = rng.below(8);
+            if k != 1 || count > 0 {
+                break k;
+            }
+        };
+        let extra = [0u8, 0x08, 0x10, 0x20, 0x40, 0x78, 0x58, 0x80, 0xf8][rng.below(9) as usize];
+        // bits 0-2 are the kind (the flags drop bits 1 and 2)
+        let b = kind as u8 | extra;
+        s.push(b);
+        let flags = u32::from(b & !6) | 1 | if count == 1 { 2 } else { 0 };
+        let v = rng.next() >> rng.below(32);
+        s.extend(leb_bytes(rng, v));
+        let leb = |rng: &mut Rng, s: &mut Vec<u8>| {
+            let v = rng.below(300);
+            s.extend(leb_bytes(rng, v));
+        };
+        if !array && flags & 0x20 != 0 {
+            leb(rng, &mut s);
+        }
+        match kind {
+            0 | 4 | 6 => made += 1,
+            2 | 3 => {
+                // the array form reads `+8` (unless flag 8) and `+0xc` of
+                // each record the run made
+                if array {
+                    for _ in 0..k {
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                        leb(rng, &mut s);
+                    }
+                }
+                made += k;
+            }
+            5 => {
+                let c = rng.below(4);
+                s.extend(leb_bytes(rng, c));
+                for _ in 0..c {
+                    let reads = if array {
+                        u32::from(flags & 1 == 0)
+                            + u32::from(flags & 2 == 0)
+                            + u32::from(flags & 8 == 0)
+                            + 1
+                    } else {
+                        u32::from(flags & 1 == 0) + u32::from(flags & 2 == 0)
+                    };
+                    for _ in 0..reads {
+                        leb(rng, &mut s);
+                    }
+                }
+                made += c;
+            }
+            1 => {
+                // `count` sub-lists that make a record each, a reported one
+                // between them now and then
+                let mut left = count;
+                while left > 0 {
+                    let bad = rng.chance(6);
+                    // listed and except sub-lists make `k` records, the
+                    // others one: never past `count`
+                    let kind2 = if bad {
+                        [0u8, 1, 5, 7, 0x20][rng.below(5) as usize]
+                    } else if left >= k {
+                        [2u8, 3, 4, 6][rng.below(4) as usize]
+                    } else {
+                        [4u8, 6][rng.below(2) as usize]
+                    };
+                    s.push(kind2);
+                    if array {
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                        leb(rng, &mut s);
+                    } else {
+                        let mut more = true;
+                        if flags & 0x10 == 0 {
+                            let x = if rng.chance(2) { 0 } else { 1 + rng.below(9) };
+                            s.extend(leb_bytes(rng, x));
+                            more = x == 0;
+                        }
+                        if more {
+                            leb(rng, &mut s);
+                            if flags & 0x20 == 0 {
+                                leb(rng, &mut s);
+                            }
+                            if flags & 0x40 == 0 {
+                                leb(rng, &mut s);
+                            }
+                        }
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                    }
+                    if !bad {
+                        left -= if kind2 == 2 || kind2 == 3 { k } else { 1 };
+                    }
+                }
+                made += count;
+            }
+            _ => {}
+        }
+    }
+    s.extend([0; 16]);
+    (s, made)
+}
+
+/// `Fixup_UnpackList` and `Fixup_UnpackArrayList` over synthetic streams
+/// of every list kind and nested kind (the runs stubbed to make one
+/// record each, `Fixup_ReadRecord`, `Fixup_ReadLeb128` the original),
+/// one object or several; framed (the templates and the descriptor the
+/// runs log, compared after the call) with the output cursor in the
+/// caller's `records` slot (compared too). Not reached: the inline
+/// value read's null check (the cursor was just read through) and, in the
+/// array form, a null cursor before a nested list's `+0xc`.
+#[test]
+#[allow(clippy::too_many_lines)] // two unpackers, one stream generator
+fn fixup_unpack_lists_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0202);
+        for case in 0..80 {
+            for array in [false, true] {
+                t.reset();
+                let size = if array { 16 } else { 28 };
+                let count = [0, 1, 2, 3, rng.below(6)][rng.below(5) as usize];
+                let lists = 1 + rng.below(5);
+                let k = 1 + rng.below(2);
+                let (stream, made) = fixup_stream(&mut rng, array, count, lists, k);
+                let stream = t.alloc(&stream);
+                let cursor = t.words(&[stream]);
+                let records = t.zeros(((made + 2) * size) as usize);
+                let stubs: [(u32, u32); 5] = if array {
+                    [
+                        (fx::RUN_ALL16, 0),
+                        (fx::RUN_LISTED16, k),
+                        (fx::RUN_EXCEPT16, count.wrapping_sub(k)),
+                        (fx::RUN_BITMASK16, 0),
+                        (fx::RUN_ARITHMETIC16, 0),
+                    ]
+                } else {
+                    [
+                        (fx::RUN_ALL, 0),
+                        (fx::RUN_LISTED, k),
+                        (fx::RUN_EXCEPT, count.wrapping_sub(k)),
+                        (fx::RUN_BITMASK, 0),
+                        (fx::RUN_ARITHMETIC, 0),
+                    ]
+                };
+                for (j, (sym, ret)) in stubs.into_iter().enumerate() {
+                    // listed and except make `k` records and answer how many
+                    // follow; the others make one
+                    let (made, r) = if j == 1 || j == 2 {
+                        (k, ret)
+                    } else {
+                        (1, rng.next())
+                    };
+                    stub_run(t, sym, made * size, r);
+                }
+                t.stub(fx::READ_RECORD, true, 2, 2, rng.next());
+                t.stub(fx::PRINTF, false, 3, 0, rng.next());
+                let n = made;
+                let args = [cursor, records, n, count];
+                let slots = t.frame_ebp(4) + 8;
+                // the caller's records slot, which the runs advance
+                Mem::write(&mut t.b, slots + 4, records);
+                let (sym, low) = if array {
+                    (0x0060_a340u32, fx::ARRAY_FRAME)
+                } else {
+                    (0x0060_a750, fx::LIST_FRAME)
+                };
+                t.skip = 0x1c;
+                let what = format!("{sym:#x} #{case} count {count} lists {lists} made {made}");
+                t.check_framed(&what, sym, Conv::Cdecl, &args, low, |m, ebp| {
+                    if array {
+                        fx::unpack_array_list(m, ebp, cursor, records, slots + 4, n, count);
+                    } else {
+                        fx::unpack_list(m, ebp, cursor, records, slots + 4, n, count);
+                    }
+                    Out::None
+                });
+                t.skip = 0;
+                let x: u32 = Mem::read(&t.a, slots + 4);
+                let y: u32 = Mem::read(&t.b, slots + 4);
+                assert_eq!(x, y, "{what}: the records slot");
+            }
         }
     });
 }

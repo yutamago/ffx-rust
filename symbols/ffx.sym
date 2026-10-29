@@ -7718,8 +7718,8 @@
 0x006080e0 function Phyre_PFile_seek_006080e0 # thiscall(file; distance, method), ret 8: the virtual file +4 (0x0061ac30), else SetFilePointer(handle +0, distance, 0, method), 0 for INVALID_HANDLE_VALUE; name ours (M4 p6 batch 11)
 0x00608120 function Phyre_PSerialization_PStreamFileWin32_seek_00608120 # thiscall(file; offset) ret 4: VFile_fileSeek(entry +4; offset, 1) or SetFilePointer(handle, offset, 0, FILE_CURRENT); offset, or 0 when it returns -1; offset for handle -1 without an entry; tail-jumped to by 0x00576a70 and Phyre_PSerialization_PStreamReaderFile_seek_00576a80; name ours; ported ffx_pother_b::m5p_framework_input_sources/_streams (m5p framework-input b2)
 0x00608160 function Phyre_PSerialization_PStreamFileWin32_write_00608160 # thiscall(file; data, size) ret 8: al = 0 for an archive entry (+4); else WriteFile(handle, data, size, &local ebp-4, 0) == 1 in eax; tail-jumped to by 0x009f0900/0x009f0950; name ours; ported ffx_pother_b::m5p_framework_input_sources/_streams (m5p framework-input b2)
-0x0060a340 function Fixup_UnpackArrayList     # (cursor*, out, count, objects): array fixup groups, 16-byte records; same modes as Fixup_UnpackList
-0x0060a750 function Fixup_UnpackList          # (cursor*, out, fixup count, object count): one list's packed pointer fixup groups, modes 0-6; ported in ffx-phyre fixup.rs
+0x0060a340 function Fixup_UnpackArrayList     # (cursor*, out, count, objects): array fixup groups, 16-byte records; same modes as Fixup_UnpackList; ported ffx_system::m5a_fixup: cdecl(&cursor, records, n, count); frame ebp-0x44 (template -0x44, nested template -0x34, desc -0x24), the output cursor the caller's records slot; jump tables 0x0060a71c (kinds) and 0x0060a738 (nested kinds 2..6) (m5 system-a r3 b3)
+0x0060a750 function Fixup_UnpackList          # (cursor*, out, fixup count, object count): one list's packed pointer fixup groups, modes 0-6; ported in ffx-phyre fixup.rs; ported ffx_system::m5a_fixup: cdecl(&cursor, records, n, count); frame ebp-0x58 (nested template -0x58, template -0x3c, desc -0x20), the output cursor the caller's records slot; jump tables 0x0060ab0c and 0x0060ab28 (m5 system-a r3 b3)
 0x0060ab40 function IdentityU8_0060ab40 # cdecl(x) -> al = (u8)x, upper eax untouched; name ours
 0x0060ab50 function Identity_0060ab50 # cdecl(x) -> x (frame-pointer build); name ours
 0x0060ab60 function Identity_0060ab60 # cdecl(x) -> x (frame-pointer build); name ours
@@ -7776,14 +7776,14 @@
 0x0060c990 function TaggedTreeInsert_0060c990 # thiscall(head; node), ret 4: inserts node by u32 key +0xc (children +0/+4 = head, parent in +8 tagged with bit 0); returns an equal node or 0; callers 0x0060c740, 0x0060dfc0; name ours
 0x0060ca10 function Fixup_RunAll16            # Fixup_RunAll for 16-byte records
 0x0060ca70 function Fixup_RunAll              # thiscall({flags, objects}, callback, template, cursor*, out*): every object
-0x0060cac0 function Fixup_RunBitmask16        # Fixup_RunBitmask for 16-byte records
-0x0060cb70 function Fixup_RunBitmask          # bitmask of ceil(objects/8) bytes, skipped before the records are read
-0x0060cc20 function Fixup_RunExcept16         # Fixup_RunExcept for 16-byte records
-0x0060cd50 function Fixup_RunExcept           # count, then excluded indices (byte if objects < 256, else LEB128); returns the count
-0x0060ce70 function Fixup_RunListed16         # Fixup_RunListed for 16-byte records
-0x0060cf40 function Fixup_RunListed           # count, then included indices; returns the count
-0x0060d000 function Fixup_RunArithmetic16     # Fixup_RunArithmetic for 16-byte records
-0x0060d080 function Fixup_RunArithmetic       # start, step, count (LEB128)
+0x0060cac0 function Fixup_RunBitmask16        # Fixup_RunBitmask for 16-byte records; ported ffx_system::m5a_fixup: thiscall(desc; cb, tmpl, &cursor, &out) ret 0x10, N bits at the cursor (moved past ceil(N/8) bytes first), a 16-byte record and cb(rec, i, &cursor, desc+0) per set bit (m5 system-a r3 b3)
+0x0060cb70 function Fixup_RunBitmask          # bitmask of ceil(objects/8) bytes, skipped before the records are read; ported ffx_system::m5a_fixup: the 28-byte form of Fixup_RunBitmask16 (m5 system-a r3 b3)
+0x0060cc20 function Fixup_RunExcept16         # Fixup_RunExcept for 16-byte records; ported ffx_system::m5a_fixup: LEB count of excluded indices (a byte each while desc+4 < 0x100, else LEB128), records for the indices between, then up to N; eax the count (m5 system-a r3 b3)
+0x0060cd50 function Fixup_RunExcept           # count, then excluded indices (byte if objects < 256, else LEB128); returns the count; ported ffx_system::m5a_fixup: the 28-byte form of Fixup_RunExcept16 (m5 system-a r3 b3)
+0x0060ce70 function Fixup_RunListed16         # Fixup_RunListed for 16-byte records; ported ffx_system::m5a_fixup: LEB count, then that many indices (byte / LEB128 as N), a record each; eax the count; the cursor's argument slot is LEB scratch (m5 system-a r3 b3)
+0x0060cf40 function Fixup_RunListed           # count, then included indices; returns the count; ported ffx_system::m5a_fixup: the 28-byte form of Fixup_RunListed16 (m5 system-a r3 b3)
+0x0060d000 function Fixup_RunArithmetic16     # Fixup_RunArithmetic for 16-byte records; ported ffx_system::m5a_fixup: LEB start, step, count; a record per index of the progression; eax the last callback's (0 for none) (m5 system-a r3 b3)
+0x0060d080 function Fixup_RunArithmetic       # start, step, count (LEB128); ported ffx_system::m5a_fixup: the 28-byte form of Fixup_RunArithmetic16 (m5 system-a r3 b3)
 0x0060dac0 function Cluster_UnpackArrayFixups # (out {_, records}, cursor*, lists, pointer_arrays): Fixup_UnpackArrayList per list with header +0x18 (arrays) or +0x20 (pointer arrays)
 0x0060db20 function Cluster_UnpackPointerFixups # (out {_, records}, cursor*, lists {count, headers}): 28-byte records; Fixup_UnpackList per list (header +0x1c fixups, +4 objects)
 0x0060e730 function Fixup_ReadRecord          # thiscall(record; cursor*, flags), ret 8: LEB128 words into record word 6 (v-1, -1 for 0; unless flag 0x10), and when that is 0 or skipped words 2, 3 (unless 0x20), 4 (unless 0x40); word 5 unless 0x08
