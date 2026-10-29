@@ -498,6 +498,29 @@ def expr_width1(e, consts):
     return None
 
 
+def closure_end(f, k):
+    """The end of the closure body starting at `k` (just after the closing
+    `|`): a block's `}`, else the `,` `;` or unmatched bracket ending the
+    expression."""
+    code = f.code
+    m = re.match(r'\s*(?:->\s*[^{]*?)?\s*\{', code[k:k + 200])
+    if m:
+        q = f.match(k + m.end() - 1)
+        return q if q >= 0 else len(code)
+    j = k
+    while j < len(code):
+        c = code[j]
+        if c in '([{':
+            q = f.match(j)
+            if q < 0:
+                return len(code)
+            j = q
+        elif c in ',;)]}':
+            return j
+        j += 1
+    return j
+
+
 def closure_param(f, fn, name, off):
     """(closure's `let` name or None, index of `name` among its parameters)
     when `name` is a parameter of a closure around `off`."""
@@ -515,6 +538,11 @@ def closure_param(f, fn, name, off):
         if not all(re.fullmatch(r'\w+|\(.*\)|\[.*\]', x) for x in params):
             continue
         if name in params:
+            # only a closure whose body holds `off`: a closure that ended
+            # earlier (`let rotate = |mem, f, n| ..;` and a later `let f`)
+            # does not bind the name there
+            if closure_end(f, lo + m.start() + len(m.group(1)) + 2) < off:
+                continue
             before = body[:m.start()]
             lm = re.search(r'\blet\s+(?:mut\s+)?(\w+)\s*=\s*(move\s+)?$', before)
             return (lm.group(1) if lm else None, params.index(name), lo + m.start())
