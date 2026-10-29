@@ -1563,3 +1563,64 @@ fn statics_children_sparkles() {
     t.set_u32(op(&t, f, 0x55) + 4, 0x0257_0001);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn moves_and_static_leave() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x9310);
+    let m = SCRATCH + 0x100;
+    for i in 0..0x1c {
+        t.set_u32(m + 4 * i, (0.5f32 * i as f32 - 3.0).to_bits());
+    }
+    t.set_u32(m + 0x68, 0xffff_fff6);
+    let c = Call {
+        eax: 0x00ea_0000,
+        ecx: m,
+        ..Call::default()
+    }
+    .with_xmm(&[
+        Xmm::F32(0),
+        Xmm::F32(0),
+        Xmm::F32(1.25f32.to_bits()),
+        Xmm::F32(f32::NAN.to_bits()),
+    ]);
+    t.check(f, c, &[], Eax::Checked, s4_small::move_setup);
+    let f = t.at(0x96e0);
+    recs(&mut t, &[(846, 1)]);
+    let parent = SCRATCH + 0x400;
+    let (a, b) = (SCRATCH + 0x500, SCRATCH + 0x600);
+    for (p, prev, next) in [
+        (0u32, a, b),
+        (parent, a, b),
+        (parent, parent, b),
+        (parent, a, parent),
+    ] {
+        t.write(parent, &[0x11; 0x20]);
+        t.write(a, &[0x22; 0x10]);
+        t.write(b, &[0x33; 0x10]);
+        t.set_u32(op(&t, f, 0x2), p);
+        t.set_u32(op(&t, f, 0x15), prev);
+        t.set_u32(op(&t, f, 0x1a), next);
+        t.check_entry(f, Call::default(), &[0x0846_0001], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(42) else { return };
+    let f = t.at(0x82f0);
+    let node = SCRATCH + 0x100;
+    for empty in [true, false] {
+        t.write(node, &[0x66; 0x40]);
+        t.write(SCRATCH + 0x300, &[0x77; 0x10]);
+        let parent = op(&t, f, 0x31);
+        t.set_u32(
+            op(&t, f, 0x2c),
+            if empty { parent } else { SCRATCH + 0x300 },
+        );
+        t.check(
+            f,
+            Call::this(node),
+            &[0xa, 0xb, 0xc, 0xd],
+            Eax::Checked,
+            s4_small::link_node_ad,
+        );
+    }
+}

@@ -1088,6 +1088,7 @@ ports! {
     "static node link (b)" => s4_small::STATIC_NODE_LINK_B, s4_small::static_node_link_b;
     "sparkle reset" => s4_small::SPARKLE_RESET, s4_small::sparkle_reset;
     "handle 0x3016" => s4_small::HANDLE_3016, s4_small::handle_3016;
+    "static leave, slot 846" => s4_small::STATIC_LEAVE_846, s4_small::static_leave_846;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
@@ -1451,6 +1452,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("two vectors", &s4_small::TWO_VECTORS),
     ("state reset", &s4_small::STATE_RESET),
     ("child node", &s4_small::CHILD_NODE),
+    ("move set-up", &s4_small::MOVE_SETUP),
+    ("link node, a d", &s4_small::LINK_NODE_AD),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

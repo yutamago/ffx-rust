@@ -3535,3 +3535,129 @@ pub const HANDLE_3016: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A move's set-up (internal, `ecx` = the move, `xmm2`, `xmm3`): flag bit
+/// 1 of `+0x68` cleared, `+0x4c` = `xmm2`, `+0x54` = `xmm3`, the deltas
+/// `+0x3c..+0x48` = `+0x2c..+0x38` minus `+0x1c..+0x28` and `+0x64` =
+/// `+0x60 - +0x5c`, flag bit 0 set, `+0x58` and `+0x50` 0. Returns the
+/// last delta in `xmm0`, `eax` as it came.
+///
+/// `magic_0070` 0x10009310 (108 bytes; 3 DLLs).
+pub fn move_setup<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let m = fr.ecx;
+    let at = |o: u32| m.wrapping_add(o);
+    let fl = |g: &G, o: u32| f32::from_bits(g.read::<u32>(m.wrapping_add(o)));
+    let flags = g.read::<u32>(at(0x68));
+    g.write::<u32>(at(0x68), flags & !2);
+    g.write::<u32>(at(0x4c), fr.xmm_f32(2).to_bits());
+    g.write::<u32>(at(0x54), fr.xmm_f32(3).to_bits());
+    for i in 0..4 {
+        let d = crate::sb_sse::sub(fl(g, 0x2c + 4 * i), fl(g, 0x1c + 4 * i));
+        g.write::<u32>(at(0x3c + 4 * i), d.to_bits());
+    }
+    let d = crate::sb_sse::sub(fl(g, 0x60), fl(g, 0x5c));
+    let flags = g.read::<u32>(at(0x68));
+    g.write::<u32>(at(0x68), flags | 1);
+    g.write::<u32>(at(0x58), 0);
+    g.write::<u32>(at(0x50), 0);
+    g.write::<u32>(at(0x64), d.to_bits());
+    Ret::xmm0(crate::Xmm::F32(d.to_bits()), fr.eax)
+}
+
+/// [`move_setup`].
+pub const MOVE_SETUP: Sig = Sig {
+    len: 108,
+    hash: 0x4581_107b_7979_518e,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's static node (`G_NODE`'s parent, operand `+0x2`) loses it:
+/// when there is a parent, its count `u16 +0x18` drops and the node's
+/// neighbours (`G_PREV`, `G_NEXT`) are joined (the parent's `+0x10` or
+/// `+0xc` when the neighbour is the parent itself); the node's links go
+/// back to itself and `G_NODE` 0; then a tail jump to slot 846 (no
+/// arguments).
+///
+/// `magic_0070` 0x100096e0 (108 bytes; 2 DLLs).
+pub fn static_leave_846<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let parent = g.read::<u32>(op(img, f, 0x2));
+    if parent != 0 {
+        let c = g
+            .read::<u16>(parent.wrapping_add(0x18))
+            .wrapping_add(0xffff);
+        g.write::<u16>(parent.wrapping_add(0x18), c);
+        let (prev, next) = (
+            g.read::<u32>(op(img, f, 0x15)),
+            g.read::<u32>(op(img, f, 0x1a)),
+        );
+        g.write::<u32>(
+            if prev == parent {
+                parent.wrapping_add(0x10)
+            } else {
+                prev.wrapping_add(8)
+            },
+            next,
+        );
+        let (next, prev) = (
+            g.read::<u32>(op(img, f, 0x2c)),
+            g.read::<u32>(op(img, f, 0x31)),
+        );
+        g.write::<u32>(
+            if next == parent {
+                parent.wrapping_add(0xc)
+            } else {
+                next.wrapping_add(4)
+            },
+            prev,
+        );
+        g.write::<u32>(op(img, f, 0x43), op(img, f, 0x47));
+        g.write::<u32>(op(img, f, 0x4d), op(img, f, 0x51));
+        g.write::<u32>(op(img, f, 0x57), 0);
+    }
+    Ret::jump(slot_target(g, op(img, f, 0x60), 846))
+}
+
+/// [`static_leave_846`].
+pub const STATIC_LEAVE_846: Sig = Sig {
+    len: 108,
+    hash: 0x4d09_27d8_4dde_d6b2,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node with its handler table (operand `+0x5`) put last in the DLL's
+/// list ([`link_last`]), `+0x20` = a, `+0x30..+0x35` 0, `+0x1c` the
+/// code's word (operand `+0x64`), `+0x38` = d (internal, `ecx` = the
+/// node, cdecl `(a, b, c, d)`). Returns d.
+///
+/// `magic_0042` 0x100082f0 (109 bytes; 3 DLLs).
+pub fn link_node_ad<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let (f, n) = (fr.at, fr.ecx);
+    g.write::<u32>(n, op(img, f, 0x5));
+    let o = LinkOps {
+        parent: (0x18, 0x1f),
+        last: (0x24, 0x2c),
+        empty: 0x31,
+        first: 0x39,
+        count: 0x45,
+        tail: 0x4e,
+    };
+    link_last(g, img, f, n, &o);
+    g.write::<u32>(n.wrapping_add(0x20), fr.arg(g, 0));
+    g.write::<u32>(n.wrapping_add(0x32), 0);
+    g.write::<u16>(n.wrapping_add(0x30), 0);
+    let d = fr.arg(g, 3);
+    g.write::<u32>(n.wrapping_add(0x1c), op(img, f, 0x64));
+    g.write::<u32>(n.wrapping_add(0x38), d);
+    Ret::eax(d)
+}
+
+/// [`link_node_ad`].
+pub const LINK_NODE_AD: Sig = Sig {
+    len: 109,
+    hash: 0x720f_d8e8_d6db_5c42,
+    calls: &[],
+    imports: &[],
+};
