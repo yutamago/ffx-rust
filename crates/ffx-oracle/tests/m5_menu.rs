@@ -33,6 +33,7 @@ use ffx_menu::m5m_e::bridge as me;
 use ffx_menu::m5m_f::bridge as mf;
 use ffx_menu::m5m_g::bridge as mg;
 use ffx_menu::m5m_h::bridge as mh;
+use ffx_menu::m5m_i::bridge as mi;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -108,6 +109,17 @@ impl Host for G<'_> {
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f32().expect("the callee leaves ST0 set")
+    }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f64().expect("the callee leaves ST0 set")
     }
     fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
         ffx_oracle::check_width(
@@ -2905,6 +2917,255 @@ fn r3_menu_screen_steps_match_the_original() {
                 t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &[], |m| {
                     Out::U32(step(m))
                 });
+            }
+        }
+    });
+}
+
+// ---- round 3, batch 2 (ffx_menu::m5m_i) ----
+
+#[test]
+fn r3b2_jump_thunks_match_the_original() {
+    type Bridge = fn(&mut G, &[u32]) -> u32;
+    let list: &[(u32, u32, u32, Bridge)] = &[
+        (0x008c_a470, mi::TK_SND_UPDATE, 0, |m, _| {
+            mi::tk_snd_update_thunk(m)
+        }),
+        (0x008c_c1a0, mi::SUMMON_INIT, 0, |m, _| {
+            mi::summon_init_thunk(m)
+        }),
+        (0x008c_f820, mi::WEAPON_INIT, 0, |m, _| {
+            mi::weapon_init_thunk(m)
+        }),
+        (0x008d_0a10, mi::LIMIT_INIT, 0, |m, _| {
+            mi::limit_init_thunk(m)
+        }),
+        (0x008d_55d0, mi::KAIZOU_INIT, 0, |m, _| {
+            mi::kaizou_init_thunk(m)
+        }),
+        (0x008d_d460, mh::TO_DRAW_SCISSOR_XYWH, 4, |m, a| {
+            mi::menu_draw_scissor_rect(m, a[0], a[1], a[2], a[3])
+        }),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0001);
+        for &(thunk, target, n, bridge) in list {
+            for i in 0..3 {
+                t.reset();
+                let ret = rng.word();
+                t.stub(target, false, n, 0, ret);
+                let args: Vec<u32> = (0..n).map(|_| rng.word()).collect();
+                let what = format!("thunk {thunk:#x} #{i}");
+                t.check(&what, thunk, Conv::Cdecl, &args, |m| {
+                    Out::U32(bridge(m, &args))
+                });
+            }
+        }
+        t.reset();
+        t.check("0x008dde90", 0x008d_de90, Conv::Cdecl, &[], |m| {
+            Out::U32(mi::vibrate_curve_008dde90(m))
+        });
+        for old in [0, 1, 0xdead_0001] {
+            t.g32(0x025d_16bc, old);
+            t.check("0x008db7d0", 0x008d_b7d0, Conv::Cdecl, &[], |m| {
+                mi::tuto_clear(m);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn r3b2_menu_screen_steps_match_the_original() {
+    type Step = fn(&mut G) -> u32;
+    let steps: &[(u32, Step)] = &[
+        (0x008c_b350, |m| mi::config_open(m)),
+        (0x008c_c300, |m| mi::summon_close(m)),
+        (0x008c_f910, |m| mi::weapon_stop_scenes(m)),
+        (0x008d_09b0, |m| mi::limit_draw(m)),
+        (0x008d_0c70, |m| mi::limit_close(m)),
+        (0x008d_1d30, |m| mi::status_open(m)),
+        (0x008d_1dd0, |m| mi::status_close(m)),
+        (0x008d_55c0, |m| mi::draw_sync_only(m)),
+        (0x008d_5650, |m| mi::kaizou_close(m)),
+        (0x008d_7560, |m| mh::draw_empty_screen(m)),
+        (0x008d_7580, |m| mi::shop_get_pos(m)),
+        (0x008d_75b0, |m| mi::wshop_close(m)),
+        (0x008d_9aa0, |m| mh::draw_empty_screen(m)),
+        (0x008d_9ac0, |m| mi::shop_get_pos(m)),
+        (0x008d_9ae0, |m| mi::wshop_close3(m)),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0002);
+        for i in 0..8 {
+            t.reset();
+            let ret = rng.word();
+            let who = rng.below(8);
+            let lang = [0, 1, 0xb][i % 3];
+            let layout = [1, 0, 2, 1][i % 4];
+            t.stubs(&[
+                (mi::TO_GET_FFX_LANG_JMP, false, 0, 0, lang),
+                (mi::GET_U32_023CBEB0, false, 0, 0, layout),
+                (mi::CONFIG_OPEN, false, 0, 0, ret),
+                (mh::TK_MENU_CLOSE_SUB_CMD_WINDOW, false, 0, 0, 0x81),
+                (mi::TK_MENU_SUMMON_CLOSE_WINDOW, false, 0, 0, ret ^ 1),
+                (mi::TK_MN2_SEQ_STOP_SCENE, false, 1, 0, ret ^ 2),
+                (mh::TK_MENU_GET_CURRENT_PLAYER, false, 0, 0, who),
+                (mh::TK_MENU_DRAW_KICK, false, 0, 0, 0x82),
+                (mh::TK_VU1_SYNC_PATH_THUNK, false, 0, 0, 0x83),
+                (mh::TK_MN2_DRAW_INIT_PACKET, false, 0, 0, 0x84),
+                (mh::TO_DRAW_MENU_BG, false, 0, 0, 0x85),
+                (mi::MENU_DRAW_DIVIDER_SHAPES, false, 1, 0, 0x86),
+                (mh::TO_MENU_DRAW_CHR_STATUS_PLATE, false, 3, 0, 0x87),
+                (mi::DRAW_LIMIT_PAGE_OVER_DRIVE, false, 1, 0, 0x88),
+                (mh::TK_MN2_DRAW_KICK_SYNC_PACKET, false, 0, 0, ret ^ 3),
+                (mi::TK_MENU_LIMIT_CLOSE_WINDOW, false, 0, 0, 0x89),
+                (mi::TK_MENU_LIMIT_CLOSE_WINDOW2, false, 0, 0, ret ^ 4),
+                (mi::TK_MN2_GET_STATUS_POS, false, 0, 0, ret ^ 5),
+                (mi::MENU_STATUS_CLOSE_WINDOW, false, 1, 0, 0x8a),
+                (mi::TK_MN2_INIT_STATUS_BG, false, 0, 0, ret ^ 6),
+                (mi::TK_MS_SET_SAVE_PARAM_ALL, false, 0, 0, 0x8b),
+                (mi::TK_MENU_KAIZOU_CLOSE_WINDOW, false, 0, 0, 0x8c),
+                (mi::ATEL_REGIST_CALLBACK_QUE2, false, 3, 0, ret ^ 7),
+                (mh::TK_MN2_GET_ISHOP_POS, false, 0, 0, 0x8d),
+                (mh::TK_MN2_GET_WSHOP_POS, false, 0, 0, 0x8e),
+                (mi::MENU_WSHOP_CLOSE_SUB_WINDOW4, false, 0, 0, 0x8f),
+                (mi::TK_MENU_WSHOP_CLOSE_WINDOW3, false, 0, 0, 0x90),
+            ]);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_X2, 1, 2.75 * i as f32);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_Y2, 1, 0.5 - i as f32);
+            let restart = [0, 1, 2, 0xffff_ffff, 7][i % 5];
+            t.g32(0x0186_a5fc, restart);
+            for k in 0..6 {
+                t.g32(0x0186_a820 + 4 * k, rng.word());
+            }
+            t.g32(0x0186_a448, rng.word());
+            t.g32(0x0186_a44c, rng.word());
+            for &(sym, step) in steps {
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(step(m))
+                });
+            }
+        }
+    });
+}
+
+/// The x87 row and cursor drawers: the remaps stubbed with awkward
+/// floats (so every product and sum rounds), both `ftol` paths
+/// (`__sse2_available` 0 and 1), rows in and out of range, the row table
+/// random.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r3b2_menu_row_drawers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e3b_0003);
+        for i in 0..48u32 {
+            t.reset();
+            let ret = rng.word();
+            t.stubs(&[
+                (mi::TK_MN2_DRAW_CROSS_CMD_CURSOR, false, 3, 0, ret),
+                (mi::TK_MN2_DRAW_CROSS_CURSOR, false, 3, 0, ret ^ 1),
+                (mi::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x81),
+                (mi::TO_DRAW_CROSS_MENU_ICON_COMMAND_NAME, false, 4, 0, 0x82),
+                (mi::TO_DRAW_CROSS_MENU_ICON_ABILITY_NAME, false, 4, 0, 0x83),
+            ]);
+            let big = if i % 11 == 10 { 3.0e9 } else { 1.0 };
+            let rx = (rng.below(2000) as f32 - 300.0) / 7.0 * big;
+            let ry = (rng.below(1200) as f32 - 100.0) / 3.0;
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_X2, 1, rx);
+            t.stub_float_logged(mh::GRAPHIC_UI_REMAP_Y2, 1, ry);
+            t.g32(0x0193_ed20, i % 2);
+            let w = t.zeros(0x60);
+            let rows = rng.below(14) as u16;
+            t.write(w + 0x30, &rows.to_le_bytes());
+            for off in [0x32, 0x46, 0x48] {
+                let v = (rng.next() as i16) >> (rng.below(12) as i16);
+                t.write(w + off, &v.to_le_bytes());
+            }
+            let table: Vec<u8> = (0..0x40)
+                .map(|k| match rng.below(4) {
+                    0 => 0,
+                    1 => [4u8, 0xb, 0xff][k % 3],
+                    _ => rng.next() as u8,
+                })
+                .collect();
+            let at = t.rebase(mi::ROW_TABLE);
+            t.write(at, &table);
+            // past 2^24 some integers don't fit an f32 (fild/fstp rounds)
+            let wide = |r: &mut Rng| match r.below(3) {
+                0 => r.next() | 0x0100_0001,
+                _ => (r.next() % 2000).wrapping_sub(500),
+            };
+            let x = wide(&mut rng);
+            let y = wide(&mut rng);
+            for sym in [0x008d_5df0, 0x008d_65f0] {
+                t.check(
+                    &format!("{sym:#x} #{i}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[w, x, y],
+                    |m| Out::U32(mi::row_cursor(m, w, x, y)),
+                );
+            }
+            t.check(
+                &format!("0x008c9940 #{i}"),
+                0x008c_9940,
+                Conv::Cdecl,
+                &[w, x, y],
+                |m| Out::U32(mi::list_cursor(m, w, x, y)),
+            );
+            t.check(
+                &format!("0x008cda20 #{i}"),
+                0x008c_da20,
+                Conv::Cdecl,
+                &[w, x, y],
+                |m| Out::U32(mi::summon_cursor(m, w)),
+            );
+            let fx = ((rng.below(4000) as f32 - 1000.0) / 9.0).to_bits();
+            let fy = ((rng.below(4000) as f32 - 1000.0) / 13.0).to_bits();
+            let row = [0, 1, 5, 13, 0xffff_ffff, rng.below(16)][i as usize % 6];
+            let fixed = i / 2 % 2;
+            for (sym, which) in [
+                (0x008c_dab0, mi::Rows::Summon),
+                (0x008d_5e60, mi::Rows::Kaizou),
+            ] {
+                let args = [w, fx, fy, row, fixed];
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &args, |m| {
+                    mi::row_draw(m, which, w, fx, fy, row, fixed);
+                    Out::None
+                });
+            }
+            // the lists: their row drawers run as they are, then stubbed
+            let b = rng.below(6);
+            for stub_rows in [false, true] {
+                if stub_rows {
+                    t.stubs(&[
+                        (mi::SUMMON_ROW_DRAW, false, 5, 0, 0x84),
+                        (mi::KAIZOU_ROW_DRAW, false, 5, 0, 0x85),
+                    ]);
+                }
+                let s = [w, fixed, b, fx, fy];
+                t.check(
+                    &format!("0x008cd990 #{i}"),
+                    0x008c_d990,
+                    Conv::Cdecl,
+                    &s,
+                    |m| {
+                        mi::list_draw(m, mi::Rows::Summon, w, fixed, b, fx, fy);
+                        Out::None
+                    },
+                );
+                let k = [w, fixed, b, x, y];
+                t.check(
+                    &format!("0x008d5d50 #{i}"),
+                    0x008d_5d50,
+                    Conv::Cdecl,
+                    &k,
+                    |m| {
+                        mi::list_draw(m, mi::Rows::Kaizou, w, fixed, b, x, y);
+                        Out::None
+                    },
+                );
             }
         }
     });

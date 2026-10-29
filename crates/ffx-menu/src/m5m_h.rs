@@ -480,7 +480,7 @@ pub mod bridge {
     /// `TOMenuDrawChrStatusPlate(who, remapX2(f32 0x00b5ef1c),
     /// remapY2(f32 y))`: the remaps run Y first, as the original does;
     /// each result is stored as `f32` (`fstp dword`).
-    fn status_plate(h: &mut impl Host, who: u32, y: u32) -> u32 {
+    pub fn status_plate(h: &mut impl Host, who: u32, y: u32) -> u32 {
         let y: u32 = h.read(h.rebase(y));
         let y = h.call_sym_st0(GRAPHIC_UI_REMAP_Y2, Conv::Cdecl, &[y]);
         let x: u32 = h.read(h.rebase(ITEM_PLATE_X));

@@ -14,6 +14,7 @@ use ffx_menu::m5m_e::bridge as e;
 use ffx_menu::m5m_f::bridge as f;
 use ffx_menu::m5m_g::bridge as g;
 use ffx_menu::m5m_h::bridge as h;
+use ffx_menu::m5m_i::bridge as i;
 
 ported! {
     // ---- batch 1 (ffx_menu::m5m_a) ----
@@ -635,5 +636,131 @@ ported! {
     /// `code_008c64f0()`.
     code_008c64f0 @ 0x008c_64f0 => extern "C" fn shop_open_rect() -> u32 {
         h::shop_open_rect(&mut mem())
+    }
+    // ---- round 3, batch 2 (ffx_menu::m5m_i) ----
+    /// `jmp TkSndUpdate`.
+    TkSndUpdate_thunk_008ca470 @ 0x008c_a470 => extern "C" fn tk_snd_update_thunk() -> u32 {
+        i::tk_snd_update_thunk(&mut mem())
+    }
+    /// `code_008cb350()`: the config screen's open.
+    code_008cb350 @ 0x008c_b350 => extern "C" fn config_open() -> u32 {
+        i::config_open(&mut mem())
+    }
+    /// `code_008cc1a0()`: `jmp 0x008ceef0`.
+    code_008cc1a0 @ 0x008c_c1a0 => extern "C" fn summon_init_thunk() -> u32 {
+        i::summon_init_thunk(&mut mem())
+    }
+    /// `code_008cc300()`.
+    code_008cc300 @ 0x008c_c300 => extern "C" fn summon_close() -> u32 {
+        i::summon_close(&mut mem())
+    }
+    /// `code_008cf820()`: `jmp 0x008cfc40`.
+    code_008cf820 @ 0x008c_f820 => extern "C" fn weapon_init_thunk() -> u32 {
+        i::weapon_init_thunk(&mut mem())
+    }
+    /// `code_008cf910()`.
+    code_008cf910 @ 0x008c_f910 => extern "C" fn weapon_stop_scenes() -> u32 {
+        i::weapon_stop_scenes(&mut mem())
+    }
+    /// `code_008d09b0()`: the limit screen's draw.
+    code_008d09b0 @ 0x008d_09b0 => extern "C" fn limit_draw() -> u32 {
+        i::limit_draw(&mut mem())
+    }
+    /// `code_008d0a10()`: `jmp 0x008d0cd0`.
+    code_008d0a10 @ 0x008d_0a10 => extern "C" fn limit_init_thunk() -> u32 {
+        i::limit_init_thunk(&mut mem())
+    }
+    /// `code_008d0c70()`.
+    code_008d0c70 @ 0x008d_0c70 => extern "C" fn limit_close() -> u32 {
+        i::limit_close(&mut mem())
+    }
+    /// `code_008d1d30()`.
+    code_008d1d30 @ 0x008d_1d30 => extern "C" fn status_open() -> u32 {
+        i::status_open(&mut mem())
+    }
+    /// `code_008d1dd0()`.
+    code_008d1dd0 @ 0x008d_1dd0 => extern "C" fn status_close() -> u32 {
+        i::status_close(&mut mem())
+    }
+    /// `code_008d55c0()`.
+    code_008d55c0 @ 0x008d_55c0 => extern "C" fn draw_sync_only() -> u32 {
+        i::draw_sync_only(&mut mem())
+    }
+    /// `code_008d55d0()`: `jmp 0x008d6be0`.
+    code_008d55d0 @ 0x008d_55d0 => extern "C" fn kaizou_init_thunk() -> u32 {
+        i::kaizou_init_thunk(&mut mem())
+    }
+    /// `code_008d5650()`.
+    code_008d5650 @ 0x008d_5650 => extern "C" fn kaizou_close() -> u32 {
+        i::kaizou_close(&mut mem())
+    }
+    /// `code_008d7560()`.
+    code_008d7560 @ 0x008d_7560 => extern "C" fn draw_empty_screen_008d7560() -> u32 {
+        h::draw_empty_screen(&mut mem())
+    }
+    /// `code_008d7580()`.
+    code_008d7580 @ 0x008d_7580 => extern "C" fn shop_get_pos_008d7580() -> u32 {
+        i::shop_get_pos(&mut mem())
+    }
+    /// `code_008d75b0()`.
+    code_008d75b0 @ 0x008d_75b0 => extern "C" fn wshop_close() -> u32 {
+        i::wshop_close(&mut mem())
+    }
+    /// `code_008d9aa0()`.
+    code_008d9aa0 @ 0x008d_9aa0 => extern "C" fn draw_empty_screen_008d9aa0() -> u32 {
+        h::draw_empty_screen(&mut mem())
+    }
+    /// `code_008d9ac0()`.
+    code_008d9ac0 @ 0x008d_9ac0 => extern "C" fn shop_get_pos_008d9ac0() -> u32 {
+        i::shop_get_pos(&mut mem())
+    }
+    /// `code_008d9ae0()`.
+    code_008d9ae0 @ 0x008d_9ae0 => extern "C" fn wshop_close3() -> u32 {
+        i::wshop_close3(&mut mem())
+    }
+    /// `code_008db7d0()`: `g_TkMenuTutoChosen` = 0.
+    code_008db7d0 @ 0x008d_b7d0 => extern "C" fn tuto_clear() {
+        i::tuto_clear(&mut mem());
+    }
+    /// `TkMenuDrawScissorRect(x, y, w, h)`: `jmp TODrawScissorXYWH`.
+    TkMenuDrawScissorRect @ 0x008d_d460 => extern "C" fn tk_menu_draw_scissor_rect(x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        i::menu_draw_scissor_rect(&mut mem(), x, y, w, hh)
+    }
+    /// `code_008dde90()`: the image address `0x00b5f46c`.
+    TkVibrateCurve_get_008dde90 @ 0x008d_de90 => extern "C" fn vibrate_curve_008dde90() -> u32 {
+        i::vibrate_curve_008dde90(&mem())
+    }
+    /// `(w, x, y)`: the gear list's cursor.
+    MenuItem_DrawGearCursor_008c9940 @ 0x008c_9940 => extern "C" fn menu_item_draw_gear_cursor(w: u32, x: u32, y: u32) -> u32 {
+        i::list_cursor(&mut mem(), w, x, y)
+    }
+    /// `(w, x, y, row, fixed)`: one summon grow row.
+    MenuSummon_DrawGrowRow_008cdab0 @ 0x008c_dab0 => extern "C" fn menu_summon_draw_grow_row(w: u32, x: u32, y: u32, row: u32, fixed: u32) {
+        i::row_draw(&mut mem(), i::Rows::Summon, w, x, y, row, fixed);
+    }
+    /// `(w, a, b, dx, dy)`: the summon grow rows.
+    MenuSummon_DrawGrowRows_008cd990 @ 0x008c_d990 => extern "C" fn menu_summon_draw_grow_rows(w: u32, a: u32, b: u32, dx: u32, dy: u32) {
+        i::list_draw(&mut mem(), i::Rows::Summon, w, a, b, dx, dy);
+    }
+    /// `(w)`: the summon grow cursor (the callers' two other words are
+    /// only overwritten).
+    MenuSummon_DrawGrowCursor_008cda20 @ 0x008c_da20 => extern "C" fn menu_summon_draw_grow_cursor(w: u32) -> u32 {
+        i::summon_cursor(&mut mem(), w)
+    }
+    /// `(w, x, y, row, fixed)`: one customize row.
+    MenuKaizou_DrawRow_008d5e60 @ 0x008d_5e60 => extern "C" fn menu_kaizou_draw_row(w: u32, x: u32, y: u32, row: u32, fixed: u32) {
+        i::row_draw(&mut mem(), i::Rows::Kaizou, w, x, y, row, fixed);
+    }
+    /// `(w, a, b, dx, dy)`: the customize rows.
+    MenuKaizou_DrawRows_008d5d50 @ 0x008d_5d50 => extern "C" fn menu_kaizou_draw_rows(w: u32, a: u32, b: u32, dx: u32, dy: u32) {
+        i::list_draw(&mut mem(), i::Rows::Kaizou, w, a, b, dx, dy);
+    }
+    /// `(w, x, y)`: the customize list's cursor.
+    MenuKaizou_DrawCursor_008d5df0 @ 0x008d_5df0 => extern "C" fn menu_kaizou_draw_cursor_008d5df0(w: u32, x: u32, y: u32) -> u32 {
+        i::row_cursor(&mut mem(), w, x, y)
+    }
+    /// `(w, x, y)`: the customize screen's second cursor.
+    MenuKaizou_DrawCursor_008d65f0 @ 0x008d_65f0 => extern "C" fn menu_kaizou_draw_cursor_008d65f0(w: u32, x: u32, y: u32) -> u32 {
+        i::row_cursor(&mut mem(), w, x, y)
     }
 }
