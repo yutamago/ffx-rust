@@ -39,7 +39,12 @@ pub mod opu_parts;
 pub mod pe;
 pub mod runtime;
 
+pub mod m0170;
+pub mod m0187;
+pub mod m0194;
+pub mod m0196;
 pub mod m0604;
+pub mod pushes;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -409,6 +414,20 @@ ports! {
     "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+    "m0170 start-up" => m0170::START, m0170::start;
+    "m0187 wrapper 1000" => m0187::E1000, m0187::e1000;
+    "m0187 wrapper 1050" => m0187::E1050, m0187::e1050;
+    "m0187 wrapper 10a0" => m0187::E10A0, m0187::e10a0;
+    "m0187 wrapper 1210" => m0187::E1210, m0187::e1210;
+    "m0187 wrapper 1170" => m0187::E1170, m0187::e1170;
+    "m0187 wrapper 10f0" => m0187::E10F0, m0187::e10f0;
+    "m0187 wrapper 1420" => m0187::E1420, m0187::e1420;
+    "m0194 effect wrapper 1230" => m0194::E1230, m0194::e1230;
+    "m0196 effect wrapper 1040" => m0196::E1040, m0196::e1040;
+    "m0196 effect wrapper 1090" => m0196::E1090, m0196::e1090;
+    "m0196 effect wrapper 10f0" => m0196::E10F0, m0196::e10f0;
+    "m0196 effect wrapper 1140" => m0196::E1140, m0196::e1140;
+    "m0196 effect wrapper 11d0" => m0196::E11D0, m0196::e11d0;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
