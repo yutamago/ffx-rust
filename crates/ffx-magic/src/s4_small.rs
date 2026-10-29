@@ -3661,3 +3661,104 @@ pub const LINK_NODE_AD: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A key of a part's track (internal, `ecx` = the cursor: `+0x0` the
+/// track's owner, `+0x4` the output vector, `+0x8` the time): slot 941
+/// maps the owner's `+0x30` to the track (none: 0 returned); the key
+/// index is `time / step` (the owner's `+0x40` record's `+0x20`,
+/// `cvttss2si`), capped at the track's count (`+0x18`, a float,
+/// `cvttss2si`), where `+0xc` becomes 1 (else 0); the key's three words
+/// (48-byte keys from `+0x40`) go to the vector. Returns the key's third
+/// word.
+///
+/// `magic_0155` 0x10008060 (114 bytes; 4 DLLs).
+pub fn track_key<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let c = fr.ecx;
+    let owner = g.read::<u32>(c);
+    let step = g.read::<u32>(g.read::<u32>(owner.wrapping_add(0x40)).wrapping_add(0x20));
+    let time = f32::from_bits(g.read::<u32>(c.wrapping_add(8)));
+    let i = trunc(crate::sb_sse::div(time, f32::from_bits(step))).cast_signed();
+    let x = g.read::<u32>(owner.wrapping_add(0x30));
+    let track = slot_call(g, img, fr.at, (0x17, 941), &[x]).eax;
+    if track == 0 {
+        return Ret::eax(0);
+    }
+    let n = trunc(f32::from_bits(g.read::<u32>(track.wrapping_add(0x18)))).cast_signed();
+    let keys = track.wrapping_add(0x40);
+    let (k, end) = if i < n { (i, 0) } else { (n, 1) };
+    let key = keys.wrapping_add(k.cast_unsigned().wrapping_mul(0x30));
+    g.write::<u32>(c.wrapping_add(0xc), end);
+    let out = g.read::<u32>(c.wrapping_add(4));
+    let mut last = 0;
+    for j in 0..3 {
+        last = g.read::<u32>(key.wrapping_add(4 * j));
+        g.write::<u32>(out.wrapping_add(4 * j), last);
+    }
+    Ret::eax(last)
+}
+
+/// [`track_key`].
+pub const TRACK_KEY: Sig = Sig {
+    len: 114,
+    hash: 0x7051_a126_e362_5f73,
+    calls: &[],
+    imports: &[],
+};
+
+/// The light ranges of the model `*G` (operand `+0x8`): slot 357 `(m,
+/// -1, 0x3c00)`, slot 356 `(m, -1, 0x2ee0)`, slot 362 `(*G_H, m, 1, 0)`
+/// (operand `+0x43`), slots 357 and 356 `(m, -1, -1)`, each call seeing
+/// the words the earlier ones left (no arguments). Returns slot 356's
+/// `eax`.
+///
+/// `magic_0348` 0x10006790 (114 bytes; 2 DLLs).
+pub fn model_ranges<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let m = g.read::<u32>(op(img, f, 0x8));
+    let all = u32::MAX;
+    let mut words = vec![m, all, 0x3c00];
+    slot_call(g, img, f, (0x1, 357), &words);
+    words.splice(0..0, [m, all, 0x2ee0]);
+    slot_call(g, img, f, (0x1d, 356), &words);
+    let h = g.read::<u32>(op(img, f, 0x43));
+    words.splice(0..0, [h, m, 1, 0]);
+    slot_call(g, img, f, (0x32, 362), &words);
+    words.splice(0..0, [m, all, all]);
+    // call width: 13 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x4a, 357), &words);
+    words.splice(0..0, [m, all, all]);
+    // call width: 16 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0x5c, 356), &words))
+}
+
+/// [`model_ranges`].
+pub const MODEL_RANGES: Sig = Sig {
+    len: 114,
+    hash: 0x9284_7d9e_2fd2_15a4,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 933 `(1.0, 1.0, 1.0, 1.0)`, `G_A` 1.0 (operand `+0x47`), then
+/// slot 785 twice with the float `G_K` (operands `+0x38`, `+0x5f`) (no
+/// arguments). Returns the last slot's `eax`.
+///
+/// `magic_0390` 0x10001530 (114 bytes; 2 DLLs).
+pub fn colour_one<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let one = 0x3f80_0000;
+    slot_call(g, img, f, (0x1, 933), &[one; 4]);
+    let k = g.read::<u32>(op(img, f, 0x38));
+    g.write::<u32>(op(img, f, 0x47), one);
+    slot_call(g, img, f, (0x30, 785), &[k]);
+    let k = g.read::<u32>(op(img, f, 0x5f));
+    through(slot_call(g, img, f, (0x57, 785), &[k]))
+}
+
+/// [`colour_one`].
+pub const COLOUR_ONE: Sig = Sig {
+    len: 114,
+    hash: 0x764a_84ce_27b0_5351,
+    calls: &[],
+    imports: &[],
+};

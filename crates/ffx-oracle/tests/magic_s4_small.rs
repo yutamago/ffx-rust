@@ -1624,3 +1624,58 @@ fn moves_and_static_leave() {
         );
     }
 }
+
+#[test]
+fn tracks_ranges_colours() {
+    let Some(mut t) = twin(155) else { return };
+    let f = t.at(0x8060);
+    let (c, owner, rec, track, out) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x400,
+    );
+    let answer = SCRATCH + 0x90;
+    rec_941(&mut t, answer);
+    for i in 0..0x40 {
+        t.set_u32(track + 0x40 + 4 * i, 0x0100_0000 + i);
+    }
+    t.set_u32(track + 0x18, 4.0f32.to_bits());
+    t.set_u32(owner + 0x40, rec);
+    t.set_u32(rec + 0x20, 0.5f32.to_bits());
+    t.set_u32(owner + 0x30, 0x0941_0001);
+    for (time, there) in [
+        (0.0f32, true),
+        (1.2, true),
+        (2.0, true),
+        (9.0, true),
+        (f32::NAN, true),
+        (1.0, false),
+    ] {
+        t.write(c, &[0; 0x10]);
+        t.set_u32(c, owner);
+        t.set_u32(c + 4, out);
+        t.set_u32(c + 8, time.to_bits());
+        t.set_u32(answer, if there { track } else { 0 });
+        t.check(f, Call::this(c), &[], Eax::Checked, s4_small::track_key);
+    }
+    drop(t);
+    let Some(mut t) = twin(348) else { return };
+    recs(&mut t, &[(357, 3), (356, 6), (362, 10)]);
+    let f = t.at(0x6790);
+    t.set_u32(op(&t, f, 0x8), 0x0357_0001);
+    t.set_u32(op(&t, f, 0x43), 0x0362_0001);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(390) else { return };
+    recs(&mut t, &[(933, 4), (785, 1)]);
+    let f = t.at(0x1530);
+    t.set_u32(op(&t, f, 0x38), 0.75f32.to_bits());
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
+
+/// Slot 941 answering the word at `answer`.
+fn rec_941(t: &mut Twin, answer: u32) {
+    rec(t, 941, 1, move |m, _| m.r32(answer));
+}
