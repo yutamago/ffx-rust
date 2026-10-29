@@ -14,8 +14,9 @@ use crate::runtime::slot_target;
 use crate::s3_misc::append_task;
 use crate::s4_misc::{START_OBJECT_AT, start_object_at};
 use crate::sa_pool::{TAKE, take};
-use crate::sb_sse::{add, mul};
+use crate::sb_sse::{add, cvt, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
+use ffx_bridge::x87::cvttsd2si;
 
 /// [`start_object_at`] through the `rel32` at `f + call`: the object
 /// `obj`, the scale the operand `k` points at, the part `index` and the
@@ -1406,5 +1407,81 @@ pub const EFFECT_NODE_B: Sig = Sig {
     len: 63,
     hash: 0xc3da_433a_3544_8ec3,
     calls: &[(0x2e, Callee::Sig(&crate::sb_nodes::EFFECT_NODE))],
+    imports: &[],
+};
+
+/// A screen coordinate as the family computes it: `(n * K1 - K2 + K3)`
+/// truncated to an integer and back to a float (the operand offsets of
+/// `K1`, `K2`, `K3`).
+fn screen_coord<G: Game>(g: &G, img: &Image, f: u32, n: u32, [k1, k2, k3]: [u32; 3]) -> u32 {
+    let k = |o: u32| f32_at(g, img.word(f + o));
+    let x = add(sub(mul(cvt(n), k(k1)), k(k2)), k(k3));
+    cvt(cvttsd2si(f64::from(x))).to_bits()
+}
+
+/// Draws one glyph quad (internal, `ecx` = the glyph, `edx` = a row, the
+/// stack `(column, rows, columns, colour, alpha)`): slot 382 `(0, 0)`;
+/// the glyph's texture (slot 719 `(TEX, 2, glyph's id)`, a 64-bit handle)
+/// and its corners `u`/`v` from the DLL's glyph table (12 bytes each,
+/// operands `+0x27`, `+0x2e`, `+0x3c`); slots 810 (texture corner), 811
+/// (colour, the colour three times and the alpha) and 809 (screen
+/// corner) for the top-left and the bottom-right (the texture corner
+/// moved by `K5`/`K6`, operands `+0x166`/`+0x140`), the screen corners
+/// from the column and row (`(n << 4) + 0x72f8` and `+ 0x6ff8`,
+/// [`screen_coord`]); slot 812 `(handle, 1, 0)` draws. Returns slot
+/// 812's `eax`.
+///
+/// `magic_0565` 0x100020c0 (570 bytes; 10 DLLs).
+pub fn glyph_quad<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (glyph, row) = (fr.ecx, fr.edx);
+    let [col, rows, cols, colour, alpha] = [0, 1, 2, 3, 4].map(|i| fr.arg(g, i));
+    let t = slot_target(g, w(0x7), 382);
+    g.call(t, 0, &[0, 0]);
+    let e = glyph.wrapping_mul(12);
+    let u = g.read::<u32>(w(0x27).wrapping_add(e));
+    let id = g.read::<u32>(w(0x2e).wrapping_add(e));
+    let v = g.read::<u32>(w(0x3c).wrapping_add(e));
+    let t = slot_target(g, w(0x41), 719);
+    // slot 382's words stay below
+    let tex = g.call(t, 0, &[w(0x4e), 2, id, 0, 0]).eax;
+    let lo = g.read::<u32>(tex);
+    let hi = g.read::<u32>(tex + 4);
+    let t = slot_target(g, w(0x69), 810);
+    g.call(t, 0, &[u, v, 0]);
+    let t = slot_target(g, w(0x9a), 811);
+    g.call(t, 0, &[colour, colour, colour, alpha, 0]);
+    let x = screen_coord(g, img, f, col.wrapping_add(0x72f8), [0xc8, 0xd3, 0xdb]);
+    let y = screen_coord(
+        g,
+        img,
+        f,
+        (row << 4).wrapping_add(0x6ff8),
+        [0x106, 0x10e, 0x116],
+    );
+    let t = slot_target(g, w(0x123), 809);
+    g.call(t, 0, &[y, x, 0]);
+    let v2 = add(f32::from_bits(v), f32_at(g, w(0x140)));
+    let u2 = add(f32::from_bits(u), f32_at(g, w(0x166)));
+    let t = slot_target(g, w(0x14a), 810);
+    g.call(t, 0, &[u2.to_bits(), v2.to_bits(), 1]);
+    let t = slot_target(g, w(0x172), 811);
+    g.call(t, 0, &[colour, colour, colour, alpha, 1]);
+    let x = (cols << 4).wrapping_add(0x72f8).wrapping_add(col);
+    let x = screen_coord(g, img, f, x, [0x1a2, 0x1af, 0x1b7]);
+    let y = (rows.wrapping_add(row) << 4).wrapping_add(0x6ff8);
+    let y = screen_coord(g, img, f, y, [0x1e5, 0x1ed, 0x1f5]);
+    let t = slot_target(g, w(0x202), 809);
+    g.call(t, 0, &[y, x, 1]);
+    let t = slot_target(g, w(0x217), 812);
+    Ret::eax(g.call(t, 0, &[lo, hi, 1, 0]).eax)
+}
+
+/// [`glyph_quad`].
+pub const GLYPH_QUAD: Sig = Sig {
+    len: 570,
+    hash: 0xe2a5_7f52_c8a8_6145,
+    calls: &[],
     imports: &[],
 };

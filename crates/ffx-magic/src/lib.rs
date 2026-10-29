@@ -1254,6 +1254,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("sparks (0565)", &s4_fam446::SPARKS_B),
     ("sparks (0446, c)", &s4_fam446::SPARKS_C),
     ("sparks (0446, d)", &s4_fam446::SPARKS_D),
+    ("glyph quad", &s4_fam446::GLYPH_QUAD),
     ("actor point", &s4_misc::ACTOR_POINT),
     ("screen place", &s4_misc::SCREEN_PLACE),
     ("scale task", &s4_misc::SCALE_TASK),

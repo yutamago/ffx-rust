@@ -1718,3 +1718,40 @@ fn state_tasks() {
         }
     }
 }
+
+/// `magic_0565` 0x100020c0: glyph quads for a few glyphs, rows and
+/// columns.
+#[test]
+fn glyph_quad() {
+    let Some(mut t) = twin(565) else { return };
+    let f = t.at(0x20c0);
+    let tex = SCRATCH + 0x800;
+    t.set_u32(tex, 0x0123_4567);
+    t.set_u32(tex + 4, 0x89ab_cdef);
+    rec(&mut t, 719, 3, move |m, a| {
+        m.w32(SCRATCH + 0x810, a[2]);
+        tex
+    });
+    for (s, n) in [(382u32, 2usize), (810, 3), (811, 5), (809, 3), (812, 4)] {
+        rec(&mut t, s, 0, move |m, a| {
+            let words: Vec<u32> = a.iter().take(n).copied().collect();
+            log(m, &words);
+            s
+        });
+    }
+    for (glyph, row, args) in [
+        (0u32, 0u32, [0u32, 1, 1, 0x80, 0x40]),
+        (3, 2, [5, 2, 3, 0xff, 0x10]),
+        (7, 0xffff_fff0, [0xffff_ff00, 4, 0x10, 1, 0]),
+    ] {
+        t.set_u32(LOG, 0);
+        let c = Call {
+            ecx: glyph,
+            edx: row,
+            ..Call::default()
+        };
+        t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+            s4_fam446::glyph_quad(g, img, fr)
+        });
+    }
+}
