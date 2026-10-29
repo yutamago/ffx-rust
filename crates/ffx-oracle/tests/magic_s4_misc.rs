@@ -105,7 +105,7 @@ fn sprites_run() {
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(&mut t, 773, 4, move |m, a| {
         m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
-        a[3] & 1
+        (a[3] >> 1) & 1
     });
     for s in [774u32, 775, 778] {
         rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
@@ -304,7 +304,12 @@ fn shake_task() {
         (0, 1, 0, magic::TRAPS, 0.1),
         (-1, 0xffff_fff0, 5, 0, 0.1),
     ] {
-        for (mx, my) in [(0.0f32, 0.0f32), (-1.0e6, 1.0e6), (f32::NAN, -0.01)] {
+        for (mx, my) in [
+            (0.0f32, 0.0f32),
+            (-1.0e6, 1.0e6),
+            (f32::NAN, -0.01),
+            (2.0, -2.0),
+        ] {
             rest_node(&mut t, task);
             t.set_u32(task + 0x14, st);
             t.write(st, &[0x44; 0x30]);
@@ -316,7 +321,7 @@ fn shake_task() {
             set_f(&mut t, st + 0x20, step);
             t.set_u32(st + 0x24, delay.cast_unsigned());
             t.set_u32(st + 0x28, left);
-            t.set_u16(st + 0x2c, flags);
+            t.set_u16(st + 0x2c, flags | if mx == 2.0 { 0x8000 } else { 0 });
             set_f(&mut t, gx, mx);
             set_f(&mut t, gy, my);
             let c = Call {
@@ -399,7 +404,7 @@ fn follow_task() {
             t.set_u16(st + 0x40, flags);
             t.set_u32(st + 0x44, mode);
             t.set_u32(st + 0x48, target);
-            t.set_u16(st + 0x4c, 0x0123);
+            t.set_u16(st + 0x4c, if n == 3 { 0x8123 } else { 0x0123 });
             t.set_u32(mean_n, n);
             t.check_entry(f, Call::default(), &[task], Eax::Checked);
         }
@@ -489,8 +494,8 @@ fn motion_script() {
     let Some(mut t) = twin(162) else { return };
     let f = t.at(0x66e0);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    let map = SCRATCH + 0x5000;
-    t.write(map, &[2, 0, 1, 3]);
+    let map = SCRATCH + 0x5004;
+    t.write(map - 4, &[1, 3, 2, 1, 2, 3, 1, 0, 1, 2, 3]);
     t.set_u32(w(&t, 0xb8), map);
     t.set_u32(w(&t, 0xb1), 0x0c0c_0001);
     for i in 0..4 {
@@ -525,12 +530,13 @@ fn motion_script() {
     }
     let (sc, cmds) = (SCRATCH + 0x100, SCRATCH + 0x1000);
     // (done, wait, model, chr)
-    let states: [(u32, u16, u32, u32); 5] = [
+    let states: [(u32, u16, u32, u32); 6] = [
         (1, 0, 0x5000, 0x0c0c_0003),
         (0, 3, 0x5000, 0x0c0c_0003),
         (0, 1, 0x5000, 0x0c0c_0003),
         (0, 0, 0x5001, 0x0c0c_0002),
         (0, 0, 0x5000, 0x0c0c_0003),
+        (2, 0, 0x5001, 0x0c0c_0002),
     ];
     let lists: [&[(i32, i32)]; 6] = [
         &[(-2, 0x40), (-3, 0), (-4, 0), (0x55, -7)],
@@ -594,6 +600,7 @@ fn trail_draw() {
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let lock = SCRATCH + 0x9000;
     t.set_u32(w(&t, 0x46e), lock);
+    t.set_u32(w(&t, 0x52b), 0x0cc0_0cc0);
     let table = SCRATCH + 0x8000;
     rec(&mut t, 941, 1, move |_, _| table);
     t.write(table, &[0; 0x100]);
@@ -646,7 +653,7 @@ fn trail_draw() {
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(&mut t, 773, 4, move |m, a| {
         m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
-        a[3] & 1
+        (a[3] >> 1) & 1
     });
     for s in [774u32, 775, 778] {
         rec(&mut t, s, if s == 775 { 2 } else { 5 }, move |m, a| {
@@ -961,6 +968,11 @@ fn fam446_load_and_mode_object() {
         0x237
     });
     let asked = t.img.word(ls + 0x18);
+    // the resource words the load step passes on
+    t.set_u32(t.img.word(ls + 0x26), 0x0e5e_0026);
+    t.set_u32(t.img.word(ls + 0x46), 0x0e5e_0046);
+    // the start-up's first cleared word holds something first
+    t.set_u32(t.img.word(su + 0x16), 0x1616);
     for (busy, state, there) in [
         (1u32, 0u32, 0u32),
         (0, 0, 0),
@@ -987,6 +999,7 @@ fn fam446_load_and_mode_object() {
         0x714
     });
     t.set_u32(t.img.word(mo + 0x29), SCRATCH + 0x8e0);
+    t.set_u32(t.img.word(mo + 0x85), 0x0a0a_0085);
     let block = t.u32(t.img.word(mo + 0x3));
     let list = t.img.word(mo + 0x1b);
     let pa = t.img.rel32_target(soa + 0x9d);
@@ -1229,7 +1242,7 @@ fn sprites_run_b() {
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
     rec(&mut t, 773, 4, move |m, a| {
         m.w32(SCRATCH + 0x9200 + 4 * (a[3] & 7), m.r32(lock));
-        a[3] & 1
+        (a[3] >> 1) & 1
     });
     for s in [774u32, 775, 778] {
         rec(&mut t, s, if s == 775 { 2 } else { 4 }, move |m, a| {
@@ -1285,6 +1298,9 @@ fn screen_place() {
     let map = SCRATCH + 0x5000;
     t.write(map, &[2, 0, 1, 3]);
     t.set_u32(t.img.word(ap + 0x26), map);
+    for i in 0..4 {
+        t.set_u32(t.img.word(ap + 0x31) + 4 * i, 0x30 + 8 * i);
+    }
     t.set_u32(t.img.word(t.img.rel32_target(ap + 0x8c) + 0x15), map);
     rec(&mut t, 262, 4, |m, a| {
         for i in 1..4usize {
