@@ -1011,4 +1011,204 @@ ported! {
     StaticDtor_PInputMouseButtonSemantic_00b0a550 @ 0x00b0_a550 => extern "C" fn s_00b0a550() -> u32 {
         si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[174])
     }
+    /// `StaticDtor_PInputMouseButtonSemantic_00b0a570`: the `PInputMouseButtonSemantic` value at `0x00c6_c3fc` gets its vtable back, then `0x00a2_ecf0(obj)` unlinks it.
+    StaticDtor_PInputMouseButtonSemantic_00b0a570 @ 0x00b0_a570 => extern "C" fn s_00b0a570() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[175])
+    }
+    /// `StaticDtor_PInputMouseButtonSemantic_00b0a590`: the `PInputMouseButtonSemantic` value at `0x00c6_c3cc` gets its vtable back, then `0x00a2_ecf0(obj)` unlinks it.
+    StaticDtor_PInputMouseButtonSemantic_00b0a590 @ 0x00b0_a590 => extern "C" fn s_00b0a590() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[176])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a640`: the `PInputChannelSemantic` value at `0x00c6_d01c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a640 @ 0x00b0_a640 => extern "C" fn s_00b0a640() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[177])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a660`: the `PInputChannelSemantic` value at `0x00c6_ce1c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a660 @ 0x00b0_a660 => extern "C" fn s_00b0a660() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[178])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a680`: the `PInputChannelSemantic` value at `0x00c6_cdec` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a680 @ 0x00b0_a680 => extern "C" fn s_00b0a680() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[179])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a6a0`: the `PInputChannelSemantic` value at `0x00c6_cdbc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a6a0 @ 0x00b0_a6a0 => extern "C" fn s_00b0a6a0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[180])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a6c0`: the `PInputChannelSemantic` value at `0x00c6_cd9c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a6c0 @ 0x00b0_a6c0 => extern "C" fn s_00b0a6c0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[181])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a6e0`: the `PInputChannelSemantic` value at `0x00c6_cd7c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a6e0 @ 0x00b0_a6e0 => extern "C" fn s_00b0a6e0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[182])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a700`: the `PInputChannelSemantic` value at `0x00c6_cd5c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a700 @ 0x00b0_a700 => extern "C" fn s_00b0a700() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[183])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a720`: the `PInputChannelSemantic` value at `0x00c6_cfdc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a720 @ 0x00b0_a720 => extern "C" fn s_00b0a720() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[184])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a740`: the `PInputChannelSemantic` value at `0x00c6_cf9c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a740 @ 0x00b0_a740 => extern "C" fn s_00b0a740() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[185])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a760`: the `PInputChannelSemantic` value at `0x00c6_cf5c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a760 @ 0x00b0_a760 => extern "C" fn s_00b0a760() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[186])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a780`: the `PInputChannelSemantic` value at `0x00c6_cf2c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a780 @ 0x00b0_a780 => extern "C" fn s_00b0a780() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[187])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a7a0`: the `PInputChannelSemantic` value at `0x00c6_cefc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a7a0 @ 0x00b0_a7a0 => extern "C" fn s_00b0a7a0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[188])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a7c0`: the `PInputChannelSemantic` value at `0x00c6_cecc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a7c0 @ 0x00b0_a7c0 => extern "C" fn s_00b0a7c0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[189])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a7e0`: the `PInputChannelSemantic` value at `0x00c6_ce9c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a7e0 @ 0x00b0_a7e0 => extern "C" fn s_00b0a7e0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[190])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a800`: the `PInputChannelSemantic` value at `0x00c6_ce6c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a800 @ 0x00b0_a800 => extern "C" fn s_00b0a800() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[191])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a820`: the `PInputChannelSemantic` value at `0x00c6_ce3c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a820 @ 0x00b0_a820 => extern "C" fn s_00b0a820() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[192])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a840`: the `PInputChannelSemantic` value at `0x00c6_cfbc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a840 @ 0x00b0_a840 => extern "C" fn s_00b0a840() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[193])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a860`: the `PInputChannelSemantic` value at `0x00c6_cf7c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a860 @ 0x00b0_a860 => extern "C" fn s_00b0a860() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[194])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a880`: the `PInputChannelSemantic` value at `0x00c6_ce4c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a880 @ 0x00b0_a880 => extern "C" fn s_00b0a880() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[195])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a8a0`: the `PInputChannelSemantic` value at `0x00c6_cf8c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a8a0 @ 0x00b0_a8a0 => extern "C" fn s_00b0a8a0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[196])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a8c0`: the `PInputChannelSemantic` value at `0x00c6_cfcc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a8c0 @ 0x00b0_a8c0 => extern "C" fn s_00b0a8c0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[197])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a8e0`: the `PInputChannelSemantic` value at `0x00c6_cd6c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a8e0 @ 0x00b0_a8e0 => extern "C" fn s_00b0a8e0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[198])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a900`: the `PInputChannelSemantic` value at `0x00c6_cf1c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a900 @ 0x00b0_a900 => extern "C" fn s_00b0a900() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[199])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a920`: the `PInputChannelSemantic` value at `0x00c6_cebc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a920 @ 0x00b0_a920 => extern "C" fn s_00b0a920() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[200])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a940`: the `PInputChannelSemantic` value at `0x00c6_ce0c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a940 @ 0x00b0_a940 => extern "C" fn s_00b0a940() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[201])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a960`: the `PInputChannelSemantic` value at `0x00c6_cf0c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a960 @ 0x00b0_a960 => extern "C" fn s_00b0a960() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[202])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a980`: the `PInputChannelSemantic` value at `0x00c6_cdfc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a980 @ 0x00b0_a980 => extern "C" fn s_00b0a980() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[203])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a9a0`: the `PInputChannelSemantic` value at `0x00c6_ceac` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a9a0 @ 0x00b0_a9a0 => extern "C" fn s_00b0a9a0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[204])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a9c0`: the `PInputChannelSemantic` value at `0x00c6_cfec` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a9c0 @ 0x00b0_a9c0 => extern "C" fn s_00b0a9c0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[205])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0a9e0`: the `PInputChannelSemantic` value at `0x00c6_cd4c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0a9e0 @ 0x00b0_a9e0 => extern "C" fn s_00b0a9e0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[206])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aa00`: the `PInputChannelSemantic` value at `0x00c6_cfac` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aa00 @ 0x00b0_aa00 => extern "C" fn s_00b0aa00() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[207])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aa20`: the `PInputChannelSemantic` value at `0x00c6_ceec` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aa20 @ 0x00b0_aa20 => extern "C" fn s_00b0aa20() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[208])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aa40`: the `PInputChannelSemantic` value at `0x00c6_ce8c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aa40 @ 0x00b0_aa40 => extern "C" fn s_00b0aa40() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[209])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aa60`: the `PInputChannelSemantic` value at `0x00c6_cddc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aa60 @ 0x00b0_aa60 => extern "C" fn s_00b0aa60() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[210])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aa80`: the `PInputChannelSemantic` value at `0x00c6_cedc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aa80 @ 0x00b0_aa80 => extern "C" fn s_00b0aa80() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[211])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aaa0`: the `PInputChannelSemantic` value at `0x00c6_cdcc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aaa0 @ 0x00b0_aaa0 => extern "C" fn s_00b0aaa0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[212])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aac0`: the `PInputChannelSemantic` value at `0x00c6_ce7c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aac0 @ 0x00b0_aac0 => extern "C" fn s_00b0aac0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[213])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aae0`: the `PInputChannelSemantic` value at `0x00c6_cf6c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aae0 @ 0x00b0_aae0 => extern "C" fn s_00b0aae0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[214])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ab00`: the `PInputChannelSemantic` value at `0x00c6_cd8c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ab00 @ 0x00b0_ab00 => extern "C" fn s_00b0ab00() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[215])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ab20`: the `PInputChannelSemantic` value at `0x00c6_ce5c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ab20 @ 0x00b0_ab20 => extern "C" fn s_00b0ab20() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[216])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ab40`: the `PInputChannelSemantic` value at `0x00c6_d00c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ab40 @ 0x00b0_ab40 => extern "C" fn s_00b0ab40() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[217])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ab60`: the `PInputChannelSemantic` value at `0x00c6_ce2c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ab60 @ 0x00b0_ab60 => extern "C" fn s_00b0ab60() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[218])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ab80`: the `PInputChannelSemantic` value at `0x00c6_cf4c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ab80 @ 0x00b0_ab80 => extern "C" fn s_00b0ab80() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[219])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0aba0`: the `PInputChannelSemantic` value at `0x00c6_cdac` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0aba0 @ 0x00b0_aba0 => extern "C" fn s_00b0aba0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[220])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0abc0`: the `PInputChannelSemantic` value at `0x00c6_cffc` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0abc0 @ 0x00b0_abc0 => extern "C" fn s_00b0abc0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[221])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0abe0`: the `PInputChannelSemantic` value at `0x00c6_cf3c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0abe0 @ 0x00b0_abe0 => extern "C" fn s_00b0abe0() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[222])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ac00`: the `PInputChannelSemantic` value at `0x00c6_d02c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ac00 @ 0x00b0_ac00 => extern "C" fn s_00b0ac00() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[223])
+    }
+    /// `StaticDtor_PInputChannelSemantic_00b0ac20`: the `PInputChannelSemantic` value at `0x00c6_cb0c` gets its vtable back, then `0x00a3_2660(obj)` unlinks it.
+    StaticDtor_PInputChannelSemantic_00b0ac20 @ 0x00b0_ac20 => extern "C" fn s_00b0ac20() -> u32 {
+        si::enum_value_dtor(&mut mem(), &si::ENUM_VALUE_DTORS[224])
+    }
 }
