@@ -8,6 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+ffx-magic.workspace = true
 thiserror.workspace = true
 unicorn-engine.workspace = true
 

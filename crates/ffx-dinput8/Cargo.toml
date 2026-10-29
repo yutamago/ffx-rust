@@ -11,6 +11,11 @@ publish = false
 name = "dinput8"
 crate-type = ["cdylib"]
 
+[features]
+default = ["dev-unicorn"]
+# ffx-hook's Unicorn overlay runner (GPL-2.0): development builds only
+dev-unicorn = ["ffx-hook/dev-unicorn"]
+
 [dependencies]
 ffx-hook.workspace = true
 

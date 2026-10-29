@@ -39,9 +39,18 @@ ffx-system.workspace = true
 ffx-text.workspace = true
 ffx-vfx.workspace = true
 
+[features]
+default = ["dev-unicorn"]
+# Development only: FFX_MAGIC_EMU / FFX_MAGIC_RUST run the spell overlays
+# in Unicorn (overlay_emu.rs). Unicorn is GPL-2.0, so a release build
+# leaves this out (`--no-default-features`; tools/check-licences.py).
+dev-unicorn = ["dep:ffx-overlay"]
+
 [target.'cfg(all(windows, target_arch = "x86"))'.dependencies]
 # FFX_MAGIC_EMU=1: the spell overlays in Unicorn (overlay_emu.rs)
-ffx-overlay.workspace = true
+ffx-overlay = { workspace = true, optional = true }
+# FFX_MAGIC_RUST: the Rust overlays
+ffx-magic.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # the Rust audio engine's output device (rust_audio_out.rs); MIT

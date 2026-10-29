@@ -993,6 +993,7 @@ dependencies = [
  "ffx-glue-other",
  "ffx-graphic",
  "ffx-kernel",
+ "ffx-magic",
  "ffx-menu",
  "ffx-monster",
  "ffx-motion",
@@ -1048,6 +1049,14 @@ name = "ffx-launch"
 version = "0.1.0"
 dependencies = [
  "windows-sys",
+]
+
+[[package]]
+name = "ffx-magic"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-core",
 ]
 
 [[package]]
@@ -1111,10 +1120,12 @@ dependencies = [
  "ffx-glue-other",
  "ffx-graphic",
  "ffx-kernel",
+ "ffx-magic",
  "ffx-menu",
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-overlay",
  "ffx-panim",
  "ffx-pcore",
  "ffx-pcui",
@@ -1143,6 +1154,7 @@ dependencies = [
 name = "ffx-overlay"
 version = "0.1.0"
 dependencies = [
+ "ffx-magic",
  "thiserror",
  "unicorn-engine",
 ]

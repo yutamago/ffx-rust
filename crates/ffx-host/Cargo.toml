@@ -11,16 +11,23 @@ publish = false
 name = "ffx-rust"
 path = "src/bin/ffx-rust.rs"
 
+[features]
+default = ["dev-unicorn"]
+# Development only: the executor runs FFX.exe's functions that have no
+# port yet in Unicorn (docs/host.md, "Rust and Unicorn"); gone before the
+# stage 4 gate. Unicorn is GPL-2.0: the release builds without it
+# (tools/check-licences.py). Until the executor has a path without
+# Unicorn, the crate refuses to build with the feature off.
+dev-unicorn = ["dep:unicorn-engine", "ffx-fpu/unicorn"]
+
 [dependencies]
 ffx-bridge.workspace = true
 ffx-core.workspace = true
-ffx-fpu = { workspace = true, features = ["unicorn"] }
+ffx-fpu.workspace = true
 ffx-kernel.workspace = true
 goblin.workspace = true
 thiserror.workspace = true
-# Development only: runs FFX.exe's functions that have no port yet
-# (docs/host.md, "Rust and Unicorn"); gone before the stage 4 gate.
-unicorn-engine.workspace = true
+unicorn-engine = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

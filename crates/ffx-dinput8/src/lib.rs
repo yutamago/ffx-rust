@@ -115,11 +115,15 @@ unsafe fn install_hooks(base: usize) {
         }
         Err(wrong) => log(&format!("  not patching: {wrong}")),
     }
-    // The spell overlays in Unicorn (FFX_MAGIC_EMU=1): FFX.exe's
-    // LoadLibraryA/GetProcAddress/FreeLibrary imports and a trap handler
-    // in front of the diagnostics one.
+    // The spell overlays in Unicorn (FFX_MAGIC_EMU=1) or in Rust
+    // (FFX_MAGIC_RUST): FFX.exe's LoadLibraryA/GetProcAddress/FreeLibrary
+    // imports and a trap handler in front of the diagnostics one.
+    // Development builds only (Unicorn is GPL-2.0).
+    #[cfg(feature = "dev-unicorn")]
     // SAFETY: forwarded from the caller.
-    unsafe { ffx_hook::overlay_emu::install(base) };
+    unsafe {
+        ffx_hook::overlay_emu::install(base);
+    }
     // The Rust sound engine in place of FMOD (FFX_RUST_AUDIO=1), first: the
     // call log and the capture wrap its stubs.
     // SAFETY: forwarded from the caller.
