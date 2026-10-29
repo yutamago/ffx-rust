@@ -749,6 +749,10 @@ impl Exec {
         let block = arena.map_anywhere(REGION_HINT, THREAD_BLOCK, &format!("thread {id:#x}"))?;
         let stubs_at = block + 3 * PAGE;
 
+        // Windows: the translation buffers commit through our handler
+        // (crate::tcg_commit)
+        #[cfg(windows)]
+        crate::tcg_commit::install();
         let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default())?;
         // The translation buffer: QEMU's default is 1 GB per instance on a
         // 64-bit host, one instance per game thread (33 on the way to the

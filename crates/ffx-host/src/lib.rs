@@ -41,6 +41,8 @@ pub mod report;
 pub mod stand_ins;
 pub mod sync;
 pub mod table;
+#[cfg(windows)]
+pub mod tcg_commit;
 pub mod win32;
 #[cfg(windows)]
 pub mod win_forward;
