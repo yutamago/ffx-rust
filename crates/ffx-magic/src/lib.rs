@@ -722,6 +722,7 @@ ports! {
     "m0098 hide" => m0098::HIDE, m0098::hide;
     "m0098 draw" => m0098::DRAW, m0098::draw;
     "m0098 start" => m0098::START, m0098::start;
+    "m0098 load" => m0098::LOAD, m0098::load;
     "m0020 step 1d90" => m0020::E1D90, m0020::e1d90;
     "m0390 task step" => m0390::E13F0, m0390::e13f0;
     "m0390 entry 15b0" => m0390::E15B0, m0390::e15b0;

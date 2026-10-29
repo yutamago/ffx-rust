@@ -110,3 +110,34 @@ fn steps_and_callbacks() {
     t.write(obj, &[0x5a; 0x80]);
     t.check_entry(s, Call::default(), &[obj], Eax::Checked);
 }
+
+/// The model load step: first time (both command records) and later.
+#[test]
+fn load() {
+    let Some(mut t) = twin(N) else { return };
+    let e = t.at(0x2240);
+    let h = t.img.word(e + 0x01);
+    let alt = t.img.word(e + 0x99);
+    let model = SCRATCH + 0x1000;
+    t.set_u32(model + 0x830, 0x830);
+    rec(&mut t, 26, 2, |_, a| a[0] ^ 0x26);
+    rec(&mut t, 0, 3, move |_, _| model);
+    for (s, n) in [(387u32, 5usize), (385, 7), (386, 9), (922, 11)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ s);
+    }
+    for (first, a) in [
+        (0u32, 0u32),
+        (0, 1),
+        (SCRATCH + 0x2000, 0),
+        (SCRATCH + 0x2000, 1),
+    ] {
+        t.set_u32(h, first);
+        t.set_u32(alt, a);
+        // the words it sets, dirty before
+        for op in [0xc8u32, 0xd2, 0xdc, 0xe6, 0x104, 0x129] {
+            let g = t.img.word(e + op);
+            t.write(g, &[0x5a; 8]);
+        }
+        t.check_entry(e, Call::default(), &[], Eax::Checked);
+    }
+}

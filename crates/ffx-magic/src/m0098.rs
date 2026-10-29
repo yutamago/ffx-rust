@@ -244,3 +244,72 @@ pub const START: Sig = Sig {
     calls: &[(0x35, Callee::Sig(&crate::opu_parts::START_PART))],
     imports: &[],
 };
+
+/// A step (0x10002240, no arguments): `G_DONE` cleared; the first time
+/// (`G_H` 0) the model 0x3015 loaded (slots 26 `(0x3015, 1)`, 0
+/// `(0x3015)` into `G_H`) and set up (slots 387 `(h, 1)`, 385 `(G_H, 1)`,
+/// 386 `(G_H, 0)`, 922 `(G_H + 0x830, 0)`; each call with the words the
+/// earlier ones left); then the fade words, and one of two command
+/// records (by `G_ALT`) gets the model and its handler table. Returns 1.
+pub fn load<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ecx = fr.ecx;
+    let mut h = g.read::<u32>(w(0x01));
+    g.write::<u32>(w(0x07), 0);
+    if h == 0 {
+        let s26 = slot_target(g, w(0x18), 26);
+        let mut stack = vec![0x3015, 1];
+        g.call(s26, ecx, &stack);
+        let s0 = slot_target(g, w(0x29), 0);
+        stack.insert(0, 0x3015);
+        // call width: 3
+        let r = g.call(s0, ecx, &stack).eax;
+        g.write::<u32>(w(0x37), r);
+        let s387 = slot_target(g, w(0x3f), 387);
+        stack.splice(0..0, [r, 1]);
+        // call width: 5
+        g.call(s387, ecx, &stack);
+        let s385 = slot_target(g, w(0x4c), 385);
+        let m = g.read::<u32>(w(0x54));
+        stack.splice(0..0, [m, 1]);
+        // call width: 7
+        g.call(s385, ecx, &stack);
+        let s386 = slot_target(g, w(0x61), 386);
+        let m = g.read::<u32>(w(0x69));
+        stack.splice(0..0, [m, 0]);
+        // call width: 9
+        g.call(s386, ecx, &stack);
+        let m = g.read::<u32>(g.read::<u32>(w(0x76)) + 0x830);
+        let s922 = slot_target(g, w(0x83), 922);
+        stack.splice(0..0, [m, 0]);
+        // call width: 11
+        g.call(s922, ecx, &stack);
+        h = g.read::<u32>(w(0x90));
+    }
+    let alt = g.read::<u32>(w(0x99));
+    for (a, v) in [(0xa0u32, 0xa4u32), (0xaa, 0xae), (0xb4, 0xb8), (0xbe, 0xc2)] {
+        g.write::<u32>(w(a), w(v));
+    }
+    for a in [0xc8u32, 0xd2, 0xdc, 0xe6] {
+        g.write::<u32>(w(a), 0);
+    }
+    let (q0, at, q1, table) = if alt == 0 {
+        (0x11c, 0x121, 0x129, (0x12f, 0x133))
+    } else {
+        (0xf7, 0xfc, 0x104, (0x10a, 0x10e))
+    };
+    g.write::<u64>(w(q0), 0);
+    g.write::<u32>(w(at), h);
+    g.write::<u64>(w(q1), 0);
+    g.write::<u32>(w(table.0), w(table.1));
+    Ret::eax(1)
+}
+
+/// 0x10002240 (317 bytes, 1 overlay).
+pub const LOAD: Sig = Sig {
+    len: 317,
+    hash: 0xeb2d_60bb_dd3c_48ea,
+    calls: &[],
+    imports: &[],
+};
