@@ -406,9 +406,7 @@ fn small_model_calls() {
         &mut t,
         &[(255, 2), (531, 2), (262, 4), (12, 5), (257, 2), (296, 2)],
     );
-    for (slot, v) in [(12u32, -7.5f64)] {
-        t.stub_st0(slot, move |_, _| v);
-    }
+    t.stub_st0(12, |_, _| -7.5);
     for slot in [255u32, 531, 12, 257, 296] {
         t.set_u32(SCRATCH + 0x3_0000 + 4 * slot, 0x0100_0000 + slot);
     }

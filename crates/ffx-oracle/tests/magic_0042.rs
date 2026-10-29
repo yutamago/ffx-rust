@@ -212,3 +212,107 @@ fn the_helpers_bind_in_every_carrier() {
         }
     }
 }
+
+#[test]
+fn node_init_big_and_time_left() {
+    let Some(mut t) = twin() else { return };
+    let args = SCRATCH;
+    let node = SCRATCH + 0x100;
+    let parent = SCRATCH + 0x400;
+    let last = SCRATCH + 0x600;
+    for (p, l) in [(0, 0), (parent, parent), (parent, last)] {
+        t.write(node, &[0xc3; 0x150]);
+        t.write(parent, &[0x3c; 0x20]);
+        t.write(last, &[0x5a; 0x10]);
+        t.set_u32(parent + 0x10, l);
+        for (i, v) in (0u32..).zip([node, p, 0xd, 0xa, 0xb, 0xc]) {
+            t.set_u32(args + 4 * i, v);
+        }
+        t.check(
+            t.at(0x35c0),
+            Call {
+                eax: 0,
+                ecx: args,
+                edx: 0,
+            },
+            &[],
+            Eax::Checked,
+            |g, _, fr| Ret::eax(m0042::node_init_big(g, fr.ecx)),
+        );
+    }
+    // time_left: slot 333 answers in ST0, slot 601 through the pointer
+    t.stub(333, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        0x0333
+    });
+    t.stub(601, |m, a| {
+        m.w32(SCRATCH + 0x904, a[0]);
+        let v = m.r32(SCRATCH + 0x908);
+        if v != 0 {
+            m.w32(a[1], v);
+        }
+        0x0601
+    });
+    let this = SCRATCH + 0x700;
+    let obj = SCRATCH + 0x800;
+    let out = SCRATCH + 0xa00;
+    t.set_u32(this, obj);
+    t.set_u32(this + 4, out);
+    t.set_u32(obj + 0x50, 0x0050_0050);
+    t.set_u32(obj + 0x54, 0x0054_0054);
+    for (bit, time) in [
+        (1u8, 0.5f64),
+        (1, -3.0e9),
+        (1, f64::NAN),
+        (0, 12.25),
+        (0, 1.0e20),
+        (0, 0.0),
+        // (K0 - t) * K1 / K2 lands just on 153427: x * (K1 / K2) would not
+        (0, f64::from(f32::from_bits(0xc11f_f4b2))),
+    ] {
+        t.stub_st0(333, move |_, _| time);
+        #[allow(clippy::cast_possible_truncation)]
+        let bits = if time == 0.0 {
+            0
+        } else {
+            (time as f32).to_bits()
+        };
+        t.set_u32(SCRATCH + 0x908, bits);
+        t.set_u8(obj + 0x90, bit);
+        t.write(out, &[0x77; 12]);
+        t.check(
+            t.at(0x3de0),
+            Call {
+                eax: 0,
+                ecx: this,
+                edx: 0,
+            },
+            &[],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(m0042::time_left(g, img, fr.at, fr.ecx, fr.esp)),
+        );
+    }
+    for (port, carriers) in [
+        (
+            "m0042 node init (big)",
+            &[(42u16, 0x35c0u32), (152, 0x3380), (533, 0x3380)][..],
+        ),
+        (
+            "m0042 time left",
+            &[(42, 0x3de0), (70, 0x4850), (570, 0x4850), (597, 0x44b0)][..],
+        ),
+    ] {
+        let dir = std::path::PathBuf::from(std::env::var_os("FFX_GAME_DIR").unwrap())
+            .join("magicFiles/FFX");
+        for &(n, rva) in carriers {
+            let name = format!("magic_{n:04}.dll");
+            let file = std::fs::read(dir.join(&name)).unwrap();
+            let img = ffx_magic::Image::new(&name, &file, 0x1000_0000).unwrap();
+            assert_eq!(
+                ffx_magic::covered(&img, 0x1000_0000 + rva),
+                Some(port),
+                "{name}"
+            );
+        }
+    }
+}

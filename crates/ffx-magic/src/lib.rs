@@ -458,6 +458,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0042 release", &m0042::RELEASE),
     ("m0042 set value", &m0042::SET_VALUE),
     ("m0042 unlink", &m0042::UNLINK),
+    ("m0042 node init (big)", &m0042::NODE_INIT_BIG),
+    ("m0042 time left", &m0042::TIME_LEFT),
     ("m0052 place", &m0052::PLACE),
     ("m0052 scaled camera", &m0052::SCALED_CAMERA),
     ("m0054 ppp init", &m0054::INIT_PPP),
