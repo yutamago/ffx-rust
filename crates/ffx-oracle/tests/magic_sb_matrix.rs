@@ -57,6 +57,27 @@ fn angle_sets() -> Vec<[u32; 3]> {
             0x1234,
         ],
     ];
+    // every combination of the quarter turns and the odd entries (sines
+    // and cosines of exactly 0, -0.0, 1, -1, 1e30 and the smallest
+    // normal): where most terms vanish, the zero products the original
+    // keeps decide the signs of the zeros left
+    let special = [
+        0u32,
+        0x4000,
+        0x8000,
+        0xc000,
+        7 << 4,
+        (7u32 << 4).wrapping_sub(0x4000),
+        9 << 4,
+        13 << 4,
+    ];
+    for &x in &special {
+        for &y in &special {
+            for &z in &special {
+                v.push([x, y, z]);
+            }
+        }
+    }
     // a fixed pseudo-random spread
     let mut s = 0x1234_5678u32;
     for _ in 0..40 {
