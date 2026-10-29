@@ -37,6 +37,8 @@ pub struct Bound {
     pub words: usize,
     /// The Rust side, `None` when unstubbed.
     pub run: Option<ImportFn>,
+    /// The DLL that imports it (`None`: `FFX.exe`).
+    pub from: Option<String>,
 }
 
 /// The imports as bound.
@@ -52,11 +54,14 @@ impl Imports {
         Self::default()
     }
 
-    /// Binds import `i` (`dll!name`) to its Rust side, if [`TABLE`] has one.
-    pub fn bind(&mut self, i: usize, dll: &str, name: &str) {
+    /// Binds import `i` (`dll!name`, imported by `from` or by `FFX.exe`)
+    /// to its Rust side, if [`TABLE`] has one.
+    pub fn bind(&mut self, i: usize, dll: &str, name: &str, from: Option<&str>) {
+        let from = from.map(str::to_string);
         let full = format!("{dll}!{name}");
-        let found = TABLE
+        let found = crate::win32::TABLE
             .iter()
+            .chain(TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
             Some(&(_, _, conv, words, run)) => Bound {
@@ -64,12 +69,25 @@ impl Imports {
                 conv,
                 words,
                 run: Some(run),
+                from,
             },
-            None => Bound {
-                name: full,
-                conv: Conv::Stdcall,
-                words: 0,
-                run: None,
+            None => match iggy_words(dll, name) {
+                // Iggy (Flash UI): a null stand-in, until `ffx-swf` takes
+                // its place; its exports carry their stack size (`_X@N`)
+                Some(words) => Bound {
+                    name: full,
+                    conv: Conv::Stdcall,
+                    words,
+                    run: Some(iggy_null),
+                    from,
+                },
+                None => Bound {
+                    name: full,
+                    conv: Conv::Stdcall,
+                    words: 0,
+                    run: None,
+                    from,
+                },
             },
         };
         self.bound.insert(i, b);
@@ -89,6 +107,20 @@ impl Imports {
     }
 }
 
+/// The stack words of an `iggy_w32.dll` stdcall export (`_Name@N`).
+fn iggy_words(dll: &str, name: &str) -> Option<usize> {
+    if !dll.eq_ignore_ascii_case("iggy_w32.dll") {
+        return None;
+    }
+    let (_, n) = name.strip_prefix('_')?.rsplit_once('@')?;
+    n.parse::<usize>().ok().map(|n| n / 4)
+}
+
+/// Every Iggy call: nothing happens, 0 (no player, no value).
+fn iggy_null(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0)
+}
+
 /// The data imports: their cells' initial contents (`DLL!name`, value).
 pub const DATA: [(&str, u32); 4] = [
     ("MSVCR110.dll!_fmode", 0),
@@ -97,21 +129,31 @@ pub const DATA: [(&str, u32); 4] = [
     ("MSVCR110.dll!_HUGE", 0),   // + 4: 0x7ff00000 (infinity)
 ];
 
-/// The C runtime's state: the arena heap, `atexit` lists, `rand`.
+/// The heap behind `malloc` and `HeapAlloc`, shared by every thread
+/// (behind [`crate::exec::Shared::heap`]'s lock).
 #[derive(Debug)]
-pub struct Crt {
-    heap: (u32, u32),
+pub struct Heap {
+    range: (u32, u32),
     next: u32,
     free: HashMap<u32, Vec<u32>>,
-    /// `_onexit` / `atexit` functions, in registration order.
-    pub at_exit: Vec<u32>,
-    /// `rand`'s state (MSVC: per thread; one thread here).
+}
+
+/// The C runtime's per-thread state.
+#[derive(Debug, Clone, Copy)]
+pub struct ThreadCrt {
+    /// `rand`'s state (per thread, as MSVC keeps it; seed 1).
     pub rand: u32,
-    /// The command line (`_acmdln`), an arena address.
-    pub cmdline: u32,
-    /// Fake handles handed out.
-    next_handle: u32,
-    last_error: u32,
+    /// `GetLastError`.
+    pub last_error: u32,
+}
+
+impl Default for ThreadCrt {
+    fn default() -> Self {
+        Self {
+            rand: 1,
+            last_error: 0,
+        }
+    }
 }
 
 /// The arena heap's size (grown by more regions later; one is enough to
@@ -120,7 +162,7 @@ const HEAP_SIZE: u32 = 0x2000_0000;
 /// Every block's header: its size.
 const HEADER: u32 = 16;
 
-impl Crt {
+impl Heap {
     /// The heap's region in `arena`.
     ///
     /// # Errors
@@ -128,14 +170,9 @@ impl Crt {
     pub fn new(arena: &Arena) -> Result<Self> {
         let at = arena.map_anywhere(0x1000_0000, HEAP_SIZE, "heap")?;
         Ok(Self {
-            heap: (at, at + HEAP_SIZE),
+            range: (at, at + HEAP_SIZE),
             next: at,
             free: HashMap::new(),
-            at_exit: Vec::new(),
-            rand: 1,
-            cmdline: 0,
-            next_handle: 0x100,
-            last_error: 0,
         })
     }
 
@@ -148,7 +185,7 @@ impl Crt {
         let Some(end) = self.next.checked_add(HEADER + rounded) else {
             return 0;
         };
-        if end > self.heap.1 {
+        if end > self.range.1 {
             return 0;
         }
         let p = self.next + HEADER;
@@ -159,7 +196,7 @@ impl Crt {
 
     /// `free`.
     pub fn release(&mut self, mem: &impl Mem, p: u32) {
-        if p == 0 || p < self.heap.0 || p >= self.heap.1 {
+        if p == 0 || p < self.range.0 || p >= self.range.1 {
             return;
         }
         let size: u32 = mem.read(p - 4);
@@ -169,20 +206,14 @@ impl Crt {
     /// A block's usable size.
     #[must_use]
     pub fn size_of(&self, mem: &impl Mem, p: u32) -> u32 {
-        if p < self.heap.0 || p >= self.heap.1 {
+        if p < self.range.0 || p >= self.range.1 {
             return 0;
         }
         mem.read(p - 4)
     }
-
-    /// A fresh fake handle.
-    pub fn handle(&mut self) -> u32 {
-        self.next_handle += 4;
-        self.next_handle
-    }
 }
 
-fn a(args: &Args, i: usize) -> u32 {
+pub(crate) fn a(args: &Args, i: usize) -> u32 {
     args.stack.get(i).copied().unwrap_or(0)
 }
 
@@ -203,7 +234,7 @@ fn first_arg(_: &mut Exec, args: &Args) -> Ret {
 }
 
 fn new_handle(e: &mut Exec, _: &Args) -> Ret {
-    Ret::eax(e.crt.handle())
+    Ret::eax(e.new_handle())
 }
 
 // ---- the C runtime -------------------------------------------------------
@@ -241,12 +272,12 @@ fn initterm_e(e: &mut Exec, args: &Args) -> Ret {
 
 /// `__getmainargs(&argc, &argv, &envp, wildcard, &startinfo)`.
 fn getmainargs(e: &mut Exec, args: &Args) -> Ret {
+    let name = e.alloc(16);
     let mut mem = e.mem();
-    let name = e.crt.alloc(&mut mem, 16);
     mem.write_bytes(name, b"FFX.exe\0");
-    let vector = e.crt.alloc(&mut mem, 8);
+    let vector = e.alloc(8);
     mem.write(vector, [name, 0]);
-    let envp = e.crt.alloc(&mut mem, 4);
+    let envp = e.alloc(4);
     mem.write(envp, 0u32);
     mem.write(a(args, 0), 1u32);
     mem.write(a(args, 1), vector);
@@ -256,21 +287,22 @@ fn getmainargs(e: &mut Exec, args: &Args) -> Ret {
 
 /// `_onexit(f)` / `__dllonexit(f, ..)`: registers `f`, returns it.
 fn onexit(e: &mut Exec, args: &Args) -> Ret {
-    e.crt.at_exit.push(a(args, 0));
+    if let Ok(mut l) = e.shared().at_exit.lock() {
+        l.push(a(args, 0));
+    }
     Ret::eax(a(args, 0))
 }
 
 fn malloc(e: &mut Exec, args: &Args) -> Ret {
-    let mut mem = e.mem();
-    Ret::eax(e.crt.alloc(&mut mem, a(args, 0)))
+    Ret::eax(e.alloc(a(args, 0)))
 }
 
 fn calloc(e: &mut Exec, args: &Args) -> Ret {
     let Some(n) = a(args, 0).checked_mul(a(args, 1)) else {
         return Ret::eax(0);
     };
+    let p = e.alloc(n);
     let mut mem = e.mem();
-    let p = e.crt.alloc(&mut mem, n);
     if p != 0 {
         mem.write_bytes(p, &vec![0; n as usize]);
     }
@@ -278,16 +310,15 @@ fn calloc(e: &mut Exec, args: &Args) -> Ret {
 }
 
 fn free(e: &mut Exec, args: &Args) -> Ret {
-    let mem = e.mem();
-    e.crt.release(&mem, a(args, 0));
+    e.release(a(args, 0));
     Ret::VOID
 }
 
 /// `_recalloc(p, n, size)` / `realloc(p, size)` share this.
 fn resize(e: &mut Exec, p: u32, size: u32, zero: bool) -> u32 {
     let mut mem = e.mem();
-    let old = e.crt.size_of(&mem, p);
-    let q = e.crt.alloc(&mut mem, size);
+    let old = e.size_of(p);
+    let q = e.alloc(size);
     if q == 0 {
         return 0;
     }
@@ -298,7 +329,7 @@ fn resize(e: &mut Exec, p: u32, size: u32, zero: bool) -> u32 {
     if zero && size > keep {
         mem.write_bytes(q + keep, &vec![0; (size - keep) as usize]);
     }
-    e.crt.release(&mem, p);
+    e.release(p);
     q
 }
 
@@ -335,7 +366,7 @@ fn strdup(e: &mut Exec, args: &Args) -> Ret {
     let n = strlen_at(&mem, a(args, 0)) + 1;
     let mut buf = vec![0; n as usize];
     mem.read_bytes(a(args, 0), &mut buf);
-    let q = e.crt.alloc(&mut mem, n);
+    let q = e.alloc(n);
     mem.write_bytes(q, &buf);
     Ret::eax(q)
 }
@@ -382,11 +413,6 @@ fn perf_counter(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(1)
 }
 
-/// `GetModuleHandleW/A(name)`: the image for NULL, else 0.
-fn module_handle(e: &mut Exec, args: &Args) -> Ret {
-    Ret::eax(if a(args, 0) == 0 { e.image().base } else { 0 })
-}
-
 /// `GetStartupInfoW(&si)`: zeroed, `cb` set.
 fn startup_info(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
@@ -397,8 +423,8 @@ fn startup_info(e: &mut Exec, args: &Args) -> Ret {
 
 /// `HeapAlloc(heap, flags, size)`.
 fn heap_alloc(e: &mut Exec, args: &Args) -> Ret {
+    let p = e.alloc(a(args, 2));
     let mut mem = e.mem();
-    let p = e.crt.alloc(&mut mem, a(args, 2));
     if p != 0 && a(args, 1) & 8 != 0 {
         mem.write_bytes(p, &vec![0; a(args, 2) as usize]);
     }
@@ -407,15 +433,13 @@ fn heap_alloc(e: &mut Exec, args: &Args) -> Ret {
 
 /// `HeapFree(heap, flags, p)`.
 fn heap_free(e: &mut Exec, args: &Args) -> Ret {
-    let mem = e.mem();
-    e.crt.release(&mem, a(args, 2));
+    e.release(a(args, 2));
     Ret::eax(1)
 }
 
 /// `HeapSize(heap, flags, p)`.
 fn heap_size(e: &mut Exec, args: &Args) -> Ret {
-    let mem = e.mem();
-    Ret::eax(e.crt.size_of(&mem, a(args, 2)))
+    Ret::eax(e.size_of(a(args, 2)))
 }
 
 /// `HeapReAlloc(heap, flags, p, size)`.
@@ -427,18 +451,6 @@ fn heap_realloc(e: &mut Exec, args: &Args) -> Ret {
 fn virtual_alloc(e: &mut Exec, args: &Args) -> Ret {
     let size = a(args, 1).next_multiple_of(PAGE);
     Ret::eax(e.map_region(size, "VirtualAlloc").unwrap_or(0))
-}
-
-/// `CreateThread(attr, stack, entry, param, flags, &id)`: recorded, not
-/// run yet (docs/host.md, "Threads").
-fn create_thread(e: &mut Exec, args: &Args) -> Ret {
-    e.stats.threads.push((a(args, 2), a(args, 3)));
-    let id = e.crt.handle();
-    if a(args, 5) != 0 {
-        let mut mem = e.mem();
-        mem.write(a(args, 5), id);
-    }
-    Ret::eax(id)
 }
 
 /// `GetSystemInfo(&info)`: one x86 processor, 4 KiB pages.
@@ -477,25 +489,9 @@ fn system_metrics(_: &mut Exec, args: &Args) -> Ret {
     })
 }
 
-/// `GetModuleFileNameA/W(module, buf, size)`: `<game>\FFX.exe`.
-fn module_file_name(e: &mut Exec, args: &Args, wide: bool) -> Ret {
-    let name = format!("{}\\FFX.exe", files::GAME_DIR_WIN);
-    let mut mem = e.mem();
-    let n = write_str(&mut mem, a(args, 1), a(args, 2), &name, wide);
-    Ret::eax(n)
-}
-
-fn module_file_name_a(e: &mut Exec, args: &Args) -> Ret {
-    module_file_name(e, args, false)
-}
-
-fn module_file_name_w(e: &mut Exec, args: &Args) -> Ret {
-    module_file_name(e, args, true)
-}
-
 /// Writes `s` (with its NUL, cut to `cap` characters) as bytes or UTF-16;
 /// returns the characters written without the NUL.
-fn write_str(mem: &mut impl Mem, at: u32, cap: u32, s: &str, wide: bool) -> u32 {
+pub(crate) fn write_str(mem: &mut impl Mem, at: u32, cap: u32, s: &str, wide: bool) -> u32 {
     if cap == 0 {
         return 0;
     }
@@ -522,7 +518,7 @@ fn write_str(mem: &mut impl Mem, at: u32, cap: u32, s: &str, wide: bool) -> u32 
 }
 
 /// Reads a NUL-terminated string (bytes or UTF-16) at `at`.
-fn read_str(mem: &impl Mem, at: u32, wide: bool) -> String {
+pub(crate) fn read_str(mem: &impl Mem, at: u32, wide: bool) -> String {
     let mut out = Vec::new();
     let mut p = at;
     loop {
@@ -600,7 +596,8 @@ fn thread_locale(_: &mut Exec, _: &Args) -> Ret {
 fn create_file(e: &mut Exec, args: &Args, wide: bool) -> Ret {
     let name = read_str(&e.mem(), a(args, 0), wide);
     let write = a(args, 1) & 0x4000_0000 != 0;
-    match e.files.open(&name, write, a(args, 4)) {
+    let opened = e.files().open(&name, write, a(args, 4));
+    match opened {
         Some(h) => {
             e.crt.last_error = 0;
             Ret::eax(h)
@@ -622,7 +619,8 @@ fn create_file_w(e: &mut Exec, args: &Args) -> Ret {
 
 /// `ReadFile(h, buf, n, &read, overlapped)`.
 fn read_file(e: &mut Exec, args: &Args) -> Ret {
-    let Some(data) = e.files.read(a(args, 0), a(args, 2) as usize) else {
+    let data = e.files().read(a(args, 0), a(args, 2) as usize);
+    let Some(data) = data else {
         return Ret::eax(0);
     };
     let mut mem = e.mem();
@@ -633,19 +631,32 @@ fn read_file(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(1)
 }
 
-/// `WriteFile(h, buf, n, &written, overlapped)`: discarded (no game file
-/// is written by this build), reported as written.
+/// `WriteFile(h, buf, n, &written, overlapped)`: documents files are
+/// written; anything else (the console) is discarded, reported as
+/// written.
 fn write_file(e: &mut Exec, args: &Args) -> Ret {
+    let mut mem = e.mem();
+    let mut data = vec![0; a(args, 2) as usize];
+    mem.read_bytes(a(args, 1), &mut data);
+    let n = e.files().write(a(args, 0), &data).unwrap_or(data.len());
     if a(args, 3) != 0 {
-        let mut mem = e.mem();
-        mem.write(a(args, 3), a(args, 2));
+        mem.write(a(args, 3), u32::try_from(n).unwrap_or(0));
     }
+    Ret::eax(1)
+}
+
+/// `CreateDirectoryW(name, sa)`: in the documents folder; elsewhere it
+/// "exists".
+fn create_directory(e: &mut Exec, args: &Args) -> Ret {
+    let name = read_str(&e.mem(), a(args, 0), true);
+    e.files().create_dir(&name);
     Ret::eax(1)
 }
 
 /// `GetFileSizeEx(h, &size)`.
 fn file_size_ex(e: &mut Exec, args: &Args) -> Ret {
-    match e.files.size(a(args, 0)) {
+    let size = e.files().size(a(args, 0));
+    match size {
         Some(n) => {
             let mut mem = e.mem();
             mem.write(a(args, 1), n);
@@ -663,7 +674,8 @@ fn set_file_pointer(e: &mut Exec, args: &Args) -> Ret {
         let hi: u32 = e.mem().read(a(args, 2));
         i64::from(hi) << 32 | i64::from(a(args, 1))
     };
-    match e.files.seek(a(args, 0), high, a(args, 3)) {
+    let pos = e.files().seek(a(args, 0), high, a(args, 3));
+    match pos {
         Some(pos) => {
             if a(args, 2) != 0 {
                 let mut mem = e.mem();
@@ -677,23 +689,18 @@ fn set_file_pointer(e: &mut Exec, args: &Args) -> Ret {
     }
 }
 
-/// `CloseHandle(h)`.
-fn close_handle(e: &mut Exec, args: &Args) -> Ret {
-    e.files.close(a(args, 0));
-    Ret::eax(1)
-}
-
 /// `GetFileAttributesW(name)`.
 fn file_attributes(e: &mut Exec, args: &Args) -> Ret {
     let name = read_str(&e.mem(), a(args, 0), true);
-    Ret::eax(e.files.attributes(&name))
+    let attributes = e.files().attributes(&name);
+    Ret::eax(attributes)
 }
 
-/// `SHGetFolderPathW(hwnd, csidl, token, flags, path)`: a documents folder
-/// outside the game folder (so nothing there opens yet).
+/// `SHGetFolderPathW(hwnd, csidl, token, flags, path)`: the documents
+/// folder ([`files::DOCUMENTS_WIN`], a host folder of the caller's).
 fn folder_path(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
-    write_str(&mut mem, a(args, 4), 260, "C:\\FFXDocuments", true);
+    write_str(&mut mem, a(args, 4), 260, files::DOCUMENTS_WIN, true);
     Ret::eax(0)
 }
 
@@ -744,16 +751,16 @@ fn path_remove_file_spec_w(e: &mut Exec, args: &Args) -> Ret {
 
 /// `GetCommandLineW()`: `FFX.exe`, in the arena.
 fn command_line_w(e: &mut Exec, _: &Args) -> Ret {
+    let p = e.alloc(32);
     let mut mem = e.mem();
-    let p = e.crt.alloc(&mut mem, 32);
     write_str(&mut mem, p, 16, "FFX.exe", true);
     Ret::eax(p)
 }
 
 /// `CommandLineToArgvW(line, &argc)`: one argument, the program.
 fn command_line_to_argv(e: &mut Exec, args: &Args) -> Ret {
+    let p = e.alloc(48);
     let mut mem = e.mem();
-    let p = e.crt.alloc(&mut mem, 48);
     write_str(&mut mem, p + 8, 16, "FFX.exe", true);
     mem.write(p, [p + 8, 0]);
     mem.write(a(args, 1), 1u32);
@@ -974,7 +981,7 @@ fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
 /// `_wfopen` / `fopen`: no stdio files yet (NULL, as for a missing file).
 fn fopen_missing(e: &mut Exec, args: &Args, wide: bool) -> Ret {
     let name = read_str(&e.mem(), a(args, 0), wide);
-    e.files.log.push((format!("fopen {name}"), false));
+    e.files().log.push((format!("fopen {name}"), false));
     Ret::eax(0)
 }
 
@@ -986,46 +993,34 @@ fn fopen(e: &mut Exec, args: &Args) -> Ret {
     fopen_missing(e, args, false)
 }
 
-/// `InterlockedCompareExchange(&v, new, cmp)`.
-fn interlocked_cmpxchg(e: &mut Exec, args: &Args) -> Ret {
-    let mut mem = e.mem();
-    let old: u32 = mem.read(a(args, 0));
-    if old == a(args, 2) {
-        mem.write(a(args, 0), a(args, 1));
-    }
-    Ret::eax(old)
-}
-
-fn interlocked_add(e: &mut Exec, args: &Args, by: u32, ret_new: bool) -> Ret {
-    let mut mem = e.mem();
-    let old: u32 = mem.read(a(args, 0));
-    let new = old.wrapping_add(by);
-    mem.write(a(args, 0), new);
-    Ret::eax(if ret_new { new } else { old })
-}
-
-fn interlocked_inc(e: &mut Exec, args: &Args) -> Ret {
-    interlocked_add(e, args, 1, true)
-}
-
-fn interlocked_dec(e: &mut Exec, args: &Args) -> Ret {
-    interlocked_add(e, args, u32::MAX, true)
-}
-
-fn interlocked_xadd(e: &mut Exec, args: &Args) -> Ret {
-    let by = a(args, 1);
-    interlocked_add(e, args, by, false)
-}
-
 /// `GetTickCount64()`.
 fn tick_count64(_: &mut Exec, _: &Args) -> Ret {
     Ret::u64(1_000_000)
 }
 
-/// A milestone stand-in: the run stops when one of these is reached
-/// unless the caller asked for more ([`Exec::stop_at`] covers the rest).
+/// The fake window handle (`CreateWindowExA`).
+pub const HWND: u32 = 0x0001_0010;
+
+/// `CreateWindowExA`: a milestone, recorded; the run goes on with a fake
+/// window ([`HWND`]) that gets no messages (`--stop-at
+/// USER32.dll!CreateWindowExA` stops here instead).
 fn window_milestone(e: &mut Exec, _: &Args) -> Ret {
-    e.end(Stop::Milestone("first window (CreateWindowExA)".into()));
+    e.stats
+        .milestones
+        .push("first window (CreateWindowExA)".into());
+    Ret::eax(HWND)
+}
+
+/// `GetClientRect` / `GetWindowRect(hwnd, &rect)`: the window is the
+/// 1920 x 1080 screen.
+fn window_rect(e: &mut Exec, args: &Args) -> Ret {
+    let mut mem = e.mem();
+    mem.write(a(args, 1), [0u32, 0, 1920, 1080]);
+    Ret::eax(1)
+}
+
+/// `PeekMessageA/W(&msg, hwnd, min, max, remove)`: no messages.
+fn peek_message(_: &mut Exec, _: &Args) -> Ret {
     Ret::eax(0)
 }
 
@@ -1078,7 +1073,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "SetLastError", Conv::Stdcall, 1, set_last_error),
     (K32, "EncodePointer", Conv::Stdcall, 1, first_arg),
     (K32, "DecodePointer", Conv::Stdcall, 1, first_arg),
-    (K32, "IsProcessorFeaturePresent", Conv::Stdcall, 1, one),
     (K32, "IsDebuggerPresent", Conv::Stdcall, 0, zero),
     (
         K32,
@@ -1089,9 +1083,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     ),
     (K32, "GetCurrentProcessId", Conv::Stdcall, 0, |_, _| {
         Ret::eax(0x1000)
-    }),
-    (K32, "GetCurrentThreadId", Conv::Stdcall, 0, |_, _| {
-        Ret::eax(0x1004)
     }),
     (K32, "GetCurrentProcess", Conv::Stdcall, 0, |_, _| {
         Ret::eax(u32::MAX)
@@ -1118,8 +1109,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         perf_counter,
     ),
     (K32, "SetUnhandledExceptionFilter", Conv::Stdcall, 1, zero),
-    (K32, "GetModuleHandleW", Conv::Stdcall, 1, module_handle),
-    (K32, "GetModuleHandleA", Conv::Stdcall, 1, module_handle),
     (K32, "GetProcessHeap", Conv::Stdcall, 0, |_, _| {
         Ret::eax(0x0bad_0001)
     }),
@@ -1129,76 +1118,13 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "HeapReAlloc", Conv::Stdcall, 4, heap_realloc),
     (K32, "VirtualAlloc", Conv::Stdcall, 4, virtual_alloc),
     (K32, "VirtualFree", Conv::Stdcall, 3, one),
-    (K32, "InitializeCriticalSection", Conv::Stdcall, 1, void),
-    (K32, "InitializeCriticalSectionEx", Conv::Stdcall, 3, one),
-    (K32, "EnterCriticalSection", Conv::Stdcall, 1, void),
-    (K32, "LeaveCriticalSection", Conv::Stdcall, 1, void),
-    (K32, "DeleteCriticalSection", Conv::Stdcall, 1, void),
-    (
-        K32,
-        "InterlockedIncrement",
-        Conv::Stdcall,
-        1,
-        interlocked_inc,
-    ),
-    (
-        K32,
-        "InterlockedDecrement",
-        Conv::Stdcall,
-        1,
-        interlocked_dec,
-    ),
-    (
-        K32,
-        "InterlockedExchangeAdd",
-        Conv::Stdcall,
-        2,
-        interlocked_xadd,
-    ),
-    (
-        K32,
-        "InterlockedCompareExchange",
-        Conv::Stdcall,
-        3,
-        interlocked_cmpxchg,
-    ),
-    (K32, "CreateEventA", Conv::Stdcall, 4, new_handle),
-    (K32, "CreateEventW", Conv::Stdcall, 4, new_handle),
-    (K32, "CreateMutexW", Conv::Stdcall, 3, new_handle),
-    (K32, "CreateSemaphoreA", Conv::Stdcall, 4, new_handle),
-    (K32, "CreateSemaphoreW", Conv::Stdcall, 4, new_handle),
-    (K32, "SetEvent", Conv::Stdcall, 1, one),
-    (K32, "ResetEvent", Conv::Stdcall, 1, one),
-    (K32, "ReleaseSemaphore", Conv::Stdcall, 3, one),
-    (K32, "ReleaseMutex", Conv::Stdcall, 1, one),
-    (K32, "CloseHandle", Conv::Stdcall, 1, close_handle),
-    (K32, "WaitForSingleObject", Conv::Stdcall, 2, zero),
-    (K32, "WaitForSingleObjectEx", Conv::Stdcall, 3, zero),
-    (K32, "CreateThread", Conv::Stdcall, 6, create_thread),
     (K32, "SetThreadPriority", Conv::Stdcall, 2, one),
-    (K32, "ResumeThread", Conv::Stdcall, 1, zero),
-    (K32, "Sleep", Conv::Stdcall, 1, void),
-    (K32, "SleepEx", Conv::Stdcall, 2, zero),
     (K32, "GetSystemInfo", Conv::Stdcall, 1, system_info),
     (K32, "SetThreadExecutionState", Conv::Stdcall, 1, one),
     (K32, "ExitProcess", Conv::Stdcall, 1, exit),
     (K32, "GetStartupInfoW", Conv::Stdcall, 1, startup_info),
     (K32, "GetThreadLocale", Conv::Stdcall, 0, thread_locale),
     (K32, "SetThreadUILanguage", Conv::Stdcall, 1, first_arg),
-    (
-        K32,
-        "GetModuleFileNameA",
-        Conv::Stdcall,
-        3,
-        module_file_name_a,
-    ),
-    (
-        K32,
-        "GetModuleFileNameW",
-        Conv::Stdcall,
-        3,
-        module_file_name_w,
-    ),
     (K32, "GetEnvironmentVariableA", Conv::Stdcall, 3, env_var),
     (K32, "GetEnvironmentVariableW", Conv::Stdcall, 3, env_var),
     (K32, "GetCurrentDirectoryA", Conv::Stdcall, 2, current_dir),
@@ -1212,7 +1138,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "GetFileSizeEx", Conv::Stdcall, 2, file_size_ex),
     (K32, "SetFilePointer", Conv::Stdcall, 4, set_file_pointer),
     (K32, "GetFileAttributesW", Conv::Stdcall, 1, file_attributes),
-    (K32, "CreateDirectoryW", Conv::Stdcall, 2, one),
+    (K32, "CreateDirectoryW", Conv::Stdcall, 2, create_directory),
     (K32, "LocalFree", Conv::Stdcall, 1, zero),
     (K32, "OutputDebugStringA", Conv::Stdcall, 1, void),
     (CRT, "_controlfp_s", Conv::Cdecl, 3, controlfp_s),
@@ -1317,6 +1243,74 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         12,
         device_milestone,
     ),
+    // Steam, absent: `SteamAPI_Init` fails, so the game runs without
+    // achievements and never asks for the interfaces (Steam_Init)
+    (
+        "steam_api.dll",
+        "SteamAPI_RestartAppIfNecessary",
+        Conv::Cdecl,
+        1,
+        zero,
+    ),
+    ("steam_api.dll", "SteamAPI_Init", Conv::Cdecl, 0, zero),
+    (
+        "steam_api.dll",
+        "SteamAPI_RunCallbacks",
+        Conv::Cdecl,
+        0,
+        void,
+    ),
+    ("steam_api.dll", "SteamAPI_Shutdown", Conv::Cdecl, 0, void),
+    (
+        "steam_api.dll",
+        "SteamAPI_RegisterCallback",
+        Conv::Cdecl,
+        2,
+        void,
+    ),
+    (
+        "steam_api.dll",
+        "SteamAPI_UnregisterCallback",
+        Conv::Cdecl,
+        1,
+        void,
+    ),
+    // the window (a fake one, no messages)
+    ("USER32.dll", "ShowWindow", Conv::Stdcall, 2, zero),
+    ("USER32.dll", "SetWindowPos", Conv::Stdcall, 7, one),
+    ("USER32.dll", "SetWindowTextA", Conv::Stdcall, 2, one),
+    ("USER32.dll", "SetWindowLongA", Conv::Stdcall, 3, zero),
+    ("USER32.dll", "GetWindowLongA", Conv::Stdcall, 2, zero),
+    ("USER32.dll", "GetClientRect", Conv::Stdcall, 2, window_rect),
+    ("USER32.dll", "GetWindowRect", Conv::Stdcall, 2, window_rect),
+    ("USER32.dll", "ClientToScreen", Conv::Stdcall, 2, one),
+    ("USER32.dll", "PeekMessageA", Conv::Stdcall, 5, peek_message),
+    ("USER32.dll", "PeekMessageW", Conv::Stdcall, 5, peek_message),
+    ("USER32.dll", "UpdateWindow", Conv::Stdcall, 1, one),
+    ("USER32.dll", "SetCursorPos", Conv::Stdcall, 2, one),
+    ("USER32.dll", "ClipCursor", Conv::Stdcall, 1, one),
+    (
+        "USER32.dll",
+        "RegisterWindowMessageA",
+        Conv::Stdcall,
+        1,
+        |_, _| Ret::eax(0xc100),
+    ),
+    (
+        "USER32.dll",
+        "RegisterDeviceNotificationA",
+        Conv::Stdcall,
+        3,
+        new_handle,
+    ),
+    (
+        "USER32.dll",
+        "SetWindowsHookExA",
+        Conv::Stdcall,
+        4,
+        new_handle,
+    ),
+    ("IMM32.dll", "ImmAssociateContext", Conv::Stdcall, 2, zero),
     // timers
     ("WINMM.dll", "timeBeginPeriod", Conv::Stdcall, 1, zero),
     ("WINMM.dll", "timeEndPeriod", Conv::Stdcall, 1, zero),

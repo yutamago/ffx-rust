@@ -11,6 +11,7 @@
 //! - [`report`]: what a run reached, for the log and the tests.
 
 pub mod arena;
+pub mod dll;
 pub mod exec;
 pub mod files;
 pub mod image;
@@ -18,7 +19,9 @@ pub mod imports;
 pub mod log;
 pub mod ports;
 pub mod report;
+pub mod sync;
 pub mod table;
+pub mod win32;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -93,12 +96,47 @@ pub fn boot(exe: &Path) -> Result<exec::Exec> {
 /// # Errors
 /// As [`boot`].
 pub fn boot_with(exe: &Path, table: table::Table) -> Result<exec::Exec> {
+    boot_opts(exe, table, &Options::default())
+}
+
+/// How to boot.
+#[derive(Debug, Clone, Default)]
+pub struct Options {
+    /// Leave the player's `MSVCR110.dll` and `MSVCP110.dll` out (Rust
+    /// stand-ins only, as the first round ran).
+    pub no_dlls: bool,
+    /// The folder the game sees as its documents folder
+    /// (`SHGetFolderPathW`), for `GameSetting.ini` and the saves; `None`:
+    /// none (every file there is missing).
+    pub documents: Option<std::path::PathBuf>,
+}
+
+/// [`boot_with`] with [`Options`]: maps the image and (unless
+/// `no_dlls`) the C runtime DLLs from beside it, builds the main thread's
+/// executor and runs the DLLs' `DllMain(DLL_PROCESS_ATTACH)`.
+///
+/// # Errors
+/// As [`boot`]; a DLL whose `DllMain` fails stops the boot.
+pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec::Exec> {
     let bytes = std::fs::read(exe)?;
     let arena = Arc::new(arena::Arena::new()?);
     let image = image::load(&arena, &bytes)?;
-    let mut exec = exec::Exec::new(arena, image, table, imports::Imports::new())?;
-    if let Some(dir) = exe.parent() {
-        exec.files = files::Files::new(dir);
+    let dir = exe.parent().unwrap_or(Path::new("."));
+    let dlls = if opts.no_dlls {
+        Vec::new()
+    } else {
+        dll::load_runtime(&arena, dir)?
+    };
+    let mut files = files::Files::new(dir);
+    files.documents.clone_from(&opts.documents);
+    let shared = exec::Shared::new(arena, image, dlls, table, files)?;
+    let mut exec = exec::Exec::new(shared)?;
+    match exec.attach_dlls(1) {
+        Ok(()) => Ok(exec),
+        Err(Error::Stopped) => Err(Error::Image(format!(
+            "the C runtime DLLs did not start: {}",
+            exec.stopped().map(ToString::to_string).unwrap_or_default()
+        ))),
+        Err(e) => Err(e),
     }
-    Ok(exec)
 }

@@ -12,6 +12,7 @@
 //! Rust ports and the original code see one memory.
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{Error, Result};
 
@@ -41,6 +42,9 @@ impl Region {
 pub struct Arena {
     base: *mut u8,
     regions: Mutex<Vec<Region>>,
+    /// Bumped by every [`Arena::map`]: each thread's emulator maps the
+    /// regions it hasn't seen when this moved (docs/host.md, "Threads").
+    generation: AtomicU64,
 }
 
 // SAFETY: the arena's memory is plain bytes shared by the game's threads,
@@ -54,6 +58,7 @@ impl std::fmt::Debug for Arena {
         f.debug_struct("Arena")
             .field("base", &self.base)
             .field("regions", &self.regions())
+            .field("generation", &self.generation())
             .finish()
     }
 }
@@ -67,6 +72,7 @@ impl Arena {
         Ok(Self {
             base: sys::reserve()?,
             regions: Mutex::new(Vec::new()),
+            generation: AtomicU64::new(0),
         })
     }
 
@@ -80,6 +86,12 @@ impl Arena {
     #[must_use]
     pub fn ptr(&self, addr: u32) -> *mut u8 {
         self.base.wrapping_add(addr as usize)
+    }
+
+    /// How many times a region was mapped so far.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
     }
 
     /// The mapped regions, sorted by address.
@@ -119,6 +131,7 @@ impl Arena {
             name: name.to_string(),
         });
         regions.sort_by_key(|r| r.start);
+        self.generation.fetch_add(1, Ordering::Release);
         Ok(())
     }
 
