@@ -1276,4 +1276,10 @@ ported! {
     Phyre_PRendering_PRendererPool_resize_005bbc30 @ 0x005b_bc30 => extern "thiscall" fn e_005bbc30(this: u32, n: u32, device: u32) -> u32 {
         ffx_prender::m5p_render_b_d3d::pool::resize(&mut mem(), this, n, device)
     }
+    /// `Phyre_PRendering_PRendererBase_pushCommand20_005bb2e0`: the wrapped cursors in this frame.
+    Phyre_PRendering_PRendererBase_pushCommand20_005bb2e0 @ 0x005b_b2e0 => extern "thiscall" fn e_005bb2e0(this: u32, arg: u32) -> u32 {
+        let mut f = super::StackFrame::<2>::new();
+        let ebp = f.at() + 8;
+        ffx_prender::m5p_render_b_d3d::queue::push(&mut mem(), ebp, this, arg)
+    }
 }

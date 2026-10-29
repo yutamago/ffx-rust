@@ -296,3 +296,51 @@ pub mod pool {
         0
     }
 }
+
+/// The command queue's callees: `Phyre_PRendering_PRenderRingBuffer_stepForAllocation`
+/// `(ring; cursor, size, &wrapped)` and
+/// `Phyre_PRendering_PRenderRingBufferSegmented_allocate(ring; size)`.
+pub const RING_STEP: u32 = 0x0061_3f00;
+pub const RING_ALLOCATE: u32 = 0x0061_3e10;
+
+pub mod queue {
+    //! `0x005bb2e0` over game memory.
+
+    use super::{RING_ALLOCATE, RING_STEP};
+    use ffx_graphic::host::{Conv, Host};
+
+    /// Whether the ring at `ring` (cursor `+8`, end `+0xc`) is full for
+    /// `size` more bytes, the step writing its wrapped cursor to `out`:
+    /// the cursor not past the end and either a wrap or the new cursor
+    /// past the end.
+    fn full(h: &mut impl Host, ring: u32, size: u32, out: u32) -> bool {
+        let cur: u32 = h.read(ring + 8);
+        let end: u32 = h.read(ring + 0xc);
+        let r = h.call_sym(RING_STEP, Conv::Thiscall(ring), &[cur, size, out]);
+        let o: u32 = h.read(out);
+        cur <= end && (o < cur || r > end)
+    }
+
+    /// `0x005bb2e0(renderer; arg)` (thiscall, `ret 4`): when the data ring
+    /// (`+0x1c`, step 0, wrapped cursor at `ebp - 4`) or the command ring
+    /// (`+0x30`, step 0x48, `ebp - 8`) is full, virtual slot 2 (the
+    /// flush); then a 0x48-byte command from the command ring (0xd when
+    /// there is none) becomes the first one (`+0x4c`, when unset) and the
+    /// last end (`+0x50`), with type 0x20 and `arg` at `+8`; 0.
+    pub fn push(h: &mut impl Host, ebp: u32, this: u32, arg: u32) -> u32 {
+        if full(h, this + 0x1c, 0, ebp - 4) || full(h, this + 0x30, 0x48, ebp - 8) {
+            h.call_virtual(this, 2, &[]);
+        }
+        let cmd = h.call_sym(RING_ALLOCATE, Conv::Thiscall(this + 0x30), &[0x48]);
+        if cmd == 0 {
+            return 0xd;
+        }
+        if h.read::<u32>(this + 0x4c) == 0 {
+            h.write(this + 0x4c, cmd);
+        }
+        h.write(this + 0x50, cmd.wrapping_add(0x48));
+        h.write(cmd + 8, arg);
+        h.write(cmd, 0x20u32);
+        0
+    }
+}

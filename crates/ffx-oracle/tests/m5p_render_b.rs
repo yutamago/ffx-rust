@@ -4391,3 +4391,55 @@ fn renderer_pool_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn command_push_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // rings as [base, limit, cursor, end]: both with room; the data
+        // cursor past its end and the command ring overrunning its end; a
+        // data wrap; a command wrap; a command cursor past its end; no
+        // command; a first command already set; a command ring with no
+        // room even after the wrap
+        let room = [0x1000u32, 0x2000, 0x1100, 0x1800];
+        for (case, data, cmds, ok, first) in [
+            (0u32, room, room, true, 0u32),
+            (
+                1,
+                [0x1000, 0x2000, 0x1900, 0x1800],
+                [0x1000, 0x2000, 0x17f0, 0x1800],
+                true,
+                0,
+            ),
+            (2, [0x1000, 0x1100, 0x1200, 0x1800], room, true, 0),
+            (3, room, [0x1000, 0x2000, 0x1fd0, 0x1ff0], true, 0),
+            (4, room, [0x1000, 0x2000, 0x1900, 0x1800], true, 0),
+            (5, room, room, false, 0),
+            (6, room, room, true, 0x7777),
+            (7, room, [0x1000, 0x1040, 0x1100, 0x1800], true, 0),
+        ] {
+            let vt_owner = t.object(&[0, 0, 0], &[]);
+            let vt = t.r32(vt_owner);
+            let r = t.junk(0x60, 3);
+            t.w32(r, vt);
+            for k in 0..4 {
+                t.w32(r + 0x1c + 4 * k, data[k as usize]);
+                t.w32(r + 0x30 + 4 * k, cmds[k as usize]);
+            }
+            t.w32(r + 0x4c, first);
+            let cmd = t.junk(0x48, 4);
+            t.stub(d3d::RING_ALLOCATE, true, 1, 1, if ok { cmd } else { 0 });
+            let ebp = t.ebp_for(1);
+            t.check_frame(
+                &format!("{label}: push {case}"),
+                0x005b_b2e0,
+                Conv::Thiscall(r),
+                &[0x4242],
+                ebp,
+                0x20,
+                (8, 0),
+                |g| Out::U32(d3d::queue::push(g, ebp, r, 0x4242)),
+            );
+            t.reset();
+        }
+    }
+}
