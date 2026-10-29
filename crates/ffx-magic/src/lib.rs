@@ -75,6 +75,7 @@ pub mod s3_wrap;
 // the shared work list's fourth round (shared-4)
 pub mod s4_fam446;
 pub mod s4_misc;
+pub mod s4_small;
 pub mod s4_summon;
 pub mod s4_wrap;
 
@@ -945,6 +946,7 @@ ports! {
     "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
     "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
     "thunk: step node" => s4_wrap::JMP_STEP_NODE, s4_wrap::ecx_jmp;
+    "thunk: nodes reset" => s4_wrap::JMP_NODES_RESET, s4_wrap::ecx_jmp;
     "thunk: particle node" => s4_wrap::JMP_PARTICLE_NODE, s4_wrap::ecx_jmp;
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
@@ -992,6 +994,32 @@ ports! {
     "0644 start-up" => s4_fam446::START_UP_C, s4_fam446::start_up_c;
     "0565 load step" => s4_fam446::LOAD_STEP_B, s4_fam446::load_step_b;
     "0644 load step" => s4_fam446::LOAD_STEP_C, s4_fam446::load_step_c;
+    "word clear" => s4_small::WORD_CLEAR, s4_small::word_clear;
+    "call slot 574" => s4_small::CALL_574, s4_small::call_574;
+    "store 1.0, return 1" => s4_small::STORE_ONE_F, s4_small::store_one;
+    "store 0, return 1" => s4_small::STORE_ONE_0, s4_small::store_one;
+    "done after slot 432" => s4_small::DONE_432, s4_small::done_432;
+    "done after slot 434" => s4_small::DONE_434, s4_small::done_434;
+    "done after slot 213" => s4_small::DONE_213, s4_small::done_213;
+    "call slot 941" => s4_small::CALL_941, s4_small::call_941;
+    "call slot 579" => s4_small::CALL_579, s4_small::call_579;
+    "call slot 579 (callback)" => s4_small::CALL_579_WITH, s4_small::call_579_with;
+    "call slot 239 (back)" => s4_small::CALL_239_BACK, s4_small::call_239_back;
+    "call slot 239 (object)" => s4_small::CALL_239_OBJ, s4_small::call_239_obj;
+    "call slot 239 when idle" => s4_small::CALL_239_IDLE, s4_small::call_239_idle;
+    "call slot 450" => s4_small::CALL_450, s4_small::call_450;
+    "give back +0xeac" => s4_small::GIVE_BACK_EAC, s4_small::give_back_eac;
+    "call slot 231" => s4_small::CALL_231, s4_small::call_231;
+    "state 0x3016" => s4_small::STATE_3016, s4_small::state_3016;
+    "call slot 632" => s4_small::CALL_632, s4_small::call_632;
+    "set handler" => s4_small::SET_HANDLER, s4_small::set_handler;
+    "first free record" => s4_small::FIRST_FREE, s4_small::first_free;
+    "two models" => s4_small::TWO_MODELS, s4_small::two_models;
+    "part slot 276" => s4_small::PART_276, s4_small::part_276;
+    "release +0x1ee4" => s4_small::RELEASE_1EE4, s4_small::release_1ee4;
+    "finish and give back" => s4_small::FINISH_GIVE_BACK, s4_small::finish_give_back;
+    "slot 371 twice" => s4_small::CALL_371_TWICE, s4_small::call_371_twice;
+    "call slot 211, flag" => s4_small::CALL_211_FLAG, s4_small::call_211_flag;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1316,6 +1344,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("target nodes", &s4_summon::TARGET_NODES),
     ("angle step", &s4_misc::ANGLE_STEP),
     ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),
+    ("call slot 296 (this)", &s4_small::CALL_296),
+    ("call slot 276 (this + 4)", &s4_small::CALL_276),
+    ("call slot 37 (this)", &s4_small::CALL_37),
+    ("call slot 239 (edx)", &s4_small::CALL_239_EDX),
+    ("bone with rate", &s4_small::BONE_RATE),
+    ("call slot 237 (model)", &s4_small::CALL_237),
+    ("call slot 250 (xmm)", &s4_small::CALL_250),
+    ("locked slot 878", &s4_small::LOCKED_878),
+    ("call slot 213 when idle", &s4_small::CALL_213_IDLE),
+    ("handle for slot 393", &s4_small::HANDLE_393),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

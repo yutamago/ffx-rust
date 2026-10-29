@@ -2054,9 +2054,18 @@ fn part_toggle_and_nodes_reset() {
                 ecx: cursor,
                 ..Call::default()
             };
+            let saved = t.save();
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 s4_misc::nodes_reset(g, img, fr)
             });
+            // through its thunk: the cursor as the first stack word
+            t.restore(&saved);
+            let c = Call {
+                eax: 0x00ea_0000,
+                ecx: 0x0bad_0ecc,
+                ..Call::default()
+            };
+            t.check_entry(t.at(0x37b0), c, &[cursor, 0x0bad_f00e], Eax::Checked);
         }
     }
 }
