@@ -11,7 +11,11 @@
 //! stack words to memory, so the diff checks every call and its
 //! arguments), or the original code on both sides. Each branch gets its
 //! own data; the tests say which ones only synthetic data reaches.
-#![allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names,
+    clippy::too_many_lines
+)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -2474,6 +2478,228 @@ fn m5p_scene_e_cursor_advance() {
         tw.run(&label, 0x009f_3e50, Conv::Thiscall(cur), &[2], |g| {
             se::bridge::cursor_advance(g, cur, 2)
         });
+        tw.unstub();
+    }
+}
+
+// ---- batch 6 (ffx_prender::m5p_scene_f) ----
+
+use ffx_prender::m5p_scene_f as sf;
+
+/// Floats for the maths tests: ordinary values, signed zeros, values that
+/// round, infinities and quiet NaNs.
+fn float_words(rng: &mut Rng, n: usize) -> Vec<u8> {
+    let special = [
+        0.0f32.to_bits(),
+        (-0.0f32).to_bits(),
+        f32::INFINITY.to_bits(),
+        f32::NEG_INFINITY.to_bits(),
+        0x7fc0_1234,
+        0xffc0_0001,
+        f32::MAX.to_bits(),
+        1.0e-40f32.to_bits(),
+    ];
+    let mut out = Vec::new();
+    for _ in 0..n {
+        let r = rng.next();
+        let w = if r.is_multiple_of(7) {
+            special[(r >> 8) as usize % special.len()]
+        } else {
+            let f = f32::from(u16::try_from(r >> 16).unwrap_or(0)) / 16.0 - 1000.0;
+            (f * 1.000_123).to_bits()
+        };
+        out.extend(w.to_le_bytes());
+    }
+    out
+}
+
+/// The polygon area over random polygons (0 to 9 points) and the 3x3
+/// product over random matrices (into fresh memory and onto itself).
+#[test]
+fn m5p_scene_f_maths() {
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(21);
+        for round in 0..40 {
+            let n = round % 10;
+            let pts = tw.alloc(&float_words(&mut rng, 4 * n.max(1) as usize));
+            let label = format!("{what} polygon area {round} ({n} points)");
+            let (ra, r) = tw.run_any(&label, 0x005a_3af0, Conv::Cdecl, &[pts, n], |g| {
+                sf::bridge::polygon_area(g, pts, n)
+            });
+            assert!(ra.st0_is(f64::from(r)), "{label}: ST0 {:?} vs {r}", ra.st0);
+        }
+        // sums whose grouping shows: (big - big) + 1 per element
+        let a = tw.alloc(
+            &[
+                1.0e30f32, 1.0e30, 1.0e30, 0.0, -1.0e30, -1.0e30, -1.0e30, 0.0, 1.0, 1.0, 1.0, 0.0,
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect::<Vec<_>>(),
+        );
+        let b = tw.alloc(
+            &[
+                1.0f32, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0,
+            ]
+            .iter()
+            .flat_map(|f| f.to_le_bytes())
+            .collect::<Vec<_>>(),
+        );
+        let out = tw.zeros(48);
+        let label = format!("{what} rotation product, cancelling sums");
+        tw.run(&label, 0x0054_7870, Conv::Thiscall(a), &[out, b], |g| {
+            sf::bridge::rotation_product(g, a, out, b)
+        });
+        for round in 0..40 {
+            let a = tw.alloc(&float_words(&mut rng, 12));
+            let b = tw.alloc(&float_words(&mut rng, 12));
+            let out = if round % 4 == 3 {
+                a
+            } else {
+                tw.alloc(&[0x5a; 48])
+            };
+            let label = format!("{what} rotation product {round}");
+            tw.run(&label, 0x0054_7870, Conv::Thiscall(a), &[out, b], |g| {
+                sf::bridge::rotation_product(g, a, out, b)
+            });
+        }
+    }
+}
+
+/// Builds a node of the scene tree with a name (`None`: no name; owned
+/// names get bit 0 when `mark`) and links: `(child, sibling, parent)`
+/// written later.
+fn scene_node(tw: &mut Twins, name: Option<&str>, mark: bool) -> u32 {
+    let node = tw.zeros(0x60);
+    if let Some(s) = name {
+        let p = tw.alloc(format!("{s}\0").as_bytes());
+        tw.w32(node + 0x50, p + u32::from(mark));
+    }
+    node
+}
+
+/// The node searches over a small tree (root; children a, b; a's child
+/// c; b's child d; names repeated so the last match counts), and the
+/// attachable component's target.
+#[test]
+fn m5p_scene_f_nodes() {
+    for (what, mut tw) in Twins::all() {
+        let root = scene_node(&mut tw, Some("root"), false);
+        let a = scene_node(&mut tw, Some("arm"), true);
+        let b = scene_node(&mut tw, Some(""), false);
+        let e = scene_node(&mut tw, Some("leg"), false);
+        let f = scene_node(&mut tw, None, false);
+        let c = scene_node(&mut tw, Some("hand"), false);
+        let d = scene_node(&mut tw, Some("hand"), true);
+        // child +8, sibling +0, parent +4
+        tw.w32(root + 8, a);
+        tw.w32(a, b);
+        tw.w32(a + 4, root);
+        tw.w32(b + 4, root);
+        tw.w32(a + 8, c);
+        tw.w32(c + 4, a);
+        // c's sibling e (no child), e's sibling f (no name)
+        tw.w32(c, e);
+        tw.w32(e + 4, a);
+        tw.w32(e, f);
+        tw.w32(f + 4, a);
+        tw.w32(b + 8, d);
+        tw.w32(d + 4, b);
+        let names: Vec<u32> = ["root", "arm", "hand", "leg", "", "han", "Leg"]
+            .iter()
+            .map(|s| tw.alloc(format!("{s}\0").as_bytes()))
+            .collect();
+        let query = tw.zeros(8);
+        for start in [root, a, b, c, e] {
+            for &n in names.iter().chain(&[0]) {
+                tw.w32(query, n);
+                tw.w32(query + 4, 0x1111);
+                let label = format!("{what} find node {n:#x} under {start:#x}");
+                tw.run(&label, 0x0050_4a00, Conv::Cdecl, &[query, start], |g| {
+                    sf::bridge::find_node(g, query, start)
+                });
+                let label = format!("{what} find named {n:#x} under {start:#x}");
+                tw.run(&label, 0x0050_6b80, Conv::Thiscall(start), &[n], |g| {
+                    sf::bridge::find_node_named(g, start, n)
+                });
+            }
+        }
+        // the attachable component
+        tw.stub(sf::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let block = tw.zeros(0x20);
+        let comp = tw.zeros(0x80);
+        for ret in [block, 0] {
+            tw.stub(sf::PHYRE_MALLOC, false, 2, 0, ret);
+            for (node, name) in [
+                (root, names[2]),
+                (root, names[3]),
+                (root, names[4]),
+                (root, 0),
+                (0, 0),
+            ] {
+                for old in [0x0012_3000, 0x0012_3001] {
+                    tw.write(block, &[0xee; 0x20]);
+                    tw.w32(comp + 0x54, old);
+                    let label =
+                        format!("{what} attach {node:#x} {name:#x} old {old:#x} alloc {ret:#x}");
+                    tw.run(
+                        &label,
+                        0x0055_ab30,
+                        Conv::Thiscall(comp),
+                        &[node, name],
+                        |g| sf::bridge::attach_target(g, comp, node, name),
+                    );
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The fly controller's matrix set (real callees; the port's frame on the
+/// stack) and the time span (a stand-in range call writing the two
+/// times, or failing).
+#[test]
+fn m5p_scene_f_frames() {
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(31);
+        let frame = tw.b.stack_range().start + 0x1000;
+        for round in 0..10 {
+            let this = tw.alloc(&float_words(&mut rng, 28));
+            let v = tw.alloc(&float_words(&mut rng, 3));
+            let label = format!("{what} fly set matrix {round}");
+            tw.run(&label, 0x005d_77a0, Conv::Thiscall(this), &[v], |g| {
+                sf::bridge::fly_set_matrix(g, this, v, frame)
+            });
+        }
+        let at = tw.rebase(sf::TIME_RANGE);
+        for (start, end, ret) in [
+            (1.5f32, 4.25f32, 0u32),
+            (0.1, 0.3, 0),
+            (f32::INFINITY, f32::INFINITY, 0),
+            (2.0, 1.0, 1),
+        ] {
+            // mov eax,[esp+4]; mov [eax],start; mov eax,[esp+8]; mov [eax],end; mov eax,ret; ret 8
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00];
+            c.extend(start.to_bits().to_le_bytes());
+            c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]);
+            c.extend(end.to_bits().to_le_bytes());
+            c.push(0xb8);
+            c.extend(ret.to_le_bytes());
+            c.extend([0xc2, 0x08, 0x00]);
+            let code = tw.a.alloc_code(&c).unwrap();
+            assert_eq!(tw.b.alloc_code(&c).unwrap(), code);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut tw.a, at, 5).unwrap();
+            tw.saved.entry(at).or_insert(old);
+            tw.write(at, &j);
+            let label = format!("{what} time span {start} {end} {ret}");
+            let (ra, r) = tw.run_any(&label, 0x0051_68b0, Conv::Thiscall(0x1234), &[], |g| {
+                sf::bridge::time_span(g, 0x1234, frame)
+            });
+            assert!(ra.st0_is(f64::from(r)), "{label}: ST0 {:?} vs {r}", ra.st0);
+        }
         tw.unstub();
     }
 }
