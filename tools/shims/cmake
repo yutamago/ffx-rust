@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # unicorn-engine-sys's CMake build under cargo xwin (ffx-overlay in the hook).
-# ~/.local/bin/cmake on the main machine is a broken pip wrapper; this runs
-# the PyPI build through uvx.
+# ~/.local/bin/cmake on the main machine is a broken pip wrapper, so the PyPI
+# build runs through uvx (from ~/.local/bin when it isn't on PATH).
+PATH="$PATH:$HOME/.local/bin"
 exec uvx --from cmake cmake "$@"
