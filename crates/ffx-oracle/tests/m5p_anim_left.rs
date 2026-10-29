@@ -26,6 +26,10 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_panim::m5p_anim_left_a::{self as la, bridge as lab};
+use ffx_panim::m5p_anim_left_b::{self as lb, bridge as lbb};
+use ffx_panim::m5p_anim_left_c::{self as lc, bridge as lcb};
+use ffx_panim::m5p_anim_left_d::{self as ld, bridge as ldb};
+use ffx_panim::m5p_anim_left_e::{self as le, bridge as leb};
 use ffx_panim::m5p_anim_small as sm;
 
 /// `ret` or `ret 4 * pops`.
@@ -84,11 +88,37 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.1
     }
+    fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
+        let conv = match conv {
+            host::Conv::Cdecl => Conv::Cdecl,
+            host::Conv::Stdcall => Conv::Stdcall,
+            host::Conv::Thiscall(t) => Conv::Thiscall(t),
+            host::Conv::Fastcall => Conv::Fastcall,
+        };
+        self.0
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .st0_f64()
+            .unwrap_or_else(|| panic!("callee {addr:#x} left no ST0"))
+    }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let b = x.to_bits();
         let r = self
             .0
             .call(self.2, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(self.2 + 16, Conv::Cdecl, &[]).unwrap();
+        v
+    }
+    fn call_intrinsic2(&mut self, addr: u32, x: f64, y: f64) -> f32 {
+        let (a, b) = (x.to_bits(), y.to_bits());
+        let words = [a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32, addr];
+        let r = self
+            .0
+            .call(self.2 + 32, Conv::Cdecl, &words)
             .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
         let Some(v) = r.st0_f32() else {
             panic!("intrinsic {addr:#x}: no float in ST0");
@@ -151,9 +181,12 @@ struct Twins {
     tramp: u32,
 }
 
-const TRAMPOLINE_CODE: [u8; 19] = [
+/// At `+32`: `fld qword [esp+4]; fld qword [esp+0xc]; call [esp+0x14];
+/// ret` for [`Host::call_intrinsic2`].
+const TRAMPOLINE_CODE: [u8; 45] = [
     0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-    0xdd, 0xd8, 0xc3,
+    0xdd, 0xd8, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0x44, 0x24, 0x04, 0xdd, 0x44, 0x24, 0x0c, 0xff, 0x54, 0x24, 0x14, 0xc3,
 ];
 
 impl Twins {
@@ -1323,5 +1356,1877 @@ fn target_copies_match_the_original() {
             }
             t.reset();
         }
+    }
+}
+
+// ---- batch 2: controllers and blenders ----
+
+impl Twins {
+    /// A recording `thiscall` method without stack words that leaves the
+    /// float `bits` in `ST0`.
+    fn float_method(&mut self, tag: u32, bits: u32) -> u32 {
+        let cell = self.alloc(&bits.to_le_bytes());
+        let mut tail = vec![0xd9, 0x05];
+        tail.extend(cell.to_le_bytes()); // fld dword [cell]
+        tail.push(0xc3);
+        self.stub_code_tail(tag, true, 0, &tail)
+    }
+
+    /// An object whose vtable slot `slot` is `code` (the others 0).
+    fn object_with(&mut self, slot: u32, code: u32) -> u32 {
+        let mut vt = vec![0u8; 4 * (slot as usize + 1)];
+        vt[4 * slot as usize..].copy_from_slice(&code.to_le_bytes());
+        let vt = self.alloc(&vt);
+        let obj = self.zeros(0x40);
+        self.w32(obj, vt);
+        obj
+    }
+
+    /// `f32` values in fresh memory.
+    fn floats(&mut self, v: &[f32]) -> u32 {
+        let mut b = Vec::new();
+        for x in v {
+            b.extend(x.to_bits().to_le_bytes());
+        }
+        b.extend([0; 4]);
+        self.alloc(&b)
+    }
+}
+
+#[test]
+fn event_dispatches_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let cb = t.stub_code(0x7e, false, 2, 0, 0xcb);
+        let times = [0.0f32, 0.5, 1.0, 1.0, 2.0, 3.0, 3.5];
+        let mut ev = Vec::new();
+        for (i, x) in times.iter().enumerate() {
+            ev.extend(x.to_bits().to_le_bytes());
+            ev.extend((0x100 + i as u32).to_le_bytes());
+        }
+        let evs = t.alloc(&ev);
+        let points = [-1.0f32, 0.0, 0.25, 1.0, 1.5, 3.5, 9.0, f32::NAN];
+        for raw in [7u32, 7 | sm::NOT_OWNED, 0, 5, 1] {
+            let this = t.junk(0x10, 0x91);
+            t.w32(this, raw);
+            t.w32(this + 4, evs);
+            for &from in &points {
+                for &to in &points {
+                    let (f, g) = (from.to_bits(), to.to_bits());
+                    let what = format!("{label}: events {raw:#x} {from}..{to}");
+                    t.check(
+                        &what,
+                        0x0052_07c0,
+                        Conv::Thiscall(this),
+                        &[f, g, cb, 0xc7],
+                        |h| Out::U32(lbb::dispatch_events(h, this, f, g, cb, 0xc7)),
+                    );
+                }
+            }
+            let what = format!("{label}: events {raw:#x} no callback");
+            t.check(
+                &what,
+                0x0052_07c0,
+                Conv::Thiscall(this),
+                &[0, 0x3f80_0000, 0, 1],
+                |h| Out::U32(lbb::dispatch_events(h, this, 0, 0x3f80_0000, 0, 1)),
+            );
+        }
+        assert!(t.log_entries() > 0);
+    }
+}
+
+#[test]
+fn interval_times_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let konst = t.rebase(sm::TIME_CONSTANT);
+        t.wf(konst, 7.25);
+        let mut r = Rng(0x7777_1234);
+        for case in 0..60u32 {
+            let src_time = [0.0f32, 3.7, -2.2, 100.5, 1e-3, f32::INFINITY][(case % 6) as usize];
+            let src = if case % 4 == 0 {
+                0
+            } else {
+                let code = t.float_method(0x7f, src_time.to_bits());
+                t.object_with(4, code)
+            };
+            let len = [2.0f32, -2.0, 0.5, 0.0, -0.0, f32::NAN, 1e-6, -7.5][(case % 8) as usize];
+            let start = ((r.next() % 200) as f32 - 100.0) / 9.0;
+            let offset = ((r.next() % 200) as f32 - 100.0) / 7.0;
+            let this = t.junk(0x20, 0x92);
+            t.w32(this + 8, src);
+            t.wf(this + 0xc, start);
+            t.wf(this + 0x10, offset);
+            t.wf(this + 0x14, len);
+            let what = format!("{label}: interval case {case}");
+            t.check(&what, 0x0052_2cd0, Conv::Thiscall(this), &[], |h| {
+                Out::F32(lbb::interval_time(h, this))
+            });
+        }
+        // remainders of exactly 0 and -0
+        for (time, start, len) in [
+            (4.0f32, 0.0f32, 2.0f32),
+            (-4.0, 0.0, 2.0),
+            (0.0, 4.0, -2.0),
+            (1.5, -0.5, 0.5),
+        ] {
+            let code = t.float_method(0x7f, time.to_bits());
+            let src = t.object_with(4, code);
+            let this = t.junk(0x20, 0x92);
+            t.w32(this + 8, src);
+            t.wf(this + 0xc, start);
+            t.wf(this + 0x10, 0.25);
+            t.wf(this + 0x14, len);
+            let what = format!("{label}: interval exact {time} {start} {len}");
+            t.check(&what, 0x0052_2cd0, Conv::Thiscall(this), &[], |h| {
+                Out::F32(lbb::interval_time(h, this))
+            });
+        }
+    }
+}
+
+#[test]
+fn key_searches_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let sets: [&[f32]; 6] = [
+            &[0.0],
+            &[0.0, 1.0],
+            &[0.0, 1.0, 2.0, 3.0, 4.0],
+            &[0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 5.0, 9.0],
+            &[-3.0, -1.0, 0.5, 0.5, 8.0, 8.5, 9.0, 10.0, 11.0, 12.0, 13.0],
+            &[0.0, f32::NAN, 2.0, 3.0],
+        ];
+        let values = [
+            -5.0f32,
+            -1.0,
+            0.0,
+            0.25,
+            0.5,
+            1.0,
+            1.5,
+            2.0,
+            4.0,
+            8.25,
+            13.0,
+            99.0,
+            f32::NAN,
+        ];
+        for keys in sets {
+            let at = t.floats(keys);
+            for n in [keys.len() as u32, 0] {
+                for &v in &values {
+                    let b = v.to_bits();
+                    let what = format!("{label}: search {keys:?}[..{n}] for {v}");
+                    t.check(&what, 0x0052_53c0, Conv::Cdecl, &[at, n, b], |h| {
+                        Out::U32(lbb::key_search(h, at, n, b))
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// A clip for the batch sizes: `+4` `k` channels, `+0xc` `c` constant
+/// channels (counts with the flag on odd `k`).
+fn sized_clip(t: &mut Twins, k: u32, c: u32) -> u32 {
+    let clip = t.junk(0x20, 0x93);
+    t.w32(clip + 4, if k & 1 == 1 { k | sm::NOT_OWNED } else { k });
+    t.w32(clip + 0xc, c);
+    clip
+}
+
+#[test]
+fn batch_sizes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let shapes: [&[(u32, u32)]; 6] = [
+            &[],
+            &[(3, 0)],
+            &[(1, 2)],
+            &[(0, 0), (5, 1), (2, 0), (9, 3), (4, 0)],
+            &[(9, 3), (0, 1)],
+            &[(5, 0)],
+        ];
+        for clips in shapes {
+            let ptrs: Vec<u32> = clips
+                .iter()
+                .map(|&(k, c)| sized_clip(&mut t, k, c))
+                .collect();
+            let arr = t.zeros(0x10);
+            t.w32(
+                arr,
+                ptrs.len() as u32 | if ptrs.len() == 2 { sm::NOT_OWNED } else { 0 },
+            );
+            if ptrs.len() == 1 {
+                t.w32(arr + 4, ptrs[0]);
+            } else {
+                let mut b = Vec::new();
+                for p in &ptrs {
+                    b.extend(p.to_le_bytes());
+                }
+                b.extend([0; 4]);
+                let data = t.alloc(&b);
+                t.w32(arr + 4, data);
+            }
+            let this = t.junk(0x10, 0x94);
+            t.w32(this + 8, arr);
+            let what = format!("{label}: batch size {clips:?}");
+            t.check(&what, 0x0052_62c0, Conv::Thiscall(this), &[], |h| {
+                Out::U32(lbb::max_batch_size(h, this))
+            });
+        }
+    }
+}
+
+#[test]
+fn controller_headers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (ctl_time, chans, consts) in [
+            (None, 3u32, 2u32),
+            (Some(1.5f32), 0x1_0005 | sm::NOT_OWNED, 0x2_0001),
+            (Some(f32::NAN), 0, 0),
+            (Some(-0.0), 7, 9),
+        ] {
+            let first = t.junk(0x10, 0x95);
+            let clip = t.junk(0x20, 0x96);
+            t.w32(clip, first);
+            t.w32(clip + 4, chans);
+            t.w32(clip + 0xc, consts);
+            let this = t.junk(0x20, 0x97);
+            t.w32(this + 0xc, clip);
+            let ctl = match ctl_time {
+                None => 0,
+                Some(v) => {
+                    let code = t.float_method(0x7d, v.to_bits());
+                    t.object_with(4, code)
+                }
+            };
+            t.w32(this + 0x10, ctl);
+            let out = t.junk(0x40, 0x98);
+            let what = format!("{label}: header {ctl_time:?} {chans:#x} {consts:#x}");
+            t.check(
+                &what,
+                0x0052_6480,
+                Conv::Thiscall(this),
+                &[1, out, 2],
+                |h| Out::U32(lbb::controller_header(h, this, out)),
+            );
+        }
+    }
+}
+
+#[test]
+fn blender_deletes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lb::DATA_SOURCE_DTOR, true, 0, 0, 0xd5);
+        for owned in [true, false] {
+            for flags in [0u32, 1, 2, 3] {
+                let this = t.junk(0x20, 0x99);
+                t.w32(this + 0xc, count(4, owned));
+                let what = format!("{label}: blender delete owned {owned} flags {flags}");
+                t.check(&what, 0x0052_bb60, Conv::Thiscall(this), &[flags], |h| {
+                    Out::U32(lbb::blender_delete(h, this, flags))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn blend_batches_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for ok in [true, false] {
+            let kernel = t.stub_code(0x7c, false, 6, 0, if ok { 0x3301 } else { 0x3300 });
+            for (n, nb) in [(0u32, 2u32), (1, 1), (3, 3), (5, 0), (2, 4)] {
+                // each source's batch entries: `+0x10` set on some, sizes
+                let mut srcs = Vec::new();
+                for k in 0..n {
+                    let base = t.junk(0x20 * nb as usize + 0x20, 0xa0 + k as u8);
+                    for b in 0..nb {
+                        let e = base + 0x20 * b;
+                        t.w32(e + 0x10, u32::from((k + b) % 3 != 0) * (0x40 + k));
+                        t.w32(
+                            e + 0x14,
+                            [5u32, 0xffff_fff0, 9, 0, 7][((k * 2 + b) % 5) as usize],
+                        );
+                    }
+                    let holder = t.alloc(&base.to_le_bytes());
+                    srcs.extend(holder.to_le_bytes());
+                }
+                srcs.extend([0; 4]);
+                let sources = t.alloc(&srcs);
+                let recs = t.junk(0x10 * nb as usize + 0x10, 0xb0);
+                let batches = t.alloc(&[0; 8]);
+                t.w32(batches, recs);
+                t.w32(batches + 4, nb);
+                let entries = t.junk(0x20 * nb as usize + 0x20, 0xb1);
+                let out = t.alloc(&entries.to_le_bytes());
+                // the list sits where the original's `alloca` puts it
+                let below = 0x4c + 4 * n;
+                let below = below + (0x10 - below % 0x10) % 0x10;
+                let args = [out, sources, n, 0xa1, 0xb2, batches, kernel];
+                // the list the kernel saw, after the last batch
+                if nb != 0 {
+                    t.frame_len = 4 * n;
+                }
+                let what = format!("{label}: blend batches ok {ok} n {n} batches {nb}");
+                t.check_frame(&what, 0x0052_c8f0, Conv::Cdecl, &args, below, |h| {
+                    let list = h.1;
+                    Out::U32(lbb::blend_batches(
+                        h, out, sources, n, 0xa1, 0xb2, batches, kernel, list,
+                    ))
+                });
+            }
+        }
+        assert!(t.log_entries() > 0);
+    }
+}
+
+#[test]
+fn source_resizes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for fail in [false, true] {
+            t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x800);
+            }
+            for raw in [0u32, 3, 3 | sm::NOT_OWNED] {
+                // (a count equal to the raw word with its flag would zero
+                // two billion slots in the original)
+                for n in [0u32, 1, 3, 6] {
+                    for f in [0x0052_cf10, 0x0052_e550, 0x0052_fbf0] {
+                        let this = t.junk(0x20, 0xc1);
+                        let srcs = t.junk(0x20, 0xc2);
+                        let weights = t.floats(&[1.0, f32::NAN, -0.0, 4.0, 5.0, 6.0]);
+                        t.w32(this + 0xc, raw);
+                        // no storage under a count: the new one is null too
+                        let null = raw == 0 || (n == 0 && f == 0x0052_cf10);
+                        t.w32(this + 0x10, if null { 0 } else { srcs });
+                        // the weights run one behind, so they resize too
+                        let wraw = if raw == 0 { 2 } else { raw - 1 };
+                        t.w32(this + 0x14, wraw);
+                        t.w32(
+                            this + 0x18,
+                            if n == 0 && f == 0x0052_e550 {
+                                0
+                            } else {
+                                weights
+                            },
+                        );
+                        let what = format!("{label}: resize {f:#x} fail {fail} {raw:#x} -> {n:#x}");
+                        t.check(&what, f, Conv::Thiscall(this), &[n], |h| {
+                            Out::U32(if f == 0x0052_cf10 {
+                                lbb::resize_sources(h, this, n)
+                            } else {
+                                lbb::resize_weights(h, this, n)
+                            })
+                        });
+                    }
+                }
+            }
+            t.reset();
+        }
+        // weights without storage: the new storage replaces no old one
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub_bump(la::PHYRE_MALLOC, 0x400);
+        for &f in lb::RESIZE_WEIGHTS {
+            let this = t.junk(0x20, 0xc1);
+            t.w32(this + 0xc, 0);
+            t.w32(this + 0x10, 0);
+            t.w32(this + 0x14, 0);
+            t.w32(this + 0x18, 0);
+            let what = format!("{label}: resize {f:#x} from no weights");
+            t.check(&what, f, Conv::Thiscall(this), &[3], |h| {
+                Out::U32(lbb::resize_weights(h, this, 3))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn blender_visits_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for (begin, child, end) in [
+            (0x101u32, 0x201u32, 0x301u32),
+            (0x100, 0x201, 0x301),
+            (0x101, 0x200, 0x301),
+            (0x1ff01, 0x2ff01, 0x300),
+        ] {
+            let visitor = t.object(&[0, 2, 0, 2], &[0, begin, 0, end]);
+            let c1 = t.object(&[0, 0, 0, 2], &[0, 0, 0, child]);
+            let c2 = t.object(&[0, 0, 0, 2], &[0, 0, 0, 0x401]);
+            let data = t.alloc(&[0; 16]);
+            t.w32(data, c1);
+            t.w32(data + 8, c2);
+            for raw in [0u32, 3, 3 | sm::NOT_OWNED] {
+                let this = t.junk(0x20, 0xc3);
+                t.w32(this + 0xc, raw);
+                t.w32(this + 0x10, data);
+                let what = format!("{label}: visit {begin:#x} {child:#x} {end:#x} {raw:#x}");
+                t.check(
+                    &what,
+                    0x0052_d180,
+                    Conv::Thiscall(this),
+                    &[visitor, 0xc7],
+                    |h| Out::U32(lbb::blender_visit(h, this, visitor, 0xc7)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn weight_marks_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let w = [1.0f32, 0.0, -0.0, f32::NAN, 2.0, 0.0, 1e-30, 0.0, 5.0, 0.0];
+        let weights = t.floats(&w);
+        let mut b = Vec::new();
+        for i in 0..10u32 {
+            b.extend((i * 3 % 7).to_le_bytes());
+        }
+        let ids = t.alloc(&b);
+        for n in [0u32, 1, 2, 4, 5, 9, 10] {
+            for (f, additive) in [(0x0052_e2f0, false), (0x0052_f8a0, true)] {
+                let this = t.junk(0x20, 0xc4);
+                t.w32(this + 0x18, weights);
+                let flags = t.zeros(0x10);
+                let what = format!("{label}: marks {f:#x} n {n}");
+                t.check(&what, f, Conv::Thiscall(this), &[flags, ids, n], |h| {
+                    if additive {
+                        lbb::mark_additive(h, this, flags, ids, n);
+                    } else {
+                        lbb::mark_weighted(h, this, flags, ids, n);
+                    }
+                    Out::None
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn weight_batch_data_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let weights = t.floats(&[
+            1.0,
+            f32::NAN,
+            -0.0,
+            4.5,
+            1e-40,
+            6.0,
+            7.0,
+            f32::INFINITY,
+            9.0,
+        ]);
+        for raw in [0u32, 1, 3, 4, 5, 8, 9 | sm::NOT_OWNED] {
+            for &f in lb::WEIGHT_BATCH_DATA {
+                let this = t.junk(0x20, 0xc5);
+                t.w32(this + 0x14, raw);
+                t.w32(this + 0x18, weights);
+                let out = t.junk(0x60, 0xc6);
+                let what = format!("{label}: batch data {f:#x} {raw:#x}");
+                t.check(&what, f, Conv::Thiscall(this), &[1, out, 2], |h| {
+                    Out::U32(lbb::weight_batch_data(h, this, out))
+                });
+            }
+        }
+    }
+}
+
+/// Random quaternions, then special values.
+fn quats(t: &mut Twins, seed: u32, n: u32) -> Vec<u32> {
+    let mut r = Rng(seed);
+    let mut out = Vec::new();
+    for i in 0..n {
+        let q = t.zeros(16);
+        for k in 0..4 {
+            let v = ((r.next() % 2001) as f32 - 1000.0) / 997.0;
+            t.wf(q + 4 * k, v);
+        }
+        if i >= n - 6 {
+            let k = (r.next() % 4) * 4;
+            t.w32(q + k, FLOATS[3 + (i % 7) as usize]);
+        }
+        out.push(q);
+    }
+    let z = t.zeros(16);
+    out.push(z);
+    // sums whose rounding order shows: products of 1 and 2^-53 pairs,
+    // squares 1, 2^-26, 2^-24, a component that overflows doubled
+    for v in [
+        [1.0f32, 1.0, 2f32.powi(-26), 2f32.powi(-26)],
+        [2f32.powi(-27), 2f32.powi(-27), 1.0, 1.0],
+        [1.0, 0.0, 2f32.powi(-13), 2f32.powi(-12)],
+        [3e38, 1e-10, 0.5, 0.5],
+    ] {
+        let q = t.zeros(16);
+        for (k, x) in (0u32..).zip(v) {
+            t.wf(q + 4 * k, x);
+        }
+        out.push(q);
+    }
+    out
+}
+
+#[test]
+fn quaternion_products_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let qs = quats(&mut t, 0x5151_aaaa, 24);
+        for (i, &a) in qs.iter().enumerate() {
+            // the two crafted ones go together
+            let b = if i == qs.len() - 4 {
+                qs[i + 1]
+            } else {
+                qs[(i * 7 + 3) % qs.len()]
+            };
+            let out = t.junk(16, 0xc7);
+            let what = format!("{label}: quat mul {i}");
+            t.check(&what, 0x0052_ecb0, Conv::Thiscall(a), &[out, b], |h| {
+                Out::U32(lbb::quat_mul(h, a, out, b))
+            });
+            // in place: the product written over `this`
+            let c = t.zeros(16);
+            for k in 0..4 {
+                let v = t.r32(a + 4 * k);
+                t.w32(c + 4 * k, v);
+            }
+            let what = format!("{label}: quat mul {i} in place");
+            t.check(&what, 0x0052_ecb0, Conv::Thiscall(c), &[c, b], |h| {
+                Out::U32(lbb::quat_mul(h, c, c, b))
+            });
+        }
+    }
+}
+
+#[test]
+fn quaternion_normalisations_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let qs = quats(&mut t, 0x1234_5151, 24);
+        for (i, &q) in qs.iter().enumerate() {
+            let out = t.junk(16, 0xc8);
+            let what = format!("{label}: normalise {i}");
+            t.check(&what, 0x0052_fa10, Conv::Cdecl, &[out, q], |h| {
+                Out::U32(lbb::quat_normalize(h, out, q))
+            });
+        }
+    }
+}
+
+#[test]
+fn quaternion_matrices_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let qs = quats(&mut t, 0x0bad_f00d, 30);
+        for (i, &q) in qs.iter().enumerate() {
+            let out = t.junk(0x30, 0xc9);
+            let what = format!("{label}: matrix {i}");
+            t.check(&what, 0x0053_0c30, Conv::Thiscall(out), &[q], |h| {
+                Out::U32(lbb::quat_matrix(h, out, q))
+            });
+        }
+    }
+}
+
+#[test]
+fn target_headers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for raw in [0u32, 1, 3, 4 | sm::NOT_OWNED] {
+            let owner = t.junk(0x20, 0xca);
+            t.w32(owner + 0x10, raw);
+            let this = t.junk(0x10, 0xcb);
+            t.w32(this + 8, owner);
+            let out = t.junk(0x40, 0xcc);
+            let what = format!("{label}: target header {raw:#x}");
+            t.check(
+                &what,
+                0x0053_0750,
+                Conv::Thiscall(this),
+                &[1, out, 2],
+                |h| Out::U32(lbb::target_header(h, this, out)),
+            );
+        }
+    }
+}
+
+#[test]
+fn log_forwards_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let code = t.stub_code(0x7b, true, 4, 4, 0x10c);
+        let logger = t.object_with(2, code);
+        for with in [true, false] {
+            let obj = t.junk(0x20, 0xcd);
+            t.w32(obj + 0x14, if with { logger } else { 0 });
+            let top = t.b.stack_range().end - 0x100;
+            // four words: the cell is the original's [ebp-4], the
+            // variable arguments start at the third word
+            let va = top - 16 + 8;
+            if with {
+                t.frame_len = 4;
+            }
+            let what = format!("{label}: log with {with}");
+            t.check_frame(
+                &what,
+                0x0053_0b20,
+                Conv::Cdecl,
+                &[obj, 0xf0f, 1, 2],
+                28,
+                |h| {
+                    let cell = h.1;
+                    Out::U32(lbb::log(h, obj, 0xf0f, va, cell))
+                },
+            );
+        }
+    }
+}
+
+// ---- batch 3: PAnimatableComponent and the network optimiser ----
+
+impl Twins {
+    /// A recording `thiscall` stub (two stack words, popped) that writes
+    /// `x` and `y` through them and returns `ret`.
+    fn stub_out2(&mut self, sym: u32, x: u32, y: u32, ret: u32) {
+        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov [eax], x
+        tail.extend(x.to_le_bytes());
+        tail.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]); // mov eax, [esp+8]; mov [eax], y
+        tail.extend(y.to_le_bytes());
+        tail.push(0xb8);
+        tail.extend(ret.to_le_bytes());
+        tail.extend(ret_bytes(2));
+        let code = self.stub_code_tail(sym, true, 2, &tail);
+        self.hook(sym, code);
+    }
+}
+
+#[test]
+fn fresh_resizes_match_the_original() {
+    assert_eq!(lc::FRESH_RESIZES.len(), 2);
+    for (label, mut t) in Twins::all() {
+        for fail in [false, true] {
+            t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            for &(_, r) in lc::FRESH_RESIZES {
+                t.stub(r.init, false, 2, 0, 0x1a);
+            }
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x1000);
+            }
+            for &(f, r) in lc::FRESH_RESIZES {
+                for (raw, data) in [
+                    (0u32, 0u32),
+                    (3, 0x0bad_0010),
+                    (3 | sm::NOT_OWNED, 0x0bad_0020),
+                    (2, 0),
+                ] {
+                    for n in [0u32, 2, 3, 5] {
+                        let this = t.junk(0x10, 0xd1);
+                        t.w32(this, raw);
+                        t.w32(this + 4, data);
+                        let what = format!("{label}: fresh {f:#x} fail {fail} {raw:#x} -> {n}");
+                        t.check(&what, f, Conv::Thiscall(this), &[n], |h| {
+                            Out::U32(lcb::fresh_resize(h, r, this, n))
+                        });
+                    }
+                }
+            }
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn record_resizes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for fail in [false, true] {
+            t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(lc::COPY_RECORDS, false, 3, 0, 0xc3);
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x2000);
+            }
+            for (raw, data) in [
+                (0u32, 0u32),
+                (2, 0x0bad_0010),
+                (2 | sm::NOT_OWNED, 0x0bad_0020),
+                (1, 0),
+            ] {
+                for n in [0u32, 1, 2, 4] {
+                    let this = t.junk(0x10, 0xd2);
+                    t.w32(this, raw);
+                    t.w32(this + 4, data);
+                    let what = format!("{label}: records fail {fail} {raw:#x} -> {n}");
+                    t.check(&what, 0x0053_bfd0, Conv::Thiscall(this), &[n], |h| {
+                        Out::U32(lcb::resize_records(h, this, n))
+                    });
+                }
+            }
+            t.reset();
+        }
+        for n in [0u32, 1, 3] {
+            let dst = t.junk(0x94 * 3 + 8, 0xd3);
+            let what = format!("{label}: construct {n} records");
+            t.check(&what, 0x0053_9480, Conv::Cdecl, &[dst, n], |h| {
+                lcb::construct_records(h, dst, n);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn appends_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lc::COPY_TRIPLES, false, 3, 0, 0x3c);
+        for &(_, _, rel) in lc::OBJECT_APPENDS {
+            t.stub(rel, false, 2, 0, 0x7e1);
+        }
+        let value = t.junk(0x10, 0xd4);
+        for (raw, null_old) in [
+            (0u32, true),
+            (0, false),
+            (3, false),
+            (3 | sm::NOT_OWNED, false),
+            (1, false),
+        ] {
+            for with in [true, false] {
+                let old = if null_old { 0 } else { t.junk(0x40, 0xd5) };
+                let mk = |t: &mut Twins| {
+                    let this = t.junk(0x10, 0xd6);
+                    t.w32(this, raw);
+                    t.w32(this + 4, old);
+                    let new = if with { t.junk(0x40, 0xd7) } else { 0 };
+                    (this, new)
+                };
+                for &f in lc::WORD_APPENDS {
+                    let (this, new) = mk(&mut t);
+                    let what = format!("{label}: append {f:#x} {raw:#x} old {old:#x} new {new:#x}");
+                    t.check(&what, f, Conv::Thiscall(this), &[new, value], |h| {
+                        Out::U32(lcb::append(h, 1, this, new, value))
+                    });
+                }
+                let (this, new) = mk(&mut t);
+                let what = format!("{label}: append pair {raw:#x} old {old:#x} new {new:#x}");
+                t.check(
+                    &what,
+                    0x0061_6b90,
+                    Conv::Thiscall(this),
+                    &[new, value],
+                    |h| Out::U32(lcb::append(h, 2, this, new, value)),
+                );
+                let (this, new) = mk(&mut t);
+                let what = format!("{label}: append triple {raw:#x} old {old:#x} new {new:#x}");
+                t.check(
+                    &what,
+                    0x0061_6c30,
+                    Conv::Thiscall(this),
+                    &[new, value],
+                    |h| Out::U32(lcb::append_triple(h, this, new, value)),
+                );
+                for &(f, _, _) in lc::OBJECT_APPENDS {
+                    let (this, new) = mk(&mut t);
+                    let what =
+                        format!("{label}: append object {f:#x} {raw:#x} old {old:#x} new {new:#x}");
+                    t.check(&what, f, Conv::Thiscall(this), &[new, value], |h| {
+                        Out::U32(lcb::append_object(
+                            h,
+                            lc::object_append_of(f),
+                            this,
+                            new,
+                            value,
+                        ))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+/// An optimiser node table: `n` entries (12 bytes: key, state, id) at
+/// `+0x10c` (count `+0x108`), owners at `+0x114` (count `+0x110`).
+fn net_node(t: &mut Twins, entries: &[(u32, u32, u32)], owners: &[u32]) -> u32 {
+    let this = t.junk(0x120, 0xd8);
+    let mut v = Vec::new();
+    for &(k, s, id) in entries {
+        for w in [k, s, id] {
+            v.extend(w.to_le_bytes());
+        }
+    }
+    v.extend([0; 4]);
+    let arr = t.alloc(&v);
+    t.w32(this + 0x108, entries.len() as u32);
+    t.w32(this + 0x10c, arr);
+    let mut o = Vec::new();
+    for w in owners {
+        o.extend(w.to_le_bytes());
+    }
+    o.extend([0; 4]);
+    let list = t.alloc(&o);
+    t.w32(this + 0x110, owners.len() as u32);
+    t.w32(this + 0x114, list);
+    this
+}
+
+/// An owner listing `links` (`(node, index)`), with `+0x118` = `state`.
+fn net_owner(t: &mut Twins, links: &[(u32, u32)], state: u32) -> u32 {
+    let o = t.junk(0x120, 0xd9);
+    let mut v = Vec::new();
+    for &(a, b) in links {
+        v.extend(a.to_le_bytes());
+        v.extend(b.to_le_bytes());
+    }
+    v.extend([0; 4]);
+    let arr = t.alloc(&v);
+    t.w32(o + 0x100, links.len() as u32);
+    t.w32(o + 0x104, arr);
+    t.w32(o + 0x118, state);
+    o
+}
+
+#[test]
+fn network_links_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lc::RELEASE, true, 1, 1, 0x4e1);
+        // the owners point back at the node, so it is made first
+        let entries = [
+            (5u32, 1u32, 7u32),
+            (6, 1, 0x8000_0000),
+            (u32::MAX, 1, 3),
+            (8, 2, 4),
+            (9, 1, 5),
+            (10, 1, 6),
+            (11, 0, 2),
+        ];
+        // case 2: index 4 is listed by an unresolved owner, then a
+        // resolved one
+        for case in 0..4u32 {
+            let node = net_node(&mut t, &entries, &[]);
+            let mut owners = Vec::new();
+            for (k, st) in [(0u32, 1u32), (4, u32::MAX), (5, 2), (1, 3)] {
+                let links = [(0x1234, k), (node, k), (node, k ^ 1)];
+                let o = net_owner(
+                    &mut t,
+                    &links[..=(case as usize % 3)],
+                    if case == 3 { u32::MAX } else { st },
+                );
+                owners.push(o);
+            }
+            let mut v = Vec::new();
+            for o in &owners {
+                v.extend(o.to_le_bytes());
+            }
+            let list = t.alloc(&v);
+            t.w32(
+                node + 0x110,
+                if case == 0 { 0 } else { owners.len() as u32 },
+            );
+            t.w32(node + 0x114, list);
+            for i in 0..7 {
+                let what = format!("{label}: links case {case} index {i}");
+                t.check(&what, 0x0061_68a0, Conv::Thiscall(node), &[i], |h| {
+                    Out::U32(lcb::links_resolved(h, node, i))
+                });
+            }
+            let what = format!("{label}: release case {case}");
+            t.check(&what, 0x0061_6930, Conv::Thiscall(node), &[0xa7], |h| {
+                Out::U32(lcb::release_resolved(h, node, 0xa7))
+            });
+        }
+        let empty = net_node(&mut t, &[], &[]);
+        t.check(
+            &format!("{label}: release none"),
+            0x0061_6930,
+            Conv::Thiscall(empty),
+            &[0xa7],
+            |h| Out::U32(lcb::release_resolved(h, empty, 0xa7)),
+        );
+        t.reset();
+    }
+}
+
+#[test]
+fn entry_resolves_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lc::RESOLVE, true, 2, 2, 0x5e5);
+        t.stub(lc::CONTEXT_DTOR, true, 0, 0, 0xd7);
+        for n in [0usize, 1, 4] {
+            let entries: Vec<(u32, u32, u32)> = (0..n as u32).map(|i| (0x40 + i, 0, 9)).collect();
+            let node = net_node(&mut t, &entries, &[]);
+            if n != 0 {
+                t.frame_len = 12;
+            }
+            let what = format!("{label}: resolve {n}");
+            t.check_frame(
+                &what,
+                0x0061_67a0,
+                Conv::Thiscall(node),
+                &[0xa8],
+                0x28,
+                |h| {
+                    let frame = h.1;
+                    let r = lcb::resolve_entries(h, node, 0xa8, frame);
+                    if n == 0 {
+                        Out::Al(r as u8)
+                    } else {
+                        Out::U32(r)
+                    }
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn node_links_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lc::NODE_SETUP, true, 1, 1, 0x5e7);
+        t.stub(lc::NODE_LINK_IN, true, 2, 2, 0x111);
+        t.stub(lc::NODE_LINK_OUT, true, 1, 1, 0x222);
+        t.stub(lc::NODE_ADD_OUTPUT, true, 1, 1, 0x3300);
+        let nodes = t.junk(0x11c * 4, 0xda);
+        let this = t.alloc(&[0; 8]);
+        t.w32(this, nodes);
+        t.w32(this + 4, 3);
+        let pairs = t.alloc(&[1, 0, 0, 0, 7, 0, 0, 0, 2, 0, 0, 0, 9, 0, 0, 0]);
+        let words = t.alloc(&[5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0]);
+        for i in [0u32, 2, 3, 9] {
+            for (n, m, w) in [
+                (0u32, 0u32, 0u32),
+                (2, 0, words),
+                (0, 3, words),
+                (2, 2, 0),
+                (1, 0, 0),
+            ] {
+                let what = format!("{label}: link node {i} pairs {n} outputs {m} words {w:#x}");
+                t.check(
+                    &what,
+                    0x005c_d920,
+                    Conv::Thiscall(this),
+                    &[i, 0xa, n, pairs, m, w],
+                    |h| Out::U32(lcb::link_node(h, this, i, 0xa, n, pairs, m, w)),
+                );
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn node_tables_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(lc::VECTOR_CTOR, false, 5, 5, 0x0c7);
+        t.stub(lc::VECTOR_DTOR, false, 4, 4, 0x0d7);
+        for fail in [false, true] {
+            let block = t.junk(0x40, 0xdf);
+            t.stub(lc::NEW_ARRAY, false, 1, 0, if fail { 0 } else { block });
+            for old in [0u32, 1] {
+                for n in [0u32, 3, 0x00e6_0000, 0xffff_ffff] {
+                    let this = t.alloc(&[0; 8]);
+                    if old == 1 {
+                        let block = t.junk(0x40, 0xdb);
+                        t.w32(block, 2);
+                        t.w32(this, block + 4);
+                    }
+                    let what = format!("{label}: node table fail {fail} old {old} n {n:#x}");
+                    t.check(&what, 0x005c_d9e0, Conv::Thiscall(this), &[n], |h| {
+                        Out::U32(lcb::make_nodes(h, this, n))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+/// A `0x4c`-byte source record whose time controller (`+0x24`) answers
+/// its scale (`+0x30`) plus `time`.
+fn source_record(t: &mut Twins, at: u32, time: f32, w: f32) {
+    let cell = t.alloc(&time.to_bits().to_le_bytes());
+    let mut tail = vec![0xd9, 0x41, 0x0c, 0xd8, 0x05]; // fld dword [ecx+0xc]; fadd dword [cell]
+    tail.extend(cell.to_le_bytes());
+    tail.push(0xc3);
+    let code = t.stub_code_tail(0x7a, true, 0, &tail);
+    let vt = t.alloc(&[0; 0x14]);
+    t.w32(vt + 0x10, code);
+    t.w32(at + 0x24, vt);
+    t.wf(at + 4, w);
+    t.wf(at + 8, 2.5);
+    t.wf(at + 0x34, 0.75);
+}
+
+#[test]
+fn record_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let konst = t.rebase(sm::TIME_CONSTANT);
+        t.wf(konst, 3.25);
+        t.stub(lc::BLENDER_SET_SOURCE, true, 2, 2, 0x55);
+        t.stub(lc::BLENDER_SET_WEIGHT, true, 2, 2, 0x56);
+        t.stub(lc::COMPONENT_REFRESH, true, 0, 0, 0x57);
+        t.stub(lc::RECORD_SET_TIME, true, 1, 1, 0);
+        for (bind, range) in [(0u32, 0u32), (0x1d, 0), (0, 0x2e)] {
+            t.stub(lc::RECORD_BIND, true, 1, 1, bind);
+            t.stub_out2(lc::CLIP_RANGE, 1.5f32.to_bits(), 9.0f32.to_bits(), range);
+            for time in [0.0f32, 4.5, -1.25, f32::NAN] {
+                let rec = t.junk(0x4c, 0xdc);
+                source_record(&mut t, rec, time, 0.5);
+                let what =
+                    format!("{label}: bind record bind {bind:#x} range {range:#x} time {time}");
+                t.check_frame(
+                    &what,
+                    0x0054_3330,
+                    Conv::Thiscall(rec),
+                    &[0xc11b],
+                    0x20,
+                    |h| {
+                        let frame = h.1;
+                        Out::U32(lcb::bind_record(h, rec, 0xc11b, frame))
+                    },
+                );
+                // through a component's source set
+                let recs = t.junk(0x4c * 3, 0xdd);
+                for k in 0..3 {
+                    source_record(&mut t, recs + 0x4c * k, time, k as f32);
+                }
+                let this = t.junk(0x48, 0xde);
+                t.w32(this + 0x14, 3 | sm::NOT_OWNED);
+                t.w32(this + 0x18, recs);
+                for (i, clip) in [(1u32, 0xc11bu32), (3, 0xc11b), (0, 0)] {
+                    let what = format!(
+                        "{label}: set source {i} clip {clip:#x} bind {bind:#x} range {range:#x} time {time}"
+                    );
+                    t.check_frame(
+                        &what,
+                        0x0054_3480,
+                        Conv::Thiscall(this),
+                        &[i, clip],
+                        0x38,
+                        |h| {
+                            let frame = h.1;
+                            Out::U32(lcb::set_source(h, this, i, clip, frame))
+                        },
+                    );
+                }
+                // all the sources' times (and none)
+                let none = t.junk(0x48, 0xe0);
+                t.w32(none + 0x14, sm::NOT_OWNED);
+                t.check(
+                    &format!("{label}: set no times"),
+                    0x0054_4040,
+                    Conv::Thiscall(none),
+                    &[0],
+                    |h| {
+                        lcb::set_times(h, none, 0);
+                        Out::None
+                    },
+                );
+                for tt in [0.0f32, 2.0, f32::NAN] {
+                    let what = format!("{label}: set times {tt} time {time}");
+                    let b = tt.to_bits();
+                    t.check(&what, 0x0054_4040, Conv::Thiscall(this), &[b], |h| {
+                        lcb::set_times(h, this, b);
+                        Out::None
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 4: sets, components, scene keys, shader parameters ----
+
+impl Twins {
+    /// `c` as code in both oracles.
+    fn alloc_code_both(&mut self, c: &[u8]) -> u32 {
+        let at = self.a.alloc_code(c).unwrap();
+        assert_eq!(self.b.alloc_code(c).unwrap(), at);
+        at
+    }
+}
+
+#[test]
+fn named_constructs_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ld::DEFAULT_NAME, false, 0, 0, 0xde7a);
+        for n in [0u32, 1, 3] {
+            let dst = t.junk(0x1c * 3 + 4, 0xe1);
+            let what = format!("{label}: construct {n} named");
+            t.check(&what, 0x0051_bb80, Conv::Cdecl, &[dst, n], |h| {
+                ldb::construct_named(h, dst, n);
+                Out::None
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn small_arrays_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        for fail in [false, true] {
+            let fresh = t.junk(0x40, 0xe2);
+            t.stub(
+                ld::SMALL_ALLOC_COPY,
+                false,
+                3,
+                3,
+                if fail { 0 } else { fresh },
+            );
+            for raw in [0u32, 1, 3, 3 | sm::NOT_OWNED, 1 | sm::NOT_OWNED] {
+                for n in [0u32, 1, 2, 3] {
+                    let this = t.junk(0x10, 0xe3);
+                    t.w32(this, raw);
+                    let what = format!("{label}: small resize fail {fail} {raw:#x} -> {n}");
+                    t.check(&what, 0x0051_d720, Conv::Thiscall(this), &[n], |h| {
+                        Out::U32(ldb::small_resize(h, this, n))
+                    });
+                }
+                // the allocation handing back the storage in place
+                let this = t.junk(0x10, 0xe3);
+                t.w32(this, raw);
+                t.stub(ld::SMALL_ALLOC_COPY, true, 3, 3, this + 4);
+                let what = format!("{label}: small resize in place {raw:#x}");
+                t.check(&what, 0x0051_d720, Conv::Thiscall(this), &[5], |h| {
+                    Out::U32(ldb::small_resize(h, this, 5))
+                });
+                t.stub(
+                    ld::SMALL_ALLOC_COPY,
+                    false,
+                    3,
+                    3,
+                    if fail { 0 } else { fresh },
+                );
+            }
+        }
+        let src = t.junk(0x10, 0xe4);
+        for raw in [0u32, 1, 3, 3 | sm::NOT_OWNED] {
+            for n in [0u32, 1, 2, 0xffff_ffff] {
+                for same in [false, true] {
+                    let this = t.junk(0x10, 0xe5);
+                    t.w32(this, raw);
+                    let other = t.junk(0x10, 0xe4);
+                    t.w32(this + 4, src);
+                    // `same`: the buffer handed in is the one held
+                    let ext = if same { src } else { other };
+                    let what = format!("{label}: small external {raw:#x} n {n:#x} same {same}");
+                    t.check(&what, 0x0051_dac0, Conv::Thiscall(this), &[ext, n], |h| {
+                        Out::U32(ldb::small_set_external(h, this, ext, n))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn copy_resizes_match_the_original() {
+    assert_eq!(ld::COPY_RESIZES.len(), 2);
+    for (label, mut t) in Twins::all() {
+        for fail in [false, true] {
+            t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            for &(_, r) in ld::COPY_RESIZES {
+                t.stub(r.copy, false, 3, 0, 0xc0);
+                t.stub(r.construct, false, 2, 0, 0xc1);
+                if r.release != 0 {
+                    t.stub(r.release, false, 2, 0, 0xc2);
+                }
+            }
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x2000);
+            }
+            for &(f, r) in ld::COPY_RESIZES {
+                for (raw, data) in [
+                    (0u32, 0u32),
+                    (2, 0x0bad_0010),
+                    (2 | sm::NOT_OWNED, 0x0bad_0020),
+                    (1, 0),
+                ] {
+                    for n in [0u32, 1, 2, 4] {
+                        let this = t.junk(0x10, 0xe6);
+                        t.w32(this, raw);
+                        t.w32(this + 4, data);
+                        let what =
+                            format!("{label}: copy resize {f:#x} fail {fail} {raw:#x} -> {n}");
+                        t.check(&what, f, Conv::Thiscall(this), &[n], |h| {
+                            Out::U32(ldb::copy_resize(h, r, this, n))
+                        });
+                    }
+                }
+            }
+            t.reset();
+        }
+    }
+}
+
+/// A `PAnimationSet`-like clip list (one kept in place) of clips named
+/// `names` (`None`: a null clip; `Some("")`: a clip without a name).
+fn clip_list(t: &mut Twins, names: &[Option<&str>]) -> u32 {
+    let mut ptrs = Vec::new();
+    for (i, n) in names.iter().enumerate() {
+        let c = match n {
+            None => 0,
+            Some(s) => {
+                let c = t.junk(0x20, 0xe7);
+                let w = if s.is_empty() {
+                    0
+                } else {
+                    t.cstr(s) | (i as u32 & 1)
+                };
+                t.w32(c + 0x1c, w);
+                c
+            }
+        };
+        ptrs.push(c);
+    }
+    let this = t.zeros(0x10);
+    t.w32(this, ptrs.len() as u32);
+    if ptrs.len() == 1 {
+        t.w32(this + 4, ptrs[0]);
+    } else {
+        let mut b = Vec::new();
+        for p in &ptrs {
+            b.extend(p.to_le_bytes());
+        }
+        b.extend([0; 4]);
+        let data = t.alloc(&b);
+        t.w32(this + 4, data);
+    }
+    this
+}
+
+#[test]
+fn clip_lookups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let lists: [&[Option<&str>]; 4] = [
+            &[],
+            &[Some("walk")],
+            &[None, Some("run_fast"), Some(""), Some("walk"), Some("run")],
+            &[Some("idle_a"), Some("idle")],
+        ];
+        for names in lists {
+            let this = clip_list(&mut t, names);
+            for q in ["walk", "run", "fast", "idle", "zzz", "", "wal"] {
+                let s = t.cstr(q);
+                let what = format!("{label}: clip {q:?} in {names:?}");
+                t.check(&what, 0x0051_ca40, Conv::Thiscall(this), &[s], |h| {
+                    Out::U32(ldb::find_clip(h, this, s))
+                });
+            }
+            let what = format!("{label}: clip null in {names:?}");
+            t.check(&what, 0x0051_ca40, Conv::Thiscall(this), &[0], |h| {
+                Out::U32(ldb::find_clip(h, this, 0))
+            });
+        }
+    }
+}
+
+#[test]
+fn row_scales_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut r = Rng(0x3344_5566);
+        for case in 0..20u32 {
+            let m = t.zeros(0x30);
+            for k in 0..12 {
+                let v = if case >= 16 && k == case - 16 {
+                    FLOATS[(6 + case % 4) as usize]
+                } else {
+                    (((r.next() % 2000) as f32) - 1000.0).to_bits() ^ (r.next() & 0x3ff)
+                };
+                t.w32(m + 4 * k, v);
+            }
+            let s = t.zeros(0x10);
+            for k in 0..3 {
+                t.wf(s + 4 * k, ((r.next() % 300) as f32 - 150.0) / 13.0);
+            }
+            let out = if case == 5 { m } else { t.junk(0x30, 0xe8) };
+            let what = format!("{label}: rows case {case}");
+            t.check(&what, 0x0053_1310, Conv::Cdecl, &[out, m, s], |h| {
+                Out::U32(ldb::scale_rows(h, out, m, s))
+            });
+        }
+    }
+}
+
+#[test]
+fn data_clears_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(sm::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        for case in 0..6u32 {
+            let this = t.junk(0x40, 0xe9);
+            for (k, arr) in [4u32, 0x20, 0x2c, 0xc].into_iter().enumerate() {
+                let raw = [0u32, 3, 3 | sm::NOT_OWNED, 2, 1][(k + case as usize) % 5];
+                t.w32(this + arr, raw);
+                if (k as u32 + case).is_multiple_of(3) {
+                    t.w32(this + arr + 4, 0);
+                }
+            }
+            let what = format!("{label}: data clear {case}");
+            t.check(&what, 0x0053_d100, Conv::Thiscall(this), &[], |h| {
+                Out::U32(ldb::clear_data(h, this))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn record_copies_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for n in [0u32, 1, 3] {
+            let src = t.junk(0x4c * 3, 0xea);
+            // a quiet NaN and a denormal among the floats
+            t.w32(src + 4, 0x7fc0_1234);
+            t.w32(src + 0x18, 3);
+            let dst = t.junk(0x4c * 3, 0xeb);
+            let what = format!("{label}: copy {n} records");
+            t.check(&what, 0x0053_d210, Conv::Cdecl, &[dst, src, n], |h| {
+                ldb::copy_records(h, dst, src, n);
+                Out::None
+            });
+        }
+    }
+}
+
+#[test]
+fn moves_to_end_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        for n in [0u32, 1, 4] {
+            for key in [0x10u32, 0x11, 0x13, 0x99] {
+                let base = t.junk(0x94 * 6, 0xec);
+                for i in 0..n {
+                    t.w32(base + 0x94 * i, 0x10 + i);
+                }
+                let this = t.junk(0x10, 0xed);
+                t.w32(this + 4, base);
+                t.w32(this + 8, n);
+                let what = format!("{label}: move {key:#x} of {n}");
+                t.check(
+                    &what,
+                    0x005c_dad0,
+                    Conv::Thiscall(this),
+                    &[key, 0x5e],
+                    |h| Out::U32(ldb::move_to_end(h, this, key)),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn shader_parameter_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let (da, db) = (t.rebase(ld::SHADER_DESC_A), t.rebase(ld::SHADER_DESC_B));
+        let param = t.junk(0x10, 0xee);
+        t.write(param + 0xa, &0xe007u16.to_le_bytes());
+        let small = t.junk(0x10, 0xef);
+        t.write(small + 0xa, &0x0009u16.to_le_bytes());
+        // the lookup finds the parameter whose name word is odd
+        for (lookup, bind) in [(param, 0xb1u32), (small, 0), (0, 0xb2)] {
+            t.stub(ld::PARAM_LOOKUP, true, 1, 1, lookup);
+            t.stub(ld::PARAM_BIND, true, 1, 1, bind);
+            for own in [0u32, 1] {
+                let mat = t.junk(0x10, 0xf0);
+                let holder = t.junk(0x10, 0xf1);
+                t.w32(holder + 4, mat);
+                let this = t.junk(0x10, 0xf2);
+                t.w32(this + 4, if own == 1 { mat } else { 0 });
+                let mut tv = Vec::new();
+                for (desc, obj, ty, name) in [
+                    (da, mat, 5u32, "p0"),
+                    (db, holder, 5, "p1"),
+                    (db, 0, 5, "p2"),
+                    (0x1234, mat, 5, "p3"),
+                    (da, 0, 5, "p4"),
+                    (da, mat, 4, "p5"),
+                    (db, t.zeros(8), 5, "p6"),
+                ] {
+                    let s = t.cstr(name) | 1;
+                    for w in [desc, obj, 0, 0, ty, s, 0] {
+                        tv.extend(w.to_le_bytes());
+                    }
+                }
+                let targets = t.alloc(&tv);
+                let out = t.zeros(0x18 * 7);
+                t.w32(out + 0x18 * 2, 9);
+                for n in [0u32, 7] {
+                    for (o, g) in [(out, targets), (0, targets), (out, 0)] {
+                        let what = format!(
+                            "{label}: shader bind {lookup:#x} {bind:#x} own {own} n {n} {o:#x} {g:#x}"
+                        );
+                        t.check(&what, 0x005c_de50, Conv::Thiscall(this), &[o, g, n], |h| {
+                            Out::U32(ldb::bind_shader_params(h, this, o, g, n))
+                        });
+                    }
+                }
+            }
+            t.reset();
+        }
+    }
+}
+
+/// A scene key (`+0` a word, `+4` the length, `+8` the bytes).
+fn scene_key(t: &mut Twins, first: u32, bytes: &[u8]) -> u32 {
+    let b = t.alloc(&[bytes, &[0x5a; 4]].concat());
+    let k = t.zeros(12);
+    t.w32(k, first);
+    t.w32(k + 4, bytes.len() as u32);
+    t.w32(k + 8, b);
+    k
+}
+
+#[test]
+fn scene_keys_and_tree_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let samples: [(u32, &[u8]); 10] = [
+            (1, b"abcd"),
+            (1, b"abce"),
+            (1, b"abcdefg"),
+            (1, b"abcdefh"),
+            (2, b"abcd"),
+            (0, b""),
+            (1, b"zbcd"),
+            (1, b"abcdefgh"),
+            (1, b"abcdefgi"),
+            (1, b"a"),
+        ];
+        let keys: Vec<u32> = samples
+            .iter()
+            .map(|&(f, b)| scene_key(&mut t, f, b))
+            .collect();
+        for &a in &keys {
+            for &b in &keys {
+                let what = format!("{label}: scene keys {a:#x} {b:#x}");
+                t.check(&what, 0x0061_7260, Conv::Cdecl, &[a, b], |h| {
+                    Out::U32(ldb::compare_scene_keys(h, a, b))
+                });
+            }
+        }
+        let hdr = t.junk(0x18, 0xf3);
+        t.w32(hdr + 0xc, hdr);
+        for (i, &(f, b)) in samples.iter().chain(samples[..3].iter()).enumerate() {
+            let node = t.junk(0x18, 0xf4);
+            let k = scene_key(&mut t, f, b);
+            for w in 0..3 {
+                let v = t.r32(k + 4 * w);
+                t.w32(node + 0xc + 4 * w, v);
+            }
+            let what = format!("{label}: scene insert {i}");
+            t.check(&what, 0x0061_70e0, Conv::Thiscall(hdr), &[node], |h| {
+                Out::U32(ldb::scene_tree_insert(h, hdr, node))
+            });
+        }
+    }
+}
+
+#[test]
+fn inverse_blends_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // f(v) = v.x
+        let f = t.alloc_code_both(&[0x8b, 0x44, 0x24, 0x04, 0xd9, 0x00, 0xc3]);
+        let eps = t.rebase(ld::BLEND_EPSILON);
+        let e: u32 = t.r32(eps);
+        for (ax, bx) in [
+            (1.0f32, 3.0f32),
+            (2.0, 2.0),
+            (5.0, 1.0),
+            (f32::NAN, 1.0),
+            (1.0, 1.0 + 1e-7),
+            (-4.0, 4.0),
+        ] {
+            let a = t.junk(16, 0xf5);
+            t.wf(a, ax);
+            let b = t.junk(16, 0xf6);
+            t.wf(b, bx);
+            let out = t.junk(16, 0xf7);
+            let what = format!(
+                "{label}: inverse blend {ax} {bx} (eps {:e})",
+                f32::from_bits(e)
+            );
+            t.check(&what, 0x00a2_f560, Conv::Cdecl, &[out, b, a, f], |h| {
+                Out::U32(ldb::inverse_blend(h, out, b, a, f))
+            });
+        }
+    }
+}
+
+/// A component for the clip-set changes: `+0x14`/`+0x18` `n` source
+/// records, the blender at `+0x1c` (vtable slot 12 a recording stub).
+fn component(t: &mut Twins, n: u32, set: u32) -> u32 {
+    let recs = t.junk(0x4c * 4, 0xf8);
+    for i in 0..n {
+        let rec = recs + 0x4c * i;
+        t.w32(rec, i & 1);
+        t.w32(rec + 0x40, if i == 1 { set } else { 0x4040 });
+    }
+    let this = t.junk(0x50, 0xf9);
+    t.w32(this + 0x14, n);
+    t.w32(this + 0x18, recs);
+    // the blender's slot 12 (its resize) answers 0
+    let blender_vt = {
+        let obj = t.object(&[1; 13], &[0; 13]);
+        t.r32(obj)
+    };
+    t.w32(this + 0x1c, blender_vt);
+    t.w32(this + 0x10, set);
+    this
+}
+
+/// A clip set of `n` clips (one kept in place).
+fn clip_set(t: &mut Twins, n: u32) -> u32 {
+    let set = t.zeros(0x10);
+    t.w32(set, n);
+    if n == 1 {
+        t.w32(set + 4, 0xc1);
+    } else if n > 1 {
+        let data = t.alloc(&[0xc2, 0, 0, 0, 0xc3, 0, 0, 0, 0, 0, 0, 0]);
+        t.w32(set + 4, data);
+    }
+    set
+}
+
+#[test]
+fn clip_set_changes_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ld::DATA_CLEAR, true, 0, 0, 0xd1);
+        t.stub(ld::BLENDER_SET_WEIGHT, true, 2, 2, 0xd2);
+        t.stub(ld::RECORD_BIND, true, 1, 1, 0xd3);
+        t.stub(ld::COMPONENT_REFRESH, true, 0, 0, 0xd4);
+        for (bind, time, source) in [(0u32, 0u32, 0u32), (0x1b, 0, 0), (0, 0x2b, 0), (0, 0, 0x3b)] {
+            t.stub(ld::CLIP_SET_BIND, true, 1, 1, bind);
+            t.stub(ld::RECORD_SET_TIME, true, 1, 1, time);
+            t.stub(ld::BLENDER_SET_SOURCE, true, 2, 2, source);
+            for k in [None, Some(0u32), Some(1), Some(2)] {
+                let set = k.map_or(0, |k| clip_set(&mut t, k));
+                for n in [0u32, 3] {
+                    let this = component(&mut t, n, set);
+                    let what = format!(
+                        "{label}: clip set {k:?} n {n} errors {bind:#x} {time:#x} {source:#x}"
+                    );
+                    t.check(&what, 0x0054_3c60, Conv::Thiscall(this), &[set], |h| {
+                        Out::U32(ldb::set_clip_set(h, this, set))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn source_counts_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ld::BLENDER_SET_WEIGHT, true, 2, 2, 0xd2);
+        t.stub(ld::RECORD_BIND, true, 1, 1, 0xd3);
+        t.stub(ld::COMPONENT_REFRESH, true, 0, 0, 0xd4);
+        for (resize, time, source) in [(0u32, 0u32, 0u32), (0x1c, 0, 0), (0, 0x2c, 0), (0, 0, 0x3c)]
+        {
+            // the records' resize keeps the storage and sets the count
+            t.stub(ld::RECORD_SET_TIME, true, 1, 1, time);
+            t.stub(ld::BLENDER_SET_SOURCE, true, 2, 2, source);
+            for set_n in [None, Some(1u32), Some(2)] {
+                let set = set_n.map_or(0, |k| clip_set(&mut t, k));
+                for (old, n) in [(1u32, 3u32), (3, 3), (3, 1), (0, 2)] {
+                    let this = component(&mut t, old, set);
+                    if resize != 0 {
+                        t.stub(ld::RECORDS_RESIZE, true, 1, 1, resize);
+                    } else {
+                        // a resize that only stores the count
+                        let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x89, 0x01]; // mov eax, [esp+4]; mov [ecx], eax
+                        tail.extend([0x31, 0xc0]); // xor eax, eax
+                        tail.extend(ret_bytes(1));
+                        let code = t.stub_code_tail(ld::RECORDS_RESIZE, true, 1, &tail);
+                        t.hook(ld::RECORDS_RESIZE, code);
+                    }
+                    let what = format!(
+                        "{label}: source count {old} -> {n} set {set_n:?} errors {resize:#x} {time:#x} {source:#x}"
+                    );
+                    t.check(&what, 0x0054_3e50, Conv::Thiscall(this), &[n], |h| {
+                        Out::U32(ldb::set_source_count(h, this, n))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+// ---- batch 5: callable binds, scene binds, the optimiser's run ----
+
+#[test]
+fn callable_binds_match_the_original() {
+    assert_eq!(le::CALLABLE_BINDS.len(), 2);
+    for (label, mut t) in Twins::all() {
+        t.stub(le::PRINTF, false, 3, 0, 0x99);
+        t.stub(le::VECTOR_TYPE, false, 0, 0, 0x40);
+        // a class chain c0 -> c1 -> c2 (through +0x40)
+        let c2 = t.zeros(0x50);
+        let c1 = t.zeros(0x50);
+        t.w32(c1 + 0x40, c2);
+        let c0 = t.zeros(0x50);
+        t.w32(c0 + 0x40, c1);
+        // signatures: good for both kinds, bad, and a callable without one
+        let good = t.alloc(&[0x41, 0, 0, 0, 0x41, 0, 0, 0, 0, 0, 0, 0]);
+        let bad = t.alloc(&[0x41, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0, 0]);
+        let mut callables = Vec::new();
+        for sig in [good, bad] {
+            let code = t.stub_code(0x7d, true, 0, 0, sig);
+            let x = t.object_with(4, code);
+            let p = t.junk(0x20, 0xa1);
+            t.w32(p + 0x14, x);
+            callables.push(p);
+        }
+        for &(f, k) in le::CALLABLE_BINDS {
+            for (found, obj8) in [(callables[0], 0u32), (callables[1], 0x0b8), (0, 0)] {
+                t.stub(k.lookup, true, 1, 1, found);
+                for head in [c0, 0] {
+                    let this = t.junk(0x10, 0xa2);
+                    t.w32(this + 4, head);
+                    t.w32(this + 8, obj8);
+                    let mut tv = Vec::new();
+                    for (class, ty, name) in [
+                        (c1, k.ty, "f0"),
+                        (c2, k.ty, "f1"),
+                        (0x7777, k.ty, "f2"),
+                        (c0, k.ty ^ 7, "f3"),
+                        (c2, k.ty, "f4"),
+                    ] {
+                        let s = t.cstr(name) | 1;
+                        for w in [class, 0x0b1e, 0, 0, ty, s, 0] {
+                            tv.extend(w.to_le_bytes());
+                        }
+                    }
+                    let targets = t.alloc(&tv);
+                    let out = t.zeros(0x18 * 5);
+                    t.w32(out + 0x18 * 4, 5);
+                    for n in [0u32, 5] {
+                        for (o, g) in [(out, targets), (0, targets), (out, 0)] {
+                            let what = format!(
+                                "{label}: callables {f:#x} found {found:#x} head {head:#x} n {n} {o:#x} {g:#x}"
+                            );
+                            t.check(&what, f, Conv::Thiscall(this), &[o, g, n], |h| {
+                                Out::U32(leb::bind_callables(h, k, this, o, g, n))
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+/// The scene bind's hash of a name.
+fn scene_hash(name: &str) -> u32 {
+    name.bytes().fold(0x7b5u32, |h, c| {
+        h.wrapping_mul(33).wrapping_add(u32::from(c & 0x1f))
+    })
+}
+
+/// A scene bind object: `+4` slots, `+8` 0x18-byte entries keyed by the
+/// names' scene keys, the tree at `+0xc` (built with the original insert
+/// in both oracles).
+fn scene_bind(t: &mut Twins, names: &[&str]) -> u32 {
+    let this = t.junk(0x20, 0xa3);
+    let slots = t.zeros(4 * names.len() + 4);
+    let entries = t.junk(0x18 * names.len() + 4, 0xa4);
+    t.w32(this + 4, slots);
+    t.w32(this + 8, entries);
+    let hdr = this + 0xc;
+    t.w32(hdr + 0xc, hdr);
+    for (i, name) in names.iter().enumerate() {
+        let e = entries + 0x18 * i as u32;
+        let s = t.cstr(name);
+        t.w32(e + 0xc, scene_hash(name));
+        t.w32(e + 0x10, name.len() as u32);
+        t.w32(e + 0x14, s);
+        let at = t.rebase(0x0061_70e0);
+        t.a.call(at, Conv::Thiscall(hdr), &[e]).unwrap();
+        t.b.call(at, Conv::Thiscall(hdr), &[e]).unwrap();
+    }
+    this
+}
+
+/// A scene node named `name` (`None`: no name word, `Some("")`: empty).
+fn scene_node(t: &mut Twins, name: Option<&str>) -> u32 {
+    let n = t.zeros(0x60);
+    let w = match name {
+        None => 0,
+        Some(s) => t.cstr(s) | 1,
+    };
+    t.w32(n + 0x50, w);
+    n
+}
+
+#[test]
+fn scene_binds_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // "Arm_L" and "arm_l" share a hash: the bytes decide
+        let names = [
+            "root", "spine", "head", "arm_l", "arm_r", "leg", "", "Arm_L",
+        ];
+        let this = scene_bind(&mut t, &names);
+        // lookups by key
+        for q in [
+            "spine", "leg", "hand", "", "arm_r", "spinf", "arm_l", "Arm_L", "ARM_L",
+        ] {
+            let s = t.cstr(q);
+            let key = t.zeros(12);
+            t.w32(key, scene_hash(q));
+            t.w32(key + 4, q.len() as u32);
+            t.w32(key + 8, s);
+            let tree = this + 0xc;
+            let what = format!("{label}: scene find {q:?}");
+            t.check(&what, 0x0061_6fd0, Conv::Thiscall(tree), &[key], |h| {
+                Out::U32(leb::scene_tree_find(h, tree, key))
+            });
+        }
+        // single nodes
+        for name in [
+            Some("head"),
+            Some("hand"),
+            Some(""),
+            None,
+            Some("head"),
+            Some("ARM_L"),
+            Some("Arm_L"),
+            Some("arm_l"),
+        ] {
+            let node = scene_node(&mut t, name);
+            let what = format!("{label}: scene node {name:?}");
+            t.check(&what, 0x0061_74b0, Conv::Thiscall(this), &[node], |h| {
+                Out::U32(leb::bind_scene_node(h, this, node))
+            });
+        }
+        // a tree: root { a { b, c { d } }, e }
+        for shape in 0..3u32 {
+            let this = scene_bind(&mut t, &names);
+            let n: Vec<u32> = ["root", "spine", "arm_l", "x", "head", "leg"]
+                .iter()
+                .map(|s| scene_node(&mut t, Some(s)))
+                .collect();
+            let link = |t: &mut Twins, parent: u32, kids: &[u32]| {
+                if let Some(&first) = kids.first() {
+                    t.w32(parent + 8, first);
+                }
+                for w in kids.windows(2) {
+                    t.w32(w[0], w[1]);
+                }
+                for &k in kids {
+                    t.w32(k + 4, parent);
+                }
+            };
+            match shape {
+                0 => {
+                    link(&mut t, n[0], &[n[1], n[5]]);
+                    link(&mut t, n[1], &[n[2], n[3]]);
+                    link(&mut t, n[3], &[n[4]]);
+                }
+                1 => link(&mut t, n[0], &[n[1], n[2], n[3]]),
+                _ => {}
+            }
+            let root = n[0];
+            let what = format!("{label}: scene tree shape {shape}");
+            t.check(&what, 0x0061_6ee0, Conv::Cdecl, &[this, root], |h| {
+                Out::U32(leb::bind_scene_tree(h, this, root))
+            });
+        }
+    }
+}
+
+/// An optimiser of `inputs.len()` nodes; node `i` takes inputs from the
+/// nodes `inputs[i]` (its links at `+0x104`, count `+0x100`).
+fn optimiser(t: &mut Twins, inputs: &[&[u32]]) -> u32 {
+    let n = inputs.len() as u32;
+    let nodes = t.zeros(0x11c * n as usize + 4);
+    for (i, ins) in inputs.iter().enumerate() {
+        let node = nodes + 0x11c * i as u32;
+        let mut links = Vec::new();
+        for &j in *ins {
+            links.extend((nodes + 0x11c * j).to_le_bytes());
+            links.extend(0u32.to_le_bytes());
+        }
+        links.extend([0; 4]);
+        let l = t.alloc(&links);
+        t.w32(node + 0x100, ins.len() as u32);
+        t.w32(node + 0x104, l);
+        t.w32(node + 0x118, 5);
+    }
+    let this = t.alloc(&[0; 8]);
+    t.w32(this, nodes);
+    t.w32(this + 4, n);
+    this
+}
+
+#[test]
+fn optimiser_runs_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(le::CONTEXT_CTOR, true, 0, 0, 0xc7);
+        t.stub(le::CONTEXT_DTOR, true, 0, 0, 0x1234_5678);
+        t.stub(le::NODE_RELEASE, true, 1, 1, 0x7e1);
+        t.stub(le::NODE_RESOLVE, true, 1, 1, 0x7e2);
+        let graphs: [&[&[u32]]; 4] = [&[], &[&[]], &[&[1], &[], &[0, 1]], &[&[0], &[]]];
+        for inputs in graphs {
+            for first in [0u32, 1, 0x100] {
+                let this = optimiser(&mut t, inputs);
+                let what = format!("{label}: run {inputs:?} release first {first:#x}");
+                t.check_frame(
+                    &what,
+                    0x005c_d7a0,
+                    Conv::Thiscall(this),
+                    &[first],
+                    0x38,
+                    |h| {
+                        let frame = h.1;
+                        Out::U32(leb::run(h, this, first, frame))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn first_source_uses_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ld::BLENDER_SET_WEIGHT, true, 2, 2, 0xd2);
+        t.stub(ld::RECORD_BIND, true, 1, 1, 0xd3);
+        t.stub(ld::COMPONENT_REFRESH, true, 0, 0, 0xd4);
+        t.stub(ld::RECORD_SET_TIME, true, 1, 1, 0);
+        t.stub(0x0054_1780, false, 2, 0, 0xc1);
+        t.stub(0x0054_0b80, false, 2, 0, 0xc2);
+        for (fail, source) in [(false, 0u32), (true, 0), (false, 0x3e)] {
+            t.stub(ld::BLENDER_SET_SOURCE, true, 2, 2, source);
+            if fail {
+                t.stub(la::PHYRE_MALLOC, false, 2, 0, 0);
+            } else {
+                t.stub_bump(la::PHYRE_MALLOC, 0x400);
+            }
+            for set_n in [None, Some(1u32), Some(2)] {
+                let set = set_n.map_or(0, |k| clip_set(&mut t, k));
+                for n in [0u32, 1, 3] {
+                    for arg in [0u32, 0xa9] {
+                        let this = component(&mut t, n, set);
+                        let what = format!(
+                            "{label}: first source n {n} set {set_n:?} arg {arg:#x} fail {fail} source {source:#x}"
+                        );
+                        t.check(&what, 0x0054_3570, Conv::Thiscall(this), &[arg], |h| {
+                            Out::U32(leb::use_first_source(h, this, arg))
+                        });
+                    }
+                }
+            }
+        }
+        t.reset();
     }
 }
