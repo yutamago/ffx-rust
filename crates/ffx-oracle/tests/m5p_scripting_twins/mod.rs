@@ -279,6 +279,18 @@ impl Twins {
         self.place(sym, code);
     }
 
+    /// A cdecl recording stub at `sym` (logging `n` words) that leaves in
+    /// `ST0` the `float` of `table` its stack word `arg` indexes.
+    pub fn stub_float_table(&mut self, sym: u32, n: u32, arg: u32, table: u32) {
+        let mut c = self.log_body(sym, false, n);
+        c.extend([0x8b, 0x44, 0x24, (4 + 4 * arg) as u8]); // mov eax, [esp+4+4arg]
+        c.extend([0xd9, 0x04, 0x85]);
+        c.extend(table.to_le_bytes()); // fld dword [table + eax*4]
+        c.push(0xc3);
+        let code = self.code(&c);
+        self.place(sym, code);
+    }
+
     /// Puts back every stubbed original.
     pub fn unstub(&mut self) {
         let saved: Vec<_> = self.saved.drain().collect();

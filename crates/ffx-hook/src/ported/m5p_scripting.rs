@@ -6,6 +6,7 @@
 //! headers can be processed from a worker. No shim keeps state; each works
 //! on the game's memory through [`mem`].
 
+use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 
@@ -586,5 +587,87 @@ ported! {
     /// `Phyre_PScripting_closeState_005d5450`.
     Phyre_PScripting_closeState_005d5450 @ 0x005d_5450 => extern "C" fn s_005d5450(l: u32) -> u32 {
         b::close_state(&mut mem(), l)
+    }
+    // ---- batch 3: the object accessors, Vector and Matrix functions ----
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PBase__Get`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PBase__Get @ 0x0043_5650 => extern "C" fn s_00435650(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[0], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClusterDependencyList__Get_0044b970`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClusterDependencyList__Get_0044b970 @ 0x0044_b970 => extern "C" fn s_0044b970(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[1], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PNodeContext__Get_004cfe80`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PRendering_PNodeContext__Get_004cfe80 @ 0x004c_fe80 => extern "C" fn s_004cfe80(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[2], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGeometry_PMeshSegmentD3D11__Get_00560450`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGeometry_PMeshSegmentD3D11__Get_00560450 @ 0x0056_0450 => extern "C" fn s_00560450(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[3], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDescriptor__Get`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PClassDescriptor__Get @ 0x0043_bad0 => extern "C" fn s_0043bad0(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[4], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PTimeController__Get_00521d80`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PAnimation_PTimeController__Get_00521d80 @ 0x0052_1d80 => extern "C" fn s_00521d80(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[5], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGameplay_PTimerComponent__Get_005557f0`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PGameplay_PTimerComponent__Get_005557f0 @ 0x0055_57f0 => extern "C" fn s_005557f0(l: u32) -> u32 {
+        lua::accessor_get(&mut mem(), &lb::ACCESSORS[6], l)
+    }
+    /// `Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get`.
+    Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_PEntity__Get @ 0x0044_f7f0 => extern "C" fn s_0044f7f0(l: u32) -> u32 {
+        lua::entity_get(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_Vector_length3_00573160`.
+    Phyre_PScripting_Vector_length3_00573160 @ 0x0057_3160 => extern "C" fn s_00573160(l: u32) -> u32 {
+        lua::vector_length(&mut mem(), l, 3, true)
+    }
+    /// `Phyre_PScripting_Vector_length4_00573230`.
+    Phyre_PScripting_Vector_length4_00573230 @ 0x0057_3230 => extern "C" fn s_00573230(l: u32) -> u32 {
+        lua::vector_length(&mut mem(), l, 4, true)
+    }
+    /// `Phyre_PScripting_Vector_lengthSquared3_00573300`.
+    Phyre_PScripting_Vector_lengthSquared3_00573300 @ 0x0057_3300 => extern "C" fn s_00573300(l: u32) -> u32 {
+        lua::vector_length(&mut mem(), l, 3, false)
+    }
+    /// `Phyre_PScripting_Vector_lengthSquared4_005733c0`.
+    Phyre_PScripting_Vector_lengthSquared4_005733c0 @ 0x0057_33c0 => extern "C" fn s_005733c0(l: u32) -> u32 {
+        lua::vector_length(&mut mem(), l, 4, false)
+    }
+    /// `Phyre_PScripting_Matrix_scale_00571480`.
+    Phyre_PScripting_Matrix_scale_00571480 @ 0x0057_1480 => extern "C" fn s_00571480(l: u32) -> u32 {
+        lua::matrix_scale(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_Matrix_translation_00571540`.
+    Phyre_PScripting_Matrix_translation_00571540 @ 0x0057_1540 => extern "C" fn s_00571540(l: u32) -> u32 {
+        lua::matrix_translation(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_Matrix_inverse_005719a0`.
+    Phyre_PScripting_Matrix_inverse_005719a0 @ 0x0057_19a0 => extern "C" fn s_005719a0(l: u32) -> u32 {
+        let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
+        lua::unary(&mut mem(), &lb::UNARY[0], l, f.at())
+    }
+    /// `Phyre_PScripting_Matrix_transpose_00571e00`.
+    Phyre_PScripting_Matrix_transpose_00571e00 @ 0x0057_1e00 => extern "C" fn s_00571e00(l: u32) -> u32 {
+        let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
+        lua::unary(&mut mem(), &lb::UNARY[1], l, f.at())
+    }
+    /// `Phyre_PScripting_Vector_normalize4_00573860`.
+    Phyre_PScripting_Vector_normalize4_00573860 @ 0x0057_3860 => extern "C" fn s_00573860(l: u32) -> u32 {
+        let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
+        lua::unary(&mut mem(), &lb::UNARY[2], l, f.at())
+    }
+    /// `Phyre_PScripting_Vector_normalize3_00573760`.
+    Phyre_PScripting_Vector_normalize3_00573760 @ 0x0057_3760 => extern "C" fn s_00573760(l: u32) -> u32 {
+        let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
+        lua::unary(&mut mem(), &lb::UNARY[3], l, f.at())
+    }
+    /// `Phyre_PScripting_Matrix_rotation_005713e0`.
+    Phyre_PScripting_Matrix_rotation_005713e0 @ 0x0057_13e0 => extern "C" fn s_005713e0(l: u32) -> u32 {
+        let mut f = StackFrame::<{(lb::FRAME_BYTES / 4) as usize}>::new();
+        lua::matrix_rotation(&mut mem(), l, f.at())
     }
 }

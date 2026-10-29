@@ -21,6 +21,7 @@
 
 mod m5p_scripting_twins;
 
+use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use m5p_scripting_twins::{JUNK, Rng, Twins};
@@ -1438,6 +1439,239 @@ fn b2_fixups_match_the_original() {
             let what = format!("{label}: animatables {find}");
             t.cdecl(&what, 0x0054_0c10, &[p], |g| Some(m::fix_animatables(g, p)));
         }
+        t.unstub();
+    }
+}
+
+// ---- batch 3: the object accessors, Vector and Matrix functions ----
+
+/// Stubs for the userdata check (`lua_touserdata` answering `u`, the
+/// metatable and its comparison answering `mt`, `eq`) and the rest of the
+/// Lua calls the batch-3 functions make; `luaL_error` logs the words the
+/// expected call passes (its varargs vary).
+fn lua_b3(t: &mut Twins, u: u32, mt: u32, eq: u32, ty: u32, err_words: u32) {
+    t.stub(s::LUA_TOUSERDATA, false, 2, 0, u);
+    t.stub(mid::LUA_GETMETATABLE, false, 2, 0, mt);
+    t.stub(mid::LUA_RAWEQUAL, false, 3, 0, eq);
+    t.stub(mid::LUA_TYPE, false, 2, 0, ty);
+    t.stub(s::LUA_GETFIELD, false, 3, 0, 0x6f1);
+    t.stub(s::LUA_SETTOP, false, 2, 0, 0x7020);
+    t.stub(s::LUA_SETMETATABLE, false, 2, 0, 0x3e7a);
+    t.stub(s::LUA_PUSHNUMBER, false, 2, 0, 0x1b7);
+    t.stub(lb::LUA_ERROR, false, err_words, 0, 0xe770);
+}
+
+/// A `PhyreObject` userdata `{descriptor, object}` whose descriptor's
+/// parent chain (`+0x40`) has `depth` links before reaching `class` (or
+/// never when `reach` is false). Each descriptor has a name at `+0x18`.
+fn object_ud(t: &mut Twins, class: u32, depth: u32, reach: bool, obj: u32, null_d: bool) -> u32 {
+    let mut d = class;
+    if !reach {
+        d = t.zeros(0x48);
+        t.w32(d + 0x18, 0x00c9_0001);
+    }
+    for i in 0..depth {
+        let e = t.zeros(0x48);
+        t.w32(e + 0x18, 0x00c9_0100 + i);
+        t.w32(e + 0x40, d);
+        d = e;
+    }
+    let u = t.zeros(8);
+    t.w32(u, if null_d { 0 } else { d });
+    t.w32(u + 4, obj);
+    u
+}
+
+#[test]
+fn b3_accessors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        t.stub(lb::DEFAULT_INSTANCE, true, 0, 0, 0x00c9_def0);
+        for (i, a) in lb::ACCESSORS.iter().enumerate() {
+            let class = t.rebase(a.class);
+            // (userdata, obj, depth, reaches, null descriptor, lua type)
+            let cases = [
+                (false, 0u32, 0u32, true, false, 0u32),
+                (false, 0, 0, true, false, 3),
+                (true, 0, 0, true, false, 0),
+                (true, 0, 0, true, false, 7),
+                (true, 0x00c9_5550, 0, true, true, 0),
+                (true, 0x00c9_5550, 0, true, false, 0),
+                (true, 0x00c9_5550, 2, true, false, 0),
+                (true, 0x00c9_5550, 2, false, false, 0),
+            ];
+            for (k, &(ud, obj, depth, reach, null_d, ty)) in cases.iter().enumerate() {
+                let u = if ud {
+                    object_ud(&mut t, class, depth, reach, obj, null_d)
+                } else {
+                    0
+                };
+                let words = if ud && obj != 0 && !null_d && !reach {
+                    4
+                } else {
+                    3
+                };
+                lua_b3(&mut t, u, 1, 1, ty, words);
+                let what = format!("{label}: accessor {i} case {k}");
+                t.cdecl(&what, a.addr, &[l], |g| Some(lua::accessor_get(g, a, l)));
+            }
+        }
+        // the reference accessor
+        let class = t.rebase(lb::ENTITY_CLASS);
+        let cases = [
+            (false, 0u32, 0u32, true, false),
+            (true, 0x00c9_5550, 0, true, true),
+            (true, 0x00c9_5550, 0, true, false),
+            (true, 0x00c9_5550, 3, true, false),
+            (true, 0x00c9_5550, 2, false, false),
+            (true, 0, 1, true, false),
+        ];
+        for (k, &(ud, obj, depth, reach, null_d)) in cases.iter().enumerate() {
+            let u = if ud {
+                object_ud(&mut t, class, depth, reach, obj, null_d)
+            } else {
+                0
+            };
+            let words = if ud && !null_d && !reach { 4 } else { 3 };
+            lua_b3(&mut t, u, 1, 1, 0, words);
+            let what = format!("{label}: entity accessor case {k}");
+            t.cdecl(&what, 0x0044_f7f0, &[l], |g| Some(lua::entity_get(g, l)));
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b3_vectors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let mut rng = Rng(0x2468_ace1);
+        for &(f, n, root) in &lb::LENGTHS {
+            // not a Vector: no userdata, no metatable, another metatable
+            for (u, mt, eq) in [(0u32, 1u32, 1u32), (1, 0, 1), (1, 1, 0)] {
+                let v = if u == 0 { 0 } else { t.zeros(0x10) };
+                lua_b3(&mut t, v, mt, eq, 0, 3);
+                let what = format!("{label}: length {f:#x} not a vector {u} {mt} {eq}");
+                t.cdecl(&what, f, &[l], |g| Some(lua::vector_length(g, l, n, root)));
+            }
+            for k in 0..40 {
+                let v = t.zeros(0x10);
+                for i in 0..4 {
+                    let w = if k < 10 {
+                        FLOATS[(k + i as usize) % FLOATS.len()]
+                    } else {
+                        // random magnitudes around 1, either sign
+                        let r = rng.next();
+                        (r & 0x8000_0000) | (0x3c00_0000 + (r & 0x07ff_ffff))
+                    };
+                    t.w32(v + 4 * i, w);
+                }
+                lua_b3(&mut t, v, 1, 1, 0, 3);
+                let what = format!("{label}: length {f:#x} #{k}");
+                t.cdecl(&what, f, &[l], |g| Some(lua::vector_length(g, l, n, root)));
+            }
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b3_matrices_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let table = t.alloc(
+            &[0u32, 0x3f80_0000, 0xc020_0000, 0x7149_f2ca, 0xffc1_2345]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for &f in &[0x0057_1480u32, 0x0057_1540] {
+            for (top, ok) in [(1u32, true), (3, true), (0, true), (2, false)] {
+                let m = if ok { t.junk(0x40, 1) } else { t.zeros(0x40) };
+                lua_b3(&mut t, 0, 1, 1, 0, 3);
+                t.stub(s::LUA_NEWUSERDATA, false, 2, 0, m);
+                t.stub(lb::LUA_GETTOP, false, 1, 0, top);
+                t.stub_float_table(lb::LUA_CHECKNUMBER, 2, 1, table);
+                let what = format!("{label}: matrix {f:#x} top {top} {ok}");
+                t.cdecl(&what, f, &[l], |g| {
+                    Some(if f == 0x0057_1480 {
+                        lua::matrix_scale(g, l)
+                    } else {
+                        lua::matrix_translation(g, l)
+                    })
+                });
+            }
+        }
+        t.unstub();
+    }
+}
+
+/// A stand-in for a math routine `(out, in)` (cdecl): copies `in_words`
+/// of its input to the returned "seen" cell (so the diff checks what it
+/// was handed), writes `out_words` pattern floats to `out`, returns `out`.
+fn math_stub(t: &mut Twins, sym: u32, in_words: u32, out_words: u32, pattern: u32) -> u32 {
+    let seen = t.zeros(0x40);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    for k in 0..in_words {
+        c.extend([0x8b, 0x50, (4 * k) as u8]); // mov edx, [eax+4k]
+        c.extend([0x89, 0x15]);
+        c.extend((seen + 4 * k).to_le_bytes()); // mov [seen+4k], edx
+    }
+    c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+    for k in 0..out_words {
+        c.extend([0xc7, 0x40, (4 * k) as u8]);
+        c.extend((0x3f80_0000 + pattern + 0x1_0000 * k).to_le_bytes()); // mov dword [eax+4k], pattern
+    }
+    c.push(0xc3);
+    let code = t.code(&c);
+    t.place(sym, code);
+    seen
+}
+
+#[test]
+fn b3_unary_math_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        // the port's math frame: low in its own stack, as the original's is in
+        // its frame (neither is compared; what reaches the routines is)
+        let frame = t.b.stack_range().start + 0x40;
+        for (i, op) in lb::UNARY.iter().enumerate() {
+            let (inw, outw) = match op.kind {
+                lb::UnaryKind::Matrix => (16, 16),
+                lb::UnaryKind::Vector4 => (4, 4),
+                lb::UnaryKind::Vector3 => (3, 4),
+            };
+            math_stub(&mut t, op.op, inw, outw, 0x100 * i as u32);
+            for (u, mt, eq) in [
+                (false, 1u32, 1u32),
+                (true, 0, 1),
+                (true, 1, 0),
+                (true, 1, 1),
+            ] {
+                let v = if u { t.junk(0x40, 7) } else { 0 };
+                lua_b3(&mut t, v, mt, eq, 0, 3);
+                let out = t.junk(0x40, 1);
+                t.stub(s::LUA_NEWUSERDATA, false, 2, 0, out);
+                let what = format!("{label}: unary {:#x} {u} {mt} {eq}", op.addr);
+                t.cdecl(&what, op.addr, &[l], |g| Some(lua::unary(g, op, l, frame)));
+            }
+        }
+        // the rotation
+        let table = t.alloc(
+            &[0u32, 0x42b4_0000, 0xc334_0000, 0x3f80_0000]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        math_stub(&mut t, lb::ROTATION, 3, 16, 0x777);
+        lua_b3(&mut t, 0, 1, 1, 0, 3);
+        let out = t.junk(0x40, 1);
+        t.stub(s::LUA_NEWUSERDATA, false, 2, 0, out);
+        t.stub_float_table(lb::LUA_CHECKNUMBER, 2, 1, table);
+        let what = format!("{label}: rotation");
+        t.cdecl(&what, 0x0057_13e0, &[l], |g| {
+            Some(lua::matrix_rotation(g, l, frame))
+        });
         t.unstub();
     }
 }
