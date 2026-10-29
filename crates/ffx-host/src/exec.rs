@@ -942,7 +942,8 @@ impl Exec {
             if let Stop::Milestone(m) = &why {
                 self.stats.milestones.push(m.clone());
             }
-            if matches!(why, Stop::Failed(..)) {
+            if matches!(why, Stop::Failed(..)) || (self.is_main() && matches!(why, Stop::Budget(_)))
+            {
                 self.trace = self.backtrace();
                 self.recent = self.uc.get_data().recent.iter().copied().collect();
             }
@@ -990,6 +991,11 @@ impl Exec {
         }
         if self.shared.sync.stopping() {
             self.stopped = Some(self.shared.stopped().unwrap_or(Stop::Returned));
+            // where the main thread was when another thread ended the run
+            // (the budget while it waited: the report says on what)
+            if self.is_main() && self.trace.is_empty() {
+                self.trace = self.backtrace();
+            }
             return true;
         }
         false

@@ -157,7 +157,15 @@ impl Arena {
             let Ok(start) = u32::try_from(at) else { break };
             match self.map(start, size, name) {
                 Ok(()) => return Ok(start),
-                Err(_) => at += GRANULE,
+                // past what holds the address (on i686 Windows the
+                // process's own memory: the GPU driver reserves hundreds
+                // of MB there, and probing it 64 KB at a time made each
+                // VirtualAlloc of the boot take tens of ms)
+                Err(_) => {
+                    at = sys::next_probe(at)
+                        .max(at + GRANULE)
+                        .next_multiple_of(GRANULE);
+                }
             }
         }
         Err(Error::Map(from, size, "arena full".into()))
@@ -238,6 +246,11 @@ impl ffx_bridge::Mem for ArenaMem {
 mod sys {
     use crate::{Error, Result};
 
+    /// Where to look next after a refused mapping at `at`.
+    pub(super) fn next_probe(at: u64) -> u64 {
+        at
+    }
+
     const SIZE: usize = 1 << 32;
 
     pub(super) fn reserve() -> Result<*mut u8> {
@@ -292,6 +305,11 @@ mod sys {
 
     use crate::{Error, Result};
 
+    /// Where to look next after a refused mapping at `at`.
+    pub(super) fn next_probe(at: u64) -> u64 {
+        at
+    }
+
     pub(super) fn reserve() -> Result<*mut u8> {
         // SAFETY: a fresh reservation.
         let p = unsafe { VirtualAlloc(std::ptr::null(), 1 << 32, MEM_RESERVE, PAGE_NOACCESS) };
@@ -337,6 +355,29 @@ mod sys {
     };
 
     use crate::{Error, Result};
+
+    /// Where to look next after a refused mapping at `at`: the end of the
+    /// allocation that holds `at` (`VirtualQuery`).
+    pub(super) fn next_probe(at: u64) -> u64 {
+        use windows_sys::Win32::System::Memory::{MEMORY_BASIC_INFORMATION, VirtualQuery};
+        let Ok(addr) = usize::try_from(at) else {
+            return at;
+        };
+        // SAFETY: a plain query into a local.
+        let mut m: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+        // SAFETY: as above.
+        let n = unsafe {
+            VirtualQuery(
+                addr as *const _,
+                &raw mut m,
+                std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+            )
+        };
+        if n == 0 || m.State == windows_sys::Win32::System::Memory::MEM_FREE {
+            return at;
+        }
+        (m.BaseAddress as u64) + m.RegionSize as u64
+    }
 
     #[allow(clippy::unnecessary_wraps)] // the same signature on every target
     pub(super) fn reserve() -> Result<*mut u8> {
