@@ -704,3 +704,7 @@ fn setters_match_the_original() {
         }
     });
 }
+
+// ---- batch 2 ----
+
+include!("m5p_render_a/b2.rs");

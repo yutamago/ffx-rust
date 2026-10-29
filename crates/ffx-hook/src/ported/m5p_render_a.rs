@@ -5,8 +5,9 @@
 //! Threads: the main thread (atexit teardown, the loader's fix-ups) and
 //! the loader thread; the shims keep no state.
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 use ffx_prender::m5p_render_a::{self as ma, bridge as a};
+use ffx_prender::m5p_render_a2::{self as m2, bridge as b};
 
 ported! {
     // ---- batch 1 ----
@@ -817,5 +818,275 @@ ported! {
     /// `(this; arg)`.
     PGameplay_forward58_0055b780 @ 0x0055_b780 => extern "thiscall" fn forward_58(this: u32, arg: u32) -> u32 {
         a::forward_58(&mut mem(), this, arg)
+    }
+    // ---- batch 2 ----
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PVertexStream_register1_00481130 @ 0x0048_1130 => extern "C" fn concrete_register_00481130(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x0048_1130) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PVertexStream_register0_00481200 @ 0x0048_1200 => extern "C" fn concrete_register_00481200(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x0048_1200) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PSharray_PMaterial_register1_0048a000 @ 0x0048_a000 => extern "C" fn concrete_register_0048a000(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x0048_a000) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PSharray_PMaterial_register0_0048a0b0 @ 0x0048_a0b0 => extern "C" fn concrete_register_0048a0b0(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x0048_a0b0) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PDynamicSegmentDesc_register0_004962c0 @ 0x0049_62c0 => extern "C" fn concrete_register_004962c0(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x0049_62c0) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PShaderPass_register0_004bb6c0 @ 0x004b_b6c0 => extern "C" fn concrete_register_004bb6c0(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x004b_b6c0) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PModifierNetworkInstance_register1_004faef0 @ 0x004f_aef0 => extern "C" fn concrete_register_004faef0(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x004f_aef0) })
+    }
+    /// `(p)`: the static descriptor, then its register (`CONCRETE_REGISTERS`).
+    PClassDescriptorConcrete_PArray_PModifierNetworkInstance_register0_004fafb0 @ 0x004f_afb0 => extern "C" fn concrete_register_004fafb0(p: u32) -> u32 {
+        b::concrete_register(&mut mem(), p, &const { m2::concrete_register(0x004f_afb0) })
+    }
+    /// `(this)` (`RELEASE_DTORS`).
+    PBufferD3D11_releaseDtor_004818b0 @ 0x0048_18b0 => extern "thiscall" fn release_dtor_004818b0(this: u32) -> u32 {
+        b::release_dtor(&mut mem(), this, 0x0056_2da0, 0x0056_46d0, 0x0055_dfa0)
+    }
+    /// `(this)` (`RELEASE_DTORS`).
+    PBufferD3D11_releaseDtor_004c3010 @ 0x004c_3010 => extern "thiscall" fn release_dtor_004c3010(this: u32) -> u32 {
+        b::release_dtor(&mut mem(), this, 0x0059_5f90, 0x0059_cc40, 0x0058_5840)
+    }
+    /// `(this)` (`RELEASE_DTORS`).
+    PBufferD3D11_releaseDtor_00501cd0 @ 0x0050_1cd0 => extern "thiscall" fn release_dtor_00501cd0(this: u32) -> u32 {
+        b::release_dtor(&mut mem(), this, 0x0059_5f80, 0x0059_ca60, 0x0058_57b0)
+    }
+    /// `(n, src, count)` -> block (`ALLOC_COPIES`).
+    PArray_allocCopy_004900c0 @ 0x0049_00c0 => extern "C" fn alloc_copy_004900c0(n: u32, src: u32, count: u32) -> u32 {
+        b::alloc_copy(&mut mem(), n, src, count, 4, 4, 0, None)
+    }
+    /// `(n, src, count)` -> block (`ALLOC_COPIES`).
+    PArray_allocCopy_00487920 @ 0x0048_7920 => extern "C" fn alloc_copy_00487920(n: u32, src: u32, count: u32) -> u32 {
+        b::alloc_copy(&mut mem(), n, src, count, 4, 2, 0, None)
+    }
+    /// `(n, src, count)` -> block (`ALLOC_COPIES`).
+    PArray_allocCopy_004901f0 @ 0x0049_01f0 => extern "C" fn alloc_copy_004901f0(n: u32, src: u32, count: u32) -> u32 {
+        b::alloc_copy(&mut mem(), n, src, count, 4, 4, 0x0044_a470, Some(4))
+    }
+    /// `(n, src, count)` -> block (`ALLOC_COPIES`).
+    PArray_allocCopy_004b6220 @ 0x004b_6220 => extern "C" fn alloc_copy_004b6220(n: u32, src: u32, count: u32) -> u32 {
+        b::alloc_copy(&mut mem(), n, src, count, 2, 2, 0x004b_2d00, Some(2))
+    }
+    /// `(n, src, count)` -> block (`ALLOC_COPIES`).
+    PArray_allocCopy_004eb260 @ 0x004e_b260 => extern "C" fn alloc_copy_004eb260(n: u32, src: u32, count: u32) -> u32 {
+        b::alloc_copy(&mut mem(), n, src, count, 8, 4, 0x004e_7d70, Some(8))
+    }
+    /// `(n, src)` -> block.
+    PArray_allocCopyAll_004878d0 @ 0x0048_78d0 => extern "C" fn alloc_copy_all(n: u32, src: u32) -> u32 {
+        b::alloc_copy_all(&mut mem(), n, src)
+    }
+    /// `(this; n)` -> status (`RESIZE_VIA`).
+    PArray_resize_004fcac0 @ 0x004f_cac0 => extern "thiscall" fn resize_004fcac0(this: u32, n: u32) -> u32 {
+        b::resize_via(&mut mem(), this, n, 0x004f_b850, false)
+    }
+    /// `(this; n)` -> status (`RESIZE_VIA`).
+    PArray_resize_004ba640 @ 0x004b_a640 => extern "thiscall" fn resize_004ba640(this: u32, n: u32) -> u32 {
+        b::resize_via(&mut mem(), this, n, 0x004b_6220, true)
+    }
+    /// `(this; n)` -> status (`RESIZE_DISCARD`).
+    PArray_resizeDiscard_00494c20 @ 0x0049_4c20 => extern "thiscall" fn resize_discard_00494c20(this: u32, n: u32) -> u32 {
+        b::resize_discard(&mut mem(), this, n, 0x40)
+    }
+    /// `(this; n)` -> status (`RESIZE_DISCARD`).
+    PArray_resizeDiscard_0049bfc0 @ 0x0049_bfc0 => extern "thiscall" fn resize_discard_0049bfc0(this: u32, n: u32) -> u32 {
+        b::resize_discard(&mut mem(), this, n, 0x4)
+    }
+    /// `(this; n)` -> status.
+    PArray_resizeCopyInit16_004ba720 @ 0x004b_a720 => extern "thiscall" fn resize_copy_init16(this: u32, n: u32) -> u32 {
+        b::resize_copy_init16(&mut mem(), this, n)
+    }
+    /// `(this; n)` -> status.
+    PArray_PShaderInfo_resize_004e1150 @ 0x004e_1150 => extern "thiscall" fn resize_shader_infos(this: u32, n: u32) -> u32 {
+        b::resize_shader_infos(&mut mem(), this, n)
+    }
+    /// `(dst, src, count)`.
+    PhyreCopyElementsU16_004b2d00 @ 0x004b_2d00 => extern "C" fn copy_u16(dst: u32, src: u32, count: u32) {
+        b::copy_u16(&mut mem(), dst, src, count);
+    }
+    /// `(dst, src, count)`.
+    PhyreCopyLocation16_004b2d70 @ 0x004b_2d70 => extern "C" fn copy_location16(dst: u32, src: u32, count: u32) {
+        b::copy_location16(&mut mem(), dst, src, count);
+    }
+    /// `(data, count)`.
+    PhyreInitLocation16_004b8cf0 @ 0x004b_8cf0 => extern "C" fn init_location16(data: u32, count: u32) {
+        b::init_location16(&mut mem(), data, count);
+    }
+    /// `(data, count)`.
+    PhyreInitSubTexture20_0056bab0 @ 0x0056_bab0 => extern "C" fn init_subtexture20(data: u32, count: u32) {
+        b::init_subtexture20(&mut mem(), data, count);
+    }
+    /// `(dst, src, count)`.
+    PhyreCopyElements64_0048c930 @ 0x0048_c930 => extern "C" fn copy_elements_0048c930(dst: u32, src: u32, count: u32) {
+        ffx_prender::m5p_render_a::bridge::copy_elements(&mut mem(), dst, src, count, 16);
+    }
+    /// `(dst, src, count)`.
+    PhyreCopyElements32_0048c9d0 @ 0x0048_c9d0 => extern "C" fn copy_elements_0048c9d0(dst: u32, src: u32, count: u32) {
+        ffx_prender::m5p_render_a::bridge::copy_elements(&mut mem(), dst, src, count, 8);
+    }
+    /// `(this)` -> this.
+    PShaderRef_init_004bbbd0 @ 0x004b_bbd0 => extern "thiscall" fn init_shader_ref(this: u32) -> u32 {
+        b::init_shader_ref(&mut mem(), this)
+    }
+    /// `(headers, n)`.
+    PhyreFreeHeaders_004d3720 @ 0x004d_3720 => extern "C" fn free_headers(headers: u32, n: u32) {
+        b::free_headers(&mut mem(), headers, n);
+    }
+    /// `(this; v)` -> status (`LOCKED_SETTERS`).
+    PLocked_setWord14_004c0680 @ 0x004c_0680 => extern "thiscall" fn locked_set_004c0680(this: u32, v: u32) -> u32 {
+        b::locked_set(&mut mem(), this, 0x14, false, v)
+    }
+    /// `(this; v)` -> status (`LOCKED_SETTERS`).
+    PLocked_setWord10_004c06b0 @ 0x004c_06b0 => extern "thiscall" fn locked_set_004c06b0(this: u32, v: u32) -> u32 {
+        b::locked_set(&mut mem(), this, 0x10, false, v)
+    }
+    /// `(this; v)` -> status (`LOCKED_SETTERS`).
+    PLocked_setWord18_004c07c0 @ 0x004c_07c0 => extern "thiscall" fn locked_set_004c07c0(this: u32, v: u32) -> u32 {
+        b::locked_set(&mut mem(), this, 0x18, false, v)
+    }
+    /// `(this; v)` -> status (`LOCKED_SETTERS`).
+    PLocked_setFloat8_004c0720 @ 0x004c_0720 => extern "thiscall" fn locked_set_004c0720(this: u32, v: u32) -> u32 {
+        b::locked_set(&mut mem(), this, 0x8, true, v)
+    }
+    /// `(this; v)` -> status (`LOCKED_SETTERS`).
+    PLocked_setFloatC_004c0790 @ 0x004c_0790 => extern "thiscall" fn locked_set_004c0790(this: u32, v: u32) -> u32 {
+        b::locked_set(&mut mem(), this, 0xc, true, v)
+    }
+    /// `(this; on)` -> status.
+    PLocked_setFlag40_004c06e0 @ 0x004c_06e0 => extern "thiscall" fn locked_set_flag40(this: u32, on: u32) -> u32 {
+        b::locked_set_flag40(&mut mem(), this, on)
+    }
+    /// `(this; v)` -> status.
+    PLocked_setByte1_004c0750 @ 0x004c_0750 => extern "thiscall" fn locked_set_byte1(this: u32, v: u32) -> u32 {
+        b::locked_set_byte1(&mut mem(), this, v)
+    }
+    /// `(this; owner)` -> status (`OWNER_SETTERS`).
+    PTextureCommonBase_setOwner1_004c2920 @ 0x004c_2920 => extern "thiscall" fn set_owner_004c2920(this: u32, owner: u32) -> u32 {
+        b::set_owner(&mut mem(), this, owner, 1)
+    }
+    /// `(this; owner)` -> status (`OWNER_SETTERS`).
+    PTextureCommonBase_setOwner2_004c2950 @ 0x004c_2950 => extern "thiscall" fn set_owner_004c2950(this: u32, owner: u32) -> u32 {
+        b::set_owner(&mut mem(), this, owner, 2)
+    }
+    /// `(this; key, p)`: the key passed by address (its slot).
+    PRedBlackTree_blockEntry_004e0700 @ 0x004e_0700 => extern "thiscall" fn node_block_entry(this: u32, key: u32, p: u32) -> u32 {
+        let mut slot = StackFrame::<1>::new();
+        b::node_block_entry(&mut mem(), this, key, p, slot.at())
+    }
+    /// `(this; a)` -> this.
+    Phyre_PRendering_PModifierNetworkDynamicMeshInstance_ctor_004fb3c0 @ 0x004f_b3c0 => extern "thiscall" fn modifier_instance_ctor(this: u32, a: u32) -> u32 {
+        b::modifier_instance_ctor(&mut mem(), this, a)
+    }
+    /// `(this; n)` -> status.
+    PBufferD3D11_setCount_00563fb0 @ 0x0056_3fb0 => extern "thiscall" fn set_buffer_count(this: u32, n: u32) -> u32 {
+        b::set_buffer_count(&mut mem(), this, n)
+    }
+    /// `(a, b)` -> -1/0/1.
+    PSprite_compareDepth_0056c110 @ 0x0056_c110 => extern "C" fn compare_depth(a: u32, b: u32) -> u32 {
+        b::compare_depth(&mut mem(), a, b)
+    }
+    /// `(this)` -> 0.
+    PSprite_resetFrames_0056df40 @ 0x0056_df40 => extern "thiscall" fn reset_frames(this: u32) -> u32 {
+        b::reset_frames(&mut mem(), this)
+    }
+    /// `(this; frame, v...)` -> status (`SPRITE_SETTERS`).
+    PSprite_setFrame28_0056e4c0 @ 0x0056_e4c0 => extern "thiscall" fn sprite_set_0056e4c0(this: u32, frame: u32, v0: u32) -> u32 {
+        b::sprite_set(&mut mem(), this, frame, 0x28, &[v0])
+    }
+    /// `(this; frame, v...)` -> status (`SPRITE_SETTERS`).
+    PSprite_setFrame0_0056e6e0 @ 0x0056_e6e0 => extern "thiscall" fn sprite_set_0056e6e0(this: u32, frame: u32, v0: u32, v1: u32) -> u32 {
+        b::sprite_set(&mut mem(), this, frame, 0x0, &[v0, v1])
+    }
+    /// `(this; frame, v...)` -> status (`SPRITE_SETTERS`).
+    PSprite_setFrame20_0056e800 @ 0x0056_e800 => extern "thiscall" fn sprite_set_0056e800(this: u32, frame: u32, v0: u32, v1: u32) -> u32 {
+        b::sprite_set(&mut mem(), this, frame, 0x20, &[v0, v1])
+    }
+    /// `(this; frame, v...)` -> status (`SPRITE_SETTERS`).
+    PSprite_setFrame10_0056e910 @ 0x0056_e910 => extern "thiscall" fn sprite_set_0056e910(this: u32, frame: u32, v0: u32, v1: u32) -> u32 {
+        b::sprite_set(&mut mem(), this, frame, 0x10, &[v0, v1])
+    }
+    /// `(this; frame, v...)` -> status (`SPRITE_SETTERS`).
+    PSprite_setFrame18_0056ea20 @ 0x0056_ea20 => extern "thiscall" fn sprite_set_0056ea20(this: u32, frame: u32, v0: u32, v1: u32) -> u32 {
+        b::sprite_set(&mut mem(), this, frame, 0x18, &[v0, v1])
+    }
+    /// `(this; frame, src)` -> status.
+    PSprite_setFrameRecord_0056e7b0 @ 0x0056_e7b0 => extern "thiscall" fn sprite_set_record(this: u32, frame: u32, src: u32) -> u32 {
+        b::sprite_set_record(&mut mem(), this, frame, src)
+    }
+    /// `(this; buffer, count)` -> 0.
+    Phyre_PArray_setToExternalBuffer_0056ebf0 @ 0x0056_ebf0 => extern "thiscall" fn set_external_release(this: u32, buffer: u32, count: u32) -> u32 {
+        b::set_external_release(&mut mem(), this, buffer, count)
+    }
+    /// `(this)`.
+    PEhVector_destroy17C_00584e80 @ 0x0058_4e80 => extern "thiscall" fn destroy_elements(this: u32) -> u32 {
+        b::destroy_elements(&mut mem(), this)
+    }
+    /// `(mode)`.
+    Phyre_PRendering_MapMode8_0058aaa0 @ 0x0058_aaa0 => extern "C" fn map_mode(mode: u32) -> u32 {
+        b::map_mode(mode)
+    }
+    /// `(this)` -> 0.
+    PTexture3DD3D11_bind_0058db50 @ 0x0058_db50 => extern "thiscall" fn texture3d_bind(this: u32) -> u32 {
+        b::texture3d_bind(&mut mem(), this)
+    }
+    /// `(this; topology, start, count, instances)` -> al.
+    PRendererD3D11_drawInstanced_00592c10 @ 0x0059_2c10 => extern "thiscall" fn draw_instanced(this: u32, topology: u32, start: u32, count: u32, instances: u32) -> u8 {
+        b::draw_instanced(&mut mem(), this, topology, start, count, instances)
+    }
+    /// `(_; renderer, _, mesh, segments, desc, a, b)` (`ret 0x1c`).
+    PMeshDraw_drawSegmentInstanced_004985b0 @ 0x0049_85b0 => extern "thiscall" fn draw_segment(_this: u32, renderer: u32, _x: u32, mesh: u32, segments: u32, desc: u32, a: u32, b: u32) -> u32 {
+        b::draw_segment(&mut mem(), renderer, mesh, segments, desc, a, b)
+    }
+    /// `()`: prune and reset (`prune_list`).
+    PList_pruneFlagged_00432680 @ 0x0043_2680 => extern "C" fn prune_list_00432680() -> u32 {
+        b::prune_list(&mut mem(), 0x00ca_4e18, 8, 0xc, 0x00ca_4edc, 0x00ca_4ef4)
+    }
+    /// `()`: prune and reset (`prune_list`).
+    PList_pruneFlagged_004326f0 @ 0x0043_26f0 => extern "C" fn prune_list_004326f0() -> u32 {
+        b::prune_list(&mut mem(), 0x00ca_54f8, 4, 0x8, 0x00ca_54fc, 0x00ca_5514)
+    }
+    /// `(this)`.
+    Phyre_PSprite_PUtilitySprite_dtor_00433dd0 @ 0x0043_3dd0 => extern "thiscall" fn utility_sprite_dtor(this: u32) {
+        b::utility_sprite_dtor(&mut mem(), this);
+    }
+    /// `(this; a)`.
+    PBuffer_unmapNextSlot_004350b0 @ 0x0043_50b0 => extern "thiscall" fn unmap_next_slot(this: u32, a: u32) -> u32 {
+        b::unmap_next_slot(&mut mem(), this, a)
+    }
+    /// `()` -> the callback cell.
+    Phyre_PTTYCallback_current_00435270 @ 0x0043_5270 => extern "C" fn tty_current() -> u32 {
+        b::tty_current(&mut mem())
+    }
+    /// `(this; flags)` -> this.
+    Phyre_PTTYCallback_scalarDeletingDtor_004351f0 @ 0x0043_51f0 => extern "thiscall" fn tty_delete(this: u32, flags: u32) -> u32 {
+        b::tty_delete(&mut mem(), this, flags)
+    }
+    /// `(this; header)` -> this.
+    PTextureIterator_ctor_00463cb0 @ 0x0046_3cb0 => extern "thiscall" fn texture_iter_ctor(this: u32, header: u32) -> u32 {
+        b::texture_iter_ctor(&mut mem(), this, header)
+    }
+    /// `(this; i)` -> word.
+    PArray_word_0048c1a0 @ 0x0048_c1a0 => extern "thiscall" fn array_word(this: u32, i: u32) -> u32 {
+        b::array_word(&mut mem(), this, i)
+    }
+    /// `()` -> the descriptor.
+    PNamedSemanticDescriptorForDynamicType_PContextSwitch_get_004d0e20 @ 0x004d_0e20 => extern "C" fn context_switch_semantic() -> u32 {
+        b::context_switch_semantic(&mut mem())
+    }
+    /// `()`.
+    PhyreStaticEventOwner_004ff0a0 @ 0x004f_f0a0 => extern "C" fn static_event_owner() -> u32 {
+        b::static_event_owner(&mut mem())
     }
 }
