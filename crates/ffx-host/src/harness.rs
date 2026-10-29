@@ -79,6 +79,11 @@ static PINNED: AtomicU32 = AtomicU32::new(0);
 const NO_LABEL: u32 = u32::MAX;
 /// Flips queued (main thread) and run (render thread), and the update each
 /// queued flip shows, by flip number (the render ring has 16 slots).
+/// Ctrl work 0's event frame count (`0x01325d94`) at the last frame
+/// boundary, for [`seeded_job`] (the hook's `JOB_EVENTS`).
+static JOB_EVENTS: AtomicU32 = AtomicU32::new(0);
+/// Seeded jobs run (cloth, middle calc), for `stats`.
+static SEEDED_JOBS: AtomicU32 = AtomicU32::new(0);
 static FLIPS: AtomicU32 = AtomicU32::new(0);
 static FLIPS_RUN: AtomicU32 = AtomicU32::new(0);
 static FLIP_LABELS: [AtomicU32; 64] = [const { AtomicU32::new(NO_LABEL) }; 64];
@@ -242,6 +247,69 @@ pub fn register(t: &mut Table) {
             entry("Rng_ClockSeed", Conv::Cdecl, 0, clock_seed),
         );
     }
+    // push ebp; mov ebp, esp; push ebx
+    t.wrap(
+        0x0082_e390,
+        entry("Ch_Cloth_PerCharacter", Conv::Cdecl, 2, cloth_job),
+        &[0x55, 0x8b, 0xec, 0x53],
+    );
+    // push ebp; mov ebp, esp; mov ecx, [ebp + 0x10]
+    t.wrap(
+        0x0083_3530,
+        entry("Ch_CalcMiddle_Batch", Conv::Cdecl, 3, middle_job),
+        &[0x55, 0x8b, 0xec, 0x8b, 0x4d, 0x10],
+    );
+}
+
+/// Runs one character job with this thread's `rand()` seeded for it and
+/// gives the thread its own seed back after, as the hook's `seeded_job`
+/// (docs/harness.md): the cloth's wind (`Sg_ClothStep` under
+/// `Ch_Cloth_PerCharacter`) and the mouth and texture animations (under
+/// `Ch_CalcMiddle_Batch`) draw from `rand()`, whose seed is per thread, and
+/// the scheduler runs them on whichever job thread is free. The seed comes
+/// from the kind, the first character's place in the character array
+/// (`*0x023c44e4`, 0x880 bytes a record) and [`JOB_EVENTS`]. Only with the
+/// harness, as in the hook; the two functions have no callers but the job
+/// schedulers (`JobSchedule_Ch_Cloth_PerCharacter` and
+/// `JobSchedule_Ch_CalcMiddle_Batch` push them), so wrapping them is the
+/// hook's patch of those pushes.
+fn seeded_job(e: &mut Exec, kind: u32, first: u32, f: u32, args: &Args) -> Ret {
+    if !enabled() || first == 0 {
+        return e.call_original(f, Conv::Cdecl, args).unwrap_or(Ret::eax(0));
+    }
+    let array = e.mem().read::<u32>(0x023c_44e4);
+    let place = first.wrapping_sub(array) / 0x880;
+    let events = JOB_EVENTS.load(Ordering::Acquire);
+    let own = e.crt.rand;
+    e.crt.rand = place.wrapping_mul(0x9e37_79b1) ^ events.wrapping_mul(0x85eb_ca6b) ^ kind;
+    let r = e.call_original(f, Conv::Cdecl, args).unwrap_or(Ret::eax(0));
+    e.crt.rand = own;
+    SEEDED_JOBS.fetch_add(1, Ordering::Relaxed);
+    r
+}
+
+/// `Ch_Cloth_PerCharacter(chars, count)` (`0x0082e390`, cdecl): `count`
+/// character pointers at `chars`, seeded (kind 1).
+fn cloth_job(e: &mut Exec, args: &Args) -> Ret {
+    let (chars, count) = (crate::imports::a(args, 0), crate::imports::a(args, 1));
+    let first = if chars != 0 && count != 0 {
+        e.mem().read::<u32>(chars)
+    } else {
+        0
+    };
+    seeded_job(e, 1, first, 0x0082_e390, args)
+}
+
+/// `Ch_CalcMiddle_Batch(chars, &pass, &count)` (`0x00833530`, cdecl):
+/// `*count` records from `chars`, seeded (kind 2, the pass above it).
+fn middle_job(e: &mut Exec, args: &Args) -> Ret {
+    let (chars, pass) = (crate::imports::a(args, 0), crate::imports::a(args, 1));
+    let kind = if pass == 0 {
+        2
+    } else {
+        2 | (e.mem().read::<u32>(pass) << 8)
+    };
+    seeded_job(e, kind, chars, 0x0083_3530, args)
 }
 
 fn seed() -> Option<u32> {
@@ -343,6 +411,7 @@ pub fn boundary(e: &mut Exec, frame: u32) {
         run_main_jobs(e, frame);
     }
     PASSED.store(frame + 1, Ordering::Release);
+    JOB_EVENTS.store(e.mem().read::<u32>(0x0132_5d94), Ordering::Release);
 }
 
 /// The `callnext` calls, at the start of the update (after the boundary's
@@ -986,12 +1055,13 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         "ping" => Ok("ok pong".into()),
         "frame" => Ok(format!("ok {}", now())),
         "stats" => Ok(format!(
-            "ok frame {} pad_reads 0 key_polls {} presents {} flips {} flips_run {} seeded_jobs 0",
+            "ok frame {} pad_reads 0 key_polls {} presents {} flips {} flips_run {} seeded_jobs {}",
             now(),
             KEY_POLLS.load(Ordering::Relaxed),
             presents(),
             FLIPS.load(Ordering::Relaxed),
             FLIPS_RUN.load(Ordering::Relaxed),
+            SEEDED_JOBS.load(Ordering::Relaxed),
         )),
         "wait" => {
             let until = now() + parse(arg(1)?)?;
