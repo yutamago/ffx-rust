@@ -54,4 +54,12 @@ ported! {
         let mut f = StackFrame::<1>::new();
         lb::script_function_names(&mut mem(), script, names, f.at())
     }
+    /// `PClassCallableMethodScript::CopyValuesFromContext(from, to, first, n)`.
+    Phyre_PScripting_PClassCallableMethodScript_CopyValuesFromContext @ 0x0061_96e0 => extern "C" fn copy_values(from: u32, to: u32, first: u32, n: u32) -> u32 {
+        lb::copy_values(&mut mem(), from, to, first, n)
+    }
+    /// `PCallerScript`'s script function call `(L)`.
+    Phyre_PScripting_PCallerScript_callFunction_00619e90 @ 0x0061_9e90 => extern "thiscall" fn caller_call(this: u32, l: u32) -> u32 {
+        lb::caller_call(&mut mem(), this, l)
+    }
 }

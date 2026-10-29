@@ -3425,3 +3425,169 @@ fn left2_script_function_names_match_the_original() {
         }
     }
 }
+
+/// A cdecl stub at `sym` answering `table[word & 15]` for its stack word
+/// `arg` (not logged).
+fn index_stub(t: &mut Twins, sym: u32, arg: u8, table: &[u32; 16]) {
+    let bytes: Vec<u8> = table.iter().flat_map(|v| v.to_le_bytes()).collect();
+    let tab = t.alloc(&bytes);
+    let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * arg]; // mov eax, [esp+4+4arg]
+    c.extend([0x83, 0xe0, 0x0f]); // and eax, 15
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    c.push(0xc3);
+    let code = t.code(&c);
+    t.place(sym, code);
+}
+
+/// A cdecl stub at `sym` answering `values` in turn (then the last one
+/// again; not logged).
+fn seq_stub(t: &mut Twins, sym: u32, values: &[u32]) {
+    let mut v = values.to_vec();
+    v.push(*values.last().unwrap());
+    let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    let tab = t.alloc(&bytes);
+    let cell = t.zeros(4);
+    let last = (values.len()) as u32;
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.push(0x3d);
+    c.extend(last.to_le_bytes()); // cmp eax, last
+    c.extend([0x74, 0x06]); // je +6
+    c.extend([0xff, 0x05]);
+    c.extend(cell.to_le_bytes()); // inc dword [cell]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    c.push(0xc3);
+    let code = t.code(&c);
+    t.place(sym, code);
+}
+
+#[test]
+fn left2_copy_values_match_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let (from, to) = (0x00d0_0001u32, 0x00d0_0002u32);
+        // index i: 1 nil, 2 boolean, 3 light userdata, 4 number, 5
+        // string, 6 table, 7 function, 8 thread, 9-12 userdata (vector,
+        // matrix, object, other), 13 an unknown type
+        let mut types = [0u32; 16];
+        types[1..14].copy_from_slice(&[0, 1, 2, 3, 4, 5, 6, 8, 7, 7, 7, 7, 9]);
+        let ud = t.zeros(8);
+        t.w32(ud, 0x0071_0000);
+        t.w32(ud + 4, 0x0072_0000);
+        for checkstack in [0u32, 1] {
+            index_stub(&mut t, l2::LUA_TYPE, 1, &types);
+            t.stub(l2::LUA_COPY[0], false, 2, 0, checkstack);
+            t.stub(l2::LUA_PUSHNIL, false, 1, 0, 0);
+            t.stub(l2::LUA_TOBOOLEAN, false, 2, 0, 1);
+            t.stub(l2::LUA_COPY[1], false, 2, 0, 0);
+            t.stub(l2::LUA_INDEX[0], false, 2, 0, ud);
+            t.stub(l2::LUA_INDEX[4], false, 2, 0, 0);
+            t.stub_float(l2::LUA_COPY[2], 3, 0x3fc0_0000);
+            t.stub(l2::LUA_COPY[3], false, 2, 0, 0);
+            t.stub(l2::LUA_TOLSTRING, false, 3, 0, 0x0073_0000);
+            t.stub(l2::LUA_COPY[4], false, 2, 0, 0);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            t.stub(l2::LUA_COPY[5], false, 2, 0, 0x0074_0000);
+            // the level and the message (the unknown-userdata message has
+            // no third word; the type name's is lua_typename's answer)
+            t.stub(l2::PRINTF, false, 2, 0, 0);
+            let mut vector = [0u32; 16];
+            vector[9] = 0x0075_0000;
+            index_stub(&mut t, l2::COPY_USERDATA[0], 1, &vector);
+            let mut matrix = [0u32; 16];
+            matrix[10] = 0x0076_0000;
+            index_stub(&mut t, l2::COPY_USERDATA[1], 1, &matrix);
+            t.stub(l2::COPY_USERDATA[2], false, 2, 0, 0);
+            t.stub(l2::COPY_USERDATA[3], false, 2, 0, 0);
+            let mut meta = [0u32; 16];
+            meta[11] = 1;
+            index_stub(&mut t, l2::LUA_INDEX[1], 1, &meta);
+            t.stub(l2::LUA_GETFIELD, false, 3, 0, 0);
+            t.stub(l2::LUA_INDEX[2], false, 3, 0, 1);
+            t.stub(l2::RELOAD_CALLS[2], false, 3, 0, 0);
+            for (f, to_, first, n) in [
+                (0u32, to, 1u32, 13u32),
+                (from, 0, 1, 13),
+                (from, from, 1, 13),
+                (from, to, 0, 13),
+                (from, to, 1, 0),
+                (from, to, 1, 13),
+                (from, to, 4, 3),
+            ] {
+                let what = format!(
+                    "{label}: CopyValues {f:#x} {to_:#x} {first} {n} checkstack {checkstack}"
+                );
+                t.cdecl(&what, 0x0061_96e0, &[f, to_, first, n], |g| {
+                    Some(l2b::copy_values(g, f, to_, first, n))
+                });
+            }
+            t.unstub();
+        }
+    }
+}
+
+#[test]
+fn left2_caller_call_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0001u32;
+        let thread = 0x00d0_0002u32;
+        // (name, pool: 0 none, 1 full, 2 free, loaded, the two pcalls,
+        //  the function's type)
+        let cases: [(bool, u32, u32, [u32; 2], u32); 9] = [
+            (false, 2, 1, [0, 0], 6),
+            (true, 0, 1, [0, 0], 6),
+            (true, 1, 1, [0, 0], 6),
+            (true, 2, 1, [0, 0], 6),
+            (true, 2, 0, [0, 0], 6),
+            (true, 2, 1, [3, 0], 6),
+            (true, 2, 1, [0, 0], 0),
+            (true, 2, 1, [0, 4], 6),
+            (true, 0, 1, [0, 4], 6),
+        ];
+        for (i, &(named, pool_kind, loaded, pcalls, ty)) in cases.iter().enumerate() {
+            let script = t.zeros(0x40);
+            t.w32(script + 0x28, 0x0077_0000);
+            t.w32(script + 0x30, if named { 0x0078_0000 } else { 1 });
+            let this = t.zeros(8);
+            t.w32(this + 4, script);
+            let cell = t.rebase(l2::CALLER_POOL[0]);
+            let pool = t.zeros(0x40);
+            let slots = t.zeros(0x80);
+            t.w32(pool + 0x2c, slots);
+            t.w32(pool + 0x28, 0x8000_0004);
+            t.w32(pool + 0x30, if pool_kind == 1 { 4 } else { 1 });
+            t.w32(cell, if pool_kind == 0 { 0 } else { pool });
+            // the slot's thread: what the pool counts while it is taken
+            // is kept in `seen`
+            let seen = t.zeros(4);
+            let mut pre = vec![0xa1];
+            pre.extend((pool + 0x30).to_le_bytes()); // mov eax, [pool + 0x30]
+            pre.push(0xa3);
+            pre.extend(seen.to_le_bytes()); // mov [seen], eax
+            let s = t.stub_code_with(&pre, l2::CALLER_POOL[1], true, 0, 0, thread);
+            t.place(l2::CALLER_POOL[1], s);
+            t.stub(l2::REQUIRE_MORE[1], false, 2, 0, loaded);
+            if pcalls == [0, 0] {
+                t.stub(l2::LUA_PCALLK, false, 6, 0, 0);
+            } else {
+                seq_stub(&mut t, l2::LUA_PCALLK, &pcalls);
+            }
+            t.stub(l2::LUA_TOLSTRING, false, 3, 0, 0x0079_0000);
+            t.stub(l2::PRINTF, false, 4, 0, 0);
+            t.stub(l2::LUA_SETTOP, false, 2, 0, 0);
+            seq_stub(&mut t, l2::LUA_MORE[2], &[3, 5, 4 + i as u32 % 3]);
+            t.stub(l2::LUA_GETGLOBAL, false, 2, 0, 0);
+            t.stub(l2::LUA_TYPE, false, 2, 0, ty);
+            t.stub(l2::LUA_MORE[9], false, 2, 0, 0);
+            t.stub(l2::COPY_VALUES, false, 4, 0, 0);
+            let what = format!("{label}: caller call case {i}");
+            t.this(&what, 0x0061_9e90, this, &[l], |g| {
+                Some(l2b::caller_call(g, this, l))
+            });
+            t.unstub();
+        }
+    }
+}

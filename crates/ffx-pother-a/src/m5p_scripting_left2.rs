@@ -235,14 +235,48 @@ pub const NAMES_CALLS: [u32; 8] = [
     0x00b3_92d4,
 ];
 
+/// `CopyValuesFromContext`'s Lua API (cdecl): `lua_checkstack(L, n)`,
+/// `lua_toboolean`'s push `lua_pushboolean(L, b)`, `lua_tonumberx(L, i,
+/// isnum)` (the number in `ST0`), `lua_pushnumber(L, float)` (a `float`
+/// word: this Lua's numbers are `float`s), `lua_pushstring(L, s)`,
+/// `lua_typename(L, t)`.
+pub const LUA_COPY: [u32; 6] = [
+    0x0094_ac00,
+    0x0094_b5a0,
+    0x0094_c040,
+    0x0094_b750,
+    0x0094_b770,
+    0x0094_c210,
+];
+/// The userdata kinds `CopyValuesFromContext` knows: the vector and
+/// matrix checks `(L, i)` and their pushes `(L, value)` (cdecl), then the
+/// messages for a value it cannot copy and an unknown userdata.
+pub const COPY_USERDATA: [u32; 6] = [
+    0x0057_0dc0,
+    0x0057_0d50,
+    0x0057_2150,
+    0x0057_1f50,
+    0x00b3_f594,
+    0x00b3_f5d4,
+];
+/// `PCallerScript`'s state pool (a pointer: `+0x28` capacity, `+0x2c`
+/// slots of 20 bytes, `+0x30` in use) and a slot's thread (`0x00618130`,
+/// thiscall on the slot).
+pub const CALLER_POOL: [u32; 2] = [0x00cb_d9b8, 0x0061_8130];
+/// `CopyValuesFromContext` (cdecl), as `0x00619e90` calls it.
+pub const COPY_VALUES: u32 = 0x0061_96e0;
+/// The call error message (`Phyre_PhyrePrintf(3, ..., code, text)`).
+pub const CALL_ERROR: u32 = 0x00b2_d298;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{
-        CLASS_DESCRIPTOR, CLOTH_INSTANCE, Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE,
-        GLOBAL_NAMESPACE, Host, INDEX_CALLS, INDEX_CLOSURES, INDEX_MESSAGES, LOAD_CALLBACKS,
-        LOADED_TABLE, LUA_GETFIELD, LUA_GETGLOBAL, LUA_INDEX, LUA_MORE, LUA_PCALLK, LUA_PUSHNIL,
-        LUA_REGISTRYINDEX, LUA_SETFIELD, LUA_SETGLOBAL, LUA_SETTOP, LUA_TOBOOLEAN, LUA_TOLSTRING,
-        LUA_TYPE, LUAL_CHECKLSTRING, MALLOC, MEMCPY, NAMES_CALLS, NEW_INDEX_MESSAGES, PRINTF,
+        CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
+        Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
+        INDEX_CLOSURES, INDEX_MESSAGES, LOAD_CALLBACKS, LOADED_TABLE, LUA_COPY, LUA_GETFIELD,
+        LUA_GETGLOBAL, LUA_INDEX, LUA_MORE, LUA_PCALLK, LUA_PUSHNIL, LUA_REGISTRYINDEX,
+        LUA_SETFIELD, LUA_SETGLOBAL, LUA_SETTOP, LUA_TOBOOLEAN, LUA_TOLSTRING, LUA_TYPE,
+        LUAL_CHECKLSTRING, MALLOC, MEMCPY, NAMES_CALLS, NEW_INDEX_MESSAGES, PRINTF,
         REGISTER_VECTOR_MATRIX, RELOAD_CALLS, RELOAD_DATA, REQUIRE_CALLS, REQUIRE_MAX_DEPTH,
         REQUIRE_MORE, REQUIRE_STATE, STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA,
         VM_MATRIX, VM_VECTOR,
@@ -945,5 +979,184 @@ pub mod bridge {
         );
         h.call_sym(NAMES_CALLS[4], Conv::Thiscall(names), &[block, string]);
         release(h, copy);
+    }
+
+    /// `PClassCallableMethodScript::CopyValuesFromContext(from, to, first,
+    /// n)` (`0x006196e0`, cdecl): the `n` values of `from` from index
+    /// `first` pushed on `to` by type: nil, booleans, light userdata,
+    /// numbers (as `float`), strings (then `from` popped once each, as
+    /// the original does), vectors, matrices and `PhyreObject`s;
+    /// tables, functions and threads are reported (`lua_typename`), and
+    /// other userdata too. 1 for a missing state, 5 for one state or no
+    /// first index, 9 when `to` cannot grow, else 0.
+    pub fn copy_values(h: &mut impl Host, from: u32, to: u32, first: u32, n: u32) -> u32 {
+        if from == 0 || to == 0 {
+            return 1;
+        }
+        if from == to || first == 0 {
+            return 5;
+        }
+        if h.call_sym(LUA_COPY[0], Conv::Cdecl, &[to, n]) == 0 {
+            return 9;
+        }
+        let mut i = first;
+        for _ in 0..n {
+            let ty = h.call_sym(LUA_TYPE, Conv::Cdecl, &[from, i]);
+            match ty {
+                0 => {
+                    h.call_sym(LUA_PUSHNIL, Conv::Cdecl, &[to]);
+                }
+                1 => {
+                    let b = h.call_sym(LUA_TOBOOLEAN, Conv::Cdecl, &[from, i]);
+                    h.call_sym(LUA_COPY[1], Conv::Cdecl, &[to, b]);
+                }
+                2 => {
+                    let p = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[from, i]);
+                    h.call_sym(LUA_INDEX[4], Conv::Cdecl, &[to, p]);
+                }
+                3 => {
+                    let v = h.call_sym_st0(LUA_COPY[2], Conv::Cdecl, &[from, i, 0]);
+                    let v = ffx_bridge::x87::round_trip(v);
+                    h.call_sym(LUA_COPY[3], Conv::Cdecl, &[to, v.to_bits()]);
+                }
+                4 => {
+                    let s = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[from, i, 0]);
+                    h.call_sym(LUA_COPY[4], Conv::Cdecl, &[to, s]);
+                    h.call_sym(LUA_SETTOP, Conv::Cdecl, &[from, 0xffff_fffe]);
+                }
+                5 | 6 | 8 => {
+                    let name = h.call_sym(LUA_COPY[5], Conv::Cdecl, &[from, ty]);
+                    let msg = h.rebase(COPY_USERDATA[4]);
+                    h.call_sym(PRINTF, Conv::Cdecl, &[1, msg, name]);
+                }
+                7 => copy_userdata(h, from, to, i),
+                _ => {}
+            }
+            i = i.wrapping_add(1);
+        }
+        0
+    }
+
+    /// [`copy_values`]' userdata: a vector, a matrix, or a `PhyreObject`
+    /// (pushed again as its object and class); anything else reported.
+    fn copy_userdata(h: &mut impl Host, from: u32, to: u32, i: u32) {
+        let vector = h.call_sym(COPY_USERDATA[0], Conv::Cdecl, &[from, i]);
+        let matrix = h.call_sym(COPY_USERDATA[1], Conv::Cdecl, &[from, i]);
+        if vector != 0 {
+            h.call_sym(COPY_USERDATA[2], Conv::Cdecl, &[to, vector]);
+            return;
+        }
+        if matrix != 0 {
+            h.call_sym(COPY_USERDATA[3], Conv::Cdecl, &[to, matrix]);
+            return;
+        }
+        let ud = h.call_sym(LUA_INDEX[0], Conv::Cdecl, &[from, i]);
+        let object = h.call_sym(LUA_INDEX[1], Conv::Cdecl, &[from, i]) != 0 && {
+            let name = h.rebase(TYPES_DATA[1]);
+            h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[from, LUA_REGISTRYINDEX, name]);
+            let same = h.call_sym(LUA_INDEX[2], Conv::Cdecl, &[from, u32::MAX, 0xffff_fffe]) != 0;
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[from, 0xffff_fffd]);
+            same
+        };
+        if object && ud != 0 {
+            let o: u32 = h.read(ud + 4);
+            let class: u32 = h.read(ud);
+            h.call_sym(RELOAD_CALLS[2], Conv::Cdecl, &[to, o, class]);
+            return;
+        }
+        let msg = h.rebase(COPY_USERDATA[5]);
+        h.call_sym(PRINTF, Conv::Cdecl, &[1, msg]);
+    }
+
+    /// `PCallerScript`'s script function call `(L)` (`0x00619e90`,
+    /// thiscall on the caller, `ret 4`): the script's function (its name
+    /// a `PString` at `[+4] + 0x30`, its chunk at `+0x28`) called with
+    /// `L`'s values, in a thread from the state pool when one is free
+    /// (the values copied over and the result back) or in `L` itself; a
+    /// load or call error is printed (0). The number of results left on
+    /// `L`, 0 without a name or a function. The pool slot is given back
+    /// when it is the last one taken.
+    pub fn caller_call(h: &mut impl Host, this: u32, l: u32) -> u32 {
+        let script: u32 = h.read(this + 4);
+        let chunk: u32 = h.read(script + 0x28);
+        let name = text(h.read(script + 0x30));
+        if name == 0 {
+            return 0;
+        }
+        let pool: u32 = h.read(h.rebase(CALLER_POOL[0]));
+        let mut slot = 0;
+        if pool != 0 {
+            let cap = h.read::<u32>(pool + 0x28) & 0x7fff_ffff;
+            let used: u32 = h.read(pool + 0x30);
+            if used < cap {
+                h.write(pool + 0x30, used + 1);
+                let slots: u32 = h.read(pool + 0x2c);
+                slot = slots.wrapping_add(used.wrapping_mul(20));
+            }
+        }
+        let (owner, thread) = if slot != 0 {
+            (pool, h.call_sym(CALLER_POOL[1], Conv::Thiscall(slot), &[]))
+        } else {
+            (0, l)
+        };
+        let result = caller_run(h, l, thread, chunk, name);
+        if owner != 0 && slot != 0 {
+            let used: u32 = h.read(owner + 0x30);
+            if used != 0 {
+                let slots: u32 = h.read(owner + 0x2c);
+                let last = slots.wrapping_add(used.wrapping_mul(20)).wrapping_sub(20);
+                if last == slot {
+                    h.write(owner + 0x30, used - 1);
+                }
+            }
+        }
+        result
+    }
+
+    /// [`caller_call`]'s call on `thread`.
+    fn caller_run(h: &mut impl Host, l: u32, thread: u32, chunk: u32, name: u32) -> u32 {
+        let loaded = h.call_sym(REQUIRE_MORE[1], Conv::Cdecl, &[thread, chunk]) & 0xff != 0;
+        if !loaded {
+            return 0;
+        }
+        let msg = h.rebase(CALL_ERROR);
+        let err = h.call_sym(LUA_PCALLK, Conv::Cdecl, &[thread, 0, 0, 0, 0, 0]);
+        if err != 0 {
+            let text = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[thread, u32::MAX, 0]);
+            h.call_sym(PRINTF, Conv::Cdecl, &[3, msg, err, text]);
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[thread, 0xffff_fffe]);
+            return 0;
+        }
+        let top = h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]);
+        let thread_top = h.call_sym(LUA_MORE[2], Conv::Cdecl, &[thread]);
+        h.call_sym(LUA_GETGLOBAL, Conv::Cdecl, &[thread, name]);
+        if h.call_sym(LUA_TYPE, Conv::Cdecl, &[thread, u32::MAX]) == 0 {
+            return 0;
+        }
+        if thread == l {
+            let end = top.wrapping_add(1);
+            let mut i = 1;
+            while i < end {
+                h.call_sym(LUA_MORE[9], Conv::Cdecl, &[thread, i]);
+                i += 1;
+            }
+        } else {
+            h.call_sym(COPY_VALUES, Conv::Cdecl, &[l, thread, 1, top]);
+        }
+        let err = h.call_sym(LUA_PCALLK, Conv::Cdecl, &[thread, top, 1, 0, 0, 0]);
+        let text = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[thread, u32::MAX, 0]);
+        if err != 0 {
+            h.call_sym(PRINTF, Conv::Cdecl, &[3, msg, err, text]);
+            h.call_sym(LUA_SETTOP, Conv::Cdecl, &[thread, 0xffff_fffe]);
+            return 0;
+        }
+        if thread != l {
+            h.call_sym(
+                COPY_VALUES,
+                Conv::Cdecl,
+                &[thread, l, thread_top.wrapping_add(1), 1],
+            );
+        }
+        h.call_sym(LUA_MORE[2], Conv::Cdecl, &[l]).wrapping_sub(top)
     }
 }
