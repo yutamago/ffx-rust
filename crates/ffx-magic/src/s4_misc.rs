@@ -2,12 +2,14 @@
 //! list. Each doc names the DLL and address it was ported from, its size
 //! and how many DLLs carry it.
 
-use crate::l5_objhost::{POOL_ALLOC, pool_alloc};
+use crate::l5_objhost::{OBJ_SCRIPT, POOL_ALLOC, obj_script, pool_alloc};
+use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
 use crate::runtime::slot_target;
 use crate::sa_misc::{RESET_TRANSFORM, reset_transform};
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, anim_step};
+use crate::sb_misc::{MEAN_POSITION, ROTATE_OFFSET, mean_position, rotate_offset};
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
@@ -473,5 +475,99 @@ pub const SHAKE_TASK: Sig = Sig {
     len: 471,
     hash: 0x1e1a_5c75_1f8c_62f4,
     calls: &[(0x1ce, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};
+
+/// A task placing an object on its target (cdecl `(task)`, its state `s`
+/// at `+0x14`; a /GS frame). By the mode `+0x44`:
+/// - 1: the target `+0x48` (-1 the caster `G_SELF`, operand `+0x38`,
+///   else `G_CHRS[G_MAP[i]]`, operands `+0x3f`, `+0x4a`) gives its
+///   position (slot 262 into `[ebp - 0x14]`, `w` 1.0); with flag `+0x40`
+///   bit 0 the offset `s` is turned by the target's angle
+///   ([`target_angle`], the angles `(0, a, 0)` at `[ebp - 0x24]`) and
+///   added to it ([`rotate_offset`]);
+/// - 2: the actors' mean position ([`mean_position`]);
+/// - else the object keeps its place.
+///
+/// The position goes into the object `s + 0x10`, whose script runs
+/// ([`obj_script`]); when it ends (flag bit 15) with bit 14 set, the task
+/// is marked (`+0x4c` bit 15) and given back ([`give_back`]). Returns
+/// the script's end flag, 0x4000, or [`give_back`]'s `eax`.
+///
+/// `magic_0052` 0x10002730 (258 bytes; 26 DLLs).
+pub fn follow_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let pos = ebp.wrapping_sub(0x14);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let placed = match g.read::<u32>(s + 0x44) {
+        1 => {
+            let i = g.read::<u32>(s + 0x48);
+            let chr = if i == u32::MAX {
+                g.read::<u32>(w(0x38))
+            } else {
+                let map = g.read::<u32>(w(0x3f));
+                let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+                g.read::<u32>(w(0x4a).wrapping_add(4 * k))
+            };
+            let t = slot_target(g, w(0x5c), 262);
+            g.call(t, 0, &[chr, pos, pos + 4, pos + 8]);
+            g.write::<u32>(pos + 0xc, 0x3f80_0000);
+            if g.read::<u8>(s + 0x40) & 1 != 0 {
+                let angles = ebp.wrapping_sub(0x24);
+                g.write::<u32>(angles, 0);
+                let i = g.read::<u32>(s + 0x48);
+                let a = target_angle(g, img, img.rel32_target(f + 0x83), i);
+                set_f32(g, angles + 4, a);
+                g.write::<u32>(angles + 8, 0);
+                // sub esp, 0x24; push esi; push edi; push s; call
+                let esp = ebp.wrapping_sub(0x34);
+                g.write::<u32>(esp + 4, s);
+                rotate_offset(g, img, img.rel32_target(f + 0x9b), esp, angles, pos);
+            }
+            true
+        }
+        2 => {
+            // sub esp, 0x24; push esi; push edi; call
+            mean_position(g, img, img.rel32_target(f + 0x29), ebp.wrapping_sub(0x30), pos);
+            true
+        }
+        _ => false,
+    };
+    if placed {
+        for i in 0..4 {
+            let x = g.read::<u32>(pos + 4 * i);
+            g.write::<u32>(s + 0x10 + 4 * i, x);
+        }
+    }
+    let obj = s + 0x10;
+    obj_script(g, img, img.rel32_target(f + 0xce), obj);
+    // the script's `eax`: its flags' bit 15
+    let ended = u32::from(g.read::<u16>(obj + 0x30)) >> 15;
+    if ended != 1 {
+        return Ret::eax(ended);
+    }
+    if g.read::<u16>(s + 0x40) & 0x4000 == 0 {
+        return Ret::eax(0x4000);
+    }
+    let flags = g.read::<u16>(s + 0x4c) | 0x8000;
+    g.write::<u16>(s + 0x4c, flags);
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0xee), task))
+}
+
+/// [`follow_task`].
+pub const FOLLOW_TASK: Sig = Sig {
+    len: 258,
+    hash: 0x0715_19c5_1314_f28a,
+    calls: &[
+        (0x29, Callee::Sig(&MEAN_POSITION)),
+        (0x83, Callee::Sig(&TARGET_ANGLE)),
+        (0x9b, Callee::Sig(&ROTATE_OFFSET)),
+        (0xce, Callee::Sig(&OBJ_SCRIPT)),
+        (0xee, Callee::Sig(&GIVE_BACK)),
+        (0xfa, Callee::Any),
+    ],
     imports: &[],
 };

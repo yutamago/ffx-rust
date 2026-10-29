@@ -947,6 +947,7 @@ ports! {
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
+    "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
