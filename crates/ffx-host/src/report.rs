@@ -178,6 +178,7 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
     let mut st = exec.stats.clone();
     st.instructions = exec.instructions();
     st.x87 = exec.x87_steps();
+    st.exceptions = exec.exceptions_raised();
     for t in &threads {
         if let Some(ts) = &t.stats {
             st.merge(ts);
@@ -223,11 +224,12 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
     };
     let _ = writeln!(
         out,
-        "executor (all threads): {} emulator starts, {} Rust->Unicorn calls, {:.3} s emulated{rate}, {} exact x87 instructions",
+        "executor (all threads): {} emulator starts, {} Rust->Unicorn calls, {:.3} s emulated{rate}, {} exact x87 instructions, {} exceptions dispatched",
         st.starts,
         st.unicorn_calls,
         st.emulated.as_secs_f64(),
-        st.x87
+        st.x87,
+        st.exceptions
     );
     let count = |r: Route| shared.routes.iter().filter(|(_, x)| *x == r).count();
     let _ = writeln!(

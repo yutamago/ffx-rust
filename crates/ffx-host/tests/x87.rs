@@ -72,6 +72,7 @@ fn thunk(exec: &mut Exec, name: &str, f: u32, two: bool) -> u32 {
 }
 
 #[test]
+#[allow(clippy::many_single_char_names)] // n cases, p fields, x and y
 fn msvcr110_maths_match_the_real_cpu() {
     let Some(mut exec) = boot() else { return };
     let exports = exec.shared().dll("MSVCR110.dll").unwrap().exports.clone();
@@ -128,12 +129,12 @@ fn the_players_builds_are_known() {
     let Some(exec) = boot() else { return };
     let image = &exec.image().x87;
     assert!(image.exact(), "FFX.exe is a known build");
-    assert!(image.at.is_empty());
+    assert_eq!(image.at, vec![]);
     let crt = &exec.shared().dll("MSVCR110.dll").unwrap().x87;
     assert!(crt.exact(), "MSVCR110.dll is a known build");
     assert_eq!(crt.at.len(), 22);
     if let Some(p) = exec.shared().dll("MSVCP110.dll") {
         assert!(p.x87.exact(), "MSVCP110.dll is a known build");
-        assert!(p.x87.at.is_empty());
+        assert_eq!(p.x87.at, vec![]);
     }
 }
