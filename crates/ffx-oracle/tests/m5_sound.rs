@@ -1343,3 +1343,268 @@ fn sound_jump_thunks_match_the_original() {
         }
     });
 }
+
+// ---- batch 4: the movie audio stream ----
+
+/// The movie player's audio work area (`0x50780` bytes) with the given
+/// `(offset, word)` and `(offset, byte)` fields.
+fn audio_work(t: &mut Twins, words: &[(u32, u32)], bytes: &[(u32, u8)]) -> u32 {
+    let work = t.zeros(0x5_0800);
+    for &(off, v) in words {
+        t.w32(work + off, v);
+    }
+    for &(off, v) in bytes {
+        t.write(work + off, &[v]);
+    }
+    work
+}
+
+#[test]
+fn audio_stream_state_matches_the_original() {
+    Twins::each(|t| {
+        for (case, started) in [0u16, 1, 3].into_iter().enumerate() {
+            t.reset();
+            t.g32(b::AUDIO_STARTED.sym, u32::from(started) | 0xabcd_0000);
+            let work = audio_work(t, &[(0x50750, 3), (0x506d4, 9)], &[(0x50765, 1)]);
+            t.stub(b::SND_STRAIGHT_VOLUME_DIRECT, false, 1, 0, 0);
+            t.stub(b::DBG_PRINTF, false, 1, 0, 0);
+            t.stub(b::SQS_STRAIGHT_STOP, false, 0, 0, 0);
+            t.stub(b::SND_DATA_SEND_SYNC, false, 1, 0, 0x5e);
+            let slots = t.frame_ebp(1) + 8;
+            t.check(
+                &format!("audioStop #{case}"),
+                0x0077_b170,
+                Conv::Cdecl,
+                &[work],
+                |m| {
+                    let r = b::audio_stop(m, work, slots);
+                    if started == 0 { Out::None } else { Out::U32(r) }
+                },
+            );
+        }
+        for (case, (started, limit)) in
+            [(0u16, 3u32), (2, 3), (3, 3), (0xffff, 0), (5, 0xffff_fff0)]
+                .into_iter()
+                .enumerate()
+        {
+            for stopped in [0u8, 1, 2] {
+                t.reset();
+                t.g32(b::AUDIO_STARTED.sym, u32::from(started));
+                let work = audio_work(t, &[(0x50750, limit)], &[(0x50766, stopped)]);
+                t.stub(b::DBG_PRINTF, false, 1, 0, 0);
+                t.stub(b::SQS_STRAIGHT_START, false, 0, 0, 0);
+                t.check(
+                    &format!("alreadyStarted_inc #{case}"),
+                    0x0077_adb0,
+                    Conv::Cdecl,
+                    &[work],
+                    |m| {
+                        b::already_started_inc(m, work);
+                        Out::None
+                    },
+                );
+                t.check(
+                    &format!("0x0077b300 #{case}"),
+                    0x0077_b300,
+                    Conv::Cdecl,
+                    &[work],
+                    |m| {
+                        b::audio_start_once(m, work);
+                        Out::None
+                    },
+                );
+                t.check(
+                    &format!("0x0077b440 #{case}"),
+                    0x0077_b440,
+                    Conv::Cdecl,
+                    &[work],
+                    |m| {
+                        b::audio_start_stream(m, work);
+                        Out::None
+                    },
+                );
+            }
+        }
+        for (last, n) in [(4u32, 5u32), (4, 7), (u32::MAX, 0), (9, 9)] {
+            t.reset();
+            let work = audio_work(t, &[(0x5072c, last)], &[(0x5076f, 0xff)]);
+            t.stub(b::FLUSH_CACHE, false, 1, 0, 0);
+            t.stub(b::SND_STRAIGHT_DATA_SEND, false, 4, 0, 0);
+            t.stub(b::DBG_PRINTF, false, 3, 0, 0);
+            let args = [0x1000, 0x2000, 3, n, work];
+            t.check(
+                &format!("send sub {last} {n}"),
+                0x0077_a8e0,
+                Conv::Cdecl,
+                &args,
+                |m| {
+                    b::straight_send_sub(m, 0x1000, 0x2000, 3, n, work);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+        t.stub(b::OPERATOR_DELETE, false, 1, 0, 0x44);
+        t.check(
+            "OutputStream dtor",
+            0x0094_998e,
+            Conv::Cdecl,
+            &[0x1234],
+            |m| Out::U32(b::output_stream_delete(m, 0x1234)),
+        );
+    });
+}
+
+#[test]
+fn audio_dma_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xd3a0_0001);
+        for case in 0..48u32 {
+            t.reset();
+            let ready = case % 2;
+            let q0 = u8::from(case / 2 % 2 == 1);
+            let q1 = u8::from(case / 4 % 2 == 1);
+            let n0 = [0u32, 5, u32::MAX, 3][(case / 8 % 4) as usize];
+            let n1 = [4u32, 2, u32::MAX, 3][((case / 8 + case / 32) % 4) as usize];
+            let work = audio_work(
+                t,
+                &[
+                    (0x50714, rng.below(2)),
+                    (0x50724, n0),
+                    (0x50728, n1),
+                    (0x50720, 17),
+                    (0x50758, 0x40),
+                ],
+                &[
+                    (0x5076a, q0),
+                    (0x5076b, q1),
+                    (0x50766, u8::from(case == 47)),
+                    (0x50770, 0xff),
+                ],
+            );
+            let a: Vec<u8> = (0..0x40).map(|i| i as u8 ^ 0x5a).collect();
+            let a = t.alloc(&a);
+            let bb = if rng.chance(3) {
+                0
+            } else {
+                t.alloc(&[0x77; 0x2300])
+            };
+            t.stub(b::ALREADY_STARTED_INC, false, 1, 0, 0);
+            t.stub(b::SQS_STRAIGHT_READY, false, 0, 0, ready);
+            t.stub(b::DBG_PRINTF, false, 1, 0, 0);
+            t.stub(b::STRAIGHT_SEND_SUB, false, 5, 0, 0);
+            t.stub(b::SND_DATA_SEND_SYNC, false, 1, 0, 0);
+            t.check(
+                &format!("audioDma #{case}"),
+                0x0077_ade0,
+                Conv::Cdecl,
+                &[a, bb, work],
+                |m| {
+                    b::audio_dma(m, a, bb, work);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn audio_decoders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0xdec0_0de1);
+        for case in 0..6u32 {
+            t.reset();
+            let work = audio_work(t, &[], &[(0x50767, u8::from(case % 2 == 1))]);
+            let pcm_bytes: Vec<u8> = (0..0x6400).map(|_| rng.next() as u8).collect();
+            let pcm = t.alloc(&pcm_bytes);
+            t.stub(b::AUDIO_DMA, false, 3, 0, 0);
+            t.stub(b::AUDIO_ENCODE_HALF, false, 3, 0, 0);
+            t.stub(b::SA_DECODE, false, 2, 0, 0);
+            t.check(
+                &format!("0x0077b060 #{case}"),
+                0x0077_b060,
+                Conv::Cdecl,
+                &[pcm, 0x99, work],
+                |m| {
+                    b::audio_mix_halves(m, pcm, 0x99, work);
+                    Out::None
+                },
+            );
+            t.stub(b::AUDIO_MIX_HALVES, false, 3, 0, 0);
+            let src_bytes: Vec<u8> = (0..0x400).map(|_| rng.next() as u8).collect();
+            let src = t.alloc(&src_bytes);
+            t.write(work + 0x355c0, &src_bytes);
+            let n = [0u32, 1, 2, 0x100, 0x3ff, 0xffff_ffff][case as usize];
+            t.check(
+                &format!("0x0077b1f0 #{case}"),
+                0x0077_b1f0,
+                Conv::Cdecl,
+                &[src, pcm, n, 0x88, work],
+                |m| {
+                    b::audio_delta_decode(m, src, pcm, n, 0x88, work);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("0x0077b270 #{case}"),
+                0x0077_b270,
+                Conv::Cdecl,
+                &[src, pcm, n, 0x88, work],
+                |m| {
+                    b::audio_sa_decode(m, src, pcm, n, 0x88, work);
+                    Out::None
+                },
+            );
+            let slots = t.frame_ebp(4) + 8;
+            t.check(
+                &format!("0x0077afc0 #{case}"),
+                0x0077_afc0,
+                Conv::Cdecl,
+                &[src, pcm, 0x77, work],
+                |m| {
+                    b::audio_decode_blocks(m, src, pcm, 0x77, work, slots);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn audio_prime_matches_the_original() {
+    Twins::each(|t| {
+        for (case, frames) in [0u32, 1, 3, 24, 50, 0xffff_ffe0, 4, 7]
+            .into_iter()
+            .enumerate()
+        {
+            t.reset();
+            let work = audio_work(
+                t,
+                &[(
+                    0x50758,
+                    [0x40, 0x41, 0, 0xffff_fffe, 0x20, 8, 0x10, 0x11][case],
+                )],
+                &[],
+            );
+            // the stream takes a block every other call
+            let ready: Vec<u32> = (0..64).map(|i| i % 2).collect();
+            t.stub_seq(b::SQS_STRAIGHT_READY, false, 0, 0, &ready);
+            t.stub(b::STRAIGHT_SEND_SUB, false, 5, 0, 0);
+            t.stub(b::SND_DATA_SEND_SYNC, false, 1, 0, 0);
+            t.stub(b::ALREADY_STARTED_INC, false, 1, 0, 0);
+            t.stub(b::AUDIO_START_ONCE, false, 1, 0, 0);
+            t.stub(b::MOVIE_WAIT, false, 0, 0, 0);
+            let slots = t.frame_ebp(2) + 8;
+            t.check(
+                &format!("0x0077b340 #{case}"),
+                0x0077_b340,
+                Conv::Cdecl,
+                &[frames, work],
+                |m| {
+                    b::audio_prime(m, frames, work, slots);
+                    Out::None
+                },
+            );
+        }
+    });
+}

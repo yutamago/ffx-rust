@@ -21,6 +21,7 @@
 pub use crate::fmod::{Conv, FmodHost as Host};
 
 /// The original functions, over game memory.
+#[allow(clippy::many_single_char_names)] // the originals' arguments
 pub mod bridge {
     use ffx_bridge::{Global, x87};
 
@@ -1385,4 +1386,344 @@ pub mod bridge {
     pub const I_VOICE_PAN_DIRECT: u32 = 0x0067_a6d0;
     pub const I_VOICE_PAN_TRANSLATE: u32 = 0x0067_a6f0;
     pub const TO_DRAW_MENU_BG: u32 = 0x008f_5c10;
+
+    // ---- batch 4: the movie audio stream (the PS2 straight stream the
+    // movie player feeds) ----
+
+    /// `g_AudioStarted` (`0x0112a838`, i16): the stream's start count.
+    pub const AUDIO_STARTED: Global<u16> = Global::new(0x0112_a838);
+    /// `dbgPrintf(fmt, ...)` (cdecl, an empty function on PC).
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `FlushCache(mode)` (cdecl, empty on PC).
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    /// `SndDataSendSync(mode)` (cdecl).
+    pub const SND_DATA_SEND_SYNC: u32 = 0x0088_5ee0;
+    /// `SqsStraightStreamingDataSend`'s slot (`0x00885ed0`, cdecl, 4 words).
+    pub const SND_STRAIGHT_DATA_SEND: u32 = 0x0088_5ed0;
+    /// `SndSetStraightStreamVolumeDirect`'s slot (`0x008871f0`, cdecl).
+    pub const SND_STRAIGHT_VOLUME_DIRECT: u32 = 0x0088_71f0;
+    /// `SqsStraightStreamingStop()` / `Start()` (cdecl).
+    pub const SQS_STRAIGHT_STOP: u32 = 0x0081_f770;
+    pub const SQS_STRAIGHT_START: u32 = 0x0081_f6c0;
+    /// `0x0081f160()`: the straight stream can take a block (cdecl).
+    pub const SQS_STRAIGHT_READY: u32 = 0x0081_f160;
+    /// `alreadyStarted_inc(work)`, `audioDma(a, b, work)`,
+    /// `SndDataSendStraightStream_sub(a, b, c, n, work)` and the others
+    /// called by address (cdecl).
+    pub const ALREADY_STARTED_INC: u32 = 0x0077_adb0;
+    pub const AUDIO_DMA: u32 = 0x0077_ade0;
+    pub const STRAIGHT_SEND_SUB: u32 = 0x0077_a8e0;
+    pub const AUDIO_MIX_HALVES: u32 = 0x0077_b060;
+    pub const AUDIO_ENCODE_HALF: u32 = 0x0077_a930;
+    pub const AUDIO_START_STREAM: u32 = 0x0077_b440;
+    pub const AUDIO_START_ONCE: u32 = 0x0077_b300;
+    /// `movie_wait()` (cdecl).
+    pub const MOVIE_WAIT: u32 = 0x0077_daa0;
+    /// `sa_decode(dst, src)` (cdecl).
+    pub const SA_DECODE: u32 = 0x00a4_3de0;
+    /// `memcpy` (cdecl thunk).
+    pub const MEMCPY: u32 = 0x0094_9256;
+    /// The silent 0x700-byte block `0x0077b340` primes the stream with.
+    pub const SILENCE: u32 = 0x00c4_1988;
+    /// `dbgPrintf` strings.
+    pub const MSG_STREAM_STOP: u32 = 0x00b5_3ff0;
+    pub const MSG_AUDIO_STOP: u32 = 0x00b5_400c;
+    pub const MSG_DB_ERR: u32 = 0x00b5_4018;
+    pub const MSG_AUDIO_START: u32 = 0x00b5_4034;
+    pub const MSG_BUFFER_FULL: u32 = 0x00b5_4044;
+
+    fn dbg(h: &mut impl Host, msg: u32, args: &[u32]) {
+        let mut a = vec![h.rebase(msg)];
+        a.extend_from_slice(args);
+        cdecl(h, DBG_PRINTF, &a);
+    }
+
+    fn started(h: &impl Host) -> i32 {
+        i32::from(AUDIO_STARTED.get(h).cast_signed())
+    }
+
+    /// `audioStop(work)` (0x0077b170): with the stream started: the
+    /// stream state cleared (`+0x506d0` 0, `+0x506d4` -1, `+0x506cc` 0,
+    /// byte `+0x50765` 0, `+0x50750` 2), the volume to 0, the stream
+    /// stopped, the start count 0, then a tail jump to
+    /// `SndDataSendSync(1)` through its own argument word (`slots`, set
+    /// to 1). Returns that `eax` (0 when not started).
+    pub fn audio_stop(h: &mut impl Host, work: u32, slots: u32) -> u32 {
+        if AUDIO_STARTED.get(h) == 0 {
+            return 0;
+        }
+        h.write(work + 0x506d0, 0u32);
+        h.write(work + 0x506d4, 0xffff_ffffu32);
+        h.write(work + 0x506cc, 0u32);
+        h.write(work + 0x50765, 0u8);
+        h.write(work + 0x50750, 2u32);
+        cdecl(h, SND_STRAIGHT_VOLUME_DIRECT, &[0]);
+        dbg(h, MSG_STREAM_STOP, &[]);
+        cdecl(h, SQS_STRAIGHT_STOP, &[]);
+        AUDIO_STARTED.set(h, 0);
+        dbg(h, MSG_AUDIO_STOP, &[]);
+        h.write(slots, 1u32);
+        cdecl(h, SND_DATA_SEND_SYNC, &[1])
+    }
+
+    /// `SndDataSendStraightStream_sub(a, b, c, n, work)` (0x0077a8e0):
+    /// `FlushCache(0)`, the block sent, and the block number kept at
+    /// `+0x5072c` (a skipped number counted at byte `+0x5076f`).
+    pub fn straight_send_sub(h: &mut impl Host, a: u32, b: u32, c: u32, n: u32, work: u32) {
+        cdecl(h, FLUSH_CACHE, &[0]);
+        cdecl(h, SND_STRAIGHT_DATA_SEND, &[a, b, c, n]);
+        let last: u32 = h.read(work + 0x5072c);
+        if last.wrapping_add(1) != n {
+            dbg(h, MSG_DB_ERR, &[last, n]);
+            let errors: u8 = h.read(work + 0x5076f);
+            h.write(work + 0x5076f, errors.wrapping_add(1));
+        }
+        h.write(work + 0x5072c, n);
+    }
+
+    /// `alreadyStarted_inc(work)` (0x0077adb0): the start count up by
+    /// one while below `+0x50750`.
+    pub fn already_started_inc(h: &mut impl Host, work: u32) {
+        let limit: u32 = h.read(work + 0x50750);
+        if started(h) < limit.cast_signed() {
+            let n = AUDIO_STARTED.get(h).wrapping_add(1);
+            AUDIO_STARTED.set(h, n);
+        }
+    }
+
+    /// The `+0x50714` "has a second channel" flag with a buffer for it.
+    fn second(h: &impl Host, work: u32, b: u32) -> bool {
+        h.read::<u32>(work + 0x50714) != 0 && b != 0
+    }
+
+    /// `audioDma(a, b, work)` (0x0077ade0): unless stopped (byte
+    /// `+0x50766`): the start count stepped; when the stream cannot take a
+    /// block, `a` (and `b`) are queued in the older of the two slots
+    /// (`+0x3cdc0`/`+0x4bdc0`, flags `+0x5076a`/`+0x50768`, numbers
+    /// `+0x50724`); when it can: straight through without a queued block,
+    /// else the queued one is sent and `a` takes its place; then
+    /// `SndDataSendSync(1)`.
+    pub fn audio_dma(h: &mut impl Host, a: u32, b: u32, work: u32) {
+        if h.read::<u8>(work + 0x50766) != 0 {
+            return;
+        }
+        cdecl(h, ALREADY_STARTED_INC, &[work]);
+        if cdecl(h, SQS_STRAIGHT_READY, &[]) == 0 {
+            if h.read::<u8>(work + 0x5076a) != 0 && h.read::<u8>(work + 0x5076b) != 0 {
+                let n: u8 = h.read(work + 0x50770);
+                h.write(work + 0x50770, n.wrapping_add(1));
+                dbg(h, MSG_BUFFER_FULL, &[]);
+            }
+            let n0: u32 = h.read(work + 0x50724);
+            let n1: u32 = h.read(work + 0x50728);
+            let slot = u32::from(n0.cast_signed() > n1.cast_signed());
+            h.write(work + slot + 0x5076a, 1u8);
+            let size: u32 = h.read(work + 0x50758);
+            cdecl(h, MEMCPY, &[work + 0x3cdc0 + slot * 0x7800, a, size]);
+            if second(h, work, b) {
+                cdecl(h, MEMCPY, &[work + 0x4bdc0 + slot * 0x2300, b, 0x2300]);
+                h.write(work + slot + 0x50768, 1u8);
+            }
+            let next: u32 = h.read(work + 0x50720);
+            h.write(work + 0x50724 + slot * 4, next);
+            return;
+        }
+        if h.read::<u8>(work + 0x5076a) == 0 && h.read::<u8>(work + 0x5076b) == 0 {
+            let second_buf = if second(h, work, b) { b } else { 0 };
+            let next: u32 = h.read(work + 0x50720);
+            cdecl(h, STRAIGHT_SEND_SUB, &[a, second_buf, 0, next, work]);
+            cdecl(h, SND_DATA_SEND_SYNC, &[1]);
+            return;
+        }
+        let n0: u32 = h.read(work + 0x50724);
+        let n1: u32 = h.read(work + 0x50728);
+        let slot = u32::from(
+            n0 == 0xffff_ffff || (n0.cast_signed() > n1.cast_signed() && n1.cast_signed() >= 0),
+        );
+        let queued_b = if second(h, work, b) {
+            work + 0x4bdc0 + slot * 0x2300
+        } else {
+            0
+        };
+        let dst = work + 0x3cdc0 + slot * 0x7800;
+        let number: u32 = h.read(work + 0x50724 + slot * 4);
+        cdecl(h, STRAIGHT_SEND_SUB, &[dst, queued_b, 0, number, work]);
+        let size: u32 = h.read(work + 0x50758);
+        cdecl(h, MEMCPY, &[dst, a, size]);
+        if second(h, work, b) {
+            cdecl(h, MEMCPY, &[work + 0x4bdc0 + slot * 0x2300, b, 0x2300]);
+            h.write(work + slot + 0x50768, 1u8);
+        }
+        let next: u32 = h.read(work + 0x50720);
+        h.write(work + 0x50724 + slot * 4, next);
+        cdecl(h, SND_DATA_SEND_SYNC, &[1]);
+    }
+
+    /// `0x0077afc0(src, pcm, b, work)`: the 16-byte header kept at
+    /// `+0x505b0`, 25 blocks of two `0x90`-byte halves decoded into
+    /// `0x200` bytes each (`0x0077a930`, with the left and right state at
+    /// `+0x505b0` and `+0x505b8`), then `audioDma(pcm, b, work)`. Writes
+    /// its own `pcm` argument word (`slots + 4`) with `work + 0x505b0`.
+    pub fn audio_decode_blocks(
+        h: &mut impl Host,
+        src: u32,
+        pcm: u32,
+        b: u32,
+        work: u32,
+        slots: u32,
+    ) {
+        for k in 0..4 {
+            let w: u32 = h.read(src + 4 * k);
+            h.write(work + 0x505b0 + 4 * k, w);
+        }
+        h.write(slots + 4, work + 0x505b0);
+        let mut s = src + 0x10;
+        let mut d = pcm;
+        for _ in 0..25 {
+            cdecl(h, AUDIO_ENCODE_HALF, &[s, d, work + 0x505b0]);
+            cdecl(h, AUDIO_ENCODE_HALF, &[s + 0x90, d + 0x200, work + 0x505b8]);
+            s += 0x120;
+            d += 0x400;
+        }
+        cdecl(h, AUDIO_DMA, &[pcm, b, work]);
+    }
+
+    /// `0x0077b060(pcm, b, work)`: with byte `+0x50767` set, each of the
+    /// 25 blocks' two channels (256 samples each) become their average,
+    /// then `audioDma(pcm, b, work)`.
+    pub fn audio_mix_halves(h: &mut impl Host, pcm: u32, b: u32, work: u32) {
+        if h.read::<u8>(work + 0x50767) != 0 {
+            for blk in 0..25 {
+                let base = pcm + blk * 0x400;
+                for i in 0..0x100 {
+                    let l = i32::from(h.read::<u16>(base + 2 * i).cast_signed());
+                    let r = i32::from(h.read::<u16>(base + 0x200 + 2 * i).cast_signed());
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    // the low half
+                    let v = i32::midpoint(l, r) as u16;
+                    h.write(base + 2 * i, v);
+                    h.write(base + 0x200 + 2 * i, v);
+                }
+            }
+        }
+        cdecl(h, AUDIO_DMA, &[pcm, b, work]);
+    }
+
+    /// The delta decoding of `0x0077b1f0`/`0x0077b270`: `n` bytes of
+    /// `src` into 16-bit samples at `pcm` (a byte with its top bit set is
+    /// a 7-bit signed step; else its low 7 bits, signed, are the step's
+    /// high byte and the next byte its low byte).
+    fn delta_decode(h: &mut impl Host, src: u32, pcm: u32, n: u32) {
+        let mut acc = 0u16;
+        let mut i = 0i32;
+        let mut out = pcm;
+        let n = n.cast_signed();
+        while i < n {
+            let c: u8 = h.read(src.wrapping_add(i.cast_unsigned()));
+            let high = i32::from((c << 1).cast_signed()) / 2;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 16-bit steps
+            let step = if c & 0x80 != 0 {
+                i += 1;
+                high as u16
+            } else {
+                let low: u8 = h.read(src.wrapping_add(i.cast_unsigned()) + 1);
+                i += 2;
+                ((high << 8) as u16) | u16::from(low)
+            };
+            acc = acc.wrapping_add(step);
+            h.write(out, acc);
+            out += 2;
+        }
+    }
+
+    /// `0x0077b1f0(src, pcm, n, b, work)`: `n` bytes delta-decoded into
+    /// `pcm`, then `0x0077b060(pcm, b, work)`.
+    pub fn audio_delta_decode(h: &mut impl Host, src: u32, pcm: u32, n: u32, b: u32, work: u32) {
+        delta_decode(h, src, pcm, n);
+        cdecl(h, AUDIO_MIX_HALVES, &[pcm, b, work]);
+    }
+
+    /// `0x0077b270(src, pcm, n, b, work)`: `sa_decode` into `+0x355c0`,
+    /// then as `0x0077b1f0` from there.
+    pub fn audio_sa_decode(h: &mut impl Host, src: u32, pcm: u32, n: u32, b: u32, work: u32) {
+        let buf = work + 0x355c0;
+        cdecl(h, SA_DECODE, &[buf, src]);
+        delta_decode(h, buf, pcm, n);
+        cdecl(h, AUDIO_MIX_HALVES, &[pcm, b, work]);
+    }
+
+    /// `0x0077b440(work)`: unless stopped (byte `+0x50766`), the straight
+    /// stream started and its state reset (byte `+0x50765` 1, `+0x506d0`
+    /// 0, `+0x506d4` -1, `+0x506cc` 0).
+    pub fn audio_start_stream(h: &mut impl Host, work: u32) {
+        if h.read::<u8>(work + 0x50766) == 0 {
+            cdecl(h, SQS_STRAIGHT_START, &[]);
+            h.write(work + 0x50765, 1u8);
+            h.write(work + 0x506d0, 0u32);
+            h.write(work + 0x506d4, 0xffff_ffffu32);
+            h.write(work + 0x506cc, 0u32);
+        }
+    }
+
+    /// `0x0077b300(work)`: when the start count reaches `+0x50750`, the
+    /// stream started (`0x0077b440`) and the count one past it.
+    pub fn audio_start_once(h: &mut impl Host, work: u32) {
+        let limit: u32 = h.read(work + 0x50750);
+        if started(h) == limit.cast_signed() {
+            cdecl(h, AUDIO_START_STREAM, &[work]);
+            dbg(h, MSG_AUDIO_START, &[]);
+            let limit: u16 = h.read(work + 0x50750);
+            AUDIO_STARTED.set(h, limit.wrapping_add(1));
+        }
+    }
+
+    /// `0x0077b340(frames, work)`: the stream primed: a silent block of
+    /// `+0x50758 / 2` samples (0, -1 alternating) at `+0x2ddc0`, five
+    /// silent second-channel blocks at `+0x4bdc0` (`0x00c41988`), numbers
+    /// from 0 (`+0x50720`, `+0x5072c` -1), then `((frames / 4 + 5) / 6) *
+    /// 6` blocks sent as the stream takes them (each wait a `movie_wait`).
+    /// Writes its own `work` argument word (`slots + 4`) with the count.
+    pub fn audio_prime(h: &mut impl Host, frames: u32, work: u32, slots: u32) {
+        let mut i = 0i32;
+        while i < h.read::<u32>(work + 0x50758).cast_signed() / 2 {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0 or -1
+            let v = (-(i & 1)) as u16;
+            h.write(work + 0x2ddc0 + 2 * i.cast_unsigned(), v);
+            i += 1;
+        }
+        let silence = h.rebase(SILENCE);
+        let mut block = [0u8; 0x700];
+        h.read_bytes(silence, &mut block);
+        for k in 0..5 {
+            h.write_bytes(work + 0x4bdc0 + 0x700 * k, &block);
+        }
+        h.write(work + 0x50720, 0u32);
+        h.write(work + 0x5072c, 0xffff_ffffu32);
+        let count = (frames.cast_signed() / 4 + 5) / 6 * 6;
+        h.write(slots + 4, count.cast_unsigned());
+        let mut sent = 0;
+        while sent < count {
+            if cdecl(h, SQS_STRAIGHT_READY, &[]) != 0 {
+                let n: u32 = h.read(work + 0x50720);
+                cdecl(
+                    h,
+                    STRAIGHT_SEND_SUB,
+                    &[work + 0x2ddc0, work + 0x4bdc0, 0, n, work],
+                );
+                cdecl(h, SND_DATA_SEND_SYNC, &[1]);
+                let n: u32 = h.read(work + 0x50720);
+                h.write(work + 0x50720, n.wrapping_add(1));
+                sent += 1;
+            }
+            cdecl(h, ALREADY_STARTED_INC, &[work]);
+            cdecl(h, AUDIO_START_ONCE, &[work]);
+            cdecl(h, MOVIE_WAIT, &[]);
+        }
+    }
+
+    /// `FMOD_OutputStream_dtor_OutputStream(p)` (0x0094998e): `operator
+    /// delete(p)`'s `eax`.
+    pub fn output_stream_delete(h: &mut impl Host, p: u32) -> u32 {
+        cdecl(h, OPERATOR_DELETE, &[p])
+    }
 }

@@ -7974,11 +7974,18 @@
 0x0077a8b0 function dvd_ReturnConst30_0077a8b0   # auto-port shape (return constant, cdecl): return 0x30; callers: dvd_cd_id_size; name ours
 0x0077a8c0 function dvd_ReturnConstf_0077a8c0    # auto-port shape (return constant, cdecl): return 0xf; callers: dvd_cd_unk7; name ours
 0x0077a8d0 function dvd_ReturnConst10_0077a8d0   # auto-port shape (return constant, cdecl): return 0x10; callers: dvd_cd_unk8; name ours
-0x0077a8e0 function SndDataSendStraightStream_sub # fh switch:bsim1.00 0x7100335870
-0x0077adb0 function alreadyStarted_inc        # fh switch:bsim1.00 0x7100335910
-0x0077ade0 function audioDma                     # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'uruu buffer full err !!!!!!\\n'; Switch 0x71003359e0 audioDma (symbols from Fahrenheit's server export)
+0x0077a8e0 function SndDataSendStraightStream_sub # fh switch:bsim1.00 0x7100335870; ported (ffx_sound::m5_sound, m5 small b4): cdecl(a, b, c, n, work): FlushCache(0), SqsStraightStreamingDataSend(a, b, c, n) (slot 0x00885ed0), +0x5072c = n (byte +0x5076f += 1 when n is not the last + 1)
+0x0077adb0 function alreadyStarted_inc # fh switch:bsim1.00 0x7100335910; ported (ffx_sound::m5_sound, m5 small b4): the i16 g_AudioStarted (0x0112a838) up by one while below work +0x50750 (signed)
+0x0077ade0 function audioDma # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'uruu buffer full err !!!!!!\\n'; Switch 0x71003359e0 audioDma (symbols from Fahrenheit's server export); ported (ffx_sound::m5_sound, m5 small b4): cdecl(pcm, b, work): queues the block in the older of two slots (+0x3cdc0 0x7800 bytes / +0x4bdc0 0x2300, flags +0x5076a/+0x50768, numbers +0x50724) while 0x0081f160() says the stream is busy, else sends straight or the queued block first; SndDataSendSync(1)
+0x0077afc0 function AudioDecodeBlocks_0077afc0 # cdecl(src, pcm, b, work): header to work +0x505b0, 25 x two 0x90-byte halves through 0x0077a930 (states +0x505b0, +0x505b8) into 0x200 bytes each, then audioDma(pcm, b, work); writes its pcm argument word; name ours; ported (ffx_sound::m5_sound, m5 small b4)
+0x0077b060 function AudioMixHalves_0077b060 # cdecl(pcm, b, work): with byte +0x50767 the two 256-sample channels of each of 25 blocks become their average ((l + r) / 2, toward zero), then audioDma; name ours; ported (ffx_sound::m5_sound, m5 small b4)
 0x0077b0d0 function audioInit                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'audioInit\\n'; Switch 0x7100335730 audioInit (symbols from Fahrenheit's server export)
-0x0077b170 function audioStop                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'SqsStraightStreamingStop()\\n'; Switch 0x71003357d0 audioStop (symbols from Fahrenheit's server export)
+0x0077b170 function audioStop # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'SqsStraightStreamingStop()\\n'; Switch 0x71003357d0 audioStop (symbols from Fahrenheit's server export); ported (ffx_sound::m5_sound, m5 small b4): with g_AudioStarted: stream state cleared (+0x506d0 0, +0x506d4 -1, +0x506cc 0, byte +0x50765 0, +0x50750 2), SndSetStraightStreamVolumeDirect(0), SqsStraightStreamingStop, g_AudioStarted = 0, then its own argument word = 1 and jmp SndDataSendSync
+0x0077b1f0 function AudioDeltaDecode_0077b1f0 # cdecl(src, pcm, n, b, work): n bytes delta-decoded to i16 (top bit: a 7-bit signed step; else a 7-bit signed high byte and the next byte), then 0x0077b060; name ours; ported (ffx_sound::m5_sound, m5 small b4)
+0x0077b270 function AudioSaDecode_0077b270 # cdecl(src, pcm, n, b, work): sa_decode(work + 0x355c0, src), then as 0x0077b1f0 from there; name ours; ported (ffx_sound::m5_sound, m5 small b4)
+0x0077b300 function AudioStartOnce_0077b300 # cdecl(work): when g_AudioStarted == +0x50750: 0x0077b440, g_AudioStarted = +0x50750 + 1; name ours; ported (ffx_sound::m5_sound, m5 small b4)
+0x0077b340 function AudioPrime_0077b340 # cdecl(frames, work): a silent block (+0x50758 / 2 samples 0/-1 at +0x2ddc0, five 0x700-byte copies of 0x00c41988 at +0x4bdc0), +0x50720 0, +0x5072c -1, then ((frames / 4 + 5) / 6) * 6 blocks sent as 0x0081f160 allows (alreadyStarted_inc, 0x0077b300, movie_wait each turn); writes its work argument word with the count; name ours; ported (ffx_sound::m5_sound, m5 small b4)
+0x0077b440 function AudioStartStream_0077b440 # cdecl(work): unless byte +0x50766: SqsStraightStreamingStart, byte +0x50765 1, +0x506d0 0, +0x506d4 -1, +0x506cc 0; name ours; ported (ffx_sound::m5_sound, m5 small b4)
 0x0077c6d0 function chr_movie_main               # layout+callees: sorts between audioStop and chr_texanim_del, and its named callees match the Switch 0x7100327200 chr_movie_main's (similarity 1.00: Sg_MemSetAlign, sa_task_init, user_malloc); symbols from Fahrenheit's server export
 0x0077c770 function chr_texanim_del           # fh v3:exact 0x0077c860
 0x0077c830 function chr_texanim_draw          # fh v3:exact 0x0077c920
@@ -16435,6 +16442,7 @@
 0x00949890 function alloca_probe_16           # fh v3:cg5 0x949890 __alloca_probe_16
 0x009498a6 function alloca_probe_8            # fh v3:cg2 0x9498a6 __alloca_probe_8
 0x00949910 function allshl                    # fh v3:cg2 0x949910 __allshl
+0x0094998e function FMOD_OutputStream_dtor_OutputStream # ported (ffx_sound::m5_sound, m5 small b4): cdecl(p) -> operator delete(p)'s eax
 0x00949b02 function report_rangecheckfailure  # fh v3:cg10 0x949afc ___report_rangecheckfailure
 0x00949cf0 function crt_rand_thunk            # g_MagicImports slot 452: jmp [0x00b0c420] (MSVCR110 rand); hidden from the dump
 0x00949d00 function aullshr                   # fh v3:cg3 0x949d00 __aullshr
@@ -20343,6 +20351,7 @@
 0x0112a509 label    g_Hdd_Status              # i8: get_hdd_status when no error
 0x0112a50a label    g_Hdd_Err                 # i8: get_hdd_err
 0x0112a528 label    g_Hdd_Heads               # 51 entries of 12 bytes (hdd_head_reset runs to 0x0112a790 and sets +0, +4 to 0, +8 to 1): +8 = read mode (i8, hdd_rmode_get)
+0x0112a838 label g_AudioStarted # i16: the movie audio stream's start count (alreadyStarted_inc, audioStop); name ours
 0x0112a844 label g_ChrTexAnim844            # u8 = 0 and 0x0112a845 = 0xff by chr_texanim_init
 0x0112a8d0 label g_BtlMem                  # 0x2150 bytes of battle globals cleared by MsBattleMemInit (the kernel table pointers 0x0112a92c.. among them)
 0x0112a8e0 label g_BtlStatus                 # i8, not 0 in battle (MsBattleGetStatus 0x007816f0 sign-extends it; MsGetBattleScene 0x00782970 tests it)

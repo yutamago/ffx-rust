@@ -347,4 +347,54 @@ ported! {
     TODrawMenuBG_thunk_008cc190 @ 0x008c_c190 => extern "C" fn to_draw_menu_bg_thunk() -> u32 {
         b::jmp_thunk(&mut game(), b::TO_DRAW_MENU_BG, &[])
     }
+
+    // ---- the movie audio stream (b4) ----
+    /// `audioStop(work)`: the tail jump's argument through its own slot.
+    audioStop @ 0x0077_b170 => extern "C" fn audio_stop(work: u32; slots: u32) -> u32 {
+        b::audio_stop(&mut game(), work, slots)
+    }
+    /// `SndDataSendStraightStream_sub(a, b, c, n, work)`.
+    SndDataSendStraightStream_sub @ 0x0077_a8e0 => extern "C" fn straight_send_sub(a: u32, bb: u32, c: u32, n: u32, work: u32) {
+        b::straight_send_sub(&mut game(), a, bb, c, n, work);
+    }
+    /// `alreadyStarted_inc(work)`.
+    alreadyStarted_inc @ 0x0077_adb0 => extern "C" fn already_started_inc(work: u32) {
+        b::already_started_inc(&mut game(), work);
+    }
+    /// `audioDma(a, b, work)`.
+    audioDma @ 0x0077_ade0 => extern "C" fn audio_dma(a: u32, bb: u32, work: u32) {
+        b::audio_dma(&mut game(), a, bb, work);
+    }
+    /// `0x0077afc0(src, pcm, b, work)`: writes its `pcm` argument slot.
+    AudioDecodeBlocks_0077afc0 @ 0x0077_afc0 => extern "C" fn audio_decode_blocks(src: u32, pcm: u32, bb: u32, work: u32; slots: u32) {
+        b::audio_decode_blocks(&mut game(), src, pcm, bb, work, slots);
+    }
+    /// `0x0077b060(pcm, b, work)`.
+    AudioMixHalves_0077b060 @ 0x0077_b060 => extern "C" fn audio_mix_halves(pcm: u32, bb: u32, work: u32) {
+        b::audio_mix_halves(&mut game(), pcm, bb, work);
+    }
+    /// `0x0077b1f0(src, pcm, n, b, work)`.
+    AudioDeltaDecode_0077b1f0 @ 0x0077_b1f0 => extern "C" fn audio_delta_decode(src: u32, pcm: u32, n: u32, bb: u32, work: u32) {
+        b::audio_delta_decode(&mut game(), src, pcm, n, bb, work);
+    }
+    /// `0x0077b270(src, pcm, n, b, work)`.
+    AudioSaDecode_0077b270 @ 0x0077_b270 => extern "C" fn audio_sa_decode(src: u32, pcm: u32, n: u32, bb: u32, work: u32) {
+        b::audio_sa_decode(&mut game(), src, pcm, n, bb, work);
+    }
+    /// `0x0077b440(work)`.
+    AudioStartStream_0077b440 @ 0x0077_b440 => extern "C" fn audio_start_stream(work: u32) {
+        b::audio_start_stream(&mut game(), work);
+    }
+    /// `0x0077b300(work)`.
+    AudioStartOnce_0077b300 @ 0x0077_b300 => extern "C" fn audio_start_once(work: u32) {
+        b::audio_start_once(&mut game(), work);
+    }
+    /// `0x0077b340(frames, work)`: writes its `work` argument slot.
+    AudioPrime_0077b340 @ 0x0077_b340 => extern "C" fn audio_prime(frames: u32, work: u32; slots: u32) {
+        b::audio_prime(&mut game(), frames, work, slots);
+    }
+    /// `FMOD_OutputStream_dtor_OutputStream(p)`.
+    FMOD_OutputStream_dtor_OutputStream @ 0x0094_998e => extern "C" fn output_stream_delete(p: u32) -> u32 {
+        b::output_stream_delete(&mut game(), p)
+    }
 }
