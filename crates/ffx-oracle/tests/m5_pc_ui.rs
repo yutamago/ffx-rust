@@ -33,6 +33,7 @@ use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
+use ffx_pcui::m5u_h::bridge as hh;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -3225,6 +3226,251 @@ fn help_window_matches_the_original() {
                 true,
                 |g| gg::help_window(g, text),
             );
+        }
+    });
+}
+
+// ---- render-pcui batch 3 (ffx_pcui::m5u_h) ----
+
+#[test]
+#[allow(clippy::too_many_lines)] // one case per function
+fn rp3_small_functions_match_the_original() {
+    // Every branch on synthetic data: the thunks and import wrappers with
+    // recording stubs (the imports through their slots), the pointer
+    // test on set and clear words, the list walk over 0..4 nodes, the
+    // movie player's CRT callbacks on real buffers (the game's
+    // MSVCR110), the GDraw and Iggy wrappers with and without their
+    // objects.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b31);
+        for case in 0..24u32 {
+            let r = rng.word();
+            t.stub(hh::WINDOW_CONTROL_SET_TEXT, false, 3, 0, r);
+            let w = [rng.word(), rng.word(), rng.word()];
+            t.check(
+                "Gu_WindowControlSetText_thunk_009411f0",
+                0x0094_11f0,
+                Conv::Cdecl,
+                &w,
+                |g| {
+                    Out::U32(hh::forward(
+                        g,
+                        hh::WINDOW_CONTROL_SET_TEXT,
+                        host::Conv::Cdecl,
+                        &w,
+                    ))
+                },
+            );
+            t.stub_import(hh::LEAVE_CRITICAL_SECTION_IAT, false, 1, 1, r ^ 1);
+            let cs = rng.word();
+            t.check(
+                "LeaveCriticalSection_ecx_009453c0",
+                0x0094_53c0,
+                Conv::Thiscall(cs),
+                &[],
+                |g| Out::U32(hh::leave(g, cs)),
+            );
+            let pm = t.zeros(0x2000);
+            let at = t.rebase(hh::PAGE_MANAGER);
+            t.patch(at, &pm.to_le_bytes());
+            t.check(
+                "PageManager_unlock_00947ea0",
+                0x0094_7ea0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(hh::page_unlock(g)),
+            );
+            t.stub_import(hh::CREATE_THREAD_IAT, false, 6, 6, r ^ 2);
+            let arg = rng.word();
+            t.check(
+                "Thread_create_00948c10",
+                0x0094_8c10,
+                Conv::Cdecl,
+                &[arg],
+                |g| Out::U32(hh::create_thread(g, arg)),
+            );
+            t.stub(hh::CREATE_THREAD, false, 1, 0, r ^ 3);
+            t.check(
+                "PageManager_startThread_00947630",
+                0x0094_7630,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(hh::page_start_thread(g)),
+            );
+            let f = t.stub_code(0x77, false, 0, 0, r ^ 4);
+            t.check(
+                "Thread_entry_00948c30",
+                0x0094_8c30,
+                Conv::Stdcall,
+                &[f],
+                |g| Out::U32(hh::thread_entry(g, f)),
+            );
+            // the pointer test
+            let data: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            let data = t.words(&data);
+            let arr = t.words(&[0, data]);
+            let i = rng.below(8);
+            t.check(
+                "PtrArray_isSet_00947da0",
+                0x0094_7da0,
+                Conv::Thiscall(arr),
+                &[i],
+                |g| Out::U32(hh::is_set(g, arr, i)),
+            );
+            // the list walk
+            let mut next = 0;
+            for _ in 0..rng.below(5) {
+                let node = t.zeros(0x10);
+                t.w32(node + 0xc, next);
+                next = node;
+            }
+            let head = t.zeros(0x20);
+            t.w32(head + 0x14, next);
+            // the neighbouring word would fault as a node: the walk starts at +0x14
+            t.w32(head + 0x10, 0xffff_fff0);
+            t.check(
+                "List_walkToEnd_00948a80",
+                0x0094_8a80,
+                Conv::Thiscall(head),
+                &[],
+                |g| Out::U32(hh::walk_to_end(g, head)),
+            );
+            // the CRT callbacks
+            let n = rng.below(64);
+            let src: Vec<u8> = (0..64).map(|_| rng.next() as u8).collect();
+            let src = t.alloc(&src);
+            let dst = t.zeros(128);
+            t.check(
+                "PVideoPlaybackWin32_memcpy_00a26fb0",
+                0x00a2_6fb0,
+                Conv::Cdecl,
+                &[dst, src, n],
+                |g| Out::U32(hh::crt3(g, hh::MEMCPY_THUNK, dst, src, n)),
+            );
+            let (d2, s2) = if case % 2 == 0 {
+                (dst + 3, dst)
+            } else {
+                (dst, dst + 5)
+            };
+            t.check(
+                "PVideoPlaybackWin32_memmove_00a26fc0",
+                0x00a2_6fc0,
+                Conv::Cdecl,
+                &[d2, s2, n],
+                |g| Out::U32(hh::crt3(g, hh::MEMMOVE_IAT, d2, s2, n)),
+            );
+            let c = rng.word();
+            t.check(
+                "PVideoPlaybackWin32_memset_00a26fd0",
+                0x00a2_6fd0,
+                Conv::Cdecl,
+                &[dst, c, n],
+                |g| Out::U32(hh::crt3(g, hh::MEMSET_THUNK, dst, c, n)),
+            );
+            // Iggy
+            let player = if case % 3 == 0 { 0 } else { rng.next() | 1 };
+            let holder = t.words(&[player]);
+            t.stub_import(hh::IGGY_GOTO_FRAME_IAT, false, 3, 3, r ^ 5);
+            t.check(
+                "IggyPlayer_replay_00a3db30",
+                0x00a3_db30,
+                Conv::Thiscall(holder),
+                &[],
+                |g| Out::U32(hh::iggy_replay(g, holder)),
+            );
+            t.stub_import(hh::IGGY_DESTROY_IAT, false, 1, 1, r ^ 6);
+            let x = rng.word();
+            t.check(
+                "IggyPlayerHolder_destroy_00a3d780",
+                0x00a3_d780,
+                Conv::Thiscall(holder),
+                &[x],
+                |g| Out::U32(hh::iggy_destroy(g, holder)),
+            );
+            let menu = t.zeros(0x80);
+            t.w32(menu + 0x6c, holder);
+            t.stub(hh::IGGY_REPLAY, true, 0, 0, r ^ 7);
+            t.check(
+                "IggyMenu_replay",
+                0x00a2_8ee0,
+                Conv::Thiscall(menu),
+                &[],
+                |g| Out::U32(hh::iggy_menu_replay(g, menu)),
+            );
+            // GDraw
+            let method = t.stub_code(0x78, false, 3, 3, r ^ 8);
+            let mut vt = vec![0; 16];
+            vt[15] = method;
+            let vt = t.words(&vt);
+            let dev = t.words(&[vt, 0]);
+            let gd = t.words(&[0, dev]);
+            let at = t.rebase(hh::GDRAW);
+            t.patch(at, &gd.to_le_bytes());
+            let handle = t.words(&[rng.word(), rng.word(), rng.word()]);
+            t.check(
+                "GDraw_releaseHandle_00a362c0",
+                0x00a3_62c0,
+                Conv::Cdecl,
+                &[handle],
+                |g| Out::U32(hh::gdraw_release_handle(g, handle)),
+            );
+            let key = rng.word();
+            let a = t.zeros(0x20);
+            t.w32(a + 0x14, if rng.chance(2) { key } else { key ^ 1 });
+            t.stub(hh::GDRAW_CALLBACK, false, 2, 0, r ^ 9);
+            let x = rng.word();
+            t.check(
+                "GDraw_callbackIf_00a398e0",
+                0x00a3_98e0,
+                Conv::Stdcall,
+                &[a, key, x],
+                |g| Out::U32(hh::callback_if(g, a, key, x)),
+            );
+            t.stub(hh::GDRAW_RELEASE, true, 0, 0, r ^ 0xa);
+            let this = rng.word();
+            t.check(
+                "GDraw_releaseThis_00a3d3c0",
+                0x00a3_d3c0,
+                Conv::Thiscall(this),
+                &[],
+                |g| Out::U32(hh::release_this(g, this)),
+            );
+            t.stub(hh::GDRAW_TEARDOWN, true, 0, 0, r ^ 0xb);
+            t.check(
+                "GDraw_teardown_thunk_00a3d4d0",
+                0x00a3_d4d0,
+                Conv::Thiscall(this),
+                &[],
+                |g| {
+                    Out::U32(hh::forward(
+                        g,
+                        hh::GDRAW_TEARDOWN,
+                        host::Conv::Thiscall(this),
+                        &[],
+                    ))
+                },
+            );
+            let cb = t.stub_code(0x79, true, 1, 1, r ^ 0xc);
+            let obj = rng.word();
+            let pair = t.words(&[obj, cb]);
+            let p = t.words(&[rng.word(), pair]);
+            t.check(
+                "Callback_invoke_00a3d6d0",
+                0x00a3_d6d0,
+                Conv::Cdecl,
+                &[p],
+                |g| Out::U32(hh::invoke(g, p)),
+            );
+            t.check(
+                "AddrOfGlobal01a858cc_00a3d7c0",
+                0x00a3_d7c0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(hh::gdraw_block(g)),
+            );
+            t.reset();
         }
     });
 }

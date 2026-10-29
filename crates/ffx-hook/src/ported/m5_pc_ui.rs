@@ -7,6 +7,7 @@
 //! state, frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_graphic::host::Conv;
 use ffx_pcui::m5u_a::bridge as a;
 use ffx_pcui::m5u_b::bridge as b;
 use ffx_pcui::m5u_c::bridge as c;
@@ -14,6 +15,7 @@ use ffx_pcui::m5u_d::bridge as d;
 use ffx_pcui::m5u_e::bridge as e;
 use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
+use ffx_pcui::m5u_h::bridge as hh;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -626,5 +628,86 @@ ported! {
     /// `Gu_HelpWindow_00855360(text)`.
     Gu_HelpWindow_00855360 @ 0x0085_5360 => extern "C" fn help_window(text: u32) -> u32 {
         gg::help_window(&mut mem(), text)
+    }
+    // ---- render-pcui batch 3 (ffx_pcui::m5u_h) ----
+    /// `Gu_WindowControlSetText_thunk_009411f0(window, id, s)`.
+    Gu_WindowControlSetText_thunk_009411f0 @ 0x0094_11f0 => extern "C" fn window_control_set_text_thunk(window: u32, id: u32, s: u32) {
+        hh::forward(&mut mem(), hh::WINDOW_CONTROL_SET_TEXT, Conv::Cdecl, &[window, id, s]);
+    }
+    /// `LeaveCriticalSection_ecx_009453c0(cs)`.
+    LeaveCriticalSection_ecx_009453c0 @ 0x0094_53c0 => extern "thiscall" fn leave_ecx(cs: u32) -> u32 {
+        hh::leave(&mut mem(), cs)
+    }
+    /// `PtrArray_isSet_00947da0(this; i)`.
+    PtrArray_isSet_00947da0 @ 0x0094_7da0 => extern "thiscall" fn is_set(this: u32, i: u32) -> u32 {
+        hh::is_set(&mem(), this, i)
+    }
+    /// `PageManager_unlock_00947ea0()`.
+    PageManager_unlock_00947ea0 @ 0x0094_7ea0 => extern "C" fn page_unlock() -> u32 {
+        hh::page_unlock(&mut mem())
+    }
+    /// `Thread_create_00948c10(arg)`.
+    Thread_create_00948c10 @ 0x0094_8c10 => extern "C" fn create_thread(arg: u32) -> u32 {
+        hh::create_thread(&mut mem(), arg)
+    }
+    /// `PageManager_startThread_00947630()`.
+    PageManager_startThread_00947630 @ 0x0094_7630 => extern "C" fn page_start_thread() -> u32 {
+        hh::page_start_thread(&mut mem())
+    }
+    /// `List_walkToEnd_00948a80(this)`.
+    List_walkToEnd_00948a80 @ 0x0094_8a80 => extern "thiscall" fn walk_to_end(this: u32) -> u32 {
+        hh::walk_to_end(&mem(), this)
+    }
+    /// `Thread_entry_00948c30(f)` (stdcall).
+    Thread_entry_00948c30 @ 0x0094_8c30 => extern "stdcall" fn thread_entry(f: u32) -> u32 {
+        hh::thread_entry(&mut mem(), f)
+    }
+    /// `PVideoPlaybackWin32_memcpy_00a26fb0(dst, src, n)`.
+    PVideoPlaybackWin32_memcpy_00a26fb0 @ 0x00a2_6fb0 => extern "C" fn video_memcpy(dst: u32, src: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMCPY_THUNK, dst, src, n)
+    }
+    /// `PVideoPlaybackWin32_memmove_00a26fc0(dst, src, n)`.
+    PVideoPlaybackWin32_memmove_00a26fc0 @ 0x00a2_6fc0 => extern "C" fn video_memmove(dst: u32, src: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMMOVE_IAT, dst, src, n)
+    }
+    /// `PVideoPlaybackWin32_memset_00a26fd0(dst, c, n)`.
+    PVideoPlaybackWin32_memset_00a26fd0 @ 0x00a2_6fd0 => extern "C" fn video_memset(dst: u32, c: u32, n: u32) -> u32 {
+        hh::crt3(&mut mem(), hh::MEMSET_THUNK, dst, c, n)
+    }
+    /// `IggyPlayer_replay_00a3db30(this)`.
+    IggyPlayer_replay_00a3db30 @ 0x00a3_db30 => extern "thiscall" fn iggy_replay(this: u32) -> u32 {
+        hh::iggy_replay(&mut mem(), this)
+    }
+    /// `IggyMenu_replay(menu)`.
+    IggyMenu_replay @ 0x00a2_8ee0 => extern "thiscall" fn iggy_menu_replay(this: u32) -> u32 {
+        hh::iggy_menu_replay(&mut mem(), this)
+    }
+    /// `GDraw_releaseHandle_00a362c0(handle)`.
+    GDraw_releaseHandle_00a362c0 @ 0x00a3_62c0 => extern "C" fn gdraw_release_handle(handle: u32) -> u32 {
+        hh::gdraw_release_handle(&mut mem(), handle)
+    }
+    /// `GDraw_callbackIf_00a398e0(a, key, x)` (stdcall).
+    GDraw_callbackIf_00a398e0 @ 0x00a3_98e0 => extern "stdcall" fn callback_if(a: u32, key: u32, x: u32) -> u32 {
+        hh::callback_if(&mut mem(), a, key, x)
+    }
+    /// `GDraw_releaseThis_00a3d3c0(this)`.
+    GDraw_releaseThis_00a3d3c0 @ 0x00a3_d3c0 => extern "thiscall" fn release_this(this: u32) -> u32 {
+        hh::release_this(&mut mem(), this)
+    }
+    /// `GDraw_teardown_thunk_00a3d4d0(this)`.
+    GDraw_teardown_thunk_00a3d4d0 @ 0x00a3_d4d0 => extern "thiscall" fn gdraw_teardown_thunk(this: u32) -> u32 {
+        hh::forward(&mut mem(), hh::GDRAW_TEARDOWN, Conv::Thiscall(this), &[])
+    }
+    /// `Callback_invoke_00a3d6d0(p)`.
+    Callback_invoke_00a3d6d0 @ 0x00a3_d6d0 => extern "C" fn invoke(p: u32) -> u32 {
+        hh::invoke(&mut mem(), p)
+    }
+    /// `IggyPlayerHolder_destroy_00a3d780(this; x)` (`x` unread).
+    IggyPlayerHolder_destroy_00a3d780 @ 0x00a3_d780 => extern "thiscall" fn iggy_destroy(this: u32, _x: u32) -> u32 {
+        hh::iggy_destroy(&mut mem(), this)
+    }
+    /// `AddrOfGlobal01a858cc_00a3d7c0()`.
+    AddrOfGlobal01a858cc_00a3d7c0 @ 0x00a3_d7c0 => extern "C" fn gdraw_block() -> u32 {
+        hh::gdraw_block(&mem())
     }
 }
