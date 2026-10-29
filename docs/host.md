@@ -555,10 +555,16 @@ thread waits on both thread handles: the count is exactly 6,000.
   activates it, `GetCursorPos` reads a point far outside the window, and
   `SetCursorPos`/`ClipCursor` never touch the user's pointer (always, for
   now).
-- **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward. Without them
-  `Sleep` kept Windows' 15.6 ms granularity: the threads that poll with
-  `Sleep(1)` (7,755 calls on the way to the third frame) made the boot to
-  the third `Present` take 190 s on Windows against 7 s on Linux.
+- **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep` has
+  the 1 ms granularity the game asks for (its threads poll with
+  `Sleep(1)`: 7,755 calls on the way to the third frame), not Windows'
+  default 15.6 ms.
+- **Memory.** On i686 a region (`VirtualAlloc`, a thread's stack) goes
+  into the first free gap of the process's own address space, which the
+  GPU driver fills with reservations of hundreds of MB. Probing those 64 KB
+  at a time made each of the boot's 765 `VirtualAlloc`s take tens of ms:
+  190 s to the third `Present`. `Arena::map_anywhere` now jumps past what
+  `VirtualQuery` says holds a refused address: 27 s (Linux: 7 s).
 - **Input.** `DirectInput` stays the layer's (no devices: the real
   keyboard, mouse and pads never reach the game); the harness's `keys`
   fill the keyboard's `GetDeviceState`. XInput is never called (the game

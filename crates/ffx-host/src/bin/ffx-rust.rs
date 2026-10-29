@@ -43,6 +43,8 @@ fn main() -> ExitCode {
         eprintln!("arena: {e}");
         return ExitCode::FAILURE;
     }
+    #[cfg(all(windows, target_pointer_width = "32"))]
+    ffx_host::relaunch::report_crashes();
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym = PathBuf::from("symbols/ffx.sym");

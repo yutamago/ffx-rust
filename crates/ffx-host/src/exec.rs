@@ -45,6 +45,8 @@ const INT3: u8 = 0xcc;
 /// The x87 control word Windows starts threads with (53-bit precision, all
 /// exceptions masked), as the game thread runs (docs/porting.md).
 pub const FPU_CONTROL: u16 = 0x027f;
+/// Each emulator's translation buffer (`Exec::on_thread`).
+const TCG_BUFFER: u32 = 64 << 20;
 /// The main thread's stack.
 const STACK_SIZE: u32 = 0x0020_0000;
 /// Every other thread's stack (the game asks for less; the emulated code
@@ -694,6 +696,23 @@ impl Exec {
         let stubs_at = block + 3 * PAGE;
 
         let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default())?;
+        // The translation buffer: QEMU's default is 1 GB per instance on a
+        // 64-bit host, one instance per game thread (33 on the way to the
+        // opening screen); on Windows an endpoint-security hook crashed
+        // reserving them (docs/host.md, "Windows"). 64 MB each.
+        // SAFETY: a plain control call on our own fresh instance, before
+        // anything initialises it.
+        unsafe {
+            unicorn_engine::uc_ctl(
+                uc.get_handle(),
+                unicorn_engine::ControlType(
+                    unicorn_engine::ControlType::TCG_BUFFER_SIZE.0
+                        | unicorn_engine::ControlType::IO_WRITE.0,
+                ),
+                TCG_BUFFER,
+            )
+        }
+        .and(Ok(()))?;
         // A Core 2: no SSE4.2, whose string instructions Unicorn gets wrong
         // (ffx-oracle, the same choice).
         uc.ctl_set_cpu_model(2)?;

@@ -96,6 +96,9 @@ pub fn run_child() -> Result<u32, String> {
             }
             CloseHandle(pi.hProcess);
         }
+        if code > 0xff {
+            eprintln!("ffx-rust: the game process ended with {code:#010x}");
+        }
         return Ok(code);
     }
     Err(format!(
@@ -187,4 +190,36 @@ fn spawn_suspended(app: &[u16]) -> Result<PROCESS_INFORMATION, String> {
         ));
     }
     Ok(pi)
+}
+
+/// A crash of the host process itself (not of emulated code, which
+/// `exec::seh` handles): writes the exception, its address, the thread and
+/// a Rust backtrace to stderr (the harness's `ffx-rust.log`) before Windows
+/// ends the process, which it would otherwise do silently.
+pub fn report_crashes() {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        EXCEPTION_POINTERS, SetUnhandledExceptionFilter,
+    };
+    unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
+        // SAFETY: Windows hands the filter a valid record.
+        let (code, at, params) = unsafe {
+            let r = &*(*info).ExceptionRecord;
+            (
+                r.ExceptionCode,
+                r.ExceptionAddress as usize,
+                r.ExceptionInformation[..2].to_vec(),
+            )
+        };
+        let thread = std::thread::current();
+        eprintln!(
+            "ffx-rust: host crash {code:#010x} at {at:#010x} {params:x?} on thread {:?}\n{}",
+            thread.name().unwrap_or("?"),
+            std::backtrace::Backtrace::force_capture()
+        );
+        0 // EXCEPTION_CONTINUE_SEARCH: Windows ends the process
+    }
+    // SAFETY: installs a process-wide filter with the signature Windows wants.
+    unsafe {
+        SetUnhandledExceptionFilter(Some(filter));
+    }
 }

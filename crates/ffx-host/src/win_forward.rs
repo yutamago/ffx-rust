@@ -27,9 +27,9 @@
 //!   activates it, the game never moves or clips the user's mouse pointer
 //!   (`SetCursorPos`, `ClipCursor` do nothing) and the pointer it reads is
 //!   far outside its window, as `ffx-hook`'s harness does for `FFX.exe`.
-//! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward: without them
-//!   Windows' `Sleep` keeps its 15.6 ms granularity, and the boot (whose
-//!   threads poll with `Sleep(1)`) took 190 s instead of 7.
+//! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
+//!   has the 1 ms granularity the game asks for (its threads poll with
+//!   `Sleep(1)`), not Windows' default 15.6 ms.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
