@@ -14,6 +14,7 @@ use ffx_prender::m5p_render_a5::{self as me, bridge as e};
 use ffx_prender::m5p_render_a6::bridge as f;
 use ffx_prender::m5p_render_a7::bridge as g;
 use ffx_prender::m5p_render_a8::bridge as h;
+use ffx_prender::m5p_render_a9::bridge as i;
 
 ported! {
     // ---- batch 1 ----
@@ -1334,5 +1335,11 @@ ported! {
     PSpriteCollection_flush_0056ee50 @ 0x0056_ee50 => extern "thiscall" fn flush(this: u32) -> u32 {
         let mut f = StackFrame::<18>::new();
         h::flush(&mut mem(), this, f.at())
+    }
+    // ---- batch 8 ----
+    /// `(this; data, views, _, skip)` -> status (the lock, description and subresources in this frame).
+    PTexture3DD3D11_create_005903a0 @ 0x0059_03a0 => extern "thiscall" fn texture3d_create(this: u32, data: u32, views: u32, _unused: u32, skip: u32) -> u32 {
+        let mut f = StackFrame::<{ ffx_prender::m5p_render_a9::bridge::CREATE_FRAME as usize / 4 }>::new();
+        i::create(&mut mem(), this, data, views as u8, skip as u8, f.at())
     }
 }
