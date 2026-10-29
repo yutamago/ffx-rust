@@ -41,6 +41,8 @@ pub mod l3_opu;
 pub mod l5_objhost;
 pub mod l5_opu_boot;
 pub mod nodes;
+pub mod ob_model;
+pub mod ob_summon;
 pub mod opu;
 pub mod opu_parts;
 pub mod pe;
@@ -67,6 +69,12 @@ pub mod m0187;
 pub mod m0194;
 pub mod m0196;
 pub mod m0219;
+pub mod m0393;
+pub mod m0394;
+pub mod m0395;
+pub mod m0396;
+pub mod m0481;
+pub mod m0596;
 pub mod m0604;
 
 pub use ffx_bridge::Mem;
@@ -663,6 +671,60 @@ ports! {
     "m0337 obj attach, set par B" => rcef::OBJ_ATTACH_SET_PAR_B, rcef::obj_attach_set_par_b;
     "m0339 task seq, no args" => rcef::TASK_SEQ_NO_ARGS, rcef::task_seq_no_args;
     "m0339 obj attach, set par" => rcef::OBJ_ATTACH_SET_PAR, rcef::obj_attach_set_par;
+    "m0481 start" => m0481::START, m0481::start;
+    "m0481 end" => m0481::END, m0481::end;
+    "m0596 start" => m0596::START, m0596::start;
+    "m0596 copy height" => m0596::COPY_HEIGHT, m0596::copy_height;
+    "m0393 task step" => m0393::STEP, m0393::step;
+    "m0393 models" => m0393::MODELS, m0393::models;
+    "m0393 attach" => m0393::ATTACH, m0393::attach;
+    "m0393 camera above" => m0393::CAMERA_ABOVE, m0393::camera_above;
+    "m0393 no target" => m0393::NO_TARGET, m0393::no_target;
+    "m0393 place" => m0393::PLACE, m0393::place;
+    "m0393 update" => m0393::UPDATE, m0393::update;
+    "m0393 cue" => m0393::CUE, m0393::cue;
+    "m0393 frame" => m0393::FRAME, m0393::frame;
+    "m0393 eye" => m0393::EYE, m0393::eye;
+    "m0395 vibrate" => m0395::VIBRATE, m0395::vibrate;
+    "m0396 start" => m0396::START, m0396::start;
+    "m0396 vibrate" => m0396::VIBRATE, m0396::vibrate;
+    "m0396 cue" => m0396::CUE, m0396::cue;
+    "m0396 fade" => m0396::FADE, m0396::fade;
+    "m0396 fade start" => m0396::FADE_START, m0396::fade_start;
+    "m0396 weapon frame" => m0396::WEAPON_FRAME, m0396::weapon_frame;
+    "m0394 task step" => ob_summon::STEP_0394, ob_summon::step;
+    "m0395 task step" => ob_summon::STEP_0395, ob_summon::step;
+    "m0396 task step" => ob_summon::STEP_0396, ob_summon::step;
+    "m0397 task step" => ob_summon::STEP_0397, ob_summon::step;
+    "m0596 task step (no pause)" => ob_summon::STEP_PLAIN_0596, ob_summon::step_plain;
+    "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
+    "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
+    "m0432 task step (no pause)" => ob_summon::STEP_PLAIN_0432, ob_summon::step_plain;
+    "m0434 task step (no pause)" => ob_summon::STEP_PLAIN_0434, ob_summon::step_plain;
+    "m0447 task step (no pause)" => ob_summon::STEP_PLAIN_0447, ob_summon::step_plain;
+    "m0511 task step (no pause)" => ob_summon::STEP_PLAIN_0511, ob_summon::step_plain;
+    "m0586 task step (no pause)" => ob_summon::STEP_PLAIN_0586, ob_summon::step_plain;
+    "m0587 task step (no pause)" => ob_summon::STEP_PLAIN_0587, ob_summon::step_plain;
+    "m0588 task step (no pause)" => ob_summon::STEP_PLAIN_0588, ob_summon::step_plain;
+    "m0589 task step (no pause)" => ob_summon::STEP_PLAIN_0589, ob_summon::step_plain;
+    "m0598 task step (no pause)" => ob_summon::STEP_PLAIN_0598, ob_summon::step_plain;
+    "m0599 task step (no pause)" => ob_summon::STEP_PLAIN_0599, ob_summon::step_plain;
+    "m0610 task step (no pause)" => ob_summon::STEP_PLAIN_0610, ob_summon::step_plain;
+    "m0638 task step (no pause)" => ob_summon::STEP_PLAIN_0638, ob_summon::step_plain;
+    "m0673 task step (no pause)" => ob_summon::STEP_PLAIN_0673, ob_summon::step_plain;
+    "m0689 task step (no pause)" => ob_summon::STEP_PLAIN_0689, ob_summon::step_plain;
+    "m0394 afterimage" => ob_summon::AFTERIMAGE_0394, ob_summon::afterimage;
+    "m0395 afterimage" => ob_summon::AFTERIMAGE_0395, ob_summon::afterimage;
+    "m0396 afterimage" => ob_summon::AFTERIMAGE_0396, ob_summon::afterimage;
+    "m0397 afterimage" => ob_summon::AFTERIMAGE_0397, ob_summon::afterimage;
+    "m0448 afterimage" => ob_summon::AFTERIMAGE_0448, ob_summon::afterimage;
+    "m0394 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0394, ob_summon::afterimage_fade;
+    "m0395 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0395, ob_summon::afterimage_fade;
+    "m0396 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0396, ob_summon::afterimage_fade;
+    "m0397 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0397, ob_summon::afterimage_fade;
+    "m0447 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0447, ob_summon::afterimage_fade;
+    "m0448 afterimage fade" => ob_summon::AFTERIMAGE_FADE_0448, ob_summon::afterimage_fade;
+    "m0394 flight" => m0394::FLIGHT, m0394::flight;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -735,6 +797,21 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0219 boot", &m0219::BOOT),
     ("m0219 make_object", &m0219::MAKE_OBJECT),
     ("m0219 object_init", &m0219::OBJECT_INIT),
+    ("m0481 free record", &m0481::FREE_RECORD),
+    ("m0481 draw records", &m0481::DRAW_RECORDS),
+    ("m0481 facing", &m0481::FACING),
+    ("m0596 part init", &m0596::PART_INIT),
+    ("m0596 object init", &m0596::OBJECT_INIT),
+    ("m0596 place pair", &m0596::PLACE_PAIR),
+    ("m0393 face", &m0393::FACE),
+    ("m0394 root", &m0394::ROOT),
+    ("m0394 scaled", &m0394::SCALED),
+    ("m0394 place", &m0394::PLACE),
+    ("m0395 face", &ob_summon::FACE_0395),
+    ("m0396 face", &ob_summon::FACE_0396),
+    ("m0396 aim", &m0396::AIM),
+    ("m0396 refresh", &m0396::REFRESH),
+    ("m0395 resets", &m0395::RESETS),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

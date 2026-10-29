@@ -186,8 +186,9 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-// 16: m0052::scaled_camera passes 13 (its earlier calls' words stay on the stack)
-const LOGGED: usize = 16;
+// 24: m0052::scaled_camera passes 13, m0396's start 17 (their earlier
+// calls' words stay on the stack)
+const LOGGED: usize = 24;
 
 #[derive(Default)]
 pub struct Shared {
@@ -284,6 +285,15 @@ impl Host for OrigHost<'_> {
         if let Some(f) = libm {
             let x = f64::from_le_bytes(regs.xmm0[..8].try_into().unwrap());
             regs.xmm0[..8].copy_from_slice(&f(x).to_le_bytes());
+            regs.esp += 4;
+            return Some(Ok(()));
+        }
+        if name == "_CIatan2" {
+            // ST1 = y, ST0 = x; the same Rust function as `PortGame::atan2`
+            let x = ffx_oracle::f80_to_f64(&regs.st[0]);
+            let y = ffx_oracle::f80_to_f64(&regs.st[1]);
+            regs.st[0] = f64_to_f80(y.atan2(x));
+            regs.st_len = 1;
             regs.esp += 4;
             return Some(Ok(()));
         }
