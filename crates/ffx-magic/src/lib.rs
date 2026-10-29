@@ -982,6 +982,12 @@ ports! {
     "0446 start 0x1430 low" => s4_fam446::START_1430_LOW, s4_fam446::start_1430_low;
     "0446 start 0x720" => s4_fam446::START_720, s4_fam446::start_720;
     "0446 start 0x260" => s4_fam446::START_260, s4_fam446::start_260;
+    "0644 start kind" => s4_fam446::START_KIND_C, s4_fam446::start_kind_c;
+    "0565 start 0x1300" => s4_fam446::START_1300_B, s4_fam446::start_1300_b;
+    "0644 start 0x1300" => s4_fam446::START_1300_C, s4_fam446::start_1300_c;
+    "0565 start 0xf70" => s4_fam446::START_F70, s4_fam446::start_f70;
+    "0565 start 0x1300 low" => s4_fam446::START_1300_LOW, s4_fam446::start_1300_low;
+    "0644 start 0x11d0" => s4_fam446::START_11D0, s4_fam446::start_11d0;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;

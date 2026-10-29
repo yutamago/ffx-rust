@@ -2348,3 +2348,67 @@ fn view_node_part() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// The family's starts in `magic_0565` and `magic_0644` (their own block
+/// layouts): each start with the pool free and empty, the kinds of the
+/// table one.
+#[test]
+fn fam446_starts_565_644() {
+    for (n, starts) in [
+        (
+            565u16,
+            &[(0x4570u32, 0xcu32), (0x4d60, 0xc), (0x6240, 0xb)][..],
+        ),
+        (644, &[(0x8600, 0x15), (0x8590, 0xc), (0x8d80, 0xc)]),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        let block = SCRATCH + 0x1_0000;
+        let call = if starts[0].0 == 0x8600 { 0x39 } else { 0x20 };
+        let soa = t.img.rel32_target(t.at(starts[0].0) + call);
+        t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+        for i in 0..0x30 {
+            t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+        }
+        t.stub(941, |_, _| SCRATCH + 0x400);
+        t.stub(714, |m, a| {
+            let k = m.r32(SCRATCH + 0x90c);
+            m.w32(SCRATCH + 0x90c, k + 1);
+            for (i, w) in (0u32..).zip(&a[..5]) {
+                m.w32(SCRATCH + 0x910 + 4 * i, *w ^ k);
+            }
+            0x714
+        });
+        let pa = t.img.rel32_target(soa + 0x9d);
+        let free = t.img.word(pa + 0x04);
+        let nodes = t.img.word(pa + 0x27) - 8;
+        let task = SCRATCH + 0x800;
+        for &(rva, block_op) in starts {
+            let f = t.at(rva);
+            t.set_u32(t.img.word(f + block_op), block);
+            for kind in [0u32, 1, 2] {
+                for count in [3u16, 0] {
+                    t.write(block, &vec![0x3c; 0xec00]);
+                    for i in 0..4 {
+                        set_f(&mut t, block + 0x2f80 + 4 * i, 1.5 * i as f32);
+                        set_f(&mut t, block + 0x2e50 + 4 * i, -2.5 * i as f32);
+                    }
+                    t.set_u32(block + 0xebf0, 0x00c1_0c00 + kind);
+                    t.set_u32(block + 0xeac0, 0x00c2_0c00 + kind);
+                    for i in 0..8 {
+                        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+                        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+                        t.set_u32(nodes + 12 * i + 8, 0);
+                    }
+                    t.set_u16(free, count);
+                    t.set_u32(task + 0x2c, kind);
+                    let c = Call {
+                        ecx: 0x0bad_0ecc,
+                        ..Call::default()
+                    };
+                    t.check_entry(f, c, &[task], Eax::Checked);
+                }
+            }
+        }
+    }
+}

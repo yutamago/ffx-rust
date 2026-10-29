@@ -45,15 +45,20 @@ fn start<G: Game>(
     )
 }
 
-/// The block's place `+0x2f80..+0x2f8c` copied into the object's
-/// `+0xd0..+0xdc`, and the block's clock `+0xebf0` into its `+0xc4`.
+/// Where a family's block keeps its place (four words) and its clock:
+/// `magic_0446`/`0565` and `magic_0644`.
+const L446: (u32, u32) = (0x2f80, 0xebf0);
+const L644: (u32, u32) = (0x2e50, 0xeac0);
+
+/// The block's place copied into the object's `+0xd0..+0xdc`, and the
+/// block's clock into its `+0xc4` (`(place, clock)` the block's offsets).
 /// Returns the clock.
-fn place<G: Game>(g: &mut G, block: u32, obj: u32) -> u32 {
+fn place<G: Game>(g: &mut G, block: u32, obj: u32, (at, clock_at): (u32, u32)) -> u32 {
     for i in 0..4 {
-        let x = g.read::<u32>(block + 0x2f80 + 4 * i);
+        let x = g.read::<u32>(block + at + 4 * i);
         g.write::<u32>(obj + 0xd0 + 4 * i, x);
     }
-    let clock = g.read::<u32>(block + 0xebf0);
+    let clock = g.read::<u32>(block + clock_at);
     g.write::<u32>(obj + 0xc4, clock);
     clock
 }
@@ -62,8 +67,15 @@ fn place<G: Game>(g: &mut G, block: u32, obj: u32) -> u32 {
 /// the block (`+kind_at`); the object is `G + 0x130 part`, `part` the
 /// kind's entry in the DLL's table (operand `+0x24`), started with the
 /// scale at `+0xa`; its `+0xc4` takes the block's clock, its `+0x104` the
-/// callback (operand `+0x52`). Returns the object and the clock.
-fn start_kind<G: Game>(g: &mut G, img: &Image, f: u32, task: u32, kind_at: u32) -> (u32, u32) {
+/// callback (operand `+0x52`). Returns the object and the clock (at
+/// `clock_at`).
+fn start_kind<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    task: u32,
+    (kind_at, clock_at): (u32, u32),
+) -> (u32, u32) {
     let w = |o: u32| img.word(f + o);
     let block = g.read::<u32>(w(0x15));
     let kind = g.read::<u32>(task + 0x2c);
@@ -71,7 +83,7 @@ fn start_kind<G: Game>(g: &mut G, img: &Image, f: u32, task: u32, kind_at: u32) 
     let part = g.read::<u32>(w(0x24).wrapping_add(kind.wrapping_mul(4)));
     let obj = block.wrapping_add(part.wrapping_mul(0x130));
     start(g, img, f, 0x39, obj, 0x0a, part, (0, 0));
-    let clock = g.read::<u32>(block + 0xebf0);
+    let clock = g.read::<u32>(block + clock_at);
     g.write::<u32>(obj + 0xc4, clock);
     g.write::<u32>(obj + 0x104, w(0x52));
     (obj, clock)
@@ -83,7 +95,7 @@ fn start_kind<G: Game>(g: &mut G, img: &Image, f: u32, task: u32, kind_at: u32) 
 /// `magic_0446` 0x10002980 (96 bytes; 15 DLLs).
 pub fn start_kind_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let task = fr.arg(g, 0);
-    let (obj, clock) = start_kind(g, img, fr.at, task, 0x8524);
+    let (obj, clock) = start_kind(g, img, fr.at, task, (0x8524, 0xebf0));
     let block = g.read::<u32>(img.word(fr.at + 0x15));
     g.write::<u32>(block + 0x8520, obj);
     Ret::eax(clock)
@@ -106,7 +118,7 @@ pub const START_KIND_A: Sig = Sig {
 pub fn start_kind_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let w = |o: u32| img.word(fr.at + o);
     let task = fr.arg(g, 0);
-    let (first, clock) = start_kind(g, img, fr.at, task, 0x5c04);
+    let (first, clock) = start_kind(g, img, fr.at, task, (0x5c04, 0xebf0));
     let block = g.read::<u32>(w(0x15));
     if g.read::<u32>(block + 0x5c04) != 2 {
         g.write::<u32>(block + 0x5bfc, first);
@@ -138,13 +150,13 @@ fn start_placed<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,
-    (block_op, obj, part): (u32, u32, u32),
+    (block_op, obj, part, layout): (u32, u32, u32, (u32, u32)),
     then: impl FnOnce(&mut G, u32, u32),
 ) -> Ret {
     let block = g.read::<u32>(img.word(fr.at + block_op));
     let o = block + obj;
     start(g, img, fr.at, 0x20, o, 0x04, part, (0, 0));
-    let clock = place(g, block, o);
+    let clock = place(g, block, o, layout);
     then(g, block, o);
     Ret::eax(clock)
 }
@@ -153,7 +165,7 @@ fn start_placed<G: Game>(
 ///
 /// `magic_0446` 0x10002910 (102 bytes; 10 DLLs).
 pub fn start_1430<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    start_placed(g, img, fr, (0xc, 0x1430, 0x11), |_, _, _| {})
+    start_placed(g, img, fr, (0xc, 0x1430, 0x11, L446), |_, _, _| {})
 }
 
 /// [`start_1430`].
@@ -169,7 +181,7 @@ pub const START_1430: Sig = Sig {
 ///
 /// `magic_0446` 0x10003050 (112 bytes; 10 DLLs).
 pub fn start_1300<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    start_placed(g, img, fr, (0xc, 0x1300, 0x10), |g, block, _| {
+    start_placed(g, img, fr, (0xc, 0x1300, 0x10, L446), |g, block, _| {
         g.write::<u32>(block + 0xd748, 0);
     })
 }
@@ -187,7 +199,7 @@ pub const START_1300: Sig = Sig {
 ///
 /// `magic_0446` 0x10004180 (112 bytes; 10 DLLs).
 pub fn start_1430_low<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    start_placed(g, img, fr, (0xb, 0x1430, 0x11), |g, _, o| {
+    start_placed(g, img, fr, (0xb, 0x1430, 0x11, L446), |g, _, o| {
         g.write::<u32>(o + 0xe8, 0xc188_0000);
     })
 }
@@ -211,7 +223,7 @@ pub fn start_720<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let block = g.read::<u32>(img.word(f + 0xc));
     let o = block + 0x720;
     start(g, img, f, 0x20, o, 0x04, 6, (0, 0));
-    place(g, block, o);
+    place(g, block, o, L446);
     g.write::<u32>(o + 0xe8, 0xc0a0_0000);
     start(g, img, f, 0x83, block + 0x2860, 0x2e, 0x22, (0, 0));
     let clock = g.read::<u32>(block + 0xebf0);
@@ -1483,5 +1495,110 @@ pub const GLYPH_QUAD: Sig = Sig {
     len: 570,
     hash: 0xe2a5_7f52_c8a8_6145,
     calls: &[],
+    imports: &[],
+};
+
+/// [`start_kind`] with the `magic_0644` block: the kind at `+0x83f4`, the
+/// clock `+0xeac0`; the object is kept at `+0x83f0`. Returns the clock.
+///
+/// `magic_0644` 0x10008600 (96 bytes; 5 DLLs).
+pub fn start_kind_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let task = fr.arg(g, 0);
+    let (obj, clock) = start_kind(g, img, fr.at, task, (0x83f4, 0xeac0));
+    let block = g.read::<u32>(img.word(fr.at + 0x15));
+    g.write::<u32>(block + 0x83f0, obj);
+    Ret::eax(clock)
+}
+
+/// [`start_kind_c`].
+pub const START_KIND_C: Sig = Sig {
+    len: 96,
+    hash: 0xaa1e_657c_5f40_8daa,
+    calls: &[(0x39, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// The object `G + 0x1300` (part 0x10) started and placed.
+///
+/// `magic_0565` 0x10004570 (102 bytes; 5 DLLs).
+pub fn start_1300_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_placed(g, img, fr, (0xc, 0x1300, 0x10, L446), |_, _, _| {})
+}
+
+/// [`start_1300_b`].
+pub const START_1300_B: Sig = Sig {
+    len: 102,
+    hash: 0x84d0_b182_7c99_3149,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// The object `G + 0x1300` (part 0x10) started and placed from the
+/// `magic_0644` block.
+///
+/// `magic_0644` 0x10008590 (102 bytes; 5 DLLs).
+pub fn start_1300_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_placed(g, img, fr, (0xc, 0x1300, 0x10, L644), |_, _, _| {})
+}
+
+/// [`start_1300_c`].
+pub const START_1300_C: Sig = Sig {
+    len: 102,
+    hash: 0x63c0_54d1_c2ed_08e4,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// The object `G + 0xf70` (part 0xd) started and placed; the block's
+/// `+0xd748` cleared.
+///
+/// `magic_0565` 0x10004d60 (112 bytes; 5 DLLs).
+pub fn start_f70<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_placed(g, img, fr, (0xc, 0xf70, 0xd, L446), |g, block, _| {
+        g.write::<u32>(block + 0xd748, 0);
+    })
+}
+
+/// [`start_f70`].
+pub const START_F70: Sig = Sig {
+    len: 112,
+    hash: 0x0206_274a_cb27_1bef,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// The object `G + 0x1300` (part 0x10) started and placed, its `+0xe8`
+/// -17.0.
+///
+/// `magic_0565` 0x10006240 (112 bytes; 5 DLLs).
+pub fn start_1300_low<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_placed(g, img, fr, (0xb, 0x1300, 0x10, L446), |g, _, o| {
+        g.write::<u32>(o + 0xe8, 0xc188_0000);
+    })
+}
+
+/// [`start_1300_low`].
+pub const START_1300_LOW: Sig = Sig {
+    len: 112,
+    hash: 0x0cab_44b8_d71f_df16,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// The object `G + 0x11d0` (part 0xf) started and placed from the
+/// `magic_0644` block; the block's `+0xd618` cleared.
+///
+/// `magic_0644` 0x10008d80 (112 bytes; 5 DLLs).
+pub fn start_11d0<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_placed(g, img, fr, (0xc, 0x11d0, 0xf, L644), |g, block, _| {
+        g.write::<u32>(block + 0xd618, 0);
+    })
+}
+
+/// [`start_11d0`].
+pub const START_11D0: Sig = Sig {
+    len: 112,
+    hash: 0xf1a0_2267_8c6b_eda9,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
     imports: &[],
 };
