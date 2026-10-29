@@ -8,6 +8,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_battle::m5_battle::bridge as mb;
+use ffx_menu::m5m_m::bridge as mm;
 
 /// Calls the game's cdecl code at a run-time address (`mb::Call`).
 fn call<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
@@ -402,5 +403,22 @@ ported! {
     MsPlySave @ 0x007d_d5e0 => extern "C" fn ms_ply_save(name: u32) -> u32 {
         let mut f = StackFrame::<0x105>::new();
         mb::ms_ply_save(&mut mem(), &mut call, f.at(), name)
+    }
+    // ---- round 4 (menu-battle-script 2) (ffx_menu::m5m_m) ----
+    /// `()`: the address `0x00b546a0`.
+    BtlRdata_007829a0 @ 0x0078_29a0 => extern "C" fn btl_rdata_007829a0() -> u32 {
+        mm::rdata_address(&mem(), 0x00b5_46a0)
+    }
+    /// `MsBtlReadFileDone_00782fe0()`.
+    MsBtlReadFileDone_00782fe0 @ 0x0078_2fe0 => extern "C" fn ms_btl_read_file_done() {
+        mm::btl_read_file_done(&mut mem());
+    }
+    /// `MsBtlReadAsyncTask_00784500()`.
+    MsBtlReadAsyncTask_00784500 @ 0x0078_4500 => extern "C" fn ms_btl_read_async_task() -> u32 {
+        mm::btl_read_async(&mut mem())
+    }
+    /// `()`: `Native_70a4`'s body.
+    ChnSystemMgrpReset_0079cca0 @ 0x0079_cca0 => extern "C" fn chn_system_mgrp_reset() {
+        mm::chn_system_mgrp_reset(&mut mem());
     }
 }

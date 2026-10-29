@@ -35,6 +35,9 @@ use ffx_menu::m5m_g::bridge as mg;
 use ffx_menu::m5m_h::bridge as mh;
 use ffx_menu::m5m_i::bridge as mi;
 use ffx_menu::m5m_j::bridge as mj;
+use ffx_menu::m5m_k::bridge as mk;
+use ffx_menu::m5m_l::bridge as ml;
+use ffx_menu::m5m_m::bridge as mm;
 use ffx_oracle::{Conv, Oracle, Pages};
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
@@ -3254,6 +3257,2133 @@ fn r3b3_kaizou_fade_band_matches_the_original() {
                 &[c],
                 |m| Out::U32(mj::kaizou_fade_band(m, c)),
             );
+        }
+    });
+}
+
+// ---- round 4, batch 1 (ffx_menu::m5m_k) ----
+
+impl Twins {
+    /// A recording stub (`tag`, `n` words, `pops`, `ret`) that first copies
+    /// `bytes` to the pointer in argument `arg`. Returns its address.
+    fn stub_writing(
+        &mut self,
+        tag: u32,
+        n: u32,
+        pops: u32,
+        ret: u32,
+        arg: u32,
+        bytes: &[u8],
+    ) -> u32 {
+        let src = self.alloc(bytes);
+        let log = self.stub_code(tag, false, n, pops, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, (0xc + 4 * arg) as u8]); // mov edi, [esp+0xc+4arg]
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.push(0xb9);
+        c.extend((bytes.len() as u32).to_le_bytes()); // mov ecx, len
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+        self.cave_code(&c)
+    }
+
+    /// [`Twins::stub_writing`] over the original at `sym`.
+    fn stub_write(&mut self, sym: u32, n: u32, ret: u32, arg: u32, bytes: &[u8]) {
+        let addr = self.stub_writing(sym, n, 0, ret, arg, bytes);
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+        self.patch(at, &j);
+    }
+
+    /// [`Twins::stub_writing`] bound to the import slot `slot` (cdecl).
+    fn stub_import_write(&mut self, slot: u32, n: u32, ret: u32, arg: u32, bytes: &[u8]) {
+        let addr = self.stub_writing(slot, n, 0, ret, arg, bytes);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// A stub over `sym` whose result depends on its argument `arg`: `hit`
+    /// when it equals `value`, else `miss`; logs `n` words under one tag.
+    fn stub_branch(&mut self, sym: u32, n: u32, arg: u32, value: u32, hit: u32, miss: u32) -> u32 {
+        let a = self.stub_code(sym, false, n, 0, hit);
+        let b = self.stub_code(sym, false, n, 0, miss);
+        let mut c = vec![0x81, 0x7c, 0x24, (4 + 4 * arg) as u8];
+        c.extend(value.to_le_bytes()); // cmp dword [esp+4+4arg], value
+        c.extend([0x0f, 0x84]); // je a
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(a.wrapping_sub(here).to_le_bytes());
+        c.push(0xe9); // jmp b
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(b.wrapping_sub(here).to_le_bytes());
+        self.cave_code(&c)
+    }
+
+    /// Runs the original at `sym` with its frame's `len` bytes below
+    /// `ebp` (the frame base the caller computed, for aligned frames)
+    /// zeroed in both oracles, the port's calls below it, and compares
+    /// the frame (less its top `skip` bytes) after the call.
+    #[allow(clippy::too_many_arguments)]
+    fn check_frame_at(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        ebp: u32,
+        len: u32,
+        bridge: impl FnOnce(&mut G, u32) -> Out,
+    ) {
+        let lo = ebp - len;
+        self.write(lo, &vec![0; len as usize]);
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, conv, args, |m| bridge(m, ebp));
+        self.b.set_call_top(None);
+        let n = (len - self.skip) as usize;
+        let mut x = vec![0; n];
+        let mut y = vec![0; n];
+        Mem::read_bytes(&self.a, lo, &mut x);
+        Mem::read_bytes(&self.b, lo, &mut y);
+        if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+            panic!(
+                "{what}: frame byte ebp - {:#x}: {} != {}",
+                len - i as u32,
+                x[i],
+                y[i]
+            );
+        }
+    }
+}
+
+impl Twins {
+    /// The event loaders' `sprintf`: logs as many words as each format
+    /// takes (3 by default).
+    fn sprintf_by_format(&mut self, kind: mk::EventFile) {
+        let five: &[u32] = match kind {
+            mk::EventFile::Ftc => &[0x00b5_eb54, 0x00b5_ebb0],
+            mk::EventFile::Message => &[0x00b5_eb00, 0x00b5_eb38],
+        };
+        let four: &[u32] = match kind {
+            mk::EventFile::Ftc => &[],
+            mk::EventFile::Message => &[0x00b5_eaf0, 0x00b5_eb20],
+        };
+        let mut cases = Vec::new();
+        for &f in five {
+            cases.push((
+                self.rebase(f),
+                self.stub_code(mk::SPRINTF_IAT, false, 5, 0, 0x72),
+            ));
+        }
+        for &f in four {
+            cases.push((
+                self.rebase(f),
+                self.stub_code(mk::SPRINTF_IAT, false, 4, 0, 0x72),
+            ));
+        }
+        let other = self.stub_code(mk::SPRINTF_IAT, false, 3, 0, 0x72);
+        let mut c = Vec::new();
+        for (v, to) in cases {
+            c.extend([0x81, 0x7c, 0x24, 8]);
+            c.extend(v.to_le_bytes()); // cmp dword [esp+8], v
+            c.extend([0x0f, 0x84]);
+            let here = self.cave_next + c.len() as u32 + 4;
+            c.extend(to.wrapping_sub(here).to_le_bytes()); // je to
+        }
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(other.wrapping_sub(here).to_le_bytes());
+        let d = self.cave_code(&c);
+        let at = self.rebase(mk::SPRINTF_IAT);
+        self.patch(at, &d.to_le_bytes());
+    }
+}
+
+/// A client box: rectangle, target, colours and the divisor word.
+fn client_box(rng: &mut Rng) -> Vec<u8> {
+    let mut c = vec![0u8; 0x28];
+    for o in (8..0x18).step_by(2) {
+        put16(&mut c, o, (rng.below(600) as i16) - 100);
+    }
+    for b in &mut c[0x18..0x20] {
+        *b = rng.next() as u8;
+    }
+    let d = match rng.below(4) {
+        0 => 0,
+        1 => rng.below(9) as i16 - 4,
+        _ => rng.below(12) as i16 + 1,
+    };
+    put16(
+        &mut c,
+        0x24,
+        if d == 0 && rng.chance(2) { 0 } else { d.max(1) },
+    );
+    if rng.chance(3) {
+        put16(&mut c, 0x14, 0);
+    }
+    c
+}
+
+#[test]
+fn r4b1_draw_client_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0001);
+        for i in 0..300 {
+            t.reset();
+            t.packet(rng.below(30));
+            let c = client_box(&mut rng);
+            let c = t.alloc(&c);
+            let (w, hh) = if i % 4 == 0 {
+                (0x1001 + 2 * rng.below(0x80), 0x1003 + 2 * rng.below(0x80))
+            } else {
+                (0x200 + rng.below(0x300), 0x180 + rng.below(0x200))
+            };
+            t.g32(g::SCREEN_W, w);
+            t.g32(g::SCREEN_H, hh);
+            let s = 0x80 + rng.below(0x100);
+            t.g32(g::H_SCALE, s);
+            let (x, y) = (rng.below(400), rng.below(300));
+            t.check(
+                &format!("Gu_DrawClient #{i}"),
+                0x0084_7b50,
+                Conv::Cdecl,
+                &[c, x, y],
+                |m| Out::U32(mk::draw_client(m, c, x, y)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b1_gu_printf_matches_the_original() {
+    let texts: [&[u8]; 12] = [
+        b"plain %d\0",
+        b"%d percent\0",
+        b"%x\0",
+        b"%~\0",
+        b"%~b~i~.text\0",
+        b"%~btext\0",
+        b"%~itext\0",
+        b"%~cff~w4\0",
+        b"%~w12x\0",
+        b"%~zz\0",
+        b"%~\x90a\0",
+        b"%~.\0",
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0002);
+        for (i, text) in texts.iter().enumerate() {
+            for k in 0..6 {
+                t.reset();
+                t.skip = 0;
+                t.packet(rng.below(20));
+                for (sym, v) in [
+                    (0x0130_370c, rng.below(0x80)),
+                    (0x0130_3710, rng.below(0x80)),
+                    (0x0130_3714, rng.below(0x80)),
+                    (0x0130_3718, rng.below(2)),
+                    (0x0130_3720, rng.below(2)),
+                    (0x0130_3728, rng.below(0x400)),
+                    (0x0130_36bc, rng.word()),
+                ] {
+                    t.g32(sym, v);
+                }
+                let s = t.alloc(text);
+                // the parsers end at a continuation: more codes or text
+                let cont = t.alloc(if k % 2 == 0 { b"~bxy\0" } else { b"zz\0" });
+                let v = rng.next();
+                t.stub_write(mk::GU_PARSE_HEX, 2, cont, 1, &v.to_le_bytes());
+                let v = rng.below(0x800);
+                t.stub_write(mk::GU_PARSE_NUMBER, 2, cont, 1, &v.to_le_bytes());
+                let chars = rng.next();
+                let log = t.stub_code(mk::SG_VFPRINTF, false, 3, 0, 0x55);
+                let at = t.rebase(0x0130_36bc);
+                let mut c = vec![0xc7, 0x05];
+                c.extend(at.to_le_bytes());
+                c.extend(chars.to_le_bytes()); // mov dword [chars], v
+                // the style the text is printed with, kept in a record
+                let rec = t.zeros(0x20);
+                let style = [
+                    0x0130_370c,
+                    0x0130_3710,
+                    0x0130_3714,
+                    0x0130_3718,
+                    0x0130_3720,
+                    0x0130_3728,
+                ];
+                for (k, sym) in style.into_iter().enumerate() {
+                    c.push(0xa1);
+                    c.extend(t.rebase(sym).to_le_bytes()); // mov eax, [sym]
+                    c.push(0xa3);
+                    c.extend((rec + 4 * k as u32).to_le_bytes()); // mov [rec+4k], eax
+                }
+                c.push(0xe9);
+                let here = t.cave_next + c.len() as u32 + 4;
+                c.extend(log.wrapping_sub(here).to_le_bytes());
+                let vf = t.cave_code(&c);
+                t.jump(mk::SG_VFPRINTF, vf);
+                t.stubs(&[
+                    (mk::GU_PRINT_BEGIN, false, 0, 0, 0x51),
+                    (mk::SET_PRINTF_FUNC, false, 1, 0, 0x5200 + i as u32),
+                ]);
+                let args = [s, rng.word(), rng.word()];
+                let va = t.frame_ebp(3) + 0xc;
+                t.check_framed(
+                    &format!("Gu_Printf {:?} #{k}", String::from_utf8_lossy(text)),
+                    0x0084_8880,
+                    Conv::Cdecl,
+                    &args,
+                    4,
+                    |m, ebp| Out::U32(mk::gu_printf(m, ebp - 4, s, va)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b1_slot_files_match_the_original() {
+    let kinds = [
+        (0x0064_6b30, mk::SlotFile::Load, 0x40c),
+        (0x0064_6ca0, mk::SlotFile::LoadBare, 0x40c),
+        (0x0064_6df0, mk::SlotFile::Save, 0x408),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0003);
+        for (sym, kind, low) in kinds {
+            for k in 0..8 {
+                t.reset();
+                t.skip = 4;
+                let zeros = vec![0u8; 0x100];
+                t.stub_write(mk::CRT_MEMSET, 3, 0x41, 0, &zeros);
+                let num: &[u8] = if k % 2 == 0 { b"07\0" } else { b"123456\0" };
+                t.stub_import_write(mk::SPRINTF_IAT, 3, 0x42, 0, num);
+                let dir: &[u8] = if k % 3 == 0 {
+                    b"\0"
+                } else {
+                    b"C:/game/saves/\0"
+                };
+                t.stub_write(mk::DATA_DIRECTORY, 3, 0x43, 1, dir);
+                let f = if k % 4 == 3 { 0 } else { 0x4400 + k };
+                t.stub_import(mk::FOPEN_IAT, false, 2, 0, f);
+                t.stub_import(mk::FREAD_IAT, false, 4, 0, 0x45);
+                t.stub_import(mk::FWRITE_IAT, false, 4, 0, 0x46);
+                t.stub_import(mk::FCLOSE_IAT, false, 1, 0, 0x47);
+                t.stubs(&[
+                    (mk::CROSS_ASSERT_OUTPUT, false, 1, 0, 0x48),
+                    (mk::SAVE_DATA_CHECK_CRC, false, 0, 0, rng.word()),
+                ]);
+                let fill: Vec<u8> = (0..0x6500u32).map(|i| (i * 7) as u8).collect();
+                let buf = t.alloc(&fill);
+                let (slot, size) = (rng.below(100), rng.below(0x6500));
+                t.check_framed(
+                    &format!("{kind:?} #{k}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[slot, buf, size],
+                    low,
+                    |m, ebp| Out::U32(mk::slot_file(m, ebp, kind, slot, buf, size)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b1_kabe_packets_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0004);
+        for i in 0..200 {
+            t.reset();
+            let p = t.zeros(0x100);
+            let w = match i % 3 {
+                0 => rng.below(0x300),
+                1 => 1 << rng.below(11),
+                _ => rng.word(),
+            };
+            let hh = match i % 4 {
+                0 => rng.below(0x300),
+                1 => (1 << rng.below(11)) + rng.below(2),
+                _ => rng.word(),
+            };
+            let (tbp, psm, x, y) = (rng.word(), rng.word(), rng.word(), rng.word());
+            t.check(
+                &format!("GsPkt_TexturedSprite #{i}"),
+                0x0077_4ff0,
+                Conv::Cdecl,
+                &[p, tbp, psm, x, y, w, hh],
+                |m| Out::U32(mk::textured_sprite(m, p, tbp, psm, x, y, w, hh)),
+            );
+            let p = t.zeros(0x100);
+            t.check(
+                &format!("frame packet #{i}"),
+                0x0077_5330,
+                Conv::Cdecl,
+                &[p, x, y, w, hh],
+                |m| Out::U32(mk::frame_packet(m, p, x, y, w, hh)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b1_kabe_load_image_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0005);
+        for i in 0..40 {
+            t.reset();
+            t.skip = 4;
+            t.stubs(&[
+                (mk::SCE_GS_SET_DEF_LOAD_IMAGE, false, 8, 0, 0x61),
+                (mk::FLUSH_CACHE, false, 1, 0, 0x62),
+                (mk::SCE_GS_EXEC_LOAD_IMAGE, false, 2, 0, 0x63),
+                (mk::SCE_GS_SYNC_PATH, false, 2, 0, rng.word()),
+            ]);
+            let mut img = vec![0u8; 0x20];
+            img[..4].copy_from_slice(&rng.word().to_le_bytes());
+            img[4..8].copy_from_slice(&rng.word().to_le_bytes());
+            let img = t.alloc(&img);
+            let out = t.zeros(8);
+            let base = rng.word();
+            t.g32(0x00c4_16cc, base);
+            // the aligned frame: entry esp at the return address R, `push
+            // ebx`, `sub esp, 8`, `and esp, -16`, `add esp, 4`, `push ebp`
+            let r = t.a.stack_range().end - 0x100 - 12 - 4;
+            let ebp = (r - 12) & !15;
+            t.check_frame_at(
+                &format!("kabe load image #{i}"),
+                0x0077_5720,
+                Conv::Cdecl,
+                &[img, out, out + 4],
+                ebp,
+                0x60,
+                |m, ebp| Out::U32(mk::kabe_load_image(m, ebp - 0x60, img, out, out + 4)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b1_event_files_match_the_original() {
+    let ftc: [u32; 5] = [0x00b5_5e74, 0x00b5_eb6c, 0x00b5_eb84, 0x00b4_04a0, 0];
+    let msg: [u32; 4] = [0x00b5_eae8, 0x00b5_5e74, 0x00b5_eb18, 0];
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0006);
+        for (sym, kind, needles) in [
+            (0x0088_c860, mk::EventFile::Ftc, &ftc[..]),
+            (0x0088_cac0, mk::EventFile::Message, &msg[..]),
+        ] {
+            for (n, &needle) in needles.iter().enumerate() {
+                for k in 0..6 {
+                    t.reset();
+                    t.skip = 4;
+                    let lang = [0u32, 1, 2, 3, 4, 5, 6, 9, 10, 11, 0xffff_ffff][(n + k) % 11];
+                    let hit = if needle == 0 { 0 } else { t.rebase(needle) };
+                    let s = t.stub_branch(mk::STRSTR_IAT, 2, 1, hit, 0x7100, 0);
+                    let at = t.rebase(mk::STRSTR_IAT);
+                    t.patch(at, &s.to_le_bytes());
+                    t.sprintf_by_format(kind);
+                    t.stub_import(mk::SPRINTF_S_IAT, false, 4, 0, 0x73);
+                    let exists = u32::from(k % 3 != 2);
+                    let size = [0u32, 1, 0x10, 0xffff_f000, 0x800, 0xffff_fff8][k];
+                    let data = t.alloc(&[0xff; 0x40]);
+                    t.stubs(&[
+                        (mk::TO_GET_FFX_LANG, false, 0, 0, lang),
+                        (mk::FIOS_UNIFY_FILENAME, false, 3, 0, 0x74),
+                        (mk::FIOS_IS_FILE_EXIST, false, 1, 0, exists),
+                        (mk::FIOS_OPEN, false, 2, 0, 0x7500 + k as u32),
+                        (mk::FIOS_FILE_SIZE, false, 1, 0, size),
+                        (mk::SG_MEM_SET_ALIGN, false, 1, 0, 0x76),
+                        (mk::USER_MALLOC, false, 1, 0, data),
+                        (mk::FIOS_READ, false, 3, 0, 0x77),
+                        (mk::FIOS_CLOSE, false, 1, 0, 0x78),
+                        (mk::DBG_PRINTF, false, 2, 0, 0x79),
+                    ]);
+                    let name = t.alloc(b"bsil0300/name\0");
+                    let _ = rng.next();
+                    t.check_framed(
+                        &format!("{kind:?} rule {n} #{k}"),
+                        sym,
+                        Conv::Cdecl,
+                        &[name],
+                        0x1c4,
+                        |m, ebp| Out::U32(mk::event_file(m, ebp, kind, name)),
+                    );
+                }
+            }
+        }
+    });
+}
+
+/// The motion window's argument and character: frame, speed, count.
+fn motion_objects(t: &mut Twins, rng: &mut Rng, count: Option<i16>) -> u32 {
+    let name = t.alloc(b"c001\0");
+    let mut c = vec![0u8; 0x810];
+    c[4..8].copy_from_slice(&name.to_le_bytes());
+    c[0x740..0x744].copy_from_slice(&rng.word().to_le_bytes());
+    put16(&mut c, 0x754, rng.next() as i16);
+    if let Some(n) = count {
+        let cnt = t.alloc(&n.to_le_bytes());
+        c[0x800..0x804].copy_from_slice(&cnt.to_le_bytes());
+    }
+    let chr = t.alloc(&c);
+    let mut a = vec![0u8; 0x50];
+    a[4..8].copy_from_slice(&chr.to_le_bytes());
+    for o in (0x38..0x50).step_by(4) {
+        a[o..o + 4].copy_from_slice(&rng.word().to_le_bytes());
+    }
+    t.alloc(&a)
+}
+
+#[test]
+fn r4b1_chr_view_motion_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0007);
+        let msgs = [0x8001u32, 0x8005, 0x8006, 0x8011, 0x8000, 0x8012, 0x8007];
+        for (m, &msg) in msgs.iter().enumerate() {
+            for id in 0..11u32 {
+                t.reset();
+                t.skip = 4;
+                let count = match (id + m as u32) % 5 {
+                    0 => None,
+                    1 => Some(-3),
+                    _ => Some(rng.below(40) as i16),
+                };
+                let arg = motion_objects(t, &mut rng, count);
+                let mut width = 20 + rng.below(200);
+                if width == 15 {
+                    width = 16;
+                }
+                let over = rng.below(2);
+                t.stub_import(mk::SPRINTF_IAT, false, 7, 0, 0x81);
+                t.stubs(&[
+                    (mk::GU_WINDOW_GET_ARG, false, 1, 0, arg),
+                    (mk::GU_MOUSE_SET_CAPTURE, false, 2, 0, 0x82),
+                    (mk::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x83),
+                    (mk::GU_WINDOW_ADD_CLIENT, false, 6, 0, 0x84),
+                    (mk::GU_WINDOW_SET_TITLE, false, 2, 0, 0x85),
+                    (mk::GU_WINDOW_GET_WIDTH, false, 1, 0, width),
+                    (mk::GU_MOUSE_GET_WINDOW_Y, false, 1, 0, rng.below(300)),
+                    (mk::GU_WINDOW_CONTROL_SET_RECT, false, 6, 0, 0x86),
+                    (mk::GU_PACKET_BEGIN_TAG, false, 1, 0, 0x87),
+                    (mk::GU_SET_TEST, false, 8, 0, 0x88),
+                    (mk::GU_SET_PRIM, false, 1, 0, 0x89),
+                    (mk::GU_SET_RGBAQ, false, 4, 0, 0x8a),
+                    (mk::GU_SET_XYZF2, false, 2, 0, 0x8b),
+                    (mk::GU_MOUSE_IN_CLIENT_RECT, false, 5, 0, over),
+                    (mk::GU_PACKET_END_TAG, false, 0, 0, 0x8c),
+                ]);
+                let (msg_id, w) = (
+                    if msg == 0x8006 {
+                        [4, 8, id][id as usize % 3]
+                    } else {
+                        id
+                    },
+                    0x9100,
+                );
+                t.check_framed(
+                    &format!("ChrViewMotionCtlProc {msg:#x} {msg_id}"),
+                    0x0084_bc00,
+                    Conv::Cdecl,
+                    &[w, msg, msg_id],
+                    0x44,
+                    |m, ebp| Out::U32(mk::chr_view_motion(m, ebp, w, msg, msg_id)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b1_debug_menu_command_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0008);
+        let mut ids: Vec<u32> = (0x28..0x70).collect();
+        ids.extend([0, 0xffff_ffff, 0x6c, 0x100]);
+        ids.extend([0x55, 0x55, 0x55, 0x55, 0x55, 0x6b, 0x6b]);
+        for (n, id) in ids.into_iter().enumerate() {
+            t.reset();
+            t.stubs(&[
+                (mk::GUI_EVE_GWM_BUTTONUP, false, 1, 0, 0x91),
+                (mk::ATEL_DEBUG_SET_0086FEC0, false, 2, 0, 0x92),
+                (mk::SG_TOGGLE_ENABLE_TK_ANTI, false, 2, 0, 0x93),
+                (mk::GU_WINDOW_CREATE, false, 6, 0, 0x94),
+                (mk::ATEL_INIT_SAVE_WORK, false, 2, 0, 0x95),
+                (
+                    mk::SG_GET_KEEP_FPS,
+                    false,
+                    0,
+                    0,
+                    (n as u32 % 5).wrapping_sub(1),
+                ),
+                (mk::SG_SET_KEEP_FPS, false, 1, 0, 0x96),
+                (mk::SG_GUI_GET_DRAW_CHR, false, 0, 0, rng.below(2)),
+                (mk::SG_GUI_SET_DRAW_CHR, false, 1, 0, 0x97),
+                (mk::SG_GUI_GET_TEXTURE_ANIM, false, 0, 0, rng.word()),
+                (mk::SG_GUI_SET_TEXTURE_ANIM, false, 1, 0, 0x98),
+                (mk::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, 0x99),
+            ]);
+            t.g32(0x0132_5928, rng.word());
+            let w = 0x9200;
+            let extra = 0x5a5a_0000 + n as u32;
+            // the caller's argument words, in `b` where `a`'s call puts them
+            let slots = t.frame_ebp(3) + 8;
+            let words: Vec<u8> = [w, id, extra]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect();
+            t.b.write(slots, &words).unwrap();
+            t.b.set_call_top(Some(slots - 0x200));
+            t.check(
+                &format!("debug menu command {id:#x}"),
+                0x0085_4c60,
+                Conv::Cdecl,
+                &[w, id, extra],
+                |m| Out::U32(mk::debug_menu_command(m, w, id, slots)),
+            );
+            t.b.set_call_top(None);
+            let x: [u32; 3] = Mem::read(&t.a, slots);
+            let y: [u32; 3] = Mem::read(&t.b, slots);
+            assert_eq!(x, y, "debug menu command {id:#x}: argument slots");
+        }
+    });
+}
+
+#[test]
+fn r4b1_focus_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0009);
+        let msgs = [
+            0x8001u32, 0x8005, 0x8006, 0x8007, 0x8009, 0x800a, 0x800b, 0x8011, 0x8000, 0x8012,
+        ];
+        for msg in msgs {
+            for k in 0..8u32 {
+                t.reset();
+                t.skip = 4;
+                let id = match k {
+                    0 => 0x4d2,
+                    1 => 0,
+                    2 => 2,
+                    3 => 0x10,
+                    4 => 0x12,
+                    5 => 0x11,
+                    6 => 0x00ff_fff0,
+                    _ => rng.next() & 0xff,
+                };
+                let focus = match rng.below(4) {
+                    0 => rng.below(0x20),
+                    1 => 0x4_fff0 + rng.below(0x200),
+                    _ => rng.below(0x6_0000),
+                };
+                let held = [0x3c, 0x3d, 0x3b, 0][k as usize % 4];
+                t.g32(
+                    0x0132_5940,
+                    if msg & 1 == 0 { rng.below(0x80) } else { held },
+                );
+                t.stub_import(mk::SPRINTF_IAT, false, 3, 0, 0xa1);
+                t.stubs(&[
+                    (mk::GU_WINDOW_SET_TITLE, false, 2, 0, 0xa2),
+                    (mk::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0xa3),
+                    (mk::GU_WINDOW_ADD_STATIC, false, 7, 0, 0xa4),
+                    (mk::SG_GET_FOCUS, false, 1, 0, focus),
+                    (mk::SG_SET_FOCUS, false, 2, 0, 0xa5),
+                    (mk::SG_TOGGLE_FOCUS, false, 0, 0, 0xa6),
+                    (mk::SG_GET_FOCUS_ENABLE, false, 0, 0, rng.below(2)),
+                    (mk::GU_PRINTF, false, 2, 0, 0xa7),
+                    (mk::GU_WINDOW_CONTROL_SET_TEXT, false, 3, 0, 0xa8),
+                ]);
+                let w = 0x9300;
+                t.check_framed(
+                    &format!("focus proc {msg:#x} {id:#x}"),
+                    0x0085_4980,
+                    Conv::Cdecl,
+                    &[w, msg, id],
+                    0x18,
+                    |m, ebp| Out::U32(mk::focus_proc(m, ebp, w, msg, id)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r4b1_put_string_core_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_000a);
+        for i in 0..300 {
+            t.reset();
+            let len = match i % 4 {
+                0 => rng.below(4),
+                1 => 30 + rng.below(8),
+                _ => rng.below(80),
+            };
+            let mut s: Vec<u8> = (0..len)
+                .map(|_| match rng.below(8) {
+                    0 => 9,
+                    1 => rng.below(0x20) as u8 | 1,
+                    2 => 0x80 + rng.below(0x80) as u8,
+                    _ => 0x20 + rng.below(0x60) as u8,
+                })
+                .collect();
+            s.extend([0, 0]);
+            let s = t.alloc(&s);
+            let buf = t.zeros(0x1800);
+            let end = buf + [0x1800, 0x100, 0x20][i % 3];
+            let ctl = t.words(&[buf, 0, 0, end]);
+            t.g32(0x0133_c8cc, ctl);
+            t.g32(0x0133_c8d0, rng.word());
+            let x = match i % 5 {
+                0 => 0x2001,
+                1 => 0x1f00 + rng.below(0x100),
+                _ => rng.below(0x1000),
+            };
+            t.g32(0x0133_c8d4, x);
+            t.g32(0x0133_c8d8, rng.word());
+            t.g32(0x0133_c8dc, rng.below(0x400));
+            let ret = rng.word();
+            t.stubs(&[
+                (mk::TK_SET_DEBUG_FONT_BUFFER, false, 1, 0, 0xb1),
+                (mk::SET_PTR32, false, 1, 0, ret),
+                (mk::DBG_PRINTF, false, 1, 0, 0xb2),
+            ]);
+            let prop = rng.below(2);
+            let colour = rng.below(12).wrapping_sub(2);
+            let scale = [rng.below(0x500), 0xffff_fff0, 0x3ff, 0x400][i % 4];
+            t.check(
+                &format!("TkPutDebugFontStringCore #{i}"),
+                0x0088_f240,
+                Conv::Cdecl,
+                &[prop, colour, scale, s],
+                |m| Out::U32(mk::put_string_core(m, prop, colour, scale, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b1_mc_callback_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_000b);
+        let mirror = (t.rebase(mk::MC_SUM_A) | 0x2000_0000) & !0xfff;
+        t.a.map_zeroed(mirror, 0x3000).unwrap();
+        t.b.map_zeroed(mirror, 0x3000).unwrap();
+        for i in 0..900 {
+            t.reset();
+            let op = [0u32, 1, 1, 1, 1, 2, 3, 3, 4, 5, 6, 6, 7][i % 13];
+            let r = if rng.chance(3) {
+                0xffff_fff0
+            } else {
+                rng.below(0x40)
+            };
+            let dest = if rng.chance(4) { 0 } else { t.zeros(0x1100) };
+            t.stubs(&[
+                (mk::SCE_MC_READ_0062F650, false, 3, 0, r),
+                (mk::SCE_MC_0062F670, false, 3, 0, r),
+                (mk::CRT_MEMCPY, false, 3, 0, 0xc1),
+            ]);
+            let mut req = vec![0u8; 0x14];
+            for b in &mut req {
+                *b = rng.next() as u8;
+            }
+            req[0x10] = rng.below(2) as u8;
+            req[0x11] = [0, 1, 2][rng.below(3) as usize];
+            let req = t.alloc(&req);
+            let buf = t.rebase(mk::MC_BUFFER);
+            let head: [u8; 0x14] = std::array::from_fn(|_| rng.next() as u8);
+            t.write(buf, &head);
+            let b8 = [2u8, 1][rng.below(2) as usize];
+            t.write(buf + 8, &[b8]);
+            t.g32(0x0132_f578, dest);
+            let left = [0u16, 1, 0x80, 0x1200, 0xff80][rng.below(5) as usize];
+            let at = t.rebase(0x0132_f57e);
+            t.write(at, &left.to_le_bytes());
+            let size = [0u32, 0x10, 0x900, 0x1100, 0xffff_ff00][rng.below(5) as usize];
+            t.check(
+                &format!("mc callback {op} #{i}"),
+                0x0088_52a0,
+                Conv::Cdecl,
+                &[op, size, req],
+                |m| Out::U32(mk::mc_callback(m, op, size, req)),
+            );
+        }
+    });
+}
+
+// ---- round 4, batch 2 (ffx_menu::m5m_k, the battle-end and menu screens) ----
+
+impl Twins {
+    /// A stub over `sym` that logs `n` words under its tag, then returns
+    /// `code`'s result (machine code ending in `ret`, run after the log).
+    fn stub_then(&mut self, sym: u32, n: u32, code: &[u8]) -> u32 {
+        let log = self.stub_code(sym, false, n, 0, 0);
+        let mut c = Vec::new();
+        for _ in 0..n {
+            c.extend([0xff, 0x74, 0x24, (4 * n) as u8]); // push dword [esp+4n]
+        }
+        c.push(0xe8); // call log
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(here).to_le_bytes());
+        c.extend([0x83, 0xc4, (4 * n) as u8]); // add esp, 4n
+        c.extend(code);
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+        addr
+    }
+}
+
+#[test]
+fn r4b2_btl_end_draw_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0101);
+        for i in 0..200u32 {
+            t.reset();
+            let count = [0u32, 1, 3, 9][i as usize % 4];
+            t.stubs(&[
+                (mk::TK_VU1_SYNC_PATH, false, 0, 0, 0x11),
+                (mk::TK_MENU_DRAW_SCISSOR_CLEAR, false, 0, 0, 0x12),
+                (mk::TO_DRAW_MENU_BG, false, 0, 0, 0x13),
+                (mk::BTL_END_DRAW_GIL_PAGES, false, 0, 0, 0x15),
+                (mk::BTL_END_DRAW_SPOIL_PAGES, false, 0, 0, 0x16),
+                (mk::SND_SEP_STOP, false, 1, 0, 0x17),
+                (mk::SND_SEP_PLAY_SIMPLE, false, 1, 0, 0x18),
+                (mk::BTL_END_DRAW_CAPTION, false, 0, 0, 0x19),
+                (mk::TK_BTL_END_DRAW_LEGEND_NOTICE, false, 0, 0, 0x1a),
+                (mk::BTL_END_DRAW_FRAME, false, 0, 0, 0x1b),
+                (mk::BTL_END_DRAW_CURSOR, false, 0, 0, 0x1c),
+                (mk::ATEL_GET_KEEP_PLAY_STATUS, false, 0, 0, rng.below(2)),
+                (mk::TK_MENU_DRAW_RECT, false, 6, 0, 0x1d),
+                (mk::TK_MENU_DRAW_KICK, false, 0, 0, 0x1e),
+                (mk::TO_MENU_CLEAR_MENU_TYPE, false, 1, 0, 0x1f),
+                (mk::BTL_END_TAKE_SPOILS, false, 0, 0, 0x20),
+                (mk::MS_BTL_GET_INIT, false, 0, 0, 0x21),
+                (mk::TK_MENU_MAIN_REMOVE_MENU, false, 1, 0, 0x22),
+            ]);
+            t.g32(0x0186_9f0c, [0, 1, 2, 0xffff_ffff][rng.below(4) as usize]);
+            // each row drawn may shrink the list (the count is re-read)
+            let cnt = t.rebase(0x0186_9f18);
+            let shrink = if i % 3 == 0 { 0xfe } else { 0 }; // dec byte / nothing
+            let mut c = vec![0x80, 0x05];
+            c.extend(cnt.to_le_bytes());
+            c.push(shrink); // add byte [count], -2 or 0
+            c.push(0xc3);
+            t.stub_then(mk::TK_BTL_END_DRAW, 1, &c);
+            let at = t.rebase(0x0186_9f18);
+            t.write(at, &[count as u8]);
+            t.g32(0x0186_9fbc, rng.below(2));
+            let fade: i16 = match i % 5 {
+                0 => 0x1000,
+                1 => -(rng.below(0x2000) as i16),
+                _ => rng.below(0x1100) as i16,
+            };
+            let at = t.rebase(0x0186_a0b4);
+            t.write(at, &fade.to_le_bytes());
+            let at = t.rebase(0x00c5_a068);
+            t.write(at, &[rng.below(2) as u8]);
+            t.check(
+                &format!("BtlEnd_Draw #{i}"),
+                0x008b_b7a0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mk::btl_end_draw(m)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b2_btl_end_draw_cursor_and_frame_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0102);
+        for i in 0..40u32 {
+            t.reset();
+            t.stubs(&[
+                (mk::MATH_COS_LOOKUP, false, 1, 0, 0x31),
+                (mk::MATH_SIN_LOOKUP, false, 1, 0, 0x32),
+                (mk::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x33),
+                (mk::TO_DRAW_SHEET_CELL, false, 5, 0, rng.word()),
+                (mk::TO_MKP_SHAPE_XYWH_UVC2, false, 11, 0, 0x34),
+                (mk::TO_MKP_SHAPE_XYWH_UV, false, 9, 0, rng.word()),
+                (
+                    mk::TO_MKP_CROSS_EXT_MES_FONT_L_CLUT,
+                    false,
+                    7,
+                    0,
+                    rng.word(),
+                ),
+            ]);
+            let state = (i % 8) as i16 - 1;
+            let at = t.rebase(0x0186_9f24);
+            t.write(at, &state.to_le_bytes());
+            let at = t.rebase(0x0186_9f22);
+            t.write(at, &(rng.next() as i16).to_le_bytes());
+            t.check(
+                &format!("BtlEnd_DrawCursor {state}"),
+                0x008b_b8c0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mk::btl_end_draw_cursor(m)),
+            );
+            t.g32(0x025c_c588, if i % 2 == 0 { 0 } else { rng.next() | 1 });
+            t.check(
+                &format!("BtlEnd_DrawFrame #{i}"),
+                0x008b_b9c0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mk::btl_end_draw_frame(m)),
+            );
+        }
+    });
+}
+
+/// A weapon record for `MsGetSaveWeapon`: exists, slot count, slots.
+fn weapon(t: &mut Twins, rng: &mut Rng, i: u32) -> u32 {
+    let mut w = vec![0u8; 0x20];
+    w[2] = u8::from(!i.is_multiple_of(5));
+    w[0xb] = [0u8, 1, 2, 4, 3][(i / 5) as usize % 5];
+    for k in 0..4 {
+        let a: u16 = [0, 0xff, 0x100 + rng.below(0x80) as u16, 0x2a][rng.below(4) as usize];
+        w[0xe + 2 * k..0x10 + 2 * k].copy_from_slice(&a.to_le_bytes());
+    }
+    t.alloc(&w)
+}
+
+#[test]
+fn r4b2_weapon_abilities_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0103);
+        for i in 0..60u32 {
+            t.reset();
+            // only the lookup's out word: the rest are the original's f32 temps
+            t.skip = 0xc;
+            let w = weapon(t, &mut rng, i);
+            t.stubs(&[
+                (mk::TO_DRAW_SCISSOR_XYWH, false, 4, 0, 0x41),
+                (mk::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x42),
+                (mk::TO_DRAW_SHEET_CELL, false, 5, 0, 0x43),
+                (mk::MS_GET_SAVE_WEAPON, false, 2, 0, w),
+                (mk::MS_CALC_WEAPON_CAP, false, 1, 0, 0x44),
+                (
+                    mk::TO_DRAW_CROSS_MENU_ICON_ABILITY_NAME,
+                    false,
+                    4,
+                    0,
+                    0x4500 + i,
+                ),
+            ]);
+            let items: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            let items = t.alloc(&items);
+            t.g32(0x025c_c580, items);
+            t.g32(0x0186_a19c, rng.below(2));
+            t.g32(0x0186_a1a8, rng.below(2));
+            t.g32(0x0186_a190, rng.below(8));
+            t.g32(0x0186_a1a0, rng.below(8));
+            t.g32(0x0186_a1a4, rng.below(8));
+            let x = match i % 3 {
+                0 => rng.below(0x200),
+                1 => rng.below(0x200).wrapping_neg(),
+                _ => rng.next(),
+            };
+            t.check_framed(
+                &format!("BtlEnd_DrawWeaponAbilities #{i}"),
+                0x008b_d020,
+                Conv::Cdecl,
+                &[x],
+                0x10,
+                |m, ebp| Out::U32(mk::btl_end_weapon_abilities(m, ebp, x)),
+            );
+            t.reset();
+            t.stubs(&[
+                (mk::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x46),
+                (mk::MS_GET_SAVE_WEAPON, false, 2, 0, w),
+                (mk::MS_CALC_WEAPON_CAP, false, 1, 0, 0x47),
+                (
+                    mk::TO_DRAW_CROSS_MENU_ICON_ABILITY_NAME,
+                    false,
+                    4,
+                    0,
+                    0x4800 + i,
+                ),
+            ]);
+            t.g32(0x0186_aa38, items);
+            let row = rng.below(16);
+            t.check_framed(
+                &format!("MenuKaizou_DrawWeaponAbilities #{i}"),
+                0x008d_63f0,
+                Conv::Cdecl,
+                &[row],
+                0x10,
+                |m, ebp| Out::U32(mk::kaizou_weapon_abilities(m, ebp, row)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b2_equip_draw_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0104);
+        for i in 0..10 {
+            t.reset();
+            t.stubs(&[
+                (mk::TO_DRAW_MENU_BG, false, 0, 0, 0x51),
+                (mk::MENU_DRAW_DIVIDER_SHAPES, false, 1, 0, 0x52),
+                (mk::TK_MENU_DRAW_KICK, false, 0, 0, 0x53),
+                (mk::TK_VU1_SYNC_PATH_THUNK, false, 0, 0, 0x54),
+                (mk::TK_MN2_DRAW_INIT_PACKET, false, 0, 0, 0x55),
+                (mk::TK_MENU_GET_CURRENT_PLAYER, false, 0, 0, rng.below(8)),
+                (mk::MENU_STATUS_DRAW_PAGE, false, 9, 0, 0x56),
+                (mk::TO_DRAW_MENU_PLATE_XYWH_TYPE, false, 5, 0, 0x57),
+                (mk::TO_DRAW_SHEET_CELL, false, 5, 0, 0x58),
+                (mk::TK_MENU_EQUIP_DRAW_CURSOR, false, 0, 0, 0x59),
+                (mk::MENU_EQUIP_DRAW_WEAPON_ABILITIES, false, 0, 0, 0x5a),
+                (mk::TK_MN2_DRAW_KICK_SYNC_PACKET, false, 0, 0, rng.word()),
+            ]);
+            t.g32(0x0186_a614, rng.word());
+            t.check(
+                &format!("MenuEquip_Draw #{i}"),
+                0x008c_f670,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mk::equip_draw(m)),
+            );
+        }
+    });
+}
+
+/// A message window: kind, flags, the pen's floats, counts.
+fn message_window(t: &mut Twins, rng: &mut Rng, i: u32) -> u32 {
+    let _ = i;
+    let text: Vec<u8> = (0..0x400)
+        .map(|_| match rng.below(6) {
+            0 => 9,
+            1 => 0x10,
+            2 => 0x50 + rng.below(0x10) as u8,
+            3 => 0xb0 + rng.below(0x50) as u8,
+            _ => rng.next() as u8,
+        })
+        .collect();
+    let text = t.alloc(&text);
+    let mut w = vec![0u8; 0x100];
+    for b in &mut w {
+        *b = rng.next() as u8;
+    }
+    put16(&mut w, 4, rng.below(4) as i16);
+    put16(&mut w, 0xe, rng.below(3) as i16);
+    put16(&mut w, 0x10, if rng.chance(2) { 0x4000 } else { 0x40 });
+    let right = 100.0f32 + rng.below(200) as f32;
+    for (o, v) in [
+        (
+            0x48,
+            right - 5.0 + [-1.0f32, 0.0, 0.5, -20.0][rng.below(4) as usize],
+        ),
+        (0x4c, rng.below(300) as f32),
+        (0x50, right),
+        (0x54, rng.below(100) as f32 * 0.5),
+        (0x58, 1.5),
+    ] {
+        w[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    w[0x94..0x98].copy_from_slice(&text.to_le_bytes());
+    for (o, v) in [
+        (0xa0, rng.below(7)),
+        (0xa4, rng.below(7)),
+        (0xa8, rng.below(9)),
+        (0xac, u32::from(rng.chance(3))),
+        (0xb4, u32::from(rng.chance(3))),
+    ] {
+        w[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    if i.is_multiple_of(9) {
+        w[0xa0..0xa4].copy_from_slice(&0xffff_fffeu32.to_le_bytes());
+    }
+    t.alloc(&w)
+}
+
+#[test]
+fn r4b2_message_text_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0105);
+        for i in 0..150u32 {
+            t.reset();
+            t.skip = 4;
+            let win = message_window(t, &mut rng, i);
+            for kind in 0..4u32 {
+                t.g32(0x025d_0b20 + 4 * kind, rng.below(2));
+            }
+            t.stub(mk::HARD_CODE_TO_FIX_THE_WRONG_DATA, false, 2, 0, rng.next());
+            // the group from the code byte: 9 and 0x10 controls (2), 0xff
+            // none (5), else (b & 3) + 1
+            let groups: Vec<u8> = (0..=255u8)
+                .map(|b| match b {
+                    9 | 0x10 => 2,
+                    0xff => 5,
+                    _ => (b & 3) + 1,
+                })
+                .collect();
+            let groups = t.alloc(&groups);
+            let mut c = vec![0x0f, 0xb6, 0x44, 0x24, 0x04]; // movzx eax, byte [esp+4]
+            c.extend([0x0f, 0xb6, 0x80]);
+            c.extend(groups.to_le_bytes()); // movzx eax, byte [eax+groups]
+            c.push(0xc3);
+            t.stub_then(mk::TO_GET_GROUP, 1, &c);
+            // the next code: one byte on
+            t.stub_then(mk::TO_SKIP_CODE, 1, &[0x8b, 0x44, 0x24, 0x04, 0x40, 0xc3]);
+            t.stubs(&[
+                (mk::TO_CONV_ALBHED_WORD, false, 2, 0, rng.below(4)),
+                (mk::TO_GET_FONT_INFO, false, 2, 0, 0x61),
+                (mk::TO_MAKE_PKT_FONT_1612, false, 2, 0, 0x62),
+                (mk::TO_FIRST_INIT_MESSAGE_NORMAL, false, 3, 0, 0x63),
+                (mk::TO_SET_DRAW_INFO, false, 3, 0, 0x64),
+                (mk::TO_DRAW_CHANGE_MACRO2, false, 3, 0, 0x65),
+            ]);
+            let r = t.a.stack_range().end - 0x100 - 4 - 4;
+            let ebp = (r - 12) & !15;
+            t.check_frame_at(
+                &format!("TODrawMessageText #{i}"),
+                0x008d_ea40,
+                Conv::Cdecl,
+                &[win],
+                ebp,
+                0x64,
+                |m, ebp| Out::U32(mk::message_text(m, ebp, win)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b2_ask_yes_no_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0106);
+        for i in 0..300u32 {
+            t.reset();
+            let trg = match i % 4 {
+                0 => 0x20,
+                1 => 0x40,
+                2 => 0,
+                _ => rng.next(),
+            };
+            t.stubs(&[
+                (mk::TO_MENU_GET_CONTROL_PAD, false, 0, 0, 0x71),
+                (mk::TO_MENU_GET_CONTROL_PAD_REP, false, 0, 0, rng.next()),
+                (
+                    mk::TO_MENU_GET_CONTROL_PAD_TRG,
+                    false,
+                    0,
+                    0,
+                    trg | (rng.next() << 16),
+                ),
+                (mk::SND_SEP_PLAY_SIMPLE, false, 1, 0, 0x7200 + i),
+            ]);
+            let mut w = vec![0u8; 0xa0];
+            for b in &mut w {
+                *b = rng.next() as u8;
+            }
+            let state = (i / 4) % 10;
+            w[0x28..0x2c].copy_from_slice(&state.to_le_bytes());
+            put16(&mut w, 0x48, rng.below(2) as i16);
+            w[0x37] = rng.below(2) as u8;
+            if rng.chance(2) {
+                w[0x58..0x5c].fill(0);
+            }
+            w[0x90..0x94].copy_from_slice(&rng.below(3).to_le_bytes());
+            let win = t.alloc(&w);
+            t.check(
+                &format!("TkMenuCtrlAskYesNoWindow {state} #{i}"),
+                0x008e_3730,
+                Conv::Cdecl,
+                &[win],
+                |m| Out::U32(mk::ask_yes_no(m, win)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b2_ask_yes_no_draw_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0107);
+        for i in 0..120u32 {
+            t.reset();
+            let mut w = vec![0u8; 0x70];
+            for b in &mut w {
+                *b = rng.next() as u8;
+            }
+            let c1 = if i % 3 == 0 { 0 } else { 0x0010_0000 + i };
+            w[0x58..0x5c].copy_from_slice(&c1.to_le_bytes());
+            put16(&mut w, 0x48, rng.below(3) as i16);
+            w[0x60..0x64].copy_from_slice(&(rng.below(0x40) as i32 - 0x20).to_le_bytes());
+            let win = t.alloc(&w);
+            let s = t.stub_branch(
+                mk::TK_MENU_DRAW_1612_WIDTH_HEIGHT,
+                2,
+                0,
+                c1,
+                rng.next() & 0x00ff_01ff,
+                rng.next() & 0x00ff_01ff,
+            );
+            t.jump(mk::TK_MENU_DRAW_1612_WIDTH_HEIGHT, s);
+            t.stubs(&[
+                (
+                    mk::TK_MENU_DRAW_WINDOW_1612,
+                    false,
+                    4,
+                    0,
+                    u32::from(i % 4 != 1),
+                ),
+                (mk::TK_MENU_DRAW_EASY_MES_1612_WITH_MACRO, false, 4, 0, 0x81),
+                (mk::TK_MENU_DRAW_EASY_MES_1612, false, 3, 0, 0x82),
+                (mk::TK_MENU_DRAW_SP30, false, 3, 0, 0x83),
+                (mk::TK_MENU_DRAW_SCISSOR_CLEAR, false, 0, 0, rng.word()),
+            ]);
+            t.check(
+                &format!("TkMenuDrawAskYesNoWindow #{i}"),
+                0x008e_3bc0,
+                Conv::Cdecl,
+                &[win],
+                |m| Out::U32(mk::ask_yes_no_draw(m, win)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b2_draw_ui_element_matches_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        t.skip = 4;
+        t.stub(mk::GRAPHIC_DRAW_UI_ELEMENT, false, 5, 0, 0x91);
+        t.check_framed(
+            "MenuDrawUiElement_008e5f60",
+            0x008e_5f60,
+            Conv::Cdecl,
+            &[],
+            0x9c,
+            |m, ebp| Out::U32(mk::draw_ui_element_008e5f60(m, ebp)),
+        );
+    });
+}
+
+// ---- round 4, batch 3 (ffx_menu::m5m_l, the event debugger's printers) ----
+
+/// What a printer test runs: the original's address and its port.
+enum Printer {
+    /// `(ebp, worker)` with a frame.
+    Framed(fn(&mut G, u32, u32) -> u32),
+    /// `(worker)` without one.
+    Plain(fn(&mut G, u32) -> u32),
+}
+
+/// A debugger worker: random bytes with a head (its first word pointing
+/// at a kind byte), a model or none, and a short list at `+0x90`.
+fn debug_worker(t: &mut Twins, rng: &mut Rng, i: u32) -> u32 {
+    let head = t.alloc(&[[2u8, 1, 0, 1][i as usize % 4], 0, 0, 0]);
+    let mut w = vec![0u8; 0xb20];
+    for b in &mut w {
+        *b = rng.next() as u8;
+    }
+    w[0..4].copy_from_slice(&head.to_le_bytes());
+    let model = if i.is_multiple_of(4) { 0 } else { 0x7700 + i };
+    w[0x9c..0xa0].copy_from_slice(&model.to_le_bytes());
+    w[0x40..0x44].copy_from_slice(&(i % 0x20).wrapping_sub(1).to_le_bytes());
+    w[0xaf] = [0xf, 3, 0x80][i as usize % 3];
+    // the list: i % 14 nodes
+    let mut next = 0u32;
+    for _ in 0..(i % 14) {
+        next = t.words(&[next, 0]);
+    }
+    w[0x90..0x94].copy_from_slice(&next.to_le_bytes());
+    t.alloc(&w)
+}
+
+impl Twins {
+    /// The debugger printers' callees: `sprintf` logging `fmt_words` words,
+    /// the font prints, and the lookups.
+    fn debugger_stubs(&mut self, rng: &mut Rng, fmt_words: u32) {
+        let level = {
+            let block = self.alloc(&[0, 0, rng.next() as u8, rng.next() as u8, 0, 0, 0, 0]);
+            let mut l = vec![0u8; 0x50];
+            l[0x48..0x4c].copy_from_slice(&block.to_le_bytes());
+            l[0x1f] = rng.below(4) as u8;
+            self.alloc(&l)
+        };
+        let pos = {
+            let p: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            let mut p = p;
+            p[0x2c..0x30].copy_from_slice(&(rng.below(1000) as f32 * 0.25).to_bits().to_le_bytes());
+            self.alloc(&p)
+        };
+        let ctrl = {
+            let mut c: Vec<u8> = (0..0x240).map(|_| rng.next() as u8).collect();
+            let id: u16 = if rng.chance(3) {
+                0xffff
+            } else {
+                rng.below(8) as u16
+            };
+            c[0xa..0xc].copy_from_slice(&id.to_le_bytes());
+            for o in [0x218usize, 0x21c, 0x220, 0x228, 0x22c, 0x230] {
+                c[o..o + 4]
+                    .copy_from_slice(&(rng.below(4000) as f32 / 8.0).to_bits().to_le_bytes());
+            }
+            self.alloc(&c)
+        };
+        self.stub_import(ml::SPRINTF_SLOT, false, fmt_words, 0, 0x5c);
+        self.stubs(&[
+            (ml::TK_PUT_DEBUG_FONT_STRING, false, 3, 0, 0xc1),
+            (ml::TK_PUT_DEBUG_FONT_STRING_P, false, 3, 0, 0xc2),
+            (ml::TK_PUT_DEBUG_FONT_STRING_P_EUC, false, 3, 0, 0xc3),
+            (ml::TK_PUT_DEBUG_FONT_STRING_PR, false, 3, 0, 0xc4),
+            (ml::SCRIPT_WORKER_LEVEL, false, 2, 0, level),
+            (ml::SCRIPT_PC_OFFSET, false, 2, 0, rng.word()),
+            (ml::ATEL_GET_POS_WORK_ADRS, false, 1, 0, pos),
+            (ml::ATEL_GET_CTRL_WORK, false, 1, 0, ctrl),
+            (ml::ATEL_GET_BASIC_WORK, false, 1, 0, 0xc5),
+            (ml::ATEL_DEBUG_PRINT_ENTRY, false, 1, 0, 0xc6),
+            (ml::CH_GET_BODY_HIT, false, 1, 0, rng.below(2)),
+            (ml::ATEL_GET_WORKER_BITS, false, 1, 0, rng.below(6)),
+        ]);
+        self.stub_float(ml::CH_GET_THICKNESS, rng.below(100) as f32 * 0.125);
+        self.g32(0x0132_8a74, rng.below(8));
+        self.g32(0x0132_8a70, rng.below(4));
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one table of printers, then the odd ones
+fn r4b3_debugger_printers_match_the_original() {
+    let mut printers: Vec<(u32, u32, Printer)> = vec![
+        (
+            0x0087_b0c0,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_motion_no(m, ebp, w)),
+        ),
+        (
+            0x0087_b170,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_state(m, ebp, w)),
+        ),
+        (
+            0x0087_b360,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_byte_af(m, ebp, w)),
+        ),
+        (
+            0x0087_b3e0,
+            3,
+            Printer::Plain(|m, w| ml::print_slot_n(m, w, 0)),
+        ),
+        (
+            0x0087_b400,
+            3,
+            Printer::Plain(|m, w| ml::print_slot_n(m, w, 1)),
+        ),
+        (
+            0x0087_b420,
+            3,
+            Printer::Plain(|m, w| ml::print_body_hit(m, w)),
+        ),
+        (
+            0x0087_b490,
+            4,
+            Printer::Framed(|m, ebp, w| ml::print_thickness(m, ebp, w)),
+        ),
+        (
+            0x0087_b520,
+            4,
+            Printer::Framed(|m, ebp, w| ml::print_pos_2c(m, ebp, w)),
+        ),
+        (
+            0x0087_b610,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_level(m, ebp, w)),
+        ),
+        (
+            0x0087_b8f0,
+            3,
+            Printer::Plain(|m, w| ml::print_bits_name(m, w)),
+        ),
+        (
+            0x0087_b920,
+            3,
+            Printer::Plain(|m, w| ml::print_flags_34(m, w)),
+        ),
+        (
+            0x0087_b980,
+            3,
+            Printer::Plain(|m, w| ml::print_flags_38(m, w)),
+        ),
+        (
+            0x0087_b9c0,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_pc(m, ebp, w)),
+        ),
+        (
+            0x0087_baa0,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_byte_33(m, ebp, w)),
+        ),
+        (
+            0x0087_baf0,
+            3,
+            Printer::Plain(|m, w| ml::print_flags_ctrl(m, w)),
+        ),
+        (
+            0x0087_bb40,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_word_c4(m, ebp, w)),
+        ),
+        (
+            0x0087_bb90,
+            3,
+            Printer::Framed(|m, ebp, w| ml::print_list_len(m, ebp, w)),
+        ),
+        (0x0087_e6d0, 3, Printer::Plain(|m, w| ml::print_right(m, w))),
+    ];
+    for (k, &(addr, _)) in ffx_menu::m5m_l::FLAGS.iter().enumerate() {
+        let f: fn(&mut G, u32) -> u32 = match k {
+            0 => |m, w| ml::print_flag(m, ffx_menu::m5m_l::FLAGS[0].1, w),
+            1 => |m, w| ml::print_flag(m, ffx_menu::m5m_l::FLAGS[1].1, w),
+            2 => |m, w| ml::print_flag(m, ffx_menu::m5m_l::FLAGS[2].1, w),
+            3 => |m, w| ml::print_flag(m, ffx_menu::m5m_l::FLAGS[3].1, w),
+            _ => |m, w| ml::print_flag(m, ffx_menu::m5m_l::FLAGS[4].1, w),
+        };
+        printers.push((addr, 3, Printer::Plain(f)));
+    }
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0201);
+        for (addr, words, p) in &printers {
+            for i in 0..40u32 {
+                t.reset();
+                t.skip = 4;
+                let w = debug_worker(t, &mut rng, i);
+                t.debugger_stubs(&mut rng, *words);
+                let what = format!("printer {addr:#x} #{i}");
+                match p {
+                    Printer::Framed(f) => {
+                        let low = if *addr == 0x0087_b490 { 0x28 } else { 0x24 };
+                        t.check_framed(&what, *addr, Conv::Cdecl, &[w], low, |m, ebp| {
+                            Out::U32(f(m, ebp, w))
+                        });
+                    }
+                    Printer::Plain(f) => {
+                        // the slot wrappers call the printer: its frame where the
+                        // original's call puts it
+                        let wraps = matches!(*addr, 0x0087_b3e0 | 0x0087_b400);
+                        if wraps {
+                            let top = t.frame_ebp(1);
+                            t.b.set_call_top(Some(top));
+                        }
+                        t.check(&what, *addr, Conv::Cdecl, &[w], |m| Out::U32(f(m, w)));
+                        t.b.set_call_top(None);
+                    }
+                }
+            }
+        }
+        // the slot printer's other slots
+        for i in 0..40u32 {
+            t.reset();
+            t.skip = 4;
+            let w = debug_worker(t, &mut rng, i);
+            t.debugger_stubs(&mut rng, 3);
+            let slot = i % 4;
+            t.check_framed(
+                &format!("print slot {slot} #{i}"),
+                0x0087_ee10,
+                Conv::Cdecl,
+                &[w, slot],
+                0x24,
+                |m, ebp| Out::U32(ml::print_slot(m, ebp, w, slot)),
+            );
+        }
+        // the control work's player and floats
+        for i in 0..30u32 {
+            t.reset();
+            t.skip = 4;
+            t.debugger_stubs(&mut rng, 4);
+            t.check("print ctrl player", 0x0087_b660, Conv::Cdecl, &[], |m| {
+                Out::U32(ml::print_ctrl_player(m))
+            });
+            let (addr, off) = ffx_menu::m5m_l::CTRL_FLOATS[i as usize % 6];
+            t.check_framed(
+                &format!("ctrl float {addr:#x}"),
+                addr,
+                Conv::Cdecl,
+                &[],
+                0x24,
+                |m, ebp| Out::U32(ml::print_ctrl_float(m, ebp, off)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b3_set_up_source_debug_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0202);
+        for i in 0..200u32 {
+            t.reset();
+            let len = rng.below(0x3000);
+            let src: Vec<u8> = (0..0x3000)
+                .map(|_| match rng.below(20) {
+                    0..=5 => b'\n',
+                    6 if rng.chance(30) => 0x1a,
+                    7 if rng.chance(60) => 0,
+                    _ => b'a',
+                })
+                .collect();
+            let src = if i % 10 == 0 { 0 } else { t.alloc(&src) };
+            let pages = t.zeros(0x400);
+            let on = u32::from(i % 7 != 1);
+            let size = if i % 4 == 0 {
+                0x10 + rng.below(0x20)
+            } else {
+                rng.below(0x400)
+            };
+            t.check(
+                &format!("AtelSetUpSourceDebug #{i}"),
+                0x0088_5b00,
+                Conv::Cdecl,
+                &[src, len, on, pages, size],
+                |m| Out::U32(ml::set_up_source_debug(m, src, len, on, pages, size)),
+            );
+        }
+    });
+}
+
+// ---- round 4, batch 3 (ffx_menu::m5m_m, platform, host files, helpers) ----
+
+impl Twins {
+    /// A stub over `sym` logging `n` words whose result counts down: it
+    /// returns `busy` (and decrements a counter) while the counter, set to
+    /// `times`, is above 0, then `done`.
+    fn stub_countdown(&mut self, sym: u32, n: u32, times: u32, busy: u32, done: u32) {
+        let cnt = self.words(&[times]);
+        let mut c = vec![0x83, 0x3d];
+        c.extend(cnt.to_le_bytes());
+        c.push(0); // cmp dword [cnt], 0
+        c.extend([0x74, 0x0c]); // je +12
+        c.extend([0xff, 0x0d]);
+        c.extend(cnt.to_le_bytes()); // dec dword [cnt]
+        c.push(0xb8);
+        c.extend(busy.to_le_bytes()); // mov eax, busy
+        c.push(0xc3);
+        c.push(0xb8);
+        c.extend(done.to_le_bytes()); // mov eax, done
+        c.push(0xc3);
+        self.stub_then(sym, n, &c);
+    }
+
+    /// The caller's argument words of a call with `args`, written in `b`
+    /// where `a`'s call puts them (for ports that write their slots); `b`'s
+    /// own calls go below them.
+    fn arg_slots(&mut self, args: &[u32]) -> u32 {
+        let slots = self.frame_ebp(args.len()) + 8;
+        let words: Vec<u8> = args.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.b.write(slots, &words).unwrap();
+        self.b.set_call_top(Some(slots - 0x200));
+        slots
+    }
+
+    fn same_slots(&mut self, what: &str, slots: u32, n: usize) {
+        self.b.set_call_top(None);
+        let mut x = vec![0; 4 * n];
+        let mut y = vec![0; 4 * n];
+        Mem::read_bytes(&self.a, slots, &mut x);
+        Mem::read_bytes(&self.b, slots, &mut y);
+        assert_eq!(x, y, "{what}: argument slots");
+    }
+}
+
+#[test]
+fn r4b3_mouse_rpcs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0301);
+        for i in 0..12u32 {
+            t.reset();
+            t.stub_countdown(mm::FFX_SIF_CHECK_STAT_RPC, 1, i % 4, 1 + i, 0);
+            let mode = i % 3;
+            let slots = t.arg_slots(&[mode, 0x5a5a_0000 + i]);
+            t.check(
+                &format!("FFXUsbMouseSync {mode} #{i}"),
+                0x0085_5bf0,
+                Conv::Cdecl,
+                &[mode, 0x5a5a_0000 + i],
+                |m| Out::U32(mm::usb_mouse_sync(m, mode, slots)),
+            );
+            t.same_slots("FFXUsbMouseSync", slots, 2);
+            t.stub(mm::FFX_SIF_CALL_RPC, false, 9, 0, rng.word());
+            let (a, d) = (rng.word(), rng.word());
+            t.check("IopMemGet", 0x0085_5c40, Conv::Cdecl, &[d], |m| {
+                Out::U32(mm::usb_mouse_iop_mem_get(m, d))
+            });
+            t.check("Read2", 0x0085_5bc0, Conv::Cdecl, &[a, d], |m| {
+                Out::U32(mm::usb_mouse_read2(m, a, d))
+            });
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one block per wrapper
+fn r4b3_threads_and_semaphores_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0302);
+        for i in 0..24u32 {
+            t.reset();
+            let r = rng.word();
+            t.stub_import(mm::RESUME_THREAD, false, 1, 1, r);
+            t.stub_import(mm::TERMINATE_THREAD, false, 2, 2, 0xd1);
+            t.stub_import(mm::CLOSE_HANDLE, false, 1, 1, 0xd2);
+            t.stub_import(mm::CREATE_SEMAPHORE_W, false, 4, 4, 0xd300 + i);
+            t.stub_import(mm::SET_THREAD_PRIORITY, false, 2, 2, r);
+            t.stub_import(mm::RELEASE_SEMAPHORE, false, 3, 3, rng.word());
+            t.stub_import(mm::CREATE_MUTEX_W, false, 3, 3, 0xd400 + i);
+            t.stub_import(mm::RELEASE_MUTEX, false, 1, 1, r);
+            let a = t.alloc(&[0xff; 0x20]);
+            let b = t.alloc(&[0xff; 0x20]);
+            let new = t.stub_branch(mm::OPERATOR_NEW, 1, 0, 4, if i % 5 == 4 { 0 } else { a }, b);
+            t.jump(mm::OPERATOR_NEW, new);
+            t.stubs(&[
+                (mm::OPERATOR_DELETE, false, 1, 0, 0xd5),
+                (mm::SYS_THREAD_CREATE, true, 4, 4, 0xd6),
+                (mm::EH_VECTOR_ITERATOR, false, 4, 4, rng.word()),
+            ]);
+            // a thread handle: its object, the thread handle at +4
+            let obj = t.object(&[(1, 0xd7)]);
+            t.w32(obj + 4, if i % 2 == 0 { 0 } else { 0x0e00 + i });
+            t.w32(obj + 8, 0x77);
+            let handle = t.words(&[obj]);
+            let arg = rng.word();
+            t.check(
+                "StartThread_ps2",
+                0x006f_2d30,
+                Conv::Cdecl,
+                &[handle, arg],
+                |m| Out::U32(mm::start_thread(m, handle, arg)),
+            );
+            t.check(
+                "SetThreadPriority",
+                0x006f_3050,
+                Conv::Cdecl,
+                &[handle, arg],
+                |m| Out::U32(mm::set_thread_priority(m, handle, arg)),
+            );
+            let params = t.words(&[0, rng.word(), 0, rng.word()]);
+            let name = if i % 3 == 0 { 0 } else { 0x0b00 + i };
+            if i % 5 != 4 {
+                t.check(
+                    "CreateThread_ps2",
+                    0x006f_2e10,
+                    Conv::Cdecl,
+                    &[params, name],
+                    |m| Out::U32(mm::create_thread(m, params, name)),
+                );
+            }
+            let count = rng.below(4);
+            t.check("CreateSema", 0x006f_2b10, Conv::Cdecl, &[count], |m| {
+                Out::U32(mm::create_sema(m, count))
+            });
+            // the handle allocated, its object not
+            let p = t.alloc(&[0xff; 4]);
+            t.stub_countdown(mm::OPERATOR_NEW, 1, 1, p, 0);
+            t.check("CreateSema half", 0x006f_2b10, Conv::Cdecl, &[count], |m| {
+                Out::U32(mm::create_sema(m, count))
+            });
+            t.check("Mutex_Create", 0x006f_2de0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::mutex_create(m))
+            });
+            let mx = t.words(&[0x0f00 + i]);
+            t.stub_import(mm::WAIT_FOR_SINGLE_OBJECT, false, 2, 2, r);
+            t.check("Mutex_Lock", 0x006f_2ed0, Conv::Cdecl, &[mx], |m| {
+                Out::U32(mm::mutex_lock(m, mx))
+            });
+            t.check("Mutex_Unlock", 0x006f_2f50, Conv::Cdecl, &[mx], |m| {
+                Out::U32(mm::mutex_unlock(m, mx))
+            });
+            let sema = t.words(&[mx]);
+            let s = if i % 4 == 0 { 0 } else { sema };
+            t.check("SignalSema", 0x006f_3000, Conv::Cdecl, &[s], |m| {
+                Out::U32(mm::signal_sema(m, s))
+            });
+            // poll: -1 a few times, then the result
+            t.reset();
+            t.stub_import(mm::RELEASE_SEMAPHORE, false, 3, 3, 0xd8);
+            let done = [0u32, 1, 0x80, 0x102][i as usize % 4];
+            let cnt = t.words(&[i % 3]);
+            let log = t.stub_code(mm::WAIT_FOR_SINGLE_OBJECT, false, 2, 0, 0);
+            let mut c = vec![0x83, 0x3d];
+            c.extend(cnt.to_le_bytes());
+            c.push(0); // cmp dword [cnt], 0
+            c.extend([0x74, 0x1c]); // je to the result
+            c.extend([0xff, 0x0d]);
+            c.extend(cnt.to_le_bytes()); // dec dword [cnt]
+            for _ in 0..2 {
+                c.extend([0xff, 0x74, 0x24, 8]); // push dword [esp+8]
+            }
+            c.push(0xe8);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // call log
+            c.extend([0x83, 0xc4, 8]); // add esp, 8
+            c.extend([0x83, 0xc8, 0xff]); // or eax, -1
+            c.extend([0xc2, 8, 0]); // ret 8
+            for _ in 0..2 {
+                c.extend([0xff, 0x74, 0x24, 8]); // push dword [esp+8]
+            }
+            c.push(0xe8);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // call log
+            c.extend([0x83, 0xc4, 8]); // add esp, 8
+            c.push(0xb8);
+            c.extend(done.to_le_bytes()); // mov eax, done
+            c.extend([0xc2, 8, 0]); // ret 8
+            let code = t.cave_code(&c);
+            let slot = t.rebase(mm::WAIT_FOR_SINGLE_OBJECT);
+            t.patch(slot, &code.to_le_bytes());
+            let s = if i % 6 == 5 { 0 } else { sema };
+            t.check("PollSema", 0x006f_2d50, Conv::Cdecl, &[s], |m| {
+                Out::U32(mm::poll_sema(m, s))
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b3_thread_objects_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0303);
+        for i in 0..16u32 {
+            t.reset();
+            let menu = t.zeros(0xa0);
+            t.stub_import(mm::TERMINATE_THREAD, false, 2, 2, 0xe1);
+            t.stub_import(mm::CLOSE_HANDLE, false, 1, 1, 0xe2);
+            t.stub_import(mm::WAIT_FOR_SINGLE_OBJECT, false, 2, 2, 0xe3);
+            t.stub_import(mm::RELEASE_SEMAPHORE, false, 3, 3, rng.word());
+            t.stubs(&[
+                (mm::OPERATOR_DELETE, false, 1, 0, 0xe4),
+                (mm::EH_VECTOR_ITERATOR, false, 4, 4, rng.word()),
+                (
+                    mm::OPERATOR_NEW,
+                    false,
+                    1,
+                    0,
+                    if i % 4 == 0 { 0 } else { menu },
+                ),
+                (mm::IGGY_MENU_CTOR, true, 6, 6, 0xe5),
+                (mm::IGGY_MENU_SET_ENABLE, true, 1, 1, rng.word()),
+            ]);
+            let obj = t.object(&[(1, 0xe6)]);
+            t.w32(obj + 4, if i % 2 == 0 { 0 } else { 0x0e00 + i });
+            let handle = t.words(&[if i % 5 == 0 { 0 } else { obj }]);
+            if i % 5 != 0 {
+                t.check(
+                    "DeleteThread_ps2",
+                    0x006f_2f00,
+                    Conv::Cdecl,
+                    &[handle],
+                    |m| Out::U32(mm::delete_thread(m, handle)),
+                );
+            }
+            let th = t.words(&[0x55, if i % 3 == 0 { 0 } else { 0x0e10 + i }, 0x66]);
+            let flags = rng.below(4);
+            t.check(
+                "Ps2Thread_dtor",
+                0x006f_29a0,
+                Conv::Thiscall(th),
+                &[flags],
+                |m| Out::U32(mm::thread_dtor(m, th, flags)),
+            );
+            let q = t.zeros(0x1e8 * 8 + 0x40);
+            for k in 0..8u32 {
+                let o = q + k * 0x1e8;
+                t.w32(o + 0x1f4, rng.below(16).wrapping_sub(8));
+                t.w32(o + 0x1f8, rng.below(8));
+                t.w32(o + 0x220, rng.below(16).wrapping_sub(8));
+                t.w32(o + 0x228, rng.below(8));
+                for j in 0..8 {
+                    t.w32(o + 0x200 + 4 * j, rng.word());
+                }
+            }
+            let k = rng.below(8);
+            let job = rng.word();
+            t.check("job push", 0x006d_b800, Conv::Thiscall(q), &[job, k], |m| {
+                Out::U32(mm::job_push(m, q, job, k))
+            });
+            t.check("job pop", 0x006d_b8a0, Conv::Thiscall(q), &[k], |m| {
+                Out::U32(mm::job_pop(m, q, k))
+            });
+            t.check("job queue dtor", 0x006d_b730, Conv::Thiscall(q), &[], |m| {
+                Out::U32(mm::job_queue_dtor(m, q))
+            });
+            t.g32(0x00ce_81fc, if i % 3 == 0 { 0x1234 } else { 0 });
+            let path = rng.word();
+            t.check("overlay menu", 0x006f_3130, Conv::Cdecl, &[path], |m| {
+                mm::overlay_menu_create(m, path);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b3_host_files_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0304);
+        for i in 0..24u32 {
+            t.reset();
+            t.skip = 4;
+            let fd = [0u32, 7, 0xffff_ffff, 9][i as usize % 4];
+            let fd2 = [0u32, 7, 0, 0xffff_fff0][(i / 4) as usize % 4];
+            let s = t.stub_branch(mm::SCE_OPEN, 2, 1, 0x203, fd2, fd);
+            t.jump(mm::SCE_OPEN, s);
+            t.stubs(&[
+                (mm::SCE_LSEEK, false, 3, 0, 0x100 + rng.below(0x40_0000)),
+                (mm::SCE_READ, false, 3, 0, rng.word()),
+                (mm::SCE_WRITE, false, 3, 0, rng.word()),
+                (mm::SCE_CLOSE, false, 1, 0, 0xf1),
+                (mm::FLUSH_CACHE, false, 1, 0, rng.word()),
+                (mm::DBG_PRINTF, false, 1, 0, 0xf2),
+                (mm::TK_SYNC_V, false, 1, 0, 0xf3),
+                (mm::TK_MEM_LOCK, false, 1, 0, 0xf4),
+                (mm::TK_MEM_UNLOCK, false, 1, 0, 0xf5),
+            ]);
+            let first = rng.below(2) as u8;
+            let at = t.rebase(0x0112_8aae);
+            t.write(at, &[first]);
+            let (buf, n) = (rng.word(), rng.word());
+            t.check("dump write", 0x0076_e890, Conv::Cdecl, &[buf, n], |m| {
+                Out::U32(mm::dump_write(m, buf, n))
+            });
+            let name = t.alloc(b"event/x.bin\0");
+            for (k, sym) in [0x0087_9c60u32, 0x0087_9cf0, 0x0087_9d60]
+                .into_iter()
+                .enumerate()
+            {
+                let f = |m: &mut G, buf: u32, name: u32| match k {
+                    0 => mm::pc_create(m, buf, name),
+                    1 => mm::pc_open(m, buf, name),
+                    _ => mm::pc_open2(m, buf, name),
+                };
+                t.check_framed(
+                    &format!("{sym:#x} #{i}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[name],
+                    0x104,
+                    |m, ebp| Out::U32(f(m, ebp - 0x104, name)),
+                );
+            }
+            t.check("AtelPCRead", 0x0087_9de0, Conv::Cdecl, &[fd, buf, n], |m| {
+                Out::U32(mm::pc_read(m, fd, buf, n))
+            });
+            t.check("AtelPCSize", 0x0087_9e10, Conv::Cdecl, &[fd], |m| {
+                Out::U32(mm::pc_size(m, fd))
+            });
+            t.check(
+                "AtelPCWrite",
+                0x0087_9e50,
+                Conv::Cdecl,
+                &[fd, buf, n],
+                |m| Out::U32(mm::pc_forward(m, mm::SCE_WRITE, fd, buf, n)),
+            );
+            t.check(
+                "AtelPClseek",
+                0x0087_9e60,
+                Conv::Cdecl,
+                &[fd, buf, n],
+                |m| Out::U32(mm::pc_forward(m, mm::SCE_LSEEK, fd, buf, n)),
+            );
+            let slots = t.arg_slots(&[fd]);
+            t.check("AtelPCClose", 0x0087_9c30, Conv::Cdecl, &[fd], |m| {
+                Out::U32(mm::pc_close(m, fd, slots))
+            });
+            t.same_slots("AtelPCClose", slots, 1);
+        }
+    });
+}
+
+#[test]
+fn r4b3_debug_files_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0305);
+        for i in 0..24u32 {
+            t.reset();
+            t.skip = 4;
+            let fd = [0u32, 7, 0xffff_fff0][i as usize % 3];
+            t.stubs(&[
+                (mm::ATEL_PC_OPEN, false, 1, 0, fd),
+                (mm::ATEL_PC_OPEN2, false, 1, 0, fd),
+                (mm::ATEL_PC_CLOSE, false, 1, 0, rng.word()),
+                (mm::ATEL_PC_WRITE, false, 3, 0, 0xf6),
+                (mm::ATEL_PC_LSEEK, false, 3, 0, 0xf7),
+                (
+                    mm::SCE_LSEEK,
+                    false,
+                    3,
+                    0,
+                    [0x10u32, 0x40_0000, 0x10_0001][i as usize % 3],
+                ),
+                (mm::SCE_CLOSE, false, 1, 0, 0xf8),
+                (mm::FLUSH_CACHE, false, 1, 0, 0xf9),
+                (mm::DBG_PRINTF, false, 3, 0, 0xfa),
+                (mm::TK_MEM_LOCK, false, 1, 0, rng.word()),
+                (mm::TK_MEM_UNLOCK, false, 1, 0, 0xfb),
+                (mm::ATEL_EVENT_GET_FILE_PATH2, false, 5, 0, 0xfd),
+            ]);
+            let entry: Vec<u8> = [rng.below(0x100), rng.below(0x40)]
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect();
+            t.stub_write(mm::SCE_READ, 3, 0xfe, 1, &entry);
+            t.stub_import(mm::SPRINTF, false, 2, 0, 0xff);
+            t.check_framed(
+                "AtelOutputEncountStart",
+                0x0088_5a80,
+                Conv::Cdecl,
+                &[],
+                0x404,
+                |m, ebp| Out::U32(mm::output_encount_start(m, ebp - 0x404)),
+            );
+            let ev = rng.below(0x100);
+            // only the index entry: the rest is the stack probe's
+            t.skip = 0x2004 - 8;
+            t.check_framed(
+                "AtelGetEventName",
+                0x0087_9760,
+                Conv::Cdecl,
+                &[ev],
+                0x2004,
+                |m, ebp| Out::U32(mm::get_event_name(m, ebp - 0x2004, ev)),
+            );
+            t.skip = 4;
+            for k in 0..7u32 {
+                let b = t.zeros(0x10);
+                t.g32(0x0132_8598 + 4 * k, b);
+            }
+            for k in 0..64u32 {
+                let b = t.zeros(0x10);
+                t.g32(0x0132_8698 + 4 * k, b);
+            }
+            t.stub(mm::ATEL_GET_EVENT_NAME, false, 1, 0, 0xfc);
+            let slot = rng.below(7);
+            t.check(
+                "AtelLoadDebugData",
+                0x0087_99b0,
+                Conv::Cdecl,
+                &[slot, ev],
+                |m| Out::U32(mm::load_debug_data(m, slot, ev)),
+            );
+            let (a, b) = (rng.below(7), rng.below(8));
+            let name = rng.word();
+            t.check(
+                "Atel_LoadSourceFile",
+                0x0087_9b60,
+                Conv::Cdecl,
+                &[a, 0x1234, b, name],
+                |m| Out::U32(mm::load_source_file(m, a, b, name)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r4b3_debugger_setup_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0306);
+        for i in 0..6u32 {
+            t.reset();
+            for k in 0..7u32 {
+                t.g32(
+                    0x0132_8598 + 4 * k,
+                    if rng.chance(2) { 0 } else { rng.word() | 1 },
+                );
+            }
+            for k in 0..56u32 {
+                t.g32(
+                    0x0132_8698 + 4 * k,
+                    if rng.chance(2) { 0 } else { rng.word() | 1 },
+                );
+                t.g32(
+                    0x0132_85b8 + 4 * k,
+                    if rng.chance(2) { 0 } else { rng.word() | 1 },
+                );
+            }
+            t.stub(mm::USER_FREE_THUNK, false, 1, 0, rng.word());
+            t.check("AtelRemovePS2Debug", 0x0087_9e70, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::remove_ps2_debug(m))
+            });
+            t.reset();
+            t.stub_countdown(mm::USER_MALLOC, 1, 1000, 0x1000_0000 + i, 0);
+            t.stubs(&[
+                (mm::TK_MEM_LOCK, false, 1, 0, 0x101),
+                (mm::INIT_DEBUGGER, false, 0, 0, rng.word()),
+            ]);
+            t.check("AtelInitPS2Debug", 0x0087_98f0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::init_ps2_debug(m))
+            });
+            t.reset();
+            t.stubs(&[
+                (mm::TK_IS_DEBUG, false, 0, 0, i % 2),
+                (mm::ATEL_INIT_PS2_DEBUG, false, 0, 0, 0x102),
+            ]);
+            t.check("init total debug", 0x0087_3ba0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::init_total_debug(m))
+            });
+            t.check("clear debugger", 0x0087_f1c0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::clear_debugger(m))
+            });
+            t.reset();
+            t.stubs(&[
+                (mm::CLEAR_DEBUGGER, false, 0, 0, 0x103),
+                (mm::SET_GLOBALS_0086E970, false, 2, 0, 0x104),
+                (mm::TK_SET_START_MAP_INDEX, false, 2, 0, rng.word()),
+            ]);
+            t.check("init debugger", 0x0087_f0d0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::init_debugger(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b3_script_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0307);
+        for i in 0..120u32 {
+            t.reset();
+            let mut ctx = vec![0u8; 0x20];
+            ctx[0] = rng.next() as u8;
+            ctx[1] = if rng.chance(4) { 4 } else { 0 };
+            ctx[3] = if rng.chance(4) { 0x80 } else { 0 };
+            let p: u16 = if rng.chance(4) {
+                0xffff
+            } else {
+                rng.below(8) as u16
+            };
+            ctx[0xa..0xc].copy_from_slice(&p.to_le_bytes());
+            ctx[0xe..0x10].copy_from_slice(&(rng.below(8) as u16).to_le_bytes());
+            let ctx = t.alloc(&ctx);
+            t.g32(0x0132_6b28, ctx);
+            let work = t.alloc(&[0x5a; 0x40]);
+            let save = t.zeros(0x100);
+            let words: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            let words = t.words(&words);
+            let table = t.words(&[0, 0, 0, 0, 0, 0, 0, 0, words - 0x10]);
+            let wk = t.words(&[table, 0x10]);
+            let wtab = t.stub_branch(mm::ATEL_GET_BASIC_WORK, 1, 0, 0x7777, wk, work);
+            t.jump(mm::ATEL_GET_BASIC_WORK, wtab);
+            t.stubs(&[
+                (mm::ATEL_UC_OFF, false, 0, 0, 0x111),
+                (mm::ATEL_UC_ON, false, 0, 0, 0x112),
+                (mm::EVENT_SET_PLAYER, false, 1, 0, 0x113),
+                (mm::TK_GET_SAVE_EVENT_ADDRESS, false, 0, 0, save),
+                (mm::ATEL_REGIST_CALLBACK_QUE2, false, 3, 0, rng.word()),
+            ]);
+            let id = match i % 5 {
+                0 => 0xffff_ffff,
+                1 => 0xffff,
+                2 => 0x8000_0000,
+                _ => rng.below(8),
+            };
+            t.check(
+                &format!("AtelSetCtrlChar {id:#x}"),
+                0x0086_f580,
+                Conv::Cdecl,
+                &[id],
+                |m| Out::U32(mm::set_ctrl_char(m, id)),
+            );
+            t.w32(save + 0xe0, rng.below(8));
+            t.check("save step 6", 0x0087_3db0, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::save_event_step6(m))
+            });
+            for (sym, to) in [(0x0087_3c40u32, 4u32), (0x0087_3d30, 1)] {
+                t.w32(save + 0xe0, rng.below(8));
+                t.check(&format!("save step {to}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(mm::save_event_step(m, to))
+                });
+            }
+            let k = rng.below(8);
+            t.check(
+                "worker table word",
+                0x0086_c250,
+                Conv::Cdecl,
+                &[0x7777, k],
+                |m| Out::U32(mm::worker_table_word(m, 0x7777, k)),
+            );
+            let keep = rng.below(3);
+            t.check("regist callbacks", 0x0086_1440, Conv::Cdecl, &[keep], |m| {
+                Out::U32(mm::regist_debug_callbacks(m, keep))
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b3_battle_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0308);
+        for i in 0..40u32 {
+            t.reset();
+            let name = t.rebase(mm::BTL_FILE_NAME);
+            t.write(name, b"ffx/battle/btl/abcd/efgh/x.bin\0");
+            t.stub_import(mm::STRSTR, false, 2, 0, name + 4);
+            t.stub_import(mm::STRRCHR, false, 2, 0, name + 24);
+            let text = if i % 3 == 0 { 0 } else { 0x0a10_0000 + i };
+            t.stubs(&[
+                (mm::TK_FREE, false, 1, 0, 0x121),
+                (mm::TK_MALLOC_AND_READ_EVENT_MESSAGE, false, 1, 0, text),
+                (mm::TK_MALLOC_AND_READ_EVENT_FTC, false, 1, 0, rng.word()),
+                (mm::CHN_SYSTEM_MGRP_LOADED, false, 0, 0, rng.below(2)),
+                (mm::CHN_SYSTEM_MGRP_RESET_TAIL, false, 0, 0, 0x122),
+            ]);
+            t.g32(0x0231_12c4, if rng.chance(2) { 0 } else { rng.word() | 1 });
+            t.g32(0x0231_12c0, if rng.chance(2) { 0 } else { rng.word() | 1 });
+            t.g32(0x0231_12bc, rng.below(2));
+            t.check("MsBtlReadAsyncTask", 0x0078_4500, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::btl_read_async(m))
+            });
+            t.g32(0x0113_606c, rng.below(2));
+            t.check("ChnSystemMgrpReset", 0x0079_cca0, Conv::Cdecl, &[], |m| {
+                mm::chn_system_mgrp_reset(m);
+                Out::None
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b3_one_liners_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0309);
+        for (sym, value) in [
+            (0x0078_29a0u32, 0x00b5_46a0u32),
+            (0x0086_0770, 0x00b5_b9fc),
+            (0x0087_8130, 0x00b5_b9fc),
+            (0x0087_9420, 0x00b5_b9fc),
+        ] {
+            t.check(&format!("{sym:#x}"), sym, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::rdata_address(m, value))
+            });
+        }
+        for _ in 0..4 {
+            t.g32(0x0132_6b58, rng.word());
+            t.check("0x0086b060", 0x0086_b060, Conv::Cdecl, &[], |m| {
+                Out::U32(mm::global_01326b58(m))
+            });
+            let at = t.rebase(0x0112_a8e0);
+            t.write(at, &[rng.next() as u8]);
+            t.check("MsBtlReadFileDone", 0x0078_2fe0, Conv::Cdecl, &[], |m| {
+                mm::btl_read_file_done(m);
+                Out::None
+            });
+            let at = t.rebase(0x0132_6b81);
+            t.write(at, &[rng.next() as u8]);
+            t.check("0x008708d0", 0x0087_08d0, Conv::Cdecl, &[], |m| {
+                mm::set_global_01326b81(m);
+                Out::None
+            });
         }
     });
 }

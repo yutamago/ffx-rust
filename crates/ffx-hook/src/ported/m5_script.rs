@@ -17,7 +17,9 @@ use ffx_script::vm::bridge::{
     native_btl, native_btl2, native_chr, native_m5, native_mods, native_move, native_msg,
 };
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
+use ffx_menu::m5m_l::bridge as l;
+use ffx_menu::m5m_m::bridge as mm;
 
 ported! {
     /// `Native_b000_MovieStart_Poll(worker, args, stack)`.
@@ -841,5 +843,419 @@ ported! {
     /// `Native_c022_EnableDrawGui(worker, args, stack)`.
     Native_c022_EnableDrawGui @ 0x0087_8b00 => extern "C" fn n_878b00(w: u32, a: u32, s: u32) -> u32 {
         native_m5::native_c022(&mut mem(), w, a, s)
+    }
+    // ---- round 4 (menu-battle-script 2): host-file and capture natives ----
+    /// `Native_c057_CopyToSaveRam(worker, args, stack)`.
+    Native_c057_CopyToSaveRam @ 0x0087_81f0 => extern "C" fn n_8781f0(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c057(&mut mem(), w, a, s)
+    }
+    /// `Native_c056_CdRead(worker, args, stack)`.
+    Native_c056_CdRead @ 0x0087_8230 => extern "C" fn n_878230(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c056(&mut mem(), w, a, s)
+    }
+    /// `Native_c05b_DebugPs2String(worker, args, stack)`.
+    Native_c05b_DebugPs2String @ 0x0087_8330 => extern "C" fn n_878330(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c05b(&mut mem(), w, a, s)
+    }
+    /// `Native_c05c_DebugPs2String(worker, args, stack)`.
+    Native_c05c_DebugPs2String @ 0x0087_83c0 => extern "C" fn n_8783c0(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c05c(&mut mem(), w, a, s)
+    }
+    /// `Native_c000_SaveEventToHost(worker, args, stack)`.
+    Native_c000_SaveEventToHost @ 0x0087_8420 => extern "C" fn n_878420(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c000(&mut mem(), w, a, s)
+    }
+    /// `Native_c001_SaveEventFromHost(worker, args, stack)`.
+    Native_c001_SaveEventFromHost @ 0x0087_8490 => extern "C" fn n_878490(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c001(&mut mem(), w, a, s)
+    }
+    /// `Native_c004_CaptureEnableKari(worker, args, stack)`.
+    Native_c004_CaptureEnableKari @ 0x0087_8570 => extern "C" fn n_878570(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c004(&mut mem(), w, a, s)
+    }
+    /// `Native_c005_CaptureEnableKariOn(worker, args, stack)`.
+    Native_c005_CaptureEnableKariOn @ 0x0087_85b0 => extern "C" fn n_8785b0(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c005(&mut mem(), w, a, s)
+    }
+    /// `Native_c00c_LoadFieldParticle(worker, args, stack)`.
+    Native_c00c_LoadFieldParticle @ 0x0087_8650 => extern "C" fn n_878650(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c00c(&mut mem(), w, a, s)
+    }
+    /// `Native_c00b_LoadBtlFieldParticle(worker, args, stack)`.
+    Native_c00b_LoadBtlFieldParticle @ 0x0087_8690 => extern "C" fn n_878690(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c00b(&mut mem(), w, a, s)
+    }
+    /// `Native_c015_SepTransFromHost(worker, args, stack)`.
+    Native_c015_SepTransFromHost @ 0x0087_87d0 => extern "C" fn n_8787d0(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c015(&mut mem(), w, a, s)
+    }
+    /// `Native_c018_SqsSetProjectBase(worker, args, stack)`.
+    Native_c018_SqsSetProjectBase @ 0x0087_88a0 => extern "C" fn n_8788a0(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c018(&mut mem(), w, a, s)
+    }
+    /// `Native_c02a_OutputEncountStart(worker, args, stack)`.
+    Native_c02a_OutputEncountStart @ 0x0087_8e10 => extern "C" fn n_878e10(w: u32, a: u32, s: u32) -> u32 {
+        native_m5::native_c02a(&mut mem(), w, a, s)
+    }
+    // ---- round 4 (menu-battle-script 2), batch 3 (ffx_menu::m5m_l, m5m_m) ----
+    /// `(worker)`: the motion number, a 0x24-byte frame.
+    AtelDebug_PrintMotionNo_0087b0c0 @ 0x0087_b0c0 => extern "C" fn print_motion_no(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_motion_no(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: the state.
+    AtelDebug_PrintState_0087b170 @ 0x0087_b170 => extern "C" fn print_state(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_state(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: the byte `+0xaf`.
+    AtelDebug_PrintByteAF_0087b360 @ 0x0087_b360 => extern "C" fn print_byte_af(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_byte_af(&mut mem(), ebp, w)
+    }
+    /// `(worker, i)`: slot `i`.
+    AtelDebug_PrintSlot_0087ee10 @ 0x0087_ee10 => extern "C" fn print_slot(w: u32, i: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_slot(&mut mem(), ebp, w, i)
+    }
+    /// `(worker)`: slot 0.
+    AtelDebug_PrintSlot0_0087b3e0 @ 0x0087_b3e0 => extern "C" fn print_slot0(w: u32) -> u32 {
+        l::print_slot_n(&mut mem(), w, 0)
+    }
+    /// `(worker)`: slot 1.
+    AtelDebug_PrintSlot1_0087b400 @ 0x0087_b400 => extern "C" fn print_slot1(w: u32) -> u32 {
+        l::print_slot_n(&mut mem(), w, 1)
+    }
+    /// `(worker)`: the body hit.
+    AtelDebug_PrintBodyHit_0087b420 @ 0x0087_b420 => extern "C" fn print_body_hit(w: u32) -> u32 {
+        l::print_body_hit(&mut mem(), w)
+    }
+    /// `(worker)`: the thickness, a 0x28-byte frame.
+    AtelDebug_PrintThickness_0087b490 @ 0x0087_b490 => extern "C" fn print_thickness(w: u32) -> u32 {
+        let mut fr = StackFrame::<10>::new();
+        let ebp = fr.at() + 0x28;
+        l::print_thickness(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: the position work's `+0x2c`.
+    AtelDebug_PrintPos2C_0087b520 @ 0x0087_b520 => extern "C" fn print_pos_2c(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_pos_2c(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: flag `+0x38` bit 5.
+    AtelDebug_PrintFlag38_20_0087b580 @ 0x0087_b580 => extern "C" fn print_flag_b580(w: u32) -> u32 {
+        l::print_flag(&mut mem(), ffx_menu::m5m_l::FLAGS[0].1, w)
+    }
+    /// `(worker)`: flag `+0x38` bit 6.
+    AtelDebug_PrintFlag38_40_0087b5b0 @ 0x0087_b5b0 => extern "C" fn print_flag_b5b0(w: u32) -> u32 {
+        l::print_flag(&mut mem(), ffx_menu::m5m_l::FLAGS[1].1, w)
+    }
+    /// `(worker)`: flag `+0x38` bit 7.
+    AtelDebug_PrintFlag38_80_0087b5e0 @ 0x0087_b5e0 => extern "C" fn print_flag_b5e0(w: u32) -> u32 {
+        l::print_flag(&mut mem(), ffx_menu::m5m_l::FLAGS[2].1, w)
+    }
+    /// `(worker)`: the level byte.
+    AtelDebug_PrintLevel_0087b610 @ 0x0087_b610 => extern "C" fn print_level(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_level(&mut mem(), ebp, w)
+    }
+    /// `()`: the control work's player.
+    AtelDebug_PrintCtrlPlayer_0087b660 @ 0x0087_b660 => extern "C" fn print_ctrl_player() -> u32 {
+        l::print_ctrl_player(&mut mem())
+    }
+    /// `()`: control work `+0x218`.
+    AtelDebug_PrintCtrl218_0087b6b0 @ 0x0087_b6b0 => extern "C" fn print_ctrl_218() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x218)
+    }
+    /// `()`: control work `+0x21c`.
+    AtelDebug_PrintCtrl21C_0087b710 @ 0x0087_b710 => extern "C" fn print_ctrl_21c() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x21c)
+    }
+    /// `()`: control work `+0x220`.
+    AtelDebug_PrintCtrl220_0087b770 @ 0x0087_b770 => extern "C" fn print_ctrl_220() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x220)
+    }
+    /// `()`: control work `+0x228`.
+    AtelDebug_PrintCtrl228_0087b7d0 @ 0x0087_b7d0 => extern "C" fn print_ctrl_228() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x228)
+    }
+    /// `()`: control work `+0x22c`.
+    AtelDebug_PrintCtrl22C_0087b830 @ 0x0087_b830 => extern "C" fn print_ctrl_22c() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x22c)
+    }
+    /// `()`: control work `+0x230`.
+    AtelDebug_PrintCtrl230_0087b890 @ 0x0087_b890 => extern "C" fn print_ctrl_230() -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_ctrl_float(&mut mem(), ebp, 0x230)
+    }
+    /// `(worker)`: the worker bits' name.
+    AtelDebug_PrintBitsName_0087b8f0 @ 0x0087_b8f0 => extern "C" fn print_bits_name(w: u32) -> u32 {
+        l::print_bits_name(&mut mem(), w)
+    }
+    /// `(worker)`: the `+0x34` flags.
+    AtelDebug_PrintFlags34_0087b920 @ 0x0087_b920 => extern "C" fn print_flags_34(w: u32) -> u32 {
+        l::print_flags_34(&mut mem(), w)
+    }
+    /// `(worker)`: the `+0x38` flags.
+    AtelDebug_PrintFlags38_0087b980 @ 0x0087_b980 => extern "C" fn print_flags_38(w: u32) -> u32 {
+        l::print_flags_38(&mut mem(), w)
+    }
+    /// `(worker)`: the program counter.
+    AtelDebug_PrintPc_0087b9c0 @ 0x0087_b9c0 => extern "C" fn print_pc(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_pc(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: flag `+0x34` bit 1, colour 0.
+    AtelDebug_PrintFlag34_02_0087ba70 @ 0x0087_ba70 => extern "C" fn print_flag_ba70(w: u32) -> u32 {
+        l::print_flag(&mut mem(), ffx_menu::m5m_l::FLAGS[3].1, w)
+    }
+    /// `(worker)`: the byte `+0x33`.
+    AtelDebug_PrintByte33_0087baa0 @ 0x0087_baa0 => extern "C" fn print_byte_33(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_byte_33(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: two flags, colour 0.
+    AtelDebug_PrintFlagsCtrl_0087baf0 @ 0x0087_baf0 => extern "C" fn print_flags_ctrl(w: u32) -> u32 {
+        l::print_flags_ctrl(&mut mem(), w)
+    }
+    /// `(worker)`: the word `+0xc4`.
+    AtelDebug_PrintWordC4_0087bb40 @ 0x0087_bb40 => extern "C" fn print_word_c4(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_word_c4(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: the list's length.
+    AtelDebug_PrintListLen_0087bb90 @ 0x0087_bb90 => extern "C" fn print_list_len(w: u32) -> u32 {
+        let mut fr = StackFrame::<9>::new();
+        let ebp = fr.at() + 0x24;
+        l::print_list_len(&mut mem(), ebp, w)
+    }
+    /// `(worker)`: flag `+0x34` bit 7.
+    AtelDebug_PrintFlag34_80_0087bc20 @ 0x0087_bc20 => extern "C" fn print_flag_bc20(w: u32) -> u32 {
+        l::print_flag(&mut mem(), ffx_menu::m5m_l::FLAGS[4].1, w)
+    }
+    /// `(s)`: right aligned.
+    AtelDebug_PrintRight_0087e6d0 @ 0x0087_e6d0 => extern "C" fn print_right(s: u32) -> u32 {
+        l::print_right(&mut mem(), s)
+    }
+    /// `AtelSetUpSourceDebug(src, len, on, page, size)`.
+    AtelSetUpSourceDebug @ 0x0088_5b00 => extern "C" fn atel_set_up_source_debug(src: u32, len: u32, on: u32, page: u32, size: u32) -> u32 {
+        l::set_up_source_debug(&mut mem(), src, len, on, page, size)
+    }
+    /// `FFXUsbMouseSync(mode)`: mode 1 writes the caller's argument word.
+    FFXUsbMouseSync @ 0x0085_5bf0 => extern "C" fn ffx_usb_mouse_sync(mode: u32; slots: u32) -> u32 {
+        mm::usb_mouse_sync(&mut mem(), mode, slots)
+    }
+    /// `FFXUsbMouse_IopMemGet(dst)`.
+    FFXUsbMouse_IopMemGet @ 0x0085_5c40 => extern "C" fn ffx_usb_mouse_iop_mem_get(dst: u32) -> u32 {
+        mm::usb_mouse_iop_mem_get(&mut mem(), dst)
+    }
+    /// `FFXUsbMouseRead2(arg, dst)`.
+    FFXUsbMouseRead2 @ 0x0085_5bc0 => extern "C" fn ffx_usb_mouse_read2(arg: u32, dst: u32) -> u32 {
+        mm::usb_mouse_read2(&mut mem(), arg, dst)
+    }
+    /// `(this)`: the job queues' destructor.
+    AsyncJobQueue_dtor_006db730 @ 0x006d_b730 => extern "thiscall" fn async_job_queue_dtor(this: u32) -> u32 {
+        mm::job_queue_dtor(&mut mem(), this)
+    }
+    /// `StartThread_ps2(thread, arg)`.
+    StartThread_ps2 @ 0x006f_2d30 => extern "C" fn start_thread_ps2(t: u32, arg: u32) -> u32 {
+        mm::start_thread(&mut mem(), t, arg)
+    }
+    /// `CreateThread_ps2(params, name)`.
+    CreateThread_ps2 @ 0x006f_2e10 => extern "C" fn create_thread_ps2(params: u32, name: u32) -> u32 {
+        mm::create_thread(&mut mem(), params, name)
+    }
+    /// `(handle)`.
+    DeleteThread_ps2_006f2f00 @ 0x006f_2f00 => extern "C" fn delete_thread_ps2(handle: u32) -> u32 {
+        mm::delete_thread(&mut mem(), handle)
+    }
+    /// `(count)`.
+    CreateSema_ps2_006f2b10 @ 0x006f_2b10 => extern "C" fn create_sema_ps2(count: u32) -> u32 {
+        mm::create_sema(&mut mem(), count)
+    }
+    /// `(handle, prio)`.
+    ChangeThreadPriority_ps2_006f3050 @ 0x006f_3050 => extern "C" fn change_thread_priority_ps2(handle: u32, prio: u32) -> u32 {
+        mm::set_thread_priority(&mut mem(), handle, prio)
+    }
+    /// `(this; job, q)`.
+    AsyncJobQueue_push_006db800 @ 0x006d_b800 => extern "thiscall" fn async_job_queue_push(this: u32, job: u32, q: u32) -> u32 {
+        mm::job_push(&mut mem(), this, job, q)
+    }
+    /// `(this; q)`.
+    AsyncJobQueue_pop_006db8a0 @ 0x006d_b8a0 => extern "thiscall" fn async_job_queue_pop(this: u32, q: u32) -> u32 {
+        mm::job_pop(&mut mem(), this, q)
+    }
+    /// `(this; flags)`.
+    Ps2Thread_dtor_006f29a0 @ 0x006f_29a0 => extern "thiscall" fn ps2_thread_dtor(this: u32, flags: u32) -> u32 {
+        mm::thread_dtor(&mut mem(), this, flags)
+    }
+    /// `(handle)`.
+    PollSema_ps2_006f2d50 @ 0x006f_2d50 => extern "C" fn poll_sema_ps2(handle: u32) -> u32 {
+        mm::poll_sema(&mut mem(), handle)
+    }
+    /// `Mutex_Create()`.
+    Mutex_Create @ 0x006f_2de0 => extern "C" fn mutex_create() -> u32 {
+        mm::mutex_create(&mut mem())
+    }
+    /// `Mutex_Lock(m)`.
+    Mutex_Lock @ 0x006f_2ed0 => extern "C" fn mutex_lock(m: u32) -> u32 {
+        mm::mutex_lock(&mut mem(), m)
+    }
+    /// `Mutex_Unlock(m)`.
+    Mutex_Unlock @ 0x006f_2f50 => extern "C" fn mutex_unlock(m: u32) -> u32 {
+        mm::mutex_unlock(&mut mem(), m)
+    }
+    /// `(handle)`.
+    SignalSema_copy_006f3000 @ 0x006f_3000 => extern "C" fn signal_sema_copy(handle: u32) -> u32 {
+        mm::signal_sema(&mut mem(), handle)
+    }
+    /// `(path)`: the overlay menu, once.
+    OverlayMenu_create_006f3130 @ 0x006f_3130 => extern "C" fn overlay_menu_create(path: u32) {
+        mm::overlay_menu_create(&mut mem(), path);
+    }
+    /// `(buf, size)`.
+    printf2_dump_0076e890 @ 0x0076_e890 => extern "C" fn printf2_dump(buf: u32, size: u32) -> u32 {
+        mm::dump_write(&mut mem(), buf, size)
+    }
+    /// `AtelSetCtrlChar(id)`.
+    AtelSetCtrlChar @ 0x0086_f580 => extern "C" fn atel_set_ctrl_char(id: u32) -> u32 {
+        mm::set_ctrl_char(&mut mem(), id)
+    }
+    /// `()`.
+    SaveEvent_SetStep6_00873db0 @ 0x0087_3db0 => extern "C" fn save_event_step6() -> u32 {
+        mm::save_event_step6(&mut mem())
+    }
+    /// `(worker, i)`.
+    Atel_GetWorkerTableWord_0086c250 @ 0x0086_c250 => extern "C" fn worker_table_word(w: u32, i: u32) -> u32 {
+        mm::worker_table_word(&mut mem(), w, i)
+    }
+    /// `()`: byte `0x01326b81` = 1.
+    AtelSetGlobal01326b81_008708d0 @ 0x0087_08d0 => extern "C" fn set_global_01326b81() {
+        mm::set_global_01326b81(&mut mem());
+    }
+    /// `()`: step 4.
+    SaveEvent_SetStep4_00873c40 @ 0x0087_3c40 => extern "C" fn save_event_step4() -> u32 {
+        mm::save_event_step(&mut mem(), 4)
+    }
+    /// `AtelRemovePS2Debug()`.
+    AtelRemovePS2Debug @ 0x0087_9e70 => extern "C" fn atel_remove_ps2_debug() -> u32 {
+        mm::remove_ps2_debug(&mut mem())
+    }
+    /// `()`: step 1.
+    SaveEvent_SetStep1_00873d30 @ 0x0087_3d30 => extern "C" fn save_event_step1() -> u32 {
+        mm::save_event_step(&mut mem(), 1)
+    }
+    /// `()`: the word at `0x01326b58`.
+    AtelGetGlobal01326b58_0086b060 @ 0x0086_b060 => extern "C" fn global_01326b58() -> u32 {
+        mm::global_01326b58(&mem())
+    }
+    /// `()`: an empty string's address.
+    AtelGetBuildDate_00860770 @ 0x0086_0770 => extern "C" fn empty_string_00860770() -> u32 {
+        mm::rdata_address(&mem(), 0x00b5_b9fc)
+    }
+    /// `(keep)`.
+    AtelRegistDebugCallbacks_00861440 @ 0x0086_1440 => extern "C" fn regist_debug_callbacks(keep: u32) -> u32 {
+        mm::regist_debug_callbacks(&mut mem(), keep)
+    }
+    /// `()`.
+    AtelClearDebugger_0087f1c0 @ 0x0087_f1c0 => extern "C" fn atel_clear_debugger() -> u32 {
+        mm::clear_debugger(&mut mem())
+    }
+    /// `()`.
+    AtelInitDebugger_0087f0d0 @ 0x0087_f0d0 => extern "C" fn atel_init_debugger() -> u32 {
+        mm::init_debugger(&mut mem())
+    }
+    /// `AtelInitPS2Debug()`.
+    AtelInitPS2Debug @ 0x0087_98f0 => extern "C" fn atel_init_ps2_debug() -> u32 {
+        mm::init_ps2_debug(&mut mem())
+    }
+    /// `()`.
+    AtelInitTotalDebug_00873ba0 @ 0x0087_3ba0 => extern "C" fn atel_init_total_debug() -> u32 {
+        mm::init_total_debug(&mut mem())
+    }
+    /// `()`: an empty string's address.
+    AtelGetBuildDate_00878130 @ 0x0087_8130 => extern "C" fn empty_string_00878130() -> u32 {
+        mm::rdata_address(&mem(), 0x00b5_b9fc)
+    }
+    /// `AtelPCClose(fd)`: writes the caller's argument word.
+    AtelPCClose @ 0x0087_9c30 => extern "C" fn atel_pc_close(fd: u32; slots: u32) -> u32 {
+        mm::pc_close(&mut mem(), fd, slots)
+    }
+    /// `AtelPCCreate(name)`: the path in a frame.
+    AtelPCCreate @ 0x0087_9c60 => extern "C" fn atel_pc_create(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mm::pc_create(&mut mem(), buf, name)
+    }
+    /// `AtelPCWrite(fd, buf, n)`.
+    AtelPCWrite @ 0x0087_9e50 => extern "C" fn atel_pc_write(fd: u32, buf: u32, n: u32) -> u32 {
+        mm::pc_forward(&mut mem(), mm::SCE_WRITE, fd, buf, n)
+    }
+    /// `AtelPCOpen(name)`: the path in a frame.
+    AtelPCOpen @ 0x0087_9cf0 => extern "C" fn atel_pc_open(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mm::pc_open(&mut mem(), buf, name)
+    }
+    /// `AtelPCRead(fd, buf, n)`.
+    AtelPCRead @ 0x0087_9de0 => extern "C" fn atel_pc_read(fd: u32, buf: u32, n: u32) -> u32 {
+        mm::pc_read(&mut mem(), fd, buf, n)
+    }
+    /// `AtelPCSize(fd)`.
+    AtelPCSize @ 0x0087_9e10 => extern "C" fn atel_pc_size(fd: u32) -> u32 {
+        mm::pc_size(&mut mem(), fd)
+    }
+    /// `AtelPCOpen2(name)`: the path in a frame.
+    AtelPCOpen2 @ 0x0087_9d60 => extern "C" fn atel_pc_open2(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mm::pc_open2(&mut mem(), buf, name)
+    }
+    /// `AtelPClseek(fd, off, whence)`.
+    AtelPClseek @ 0x0087_9e60 => extern "C" fn atel_pc_lseek(fd: u32, off: u32, whence: u32) -> u32 {
+        mm::pc_forward(&mut mem(), mm::SCE_LSEEK, fd, off, whence)
+    }
+    /// `AtelOutputEncountStart()`: the line in a frame.
+    AtelOutputEncountStart @ 0x0088_5a80 => extern "C" fn atel_output_encount_start() -> u32 {
+        let mut fr = StackFrame::<{ 0x404 / 4 }>::new();
+        let buf = fr.at();
+        mm::output_encount_start(&mut mem(), buf)
+    }
+    /// `()`: an empty string's address.
+    AtelGetBuildDate_00879420 @ 0x0087_9420 => extern "C" fn empty_string_00879420() -> u32 {
+        mm::rdata_address(&mem(), 0x00b5_b9fc)
+    }
+    /// `AtelGetEventName(i)`: the index entry in a frame.
+    AtelGetEventName @ 0x0087_9760 => extern "C" fn atel_get_event_name(i: u32) -> u32 {
+        let mut fr = StackFrame::<2>::new();
+        let entry = fr.at();
+        mm::get_event_name(&mut mem(), entry, i)
+    }
+    /// `AtelLoadDebugData(slot, event)`.
+    AtelLoadDebugData @ 0x0087_99b0 => extern "C" fn atel_load_debug_data(slot: u32, event: u32) -> u32 {
+        mm::load_debug_data(&mut mem(), slot, event)
+    }
+    /// `(a, _, b, name)`.
+    Atel_LoadSourceFile_00879b60 @ 0x0087_9b60 => extern "C" fn atel_load_source_file(a: u32, _x: u32, b: u32, name: u32) -> u32 {
+        mm::load_source_file(&mut mem(), a, b, name)
     }
 }
