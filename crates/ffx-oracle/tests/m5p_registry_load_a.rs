@@ -25,6 +25,7 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_misc::{self as ms, bridge as msb};
 use ffx_pload::m5p_registry_load_a_ptype::{self as pt, Kind, bridge as ptb};
 
 /// Deterministic xorshift stream.
@@ -196,6 +197,10 @@ impl Twins {
 
     fn r32(&self, at: u32) -> u32 {
         Mem::read(&self.a, at)
+    }
+
+    fn log_entries(&self) -> u32 {
+        Mem::read(&self.b, self.log)
     }
 
     /// Clears the log and puts back every stubbed original.
@@ -738,5 +743,280 @@ fn ptype_script_values_match_the_original() {
                 t.reset();
             }
         }
+    }
+}
+
+// ---- batch 3: tail destructors, setters, iterators, utility lists ----
+
+#[test]
+fn misc_tail_destructors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ms::DESCRIPTOR_DESTRUCT, true, 0, 0, 0xde57);
+        t.stub(ms::MEMBER_DTOR, true, 0, 0, 0xde58);
+        let obj = t.junk(0x40, 5);
+        for d in &ms::TAIL_DTORS {
+            let what = format!("{label}: {} dtor {:#x}", d.class, d.addr);
+            t.check(&what, d.addr, Conv::Thiscall(obj), &[], |g| {
+                Out::U32(msb::tail_dtor(g, d, obj))
+            });
+        }
+        assert_eq!(t.log_entries(), ms::TAIL_DTORS.len() as u32);
+        t.reset();
+        // PIClassDataMemberDynamicType's dtor and the unlock jump
+        let member = t.junk(0x40, 6);
+        let ty = t.junk(0x10, 8);
+        t.w32(ty + 4, member);
+        let what = format!("{label}: PIClassDataMemberDynamicType dtor");
+        t.check(&what, 0x0057_54f0, Conv::Thiscall(ty), &[], |g| {
+            Out::U32(msb::dynamic_type_dtor(g, ty))
+        });
+        t.stub(ms::CS_UNLOCK, true, 0, 0, 0x0c5);
+        let holder = t.zeros(8);
+        t.w32(holder, 0x00c9_1234);
+        let what = format!("{label}: unlock through the holder");
+        t.check(&what, 0x0045_c0b0, Conv::Thiscall(holder), &[], |g| {
+            Out::U32(msb::unlock_held(g, holder))
+        });
+        t.reset();
+    }
+}
+
+#[test]
+fn misc_float_setters_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let obj = t.junk(0x20, 1);
+        for (f, off) in ms::FLOAT_SETTERS {
+            for v in FLOATS {
+                let what = format!("{label}: setter {f:#x} {v:#x}");
+                t.check(&what, f, Conv::Thiscall(obj), &[v], |g| {
+                    Out::U32(msb::set_float(g, obj, off, v))
+                });
+            }
+        }
+    }
+}
+
+/// An owner whose list (head at `+0x1c`, linked through the elements'
+/// first word) holds four elements for the wanted class `want`: no
+/// match, a match with count 0, a match through a second chain node, a
+/// match. Returns the owner and the elements (as `p1_load.rs`'s).
+fn iter_owner(t: &mut Twins, want: u32) -> (u32, [u32; 4]) {
+    let owner = t.zeros(0x40);
+    let end = owner + 0x1c;
+    let e: Vec<u32> = (0..4).map(|_| t.zeros(0x50)).collect();
+    let other = t.zeros(0x50);
+    for i in 0..4 {
+        let next = if i < 3 { e[i + 1] } else { end };
+        t.w32(e[i], next);
+    }
+    t.w32(end, e[0]);
+    t.w32(e[0] + 0x2c, other);
+    t.w32(e[1] + 0x2c, want);
+    t.w32(other + 0x40, 0);
+    t.w32(e[3] + 0x2c, want);
+    t.w32(e[2] + 0x40, 2);
+    t.w32(e[3] + 0x40, 1);
+    let other2 = t.zeros(0x50);
+    t.w32(e[2] + 0x2c, other2);
+    t.w32(other2 + 0x40, want);
+    (owner, [e[0], e[1], e[2], e[3]])
+}
+
+#[test]
+fn misc_iterators_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(0x0044_1dc0, true, 1, 1, 0x77);
+        let want = t.zeros(0x50);
+        let (owner, e) = iter_owner(&mut t, want);
+        let end = owner + 0x1c;
+        for sym in ms::ITER_NEXTS {
+            for cur in [e[0], e[1], e[2], e[3], 0] {
+                let it = t.junk(0x20, 1);
+                t.w32(it + 0x14, end);
+                t.w32(it + 0x18, cur);
+                t.w32(it + 0x1c, want);
+                let what = format!("{label}: iterNext {sym:#x} {cur:#x}");
+                t.check(&what, sym, Conv::Thiscall(it), &[], |g| {
+                    Out::U32(ffx_pload::cluster::bridge::iter_next(g, it))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+/// A list at `head` (an `ffx.sym` address) of `n` fresh nodes linked
+/// through `+link`; returns the nodes.
+fn chain(t: &mut Twins, head: u32, n: usize, link: u32) -> Vec<u32> {
+    let nodes: Vec<u32> = (0..n).map(|_| t.junk(0x20, 0x33)).collect();
+    let at = t.rebase(head);
+    t.w32(at, nodes.first().copied().unwrap_or(0));
+    for (i, &x) in nodes.iter().enumerate() {
+        t.w32(x + link, nodes.get(i + 1).copied().unwrap_or(0));
+    }
+    nodes
+}
+
+#[test]
+fn misc_utility_lists_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // push_front
+        let head = t.junk(4, 1);
+        let x = t.junk(8, 2);
+        let what = format!("{label}: push front");
+        t.check(&what, 0x0043_20a0, Conv::Thiscall(x), &[head], |g| {
+            Out::U32(msb::push_front(g, x, head))
+        });
+        // the unlinks: first, middle, last, absent, empty list
+        for (f, head) in [
+            (0x0047_fe10, ms::GEOMETRY_UTILITIES),
+            (0x0047_fe60, ms::GEOMETRY_UTILITIES),
+            (0x004c_1410, ms::RENDERING_UTILITIES),
+            (0x004c_1460, ms::RENDERING_UTILITIES),
+        ] {
+            for (n, pick) in [(3, 0), (3, 1), (3, 2), (2, 9), (0, 9)] {
+                let nodes = chain(&mut t, head, n, 4);
+                let x = nodes.get(pick).copied().unwrap_or(0x0123_4560);
+                if f == 0x004c_1460 {
+                    let idx = (pick as u32) * 3 + 1;
+                    let at = t.rebase(ms::RENDERING_SLOTS) + 4 * idx;
+                    t.w32(at, 0xdead_0000 + idx);
+                    if nodes.get(pick).is_none() {
+                        // an absent node still has an index word
+                        let fake = t.zeros(0x10);
+                        t.w32(fake + 8, idx);
+                        let what = format!("{label}: unlink {f:#x} absent");
+                        t.check(&what, f, Conv::Cdecl, &[fake], |g| {
+                            Out::U32(if f == 0x004c_1460 {
+                                msb::unlink_rendering(g, fake)
+                            } else {
+                                msb::unlink(g, head, fake)
+                            })
+                        });
+                        continue;
+                    }
+                    t.w32(x + 8, idx);
+                }
+                let what = format!("{label}: unlink {f:#x} n={n} pick={pick}");
+                t.check(&what, f, Conv::Cdecl, &[x], |g| {
+                    Out::U32(if f == 0x004c_1460 {
+                        msb::unlink_rendering(g, x)
+                    } else {
+                        msb::unlink(g, head, x)
+                    })
+                });
+            }
+        }
+        // PUtility's deleting destructors
+        t.stub(ms::OPERATOR_DELETE, false, 1, 0, 0xde1);
+        for f in [0x0043_1e10, 0x0043_1e70] {
+            for (n, pick) in [(3, 0), (3, 2), (2, 9), (0, 9)] {
+                for flags in [0, 1, 0xfe] {
+                    let nodes = chain(&mut t, ms::UTILITIES, n, 4);
+                    let x = match nodes.get(pick) {
+                        Some(&x) => x,
+                        None => t.junk(0x10, 4),
+                    };
+                    let what =
+                        format!("{label}: PUtility dtor {f:#x} n={n} pick={pick} flags={flags:#x}");
+                    t.check(&what, f, Conv::Thiscall(x), &[flags], |g| {
+                        Out::U32(msb::delete_utility(g, x, flags))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn misc_shutdown_steps_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(ms::TREE_CLEAR, true, 0, 0, 0x7c1);
+        t.stub(ms::SERIALIZATION_OBJECT_DTOR, true, 0, 0, 0x0d7);
+        t.stub(ms::FREE, false, 1, 0, 0xf4e);
+        let flag = t.rebase(ms::KERNELS_REGISTERED);
+        t.w8(flag, 1);
+        let what = format!("{label}: clear kernels");
+        t.check(&what, 0x0047_a210, Conv::Cdecl, &[], |g| {
+            Out::U32(msb::clear_kernels(g))
+        });
+        for n in [0, 1, 3] {
+            chain(&mut t, ms::SERIALIZATION_OBJECTS, n, 0);
+            t.w8(flag, 1);
+            let ready = t.rebase(ms::SERIALIZATION_READY);
+            t.w8(ready, 1);
+            let what = format!("{label}: serialization shutdown n={n}");
+            t.check(&what, 0x0043_2150, Conv::Cdecl, &[], |g| {
+                Out::U32(msb::shutdown_serialization(g))
+            });
+        }
+        t.reset();
+        // the namespace: remove one descriptor, then clear a namespace of
+        // n descriptors whose remove (stubbed) unlinks the first
+        let ns = t.zeros(0x40);
+        let remove = [
+            0x8b, 0x44, 0x24, 0x04, // mov eax, [esp+4]  (desc)
+            0x8b, 0x50, 0x2c, // mov edx, [eax+0x2c]  (its next)
+            0x89, 0x51, 0x08, // mov [ecx+8], edx  (the namespace's first)
+            0xb8, 0x11, 0x22, 0x00, 0x00, // mov eax, 0x2211
+            0xc2, 0x04, 0x00, // ret 4
+        ];
+        let code = t.a.alloc_code(&remove).unwrap();
+        assert_eq!(t.b.alloc_code(&remove).unwrap(), code);
+        let at = t.rebase(ms::NAMESPACE_REMOVE);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut t.a, at, 5).unwrap();
+        t.saved.entry(at).or_insert(old);
+        t.write(at, &j);
+        let desc = t.junk(0x100, 9);
+        t.w32(desc + 0x3c, ns);
+        let what = format!("{label}: remove from namespace");
+        t.check(&what, 0x0043_d420, Conv::Thiscall(desc), &[], |g| {
+            Out::U32(msb::remove_from_namespace(g, desc))
+        });
+        t.stub(ms::GLOBAL_NAMESPACE, false, 0, 0, ns);
+        for n in [0usize, 1, 3] {
+            let descs: Vec<u32> = (0..n).map(|_| t.junk(0x100, 0x21)).collect();
+            let head = ns + 8;
+            t.w32(head, descs.first().map_or(head, |d| d + 0x2c));
+            for (i, &d) in descs.iter().enumerate() {
+                t.w32(d + 0x3c, ns);
+                t.w32(d + 0x2c, descs.get(i + 1).map_or(head, |e| e + 0x2c));
+            }
+            t.w32(ns + 0x10, 0x5555);
+            let what = format!("{label}: clear global namespace n={n}");
+            t.check(&what, 0x0043_e610, Conv::Cdecl, &[], |g| {
+                Out::U32(msb::clear_global_namespace(g))
+            });
+        }
+        // a list ending in 0 and one whose element is the descriptor at 0
+        for last in [0u32, 0x2c] {
+            t.w32(ns + 8, last);
+            let what = format!("{label}: clear global namespace, ends in {last:#x}");
+            t.check(&what, 0x0043_e610, Conv::Cdecl, &[], |g| {
+                Out::U32(msb::clear_global_namespace(g))
+            });
+        }
+        t.reset();
+        // the pool lock and the thread count
+        t.stub(ms::CS_RELEASE, true, 0, 0, 0x4e1);
+        for held in [0u8, 1, 0x80] {
+            let at = t.rebase(ms::POOL_LOCK);
+            t.w8(at, held);
+            let what = format!("{label}: release pool lock {held}");
+            t.check(&what, 0x0045_da00, Conv::Cdecl, &[], |g| {
+                Out::U32(msb::release_pool_lock(g))
+            });
+        }
+        t.stub(ms::SET_THREAD_COUNT, false, 1, 0, 0x7c);
+        for n in [0, 4, u32::MAX] {
+            let what = format!("{label}: set thread count {n}");
+            t.check(&what, 0x0043_1170, Conv::Cdecl, &[n], |g| {
+                Out::U32(msb::set_thread_count(g, n))
+            });
+        }
+        t.reset();
     }
 }

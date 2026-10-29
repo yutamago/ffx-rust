@@ -6,7 +6,9 @@
 //! thread and the main thread); no shim keeps state, each works on the
 //! game's memory through [`mem`].
 
+use ffx_pload::cluster;
 use ffx_pload::m5p_registry_load_a_convert as cv;
+use ffx_pload::m5p_registry_load_a_misc::{self as ms, bridge as msb};
 use ffx_pload::m5p_registry_load_a_ptype::{Kind, bridge as ptb};
 
 use super::{mem, ported};
@@ -579,5 +581,203 @@ ported! {
     /// `PTypeDefault<bool>::swapEndian(p, n)`.
     Phyre_PTypeDefault_bool_swapEndian @ 0x0043_9db0 => extern "stdcall" fn s_00439db0(p: u32, _n: u32) -> u32 {
         ptb::swap_endian(&mut mem(), Kind::Bool, p)
+    }
+
+    // ---- batch 3: tail destructors, setters, iterators, utility lists ----
+    /// `PClassDescriptorForType<PClassMember>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClassMember_dtor_0043a100 @ 0x0043_a100 => extern "thiscall" fn t_0043a100(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[0], this)
+    }
+    /// `PClassDescriptorForType<PNamespace>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PNamespace_dtor_0043ddb0 @ 0x0043_ddb0 => extern "thiscall" fn t_0043ddb0(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[1], this)
+    }
+    /// `PClassDescriptorForType<PCluster>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PCluster_dtor_0043f9e0 @ 0x0043_f9e0 => extern "thiscall" fn t_0043f9e0(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[2], this)
+    }
+    /// `PClassDescriptorForType<PTypedObject>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PTypedObject_dtor_00444330 @ 0x0044_4330 => extern "thiscall" fn t_00444330(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[3], this)
+    }
+    /// `PClassDataMemberArray::~PClassDataMemberArray()`: its vtable, then the parent's destructor.
+    Phyre_PClassDataMemberArray_dtor_00575f70 @ 0x0057_5f70 => extern "thiscall" fn t_00575f70(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[4], this)
+    }
+    /// `PClassDescriptorForType<PClassDataMemberDynamic>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClassDataMemberDynamic_dtor_004462d0 @ 0x0044_62d0 => extern "thiscall" fn t_004462d0(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[5], this)
+    }
+    /// `PClassDescriptorForType<PArray<unsigned char>>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PArray_unsigned_char_dtor_00447850 @ 0x0044_7850 => extern "thiscall" fn t_00447850(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[6], this)
+    }
+    /// `PClassDescriptorForType<PClassDescriptorDynamic>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClassDescriptorDynamic_dtor_00447860 @ 0x0044_7860 => extern "thiscall" fn t_00447860(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[7], this)
+    }
+    /// `PClassDescriptorForType<PArray<PTypedObject>>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PArray_PTypedObject_dtor_00457b20 @ 0x0045_7b20 => extern "thiscall" fn t_00457b20(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[8], this)
+    }
+    /// `PClassDescriptorForType<PInstancesComponent>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PInstancesComponent_dtor_00457b30 @ 0x0045_7b30 => extern "thiscall" fn t_00457b30(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[9], this)
+    }
+    /// `PClassDescriptorForType<PAssetReference>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PAssetReference_dtor_0045c080 @ 0x0045_c080 => extern "thiscall" fn t_0045c080(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[10], this)
+    }
+    /// `PClassDescriptorForType<PAssetReferenceImport>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PAssetReferenceImport_dtor_0045c090 @ 0x0045_c090 => extern "thiscall" fn t_0045c090(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[11], this)
+    }
+    /// `PClassDescriptorForType<PClusterHeader>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClusterHeader_dtor_00468730 @ 0x0046_8730 => extern "thiscall" fn t_00468730(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[12], this)
+    }
+    /// `PClassDescriptorForType<PClusterHeaderBase>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClusterHeaderBase_dtor_00468740 @ 0x0046_8740 => extern "thiscall" fn t_00468740(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[13], this)
+    }
+    /// `PClassDescriptorForType<PClusterHeaderD3D11>::~PClassDescriptorForType()`: its vtable, then the parent's destructor.
+    Phyre_PClassDescriptorForType_PClusterHeaderD3D11_dtor_004699d0 @ 0x0046_99d0 => extern "thiscall" fn t_004699d0(this: u32) -> u32 {
+        msb::tail_dtor(&mut mem(), &ms::TAIL_DTORS[14], this)
+    }
+    /// `thiscall(f)`: `f` stored at `+0xc`; returns this.
+    Phyre_setFloatAtc_00462610 @ 0x0046_2610 => extern "thiscall" fn f_00462610(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0xc, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x0`; returns this.
+    Phyre_setFloatAt0_00462620 @ 0x0046_2620 => extern "thiscall" fn f_00462620(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x0, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x0`; returns this.
+    Phyre_setFloatAt0_00462630 @ 0x0046_2630 => extern "thiscall" fn f_00462630(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x0, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x0`; returns this.
+    Phyre_setFloatAt0_00462640 @ 0x0046_2640 => extern "thiscall" fn f_00462640(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x0, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x0`; returns this.
+    Phyre_setFloatAt0_00462650 @ 0x0046_2650 => extern "thiscall" fn f_00462650(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x0, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x4`; returns this.
+    Phyre_setFloatAt4_00462660 @ 0x0046_2660 => extern "thiscall" fn f_00462660(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x4, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x4`; returns this.
+    Phyre_setFloatAt4_00462670 @ 0x0046_2670 => extern "thiscall" fn f_00462670(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x4, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x4`; returns this.
+    Phyre_setFloatAt4_00462680 @ 0x0046_2680 => extern "thiscall" fn f_00462680(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x4, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x4`; returns this.
+    Phyre_setFloatAt4_00462690 @ 0x0046_2690 => extern "thiscall" fn f_00462690(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x4, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x8`; returns this.
+    Phyre_setFloatAt8_004626a0 @ 0x0046_26a0 => extern "thiscall" fn f_004626a0(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x8, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x8`; returns this.
+    Phyre_setFloatAt8_004626b0 @ 0x0046_26b0 => extern "thiscall" fn f_004626b0(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x8, f)
+    }
+    /// `thiscall(f)`: `f` stored at `+0x8`; returns this.
+    Phyre_setFloatAt8_004626c0 @ 0x0046_26c0 => extern "thiscall" fn f_004626c0(this: u32, f: u32) -> u32 {
+        msb::set_float(&mut mem(), this, 0x8, f)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_004650e0 @ 0x0046_50e0 => extern "thiscall" fn i_004650e0(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_004651a0 @ 0x0046_51a0 => extern "thiscall" fn i_004651a0(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_00465200 @ 0x0046_5200 => extern "thiscall" fn i_00465200(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_004652c0 @ 0x0046_52c0 => extern "thiscall" fn i_004652c0(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_00465320 @ 0x0046_5320 => extern "thiscall" fn i_00465320(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_00465440 @ 0x0046_5440 => extern "thiscall" fn i_00465440(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// The class-member iterator's next (a copy of `0x00465080`).
+    Phyre_PClusterHeader_iterNext_004654a0 @ 0x0046_54a0 => extern "thiscall" fn i_004654a0(this: u32) -> u32 {
+        cluster::bridge::iter_next(&mut mem(), this)
+    }
+    /// `thiscall`: unlocks the lock `this` points to.
+    Phyre_PCriticalSectionSimple_unlockHeld_0045c0b0 @ 0x0045_c0b0 => extern "thiscall" fn unlock_held(this: u32) -> u32 {
+        msb::unlock_held(&mut mem(), this)
+    }
+    /// `PIClassDataMemberDynamicType::~PIClassDataMemberDynamicType()`.
+    Phyre_PIClassDataMemberDynamicType_dtor_PIClassDataMemberDynamicType @ 0x0057_54f0 => extern "thiscall" fn dynamic_type_dtor(this: u32) -> u32 {
+        msb::dynamic_type_dtor(&mut mem(), this)
+    }
+    /// `thiscall(head)`: this pushed on the list at `head`.
+    Phyre_PList_pushFront_004320a0 @ 0x0043_20a0 => extern "thiscall" fn push_front(this: u32, head: u32) -> u32 {
+        msb::push_front(&mut mem(), this, head)
+    }
+    /// `cdecl`: the conversion kernels' tree cleared.
+    Phyre_PSerialization_clearConversionKernels_0047a210 @ 0x0047_a210 => extern "C" fn clear_kernels() -> u32 {
+        msb::clear_kernels(&mut mem())
+    }
+    /// `cdecl(x)`: `x` unlinked from the geometry utilities.
+    Phyre_PUtilityGeometry_unlink_0047fe10 @ 0x0047_fe10 => extern "C" fn unlink_geometry(x: u32) -> u32 {
+        msb::unlink(&mut mem(), ms::GEOMETRY_UTILITIES, x)
+    }
+    /// `cdecl(x)`: a jump to `0x0047fe10`.
+    Phyre_PUtilityGeometry_unlink_0047fe60 @ 0x0047_fe60 => extern "C" fn unlink_geometry_jmp(x: u32) -> u32 {
+        msb::unlink(&mut mem(), ms::GEOMETRY_UTILITIES, x)
+    }
+    /// `cdecl(x)`: `x` unlinked from the rendering utilities.
+    Phyre_PUtilityRendering_unlink_004c1410 @ 0x004c_1410 => extern "C" fn unlink_rendering_list(x: u32) -> u32 {
+        msb::unlink(&mut mem(), ms::RENDERING_UTILITIES, x)
+    }
+    /// `cdecl(x)`: the slot of `x` cleared, then unlinked.
+    Phyre_PUtilityRendering_unregister_004c1460 @ 0x004c_1460 => extern "C" fn unlink_rendering(x: u32) -> u32 {
+        msb::unlink_rendering(&mut mem(), x)
+    }
+    /// `PUtility`'s scalar deleting destructor.
+    Phyre_PUtility_deletingDtor_00431e10 @ 0x0043_1e10 => extern "thiscall" fn u_00431e10(this: u32, flags: u32) -> u32 {
+        msb::delete_utility(&mut mem(), this, flags)
+    }
+    /// `PUtility`'s scalar deleting destructor.
+    Phyre_PUtility_deletingDtor_00431e70 @ 0x0043_1e70 => extern "thiscall" fn u_00431e70(this: u32, flags: u32) -> u32 {
+        msb::delete_utility(&mut mem(), this, flags)
+    }
+    /// `cdecl`: the serialization's objects destroyed, the kernels cleared.
+    Phyre_PSerialization_shutdown_00432150 @ 0x0043_2150 => extern "C" fn shutdown_serialization() -> u32 {
+        msb::shutdown_serialization(&mut mem())
+    }
+    /// `thiscall`: the descriptor removed from its namespace.
+    Phyre_PClassDescriptor_removeFromNamespace_0043d420 @ 0x0043_d420 => extern "thiscall" fn remove_from_namespace(this: u32) -> u32 {
+        msb::remove_from_namespace(&mut mem(), this)
+    }
+    /// `cdecl`: every descriptor of the global namespace removed.
+    Phyre_PNamespace_clearGlobal_0043e610 @ 0x0043_e610 => extern "C" fn clear_global_namespace() -> u32 {
+        msb::clear_global_namespace(&mut mem())
+    }
+    /// `cdecl`: the thread pool's lock released.
+    Phyre_PThreadPool_releaseLock_0045da00 @ 0x0045_da00 => extern "C" fn release_pool_lock() -> u32 {
+        msb::release_pool_lock(&mut mem())
+    }
+    /// `cdecl(n)`: a jump to `PThreadPool::SetThreadCount`.
+    Phyre_PThreadPool_SetThreadCount_jmp_00431170 @ 0x0043_1170 => extern "C" fn set_thread_count(n: u32) -> u32 {
+        msb::set_thread_count(&mut mem(), n)
     }
 }
