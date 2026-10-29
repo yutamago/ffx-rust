@@ -9,6 +9,7 @@
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_more::bridge as mo;
+use ffx_pother_a::m5p_scripting_run::bridge as ru;
 use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::bridge as st;
@@ -783,5 +784,19 @@ ported! {
     /// `Phyre_PScripting_objectsEqual_00436aa0`.
     Phyre_PScripting_objectsEqual_00436aa0 @ 0x0043_6aa0 => extern "C" fn s_00436aa0(l: u32) -> u32 {
         mo::objects_equal(&mut mem(), l)
+    }
+    // ---- batch 7: the scheduler runs ----
+    /// `Phyre_PScripting_PScheduler_tick_005d0910`.
+    Phyre_PScripting_PScheduler_tick_005d0910 @ 0x005d_0910 => extern "thiscall" fn s_005d0910(this: u32, frame: u32) -> u32 {
+        ru::tick(&mut mem(), this, frame)
+    }
+    /// `Phyre_PScripting_PScheduler_runList_005d0670`.
+    Phyre_PScripting_PScheduler_runList_005d0670 @ 0x005d_0670 => extern "thiscall" fn s_005d0670(this: u32, list: u32) -> u32 {
+        ru::run_list(&mut mem(), this, list)
+    }
+    /// `Phyre_PScripting_PScheduler_runNow_005d07d0`.
+    Phyre_PScripting_PScheduler_runNow_005d07d0 @ 0x005d_07d0 => extern "thiscall" fn s_005d07d0(this: u32, owner: u32, key: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ru::run_now(&mut mem(), this, owner, key, name, f.at())
     }
 }

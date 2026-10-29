@@ -24,6 +24,7 @@ mod m5p_scripting_twins;
 use ffx_pother_a::m5p_scripting_lua::{self as lb, bridge as lua};
 use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_more::{self as mo_, bridge as mo};
+use ffx_pother_a::m5p_scripting_run::{self as ru_, bridge as ru};
 use ffx_pother_a::m5p_scripting_sched::{self as sc_, bridge as sc};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::{self as st_, bridge as st};
@@ -2376,6 +2377,125 @@ fn b6_lua_objects_match_the_original() {
             let what = format!("{label}: objects equal {a} {b_}");
             t.cdecl(&what, 0x0043_6aa0, &[l], |g| Some(mo::objects_equal(g, l)));
         }
+        t.unstub();
+    }
+}
+
+// ---- batch 7: the scheduler runs ----
+
+/// A scheduler for the runs: `n` entries on its live list (+0x24) with
+/// periods `steps`, phases `i`, states `+0x18`, own Lua states for odd
+/// entries when `own`; a pool of `cap` 20-byte slots of which `used` are
+/// taken.
+fn run_sched(t: &mut Twins, steps: &[u16], own: bool, cap: u32, used: u32) -> (u32, Vec<u32>) {
+    let s_ = scheduler(t, 0);
+    let es: Vec<u32> = steps.iter().map(|_| t.zeros(0x20)).collect();
+    for (i, (&e, &step)) in es.iter().zip(steps).enumerate() {
+        let i = i as u32;
+        t.w32(e, es.get(i as usize + 1).copied().unwrap_or(0));
+        t.w32(e + 4, 0x00c9_0400);
+        t.w32(e + 8, 0x10 + i);
+        t.w32(e + 0x10, 0x20 + i);
+        t.write(e + 0x14, &step.to_le_bytes());
+        t.write(e + 0x16, &(i as u16).to_le_bytes());
+        t.w32(e + 0x18, u32::from(i == 2));
+        t.w32(e + 0x1c, if own && i % 2 == 1 { 0x00c9_1100 } else { 0 });
+    }
+    t.w32(s_ + 0x24, es.first().copied().unwrap_or(0));
+    let pool = t.junk(20 * 4, 2);
+    t.w32(s_ + 0x28, cap);
+    t.w32(s_ + 0x2c, pool);
+    t.w32(s_ + 0x30, used);
+    (s_, es)
+}
+
+#[test]
+fn b7_scheduler_runs_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let running = t.rebase(ru_::SCHEDULER_RUNNING);
+        let old = t.r32(running);
+        t.stub(ru_::FREELIST_DEALLOCATE, true, 1, 1, 0xfee);
+        t.stub(ru_::SLOT_STATE, true, 0, 0, 0x00c9_1200);
+        for (r_exec, r_pers) in [(0u32, 0u32), (5, 6)] {
+            // the runs record the current entry (0x00cbd9bc) they see
+            let cur = t.rebase(ru_::CURRENT_ENTRY);
+            let seen = t.zeros(4);
+            let mut pre = vec![0xa1];
+            pre.extend(cur.to_le_bytes()); // mov eax, [cur]
+            pre.push(0xa3);
+            pre.extend(seen.to_le_bytes()); // mov [seen], eax
+            let c = t.stub_code_with(&pre, ru_::EXECUTE, true, 2, 2, r_exec);
+            t.place(ru_::EXECUTE, c);
+            let c = t.stub_code_with(&pre, ru_::EXECUTE_PERSISTENT, true, 1, 1, r_pers);
+            t.place(ru_::EXECUTE_PERSISTENT, c);
+            for (own, cap, used) in [
+                (false, 4u32, 0u32),
+                (true, 4, 0),
+                (false, 0x8000_0001, 1),
+                (false, 4, 2),
+                (false, 2, 2),
+            ] {
+                for frame in [0u32, 1, 2, 6, 0xffff_ffff] {
+                    t.w32(running, 0);
+                    let (s_, _) = run_sched(&mut t, &[1, 2, 3, 0, 4], own, cap, used);
+                    let what =
+                        format!("{label}: tick {r_exec} {r_pers} {own} {cap:#x} {used} {frame:#x}");
+                    t.this(&what, 0x005d_0910, s_, &[frame], |g| {
+                        Some(ru::tick(g, s_, frame))
+                    });
+                }
+                t.w32(running, 0);
+                let (s_, es) = run_sched(&mut t, &[1, 2, 3], own, cap, used);
+                // the one-shot list holds the same entries
+                let list = t.zeros(4);
+                t.w32(list, es[0]);
+                t.w32(s_ + 0x24, 0);
+                let what = format!("{label}: run list {r_exec} {r_pers} {own} {cap:#x} {used}");
+                t.this(&what, 0x005d_0670, s_, &[list], |g| {
+                    Some(ru::run_list(g, s_, list))
+                });
+                // run now: found and not, a known name or not
+                let cell = t.b.stack_range().start + 0x40;
+                for (key, idx) in [
+                    (0x11u32, 3u32),
+                    (0x10, 1),
+                    (0x10, 0x8000_0000),
+                    (0x99, 1),
+                    (0x10, 0),
+                    (0x11, 7),
+                ] {
+                    t.stub_deref0(ru_::NAME_INDEX, 2, 2, idx);
+                    t.w32(running, 0);
+                    let (s_, _) = run_sched(&mut t, &[1, 2, 3], own, cap, used);
+                    let name = if idx == 7 { t.cstr("") } else { t.cstr("tick") };
+                    let what = format!(
+                        "{label}: run now {r_exec} {own} {cap:#x} {used} {key:#x} {idx:#x}"
+                    );
+                    t.this(&what, 0x005d_07d0, s_, &[0x00c9_0400, key, name], |g| {
+                        Some(ru::run_now(g, s_, 0x00c9_0400, key, name, cell))
+                    });
+                }
+            }
+        }
+        // already running
+        t.w32(running, 0x00c9_9000);
+        let (s_, _) = run_sched(&mut t, &[1], false, 4, 0);
+        t.this(
+            &format!("{label}: tick nested"),
+            0x005d_0910,
+            s_,
+            &[0],
+            |g| Some(ru::tick(g, s_, 0)),
+        );
+        let list = t.zeros(4);
+        t.this(
+            &format!("{label}: run list nested"),
+            0x005d_0670,
+            s_,
+            &[list],
+            |g| Some(ru::run_list(g, s_, list)),
+        );
+        t.w32(running, old);
         t.unstub();
     }
 }
