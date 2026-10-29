@@ -370,6 +370,9 @@ fn float_289() {
             assert!(r.xmm0.is_some());
         }
     }
+    // (a slot leaving no ST0 is not tested: the port stores the
+    // indefinite NaN, as the CPU's `fstp` of an empty stack does, but
+    // Unicorn reads the empty register as 0; slot 289 always returns one)
 }
 
 #[test]
@@ -392,7 +395,16 @@ fn scale_ratio_801() {
         [0.005, -0.0, 150.0, 99.99],
     ];
     for v in cases {
-        for s in [[1.0f32, 2.0, 4.0, 0.5], [3.0, 0.25, 1.0, 1.0]] {
+        // (the infinities give quotients of +0 and -0, which compare
+        // equal: which one the maximum keeps shows)
+        for s in [
+            [1.0f32, 2.0, 4.0, 0.5],
+            [3.0, 0.25, 1.0, 1.0],
+            [f32::INFINITY, f32::NEG_INFINITY, f32::INFINITY, 1.0],
+            [f32::NEG_INFINITY, f32::INFINITY, f32::NEG_INFINITY, 1.0],
+            // (+0 and -0 tie, and a negative `q0` keeps the tie's pick)
+            [f32::INFINITY, f32::NEG_INFINITY, -1.0, 1.0],
+        ] {
             for (i, x) in (0u32..).zip(v) {
                 t.set_u32(this + 4 * i, x.to_bits());
             }
@@ -571,7 +583,9 @@ fn bounce_in(n: u16, rva: u32, thunk: u32) {
     });
     for (flag, mode, om) in MODES {
         for ms in method_sets() {
-            for floor in [-100.0f32, 0.0, 4.0, 100.0, f32::NAN] {
+            // (-3.5: the vector's `y`, the parent's -5.25 plus the
+            // owner's 1.75, exactly on the floor)
+            for floor in [-100.0f32, 0.0, 4.0, 100.0, f32::NAN, -3.5] {
                 group(&mut t, flag, mode, om, &ms, 0, 0);
                 t.set_u32(OWNER + 0x34, floor.to_bits());
                 t.check_thunked(
@@ -641,6 +655,9 @@ fn draw_model_in(n: u16, rva: u32, thunk: u32) {
             for i in 0..0x12 {
                 m.w32(row + 0x20 + 4 * i, m.r32(a[3] + 4 * i));
             }
+            // the draw leaves the lock changed: the lock is set again
+            // before slot 775
+            m.w32(lock, slot);
             slot
         });
     }
@@ -678,3 +695,18 @@ fn draw_model_in(n: u16, rva: u32, thunk: u32) {
         }
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_nodes: 310 mutants, 303 killed. Equivalent:
+//   visit_offset_int's first cursor store (each child replaces it before
+//   any method sees it) and `sum`'s initial value (the loop sets it);
+//   float_289's ST0-less default (slot 289 always returns a float, and
+//   Unicorn reads an empty x87 register as 0 where the CPU stores the
+//   indefinite NaN, so the case is not testable); `below`'s `k < x` as
+//   `<=` (it differs only at `k == x`, where the clamp stores 0.01 or
+//   100.0 over a word already holding exactly that: magic_0003's limits
+//   are 0x3c23d70a and 100.0); axis_sprites' `row + 0xc = 0` (stored
+//   0x80 again before anything reads it); bounce's two `vec + 4` stores
+//   moved to `vec - 4` (stored again before slot 325 reads the vector;
+//   `vec - 4` is a frame word nothing reads).

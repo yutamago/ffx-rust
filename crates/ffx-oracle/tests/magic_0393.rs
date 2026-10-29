@@ -16,7 +16,7 @@ mod ownb;
 
 use ffx_magic::{Ret, m0393};
 use magic::{Call, Eax, SCRATCH, Twin};
-use ownb::{dirty_stack, fill, floats, rec, rec_all, reset_counters};
+use ownb::{dirty_stack, fill, floats, rec, rec_all, reset_counters, rotations};
 
 const N: u16 = 393;
 
@@ -57,10 +57,12 @@ fn twin() -> Option<Twin> {
     });
     rec(&mut t, 333, 5, |_, _| 0);
     t.stub_st0(333, |m, _| f64::from(f32::from_bits(m.r32(CFG))));
-    rec(&mut t, 277, 1, |_, _| 0);
+    // the scale calls log every word they see: their own (the caster
+    // or character, then the matrix) and the earlier calls' words left
+    // below them ([`update`]'s widths; [`place`] has 9 more)
+    scale_logs(&mut t, 0);
     t.stub_st0(277, |_, a| 40.0 + f64::from(a[0] & 0xf));
     for (s, v) in [(15u32, 1.5f64), (16, -0.75), (17, 3.0)] {
-        rec(&mut t, s, 1, |_, _| 0);
         t.stub_st0(s, move |_, a| v + f64::from(a[0] & 0x3));
     }
     rec(&mut t, 235, 1, |m, a| {
@@ -98,23 +100,14 @@ fn twin() -> Option<Twin> {
     Some(t)
 }
 
-/// Rotations whose angle `A - rot` (operands `a`, `hi`, `lo` of `f`)
-/// wraps down, stays, wraps up, lands on either limit, or is NaN.
-fn rotations(t: &Twin, f: u32, a: u32, hi: u32, lo: u32) -> Vec<f32> {
-    let k = |op: u32| f32::from_bits(t.u32(t.img.word(f + op)));
-    let (a, hi, lo) = (k(a), k(hi), k(lo));
-    let mut v = vec![0.0f32, a, a + 4.0, -2.0, f32::NAN];
-    for limit in [hi, lo] {
-        let guess = (a - limit).to_bits();
-        if let Some(r) = (0..256u32)
-            .flat_map(|d| [guess.wrapping_add(d), guess.wrapping_sub(d)])
-            .map(f32::from_bits)
-            .find(|&r| (a - r).to_bits() == limit.to_bits())
-        {
-            v.push(r);
-        }
+/// Logs slot 277's and slots 15-17's calls with all `2 + base`, `3 +
+/// base`, ... words (each call's own words above the matrix and the
+/// `base` words the caller's earlier calls left on the stack), not just
+/// the first.
+fn scale_logs(t: &mut Twin, base: usize) {
+    for (s, n) in [(277u32, 2usize), (15, 3), (16, 4), (17, 5)] {
+        rec(t, s, n + base, |_, _| 0);
     }
-    v
 }
 
 #[test]
@@ -134,6 +127,10 @@ fn face() {
         for g in flags {
             t.set_u32(g, 0x77);
         }
+        // the words face sets, not yet what it sets them to: the
+        // position's `w` and the done word
+        t.set_u32(STATE + 0x1c1c, 0x77);
+        t.set_u32(STATE + 0x1f00, 0x77);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(m0393::face(g, img, fr.at))
         });
@@ -216,6 +213,10 @@ fn small_callbacks() {
 fn place() {
     let Some(mut t) = twin() else { return };
     let f = t.at(0x24d0);
+    scale_logs(&mut t, 9);
+    // words below the state block, so that turns read from the wrong
+    // side of it differ from the zeros place writes
+    fill(&mut t, STATE - 0x1c00, 0x10, 0x1c00);
     // the facing -rot: facing + K = K - rot hits each case
     for rot in rotations(&t, f, 0x30, 0x51, 0x7f) {
         t.set_u32(STATE + 0x1ee0, (-rot).to_bits());
@@ -316,3 +317,22 @@ fn eye() {
     floats(&mut t, STATE + 0x1ba0, &[1.0, 2.0, 3.0, 4.0]);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::m0393: 329 mutants, 317 killed. Equivalent: the second
+//   `v + 0xc = 1.0` in place (twice; the loop just stored 1.0 there and
+//   nothing writes `v` in between; at `v - 0xc` it lands in `out + 4`,
+//   which slot 229 rewrites whole) and its deletion; place's `m == 0`
+//   branch (5 mutants: `m` is the state block + 0x1bb0, null only for a
+//   state pointer at 0xffffe450, unmapped); cue's `r > 3` as `>=` and
+//   `f + 0x20` as `f - 0x20` (`to` only matters by being `f + 0x52` or
+//   not; table entry 3 is `f + 0x20`); eye's `last` initial value (the
+//   loop always sets it).
+// - ffx_magic::ob_model (here first, then magic_0394..0396/0596/
+//   ob_summon): 40 mutants, 35 killed. Equivalent: the `eax` initial
+//   values of scale_unit and scale_model (the loops always set them);
+//   `stack.insert(1, c)` in scale_unit (`c` and `c277` are the same
+//   character, both `G_CHRS[(*G_SEL)[at]]` through the same globals with
+//   nothing in between that writes them); root_matrix's `moved` flag
+//   (2: its only caller, m0394::root, returns `.1`).

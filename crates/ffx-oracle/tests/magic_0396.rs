@@ -226,3 +226,11 @@ fn weapon_frame() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::m0396: 107 mutants, 104 killed. Equivalent: aim's `hi`
+//   operand and `y > hi` as `>=` (`hi` only orders the two stores to
+//   `out + 4` and `out + 8`; the memory after is the same);
+//   weapon_frame's `stack.insert(1, wpn)` (`stack[0]` is `wpn` already).
+// - ffx_magic::m0395 (magic_0395): 20 mutants, all killed.

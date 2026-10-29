@@ -157,19 +157,24 @@ fn pool_take() {
         (0, 0, 0),
         (6, 5, 0b10_0000),
         (6, 4, 0b11_0000),
+        // all busy from the last record: the wrap comes first
+        (4, 3, 0b1111),
     ] {
-        for i in 0..8 {
-            t.write(recs + 0x74 * i, &[0x5a; 0x74]);
-            t.set_u32(recs + 0x74 * i + 0x30, 0x300 + i);
-            t.set_u32(recs + 0x74 * i + 0x6c, (busy >> i) & 1);
+        for pg in [0u32, 1] {
+            for i in 0..8 {
+                t.write(recs + 0x74 * i, &[0x5a; 0x74]);
+                t.set_u32(recs + 0x74 * i + 0x30, 0x300 + i);
+                t.set_u32(recs + 0x74 * i + 0x6c, (busy >> i) & 1);
+            }
+            t.set_u32(n, count);
+            t.set_u32(idx, start);
+            // (page 1: the refill's keys go to the second 0x200 words)
+            t.set_u32(page, pg);
+            t.write(LOG, &[0; 4]);
+            t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(sb_misc::pool_take(g, img, fr.at))
+            });
         }
-        t.set_u32(n, count);
-        t.set_u32(idx, start);
-        t.set_u32(page, 0);
-        t.write(LOG, &[0; 4]);
-        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
-            Ret::eax(sb_misc::pool_take(g, img, fr.at))
-        });
     }
 }
 
@@ -223,6 +228,10 @@ fn part_setup_and_ease() {
         0x710
     });
     t.set_u32(lock, 9);
+    // the four words part_setup clears hold something first
+    for o in [0x58u32, 0x62, 0x6c, 0x76] {
+        t.set_u32(t.img.word(f + o), 0x77);
+    }
     t.check(
         f,
         Call::default(),
@@ -235,53 +244,65 @@ fn part_setup_and_ease() {
     let keys = [
         0.5f32, 2.75, -3.0, 3.1, 1.0, -0.5, 0.0, 6.0, -6.0, 2.0, 0.25, -1.5,
     ];
-    for (i, k) in (0u32..).zip(keys) {
-        t.set_u32(tab + 4 * i, k.to_bits());
-    }
-    for (rva, angle) in [(0x90a0u32, false), (0x91a0, true)] {
-        for time in [
-            0.0f32, 0.25, 0.5, 0.75, 1.0, 1.4, 2.6, 3.0, 3.9, 4.5, 4.99, -0.0,
-        ] {
-            for (n, stride) in [(6u32, 2u32), (5, 2), (3, 4), (12, 1)] {
-                if time >= n as f32 {
-                    continue;
-                }
-                t.check(
-                    t.at(rva),
-                    Call {
-                        eax: 0,
-                        ecx: tab,
-                        edx: n,
-                        ..Call::default()
+    // and: the same past a whole turn (the angle's turns taken off), every
+    // key at -pi (the angle exactly 0) and neighbours exactly a half turn
+    // apart (pi is the angle's offset `+0x07`)
+    let pi = std::f32::consts::PI;
+    let tables = [
+        keys,
+        keys.map(|k| k + 4.0),
+        [-pi; 12],
+        [0.0, pi, 0.0, -pi, pi, 0.0, -pi, 0.0, pi, pi, 0.0, -pi],
+    ];
+    for keys in tables {
+        for (i, k) in (0u32..).zip(keys) {
+            t.set_u32(tab + 4 * i, k.to_bits());
+        }
+        for (rva, angle) in [(0x90a0u32, false), (0x91a0, true)] {
+            for time in [
+                0.0f32, 0.25, 0.5, 0.75, 1.0, 1.4, 2.6, 3.0, 3.9, 4.5, 4.99, -0.0,
+            ] {
+                for (n, stride) in [(6u32, 2u32), (5, 2), (3, 4), (12, 1)] {
+                    if time >= n as f32 {
+                        continue;
                     }
-                    .with_xmm(&[Xmm::f32(time)]),
-                    &[stride],
-                    Eax::Junk,
-                    |g, img, fr| {
-                        let x = if angle {
-                            sb_misc::ease_angle(
-                                g,
-                                img,
-                                fr.at,
-                                fr.esp,
-                                fr.ecx,
-                                fr.edx,
-                                fr.xmm_f32(0),
-                            )
-                        } else {
-                            sb_misc::ease_sample(
-                                g,
-                                img,
-                                fr.at,
-                                fr.esp,
-                                fr.ecx,
-                                fr.edx,
-                                fr.xmm_f32(0),
-                            )
-                        };
-                        Ret::xmm0(Xmm::f32(x), 0)
-                    },
-                );
+                    t.check(
+                        t.at(rva),
+                        Call {
+                            eax: 0,
+                            ecx: tab,
+                            edx: n,
+                            ..Call::default()
+                        }
+                        .with_xmm(&[Xmm::f32(time)]),
+                        &[stride],
+                        Eax::Junk,
+                        |g, img, fr| {
+                            let x = if angle {
+                                sb_misc::ease_angle(
+                                    g,
+                                    img,
+                                    fr.at,
+                                    fr.esp,
+                                    fr.ecx,
+                                    fr.edx,
+                                    fr.xmm_f32(0),
+                                )
+                            } else {
+                                sb_misc::ease_sample(
+                                    g,
+                                    img,
+                                    fr.at,
+                                    fr.esp,
+                                    fr.ecx,
+                                    fr.edx,
+                                    fr.xmm_f32(0),
+                                )
+                            };
+                            Ret::xmm0(Xmm::f32(x), 0)
+                        },
+                    );
+                }
             }
         }
     }
@@ -295,6 +316,8 @@ fn start_steps() {
     let f = t.at(0x93c0);
     let state = t.img.word(f + 0x01);
     log_slots(&mut t, &[(225, 1), (313, 1), (549, 1), (226, 2)]);
+    // slot 226's global argument (non-zero, so that reading it shows)
+    t.set_u32(t.img.word(f + 0x5e), 0x0226_005e);
     for s in [0u32, 1, 2, 3, 4, 0xffff_ffff] {
         for a in [[0u32, 0, 0, 7], [1, 0, 0, 7], [0, 1, 0, 7], [0, 0, 1, 7]] {
             answers(&mut t, &a);
@@ -337,6 +360,22 @@ fn load_step() {
         t.img.word(f + 0x67),
     );
     log_slots(&mut t, &[(253, 0), (225, 1), (226, 2), (227, 1)]);
+    // the two counters and the slots' global arguments: non-zero, so
+    // that reading them shows
+    for (o, v) in [
+        (0x36u32, 0x100u32),
+        (0x4c, 0x0226_004c),
+        (0x75, 0x0227_0075),
+        (0x8b, 0x200),
+    ] {
+        t.set_u32(t.img.word(f + o), v);
+    }
+    // the counters are the flags `+0x14`/`+0x67` (the same globals), so
+    // they are 0 whenever they are counted up: the words a misread
+    // operand would name instead (one byte on) are made non-zero
+    for o in [0x37u32, 0x8c] {
+        t.set_u32(t.img.word(f + o), 0x5a5a);
+    }
     for ready in [0u32, 1] {
         for r225 in [0u32, 1] {
             for r227 in [0u32, 1, 2, 0x8000_0000] {
@@ -378,6 +417,8 @@ fn move_start() {
             Eax::Checked,
             |g, img, fr| Ret::eax(sb_misc::move_start(g, img, fr.at, fr.xmm_f32(2), fr.eax)),
         );
+        // the word move_start_2 clears holds something first
+        t.set_u32(t.img.word(t.at(0x67f0) + 0x3d), 0x77);
         t.check(
             t.at(0x67f0),
             Call::default().with_xmm(&[
@@ -455,3 +496,39 @@ fn op_free_part() {
         t.check_entry(f, Call::default(), &[SCRATCH, ip], Eax::Checked);
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_misc (against this file and magic_sb_misc2.rs): 923
+//   mutants, 901 killed. Equivalent:
+//   - mean_position: the `i == u32::MAX` arm (i counts up from 0 and
+//     stops at a signed count) and the frame vector's `w = 1.0` (slot 262
+//     gets x, y, z only; nothing reads it).
+//   - pool_take: `esi < esi + 0x200` as `<=` (true either way, `esi` is
+//     `page << 9`); `l4`'s step (it only places a second refill in the
+//     same call, and the search ends after `n` probes, one wrap at most,
+//     with the count slot 941 does not change).
+//   - pool_take_140: `tried` counting down (the search then ends after
+//     2^31 probes instead of `n`, with the same 0: the loop stores nothing
+//     until it finds a record) and `>=` as `>` (one more probe of a record
+//     already refused).
+//   - unwrap_near's `a > b` as `>=` (at `a == b` both arms give `b`,
+//     `0 > k5` being false for k5 = pi); ease_angle's `turns > 0` as `>=`
+//     (taking off `0 * k6` = +0 leaves any `x2` as it is).
+//   - timeline_run's `r` initial value (only `r == 0` matters).
+//   - the ST0-less defaults of actor_scale, place_model_unscaled and
+//     start_551 (the slots always return a float; Unicorn reads an empty
+//     x87 register as 0 where the CPU stores the indefinite NaN).
+//   - lookup_actors: `+0x34`/`+0x73` swapped (the same global); slot 215
+//     as 219 (the mode word `+0x42` is `+0x18`, which the function sets
+//     to 1 first: the 215 arm never runs).
+//   - start_551: the `ecx` of the cdecl slot 221 call.
+//   - sprite_init_colour's and aim_parent's `eax` initial values (the
+//     loops set them).
+//   - deal: `ebp` 8 bytes up (the frame's scratch counts and pool move,
+//     still below the entry for any pool the original's 256 bytes hold);
+//     `max(0)` as `max(1)` (n > 1 there); `c > 0` as `>= 0` (a zero count
+//     adds nothing); `unwrap_or(1)` (only for an empty pool, where the
+//     original's `idiv` faults).
+//   - pick_variant's record step (the count `+0x5c` is `+0x24`, set to 1
+//     just before: one record).

@@ -64,6 +64,10 @@ fn stubs(t: &mut Twin, lock: u32) {
         m.w32(LOG + 0x400, a[0]);
         m.w32(LOG + 0x404, a[1]);
         m.w32(LOG + 0x408, m.r32(lock));
+        // the part changes the word handed over to it (`*+0x2e0`, the
+        // `PTRS + 0x20` the test points it at), so that the hand-back
+        // into `+0x2e5`'s global is seen
+        m.w32(PTRS + 0x20, m.r32(PTRS + 0x20) ^ 0x0712_0000);
         m.r32(a[0] - 4)
     });
 }
@@ -164,3 +168,9 @@ fn run_part() {
         }
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_ppp: 99 mutants, 98 killed. Equivalent: the frame
+//   run_part hands free_then_unlink at `esp + 0x2c` (it reads only `at`
+//   and `ecx`, never `esp`).
