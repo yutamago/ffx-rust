@@ -166,6 +166,24 @@ impl<M: Mem> StubMem for M {
 }
 
 type Stub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> u32>;
+type FloatStub = Box<dyn Fn(&mut dyn StubMem, &[u32]) -> f64>;
+
+/// An x87 80-bit value from an `f64` (exact; no subnormals).
+fn f64_to_f80(x: f64) -> [u8; 10] {
+    let b = x.to_bits();
+    let sign = ((b >> 63) as u16) << 15;
+    let exp = ((b >> 52) & 0x7ff) as u16;
+    let frac = b & ((1 << 52) - 1);
+    let (e, m): (u16, u64) = match exp {
+        0 => (0, 0),
+        0x7ff => (0x7fff, (1 << 63) | (frac << 11)),
+        _ => (exp + (16383 - 1023), (1 << 63) | (frac << 11)),
+    };
+    let mut out = [0u8; 10];
+    out[..8].copy_from_slice(&m.to_le_bytes());
+    out[8..].copy_from_slice(&(sign | e).to_le_bytes());
+    out
+}
 
 /// One call-out: the target, its slot, the argument words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,11 +195,13 @@ pub struct CallOut {
 
 /// How many stack words a call-out's log keeps from the original's stack
 /// (its arity is not known there; the port's own count is compared).
-const LOGGED: usize = 12;
+const LOGGED: usize = 16;
 
 #[derive(Default)]
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
+    /// Slots answering a float in ST0 (eax stays 0).
+    float_stubs: HashMap<u32, FloatStub>,
     rand: u32,
 }
 
@@ -195,6 +215,13 @@ fn answer(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> u3
         Some(f) => f(m, args),
         None => 0,
     }
+}
+
+/// A float stub's ST0 for this call-out, if the slot has one.
+fn answer_float(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> Option<f64> {
+    slot_of(target)
+        .and_then(|s| shared.float_stubs.get(&s))
+        .map(|f| f(m, args))
 }
 
 /// The original's host: Unicorn's call-outs logged and answered by the
@@ -213,12 +240,32 @@ impl Host for OrigHost<'_> {
             .collect();
         let mut mm = ArenaMem;
         regs.eax = answer(self.shared, &mut mm, target, &args);
+        if let Some(x) = answer_float(self.shared, &mut mm, target, &args) {
+            regs.st[0] = f64_to_f80(x);
+            regs.st_len = 1;
+        }
         self.calls.push(CallOut { target, slot, args });
         regs.esp += 4;
         Ok(())
     }
 
     fn import(&mut self, name: &str, regs: &mut Regs) -> Option<Result<(), String>> {
+        // the libm imports: the same Rust functions as `PortGame::libm`
+        // (MSVCR110's own results are the game's; here both sides only
+        // need to agree)
+        let libm: Option<fn(f64) -> f64> = match name {
+            "_libm_sse2_sin_precise" => Some(f64::sin),
+            "_libm_sse2_cos_precise" => Some(f64::cos),
+            "_libm_sse2_atan_precise" => Some(f64::atan),
+            "_libm_sse2_acos_precise" => Some(f64::acos),
+            _ => None,
+        };
+        if let Some(f) = libm {
+            let x = f64::from_le_bytes(regs.xmm0[..8].try_into().unwrap());
+            regs.xmm0[..8].copy_from_slice(&f(x).to_le_bytes());
+            regs.esp += 4;
+            return Some(Ok(()));
+        }
         if name == "rand" {
             self.shared.rand = self
                 .shared
@@ -263,6 +310,7 @@ impl Mem for PortGame {
 impl Game for PortGame {
     fn call(&mut self, target: u32, _ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
+        let st0 = answer_float(&self.shared, &mut self.mem, target, args);
         self.calls.push(CallOut {
             target,
             slot: slot_of(target),
@@ -270,6 +318,7 @@ impl Game for PortGame {
         });
         Out {
             eax,
+            st0,
             ..Out::default()
         }
     }
@@ -324,6 +373,9 @@ pub struct Twin {
     heap: u32,
     /// Words the next comparison leaves out (the CRT's own state).
     ignore: Vec<u32>,
+    /// The original's registers after the last [`Twin::check`] (for
+    /// results outside `eax`/ST0, such as an internal function's `xmm0`).
+    pub last: Regs,
 }
 
 fn game_dir() -> Option<PathBuf> {
@@ -426,11 +478,13 @@ impl Twin {
             port: PageMem::default(),
             shared: Shared {
                 stubs: HashMap::new(),
+                float_stubs: HashMap::new(),
                 rand: 1,
             },
             functions,
             heap: HEAP,
             ignore: Vec::new(),
+            last: Regs::default(),
         };
         // this thread's Unicorn engine (its thread block comes from the
         // heap) before any snapshot: GetEffectOverlayTable(1)
@@ -579,6 +633,17 @@ impl Twin {
         self.shared.stubs.insert(slot, Box::new(f));
     }
 
+    /// The original's `xmm0` low word after the last [`Twin::check`].
+    #[must_use]
+    pub fn xmm0_f32(&self) -> u32 {
+        u32::from_le_bytes(self.last.xmm0[..4].try_into().unwrap())
+    }
+
+    /// Answers `slot` with a float in ST0 for both sides.
+    pub fn stub_float(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> f64 + 'static) {
+        self.shared.float_stubs.insert(slot, Box::new(f));
+    }
+
     fn orig(&mut self, at: u32, c: Call, args: &[u32]) -> (Regs, Vec<CallOut>) {
         let mut a = ArenaMem;
         let sp = ENTRY_ESP;
@@ -618,6 +683,7 @@ impl Twin {
             self.port.write::<u32>(ENTRY_ESP + 4 + 4 * i, *w);
         }
         let (o, ocalls) = self.orig(at, c, args);
+        self.last = o;
         let frame = Frame {
             at,
             esp: ENTRY_ESP,
