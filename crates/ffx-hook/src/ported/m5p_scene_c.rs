@@ -1,9 +1,7 @@
 //! M5 stage 1, list `scene`, batch 3 (`ffx_prender::m5p_scene_c`): the
 //! utilities' registry, array resizes and element constructors, list
 //! unlinks, the scene cursor and more small methods. Parity tests:
-//! `crates/ffx-oracle/tests/m5p_scene.rs` (`m5p_scene_c_*`). The six
-//! functions under five bytes have bridges and tests but no hook
-//! (`symbols/m5-not-portable.tsv`).
+//! `crates/ffx-oracle/tests/m5p_scene.rs` (`m5p_scene_c_*`).
 
 use ffx_prender::m5p_scene_c as t;
 use ffx_prender::m5p_scene_c::bridge as b;

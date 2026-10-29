@@ -1771,38 +1771,6 @@ fn m5p_scene_c_misc() {
     }
 }
 
-/// The functions under five bytes (no hook; their bridges for the 64-bit
-/// table).
-#[test]
-fn m5p_scene_c_stubs() {
-    for (what, mut tw) in Twins::all() {
-        for this in [0, 0x0012_3450, 0xffff_fff8] {
-            for f in [0x0043_2bf0, 0x0050_42a0] {
-                let label = format!("{what} stub {f:#x}");
-                tw.run(&label, f, Conv::Thiscall(this), &[], |_| {
-                    sc::bridge::stub_zero()
-                });
-            }
-            let label = format!("{what} stub 0x555d00");
-            tw.run_al(&label, 0x0055_5d00, Conv::Thiscall(this), &[], |_| {
-                sc::bridge::stub_false()
-            });
-            let label = format!("{what} stub 0x4fd120");
-            tw.run(&label, 0x004f_d120, Conv::Thiscall(this), &[], |_| {
-                sc::bridge::stub_this(this)
-            });
-            let label = format!("{what} stub 0x4fc880");
-            tw.run(&label, 0x004f_c880, Conv::Thiscall(this), &[], |_| {
-                sc::bridge::stub_field_c(this)
-            });
-            let label = format!("{what} stub 0x5d7440");
-            tw.run_void(&label, 0x005d_7440, Conv::Thiscall(this), &[], |_| {
-                sc::bridge::stub_nothing();
-            });
-        }
-    }
-}
-
 // ---- batch 4 (ffx_prender::m5p_scene_d) ----
 
 use ffx_prender::m5p_scene_d as sd;

@@ -603,34 +603,4 @@ pub mod bridge {
         }
         0
     }
-
-    // ---- under five bytes (not hookable: symbols/m5-not-portable.tsv) ----
-
-    /// `0x00432bf0` (`PUtilityScene` slot 2), `0x005042a0` (`PUtilityLOD`
-    /// slot 2): `xor eax, eax; ret`.
-    #[must_use]
-    pub const fn stub_zero() -> u32 {
-        0
-    }
-
-    /// `0x00555d00` (`PTimerComponent` slot 11): `xor al, al; ret`.
-    #[must_use]
-    pub const fn stub_false() -> u8 {
-        0
-    }
-
-    /// `0x004fd120` (thiscall): `mov eax, ecx; ret`.
-    #[must_use]
-    pub const fn stub_this(this: u32) -> u32 {
-        this
-    }
-
-    /// `0x004fc880` (thiscall): `lea eax, [ecx+0xc]; ret`.
-    #[must_use]
-    pub const fn stub_field_c(this: u32) -> u32 {
-        this.wrapping_add(0xc)
-    }
-
-    /// `0x005d7440` (`PWorldMatrixController` slot 3): a bare `ret`.
-    pub const fn stub_nothing() {}
 }
