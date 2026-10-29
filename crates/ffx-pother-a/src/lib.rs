@@ -8,7 +8,8 @@
 //! - [`object`]: small constructors, destructors and the class
 //!   descriptors' create/destroy callbacks (`mov al, 1; ret 4`);
 //! - [`physics`]: the physics classes' create callbacks;
-//! - [`m5p_scripting_small`]: M5 phyre-scripting batch 1, the small functions.
+//! - [`m5p_scripting_small`]: M5 phyre-scripting batch 1, the small functions;
+//! - [`m5p_scripting_mid`]: M5 phyre-scripting batch 2, middle-sized Lua glue and fixups.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -26,6 +27,7 @@
 use ffx_graphic::host::{Conv, Host};
 
 pub mod class;
+pub mod m5p_scripting_mid;
 pub mod m5p_scripting_small;
 pub mod object;
 pub mod p3_bind;

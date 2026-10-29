@@ -188,7 +188,7 @@ impl Twins {
         Mem::read(&self.b, self.log + 4 + 32 * n + 4 * i)
     }
 
-    fn code(&mut self, c: &[u8]) -> u32 {
+    pub fn code(&mut self, c: &[u8]) -> u32 {
         let at = self.a.alloc_code(c).unwrap();
         assert_eq!(self.b.alloc_code(c).unwrap(), at);
         at

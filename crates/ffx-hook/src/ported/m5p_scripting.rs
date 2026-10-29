@@ -6,9 +6,10 @@
 //! headers can be processed from a worker. No shim keeps state; each works
 //! on the game's memory through [`mem`].
 
+use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     // ---- batch 1: the small functions ----
@@ -439,5 +440,151 @@ ported! {
     /// `Phyre_PClassDescriptorForType_Phyre_DynamicMeshDefaultImplmenetation_dtor_006e0a80`.
     Phyre_PClassDescriptorForType_Phyre_DynamicMeshDefaultImplmenetation_dtor_006e0a80 @ 0x006e_0a80 => extern "thiscall" fn s_006e0a80(this: u32) -> u32 {
         b::tail_dtor(&mut mem(), &s::TAIL_DTORS[12], this)
+    }
+    // ---- batch 2: middle-sized Lua glue and fixups ----
+    /// `Phyre_PScripting_pushVector_00572150`.
+    Phyre_PScripting_pushVector_00572150 @ 0x0057_2150 => extern "C" fn s_00572150(l: u32, v: u32) -> u32 {
+        m::push_vector(&mut mem(), l, v)
+    }
+    /// `Phyre_PNameComponent_linkAll_0045ad00`.
+    Phyre_PNameComponent_linkAll_0045ad00 @ 0x0045_ad00 => extern "C" fn s_0045ad00(p: u32) -> u32 {
+        m::link_names(&mut mem(), p)
+    }
+    /// `Phyre_PScripting_readArray_004363b0`.
+    Phyre_PScripting_readArray_004363b0 @ 0x0043_63b0 => extern "C" fn s_004363b0(l: u32, n: u32, at: u32, ty: u32) -> u32 {
+        m::read_array(&mut mem(), l, n, at, ty)
+    }
+    /// `Phyre_PScripting_runChunk_005d65f0`.
+    Phyre_PScripting_runChunk_005d65f0 @ 0x005d_65f0 => extern "C" fn s_005d65f0(pl: u32) -> u32 {
+        m::run_chunk(&mut mem(), pl)
+    }
+    /// `Phyre_PScripting_PUtilityScripting_scalarDeletingDtor_005d52d0`.
+    Phyre_PScripting_PUtilityScripting_scalarDeletingDtor_005d52d0 @ 0x005d_52d0 => extern "thiscall" fn s_005d52d0(this: u32, flags: u32) -> u32 {
+        m::registrant_dtor(&mut mem(), this, flags)
+    }
+    /// `Phyre_PScripting_luaAlloc_005d5ba0`.
+    Phyre_PScripting_luaAlloc_005d5ba0 @ 0x005d_5ba0 => extern "C" fn s_005d5ba0(_ud: u32, old: u32, old_size: u32, new_size: u32) -> u32 {
+        m::lua_alloc(&mut mem(), old, old_size, new_size)
+    }
+    /// `Phyre_PScripting_loadScript_00436750`.
+    Phyre_PScripting_loadScript_00436750 @ 0x0043_6750 => extern "C" fn s_00436750(l: u32, s: u32) -> u32 {
+        m::load_script(&mut mem(), l, s)
+    }
+    /// `Phyre_PScripting_PScheduler_reapFinished_005d1220`.
+    Phyre_PScripting_PScheduler_reapFinished_005d1220 @ 0x005d_1220 => extern "thiscall" fn s_005d1220(this: u32) {
+        m::reap_finished(&mut mem(), this);
+    }
+    /// `Phyre_PScripting_pushValues_00436e20`.
+    Phyre_PScripting_pushValues_00436e20 @ 0x0043_6e20 => extern "C" fn s_00436e20(l: u32, n: u32, at: u32, ty: u32) -> u32 {
+        m::push_values(&mut mem(), l, n, at, ty)
+    }
+    /// `Phyre_PScripting_PScheduler_hasEntry_005d0e20`.
+    Phyre_PScripting_PScheduler_hasEntry_005d0e20 @ 0x005d_0e20 => extern "thiscall" fn s_005d0e20(this: u32, owner: u32, key: u32, name: u32) -> u8 {
+        m::has_entry(&mut mem(), this, owner, key, name)
+    }
+    /// `Phyre_PRandomGenerator_nextFloat_0045ea50`.
+    Phyre_PRandomGenerator_nextFloat_0045ea50 @ 0x0045_ea50 => extern "C" fn s_0045ea50() -> f32 {
+        m::random_float(&mut mem())
+    }
+    /// `Phyre_PRendering_PContextSwitchLights_readBits_004d3ef0`.
+    Phyre_PRendering_PContextSwitchLights_readBits_004d3ef0 @ 0x004d_3ef0 => extern "thiscall" fn s_004d3ef0(this: u32, start: u32, n: u32) -> u32 {
+        m::read_bits(&mem(), this, start, n)
+    }
+    /// `Phyre_PScripting_GetLibraryOpener`.
+    Phyre_PScripting_GetLibraryOpener @ 0x005d_5710 => extern "C" fn s_005d5710(name: u32) -> u32 {
+        m::library_opener(&mem(), name)
+    }
+    /// `Phyre_PScripting_checkPhyreObject_00436160`.
+    Phyre_PScripting_checkPhyreObject_00436160 @ 0x0043_6160 => extern "C" fn s_00436160(l: u32, idx: u32) -> u32 {
+        m::check_userdata(&mut mem(), mid::USERDATA_CHECKS[0].1, l, idx)
+    }
+    /// `Phyre_PScripting_checkVector_00570dc0`.
+    Phyre_PScripting_checkVector_00570dc0 @ 0x0057_0dc0 => extern "C" fn s_00570dc0(l: u32, idx: u32) -> u32 {
+        m::check_userdata(&mut mem(), mid::USERDATA_CHECKS[1].1, l, idx)
+    }
+    /// `Phyre_PPostProcessing_PDepthOfField_initialize_00a1b710`.
+    Phyre_PPostProcessing_PDepthOfField_initialize_00a1b710 @ 0x00a1_b710 => extern "thiscall" fn s_00a1b710(this: u32) -> u32 {
+        m::dof_init(&mut mem(), this)
+    }
+    /// `Phyre_PScripting_componentIndex_00436240`.
+    Phyre_PScripting_componentIndex_00436240 @ 0x0043_6240 => extern "C" fn s_00436240(l: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        m::component_index(&mut mem(), l, f.at())
+    }
+    /// `Phyre_PSerialization_PStreamWriterFile_scalarDeletingDtor_009f07a0`.
+    Phyre_PSerialization_PStreamWriterFile_scalarDeletingDtor_009f07a0 @ 0x009f_07a0 => extern "thiscall" fn s_009f07a0(this: u32, flags: u32) -> u32 {
+        m::writer_dtor(&mut mem(), this, flags)
+    }
+    /// `Phyre_PScripting_RegisterFunctions`.
+    Phyre_PScripting_RegisterFunctions @ 0x005d_6070 => extern "C" fn s_005d6070(l: u32) -> u32 {
+        m::register_functions(&mut mem(), l)
+    }
+    /// `Phyre_PClassDataMemberDynamic_fixObjects_00446650`.
+    Phyre_PClassDataMemberDynamic_fixObjects_00446650 @ 0x0044_6650 => extern "C" fn s_00446650(p: u32) -> u32 {
+        m::fix_dynamic_members(&mut mem(), p)
+    }
+    /// `Phyre_PPostProcessing_PDeferredLighting_fixObjects_00a07e80`.
+    Phyre_PPostProcessing_PDeferredLighting_fixObjects_00a07e80 @ 0x00a0_7e80 => extern "C" fn s_00a07e80(p: u32) -> u32 {
+        m::fix_postfx(&mut mem(), mid::POSTFX_FIXUPS[0].1, p)
+    }
+    /// `Phyre_PPostProcessing_PFXAA_fixObjects_00a07fb0`.
+    Phyre_PPostProcessing_PFXAA_fixObjects_00a07fb0 @ 0x00a0_7fb0 => extern "C" fn s_00a07fb0(p: u32) -> u32 {
+        m::fix_postfx(&mut mem(), mid::POSTFX_FIXUPS[1].1, p)
+    }
+    /// `Phyre_PPostProcessing_PGlow_fixObjects_00a08030`.
+    Phyre_PPostProcessing_PGlow_fixObjects_00a08030 @ 0x00a0_8030 => extern "C" fn s_00a08030(p: u32) -> u32 {
+        m::fix_postfx(&mut mem(), mid::POSTFX_FIXUPS[2].1, p)
+    }
+    /// `Phyre_PPostProcessing_PMotionBlur_fixObjects_00a080b0`.
+    Phyre_PPostProcessing_PMotionBlur_fixObjects_00a080b0 @ 0x00a0_80b0 => extern "C" fn s_00a080b0(p: u32) -> u32 {
+        m::fix_postfx(&mut mem(), mid::POSTFX_FIXUPS[3].1, p)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_fixObjects_00a08130`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_fixObjects_00a08130 @ 0x00a0_8130 => extern "C" fn s_00a08130(p: u32) -> u32 {
+        m::fix_postfx(&mut mem(), mid::POSTFX_FIXUPS[4].1, p)
+    }
+    /// `Phyre_PScripting_upvalueCall_00437160`.
+    Phyre_PScripting_upvalueCall_00437160 @ 0x0043_7160 => extern "C" fn s_00437160(l: u32) -> u32 {
+        m::upvalue_call(&mut mem(), l)
+    }
+    /// `Phyre_PScripting_upvalueCall_004371e0`.
+    Phyre_PScripting_upvalueCall_004371e0 @ 0x0043_71e0 => extern "C" fn s_004371e0(l: u32) -> u32 {
+        m::upvalue_call(&mut mem(), l)
+    }
+    /// `Phyre_PAnimation_PAnimatableComponent_bind_00541c00`.
+    Phyre_PAnimation_PAnimatableComponent_bind_00541c00 @ 0x0054_1c00 => extern "thiscall" fn s_00541c00(this: u32) -> u32 {
+        m::animatable_bind(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimatableComponent_setSlot_00543280`.
+    Phyre_PAnimation_PAnimatableComponent_setSlot_00543280 @ 0x0054_3280 => extern "thiscall" fn s_00543280(this: u32, index: u32, target: u32) -> u32 {
+        m::animatable_set_slot(&mut mem(), this, index, target)
+    }
+    /// `Phyre_PAnimation_PAnimatableComponent_fixObjects_00540c10`.
+    Phyre_PAnimation_PAnimatableComponent_fixObjects_00540c10 @ 0x0054_0c10 => extern "C" fn s_00540c10(p: u32) -> u32 {
+        m::fix_animatables(&mut mem(), p)
+    }
+    /// `Phyre_PLODGroup_fixObjects_005a5110`.
+    Phyre_PLODGroup_fixObjects_005a5110 @ 0x005a_5110 => extern "C" fn s_005a5110(p: u32) -> u32 {
+        m::lod_fixup(&mut mem(), p, false)
+    }
+    /// `Phyre_PLODLevel_fixObjects_005a5190`.
+    Phyre_PLODLevel_fixObjects_005a5190 @ 0x005a_5190 => extern "C" fn s_005a5190(p: u32) -> u32 {
+        m::lod_fixup(&mut mem(), p, true)
+    }
+    /// `Phyre_PScripting_PClassCallableMethodScript_fixObjects_00619980`.
+    Phyre_PScripting_PClassCallableMethodScript_fixObjects_00619980 @ 0x0061_9980 => extern "C" fn s_00619980(p: u32) -> u32 {
+        m::fix_method_scripts(&mut mem(), p)
+    }
+    /// `Phyre_PScripting_loadedModule_005d5a90`.
+    Phyre_PScripting_loadedModule_005d5a90 @ 0x005d_5a90 => extern "C" fn s_005d5a90(l: u32, name: u32, keep: u32) -> u32 {
+        m::loaded_module(&mut mem(), l, name, keep)
+    }
+    /// `Phyre_PSerialization_PStreamWriterFile_create_009f0810`.
+    Phyre_PSerialization_PStreamWriterFile_create_009f0810 @ 0x009f_0810 => extern "C" fn s_009f0810(path: u32) -> u32 {
+        m::new_writer(&mut mem(), path)
+    }
+    /// `Phyre_PScripting_closeState_005d5450`.
+    Phyre_PScripting_closeState_005d5450 @ 0x005d_5450 => extern "C" fn s_005d5450(l: u32) -> u32 {
+        b::close_state(&mut mem(), l)
     }
 }

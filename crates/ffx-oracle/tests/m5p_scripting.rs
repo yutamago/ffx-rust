@@ -21,6 +21,7 @@
 
 mod m5p_scripting_twins;
 
+use ffx_pother_a::m5p_scripting_mid::{self as mid, bridge as m};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use m5p_scripting_twins::{JUNK, Rng, Twins};
 
@@ -812,6 +813,630 @@ fn b1_poppers_match_the_original() {
                     t.cdecl(&what, p.addr, &[ty, l, o], |g| Some(b::pop(g, p, ty, l, o)));
                 }
             }
+        }
+        t.unstub();
+    }
+}
+
+// ---- batch 2: middle-sized Lua glue and fixups ----
+
+/// A descriptor's instance list for the `fixObjectsAfterLoading` steps:
+/// `n` records of `stride` bytes; `+0x30` points `back` bytes into the
+/// first. Returns (p, first record).
+fn instance_list(t: &mut Twins, n: u32, stride: u32, back: u32) -> (u32, u32) {
+    let p = t.zeros(0x40);
+    let class = t.zeros(0x20);
+    t.w32(class + 0x1c, stride);
+    let recs = t.zeros((stride * n.max(1) + 0x20) as usize);
+    t.w32(p + 0x2c, class);
+    t.w32(p + 0x30, recs + back);
+    t.w32(p + 0x3c, n);
+    (p, recs)
+}
+
+#[test]
+fn b2_lua_glue_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        t.stub(s::LUA_CHECKSTACK, false, 2, 0, 0x0c5);
+        t.stub(s::LUA_PUSHINTEGER, false, 2, 0, 0x1a7);
+        t.stub(s::LUA_GETFIELD, false, 3, 0, 0x6f1);
+        t.stub(s::LUA_SETMETATABLE, false, 2, 0, 0x3e7a);
+        t.stub(s::LUA_CREATETABLE, false, 3, 0, 0xc7ab);
+        t.stub(s::LUA_SETTABLE, false, 2, 0, 0x5e7b);
+        t.stub(s::LUA_SETTOP, false, 2, 0, 0x7020_7000);
+        t.stub(s::LUA_SETGLOBAL, false, 2, 0, 0x5e7);
+        t.stub(mid::LUA_GETTABLE, false, 2, 0, 0x6e7a);
+        t.stub(mid::LUA_PUSHCCLOSURE, false, 3, 0, 0xcc10);
+        t.stub(mid::LUA_REMOVE, false, 2, 0, 0x7e30);
+        t.stub(mid::LUA_GETTOP, false, 1, 0, 3);
+        t.stub(mid::PRINTF, false, 4, 0, 0x9f);
+        t.stub(mid::LUA_TOLSTRING, false, 3, 0, 0x00c9_7700);
+        // the vector userdata
+        for ok in [false, true] {
+            let u = if ok { t.junk(0x10, 2) } else { 0 };
+            t.stub(s::LUA_NEWUSERDATA, false, 2, 0, u);
+            let v = t.zeros(0x10);
+            for (i, &f) in FLOATS[..4].iter().enumerate() {
+                t.w32(v + 4 * i as u32, f ^ u32::from(!ok));
+            }
+            let what = format!("{label}: push vector {ok}");
+            t.cdecl(&what, 0x0057_2150, &[l, v], |g| {
+                Some(m::push_vector(g, l, v))
+            });
+        }
+        // reading and pushing arrays of values
+        for ty_ in [3u32, 5] {
+            t.stub(mid::LUA_TYPE, false, 2, 0, ty_);
+            for n in [0u32, 1, 3] {
+                let ty = t.object(0x7b00, &[0, 0, 0, 2, 2], &[]);
+                t.w32(ty + 0x1c, 0xc);
+                let at = t.zeros(0x40);
+                let what = format!("{label}: read array {ty_} {n}");
+                t.cdecl(&what, 0x0043_63b0, &[l, n, at, ty], |g| {
+                    Some(m::read_array(g, l, n, at, ty))
+                });
+                let what = format!("{label}: push values {n}");
+                t.cdecl(&what, 0x0043_6e20, &[l, n, at, ty], |g| {
+                    Some(m::push_values(g, l, n, at, ty))
+                });
+            }
+        }
+        // running a chunk
+        for r in [0u32, 2] {
+            t.stub(mid::LUA_PCALLK, false, 6, 0, r);
+            let pl = t.zeros(4);
+            t.w32(pl, l);
+            let what = format!("{label}: run chunk {r}");
+            t.cdecl(&what, 0x005d_65f0, &[pl], |g| Some(m::run_chunk(g, pl)));
+        }
+        // the allocator
+        t.stub(s::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        t.stub(s::MEMCPY, false, 3, 0, 0x3e3c);
+        for (old, osize, nsize, got) in [
+            (0x00c9_0100u32, 8u32, 0u32, 0x00c9_0200u32),
+            (0, 0, 0x20, 0x00c9_0200),
+            (0x00c9_0100, 8, 0x20, 0x00c9_0200),
+            (0x00c9_0100, 0x40, 0x20, 0x00c9_0200),
+            (0x00c9_0100, 8, 0x20, 0),
+        ] {
+            t.stub(mid::MALLOC_ALIGNED, false, 2, 0, got);
+            let what = format!("{label}: alloc {old:#x} {osize} {nsize} {got:#x}");
+            t.cdecl(&what, 0x005d_5ba0, &[JUNK[0], old, osize, nsize], |g| {
+                Some(m::lua_alloc(g, old, osize, nsize))
+            });
+        }
+        // loading a script buffer
+        for (buf, r) in [(0u32, 0u32), (0x00c9_8800, 0), (0x00c9_8800, 3)] {
+            t.stub(mid::LUA_LOADBUFFERX, false, 5, 0, r);
+            let sc = t.zeros(0x20);
+            t.w32(sc, 0x8000_0123);
+            t.w32(sc + 4, buf);
+            t.w32(sc + 0x1c, 0x00c9_9901);
+            let what = format!("{label}: load script {buf:#x} {r}");
+            t.cdecl(&what, 0x0043_6750, &[l, sc], |g| {
+                Some(m::load_script(g, l, sc))
+            });
+        }
+        // the library openers
+        let names: Vec<u32> = ["base", "table", "io", "string"]
+            .iter()
+            .map(|n| t.cstr(n))
+            .collect();
+        let table = t.zeros(0x20);
+        for (i, &n) in names.iter().enumerate() {
+            t.w32(table + 8 * i as u32, n);
+            t.w32(table + 8 * i as u32 + 4, 0x00c9_a000 + i as u32);
+        }
+        let (cnt, tab) = (t.rebase(mid::OPENERS_COUNT), t.rebase(mid::OPENERS));
+        let (old_cnt, old_tab) = (t.r32(cnt), t.r32(tab));
+        t.w32(tab, table);
+        for count in [0u32, 4, 0x8000_0003] {
+            t.w32(cnt, count);
+            for want in ["io", "string", "math", "", "tabl"] {
+                let w = t.cstr(want);
+                let what = format!("{label}: opener {count:#x} {want}");
+                t.cdecl(&what, 0x005d_5710, &[w], |g| Some(m::library_opener(g, w)));
+            }
+        }
+        // a count with bits above 16 (masked to 31 bits): found early
+        t.w32(cnt, 0x8001_0000);
+        for want in ["base", "io"] {
+            let w = t.cstr(want);
+            let what = format!("{label}: opener big count {want}");
+            t.cdecl(&what, 0x005d_5710, &[w], |g| Some(m::library_opener(g, w)));
+        }
+        t.w32(cnt, old_cnt);
+        t.w32(tab, old_tab);
+        // the userdata checks
+        for &(f, name) in &mid::USERDATA_CHECKS {
+            for (u, mt, eq) in [
+                (0u32, 1u32, 1u32),
+                (0x00c9_b000, 0, 1),
+                (0x00c9_b000, 1, 0),
+                (0x00c9_b000, 1, 1),
+            ] {
+                t.stub(s::LUA_TOUSERDATA, false, 2, 0, u);
+                t.stub(mid::LUA_GETMETATABLE, false, 2, 0, mt);
+                t.stub(mid::LUA_RAWEQUAL, false, 3, 0, eq);
+                let what = format!("{label}: check {f:#x} {u:#x} {mt} {eq}");
+                t.cdecl(&what, f, &[l, 2], |g| {
+                    Some(m::check_userdata(g, name, l, 2))
+                });
+            }
+        }
+        // the component index: no name, no upvalue, not found, found
+        // the port's index word: low in its own stack (the original's is in its frame;
+        // neither is compared)
+        let out = t.b.stack_range().start + 0x40;
+        for (name, u, found, writes) in [
+            (0u32, 1u32, 1u32, true),
+            (0x00c9_c000, 0, 1, true),
+            (0x00c9_c000, 1, 0x100, true),
+            (0x00c9_c000, 1, 1, true),
+            // a callee that says yes without writing: the zeroed word is pushed
+            (0x00c9_c000, 1, 1, false),
+        ] {
+            t.stub(mid::LUA_TOLSTRING, false, 3, 0, name);
+            let ud = if u == 0 { 0 } else { t.zeros(0x20) };
+            t.stub(s::LUA_TOUSERDATA, false, 2, 0, ud);
+            // the callee writes the index through its second word
+            let mut pre = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            pre.extend([0xc7, 0x00]);
+            pre.extend(0x0000_0042u32.to_le_bytes()); // mov dword [eax], 0x42
+            if !writes {
+                pre.clear();
+            }
+            let c = t.stub_code_with(&pre, mid::COMPONENT_INDEX, true, 1, 2, found);
+            t.place(mid::COMPONENT_INDEX, c);
+            let what = format!("{label}: component index {name:#x} {u} {found:#x} {writes}");
+            t.cdecl(&what, 0x0043_6240, &[l], |g| {
+                Some(m::component_index(g, l, out))
+            });
+        }
+        t.cdecl(
+            &format!("{label}: register functions"),
+            0x005d_6070,
+            &[l],
+            |g| Some(m::register_functions(g, l)),
+        );
+        // the loaded modules
+        for (t1, t2, keep) in [
+            (0u32, 5u32, 1u32),
+            (5, 0, 1),
+            (5, 5, 0),
+            (5, 5, 0x100),
+            (5, 5, 1),
+        ] {
+            let ty_code = {
+                // lua_type: the first call answers t1, the second t2
+                let cell = t.zeros(4);
+                let mut pre = vec![0xff, 0x05];
+                pre.extend(cell.to_le_bytes()); // inc dword [cell]
+                pre.extend([0x83, 0x3d]);
+                pre.extend(cell.to_le_bytes());
+                pre.push(0x01); // cmp dword [cell], 1
+                pre.extend([0xb8]);
+                pre.extend(t1.to_le_bytes()); // mov eax, t1
+                pre.extend([0x74, 0x05]); // je +5
+                pre.push(0xb8);
+                pre.extend(t2.to_le_bytes()); // mov eax, t2
+                let mut c = pre;
+                c.push(0xc3);
+                (c, cell)
+            };
+            let code = t.code(&ty_code.0);
+            t.place(mid::LUA_TYPE, code);
+            let name = t.cstr("mod");
+            let what = format!("{label}: loaded module {t1} {t2} {keep:#x}");
+            t.w32(ty_code.1, 0);
+            let ea = {
+                let addr = t.rebase(0x005d_5a90);
+                t.w32(t.log, 0);
+                let ra =
+                    t.a.call(addr, ffx_oracle::Conv::Cdecl, &[l, name, keep])
+                        .unwrap();
+                ra.eax
+            };
+            let eb = m::loaded_module(&mut m5p_scripting_twins::G(&mut t.b), l, name, keep);
+            assert_eq!(ea, eb, "{what}: eax");
+            t.diff(&what);
+        }
+        // the upvalue callers
+        for &f in &mid::UPVALUE_CALLERS {
+            for (has_u, has_obj, flags, sig_n) in [
+                (false, true, 0u8, 1u32),
+                (true, false, 0, 1),
+                (true, true, 0, 1),
+                (true, true, 4, 1),
+                (true, true, 0, 3),
+                (true, true, 0, 5),
+            ] {
+                let u = if has_u { t.zeros(0x20) } else { 0 };
+                t.stub(s::LUA_TOUSERDATA, false, 2, 0, u);
+                if has_u {
+                    t.w8(u + 0x10, flags);
+                    if has_obj {
+                        let sig = t.zeros(0x20);
+                        for i in 0..sig_n {
+                            t.w32(sig + 4 * i, 0x100 + i);
+                        }
+                        let o = t.object(0x7c00, &[0, 1, 0, 0, 0], &[0, 0x0bb, 0, 0, sig]);
+                        t.w32(u + 0x14, o);
+                    }
+                }
+                let what =
+                    format!("{label}: upvalue call {f:#x} {has_u} {has_obj} {flags} {sig_n}");
+                t.cdecl(&what, f, &[l], |g| Some(m::upvalue_call(g, l)));
+            }
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b2_objects_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(s::OPERATOR_DELETE, false, 1, 0, 0x0de1);
+        t.stub(s::PHYRE_FREE, false, 1, 0, 0x0de2);
+        // registrants: first, middle, absent, empty list
+        let list = t.rebase(mid::UTILITY_LIST);
+        let old = t.r32(list);
+        for (case, flags) in [(0u32, 0u32), (1, 1), (2, 0), (3, 1)] {
+            let objs: Vec<u32> = (0..3u8).map(|i| t.junk(0x10, i)).collect();
+            for i in 0..3 {
+                t.w32(objs[i] + 4, if i < 2 { objs[i + 1] } else { 0 });
+            }
+            let this = match case {
+                0 => objs[0],
+                1 => objs[1],
+                _ => t.junk(0x10, 9),
+            };
+            t.w32(list, if case == 3 { 0 } else { objs[0] });
+            let what = format!("{label}: registrant dtor {case} {flags}");
+            t.this(&what, 0x005d_52d0, this, &[flags], |g| {
+                Some(m::registrant_dtor(g, this, flags))
+            });
+        }
+        t.w32(list, old);
+        // the stream writer
+        t.stub(mid::WRITER_BASE_DTOR, true, 0, 0, 0xba5e);
+        t.stub(mid::STREAM_DTOR, true, 0, 0, 0x5d);
+        for flags in [0u32, 1] {
+            let w = t.junk(0x20, 3);
+            let what = format!("{label}: writer dtor {flags}");
+            t.this(&what, 0x009f_07a0, w, &[flags], |g| {
+                Some(m::writer_dtor(g, w, flags))
+            });
+        }
+        t.stub(mid::STREAM_CTOR, true, 5, 5, 0xc7);
+        t.stub(mid::READER_CTOR, true, 1, 1, 0xc8);
+        for ok in [false, true] {
+            let p = if ok { t.junk(0x18, 1) } else { 0 };
+            t.stub(mid::MALLOC, false, 1, 0, p);
+            let what = format!("{label}: new writer {ok}");
+            t.cdecl(&what, 0x009f_0810, &[0x00c9_0400], |g| {
+                Some(m::new_writer(g, 0x00c9_0400))
+            });
+        }
+        // the scheduler list: entries {next, owner, key, .., index +0x10, .., state +0x18}
+        t.stub(mid::FREELIST_DEALLOCATE, true, 1, 1, 0xfee);
+        for states in [[0u32, 0, 0], [1, 0, 1], [1, 1, 1], [0, 1, 0]] {
+            let sched = t.junk(0x40, 2);
+            let es: Vec<u32> = (0..3u8).map(|i| t.junk(0x20, i + 4)).collect();
+            for i in 0..3 {
+                t.w32(es[i], if i < 2 { es[i + 1] } else { 0 });
+                t.w32(es[i] + 0x18, states[i]);
+            }
+            t.w32(sched + 0x24, es[0]);
+            let what = format!("{label}: reap {states:?}");
+            t.this(&what, 0x005d_1220, sched, &[], |g| {
+                m::reap_finished(g, sched);
+                None
+            });
+        }
+        let sched = t.zeros(0x40);
+        t.this(
+            &format!("{label}: reap empty"),
+            0x005d_1220,
+            sched,
+            &[],
+            |g| {
+                m::reap_finished(g, sched);
+                None
+            },
+        );
+        // has entry: owner/key/name combinations
+        let owner = t.zeros(0x20);
+        let names = t.zeros(0x20);
+        t.w32(owner + 0xc, names);
+        let sched = t.zeros(0x40);
+        let es: Vec<u32> = (0..3).map(|_| t.zeros(0x20)).collect();
+        for i in 0..3 {
+            t.w32(es[i], if i < 2 { es[i + 1] } else { 0 });
+            t.w32(es[i] + 4, owner);
+            t.w32(es[i] + 8, 0x10 + i as u32);
+            t.w32(es[i] + 0x10, i as u32);
+            t.w32(es[i] + 0x18, u32::from(i == 0));
+        }
+        t.w32(sched + 0x24, es[0]);
+        let empty = t.cstr("");
+        let nm = t.cstr("idle");
+        for ok in [0u32, 0x101, 0x100] {
+            t.stub(mid::NAME_IS, true, 1, 1, ok);
+            for (o, key, name) in [
+                (owner, 0x10u32, 0u32),
+                (owner, 0x11, 0),
+                (owner, 0x11, empty),
+                (owner, 0x12, nm),
+                (0x55, 0x12, 0),
+                (owner, 0x13, nm),
+            ] {
+                let what = format!("{label}: has entry {ok:#x} {key:#x} {name:#x}");
+                let mut al = 0u8;
+                let ea = t.this(&what, 0x005d_0e20, sched, &[o, key, name], |g| {
+                    al = m::has_entry(g, sched, o, key, name);
+                    None
+                });
+                assert_eq!(ea as u8, al, "{what}: al");
+            }
+        }
+        // the float random number
+        let ctr = t.rebase(mid::RANDOM_COUNTER);
+        for c in [
+            0u32,
+            1,
+            2,
+            0x7fff_ffff,
+            0xffff_ffff,
+            0x1234_5678,
+            41,
+            42,
+            43,
+            1000,
+        ] {
+            t.w32(ctr, c);
+            let what = format!("{label}: random {c:#x}");
+            let addr = t.rebase(0x0045_ea50);
+            let ra = t.a.call(addr, ffx_oracle::Conv::Cdecl, &[]).unwrap();
+            let fb = m::random_float(&mut m5p_scripting_twins::G(&mut t.b));
+            assert_eq!(ra.st0_f32().map(f32::to_bits), Some(fb.to_bits()), "{what}");
+            t.diff(&what);
+        }
+        // the bit array reads
+        let words = t.alloc(
+            &[0x89ab_cdefu32, 0x0123_4567, 0xfedc_ba98, 0x7654_3210]
+                .iter()
+                .flat_map(|w| w.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let ba = t.zeros(4);
+        t.w32(ba, words);
+        for (start, n) in [
+            (0u32, 0u32),
+            (0, 1),
+            (3, 5),
+            (30, 4),
+            (0, 32),
+            (4, 32),
+            (32, 32),
+            (17, 40),
+            (1, 31),
+            (64, 20),
+        ] {
+            let what = format!("{label}: bits {start} {n}");
+            t.this(&what, 0x004d_3ef0, ba, &[start, n], |g| {
+                Some(m::read_bits(g, ba, start, n))
+            });
+        }
+        // the depth of field initialiser
+        t.stub(mid::SHADER_PARAM, true, 1, 1, 0x00c9_d000);
+        for (ctx, first, r) in [
+            (false, 0u32, 0u32),
+            (true, 0, 0),
+            (true, 0x00c9_0200, 0),
+            (true, 0x00c9_0200, 1),
+        ] {
+            t.stub(mid::DOF_INIT_SHADERS, true, 2, 2, r);
+            let fx = t.junk(0x1000, 6);
+            if ctx {
+                let cx = t.zeros(8);
+                t.w32(cx, first);
+                t.w32(fx + 8, cx);
+            } else {
+                t.w32(fx + 8, 0);
+            }
+            let what = format!("{label}: dof {ctx} {first:#x} {r}");
+            t.this(&what, 0x00a1_b710, fx, &[], |g| Some(m::dof_init(g, fx)));
+        }
+        t.unstub();
+    }
+}
+
+#[test]
+fn b2_fixups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // name components: records of 0x20 bytes, links at +0xc
+        let list = t.rebase(mid::NAME_LIST);
+        let old = t.r32(list);
+        for n in [0u32, 1, 3] {
+            let (p, _) = instance_list(&mut t, n, 0x20, 0);
+            let head = t.zeros(8);
+            t.w32(list, head);
+            let what = format!("{label}: link names {n}");
+            t.cdecl(&what, 0x0045_ad00, &[p], |g| Some(m::link_names(g, p)));
+        }
+        t.w32(list, old);
+        // dynamic members: class flag on and off
+        t.stub(mid::DYNAMIC_MEMBER_FIXUP, true, 1, 1, 0xd1);
+        for n in [0u32, 1, 3] {
+            let (p, recs) = instance_list(&mut t, n, 0x40, 4);
+            for i in 0..n {
+                let r = recs + 0x40 * i;
+                let class = t.zeros(0x100);
+                t.w8(class + 0x90, (i & 1) as u8 | 0x10);
+                t.w32(r + 0xc, class);
+                t.w32(r + 0x14, 0xffff_ffff);
+                t.w32(r + 0x2c, 0x00c9_e001 + 0x10 * i);
+            }
+            let what = format!("{label}: dynamic members {n}");
+            t.cdecl(&what, 0x0044_6650, &[p], |g| {
+                Some(m::fix_dynamic_members(g, p))
+            });
+        }
+        // the post effects: slot 1 failing, a context, the initialiser failing
+        for &(f, init) in &mid::POSTFX_FIXUPS {
+            for (slot1, ctx, r) in [
+                (0u32, 0u32, 0u32),
+                (5, 0, 0),
+                (0, 1, 0),
+                (0, 1, 7),
+                (0, 2, 0),
+            ] {
+                t.stub(init, true, 2, 2, r);
+                let (p, recs) = instance_list(&mut t, 2, 0x40, 4);
+                for i in 0..2u32 {
+                    let e = recs + 0x40 * i;
+                    let o = t.object(
+                        0x7d00 + 0x10 * i,
+                        &[0, 2],
+                        &[0, if i == 1 { slot1 } else { 0 }],
+                    );
+                    let vt = t.r32(o);
+                    t.w32(e, vt);
+                    if ctx != 0 {
+                        let c = t.zeros(8);
+                        t.w32(c, if ctx == 1 { 0x00c9_0300 } else { 0 });
+                        t.w32(e + 8, c);
+                    }
+                }
+                let what = format!("{label}: postfx {f:#x} {slot1} {ctx} {r}");
+                t.cdecl(&what, f, &[p], |g| Some(m::fix_postfx(g, init, p)));
+            }
+            let (p, _) = instance_list(&mut t, 0, 0x40, 4);
+            t.cdecl(&format!("{label}: postfx {f:#x} empty"), f, &[p], |g| {
+                Some(m::fix_postfx(g, init, p))
+            });
+        }
+        // LODs: count 1, no buffer, two records
+        for level in [false, true] {
+            let f = if level { 0x005a_5190 } else { 0x005a_5110 };
+            t.stub(mid::LOD_GROUP_SET, true, 2, 2, 0x1d1);
+            t.stub(mid::LOD_LEVEL_SET, true, 2, 2, 0x1d2);
+            let cnt = t.rebase(mid::LOD_COUNT);
+            let old = t.r32(cnt);
+            for (count, buf, n) in [
+                (1u32, true, 2u32),
+                (3, false, 2),
+                (3, true, 0),
+                (3, true, 2),
+                (2, true, 1),
+            ] {
+                t.w32(cnt, count);
+                let (p, _) = instance_list(&mut t, n, 0x40, 0);
+                if buf {
+                    let b_ = t.junk(0x100, 1);
+                    t.w32(p + 0x38, b_);
+                }
+                let what = format!("{label}: lod {level} {count} {buf} {n}");
+                t.cdecl(&what, f, &[p], |g| Some(m::lod_fixup(g, p, level)));
+            }
+            t.w32(cnt, old);
+        }
+        // script method records
+        t.stub(mid::FIND_MEMBER, true, 1, 1, 0);
+        for found in [0u32, 0x00c9_f000] {
+            t.stub(mid::FIND_MEMBER, true, 1, 1, found);
+            for n in [0u32, 2] {
+                let (p, recs) = instance_list(&mut t, n, 0x40, 0);
+                for i in 0..n {
+                    let r = recs + 0x40 * i;
+                    let class = t.zeros(0x60);
+                    t.w32(class + 0x4c, class + 0x4c);
+                    t.w32(class + 0x50, class + 0x4c);
+                    t.w32(r + 8, class);
+                    t.w32(r + 0x2c, if i == 0 { 0 } else { 0x00c9_e101 });
+                }
+                let what = format!("{label}: method scripts {found:#x} {n}");
+                t.cdecl(&what, 0x0061_9980, &[p], |g| {
+                    Some(m::fix_method_scripts(g, p))
+                });
+            }
+        }
+        // animatable components
+        t.stub(mid::ANIM_EVALUATE, true, 3, 3, 0xe7);
+        t.stub(mid::ANIM_BIND, false, 4, 0, 0xb1d);
+        t.stub(mid::ANIM_SET_TARGET, true, 2, 2, 0x7a);
+        t.stub(mid::ANIM_SET_WEIGHT, true, 2, 2, 0x3e);
+        let class = t.rebase(mid::ANIM_SET_CLASS);
+        let mk = |t: &mut Twins, set: u32, same: bool, found: bool, ctx: bool| -> u32 {
+            let c = t.junk(0x80, 3);
+            t.w32(c + 0x10, set);
+            t.w32(c + 0x5c, if same { set } else { set ^ 0x40 });
+            if ctx {
+                let e2 = t.zeros(0x20);
+                t.w32(e2 + 8, if found { class } else { 0x77 });
+                let e1 = t.zeros(0x20);
+                t.w32(e1, e2);
+                t.w32(e1 + 8, 0x66);
+                let cx = t.zeros(8);
+                t.w32(cx, e1);
+                t.w32(c + 8, cx);
+            } else {
+                t.w32(c + 8, 0);
+            }
+            c
+        };
+        for (set, same, found, ctx) in [
+            (0u32, false, true, true),
+            (0x00c9_1200, false, true, false),
+            (0x00c9_1200, false, false, true),
+            (0x00c9_1200, true, true, true),
+            (0x00c9_1200, false, true, true),
+        ] {
+            let c = mk(&mut t, set, same, found, ctx);
+            let what = format!("{label}: animatable bind {set:#x} {same} {found} {ctx}");
+            t.this(&what, 0x0054_1c00, c, &[], |g| {
+                Some(m::animatable_bind(g, c))
+            });
+        }
+        for (count, index, target, check) in [
+            (2u32, 2u32, 1u32, 0u32),
+            (0x8000_0002, 1, 0, 0),
+            (0x8000_0002, 2, 1, 0),
+            (2, 1, 0x00c9_1300, 9),
+            (2, 1, 0x00c9_1300, 0),
+        ] {
+            t.stub(mid::ANIM_SLOT_CHECK, true, 1, 1, check);
+            let c = mk(&mut t, 0x00c9_1200, false, true, true);
+            let slots = t.junk(0xa0, 2);
+            t.w32(c + 0x14, count);
+            t.w32(c + 0x18, slots);
+            let what = format!("{label}: set slot {count:#x} {index} {target:#x} {check}");
+            t.this(&what, 0x0054_3280, c, &[index, target], |g| {
+                Some(m::animatable_set_slot(g, c, index, target))
+            });
+        }
+        t.stub(mid::ANIM_SLOT_CHECK, true, 1, 1, 0);
+        for find in [0u32, 4] {
+            t.stub(mid::ANIM_SLOT_FIND, true, 1, 1, find);
+            let (p, recs) = instance_list(&mut t, 3, 0x80, 4);
+            for i in 0..3u32 {
+                let c = recs + 0x80 * i;
+                t.w32(c + 0x10, if i == 1 { 0 } else { 0x00c9_1200 });
+                t.w32(c + 0x5c, 0x00c9_1200);
+                let cx = t.zeros(8);
+                let e1 = t.zeros(0x20);
+                t.w32(e1 + 8, class);
+                t.w32(cx, e1);
+                t.w32(c + 8, cx);
+                let tl = t.zeros(0x60);
+                t.w32(tl, if i == 2 { 0 } else { 0x00c9_1400 });
+                t.w32(c + 0x14, if i == 0 { 2 } else { 0x8000_0001 });
+                t.w32(c + 0x18, tl);
+            }
+            let what = format!("{label}: animatables {find}");
+            t.cdecl(&what, 0x0054_0c10, &[p], |g| Some(m::fix_animatables(g, p)));
         }
         t.unstub();
     }
