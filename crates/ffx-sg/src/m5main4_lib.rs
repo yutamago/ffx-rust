@@ -158,4 +158,152 @@ pub mod bridge {
             }
         }
     }
+
+    /// `FUN_006eb950(m, nb)` (cdecl): dlmalloc's `tmalloc_small` for the
+    /// heap `m` (`+0` the small map, `+4` the tree map, `+8` the
+    /// designated victim's size, `+0x10` the least address, `+0x14` the
+    /// victim, small bins from `+0x28`, tree bins from `+0x130`): the
+    /// best fit for `nb` in the smallest tree bin, unlinked from its tree,
+    /// split (a remainder of 16 bytes or more becomes the new victim, the
+    /// old one going to its small bin) or used whole. Checks against the
+    /// least address skip the links that would fail them, as the original
+    /// does. Returns the chunk's memory, or 0 for a chunk below the least
+    /// address. The tree map must not be 0 (the original's `bsf` leaves
+    /// an undefined index then; its caller never calls it so).
+    pub fn tmalloc_small<H: Host>(h: &mut H, m: u32, nb: u32) -> u32 {
+        let map: u32 = h.read(at(m, 4));
+        let i = (map & map.wrapping_neg()).trailing_zeros();
+        let mut t: u32 = h.read(at(m, 0x130 + 4 * i));
+        let size = |h: &mut H, c: u32| -> u32 { h.read::<u32>(at(c, 4)) & !7 };
+        let mut rsize = size(h, t).wrapping_sub(nb);
+        let mut v = t;
+        loop {
+            let left: u32 = h.read(at(t, 0x10));
+            t = if left != 0 { left } else { h.read(at(t, 0x14)) };
+            if t == 0 {
+                break;
+            }
+            let trem = size(h, t).wrapping_sub(nb);
+            if trem < rsize {
+                rsize = trem;
+                v = t;
+            }
+        }
+        let least: u32 = h.read(at(m, 0x10));
+        let r = v.wrapping_add(nb);
+        if v < least || v >= r {
+            return 0;
+        }
+        unlink_large_chunk(h, m, v);
+        if rsize < 0x10 {
+            h.write(at(v, 4), rsize.wrapping_add(nb) | 3);
+            let next_head = v.wrapping_add(rsize).wrapping_add(nb).wrapping_add(4);
+            let head: u32 = h.read(next_head);
+            h.write(next_head, head | 1);
+            return at(v, 8);
+        }
+        h.write(at(v, 4), nb | 3);
+        h.write(at(r, 4), rsize | 1);
+        h.write(at(r, rsize), rsize);
+        let dvs: u32 = h.read(at(m, 8));
+        if dvs != 0 {
+            let dv: u32 = h.read(at(m, 0x14));
+            let idx = dvs >> 3;
+            let bin = at(m, (idx.wrapping_add(5)) << 3);
+            let bit = 1u32 << (idx & 31);
+            let small: u32 = h.read(m);
+            let mut f = bin;
+            if small & bit == 0 {
+                h.write(m, small | bit);
+            } else {
+                let fd: u32 = h.read(at(bin, 8));
+                if fd >= h.read::<u32>(at(m, 0x10)) {
+                    f = fd;
+                }
+            }
+            h.write(at(bin, 8), dv);
+            h.write(at(f, 0xc), dv);
+            h.write(at(dv, 8), f);
+            h.write(at(dv, 0xc), bin);
+        }
+        h.write(at(m, 8), rsize);
+        h.write(at(m, 0x14), r);
+        at(v, 8)
+    }
+
+    /// dlmalloc's `unlink_large_chunk(m, v)` as `tmalloc_small` inlines it
+    /// (tree chunk: `+8/+0xc` the list links, `+0x10/+0x14` the children,
+    /// `+0x18` the parent, `+0x1c` the bin index).
+    fn unlink_large_chunk(h: &mut impl Host, m: u32, v: u32) {
+        let parent: u32 = h.read(at(v, 0x18));
+        let mut r: u32 = h.read(at(v, 0xc));
+        if r == v {
+            let mut rp = at(v, 0x14);
+            r = h.read(rp);
+            if r == 0 {
+                rp = at(v, 0x10);
+                r = h.read(rp);
+            }
+            if r != 0 {
+                loop {
+                    let mut cp = at(r, 0x14);
+                    let mut c: u32 = h.read(cp);
+                    if c == 0 {
+                        cp = at(r, 0x10);
+                        c = h.read(cp);
+                        if c == 0 {
+                            break;
+                        }
+                    }
+                    rp = cp;
+                    r = c;
+                }
+                if rp >= h.read::<u32>(at(m, 0x10)) {
+                    h.write(rp, 0u32);
+                }
+            }
+        } else {
+            let f: u32 = h.read(at(v, 8));
+            if f >= h.read::<u32>(at(m, 0x10)) {
+                h.write(at(f, 0xc), r);
+                h.write(at(r, 8), f);
+            }
+        }
+        if parent == 0 {
+            return;
+        }
+        let index: u32 = h.read(at(v, 0x1c));
+        let bin_at = at(m, 0x130u32.wrapping_add(index.wrapping_mul(4)));
+        if v == h.read::<u32>(bin_at) {
+            h.write(bin_at, r);
+            if r == 0 {
+                let map: u32 = h.read(at(m, 4));
+                h.write(at(m, 4), map & !(1u32 << (index & 31)));
+                return;
+            }
+        } else {
+            if parent >= h.read::<u32>(at(m, 0x10)) {
+                let child = if h.read::<u32>(at(parent, 0x10)) == v {
+                    0x10
+                } else {
+                    0x14
+                };
+                h.write(at(parent, child), r);
+            }
+            if r == 0 {
+                return;
+            }
+        }
+        if r < h.read::<u32>(at(m, 0x10)) {
+            return;
+        }
+        h.write(at(r, 0x18), parent);
+        for o in [0x10, 0x14] {
+            let c: u32 = h.read(at(v, o));
+            if c != 0 && c >= h.read::<u32>(at(m, 0x10)) {
+                h.write(at(r, o), c);
+                h.write(at(c, 0x18), r);
+            }
+        }
+    }
 }

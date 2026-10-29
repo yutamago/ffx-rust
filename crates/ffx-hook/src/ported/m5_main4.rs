@@ -15,7 +15,9 @@ use ffx_sg::m5main4_lib::bridge as lib;
 use ffx_sg::m5main4_misc::bridge as misc;
 use ffx_sg::m5main4_movie::bridge as movie;
 use ffx_sg::m5main4_ogg::bridge as ogg;
+use ffx_sg::m5main4_pages::bridge as pages;
 use ffx_sg::m5main4_sound::bridge as sound;
+use ffx_sg::m5main4_viewer::bridge as viewer;
 
 ported! {
     // ---- batch 1 ----
@@ -128,5 +130,148 @@ ported! {
     /// `(name, dir)` -> the viewer key.
     Ch_IdGetFromName @ 0x0082_6dc0 => extern "C" fn id_get_from_name(name: u32, dir: u32) -> u32 {
         chara::id_get_from_name(&mut mem(), name, dir)
+    }
+
+    // ---- batch 2 ----
+    /// `(tag, src, n)`: DMA reference tags.
+    GsRefTags_0077f160 @ 0x0077_f160 => extern "C" fn gs_ref_tags(tag: u32, src: u32, n: u32) {
+        viewer::ref_tags(&mut mem(), tag, src, n);
+    }
+    /// `(i, x, y, mode)` -> `TexAnim_LoadImageRegs`'s `eax`.
+    MovieViewer_BlockStep_0077c3c0 @ 0x0077_c3c0 => extern "C" fn viewer_block_step(i: u32, x: u32, y: u32, mode: u32) -> u32 {
+        viewer::block_step(&mut mem(), i, x, y, mode)
+    }
+    /// `(tag, src, step, w, h, base, half, psm)` -> `FlushCache`'s `eax`.
+    MovieViewer_TiledUpload_0077ee40 @ 0x0077_ee40 => extern "C" fn viewer_tiled_upload(tag: u32, src: u32, step: u32, w: u32, hgt: u32, base: u32, half: u32, psm: u32) -> u32 {
+        viewer::tiled_upload(&mut mem(), tag, src, step, w, hgt, base, half, psm)
+    }
+    /// `(v)` -> the last `sceGsSyncPath`'s `eax`.
+    MovieViewer_IPictureMovie_0077c4c0 @ 0x0077_c4c0 => extern "C" fn viewer_ipu_movie(v: u32) -> u32 {
+        viewer::ipu_movie(&mut mem(), v)
+    }
+    /// `()` -> 0.
+    MovieViewer_IntraDecode_0077b480 @ 0x0077_b480 => extern "C" fn viewer_intra_decode() -> u32 {
+        viewer::intra_decode(&mut mem())
+    }
+    /// `()` -> the last `sceGsSyncPath`'s `eax`.
+    MovieViewer_FrameOut_0077ca80 @ 0x0077_ca80 => extern "C" fn viewer_frame_out() -> u32 {
+        viewer::frame_out(&mut mem())
+    }
+    /// `mpegstrendsub(v, convert)` -> the last call's `eax`.
+    mpegstrendsub @ 0x0077_dab0 => extern "C" fn mpeg_str_end(v: u32, convert: u32) -> u32 {
+        viewer::mpeg_str_end(&mut mem(), v, convert)
+    }
+    /// `()` -> the last `dbgPrintf`'s `eax`.
+    MovieViewer_AllocBuffers_0077df90 @ 0x0077_df90 => extern "C" fn viewer_alloc_buffers() -> u32 {
+        viewer::alloc_buffers(&mut mem())
+    }
+    /// `()` -> the viewer.
+    MovieViewer_PictureSetup_0077ce10 @ 0x0077_ce10 => extern "C" fn viewer_picture_setup() -> u32 {
+        viewer::picture_setup(&mut mem())
+    }
+    /// `(m, nb)` -> the chunk's memory or 0.
+    dlmalloc_tmalloc_small_006eb950 @ 0x006e_b950 => extern "C" fn tmalloc_small(m: u32, nb: u32) -> u32 {
+        lib::tmalloc_small(&mut mem(), m, nb)
+    }
+    /// `(cache)`: the cluster cache emptied; the gathered clusters in a
+    /// frame `PArray`.
+    ClusterCache_clear_0069a9c0 @ 0x0069_a9c0 => extern "thiscall" fn cluster_cache_clear(cache: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        chara::cluster_cache_clear(&mut mem(), cache, f.at())
+    }
+    /// `(path, cloth_a, cloth_b, id)` -> `graphicCharacterLoad`'s `eax`;
+    /// the three name buffers in a frame.
+    Ch_LoadHdRenderData @ 0x0082_a1c0 => extern "C" fn load_hd_render_data(path: u32, a: u32, b: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<0xa0>::new();
+        chara::load_hd_render_data(&mut mem(), path, a, b, id, f.at())
+    }
+    /// `(key)` -> the name buffer; the table path in a frame.
+    Ch_MotionName_008371f0 @ 0x0083_71f0 => extern "C" fn motion_name(key: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        chara::motion_name(&mut mem(), key, f.at())
+    }
+    /// `(chr, set, idx, max, dir)` -> the index set, or 0.
+    Ch_SetSysMotion_ViewerAnimation @ 0x0083_7e10 => extern "C" fn set_sys_motion_viewer(chr: u32, set: u32, idx: u32, max: u32, dir: u32) -> u32 {
+        chara::set_sys_motion_viewer(&mut mem(), chr, set, idx, max, dir)
+    }
+    /// `(window, msg, id)` -> 0; the title buffer in a frame.
+    ChrAnimWin_Proc_0093e370 @ 0x0093_e370 => extern "C" fn anim_window_proc(window: u32, msg: u32, id: u32) -> u32 {
+        let mut f = StackFrame::<32>::new();
+        chara::anim_window_proc(&mut mem(), window, msg, id, f.at())
+    }
+    /// `(chr, dir, sub, name)` -> 4, 0 or `dir`; the path in a frame.
+    Ch_ReadMotionViewer @ 0x0082_83c0 => extern "C" fn read_motion_viewer(chr: u32, dir: u32, sub: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<32>::new();
+        chara::read_motion_viewer(&mut mem(), chr, dir, sub, name, f.at())
+    }
+
+    // ---- batch 3 (list main: the page heap) ----
+    /// `(pool)` -> a new page or 0.
+    PagePool_newPage_00943c50 @ 0x0094_3c50 => extern "thiscall" fn page_pool_new_page(pool: u32) -> u32 {
+        pages::new_page(&mut mem(), pool)
+    }
+    /// `(pool; n)` -> the memory or 0.
+    PagePool_alloc_00943a50 @ 0x0094_3a50 => extern "thiscall" fn page_pool_alloc(pool: u32, n: u32) -> u32 {
+        pages::pool_alloc(&mut mem(), pool, n)
+    }
+    /// `(pool; p)` -> `PageRelease`'s `eax` or the page's free size.
+    PagePool_free_00943e30 @ 0x0094_3e30 => extern "thiscall" fn page_pool_free(pool: u32, p: u32) -> u32 {
+        pages::pool_free(&mut mem(), pool, p)
+    }
+    /// `(pool)`: every block freed.
+    PagePool_freeAll_009439f0 @ 0x0094_39f0 => extern "thiscall" fn page_pool_free_all(pool: u32) {
+        pages::pool_free_all(&mut mem(), pool);
+    }
+    /// `(heap)`: every allocated block freed.
+    UserHeap_freeAll_00942a80 @ 0x0094_2a80 => extern "thiscall" fn user_heap_free_all(heap: u32) {
+        pages::heap_free_all(&mut mem(), heap);
+    }
+    /// `(cs)` -> `DeleteCriticalSection`'s `eax`.
+    LockedHeap_destroy_00942630 @ 0x0094_2630 => extern "thiscall" fn locked_heap_destroy(cs: u32) -> u32 {
+        pages::heap_destroy(&mut mem(), cs)
+    }
+    /// `(cs)` -> `DeleteCriticalSection`'s `eax`.
+    LockedPool_destroy_00942680 @ 0x0094_2680 => extern "thiscall" fn locked_pool_destroy(cs: u32) -> u32 {
+        pages::pool_destroy(&mut mem(), cs)
+    }
+    /// `(alloc; size, align, pool)` -> `alloc`.
+    FixedAlloc_init_00944080 @ 0x0094_4080 => extern "thiscall" fn fixed_alloc_init(a: u32, size: u32, align: u32, pool: u32) -> u32 {
+        pages::alloc_init(&mut mem(), a, size, align, pool)
+    }
+    /// `(alloc)` -> `DeleteCriticalSection`'s `eax`.
+    FixedAlloc_destroy_00944190 @ 0x0094_4190 => extern "thiscall" fn fixed_alloc_destroy(a: u32) -> u32 {
+        pages::alloc_destroy(&mut mem(), a)
+    }
+    /// `(alloc; chunk)` -> `LeaveCriticalSection`'s `eax`.
+    FixedAlloc_removeChunk_00944660 @ 0x0094_4660 => extern "thiscall" fn fixed_alloc_remove_chunk(a: u32, chunk: u32) -> u32 {
+        pages::chunk_remove(&mut mem(), a, chunk)
+    }
+    /// `(it; table)` -> `it`.
+    PageHash_iterBegin_00944b40 @ 0x0094_4b40 => extern "thiscall" fn page_hash_iter_begin(it: u32, table: u32) -> u32 {
+        pages::iter_init(&mut mem(), it, table)
+    }
+    /// `(table)` -> the last `VirtualFree_Release`'s `eax`.
+    PageHash_clear_00944f00 @ 0x0094_4f00 => extern "thiscall" fn page_hash_clear(table: u32) -> u32 {
+        pages::table_clear(&mut mem(), table)
+    }
+    /// `(big; p)` -> found; the key in a frame.
+    BigAlloc_free_00944f80 @ 0x0094_4f80 => extern "thiscall" fn big_alloc_free(big: u32, p: u32) -> bool {
+        let mut f = StackFrame::<4>::new();
+        pages::big_free(&mut mem(), big, p, f.at()) != 0
+    }
+    /// `(big)` -> `DeleteCriticalSection`'s `eax`.
+    BigAlloc_destroy_00944ba0 @ 0x0094_4ba0 => extern "thiscall" fn big_alloc_destroy(big: u32) -> u32 {
+        pages::big_destroy(&mut mem(), big)
+    }
+    /// `()`: `MemSystem_Ensure`'s slow path; the descriptor in a frame.
+    MemSystem_create_009428b0 @ 0x0094_28b0 => extern "C" fn mem_system_create() {
+        let mut f = StackFrame::<14>::new();
+        pages::mem_system_ensure(&mut mem(), f.at());
+    }
+    /// `()` -> `Cam_SetPolar`'s `eax` or the index reached; the point in
+    /// a frame.
+    CamDebug_PointOrbit_00942520 @ 0x0094_2520 => extern "C" fn cam_point_orbit() -> u32 {
+        let mut f = StackFrame::<3>::new();
+        misc::point_orbit(&mut mem(), f.at())
     }
 }

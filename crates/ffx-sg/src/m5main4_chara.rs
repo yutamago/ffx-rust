@@ -346,4 +346,596 @@ pub mod bridge {
         h.write(at(e, 8), p);
         i.wrapping_add(0xf000)
     }
+
+    /// `WaitForSingleObject(h, ms)` and `ReleaseMutex(h)`'s import slots
+    /// (stdcall), `Phyre_PhyreMalloc(size, align)`, `PArray_PushInto(array;
+    /// dst, value)` (thiscall, `ret 8`), `operator delete(p)`,
+    /// `ClusterMap_eraseSubtree(map; node)` (thiscall, `ret 4`),
+    /// `PCluster` destructor (thiscall), `Phyre_PhyreFree(p)`.
+    pub const WAIT_FOR_SINGLE_OBJECT: u32 = 0x00b0_c0f8;
+    pub const RELEASE_MUTEX: u32 = 0x00b0_c1c0;
+    pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+    pub const PARRAY_PUSH_INTO: u32 = 0x0069_b650;
+    pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+    pub const ERASE_SUBTREE: u32 = 0x0069_a2d0;
+    pub const CLUSTER_DTOR: u32 = 0x0043_fa30;
+    pub const PHYRE_FREE: u32 = 0x0042_fb20;
+
+    /// The in-order successor of `node` in an MSVC `std::map` (nil byte
+    /// `+0xd`, left `+0`, parent `+4`, right `+8`); a nil node stays.
+    fn successor(h: &impl Host, node: u32) -> u32 {
+        let nil = |n: u32| -> bool { h.read::<u8>(at(n, 0xd)) != 0 };
+        if nil(node) {
+            return node;
+        }
+        let right: u32 = h.read(at(node, 8));
+        if !nil(right) {
+            let mut n = right;
+            loop {
+                let left: u32 = h.read(n);
+                if nil(left) {
+                    return n;
+                }
+                n = left;
+            }
+        }
+        let mut n = node;
+        let mut p: u32 = h.read(at(n, 4));
+        while !nil(p) && n == h.read::<u32>(at(p, 8)) {
+            n = p;
+            p = h.read(at(p, 4));
+        }
+        p
+    }
+
+    /// `FUN_0069a9c0(cache)` (thiscall): the cluster cache emptied at
+    /// shutdown. Under its mutex (`[[+0x18]]`): every entry of the map at
+    /// `+0x10` gathers its value in a local `PArray` (`arr`, the
+    /// original's `ebp - 0x20`: count, data), and the entry's slot is
+    /// handed back to the pool (`+0x1c`, 0x18 bytes each, 0x400 of them:
+    /// its in-use byte `+0x601c` cleared, the lowest free index `+0x641c`
+    /// lowered) or deleted; the map is erased. Then each gathered cluster
+    /// is destroyed and freed, and the array's storage freed when owned.
+    /// Returns `Phyre_PhyreFree`'s `eax`, or what the original's last
+    /// instructions leave (the count, or the data pointer).
+    pub fn cluster_cache_clear(h: &mut impl Host, cache: u32, arr: u32) -> u32 {
+        h.write(arr, 0u32);
+        h.write(at(arr, 4), 0u32);
+        let wait: u32 = h.read(h.rebase(WAIT_FOR_SINGLE_OBJECT));
+        let mutex: u32 = h.read(h.read::<u32>(at(cache, 0x18)));
+        h.call(wait, Conv::Stdcall, &[mutex, u32::MAX]);
+        let map = at(cache, 0x10);
+        let mut node: u32 = h.read(h.read::<u32>(map));
+        let pool = at(cache, 0x1c);
+        let pool_end = at(cache, 0x601c);
+        while node != h.read::<u32>(map) {
+            let value: u32 = h.read(at(node, 0x14));
+            let count: u32 = h.read(arr);
+            let dst = cdecl(
+                h,
+                PHYRE_MALLOC,
+                &[(count & 0x7fff_ffff).wrapping_mul(4).wrapping_add(4), 4],
+            );
+            h.call_sym(PARRAY_PUSH_INTO, Conv::Thiscall(arr), &[dst, value]);
+            let slot: u32 = h.read(at(node, 0x14));
+            if slot >= pool && slot < pool_end {
+                let idx = slot.wrapping_sub(cache).wrapping_sub(0x1c).cast_signed() / 0x18;
+                h.write(at(pool_end, idx.cast_unsigned()), 0u8);
+                if idx < h.read::<i32>(at(cache, 0x641c)) {
+                    h.write(at(cache, 0x641c), idx);
+                }
+            } else {
+                cdecl(h, OPERATOR_DELETE, &[slot]);
+            }
+            node = successor(h, node);
+        }
+        let head: u32 = h.read(map);
+        let mut n: u32 = h.read(at(head, 4));
+        while h.read::<u8>(at(n, 0xd)) == 0 {
+            let right: u32 = h.read(at(n, 8));
+            h.call_sym(ERASE_SUBTREE, Conv::Thiscall(map), &[right]);
+            let left: u32 = h.read(n);
+            cdecl(h, OPERATOR_DELETE, &[n]);
+            n = left;
+        }
+        let head: u32 = h.read(map);
+        h.write(at(head, 4), head);
+        let head: u32 = h.read(map);
+        h.write(head, head);
+        let head: u32 = h.read(map);
+        h.write(at(head, 8), head);
+        h.write(at(map, 4), 0u32);
+        let release: u32 = h.read(h.rebase(RELEASE_MUTEX));
+        let mutex: u32 = h.read(h.read::<u32>(at(cache, 0x18)));
+        h.call(release, Conv::Stdcall, &[mutex]);
+        let count: u32 = h.read(arr);
+        let n = count & 0x7fff_ffff;
+        let mut r = n;
+        for i in 0..n {
+            let data: u32 = h.read(at(arr, 4));
+            let e: u32 = h.read(at(data, 4 * i));
+            if e != 0 {
+                h.call_sym(CLUSTER_DTOR, Conv::Thiscall(e), &[]);
+                cdecl(h, PHYRE_FREE, &[e]);
+            }
+            r = h.read(at(arr, 4));
+        }
+        if count & 0x8000_0000 == 0 {
+            let data: u32 = h.read(at(arr, 4));
+            r = cdecl(h, PHYRE_FREE, &[data]);
+        }
+        r
+    }
+
+    /// CRT import slots (cdecl): `memset`'s thunk, `strstr`, `__iob_func`,
+    /// `fprintf`, `fflush`, `sprintf`; `Ch_AnalysisChrNum(src, dst)`,
+    /// `fiosUnifyFilename(src, out, size)`, `graphicCharacterLoad(name,
+    /// id)`, `graphicTryAsyncLoadIfAvailable(f, arg)` (cdecl); the strings;
+    /// the 50 cloth file loads (`g_ChrClothLoads`, 0x110 bytes each from
+    /// `0x012fc598`: the path, `+0x100/+0x104` the outputs, `+0x108` busy,
+    /// `+0x10c` the character); `Ch_LoadClothFileTask`.
+    pub const MEMSET: u32 = 0x0094_964c;
+    pub const STRSTR: u32 = 0x00b0_c378;
+    pub const IOB_FUNC: u32 = 0x00b0_c350;
+    pub const FPRINTF: u32 = 0x00b0_c38c;
+    pub const FFLUSH: u32 = 0x00b0_c3bc;
+    pub const SPRINTF: u32 = 0x00b0_c3dc;
+    pub const ANALYSIS_CHR_NUM: u32 = 0x0082_9e60;
+    pub const UNIFY_FILENAME: u32 = 0x0067_9820;
+    pub const CHARACTER_LOAD: u32 = 0x0063_d140;
+    pub const TRY_ASYNC_LOAD: u32 = 0x0064_42f0;
+    pub const STR_CHR: u32 = 0x00b4_7d84;
+    pub const STR_MAGENTA: u32 = 0x00b5_967c;
+    pub const STR_LOAD_CHARACTER: u32 = 0x00b5_9684;
+    pub const STR_RESET: u32 = 0x00b1_f854;
+    pub const STR_DATA_DIR: u32 = 0x00b4_3b18;
+    pub const STR_PATH_FMT: u32 = 0x00b5_85c8;
+    pub const STR_AHWIN32: u32 = 0x00b5_9698;
+    pub const CLOTH_LOADS: u32 = 0x012f_c598;
+    pub const LOAD_CLOTH_FILE_TASK: u32 = 0x0082_a140;
+
+    fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Cdecl, args)
+    }
+
+    /// `fprintf(stderr, ...)` through `__iob_func() + 0x20`.
+    fn eprint(h: &mut impl Host, args: &[u32]) {
+        let err = import(h, IOB_FUNC, &[]).wrapping_add(0x20);
+        let mut w = [err, 0, 0];
+        w[1..=args.len()].copy_from_slice(args);
+        import(h, FPRINTF, &w[..=args.len()]);
+    }
+
+    /// `Ch_LoadHdRenderData(path, cloth_a, cloth_b, id)` (`0x0082a1c0`,
+    /// cdecl). `frame` is the original's three buffers (`ebp - 0x284`:
+    /// the data directory, 0x100 bytes; then the file path, 0x100; then
+    /// the character's name, 0x80): the name taken from `path` after
+    /// "chr" (`Ch_AnalysisChrNum`), printed to stderr in magenta, the
+    /// path `<data dir>/<name>` with its last two characters and on
+    /// replaced by "ahwin32" loaded (`graphicCharacterLoad(path, id)`);
+    /// with both cloth outputs given, a free cloth load slot gets the path
+    /// and the outputs and `Ch_LoadClothFileTask` is queued on it. Returns
+    /// `graphicCharacterLoad`'s `eax`.
+    pub fn load_hd_render_data(
+        h: &mut impl Host,
+        path: u32,
+        a: u32,
+        b: u32,
+        id: u32,
+        frame: u32,
+    ) -> u32 {
+        let (dir, full, name) = (frame, at(frame, 0x100), at(frame, 0x200));
+        cdecl(h, MEMSET, &[name, 0, 0x80]);
+        cdecl(h, MEMSET, &[full, 0, 0x100]);
+        let chr = h.rebase(STR_CHR);
+        let p = import(h, STRSTR, &[path, chr]);
+        if p != 0 {
+            cdecl(h, ANALYSIS_CHR_NUM, &[p, name]);
+        }
+        let s = h.rebase(STR_MAGENTA);
+        eprint(h, &[s]);
+        let s = h.rebase(STR_LOAD_CHARACTER);
+        eprint(h, &[s, name]);
+        let s = h.rebase(STR_RESET);
+        eprint(h, &[s]);
+        let err = import(h, IOB_FUNC, &[]).wrapping_add(0x20);
+        import(h, FFLUSH, &[err]);
+        let s = h.rebase(STR_DATA_DIR);
+        cdecl(h, UNIFY_FILENAME, &[s, dir, 0x100]);
+        let s = h.rebase(STR_PATH_FMT);
+        import(h, SPRINTF, &[full, s, dir, name]);
+        let mut len = 0u32;
+        while h.read::<u8>(at(full, len)) != 0 {
+            len += 1;
+        }
+        let s = h.rebase(STR_AHWIN32);
+        import(h, STRNCPY, &[at(full, len).wrapping_sub(2), s, 7]);
+        let r = cdecl(h, CHARACTER_LOAD, &[full, id]);
+        if a == 0 || b == 0 {
+            return r;
+        }
+        let loads = h.rebase(CLOTH_LOADS);
+        let Some(slot) = (0..50u32)
+            .map(|i| at(loads, i * 0x110))
+            .find(|&s| h.read::<u8>(at(s, 0x108)) == 0)
+        else {
+            return r;
+        };
+        h.write(at(slot, 0x108), 1u8);
+        h.write(at(slot, 0x10c), r);
+        import(h, STRNCPY, &[slot, full, 0x100]);
+        h.write(at(slot, 0x100), a);
+        h.write(at(slot, 0x104), b);
+        let task = h.rebase(LOAD_CLOTH_FILE_TASK);
+        cdecl(h, TRY_ASYNC_LOAD, &[task, slot]);
+        r
+    }
+
+    /// `ch_create_name(id)`, `ch_create_chrpath(id)`, `Sg_PcReadD(path)`,
+    /// `Sg_PcReadGetLen()` (cdecl); `FFXIsDebug`; the two name buffers;
+    /// the 50 motion table entries (16 bytes from `0x01301438`: data,
+    /// used, count, id); the formats.
+    pub const CREATE_NAME: u32 = 0x0083_8100;
+    pub const CREATE_CHRPATH: u32 = 0x0083_80b0;
+    pub const PC_READ_D: u32 = 0x0083_ae50;
+    pub const PC_READ_GET_LEN: u32 = 0x0083_ae70;
+    pub const IS_DEBUG: u32 = 0x0133_c910;
+    pub const MOTION_NAME: u32 = 0x0130_17b8;
+    pub const MOTION_NAME2: u32 = 0x0130_1778;
+    pub const MOTION_TABLES: u32 = 0x0130_1438;
+    pub const FMT_NAME_KEY: u32 = 0x00b5_9adc;
+    pub const FMT_MOTION_TBL: u32 = 0x00b5_9ae4;
+    pub const FMT_NAME_NAME: u32 = 0x00b4_a5dc;
+
+    /// `FUN_008371f0(key)` (cdecl): the motion `key` (`id << 16 |
+    /// motion`) as text: "name:key" in `0x013017b8`; in a debug build for
+    /// a non-viewer character, the character's `inf/motion.tbl` (loaded
+    /// once into a free table entry through `path`, the original's 64-byte
+    /// local at `ebp - 0x44`; no free entry ends the search) gives the
+    /// motion's own name, `name_motion` in `0x01301778`. Returns the
+    /// buffer used.
+    pub fn motion_name(h: &mut impl Host, key: u32, path: u32) -> u32 {
+        let id = (key.cast_signed() >> 16).cast_unsigned() & 0xffff;
+        let buf = h.rebase(MOTION_NAME);
+        let name = cdecl(h, CREATE_NAME, &[id]);
+        let f = h.rebase(FMT_NAME_KEY);
+        import(h, SPRINTF, &[buf, f, name, key]);
+        if h.read::<u8>(h.rebase(IS_DEBUG)) == 0 || id & 0xf000 == 0xf000 {
+            return buf;
+        }
+        let motion = key & 0xffff;
+        let tables = h.rebase(MOTION_TABLES);
+        let (mut free, mut found) = (0u32, 0u32);
+        for i in 0..50 {
+            let e = at(tables, 16 * i);
+            if h.read::<u32>(at(e, 4)) == 0 {
+                if free == 0 {
+                    free = e;
+                }
+            } else if h.read::<u32>(at(e, 0xc)) == id {
+                found = e;
+            }
+        }
+        if free == 0 {
+            return buf;
+        }
+        if found == 0 {
+            let dir = cdecl(h, CREATE_CHRPATH, &[id]);
+            let f = h.rebase(FMT_MOTION_TBL);
+            import(h, SPRINTF, &[path, f, dir]);
+            let data = cdecl(h, PC_READ_D, &[path]);
+            h.write(free, data);
+            h.write(at(free, 0xc), id);
+            if data != 0 {
+                let len = cdecl(h, PC_READ_GET_LEN, &[]);
+                h.write(at(free, 8), len.wrapping_sub(0x10) >> 6);
+            }
+            found = free;
+            h.write(at(free, 4), 1u32);
+        }
+        let data: u32 = h.read(found);
+        if data == 0 {
+            return buf;
+        }
+        let n: i32 = h.read(at(found, 8));
+        let mut p = at(data, 0x10);
+        for _ in 0..n.max(0) {
+            if u32::from(h.read::<u16>(p)) == motion {
+                let name = cdecl(h, CREATE_NAME, &[id]);
+                let buf2 = h.rebase(MOTION_NAME2);
+                let f = h.rebase(FMT_NAME_NAME);
+                import(h, SPRINTF, &[buf2, f, name, at(p, 0x20)]);
+                return buf2;
+            }
+            p = at(p, 0x40);
+        }
+        buf
+    }
+
+    /// `Ch_TextureSetAnim(chr, a, b)`, `Ch_SetSequence(chr, id)` (cdecl),
+    /// the system motion sets (`i8` per set), the search counter.
+    pub const TEXTURE_SET_ANIM: u32 = 0x0083_d040;
+    pub const SET_SEQUENCE: u32 = 0x0083_7ac0;
+    pub const SYS_MOTION_SETS: u32 = 0x00c4_9784;
+    pub const SEARCH_COUNT: u32 = 0x0130_09f0;
+
+    /// The next index from `i` in direction `dir` (up when set) over
+    /// `0..=max`, wrapping.
+    fn step(i: i32, max: i32, dir: u32) -> i32 {
+        if dir != 0 {
+            let up = i.wrapping_add(1);
+            if up > max { 0 } else { up }
+        } else {
+            let down = i.wrapping_sub(1);
+            if down < 0 { max } else { down }
+        }
+    }
+
+    /// `Ch_SetSysMotion_ViewerAnimation(chr, set, idx, max, dir)`
+    /// (`0x00837e10`, cdecl): the model viewer's next motion of `set`
+    /// from `idx` on, in direction `dir`, trying at most `max` + 1 (the
+    /// shared counter `0x013009f0`) indices. A definition with flag 1
+    /// (`[chr + 0x1c4] + 0x70`) looks in its system motion table (a
+    /// missing row gives 0 at once; the texture animation 4 set for set 1
+    /// index 0x10 on characters with flag 0x200), else in its motion list
+    /// `+0x108` (entries of 8 bytes: count `+8`, `(index, motion)` pairs
+    /// `+0xc`; set 0 tries only `idx`). The motion found is set
+    /// (`Ch_SetSequence`) and its index returned; 0 when none is.
+    pub fn set_sys_motion_viewer(
+        h: &mut impl Host,
+        chr: u32,
+        set: u32,
+        idx: u32,
+        max: u32,
+        dir: u32,
+    ) -> u32 {
+        let counter = h.rebase(SEARCH_COUNT);
+        let def: u32 = h.read(at(chr, 0x1c4));
+        let mut i = idx.cast_signed();
+        let max_s = max.cast_signed();
+        let mut g = h.read::<u32>(counter).wrapping_add(1);
+        if h.read::<u8>(at(def, 0x70)) & 1 != 0 {
+            h.write(counter, g);
+            while g.cast_signed() <= max_s {
+                let k = i32::from(h.read::<i8>(at(h.rebase(SYS_MOTION_SETS), set)));
+                let def: u32 = h.read(at(chr, 0x1c4));
+                let tbl: u32 = h.read(at(def, 0x6c));
+                let row: u32 = h.read(at(
+                    tbl,
+                    k.cast_unsigned().wrapping_mul(8).wrapping_add(0x10),
+                ));
+                if row == 0 {
+                    return 0;
+                }
+                if h.read::<u32>(at(chr, 0x198)) & 0x200 != 0 && set == 1 && i == 0x10 {
+                    cdecl(h, TEXTURE_SET_ANIM, &[chr, 4, set]);
+                    g = h.read(counter);
+                }
+                let m: u32 = h.read(at(row, i.cast_unsigned().wrapping_mul(4)));
+                if m != 0 {
+                    cdecl(h, SET_SEQUENCE, &[chr, m]);
+                    h.write(counter, 0u32);
+                    return i.cast_unsigned();
+                }
+                i = step(i, max_s, dir);
+                g = g.wrapping_add(1);
+                h.write(counter, g);
+            }
+            h.write(counter, 0u32);
+            return 0;
+        }
+        let list: u32 = h.read(at(def, 0x108));
+        if list == 0 {
+            return 0;
+        }
+        h.write(counter, g);
+        let ent = at(list, set.wrapping_mul(8));
+        while g.cast_signed() <= max_s {
+            let pairs: u32 = h.read(at(ent, 0xc));
+            let n: u32 = h.read(at(ent, 8));
+            for j in 0..n {
+                let p = at(pairs, j * 4);
+                if i.cast_unsigned() == u32::from(h.read::<u16>(p)) {
+                    let motion = u32::from(h.read::<u16>(at(p, 2)));
+                    let def: u32 = h.read(at(chr, 0x1c4));
+                    let id: u32 = h.read(def);
+                    cdecl(h, SET_SEQUENCE, &[chr, motion | id << 16]);
+                    return i.cast_unsigned();
+                }
+            }
+            if set == 0 {
+                return 0;
+            }
+            i = step(i, max_s, dir);
+            g = g.wrapping_add(1);
+            h.write(counter, g);
+        }
+        h.write(counter, 0u32);
+        0
+    }
+
+    /// The `Gu` window calls (cdecl): `Gu_WindowGetArg(w)`,
+    /// `Gu_WindowSetArg(w, a)`, `Gu_WindowSetTitle(w, s)`,
+    /// `Gu_WindowAddButton(w, id, text, x, y, wd, ht)`,
+    /// `Gu_ButtonSetToggle(w, id, on)`, `Gu_ButtonSetToggleValue(w, id,
+    /// on)`, `Gu_WindowCloseTree(w)`; `Ch_TextureGetAnimId(chr)`,
+    /// `tex_anim_no_set(i, a, b, c, d)`, `user_malloc(n)`,
+    /// `user_free_thunk(p)`, `Ch_CheckHandle(chr)`; the window's character
+    /// (`0x0193c148`), its title format, note and `"%d"`.
+    pub const WINDOW_GET_ARG: u32 = 0x0084_aec0;
+    pub const WINDOW_SET_ARG: u32 = 0x0084_b560;
+    pub const WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
+    pub const WINDOW_ADD_BUTTON: u32 = 0x0084_a470;
+    pub const BUTTON_SET_TOGGLE: u32 = 0x0084_9380;
+    pub const BUTTON_SET_TOGGLE_VALUE: u32 = 0x0084_93e0;
+    pub const WINDOW_CLOSE_TREE: u32 = 0x0084_ab80;
+    pub const TEXTURE_GET_ANIM_ID: u32 = 0x0082_b960;
+    pub const TEX_ANIM_NO_SET: u32 = 0x0077_e940;
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const CHECK_HANDLE: u32 = 0x0082_61b0;
+    pub const ANIM_WIN_CHR: u32 = 0x0193_c148;
+    pub const FMT_TEX_ANIM: u32 = 0x00b6_8f90;
+    pub const ANIM_WIN_FMT: u32 = 0x00b6_2d20;
+    pub const ANIM_WIN_TEXT: u32 = 0x00b6_8f7c;
+    pub const FMT_D: u32 = 0x00b0_f604;
+
+    /// `FUN_0093e370(window, msg, id)` (cdecl): the texture animation
+    /// window's procedure (`chr_anim_win`'s). `buf` is the original's
+    /// 128-byte local (`ebp - 0x84`). On create (0x8001) its state (8
+    /// bytes: the character, the pressed button) is made, the title set
+    /// and 32 toggle buttons laid out, button `id` pressed and animation
+    /// 0 shown; on close (0x8003) the state is freed; a button (0x8007,
+    /// `id` below 32) shows that animation and moves the pressed toggle.
+    /// The window closes when its character's handle is gone. Returns 0.
+    pub fn anim_window_proc(h: &mut impl Host, window: u32, msg: u32, id: u32, buf: u32) -> u32 {
+        let mut st = cdecl(h, WINDOW_GET_ARG, &[window]);
+        match msg {
+            0x8001 => {
+                st = cdecl(h, USER_MALLOC, &[8]);
+                let chr: u32 = h.read(h.rebase(ANIM_WIN_CHR));
+                h.write(st, chr);
+                cdecl(h, WINDOW_SET_ARG, &[window, st]);
+                let chr: u32 = h.read(h.rebase(ANIM_WIN_CHR));
+                let name = cdecl(h, GET_NAME, &[chr]);
+                let f = h.rebase(FMT_TEX_ANIM);
+                import(h, SPRINTF, &[buf, f, name]);
+                cdecl(h, WINDOW_SET_TITLE, &[window, buf]);
+                let chr: u32 = h.read(st);
+                let anim = cdecl(h, TEXTURE_GET_ANIM_ID, &[chr]);
+                let (f, t) = (h.rebase(ANIM_WIN_FMT), h.rebase(ANIM_WIN_TEXT));
+                cdecl(h, DBG_PRINTF, &[f, t]);
+                for i in 0..32u32 {
+                    let f = h.rebase(FMT_D);
+                    import(h, SPRINTF, &[buf, f, i]);
+                    let (x, y) = ((i & 7) * 20, (i >> 3) * 20 + 4);
+                    cdecl(h, WINDOW_ADD_BUTTON, &[window, i, buf, x, y, 0x11, 0xe]);
+                    cdecl(h, BUTTON_SET_TOGGLE, &[window, i, 1]);
+                }
+                cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, id, 1]);
+                h.write(at(st, 4), 0u32);
+                cdecl(h, TEX_ANIM_NO_SET, &[anim, 4, 0, 0, 0]);
+            }
+            0x8003 => {
+                cdecl(h, USER_FREE, &[st]);
+                return 0;
+            }
+            0x8007 if id <= 0x1f => {
+                let chr: u32 = h.read(st);
+                let anim = cdecl(h, TEXTURE_GET_ANIM_ID, &[chr]);
+                cdecl(h, TEX_ANIM_NO_SET, &[anim, 4, id, 0, 0]);
+                let pressed: u32 = h.read(at(st, 4));
+                if pressed & 0x8000_0000 == 0 {
+                    cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, pressed, 0]);
+                }
+                cdecl(h, BUTTON_SET_TOGGLE_VALUE, &[window, id, 1]);
+                h.write(at(st, 4), id);
+            }
+            _ => {}
+        }
+        if st != 0 {
+            let chr: u32 = h.read(st);
+            if cdecl(h, CHECK_HANDLE, &[chr]) & 0x8000_0000 != 0 {
+                cdecl(h, WINDOW_CLOSE_TREE, &[window]);
+            }
+        }
+        0
+    }
+
+    /// `Sg_PcRead(path)`, `Ch_SetMotionSeq(chr, clip, loops, start, end)`,
+    /// `sg_getdbnum(c)` (cdecl), `atoi`'s import slot (cdecl), the
+    /// formats.
+    pub const PC_READ: u32 = 0x0083_ae30;
+    pub const SET_MOTION_SEQ: u32 = 0x0083_9b80;
+    pub const GET_DB_NUM: u32 = 0x0082_9d80;
+    pub const ATOI: u32 = 0x00b0_c40c;
+    pub const FMT_MTYPE: u32 = 0x00b5_9464;
+    pub const FMT_ANM_LOCAL: u32 = 0x00b5_9484;
+    pub const FMT_ANM_PROJ: u32 = 0x00b5_9494;
+    pub const MSG_MOTRELTAB: u32 = 0x00b5_94bc;
+
+    /// `Ch_ReadMotionViewer(chr, dir, sub, name)` (`0x008283c0`, cdecl):
+    /// the model viewer's motion file. `buf` is the original's 128-byte
+    /// path (`ebp - 0x84`). Unless the definition (`[chr + 0x1c4]`)
+    /// holds its motions (`+0xf8`), the `.anm` is read (viewer models
+    /// from their own directory `+0xb8`, others from the project tree),
+    /// kept in the definition's slot `+0xfc` (the old one freed, the name
+    /// copied to `+0x104`) and started (a clip for kinds above 1, else
+    /// the pose `+0x754` = 0x100); the relative motion table `+0x114`
+    /// (count `+0x110`) gives `+0x758` for `atoi(sub + 1) | db(sub[0]) <<
+    /// 12`; the motion slot `+0x800` and mode `+0x752` = 4 set. Returns
+    /// 4, 0 when the file doesn't read, or `dir` when the definition
+    /// holds its motions.
+    pub fn read_motion_viewer(
+        h: &mut impl Host,
+        chr: u32,
+        dir: u32,
+        sub: u32,
+        name: u32,
+        buf: u32,
+    ) -> u32 {
+        let def: u32 = h.read(at(chr, 0x1c4));
+        let flags: u32 = h.read(at(chr, 0x194));
+        h.write(at(chr, 0x194), flags & 0x7fff_ffff);
+        if h.read::<u8>(at(def, 0xf8)) != 0 {
+            return dir;
+        }
+        let f = h.rebase(FMT_MTYPE);
+        cdecl(h, DBG_PRINTF, &[f, dir, sub, name]);
+        if h.read::<u16>(chr) & 0xf000 == 0xf000 {
+            let f = h.rebase(FMT_ANM_LOCAL);
+            import(h, SPRINTF, &[buf, f, at(def, 0xb8), name]);
+        } else {
+            let f = h.rebase(FMT_ANM_PROJ);
+            import(h, SPRINTF, &[buf, f, dir, sub, name]);
+        }
+        let data = cdecl(h, PC_READ, &[buf]);
+        if data == 0 {
+            return 0;
+        }
+        let e = at(def, 0xfc);
+        let old: u32 = h.read(at(e, 4));
+        if old != 0 {
+            cdecl(h, USER_FREE, &[old]);
+            h.write(at(e, 4), 0u32);
+        }
+        h.write(at(e, 4), data);
+        let copy = import(h, STRDUP, &[name]);
+        h.write(at(e, 8), copy);
+        let kind: u16 = h.read(at(data, 8));
+        if kind == 0 || kind == 1 {
+            let pose: u16 = h.read(data);
+            h.write(e, pose);
+            let flags: u32 = h.read(at(chr, 0x194));
+            h.write(at(chr, 0x194), flags | 0x8000_0000);
+            h.write(at(chr, 0x740), 0u32);
+            h.write(at(chr, 0x754), 0x100u16);
+        } else {
+            let clip: u32 = h.read(at(e, 4));
+            cdecl(h, SET_MOTION_SEQ, &[chr, clip, 0, 0, u32::MAX]);
+        }
+        let n = import(h, ATOI, &[at(sub, 1)]);
+        let c = i32::from(h.read::<i8>(sub)).cast_unsigned();
+        let key = n | cdecl(h, GET_DB_NUM, &[c]) << 12;
+        h.write(at(chr, 0x758), 0u32);
+        let list: u32 = h.read(at(def, 0x114));
+        if list != 0 {
+            let count = i32::from(h.read::<i16>(at(def, 0x110)));
+            for i in 0..count.max(0).cast_unsigned() {
+                let entry: u32 = h.read(at(list, 4 * i));
+                if i32::from(h.read::<i16>(entry)).cast_unsigned() == key {
+                    h.write(at(chr, 0x758), entry);
+                    let f = h.rebase(MSG_MOTRELTAB);
+                    cdecl(h, DBG_PRINTF, &[f]);
+                    break;
+                }
+            }
+        }
+        let flags: u32 = h.read(at(chr, 0x194));
+        h.write(at(chr, 0x194), flags | 0x40);
+        h.write(at(chr, 0x800), e);
+        h.write(at(chr, 0x752), 4u16);
+        4
+    }
 }

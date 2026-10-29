@@ -1,10 +1,16 @@
 //! M5 stage 1, lists `small` and `main`, round 4: leftovers of the debug
-//! tools (the movie camera's default path).
+//! tools (the movie camera's default path, the camera turned onto a
+//! point).
 
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // registers and indices
 pub mod bridge {
-    use ffx_graphic::host::Host;
+    use ffx_bridge::x87;
+    use ffx_graphic::host::{Conv, Host};
+
+    fn cdecl(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
+        h.call_sym(sym, Conv::Cdecl, args)
+    }
 
     fn at(p: u32, o: u32) -> u32 {
         p.wrapping_add(o)
@@ -56,5 +62,67 @@ pub mod bridge {
                 h.write(at(p, 4 * j), 0u32);
             }
         }
+    }
+
+    /// The debug camera (`0x025d5ee0`), its polar angles and distance
+    /// (`f32` at `0x025d5f80/84/88`), the constants 200 (`f32`) and pi
+    /// (`f64`); `MsCameraGetAngle(&yaw, &pitch, &len)`,
+    /// `MsCameraSetRect(cam, side, xyz)`, `Cam_SetPolar(cam, side, yaw,
+    /// pitch, len)` (cdecl).
+    pub const CAMERA: u32 = 0x025d_5ee0;
+    pub const YAW: u32 = 0x025d_5f80;
+    pub const PITCH: u32 = 0x025d_5f84;
+    pub const DISTANCE: u32 = 0x025d_5f88;
+    pub const F200: u32 = 0x00b6_59bc;
+    pub const PI_F64: u32 = 0x00b9_2288;
+    pub const GET_ANGLE: u32 = 0x007b_d2d0;
+    pub const SET_RECT: u32 = 0x007b_f940;
+    pub const SET_POLAR: u32 = 0x007b_f700;
+
+    /// `fld dword` / `fstp dword` of the bits at `p`.
+    fn copy_f32(h: &impl Host, p: u32) -> u32 {
+        x87::store(x87::load(h.read(p)))
+    }
+
+    /// `FUN_00942520()` (cdecl): the debug camera turned round onto the
+    /// first selected point (flag bit 1) of the current list: its angles
+    /// read (`MsCameraGetAngle`), side 0 set at the point (`xyz`, the
+    /// original's 12-byte local at `ebp - 0x14`), the distance 200 and
+    /// the pitch turned by pi (`f32` + `f64`, rounded to `f32`), side 1
+    /// set from them (`Cam_SetPolar`). Returns its `eax`, or the index
+    /// reached (0 for an empty list) when no point is selected.
+    pub fn point_orbit(h: &mut impl Host, xyz: u32) -> u32 {
+        let k: u32 = h.read(h.rebase(CUR_LIST));
+        let n: i32 = h.read(at(h.rebase(LIST_COUNT), k.wrapping_mul(4)));
+        let mut flags: u32 = h.read(at(h.rebase(LIST_FLAGS), k.wrapping_mul(4)));
+        let mut point: u32 = h.read(at(h.rebase(LIST_POINTS), k.wrapping_mul(4)));
+        if n <= 0 {
+            return 0;
+        }
+        let mut i = 0i32;
+        while h.read::<u8>(flags) & 2 == 0 {
+            i += 1;
+            flags = at(flags, 0xc);
+            point = at(point, 0x10);
+            if i >= n {
+                return i.cast_unsigned();
+            }
+        }
+        let (yaw, pitch, dist) = (h.rebase(YAW), h.rebase(PITCH), h.rebase(DISTANCE));
+        cdecl(h, GET_ANGLE, &[yaw, pitch, dist]);
+        for j in 0..3 {
+            let v = copy_f32(h, at(point, 4 * j));
+            h.write(at(xyz, 4 * j), v);
+        }
+        let cam: u32 = h.read(h.rebase(CAMERA));
+        let d = copy_f32(h, h.rebase(F200));
+        h.write(dist, d);
+        let pi = f64::from_bits(h.read::<u64>(h.rebase(PI_F64)));
+        let turned = x87::store(x87::add(x87::load(h.read(pitch)), pi));
+        h.write(pitch, turned);
+        cdecl(h, SET_RECT, &[cam, 0, xyz]);
+        let (d, p, y) = (copy_f32(h, dist), copy_f32(h, pitch), copy_f32(h, yaw));
+        let cam: u32 = h.read(h.rebase(CAMERA));
+        cdecl(h, SET_POLAR, &[cam, 1, y, p, d])
     }
 }

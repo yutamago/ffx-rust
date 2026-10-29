@@ -933,3 +933,1210 @@ fn viewer_motion_groups_and_names_match_the_original() {
         }
     });
 }
+
+// ---- the PS2 movie viewer ----
+
+use ffx_sg::m5main4_viewer::bridge as viewer;
+
+/// A stub extra that sets the byte `[arg0 + off]` to 1 on the stub's
+/// `n`-th call (counting from 1).
+fn set_byte_on_call(t: &mut Twins, n: u32, off: u32) -> Vec<u8> {
+    let ctr = t.words(&[n]);
+    let mut c = vec![0xff, 0x0d];
+    c.extend(ctr.to_le_bytes()); // dec dword [ctr]
+    c.extend([0x75, 0x0b]); // jnz +11
+    c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp + 4]
+    c.extend([0xc6, 0x81]);
+    c.extend(off.to_le_bytes());
+    c.push(1); // mov byte [ecx + off], 1
+    c
+}
+
+/// A viewer of 0x51000 zero bytes as the global viewer.
+fn new_viewer(t: &mut Twins) -> u32 {
+    let v = t.zeros(0x5_1000);
+    t.g32(viewer::VIEWER, v);
+    v
+}
+
+#[test]
+fn viewer_tags_and_block_step_match_the_original() {
+    let mut rng = Rng(0x0077_f160);
+    Twins::each(|t| {
+        for n in [
+            0u32,
+            0xffff_fffb,
+            1,
+            0x10,
+            0xf_fff0,
+            0xf_fff1,
+            0x20_0000,
+            0x2ff_ffff,
+        ] {
+            t.reset();
+            t.stub(viewer::GS_PACK_TAG, false, 4, 0, 0x11);
+            let what = format!("ref tags {n:#x}");
+            t.check(
+                &what,
+                viewer::REF_TAGS,
+                Conv::Cdecl,
+                &[0x100, 0x5000, n],
+                |m| {
+                    viewer::ref_tags(m, 0x100, 0x5000, n);
+                    Out::None
+                },
+            );
+        }
+        for k in 0..30 {
+            t.reset();
+            for s in [viewer::ADD_BLOCK1, viewer::ADD_BLOCK2, viewer::CLEAR_BLOCK0] {
+                t.stub(s, false, 1, 0, 0x21);
+            }
+            t.stub(viewer::LOAD_IMAGE_REGS, false, 3, 0, 0x22);
+            let block = t.zeros(0x400);
+            t.g32(viewer::BLOCK, block);
+            let v = new_viewer(t);
+            t.w32(v + 0x5_03cc, 0x0060_0000);
+            let (i, x, y) = (rng.below(8), rng.word(), rng.word());
+            let mode = rng.pick(&[0u32, 1, 2, 3, 5, 0xffff_ffff]);
+            let what = format!("block step {k}");
+            t.check(
+                &what,
+                viewer::BLOCK_STEP,
+                Conv::Cdecl,
+                &[i, x, y, mode],
+                |m| Out::U32(viewer::block_step(m, i, x, y, mode)),
+            );
+        }
+        for k in 0..30 {
+            t.reset();
+            t.stub(viewer::FLUSH_CACHE, false, 1, 0, 0x31);
+            t.stub(viewer::SET_DMA_TAG, false, 7, 0, 0x32);
+            t.stub(viewer::SET_GIF_TAG, false, 9, 0, 0x33);
+            t.stub(viewer::SET_TAG, false, 5, 0, 0x34);
+            t.stub(viewer::TRXREG, false, 3, 0, 0x35);
+            t.stub(viewer::TRXPOS, false, 4, 0, 0x36);
+            t.stub(viewer::TRXDIR, false, 2, 0, 0x37);
+            let w = rng.pick(&[0u32, 0x10, 0x30, 0x40, 0x1f, 0xffff_fff0]);
+            let hh = rng.pick(&[0u32, 0x10, 0x20, 0x3f, 0xffff_ffe0]);
+            let half = rng.pick(&[0, 1, 0x100]);
+            let a = [0x4000, 0x8000, 0x400, w, hh, 0x3400, half, 0x13];
+            let what = format!("tiled upload {k}");
+            t.check(&what, viewer::TILED_UPLOAD, Conv::Cdecl, &a, |m| {
+                Out::U32(viewer::tiled_upload(
+                    m, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
+                ))
+            });
+        }
+    });
+}
+
+#[test]
+fn viewer_ipu_movie_matches_the_original() {
+    let mut rng = Rng(0x0077_c4c0);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            printf_stub(
+                t,
+                viewer::DBG_PRINTF,
+                &[(viewer::PICTURE_MOVIE, 4)],
+                2,
+                0x41,
+            );
+            for (s, n) in [
+                (viewer::IPU_INIT, 0),
+                (viewer::HARDWARE_INIT, 0),
+                (viewer::TILED_UPLOAD, 8),
+                (viewer::CLUT_SWIZZLE, 3),
+                (viewer::FLUSH_CACHE, 1),
+                (viewer::REF_TAGS, 3),
+                (viewer::IPU_SYNC, 2),
+                (viewer::SYNC_PATH, 1),
+                (viewer::LOAD_IMAGE, 2),
+                (viewer::TASK_WAIT, 1),
+            ] {
+                t.stub(s, false, n, 0, 0x42);
+            }
+            t.stub(viewer::GS_SYNC_PATH, false, 2, 0, rng.pick(&[0x43, 0x44]));
+            let stop = set_byte_on_call(t, 1 + rng.below(8), 0x60fc);
+            t.stub_ex(viewer::SYNC_PATH2, false, 1, 0, &Ret::Fixed(0x45), &stop);
+            // the header and its records (frames 1..3; the last rewinds)
+            let mut e = Vec::new();
+            e.extend(rng.next().to_le_bytes());
+            e.extend(rng.next().to_le_bytes());
+            e.extend(rng.next().to_le_bytes());
+            e.extend((rng.pick(&[0x40u16, 0x200, 0x10])).to_le_bytes());
+            e.extend((rng.pick(&[0x40u16, 0x1a0, 0x1f])).to_le_bytes());
+            e.resize(0x20, 0);
+            // 1..3 records of 1..3 frames, then one that rewinds
+            let records = 1 + rng.below(3);
+            for r in 0..=records {
+                let size = 0x10 * (1 + rng.below(3));
+                let frames = if r == records {
+                    u32::MAX
+                } else {
+                    1 + rng.below(3)
+                };
+                e.extend(0u32.to_le_bytes());
+                e.extend(size.to_le_bytes());
+                e.extend(frames.to_le_bytes());
+                e.extend(0u32.to_le_bytes());
+                e.extend(vec![0u8; size as usize]);
+            }
+            let mut head = vec![0u8; 0x10];
+            head[8..12].copy_from_slice(&0x10u32.to_le_bytes());
+            head.extend(e);
+            let head = t.alloc(&head);
+            let v = t.zeros(0x4_6100);
+            t.w32(v + 0x4_60f4, head);
+            t.w32(v + 0x4_60e8, 9);
+            t.w32(v + 0x4_60ec, 0x10);
+            let what = format!("ipu movie {k}");
+            t.check(&what, viewer::IPU_MOVIE_SYM, Conv::Cdecl, &[v], |m| {
+                Out::U32(viewer::ipu_movie(m, v))
+            });
+        }
+    });
+}
+
+#[test]
+fn viewer_decode_and_frame_out_match_the_original() {
+    let mut rng = Rng(0x0077_b480);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            t.stub(viewer::LOAD_IMAGE_101, false, 2, 0, 0x51);
+            t.stub(viewer::LOAD_IMAGE, false, 2, 0, 0x52);
+            // each register load adds the GS register to a cell: the
+            // commands written before it become visible
+            let cell = t.zeros(4);
+            let mut sum = vec![0xa1];
+            sum.extend(t.rebase(viewer::GS_SINK).to_le_bytes()); // mov eax, [sink]
+            sum.extend([0x01, 0x05]);
+            sum.extend(cell.to_le_bytes()); // add [cell], eax
+            t.stub_ex(
+                viewer::LOAD_IMAGE_REGS,
+                false,
+                3,
+                0,
+                &Ret::Fixed(0x53),
+                &sum,
+            );
+            t.stub(viewer::BLOCK_STEP, false, 4, 0, 0x54);
+            let mut ready: Vec<u32> = (0..rng.below(4)).map(|_| rng.pick(&[1, 2])).collect();
+            ready.push(0);
+            t.stub_ex(viewer::SINK_READY, false, 1, 0, &Ret::Seq(ready), &[]);
+            let block = t.zeros(0x100);
+            t.g32(viewer::BLOCK, block);
+            let v = new_viewer(t);
+            let rec: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+            let rec = t.alloc(&rec);
+            t.w32(v + 0x5_059c, rec);
+            t.w32(v + 0x5_03c8, 0x0070_0000);
+            let what = format!("intra decode {k}");
+            t.check(&what, viewer::INTRA_DECODE, Conv::Cdecl, &[], |m| {
+                Out::U32(viewer::intra_decode(m))
+            });
+        }
+        for k in 0..40 {
+            t.reset();
+            t.stub(viewer::GS_SYNC_PATH, false, 2, 0, 0x61);
+            t.stub(viewer::LOAD_IMAGE_101, false, 2, 0, 0x62);
+            t.stub(viewer::LOAD_IMAGE, false, 2, 0, 0x63);
+            t.stub(viewer::FRAME_COPY, false, 11, 0, 0x64);
+            t.stub(viewer::SYNC_PATH2, false, 1, 0, 0x65);
+            let v = new_viewer(t);
+            t.w8(v + 0x5_076e, rng.pick(&[0, 1, 0x80]));
+            t.w8(v + 0x5_0761, rng.pick(&[0, 1]));
+            t.w8(v + 0x5_0762, rng.pick(&[0, 1, 3]));
+            t.w8(v + 0x5_075f, rng.pick(&[0, 1]));
+            t.w8(v + 0x5_0763, rng.pick(&[0, 1]));
+            t.w32(v + 0x5_0534, rng.pick(&[0, 0, 1]));
+            t.w32(v + 0x5_0518, rng.pick(&[0, 1, 3, 0xffff_ffff]));
+            t.w32(v + 0x5_0514, rng.pick(&[1, 0x20, 0xff]));
+            t.w32(v + 0x5_051c, rng.pick(&[0x200, 0x140]));
+            t.w32(v + 0x5_0520, rng.pick(&[0x1a0, 0xe0]));
+            t.w32(v + 0x5_0524, rng.pick(&[0, 0, 1]));
+            t.w32(v + 0x5_06e0, rng.word());
+            for o in [0x5_03c0, 0x5_03c4, 0x5_03cc, 0x5_03d0] {
+                t.w32(v + o, rng.next());
+            }
+            let what = format!("frame out {k}");
+            t.check(&what, viewer::FRAME_OUT, Conv::Cdecl, &[], |m| {
+                Out::U32(viewer::frame_out(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn viewer_end_and_setup_match_the_original() {
+    let mut rng = Rng(0x0077_dab0);
+    Twins::each(|t| {
+        for k in 0..60 {
+            t.reset();
+            printf_stub(
+                t,
+                viewer::DBG_PRINTF,
+                &[(viewer::MSG_END, 2), (viewer::MSG_FD, 2)],
+                1,
+                0x71,
+            );
+            let seq = |rng: &mut Rng| -> Vec<u32> {
+                let mut s: Vec<u32> = (0..rng.below(3))
+                    .map(|_| rng.pick(&[1, 2, u32::MAX]))
+                    .collect();
+                s.push(0);
+                s
+            };
+            t.stub(viewer::AUDIO_STOP, false, 1, 0, 0x72);
+            let s = seq(&mut rng);
+            t.stub_ex(viewer::SYNC_STR_CHECK_HDD, false, 1, 0, &Ret::Seq(s), &[]);
+            t.stub(viewer::FRAME_WAIT, false, 1, 0, 0x73);
+            t.stub(viewer::MOVIE_CLOSE, false, 1, 0, 0x74);
+            let s = seq(&mut rng);
+            t.stub_ex(viewer::SYNC_STR_CHECK, false, 1, 0, &Ret::Seq(s), &[]);
+            t.stub(viewer::HDD_STATE_CLEAR, false, 0, 0, 0x75);
+            let c: Vec<u32> = (0..3).map(|_| rng.pick(&[0, 1, 10, 2, 5])).collect();
+            t.stub_ex(viewer::CD_OPEN_CHECK, false, 1, 0, &Ret::Seq(c), &[]);
+            t.stub(viewer::SND_DIGITAL_MODE, false, 1, 0, 0x76);
+            t.stub(viewer::TK_SND_UPDATE2, false, 0, 0, 0x77);
+            let s = seq(&mut rng);
+            t.stub_ex(viewer::SND_STANDBY, false, 1, 0, &Ret::Seq(s), &[]);
+            let g = new_viewer(t);
+            t.w8(g + 0x5_075c, rng.pick(&[0, 1]));
+            let v = if rng.chance(3) { g } else { t.zeros(0x5_0800) };
+            t.w32(v + 0x5_0544, rng.pick(&[0, 5, 0xffff_ffff]));
+            t.w8(v + 0x5_075d, rng.pick(&[0, 1]));
+            t.w32(v + 0x5_0714, rng.pick(&[0, 1]));
+            let conv = rng.pick(&[0, 1]);
+            let what = format!("mpegstrendsub {k}");
+            t.check(&what, viewer::MPEG_STR_END, Conv::Cdecl, &[v, conv], |m| {
+                Out::U32(viewer::mpeg_str_end(m, v, conv))
+            });
+        }
+        // a null viewer returns the caller's `eax`
+        t.reset();
+        t.check(
+            "mpegstrendsub null",
+            viewer::MPEG_STR_END,
+            Conv::Cdecl,
+            &[0, 0],
+            |m| {
+                viewer::mpeg_str_end(m, 0, 0);
+                Out::None
+            },
+        );
+        for k in 0..30 {
+            t.reset();
+            printf_stub(t, viewer::DBG_PRINTF, &[(viewer::MSG_BUFF_END, 4)], 2, 0x81);
+            t.stub(viewer::MOVIE_ERR, false, 3, 0, 0x82);
+            let v = new_viewer(t);
+            let mem = t.zeros(0x1_0000);
+            t.w32(v + 0x5_06f4, mem);
+            t.w32(v + 0x5_0514, 1 + rng.below(4));
+            t.w32(v + 0x5_0518, rng.below(5));
+            t.w8(v + 0x5_075f, rng.pick(&[0, 1, 0x80]));
+            if k == 0 {
+                // MBX 1, MBY 0: the end (guard + 4) lands on the limit
+                t.w32(v + 0x5_06f4, 0x01f0_0000 - 0x8b4);
+                t.w32(v + 0x5_0514, 1);
+                t.w32(v + 0x5_0518, 0);
+                t.w8(v + 0x5_075f, 0);
+            }
+            for o in [0x5_051c, 0x5_0520, 0x5_0524] {
+                t.w32(v + o, rng.next());
+            }
+            let what = format!("alloc buffers {k}");
+            t.check(&what, viewer::ALLOC_BUFFERS, Conv::Cdecl, &[], |m| {
+                Out::U32(viewer::alloc_buffers(m))
+            });
+        }
+        for k in 0..40 {
+            t.reset();
+            printf_stub(t, viewer::DBG_PRINTF, &[], 2, 0x91);
+            t.stub(viewer::SET_CRT_MODE, false, 2, 0, 0x92);
+            t.stub(viewer::SA_WARN, false, 1, 0, 0x93);
+            t.stub(viewer::CRT_RESET, false, 0, 0, 0x94);
+            t.stub(viewer::CRT_SIZE, false, 2, 0, 0x95);
+            t.stub(viewer::ALLOC_BUFFERS, false, 0, 0, 0x96);
+            t.stub(viewer::IPU_RESET, false, 0, 0, 0x97);
+            t.stub(viewer::SPAD_CALL, false, 4, 0, 0x98);
+            let block = t.zeros(0x10);
+            t.g32(viewer::BLOCK, block);
+            let v = new_viewer(t);
+            let mut rec = vec![0u8; 0x10];
+            rec[8] = rng.pick(&[0, 1]);
+            rec[0xb] = rng.pick(&[0x20, 0x14, 0x28, 0x10]);
+            rec[0xc] = rng.pick(&[0x1a, 0x0e, 0x1b]);
+            let rec = t.alloc(&rec);
+            t.w32(v + 0x5_059c, rec);
+            t.w32(v + 0x5_05c0, rng.pick(&[0, 0x1_0000, 0xffff]));
+            t.w8(v + 0x5_075f, rng.pick(&[0, 1, 2, 4, 5, 6, 9]));
+            t.w8(v + 0x5_0760, rng.pick(&[0, 1, 2, 4, 5, 6]));
+            t.w32(v + 0x5_0534, rng.next());
+            let what = format!("picture setup {k}");
+            t.check(&what, viewer::PICTURE_SETUP, Conv::Cdecl, &[], |m| {
+                Out::U32(viewer::picture_setup(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_tmalloc_small_matches_the_original() {
+    let mut rng = Rng(0x006e_b950);
+    Twins::each(|t| {
+        for k in 0..200 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let i = rng.below(8);
+            t.w32(m + 4, (1 << i) | rng.pick(&[0, 0x100, 0x8000_0000]));
+            let nb = if k % 10 == 9 {
+                0xffff_ff00
+            } else {
+                0x40 + 8 * rng.below(8)
+            };
+            // up to five tree chunks, each in its own 0x400-byte block
+            let n = 1 + rng.below(5) as usize;
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x400)).collect();
+            let mut free_slots: Vec<(usize, u32)> = vec![(0, 0x10), (0, 0x14)];
+            let bin = m + 0x130 + 4 * i;
+            for (j, &c) in nodes.iter().enumerate() {
+                let size = (nb + 8 * rng.below(40)) | rng.pick(&[0, 1, 3]);
+                t.w32(c + 4, size);
+                t.w32(c + 8, c);
+                t.w32(c + 0xc, c);
+                t.w32(c + 0x1c, if rng.chance(6) { i ^ 1 } else { i });
+                if j == 0 {
+                    t.w32(bin, c);
+                    t.w32(c + 0x18, if rng.chance(5) { 0 } else { bin });
+                } else {
+                    let s = rng.below(free_slots.len() as u32) as usize;
+                    let (p, off) = free_slots.swap_remove(s);
+                    t.w32(nodes[p] + off, c);
+                    t.w32(c + 0x18, nodes[p]);
+                    free_slots.push((j, 0x10));
+                    free_slots.push((j, 0x14));
+                }
+                if rng.chance(4) {
+                    // a same-size chunk on the node's list
+                    let d = t.zeros(0x40);
+                    t.w32(d + 4, size);
+                    t.w32(d + 8, c);
+                    t.w32(d + 0xc, c);
+                    t.w32(c + 8, d);
+                    t.w32(c + 0xc, d);
+                }
+            }
+            let dv = t.zeros(0x20);
+            t.w32(m + 8, rng.pick(&[0, 0x18, 0x20, 0x38]));
+            t.w32(m + 0x14, dv);
+            t.w32(m, rng.pick(&[0, 0xff, 0x8]));
+            for b in 0..8 {
+                let fd = rng.pick(&[m + 0x1c0, dv, m + 0x28 + 8 * b]);
+                t.w32(m + 0x28 + 8 * b + 8, fd);
+            }
+            let least = match rng.below(7) {
+                6 => m + 0x1c0,
+                0 => nodes[rng.below(n as u32) as usize],
+                1 => 0xffff_0000,
+                _ => 0,
+            };
+            t.w32(m + 0x10, least);
+            let what = format!("tmalloc_small {k}");
+            t.check(&what, 0x006e_b950, Conv::Cdecl, &[m, nb], |mm| {
+                Out::U32(lib::tmalloc_small(mm, m, nb))
+            });
+        }
+    });
+}
+
+/// An MSVC `std::map` of `keys` (inserted in that order, unbalanced): its
+/// head (nil byte +0xd set) and the nodes; node +0x14 gets `values[i]`.
+fn std_map(t: &mut Twins, keys: &[u32], values: &[u32]) -> u32 {
+    let head = t.zeros(0x20);
+    t.w8(head + 0xd, 1);
+    let mut nodes: Vec<(u32, u32)> = Vec::new(); // (key, address)
+    let mut root = head;
+    for (&k, &v) in keys.iter().zip(values) {
+        let n = t.zeros(0x20);
+        t.w32(n, head);
+        t.w32(n + 8, head);
+        t.w32(n + 0x14, v);
+        if root == head {
+            root = n;
+            t.w32(n + 4, head);
+        } else {
+            let mut p = root;
+            loop {
+                let pk = nodes.iter().find(|x| x.1 == p).unwrap().0;
+                let off = if k < pk { 0 } else { 8 };
+                let c: u32 = ffx_bridge::Mem::read(&t.a, p + off);
+                if c == head {
+                    t.w32(p + off, n);
+                    t.w32(n + 4, p);
+                    break;
+                }
+                p = c;
+            }
+        }
+        nodes.push((k, n));
+    }
+    t.w32(head + 4, root);
+    let min = nodes.iter().min_by_key(|x| x.0).map_or(head, |x| x.1);
+    let max = nodes.iter().max_by_key(|x| x.0).map_or(head, |x| x.1);
+    t.w32(head, min);
+    t.w32(head + 8, max);
+    head
+}
+
+#[test]
+fn cluster_cache_clear_matches_the_original() {
+    let mut rng = Rng(0x0069_a9c0);
+    Twins::each(|t| {
+        for k in 0..40 {
+            t.reset();
+            t.stub_import(chara::WAIT_FOR_SINGLE_OBJECT, 2, 2, 0);
+            t.stub_import(chara::RELEASE_MUTEX, 1, 1, 1);
+            let n = rng.pick(&[0usize, 1, 2, 3, 5]);
+            let cache = t.zeros(0x6500);
+            let bufs: Vec<u32> = (0..=n)
+                .map(|_| {
+                    let w: Vec<u32> = (0..8).map(|_| rng.pick(&[0, 0x7a00, 0x7b00])).collect();
+                    t.words(&w)
+                })
+                .collect();
+            t.stub_ex(chara::PHYRE_MALLOC, false, 2, 0, &Ret::Seq(bufs), &[]);
+            // PushInto: data = dst, count + 1 (and the "not owned" bit)
+            let mut push = vec![0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04, 0xff, 0x01];
+            if rng.chance(3) {
+                push.extend([0x81, 0x09]);
+                push.extend(0x8000_0000u32.to_le_bytes());
+            }
+            t.stub_ex(chara::PARRAY_PUSH_INTO, true, 2, 2, &Ret::Fixed(0), &push);
+            t.stub(chara::OPERATOR_DELETE, false, 1, 0, 0xc1);
+            t.stub(chara::ERASE_SUBTREE, true, 1, 1, 0xc2);
+            t.stub(chara::CLUSTER_DTOR, true, 0, 0, 0xc3);
+            t.stub(chara::PHYRE_FREE, false, 1, 0, 0xc4);
+            let mutex = t.words(&[0x77]);
+            t.w32(cache + 0x18, mutex);
+            t.w32(cache + 0x641c, rng.pick(&[0, 3, 0x400]));
+            let keys: Vec<u32> = (0..n).map(|_| rng.below(100)).collect();
+            let values: Vec<u32> = (0..n)
+                .map(|_| match rng.below(3) {
+                    0 => cache + 0x1c + 0x18 * rng.below(0x400),
+                    1 => cache + 0x1c + 0x18 * 0x400,
+                    _ => 0x5500 + rng.below(0x100),
+                })
+                .collect();
+            let head = std_map(t, &keys, &values);
+            t.w32(cache + 0x10, head);
+            t.w32(cache + 0x14, n as u32);
+            let what = format!("cluster cache clear {k}");
+            t.skip = 0x18;
+            t.check_framed(
+                &what,
+                0x0069_a9c0,
+                Conv::Thiscall(cache),
+                &[],
+                0x20,
+                |m, ebp| Out::U32(chara::cluster_cache_clear(m, cache, ebp - 0x20)),
+            );
+            t.skip = 4;
+        }
+    });
+}
+
+/// [`printf_stub`] for an `fprintf`-like import slot: the format is the
+/// second argument.
+fn fprintf_import_stub(t: &mut Twins, slot: u32, fmts: &[(u32, u32)], other: u32) {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp + 8]
+    for &(fmt, n) in fmts {
+        let to = t.stub_code(slot, false, n, 0, &Ret::Fixed(0xd0), &[]);
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(fmt).to_le_bytes()); // cmp edx, fmt
+        c.extend([0x75, 7]); // jne next
+        c.push(0xb8);
+        c.extend(to.to_le_bytes()); // mov eax, to
+        c.extend([0xff, 0xe0]); // jmp eax
+    }
+    let rest = t.stub_code(slot, false, other, 0, &Ret::Fixed(0xd0), &[]);
+    c.push(0xb8);
+    c.extend(rest.to_le_bytes());
+    c.extend([0xff, 0xe0]);
+    let at = t.code(&c);
+    let s = t.rebase(slot);
+    t.patch(s, &at.to_le_bytes());
+}
+
+#[test]
+fn load_hd_render_data_matches_the_original() {
+    let mut rng = Rng(0x0082_a1c0);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            t.stub(chara::MEMSET, false, 3, 0, 0xe0);
+            let found = rng.pick(&[0, 0x6600]);
+            t.stub_import(chara::STRSTR, 2, 0, found);
+            let name = store_arg(1, 0, u32::from_le_bytes(*b"c001"));
+            t.stub_ex(
+                chara::ANALYSIS_CHR_NUM,
+                false,
+                2,
+                0,
+                &Ret::Fixed(0xe1),
+                &name,
+            );
+            t.stub_import(chara::IOB_FUNC, 0, 0, 0x7700);
+            fprintf_import_stub(t, chara::FPRINTF, &[(chara::STR_LOAD_CHARACTER, 3)], 2);
+            t.stub_import(chara::FFLUSH, 1, 0, 0xe2);
+            let dir = store_arg(1, 0, u32::from_le_bytes(*b"/dd\0"));
+            t.stub_ex(chara::UNIFY_FILENAME, false, 3, 0, &Ret::Fixed(0xe3), &dir);
+            let len = rng.pick(&[2u32, 5, 8]);
+            let mut full = store_arg(0, 0, u32::from_le_bytes(*b"a/bc"));
+            full.extend(store_arg(0, 4, u32::from_le_bytes(*b"defg")));
+            full.extend(store_arg(0, len as u8, 0));
+            let sprintf = t.stub_code(chara::SPRINTF, false, 4, 0, &Ret::Fixed(len), &full);
+            let s = t.rebase(chara::SPRINTF);
+            t.patch(s, &sprintf.to_le_bytes());
+            t.stub_import(chara::STRNCPY, 3, 0, 0xe4);
+            t.stub(chara::CHARACTER_LOAD, false, 2, 0, rng.pick(&[0, 0xe5]));
+            t.stub(chara::TRY_ASYNC_LOAD, false, 2, 0, 0xe6);
+            let busy = rng.pick(&[0u32, 3, 50]);
+            for i in 0..50 {
+                t.g8(chara::CLOTH_LOADS + 0x110 * i + 0x108, u8::from(i < busy));
+            }
+            let a = rng.pick(&[0, 0x8800]);
+            let b = rng.pick(&[0, 0x8900]);
+            let path = t.alloc(b"chr/c001/x\0");
+            let what = format!("Ch_LoadHdRenderData {k}");
+            t.check_framed(
+                &what,
+                0x0082_a1c0,
+                Conv::Cdecl,
+                &[path, a, b, 7],
+                0x284,
+                |m, ebp| Out::U32(chara::load_hd_render_data(m, path, a, b, 7, ebp - 0x284)),
+            );
+        }
+    });
+}
+
+#[test]
+fn viewer_motion_name_and_sys_motion_match_the_original() {
+    let mut rng = Rng(0x0083_71f0);
+    Twins::each(|t| {
+        for k in 0..60 {
+            t.reset();
+            t.stub(chara::CREATE_NAME, false, 1, 0, 0x5a00);
+            t.stub(chara::CREATE_CHRPATH, false, 1, 0, 0x5b00);
+            fprintf_import_stub(t, chara::SPRINTF, &[(chara::FMT_MOTION_TBL, 3)], 4);
+            let data = t.zeros(0x200);
+            for j in 0..4u32 {
+                let id = rng.pick(&[1u16, 2, 7, 0x22]);
+                t.write(data + 0x10 + 0x40 * j, &id.to_le_bytes());
+            }
+            t.stub(chara::PC_READ_D, false, 1, 0, rng.pick(&[0, data, data]));
+            t.stub(
+                chara::PC_READ_GET_LEN,
+                false,
+                0,
+                0,
+                rng.pick(&[0x10, 0x40, 0x90, 0x100, 0x7]),
+            );
+            t.g8(chara::IS_DEBUG, rng.pick(&[0, 1, 1]));
+            let id = rng.pick(&[0x0001u32, 0x0042, 0xf001, 0x8001]);
+            for i in 0..50 {
+                let e = chara::MOTION_TABLES + 16 * i;
+                let used = u32::from(rng.chance(if k % 4 == 0 { 1 } else { 3 }));
+                t.g32(e + 4, used);
+                t.g32(e + 0xc, if rng.chance(6) { id } else { 0x99 });
+                t.g32(e, rng.pick(&[0, data]));
+                t.g32(e + 8, rng.pick(&[0, 2, 4, 0xffff_ffff]));
+            }
+            let key = id << 16 | rng.pick(&[1, 2, 7, 0x22, 5]);
+            let what = format!("motion name {k}");
+            t.check_framed(&what, 0x0083_71f0, Conv::Cdecl, &[key], 0x44, |m, ebp| {
+                Out::U32(chara::motion_name(m, key, ebp - 0x44))
+            });
+        }
+        for k in 0..80 {
+            t.reset();
+            t.stub(chara::TEXTURE_SET_ANIM, false, 3, 0, 0x61);
+            t.stub(chara::SET_SEQUENCE, false, 2, 0, 0x62);
+            let row: Vec<u32> = (0..0x20).map(|_| rng.pick(&[0, 0, 0, 0x300])).collect();
+            let row = t.words(&row);
+            let tbl = t.zeros(0x40);
+            for s in 0..4 {
+                t.w32(tbl + 0x10 + 8 * s, if rng.chance(5) { 0 } else { row });
+            }
+            let pairs: Vec<u32> = (0..6)
+                .map(|_| rng.below(0x14) | rng.below(0x100) << 16)
+                .collect();
+            let pairs = t.words(&pairs);
+            let list = t.zeros(0x40);
+            for s in 0..4 {
+                t.w32(list + 8 * s + 8, rng.pick(&[0, 3, 6]));
+                t.w32(list + 8 * s + 0xc, pairs);
+            }
+            let def = t.zeros(0x120);
+            t.w32(def, rng.below(0x100));
+            t.w8(def + 0x70, rng.pick(&[0, 1]));
+            t.w32(def + 0x6c, tbl);
+            t.w32(def + 0x108, if rng.chance(6) { 0 } else { list });
+            let chr = t.zeros(0x200);
+            t.w32(chr + 0x1c4, def);
+            t.w32(chr + 0x198, rng.pick(&[0, 0x200]));
+            let set = rng.below(3);
+            t.g8(chara::SYS_MOTION_SETS + set, rng.below(4) as u8);
+            t.g32(chara::SEARCH_COUNT, rng.pick(&[0, 0, 5]));
+            let max = rng.pick(&[0u32, 3, 0x13, 0x1f]);
+            let idx = rng.pick(&[0u32, 1, 0x10, max]);
+            let dir = rng.pick(&[0, 1]);
+            let set = if rng.chance(4) { 1 } else { set };
+            let what = format!("Ch_SetSysMotion_ViewerAnimation {k}");
+            t.check(
+                &what,
+                0x0083_7e10,
+                Conv::Cdecl,
+                &[chr, set, idx, max, dir],
+                |m| Out::U32(chara::set_sys_motion_viewer(m, chr, set, idx, max, dir)),
+            );
+        }
+    });
+}
+
+#[test]
+fn anim_window_and_motion_viewer_match_the_original() {
+    let mut rng = Rng(0x0093_e370);
+    Twins::each(|t| {
+        for k in 0..40 {
+            t.reset();
+            let st = t.words(&[0x4400, rng.pick(&[0, 3, 0xffff_ffff])]);
+            let fresh = t.zeros(8);
+            let msg = rng.pick(&[0x8001u32, 0x8003, 0x8007, 0x8007, 0x8002]);
+            let id = rng.pick(&[0u32, 5, 0x1f, 0x20]);
+            // a button press without state reads [0] in the original
+            let arg = if msg == 0x8007 && id < 0x20 {
+                st
+            } else {
+                rng.pick(&[st, st, 0])
+            };
+            t.stub(chara::WINDOW_GET_ARG, false, 1, 0, arg);
+            t.stub(chara::USER_MALLOC, false, 1, 0, fresh);
+            for (s, n) in [
+                (chara::WINDOW_SET_ARG, 2),
+                (chara::WINDOW_SET_TITLE, 2),
+                (chara::WINDOW_ADD_BUTTON, 7),
+                (chara::BUTTON_SET_TOGGLE, 3),
+                (chara::BUTTON_SET_TOGGLE_VALUE, 3),
+                (chara::WINDOW_CLOSE_TREE, 1),
+                (chara::TEX_ANIM_NO_SET, 5),
+                (chara::USER_FREE, 1),
+                (chara::GET_NAME, 1),
+            ] {
+                t.stub(s, false, n, 0, 0x70 + n);
+            }
+            t.stub(chara::TEXTURE_GET_ANIM_ID, false, 1, 0, 0x7a);
+            t.stub(
+                chara::CHECK_HANDLE,
+                false,
+                1,
+                0,
+                rng.pick(&[0, 1, 0xffff_ffff]),
+            );
+            printf_stub(t, chara::DBG_PRINTF, &[], 2, 0x7b);
+            fprintf_import_stub(t, chara::SPRINTF, &[], 3);
+            t.g32(chara::ANIM_WIN_CHR, 0x4500);
+            let what = format!("anim window proc {k}");
+            t.check_framed(
+                &what,
+                0x0093_e370,
+                Conv::Cdecl,
+                &[0x9900, msg, id],
+                0x84,
+                |m, ebp| Out::U32(chara::anim_window_proc(m, 0x9900, msg, id, ebp - 0x84)),
+            );
+        }
+        for k in 0..40 {
+            t.reset();
+            printf_stub(t, chara::DBG_PRINTF, &[(chara::FMT_MTYPE, 4)], 1, 0x81);
+            fprintf_import_stub(t, chara::SPRINTF, &[(chara::FMT_ANM_PROJ, 5)], 4);
+            let data = t.zeros(0x10);
+            t.write(data, &rng.pick(&[0x12u16, 0x34]).to_le_bytes());
+            t.write(data + 8, &rng.pick(&[0u16, 1, 2, 0x100]).to_le_bytes());
+            t.stub(chara::PC_READ, false, 1, 0, rng.pick(&[0, data, data]));
+            t.stub(chara::USER_FREE, false, 1, 0, 0x82);
+            t.stub_import(chara::STRDUP, 1, 0, 0x8300);
+            t.stub(chara::SET_MOTION_SEQ, false, 5, 0, 0x84);
+            let n = rng.pick(&[0u32, 3, 0x22]);
+            t.stub_import(chara::ATOI, 1, 0, n);
+            let db = rng.pick(&[0u32, 1, 2]);
+            t.stub(chara::GET_DB_NUM, false, 1, 0, db);
+            let key = n | db << 12;
+            let entries: Vec<u32> = (0..4)
+                .map(|_| {
+                    let v = rng.pick(&[key, key + 1, 0x8000 | key]);
+                    t.words(&[v])
+                })
+                .collect();
+            let list = t.words(&entries);
+            let def = t.zeros(0x120);
+            t.w8(def + 0xf8, u8::from(rng.chance(6)));
+            t.w32(def + 0x100, rng.pick(&[0, 0x9100]));
+            t.w32(def + 0x114, if rng.chance(5) { 0 } else { list });
+            t.write(def + 0x110, &rng.pick(&[0u16, 2, 4, 0xffff]).to_le_bytes());
+            let chr = t.zeros(0x810);
+            t.write(chr, &rng.pick(&[0xf001u16, 0x0001, 0x7001]).to_le_bytes());
+            t.w32(chr + 0x1c4, def);
+            t.w32(chr + 0x194, rng.next());
+            let sub = t.alloc(b"m012\0");
+            let what = format!("Ch_ReadMotionViewer {k}");
+            t.check_framed(
+                &what,
+                0x0082_83c0,
+                Conv::Cdecl,
+                &[chr, 0x6600, sub, 0x6700],
+                0x84,
+                |m, ebp| {
+                    Out::U32(chara::read_motion_viewer(
+                        m,
+                        chr,
+                        0x6600,
+                        sub,
+                        0x6700,
+                        ebp - 0x84,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+// ---- the page heap ----
+
+use ffx_sg::m5main4_pages::bridge as pages;
+
+/// Critical section imports as plain stubs.
+fn cs_stubs(t: &mut Twins) {
+    for s in [
+        pages::INITIALIZE_CS,
+        pages::ENTER_CS,
+        pages::LEAVE_CS,
+        pages::DELETE_CS,
+    ] {
+        t.stub_import(s, 1, 1, 0xcc);
+    }
+}
+
+/// The used blocks' memory addresses in the pool's pages (from `a`).
+fn used_blocks(t: &Twins, pool: u32) -> Vec<u32> {
+    let rd = |a: u32| -> u32 { ffx_bridge::Mem::read(&t.a, a) };
+    let size = rd(pool + 4);
+    let mut page = rd(pool);
+    let mut out = Vec::new();
+    while page != 0 {
+        let end = page + size - 0x10;
+        let mut b = page + 0x24;
+        while b < end && rd(b + 8) != 0 {
+            if rd(b) == 0 && rd(b + 4) == 0 {
+                out.push(b + 0x10);
+            }
+            b += rd(b + 8);
+        }
+        page = rd(page + 0x10);
+    }
+    out
+}
+
+#[test]
+fn page_pool_matches_the_original() {
+    let mut rng = Rng(0x0094_3a50);
+    Twins::each(|t| {
+        for round in 0..6 {
+            t.reset();
+            let size = rng.pick(&[0x200u32, 0x400, 0x1000]);
+            let mut seq: Vec<u32> = (0..64).map(|_| t.zeros(size as usize)).collect();
+            if round % 3 == 2 {
+                seq[3] = 0;
+            }
+            t.stub_ex(pages::PAGE_ALLOC, false, 2, 0, &Ret::Seq(seq), &[]);
+            let commit = if round % 3 == 1 {
+                vec![1, 1, 0x100, 1]
+            } else {
+                vec![1]
+            };
+            t.stub_ex(pages::PAGE_COMMIT, false, 2, 0, &Ret::Seq(commit), &[]);
+            t.stub(pages::PAGE_QUEUE_DECOMMIT, false, 2, 0, 0xd1);
+            t.stub(pages::PAGE_RELEASE, false, 1, 0, 0xd2);
+            let pool = t.words(&[0, size]);
+            for k in 0..60 {
+                let live = used_blocks(t, pool);
+                if live.is_empty() || rng.chance(2) {
+                    // at most what a fresh page holds: more grows the pool forever
+                    let n = rng.pick(&[0u32, 1, 8, 0x20, 0x50, size / 3, size - 0x50, size - 0x44]);
+                    let what = format!("pool alloc {round} {k}");
+                    t.check(&what, pages::POOL_ALLOC, Conv::Thiscall(pool), &[n], |m| {
+                        Out::U32(pages::pool_alloc(m, pool, n))
+                    });
+                } else {
+                    let p = live[rng.below(live.len() as u32) as usize];
+                    let what = format!("pool free {round} {k}");
+                    t.check(&what, pages::POOL_FREE, Conv::Thiscall(pool), &[p], |m| {
+                        Out::U32(pages::pool_free(m, pool, p))
+                    });
+                }
+            }
+            if !used_blocks(t, pool).is_empty() {
+                let what = format!("pool free all {round}");
+                t.check(
+                    &what,
+                    pages::POOL_FREE_ALL,
+                    Conv::Thiscall(pool),
+                    &[],
+                    |m| {
+                        pages::pool_free_all(m, pool);
+                        Out::None
+                    },
+                );
+            }
+            for commit in [0u32, 1, 0x100] {
+                t.reset();
+                let page = t.zeros(size as usize);
+                t.stub(
+                    pages::PAGE_ALLOC,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(4) { 0 } else { page },
+                );
+                t.stub(pages::PAGE_COMMIT, false, 2, 0, commit);
+                let pool = t.words(&[0, size]);
+                t.check(
+                    "new page",
+                    pages::NEW_PAGE,
+                    Conv::Thiscall(pool),
+                    &[],
+                    |m| Out::U32(pages::new_page(m, pool)),
+                );
+            }
+        }
+    });
+}
+
+/// A stub extra: on the stub's `n`-th call, `mov dword [ecx + off], 0`.
+fn zero_this_field_on_call(t: &mut Twins, n: u32, off: u8) -> Vec<u8> {
+    let ctr = t.words(&[n]);
+    let mut c = vec![0xff, 0x0d];
+    c.extend(ctr.to_le_bytes()); // dec dword [ctr]
+    c.extend([0x75, 0x07]); // jnz +7
+    c.extend([0xc7, 0x41, off]);
+    c.extend(0u32.to_le_bytes()); // mov dword [ecx + off], 0
+    c
+}
+
+#[test]
+fn page_heap_teardown_matches_the_original() {
+    let mut rng = Rng(0x0094_2a80);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            // an arena: blocks of 0x20 from +0x1010, tags 2 (used) or 1,
+            // the last one (tag 2) at the arena's end - 0x10
+            let blocks = 1 + rng.below(6);
+            let arena_size = 0x1010 + 0x20 * blocks + 0x10;
+            let arena = t.zeros(arena_size as usize + 0x20);
+            for i in 0..blocks {
+                let b = arena + 0x1010 + 0x20 * i;
+                t.w32(b + 4, 0x20);
+                t.w32(b + 0xc, rng.pick(&[1, 2, 2, 3]));
+            }
+            let end = arena + arena_size - 0x10;
+            t.w32(end + 4, 0x10);
+            t.w32(end + 0xc, 2);
+            let heap = t.words(&[arena_size, 0, 0, arena]);
+            let frees = 1 + rng.below(8);
+            let stop = zero_this_field_on_call(t, frees, 0xc);
+            t.stub_ex(pages::USER_HEAP_FREE, true, 1, 1, &Ret::Fixed(1), &stop);
+            // the arena keeps its blocks until the heap drops it: a heap
+            // whose blocks are all free (no tag 2 before the end) would
+            // spin forever, so give it at least one
+            t.w32(arena + 0x1010 + 0xc, 2);
+            let what = format!("heap free all {k}");
+            t.check(
+                &what,
+                pages::HEAP_FREE_ALL,
+                Conv::Thiscall(heap),
+                &[],
+                |m| {
+                    pages::heap_free_all(m, heap);
+                    Out::None
+                },
+            );
+        }
+        for k in 0..4 {
+            t.reset();
+            cs_stubs(t);
+            t.stub(pages::HEAP_FREE_ALL, true, 0, 0, 0xe1);
+            t.stub(pages::POOL_FREE_ALL, true, 0, 0, 0xe2);
+            let cs = t.zeros(0x40);
+            let what = format!("heap destroy {k}");
+            t.check(&what, 0x0094_2630, Conv::Thiscall(cs), &[], |m| {
+                Out::U32(pages::heap_destroy(m, cs))
+            });
+            t.check(&what, 0x0094_2680, Conv::Thiscall(cs), &[], |m| {
+                Out::U32(pages::pool_destroy(m, cs))
+            });
+        }
+    });
+}
+
+#[test]
+fn page_allocators_match_the_original() {
+    let mut rng = Rng(0x0094_4080);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            cs_stubs(t);
+            let table = t.zeros(0x10);
+            t.stub(pages::POOL_ALLOC, true, 1, 1, table);
+            let a = t.zeros(0x40);
+            let size = rng.pick(&[1u32, 0x10, 0x30, 0x1000, 0x2000, 0xffff_fff0]);
+            let align = rng.pick(&[0x10u32, 0x1000, 0x10000, 0xffff_0000]);
+            let what = format!("allocator init {k}");
+            t.check(
+                &what,
+                0x0094_4080,
+                Conv::Thiscall(a),
+                &[size, align, 0x7700],
+                |m| Out::U32(pages::alloc_init(m, a, size, align, 0x7700)),
+            );
+        }
+        for k in 0..30 {
+            t.reset();
+            cs_stubs(t);
+            // CHUNK_REMOVE: the list head moves to the chunk's next
+            let pop = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x40, 0x18, 0x89, 0x41, 0x2c];
+            t.stub_ex(pages::CHUNK_REMOVE, true, 1, 1, &Ret::Fixed(0xf1), &pop);
+            t.stub(pages::POOL_FREE, true, 1, 1, 0xf2);
+            let mut next = 0;
+            for _ in 0..rng.below(3) {
+                let c = t.zeros(0x20);
+                t.w32(c + 0x18, next);
+                next = c;
+            }
+            let mut list = 0;
+            for _ in 0..rng.below(3) {
+                list = t.words(&[list, 0]);
+            }
+            let a = t.zeros(0x40);
+            t.w32(a + 0x2c, next);
+            t.w32(a + 0x34, 0x6600);
+            t.w32(a + 0x38, list);
+            t.w32(a + 0x3c, 0x7700);
+            let what = format!("allocator destroy {k}");
+            t.check(&what, 0x0094_4190, Conv::Thiscall(a), &[], |m| {
+                Out::U32(pages::alloc_destroy(m, a))
+            });
+        }
+        for k in 0..40 {
+            t.reset();
+            cs_stubs(t);
+            t.stub(pages::PAGE_QUEUE_DECOMMIT, false, 2, 0, 0xa1);
+            t.stub(pages::PAGE_RELEASE, false, 1, 0, 0xa2);
+            t.stub(pages::BUCKET_LOCKED_CALL, true, 0, 0, 0xa3);
+            t.stub(pages::POOL_FREE, true, 1, 1, 0xa4);
+            let n = 1 + rng.below(3);
+            let chunks: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+            for (i, &c) in chunks.iter().enumerate() {
+                let next = chunks.get(i + 1).copied().unwrap_or(0);
+                t.w32(c + 0x18, next);
+                t.w32(c, 0x1_0000 * (i as u32 + 1));
+                let bits: Vec<u32> = (0..4)
+                    .map(|_| rng.pick(&[0, 1, 0x8000_0000, 0x10]))
+                    .collect();
+                let bits = t.words(&bits);
+                t.w32(c + 8, bits);
+            }
+            let table: Vec<u32> = (0..=n).map(|i| 0x1_0000 * (n - i + 1)).collect();
+            let table = t.words(&table);
+            let a = t.zeros(0x40);
+            t.w32(a + 0x2c, chunks[0]);
+            t.w32(a + 0x34, table);
+            // no items per page loops forever on a chunk with items
+            let count = rng.pick(&[0, 0x20, 0x40, 0x80]);
+            t.w32(a + 0x24, count);
+            t.w32(
+                a + 0x28,
+                if count == 0 {
+                    rng.pick(&[0, 8])
+                } else {
+                    rng.pick(&[8, 0x20, 1, 3, 0x18])
+                },
+            );
+            t.w32(a + 0x1c, 0x1000);
+            t.w32(a + 0x3c, 0x7700);
+            let chunk = chunks[rng.below(n) as usize];
+            let what = format!("chunk remove {k}");
+            t.check(
+                &what,
+                pages::CHUNK_REMOVE,
+                Conv::Thiscall(a),
+                &[chunk],
+                |m| Out::U32(pages::chunk_remove(m, a, chunk)),
+            );
+        }
+    });
+}
+
+#[test]
+fn page_big_table_matches_the_original() {
+    let mut rng = Rng(0x0094_4f80);
+    Twins::each(|t| {
+        for k in 0..8 {
+            t.reset();
+            let it = t.zeros(0xc);
+            let table = t.words(&[rng.pick(&[0, 4]), 0x5500]);
+            let what = format!("iterator {k}");
+            t.check(&what, 0x0094_4b40, Conv::Thiscall(it), &[table], |m| {
+                Out::U32(pages::iter_init(m, it, table))
+            });
+        }
+        for k in 0..20 {
+            t.reset();
+            t.stub(pages::VIRTUAL_DECOMMIT, false, 2, 0, 0xb1);
+            t.stub_ex(
+                pages::VIRTUAL_RELEASE,
+                false,
+                2,
+                0,
+                &Ret::Seq(vec![0xb2, 0xb3, 0xb4]),
+                &[],
+            );
+            let mut next = 0;
+            for _ in 0..rng.below(3) {
+                next = t.words(&[next, 0]);
+            }
+            let tb = t.words(&[
+                rng.pick(&[0, 4, 0x400, 0x401]),
+                0x5500,
+                3,
+                0,
+                next,
+                7,
+                0x10_0000,
+            ]);
+            let what = format!("table clear {k}");
+            t.check(&what, pages::TABLE_CLEAR, Conv::Thiscall(tb), &[], |m| {
+                Out::U32(pages::table_clear(m, tb))
+            });
+        }
+        for k in 0..30 {
+            t.reset();
+            cs_stubs(t);
+            let found = rng.pick(&[0u32, 1, 0x100]);
+            let size = store_arg(1, 0, rng.pick(&[0, 1, 0x1000, 0x1001]));
+            t.stub_ex(pages::HASH_FIND, true, 2, 2, &Ret::Fixed(found), &size);
+            t.stub(pages::PAGE_QUEUE_DECOMMIT, false, 2, 0, 0xc1);
+            t.stub(pages::PAGE_RELEASE, false, 1, 0, 0xc2);
+            t.stub(pages::HASH_REMOVE, true, 1, 1, 0xc3);
+            let big = t.zeros(0x40);
+            let p = rng.next();
+            let what = format!("big free {k}");
+            t.skip = 0xc;
+            t.check_framed(
+                &what,
+                pages::BIG_FREE,
+                Conv::Thiscall(big),
+                &[p],
+                0x1c,
+                |m, ebp| Out::U32(pages::big_free(m, big, p, ebp - 0x1c)),
+            );
+            t.skip = 4;
+        }
+        for k in 0..30 {
+            t.reset();
+            cs_stubs(t);
+            t.stub(pages::BIG_FREE, true, 1, 1, 0xd1);
+            t.stub(pages::TABLE_CLEAR, true, 0, 0, 0xd2);
+            let n = rng.pick(&[0u32, 1, 4, 8]);
+            let slots: Vec<u32> = (0..n)
+                .map(|_| {
+                    if rng.chance(2) {
+                        0
+                    } else {
+                        t.words(&[rng.next()])
+                    }
+                })
+                .collect();
+            let slots = t.words(&[slots, vec![0]].concat());
+            let big = t.zeros(0x40);
+            t.w32(big + 0x18, n);
+            t.w32(big + 0x1c, slots);
+            let what = format!("big destroy {k}");
+            t.check(&what, 0x0094_4ba0, Conv::Thiscall(big), &[], |m| {
+                Out::U32(pages::big_destroy(m, big))
+            });
+        }
+        for set in [0u32, 1, 0x1234] {
+            t.reset();
+            t.stub(pages::MEM_PRE_INIT, false, 0, 0, 0xe1);
+            t.stub(pages::DESC_INIT, true, 0, 0, 0xe2);
+            t.stub(pages::SYSTEM_INIT, true, 1, 1, 0xe3);
+            t.stub(pages::START_THREAD, false, 0, 0, 0xe4);
+            t.g32(pages::MEM_SYSTEM, set);
+            let what = format!("mem system ensure {set}");
+            t.skip = 0xc;
+            t.check_framed(&what, 0x0094_28b0, Conv::Cdecl, &[], 0x44, |m, ebp| {
+                pages::mem_system_ensure(m, ebp - 0x44);
+                Out::None
+            });
+            t.skip = 4;
+        }
+    });
+}
+
+#[test]
+fn page_hash_matches_its_formula() {
+    // the formula against the original's own words on a few keys is in
+    // big_free's test (the key's hash word); here only fixed points
+    assert_eq!(pages::hash(0), {
+        let a = (0x3du32).wrapping_mul(9);
+        let b = (a >> 4 ^ a).wrapping_mul(0x27d4_eb2d);
+        b >> 15 ^ b
+    });
+}
+
+#[test]
+fn camera_point_orbit_matches_the_original() {
+    let mut rng = Rng(0x0094_2520);
+    Twins::each(|t| {
+        for k in 0..30 {
+            t.reset();
+            t.stub(misc::GET_ANGLE, false, 3, 0, 0x31);
+            t.stub(misc::SET_RECT, false, 3, 0, 0x32);
+            t.stub(misc::SET_POLAR, false, 5, 0, 0x33);
+            let list = rng.below(2);
+            t.g32(misc::CUR_LIST, list);
+            let n = rng.pick(&[0u32, 1, 3, 0xffff_ffff]);
+            t.g32(misc::LIST_COUNT + 4 * list, n);
+            let flags: Vec<u32> = (0..9).map(|_| rng.pick(&[0, 0, 2, 0x10, 0xff])).collect();
+            let flags = t.words(&flags);
+            let pts: Vec<u32> = (0..12)
+                .map(|_| (rng.below(2000) as f32 - 1000.0).to_bits())
+                .collect();
+            let pts = t.words(&pts);
+            t.g32(misc::LIST_FLAGS + 4 * list, flags);
+            t.g32(misc::LIST_POINTS + 4 * list, pts);
+            for g in [misc::YAW, misc::PITCH, misc::DISTANCE] {
+                t.g32(g, (rng.below(700) as f32 / 100.0 - 3.5).to_bits());
+            }
+            let what = format!("camera point orbit {k}");
+            t.check_framed(&what, 0x0094_2520, Conv::Cdecl, &[], 0x14, |m, ebp| {
+                Out::U32(misc::point_orbit(m, ebp - 0x14))
+            });
+        }
+    });
+}
