@@ -23,6 +23,8 @@
 pub mod array;
 pub mod controller;
 pub mod descriptor;
+pub mod m5p_anim_arrays;
+pub mod m5p_anim_misc;
 pub mod m5p_anim_small;
 pub mod network;
 pub mod p2_bind;
