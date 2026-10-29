@@ -14,6 +14,9 @@
 //!   transpose and the registrations' tables (continuation round);
 //! - [`p5_lights`] has the per-instance light selection `0x004d4140` (round 4);
 //! - [`p5_gdraw_device`] has `GDraw`'s D3D11 device objects `0x00a34cc0`;
+//! - [`m5p_core`] has M5 stage 1's list `phyre-core` (the descriptor
+//!   destructors' and array resets' tables, destructors, the pools' small
+//!   members, float setters);
 //! - [`small`] has the class descriptors' little virtual members (construct
 //!   in place, destroy, forward).
 //!
@@ -37,6 +40,14 @@
 
 pub mod array;
 pub mod freelist;
+pub mod m5p_core;
+pub mod m5p_core_b;
+pub mod m5p_core_c;
+pub mod m5p_core_d;
+pub mod m5p_core_e;
+pub mod m5p_core_f;
+pub mod m5p_core_g;
+pub mod m5p_core_h;
 pub mod matrix;
 pub mod p5_gdraw;
 pub mod p5_gdraw_device;
