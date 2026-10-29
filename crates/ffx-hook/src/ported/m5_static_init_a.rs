@@ -473,4 +473,188 @@ ported! {
     StaticInit_Ctor8_00ae5000 @ 0x00ae_5000 => extern "C" fn init_00ae5000() -> u32 {
         sa::ctor8(&mut mem(), 0x00ae_5000)
     }
+    /// `0x00ae_0c30`: the class descriptor of `PClassDataMemberDynamic` in `0x00c9_1180`, then `atexit(0x00af_a3a0)`.
+    StaticInit_ClassDesc_PClassDataMemberDynamic_00ae0c30 @ 0x00ae_0c30 => extern "C" fn init_00ae0c30() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_0c30)
+    }
+    /// `0x00ae_0cf0`: the class descriptor of `PClassDescriptorDynamic` in `0x00c9_1330`, then `atexit(0x00af_a3f0)`.
+    StaticInit_ClassDesc_PClassDescriptorDynamic_00ae0cf0 @ 0x00ae_0cf0 => extern "C" fn init_00ae0cf0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_0cf0)
+    }
+    /// `0x00ae_13e0`: the class descriptor of `PNameComponent` in `0x00c9_3e38`, then `atexit(0x00af_aeb0)`.
+    StaticInit_ClassDesc_PNameComponent_00ae13e0 @ 0x00ae_13e0 => extern "C" fn init_00ae13e0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_13e0)
+    }
+    /// `0x00ae_31e0`: the class descriptor of `PShaderComputeProgram` in `0x00c9_ca40`, then `atexit(0x00af_d3e0)`.
+    StaticInit_ClassDesc_PShaderComputeProgram_00ae31e0 @ 0x00ae_31e0 => extern "C" fn init_00ae31e0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_31e0)
+    }
+    /// `0x00ae_32a0`: the class descriptor of `PShaderFragmentProgram` in `0x00c9_c910`, then `atexit(0x00af_d400)`.
+    StaticInit_ClassDesc_PShaderFragmentProgram_00ae32a0 @ 0x00ae_32a0 => extern "C" fn init_00ae32a0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_32a0)
+    }
+    /// `0x00ae_3360`: the class descriptor of `PShaderGeometryProgram` in `0x00c9_c9a8`, then `atexit(0x00af_d420)`.
+    StaticInit_ClassDesc_PShaderGeometryProgram_00ae3360 @ 0x00ae_3360 => extern "C" fn init_00ae3360() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_3360)
+    }
+    /// `0x00ae_4260`: the class descriptor of `PShaderVertexProgram` in `0x00c9_c878`, then `atexit(0x00af_d6a0)`.
+    StaticInit_ClassDesc_PShaderVertexProgram_00ae4260 @ 0x00ae_4260 => extern "C" fn init_00ae4260() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_4260)
+    }
+    /// `0x00ae_5570`: the class descriptor of `PRenderTarget` in `0x00ca_4200`, then `atexit(0x00af_e440)`.
+    StaticInit_ClassDesc_PRenderTarget_00ae5570 @ 0x00ae_5570 => extern "C" fn init_00ae5570() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_5570)
+    }
+    /// `0x00ae_6f40`: the class descriptor of `PModifierNetworkDynamicMeshInstance` in `0x00ca_8020`, then `atexit(0x00af_f800)`.
+    StaticInit_ClassDesc_PModifierNetworkDynamicMeshInstance_00ae6f40 @ 0x00ae_6f40 => extern "C" fn init_00ae6f40() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_6f40)
+    }
+    /// `0x00ae_a920`: the class descriptor of `PShaderComputeProgramD3D11` in `0x00cb_3908`, then `atexit(0x00b0_3790)`.
+    StaticInit_ClassDesc_PShaderComputeProgramD3D11_00aea920 @ 0x00ae_a920 => extern "C" fn init_00aea920() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_a920)
+    }
+    /// `0x00ae_a9e0`: the class descriptor of `PShaderFragmentProgramD3D11` in `0x00cb_37d8`, then `atexit(0x00b0_37b0)`.
+    StaticInit_ClassDesc_PShaderFragmentProgramD3D11_00aea9e0 @ 0x00ae_a9e0 => extern "C" fn init_00aea9e0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_a9e0)
+    }
+    /// `0x00ae_aaa0`: the class descriptor of `PShaderGeometryProgramD3D11` in `0x00cb_3870`, then `atexit(0x00b0_37d0)`.
+    StaticInit_ClassDesc_PShaderGeometryProgramD3D11_00aeaaa0 @ 0x00ae_aaa0 => extern "C" fn init_00aeaaa0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_aaa0)
+    }
+    /// `0x00ae_ace0`: the class descriptor of `PShaderProgramD3D11` in `0x00cb_36a8`, then `atexit(0x00b0_3830)`.
+    StaticInit_ClassDesc_PShaderProgramD3D11_00aeace0 @ 0x00ae_ace0 => extern "C" fn init_00aeace0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_ace0)
+    }
+    /// `0x00ae_ada0`: the class descriptor of `PShaderVertexProgramD3D11` in `0x00cb_3740`, then `atexit(0x00b0_3850)`.
+    StaticInit_ClassDesc_PShaderVertexProgramD3D11_00aeada0 @ 0x00ae_ada0 => extern "C" fn init_00aeada0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_ada0)
+    }
+    /// `0x00ae_10f0`: the class descriptor of `PCameraProjection` in `0x00c9_2358`, then `atexit(0x00af_aa20)`.
+    StaticInit_ClassDesc_PCameraProjection_00ae10f0 @ 0x00ae_10f0 => extern "C" fn init_00ae10f0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_10f0)
+    }
+    /// `0x00ae_8770`: the class descriptor of `PAnimationDataSource` in `0x00ca_bd28`, then `atexit(0x00b0_0c50)`.
+    StaticInit_ClassDesc_PAnimationDataSource_00ae8770 @ 0x00ae_8770 => extern "C" fn init_00ae8770() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_8770)
+    }
+    /// `0x00ae_8b20`: the class descriptor of `PAnimationBlenderController` in `0x00ca_c618`, then `atexit(0x00b0_0e30)`.
+    StaticInit_ClassDesc_PAnimationBlenderController_00ae8b20 @ 0x00ae_8b20 => extern "C" fn init_00ae8b20() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_8b20)
+    }
+    /// `0x00ae_97f0`: the class descriptor of `PScriptableComponent` in `0x00ca_f780`, then `atexit(0x00b0_20e0)`.
+    StaticInit_ClassDesc_PScriptableComponent_00ae97f0 @ 0x00ae_97f0 => extern "C" fn init_00ae97f0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_97f0)
+    }
+    /// `0x00ae_a7b0`: the class descriptor of `PRenderTargetD3D11` in `0x00cb_3b68`, then `atexit(0x00b0_3750)`.
+    StaticInit_ClassDesc_PRenderTargetD3D11_00aea7b0 @ 0x00ae_a7b0 => extern "C" fn init_00aea7b0() -> u32 {
+        sa::class_desc(&mut mem(), 0x00ae_a7b0)
+    }
+    /// `0x00ae_1a10`: `PhyreStaticEntry(0x00c9_8668, ...)` with the word `Binormal`, then `atexit(0x00af_c2e0)`.
+    StaticInit_StaticEntry_00ae1a10 @ 0x00ae_1a10 => extern "C" fn init_00ae1a10() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1a10)
+    }
+    /// `0x00ae_1a40`: `PhyreStaticEntry(0x00c9_86a4, ...)` with the word `BoundaryTriangleVertexIndex`, then `atexit(0x00af_c2f0)`.
+    StaticInit_StaticEntry_00ae1a40 @ 0x00ae_1a40 => extern "C" fn init_00ae1a40() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1a40)
+    }
+    /// `0x00ae_1a70`: `PhyreStaticEntry(0x00c9_8650, ...)` with the word `Color`, then `atexit(0x00af_c300)`.
+    StaticInit_StaticEntry_00ae1a70 @ 0x00ae_1a70 => extern "C" fn init_00ae1a70() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1a70)
+    }
+    /// `0x00ae_1aa0`: `PhyreStaticEntry(0x00c9_8698, ...)` with the word `EdgeFaceIndex`, then `atexit(0x00af_c310)`.
+    StaticInit_StaticEntry_00ae1aa0 @ 0x00ae_1aa0 => extern "C" fn init_00ae1aa0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1aa0)
+    }
+    /// `0x00ae_1ad0`: `PhyreStaticEntry(0x00c9_868c, ...)` with the word `EdgeVertexIndex`, then `atexit(0x00af_c320)`.
+    StaticInit_StaticEntry_00ae1ad0 @ 0x00ae_1ad0 => extern "C" fn init_00ae1ad0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1ad0)
+    }
+    /// `0x00ae_1b00`: `PhyreStaticEntry(0x00c9_86c8, ...)` with the word `InstanceTransform0`, then `atexit(0x00af_c330)`.
+    StaticInit_StaticEntry_00ae1b00 @ 0x00ae_1b00 => extern "C" fn init_00ae1b00() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1b00)
+    }
+    /// `0x00ae_1b30`: `PhyreStaticEntry(0x00c9_86d4, ...)` with the word `InstanceTransform1`, then `atexit(0x00af_c340)`.
+    StaticInit_StaticEntry_00ae1b30 @ 0x00ae_1b30 => extern "C" fn init_00ae1b30() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1b30)
+    }
+    /// `0x00ae_1b60`: `PhyreStaticEntry(0x00c9_86e0, ...)` with the word `InstanceTransform2`, then `atexit(0x00af_c350)`.
+    StaticInit_StaticEntry_00ae1b60 @ 0x00ae_1b60 => extern "C" fn init_00ae1b60() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1b60)
+    }
+    /// `0x00ae_1b90`: `PhyreStaticEntry(0x00c9_8644, ...)` with the word `LightMapST`, then `atexit(0x00af_c360)`.
+    StaticInit_StaticEntry_00ae1b90 @ 0x00ae_1b90 => extern "C" fn init_00ae1b90() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1b90)
+    }
+    /// `0x00ae_1bc0`: `PhyreStaticEntry(0x00c9_86ec, ...)` with the word `NULL`, then `atexit(0x00af_c370)`.
+    StaticInit_StaticEntry_00ae1bc0 @ 0x00ae_1bc0 => extern "C" fn init_00ae1bc0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1bc0)
+    }
+    /// `0x00ae_1bf0`: `PhyreStaticEntry(0x00c9_862c, ...)` with the word `Normal`, then `atexit(0x00af_c380)`.
+    StaticInit_StaticEntry_00ae1bf0 @ 0x00ae_1bf0 => extern "C" fn init_00ae1bf0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1bf0)
+    }
+    /// `0x00ae_1c20`: `PhyreStaticEntry(0x00c9_8638, ...)` with the word `ST`, then `atexit(0x00af_c390)`.
+    StaticInit_StaticEntry_00ae1c20 @ 0x00ae_1c20 => extern "C" fn init_00ae1c20() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1c20)
+    }
+    /// `0x00ae_1c50`: `PhyreStaticEntry(0x00c9_85b4, ...)` with the word `ScreenVertex`, then `atexit(0x00af_c3a0)`.
+    StaticInit_StaticEntry_00ae1c50 @ 0x00ae_1c50 => extern "C" fn init_00ae1c50() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1c50)
+    }
+    /// `0x00ae_1c80`: `PhyreStaticEntry(0x00c9_8614, ...)` with the word `SkinIndices`, then `atexit(0x00af_c3b0)`.
+    StaticInit_StaticEntry_00ae1c80 @ 0x00ae_1c80 => extern "C" fn init_00ae1c80() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1c80)
+    }
+    /// `0x00ae_1cb0`: `PhyreStaticEntry(0x00c9_8608, ...)` with the word `SkinWeights`, then `atexit(0x00af_c3c0)`.
+    StaticInit_StaticEntry_00ae1cb0 @ 0x00ae_1cb0 => extern "C" fn init_00ae1cb0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1cb0)
+    }
+    /// `0x00ae_1ce0`: `PhyreStaticEntry(0x00c9_85fc, ...)` with the word `SkinnableBinormal`, then `atexit(0x00af_c3d0)`.
+    StaticInit_StaticEntry_00ae1ce0 @ 0x00ae_1ce0 => extern "C" fn init_00ae1ce0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1ce0)
+    }
+    /// `0x00ae_1d10`: `PhyreStaticEntry(0x00c9_85e4, ...)` with the word `SkinnableNormal`, then `atexit(0x00af_c3e0)`.
+    StaticInit_StaticEntry_00ae1d10 @ 0x00ae_1d10 => extern "C" fn init_00ae1d10() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1d10)
+    }
+    /// `0x00ae_1d40`: `PhyreStaticEntry(0x00c9_85f0, ...)` with the word `SkinnableTangent`, then `atexit(0x00af_c3f0)`.
+    StaticInit_StaticEntry_00ae1d40 @ 0x00ae_1d40 => extern "C" fn init_00ae1d40() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1d40)
+    }
+    /// `0x00ae_1d70`: `PhyreStaticEntry(0x00c9_85d8, ...)` with the word `SkinnableVertex`, then `atexit(0x00af_c400)`.
+    StaticInit_StaticEntry_00ae1d70 @ 0x00ae_1d70 => extern "C" fn init_00ae1d70() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1d70)
+    }
+    /// `0x00ae_1da0`: `PhyreStaticEntry(0x00c9_865c, ...)` with the word `Tangent`, then `atexit(0x00af_c410)`.
+    StaticInit_StaticEntry_00ae1da0 @ 0x00ae_1da0 => extern "C" fn init_00ae1da0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1da0)
+    }
+    /// `0x00ae_1dd0`: `PhyreStaticEntry(0x00c9_8680, ...)` with the word `TriangleEdgeIndex`, then `atexit(0x00af_c420)`.
+    StaticInit_StaticEntry_00ae1dd0 @ 0x00ae_1dd0 => extern "C" fn init_00ae1dd0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1dd0)
+    }
+    /// `0x00ae_1e00`: `PhyreStaticEntry(0x00c9_8674, ...)` with the word `TriangleVertexIndex`, then `atexit(0x00af_c430)`.
+    StaticInit_StaticEntry_00ae1e00 @ 0x00ae_1e00 => extern "C" fn init_00ae1e00() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1e00)
+    }
+    /// `0x00ae_1e30`: `PhyreStaticEntry(0x00c9_86bc, ...)` with the word `VertexIndexWithRestart`, then `atexit(0x00af_c440)`.
+    StaticInit_StaticEntry_00ae1e30 @ 0x00ae_1e30 => extern "C" fn init_00ae1e30() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1e30)
+    }
+    /// `0x00ae_1e60`: `PhyreStaticEntry(0x00c9_86b0, ...)` with the word `VertexIndex`, then `atexit(0x00af_c450)`.
+    StaticInit_StaticEntry_00ae1e60 @ 0x00ae_1e60 => extern "C" fn init_00ae1e60() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1e60)
+    }
+    /// `0x00ae_1e90`: `PhyreStaticEntry(0x00c9_8620, ...)` with the word `Vertex`, then `atexit(0x00af_c460)`.
+    StaticInit_StaticEntry_00ae1e90 @ 0x00ae_1e90 => extern "C" fn init_00ae1e90() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1e90)
+    }
+    /// `0x00ae_1ec0`: `PhyreStaticEntry(0x00c9_85cc, ...)` with the word `WorldNormal`, then `atexit(0x00af_c470)`.
+    StaticInit_StaticEntry_00ae1ec0 @ 0x00ae_1ec0 => extern "C" fn init_00ae1ec0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1ec0)
+    }
+    /// `0x00ae_1ef0`: `PhyreStaticEntry(0x00c9_85c0, ...)` with the word `WorldVertex`, then `atexit(0x00af_c480)`.
+    StaticInit_StaticEntry_00ae1ef0 @ 0x00ae_1ef0 => extern "C" fn init_00ae1ef0() -> u32 {
+        sa::static_entry(&mut mem(), 0x00ae_1ef0)
+    }
 }

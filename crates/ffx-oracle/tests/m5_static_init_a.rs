@@ -381,3 +381,41 @@ fn ctor8_initialisers_match_the_original() {
         }
     }
 }
+
+/// The two-word static entry, as the ctor8 case but with two words.
+#[test]
+fn static_entry_initialisers_match_the_original() {
+    for mut t in Twins::all() {
+        for r in rows::STATIC_ENTRY {
+            t.stub_fn(sa::STATIC_ENTRY, true, 2, true, 0x4343);
+            let what = format!("static entry {:#x}", r.at);
+            t.check(&what, r.at, ALL, |g| sa::static_entry(g, r.at));
+            let log = t.log;
+            assert_eq!(
+                t.r32(log),
+                2,
+                "{} {what}: the constructor, then atexit",
+                t.label
+            );
+        }
+    }
+}
+
+/// The class-descriptor initialisers: the namespace getter, the constructor
+/// (six words), the three buffer setters and `atexit`, six calls in all.
+#[test]
+fn class_desc_initialisers_match_the_original() {
+    for mut t in Twins::all() {
+        for r in rows::CLASS_DESC {
+            t.stub_fn(sa::GET_NS, false, 0, false, 0x5a5a_5a5a);
+            t.stub_fn(sa::PCD_CTOR, true, 6, true, 0);
+            t.stub_fn(sa::SET_DEF, true, 1, true, 0);
+            t.stub_fn(sa::SET_VAL, true, 1, true, 0);
+            t.stub_fn(sa::SET_WM, true, 1, true, 0);
+            let what = format!("class desc {:#x}", r.at);
+            t.check(&what, r.at, ALL, |g| sa::class_desc(g, r.at));
+            let log = t.log;
+            assert_eq!(t.r32(log), 6, "{} {what}: six calls", t.label);
+        }
+    }
+}
