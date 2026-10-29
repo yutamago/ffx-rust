@@ -952,6 +952,8 @@ ports! {
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
     "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
+    "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
+    "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;

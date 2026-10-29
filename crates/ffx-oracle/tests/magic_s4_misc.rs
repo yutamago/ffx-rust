@@ -1360,3 +1360,75 @@ fn screen_place() {
         });
     }
 }
+
+/// `magic_0255` 0x10001540: the frame step not ready, then with each of
+/// slot 261's answers.
+#[test]
+fn frame_step() {
+    let Some(mut t) = twin(255) else { return };
+    let f = t.at(0x1540);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    t.set_u32(w(&t, 0xd), SCRATCH + 0x800);
+    t.set_u32(w(&t, 0x13), 0x0a0a_0001);
+    t.set_u32(w(&t, 0x31), 0x0b0b_0002);
+    t.set_u32(w(&t, 0x3f), SCRATCH + 0x810);
+    t.set_u32(w(&t, 0x87), 0x0e0e_0003);
+    let answers = SCRATCH + 0x820;
+    rec(&mut t, 261, 1, move |m, a| m.r32(answers + 4 * (a[0] & 1)));
+    for s in [723u32, 724, 214] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    for (ready, a0, a1) in [
+        (0u32, 0u32, 0u32),
+        (1, 0, 0),
+        (1, 0, 1),
+        (1, 1, 0),
+        (1, 1, 1),
+    ] {
+        t.set_u32(w(&t, 0x2), ready);
+        t.set_u32(answers, a0);
+        t.set_u32(answers + 4, a1);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0414` 0x100069d0: the timed task in each mode, before and after
+/// its time, leaving with flag bit 2.
+#[test]
+fn timed_task() {
+    let Some(mut t) = twin(414) else { return };
+    let f = t.at(0x69d0);
+    let k2 = f32::from_bits(t.u32(t.img.word(f + 0x99)));
+    let k = f32::from_bits(t.u32(t.img.word(f + 0x17)));
+    rec(&mut t, 239, 3, |_, _| 0x239);
+    t.set_u32(t.img.word(f + 0xb1), 0x00a0_0001);
+    let (task, s, node) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x200);
+    for (mode, flags, time) in [
+        (0u32, 0u8, k2 - k - 1.0),
+        (0, 0, k2 - k),
+        (1, 4, 0.0),
+        (1, 0, k2),
+        (3, 4, k2 + 1.0),
+        (2, 0, f32::NAN),
+    ] {
+        t.write(s, &[0x33; 0x300]);
+        // the four nodes: no parents
+        for off in [0x120u32, 0x14c, 0x178, 0x2d8] {
+            t.set_u32(s + off + 0x14, 0);
+        }
+        set_f(&mut t, s + 0x2c4, time);
+        t.set_u32(s + 0x2d0, mode);
+        t.set_u8(s + 0x108, flags);
+        t.set_u32(s + 0x2d4, SCRATCH + 0x400);
+        t.set_u32(SCRATCH + 0x450, 0x50);
+        // the task in a ring of two
+        let other = SCRATCH + 0x300;
+        t.set_u32(task, node);
+        t.set_u32(task + 4, s);
+        t.set_u32(node + 4, other);
+        t.set_u32(node + 8, other);
+        t.set_u32(other + 4, node);
+        t.set_u32(other + 8, node);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

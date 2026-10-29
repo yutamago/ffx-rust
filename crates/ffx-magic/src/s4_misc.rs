@@ -1624,3 +1624,119 @@ pub const SCREEN_PLACE: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The effect's frame step (a table entry, no arguments): nothing before
+/// it is ready (`G_READY`, operand `+0x2`, 0 returned). `*G_P = ITEM`
+/// (operands `+0xd`, `+0x19`); the screen and camera matrices go to the
+/// DLL's (slots 723, 724 with `*G_A`, `*G_B`); `*G_C = G_D`. When slot
+/// 261 `(0)` answers, the timeline runs ([`crate::sa_misc::timeline`]);
+/// when slot 261 `(1)` answers, the timeline stops
+/// ([`crate::sb_misc::timeline_stop_global`]) and slot 214 `(*G_E)`
+/// (operand `+0x87`) follows; else the count `G_N` (`+0x9e`) goes up.
+/// Returns 1.
+///
+/// `magic_0255` 0x10001540 (168 bytes; 10 DLLs).
+pub fn frame_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    if g.read::<u32>(w(0x2)) == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(w(0xd));
+    let a = g.read::<u32>(w(0x13));
+    g.write::<u32>(p, w(0x19));
+    let mut s = Pushes::default();
+    s.push(a);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x1e), 723), 0);
+    s.push(g.read::<u32>(w(0x31)));
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x2b), 724), 0);
+    let c = g.read::<u32>(w(0x3f));
+    g.write::<u32>(c, g.read::<u32>(w(0x44)));
+    s.push(0);
+    // call width: 12 (Pushes caps the words at 12)
+    if s.call(g, slot_target(g, w(0x4b), 261), 0).eax != 0 {
+        crate::sa_misc::timeline(g, img, img.rel32_target(f + 0x61));
+    }
+    let t = slot_target(g, w(0x66), 261);
+    if g.call(t, 0, &[1]).eax == 0 {
+        let n = g.read::<u32>(w(0x9e));
+        g.write::<u32>(w(0x9e), n.wrapping_add(1));
+        return Ret::eax(1);
+    }
+    crate::sb_misc::timeline_stop_global(g, img, img.rel32_target(f + 0x7c));
+    let t = slot_target(g, w(0x81), 214);
+    g.call(t, 0, &[g.read::<u32>(w(0x87))]);
+    Ret::eax(1)
+}
+
+/// [`frame_step`].
+pub const FRAME_STEP: Sig = Sig {
+    len: 168,
+    hash: 0x3f08_9d62_2aa9_2b90,
+    calls: &[
+        (0x61, Callee::Sig(&crate::sa_misc::TIMELINE)),
+        (0x7c, Callee::Sig(&crate::sb_misc::TIMELINE_STOP_GLOBAL)),
+    ],
+    imports: &[],
+};
+
+/// A task waiting on its time (cdecl `(task)`, the state `s` at `+0x4`):
+/// the time `+0x2c4` grows by `K` (operand `+0x17`). In mode 1 (`+0x2d0`)
+/// with flag bit 2 (`+0x108`) the state's four nodes leave their parents
+/// ([`crate::sa_misc::leave`]: `+0x120`, `+0x14c`, `+0x178`, `+0x2d8`),
+/// the task leaves its ring and the mode is 0xff. In mode 0, once the
+/// time reaches `K2` (`+0x99`), slot 239 `(*G, the object's +0x50, 0x20)`
+/// starts (the object at `+0x2d4`, `G` operand `+0xb1`) and the mode goes
+/// up. Returns the ring's next link, slot 239's `eax`, or the mode less
+/// 1 (0 in modes 0 and 1).
+///
+/// `magic_0414` 0x100069d0 (202 bytes; 10 DLLs).
+pub fn timed_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 4);
+    let time = add(f32_at(g, s + 0x2c4), f32_at(g, w(0x17)));
+    let mode = g.read::<u32>(s + 0x2d0);
+    set_f32(g, s + 0x2c4, time);
+    if mode == 1 && g.read::<u8>(s + 0x108) & 4 != 0 {
+        for off in [0x120, 0x14c, 0x178, 0x2d8] {
+            crate::sa_misc::leave(g, s + off, 0);
+        }
+        let node = g.read::<u32>(task);
+        let (prev, next) = (g.read::<u32>(node + 4), g.read::<u32>(node + 8));
+        g.write::<u32>(prev + 8, next);
+        let (next, prev) = (g.read::<u32>(node + 8), g.read::<u32>(node + 4));
+        g.write::<u32>(next + 4, prev);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(node + 4, node);
+        g.write::<u32>(s + 0x2d0, 0xff);
+        return Ret::eax(prev);
+    }
+    // comiss time, K2; jb: not yet
+    if mode != 0 || !(time >= f32_at(g, w(0x99))) {
+        return Ret::eax(if mode == 0 { 0 } else { mode.wrapping_sub(1) });
+    }
+    let obj = g.read::<u32>(s + 0x2d4);
+    let t = slot_target(g, w(0xab), 239);
+    let x = g.read::<u32>(w(0xb1));
+    let eax = g.call(t, 0, &[x, g.read::<u32>(obj + 0x50), 0x20]).eax;
+    let m = g.read::<u32>(s + 0x2d0).wrapping_add(1);
+    g.write::<u32>(s + 0x2d0, m);
+    Ret::eax(eax)
+}
+
+/// [`timed_task`] (the `rel32`s: four [`crate::sa_misc::leave`]s).
+pub const TIMED_TASK: Sig = Sig {
+    len: 202,
+    hash: 0xeac4_4b58_7fa5_3ce0,
+    calls: &[
+        (0x49, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x54, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x5f, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x6a, Callee::Sig(&crate::sa_misc::LEAVE)),
+    ],
+    imports: &[],
+};
