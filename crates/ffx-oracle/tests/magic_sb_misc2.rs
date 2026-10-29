@@ -103,6 +103,8 @@ fn script_run() {
                 t.set_u32(ANS + 0x4c, 2);
                 t.write(ctx, &[0; 0x60]);
                 t.set_u32(ctx, ip);
+                // the first opcode is 1, the next ones (at ip + 1..) 0
+                t.write(ip, &[1, 0, 0, 0]);
                 t.set_u8(ctx + 0x56, state);
                 t.set_u16(ctx + 0x54, wait);
                 t.set_u32(ctx + 0x24, trap(1001));
@@ -133,6 +135,20 @@ fn timeline(t: &mut Twin, this: u32, now: u32, live: [u32; 3], lens: [u32; 3]) {
         t.set_u32(e + 0xc, if i == 2 { 0 } else { trap(1001) });
         t.set_u32(e + 0x10, trap(1001));
         t.set_u32(e + 0x14, 0xa0 + i);
+    }
+    // a live fourth event past the count, which only a loop running one
+    // too far would call
+    t.set_u32(this + 0xc + 8 * 3, 1);
+    let e = ev + 0x18 * 3;
+    for (o, v) in [
+        (0u32, 0u32),
+        (4, 1),
+        (8, 0),
+        (0xc, trap(1001)),
+        (0x10, 0),
+        (0x14, 0xa3),
+    ] {
+        t.set_u32(e + o, v);
     }
 }
 
@@ -283,9 +299,14 @@ fn actor_scale_and_reset() {
     log_slots(&mut t, &[(287, 3), (283, 2), (281, 1)]);
     let f = t.at(0x50d0);
     let mode = t.img.word(f + 0x42);
+    // the three records the reset stores into hold something else first
+    // (a byte or halfword stored wider or narrower shows)
+    let (lo, hi) = (t.img.word(f + 0x5e), t.img.word(f + 0x295) + 4);
+    assert!(lo < hi && hi - lo < 0x1000);
     for m in [0u32, 1] {
         answers(&mut t, &[0x287, 0x283, 0x281]);
         t.set_u32(mode, m);
+        t.write(lo, &vec![0x5a; (hi - lo) as usize]);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(sb_misc::effect_reset(g, img, fr.at))
         });
@@ -302,7 +323,12 @@ fn lookup_actors() {
     let (n, mode, bytes) = (w(&t, 0x34), w(&t, 0x42), w(&t, 0x4a));
     log_slots(&mut t, &[(413, 1), (215, 1)]);
     t.write(bytes, &[2, 0, 5, 1, 7]);
+    // the word copied to `+0x06` and the own actor's word (non-zero, so
+    // that the copy and the read are seen)
+    let (src, own) = (w(&t, 0x01), w(&t, 0x12));
     for (count, m) in [(0u32, 0u32), (3, 0), (5, 1), (0xffff_ffff, 0)] {
+        t.set_u32(src, 0x0106_0000 | count);
+        t.set_u32(own, 0x0c12_0000 | count);
         answers(&mut t, &[0x413, 0x215]);
         t.set_u32(n, count);
         t.set_u32(mode, m);
@@ -345,10 +371,31 @@ fn draw_frame() {
     t.set_u8(table + 0x10 + 0x20 + 4, 0x5c);
     t.set_u32(rec + 0x1c, 0x1c1c);
     t.stub_edx(772, |_, a| a[0] ^ 0x00ed_0000);
+    // the slots that run under the lock log it too, and the draw leaves
+    // it changed (the lock is set again before slot 775)
+    for (k, s, n) in [
+        (2u32, 773u32, 2usize),
+        (3, 774, 5),
+        (4, 775, 2),
+        (7, 778, 6),
+    ] {
+        let row = LOG + 0x800 + 0x40 * k;
+        t.stub(s, move |m, a| {
+            for (i, w) in (0u32..).zip(&a[..n]) {
+                m.w32(row + 4 * i, *w);
+            }
+            m.w32(row + 0x3c, m.r32(lock));
+            if s == 774 {
+                m.w32(lock, 0x774);
+            }
+            m.r32(ANS + 4 * k)
+        });
+    }
     for ready in [0u32, 1] {
+        // (776 and 777 answer overlapping bits: their `or` shows)
         answers(
             &mut t,
-            &[table, 0x772, ready, 0x774, 0x775, 0x0700, 0x0007, 0x778],
+            &[table, 0x772, ready, 0x774, 0x775, 0x0707, 0x0077, 0x778],
         );
         t.set_u32(lock, 0x42);
         t.check(
@@ -393,8 +440,23 @@ fn small_0446() {
         t.set_u32(node + 0x80 + 4 * i, (1.0f32 + i as f32).to_bits());
     }
     answers(&mut t, &[0x0219_0003, 0x237, 0x236, 0x257]);
-    t.check_entry(t.at(0x5740), Call::default(), &[node], Eax::Checked);
-    t.check_entry(t.at(0x13f0), Call::default(), &[node], Eax::Checked);
+    // the globals slot 219 gets (non-zero, so that reading them shows)
+    for (rva, ops) in [
+        (0x5740u32, &[0x16u32][..]),
+        (0x13f0, &[0x15, 0x109]),
+        (0x5790, &[0x09]),
+        (0x4be0, &[0x10, 0x55]),
+    ] {
+        for &o in ops {
+            let g = t.img.word(t.at(rva) + o);
+            t.set_u32(g, 0x0219_0000 | o);
+        }
+    }
+    for rva in [0x5740u32, 0x13f0] {
+        // the position's `w` holds something else first
+        t.set_u32(node + 0xdc, 0x77);
+        t.check_entry(t.at(rva), Call::default(), &[node], Eax::Checked);
+    }
     t.check_entry(t.at(0x5790), Call::default(), &[], Eax::Checked);
     // the light ranges
     log_slots(&mut t, &[(357, 3), (356, 3), (362, 4)]);
@@ -499,6 +561,15 @@ fn draw_loops() {
     let recs = SCRATCH + 0x1000;
     t.set_u32(w(&t, 0x13), recs);
     let (n, m) = (w(&t, 0x0b), w(&t, 0x76));
+    // distinct words in the records (`+0x30`, 0x74 apart) and in the
+    // pages (0x200 words from the immediate `+0x85`)
+    for i in 0..4 {
+        t.set_u32(recs + 0x30 + 0x74 * i, 0x0130_0000 + i);
+    }
+    let pages = w(&t, 0x85);
+    for i in 0..0x400 {
+        t.set_u32(pages + 4 * i, 0x0085_0000 + i);
+    }
     t.stub(941, |_, a| a[0] + 1);
     t.stub(772, |m, a| {
         let c = m.r32(LOG).wrapping_add(a[0] ^ a[1]);
@@ -533,6 +604,10 @@ fn draw_loops() {
     let lock = SCRATCH + 0x50;
     t.set_u32(t.img.word(f + 0x53), lock);
     t.set_u32(t.img.word(f + 0x0f), SCRATCH + 0x1000);
+    // distinct first words of the records (0x50 apart)
+    for i in 0..4 {
+        t.set_u32(SCRATCH + 0x1000 + 0x50 * i, 0x0050_0000 + i);
+    }
     let n = t.img.word(f + 0x08);
     log_slots(&mut t, &[(941, 1), (772, 2), (779, 2)]);
     for nn in [0u32, 1, 3] {
@@ -558,7 +633,15 @@ fn aim_parent() {
         SCRATCH + 0x700,
     );
     let vt = SCRATCH + 0x800;
-    t.set_u32(vt + 0x1c, trap(1001));
+    // the nodes' method logs the cursor it gets: the node and the pass
+    t.set_u32(vt + 0x1c, trap(1003));
+    t.stub(1003, |m, a| {
+        let c = m.r32(LOG + 0xff4).wrapping_add(1);
+        m.w32(LOG + 0xff4, c);
+        m.w32(LOG + 0xc00 + 8 * (c & 0x1f), m.r32(a[0]));
+        m.w32(LOG + 0xc04 + 8 * (c & 0x1f), m.r32(a[0] + 4));
+        0x1003
+    });
     // slot 234 writes a vector from its two sources
     t.stub(234, |m, a| {
         for i in 0..4 {
@@ -606,6 +689,14 @@ fn small_misc() {
     let Some(mut t) = magic_l3::twin(42) else {
         return;
     };
+    // the static nodes hold something else first (a halfword or byte
+    // stored wider or narrower shows)
+    let (lo, hi) = (
+        t.img.word(t.at(0x7e90) + 0x3),
+        t.img.word(t.at(0x7e90) + 0x15c) + 4,
+    );
+    assert!(lo < hi && hi - lo < 0x1000);
+    t.write(lo, &vec![0x5a; (hi - lo) as usize]);
     t.check(
         t.at(0x7e90),
         Call {
@@ -659,23 +750,40 @@ fn small_misc() {
         |g, img, fr| Ret::eax(sb_misc::call_220(g, img, fr.at, fr.esp, fr.ecx, fr.edx)),
     );
     let f = t.at(0x6dd0);
+    // slot 213's global argument (non-zero, so that reading it shows)
+    t.set_u32(t.img.word(f + 0x25), 0x0213_0025);
     for v in [0u16, 1] {
         t.set_u16(t.img.word(f + 0x15), v);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(sb_misc::call_628_213(g, img, fr.at))
         });
     }
-    t.check_entry(t.at(0x1650), Call::default(), &[], Eax::Checked);
+    // the words start_seq clears hold something first
+    let f = t.at(0x1650);
+    for o in [0x22u32, 0x2c, 0x36] {
+        t.set_u32(t.img.word(f + o), 0x77);
+    }
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
     let f = t.at(0x17e0);
     let count = t.img.word(f + 0x5c);
+    // slot 646's argument, the cleared words and the records' first
+    // words hold something first
+    t.set_u32(t.img.word(f + 0x07), 0x0646_0007);
     for _ in 0..2 {
+        for o in [0x2eu32, 0x38] {
+            t.set_u32(t.img.word(f + o), 0x77);
+        }
+        for i in 0..5 {
+            t.set_u32(t.img.word(f + 0x43) + 0x78 * i, 0x78);
+        }
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(sb_misc::pick_variant(g, img, fr.at))
         });
         t.set_u32(count, 3);
     }
     log_slots(&mut t, &[(305, 0), (302, 3), (303, 3), (304, 3)]);
-    for r in [0u32, 1, 2, 3] {
+    // (4 and -1: a first answer with bits the mask clears)
+    for r in [0u32, 1, 2, 3, 4, 0xffff_ffff] {
         answers(&mut t, &[r, 0x0001_0302, 0x0002_0303, 0xabc4_0304]);
         t.check(
             t.at(0xa310),
@@ -690,7 +798,17 @@ fn small_misc() {
         return;
     };
     t.stub_st0(790, |_, _| 1.5);
-    log_slots(&mut t, &[(719, 3), (551, 3)]);
-    answers(&mut t, &[0x0719_0000, 0x551]);
-    t.check_entry(t.at(0x10a0), Call::default(), &[0x00ab_cdef], Eax::Checked);
+    log_slots(&mut t, &[(719, 3), (551, 3), (221, 11)]);
+    answers(&mut t, &[0x0719_0000, 0x551, 0x221]);
+    // the words start_551 sets hold something else first: the three
+    // 1.0s, the payload table it clears, its count's partner and the
+    // last word
+    let f = t.at(0x10a0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    for o in [0x57u32, 0x61, 0x6b, 0x13b] {
+        t.set_u32(w(&t, o), 0x77);
+    }
+    t.set_u16(w(&t, 0xab), 0x7777);
+    t.write(w(&t, 0x81), &[0x5a; 12 * 0x3ff]);
+    t.check_entry(f, Call::default(), &[0x00ab_cdef], Eax::Checked);
 }
