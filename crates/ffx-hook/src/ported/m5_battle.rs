@@ -467,4 +467,19 @@ ported! {
     MsDebugSliderXyz_007dabc0 @ 0x007d_abc0 => extern "C" fn ms_debug_slider_xyz_abc0(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
         mm::slider_xyz(&mut mem(), obj, id, p, slots)
     }
+    // ---- round 4 (menu-battle-script 2), batch 6 (ffx_menu::m5m_m) ----
+    /// `(obj, id, p)`: writes the caller's `id` word.
+    MsDebugSliderKeepXz_007d66d0 @ 0x007d_66d0 => extern "C" fn ms_debug_slider_keep_xz(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_keep_xz(&mut mem(), obj, id, p, slots)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderCamera3_007d6a50 @ 0x007d_6a50 => extern "C" fn ms_debug_slider_camera3(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mm::slider_camera3(&mut mem(), obj, id, p, slots)
+    }
+    /// `(y)`: the line buffer in a frame.
+    MsDebugPrintDashes_007d9950 @ 0x007d_9950 => extern "C" fn ms_debug_print_dashes(y: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mm::debug_print_dashes(&mut mem(), buf, y)
+    }
 }

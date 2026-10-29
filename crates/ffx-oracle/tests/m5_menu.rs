@@ -5471,8 +5471,8 @@ fn r4b4_btl_end_menu_step_matches_the_original() {
 
 /// A slider's object: floats at `+0x30..+0x4c`, indices at `+0xc`/`+0xe`.
 fn slider_object(t: &mut Twins, rng: &mut Rng, i: u32) -> u32 {
-    let mut o = vec![0u8; 0x50];
-    for k in (0x30..0x50).step_by(4) {
+    let mut o = vec![0u8; 0x60];
+    for k in (0x30..0x58).step_by(4) {
         let v: f32 = match (i + k as u32) % 4 {
             0 => rng.below(2000) as f32 / 7.0 - 140.0,
             1 => (rng.below(720) as f32 - 360.0) * 0.017_453_3,
@@ -5523,6 +5523,8 @@ fn r4b5_debug_sliders_match_the_original() {
                         (0x007d_0af0, 3),
                         (0x007d_6470, 3),
                         (0x007d_95e0, 4),
+                        (0x007d_6a50, 3),
+                        (0x007d_66d0, 3),
                     ] {
                         let slots = t.arg_slots(&args[..n]);
                         t.check(
@@ -5535,6 +5537,8 @@ fn r4b5_debug_sliders_match_the_original() {
                                     0x007d_0af0 => mm::slider_camera(m, obj, id, p, slots),
                                     0x007d_6470 => mm::slider_keep_angle(m, obj, id, p, slots),
                                     0x007d_95e0 => mm::slider_actors(m, obj, id, p, flags, slots),
+                                    0x007d_6a50 => mm::slider_camera3(m, obj, id, p, slots),
+                                    0x007d_66d0 => mm::slider_keep_xz(m, obj, id, p, slots),
                                     _ => mm::slider_xyz(m, obj, id, p, slots),
                                 })
                             },
@@ -5577,6 +5581,27 @@ fn r4b5_debug_keep_windows_match_the_original() {
             let all = rng.below(2);
             t.check("keep windows", 0x007d_71d0, Conv::Cdecl, &[all], |m| {
                 Out::U32(mm::debug_keep_windows(m, all))
+            });
+        }
+    });
+}
+
+#[test]
+fn r4b6_debug_print_dashes_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e4b_0601);
+        for _ in 0..8 {
+            t.reset();
+            t.skip = 4;
+            t.stub_import(mm::SPRINTF, false, 2, 0, 6);
+            t.stubs(&[
+                (mm::GU_PRINT_SET_X, false, 1, 0, 0x141),
+                (mm::GU_PRINT_SET_Y, false, 1, 0, 0x142),
+                (mm::GU_PRINTF, false, 2, 0, rng.word()),
+            ]);
+            let y = rng.word();
+            t.check_framed("dashes", 0x007d_9950, Conv::Cdecl, &[y], 0x104, |m, ebp| {
+                Out::U32(mm::debug_print_dashes(m, ebp - 0x104, y))
             });
         }
     });

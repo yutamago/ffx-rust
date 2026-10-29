@@ -1275,8 +1275,28 @@ pub mod bridge {
     /// the angles to whole degrees and `+0x48`, `+0x4c` to integers (the
     /// arguments' second slot holding each). Returns `eax` as left.
     pub fn slider_camera(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        slider_angles(h, obj, id, p, slots, &[0x48, 0x4c])
+    }
+
+    /// `MsDebugSliderCamera3_007d6a50(obj, id, p)` (name ours): as
+    /// [`slider_camera`] with one plain field, `+0x48`.
+    pub fn slider_camera3(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        slider_angles(h, obj, id, p, slots, &[0x48])
+    }
+
+    /// The two-angle sliders: ids 0x27..0x2a the angles `+0x40`/`+0x44`,
+    /// the next pairs the `plain` fields; 0x33 rounds them.
+    fn slider_angles(
+        h: &mut impl Host,
+        obj: u32,
+        id: u32,
+        p: u32,
+        slots: u32,
+        plain: &[u32],
+    ) -> u32 {
         use ffx_bridge::x87;
         let k = id.wrapping_sub(0x27);
+        let n = 4 + 2 * plain.len() as u32;
         let pi = f64_at(h, PI_F64);
         let deg = f64_at(h, DEG_180);
         match k {
@@ -1292,8 +1312,14 @@ pub mod bridge {
                 h.write(at(obj, o), x87::store(v));
                 obj
             }
-            4..=7 => {
-                step_tenth(h, obj, 0x48 + ((k - 4) / 2) * 4, p, k.is_multiple_of(2));
+            4.. if k < n => {
+                step_tenth(
+                    h,
+                    obj,
+                    plain[((k - 4) / 2) as usize],
+                    p,
+                    k.is_multiple_of(2),
+                );
                 obj
             }
             0xc => {
@@ -1306,7 +1332,7 @@ pub mod bridge {
                     h.write(at(obj, o), x87::store(v));
                 }
                 let mut eax = 0;
-                for o in [0x48u32, 0x4c] {
+                for &o in plain {
                     let (i, f) = trunc_f32(h, f32_at(h, at(obj, o)));
                     h.write(at(slots, 4), i);
                     h.write(at(obj, o), f);
@@ -1323,34 +1349,70 @@ pub mod bridge {
     /// in degrees (`0x0113ed78`); 0x33 rounds it to whole degrees.
     /// Returns `eax` as left (`obj`, the integer, or `id - 0x33`).
     pub fn slider_keep_angle(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        match id {
+            0x27 | 0x28 => keep_angle_step(h, obj, 0x40, id == 0x27, p, slots),
+            0x33 => keep_angle_round(h, obj, 0x40, slots),
+            _ => id.wrapping_sub(0x33),
+        }
+    }
+
+    /// A keep angle at `+o` stepped by `-/+ p * 0.1 * pi / 180`, kept in
+    /// the arguments' second slot and shown in degrees; returns `obj`.
+    fn keep_angle_step(h: &mut impl Host, obj: u32, o: u32, sub: bool, p: u32, slots: u32) -> u32 {
         use ffx_bridge::x87;
         let pi = f64_at(h, PI_F64);
         let deg = f64_at(h, DEG_180);
-        match id {
-            0x27 | 0x28 => {
-                let d = x87::div(x87::mul(x87::mul(x87::load(p), f64_at(h, TENTH)), pi), deg);
-                let f = f32_at(h, at(obj, 0x40));
-                let v = if id == 0x27 {
-                    x87::sub(f, d)
-                } else {
-                    x87::add(d, f)
-                };
-                let v = x87::store(v);
-                h.write(at(slots, 4), v);
-                h.write(at(obj, 0x40), v);
-                let shown = x87::div(x87::mul(deg, x87::load(v)), pi);
-                h.write(h.rebase(KEEP_ANGLE_DEG), x87::store(shown));
+        let d = x87::div(x87::mul(x87::mul(x87::load(p), f64_at(h, TENTH)), pi), deg);
+        let f = f32_at(h, at(obj, o));
+        let v = if sub { x87::sub(f, d) } else { x87::add(d, f) };
+        let v = x87::store(v);
+        h.write(at(slots, 4), v);
+        h.write(at(obj, o), v);
+        let shown = x87::div(x87::mul(deg, x87::load(v)), pi);
+        h.write(h.rebase(KEEP_ANGLE_DEG), x87::store(shown));
+        obj
+    }
+
+    /// A keep angle at `+o` rounded to whole degrees (its `f32` in the
+    /// arguments' second slot); returns the integer.
+    fn keep_angle_round(h: &mut impl Host, obj: u32, o: u32, slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let pi = f64_at(h, PI_F64);
+        let deg = f64_at(h, DEG_180);
+        let x = x87::div(x87::mul(f32_at(h, at(obj, o)), deg), pi);
+        let (i, f) = trunc_f32(h, x);
+        h.write(at(slots, 4), f);
+        let v = x87::div(x87::mul(pi, x87::load(f)), deg);
+        h.write(at(obj, o), x87::store(v));
+        i
+    }
+
+    /// `MsDebugSliderKeepXz_007d66d0(obj, id, p)` (name ours): 0x27/0x28
+    /// the keep angle `+0x50` (shown in degrees), 0x29..0x2c `+0x30` and
+    /// `+0x38` by `-/+ p * 0.1`; 0x33 the angle to whole degrees and
+    /// `+0x30..+0x38` to integers. Returns `eax` as left (`obj`, the last
+    /// integer, or `id - 0x27`).
+    pub fn slider_keep_xz(h: &mut impl Host, obj: u32, id: u32, p: u32, slots: u32) -> u32 {
+        let k = id.wrapping_sub(0x27);
+        match k {
+            0 | 1 => keep_angle_step(h, obj, 0x50, k == 0, p, slots),
+            2..=5 => {
+                let o = if k < 4 { 0x30 } else { 0x38 };
+                step_tenth(h, obj, o, p, k.is_multiple_of(2));
                 obj
             }
-            0x33 => {
-                let x = x87::div(x87::mul(f32_at(h, at(obj, 0x40)), deg), pi);
-                let (i, f) = trunc_f32(h, x);
-                h.write(at(slots, 4), f);
-                let v = x87::div(x87::mul(pi, x87::load(f)), deg);
-                h.write(at(obj, 0x40), x87::store(v));
-                i
+            0xc => {
+                keep_angle_round(h, obj, 0x50, slots);
+                let mut eax = 0;
+                for o in [0x30u32, 0x34, 0x38] {
+                    let (i, f) = trunc_f32(h, f32_at(h, at(obj, o)));
+                    h.write(at(slots, 4), i);
+                    h.write(at(obj, o), f);
+                    eax = i;
+                }
+                eax
             }
-            _ => id.wrapping_sub(0x33),
+            _ => k,
         }
     }
 
@@ -1444,5 +1506,25 @@ pub mod bridge {
             }
         }
         w
+    }
+
+    pub const GU_PRINT_SET_X: u32 = 0x0084_8820;
+    pub const GU_PRINT_SET_Y: u32 = 0x0084_8860;
+    pub const GU_PRINTF: u32 = 0x0084_8880;
+
+    /// `MsDebugPrintDashes_007d9950(y)` (name ours; buffer at `buf`, the
+    /// original's `ebp - 0x104`): six dash lines (`sprintf(buf,
+    /// "------")`, `Gu_Printf("%s\n", buf)`) at x 0x5c, rows `y + 10` to
+    /// `y + 60`. Returns the last row, `y + 60`.
+    pub fn debug_print_dashes(h: &mut impl Host, buf: u32, y: u32) -> u32 {
+        for i in 1..=6u32 {
+            cdecl(h, GU_PRINT_SET_X, &[0x5c]);
+            cdecl(h, GU_PRINT_SET_Y, &[y.wrapping_add(10 * i)]);
+            let dashes = h.rebase(0x00b5_6750);
+            crt(h, SPRINTF, &[buf, dashes]);
+            let fmt = h.rebase(0x00b1_2ad0);
+            cdecl(h, GU_PRINTF, &[fmt, buf]);
+        }
+        y.wrapping_add(60)
     }
 }
