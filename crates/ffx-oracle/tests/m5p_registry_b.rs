@@ -2899,3 +2899,77 @@ fn batch9_skin_kernel_matches_the_original() {
         );
     }
 }
+
+#[test]
+fn batch10_skin_positions_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x1010_1010);
+        // one NaN source at a time (see batch9_skin_kernel_matches_the_original)
+        let invalid = [
+            0.0f32,
+            -0.0,
+            1.0,
+            f32::INFINITY,
+            f32::from_bits(0x0001_0000),
+            -3.0e38,
+        ];
+        let quiet = [0.0f32, -0.0, 1.0, f32::NAN, f32::from_bits(0x0001_0000)];
+        for n in [0u32, 1, 2, 3, 4, 5, 8] {
+            for special in [0u32, 1, 2, 3] {
+                let specials: &[f32] = if special == 1 { &invalid } else { &quiet };
+                let raw = t.zeros(64 * 6 + 16);
+                let bones = (raw + 15) & !15;
+                for k in 0..(16 * 6) {
+                    let v = if special != 0 && rng.next() % 9 == 0 {
+                        specials[(rng.next() % specials.len() as u32) as usize]
+                    } else {
+                        (rng.next() % 4000) as f32 / 1000.0 - if special == 3 { 0.0 } else { 2.0 }
+                    };
+                    t.w32(bones + 4 * k, v.to_bits());
+                }
+                let pos = t.zeros(12 * n as usize + 16);
+                for k in 0..(3 * n) {
+                    t.w32(
+                        pos + 4 * k,
+                        ((rng.next() % 2000) as f32 / 700.0 - if special == 3 { 0.0 } else { 1.0 })
+                            .to_bits(),
+                    );
+                }
+                let w = t.zeros(16 * n as usize + 16);
+                for k in 0..(4 * n) {
+                    // -0 weights on positive values: every product -0, which a sum
+                    // started from +0 would lose
+                    let wv = if special == 3 {
+                        -0.0
+                    } else if rng.next() % 3 == 0 {
+                        0.0
+                    } else {
+                        (rng.next() % 1000) as f32 / 999.0
+                    };
+                    t.w32(w + 4 * k, wv.to_bits());
+                }
+                let idx = t.zeros(4 * n as usize + 4);
+                for k in 0..(4 * n) {
+                    t.write(idx + k, &[(rng.next() % 6) as u8]);
+                }
+                let src = t.zeros(12);
+                t.w32(src, pos);
+                t.w32(src + 4, w);
+                t.w32(src + 8, idx);
+                let pout = t.object(&mut rng, 12 * n as usize + 16);
+                let dst = t.zeros(4);
+                t.w32(dst, pout);
+                t.check(
+                    &format!("{name} 0x5c94f0 {n} {special}"),
+                    0x005c_94f0,
+                    Conv::Cdecl,
+                    &[bones, n, src, dst],
+                    |g| {
+                        sk::bridge::skin4_positions(g, bones, n, src, dst);
+                        Out::Void
+                    },
+                );
+            }
+        }
+    }
+}

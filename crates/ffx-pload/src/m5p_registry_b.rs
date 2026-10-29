@@ -2901,6 +2901,67 @@ pub mod skin {
         /// when `n` is a multiple of 4 run on SSE and store 16 bytes each
         /// (the fourth lane spills into the next vector); that last one
         /// runs on the x87 and stores 12.
+        /// The positions-only four-bone kernel `(bones, n, &src, &dst)`
+        /// (`0x005c94f0`, cdecl; `src = {positions, weights, indices}`,
+        /// `dst = {positions}`): as [`skin4`] without normals, every bone
+        /// `((c0 x + c3) + c1 y) + c2 z` on SSE.
+        pub fn skin4_positions(h: &mut impl Host, bones: u32, n: u32, src: u32, dst: u32) {
+            if n == 0 {
+                return;
+            }
+            let mut pos: u32 = h.read(src);
+            let mut w: u32 = h.read(src.wrapping_add(4));
+            let mut idx: u32 = h.read(src.wrapping_add(8));
+            let mut pout: u32 = h.read(dst);
+            let simd = if n & 3 != 0 { n } else { n - 1 };
+            for _ in 0..simd {
+                let x = splat(scalar(h, pos));
+                let y = splat(scalar(h, pos.wrapping_add(4)));
+                let z = splat(scalar(h, pos.wrapping_add(8)));
+                let mut acc = [0.0f32; 4];
+                for k in [1u32, 0, 2, 3] {
+                    let i: u8 = h.read(idx.wrapping_add(k));
+                    let b = bones.wrapping_add(u32::from(i) << 6);
+                    let p = add4(
+                        add4(
+                            add4(mul4(column(h, b, 0), x), column(h, b, 3)),
+                            mul4(column(h, b, 1), y),
+                        ),
+                        mul4(column(h, b, 2), z),
+                    );
+                    let pw = mul4(p, splat(scalar(h, w.wrapping_add(4 * k))));
+                    acc = if k == 1 { pw } else { add4(acc, pw) };
+                }
+                put4(h, pout, acc);
+                pos = pos.wrapping_add(0xc);
+                pout = pout.wrapping_add(0xc);
+                w = w.wrapping_add(0x10);
+                idx = idx.wrapping_add(4);
+            }
+            if simd == n {
+                return;
+            }
+            let p: [f64; 3] =
+                core::array::from_fn(|k| x87::load(h.read(pos.wrapping_add(4 * k as u32))));
+            let mut acc: [f64; 3] = [0.0; 3];
+            for k in 0..4u32 {
+                let b = bones.wrapping_add(u32::from(h.read::<u8>(idx.wrapping_add(k))) << 6);
+                let r: [f64; 3] = core::array::from_fn(|c| transform_x87(h, b, c as u32, p, true));
+                let wk = x87::load(h.read(w.wrapping_add(4 * k)));
+                for c in 0..3 {
+                    let t = x87::load(x87::store(x87::mul(wk, r[c])));
+                    acc[c] = if k == 0 {
+                        t
+                    } else {
+                        x87::load(x87::store(x87::add(acc[c], t)))
+                    };
+                }
+            }
+            for (c, v) in acc.iter().enumerate() {
+                h.write(pout.wrapping_add(4 * c as u32), x87::store(*v));
+            }
+        }
+
         pub fn skin4(h: &mut impl Host, bones: u32, n: u32, src: u32, dst: u32) {
             if n == 0 {
                 return;

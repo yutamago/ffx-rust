@@ -987,4 +987,8 @@ ported! {
     Phyre_PDynamicGeometry_skin4Bones_005c8930 @ 0x005c_8930 => extern "C" fn sk_005c8930(bones: u32, n: u32, src: u32, dst: u32) {
         sk::bridge::skin4(&mut mem(), bones, n, src, dst);
     }
+    /// `Phyre_PDynamicGeometry_skin4BonesPositions_005c94f0`.
+    Phyre_PDynamicGeometry_skin4BonesPositions_005c94f0 @ 0x005c_94f0 => extern "C" fn sk_005c94f0(bones: u32, n: u32, src: u32, dst: u32) {
+        sk::bridge::skin4_positions(&mut mem(), bones, n, src, dst);
+    }
 }
