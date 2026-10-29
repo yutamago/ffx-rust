@@ -97,6 +97,16 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f32().expect("the callee leaves ST0 set")
     }
+    fn call_st0_f64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f64 {
+        ffx_oracle::check_width(
+            "Host::call_st0_f64",
+            addr,
+            args.len(),
+            host::max_words(c, true),
+        );
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        r.st0_f64().expect("the callee leaves ST0 set")
+    }
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
@@ -1469,5 +1479,885 @@ fn update_ffx_animate_and_thunk_match_the_original() {
         t.check("0x00822750", 0x0082_2750, Conv::Cdecl, &[], |m| {
             Out::U32(lp::clear_vsync_thunk(m))
         });
+    });
+}
+
+// ---- round 2: FFXApplication's other methods and start-up ----
+
+use ffx_sg::m5main_init::bridge as init;
+
+/// `mov dword [ecx], v`.
+fn set_at_ecx(v: u32) -> Vec<u8> {
+    let mut c = vec![0xc7, 0x01];
+    c.extend(v.to_le_bytes());
+    c
+}
+
+#[test]
+fn exit_application_matches_the_original() {
+    Twins::each(|t| {
+        for err in [0, 1, 0x100] {
+            for up in [0u8, 1, 0x80] {
+                t.reset();
+                t.stubs(&[
+                    (init::TTY_WRITE, 2, 0),
+                    (init::FREE_BLOCK, 0, 1),
+                    (init::GRAPHIC_FINALIZE, 0, 2),
+                    (init::CLEAR_VSYNC, 0, 3),
+                    (init::TROPHY_GET_ERROR, 0, err),
+                    (init::FMOD_FINALIZE, 0, 4),
+                    (init::SYNC_SHUTDOWN, 0, 5),
+                    (init::FIOS_FINALIZE, 0, 6),
+                ]);
+                t.stub(init::BASE_EXIT_APPLICATION, true, 0, 0, 0x77);
+                t.g8(init::FMOD_UP, up);
+                let this = t.zeros(0x400);
+                let what = format!("exitApplication err {err:#x} up {up}");
+                t.check(&what, 0x0042_f600, Conv::Thiscall(this), &[], |m| {
+                    Out::U32(init::exit_application(m, this))
+                });
+            }
+        }
+    });
+}
+
+#[test]
+fn scene_entry_exit_and_pre_init_match_the_original() {
+    Twins::each(|t| {
+        t.reset();
+        for (k, f) in init::EXIT_SCENE_STEPS.into_iter().enumerate() {
+            t.stub(f, false, 0, 0, k as u32);
+        }
+        t.stub(init::BASE_EXIT_SCENE, true, 0, 0, 0x55);
+        let this = t.zeros(0x400);
+        t.check("exitScene", 0x0042_f660, Conv::Thiscall(this), &[], |m| {
+            Out::U32(init::exit_scene(m, this))
+        });
+        t.reset();
+        t.stub(init::GRAPHIC_INIT_SCENE, false, 0, 0, 9);
+        t.stub(init::BASE_INIT_SCENE, true, 0, 0, 0x56);
+        t.check("initScene", 0x0042_f8e0, Conv::Thiscall(this), &[], |m| {
+            Out::U32(init::init_scene(m, this))
+        });
+        t.reset();
+        for (k, f) in init::REGISTER_TYPES.into_iter().enumerate() {
+            t.stub(f, false, 0, 0, 0x10 + k as u32);
+        }
+        t.stub(init::BASE_PRE_PHYRE_INIT, true, 0, 0, 0x57);
+        t.check(
+            "prePhyreInit",
+            0x0042_f8f0,
+            Conv::Thiscall(this),
+            &[],
+            |m| Out::U32(init::pre_phyre_init(m, this)),
+        );
+    });
+}
+
+#[test]
+fn input_methods_match_the_original() {
+    Twins::each(|t| {
+        for utility in [0u8, 1, 0xff] {
+            t.reset();
+            t.stub(init::INPUT_UPDATE_ALL, false, 0, 0, 3);
+            t.stub(init::BASE_HANDLE_INPUTS, true, 0, 0, 0x58);
+            let this = t.zeros(0x400);
+            t.w8(this + 0x3ad, utility);
+            let what = format!("handleInputs utility {utility}");
+            t.check(&what, 0x0042_f770, Conv::Thiscall(this), &[], |m| {
+                Out::U32(init::handle_inputs(m, this))
+            });
+        }
+        for swap in [false, true] {
+            for sync in [false, true] {
+                t.reset();
+                let this = t.zeros(0x400);
+                let mapper = t.zeros(0x40);
+                let other = t.zeros(0x40);
+                t.w32(this + 0x2b8, mapper);
+                t.stub(init::SET_POLL_FLAG, false, 1, 0, 0);
+                // the update may swap the mapper (the pointer is read again)
+                let extra = if swap {
+                    set_word(this + 0x2b8, other)
+                } else {
+                    Vec::new()
+                };
+                t.stub_ex(init::MAPPER_UPDATE, true, 0, 0, &Ret::Fixed(1), &extra);
+                t.stub(init::MAPPER_LATCH, true, 0, 0, 2);
+                t.stub(init::INPUT_OD_UPDATE, false, 0, 0, 0x99);
+                let what = format!("pollInput sync {sync} swap {swap}");
+                if sync {
+                    let slots: Vec<(u32, u32, Vec<u8>)> =
+                        (0..8).map(|k| (0, 0x60 + k, Vec::new())).collect();
+                    t.fake_vtable(this, &slots);
+                    t.check(&what, 0x0042_f7c0, Conv::Thiscall(this), &[], |m| {
+                        Out::U32(init::poll_input_sync(m, this))
+                    });
+                } else {
+                    t.check(&what, 0x0042_f790, Conv::Thiscall(this), &[], |m| {
+                        Out::U32(init::poll_input_async(m, this))
+                    });
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn init_systems_matches_the_original() {
+    Twins::each(|t| {
+        for steam in [0u8, 1, 0x40] {
+            t.reset();
+            let mgr = t.zeros(0x40);
+            t.stubs(&[
+                (init::SAVE_MANAGER_CREATE, 0, 1),
+                (init::SAVE_FOLDER, 0, 2),
+                (init::STATS_CREATE, 0, 3),
+                (init::TROPHY_CREATE, 0, 4),
+                (init::SAVE_MANAGER_INSTANCE, 0, mgr),
+            ]);
+            t.stub(init::SAVE_INIT_SYS_MODULES, true, 0, 0, 0x5a);
+            t.g8(init::STEAM_READY, steam);
+            let what = format!("Game_InitSystems steam {steam}");
+            t.check(&what, 0x0064_7fe0, Conv::Cdecl, &[], |m| {
+                Out::U32(init::init_systems(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn init_file_system_matches_the_original() {
+    Twins::each(|t| {
+        // registered: al 1 (upper bytes set too); 0x100 has al 0
+        for ok in [1, 0x101, 0, 0x100] {
+            for inst in [0, 0x0040_0000] {
+                for refs in [1, 2, 0] {
+                    for lang in [0, 1, 2, 3, 4, 0xffff_ffff] {
+                        if ok & 0xff != 0 && (inst != 0 || refs != 1) {
+                            continue;
+                        }
+                        t.reset();
+                        let big = t.zeros(0x40);
+                        let loc = t.words(&[lang, 0, 0, 0]);
+                        t.stubs(&[
+                            (init::SET_STREAM_PREFIX, 1, 0),
+                            (init::BIG_FILE_CREATE, 0, 0),
+                            (init::BIG_FILE_GET, 0, big),
+                            (init::FIND_STRING_RESOURCE, 2, inst),
+                            (init::RESET_TO_LAUNCHER, 0, 0),
+                            (init::LOC_CREATE, 0, 0),
+                            (init::LOC_INSTANCE, 0, loc),
+                            (init::GET_STREAM_PREFIX, 0, 0x0123_4567),
+                            (init::FIOS_INITIALIZE, 1, 0x0bad),
+                        ]);
+                        t.stub(init::BIG_FILE_SET_PREFIX, true, 1, 1, 0);
+                        t.stub(init::BIG_FILE_REGISTER, true, 1, 1, ok);
+                        t.stub(init::LOC_INITIALIZE, true, 0, 0, 0);
+                        t.stub_import(init::SHOW_CURSOR_IAT, 1, 1, 1);
+                        t.stub_import(init::MESSAGE_BOX_IAT, 4, 4, 1);
+                        // the empty string's block and the loaded one
+                        let owner = t.zeros(0x10);
+                        t.fake_vtable(owner, &[(1, 0, Vec::new()), (1, 0, Vec::new())]);
+                        let nil = t.words(&[owner, 0, 0, refs, 0]);
+                        let loaded = t.words(&[owner, 4, 4, refs, 0x41]);
+                        let mgr = t.rebase(init::STRING_MANAGER);
+                        t.fake_vtable(
+                            mgr,
+                            &[
+                                (0, 0, Vec::new()),
+                                (0, 0, Vec::new()),
+                                (0, 0, Vec::new()),
+                                (0, nil, Vec::new()),
+                            ],
+                        );
+                        let extra = set_at_ecx(loaded + 0x10);
+                        t.stub_ex(init::LOAD_STRING, true, 2, 2, &Ret::Fixed(1), &extra);
+                        let what = format!(
+                            "Game_InitFileSystem ok {ok:#x} inst {inst:#x} refs {refs} lang {lang:#x}"
+                        );
+                        t.check_framed(
+                            &what,
+                            0x0067_95b0,
+                            Conv::Cdecl,
+                            &[],
+                            init::INIT_FS_FRAME,
+                            |m, ebp| Out::U32(init::init_file_system(m, ebp)),
+                        );
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn init_application_matches_the_original() {
+    Twins::each(|t| {
+        for arg in [&b"_ECalm\0"[..], b"_ECal\0", b"_ECalmX\0", b"\0", b"FFX\0"] {
+            for argc in [0, 1, 2, 5, 0xffff_ffff] {
+                for err in [0, 1] {
+                    t.reset();
+                    t.stubs(&[
+                        (init::TTY_WRITE, 2, 0),
+                        (init::INIT_FILE_SYSTEM, 0, 1),
+                        (init::INIT_ENCODING, 0, 2),
+                        (init::INIT_SYSTEMS, 0, 3),
+                        (init::SAVE_DATA_INIT, 0, 4),
+                        (init::GRAPHIC_INITIALIZE, 0, 5),
+                        (init::TROPHY_GET_ERROR, 0, err),
+                        (init::FMOD_INITIALIZE, 0, 6),
+                        (init::SYNC_INITIALIZE, 0, 7),
+                    ]);
+                    let input = t.zeros(0x40);
+                    t.stub(init::INPUT_MANAGER, false, 0, 0, input);
+                    t.stub(init::BUILD_PAD_MAP, true, 0, 0, 8);
+                    t.stub(init::SET_WINDOW_TITLE, true, 1, 1, 9);
+                    t.g8(init::FMOD_UP, 0);
+                    let s = t.alloc(arg);
+                    let argv = t.words(&[0x0011_2233, s, 0]);
+                    let this = t.zeros(0x400);
+                    t.w32(this + 0x3b0, 0x3f80_0000);
+                    let what = format!("initApplication {arg:?} argc {argc:#x} err {err}");
+                    t.check(
+                        &what,
+                        0x0042_f7f0,
+                        Conv::Thiscall(this),
+                        &[argv, argc],
+                        |m| Out::U32(init::init_application(m, this, argv, argc)),
+                    );
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn render_matches_the_original() {
+    Twins::each(|t| {
+        for utility in [0u8, 1] {
+            for err in [0, 1, 2] {
+                for abmap in [None, Some(3), Some(4), Some(0xffff_ffff), Some(9)] {
+                    for esc in [0, 1] {
+                        if utility != 0 && (err != 0 || abmap.is_some() || esc != 0) {
+                            continue;
+                        }
+                        t.reset();
+                        t.stubs(&[
+                            (init::RENDER_CAPTURE_IGGY, 0, 1),
+                            (init::TROPHY_GET_ERROR, 0, err),
+                            (init::SET_CLOTH_BUFFERS, 0, 2),
+                            (init::GRAPHIC_RENDER, 0, 3),
+                            (init::VSYNC_WAKE, 0, 4),
+                            (init::IS_ESC_MENU_ACTIVE, 0, esc),
+                            (init::COPY_POST_BUFFER, 0, 5),
+                        ]);
+                        let obj = match abmap {
+                            None => 0,
+                            Some(s) => t.words(&[0, s]),
+                        };
+                        t.g32(init::GRAPHIC_ABMAP, obj);
+                        let this = t.zeros(0x400);
+                        t.w8(this + 0x3ad, utility);
+                        let what =
+                            format!("render utility {utility} err {err} abmap {abmap:?} esc {esc}");
+                        t.check(&what, 0x0042_f930, Conv::Thiscall(this), &[], |m| {
+                            Out::U32(init::render(m, this))
+                        });
+                    }
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn settings_reset_and_animated_materials_match_the_original() {
+    Twins::each(|t| {
+        for scene in [false, true] {
+            t.reset();
+            let obj = if scene { t.zeros(0x40) } else { 0 };
+            t.g32(init::PHYRE_SCENE, obj);
+            t.stub(init::SCENE_APPLY_SETTINGS, true, 0, 0, 0x33);
+            let what = format!("ApplySettings scene {scene}");
+            t.check(&what, 0x0042_f9b0, Conv::Cdecl, &[], |m| {
+                Out::U32(init::apply_settings(m))
+            });
+        }
+        for r in [0, 1, 0xffff_ffff] {
+            t.reset();
+            t.stub_import(init::SEND_MESSAGE_IAT, 4, 4, r);
+            t.g32(init::HWND, 0x0005_0607);
+            t.g32(init::RESET_PENDING, 0x1234);
+            t.check("PostReset", 0x0042_fa70, Conv::Cdecl, &[], |m| {
+                Out::U32(init::post_reset(m))
+            });
+        }
+        let mut rng = Rng(0x0082_9c00);
+        let floats = [
+            0.0f32.to_bits(),
+            (-0.0f32).to_bits(),
+            1.5f32.to_bits(),
+            f32::INFINITY.to_bits(),
+            0x7fc0_1234, // a quiet NaN with a payload
+            0xffc0_0000,
+            0x0000_0001, // a denormal
+        ];
+        for i in 0..24 {
+            t.reset();
+            let player = if i % 6 == 0 {
+                0
+            } else {
+                let p = t.zeros(0x900);
+                t.w32(p + 0x830, rng.word());
+                p
+            };
+            t.stub(init::GET_PLAYER, false, 0, 0, player);
+            t.stub(init::SET_ANIMATED_MATERIALS, false, 11, 0, 0x4400 + i);
+            let a: [u32; 10] = std::array::from_fn(|k| {
+                if (3..9).contains(&k) {
+                    if rng.chance(2) {
+                        rng.pick(&floats)
+                    } else {
+                        rng.next() & 0xbfff_ffff // finite
+                    }
+                } else {
+                    rng.word()
+                }
+            });
+            let what = format!("player animated materials #{i}");
+            t.check(&what, 0x0082_9c00, Conv::Cdecl, &a, |m| {
+                Out::U32(init::player_animated_materials(m, a))
+            });
+        }
+    });
+}
+
+// ---- round 2: the task layer, the CD callbacks, the debug printfs ----
+
+use ffx_sg::m5main_task::bridge as task;
+
+#[test]
+fn task_warnings_match_the_original() {
+    Twins::each(|t| {
+        type Port = fn(&mut G) -> u32;
+        let cases: [(u32, Port); 4] = [
+            (0x0077_a4e0, |m| task::warn(m, task::MSG_TASK_WAIT)),
+            (0x0077_a4c0, |m| task::warn(m, task::MSG_TASK_INIT_ASM)),
+            (0x0076_f0f0, |m| task::warn(m, task::MSG_CAMERA_SET)),
+            (0x0076_f170, |m| task::warn(m, task::MSG_0076F170)),
+        ];
+        for (addr, port) in cases {
+            t.reset();
+            t.stub(task::DBG_PRINTF, false, 1, 0, 0x1234 + addr);
+            let what = format!("warning {addr:#x}");
+            t.check(&what, addr, Conv::Cdecl, &[], |m| Out::U32(port(m)));
+        }
+        t.reset();
+        t.stub(task::DBG_PRINTF, false, 1, 0, 0x99);
+        t.check(
+            "task_create_asm",
+            0x0077_a4b0,
+            Conv::Cdecl,
+            &[1, 2, 3],
+            |m| Out::U32(task::task_create_asm(m)),
+        );
+        t.reset();
+        t.stub(task::TASK_CREATE_ASM, false, 0, 0, 0x98);
+        t.check("0x0077a320", 0x0077_a320, Conv::Cdecl, &[], |m| {
+            Out::U32(task::task_create_asm_thunk(m))
+        });
+    });
+}
+
+/// A task record (0x60 bytes, the stack area after it) with known words.
+fn task_record(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let w: Vec<u32> = (0..0x40).map(|_| rng.word()).collect();
+    t.words(&w)
+}
+
+#[test]
+fn task_init_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0077_a1d0);
+        let groups = t.rebase(task::GROUPS);
+        for i in 0..40 {
+            t.reset();
+            t.stub(task::MOVIE_ERR, false, 3, 0, 0);
+            t.stub(task::TASK_INIT_ASM, false, 0, 0, 0x11);
+            // the first `used` slots taken (all eight sometimes)
+            let used = if i % 5 == 0 { 8 } else { rng.below(8) };
+            for k in 0..9 {
+                let v = if k < used { 0x0050_0000 + k } else { 0 };
+                t.patch(groups + 4 * k, &v.to_le_bytes());
+            }
+            let rec = task_record(t, &mut rng) + rng.below(16);
+            let id = rng.pick(&[0, 1, 2, 7, 0x100]);
+            let flag = rng.word();
+            for (cur, v) in [
+                (task::CUR_ID, rng.word()),
+                (task::CUR_STACK_TOP, rng.word()),
+                (task::CUR_STACK_END, rng.word()),
+                (task::CUR_STACK_BASE, rng.word()),
+            ] {
+                t.g32(cur, v);
+            }
+            let what = format!("sa_task_init2 #{i} used {used}");
+            t.check(&what, 0x0077_a1d0, Conv::Cdecl, &[id, rec, flag], |m| {
+                Out::U32(task::task_init2(m, id, rec, flag))
+            });
+        }
+        for id in [0, 3] {
+            t.reset();
+            t.stubs(&[
+                (task::TASK_BUFF_SIZE, 1, 0x1340),
+                (task::USER_MALLOC, 1, 0x0070_0000),
+                (task::TASK_INIT2, 3, 0x0070_0010),
+            ]);
+            t.check("sa_task_init", 0x0077_a1a0, Conv::Cdecl, &[id], |m| {
+                Out::U32(task::task_init(m, id))
+            });
+        }
+    });
+}
+
+#[test]
+fn task_groups_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0077_a390);
+        let groups = t.rebase(task::GROUPS);
+        for g in 0..8 {
+            for heap in [0, 1] {
+                t.reset();
+                let rec = task_record(t, &mut rng);
+                t.w32(rec + 0x24, heap);
+                t.patch(groups + 4 * g, &rec.to_le_bytes());
+                for (cur, v) in [
+                    (task::CUR_ID, rng.word()),
+                    (task::CUR_STACK_TOP, rng.word()),
+                    (task::CUR_STACK_END, rng.word()),
+                    (task::CUR_STACK_BASE, rng.word()),
+                    (task::CUR_RECORD, rng.word()),
+                ] {
+                    t.g32(cur, v);
+                }
+                // the asm step changes the current words (put back after)
+                let mut extra = set_word(t.rebase(task::CUR_ID), 0x5151);
+                extra.extend(set_word(t.rebase(task::CUR_STACK_TOP), 0x5252));
+                t.stub_ex(
+                    task::TASK_CREATE_ASM,
+                    false,
+                    3,
+                    0,
+                    &Ret::Fixed(0x77),
+                    &extra,
+                );
+                t.stub(task::USER_FREE, false, 1, 0, 0x66);
+                let what = format!("task_create_in_group {g} heap {heap}");
+                t.check(&what, 0x0077_a390, Conv::Cdecl, &[g, 4, 5, 6], |m| {
+                    Out::U32(task::task_create_in_group(m, g, 4, 5, 6))
+                });
+                let what = format!("sa_task_run_in_group {g}");
+                t.check(&what, 0x0077_a420, Conv::Cdecl, &[g], |m| {
+                    Out::U32(task::task_run_in_group(m, g))
+                });
+                let what = format!("sa_task_delete_in_group {g} heap {heap}");
+                t.check(&what, 0x0077_a3f0, Conv::Cdecl, &[g], |m| {
+                    Out::U32(task::task_delete_in_group(m, g))
+                });
+            }
+        }
+        let create = [
+            0x0077_9f80,
+            0x0077_9fa0,
+            0x0077_9fc0,
+            0x0077_9fe0,
+            0x0077_a000,
+            0x0077_a020,
+            0x0077_a040,
+        ];
+        for (g, addr) in (0u32..).zip(create) {
+            t.reset();
+            t.stub(task::TASK_CREATE_IN_GROUP, false, 4, 0, 0x10 + g);
+            let what = format!("create entry {g}");
+            t.check(&what, addr, Conv::Cdecl, &[7, 8, 9], |m| {
+                Out::U32(task::task_create_group(m, g, 7, 8, 9))
+            });
+        }
+        for g in 0..8 {
+            t.reset();
+            t.stub(task::TASK_RUN_IN_GROUP, false, 1, 0, 0x20 + g);
+            t.stub(task::TASK_DELETE_IN_GROUP, false, 1, 0, 0x30 + g);
+            let what = format!("run entry {g}");
+            t.check(&what, 0x0077_a080 + 0x10 * g, Conv::Cdecl, &[], |m| {
+                Out::U32(task::task_run_group(m, g))
+            });
+            let what = format!("delete entry {g}");
+            t.check(&what, 0x0077_a100 + 0x10 * g, Conv::Cdecl, &[], |m| {
+                Out::U32(task::task_delete_group(m, g))
+            });
+        }
+    });
+}
+
+#[test]
+fn chgname_printf_and_read_helpers_match_the_original() {
+    Twins::each(|t| {
+        for ready in [0u8, 1, 0x80] {
+            t.reset();
+            t.g8(task::CHGNAME_READY, ready);
+            for k in 0..32 {
+                t.g32(task::CHGNAME_FROM + 4 * k, 0x1111_0000 + k);
+            }
+            t.check("read_chgname_init", 0x00a4_3130, Conv::Cdecl, &[], |m| {
+                task::chgname_init(m);
+                Out::None
+            });
+        }
+        t.reset();
+        t.stub(task::PRINTF2, false, 2, 0, 0x42);
+        t.check_framed(
+            "sa_printf_0076de70",
+            0x0076_de70,
+            Conv::Cdecl,
+            &[0x00b0_0000, 1, 2, 3],
+            4,
+            |m, ebp| Out::U32(task::printf(m, 0x00b0_0000, ebp + 8)),
+        );
+        t.reset();
+        t.stubs(&[(task::PRINTF_SET, 1, 1), (task::FLUSH_CACHE, 1, 0x77)]);
+        t.check("printf_cut", 0x0076_de90, Conv::Cdecl, &[], |m| {
+            Out::U32(task::printf_cut(m))
+        });
+        t.reset();
+        t.stub(task::REGIST_BG_THREAD, false, 1, 0, 0x78);
+        t.check("read_thread_init", 0x0076_e630, Conv::Cdecl, &[], |m| {
+            Out::U32(task::read_thread_init(m))
+        });
+        t.reset();
+        let cb = t.stub_code(0x0cb0, false, 1, 0, &Ret::Fixed(0x79), &[]);
+        let req = t.words(&[0x0101_0101; 16]);
+        t.w32(req + 0x20, cb);
+        t.check("sa_read_callback", 0x0076_e640, Conv::Cdecl, &[req], |m| {
+            Out::U32(task::read_callback(m, req))
+        });
+    });
+}
+
+#[test]
+fn cd_callback_init_matches_the_original() {
+    Twins::each(|t| {
+        for env in [1, 0, 2] {
+            for debug in [0, 1] {
+                for flag in [0, 1, 0x100] {
+                    t.reset();
+                    t.stubs(&[
+                        (task::TASK_START, 0, 1),
+                        (task::DBG_PRINTF, 1, 0x5050),
+                        (task::SET_DEF_DRAW_ENV2, 0, env),
+                        (task::CD_ENV_INIT, 1, 2),
+                        (task::IS_DEBUG, 0, debug),
+                        (task::MS_ENV_INIT, 0, 3),
+                    ]);
+                    let what = format!("sa_cd_callback_init env {env} debug {debug} flag {flag}");
+                    let slot = t.frame_ebp(1) + 8;
+                    t.check_framed(&what, 0x0076_f100, Conv::Cdecl, &[flag], 4, |m, ebp| {
+                        Out::U32(task::cd_callback_init(m, flag, ebp + 8))
+                    });
+                    let a: u32 = Mem::read(&t.a, slot);
+                    let b: u32 = Mem::read(&t.b, slot);
+                    assert_eq!(a, b, "{what}: the argument slot");
+                }
+            }
+        }
+    });
+}
+
+#[test]
+fn movie_resets_and_counters_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0077_0340);
+        for handler in [false, true] {
+            t.reset();
+            t.stub(task::DBG_PRINTF, false, 1, 0, 0x60);
+            t.stub(task::TK_FREE, false, 1, 0, 0x61);
+            for w in task::MOVIE_END_WORDS
+                .into_iter()
+                .chain(task::MOVIE_RESET_WORDS)
+                .chain(task::MOVIE_RESET_HALVES)
+            {
+                t.g32(w, rng.word() | 1);
+            }
+            let obj = if handler {
+                let f = t.stub_code(0x0ab0, false, 0, 0, &Ret::Fixed(0x62), &[]);
+                t.words(&[0, f])
+            } else {
+                0
+            };
+            t.g32(task::MOVIE_HANDLER, obj);
+            t.g32(task::MOVIE_HANDLER_DONE, 5);
+            let what = format!("movie_end handler {handler}");
+            t.check(&what, 0x0077_0340, Conv::Cdecl, &[], |m| {
+                Out::U32(task::movie_end(m))
+            });
+            t.check("movie_reset", 0x0076_f3b0, Conv::Cdecl, &[], |m| {
+                Out::U32(task::movie_reset(m))
+            });
+        }
+        for (n, s) in [(5, 3), (3, 5), (0, 0)] {
+            t.reset();
+            t.stubs(&[
+                (task::SAVE_BATTLE_COUNT, 0, n),
+                (task::ENCOUNT_EVENT_START, 0, s),
+                (task::GET_GIL, 0, n * 100),
+            ]);
+            t.check("battles since event", 0x0077_22a0, Conv::Cdecl, &[], |m| {
+                Out::U32(task::battles_since_event(m))
+            });
+            t.check("battle count thunk", 0x0077_2310, Conv::Cdecl, &[], |m| {
+                Out::U32(task::battle_count_thunk(m))
+            });
+            t.check("gil thunk", 0x0077_2550, Conv::Cdecl, &[], |m| {
+                Out::U32(task::gil_thunk(m))
+            });
+        }
+        for v in [0, 0x1234_5678] {
+            t.reset();
+            t.g32(task::WORD_012FBBF4, v);
+            t.check("0x00820520", 0x0082_0520, Conv::Cdecl, &[], |m| {
+                Out::U32(task::get_012fbbf4(m))
+            });
+        }
+    });
+}
+
+#[test]
+fn decode_and_ring_printf_match_the_original() {
+    Twins::each(|t| {
+        for kind in [0u8, 1, 7, 0xff] {
+            t.reset();
+            // mov eax, [esp + 0xc]; add dword [eax], 3 (the decoder advances src)
+            let extra = [0x8b, 0x44, 0x24, 0x0c, 0x83, 0x00, 0x03];
+            let f = t.stub_code(0x0dec, false, 3, 0, &Ret::Fixed(0x63), &extra);
+            let entry = t.rebase(task::DECODERS) + 4 * u32::from(kind);
+            t.patch(entry, &f.to_le_bytes());
+            let src = t.alloc(&[kind, 2, 3, 4]);
+            let out = t.zeros(0x10);
+            let slot = t.frame_ebp(2) + 0xc;
+            Mem::write(&mut t.b, slot, src);
+            let what = format!("sa_decode kind {kind}");
+            t.check_framed(&what, 0x00a4_3de0, Conv::Cdecl, &[out, src], 4, |m, ebp| {
+                Out::U32(task::decode(m, out, src, ebp + 8))
+            });
+        }
+        let mut rng = Rng(0x0076_b860);
+        for index in [0, 1, 0xfe, 0xff, 0x100, 0x7fff_ffff, 0xffff_ffff] {
+            t.reset();
+            t.stub_import(task::VSPRINTF_IAT, 3, 0, 0x64);
+            t.g32(task::RING_INDEX, index);
+            let mut args = vec![0x00b1_2340];
+            args.extend((0..16).map(|_| rng.word()));
+            let a: [u32; 16] = std::array::from_fn(|k| args[k + 1]);
+            let what = format!("printf ring index {index:#x}");
+            t.check_framed(
+                &what,
+                0x0076_b860,
+                Conv::Cdecl,
+                &args,
+                task::RING_FRAME,
+                |m, ebp| Out::U32(task::ring_printf(m, ebp, args[0], a)),
+            );
+        }
+    });
+}
+
+// ---- round 2: the debug captures and the ID draw ----
+
+use ffx_sg::m5main_dbg2::bridge as dbg2;
+
+/// The import at `slot` bound to recording stubs that log the words each
+/// format (the second argument) takes; `other` words for the rest.
+fn varargs_stub(t: &mut Twins, slot: u32, fmts: &[(u32, u32)], other: u32) {
+    let mut c = vec![0x8b, 0x54, 0x24, 0x08]; // mov edx, [esp + 8]
+    for &(fmt, n) in fmts {
+        let to = t.stub_code(slot, false, n, 0, &Ret::Fixed(0x21), &[]);
+        c.extend([0x81, 0xfa]);
+        c.extend(t.rebase(fmt).to_le_bytes()); // cmp edx, fmt
+        c.extend([0x75, 7]); // jne next
+        c.push(0xb8);
+        c.extend(to.to_le_bytes()); // mov eax, to
+        c.extend([0xff, 0xe0]); // jmp eax
+    }
+    let rest = t.stub_code(slot, false, other, 0, &Ret::Fixed(0x21), &[]);
+    c.push(0xb8);
+    c.extend(rest.to_le_bytes()); // mov eax, rest
+    c.extend([0xff, 0xe0]); // jmp eax
+    let at = t.code(&c);
+    let slot = t.rebase(slot);
+    t.patch(slot, &at.to_le_bytes());
+}
+
+#[test]
+fn capture_to_file_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0083_a690);
+        // the stored frame (one line more: the blend reads below the last)
+        let pixels: Vec<u8> = (0..0xd_0800).map(|_| rng.next() as u8).collect();
+        let a = t.alloc(&pixels);
+        let b = t.zeros(0x100);
+        let out = t.zeros(0x13_8000);
+        let name = t.alloc(b"shot.bmp\0");
+        for odd in [0u8, 1] {
+            for (interlaced, blend) in [(0u8, 0u8), (0, 1), (1, 0), (1, 1)] {
+                t.reset();
+                varargs_stub(
+                    t,
+                    dbg2::SPRINTF_IAT,
+                    &[(dbg2::FMT_CONCAT, 4), (dbg2::FMT_CHMOD, 3)],
+                    2,
+                );
+                t.stub_ex(
+                    dbg2::USER_MALLOC,
+                    false,
+                    1,
+                    0,
+                    &Ret::Seq(vec![a, b, out]),
+                    &[],
+                );
+                t.stubs(&[
+                    (dbg2::SCE_OPEN, 2, 7),
+                    (dbg2::SCE_WRITE, 3, 0x36),
+                    (dbg2::SCE_CLOSE, 1, 0),
+                    (dbg2::SET_DEF_STORE_IMAGE, 8, 0),
+                    (dbg2::EXEC_STORE_IMAGE, 2, 0),
+                    (dbg2::GS_SYNC_PATH, 2, 0),
+                    (dbg2::FLUSH_CACHE, 1, 0),
+                    (dbg2::SYSTEM_ON_HOST, 2, 0),
+                    (dbg2::USER_FREE, 1, 0x5a),
+                ]);
+                t.g8(dbg2::SG_FRAME, odd + 2);
+                t.g8(dbg2::CAPTURE_INTERLACED, interlaced);
+                t.g8(dbg2::CAPTURE_BLEND, blend);
+                let what =
+                    format!("Sg_CaptureToFile odd {odd} interlaced {interlaced} blend {blend}");
+                t.check_framed(
+                    &what,
+                    0x0083_a690,
+                    Conv::Cdecl,
+                    &[name],
+                    dbg2::CAPTURE_FILE_FRAME,
+                    |m, ebp| Out::U32(dbg2::capture_to_file(m, ebp, name)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn id_triangles_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0084_47a0);
+        for i in 0..60 {
+            t.reset();
+            // vertices -2..16, the base two records in
+            let vw: Vec<u8> = (0..18 * 8).map(|_| rng.next() as u8).collect();
+            let verts = t.alloc(&vw) + 16;
+            let n = if i % 10 == 0 { 0 } else { rng.below(6) };
+            let mut list = Vec::new();
+            for _ in 0..n {
+                for _ in 0..3 {
+                    let idx = rng.below(18) as i32 - 2;
+                    list.extend((idx as i16).to_le_bytes());
+                }
+                list.extend((rng.next() as u16).to_le_bytes());
+                list.extend(rng.next().to_le_bytes());
+                list.extend(rng.word().to_le_bytes()); // the shade word
+                list.extend(rng.next().to_le_bytes());
+            }
+            list.extend([0; 16]);
+            let list = t.alloc(&list);
+            let model = t.zeros(0x20);
+            t.write(model + 8, &(n as i16).to_le_bytes());
+            t.w32(model + 0xc, 0x0bad_0000 + i);
+            t.stub(dbg2::GET_PTR32, false, 1, 0, list);
+            let proj: Vec<u32> = (0..=3 * n).map(|_| u32::from(rng.chance(4))).collect();
+            let pw: Vec<u32> = (0..0x100).map(|_| rng.next()).collect();
+            let packet = t.words(&pw);
+            // half the cases: the projection moves the packet global (the
+            // original reads it again after each call)
+            let other = t.zeros(0x400);
+            let extra = if i % 2 == 1 {
+                set_word(t.rebase(dbg2::ID_PACKET), other)
+            } else {
+                Vec::new()
+            };
+            t.stub_ex(dbg2::ID_PROJECT, false, 3, 0, &Ret::Seq(proj), &extra);
+            let shades: Vec<u32> = (0..=n).map(|_| rng.word()).collect();
+            t.stub_ex(dbg2::ID_GET_SHADE, false, 1, 0, &Ret::Seq(shades), &[]);
+            let m = 0x00ab_cd00;
+            let what = format!("id triangles #{i} n {n}");
+            t.check_framed(
+                &what,
+                0x0084_47a0,
+                Conv::Cdecl,
+                &[verts, model, m, packet],
+                dbg2::ID_TRIANGLES_FRAME,
+                |g, ebp| Out::U32(dbg2::id_triangles(g, ebp, verts, model, m, packet)),
+            );
+        }
+    });
+}
+
+#[test]
+fn id_draw_main_matches_the_original() {
+    Twins::each(|t| {
+        let zooms = [1.0f32, 3.0, 0.0, -2.5, 0.1];
+        for (k, zoom) in zooms.into_iter().enumerate() {
+            for (has_id, on, parts) in [(false, 1, 0), (true, 0, 2), (true, 1, 0), (true, 1, 3)] {
+                t.reset();
+                let id = if has_id {
+                    let p = t.zeros(0x20);
+                    t.write(p + 6, &(parts as i16).to_le_bytes());
+                    t.w32(p + 0x18, 0x1818);
+                    t.w32(p + 0x1c, 0x1c1c);
+                    p
+                } else {
+                    0
+                };
+                let cell = t.words(&[zoom.to_bits()]);
+                t.stubs(&[
+                    (dbg2::PACKET_GET_PTR, 0, 0x0077_0000),
+                    (dbg2::ID_GET_PTR, 0, id),
+                    (dbg2::SCREEN_MATRIX, 0, 0x0066_0000),
+                    (dbg2::CAMERA_MATRIX, 0, 0x0066_0040),
+                    (dbg2::MEMSET, 3, 0),
+                    (dbg2::UNIT_MATRIX, 1, 0),
+                    (dbg2::MUL_MATRIX, 3, 0),
+                    (dbg2::FLUSH_CACHE, 1, 0),
+                    (dbg2::DMA_SEND, 2, 0),
+                    (dbg2::GS_SYNC_PATH, 2, 0),
+                ]);
+                // the model packet moves the channel word (read again)
+                let extra = set_word(t.rebase(dbg2::DMA_CHANNEL), 0x2000_0000 + k as u32);
+                t.stub_ex(dbg2::ID_MODEL_PACKET, false, 5, 0, &Ret::Fixed(0), &extra);
+                t.stub_ex(dbg2::ID_GET_ZOOM, false, 0, 0, &Ret::Fixed(0), &fld(cell));
+                let gets: Vec<u32> = (0..=2 * parts).map(|j| 0x0055_0000 + 0x100 * j).collect();
+                t.stub_ex(dbg2::GET_PTR32, false, 1, 0, &Ret::Seq(gets), &[]);
+                t.g32(dbg2::ID_DRAW_ON, on);
+                t.g32(dbg2::DMA_CHANNEL, 0x1000_9000 + k as u32);
+                let what = format!("Sg_IdDrawMain zoom {zoom} id {has_id} on {on} parts {parts}");
+                t.check_framed(
+                    &what,
+                    0x0084_4a80,
+                    Conv::Cdecl,
+                    &[],
+                    dbg2::ID_DRAW_FRAME,
+                    |g, ebp| {
+                        dbg2::id_draw_main(g, ebp);
+                        Out::None
+                    },
+                );
+            }
+        }
     });
 }
