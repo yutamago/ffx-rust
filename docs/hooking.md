@@ -223,9 +223,29 @@ place among the others. `opu_unit_etc` (`0x0080b180`) passes
 original's struct holds stack words it never wrote, the bridge takes them
 as an explicit `junk` argument (as for `op_irandom_p`'s three words past its
 argument), the shim passes 0 and the oracle test fills the original's frame
-with known values and hands the same to the port. Each helper is a plain
-`extern "C"` call (no asm), so the thunk rules hold: the shim's thunk saves
-the registers, and no `in(reg)` operand follows a `call`.
+with known values and hands the same to the port.
+
+Every call from Rust into game code goes through the call router,
+`ffx_bridge::route` (docs/host.md, "One source of truth"): the helpers
+above, the hosts' `RawMem` impls (`ffx_bridge::Host`,
+`ffx_graphic::host::Host`, `ffx_script`'s `NativeHost`), and a shim's own
+calls:
+
+| Call | Arguments | Result |
+|---|---|---|
+| `route::cdecl::<R>(f, &[u32])` | exactly these stack words | `R` from `eax` (`u32`, `i32`, `u8`, ...), `edx:eax` (`u64`), `ST0` (`f32`: `fstp dword`, `f64`: `fstp qword`) or nothing (`()`) |
+| `route::stdcall` | exactly the callee's words (it pops them) | as `cdecl` |
+| `route::thiscall::<R>(f, this, &[u32])` | `ecx` + exactly the callee's words | as `cdecl` |
+| `route::fastcall` / `route::caller_pops` | the first two in `ecx`, `edx`, the rest on the stack | as `cdecl` |
+| `route::x87::<R>(f, &[f64])` | operands loaded with `fld qword` in order (the last in `ST0`): a CRT `_CI*` intrinsic through its thunk or import slot | `ST0` as `R` |
+
+In the hooked game a route call is a native call (one asm routine,
+`route::native`, that pushes the words, sets `ecx`/`edx`, calls, puts
+`esp` back and reads `eax`, `edx` and `ST0`); in `ffx-host` it goes to the
+function table. A shim calls nothing else: `tools/check-ported.py`
+rejects a `transmute`d function pointer or an `asm!` block in
+`ported/*.rs`. An `fld dword` operand is `f64::from(x)` (exact). An import
+slot's function is `super::import_slot(slot)`.
 
 ## Threads
 
@@ -243,6 +263,12 @@ no Rust state shared between threads without the original's locking.
   The one exception is a table filled once before the game runs and only
   read after, such as the vtable of an object Rust hands the game
   (`rust_audio.rs`); its line carries `// check-ported: read-only table`.
+- **Hand the game a `StackFrame`, not a Rust local.** In `ffx-host` a
+  `StackFrame` lives on the game thread's stack in the arena, where
+  Unicorn's originals reach it; a local's address (`&raw mut x`,
+  `buf.as_mut_ptr()`, a `thread_local!`'s) does not. `tools/host-ports.py`
+  keeps such shims out of ffx-host's table (306 on 2026-10-29) and
+  check-ported fails until its list is regenerated.
 - The hosts' `callee_scratch()` / `scratch()` (`ffx-bridge`, `ffx-graphic`,
   `ffx-script`) are per thread, so a bridge must not hold one across a call
   that can re-enter another port on the same thread.

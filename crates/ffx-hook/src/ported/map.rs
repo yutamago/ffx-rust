@@ -1157,13 +1157,9 @@ ported! {
     MapPart_LangOverride @ 0x0067_fb30 => extern "thiscall" fn map_part_lang_override(this: u32, lang: u32, map: u32) -> u32 {
         scene::bridge::map_part_lang_override(&mut mem(), this, lang, map, |_| {
             // Phyre::PhyrePrintf(2, "\n Warning: uncorrect LanguageType \n")
-            // SAFETY: a variadic cdecl function of this build and its string.
-            unsafe {
-                let f: unsafe extern "C" fn(u32, u32) -> u32 =
-                    std::mem::transmute(crate::rebase(0x0043_52f0));
-                #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-                f(2, crate::rebase(0x00b4_5b7c) as u32);
-            }
+            // a variadic cdecl function of this build and its string
+            #[allow(clippy::cast_possible_truncation)] // game addresses
+            ffx_bridge::route::cdecl::<u32>(crate::rebase(0x0043_52f0) as u32, &[2, crate::rebase(0x00b4_5b7c) as u32]);
         })
     }
     /// `TextUtilList::TextUtilList()`.
@@ -1384,14 +1380,10 @@ ported! {
     SqsBattleStreamingDataSend @ 0x0081_cef0 => extern "C" fn sqs_battle_streaming_data_send(a: u32, b: u32) {
         nkz::bridge::sqs_battle_streaming_data_send(&mut mem(), a, b, |_| {
             // fprintf(stderr, "FMOD SFX ERROR! ...") through the CRT's imports.
-            // SAFETY: the import slots hold MSVCR110's __iob_func and fprintf.
-            unsafe {
-                let iob: unsafe extern "C" fn() -> usize =
-                    std::mem::transmute(*(crate::rebase(0x00b0_c350) as *const usize));
-                let fprintf: unsafe extern "C" fn(usize, usize) -> i32 =
-                    std::mem::transmute(*(crate::rebase(0x00b0_c38c) as *const usize));
-                fprintf(iob() + 0x40, crate::rebase(0x00b5_8f40));
-            }
+            // the import slots hold MSVCR110's __iob_func and fprintf
+            let iob: u32 = ffx_bridge::route::cdecl(super::import_slot(0x00b0_c350), &[]);
+            #[allow(clippy::cast_possible_truncation)] // a game address
+            ffx_bridge::route::cdecl::<i32>(super::import_slot(0x00b0_c38c), &[iob + 0x40, crate::rebase(0x00b5_8f40) as u32]);
         });
     }
     /// `yiClutAlloc_makepacket(packet, cluts, n)`.
@@ -1552,11 +1544,8 @@ ported! {
                 let mut more = 0u32;
                 #[allow(clippy::cast_possible_truncation)] // a 32-bit process
                 let p = (&raw mut more).expose_provenance() as u32;
-                // SAFETY: the born callback is a cdecl function of (obj, arg, vertex, &more).
-                unsafe {
-                    let f: unsafe extern "C" fn(u32, u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
-                    f(a, b, at, p);
-                }
+                // the born callback is a cdecl function of (obj, arg, vertex, &more)
+                ffx_bridge::route::cdecl::<u32>(f, &[a, b, at, p]);
                 more
             },
         )
@@ -5157,32 +5146,17 @@ fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
     match args {
         camera::FArgs::St0(x) => st0_call(f, x),
         camera::FArgs::St01(a, b) => st01_call(f, a, b),
-        // SAFETY: the callers pass cdecl functions of two words returning
-        // a float (`Ch_SetClipZ`); the declared `f32` return pops ST0.
-        // SAFETY: a cdecl function of one word returning a double
-        // (`atof`); the declared `f64` return pops ST0.
-        // SAFETY: a cdecl function without arguments returning a float
-        // (`MsCameraGetScrDpt`); the declared `f64` return pops ST0.
-        camera::FArgs::Stack(&[]) => unsafe {
-            std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f as usize)()
-        },
-        camera::FArgs::Stack(&[a]) => unsafe {
-            std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a)
-        },
-        camera::FArgs::Stack(&[a, b]) => unsafe {
-            f64::from(std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32) -> f32,
-            >(f as usize)(a, b))
-        },
-        // SAFETY: a cdecl function of three words returning a float
-        // (`Math_AngleStep`); the declared `f32` return pops ST0.
-        camera::FArgs::Stack(&[a, b, c]) => unsafe {
-            f64::from(std::mem::transmute::<
-                usize,
-                unsafe extern "C" fn(u32, u32, u32) -> f32,
-            >(f as usize)(a, b, c))
-        },
+        // a cdecl function without arguments returning a float
+        // (`MsCameraGetScrDpt`) or of one word returning a double (`atof`):
+        // ST0 popped as `fstp qword`
+        camera::FArgs::Stack(&[]) => ffx_bridge::route::cdecl(f, &[]),
+        camera::FArgs::Stack(&[a]) => ffx_bridge::route::cdecl(f, &[a]),
+        // cdecl functions of two words (`Ch_SetClipZ`) or three
+        // (`Math_AngleStep`) returning a float: ST0 popped as `fstp dword`
+        camera::FArgs::Stack(&[a, b]) => f64::from(ffx_bridge::route::cdecl::<f32>(f, &[a, b])),
+        camera::FArgs::Stack(&[a, b, c]) => {
+            f64::from(ffx_bridge::route::cdecl::<f32>(f, &[a, b, c]))
+        }
         camera::FArgs::Stack(a) => {
             crate::log::log(&format!("map: no float call of {} words", a.len()));
             f64::NAN
@@ -5193,62 +5167,18 @@ fn call_float(f: u32, args: camera::FArgs<'_>) -> f64 {
 /// An `_CI*` intrinsic through the game's import thunk: `x` in `ST0`
 /// (`fld qword`), the result read back from `ST0` (`fstp qword`).
 fn st0_call(f: u32, x: f64) -> f64 {
-    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
-    // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE
-    // registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let mut out = 0f64;
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            // edi: the callee keeps it (eax, ecx and edx it may not)
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        // the CRT's intrinsics only run in the 32-bit game
-        let _ = (f, x);
-        unreachable!("the CRT intrinsics: this runs in the 32-bit game")
-    }
+    // the thunk jumps to the CRT's intrinsic, which takes its argument in
+    // ST0 and returns in ST0 (`fstp qword`)
+    ffx_bridge::route::x87(f, &[x])
 }
 
 /// An `_CI*` intrinsic of two operands (`_CIfmod`) through the game's
 /// import thunk: `a` in `ST1`, `b` in `ST0` (`fld qword` each), the result
 /// read back from `ST0`.
 fn st01_call(f: u32, a: f64, b: f64) -> f64 {
-    // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
-    // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
-    // ecx, edx, the x87 and SSE registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let mut out = 0f64;
-        std::arch::asm!(
-            "fld qword ptr [{a}]",
-            "fld qword ptr [{b}]",
-            "call {f}",
-            "fstp qword ptr [edi]",
-            a = in(reg) &raw const a,
-            b = in(reg) &raw const b,
-            f = in(reg) f,
-            // edi: the callee keeps it (eax, ecx and edx it may not)
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        // the CRT's intrinsics only run in the 32-bit game
-        let _ = (f, a, b);
-        unreachable!("the CRT intrinsics: this runs in the 32-bit game")
-    }
+    // the thunk jumps to the CRT's intrinsic, which takes its operands in
+    // ST1 and ST0 and leaves the result alone in ST0 (`fstp qword`)
+    ffx_bridge::route::x87(f, &[a, b])
 }
 
 /// Calls an original cdecl function (absolute address) with its word
@@ -5261,12 +5191,9 @@ fn call_cdecl(f: u32, a: &[u32]) -> u32 {
 /// (thiscall) or the one cdecl argument.
 fn phyre_call(f: u32, arg: u32, thiscall: bool) {
     if thiscall {
-        // SAFETY: the free camera's constructor/destructor slots are
-        // thiscall functions of `this` alone.
-        unsafe {
-            let f: unsafe extern "thiscall" fn(u32) -> u32 = std::mem::transmute(f as usize);
-            f(arg);
-        }
+        // the free camera's constructor/destructor slots are thiscall
+        // functions of `this` alone
+        ffx_bridge::route::thiscall::<u32>(f, arg, &[]);
     } else {
         call_ptr1(f, arg);
     }
@@ -5275,22 +5202,16 @@ fn phyre_call(f: u32, arg: u32, thiscall: bool) {
 /// Calls a game function pointer (an absolute address, cdecl) with one
 /// argument: the sequence, after- and destructor functions of `rcef` tasks.
 fn call_ptr1(f: u32, arg: u32) -> u32 {
-    // SAFETY: the task's function slots hold cdecl functions taking it.
-    unsafe {
-        let f: unsafe extern "C" fn(u32) -> u32 = std::mem::transmute(f as usize);
-        f(arg)
-    }
+    // the task's function slots hold cdecl functions taking it
+    ffx_bridge::route::cdecl(f, &[arg])
 }
 
 /// Calls a force's reset function (an absolute address, cdecl) with the
 /// force and its particle system (`rcfxParticleResetForce`).
 fn call_ptr2(f: u32, a: u32, b: u32) -> u32 {
-    // SAFETY: the force's reset slot and the sphere grid visitors hold
-    // cdecl functions of two words.
-    unsafe {
-        let f: unsafe extern "C" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
-        f(a, b)
-    }
+    // the force's reset slot and the sphere grid visitors hold cdecl
+    // functions of two words
+    ffx_bridge::route::cdecl(f, &[a, b])
 }
 
 /// The VFX run record of an FP id (`pppFpGetMngPtr(id, &run, NULL)`).
@@ -5304,10 +5225,6 @@ fn fp_run(m: &mut super::RawMem, id: u32) -> u32 {
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`).
 fn crt_srand(seed: u32) {
-    // SAFETY: the import slot holds MSVCR110's cdecl srand(seed).
-    unsafe {
-        let f: unsafe extern "C" fn(u32) =
-            std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
-        f(seed);
-    }
+    // the import slot holds MSVCR110's cdecl srand(seed)
+    ffx_bridge::route::cdecl::<()>(super::import_slot(0x00b0_c484), &[seed]);
 }

@@ -1,11 +1,13 @@
 //! The ports this build registers in the function table
 //! (docs/host.md, "One source of truth").
 //!
-//! The target is the hook's own `ported!` lists, compiled a second time
-//! with a host-side `ported!` that registers each shim here instead of
-//! patching (docs/host.md lists what that needs first). Until then this
-//! file registers ports by hand through their portable bridges, which is
-//! enough to prove the Rust and Unicorn paths in both directions.
+//! The hook's own `ported!` lists, compiled a second time by
+//! `ffx-host-ports` (each line an entry: name, address, convention, stack
+//! words and the shim), but the shims `tools/host-ports.py` holds back
+//! (they hand the game host addresses). Two hand-written ports through
+//! their portable bridges stay as the executor's own check of both
+//! directions; the `ported!` entries at the same addresses replace them in
+//! [`table`].
 
 use ffx_bridge::Mem;
 
@@ -42,9 +44,12 @@ fn ms_check_range(_: &mut Exec, args: &Args) -> Ret {
     Ret::eax(ffx_kernel::bridge::ms_check_range(x, lo, hi).cast_unsigned())
 }
 
+/// A hand-written port.
+pub type HandPort = fn(&mut Exec, &Args) -> Ret;
+
 /// The hand-registered ports: address, `ffx.sym` name, convention, stack
 /// words, port.
-pub const HAND: [(u32, &str, Conv, usize, Port); 2] = [
+pub const HAND: [(u32, &str, Conv, usize, HandPort); 2] = [
     (
         0x0060_7d50,
         "Path_ToLowerAscii",
@@ -55,9 +60,9 @@ pub const HAND: [(u32, &str, Conv, usize, Port); 2] = [
     (0x0079_a0c0, "MsCheckRange", Conv::Cdecl, 3, ms_check_range),
 ];
 
-/// Every port of this build.
+/// The hand-registered ports alone.
 #[must_use]
-pub fn table() -> Table {
+pub fn hand() -> Table {
     let mut t = Table::new();
     for (addr, name, conv, words, port) in HAND {
         t.register(
@@ -66,9 +71,39 @@ pub fn table() -> Table {
                 name,
                 conv,
                 words,
-                port,
+                port: Port::Exec(port),
             },
         );
+    }
+    t
+}
+
+/// The `ported!` entries alone (the held ones left out).
+#[must_use]
+pub fn ported() -> Table {
+    let mut t = Table::new();
+    let (hooks, _) = ffx_host_ports::table_hooks();
+    for h in hooks {
+        t.register(
+            h.address,
+            Entry {
+                name: h.name,
+                conv: h.conv,
+                words: h.words,
+                port: Port::Routed(h.run),
+            },
+        );
+    }
+    t
+}
+
+/// Every port of this build: the hand-written ones, then the `ported!`
+/// entries over them.
+#[must_use]
+pub fn table() -> Table {
+    let mut t = hand();
+    for (addr, e) in ported().entries() {
+        t.register(addr, e);
     }
     t
 }

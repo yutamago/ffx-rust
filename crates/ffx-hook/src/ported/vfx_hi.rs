@@ -15,25 +15,10 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
 /// (`0x00b0c3b4`, `0x00b0c3b8`) on a 53-bit operand: loaded as `fld
 /// qword`, the result stored as `fstp dword` through `edi`.
 fn crt_trig(cos: bool, x: f64) -> f32 {
-    let slot = crate::rebase(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }) as *const usize;
-    let mut out = 0f32;
-    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
-    // in ST0 and leaves the result there; the asm loads it, calls it and
-    // stores the result through edi (which the callee keeps), leaving the
-    // x87 stack empty.
-    unsafe {
-        let f = slot.read();
-        std::arch::asm!(
-            "fld qword ptr [{x}]",
-            "call {f}",
-            "fstp dword ptr [edi]",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            in("edi") &raw mut out,
-            clobber_abi("C"),
-        );
-    }
-    out
+    let f = super::import_slot(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 });
+    // the slot holds the CRT's intrinsic, which takes its operand in ST0
+    // (`fld qword`) and leaves the result there (`fstp dword`)
+    ffx_bridge::route::x87(f, &[x])
 }
 
 ported! {

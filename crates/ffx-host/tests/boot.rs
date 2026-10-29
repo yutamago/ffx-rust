@@ -75,5 +75,9 @@ fn boots_through_the_crt_into_win_main() {
         other => panic!("unexpected stop {other:?}\n{report}"),
     }
     let s = ffx_host::report::summary(&exec, &syms);
-    assert!(s.unicorn_functions.len() > 100, "{report}");
+    // ported functions run in Rust now, the rest in Unicorn
+    assert!(
+        s.unicorn_functions.len() + s.rust_functions > 100,
+        "{report}"
+    );
 }

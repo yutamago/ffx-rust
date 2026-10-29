@@ -14,6 +14,7 @@ path = "src/bin/ffx-rust.rs"
 [dependencies]
 ffx-bridge.workspace = true
 ffx-core.workspace = true
+ffx-host-ports.workspace = true
 ffx-kernel.workspace = true
 goblin.workspace = true
 thiserror.workspace = true

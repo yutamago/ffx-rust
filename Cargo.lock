@@ -1015,12 +1015,43 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-core",
+ "ffx-host-ports",
  "ffx-kernel",
  "goblin",
  "libc",
  "thiserror",
  "unicorn-engine",
  "windows-sys",
+]
+
+[[package]]
+name = "ffx-host-ports"
+version = "0.1.0"
+dependencies = [
+ "ffx-auto",
+ "ffx-battle",
+ "ffx-bridge",
+ "ffx-chara",
+ "ffx-field",
+ "ffx-glue-other",
+ "ffx-graphic",
+ "ffx-kernel",
+ "ffx-menu",
+ "ffx-movie",
+ "ffx-panim",
+ "ffx-pcore",
+ "ffx-pcui",
+ "ffx-pload",
+ "ffx-pother-a",
+ "ffx-pother-b",
+ "ffx-prender",
+ "ffx-ps2",
+ "ffx-script",
+ "ffx-sg",
+ "ffx-sound",
+ "ffx-system",
+ "ffx-text",
+ "ffx-vfx",
 ]
 
 [[package]]

@@ -1,0 +1,38 @@
+[package]
+name = "ffx-host-ports"
+description = "ffx-hook's ported! lists compiled for ffx-host's function table (docs/host.md, \"One source of truth\")"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The same module crates as ffx-hook, whose shims this compiles.
+[dependencies]
+ffx-auto.workspace = true
+ffx-battle.workspace = true
+ffx-bridge.workspace = true
+ffx-chara.workspace = true
+ffx-field.workspace = true
+ffx-graphic.workspace = true
+ffx-glue-other.workspace = true
+ffx-pload.workspace = true
+ffx-prender.workspace = true
+ffx-panim.workspace = true
+ffx-pother-a.workspace = true
+ffx-pcore.workspace = true
+ffx-kernel.workspace = true
+ffx-menu.workspace = true
+ffx-movie.workspace = true
+ffx-pcui.workspace = true
+ffx-pother-b.workspace = true
+ffx-ps2.workspace = true
+ffx-script.workspace = true
+ffx-sg.workspace = true
+ffx-sound.workspace = true
+ffx-system.workspace = true
+ffx-text.workspace = true
+ffx-vfx.workspace = true
+
+[lints]
+workspace = true

@@ -219,6 +219,30 @@ for f in sorted(progress.REPO.glob("crates/*/src/**/*.rs")):
         print(f"{f.relative_to(progress.REPO)}:{n}: clamp shape rustc 1.99 miscompiles (write the explicit else-if chain)")
         bad += 1
 
+# The call router (docs/host.md, "One source of truth"): the shims call
+# original code only through ffx_bridge::route (directly or through
+# ported/mod.rs's call_cdecl and friends), which calls natively in the hook
+# and through the function table in ffx-host. A transmuted function pointer
+# or an asm block that calls is invisible to ffx-host (and breaks its build
+# where the ABI doesn't exist); x87 intrinsics go through route::x87.
+ROUTED = re.compile(r"\btransmute\b|\basm!\s*\(")
+for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
+    if f.name == "mod.rs":
+        continue
+    for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+        code = line.split("//", 1)[0]
+        if ROUTED.search(code):
+            print(f"{f.name}:{n}: calls original code around ffx_bridge::route ({code.strip()[:60]}); use route::cdecl/stdcall/thiscall/fastcall/x87 or call_cdecl")
+            bad += 1
+# ffx-host's list of shims it leaves out of its table (tools/host-ports.py).
+import subprocess  # noqa: E402
+
+held = subprocess.run([sys.executable, "-I", str(progress.REPO / "tools/host-ports.py"), "--check"],
+                      capture_output=True, text=True)
+if held.returncode:
+    print(held.stdout.strip() or held.stderr.strip())
+    bad += 1
+
 # Argument counts at the bridges' calls into original code (tools/callarity.py).
 if exe:
     import callarity  # noqa: E402

@@ -62,7 +62,9 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP_CRATES = {'ffx-oracle', 'ffx-studio'}
+# ffx-host: the executor's own Exec::call takes any width (its table, its
+# Unicorn); the ports' calls into it come through ffx_bridge::route
+SKIP_CRATES = {'ffx-oracle', 'ffx-studio', 'ffx-host'}
 
 # method name -> (args before the slice, limit, kind); limit None: by conv
 METHODS = {

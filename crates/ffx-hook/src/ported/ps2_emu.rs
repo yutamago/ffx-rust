@@ -15,42 +15,15 @@ fn crt_trig(t: Trig, x: f32) -> f32 {
         Trig::Cos => 0x00b0_c3b4,
         Trig::Sin => 0x00b0_c3b8,
     };
-    // SAFETY: the slot holds the address of the CRT's intrinsic, which
-    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
-    // and SSE registers clobbered).
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = (crate::rebase(slot) as *const usize).read();
-        let bits: u32;
-        std::arch::asm!(
-            "fld dword ptr [{x}]",
-            "call {f}",
-            "sub esp, 4",
-            "fstp dword ptr [esp]",
-            "pop eax",
-            x = in(reg) &raw const x,
-            f = in(reg) f,
-            lateout("eax") bits,
-            clobber_abi("C"),
-        );
-        f32::from_bits(bits)
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (slot, x);
-        unreachable!("the CRT's trigonometry runs in the 32-bit game")
-    }
+    // the slot holds the address of the CRT's intrinsic, which takes its
+    // argument in ST0 (`fld dword`) and returns in ST0 (`fstp dword`)
+    ffx_bridge::route::x87(super::import_slot(slot), &[f64::from(x)])
 }
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`).
 fn crt_srand(seed: u32) {
-    // SAFETY: the import slot holds the address of MSVCR110's cdecl
-    // `srand(seed)`.
-    unsafe {
-        let f: unsafe extern "C" fn(u32) =
-            std::mem::transmute(*(crate::rebase(0x00b0_c484) as *const usize));
-        f(seed);
-    }
+    // the import slot holds the address of MSVCR110's cdecl `srand(seed)`
+    ffx_bridge::route::cdecl::<()>(super::import_slot(0x00b0_c484), &[seed]);
 }
 
 ported! {

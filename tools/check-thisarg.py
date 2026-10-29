@@ -270,7 +270,7 @@ class Resolver:
         return None
 
 
-PRIMITIVE = r"(\.call|\.call_st0(?:_f64)?|\.call_u64|\.call_sym|\.call_sym_st0(?:_f64)?|\.call_sym_u64|\.call_wide|\.call_sym_wide|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0)"
+PRIMITIVE = r"(\.call|\.call_st0(?:_f64)?|\.call_u64|\.call_sym|\.call_sym_st0(?:_f64)?|\.call_sym_u64|\.call_wide|\.call_sym_wide|\bcall_cdecl(?:_f64|_f32|_u64|_words)?|\bcall0|\broute::(?:cdecl|stdcall)(?:::<[^>]*>)?)"
 
 
 def params_of(code, fn_start):

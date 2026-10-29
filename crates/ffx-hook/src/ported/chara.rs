@@ -39,65 +39,25 @@ fn scratch() -> super::StackFrame<SCRATCH_WORDS> {
 /// as the callers do (`fstp dword`). The result pointer rides in `edi`,
 /// which the intrinsic keeps (map.rs's `st0_call`/`st01_call`).
 fn ci_call(f: u32, args: &[f64]) -> f32 {
-    #[cfg(target_arch = "x86")]
-    {
-        let mut out = 0f32;
-        match *args {
-            // SAFETY: the thunk jumps to the CRT's intrinsic, which takes
-            // its operand in ST0 and leaves its result there (eax, ecx,
-            // edx, the x87 and SSE registers clobbered).
-            [x] => unsafe {
-                std::arch::asm!(
-                    "fld qword ptr [{x}]",
-                    "call {f}",
-                    "fstp dword ptr [edi]",
-                    x = in(reg) &raw const x,
-                    f = in(reg) f,
-                    in("edi") &raw mut out,
-                    clobber_abi("C"),
-                );
-            },
-            // SAFETY: as above, with operands in ST1 and ST0.
-            [a, b] => unsafe {
-                std::arch::asm!(
-                    "fld qword ptr [{a}]",
-                    "fld qword ptr [{b}]",
-                    "call {f}",
-                    "fstp dword ptr [edi]",
-                    a = in(reg) &raw const a,
-                    b = in(reg) &raw const b,
-                    f = in(reg) f,
-                    in("edi") &raw mut out,
-                    clobber_abi("C"),
-                );
-            },
-            _ => return f32::NAN,
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (f, args);
-        f32::NAN
+    // the thunk jumps to the CRT's intrinsic, which takes its operands in
+    // ST0 (and ST1) and leaves its result there (`fstp dword`)
+    match *args {
+        [x] => ffx_bridge::route::x87(f, &[x]),
+        [a, b] => ffx_bridge::route::x87(f, &[a, b]),
+        _ => f32::NAN,
     }
 }
 
 /// A cdecl function of one to three words that returns in `ST0` (read
 /// back as `f64`).
 fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
-    // SAFETY: `f` is an original cdecl function of these words returning
-    // a float in ST0.
-    unsafe {
-        match *args {
-            [a] => std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f as usize)(a),
-            [a, b] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32) -> f64>(
-                f as usize,
-            )(a, b),
-            [a, b, c] => std::mem::transmute::<usize, unsafe extern "C" fn(u32, u32, u32) -> f64>(
-                f as usize,
-            )(a, b, c),
-            _ => f64::NAN,
-        }
+    // `f` is an original cdecl function of these words returning a float
+    // in ST0
+    match *args {
+        [a] => ffx_bridge::route::cdecl(f, &[a]),
+        [a, b] => ffx_bridge::route::cdecl(f, &[a, b]),
+        [a, b, c] => ffx_bridge::route::cdecl(f, &[a, b, c]),
+        _ => f64::NAN,
     }
 }
 

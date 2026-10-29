@@ -17,10 +17,13 @@ same memory. The release runs no `FFX.exe` code.
 | `src/exec.rs` | `Exec`: the mixed Rust/Unicorn executor, `Exec::call`, the stats |
 | `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, milestones) |
 | `src/files.rs` | the `CreateFile` family over `std::fs`, rooted at the game folder |
-| `src/ports.rs` | what this build registers in the table (by hand for now, see below) |
+| `src/ports.rs` | what this build registers in the table: the `ported!` lists (`ffx-host-ports`) and two hand-written ports |
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions, imports, the stop |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
+| `tests/table.rs` | the `ported!` lists in the table: entries, parity with Unicorn, the boot |
+| `crates/ffx-host-ports` | `crates/ffx-hook/src/ported` compiled a second time with `cfg(ffx_host)`: every `ported!` line as a table entry |
+| `crates/ffx-bridge/src/route.rs` | the call router every call from Rust into game code goes through |
 
 ```bash
 cargo run -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X2-HD --cover --budget 60 [--lenient] [--stop-at DLL!name]
@@ -81,45 +84,55 @@ Everything that calls code goes through the table:
 ### One source of truth
 
 The ports are the hook's `ported!` lists (`crates/ffx-hook/src/ported/*.rs`,
-15,158 entries on 2026-10-28). `ffx-host` is to compile those same files a
-second time, with its own `ported/mod.rs`, instead of keeping a second
-list:
+15,157 entries on 2026-10-29). `ffx-host-ports` compiles those same files
+a second time (`#[path]` to `crates/ffx-hook/src/ported/mod.rs`, with
+`cfg(ffx_host)` set by its build script), so there is no second list:
 
-- `ported!` expands to `Entry` registrations: `$addr`, `stringify!($name)`,
-  the ABI string mapped by `Conv::from_abi`, the stack words from the
-  argument sizes (`stack_words`, already in the macro), and an adapter that
-  decodes `Args` into the shim's typed arguments (a `FromWords` trait for
-  `u32`/`i32`/`u8`/`u16`/`bool`/`f32`, two words for `u64`/`f64`) and
-  encodes the result into `Ret` (an `IntoRet` trait: integers to `eax`,
-  64-bit to `edx:eax`, floats to `ST0`, `()` to nothing). No thunk, no
-  patch;
-- `mem()` returns `ArenaMem`; `StackFrame::at()` hands out words on a
-  per-thread stack inside the arena, not the host stack;
-- `call_cdecl`, `call_cdecl_words`, `call_thiscall` and the float forms
-  call `Exec::call`.
+- `ported!` (the `cfg(ffx_host)` arm in `ported/mod.rs`) makes each shim a
+  plain Rust function and each line a `Hook`: `$addr`,
+  `stringify!($name)`, the convention from the ABI string, the stack
+  words (`stack_words`, the hook's own), and an adapter `fn(&Args) -> Ret`
+  that decodes the caller's words into the shim's typed arguments
+  (`FromWords`: register arguments first, one word for `u32`/`i32`/`u8`/
+  `u16`/`bool`/`f32`, two for `u64`/`f64`; `slots` from `Args::slots`) and
+  encodes the result (`IntoRet`: integers to `eax`, 64-bit to `edx:eax`,
+  floats to `ST0`, `()` to nothing, as the thunks' `Saved` keeps the rest).
+  The input syntax is unchanged, so new lines need nothing;
+- `mem()` is `RawMem` at the preferred image base; on 64-bit hosts
+  `RawMem` reads and writes through the router (the arena);
+- `StackFrame` is carved from the game thread's stack in the arena
+  (`Router::frame_alloc`, released on drop), the hosts' scratch
+  (`callee_scratch`, `scratch`) are per-thread blocks in the arena
+  (`Router::scratch`);
+- the crate-root names the shims use (`crate::rebase`, `crate::log`,
+  `crate::harness`, `crate::iggy_log`, `crate::loader_turn`,
+  `crate::hook_only`) are `ffx-host-ports`' own: identity rebase, stderr,
+  and no harness hooks yet.
 
-What has to change first, all in shared code, so it is its own round:
+**The call router** (`ffx_bridge::route`). Every call from Rust into game
+code goes through it: the hook's `call_cdecl*`, `call_thiscall`, `call0`,
+the former 61 `transmute` call sites and 22 x87 `asm!` blocks in the shims
+(`route::cdecl/stdcall/thiscall/fastcall/caller_pops/x87`), and the
+`RawMem` impls of `ffx_bridge::Host`, `ffx_graphic::host::Host` and
+`ffx_script`'s `NativeHost`. With no router on the thread (the hooked game)
+it calls natively, the same words, convention and result width as before;
+in `ffx-host` the executor is the thread's `Router` while a routed port
+runs (`Exec::run_port`), and the call goes to `Exec::call` (the table, an
+import's Rust side, else Unicorn). `route::x87` loads its operands on
+Unicorn's x87 stack through a small stub and calls the intrinsic's thunk
+or import slot there. `tools/check-ported.py` rejects any other way to call
+the game from `ported/*.rs`; check-callconv and check-thisarg know the
+route calls.
 
-- **A call router.** 61 shims call originals by `transmute(crate::rebase(..))`,
-  22 `asm!` blocks call the CRT's x87 intrinsics through the import slots
-  (`_CIsin`, `_CIcos`, `_CIpow`, ...), and the `Host` impls for `RawMem`
-  (`ffx_bridge::Host`, `ffx_graphic::host::Host`, `ffx_script::NativeHost`)
-  call native addresses. All of them must go through one routine,
-  `ffx_bridge::route` (address, convention, words → `eax`/`edx`/`ST0`):
-  a native call in the hooked game, `Exec::call` in `ffx-host`. The
-  intrinsics become Rust functions with the CRT's results (they are imports
-  of `MSVCR110`, and the CRT becomes Rust `std` anyway).
-- **No host-only crate paths.** The shims use `crate::rebase`,
-  `crate::log`, `crate::harness`, `crate::iggy_log`, `crate::loader_turn`,
-  `crate::minimap`, `crate::hook_only` and `ffx_bridge::RawMem` directly
-  (`sound.rs`); `ffx-host`'s `mod.rs` provides the same names.
-- **Per-thread host state.** The router needs the current thread's `Exec`
-  (a `thread_local!` set by the executor), since a port gets no context
-  argument.
-
-Until then `src/ports.rs` registers ports by hand through their portable
-bridges (`Path_ToLowerAscii`, `MsCheckRange`), enough to prove both
-directions.
+**Held shims.** A shim that hands the game a Rust local's address
+(`&raw mut x`, `buf.as_mut_ptr()`, a `thread_local!`'s) can't run from
+the table: on x86_64 that address is outside the arena, and even on i686
+Unicorn doesn't map the host stack. `tools/host-ports.py` lists them
+(their bodies, or same-file helpers they name) in
+`crates/ffx-host-ports/src/held.rs`; they stay out of the table and their
+originals run in Unicorn. 306 on 2026-10-29: each becomes portable when its
+local becomes a `StackFrame`. Rerun the tool after merging `ported!`
+lines; check-ported fails while the list is stale.
 
 ## Rust and Unicorn
 
@@ -231,7 +244,23 @@ through the harness's background mode. This round did not launch it.
 
 ## The Linux check
 
-`tests/boot.rs` (needs `FFX_GAME_DIR`, skips without it):
+`tests/table.rs` (needs `FFX_GAME_DIR`, skips without it):
+
+- `every_ported_line_is_an_entry`: every `ported!` line is a `Hook`, all
+  but the held ones in the table, conventions and words as declared;
+- `ported_functions_match_unicorn_through_the_table`: 15 ported functions
+  (cdecl and thiscall, integer, pointer and float arguments, `eax` and
+  `ST0` results) called from code in Unicorn, once through the table
+  (Unicorn → Rust), once with an empty table (all Unicorn): the same
+  results and the same bytes written;
+- `boot_runs_ports_from_the_table`: the boot with the full table runs 88
+  ported functions in Rust (2,622 calls);
+- `boot_with_the_table_ends_where_unicorn_alone_ends`: that boot and the
+  all-Unicorn boot stop at the same import, call the same imports as often
+  (but `memset`/`memcpy`/`memmove`, which ports do in Rust), and leave
+  every arena region but the stacks byte for byte the same.
+
+`tests/boot.rs`:
 
 - `unicorn_code_enters_a_port_and_matches_the_original`: code in the arena
   calls `MsCheckRange` the way the game does; once with the port (Unicorn
@@ -263,8 +292,10 @@ use the upper 2 GB.
   `Game_Main` reads `GameSetting.ini` (`fopen`, not found in the sandboxed
   documents folder) and builds its first C++ stream: 139 functions in
   Unicorn (5,657 basic blocks), 0 in Rust (no port on this path: the two
-  hand-registered ones aren't reached and the `ported!` lists aren't in
-  the table yet);
+  hand-registered ones aren't reached and the `ported!` lists weren't in
+  the table yet). With the lists in the table (2026-10-29): 88 functions
+  in Rust (2,622 calls), 100 in Unicorn, the same stop and the same
+  memory as the all-Unicorn run (`tests/table.rs`);
 - 889,693 instructions emulated, 1,006 calls from Rust into Unicorn
   (`_initterm` and `_initterm_e`'s initialisers), 3,287 emulator starts
   (every import and port call stops and resumes the emulator);
@@ -286,8 +317,13 @@ use the upper 2 GB.
    the arena, relocated, their `KERNEL32` imports bound to the same stubs;
    `ffx-oracle` already loads MSVCR110 this way), then replace their
    functions with Rust as stage 1 reaches them.
-2. **The `ported!` lists in the table** (above, "One source of truth"):
-   the call router in `ffx-bridge`, then the host-side `ported!`.
+2. **The `ported!` lists in the table**: done (2026-10-29, above). Left:
+   the 306 held shims (their locals to `StackFrame`), the hook-only
+   wrappers that aren't `ported!` lines (`MsScreenProcess`'s
+   `gfx::live`, `rcbgGuideUpdateEx`'s minimap, `renderWorldCulledSorted`),
+   and Rust sides for the CRT's `_CI*` intrinsics and `_isnan` (until
+   MSVCR110 runs in Unicorn, a port's `route::x87` reaches an unstubbed
+   import).
 3. **Windows.** The forwarding imports (window, input, files, D3D11 COM
    handles), `ffx-rust.exe` started by the harness in background mode, and
    the threads.
