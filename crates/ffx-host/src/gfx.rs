@@ -2141,7 +2141,8 @@ pub fn report(exec: &Exec) -> String {
 }
 
 /// Writes the layer's recording into `dir`: `capture.ffxgfx` (the
-/// stream) and `calls.txt` (the text log).
+/// stream after `ffx_gfx::CAPTURE_MAGIC`, as the hook writes it) and
+/// `calls.txt` (the text log).
 ///
 /// # Errors
 /// When a file can't be written.
@@ -2151,7 +2152,9 @@ pub fn write(exec: &Exec, dir: &std::path::Path) -> std::io::Result<()> {
         return Ok(());
     };
     std::fs::create_dir_all(dir)?;
-    std::fs::write(dir.join("capture.ffxgfx"), g.stream())?;
+    let mut file = ffx_gfx::CAPTURE_MAGIC.to_vec();
+    file.extend(g.stream());
+    std::fs::write(dir.join("capture.ffxgfx"), file)?;
     let mut text = g.log().join("\n");
     text.push('\n');
     std::fs::write(dir.join("calls.txt"), text)

@@ -2,13 +2,15 @@
 """Writes crates/ffx-host/src/com_methods.rs: the vtable of every COM
 interface ffx-host stands in for (docs/host.md, "D3D11 and DXGI").
 
-The method order is the declaration order of d3d11.h / dxgi.h, read from
-the `windows` crate's generated `*_Vtbl` structs (the facts only: names,
-order, argument count). Every argument of these methods is one 32-bit word
-on i686 (pointers, UINTs, enums, BOOLs, FLOATs, SIZE_T), so the stack words
-are the argument count plus `this`; the script refuses any other type.
+The method order is the declaration order of d3d11.h / dxgi.h / dinput.h,
+read from the `windows` crate's generated `*_Vtbl` structs (the facts only:
+names, order, argument types). Each argument is one 32-bit word on i686
+(pointers, UINTs, enums, BOOLs, FLOATs, SIZE_T, handles) or two (u64), so
+the stack words follow from the types plus `this`; the script refuses any
+other type in the classes it writes.
 
-    python3 -I tools/host-com-methods.py [windows crate src dir]
+    python3 -I tools/host-com-methods.py [windows crate Graphics dir]
+    cargo fmt -p ffx-host
 """
 
 import glob
