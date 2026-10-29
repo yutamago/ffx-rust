@@ -54,6 +54,7 @@ pub mod m5p_tmpl_abstract_ab;
 pub mod m5p_tmpl_abstract_cd;
 pub mod m5p_tmpl_concrete;
 pub mod m5p_tmpl_members_dynamic;
+pub mod m5p_tmpl_members_phyrearray;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
