@@ -101,19 +101,8 @@ ported! {
 /// ratio, scale_x, scale_y)` (`ret 0x50`): twenty stack words, more than
 /// `call_thiscall` takes; `eax` (its `al` is the answer).
 fn caster_crosses_edge(this: u32, w: &[u32; 20]) -> u32 {
-    #[rustfmt::skip]
-    type F = unsafe extern "thiscall" fn(
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
-    ) -> u32;
     let f = mem().rebase(ffx_prender::h3b_glue8::CROSSES_EDGE);
-    // SAFETY: the function of this build at that address is a thiscall
-    // taking exactly twenty stack words, which it pops (`ret 0x50`).
-    unsafe {
-        let g = std::mem::transmute::<usize, F>(f as usize);
-        g(
-            this, w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12],
-            w[13], w[14], w[15], w[16], w[17], w[18], w[19],
-        )
-    }
+    // the function of this build at that address is a thiscall taking
+    // exactly twenty stack words, which it pops (`ret 0x50`)
+    ffx_bridge::route::thiscall(f, this, w)
 }

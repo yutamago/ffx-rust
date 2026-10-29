@@ -16,6 +16,7 @@ ffx-bridge.workspace = true
 ffx-core.workspace = true
 ffx-fpu = { workspace = true, features = ["unicorn"] }
 ffx-gfx.workspace = true
+ffx-host-ports.workspace = true
 ffx-kernel.workspace = true
 goblin.workspace = true
 md-5.workspace = true

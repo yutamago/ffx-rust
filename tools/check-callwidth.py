@@ -64,7 +64,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ffx-host runs the game's code in its own executor (docs/host.md), which
 # passes any number of words, as ffx-oracle does; the limits are the hooked
-# game's
+# game's. The ports' calls into it come through ffx_bridge::route
 SKIP_CRATES = {'ffx-oracle', 'ffx-studio', 'ffx-host'}
 
 # method name -> (args before the slice, limit, kind); limit None: by conv

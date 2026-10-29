@@ -26,39 +26,12 @@ fn menu_packet(build: impl FnOnce(&mut super::RawMem, u32) -> u32) -> u32 {
 /// `a` in `ST0` (with `b` set, `a` in `ST1` and `b` in `ST0`), the result
 /// read back from `ST0` as a double.
 fn crt_x87(slot: u32, a: f64, b: Option<f64>) -> f64 {
-    // SAFETY: the slot holds the address of a CRT intrinsic taking its
-    // operands in ST0/ST1 and returning in ST0 (eax, ecx, edx, x87 and SSE
-    // clobbered). Every input operand is used before the call.
-    #[cfg(target_arch = "x86")]
-    unsafe {
-        let f = (crate::rebase(slot) as *const usize).read();
-        let ops = [a, b.unwrap_or(0.0)];
-        let two = u32::from(b.is_some());
-        let (lo, hi): (u32, u32);
-        std::arch::asm!(
-            "fld qword ptr [{ops}]",
-            "test {two}, {two}",
-            "jz 2f",
-            "fld qword ptr [{ops} + 8]",
-            "2:",
-            "call {f}",
-            "sub esp, 8",
-            "fstp qword ptr [esp]",
-            "pop eax",
-            "pop edx",
-            ops = in(reg) ops.as_ptr(),
-            two = in(reg) two,
-            f = in(reg) f,
-            lateout("eax") lo,
-            lateout("edx") hi,
-            clobber_abi("C"),
-        );
-        f64::from_bits(u64::from(lo) | (u64::from(hi) << 32))
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (slot, a, b);
-        unreachable!("the CRT's intrinsics: this runs in the 32-bit game")
+    // the slot holds the address of a CRT intrinsic taking its operands
+    // in ST0/ST1 and returning in ST0 (`fstp qword`)
+    let f = super::import_slot(slot);
+    match b {
+        Some(b) => ffx_bridge::route::x87(f, &[a, b]),
+        None => ffx_bridge::route::x87(f, &[a]),
     }
 }
 
@@ -108,25 +81,22 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
 
 /// Calls a game function returning its result in `ST0` (cdecl, 0 to 8
 /// word arguments), read back as a double.
-#[allow(clippy::many_single_char_names)] // the arguments, in order
 fn fcall_ptr(f: u32, a: &[u32]) -> f64 {
-    type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
     let mut w = [0u32; 8];
     let n = a.len().min(8);
     w[..n].copy_from_slice(&a[..n]);
-    // SAFETY: a cdecl function of at most 8 word arguments returning in
-    // ST0; the extra zero words it doesn't read sit on the caller's side.
-    unsafe {
-        std::mem::transmute::<usize, F8>(f as usize)(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7])
-    }
+    // a cdecl function of at most 8 word arguments returning in ST0; the
+    // extra zero words it doesn't read sit on the caller's side
+    ffx_bridge::route::cdecl(f, &w)
 }
 
 /// `graphicUiRemapX2`/`graphicUiRemapY2(v)` (`0x006447e0`/`0x00644820`)
 /// through the game's entries: the result in `ST0`, read back as a double.
 fn ui_remap(y: bool, v: f32) -> f64 {
-    let f = crate::rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
-    // SAFETY: a cdecl function of one float word returning in ST0.
-    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(v.to_bits()) }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(if y { 0x0064_4820 } else { 0x0064_47e0 }) as u32;
+    // a cdecl function of one float word returning in ST0
+    ffx_bridge::route::cdecl(f, &[v.to_bits()])
 }
 
 ported! {
@@ -3518,8 +3488,7 @@ ported! {
             let mut buf = [0u8; 0x400];
             let at = u32::try_from(buf.as_mut_ptr() as usize).unwrap_or(0);
             let list = u32::try_from(args.as_ptr() as usize).unwrap_or(0);
-            // SAFETY: an import slot of this build, filled by the loader.
-            let vsprintf = unsafe { (crate::rebase(0x00b0_c430) as *const u32).read() };
+            let vsprintf = super::import_slot(0x00b0_c430);
             call_ptr(vsprintf, &[at, fmt, list]);
             gu::gu_window_control_set_text(&mut m, window, id, at, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
         }
@@ -5184,15 +5153,17 @@ ported! {
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
 /// (the hook when it is on): the result in `ST0`, read back as a double.
 fn sel_list_cursor_x(window: u32) -> f64 {
-    let f = crate::rebase(0x008d_1bc0);
-    // SAFETY: a cdecl function of one word returning in ST0.
-    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(window) }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(0x008d_1bc0) as u32;
+    // a cdecl function of one word returning in ST0
+    ffx_bridge::route::cdecl(f, &[window])
 }
 
 /// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result
 /// in `ST0`, read back as a double.
 fn input_get_cur_time() -> f64 {
-    let f = crate::rebase(0x0063_0c60);
-    // SAFETY: a cdecl function of no arguments returning in ST0.
-    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)() }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(0x0063_0c60) as u32;
+    // a cdecl function of no arguments returning in ST0
+    ffx_bridge::route::cdecl(f, &[])
 }

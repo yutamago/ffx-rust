@@ -153,6 +153,31 @@ pub fn summary(exec: &Exec, syms: &Symbols) -> Summary {
     }
 }
 
+/// Every port that ran (all threads) as tab-separated lines (address,
+/// name, calls), for `--ports FILE`: the list to bisect with
+/// `FFX_HOST_DISABLE`/`FFX_HOST_ONLY` (`crate::ports::ported`).
+#[must_use]
+pub fn ports_tsv(exec: &Exec) -> String {
+    let mut stats = exec.stats.clone();
+    for t in exec
+        .shared()
+        .threads
+        .lock()
+        .map(|t| t.clone())
+        .unwrap_or_default()
+    {
+        if let Some(s) = &t.stats {
+            stats.merge(s);
+        }
+    }
+    let mut out = String::from("address\tname\tcalls\n");
+    for (&addr, &n) in &stats.ports {
+        let name = exec.table().get(addr).map_or("?", |e| e.name);
+        let _ = writeln!(out, "{addr:#010x}\t{name}\t{n}");
+    }
+    out
+}
+
 /// Every Unicorn function as tab-separated lines (module, start, name,
 /// calls, blocks, samples), for `--profile FILE`.
 #[must_use]

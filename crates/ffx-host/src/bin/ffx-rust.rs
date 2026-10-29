@@ -3,14 +3,15 @@
 //! ```text
 //! ffx-rust [--game-dir DIR] [--sym FILE] [--budget SECONDS] [--cover]
 //!          [--lenient] [--count] [--stop-at DLL!name]... [--no-dlls]
-//!          [--documents DIR] [--profile FILE] [--routes FILE]
+//!          [--documents DIR] [--profile FILE] [--routes FILE] [--ports FILE]
 //!          [--gfx-out DIR] [--gfx-null] [--presents N]
 //! ```
 //!
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
 //! function that ran in Unicorn with its calls and time (`--cover`
-//! implied); `--routes` where each import went (Rust, DLL, missing).
+//! implied); `--routes` where each import went (Rust, DLL, missing);
+//! `--ports` every port that ran, with its calls.
 //!
 //! The game directory defaults to `FFX_GAME_DIR`, then the directory of
 //! this executable. The run's report goes to stdout. Development build:
@@ -33,6 +34,7 @@ fn main() -> ExitCode {
     let mut opts = ffx_host::Options::default();
     let mut profile: Option<PathBuf> = None;
     let mut routes: Option<PathBuf> = None;
+    let mut ports: Option<PathBuf> = None;
     let mut gfx_out: Option<PathBuf> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -55,6 +57,7 @@ fn main() -> ExitCode {
                 cover = true;
             }
             "--routes" => routes = args.next().map(PathBuf::from),
+            "--ports" => ports = args.next().map(PathBuf::from),
             "--gfx-out" => gfx_out = args.next().map(PathBuf::from),
             "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
             "--presents" => {
@@ -118,6 +121,11 @@ fn main() -> ExitCode {
         && let Err(e) = std::fs::write(&p, ffx_host::report::routes(&exec))
     {
         eprintln!("routes: {e}");
+    }
+    if let Some(p) = ports
+        && let Err(e) = std::fs::write(&p, ffx_host::report::ports_tsv(&exec))
+    {
+        eprintln!("ports: {e}");
     }
     println!("wall: {:.3} s", t.elapsed().as_secs_f64());
     if count {

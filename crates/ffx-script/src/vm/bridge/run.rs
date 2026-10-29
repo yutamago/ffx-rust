@@ -141,10 +141,10 @@ thread_local! {
     static SCRATCH: core::cell::UnsafeCell<[u32; 16]> = const { core::cell::UnsafeCell::new([0; 16]) };
 }
 
-#[cfg(target_pointer_width = "32")]
+/// In the game every call goes through `ffx_bridge::route`: a native call
+/// in the hooked game, the function table in `ffx-host`.
 impl NativeHost for ffx_bridge::RawMem {
     fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
-        type F6 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32) -> f64;
         // no panic: the natives run inside the game; a longer list fails
         if args.len() > ffx_bridge::CALL_WORDS {
             ffx_bridge::too_many_arguments(
@@ -157,17 +157,11 @@ impl NativeHost for ffx_bridge::RawMem {
         }
         let mut a = [0u32; ffx_bridge::CALL_WORDS];
         a[..args.len()].copy_from_slice(args);
-        // SAFETY: the address is a cdecl native of the game returning in
-        // ST0 and taking at most these arguments; the caller pops them.
-        unsafe {
-            let f: F6 = std::mem::transmute(addr as usize);
-            f(a[0], a[1], a[2], a[3], a[4], a[5])
-        }
+        // a cdecl native of the game returning in ST0 and taking at most
+        // these arguments; the caller pops them
+        ffx_bridge::route::cdecl(addr, &a)
     }
-    #[allow(clippy::many_single_char_names)]
     fn call_n(&mut self, addr: u32, args: &[u32]) -> u32 {
-        type F12 =
-            unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
         // no panic: the natives run inside the game; a longer list would
         // be cut short, so it fails as `Host::call`'s does
         if args.len() > CALL_N_WORDS {
@@ -176,60 +170,30 @@ impl NativeHost for ffx_bridge::RawMem {
         }
         let mut a = [0u32; CALL_N_WORDS];
         a[..args.len()].copy_from_slice(args);
-        // SAFETY: a cdecl function of the game taking at most 12 word
-        // arguments; the extra words sit on the caller's side, which pops.
-        unsafe {
-            let f: F12 = std::mem::transmute(addr as usize);
-            f(
-                a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11],
-            )
-        }
+        // a cdecl function of the game taking at most 12 word arguments;
+        // the extra words sit on the caller's side, which pops
+        ffx_bridge::route::cdecl(addr, &a)
     }
-    #[cfg(target_arch = "x86")]
     fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
-        let mut out = 0f64;
-        // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
-        // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
-        // ecx, edx, the x87 and SSE registers clobbered). The x87 stack is
-        // empty here (Rust keeps no values in it). Only edi, which the
-        // callee keeps, is read after the call.
-        unsafe {
-            std::arch::asm!(
-                "fld qword ptr [{a}]",
-                "fld qword ptr [{b}]",
-                "call {f}",
-                "fstp qword ptr [edi]",
-                a = in(reg) &raw const a,
-                b = in(reg) &raw const b,
-                f = in(reg) addr,
-                in("edi") &raw mut out,
-                clobber_abi("C"),
-            );
-        }
-        out
+        // the thunk jumps to the CRT's intrinsic, which takes its operands
+        // in ST1 and ST0 and leaves the result alone in ST0 (`fstp m64`)
+        ffx_bridge::route::x87(addr, &[a, b])
     }
-    #[cfg(target_arch = "x86")]
     fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
-        let mut out = 0f64;
-        // SAFETY: as call_intrinsic2, with the one operand in ST0.
-        unsafe {
-            std::arch::asm!(
-                "fld qword ptr [{a}]",
-                "call {f}",
-                "fstp qword ptr [edi]",
-                a = in(reg) &raw const a,
-                f = in(reg) addr,
-                in("edi") &raw mut out,
-                clobber_abi("C"),
-            );
-        }
-        out
+        // as call_intrinsic2, with the one operand in ST0
+        ffx_bridge::route::x87(addr, &[a])
     }
     fn scratch(&mut self) -> u32 {
+        if let Some(at) = ffx_bridge::route::scratch(ffx_bridge::route::Scratch::Script) {
+            return at;
+        }
         // the game thread's own buffer: a 32-bit process, so the address
         // fits; natives do not nest
+        #[cfg(target_pointer_width = "32")]
         #[allow(clippy::cast_possible_truncation)]
-        SCRATCH.with(|s| s.get() as usize as u32)
+        return SCRATCH.with(|s| s.get() as usize as u32);
+        #[cfg(not(target_pointer_width = "32"))]
+        0
     }
 }
 

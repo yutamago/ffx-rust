@@ -23,35 +23,9 @@ use super::{mem, ported};
 /// `_CIatan2(y, x)` through MSVCR110's import slot (`y` in `ST1`, `x` in
 /// `ST0`), the result stored as a float.
 fn ci_atan2(y: f64, x: f64) -> f32 {
-    #[cfg(target_arch = "x86")]
-    {
-        let mut out = 0f32;
-        let ops = [y, x];
-        // SAFETY: the slot holds the CRT's `_CIatan2`, which takes its
-        // operands in ST1/ST0 and leaves its result in ST0 (eax, ecx, edx,
-        // the x87 and SSE registers clobbered). The x87 stack is empty here.
-        // Only edi, which the callee keeps, is read after the call.
-        unsafe {
-            let f = (crate::rebase(link::CI_ATAN2_SLOT) as *const usize).read();
-            std::arch::asm!(
-                "fld qword ptr [{ops}]",
-                "fld qword ptr [{ops} + 8]",
-                "call {f}",
-                "fstp dword ptr [edi]",
-                ops = in(reg) ops.as_ptr(),
-                f = in(reg) f,
-                in("edi") &raw mut out,
-                clobber_abi("C"),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        // the CRT's intrinsics only run in the 32-bit game
-        let _ = (y, x);
-        f32::NAN
-    }
+    // the slot holds the CRT's `_CIatan2`, which takes its operands in
+    // ST1/ST0 and leaves its result in ST0 (`fstp dword`)
+    ffx_bridge::route::x87(super::import_slot(link::CI_ATAN2_SLOT), &[y, x])
 }
 
 ported! {

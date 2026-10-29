@@ -40,12 +40,12 @@ HELPERS = {
     "call_cdecl": (12, "crates/ffx-hook/src/ported/mod.rs", r"fn call_cdecl\(f: u32, a: &\[u32\]\)[\s\S]*?a\.len\(\)\.min\(12\)"),
     "call_ptr_f64": (12, "crates/ffx-hook/src/ported/vfx.rs", r"fn call_ptr_f64[\s\S]*?a\.len\(\)\.min\(12\)"),
     "harness_call": (8, "crates/ffx-hook/src/harness.rs", r"type F8 = unsafe extern \"C\" fn\(u32, u32, u32, u32, u32, u32, u32, u32\)"),
-    "bridge_call": (6, "crates/ffx-bridge/src/lib.rs", r"impl Host for RawMem \{\s*fn call\(&mut self, addr: u32, args: &\[u32\]\) -> u32 \{\s*type F6"),
-    "native_call_float": (6, "crates/ffx-script/src/vm/bridge/run.rs", r"fn call_float\(&mut self, addr: u32, args: &\[u32\]\) -> f64 \{\s*type F6"),
+    "bridge_call": (6, "crates/ffx-bridge/src/lib.rs", r"impl Host for RawMem \{\s*fn call\(&mut self, addr: u32, args: &\[u32\]\) -> u32 \{[\s\S]*?let mut a = \[0u32; CALL_WORDS\];[\s\S]*?route::cdecl\(addr, &a\)"),
+    "native_call_float": (6, "crates/ffx-script/src/vm/bridge/run.rs", r"fn call_float\(&mut self, addr: u32, args: &\[u32\]\) -> f64 \{[\s\S]*?let mut a = \[0u32; ffx_bridge::CALL_WORDS\];[\s\S]*?route::cdecl\(addr, &a\)"),
     "native_call_n": (12, "crates/ffx-script/src/vm/bridge/run.rs", r"pub const CALL_N_WORDS: usize = 12;[\s\S]*?fn call_n\(&mut self[\s\S]*?args\.len\(\) > CALL_N_WORDS"),
     # cdecl and thiscall: 12; stdcall and fastcall: 8 (`classify`)
-    "graphic_call": (12, "crates/ffx-graphic/src/host.rs", r"fn call\(&mut self, addr: u32, conv: Conv, args: &\[u32\]\) -> u32 \{\s*type C12"),
-    "graphic_call_st0": (8, "crates/ffx-graphic/src/host.rs", r"fn float_call_any<R>\(addr: u32, conv: Conv, args: &\[u32\]\) -> R \{\s*let mut a = \[0u32; 8\]"),
+    "graphic_call": (12, "crates/ffx-graphic/src/host.rs", r"fn call\(&mut self, addr: u32, conv: Conv, args: &\[u32\]\) -> u32 \{[\s\S]*?Conv::Cdecl => route::cdecl\(addr, &a\[\.\.12\]\)"),
+    "graphic_call_st0": (8, "crates/ffx-graphic/src/host.rs", r"fn float_call_any<R: route::Out>\(addr: u32, conv: Conv, args: &\[u32\]\) -> R \{\s*let mut a = \[0u32; 8\]"),
 }
 # helpers whose word counts are match arms: (file, function) -> parsed set
 ARM_HELPERS = {

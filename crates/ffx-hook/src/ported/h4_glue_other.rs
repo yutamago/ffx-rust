@@ -2766,33 +2766,9 @@ ported! {
 /// `ST0` as `fstp qword` stores it (exact: the remainder of two `f64`s is
 /// one).
 fn ci_fmod(a: f64, b: f64) -> f64 {
-    let f = crate::rebase(k1::CI_FMOD);
-    #[cfg(target_arch = "x86")]
-    {
-        let pair = [a, b];
-        let mut out = 0f64;
-        // SAFETY: the thunk jumps to the CRT's `_CIfmod`, which takes its
-        // operands in ST1 and ST0 and leaves the result alone in ST0 (eax,
-        // ecx, edx, the x87 and SSE registers clobbered); the asm loads
-        // them, calls it and stores the result through edi (which the
-        // callee keeps), leaving the x87 stack empty.
-        unsafe {
-            std::arch::asm!(
-                "fld qword ptr [{p}]",
-                "fld qword ptr [{p} + 8]",
-                "call {f}",
-                "fstp qword ptr [edi]",
-                p = in(reg) &raw const pair,
-                in("edi") &raw mut out,
-                f = in(reg) f,
-                clobber_abi("C"),
-            );
-        }
-        out
-    }
-    #[cfg(not(target_arch = "x86"))]
-    {
-        let _ = (f, a, b);
-        0.0
-    }
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(k1::CI_FMOD) as u32;
+    // the thunk jumps to the CRT's `_CIfmod`, which takes its operands in
+    // ST1 and ST0 and leaves the result alone in ST0 (`fstp qword`)
+    ffx_bridge::route::x87(f, &[a, b])
 }

@@ -652,6 +652,12 @@ FREE = {
     "call_cdecl_words": (0, "cdecl", 1),
     "call0": (0, "cdecl", None),
     "call_thiscall": (0, "thiscall", 2),
+    # ffx_bridge::route's typed calls (the call router, docs/host.md)
+    "cdecl": (0, "cdecl", 1),
+    "stdcall": (0, "stdcall", 1),
+    "thiscall": (0, "thiscall", 2),
+    "fastcall": (0, "fastcall", 1),
+    "caller_pops": (0, "fastcall-caller-pops", 1),
 }
 TRANSMUTE = re.compile(r'\blet\s+(?:mut\s+)?(\w+)\s*:\s*unsafe\s+extern\s+"(\w+)"\s+fn\s*\(')
 ABI = {"C": "cdecl", "cdecl": "cdecl", "stdcall": "stdcall", "thiscall": "thiscall",
