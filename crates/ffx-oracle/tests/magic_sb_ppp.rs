@@ -126,6 +126,9 @@ fn run_part() {
         t.set_u32(g, v);
     }
     t.set_u32(w(&t, 0x2e5), 0x2e5_2e5);
+    // the word handed back (`**+0x334` into the global at `+0x33b`)
+    t.set_u32(w(&t, 0x334), PTRS + 0x40);
+    t.set_u32(PTRS + 0x40, 0x334_0334);
     stubs(&mut t, lock);
     for (flags, delay) in [
         (0u32, 0u32),
