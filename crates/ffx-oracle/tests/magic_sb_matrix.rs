@@ -73,6 +73,7 @@ fn angle_sets() -> Vec<[u32; 3]> {
 fn check(
     t: &mut Twin,
     rva: u32,
+    thunk: u32,
     port: fn(&mut magic::PortGame, &ffx_magic::Image, u32, u32, u32) -> u32,
 ) {
     for a in angle_sets() {
@@ -80,8 +81,10 @@ fn check(
             t.set_u32(ANGLES + 4 * i, x);
         }
         t.write(OUT, &[0xcd; 0x40]);
-        t.check(
+        t.check_thunked(
             t.at(rva),
+            t.at(thunk),
+            true,
             Call {
                 eax: 1,
                 ecx: OUT,
@@ -100,7 +103,7 @@ fn rotation_52a0() {
     let Some(mut t) = twin(0x52a0, 0x1c) else {
         return;
     };
-    check(&mut t, 0x52a0, sb_matrix::rotation_52a0);
+    check(&mut t, 0x52a0, 0x5b90, sb_matrix::rotation_52a0);
 }
 
 #[test]
@@ -108,5 +111,31 @@ fn rotation_19d0() {
     let Some(mut t) = twin(0x19d0, 0x17) else {
         return;
     };
-    check(&mut t, 0x19d0, sb_matrix::rotation_19d0);
+    check(&mut t, 0x19d0, 0x5b50, sb_matrix::rotation_19d0);
+}
+
+/// The shared-3 list's three (`ffx_magic::s3_matrix`), through their
+/// thunks too.
+#[test]
+fn rotation_47c0() {
+    let Some(mut t) = twin(0x47c0, 0x1f) else {
+        return;
+    };
+    check(&mut t, 0x47c0, 0x5b80, ffx_magic::s3_matrix::rotation_47c0);
+}
+
+#[test]
+fn rotation_4d40() {
+    let Some(mut t) = twin(0x4d40, 0x0c) else {
+        return;
+    };
+    check(&mut t, 0x4d40, 0x5b60, ffx_magic::s3_matrix::rotation_4d40);
+}
+
+#[test]
+fn rotation_4250() {
+    let Some(mut t) = twin(0x4250, 0x0c) else {
+        return;
+    };
+    check(&mut t, 0x4250, 0x5b70, ffx_magic::s3_matrix::rotation_4250);
 }

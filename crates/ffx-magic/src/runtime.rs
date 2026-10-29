@@ -152,10 +152,12 @@ pub const INIT_MAGIC_PRX: Sig = Sig {
 };
 
 /// A slot thunk: `push ebp; mov ebp, esp; mov eax, [G]; mov eax, [eax +
-/// 4 * slot]; pop ebp; jmp eax`. The game stores these as the particle
-/// programs' step functions; the overlay calls them for its slot calls.
-/// The port jumps to the slot's function with the caller's stack as it
-/// is (eax holds the target, as in the original).
+/// 4 * slot]; pop ebp; jmp eax` (17 bytes), or the same without the frame
+/// (`mov eax, [G]; mov eax, [eax + 4 * slot]; jmp eax`, 13 bytes;
+/// `magic_0275`, `magic_0297` and others). The game stores these as the
+/// particle programs' step functions; the overlay calls them for its slot
+/// calls. The port jumps to the slot's function with the caller's stack
+/// as it is (eax holds the target, as in the original).
 pub fn slot_thunk<G: Game>(g: &mut G, img: &Image, f: &Frame) -> Ret {
     let table = table_global(img).unwrap_or(0);
     let slot = slot_of_thunk(img, f.at, table).unwrap_or(0);
@@ -173,23 +175,26 @@ pub const SLOT_THUNK: Sig = Sig {
 };
 
 /// The slot a thunk at `addr` jumps through, when the code there is a
-/// slot thunk over `table_global`.
+/// slot thunk over `table_global` (either shape of [`slot_thunk`]).
 #[must_use]
 pub fn slot_of_thunk(img: &Image, addr: u32, table_global: u32) -> Option<u32> {
+    let b = |o: u32| img.word(addr + o).to_le_bytes()[0];
     // 55 8b ec a1 G 8b 80 off 5d ff e0
-    let w0 = img.word(addr).to_le_bytes();
-    let w2 = img.word(addr + 8).to_le_bytes();
-    let w3 = img.word(addr + 12).to_le_bytes();
-    let w4 = img.word(addr + 16).to_le_bytes();
-    let shape = w0 == [0x55, 0x8b, 0xec, 0xa1]
+    let framed = [b(0), b(1), b(2), b(3)] == [0x55, 0x8b, 0xec, 0xa1]
         && img.word(addr + 4) == table_global
-        && w2[0] == 0x8b
-        && w2[1] == 0x80
-        && w3[2] == 0x5d
-        && w3[3] == 0xff
-        && w4[0] == 0xe0;
-    let off = img.word(addr + 10);
-    (shape && off.is_multiple_of(4) && off < 0x1000).then_some(off / 4)
+        && [b(8), b(9), b(14), b(15), b(16)] == [0x8b, 0x80, 0x5d, 0xff, 0xe0];
+    // a1 G 8b 80 off ff e0
+    let bare = b(0) == 0xa1
+        && img.word(addr + 1) == table_global
+        && [b(5), b(6), b(11), b(12)] == [0x8b, 0x80, 0xff, 0xe0];
+    let off = if framed {
+        img.word(addr + 10)
+    } else if bare {
+        img.word(addr + 7)
+    } else {
+        return None;
+    };
+    (off.is_multiple_of(4) && off < 0x1000).then_some(off / 4)
 }
 
 /// `xor eax, eax; ret` (402 overlays): returns 0.

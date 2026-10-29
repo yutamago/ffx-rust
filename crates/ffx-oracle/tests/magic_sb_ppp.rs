@@ -144,8 +144,10 @@ fn run_part() {
                         node(&mut t, flags, delay, e4, e6, done, func);
                         t.set_u32(pause, paused);
                         t.set_u32(lock, 0x42);
-                        t.check(
+                        t.check_thunked(
                             f,
+                            t.at(0x3a20),
+                            false,
                             Call {
                                 eax: 0x77,
                                 ecx: GROUP,

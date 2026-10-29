@@ -8,7 +8,7 @@ mod magic;
 mod sa;
 
 use magic::{Call, Eax, TRAPS, Twin};
-use sa::{CURSOR, RINGS, VTABLE_2, check_this, check_this_eax, handler_stubs, node, rec, ring};
+use sa::{CURSOR, RINGS, VTABLE_2, check_this_thunk, handler_stubs, node, rec, ring};
 
 /// A /GS handler's `eax` is the cookie's junk on the first ring (no move).
 fn gs_eax(k: usize) -> Eax {
@@ -34,7 +34,7 @@ fn place_by_model_number() {
             ring(&mut t, c, p, cp, 0x40 + k as u8);
             t.set_u8(node(0) + 0x2d, flag);
             t.set_u8(node(0) + 0x2c, 0x80 | flag);
-            check_this(&mut t, f, ffx_magic::sa_summon::place);
+            check_this_thunk(&mut t, f, 0x2f20, ffx_magic::sa_summon::place, Eax::Checked);
         }
     }
 }
@@ -64,7 +64,13 @@ fn model_setup_by_flags() {
             t.set_u32(node(0) + 0x64, motion);
             t.set_u32(node(5), parts[0]);
             t.set_u32(node(5) + 4, parts[1]);
-            check_this(&mut t, f, ffx_magic::sa_summon::model_setup);
+            check_this_thunk(
+                &mut t,
+                f,
+                0x2a60,
+                ffx_magic::sa_summon::model_setup,
+                Eax::Checked,
+            );
         }
     }
 }
@@ -81,7 +87,13 @@ fn sub_walk_runs_the_inner_ring() {
         t.write(obj, &[0x77; 0x100]);
         t.set_u32(obj, VTABLE_2);
         t.set_u32(node(0) + 0x3c, obj);
-        check_this(&mut t, f, ffx_magic::sa_summon::sub_walk);
+        check_this_thunk(
+            &mut t,
+            f,
+            0x4050,
+            ffx_magic::sa_summon::sub_walk,
+            Eax::Checked,
+        );
     }
 }
 
@@ -102,7 +114,13 @@ fn scaled_place_scales() {
         {
             t.set_u32(node(0) + 0x20 + 4 * i as u32, v.to_bits());
         }
-        check_this(&mut t, f, ffx_magic::sa_summon::scaled_place);
+        check_this_thunk(
+            &mut t,
+            f,
+            0x31b0,
+            ffx_magic::sa_summon::scaled_place,
+            Eax::Checked,
+        );
     }
 }
 
@@ -232,7 +250,13 @@ fn vector_op_by_operation() {
                 t.set_u32(node(0) + 0x38, owner);
                 t.set_u32(node(0) + 0x3c, 0x0003_c3c3);
                 t.set_u8(node(0) + 0x40, op);
-                check_this(&mut t, f, ffx_magic::sa_summon::vector_op);
+                check_this_thunk(
+                    &mut t,
+                    f,
+                    0x30f0,
+                    ffx_magic::sa_summon::vector_op,
+                    Eax::Checked,
+                );
             }
         }
     }
@@ -288,7 +312,7 @@ fn bounce_rebuilds_the_vector() {
             }
             t.set_u16(node(0) + 0x40, 7);
             t.set_u16(node(0) + 0x42, count);
-            check_this_eax(&mut t, f, ffx_magic::sa_summon::bounce, gs_eax(k));
+            check_this_thunk(&mut t, f, 0x6020, ffx_magic::sa_summon::bounce, gs_eax(k));
         }
     }
 }
@@ -312,7 +336,7 @@ fn pair_aim_counts_down() {
                 }
                 t.set_u32(node(0) + 0x2c, flags);
                 t.set_u32(node(0) + 0x30, count);
-                check_this_eax(&mut t, f, ffx_magic::sa_summon::pair_aim, gs_eax(k));
+                check_this_thunk(&mut t, f, 0x4240, ffx_magic::sa_summon::pair_aim, gs_eax(k));
             }
         }
     }
@@ -324,6 +348,7 @@ const TABLE_SLOT: u32 = 32;
 fn bone_case(
     t: &mut Twin,
     f: u32,
+    thunk: u32,
     port: fn(&mut magic::PortGame, &ffx_magic::Image, &ffx_magic::Frame) -> ffx_magic::Ret,
 ) {
     rec(t, TABLE_SLOT, 2, |_, a| 0x0032_0000 ^ a[0]);
@@ -361,7 +386,7 @@ fn bone_case(
                 }
             }
             t.set_u8(node(0) + 0x148, which);
-            check_this_eax(t, f, port, gs_eax(k));
+            check_this_thunk(t, f, thunk, port, gs_eax(k));
         }
     }
 }
@@ -370,14 +395,14 @@ fn bone_case(
 fn bone_plain_updates() {
     let Some(mut t) = twin() else { return };
     let f = t.at(0x5820);
-    bone_case(&mut t, f, ffx_magic::sa_summon::bone_plain);
+    bone_case(&mut t, f, 0x5c10, ffx_magic::sa_summon::bone_plain);
 }
 
 #[test]
 fn bone_scaled_updates() {
     let Some(mut t) = twin() else { return };
     let f = t.at(0x2b20);
-    bone_case(&mut t, f, ffx_magic::sa_summon::bone_scaled);
+    bone_case(&mut t, f, 0x2e80, ffx_magic::sa_summon::bone_scaled);
 }
 
 #[test]
