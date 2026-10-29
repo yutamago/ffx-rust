@@ -28,6 +28,7 @@ use ffx_pother_a::m5p_scripting_run::{self as ru_, bridge as ru};
 use ffx_pother_a::m5p_scripting_sched::{self as sc_, bridge as sc};
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::{self as st_, bridge as st};
+use ffx_pother_a::m5p_scripting_vec::{self as ve_, bridge as ve};
 use m5p_scripting_twins::{JUNK, Rng, Twins};
 
 /// Floats for the copies through the x87: signs, fractions, huge, tiny,
@@ -2498,4 +2499,60 @@ fn b7_scheduler_runs_match_the_original() {
         t.w32(running, old);
         t.unstub();
     }
+}
+
+// ---- batch 8: Vector dot and cross products ----
+
+#[test]
+fn b8_vector_products_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let l = 0x00c9_1100;
+        let mut rng = Rng(0x1357_2468);
+        for k in 0..60u32 {
+            let a = t.zeros(0x10);
+            let b_ = t.zeros(0x10);
+            for i in 0..4 {
+                let w = |r: u32| (r & 0x8000_0000) | (0x3a00_0000 + (r & 0x0fff_ffff));
+                let (x, y) = if k < 10 {
+                    (
+                        FLOATS[(k + i) as usize % FLOATS.len()],
+                        FLOATS[(k * 3 + i) as usize % FLOATS.len()],
+                    )
+                } else {
+                    (w(rng.next()), w(rng.next()))
+                };
+                t.w32(a + 4 * i, x);
+                t.w32(b_ + 4 * i, y);
+            }
+            // either argument missing, then both
+            for (pa, pb) in [(0u32, b_), (a, 0), (a, b_)] {
+                lua_b3(&mut t, 0, 1, 1, 0, 3);
+                let c = vec_args(&mut t, pa, pb);
+                t.place(s::LUA_TOUSERDATA, c);
+                let out = t.junk(0x10, 3);
+                t.stub(s::LUA_NEWUSERDATA, false, 2, 0, out);
+                for &(f, n) in &ve_::DOTS {
+                    let what = format!("{label}: dot{n} #{k} {pa:#x} {pb:#x}");
+                    t.cdecl(&what, f, &[l], |g| Some(ve::dot(g, l, n)));
+                }
+                let what = format!("{label}: cross #{k} {pa:#x} {pb:#x}");
+                t.cdecl(&what, 0x0057_2690, &[l], |g| Some(ve::cross(g, l)));
+            }
+        }
+        t.unstub();
+    }
+}
+
+/// A `lua_touserdata` stand-in answering `a` for argument 1 and `b` for
+/// argument 2.
+fn vec_args(t: &mut Twins, a: u32, b: u32) -> u32 {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8] (the index)
+    c.extend([0x83, 0xf8, 0x01]); // cmp eax, 1
+    c.push(0xb8);
+    c.extend(a.to_le_bytes()); // mov eax, a
+    c.extend([0x74, 0x05]); // je +5
+    c.push(0xb8);
+    c.extend(b.to_le_bytes()); // mov eax, b
+    c.push(0xc3);
+    t.code(&c)
 }

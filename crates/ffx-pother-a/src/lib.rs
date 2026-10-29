@@ -14,7 +14,8 @@
 //! - [`m5p_scripting_sched`]: M5 phyre-scripting batch 4, the scheduler, scripted components, fixups;
 //! - [`m5p_scripting_state`]: M5 phyre-scripting batch 5, script states and runs, member setters;
 //! - [`m5p_scripting_more`]: M5 phyre-scripting batch 6, scheduler removal, Vector constructor, type queries;
-//! - [`m5p_scripting_run`]: M5 phyre-scripting batch 7, the scheduler's runs.
+//! - [`m5p_scripting_run`]: M5 phyre-scripting batch 7, the scheduler's runs;
+//! - [`m5p_scripting_vec`]: M5 phyre-scripting batch 8, Vector dot and cross products.
 //!
 //! What this list does not hold (the class descriptor, the type
 //! dispenser, the heap, the red-black tree) is called at its address
@@ -39,6 +40,7 @@ pub mod m5p_scripting_run;
 pub mod m5p_scripting_sched;
 pub mod m5p_scripting_small;
 pub mod m5p_scripting_state;
+pub mod m5p_scripting_vec;
 pub mod object;
 pub mod p3_bind;
 pub mod p3_init;

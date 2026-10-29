@@ -13,6 +13,7 @@ use ffx_pother_a::m5p_scripting_run::bridge as ru;
 use ffx_pother_a::m5p_scripting_sched::bridge as sc;
 use ffx_pother_a::m5p_scripting_small::{self as s, bridge as b};
 use ffx_pother_a::m5p_scripting_state::bridge as st;
+use ffx_pother_a::m5p_scripting_vec::bridge as ve;
 
 use super::{StackFrame, mem, ported};
 
@@ -798,5 +799,18 @@ ported! {
     Phyre_PScripting_PScheduler_runNow_005d07d0 @ 0x005d_07d0 => extern "thiscall" fn s_005d07d0(this: u32, owner: u32, key: u32, name: u32) -> u32 {
         let mut f = StackFrame::<1>::new();
         ru::run_now(&mut mem(), this, owner, key, name, f.at())
+    }
+    // ---- batch 8: Vector dot and cross products ----
+    /// `Phyre_PScripting_Vector_dot3_00572a40`.
+    Phyre_PScripting_Vector_dot3_00572a40 @ 0x0057_2a40 => extern "C" fn s_00572a40(l: u32) -> u32 {
+        ve::dot(&mut mem(), l, 3)
+    }
+    /// `Phyre_PScripting_Vector_dot4_00572b70`.
+    Phyre_PScripting_Vector_dot4_00572b70 @ 0x0057_2b70 => extern "C" fn s_00572b70(l: u32) -> u32 {
+        ve::dot(&mut mem(), l, 4)
+    }
+    /// `Phyre_PScripting_Vector_cross_00572690`.
+    Phyre_PScripting_Vector_cross_00572690 @ 0x0057_2690 => extern "C" fn s_00572690(l: u32) -> u32 {
+        ve::cross(&mut mem(), l)
     }
 }
