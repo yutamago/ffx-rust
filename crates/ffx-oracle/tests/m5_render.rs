@@ -47,6 +47,8 @@ use ffx_prender::m5r_j::{self as mj, bridge as j};
 use ffx_prender::m5r_k::{self as mk, bridge as k};
 use ffx_prender::m5r_l::{self as ml, bridge as lb};
 use ffx_prender::m5r_m::{self as mm, bridge as mb2};
+use ffx_prender::m5r_n::{self as mn, bridge as nb};
+use ffx_prender::m5r_o::{self as mo, bridge as ob};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -6159,6 +6161,1217 @@ fn rp2_introsort_matches_the_original() {
                 );
                 assert_eq!(wa, wb, "introsort: slot {k}");
             }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 (render-pcui3) batch 1: ffx_prender::m5r_n ----
+
+/// Code that writes `writes` (`(source, offset, value)`: the source is
+/// the stack argument `k` for `Some(k)`, `ecx` for `None`) through a
+/// pointer, then jumps to `then` (a logging stub that pops and returns).
+/// For callees that fill a structure the caller hands them.
+fn writer_code(t: &mut Twins, writes: &[(Option<u32>, u32, u32)], then: u32) -> u32 {
+    let mut c = vec![];
+    for &(src, off, v) in writes {
+        match src {
+            Some(k) => c.extend([0x8b, 0x44, 0x24, (4 + 4 * k) as u8]), // mov eax, [esp+4+4k]
+            None => c.extend([0x8b, 0xc1]),                             // mov eax, ecx
+        }
+        c.extend([0xc7, 0x80]);
+        c.extend(off.to_le_bytes());
+        c.extend(v.to_le_bytes()); // mov dword [eax+off], v
+    }
+    let at = t.a.alloc_code(&[0; 0x100]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 0x100]).unwrap(), at);
+    let end = at + c.len() as u32 + 5;
+    c.push(0xe9);
+    c.extend(then.wrapping_sub(end).to_le_bytes()); // jmp then
+    t.write(at, &c);
+    at
+}
+
+/// `dec dword [cell]; ret` over the original at `sym` (a sleep that
+/// counts a busy word down).
+fn countdown_sym(t: &mut Twins, sym: u32, cell: u32) {
+    let mut c = vec![0xff, 0x0d];
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    t.jump(sym, at);
+}
+
+/// A logging stub over the thiscall original at `sym` (`n` words, all
+/// popped) that also copies `words` words from the pointer in stack
+/// argument `k` into a capture buffer (compared with the rest of memory):
+/// for a value the caller hands over in its frame.
+fn capture_sym(t: &mut Twins, sym: u32, tag: u32, n: u32, k: u32, words: u32) {
+    let buffer = t.zeros(0x1000);
+    let cursor = t.words(&[buffer]);
+    let log = t.stub_code(tag, true, n, n, Ret::Val(0), false);
+    let mut c = vec![0x56, 0x57, 0x51]; // push esi, edi, ecx
+    c.extend([0x8b, 0x74, 0x24, (16 + 4 * k) as u8]); // mov esi, [esp+16+4k]
+    c.extend([0x8b, 0x3d]);
+    c.extend(cursor.to_le_bytes()); // mov edi, [cursor]
+    c.push(0xb9);
+    c.extend(words.to_le_bytes()); // mov ecx, words
+    c.extend([0xf3, 0xa5]); // rep movsd
+    c.extend([0x89, 0x3d]);
+    c.extend(cursor.to_le_bytes()); // mov [cursor], edi
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx, edi, esi
+    let at = t.a.alloc_code(&[0; 0x40]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 0x40]).unwrap(), at);
+    let end = at + c.len() as u32 + 5;
+    c.push(0xe9);
+    c.extend(log.wrapping_sub(end).to_le_bytes());
+    t.write(at, &c);
+    t.jump(sym, at);
+}
+
+#[test]
+fn rp3_scene_finalize_matches_the_original() {
+    // Every callee stubbed. The ten arrays owned (both words negative) or
+    // not; the three pools with counts below, at and past 3000, sparse
+    // flag bytes, slots whose element (or element + 4) is 0; the block;
+    // the four flag arrays owned with and without data.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c01);
+        for case in 0..12 {
+            let scene = t.zeros(0x10e00);
+            for k in (0..0x10e00).step_by(4) {
+                if rng.chance(64) {
+                    t.w32(scene + k, rng.next());
+                }
+            }
+            for off in (0xfb60..=0xfb78).step_by(4) {
+                t.w32(scene + off, rng.next() | 1);
+            }
+            let post = rng.next();
+            t.w32(scene + 0x10cc, post);
+            t.stub_sym(mn::CLOSE_MENU, 1, false, 0, 0, Ret::Val(rng.word()));
+            t.stub_sym(mn::POST_SET_ALL_SWITCHES, 2, true, 1, 1, Ret::Val(0));
+            t.stub_sym(mn::POST_RELEASE, 3, true, 0, 0, Ret::Val(0));
+            let boot = t.seq(&[rng.next(), rng.next()]);
+            t.stub_sym(mn::INSTANCE_GET, 4, false, 0, 0, boot);
+            t.stub_sym(mn::BOOT_TEXT_TERMINATE, 5, true, 0, 0, Ret::Val(0));
+            t.stub_sym(mn::BOOT_TEXT_RELEASE_BUFFER, 6, true, 0, 0, Ret::Val(0));
+            for (k, (get, method)) in mn::SINGLETON_RELEASES.into_iter().enumerate() {
+                let tag = 10 + 2 * k as u32;
+                t.stub_sym(get, tag, false, 0, 0, Ret::Val(rng.next()));
+                t.stub_sym(method, tag + 1, true, 0, 0, Ret::Val(rng.word()));
+            }
+            t.stub_sym(mn::SAMPLER_RELEASE, 20, true, 0, 0, Ret::Val(0));
+            t.stub_sym(mn::SCENE_LIST_RELEASE, 21, true, 0, 0, Ret::Val(0));
+            for (k, r) in [
+                0x0066_7e80_u32,
+                0x0066_7e00,
+                0x0066_8200,
+                0x0066_8080,
+                0x0066_8000,
+            ]
+            .into_iter()
+            .chain([0x0066_7f80, 0x0066_8280])
+            .enumerate()
+            {
+                t.stub_sym(r, 30 + k as u32, true, 1, 1, Ret::Val(rng.word()));
+            }
+            for (off, _) in mn::FINALIZE_ARRAYS {
+                let own = rng.below(4);
+                t.w32(
+                    scene + off,
+                    if own & 1 == 0 {
+                        0x8000_0000 | rng.below(9)
+                    } else {
+                        rng.below(9)
+                    },
+                );
+                t.w32(
+                    scene + off + 4,
+                    if own & 2 == 0 {
+                        0x8000_0000 | rng.below(9)
+                    } else {
+                        rng.below(9)
+                    },
+                );
+            }
+            for (k, (array, size, extra)) in mn::POOLS.into_iter().enumerate() {
+                let count = [0_u32, 7, 3000, 3100, 0xffff_ffff][rng.below(5) as usize];
+                t.w32(scene + array + 4, count);
+                let flags: Vec<u8> = (0..3000).map(|_| u8::from(rng.chance(24))).collect();
+                let flags = t.alloc(&flags);
+                t.w32(scene + array + 0xc, flags);
+                // one slot whose element (or element + extra) is 0
+                let zero = rng.below(3000);
+                t.w8(flags + zero, 1);
+                let base = (0_u32)
+                    .wrapping_sub(zero * size)
+                    .wrapping_sub(if k == 2 && rng.chance(2) { extra } else { 0 });
+                let base = if rng.chance(3) { rng.next() & !3 } else { base };
+                t.w32(scene + array, base);
+            }
+            t.stub_sym(
+                mn::CLUSTER_DELETE_OBJECT,
+                40,
+                true,
+                1,
+                1,
+                Ret::Val(rng.word()),
+            );
+            t.stub_sym(mn::ALIGNED_FREE, 41, false, 1, 0, Ret::Val(rng.word()));
+            t.stub_sym(mn::USER_MALLOC, 42, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mn::USER_FREE, 43, false, 1, 0, Ret::Val(rng.word()));
+            for off in [0xfb80_u32, 0xfb94, 0xfba8, 0xfbbc] {
+                let own = case % 4 != 0;
+                t.w32(scene + off, if own { 0x8000_0000 } else { rng.below(4) });
+                t.w32(scene + off + 4, if rng.chance(2) { 0x8000_0001 } else { 0 });
+                let data = if rng.chance(2) { 0 } else { rng.next() };
+                if off != 0xfbbc {
+                    // the pools' flag arrays: keep them for the loop
+                    continue;
+                }
+                t.w32(scene + off + 8, data);
+            }
+            t.check(
+                "PhyreScene_finalize_00659d20",
+                0x0065_9d20,
+                Conv::Thiscall(scene),
+                &[],
+                |g| {
+                    nb::finalize(g, scene);
+                    Out::None
+                },
+            );
+            assert!(t.calls() < 1000, "the log holds 1023 calls");
+            t.reset();
+        }
+    });
+}
+
+/// A 3x4 transform of small floats.
+fn transform(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let m: Vec<u32> = (0..12)
+        .map(|_| (rng.below(400) as f32 / 100.0 - 2.0).to_bits())
+        .collect();
+    t.words(&m)
+}
+
+/// A render instance of `n` mesh instances for the bound boxes: each
+/// mesh's `+0x1c` box (corner, transform or 0, size).
+fn bounds_instance(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let meshes: Vec<u32> = (0..n)
+        .map(|_| {
+            let tr = if rng.chance(2) { transform(t, rng) } else { 0 };
+            let mut b: Vec<u32> = (0..7)
+                .map(|_| match rng.below(6) {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    _ => float_word(rng),
+                })
+                .collect();
+            if rng.chance(2) {
+                for w in &mut b {
+                    *w = (rng.below(2000) as f32 / 10.0 - 100.0).to_bits();
+                }
+            }
+            if rng.chance(3) {
+                // signed zeros: equal values must not be copied
+                for w in &mut b {
+                    *w = if rng.chance(2) { 0 } else { 0x8000_0000 };
+                }
+            }
+            b[3] = tr;
+            let b = t.words(&b);
+            let mesh = t.zeros(0x40);
+            t.w32(mesh + 0x1c, b);
+            mesh
+        })
+        .collect();
+    let list = t.words(&meshes);
+    let flag = if rng.chance(2) { 0x8000_0000 } else { 0 };
+    t.words(&[n | flag, list])
+}
+
+#[test]
+fn rp3_character_bounds_match_the_original() {
+    // No instance; no meshes (the result is `min`); boxes with and
+    // without a transform (the matrix code runs as it is), NaNs and
+    // infinities among the floats; `max` and `min` the same vector.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c02);
+        for case in 0..60 {
+            let n = [0_u32, 1, 2, 5][rng.below(4) as usize];
+            let inst = if case % 9 == 0 {
+                0
+            } else {
+                bounds_instance(t, &mut rng, n)
+            };
+            t.stub_sym(mn::CHR_RENDER_INSTANCE, 1, false, 1, 0, Ret::Val(inst));
+            t.stub_sym(mn::UPDATE_BOUNDS, 2, true, 0, 0, Ret::Val(rng.word()));
+            let max = t.zeros(16);
+            let min = if case % 7 == 3 { max } else { t.zeros(16) };
+            let chr = rng.below(8);
+            let ebp = frame_ebp(&t.a, 3);
+            let frame = ebp - 0xc4;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "graphicCharacterGetBounds_0063a410",
+                mn::CHR_BOUNDS,
+                Conv::Cdecl,
+                &[chr, max, min],
+                |g| Out::U32(nb::chr_bounds(g, frame, chr, max, min)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_character_joint_bounds_match_the_original() {
+    // The bounds call stubbed (the boxes come from the test); meshes that
+    // are null, have no joints, a failing allocation, joints without the
+    // object's `+0x2c`; translations inside and outside the box, NaNs;
+    // a joint count with the top bit (no free).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c03);
+        for case in 0..60 {
+            let n = [0_u32, 1, 3, 6][rng.below(4) as usize];
+            let mut blocks = vec![];
+            let meshes: Vec<u32> = (0..n)
+                .map(|_| {
+                    if rng.chance(6) {
+                        return 0;
+                    }
+                    // 0x7fff_ffff and 0x4000_0000 only without the joint walk:
+                    // the block of count + 1 (top bit) is not freed
+                    let walk = !rng.chance(4);
+                    let joints = if walk {
+                        [0_u32, 1, 3, 9][rng.below(4) as usize]
+                    } else {
+                        [0_u32, 2, 0x4000_0000, 0x7fff_ffff][rng.below(4) as usize]
+                    };
+                    let object = t.zeros(0x40);
+                    let top = if rng.chance(5) { 0x8000_0000 } else { 0 };
+                    t.w32(object + 0x18, joints | top);
+                    t.w32(object + 0x2c, u32::from(walk));
+                    if joints != 0 {
+                        let block = if rng.chance(6) {
+                            0
+                        } else {
+                            let m: Vec<u32> = (0..16 * (joints.min(9) + 1))
+                                .map(|_| {
+                                    if rng.chance(4) {
+                                        if rng.chance(2) { 0 } else { 0x8000_0000 }
+                                    } else if rng.chance(12) {
+                                        float_word(&mut rng)
+                                    } else {
+                                        (rng.below(40) as f32 - 20.0).to_bits()
+                                    }
+                                })
+                                .collect();
+                            t.words(&m)
+                        };
+                        blocks.push(block);
+                    }
+                    let mesh = t.zeros(0x20);
+                    t.w32(mesh, object);
+                    mesh
+                })
+                .collect();
+            let list = t.words(&meshes);
+            let inst = if case % 11 == 0 {
+                0
+            } else {
+                t.words(&[n, list])
+            };
+            t.stub_sym(mn::CHR_RENDER_INSTANCE, 1, false, 1, 0, Ret::Val(inst));
+            t.stub_sym(mn::CHR_BOUNDS, 2, false, 3, 0, Ret::Val(rng.word()));
+            let blocks = t.seq(&blocks);
+            t.stub_sym(mn::PHYRE_MALLOC, 3, false, 2, 0, blocks);
+            t.stub_sym(mn::COMPUTE_JOINTS, 4, true, 1, 1, Ret::Val(rng.word()));
+            t.stub_sym(mn::PHYRE_FREE, 5, false, 1, 0, Ret::Val(rng.word()));
+            let v = |rng: &mut Rng| (rng.below(30) as f32 - 15.0).to_bits();
+            let lo: Vec<u32> = (0..3).map(|_| v(&mut rng)).collect();
+            let hi: Vec<u32> = lo
+                .iter()
+                .map(|&x| (f32::from_bits(x) + rng.below(30) as f32).to_bits())
+                .collect();
+            let max = t.words(&hi);
+            let min = t.words(&lo);
+            if rng.chance(8) {
+                t.w32(min + 4, 0x7fc0_0001);
+            }
+            let jmax = t.zeros(16);
+            let jmin = t.zeros(16);
+            let chr = rng.below(8);
+            let ebp = frame_ebp(&t.a, 5);
+            let frame = ebp - 0x24;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "graphicCharacterGetJointBounds_0063a610",
+                0x0063_a610,
+                Conv::Cdecl,
+                &[chr, max, min, jmax, jmin],
+                |g| Out::U32(nb::chr_joint_bounds(g, frame, chr, max, min, jmax, jmin)),
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+/// A printf stub over the import slot `slot` that logs exactly the words
+/// each format passes (`formats`: `(format sym, words with the format)`;
+/// others log six).
+fn printf_stub(t: &mut Twins, slot: u32, formats: &[(u32, u32)]) {
+    let stubs: Vec<u32> = (1..=6)
+        .map(|n| t.stub_code(1, false, n, 0, Ret::Val(n), false))
+        .collect();
+    let at = t.a.alloc_code(&[0; 0x100]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 0x100]).unwrap(), at);
+    let mut c = vec![];
+    for &(f, n) in formats {
+        c.extend([0x81, 0x7c, 0x24, 0x04]);
+        c.extend(t.rebase(f).to_le_bytes()); // cmp dword [esp+4], format
+        let end = at + c.len() as u32 + 6;
+        c.extend([0x0f, 0x84]);
+        c.extend(stubs[n as usize - 1].wrapping_sub(end).to_le_bytes()); // je stub
+    }
+    let end = at + c.len() as u32 + 5;
+    c.push(0xe9);
+    c.extend(stubs[5].wrapping_sub(end).to_le_bytes());
+    t.write(at, &c);
+    let s = t.rebase(slot);
+    t.patch(s, &at.to_le_bytes());
+}
+
+#[test]
+fn rp3_output_vertex_buffers_matches_the_original() {
+    // printf stubbed (every argument logged). Streams bound, created or
+    // neither (the range of the stream before is printed; the first one
+    // reads the zeroed frame), busy buffers (the sleep counts them down),
+    // one, two or no buffer slots, map and unmap failing or not, byte and
+    // float streams, NaN floats, rows from a negative size, a cell of 0.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c04);
+        for case in 0..40 {
+            printf_stub(
+                t,
+                mn::PRINTF_SLOT,
+                &[
+                    (mn::FMT_START, 1),
+                    (mn::FMT_MESH_COUNT, 2),
+                    (mn::FMT_MESH, 3),
+                    (mn::FMT_SEGMENT, 3),
+                    (mn::FMT_VERTEX_DATA, 4),
+                    (mn::FMT_STREAM, 6),
+                    (mn::FMT_FLOAT, 3),
+                    (mn::FMT_BYTE, 2),
+                    (mn::FMT_NEWLINE, 1),
+                ],
+            );
+            let ebp = frame_ebp(&t.a, 1);
+            let frame = ebp - 0x58;
+            // the never-written range: 0 in both
+            t.write(frame, &[0; 8]);
+            let bytes_ty = t.rebase(mn::BYTE_STREAM_TYPE);
+            let other_ty = t.words(&[rng.next()]);
+            let mut bound = vec![];
+            let mut created = vec![];
+            let mut maps = vec![];
+            let mut busy_cells = vec![];
+            let mut vd_for_mesh = |t: &mut Twins, rng: &mut Rng| -> u32 {
+                let n = 1 + rng.below(3);
+                let stride = [4_u32, 8, 12, 16][rng.below(4) as usize];
+                let vds = t.zeros(0x40 * n as usize);
+                for d in 0..n {
+                    let vd = vds + 0x40 * d;
+                    let streams = rng.below(3);
+                    let list: Vec<u32> = (0..streams)
+                        .flat_map(|k| {
+                            let ty = if rng.chance(2) { bytes_ty } else { other_ty };
+                            [(4 * k).min(stride), ty, 0]
+                        })
+                        .collect();
+                    let list = t.words(&list);
+                    t.w32(vd, stride);
+                    t.w32(vd + 8, streams);
+                    t.w32(vd + 0xc, list);
+                    let slots = 1 + rng.below(2);
+                    let idx = if slots == 1 { 0 } else { rng.below(2) };
+                    t.w32(vd + 0x10, idx);
+                    t.w32(vd + 0x18, slots);
+                    let buffers = t.zeros(0x40);
+                    let busy = if slots == 1 { vd + 0x1c } else { buffers };
+                    t.w32(vd + 0x1c, if slots == 1 { 0 } else { buffers });
+                    let cell = busy + 20 * idx + 0x10;
+                    for _ in 0..streams {
+                        bound.push(u32::from(rng.chance(2)));
+                        created.push(u32::from(rng.chance(3)));
+                        let rows = rng.below(3);
+                        let data: Vec<u32> =
+                            (0..rows * stride / 4).map(|_| float_word(rng)).collect();
+                        let data = t.words(&data);
+                        let size = if rng.chance(8) {
+                            (0_u32).wrapping_sub(stride * rows)
+                        } else {
+                            stride * rows + rng.below(stride)
+                        };
+                        maps.push((data, size));
+                    }
+                    if slots != 1 {
+                        busy_cells.push(cell);
+                    }
+                }
+                let segs = t.zeros(0x6c);
+                t.w32(segs + 0x28, n);
+                t.w32(segs + 0x2c, vds);
+                segs
+            };
+            let n = 1 + rng.below(2);
+            let meshes: Vec<u32> = (0..n)
+                .map(|_| {
+                    let segs = vd_for_mesh(t, &mut rng);
+                    let mesh = t.words(&[1, segs]);
+                    t.words(&[mesh])
+                })
+                .collect();
+            let list = t.words(&meshes);
+            let inst = if case % 13 == 0 {
+                0
+            } else {
+                t.words(&[n, list])
+            };
+            let tags_bound = t.seq(&bound);
+            t.stub_sym(mn::IS_BOUND, 2, true, 0, 0, tags_bound);
+            let tags_created = t.seq(&created);
+            t.stub_sym(mn::VB_CREATE, 3, true, 0, 0, tags_created);
+            // one busy word counted down by the sleep
+            let busy = t.zeros(4);
+            if let Some(&cell) = busy_cells.first() {
+                t.w32(cell, 2);
+                countdown_sym(t, mn::OS_SLEEP, cell);
+            } else {
+                countdown_sym(t, mn::OS_SLEEP, busy);
+            }
+            // the map writes the next range
+            let ranges: Vec<u32> = maps.iter().flat_map(|&(d, s)| [d, s]).collect();
+            let ranges = t.words(&ranges);
+            let cursor = t.words(&[ranges]);
+            let rets = t.seq(&(0..maps.len()).map(|_| rng.below(2)).collect::<Vec<_>>());
+            let log = t.stub_code(4, true, 2, 2, rets, false);
+            // mov eax,[cursor]; mov edx,[eax]; mov ecx2.. (copy two words to [esp+8])
+            let mut c = vec![0x50, 0x52, 0x51]; // push eax, edx, ecx
+            c.push(0xa1);
+            c.extend(cursor.to_le_bytes()); // mov eax, [cursor]
+            c.extend([0x8b, 0x54, 0x24, 0x14]); // mov edx, [esp+0x14] (the range pointer)
+            c.extend([0x8b, 0x08, 0x89, 0x0a]); // mov ecx,[eax]; mov [edx],ecx
+            c.extend([0x8b, 0x48, 0x04, 0x89, 0x4a, 0x04]); // mov ecx,[eax+4]; mov [edx+4],ecx
+            c.extend([0x83, 0x05]);
+            c.extend(cursor.to_le_bytes());
+            c.push(0x08); // add dword [cursor], 8
+            c.extend([0x59, 0x5a, 0x58]); // pop ecx, edx, eax
+            let at = t.a.alloc_code(&[0; 0x40]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 0x40]).unwrap(), at);
+            let end = at + c.len() as u32 + 5;
+            c.push(0xe9);
+            c.extend(log.wrapping_sub(end).to_le_bytes());
+            t.write(at, &c);
+            t.jump(mn::MAP_FOR_READ, at);
+            let unmaps = t.seq(&(0..maps.len()).map(|_| rng.below(2)).collect::<Vec<_>>());
+            t.stub_sym(mn::VB_UNMAP, 5, true, 2, 2, unmaps);
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "graphicCharacterInstanceOutputAllVertexBuffers",
+                0x0063_b290,
+                Conv::Cdecl,
+                &[inst],
+                |g| {
+                    nb::output_vertex_buffers(g, frame, inst);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            assert!(t.calls() < 1000, "the log holds 1023 calls");
+            t.reset();
+        }
+    });
+}
+
+/// A render instance whose meshes have `segs` segments over a material
+/// array of `mats` entries (one stored in place, more through a pointer):
+/// `(instance, the materials' parameter sets and buffers)`.
+fn material_instance(t: &mut Twins, rng: &mut Rng) -> (u32, Vec<(u32, u32)>) {
+    let n = rng.below(3);
+    let mut mats = vec![];
+    let entries: Vec<u32> = (0..n)
+        .map(|_| {
+            let count = 1 + rng.below(3);
+            let list: Vec<(u32, u32)> = (0..count)
+                .map(|_| {
+                    let params = rng.next() | 1;
+                    let buffer = t.zeros(0x40);
+                    t.w32(buffer, 0x10 + rng.below(0x30));
+                    (params, buffer)
+                })
+                .collect();
+            mats.extend(list.iter().copied());
+            let pairs: Vec<u32> = list.iter().map(|&(p, b)| t.words(&[p, b])).collect();
+            let arr = if count == 1 {
+                t.words(&[1, pairs[0]])
+            } else {
+                let data = t.words(&pairs);
+                t.words(&[count | if rng.chance(2) { 0x8000_0000 } else { 0 }, data])
+            };
+            let segs = rng.below(4);
+            let seg = t.zeros(0x6c * segs as usize + 4);
+            for s in 0..segs {
+                t.w32(seg + 0x6c * s, rng.below(count));
+            }
+            let mesh = t.words(&[segs, seg]);
+            let entry = t.zeros(0x20);
+            t.w32(entry, mesh);
+            t.w32(entry + 0x10, arr);
+            entry
+        })
+        .collect();
+    let list = t.words(&entries);
+    (t.words(&[n, list]), mats)
+}
+
+/// A parameter record: type byte `+2`, offset `+8`, size `+0xa` (the top
+/// three bits set at random: masked off).
+fn param(t: &mut Twins, rng: &mut Rng, ty: u8, max_size: u32) -> u32 {
+    let p = t.zeros(0x10);
+    t.w8(p + 2, ty);
+    t.write(p + 8, &(rng.below(0x30) as u16).to_le_bytes());
+    let size = rng.below(max_size + 1) as u16 | ((rng.below(8) as u16) << 13);
+    t.write(p + 0xa, &size.to_le_bytes());
+    p
+}
+
+#[test]
+fn rp3_summon_textures_match_the_original() {
+    // The material walk with the parameter lookup stubbed: found or not,
+    // every sampler type and others, offsets below 4, values that fit the
+    // buffer and not. Sizes stay within the original's local (16 bytes
+    // for the sampler, 4 for a layer): past it the original copies its
+    // own frame (the port writes 0 there). With a name: no cluster, an
+    // iterator with no texture, one with a texture. The restore list:
+    // counts below 1, null entries.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c05);
+        for case in 0..60 {
+            let (inst, _) = material_instance(t, &mut rng);
+            let types = [0x42_u8, 0xd9, 0xda, 0xdb, 0xdc, 0x12, 0x41, 0];
+            let ps: Vec<u32> = (0..64)
+                .map(|_| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        let ty = types[rng.below(8) as usize];
+                        param(t, &mut rng, ty, 16)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 1, true, 1, 1, found);
+            let name = if case % 3 == 0 { 0 } else { rng.next() };
+            t.stub_sym(mn::CLUSTER_MANAGER, 2, false, 0, 0, Ret::Val(rng.next()));
+            let cluster = if rng.chance(5) { 0 } else { rng.next() };
+            t.stub_sym(mn::CLUSTER_BY_NAME, 3, true, 1, 1, Ret::Val(cluster));
+            let has = u32::from(!rng.chance(4));
+            let log = t.stub_code(4, true, 1, 1, Ret::Val(rng.word()), false);
+            let ctor = writer_code(
+                t,
+                &[
+                    (None, 0, rng.next()),
+                    (None, 0xc, has),
+                    (None, 0x10, rng.next()),
+                ],
+                log,
+            );
+            t.jump(mn::TEXTURE_ITERATOR_CTOR, ctor);
+            let samplers = t.seq(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            t.stub_sym(mn::LINEAR_SAMPLER, 5, true, 1, 1, samplers);
+            capture_sym(t, mn::SET_TEXTURE_CHECKED, 6, 2, 1, 4);
+            let ebp = frame_ebp(&t.a, 2);
+            let frame = ebp - 0x44;
+            t.b_top = Some(frame - 0x40);
+            let target = if case % 10 == 0 { 0 } else { inst };
+            t.check(
+                "graphicCharacterSetSummonTexture_0063c0c0",
+                0x0063_c0c0,
+                Conv::Cdecl,
+                &[target, name],
+                |g| {
+                    nb::set_summon_texture(g, frame, target, name);
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            // the layers: 4-byte values
+            let ps: Vec<u32> = (0..64)
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        param(t, &mut rng, 0, 4)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 7, true, 1, 1, found);
+            t.check(
+                "graphicCharacterClearSummonLayers_0063dad0",
+                0x0063_dad0,
+                Conv::Cdecl,
+                &[target],
+                |g| {
+                    nb::clear_summon_layers(g, target);
+                    Out::None
+                },
+            );
+            // the restore list
+            let count = [0_u32, 1, 3, 0xffff_ffff][rng.below(4) as usize];
+            t.global(mn::TEXANIM_SKIP, count);
+            for k in 1..=4 {
+                let e = if rng.chance(3) {
+                    0
+                } else {
+                    material_instance(t, &mut rng).0
+                };
+                t.global(mn::TEXANIM_SKIP + 4 * k, e);
+            }
+            let ps: Vec<u32> = (0..40)
+                .map(|_| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        let ty = types[rng.below(8) as usize];
+                        param(t, &mut rng, ty, 16)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 8, true, 1, 1, found);
+            t.check(
+                "graphicCharacterRestoreSummonTexture",
+                0x0063_d550,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(nb::restore_summon_texture(g)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_draw_dream_matches_the_original() {
+    // The fade levels (-1, 0 on map 0x86 with scenario 0x38e and not,
+    // 1..7), the fade on and off, fades of 1.0 (nothing drawn), 0, 0.5,
+    // above 1, negative and NaN; the pause path; the counter at 0, 1 and 2.
+    // rand comes from a table. The original's frame is zeroed first (its
+    // never-written words are 0 in the port).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c06);
+        for case in 0..80 {
+            let level = [0xffff_ffff_u32, 0, 0, 1, 3, 5, 6, 7][rng.below(8) as usize];
+            t.global(mn::DREAM_LEVEL, level);
+            t.global(
+                mn::MAP_ID,
+                if rng.chance(2) {
+                    0x86
+                } else {
+                    rng.below(0x200)
+                },
+            );
+            let scenario = if rng.chance(2) { 0x38e } else { rng.word() };
+            t.stub_sym(mn::SCENARIO_FLAG, 1, false, 0, 0, Ret::Val(scenario));
+            t.global(mn::DREAM_FADE_ON, u32::from(!rng.chance(5)));
+            let fade = match rng.below(7) {
+                0 => 1.0_f32.to_bits(),
+                1 => 0,
+                2 => 0.5_f32.to_bits(),
+                3 => 2.5_f32.to_bits(),
+                4 if rng.chance(2) => (-1.0e10_f32).to_bits(),
+                4 => (-3.0_f32).to_bits(),
+                5 => 0x7fc0_0003,
+                _ => (rng.below(1000) as f32 / 1000.0).to_bits(),
+            };
+            t.global(mn::DREAM_FADE, fade);
+            t.global(mn::PAUSE_ON, u32::from(case % 6 == 0));
+            t.global(mn::DREAM_COUNTER, rng.below(3) | (rng.next() & 0xffff_0000));
+            for w in 0..4 * 0x26 {
+                t.global(mn::DREAM_SAVED + 4 * w, rng.next());
+            }
+            for k in 0..5 {
+                t.global(mn::DREAM_TEXTURES + 4 * k, rng.next());
+            }
+            let rands = t.seq(&(0..8).map(|_| rng.below(0x8000)).collect::<Vec<_>>());
+            t.import_sym(mn::RAND_SLOT, 2, 0, 0, rands);
+            t.stub_sym(mn::DRAW_UI_ELEMENT, 3, false, 5, 0, Ret::Val(rng.word()));
+            let ebp = frame_ebp(&t.a, 0);
+            let frame = ebp - 0x264;
+            t.write(frame, &[0; 0x260]);
+            t.b_top = Some(frame - 0x40);
+            t.check("graphicDrawDream", 0x0063_df70, Conv::Cdecl, &[], |g| {
+                nb::draw_dream(g, frame);
+                Out::None
+            });
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_free_cloth_buffers_matches_the_original() {
+    // Trees of 0..3 nodes of 0..3 leaves, null nodes and leaves, leaves
+    // with counts 0..3 and a first buffer set or not; pointers inside the
+    // cloth heap's megabyte (both ends) and outside.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c07);
+        for _ in 0..60 {
+            let base = 0x2000_0000 + (rng.below(0x100) << 12);
+            t.global(mn::CLOTH_HEAP_BASE, base);
+            t.global(mn::CLOTH_HEAP, rng.next());
+            let ptr = |rng: &mut Rng| match rng.below(5) {
+                0 => base,
+                1 => base + 0xf_ffff,
+                2 => base + 0x10_0000,
+                3 => base.wrapping_sub(1),
+                _ => rng.next(),
+            };
+            let n = rng.below(4);
+            let mut root = vec![n];
+            for _ in 0..n {
+                if rng.chance(5) {
+                    root.push(0);
+                    continue;
+                }
+                let m = rng.below(4);
+                let mut node = vec![m];
+                for _ in 0..m {
+                    if rng.chance(5) {
+                        node.push(0);
+                        continue;
+                    }
+                    let first = if rng.chance(3) { 0 } else { ptr(&mut rng) };
+                    let leaf = [rng.below(4), first, ptr(&mut rng), ptr(&mut rng)];
+                    node.push(t.words(&leaf));
+                }
+                root.push(t.words(&node));
+            }
+            let root = t.words(&root);
+            let slot = t.words(&[root]);
+            let frees = t.seq(&(0..64).map(|_| rng.word()).collect::<Vec<_>>());
+            t.stub_sym(mn::MSPACE_FREE, 1, false, 2, 0, frees);
+            let frees = t.seq(&(0..64).map(|_| rng.word()).collect::<Vec<_>>());
+            t.stub_sym(mn::USER_FREE, 2, false, 1, 0, frees);
+            t.check(
+                "Cache_FreeClothVertexBuff_00640e70",
+                0x0064_0e70,
+                Conv::Cdecl,
+                &[slot],
+                |g| Out::U32(nb::free_cloth_buffers(g, slot)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_magic_material_params_match_the_original() {
+    // The ball parameters (list copy stubbed: a copy or none; the center
+    // with NaNs and signs; range and rate copied from the argument slots,
+    // up to the two slots' eight bytes) and the four colour parameters
+    // (sources null or not). Sizes stay within what the original copies
+    // from its own words.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c08);
+        for case in 0..60 {
+            let (inst, _) = material_instance(t, &mut rng);
+            let count: u32 = t.r32(inst);
+            let items: u32 = t.r32(inst + 4);
+            let copy = if case % 7 == 0 {
+                0
+            } else {
+                let w: Vec<u32> = (0..count).map(|k| t.r32(items + 4 * k)).collect();
+                t.words(&w)
+            };
+            t.stub_sym(mn::LIST_COPY, 1, false, 2, 0, Ret::Val(copy));
+            t.stub_sym(mn::PHYRE_FREE, 2, false, 1, 0, Ret::Val(rng.word()));
+            let ps: Vec<u32> = (0..64)
+                .map(|k| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        let max = [16, 8, 4][k % 3];
+                        param(t, &mut rng, 0, max)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 3, true, 1, 1, found);
+            let c: Vec<u32> = (0..3).map(|_| float_word(&mut rng)).collect();
+            let center = t.words(&c);
+            let (range, rate) = (rng.next(), rng.next());
+            let list = if case % 9 == 0 { 0 } else { inst };
+            let slots = first_slot(&t.a, 4);
+            for (k, v) in [list, center, range, rate].into_iter().enumerate() {
+                t.w32(slots + 4 * k as u32, v);
+            }
+            t.b_top = Some(slots - 0x40);
+            t.check(
+                "graphicMagic0708ConvBallChr",
+                0x0064_1e60,
+                Conv::Cdecl,
+                &[list, center, range, rate],
+                |g| {
+                    nb::conv_ball_chr(g, slots, list, center);
+                    Out::None
+                },
+            );
+            for k in 0..4 {
+                let (wa, wb): (u32, u32) = (
+                    Mem::read(&t.a, slots + 4 * k),
+                    Mem::read(&t.b, slots + 4 * k),
+                );
+                assert_eq!(wa, wb, "ConvBallChr: slot {k}");
+            }
+            t.b_top = None;
+            let ps: Vec<u32> = (0..64)
+                .map(|_| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        param(t, &mut rng, 0, 16)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 4, true, 1, 1, found);
+            let mut src = [0_u32; 4];
+            for s in &mut src {
+                if !rng.chance(4) {
+                    let bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+                    *s = t.alloc(&bytes);
+                }
+            }
+            t.check(
+                "graphicMagic_DrawColorModel_KaMdldrw",
+                0x0064_2110,
+                Conv::Cdecl,
+                &[inst, src[0], src[1], src[2], src[3]],
+                |g| {
+                    nb::color_model(g, inst, src);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_loading_screen_matches_the_original() {
+    // on and off, modes 0..3 and others, states -1..3 and larger; the
+    // argument slots compared (the first holds the 0.0 handed on).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c09);
+        for case in 0..80 {
+            let ls = t.zeros(0x20);
+            let state = [0xffff_ffff_u32, 0, 1, 2, 3, 0x40][rng.below(6) as usize];
+            t.w32(ls + 0x10, state);
+            t.w8(ls + 1, rng.next() as u8);
+            t.global(mn::LOADING_SCREEN, ls);
+            let app = t.zeros(0x400);
+            t.stub_sym(mn::GET_APPLICATION, 1, false, 0, 0, Ret::Val(app));
+            t.stub_sym(
+                mn::SET_PARAMETER_MANUALLY,
+                2,
+                true,
+                3,
+                3,
+                Ret::Val(rng.word()),
+            );
+            let on = if case % 2 == 0 { 0 } else { rng.word() | 1 };
+            let mode = [0_u32, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize];
+            let slots = first_slot(&t.a, 2);
+            t.w32(slots, on);
+            t.w32(slots + 4, mode);
+            let frame = frame_ebp(&t.a, 2) - 8;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "graphicSetLoadingScreen_00643500",
+                0x0064_3500,
+                Conv::Cdecl,
+                &[on, mode],
+                |g| Out::U32(nb::loading_screen(g, slots, frame, on, mode)),
+            );
+            for k in 0..2 {
+                let (wa, wb): (u32, u32) = (
+                    Mem::read(&t.a, slots + 4 * k),
+                    Mem::read(&t.b, slots + 4 * k),
+                );
+                assert_eq!(wa, wb, "loading screen: slot {k}");
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_color_scale_matches_the_original() {
+    // The flag off; scales and vectors with NaNs; lengths below, at and
+    // above 1e-4; an empty tree, one node, two (the successor stubbed);
+    // nodes with no lists, lists of materials found or not.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0a);
+        for case in 0..60 {
+            let scene = t.zeros(0x10e00);
+            t.w32(scene + 0x10d4, u32::from(case % 8 != 0));
+            for k in 0..4 {
+                t.w32(scene + 0xfc78 + 4 * k, float_word(&mut rng));
+            }
+            let d: [u32; 3] = match rng.below(4) {
+                0 => [0, 0, 0],
+                1 => [0.01_f32.to_bits(), 0, 0],
+                2 => [0x3c23_d70a, 0, 0], // about 0.01: the square near 1e-4
+                _ => [
+                    float_word(&mut rng),
+                    float_word(&mut rng),
+                    float_word(&mut rng),
+                ],
+            };
+            for (k, x) in (0u32..).zip(d) {
+                t.w32(scene + 0x10d30 + 4 * k, x);
+            }
+            let out = t.zeros(0x40);
+            t.w32(scene + 0xcc, out);
+            let tree = scene + 0x1198;
+            let n = rng.below(3);
+            let mut nodes = vec![];
+            for _ in 0..n {
+                let node = t.zeros(0x20);
+                let k = rng.below(3);
+                let items: Vec<u32> = (0..k)
+                    .map(|_| {
+                        let (inst, _) = material_instance(t, &mut rng);
+                        let entries: u32 = t.r32(inst + 4);
+                        if t.r32(inst) == 0 {
+                            let e = t.zeros(0x20);
+                            let arr = t.words(&[0, 0]);
+                            t.w32(e + 0x10, arr);
+                            e
+                        } else {
+                            t.r32(entries)
+                        }
+                    })
+                    .collect();
+                let items = t.words(&items);
+                let list = t.words(&[k, 0, items]);
+                t.w32(node + 0x10, list);
+                nodes.push(node);
+            }
+            match n {
+                0 => t.w32(tree + 0xc, tree),
+                1 => {
+                    t.w32(tree + 0xc, nodes[0]);
+                    t.w32(nodes[0], tree);
+                }
+                _ => {
+                    t.w32(tree + 0xc, nodes[1]);
+                    t.w32(nodes[1], nodes[0]);
+                    t.w32(nodes[0], tree);
+                }
+            }
+            let order: Vec<u32> = match n {
+                0 => vec![],
+                1 => vec![tree],
+                _ => vec![nodes[1], tree],
+            };
+            let succ = t.seq(&order);
+            t.stub_sym(mn::TREE_SUCCESSOR, 1, true, 1, 1, succ);
+            let ps: Vec<u32> = (0..64)
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        param(t, &mut rng, 0, 32)
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mn::FIND_PARAM, 2, true, 1, 1, found);
+            let rgb = [
+                float_word(&mut rng),
+                float_word(&mut rng),
+                float_word(&mut rng),
+            ];
+            let rest: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            t.check(
+                "PhyreScene_setColorScale_0066d3b0",
+                0x0066_d3b0,
+                Conv::Thiscall(scene),
+                &[rgb[0], rgb[1], rgb[2], rest[0], rest[1], rest[2], rest[3]],
+                |g| {
+                    nb::set_color_scale(g, scene, rgb);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 (render-pcui3) batch 2: ffx_prender::m5r_o ----
+
+/// The cluster stubs for the specular setters: the manager, the cluster
+/// (or none), an iterator constructor writing `+0`, `+0xc` (a texture or
+/// none) and `+0x10`, a list copy writing `(count, data)`, the linear
+/// sampler, `setTextureChecked` capturing the value, `PhyreFree`.
+fn specular_stubs(t: &mut Twins, rng: &mut Rng, inst: u32) {
+    t.stub_sym(mo::CLUSTER_MANAGER, 1, false, 0, 0, Ret::Val(rng.next()));
+    let cluster = if rng.chance(5) { 0 } else { rng.next() };
+    t.stub_sym(mo::CLUSTER_BY_NAME, 2, true, 1, 1, Ret::Val(cluster));
+    let has = u32::from(!rng.chance(5));
+    let log = t.stub_code(3, true, 1, 1, Ret::Val(rng.word()), false);
+    let ctor = writer_code(
+        t,
+        &[
+            (None, 0, rng.next()),
+            (None, 0xc, has),
+            (None, 0x10, rng.next()),
+        ],
+        log,
+    );
+    t.jump(mo::TEXTURE_ITERATOR_CTOR, ctor);
+    let count: u32 = t.r32(inst) & 0x7fff_ffff;
+    let items: u32 = t.r32(inst + 4);
+    let w: Vec<u32> = (0..count).map(|k| t.r32(items + 4 * k)).collect();
+    let data = t.words(&w);
+    let owned = if rng.chance(3) { 0x8000_0000 } else { 0 };
+    let log = t.stub_code(4, true, 1, 1, Ret::Val(rng.word()), false);
+    let copy = writer_code(t, &[(None, 0, count | owned), (None, 4, data)], log);
+    t.jump(mo::ARRAY_COPY_FROM, copy);
+    let samplers = t.seq(&(0..64).map(|_| rng.next()).collect::<Vec<_>>());
+    t.stub_sym(mo::LINEAR_SAMPLER, 5, true, 1, 1, samplers);
+    capture_sym(t, mo::SET_TEXTURE_CHECKED, 6, 2, 1, 4);
+    t.stub_sym(mo::PHYRE_FREE, 7, false, 1, 0, Ret::Val(rng.word()));
+}
+
+#[test]
+fn rp3_specular_material_matches_the_original() {
+    // No instance; no name (the sampler reset: sampler types and others);
+    // a name with no cluster, no texture, a texture; each parameter found
+    // or not, sources null or not, sizes within each local; owned copies.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0b);
+        for case in 0..60 {
+            let (inst, _) = material_instance(t, &mut rng);
+            specular_stubs(t, &mut rng, inst);
+            let caps = [16_u32, 8, 4, 16, 16, 16, 16];
+            let types = [0x42_u8, 0xd9, 0xdc, 0x12, 0x41, 0];
+            let ps: Vec<u32> = (0..140)
+                .map(|k| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        let ty = types[rng.below(6) as usize];
+                        param(t, &mut rng, ty, caps[k % 7])
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mo::FIND_PARAM, 8, true, 1, 1, found);
+            let name = if case % 4 == 0 { 0 } else { rng.next() };
+            let target = if case % 13 == 0 { 0 } else { inst };
+            let src = |t: &mut Twins, rng: &mut Rng| {
+                if rng.chance(4) {
+                    0
+                } else {
+                    let b: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+                    t.alloc(&b)
+                }
+            };
+            let (vector1, mat1) = (src(t, &mut rng), src(t, &mut rng));
+            let w: Vec<u32> = (0..6).map(|_| float_word(&mut rng)).collect();
+            let args = [
+                target, name, w[0], w[1], vector1, w[2], mat1, w[3], w[4], w[5],
+            ];
+            let frame = frame_ebp(&t.a, 10) - 0x80;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "SpecularMapParamsManager_setSpecularMaterial_006c6390",
+                0x006c_6390,
+                Conv::Stdcall,
+                &args,
+                |g| {
+                    ob::set_specular_material(
+                        g,
+                        frame,
+                        target,
+                        name,
+                        [w[0], w[1]],
+                        vector1,
+                        w[2],
+                        mat1,
+                        [w[3], w[4], w[5]],
+                    );
+                    Out::None
+                },
+            );
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp3_shade_specular_matches_the_original() {
+    // As above for the shade setter: sampler state, sampler (texture, no
+    // sampler), uv offset, shininess, power.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0c0c);
+        for case in 0..60 {
+            let (inst, _) = material_instance(t, &mut rng);
+            specular_stubs(t, &mut rng, inst);
+            let caps = [16_u32, 16, 8, 12, 4];
+            let types = [0x42_u8, 0xd9, 0xdc, 0x12, 0x41, 0];
+            let ps: Vec<u32> = (0..100)
+                .map(|k| {
+                    if rng.chance(5) {
+                        0
+                    } else {
+                        let ty = types[rng.below(6) as usize];
+                        param(t, &mut rng, ty, caps[k % 5])
+                    }
+                })
+                .collect();
+            let found = t.seq(&ps);
+            t.stub_sym(mo::FIND_PARAM, 8, true, 1, 1, found);
+            let name = if case % 4 == 0 { 0 } else { rng.next() };
+            let target = if case % 13 == 0 { 0 } else { inst };
+            let w: Vec<u32> = (0..3).map(|_| float_word(&mut rng)).collect();
+            let frame = frame_ebp(&t.a, 5) - 0x7c;
+            t.b_top = Some(frame - 0x40);
+            t.check(
+                "SpecularMapParamsManager_setShadeSpecularMapParams",
+                0x006c_6830,
+                Conv::Stdcall,
+                &[target, name, w[0], w[1], w[2]],
+                |g| {
+                    ob::set_shade_specular(g, frame, target, name, [w[0], w[1]], w[2]);
+                    Out::None
+                },
+            );
             t.b_top = None;
             t.reset();
         }
