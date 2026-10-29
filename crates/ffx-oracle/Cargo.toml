@@ -40,6 +40,7 @@ ffx-ps2.workspace = true
 ffx-script.workspace = true
 ffx-sg.workspace = true
 ffx-sound.workspace = true
+ffx-static-a.workspace = true
 ffx-system.workspace = true
 ffx-text.workspace = true
 ffx-vbf.workspace = true

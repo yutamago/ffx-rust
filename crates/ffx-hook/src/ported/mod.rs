@@ -42,6 +42,7 @@ mod m5_ps2_emu;
 mod m5_render;
 mod m5_script;
 mod m5_sound;
+mod m5_static_init_a;
 mod m5_system_a;
 mod m5_vfx;
 mod main;
@@ -100,6 +101,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(m5_menu::hooks());
     all.extend(m5_render::hooks());
     all.extend(m5_script::hooks());
+    all.extend(m5_static_init_a::hooks());
     all.extend(m5_system_a::hooks());
     all.extend(m5_vfx::hooks());
     all.extend(m5_sound::hooks());

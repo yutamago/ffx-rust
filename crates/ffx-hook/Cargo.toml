@@ -35,6 +35,7 @@ ffx-script.workspace = true
 ffx-scene = { path = "../ffx-scene" }
 ffx-sg.workspace = true
 ffx-sound.workspace = true
+ffx-static-a.workspace = true
 ffx-system.workspace = true
 ffx-text.workspace = true
 ffx-vfx.workspace = true

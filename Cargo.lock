@@ -1010,6 +1010,7 @@ dependencies = [
  "ffx-script",
  "ffx-sg",
  "ffx-sound",
+ "ffx-static-a",
  "ffx-system",
  "ffx-text",
  "ffx-vfx",
@@ -1131,6 +1132,7 @@ dependencies = [
  "ffx-script",
  "ffx-sg",
  "ffx-sound",
+ "ffx-static-a",
  "ffx-system",
  "ffx-text",
  "ffx-vbf",
@@ -1310,6 +1312,14 @@ dependencies = [
  "ffx-graphic",
  "ffx-vbf",
  "thiserror",
+]
+
+[[package]]
+name = "ffx-static-a"
+version = "0.1.0"
+dependencies = [
+ "ffx-bridge",
+ "ffx-graphic",
 ]
 
 [[package]]
