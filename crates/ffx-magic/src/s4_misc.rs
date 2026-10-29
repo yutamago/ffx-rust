@@ -7,15 +7,16 @@ use crate::m0163::{TARGET_ANGLE, target_angle};
 use crate::opu_parts::{START_PART, start_part};
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
+use crate::sa_misc::{LINK_PART, link_part};
 use crate::sa_misc::{
-    RESET_TRANSFORM, RESET_TRANSFORM_0, RESET_TRANSFORM_3, reset_transform, reset_transform_0,
-    reset_transform_3,
+    RESET_TRANSFORM, RESET_TRANSFORM_0, RESET_TRANSFORM_3, RESET_TRANSFORM_14, reset_transform,
+    reset_transform_0, reset_transform_3, reset_transform_14,
 };
 use crate::sa_pool::{GIVE_BACK, give_back};
 use crate::sb_common::{ANIM_STEP, SET_SPEED, anim_step, set_speed};
 use crate::sb_misc::{
-    ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, anim_reset, ease_angle,
-    ease_sample, mean_position, rotate_offset,
+    ACTOR_SCALE, ANIM_RESET, EASE_ANGLE, EASE_SAMPLE, MEAN_POSITION, ROTATE_OFFSET, actor_scale,
+    anim_reset, ease_angle, ease_sample, mean_position, rotate_offset,
 };
 use crate::sb_sse::{add, cvt, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
@@ -210,6 +211,40 @@ pub fn start_object_plain<G: Game>(
     let list = [0xa1, 0xb4, 0xba, 0xc3, 0xcf, 0xd8, 0xe1];
     start_object(g, img, f, obj, scale, index, reset, (0x84, 0x96, list))
 }
+
+/// Starts an effect object (internal: `edx` = the object, `xmm3` its
+/// scale, the stack `(-, owner)`): [`start_object`] with the part
+/// `list[0]` and its transform reset with the owner and the callback
+/// `CB` (operand `+0x8b`; [`reset_transform_14`]). Returns the object.
+///
+/// `magic_0010` 0x10001cd0 (239 bytes; 11 DLLs).
+pub fn start_object_first<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    owner: u32,
+) -> u32 {
+    let callback = img.word(f + 0x8b);
+    let reset = |g: &mut G| {
+        reset_transform_14(g, obj, owner, callback);
+    };
+    let list = [0xa6, 0xb9, 0xbf, 0xc8, 0xd4, 0xdd, 0xe6];
+    start_object(g, img, f, obj, scale, 0, reset, (0x80, 0x9b, list))
+}
+
+/// [`start_object_first`].
+pub const START_OBJECT_FIRST: Sig = Sig {
+    len: 239,
+    hash: 0xfbf5_d324_0967_22ae,
+    calls: &[
+        (0x80, Callee::Sig(&START_PART)),
+        (0x93, Callee::Sig(&RESET_TRANSFORM_14)),
+        (0x9b, Callee::Sig(&POOL_ALLOC)),
+    ],
+    imports: &[],
+};
 
 /// [`start_object_plain`].
 pub const START_OBJECT_PLAIN: Sig = Sig {
@@ -782,19 +817,24 @@ fn angle_track<G: Game>(
     let [s235, s330, s328, s329, s229] = o.slots;
     let mut st = Pushes::default();
     st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot_target(g, w(s235), 235), 0);
     st.set_top(0);
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot_target(g, w(s330), 330), 0);
     st.pop(2);
     st.set_top(a0.to_bits());
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot_target(g, w(s328), 328), 0);
     st.pop(2);
     st.set_top(a1.to_bits());
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot_target(g, w(s329), 329), 0);
     st.push_all(&[v, m, v]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, slot_target(g, w(s229), 229), 0);
     let base = g.read::<u32>(s + 0x24);
     for i in 0..3 {
@@ -1228,6 +1268,359 @@ pub const TRAIL_DRAW: Sig = Sig {
         (0x59, Callee::Sig(&ANIM_STEP)),
         (0x191, Callee::Import("_libm_sse2_sqrt_precise")),
         (0x5ae, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// An actor's position for a mode (internal, `ecx` = the actor's index,
+/// -1 the caster; `edx` = four floats out; the stack word = the mode; a
+/// /GS frame): the character (`G_SELF`, or `G_CHRS[G_MAP[i]]`, operands
+/// `+0x1f`, `+0x31`, `+0x26`) gives its position (slot 262 into `out`);
+/// then by mode: 1 the height of its point 6 (slot 268 into the frame,
+/// `[ebp - 0x14]`); 2 the same less the actor's scale
+/// ([`actor_scale`]) times `K` (operand `+0xb2`); 3 its ground (slot 12,
+/// ST0); 4 or 5 its point 0x10 or 0x11 into `out`; 6 or 7 the same with
+/// the ground as the height. `w` is 1.0. Returns the last call's `eax`
+/// (the mode less 1 for any other mode).
+///
+/// `magic_0162` 0x10006030 (336 bytes with its jump table; 11 DLLs).
+pub fn actor_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (index, out) = (fr.ecx, fr.edx);
+    let mode = fr.arg(g, 0);
+    let chr = if index == u32::MAX {
+        g.read::<u32>(w(0x1f))
+    } else {
+        let map = g.read::<u32>(w(0x26));
+        let k = u32::from(g.read::<u8>(map.wrapping_add(index)));
+        g.read::<u32>(w(0x31).wrapping_add(4 * k))
+    };
+    let t = slot_target(g, w(0x3a), 262);
+    g.call(t, 0, &[chr, out, out + 4, out + 8]);
+    let eax;
+    let local = fr.esp.wrapping_sub(4 + 0x14);
+    // slot 268 `(chr, point, at)`, then slot 12's ground into `out + 4`
+    let point = |g: &mut G, op: u32, p: u32, at: u32| {
+        let t = slot_target(g, w(op), 268);
+        g.call(t, 0, &[chr, p, at]).eax
+    };
+    let ground = |g: &mut G, op: u32, words: &[u32]| {
+        let t = slot_target(g, w(op), 12);
+        let o = g.call(t, 0, words);
+        g.write::<u32>(out + 4, crate::sa_summon::st0_f32(o));
+        o.eax
+    };
+    match mode {
+        1 => {
+            eax = point(g, 0x68, 6, local);
+            let y = g.read::<u32>(local + 4);
+            g.write::<u32>(out + 4, y);
+        }
+        2 => {
+            let (scale, _) = actor_scale(g, img, img.rel32_target(f + 0x8c), index);
+            eax = point(g, 0x95, 6, local);
+            let y = sub(f32_at(g, local + 4), mul(scale, f32_at(g, w(0xb2))));
+            set_f32(g, out + 4, y);
+        }
+        3 => eax = ground(g, 0xc9, &[chr]),
+        4 => eax = point(g, 0xdc, 0x10, out),
+        5 => eax = point(g, 0xdc, 0x11, out),
+        6 | 7 => {
+            let p = if mode == 6 { 0x10 } else { 0x11 };
+            point(g, 0xfc, p, out);
+            // slot 268's words stay below
+            eax = ground(g, 0x10a, &[chr, chr, p, out]);
+        }
+        // dec eax; cmp eax, 6; ja: the mode less 1 is left
+        _ => eax = mode.wrapping_sub(1),
+    }
+    g.write::<u32>(out + 0xc, 0x3f80_0000);
+    Ret::eax(eax)
+}
+
+/// [`actor_point`] (the `rel32`s: [`actor_scale`], the cookie check and
+/// two jumps inside).
+pub const ACTOR_POINT: Sig = Sig {
+    len: 336,
+    hash: 0x281b_4b1b_d20a_b4d4,
+    calls: &[(0x8c, Callee::Sig(&ACTOR_SCALE)), (0x129, Callee::Any)],
+    imports: &[],
+};
+
+/// The sprites' frame of the `magic_0171` family (a table entry, no
+/// arguments; an 8-aligned /GS frame, `E` = `esp` after it and three
+/// pushes): as [`sprites_run`] with its own record (0x50 bytes; `b` =
+/// the record + 0x14: the position `-0x8..+0x0` stepped by `+0x8..+0x10`,
+/// the roll `+0x14` as it is, the scale `+0x18`, the copy's `z` `+0x1c`,
+/// a life `+0x20`, the colour `+0x24..+0x33`, the flags byte `+0x38`,
+/// live `+0x34`; the animation cursor at `-0x14`, stepped inline as
+/// [`anim_step`] does) and the drawing through [`link_part`] (the owner
+/// block at operand `+0x2af`, whose `+0x4` is `G_COL` and `+0x1c` `G_P`).
+/// Returns the number of live records (also into `G_COUNT`).
+///
+/// `magic_0171` 0x100035f0 (778 bytes; 12 DLLs).
+pub fn sprites_run_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // push ebp; and esp, -8; sub esp, 0x154; three pushes
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x154 + 12);
+    let at = |o: u32| e.wrapping_add(o);
+    let list = g.read::<u32>(w(0x1f));
+    let t = slot_target(g, w(0x2c), 723);
+    g.call(t, 0, &[at(0x118)]);
+    let t = slot_target(g, w(0x44), 724);
+    g.call(t, 0, &[at(0xd8)]);
+    // `lea eax, [esp + 0x5c]` with the argument still pushed
+    g.write::<u32>(w(0x55), at(0x58));
+    let t = slot_target(g, w(0x62), 235);
+    g.call(t, 0, &[at(0x18)]);
+    let mut count = 0u32;
+    if g.read::<i32>(w(0x7b)) > 0 {
+        let mut b = list.wrapping_add(0x14);
+        let mut i = 0u32;
+        loop {
+            if g.read::<u32>(b + 0x34) != 0 {
+                count = count.wrapping_add(1);
+                sprite_b(g, img, f, &at, b, i);
+                let life = g.read::<i32>(b + 0x20);
+                if life > 0 {
+                    g.write::<i32>(b + 0x20, life - 1);
+                    if life == 1 {
+                        g.write::<u32>(b + 0x34, 0);
+                    }
+                }
+            }
+            i += 1;
+            b = b.wrapping_add(0x50);
+            if i.cast_signed() >= g.read::<i32>(w(0x2e6)) {
+                break;
+            }
+        }
+    }
+    g.write::<u32>(w(0x2fd), count);
+    Ret::eax(count)
+}
+
+/// One record of [`sprites_run_b`].
+fn sprite_b<G: Game>(g: &mut G, img: &Image, f: u32, at: &impl Fn(u32) -> u32, b: u32, i: u32) {
+    let w = |o: u32| img.word(f + o);
+    for (p, v) in [(b - 8, b + 8), (b - 4, b + 0xc), (b, b + 0x10)] {
+        let x = add(f32_at(g, v), f32_at(g, p));
+        set_f32(g, p, x);
+    }
+    let scale = g.read::<u32>(b + 0x18);
+    for off in [0x40, 0x2c, 0x18] {
+        g.write::<u32>(at(off), scale);
+    }
+    let roll = g.read::<u32>(b + 0x14);
+    let t = slot_target(g, w(0xf9), 330);
+    g.call(t, 0, &[at(0x58), at(0x18), roll]);
+    let t = slot_target(g, w(0x11a), 229);
+    g.call(t, 0, &[at(0x88), at(0xd8), b - 8]);
+    g.write::<u32>(w(0x12b), 0);
+    if g.read::<u8>(b + 0x38) & 1 != 0 {
+        let t = slot_target(g, w(0x147), 230);
+        g.call(t, 0, &[at(0x98), at(0x58)]);
+        let z = add(f32_at(g, b + 0x1c), f32_at(g, at(0xd0)));
+        g.write::<u32>(w(0x16c), at(0x98));
+        set_f32(g, at(0xd0), z);
+    }
+    let total = g.read::<i32>(b + 0x24);
+    if total > 0 {
+        let k = g.read::<i32>(b + 0x28).wrapping_abs();
+        for (c, op) in [(0u32, 0x1a5), (1, 0x1c3), (2, 0x1e1), (3, 0x203)] {
+            let total = if c == 0 {
+                total
+            } else {
+                g.read::<i32>(b + 0x24)
+            };
+            let from = i32::from(g.read::<u8>(b + 0x2c + c));
+            let to = i32::from(g.read::<u8>(b + 0x30 + c));
+            let n = from
+                .wrapping_mul(total.wrapping_sub(k))
+                .wrapping_add(to.wrapping_mul(k));
+            // idiv: a zero total (or an overflow) faults in the original
+            let x = n.checked_div(total).unwrap_or(0);
+            g.write::<u8>(w(op), x.cast_unsigned() as u8);
+        }
+        let n = g.read::<u32>(b + 0x28).wrapping_add(1);
+        g.write::<u32>(b + 0x28, n);
+        if n.cast_signed() > g.read::<i32>(b + 0x24) {
+            g.write::<u32>(b + 0x24, 0);
+        }
+    } else {
+        let c = g.read::<u32>(b + 0x30);
+        g.write::<u32>(w(0x21f), c);
+    }
+    let cursor = b - 0x14;
+    let entry = crate::sb_common::anim_step_with(g, w(0x224), cursor);
+    if g.read::<i32>(b + 0x20) < 0 && g.read::<u32>(b - 0x10) != 1 {
+        g.write::<u32>(b + 0x20, 1);
+        return;
+    }
+    // push index; push owner; ecx = the cursor, edx = the frame's entry
+    let esp = at(0).wrapping_sub(12);
+    g.write::<u32>(esp + 4, w(0x2af));
+    g.write::<u32>(esp + 8, i);
+    let callee = Frame {
+        at: img.rel32_target(f + 0x2b7),
+        esp,
+        ecx: cursor,
+        edx: entry,
+        ..Frame::default()
+    };
+    link_part(g, img, &callee);
+}
+
+/// [`sprites_run_b`] (the `rel32`s: [`link_part`] and the cookie check).
+pub const SPRITES_RUN_B: Sig = Sig {
+    len: 778,
+    hash: 0xb47d_67e6_e58b_4868,
+    calls: &[(0x2b7, Callee::Sig(&LINK_PART)), (0x302, Callee::Any)],
+    imports: &[],
+};
+
+/// Where an object of the `magic_0162` family is on the screen
+/// (internal, `ecx` = the object; a /GS frame). By its mode `u16 +0x124`:
+/// 1 the point of actor `+0x11c` for the mode `+0x120`
+/// ([`actor_point`]); 2 and 3 the actor's vector `(+0x120, 0 or the
+/// object's +0xe0)` ([`crate::sa_script::actor_vector`]); 4 the record
+/// `+0x120` (-1: `G_IDX`, operand `+0x96`) of `G_RECS` (`+0xa2`, 0x148
+/// bytes each): its `+0x60` as it is, or placed by its matrix (slot 229)
+/// when its byte `+0x146` is set. The point (`[ebp - 0x14]`) goes into
+/// `G_V` (operand `+0xfc`, slot 325, `w` 1.0) and through the screen and
+/// camera matrices (slots 723, 724, 231) to the screen (slot 565); the
+/// object's `+0x114`/`+0x118` take `x / 16 - 0x700` and `y / 16 - 0x730`.
+/// Mode 5 runs the callback `+0xf4` `(object)` instead; then (and for any
+/// other mode) `G_V` is set back from them: `(x K1, y / K2, 0, 0)`
+/// (operands `+0x1c6`, `+0x1ed`). Returns the screen `y` word, the
+/// callback's `eax`, or the mode less 1.
+///
+/// `magic_0162` 0x10008e70 (548 bytes with its jump table; 11 DLLs).
+#[allow(clippy::too_many_lines)] // the original's modes
+pub fn screen_place<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let obj = fr.ecx;
+    let ebp = fr.esp.wrapping_sub(4);
+    let v = ebp.wrapping_sub(0x14);
+    let mode = i32::from(g.read::<u16>(obj + 0x124).cast_signed()) - 1;
+    let gv = w(0xfc);
+    let actor = g.read::<u32>(obj + 0x11c);
+    let placed = match mode {
+        0 => {
+            // sub esp, 0xe4; push esi; push the mode word; call
+            let esp = ebp.wrapping_sub(0xf0);
+            g.write::<u32>(esp + 4, g.read::<u32>(obj + 0x120));
+            let callee = Frame {
+                at: img.rel32_target(f + 0x3e),
+                esp,
+                ecx: actor,
+                edx: v,
+                ..Frame::default()
+            };
+            actor_point(g, img, &callee);
+            true
+        }
+        1 | 2 => {
+            let a = if mode == 1 { 0 } else { obj + 0xe0 };
+            let esp = ebp.wrapping_sub(0xf4);
+            g.write::<u32>(esp + 4, a);
+            g.write::<u32>(esp + 8, v);
+            let callee = Frame {
+                at: img.rel32_target(f + if mode == 1 { 0x5d } else { 0x81 }),
+                esp,
+                ecx: actor,
+                edx: g.read::<u32>(obj + 0x120),
+                ..Frame::default()
+            };
+            crate::sa_script::actor_vector(g, img, &callee);
+            true
+        }
+        3 => {
+            let mut i = g.read::<u32>(obj + 0x120);
+            if i == u32::MAX {
+                i = g.read::<u32>(w(0x96));
+            }
+            let rec = i.wrapping_mul(0x148).wrapping_add(w(0xa2));
+            if g.read::<u8>(rec + 0x146) == 0 {
+                for k in 0..4 {
+                    let x = g.read::<u32>(rec + 0x60 + 4 * k);
+                    g.write::<u32>(v + 4 * k, x);
+                }
+            } else {
+                let t = slot_target(g, w(0xe3), 229);
+                g.call(t, 0, &[v, rec, rec + 0x60]);
+            }
+            true
+        }
+        4 => {
+            let callback = g.read::<u32>(obj + 0xf4);
+            let eax = g.call(callback, obj, &[obj]).eax;
+            reset_view(g, img, f, obj);
+            return Ret::eax(eax);
+        }
+        _ => false,
+    };
+    if !placed {
+        reset_view(g, img, f, obj);
+        return Ret::eax(mode.cast_unsigned());
+    }
+    let (screen, camera, m, out) = (
+        ebp.wrapping_sub(0xa4),
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0xe4),
+        ebp.wrapping_sub(0x24),
+    );
+    let mut s = Pushes::default();
+    s.push_all(&[v, gv]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0xf7), 325), 0);
+    s.push(screen);
+    g.write::<u32>(gv + 0xc, 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x110), 723), 0);
+    s.push(camera);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x12b), 724), 0);
+    s.push_all(&[camera, screen, m]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x14a), 231), 0);
+    s.push_all(&[0, v, m, out]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x168), 565), 0);
+    let x = (g.read::<i32>(out) >> 4).wrapping_sub(0x700);
+    g.write::<i32>(obj + 0x114, x);
+    let y = (g.read::<i32>(out + 4) >> 4).wrapping_sub(0x730);
+    g.write::<i32>(obj + 0x118, y);
+    Ret::eax(y.cast_unsigned())
+}
+
+/// `G_V` from the object's screen place (the tail of [`screen_place`]).
+fn reset_view<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32) {
+    let w = |o: u32| img.word(f + o);
+    let x = mul(cvt(g.read::<u32>(obj + 0x114)), f32_at(g, w(0x1c6)));
+    set_f32(g, w(0x1d0), x);
+    let y = cvt(g.read::<u32>(obj + 0x118));
+    g.write::<u32>(w(0x1e1), 0);
+    let y = div(y, f32_at(g, w(0x1ed)));
+    g.write::<u32>(w(0x1f3), 0);
+    set_f32(g, w(0x1ff), y);
+}
+
+/// [`screen_place`] (the `rel32`s: [`actor_point`], two
+/// [`crate::sa_script::actor_vector`]s, the cookie check, three jumps
+/// inside).
+pub const SCREEN_PLACE: Sig = Sig {
+    len: 548,
+    hash: 0xd65e_f67a_21c8_0115,
+    calls: &[
+        (0x3e, Callee::Sig(&ACTOR_POINT)),
+        (0x5d, Callee::Sig(&crate::sa_script::ACTOR_VECTOR)),
+        (0x81, Callee::Sig(&crate::sa_script::ACTOR_VECTOR)),
+        (0x1a0, Callee::Any),
+        (0x205, Callee::Any),
     ],
     imports: &[],
 };

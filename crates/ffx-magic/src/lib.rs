@@ -944,11 +944,14 @@ ports! {
     "thunk: element bone" => s4_wrap::JMP_ELEM_BONE, s4_wrap::ecx_jmp;
     "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
     "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
+    "thunk: step node" => s4_wrap::JMP_STEP_NODE, s4_wrap::ecx_jmp;
+    "thunk: particle node" => s4_wrap::JMP_PARTICLE_NODE, s4_wrap::ecx_jmp;
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
     "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
+    "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
@@ -1229,14 +1232,20 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("element bone", &s4_summon::ELEM_BONE),
     ("colour node fade", &s4_summon::COLOUR_NODE_FADE),
     ("motion state", &s4_summon::MOTION_STATE),
+    ("step node", &s4_summon::STEP_NODE),
+    ("particle node (0070)", &s4_summon::PARTICLE_NODE),
     ("start object at", &s4_misc::START_OBJECT_AT),
     ("start object (anim)", &s4_misc::START_OBJECT_ANIM),
     ("start object (owners)", &s4_misc::START_OBJECT_OWNERS),
     ("start object (plain)", &s4_misc::START_OBJECT_PLAIN),
+    ("start object (first part)", &s4_misc::START_OBJECT_FIRST),
+    ("actor point", &s4_misc::ACTOR_POINT),
+    ("screen place", &s4_misc::SCREEN_PLACE),
     ("motion script", &s4_misc::MOTION_SCRIPT),
     ("trail draw", &s4_misc::TRAIL_DRAW),
     ("targets init", &s4_summon::TARGETS_INIT),
     ("targets init (b)", &s4_summon::TARGETS_INIT_B),
+    ("targets init (c)", &s4_summon::TARGETS_INIT_C),
     ("target nodes", &s4_summon::TARGET_NODES),
     ("angle step", &s4_misc::ANGLE_STEP),
     ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),

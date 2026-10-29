@@ -245,9 +245,11 @@ pub fn start_260<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     s.push_all(&[0, fr.ecx, 0, 2]);
     let x = g.read::<u32>(w(0x2c));
     s.push_all(&[0, x]);
+    // call width: 12 (Pushes caps the words at 12)
     let elem = s.call(g, slot_target(g, w(0x24), 219), 0).eax;
     let pos = block + 0x330;
     s.push_all(&[pos, 0, 0, elem]);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x45), 237), 0);
     g.write::<u32>(pos + 0xc, 0x3f80_0000);
     g.write::<u32>(block + 0x320, 0x3d00_adfd);
@@ -602,9 +604,11 @@ pub fn mode_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     s.push_all(&[0, part]);
     let x = g.read::<u32>(w(0x85));
     s.push_all(&[0, x]);
+    // call width: 12 (Pushes caps the words at 12)
     let elem = s.call(g, slot_target(g, w(0x7d), 219), 0).eax;
     let pos = obj + 0xd0;
     s.push_all(&[pos, 0, 0, elem]);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x9e), 237), 0);
     g.write::<u32>(pos + 0xc, 0x3f80_0000);
     let clock = g.read::<u32>(block + 0xebf0);

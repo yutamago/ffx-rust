@@ -12,7 +12,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the register the thunk
 /// loaded, `esp` at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 4] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 6] {
     [
         (&s3_nodes::LEAVE_AND_RESET, |g, img, fr| {
             Ret::eax(s3_nodes::leave_and_reset(g, img, fr))
@@ -23,6 +23,8 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 4] {
             s4_summon::colour_node_fade::<G>,
         ),
         (&s4_summon::MOTION_STATE, s4_summon::motion_state::<G>),
+        (&s4_summon::STEP_NODE, s4_summon::step_node::<G>),
+        (&s4_summon::PARTICLE_NODE, s4_summon::particle_node::<G>),
     ]
 }
 
@@ -73,4 +75,8 @@ thunks! {
     /// `magic_0003` 0x10002a70 (103 DLLs; `magic_0087`/`0088`
     /// 0x10002cb0) over [`s4_summon::motion_state`].
     JMP_MOTION_STATE: 12, ECX_JMP_HASH, 8 => s4_summon::MOTION_STATE;
+    /// `magic_0070` 0x10005950 (10 DLLs) over [`s4_summon::step_node`].
+    JMP_STEP_NODE: 12, ECX_JMP_HASH, 8 => s4_summon::STEP_NODE;
+    /// `magic_0070` 0x10006320 (12 DLLs) over [`s4_summon::particle_node`].
+    JMP_PARTICLE_NODE: 12, ECX_JMP_HASH, 8 => s4_summon::PARTICLE_NODE;
 }

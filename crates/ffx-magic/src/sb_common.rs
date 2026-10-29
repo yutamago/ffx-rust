@@ -64,7 +64,13 @@ pub const SET_SPEED: Sig = Sig {
 ///
 /// `magic_0009` 0x10002470 (122 bytes, `ecx` = the cursor, 85 DLLs).
 pub fn anim_step<G: Game>(g: &mut G, img: &Image, f: u32, this: u32) -> u32 {
-    let s941 = slot_target(g, img.word(f + 0x01), 941);
+    anim_step_with(g, img.word(f + 0x01), this)
+}
+
+/// [`anim_step`] with the import table's global given (`table`): the same
+/// steps where a function carries them inline.
+pub(crate) fn anim_step_with<G: Game>(g: &mut G, table: u32, this: u32) -> u32 {
+    let s941 = slot_target(g, table, 941);
     let table = g.call(s941, this, &[g.read::<u32>(this)]).eax;
     let frame = |n: u32| {
         let i = i32::from((n as u16).cast_signed())

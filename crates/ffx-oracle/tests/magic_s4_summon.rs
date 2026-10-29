@@ -402,7 +402,7 @@ fn summon_start_in(n: u16, rva: u32) {
 /// statics' reset under a root with and without a child.
 #[test]
 fn targets_init() {
-    for (n, rva) in [(3u16, 0x6390u32), (76, 0x62c0)] {
+    for (n, rva) in [(3u16, 0x6390u32), (76, 0x62c0), (70, 0x9010)] {
         targets_init_in(n, rva);
     }
 }
@@ -410,7 +410,7 @@ fn targets_init() {
 fn targets_init_in(n: u16, rva: u32) {
     let Some(mut t) = twin(n) else { return };
     let at = t.at(rva);
-    let b = n == 76;
+    let b = n != 3;
     let statics = t.img.rel32_target(at + 0xe0);
     let root = t.img.word(statics + 0x10d);
     let count_at = t.img.word(at + if b { 0x35 } else { 0x32 });
@@ -446,7 +446,9 @@ fn targets_init_in(n: u16, rva: u32) {
             &[],
             Eax::Checked,
             |g, img, fr| {
-                ffx_magic::Ret::eax(if b {
+                ffx_magic::Ret::eax(if n == 70 {
+                    s4_summon::targets_init_c(g, img, fr.at, fr.esp, fr.ecx)
+                } else if b {
                     s4_summon::targets_init_b(g, img, fr.at, fr.esp, fr.ecx)
                 } else {
                     s4_summon::targets_init(g, img, fr.at, fr.esp, fr.ecx)
@@ -505,5 +507,149 @@ fn target_nodes() {
         t.check(f, magic::Call::this(r), &[], Eax::Checked, |g, img, fr| {
             ffx_magic::Ret::eax(s4_summon::target_nodes(g, img, fr))
         });
+    }
+}
+
+/// `magic_0070` 0x100057e0 (and its thunk): the stepping node with steps
+/// (the time reaching `K3` or not), without (leaving its parent or not).
+#[test]
+fn step_node_steps() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x57e0);
+    rec(&mut t, 776, 1, |_, a| 0x7760_0000 ^ a[0]);
+    rec(&mut t, 915, 5, |_, _| 0x915);
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let v = m.r32(a[1] + 4 * i) ^ m.r32(a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x234
+    });
+    let k3 = f32::from_bits(t.u32(t.img.word(f + 0x113)));
+    for (kr, &(c, p, cp)) in RINGS.iter().enumerate() {
+        for (steps, time, rate, flags) in [
+            (2u32, 0.0f32, 0.25f32, 0u8),
+            (1, k3 - 0.125, 0.25, 0),
+            (3, k3, 0.0, 1),
+            (0, 0.0, 0.5, 0),
+            (0, 0.0, 0.5, 1),
+            (0, 0.0, 0.5, 3),
+        ] {
+            ring(&mut t, c, p, cp, 0x30 + kr as u8);
+            let n0 = node(0);
+            for j in 0..12 {
+                set_f(&mut t, n0 + 0x1c + 4 * j, j as f32 * 0.75 - 3.0);
+            }
+            set_f(&mut t, n0 + 0x4c, time);
+            set_f(&mut t, n0 + 0x50, rate);
+            t.set_u32(n0 + 0x54, steps);
+            t.set_u8(n0 + 0x58, flags);
+            t.set_u16(n0 + 0x5a, 0x1234);
+            // the parent to leave, when there is one
+            if flags & 2 == 0 {
+                t.set_u32(n0 + 0x14, 0);
+            } else {
+                let parent = node(5);
+                t.write(parent, &[0x45; 0x40]);
+                t.set_u32(n0 + 0x14, parent);
+                t.set_u32(n0 + 4, parent);
+                t.set_u32(n0 + 8, parent);
+                t.set_u16(parent + 0x18, 3);
+            }
+            // the walk's `eax` is the cookie's junk when nothing is called
+            let eax = if kr == 0 || steps == 0 {
+                Eax::Junk
+            } else {
+                Eax::Checked
+            };
+            check_this_thunk(&mut t, f, 0x5950, s4_summon::step_node, eax);
+        }
+    }
+}
+
+/// `magic_0070` 0x10005f60 (and its thunk): the particle node done,
+/// delayed (paused or not), fading, drawn (its part finished or not) and
+/// calling back.
+#[test]
+#[allow(clippy::too_many_lines)] // one set-up per global
+fn particle_node_draws() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x5f60);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let pause = magic::SCRATCH + 0x8000;
+    t.set_u32(w(&t, 0x75), pause);
+    t.set_u32(w(&t, 0x17e), magic::SCRATCH + 0x8100);
+    let matrix = magic::SCRATCH + 0x8200;
+    t.set_u32(w(&t, 0x1c2), matrix);
+    t.set_u32(w(&t, 0x2b3), magic::SCRATCH + 0x8300);
+    t.set_u32(w(&t, 0x2bf), magic::SCRATCH + 0x8400);
+    t.set_u32(w(&t, 0x2d2), magic::SCRATCH + 0x8500);
+    t.set_u32(w(&t, 0x2df), 0x00d0_00d0);
+    t.set_u32(w(&t, 0x2e5), magic::SCRATCH + 0x8600);
+    t.set_u32(w(&t, 0x2ee), magic::SCRATCH + 0x8610);
+    t.set_u32(w(&t, 0x2f8), magic::SCRATCH + 0x8620);
+    let fu = t.img.rel32_target(f + 0x328);
+    t.set_u32(t.img.word(fu + 0x01), magic::SCRATCH + 0x8630);
+    for s in [325u32, 230, 668, 231] {
+        rec(&mut t, s, 2, move |m, a| {
+            let x = m.r32(a[1]) ^ s;
+            m.w32(a[0], x);
+            s
+        });
+    }
+    rec(&mut t, 233, 3, |m, a| {
+        m.w32(a[0], a[2]);
+        0x233
+    });
+    let done = magic::SCRATCH + 0x8640;
+    rec(&mut t, 712, 2, move |m, _| {
+        let lock = m.r32(magic::SCRATCH + 0x8620);
+        m.w32(magic::SCRATCH + 0x8644, lock);
+        m.r32(done)
+    });
+    rec(&mut t, 713, 1, |_, _| 0x713);
+    rec(&mut t, 160, 3, |_, _| 0x160);
+    for (kr, &(c, p, cp)) in RINGS.iter().enumerate() {
+        for (flags, delay, paused, fin, callback) in [
+            (2u32, 0u32, 0u32, 0u32, 0u32),
+            (0, 3, 0, 0, 0),
+            (0, 3, 1, 0, 0),
+            (1, 0, 0, 0, 0x0cb0),
+            (1, 0, 1, 1, 0x0cb0),
+            (0, 0, 0, 1, 0),
+            (1, 0xffff_fff0, 0, 0, 0x0cb1),
+        ] {
+            ring(&mut t, c, p, cp, 0x30 + kr as u8);
+            let n0 = node(0);
+            for j in 0..8 {
+                set_f(&mut t, n0 + 0x2c + 4 * j, 200.0 - 23.5 * j as f32);
+            }
+            set_f(&mut t, n0 + 0x1c, 1.5);
+            set_f(&mut t, n0 + 0x20, -2.0);
+            set_f(&mut t, n0 + 0x24, 0.25);
+            let parent = node(6);
+            t.write(parent, &[0x46; 0x200]);
+            set_f(&mut t, parent + 0x138, 2.0);
+            t.set_u32(n0 + 0x4c, parent);
+            t.set_u32(n0 + 0x50, 0x5050);
+            t.set_u32(n0 + 0x14, 0);
+            t.set_u32(n0 + 0xe0, callback);
+            t.set_u16(n0 + 0xe4, (kr as u16) * 3);
+            t.set_u16(n0 + 0xe6, 8);
+            t.set_u32(n0 + 0xe8, flags);
+            t.set_u32(n0 + 0xec, delay);
+            t.set_u32(n0 + 0xf4, 0xf4f4);
+            t.set_u32(pause, paused);
+            t.set_u32(done, fin);
+            for i in 0..16 {
+                set_f(&mut t, matrix + 4 * i, i as f32);
+            }
+            let eax = if kr == 0 || flags & 2 != 0 {
+                Eax::Junk
+            } else {
+                Eax::Checked
+            };
+            check_this_thunk(&mut t, f, 0x6320, s4_summon::particle_node, eax);
+        }
     }
 }
