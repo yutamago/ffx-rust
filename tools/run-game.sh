@@ -39,6 +39,7 @@
 #               folder (an instance's own file), its report in ffx-rust.log
 #               there; the harness options mean the same (docs/harness.md,
 #               "Two processes"). Only with --background.
+#               FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit build (stage 4)
 # FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
 #               already built instead of building first (cargo-xwin builds
 #               queue for one lock shared by every worktree)
@@ -175,7 +176,7 @@ if [[ -n "${rust:-}" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 ]] || "$repo/tools/build-host.sh" >/dev/null
     # rm first: never write through a hard link into the game folder.
     rm -f "$game/ffx-rust.exe"
-    install -m 755 "$repo/target/i686-pc-windows-msvc/release/ffx-rust.exe" "$game/ffx-rust.exe"
+    install -m 755 "$repo/target/${FFX_HOST_TARGET:-i686-pc-windows-msvc}/release/ffx-rust.exe" "$game/ffx-rust.exe"
 elif [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
 else
