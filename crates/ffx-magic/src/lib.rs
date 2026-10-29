@@ -1080,6 +1080,12 @@ ports! {
     "register all" => s4_small::REGISTER_ALL, s4_small::register_all;
     "object done" => s4_small::OBJECT_DONE, s4_small::object_done;
     "run once, motion" => s4_small::RUN_ONCE_MOTION, s4_small::run_once_motion;
+    "states 0x301a..0x301c" => s4_small::STATES_301A, s4_small::states_301a;
+    "block task" => s4_small::BLOCK_TASK, s4_small::block_task;
+    "counted task 24" => s4_small::COUNTED_TASK_24, s4_small::counted_task;
+    "counted task 16" => s4_small::COUNTED_TASK_16, s4_small::counted_task;
+    "counted task 20" => s4_small::COUNTED_TASK_20, s4_small::counted_task;
+    "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1435,6 +1441,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("link node, x and 0xff", &s4_small::LINK_NODE_X_FF),
     ("link node, +0x2c", &s4_small::LINK_NODE_2C),
     ("walk, then slot 275", &s4_small::WALK_275),
+    ("link node, grey", &s4_small::LINK_NODE_GREY),
+    ("link node, blocks", &s4_small::LINK_NODE_BLOCKS),
+    ("model place", &s4_small::MODEL_PLACE),
+    ("static node link", &s4_small::STATIC_NODE_LINK),
+    ("two vectors", &s4_small::TWO_VECTORS),
+    ("state reset", &s4_small::STATE_RESET),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

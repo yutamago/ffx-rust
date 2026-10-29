@@ -4,7 +4,7 @@
 //! targets so the two lists' handlers stay apart.
 
 use crate::s3_wrap::ECX_JMP_HASH;
-use crate::{Callee, Frame, Game, Image, Ret, Sig, s3_nodes, s4_misc, s4_summon};
+use crate::{Callee, Frame, Game, Image, Ret, Sig, s3_nodes, s4_misc, s4_small, s4_summon};
 
 /// A handler's port on the frame its thunk hands it.
 type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
@@ -12,7 +12,7 @@ type Handler<G> = fn(&mut G, &Image, &Frame) -> Ret;
 /// The handlers the thunks reach: each one's code identity and its port
 /// on the callee's frame (`at` the handler, `ecx` the register the thunk
 /// loaded, `esp` at the return address the handler returns to).
-fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 7] {
+fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 8] {
     [
         (&s3_nodes::LEAVE_AND_RESET, |g, img, fr| {
             Ret::eax(s3_nodes::leave_and_reset(g, img, fr))
@@ -26,6 +26,7 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 7] {
         (&s4_summon::STEP_NODE, s4_summon::step_node::<G>),
         (&s4_summon::PARTICLE_NODE, s4_summon::particle_node::<G>),
         (&s4_misc::NODES_RESET, s4_misc::nodes_reset::<G>),
+        (&s4_small::WALK_275, s4_small::walk_275::<G>),
     ]
 }
 
@@ -82,4 +83,6 @@ thunks! {
     JMP_PARTICLE_NODE: 12, ECX_JMP_HASH, 8 => s4_summon::PARTICLE_NODE;
     /// `magic_0201` 0x100037b0 (6 DLLs) over [`s4_misc::nodes_reset`].
     JMP_NODES_RESET: 12, ECX_JMP_HASH, 8 => s4_misc::NODES_RESET;
+    /// `magic_0070` 0x10005070 (3 DLLs) over [`s4_small::walk_275`].
+    JMP_WALK_275: 12, ECX_JMP_HASH, 8 => s4_small::WALK_275;
 }

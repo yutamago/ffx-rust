@@ -1,7 +1,11 @@
 //! The shared-4 list's small slot wrappers (`ffx_magic::s4_small`) against
 //! the DLLs they were ported from. Needs `FFX_GAME_DIR`.
 
-#![allow(clippy::cast_possible_truncation)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
 
 mod magic;
 #[path = "magic/sa.rs"]
@@ -1346,5 +1350,155 @@ fn walks_and_registers() {
         t.set_u16(t.img.word(ms + 0x11), 5);
         objects(&mut t, ro, one);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+#[test]
+fn links_grey_and_blocks() {
+    for (n, rva, args, port) in [
+        (
+            42u16,
+            0x9420u32,
+            &[0x0001_001c, 0x0001_0020][..],
+            s4_small::link_node_grey as Port,
+        ),
+        (577, 0x8f10, &[][..], s4_small::link_node_blocks),
+    ] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let (last_at, parent) = if n == 42 {
+            (op(&t, f, 0x26), op(&t, f, 0x2b))
+        } else {
+            (op(&t, f, 0x29), op(&t, f, 0x2e))
+        };
+        let node = SCRATCH + 0x100;
+        for empty in [true, false] {
+            t.write(node, &[0x66; 0x80]);
+            t.write(SCRATCH + 0x300, &[0x77; 0x10]);
+            t.set_u32(last_at, if empty { parent } else { SCRATCH + 0x300 });
+            t.check(f, Call::this(node), args, Eax::Checked, port);
+        }
+    }
+    let Some(mut t) = twin(155) else { return };
+    let f = t.at(0x9500);
+    let last = SCRATCH + 0x300;
+    t.write(last, &[0x77; 0x10]);
+    t.set_u32(op(&t, f, 0x1), last);
+    t.set_u32(op(&t, f, 0x3b), 0xffff_ffff);
+    let c = Call {
+        edx: 0x0edd_0001,
+        ..Call::default()
+    };
+    t.check(f, c, &[], Eax::Checked, s4_small::static_node_link);
+}
+
+#[test]
+fn states_models_vectors() {
+    let Some(mut t) = twin(511) else { return };
+    recs(&mut t, &[(4, 1), (27, 3)]);
+    t.check_entry(t.at(0x21d0), Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(262) else { return };
+    recs(&mut t, &[(217, 2), (248, 5)]);
+    let f = t.at(0x6b60);
+    let (obj, v) = (SCRATCH + 0x100, SCRATCH + 0x300);
+    for flags in [0u16, 1, 0xfffe] {
+        t.write(obj, &[0x11; 0x100]);
+        t.set_u16(obj + 0x90, flags);
+        t.write(v, &[0x22; 0x10]);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ecx: obj,
+            edx: v,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::F32(0), Xmm::F32(0), Xmm::F32(3.25f32.to_bits())]);
+        t.check(f, c, &[], Eax::Checked, s4_small::model_place);
+    }
+    drop(t);
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x93e0);
+    let v = SCRATCH + 0x300;
+    for i in 0..4 {
+        t.set_u32(v + 4 * i, (1.5f32 + i as f32).to_bits());
+    }
+    let c = Call {
+        eax: 0x00ea_0000,
+        edx: v,
+        ..Call::default()
+    };
+    t.check(f, c, &[], Eax::Checked, s4_small::two_vectors);
+    drop(t);
+    let Some(mut t) = twin(180) else { return };
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x2ad0);
+    let s = SCRATCH + 0x100;
+    t.write(s, &[0x33; 0x300]);
+    t.check(f, Call::this(s), &[], Eax::Checked, s4_small::state_reset);
+}
+
+/// A free ring of three pool nodes for the take at `take`.
+fn pool_ring(t: &mut Twin, take: u32) {
+    let node = |i: u32| SCRATCH + 0x4000 + 0x40 * i;
+    for i in 1..=3u32 {
+        t.write(node(i), &[0x5a; 0x1c]);
+        t.set_u32(node(i), node(if i == 1 { 3 } else { i - 1 }));
+        t.set_u32(node(i) + 4, node(if i == 3 { 1 } else { i + 1 }));
+    }
+    t.set_u32(t.img.word(take + 0x17), node(1));
+    t.set_u16(t.img.word(take + 0x04), 3);
+}
+
+#[test]
+fn tasks_from_the_pool() {
+    let Some(mut t) = twin(430) else { return };
+    let f = t.at(0x32b0);
+    let take = t.img.rel32_target(f + 0x17);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x3), block);
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x1d), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x31), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x1d), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    for (n, rva) in [(249u16, 0x2fc0u32), (270, 0x41e0), (419, 0x2900)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let take = t.img.rel32_target(f + 0x24);
+        for listed in [false, true] {
+            pool_ring(&mut t, take);
+            if listed {
+                t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+                t.set_u32(op(&t, f, 0x2a), SCRATCH + 0x5000);
+                t.set_u32(op(&t, f, 0x41), SCRATCH + 0x5000);
+            } else {
+                t.set_u32(op(&t, f, 0x2a), 0);
+            }
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}
+
+#[test]
+fn walk_thunk() {
+    let Some(mut t) = twin(70) else { return };
+    sa::handler_stubs(&mut t);
+    recs(&mut t, &[(275, 1)]);
+    let f = t.at(0x5070);
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x31);
+        let call = Call {
+            eax: 0xaabb_ccdd,
+            ecx: 0x0bad_0ecc,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
     }
 }
