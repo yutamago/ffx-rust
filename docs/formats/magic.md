@@ -295,8 +295,12 @@ memory; make them read every argument word the original passes and write
 what they see (a stub that ignores an argument cannot catch a port that
 drops it), and fill the tables a function clears with non-zero bytes
 first. `Twin::stub_st0(slot, |m, args| f64)` makes a slot also return
-a float in ST0 (the game's float functions), on both sides. A call-out
-logs 16 words of the original's stack. Mutants go through
+a float in ST0 (the game's float functions), on both sides, and
+`Twin::stub_edx(slot, …)` its `edx` (a 64-bit `edx:eax` result, such as
+slot 772's part handle). A call-out logs 16 words of the original's
+stack; the port's words are compared as a prefix of them, so a port
+that drops trailing words the callee never reads (an earlier call's
+words the original leaves on the stack) still passes. Mutants go through
 `tools/mutants.py` as for every port (`MUT_TEST=magic_NNNN MUT_SNAPS=`,
 no snapshots).
 

@@ -21,7 +21,7 @@ use crate::{Callee, Frame, Game, Image, Ret, Sig};
 /// group as its one argument and `ecx` as the caller left it; eax is the
 /// last method's, its low byte then the mode. The group is restored to the
 /// owner, the owner's `+0x1a` takes the mode and the flag is set (`Some`).
-fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, Option<u32>) {
+pub(crate) fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, Option<u32>) {
     let owner = g.read::<u32>(this);
     let mut eax = (eax & !0xff) | u32::from(g.read::<u8>(owner + 0x1a));
     if g.read::<u8>(this + 5) == g.read::<u8>(owner + 0x1a) {
@@ -52,7 +52,7 @@ fn walk<G: Game>(g: &mut G, this: u32, ecx: u32, eax: u32) -> (u32, Option<u32>)
 /// `+0x14` branch): the parent's count `+0x18` drops by one, the links
 /// around the node are joined and the node's own links and `+0x14` are
 /// cleared. Returns the node's previous link as it was last read.
-fn leave_parent<G: Game>(g: &mut G, node: u32, parent: u32) -> u32 {
+pub(crate) fn leave_parent<G: Game>(g: &mut G, node: u32, parent: u32) -> u32 {
     let count = g.read::<u16>(parent + 0x18).wrapping_add(0xffff);
     g.write::<u16>(parent + 0x18, count);
     let next = g.read::<u32>(node + 8);

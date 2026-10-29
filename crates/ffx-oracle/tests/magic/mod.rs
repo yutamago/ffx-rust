@@ -193,6 +193,8 @@ const LOGGED: usize = 16;
 pub struct Shared {
     stubs: HashMap<u32, Stub>,
     floats: HashMap<u32, FloatStub>,
+    /// `edx` of slots returning 64 bits (`edx:eax`).
+    highs: HashMap<u32, Stub>,
     rand: u32,
 }
 
@@ -230,6 +232,13 @@ fn answer_st0(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -
         .map(|f| f(m, args))
 }
 
+/// The `edx` a slot's [`Twin::stub_edx`] answers (after its `eax` stub).
+fn answer_edx(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> Option<u32> {
+    slot_of(target)
+        .and_then(|s| shared.highs.get(&s))
+        .map(|f| f(m, args))
+}
+
 fn answer(shared: &Shared, m: &mut dyn StubMem, target: u32, args: &[u32]) -> u32 {
     match slot_of(target).and_then(|s| shared.stubs.get(&s)) {
         Some(f) => f(m, args),
@@ -253,6 +262,9 @@ impl Host for OrigHost<'_> {
             .collect();
         let mut mm = ArenaMem;
         regs.eax = answer(self.shared, &mut mm, target, &args);
+        if let Some(v) = answer_edx(self.shared, &mut mm, target, &args) {
+            regs.edx = v;
+        }
         if let Some(v) = answer_st0(self.shared, &mut mm, target, &args) {
             regs.st[0] = f64_to_f80(v);
             regs.st_len = 1;
@@ -331,6 +343,7 @@ impl Mem for PortGame {
 impl Game for PortGame {
     fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> Out {
         let eax = answer(&self.shared, &mut self.mem, target, args);
+        let edx = answer_edx(&self.shared, &mut self.mem, target, args).unwrap_or(0);
         let st0 = answer_st0(&self.shared, &mut self.mem, target, args);
         self.calls.push(CallOut {
             target,
@@ -340,6 +353,7 @@ impl Game for PortGame {
         });
         Out {
             eax,
+            edx,
             st0,
             ..Out::default()
         }
@@ -528,6 +542,7 @@ impl Twin {
             shared: Shared {
                 stubs: HashMap::new(),
                 floats: HashMap::new(),
+                highs: HashMap::new(),
                 rand: 1,
             },
             functions,
@@ -705,6 +720,13 @@ impl Twin {
     /// (0 without one; that stub runs first).
     pub fn stub_st0(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> f64 + 'static) {
         self.shared.floats.insert(slot, Box::new(f));
+    }
+
+    /// Makes `slot` also return `edx` (a 64-bit `edx:eax` result) on both
+    /// sides (after its [`Twin::stub`]). Without one, the port's side
+    /// sees 0 and the original's whatever `edx` held before the call.
+    pub fn stub_edx(&mut self, slot: u32, f: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static) {
+        self.shared.highs.insert(slot, Box::new(f));
     }
 
     /// The original's `xmm0` low word after the last [`Twin::check`].
