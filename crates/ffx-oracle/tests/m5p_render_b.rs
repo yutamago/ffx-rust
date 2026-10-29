@@ -2923,3 +2923,453 @@ fn more_text_and_bindings_match_the_original() {
         }
     }
 }
+
+// ---- batch 6: teardown, hand-off, resizes, copies ----
+
+use ffx_prender::m5p_render_b_more2::{self as more2, bridge as nb};
+
+#[test]
+fn more2_teardown_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the render thread: events open or closed
+        for mask in [0u32, 0b0101, 0b1111] {
+            t.stub(more2::EVENT_CLOSE, true, 0, 0, 0xec);
+            t.stub(more2::EH_VECTOR_DTOR, false, 4, 4, 0xe4);
+            t.stub(more2::THREAD_BASE_DTOR, true, 0, 0, 0x7b);
+            let obj = t.junk(0x200, 1);
+            for k in 0..4 {
+                t.w8(obj + 0x170 + 8 * k, u8::from((mask >> k) & 1 != 0) * 3);
+            }
+            t.check(
+                &format!("{label}: render thread dtor {mask:#b}"),
+                0x0061_4220,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    nb::render_thread_dtor(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the command hand-off: a negative count (no array), owned / not
+        // owned / null / same old buffers
+        for (n, old_kind) in [(0xffff_ffffu32, 0u32), (3, 0), (3, 1), (3, 2), (0, 3)] {
+            let ring = t.zeros(0x10);
+            let block = t.junk(0x400, 2);
+            t.stub(more2::RING_SINGLETON, false, 0, 0, ring);
+            t.stub(more2::RING_ALLOCATE, true, 1, 1, block);
+            t.stub(more2::MEMCPY, false, 3, 0, 0x3c);
+            t.stub(more2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.junk(0x2400, 3);
+            t.w32(obj + 0x2318, 2);
+            t.w32(obj + 0x2310, obj + 0x200c + 0x30);
+            t.w32(obj + 0x2314, n);
+            let job = t.junk(0x40, 4);
+            let records = 2u32 << 5;
+            let (count, old) = match old_kind {
+                0 => (5, t.junk(0x10, 5)),
+                1 => (0x8000_0005, t.junk(0x10, 6)),
+                2 => (5, 0),
+                _ => (5, block + 0x10 + records),
+            };
+            t.w32(job + 0x2c, count);
+            t.w32(job + 0x30, old);
+            t.check(
+                &format!("{label}: hand off {n:#x} {old_kind}"),
+                0x005b_99a0,
+                Conv::Thiscall(obj),
+                &[job],
+                |g| {
+                    nb::hand_off(g, obj, job);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the character lighting's destructor
+        for s in [
+            more2::MAP_REMOVE_ALL,
+            more2::TREE_ORPHAN_ALL,
+            more2::TREE_CLEAR,
+            more2::FREE_LIST_RESET,
+            more2::FREE_LIST_DTOR,
+            more2::CLUSTER_DTOR,
+        ] {
+            t.stub(s, true, 0, 0, s & 0xff);
+        }
+        let obj = t.junk(0x200, 7);
+        t.check(
+            &format!("{label}: lighting dtor"),
+            0x006a_69b0,
+            Conv::Thiscall(obj),
+            &[],
+            |g| {
+                nb::character_lighting_dtor(g, obj);
+                Out::None
+            },
+        );
+        t.reset();
+        // the program's COM objects: none, some, all
+        for mask in [0u32, 0x5555_5555, 0xffff_ffff] {
+            let obj = t.junk(0xc40, 8);
+            let mut k = 0u32;
+            let mut slots: Vec<u32> = Vec::new();
+            for s in 0..8 {
+                for off in [0, 4, 8, 0xc] {
+                    slots.push(0x194 + 0x17c * s + off);
+                }
+            }
+            slots.extend((0..11).map(|i| 4 * i));
+            for at in slots {
+                let o = if (mask >> (k % 32)) & 1 != 0 {
+                    t.com_object(&[0, 0, 1], &[0, 0, k])
+                } else {
+                    0
+                };
+                t.w32(obj + at, o);
+                k += 1;
+            }
+            t.check(
+                &format!("{label}: program release {mask:#x}"),
+                0x0059_c230,
+                Conv::Thiscall(obj),
+                &[],
+                |g| Out::U32(nb::program_release(g, obj)),
+            );
+        }
+        // the wide name: null, empty, a name with a high byte, failing
+        for (s, fails) in [
+            (None, false),
+            (Some(&b"\0"[..]), false),
+            (Some(&b"Ab\xe9z\0"[..]), false),
+            (Some(&b"name\0"[..]), true),
+        ] {
+            let buf = t.junk(0x20, 9);
+            t.stub(
+                more2::PHYRE_MALLOC,
+                false,
+                2,
+                0,
+                if fails { 0 } else { buf },
+            );
+            t.stub(more2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let sp = match s {
+                Some(x) => t.alloc(x),
+                None => 0,
+            };
+            for f in [0x0059_7f20u32, 0x0059_7ff0] {
+                t.check(
+                    &format!("{label}: widen {f:#x} {s:?} {fails}"),
+                    f,
+                    Conv::Thiscall(0x1234),
+                    &[sp],
+                    |g| Out::U32(nb::widen(g, sp)),
+                );
+            }
+            t.reset();
+        }
+        // the renderer job's destructor
+        for (a, b) in [(3u32, 0x8000_0002u32), (0, 1)] {
+            t.stub(more2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            t.stub(more2::RING_JOB_DTOR, true, 0, 0, 0x2b);
+            let obj = t.junk(0x40, 10);
+            t.w32(obj + 0x2c, a);
+            t.w32(obj + 0x24, b);
+            t.w32(obj + 0x1c, a);
+            t.w32(obj + 0x20, 0);
+            t.check(
+                &format!("{label}: job dtor {a:#x} {b:#x}"),
+                0x005b_4aa0,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    nb::renderer_job_dtor(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the tweak utility's arrays and the text destructor
+        for s in [
+            more2::SPRITE_ARRAYS_RELEASE,
+            more2::MESH_INSTANCE_DTOR,
+            more2::WAIT_AND_CLEAR,
+            more2::ARRAY40_RELEASE,
+            more2::MESH_DTOR,
+        ] {
+            t.stub(s, true, 0, 0, s & 0xff);
+        }
+        t.stub(more2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+        let obj = t.junk(0x200, 11);
+        t.w32(obj + 0x18, 0x8000_0001);
+        t.w32(obj + 8, 0);
+        t.check(
+            &format!("{label}: release four"),
+            0x006a_bc20,
+            Conv::Thiscall(obj),
+            &[],
+            |g| {
+                nb::release_four(g, obj);
+                Out::None
+            },
+        );
+        for with in [false, true] {
+            let obj = t.junk(0x200, 12);
+            let o = if with { t.object(&[0, 0, 0], &[]) } else { 0 };
+            t.w32(obj + 0x164, o);
+            t.check(
+                &format!("{label}: text dtor {with}"),
+                0x00a2_95a0,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    nb::text_dtor(g, obj);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+        // vorbis's lookup: null, tables or not
+        for (null, rows, three) in [
+            (true, false, false),
+            (false, false, false),
+            (false, true, true),
+        ] {
+            let free = t.stub_code(0xf4ee, false, 1, 0, 0);
+            let at = t.rebase(more2::VORBIS_FREE);
+            t.put_saved(at, free);
+            t.stub(more2::MEMSET, false, 3, 0, 0x5e);
+            let obj = if null { 0 } else { t.junk(0x40, 13) };
+            if !null {
+                let r = if rows {
+                    let table = t.zeros(4 * 17);
+                    for row in 0..17 {
+                        let rr = t.junk(0x20, row as u8);
+                        t.w32(table + 4 * row, rr);
+                    }
+                    table
+                } else {
+                    0
+                };
+                t.w32(obj + 8, r);
+                let th = if three { t.junk(0xc, 14) } else { 0 };
+                t.w32(obj + 0xc, th);
+                t.w32(obj + 0x14, 0);
+            }
+            t.check(
+                &format!("{label}: vorbis lookup {null} {rows} {three}"),
+                0x00a9_7330,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    nb::vorbis_lookup_free(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn more2_packets_resizes_copies_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the modifier packet: no record, slots with negative and missing
+        // inputs
+        for (code, n) in [
+            (false, 0u32),
+            (true, 0),
+            (true, 4),
+            (true, 0x8000_0003),
+            (true, 0x100),
+        ] {
+            t.stub(more2::RUN_PACKET, false, 1, 0, 0x9a);
+            let obj = t.junk(0x40, 1);
+            let recs = t.zeros(0x40);
+            let c = if code {
+                let c = t.zeros(0x20);
+                t.w32(c + 0x18, n);
+                c
+            } else {
+                0
+            };
+            t.w32(recs + 0x10, c);
+            t.w32(recs + 0x14, 2);
+            t.w32(recs + 0x18, 1);
+            t.w32(obj + 0x38, recs);
+            let table = t.zeros(4 * 0x108);
+            t.write(
+                table,
+                &[0u32, 1, 0xffff_ffff, 2, 0].map(u32::to_le_bytes).concat(),
+            );
+            t.w32(obj + 0x30, table);
+            let outs = t.junk(0x40, 2);
+            t.w32(obj + 0x14, outs);
+            let streams = t.zeros(0x20);
+            t.w32(obj + 0x20, streams);
+            let in0 = t.junk(0x40, 3);
+            let inputs = t.alloc(&[in0, 0, in0].map(u32::to_le_bytes).concat());
+            let packet = t.junk(0x500, 4);
+            let desc = t.junk(0x20, 5);
+            t.w32(packet + 0x10, desc);
+            t.write(packet + 0x10 + 0x12, &0x20u16.to_le_bytes());
+            let info = t.junk(8, 6);
+            let args = [1, packet, inputs, 0x99, info];
+            t.check(
+                &format!("{label}: modifier packet {code} {n:#x}"),
+                0x005a_e1d0,
+                Conv::Thiscall(obj),
+                &args,
+                |g| Out::U32(nb::modifier_packet(g, obj, 1, packet, inputs, info)),
+            );
+            t.reset();
+        }
+        // the glow and SSR resizes: missing handles, kinds, errors, done
+        for (case, bound, unbind, set) in [
+            (0u32, 0u32, 0u32, 0u32),
+            (1, 0, 0, 0),
+            (2, 1, 6, 0),
+            (3, 0, 0, 0x22),
+            (4, 0, 0, 0),
+            (5, 1, 0, 0),
+            (6, 0, 0, 0),
+        ] {
+            t.stub(more2::IS_BOUND, true, 0, 0, bound);
+            t.stub(more2::UNBIND, true, 0, 0, unbind);
+            t.stub(more2::SET_DIMENSIONS, true, 4, 4, set);
+            let obj = t.junk(0x100, 7);
+            for (k, at) in [0x78u32, 0x84, 0x7c, 0x88, 0x80, 0x8c, 0x68, 0x70, 0x6c]
+                .into_iter()
+                .enumerate()
+            {
+                let tex = t.junk(0x40, 8);
+                t.w32(tex + 0x1c, if k % 2 == 0 { 40 } else { 7 });
+                t.w32(tex + 0x20, if case == 6 { 23 } else { 22 });
+                let handle = t.zeros(8);
+                t.w32(handle, if case == 1 && k == 3 { 0 } else { tex });
+                t.w8(handle + 4, u8::from(case == 4 && k == 7));
+                let hv = if case == 0 && (k == 2 || k == 6) {
+                    0
+                } else {
+                    handle
+                };
+                t.w32(obj + at, hv);
+            }
+            t.check(
+                &format!("{label}: glow resize {case}"),
+                0x00a2_33f0,
+                Conv::Thiscall(obj),
+                &[320, 180],
+                |g| Out::U32(nb::glow_resize(g, obj, 320, 180)),
+            );
+            t.check(
+                &format!("{label}: ssr resize {case}"),
+                0x00a2_3780,
+                Conv::Thiscall(obj),
+                &[80, 44],
+                |g| Out::U32(nb::ssr_resize(g, obj, 80, 44)),
+            );
+            t.reset();
+        }
+        // the network records: none, a null destination, arrays empty /
+        // failing / copied
+        for (n, null_dst, fails) in [
+            (0u32, false, false),
+            (1, true, false),
+            (3, false, false),
+            (2, false, true),
+        ] {
+            let buf = t.junk(0x80, 9);
+            t.stub(
+                more2::PHYRE_MALLOC,
+                false,
+                2,
+                0,
+                if fails { 0 } else { buf },
+            );
+            let src = t.junk(0x14 * 3, 10);
+            for k in 0..3u32 {
+                t.w32(src + 0x14 * k + 0xc, [0u32, 3, 0x8000_0002][k as usize]);
+                let from = t.junk(0x20, 11);
+                t.w32(src + 0x14 * k + 0x10, from);
+            }
+            let dst = if null_dst { 0 } else { t.junk(0x14 * 3, 12) };
+            t.check(
+                &format!("{label}: copy networks {n} {null_dst} {fails}"),
+                0x005b_c500,
+                Conv::Cdecl,
+                &[dst, src, n],
+                |g| {
+                    nb::copy_networks(g, dst, src, n);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        // the 64-bit clear colour
+        for (lo, hi) in [
+            (0u32, 0u32),
+            (0xffff_ffff, 0xffff_ffff),
+            (0x80ff_4001, 0x1234_5678),
+        ] {
+            let obj = t.junk(0x400, 13);
+            t.check(
+                &format!("{label}: colour64 {lo:#x} {hi:#x}"),
+                0x0059_9d80,
+                Conv::Thiscall(obj),
+                &[lo, hi],
+                |g| {
+                    nb::set_colour64(g, obj, lo, hi);
+                    Out::None
+                },
+            );
+        }
+        // the render interface's teardown: with and without a context
+        for (ctx, bufs) in [(false, false), (true, true)] {
+            for s in [
+                more2::SCENE_RELEASE,
+                more2::SHADERS_RELEASE,
+                more2::PROGRAM_RELEASE,
+                more2::TARGET_RELEASE_VIEWS,
+                more2::SHADER_RELEASE_VIEWS,
+                more2::SAMPLER_RELEASE,
+                more2::COM_PAIRS,
+                more2::COM_EIGHT,
+            ] {
+                t.stub(s, true, 0, 0, s & 0xff);
+            }
+            t.stub(more2::PHYRE_FREE, false, 1, 0, 0xf4ee);
+            let obj = t.junk(0x1400, 14);
+            let mut words = vec![0u32; 0x70];
+            words[0x84 / 4] = 4;
+            words[0x1b8 / 4] = 1;
+            words[0x1bc / 4] = 1;
+            words[2] = 1;
+            let c = if ctx { t.com_object(&words, &[]) } else { 0 };
+            t.w32(obj + 0x70, c);
+            for at in [0x340u32, 0x344] {
+                t.w32(obj + at, if bufs { 0x1000 + at } else { 0 });
+            }
+            for at in [0x378u32, 0x74, 0x6c] {
+                let o = if ctx {
+                    t.com_object(&[0, 0, 1], &[0, 0, at])
+                } else {
+                    0
+                };
+                t.w32(obj + at, o);
+            }
+            t.check(
+                &format!("{label}: interface release {ctx} {bufs}"),
+                0x0059_c400,
+                Conv::Thiscall(obj),
+                &[],
+                |g| {
+                    nb::interface_release(g, obj);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}

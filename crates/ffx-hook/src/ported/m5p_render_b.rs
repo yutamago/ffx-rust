@@ -11,6 +11,7 @@ use ffx_prender::m5p_render_b::{self as rb, bridge as b};
 use ffx_prender::m5p_render_b_arrays::{self as arr, bridge as ab};
 use ffx_prender::m5p_render_b_dtors::bridge as tb;
 use ffx_prender::m5p_render_b_more::bridge as mb;
+use ffx_prender::m5p_render_b_more2::bridge as nb;
 use ffx_prender::m5p_render_b_post::{self as post, bridge as pb};
 use ffx_prender::m5p_render_b_post2::{self as post2, bridge as qb};
 use ffx_prender::m5p_render_b_small::{self as small, bridge as sb};
@@ -1051,5 +1052,70 @@ ported! {
     /// `Phyre_PRendering_PRenderInterface_bindComputeBuffer_0058ebb0`.
     Phyre_PRendering_PRenderInterface_bindComputeBuffer_0058ebb0 @ 0x0058_ebb0 => extern "thiscall" fn m_0058ebb0(this: u32, buf: u32, uav: u32) -> u32 {
         mb::bind_compute_buffer(&mut mem(), this, buf, uav)
+    }
+    // ---- batch 6: teardown, hand-off, resizes, copies (ffx_prender::m5p_render_b_more2) ----
+    /// `Phyre_PRendering_PRenderThread_dtor_00614220`.
+    Phyre_PRendering_PRenderThread_dtor_00614220 @ 0x0061_4220 => extern "thiscall" fn n_00614220(this: u32) {
+        nb::render_thread_dtor(&mut mem(), this);
+    }
+    /// `Phyre_PRendering_PRendererBase_handOffCommands_005b99a0`.
+    Phyre_PRendering_PRendererBase_handOffCommands_005b99a0 @ 0x005b_99a0 => extern "thiscall" fn n_005b99a0(this: u32, job: u32) {
+        nb::hand_off(&mut mem(), this, job);
+    }
+    /// `Phyre_CharacterLighting_dtor_006a69b0`.
+    Phyre_CharacterLighting_dtor_006a69b0 @ 0x006a_69b0 => extern "thiscall" fn n_006a69b0(this: u32) {
+        nb::character_lighting_dtor(&mut mem(), this);
+    }
+    /// `PShaderProgramD3D11_release_0059c230`.
+    PShaderProgramD3D11_release_0059c230 @ 0x0059_c230 => extern "thiscall" fn n_0059c230(this: u32) -> u32 {
+        nb::program_release(&mut mem(), this)
+    }
+    /// `Phyre_PRendering_PRenderInterface_widenName_00597f20`.
+    Phyre_PRendering_PRenderInterface_widenName_00597f20 @ 0x0059_7f20 => extern "thiscall" fn n_00597f20(_this: u32, s: u32) -> u32 {
+        nb::widen(&mut mem(), s)
+    }
+    /// `Phyre_PRendering_PRenderInterface_widenName_00597ff0`.
+    Phyre_PRendering_PRenderInterface_widenName_00597ff0 @ 0x0059_7ff0 => extern "thiscall" fn n_00597ff0(_this: u32, s: u32) -> u32 {
+        nb::widen(&mut mem(), s)
+    }
+    /// `vorbis_lookup_free_00a97330`.
+    vorbis_lookup_free_00a97330 @ 0x00a9_7330 => extern "thiscall" fn n_00a97330(this: u32) {
+        nb::vorbis_lookup_free(&mut mem(), this);
+    }
+    /// `Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_vslot18_runModifier`.
+    Phyre_PDynamicGeometry_PModifierNetworkDynamicMesh_vslot18_runModifier @ 0x005a_e1d0 => extern "thiscall" fn n_005ae1d0(this: u32, i: u32, packet: u32, inputs: u32, _c: u32, info: u32) -> u32 {
+        nb::modifier_packet(&mut mem(), this, i, packet, inputs, info)
+    }
+    /// `Phyre_PRendering_PInternal_PRendererThreadPoolJob_dtor_005b4aa0`.
+    Phyre_PRendering_PInternal_PRendererThreadPoolJob_dtor_005b4aa0 @ 0x005b_4aa0 => extern "thiscall" fn n_005b4aa0(this: u32) {
+        nb::renderer_job_dtor(&mut mem(), this);
+    }
+    /// `Phyre_PPostProcessing_PGlow_resizeTargets_00a233f0`.
+    Phyre_PPostProcessing_PGlow_resizeTargets_00a233f0 @ 0x00a2_33f0 => extern "thiscall" fn n_00a233f0(this: u32, w: u32, h: u32) -> u32 {
+        nb::glow_resize(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PPostProcessing_PScreenSpaceReflection_resizeTargets_00a23780`.
+    Phyre_PPostProcessing_PScreenSpaceReflection_resizeTargets_00a23780 @ 0x00a2_3780 => extern "thiscall" fn n_00a23780(this: u32, w: u32, h: u32) -> u32 {
+        nb::ssr_resize(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetwork__copyConstruct_005bc500`.
+    Phyre_PClassDescriptorConcrete_Phyre_PDynamicGeometry_PModifierNetwork__copyConstruct_005bc500 @ 0x005b_c500 => extern "C" fn n_005bc500(dst: u32, src: u32, n: u32) {
+        nb::copy_networks(&mut mem(), dst, src, n);
+    }
+    /// `Phyre_PRendering_PRenderInterface_setClearColour64_00599d80`.
+    Phyre_PRendering_PRenderInterface_setClearColour64_00599d80 @ 0x0059_9d80 => extern "thiscall" fn n_00599d80(this: u32, lo: u32, hi: u32) {
+        nb::set_colour64(&mut mem(), this, lo, hi);
+    }
+    /// `Phyre_PRendering_PRenderInterfaceD3D11_release_0059c400`.
+    Phyre_PRendering_PRenderInterfaceD3D11_release_0059c400 @ 0x0059_c400 => extern "thiscall" fn n_0059c400(this: u32) {
+        nb::interface_release(&mut mem(), this);
+    }
+    /// `Phyre_CharacterLightingTweakUtil_releaseArrays_006abc20`.
+    Phyre_CharacterLightingTweakUtil_releaseArrays_006abc20 @ 0x006a_bc20 => extern "thiscall" fn n_006abc20(this: u32) {
+        nb::release_four(&mut mem(), this);
+    }
+    /// `Phyre_PText_PBitmapFontText_dtor_00a295a0`.
+    Phyre_PText_PBitmapFontText_dtor_00a295a0 @ 0x00a2_95a0 => extern "thiscall" fn n_00a295a0(this: u32) {
+        nb::text_dtor(&mut mem(), this);
     }
 }
