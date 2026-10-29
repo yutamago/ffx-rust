@@ -843,6 +843,92 @@ ported! {
     VFX_CopyViaC8f980_0092cbf0 @ 0x0092_cbf0 => extern "C" fn copy_via_c8f980(dst: u32, src: u32) -> u32 {
         pc::copy_via_c8f980(&mut mem(), dst, src)
     }
+
+    // ---- round 3, batch 2: packet builders and menu draws ----
+    /// `(cursor)`.
+    TOAdpTexFlushAlpha_008eb4e0 @ 0x008e_b4e0 => extern "C" fn tex_flush_alpha(cursor: u32) -> u32 {
+        mn::tex_flush_alpha(&mut mem(), cursor)
+    }
+    /// `()`.
+    TOMkpPlainDrawRegs_009046e0 @ 0x0090_46e0 => extern "C" fn plain_draw_regs() -> u32 {
+        mn::plain_draw_regs(&mut mem())
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDbIcon10b_008f1990 @ 0x008f_1990 => extern "C" fn shape_da_db_10b(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db_icon(&mut mem(), [cursor, x, y, w, c, c1], 0x10b)
+    }
+    /// `(cursor, x, y, w, c, c1)`.
+    TOAdpShapeDaDbIcon10a_008f1a10 @ 0x008f_1a10 => extern "C" fn shape_da_db_10a(cursor: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_da_db_icon(&mut mem(), [cursor, x, y, w, c, c1], 0x10a)
+    }
+    /// `(a, b, x, y, w, c, c1)`.
+    TOMkpShapeLeftRight_008f5e90 @ 0x008f_5e90 => extern "C" fn shape_left_right(a: u32, b: u32, x: u32, y: u32, w: u32, c: u32, c1: u32) -> u32 {
+        mn::shape_left_right(&mut mem(), [a, b, x, y, w, c, c1])
+    }
+    /// `(x, y, w, h, c, c1)`: `w` clamped in its argument slot.
+    TOMkpWindowFrame_008f9b60 @ 0x008f_9b60 => extern "C" fn window_frame(x: u32, y: u32, w: u32, h: u32, c: u32, c1: u32; slots: u32) -> u32 {
+        mn::window_frame(&mut mem(), [x, y, w, h, c, c1], slots)
+    }
+    /// `(x, y, w, h)`: `w` less the corner in its argument slot.
+    TOMkpWindowPlain_008f9a40 @ 0x008f_9a40 => extern "C" fn window_plain(x: u32, y: u32, w: u32, h: u32; slots: u32) -> u32 {
+        mn::window_plain(&mut mem(), [x, y, w, h], slots)
+    }
+    /// `(x0, y0, x1, y1)`.
+    TOMakePktSampleBlueWindowXY2 @ 0x008f_de50 => extern "C" fn sample_blue_window(x0: u32, y0: u32, x1: u32, y1: u32) -> u32 {
+        mn::sample_blue_window(&mut mem(), [x0, y0, x1, y1])
+    }
+    /// `(chr, x, y)`.
+    TOBtlDrawChangeSeqAnm0 @ 0x0089_28b0 => extern "C" fn change_seq_anm(chr: u32, x: u32, y: u32) -> u32 {
+        mn::change_seq_anm(&mut mem(), chr, x, y)
+    }
+    /// `(save, x, y)`: the info kept in the first argument slot.
+    TkMenuDrawSavePartyFaces_008b37d0 @ 0x008b_37d0 => extern "C" fn save_party_faces(save: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::save_party_faces(&mut mem(), save, x, y, slots)
+    }
+    /// `(p, slot, x, y, c0, c1, c2, c3)`: the cell's `u` in the slot's
+    /// argument slot.
+    TOAdpFaceSprite_008f1880 @ 0x008f_1880 => extern "C" fn face_sprite(p: u32, slot: u32, x: u32, y: u32, c0: u32, c1: u32, c2: u32, c3: u32; slots: u32) -> u32 {
+        mn::face_sprite(&mut mem(), [p, slot, x, y, c0, c1, c2, c3], slots)
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFontMClutRight_008f3280 @ 0x008f_3280 => extern "C" fn value_font_m(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_m(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFont3d80_008f3390 @ 0x008f_3390 => extern "C" fn value_font_3d80(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_3d80(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(value, x, y, c)`: frame `ebp - 0xc`.
+    TOMkpBtlLimitLuluMidareCounter @ 0x0090_1280 => extern "C" fn lulu_counter(value: u32, x: u32, y: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        mn::lulu_counter(&mut mem(), f.at() + 0xc, [value, x, y, c])
+    }
+    /// `(cursor, value, x, a, b)`: frame `ebp - 0x24`.
+    TOAdpValueFontLClutRight @ 0x008f_30b0 => extern "C" fn value_font_l_clut_right(cursor: u32, value: u32, x: u32, a: u32, b: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        mn::value_font_l_clut_right(&mut mem(), f.at() + 0x24, [cursor, value, x, a, b])
+    }
+    /// `(text, x, y)`: `f32 x` left in the `y` argument slot.
+    TOMkpEasyStrFontS @ 0x0090_2040 => extern "C" fn easy_str_font_s(text: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::easy_str_font_s(&mut mem(), text, x, y, slots)
+    }
+    /// `(text, x, y)`: frame `ebp - 8`; `f32 x` left in its argument slot.
+    TOMkpEasyMesFontLCenter @ 0x0090_1c50 => extern "C" fn easy_mes_font_l_center(text: u32, x: u32, y: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::easy_mes_font_l_center(&mut mem(), f.at() + 8, [text, x, y], slots)
+    }
+    /// `(path)`: frame `ebp - 0x204`.
+    TOInitBattleFontPath @ 0x008a_d780 => extern "C" fn init_battle_font_path(path: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::init_font_path(&mut mem(), f.at() + 0x204, path, &ffx_system::m5b_menu::BATTLE_FONTS)
+    }
+    /// `(path)`: frame `ebp - 0x204`.
+    TOInitEventFontPath @ 0x008a_d840 => extern "C" fn init_event_font_path(path: u32) -> u32 {
+        let mut f = StackFrame::<0x81>::new();
+        mn::init_font_path(&mut mem(), f.at() + 0x204, path, &ffx_system::m5b_menu::EVENT_FONTS)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

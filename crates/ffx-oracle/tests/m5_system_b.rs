@@ -3920,3 +3920,523 @@ fn r3_vfx_vector_cells_match_the_original() {
         }
     });
 }
+
+// ---- round 3, batch 2: packet builders and menu draws (`ffx_system::m5b_menu`) ----
+//
+// None of these ran in a coverage run but the battle plate and the
+// windows; every branch runs on synthetic globals and recording stubs
+// (the face slot past 7, a window under 16 wide, a save slot not in use,
+// each `TOCtrlPkt` state, the languages), and the snapshots repeat them
+// over their memory.
+
+impl Twins {
+    /// A recording stub (cdecl) that writes a string into the buffer its
+    /// word `buf` points to: `count` bytes of `src` (its word `count_word`
+    /// masked to 0..15 when given, else `fixed`), then a NUL. Logs `n`
+    /// words, returns `ret`; returns its address.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_code(
+        &mut self,
+        tag: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) -> u32 {
+        let log_stub = self.stub_code(tag, false, n, 0, ret);
+        let mut c = vec![0x56, 0x57]; // push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, 0xc + 4 * buf]); // mov edi, [esp+0xc+4buf]
+        if let Some(w) = count_word {
+            c.extend([0x8b, 0x4c, 0x24, 0xc + 4 * w]); // mov ecx, [esp+0xc+4w]
+            c.extend([0x83, 0xe1, 0x0f]); // and ecx, 0xf
+        } else {
+            c.push(0xb9);
+            c.extend(fixed.to_le_bytes()); // mov ecx, fixed
+        }
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0xc6, 0x07, 0x00]); // mov byte [edi], 0
+        c.extend([0x5f, 0x5e]); // pop edi; pop esi
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        self.cave_code(&c)
+    }
+
+    /// A recording stub over `sym` (no words) that first sets the word at
+    /// the `ffx.sym` address `global` to `value`; returns `ret`.
+    fn stub_store_global(&mut self, sym: u32, global: u32, value: u32, ret: u32) {
+        let log_stub = self.stub_code(sym, false, 0, 0, ret);
+        let mut c = vec![0xc7, 0x05];
+        c.extend(self.rebase(global).to_le_bytes());
+        c.extend(value.to_le_bytes()); // mov dword [global], value
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+
+    /// [`Twins::fill_code`] bound to the import slot `slot` (tag `slot`).
+    #[allow(clippy::too_many_arguments)]
+    fn fill_import(
+        &mut self,
+        slot: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) {
+        let addr = self.fill_code(slot, n, buf, count_word, fixed, src, ret);
+        let at = self.rebase(slot);
+        self.patch(at, &addr.to_le_bytes());
+    }
+
+    /// [`Twins::fill_code`] over the original at `sym`.
+    #[allow(clippy::too_many_arguments)]
+    fn fill_stub(
+        &mut self,
+        sym: u32,
+        n: u32,
+        buf: u8,
+        count_word: Option<u8>,
+        fixed: u32,
+        src: u32,
+        ret: u32,
+    ) {
+        let addr = self.fill_code(sym, n, buf, count_word, fixed, src, ret);
+        self.jump(sym, addr);
+    }
+
+    /// [`Twins::check`] of a cdecl original with a frame of `low` bytes
+    /// below its `ebp` (zeroed in both; the top `skip` bytes, the
+    /// security cookie, left out of the comparison) and its argument
+    /// slots: the bridge gets `ebp` and the slots' address (B holds the
+    /// same argument words there, its own calls go below the frame), and
+    /// both the frame and the slots must agree afterwards.
+    fn check_fs(
+        &mut self,
+        what: &str,
+        sym: u32,
+        args: &[u32],
+        low: u32,
+        skip: u32,
+        bridge: impl FnOnce(&mut G, u32, u32) -> Out,
+    ) {
+        let ebp = self.frame_ebp(args.len());
+        let slots = ebp + 8;
+        let lo = ebp - low;
+        self.write(lo, &vec![0; low as usize]);
+        let words: Vec<u8> = args.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.b.write(slots, &words).unwrap();
+        self.b.set_call_top(Some(lo - 0x100));
+        self.check(what, sym, Conv::Cdecl, args, |m| bridge(m, ebp, slots));
+        self.b.set_call_top(None);
+        for (from, n) in [(lo, low - skip), (slots, 4 * args.len() as u32)] {
+            let mut x = vec![0; n as usize];
+            let mut y = vec![0; n as usize];
+            Mem::read_bytes(&self.a, from, &mut x);
+            Mem::read_bytes(&self.b, from, &mut y);
+            if let Some(i) = x.iter().zip(&y).position(|(u, v)| u != v) {
+                panic!(
+                    "{what}: stack byte {:#x}: {} != {}",
+                    from + i as u32,
+                    x[i],
+                    y[i]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r3b2_packet_words_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0601);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            let buf = t.zeros(0x200);
+            t.g32(mnc::PKT_CURSOR, buf);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 0x99);
+            // TOGsTEXFLUSH moves the cursor: a stub that sets it
+            let moved = buf + 0x40;
+            t.stub_store_global(mnc::GS_TEXFLUSH, mnc::PKT_CURSOR, moved, r ^ 1);
+            t.check(
+                &format!("tex flush #{case}"),
+                0x008e_b4e0,
+                Conv::Cdecl,
+                &[buf],
+                |m| Out::U32(mnb::tex_flush_alpha(m, buf)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            ctrl_state(t, case, buf + 0x60);
+            t.check(
+                &format!("plain regs #{case}"),
+                0x0090_46e0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mnb::plain_draw_regs(m)),
+            );
+            t.g32(mnc::PKT_CURSOR, buf);
+            for (sym, n) in [(mnc::GS_ALPHA, 5), (mnc::GS_WORDS4, 4)] {
+                t.stub(sym, false, n, 0, r ^ sym);
+            }
+            t.stub_seq(mnc::GS_XYZ2_OFFSET, 2, 0, &[r ^ 2, r ^ 3, r ^ 4, r ^ 5]);
+            ctrl_state(t, case, r ^ 5);
+            let w4: [u32; 4] = std::array::from_fn(|_| rng.word());
+            t.check(
+                &format!("blue window #{case}"),
+                0x008f_de50,
+                Conv::Cdecl,
+                &w4,
+                |m| Out::U32(mnb::sample_blue_window(m, w4)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_face_sprite_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0602);
+        for slot in [0u32, 1, 2, 3, 4, 5, 6, 7, 8, 0xffff_ffff, 0x8000_0003] {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::ADP_TEST, false, 9, 0, r);
+            let p = t.zeros(0x80);
+            t.stub(mnc::ADP_TEX0, false, 13, 0, p + 0x20);
+            t.stub(mnc::ADP_WORDS4, false, 5, 0, r ^ 1);
+            t.stub_seq(mnc::ADP_XY2, 3, 0, &[r ^ 2, r ^ 3]);
+            t.stub_seq(mnc::ADP_XYZ2_OFFSET, 3, 0, &[r ^ 4, r ^ 5]);
+            let mut args = [p, slot, 0, 0, 0, 0, 0, 0];
+            for a in &mut args[2..] {
+                *a = rng.word();
+            }
+            t.check_fs(
+                &format!("face sprite {slot:#x}"),
+                0x008f_1880,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::face_sprite(m, args, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_menu_shapes_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0603);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let info = t.zeros(0x10);
+            let ww = [0u16, 4, 0x20, 0xffff][(case % 4) as usize];
+            let hh = [0u16, 6, 0x30, 0x8000][(case / 4 % 3) as usize];
+            t.write(info + 8, &ww.to_le_bytes());
+            t.write(info + 0xa, &hh.to_le_bytes());
+            t.stub(mnc::SHAPE_INFO, false, 1, 0, info);
+            t.stub(mnc::WINDOW_LAYOUT, false, 1, 0, info);
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+            let w: [u32; 7] = std::array::from_fn(|_| rng.word());
+            let w6 = [w[0], w[1], w[2], w[3], w[4], w[5]];
+            for (sym, id) in [(0x008f_1990u32, 0x10b), (0x008f_1a10, 0x10a)] {
+                t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+                t.check(
+                    &format!("da db icon {sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &w6,
+                    |m| Out::U32(mnb::shape_da_db_icon(m, w6, id)),
+                );
+            }
+            t.stub_seq(mnc::EASY_SHAPE, 8, 0, &[r, r ^ 1, r ^ 2]);
+            let cell = t.rebase(mnc::PKT_CURSOR);
+            t.w32(cell, rng.next());
+            t.check(
+                &format!("left right #{case}"),
+                0x008f_5e90,
+                Conv::Cdecl,
+                &w,
+                |m| Out::U32(mnb::shape_left_right(m, w)),
+            );
+            // the windows: widths below, at and past 16
+            t.stub_seq(mnc::MKP_SHAPE_XYWHC2, 7, 0, &[r ^ 3, r ^ 4, r ^ 5, r ^ 6]);
+            t.stub_seq(mnc::SHAPE_901C10, 7, 0, &[r ^ 7, r ^ 8]);
+            t.g32(mnc::WINDOW_COLOUR, rng.next());
+            t.g32(mnc::WINDOW_COLOUR2, rng.next());
+            ctrl_state(t, case, r ^ 6);
+            let width = [0u32, 0xf, 0x10, 0x40, 0xffff_fff0, 0x7fff_ffff][(case % 6) as usize];
+            let fr = [w[0], w[1], width, w[3], w[4], w[5]];
+            t.check_fs(
+                &format!("window frame #{case}"),
+                0x008f_9b60,
+                &fr,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window_frame(m, fr, s)),
+            );
+            t.stub_seq(mnc::MKP_SHAPE_XYWHC2, 7, 0, &[r ^ 3, r ^ 4, r ^ 5, r ^ 6]);
+            let wp = [w[0], w[1], width, w[3]];
+            let last = if width.cast_signed() < 0x10 {
+                r ^ 8
+            } else {
+                r ^ 6
+            };
+            ctrl_state(t, case, last);
+            t.check_fs(
+                &format!("window plain #{case}"),
+                0x008f_9a40,
+                &wp,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::window_plain(m, wp, s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_battle_plate_and_save_faces_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0604);
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            for (k, (sym, n)) in [
+                (mnc::BLUE_WINDOW, 4),
+                (mnc::MKP_SHAPE_XY, 3),
+                (mnc::SAVE_CHR_NAME, 1),
+                (mnc::MES_FONT_L_CENTER, 3),
+                (mnc::PARAM_PLATE, 3),
+                (mnc::SMALL_FACE, 0),
+                (mnc::PKT_SCISSOR, 4),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, r ^ (k as u32 * 0x101));
+            }
+            let w3: [u32; 3] = std::array::from_fn(|_| rng.word());
+            t.check(
+                &format!("change seq anm #{case}"),
+                0x0089_28b0,
+                Conv::Cdecl,
+                &w3,
+                |m| Out::U32(mnb::change_seq_anm(m, w3[0], w3[1], w3[2])),
+            );
+            // the save file: its index, info (faces from +5, the flag +0x1e)
+            let idx = [0u16, 3, 0x62, 0xffff][(case % 4) as usize];
+            let save = t.zeros(0x50);
+            t.write(save + 0x48, &idx.to_le_bytes());
+            let mut faces = [0u8; 0x20];
+            for (i, f) in faces[5..12].iter_mut().enumerate() {
+                *f = [6, 0xff, 1, 6, 0xff, 7, 0xff][(i + case as usize) % 7];
+            }
+            faces[0x1e] = u8::from(case & 2 != 0);
+            if case == 7 {
+                faces[11] = 2; // the last face drawn
+            }
+            let info = t.alloc(&faces);
+            t.stub(mnc::SAVE_FILE_INFO, false, 1, 0, info);
+            let slots_at = t.rebase(mnc::SAVE_SLOTS);
+            let state = i32::from(idx.cast_signed()).cast_unsigned();
+            t.write(
+                slots_at.wrapping_add(state),
+                &[if case & 4 == 0 { 1 } else { 3 }],
+            );
+            t.stub_seq(
+                mnc::FONT_8F8870,
+                3,
+                0,
+                &[
+                    r ^ 0x10,
+                    r ^ 0x11,
+                    r ^ 0x12,
+                    r ^ 0x13,
+                    r ^ 0x14,
+                    r ^ 0x15,
+                    r ^ 0x16,
+                ],
+            );
+            let args = [save, rng.word(), rng.word()];
+            t.check_fs(
+                &format!("save faces #{case}"),
+                0x008b_37d0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::save_party_faces(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_number_printers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0605);
+        // digits with a letter and a sign among them
+        let src = t.alloc(b"19a4:-/7890123456789");
+        for case in 0..16u32 {
+            t.reset();
+            let r = rng.next();
+            t.fill_import(mnc::SPRINTF_IAT, 3, 0, Some(2), 0, src, r ^ 0x55);
+            t.stub(mnc::STR_FONT_M, false, 9, 0, r);
+            t.stub(mnc::FONT3D80_STRING, false, 9, 0, r ^ 1);
+            t.stub(mnc::MKP_SHAPE_XYC2, false, 5, 0, r ^ 2);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 3);
+            let value = [0u32, 1, 3, 8, 9, 11, 15, 0x1234_5670][(case % 8) as usize];
+            let w5 = [rng.next(), value, rng.word(), rng.word(), rng.word()];
+            t.check_fs(
+                &format!("value font m #{case}"),
+                0x008f_3280,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_m(m, ebp, w5)),
+            );
+            t.check_fs(
+                &format!("value font 3d80 #{case}"),
+                0x008f_3390,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_3d80(m, ebp, w5)),
+            );
+            ctrl_state(t, case, 0);
+            t.g32(mnc::PKT_CURSOR, r ^ 2);
+            // at most 7 characters: an eighth and its NUL would reach the
+            // security cookie at ebp - 4 (the original's 8-character path
+            // needs a 9-byte "%02d", which breaks the cookie in the game too)
+            let w4 = [case % 8, rng.word(), rng.word(), rng.word()];
+            t.check_fs(
+                &format!("lulu counter #{case}"),
+                0x0090_1280,
+                &w4,
+                0xc,
+                4,
+                |m, ebp, _| Out::U32(mnb::lulu_counter(m, ebp, w4)),
+            );
+            // TOValueToMesFontL writes the digits; the language and the
+            // English config choose the width
+            t.fill_stub(mnc::VALUE_TO_MES_FONT_L, 3, 1, Some(0), 0, src, r ^ 4);
+            t.stub(
+                mnc::GET_FFX_LANG_JMP,
+                false,
+                0,
+                0,
+                [0, 0, 9, 1][(case % 4) as usize],
+            );
+            // MsGetSaveConfigEnglish is `xor eax, eax; ret`: the stub's jump
+            // covers two bytes past it, put back by the reset
+            t.stub(
+                mnc::SAVE_CONFIG_ENGLISH,
+                false,
+                0,
+                0,
+                u32::from(case & 4 != 0),
+            );
+            t.stub(mnc::BASE_MES_FONT_RGBA, false, 11, 0, r ^ 5);
+            t.check_fs(
+                &format!("value font l #{case}"),
+                0x008f_30b0,
+                &w5,
+                0x24,
+                4,
+                |m, ebp, _| Out::U32(mnb::value_font_l_clut_right(m, ebp, w5)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b2_string_wrappers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0606);
+        let path = t.alloc(b"ffx/font/abc/name.dat\0");
+        let replaced = t.alloc(b"/FFX_Data/new.dat\0");
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::CROSS_STR_FONT_S, false, 10, 0, r);
+            let xy = [
+                (0u32, 0u32),
+                (5, 0xffff_fffb),
+                (0x7fff_ffff, 0x8000_0000),
+                (0x0123_4567, 3),
+            ][(case % 4) as usize];
+            let args = [rng.next(), xy.0, xy.1];
+            t.check_fs(
+                &format!("str font s #{case}"),
+                0x0090_2040,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::easy_str_font_s(m, args[0], args[1], args[2], s)),
+            );
+            // the width TOGetMessageWH writes, both x87 and SSE truncation
+            let width = [0.0f32, 13.0, 7.5, -3.25, 1e10, 3.0][(case % 6) as usize];
+            t.stub_store(
+                mnc::MESSAGE_WH,
+                None,
+                2,
+                width.to_bits(),
+                false,
+                6,
+                0,
+                r ^ 1,
+            );
+            t.stub(mnc::BASE_MES_FONT_PLAIN, false, 4, 0, r ^ 2);
+            t.stub(mnc::DRAW_KICK, false, 0, 0, r ^ 3);
+            ctrl_state(t, case, r ^ 2);
+            let sse = t.rebase(0x0193_ed20); // __sse2_available
+            // 1e10 (case 4 and 10) under both truncations
+            t.w32(sse, (case >> 1) & 1);
+            t.check_fs(
+                &format!("mes font l center #{case}"),
+                0x0090_1c50,
+                &args,
+                8,
+                0,
+                |m, ebp, s| Out::U32(mnb::easy_mes_font_l_center(m, ebp, args, s)),
+            );
+            // the font paths: languages 0, 9, 10 and another
+            t.stub(
+                mnc::GET_FFX_LANG_JMP,
+                false,
+                0,
+                0,
+                [0, 9, 10, 1][(case % 4) as usize],
+            );
+            t.stub(mnc::STR_REPLACE, false, 3, 0, replaced);
+            t.fill_stub(mnc::UNIFY_FILENAME, 3, 1, None, 22, path, r ^ 4);
+            let ebp = t.frame_ebp(1);
+            // strrchr: the last '/' of the unified path
+            imp(t, mnc::STRRCHR_IAT, 2, false, ebp - 0x204 + 12);
+            t.stub(mnc::USER_FREE, false, 1, 0, r ^ 5);
+            let (sym, table) = if case & 1 == 0 {
+                (0x008a_d780u32, &mnc::BATTLE_FONTS)
+            } else {
+                (0x008a_d840, &mnc::EVENT_FONTS)
+            };
+            let dest = t.rebase(table.dest);
+            t.write(dest, &[0xa5; 0x20]);
+            t.check_fs(
+                &format!("font path #{case}"),
+                sym,
+                &[path],
+                0x204,
+                4,
+                |m, ebp, _| Out::U32(mnb::init_font_path(m, ebp, path, table)),
+            );
+        }
+    });
+}

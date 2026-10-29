@@ -121,6 +121,89 @@ pub const ADVANCE_PAD: u32 = 0x00b9_2248;
 pub const SHAPE_INFO: u32 = 0x008f_a7d0;
 pub const SHAPE_INFO_ID: u32 = 0x008f_a4f0;
 
+/// Round 3, batch 2: the packet builders' callees (cdecl): `TOGsTEXFLUSH`,
+/// `TOGsALPHA`, `TOGsWords4`, `TOGsXYZ2Offset`, `TOAdpTEST`, `TOAdpTEX0`
+/// (13 words), `TOAdpWords4`, `TOAdpXY2`, `TOAdpXYZ2Offset`;
+/// `TOGetWindowLayout`, `TOMkpShapeXYWHC2`, `TOMkpShapeXYC2`,
+/// `TOMkpShapeXY`, `0x00901c10` (a shape with its own colours), the
+/// window colours `0x025d16b4`/`0x025d16b0`.
+pub const GS_TEXFLUSH: u32 = 0x008f_ac80;
+pub const GS_ALPHA: u32 = 0x008f_aa20;
+pub const GS_WORDS4: u32 = 0x008f_ab80;
+pub const GS_XYZ2_OFFSET: u32 = 0x008f_acf0;
+pub const ADP_TEST: u32 = 0x008e_f970;
+pub const ADP_TEX0: u32 = 0x008e_fa00;
+pub const ADP_WORDS4: u32 = 0x008e_f8e0;
+pub const ADP_XY2: u32 = 0x008e_fb90;
+pub const ADP_XYZ2_OFFSET: u32 = 0x008e_fbf0;
+pub const WINDOW_LAYOUT: u32 = 0x008f_a4f0;
+pub const MKP_SHAPE_XYWHC2: u32 = 0x0090_3b70;
+pub const MKP_SHAPE_XYC2: u32 = 0x0090_3a50;
+pub const MKP_SHAPE_XY: u32 = 0x0090_3a10;
+pub const SHAPE_901C10: u32 = 0x0090_1c10;
+pub const WINDOW_COLOUR: u32 = 0x025d_16b4;
+pub const WINDOW_COLOUR2: u32 = 0x025d_16b0;
+/// The battle plate's callees: `TOMakePktSampleBlueWindowXY2`,
+/// `TOGetSaveChrName`, `TOMkpEasyMesFontLCenter`, `TOBtlDrawParamPlate`;
+/// the save slot's: `TkMenuGetSaveFileInfo`, `g_TkSaveSlots`,
+/// `TOMenuTransSmallFacePlyTex`, `TOMakePktScissor`, `0x008f8870`.
+pub const BLUE_WINDOW: u32 = 0x008f_de50;
+pub const SAVE_CHR_NAME: u32 = 0x008a_c850;
+pub const MES_FONT_L_CENTER: u32 = 0x0090_1c50;
+pub const PARAM_PLATE: u32 = 0x0089_5940;
+pub const SAVE_FILE_INFO: u32 = 0x008b_4e40;
+pub const SAVE_SLOTS: u32 = 0x0186_6290;
+pub const SMALL_FACE: u32 = 0x0090_1160;
+pub const PKT_SCISSOR: u32 = 0x008f_dee0;
+pub const FONT_8F8870: u32 = 0x008f_8870;
+/// The number printers: the CRT's `sprintf` (import slot), the formats
+/// `0x00b5f090` and `0x00b66b48`; `TODrawFont3d80String_008ee060`,
+/// `TOValueToMesFontL`, `TOGetFFXLangJmp`, `MsGetSaveConfigEnglish`,
+/// `TOAddPktBaseMesFontLClutTypeRGBA`.
+pub const SPRINTF_IAT: u32 = 0x00b0_c3dc;
+pub const FMT_B5F090: u32 = 0x00b5_f090;
+pub const FMT_B66B48: u32 = 0x00b6_6b48;
+pub const FONT3D80_STRING: u32 = 0x008e_e060;
+pub const VALUE_TO_MES_FONT_L: u32 = 0x008b_9140;
+pub const SAVE_CONFIG_ENGLISH: u32 = 0x0078_51d0;
+pub const BASE_MES_FONT_RGBA: u32 = 0x008e_92a0;
+/// The small and centred string wrappers: `TOAdpCrossEasyStrFontSClutRGBA`
+/// (its scale `0x00b5ee10`), `TOGetMessageWH`,
+/// `TOAddPktBaseMesFontPlain_008ed060`, `g_Vu0FixedRound` (f64 0.5).
+pub const CROSS_STR_FONT_S: u32 = 0x008e_c2f0;
+pub const STR_FONT_S_SCALE: u32 = 0x00b5_ee10;
+pub const MESSAGE_WH: u32 = 0x008b_9650;
+pub const BASE_MES_FONT_PLAIN: u32 = 0x008e_d060;
+pub const HALF: u32 = 0x00b9_2220;
+/// The font paths: `str_replace`, `fiosUnifyFilename`, the CRT's
+/// `strrchr` (import slot), `user_free_thunk`; the two path buffers and
+/// the format/language strings.
+pub const STR_REPLACE: u32 = 0x00a4_4bd0;
+pub const UNIFY_FILENAME: u32 = 0x0067_9820;
+pub const STRRCHR_IAT: u32 = 0x00b0_c3a4;
+pub const USER_FREE: u32 = 0x0068_7010;
+/// A font path's strings: what `str_replace` replaces for languages 0, 9
+/// and 10, their folders, and the buffer the path goes to.
+pub struct FontPaths {
+    pub what: u32,
+    pub with: [u32; 3],
+    pub dest: u32,
+}
+/// `TOInitBattleFontPath`'s.
+pub const BATTLE_FONTS: FontPaths = FontPaths {
+    what: 0x00b6_2f00,
+    with: [0x00b6_2ed4, 0x00b6_2f50, 0x00b6_2f24],
+    dest: 0x025d_06a0,
+};
+/// `TOInitEventFontPath`'s.
+pub const EVENT_FONTS: FontPaths = FontPaths {
+    what: 0x00b6_2e48,
+    with: [0x00b6_2e1c, 0x00b6_2e94, 0x00b6_2e6c],
+    dest: 0x025d_08a0,
+};
+/// The other languages' replacement (`what`, `with`).
+pub const FONT_OTHER: (u32, u32) = (0x00b6_2ebc, 0x00b4_3b18);
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -575,5 +658,531 @@ pub mod bridge {
         let [cursor, id1, id2, x, y, w, c, c1] = args;
         let info = cdecl(h, super::SHAPE_INFO_ID, &[id1]);
         shape_pair(h, cursor, [id1, id2], info, [x, y, w], c, c1)
+    }
+    // ---- round 3, batch 2: packet builders and menu draws ----
+
+    /// A CRT import (cdecl) through its import slot.
+    fn crt(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Cdecl, args)
+    }
+
+    /// Writes `words` from `p` on; returns `p` past them.
+    fn put_words(h: &mut impl Host, p: u32, words: &[u32]) -> u32 {
+        let mut at = p;
+        for &w in words {
+            h.write(at, w);
+            at = at.wrapping_add(4);
+        }
+        at
+    }
+
+    /// The length of the NUL-terminated string at `s`.
+    fn strlen(h: &impl Host, s: u32) -> u32 {
+        let mut n = 0u32;
+        while h.read::<u8>(s.wrapping_add(n)) != 0 {
+            n = n.wrapping_add(1);
+        }
+        n
+    }
+
+    /// The word at the `ffx.sym` address `sym`.
+    fn global(h: &impl Host, sym: u32) -> u32 {
+        h.read(h.rebase(sym))
+    }
+
+    /// `FUN_008eb4e0(cursor)`: a GS tag with `TEXFLUSH` (through
+    /// `TOGsTEXFLUSH`, which moves `g_TOPktCursor`), then the alpha, test
+    /// and register words of the menu's plain drawing; `g_TOPktCursor`
+    /// past them, returned.
+    pub fn tex_flush_alpha(h: &mut impl Host, cursor: u32) -> u32 {
+        let cell = h.rebase(PKT_CURSOR);
+        let p = put_words(h, cursor, &[0x8005, 0x1000_0000, 0xe, 0]);
+        h.write(cell, p);
+        cdecl(h, super::GS_TEXFLUSH, &[]);
+        let p: u32 = h.read(cell);
+        let end = put_words(
+            h,
+            p,
+            &[
+                0x0200_0000,
+                0x01a0_0000,
+                0x40,
+                0,
+                0,
+                0,
+                8,
+                0,
+                0x44,
+                0x80,
+                0x42,
+                0,
+                0xf,
+                0,
+                0x47,
+                0,
+            ],
+        );
+        h.write(cell, end);
+        end
+    }
+
+    /// `FUN_009046e0()`: a GS tag and five register writes at
+    /// `g_TOPktCursor` (the cursor past them), then the tail jump to
+    /// `TOCtrlPkt`.
+    pub fn plain_draw_regs(h: &mut impl Host) -> u32 {
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let end = put_words(
+            h,
+            p,
+            &[
+                0x8005,
+                0x1000_0000,
+                0xe,
+                0,
+                0,
+                0,
+                0x3f,
+                0,
+                0x44,
+                0x80,
+                0x42,
+                0,
+                0xf,
+                0,
+                0x47,
+                0,
+                0x60,
+                0,
+                0x14,
+                0,
+                5,
+                0,
+                8,
+                0,
+            ],
+        );
+        h.write(cell, end);
+        ctrl_pkt(h, end)
+    }
+
+    /// `FUN_008f1990` / `FUN_008f1a10(cursor, x, y, w, c, c1)`:
+    /// [`shape_da_db`], then shape `id` (0x10b / 0x10a) at `(x + 0x61, y)`
+    /// with no size and colours 0x80000000.
+    pub fn shape_da_db_icon(h: &mut impl Host, args: [u32; 6], id: u32) -> u32 {
+        let [_, x, y, ..] = args;
+        let cur = shape_da_db(h, args);
+        cdecl(
+            h,
+            EASY_SHAPE,
+            &[
+                cur,
+                id,
+                x.wrapping_add(0x61),
+                y,
+                0,
+                0,
+                0x8000_0000,
+                0x8000_0000,
+            ],
+        )
+    }
+
+    /// `FUN_008f5e90(a, b, x, y, w, c, c1)`: shape `a` at `(x, y)`, `w`
+    /// less `b`'s layout width wide (colours `c, c1`), then shape `b` right
+    /// of it with no size (`c1, c1`), both at `g_TOPktCursor` (moved and
+    /// returned).
+    pub fn shape_left_right(h: &mut impl Host, args: [u32; 7]) -> u32 {
+        let [a, b, x, y, w, c, c1] = args;
+        let info = cdecl(h, super::WINDOW_LAYOUT, &[b]);
+        let ww = u32::from(h.read::<u16>(info.wrapping_add(8)));
+        let cell = h.rebase(PKT_CURSOR);
+        let cur: u32 = h.read(cell);
+        let cur = cdecl(h, EASY_SHAPE, &[cur, a, x, y, w.wrapping_sub(ww), 0, c, c1]);
+        h.write(cell, cur);
+        let x2 = x.wrapping_sub(ww).wrapping_add(w);
+        let cur = cdecl(h, EASY_SHAPE, &[cur, b, x2, y, 0, 0, c1, c1]);
+        h.write(cell, cur);
+        cur
+    }
+
+    /// `FUN_008f9b60(x, y, w, h, c, c1; slots)`: a window frame of shapes
+    /// 0xc8..0xcb (`TOMkpShapeXYWHC2`; the corner sizes from layout
+    /// 0xc8's halfwords `+8`/`+0xa`), `w` at least 16 (stored back into
+    /// its argument slot `slots + 8`), then `TOCtrlPkt`.
+    pub fn window_frame(h: &mut impl Host, args: [u32; 6], slots: u32) -> u32 {
+        let [x, y, mut w, hh, c, c1] = args;
+        if w.cast_signed() < 0x10 {
+            w = 0x10;
+            h.write(slots.wrapping_add(8), w);
+        }
+        let info = cdecl(h, super::WINDOW_LAYOUT, &[0xc8]).wrapping_add(4);
+        let shape = super::MKP_SHAPE_XYWHC2;
+        cdecl(h, shape, &[0xc8, x, y, 0, 0, c, c]);
+        let cw = u32::from(h.read::<u16>(info.wrapping_add(4)));
+        cdecl(
+            h,
+            shape,
+            &[0xc9, x.wrapping_add(cw), y, w.wrapping_sub(cw), 0, c, c1],
+        );
+        let ch = u32::from(h.read::<u16>(info.wrapping_add(6)));
+        cdecl(
+            h,
+            shape,
+            &[0xca, x, y.wrapping_add(ch), 0, hh.wrapping_sub(ch), c, c],
+        );
+        let ch = u32::from(h.read::<u16>(info.wrapping_add(6)));
+        let cw = u32::from(h.read::<u16>(info.wrapping_add(4)));
+        let r = cdecl(
+            h,
+            shape,
+            &[
+                0xcb,
+                x.wrapping_add(cw),
+                y.wrapping_add(ch),
+                w.wrapping_sub(cw),
+                hh.wrapping_sub(ch),
+                c,
+                c1,
+            ],
+        );
+        ctrl_pkt(h, r)
+    }
+
+    /// `FUN_008f9a40(x, y, w, h; slots)`: a window in the window colours
+    /// (`0x025d16b4`, `0x025d16b0`): under 16 wide, two `0x00901c10`
+    /// shapes (0xc8 and 0xca); else four `TOMkpShapeXYWHC2` (0xc8..0xcb,
+    /// the corner sizes from layout 0xc8, `w` less the corner stored into
+    /// its argument slot `slots + 8`). Then `TOCtrlPkt`.
+    pub fn window_plain(h: &mut impl Host, args: [u32; 4], slots: u32) -> u32 {
+        let [x, y, w, hh] = args;
+        let info = cdecl(h, super::WINDOW_LAYOUT, &[0xc8]);
+        let cw = u32::from(h.read::<u16>(info.wrapping_add(8)));
+        let ch = u32::from(h.read::<u16>(info.wrapping_add(0xa)));
+        let r = if w.cast_signed() < 0x10 {
+            cdecl(h, super::WINDOW_LAYOUT, &[0xc8]);
+            let a = global(h, super::WINDOW_COLOUR);
+            cdecl(h, super::SHAPE_901C10, &[0xc8, x, y, w, ch, a, a]);
+            let a = global(h, super::WINDOW_COLOUR);
+            cdecl(
+                h,
+                super::SHAPE_901C10,
+                &[0xca, x, ch.wrapping_add(y), w, hh.wrapping_sub(ch), a, a],
+            )
+        } else {
+            let shape = super::MKP_SHAPE_XYWHC2;
+            let a = global(h, super::WINDOW_COLOUR);
+            cdecl(h, shape, &[0xc8, x, y, 0, 0, a, a]);
+            let b0 = global(h, super::WINDOW_COLOUR2);
+            let a = global(h, super::WINDOW_COLOUR);
+            let rest = w.wrapping_sub(cw);
+            h.write(slots.wrapping_add(8), rest);
+            cdecl(h, shape, &[0xc9, cw.wrapping_add(x), y, rest, 0, a, b0]);
+            let a = global(h, super::WINDOW_COLOUR);
+            let (y2, h2) = (y.wrapping_add(ch), hh.wrapping_sub(ch));
+            cdecl(h, shape, &[0xca, x, y2, 0, h2, a, a]);
+            let b0 = global(h, super::WINDOW_COLOUR2);
+            let a = global(h, super::WINDOW_COLOUR);
+            let rest: u32 = h.read(slots.wrapping_add(8));
+            cdecl(h, shape, &[0xcb, cw.wrapping_add(x), y2, rest, h2, a, b0])
+        };
+        ctrl_pkt(h, r)
+    }
+
+    /// `TOMakePktSampleBlueWindowXY2(x0, y0, x1, y1)`: a GS tag, alpha
+    /// (`TOGsALPHA(0, 1, 0, 1, 0x80)`) and two gradient strips
+    /// (`TOGsWords4` colours, `TOGsXYZ2Offset` corners `(x0, y0)`, `(x1,
+    /// y0)`, then `(x0, y1)`, `(x1, y1)`), then the tail jump to
+    /// `TOCtrlPkt`.
+    pub fn sample_blue_window(h: &mut impl Host, args: [u32; 4]) -> u32 {
+        let [x0, y0, x1, y1] = args;
+        let cell = h.rebase(PKT_CURSOR);
+        let p: u32 = h.read(cell);
+        let p = put_words(h, p, &[0x8001, 0x70a6_4000, 0x0441_441e, 0]);
+        h.write(cell, p);
+        cdecl(h, super::GS_ALPHA, &[0, 1, 0, 1, 0x80]);
+        cdecl(h, super::GS_WORDS4, &[0x10, 0x10, 0x70, 0x58]);
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x0, y0]);
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x1, y0]);
+        cdecl(h, super::GS_WORDS4, &[0x50, 0x50, 0x50, 0x60]);
+        cdecl(h, super::GS_XYZ2_OFFSET, &[x0, y1]);
+        let r = cdecl(h, super::GS_XYZ2_OFFSET, &[x1, y1]);
+        ctrl_pkt(h, r)
+    }
+
+    /// `TOBtlDrawChangeSeqAnm0(chr, x, y)`: the blue window
+    /// `(x, y)..(x + 0xa2, y + 0x2c)`, the face shape (`chr + 0x1b8`) at
+    /// `(x + 2, y + 2)`, the name centred at `(x + 0x61, y + 2)` and the
+    /// parameter plate at `(x + 2, y + 0x17)`; the plate's `eax`.
+    pub fn change_seq_anm(h: &mut impl Host, chr: u32, x: u32, y: u32) -> u32 {
+        cdecl(
+            h,
+            super::BLUE_WINDOW,
+            &[x, y, x.wrapping_add(0xa2), y.wrapping_add(0x2c)],
+        );
+        let (x2, y2) = (x.wrapping_add(2), y.wrapping_add(2));
+        cdecl(h, super::MKP_SHAPE_XY, &[chr.wrapping_add(0x1b8), x2, y2]);
+        let name = cdecl(h, super::SAVE_CHR_NAME, &[chr]);
+        cdecl(
+            h,
+            super::MES_FONT_L_CENTER,
+            &[name, x.wrapping_add(0x61), y2],
+        );
+        cdecl(h, super::PARAM_PLATE, &[chr, x2, y.wrapping_add(0x17)])
+    }
+
+    /// `FUN_008b37d0(save, x, y; slots)`: the save file `i16 save + 0x48`'s
+    /// info (`TkMenuGetSaveFileInfo`, kept in the argument slot `slots`);
+    /// when its slot state (`g_TkSaveSlots`) is 1, the small faces
+    /// (`TOMenuTransSmallFacePlyTex`), a full-screen scissor and the
+    /// party's faces: each of the 7 bytes from `info + 5` but 0xff drawn
+    /// by `0x008f8870(face, x, y)` (face 6 as 7 when `info + 0x1e` is
+    /// set), `x` stepping 0x3b per drawn face. Returns the `eax` the
+    /// original leaves: the info, or the last face call's with the low
+    /// byte of a trailing 0xff byte read over it.
+    pub fn save_party_faces(h: &mut impl Host, save: u32, x: u32, y: u32, slots: u32) -> u32 {
+        let idx = i32::from(h.read::<i16>(save.wrapping_add(0x48))).cast_unsigned();
+        let info = cdecl(h, super::SAVE_FILE_INFO, &[idx]);
+        h.write(slots, info);
+        let state: u8 = h.read(h.rebase(super::SAVE_SLOTS).wrapping_add(idx));
+        if state != 1 {
+            return info;
+        }
+        cdecl(h, super::SMALL_FACE, &[]);
+        let mut eax = cdecl(h, super::PKT_SCISSOR, &[0, 0, 0x200, 0x1a0]);
+        let mut at = x;
+        for i in 0..7u32 {
+            let b: u8 = h.read(info.wrapping_add(5 + i));
+            eax = (eax & !0xff) | u32::from(b);
+            if b == 0xff {
+                continue;
+            }
+            let mut face = u32::from(b);
+            // the flag through the info the slot keeps (reread after each call)
+            let kept: u32 = h.read(slots);
+            if face == 6 && h.read::<u8>(kept.wrapping_add(0x1e)) != 0 {
+                face = 7;
+            }
+            eax = cdecl(h, super::FONT_8F8870, &[face, at, y]);
+            at = at.wrapping_add(0x3b);
+        }
+        eax
+    }
+
+    /// `FUN_008f1880(p, slot, x, y, c0, c1, c2, c3; slots)`: for a face
+    /// slot 0..7 (unsigned), a sprite packet at `p`: a GS tag, `TOAdpTEST`,
+    /// `TOAdpTEX0` of the face page, a tag and the colours
+    /// (`TOAdpWords4`), then the face's cell (`(slot % 4) * 64`,
+    /// `(slot / 4) * 64`, the first stored into the argument slot
+    /// `slots + 4`) and the screen corners `(x, y)`, `(x + 0x40, y +
+    /// 0x40)`. Returns the packet's end, or `p` for another slot.
+    pub fn face_sprite(h: &mut impl Host, args: [u32; 8], slots: u32) -> u32 {
+        let [p, slot, x, y, c0, c1, c2, c3] = args;
+        if slot > 7 {
+            return p;
+        }
+        let q = put_words(h, p, &[2, 0x1000_0000, 0xe, 0]);
+        let q = cdecl(h, super::ADP_TEST, &[q, 1, 7, 0, 0, 0, 0, 0, 0]);
+        let q = h.call_sym_wide(
+            super::ADP_TEX0,
+            &[q, 0x3100, 4, 0x13, 8, 7, 1, 0, 0x2ed8, 0, 0, 0, 2],
+        );
+        let q = put_words(h, q, &[0x8001, 0x508f_4000, 0x0004_3431, 0]);
+        let q = cdecl(h, super::ADP_WORDS4, &[q, c0, c1, c2, c3]);
+        let v = (slot >> 2) << 6;
+        let u = (slot & 3) << 6;
+        h.write(slots.wrapping_add(4), u);
+        let q = cdecl(h, super::ADP_XY2, &[q, u, v]);
+        let q = cdecl(h, super::ADP_XYZ2_OFFSET, &[q, x, y]);
+        let u: u32 = h.read(slots.wrapping_add(4));
+        let q = cdecl(
+            h,
+            super::ADP_XY2,
+            &[q, u.wrapping_add(0x40), v.wrapping_add(0x40)],
+        );
+        cdecl(
+            h,
+            super::ADP_XYZ2_OFFSET,
+            &[q, x.wrapping_add(0x40), y.wrapping_add(0x40)],
+        )
+    }
+
+    /// `sprintf(buf, fmt, value)` into `buf`; the string's length.
+    fn print_value(h: &mut impl Host, buf: u32, fmt: u32, value: u32) -> u32 {
+        let fmt = h.rebase(fmt);
+        crt(h, super::SPRINTF_IAT, &[buf, fmt, value]);
+        strlen(h, buf)
+    }
+
+    /// `FUN_008f3280(cursor, value, x, a, b)` with its frame at `ebp`:
+    /// `value` printed (`sprintf` with `0x00b5f090`) into `ebp - 0x24`
+    /// and drawn right-aligned (`x - 12 * len + 2`) by `0x008edfc0` with
+    /// the four colours 0x80; its cursor.
+    pub fn value_font_m(h: &mut impl Host, ebp: u32, args: [u32; 5]) -> u32 {
+        let [cursor, value, x, a, b] = args;
+        let buf = ebp.wrapping_sub(0x24);
+        let len = print_value(h, buf, super::FMT_B5F090, value);
+        let x = x.wrapping_sub(len.wrapping_mul(12)).wrapping_add(2);
+        cdecl(
+            h,
+            STR_FONT_M,
+            &[cursor, buf, x, a, b, 0x80, 0x80, 0x80, 0x80],
+        )
+    }
+
+    /// `FUN_008f3390(cursor, value, x, a, b)` with its frame at `ebp`: as
+    /// [`value_font_m`], 10 pixels a digit, drawn by
+    /// `TODrawFont3d80String_008ee060`.
+    pub fn value_font_3d80(h: &mut impl Host, ebp: u32, args: [u32; 5]) -> u32 {
+        let [cursor, value, x, a, b] = args;
+        let buf = ebp.wrapping_sub(0x24);
+        let len = print_value(h, buf, super::FMT_B5F090, value);
+        let x = x.wrapping_sub(len.wrapping_mul(10)).wrapping_add(2);
+        cdecl(
+            h,
+            super::FONT3D80_STRING,
+            &[cursor, buf, x, a, b, 0x80, 0x80, 0x80, 0x80],
+        )
+    }
+
+    /// `TOMkpBtlLimitLuluMidareCounter(value, x, y, c)` with its frame at
+    /// `ebp`: `value` printed (`0x00b66b48`) into `ebp - 0xc`, each of
+    /// its first 8 characters that is a digit drawn as shape `0x1ba +
+    /// char` at `(x + 16 i, y)` (`TOMkpShapeXYC2`, colours `c, c`), then
+    /// `TOCtrlPkt`. Returns the `eax` the original leaves (the last
+    /// character read sits in its low byte when no shape follows it).
+    pub fn lulu_counter(h: &mut impl Host, ebp: u32, args: [u32; 4]) -> u32 {
+        let [value, x, y, c] = args;
+        let buf = ebp.wrapping_sub(0xc);
+        let fmt = h.rebase(super::FMT_B66B48);
+        let mut eax = crt(h, super::SPRINTF_IAT, &[buf, fmt, value]);
+        for i in 0..8u32 {
+            let ch: u8 = h.read(buf.wrapping_add(i));
+            eax = (eax & !0xff) | u32::from(ch);
+            if ch == 0 {
+                break;
+            }
+            let ch = ch.cast_signed();
+            if (0x30..=0x39).contains(&ch) {
+                let id = i32::from(ch).cast_unsigned().wrapping_add(0x1ba);
+                eax = cdecl(
+                    h,
+                    super::MKP_SHAPE_XYC2,
+                    &[id, x.wrapping_add(16 * i), y, c, c],
+                );
+            }
+        }
+        ctrl_pkt(h, eax)
+    }
+
+    /// `TOAdpValueFontLClutRight(cursor, value, x, a, b)` with its frame
+    /// at `ebp`: `value` as message-font digits
+    /// (`TOValueToMesFontL(value, ebp - 0x24, 0)`), drawn right-aligned
+    /// by `TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x', a, b,
+    /// 0, 0x80 x4)`: `x' = x - 12 len` for Japanese text (language 0 and
+    /// not the English config), else `x - 9 len`.
+    pub fn value_font_l_clut_right(h: &mut impl Host, ebp: u32, args: [u32; 5]) -> u32 {
+        let [cursor, value, x, a, b] = args;
+        let buf = ebp.wrapping_sub(0x24);
+        cdecl(h, super::VALUE_TO_MES_FONT_L, &[value, buf, 0]);
+        let wide =
+            cdecl(h, GET_FFX_LANG_JMP, &[]) == 0 && cdecl(h, super::SAVE_CONFIG_ENGLISH, &[]) == 0;
+        let len = strlen(h, buf);
+        let step = if wide { 12 } else { 9 };
+        let x = x.wrapping_sub(len.wrapping_mul(step));
+        cdecl(
+            h,
+            super::BASE_MES_FONT_RGBA,
+            &[cursor, u32::MAX, buf, x, a, b, 0, 0x80, 0x80, 0x80, 0x80],
+        )
+    }
+
+    /// `i` as `fild`/`fstp dword` makes it: the nearest `f32`.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_f32(i: u32) -> f32 {
+        i.cast_signed() as f32
+    }
+
+    /// `TOMkpEasyStrFontS(text, x, y; slots)`:
+    /// `TOAdpCrossEasyStrFontSClutRGBA(text, f32 x, f32 y, 0, 0x80 x4,
+    /// scale, 1.0)` (the scale at `0x00b5ee10`); the original converts
+    /// through its `y` argument slot (`slots + 8`), which keeps `f32 x`.
+    pub fn easy_str_font_s(h: &mut impl Host, text: u32, x: u32, y: u32, slots: u32) -> u32 {
+        let yf = int_f32(y).to_bits();
+        let xf = int_f32(x).to_bits();
+        h.write(slots.wrapping_add(8), xf);
+        let scale: u32 = global(h, super::STR_FONT_S_SCALE);
+        cdecl(
+            h,
+            super::CROSS_STR_FONT_S,
+            &[
+                text,
+                xf,
+                yf,
+                0,
+                0x80,
+                0x80,
+                0x80,
+                0x80,
+                scale,
+                1.0f32.to_bits(),
+            ],
+        )
+    }
+
+    /// `TOMkpEasyMesFontLCenter(text, x, y; slots)` with its frame at
+    /// `ebp`: the text's width (`TOGetMessageWH(0, text, ebp - 8, ebp - 4,
+    /// 0, 0)`), drawn at `ftol(f32 x - width * 0.5)` (`f32 x` kept in the
+    /// argument slot `slots + 4`) by `TOAddPktBaseMesFontPlain_008ed060`
+    /// at `g_TOPktCursor`, then `TOCtrlPkt`.
+    pub fn easy_mes_font_l_center(h: &mut impl Host, ebp: u32, args: [u32; 3], slots: u32) -> u32 {
+        let [text, x, y] = args;
+        let (w_at, h_at) = (ebp.wrapping_sub(8), ebp.wrapping_sub(4));
+        cdecl(h, super::MESSAGE_WH, &[0, text, w_at, h_at, 0, 0]);
+        let xf = int_f32(x);
+        h.write(slots.wrapping_add(4), xf.to_bits());
+        let w = f64::from(f32::from_bits(h.read(w_at)));
+        let half = f64::from_bits(h.read::<u64>(h.rebase(super::HALF)));
+        let left = ffx_bridge::x87::ftol(h, f64::from(xf) - w * half);
+        let cell = h.rebase(PKT_CURSOR);
+        let cur: u32 = h.read(cell);
+        let cur = cdecl(h, super::BASE_MES_FONT_PLAIN, &[cur, text, left, y]);
+        h.write(cell, cur);
+        ctrl_pkt(h, cur)
+    }
+
+    /// `TOInitBattleFontPath(path)` / `TOInitEventFontPath(path)` with the
+    /// frame at `ebp`: `path` with the language's font folder put in
+    /// (`str_replace(path, what, with)`: `what` for languages 0, 9 and 10
+    /// with their folder, else `0x00b62ebc` with `0x00b43b18`), unified
+    /// (`fiosUnifyFilename(s, ebp - 0x204, 0x200)`), cut after its last
+    /// `/` (the CRT's `strrchr`) and copied to `dest` with its NUL; the
+    /// replaced string freed (`user_free_thunk`), whose `eax` is returned.
+    pub fn init_font_path(h: &mut impl Host, ebp: u32, path: u32, table: &super::FontPaths) -> u32 {
+        let lang = cdecl(h, GET_FFX_LANG_JMP, &[]);
+        let (what, with) = match lang {
+            0 => (table.what, table.with[0]),
+            9 => (table.what, table.with[1]),
+            10 => (table.what, table.with[2]),
+            _ => super::FONT_OTHER,
+        };
+        let (what, with) = (h.rebase(what), h.rebase(with));
+        let s = cdecl(h, super::STR_REPLACE, &[path, what, with]);
+        let buf = ebp.wrapping_sub(0x204);
+        cdecl(h, super::UNIFY_FILENAME, &[s, buf, 0x200]);
+        let slash = crt(h, super::STRRCHR_IAT, &[buf, 0x2f]);
+        h.write(slash.wrapping_add(1), 0u8);
+        let dest = h.rebase(table.dest);
+        let mut i = 0u32;
+        loop {
+            let b: u8 = h.read(buf.wrapping_add(i));
+            h.write(dest.wrapping_add(i), b);
+            i = i.wrapping_add(1);
+            if b == 0 {
+                break;
+            }
+        }
+        cdecl(h, super::USER_FREE, &[s])
     }
 }
