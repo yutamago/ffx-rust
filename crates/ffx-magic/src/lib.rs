@@ -944,6 +944,8 @@ ports! {
     "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
     "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
     "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
+    "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
+    "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

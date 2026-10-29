@@ -589,17 +589,16 @@ pub const TARGETS_INIT: Sig = Sig {
     imports: &[],
 };
 
-/// The summon's start (a table entry, cdecl `(actor)`): the targets
+/// A summon's start (a table entry, cdecl `(actor)`): the targets
 /// ([`targets_init`]); the DLL's task list, two static nodes and their
 /// links set up (words and immediates from the code); slot 718 and slot
 /// 719 `(part, 8, 0)` on the DLL's part, whose handle goes into `G_H`;
 /// slot 711 `(handle, program, 0)` with `**G_LOCK` 1 around it; slot 710
 /// loads the part's data; slots 222 and 221 `(part, 0, 1000, 2)`; a task
 /// is appended to the list (its links and three words cleared, the
-/// list's flag bit 0 cleared). Returns 0.
-///
-/// `magic_0003` 0x100068d0 (457 bytes; 18 DLLs).
-pub fn summon_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+/// list's flag bit 0 cleared). Returns 0. `cleared`: the operand
+/// offsets of the task's words cleared last.
+fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let actor = fr.arg(g, 0);
@@ -649,11 +648,33 @@ pub fn summon_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let flags = g.read::<u32>(w(0x197));
     g.write::<u32>(w(0x197), flags & !1);
     g.write::<u32>(w(0x19e), w(0x1a2));
-    for dst in [0x1a8, 0x1b2, 0x1bc] {
+    for &dst in cleared {
         g.write::<u32>(w(dst), 0);
     }
     Ret::eax(0)
 }
+
+/// [`start`] with three task words cleared.
+///
+/// `magic_0003` 0x100068d0 (457 bytes; 18 DLLs).
+pub fn summon_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start(g, img, fr, &[0x1a8, 0x1b2, 0x1bc])
+}
+
+/// [`start`] with one task word cleared.
+///
+/// `magic_0202` 0x10007760 (437 bytes; 21 DLLs).
+pub fn summon_start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start(g, img, fr, &[0x1a8])
+}
+
+/// [`summon_start_b`] (the `rel32`: [`targets_init`]).
+pub const SUMMON_START_B: Sig = Sig {
+    len: 437,
+    hash: 0xe46b_13bb_4b92_a306,
+    calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
 
 /// [`summon_start`] (the `rel32`: [`targets_init`]).
 pub const SUMMON_START: Sig = Sig {

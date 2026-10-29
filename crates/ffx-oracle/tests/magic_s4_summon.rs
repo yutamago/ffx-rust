@@ -332,8 +332,14 @@ fn motion_state_steps() {
 /// the part and its program, with the lock word as the game left it.
 #[test]
 fn summon_start() {
-    let Some(mut t) = twin(3) else { return };
-    let at = t.at(0x68d0);
+    for (n, rva) in [(3u16, 0x68d0u32), (202, 0x7760)] {
+        summon_start_in(n, rva);
+    }
+}
+
+fn summon_start_in(n: u16, rva: u32) {
+    let Some(mut t) = twin(n) else { return };
+    let at = t.at(rva);
     let targets = t.img.rel32_target(at + 0x08);
     let statics = t.img.rel32_target(targets + 0xe0);
     let root = t.img.word(statics + 0x10d);
