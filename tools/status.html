@@ -303,7 +303,7 @@ document.addEventListener("mousemove", e => {
 
 // ---- state ---------------------------------------------------------------
 let D = null, L = null, current = 0, currentLive = 0;
-const ui = { mapMode: "port", scope: "game", focus: null };
+const ui = { mapMode: "port", scope: "game", focus: null, trajRange: "7" };
 
 function gameTotals(counts) {
   const t = {};
@@ -393,12 +393,14 @@ function render() {
     </section>
     <section class="grid-two" id="ports">
       <div class="card">
-        <h2>Trajectory</h2>
-        <p class="hint">Share of the game's code, by bytes, at every commit to ${esc(D.ref)}.</p>
+        <div class="toolbar" style="margin-bottom:4px"><h2>Trajectory</h2><div class="seg" id="trajRange"><button data-v="all">All</button><button data-v="7">Last 7 days</button></div></div>
+        <p class="hint">Share of the game's code, by bytes, at every commit to ${esc(D.ref)}, and where the pace leads.</p>
         <div id="traj"></div>
+        <p class="note" id="trajHint" style="margin:8px 0 0"></p>
         <div class="legend" style="margin-top:6px">
           <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
           <span><i style="background:${C.named}"></i>Named</span>
+          <span><i class="dash"></i>Projection at the 24 h pace</span>
         </div>
       </div>
       <div class="card">
@@ -420,6 +422,7 @@ function render() {
   layoutMap();
   drawMap();
   renderPulse();
+  bindSeg("trajRange", "trajRange", renderTrajectory);
   renderTrajectory();
   renderFeed();
   renderCoverage();
@@ -1185,10 +1188,15 @@ function renderPulse() {
 
 // ---- line charts ---------------------------------------------------------------
 function lineChart(el, series, opt) {
-  const W = el.clientWidth || 600, H = opt.height || 220;
-  const L = 58, R = 64, T = 10, B = 26;
+  const W = el.clientWidth || 600, H = (opt.height || 220) + (opt.project ? 30 : 0);
+  const L = 58, R = 64, T = opt.project ? 40 : 10, B = 26;
   const pts = series.flatMap(s => s.points);
-  const t0 = Math.min(...pts.map(p => p.t)), t1 = Math.max(...pts.map(p => p.t));
+  const tData = Math.max(...pts.map(p => p.t));
+  const t0 = Math.max(Math.min(...pts.map(p => p.t)), opt.from || 0);
+  const clip = "clip" + Math.random().toString(36).slice(2, 8);
+  // opt.project: per series {rate (per day), to (value), end (time)}; opt.ref: {v, label, color}
+  const P = opt.project || [];
+  const t1 = Math.max(tData, ...P.filter(Boolean).map(q => q.end));
   const ymax = opt.ymax ?? Math.max(...pts.map(p => p.v)) * 1.1;
   const x = t => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0);
   const y = v => T + (H - T - B) * (1 - v / ymax);
@@ -1207,6 +1215,32 @@ function lineChart(el, series, opt) {
     s += `<text x="${x(t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${C.muted}">${new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
   }
   s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="${C.muted}" stroke-opacity=".5"/>`;
+  if (P.some(Boolean)) {
+    const tn = Math.min(now(), t1);
+    s += `<line x1="${x(tn)}" x2="${x(tn)}" y1="${T}" y2="${H - B}" stroke="${C.secondary}" stroke-opacity=".4" stroke-dasharray="2 3"/><text x="${x(tn) - 4}" y="${H - B - 6}" text-anchor="end" font-size="11" fill="${C.muted}">now</text>`;
+  }
+  if (opt.ref) {
+    s += `<line x1="${L}" x2="${W - R}" y1="${y(opt.ref.v)}" y2="${y(opt.ref.v)}" stroke="${opt.ref.color}" stroke-opacity=".7" stroke-dasharray="1 4" stroke-linecap="round" stroke-width="2"/>`;
+    s += `<text x="${L + 6}" y="${y(opt.ref.v) + 15}" font-size="11.5" fill="${C.secondary}">${esc(opt.ref.label)}</text>`;
+  }
+  const marks = [];
+  series.forEach((se, k) => {
+    const q = P[k];
+    if (!q) return;
+    const lp = se.points[se.points.length - 1];
+    const v1 = Math.min(q.to, lp.v + q.rate * (q.end - lp.t) / 86400);
+    s += `<line x1="${x(lp.t)}" y1="${y(lp.v)}" x2="${x(q.end)}" y2="${y(v1)}" stroke="${se.color}" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>`;
+    s += `<circle cx="${x(q.end)}" cy="${y(v1)}" r="4" fill="${C.surface}" stroke="${se.color}" stroke-width="2"/>`;
+    for (const m of q.marks || []) marks.push({ ...m, color: se.color });
+  });
+  for (const m of marks) {
+    const mx = x(m.t), right = mx > W - 160;
+    s += `<circle cx="${mx}" cy="${y(m.v)}" r="4" fill="${C.surface}" stroke="${m.color}" stroke-width="2"/>`;
+    // a mark on the reference line is labelled at the right end, above the line
+    const ty = m.below ? y(m.v) - 6 : y(m.v) - 9 - (m.up || 0);
+    s += `<text x="${m.below ? W - R : right ? mx + 6 : mx - 6}" y="${ty}" text-anchor="${m.below || right ? "end" : "start"}" font-size="11.5" font-weight="600" fill="${C.primary}"><tspan fill="${m.color}">●</tspan> ${esc(m.label)}</text>`;
+  }
+  s += `<clipPath id="${clip}"><rect x="${L}" y="0" width="${W - L - R + 12}" height="${H - B}"/></clipPath><g clip-path="url(#${clip})">`;
   for (const se of series) {
     const p = se.points;
     // a step line: the counts hold until the next commit
@@ -1214,6 +1248,10 @@ function lineChart(el, series, opt) {
     p.forEach((q, i) => { path += i ? `H${x(q.t).toFixed(1)}V${y(q.v).toFixed(1)}` : `M${x(q.t).toFixed(1)},${y(q.v).toFixed(1)}`; });
     if (se.area) s += `<path d="${path}V${y(0)}H${x(p[0].t)}Z" fill="${se.color}" fill-opacity=".10"/>`;
     s += `<path d="${path}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  s += `</g>`;
+  for (const se of series) {
+    const p = se.points;
     const lp = p[p.length - 1];
     s += `<circle cx="${x(lp.t)}" cy="${y(lp.v)}" r="4" fill="${se.color}" stroke="${C.surface}" stroke-width="2"/>`;
     s += `<text x="${x(lp.t) + 9}" y="${y(lp.v) + 4}" font-size="12" font-weight="600" fill="${C.primary}">${opt.fmtV(lp.v)}</text>`;
@@ -1226,6 +1264,16 @@ function lineChart(el, series, opt) {
     const r = svg.getBoundingClientRect(), mx = e.clientX - r.left;
     if (mx < L || mx > W - R) { hov.style.display = "none"; return hideTip(); }
     const t = t0 + (mx - L) / (W - L - R) * (t1 - t0);
+    if (t > tData) {
+      // past the data: the projections
+      hov.style.display = "";
+      hov.querySelector("line").setAttribute("x1", mx);
+      hov.querySelector("line").setAttribute("x2", mx);
+      const vs = series.map((se, k) => { const lp = se.points[se.points.length - 1], q = P[k]; return q ? Math.min(q.to, lp.v + q.rate * (t - lp.t) / 86400) : lp.v; });
+      hov.querySelectorAll("circle").forEach((c, i) => { c.setAttribute("cx", mx); c.setAttribute("cy", y(vs[i])); });
+      showTip(`<div style="margin-bottom:4px">${whenDay(t)} · projected</div>${series.map((se, i) => row(`<i style="background:${se.color}"></i>${se.name}`, P[i] ? opt.fmtV(vs[i]) : "no pace")).join("")}`, e);
+      return;
+    }
     const at = se => { let q = se.points[0]; for (const p of se.points) { if (p.t <= t) q = p; else break; } return q; };
     hov.style.display = "";
     hov.querySelector("line").setAttribute("x1", mx);
@@ -1239,12 +1287,47 @@ function lineChart(el, series, opt) {
   };
   svg.onmouseleave = () => { hov.style.display = "none"; hideTip(); };
 }
+// the value of a step series at time t, and its pace per day over the last `hours`
+const valueAt = (pts, t) => { let v = pts[0].v; for (const p of pts) { if (p.t <= t) v = p.v; else break; } return v; };
+function paceOf(pts, hours) {
+  const tn = now(), lp = pts[pts.length - 1];
+  const t0 = Math.max(pts[0].t, tn - hours * 3600);
+  return (tn - t0) > 3600 ? (lp.v - valueAt(pts, t0)) / ((tn - t0) / 86400) : 0;
+}
 function renderTrajectory() {
   const H = D.history.map(e => ({ e, g: gameTotals(e.counts) }));
+  const named = H.map(({ e, g }) => ({ t: e.t, v: 100 * g.named_bytes / g.bytes, e }));
+  const repl = H.map(({ e, g }) => ({ t: e.t, v: 100 * g.replaced_bytes / g.bytes, e }));
+  const g = H[H.length - 1].g;
+  // where the replaced share ends once the M5 lists are done: the rest is
+  // dropped as unreachable, not portable, or in no list yet
+  const listLeft = Object.entries(D.m5_left || {}).filter(([m]) => D.kinds[m] === "game").reduce((n, [, v]) => n + v[1], 0);
+  const ceil = Math.min(100, 100 * (g.replaced_bytes + listLeft) / g.bytes);
+  const tn = now(), cap = tn + 45 * 86400;
+  const proj = (pts, hours, extra) => {
+    const rate = paceOf(pts, hours), lp = pts[pts.length - 1];
+    if (rate <= 0 || lp.v >= 100) return null;
+    const hit = lp.t + (100 - lp.v) / rate * 86400;
+    const marks = hit <= cap ? [{ t: hit, v: 100, label: "100% " + etaShort(hit) }] : [];
+    for (const m of extra || []) if (m.v > lp.v) { const tm = lp.t + (m.v - lp.v) / rate * 86400; if (tm <= cap) marks.push({ t: tm, v: m.v, label: m.label + " " + etaShort(tm), below: true }); }
+    return { rate, to: 100, end: Math.min(hit, cap), hit, marks };
+  };
+  const pN = proj(named, 24), pR = proj(repl, 24, [{ v: ceil, label: "lists done" }]);
+  // the two 100% labels one above the other
+  const at100 = [pN, pR].map(q => q && q.marks.find(m => m.v === 100)).filter(Boolean).sort((a, b) => a.t - b.t);
+  at100.forEach((m, i) => { m.up = 15 * (at100.length - 1 - i); });
   lineChart($("traj"), [
-    { name: "Named", color: C.named, area: false, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.named_bytes / g.bytes, e })) },
-    { name: "Replaced", color: C.replaced, area: true, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.replaced_bytes / g.bytes, e })) },
-  ], { label: "Share of game code replaced and named over time", ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%" });
+    { name: "Named", color: C.named, area: false, points: named },
+    { name: "Replaced", color: C.replaced, area: true, points: repl },
+  ], { label: "Share of game code replaced and named over time, projected", ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%",
+       project: [pN, pR], from: ui.trajRange === "7" ? tn - 7 * 86400 : 0, ref: { v: ceil, color: C.replaced, label: `M5 lists done: ${ceil.toFixed(1)}% replaced` } });
+  const say = (name, pts, q) => {
+    if (!q) return `${name}: no progress over the last 24 h.`;
+    const r72 = paceOf(pts, 72), hit72 = r72 > 0 ? pts[pts.length - 1].t + (100 - pts[pts.length - 1].v) / r72 * 86400 : null;
+    return `${name}: +${q.rate.toFixed(1)} pts a day over 24 h, 100% ${etaShort(q.hit)}${hit72 ? ` (at the 72 h pace, +${r72.toFixed(1)} a day: ${etaShort(hit72)})` : ""}.`;
+  };
+  $("trajHint").innerHTML = `Dashed: the last 24 h's pace carried on. ${esc(say("Named", named, pN))} ${esc(say("Replaced", repl, pR))}
+    Replaced stops short of 100%: code <code>tools/reach.py</code> finds unreachable (<code>symbols/m5-dropped.tsv</code>), the not-portable lists and code in no M5 list are never replaced, so the dotted line is where the current lists end${pR && pR.marks.find(m => m.label.startsWith("lists")) ? "" : " (beyond 45 days at this pace)"}.`;
 }
 
 // ---- feed ---------------------------------------------------------------------
