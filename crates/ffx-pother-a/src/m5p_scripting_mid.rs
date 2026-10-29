@@ -586,6 +586,11 @@ pub mod bridge {
     /// 32-bit word reads as 0: the original's mask `(1 << 32) - 1` is 0).
     pub fn read_bits(h: &impl Host, this: u32, start: u32, n: u32) -> u32 {
         let words: u32 = h.read(this);
+        read_bits_at(h, words, start, n)
+    }
+
+    /// [`read_bits`] on the bit array at `words`.
+    pub fn read_bits_at(h: &impl Host, words: u32, start: u32, n: u32) -> u32 {
         let mut out = 0u32;
         let mut done = 0u32;
         while done < n {

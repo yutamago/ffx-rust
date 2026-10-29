@@ -839,4 +839,13 @@ ported! {
     Phyre_PScripting_Matrix_equals_00571600 @ 0x0057_1600 => extern "C" fn s_00571600(l: u32) -> u32 {
         ve::equals(&mut mem(), l, ve_::EQUALS[1].1, ve_::EQUALS[1].2)
     }
+    // ---- batch 11: bit-packed pairs, mesh target binding ----
+    /// `Phyre_PRendering_PContextSwitchLights_decodePairs_004d3d30`.
+    Phyre_PRendering_PContextSwitchLights_decodePairs_004d3d30 @ 0x004d_3d30 => extern "C" fn s_004d3d30(out_a: u32, out_b: u32, cursor: u32) -> u32 {
+        mo::decode_pairs(&mut mem(), out_a, out_b, cursor)
+    }
+    /// `Phyre_PAnimation_PAnimationChannelTargetBindSceneToMeshInstance_bindTargets_005ce320`.
+    Phyre_PAnimation_PAnimationChannelTargetBindSceneToMeshInstance_bindTargets_005ce320 @ 0x005c_e320 => extern "thiscall" fn s_005ce320(this: u32, out: u32, targets: u32, n: u32) -> u32 {
+        mo::bind_mesh_targets(&mut mem(), this, out, targets, n)
+    }
 }

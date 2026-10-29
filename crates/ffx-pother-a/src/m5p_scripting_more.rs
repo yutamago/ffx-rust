@@ -23,6 +23,10 @@ pub const FREELIST_DEALLOCATE: u32 = 0x0049_c980;
 pub const LUA_PUSHBOOLEAN: u32 = 0x0094_b5a0;
 /// The class descriptor `PhyreGetTypeOf` pushes types with.
 pub const TYPE_CLASS: u32 = 0x00c9_0760;
+/// `Phyre_PRendering_NameIs(name; s)` `0x004ea7a0` (thiscall).
+pub const NAME_IS: u32 = 0x004e_a7a0;
+/// The class `0x005ce320` looks for in a target's chain.
+pub const MESH_INSTANCE_CLASS: u32 = 0x00ca_91f8;
 /// `PhyreGetTypeOf`'s error: file, line, function, message.
 pub const TYPEOF_ERROR: (u32, u32, u32, u32) = (0x00b0_e268, 0x1ec, 0x00b0_e4dc, 0x00b0_e500);
 
@@ -31,8 +35,8 @@ pub mod bridge {
     use super::{
         Conv, ERROR_FILE, ERROR_FUNCTION, ERROR_LINE, FREELIST_DEALLOCATE, Host, LUA_CHECKNUMBER,
         LUA_ERROR, LUA_GETFIELD, LUA_GETTOP, LUA_NEWUSERDATA, LUA_PUSHBOOLEAN, LUA_REGISTRYINDEX,
-        LUA_SETMETATABLE, SCHEDULER_RUNNING, STR_PHYRE_OBJECT, STR_VECTOR, TYPE_CLASS,
-        TYPEOF_ERROR, mid, small, x87,
+        LUA_SETMETATABLE, MESH_INSTANCE_CLASS, NAME_IS, SCHEDULER_RUNNING, STR_PHYRE_OBJECT,
+        STR_VECTOR, TYPE_CLASS, TYPEOF_ERROR, mid, small, x87,
     };
 
     /// Whether a scheduler entry is the one named `name` (null matches
@@ -218,5 +222,82 @@ pub mod bridge {
         };
         h.call_sym(LUA_PUSHBOOLEAN, Conv::Cdecl, &[l, u32::from(eq)]);
         1
+    }
+
+    /// `0x004d3d30` `(out_a, out_b, &cursor)`: a packed list at the bit
+    /// array `*cursor`: a 4-bit count, then that many pairs of 5-bit
+    /// values (into `out_a`, `out_b`); the cursor moves past the words it
+    /// used. Returns the count.
+    pub fn decode_pairs(h: &mut impl Host, out_a: u32, out_b: u32, cursor: u32) -> u32 {
+        let words: u32 = h.read(cursor);
+        let n = mid::read_bits_at(h, words, 0, 4);
+        let mut pos = 4u32;
+        for k in 0..n {
+            let a = mid::read_bits_at(h, words, pos, 5);
+            h.write(out_a.wrapping_add(4 * k), a);
+            let b = mid::read_bits_at(h, words, pos.wrapping_add(5), 5);
+            h.write(out_b.wrapping_add(4 * k), b);
+            pos = pos.wrapping_add(10);
+        }
+        let at: u32 = h.read(cursor);
+        h.write(
+            cursor,
+            at.wrapping_add((pos.wrapping_add(0x1f) >> 5).wrapping_mul(4)),
+        );
+        n
+    }
+
+    /// `0x005ce320` (thiscall `(out, targets, n)`): for each of the `n`
+    /// 0x1c-byte binding targets of kind 1 whose class chain (`+0`,
+    /// parents at `+0x40`) holds the mesh instance class, and whose result
+    /// (6 words at `out`) is still unset, the mesh's segment names
+    /// (the context's first object, names `+0x24`, count `+0x18`) are
+    /// matched to the target's name (`+0x14`): `{1, segment, 0x40}`
+    /// (the last match). 1 without targets or results, else 0.
+    pub fn bind_mesh_targets(h: &mut impl Host, this: u32, out: u32, targets: u32, n: u32) -> u32 {
+        if n == 0 {
+            return 0;
+        }
+        if targets == 0 || out == 0 {
+            return 1;
+        }
+        let ctx: u32 = h.read(this.wrapping_add(4));
+        let first: u32 = h.read(ctx);
+        let names: u32 = h.read(first.wrapping_add(0x24));
+        let count: u32 = h.read(first.wrapping_add(0x18));
+        let count = count & 0x7fff_ffff;
+        let segments: u32 = h.read(ctx.wrapping_add(0xc));
+        let class = h.rebase(MESH_INSTANCE_CLASS);
+        for k in 0..n {
+            let t = targets.wrapping_add(k.wrapping_mul(0x1c));
+            let o = out.wrapping_add(k.wrapping_mul(0x18));
+            if h.read::<u32>(t.wrapping_add(0x10)) != 1 {
+                continue;
+            }
+            let mut d: u32 = h.read(t);
+            while d != 0 && d != class {
+                d = h.read(d.wrapping_add(0x40));
+            }
+            if d == 0 || h.read::<u32>(o) != 0 {
+                continue;
+            }
+            let w: u32 = h.read(t.wrapping_add(0x14));
+            let name = w.wrapping_sub(w & 1);
+            for i in 0..count {
+                let cell = names.wrapping_add(4 * i);
+                let s: u32 = h.read(cell);
+                if s.wrapping_sub(s & 1) != 0
+                    && h.call_sym(NAME_IS, Conv::Thiscall(cell), &[name]) as u8 != 0
+                {
+                    h.write(o, 1u32);
+                    h.write(
+                        o.wrapping_add(4),
+                        segments.wrapping_add(i.wrapping_mul(0x40)),
+                    );
+                    h.write(o.wrapping_add(8), 0x40u32);
+                }
+            }
+        }
+        0
     }
 }

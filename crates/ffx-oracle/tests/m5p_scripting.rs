@@ -2654,3 +2654,89 @@ fn b10_equality_matches_the_original() {
         t.unstub();
     }
 }
+
+// ---- batch 11: bit-packed pairs, mesh target binding ----
+
+#[test]
+fn b11_decode_and_bind_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x5eed_0011);
+        for count in [0u32, 1, 3, 6, 15] {
+            for _ in 0..4 {
+                let mut words: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+                words[0] = (words[0] & !0xf) | count;
+                let bits = t.alloc(
+                    &words
+                        .iter()
+                        .flat_map(|w| w.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let cursor = t.zeros(4);
+                t.w32(cursor, bits);
+                let a = t.junk(0x40, 1);
+                let b_ = t.junk(0x40, 2);
+                let what = format!("{label}: decode pairs {count}");
+                t.cdecl(&what, 0x004d_3d30, &[a, b_, cursor], |g| {
+                    Some(mo::decode_pairs(g, a, b_, cursor))
+                });
+            }
+        }
+        // mesh target binding
+        let class = t.rebase(mo_::MESH_INSTANCE_CLASS);
+        let seg_names: Vec<u32> = ["arm", "leg", "", "arm"]
+            .iter()
+            .map(|n| t.cstr(n))
+            .collect();
+        // 0x104 names (bit 31 of the count set): four at the start, one at 0x100
+        let names = t.zeros(0x104 * 4);
+        for (i, &n) in seg_names.iter().enumerate() {
+            t.w32(names + 4 * i as u32, if i == 2 { 0 } else { n + 1 });
+        }
+        t.w32(names + 4 * 0x100, seg_names[0]);
+        let first = t.zeros(0x30);
+        t.w32(first + 0x24, names);
+        t.w32(first + 0x18, 0x8000_0104);
+        let ctx = t.zeros(0x10);
+        t.w32(ctx, first);
+        t.w32(ctx + 0xc, 0x00c9_a000);
+        let this = t.zeros(8);
+        t.w32(this + 4, ctx);
+        let tname = t.cstr("arm");
+        for (matches, n, null) in [
+            (0u32, 3u32, false),
+            (0x101, 3, false),
+            (1, 3, false),
+            (1, 0, false),
+            (1, 3, true),
+            (1, 1, false),
+            (0x100, 3, false),
+        ] {
+            t.stub(mid::NAME_IS, true, 1, 1, matches);
+            let targets = t.zeros(0x1c * 3);
+            let out = t.zeros(0x18 * 3);
+            for k in 0..3u32 {
+                let tg = targets + 0x1c * k;
+                // a chain reaching the class (via a parent), another class, kind 0
+                let d = t.zeros(0x48);
+                t.w32(d + 0x40, if k == 1 { 0x55 } else { class });
+                if k == 1 {
+                    let other = t.zeros(0x48);
+                    t.w32(d + 0x40, other);
+                }
+                t.w32(tg, d);
+                t.w32(tg + 0x10, if k == 2 { 2 } else { 1 });
+                t.w32(tg + 0x14, tname + 1);
+            }
+            // a result already set for the first target
+            if matches == 0x101 {
+                t.w32(out, 7);
+            }
+            let (pt, po) = if null { (0, out) } else { (targets, out) };
+            let what = format!("{label}: bind targets {matches:#x} {n} {null}");
+            t.this(&what, 0x005c_e320, this, &[po, pt, n], |g| {
+                Some(mo::bind_mesh_targets(g, this, po, pt, n))
+            });
+        }
+        t.unstub();
+    }
+}
