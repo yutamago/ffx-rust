@@ -11,7 +11,10 @@ computes the commits it has not seen.
 
 Output ($FFX_WORK/status): index.html (tools/status.html), data.js (the
 numbers), live.js (the "now" part; --live writes only that, in well under a
-second) and history.json (the cache). The open page reloads both scripts
+second) and history-<N>.json (the cache, one per count of functions N: a
+checkout's symbols decide N, and worktrees on other commits would otherwise
+throw each other's cache away; the newest few are kept). The open page
+reloads both scripts
 every 30 s; `tools/status.sh --watch` keeps live.js fresh.
 
 Read from the file system, not git (missing or broken, the section says so):
@@ -700,7 +703,7 @@ def main():
         return
 
     rows = progress.functions()
-    cache_path = out / "history.json"
+    cache_path = out / f"history-{len(rows)}.json"
     cache = {}
     if cache_path.exists():
         cache = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -710,6 +713,8 @@ def main():
 
     head = git("rev-parse", args.ref).strip()
     entries = history(rows, head, cache)
+    for old in sorted(out.glob("history-*.json"), key=lambda f: f.stat().st_mtime)[:-3]:
+        old.unlink(missing_ok=True)
     tmp = cache_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(cache), encoding="utf-8")
     tmp.replace(cache_path)

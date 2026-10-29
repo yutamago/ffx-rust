@@ -423,7 +423,7 @@ git, so every worktree writes the same page. From the top:
 `tools/status.sh` returns at once and runs `tools/status.py` behind a lock;
 calls during a run fold into one more run. `tools/verify-batch.py` calls it
 when a batch passes. The first run replays the whole history (about a
-minute); later ones reuse `history.json` and take under a second.
+minute); later ones reuse `history-<N>.json` (one per function count, which a checkout's symbols decide) and take about two seconds.
 `tools/status.sh --watch` starts one detached loop that writes `live.js`
 every minute and the whole page when `main` moves; the open page reloads
 `data.js` and `live.js` every 30 s.
