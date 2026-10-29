@@ -35,6 +35,7 @@ use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
+use ffx_pcui::m5u_j::bridge as jj;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -3834,6 +3835,110 @@ fn rp4_functions_match_the_original() {
                     Out::None
                 },
             );
+        }
+    });
+}
+
+// ---- render-pcui batch 5 (ffx_pcui::m5u_j) ----
+
+#[test]
+fn rp5_functions_match_the_original() {
+    // Every branch on synthetic data: the selector handler on other
+    // messages and on 0x8011 with and without a chosen item; the utility
+    // destructor with an empty list, the utility first, later or absent,
+    // with and without the delete flag; the locked call, the lock
+    // constructor and the statistics pass with and without a page
+    // manager (the imports and callees stubbed).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0b51);
+        for case in 0..30u32 {
+            let item = if case % 3 == 0 {
+                0
+            } else {
+                t.words(&[0, rng.next()])
+            };
+            t.stub(jj::SELECTOR_GET_ITEM_VALUE, false, 1, 0, item);
+            t.stub(jj::WINDOW_SET_ARG, false, 2, 0, 0);
+            t.stub(jj::WINDOW_CONTROL_SET_TEXT, false, 3, 0, 0);
+            t.stub(jj::WINDOW_SET_WORD30, false, 2, 0, 0);
+            for (sym, v) in [(jj::CHR_SELECTOR, rng.word()), (jj::CHR_WINDOW, rng.word())] {
+                let at = t.rebase(sym);
+                t.patch(at, &v.to_le_bytes());
+            }
+            let window = rng.word();
+            let message = if case % 4 == 0 { rng.word() } else { 0x8011 };
+            t.check(
+                "Gu_ChrSelectorProc_00853d40",
+                0x0085_3d40,
+                Conv::Cdecl,
+                &[window, message],
+                |g| Out::U32(jj::chr_selector_proc(g, window, message)),
+            );
+            // the utility list
+            let n = rng.below(4);
+            let mut nodes = vec![];
+            for _ in 0..n {
+                nodes.push(t.zeros(8));
+            }
+            let this = match case % 4 {
+                0 => t.zeros(8),
+                _ if n > 0 => nodes[rng.below(n) as usize],
+                _ => t.zeros(8),
+            };
+            for k in 0..n as usize {
+                let next = nodes.get(k + 1).copied().unwrap_or(0);
+                t.w32(nodes[k] + 4, next);
+            }
+            let w = rng.next();
+            t.w32(this, w);
+            let head = t.rebase(jj::UTILITY_LIST);
+            let first = nodes.first().copied().unwrap_or(0);
+            t.patch(head, &first.to_le_bytes());
+            t.stub(jj::OPERATOR_DELETE, false, 1, 0, 0);
+            let flags = rng.word();
+            t.check(
+                "PUtility_scalarDeletingDtor_00a3e3e0",
+                0x00a3_e3e0,
+                Conv::Thiscall(this),
+                &[flags],
+                |g| Out::U32(jj::utility_delete(g, this, flags)),
+            );
+            // the page heap pieces
+            t.stub_import(jj::ENTER_CRITICAL_SECTION_IAT, false, 1, 1, rng.word());
+            t.stub_import(jj::LEAVE_CRITICAL_SECTION_IAT, false, 1, 1, rng.word());
+            t.stub_import(jj::INIT_CRITICAL_SECTION_IAT, false, 1, 1, rng.word());
+            t.stub(jj::BUCKET_CALL, true, 1, 1, rng.word());
+            t.stub(jj::STORE_COMPUTED, true, 1, 1, rng.word());
+            let bucket = t.words(&[0, rng.word(), 0, 0, rng.word()]);
+            t.check(
+                "PageBucket_lockedCall_00948820",
+                0x0094_8820,
+                Conv::Thiscall(bucket),
+                &[],
+                |g| Out::U32(jj::locked_call(g, bucket)),
+            );
+            let lock = rng.word();
+            t.check(
+                "PageLock_ctor_009488a0",
+                0x0094_88a0,
+                Conv::Thiscall(lock),
+                &[],
+                |g| Out::U32(jj::lock_ctor(g, lock)),
+            );
+            t.stub(jj::COMMITTED_BYTES, false, 0, 0, rng.word());
+            t.stub(jj::RESERVED_BYTES, false, 0, 0, rng.word());
+            t.stub(jj::PAGE_MANAGER_STATS, true, 0, 0, rng.word());
+            let pm = if case % 3 == 0 { 0 } else { rng.word() | 1 };
+            let at = t.rebase(jj::PAGE_MANAGER);
+            t.patch(at, &pm.to_le_bytes());
+            t.check(
+                "PageStats_update_00947cc0",
+                0x0094_7cc0,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(jj::stats_update(g)),
+            );
+            t.reset();
         }
     });
 }

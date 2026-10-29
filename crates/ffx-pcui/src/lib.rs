@@ -43,6 +43,7 @@ pub mod m5u_f;
 pub mod m5u_g;
 pub mod m5u_h;
 pub mod m5u_i;
+pub mod m5u_j;
 pub mod mapname;
 pub mod menus;
 pub mod panel;

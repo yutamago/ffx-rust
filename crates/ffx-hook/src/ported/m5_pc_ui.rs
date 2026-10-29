@@ -17,6 +17,7 @@ use ffx_pcui::m5u_f::bridge as ff;
 use ffx_pcui::m5u_g::bridge as gg;
 use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
+use ffx_pcui::m5u_j::bridge as jj;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -789,5 +790,26 @@ ported! {
     /// `IggyValue_read_00a258c0(reader; v, class, out, cursor)`.
     IggyValue_read_00a258c0 @ 0x00a2_58c0 => extern "thiscall" fn value_read_00a258c0(this: u32, v: u32, class: u32, out: u32, cursor: u32) -> u32 {
         ii::value_read(&mut mem(), this, v, class, out, cursor, false)
+    }
+    // ---- render-pcui batch 5 (ffx_pcui::m5u_j) ----
+    /// `Gu_ChrSelectorProc_00853d40(window, message)`.
+    Gu_ChrSelectorProc_00853d40 @ 0x0085_3d40 => extern "C" fn chr_selector_proc(window: u32, message: u32) -> u32 {
+        jj::chr_selector_proc(&mut mem(), window, message)
+    }
+    /// `PUtility_scalarDeletingDtor_00a3e3e0(this; flags)`.
+    PUtility_scalarDeletingDtor_00a3e3e0 @ 0x00a3_e3e0 => extern "thiscall" fn utility_delete(this: u32, flags: u32) -> u32 {
+        jj::utility_delete(&mut mem(), this, flags)
+    }
+    /// `PageBucket_lockedCall_00948820(this)`.
+    PageBucket_lockedCall_00948820 @ 0x0094_8820 => extern "thiscall" fn locked_call(this: u32) -> u32 {
+        jj::locked_call(&mut mem(), this)
+    }
+    /// `PageLock_ctor_009488a0(lock)`.
+    PageLock_ctor_009488a0 @ 0x0094_88a0 => extern "thiscall" fn lock_ctor(this: u32) -> u32 {
+        jj::lock_ctor(&mut mem(), this)
+    }
+    /// `PageStats_update_00947cc0()`.
+    PageStats_update_00947cc0 @ 0x0094_7cc0 => extern "C" fn stats_update() -> u32 {
+        jj::stats_update(&mut mem())
     }
 }

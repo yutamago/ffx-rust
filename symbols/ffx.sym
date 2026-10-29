@@ -11842,6 +11842,7 @@
 0x00853520 function SpriteFrameRegion_Load       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Filter'; Switch 0x7100847e80 SpriteFrameRegion::Load (symbols from Fahrenheit's server export)
 0x00853780 function Gui_SpriteWindowInit_00853780 # cdecl(): once (byte 0x01325916) Gu_WindowCreate(0x14, 0xa, 0x78, 0x46, 6, SpriteFrameRegion_Load); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b8)
 0x008537b0 function Gui_ChrInfo               # fh v3:cg3 0x8537b0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(0x28, 4, 0x140, 0x60, 0xe, 0x008537d0)
+0x00853d40 function Gu_ChrSelectorProc_00853d40 # cdecl(window, message) -> 0: on 0x8011 Gu_SelectorGetItemValue(g_GuChrSelector) becomes Gu_WindowSetArg([0x0132591c], item), its name (+4) the text 0x4d1 when set, and Gu_WindowSetWord30(window, 1); name ours; ported M5 render-pcui b5 (ffx_pcui::m5u_j)
 0x00853dc0 function Gu_ChrSelectorFill_00853dc0 # cdecl() -> 0 / -1 (none in use): Gu_SelectorResetNbItem(*0x01325918, Ch_SysGetNbUse()), Gu_SelectorSetItem(sel, k, chr +4, chr) for each g_ChrArray entry (0x880 bytes) with byte +2 set; name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853e40 function Gu_LogPrintf_00853e40 # cdecl varargs(fmt, ...): vsprintf into ebp-0x404, Gu_PrintSetXY(0, g_GuLogY), g_GuLogY += 7, Gu_Printf(buf); name ours; ported ffx_pcui::m5u_g (m5 pc-ui b9)
 0x00853ea0 function Gui_ClockInit             # fh v3:exact 0x00853ea0; ported ffx_pcui::m5u_g (m5 pc-ui b8): Gu_WindowCreate(8, 0x9e, 0x64, 0x3c, 6, 0x00853ec0)
@@ -16597,6 +16598,7 @@
 0x00947670 function PageQueueDecommit         # cdecl(addr, size): PageManager_QueueDecommit on *g_PageManager; name ours
 0x00947690 function PageManager_QueueDecommit # thiscall(mgr, addr, size), ret 8: queues the range (sorted by address, stamp = frame stamp + 1) for PageManager_Flush to decommit; name ours
 0x009478e0 function PageManager_Flush         # thiscall(mgr, force), ret 4: decommits queued ranges and releases cached reservations whose stamp <= mgr+0x1c6c (all when force or the stamp is 0); name ours
+0x00947cc0 function PageStats_update_00947cc0 # cdecl() (reads no ecx; Ghidra says fastcall): Get_g_CommittedBytes, Get_g_ReservedBytes (unused), then FUN_00946f50(g_PageManager) when set -> its eax, else the reserved bytes; callers FUN_009428b0, 0x009436b0; name ours; ported M5 render-pcui b5 (ffx_pcui::m5u_j)
 0x00947da0 function PtrArray_isSet_00947da0 # thiscall(this; i) ret 4: [[this + 4] + 4 i] != 0 (setne); name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
 0x00947e80 function PageRelease               # cdecl(addr): PageManager_Release on *g_PageManager; name ours
 0x00947ea0 function PageManager_unlock_00947ea0 # cdecl(): LeaveCriticalSection([g_PageManager] + 0x1c0c) (18 bytes; the dump has no function here); name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
@@ -16609,6 +16611,8 @@
 0x009485b0 function UserHeap_NodeAlloc        # fastcall(pool = heap + 0x10): a 16-byte free node from the pool's pages (+0 free list, +4 next page, +8 free count); UserHeap_NodeNewPage when none; name ours
 0x009485f0 function UserHeap_NodeNewPage      # fastcall(pool): PageAlloc(0x1000, 0x1000) + PageCommit, nodes from +0xc; name ours
 0x009486a0 function UserHeap_NodeFree         # thiscall(pool, node), ret 4: back to its page; an all-free page leaves the pool (PageQueueDecommit + PageRelease), a full one joins it; name ours
+0x00948820 function PageBucket_lockedCall_00948820 # thiscall(this): EnterCriticalSection([+0x10]), FUN_00943e30([+0x10] + 0x18; [+4]), LeaveCriticalSection -> its eax; 8 callers; name ours; ported M5 render-pcui b5 (ffx_pcui::m5u_j)
+0x009488a0 function PageLock_ctor_009488a0 # thiscall(lock): InitializeCriticalSection(lock), StoreComputed_009439d0(lock + 0x18; 0x4000) -> lock; caller FUN_009457b0; name ours; ported M5 render-pcui b5 (ffx_pcui::m5u_j)
 0x00948900 function PageBucket_init_00948900 # thiscall(this; size, align, heap) ret 0xc: +0 size, +0xc align, +0x10 heap, +0x14 0, +4 size rounded up to align, +8 ([heap + 0x18] - (15 / align + 1) * align) / +4 (signed idiv) -> this; name ours; ported M5 render-pcui b4 (ffx_pcui::m5u_i)
 0x00948a80 function List_walkToEnd_00948a80 # thiscall(this): follows +0x14, then +0xc, until 0 -> eax 0; 3 callers; name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
 0x00948c10 function Thread_create_00948c10 # cdecl(arg): CreateThread(0, 0, Thread_entry_00948c30, arg, 0, 0) -> the handle; caller PageManager_startThread_00947630; name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
@@ -17455,6 +17459,7 @@
 0x00a3e1b0 function VbfMkvReader_Length # vtable slot 1 (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e1f0 function VbfMkvReader_Open # (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00a3e2b0 function VbfMkvReader_Read # vtable slot 0 (platform census 2026-10-25, docs/formats/platform.md; movie)
+0x00a3e3e0 function PUtility_scalarDeletingDtor_00a3e3e0 # thiscall(this; flags) ret 4: Phyre_PUtility_vftable, the utility unlinked from the list at 0x00c901a8 (links +4) when found, operator_delete with flag bit 0 -> this; name ours; ported M5 render-pcui b5 (ffx_pcui::m5u_j)
 0x00a3e4f0 function Iggy_createPlayer_00a3e4f0 # cdecl(7 words): a 0x2c-byte player (PhyreMalloc, 0x00a3d3c0), set up by 0x00a3d900; on error 0x00a3d4d0 and freed, 0; name ours (M4 p6 batch 13)
 0x00a3e5a0 function Phyre_PIggy_PUtilityIggy_allocCallback_00a3e5a0 # stdcall(user, size, _) -> PhyreMalloc(size, 1); a callback 0x00a3e6d0 (PUtilityIggy, IggyInit) hands Iggy; name ours; port ffx_prender::misc (p6-render-c)
 0x00a3e5c0 function Phyre_PIggy_PUtilityIggy_freeCallback_00a3e5c0 # stdcall(user, ptr) -> PhyreFree(ptr)'s eax; a callback 0x00a3e6d0 (PUtilityIggy, IggyInit) hands Iggy; name ours; port ffx_prender::misc (p6-render-c)
