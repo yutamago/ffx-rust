@@ -3762,3 +3762,171 @@ pub const COLOUR_ONE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`static_node_link`] with the node's four last words 0 (operands
+/// `+0x4c`, `+0x56`, `+0x60`, `+0x6a`; no arguments). Returns the old
+/// last.
+///
+/// `magic_0374` 0x10007d30 (115 bytes; 2 DLLs).
+pub fn static_node_link_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = static_link_head(g, img, f);
+    for o in [0x4c, 0x56, 0x60, 0x6a] {
+        g.write::<u32>(op(img, f, o), 0);
+    }
+    Ret::eax(last)
+}
+
+/// [`static_node_link_c`].
+pub const STATIC_NODE_LINK_C: Sig = Sig {
+    len: 115,
+    hash: 0x0cb4_e0e0_304d_17a9,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's static node (operand `+0x2`, its handler table `+0x6`) set
+/// up fresh under `parent` (`edx`, when not 0, it goes last among the
+/// parent's children: the old last, or the parent's first, links to it
+/// and the count goes up); then byte `G_A` and `G_B` 0 (internal).
+/// Returns the old last, or `eax` as it came without a parent.
+///
+/// `magic_0513` 0x10006a10 (115 bytes; 2 DLLs).
+pub fn static_child<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let parent = fr.edx;
+    g.write::<u32>(op(img, f, 0x2), op(img, f, 0x6));
+    g.write::<u16>(op(img, f, 0xd), 0xff);
+    g.write::<u32>(op(img, f, 0x15), op(img, f, 0x19));
+    g.write::<u32>(op(img, f, 0x1f), op(img, f, 0x23));
+    g.write::<u32>(op(img, f, 0x29), parent);
+    let mut eax = fr.eax;
+    if parent != 0 {
+        g.write::<u32>(op(img, f, 0x33), parent);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        g.write::<u32>(op(img, f, 0x3b), last);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        if last == parent {
+            g.write::<u32>(parent.wrapping_add(0xc), op(img, f, 0x49));
+        } else {
+            g.write::<u32>(last.wrapping_add(4), op(img, f, 0x52));
+        }
+        let c = g.read::<u16>(parent.wrapping_add(0x18)).wrapping_add(1);
+        g.write::<u16>(parent.wrapping_add(0x18), c);
+        g.write::<u32>(parent.wrapping_add(0x10), op(img, f, 0x5d));
+        eax = last;
+    }
+    g.write::<u8>(op(img, f, 0x63), 0);
+    g.write::<u32>(op(img, f, 0x6a), 0);
+    Ret::eax(eax)
+}
+
+/// [`static_child`].
+pub const STATIC_CHILD: Sig = Sig {
+    len: 115,
+    hash: 0xd3a2_8f41_8f4b_07c7,
+    calls: &[],
+    imports: &[],
+};
+
+/// A strip cursor's window (internal, `ecx` = the cursor, `+0x0` the
+/// strip: `u16 +0x20` its length, `+0x22` the stride, `+0x26` the
+/// window, `+0x28` the start, `+0x1c` the data): `+0x8` the start's data;
+/// when start + window passes the length (signed `u16`), `u16 +0x4` the
+/// part up to the end and `+0x6` the rest, `+0xc` the data; else `+0x4`
+/// the window, `+0x6` 0 and `+0xc` the window's end. Returns the data, or
+/// the stride.
+///
+/// `magic_0150` 0x10006f40 (115 bytes; 2 DLLs).
+pub fn strip_window<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let c = fr.ecx;
+    let u16_at = |g: &G, p: u32, o: u32| u32::from(g.read::<u16>(p.wrapping_add(o)));
+    let p = g.read::<u32>(c);
+    let data = g.read::<u32>(p.wrapping_add(0x1c));
+    let start = u16_at(g, p, 0x22)
+        .wrapping_mul(u16_at(g, p, 0x28))
+        .wrapping_add(data);
+    g.write::<u32>(c.wrapping_add(8), start);
+    let p = g.read::<u32>(c);
+    let (from, window) = (u16_at(g, p, 0x28), u16_at(g, p, 0x26));
+    let len = g.read::<u16>(p.wrapping_add(0x20));
+    let end = window.wrapping_add(from) & 0xffff;
+    if end.cast_signed() > i32::from(len.cast_signed()) {
+        let head = u32::from(len).wrapping_sub(from);
+        let [h0, h1, _, _] = head.to_le_bytes();
+        let head16 = u16::from_le_bytes([h0, h1]);
+        g.write::<u16>(c.wrapping_add(4), head16);
+        let p = g.read::<u32>(c);
+        let rest = g.read::<u16>(p.wrapping_add(0x26)).wrapping_sub(head16);
+        g.write::<u16>(c.wrapping_add(6), rest);
+        let p = g.read::<u32>(c);
+        let data = g.read::<u32>(p.wrapping_add(0x1c));
+        g.write::<u32>(c.wrapping_add(0xc), data);
+        return Ret::eax(data);
+    }
+    let [w0, w1, _, _] = window.to_le_bytes();
+    g.write::<u16>(c.wrapping_add(4), u16::from_le_bytes([w0, w1]));
+    g.write::<u16>(c.wrapping_add(6), 0);
+    let p = g.read::<u32>(c);
+    let stride = u16_at(g, p, 0x22);
+    let tail = u16_at(g, p, 0x26)
+        .wrapping_mul(stride)
+        .wrapping_add(g.read::<u32>(p.wrapping_add(0x1c)));
+    g.write::<u32>(c.wrapping_add(0xc), tail);
+    Ret::eax(stride)
+}
+
+/// [`strip_window`].
+pub const STRIP_WINDOW: Sig = Sig {
+    len: 115,
+    hash: 0xb3aa_337e_5d82_bec5,
+    calls: &[],
+    imports: &[],
+};
+
+/// A fader's state reset (internal, `ecx` = the state: `+0x0`, `+0x1c`,
+/// `+0x24` 0, `+0x20` 1/30, `+0x28` 30, `u16 +0x2c` 0) and a task node
+/// for the callback (operand `+0x6`; [`take`], kind 1, `+0x14` the state)
+/// appended to the task list (operands `+0x37`, `+0x4f`, `+0x59`;
+/// `+0x68`, `+0x6d` when it was empty). Returns the node.
+///
+/// `magic_0168` 0x10007680 (117 bytes; 3 DLLs).
+pub fn fader_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let s = fr.ecx;
+    for (off, v) in [
+        (0x0, 0),
+        (0x1c, 0),
+        (0x20, 0x3d08_8889),
+        (0x24, 0),
+        (0x28, 0x1e),
+    ] {
+        g.write::<u32>(s.wrapping_add(off), v);
+    }
+    g.write::<u16>(s.wrapping_add(0x2c), 0);
+    let node = take(g, img, img.rel32_target(f + 0x31), op(img, f, 0x6));
+    let empty = g.read::<u32>(op(img, f, 0x37)) == 0;
+    g.write::<u32>(node.wrapping_add(0x14), s);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if empty {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(op(img, f, 0x68), node);
+        g.write::<u32>(op(img, f, 0x6d), node);
+    } else {
+        let tail = g.read::<u32>(op(img, f, 0x4f));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(op(img, f, 0x59), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`fader_task`].
+pub const FADER_TASK: Sig = Sig {
+    len: 117,
+    hash: 0xfcb8_c95f_ab2e_a737,
+    calls: &[(0x31, Callee::Sig(&TAKE))],
+    imports: &[],
+};

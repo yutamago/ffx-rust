@@ -1679,3 +1679,68 @@ fn tracks_ranges_colours() {
 fn rec_941(t: &mut Twin, answer: u32) {
     rec(t, 941, 1, move |m, _| m.r32(answer));
 }
+
+#[test]
+fn statics_strips_faders() {
+    let Some(mut t) = twin(374) else { return };
+    let f = t.at(0x7d30);
+    let last = SCRATCH + 0x300;
+    t.write(last, &[0x77; 0x10]);
+    t.set_u32(op(&t, f, 0x1), last);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(513) else { return };
+    let f = t.at(0x6a10);
+    let (parent, kid) = (SCRATCH + 0x200, SCRATCH + 0x300);
+    for (p, kids) in [(0u32, false), (parent, false), (parent, true)] {
+        t.write(parent, &[0; 0x20]);
+        t.write(kid, &[0x77; 0x10]);
+        let l = if kids { kid } else { parent };
+        t.set_u32(parent + 0x10, l);
+        t.set_u32(parent + 0xc, l);
+        let c = Call {
+            eax: 0x00ea_0000,
+            edx: p,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_small::static_child);
+    }
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0x6f40);
+    let (c, p) = (SCRATCH + 0x100, SCRATCH + 0x200);
+    for (len, stride, window, from) in [
+        (10u16, 4u16, 3u16, 2u16),
+        (10, 4, 3, 7),
+        (10, 4, 3, 8),
+        (0x8000, 2, 0x10, 0x7ff8),
+        (0, 1, 0, 0),
+    ] {
+        t.write(c, &[0x55; 0x10]);
+        t.set_u32(c, p);
+        t.write(p, &[0; 0x30]);
+        t.set_u32(p + 0x1c, 0x0d00_0000);
+        t.set_u16(p + 0x20, len);
+        t.set_u16(p + 0x22, stride);
+        t.set_u16(p + 0x26, window);
+        t.set_u16(p + 0x28, from);
+        t.check(f, Call::this(c), &[], Eax::Checked, s4_small::strip_window);
+    }
+    drop(t);
+    let Some(mut t) = twin(168) else { return };
+    let f = t.at(0x7680);
+    let take = t.img.rel32_target(f + 0x31);
+    let s = SCRATCH + 0x100;
+    for listed in [false, true] {
+        pool_ring(&mut t, take);
+        t.write(s, &[0x44; 0x40]);
+        if listed {
+            t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+            t.set_u32(op(&t, f, 0x37), SCRATCH + 0x5000);
+            t.set_u32(op(&t, f, 0x4f), SCRATCH + 0x5000);
+        } else {
+            t.set_u32(op(&t, f, 0x37), 0);
+        }
+        t.check(f, Call::this(s), &[], Eax::Checked, s4_small::fader_task);
+    }
+}
