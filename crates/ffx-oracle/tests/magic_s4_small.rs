@@ -687,3 +687,271 @@ fn steps_until_done() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn records_and_sequences() {
+    let Some(mut t) = twin(205) else { return };
+    let f = t.at(0x2450);
+    let r = SCRATCH + 0x100;
+    t.write(r, &[0x66; 0x40]);
+    t.check(
+        f,
+        Call::this(r),
+        &[0x0024_0024],
+        Eax::Checked,
+        s4_small::record_reset,
+    );
+    drop(t);
+    for (n, rva, nop, with) in [(667u16, 0x2660u32, 0x8u32, false), (515, 0x2660, 0x7, true)] {
+        let Some(mut t) = twin(n) else { return };
+        recs(&mut t, &[(296, 2)]);
+        let f = t.at(rva);
+        let recs_at = op(&t, f, 0xd);
+        for ids in [
+            &[][..],
+            &[3u32, 0xff][..],
+            &[0xff, 4, 5][..],
+            &[7, 0xff, 0xff][..],
+        ] {
+            t.set_u32(op(&t, f, nop), ids.len() as u32);
+            for (i, &id) in (0u32..).zip(ids) {
+                t.set_u32(recs_at + 0xcc * i, id);
+            }
+            let c = Call {
+                eax: 0x00ea_0000,
+                ..Call::default()
+            };
+            let args: &[u32] = if with { &[0x0296_0002] } else { &[] };
+            t.check_entry(f, c, args, Eax::Checked);
+        }
+    }
+    let Some(mut t) = twin(312) else { return };
+    recs(&mut t, &[(450, 2), (451, 4), (440, 4), (449, 4)]);
+    let obj = SCRATCH + 0x100;
+    t.write(obj, &[0x10; 0x200]);
+    let f = t.at(0x1d30);
+    t.set_u32(op(&t, f, 0x12), 0x5555);
+    t.set_u32(op(&t, f, 0x1c), 0x6666);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    let f = t.at(0x16f0);
+    t.set_u32(op(&t, f, 0x19), 0x0440_0440);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    let f = t.at(0x1300);
+    let base = SCRATCH + 0x400;
+    t.set_u32(op(&t, f, 0x4), base);
+    t.set_u32(base + 0x198, 0x0198_0198);
+    for k in [0u32, 3] {
+        t.set_u32(obj + 0xac, k);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(194) else { return };
+    recs(&mut t, &[(450, 2), (449, 4), (434, 2), (451, 6)]);
+    let f = t.at(0x1000);
+    t.set_u32(op(&t, f, 0x18), 0x5555);
+    t.set_u32(op(&t, f, 0x22), 0x6666);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    let f = t.at(0x1170);
+    t.set_u32(op(&t, f, 0xf), 0x0434_0434);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(378) else { return };
+    recs(&mut t, &[(450, 4), (434, 2), (451, 6)]);
+    let f = t.at(0x10d0);
+    t.set_u32(op(&t, f, 0xf), 0x0434_0435);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(421) else { return };
+    recs(&mut t, &[(447, 2), (450, 4), (451, 6)]);
+    let f = t.at(0x13d0);
+    let base = SCRATCH + 0x400;
+    t.set_u32(op(&t, f, 0x4), base);
+    t.set_u32(base + 0x198, 0x0198_0199);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(193) else { return };
+    recs(&mut t, &[(448, 2), (450, 4), (449, 6)]);
+    let f = t.at(0x1000);
+    t.set_u32(op(&t, f, 0x14), 0x5555);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(162) else { return };
+    recs(&mut t, &[(4, 1), (27, 3)]);
+    t.check_entry(t.at(0x2d60), Call::default(), &[], Eax::Checked);
+}
+
+#[test]
+fn indexed_calls() {
+    let Some(mut t) = twin(391) else { return };
+    recs(&mut t, &[(542, 2)]);
+    let f = t.at(0x1630);
+    let map = SCRATCH + 0x300;
+    t.write(map, &[4, 3, 2, 1]);
+    t.set_u32(op(&t, f, 0x1d), map);
+    t.set_u32(op(&t, f, 0x16), 0x0e0e_0016);
+    for n in [0u32, 1, 3, u32::MAX] {
+        t.set_u32(op(&t, f, 0x8), n);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ecx: 0x0542_0ecc,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_small::each_542);
+    }
+    drop(t);
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x3c90);
+    let map = SCRATCH + 0x300;
+    t.write(map, &[0, 1, 2, 3, 0]);
+    t.set_u32(op(&t, f, 0x15), map);
+    t.set_u32(op(&t, f, 0x1c), SCRATCH + 0x800);
+    for k in 0..4u32 {
+        let chr = SCRATCH + 0x1000 + 0x1000 * k;
+        t.set_u32(op(&t, f, 0x30) + 4 * k, chr);
+        t.set_u32(chr + 0x830, 0x0c00_0000 + k);
+    }
+    for (n, this) in [
+        (1u32, 0x0c00_0001u32),
+        (4, 0x0c00_0002),
+        (4, 0x0c00_0000),
+        (5, 0x0c00_0009),
+        (5, 0x0c00_0001),
+    ] {
+        t.set_u32(op(&t, f, 0x2), n);
+        t.check(
+            f,
+            Call::this(this),
+            &[],
+            Eax::Checked,
+            s4_small::actor_index,
+        );
+    }
+}
+
+#[test]
+fn places_and_products() {
+    let obj = SCRATCH + 0x100;
+    let Some(mut t) = twin(393) else { return };
+    recs(&mut t, &[(268, 3), (713, 1)]);
+    let f = t.at(0x2f80);
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x4), p);
+    for i in 0..4 {
+        t.set_u32(op(&t, f, 0x1d) + 4 * i, 0x0268_0000 + i);
+    }
+    for k in [0u8, 2] {
+        t.set_u8(p + 1, k);
+        t.write(obj, &[0x77; 0x200]);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    // the block object, listed or not
+    let f = t.at(0x3050);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x3), block);
+    t.set_u32(op(&t, f, 0x1e), SCRATCH + 0x90);
+    let lr = t.img.rel32_target(f + 0x15);
+    let list = op(&t, f, 0x10);
+    let node = SCRATCH + 0x3000;
+    let free = t.img.word(lr + 0x4d);
+    for listed in [false, true] {
+        t.write(block + 0x850, &[0x5a; 0x130]);
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
+        t.set_u32(node + 8, if listed { block + 0x850 } else { 0x1234 });
+        t.set_u32(list, node);
+        t.set_u32(list + 4, node);
+        t.set_u32(list + 8, node);
+        t.set_u32(list + 0xc, 1);
+        t.set_u16(free, 7);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(55) else { return };
+    recs(&mut t, &[(237, 4)]);
+    let f = t.at(0x1950);
+    t.set_u32(op(&t, f, 0x24), 0x0237_0237);
+    for k in [0u32, 3] {
+        t.set_u32(op(&t, f, 0x4), k);
+        t.write(obj, &[0x77; 0x200]);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(104) else { return };
+    let f = t.at(0x1830);
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x7), p);
+    t.set_u8(p, 2);
+    rec(&mut t, 364, 1, |_, _| 0x364);
+    rec(&mut t, 16, 2, |_, _| 0x16);
+    for (a, b) in [(1.5f64, 2.0f64), (-3.0, 0.1), (1e30, 1e30)] {
+        t.stub_st0(364, move |_, _| a);
+        t.stub_st0(16, move |_, _| b);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(673) else { return };
+    let f = t.at(0x1900);
+    for count in [0x41u32, 0x40, 0x3f, 2, 1, 0, u32::MAX] {
+        t.write(obj, &[0x33; 0x200]);
+        t.set_u32(obj + 0x120, count);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(249) else { return };
+    let f = t.at(0x1ee0);
+    let (src, end) = (op(&t, f, 0x6) - 4, op(&t, f, 0x43));
+    for i in 0..(end - src) / 4 {
+        t.set_u32(src + 4 * i, 0x0010_0000 + i);
+    }
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
+
+#[test]
+fn lights() {
+    let Some(mut t) = twin(70) else { return };
+    recs(&mut t, &[(325, 2), (234, 3)]);
+    let f = t.at(0x9480);
+    let c = Call {
+        edx: 0x0edd_0001,
+        ..Call::default()
+    }
+    .with_xmm(&[Xmm::F32(0), Xmm::F32(0), Xmm::F32(2.5f32.to_bits())]);
+    t.check(f, c, &[], Eax::Checked, s4_small::light_set);
+    let f = t.at(0x9950);
+    let c = Call::default().with_xmm(&[Xmm::F32(0), Xmm::F32((-0.75f32).to_bits())]);
+    t.check(f, c, &[], Eax::Checked, s4_small::light_on);
+}
+
+#[test]
+fn motion_register() {
+    let Some(mut t) = twin(347) else { return };
+    let f = t.at(0x3c10);
+    let ms = t.img.rel32_target(f + 0x5);
+    let ro = t.img.rel32_target(f + 0xc);
+    let rp = t.img.rel32_target(f + 0x42);
+    recs(&mut t, &[(723, 1), (724, 2), (235, 3)]);
+    // no parts and no banks to register
+    t.set_u32(t.img.word(rp + 0xe), 0);
+    let task = SCRATCH + 0x100;
+    let rec_at = SCRATCH + 0x200;
+    for (done, one, wait, busy) in [
+        (1u32, false, 0u32, 0u32),
+        (0, false, 0, 0),
+        (1, true, 0, 0),
+        (1, false, 1, 0),
+        (1, false, 0, 1),
+    ] {
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, rec_at);
+        t.set_u32(t.img.word(ms + 0x02), done);
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        t.set_u32(op(&t, f, 0x1b), wait);
+        t.set_u32(op(&t, f, 0x24), busy);
+        objects(&mut t, ro, one);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[task], Eax::Checked);
+    }
+}

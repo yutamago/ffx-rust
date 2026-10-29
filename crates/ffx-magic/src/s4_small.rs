@@ -3,10 +3,11 @@
 //! address it was ported from, its size and how many DLLs carry it;
 //! "`G`" is a global of the DLL (an operand of the code).
 
-use crate::l5_objhost::{RUN_OBJECTS, run_objects};
+use crate::l5_objhost::{LIST_REMOVE, RUN_OBJECTS, list_remove, run_objects};
 use crate::runtime::slot_target;
+use crate::sa_misc::{REGISTER_PARTS, register_parts};
 use crate::sa_pool::{GIVE_BACK, give_back};
-use crate::sa_summon::{BONE, MODEL_SETUP, bone_plain, model_setup};
+use crate::sa_summon::{BONE, MODEL_SETUP, bone_plain, model_setup, st0_f32};
 use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig};
 
@@ -1399,6 +1400,673 @@ pub fn count_or_257<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const COUNT_OR_257: Sig = Sig {
     len: 64,
     hash: 0x4b07_bd41_bd14_a92e,
+    calls: &[],
+    imports: &[],
+};
+
+/// A record's fields reset (internal, `ecx` = the record, cdecl `(x)`):
+/// `+0x10..+0x1c` and `+0x28`, `+0x2c` 0, `u16 +0x30` 0, `+0x24` = x and
+/// the callback `+0x20` (operand `+0x2a`). Returns 0.
+///
+/// `magic_0205` 0x10002450 (66 bytes; 2 DLLs).
+pub fn record_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let r = fr.ecx;
+    let x = fr.arg(g, 0);
+    for off in [0x18, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(r.wrapping_add(off), 0);
+    }
+    g.write::<u32>(r.wrapping_add(0x24), x);
+    g.write::<u32>(r.wrapping_add(0x20), op(img, fr.at, 0x2a));
+    g.write::<u32>(r.wrapping_add(0x28), 0);
+    g.write::<u32>(r.wrapping_add(0x2c), 0);
+    g.write::<u16>(r.wrapping_add(0x30), 0);
+    Ret::eax(0)
+}
+
+/// [`record_reset`].
+pub const RECORD_RESET: Sig = Sig {
+    len: 66,
+    hash: 0x8651_69b0_c2ce_b792,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 296 `(id, second)` for each of the `G_N` records (0xcc bytes from
+/// operand `p`) whose first word is not 0xff. Returns the last slot's
+/// `eax` or the last id read, or `eax` as it came with no records.
+fn records_296<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (n, p, table): (u32, u32, u32),
+    second: u32,
+) -> Ret {
+    let f = fr.at;
+    let mut left = g.read::<u32>(op(img, f, n));
+    let mut rec = op(img, f, p);
+    let mut ret = Ret::eax(fr.eax);
+    while left != 0 {
+        let id = g.read::<u32>(rec);
+        left = left.wrapping_sub(1);
+        ret = if id == 0xff {
+            Ret::eax(id)
+        } else {
+            through(slot_call(g, img, f, (table, 296), &[id, second]))
+        };
+        rec = rec.wrapping_add(0xcc);
+    }
+    ret
+}
+
+/// [`records_296`] with 0 (no arguments).
+///
+/// `magic_0667` 0x10002660 (66 bytes; 2 DLLs).
+pub fn records_296_off<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    records_296(g, img, fr, (0x8, 0xd, 0x23), 0)
+}
+
+/// [`records_296_off`].
+pub const RECORDS_296_OFF: Sig = Sig {
+    len: 66,
+    hash: 0x64f6_e6b0_e03b_51f3,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`records_296`] with `x` (cdecl `(x)`).
+///
+/// `magic_0515` 0x10002660 (77 bytes; 2 DLLs).
+pub fn records_296_with<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let x = fr.arg(g, 0);
+    records_296(g, img, fr, (0x7, 0xd, 0x2d), x)
+}
+
+/// [`records_296_with`].
+pub const RECORDS_296_WITH: Sig = Sig {
+    len: 77,
+    hash: 0x7b59_3a94_d995_fe6e,
+    calls: &[],
+    imports: &[],
+};
+
+/// `G_A` and `G_B` cleared (operands `a`, `b`), slot 450 `(obj,
+/// callback)` (operand `+0x9`), then slot `then` `(obj, y)` (operand
+/// `then_table`; the first call's words stay under the second's). Returns
+/// the second's `eax`.
+fn clear_and_callback<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (a, b): (u32, u32),
+    (then_table, then, y): (u32, u32, u32),
+) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let cb = op(img, f, 0x9);
+    g.write::<u32>(op(img, f, a), 0);
+    g.write::<u32>(op(img, f, b), 0);
+    slot_call(g, img, f, (0x4, 450), &[obj, cb]);
+    through(slot_call(g, img, f, (then_table, then), &[obj, y, obj, cb]))
+}
+
+/// [`clear_and_callback`], then slot 451 `(obj, 18)` (cdecl `(obj)`).
+///
+/// `magic_0312` 0x10001d30 (67 bytes; 2 DLLs).
+pub fn clear_count_18<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    clear_and_callback(g, img, fr, (0x12, 0x1c), (0x2d, 451, 0x12))
+}
+
+/// [`clear_count_18`].
+pub const CLEAR_COUNT_18: Sig = Sig {
+    len: 67,
+    hash: 0xf199_02b6_8840_2040,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`clear_and_callback`], then slot 449 `(obj, callback 2)` (operand
+/// `+0x32`; cdecl `(obj)`).
+///
+/// `magic_0194` 0x10001000 (70 bytes; 3 DLLs).
+pub fn clear_two_callbacks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let y = op(img, fr.at, 0x32);
+    clear_and_callback(g, img, fr, (0x18, 0x22), (0x2d, 449, y))
+}
+
+/// [`clear_two_callbacks`].
+pub const CLEAR_TWO_CALLBACKS: Sig = Sig {
+    len: 70,
+    hash: 0x3f81_bd66_337a_9f00,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 542 `(x, this)` for each index `i` below `G_N` (signed): `x` the
+/// byte `G_MAP[i]` (the shared index helper's -1 case, the word
+/// `G_NONE`, cannot come up: `i` counts up from 0) (internal, `ecx` =
+/// this). Returns the last slot's `eax`, or `eax` as it came.
+///
+/// `magic_0391` 0x10001630 (67 bytes; 2 DLLs).
+pub fn each_542<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut ret = Ret::eax(fr.eax);
+    if g.read::<i32>(op(img, f, 0x8)) <= 0 {
+        return ret;
+    }
+    let mut i = 0u32;
+    loop {
+        let x = if i == u32::MAX {
+            g.read::<u32>(op(img, f, 0x16))
+        } else {
+            let map = g.read::<u32>(op(img, f, 0x1d));
+            u32::from(g.read::<u8>(map.wrapping_add(i)))
+        };
+        ret = through(slot_call(g, img, f, (0x28, 542), &[x, fr.ecx]));
+        i = i.wrapping_add(1);
+        if i.cast_signed() >= g.read::<i32>(op(img, f, 0x3a)) {
+            return ret;
+        }
+    }
+}
+
+/// [`each_542`].
+pub const EACH_542: Sig = Sig {
+    len: 67,
+    hash: 0x4989_0ae7_fa8b_201b,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slots 4 `(s)` and 27 `(s, 1)` for the states 0x3011 then 0x3013, each
+/// call seeing the words the earlier ones left (no arguments). Returns
+/// the last slot's `eax`.
+///
+/// `magic_0162` 0x10002d60 (68 bytes; 2 DLLs).
+pub fn states_3011_3013<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (a, b) = (0x3011, 0x3013);
+    slot_call(g, img, f, (0x1, 4), &[a]);
+    slot_call(g, img, f, (0x10, 27), &[a, 1, a]);
+    slot_call(g, img, f, (0x21, 4), &[b, a, 1, a]);
+    through(slot_call(g, img, f, (0x30, 27), &[b, 1, b, a, 1, a]))
+}
+
+/// [`states_3011_3013`].
+pub const STATES_3011_3013: Sig = Sig {
+    len: 68,
+    hash: 0x8c13_ef7a_06ab_720b,
+    calls: &[],
+    imports: &[],
+};
+
+/// The object's place (`+0xd0`) from slot `slot` `(model, a, b, obj +
+/// 0xd0)`; then `+0xdc` (w) 1.0 and `+0x104` 0. Returns the slot's `eax`.
+fn place_and_clear<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (table, slot): (u32, u32),
+    words: &[u32],
+) -> Ret {
+    let obj = fr.arg(g, 0);
+    let mut args = words.to_vec();
+    args.push(obj.wrapping_add(0xd0));
+    let out = slot_call(g, img, fr.at, (table, slot), &args);
+    g.write::<u32>(obj.wrapping_add(0xdc), 0x3f80_0000);
+    g.write::<u32>(obj.wrapping_add(0x104), 0);
+    through(out)
+}
+
+/// [`place_and_clear`] by slot 268 `(T[k], 6, ..)`: `k` the byte `*G +
+/// 1`, `T` a word table (operand `+0x1d`; cdecl `(obj)`).
+///
+/// `magic_0393` 0x10002f80 (70 bytes; 2 DLLs).
+pub fn place_268<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x4));
+    let k = u32::from(g.read::<u8>(p.wrapping_add(1)));
+    let x = g.read::<u32>(op(img, f, 0x1d).wrapping_add(4 * k));
+    place_and_clear(g, img, fr, (0x22, 268), &[x, 6])
+}
+
+/// [`place_268`].
+pub const PLACE_268: Sig = Sig {
+    len: 70,
+    hash: 0xa939_1d71_8c26_22a5,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`place_and_clear`] by slot 237 `(*G_MODEL, T[k], 0, ..)`: `k` the
+/// word `G_K`, `T` a word table (operand `+0x19`; cdecl `(obj)`).
+///
+/// `magic_0055` 0x10001950 (72 bytes; 2 DLLs).
+pub fn place_237_table<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let k = g.read::<u32>(op(img, f, 0x4));
+    let x = g.read::<u32>(op(img, f, 0x19).wrapping_add(k.wrapping_mul(4)));
+    let model = g.read::<u32>(op(img, f, 0x24));
+    place_and_clear(g, img, fr, (0x1e, 237), &[model, x, 0])
+}
+
+/// [`place_237_table`].
+pub const PLACE_237_TABLE: Sig = Sig {
+    len: 72,
+    hash: 0xacf0_654c_c1d1_c13c,
+    calls: &[],
+    imports: &[],
+};
+
+/// The actor `A = T[k]` (`k` the byte `*G`, `T` operand `+0x12`): slot
+/// 364 `(A)` and slot 16 `(A)` answer floats (rounded to `f32`; the first
+/// call's word stays under the second's); their product `slot 16 * slot
+/// 364` (no arguments). Returns the product in `xmm0`, `eax` slot 16's.
+///
+/// `magic_0104` 0x10001830 (71 bytes; 2 DLLs).
+pub fn scale_product<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x7));
+    let k = u32::from(g.read::<u8>(p));
+    let actor = g.read::<u32>(op(img, f, 0x12).wrapping_add(4 * k));
+    let a = f32::from_bits(st0_f32(slot_call(g, img, f, (0x17, 364), &[actor])));
+    let out = slot_call(g, img, f, (0x28, 16), &[actor, actor]);
+    let b = f32::from_bits(st0_f32(out));
+    Ret::xmm0(crate::Xmm::F32(crate::sb_sse::mul(b, a).to_bits()), out.eax)
+}
+
+/// [`scale_product`].
+pub const SCALE_PRODUCT: Sig = Sig {
+    len: 71,
+    hash: 0xadf5_ebca_dbe5_63b9,
+    calls: &[],
+    imports: &[],
+};
+
+/// The block's object (`*G + 0x850`) taken out of the DLL's list
+/// ([`list_remove`], the list operand `+0x10`); when it was there, `*G_P`
+/// = `ITEM` (operands `+0x1e`, `+0x25`), slot 713 frees it and its flag
+/// bit 15 (`u16 +0x124`) is cleared (no arguments). Returns 0x7fff, or 0.
+///
+/// `magic_0393` 0x10003050 (71 bytes; 2 DLLs).
+pub fn unlist_block_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = g.read::<u32>(op(img, f, 0x3)).wrapping_add(0x850);
+    if list_remove(g, img, img.rel32_target(f + 0x15), op(img, f, 0x10), obj) == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(op(img, f, 0x1e));
+    g.write::<u32>(p, op(img, f, 0x25));
+    slot_call(g, img, f, (0x2a, 713), &[obj]);
+    let flags = g.read::<u16>(obj.wrapping_add(0x124));
+    g.write::<u16>(obj.wrapping_add(0x124), flags & 0x7fff);
+    Ret::eax(0x7fff)
+}
+
+/// [`unlist_block_object`].
+pub const UNLIST_BLOCK_OBJECT: Sig = Sig {
+    len: 71,
+    hash: 0x857c_b3f9_2b38_c701,
+    calls: &[(0x15, Callee::Sig(&LIST_REMOVE))],
+    imports: &[],
+};
+
+/// Slot 434 `(*G, callback)` (operands `+0xf`, `+0x9`), slot 450 `(obj,
+/// callback 2)` (operand `+0x21`), then slot 451 `(obj, n)` with the
+/// code's 8-bit `n` (operand `+0x36`), each call seeing the words the
+/// earlier ones left (cdecl `(obj)`). Returns slot 451's `eax`.
+///
+/// `magic_0194` 0x10001170 (n 2) and `magic_0378` 0x100010d0 (n 5) (71
+/// bytes; 2 DLLs each).
+pub fn three_callbacks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let x = g.read::<u32>(op(img, f, 0xf));
+    let (cb, cb2) = (op(img, f, 0x9), op(img, f, 0x21));
+    slot_call(g, img, f, (0x4, 434), &[x, cb]);
+    slot_call(g, img, f, (0x1c, 450), &[obj, cb2, x, cb]);
+    let n = imm8(img, f, 0x36);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x31, 451),
+        &[obj, n, obj, cb2, x, cb],
+    ))
+}
+
+/// [`three_callbacks`] with 2.
+pub const THREE_CALLBACKS_2: Sig = Sig {
+    len: 71,
+    hash: 0x7be2_622a_de65_12fb,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`three_callbacks`] with 5.
+pub const THREE_CALLBACKS_5: Sig = Sig {
+    len: 71,
+    hash: 0x6fa0_8d9f_9899_5aea,
+    calls: &[],
+    imports: &[],
+};
+
+/// The fade counter `obj + 0x120` down by one: from 64 up nothing more;
+/// above 0 the four `u16 +0x70..+0x76` get `count * 64` (`(count << 12) /
+/// 64`); at 0 or below the object is flagged 0x4000 (`u16 +0x124`)
+/// (cdecl `(obj)`). Returns the count, the value or 0x4000.
+///
+/// `magic_0673` 0x10001900 (71 bytes; 2 DLLs).
+pub fn fade_down<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let obj = fr.arg(g, 0);
+    let count = g.read::<i32>(obj.wrapping_add(0x120)).wrapping_sub(1);
+    g.write::<i32>(obj.wrapping_add(0x120), count);
+    if count >= 0x40 {
+        return Ret::eax(count.cast_unsigned());
+    }
+    if count <= 0 {
+        let flags = g.read::<u16>(obj.wrapping_add(0x124));
+        g.write::<u16>(obj.wrapping_add(0x124), flags | 0x4000);
+        return Ret::eax(0x4000);
+    }
+    let v = (count << 12) / 64;
+    let [lo, hi, _, _] = v.to_le_bytes();
+    for off in [0x76, 0x74, 0x72, 0x70] {
+        g.write::<u16>(obj.wrapping_add(off), u16::from_le_bytes([lo, hi]));
+    }
+    Ret::eax(v.cast_unsigned())
+}
+
+/// [`fade_down`].
+pub const FADE_DOWN: Sig = Sig {
+    len: 71,
+    hash: 0x62f3_954d_f1eb_d15d,
+    calls: &[],
+    imports: &[],
+};
+
+/// The motion step and the objects run ([`step_done`]'s shape) with two
+/// guards (`G_WAIT` not above 0, `G_BUSY` 0); then the task's state 3
+/// and next function (operand `+0x3c`) and a tail jump into
+/// [`register_parts`] with the record in `eax` (cdecl `(task)`). Returns
+/// the parts' result, or the objects'.
+///
+/// `magic_0347` 0x10003c10 (73 bytes; 2 DLLs).
+pub fn motion_step_register<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x5));
+    // push ebp; push esi; call: the run's return address
+    let b = run_objects(g, img, img.rel32_target(f + 0xc), fr.esp.wrapping_sub(12));
+    if b != 1
+        || a != 1
+        || g.read::<i32>(op(img, f, 0x1b)) > 0
+        || g.read::<u32>(op(img, f, 0x24)) != 0
+    {
+        return Ret::eax(b);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task.wrapping_add(0x14), 3);
+    let rec = g.read::<u32>(task.wrapping_add(8));
+    g.write::<u32>(rec.wrapping_add(0x10), op(img, f, 0x3c));
+    Ret::eax(register_parts(g, img, img.rel32_target(f + 0x42), rec))
+}
+
+/// [`motion_step_register`].
+pub const MOTION_STEP_REGISTER: Sig = Sig {
+    len: 73,
+    hash: 0x48d6_abf0_a2dc_1950,
+    calls: &[
+        (0x5, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xc, Callee::Sig(&RUN_OBJECTS)),
+        (0x42, Callee::Sig(&REGISTER_PARTS)),
+    ],
+    imports: &[],
+};
+
+/// The light's radius `xmm2` kept twice (operands `+0xa`, `+0x12`) and
+/// its flag byte 1 (`+0x18`); slot 325 `(v, edx)` and slot 234 `(a, v,
+/// b)` on the light's vectors (operands `+0x24`, `+0x40`, `+0x30`; the
+/// first call's words stay under the second's) (internal, `edx`, `xmm2`).
+/// Returns slot 234's `eax`.
+///
+/// `magic_0070` 0x10009480 (74 bytes; 3 DLLs).
+pub fn light_set<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.xmm_f32(2).to_bits();
+    g.write::<u32>(op(img, f, 0xa), r);
+    g.write::<u32>(op(img, f, 0x12), r);
+    g.write::<u8>(op(img, f, 0x18), 1);
+    let v = op(img, f, 0x24);
+    slot_call(g, img, f, (0x1, 325), &[v, fr.edx]);
+    let words = [
+        op(img, f, 0x40),
+        op(img, f, 0x3b),
+        op(img, f, 0x30),
+        v,
+        fr.edx,
+    ];
+    through(slot_call(g, img, f, (0x2b, 234), &words))
+}
+
+/// [`light_set`].
+pub const LIGHT_SET: Sig = Sig {
+    len: 74,
+    hash: 0xef60_4c74_b9a7_a9c7,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 234 `(a, b, c)` on three vectors (operands `+0x1a`, `+0x15`,
+/// `+0xa`), then `G_ON` 1, `G_R` = `xmm1` and `G_T` 0 (operands `+0x2f`,
+/// `+0x3b`, `+0x41`) (internal, `xmm1`). Returns `xmm1` in `xmm0`, `eax`
+/// slot 234's.
+///
+/// `magic_0070` 0x10009950 (77 bytes; 3 DLLs).
+pub fn light_on<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.xmm_f32(1).to_bits();
+    let args = [op(img, f, 0x1a), op(img, f, 0x15), op(img, f, 0xa)];
+    let eax = slot_call(g, img, f, (0x5, 234), &args).eax;
+    g.write::<u32>(op(img, f, 0x2f), 1);
+    g.write::<u32>(op(img, f, 0x3b), r);
+    g.write::<u32>(op(img, f, 0x41), 0);
+    Ret::xmm0(crate::Xmm::F32(r), eax)
+}
+
+/// [`light_on`].
+pub const LIGHT_ON: Sig = Sig {
+    len: 77,
+    hash: 0x7d81_aa62_4cfc_84f5,
+    calls: &[],
+    imports: &[],
+};
+
+/// Each 16-byte entry of a table (operand `+0x6` minus 4, to operand
+/// `+0x43`) copied into the 0x34-byte records from operand `+0x1` minus 8,
+/// with `+0x20` 1 and `+0x18`, `+0x28` 0 (relative to the record + 8; no
+/// arguments). Returns the last word copied.
+///
+/// `magic_0249` 0x10001ee0 (74 bytes; 2 DLLs).
+pub fn records_from_table<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (mut dst, mut src, end) = (op(img, f, 0x1), op(img, f, 0x6), op(img, f, 0x43));
+    loop {
+        let mut last = 0;
+        for i in 0..4u32 {
+            last = g.read::<u32>(src.wrapping_sub(4).wrapping_add(4 * i));
+            g.write::<u32>(dst.wrapping_sub(8).wrapping_add(4 * i), last);
+        }
+        src = src.wrapping_add(0x10);
+        g.write::<u32>(dst.wrapping_add(0x20), 1);
+        g.write::<u32>(dst.wrapping_add(0x18), 0);
+        g.write::<u32>(dst.wrapping_add(0x28), 0);
+        dst = dst.wrapping_add(0x34);
+        if src.cast_signed() >= end.cast_signed() {
+            return Ret::eax(last);
+        }
+    }
+}
+
+/// [`records_from_table`].
+pub const RECORDS_FROM_TABLE: Sig = Sig {
+    len: 74,
+    hash: 0x1b32_2b21_fc85_dbc1,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 440 `(*G, obj, 0, 2)`, slot 450 `(obj, callback)` and slot 449
+/// `(obj, callback 2)` (operands `+0x19`, `+0x25`, `+0x38`), each seeing
+/// the words the earlier ones left (cdecl `(obj)`). Returns slot 449's
+/// `eax`.
+///
+/// `magic_0312` 0x100016f0 (75 bytes; 2 DLLs).
+pub fn three_440<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let x = g.read::<u32>(op(img, f, 0x19));
+    let (cb, cb2) = (op(img, f, 0x25), op(img, f, 0x38));
+    slot_call(g, img, f, (0x4, 440), &[x, obj, 0, 2]);
+    slot_call(g, img, f, (0x20, 450), &[obj, cb, x, obj, 0, 2]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x33, 449),
+        &[obj, cb2, obj, cb, x, obj, 0, 2],
+    ))
+}
+
+/// [`three_440`].
+pub const THREE_440: Sig = Sig {
+    len: 75,
+    hash: 0x2dc7_dfdf_97e2_9775,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 450 `(obj, callback)` and slot 449 `(obj, callback 2)` (operands
+/// `+0x19`, `+0x2c`; the first call's words stay under the second's),
+/// then the object's entry `obj + 0x2c + 16 * k` (`k` = `obj + 0xac`)
+/// gets the word `*G + 0x198` read before (cdecl `(obj)`). Returns `2k`.
+///
+/// `magic_0312` 0x10001300 (76 bytes; 2 DLLs).
+pub fn two_callbacks_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let base = g.read::<u32>(op(img, f, 0x4));
+    let x = g.read::<u32>(base.wrapping_add(0x198));
+    let (cb, cb2) = (op(img, f, 0x19), op(img, f, 0x2c));
+    slot_call(g, img, f, (0x14, 450), &[obj, cb]);
+    slot_call(g, img, f, (0x27, 449), &[obj, cb2, obj, cb]);
+    let k2 = g.read::<u32>(obj.wrapping_add(0xac)).wrapping_mul(2);
+    g.write::<u32>(obj.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c), x);
+    Ret::eax(k2)
+}
+
+/// [`two_callbacks_entry`].
+pub const TWO_CALLBACKS_ENTRY: Sig = Sig {
+    len: 76,
+    hash: 0x3346_6e58_6e39_e910,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 447 `(x, 0xc1)` with `x` the word `*G + 0x198`, slot 450 `(obj,
+/// callback)` (operand `+0x26`) and slot 451 `(obj, 90)`, each seeing the
+/// words the earlier ones left (cdecl `(obj)`). Returns slot 451's `eax`.
+///
+/// `magic_0421` 0x100013d0 (76 bytes; 2 DLLs).
+pub fn callback_451_90<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let base = g.read::<u32>(op(img, f, 0x4));
+    let x = g.read::<u32>(base.wrapping_add(0x198));
+    let obj = fr.arg(g, 0);
+    let cb = op(img, f, 0x26);
+    slot_call(g, img, f, (0x14, 447), &[x, 0xc1]);
+    slot_call(g, img, f, (0x21, 450), &[obj, cb, x, 0xc1]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x36, 451),
+        &[obj, 0x5a, obj, cb, x, 0xc1],
+    ))
+}
+
+/// [`callback_451_90`].
+pub const CALLBACK_451_90: Sig = Sig {
+    len: 76,
+    hash: 0x233c_d2fe_ab38_2873,
+    calls: &[],
+    imports: &[],
+};
+
+/// The index of the actor whose character (`+0x830`) is `this`, among
+/// the `G_N` actors from 1 (`T[G_MAP[i]]`; the shared index helper's -1
+/// case, the word `G_SELF`, cannot come up) (internal, `ecx` = this).
+/// Returns the index, or -1.
+///
+/// `magic_0434` 0x10003c90 (77 bytes; 2 DLLs).
+pub fn actor_index<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let n = g.read::<i32>(op(img, f, 0x2));
+    if n <= 1 {
+        return Ret::eax(u32::MAX);
+    }
+    let map = g.read::<u32>(op(img, f, 0x15));
+    let own = g.read::<u32>(op(img, f, 0x1c));
+    let mut i = 1i32;
+    loop {
+        let chr = if i == -1 {
+            own
+        } else {
+            let k = u32::from(g.read::<u8>(map.wrapping_add(i.cast_unsigned())));
+            g.read::<u32>(op(img, f, 0x30).wrapping_add(4 * k))
+        };
+        if g.read::<u32>(chr.wrapping_add(0x830)) == fr.ecx {
+            return Ret::eax(i.cast_unsigned());
+        }
+        i += 1;
+        if i >= n {
+            return Ret::eax(u32::MAX);
+        }
+    }
+}
+
+/// [`actor_index`].
+pub const ACTOR_INDEX: Sig = Sig {
+    len: 77,
+    hash: 0x4909_e951_6062_80ee,
+    calls: &[],
+    imports: &[],
+};
+
+/// `G_A` cleared (operand `+0x14`), slot 448 `(2, 0)`, slot 450 `(obj,
+/// callback)` and slot 449 `(obj, callback 2)` (operands `+0x24`,
+/// `+0x39`), each seeing the words the earlier ones left (cdecl `(obj)`).
+/// Returns slot 449's `eax`.
+///
+/// `magic_0193` 0x10001000 (77 bytes; 2 DLLs).
+pub fn three_448<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let (cb, cb2) = (op(img, f, 0x24), op(img, f, 0x39));
+    g.write::<u32>(op(img, f, 0x14), 0);
+    slot_call(g, img, f, (0x4, 448), &[2, 0]);
+    slot_call(g, img, f, (0x1f, 450), &[obj, cb, 2, 0]);
+    through(slot_call(
+        g,
+        img,
+        f,
+        (0x34, 449),
+        &[obj, cb2, obj, cb, 2, 0],
+    ))
+}
+
+/// [`three_448`].
+pub const THREE_448: Sig = Sig {
+    len: 77,
+    hash: 0x2800_239b_b843_9caa,
     calls: &[],
     imports: &[],
 };

@@ -1039,6 +1039,24 @@ ports! {
     "ranges off" => s4_small::RANGES_OFF, s4_small::ranges_off;
     "place from block" => s4_small::PLACE_FROM_BLOCK, s4_small::place_from_block;
     "count or slot 257" => s4_small::COUNT_OR_257, s4_small::count_or_257;
+    "records slot 296" => s4_small::RECORDS_296_OFF, s4_small::records_296_off;
+    "records slot 296 (with)" => s4_small::RECORDS_296_WITH, s4_small::records_296_with;
+    "clear and count 18" => s4_small::CLEAR_COUNT_18, s4_small::clear_count_18;
+    "clear and two callbacks" => s4_small::CLEAR_TWO_CALLBACKS, s4_small::clear_two_callbacks;
+    "states 0x3011, 0x3013" => s4_small::STATES_3011_3013, s4_small::states_3011_3013;
+    "place by slot 268" => s4_small::PLACE_268, s4_small::place_268;
+    "place by slot 237 (table)" => s4_small::PLACE_237_TABLE, s4_small::place_237_table;
+    "scale product" => s4_small::SCALE_PRODUCT, s4_small::scale_product;
+    "unlist block object" => s4_small::UNLIST_BLOCK_OBJECT, s4_small::unlist_block_object;
+    "three callbacks (2)" => s4_small::THREE_CALLBACKS_2, s4_small::three_callbacks;
+    "three callbacks (5)" => s4_small::THREE_CALLBACKS_5, s4_small::three_callbacks;
+    "fade down" => s4_small::FADE_DOWN, s4_small::fade_down;
+    "motion step, register" => s4_small::MOTION_STEP_REGISTER, s4_small::motion_step_register;
+    "records from table" => s4_small::RECORDS_FROM_TABLE, s4_small::records_from_table;
+    "three with slot 440" => s4_small::THREE_440, s4_small::three_440;
+    "two callbacks, entry" => s4_small::TWO_CALLBACKS_ENTRY, s4_small::two_callbacks_entry;
+    "callback and 90" => s4_small::CALLBACK_451_90, s4_small::callback_451_90;
+    "three with slot 448" => s4_small::THREE_448, s4_small::three_448;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
     "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
@@ -1378,6 +1396,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("frames to time", &s4_small::FRAMES_TIME),
     ("big node", &s4_small::BIG_NODE),
     ("particle node from", &s4_small::PARTICLE_FROM),
+    ("record reset", &s4_small::RECORD_RESET),
+    ("each slot 542", &s4_small::EACH_542),
+    ("light set", &s4_small::LIGHT_SET),
+    ("light on", &s4_small::LIGHT_ON),
+    ("actor index", &s4_small::ACTOR_INDEX),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
