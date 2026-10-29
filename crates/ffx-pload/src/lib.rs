@@ -45,6 +45,7 @@
 pub mod cluster;
 pub mod descriptor;
 pub mod m5_static_init_b;
+pub mod m5_static_init_d;
 pub mod p1_bind;
 pub mod p1_body;
 pub mod p1_buffers;
