@@ -7,6 +7,7 @@
 //! moved. Each doc names the DLL and address it was ported from, its size
 //! and how many DLLs carry it.
 
+use crate::l3_common::{ListAt, attach};
 use crate::nodes::walk;
 use crate::pushes::Pushes;
 use crate::runtime::slot_target;
@@ -603,7 +604,13 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     let w = |o: u32| img.word(f + o);
     let actor = fr.arg(g, 0);
     // push ebp; push esi; call
-    targets_init(g, img, img.rel32_target(f + 0x08), fr.esp.wrapping_sub(12), actor);
+    targets_init(
+        g,
+        img,
+        img.rel32_target(f + 0x08),
+        fr.esp.wrapping_sub(12),
+        actor,
+    );
     for (dst, src) in [(0x13, 0x17), (0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35)] {
         g.write::<u32>(w(dst), w(src));
     }
@@ -641,7 +648,12 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, cleared: &[u32]) -> Ret {
     s.call(g, slot_target(g, w(0x13f), 221), 0);
     let tail = g.read::<u32>(w(0x15a));
     g.write::<u32>(w(0x162), tail);
-    for (dst, src) in [(0x168, 0x16c), (0x172, 0x176), (0x17c, 0x180), (0x186, 0x18a)] {
+    for (dst, src) in [
+        (0x168, 0x16c),
+        (0x172, 0x176),
+        (0x17c, 0x180),
+        (0x186, 0x18a),
+    ] {
         g.write::<u32>(w(dst), w(src));
     }
     g.write::<u32>(tail.wrapping_add(4), w(0x191));
@@ -681,5 +693,74 @@ pub const SUMMON_START: Sig = Sig {
     len: 457,
     hash: 0x3e98_7198_16df_4276,
     calls: &[(0x08, Callee::Sig(&TARGETS_INIT))],
+    imports: &[],
+};
+
+/// A node holding one model node per target (internal, `ecx` = a set-up
+/// record: `+0x0` the node, `+0x4` its parent, `+0x8` the character,
+/// `+0xc` a word and `+0x10` a flags byte kept in the node; an 8-aligned
+/// frame): the node's lists set up and the node appended to the parent's
+/// children ([`attach`]); `+0x4e4`, `+0x4ec` and the character `+0x4e8`
+/// kept; slot 218 (`MsGetTargetList`) gives the targets (`+0x4e0`) and
+/// their count (`+0x4dc`). Each target `i` gets the node at `+0x1c +
+/// 0x98 i` (vtable `V`, operand `+0xb8`), set up by
+/// [`crate::sa_summon::model_node_init`] from a record on the frame
+/// (`[esp + 0x10]`: the node, the record's parent, the target's byte, no
+/// flags). Returns the last set-up's `eax`, or slot 218's.
+///
+/// `magic_0411` 0x10006000 (215 bytes; 21 DLLs).
+pub fn target_nodes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rec = fr.ecx;
+    let parent = g.read::<u32>(rec + 4);
+    let n = g.read::<u32>(rec);
+    g.write::<u16>(n + 0x1a, 0xff);
+    g.write::<u32>(n + 0x10, n);
+    g.write::<u32>(n + 0xc, n);
+    g.write::<u32>(n + 0x14, parent);
+    if parent != 0 {
+        attach(g, n, parent, ListAt::of(parent));
+    }
+    let x = g.read::<u32>(rec + 0xc);
+    let chr = g.read::<u32>(rec + 8);
+    g.write::<u32>(n + 0x4e4, x);
+    let flags = g.read::<u8>(rec + 0x10);
+    g.write::<u8>(n + 0x4ec, flags);
+    g.write::<u32>(n + 0x4e8, chr);
+    let t = slot_target(g, w(0x5f), 218);
+    let targets = g.call(t, 0, &[chr, n + 0x4dc]).eax;
+    g.write::<u32>(n + 0x4e0, targets);
+    let mut eax = targets;
+    if g.read::<i32>(n + 0x4dc) > 0 {
+        // push ebp; and esp, -8; sub esp, 0x14; three pushes
+        let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x14 + 12);
+        let args = e + 0x10;
+        let init = img.rel32_target(f + 0xbd);
+        let mut i = 0u32;
+        loop {
+            let node = n + 0x1c + 0x98 * i;
+            let parent = g.read::<u32>(rec + 4);
+            let target = u32::from(g.read::<u8>(g.read::<u32>(n + 0x4e0).wrapping_add(i)));
+            for (k, x) in [node, parent, target].into_iter().enumerate() {
+                g.write::<u32>(args + 4 * k as u32, x);
+            }
+            g.write::<u8>(args + 0xc, 0);
+            g.write::<u32>(node, w(0xb8));
+            eax = crate::sa_summon::model_node_init(g, img, init, args);
+            i += 1;
+            if i.cast_signed() >= g.read::<i32>(n + 0x4dc) {
+                break;
+            }
+        }
+    }
+    eax
+}
+
+/// [`target_nodes`].
+pub const TARGET_NODES: Sig = Sig {
+    len: 215,
+    hash: 0x8465_1687_28da_7b85,
+    calls: &[(0xbd, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT))],
     imports: &[],
 };

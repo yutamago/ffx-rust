@@ -18,7 +18,10 @@ fn targets<G: Game>() -> [(&'static Sig, Handler<G>); 4] {
             Ret::eax(s3_nodes::leave_and_reset(g, img, fr))
         }),
         (&s4_summon::ELEM_BONE, s4_summon::elem_bone::<G>),
-        (&s4_summon::COLOUR_NODE_FADE, s4_summon::colour_node_fade::<G>),
+        (
+            &s4_summon::COLOUR_NODE_FADE,
+            s4_summon::colour_node_fade::<G>,
+        ),
         (&s4_summon::MOTION_STATE, s4_summon::motion_state::<G>),
     ]
 }

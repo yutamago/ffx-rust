@@ -175,7 +175,11 @@ fn sprites_run() {
 /// an empty list, to a list with a tail, and with the pool empty.
 #[test]
 fn start_object_at() {
-    for (n, rva, anim) in [(18u16, 0x3a10u32, false), (446, 0x8090, false), (54, 0x1b80, true)] {
+    for (n, rva, anim) in [
+        (18u16, 0x3a10u32, false),
+        (446, 0x8090, false),
+        (54, 0x1b80, true),
+    ] {
         let Some(mut t) = twin(n) else { return };
         let at = t.at(rva);
         let (pool_op, tail_op) = if anim { (0x99, 0xa4) } else { (0x9d, 0xa8) };
@@ -223,13 +227,13 @@ fn start_object_at() {
                 ecx: 0x0bad_0ecc,
                 ..Call::default()
             }
-            .with_xmm(&[
-                Xmm::f32(0.0),
-                Xmm::f32(0.0),
-                Xmm::f32(0.0),
-                Xmm::f32(scale),
-            ]);
-            let args = [k as u32 * 2 + 1, 0x0a00 + k as u32, 0xdead, 0x0b00 + k as u32];
+            .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(scale)]);
+            let args = [
+                k as u32 * 2 + 1,
+                0x0a00 + k as u32,
+                0xdead,
+                0x0b00 + k as u32,
+            ];
             t.check(at, c, &args, Eax::Checked, |g, img, fr| {
                 let (obj, scale, index) = (fr.edx, fr.xmm_f32(3), fr.arg(g, 0));
                 Ret::eax(if anim {

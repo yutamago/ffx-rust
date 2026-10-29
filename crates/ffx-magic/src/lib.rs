@@ -1215,6 +1215,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("start object at", &s4_misc::START_OBJECT_AT),
     ("start object (anim)", &s4_misc::START_OBJECT_ANIM),
     ("targets init", &s4_summon::TARGETS_INIT),
+    ("target nodes", &s4_summon::TARGET_NODES),
     ("angle step", &s4_misc::ANGLE_STEP),
     ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),
 ];

@@ -76,7 +76,10 @@ fn elem_bone_cases(t: &mut Twin, f: u32, thunk: u32) {
     });
     rec(t, 231, 3, |m, a| {
         // the unit matrix's last row and the matrix it is given
-        m.w32(sa::node(30) + (a[0] & 0xfc), m.r32(a[1] + 0x30) ^ m.r32(a[1] + 0x3c));
+        m.w32(
+            sa::node(30) + (a[0] & 0xfc),
+            m.r32(a[1] + 0x30) ^ m.r32(a[1] + 0x3c),
+        );
         0x2310_0000 ^ a[2]
     });
     rec(t, 229, 3, |m, a| m.r32(a[1] + 4));
@@ -311,8 +314,12 @@ fn motion_state_steps() {
                     set_f(&mut t, n0 + 0x70, 0.5);
                     set_f(&mut t, n0 + 0x74, -2.0);
                     // the fall: height, its step, the damping, the bounce
-                    let (h, step) = [(5.0f32, 1.0f32), (k - 0.5, 0.25), (k + 3.0, -2.0), (0.0, 0.0)]
-                        [variant as usize];
+                    let (h, step) = [
+                        (5.0f32, 1.0f32),
+                        (k - 0.5, 0.25),
+                        (k + 3.0, -2.0),
+                        (0.0, 0.0),
+                    ][variant as usize];
                     set_f(&mut t, n0 + 0x78, h);
                     set_f(&mut t, n0 + 0x7c, step);
                     set_f(&mut t, n0 + 0x80, 0.5);
@@ -424,5 +431,57 @@ fn targets_init() {
                 ffx_magic::Ret::eax(s4_summon::targets_init(g, img, fr.at, fr.esp, fr.ecx))
             },
         );
+    }
+}
+
+/// `magic_0411` 0x10006000: the node for every target (none, one, three)
+/// under no parent, an empty parent and a parent with a child.
+#[test]
+fn target_nodes() {
+    let Some(mut t) = twin(411) else { return };
+    let f = t.at(0x6000);
+    let list = magic::SCRATCH + 0x8000;
+    t.write(list, &[5, 7, 9, 11]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], m.r32(magic::SCRATCH + 0x8100));
+        list
+    });
+    for s in [413u32, 215] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 14, 4, |m, a| {
+        for i in 1..4 {
+            m.w32(a[i], a[0].wrapping_mul(i as u32));
+        }
+        0x14
+    });
+    rec(&mut t, 333, 5, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125);
+    let (r, node, parent, kid) = (
+        magic::SCRATCH + 0x100,
+        magic::SCRATCH + 0x1000,
+        magic::SCRATCH + 0x2000,
+        magic::SCRATCH + 0x3000,
+    );
+    for (count, p, last) in [
+        (0u32, 0, 0),
+        (1, parent, parent),
+        (3, parent, kid),
+        (0xffff_ffff, parent, kid),
+    ] {
+        t.set_u32(magic::SCRATCH + 0x8100, count);
+        t.write(node, &[0x66; 0x500]);
+        t.write(parent, &[0x77; 0x40]);
+        t.write(kid, &[0x88; 0x40]);
+        t.set_u32(parent + 0x10, last);
+        for (i, x) in [node, p, 0x0c0c_0003, 0x1234_5678, 0x0000_00f1]
+            .into_iter()
+            .enumerate()
+        {
+            t.set_u32(r + 4 * i as u32, x);
+        }
+        t.check(f, magic::Call::this(r), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(s4_summon::target_nodes(g, img, fr))
+        });
     }
 }

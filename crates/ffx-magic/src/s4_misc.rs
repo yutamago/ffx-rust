@@ -585,7 +585,13 @@ pub fn follow_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         }
         2 => {
             // sub esp, 0x24; push esi; push edi; call
-            mean_position(g, img, img.rel32_target(f + 0x29), ebp.wrapping_sub(0x30), pos);
+            mean_position(
+                g,
+                img,
+                img.rel32_target(f + 0x29),
+                ebp.wrapping_sub(0x30),
+                pos,
+            );
             true
         }
         _ => false,
@@ -647,7 +653,13 @@ struct AngleOps {
 /// 0x54]`: slot 235's unit, rolled by 0 (330), the first angle (328), the
 /// second (329); slot 229) and added to the base; the base's `w` is
 /// copied and returned.
-fn angle_track<G: Game>(g: &mut G, img: &Image, fr: &Frame, curve: Option<(u32, u32)>, o: &AngleOps) -> u32 {
+fn angle_track<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    curve: Option<(u32, u32)>,
+    o: &AngleOps,
+) -> u32 {
     let f = fr.at;
     let w = |off: u32| img.word(f + off);
     let (s, out) = (fr.ecx, fr.edx);
