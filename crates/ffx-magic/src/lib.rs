@@ -40,6 +40,7 @@ pub mod pe;
 pub mod runtime;
 
 pub mod m0604;
+pub mod nodes;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -409,6 +410,21 @@ ports! {
     "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+    "xor eax, eax; ret" => runtime::ZERO_RET, runtime::zero_ret;
+    "node visit thunk" => nodes::THUNK_VISIT, nodes::thunk_visit;
+    "node visit thunk (vu0)" => nodes::THUNK_VISIT_VU0, nodes::thunk_visit_vu0;
+    "node visit thunk (slot 268)" => nodes::THUNK_VISIT_268, nodes::thunk_visit_268;
+    "node visit thunk (children)" => nodes::THUNK_VISIT_CHILDREN, nodes::thunk_visit_children;
+    "node visit plain" => nodes::PLAIN, nodes::visit_plain;
+    "node visit gated" => nodes::GATED, nodes::visit_gated;
+    "node visit add float" => nodes::ADD, nodes::visit_add_float;
+    "node unlink list" => nodes::UNLINK_LIST, nodes::unlink_list;
+    "node flag call" => nodes::FLAG_CALL, nodes::flag_method_call;
+    "node flag pointer call" => nodes::FLAG_PTR, nodes::flag_pointer_call;
+    "node all free tail" => nodes::FREE_TAIL, nodes::all_free_tail;
+    "node free then unlink" => nodes::FREE_THEN_UNLINK, nodes::free_then_unlink;
+    "node insert" => nodes::INSERT, nodes::node_insert;
+    "node unlink" => nodes::UNLINK, nodes::unlink;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -418,6 +434,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),
+    ("node visit", &nodes::VISIT),
+    ("node visit (vu0)", &nodes::VISIT_VU0),
+    ("node visit (slot 268)", &nodes::VISIT_268),
+    ("node visit (children)", &nodes::VISIT_CHILDREN),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

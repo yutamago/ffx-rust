@@ -191,3 +191,16 @@ pub fn slot_of_thunk(img: &Image, addr: u32, table_global: u32) -> Option<u32> {
     let off = img.word(addr + 10);
     (shape && off.is_multiple_of(4) && off < 0x1000).then_some(off / 4)
 }
+
+/// `xor eax, eax; ret` (402 overlays): returns 0.
+pub fn zero_ret<G: Game>(_g: &mut G, _img: &Image, _fr: &Frame) -> Ret {
+    Ret::eax(0)
+}
+
+/// `xor eax, eax; ret`.
+pub const ZERO_RET: Sig = Sig {
+    len: 3,
+    hash: 0x5838_9c18_2330_78ff,
+    calls: &[],
+    imports: &[],
+};
