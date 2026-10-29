@@ -1227,6 +1227,16 @@ ported! {
         let mut f = StackFrame::<0x48>::new();
         hd::ins_check(&mut mem(), f.at() + 0x120, list)
     }
+
+    /// `()`.
+    TODrawWakkaLimitFrame_008a1e50 @ 0x008a_1e50 => extern "C" fn wakka_frame() -> u32 {
+        mn::wakka_frame(&mut mem())
+    }
+
+    /// `(win, macro, pos)`: the step left in `win`'s argument slot.
+    TODrawMovieChangeMacro2 @ 0x008b_5ea0 => extern "C" fn movie_change_macro(win: u32, macro_id: u32, pos: u32; slots: u32) -> u32 {
+        mn::movie_change_macro(&mut mem(), win, macro_id, pos, slots)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

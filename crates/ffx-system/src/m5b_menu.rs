@@ -375,6 +375,28 @@ pub const ICON_CONSTS: [u32; 7] = [
 pub const CROSS_MENU_ICON: u32 = 0x008e_6af0;
 pub const BTL_EASY_FONT: u32 = 0x0090_5ab0;
 
+/// `FUN_008a1e50`'s: `TOMkpShapeXYWHUV`, the shared floats `0x00b5f434`
+/// (a height) and `0x00b5ef1c` (a width), and per piece its `x` (remapped),
+/// `u0` (remapped), `u1` and `v1` floats.
+pub const SHAPE_XYWHUV: u32 = 0x0090_3bb0;
+pub const PIECE_H: u32 = 0x00b5_f434;
+pub const PIECE_W: u32 = 0x00b5_ef1c;
+pub const PIECES: [[u32; 4]; 4] = [
+    [0x00b4_1d88, 0x00b5_f354, 0x00b5_f38c, 0x00b5_f3a0],
+    [0x00b9_2314, 0x00b5_f3b4, 0x00b5_f3a4, 0x00b5_f3b8],
+    [0x00b5_f39c, 0x00b5_f3bc, 0x00b5_f3b8, 0x00b5_f3d4],
+    [0x00b9_2318, 0x00b5_f3e0, 0x00b5_f3d4, 0x00b5_efa0],
+];
+
+/// `TODrawMovieChangeMacro2`'s: `TOGetChangeMacroAddress`, the character
+/// class `0x008df610`, `TODrawChangeMacro2`, `TOGetFontInfo`,
+/// `TOMakePktMovieFont1612`.
+pub const CHANGE_MACRO_ADDRESS: u32 = 0x008b_6660;
+pub const CHAR_CLASS: u32 = 0x008d_f610;
+pub const CHANGE_MACRO2: u32 = 0x008b_5960;
+pub const FONT_INFO: u32 = 0x008b_7240;
+pub const MOVIE_FONT_1612: u32 = 0x008f_d960;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2655,5 +2677,111 @@ pub mod bridge {
             super::BTL_EASY_FONT,
             &[name, xx, yy, colour, scale, 1.0f32.to_bits()],
         )
+    }
+    /// The float at `sym` as `fld dword`/`fstp dword` copy it.
+    fn float_copy(h: &impl Host, sym: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(global(h, sym)))
+    }
+
+    /// `FUN_008a1e50()` (the Wakka limit window's frame): four pieces by
+    /// `TOMkpShapeXYWHUV(-1, x, y, w, h, u0, v0, u1, v1)` with `x` =
+    /// `graphicUiRemapX2(0x00b5ef1c)`, `y` = `graphicUiRemapY2(piece[1])`,
+    /// `w` = `graphicUiRemapX2(0x00b5f434)`, `h` =
+    /// `graphicUiRemapY2(piece[0])`, `u0` = 0, `v0` = `piece[2]`, `u1` =
+    /// `0x00b5f434`, `v1` = `piece[3]` (floats; the original builds the
+    /// words in place on its stack, the remaps in this order). The last
+    /// shape's `eax`.
+    pub fn wakka_frame(h: &mut impl Host) -> u32 {
+        use ffx_bridge::x87;
+        let mut r = 0;
+        for piece in super::PIECES {
+            let a = x87::store(remap(h, super::REMAP_Y2, float_copy(h, piece[0])));
+            let height = float_copy(h, super::PIECE_H);
+            let b = x87::store(remap(h, super::REMAP_X2, height));
+            let c = x87::store(remap(h, super::REMAP_Y2, float_copy(h, piece[1])));
+            let width = float_copy(h, super::PIECE_W);
+            let d = x87::store(remap(h, super::REMAP_X2, width));
+            let words = [
+                u32::MAX,
+                d,
+                c,
+                b,
+                a,
+                0,
+                float_copy(h, piece[2]),
+                float_copy(h, super::PIECE_H),
+                float_copy(h, piece[3]),
+            ];
+            r = cdecl(h, super::SHAPE_XYWHUV, &words);
+        }
+        r
+    }
+    /// `TODrawMovieChangeMacro2(win, macro, pos; slots)`: the glyph record
+    /// cleared, the macro's text (`TOGetChangeMacroAddress(i16 win +4,
+    /// macro)`) drawn while the window's count (`+0x9c`) is below its
+    /// limit (`+0xa0`): code 7 with `0xe0..0xef` after it moves `pos.x`
+    /// by that less 0xe0 (through `win`'s argument slot as a float); a
+    /// class-3 character (`0x008df610`) is a nested macro
+    /// (`TODrawChangeMacro2(win, text, pos)`); others are glyphs
+    /// (`TOGetFontInfo`, `TOMakePktMovieFont1612(pos, record)`), counted,
+    /// and while neither `+0xb4` nor `+0xac` is set the limit grows up to
+    /// `+0xa8`. Each step goes on with `0x008dfd80`. Returns the `eax` the
+    /// original leaves.
+    pub fn movie_change_macro(
+        h: &mut impl Host,
+        win: u32,
+        macro_id: u32,
+        pos: u32,
+        slots: u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let record = h.rebase(super::GLYPH_RECORD);
+        cdecl(h, super::CRT_MEMSET, &[record, 0, 0x40]);
+        let id = i16_at(h, win, 4);
+        let mut text = cdecl(h, super::CHANGE_MACRO_ADDRESS, &[id, macro_id]);
+        if text == 0 || h.read::<u8>(text) == 0 {
+            return text;
+        }
+        let at = |off: u32| win.wrapping_add(off);
+        loop {
+            let mut eax: u32 = h.read(at(0x9c));
+            if eax.cast_signed() >= h.read::<u32>(at(0xa0)).cast_signed() {
+                return eax;
+            }
+            let c: u8 = h.read(text);
+            if c == 7 {
+                let next: u8 = h.read(text.wrapping_add(1));
+                if (0xe0..0xf0).contains(&next) {
+                    let step = int_f32(u32::from(next) - 0xe0).to_bits();
+                    h.write(slots, step);
+                    let px = pos.wrapping_add(4);
+                    let v = x87::add(x87::load(step), x87::load(h.read(px)));
+                    h.write(px, x87::store(v));
+                }
+                text = cdecl(h, super::NEXT_CHAR, &[text]);
+                eax = text;
+            } else if cdecl(h, super::CHAR_CLASS, &[u32::from(c)]) == 3 {
+                cdecl(h, super::CHANGE_MACRO2, &[win, text, pos]);
+                text = cdecl(h, super::NEXT_CHAR, &[text]);
+                eax = text;
+            } else {
+                cdecl(h, super::FONT_INFO, &[text, record]);
+                cdecl(h, super::MOVIE_FONT_1612, &[pos, record]);
+                text = cdecl(h, super::NEXT_CHAR, &[text]);
+                eax = text;
+                let count = h.read::<u32>(at(0x9c)).wrapping_add(1);
+                h.write(at(0x9c), count);
+                if h.read::<u32>(at(0xb4)) == 0 && h.read::<u32>(at(0xac)) == 0 {
+                    eax = h.read(at(0xa0));
+                    if eax.cast_signed() < h.read::<u32>(at(0xa8)).cast_signed() {
+                        eax = eax.wrapping_add(1);
+                        h.write(at(0xa0), eax);
+                    }
+                }
+            }
+            if h.read::<u8>(text) == 0 {
+                return eax;
+            }
+        }
     }
 }

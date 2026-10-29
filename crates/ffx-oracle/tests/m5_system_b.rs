@@ -6162,3 +6162,101 @@ fn r3b8_hdd_ins_check_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b9_wakka_frame_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0f01);
+        for case in 0..4u32 {
+            t.reset();
+            let r = rng.next();
+            // constant remaps, or ones that hand back their argument (the
+            // results then tell the constants apart)
+            if case < 2 {
+                t.stub_float(mnc::REMAP_Y2, [0.5f32, -12.25][case as usize]);
+                t.stub_float(mnc::REMAP_X2, [1.75f32, 7.0][case as usize]);
+            } else {
+                for sym in [mnc::REMAP_Y2, mnc::REMAP_X2] {
+                    let at = t.cave_code(&[0xd9, 0x44, 0x24, 0x04, 0xc3]); // fld dword [esp+4]; ret
+                    t.jump(sym, at);
+                }
+            }
+            t.stub_seq(mnc::SHAPE_XYWHUV, 9, 0, &[r, r ^ 1, r ^ 2, r ^ 3]);
+            t.check(
+                &format!("wakka frame #{case}"),
+                0x008a_1e50,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mnb::wakka_frame(m)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b9_movie_change_macro_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0f02);
+        for case in 0..15u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            // the text: codes 7 + step, nested macros, glyphs; empty, none
+            let text = t.alloc(&[0x41, 7, 0xe3, 0x42, 7, 0xf0, 0x43, 0x44, 0]);
+            let empty = t.alloc(&[0]);
+            let found = match case % 5 {
+                _ if case >= 10 => text,
+                0 => 0,
+                1 => empty,
+                _ => text,
+            };
+            t.stub(mnc::CHANGE_MACRO_ADDRESS, false, 2, 0, found);
+            t.stub_seq(
+                mnc::NEXT_CHAR,
+                1,
+                0,
+                &[text + 1, text + 3, text + 4, text + 6, text + 7, text + 8],
+            );
+            // the class: the argument's upper bytes are the caller's, so not logged
+            t.stub_seq(
+                mnc::CHAR_CLASS,
+                0,
+                0,
+                &[[1u32, 3][(case & 1) as usize], 1, 2, 3, 1],
+            );
+            t.stub(mnc::CHANGE_MACRO2, false, 3, 0, r);
+            t.stub(mnc::FONT_INFO, false, 2, 0, r ^ 1);
+            t.stub(mnc::MOVIE_FONT_1612, false, 2, 0, r ^ 2);
+            let win = t.zeros(0xc0);
+            let (count, limit, most) = [
+                (0u32, 9u32, 9u32),
+                (0, 2, 9),
+                (1, 1, 2),
+                (0, 1, 3),
+                (3, 2, 1),
+            ][(case % 5) as usize];
+            // cases 10..14: the limit's growth: stopped by +0xb4, by +0xac,
+            // free up to 3, held at 1, free
+            let (count, limit, most) = if case >= 10 {
+                (0, 1, if case == 13 { 1 } else { 3 })
+            } else {
+                (count, limit, most)
+            };
+            t.put(win + 0x9c, &[count, limit]);
+            t.put(
+                win + 0xa8,
+                &[most, u32::from(case == 11), 0, u32::from(case == 10)],
+            );
+            let pos = t.words(&[0, 2.5f32.to_bits(), 0, 0, 0, 0, 0]);
+            let args = [win, rng.next(), pos];
+            t.check_fs(
+                &format!("change macro #{case}"),
+                0x008b_5ea0,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::movie_change_macro(m, args[0], args[1], args[2], s)),
+            );
+        }
+    });
+}
