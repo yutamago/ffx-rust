@@ -41,6 +41,16 @@ pub mod runtime;
 
 pub mod m0604;
 
+pub mod l1_opu;
+pub mod m0003;
+pub mod m0032;
+pub mod m0042;
+pub mod m0052;
+pub mod m0054;
+pub mod m0070;
+pub mod m0074;
+pub mod m0078;
+
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
 use ffx_core as _;
@@ -409,6 +419,12 @@ ports! {
     "opu init env" => opu_parts::INIT_ENV, opu_parts::init_env;
     "m0604 start-up" => m0604::E1660, m0604::e1660;
     "m0604 shutdown" => m0604::E1820, m0604::e1820;
+    "l1 opu start-up (set-up tail)" => l1_opu::START_UP, l1_opu::start_up;
+    "l1 opu part init data (found: data)" => l1_opu::INIT_DATA, l1_opu::init_data;
+    "m0003 tick handler" => m0003::TICK_HANDLER, m0003::tick_handler;
+    "m0003 follow handler" => m0003::FOLLOW, m0003::follow;
+    "m0003 load steps" => m0003::LOAD_STEPS, m0003::load_steps;
+    "m0078 clock" => m0078::CLOCK, m0078::clock;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -418,6 +434,35 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("opu set-up", &opu::SETUP),
     ("opu printf wrapper", &opu::DEBUG_PRINTF),
     ("pppStartPart wrapper", &opu_parts::START_PART),
+    ("m0003 tick", &m0003::TICK),
+    ("m0003 node init", &m0003::NODE_INIT),
+    ("m0032 free-list pop", &m0032::POP_NODE),
+    ("m0032 state reset (0x14)", &m0032::RESET_STATE),
+    ("m0032 state reset (0)", &m0032::RESET_STATE_0),
+    ("m0032 state reset (edx, 0x12)", &m0032::RESET_STATE_EDX),
+    ("m0074 pick", &m0074::PICK),
+    ("m0052 model reset", &m0052::RESET_MODEL),
+    ("m0042 node init", &m0042::NODE_INIT),
+    ("m0070 node init (big)", &m0070::NODE_INIT_BIG),
+    ("m0070 node init (root)", &m0070::NODE_INIT_ROOT),
+    ("m0070 node init (small)", &m0070::NODE_INIT_SMALL),
+    ("m0070 part free", &m0070::FREE_PART),
+    ("m0070 node init (big, table)", &m0070::NODE_INIT_BIG_TABLE),
+    ("m0070 model state", &m0070::MODEL_STATE),
+    ("m0070 show", &m0070::SHOW),
+    ("m0070 ring take", &m0070::RING_TAKE),
+    ("m0070 part call (255)", &m0070::PART_CALL_255),
+    ("m0070 part call (531)", &m0070::PART_CALL_531),
+    ("m0070 model position", &m0070::MODEL_POSITION),
+    ("m0070 hide model", &m0070::HIDE_MODEL),
+    ("m0042 release", &m0042::RELEASE),
+    ("m0042 set value", &m0042::SET_VALUE),
+    ("m0042 unlink", &m0042::UNLINK),
+    ("m0042 node init (big)", &m0042::NODE_INIT_BIG),
+    ("m0042 time left", &m0042::TIME_LEFT),
+    ("m0052 place", &m0052::PLACE),
+    ("m0052 scaled camera", &m0052::SCALED_CAMERA),
+    ("m0054 ppp init", &m0054::INIT_PPP),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

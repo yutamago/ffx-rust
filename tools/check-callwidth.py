@@ -856,6 +856,11 @@ def main():
                 if name == 'call':
                     if len(args) == 2:
                         check(f, off, args, 1, 6, 'Host::call')
+                    elif len(args) == 3 and f.rel.startswith('crates/ffx-magic/'):
+                        # ffx_magic::Game::call(target, ecx, args): the
+                        # hook's overlay call-out copies 32 words
+                        # (overlay_emu.rs ARGS)
+                        check(f, off, args, 2, 32, 'magic Game::call')
                     elif len(args) == 3:
                         lim, conv = graphic_limit(args[1])
                         check(f, off, args, 2, lim, f'graphic Host::call ({conv})')
