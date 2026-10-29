@@ -36,8 +36,8 @@ use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_b::{
-    self as rb, bridge as b, geometry as gm, helpers as h, mapping as mp, more as m, rest as r,
-    swap as s,
+    self as rb, bridge as b, contacts as ct, geometry as gm, helpers as h, mapping as mp,
+    more as m, rest as r, swap as s,
 };
 use ffx_pload::m5p_tmpl_fortype as ft;
 
@@ -132,6 +132,8 @@ enum Log {
     /// (the last as a byte): the `swapEndiannessOfObject` visitors, whose
     /// argument is in the caller's frame.
     Visitor,
+    /// [`Log::Visitor`], then the second and third stack words.
+    VisitorArgs,
 }
 
 /// Bytes per log entry: tag, `ecx`, six words.
@@ -272,7 +274,7 @@ impl Twins {
                     c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
                 }
             }
-            Log::Visitor => {
+            Log::Visitor | Log::VisitorArgs => {
                 c.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp+4]
                 for i in 0..3u8 {
                     c.extend([0x8b, 0x51, 4 * i]); // mov edx, [ecx+4i]
@@ -280,6 +282,12 @@ impl Twins {
                 }
                 c.extend([0x0f, 0xb6, 0x51, 0x0c]); // movzx edx, byte [ecx+0xc]
                 c.extend([0x89, 0x50, 0x14]); // mov [eax+0x14], edx
+                if matches!(log, Log::VisitorArgs) {
+                    c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+                    c.extend([0x89, 0x50, 0x18]); // mov [eax+0x18], edx
+                    c.extend([0x8b, 0x54, 0x24, 0x0c]); // mov edx, [esp+0xc]
+                    c.extend([0x89, 0x50, 0x1c]); // mov [eax+0x1c], edx
+                }
             }
         }
         c.extend([0xff, 0x05]);
@@ -2642,6 +2650,150 @@ fn batch7_clipper_matches_the_original() {
                     |g| Out::U32(gm::bridge::clip(g, frame, input, n, out, count, distance)),
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn batch8_point_in_box_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let vals = [-2.0f32, -1.0, 0.0, 0.5, 1.0, 3.0, f32::NAN, -0.0];
+        let mut rng = Rng(0x0c0c_0c0c);
+        for _ in 0..80 {
+            let mk = |t: &mut Twins, rng: &mut Rng| {
+                let p = t.zeros(12);
+                for k in 0..3 {
+                    let v = vals[(rng.next() % vals.len() as u32) as usize];
+                    t.w32(p + 4 * k, v.to_bits());
+                }
+                p
+            };
+            let (p, min, max) = (
+                mk(&mut t, &mut rng),
+                mk(&mut t, &mut rng),
+                mk(&mut t, &mut rng),
+            );
+            t.check(
+                &format!("{name} 0xa2fc90"),
+                0x00a2_fc90,
+                Conv::Cdecl,
+                &[p, min, max],
+                |g| Out::U32(ct::bridge::inside(g, p, min, max)),
+            );
+        }
+    }
+}
+
+#[test]
+fn batch8_convert_elements_matches_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0d0d_0d0d);
+        t.stub(ct::MEMCPY, false, 3, 0, RET);
+        // the driver logs its counts (the struct its first stack word points at)
+        t.stub_log(ct::DRIVER, true, 0, 3, RET ^ 1, Log::VisitorArgs);
+        for (buf, n) in [(0u32, 3u32), (0x0012_3400, 0), (0x0012_3400, 3)] {
+            restub(&mut t, ct::DEFAULT_BUFFER, true, 0, 0, buf);
+            let rt = t.object(&mut rng, 0x90);
+            t.w32(rt + 0x1c, 0x10);
+            let st = t.object(&mut rng, 0x20);
+            let entry = t.object(&mut rng, 0x10);
+            t.w32(entry + 4, st);
+            t.w32(entry + 8, rt);
+            let (src, dst) = (rng.next() & !3, rng.next() & !3);
+            let frame = t.zeros(16);
+            t.sync.push((frame, 16));
+            t.check(
+                &format!("{name} 0x5788f0 {buf:#x} {n}"),
+                0x0057_88f0,
+                Conv::Cdecl,
+                &[entry, src, dst, n],
+                |g| Out::U32(ct::bridge::convert_elements(g, frame, entry, src, dst, n)),
+            );
+        }
+    }
+}
+
+#[test]
+fn batch8_contact_arrays_match_the_original() {
+    for (name, mut t) in Twins::all() {
+        let mut rng = Rng(0x0e0e_0e0e);
+        t.stub(ct::PHYRE_FREE, false, 1, 0, RET);
+        for &(f, words, copy, ctor) in ct::RESIZES {
+            assert_eq!(ct::resize_of(f), (f, words, copy, ctor));
+            t.stub(copy, false, 3, 0, RET ^ 1);
+            if ctor != 0 {
+                t.stub(ctor, false, 2, 0, RET ^ 2);
+            }
+            for fail in [false, true] {
+                for (n, word, old) in [
+                    (0u32, 2u32, 1u32),
+                    (2, 2, 1),
+                    (3, 2, 1),
+                    (1, 5, 1),
+                    (4, 0x8000_0002, 1),
+                    (2, 1, 0),
+                    (0, 0, 0),
+                ] {
+                    let heap = t.object(&mut rng, 0x200);
+                    restub(
+                        &mut t,
+                        ct::PHYRE_MALLOC,
+                        false,
+                        2,
+                        0,
+                        if fail { 0 } else { heap },
+                    );
+                    let this = t.object(&mut rng, 8);
+                    t.w32(this, word);
+                    let o = if old == 0 {
+                        0
+                    } else {
+                        t.object(&mut rng, 0x40)
+                    };
+                    t.w32(this + 4, o);
+                    t.check(
+                        &format!("{name} {f:#x} {n} {word:#x} {fail}"),
+                        f,
+                        Conv::Thiscall(this),
+                        &[n],
+                        |g| Out::U32(ct::bridge::resize(g, words, copy, ctor, this, n)),
+                    );
+                }
+            }
+        }
+        // the append (resizes stubbed), then the wrapper on the real append
+        restub(&mut t, ct::RESIZE[0], true, 1, 1, 0);
+        restub(&mut t, ct::RESIZE[1], true, 1, 1, 0);
+        for (count, cap) in [(0u32, 4u32), (3, 4), (4, 4), (0, 0)] {
+            let this = t.object(&mut rng, 0x100);
+            t.w32(this + 0x3c, count);
+            t.w32(this + 0x90, cap);
+            let data = t.object(&mut rng, 36 * 8);
+            t.w32(this + 0x84, data);
+            let a = t.object(&mut rng, 12);
+            let b = t.object(&mut rng, 12);
+            let index = t.object(&mut rng, 4);
+            let c = rng.next();
+            t.check(
+                &format!("{name} 0x5f36d0 {count} {cap}"),
+                ct::APPEND,
+                Conv::Thiscall(this),
+                &[a, b, index, c],
+                |g| Out::U32(ct::bridge::append(g, this, a, b, index, c)),
+            );
+            let this2 = t.object(&mut rng, 0x100);
+            t.w32(this2 + 0x3c, count);
+            t.w32(this2 + 0x90, cap);
+            t.w32(this2 + 0x84, data);
+            let frame = t.zeros(4);
+            t.sync.push((frame, 4));
+            t.check(
+                &format!("{name} 0x5f31e0 {count} {cap}"),
+                0x005f_31e0,
+                Conv::Thiscall(this2),
+                &[a, b, c],
+                |g| Out::U32(ct::bridge::add_contact(g, frame, this2, a, b, c)),
+            );
         }
     }
 }

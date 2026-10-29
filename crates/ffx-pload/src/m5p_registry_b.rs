@@ -2641,3 +2641,197 @@ pub mod geometry {
         }
     }
 }
+
+/// Batch 8: the point-in-box test, the element conversion entry point and
+/// the physics world's contact arrays.
+pub mod contacts {
+    use ffx_bridge::x87;
+    use ffx_graphic::host::{Conv, Host};
+
+    /// `Phyre_PClassDescriptor_getDefaultBuffer` (thiscall).
+    pub const DEFAULT_BUFFER: u32 = 0x0043_cb80;
+    /// The CRT's `memcpy` thunk (cdecl).
+    pub const MEMCPY: u32 = 0x0094_9256;
+    /// The conversion driver (`0x0047c610`, this list).
+    pub const DRIVER: u32 = 0x0047_c610;
+    /// `Phyre_PhyreMalloc(size, align)` / `Phyre_PhyreFree` (cdecl).
+    pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+    pub const PHYRE_FREE: u32 = 0x0042_fb20;
+    /// The second contact array's element constructor `(p, n)` (cdecl).
+    pub const CONSTRUCT_40: u32 = 0x005f_0950;
+    /// The contact append (`0x005f36d0`, this list) and the two resizes.
+    pub const APPEND: u32 = 0x005f_36d0;
+    pub const RESIZE: [u32; 2] = [0x0060_2900, 0x0060_29a0];
+
+    /// The `PArray<T>` resizes `(this; n)`: `(copy, element words, copy
+    /// constructor, default constructor of the new tail)`.
+    pub const RESIZES: &[(u32, u32, u32, u32)] = &[
+        (0x0060_2900, 9, 0x005d_78b0, 0),
+        (0x0060_29a0, 10, 0x005d_78e0, CONSTRUCT_40),
+        (0x0060_2a60, 10, 0x005d_7910, 0),
+    ];
+
+    /// The [`RESIZES`] row of `f` (a compile error when missing).
+    #[must_use]
+    pub const fn resize_of(f: u32) -> (u32, u32, u32, u32) {
+        let mut i = 0;
+        while i < RESIZES.len() {
+            if RESIZES[i].0 == f {
+                return RESIZES[i];
+            }
+            i += 1;
+        }
+        panic!("not a resize of this list");
+    }
+
+    pub mod bridge {
+        use super::{
+            Conv, DEFAULT_BUFFER, DRIVER, Host, MEMCPY, PHYRE_FREE, PHYRE_MALLOC, RESIZE, x87,
+        };
+
+        /// The point-in-box test `(&p, &min, &max)` (`0x00a2fc90`, cdecl):
+        /// 1 unless a component of `p` is above `max` or below `min`
+        /// (ordered compares: NaN is inside), else 0.
+        pub fn inside(h: &mut impl Host, p: u32, min: u32, max: u32) -> u32 {
+            let mut out = false;
+            for k in 0..3u32 {
+                let v = x87::load(h.read(p.wrapping_add(4 * k)));
+                let lo = x87::load(h.read(min.wrapping_add(4 * k)));
+                let hi = x87::load(h.read(max.wrapping_add(4 * k)));
+                out |= v > hi || v < lo;
+            }
+            u32::from(!out)
+        }
+
+        /// Converts `n` stored elements `(entry, src, dst, n)`
+        /// (`0x005788f0`, cdecl; `frame`: the 16-byte counts the original
+        /// builds in its frame): `dst` filled with the runtime class's
+        /// default buffer (`[entry+8]`, its size `+0x1c`) when it has one,
+        /// then the driver on `entry` with `{n, stored stride ([[entry+4]+4]
+        /// & 0x0fffffff), runtime size, direction 1}`, the pointers moved
+        /// from the stored base (`[st+0x14]` to `[st+0x18]`) and the runtime
+        /// one (`[rt+0x88]` to `[rt+0x8c]`); the driver's `eax`.
+        pub fn convert_elements(
+            h: &mut impl Host,
+            frame: u32,
+            entry: u32,
+            src: u32,
+            dst: u32,
+            n: u32,
+        ) -> u32 {
+            let rt: u32 = h.read(entry.wrapping_add(8));
+            let st: u32 = h.read(entry.wrapping_add(4));
+            let size: u32 = h.read(rt.wrapping_add(0x1c));
+            let buf = h.call_sym(DEFAULT_BUFFER, Conv::Thiscall(rt), &[]);
+            if buf != 0 {
+                let end = n.wrapping_mul(size).wrapping_add(dst);
+                let mut p = dst;
+                while p < end {
+                    h.call_sym(MEMCPY, Conv::Cdecl, &[p, buf, size]);
+                    p = p.wrapping_add(size);
+                }
+            }
+            let st_to: u32 = h.read(st.wrapping_add(0x18));
+            let st_from: u32 = h.read(st.wrapping_add(0x14));
+            let rt_to: u32 = h.read(rt.wrapping_add(0x8c));
+            let rt_from: u32 = h.read(rt.wrapping_add(0x88));
+            let stride = h.read::<u32>(st.wrapping_add(4)) & 0x0fff_ffff;
+            h.write(frame, n);
+            h.write(frame.wrapping_add(4), stride);
+            h.write(frame.wrapping_add(8), size);
+            h.write(frame.wrapping_add(0xc), 1u8);
+            let s = src.wrapping_sub(st_from).wrapping_add(st_to);
+            let d = dst.wrapping_sub(rt_from).wrapping_add(rt_to);
+            h.call_sym(DRIVER, Conv::Thiscall(entry), &[frame, s, d])
+        }
+
+        /// A `PArray<T>` resize `(this; n)` ([`super::RESIZES`]): 0 when the
+        /// count word is `n`; new storage of `n` elements (0xd when it
+        /// fails) holding the first `min(n, count)` (`copy(new, old, k)`)
+        /// and, with a constructor, the rest default-built; the old
+        /// owned, non-null storage freed unless reused; 0.
+        pub fn resize(
+            h: &mut impl Host,
+            words: u32,
+            copy: u32,
+            ctor: u32,
+            this: u32,
+            n: u32,
+        ) -> u32 {
+            let word: u32 = h.read(this);
+            if n == word {
+                return 0;
+            }
+            let keep = n.min(word & 0x7fff_ffff);
+            let old: u32 = h.read(this.wrapping_add(4));
+            let mut buf = 0;
+            if n != 0 {
+                buf = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4 * words), 4]);
+                if buf == 0 {
+                    return 0xd;
+                }
+                h.call_sym(copy, Conv::Cdecl, &[buf, old, keep]);
+                if ctor != 0 {
+                    let tail = buf.wrapping_add(keep.wrapping_mul(4 * words));
+                    h.call_sym(ctor, Conv::Cdecl, &[tail, n.wrapping_sub(keep)]);
+                }
+            }
+            let now: u32 = h.read(this.wrapping_add(4));
+            let w: u32 = h.read(this);
+            if now != buf && w >> 31 == 0 && now != 0 {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[now]);
+            }
+            h.write(this.wrapping_add(4), buf);
+            h.write(this, n);
+            0
+        }
+
+        /// The physics world's contact append `(this; &a, &b, &index, c)`
+        /// (`0x005f36d0`, `ret 0x10`): both arrays grown to `2cap + 1`
+        /// when full (`[+0x3c]` vs `[+0x90]`; `+0x80` and `+0x88`); the
+        /// record at the end of `+0x84` (36 bytes): `a` (3 floats), `b` at
+        /// `+0x10`, `c` at `+0x20`; `*index` its index; the count bumped; 0.
+        pub fn append(h: &mut impl Host, this: u32, a: u32, b: u32, index: u32, c: u32) -> u32 {
+            let cap: u32 = h.read(this.wrapping_add(0x90));
+            if h.read::<u32>(this.wrapping_add(0x3c)) >= cap {
+                let cap = cap.wrapping_mul(2).wrapping_add(1);
+                h.write(this.wrapping_add(0x90), cap);
+                h.call_sym(RESIZE[0], Conv::Thiscall(this.wrapping_add(0x80)), &[cap]);
+                let cap: u32 = h.read(this.wrapping_add(0x90));
+                h.call_sym(RESIZE[1], Conv::Thiscall(this.wrapping_add(0x88)), &[cap]);
+            }
+            let count: u32 = h.read(this.wrapping_add(0x3c));
+            h.write(index, count);
+            for (base, from) in [(0u32, a), (0x10, b)] {
+                let i: u32 = h.read(index);
+                let data: u32 = h.read(this.wrapping_add(0x84));
+                let rec = data.wrapping_add(i.wrapping_mul(36)).wrapping_add(base);
+                for k in 0..3u32 {
+                    let f: u32 = h.read(from.wrapping_add(4 * k));
+                    h.write(rec.wrapping_add(4 * k), x87::store(x87::load(f)));
+                }
+            }
+            let i: u32 = h.read(index);
+            let data: u32 = h.read(this.wrapping_add(0x84));
+            h.write(data.wrapping_add(i.wrapping_mul(36)).wrapping_add(0x20), c);
+            let n: u32 = h.read(this.wrapping_add(0x3c));
+            h.write(this.wrapping_add(0x3c), n.wrapping_add(1));
+            0
+        }
+
+        /// `0x005f31e0(this; &a, &b, c)` (`ret 0xc`; `frame`: its local
+        /// index): the append's index, or -1 when it fails.
+        pub fn add_contact(
+            h: &mut impl Host,
+            frame: u32,
+            this: u32,
+            a: u32,
+            b: u32,
+            c: u32,
+        ) -> u32 {
+            h.write(frame, 0u32);
+            let r = h.call_sym(super::APPEND, Conv::Thiscall(this), &[a, b, frame, c]);
+            if r == 0 { h.read(frame) } else { u32::MAX }
+        }
+    }
+}

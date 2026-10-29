@@ -7,6 +7,7 @@
 use super::StackFrame;
 #[allow(unused_imports)]
 use super::{call_cdecl, mem, ported};
+use ffx_pload::m5p_registry_b::contacts as ct;
 use ffx_pload::m5p_registry_b::geometry as gm;
 use ffx_pload::m5p_registry_b::helpers as h;
 use ffx_pload::m5p_registry_b::mapping as mp;
@@ -952,5 +953,33 @@ ported! {
     /// `FFXApplication_clipPolygonPlane_00a2f5e0`.
     FFXApplication_clipPolygonPlane_00a2f5e0 @ 0x00a2_f5e0 => extern "C" fn gm_00a2f5e0(input: u32, n: u32, out: u32, count: u32, distance: u32) -> u32 {
         { let mut f = StackFrame::<4>::new(); gm::bridge::clip(&mut mem(), f.at(), input, n, out, count, distance) }
+    }
+    /// `FFXApplication_pointInBox_00a2fc90`.
+    FFXApplication_pointInBox_00a2fc90 @ 0x00a2_fc90 => extern "C" fn ct_00a2fc90(p: u32, min: u32, max: u32) -> u32 {
+        ct::bridge::inside(&mut mem(), p, min, max)
+    }
+    /// `Phyre_PSerialization_convertElements_005788f0`.
+    Phyre_PSerialization_convertElements_005788f0 @ 0x0057_88f0 => extern "C" fn ct_005788f0(entry: u32, src: u32, dst: u32, n: u32) -> u32 {
+        { let mut f = StackFrame::<4>::new(); ct::bridge::convert_elements(&mut mem(), f.at(), entry, src, dst, n) }
+    }
+    /// `Phyre_PPhysics_PPhysicsWorld_appendContact_005f36d0`.
+    Phyre_PPhysics_PPhysicsWorld_appendContact_005f36d0 @ 0x005f_36d0 => extern "thiscall" fn ct_005f36d0(this: u32, a: u32, b: u32, index: u32, c: u32) -> u32 {
+        ct::bridge::append(&mut mem(), this, a, b, index, c)
+    }
+    /// `Phyre_PPhysics_PPhysicsWorld_addContact_005f31e0`.
+    Phyre_PPhysics_PPhysicsWorld_addContact_005f31e0 @ 0x005f_31e0 => extern "thiscall" fn ct_005f31e0(this: u32, a: u32, b: u32, c: u32) -> u32 {
+        { let mut f = StackFrame::<1>::new(); ct::bridge::add_contact(&mut mem(), f.at(), this, a, b, c) }
+    }
+    /// `Phyre_PArray_resize36_00602900`.
+    Phyre_PArray_resize36_00602900 @ 0x0060_2900 => extern "thiscall" fn ct_00602900(this: u32, n: u32) -> u32 {
+        { let (_, w, copy, ctor) = const { ct::resize_of(0x0060_2900) }; ct::bridge::resize(&mut mem(), w, copy, ctor, this, n) }
+    }
+    /// `Phyre_PArray_resize40_006029a0`.
+    Phyre_PArray_resize40_006029a0 @ 0x0060_29a0 => extern "thiscall" fn ct_006029a0(this: u32, n: u32) -> u32 {
+        { let (_, w, copy, ctor) = const { ct::resize_of(0x0060_29a0) }; ct::bridge::resize(&mut mem(), w, copy, ctor, this, n) }
+    }
+    /// `Phyre_PArray_resize40_00602a60`.
+    Phyre_PArray_resize40_00602a60 @ 0x0060_2a60 => extern "thiscall" fn ct_00602a60(this: u32, n: u32) -> u32 {
+        { let (_, w, copy, ctor) = const { ct::resize_of(0x0060_2a60) }; ct::bridge::resize(&mut mem(), w, copy, ctor, this, n) }
     }
 }
