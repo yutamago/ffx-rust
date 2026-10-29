@@ -12,11 +12,22 @@ static BAD: Mutex<(u64, Vec<Access>)> = Mutex::new((0, Vec::new()));
 
 /// Records an access outside the mapped regions.
 pub fn bad_access(addr: u32, len: usize, write: bool) {
-    if let Ok(mut b) = BAD.lock() {
+    let first = if let Ok(mut b) = BAD.lock() {
         b.0 += 1;
-        if b.1.len() < 16 {
+        let first = b.1.len() < 16;
+        if first {
             b.1.push((addr, len, write));
         }
+        first
+    } else {
+        false
+    };
+    // the first ones as notes too (the harness's `notes`), outside the lock
+    if first {
+        note(&format!(
+            "bad access: {} of {len} bytes at {addr:#010x} (outside the arena's regions)",
+            if write { "write" } else { "read" }
+        ));
     }
 }
 
