@@ -2703,3 +2703,150 @@ fn m5p_scene_f_frames() {
         tw.unstub();
     }
 }
+
+// ---- batch 7 (ffx_prender::m5p_scene_g) ----
+
+use ffx_prender::m5p_scene_g as sg;
+
+/// The fly controller's steps over random matrices, positions and step
+/// sizes (real matrix callees; the port's frame on the stack).
+#[test]
+fn m5p_scene_g_fly_steps() {
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(41);
+        let frame = tw.b.stack_range().start + 0x1000;
+        for round in 0..30 {
+            let this = tw.alloc(&float_words(&mut rng, 28));
+            let s = float_words(&mut rng, 2);
+            let a = u32::from_le_bytes([s[0], s[1], s[2], s[3]]);
+            let b = u32::from_le_bytes([s[4], s[5], s[6], s[7]]);
+            let label = format!("{what} fly forward {round}");
+            tw.run(&label, 0x005d_7190, Conv::Thiscall(this), &[a], |g| {
+                sg::bridge::fly_forward(g, this, f32::from_bits(a), frame)
+            });
+            let label = format!("{what} fly strafe {round}");
+            tw.run(&label, 0x005d_72b0, Conv::Thiscall(this), &[a, b], |g| {
+                sg::bridge::fly_strafe(g, this, f32::from_bits(a), f32::from_bits(b), frame)
+            });
+        }
+    }
+}
+
+/// The context switch's default state: already two pairs (each with one
+/// word or not), another count (owned and external old pairs), failing
+/// allocations (a stand-in allocator that fails on a chosen call).
+#[test]
+fn m5p_scene_g_switch_state() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sg::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        tw.stub(sg::STATE_RELEASE, false, 2, 0, 0x0bad_0022);
+        let state = tw.zeros(8);
+        let pairs = tw.zeros(0x10);
+        let words = tw.zeros(0x40);
+        let old_words = tw.zeros(8);
+        // the allocator: hands out 16-byte blocks from `words` + 0x10 on,
+        // the call numbered `fail` (0-based, counted in `words`) gets 0
+        let at = tw.rebase(sg::PHYRE_MALLOC);
+        let code = {
+            // mov eax,[words]; inc dword [words]; cmp eax,[words+4]; je zero;
+            // shl eax,4; add eax, words+0x10; ret; zero: xor eax,eax; ret
+            let mut c = vec![0xa1];
+            c.extend(words.to_le_bytes());
+            c.extend([0xff, 0x05]);
+            c.extend(words.to_le_bytes());
+            c.extend([0x3b, 0x05]);
+            c.extend((words + 4).to_le_bytes());
+            c.extend([0x74, 0x09]);
+            c.extend([0xc1, 0xe0, 0x04]);
+            c.push(0x05);
+            c.extend((words + 0x10).to_le_bytes());
+            c.push(0xc3);
+            c.extend([0x31, 0xc0, 0xc3]);
+            let code = tw.a.alloc_code(&c).unwrap();
+            assert_eq!(tw.b.alloc_code(&c).unwrap(), code);
+            code
+        };
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        tw.write(at, &j);
+        for header in [2, 0, 3, 0x8000_0003] {
+            for (c0, c1) in [(1, 1), (0, 1), (1, 3), (0x8000_0002, 0)] {
+                for fail in [9, 0, 1, 2] {
+                    tw.write(words, &[0; 0x40]);
+                    // blocks that look like a one-word pair at +8 (the
+                    // original zeroes them)
+                    for k in 0..3 {
+                        tw.w32(words + 0x10 + 0x10 * k + 8, 1);
+                        tw.w32(words + 0x10 + 0x10 * k + 0xc, old_words + 4);
+                    }
+                    tw.w32(words + 4, fail);
+                    tw.w32(state, header);
+                    tw.w32(state + 4, pairs);
+                    tw.w32(pairs, c0);
+                    tw.w32(pairs + 4, old_words);
+                    tw.w32(pairs + 8, c1);
+                    tw.w32(pairs + 0xc, if c1 == 0 { 0 } else { old_words + 4 });
+                    let label =
+                        format!("{what} switch state {header:#x} ({c0:#x}, {c1:#x}) fail {fail}");
+                    tw.run(
+                        &label,
+                        0x004d_4d50,
+                        Conv::Thiscall(0x1234),
+                        &[7, state],
+                        |g| sg::bridge::switch_default_state(g, state),
+                    );
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
+
+/// The joint target: named joints found (owned and unowned names, a
+/// null slot), not found, no joints; unnamed with and without a node;
+/// the copy's allocation failing.
+#[test]
+fn m5p_scene_g_attach_joint() {
+    for (what, mut tw) in Twins::all() {
+        tw.stub(sg::PHYRE_FREE, false, 1, 0, 0x0bad_0002);
+        let block = tw.zeros(0x20);
+        let names: Vec<u32> = ["hip", "spine", "head", "", "Head"]
+            .iter()
+            .map(|s| tw.alloc(format!("{s}\0").as_bytes()))
+            .collect();
+        let joints = tw.zeros(0x14);
+        // a second "head": the first one wins
+        tw.w32(joints + 0x10, names[2]);
+        tw.w32(joints, names[0] + 1);
+        tw.w32(joints + 4, 0);
+        tw.w32(joints + 8, names[1]);
+        tw.w32(joints + 0xc, names[2] + 1);
+        let obj = tw.zeros(0x30);
+        tw.w32(obj + 0x24, joints);
+        let skel = tw.zeros(8);
+        tw.w32(skel, obj);
+        let comp = tw.zeros(0x80);
+        for ret in [block, 0] {
+            tw.stub(sg::PHYRE_MALLOC, false, 2, 0, ret);
+            for count in [5, 0x8000_0004, 0, 2] {
+                tw.w32(obj + 0x18, count);
+                for node in [0, 0x0077_0000] {
+                    tw.w32(skel + 4, node);
+                    for &n in names.iter().chain(&[0]) {
+                        for old in [0x0012_3000, 0x0012_3001] {
+                            tw.write(block, &[0xee; 0x20]);
+                            tw.w32(comp + 0x54, old);
+                            let label = format!(
+                                "{what} joint {n:#x} count {count:#x} node {node:#x} old {old:#x} alloc {ret:#x}"
+                            );
+                            tw.run(&label, 0x0055_a980, Conv::Thiscall(comp), &[skel, n], |g| {
+                                sg::bridge::attach_joint(g, comp, skel, n)
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        tw.unstub();
+    }
+}
