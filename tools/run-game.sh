@@ -268,8 +268,8 @@ if [[ -n "${rust:-}" ]]; then
     echo "ffx-rust.exe started (language $lang, pid $!, report in $game/ffx-rust.log)"
 elif [[ -n "${fixed:-}" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 && -f "$repo/target/x86_64-pc-windows-msvc/release/ffx-launch.exe" ]] ||
-    PATH="$repo/tools/shims:$PATH" XWIN_ARCH=x86,x86_64 flock "${XDG_CACHE_HOME:-$HOME/.cache}/ffx-xwin.lock" cargo xwin build -q --release \
-        --manifest-path "$repo/Cargo.toml" --target x86_64-pc-windows-msvc -p ffx-launch >/dev/null
+    (eval "$("$repo/tools/xwin-env.sh" x86_64-pc-windows-msvc)" && cargo build -q --release \
+        --manifest-path "$repo/Cargo.toml" --target x86_64-pc-windows-msvc -p ffx-launch >/dev/null)
     rm -f "$game/ffx-launch.exe"
     install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-launch.exe" "$game/ffx-launch.exe"
     pid="$(./ffx-launch.exe FFX.exe | tr -d '\r')"

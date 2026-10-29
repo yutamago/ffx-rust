@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
-# Ubuntu ships the MSVC-style librarian as llvm-lib-18; unicorn-engine-sys's
-# CMake build (ffx-overlay under cargo xwin) archives its objects with it.
-exec llvm-lib-18 "$@"
+# unicorn-engine-sys's CMake build (ffx-overlay under cargo xwin) archives its
+# objects with the MSVC-style librarian. Ubuntu ships it versioned
+# (llvm-lib-18, -21, ...) or not at all (PC2: there, `rustup component add
+# llvm-tools`, installed by hand, not in rust-toolchain.toml, so no other
+# machine downloads it); its llvm-ar acts as llvm-lib under that name.
+for v in llvm-lib llvm-lib-{22,21,20,19,18}; do
+    command -v "$v" >/dev/null && exec "$v" "$@"
+done
+ar="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-ar"
+[ -x "$ar" ] && exec -a llvm-lib "$ar" "$@"
+echo "llvm-lib: none found (install llvm, or: rustup component add llvm-tools)" >&2
+exit 127
