@@ -182,3 +182,8 @@ fn afterimages_in_every_copy() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::ob_summon: 46 mutants, all killed (face's 23 by
+//   magic_0395, the rest here).

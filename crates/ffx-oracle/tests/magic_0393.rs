@@ -317,3 +317,22 @@ fn eye() {
     floats(&mut t, STATE + 0x1ba0, &[1.0, 2.0, 3.0, 4.0]);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::m0393: 329 mutants, 317 killed. Equivalent: the second
+//   `v + 0xc = 1.0` in place (twice; the loop just stored 1.0 there and
+//   nothing writes `v` in between; at `v - 0xc` it lands in `out + 4`,
+//   which slot 229 rewrites whole) and its deletion; place's `m == 0`
+//   branch (5 mutants: `m` is the state block + 0x1bb0, null only for a
+//   state pointer at 0xffffe450, unmapped); cue's `r > 3` as `>=` and
+//   `f + 0x20` as `f - 0x20` (`to` only matters by being `f + 0x52` or
+//   not; table entry 3 is `f + 0x20`); eye's `last` initial value (the
+//   loop always sets it).
+// - ffx_magic::ob_model (here first, then magic_0394..0396/0596/
+//   ob_summon): 40 mutants, 35 killed. Equivalent: the `eax` initial
+//   values of scale_unit and scale_model (the loops always set them);
+//   `stack.insert(1, c)` in scale_unit (`c` and `c277` are the same
+//   character, both `G_CHRS[(*G_SEL)[at]]` through the same globals with
+//   nothing in between that writes them); root_matrix's `moved` flag
+//   (2: its only caller, m0394::root, returns `.1`).

@@ -166,3 +166,9 @@ fn run_part() {
         }
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_ppp: 99 mutants, 98 killed. Equivalent: the frame
+//   run_part hands free_then_unlink at `esp + 0x2c` (it reads only `at`
+//   and `ecx`, never `esp`).

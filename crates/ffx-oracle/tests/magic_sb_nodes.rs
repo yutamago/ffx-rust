@@ -681,3 +681,18 @@ fn draw_model_in(n: u16, rva: u32) {
         }
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_nodes: 310 mutants, 303 killed. Equivalent:
+//   visit_offset_int's first cursor store (each child replaces it before
+//   any method sees it) and `sum`'s initial value (the loop sets it);
+//   float_289's ST0-less default (slot 289 always returns a float, and
+//   Unicorn reads an empty x87 register as 0 where the CPU stores the
+//   indefinite NaN, so the case is not testable); `below`'s `k < x` as
+//   `<=` (it differs only at `k == x`, where the clamp stores 0.01 or
+//   100.0 over a word already holding exactly that: magic_0003's limits
+//   are 0x3c23d70a and 100.0); axis_sprites' `row + 0xc = 0` (stored
+//   0x80 again before anything reads it); bounce's two `vec + 4` stores
+//   moved to `vec - 4` (stored again before slot 325 reads the vector;
+//   `vec - 4` is a frame word nothing reads).

@@ -329,3 +329,11 @@ fn call_239() {
     t.set_u32(CTX + 0x120, 0x0120);
     t.check_entry(f, Call::default(), &[CTX], Eax::Checked);
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_vm: 262 mutants, 256 killed. Equivalent: record's
+//   current-index read (6: the operand itself and each caller's `cur`;
+//   the index is used only when the halfword at `ip + 2` equals
+//   u32::MAX, which it never does; the original's compare with -1 is
+//   dead the same way).

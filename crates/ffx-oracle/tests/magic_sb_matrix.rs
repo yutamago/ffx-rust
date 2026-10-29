@@ -131,3 +131,16 @@ fn rotation_19d0() {
     };
     check(&mut t, 0x19d0, sb_matrix::rotation_19d0);
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::sb_matrix: 358 mutants, 251 killed. The 107 left (52 in
+//   rotation_52a0, 55 in rotation_19d0) are judged equivalent on a
+//   native check: every one of them, built as a copy of the port with
+//   the change, gave bit-identical matrices and `eax` to the port on
+//   5,002,240 angle triples (the special combinations above, every
+//   quarter-turn neighbourhood, 5,000,000 random) with a real sine table
+//   and with this file's odd one; the same check flags killed mutants at
+//   once. The ones read by hand change terms that only feed the
+//   original's zero products (an operand that is the constant 0.0), a
+//   zero whose sign no output keeps while the sines are finite.

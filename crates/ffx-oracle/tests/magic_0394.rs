@@ -228,3 +228,14 @@ fn flight() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+// Mutation testing (M5 magic round 3, tools/mutants.py, a mutant per
+// code line plus a deletion per store or call):
+// - ffx_magic::m0394: 132 mutants (one by hand: flight_axis's
+//   `tt * tt * 0.0` as `tt + (tt * 0.0)` at the top level), 125 killed.
+//   Equivalent: scaled's three turn operands (scale_unit never reads
+//   them, only scale_model does); place's first `l(0x8) = 1.0` (moved to
+//   `l(0xc)`, overwritten by the next store; deleted, or the second one
+//   deleted: the same store twice, only slots 235/328/329 run in between
+//   on the matrix at `ebp - 0x64`); `tt * tt` as `tt + tt` inside `* 0.0`
+//   (the same +0 or NaN for every `t`).
