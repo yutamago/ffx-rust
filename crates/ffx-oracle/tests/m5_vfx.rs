@@ -30,6 +30,7 @@ use ffx_glue_other::m5v_a::{self as ma, bridge as a};
 use ffx_glue_other::m5v_b::{self as mb, bridge as b};
 use ffx_glue_other::m5v_c::{self as mc, bridge as c};
 use ffx_glue_other::m5v_d::{self as md, bridge as d};
+use ffx_glue_other::m5v_e::{self as me, bridge as e};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2251,6 +2252,52 @@ fn opd_operand_printers_match_the_original() {
                     Out::None
                 });
                 t.b_top = None;
+            }
+            t.reset();
+        }
+    });
+}
+
+// ---- batch 5 (ffx_glue_other::m5v_e) ----
+
+#[test]
+fn bind_flags_and_thunks_match_the_original() {
+    // the flag setters on random flags (and the game's own on the
+    // snapshots), the debug byte, every thunk with logged words
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0501);
+        for case in 0..20 {
+            if !(t.snapshot && case == 0) {
+                let v = rng.next() as u16;
+                t.write(t.rebase(me::BIND_DEFAULT.sym), &v.to_le_bytes());
+            }
+            for (at, mask, set) in [
+                (0x007f_b510_u32, 0x1000_u16, true),
+                (0x007f_b520, 0xefff, false),
+                (0x007f_b680, 0x0800, true),
+                (0x007f_b720, 0x2000, true),
+                (0x007f_b730, 0xdfff, false),
+            ] {
+                t.check("EtBindDefault", at, Conv::Cdecl, &[], |o| {
+                    Out::U32(e::bind_flags(o, mask, set))
+                });
+            }
+            let b = rng.next() as u8;
+            t.patch(t.rebase(me::OP_DEBUG_BYTE.sym), &[b]);
+            t.check(
+                "op_debug_reset_008005f0",
+                0x0080_05f0,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(e::op_debug_reset(o)),
+            );
+            for (at, target, n) in me::THUNKS {
+                let args: Vec<u32> = (0..n).map(|_| rng.word()).collect();
+                let r = rng.next();
+                t.stub_sym(target, 1, false, n as u32, 0, Ret::Val(r));
+                t.check("jmp thunk", at, Conv::Cdecl, &args, |o| {
+                    Out::U32(e::jmp_thunk(o, target, &args))
+                });
             }
             t.reset();
         }

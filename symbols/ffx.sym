@@ -9936,6 +9936,7 @@
 0x007eb430 function op_func_ot                   # layout+callees: sorts between op_func_final_set and op_func_ot_free, and its named callees match the Switch 0x71003c9df0 op_func_ot's (similarity 1.00: op_func_ot_free); symbols from Fahrenheit's server export
 0x007eb4a0 function op_func_ot_free           # fh v3:exact 0x007eb3b0
 0x007eb500 function op_func_ot_set            # fh v3:exact 0x007eb410
+0x007eb570 function op_gs1_init_thunk_007eb570 # jmp op_gs1_init (5 bytes, hidden from the dump); called at 0x007ff6f4; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x007eb580 function op_gs1_transfer           # fh v3:exact 0x007eb490
 0x007eb760 function op_gs1_init               # fh v3:exact 0x007eb670; ported (ffx_glue_other::h4_j1, m4 h4 cont8): cdecl(work, flags) -> [env+0x24]; op_fog_param_set, then two GS register packets at 0x011a0720 and 0x011a07d0 from env = work + 0x120 (flags bit 0) or + 0x60
 0x007eba80 function op_gs_clear_host             # layout+callees: sorts between op_gs1_init and op_init_draw, and its named callees match the Switch 0x71003c9230 op_gs_clear_host's (similarity 1.00: op_spr_alloc, op_spr_free, sceGsSetDefLoadImage, sceGsSyncPath); symbols from Fahrenheit's server export
@@ -10001,10 +10002,15 @@
 0x007fb360 function op_et_bindeff2            # fh v3:exact 0x007fb280; (h): g_OpusEncount takes a g_OpusBattle oef2 slot; a known h whose 0x50001800+index effect is not past g_EtEff record 0 gets opus_get_eff_status_index(id, slot, 1) and, when positive, opu_et_unit(enc, 0, 0x18, id), bind flag 0x10, walk_on/breath_off/water_off (et::bridge::op_et_bindeff2)
 0x007fb470 function op_et_bindeff2_breath_off # (h) g_EtChr bind flags |= 0x200; characters 1/0x65 (u16 at h) clear bit 0 of g_EtBreathFlags; between op_et_bindeff2 and op_et_bindeff2_breath_on, the off form of it
 0x007fb4c0 function op_et_bindeff2_breath_on  # fh v3:exact 0x007fb3e0
+0x007fb510 function EtBindDefault_setBit12_007fb510 # cdecl() -> 0x1000: g_EtBindDefault |= 0x1000 (13 bytes, hidden from the dump); Native_0249_SetGlobal011a0080Bit12; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
+0x007fb520 function EtBindDefault_clearBit12_007fb520 # cdecl() -> 0xefff: g_EtBindDefault &= 0xefff (13 bytes, hidden from the dump); Native_0248; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x007fb530 function op_et_bindeff2_draw_off   # (h) -> 8 if newly set: draw flags (g_EtChrDrawFlags2 if nonzero, else g_EtChrDrawFlags) |= 8 when bind flags & 0x10; the set form of op_et_bindeff2_draw_on
 0x007fb5a0 function op_et_bindeff2_draw_on    # fh v3:bsim1.00 0x007fb4c0
 0x007fb610 function op_et_bindeff2_draw_set   # (h, hide) op_et_bindeff2_draw_off (hide) or _draw_on, one body; returns ~old & 8
+0x007fb680 function EtBindDefault_setBit11_007fb680 # cdecl() -> 0x800: g_EtBindDefault |= 0x800 (13 bytes, hidden from the dump); Native_0245; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x007fb6d0 function op_et_bindeff2_off        # (h) bind flags &= 0xf8cf, then opu_unit_free_by_id(g_OpusBattle, 0x50001800 + record index): the unit op_et_bindeff2 starts with opu_et_unit(oef2, 0, 0x18, 0x50001800 + i)
+0x007fb720 function EtBindDefault_setBit13_007fb720 # cdecl() -> 0x2000: g_EtBindDefault |= 0x2000 (13 bytes, hidden from the dump); Native_0247; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
+0x007fb730 function EtBindDefault_clearBit13_007fb730 # cdecl() -> 0xdfff: g_EtBindDefault &= 0xdfff (13 bytes, hidden from the dump); Native_0246; name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x007fb740 function op_et_bindeff2_walk          # layout+callees: sorts between op_et_bindeff2_off and op_et_bindeff2_walk_off, and its named callees match the Switch 0x71003f1530 op_et_bindeff2_walk's (similarity 0.67: op_oef2_obj_a_get, op_xyz_scale); symbols from Fahrenheit's server export ; (h, speed): with g_EventEffect, the EFF record keyed 0x50001800 + chr index (not record 0) gets op_oef2_obj_a_get(g_OpusEncount, 0, 0x20) and opus_osu_set_0080b520(g_OpusBattle, +4, obj, 1, h); op_xyz_scale(unit + 0x40, speed, [0x00b9231c]) (et::bridge::op_et_bindeff2_walk)
 0x007fb7f0 function op_et_bindeff2_walk_off   # (h) bind flags |= 0x100 (op_et_bindeff2_walk_on clears it)
 0x007fb830 function op_et_bindeff2_walk_on    # fh v3:bsim1.00 0x007fb750
@@ -10024,6 +10030,7 @@
 0x007fc130 function op_et_draw_flags_restore  # (h) -> u8: g_EtChrDrawFlags[i] = g_EtChrDrawFlags2[i] & 0x7f, g_EtChrDrawFlags2[i] = 0, returns the old g_EtChrDrawFlags2 (i = the record's +0xe; __report_rangecheckfailure for i >= 0xf0 after the first store); g_MagicImports slot 547
 0x007fc190 function op_et_draw_flags_save     # (h) -> u8: g_EtChrDrawFlags2[i] = g_EtChrDrawFlags[i] | 0x80, g_EtChrDrawFlags[i] = 0, returns the old g_EtChrDrawFlags2; g_MagicImports slot 548
 0x007fc200 function op_et_draw_flags_switch   # (h, restore) op_et_draw_flags_restore (restore) or op_et_draw_flags_save, one body with both range checks
+0x007fc290 function opus_change_chrhd_ffx_to_battle_thunk_007fc290 # jmp opus_change_chrhd_ffx_to_battle (5 bytes, hidden from the dump); name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x007fc2a0 function op_et_oef2_free           # (oef2) opu_unit_free_by_oef2(g_OpusBattle, oef2)
 0x007fc2c0 function op_et_oef2_start          # (oef2) op_oef2_set2(oef2); opu_et_unit(oef2, 0, 0, -1)
 0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200; ported r35 (vfx): opu_et_unit + 0x00c48d78 = id, returns 1; debug mode swaps in the debug objects 0x023215c0/c8/d0 by flag bits 0/1/2 of 0x02321580 (et::bridge::op_et_eff)
@@ -10132,6 +10139,7 @@
 0x00800410 function opus_part_kind            # (p) -> (i16) at *(p + 0xc) + 2
 0x00800440 function op_oef2_sound_init_00800440 # ours: () -> 0: g_OpOef2SoundCueRing/Args, 0x023c36a0..0x023c389f (64 words, g_OpOef2Seps the second half), head/count, both g_OpOef2StreamCues and byte 0x023c3644 cleared; g_OpSoundCurves and 0x023c3660/64 set from image f32 constants (32, 512, 127, 96, 64, 768, 96, 32, 64, -0.0646, 129.07, 1/24); caller 0x007ff960 next to op_oef2_tex_clut_init_007e5680
 0x00800580 function op_effect_init            # fh v3:exact 0x008004a0 ; (): [[0x00c88a90]+0x50] = [0x00c48d88], 0x012e9c70 0x400 bytes cleared, the 256 0x80-byte records at 0x012ea070 memset with u16 +0x1e = index, pppInitEnv(0x012f2070, 0, 0x02343520, 0x80000); returns 0 (op::bridge::op_effect_init)
+0x008005f0 function op_debug_reset_008005f0 # cdecl() -> 0: byte 0x02322791 (after g_OpDebugMode) = 0 (10 bytes, hidden from the dump); name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530; (): g_OpusBattle +0x54 = +0x58 pinned frame or latched 0x02332e8c (limit 0x02332e88 = 0x02332e90 + 0xf0000), opu_main_host(0, 0), latch back when unpinned, limit 0 (op::bridge::op_effect_run_before)
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590; (): oef2 clut cue/ovl trans(-1)/sound cue loops, unpinned g_OpusBattle +0x54 = g_OpLatch0 and g_OpEffectRunLimit = [0x02332e90] + 0xf0000, MsCopyCameraMatrix(g_Op3dListener), MsCopyScreenMatrix(0x0113fd10), opu_main_host(0, 1), opp_main(0), latch back, limit 0 (op::bridge::op_effect_run_after)
 0x00800700 function op_part_fp_init           # fh v3:exact 0x00800620; ported (round 33): (part) -> 0: ppp part [part+0xd0] loaded: 0x012f2090..98 = its +0x14..+0x1c, op env, pppInitData unless op_part_init_check (opus::bridge::op_part_fp_init)
@@ -10262,6 +10270,7 @@
 0x008088c0 function opu_tex_ctrl_008088c0     # ours: (host, cmd) -> next cmd: by flag nibble 0 texture load, 0x1000/0x2000 op_et_chr_show(1/0), 0x4000 copy an oef2 image over Ch_TexGetImage's (+ graphicCharacterReplaceSummonTexture for magic 0x276..0x27d), 0x5000 Ch_TextureAnimSetEnable(h, 0); ported r35 (vfx, opus::bridge::opu_tex_ctrl)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90; (): Ch_ClutDispose of each of the first 0xd0 g_EtChr records' +0 (opus::bridge::opus_all_clut_dispose)
 0x00808a60 function opus_copy_buffer_event_00808a60 # ours: (): graphicVFXAddCopyBufferEventWithClearRGB(0, 1) in magic files 0x11b and 0x1a6 (opus::bridge::opus_copy_buffer_event)
+0x00808a90 function op_oef2_tex0_get_thunk_00808a90 # jmp op_oef2_tex0_get_007e5260 (5 bytes, hidden from the dump); name ours; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x00808b00 function op_fvec4_to_ivec4_00808b00 # ours: (dst, src): src's four f32 (copied first) truncated by _ftol2 into dst's i32; called on g_Vu0_VfMove in place (vec::bridge::fvec4_to_ivec4)
 0x00808b70 function Vec4Max_00808b70           # ours: (dst, src, x, y, z, w): each component the larger of src's and the argument's (fcom: the argument when unordered); 65 functions above it
 0x00808c10 function vfx_vec4_min              # (dst, v, s) dst[i] = v[i] < s ? v[i] : s; callers 0x00809180, 0x00809620, 0x0081bef0, 0x0081c2a0
@@ -16094,8 +16103,8 @@
 0x0092d780 function rcbgScaleVector_0092d780  # the same code as rcbgScaleVector 0x009200a0
 0x0092d7e0 function rcefVecToField            # (v): scaled by the float at 0x00b67e24 (rcbgScaleVector_0092d690), then y - 1024
 0x0092d810 function rcefAngleWrap             # (a) -> float: into 0..2pi (double 0x00b39378): negative 2pi - fmod(-a, 2pi), past 2pi fmod(a, 2pi) (_CIfmod ST1, ST0)
-0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump
-0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
+0x0092d860 function op_et_bindeff_draw_off_thunk # g_MagicImports slot 454 (1 overlay): jmp op_et_bindeff_draw_off; hidden from the dump; ported M5 vfx b5 (ffx_glue_other::m5v_e)
+0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump; ported M5 vfx b5 (ffx_glue_other::m5v_e)
 0x0092d880 function SetGlobals_0092d880          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2; callers: no direct caller; name ours
 0x0092d8c0 function rcefCalcChrElemRotBaseMatrix # (i, e, out, v): out = 0.001 scale x element base position (x -0.001, f32 0x00b67e20) x turn by v (rcefVecToField, op_rt_m_yxz); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
 0x0092d9a0 function rcefCalcChrElemRotMatrix  # (i, e, out, v): as rcefCalcChrElemRotBaseMatrix, turned about the element (moved there and back, fchs) and placed at MsGetChrPos (battle only); Switch rcefUtil name by layout (PC run rcefAngleWrap, [rcefBlur], rcefCalcChrElemRotBaseMatrix, rcefCalcChrElemRotMatrix, rcefCalcChrElemRotTargetMatrix, rcefCalcChrRotMatrix, rcefCalcRotMatrix 0x0092dcd0 is alphabetical; sizes ordered as the Switch's); ported (field r2 E)
