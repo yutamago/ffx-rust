@@ -5,4 +5,5 @@
 //! over game memory (`docs/porting.md`), one module per area.
 
 pub mod ee;
+pub mod m5_ps2;
 pub mod vu0;

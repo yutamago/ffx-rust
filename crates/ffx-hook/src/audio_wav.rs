@@ -397,6 +397,25 @@ fn serve_sync(manager: u32) {
 /// `FmodManager` thread: with turns on, waits for the main thread's turn
 /// (serving synchronous commands meanwhile), then runs the original once.
 unsafe extern "fastcall" fn tick(manager: u32) {
+    tick_with(manager, |m| {
+        // SAFETY: the original through its trampoline, with the same manager.
+        unsafe {
+            let f: unsafe extern "fastcall" fn(u32) =
+                std::mem::transmute(TICK_ORIGINAL.load(Ordering::Acquire));
+            f(m);
+        }
+    });
+}
+
+/// The capture is on: `FmodManager_tick`'s port (`ported/m5_sound.rs`)
+/// runs inside [`tick_with`] then, since the port's hook replaces this
+/// wrapper's at the same address.
+pub(crate) fn active() -> bool {
+    ON.load(Ordering::Acquire)
+}
+
+/// [`tick`]'s turn rule around `run` (the original or its port).
+pub(crate) fn tick_with(manager: u32, run: impl FnOnce(u32)) {
     MANAGER.store(manager, Ordering::Release);
     if crate::harness::reached() > 0 && crate::harness::virtual_clock() {
         TURNS_ON.store(true, Ordering::Release);
@@ -409,12 +428,7 @@ unsafe extern "fastcall" fn tick(manager: u32) {
         // SAFETY: the manager's event handle.
         unsafe { SetEvent(event(manager)) };
     }
-    // SAFETY: the original through its trampoline, with the same manager.
-    unsafe {
-        let f: unsafe extern "fastcall" fn(u32) =
-            std::mem::transmute(TICK_ORIGINAL.load(Ordering::Acquire));
-        f(manager);
-    }
+    run(manager);
     if TURNS_ON.load(Ordering::Acquire) {
         TURNS_DONE.store(TURNS_ASKED.load(Ordering::Acquire), Ordering::Release);
         let _g = WAKE.lock();

@@ -1094,6 +1094,7 @@ name = "ffx-movie"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-graphic",
  "libm",
  "md-5",
  "zvidlib-core",
@@ -1243,6 +1244,7 @@ name = "ffx-ps2"
 version = "0.1.0"
 dependencies = [
  "ffx-bridge",
+ "ffx-graphic",
  "ffx-system",
 ]
 
