@@ -1860,3 +1860,65 @@ fn small_entries() {
         }
     }
 }
+
+/// The grid frame (`magic_0242`), the block object freed (`magic_0565`)
+/// and the objects' end frames (`magic_0644`, `magic_0565`), with no
+/// objects to run.
+#[test]
+fn object_frames() {
+    let stubs = |t: &mut Twin| {
+        for s in [
+            941u32, 772, 779, 552, 230, 554, 229, 231, 712, 713, 330, 328, 329, 219, 257, 214,
+        ] {
+            rec(t, s, 1, move |_, _| s);
+        }
+    };
+    if let Some(mut t) = twin(242) {
+        stubs(&mut t);
+        let f = t.at(0x3a60);
+        let task = SCRATCH + 0x800;
+        let owner = SCRATCH + 0x900;
+        for _ in 0..2 {
+            t.set_u32(task + 8, owner);
+            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(565) {
+        stubs(&mut t);
+        let f = t.at(0x6140);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(f + 0x3), block);
+        t.set_u32(t.img.word(f + 0x1e), SCRATCH + 0x80);
+        let list = t.img.word(f + 0x10);
+        let obj = block + 0xf70;
+        let node = SCRATCH + 0x300;
+        for listed in [false, true] {
+            t.write(list, &[0; 0x10]);
+            t.write(node, &[0; 0x10]);
+            t.set_u32(node + 8, obj);
+            if listed {
+                t.set_u32(list, node);
+                t.set_u32(list + 4, node);
+                t.set_u32(list + 0xc, 1);
+            }
+            t.set_u16(obj + 0x124, 0xffff);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+        let f = t.at(0x6b40);
+        t.set_u32(t.img.word(f + 0x3), block);
+        for end in [0u32, 1] {
+            t.set_u32(block + 0xeca4, end);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+    if let Some(mut t) = twin(644) {
+        stubs(&mut t);
+        let f = t.at(0xa970);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(f + 0x3), block);
+        for end in [0u32, 1] {
+            t.set_u32(block + 0xeb74, end);
+            t.check_entry(f, Call::default(), &[], Eax::Checked);
+        }
+    }
+}

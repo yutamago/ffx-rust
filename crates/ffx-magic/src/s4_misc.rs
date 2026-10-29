@@ -2064,3 +2064,143 @@ pub const COUNT_DONE_B: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A grid effect's frame (cdecl `(task)`): the motion steps
+/// ([`crate::s3_motion::motion_step`]) and the objects run
+/// ([`crate::l5_objhost::run_objects`]); when both are done (1) the task
+/// ends (`+0x14` 3, its owner's callback the next function, operand
+/// `+0x2a`) and the grid is drawn ([`crate::sb_misc::draw_grid`], the
+/// original's tail jump). Returns the grid's `eax`, or the objects'
+/// answer.
+///
+/// `magic_0242` 0x10003a60 (55 bytes; 5 DLLs).
+pub fn grid_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = crate::s3_motion::motion_step(g, img, img.rel32_target(f + 0x5));
+    // push ebp; push esi; call
+    let esp = fr.esp.wrapping_sub(12);
+    let r = crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0xc), esp);
+    if r != 1 || a != 1 {
+        return Ret::eax(r);
+    }
+    let task = fr.arg(g, 0);
+    g.write::<u32>(task + 0x14, 3);
+    let owner = g.read::<u32>(task + 8);
+    g.write::<u32>(owner + 0x10, img.word(f + 0x2a));
+    Ret::eax(crate::sb_misc::draw_grid(
+        g,
+        img,
+        img.rel32_target(f + 0x30),
+    ))
+}
+
+/// [`grid_frame`].
+pub const GRID_FRAME: Sig = Sig {
+    len: 55,
+    hash: 0x9c2e_268a_a3d3_5b79,
+    calls: &[
+        (0x5, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0xc, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x30, Callee::Sig(&crate::sb_misc::DRAW_GRID)),
+    ],
+    imports: &[],
+};
+
+/// Frees the block's object `+0xf70` (a table entry, no arguments): when
+/// the DLL's list (operand `+0x10`) held it
+/// ([`crate::l5_objhost::list_remove`]), `*G_P = ITEM` (`+0x1e`,
+/// `+0x25`), slot 713 frees its part and its flag bit 15 is cleared.
+/// Returns 0x7fff, or 0 when it was not listed.
+///
+/// `magic_0565` 0x10006140 (71 bytes; 5 DLLs).
+pub fn free_block_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let obj = g.read::<u32>(w(0x3)).wrapping_add(0xf70);
+    if crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0x15), w(0x10), obj) == 0 {
+        return Ret::eax(0);
+    }
+    let p = g.read::<u32>(w(0x1e));
+    g.write::<u32>(p, w(0x25));
+    let t = slot_target(g, w(0x2a), 713);
+    g.call(t, 0, &[obj]);
+    let flags = g.read::<u16>(obj + 0x124) & 0x7fff;
+    g.write::<u16>(obj + 0x124, flags);
+    Ret::eax(0x7fff)
+}
+
+/// [`free_block_object`].
+pub const FREE_BLOCK_OBJECT: Sig = Sig {
+    len: 71,
+    hash: 0xb0e7_f316_e292_561c,
+    calls: &[(0x15, Callee::Sig(&crate::l5_objhost::LIST_REMOVE))],
+    imports: &[],
+};
+
+/// The objects' frame ending the effect (a table entry, no arguments):
+/// the objects run ([`crate::l5_objhost::run_objects`]); when none ran
+/// and the block's word `end` is 1, slot 257 shows the element slot 219
+/// `(*G_A, 0)` gives, slot 214 `(*G_B)` follows and the part handles are
+/// registered ([`crate::sa_misc::register_parts`], the original's tail
+/// jump). Returns its `eax`, or the objects' answer.
+fn objects_end<G: Game>(g: &mut G, img: &Image, fr: &Frame, end: u32) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let block = g.read::<u32>(w(0x3));
+    // push esi; call
+    let r =
+        crate::l5_objhost::run_objects(g, img, img.rel32_target(f + 0x8), fr.esp.wrapping_sub(8));
+    if r != 1 || g.read::<u32>(block + end) != 1 {
+        return Ret::eax(r);
+    }
+    let a = g.read::<u32>(w(0x22));
+    let t = slot_target(g, w(0x1a), 219);
+    let elem = g.call(t, 0, &[a, 0]).eax;
+    let t = slot_target(g, w(0x32), 257);
+    g.call(t, 0, &[elem, 0, a, 0]);
+    let b = g.read::<u32>(w(0x45));
+    let t = slot_target(g, w(0x3f), 214);
+    let eax = g.call(t, 0, &[b, elem, 0, a, 0]).eax;
+    Ret::eax(crate::sa_misc::register_parts(
+        g,
+        img,
+        img.rel32_target(f + 0x56),
+        eax,
+    ))
+}
+
+/// [`objects_end`] with the end word `+0xeb74`.
+///
+/// `magic_0644` 0x1000a970 (92 bytes; 5 DLLs).
+pub fn objects_end_a<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    objects_end(g, img, fr, 0xeb74)
+}
+
+/// [`objects_end_a`].
+pub const OBJECTS_END_A: Sig = Sig {
+    len: 92,
+    hash: 0xe0ff_272b_d648_870f,
+    calls: &[
+        (0x8, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x56, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+    ],
+    imports: &[],
+};
+
+/// [`objects_end`] with the end word `+0xeca4`.
+///
+/// `magic_0565` 0x10006b40 (92 bytes; 5 DLLs).
+pub fn objects_end_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    objects_end(g, img, fr, 0xeca4)
+}
+
+/// [`objects_end_b`].
+pub const OBJECTS_END_B: Sig = Sig {
+    len: 92,
+    hash: 0x6faa_e5ee_7662_d740,
+    calls: &[
+        (0x8, Callee::Sig(&crate::l5_objhost::RUN_OBJECTS)),
+        (0x56, Callee::Sig(&crate::sa_misc::REGISTER_PARTS)),
+    ],
+    imports: &[],
+};

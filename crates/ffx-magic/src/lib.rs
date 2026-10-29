@@ -962,6 +962,10 @@ ports! {
     "free part item" => s4_misc::FREE_PART_ITEM, s4_misc::free_part_item;
     "count done (a)" => s4_misc::COUNT_DONE_A, s4_misc::count_done_a;
     "count done (b)" => s4_misc::COUNT_DONE_B, s4_misc::count_done_b;
+    "grid frame" => s4_misc::GRID_FRAME, s4_misc::grid_frame;
+    "free block object" => s4_misc::FREE_BLOCK_OBJECT, s4_misc::free_block_object;
+    "objects end (a)" => s4_misc::OBJECTS_END_A, s4_misc::objects_end_a;
+    "objects end (b)" => s4_misc::OBJECTS_END_B, s4_misc::objects_end_b;
     "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
     "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
     "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
