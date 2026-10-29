@@ -39,7 +39,9 @@
 #               folder (an instance's own file), its report in ffx-rust.log
 #               there; the harness options mean the same (docs/harness.md,
 #               "Two processes"). Only with --background.
-#               FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit build (stage 4)
+#               FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit build (stage 4);
+#               FFX_HOST_GFX_RECORD=1 keeps the draw recording (gfxcapture),
+#               FFX_HOST_NOTES=1 / FFX_HOST_TRACE=n reach it (docs/host.md)
 # FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
 #               already built instead of building first (cargo-xwin builds
 #               queue for one lock shared by every worktree)
@@ -74,7 +76,7 @@ while [[ $# -gt 0 ]]; do
         --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
-        --rust) rust=1 ;;
+        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE" ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift

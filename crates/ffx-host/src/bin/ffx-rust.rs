@@ -106,6 +106,12 @@ fn main() -> ExitCode {
         eprintln!("no game directory (--game-dir or FFX_GAME_DIR)");
         return ExitCode::FAILURE;
     };
+    // the draw recording only when it will be written (it grows by every
+    // frame's draws)
+    opts.gfx.no_record = gfx_out.is_none()
+        && std::env::var("FFX_HOST_GFX_RECORD")
+            .ok()
+            .is_none_or(|v| v != "1");
     // the harness's sandbox (FFX_HARNESS_HOME) unless --documents says
     if opts.documents.is_none() {
         opts.documents = ffx_host::harness::home();

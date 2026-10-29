@@ -70,7 +70,9 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   twice as slow; the report gives instructions per second).
 - `--gfx-out DIR`: writes the D3D11 layer's recording there:
   `capture.ffxgfx` (the stream `drawdiff` reads) and `calls.txt` (every
-  COM call, the first 50,000).
+  COM call, the first 50,000). Without it (or `FFX_HOST_GFX_RECORD=1`,
+  for the harness's `gfxcapture`) the layer keeps no recording: it grows
+  by every frame's draws (about 6 GB of a 2,000-update harness run).
 - `--gfx-null`: the recording null device on Windows too (the default
   there is the real device).
 - `--presents N`: ends the run (a milestone) at the `N`-th `Present`.
@@ -84,8 +86,9 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
 - `cargo build --features swf`: Iggy's players on Ruffle (below, "Iggy").
-- `FFX_HOST_NOTES=1`: the run's notes (turns, Iggy calls, FMOD loads) on
-  stderr as they happen; `FFX_HOST_IGGY_OUT=DIR` (feature `swf`): every
+- `FFX_HOST_NOTES=1`: the run's notes (turns, Iggy calls, FMOD loads, a
+  game thread that failed) on stderr as they happen (the harness's
+  `notes` lists them too); `FFX_HOST_IGGY_OUT=DIR` (feature `swf`): every
   30th image of each Flash player.
 
 ## The arena

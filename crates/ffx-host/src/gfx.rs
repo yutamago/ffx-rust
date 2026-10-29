@@ -99,6 +99,11 @@ pub struct Config {
     pub backend: Choice,
     /// End the run (a milestone) after this many `Present` calls.
     pub stop_after_presents: Option<u32>,
+    /// Keep no recording (`capture.ffxgfx`): `ffx-rust` without
+    /// `--gfx-out` or `FFX_HOST_GFX_RECORD=1`. The recording grows by every
+    /// frame's draws (1.8 GB on the boot to the title, about 6 GB of the
+    /// process in menu-grid's harness run).
+    pub no_record: bool,
 }
 
 /// `DXGI_SWAP_CHAIN_DESC`, word by word as the game passes it.
@@ -676,7 +681,15 @@ impl Gfx {
     }
 
     fn emit(&mut self, m: &Msg) {
-        m.write(&mut self.stream);
+        if !self.config.no_record {
+            m.write(&mut self.stream);
+        }
+    }
+
+    /// Whether the layer keeps its recording ([`Config::no_record`]).
+    #[must_use]
+    pub fn records(&self) -> bool {
+        !self.config.no_record
     }
 
     /// Hands `h` out through `out` with a reference (`GetDevice`,

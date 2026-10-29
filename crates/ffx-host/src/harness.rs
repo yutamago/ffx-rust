@@ -1221,6 +1221,9 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         }
         "gfxcapture" => {
             let dir = arg(1)?;
+            if shared.gfx.lock().as_ref().is_some_and(|g| !g.records()) {
+                return Err("no recording (start ffx-rust with FFX_HOST_GFX_RECORD=1)".into());
+            }
             crate::gfx::write_shared(shared, std::path::Path::new(dir))
                 .map_err(|e| e.to_string())?;
             let frames = shared.gfx.lock().as_ref().map_or(0, |g| g.presents);

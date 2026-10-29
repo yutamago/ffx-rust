@@ -2055,9 +2055,11 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   `ping`, `stats`, `frame`, `wait`, `waitfor`, `shotwhen`, `holdfor`,
   `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events`,
   `read`, `readp`, `readabs`, `write`, `writep`, `keys`, `key`, `pad`,
-  `press`, `shot`, `gfxcapture`, `quit` (and `calllog off`, the replay
-  player's closing line). Every other command (`snapshot`, `fpucw`,
-  `audiomark`, the overlay and editor commands, `cursor`, `threads`)
+  `press`, `shot`, `gfxcapture`, `notes` (the run's notes so far, a
+  failed game thread among them, listed as `events` lists), `audiomark`
+  (`ok off`: no capture), `quit` (and `calllog off`, the replay player's
+  closing line). Every other command (`snapshot`, `fpucw`,
+  the overlay and editor commands, `cursor`, `threads`)
   answers `err ... not served by ffx-rust yet`.
 - **Frames** (2026-10-29, host-pc2) are updates, as in the hook: frame `n`
   is the boundary after `n` updates, the entry of `FFXApplication_animate`,
@@ -2106,7 +2108,9 @@ tools/run-game.sh --instance N --harness P --background --rust          # what G
   With the null device (`--gfx-null`) there is nothing to read and `shot`
   fails.
 - **Draw streams.** `gfxcapture <dir>` writes ffx-rust's recording so far
-  (`capture.ffxgfx` from the first `Present`, `calls.txt`). For the same
+  (`capture.ffxgfx` from the first `Present`, `calls.txt`); the recording
+  is kept only with `FFX_HOST_GFX_RECORD=1` (it grows by every frame's
+  draws), else `gfxcapture` answers `err`. For the same
   frames of `FFX.exe`, `FFX_GFX_BOOT_CAPTURE="<dir> [hash] frames N"`
   (with `--gfx`) arms the hook's capture before the device exists, so it
   holds the frames from the first `Present` on; a script waits for it with

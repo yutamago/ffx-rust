@@ -157,6 +157,7 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
             stop_after_presents: Some(3),
+            ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()
     };
