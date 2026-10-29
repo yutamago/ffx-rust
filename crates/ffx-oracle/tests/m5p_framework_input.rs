@@ -2583,3 +2583,77 @@ fn blur_targets_match_the_original() {
         }
     }
 }
+
+// ---- batch 8: the viewport fit, the notifier removal ----
+
+use ffx_pother_b::m5p_framework_input_view::{self as vw, bridge as vwb};
+
+#[test]
+fn viewport_fit_matches_the_original() {
+    let aspects = [
+        0x3f80_0000u32, // 1.0
+        0x3fe3_8e39,    // 16:9
+        0x3faa_aaab,    // 4:3
+        0x4018_0000,    // 2.375
+        0x3f00_0000,    // 0.5
+        0x0000_0000,    // 0: the quotient is infinite
+        0x7fc0_0000,    // NaN
+        0xbf80_0000,    // -1
+    ];
+    let rects = [
+        [0u32, 0, 1920, 1080],
+        [10, 20, 1280, 1024],
+        [0, 0, 1, 1],
+        [0, 0, 0, 0],
+        [5, 7, 0x8000_0010, 0x8000_0000],
+        [0xffff_fff0, 3, 640, 0xffff_ffff],
+        [100, 100, 1000, 1001],
+    ];
+    for (label, mut t) in Twins::all() {
+        for &aspect in &aspects {
+            for &r in &rects {
+                let app = t.object(&[0, 0, 0, 0, 0], &[0, 0, 0, 0, 0x7a]);
+                t.w32(app + 0x10, aspect);
+                let what = format!("{label}: viewport fit {aspect:#x} {r:x?}");
+                t.check(&what, 0x0062_cba0, Conv::Thiscall(app), &r, |g| {
+                    Out::U32(vwb::set_viewport_keeping_aspect(g, app, r))
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn notifier_removal_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // equal_range writes (first, last) = (0x5100, 0x5200) to its out
+        // (first = the key itself, so the key's address is checked)
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        c.extend([0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x09, 0x89, 0x08]); // [eax] = *[esp+8]
+        c.extend([0xc7, 0x40, 0x04]);
+        c.extend(0x5200u32.to_le_bytes()); // mov [eax+4], last
+        c.extend([0xc2, 0x08, 0x00]); // ret 8
+        let code = t.a.alloc_code(&c).unwrap();
+        assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+        let at = t.rebase(vw::MAP_EQUAL_RANGE);
+        let old = Oracle::read(&mut t.a, at, 5).unwrap();
+        t.saved.entry(at).or_insert(old);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        t.stub(vw::MAP_ERASE_RANGE, true, 3, 3, 0xe5);
+        for key in [0u32, 0x4444] {
+            t.frame_len = 8;
+            let what = format!("{label}: remove notifier {key:#x}");
+            // the original's argument word sits 4 bytes under where the
+            // call pushes from; the port's frame block 0x14 under it
+            t.check_frame(&what, 0x0062_bce0, Conv::Cdecl, &[key], 0x14, |g| {
+                let frame = g.1;
+                let key_at = frame + 0x10;
+                Mem::write(g, key_at, key);
+                Out::U32(vwb::remove_notifier(g, key_at, frame))
+            });
+        }
+        t.reset();
+    }
+}

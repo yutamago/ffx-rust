@@ -19,6 +19,7 @@ use ffx_pother_b::m5p_framework_input_script::bridge as sb6;
 use ffx_pother_b::m5p_framework_input_small::{self as sm, bridge as smb};
 use ffx_pother_b::m5p_framework_input_sources::{self as so, bridge as sb};
 use ffx_pother_b::m5p_framework_input_streams::bridge as tb;
+use ffx_pother_b::m5p_framework_input_view::bridge as vb;
 
 ported! {
     /// `Phyre_PhyreOS_Sleep(ms)`: `Sleep(ms)`; its `eax`.
@@ -629,5 +630,15 @@ ported! {
     /// `Phyre_PPostProcessing_PMotionBlur_checkTargets_00a235f0`: both render targets sized to `(w, h)`; 0, 1, or a failing step's `eax`.
     Phyre_PPostProcessing_PMotionBlur_checkTargets_00a235f0 @ 0x00a2_35f0 => extern "thiscall" fn lf_00a235f0(this: u32, w: u32, h: u32) -> u32 {
         lb::check_targets(&mut mem(), this, w, h)
+    }
+    /// `Phyre_PFramework_PApplication_removeNotifier_0062bce0`: every notifier under `key` removed from the map; the erase's `eax`.
+    Phyre_PFramework_PApplication_removeNotifier_0062bce0 @ 0x0062_bce0 => extern "C" fn vw_0062bce0(_key: u32; slots: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let at = frame.at();
+        vb::remove_notifier(&mut mem(), slots, at)
+    }
+    /// `Phyre_PFramework_PApplication_setViewportKeepingAspect_0062cba0`: the rectangle fitted to the aspect, then the virtual apply; its `eax`.
+    Phyre_PFramework_PApplication_setViewportKeepingAspect_0062cba0 @ 0x0062_cba0 => extern "thiscall" fn vw_0062cba0(this: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
+        vb::set_viewport_keeping_aspect(&mut mem(), this, [x, y, w, h])
     }
 }
