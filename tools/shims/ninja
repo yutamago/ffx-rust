@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# unicorn-engine-sys's CMake build under cargo xwin (ffx-overlay in the hook)
+# needs Ninja: cargo-xwin selects the Ninja generator. Runs the PyPI build.
+exec uvx --from ninja ninja "$@"

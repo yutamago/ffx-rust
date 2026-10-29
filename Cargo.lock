@@ -997,6 +997,7 @@ dependencies = [
  "ffx-monster",
  "ffx-motion",
  "ffx-movie",
+ "ffx-overlay",
  "ffx-panim",
  "ffx-pcore",
  "ffx-pcui",
@@ -1137,6 +1138,14 @@ dependencies = [
  "goblin",
  "lz4_flex",
  "md-5",
+ "thiserror",
+ "unicorn-engine",
+]
+
+[[package]]
+name = "ffx-overlay"
+version = "0.1.0"
+dependencies = [
  "thiserror",
  "unicorn-engine",
 ]

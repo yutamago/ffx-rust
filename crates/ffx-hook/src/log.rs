@@ -51,6 +51,13 @@ unsafe extern "system" fn fault(
         unsafe { (*(*info).ContextRecord).Eip = at as u32 };
         return -1; // EXCEPTION_CONTINUE_EXECUTION
     }
+    // Unicorn (FFX_MAGIC_EMU=1, overlay_emu.rs) reserves its translated
+    // code buffer and commits it on the first write to each 4 MiB, in a
+    // vectored handler of its own after this one: not a fault.
+    // SAFETY: the system passes a valid record.
+    if code == 0xc000_0005 && unsafe { lazy_commit(&*(*info).ExceptionRecord) } {
+        return 0;
+    }
     let serious = matches!(
         code,
         0xc000_0005 | 0xc000_001d | 0xc000_00fd | 0xc000_0409 | 0xc000_0094 | 0xc000_0096
@@ -67,6 +74,30 @@ unsafe extern "system" fn fault(
         }
     }
     0 // EXCEPTION_CONTINUE_SEARCH
+}
+
+/// A write into reserved, uncommitted memory whose reservation is
+/// read-write-execute: Unicorn's code buffer, committed on demand.
+#[cfg(windows)]
+unsafe fn lazy_commit(
+    r: &windows_sys::Win32::System::Diagnostics::Debug::EXCEPTION_RECORD,
+) -> bool {
+    use windows_sys::Win32::System::Memory::{
+        MEM_RESERVE, MEMORY_BASIC_INFORMATION, PAGE_EXECUTE_READWRITE, VirtualQuery,
+    };
+    if r.NumberParameters < 2 || r.ExceptionInformation[0] != 1 {
+        return false;
+    }
+    // SAFETY: an out-parameter of the right size.
+    let mut m: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+    let n = unsafe {
+        VirtualQuery(
+            r.ExceptionInformation[1] as *const std::ffi::c_void,
+            &raw mut m,
+            std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+        )
+    };
+    n != 0 && m.State == MEM_RESERVE && m.AllocationProtect == PAGE_EXECUTE_READWRITE
 }
 
 /// The registers, and the stack words that point into a module (return

@@ -130,6 +130,8 @@ pub mod minimap;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod mods;
 #[cfg(all(windows, target_arch = "x86"))]
+pub mod overlay_emu;
+#[cfg(all(windows, target_arch = "x86"))]
 mod patch;
 #[cfg(all(windows, target_arch = "x86"))]
 pub mod ported;

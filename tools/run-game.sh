@@ -99,6 +99,12 @@ fi
 if [[ -n "${FFX_AUDIO_WAV:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_AUDIO_WAV/p"
 fi
+# The spell overlays in Unicorn instead of natively
+# (crates/ffx-hook/src/overlay_emu.rs, docs/formats/magic.md "Running the
+# original overlays"): FFX_MAGIC_EMU=1.
+if [[ -n "${FFX_MAGIC_EMU:-}" ]]; then
+    export WSLENV="${WSLENV:+$WSLENV:}FFX_MAGIC_EMU"
+fi
 # The Rust sound engine in place of FMOD (crates/ffx-hook/src/rust_audio.rs,
 # docs/formats/audio-platform.md "The Rust engine in the game").
 if [[ -n "${FFX_RUST_AUDIO:-}" ]]; then
