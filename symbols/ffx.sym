@@ -14997,7 +14997,7 @@
 0x007c5f60 function MsDebugSetScene           # fh v3:exact 0x007c5ef0
 0x007c5fc0 function MsGetBattleName           # fh v3:exact 0x007c5f30
 0x007c60a0 function MsDebugNextMember_007c60a0 # cdecl(slot, step) -> u8: party slot's character stepped down (wrapping to 0x11) or up (0xff past 0x11) to the next joined one not in another party slot; 0xff for an empty slot; step 0 with an unjoined character loops forever (as the original); name ours; ported ffx_battle::m5_battle (m5 battle b1)
-0x007c6110 function Ms_Gui_BattleConsoleProc  # fh v3:exact 0x007c6080
+0x007c6110 function Ms_Gui_BattleConsoleProc  # fh v3:exact 0x007c6080; cdecl(win, msg, id) -> 0: the battle console debug window's procedure: 0x8001 title and buttons (scene/encounter steppers, party slots, master mode 0x0112a8f6, SAVE/SREL/EXE, language, PAL) and the three auto-repeats 0x01139e58/6c/80; 0x8003 0x01139ef8 = 0; 0x8006/0x800a/0x800e auto-repeat reset; 0x8005/0x8009/0x800d after MsAutoRepeatCheck the button (steps 1/10/100): field 0x00c44248, encounter 0x01139e44, master, MsDebugEnvSave(0x02311400), MsSetSaveStartGame, battle reload/start (MsBattleExe), party (MsDebugNextMember_007c60a0 / the next joined free character, MsExchangeSaveParty), language (TkGetLang/TkSetLang tables), PAL 0x023113e0, English, Asia; 0x8011 the button texts and the scene, encounter, party and region lines; ported M5 r5 mbs-static b10 (ffx_menu::m5m_n)
 0x007c6d80 function enterBattle               # fh switch:bsim1.00 0x71003a8a40
 0x007c6da0 function GetGlobal01139e48_007c6da0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01139e48]; return t0; callers: ; name ours
 0x007c6db0 function GetGlobal00c44248_007c6db0 # ours: () -> [0x00c44248]; callers FUN_006b81d0, MapNameText_Show_006bb480; ported (ffx_battle::misc, battle round 29)
@@ -15128,7 +15128,7 @@
 0x007dcf70 function MsDebugChrMotionSave_007dcf70 # cdecl(i, writer) -> the last MsEnvWriteText_007de700 eax: actor i's motion settings as battle script (setstat2 stat_motion_type with the +0x4ac flags as a | list, then 20 setstat2/setmotiondata2 lines of its fields), each line written with MsEnvWriteText_007de700 (buffer ebp-0x404); MsMonSave/MsPlySave's; name ours; ported M5 r5 mbs-static b5 (ffx_menu::m5m_n)
 0x007dd480 function MsMonSave                    # str-match switch: only user of 2 string(s) held once by both builds, e.g. '// monster %03d motion macro at %s\\n\\n'; Switch 0x71003c46f0 MsMonSave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b4)
 0x007dd5e0 function MsPlySave                    # str-match switch: only user of 9 string(s) held once by both builds, e.g. '// player motion macro at %s\\n\\n'; Switch 0x71003c3e80 MsPlySave (symbols from Fahrenheit's server export); ported ffx_battle::m5_battle (m5 battle b7)
-0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0
+0x007dd890 function Ms_Gui_BattleChr1Proc     # fh v3:exact 0x007dd7a0; cdecl(win, msg, id) -> 0: the battle "CHR data 1" window: 0x8001 title, auto-repeats 0x0113f8a4/b8/cc, buttons (actor, FIT, PLY SV, MON SV, 17 motion flags 0xae..0xbe); 0x8003 0x01139f00 = 0; in battle 0x8005/0x8009/0x800d the actor 0x0113f8a0 (by 1, or party/monster 0/0x14), a +0x4ac bit or +0x41d/+0x41b toggled, FIT (+0x4bc.. truncated), MsPlySave/MsMonSave; 0x8011 the flags' texts, the actor's name (MsStrCopy), file (ply_%02d / mon_%03d) and the flags' names; ported M5 r5 mbs-static b10 (ffx_menu::m5m_n)
 0x007de700 function MsEnvWriteText_007de700 # cdecl(writer, text): a byte-for-byte copy of MsEnvWriteText_007ce9f0 (MsMonSave's); name ours; ported ffx_battle::m5_battle (m5 battle b3)
 0x007de790 function Ms_Gui_BattleChr2Proc     # fh v3:exact 0x007de6a0
 0x007dfde0 function Ms_Gui_ShakeProc          # fh v3:exact 0x007dfcf0
@@ -28644,6 +28644,7 @@
 0x0113f3d2 label g_BtlUcId                    # u16; The user character ID MsSaveUcID keeps.
 0x0113f864 label    g_DebugRefActor           # i32: the reference window's actor (-1 none; MsDebugRefModeNext_007d9b00 takes -1 as 0); name ours
 0x0113f86c label    g_DebugRefActorCount      # i32: the count the reference window shows beside each actor (MsDebugPrintActors_007d9700); name ours
+0x0113f8a0 label    g_DebugChrSel             # i32: the actor the battle CHR data windows show (0..0x1e; Ms_Gui_BattleChr1Proc); name ours
 0x0113fb58 label    g_OpCharClass                # 256 bytes: the op script tokenizer's class per byte (1 word, 2 two-byte, 3/4 quotes, 5 space, 6/8 single, 7 comment/end)
 0x0113fc60 label    g_OpInComment                # nonzero inside an op script block comment (op_token_007e1f80)
 0x0113fc64 label    g_OpCommentDepth             # op script block-comment nesting depth (op_token_007e1f80)

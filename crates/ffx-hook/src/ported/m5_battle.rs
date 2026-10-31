@@ -701,4 +701,18 @@ ported! {
     MsBtlPosParseToken_007cc420 @ 0x007c_c420 => extern "C" fn ms_btl_pos_parse_token(reader: u32, name: u32; slots: u32) {
         mn::pos_parse_token(&mut mem(), reader, name, slots);
     }
+    // ---- round 5 (mbs-static), batch 10 (ffx_menu::m5m_n) ----
+    /// `(win, msg, id)`: the window procedure (stored by `0x007c87a0`);
+    /// the buffers in a frame (the original's `ebp - 0x108..`).
+    Ms_Gui_BattleConsoleProc @ 0x007c_6110 => extern "C" fn ms_gui_battle_console_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x108 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x108);
+        mn::console_proc(&mut mem(), ebp, win, msg, id)
+    }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_BattleChr1Proc @ 0x007d_d890 => extern "C" fn ms_gui_battle_chr1_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x108 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x108);
+        mn::chr1_proc(&mut mem(), ebp, win, msg, id)
+    }
 }

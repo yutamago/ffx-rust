@@ -3850,4 +3850,605 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    // ---- batch 10: the battle debug windows' procedures ----
+
+    pub const GU_WINDOW_SET_TITLE: u32 = 0x0084_b6a0;
+    pub const GU_WINDOW_ADD_BUTTON: u32 = 0x0084_a470;
+    pub const GU_WINDOW_SET_BUTTON_TEXT: u32 = 0x0084_a710;
+    pub const MS_AUTO_REPEAT_INIT: u32 = 0x007c_89a0;
+    pub const MS_AUTO_REPEAT_CHECK: u32 = 0x007c_8950;
+    pub const FFX_GET_ASIA_MODE: u32 = 0x0088_7c20;
+    pub const TK_GET_LANG: u32 = 0x0088_7c30;
+    pub const MS_GET_SAVE_CONFIG_ENGLISH: u32 = 0x0078_51d0;
+
+    /// `Gu_WindowAddButton(win, id, label, x, y, w, h)`.
+    fn button(h: &mut impl Host, win: u32, id: u32, label: u32, rect: [u32; 4]) {
+        cdecl(
+            h,
+            GU_WINDOW_ADD_BUTTON,
+            &[win, id, label, rect[0], rect[1], rect[2], rect[3]],
+        );
+    }
+
+    /// A `.rdata` string's address.
+    fn s(h: &impl Host, sym: u32) -> u32 {
+        h.rebase(sym)
+    }
+
+    /// The word `i` of the table at `table` (`.data`).
+    fn table_word(h: &impl Host, table: u32, i: u32) -> u32 {
+        h.read(at(h.rebase(table), i.wrapping_mul(4)))
+    }
+
+    /// `Gu_PrintSetX(x)`, `Gu_PrintSetY(y)`.
+    fn print_xy(h: &mut impl Host, x: u32, y: u32) {
+        cdecl(h, GU_PRINT_SET_X, &[x]);
+        cdecl(h, GU_PRINT_SET_Y, &[y]);
+    }
+
+    /// `Gu_Printf(text)` (the text as its own format).
+    fn gu_print(h: &mut impl Host, text: u32) {
+        cdecl(h, GU_PRINTF, &[text]);
+    }
+
+    pub const S_PARTY_SLOT: u32 = 0x0113_07e8;
+    pub const MS_EXCHANGE_SAVE_PARTY: u32 = 0x0078_4d00;
+    pub const MS_GET_SAVE_PLY_JOIN: u32 = 0x0078_5380;
+    pub const MS_DEBUG_NEXT_MEMBER: u32 = 0x007c_60a0;
+    pub const MS_DEBUG_SCENE_WALK: u32 = 0x007c_5dd0;
+    pub const MS_BATTLE_EXE: u32 = 0x0078_1020;
+    pub const G_BTL_STATUS: u32 = 0x0112_a8e0;
+    /// The scene picker's field (`0x00c44248`) and encounter
+    /// (`0x01139e44`), the master mode (`i8 0x0112a8f6`: PC, CD, local).
+    pub const DEBUG_FIELD: u32 = 0x00c4_4248;
+    pub const DEBUG_ENCOUNTER: u32 = 0x0113_9e44;
+    pub const DEBUG_MASTER: u32 = 0x0112_a8f6;
+    pub const DEBUG_VIDEO_PAL: u32 = 0x0231_13e0;
+
+    /// The console's party buttons: the next joined character up from
+    /// party slot `slot`'s that no other slot holds (0xff past 0x11).
+    fn console_party_up(h: &mut impl Host, slot: u32) {
+        let slots = h.rebase(S_PARTY_SLOT);
+        let mut c: u8 = h.read(at(slots, slot));
+        let chosen = 'outer: loop {
+            c = c.wrapping_add(1);
+            if c >= 0x12 {
+                break 0xff;
+            }
+            if c == 0xff {
+                break 0xff;
+            }
+            if cdecl(h, MS_GET_SAVE_PLY_JOIN, &[u32::from(c)]) == 0 {
+                continue;
+            }
+            for k in 0..3u32 {
+                if k != slot && c == h.read::<u8>(at(slots, k)) {
+                    continue 'outer;
+                }
+            }
+            break c;
+        };
+        cdecl(h, MS_EXCHANGE_SAVE_PARTY, &[u32::from(chosen), slot]);
+    }
+
+    /// The new language of the console's language buttons: `down` the
+    /// first table, else the second; other languages stay.
+    fn console_lang(lang: u32, down: bool) -> u32 {
+        let next: &[(u32, u32)] = if down {
+            &[(2, 4), (4, 1), (5, 2), (3, 5), (0x12, 3), (0, 0x12), (1, 0)]
+        } else {
+            &[(1, 4), (0, 1), (4, 2), (2, 5), (5, 3), (3, 0x12), (0x12, 0)]
+        };
+        next.iter().find(|p| p.0 == lang).map_or(lang, |p| p.1)
+    }
+
+    pub const TK_SET_LANG: u32 = 0x0088_7ca0;
+    pub const MS_GET_KUNI: u32 = 0x0078_2c00;
+    pub const MS_SET_SAVE_CONFIG_ENGLISH: u32 = 0x0078_5ed0;
+    pub const FFX_SET_ASIA_MODE: u32 = 0x0088_7c70;
+
+    /// `Ms_Gui_BattleConsoleProc(win, msg, id)`: the battle console debug
+    /// window's procedure. 0x8001 its buttons (scene, encounter, party,
+    /// master, save/reload/exe, language, video) and auto-repeats;
+    /// 0x8003 closed; 0x8006/0x800a/0x800e the auto-repeats reset;
+    /// 0x8005/0x8009/0x800d a button (steps 1, 10, 100 by the mouse
+    /// button): the field and encounter, the master mode, the battle
+    /// started (EXE, SREL: everything reloaded first), saved
+    /// (`MsDebugEnvSave`), the party slots, the language, PAL, English,
+    /// Asia; 0x8011 its texts. `ebp` is the original's frame (the line
+    /// buffer at `ebp - 0x104`, the region at `- 0x108`). Returns 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn console_proc(h: &mut impl Host, ebp: u32, win: u32, msg: u32, id: u32) -> u32 {
+        const LT: u32 = 0x00b5_5220;
+        const GT: u32 = 0x00b4_8250;
+        let buf = ebp.wrapping_sub(0x104);
+        match msg {
+            0x8001 => {
+                let t = s(h, 0x00b5_5210);
+                cdecl(h, GU_WINDOW_SET_TITLE, &[win, t]);
+                for (bid, label, x) in [
+                    (0x3bu32, LT, 0x1eu32),
+                    (0x3c, GT, 0x60),
+                    (0x3d, LT, 0x74),
+                    (0x3e, GT, 0xbc),
+                    (0x4d, 0x00b3_0da0, 0xd0),
+                    (0x3f, 0x00b5_5224, 0xe4),
+                ] {
+                    let l = s(h, label);
+                    button(h, win, bid, l, [x, 0, 0x12, 8]);
+                }
+                for rep in [0x0113_9e58u32, 0x0113_9e6c, 0x0113_9e80] {
+                    let r = h.rebase(rep);
+                    cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+                }
+                for (bid, label, x) in [
+                    (0x61u32, LT, 4u32),
+                    (0x62, GT, 0x40),
+                    (0x63, LT, 0x56),
+                    (0x64, GT, 0x92),
+                    (0x65, LT, 0xa8),
+                    (0x66, GT, 0xe4),
+                ] {
+                    let l = s(h, label);
+                    button(h, win, bid, l, [x, 0x14, 0x12, 8]);
+                }
+                let m = i32::from(h.read::<i8>(h.rebase(DEBUG_MASTER))) as u32;
+                let l = table_word(h, 0x00c4_424c, m);
+                button(h, win, 0x5e, l, [2, 0x1e, 0x52, 8]);
+                for (bid, label, x) in [
+                    (0x5fu32, 0x00b5_5228u32, 0x5au32),
+                    (0x4d, 0x00b5_5230, 0x90),
+                    (0x3f, 0x00b5_5238, 0xc6),
+                ] {
+                    let l = s(h, label);
+                    button(h, win, bid, l, [x, 0x1e, 0x30, 8]);
+                }
+                let asia = cdecl(h, FFX_GET_ASIA_MODE, &[]);
+                let l = table_word(h, 0x00c4_4258, asia);
+                button(h, win, 0xfa, l, [0x40, 0x28, 0x12, 8]);
+                for (bid, label, x) in [
+                    (0x67u32, LT, 0x56u32),
+                    (0x68, GT, 0x92),
+                    (0x69, LT, 0xa8),
+                    (0x6a, GT, 0xe4),
+                ] {
+                    let l = s(h, label);
+                    button(h, win, bid, l, [x, 0x28, 0x12, 8]);
+                }
+            }
+            0x8003 => set32(h, 0x0113_9ef8, 0),
+            0x8006 | 0x800a | 0x800e => {
+                let rep = match msg {
+                    0x8006 => 0x0113_9e58,
+                    0x800e => 0x0113_9e6c,
+                    _ => 0x0113_9e80,
+                };
+                let r = h.rebase(rep);
+                cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+            }
+            0x8005 | 0x8009 | 0x800d => {
+                let (rep, step) = match msg {
+                    0x8005 => (0x0113_9e58, 1u32),
+                    0x800d => (0x0113_9e6c, 100),
+                    _ => (0x0113_9e80, 10),
+                };
+                let r = h.rebase(rep);
+                if cdecl(h, MS_AUTO_REPEAT_CHECK, &[r, id]) == 0 {
+                    return 0;
+                }
+                console_button(h, msg, id, step);
+            }
+            0x8011 => console_paint(h, ebp, buf, win),
+            _ => {}
+        }
+        0
+    }
+
+    /// A console button (after its auto-repeat).
+    fn console_button(h: &mut impl Host, msg: u32, id: u32, step: u32) {
+        let field = h.rebase(DEBUG_FIELD);
+        let enc = h.rebase(DEBUG_ENCOUNTER);
+        let idle = |h: &_| matches!(Mem::read::<u8>(h, Mem::rebase(h, G_BTL_STATUS)), 0 | 1);
+        let exe = |h: &mut _| {
+            let w = [
+                0,
+                g32(h, DEBUG_FIELD),
+                g32(h, 0x0113_9e48),
+                g32(h, 0x0113_9e4c),
+            ];
+            cdecl(h, MS_BATTLE_EXE, &w);
+        };
+        match id {
+            0x3b | 0x3c => {
+                let v: u32 = h.read(field);
+                h.write(
+                    field,
+                    if id == 0x3b {
+                        v.wrapping_sub(step)
+                    } else {
+                        v.wrapping_add(step)
+                    },
+                );
+            }
+            0x3d | 0x3e => {
+                let v: u32 = h.read(enc);
+                h.write(
+                    enc,
+                    if id == 0x3d {
+                        v.wrapping_sub(step)
+                    } else {
+                        v.wrapping_add(step)
+                    },
+                );
+            }
+            0x5e => {
+                let m = h.rebase(DEBUG_MASTER);
+                if msg == 0x8005 {
+                    let v = i32::from(h.read::<u8>(m).wrapping_add(1) as i8);
+                    h.write(m, (v % 3) as u8);
+                } else {
+                    let v = h.read::<u8>(m).wrapping_sub(1);
+                    h.write(m, if (v as i8) < 0 { 2 } else { v });
+                }
+            }
+            0x5f => {
+                if idle(h) {
+                    let name = h.rebase(0x0231_1400);
+                    cdecl(h, 0x007c_d800, &[name]);
+                }
+            }
+            0x4e => {
+                cdecl(h, 0x0078_6b00, &[]);
+            }
+            0x4d => {
+                if idle(h) {
+                    for f in [
+                        0x007f_f8e0u32,
+                        0x008a_b590,
+                        0x007a_00b0,
+                        0x007b_d5d0,
+                        0x0078_0b40,
+                        0x0079_e630,
+                        0x0078_1d00,
+                        0x0078_2770,
+                        0x0078_1700,
+                        0x0078_2740,
+                        MS_DEBUG_SCENE_WALK,
+                    ] {
+                        cdecl(h, f, &[]);
+                    }
+                    exe(h);
+                }
+            }
+            0x3f => {
+                if idle(h) {
+                    for f in [
+                        0x007f_f8e0u32,
+                        0x008a_b590,
+                        MS_DEBUG_SCENE_WALK,
+                        0x007a_00b0,
+                    ] {
+                        cdecl(h, f, &[]);
+                    }
+                    exe(h);
+                }
+            }
+            0x61 | 0x63 | 0x65 => {
+                let slot = (id - 0x61) / 2;
+                let c = cdecl(h, MS_DEBUG_NEXT_MEMBER, &[slot, u32::MAX]) & 0xff;
+                cdecl(h, MS_EXCHANGE_SAVE_PARTY, &[c, slot]);
+            }
+            0x62 | 0x64 | 0x66 => console_party_up(h, (id - 0x62) / 2),
+            0x67 | 0x68 => {
+                let lang = cdecl(h, TK_GET_LANG, &[]);
+                let new = console_lang(lang, id == 0x67);
+                cdecl(h, TK_SET_LANG, &[new]);
+                let k = cdecl(h, MS_GET_KUNI, &[0]);
+                set32(h, DEBUG_VIDEO_PAL, k);
+            }
+            0x69 | 0x6a => {
+                let v = g32(h, DEBUG_VIDEO_PAL);
+                set32(h, DEBUG_VIDEO_PAL, u32::from(v == 0));
+            }
+            0xe9 | 0xea => {
+                cdecl(h, MS_SET_SAVE_CONFIG_ENGLISH, &[id - 0xe9]);
+            }
+            0xfa => {
+                let a = cdecl(h, FFX_GET_ASIA_MODE, &[]);
+                cdecl(h, FFX_SET_ASIA_MODE, &[a.wrapping_sub(1) & 1]);
+            }
+            _ => {}
+        }
+    }
+
+    pub const MS_DEBUG_SCENE_NAME: u32 = 0x007c_5fc0;
+    pub const MS_STR_COPY_7CF6C0: u32 = 0x007c_f6c0;
+
+    /// The console's 0x8011 texts.
+    fn console_paint(h: &mut impl Host, ebp: u32, buf: u32, win: u32) {
+        let m = i32::from(h.read::<i8>(h.rebase(DEBUG_MASTER))) as u32;
+        let l = table_word(h, 0x00c4_424c, m);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0x5e, l]);
+        let asia = cdecl(h, FFX_GET_ASIA_MODE, &[]);
+        let l = table_word(h, 0x00c4_4258, asia);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0xfa, l]);
+        let e = cdecl(h, MS_GET_SAVE_CONFIG_ENGLISH, &[]);
+        let l: u32 = h.read(h.rebase(0x00c4_4690).wrapping_sub(e.wrapping_shl(2)));
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0xe9, l]);
+        let e = cdecl(h, MS_GET_SAVE_CONFIG_ENGLISH, &[]);
+        let l = table_word(h, 0x00c4_468c, e);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0xea, l]);
+        cdecl(h, MS_DEBUG_SCENE_WALK, &[]);
+        print_xy(h, 2, 1);
+        sprintf(h, buf, 0x00b5_523c, &[]);
+        gu_print(h, buf);
+        print_xy(h, 0x3a, 1);
+        let f = g32(h, DEBUG_FIELD);
+        sprintf(h, buf, 0x00b5_4c6c, &[f]);
+        gu_print(h, buf);
+        print_xy(h, 0x8e, 1);
+        let grp = g32(h, 0x0113_9e98);
+        let n = u32::from(h.read::<u8>(grp)).wrapping_sub(1);
+        let e = g32(h, DEBUG_ENCOUNTER);
+        sprintf(h, buf, 0x00b5_5240, &[e, n]);
+        gu_print(h, buf);
+        print_xy(h, 2, 0xb);
+        cdecl(h, MS_DEBUG_SCENE_NAME, &[1, buf]);
+        gu_print(h, buf);
+        print_xy(h, 0x60, 0xb);
+        let rec = g32(h, 0x0113_9e9c);
+        let c = (u32::from(h.read::<u8>(at(rec, 2))) << 8) + u32::from(h.read::<u8>(at(rec, 1)));
+        let b4 = u32::from(h.read::<u8>(at(rec, 4)));
+        let b_ea0 = u32::from(h.read::<u8>(at(g32(h, 0x0113_9ea0), 1))) & 0xf;
+        let a = u32::from(h.read::<u8>(at(g32(h, 0x0113_9e98), 1)));
+        let g = g32(h, 0x0113_9e48).wrapping_add(1);
+        let fmt = if c & 0x400 != 0 {
+            0x00b5_5248
+        } else {
+            0x00b5_5260
+        };
+        sprintf(h, buf, fmt, &[g, a, c & 0x3ff, b_ea0, b4]);
+        gu_print(h, buf);
+        let slots = h.rebase(S_PARTY_SLOT);
+        for i in 0..3u32 {
+            print_xy(h, 0x1a + 0x52 * i, 0x15);
+            let c: u8 = h.read(at(slots, i));
+            if c == 0xff {
+                sprintf(h, buf, 0x00b5_5278, &[]);
+            } else {
+                let name = table_word(h, 0x00c4_4950, u32::from(c));
+                cdecl(h, MS_STR_COPY_7CF6C0, &[name, buf, 5]);
+            }
+            gu_print(h, buf);
+        }
+        print_xy(h, 2, 0x29);
+        let k = s(h, 0x00b5_5280);
+        gu_print(h, k);
+        let region = ebp.wrapping_sub(0x108);
+        cdecl(h, MS_GET_KUNI, &[region]);
+        print_xy(h, 0x74, 0x29);
+        gu_print(h, region);
+        print_xy(h, 0xbe, 0x29);
+        let v = if g32(h, DEBUG_VIDEO_PAL) == 0 {
+            0x00b5_5288
+        } else {
+            0x00b5_5290
+        };
+        let v = s(h, v);
+        gu_print(h, v);
+    }
+
+    /// `g_DebugChrSel` (`0x0113f8a0`, name ours): the actor the battle
+    /// CHR data windows show.
+    pub const DEBUG_CHR_SEL: u32 = 0x0113_f8a0;
+    pub const MS_GET_PLY_SAVE_NAME: u32 = 0x007d_cec0;
+    pub const MS_PLY_SAVE: u32 = 0x007d_d5e0;
+    pub const MS_SET_FILE_NAME: u32 = 0x007d_ce80;
+    pub const MS_MON_SAVE: u32 = 0x007d_d480;
+    pub const MS_GET_RAM_CHR_MONSTER: u32 = 0x0079_aef0;
+    /// The motion flags the CHR data 1 window toggles, buttons 0xae..0xbe
+    /// in order: a bit of `+0x4ac`, or (0) the byte `+0x41d`/`+0x41b`.
+    pub const CHR1_FLAGS: [(u32, u32); 17] = [
+        (0xae, 1),
+        (0xaf, 2),
+        (0xb0, 4),
+        (0xb1, 8),
+        (0xb2, 0x10),
+        (0xb3, 0x1000),
+        (0xb4, 0x20),
+        (0xb5, 0),
+        (0xb6, 0),
+        (0xb7, 0x100),
+        (0xb8, 0x200),
+        (0xb9, 0x400),
+        (0xba, 0x800),
+        (0xbb, 0x2000),
+        (0xbc, 0x4000),
+        (0xbd, 0x8000),
+        (0xbe, 0x1_0000),
+    ];
+
+    /// The actor selector's step: by 1 with wrap (0..0x1e), or by 10/100
+    /// a jump between the party (0) and the monsters (0x14).
+    fn chr_sel_step(h: &mut impl Host, up: bool, step: u32) {
+        let s = h.rebase(DEBUG_CHR_SEL);
+        let v: i32 = h.read(s);
+        if step != 1 {
+            h.write(s, if v > 0x13 { 0u32 } else { 0x14 });
+            return;
+        }
+        if up {
+            let v = v.wrapping_add(1);
+            h.write(s, if v > 0x1e { 0 } else { v });
+        } else {
+            let v = v.wrapping_sub(1);
+            h.write(s, if v < 0 { 0x1e } else { v });
+        }
+    }
+
+    /// `Ms_Gui_BattleChr1Proc(win, msg, id)`: the battle "CHR data 1"
+    /// window: 0x8001 its buttons (actor, FIT, PLY SV, MON SV, 17 motion
+    /// flags), 0x8003 closed, 0x8006/0x800a/0x800e the auto-repeats
+    /// reset, 0x8005/0x8009/0x800d in battle a button (the actor by 1 or
+    /// between party and monsters, a flag toggled, FIT the motion
+    /// distances truncated to integers, the party or monster saved),
+    /// 0x8011 in battle the flags, the actor's name and file and the
+    /// flags' names. `ebp` is the original's frame (the buffer at `ebp -
+    /// 0x104`). Returns 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn chr1_proc(h: &mut impl Host, ebp: u32, win: u32, msg: u32, id: u32) -> u32 {
+        let buf = ebp.wrapping_sub(0x104);
+        let reps = [0x0113_f8a4u32, 0x0113_f8b8, 0x0113_f8cc];
+        let in_battle = |h: &_| Mem::read::<u8>(h, Mem::rebase(h, G_BTL_STATUS)) != 0;
+        match msg {
+            0x8001 => {
+                let t = s(h, 0x00b5_72a0);
+                cdecl(h, GU_WINDOW_SET_TITLE, &[win, t]);
+                for r in reps {
+                    let r = h.rebase(r);
+                    cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+                }
+                for (bid, label, x, w) in [
+                    (0x61u32, 0x00b5_5220u32, 8u32, 0x12u32),
+                    (0x62, 0x00b4_8250, 0x1e, 0x12),
+                    (0xd5, 0x00b5_72ac, 0xd6, 0x28),
+                    (0xd6, 0x00b5_72b0, 0x102, 0x40),
+                    (0xd7, 0x00b5_72b8, 0x146, 0x40),
+                ] {
+                    let l = s(h, label);
+                    button(h, win, bid, l, [x, 0, w, 8]);
+                }
+                for (i, &(bid, _)) in CHR1_FLAGS.iter().enumerate() {
+                    let l = s(h, S_SPACE);
+                    button(h, win, bid, l, [8, 0x14 + 10 * i as u32, 0x12, 8]);
+                }
+            }
+            0x8003 => set32(h, 0x0113_9f00, 0),
+            0x8006 | 0x800a | 0x800e => {
+                let r = match msg {
+                    0x8006 => reps[0],
+                    0x800a => reps[2],
+                    _ => reps[1],
+                };
+                let r = h.rebase(r);
+                cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+            }
+            0x8005 | 0x8009 | 0x800d => {
+                if !in_battle(h) {
+                    return 0;
+                }
+                let sel = g32(h, DEBUG_CHR_SEL);
+                let a = cdecl(h, MS_GET_CHR, &[sel]);
+                let (rep, step) = match msg {
+                    0x8005 => (reps[0], 1),
+                    0x8009 => (reps[2], 10),
+                    _ => (reps[1], 100),
+                };
+                let r = h.rebase(rep);
+                if cdecl(h, MS_AUTO_REPEAT_CHECK, &[r, id]) == 0 {
+                    return 0;
+                }
+                match id {
+                    0x61 | 0x62 => chr_sel_step(h, id == 0x62, step),
+                    0xae..=0xbe => {
+                        if let Some(&(_, mask)) = CHR1_FLAGS.iter().find(|f| f.0 == id) {
+                            if mask == 0 {
+                                let o = if id == 0xb5 { 0x41d } else { 0x41b };
+                                let b: u8 = h.read(at(a, o));
+                                h.write(at(a, o), b.wrapping_sub(1) & 1);
+                            } else {
+                                let f: u32 = h.read(at(a, 0x4ac));
+                                h.write(at(a, 0x4ac), f ^ mask);
+                            }
+                        }
+                    }
+                    0xd5 => {
+                        for o in [0x4bcu32, 0x4c0, 0x4c8, 0x4d4, 0x4d8, 0x4cc, 0x4d0, 0x4dc] {
+                            let (_, f) = trunc_f32(h, f32_at(h, at(a, o)));
+                            h.write(at(a, o), f);
+                        }
+                    }
+                    0xd6 => {
+                        let name = s(h, 0x00b5_48f0);
+                        cdecl(h, MS_GET_PLY_SAVE_NAME, &[buf, name]);
+                        dbg(h, 0x00b5_72c0, &[buf]);
+                        cdecl(h, MS_PLY_SAVE, &[buf]);
+                    }
+                    0xd7 => {
+                        let sel = g32(h, DEBUG_CHR_SEL);
+                        if (sel as i32) >= 0x14 {
+                            let m: u32 = h.read(at(a, 4));
+                            cdecl(h, MS_SET_FILE_NAME, &[buf, m]);
+                            dbg(h, 0x00b5_72c0, &[buf]);
+                            let m: u32 = h.read(at(a, 4));
+                            let sel = g32(h, DEBUG_CHR_SEL);
+                            cdecl(h, MS_MON_SAVE, &[buf, sel, m]);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            0x8011 => {
+                if !in_battle(h) {
+                    return 0;
+                }
+                let sel = g32(h, DEBUG_CHR_SEL);
+                let a = cdecl(h, MS_GET_CHR, &[sel]);
+                for (bid, mask) in CHR1_FLAGS {
+                    let on = if mask == 0 {
+                        let o = if bid == 0xb5 { 0x41d } else { 0x41b };
+                        h.read::<u8>(at(a, o)) != 0
+                    } else {
+                        h.read::<u32>(at(a, 0x4ac)) & mask != 0
+                    };
+                    let l = table_word(h, 0x00c4_468c, u32::from(on));
+                    cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, bid, l]);
+                }
+                print_xy(h, 0x36, 1);
+                let sel = g32(h, DEBUG_CHR_SEL);
+                let name = table_word(h, 0x00c4_4950, sel);
+                cdecl(h, MS_STR_COPY_7CF6C0, &[name, buf, 0x100]);
+                gu_print(h, buf);
+                print_xy(h, 0x98, 1);
+                let sel = g32(h, DEBUG_CHR_SEL);
+                if cdecl(h, MS_GET_RAM_CHR_MONSTER, &[sel]) == 0 {
+                    let n = u32::from(h.read::<u8>(at(a, 0xc)));
+                    sprintf(h, buf, 0x00b5_72cc, &[n]);
+                } else {
+                    let n = h.read::<u32>(at(a, 4)) & 0x3ff;
+                    sprintf(h, buf, 0x00b5_72d8, &[n]);
+                }
+                gu_print(h, buf);
+                for (i, label) in [
+                    0x00b5_72e4u32,
+                    0x00b5_72f8,
+                    0x00b5_7308,
+                    0x00b5_7320,
+                    0x00b5_7330,
+                    0x00b5_7344,
+                    0x00b5_735c,
+                    0x00b5_736c,
+                    0x00b5_737c,
+                    0x00b5_738c,
+                    0x00b5_73a0,
+                    0x00b5_73b0,
+                    0x00b5_73c0,
+                    0x00b5_73d0,
+                    0x00b5_73e0,
+                    0x00b5_73f4,
+                    0x00b5_7410,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    print_xy(h, 0x20, 0x15 + 10 * i as u32);
+                    let l = s(h, label);
+                    gu_print(h, l);
+                }
+            }
+            _ => {}
+        }
+        0
+    }
 }

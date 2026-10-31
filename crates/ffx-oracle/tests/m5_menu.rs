@@ -7369,3 +7369,184 @@ fn r5b9_pos_parse_token_matches_the_original() {
         }
     });
 }
+
+// ---- round 5, batch 10 (ffx_menu::m5m_n, the battle debug windows' procedures) ----
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b10_console_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_1001);
+        let mut ids: Vec<u32> = (0x3b..=0x6a).collect();
+        ids.extend([0xe9, 0xea, 0xfa, 0x100]);
+        let msgs = [
+            0x8001u32, 0x8003, 0x8006, 0x800a, 0x800e, 0x8011, 0x8002, 0x8000, 0x8012,
+        ];
+        let mut cases: Vec<(u32, u32)> = msgs.iter().map(|&m| (m, 0)).collect();
+        for &id in &ids {
+            for m in [0x8005u32, 0x8009, 0x800d] {
+                cases.push((m, id));
+            }
+        }
+        for round in 0..8u32 {
+            for (ci, &(msg, id)) in cases.iter().enumerate() {
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                let s = t.by_format(
+                    mn::SPRINTF,
+                    1,
+                    &[
+                        (0x00b5_4c6c, 3),
+                        (0x00b5_5240, 4),
+                        (0x00b5_5248, 7),
+                        (0x00b5_5260, 7),
+                    ],
+                    2,
+                    7,
+                );
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                let lang = [0u32, 1, 2, 3, 4, 5, 0x12, 9][(ci + round as usize) % 8];
+                let mut stubs = vec![
+                    (mn::GU_WINDOW_SET_TITLE, false, 2, 0, 0x201),
+                    (mn::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x202),
+                    (mn::GU_WINDOW_SET_BUTTON_TEXT, false, 3, 0, 0x203),
+                    (mn::MS_AUTO_REPEAT_INIT, false, 3, 0, 0x204),
+                    (
+                        mn::MS_AUTO_REPEAT_CHECK,
+                        false,
+                        2,
+                        0,
+                        u32::from(round % 4 != 3),
+                    ),
+                    (mn::FFX_GET_ASIA_MODE, false, 0, 0, rng.below(2)),
+                    (mn::TK_GET_LANG, false, 0, 0, lang),
+                    (mn::TK_SET_LANG, false, 1, 0, 0x205),
+                    (mn::MS_GET_KUNI, false, 1, 0, rng.below(2)),
+                    (mn::MS_GET_SAVE_CONFIG_ENGLISH, false, 0, 0, rng.below(2)),
+                    (mn::MS_SET_SAVE_CONFIG_ENGLISH, false, 1, 0, 0x206),
+                    (mn::FFX_SET_ASIA_MODE, false, 1, 0, 0x207),
+                    (mn::MS_EXCHANGE_SAVE_PARTY, false, 2, 0, 0x208),
+                    (mn::MS_GET_SAVE_PLY_JOIN, false, 1, 0, rng.below(2)),
+                    (mn::MS_DEBUG_NEXT_MEMBER, false, 2, 0, rng.next() | 0x100),
+                    (mn::MS_DEBUG_SCENE_WALK, false, 0, 0, 0x209),
+                    (mn::MS_BATTLE_EXE, false, 4, 0, 0x20a),
+                    (0x007c_d800, false, 1, 0, 0x20b),
+                    (0x0078_6b00, false, 0, 0, 0x20c),
+                    (mn::MS_DEBUG_SCENE_NAME, false, 2, 0, 0x20d),
+                    (mn::MS_STR_COPY_7CF6C0, false, 3, 0, 0x20e),
+                    (mn::GU_PRINT_SET_X, false, 1, 0, 0x20f),
+                    (mn::GU_PRINT_SET_Y, false, 1, 0, 0x210),
+                    (mn::GU_PRINTF, false, 1, 0, 0x211),
+                ];
+                for f in [
+                    0x007f_f8e0u32,
+                    0x008a_b590,
+                    0x007a_00b0,
+                    0x007b_d5d0,
+                    0x0078_0b40,
+                    0x0079_e630,
+                    0x0078_1d00,
+                    0x0078_2770,
+                    0x0078_1700,
+                    0x0078_2740,
+                ] {
+                    stubs.push((f, false, 0, 0, f & 0xfff));
+                }
+                t.stubs(&stubs);
+                // the debug state: field, encounter, master, party, video
+                let v = [rng.word(), rng.word()];
+                t.g32(mn::DEBUG_FIELD, v[0]);
+                t.g32(mn::DEBUG_ENCOUNTER, v[1]);
+                let m = [0u8, 1, 2, 0xff, 0x90][(ci + round as usize) % 5];
+                t.write(t.rebase(mn::DEBUG_MASTER), &[m]);
+                let party: Vec<u8> = (0..3)
+                    .map(|_| [0u8, 3, 0x10, 0x11, 0xff, 7][rng.below(6) as usize])
+                    .collect();
+                t.write(t.rebase(mn::S_PARTY_SLOT), &party);
+                t.g32(mn::DEBUG_VIDEO_PAL, rng.below(2));
+                t.write(t.rebase(mn::G_BTL_STATUS), &[rng.below(3) as u8]);
+                let rec: Vec<u8> = (0..8).map(|_| rng.next() as u8).collect();
+                let rec = t.alloc(&rec);
+                for g in [0x0113_9e98u32, 0x0113_9e9c, 0x0113_9ea0] {
+                    t.g32(g, rec);
+                }
+                let win = rng.word();
+                let args = [win, msg, id];
+                t.check_framed(
+                    &format!("console proc {msg:#x} {id:#x} #{round}"),
+                    0x007c_6110,
+                    Conv::Cdecl,
+                    &args,
+                    0x108,
+                    |mm, ebp| Out::U32(mn::console_proc(mm, ebp, win, msg, id)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn r5b10_chr1_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_1002);
+        let mut ids: Vec<u32> = vec![0x61, 0x62, 0xd5, 0xd6, 0xd7, 0x63, 0xbf];
+        ids.extend(0xae..=0xbe);
+        let msgs = [
+            0x8001u32, 0x8003, 0x8006, 0x800a, 0x800e, 0x8011, 0x8002, 0x8012,
+        ];
+        let mut cases: Vec<(u32, u32)> = msgs.iter().map(|&m| (m, 0)).collect();
+        for &id in &ids {
+            for m in [0x8005u32, 0x8009, 0x800d] {
+                cases.push((m, id));
+            }
+        }
+        for round in 0..4u32 {
+            for &(msg, id) in &cases {
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                let s = t.by_format(mn::SPRINTF, 1, &[(0x00b5_72cc, 3), (0x00b5_72d8, 3)], 2, 7);
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                let index = rng.below(0x20) as u8;
+                let actor = debug_actor(t, &mut rng, 0x600, index, 0);
+                let flags = rng.next();
+                t.w32(actor + 0x4ac, flags);
+                t.stubs(&[
+                    (mn::GU_WINDOW_SET_TITLE, false, 2, 0, 0x201),
+                    (mn::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x202),
+                    (mn::GU_WINDOW_SET_BUTTON_TEXT, false, 3, 0, 0x203),
+                    (mn::MS_AUTO_REPEAT_INIT, false, 3, 0, 0x204),
+                    (mn::MS_AUTO_REPEAT_CHECK, false, 2, 0, u32::from(round != 3)),
+                    (mn::MS_GET_CHR, false, 1, 0, actor),
+                    (mn::MS_GET_PLY_SAVE_NAME, false, 2, 0, 0x205),
+                    (mn::MS_PLY_SAVE, false, 1, 0, 0x206),
+                    (mn::MS_SET_FILE_NAME, false, 2, 0, 0x207),
+                    (mn::MS_MON_SAVE, false, 3, 0, 0x208),
+                    (mn::MS_GET_RAM_CHR_MONSTER, false, 1, 0, rng.below(2)),
+                    (mn::MS_STR_COPY_7CF6C0, false, 3, 0, 0x209),
+                    (mn::DBG_PRINTF, false, 2, 0, 0x20a),
+                    (mn::GU_PRINT_SET_X, false, 1, 0, 0x20f),
+                    (mn::GU_PRINT_SET_Y, false, 1, 0, 0x210),
+                    (mn::GU_PRINTF, false, 1, 0, 0x211),
+                ]);
+                let sel = [0u32, 0x13, 0x14, 0x1e, 5, 0x1d][rng.below(6) as usize];
+                t.g32(mn::DEBUG_CHR_SEL, sel);
+                t.g32(0x0193_ed20, round % 2);
+                t.write(t.rebase(mn::G_BTL_STATUS), &[u8::from(round != 2)]);
+                let win = rng.word();
+                let args = [win, msg, id];
+                t.check_framed(
+                    &format!("chr1 proc {msg:#x} {id:#x} #{round}"),
+                    0x007d_d890,
+                    Conv::Cdecl,
+                    &args,
+                    0x104,
+                    |mm, ebp| Out::U32(mn::chr1_proc(mm, ebp, win, msg, id)),
+                );
+            }
+        }
+    });
+}
