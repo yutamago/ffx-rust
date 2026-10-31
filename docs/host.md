@@ -1263,7 +1263,8 @@ The whole replay suite on the x86_64 `ffx-rust.exe`, through
 (`FFX_HOST_TARGET=x86_64-pc-windows-msvc`, `FFX_REPLAY_SERIAL=1`: one game
 at a time, background, muted), against PC2's own original recordings.
 Overlays with their Rust ports on (above, "Overlays"). The main list in
-2 h 41 min (16:34-19:15), every replay to its end but event-arrival:
+2 h 41 min (16:34-19:15), every replay to its end but event-arrival
+(rerun after the movie fixes, below):
 
 | Replay | Trace events | Screenshots | Overlay calls (Rust / Unicorn) |
 |---|---|---|---|
@@ -1272,16 +1273,23 @@ Overlays with their Rust ports on (above, "Overlays"). The main list in
 | menu-browse | same (2 ranges) | 5 of 5, 0 pixels | - |
 | boot | (none recorded) | 3 of 4; boot-4 the title's Load cursor glow, 27 pixels | - |
 | battle-magic | same (10 ranges) | 3 of 3 (one cursor-glow pixel, allowed) | magic_0481: 729,850 / 2,389 |
-| battle-overdrive | same (14 ranges) | 9 (by eye: `eye` list) | 0390 44,069 / 424; 0595 1,133 / 0; 0604 212,813 / 0; 0309 36,891 / 0 |
+| battle-overdrive | same (14 ranges) | 9 of 9 against `orig/eye`, 0 pixels | 0390 44,069 / 424; 0595 1,133 / 0; 0604 212,813 / 0; 0309 36,891 / 0 |
 | event-besaid | same (9 ranges) | 5 of 5, 0 pixels (shot 4: the cloth race, below) | - |
-| event-cliff | same (8 ranges, sampled 6, 7) | 5 (by eye) | magic_0372: 30,092 / 221 |
+| event-cliff (`realtime`) | same (8 ranges, sampled 6, 7) | 5 (by eye: 1,716-14,699 pixels from the original, whose two runs differ by 383,758-648,872) | magic_0372: 30,092 / 221 |
 | menu-shop | same (7 ranges) | 8 of 8, 0 pixels | - |
 | menu-grid | same (6 ranges) | 9 of 9 (4 cursor-glow pixels, allowed) | - |
 | menu-save | same (14 ranges) | 4 of 6; shots 4 and 6 520 and 574 pixels (the cursor glow, the header band) | - |
 | event-agency | same (11 ranges, sampled 2) | 7 of 7 (4-6 coarse 0.0) | - |
-| event-arrival | first run: a fault after shot 5 (fixed, below); then stalled after shot 6: 4 of 10 ranges the original's, the scene stops before the control comes back (`waitfor` timeout at 2669, below) | 6 of 7 taken (by eye) | magic_0477: 379,887 / 6,680 |
+| event-arrival (`realtime`; after the movie fixes below) | same (10 ranges) | 7 (by eye: 2-5 within 6 pixels of the original; 6, the ball over the beach, shows another phase of the ball's spin and the camera, where the two originals agree; 1 and 7 differ less than the originals between themselves) | magic_0477: 379,887 / 6,680 |
 
-[extra list here]
+The extra list (each replay after the fixes it needed):
+
+| Replay | Trace events | Screenshots | Overlay calls (Rust / Unicorn) |
+|---|---|---|---|
+| battle-ifrit | same (10 ranges) | 4 of 4, 0 pixels | magic_0596: 28,402 / 1,393 |
+| movie-fmv (after the movie fixes) | same (3 ranges) | 4 of 4, 0 pixels | - |
+| iggy-menus | same (4 ranges) | (by eye: `eye` list) | - |
+[settings here]
 
 Rust / Unicorn counts the calls of the overlay's entries (exports and
 addresses its relocations point to) that ran in each; a jump-table
@@ -1311,20 +1319,17 @@ What it found and what was fixed:
   `tools/host-ports.py` did not see either: the reader's address is
   taken inside a trait method the movie crate calls back, and the
   objects' addresses inside `ffx-movie` itself.
-  With both fixed event-arrival no longer faults, but stalls with the
-  ball movie on: after shot 6 the scenario word stops at 20 of the
-  original's 24 changes and Tidus never moves again (`waitfor` for the
-  control timed out at update 2669). movie-fmv (extra list) times out
-  too, at update 264: its `holdfor *0x00cded3c+0xb0 = 30` (the
-  player's queue of decoded frames full, 60 s of host time with the main
-  thread held) never held, so the movie's reading and decoding threads
-  don't fill the queue. **Movies are the open blocker**:
-  ffx-rust.exe's movie player (the reading and decoding threads on the
-  ported demux loop and decoders, the frame queues, the texture update)
-  has not played one through yet; event-arrival and movie-fmv are the
-  replays to work it on (`FFX_HOST_WATCH` on
-  `PVideoPlaybackWin32_DemuxLoop`, `vpx_codec_decode`,
-  `Phyre_PVideo_PVideoPlaybackWin32_updateTexture`).
+  With both fixed event-arrival no longer faulted, but stalled with the
+  ball movie on (the control never came back), and movie-fmv timed out
+  at update 264 in its `holdfor *0x00cded3c+0xb0 = 30` (the player's
+  queue of decoded frames never filled): the decoders handed out Rust
+  addresses too (`ffx_movie::api`: `vpx_codec_get_frame`'s `vpx_image_t`
+  and its planes, `vorbis_synthesis_pcmout`'s channel pointers and
+  samples). In `ffx-host` they are now copied into game blocks from the
+  game's `malloc` (`api::vpx_get_frame_in_game`,
+  `api::vorbis_pcmout_in_game`, one block per decoder, a new one when a
+  frame needs more). With that **movie-fmv passes**: its 3 ranges with
+  the original's events, 4 of 4 shots with 0 pixels.
 - **The cloth race**: below; with `FFX_HARNESS_CLOTH_ORDER=1`
   event-besaid-4 matches the originals.
 - **Still different: the updates before the first trace event.** In
@@ -1552,10 +1557,10 @@ runs past the third frame (the Unicorn abort).
    bit 1 is set; nothing clears it (what should, presumably the motion's
    end, was not traced yet; "The main replay list on PC2"). battle-attack, battle-magic and battle-overdrive need it. The
    menu replays, field-walk and menu-save pass.
-8. **Movies** (host-gate, 2026-10-31): the movie ports handed the game
-   Rust addresses (fixed: "The stage 3 gate on PC2"), but no movie has
-   played through in ffx-rust.exe yet: event-arrival stalls with its
-   texture movie on, movie-fmv times out before its trace.
+8. Done (host-gate, 2026-10-31): **movies**. The movie ports handed the
+   game Rust addresses (the reader's buffer, the parser's objects, the
+   decoded frames and samples); in ffx-host they are game memory now and
+   movie-fmv passes ("The stage 3 gate on PC2").
 9. **Load pacing** (host-gate): `load direct`'s map load takes about 10
    updates fewer than in the hooked original, so free-running timers
    (the title's cursor glow: menu-save-4/-6, boot-4) show another phase;

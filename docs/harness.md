@@ -2138,9 +2138,9 @@ records).
   PC2"); since host-battle (2026-10-31) also the battle replays
   (battle-attack, -magic, -overdrive, -ifrit) and event-besaid with the
   original's trace events (`docs/host.md`, "The battle replays on PC2").
-  The whole suite (2026-10-31, host-gate): every main-list replay with
-  the original's trace events but event-arrival, which stalls on its
-  texture movie (`docs/host.md`, "The stage 3 gate on PC2"). The i686
+  The whole suite (2026-10-31, host-gate): every replay of the main and
+  extra lists with the original's trace events, after the movie ports'
+  host-pointer fixes (`docs/host.md`, "The stage 3 gate on PC2"). The i686
   build still ends a few seconds past its third frame in an abort inside
   Unicorn's 32-bit translator.
 - **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
