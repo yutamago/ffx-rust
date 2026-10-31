@@ -2634,3 +2634,42 @@ fn fam446_start_kind_e() {
         t.check_entry(f, c, &[task], Eax::Checked);
     }
 }
+
+/// The mode set-ups of `magic_0565` and `magic_0644`: each mode, the task
+/// list empty and not.
+#[test]
+fn fam446_mode_setups_565_644() {
+    for (n, rva) in [(565u16, 0x3bb0u32), (644, 0x7bd0)] {
+        let Some(mut t) = twin(n) else { return };
+        let ms = t.at(rva);
+        let take = t.img.rel32_target(ms + 0x64);
+        let owner_res = SCRATCH + 0x880;
+        t.set_u32(t.img.word(ms + 0x12), owner_res);
+        t.write(owner_res, &[0; 0x40]);
+        t.set_u32(owner_res + 0x28, 0x0e5e_0028);
+        t.set_u32(owner_res + 0x2c, 0x0e5e_002c);
+        let head = t.img.word(ms + 0x6a);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(ms + 0x3), block);
+        let mode_at = t.img.word(ms + 0x9);
+        for mode in [0u32, 1, 2] {
+            for listed in [false, true] {
+                free_ring(&mut t, take, SCRATCH + 0x1000, 2);
+                t.write(block + 0x5800, &[0x3c; 0x400]);
+                if listed {
+                    t.write(SCRATCH + 0x1400, &[0x22; 0x1c]);
+                    t.set_u32(head, SCRATCH + 0x1400);
+                    t.set_u32(t.img.word(ms + 0x7a), SCRATCH + 0x1400);
+                } else {
+                    t.set_u32(head, 0);
+                }
+                t.set_u32(block + mode_at, mode);
+                let c = Call {
+                    eax: 0x00ea_0000 + mode,
+                    ..Call::default()
+                };
+                t.check_entry(ms, c, &[], Eax::Checked);
+            }
+        }
+    }
+}

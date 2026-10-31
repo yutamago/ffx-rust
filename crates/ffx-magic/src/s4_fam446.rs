@@ -609,22 +609,49 @@ pub const START_UP: Sig = Sig {
 pub fn mode_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
+    // the block's fields are the displacements of the instructions
+    // (`magic_0446`: mode `+0x5c04`, sprite `+0x59b0`, owner `+0x24`)
     let block = g.read::<u32>(w(0x3));
+    let mode = w(0x9);
     let mut eax = fr.eax;
-    if g.read::<u32>(block + 0x5c04) == 0 {
-        let res = g.read::<u32>(g.read::<u32>(w(0x12)).wrapping_add(0x24));
-        eax = crate::sb_misc::sprite_init(g, block + 0x59b0, res);
-        g.write::<u32>(block + 0x5bd8, 0x10);
-        g.write::<u32>(block + 0x5bcc, 0x3f80_0000);
-        g.write::<u32>(block + 0x5bc8, 0x3f00_0000);
-        g.write::<u8>(block + 0x5bbf, 0x40);
+    if g.read::<u32>(block + mode) == 0 {
+        let owner_off = w(0x19) & 0xff;
+        let res = g.read::<u32>(g.read::<u32>(w(0x12)).wrapping_add(owner_off));
+        eax = crate::sb_misc::sprite_init(g, block + w(0x1c), res);
+        g.write::<u32>(block + w(0x27), 0x10);
+        g.write::<u32>(block + w(0x31), 0x3f80_0000);
+        g.write::<u32>(block + w(0x3b), 0x3f00_0000);
+        g.write::<u8>(block + w(0x45), 0x40);
     }
-    if g.read::<u32>(block + 0x5c04) == 1 {
+    if g.read::<u32>(block + w(0x4d)) == 1 {
         return Ret::eax(eax);
     }
-    g.write::<u32>(block + 0x5c00, 0x71);
+    g.write::<u32>(block + w(0x5b), 0x71);
     Ret::eax(new_task(g, img, f, 0x64, w(0x55), None, (0x6a, 0x7a)))
 }
+
+/// [`mode_setup`] in `magic_0644` (mode `+0x5ad4`, sprite `+0x5880`,
+/// owner `+0x2c`).
+pub const MODE_SETUP_644: Sig = Sig {
+    len: 162,
+    hash: 0x0ea8_b9e1_262c_4a33,
+    calls: &[
+        (0x21, Callee::Sig(&crate::sb_misc::SPRITE_INIT)),
+        (0x64, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
+
+/// [`mode_setup`] in `magic_0565` (owner `+0x28`).
+pub const MODE_SETUP_565: Sig = Sig {
+    len: 162,
+    hash: 0x41f4_9425_5b7f_aae2,
+    calls: &[
+        (0x21, Callee::Sig(&crate::sb_misc::SPRITE_INIT)),
+        (0x64, Callee::Sig(&TAKE)),
+    ],
+    imports: &[],
+};
 
 /// [`mode_setup`].
 pub const MODE_SETUP: Sig = Sig {
