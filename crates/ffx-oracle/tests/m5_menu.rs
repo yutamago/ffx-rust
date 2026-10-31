@@ -7550,3 +7550,234 @@ fn r5b10_chr1_proc_matches_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b10_info_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_1003);
+        let msgs = [0x8001u32, 0x8003, 0x8006, 0x800a, 0x8002, 0x8012];
+        let mut cases: Vec<(u32, u32, u32)> = msgs.iter().map(|&m| (m, 0, 0)).collect();
+        for page in 0..5u32 {
+            cases.push((0x8011, 0, page));
+        }
+        for id in [5u32, 6, 0x35, 0x3a, 7, 0x3b] {
+            for m in [0x8005u32, 0x8009] {
+                for page in 0..4u32 {
+                    cases.push((m, id, page));
+                }
+            }
+        }
+        for round in 0..6u32 {
+            for (ci, &(msg, id, page)) in cases.iter().enumerate() {
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                let fmts = [
+                    (0x00b5_5e18u32, 14u32),
+                    (0x00b5_5e54, 4),
+                    (0x00b5_5e5c, 4),
+                    (0x00b5_5e64, 4),
+                    (0x00b5_5e78, 4),
+                    (0x00b5_5e80, 4),
+                    (0x00b5_5e88, 4),
+                    (0x00b5_5e90, 6),
+                    (0x00b5_5ea4, 6),
+                    (0x00b5_5eb0, 6),
+                    (0x00b5_5ec4, 6),
+                    (0x00b5_5ed4, 6),
+                    (0x00b5_5ee8, 6),
+                    (0x00b5_5f08, 3),
+                    (0x00b5_5f10, 8),
+                    (0x00b5_5f38, 4),
+                    (0x00b5_5f40, 4),
+                    (0x00b5_5f48, 4),
+                    (0x00b5_5f50, 4),
+                    (0x00b5_5f58, 4),
+                    (0x00b5_5f68, 4),
+                    (0x00b5_5f78, 4),
+                ];
+                let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, 7);
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                let gp = t.by_format(mn::GU_PRINTF, 0, &[(0x00b5_5e74, 1)], 2, 0x211);
+                t.jump(mn::GU_PRINTF, gp);
+                debug_cameras(t, &mut rng);
+                let wins: Vec<u8> = (0..0x40 * 4).map(|_| rng.next() as u8).collect();
+                let wins = t.alloc(&wins);
+                for k in 0..4u32 {
+                    t.g32(
+                        mn::INFO_WINS + 4 * k,
+                        if ci % 7 == 3 && k == 0 {
+                            0
+                        } else {
+                            wins + 0x40 * k
+                        },
+                    );
+                }
+                let screen: Vec<u8> = (0..0xe0 / 4)
+                    .flat_map(|_| debug_float(&mut rng).to_le_bytes())
+                    .collect();
+                let screen = t.alloc(&screen);
+                t.g32(mn::G_BTL_SCREEN, screen);
+                t.g32(mn::INFO_PAGE, page);
+                t.g32(mn::INFO_BLINK, rng.next());
+                t.g32(mn::DEBUG_CAMERA_KEEP, rng.below(2));
+                for sym in [mn::INFO_ROLL, mn::INFO_DEPTH, 0x0113_701c] {
+                    let v = debug_float(&mut rng);
+                    t.g32(sym, v);
+                }
+                let pad = [8u32, 2, 0xf000 | 8, 0xa002, 0, rng.next()][(ci + round as usize) % 6];
+                t.stubs(&[
+                    (mn::GU_WINDOW_SET_TITLE, false, 2, 0, 0x201),
+                    (mn::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x202),
+                    (mn::GU_WINDOW_SET_BUTTON_TEXT, false, 3, 0, 0x203),
+                    (mn::MS_AUTO_REPEAT_INIT, false, 3, 0, 0x204),
+                    (
+                        mn::MS_AUTO_REPEAT_CHECK,
+                        false,
+                        2,
+                        0,
+                        u32::from(round % 3 != 2),
+                    ),
+                    (mn::MS_CAMERA_GET_NUM, false, 1, 0, rng.below(4)),
+                    (mn::MS_CAMERA_GET_ID, false, 1, 0, rng.word()),
+                    (mn::MS_DEBUG_CAMERA_KEEP, false, 1, 0, rng.below(3)),
+                    (mn::MS_DEBUG_GET_CAMERA_MODE, false, 1, 0, rng.below(8)),
+                    (mn::MS_INFO_WINS_INIT, false, 0, 0, 0x205),
+                    (mn::MS_INFO_WIN_SET, false, 3, 0, 0x206),
+                    (
+                        mn::MS_CAMERA_KIND_CHAR,
+                        false,
+                        1,
+                        0,
+                        [0x4du32, 0xffff_ffad, 0x1234_5662][rng.below(3) as usize],
+                    ),
+                    (mn::TK_GET_CONTROLER_HIST, false, 3, 0, pad),
+                    (mn::MS_BATTLE_GET_STATUS, false, 0, 0, rng.below(2)),
+                    (mn::MS_BATTLE_SPECIAL_CAMERA_KIND, false, 1, 0, rng.word()),
+                    (mn::MS_MOVE_TARGET_POS, false, 0, 0, 0x207),
+                    (mn::ADDR_OF_0113ED18, false, 0, 0, 0x208),
+                    (mn::ADDR_OF_0113ED28, false, 0, 0, 0x209),
+                    (mn::MS_VECTOR_RECT2_POLAR, false, 5, 0, 0x20a),
+                    (mn::TK_REMOVE, false, 1, 0, 0x20b),
+                    (mn::DBG_PRINTF, false, 2, 0, 0x20c),
+                    (mn::GU_PRINT_SET_X, false, 1, 0, 0x20f),
+                    (mn::GU_PRINT_SET_Y, false, 1, 0, 0x210),
+                ]);
+                // the frame's polar form below the buffer: 0 in both (the
+                // page reads it before this call writes it)
+                let ebp = t.frame_ebp(3);
+                t.write(ebp - 0x120, &[0; 0x20]);
+                let win = rng.word();
+                let args = [win, msg, id];
+                t.check_framed(
+                    &format!("info proc {msg:#x} {id:#x} page {page} #{round}"),
+                    0x007c_fcd0,
+                    Conv::Cdecl,
+                    &args,
+                    0x104,
+                    |mm, ebp| Out::U32(mn::info_proc(mm, ebp, win, msg, id)),
+                );
+            }
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b11_map_data_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_1101);
+        let msgs = [
+            0x8001u32, 0x8003, 0x8006, 0x800a, 0x800e, 0x8011, 0x8002, 0x8012,
+        ];
+        let mut cases: Vec<(u32, u32)> = msgs.iter().map(|&m| (m, 0)).collect();
+        let mut ids: Vec<u32> = vec![
+            5, 6, 0x33, 0x20, 0x19, 0x1a, 0x1b, 0x1c, 0x37, 0x38, 0x39, 7, 0x3a,
+        ];
+        ids.extend(0xb..=0x18);
+        ids.extend([0x23, 0x24]);
+        for &id in &ids {
+            for m in [0x8005u32, 0x8009, 0x800d] {
+                cases.push((m, id));
+            }
+        }
+        for round in 0..6u32 {
+            for (ci, &(msg, id)) in cases.iter().enumerate() {
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                trig_patch(t);
+                let fmts = [(0x00b5_6378u32, 4u32), (0x00b5_6334, 4), (0x00b5_5240, 4)];
+                let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, 7);
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                debug_cameras(t, &mut rng);
+                let cnt = [0u32, 1, 2, 5, 32][(ci + round as usize) % 5];
+                t.g32(mn::CAMERA_KEEP_BLOCK, cnt);
+                let cur = [0u32, 1, 4, 31, 0x20, 0x1e][(ci / 5 + round as usize) % 6];
+                t.g32(mn::KEEP_CUR, cur);
+                let keeps: Vec<u8> = (0..0x30 * 33)
+                    .flat_map(|_| debug_float(&mut rng).to_le_bytes())
+                    .collect();
+                let at = t.rebase(mn::KEEPS);
+                t.write(at, &keeps);
+                for sym in [
+                    0x0113_ed64u32,
+                    0x0113_ed68,
+                    0x0113_ed6c,
+                    0x0113_ed70,
+                    0x0113_ed74,
+                    0x0113_f3ac,
+                ] {
+                    let v = if rng.chance(4) {
+                        (-(rng.below(9) as f32)).to_bits()
+                    } else {
+                        debug_float(&mut rng)
+                    };
+                    t.g32(sym, v);
+                }
+                // the weight: also exactly 0 and -0
+                let w = [0u32, 0x8000_0000, 0xbf80_0000][(ci + round as usize / 2) % 3];
+                if round % 2 == 1 {
+                    t.g32(0x0113_ed74, w);
+                }
+                t.write(t.rebase(0x0112_a8e1), &[rng.below(2) as u8]);
+                t.g32(0x0193_ed20, round % 2);
+                t.stubs(&[
+                    (mn::GU_WINDOW_SET_TITLE, false, 2, 0, 0x201),
+                    (mn::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x202),
+                    (mn::GU_WINDOW_SET_BUTTON_TEXT, false, 3, 0, 0x203),
+                    (mn::MS_AUTO_REPEAT_INIT, false, 3, 0, 0x204),
+                    (mn::MS_AUTO_REPEAT_CHECK, false, 2, 0, u32::from(round != 3)),
+                    (mn::MS_CAMERA_GET_NUM, false, 1, 0, rng.below(4)),
+                    (mn::MS_CAMERA_GET_ID, false, 1, 0, rng.word()),
+                    (mn::MS_DEBUG_CAMERA_KEEP, false, 1, 0, rng.below(3)),
+                    (mn::MS_DEBUG_CAMERA_KEEP_ADD, false, 0, 0, 0x205),
+                    (mn::MS_DEBUG_CAMERA_COPY, false, 0, 0, 0x206),
+                    (mn::MS_DEBUG_KEEP_WINDOWS, false, 1, 0, 0x207),
+                    (mn::MS_DEBUG_CAMERA_APPLY, false, 1, 0, 0x208),
+                    (mn::MS_DEBUG_OUT_CAMERA, false, 0, 0, 0x209),
+                    (mn::MS_DEBUG_CAMERA_POLAR, false, 4, 0, 0x20a),
+                    (mn::MS_DEBUG_CAMERA_KEEP_LOAD, false, 0, 0, 0x20b),
+                    (mn::GU_PRINT_SET_X, false, 1, 0, 0x20f),
+                    (mn::GU_PRINT_SET_Y, false, 1, 0, 0x210),
+                    (mn::GU_PRINTF, false, 2, 0, 0x211),
+                ]);
+                let win = rng.word();
+                let args = [win, msg, id];
+                t.check_framed(
+                    &format!("map data proc {msg:#x} {id:#x} #{round}"),
+                    0x007d_5480,
+                    Conv::Cdecl,
+                    &args,
+                    0x104,
+                    |mm, ebp| {
+                        Out::U32(mn::map_data_proc(mm, &mut trig_stand_in, ebp, win, msg, id))
+                    },
+                );
+            }
+        }
+    });
+}

@@ -715,4 +715,18 @@ ported! {
         let ebp = fr.at().wrapping_add(0x108);
         mn::chr1_proc(&mut mem(), ebp, win, msg, id)
     }
+    // ---- round 5 (mbs-static), batch 11 (ffx_menu::m5m_n) ----
+    /// `(win, msg, id)`: the window procedure; the buffer and the polar
+    /// form in a frame (the original's `ebp - 0x120..`).
+    Ms_Gui_InfoProc @ 0x007c_fcd0 => extern "C" fn ms_gui_info_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x120 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x120);
+        mn::info_proc(&mut mem(), ebp, win, msg, id)
+    }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_MapDataProc @ 0x007d_5480 => extern "C" fn ms_gui_map_data_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x114 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x114);
+        mn::map_data_proc(&mut mem(), &mut crt_trig, ebp, win, msg, id)
+    }
 }

@@ -4451,4 +4451,775 @@ pub mod bridge {
         }
         0
     }
+
+    pub const MS_DEBUG_CAMERA_KEEP: u32 = 0x007c_8c50;
+    pub const MS_INFO_WINS_INIT: u32 = 0x007c_fca0;
+    pub const MS_INFO_WIN_SET: u32 = 0x007c_fba0;
+    pub const MS_CAMERA_KIND_CHAR: u32 = 0x007c_faa0;
+    pub const TK_GET_CONTROLER_HIST: u32 = 0x0088_8d70;
+    pub const MS_BATTLE_GET_STATUS: u32 = 0x0078_16f0;
+    pub const MS_BATTLE_SPECIAL_CAMERA_KIND: u32 = 0x0079_dd70;
+    pub const MS_MOVE_TARGET_POS: u32 = 0x007a_b160;
+    pub const ADDR_OF_0113ED18: u32 = 0x007d_2420;
+    pub const ADDR_OF_0113ED28: u32 = 0x007d_2410;
+    pub const G_BTL_SCREEN: u32 = 0x0231_14c0;
+    /// The info window's shown roll (degrees) and screen depth
+    /// (`0x0113e4d0`, `0x0113e4d4`), its page (`0x0113e4d8`, 0-3), its
+    /// blink counter (`0x0113e4cc`), its four windows (`0x0113e494..`).
+    pub const INFO_ROLL: u32 = 0x0113_e4d0;
+    pub const INFO_DEPTH: u32 = 0x0113_e4d4;
+    pub const INFO_PAGE: u32 = 0x0113_e4d8;
+    pub const INFO_BLINK: u32 = 0x0113_e4cc;
+    pub const INFO_WINS: u32 = 0x0113_e494;
+
+    /// `Gu_Printf(fmt, word)`.
+    fn gu_printf(h: &mut impl Host, fmt: u32, word: u32) {
+        let f = h.rebase(fmt);
+        cdecl(h, GU_PRINTF, &[f, word]);
+    }
+
+    /// A `sprintf` of doubles printed with `Gu_Printf(line_fmt, buf)` at
+    /// `(x, y)` (`y` none: only `x` set).
+    fn info_line(
+        h: &mut impl Host,
+        buf: u32,
+        x: u32,
+        y: Option<u32>,
+        fmt: u32,
+        vals: &[f64],
+        line_fmt: u32,
+    ) {
+        cdecl(h, GU_PRINT_SET_X, &[x]);
+        if let Some(y) = y {
+            cdecl(h, GU_PRINT_SET_Y, &[y]);
+        }
+        sprintf_f(h, buf, fmt, &[], vals);
+        gu_printf(h, line_fmt, buf);
+    }
+
+    /// `Ms_Gui_InfoProc(win, msg, id)`: the battle camera info window:
+    /// first the shown roll and depth refreshed from the debug camera;
+    /// 0x8001 title, buttons (keep, mode, page, OUT), auto-repeats and the
+    /// four info windows; 0x8003 closed (its windows freed);
+    /// 0x8006/0x800a the auto-repeats reset; 0x8005/0x8009 a button
+    /// (OUT: the camera's positions written as script, the keep stepped,
+    /// the keep flag toggled, the next page); 0x8011 its page (0 the
+    /// reference and camera positions and kinds, 1 the screen's sizes
+    /// moved by the pad, 2 focus and ids, 3 offsets) and the reference
+    /// windows, depth and roll. `ebp` is the original's frame (the
+    /// buffer at `ebp - 0x104`, the polar form at `- 0x114`, `- 0x110`,
+    /// `- 0x11c`). Returns 0.
+    // the original compares the shown values exactly (`fucomp`)
+    #[allow(clippy::too_many_lines, clippy::float_cmp)]
+    pub fn info_proc(h: &mut impl Host, ebp: u32, win: u32, msg: u32, id: u32) -> u32 {
+        let buf = ebp.wrapping_sub(0x104);
+        let (th, ph, ln) = (
+            ebp.wrapping_sub(0x114),
+            ebp.wrapping_sub(0x110),
+            ebp.wrapping_sub(0x11c),
+        );
+        let screen = g32(h, DEBUG_SCREEN);
+        let cam = u32::from(h.read::<u8>(at(h.rebase(DEBUG_CAMERA), screen.wrapping_mul(0x1c0))));
+        let num = cdecl(h, MS_CAMERA_GET_NUM, &[cam]);
+        let keep = cdecl(h, MS_DEBUG_CAMERA_KEEP, &[0]);
+        let c = cam.wrapping_mul(0xda0);
+        let cf = |h: &_, sym: u32| f32_at(h, at(Mem::rebase(h, sym), c));
+        let roll = deg(h, cf(h, 0x0113_81d0));
+        if f32_at(h, h.rebase(INFO_ROLL)) != roll {
+            set32(h, INFO_ROLL, x87::store(roll));
+        }
+        if cf(h, 0x0113_81dc) != f32_at(h, h.rebase(INFO_DEPTH)) {
+            let v = fcopy(h.read(at(h.rebase(0x0113_81dc), c)));
+            set32(h, INFO_DEPTH, v);
+        }
+        let reps = [0x0113_e4a4u32, 0x0113_e4b8];
+        match msg {
+            0x8001 => {
+                let t = s(h, 0x00b5_5e08);
+                cdecl(h, GU_WINDOW_SET_TITLE, &[win, t]);
+                let k = g32(h, DEBUG_CAMERA_KEEP);
+                let l = table_word(h, 0x00c4_468c, k);
+                set32(h, INFO_PAGE, 0);
+                button(h, win, 0x35, l, [0xe0, 0x1e, 0xe, 8]);
+                let l = table_word(h, 0x00c4_4264, keep);
+                button(h, win, 6, l, [0xf4, 0x1e, 0x30, 8]);
+                let l = s(h, S_SPACE);
+                button(h, win, 0x3a, l, [0x126, 0x1e, 6, 8]);
+                let l = s(h, 0x00b5_5e14);
+                button(h, win, 5, l, [0x12e, 0x1e, 0x30, 8]);
+                for r in reps {
+                    let r = h.rebase(r);
+                    cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+                }
+                let roll = deg(h, cf(h, 0x0113_81d0));
+                set32(h, INFO_ROLL, x87::store(roll));
+                let v = fcopy(h.read(at(h.rebase(0x0113_81dc), c)));
+                set32(h, INFO_DEPTH, v);
+                cdecl(h, MS_INFO_WINS_INIT, &[]);
+            }
+            0x8003 => {
+                set32(h, 0x0113_9ee0, 0);
+                for k in 0..4u32 {
+                    let g = INFO_WINS + 4 * k;
+                    let w = g32(h, g);
+                    h.write(at(w, 0x20), 0u8);
+                    set32(h, g, 0);
+                }
+            }
+            0x8006 | 0x800a => {
+                let r = h.rebase(if msg == 0x8006 { reps[0] } else { reps[1] });
+                cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 3]);
+            }
+            0x8005 | 0x8009 => {
+                let r = h.rebase(if msg == 0x8005 { reps[0] } else { reps[1] });
+                if cdecl(h, MS_AUTO_REPEAT_CHECK, &[r, id]) == 0 {
+                    return 0;
+                }
+                match id {
+                    5 => {
+                        let v = at(h.rebase(0x0113_7bdc), c);
+                        let r: u32 = h.read(at(h.rebase(0x0113_7c18), c));
+                        cdecl(h, MS_VECTOR_RECT2_POLAR, &[v, r, th, ph, ln]);
+                        let vals = [
+                            cf(h, 0x0113_7590),
+                            cf(h, 0x0113_7594),
+                            cf(h, 0x0113_7598),
+                            cf(h, 0x0113_7bac),
+                            cf(h, 0x0113_7bb0),
+                            cf(h, 0x0113_7bb4),
+                        ];
+                        sprintf_f(h, buf, 0x00b5_5e18, &[], &vals);
+                        cdecl(h, TK_REMOVE, &[buf]);
+                        dbg(h, S_FMT_S, &[buf]);
+                    }
+                    6 => {
+                        let step = if msg == 0x8005 { 1 } else { u32::MAX };
+                        cdecl(h, MS_DEBUG_CAMERA_KEEP, &[step]);
+                    }
+                    0x35 => {
+                        let k = g32(h, DEBUG_CAMERA_KEEP);
+                        set32(h, DEBUG_CAMERA_KEEP, k.wrapping_sub(1) & 1);
+                    }
+                    0x3a => {
+                        let p = g32(h, INFO_PAGE).wrapping_add(1);
+                        set32(h, INFO_PAGE, if (p as i32) > 3 { 0 } else { p });
+                    }
+                    _ => {}
+                }
+            }
+            0x8011 => info_paint(h, buf, win, keep, num, c, [th, ph, ln]),
+            _ => {}
+        }
+        0
+    }
+
+    /// The info window's 0x8011 page and footer.
+    #[allow(clippy::too_many_lines)]
+    fn info_paint(
+        h: &mut impl Host,
+        buf: u32,
+        win: u32,
+        keep: u32,
+        num: u32,
+        c: u32,
+        polar: [u32; 3],
+    ) {
+        const LINE: u32 = 0x00b1_2ad0;
+        let k = g32(h, DEBUG_CAMERA_KEEP);
+        let l = table_word(h, 0x00c4_468c, k);
+        let b = g32(h, INFO_BLINK);
+        set32(h, INFO_BLINK, b.wrapping_add(1));
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0x35, l]);
+        let l = table_word(h, 0x00c4_4264, keep);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 6, l]);
+        let mut y = 1u32;
+        let cf = |h: &_, sym: u32, o: u32| f32_at(h, at(at(Mem::rebase(h, sym), c), o));
+        let scr = |h: &_| g32(h, G_BTL_SCREEN);
+        match g32(h, INFO_PAGE) {
+            0 => {
+                for side in 0..2u32 {
+                    let so = side.wrapping_mul(0x61c);
+                    cdecl(h, GU_PRINT_SET_X, &[2]);
+                    if side == 0 {
+                        cdecl(h, GU_PRINT_SET_Y, &[y]);
+                        let m = cdecl(h, MS_DEBUG_GET_CAMERA_MODE, &[0]);
+                        let t = table_word(h, 0x00c4_4640, m);
+                        gu_printf(h, 0x00b5_5e44, t);
+                    } else {
+                        cdecl(h, GU_PRINT_SET_Y, &[0xb]);
+                        let m = cdecl(h, MS_DEBUG_GET_CAMERA_MODE, &[1]);
+                        let t = table_word(h, 0x00c4_4640, m);
+                        gu_printf(h, 0x00b5_5e4c, t);
+                    }
+                    for (x, fmt, o) in [
+                        (0x50u32, 0x00b5_5e54u32, 0u32),
+                        (0xaa, 0x00b5_5e5c, 4),
+                        (0x104, 0x00b5_5e64, 8),
+                    ] {
+                        let v = cf(h, 0x0113_7580, so + o);
+                        info_line(h, buf, x, Some(y), fmt, &[v], LINE);
+                    }
+                    let w = g32(h, INFO_WINS);
+                    if side == 0 && w != 0 {
+                        let blink = g32(h, INFO_BLINK) & 1 != 0;
+                        h.write(at(w, 0x21), 1u8);
+                        for o in [0u32, 4, 8] {
+                            let v = fcopy(h.read(at(at(h.rebase(0x0113_7580), c), o)));
+                            let w = g32(h, INFO_WINS);
+                            h.write(at(w, o), v);
+                        }
+                        let w = g32(h, INFO_WINS);
+                        h.write(at(w, 0x22), 2u8);
+                        let rgb = if blink {
+                            [0xcdu32, 0xcd, 0xff]
+                        } else {
+                            [0xbc, 0xbc, 0xe4]
+                        };
+                        for (i, v) in rgb.into_iter().enumerate() {
+                            let w = g32(h, INFO_WINS);
+                            h.write(at(w, 0x28 + 4 * i as u32), v);
+                        }
+                    }
+                    y += 10;
+                }
+                print_xy(h, 2, y);
+                sprintf(h, buf, 0x00b5_5e6c, &[]);
+                gu_printf(h, LINE, buf);
+                let mut p = at(h.rebase(0x0113_81ac), c);
+                let mut x = 0x17u32;
+                while x < 0x47 {
+                    print_xy(h, x - 1, y);
+                    let kind = u32::from(h.read::<u16>(p.wrapping_sub(2))) & 0xff;
+                    let ch = i32::from(cdecl(h, MS_CAMERA_KIND_CHAR, &[kind]) as u8 as i8) as u32;
+                    gu_printf(h, 0x00b5_5e70, ch);
+                    if h.read::<u8>(p) == 0 {
+                        print_xy(h, x, y);
+                        gu_printf(h, 0x00b5_5e70, ch);
+                    }
+                    p = at(p, 8);
+                    x += 0xc;
+                }
+                print_xy(h, num.wrapping_mul(12).wrapping_add(0x16), y + 2);
+                let u = s(h, 0x00b5_5e74);
+                gu_print(h, u);
+                // junk read: [ebp-0x114], [ebp-0x110], [ebp-0x11c] never
+                // written in this call (the polar form comes later); the
+                // shim's frame is zeroed, so 0 (brief 2026-10-24)
+                cdecl(h, GU_PRINT_SET_X, &[0x50]);
+                cdecl(h, GU_PRINT_SET_Y, &[y]);
+                let t = x87::store(deg(h, f32_at(h, polar[0])));
+                let lim = f32_at(h, h.rebase(0x00b5_5f80));
+                let t = if x87::load(t) < lim {
+                    x87::load(x87::store(x87::add(x87::load(t), f64_at(h, 0x00b4_8380))))
+                } else {
+                    x87::load(t)
+                };
+                sprintf_f(h, buf, 0x00b5_5e78, &[], &[t]);
+                gu_printf(h, LINE, buf);
+                let v = deg(h, f32_at(h, polar[1]));
+                info_line(h, buf, 0xaa, Some(y), 0x00b5_5e80, &[v], LINE);
+                let v = f32_at(h, polar[2]);
+                info_line(h, buf, 0x104, Some(y), 0x00b5_5e88, &[v], LINE);
+            }
+            1 => {
+                let pad = cdecl(h, TK_GET_CONTROLER_HIST, &[0, 0, 0]) & 0xffff;
+                print_xy(h, 2, 1);
+                let g = scr(h);
+                let v = [f32_at(h, at(g, 0x10)), f32_at(h, at(g, 0x14))];
+                sprintf_f(h, buf, 0x00b5_5e90, &[], &v);
+                gu_printf(h, S_FMT_S, buf);
+                let step = if pad & 8 != 0 {
+                    Some(1.0)
+                } else if pad & 2 != 0 {
+                    Some(f32_at(h, h.rebase(0x00b9_2318)))
+                } else {
+                    None
+                };
+                if let Some(st) = step {
+                    let st = x87::load(x87::store(st));
+                    for (bit, o, sub) in [
+                        (0x8000u32, 0x20u32, false),
+                        (0x2000, 0x20, true),
+                        (0x1000, 0x24, false),
+                        (0x4000, 0x24, true),
+                    ] {
+                        if pad & bit != 0 {
+                            let g = scr(h);
+                            let f = f32_at(h, at(g, o));
+                            let v = if sub {
+                                x87::sub(f, st)
+                            } else {
+                                x87::add(f, st)
+                            };
+                            h.write(at(g, o), x87::store(v));
+                        }
+                    }
+                }
+                for (x, y, fmt, o) in [
+                    (0xc4u32, 1u32, 0x00b5_5ea4u32, 0x20u32),
+                    (2, 0xb, 0x00b5_5eb0, 0x40),
+                    (0xc4, 0xb, 0x00b5_5ec4, 0x48),
+                    (2, 0x15, 0x00b5_5ed4, 0x50),
+                    (0xc4, 0x15, 0x00b5_5ec4, 0x58),
+                ] {
+                    let g = scr(h);
+                    let v = [f32_at(h, at(g, o)), f32_at(h, at(g, o + 4))];
+                    info_line(h, buf, x, Some(y), fmt, &v, S_FMT_S);
+                }
+                y = 0x15;
+            }
+            2 => {
+                print_xy(h, 2, 1);
+                let g = scr(h);
+                let w: Vec<u32> = [0xccu32, 0xd0, 0xd8, 0xd4]
+                    .iter()
+                    .map(|&o| Mem::read(h, at(g, o)))
+                    .collect();
+                // call width: 6 (the buffer, the format, four words)
+                sprintf(h, buf, 0x00b5_5ee8, &w);
+                gu_printf(h, S_FMT_S, buf);
+                print_xy(h, 2, 0xb);
+                let id = cdecl(h, MS_CAMERA_GET_ID, &[0]);
+                sprintf(h, buf, 0x00b5_5f08, &[id]);
+                gu_printf(h, S_FMT_S, buf);
+                print_xy(h, 2, 0x15);
+                let a = i32::from(h.read::<i8>(h.rebase(0x0112_c9fc))) as u32;
+                let b = i32::from(h.read::<i8>(h.rebase(0x0112_a8e7))) as u32;
+                let st = cdecl(h, MS_BATTLE_GET_STATUS, &[]);
+                let kind = cdecl(h, MS_BATTLE_SPECIAL_CAMERA_KIND, &[st]);
+                let sp = i32::from(h.read::<i8>(h.rebase(0x0112_a8e6))) as u32;
+                sprintf(h, buf, 0x00b5_5f10, &[sp, kind, st, 1, b, a]);
+                gu_printf(h, S_FMT_S, buf);
+                y = 0x1f;
+            }
+            3 => {
+                print_xy(h, 2, 1);
+                let g = scr(h);
+                let v = f32_at(h, at(g, 0x30));
+                sprintf_f(h, buf, 0x00b5_5f38, &[], &[v]);
+                gu_printf(h, S_FMT_S, buf);
+                let g = scr(h);
+                let v = f32_at(h, at(g, 0x34));
+                info_line(h, buf, 0x72, None, 0x00b5_5f40, &[v], S_FMT_S);
+                let mut yy = 0xbu32;
+                for side in 0..2u32 {
+                    let p = at(at(h.rebase(0x0113_7604), c), side * 0x61c);
+                    cdecl(h, GU_PRINT_SET_Y, &[yy]);
+                    for (x, fmt, o) in [
+                        (2u32, 0x00b5_5f48u32, 0u32),
+                        (0x72, 0x00b5_5f50, 4),
+                        (0xe2, 0x00b5_5f58, 8),
+                    ] {
+                        let v = f32_at(h, p.wrapping_sub(4).wrapping_add(o));
+                        info_line(h, buf, x, None, fmt, &[v], S_FMT_S);
+                    }
+                    yy += 10;
+                }
+                y = 0x1f;
+            }
+            _ => {}
+        }
+        let p = cdecl(h, ADDR_OF_0113ED18, &[]);
+        cdecl(h, MS_INFO_WIN_SET, &[1, 1, p]);
+        let p = cdecl(h, ADDR_OF_0113ED28, &[]);
+        cdecl(h, MS_INFO_WIN_SET, &[2, 1, p]);
+        if cdecl(h, MS_BATTLE_GET_STATUS, &[]) != 0 {
+            let p = cdecl(h, MS_MOVE_TARGET_POS, &[]);
+            cdecl(h, MS_INFO_WIN_SET, &[3, 1, p]);
+        }
+        let v = at(h.rebase(0x0113_7bac), c);
+        let r: u32 = h.read(at(h.rebase(0x0113_7c18), c));
+        cdecl(
+            h,
+            MS_VECTOR_RECT2_POLAR,
+            &[v, r, polar[0], polar[1], polar[2]],
+        );
+        y += 10;
+        print_xy(h, 2, y);
+        sprintf(h, buf, 0x00b5_5f60, &[]);
+        gu_printf(h, LINE, buf);
+        let v = f32_at(h, h.rebase(0x0113_701c));
+        info_line(h, buf, 0x3e, Some(y), 0x00b5_5f68, &[v], LINE);
+        print_xy(h, 0x7c, y);
+        sprintf(h, buf, 0x00b5_5f70, &[]);
+        gu_printf(h, LINE, buf);
+        let v = f32_at(h, h.rebase(INFO_ROLL));
+        info_line(h, buf, 0xa2, Some(y), 0x00b5_5f78, &[v], LINE);
+    }
+
+    pub const MS_DEBUG_CAMERA_KEEP_ADD: u32 = 0x007d_0ee0;
+    pub const MS_DEBUG_CAMERA_COPY: u32 = 0x007d_1220;
+    pub const MS_DEBUG_KEEP_WINDOWS: u32 = 0x007d_71d0;
+    pub const MS_DEBUG_CAMERA_APPLY: u32 = 0x007d_2fc0;
+    pub const MS_DEBUG_OUT_CAMERA: u32 = 0x007d_2430;
+    pub const MS_DEBUG_CAMERA_POLAR: u32 = 0x007d_1030;
+    pub const MS_DEBUG_CAMERA_KEEP_LOAD: u32 = 0x007d_7130;
+    /// The point editor's undo copy of the keep block (`0x0113e668`) and
+    /// the keep values it edits (`0x0113ed64..0x0113ed74`, the offset
+    /// `0x0113f3ac`).
+    pub const KEEP_UNDO: u32 = 0x0113_e668;
+
+    /// A button label of the point editor: a string, or a table entry.
+    #[derive(Debug, Clone, Copy)]
+    enum MapLabel {
+        S(u32),
+        Flag,
+        Speed,
+        Keep,
+    }
+
+    /// `Ms_Gui_MapDataProc(win, msg, id)`: the battle "Camera Point Data"
+    /// window: first the camera's id and channel, the keep count and the
+    /// keep mode (`MsDebugCameraKeep_007c8c50(0)`; no keeps: one added);
+    /// 0x8001 title, buttons and the undo copy, auto-repeats;
+    /// 0x8003 closed; 0x8006/0x800a/0x800e the auto-repeats reset;
+    /// 0x8005/0x8009/0x800d a button (steps 1/10/100): the keep's angles,
+    /// length, roll, weight, offset (`MsDebugCameraPolar_007d1030`),
+    /// truncation, undo, the current keep, add, set, delete, flags, OUT;
+    /// 0x8011 the keep refreshed from the camera and its values printed,
+    /// the camera re-requested. Then (every message) `0x0113ed80` = the
+    /// channel's flag byte. `ebp` is the original's frame (the buffer at
+    /// `ebp - 0x104`). Returns 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn map_data_proc(
+        h: &mut impl Host,
+        trig: &mut dyn FnMut(Trig, f64) -> u32,
+        ebp: u32,
+        win: u32,
+        msg: u32,
+        id: u32,
+    ) -> u32 {
+        const LT: u32 = 0x00b5_5220;
+        const GT: u32 = 0x00b4_8250;
+        let buf = ebp.wrapping_sub(0x104);
+        let screen = g32(h, DEBUG_SCREEN);
+        let cam = u32::from(h.read::<u8>(at(h.rebase(DEBUG_CAMERA), screen.wrapping_mul(0x1c0))));
+        cdecl(h, MS_CAMERA_GET_ID, &[cam]);
+        let rec = at(h.rebase(0x0113_7b8c), cam.wrapping_mul(0xda0));
+        let num = cdecl(h, MS_CAMERA_GET_NUM, &[cam]);
+        let flag_at = at(rec, num.wrapping_mul(0x130).wrapping_add(0xc3));
+        let cnt = g32(h, CAMERA_KEEP_BLOCK);
+        let keep = cdecl(h, MS_DEBUG_CAMERA_KEEP, &[0]);
+        if cnt == 0 {
+            cdecl(h, MS_DEBUG_CAMERA_KEEP_ADD, &[]);
+        }
+        let reps = [0x0113_e624u32, 0x0113_e638, 0x0113_e64c];
+        let copy_block = |h: &mut _, from: u32, to: u32| {
+            let (f, t) = (Mem::rebase(h, from), Mem::rebase(h, to));
+            for i in 0..0x18cu32 {
+                let w: u32 = Mem::read(h, at(f, 4 * i));
+                Mem::write(h, at(t, 4 * i), w);
+            }
+        };
+        match msg {
+            0x8001 => {
+                let t = s(h, 0x00b5_634c);
+                cdecl(h, GU_WINDOW_SET_TITLE, &[win, t]);
+                let rows: [(u32, MapLabel, [u32; 4]); 25] = [
+                    (0xf, MapLabel::S(LT), [0x40, 0, 0x12, 8]),
+                    (0x10, MapLabel::S(GT), [0x54, 0, 0x12, 8]),
+                    (0x15, MapLabel::S(LT), [0xea, 0, 0x12, 8]),
+                    (0x16, MapLabel::S(GT), [0xfe, 0, 0x12, 8]),
+                    (0x11, MapLabel::S(LT), [0x40, 0xa, 0x12, 8]),
+                    (0x12, MapLabel::S(GT), [0x54, 0xa, 0x12, 8]),
+                    (0x19, MapLabel::S(0x00b5_631c), [0xd6, 0xa, 0x34, 8]),
+                    (0x1b, MapLabel::S(0x00b5_6360), [0x110, 0xa, 0x34, 8]),
+                    (0x13, MapLabel::S(LT), [0x40, 0x14, 0x12, 8]),
+                    (0x14, MapLabel::S(GT), [0x54, 0x14, 0x12, 8]),
+                    (0x1a, MapLabel::S(0x00b5_6364), [0xd6, 0x14, 0x34, 8]),
+                    (0x1c, MapLabel::Flag, [0x110, 0x14, 0x34, 8]),
+                    (0xb, MapLabel::S(LT), [0x40, 0x1e, 0x12, 8]),
+                    (0xc, MapLabel::S(GT), [0x54, 0x1e, 0x12, 8]),
+                    (0x20, MapLabel::S(0x00b5_6368), [0xd6, 0x1e, 0x34, 8]),
+                    (0x33, MapLabel::S(0x00b5_6308), [0x110, 0x1e, 0x34, 8]),
+                    (0x23, MapLabel::S(LT), [0x40, 0x28, 0x12, 8]),
+                    (0x24, MapLabel::S(GT), [0x54, 0x28, 0x12, 8]),
+                    (0x37, MapLabel::Speed, [0xd6, 0x28, 0xe, 8]),
+                    (0x38, MapLabel::Speed, [0xfc, 0x28, 0xe, 8]),
+                    (0x39, MapLabel::Speed, [0x122, 0x28, 0xe, 8]),
+                    (0x17, MapLabel::S(LT), [0x40, 0x32, 0x12, 8]),
+                    (0x18, MapLabel::S(GT), [0x54, 0x32, 0x12, 8]),
+                    (6, MapLabel::Keep, [0xd6, 0x32, 0x34, 8]),
+                    (5, MapLabel::S(0x00b5_5e14), [0x110, 0x32, 0x34, 8]),
+                ];
+                for (bid, label, rect) in rows {
+                    let l = match label {
+                        MapLabel::S(sym) => s(h, sym),
+                        MapLabel::Flag => {
+                            let f = u32::from(h.read::<u8>(flag_at)) & 1;
+                            table_word(h, 0x00c4_48d4, f)
+                        }
+                        MapLabel::Speed => {
+                            let v = i32::from(h.read::<i8>(h.rebase(0x0112_a8e1))) as u32;
+                            table_word(h, 0x00c4_468c, v)
+                        }
+                        MapLabel::Keep => table_word(h, 0x00c4_4264, keep),
+                    };
+                    button(h, win, bid, l, rect);
+                }
+                copy_block(h, CAMERA_KEEP_BLOCK, KEEP_UNDO);
+                for r in reps {
+                    let r = h.rebase(r);
+                    cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 1]);
+                }
+            }
+            0x8003 => set32(h, 0x0113_9eec, 0),
+            0x8006 | 0x800a | 0x800e => {
+                let r = match msg {
+                    0x8006 => reps[0],
+                    0x800e => reps[1],
+                    _ => reps[2],
+                };
+                let r = h.rebase(r);
+                cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 1]);
+            }
+            0x8005 | 0x8009 | 0x800d => {
+                let (rep, step) = match msg {
+                    0x8005 => (reps[0], 1i32),
+                    0x800d => (reps[1], 100),
+                    _ => (reps[2], 10),
+                };
+                let r = h.rebase(rep);
+                if cdecl(h, MS_AUTO_REPEAT_CHECK, &[r, id]) != 0 {
+                    map_data_button(h, msg, id, f64::from(step), cnt, rec, flag_at);
+                }
+            }
+            0x8011 => {
+                cdecl(h, MS_DEBUG_CAMERA_COPY, &[]);
+                cdecl(h, MS_DEBUG_KEEP_WINDOWS, &[u32::MAX]);
+                let l = table_word(h, 0x00c4_4264, keep);
+                cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 6, l]);
+                let f = u32::from(h.read::<u8>(flag_at));
+                let l = table_word(h, 0x00c4_48d4, f & 1);
+                cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0x1c, l]);
+                for (bid, k) in [(0x37u32, 1u32), (0x38, 2), (0x39, 3)] {
+                    let f = u32::from(!h.read::<u8>(flag_at));
+                    let l = table_word(h, 0x00c4_468c, (f >> k) & 1);
+                    cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, bid, l]);
+                }
+                map_data_paint(h, trig, buf, cnt);
+            }
+            _ => {}
+        }
+        let f = u32::from(h.read::<u8>(flag_at));
+        set32(h, 0x0113_ed80, f);
+        0
+    }
+
+    /// A keep value at `sym` stepped by `-/+ step * k` (`k` the `f64` at
+    /// `ksym`).
+    fn keep_step(h: &mut impl Host, sym: u32, ksym: u32, sub: bool, step: f64) {
+        let d = x87::mul(step, f64_at(h, ksym));
+        let f = f32_at(h, h.rebase(sym));
+        let v = if sub { x87::sub(f, d) } else { x87::add(d, f) };
+        set32(h, sym, x87::store(v));
+    }
+
+    /// A point editor button (after its auto-repeat).
+    #[allow(clippy::too_many_lines)]
+    fn map_data_button(
+        h: &mut impl Host,
+        msg: u32,
+        id: u32,
+        step: f64,
+        cnt: u32,
+        rec: u32,
+        flag_at: u32,
+    ) {
+        let cur = |h: &_| g32(h, KEEP_CUR);
+        let keep_rec = |h: &_| at(Mem::rebase(h, KEEPS), cur(h).wrapping_mul(0x30));
+        match id {
+            0x33 => {
+                for sym in [0x0113_ed68u32, 0x0113_ed6c, 0x0113_ed70] {
+                    let (_, f) = trunc_f32(h, f32_at(h, h.rebase(sym)));
+                    set32(h, sym, f);
+                }
+                let x = x87::div(f32_at(h, h.rebase(0x0113_ed74)), f64_at(h, TENTH));
+                let (_, f) = trunc_f32(h, x);
+                set32(
+                    h,
+                    0x0113_ed74,
+                    x87::store(x87::div(x87::load(f), f64_at(h, METRE))),
+                );
+                let (_, f) = trunc_f32(h, f32_at(h, h.rebase(0x0113_ed64)));
+                set32(h, 0x0113_ed64, f);
+            }
+            0xf..=0x14 => {
+                let sym = [0x0113_ed68u32, 0x0113_ed6c, 0x0113_ed70][((id - 0xf) / 2) as usize];
+                keep_step(h, sym, TENTH, id & 1 == 1, step);
+            }
+            0xb | 0xc => {
+                let k = if id == 0xb { 0x00b5_67b0 } else { TENTH };
+                let d = x87::store(x87::mul(step, f64_at(h, k)));
+                let a = [
+                    h.rebase(0x0113_f3ac),
+                    d,
+                    h.rebase(0x0113_ed70),
+                    h.rebase(0x0113_ed6c),
+                ];
+                cdecl(h, MS_DEBUG_CAMERA_POLAR, &a);
+            }
+            0x17 | 0x18 => keep_step(h, 0x0113_ed74, HUNDREDTH, id == 0x17, step),
+            0x20 => {
+                let (f, t) = (h.rebase(KEEP_UNDO), h.rebase(CAMERA_KEEP_BLOCK));
+                for i in 0..0x18cu32 {
+                    let w: u32 = h.read(at(f, 4 * i));
+                    h.write(at(t, 4 * i), w);
+                }
+                cdecl(h, MS_DEBUG_CAMERA_KEEP_LOAD, &[]);
+            }
+            0x23 | 0x24 => keep_step(h, 0x0113_ed64, TENTH, id == 0x23, step),
+            0x15 | 0x16 => {
+                let c = cur(h) as i32;
+                let mut c = if id == 0x15 {
+                    c.wrapping_sub(1)
+                } else {
+                    c.wrapping_add(1)
+                };
+                if c < 0 {
+                    c = (cnt as i32).wrapping_sub(1);
+                }
+                set32(h, KEEP_CUR, if c >= cnt as i32 { 0 } else { c as u32 });
+                cdecl(h, MS_DEBUG_CAMERA_KEEP_LOAD, &[]);
+            }
+            0x1c | 0x37 | 0x38 | 0x39 => {
+                let bit = match id {
+                    0x1c => 1u8,
+                    0x37 => 2,
+                    0x38 => 4,
+                    _ => 8,
+                };
+                let f: u8 = h.read(flag_at);
+                h.write(flag_at, f ^ bit);
+            }
+            6 => {
+                let st = if msg == 0x8005 { 1 } else { u32::MAX };
+                cdecl(h, MS_DEBUG_CAMERA_KEEP, &[st]);
+            }
+            0x1b => {
+                cdecl(h, MS_DEBUG_CAMERA_KEEP_ADD, &[]);
+                cdecl(h, MS_DEBUG_CAMERA_KEEP_LOAD, &[]);
+            }
+            0x19 => {
+                for o in [0u32, 4, 8] {
+                    let v = fcopy(h.read(at(rec, 0x30 + o)));
+                    let k = keep_rec(h);
+                    h.write(at(k, o), v);
+                }
+            }
+            0x1a => {
+                if (cnt as i32) > 1 {
+                    let n = cnt.wrapping_sub(1);
+                    set32(h, CAMERA_KEEP_BLOCK, n);
+                    let c = cur(h);
+                    if (c as i32) < 0x1f {
+                        let end = h.rebase(0x0113_f35c);
+                        let mut p = keep_rec(h);
+                        loop {
+                            for o in (0..0x30u32).step_by(4) {
+                                let v = fcopy(h.read(at(p, 0x30 + o)));
+                                h.write(at(p, o), v);
+                            }
+                            p = at(p, 0x30);
+                            if (p as i32) >= (end as i32) {
+                                break;
+                            }
+                        }
+                    }
+                    if (cur(h) as i32) >= n as i32 {
+                        set32(h, KEEP_CUR, n.wrapping_sub(1));
+                    }
+                }
+                cdecl(h, MS_DEBUG_CAMERA_KEEP_LOAD, &[]);
+            }
+            5 => {
+                cdecl(h, MS_DEBUG_OUT_CAMERA, &[]);
+            }
+            _ => {}
+        }
+    }
+
+    /// The point editor's 0x8011 values: the current keep refreshed
+    /// (weight at least 0, the angles in radians, the distance, the
+    /// offset `sin(phi) * distance` with `_CIsin`, the roll), then printed;
+    /// the camera re-requested (`MsDebugCameraApply_007d2fc0(1)`).
+    fn map_data_paint(
+        h: &mut impl Host,
+        trig: &mut dyn FnMut(Trig, f64) -> u32,
+        buf: u32,
+        cnt: u32,
+    ) {
+        const LINE: u32 = 0x00b1_2ad0;
+        const F4: u32 = 0x00b5_6378;
+        let g = |h: &_, sym: u32| f32_at(h, Mem::rebase(h, sym));
+        let keep_rec = |h: &_| at(Mem::rebase(h, KEEPS), g32(h, KEEP_CUR).wrapping_mul(0x30));
+        let w = g(h, 0x0113_ed74);
+        let w = if w < 0.0 {
+            set32(h, 0x0113_ed74, 0);
+            0
+        } else {
+            x87::store(w)
+        };
+        h.write(at(keep_rec(h), 0xc), w);
+        let (pi, d180) = (f64_at(h, PI_F64), f64_at(h, DEG_180));
+        let a = x87::store(x87::div(x87::mul(g(h, 0x0113_ed68), pi), d180));
+        h.write(at(keep_rec(h), 0x10), a);
+        let b = x87::store(x87::div(x87::mul(g(h, 0x0113_ed6c), pi), d180));
+        h.write(at(keep_rec(h), 0x14), b);
+        let d = fcopy(g32(h, 0x0113_ed70));
+        h.write(at(keep_rec(h), 0x18), d);
+        let x = x87::div(x87::mul(pi, g(h, 0x0113_ed6c)), d180);
+        let sn = trig(Trig::Sin, x);
+        let off = x87::store(x87::mul(x87::load(sn), g(h, 0x0113_ed70)));
+        set32(h, 0x0113_f3ac, off);
+        let r = fcopy(g32(h, 0x0113_ed64));
+        h.write(at(keep_rec(h), 0x20), r);
+        let label = |h: &mut _, x: u32, y: u32, sym: u32| {
+            print_xy(h, x, y);
+            sprintf(h, buf, sym, &[]);
+            gu_printf(h, LINE, buf);
+        };
+        label(h, 0, 1, 0x00b5_6370);
+        info_line(h, buf, 0x6c, Some(1), F4, &[g(h, 0x0113_ed68)], LINE);
+        label(h, 0xd4, 1, 0x00b5_6380);
+        print_xy(h, 0x118, 1);
+        let c = g32(h, KEEP_CUR).wrapping_add(1);
+        sprintf(h, buf, 0x00b5_5240, &[c, cnt]);
+        gu_printf(h, LINE, buf);
+        label(h, 0, 0xb, 0x00b5_6384);
+        info_line(h, buf, 0x6c, Some(0xb), F4, &[g(h, 0x0113_ed6c)], LINE);
+        label(h, 0, 0x15, 0x00b5_6388);
+        info_line(h, buf, 0x6c, Some(0x15), F4, &[g(h, 0x0113_ed70)], LINE);
+        label(h, 0, 0x1f, 0x00b5_638c);
+        info_line(
+            h,
+            buf,
+            0x6c,
+            Some(0x1f),
+            FMT_VALUE,
+            &[g(h, 0x0113_f3ac)],
+            LINE,
+        );
+        label(h, 0, 0x29, 0x00b5_6394);
+        info_line(h, buf, 0x6c, Some(0x29), F4, &[g(h, 0x0113_ed64)], LINE);
+        for (x, sym) in [
+            (0xeau32, 0x00b5_639cu32),
+            (0x110, 0x00b5_63a0),
+            (0x136, 0x00b5_63a4),
+        ] {
+            print_xy(h, x, 0x29);
+            gu_printf(h, sym, buf);
+        }
+        label(h, 0, 0x33, 0x00b5_63a8);
+        info_line(
+            h,
+            buf,
+            0x6c,
+            Some(0x33),
+            FMT_VALUE,
+            &[g(h, 0x0113_ed74)],
+            LINE,
+        );
+        cdecl(h, MS_DEBUG_CAMERA_APPLY, &[1]);
+    }
 }
