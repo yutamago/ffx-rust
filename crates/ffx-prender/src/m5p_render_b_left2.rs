@@ -153,12 +153,205 @@ pub const SAMPLER_DATA: [u32; 4] = [0x00c9_98e8, 0x00b7_62d0, 0x00b3_018c, 0x47]
 /// frame from its lowest address).
 pub const SAMPLER_FRAME_WORDS: u32 = 12;
 
+/// `0x006e5be0`'s callees and data: `ClusterManager::GetInstance()`
+/// (cdecl), `ClusterManager::loadPCluster(name)` (thiscall, ret 4),
+/// `PApplication::GetApplication()`, `PApplication_FixupClusters(&c, n)`
+/// (cdecl), `PhyreSceneCursor_Seek3` (thiscall on the cursor), the
+/// cluster global, the class the cursor walks, the global it sets.
+pub const LIGHT_CLUSTER: [u32; 8] = [
+    0x0069_a1a0,
+    0x0069_b940,
+    0x0062_3b90,
+    0x0062_3580,
+    0x0065_ec40,
+    0x00ce_63cc,
+    0x00ca_5ff0,
+    0x00ce_63d4,
+];
+
+/// `PDeferredLightingBase::initializeCommonShaders`'s callees beyond
+/// [`SAMPLER_CALLS`]: `PCluster::deleteObject(obj)` (thiscall on the
+/// cluster, ret 4), the word array's `set(i, v)` (thiscall, ret 8),
+/// `PParameterBuffer::setValueDesc(desc, sampler)` (thiscall on the
+/// material's buffer, ret 8); the second sampler's name.
+pub const COMMON_CALLS: [u32; 4] = [0x0044_1240, 0x0048_c540, 0x0056_e600, 0x00b7_62e4];
+/// The parameters `initializeCommonShaders` looks up, in its order:
+/// the name and the field that takes it.
+pub const COMMON_PARAMS: [(u32, u32); 15] = [
+    (0x00b7_61a4, 0x3f54),
+    (0x00b7_61b8, 0x3f58),
+    (0x00b7_61c4, 0x3f5c),
+    (0x00b7_61dc, 0x3f60),
+    (0x00b7_61ec, 0x3f64),
+    (0x00b7_6204, 0x3f84),
+    (0x00b7_6210, 0x3f7c),
+    (0x00b7_6224, 0x3f80),
+    (0x00b7_6238, 0x3f68),
+    (0x00b7_6254, 0x3f6c),
+    (0x00b7_6270, 0x3f70),
+    (0x00b7_628c, 0x3f74),
+    (0x00b7_62a8, 0x3f78),
+    (0x00b7_62c0, 0x3f88),
+    (0x00b2_3e5c, 0x3f8c),
+];
+
+/// `0x005930e0`'s `memset` (cdecl) and the sampler class instances it
+/// passes.
+pub const TABLES_MEMSET: u32 = 0x0094_964c;
+/// See [`TABLES_MEMSET`].
+pub const TABLES_CLASSES: u32 = 0x00b3_3a80;
+/// The words of `0x005930e0`'s frame: the zeroed table.
+pub const TABLES_FRAME_WORDS: u32 = 0x80;
+
+/// `0x0059a390`'s callees: `PMatrix4_RowTimes(out, v)` (thiscall, ret 8),
+/// `PMatrix4_Transpose(out, m)` (cdecl).
+pub const DEPTH_CALLS: [u32; 2] = [0x004c_9c20, 0x004f_93f0];
+/// The words of `0x0059a390`'s frame.
+pub const DEPTH_FRAME_WORDS: u32 = 0x45;
+
+/// `0x00a13400`'s data and callees: what the renderer's `+0x48` is set
+/// to, the tile setup `0x005b6620` (thiscall on the renderer, ret 0x14),
+/// `PParameterBuffer_writeParameter(parameter, src)` (thiscall, ret 8).
+pub const TEXTURE_PARAMS: [u32; 3] = [0x0194_4c3c, 0x005b_6620, 0x004d_57d0];
+/// The words of `0x00a13400`'s frame.
+pub const TEXTURE_FRAME_WORDS: u32 = 21;
+
+/// `0x00a965d0`'s constants in the image: 6.0 (`float`), 30.0 and 0.1
+/// (doubles), 16.0 (`float`).
+pub const PROFILE_CONSTS: [u32; 4] = [0x00b9_2308, 0x00b9_22c8, 0x00b9_21f0, 0x00b9_231c];
+
+/// `0x00a191f0`'s callees and data: `initializeGeometry(cluster)`
+/// (thiscall, ret 4), the buffers' resize `(w, h)` (thiscall, ret 8),
+/// the 128 x 128 target's format record, `makeRenderTarget` (cdecl, 7
+/// words), `0x00a19cf0` (thiscall), `GetRenderStateCache` (cdecl).
+pub const TAKE_TARGETS: [u32; 6] = [
+    0x00a1_9cb0,
+    0x00a1_0590,
+    0x00ca_310c,
+    0x00a0_6a30,
+    0x00a1_9cf0,
+    0x004f_d8b0,
+];
+
+/// `0x00a19cf0`'s callees and data: `PhyreMalloc(size)` (cdecl), the
+/// constant buffer's constructor, `resizeSlots(n)` (ret 4), `create(size,
+/// data)` (ret 8), the structured buffer's constructor, its setup
+/// `0x0058f2b0(a, b, c, d)` (ret 0x10; all thiscall); the render state
+/// cache's guard word, the cache, its constructor (thiscall), its
+/// destructor, `atexit` (cdecl).
+pub const DEFERRED_BUFFERS: [u32; 11] = [
+    0x0042_fb40,
+    0x0058_3240,
+    0x0059_9a80,
+    0x0058_ee20,
+    0x0058_41a0,
+    0x0058_f2b0,
+    0x00c9_628c,
+    0x00c9_4f00,
+    0x004f_ee70,
+    0x00af_b710,
+    0x0094_9207,
+];
+
+/// `0x005b6620`'s callees and data: `PEffect_findTechniqueByPass(effect)`
+/// (thiscall, ret 4), the block tree global, its entry lookup `(key, p)`
+/// (thiscall, ret 8), `InterlockedExchangeAdd`'s import slot (stdcall),
+/// `meshInstanceSizes` (cdecl, 9 words), `hasRoom(bytes, commands)`
+/// (thiscall, ret 8, `al`), the scene-wide and material capture buffers
+/// (thiscall, ret 0 / 4), `PRenderRingBufferSegmented::allocate(size)`
+/// (thiscall, ret 4), `texturePointers(base, params, out)` (cdecl).
+pub const QUEUE_PASS: [u32; 10] = [
+    0x004e_71d0,
+    0x00cb_bf58,
+    0x004e_0700,
+    0x00b0_c128,
+    0x005b_5150,
+    0x005b_6a70,
+    0x005b_86d0,
+    0x005b_7f30,
+    0x0061_3e10,
+    0x005b_53f0,
+];
+/// The words of `0x005b6620`'s frame (`ebp - 0xc` .. its first argument
+/// slot).
+pub const QUEUE_FRAME_WORDS: u32 = 6;
+
+/// `0x0058f2b0`'s callees and data: the render scope lock's enter
+/// (thiscall on a frame word), the render state cache's guard, the
+/// cache, its constructor (thiscall), its destructor, `atexit` (cdecl),
+/// the device global, the slot count (`0x00593ba0`, thiscall), the
+/// lock's leave, `PStructuredBufferD3D11_createViews` (thiscall).
+pub const STRUCTURED: [u32; 10] = [
+    0x0046_3d50,
+    0x00c9_628c,
+    0x00c9_4f00,
+    0x004f_ee70,
+    0x00af_b710,
+    0x0094_9207,
+    0x00c9_4f6c,
+    0x0059_3ba0,
+    0x0046_3e90,
+    0x0058_f5d0,
+];
+/// The words of `0x0058f2b0`'s frame.
+pub const STRUCTURED_FRAME_WORDS: u32 = 12;
+
+/// The words of `0x0058ec50`'s frame.
+pub const READ_BACK_FRAME_WORDS: u32 = 18;
+
+/// `0x00a22be0`'s callees: `PTexture2DD3D11::isBound` (`al`), `unbind`,
+/// `PTexture2DBase::setDimensions(w, h, format, 0)` (thiscall, ret 0x10),
+/// `renderTargetResize(target, w, h, force)` (cdecl).
+pub const RESIZE_TARGETS: [u32; 4] = [0x0059_5f90, 0x0059_cc40, 0x004c_40c0, 0x00a0_e4b0];
+
+/// `0x00a179a0`'s callees and data: the `PTexture2D` class, `PCluster::
+/// create(n, class, flags)` (thiscall, ret 0xc), the format record,
+/// `setDimensions(w, h, format, 0)` (ret 0x10), `updateMaxLevel`, the
+/// render target class, `allocateInstanceList(n, class, flags)` (ret
+/// 0xc), the render target's constructor `(texture)` (ret 4), the name.
+pub const DOWNSAMPLE: [u32; 9] = [
+    0x00ca_37d0,
+    0x0044_1010,
+    0x00ca_310c,
+    0x004c_40c0,
+    0x004c_4250,
+    0x00ca_4200,
+    0x0044_0b70,
+    0x0058_3a60,
+    0x00b7_6848,
+];
+
+/// `0x00a19620`'s data: the screen size (width, height), the global
+/// cluster, the five render targets' formats.
+pub const OWN_TARGETS: [u32; 8] = [
+    0x00c9_5100,
+    0x00c9_5104,
+    0x0194_3da0,
+    0x00ca_3274,
+    0x00ca_310c,
+    0x00ca_310c,
+    0x00ca_310c,
+    0x00ca_347c,
+];
+/// `0x00a191f0` (the targets taken), as `0x00a19620` calls it.
+pub const TAKE_TARGETS_FN: u32 = 0x00a1_91f0;
+/// The words of `0x00a19620`'s frame.
+pub const OWN_TARGETS_FRAME_WORDS: u32 = 7;
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::LIGHT_CLUSTER;
+    use super::{COMMON_CALLS, COMMON_PARAMS};
     use super::{
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
+    use super::{
+        DEFERRED_BUFFERS, DOWNSAMPLE, PROFILE_CONSTS, QUEUE_PASS, RESIZE_TARGETS, STRUCTURED,
+        TAKE_TARGETS,
+    };
+    use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
+    use super::{OWN_TARGETS, TAKE_TARGETS_FN};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -325,5 +518,1333 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `0x006e5be0` (cdecl `()`, the light setup's cluster load; reached
+    /// by a tail jump from `0x006e5df0`, which unloads the old one first):
+    /// `[0x00ce63cc] = loadPCluster(GetInstance(); name)`; with a cluster,
+    /// `GetApplication()`, `PApplication_FixupClusters(&[0x00ce63cc], 1)`,
+    /// then a scene cursor over the cluster's object list (`+0x1c`, empty
+    /// when it points at itself) for the class `0x00ca5ff0`
+    /// (`PhyreSceneCursor_Seek3`); when it finds one (cursor `+0xc` set),
+    /// `[0x00ce63d4]` = cursor `+0x10` + cursor `+0`.
+    ///
+    /// The name the original passes is `[ebp-4]`, a frame word it never
+    /// writes (stale stack: the caller's last return address, or older);
+    /// the port passes 0 (the junk-read policy, brief 2026-10-24).
+    ///
+    /// `frame` is the cursor, 8 words (the original's `ebp - 0x24`).
+    pub fn load_light_cluster(h: &mut impl Host, frame: u32) {
+        let manager = h.call_sym(LIGHT_CLUSTER[0], Conv::Cdecl, &[]);
+        let name = 0; // junk read: [ebp-0x4] never written; 0 (brief 2026-10-24)
+        let cluster = h.call_sym(LIGHT_CLUSTER[1], Conv::Thiscall(manager), &[name]);
+        let global = h.rebase(LIGHT_CLUSTER[5]);
+        h.write(global, cluster);
+        if cluster == 0 {
+            return;
+        }
+        h.call_sym(LIGHT_CLUSTER[2], Conv::Cdecl, &[]);
+        h.call_sym(LIGHT_CLUSTER[3], Conv::Cdecl, &[global, 1]);
+        let cluster: u32 = h.read(global);
+        let list = cluster.wrapping_add(0x1c);
+        let first: u32 = h.read(list);
+        let first = if first == list { 0 } else { first };
+        let class = h.rebase(LIGHT_CLUSTER[6]);
+        for (i, w) in [0, 0, 0, 0, 0, list, first, class].into_iter().enumerate() {
+            h.write(frame + 4 * i as u32, w);
+        }
+        h.call_sym(LIGHT_CLUSTER[4], Conv::Thiscall(frame), &[]);
+        if h.read::<u32>(frame + 0xc) != 0 {
+            let v = h
+                .read::<u32>(frame + 0x10)
+                .wrapping_add(h.read::<u32>(frame));
+            let at = h.rebase(LIGHT_CLUSTER[7]);
+            h.write(at, v);
+        }
+    }
+
+    /// `PDeferredLightingBase::initializeCommonShaders(cluster, effect)`
+    /// (`0x00a182f0`, thiscall, `ret 8`): 0x15 unless the three targets
+    /// `+0x3edc`, `+0x3ee0`, `+0x3ee4` are there; the old material
+    /// (`+0x3ed8`) deleted from the cluster; a new one from the effect
+    /// (its buffer's block copied from the previous one `[+8] + 4` when
+    /// their sizes match); a one-element instance array from the cluster
+    /// holding the material, kept in each target's `+0x10`; the fifteen
+    /// parameters ([`COMMON_PARAMS`]); the three sampler states
+    /// (`+0x3ee8`, `+0x3f0c`, `+0x3f30`) registered (their error
+    /// returned); the point-clamp and shadow-map samplers bound to the
+    /// first two when the material has them (their error returned). 0.
+    pub fn init_common_shaders(h: &mut impl Host, this: u32, cluster: u32, effect: u32) -> u32 {
+        for target in [0x3edc, 0x3ee0, 0x3ee4] {
+            if h.read::<u32>(this + target) == 0 {
+                return NOT_READY;
+            }
+        }
+        let old: u32 = h.read(this + 0x3ed8);
+        if old != 0 {
+            h.call_sym(COMMON_CALLS[0], Conv::Thiscall(cluster), &[old]);
+        }
+        let material = h.call_sym(SAMPLER_CALLS[0], Conv::Thiscall(effect), &[cluster, 0, 0]);
+        h.write(this + 0x3ed8, material);
+        let prev: u32 = h.read(this + 8);
+        if prev != 0 {
+            let dst: u32 = h.read(material + 4);
+            let src: u32 = h.read(prev + 4);
+            let a: u32 = h.read(dst + 8);
+            let b: u32 = h.read(src + 8);
+            if a & 0x7fff_ffff == b & 0x7fff_ffff {
+                let n: u32 = h.read(src);
+                h.call_sym(SAMPLER_CALLS[1], Conv::Cdecl, &[dst, src, n]);
+            }
+        }
+        let class = h.rebase(SAMPLER_DATA[0]);
+        let arr = h.call_sym(SAMPLER_CALLS[2], Conv::Thiscall(cluster), &[1, class, 0]);
+        let head: u32 = h.read(arr);
+        if head != 1 {
+            let count = head & 0x7fff_ffff;
+            let slot = arr.wrapping_add(4);
+            let data = match count {
+                0 => 0,
+                1 => slot,
+                _ => h.read(slot),
+            };
+            if slot != 0 {
+                h.write(slot, 0u32);
+                if data != slot && head & 0x8000_0000 == 0 {
+                    h.call_sym(SAMPLER_CALLS[3], Conv::Cdecl, &[data]);
+                }
+                h.write(arr, 1u32);
+            }
+        }
+        let material: u32 = h.read(this + 0x3ed8);
+        h.call_sym(COMMON_CALLS[1], Conv::Thiscall(arr), &[0, material]);
+        for target in [0x3edc, 0x3ee0, 0x3ee4] {
+            let t: u32 = h.read(this + target);
+            h.write(t + 0x10, arr);
+        }
+        for (name, field) in COMMON_PARAMS {
+            let n = h.rebase(name);
+            let p = h.call_sym(FIND_PARAM, Conv::Thiscall(effect), &[n]);
+            h.write(this + field, p);
+        }
+        for sampler in [0x3ee8, 0x3f0c, 0x3f30] {
+            let r = h.call_sym(SAMPLER_CALLS[4], Conv::Thiscall(this + sampler), &[]);
+            if r != 0 {
+                return r;
+            }
+        }
+        let names = [SAMPLER_DATA[1], COMMON_CALLS[3]];
+        let mut found = [0u32; 2];
+        for (f, name) in found.iter_mut().zip(names) {
+            let n = h.rebase(name);
+            *f = h.call_sym(FIND_PARAM, Conv::Thiscall(effect), &[n]);
+        }
+        for (desc, sampler) in found.into_iter().zip([0x3ee8, 0x3f0c]) {
+            if desc == 0 {
+                continue;
+            }
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            let r = h.call_sym(
+                COMMON_CALLS[2],
+                Conv::Thiscall(buffer),
+                &[desc, this + sampler],
+            );
+            if r != 0 {
+                return r;
+            }
+        }
+        0
+    }
+
+    /// `0x005b4c00` (thiscall `(m; out, v)`, ret 8 -> `out`): `out` = the
+    /// 4x4 `m` (16 floats, rows) applied to the column `v`: for each of
+    /// `out[2]`, `out[1]`, `out[0]` (in that order) the products
+    /// `f32(v_i m[c + 4i])`, summed as `f32(f32(f32(p1 + p0) + p2) + p3)`;
+    /// `out[3]` = `v[3]`. Every value passes through `float` memory, as
+    /// the original's.
+    pub fn transform_column(h: &mut impl Host, m: u32, out: u32, v: u32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let mut col = [0u32; 16];
+        for (i, w) in col.iter_mut().enumerate() {
+            *w = h.read(m + 4 * i as u32);
+        }
+        let ld = |bits: u32| Reg::load(f32::from_bits(bits));
+        let w = ld(h.read(v + 0xc)).store();
+        let mut r = [0f32; 3];
+        for c in [2usize, 1, 0] {
+            let mut p = [0f32; 4];
+            for (i, pi) in p.iter_mut().enumerate() {
+                let vi = ld(h.read(v + 4 * i as u32)).store();
+                let mi = ld(col[c + 4 * i]).store();
+                *pi = (Reg::load(vi) * Reg::load(mi)).store();
+            }
+            let s = (Reg::load(p[1]) + Reg::load(p[0])).store();
+            let s = (Reg::load(p[2]) + Reg::load(s)).store();
+            r[c] = (Reg::load(p[3]) + Reg::load(s)).store();
+        }
+        h.write(out + 4, r[1].to_bits());
+        h.write(out, r[0].to_bits());
+        h.write(out + 8, r[2].to_bits());
+        h.write(out + 0xc, w.to_bits());
+        out
+    }
+
+    /// `ID3D11DeviceContext` method `slot` (a byte offset into the
+    /// vtable) on `ctx` (COM: stdcall, `ctx` first).
+    fn com(h: &mut impl Host, ctx: u32, slot: u32, args: &[u32]) {
+        let vt: u32 = h.read(ctx);
+        let f: u32 = h.read(vt.wrapping_add(slot));
+        let mut words = vec![ctx];
+        words.extend_from_slice(args);
+        h.call(f, Conv::Stdcall, &words);
+    }
+
+    /// The tables' constant buffer (`+0`, when there is one) updated from
+    /// `+8` (method `+0xc0`, the size `+4` masked as the row and depth
+    /// pitch).
+    fn upload_tables(h: &mut impl Host, this: u32, ctx: u32) {
+        let buffer: u32 = h.read(this);
+        if buffer != 0 {
+            let size = h.read::<u32>(this + 4) & 0x7fff_ffff;
+            let src: u32 = h.read(this + 8);
+            com(h, ctx, 0xc0, &[buffer, 0, 0, src, size, size]);
+        }
+    }
+
+    /// `0x005930e0` (thiscall `(tables; renderer, unused)`, ret 8 -> `al`
+    /// 1): the shader resource tables bound on the renderer's context
+    /// (`[[renderer] + 0x70]`): the constant buffer `+0` (when there is
+    /// one; method `+0xc0` with `+8` and the size `+4` masked twice);
+    /// every stage's 128 resource slots cleared from a zeroed 0x200-byte
+    /// table (`frame`, the original's `ebp - 0x204`: its first word
+    /// stored, the rest `memset`) through methods `+0x20`, `+0x64`,
+    /// `+0x7c`, `+0x10c`, `+0xec`, `+0xfc`, then `+0x84(0, 0, 0)`; with a
+    /// slot index (`+0x18`, not -1) the buffer uploaded again and stored
+    /// at `+0x27c + 4 * index`; the samplers `+0x25c` (8 of them when the
+    /// device's feature level `+0xb4` is 0xb000 or more, else 1, with the
+    /// class instances `0x00b33a80`; the device's `+0x300` cleared), then
+    /// `+0x114([+0x4e0], 0, 0)`, the 8 constant buffers `+0x27c`, the 128
+    /// resources `+0x1c`, the 16 `+0x21c`.
+    pub fn bind_resource_tables(h: &mut impl Host, this: u32, renderer: u32, frame: u32) -> u8 {
+        let device: u32 = h.read(renderer);
+        let ctx: u32 = h.read(device + 0x70);
+        upload_tables(h, this, ctx);
+        h.write(frame, 0u32);
+        h.call_sym(TABLES_MEMSET, Conv::Cdecl, &[frame + 4, 0, 0x1fc]);
+        for slot in [0x20, 0x64, 0x7c, 0x10c, 0xec, 0xfc] {
+            com(h, ctx, slot, &[0, 0x80, frame]);
+        }
+        com(h, ctx, 0x84, &[0, 0, 0]);
+        let index: u32 = h.read(this + 0x18);
+        if index != u32::MAX {
+            let device: u32 = h.read(renderer);
+            let ctx2: u32 = h.read(device + 0x70);
+            upload_tables(h, this, ctx2);
+            let buffer: u32 = h.read(this);
+            h.write(
+                this.wrapping_add(index.wrapping_mul(4)).wrapping_add(0x27c),
+                buffer,
+            );
+        }
+        let level: u32 = h.read(device + 0xb4);
+        let n = if level.cast_signed() >= 0xb000 { 8 } else { 1 };
+        let classes = h.rebase(TABLES_CLASSES);
+        com(h, ctx, 0x110, &[0, n, this + 0x25c, classes]);
+        h.write(device + 0x300, 0u32);
+        let p: u32 = h.read(this + 0x4e0);
+        com(h, ctx, 0x114, &[p, 0, 0]);
+        com(h, ctx, 0x11c, &[0, 8, this + 0x27c]);
+        com(h, ctx, 0x10c, &[0, 0x80, this + 0x1c]);
+        com(h, ctx, 0x118, &[0, 0x10, this + 0x21c]);
+        1
+    }
+
+    /// `0x0059a390` (thiscall `(this; renderer, m, color)`, ret 0xc -> 0):
+    /// the constant buffer `[this + 0x48]` updated (context method
+    /// `+0xc0` on `[renderer + 0x70]`, 0x50 bytes) with the transpose of
+    /// `m` with its depth remapped to 0..1 (each row of `m` times the
+    /// matrix with rows `{1,0,0,0}, {0,1,0,0}, {0,0,0.5,0}, {0,0,0.5,1}`,
+    /// `PMatrix4_RowTimes`; `PMatrix4_Transpose`) followed by `color`.
+    ///
+    /// `frame` is 69 words, the original's `ebp - 0x114`: the transpose's
+    /// output at `+0`, the rows' at `+0x40..+0x7c`, the block at `+0x80`,
+    /// the remap matrix at `+0xd4`.
+    pub fn update_depth_transform(
+        h: &mut impl Host,
+        this: u32,
+        renderer: u32,
+        m: u32,
+        color: u32,
+        frame: u32,
+    ) -> u32 {
+        let remap = frame + 0xd4;
+        let (one, half) = (1.0f32.to_bits(), 0.5f32.to_bits());
+        let init = [
+            one, 0, 0, 0, //
+            0, one, 0, 0, //
+            0, 0, half, 0, //
+            0, 0, half, one,
+        ];
+        for (i, w) in init.into_iter().enumerate() {
+            h.write(remap + 4 * i as u32, w);
+        }
+        let r3 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x50, m + 0x30],
+        );
+        let r2 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x60, m + 0x20],
+        );
+        let r1 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x70, m + 0x10],
+        );
+        let r0 = h.call_sym(DEPTH_CALLS[0], Conv::Thiscall(remap), &[frame + 0x40, m]);
+        for (row, src) in [r0, r1, r2, r3].into_iter().enumerate() {
+            copy_floats(h, src, remap + 0x10 * row as u32, 4);
+        }
+        let t = h.call_sym(DEPTH_CALLS[1], Conv::Cdecl, &[frame, remap]);
+        let block = frame + 0x80;
+        copy_floats(h, t, block, 16);
+        copy_floats(h, color, block + 0x40, 4);
+        let ctx: u32 = h.read(renderer + 0x70);
+        let buffer: u32 = h.read(this + 0x48);
+        com(h, ctx, 0xc0, &[buffer, 0, 0, block, 0x50, 0x50]);
+        0
+    }
+
+    /// `n` floats from `src` to `dst` through the x87 (`fld`/`fstp`).
+    fn copy_floats(h: &mut impl Host, src: u32, dst: u32, n: u32) {
+        for i in 0..n {
+            let x = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+            h.write(dst + 4 * i, x.to_bits());
+        }
+    }
+
+    /// One texture parameter record `{tag, 0, 0, value, 0}` staged at
+    /// `rec` (five words, as the original's frame) and copied into the
+    /// material's buffer at the parameter's offset (`memcpy`, its size
+    /// `+0xa & 0x1fff`); `false` (error 3) when it does not fit or the
+    /// offset is under 4.
+    fn put_texture(
+        h: &mut impl Host,
+        param: u32,
+        buffer: u32,
+        rec: u32,
+        tag: u32,
+        value: u32,
+    ) -> bool {
+        for (i, w) in [tag, 0, 0, value, 0].into_iter().enumerate() {
+            h.write(rec + 4 * i as u32, w);
+        }
+        put_block(h, param, buffer, rec)
+    }
+
+    /// `0x00a13400` (thiscall `(this; renderer, unused)`, ret 8): the
+    /// deferred lighting's texture parameters set in its material's
+    /// buffer (`[[+0x3ed8] + 4]`): `+0x4024` (tag 0x48, the texture
+    /// `+0x4034`) and `+0x403c` (`+0x4038`), each only of type `'H'`
+    /// (else 5); `+0x4014` (tag 0x49, the shadow texture `+0x3fd0`, which
+    /// must have flag 8 at `+8` when there is one) of type `'I'`, 0x14 or
+    /// 0x15; each failing copy's 3 returned. Then the renderer's `+0x48`
+    /// set to `0x01944c3c` and `0x005b6620([mat], [mat + 4], ceil(w / 8),
+    /// ceil(h / 8), 1)` with the size of the target `[+0x3fc4]` (its
+    /// object `+0`, none when the byte `+4` is set; `+0x1c`, `+0x20`);
+    /// its error returned; then `+0x4010` (tag 0x48, `+0x3fd0`, type
+    /// `'H'`) written with `PParameterBuffer_writeParameter`. 0.
+    ///
+    /// `frame` is 21 words, the original's `ebp - 0x54`: the records at
+    /// `+0x3c`, `+0x28`, `+0x14`, `+0` in the order above (a copy longer
+    /// than 20 bytes reads past its record into the original's stale
+    /// stack; the game's parameters are 16 bytes).
+    pub fn set_texture_params(h: &mut impl Host, this: u32, renderer: u32, frame: u32) -> u32 {
+        for (param, value, rec) in [(0x4024, 0x4034, 0x3c), (0x403c, 0x4038, 0x28)] {
+            let p: u32 = h.read(this + param);
+            if p == 0 {
+                continue;
+            }
+            let value: u32 = h.read(this + value);
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            if h.read::<u8>(p + 2) != b'H' {
+                return 5;
+            }
+            if !put_texture(h, p, buffer, frame + rec, 0x48, value) {
+                return 3;
+            }
+        }
+        let p: u32 = h.read(this + 0x4014);
+        if p != 0 {
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            let shadow: u32 = h.read(this + 0x3fd0);
+            let ty: u8 = h.read(p + 2);
+            if ty != 0x49 && ty != 0x14 && ty != 0x15 {
+                return 5;
+            }
+            if shadow != 0 && h.read::<u8>(shadow + 8) & 8 == 0 {
+                return 5;
+            }
+            if !put_texture(h, p, buffer, frame + 0x14, 0x49, shadow) {
+                return 3;
+            }
+        }
+        let target: u32 = h.read(this + 0x3fc4);
+        let object: u32 = if h.read::<u8>(target + 4) == 0 {
+            h.read(target)
+        } else {
+            0
+        };
+        let w: u32 = h.read(object.wrapping_add(0x1c));
+        let ht: u32 = h.read(object.wrapping_add(0x20));
+        let at = h.rebase(TEXTURE_PARAMS[0]);
+        h.write(renderer + 0x48, at);
+        let material: u32 = h.read(this + 0x3ed8);
+        let (first, second): (u32, u32) = (h.read(material), h.read(material + 4));
+        let tiles = |n: u32| (n >> 3) + u32::from(n & 7 != 0);
+        let r = h.call_sym(
+            TEXTURE_PARAMS[1],
+            Conv::Thiscall(renderer),
+            &[first, second, tiles(w), tiles(ht), 1],
+        );
+        if r != 0 {
+            return r;
+        }
+        let p: u32 = h.read(this + 0x4010);
+        if p != 0 {
+            let shadow: u32 = h.read(this + 0x3fd0);
+            for (i, word) in [0x48, 0, 0, shadow, 0].into_iter().enumerate() {
+                h.write(frame + 4 * i as u32, word);
+            }
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            if h.read::<u8>(p + 2) != b'H' {
+                return 5;
+            }
+            let r = h.call_sym(TEXTURE_PARAMS[2], Conv::Thiscall(buffer), &[p, frame]);
+            if r != 0 {
+                return r;
+            }
+        }
+        0
+    }
+
+    /// `cvttss2si`: truncation toward zero, `0x80000000` for NaN and
+    /// values out of the `i32` range.
+    fn cvtt(x: f32) -> i32 {
+        ffx_bridge::x87::cvttsd2si(f64::from(x)).cast_signed()
+    }
+
+    /// A float of game memory.
+    fn rf(h: &impl ffx_bridge::Mem, at: u32) -> f32 {
+        f32::from_bits(h.read(at))
+    }
+
+    /// `0x00a965d0` (fastcall `(this, tables; values, floors, out,
+    /// bias)`, the caller pops; SSE): for each run of equal keys
+    /// (`[+0x14]`, `[+0]` of them) the largest value of the run (`values`,
+    /// `comiss`); when it plus 6 beats the floor at the run's last index,
+    /// a profile is chosen (row: the key `>> [+0x20]` clamped to 0..16;
+    /// level: `cvttsd2si((f64(v + off) - 30) * 0.1)` clamped to 0..7,
+    /// `off` = `[[+4] + 0x1f0] - bias`; `[[tables + 4 row] + 4 level]`:
+    /// `{first, end, heights...}` as floats) and its heights plus the
+    /// value raised into `out` from the position
+    /// `(key - [+0x1c]) + (first - 16) * stride - stride / 2` (`stride`
+    /// `[+0x24]`) on, one per
+    /// height, every `stride`, while under `[+0x28]` (positions under 1
+    /// skipped). Each operation one SSE instruction: `f32` arithmetic,
+    /// `cvtdq2ps` for the integers, truncating conversions. The 6, 30,
+    /// 0.1 and 16 are read from the image.
+    pub fn raise_profiles(
+        h: &mut impl Host,
+        this: u32,
+        tables: u32,
+        values: u32,
+        floors: u32,
+        out: u32,
+        bias: u32,
+    ) {
+        let n: i32 = h.read::<u32>(this).cast_signed();
+        let owner: u32 = h.read(this + 4);
+        let off = rf(h, owner + 0x1f0) - f32::from_bits(bias);
+        let six = rf(h, h.rebase(PROFILE_CONSTS[0]));
+        let thirty = f64::from_bits(h.read(h.rebase(PROFILE_CONSTS[1])));
+        let tenth = f64::from_bits(h.read(h.rebase(PROFILE_CONSTS[2])));
+        let sixteen = rf(h, h.rebase(PROFILE_CONSTS[3]));
+        let mut i: i32 = 0;
+        while i < n {
+            let keys: u32 = h.read(this + 0x14);
+            let at = |i: i32| i.cast_unsigned().wrapping_mul(4);
+            let mut v = rf(h, values.wrapping_add(at(i)));
+            let key: i32 = h.read::<u32>(keys.wrapping_add(at(i))).cast_signed();
+            while i + 1 < n && h.read::<u32>(keys.wrapping_add(at(i + 1))).cast_signed() == key {
+                i += 1;
+                let x = rf(h, values.wrapping_add(at(i)));
+                if x > v {
+                    v = x;
+                }
+            }
+            let floor = rf(h, floors.wrapping_add(at(i)));
+            if v + six > floor {
+                let shift = h.read::<u32>(this + 0x20) & 31;
+                let row = key >> shift;
+                let row = if row >= 0x11 {
+                    0x10
+                } else if row < 0 {
+                    0
+                } else {
+                    row
+                };
+                let limit: i32 = h.read::<u32>(this + 0x28).cast_signed();
+                let stride: i32 = h.read::<u32>(this + 0x24).cast_signed();
+                let e =
+                    ffx_bridge::x87::cvttsd2si((f64::from(v + off) - thirty) * tenth).cast_signed();
+                let level = if e > 0 { e } else { 0 };
+                let level = if level < 7 { level } else { 7 };
+                let rows: u32 = h.read(tables.wrapping_add(at(row)));
+                let profile: u32 = h.read(rows.wrapping_add(at(level)));
+                let first = rf(h, profile);
+                let end = cvtt(rf(h, profile + 4));
+                #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+                let pos = {
+                    let base: i32 = h.read::<u32>(this + 0x1c).cast_signed();
+                    let here = h
+                        .read::<u32>(keys.wrapping_add(at(i)))
+                        .cast_signed()
+                        .wrapping_sub(base);
+                    let x = here as f32 + (first - sixteen) * stride as f32;
+                    x - (stride >> 1) as f32
+                };
+                let mut pos = cvtt(pos);
+                let mut j = cvtt(first);
+                while j < end {
+                    if pos > 0 {
+                        let x = rf(h, profile.wrapping_add(at(j)).wrapping_add(8)) + v;
+                        let dst = out.wrapping_add(at(pos));
+                        if x > rf(h, dst) {
+                            h.write(dst, x.to_bits());
+                        }
+                    }
+                    pos = pos.wrapping_add(stride);
+                    if pos >= limit {
+                        break;
+                    }
+                    j += 1;
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// A render target handle's object (`+0`, none when the byte `+4` is
+    /// set).
+    fn target_object(h: &impl ffx_bridge::Mem, t: u32) -> u32 {
+        if h.read::<u8>(t + 4) == 0 {
+            h.read(t)
+        } else {
+            0
+        }
+    }
+
+    /// Whether the handle `t` is there, of size `w` x `h` (its object's
+    /// `+0x1c`, `+0x20`) and, when `format` is given, of that format
+    /// (the byte `+5`).
+    fn target_matches(
+        h: &impl ffx_bridge::Mem,
+        t: u32,
+        w: u32,
+        ht: u32,
+        format: Option<u8>,
+    ) -> bool {
+        if t == 0 {
+            return false;
+        }
+        if format.is_some_and(|f| h.read::<u8>(t + 5) != f) {
+            return false;
+        }
+        let o = target_object(h, t);
+        h.read::<u32>(o.wrapping_add(0x1c)) == w && {
+            let o = target_object(h, t);
+            h.read::<u32>(o.wrapping_add(0x20)) == ht
+        }
+    }
+
+    /// `0x00a191f0` (thiscall `(this; cluster, targets)`, ret 8): the
+    /// deferred lighting's targets taken: 0x16 when it has them already
+    /// (`+0x3ed4`); 5 unless the six handles (`targets[0..6]`) are there
+    /// and share the size of the sixth, the sixth's format (byte `+5`) is
+    /// 0 or 2, the fourth and third have that format and the fifth format
+    /// 0. Then they are kept (`+0x3fb0..+0x3fc4`, state 3), the geometry
+    /// initialised (`initializeGeometry(cluster)`), the buffers resized
+    /// (`0x00a10590(w, h)`), a 128 x 128 target made
+    /// (`makeRenderTarget(cluster, 0x80, 0x80, 0x00ca310c, 0, 0, &err)`
+    /// into `+0x4030`; `err` is the original's argument slot, `out` here),
+    /// `0x00a19cf0`; each error returned (no target: `err`). Last the two
+    /// feature flags (`+0x402c`, `+0x3f90`) kept only when the render
+    /// state cache's level (`+0xb4`) is 0xb000 or more. 0.
+    pub fn take_targets(h: &mut impl Host, this: u32, cluster: u32, targets: u32, out: u32) -> u32 {
+        if h.read::<u32>(this + 0x3ed4) != 0 {
+            return 0x16;
+        }
+        let last: u32 = h.read(targets + 0x14);
+        if last == 0 {
+            return 5;
+        }
+        let format: u8 = h.read(last + 5);
+        let o = target_object(h, last);
+        let w: u32 = h.read(o.wrapping_add(0x1c));
+        let o = target_object(h, last);
+        let ht: u32 = h.read(o.wrapping_add(0x20));
+        if format != 0 && format != 2 {
+            return 5;
+        }
+        for (i, f) in [
+            (0, None),
+            (1, None),
+            (3, Some(format)),
+            (2, Some(format)),
+            (4, Some(0)),
+        ] {
+            let t: u32 = h.read(targets + 4 * i);
+            if !target_matches(h, t, w, ht, f) {
+                return 5;
+            }
+        }
+        for i in 0..6 {
+            let t: u32 = h.read(targets + 4 * i);
+            h.write(this + 0x3fb0 + 4 * i, t);
+        }
+        h.write(this + 0x3ed4, 3u32);
+        let r = h.call_sym(TAKE_TARGETS[0], Conv::Thiscall(this), &[cluster]);
+        if r != 0 {
+            return r;
+        }
+        let r = h.call_sym(TAKE_TARGETS[1], Conv::Thiscall(this), &[w, ht]);
+        if r != 0 {
+            return r;
+        }
+        h.write(out, 0u32);
+        let format = h.rebase(TAKE_TARGETS[2]);
+        let target = h.call_sym(
+            TAKE_TARGETS[3],
+            Conv::Cdecl,
+            &[cluster, 0x80, 0x80, format, 0, 0, out],
+        );
+        h.write(this + 0x4030, target);
+        let err: u32 = h.read(out);
+        if target == 0 || err != 0 {
+            return err;
+        }
+        let r = h.call_sym(TAKE_TARGETS[4], Conv::Thiscall(this), &[]);
+        if r != 0 {
+            return r;
+        }
+        for flag in [0x402c, 0x3f90] {
+            let cache = h.call_sym(TAKE_TARGETS[5], Conv::Cdecl, &[]);
+            let level: u32 = h.read(cache + 0xb4);
+            let keep = u8::from(level.cast_signed() >= 0xb000);
+            let f: u8 = h.read(this + flag);
+            h.write(this + flag, f & keep);
+        }
+        0
+    }
+
+    /// A `PConstantBufferD3D11` (0x3c bytes, `PhyreMalloc` and its
+    /// constructor; none when the allocation fails, which the original
+    /// then dereferences) kept at `this + field`, its slot array sized to
+    /// 8 (`resizeSlots(8)` unless it holds 8 already; on success `+4`
+    /// cleared) and created with `size` bytes; `create`'s error.
+    fn new_constant_buffer(h: &mut impl Host, this: u32, field: u32, size: u32) -> u32 {
+        let p = h.call_sym(DEFERRED_BUFFERS[0], Conv::Cdecl, &[0x3c]);
+        let b = if p == 0 {
+            0
+        } else {
+            h.call_sym(DEFERRED_BUFFERS[1], Conv::Thiscall(p), &[]);
+            p
+        };
+        h.write(this + field, b);
+        let n = h.read::<u32>(b.wrapping_add(0xc)) & 0x7fff_ffff;
+        if n != 8 && h.call_sym(DEFERRED_BUFFERS[2], Conv::Thiscall(b), &[8]) == 0 {
+            h.write(b.wrapping_add(4), 0u32);
+        }
+        let b: u32 = h.read(this + field);
+        h.call_sym(DEFERRED_BUFFERS[3], Conv::Thiscall(b), &[size, 0])
+    }
+
+    /// A structured buffer (0x48 bytes, `PhyreMalloc` and its
+    /// constructor; none when the allocation fails) kept at `this +
+    /// field` and set up with `0x0058f2b0(a, b, c, 0)`; its error.
+    fn new_structured_buffer(h: &mut impl Host, this: u32, field: u32, args: [u32; 3]) -> u32 {
+        let p = h.call_sym(DEFERRED_BUFFERS[0], Conv::Cdecl, &[0x48]);
+        let b = if p == 0 {
+            0
+        } else {
+            h.call_sym(DEFERRED_BUFFERS[4], Conv::Thiscall(p), &[]);
+            p
+        };
+        h.write(this + field, b);
+        h.call_sym(
+            DEFERRED_BUFFERS[5],
+            Conv::Thiscall(b),
+            &[args[0], args[1], args[2], 0],
+        )
+    }
+
+    /// `0x00a19cf0` (thiscall `(this)`): the deferred lighting's buffers:
+    /// constant buffers of 0x2800 and 0xc00 bytes (`+0x3fc8`, `+0x3fcc`);
+    /// then, when the render state cache's level (`0x00c94fb4`; the cache
+    /// built on first use: guard bit 0 of `0x00c9628c`, `0x004fee70`,
+    /// `atexit(0x00afb710)`) is 0xb000 or more, structured buffers
+    /// `+0x4034` `(0x4000, 0xa0, 10)` and `+0x4038` `(4, 4, 8)`. The
+    /// first error, else 0. (The original's exception frame, for the
+    /// constructors, is left out.)
+    pub fn create_buffers(h: &mut impl Host, this: u32) -> u32 {
+        for (field, size) in [(0x3fc8, 0x2800), (0x3fcc, 0xc00)] {
+            let r = new_constant_buffer(h, this, field, size);
+            if r != 0 {
+                return r;
+            }
+        }
+        let guard = h.rebase(DEFERRED_BUFFERS[6]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(DEFERRED_BUFFERS[7]);
+            h.call_sym(DEFERRED_BUFFERS[8], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(DEFERRED_BUFFERS[9]);
+            h.call_sym(DEFERRED_BUFFERS[10], Conv::Cdecl, &[dtor]);
+        }
+        let cache = h.rebase(DEFERRED_BUFFERS[7]);
+        let level: u32 = h.read(cache + 0xb4);
+        if level.cast_signed() < 0xb000 {
+            return 0;
+        }
+        for (field, args) in [(0x4034, [0x4000, 0xa0, 10]), (0x4038, [4, 4, 8])] {
+            let r = new_structured_buffer(h, this, field, args);
+            if r != 0 {
+                return r;
+            }
+        }
+        0
+    }
+
+    /// [`queue_pass`]'s commands: for each of the pass's `n` passes
+    /// (`[pass + 8]`, every 0x254 bytes) that draws (`+0xc`), a 0x48-byte
+    /// command from the command ring (`+0x30`; the first and the end kept
+    /// at `+0x4c`, `+0x50`) `{3, _, pass, scene, material, 0, 0, table,
+    /// a, b, c}` (`words`: table, scene, material).
+    fn queue_commands(
+        h: &mut impl Host,
+        this: u32,
+        pass: u32,
+        n: u32,
+        words: [u32; 3],
+        args: [u32; 3],
+    ) {
+        let [buf, scene, mat] = words;
+        let mut p: u32 = h.read(pass + 8);
+        for _ in 0..n {
+            if h.read::<u32>(p + 0xc) != 0 {
+                let cmd = h.call_sym(QUEUE_PASS[8], Conv::Thiscall(this + 0x30), &[0x48]);
+                if cmd != 0 {
+                    if h.read::<u32>(this + 0x4c) == 0 {
+                        h.write(this + 0x4c, cmd);
+                    }
+                    h.write(this + 0x50, cmd + 0x48);
+                }
+                for (off, v) in [
+                    (0x20, args[0]),
+                    (0x24, args[1]),
+                    (0x28, args[2]),
+                    (0, 3),
+                    (8, p),
+                    (0x1c, buf),
+                    (0xc, scene),
+                    (0x10, mat),
+                    (0x14, 0),
+                    (0x18, 0),
+                ] {
+                    h.write(cmd.wrapping_add(off), v);
+                }
+            }
+            p = p.wrapping_add(0x254);
+        }
+    }
+
+    /// `0x005b6620` (thiscall `(renderer; material, instance, a, b, c)`,
+    /// ret 0x14): the deferred pass's draw commands queued. 0x16 while the
+    /// renderer is busy (bit 0 of `+4`), 0x15 without its effect
+    /// (`+0x48`), 7 when the material has no technique for it (its
+    /// technique table `+0x14`/`+0x18` at the effect's index `+0xc`, else
+    /// `PEffect_findTechniqueByPass`) or the technique no pass (`+8`).
+    /// With the block tree (`0x00cbbf58`), the pass's block entry
+    /// counted up (`InterlockedExchangeAdd(entry, 1)`). Then the sizes
+    /// (`meshInstanceSizes(&total, &blocks, &table, flags, instance,
+    /// material, pass, 0, 0)`, the three words in `frame`), room made
+    /// (`hasRoom(total, n)`, else the renderer's slot 2), the scene-wide
+    /// (flag 1) and material (flag 2) capture buffers, a table of
+    /// `blocks` bytes from the data ring (`+0x1c`), and for each of the
+    /// pass's `n` (`+4`) passes (`+8`, every 0x254 bytes) that draws
+    /// (`+0xc`) a 0x48-byte command from the command ring (`+0x30`; the
+    /// first and the end kept at `+0x4c`, `+0x50`): `{3, _, pass, scene,
+    /// material, 0, 0, table, a, b, c}`. The table: the scene buffer's
+    /// data (`+4`) when there is one, then the material's texture
+    /// pointers (`texturePointers`), its count first; each pointed-to
+    /// counter raised by `n`. 0.
+    ///
+    /// `frame` is 6 words, the original's `ebp - 0xc` (`table`, `blocks`
+    /// at `+0`, `+4`); `+0x14` stands for the original's first argument
+    /// slot, which it reuses for `total` and the scene buffer.
+    pub fn queue_pass(
+        h: &mut impl Host,
+        this: u32,
+        material: u32,
+        instance: u32,
+        args: [u32; 3],
+        frame: u32,
+    ) -> u32 {
+        let c = QUEUE_PASS;
+        if h.read::<u8>(this + 4) & 1 != 0 {
+            return 0x16;
+        }
+        let effect: u32 = h.read(this + 0x48);
+        if effect == 0 {
+            return 0x15;
+        }
+        let index: u32 = h.read(effect + 0xc);
+        let mut technique = 0;
+        if index != u32::MAX && index < h.read::<u32>(material + 0x14) & 0x7fff_ffff {
+            let table: u32 = h.read(material + 0x18);
+            technique = h.read(table.wrapping_add(index.wrapping_mul(4)));
+        }
+        if technique == 0 {
+            technique = h.call_sym(c[0], Conv::Thiscall(material), &[effect]);
+            if technique == 0 {
+                return 7;
+            }
+        }
+        let pass: u32 = h.read(technique + 8);
+        if pass == 0 {
+            return 7;
+        }
+        let tree: u32 = h.read(h.rebase(c[1]));
+        if tree != 0 {
+            let entry = h.call_sym(c[2], Conv::Thiscall(tree), &[technique, pass]);
+            if entry != 0 {
+                let f: u32 = h.read(h.rebase(c[3]));
+                h.call(f, Conv::Stdcall, &[entry, 1]);
+            }
+        }
+        let n = h.read::<u32>(pass + 4) & 0x7fff_ffff;
+        let flags: u32 = h.read(pass);
+        let (table, blocks, total) = (frame, frame + 4, frame + 0x14);
+        for w in [total, table, blocks] {
+            h.write(w, 0u32);
+        }
+        h.call_sym_wide(
+            c[4],
+            &[total, table, blocks, flags, instance, material, pass, 0, 0],
+        );
+        let bytes: u32 = h.read(total);
+        if h.call_sym(c[5], Conv::Thiscall(this), &[bytes, n]) as u8 == 0 {
+            let vt: u32 = h.read(this);
+            let f: u32 = h.read(vt + 8);
+            h.call(f, Conv::Thiscall(this), &[]);
+        }
+        h.write(total, 0u32);
+        h.write(table, 0u32);
+        let scene = if flags & 1 != 0 {
+            h.call_sym(c[6], Conv::Thiscall(this), &[])
+        } else {
+            0
+        };
+        h.write(total, scene);
+        let mat = if flags & 2 != 0 {
+            h.call_sym(c[7], Conv::Thiscall(this), &[instance])
+        } else {
+            0
+        };
+        h.write(table, mat);
+        let size: u32 = h.read(blocks);
+        let buf = h.call_sym(c[8], Conv::Thiscall(this + 0x1c), &[size]);
+        queue_commands(h, this, pass, n, [buf, scene, mat], args);
+        let first = buf.wrapping_add(4);
+        let mut cursor = first;
+        if scene != 0 {
+            h.write(first, scene + 4);
+            cursor = first + 4;
+        }
+        let end = h.call_sym(c[9], Conv::Cdecl, &[instance, instance + 8, cursor]);
+        let count = (end.wrapping_sub(first).cast_signed() >> 2).cast_unsigned();
+        h.write(buf, count);
+        let add: u32 = h.read(h.rebase(c[3]));
+        let mut i = 0;
+        while i < h.read::<u32>(buf) {
+            let counter: u32 = h.read(first + 4 * i);
+            h.call(add, Conv::Stdcall, &[counter, n]);
+            i += 1;
+        }
+        0
+    }
+
+    /// A structured buffer's slot array (`+0x14` count, one inline at
+    /// `+0x18`, more behind the pointer there; none when 0).
+    fn structured_slots(h: &impl ffx_bridge::Mem, this: u32) -> u32 {
+        let n = h.read::<u32>(this + 0x14) & 0x7fff_ffff;
+        match n {
+            0 => 0,
+            1 => this + 0x18,
+            _ => h.read(this + 0x18),
+        }
+    }
+
+    /// `0x0058f2b0` (thiscall `(buffer; size, stride, flags, data)`, ret
+    /// 0x10): a structured buffer's D3D11 buffers made. Keeps size,
+    /// stride and flags (`+0`, `+4`, `+8`); under the render scope lock
+    /// (`frame + 0x10`) and with the render state cache built (guard bit
+    /// 0 of `0x00c9628c`), one `ID3D11Device::CreateBuffer(&desc, data ?
+    /// &init : null, &slot)` (device `0x00c94f6c`, method `+0xc`) per slot
+    /// of the buffer's array (`+0x14` count, one when 0; data at `+0x18`,
+    /// 0x14 bytes each), each followed by the new buffer's `GetDesc(+0x2c)`
+    /// (`+0x28`); a failed create: 9. `desc` = `{size * stride, usage
+    /// (flags bit 0: 2 dynamic, else 1 with data, 0 without), 8 (shader
+    /// resource), CPU write (0x10000) when dynamic, 0x40 (structured),
+    /// stride}`, `init` = `{data, 0, 0}`. Then the views
+    /// (`PStructuredBufferD3D11_createViews`, its `eax`).
+    ///
+    /// `frame` is 12 words, the original's `ebp - 0x44`, laid out as it
+    /// is: `init` at `+0`, the device `+0xc`, the lock `+0x10`, the slot
+    /// counter `+0x14`, the data flag byte `+0x1b`, `desc` `+0x1c`. (The
+    /// original also keeps `flags & 1` in its `flags` argument slot, and
+    /// its exception frame for the lock is left out.)
+    pub fn create_structured(h: &mut impl Host, this: u32, args: [u32; 4], frame: u32) -> u32 {
+        let [size, stride, flags, data] = args;
+        let c = STRUCTURED;
+        h.write(this, size);
+        h.write(this + 4, stride);
+        h.write(this + 8, flags);
+        h.write(frame + 0x1b, u8::from(data != 0));
+        let dynamic = flags & 1 != 0;
+        let lock = frame + 0x10;
+        h.call_sym(c[0], Conv::Thiscall(lock), &[]);
+        let guard = h.rebase(c[1]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(c[2]);
+            h.call_sym(c[3], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(c[4]);
+            h.call_sym(c[5], Conv::Cdecl, &[dtor]);
+        }
+        let device: u32 = h.read(h.rebase(c[6]));
+        h.write(frame + 0xc, device);
+        let stride: u32 = h.read(this + 4);
+        let size: u32 = h.read(this);
+        let usage = if dynamic {
+            2
+        } else {
+            u32::from(h.read::<u8>(frame + 0x1b) != 0)
+        };
+        let desc = frame + 0x1c;
+        let cpu = if dynamic { 0x10000 } else { 0 };
+        for (i, w) in [size.wrapping_mul(stride), usage, 8, cpu, 0x40, stride]
+            .into_iter()
+            .enumerate()
+        {
+            h.write(desc + 4 * i as u32, w);
+        }
+        h.write(frame + 0x14, 0u32);
+        for (i, w) in [data, 0, 0].into_iter().enumerate() {
+            h.write(frame + 4 * i as u32, w);
+        }
+        if h.call_sym(c[7], Conv::Thiscall(this), &[]) != 0 {
+            let init = if data != 0 { frame } else { 0 };
+            let mut at = 0u32;
+            loop {
+                let slot = structured_slots(h, this).wrapping_add(at);
+                let vt: u32 = h.read(device);
+                let create: u32 = h.read(vt + 0xc);
+                if h.call(create, Conv::Stdcall, &[device, desc, init, slot]) != 0 {
+                    h.call_sym(c[8], Conv::Thiscall(lock), &[]);
+                    return 9;
+                }
+                let object: u32 = h.read(structured_slots(h, this).wrapping_add(at));
+                let vt: u32 = h.read(object);
+                let get_desc: u32 = h.read(vt + 0x28);
+                h.call(get_desc, Conv::Stdcall, &[object, this + 0x2c]);
+                let k = h.read::<u32>(frame + 0x14).wrapping_add(1);
+                h.write(frame + 0x14, k);
+                at = at.wrapping_add(0x14);
+                if k >= h.call_sym(c[7], Conv::Thiscall(this), &[]) {
+                    break;
+                }
+            }
+        }
+        h.call_sym(c[8], Conv::Thiscall(lock), &[]);
+        h.call_sym(c[9], Conv::Thiscall(this), &[])
+    }
+
+    /// `IUnknown::Release` (slot 2) of `obj`.
+    fn release(h: &mut impl Host, obj: u32) {
+        com(h, obj, 8, &[]);
+    }
+
+    /// `0x0058ec50` (thiscall `(renderer; dst)`, ret 4): the first render
+    /// target's texture (`+0xdc` count, `+0xe0` inline or the array) read
+    /// back into `dst` as RGB rows, bottom row first: its description
+    /// (`GetDesc`, slot `+0x28`) reused for a single-sample default
+    /// texture and a staging one (CPU read) from the device (`+0x6c`,
+    /// `CreateTexture2D` `+0x14`); on the context (`+0x70`) the target
+    /// resolved into the first (`ResolveSubresource` `+0xe4`, format
+    /// 0x1c), copied into the second (`CopyResource` `+0xbc`), mapped
+    /// (`Map` `+0x38`, read) and its pixels' first three bytes copied
+    /// (`Unmap` `+0x3c`); the textures made and the target released
+    /// (`Release`, slot 2). 1 without `dst`, else 0 (also when a step
+    /// fails).
+    ///
+    /// `frame` is 18 words, the original's `ebp - 0x4c`: the mapping at
+    /// `+0`, the target and `this` at `+0xc`, `+0x10`, the two textures
+    /// at `+0x14`, `+0x18`, the description at `+0x1c`.
+    pub fn read_back(h: &mut impl Host, this: u32, dst: u32, frame: u32) -> u32 {
+        // the original's saved copies of `this` and the target
+        h.write(frame + 0x10, this);
+        if dst == 0 {
+            return 1;
+        }
+        let n = h.read::<u32>(this + 0xdc) & 0x7fff_ffff;
+        if n == 0 {
+            return 0;
+        }
+        let arr = if n > 1 {
+            h.read(this + 0xe0)
+        } else {
+            this + 0xe0
+        };
+        let target: u32 = h.read(arr);
+        h.write(frame + 0xc, target);
+        if target == 0 {
+            return 0;
+        }
+        let (mapped, resolved, staging, desc) = (frame, frame + 0x14, frame + 0x18, frame + 0x1c);
+        h.write(resolved, 0u32);
+        h.write(staging, 0u32);
+        com(h, target, 0x28, &[desc]);
+        let device: u32 = h.read(this + 0x6c);
+        for (off, v) in [(0x20, 0u32), (0x14, 1), (0x1c, 0), (0x24, 0)] {
+            h.write(desc + off, v);
+        }
+        let hr = com_r(h, device, 0x14, &[desc, 0, resolved]);
+        if h.read::<u32>(resolved) != 0 && hr == 0 {
+            let device: u32 = h.read(this + 0x6c);
+            h.write(desc + 0x1c, 3u32);
+            h.write(desc + 0x24, 0x20000u32);
+            let hr = com_r(h, device, 0x14, &[desc, 0, staging]);
+            if h.read::<u32>(staging) != 0 && hr == 0 {
+                let ctx: u32 = h.read(this + 0x70);
+                let first: u32 = h.read(resolved);
+                com(h, ctx, 0xe4, &[first, 0, target, 0, 0x1c]);
+                let ctx: u32 = h.read(this + 0x70);
+                let (first, second): (u32, u32) = (h.read(resolved), h.read(staging));
+                com(h, ctx, 0xbc, &[second, first]);
+                let ctx: u32 = h.read(this + 0x70);
+                let second: u32 = h.read(staging);
+                if com_r(h, ctx, 0x38, &[second, 0, 1, 0, mapped]) == 0 {
+                    copy_rgb_rows(h, desc, mapped, dst);
+                    let ctx: u32 = h.read(this + 0x70);
+                    let second: u32 = h.read(staging);
+                    com(h, ctx, 0x3c, &[second, 0]);
+                }
+                let second: u32 = h.read(staging);
+                if second != 0 {
+                    release(h, second);
+                }
+            }
+            let first: u32 = h.read(resolved);
+            if first != 0 {
+                release(h, first);
+            }
+        }
+        release(h, target);
+        0
+    }
+
+    /// The mapped pixels (`desc` width `+0`, height `+4`; `mapped` data
+    /// `+0`, row pitch `+4`) as RGB bytes into `dst`, the bottom row
+    /// first.
+    fn copy_rgb_rows(h: &mut impl Host, desc: u32, mapped: u32, mut dst: u32) {
+        let width: u32 = h.read(desc);
+        let rows: u32 = h.read(desc + 4);
+        let data: u32 = h.read(mapped);
+        let pitch: u32 = h.read(mapped + 4);
+        let mut row = rows.wrapping_sub(1).wrapping_mul(pitch).wrapping_add(data);
+        let mut end = row.wrapping_add(width.wrapping_mul(4));
+        for _ in 0..rows {
+            let mut p = row;
+            while p < end {
+                for k in 0..3 {
+                    let b: u8 = h.read(p + k);
+                    h.write(dst + k, b);
+                }
+                p += 4;
+                dst += 3;
+            }
+            row = row.wrapping_sub(pitch);
+            end = end.wrapping_sub(pitch);
+        }
+    }
+
+    /// [`com`] with the method's `eax` (an `HRESULT`).
+    fn com_r(h: &mut impl Host, obj: u32, slot: u32, args: &[u32]) -> u32 {
+        let vt: u32 = h.read(obj);
+        let f: u32 = h.read(vt.wrapping_add(slot));
+        let mut words = vec![obj];
+        words.extend_from_slice(args);
+        h.call(f, Conv::Stdcall, &words)
+    }
+
+    /// One render target handle of [`resize_targets`]: `Err(1)` when it
+    /// is missing (no handle, the byte `+4` set, no texture `+0`); a
+    /// texture of another size (`+0x1c`, `+0x20`) unbound when bound
+    /// (`isBound`, `unbind`) and given the new size
+    /// (`PTexture2DBase::setDimensions(w, h, [tex], 0)`); their error.
+    fn resize_handle(h: &mut impl Host, handle: u32, w: u32, ht: u32) -> Result<(), u32> {
+        if handle == 0 || h.read::<u8>(handle + 4) != 0 {
+            return Err(1);
+        }
+        let tex: u32 = h.read(handle);
+        if tex == 0 {
+            return Err(1);
+        }
+        if h.read::<u32>(tex + 0x1c) == w && h.read::<u32>(tex + 0x20) == ht {
+            return Ok(());
+        }
+        if h.call_sym(RESIZE_TARGETS[0], Conv::Thiscall(tex), &[]) as u8 != 0 {
+            let r = h.call_sym(RESIZE_TARGETS[1], Conv::Thiscall(tex), &[]);
+            if r != 0 {
+                return Err(r);
+            }
+        }
+        let first: u32 = h.read(tex);
+        let r = h.call_sym(RESIZE_TARGETS[2], Conv::Thiscall(tex), &[w, ht, first, 0]);
+        if r != 0 {
+            return Err(r);
+        }
+        Ok(())
+    }
+
+    /// `0x00a22be0` (thiscall `(this; w, h)`, ret 8): the deferred
+    /// lighting's targets resized for its state (`+0x3ed4`): 1 the three
+    /// handles `+0x3f94..`, 2 the four `+0x3fa0..`, 3 the four `+0x3fb0..`
+    /// and then the render targets `+0x3fc0`, `+0x3fc4`
+    /// (`renderTargetResize(t, w, h, 0)`); each through [`resize_handle`]
+    /// (a missing handle: 1; an error returned). Then the buffers
+    /// (`resizeBuffers(w, h)`, its `eax`; also for any other state).
+    pub fn resize_targets(h: &mut impl Host, this: u32, w: u32, ht: u32) -> u32 {
+        let state: u32 = h.read(this + 0x3ed4);
+        let handles: &[u32] = match state {
+            1 => &[0x3f94, 0x3f98, 0x3f9c],
+            2 => &[0x3fa0, 0x3fa4, 0x3fa8, 0x3fac],
+            3 => &[0x3fb0, 0x3fb4, 0x3fb8, 0x3fbc],
+            _ => &[],
+        };
+        for &field in handles {
+            let handle: u32 = h.read(this + field);
+            if let Err(r) = resize_handle(h, handle, w, ht) {
+                return r;
+            }
+        }
+        if state == 3 {
+            for field in [0x3fc0, 0x3fc4] {
+                let t: u32 = h.read(this + field);
+                let r = h.call_sym(RESIZE_TARGETS[3], Conv::Cdecl, &[t, w, ht, 0]);
+                if r != 0 {
+                    return r;
+                }
+            }
+        }
+        h.call_sym(TAKE_TARGETS[1], Conv::Thiscall(this), &[w, ht])
+    }
+
+    /// A render target of `w` x `h` from `cluster`: a texture
+    /// (`PCluster::create(1, PTexture2D, 0)`) given its size
+    /// (`setDimensions(w, h, 0x00ca310c, 0)`; on success flag 2 of `+0x14`
+    /// and the byte `+5` cleared, `updateMaxLevel`), an instance list of
+    /// one render target (`allocateInstanceList(1, 0x00ca4200, 0)`, its
+    /// instance `+0x34`) constructed over it (`0x00583a60`), its byte
+    /// `+5` cleared and its name `"PPostProcessUtils"`; 0 when a step
+    /// fails.
+    fn make_utility_target(h: &mut impl Host, cluster: u32, w: u32, ht: u32) -> u32 {
+        let c = DOWNSAMPLE;
+        let class = h.rebase(c[0]);
+        let tex = h.call_sym(c[1], Conv::Thiscall(cluster), &[1, class, 0]);
+        if tex == 0 {
+            return 0;
+        }
+        let format = h.rebase(c[2]);
+        if h.call_sym(c[3], Conv::Thiscall(tex), &[w, ht, format, 0]) != 0 {
+            return 0;
+        }
+        let f: u32 = h.read(tex + 0x14);
+        h.write(tex + 0x14, f & !2);
+        h.write(tex + 5, 0u8);
+        h.call_sym(c[4], Conv::Thiscall(tex), &[]);
+        let class = h.rebase(c[5]);
+        let list = h.call_sym(c[6], Conv::Thiscall(cluster), &[1, class, 0]);
+        if list == 0 {
+            return 0;
+        }
+        let inst: u32 = h.read(list + 0x34);
+        if inst == 0 {
+            return 0;
+        }
+        h.call_sym(c[7], Conv::Thiscall(inst), &[tex]);
+        h.write(inst + 5, 0u8);
+        let name = h.rebase(c[8]);
+        h.write(inst + 0xc, name);
+        inst
+    }
+
+    /// `0x00a179a0` (thiscall `(this; cluster, w, h)`, ret 0xc; also
+    /// reached by a tail jump from `0x00a17990`): the post-process
+    /// utility's downsample chain: three pairs of render targets of a
+    /// quarter, an eighth and a sixteenth of the size (`+0x90..`, `+0x9c..`)
+    /// and one of half the size (`+0xa8`), each [`make_utility_target`]
+    /// (0 for a failed one). 0. (The original's exception frame, for the
+    /// constructors, is left out.)
+    pub fn create_downsample_targets(
+        h: &mut impl Host,
+        this: u32,
+        cluster: u32,
+        w: u32,
+        ht: u32,
+    ) -> u32 {
+        let (mut tw, mut th) = (w >> 2, ht >> 2);
+        for k in 0..3 {
+            let first = make_utility_target(h, cluster, tw, th);
+            h.write(this + 0x90 + 4 * k, first);
+            let second = make_utility_target(h, cluster, tw, th);
+            h.write(this + 0x9c + 4 * k, second);
+            th >>= 1;
+            tw >>= 1;
+        }
+        let half = make_utility_target(h, cluster, w >> 1, ht >> 1);
+        h.write(this + 0xa8, half);
+        0
+    }
+
+    /// `0x00a19620` (thiscall `(this; w, h)`, ret 8): the deferred
+    /// lighting's own targets made and taken. With the render state cache
+    /// built (as [`create_buffers`]) and the size defaulting to the
+    /// screen's (`0x00c95100`, `0x00c95104`) when 0: 0x16 when it has its
+    /// targets; else from the global cluster `0x01943da0` a depth target
+    /// (as [`make_utility_target`]) and five render targets
+    /// (`makeRenderTarget(cluster, w, h, format, 0, 0, &err)`, formats
+    /// `0x00ca3274`, `0x00ca310c` x 3, `0x00ca347c`), the six handed to
+    /// [`take_targets`] (`0x00a191f0`) in the original's order (depth,
+    /// first, third, second, fourth, fifth). A failed step's error is
+    /// returned, but a step that fails without one (no texture, no list,
+    /// no instance, a maker answering none with `err` 0) counts as done:
+    /// the flag `+0x10` set and 0, as when all went through.
+    ///
+    /// `frame` is 7 words: the six targets (the original's `ebp - 0x34`)
+    /// and the maker's error word (the original's first argument slot).
+    pub fn create_targets(h: &mut impl Host, this: u32, w: u32, ht: u32, frame: u32) -> u32 {
+        let guard = h.rebase(DEFERRED_BUFFERS[6]);
+        let g: u32 = h.read(guard);
+        if g & 1 == 0 {
+            h.write(guard, g | 1);
+            let cache = h.rebase(DEFERRED_BUFFERS[7]);
+            h.call_sym(DEFERRED_BUFFERS[8], Conv::Thiscall(cache), &[]);
+            let dtor = h.rebase(DEFERRED_BUFFERS[9]);
+            h.call_sym(DEFERRED_BUFFERS[10], Conv::Cdecl, &[dtor]);
+        }
+        let w = if w == 0 {
+            h.read(h.rebase(OWN_TARGETS[0]))
+        } else {
+            w
+        };
+        let ht = if ht == 0 {
+            h.read(h.rebase(OWN_TARGETS[1]))
+        } else {
+            ht
+        };
+        if h.read::<u32>(this + 0x3ed4) != 0 {
+            return 0x16;
+        }
+        let r = own_targets(h, this, w, ht, frame);
+        if r != 0 {
+            return r;
+        }
+        h.write(this + 0x10, 1u8);
+        0
+    }
+
+    /// [`create_targets`]' steps; the first error (0 also when a step
+    /// fails without one).
+    fn own_targets(h: &mut impl Host, this: u32, w: u32, ht: u32, frame: u32) -> u32 {
+        let c = DOWNSAMPLE;
+        let targets = frame;
+        let err = frame + 0x18;
+        for i in 0..6 {
+            h.write(targets + 4 * i, 0u32);
+        }
+        let cluster = h.rebase(OWN_TARGETS[2]);
+        let class = h.rebase(c[0]);
+        let tex = h.call_sym(c[1], Conv::Thiscall(cluster), &[1, class, 0]);
+        if tex == 0 {
+            return 0;
+        }
+        let format = h.rebase(c[2]);
+        let r = h.call_sym(c[3], Conv::Thiscall(tex), &[w, ht, format, 0]);
+        h.write(err, r);
+        if r != 0 {
+            return r;
+        }
+        let f: u32 = h.read(tex + 0x14);
+        h.write(tex + 0x14, f & !2);
+        h.write(tex + 5, 0u8);
+        h.call_sym(c[4], Conv::Thiscall(tex), &[]);
+        let class = h.rebase(c[5]);
+        let list = h.call_sym(c[6], Conv::Thiscall(cluster), &[1, class, 0]);
+        if list == 0 {
+            return 0;
+        }
+        let depth: u32 = h.read(list + 0x34);
+        if depth == 0 {
+            return 0;
+        }
+        h.call_sym(c[7], Conv::Thiscall(depth), &[tex]);
+        h.write(depth + 5, 0u8);
+        let name = h.rebase(c[8]);
+        h.write(depth + 0xc, name);
+        let mut made = [0u32; 5];
+        for k in 0..5 {
+            let format = h.rebase(OWN_TARGETS[3 + k]);
+            let t = h.call_sym(
+                TAKE_TARGETS[3],
+                Conv::Cdecl,
+                &[cluster, w, ht, format, 0, 0, err],
+            );
+            let e: u32 = h.read(err);
+            if t == 0 || e != 0 {
+                return e;
+            }
+            made[k] = t;
+            if k == 3 {
+                for (i, v) in [depth, made[0], made[2], made[1], made[3]]
+                    .into_iter()
+                    .enumerate()
+                {
+                    h.write(targets + 4 * i as u32, v);
+                }
+            }
+        }
+        h.write(targets + 0x14, made[4]);
+        h.call_sym(TAKE_TARGETS_FN, Conv::Thiscall(this), &[cluster, targets])
     }
 }

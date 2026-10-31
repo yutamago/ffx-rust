@@ -3577,3 +3577,67 @@ fn m5p_scene_n_joint_world() {
         }
     }
 }
+
+/// `0x00a2f9b0` (the box between two points tested against a matrix)
+/// against the original, the point transform and the outcodes running as
+/// the game's code: random boxes and matrices (visible and not), boxes
+/// around the origin with a projection-like matrix (visible), a quiet NaN
+/// in the box.
+#[test]
+fn m5p_scene_big_box_between() {
+    for (what, mut tw) in Twins::all() {
+        let mut rng = Rng(173);
+        let frame = tw.b.stack_range().start + 0x1000;
+        let f = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<_>>();
+        for round in 0..120 {
+            let from = tw.alloc(&float_words(&mut rng, 3));
+            let to = tw.alloc(&float_words(&mut rng, 3));
+            let m = tw.alloc(&float_words(&mut rng, 16));
+            let label = format!("{what} box between {round}");
+            tw.run(&label, 0x00a2_f9b0, Conv::Cdecl, &[from, to, m], |g| {
+                sn::bridge::box_visible_between(g, from, to, m, frame)
+            });
+        }
+        let ident = tw.alloc(&f(&[
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]));
+        for (k, (lo, hi)) in [
+            ([-0.5f32, -0.5, -0.5], [0.5f32, 0.5, 0.5]),
+            ([2.0, 2.0, 2.0], [3.0, 3.0, 3.0]),
+            ([-3.0, 0.25, 0.25], [-2.0, 0.5, 0.5]),
+            ([f32::from_bits(0x7fc0_0001), 0.0, 0.0], [1.0, 1.0, 1.0]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let from = tw.alloc(&f(&lo));
+            let to = tw.alloc(&f(&hi));
+            let label = format!("{what} box between, fixed {k}");
+            tw.run(&label, 0x00a2_f9b0, Conv::Cdecl, &[from, to, ident], |g| {
+                sn::bridge::box_visible_between(g, from, to, ident, frame)
+            });
+        }
+        // a single corner inside the x planes decides: t + c (first
+        // matrix), (t + b) + c (second); the box from 0 to (0.5, 0.5, 1)
+        for (k, rows) in [
+            [
+                1.0f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.2, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0,
+            ],
+            [
+                1.0, 0.0, 0.0, 0.0, -1.2, 0.0, 0.0, 0.0, -0.6, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0,
+            ],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let m = tw.alloc(&f(&rows));
+            let from = tw.alloc(&f(&[0.0, 0.0, 0.0]));
+            let to = tw.alloc(&f(&[0.5, 0.5, 1.0]));
+            let label = format!("{what} box between, one corner inside {k}");
+            let r = tw.run(&label, 0x00a2_f9b0, Conv::Cdecl, &[from, to, m], |g| {
+                sn::bridge::box_visible_between(g, from, to, m, frame)
+            });
+            assert_eq!(r, 1, "{label}");
+        }
+    }
+}

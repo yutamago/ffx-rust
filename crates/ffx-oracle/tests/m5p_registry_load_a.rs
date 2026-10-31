@@ -2346,3 +2346,51 @@ fn left2_frame_users_match_the_original() {
         }
     }
 }
+
+/// `0x004c1480` (the utility registrations taken out) against the
+/// original: the memory as it is (the snapshots' live list), a list built
+/// in a shuffled order with a foreign node and some registrations
+/// missing, and the unlink answering nonzero (the original stops there).
+#[test]
+fn big_utility_teardown_matches_the_original() {
+    use ffx_pload::m5p_registry_load_a_left::{self as l2, bridge as l2b};
+    let [head, slots, first, stride, count, unlink, _] = l2::UTILITY_TEARDOWN;
+    for case in 0..3u32 {
+        for (label, mut t) in Twins::all() {
+            if case >= 1 {
+                // the slot table and each registration's index
+                let slots_at = t.rebase(slots);
+                t.write(slots_at, &[0x5a; 0x40]);
+                for k in 0..count {
+                    let e = t.rebase(first + stride * k);
+                    t.w32(e + 8, k % 16);
+                    t.w32(e + 4, 0);
+                }
+                // the list: shuffled, a foreign node in the middle, every
+                // fourth registration left out
+                let foreign = t.zeros(8);
+                // the inline three early, between others
+                let mut order: Vec<u32> = vec![4, 0, 5, 1, 6, 2];
+                order.extend((8..count).filter(|k| k % 4 != 3).rev());
+                let mut nodes: Vec<u32> = order
+                    .iter()
+                    .map(|&k| t.rebase(first + stride * k))
+                    .collect();
+                nodes.insert(5, foreign);
+                let head_at = t.rebase(head);
+                t.w32(head_at, nodes[0]);
+                for w in nodes.windows(2) {
+                    t.w32(w[0] + 4, w[1]);
+                }
+            }
+            if case == 2 {
+                t.stub(unlink, false, 1, 0, 9);
+            }
+            let what = format!("{label}: utility teardown case {case}");
+            t.check(&what, 0x004c_1480, Conv::Cdecl, &[], |g| {
+                Out::U32(l2b::utility_teardown(g))
+            });
+            t.reset();
+        }
+    }
+}

@@ -85,4 +85,21 @@ ported! {
     Phyre_PScripting_MatrixIndexHandler_00571770 @ 0x0057_1770 => extern "C" fn matrix_index(l: u32) -> u32 {
         lb::matrix_index(&mut mem(), l)
     }
+    /// The script's matrix `__mul` `(L)`.
+    Phyre_PScripting_Matrix_mul_00571a60 @ 0x0057_1a60 => extern "C" fn matrix_mul(l: u32) -> u32 {
+        let mut f = StackFrame::<32>::new();
+        lb::matrix_mul(&mut mem(), l, f.at())
+    }
+    /// `Phyre::PScripting::VectorIndexHandler(L)`.
+    Phyre_PScripting_VectorIndexHandler @ 0x0057_2e70 => extern "C" fn vector_index(l: u32) -> u32 {
+        lb::vector_index(&mut mem(), l)
+    }
+    /// The occluder's plane through a point `(out, a, b, p)`.
+    POccluderGeometry_plane_00a30eb0 @ 0x00a3_0eb0 => extern "C" fn occluder_plane(out: u32, a: u32, b: u32, p: u32) -> u32 {
+        lb::occluder_plane(&mut mem(), out, a, b, p)
+    }
+    /// The occluder's edge quad `(a, b, d)` appended to a job's buffer.
+    POccluderGeometry_pushEdgeQuad_00a30600 @ 0x00a3_0600 => extern "thiscall" fn occluder_quad(list: u32, a: u32, b: u32, d: u32) {
+        lb::occluder_quad(&mut mem(), list, a, b, d);
+    }
 }

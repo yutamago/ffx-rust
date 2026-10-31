@@ -289,8 +289,23 @@ impl CopyVisitor {
     }
 }
 
+/// `0x004c1480`'s data and callees: the registration list's head, the
+/// slot table, the first registration, their stride and count,
+/// `Phyre_PUtilityRendering_unlink_004c1410` and
+/// `Phyre_PUtilityRendering_unregister_004c1460` (cdecl).
+pub const UTILITY_TEARDOWN: [u32; 7] = [
+    0x00ca_2f04,
+    0x00ca_2f08,
+    0x00ca_2fcc,
+    0x28,
+    33,
+    0x004c_1410,
+    0x004c_1460,
+];
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::UTILITY_TEARDOWN;
     use super::{
         ADD_DYNAMIC, ADD_MEMBER_NAMED, ATEXIT, CLUSTER_DTOR, CREATE_INTERNAL, Conv, CopyVisitor,
         DYNAMIC_TYPE, FOR_EACH_ELEMENT, FREE, Host, LUA, LUA_REGISTRYINDEX, MALLOC, MALLOC_ALIGNED,
@@ -1219,5 +1234,58 @@ pub mod bridge {
             link = h.read(list + 0x48);
         }
         count
+    }
+
+    /// A utility registration's slot (`0x00ca2f08 + 4 [e + 8]`) cleared.
+    fn clear_utility_slot(h: &mut impl Host, e: u32) {
+        let slots = h.rebase(UTILITY_TEARDOWN[1]);
+        let i: u32 = h.read(e + 8);
+        h.write(slots.wrapping_add(i.wrapping_mul(4)), 0u32);
+    }
+
+    /// `0x004c1480` (cdecl `()`, from `PUtilityRendering::terminate`):
+    /// the 33 utility registrations (`0x00ca2fcc`, every 0x28 bytes) taken
+    /// out: each one's slot (`0x00ca2f08 + 4 [e + 8]`) cleared and the
+    /// entry unlinked from the list `0x00ca2f04` (next at `+4`, cleared):
+    /// the first three inline, the next five through
+    /// `Phyre_PUtilityRendering_unlink_004c1410`, the rest through
+    /// `Phyre_PUtilityRendering_unregister_004c1460`; a call's nonzero
+    /// `eax` stops it (never, in the game: both return 0). The last call's
+    /// `eax`.
+    pub fn utility_teardown(h: &mut impl Host) -> u32 {
+        let [head, _, first, stride, count, unlink, unregister] = UTILITY_TEARDOWN;
+        let head = h.rebase(head);
+        for k in 0..3 {
+            let e = h.rebase(first + stride * k);
+            clear_utility_slot(h, e);
+            let mut link = head;
+            loop {
+                let node: u32 = h.read(link);
+                if node == 0 {
+                    break;
+                }
+                if node == e {
+                    let next: u32 = h.read(node + 4);
+                    h.write(link, next);
+                    h.write(node + 4, 0u32);
+                    break;
+                }
+                link = node + 4;
+            }
+        }
+        let mut r = 0;
+        for k in 3..count {
+            let e = h.rebase(first + stride * k);
+            r = if k < 8 {
+                clear_utility_slot(h, e);
+                h.call_sym(unlink, Conv::Cdecl, &[e])
+            } else {
+                h.call_sym(unregister, Conv::Cdecl, &[e])
+            };
+            if r != 0 {
+                break;
+            }
+        }
+        r
     }
 }

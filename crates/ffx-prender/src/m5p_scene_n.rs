@@ -12,10 +12,16 @@ pub use crate::m5p_scene_f::FROM_MATRIX3X4;
 /// a . b`, returning `out`.
 pub const MUL_THIS: u32 = 0x004c_9da0;
 
+/// `0x00a2f9b0`'s callees: `PMatrix4_TransformPoint(out, p)` (thiscall,
+/// ret 8), `ClipOutcode(v)` (cdecl).
+pub const BOX_BETWEEN: [u32; 2] = [0x004c_9cb0, 0x0065_2470];
+/// The words of `0x00a2f9b0`'s frame.
+pub const BOX_BETWEEN_FRAME_WORDS: u32 = 12;
+
 pub mod bridge {
     //! The port over game memory.
 
-    use super::{Conv, FROM_MATRIX3X4, Host, MUL_THIS, Mem, x87};
+    use super::{BOX_BETWEEN, Conv, FROM_MATRIX3X4, Host, MUL_THIS, Mem, x87};
 
     const EXTERNAL: u32 = 0x8000_0000;
 
@@ -101,5 +107,62 @@ pub mod bridge {
             h.write(out + 4 * i, w);
         }
         out
+    }
+
+    /// `0x00a2f9b0` (cdecl `(from, to, m)` -> 0/1, from the occluder
+    /// job's culling `0x00a30260`): whether the box spanned by the points
+    /// `from` and `to` is visible through the 4x4 `m`. The extent `to -
+    /// from` (floats), its components times `m`'s rows (`a`, `b`, `c`,
+    /// each product a float), `t = PMatrix4_TransformPoint(m, from)`, the
+    /// eight corners `t`, `t+a`, `t+b`, `(t+a)+b` and those `+c` (each
+    /// sum a float), their `ClipOutcode`s and-ed together: 1 when that is 0.
+    ///
+    /// `frame` is 12 words: `from`'s copy at `+0`, the transformed point
+    /// at `+0x10`, the corner being tested at `+0x20`.
+    pub fn box_visible_between(h: &mut impl Host, from: u32, to: u32, m: u32, frame: u32) -> u32 {
+        let st = |x: f64| x87::load(x87::store(x));
+        let ext: [f64; 3] = core::array::from_fn(|k| {
+            let k = 4 * u32::try_from(k).unwrap_or(0);
+            st(x87::sub(ld(h, to + k), ld(h, from + k)))
+        });
+        let mut rows = [[0f64; 4]; 3];
+        for (r, out) in (0u32..).zip(rows.iter_mut()) {
+            for (k, v) in (0u32..).zip(out.iter_mut()) {
+                *v = st(x87::mul(ld(h, m + 0x10 * r + 4 * k), ext[r as usize]));
+            }
+        }
+        let [a, b, c] = rows;
+        let (centre, tp, at) = (frame, frame + 0x10, frame + 0x20);
+        for k in 0..3 {
+            let v: u32 = h.read(from + 4 * k);
+            h.write(centre + 4 * k, x87::store(x87::load(v)));
+        }
+        h.call_sym(BOX_BETWEEN[0], Conv::Thiscall(m), &[tp, centre]);
+        let t: [f64; 4] = core::array::from_fn(|k| ld(h, tp + 4 * u32::try_from(k).unwrap_or(0)));
+        let add = |p: [f64; 4], q: [f64; 4]| -> [f64; 4] {
+            core::array::from_fn(|k| st(x87::add(p[k], q[k])))
+        };
+        let ta = add(t, a);
+        let tb = add(t, b);
+        let tab = add(ta, b);
+        // in the original's order of outcodes
+        let corners = [
+            add(tab, c),
+            add(tb, c),
+            add(ta, c),
+            add(t, c),
+            tab,
+            tb,
+            ta,
+            t,
+        ];
+        let mut acc = u32::MAX;
+        for p in corners {
+            for (k, v) in (0u32..).zip(p) {
+                h.write(at + 4 * k, x87::store(v));
+            }
+            acc &= h.call_sym(BOX_BETWEEN[1], Conv::Cdecl, &[at]);
+        }
+        u32::from(acc == 0)
     }
 }

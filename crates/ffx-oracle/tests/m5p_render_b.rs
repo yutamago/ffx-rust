@@ -72,6 +72,13 @@ impl Host for G<'_> {
     fn scratch(&mut self) -> u32 {
         self.0.stack_range().start + 0x100
     }
+    fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
+        ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
+        self.0
+            .call(addr, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("callee {addr:#x}: {e}"))
+            .eax
+    }
     fn call_st0(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f32 {
         let conv = match conv {
             host::Conv::Cdecl => Conv::Cdecl,
@@ -4864,4 +4871,1372 @@ fn place(t: &mut Twins, sym: u32, code: u32) {
     let old = Oracle::read(&mut t.a, at, 5).unwrap();
     t.saved.entry(at).or_insert(old);
     t.write(at, &j);
+}
+
+/// The light setup's cluster load `0x006e5be0`: no cluster; an empty
+/// object list; a list whose first node is of the cursor's class (found,
+/// the global set) or of another class (not found). The original's
+/// never-written name word `[ebp-4]` is 0 in its frame (the junk-read
+/// policy), the cursor compared in the original's frame.
+#[test]
+fn left2_light_cluster_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let class = t.rebase(l2::LIGHT_CLUSTER[6]);
+        let other = t.zeros(0x90);
+        for case in 0..5u32 {
+            let cluster = if case == 0 { 0 } else { t.junk(0x80, 5) };
+            // the fixup moves the cluster: the port must read it again
+            let moved = if case == 0 { 0 } else { t.junk(0x80, 6) };
+            if cluster != 0 {
+                let list = moved + 0x1c;
+                if case == 1 {
+                    // empty: the list head itself would pass as a node
+                    t.w32(list, list);
+                    t.w32(list + 0x2c, class);
+                    t.w32(list + 0x40, 2);
+                } else {
+                    let node = t.junk(0x50, 9);
+                    t.w32(list, node);
+                    t.w32(node, list);
+                    t.w32(node + 0x2c, if case == 3 { other } else { class });
+                    t.w32(node + 0x40, if case == 4 { 0 } else { 2 });
+                    // +8 differs from +0x34: SetNode does not step
+                    t.w32(node + 0x08, 0x1234);
+                    t.w32(node + 0x34, 0x5678);
+                    t.w32(node + 0x3c, 3);
+                }
+            }
+            t.stub(l2::LIGHT_CLUSTER[0], false, 0, 0, 0x00e0_0000);
+            t.stub(l2::LIGHT_CLUSTER[1], true, 1, 1, cluster);
+            t.stub(l2::LIGHT_CLUSTER[2], false, 0, 0, 0x00e1_0000);
+            t.stub(l2::LIGHT_CLUSTER[3], false, 2, 0, 0);
+            // the fixup stub stores `moved` through its first word first
+            let fix = t.rebase(l2::LIGHT_CLUSTER[3]);
+            let logger = t.stub_code(l2::LIGHT_CLUSTER[3], false, 2, 0, 0);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], moved
+            c.extend(moved.to_le_bytes());
+            let code = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), code);
+            c.push(0xe9);
+            c.extend(logger.wrapping_sub(code + 15).to_le_bytes()); // jmp logger
+            t.write(code, &c);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(fix + 5).to_le_bytes());
+            t.write(fix, &j);
+            let ebp = t.ebp_for(0);
+            t.w32(ebp - 4, 0);
+            let what = format!("{label}: light cluster case {case}");
+            t.check_frame(
+                &what,
+                0x006e_5be0,
+                Conv::Cdecl,
+                &[],
+                ebp,
+                0x40,
+                (0x24, 4),
+                |g| {
+                    l2b::load_light_cluster(g, ebp - 0x24);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `PDeferredLightingBase::initializeCommonShaders` against the
+/// original: a target missing; the old material there or not; the
+/// previous block copied (sizes match) or not, or no previous; the
+/// instance array's heads (already one, empty, one inline, owned and
+/// borrowed data); each sampler registration failing; each sampler
+/// parameter missing; a binding failing.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case, columns named above
+fn big_common_shaders_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (the missing target, old material, previous: 0 none 1 same size
+    // 2 other, the array head, registration errors, the sampler name the
+    // lookup answers 0 for (0: none, 1: first, 2: second), bind error)
+    let cases: [(u32, bool, u32, u32, [u32; 3], u32, u32); 12] = [
+        (0, true, 1, 1, [0; 3], 0, 0),
+        (1, true, 1, 1, [0; 3], 0, 0),
+        (2, true, 1, 1, [0; 3], 0, 0),
+        (9, true, 1, 1, [0; 3], 0, 0),
+        (9, false, 2, 0, [0; 3], 1, 0),
+        (9, true, 0, 0x8000_0001, [0; 3], 2, 0),
+        (9, false, 1, 2, [0; 3], 0, 3),
+        (9, true, 2, 0x8000_0002, [0; 3], 0, 0),
+        (9, true, 1, 3, [7, 0, 0], 0, 0),
+        (9, true, 1, 1, [0, 8, 0], 0, 0),
+        (9, true, 1, 1, [0, 0, 9], 0, 0),
+        (9, true, 1, 1, [0; 3], 2, 3),
+    ];
+    for (missing, old, prev, head, regs, absent, bind) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::SAMPLER_CALLS;
+            let k = l2::COMMON_CALLS;
+            // the lookup: logs this and the name, answers name ^ key
+            let key = match absent {
+                1 => t.rebase(l2::SAMPLER_DATA[1]),
+                2 => t.rebase(k[3]),
+                _ => 0x5a5a_0000,
+            };
+            let at = t.rebase(l2::FIND_PARAM);
+            let log_stub = t.stub_code(l2::FIND_PARAM, true, 1, 0, 0);
+            let code_at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), code_at);
+            let mut code = vec![0xff, 0x74, 0x24, 0x04]; // push dword [esp+4]
+            code.push(0xe8);
+            code.extend(log_stub.wrapping_sub(code_at + 9).to_le_bytes()); // call log_stub
+            code.extend([0x83, 0xc4, 0x04]); // add esp, 4
+            code.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+            code.push(0x35);
+            code.extend(key.to_le_bytes()); // xor eax, key
+            code.extend([0xc2, 0x04, 0x00]); // ret 4
+            t.write(code_at, &code);
+            let mut j = vec![0xe9];
+            j.extend(code_at.wrapping_sub(at + 5).to_le_bytes());
+            let saved = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(saved);
+            t.write(at, &j);
+            // the registration: logs this, answers [this + 4]
+            let at = t.rebase(c[4]);
+            let log_reg = t.stub_code(c[4], true, 0, 0, 0);
+            let code_at = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), code_at);
+            let mut code = vec![0xe8];
+            code.extend(log_reg.wrapping_sub(code_at + 5).to_le_bytes()); // call log_reg
+            code.extend([0x8b, 0x41, 0x04, 0xc3]); // mov eax, [ecx+4]; ret
+            t.write(code_at, &code);
+            let mut j = vec![0xe9];
+            j.extend(code_at.wrapping_sub(at + 5).to_le_bytes());
+            let saved = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(saved);
+            t.write(at, &j);
+
+            let this = t.zeros(0x3fa0);
+            for (i, off) in [0x3edc, 0x3ee0, 0x3ee4].into_iter().enumerate() {
+                if i as u32 != missing {
+                    let target = t.zeros(0x20);
+                    t.w32(this + off, target);
+                }
+            }
+            for (i, off) in [0x3ee8u32, 0x3f0c, 0x3f30].into_iter().enumerate() {
+                t.w32(this + off + 4, regs[i]);
+            }
+            if old {
+                t.w32(this + 0x3ed8, 0x0051_0000);
+            }
+            let dst = t.junk(0x20, 1);
+            t.w32(dst + 8, 0x10);
+            let material = t.zeros(8);
+            t.w32(material + 4, dst);
+            if prev != 0 {
+                let src = t.junk(0x20, 2);
+                t.w32(src, 0x18);
+                t.w32(src + 8, if prev == 1 { 0x8000_0010 } else { 0x11 });
+                let p = t.zeros(8);
+                t.w32(p + 4, src);
+                t.w32(this + 8, p);
+            }
+            let arr = t.zeros(0x10);
+            t.w32(arr, head);
+            let data = t.zeros(8);
+            t.w32(arr + 4, data);
+            t.stub(k[0], true, 1, 1, 0);
+            t.stub(c[0], true, 3, 3, material);
+            t.stub(c[1], false, 3, 0, 0);
+            t.stub(c[2], true, 3, 3, arr);
+            t.stub(c[3], false, 1, 0, 0);
+            t.stub(k[1], true, 2, 2, 0);
+            t.stub(k[2], true, 2, 2, bind);
+            let what = format!(
+                "{label}: common shaders missing {missing} old {old} prev {prev} head {head:#x} regs {regs:?} absent {absent} bind {bind}"
+            );
+            t.check(
+                &what,
+                0x00a1_82f0,
+                Conv::Thiscall(this),
+                &[0x0012_0000, 0x0034_0000],
+                |g| Out::U32(l2b::init_common_shaders(g, this, 0x0012_0000, 0x0034_0000)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x005b4c00` (a 4x4 matrix applied to a column) against the original:
+/// ordinary values and the special floats (quiet NaNs with payloads,
+/// infinities, denormals) anywhere in the matrix and the vector.
+#[test]
+fn big_transform_column_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    const SPECIAL: [u32; 8] = [
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc0_0000,
+        0xffc1_2345,
+        0x0000_0001,
+        0x7f7f_ffff,
+    ];
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x1357_9bdfu32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for case in 0..49 {
+            let mut words = [0u32; 20];
+            for w in &mut words {
+                let r = next();
+                *w = if case >= 8 && r.is_multiple_of(9) {
+                    SPECIAL[(r >> 4) as usize % SPECIAL.len()]
+                } else {
+                    (0x3a00_0000 + (r >> 8) % 0x0a00_0000) | (r & 0x8000_0000)
+                };
+            }
+            if case == 48 {
+                // every product -0: the sums keep the sign
+                for w in &mut words[..16] {
+                    *w |= 0x8000_0000;
+                }
+                words[16..20].fill(0);
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let m = t.alloc(&bytes[..64]);
+            let v = t.alloc(&bytes[64..]);
+            let out = t.junk(0x10, 7);
+            let what = format!("{label}: transform column case {case}");
+            t.check(&what, 0x005b_4c00, Conv::Thiscall(m), &[out, v], |g| {
+                Out::U32(l2b::transform_column(g, m, out, v))
+            });
+        }
+        t.reset();
+    }
+}
+
+/// `0x005930e0` (the shader resource tables bound) against the original:
+/// a constant buffer or none, a slot index or -1, feature levels below
+/// and at 0xb000. The context is a COM object of recording stubs; the
+/// zeroed table is compared in the original's frame.
+#[test]
+fn big_resource_tables_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (buffer, index, level) in [
+        (true, 2u32, 0xb000u32),
+        (false, u32::MAX, 0xa100),
+        (true, u32::MAX, 0xafff),
+        (false, 0, 0xc000),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let mut words = vec![1u32; 72];
+            words[0xc0 / 4] = 7;
+            for slot in [
+                0x20, 0x64, 0x7c, 0x10c, 0xec, 0xfc, 0x84, 0x114, 0x11c, 0x118,
+            ] {
+                words[slot / 4] = 4;
+            }
+            words[0x110 / 4] = 5;
+            let ctx = t.com_object(&words, &[]);
+            let device = t.zeros(0x310);
+            t.w32(device + 0x70, ctx);
+            t.w32(device + 0xb4, level);
+            t.w32(device + 0x300, 0x55);
+            let renderer = t.zeros(8);
+            t.w32(renderer, device);
+            let this = t.junk(0x500, 4);
+            t.w32(this, if buffer { 0x0066_0000 } else { 0 });
+            t.w32(this + 4, 0x8000_0040);
+            t.w32(this + 0x18, index);
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: resource tables buffer {buffer} index {index:#x} level {level:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x0059_30e0,
+                Conv::Thiscall(this),
+                &[renderer, 0x77],
+                ebp,
+                0x220,
+                (0x204, 4),
+                |g| Out::U8(l2b::bind_resource_tables(g, this, renderer, ebp - 0x204)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x0059a390` (a depth-remapped transposed matrix and a color uploaded)
+/// against the original: the row products and the transpose run as the
+/// game's code; the 0x50-byte block and the rows are compared in the
+/// original's frame (below its saved `ecx`).
+#[test]
+fn big_depth_transform_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x2468_ace1u32;
+        for case in 0..6u32 {
+            let mut words = [0u32; 20];
+            for w in &mut words {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                *w = (0x3c00_0000 + (seed >> 8) % 0x0600_0000) | (seed & 0x8000_0000);
+            }
+            if case == 5 {
+                words[3] = 0x7fc0_1234;
+                words[17] = 0xff80_0000;
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let m = t.alloc(&bytes[..64]);
+            let color = t.alloc(&bytes[64..]);
+            let mut slots = vec![1u32; 49];
+            slots[0xc0 / 4] = 7;
+            let ctx = t.com_object(&slots, &[]);
+            let renderer = t.zeros(0x80);
+            t.w32(renderer + 0x70, ctx);
+            let this = t.zeros(0x50);
+            t.w32(this + 0x48, 0x0077_0000 + case);
+            let ebp = t.ebp_for(3);
+            let what = format!("{label}: depth transform case {case}");
+            t.check_frame(
+                &what,
+                0x0059_a390,
+                Conv::Thiscall(this),
+                &[renderer, m, color],
+                ebp,
+                0x130,
+                (0x114, 0x44),
+                |g| {
+                    Out::U32(l2b::update_depth_transform(
+                        g,
+                        this,
+                        renderer,
+                        m,
+                        color,
+                        ebp - 0x114,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a13400` (the deferred lighting's texture parameters) against the
+/// original: the copies and `PParameterBuffer_writeParameter` run as the
+/// game's code into a real buffer; each parameter missing, of a wrong
+/// type, not fitting or under offset 4; the shadow texture without its
+/// flag or absent; the tile setup failing.
+#[test]
+fn big_texture_params_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (which parameter is changed: 0..3 = +0x4024, +0x403c, +0x4014,
+    // +0x4010, 9 none; how: 0 missing, 1 wrong type, 2 too far, 3 offset
+    // under 4; the shadow: 0 none, 1 flagged, 2 unflagged; tile error)
+    let cases: [(u32, u32, u32, u32); 16] = [
+        (9, 0, 1, 0),
+        (9, 0, 0, 0),
+        (9, 0, 2, 0),
+        (9, 0, 1, 7),
+        (0, 0, 1, 0),
+        (0, 1, 1, 0),
+        (0, 2, 1, 0),
+        (1, 1, 1, 0),
+        (1, 3, 1, 0),
+        (2, 0, 1, 0),
+        (2, 1, 1, 0),
+        (2, 2, 1, 0),
+        (3, 0, 1, 0),
+        (3, 1, 1, 0),
+        (3, 2, 1, 0),
+        (2, 4, 1, 0),
+    ];
+    for (which, how, shadow_kind, tiles) in cases {
+        for (label, mut t) in Twins::all() {
+            let this = t.zeros(0x4040);
+            let buffer = t.junk(0x100, 3);
+            t.w32(buffer, 0xc0);
+            let material = t.zeros(8);
+            t.w32(material, 0x0044_0000);
+            t.w32(material + 4, buffer);
+            t.w32(this + 0x3ed8, material);
+            for (i, (field, ty, off)) in [
+                (0x4024u32, b'H', 0x10u16),
+                (0x403c, b'H', 0x24),
+                (0x4014, b'I', 0x38),
+                (0x4010, b'H', 0x4c),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let i = i as u32;
+                if i == which && how == 0 {
+                    continue;
+                }
+                let p = t.zeros(0x10);
+                let ty = match (i == which, how) {
+                    (true, 1) => b'J',
+                    (true, 4) => 0x15,
+                    _ => ty,
+                };
+                let off = match (i == which, how) {
+                    (true, 2) => 0xb8,
+                    (true, 3) => 2,
+                    _ => off,
+                };
+                t.w8(p + 2, ty);
+                t.write(p + 8, &off.to_le_bytes());
+                t.write(p + 0xa, &(0xe010u16).to_le_bytes());
+                t.w32(this + field, p);
+            }
+            let shadow = match shadow_kind {
+                0 => 0,
+                k => {
+                    let s = t.zeros(0x10);
+                    t.w8(s + 8, if k == 1 { 0x0c } else { 0x04 });
+                    s
+                }
+            };
+            t.w32(this + 0x3fd0, shadow);
+            t.w32(this + 0x4034, 0x0101_0101);
+            t.w32(this + 0x4038, 0x0202_0202);
+            let object = t.zeros(0x24);
+            t.w32(object + 0x1c, 0x41);
+            t.w32(object + 0x20, 0x38);
+            let target = t.zeros(8);
+            t.w32(target, object);
+            t.w32(this + 0x3fc4, target);
+            let renderer = t.zeros(0x50);
+            t.stub(l2::TEXTURE_PARAMS[1], true, 5, 5, tiles);
+            let what = format!(
+                "{label}: texture params which {which} how {how} shadow {shadow_kind} tiles {tiles}"
+            );
+            t.check(
+                &what,
+                0x00a1_3400,
+                Conv::Thiscall(this),
+                &[renderer, 0x99],
+                |g| {
+                    let frame = ffx_graphic::host::Host::scratch(g);
+                    Out::U32(l2b::set_texture_params(g, this, renderer, frame))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a965d0` (the profiles raised into a height line; SSE) against
+/// the original: runs of equal keys (their largest value, a quiet NaN
+/// among them), floors beaten or not, rows clamped at both ends, levels
+/// clamped at 0 and 7, fractional profile bounds, positions under 1 and
+/// past the limit.
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn big_raise_profiles_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x0f1e_2d3cu32;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for case in 0..4u32 {
+            let keys: [i32; 12] = [
+                0x40, 0x40, 0x55, 0x80, 0x80, 0x80, -0x10, 0x900, 0x31, 0x33, 0x33, 0x7f,
+            ];
+            let n = keys.len() as u32;
+            let fbytes = |v: &[f32]| {
+                v.iter()
+                    .flat_map(|x| x.to_bits().to_le_bytes())
+                    .collect::<Vec<u8>>()
+            };
+            let mut values: Vec<f32> = (0..n).map(|_| (next() % 1000) as f32 * 0.1 - 5.0).collect();
+            if case == 1 {
+                values[4] = f32::from_bits(0x7fc0_0042);
+            }
+            let floors: Vec<f32> = (0..n)
+                .map(|k| {
+                    if (k + case) % 3 == 0 {
+                        500.0
+                    } else {
+                        (next() % 600) as f32 * 0.1 - 10.0
+                    }
+                })
+                .collect();
+            let kbytes: Vec<u8> = keys.iter().flat_map(|k| k.to_le_bytes()).collect();
+            let keys_at = t.alloc(&kbytes);
+            let values_at = t.alloc(&fbytes(&values));
+            let floors_at = t.alloc(&fbytes(&floors));
+            let out = t.alloc(&fbytes(&vec![1.0f32; 0x110]));
+            // three row tables of eight profiles {first, end, heights}
+            let mut rows = Vec::new();
+            for r in 0..3u32 {
+                let mut levels = Vec::new();
+                for l in 0..8u32 {
+                    let first = [0.0f32, 1.5, 3.0, 2.25][((r + l + case) % 4) as usize];
+                    let end = first + 4.0 + (l % 3) as f32;
+                    let mut p = vec![first, end];
+                    p.extend((0..12).map(|_| (next() % 400) as f32 * 0.25 - 20.0));
+                    levels.push(t.alloc(&fbytes(&p)));
+                }
+                rows.push(
+                    t.alloc(
+                        &levels
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>(),
+                    ),
+                );
+            }
+            let table: Vec<u32> = (0..17).map(|k| rows[k % 3]).collect();
+            let tables = t.alloc(
+                &table
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let owner = t.zeros(0x200);
+            t.w32(owner + 0x1f0, (50.0f32 + case as f32 * 7.0).to_bits());
+            let this = t.zeros(0x30);
+            t.w32(this, n);
+            t.w32(this + 4, owner);
+            t.w32(this + 0x14, keys_at);
+            t.w32(this + 0x1c, 0x30);
+            t.w32(this + 0x20, 4);
+            t.w32(this + 0x24, 3 + case);
+            t.w32(this + 0x28, [0x100, 0x40, 0x100, 0x90][case as usize]);
+            let bias = (10.0f32 + case as f32 * 15.0).to_bits();
+            let what = format!("{label}: raise profiles case {case}");
+            t.check(
+                &what,
+                0x00a9_65d0,
+                Conv::FastcallCallerPops,
+                &[this, tables, values_at, floors_at, out, bias],
+                |g| {
+                    l2b::raise_profiles(g, this, tables, values_at, floors_at, out, bias);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+/// `0x00a965d0`'s edges, built by hand: a value exactly 6 under its
+/// floor (not raised), a row under 0 and one at 16 (clamped), level 1
+/// (`trunc(v * 0.1)` with the offset cancelling the 30), a store of -0
+/// over +0 (not greater), a position landing exactly on the limit.
+#[test]
+fn big_raise_profiles_edges_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let fbytes = |v: &[f32]| {
+            v.iter()
+                .flat_map(|x| x.to_bits().to_le_bytes())
+                .collect::<Vec<u8>>()
+        };
+        let keys: [i32; 6] = [0x50, 0x50, -0x30, 0x105, 0x60, 0x60];
+        let values = [10.0f32, 10.0, 25.0, -0.0, 3.0, 2.0];
+        let floors = [-100.0f32, -100.0, -100.0, -100.0, -100.0, 9.0];
+        let kbytes: Vec<u8> = keys.iter().flat_map(|k| k.to_le_bytes()).collect();
+        let keys_at = t.alloc(&kbytes);
+        let values_at = t.alloc(&fbytes(&values));
+        let floors_at = t.alloc(&fbytes(&floors));
+        let out = t.alloc(&fbytes(&[0.0f32; 0x110]));
+        let mut table = Vec::new();
+        for k in 0..17u16 {
+            let mut levels = Vec::new();
+            for l in 0..8u16 {
+                let first = if k <= 1 { 30.0f32 } else { 1.0 };
+                let mut p = vec![first, first + 4.0];
+                p.extend((0..40u16).map(|i| {
+                    if k == 16 {
+                        -0.0
+                    } else {
+                        0.25 * f32::from(k * 8 + l) + 0.01 * f32::from(i)
+                    }
+                }));
+                levels.push(t.alloc(&fbytes(&p)));
+            }
+            table.push(
+                t.alloc(
+                    &levels
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                ),
+            );
+        }
+        let tables = t.alloc(
+            &table
+                .iter()
+                .flat_map(|v| v.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        let owner = t.zeros(0x200);
+        t.w32(owner + 0x1f0, 40.0f32.to_bits());
+        let this = t.zeros(0x30);
+        t.w32(this, keys.len() as u32);
+        t.w32(this + 4, owner);
+        t.w32(this + 0x14, keys_at);
+        t.w32(this + 0x1c, 0);
+        t.w32(this + 0x20, 4);
+        t.w32(this + 0x24, 4);
+        t.w32(this + 0x28, 26);
+        let bias = 10.0f32.to_bits();
+        t.check(
+            &format!("{label}: raise profiles edges"),
+            0x00a9_65d0,
+            Conv::FastcallCallerPops,
+            &[this, tables, values_at, floors_at, out, bias],
+            |g| {
+                l2b::raise_profiles(g, this, tables, values_at, floors_at, out, bias);
+                Out::None
+            },
+        );
+        t.reset();
+    }
+}
+
+/// `0x00a191f0` (the deferred lighting's targets taken) against the
+/// original: already taken; each handle missing, of another size or
+/// format; formats 0 and 2 and an unsupported one; each later step
+/// failing, the target maker failing with and without an error word;
+/// the feature levels on both sides of 0xb000. The error word the maker
+/// writes is the original's argument slot, which the port gets as its
+/// `out` (the same address here).
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_take_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (taken, the handle changed (9 none), how: 0 missing, 1 width,
+    // 2 height, 3 format; the sixth's format; the step errors
+    // [geometry, resize, maker target, maker error, 0x00a19cf0]; level)
+    let cases: [(bool, u32, u32, u8, [u32; 5], u32); 17] = [
+        (true, 9, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 2, [0, 0, 1, 0, 0], 0xafff),
+        (false, 9, 0, 1, [0, 0, 1, 0, 0], 0xb000),
+        (false, 5, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 0, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 1, 1, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 3, 2, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 2, 3, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 3, 3, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 4, 3, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [7, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 8, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 0, 0xd, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 0, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0xd, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0, 9], 0xc000),
+    ];
+    for (taken, which, how, format, errs, level) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::TAKE_TARGETS;
+            t.stub(c[0], true, 1, 1, errs[0]);
+            t.stub(c[1], true, 2, 2, errs[1]);
+            t.stub(c[4], true, 0, 0, errs[4]);
+            let cache = t.zeros(0xc0);
+            t.w32(cache + 0xb4, level);
+            t.stub(c[5], false, 0, 0, cache);
+            // the maker: stores the error through its seventh word, logs
+            // six, answers the target
+            let target = if errs[2] != 0 { 0x0088_0000 } else { 0 };
+            let logger = t.stub_code(c[3], false, 6, 0, target);
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x1c, 0xc7, 0x00]; // mov eax, [esp+0x1c]; mov dword [eax], err
+            k.extend(errs[3].to_le_bytes());
+            k.push(0xe9);
+            k.extend(logger.wrapping_sub(code + 15).to_le_bytes()); // jmp logger
+            t.write(code, &k);
+            let at = t.rebase(c[3]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let this = t.zeros(0x4040);
+            t.w32(this + 0x3ed4, u32::from(taken));
+            t.w8(this + 0x402c, 0xff);
+            t.w8(this + 0x3f90, 0x01);
+            let mut handles = Vec::new();
+            for i in 0..6u32 {
+                if i == which && how == 0 {
+                    handles.push(0);
+                    continue;
+                }
+                let obj = t.zeros(0x24);
+                let w = if i == which && how == 1 { 0x101 } else { 0x100 };
+                let ht = if i == which && how == 2 { 0x81 } else { 0x80 };
+                t.w32(obj + 0x1c, w);
+                t.w32(obj + 0x20, ht);
+                let hnd = t.zeros(8);
+                t.w32(hnd, obj);
+                let f = match i {
+                    2 | 3 | 5 => format,
+                    _ => 0,
+                };
+                let f = if i == which && how == 3 { f ^ 2 } else { f };
+                t.w8(hnd + 5, f);
+                handles.push(hnd);
+            }
+            let targets = t.alloc(
+                &handles
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: take targets taken {taken} which {which} how {how} format {format} errs {errs:?} level {level:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x00a1_91f0,
+                Conv::Thiscall(this),
+                &[0x0055_0000, targets],
+                ebp,
+                0x20,
+                (0, 0),
+                |g| Out::U32(l2b::take_targets(g, this, 0x0055_0000, targets, ebp + 0xc)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a19cf0` (the deferred lighting's buffers) against the original:
+/// slot counts of 8 and others, the resize and each create failing, the
+/// render state cache built or not, levels on both sides of 0xb000, the
+/// structured buffers' setup failing.
+#[test]
+fn big_create_buffers_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (slot count, resize error, create error, guard set, level, setup error)
+    for (count, resize, create, guard, level, setup) in [
+        (8u32, 0u32, 0u32, true, 0xb000u32, 0u32),
+        (0, 0, 0, false, 0xb000, 0),
+        (3, 5, 0, true, 0xafff, 0),
+        (0x8000_0008, 0, 0, true, 0xc000, 4),
+        (8, 0, 9, true, 0xb000, 0),
+        (3, 0, 0, false, 0x9000, 0),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DEFERRED_BUFFERS;
+            let block = t.zeros(0x60);
+            t.w32(block + 4, 0x77);
+            t.w32(block + 0xc, count);
+            t.stub(c[0], false, 1, 0, block);
+            t.stub(c[1], true, 0, 0, block);
+            t.stub(c[2], true, 1, 1, resize);
+            t.stub(c[3], true, 2, 2, create);
+            t.stub(c[4], true, 0, 0, block);
+            t.stub(c[5], true, 4, 4, setup);
+            t.stub(c[8], true, 0, 0, 0x00c9_4f00);
+            t.stub(c[10], false, 1, 0, 0);
+            let g = t.rebase(c[6]);
+            t.w32(g, if guard { 0x11 } else { 0x10 });
+            let cache = t.rebase(c[7]);
+            t.w32(cache + 0xb4, level);
+            let this = t.zeros(0x4040);
+            let what = format!(
+                "{label}: create buffers count {count:#x} resize {resize} create {create} guard {guard} level {level:#x} setup {setup}"
+            );
+            t.check(&what, 0x00a1_9cf0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::create_buffers(g, this))
+            });
+            t.reset();
+        }
+    }
+}
+
+impl Twins {
+    /// Code in both oracles at the same address.
+    fn code_at(&mut self, c: &[u8]) -> u32 {
+        let at = self.a.alloc_code(c).unwrap();
+        assert_eq!(self.b.alloc_code(c).unwrap(), at);
+        at
+    }
+
+    /// A `jmp` at the original `sym` to `code`, put back by `reset`.
+    fn place_jmp(&mut self, sym: u32, code: u32) {
+        let at = self.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        let old = Oracle::read(&mut self.a, at, 5).unwrap();
+        self.saved.entry(at).or_insert(old);
+        self.write(at, &j);
+    }
+}
+
+/// `0x005b6620` (the deferred pass's draw commands queued) against the
+/// original: busy, no effect, the technique from the table or the finder
+/// (index -1, out of range, a null entry; none found), no pass; the block
+/// tree absent, without an entry, with one; room or not; capture flags
+/// 0..3; passes that draw and do not. Callees are recording stubs; the
+/// sizes routine writes through the three words it gets (the original's
+/// frame and first argument slot, the port's frame at the same address).
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_queue_pass_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (busy, effect, technique: 0 table, 1 index -1, 2 out of range,
+    // 3 null entry, 4 none found; pass there, tree: 0 none, 1 no entry,
+    // 2 entry; room, flags)
+    let cases: [(bool, bool, u32, bool, u32, bool, u32); 12] = [
+        (true, true, 0, true, 0, true, 0),
+        (false, false, 0, true, 0, true, 0),
+        (false, true, 0, true, 0, true, 0),
+        (false, true, 1, true, 1, true, 1),
+        (false, true, 2, true, 2, false, 2),
+        (false, true, 3, true, 2, true, 3),
+        (false, true, 4, true, 0, true, 0),
+        (false, true, 0, false, 0, true, 0),
+        (false, true, 0, true, 2, false, 3),
+        (false, true, 1, true, 0, true, 2),
+        (false, true, 3, true, 1, false, 1),
+        (false, true, 0, true, 2, true, 1),
+    ];
+    for (busy, has_effect, tech, has_pass, tree, room, flags) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::QUEUE_PASS;
+            let renderer_vt = t.object(&[0, 0, 0], &[0, 0, 0x99]);
+            let vt = t.r32(renderer_vt);
+            let this = t.zeros(0x60);
+            t.w32(this, vt);
+            t.w8(this + 4, u8::from(busy) | 0x10);
+            let effect = t.zeros(0x10);
+            t.w32(
+                effect + 0xc,
+                match tech {
+                    1 => u32::MAX,
+                    2 => 9,
+                    _ => 1,
+                },
+            );
+            if has_effect {
+                t.w32(this + 0x48, effect);
+            }
+            // the pass: flags, n (bit 31 set), the passes (0x254 apart)
+            // 257 passes: more than a byte's worth
+            let passes = t.zeros(0x254 * 0x101 + 0x10);
+            t.w32(passes + 0xc, 1);
+            t.w32(passes + 0x254 * 2 + 0xc, 5);
+            let pass = t.zeros(0x10);
+            t.w32(pass, flags | 0x40);
+            t.w32(pass + 4, 0x8000_0101);
+            t.w32(pass + 8, passes);
+            let technique = t.zeros(0x10);
+            if has_pass {
+                t.w32(technique + 8, pass);
+            }
+            let material = t.zeros(0x20);
+            // entry 9 (past the count) a technique without a pass
+            let other = t.zeros(0x10);
+            let mut entries = [0u32; 10];
+            entries[1] = if tech >= 3 { 0 } else { technique };
+            entries[9] = other;
+            let table = t.alloc(
+                &entries
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.w32(material + 0x14, 0x8000_0003);
+            t.w32(material + 0x18, table);
+            t.stub(c[0], true, 1, 1, if tech == 4 { 0 } else { technique });
+            let tree_at = t.rebase(c[1]);
+            t.w32(tree_at, if tree == 0 { 0 } else { 0x00d1_0000 });
+            t.stub(c[2], true, 2, 2, if tree == 2 { 0x00d2_0000 } else { 0 });
+            t.stub_import(c[3], 2, 2, 0);
+            // the sizes: writes total, table, blocks through its words
+            let log9 = t.stub_code(c[4], false, 6, 0, 0);
+            let mut k = Vec::new();
+            for (i, v) in [(4u8, 0x1234u32), (8, 0x5555), (0xc, 0x80)] {
+                k.extend([0x8b, 0x44, 0x24, i, 0xc7, 0x00]); // mov eax, [esp+i]; mov [eax], v
+                k.extend(v.to_le_bytes());
+            }
+            let code = t.code_at(&[0xcc; 0x40]);
+            k.push(0xe9);
+            let next = code + k.len() as u32 + 4;
+            k.extend(log9.wrapping_sub(next).to_le_bytes()); // jmp log9
+            t.write(code, &k);
+            t.place_jmp(c[4], code);
+            t.stub(c[5], true, 2, 2, u32::from(room) | 0x100);
+            t.stub(c[6], true, 0, 0, 0x00d3_0000);
+            t.stub(c[7], true, 1, 1, 0x00d4_0000);
+            // the rings: logs this and the size, the data ring answers the
+            // table, the command ring a command block
+            let buf = t.zeros(0x40);
+            let cmd = t.zeros(0x50);
+            let log1 = t.stub_code(c[8], true, 1, 0, 0);
+            let code = t.code_at(&[0xcc; 0x40]);
+            let mut k = vec![0xff, 0x74, 0x24, 0x04]; // push [esp+4]
+            k.push(0xe8);
+            k.extend(log1.wrapping_sub(code + 9).to_le_bytes()); // call log1
+            k.extend([0x83, 0xc4, 0x04]); // add esp, 4
+            k.extend([0x81, 0xf9]);
+            k.extend((this + 0x1c).to_le_bytes()); // cmp ecx, this + 0x1c
+            k.extend([0x75, 0x08]); // jne +8
+            k.push(0xb8);
+            k.extend(buf.to_le_bytes()); // mov eax, buf
+            k.extend([0xc2, 0x04, 0x00]); // ret 4
+            k.push(0xb8);
+            k.extend(cmd.to_le_bytes()); // mov eax, cmd
+            k.extend([0xc2, 0x04, 0x00]); // ret 4
+            t.write(code, &k);
+            t.place_jmp(c[8], code);
+            // the texture pointers: logs, writes two counters, answers the
+            // cursor past them
+            let log3 = t.stub_code(c[9], false, 3, 0, 0);
+            let code = t.code_at(&[0xcc; 0x40]);
+            let mut k = vec![
+                0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c, 0xff, 0x74, 0x24, 0x0c,
+            ]; // push [esp+0xc] x3
+            k.push(0xe8);
+            k.extend(log3.wrapping_sub(code + 17).to_le_bytes()); // call log3
+            k.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+            k.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+            k.extend([0xc7, 0x00]);
+            k.extend(0x00d5_0000u32.to_le_bytes()); // mov [eax], c1
+            k.extend([0xc7, 0x40, 0x04]);
+            k.extend(0x00d6_0000u32.to_le_bytes()); // mov [eax+4], c2
+            k.extend([0x83, 0xc0, 0x08, 0xc3]); // add eax, 8; ret
+            t.write(code, &k);
+            t.place_jmp(c[9], code);
+
+            let ebp = t.ebp_for(5);
+            let instance = 0x00d7_0000;
+            let what = format!(
+                "{label}: queue pass busy {busy} effect {has_effect} tech {tech} pass {has_pass} tree {tree} room {room} flags {flags}"
+            );
+            t.check_frame(
+                &what,
+                0x005b_6620,
+                Conv::Thiscall(this),
+                &[material, instance, 0xa1, 0xb2, 0xc3],
+                ebp,
+                0x40,
+                // the table word; the next is the original's loop counter
+                (0xc, 8),
+                |g| {
+                    Out::U32(l2b::queue_pass(
+                        g,
+                        this,
+                        material,
+                        instance,
+                        [0xa1, 0xb2, 0xc3],
+                        ebp - 0xc,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x0058f2b0` (a structured buffer's D3D11 buffers) against the
+/// original: one slot and two, with and without initial data, dynamic
+/// and not, the cache built or not, a failed create, the views' answer.
+/// The device and the buffers are COM objects of recording stubs; the
+/// whole frame (description, initial data, counter) is compared at the
+/// original's address.
+#[test]
+fn big_structured_buffers_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (slots, data, flags, guard set, create result, views result)
+    for (slots, data, flags, guard, hr, views) in [
+        (1u32, true, 0u32, true, 0u32, 0u32),
+        (2, false, 1, false, 0, 9),
+        (2, true, 3, true, 0, 0),
+        (1, false, 0, true, 0x8007_000e, 0),
+        (2, true, 0, true, 0x8007_0057, 0),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::STRUCTURED;
+            t.stub(c[0], true, 0, 0, 0x0042_0000);
+            let g = t.rebase(c[1]);
+            t.w32(g, if guard { 0x11 } else { 0x10 });
+            t.stub(c[3], true, 0, 0, 0);
+            t.stub(c[5], false, 1, 0, 0);
+            t.stub(c[8], true, 0, 0, 0x0043_0000);
+            t.stub(c[9], true, 0, 0, views);
+            let device = t.com_object(&[1, 1, 1, 4], &[0, 0, 0, hr]);
+            let dev_at = t.rebase(c[6]);
+            t.w32(dev_at, device);
+            let this = t.zeros(0x60);
+            let objects: Vec<u32> = (0..slots)
+                .map(|_| t.com_object(&[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2], &[]))
+                .collect();
+            if slots == 1 {
+                t.w32(this + 0x14, 1);
+                t.w32(this + 0x18, objects[0]);
+            } else {
+                let arr = t.zeros(0x14 * slots as usize);
+                for (i, &o) in objects.iter().enumerate() {
+                    t.w32(arr + 0x14 * i as u32, o);
+                }
+                t.w32(this + 0x14, 0x8000_0000 | slots);
+                t.w32(this + 0x18, arr);
+            }
+            let ebp = t.ebp_for(4);
+            let args = [0x40, 0x10, flags, if data { 0x0044_0000 } else { 0 }];
+            let what = format!(
+                "{label}: structured slots {slots} data {data} flags {flags} guard {guard} hr {hr:#x} views {views}"
+            );
+            t.check_frame(
+                &what,
+                0x0058_f2b0,
+                Conv::Thiscall(this),
+                &args,
+                ebp,
+                0x60,
+                (0x44, 0x10),
+                |g| Out::U32(l2b::create_structured(g, this, args, ebp - 0x44)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x0058ec50` (the render target read back as RGB rows) against the
+/// original: no destination, no target, the inline target and the array,
+/// each texture creation failing (an error or no texture), the map
+/// failing, a 3 x 2 read back. The device's `CreateTexture2D` stores a
+/// texture chosen by the description's usage; `GetDesc` and `Map` fill
+/// what the real ones would.
+#[test]
+fn big_read_back_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    // (dst, targets: 0 none, 1 inline, 2 array; first texture: 0 ok,
+    // 1 error, 2 none; second likewise; map error)
+    for (with_dst, targets, first, second, map_hr) in [
+        (false, 1u32, 0u32, 0u32, 0u32),
+        (true, 0, 0, 0, 0),
+        (true, 1, 0, 0, 0),
+        (true, 2, 0, 0, 0),
+        (true, 1, 1, 0, 0),
+        (true, 1, 2, 0, 0),
+        (true, 1, 0, 1, 0),
+        (true, 2, 0, 2, 0),
+        (true, 1, 0, 0, 0x8000_4005),
+    ] {
+        for (label, mut t) in Twins::all() {
+            // a COM object whose slot `slot` runs `code` (the rest record)
+            let with_slot = |t: &mut Twins, words: &[u32], slot: usize, code: &[u8]| -> u32 {
+                let obj = t.com_object(words, &[]);
+                let at = t.a.alloc_code(code).unwrap();
+                assert_eq!(t.b.alloc_code(code).unwrap(), at);
+                let vt = t.r32(obj);
+                t.w32(vt + 4 * slot as u32, at);
+                obj
+            };
+            // GetDesc(this, desc): width 3, height 2, junk elsewhere kept
+            let mut get_desc = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+            get_desc.extend([0xc7, 0x00, 3, 0, 0, 0]); // mov [eax], 3
+            get_desc.extend([0xc7, 0x40, 0x04, 2, 0, 0, 0]); // mov [eax+4], 2
+            get_desc.extend([0xc2, 0x08, 0x00]); // ret 8
+            let target = with_slot(&mut t, &[1; 11], 10, &get_desc);
+            let tex1 = t.com_object(&[1; 3], &[]);
+            let tex2 = t.com_object(&[1; 3], &[]);
+            let obj = |kind: u32, tex: u32| if kind == 2 { 0 } else { tex };
+            let hr = |kind: u32| if kind == 1 { 0x8007_000e_u32 } else { 0 };
+            // CreateTexture2D(this, desc, init, out): staging (usage 3) gets
+            // the second texture
+            let mut create = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0x78, 0x1c, 0x03]; // mov eax,[esp+8]; cmp dword [eax+0x1c], 3
+            create.extend([0x8b, 0x44, 0x24, 0x10]); // mov eax, [esp+0x10]
+            create.extend([0x74, 0x0e]); // je second
+            create.extend([0xc7, 0x00]);
+            create.extend(obj(first, tex1).to_le_bytes()); // mov [eax], tex1
+            create.push(0xb8);
+            create.extend(hr(first).to_le_bytes()); // mov eax, hr1
+            create.extend([0xc2, 0x10, 0x00]); // ret 0x10
+            create.extend([0xc7, 0x00]);
+            create.extend(obj(second, tex2).to_le_bytes()); // second: mov [eax], tex2
+            create.push(0xb8);
+            create.extend(hr(second).to_le_bytes()); // mov eax, hr2
+            create.extend([0xc2, 0x10, 0x00]); // ret 0x10
+            let device = with_slot(&mut t, &[1; 6], 5, &create);
+            // Map(this, res, sub, type, flags, out): the pixels
+            let pixels = t.alloc(&(0..0x40u8).collect::<Vec<_>>());
+            let mut map = vec![0x8b, 0x44, 0x24, 0x18]; // mov eax, [esp+0x18]
+            map.extend([0xc7, 0x00]);
+            map.extend(pixels.to_le_bytes()); // mov [eax], pixels
+            map.extend([0xc7, 0x40, 0x04, 0x10, 0, 0, 0]); // mov [eax+4], 16
+            map.extend([0xc7, 0x40, 0x08, 0, 0, 0, 0]); // mov [eax+8], 0
+            map.push(0xb8);
+            map.extend(map_hr.to_le_bytes()); // mov eax, hr
+            map.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let mut words = vec![1u32; 0x3a];
+            words[0xe4 / 4] = 6;
+            words[0xbc / 4] = 3;
+            words[0x3c / 4] = 3;
+            words[0x38 / 4] = 6;
+            let ctx = with_slot(&mut t, &words, 0x38 / 4, &map);
+            let this = t.zeros(0x100);
+            t.w32(this + 0x6c, device);
+            t.w32(this + 0x70, ctx);
+            match targets {
+                1 => {
+                    t.w32(this + 0xdc, 0x8000_0001);
+                    t.w32(this + 0xe0, target);
+                }
+                2 => {
+                    let arr = t.alloc(&[target.to_le_bytes(), 0u32.to_le_bytes()].concat());
+                    t.w32(this + 0xdc, 2);
+                    t.w32(this + 0xe0, arr);
+                }
+                _ => {}
+            }
+            let dst = if with_dst { t.junk(0x20, 6) } else { 0 };
+            let ebp = t.ebp_for(1);
+            let what = format!(
+                "{label}: read back dst {with_dst} targets {targets} first {first} second {second} map {map_hr:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x0058_ec50,
+                Conv::Thiscall(this),
+                &[dst],
+                ebp,
+                0x60,
+                (0x4c, 4),
+                |g| Out::U32(l2b::read_back(g, this, dst, ebp - 0x4c)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a22be0` (the deferred lighting's targets resized) against the
+/// original: states 1, 2, 3 and another; textures of the size and of
+/// another; a handle missing in each way at a later position; bound or
+/// not; the unbind, the resize, a render target resize and the buffers
+/// failing.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_resize_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (state, broken handle index (9 none), how: 0 null, 1 flag, 2 no
+    // texture; bound, errors [unbind, setDimensions, rt resize, buffers])
+    let cases: [(u32, u32, u32, bool, [u32; 4]); 12] = [
+        (1, 9, 0, true, [0, 0, 0, 0]),
+        (2, 9, 0, false, [0, 0, 0, 7]),
+        (3, 9, 0, true, [0, 0, 0, 0]),
+        (0, 9, 0, true, [0, 0, 0, 5]),
+        (1, 1, 0, true, [0, 0, 0, 0]),
+        (2, 3, 1, false, [0, 0, 0, 0]),
+        (3, 2, 2, true, [0, 0, 0, 0]),
+        (3, 9, 0, true, [4, 0, 0, 0]),
+        (2, 9, 0, false, [0, 6, 0, 0]),
+        (3, 9, 0, false, [0, 0, 8, 0]),
+        (1, 9, 0, true, [0, 3, 0, 0]),
+        (3, 0, 0, false, [0, 0, 0, 0]),
+    ];
+    for (state, broken, how, bound, errs) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::RESIZE_TARGETS;
+            t.stub(c[0], true, 0, 0, u32::from(bound) | 0x300);
+            t.stub(c[1], true, 0, 0, errs[0]);
+            t.stub(c[2], true, 4, 4, errs[1]);
+            t.stub(c[3], false, 4, 0, errs[2]);
+            t.stub(l2::TAKE_TARGETS[1], true, 2, 2, errs[3]);
+            let this = t.zeros(0x4000);
+            t.w32(this + 0x3ed4, state);
+            let fields: &[u32] = match state {
+                1 => &[0x3f94, 0x3f98, 0x3f9c],
+                2 => &[0x3fa0, 0x3fa4, 0x3fa8, 0x3fac],
+                _ => &[0x3fb0, 0x3fb4, 0x3fb8, 0x3fbc],
+            };
+            for (i, &f) in fields.iter().enumerate() {
+                let i = i as u32;
+                if i == broken && how == 0 {
+                    continue;
+                }
+                let tex = t.zeros(0x24);
+                t.w32(tex, 0x0099_0000 + i);
+                // every other texture already of the size
+                t.w32(tex + 0x1c, if i.is_multiple_of(2) { 0x200 } else { 0x100 });
+                // the fourth of the width but not the height
+                t.w32(tex + 0x20, if i == 3 { 0x81 } else { 0x80 });
+                let handle = t.zeros(8);
+                t.w32(handle, if i == broken && how == 2 { 0 } else { tex });
+                t.w8(handle + 4, u8::from(i == broken && how == 1));
+                t.w32(this + f, handle);
+            }
+            t.w32(this + 0x3fc0, 0x0077_0000);
+            t.w32(this + 0x3fc4, 0x0078_0000);
+            let what = format!(
+                "{label}: resize targets state {state} broken {broken} how {how} bound {bound} errs {errs:?}"
+            );
+            t.check(
+                &what,
+                0x00a2_2be0,
+                Conv::Thiscall(this),
+                &[0x100, 0x80],
+                |g| Out::U32(l2b::resize_targets(g, this, 0x100, 0x80)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a179a0` (the post-process utility's downsample targets) against
+/// the original: every step answering, then each step failing (no
+/// texture, a size error, no list, no instance). The callees are
+/// recording stubs; the texture and the instance are blocks the test
+/// owns.
+#[test]
+fn big_downsample_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // which step fails: 9 none, 0 create, 1 setDimensions, 2 the list,
+    // 3 the instance
+    for fail in [9u32, 0, 1, 2, 3] {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DOWNSAMPLE;
+            let tex = t.junk(0x20, 3);
+            let inst = t.junk(0x20, 4);
+            let list = t.zeros(0x40);
+            t.w32(list + 0x34, if fail == 3 { 0 } else { inst });
+            t.stub(c[1], true, 3, 3, if fail == 0 { 0 } else { tex });
+            t.stub(c[3], true, 4, 4, if fail == 1 { 3 } else { 0 });
+            t.stub(c[4], true, 0, 0, 0);
+            t.stub(c[6], true, 3, 3, if fail == 2 { 0 } else { list });
+            t.stub(c[7], true, 1, 1, inst);
+            let this = t.junk(0xb0, 5);
+            let what = format!("{label}: downsample targets fail {fail}");
+            t.check(
+                &what,
+                0x00a1_79a0,
+                Conv::Thiscall(this),
+                &[0x0055_0000, 0x500, 0x2d3],
+                |g| {
+                    Out::U32(l2b::create_downsample_targets(
+                        g,
+                        this,
+                        0x0055_0000,
+                        0x500,
+                        0x2d3,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x00a19620` (the deferred lighting's own targets) against the
+/// original: taken already; the size given and defaulted; the depth
+/// target's steps failing (no texture, a size error, no list, no
+/// instance); the k-th render target answering none or an error; all
+/// made and the take answering 0 or an error. The maker is a counting
+/// stub (it logs its first six words, stores the error through the
+/// seventh); the six targets are compared in the original's frame.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_own_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (taken, w, h, depth step failing (9 none: 0 create, 1 size, 2 list,
+    // 3 instance), maker call answering none (0 none), maker call
+    // with an error (0 none), the take's answer)
+    let cases: [(bool, u32, u32, u32, u32, u32, u32); 11] = [
+        (true, 0x100, 0x80, 9, 0, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 0, 0),
+        (false, 0, 0, 9, 0, 0, 7),
+        (false, 0x100, 0x80, 0, 0, 0, 0),
+        (false, 0x100, 0x80, 1, 0, 0, 0),
+        (false, 0x100, 0x80, 2, 0, 0, 0),
+        (false, 0x100, 0x80, 3, 0, 0, 0),
+        (false, 0x100, 0x80, 9, 1, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 3, 0),
+        (false, 0x100, 0x80, 9, 5, 0, 0),
+        (false, 0x100, 0x80, 9, 0, 5, 0),
+    ];
+    for (taken, w, ht, depth_fail, none_at, err_at, take) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::DOWNSAMPLE;
+            let tex = t.junk(0x20, 3);
+            let inst = t.junk(0x20, 4);
+            let list = t.zeros(0x40);
+            t.w32(list + 0x34, if depth_fail == 3 { 0 } else { inst });
+            t.stub(c[1], true, 3, 3, if depth_fail == 0 { 0 } else { tex });
+            t.stub(c[3], true, 4, 4, if depth_fail == 1 { 6 } else { 0 });
+            t.stub(c[4], true, 0, 0, 0);
+            t.stub(c[6], true, 3, 3, if depth_fail == 2 { 0 } else { list });
+            t.stub(c[7], true, 1, 1, inst);
+            t.stub(l2::TAKE_TARGETS_FN, true, 2, 2, take);
+            let guard = t.rebase(l2::DEFERRED_BUFFERS[6]);
+            t.w32(guard, 0x11);
+            let screen = t.rebase(l2::OWN_TARGETS[0]);
+            t.w32(screen, 0x500);
+            t.w32(screen + 4, 0x2d0);
+            // the maker
+            let cnt = t.zeros(4);
+            let logger = t.stub_code(l2::TAKE_TARGETS[3], false, 6, 0, 0);
+            let code = t.a.alloc_code(&[0xcc; 0x60]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x60]).unwrap(), code);
+            let mut k = Vec::new();
+            for _ in 0..6 {
+                k.extend([0xff, 0x74, 0x24, 0x18]); // push [esp+0x18]
+            }
+            k.push(0xe8);
+            k.extend(logger.wrapping_sub(code + 29).to_le_bytes()); // call logger
+            k.extend([0x83, 0xc4, 0x18]); // add esp, 0x18
+            k.extend([0xff, 0x05]);
+            k.extend(cnt.to_le_bytes()); // inc dword [cnt]
+            k.push(0xa1);
+            k.extend(cnt.to_le_bytes()); // mov eax, [cnt]
+            k.extend([0x8b, 0x4c, 0x24, 0x1c]); // mov ecx, [esp+0x1c]
+            k.extend([0xc7, 0x01, 0, 0, 0, 0]); // mov dword [ecx], 0
+            k.push(0x3d);
+            k.extend(err_at.to_le_bytes()); // cmp eax, err_at
+            k.extend([0x75, 0x06]); // jne +6
+            k.extend([0xc7, 0x01, 5, 0, 0, 0]); // mov dword [ecx], 5
+            k.push(0x3d);
+            k.extend(none_at.to_le_bytes()); // cmp eax, none_at
+            k.extend([0x74, 0x06]); // je zero
+            k.push(0x05);
+            k.extend(0x0088_0000u32.to_le_bytes()); // add eax, 0x880000
+            k.push(0xc3); // ret
+            k.extend([0x31, 0xc0, 0xc3]); // zero: xor eax, eax; ret
+            t.write(code, &k);
+            let at = t.rebase(l2::TAKE_TARGETS[3]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let this = t.zeros(0x4000);
+            t.w32(this + 0x3ed4, u32::from(taken));
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: own targets taken {taken} {w}x{ht} depth {depth_fail} none {none_at} err {err_at} take {take}"
+            );
+            t.check_frame(
+                &what,
+                0x00a1_9620,
+                Conv::Thiscall(this),
+                &[w, ht],
+                ebp,
+                0x60,
+                (0x34, 0x1c),
+                |g| Out::U32(l2b::create_targets(g, this, w, ht, ebp - 0x34)),
+            );
+            t.reset();
+        }
+    }
 }

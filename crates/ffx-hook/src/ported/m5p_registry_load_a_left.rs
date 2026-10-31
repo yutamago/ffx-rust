@@ -156,4 +156,8 @@ ported! {
         let mut f = StackFrame::<8>::new();
         lb::push_instances(&mut mem(), world, l, name, f.at())
     }
+    /// The utility registrations taken out `()`.
+    Phyre_PUtilityRendering_unregisterAll_004c1480 @ 0x004c_1480 => extern "C" fn utility_teardown() -> u32 {
+        lb::utility_teardown(&mut mem())
+    }
 }

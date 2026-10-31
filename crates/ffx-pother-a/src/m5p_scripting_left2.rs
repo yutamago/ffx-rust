@@ -313,10 +313,54 @@ pub const MATRIX_INDEX_STATICS: [(u32, u32); 4] = [
     (0x00b3_0928, 0x0057_1200),
 ];
 
+/// The matrix `__mul`'s callees: the new matrix userdata `(L)` (cdecl),
+/// `PMatrix4::rowTimes(out, v)` (thiscall, ret 8), the scale
+/// `(out, float)` (thiscall, ret 8), then the metatable names `"Matrix"`
+/// and `"Vector"`.
+pub const MATRIX_MUL: [u32; 5] = [
+    0x0057_1030,
+    0x004c_9c20,
+    0x0057_0c00,
+    0x00b3_07bc,
+    0x00b3_07b4,
+];
+
+/// The vector `__index`'s callees and data: the vector check `(L, i)`,
+/// the swizzle index `(char)` (cdecl), `lua_pushnumber(L, float)`, then
+/// the error's source file, function name and message (`"Trying to get
+/// member '%s' on ..."`) and its line (542).
+pub const VECTOR_INDEX: [u32; 7] = [
+    0x0057_0dc0,
+    0x0057_10b0,
+    0x0094_b750,
+    0x00b3_07ec,
+    0x00b3_07c4,
+    0x00b3_0814,
+    0x21e,
+];
+/// The `Vector` methods `__index` gives (name, C function).
+pub const VECTOR_INDEX_METHODS: [(u32, u32); 9] = [
+    (0x00b3_0850, 0x0057_2a40),
+    (0x00b3_0858, 0x0057_2b70),
+    (0x00b3_0860, 0x0057_2690),
+    (0x00b3_0868, 0x0057_3160),
+    (0x00b3_0870, 0x0057_3230),
+    (0x00b3_0878, 0x0057_3300),
+    (0x00b3_0884, 0x0057_33c0),
+    (0x00b3_0890, 0x0057_3760),
+    (0x00b3_089c, 0x0057_3860),
+];
+
+/// The occluder quad's `InterlockedCompareExchange` import slot (stdcall)
+/// and the double 0.5 it scales the midpoint by.
+pub const OCCLUDER_QUAD: [u32; 2] = [0x00b0_c12c, 0x00b9_2220];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::CLIP_DATA;
+    use super::MATRIX_MUL;
     use super::MATRIX_NEW;
+    use super::OCCLUDER_QUAD;
     use super::{
         CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
         Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
@@ -329,6 +373,7 @@ pub mod bridge {
         STRCHR_SLOT, TYPES_CLASS, TYPES_DATA, TYPES_OBJECT, VM_DATA, VM_MATRIX, VM_VECTOR,
     };
     use super::{MATRIX_INDEX, MATRIX_INDEX_METHODS, MATRIX_INDEX_STATICS};
+    use super::{VECTOR_INDEX, VECTOR_INDEX_METHODS};
     use ffx_bridge::Mem;
 
     /// A `PString` word's pointer (bit 0 cleared).
@@ -1535,5 +1580,233 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// A new userdata of `size` bytes with the registry's metatable
+    /// `name` (`lua_newuserdata`, `lua_getfield`, `lua_setmetatable` when
+    /// it was made); the userdata or 0.
+    fn new_userdata(h: &mut impl Host, l: u32, size: u32, name: u32) -> u32 {
+        let ud = h.call_sym(LUA_MORE[6], Conv::Cdecl, &[l, size]);
+        if ud != 0 {
+            let name = h.rebase(name);
+            h.call_sym(LUA_GETFIELD, Conv::Cdecl, &[l, LUA_REGISTRYINDEX, name]);
+            h.call_sym(LUA_MORE[7], Conv::Cdecl, &[l, 0xffff_fffe]);
+        }
+        ud
+    }
+
+    /// Copies the four floats at `src` to `dst` through the x87.
+    fn copy_vector(h: &mut impl Host, src: u32, dst: u32) {
+        for i in 0..4 {
+            let x = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+            h.write(dst + 4 * i, x.to_bits());
+        }
+    }
+
+    /// The script's matrix `__mul` (`0x00571a60`, cdecl `(L)`). Argument 1
+    /// is checked as a `Matrix`, argument 2 as a `Matrix` and as a
+    /// `Vector` (all three checks always run). Matrix times matrix: a new
+    /// matrix userdata, each row of the second times the first
+    /// (`PMatrix4::rowTimes`, rows 3, 2, 1, 0 into `frame` +0x20, +0x10,
+    /// +0x00, +0x30) staged at `frame` +0x40 and copied in
+    /// (`PMatrix4::copy`, `this` the userdata, 0 when it failed). Matrix
+    /// times vector: a new vector (`0x00571070`) set to the vector times
+    /// the matrix (through `frame` +0x30). Matrix times number
+    /// (`luaL_checknumber(L, 2)`, a `float`), or number
+    /// (`luaL_checknumber(L, 1)`) times matrix: the scaled matrix
+    /// (`0x00570c00` into `frame` +0x40) copied into a new matrix
+    /// userdata; the first makes it with `0x00571030` after the number,
+    /// the second inline. 1, or 0 when neither side is a matrix.
+    ///
+    /// `frame` is 32 words, the original's `ebp - 0x8c`.
+    pub fn matrix_mul(h: &mut impl Host, l: u32, frame: u32) -> u32 {
+        use crate::m5p_scripting_mid::bridge::check_userdata;
+        let a = check_userdata(h, MATRIX_MUL[3], l, 1);
+        let b = check_userdata(h, MATRIX_MUL[3], l, 2);
+        let v = check_userdata(h, MATRIX_MUL[4], l, 2);
+        if a == 0 {
+            if b == 0 {
+                return 0;
+            }
+            let s = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, 1]);
+            let ud = new_userdata(h, l, 0x40, MATRIX_MUL[3]);
+            let out = h.call_sym(
+                MATRIX_MUL[2],
+                Conv::Thiscall(b),
+                &[frame + 0x40, s.to_bits()],
+            );
+            h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[out]);
+            return 1;
+        }
+        if b != 0 {
+            let ud = new_userdata(h, l, 0x40, MATRIX_MUL[3]);
+            let r3 = h.call_sym(MATRIX_MUL[1], Conv::Thiscall(a), &[frame + 0x20, b + 0x30]);
+            let r2 = h.call_sym(MATRIX_MUL[1], Conv::Thiscall(a), &[frame + 0x10, b + 0x20]);
+            let r1 = h.call_sym(MATRIX_MUL[1], Conv::Thiscall(a), &[frame, b + 0x10]);
+            let r0 = h.call_sym(MATRIX_MUL[1], Conv::Thiscall(a), &[frame + 0x30, b]);
+            for (i, row) in [r0, r1, r2, r3].into_iter().enumerate() {
+                copy_vector(h, row, frame + 0x40 + 0x10 * i as u32);
+            }
+            h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[frame + 0x40]);
+            return 1;
+        }
+        if v != 0 {
+            let dst = h.call_sym(MATRIX_INDEX[1], Conv::Cdecl, &[l]);
+            let r = h.call_sym(MATRIX_MUL[1], Conv::Thiscall(a), &[frame + 0x30, v]);
+            copy_vector(h, r, dst);
+            return 1;
+        }
+        let s = h.call_sym_st0(MATRIX_NEW[0], Conv::Cdecl, &[l, 2]);
+        let ud = h.call_sym(MATRIX_MUL[0], Conv::Cdecl, &[l]);
+        let out = h.call_sym(
+            MATRIX_MUL[2],
+            Conv::Thiscall(a),
+            &[frame + 0x40, s.to_bits()],
+        );
+        h.call_sym(MATRIX_NEW[2], Conv::Thiscall(ud), &[out]);
+        1
+    }
+
+    /// `Phyre::PScripting::VectorIndexHandler` (`0x00572e70`, cdecl
+    /// `(L)`): the key `lua_tolstring(L, 2)` (none: 0); without a vector
+    /// at 1 the error location (file, line 542, function) and
+    /// `luaL_error(L, "Trying to get member '%s' ...", key)`, then 0. A
+    /// one-character key is a component (`0x005710b0`: '0'..'3', x y z w;
+    /// another character: 0 pushed nothing), its float pushed
+    /// (`lua_pushnumber`, through the x87); else one of nine method names
+    /// pushes its C function (`lua_pushcclosure(L, f, 0)`). 1 when
+    /// something was pushed, else 0.
+    pub fn vector_index(h: &mut impl Host, l: u32) -> u32 {
+        let key = h.call_sym(LUA_TOLSTRING, Conv::Cdecl, &[l, 2, 0]);
+        if key == 0 {
+            return 0;
+        }
+        let v = h.call_sym(VECTOR_INDEX[0], Conv::Cdecl, &[l, 1]);
+        if v == 0 {
+            for (at, value) in [
+                (ERROR_AT[0], h.rebase(VECTOR_INDEX[3])),
+                (ERROR_AT[1], VECTOR_INDEX[6]),
+                (ERROR_AT[2], h.rebase(VECTOR_INDEX[4])),
+            ] {
+                let at = h.rebase(at);
+                h.write(at, value);
+            }
+            let msg = h.rebase(VECTOR_INDEX[5]);
+            h.call_sym(LUA_INDEX[7], Conv::Cdecl, &[l, msg, key]);
+            return 0;
+        }
+        let first: u8 = h.read(key);
+        if first != 0 && h.read::<u8>(key + 1) == 0 {
+            let i = h.call_sym(VECTOR_INDEX[1], Conv::Cdecl, &[u32::from(first)]);
+            if i.cast_signed() < 0 {
+                return 0;
+            }
+            let x: u32 = h.read(v.wrapping_add(i.wrapping_mul(4)));
+            let x = ffx_bridge::x87::round_trip(f32::from_bits(x));
+            h.call_sym(VECTOR_INDEX[2], Conv::Cdecl, &[l, x.to_bits()]);
+            return 1;
+        }
+        for &(name, f) in &VECTOR_INDEX_METHODS {
+            let name = h.rebase(name);
+            if same_c_string(h, key, name) {
+                let f = h.rebase(f);
+                h.call_sym(LUA_MORE[4], Conv::Cdecl, &[l, f, 0]);
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// A float of game memory in an x87 register.
+    fn reg(h: &impl Mem, at: u32) -> ffx_bridge::x87::Reg {
+        ffx_bridge::x87::Reg::load(f32::from_bits(h.read(at)))
+    }
+
+    /// The occluder's plane through a point (`0x00a30eb0`, cdecl `(out, a,
+    /// b, p)` -> `out`): the normal `a x b` (each component `f32(x*y -
+    /// z*w)`), its squared length summed in `float`s, `_CIsqrt` (the
+    /// correctly rounded double square root, as the x87's `fsqrt` at 53
+    /// bits; the parity test runs the real intrinsic), `inv = f32(1 /
+    /// len)`; `out` = the normal times `inv` (each rounded), and `out[3]` =
+    /// the dot product with `p` (`f32(p0 n0)`, then `+ p1 n1`, `+ p2 n2`,
+    /// each rounded). The original keeps its sums in its own argument
+    /// slot (`b`'s), which its callers never read again.
+    pub fn occluder_plane(h: &mut impl Host, out: u32, a: u32, b: u32, p: u32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let (a0, a1, a2) = (reg(h, a), reg(h, a + 4), reg(h, a + 8));
+        let (b0, b1, b2) = (reg(h, b), reg(h, b + 4), reg(h, b + 8));
+        let n0 = Reg::load((a1 * b2 - a2 * b1).store());
+        let n1 = Reg::load((a2 * b0 - a0 * b2).store());
+        let n2 = Reg::load((b1 * a0 - b0 * a1).store());
+        let s = (n0 * n0).store();
+        let s = (Reg::load(s) + n1 * n1).store();
+        let s = (Reg::load(s) + n2 * n2).store();
+        let len = Reg::load(s).sqrt().store();
+        let inv = Reg::load((Reg::ONE / Reg::load(len)).store());
+        let q0 = (n0 * inv).store();
+        let q1 = (n1 * inv).store();
+        let q2 = (inv * n2).store();
+        let (p0, p1, p2) = (reg(h, p), reg(h, p + 4), reg(h, p + 8));
+        let d = (p0 * Reg::load(q0)).store();
+        let d = (p1 * Reg::load(q1) + Reg::load(d)).store();
+        let d = (p2 * Reg::load(q2) + Reg::load(d)).store();
+        h.write(out, q0.to_bits());
+        h.write(out + 4, q1.to_bits());
+        h.write(out + 8, q2.to_bits());
+        h.write(out + 0xc, d.to_bits());
+        out
+    }
+
+    /// The occluder's edge quad (`0x00a30600`, thiscall `(list; a, b,
+    /// d)`, ret 0xc): with a buffer (`+0`), four 16-byte slots reserved at
+    /// the index `+4` (`InterlockedCompareExchange`, retried until it takes;
+    /// nothing when they would reach the end `+8`), filled with `a`, `b`,
+    /// their midpoint `f32(f32(a + b) * 0.5)` (the double at
+    /// `0x00b92220`) and the midpoint plus `d`, each with `w` 1.0.
+    pub fn occluder_quad(h: &mut impl Host, list: u32, a: u32, b: u32, d: u32) {
+        use ffx_bridge::x87::Reg;
+        if h.read::<u32>(list) == 0 {
+            return;
+        }
+        let cur = loop {
+            let cur: u32 = h.read(list + 4);
+            let next = cur.wrapping_add(4);
+            if next >= h.read::<u32>(list + 8) {
+                return;
+            }
+            let f: u32 = h.read(h.rebase(OCCLUDER_QUAD[0]));
+            if h.call(f, Conv::Stdcall, &[list + 4, next, cur]) == cur {
+                break cur;
+            }
+        };
+        let rec = (cur << 4).wrapping_add(h.read(list));
+        let one = 1.0f32.to_bits();
+        for (i, v) in [a, b].into_iter().enumerate() {
+            let at = rec + 0x10 * i as u32;
+            for k in 0..3 {
+                let x = reg(h, v + 4 * k).store();
+                h.write(at + 4 * k, x.to_bits());
+            }
+            h.write(at + 0xc, one);
+        }
+        let half = Reg::constant(f64::from_bits(h.read(h.rebase(OCCLUDER_QUAD[1]))));
+        let m: [Reg; 3] = core::array::from_fn(|k| {
+            Reg::load((reg(h, a + 4 * k as u32) + reg(h, b + 4 * k as u32)).store())
+        });
+        let c = [
+            Reg::load((m[0] * half).store()),
+            Reg::load((m[1] * half).store()),
+            Reg::load((half * m[2]).store()),
+        ];
+        for (k, ck) in c.iter().enumerate() {
+            h.write(rec + 0x20 + 4 * k as u32, ck.store().to_bits());
+        }
+        h.write(rec + 0x2c, one);
+        for (k, ck) in c.into_iter().enumerate() {
+            let k = k as u32;
+            let e = (ck + reg(h, d + 4 * k)).store();
+            h.write(rec + 0x30 + 4 * k, e.to_bits());
+        }
+        h.write(rec + 0x3c, one);
     }
 }
