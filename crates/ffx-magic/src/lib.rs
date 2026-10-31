@@ -77,6 +77,7 @@ pub mod s3_wrap;
 pub mod o4_effect;
 pub mod o4_fam2;
 pub mod o4_fam3;
+pub mod o4_fam4;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_small;
@@ -1274,6 +1275,24 @@ ports! {
     "o4 fam3 vector_globals 0563@5670" => o4_fam3::VECTOR_GLOBALS_0563_5670, o4_fam3::vector_globals;
     "o4 fam3 release_and_reset 0162@3900" => o4_fam3::RELEASE_AND_RESET_0162_3900, o4_fam3::release_and_reset;
     "o4 fam3 release_and_reset 0586@3510" => o4_fam3::RELEASE_AND_RESET_0586_3510, o4_fam3::release_and_reset;
+    "o4 fam4 effect_record 0307@24c0" => o4_fam4::EFFECT_RECORD_0307_24C0, o4_fam4::effect_record;
+    "o4 fam4 effect_record 0605@7e40" => o4_fam4::EFFECT_RECORD_0605_7E40, o4_fam4::effect_record;
+    "o4 fam4 deal_then_slots 0391@2a20" => o4_fam4::DEAL_THEN_SLOTS_0391_2A20, o4_fam4::deal_then_slots;
+    "o4 fam4 deal_then_slots 0448@6440" => o4_fam4::DEAL_THEN_SLOTS_0448_6440, o4_fam4::deal_then_slots;
+    "o4 fam4 record_at_node 0673@1f10" => o4_fam4::RECORD_AT_NODE_0673_1F10, o4_fam4::record_at_node;
+    "o4 fam4 record_at_node 0673@1fa0" => o4_fam4::RECORD_AT_NODE_0673_1FA0, o4_fam4::record_at_node;
+    "o4 fam4 attach_par_seq 0312@15b0" => o4_fam4::ATTACH_PAR_SEQ_0312_15B0, o4_fam4::attach_par_seq;
+    "o4 fam4 attach_par_seq 0378@1250" => o4_fam4::ATTACH_PAR_SEQ_0378_1250, o4_fam4::attach_par_seq;
+    "o4 fam4 copy_then_rect 0511@2f70" => o4_fam4::COPY_THEN_RECT_0511_2F70, o4_fam4::copy_then_rect;
+    "o4 fam4 copy_then_rect 0589@2b50" => o4_fam4::COPY_THEN_RECT_0589_2B50, o4_fam4::copy_then_rect;
+    "o4 fam4 packet 0267@2f80" => o4_fam4::PACKET_0267_2F80, o4_fam4::packet;
+    "o4 fam4 packet 0431@1430" => o4_fam4::PACKET_0431_1430, o4_fam4::packet;
+    "o4 fam4 mixed_record_node 0473@2010" => o4_fam4::MIXED_RECORD_NODE_0473_2010, o4_fam4::mixed_record_node;
+    "o4 fam4 mixed_record_node 0673@1850" => o4_fam4::MIXED_RECORD_NODE_0673_1850, o4_fam4::mixed_record_node;
+    "o4 fam4 three_tasks_keep 0313@1240" => o4_fam4::THREE_TASKS_KEEP_0313_1240, o4_fam4::three_tasks_keep;
+    "o4 fam4 three_tasks_keep 0361@1330" => o4_fam4::THREE_TASKS_KEEP_0361_1330, o4_fam4::three_tasks_keep;
+    "o4 fam4 slot_attach_mode_par 0194@1620" => o4_fam4::SLOT_ATTACH_MODE_PAR_0194_1620, o4_fam4::slot_attach_mode_par;
+    "o4 fam4 slot_attach_mode_par 0359@1420" => o4_fam4::SLOT_ATTACH_MODE_PAR_0359_1420, o4_fam4::slot_attach_mode_par;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1635,6 +1654,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 fam3 record_copy 0480@2910",
         &o4_fam3::RECORD_COPY_0480_2910,
+    ),
+    (
+        "o4 fam4 mesh_flags 0391@3e40",
+        &o4_fam4::MESH_FLAGS_0391_3E40,
+    ),
+    (
+        "o4 fam4 mesh_flags 0392@4070",
+        &o4_fam4::MESH_FLAGS_0392_4070,
     ),
 ];
 
