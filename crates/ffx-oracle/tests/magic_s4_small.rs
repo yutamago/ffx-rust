@@ -1961,3 +1961,58 @@ fn actors_faces_statics() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn places_tables_links() {
+    let Some(mut t) = twin(349) else { return };
+    recs(&mut t, &[(237, 4)]);
+    let f = t.at(0x4e10);
+    let block = SCRATCH + 0x2000;
+    t.set_u32(op(&t, f, 0x6), block);
+    t.set_u32(block + 0x1a24, 2.5f32.to_bits());
+    let map = SCRATCH + 0x300;
+    t.write(map, &[2, 1, 0, 3]);
+    t.set_u32(op(&t, f, 0x28), map);
+    t.set_u32(op(&t, f, 0x21), 0x0e0e_0021);
+    for k in 0..4 {
+        t.set_u32(op(&t, f, 0x33) + 4 * k, 0x0237_0000 + k);
+    }
+    let obj = SCRATCH + 0x100;
+    for i in [u32::MAX, 0, 3] {
+        t.write(obj, &[0x22; 0x130]);
+        t.set_u32(obj + 0x120, i);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x91c0);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x46) } else { last });
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(638) else { return };
+    let f = t.at(0x31e0);
+    let so = t.img.rel32_target(f + 0x2f);
+    t.set_u32(t.img.word(so + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(so + 0x5e), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |_, _| 0x714);
+    let pa = t.img.rel32_target(so + 0x96);
+    let free = t.img.word(pa + 0x04);
+    let nodes = t.img.word(pa + 0x27) - 8;
+    for i in 0..8 {
+        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+        t.set_u32(nodes + 12 * i + 8, 0);
+    }
+    let base = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x18), base);
+    for i in [0u32, 1] {
+        t.write(base + 0x130 * i, &[0x5a; 0x130]);
+        t.set_u16(free, 3);
+        t.check(f, Call::this(i), &[], Eax::Checked, s4_small::table_object);
+    }
+}

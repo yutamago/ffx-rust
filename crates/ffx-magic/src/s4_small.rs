@@ -4139,6 +4139,15 @@ pub const STATIC_LEAVE_MODEL: Sig = Sig {
 /// `magic_0201` 0x10006e00 (120 bytes; 3 DLLs).
 pub fn static_link_last<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
+    let last = static_link_table(g, img, f);
+    g.write::<u8>(op(img, f, 0x72), 0);
+    Ret::eax(last)
+}
+
+/// The static node with its handler table first, put last under the
+/// DLL's list: [`static_link_last`] and [`static_link_last_word`] up to
+/// their last store. Returns the old last.
+fn static_link_table<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     let last = g.read::<u32>(op(img, f, 0x1));
     g.write::<u32>(op(img, f, 0x7), op(img, f, 0xb));
     g.write::<u16>(op(img, f, 0x12), 0xff);
@@ -4155,8 +4164,7 @@ pub fn static_link_last<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let c = g.read::<u16>(count).wrapping_add(1);
     g.write::<u16>(count, c);
     g.write::<u32>(op(img, f, 0x68), op(img, f, 0x6c));
-    g.write::<u8>(op(img, f, 0x72), 0);
-    Ret::eax(last)
+    last
 }
 
 /// [`static_link_last`].
@@ -4419,5 +4427,100 @@ pub const STATIC_LINK_WORD: Sig = Sig {
     len: 123,
     hash: 0x39fc_a7d9_582c_2460,
     calls: &[],
+    imports: &[],
+};
+
+/// [`static_link_last`] ending with a word 0 (operand `+0x72`) (no
+/// arguments). Returns the old last.
+///
+/// `magic_0070` 0x100091c0 (123 bytes; 2 DLLs).
+pub fn static_link_last_word<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = static_link_table(g, img, f);
+    g.write::<u32>(op(img, f, 0x72), 0);
+    Ret::eax(last)
+}
+
+/// [`static_link_last_word`].
+pub const STATIC_LINK_LAST_WORD: Sig = Sig {
+    len: 123,
+    hash: 0x75c4_032a_4432_bf78,
+    calls: &[],
+    imports: &[],
+};
+
+/// The object's place (`+0xd0`) at a bone of the actor `x` (slot 237
+/// `(x, 0x10, 0, obj + 0xd0)`; `x` the word `T[G_MAP[i]]` for the
+/// object's index `i` `+0x120`, or `G_NONE` for -1), `+0xdc` 1.0, its
+/// height `+0xd4` the block's `+0x1a24` minus `K` (operand `+0x5d`) and
+/// `+0x104` 0 (cdecl `(obj)`). Returns slot 237's `eax`.
+///
+/// `magic_0349` 0x10004e10 (123 bytes; 2 DLLs).
+pub fn place_bone_10<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x6));
+    let obj = fr.arg(g, 0);
+    let i = g.read::<u32>(obj.wrapping_add(0x120));
+    let x = if i == u32::MAX {
+        g.read::<u32>(op(img, f, 0x21))
+    } else {
+        let map = g.read::<u32>(op(img, f, 0x28));
+        let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+        g.read::<u32>(op(img, f, 0x33).wrapping_add(4 * k))
+    };
+    let out = slot_call(
+        g,
+        img,
+        f,
+        (0x3e, 237),
+        &[x, 0x10, 0, obj.wrapping_add(0xd0)],
+    );
+    g.write::<u32>(obj.wrapping_add(0xdc), 0x3f80_0000);
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let h = crate::sb_sse::sub(fl(g, block.wrapping_add(0x1a24)), fl(g, op(img, f, 0x5d)));
+    g.write::<u32>(obj.wrapping_add(0xd4), h.to_bits());
+    g.write::<u32>(obj.wrapping_add(0x104), 0);
+    through(out)
+}
+
+/// [`place_bone_10`].
+pub const PLACE_BONE_10: Sig = Sig {
+    len: 123,
+    hash: 0x2cc7_6cb3_df68_1a75,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's object `i` (`*G + 0x130 i`, `ecx` = i) started
+/// ([`crate::s4_misc::start_object_plain`] with the scale and part of the
+/// DLL's table row `i`, seven words from operand `+0x36`), then its
+/// place `+0xd0..+0xdc` from the row's first four words and `+0xc4` from
+/// its sixth (internal). Returns the object.
+///
+/// `magic_0638` 0x100031e0 (124 bytes; 2 DLLs).
+pub fn table_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let i = fr.ecx;
+    let obj = i
+        .wrapping_mul(0x130)
+        .wrapping_add(g.read::<u32>(op(img, f, 0x18)));
+    let row = op(img, f, 0x36).wrapping_add(i.wrapping_mul(0x1c));
+    let part = g.read::<u32>(row.wrapping_add(0x18));
+    let scale = f32::from_bits(g.read::<u32>(row.wrapping_add(0x10)));
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x2f), obj, scale, part);
+    for k in 0..4 {
+        let x = g.read::<u32>(row.wrapping_add(4 * k));
+        g.write::<u32>(obj.wrapping_add(0xd0 + 4 * k), x);
+    }
+    let x = g.read::<u32>(row.wrapping_add(0x14));
+    g.write::<u32>(obj.wrapping_add(0xc4), x);
+    Ret::eax(obj)
+}
+
+/// [`table_object`].
+pub const TABLE_OBJECT: Sig = Sig {
+    len: 124,
+    hash: 0x4eeb_7418_d326_1128,
+    calls: &[(0x2f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
     imports: &[],
 };
