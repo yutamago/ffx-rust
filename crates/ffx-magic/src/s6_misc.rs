@@ -4,9 +4,11 @@
 //! "`G`" is a global of the DLL (an operand of the code).
 
 use crate::l5_objhost::{LIST_CUR, LIST_REMOVE, POOL_ALLOC, list_cur, list_remove};
-use crate::m0032::{RESET_STATE, reset_state};
+use crate::l5_objhost::{PART_INIT, part_init};
+use crate::m0032::{POP_NODE, RESET_STATE, pop_node, reset_state};
 use crate::nodes::{INSERT, node_insert};
 use crate::opu_parts::{START_PART, start_part};
+use crate::pushes::Pushes;
 use crate::s3_misc::{COLOUR_NODE, colour_node};
 use crate::s3_summon::{MODEL_NODES, model_nodes};
 use crate::s4_misc::{FREE_RECORD, append_object, free_record};
@@ -2362,5 +2364,91 @@ pub const LIVE_PARTS_AXES: Sig = Sig {
     len: 265,
     hash: 0xd56a_a09c_96d0_dc80,
     calls: &[(0x101, Callee::Any)],
+    imports: &[],
+};
+
+/// An object host's start with one object (cdecl, no arguments): the
+/// two host words `*G_A = A`, `*G_B = B` (immediates), the effect data
+/// (slot 719 `(E, 8, 0)` into `*G_E`), the part's set-up
+/// ([`part_init`]), the object `O` started ([`start_object_reset`],
+/// scale `K`), the battle position and option point 0x11 of the
+/// selection's first actor into `G_P` (slots 262 and 268, `w` 1.0), the
+/// host record `G_R` cleared (but `+0x20 = E`, `+0x24 = T`, u16 `+0x30 =
+/// 0`, `*G_C = G_R`), and a task node ([`pop_node`]) appended to the
+/// task list. Each call sees the words the earlier ones left on the
+/// stack. Returns 0.
+///
+/// `magic_0032` 0x10001370 (319 bytes; 4 DLLs).
+pub fn host_start_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let mut s = Pushes::default();
+    s.push_all(&[0, 8, w(0x11)]);
+    g.write::<u32>(w(0x17), w(0x1b));
+    g.write::<u32>(w(0x21), w(0x25));
+    // call width: 12 (the most `Pushes::words` holds)
+    let e = s
+        .call(g, crate::runtime::slot_target(g, w(0x1), 719), 0)
+        .eax;
+    s.pop(1);
+    g.write::<u32>(w(0x2f), e);
+    part_init(g, img, img.rel32_target(f + 0x34));
+    // sub esp, 8; call: the start's frame
+    let start = Frame {
+        at: img.rel32_target(f + 0x49),
+        esp: fr.esp.wrapping_sub(0x18),
+        edx: w(0x44),
+        xmm: [0, 0, 0, u128::from(g.read::<u32>(w(0x3c)))],
+        ..*fr
+    };
+    start_object_reset(g, img, &start);
+    // sub esp, 8: the words there are the part set-up's return address
+    // (its call at +0x33) and its first push (the 0 of slot 711's words)
+    s.push_all(&[f + 0x38, 0]);
+    let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x4e))));
+    let ch = g.read::<u32>(w(0x62).wrapping_add(4 * b));
+    s.push_all(&[w(0x53), w(0x5b), w(0x6c), ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, crate::runtime::slot_target(g, w(0x67), 262), 0);
+    s.push_all(&[w(0x7f), 0x11, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, crate::runtime::slot_target(g, w(0x7a), 268), 0);
+    g.write::<u32>(w(0x95), 0x3f80_0000);
+    for o in [0x9fu32, 0xa9, 0xb3, 0xbd] {
+        g.write::<u32>(w(o), 0);
+    }
+    g.write::<u32>(w(0xc7), w(0xcb));
+    g.write::<u32>(w(0xd1), w(0xd5));
+    g.write::<u32>(w(0xdb), 0);
+    g.write::<u32>(w(0xe5), 0);
+    g.write::<u16>(w(0xef), 0);
+    g.write::<u32>(w(0xf5), w(0xf9));
+    let node = pop_node(g, img, img.rel32_target(f + 0xfe));
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if g.read::<u32>(w(0x104)) != 0 {
+        let tail = g.read::<u32>(w(0x115));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(node.wrapping_add(8), node);
+        g.write::<u32>(w(0x122), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x130), node);
+        g.write::<u32>(node.wrapping_add(8), node);
+        g.write::<u32>(w(0x138), node);
+    }
+    Ret::eax(0)
+}
+
+/// [`host_start_object`] (the `rel32`s: [`part_init`],
+/// [`start_object_reset`] and [`pop_node`]).
+pub const HOST_START_OBJECT: Sig = Sig {
+    len: 319,
+    hash: 0x20ef_39c3_853f_8f8c,
+    calls: &[
+        (0x34, Callee::Sig(&PART_INIT)),
+        (0x49, Callee::Sig(&START_OBJECT_RESET)),
+        (0xfe, Callee::Sig(&POP_NODE)),
+    ],
     imports: &[],
 };

@@ -1693,3 +1693,76 @@ fn live_parts_axes_turned() {
         });
     }
 }
+
+/// Row 285: `magic_0032`'s one-object host start: the object and task
+/// lists empty and not.
+#[test]
+#[allow(clippy::too_many_lines)] // the callees' slots and lists
+fn host_starts_one_object() {
+    let Some(mut t) = twin(32) else { return };
+    let f = t.at(0x1370);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    let lock = SCRATCH + 0x7f0;
+    let init = t.img.rel32_target(f + 0x34);
+    t.set_u32(op(&t, init, 0x01), lock);
+    t.set_u32(op(&t, init, 0x07), 0x0aa0_0001);
+    t.set_u32(op(&t, init, 0x11), 0x0bb0_0001);
+    rec_lock(&mut t, 711, 3, lock, |_, a| 0x0711_0000 ^ a[1]);
+    rec(&mut t, 710, 7, |_, a| 0x0710_0000 ^ a[0]);
+    // the object start's slots (`start_object_reset`)
+    let start = t.img.rel32_target(f + 0x49);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let sp = t.img.rel32_target(start + 0x7d);
+    t.set_u32(op(&t, sp, 0x04), SCRATCH + 0x7f8);
+    t.set_u32(op(&t, start, 0x1), SCRATCH + 0x2f0);
+    let pa = t.img.rel32_target(start + 0x95);
+    t.set_u16(op(&t, pa, 0x04), 4);
+    let obj_tail = op(&t, start, 0xa0);
+    // the actor and its points
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            m.w32(a[i], (1.5f32 + i as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[2, 0, 1]);
+    t.set_u32(op(&t, f, 0x4e), sel);
+    for i in 0..4 {
+        t.set_u32(op(&t, f, 0x62) + 4 * i, 0x0cc0_0000 + i);
+    }
+    // the task node's free ring (`m0032::pop_node`)
+    let pop = t.img.rel32_target(f + 0xfe);
+    let (head_w, count_w) = (op(&t, pop, 0x13), op(&t, pop, 0x04));
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    let (thead, ttail) = (op(&t, f, 0x104), op(&t, f, 0x115));
+    for (k, (objs, tasks)) in [(false, false), (true, true), (false, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.write(op(&t, f, 0x9f) - 0x10, &varied(0x40, k));
+        for i in 0..3 {
+            t.write(node(i), &varied(0x20, i + k));
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(head_w, node(k % 3));
+        t.set_u16(count_w, 3);
+        t.write(SCRATCH + 0x1400, &varied(0x20, k));
+        t.set_u32(obj_tail, if objs { SCRATCH + 0x1400 } else { 0 });
+        t.write(SCRATCH + 0x1440, &varied(0x20, k + 1));
+        let last = if tasks { SCRATCH + 0x1440 } else { 0 };
+        t.set_u32(thead, last);
+        t.set_u32(ttail, last);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
