@@ -6293,3 +6293,74 @@ pub const PART_DROP_UNLOCK: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The DLL's static node (operand `+0x1a`, its handler table `+0x35`)
+/// set up ([`node_from_args`] with a record on the frame: the node, the
+/// parent operand `+0x21`, 0, 0, `a`, `b`) (cdecl `(-, -, -, a, b)`).
+/// Returns the set-up's result.
+///
+/// `magic_0070` 0x10009ab0 (66 bytes; 2 DLLs).
+pub fn static_node_args<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // push ebp; sub esp, 0x1c: the record is [ebp - 0x1c]
+    let rec = fr.esp.wrapping_sub(0x20);
+    let words = [
+        op(img, f, 0x1a),
+        op(img, f, 0x21),
+        0,
+        0,
+        fr.arg(g, 3),
+        fr.arg(g, 4),
+    ];
+    for (i, w) in (0u32..).zip(words) {
+        g.write::<u32>(rec + 4 * i, w);
+    }
+    g.write::<u32>(op(img, f, 0x31), op(img, f, 0x35));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x3a),
+        esp: rec.wrapping_sub(4),
+        ecx: rec,
+        ..*fr
+    };
+    node_from_args(g, img, &callee)
+}
+
+/// [`static_node_args`].
+pub const STATIC_NODE_ARGS: Sig = Sig {
+    len: 66,
+    hash: 0xc238_3606_bd5f_f9c7,
+    calls: &[(0x3a, Callee::Sig(&NODE_FROM_ARGS))],
+    imports: &[],
+};
+
+/// A colour with a level as its alpha (internal, `ecx` = the level,
+/// `edx` = its full value; cdecl `(r, g, b)` bytes): the alpha is 0x80
+/// at or above the full value, else `level * 128 / full` (signed); slot
+/// 776 `(0x44)` gives a handle and slot 915 `(r K, g K, b K, alpha K,
+/// h)` sets the colour (`K` operand `+0x2d`). Returns slot 915's `eax`.
+///
+/// `magic_0515` 0x10002320 (158 bytes; 4 DLLs).
+pub fn level_colour<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{cvt, mul};
+    let f = fr.at;
+    let (level, full) = (fr.ecx.cast_signed(), fr.edx.cast_signed());
+    let alpha = if level >= full {
+        0x80
+    } else {
+        // idiv: a zero full value faults in the original as well
+        (level.wrapping_shl(7).wrapping_div(full).cast_unsigned()) & 0xff
+    };
+    let h = slot_call(g, img, f, (0x1b, 776), &[0x44]).eax;
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0x2d)));
+    let ch = |i: u32| mul(cvt(fr.arg(g, i) & 0xff), k).to_bits();
+    let words = [ch(0), ch(1), ch(2), mul(cvt(alpha), k).to_bits(), h];
+    through(slot_call(g, img, f, (0x7f, 915), &words))
+}
+
+/// [`level_colour`].
+pub const LEVEL_COLOUR: Sig = Sig {
+    len: 158,
+    hash: 0xb34a_0433_d43a_874f,
+    calls: &[],
+    imports: &[],
+};

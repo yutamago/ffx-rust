@@ -2908,3 +2908,45 @@ fn counted_frames_unlocked_drops() {
         t.check_entry(f, Call::default(), &[0x0258_0001], Eax::Checked);
     }
 }
+
+#[test]
+fn static_args_and_level_colours() {
+    let Some(mut t) = twin(70) else { return };
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x9ab0);
+    let parent = op(&t, f, 0x21);
+    t.write(op(&t, f, 0x1a), &[0x66; 0x80]);
+    t.write(parent, &[0; 0x20]);
+    t.set_u32(parent + 0x10, parent);
+    t.set_u32(parent + 0xc, parent);
+    t.check_entry(
+        f,
+        Call::default(),
+        &[1, 2, 3, 0x0a0a_0004, 0x0b0b_0005],
+        Eax::Checked,
+    );
+    drop(t);
+    let Some(mut t) = twin(515) else { return };
+    recs(&mut t, &[(776, 1), (915, 5)]);
+    let f = t.at(0x2320);
+    for (level, full) in [
+        (5u32, 5u32),
+        (9, 5),
+        (3, 8),
+        (0xffff_fffd, 8),
+        (1, 0x7fff_ffff),
+    ] {
+        let c = Call {
+            ecx: level,
+            edx: full,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            c,
+            &[0x1ff, 0x80, 0x7],
+            Eax::Checked,
+            s4_small::level_colour,
+        );
+    }
+}
