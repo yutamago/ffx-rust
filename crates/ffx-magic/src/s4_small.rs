@@ -5395,8 +5395,9 @@ pub const PART_DROP_FIXED: Sig = Sig {
 ///
 /// `magic_0168` 0x10001c30 (scale `+0x3150`, floats `+0xa90`; 3 DLLs),
 /// `magic_0165` 0x10001a40 (`+0x5ee8`, `+0x9d0`), `magic_0511` 0x10002040
-/// (`+0x2258`, `+0x1990`) and `magic_0563` 0x10001f40 (`+0x3ba4`,
-/// `+0x2b20`) (142 bytes; 2 DLLs each).
+/// (`+0x2258`, `+0x1990`), `magic_0563` 0x10001f40 (`+0x3ba4`,
+/// `+0x2b20`) and `magic_0430` 0x10001e60 (`+0xeb4`, `+0xc54`) (142
+/// bytes; 2 DLLs each).
 pub fn reset_and_scale<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
     let block = g.read::<u32>(op(img, f, 0x3));
@@ -5443,5 +5444,90 @@ pub const RESET_AND_SCALE_563: Sig = Sig {
     len: 142,
     hash: 0x6ebc_9978_673d_20f3,
     calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};
+
+/// [`reset_and_scale`] in `magic_0430`.
+pub const RESET_AND_SCALE_430: Sig = Sig {
+    len: 142,
+    hash: 0x2711_1126_a167_0e80,
+    calls: &[(0x8, Callee::Sig(&crate::sb_misc::EFFECT_RESET))],
+    imports: &[],
+};
+
+/// An object's four colour channels from its `u16 +0xd0..+0xd6` (each
+/// times `K`, operand `+0x4`) into `+0x2c..+0x38`, slot 325 `(obj +
+/// 0x3c, edx)`, flag bit 0 of `+0xe8` and `+0xe4` 0x140014 (internal,
+/// `ecx` = obj, `edx`). Returns slot 325's `eax`.
+///
+/// `magic_0512` 0x100075d0 (143 bytes; 2 DLLs).
+pub fn colour_from_words<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.ecx;
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0x4)));
+    for i in 0..4 {
+        let w = u32::from(g.read::<u16>(obj.wrapping_add(0xd0 + 2 * i)));
+        let x = crate::sb_sse::mul(crate::sb_sse::cvt(w), k);
+        g.write::<u32>(obj.wrapping_add(0x2c + 4 * i), x.to_bits());
+    }
+    let out = slot_call(g, img, f, (0x68, 325), &[obj.wrapping_add(0x3c), fr.edx]);
+    let flags = g.read::<u32>(obj.wrapping_add(0xe8));
+    g.write::<u32>(obj.wrapping_add(0xe8), flags | 1);
+    g.write::<u32>(obj.wrapping_add(0xe4), 0x14_0014);
+    through(out)
+}
+
+/// [`colour_from_words`].
+pub const COLOUR_FROM_WORDS: Sig = Sig {
+    len: 143,
+    hash: 0x5b66_8521_49fa_68fa,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], `ecx` = the cursor); when it
+/// ran and the owner has a child (`+0x2c`), the child's handler runs on a
+/// cursor in the frame (the child, the walk's pass byte at `+5`), slot
+/// 325 `(owner + 0x1c, child + 0x15d4)` takes its place and the owner's
+/// `+0x28` becomes 1.0 (internal, `ecx` = the cursor). Returns slot 325's
+/// `eax`, or the walk's.
+///
+/// `magic_0155` 0x10004910 (146 bytes; 2 DLLs).
+pub fn walk_child_place<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let cursor = fr.ecx;
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let owner = g.read::<u32>(cursor);
+    let child = g.read::<u32>(owner.wrapping_add(0x2c));
+    if child == 0 {
+        return Ret::eax(eax);
+    }
+    // push ebp; sub esp, 8: the cursor is [ebp - 8]
+    let local = fr.esp.wrapping_sub(0xc);
+    let pass = g.read::<u8>(cursor + 5);
+    g.write::<u32>(local, child);
+    g.write::<u8>(local + 5, pass);
+    let handler = g.read::<u32>(g.read::<u32>(child).wrapping_add(0x1c));
+    g.call(handler, local, &[local]);
+    let src = g.read::<u32>(owner.wrapping_add(0x2c)).wrapping_add(0x15d4);
+    let out = slot_call(
+        g,
+        img,
+        f,
+        (0x71, 325),
+        &[owner.wrapping_add(0x1c), src, local],
+    );
+    g.write::<u32>(owner.wrapping_add(0x28), 0x3f80_0000);
+    through(out)
+}
+
+/// [`walk_child_place`].
+pub const WALK_CHILD_PLACE: Sig = Sig {
+    len: 146,
+    hash: 0x0e89_327e_fd23_71c7,
+    calls: &[],
     imports: &[],
 };

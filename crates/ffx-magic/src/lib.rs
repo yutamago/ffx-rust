@@ -1122,6 +1122,7 @@ ports! {
     "reset and scale (165)" => s4_small::RESET_AND_SCALE_165, s4_small::reset_and_scale;
     "reset and scale (511)" => s4_small::RESET_AND_SCALE_511, s4_small::reset_and_scale;
     "reset and scale (563)" => s4_small::RESET_AND_SCALE_563, s4_small::reset_and_scale;
+    "reset and scale (430)" => s4_small::RESET_AND_SCALE_430, s4_small::reset_and_scale;
     "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;
@@ -1512,6 +1513,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("walk and track", &s4_small::WALK_TRACK),
     ("id list", &s4_small::ID_LIST),
     ("actor scale by index", &s4_small::ACTOR_SCALE_BY),
+    ("colour from words", &s4_small::COLOUR_FROM_WORDS),
+    ("walk, child place", &s4_small::WALK_CHILD_PLACE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

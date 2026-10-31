@@ -2500,3 +2500,48 @@ fn resets_and_scales() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn colours_and_child_places() {
+    let Some(mut t) = twin(430) else { return };
+    recs(&mut t, &[(287, 3), (283, 2), (281, 1), (235, 1), (329, 3)]);
+    let f = t.at(0x1e60);
+    t.set_u32(op(&t, f, 0x3), SCRATCH + 0x1000);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(512) else { return };
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x75d0);
+    let obj = SCRATCH + 0x100;
+    t.write(obj, &[0x11; 0x100]);
+    for (i, w) in [0u16, 1, 0x80, 0xffff].into_iter().enumerate() {
+        t.set_u16(obj + 0xd0 + 2 * i as u32, w);
+    }
+    let c = Call {
+        ecx: obj,
+        edx: SCRATCH + 0x400,
+        ..Call::default()
+    };
+    t.check(f, c, &[], Eax::Checked, s4_small::colour_from_words);
+    drop(t);
+    let Some(mut t) = twin(155) else { return };
+    sa::handler_stubs(&mut t);
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x4910);
+    let child = SCRATCH + 0x5000;
+    for &(c, p, cp) in sa::RINGS {
+        for kid in [0u32, child] {
+            sa::ring(&mut t, c, p, cp, 0x30);
+            t.write(child, &[0x41; 0x20]);
+            t.set_u32(child, sa::VTABLE);
+            t.set_u32(sa::node(0) + 0x2c, kid);
+            t.check(
+                f,
+                Call::this(sa::CURSOR),
+                &[],
+                Eax::Checked,
+                s4_small::walk_child_place,
+            );
+        }
+    }
+}
