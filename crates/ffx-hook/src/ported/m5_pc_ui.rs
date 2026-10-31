@@ -19,6 +19,7 @@ use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
 use ffx_pcui::m5u_j::bridge as jj;
 use ffx_pcui::m5u_k::bridge as kk;
+use ffx_pcui::m5u_l::bridge as ll;
 
 ported! {
     // ---- batch 1 (ffx_pcui::m5u_a) ----
@@ -825,5 +826,141 @@ ported! {
     /// `PageHash_release_009474f0(this)`.
     PageHash_release_009474f0 @ 0x0094_74f0 => extern "thiscall" fn hash_release(this: u32) {
         kk::hash_release(&mut mem(), this);
+    }
+
+    // ---- round 6 (render-pcui4, ffx_pcui::m5u_l) ----
+    /// `CrashDump_readMemory_00689370(process, base, unused, buffer, size,
+    /// read)` (the count cell).
+    CrashDump_readMemory_00689370 @ 0x0068_9370 => extern "stdcall" fn crash_read_memory(process: u32, base: u32, unused: u32, buffer: u32, size: u32, read: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ll::crash_read_memory(&mut mem(), f.at(), [process, base, unused, buffer, size, read])
+    }
+    /// `VideoTexture_release_006e7d30(this)`.
+    VideoTexture_release_006e7d30 @ 0x006e_7d30 => extern "thiscall" fn video_texture_release(this: u32) -> u32 {
+        ll::video_texture_release(&mut mem(), this)
+    }
+    /// `FFEscMenu_buildResolutionList(this)` (the render scope lock).
+    FFEscMenu_buildResolutionList @ 0x006f_edf0 => extern "thiscall" fn build_resolution_list(this: u32) {
+        let mut f = StackFrame::<2>::new();
+        ll::build_resolution_list(&mut mem(), f.at(), this);
+    }
+    /// `FFEscMenu_applyVideoSettings(this; s)`.
+    FFEscMenu_applyVideoSettings @ 0x006f_f290 => extern "thiscall" fn apply_video_settings(this: u32, s: u32) -> u32 {
+        ll::apply_video_settings(&mut mem(), this, s)
+    }
+    /// `FFEscMenu_keyBindingInput_00701190(this; done)` (the Iggy value and
+    /// the string loader).
+    FFEscMenu_keyBindingInput_00701190 @ 0x0070_1190 => extern "thiscall" fn key_binding_input(this: u32, done: u32) {
+        let mut f = StackFrame::<0x48>::new();
+        ll::key_binding_input(&mut mem(), f.at(), this, done);
+    }
+
+    /// `FFEscMenu_loadKeyBindings_00701680(menu, args)` (the value
+    /// reference and text buffer).
+    FFEscMenu_loadKeyBindings_00701680 @ 0x0070_1680 => extern "C" fn load_key_bindings(menu: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x24>::new();
+        ll::load_key_bindings(&mut mem(), f.at(), menu, args)
+    }
+    /// `FFEscMenu_padBindingInput_007019b0(this; done)` (the Iggy value and
+    /// the string loader).
+    FFEscMenu_padBindingInput_007019b0 @ 0x0070_19b0 => extern "thiscall" fn pad_binding_input(this: u32, done: u32) {
+        let mut f = StackFrame::<0x48>::new();
+        ll::pad_binding_input(&mut mem(), f.at(), this, done);
+    }
+    /// `FFEscMenu_loadPadBindings_00701e60(menu, args)` (the value
+    /// reference and text buffer).
+    FFEscMenu_loadPadBindings_00701e60 @ 0x0070_1e60 => extern "C" fn load_pad_bindings(menu: u32, args: u32) -> u32 {
+        let mut f = StackFrame::<0x21>::new();
+        ll::load_pad_bindings(&mut mem(), f.at(), menu, args)
+    }
+
+    /// `syncStrPc(play, state)` (the status cell).
+    syncStrPc @ 0x0093_db20 => extern "C" fn sync_str_pc(play: u32, state: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        ll::sync_str_pc(&mut mem(), f.at(), play, state)
+    }
+    /// `GuPrintChar_00849070(c)`.
+    GuPrintChar_00849070 @ 0x0084_9070 => extern "C" fn gu_print_char(c: u32) -> u32 {
+        ll::gu_print_char(&mut mem(), c)
+    }
+    /// `SgClock_resetState_0084ca00()`.
+    SgClock_resetState_0084ca00 @ 0x0084_ca00 => extern "C" fn sg_clock_reset_state() -> u32 {
+        ll::sg_clock_reset_state(&mut mem())
+    }
+    /// `DebugScript_readLine_008530d0()`.
+    DebugScript_readLine_008530d0 @ 0x0085_30d0 => extern "C" fn debug_read_line() -> u32 {
+        ll::debug_read_line(&mut mem())
+    }
+    /// `DebugScript_tokenizeLine_00853070()`.
+    DebugScript_tokenizeLine_00853070 @ 0x0085_3070 => extern "C" fn debug_tokenize_line() -> u32 {
+        ll::debug_tokenize_line(&mut mem())
+    }
+
+    /// `Gui_MasakiInit(which)`.
+    Gui_MasakiInit @ 0x007c_86e0 => extern "C" fn gui_masaki_init(which: u32) -> u32 {
+        ll::gui_masaki_init(&mut mem(), which)
+    }
+    /// `DebugScript_readLights_0084d790(n)`.
+    DebugScript_readLights_0084d790 @ 0x0084_d790 => extern "C" fn debug_read_lights(n: u32) {
+        ll::debug_read_lights(&mut mem(), n);
+    }
+    /// `DebugScript_interpret_00853210()`.
+    DebugScript_interpret_00853210 @ 0x0085_3210 => extern "C" fn debug_interpret() -> u32 {
+        ll::debug_interpret(&mut mem())
+    }
+    /// `DebugScript_loadLights_008531a0()`.
+    DebugScript_loadLights_008531a0 @ 0x0085_31a0 => extern "C" fn debug_load_lights() -> u32 {
+        ll::debug_load_lights(&mut mem())
+    }
+
+    /// `Gui_ProgAvarage()` (the caller's `eax` kept: callers don't read it).
+    Gui_ProgAvarage @ 0x0085_5430 => extern "C" fn gui_prog_average() {
+        let _ = ll::gui_prog_average(&mut mem());
+    }
+    /// `ChrView_updateControls_0084cc30(window, chr)`.
+    ChrView_updateControls_0084cc30 @ 0x0084_cc30 => extern "C" fn chrview_update_controls(window: u32, chr: u32) -> u32 {
+        ll::chrview_update_controls(&mut mem(), window, chr)
+    }
+    /// `ChrMenu_updateLightTexts_0084d540(window)`.
+    ChrMenu_updateLightTexts_0084d540 @ 0x0084_d540 => extern "C" fn chrmenu_update_light_texts(window: u32) -> u32 {
+        ll::chrmenu_update_light_texts(&mut mem(), window)
+    }
+
+    /// `ChrMenu_fillSelector_0084ce10(selector)`.
+    ChrMenu_fillSelector_0084ce10 @ 0x0084_ce10 => extern "C" fn chrmenu_fill_selector(selector: u32) -> u32 {
+        ll::chrmenu_fill_selector(&mut mem(), selector)
+    }
+    /// `create_chrview(chr)`.
+    create_chrview @ 0x0084_cea0 => extern "C" fn create_chrview(chr: u32) -> u32 {
+        ll::create_chrview(&mut mem(), chr)
+    }
+    /// `ChrMenu_listMotions_0084d3f0(sel)` (the command buffer).
+    ChrMenu_listMotions_0084d3f0 @ 0x0084_d3f0 => extern "C" fn chrmenu_list_motions(sel: u32) -> u32 {
+        let mut f = StackFrame::<0x20>::new();
+        ll::chrmenu_list_motions(&mut mem(), f.at(), sel)
+    }
+    /// `ChrMenu_listCharacters_0084d4a0(sel)` (the command buffer).
+    ChrMenu_listCharacters_0084d4a0 @ 0x0084_d4a0 => extern "C" fn chrmenu_list_characters(sel: u32) -> u32 {
+        let mut f = StackFrame::<0x20>::new();
+        ll::chrmenu_list_characters(&mut mem(), f.at(), sel)
+    }
+    /// `Gui_SettingSaveLight()`.
+    Gui_SettingSaveLight @ 0x0084_d8a0 => extern "C" fn gui_setting_save_light() -> u32 {
+        ll::gui_setting_save_light(&mut mem())
+    }
+
+    /// `SpecWindowProc_0084ccc0(window, msg, arg)` (the number buffer).
+    SpecWindowProc_0084ccc0 @ 0x0084_ccc0 => extern "C" fn spec_window_proc(window: u32, msg: u32, arg: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ll::spec_window_proc(&mut mem(), f.at(), window, msg, arg)
+    }
+    /// `gui_chr_GWM_SELECTOR(window, msg, sel)`.
+    gui_chr_GWM_SELECTOR @ 0x0084_d270 => extern "C" fn gui_chr_selector(window: u32, msg: u32, sel: u32) -> u32 {
+        ll::gui_chr_selector(&mut mem(), window, msg, sel)
+    }
+    /// `ChrMenu_loadSelected_0084d5e0(sel)` (the id cell and name buffer).
+    ChrMenu_loadSelected_0084d5e0 @ 0x0084_d5e0 => extern "C" fn chrmenu_load_selected(sel: u32) -> u32 {
+        let mut f = StackFrame::<0x11>::new();
+        ll::chrmenu_load_selected(&mut mem(), f.at(), sel)
     }
 }

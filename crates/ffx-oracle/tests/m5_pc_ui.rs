@@ -37,6 +37,7 @@ use ffx_pcui::m5u_h::bridge as hh;
 use ffx_pcui::m5u_i::bridge as ii;
 use ffx_pcui::m5u_j::bridge as jj;
 use ffx_pcui::m5u_k::bridge as kk;
+use ffx_pcui::m5u_l::bridge as ll;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -4013,6 +4014,977 @@ fn rp6_page_hash_matches_the_original() {
                     Out::None
                 },
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 6 (render-pcui4, ffx_pcui::m5u_l) ----
+
+#[test]
+fn rp4_crash_read_and_video_release_match_the_original() {
+    // The memory reader with and without an override (ReadProcessMemory
+    // stubbed; the count cell in the frame). The video texture release
+    // with every slot set or empty.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4081);
+        for case in 0..8 {
+            let hook = if case % 2 == 0 {
+                0
+            } else {
+                t.stub_code(0x4801, false, 7, 0, rng.next())
+            };
+            t.g32(ll::READ_MEMORY_HOOK, hook);
+            t.g32(ll::READ_MEMORY_CONTEXT, rng.next());
+            // ReadProcessMemory writes the count through its fifth word
+            let n = rng.next();
+            let mut c = vec![0x8b, 0x44, 0x24, 0x14, 0xc7, 0x00];
+            c.extend(n.to_le_bytes()); // mov eax, [esp+0x14]; mov [eax], n
+            c.push(0xb8);
+            c.extend(rng.next().to_le_bytes()); // mov eax, result
+            c.extend([0xc2, 0x14, 0x00]);
+            let rpm = t.cave_code(&c);
+            let slot = t.rebase(ll::READ_PROCESS_MEMORY);
+            t.patch(slot, &rpm.to_le_bytes());
+            let read = t.zeros(4);
+            let args = [
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                read,
+            ];
+            // with the override the cell is only the original's frame slot
+            t.skip = if hook == 0 { 0 } else { 4 };
+            t.check_framed(
+                "CrashDump_readMemory_00689370",
+                0x0068_9370,
+                Conv::Stdcall,
+                &args,
+                4,
+                |m, ebp| Out::U32(ll::crash_read_memory(m, ebp - 4, args)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        for _ in 0..20 {
+            let this = t.zeros(0x80);
+            for off in (0x18..0x6c).step_by(4) {
+                let v = if rng.chance(3) { 0 } else { rng.next() };
+                t.w32(this + off, v);
+            }
+            let scene = t.zeros(0x1300);
+            t.g32(ll::SCENE, scene);
+            t.stubs(&[
+                (ll::CLUSTER_MANAGER, false, 0, 0, rng.next()),
+                (ll::RELEASE_CLUSTER, true, 1, 1, rng.next()),
+                (ll::DELETE_MATERIAL, true, 4, 4, rng.next()),
+                (ll::RELEASE_POOL_ARRAY, true, 2, 2, rng.next()),
+                (ll::DELETE_POOL_OBJECT56, true, 2, 2, rng.next()),
+                (ll::DELETE_MESH_INSTANCE, true, 2, 2, rng.next()),
+            ]);
+            t.check(
+                "VideoTexture_release_006e7d30",
+                0x006e_7d30,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(ll::video_texture_release(m, this)),
+            );
+            t.reset();
+        }
+    });
+}
+
+impl Twins {
+    fn w8(&mut self, at: u32, v: u8) {
+        self.write(at, &[v]);
+    }
+
+    /// `getDisplayModeList(this; count, buf)` (`ret 8`): without a buffer
+    /// `*count = n`, else the `n` 0x1c-byte modes of `table` copied in.
+    fn stub_display_modes(&mut self, table: u32, n: u32) {
+        let mut c = vec![
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x85, 0xd2, 0x75, 0x09,
+        ];
+        c.extend([0xc7, 0x00]);
+        c.extend(n.to_le_bytes());
+        c.extend([0xc2, 0x08, 0x00, 0x56, 0x57, 0xbe]);
+        c.extend(table.to_le_bytes());
+        c.extend([0x89, 0xd7, 0xb9]);
+        c.extend((n * 7).to_le_bytes());
+        c.extend([0xf3, 0xa5, 0x5f, 0x5e, 0xc2, 0x08, 0x00]);
+        let addr = self.cave_code(&c);
+        self.jump(ll::DISPLAY_MODES, addr);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // three functions
+fn rp4_video_menu_matches_the_original() {
+    // The resolution list: 0..12 modes with duplicate sizes and every
+    // order, the render interface made or not, the settings' resolution
+    // listed or not. The apply: every choice changed or not, the screen
+    // mode 1 or another (SetWordAt as it is). The key binding prompt:
+    // escape held and released, a key held and released, no key, the help
+    // text shown or not.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4082);
+        for _ in 0..40 {
+            let n = rng.below(13);
+            let sizes = [
+                (640, 480),
+                (800, 600),
+                (1280, 720),
+                (1920, 1080),
+                (1280, 1024),
+            ];
+            let mut modes = vec![];
+            for _ in 0..n {
+                let (w, h) = sizes[rng.below(sizes.len() as u32) as usize];
+                modes.extend([
+                    w,
+                    h,
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                    rng.next(),
+                ]);
+            }
+            modes.extend([0; 7]);
+            let table = t.words(&modes);
+            t.stub_display_modes(table, n);
+            t.stub_alloc(ll::NEW_ARRAY, 99);
+            t.stubs(&[
+                (ll::SCOPE_LOCK_ENTER, true, 0, 0, rng.next()),
+                (ll::SCOPE_LOCK_LEAVE, true, 0, 0, rng.next()),
+                (ll::RENDER_INTERFACE_CTOR, true, 0, 0, rng.next()),
+                (ll::ATEXIT, false, 1, 0, 0),
+                (ll::DELETE_ARRAY, false, 1, 0, 0),
+            ]);
+            let guard = t.rebase(ll::RENDER_INTERFACE_GUARD);
+            let g: u32 = Mem::read(&t.b, guard);
+            let g = (g & !1) | rng.below(2);
+            t.g32(ll::RENDER_INTERFACE_GUARD, g);
+            let settings = t.zeros(0x80);
+            let (w, h) = sizes[rng.below(sizes.len() as u32) as usize];
+            t.w32(settings + 4, w << 16 | h);
+            t.g32(ll::SETTINGS, settings);
+            let this = t.zeros(0x100);
+            t.w32(this + 0xd8, rng.next());
+            // the lock object only: the rest are the original's spills
+            t.skip = 0x20;
+            t.check_framed(
+                "FFEscMenu_buildResolutionList",
+                0x006f_edf0,
+                Conv::Thiscall(this),
+                &[],
+                0x24,
+                |m, ebp| {
+                    ll::build_resolution_list(m, ebp - 0x24, this);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        for case in 0..40 {
+            let this = t.zeros(0x100);
+            let modes = t.zeros(0x1c * 4);
+            for k in 0..8 {
+                t.w32(modes + 4 * k, rng.next());
+            }
+            t.w32(this + 0xdc, modes);
+            t.w32(this + 0xd8, rng.below(3));
+            t.w32(this + 0xa8, rng.below(3));
+            let settings = t.zeros(0x80);
+            t.w32(settings + 8, if case % 3 == 0 { 1 } else { rng.below(3) });
+            t.g32(ll::SETTINGS, settings);
+            let app = t.zeros(0x40);
+            t.stubs(&[
+                (ll::GET_APPLICATION, false, 0, 0, app),
+                (ll::APPLY_SCREEN_MODE, false, 0, 0, rng.next()),
+                (ll::APPLY_SETTINGS, true, 0, 0, rng.next()),
+                (ll::DETECT_QUALITY, true, 0, 0, rng.next()),
+                (ll::DELETE_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            let mut s = vec![rng.below(3), rng.below(3)];
+            for k in 2..12 {
+                s.push(match k {
+                    4 => rng.below(3),
+                    6 | 7 => rng.below(4),
+                    _ => rng.next(),
+                });
+            }
+            let rec = t.words(&s);
+            t.check(
+                "FFEscMenu_applyVideoSettings",
+                0x006f_f290,
+                Conv::Thiscall(this),
+                &[rec],
+                |m| Out::U32(ll::apply_video_settings(m, this, rec)),
+            );
+            t.reset();
+        }
+        for case in 0..60 {
+            let this = t.zeros(0x100);
+            t.w8(this + 0xfc, u8::from(rng.chance(2)));
+            let k = match case % 4 {
+                0 => 0x40,
+                1 => u32::MAX,
+                _ => rng.below(8),
+            };
+            t.w32(this + 0xf8, k);
+            let app = t.zeros(0x40);
+            let held: Vec<u32> = (0..20).map(|_| u32::from(rng.chance(3)) | 0x100).collect();
+            let names: Vec<u32> = (0..20).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_seq(ll::KEY_HELD, true, 2, 2, &held);
+            t.stub_seq(ll::HAS_KEY_NAME, false, 1, 0, &names);
+            t.stubs(&[
+                (ll::GET_APPLICATION, false, 0, 0, app),
+                (ll::LOC_STRING_LOAD, true, 1, 1, rng.next()),
+                (ll::LOC_STRING_TO_VALUE, true, 1, 1, rng.next()),
+                (ll::CALL_FLASH, false, 6, 0, rng.next()),
+                (ll::INPUT_SWAP_STATE, false, 4, 0, rng.next()),
+                (ll::CALL_AS3, true, 5, 5, rng.next()),
+                (ll::KEY_NAME, false, 1, 0, rng.next()),
+                (ll::IGGY_SET_UTF8, false, 2, 0, rng.next()),
+                (ll::RESET_INPUT_STATE, true, 0, 0, rng.next()),
+                (ll::KEY_SLOTS, false, 0, 0, 8),
+            ]);
+            let done = t.zeros(4);
+            t.skip = 4;
+            t.check_framed(
+                "FFEscMenu_keyBindingInput_00701190",
+                0x0070_1190,
+                Conv::Thiscall(this),
+                &[done],
+                0x124,
+                |m, ebp| {
+                    ll::key_binding_input(m, ebp - 0x124, this, done);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+impl Twins {
+    /// `IggyValue_getStringUTF8(ref; i, buf, size)` (`ret 0xc`): copies
+    /// entry `i` of `texts` (28 bytes) into `buf` and returns its length.
+    fn stub_texts(&mut self, texts: &[String]) {
+        let mut t = vec![];
+        for s in texts {
+            let mut b = s.as_bytes().to_vec();
+            b.resize(28, 0);
+            t.extend(b);
+            t.extend((s.len() as u32).to_le_bytes());
+        }
+        let table = self.alloc(&t);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x05, 0x05];
+        c.extend(table.to_le_bytes());
+        c.extend([
+            0x56, 0x57, 0x89, 0xc6, 0x8b, 0x7c, 0x24, 0x10, 0xb9, 7, 0, 0, 0,
+        ]);
+        c.extend([0xf3, 0xa5, 0x8b, 0x06, 0x5f, 0x5e, 0xc2, 0x0c, 0x00]);
+        let addr = self.cave_code(&c);
+        self.jump(ll::VALUE_GET_UTF8, addr);
+    }
+
+    /// A name table stub at `sym` (`cdecl(i)` -> the name of slot `i`)
+    /// and a "has a name" stub at `has` (slots below 6).
+    fn stub_names(&mut self, sym: u32, has: u32, names: &[&str]) {
+        let ptrs: Vec<u32> = names.iter().map(|s| self.cstr(s)).collect();
+        let table = self.words(&ptrs);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85];
+        c.extend(table.to_le_bytes());
+        c.push(0xc3);
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+        let c = [
+            0x8b, 0x44, 0x24, 0x04, 0x83, 0xf8, 0x06, 0x0f, 0x92, 0xc0, 0xc3,
+        ];
+        let addr = self.cave_code(&c);
+        self.jump(has, addr);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // three functions
+fn rp4_binding_pages_match_the_original() {
+    // The keyboard and controller binding loads: each record's text a
+    // known name, an unknown one, two names or one (keyboard), the menu
+    // calls stubbed, strchr as it is. The controller prompt as the
+    // keyboard one's test.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4091);
+        let names = ["A", "Bb", "Ccc", "D", "Esc", "F1", "G", "H"];
+        for round in 0..6 {
+            let pick = |rng: &mut Rng| {
+                if rng.chance(5) {
+                    "Zz".to_string()
+                } else {
+                    names[rng.below(8) as usize].to_string()
+                }
+            };
+            let texts: Vec<String> = (0..23)
+                .map(|_| {
+                    let a = pick(&mut rng);
+                    if rng.chance(3) {
+                        format!("{a}\n")
+                    } else {
+                        format!("{a}\n{}", pick(&mut rng))
+                    }
+                })
+                .collect();
+            t.stub_texts(&texts);
+            t.stub_names(ll::KEY_NAME, ll::HAS_KEY_NAME, &names);
+            let menu = t.zeros(0x80);
+            let obj = t.zeros(0x40);
+            t.stub_alloc(ll::OPERATOR_NEW, 99);
+            t.stubs(&[
+                (ll::MENU_CONTEXT, true, 0, 0, rng.next()),
+                (ll::VALUE_REF_CREATE, true, 2, 2, rng.next()),
+                (ll::KEY_SLOTS, false, 0, 0, if round == 5 { 0 } else { 8 }),
+                (ll::DYNAMIC_CAST, false, 5, 0, obj),
+                (ll::ADD_CALL, true, 2, 2, rng.next()),
+                (ll::INPUT_MANAGER, false, 0, 0, rng.next()),
+                (ll::BUILD_PAD_MAP, true, 0, 0, rng.next()),
+                (ll::VALUE_REF_FREE, true, 0, 0, rng.next()),
+            ]);
+            let settings = t.zeros(0x400);
+            t.g32(ll::SETTINGS, settings);
+            let args = t.words(&[0, rng.next()]);
+            t.skip = 0xa0; // the stubs write the frame alike; the rest are spills
+            t.check_framed(
+                "FFEscMenu_loadKeyBindings_00701680",
+                0x0070_1680,
+                Conv::Cdecl,
+                &[menu, args],
+                0xa0,
+                |m, ebp| Out::U32(ll::load_key_bindings(m, ebp - 0xa0, menu, args)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        for round in 0..6 {
+            let texts: Vec<String> = (0..23)
+                .map(|_| {
+                    if rng.chance(5) {
+                        "Zz".to_string()
+                    } else {
+                        names[rng.below(8) as usize].to_string()
+                    }
+                })
+                .collect();
+            t.stub_texts(&texts);
+            t.stub_names(ll::PAD_NAME, ll::HAS_PAD_NAME, &names);
+            let menu = t.zeros(0x80);
+            t.stubs(&[
+                (ll::MENU_CONTEXT, true, 0, 0, rng.next()),
+                (ll::VALUE_REF_CREATE, true, 2, 2, rng.next()),
+                (ll::PAD_SLOTS, false, 0, 0, if round == 5 { 0 } else { 8 }),
+                (ll::INPUT_MANAGER, false, 0, 0, rng.next()),
+                (ll::BUILD_PAD_MAP, true, 0, 0, rng.next()),
+                (ll::VALUE_REF_FREE, true, 0, 0, rng.next()),
+            ]);
+            let settings = t.zeros(0x400);
+            t.g32(ll::SETTINGS, settings);
+            let args = t.words(&[0, rng.next()]);
+            t.skip = 0x94;
+            t.check_framed(
+                "FFEscMenu_loadPadBindings_00701e60",
+                0x0070_1e60,
+                Conv::Cdecl,
+                &[menu, args],
+                0x94,
+                |m, ebp| Out::U32(ll::load_pad_bindings(m, ebp - 0x94, menu, args)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        for case in 0..60 {
+            let this = t.zeros(0x100);
+            t.w8(this + 0xfc, u8::from(rng.chance(2)));
+            let k = match case % 4 {
+                0 => 0x40,
+                1 => u32::MAX,
+                _ => rng.below(8),
+            };
+            t.w32(this + 0xf8, k);
+            let app = t.zeros(0x40);
+            let held: Vec<u32> = (0..20).map(|_| u32::from(rng.chance(3)) | 0x100).collect();
+            let down: Vec<u32> = (0..20).map(|_| u32::from(rng.chance(3)) | 0x200).collect();
+            let names: Vec<u32> = (0..20).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_seq(ll::KEY_HELD, true, 2, 2, &held);
+            t.stub_seq(ll::KEY_DOWN, true, 2, 2, &down);
+            t.stub_seq(ll::HAS_PAD_NAME, false, 1, 0, &names);
+            t.stubs(&[
+                (ll::GET_APPLICATION, false, 0, 0, app),
+                (ll::LOC_STRING_LOAD, true, 1, 1, rng.next()),
+                (ll::LOC_STRING_TO_VALUE, true, 1, 1, rng.next()),
+                (ll::CALL_FLASH, false, 6, 0, rng.next()),
+                (ll::CALL_AS3, true, 5, 5, rng.next()),
+                (ll::PAD_NAME, false, 1, 0, rng.next()),
+                (ll::IGGY_SET_UTF8, false, 2, 0, rng.next()),
+                (ll::RESET_INPUT_STATE, true, 0, 0, rng.next()),
+                (ll::PAD_SLOTS, false, 0, 0, 8),
+            ]);
+            let done = t.zeros(4);
+            t.skip = 4;
+            t.check_framed(
+                "FFEscMenu_padBindingInput_007019b0",
+                0x0070_19b0,
+                Conv::Thiscall(this),
+                &[done],
+                0x124,
+                |m, ebp| {
+                    ll::pad_binding_input(m, ebp - 0x124, this, done);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+impl Twins {
+    /// `sceIoctl(fd, cmd, out)` (`cdecl`): logs its three words and writes
+    /// the next value of `seq` to `*out`, returning 0.
+    fn stub_ioctl(&mut self, seq: &[u32]) {
+        let ctr = self.words(&[0]);
+        let tbl = self.words(seq);
+        let log = self.stub_code(ll::SCE_IOCTL, false, 3, 0, 0);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15];
+        c.extend(ctr.to_le_bytes());
+        c.extend([0x8b, 0x14, 0x95]);
+        c.extend(tbl.to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes());
+        c.extend([0x89, 0x10, 0xe9]);
+        let at = self.cave_next;
+        let end = at + c.len() as u32 + 4;
+        c.extend(log.wrapping_sub(end).to_le_bytes());
+        let addr = self.cave_code(&c);
+        self.jump(ll::SCE_IOCTL, addr);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // five functions
+fn rp4_movie_sync_and_debug_print_match_the_original() {
+    // The stream sync: no stream, done at once, a few frames' wait,
+    // playing or not. The debug print character: a newline, characters,
+    // bold, italic. The clock reset. The debug script reader and
+    // tokenizer on scripts of empty lines, carriage returns, ';'
+    // separators and the end mid-line (strtok as it is).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40a1);
+        for case in 0..12 {
+            let state = t.zeros(0x5_0600);
+            let fd = if case % 4 == 0 {
+                0x8000_0000
+            } else {
+                rng.below(8)
+            };
+            t.w32(state + 0x5_0544, fd);
+            let waits = rng.below(4);
+            let mut seq: Vec<u32> = (0..waits).map(|_| 1 + rng.below(9)).collect();
+            seq.push(0);
+            t.stub_ioctl(&seq);
+            t.stubs(&[
+                // one word: the others are stack (the frame count of the
+                // last message is the waits seen above)
+                (ll::DBG_PRINTF, false, 1, 0, rng.next()),
+                (ll::MOVIE_WAIT, false, 0, 0, rng.next()),
+                (ll::AUDIO_STOP, false, 1, 0, rng.next()),
+                (ll::MOVIE_CSC, false, 0, 0, rng.next()),
+                (ll::PAD_PRINT_FLAG, false, 0, 0, rng.next()),
+            ]);
+            let play = rng.below(2);
+            t.check_framed(
+                "syncStrPc",
+                0x0093_db20,
+                Conv::Cdecl,
+                &[play, state],
+                4,
+                |m, ebp| Out::U32(ll::sync_str_pc(m, ebp - 4, play, state)),
+            );
+            t.reset();
+        }
+        for case in 0..30 {
+            for (sym, v) in [
+                (ll::GU_BASE_X, rng.below(100)),
+                (ll::GU_X, rng.below(600)),
+                (ll::GU_Y, rng.below(400)),
+                (ll::GU_ADVANCE, rng.below(12)),
+                (ll::GU_NEXT_LINE, rng.below(20)),
+                (ll::GU_LINE, rng.below(20)),
+                (ll::GU_TEX_A, rng.next()),
+                (ll::GU_TEX_B, rng.next()),
+                (ll::GU_ITALIC, rng.below(2)),
+                (ll::GU_SLANT, rng.next()),
+                (ll::GU_BOLD, rng.below(2)),
+                (ll::GU_BOLD_OFFSET, rng.below(3)),
+                (ll::GU_COUNT, rng.below(100)),
+            ] {
+                t.g32(sym, v);
+            }
+            t.stub(ll::GU_DRAW_CHAR, false, 9, 0, rng.next());
+            let c = if case % 5 == 0 {
+                0xa
+            } else {
+                0x20 + rng.below(0x60)
+            };
+            t.check(
+                "GuPrintChar_00849070",
+                0x0084_9070,
+                Conv::Cdecl,
+                &[c],
+                |m| Out::U32(ll::gu_print_char(m, c)),
+            );
+            t.reset();
+        }
+        t.check(
+            "SgClock_resetState_0084ca00",
+            0x0084_ca00,
+            Conv::Cdecl,
+            &[],
+            |m| Out::U32(ll::sg_clock_reset_state(m)),
+        );
+        let scripts = [
+            "warp 1 2\nsay hi;x y\r\n\n;;z",
+            "\n\n\r\n",
+            "",
+            "one two three four five six",
+            "a\tb\rc;d",
+        ];
+        for s in scripts {
+            let buf = t.cstr(s);
+            for tokenize in [false, true] {
+                t.g32(ll::DEBUG_CURSOR, buf);
+                t.g32(ll::DEBUG_END, buf + s.len() as u32);
+                let packet = t.zeros(0x40);
+                t.stub(ll::PACKET_PTR, false, 0, 0, packet);
+                for _ in 0..4 {
+                    if tokenize {
+                        t.check(
+                            "DebugScript_tokenizeLine_00853070",
+                            0x0085_3070,
+                            Conv::Cdecl,
+                            &[],
+                            |m| Out::U32(ll::debug_tokenize_line(m)),
+                        );
+                    } else {
+                        t.check(
+                            "DebugScript_readLine_008530d0",
+                            0x0085_30d0,
+                            Conv::Cdecl,
+                            &[],
+                            |m| Out::U32(ll::debug_read_line(m)),
+                        );
+                    }
+                }
+                t.reset();
+            }
+        }
+    });
+}
+
+#[test]
+fn rp4_debug_windows_and_light_script_match_the_original() {
+    // Gui_MasakiInit for every index (open or not) and past the table. The
+    // light reader on LGT lines and others, every light kind, groups and
+    // lights at and past the limits (negative too). The interpreter on
+    // scripts with VERSION, #LIGHT n, #skip n and other lines (the line
+    // reader, tokenizer and atoi as they are; the light reader stubbed).
+    // The loader with and without the file.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40b1);
+        for which in 0..12_u32 {
+            for open in [0, 1] {
+                if let Some(&(flag, _, _)) = ll::MASAKI_WINDOWS.get(which as usize) {
+                    t.g32(flag, open);
+                }
+                t.stub(ll::GU_WINDOW_CREATE, false, 6, 0, rng.next());
+                t.check("Gui_MasakiInit", 0x007c_86e0, Conv::Cdecl, &[which], |m| {
+                    Out::U32(ll::gui_masaki_init(m, which))
+                });
+                t.reset();
+            }
+        }
+        for _ in 0..30 {
+            let lgt = t.cstr("LGT");
+            let other = t.cstr("LGTX");
+            let n = rng.below(5);
+            let firsts: Vec<u32> = (0..n)
+                .map(|_| if rng.chance(4) { other } else { lgt })
+                .collect();
+            let ints: Vec<u32> = (0..n * 8)
+                .map(|k| match k % 8 {
+                    0 => rng.below(9).wrapping_sub(1),
+                    1 => rng.below(8).wrapping_sub(1),
+                    _ => rng.next(),
+                })
+                .collect();
+            t.stub_seq(
+                ll::PACKET_ARG,
+                false,
+                1,
+                0,
+                &[firsts.as_slice(), &[0]].concat(),
+            );
+            t.stub_seq(
+                ll::PACKET_ARG_INT,
+                false,
+                1,
+                0,
+                &[ints.as_slice(), &[0]].concat(),
+            );
+            t.stub(ll::DEBUG_TOKENIZE, false, 0, 0, rng.next());
+            t.check(
+                "DebugScript_readLights_0084d790",
+                0x0084_d790,
+                Conv::Cdecl,
+                &[n],
+                |m| {
+                    ll::debug_read_lights(m, n);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+        let scripts = [
+            "VERSION 3\n#LIGHT 2\nLGT 0 1\nLGT 1 2\n#skip 1\nx y\nz",
+            "#LIGHT 0\n#x 0\n#y 2\na\nb\nc",
+            "",
+            "plain words\nVERSION\n#LIGHT\n",
+            "xa 3\n#b\nl1\nl2\nl3\nl4\n#c 1\nVERSION",
+        ];
+        for s in scripts {
+            let buf = t.cstr(s);
+            t.g32(ll::DEBUG_CURSOR, buf);
+            t.g32(ll::DEBUG_END, buf + s.len() as u32);
+            let packet = t.zeros(0x40);
+            t.stub(ll::PACKET_PTR, false, 0, 0, packet);
+            t.stub(ll::DEBUG_LIGHTS, false, 1, 0, rng.next());
+            t.check(
+                "DebugScript_interpret_00853210",
+                0x0085_3210,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ll::debug_interpret(m)),
+            );
+            t.reset();
+        }
+        for case in 0..4 {
+            let user = t.cstr("user");
+            let file = if case % 2 == 0 { 0 } else { t.zeros(0x40) };
+            t.stubs(&[
+                (ll::USER_NAME, false, 0, 0, user),
+                (ll::PC_READ, false, 1, 0, file),
+                (ll::PC_READ_LEN, false, 0, 0, rng.below(0x40)),
+                (ll::DBG_PRINTF, false, 3, 0, rng.next()),
+                (ll::DEBUG_INTERPRET, false, 0, 0, rng.next()),
+                (ll::USER_FREE, false, 1, 0, rng.next()),
+            ]);
+            t.check(
+                "DebugScript_loadLights_008531a0",
+                0x0085_31a0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ll::debug_load_lights(m)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_debug_gui_pages_match_the_original() {
+    // The progress window (open or not), the character view's controls
+    // (flag bit 6 set or not), the light page texts (mode on or off).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40c1);
+        for open in [0, 1, 0, 1] {
+            t.g32(ll::PROG_OPEN, open);
+            let creates = [rng.next(), rng.next()];
+            t.stub_seq(ll::GU_WINDOW_CREATE, false, 6, 0, &creates);
+            t.stubs(&[
+                (ll::GU_WINDOW_SET_LOCAL_TRANS, false, 3, 0, rng.next()),
+                (ll::GU_WINDOW_SET_PARENT, false, 2, 0, rng.next()),
+                (ll::SG_SET_RESOURCE, false, 2, 0, rng.next()),
+            ]);
+            t.check(
+                "Gui_ProgAvarage",
+                0x0085_5430,
+                Conv::Cdecl,
+                &[],
+                |m| match ll::gui_prog_average(m) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                },
+            );
+            t.reset();
+        }
+        for _ in 0..8 {
+            let chr = t.zeros(0x200);
+            t.w32(chr + 0x194, rng.next());
+            let window = rng.next();
+            t.stubs(&[
+                (ll::GU_CONTROL_SET_DISABLE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+            ]);
+            t.check(
+                "ChrView_updateControls_0084cc30",
+                0x0084_cc30,
+                Conv::Cdecl,
+                &[window, chr],
+                |m| Out::U32(ll::chrview_update_controls(m, window, chr)),
+            );
+            t.reset();
+        }
+        for _ in 0..6 {
+            let at = t.rebase(ll::LIGHT_MODE);
+            t.write(at, &[u8::from(rng.chance(2))]);
+            t.g32(ll::LIGHT_NAME_ON, rng.next());
+            t.g32(ll::LIGHT_NAME_OFF, rng.next());
+            let window = rng.next();
+            t.stub(ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next());
+            t.check(
+                "ChrMenu_updateLightTexts_0084d540",
+                0x0084_d540,
+                Conv::Cdecl,
+                &[window],
+                |m| Out::U32(ll::chrmenu_update_light_texts(m, window)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // five functions
+fn rp4_character_menu_matches_the_original() {
+    // The character selector (none in use, 0..5 characters with some
+    // unused), the character view window (the strings copied, the clip
+    // toggle), the two file listings (light mode on and off, lists of
+    // 0..4 entries; sprintf as it is), and the light script saver.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40d1);
+        for case in 0..12 {
+            let n = rng.below(6);
+            let chrs = t.zeros(0x880 * n as usize + 4);
+            for k in 0..n {
+                t.w8(chrs + 0x880 * k + 2, u8::from(!rng.chance(3)));
+                t.w32(chrs + 0x880 * k + 4, rng.next());
+            }
+            t.g32(ll::CHR_COUNT, n);
+            t.g32(ll::CHR_ARRAY, chrs);
+            let sel = t.words(&[rng.next()]);
+            let used = if case % 4 == 0 { 0 } else { n };
+            t.stubs(&[
+                (ll::CH_SYS_NB_USE, false, 0, 0, used),
+                (ll::GU_SELECTOR_RESET, false, 2, 0, rng.next()),
+                (ll::GU_SELECTOR_SET_ITEM, false, 4, 0, rng.next()),
+            ]);
+            t.check(
+                "ChrMenu_fillSelector_0084ce10",
+                0x0084_ce10,
+                Conv::Cdecl,
+                &[sel],
+                |m| Out::U32(ll::chrmenu_fill_selector(m, sel)),
+            );
+            t.reset();
+        }
+        for _ in 0..6 {
+            let chr = t.zeros(0x20);
+            t.write(chr, &(rng.below(0x10000) as u16).to_le_bytes());
+            let name = t.cstr("Tidus");
+            t.w32(chr + 4, name);
+            let arg = t.zeros(0x100);
+            let db = t.cstr("c001");
+            let cell = t.words(&[0, rng.next()]);
+            t.stubs(&[
+                (ll::SG_SET_PLAYER, false, 1, 0, rng.next()),
+                (ll::GU_WINDOW_CREATE, false, 6, 0, rng.next()),
+                (ll::GU_WINDOW_GET_ARG, false, 1, 0, arg),
+                (ll::SET_PTR32, false, 1, 0, rng.next()),
+                (ll::SG_DB_NAME, false, 1, 0, db),
+                (ll::GET_PTR32, false, 1, 0, cell),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::CHRVIEW_UPDATE_CONTROLS, false, 2, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::CH_GET_CLIP, false, 1, 0, rng.below(2)),
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+            ]);
+            t.check("create_chrview", 0x0084_cea0, Conv::Cdecl, &[chr], |m| {
+                Out::U32(ll::create_chrview(m, chr))
+            });
+            t.reset();
+        }
+        for case in 0..8 {
+            let at = t.rebase(ll::LIGHT_MODE);
+            t.write(at, &[u8::from(case % 2 == 0)]);
+            let (a, b) = (t.cstr("c001"), t.cstr("m002"));
+            t.g32(ll::LIGHT_NAME_ON, a);
+            t.g32(ll::LIGHT_NAME_OFF, b);
+            let n = rng.below(5);
+            let items: Vec<u32> = (0..n).map(|_| rng.next()).collect();
+            let data = t.words(&[items.as_slice(), &[0]].concat());
+            for list in [ll::MOTION_LIST, ll::CHR_LIST] {
+                t.g32(list, n);
+                t.g32(list + 8, data);
+            }
+            t.stubs(&[
+                (ll::MAKE_FILELIST, false, 3, 0, rng.next()),
+                (ll::GU_SELECTOR_RESET, false, 2, 0, rng.next()),
+                (ll::GU_SELECTOR_SET_ITEM, false, 4, 0, rng.next()),
+            ]);
+            let sel = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "ChrMenu_listMotions_0084d3f0",
+                0x0084_d3f0,
+                Conv::Cdecl,
+                &[sel],
+                0x84,
+                |m, ebp| Out::U32(ll::chrmenu_list_motions(m, ebp - 0x84, sel)),
+            );
+            t.check_framed(
+                "ChrMenu_listCharacters_0084d4a0",
+                0x0084_d4a0,
+                Conv::Cdecl,
+                &[sel],
+                0x84,
+                |m, ebp| Out::U32(ll::chrmenu_list_characters(m, ebp - 0x84, sel)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        let table = t.rebase(ll::DEBUG_LIGHT_TABLE);
+        let bytes: Vec<u8> = (0..0x1c * 42).map(|_| rng.next() as u8).collect();
+        t.write(table, &bytes);
+        // the lines printed as they are into a buffer (the script cursor)
+        let out = t.zeros(0x2000);
+        t.g32(ll::DEBUG_CURSOR, out);
+        t.check("Gui_SettingSaveLight", 0x0084_d8a0, Conv::Cdecl, &[], |m| {
+            Out::U32(ll::gui_setting_save_light(m))
+        });
+        t.reset();
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // three functions
+fn rp4_character_menu_windows_match_the_original() {
+    // The specular window (build, steps both ways by 1 and 10 with the
+    // clamps, other buttons and messages; sprintf as it is), the
+    // character selector messages (3 in both light modes, 0xf, 0x3e,
+    // others; _strdup stubbed), the character load (light mode with a
+    // numbered name, the other mode, allocation failing; sscanf and
+    // sprintf as they are).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40e1);
+        for case in 0..90 {
+            let v = t.words(&[[0, 3, 0x100, 0xfe, 9, rng.below(0x110)][case % 6]]);
+            let msg =
+                [0x8001, 0x8005, 0x8009, 0x8005, 0x8009, 7][(case / 6 + rng.below(2) as usize) % 6];
+            let arg = [0, 2, 1][(case / 2 + rng.below(2) as usize) % 3];
+            // one step past the top
+            let (msg, arg) = if case == 89 {
+                t.w32(v, 0x100);
+                (0x8005, 2)
+            } else {
+                (msg, arg)
+            };
+            t.stubs(&[
+                (ll::GU_WINDOW_GET_ARG, false, 1, 0, v),
+                (ll::GU_WINDOW_SET_ARG, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::SET_SPECULAR_POWER, false, 1, 0, rng.next()),
+            ]);
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "SpecWindowProc_0084ccc0",
+                0x0084_ccc0,
+                Conv::Cdecl,
+                &[window, msg, arg],
+                0x18,
+                |m, ebp| Out::U32(ll::spec_window_proc(m, ebp - 0x18, window, msg, arg)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+        for case in 0..16 {
+            let at = t.rebase(ll::LIGHT_MODE);
+            t.write(at, &[u8::from(rng.chance(2))]);
+            let msg = [3, 0xf, 0x3e, 5][case % 4];
+            let sel = t.words(&[rng.next(), rng.next()]);
+            t.stubs(&[
+                (ll::GU_SELECTOR_ITEM_NAME, false, 1, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::SG_SET_RESOURCE_STR, false, 2, 0, rng.next()),
+                (ll::CHR_LOAD_SELECTED, false, 1, 0, rng.next()),
+                (ll::GU_SELECTOR_ITEM_VALUE, false, 1, 0, rng.next()),
+                (ll::CREATE_CHRVIEW, false, 1, 0, rng.next()),
+                (ll::GU_SELECTOR_MOUSE_FUKKI, false, 2, 0, rng.next()),
+            ]);
+            t.stub_import(ll::STRDUP, false, 1, 0, rng.next());
+            let window = rng.next();
+            t.check(
+                "gui_chr_GWM_SELECTOR",
+                0x0084_d270,
+                Conv::Cdecl,
+                &[window, msg, sel],
+                |m| Out::U32(ll::gui_chr_selector(m, window, msg, sel)),
+            );
+            t.reset();
+        }
+        for case in 0..60 {
+            let at = t.rebase(ll::LIGHT_MODE);
+            t.write(at, &[u8::from(case % 3 != 0)]);
+            let names = ["c001", "m123", "x", "a7"];
+            let name = t.cstr(names[rng.below(4) as usize]);
+            let (fa, fb) = (t.cstr("data"), t.cstr("prot"));
+            t.g32(ll::LIGHT_NAME_ON, fa);
+            t.g32(ll::LIGHT_NAME_OFF, fb);
+            let sel = t.words(&[rng.next(), rng.next()]);
+            let chr = if case % 5 == 2 { 0 } else { rng.next() };
+            t.stubs(&[
+                (ll::GU_SELECTOR_ITEM_NAME, false, 1, 0, name),
+                (ll::SG_DB_NUM, false, 1, 0, rng.below(5)),
+                (ll::CH_ID_FROM_NAME, false, 2, 0, rng.next()),
+                (ll::SG_SET_RESOURCE_STR, false, 2, 0, rng.next()),
+                (ll::CH_SET_ALLOCATE_ERR, false, 0, 0, rng.next()),
+                (ll::CH_ALLOCATE, false, 1, 0, chr),
+                (ll::OP_ET_BINDEFF, false, 1, 0, rng.next()),
+                (ll::CREATE_CHRVIEW, false, 1, 0, rng.next()),
+                (ll::CHN_READ_SYSTEM_MGRP, false, 2, 0, rng.next()),
+                (ll::CH_SET_MOTION_TYPE, false, 2, 0, rng.next()),
+                (ll::CH_SET_SYS_MOTION, false, 3, 0, rng.next()),
+                (ll::CH_MOTION_SET_LOOP, false, 2, 0, rng.next()),
+                (ll::GU_MESSAGE_BOX, false, 1, 0, rng.next()),
+                (ll::GU_SELECTOR_MOUSE_FUKKI, false, 2, 0, rng.next()),
+            ]);
+            t.skip = 4;
+            t.check_framed(
+                "ChrMenu_loadSelected_0084d5e0",
+                0x0084_d5e0,
+                Conv::Cdecl,
+                &[sel],
+                0x48,
+                |m, ebp| Out::U32(ll::chrmenu_load_selected(m, ebp - 0x48, sel)),
+            );
+            t.skip = 0;
             t.reset();
         }
     });
