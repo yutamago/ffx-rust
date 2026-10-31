@@ -45,6 +45,14 @@ fn varied(n: u32, seed: u32) -> Vec<u8> {
     (0..n).map(|i| (i * 7 + seed * 13 + 1) as u8).collect()
 }
 
+/// The frame area below the entry's stack pointer cleared before a run:
+/// the original's stores of the run before would otherwise still be there
+/// for the port, and a port that drops a store into its frame would see
+/// them.
+fn scrub(t: &mut Twin) {
+    let top = STACK_TOP - 0x100;
+    t.write(top - 0x3000, &[0; 0x3000]);
+}
 /// Whether `a` is in the stack or the scratch area (a pointer a stub may
 /// follow).
 fn followable(a: u32) -> bool {
@@ -164,6 +172,7 @@ fn wot_frames() {
             t.set_u32(ev + 0x18 * i + 0x10, if i == 2 { 0 } else { trap(1001) });
             t.set_u32(ev + 0x18 * i + 0x14, 0xb0 + i);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -186,6 +195,7 @@ fn facing_scales() {
     for depth in [2.5f64, 0.1, -3.0, 0.0] {
         t.stub_st0(282, move |_, _| depth);
         t.write(obj, &varied(0x100, depth.to_bits() as u32));
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -219,6 +229,7 @@ fn motions_towards() {
             // the cookie word: the original's DllMain set the cookie
             Eax::Junk
         };
+        scrub(&mut t);
         t.check_entry(f, Call::this(this), &[], eax);
     }
 }
@@ -243,6 +254,7 @@ fn chara_setups() {
         }
         t.set_u32(op(&t, f, 0x7), 5);
         t.set_u32(op(&t, f, 0x1), have);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -281,6 +293,7 @@ fn targets_starts() {
             ecx: 0x0ecc_0ecc,
             ..Call::default()
         };
+        scrub(&mut t);
         t.check_entry(f, c, &[recs_at], Eax::Checked);
     }
 }
@@ -311,6 +324,7 @@ fn particles_rethrown() {
         t.set_u32(this, obj);
         t.set_u32(this + 4, 0x0aaa_0004);
         t.set_u32(this + 8, 0x0bbb_0008);
+        scrub(&mut t);
         t.check_entry(f, Call::this(this), &[], Eax::Checked);
     }
 }
@@ -349,6 +363,7 @@ fn camera_rect_tasks() {
         t.set_u32(rec_at + 0x9c, 2.5f32.to_bits());
         t.set_u32(rec_at + 0x18, count);
         t.set_u32(rec_at + 0x1c, state);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -401,6 +416,7 @@ fn host_starts_chara() {
         for o in [0x57, 0x61, 0x6b, 0xa3, 0xab] {
             t.set_u32(op(&t, f, o), 0x0101_0101);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x00ab_c000 + n], Eax::Checked);
     }
 }
@@ -422,6 +438,7 @@ fn node_setups() {
         t.set_u32(args, node);
         t.set_u32(args + 4, p);
         t.set_u32(parent + 0x10, l);
+        scrub(&mut t);
         t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }
@@ -440,12 +457,13 @@ fn rising_parts() {
         m.w32(SCRATCH + 0x7c0, 0x0712_0712);
         m.r32(answer)
     });
-    rec(&mut t, 713, 1, |m, _| {
+    // (each records the current part it is called with first)
+    rec_lock(&mut t, 713, 1, SCRATCH + 0x7c0, |m, _| {
         m.w32(SCRATCH + 0x7c0, 0x0713_0713);
         0x713
     });
     let table = SCRATCH + 0x700;
-    rec(&mut t, 941, 2, move |m, _| {
+    rec_lock(&mut t, 941, 2, SCRATCH + 0x7c0, move |m, _| {
         m.w32(SCRATCH + 0x7c0, 0x0941_0941);
         table
     });
@@ -475,6 +493,7 @@ fn rising_parts() {
         t.set_u32(SCRATCH + 0x7c4, 0x0bad_0000 + fade);
         t.set_u32(op(&t, f, 0xee), SCRATCH + 0x7c8);
         t.set_u32(op(&t, f, 0x11a), fade);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -508,6 +527,7 @@ fn host_starts_bank() {
         for o in [0x57, 0x61, 0x6b, 0xa3, 0xab] {
             t.set_u32(op(&t, f, o), 0x0101_0101);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x00ab_c000 + n], Eax::Checked);
     }
 }
@@ -528,6 +548,7 @@ fn host_runs(t: &mut Twin, f: u32, done: u32, vary: impl Fn(&mut Twin, u32)) {
         for o in [0x57, 0x61, 0x6b, 0xa3, 0xab] {
             t.set_u32(op(t, f, o), 0x0101_0101);
         }
+        scrub(t);
         t.check_entry(f, Call::default(), &[0x00ab_c000 + n], Eax::Checked);
     }
 }
@@ -670,10 +691,21 @@ fn faces_map_centre() {
     let Some(mut t) = twin(307) else { return };
     let f = t.at(0x13f0);
     position_stubs(&mut t);
+    // slot 292 also logs the point's `w` (the word after its `z`)
+    rec(&mut t, 292, 2, |m, a| {
+        let w = m.r32(a[4] + 4);
+        m.w32(SCRATCH + 0x3000, w);
+        for i in 0..4 {
+            let v = m.r32(POS + 0x10 + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x292
+    });
     for &c in FACINGS {
         set_facing(&mut t, c);
         t.set_u32(op(&t, f, 0x2a), 0x0262_0001);
         t.set_u32(op(&t, f, 0x107), 0x0576_0001);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -707,6 +739,10 @@ fn model_draws() {
     recs(&mut t, &[(723, 3), (724, 1), (231, 3)]);
     for (s, n) in [(819u32, 4usize), (870, 6), (871, 5)] {
         rec_lock(&mut t, s, n, SCRATCH + 0x7f0, move |m, a| {
+            // slot 819 leaves the lock changed (the original sets it again)
+            if s == 819 {
+                m.w32(SCRATCH + 0x7f0, 0x0819_0819);
+            }
             // the record's model word (`+0x1c`) as the callee sees it
             let r = a[2];
             if (STACK_TOP - STACK_LEN..STACK_TOP).contains(&r) {
@@ -733,6 +769,7 @@ fn model_draws() {
             edx: SCRATCH + 0x900,
             ..Call::default()
         };
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::model_draw(g, img, fr.at, fr.esp, fr.ecx, fr.edx))
         });
@@ -783,6 +820,7 @@ fn four_part_tasks() {
         t.set_u32(node + 8, SCRATCH + 0x740);
         t.set_u32(rec_at + 0x18, state);
         t.set_u32(rec_at + 0x40, count);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -809,12 +847,13 @@ fn moving_parts() {
         m.w32(SCRATCH + 0x7c0, 0x0712_0712);
         m.r32(answer)
     });
-    rec(&mut t, 713, 1, |m, _| {
+    // (each records the current part it is called with first)
+    rec_lock(&mut t, 713, 1, SCRATCH + 0x7c0, |m, _| {
         m.w32(SCRATCH + 0x7c0, 0x0713_0713);
         0x713
     });
     let table = SCRATCH + 0x700;
-    rec(&mut t, 941, 2, move |m, _| {
+    rec_lock(&mut t, 941, 2, SCRATCH + 0x7c0, move |m, _| {
         m.w32(SCRATCH + 0x7c0, 0x0941_0941);
         table
     });
@@ -842,6 +881,7 @@ fn moving_parts() {
         t.set_u32(SCRATCH + 0x7c4, 0x0bad_0000 + fade);
         t.set_u32(op(&t, f, 0xe7), SCRATCH + 0x7c8);
         t.set_u32(op(&t, f, 0x113), fade);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -860,6 +900,7 @@ fn thickness_margins() {
     ] {
         t.set_u32(model, id);
         t.set_u32(op(&t, f, 0xc), 0x0188_0000 + id);
+        scrub(&mut t);
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             s5_misc::thickness_margin(g, img, fr.at)
         });
@@ -882,6 +923,7 @@ fn ppp_effect_setups() {
         t.set_u32(op(&t, f, 0x74), lock);
         t.set_u32(lock, 0x0bad_0000 + k);
         t.set_u32(op(&t, f, 0xa6), 0x0a6a_6a00 + k);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0292_0000 + k], Eax::Checked);
     }
 }
@@ -901,6 +943,7 @@ fn ppp_effect_setups_6() {
         t.write(op(&t, f, 0x11e), &varied(0x120, k + 5));
         t.set_u32(op(&t, f, 0x7d), lock);
         t.set_u32(lock, 0x0bad_0000 + k);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0662_0000 + k], Eax::Checked);
     }
 }
@@ -917,6 +960,9 @@ fn packed_textures() {
         for (i, x) in (0u32..).zip(&a[..7]) {
             m.w32(row + 4 * i, *x);
         }
+        // the lock as the callee sees it
+        let held = m.r32(SCRATCH + 0x7f0);
+        m.w32(row + 0x1c, held);
         m.r32(answer)
     });
     let model = SCRATCH + 0x1000;
@@ -941,6 +987,7 @@ fn packed_textures() {
             (-2.0f32).to_bits(),
             n,
         ];
+        scrub(&mut t);
         t.check_entry(f, c, &args, Eax::Checked);
     }
 }
@@ -977,6 +1024,7 @@ fn two_lights_starts() {
             t.set_u32(head, SCRATCH + 0x1400);
             t.set_u32(tail, SCRATCH + 0x1400);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -993,8 +1041,14 @@ fn targets_mean_offsets() {
         0x325
     });
     rec(&mut t, 684, 1, move |m, a| m.r32(live) >> (a[0] & 7) & 1);
-    rec(&mut t, 531, 2, |m, a| {
+    // (the point's old words logged first: the offsets left there)
+    let log = SCRATCH + 0x3000;
+    rec(&mut t, 531, 2, move |m, a| {
+        let k = m.r32(log);
+        m.w32(log, k + 1);
         for i in 0..3 {
+            let old = m.r32(a[1] + 4 * i);
+            m.w32(log + 4 + 0x10 * (k % 8) + 4 * i, old);
             m.w32(a[1] + 4 * i, (a[0] as f32 * 1.25 - i as f32).to_bits());
         }
         0x531 ^ a[0]
@@ -1014,6 +1068,7 @@ fn targets_mean_offsets() {
         t.set_u32(op(&t, f, 0x4c), n);
         t.set_u32(live, mask);
         t.write(out, &varied(0x10, n));
+        scrub(&mut t);
         t.check_entry(f, Call::this(out), &[], Eax::Checked);
     }
 }
@@ -1047,6 +1102,12 @@ fn three_charas_reset() {
         t.set_u8(sel + i, (2 - i) as u8);
     }
     t.set_u32(op(&t, f, 0x146), sel);
+    // the characters the selection picks
+    let table = op(&t, f, 0x151);
+    for i in 0..8u32 {
+        t.set_u32(table + 4 * i, 0x0cc0_0000 + 0x11 * i);
+    }
+    scrub(&mut t);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
 
@@ -1086,6 +1147,7 @@ fn fading_model_tasks() {
         t.set_u32(rec_at + 0x18, state);
         t.set_u32(rec_at + 0x34, timer);
         t.set_u8(rec_at + 0xc3, fade);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -1116,6 +1178,7 @@ fn target_measures() {
         t.stub_st0(277, move |_, _| wid + 0.5);
         t.write(r, &varied(0x100, id));
         t.set_u32(r, id);
+        scrub(&mut t);
         t.check_entry(f, Call::this(r), &[], Eax::Checked);
     }
 }
@@ -1186,6 +1249,7 @@ fn weapon_swings() {
         t.set_u32(node, 0);
         t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -1213,6 +1277,11 @@ fn shade_reset_colour_tasks() {
         for i in 0..4u32 {
             t.set_u8(sel + i, (3 - i) as u8);
         }
+        // the characters the selection picks
+        let table = op(&t, f, 0x2a);
+        for i in 0..8u32 {
+            t.set_u32(table + 4 * i, 0x0cc0_0000 + 0x11 * i);
+        }
         t.set_u16(op(&t, f, 0x6d), count);
         // a ring of three free nodes
         let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
@@ -1226,6 +1295,7 @@ fn shade_reset_colour_tasks() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        scrub(&mut t);
         t.check_entry(
             f,
             Call {
@@ -1276,6 +1346,10 @@ fn effect_ends_shown() {
         }
         t.set_u32(op(&t, f, 0x48), alt);
         t.set_u32(op(&t, f, 0x50), id);
+        // the character words the three calls read
+        for (i, o) in [0x13u32, 0x88, 0xe2].into_iter().enumerate() {
+            t.set_u32(op(&t, f, o), 0x0cc0_0010 + i as u32);
+        }
         t.set_u32(op(&t, f, 0x146), lock);
         t.set_u32(lock, 0x5a5a_0000 + id);
         if hold {
@@ -1289,6 +1363,7 @@ fn effect_ends_shown() {
         } else {
             t.set_u32(op(&t, f, 0x90), 0);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1298,11 +1373,12 @@ fn screen_fade_steps() {
     let Some(mut t) = twin(188) else { return };
     let f = t.at(0x23b0);
     recs(&mut t, &[(801, 6), (785, 1)]);
-    rec(&mut t, 353, 1, |m, a| m.r32(a[0]) ^ m.r32(a[0] + 12));
-    rec(&mut t, 397, 2, |m, a| m.r32(a[0]) ^ m.r32(a[1] + 4));
+    // the colour and offset records, all four words of each
+    rec_mem(&mut t, 353, 1, 4, None);
+    rec_mem(&mut t, 397, 2, 4, None);
     let k = |t: &Twin, o: u32| f32::from_bits(t.u32(op(t, f, o)));
     let (lo, hi, up, dn) = (k(&t, 0x26), k(&t, 0x45), k(&t, 0x30), k(&t, 0x85));
-    for (timer, x, z) in [
+    for (i, (timer, x, z)) in [
         (0xb0u32, lo, 2.0f32),
         (0xb0, hi - up, 2.0),
         (0xb0, hi, 2.0),
@@ -1312,10 +1388,18 @@ fn screen_fade_steps() {
         (0xaf, lo + dn * 0.5, 0.5),
         (0xaf, lo.midpoint(hi), 0.0),
         (0, f32::NAN, 1.0),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // the level and its floor (both ways round)
+        let (y, m) = [(0.75f32, 0.25f32), (0.25, 0.75), (1.5, -2.0)][i % 3];
+        t.set_u32(op(&t, f, 0x104), y.to_bits());
+        t.set_u32(op(&t, f, 0x10c), m.to_bits());
         t.set_u32(op(&t, f, 0x12), timer);
         t.set_u32(op(&t, f, 0x1e), x.to_bits());
         t.set_u32(op(&t, f, 0x12c), z.to_bits());
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1339,6 +1423,7 @@ fn angle_keys_sampled() {
             0.0f32, 0.25, 0.5, 0.75, 1.0, 1.3, 2.6, 3.0, 3.9, 4.2, 4.8, 5.0,
         ] {
             let c = Call::this(keys).with_xmm(&[Xmm::f32(time)]);
+            scrub(&mut t);
             t.check(f, c, &[], Eax::Checked, |g, img, fr| {
                 let (r, eax) = s5_misc::angle_keys(g, img, fr.at, fr.ecx, fr.xmm_f32(0));
                 Ret::xmm0(Xmm::f32(r), eax)
@@ -1379,14 +1464,23 @@ fn summon_ppp_in(dll: u16, rva: u32) {
     });
     rec(&mut t, 289, 1, |_, _| 0x289);
     t.stub_st0(289, |_, a| f64::from(a[0] & 0xff) * -0.5);
-    recs(
-        &mut t,
-        &[(718, 1), (711, 7), (710, 11), (222, 12), (221, 12)],
-    );
+    recs(&mut t, &[(718, 1), (710, 11), (222, 12), (221, 12)]);
+    rec_lock(&mut t, 711, 7, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
     let data = SCRATCH + 0x800;
     rec(&mut t, 719, 4, move |_, _| data);
     let lock = SCRATCH + 0x7f0;
     for count in [0u32, 2] {
+        // the statics the start sets: other values before
+        for (i, o) in [
+            0x13u32, 0x1d, 0x27, 0x31, 0x3b, 0x45, 0x58, 0x62, 0x6c, 0x76, 0x89, 0x93, 0x9d, 0xb2,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            t.set_u32(op(&t, f, o), 0x5a5a_0000 + i as u32 + count);
+        }
+        t.set_u16(op(&t, f, 0x50), 0x1234);
+        t.set_u16(op(&t, f, 0x81), 0x1234);
         t.write(list, &[0x80, 0x81, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88]);
         t.set_u32(list + 0x7c, count);
         t.write(root, &[0x5a; 0x150]);
@@ -1400,6 +1494,7 @@ fn summon_ppp_in(dll: u16, rva: u32) {
         if dll == 71 {
             t.set_u32(op(&t, f, 0x1b2), 0x1b2);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0342_0040 + count], Eax::Checked);
     }
 }
@@ -1436,6 +1531,7 @@ fn images_stored_and_loaded() {
         for o in [0x32u32, 0x7d, 0xbf, 0x14b, 0x197] {
             t.set_u32(op(&t, f, o), 0x0100_0000 + o + n);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1468,8 +1564,11 @@ fn target_measures_modes() {
         for (o, v) in [0x10cu32, 0x115, 0x138].into_iter().zip(modes) {
             t.set_u32(op(&t, f, o), v);
         }
+        // the smallest size that gets the mode's radius: below the cases'
+        t.set_u32(op(&t, f, 0x104), 0.25f32.to_bits());
         t.write(r, &varied(0x100, id));
         t.set_u32(r, id);
+        scrub(&mut t);
         t.check_entry(f, Call::this(r), &[], Eax::Checked);
     }
 }
@@ -1515,6 +1614,7 @@ fn model_parts_drawn() {
             edx: mtx,
             ..Call::default()
         };
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::model_parts_draw(
                 g, img, fr.at, fr.esp, fr.ecx, fr.edx,
@@ -1547,6 +1647,7 @@ fn root_point_parts() {
         t.set_u32(op(&t, f, 0x188), SCRATCH + 0x7c0);
         t.set_u32(op(&t, f, 0x196), lock);
         t.set_u32(lock, 0x5a5a_0000 + alt);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -1602,6 +1703,7 @@ fn summon_ppp_stream_in(dll: u16, rva: u32) {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x185), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x1c2), 0xffff_ff0f + count);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0186_0040 + count], Eax::Checked);
     }
 }
@@ -1626,6 +1728,7 @@ fn spark_pairs_started() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        scrub(&mut t);
         t.check_entry(
             f,
             Call {
@@ -1653,6 +1756,7 @@ fn three_points_eased() {
         for (i, c) in (0u32..).zip(counts) {
             t.set_u32(s + 0x2268 + 4 * i, c);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1689,6 +1793,7 @@ fn arc_carries() {
         t.stub_st0(333, move |_, _| turn);
         t.set_u32(op(&t, f, 0x13), timer);
         t.set_u32(op(&t, place, 0x02), timer & 1);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1746,6 +1851,7 @@ fn objects_started_around() {
         }
         t.set_u16(free, count);
         t.write(base + 0x11d0, &varied(0x980, u32::from(count)));
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -1769,6 +1875,7 @@ fn tasks_scattered() {
     for m in [0x0463_0001u32, 0x0463_0007] {
         t.set_u32(holder + 0x1a0, m);
         t.write(task, &varied(0x140, m));
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -1823,6 +1930,7 @@ fn throws_aimed() {
         for (i, v) in (0u32..).zip(words) {
             t.set_u32(args + 4 * i, v);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }
@@ -1883,6 +1991,7 @@ fn weapon_swings_drop() {
         t.set_u32(node, 0);
         t.set_u32(node + 4, 0);
         t.set_u32(node + 8, obj);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -1934,6 +2043,7 @@ fn aim_tasks() {
             t.set_u32(tail, SCRATCH + 0x1400);
         }
         let c = Call::default().with_xmm(&[Xmm::f32(9.0), Xmm::f32(r)]);
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::aim_task(g, img, fr.at, fr.esp, fr.xmm_f32(1)))
         });
@@ -1961,6 +2071,7 @@ fn three_parts_drawn() {
             edx: 0x0edd_0000 + k,
             ..Call::default()
         };
+        scrub(&mut t);
         t.check(f, c, &args, Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::three_parts_draw(g, img, fr))
         });
@@ -1985,7 +2096,7 @@ fn camera_parts() {
         m.w32(ptr, 0x0712_0712);
         m.r32(answer)
     });
-    rec(&mut t, 713, 1, move |m, _| {
+    rec_lock(&mut t, 713, 1, ptr, move |m, _| {
         m.w32(ptr, 0x0713_0713);
         0x713
     });
@@ -2010,6 +2121,7 @@ fn camera_parts() {
         t.set_u32(op(&t, f, 0x155), ptr);
         t.set_u32(lock, 0x5a5a_0000 + n);
         t.set_u32(op(&t, f, 0x1b3), SCRATCH + 0x7a0);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -2099,6 +2211,7 @@ fn homing_trails() {
         t.set_u32(task + 8, SCRATCH + 0x140);
         t.set_u32(SCRATCH + 0x14c, 0);
         t.set_u32(task + 0x14, obj);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -2135,6 +2248,7 @@ fn sine_rises() {
         t.set_u32(op(&t, f, 0x82), n1.cast_unsigned());
         t.set_u32(op(&t, f, 0xd3), n2.cast_unsigned());
         t.set_u32(op(&t, f, 0x18a), end.cast_unsigned());
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[p], Eax::Checked);
     }
 }
@@ -2181,6 +2295,7 @@ fn aim_objects() {
             t.set_u32(tail, SCRATCH + 0x1400);
         }
         let c = Call::this(obj).with_xmm(&[Xmm::f32(9.0), Xmm::f32(r)]);
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::aim_object(
                 g,
@@ -2218,6 +2333,7 @@ fn signed_axes_set() {
         for (i, v) in (0u32..).zip([obj, steps, sizes, mode]) {
             t.set_u32(args + 4 * i, v);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }
@@ -2290,6 +2406,7 @@ fn shower_steps() {
         t.set_u16(parent + 0x18, 7);
         t.set_u32(parent + 0xc, obj + 0x220);
         t.set_u32(parent + 0x10, obj + 0x57c);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -2305,6 +2422,7 @@ fn sine_rise_starts() {
         t.set_u32(p + 0xac, k);
         t.set_u32(op(&t, f, 0xce), n);
         t.set_u32(op(&t, f, 0x184), 0x0458_0000 + n);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[p], Eax::Checked);
     }
 }
@@ -2343,6 +2461,7 @@ fn sparks_thrown_out() {
             t.write(recs + 0x74 * i, &varied(0x74, i + n));
             t.set_u32(recs + 0x74 * i + 0x6c, u32::from(i >= n - taken));
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2392,6 +2511,7 @@ fn targets_more_and_tasks() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2425,6 +2545,7 @@ fn flight_tasks() {
         let c =
             Call::this(obj).with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(1.5)]);
         let args = [to, 2.5f32.to_bits(), (-0.5f32).to_bits(), n];
+        scrub(&mut t);
         t.check(f, c, &args, Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::flight_task(g, img, fr))
         });
@@ -2446,6 +2567,7 @@ fn camera_trees() {
         t.set_u32(parent + 0x10, last);
         t.set_u32(args, node);
         t.set_u32(args + 4, p);
+        scrub(&mut t);
         t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }
@@ -2479,6 +2601,7 @@ fn sprite_packets() {
         t.set_u32(o + 0x2c, packet);
         t.set_u8(o + 0x30, t30);
         t.set_u8(o + 0x31, flag);
+        scrub(&mut t);
         t.check(f, Call::this(o), &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::sprite_packet(g, img, fr.at, fr.ecx))
         });
@@ -2516,6 +2639,7 @@ fn models_drawn_around() {
         }
         t.write(table + 0x200, &varied(0x300, k + 1));
         t.set_u32(lock, 0x5a5a_0000 + k);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2552,6 +2676,7 @@ fn models_around_starts() {
         let last = if listed { SCRATCH + 0x1400 } else { 0 };
         t.set_u32(head, last);
         t.set_u32(tail, last);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2600,6 +2725,7 @@ fn cameras_behind() {
         t.set_u32(op(&t, f, 0x4a), a);
         t.set_u32(op(&t, f, 0x58), b);
         t.write(op(&t, f, 0x1a3), &varied(0x10, a + b));
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2631,6 +2757,7 @@ fn look_parts() {
         t.set_u32(op(&t, f, 0x255), lock);
         t.set_u32(lock, 0x5a5a_0000 + ran);
         t.set_u32(answer, ran);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -2643,6 +2770,7 @@ fn wave_tables() {
     for a in [0.7f32, -2.5] {
         t.write(out, &varied(33 * 33 * 8, a.to_bits()));
         let c = Call::this(out).with_xmm(&[Xmm::f32(9.0), Xmm::f32(a)]);
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Junk, |g, img, fr| {
             Ret::eax(s5_misc::wave_table(g, img, fr.at, fr.ecx, fr.xmm_f32(1)))
         });
@@ -2706,6 +2834,7 @@ fn curve_carries() {
         } else {
             Eax::Checked
         };
+        scrub(&mut t);
         t.check_entry(
             f,
             Call {
@@ -2767,6 +2896,7 @@ fn actor_clip_draws() {
             t.set_u32(SCRATCH + 0x1000 + 0x1000 * j + 0x830, 0x0c0c_0000 + j);
         }
         t.set_u32(actor + 0x830, obj);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
@@ -2822,6 +2952,7 @@ fn clock_lights() {
     for n in [0u32, 20, 50, 51, 90] {
         t.set_u32(op(&t, f, 0x65), n);
         t.set_u32(lock, 0x5a5a_0000 + n);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2897,6 +3028,7 @@ fn objects_at_targets_started() {
         t.set_u32(op(&t, f, 0x23a), x);
         t.set_u32(op(&t, f, 0x249), id);
         t.set_u16(op(&t, f, 0x28f), wmode);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -2945,6 +3077,7 @@ fn scene_lights() {
     for x in [5.0f32, 0.0, -5.0, 3.5, -3.5] {
         for k in [ka, kb] {
             t.set_u32(b + 0x2b04, (k + x).to_bits());
+            scrub(&mut t);
             t.check_entry(f, Call::default(), &[], Eax::Checked);
         }
     }
@@ -3005,6 +3138,7 @@ fn sprays_on_cue() {
             t.write(recs + 0x74 * i, &varied(0x74, i + n));
             t.set_u32(recs + 0x74 * i + 0x6c, 0);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -3072,6 +3206,7 @@ fn weapon_bounces() {
         for o in [0x290u32, 0x294, 0x298] {
             t.set_u32(obj + o, fl(0.25 + o as f32 / 4096.0));
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -3104,6 +3239,7 @@ fn scene_two_records_set() {
             t.set_u32(head, SCRATCH + 0x1400);
             t.set_u32(tail, SCRATCH + 0x1400);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -3172,6 +3308,7 @@ fn camera_behind_starts() {
         t.write(data, &varied(0x100, k));
         t.set_u8(targets, target);
         t.set_u32(lock, 0x0bad_0000 + k);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[0x0188_0000 + k], Eax::Checked);
     }
 }
@@ -3207,6 +3344,7 @@ fn camera_records_started() {
             t.set_u32(head, 0);
             t.set_u32(tail, 0);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -3276,6 +3414,7 @@ fn timed_sparks_fired() {
         let plist = op(&t, f, 0x330);
         t.write(plist, &varied(0x1c, i + 2));
         t.set_u32(plist + 0x10, if listed { SCRATCH + 0x540 } else { plist });
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -3346,6 +3485,7 @@ fn thrown_effects() {
             ..Call::default()
         }
         .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(2.5 + k as f32)]);
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::thrown_effect(g, img, fr))
         });
@@ -3383,6 +3523,7 @@ fn spin_jump_lights() {
         t.write(b + 0xa00, &varied(0xc0, k + 2));
         t.set_u32(b + 0xaa4, yaw.to_bits());
         t.set_u32(b + 0x3154, count);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -3435,6 +3576,7 @@ fn burst_records_set() {
             ..Call::default()
         }
         .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(-2.5 + k as f32)]);
+        scrub(&mut t);
         t.check(f, c, &[], Eax::Checked, |g, img, fr| {
             Ret::eax(s5_misc::burst_records(g, img, fr))
         });
@@ -3546,6 +3688,7 @@ fn bursts_tasks() {
         t.set_u32(task + 4, 0);
         t.set_u32(task + 8, SCRATCH + 0x340);
         t.set_u32(SCRATCH + 0x34c, 0);
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
@@ -3647,6 +3790,7 @@ fn parts_vertices_moved() {
             edx: SCRATCH + 0x4800,
             ..Call::default()
         };
+        scrub(&mut t);
         t.check(
             f,
             c,
@@ -3702,6 +3846,7 @@ fn object_three_points_started() {
             t.set_u32(head, SCRATCH + 0x1400);
             t.set_u32(tail, SCRATCH + 0x1400);
         }
+        scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
