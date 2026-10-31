@@ -9,10 +9,19 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_assets::bridge as al;
+use ffx_system::m5a_files::bridge as fl;
+use ffx_system::m5a_fixup::bridge as fx;
+use ffx_system::m5a_glue::bridge as gl;
+use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::bridge as pf;
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
+use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
+use ffx_system::m5a_savedata3::bridge as s3;
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_ui::bridge as ui;
+use ffx_system::m5a_vfs::bridge as vf;
 
 ported! {
     // ---- <system_error>, <ios> and the string streams ----
@@ -724,6 +733,631 @@ ported! {
     /// `code_006f2740()`: the 5-byte `jmp SaveDataMachine_Update`.
     code_006f2740 @ 0x006f_2740 => extern "C" fn machine_update_thunk() -> u32 {
         sa::machine_update_thunk(&mut mem())
+    }
+
+    // ---- round 3: the input forwarders, clock, seek, voice glue, dtors ----
+    /// `0x0062f5b0(out)`: frame `ebp - 0x14` (the `SYSTEMTIME`).
+    Rng_ReadSystemClock_0062f5b0 @ 0x0062_f5b0 => extern "C" fn read_system_clock(out: u32) -> u32 {
+        let mut f = StackFrame::<{ (gl::SYSTEM_TIME_FRAME / 4) as usize }>::new();
+        gl::system_clock(&mut mem(), f.at() + gl::SYSTEM_TIME_FRAME, out)
+    }
+    /// `sceLseek(f, offset, whence)`: the jump thunk to `fiosLseek`.
+    sceLseek @ 0x0062_f8e0 => extern "C" fn sce_lseek(f: u32, offset: u32, whence: u32) -> u64 {
+        gl::fios_lseek(&mut mem(), f, offset, whence)
+    }
+    /// `0x00630b10()`.
+    Input_ShutdownDevice_00630b10 @ 0x0063_0b10 => extern "C" fn input_shutdown_device() -> u32 {
+        gl::input_shutdown(&mut mem())
+    }
+    /// `inputClear()`.
+    inputClear @ 0x0063_0c30 => extern "C" fn input_clear() -> u32 {
+        gl::input_clear(&mut mem())
+    }
+    /// `inputClearAllInputInfo()`.
+    inputClearAllInputInfo @ 0x0063_0c40 => extern "C" fn clear_all_input_info() -> u32 {
+        gl::clear_all_input_info(&mut mem())
+    }
+    /// `inputGetCurrDeviceButtonInfo()`.
+    inputGetCurrDeviceButtonInfo @ 0x0063_0c80 => extern "C" fn button_info() -> u32 {
+        gl::button_info(&mut mem())
+    }
+    /// `Input_AsyncPoll()`.
+    Input_AsyncPoll @ 0x0063_0cb0 => extern "C" fn async_poll() -> u32 {
+        gl::async_poll(&mut mem())
+    }
+    /// `inputIsReleaseButton(b)`.
+    inputIsReleaseButton @ 0x0063_0d10 => extern "C" fn is_release_button(b: u32) -> u32 {
+        gl::input_button(&mut mem(), gl::INPUT_IS_RELEASE, b)
+    }
+    /// `inputIsRepButton(b)`.
+    inputIsRepButton @ 0x0063_0d30 => extern "C" fn is_rep_button(b: u32) -> u32 {
+        gl::input_button(&mut mem(), gl::INPUT_IS_REP, b)
+    }
+    /// `0x00631230(this; keep)`.
+    UserBuffer_reset_00631230 @ 0x0063_1230 => extern "thiscall" fn user_buffer_reset(this: u32, keep: u32) {
+        gl::buffer_reset(&mut mem(), this, keep);
+    }
+    /// `0x00631060` (`ecx`; unwinding).
+    UserBuffer_dtor_00631060 @ 0x0063_1060 => extern "thiscall" fn user_buffer_dtor(this: u32) -> u32 {
+        gl::free_member8(&mut mem(), this)
+    }
+    /// `Virtuos_InputManager_setVibration(this; pad, small, large)`.
+    Virtuos_InputManager_setVibration @ 0x0063_29c0 => extern "thiscall" fn set_vibration(this: u32, pad: u32, small: u32, large: u32) -> u32 {
+        gl::set_vibration(&mut mem(), this, pad, small, large)
+    }
+    /// `0x00630f40` (`ecx` = the input manager `0x00ccb170`).
+    Virtuos_InputManager_ctor_00630f40 @ 0x0063_0f40 => extern "thiscall" fn input_manager_ctor(this: u32) -> u32 {
+        gl::controller_ctor(&mut mem(), this)
+    }
+    /// `0x00633f70` (`ecx`; unwinding).
+    TreeSet_dtor_00633f70 @ 0x0063_3f70 => extern "thiscall" fn tree_set_dtor(this: u32) {
+        gl::tree_set_dtor(&mut mem(), this);
+    }
+    /// `0x00634200` (`ecx`; unwinding).
+    PString_release_00634200 @ 0x0063_4200 => extern "thiscall" fn pstring_release(this: u32) {
+        gl::phyre_free_member_c(&mut mem(), this);
+    }
+    /// `0x00634340` (`ecx`; unwinding).
+    Unwind_deleteMember0_00634340 @ 0x0063_4340 => extern "thiscall" fn delete_member0(this: u32) {
+        gl::delete_member0(&mut mem(), this);
+    }
+    /// `0x00634360`: the 5-byte `jmp ListVector_dtor_00634220`.
+    ListVector_dtor_thunk_00634360 @ 0x0063_4360 => extern "thiscall" fn list_vector_dtor_thunk(this: u32) -> u32 {
+        gl::list_vector_dtor_thunk(&mut mem(), this)
+    }
+    /// `0x00634370` (`ecx`; unwinding).
+    StdList_dtor_00634370 @ 0x0063_4370 => extern "thiscall" fn std_list_dtor(this: u32) {
+        gl::list_dtor(&mut mem(), this);
+    }
+    /// `0x006343b0` (`ecx`; unwinding): frame `ebp - 4`.
+    StdTree_dtor_006343b0 @ 0x0063_43b0 => extern "thiscall" fn std_tree_dtor_6343b0(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        gl::tree_dtor(&mut mem(), f.at() + gl::TREE_DTOR_FRAME, gl::TREE_ERASE_636D60, this);
+    }
+    /// `0x006343e0` (`ecx`; unwinding): frame `ebp - 4`.
+    StdTree_dtor_006343e0 @ 0x0063_43e0 => extern "thiscall" fn std_tree_dtor_6343e0(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        gl::tree_dtor(&mut mem(), f.at() + gl::TREE_DTOR_FRAME, gl::TREE_ERASE_6370D0, this);
+    }
+    /// `0x00634500` (`ecx`; unwinding).
+    StdVector_dtor_00634500 @ 0x0063_4500 => extern "thiscall" fn std_vector_dtor(this: u32) -> u32 {
+        gl::vector_dtor(&mut mem(), this)
+    }
+    /// `SaveDataGetLoc(id, out)`.
+    SaveDataGetLoc @ 0x0064_12d0 => extern "C" fn save_data_get_loc(id: u32, out: u32) -> u32 {
+        gl::save_data_get_loc(&mut mem(), id, out)
+    }
+    /// `iVoiceVolumeDirect(v)`.
+    iVoiceVolumeDirect @ 0x0067_a7b0 => extern "C" fn voice_volume_direct(v: u32) -> u32 {
+        gl::voice_volume_direct(&mut mem(), v)
+    }
+    /// `iVoiceVolumeTranslate(v, t)`.
+    iVoiceVolumeTranslate @ 0x0067_a7d0 => extern "C" fn voice_volume_translate(v: u32, t: u32) -> u32 {
+        gl::voice_volume_translate(&mut mem(), v, t)
+    }
+    /// `0x0067a9b0(id, b, c, d)`.
+    VoiceTable_selectForward_0067a9b0 @ 0x0067_a9b0 => extern "C" fn voice_select_forward(id: u32, b: u32, c: u32, d: u32) -> u32 {
+        gl::voice_select_forward(&mut mem(), id, b, c, d)
+    }
+    /// `0x0067a9d0(a, b)`.
+    VoiceTable_findForward_0067a9d0 @ 0x0067_a9d0 => extern "C" fn voice_find_forward(a: u32, b: u32) -> u32 {
+        gl::voice_find_forward(&mut mem(), a, b)
+    }
+    /// `fiosLseek(f, offset, whence)`.
+    fiosLseek @ 0x0067_9710 => extern "C" fn fios_lseek(f: u32, offset: u32, whence: u32) -> u64 {
+        gl::fios_lseek(&mut mem(), f, offset, whence)
+    }
+    /// `0x00686bb0(next, prev)`.
+    StdList_buyNode_00686bb0 @ 0x0068_6bb0 => extern "stdcall" fn buy_list_node(next: u32, prev: u32) -> u32 {
+        gl::buy_list_node(&mut mem(), next, prev)
+    }
+    /// `vsnprintf1K_00687070(buffer, count, fmt, ...)`: the variadic
+    /// words from the caller's fourth slot.
+    vsnprintf1K_00687070 @ 0x0068_7070 => extern "C" fn vsnprintf_1k(buffer: u32, count: u32, fmt: u32; slots: u32) -> u32 {
+        gl::vsnprintf_1k(&mut mem(), buffer, count, fmt, slots + 12)
+    }
+    /// `0x006fb380(this; id, b, c, d)`.
+    VoiceTable_select_006fb380 @ 0x006f_b380 => extern "thiscall" fn voice_select(this: u32, id: u32, b: u32, c: u32, d: u32) -> u32 {
+        gl::voice_select(&mut mem(), this, id, b, c, d)
+    }
+    /// `0x006fb410(this; a, b)`.
+    VoiceTable_find_006fb410 @ 0x006f_b410 => extern "thiscall" fn voice_find(this: u32, a: u32, b: u32) -> u32 {
+        gl::voice_find(&mut mem(), this, a, b)
+    }
+    /// `code_006793b0()`: the 5-byte `jmp PhyreFIOS_LoadPrxIdle`.
+    code_006793b0 @ 0x0067_93b0 => extern "C" fn prx_idle_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_IDLE)
+    }
+    /// `code_006793c0()`: the 5-byte `jmp PhyreFIOS_LoadPrxInProgress`.
+    code_006793c0 @ 0x0067_93c0 => extern "C" fn prx_in_progress_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_IN_PROGRESS)
+    }
+    /// `code_006793d0()`: the 5-byte `jmp Compare_006f9b70` (PRX state 3).
+    code_006793d0 @ 0x0067_93d0 => extern "C" fn prx_loaded_thunk() -> u32 {
+        gl::jump_thunk(&mut mem(), gl::PRX_LOADED)
+    }
+
+    // ---- round 3: the save manager's forwarders, load/save starts, debug save ----
+    /// `SetUpDefaultSaveFolder()`: frame `ebp - 0x1004`.
+    SetUpDefaultSaveFolder @ 0x006f_0330 => extern "C" fn set_up_default_save_folder() {
+        let mut f = StackFrame::<{ (s2::bridge::FOLDER_FRAME / 4) as usize }>::new();
+        s2b::set_up_default_save_folder(&mut mem(), f.at() + s2::bridge::FOLDER_FRAME);
+    }
+    /// `SaveDataManager_initSaveDataSys(this; buf, size)`: frame `ebp - 0x84`.
+    SaveDataManager_initSaveDataSys @ 0x006f_1fa0 => extern "thiscall" fn init_save_data_sys(this: u32, buf: u32, size: u32) -> u32 {
+        let mut f = StackFrame::<{ (s2::bridge::INIT_FRAME / 4) as usize }>::new();
+        s2b::init_save_data_sys(&mut mem(), f.at() + s2::bridge::INIT_FRAME, this, buf, size)
+    }
+    /// `SaveDataManager_debugSave_Internal_6f0650(size, buf)`: frame `ebp - 0x404`.
+    SaveDataManager_debugSave_Internal_6f0650 @ 0x006f_0510 => extern "C" fn debug_save_internal(size: u32, buf: u32) -> u32 {
+        let mut f = StackFrame::<{ (s2::bridge::DEBUG_SAVE_FRAME / 4) as usize }>::new();
+        s2b::debug_save_internal(&mut mem(), f.at() + s2::bridge::DEBUG_SAVE_FRAME, size, buf)
+    }
+    /// `0x006f1c40(this; _)`.
+    SaveDataManager_checkDebugSave_006f1c40 @ 0x006f_1c40 => extern "thiscall" fn check_debug_save(this: u32, _x: u32) -> u32 {
+        s2b::check_debug_save(&mut mem(), this)
+    }
+    /// `AutoSave_DebugSave_00647e10(x)`.
+    AutoSave_DebugSave_00647e10 @ 0x0064_7e10 => extern "C" fn auto_debug_save(x: u32) -> u32 {
+        s2b::auto_debug_save(&mut mem(), x)
+    }
+    /// `SaveDataManager_MarkAlbhedLoaded()`.
+    SaveDataManager_MarkAlbhedLoaded @ 0x0064_7e40 => extern "C" fn mark_albhed_loaded() -> u32 {
+        s2b::mark_albhed_loaded(&mut mem())
+    }
+    /// `SaveDataIsAlbhedLoaded()`.
+    SaveDataIsAlbhedLoaded @ 0x0064_8020 => extern "C" fn is_albhed_loaded() -> u32 {
+        s2b::is_albhed_loaded(&mut mem())
+    }
+    /// `SaveDataIsDeletingFinished()`.
+    SaveDataIsDeletingFinished @ 0x0064_8060 => extern "C" fn is_deleting_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_DELETING)
+    }
+    /// `SaveDataIsLoadingFinished()`.
+    SaveDataIsLoadingFinished @ 0x0064_8090 => extern "C" fn is_loading_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_LOADING)
+    }
+    /// `SaveDataIsSavingFinished()`.
+    SaveDataIsSavingFinished @ 0x0064_80f0 => extern "C" fn is_saving_finished() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::IS_SAVING)
+    }
+    /// `SaveDataLocRemoveNumTag(src, dst)`.
+    SaveDataLocRemoveNumTag @ 0x0064_8150 => extern "C" fn loc_remove_num_tag(src: u32, dst: u32) -> u32 {
+        s2b::loc_remove_num_tag(&mut mem(), src, dst)
+    }
+    /// `SaveDataManager_preDebugSave(this; _)`.
+    SaveDataManager_preDebugSave @ 0x006f_2410 => extern "thiscall" fn pre_debug_save(this: u32, _x: u32) -> u32 {
+        s2b::pre_debug_save(&mut mem(), this)
+    }
+    /// `SaveDataPreDebugSave(x)`.
+    SaveDataPreDebugSave @ 0x0064_84d0 => extern "C" fn pre_debug_save_forward(x: u32) -> u32 {
+        s2b::pre_debug_save_forward(&mut mem(), x)
+    }
+    /// `SaveDataResetToIdle()`.
+    SaveDataResetToIdle @ 0x0064_8530 => extern "C" fn reset_to_idle() -> u32 {
+        s2b::manager_call(&mut mem(), s2b::RESET_IDLE)
+    }
+    /// `SaveDataManager_setSaveDataInfo(this; title, detail, text)`.
+    SaveDataManager_setSaveDataInfo @ 0x006f_2560 => extern "thiscall" fn set_save_data_info(this: u32, title: u32, detail: u32, text: u32) -> u32 {
+        s2b::set_save_data_info(&mut mem(), this, title, detail, text)
+    }
+    /// `SaveDataSetSaveDataInfo(title, detail, text)`.
+    SaveDataSetSaveDataInfo @ 0x0064_86c0 => extern "C" fn set_save_data_info_forward(title: u32, detail: u32, text: u32) -> u32 {
+        s2b::set_save_data_info_forward(&mut mem(), title, detail, text)
+    }
+    /// `SaveDataSetState(v)`.
+    SaveDataSetState @ 0x0064_8710 => extern "C" fn set_state(v: u32) -> u32 {
+        s2b::set_state(&mut mem(), v)
+    }
+    /// `SaveDataMachine_StartLoad(size, buf)`.
+    SaveDataMachine_StartLoad @ 0x006f_01d0 => extern "C" fn start_load(size: u32, buf: u32) -> u32 {
+        s2b::start_load(&mut mem(), 0xb, size, buf)
+    }
+    /// `SaveDataManager_doLoad(this)`.
+    SaveDataManager_doLoad @ 0x006f_1ce0 => extern "thiscall" fn do_load(this: u32) -> u32 {
+        s2b::do_load(&mut mem(), this)
+    }
+    /// `SaveDataToLoad()`.
+    SaveDataToLoad @ 0x0064_8760 => extern "C" fn to_load() -> u32 {
+        s2b::to_load(&mut mem())
+    }
+    /// `0x006efeb0(size, buf)`.
+    SaveDataMachine_StartLoadAll_006efeb0 @ 0x006e_feb0 => extern "C" fn start_load_all(size: u32, buf: u32) -> u32 {
+        s2b::start_load(&mut mem(), 0x15, size, buf)
+    }
+    /// `0x006f1d10(this)`.
+    SaveDataManager_doLoadAll_006f1d10 @ 0x006f_1d10 => extern "thiscall" fn do_load_all(this: u32) -> u32 {
+        s2b::load_all(&mut mem(), this)
+    }
+    /// `SaveDataToLoadAllAlBhed()`.
+    SaveDataToLoadAllAlBhed @ 0x0064_8790 => extern "C" fn to_load_all() -> u32 {
+        s2b::to_load_all(&mut mem())
+    }
+    /// `0x006f07a0(size, buf)`.
+    SaveDataMachine_StartSave_006f07a0 @ 0x006f_07a0 => extern "C" fn start_save(size: u32, buf: u32) -> u32 {
+        s2b::start_save(&mut mem(), size, buf)
+    }
+    /// `SaveDataManager_doSave(this)`.
+    SaveDataManager_doSave @ 0x006f_1d70 => extern "thiscall" fn do_save(this: u32) -> u32 {
+        s2b::do_save(&mut mem(), this)
+    }
+    /// `SaveDataToSave()`.
+    SaveDataToSave @ 0x0064_87a0 => extern "C" fn to_save() -> u32 {
+        s2b::to_save(&mut mem())
+    }
+    /// `SaveDataManager_setSaveDataIconString(this; s)`.
+    SaveDataManager_setSaveDataIconString @ 0x006f_2530 => extern "thiscall" fn set_icon_string(this: u32, s: u32) -> u32 {
+        s2b::set_icon_string(&mut mem(), this, s)
+    }
+    /// `debugLoad_Thunk_006492b0(slot, buf, size)`.
+    debugLoad_Thunk_006492b0 @ 0x0064_92b0 => extern "C" fn debug_load_thunk(slot: u32, buf: u32, size: u32) -> u32 {
+        s2b::debug_thunk(&mut mem(), s2b::DEBUG_LOAD, slot, buf, size)
+    }
+    /// `debugSavedataLoadAll(slot)`.
+    debugSavedataLoadAll @ 0x0064_92c0 => extern "C" fn debug_load_all(slot: u32) -> u32 {
+        s2b::debug_load_all(&mut mem(), slot)
+    }
+    /// `debugSave_Thunk_006492e0(slot, buf, size)`.
+    debugSave_Thunk_006492e0 @ 0x0064_92e0 => extern "C" fn debug_save_thunk(slot: u32, buf: u32, size: u32) -> u32 {
+        s2b::debug_thunk(&mut mem(), s2b::DEBUG_SAVE, slot, buf, size)
+    }
+    /// `0x006f2630(this)`.
+    SaveDataManager_rebuildTable_006f2630 @ 0x006f_2630 => extern "thiscall" fn rebuild_table(this: u32) {
+        s2b::rebuild_table(&mut mem(), this);
+    }
+    /// `0x006494d0(this; src, _)`.
+    NamedValue_moveCtor_006494d0 @ 0x0064_94d0 => extern "thiscall" fn named_value_move_6494d0(this: u32, src: u32, _x: u32) -> u32 {
+        s2b::string_move(&mut mem(), this, src)
+    }
+    /// `0x00649540(this; src, _)`.
+    NamedValue_moveCtor_00649540 @ 0x0064_9540 => extern "thiscall" fn named_value_move_649540(this: u32, src: u32, _x: u32) -> u32 {
+        s2b::string_move(&mut mem(), this, src)
+    }
+    /// `EternalCalm_FileSize_0067a9f0(name)`.
+    EternalCalm_FileSize_0067a9f0 @ 0x0067_a9f0 => extern "C" fn calm_file_size(name: u32) -> u32 {
+        s2b::calm_file_size(&mut mem(), name)
+    }
+    /// `getEternalCalmMgrpSize(map)`.
+    getEternalCalmMgrpSize @ 0x0067_aa70 => extern "C" fn calm_mgrp_size(map: u32) -> u32 {
+        s2b::calm_size(&mut mem(), s2::CALM_MGRP_SIZES, s2::CALM_MGRP_NAMES, map)
+    }
+    /// `getEternalCalmSceneSize(map)`.
+    getEternalCalmSceneSize @ 0x0067_aae0 => extern "C" fn calm_scene_size(map: u32) -> u32 {
+        s2b::calm_size(&mut mem(), s2::CALM_SCENE_SIZES, s2::CALM_SCENE_NAMES, map)
+    }
+    /// `WaterWaveController_setBuoyancyFix(c, v)`: `v` by its slot.
+    WaterWaveController_setBuoyancyFix @ 0x006f_5760 => extern "stdcall" fn set_buoyancy_fix(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::BUOYANCY_FIX, c, slots);
+    }
+    /// `WaterWaveController_setCircleWaveStrength(c, a, b)`.
+    WaterWaveController_setCircleWaveStrength @ 0x006f_5790 => extern "stdcall" fn set_circle_wave(c: u32, a: u32, b: u32) {
+        s2b::set_two(&mut mem(), s2::CIRCLE_WAVE, c, a, b);
+    }
+    /// `WaterWaveController_setDraughtOffset(c, v)`: `v` by its slot.
+    WaterWaveController_setDraughtOffset @ 0x006f_57e0 => extern "stdcall" fn set_draught_offset(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::DRAUGHT_OFFSET, c, slots);
+    }
+    /// `WaterWaveController_setFoamStrength(c, v)`: `v` by its slot.
+    WaterWaveController_setFoamStrength @ 0x006f_5810 => extern "stdcall" fn set_foam_strength(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::FOAM_STRENGTH, c, slots);
+    }
+    /// `WaterWaveController_setMultiTexBlendFactor(c, v)`: `v` by its slot.
+    WaterWaveController_setMultiTexBlendFactor @ 0x006f_5840 => extern "stdcall" fn set_multi_tex_blend(c: u32, _v: u32; slots: u32) {
+        s2b::set_one(&mut mem(), s2::MULTI_TEX_BLEND, c, slots);
+    }
+    /// `WaterWaveController_setScrollSpeed(c, x0, y0, x1, y1)`: by the slots.
+    WaterWaveController_setScrollSpeed @ 0x006f_5870 => extern "stdcall" fn set_scroll_speed(c: u32, _x0: u32, _y0: u32, _x1: u32, _y1: u32; slots: u32) {
+        s2b::set_scroll_speed(&mut mem(), c, slots);
+    }
+    /// `WaterWaveController_setSineWaveStrength(c, a, b)`.
+    WaterWaveController_setSineWaveStrength @ 0x006f_59a0 => extern "stdcall" fn set_sine_wave(c: u32, a: u32, b: u32) {
+        s2b::set_two(&mut mem(), s2::SINE_WAVE, c, a, b);
+    }
+
+    // ---- round 3: the cluster pointer-fixup unpackers and their runs ----
+    /// `Fixup_RunBitmask16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunBitmask16 @ 0x0060_cac0 => extern "thiscall" fn run_bitmask16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) {
+        fx::run_bitmask(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 });
+    }
+    /// `Fixup_RunExcept16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunExcept16 @ 0x0060_cc20 => extern "thiscall" fn run_except16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_except(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunListed16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunListed16 @ 0x0060_ce70 => extern "thiscall" fn run_listed16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_listed(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunArithmetic16(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunArithmetic16 @ 0x0060_d000 => extern "thiscall" fn run_arithmetic16(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_arithmetic(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x10 })
+    }
+    /// `Fixup_RunBitmask(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunBitmask @ 0x0060_cb70 => extern "thiscall" fn run_bitmask(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) {
+        fx::run_bitmask(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c });
+    }
+    /// `Fixup_RunExcept(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunExcept @ 0x0060_cd50 => extern "thiscall" fn run_except(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_except(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_RunListed(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunListed @ 0x0060_cf40 => extern "thiscall" fn run_listed(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_listed(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_RunArithmetic(desc; cb, tmpl, &cursor, &out)`.
+    Fixup_RunArithmetic @ 0x0060_d080 => extern "thiscall" fn run_arithmetic(desc: u32, cb: u32, tmpl: u32, cursor: u32, out: u32) -> u32 {
+        fx::run_arithmetic(&mut mem(), fx::Run { desc, cb, tmpl, cursor, out, size: 0x1c })
+    }
+    /// `Fixup_UnpackArrayList(&cursor, records, n, count)`: frame `ebp -
+    /// 0x44`; the output cursor is the caller's `records` slot.
+    Fixup_UnpackArrayList @ 0x0060_a340 => extern "C" fn unpack_array_list(cursor: u32, records: u32, n: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<{ (fx::ARRAY_FRAME / 4) as usize }>::new();
+        fx::unpack_array_list(&mut mem(), f.at() + fx::ARRAY_FRAME, cursor, records, slots + 4, n, count);
+    }
+    /// `Fixup_UnpackList(&cursor, records, n, count)`: frame `ebp -
+    /// 0x58`; the output cursor is the caller's `records` slot.
+    Fixup_UnpackList @ 0x0060_a750 => extern "C" fn unpack_list(cursor: u32, records: u32, n: u32, count: u32; slots: u32) {
+        let mut f = StackFrame::<{ (fx::LIST_FRAME / 4) as usize }>::new();
+        fx::unpack_list(&mut mem(), f.at() + fx::LIST_FRAME, cursor, records, slots + 4, n, count);
+    }
+
+    // ---- round 3: archive read requests, VFile, member caches, tree dtors ----
+    /// `0x00573b70(L)`: the Lua vector's negation.
+    PVector4_luaUnm_00573b70 @ 0x0057_3b70 => extern "C" fn lua_vector_negate(lua: u32) -> u32 {
+        fl::lua_vector_negate(&mut mem(), lua)
+    }
+    /// `0x0057a200(this; &cursor, a, b, c)`.
+    MemberCache_findMember_0057a200 @ 0x0057_a200 => extern "thiscall" fn cached_find_member(this: u32, cursor: u32, a: u32, b: u32, c: u32) -> u32 {
+        fl::cached_find_member(&mut mem(), this, cursor, a, b, c)
+    }
+    /// `Fixup_FindMember(this; index, &cursor, a, &element, b)`.
+    Fixup_FindMember @ 0x0057_a280 => extern "thiscall" fn fixup_find_member(this: u32, index: u32, cursor: u32, a: u32, element: u32, b: u32) -> u32 {
+        fl::fixup_find_member(&mut mem(), this, index, cursor, a, element, b)
+    }
+    /// `0x0060ac50(a, b)`: a sort predicate.
+    FixupRecord_less_0060ac50 @ 0x0060_ac50 => extern "C" fn record_less_60ac50(a: u32, b: u32) -> u32 {
+        fl::record_less(&mem(), &fl::LESS_60AC50, a, b)
+    }
+    /// `0x0060ad00(a, b)`: a sort predicate.
+    FixupRecord_less_0060ad00 @ 0x0060_ad00 => extern "C" fn record_less_60ad00(a: u32, b: u32) -> u32 {
+        fl::record_less(&mem(), &fl::LESS_60AD00, a, b)
+    }
+    /// `0x0060d460` (`ecx`; unwinding).
+    PRedBlackTree_dtor_0060d460 @ 0x0060_d460 => extern "thiscall" fn tree_dtor_60d460(this: u32) {
+        fl::tree_dtor(&mut mem(), this);
+    }
+    /// `0x0060d550` (`ecx`; unwinding).
+    PooledTree_dtor_0060d550 @ 0x0060_d550 => extern "thiscall" fn pooled_tree_dtor(this: u32) {
+        fl::pooled_tree_dtor(&mut mem(), this);
+    }
+    /// `0x0060d5d0` (`ecx`; unwinding).
+    OwnedArrayTree_dtor_0060d5d0 @ 0x0060_d5d0 => extern "thiscall" fn owned_array_dtor(this: u32) {
+        fl::owned_array_dtor(&mut mem(), this);
+    }
+    /// `0x0061a690(this)`: frame `ebp - 0x40` (the identity it converts).
+    Phyre_PWorldMatrixController_ctor_0061a690 @ 0x0061_a690 => extern "thiscall" fn world_matrix_controller_ctor(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (fl::MATRIX_FRAME / 4) as usize }>::new();
+        fl::controller_ctor(&mut mem(), f.at() + fl::MATRIX_FRAME, this)
+    }
+    /// `0x0061a770(this; out)` (vtable slot 4): frame `ebp - 0x44`.
+    Phyre_PWorldMatrixController_getAxis_0061a770 @ 0x0061_a770 => extern "thiscall" fn world_matrix_controller_axis(this: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<{ (fl::AXIS_FRAME / 4) as usize }>::new();
+        fl::controller_axis(&mut mem(), f.at() + fl::AXIS_FRAME, this, out)
+    }
+    /// `VFile_VFile(this)`.
+    VFile_VFile @ 0x0061_a860 => extern "thiscall" fn vfile_ctor(this: u32) -> u32 {
+        fl::vfile_ctor(&mut mem(), this)
+    }
+    /// `0x0061b030(this)`.
+    VFile_freeBuffers_0061b030 @ 0x0061_b030 => extern "thiscall" fn vfile_free_buffers(this: u32) {
+        fl::vfile_free_buffers(&mut mem(), this);
+    }
+    /// `0x0061b270(id)`.
+    AtlFindStringResource_0061b270 @ 0x0061_b270 => extern "C" fn find_string_resource(id: u32) -> u32 {
+        fl::find_string_resource(&mut mem(), id)
+    }
+    /// `0x0061b740(this; lo, hi, size, total)`.
+    BigFileStream_setUpSlot_0061b740 @ 0x0061_b740 => extern "thiscall" fn set_up_slot(this: u32, lo: u32, hi: u32, size: u32, total: u32) -> u32 {
+        fl::set_up_slot(&mut mem(), this, lo, hi, size, total)
+    }
+    /// `FileSys_NewReadRequest(this; file, length, req, lo, hi, info)`.
+    FileSys_NewReadRequest @ 0x0061_b7e0 => extern "thiscall" fn new_read_request(this: u32, file: u32, length: u32, req: u32, lo: u32, hi: u32, info: u32) -> u32 {
+        fl::new_read_request(&mut mem(), this, file, length, req, lo, hi, info)
+    }
+
+    // ---- round 3: the archive name lookups, the synchronous read, the VFile pool ----
+    /// `FileSys_Exists(this; name)`: frame `ebp - 0x1c`.
+    FileSys_Exists @ 0x0061_be40 => extern "thiscall" fn file_sys_exists(this: u32, name: u32) -> u8 {
+        let mut f = StackFrame::<{ (vf::DIGEST_FRAME / 4) as usize }>::new();
+        vf::exists(&mut mem(), f.at() + vf::DIGEST_FRAME, this, name)
+    }
+    /// `BigFileStream_openFile(this; name)`: frame `ebp - 0x1c`.
+    BigFileStream_openFile @ 0x0061_bf10 => extern "thiscall" fn big_file_open(this: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<{ (vf::DIGEST_FRAME / 4) as usize }>::new();
+        vf::open_file(&mut mem(), f.at() + vf::DIGEST_FRAME, this, name)
+    }
+    /// `BigFileStream_readVFile(this; file, length, req, lo, hi, info)`.
+    BigFileStream_readVFile @ 0x0061_bfe0 => extern "thiscall" fn read_vfile(this: u32, file: u32, length: u32, req: u32, lo: u32, hi: u32, info: u32) -> u32 {
+        vf::read_vfile(&mut mem(), this, file, length, req, lo, hi, info)
+    }
+    /// `0x0061d9c0(this; digest)`.
+    BigFileHandle_newVFile_0061d9c0 @ 0x0061_d9c0 => extern "thiscall" fn new_vfile(this: u32, digest: u32) -> u32 {
+        vf::new_vfile(&mut mem(), this, digest)
+    }
+    /// `BigFileStream_fileTaskRead(_, slot, _)` (stdcall).
+    BigFileStream_fileTaskRead @ 0x0061_b8d0 => extern "stdcall" fn task_read(_a: u32, slot: u32, _c: u32) {
+        vf::task_read(&mut mem(), slot);
+    }
+    /// `0x0061add0(this)`: a read slot's constructor.
+    BigFileStream_slotCtor_0061add0 @ 0x0061_add0 => extern "thiscall" fn read_slot_ctor(this: u32) -> u32 {
+        vf::slot_ctor(&mut mem(), this)
+    }
+
+    // ---- round 3: DirectInput's start, the archive handles' set-up ----
+    /// `Input_InitDirectInput()`.
+    Input_InitDirectInput @ 0x0062_4350 => extern "C" fn init_direct_input() -> u32 {
+        ip::init_direct_input(&mut mem())
+    }
+    /// `Input_EnumDevicesCallback(instance, ctx)`.
+    Input_EnumDevicesCallback @ 0x0062_3330 => extern "stdcall" fn enum_devices_callback(instance: u32, _ctx: u32) -> u32 {
+        ip::enum_devices_callback(&mut mem(), instance)
+    }
+    /// `Input_EnumAxesSetRange(object, device)`: frame `ebp - 0x1c`.
+    Input_EnumAxesSetRange @ 0x0062_33a0 => extern "stdcall" fn enum_axes_set_range(object: u32, device: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::RANGE_FRAME / 4) as usize }>::new();
+        ip::enum_axes_set_range(&mut mem(), f.at() + ip::RANGE_FRAME, object, device)
+    }
+    /// `0x00623420(out)`.
+    IntrusiveList_copy_00623420 @ 0x0062_3420 => extern "C" fn copy_list(out: u32) -> u32 {
+        ip::copy_list(&mut mem(), out)
+    }
+    /// `0x00623da0(s, prefix)`.
+    CmdLine_afterPrefix_00623da0 @ 0x0062_3da0 => extern "C" fn after_prefix(s: u32, prefix: u32) -> u32 {
+        ip::after_prefix(&mut mem(), s, prefix)
+    }
+    /// `BigFileHandle_BigFileHandle(this)`.
+    BigFileHandle_BigFileHandle @ 0x0061_d460 => extern "thiscall" fn big_file_handle_ctor(this: u32) -> u32 {
+        ip::handle_ctor(&mut mem(), this)
+    }
+    /// `BigFileStream_registerBigFile(this; path)`.
+    BigFileStream_registerBigFile @ 0x0061_c150 => extern "thiscall" fn register_big_file(this: u32, path: u32) -> u8 {
+        ip::register_big_file(&mut mem(), this, path)
+    }
+    /// `Steam_Init()`.
+    Steam_Init @ 0x0062_3470 => extern "C" fn steam_init() -> u32 {
+        ip::steam_init(&mut mem())
+    }
+    /// `0x006255d0(table, name, default)`.
+    CmdLine_findOption_006255d0 @ 0x0062_55d0 => extern "C" fn find_option(table: u32, name: u32, default: u32) -> u32 {
+        ip::find_option(&mut mem(), table, name, default)
+    }
+    /// `Input_Shutdown()`.
+    Input_Shutdown @ 0x0062_5680 => extern "C" fn input_shutdown_all() -> u32 {
+        ip::input_shutdown(&mut mem())
+    }
+    /// `Settings_SetThreadUILanguage()`.
+    Settings_SetThreadUILanguage @ 0x0062_cad0 => extern "C" fn set_thread_ui_language() -> u32 {
+        ip::set_thread_ui_language(&mut mem())
+    }
+    /// `0x00624810(app, key)`: a script key-down command.
+    ScriptKey_down_00624810 @ 0x0062_4810 => extern "C" fn script_key_down(app: u32, key: u32) -> u32 {
+        ip::set_script_key(&mut mem(), app, key, 1)
+    }
+    /// `0x00624850(app, key)`: a script key-up command.
+    ScriptKey_up_00624850 @ 0x0062_4850 => extern "C" fn script_key_up(app: u32, key: u32) -> u32 {
+        ip::set_script_key(&mut mem(), app, key, 0)
+    }
+    /// `0x00624d70(obj, arg)`: a script command.
+    ScriptCommand_00624d70 @ 0x0062_4d70 => extern "C" fn script_624d70(obj: u32, arg: u32) -> u32 {
+        ip::script_624d70(&mut mem(), obj, arg)
+    }
+    /// `Input_AddKeyboard(instance)`: frame `ebp - 4`.
+    Input_AddKeyboard @ 0x0062_3fa0 => extern "C" fn add_keyboard(instance: u32) {
+        let mut f = StackFrame::<{ (ip::KEYBOARD_FRAME / 4) as usize }>::new();
+        ip::add_keyboard(&mut mem(), f.at() + ip::KEYBOARD_FRAME, instance);
+    }
+    /// `Input_AddMouse(instance)`: frame `ebp - 0x10`.
+    Input_AddMouse @ 0x0062_4020 => extern "C" fn add_mouse(instance: u32) {
+        let mut f = StackFrame::<{ (ip::MOUSE_FRAME / 4) as usize }>::new();
+        ip::add_mouse(&mut mem(), f.at() + ip::MOUSE_FRAME, instance);
+    }
+    /// `0x00624890(app, key)`: a script key-press command.
+    ScriptKey_press_00624890 @ 0x0062_4890 => extern "C" fn script_key_press(app: u32, key: u32) -> u32 {
+        ip::script_key_press(&mut mem(), app, key)
+    }
+    /// `0x00624910(app, text)`: frame `ebp - 8`.
+    ScriptMouse_set_00624910 @ 0x0062_4910 => extern "C" fn script_mouse_set(app: u32, text: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::MOUSE_SET_FRAME / 4) as usize }>::new();
+        ip::script_mouse_set(&mut mem(), f.at() + ip::MOUSE_SET_FRAME, app, text)
+    }
+
+    // ---- round 3: the asset list reader, the Steam stats ctor, FileSys_Read ----
+    /// `AssetListReader_copy_0064d9e0(this; src)`: frame `ebp - 0x14`.
+    AssetListReader_copy_0064d9e0 @ 0x0064_d9e0 => extern "thiscall" fn asset_list_copy(this: u32, src: u32) -> u32 {
+        let mut f = StackFrame::<{ (al::COPY_FRAME / 4) as usize }>::new();
+        al::copy(&mut mem(), f.at() + al::COPY_FRAME, this, src)
+    }
+    /// `AssetListReader_dtor_AssetListReader(this)`: frame `ebp - 4`.
+    AssetListReader_dtor_AssetListReader @ 0x0063_4610 => extern "thiscall" fn asset_list_dtor(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        al::dtor(&mut mem(), f.at() + al::DTOR_FRAME, this);
+    }
+    /// `StatsAndAchievements_ctor(this)`.
+    StatsAndAchievements_ctor @ 0x006f_11a0 => extern "thiscall" fn stats_ctor(this: u32) -> u32 {
+        al::stats_ctor(&mut mem(), this)
+    }
+    /// `FileSys_Read(vfile; dst, len)`.
+    FileSys_Read @ 0x0061_aa90 => extern "thiscall" fn file_sys_read(vfile: u32, dst: u32, len: u32) -> u32 {
+        al::file_read(&mut mem(), vfile, dst, len)
+    }
+    /// `PApplicationScriptProxy_buttonRelease(app, name)`.
+    PApplicationScriptProxy_buttonRelease @ 0x0062_2ed0 => extern "C" fn button_release(app: u32, name: u32) -> u32 {
+        ip::button_release(&mut mem(), app, name)
+    }
+    /// `0x00623060(app, name)`: the press command.
+    PApplicationScriptProxy_buttonPress_00623060 @ 0x0062_3060 => extern "C" fn button_press(app: u32, name: u32) -> u32 {
+        ip::button_press(&mut mem(), app, name)
+    }
+    /// `Input_AddPadDevice(instance)`: frame `ebp - 0x10`.
+    Input_AddPadDevice @ 0x0062_40e0 => extern "C" fn add_pad_device(instance: u32) {
+        let mut f = StackFrame::<{ (ip::PAD_FRAME / 4) as usize }>::new();
+        ip::add_pad_device(&mut mem(), f.at() + ip::PAD_FRAME, instance);
+    }
+    /// `0x0067ad30(this)`: the graphic UI object's constructor.
+    GraphicUi_ctor_0067ad30 @ 0x0067_ad30 => extern "thiscall" fn graphic_ui_ctor(this: u32) -> u32 {
+        ui::ctor(&mut mem(), this)
+    }
+    /// `SaveDataMachine_ScanFiles()`: frame `ebp - 0x4dc`.
+    SaveDataMachine_ScanFiles @ 0x006f_0a70 => extern "C" fn scan_files() -> u32 {
+        let mut f = StackFrame::<{ (s3::SCAN_FRAME / 4) as usize }>::new();
+        s3::scan_files(&mut mem(), f.at() + s3::SCAN_FRAME)
+    }
+    /// `SaveDataMachine_ReadHeaders(first, end)`: frame `ebp - 0x444`.
+    SaveDataMachine_ReadHeaders @ 0x006f_0c60 => extern "C" fn read_headers(first: u32, end: u32) {
+        let mut f = StackFrame::<{ (s3::HEADERS_FRAME / 4) as usize }>::new();
+        s3::read_headers(&mut mem(), f.at() + s3::HEADERS_FRAME, first, end);
+    }
+    /// `BigFileHandle_initialize(this; path)`: frame `ebp - 0x54`; the
+    /// header size goes to the caller's `path` slot.
+    BigFileHandle_initialize @ 0x0061_dac0 => extern "thiscall" fn big_file_handle_initialize(this: u32, path: u32; slots: u32) -> u8 {
+        let mut f = StackFrame::<{ (vf::INIT_FRAME / 4) as usize }>::new();
+        vf::initialize(&mut mem(), f.at() + vf::INIT_FRAME, this, path, slots)
+    }
+    /// `BigFileStream_fileTaskUncompress(_, slot, _, _)`: frame `ebp -
+    /// 0x10`; the error text goes to the caller's third slot.
+    BigFileStream_fileTaskUncompress @ 0x0061_ba80 => extern "stdcall" fn task_uncompress(_a: u32, slot: u32, _c: u32, _d: u32; slots: u32) {
+        let mut f = StackFrame::<{ (vf::UNCOMPRESS_FRAME / 4) as usize }>::new();
+        vf::task_uncompress(&mut mem(), f.at() + vf::UNCOMPRESS_FRAME, slot, slots);
+    }
+    /// `SaveDataUpdateIcon(map)`: frame `ebp - 0x9c`.
+    SaveDataUpdateIcon @ 0x0064_8920 => extern "C" fn update_icon(map: u32) -> u32 {
+        let mut f = StackFrame::<{ (s3::ICON_FRAME / 4) as usize }>::new();
+        s3::update_icon(&mut mem(), f.at() + s3::ICON_FRAME, map)
+    }
+    /// `Input_IsXInputDevice(&guid)`: frame `ebp - 0x88`.
+    Input_IsXInputDevice @ 0x0062_44f0 => extern "C" fn is_xinput_device(guid: u32) -> u8 {
+        let mut f = StackFrame::<{ (ip::XINPUT_FRAME / 4) as usize }>::new();
+        ip::is_xinput_device(&mut mem(), f.at() + ip::XINPUT_FRAME, guid)
+    }
+    /// `PhyreFIOS_LoadMagicfilePrx(name, b, c)`: frame `ebp - 0x10c`.
+    PhyreFIOS_LoadMagicfilePrx @ 0x0067_93e0 => extern "C" fn load_magicfile_prx(name: u32, b: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<{ (vf::PRX_FRAME / 4) as usize }>::new();
+        vf::load_magicfile_prx(&mut mem(), f.at() + vf::PRX_FRAME, name, b, c)
+    }
+    /// `0x006790c0(this; a, mode, c, d)`: frame `ebp - 0x14`; `c`'s slot
+    /// is scratch for the doubled offset.
+    GradMesh_setup_006790c0 @ 0x0067_90c0 => extern "thiscall" fn grad_mesh_setup(this: u32, _a: u32, mode: u32, _c: u32, _d: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<{ (ui::GRAD_FRAME / 4) as usize }>::new();
+        ui::grad_mesh(&mut mem(), f.at() + ui::GRAD_FRAME, this, mode, slots)
+    }
+    /// `0x00634850(this)`: frame `ebp - 0x14`.
+    Graphic_dtor_00634850 @ 0x0063_4850 => extern "thiscall" fn graphic_final(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (ui::FINAL_FRAME / 4) as usize }>::new();
+        ui::graphic_final(&mut mem(), f.at() + ui::FINAL_FRAME, this)
+    }
+    /// `Virtuos_InputManager_updateInput(this)`: frame `ebp - 0x24`.
+    Virtuos_InputManager_updateInput @ 0x0063_2a30 => extern "thiscall" fn update_input(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (ip::UPDATE_FRAME / 4) as usize }>::new();
+        ip::update_input(&mut mem(), f.at() + ip::UPDATE_FRAME, this)
     }
 }
 

@@ -24,10 +24,19 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_assets::bridge as al;
+use ffx_system::m5a_files::bridge as fl;
+use ffx_system::m5a_fixup::bridge as fx;
+use ffx_system::m5a_glue::bridge as gl;
+use ffx_system::m5a_input::bridge as ip;
 use ffx_system::m5a_platform::{self as platform, bridge as pf};
 use ffx_system::m5a_savedata::{self as sv, bridge as sa};
+use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
+use ffx_system::m5a_savedata3::bridge as s3;
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_ui::bridge as ui;
+use ffx_system::m5a_vfs::bridge as vf;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -128,6 +137,8 @@ enum Out {
     U32(u32),
     /// `al`.
     U8(u8),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 struct Twins {
@@ -388,6 +399,37 @@ impl Twins {
         self.patch(at, &addr.to_le_bytes());
     }
 
+    /// A recording stub (`tag`, `this`, `n` words, `pops`, `ret` as
+    /// [`Twins::stub_code`]) that first copies `len` bytes from `src` to
+    /// the pointer in its stack word `arg` (what the callee writes there).
+    /// Returns its address.
+    #[allow(clippy::too_many_arguments)]
+    fn stub_code_writes(
+        &mut self,
+        tag: u32,
+        this: bool,
+        n: u32,
+        pops: u32,
+        ret: u32,
+        arg: u32,
+        src: u32,
+        len: u32,
+    ) -> u32 {
+        let log_stub = self.stub_code(tag, this, n, pops, ret);
+        let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+        c.extend([0x8b, 0x7c, 0x24, (0x10 + 4 * arg) as u8]); // mov edi, [esp+0x10+4arg]
+        c.push(0xb9);
+        c.extend(len.to_le_bytes()); // mov ecx, len
+        c.push(0xbe);
+        c.extend(src.to_le_bytes()); // mov esi, src
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        self.cave_code(&c)
+    }
+
     /// Recording stubs over the originals `(sym, this, words, pops, ret)`.
     fn stubs(&mut self, list: &[(u32, bool, u32, u32, u32)]) {
         for &(sym, this, n, pops, ret) in list {
@@ -468,6 +510,11 @@ impl Twins {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::U64(v) => assert_eq!(
+                u64::from(ra.edx) << 32 | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
         }
         self.diff(what);
     }
@@ -3400,6 +3447,3994 @@ fn set_input_info_matches_the_original() {
                 &init,
                 |m, ebp| Out::U32(sa::set_input_info(m, ebp, obj)),
             );
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_glue) ----
+
+/// The forwarders: the input manager's (`inputClear`,
+/// `inputClearAllInputInfo`, `inputGetCurrDeviceButtonInfo`,
+/// `Input_AsyncPoll`, `inputIsReleaseButton`, `inputIsRepButton`),
+/// `SaveDataGetLoc`, the voice-volume and voice-table ones, `fiosLseek`
+/// and `sceLseek` (null file or not), the `ListVector_dtor` thunk and
+/// `vsnprintf1K` (its `va_list` the caller's fourth slot): stubbed
+/// callees, then the button reads again on the real callees.
+#[test]
+#[allow(clippy::too_many_lines)] // eighteen forwarders, one case setup
+fn glue_forwarders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0001);
+        for case in 0..40 {
+            t.reset();
+            let (m, c, app, loc, fmod, voices) = (
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            );
+            t.stubs(&[
+                (gl::INPUT_MANAGER, false, 0, 0, m),
+                (gl::INPUT_BUTTON_INFO, true, 0, 0, rng.next()),
+                (gl::INPUT_IS_RELEASE, true, 1, 1, rng.next()),
+                (gl::INPUT_IS_REP, true, 1, 1, rng.next()),
+                (gl::CONTROLLER_MANAGER, false, 0, 0, c),
+                (gl::CLEAR_CONTROLLER_INFO, true, 0, 0, rng.next()),
+                (gl::GET_APPLICATION, false, 0, 0, app),
+                (gl::POLL_INPUT_ASYNC, true, 0, 0, rng.next()),
+                (gl::LOC_MANAGER, false, 0, 0, loc),
+                (gl::LOC_TEXT, true, 3, 3, rng.next()),
+                (gl::FMOD_COMMAND3, true, 3, 3, rng.next()),
+                (gl::VOICE_SELECT, true, 4, 4, rng.next()),
+                (gl::VOICE_FIND, true, 2, 2, rng.next()),
+                (gl::STREAM_SEEK, true, 2, 2, rng.next()),
+                (gl::LIST_VECTOR_DTOR, true, 0, 0, rng.next()),
+            ]);
+            t.stub_import(gl::VSNPRINTF_S_IAT, false, 5, 0, rng.next());
+            t.g32(gl::FMOD_MANAGER, fmod);
+            t.g32(gl::VOICE_TABLE, voices);
+            let none = |name: &str| format!("{name} #{case}");
+            t.check(&none("inputClear"), 0x0063_0c30, Conv::Cdecl, &[], |m| {
+                Out::U32(gl::input_clear(m))
+            });
+            t.check(
+                &none("inputClearAllInputInfo"),
+                0x0063_0c40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::clear_all_input_info(m)),
+            );
+            t.check(
+                &none("inputGetCurrDeviceButtonInfo"),
+                0x0063_0c80,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::button_info(m)),
+            );
+            t.check(
+                &none("Input_AsyncPoll"),
+                0x0063_0cb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::async_poll(m)),
+            );
+            let b = rng.word();
+            for (sym, method) in [
+                (0x0063_0d10u32, gl::INPUT_IS_RELEASE),
+                (0x0063_0d30, gl::INPUT_IS_REP),
+            ] {
+                t.check(&none(&format!("{sym:#x}")), sym, Conv::Cdecl, &[b], |m| {
+                    Out::U32(gl::input_button(m, method, b))
+                });
+            }
+            let (id, out) = (rng.word(), rng.next());
+            t.check(
+                &none("SaveDataGetLoc"),
+                0x0064_12d0,
+                Conv::Cdecl,
+                &[id, out],
+                |m| Out::U32(gl::save_data_get_loc(m, id, out)),
+            );
+            let (v, w) = (rng.word(), rng.word());
+            t.check(
+                &none("iVoiceVolumeDirect"),
+                0x0067_a7b0,
+                Conv::Cdecl,
+                &[v],
+                |m| Out::U32(gl::voice_volume_direct(m, v)),
+            );
+            t.check(
+                &none("iVoiceVolumeTranslate"),
+                0x0067_a7d0,
+                Conv::Cdecl,
+                &[v, w],
+                |m| Out::U32(gl::voice_volume_translate(m, v, w)),
+            );
+            let a: Vec<u32> = (0..4).map(|_| rng.word()).collect();
+            t.check(&none("0x0067a9b0"), 0x0067_a9b0, Conv::Cdecl, &a, |m| {
+                Out::U32(gl::voice_select_forward(m, a[0], a[1], a[2], a[3]))
+            });
+            t.check(
+                &none("0x0067a9d0"),
+                0x0067_a9d0,
+                Conv::Cdecl,
+                &a[..2],
+                |m| Out::U32(gl::voice_find_forward(m, a[0], a[1])),
+            );
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            for sym in [0x0067_9710u32, 0x0062_f8e0] {
+                t.check(
+                    &none(&format!("{sym:#x} f {f:#x}")),
+                    sym,
+                    Conv::Cdecl,
+                    &[f, a[0], a[1]],
+                    |m| Out::U64(gl::fios_lseek(m, f, a[0], a[1])),
+                );
+            }
+            let this = rng.next();
+            t.check(
+                &none("0x00634360"),
+                0x0063_4360,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(gl::list_vector_dtor_thunk(m, this)),
+            );
+            // the va_list is the address of the caller's fourth slot
+            let slots = t.frame_ebp(4) + 8;
+            t.check(&none("vsnprintf1K"), 0x0068_7070, Conv::Cdecl, &a, |m| {
+                Out::U32(gl::vsnprintf_1k(m, a[0], a[1], a[2], slots + 12))
+            });
+            // the real input manager
+            t.reset();
+            let b = 1 << rng.below(32);
+            for (sym, method) in [
+                (0x0063_0d10u32, gl::INPUT_IS_RELEASE),
+                (0x0063_0d30, gl::INPUT_IS_REP),
+            ] {
+                let what = format!("{sym:#x} real #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[b], |m| {
+                    Out::U32(gl::input_button(m, method, b))
+                });
+            }
+            t.check(
+                &none("inputGetCurrDeviceButtonInfo real"),
+                0x0063_0c80,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::button_info(m)),
+            );
+            t.check(
+                &none("inputClear real"),
+                0x0063_0c30,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(gl::input_clear(m)),
+            );
+        }
+    });
+}
+
+/// `Virtuos_InputManager_setVibration`: pads with and without a device,
+/// vibration on and off; `0x0062f5b0` (`GetSystemTime` stubbed to write a
+/// random `SYSTEMTIME`).
+#[test]
+fn glue_vibration_and_clock_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0002);
+        for case in 0..40 {
+            t.reset();
+            let table = t.zeros(0x60);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x2b8, table);
+            let pad = rng.below(10);
+            if !rng.chance(3) {
+                let dev = rng.next();
+                t.w32(table + 0x38 + 4 * pad, dev);
+            }
+            let this = t.zeros(0x100);
+            let on = if rng.chance(2) { 0 } else { rng.word() };
+            t.w32(this + 0xa8, on);
+            t.stubs(&[
+                (gl::GET_APPLICATION, false, 0, 0, app),
+                (gl::PAD_SET_VIBRATION, true, 2, 2, rng.next()),
+            ]);
+            let (small, large) = (rng.word(), rng.word());
+            let what = format!("setVibration #{case} pad {pad}");
+            t.check(
+                &what,
+                0x0063_29c0,
+                Conv::Thiscall(this),
+                &[pad, small, large],
+                |m| Out::U32(gl::set_vibration(m, this, pad, small, large)),
+            );
+            let time: Vec<u8> = (0..16).map(|_| rng.next() as u8).collect();
+            let src = t.alloc(&time);
+            let r = rng.next();
+            let stub = t.stub_code_writes(gl::GET_SYSTEM_TIME_IAT, false, 1, 1, r, 0, src, 16);
+            let at = t.rebase(gl::GET_SYSTEM_TIME_IAT);
+            t.patch(at, &stub.to_le_bytes());
+            let out = t.alloc(&(0..8).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            t.skip = 4;
+            let what = format!("0x0062f5b0 #{case}");
+            t.check_framed(
+                &what,
+                0x0062_f5b0,
+                Conv::Cdecl,
+                &[out],
+                gl::SYSTEM_TIME_FRAME,
+                |m, ebp| Out::U32(gl::system_clock(m, ebp, out)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// A circular `std::list` of `n` nodes after the head; returns the owner
+/// (`+0` the head, `+4` the size).
+fn std_list(t: &mut Twins, n: u32) -> u32 {
+    let head = t.zeros(0x10);
+    let mut prev = head;
+    for _ in 0..n {
+        let node = t.zeros(0x10);
+        t.w32(prev, node);
+        t.w32(node + 4, prev);
+        prev = node;
+    }
+    t.w32(prev, head);
+    t.w32(head + 4, prev);
+    t.words(&[head, n])
+}
+
+/// The unwinding destructors and small teardowns: `0x00631230` (kept or
+/// not), `0x00631060` (buffer set or not), `0x00634200` (tagged or not),
+/// `0x00634340`, `0x00634370` (0..4 nodes), `0x006343b0`/`0x006343e0`
+/// (framed: the erase's iterator at `ebp - 4`), `0x00634500` (empty or
+/// not), `0x00633f70`, `0x00630b10` (device set or not), `0x00686bb0`
+/// (`next` 0 or not), `0x00630f40` (`inputGetCurTime` a random float).
+#[test]
+#[allow(clippy::too_many_lines)] // thirteen functions, one case setup
+fn glue_dtors_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0003);
+        for case in 0..40 {
+            t.reset();
+            t.stubs(&[
+                (gl::USER_FREE_THUNK, false, 1, 0, rng.next()),
+                (gl::PHYRE_FREE, false, 1, 0, rng.next()),
+                (gl::OPERATOR_DELETE, false, 1, 0, rng.next()),
+                (gl::TREE_ERASE_636D60, true, 3, 3, rng.next()),
+                (gl::TREE_ERASE_6370D0, true, 3, 3, rng.next()),
+                (gl::DESTROY_RANGE, false, 2, 2, rng.next()),
+                (gl::TEARDOWN_636970, true, 0, 0, rng.next()),
+                (gl::FREE_LIST_DTOR, true, 0, 0, rng.next()),
+                (gl::TREE_CLEAR, true, 0, 0, rng.next()),
+                (gl::INPUT_TEARDOWN, false, 0, 0, rng.next()),
+                (gl::TOUCH_RECORD_CREATE, false, 0, 0, rng.next()),
+                (gl::TOUCH_MANAGER, false, 0, 0, rng.next()),
+                (gl::GUI_TOUCH_RESET, true, 0, 0, rng.next()),
+                (gl::MOUSE_STATE_CREATE, false, 0, 0, rng.next()),
+                (gl::ARRAY16_CREATE, false, 0, 0, rng.next()),
+            ]);
+            let words = |rng: &mut Rng| -> Vec<u32> {
+                (0..0x30)
+                    .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                    .collect()
+            };
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let keep = [0, 1, 0x100, 0xff00, rng.word()][rng.below(5) as usize];
+            let what = format!("0x00631230 #{case} keep {keep:#x}");
+            t.check(&what, 0x0063_1230, Conv::Thiscall(this), &[keep], |m| {
+                gl::buffer_reset(m, this, keep);
+                Out::None
+            });
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let what = format!("0x00631060 #{case}");
+            t.check(&what, 0x0063_1060, Conv::Thiscall(this), &[], |m| {
+                Out::U32(gl::free_member8(m, this))
+            });
+            let what = format!("0x00634200 #{case}");
+            t.check(&what, 0x0063_4200, Conv::Thiscall(this), &[], |m| {
+                gl::phyre_free_member_c(m, this);
+                Out::None
+            });
+            let what = format!("0x00634340 #{case}");
+            t.check(&what, 0x0063_4340, Conv::Thiscall(this), &[], |m| {
+                gl::delete_member0(m, this);
+                Out::None
+            });
+            let list = std_list(t, rng.below(5));
+            let what = format!("0x00634370 #{case}");
+            t.check(&what, 0x0063_4370, Conv::Thiscall(list), &[], |m| {
+                gl::list_dtor(m, list);
+                Out::None
+            });
+            for (sym, erase) in [
+                (0x0063_43b0u32, gl::TREE_ERASE_636D60),
+                (0x0063_43e0, gl::TREE_ERASE_6370D0),
+            ] {
+                let head = t.words(&[rng.next(), rng.next(), rng.next()]);
+                let tree = t.words(&[head, rng.next()]);
+                let what = format!("{sym:#x} #{case}");
+                t.check_framed(
+                    &what,
+                    sym,
+                    Conv::Thiscall(tree),
+                    &[],
+                    gl::TREE_DTOR_FRAME,
+                    |m, ebp| {
+                        gl::tree_dtor(m, ebp, erase, tree);
+                        Out::None
+                    },
+                );
+            }
+            let v = t.words(&words(&mut rng)[..3]);
+            let what = format!("0x00634500 #{case}");
+            t.check(&what, 0x0063_4500, Conv::Thiscall(v), &[], |m| {
+                Out::U32(gl::vector_dtor(m, v))
+            });
+            let what = format!("0x00633f70 #{case}");
+            t.check(&what, 0x0063_3f70, Conv::Thiscall(this), &[], |m| {
+                gl::tree_set_dtor(m, this);
+                Out::None
+            });
+            let dev = if rng.chance(3) {
+                0
+            } else {
+                let r = rng.next();
+                t.object(&[(1, r)])
+            };
+            t.g32(gl::INPUT_DEVICE, dev);
+            let what = format!("0x00630b10 #{case}");
+            t.check(&what, 0x0063_0b10, Conv::Cdecl, &[], |m| {
+                Out::U32(gl::input_shutdown(m))
+            });
+            let node = t.zeros(0x24);
+            t.stub(gl::OPERATOR_NEW, false, 1, 0, node);
+            let next = if rng.chance(2) { 0 } else { rng.next() };
+            let prev = rng.next();
+            let what = format!("0x00686bb0 #{case} next {next:#x}");
+            t.check(&what, 0x0068_6bb0, Conv::Stdcall, &[next, prev], |m| {
+                Out::U32(gl::buy_list_node(m, next, prev))
+            });
+            let now = f32::from_bits(rng.next() & 0x7f7f_ffff);
+            t.stub_float(gl::CUR_TIME, now);
+            let w = words(&mut rng);
+            let this = t.words(&w);
+            let what = format!("0x00630f40 #{case}");
+            t.check(&what, 0x0063_0f40, Conv::Thiscall(this), &[], |m| {
+                Out::U32(gl::controller_ctor(m, this))
+            });
+        }
+    });
+}
+
+/// The voice table's lookups `0x006fb380` and `0x006fb410`: no table, a
+/// table still loading (the sleep stub marks it loaded), 0..6 rows of
+/// small values so that some rows match (several for the find, whose
+/// last match counts), a negative count.
+#[test]
+fn glue_voice_table_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0004);
+        for case in 0..120 {
+            t.reset();
+            let this = t.zeros(0x40);
+            let n = rng.below(7);
+            for off in [4u32, 0x24, 0x28, 0x2c, 0x30, 0x34, 0x38, 0x3c] {
+                let col: Vec<u32> = (0..n.max(1)).map(|_| rng.below(2)).collect();
+                let col = t.words(&col);
+                t.w32(this + off, col);
+            }
+            let count = if rng.chance(8) { 0xffff_fffe } else { n };
+            t.w32(this + 0x10, count);
+            t.w32(this + 0x14, count);
+            t.w32(this + 0x1c, u32::from(!rng.chance(5)));
+            let loaded = u32::from(!rng.chance(3));
+            t.w32(this + 0x20, loaded);
+            // the sleep stub: logs, then marks the table loaded
+            let log = t.stub_code(gl::SLEEP_MS, false, 1, 0, 0);
+            let mut c = vec![0xc7, 0x05];
+            c.extend((this + 0x20).to_le_bytes());
+            c.extend(1u32.to_le_bytes()); // mov dword [this+0x20], 1
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let sleep = t.cave_code(&c);
+            t.jump(gl::SLEEP_MS, sleep);
+            // bits 8 and 16 of the id: only its low half counts
+            let id = rng.below(2)
+                | ((rng.below(2) << 8) * u32::from(rng.chance(4)))
+                | (rng.below(2) << 16);
+            let (b, c, d) = (rng.below(2), rng.below(2), rng.below(2));
+            let what = format!("0x006fb380 #{case} n {count:#x}");
+            t.check(
+                &what,
+                0x006f_b380,
+                Conv::Thiscall(this),
+                &[id, b, c, d],
+                |m| Out::U32(gl::voice_select(m, this, id, b, c, d)),
+            );
+            t.w32(this + 0x20, loaded);
+            let what = format!("0x006fb410 #{case} n {count:#x}");
+            t.check(&what, 0x006f_b410, Conv::Thiscall(this), &[b, c], |m| {
+                Out::U32(gl::voice_find(m, this, b, c))
+            });
+        }
+    });
+}
+
+/// The three `xor eax, eax; ret` stubs (host-only table entries) and the
+/// PRX-state jump thunks `code_006793b0`/`c0`/`d0`: on the real targets
+/// with the PRX state words random, and on recording stubs.
+#[test]
+fn glue_stubs_and_thunks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0005);
+        for case in 0..24 {
+            t.reset();
+            for sym in [0x0062_f640u32, 0x0062_f980, 0x0062_fb00] {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |_| {
+                    Out::U32(ffx_pcore::m5p_stubs::bridge::zero())
+                });
+            }
+            // PhyreFIOS's PRX load state and error words
+            t.g32(0x00ce_83c4, rng.below(5));
+            t.g32(0x00ce_83c0, rng.below(2));
+            let thunks = [
+                (0x0067_93b0u32, gl::PRX_IDLE),
+                (0x0067_93c0, gl::PRX_IN_PROGRESS),
+                (0x0067_93d0, gl::PRX_LOADED),
+            ];
+            for (sym, target) in thunks {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(gl::jump_thunk(m, target))
+                });
+            }
+            for (sym, target) in thunks {
+                let r = rng.next();
+                t.stub(target, false, 0, 0, r);
+                let what = format!("{sym:#x} stubbed #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(gl::jump_thunk(m, target))
+                });
+            }
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_savedata2) ----
+
+/// A recording stub over the original at `sym` (`this`, `n` words, `pops`
+/// as [`Twins::stub_code`]) returning `seq[k]` on its `k`-th call (`seq`
+/// must be long enough).
+fn stub_seq(t: &mut Twins, sym: u32, this: bool, n: u32, pops: u32, seq: &[u32]) {
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let mut c = Vec::new();
+    let logw = t.log;
+    c.push(0xa1);
+    c.extend(logw.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((logw + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    if this {
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    }
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(logw.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(((pops * 4) as u16).to_le_bytes());
+    }
+    let addr = t.cave_code(&c);
+    t.jump(sym, addr);
+}
+
+/// A recording cdecl stub bound to the import slot `slot` for a variadic
+/// callee (`sprintf`, `wsprintfW`): logs `long` words, or `short` when
+/// its word `which` is `value` (a call with fewer arguments: the words
+/// past them are the caller's stack). Returns `value_out`.
+#[allow(clippy::too_many_arguments)]
+fn stub_import_varargs(
+    t: &mut Twins,
+    slot: u32,
+    which: u32,
+    value: u32,
+    short: u32,
+    most: u32,
+    value_out: u32,
+) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(slot.to_le_bytes()); // mov [eax], tag
+    for i in 0..short {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0x81, 0x7c, 0x24, (4 + 4 * which) as u8]);
+    c.extend(value.to_le_bytes()); // cmp dword [esp+4+4which], value
+    let tail: Vec<u8> = (short..most)
+        .flat_map(|i| {
+            [
+                0x8b,
+                0x54,
+                0x24,
+                (4 + 4 * i) as u8,
+                0x89,
+                0x50,
+                (8 + 4 * i) as u8,
+            ]
+        })
+        .collect();
+    c.extend([0x74, tail.len() as u8]); // je past the tail
+    c.extend(tail);
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(value_out.to_le_bytes()); // mov eax, value_out
+    c.push(0xc3);
+    let addr = t.cave_code(&c);
+    let at = t.rebase(slot);
+    t.patch(at, &addr.to_le_bytes());
+}
+
+/// The save layer's forwarders: `SaveDataManager_MarkAlbhedLoaded`,
+/// `SaveDataIsAlbhedLoaded` (no manager or one), the three
+/// `SaveDataIs*Finished` and `SaveDataResetToIdle` (stubbed and on the real
+/// methods), `SaveDataSetState`, `SaveDataSetSaveDataInfo`,
+/// `SaveDataPreDebugSave`, `AutoSave_DebugSave_00647e10` (`al` 0 or not),
+/// `SaveDataToLoad`, `SaveDataToLoadAllAlBhed`, `SaveDataToSave` (saving
+/// enabled or not), the debug-load/save thunks and `debugSavedataLoadAll`,
+/// the Eternal Calm sizes (outside the 7 maps, cached, measured) and
+/// `EternalCalm_FileSize_0067a9f0` (open or not; sizes around the
+/// signed rounding).
+#[test]
+#[allow(clippy::too_many_lines)] // two dozen forwarders, one case setup
+fn save2_forwarders_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0101);
+        for case in 0..40 {
+            t.reset();
+            let obj = t.zeros(0x400);
+            let dialog = t.zeros(0x40);
+            t.g32(s2::MANAGER, dialog);
+            let none = |name: &str| format!("{name} #{case}");
+            // the real methods on a manager object
+            t.stub(s2b::INSTANCE, false, 0, 0, obj);
+            t.w32(obj + 8, rng.below(8));
+            t.w32(obj + 0xc, rng.word());
+            for (sym, method) in [
+                (0x0064_8060u32, s2b::IS_DELETING),
+                (0x0064_8090, s2b::IS_LOADING),
+                (0x0064_80f0, s2b::IS_SAVING),
+                (0x0064_8530, s2b::RESET_IDLE),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x} real")),
+                    sym,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(s2b::manager_call(m, method)),
+                );
+            }
+            t.check(
+                &none("IsAlbhedLoaded real"),
+                0x0064_8020,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::is_albhed_loaded(m)),
+            );
+            t.check(
+                &none("MarkAlbhedLoaded real"),
+                0x0064_7e40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::mark_albhed_loaded(m)),
+            );
+            let v = rng.word();
+            t.check(&none("SetState"), 0x0064_8710, Conv::Cdecl, &[v], |m| {
+                Out::U32(s2b::set_state(m, v))
+            });
+            // stubbed methods
+            t.reset();
+            let m0 = if rng.chance(4) { 0 } else { rng.next() };
+            let pad: Vec<u8> = (0..4).map(|_| rng.next() as u8).collect();
+            let pad_at = t.rebase(s2::PAD_WORDS[0]);
+            t.write(pad_at, &pad);
+            t.stubs(&[
+                (s2b::INSTANCE, false, 0, 0, m0),
+                // SetWord0 leaves eax (the manager) alone
+                (s2b::MARK_ALBHED, true, 0, 0, m0),
+                (s2b::IS_ALBHED, true, 0, 0, rng.next()),
+                (s2b::IS_DELETING, true, 0, 0, rng.next()),
+                (s2b::IS_LOADING, true, 0, 0, rng.next()),
+                (s2b::IS_SAVING, true, 0, 0, rng.next()),
+                (s2b::RESET_IDLE, true, 0, 0, rng.next()),
+                (s2b::SET_CB_RESULT, true, 1, 1, rng.next()),
+                (
+                    s2b::IS_SAVE_ENABLED,
+                    true,
+                    0,
+                    0,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                ),
+                (s2b::SET_INFO, true, 3, 3, rng.next()),
+                (s2b::PRE_DEBUG_SAVE, true, 1, 1, rng.next()),
+                (
+                    s2b::CHECK_DEBUG_SAVE,
+                    true,
+                    1,
+                    1,
+                    rng.next() & !(0xff * u32::from(rng.chance(2))),
+                ),
+                (s2b::DO_LOAD, true, 0, 0, rng.next()),
+                (s2b::LOAD_ALL, true, 0, 0, rng.next()),
+                (s2b::DEBUG_LOAD, false, 3, 0, rng.next()),
+                (s2b::DEBUG_SAVE, false, 3, 0, rng.next()),
+                (s2b::DEBUG_LOAD_ALL, false, 3, 0, rng.next()),
+            ]);
+            // doSave's stub keeps the pad words it sees (set for the call)
+            let r = rng.next();
+            let log = t.stub_code(s2b::DO_SAVE, true, 0, 0, r);
+            let snoop = t.zeros(4);
+            let mut c = vec![0xa1];
+            c.extend(pad_at.to_le_bytes()); // mov eax, [pad words]
+            c.push(0xa3);
+            c.extend(snoop.to_le_bytes()); // mov [snoop], eax
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+            let at = t.cave_code(&c);
+            t.jump(s2b::DO_SAVE, at);
+            t.check(
+                &none("MarkAlbhedLoaded"),
+                0x0064_7e40,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::mark_albhed_loaded(m)),
+            );
+            t.check(
+                &none("IsAlbhedLoaded"),
+                0x0064_8020,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(s2b::is_albhed_loaded(m)),
+            );
+            let a: Vec<u32> = (0..3).map(|_| rng.word()).collect();
+            t.check(
+                &none("SetSaveDataInfo"),
+                0x0064_86c0,
+                Conv::Cdecl,
+                &a,
+                |m| Out::U32(s2b::set_save_data_info_forward(m, a[0], a[1], a[2])),
+            );
+            t.check(
+                &none("PreDebugSave"),
+                0x0064_84d0,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::pre_debug_save_forward(m, a[0])),
+            );
+            t.check(
+                &none("AutoSave_DebugSave"),
+                0x0064_7e10,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::auto_debug_save(m, a[0])),
+            );
+            t.check(&none("ToLoad"), 0x0064_8760, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_load(m))
+            });
+            t.check(&none("ToLoadAll"), 0x0064_8790, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_load_all(m))
+            });
+            t.check(&none("ToSave"), 0x0064_87a0, Conv::Cdecl, &[], |m| {
+                Out::U32(s2b::to_save(m))
+            });
+            for (sym, target) in [
+                (0x0064_92b0u32, s2b::DEBUG_LOAD),
+                (0x0064_92e0, s2b::DEBUG_SAVE),
+            ] {
+                t.check(&none(&format!("{sym:#x}")), sym, Conv::Cdecl, &a, |m| {
+                    Out::U32(s2b::debug_thunk(m, target, a[0], a[1], a[2]))
+                });
+            }
+            t.check(
+                &none("debugSavedataLoadAll"),
+                0x0064_92c0,
+                Conv::Cdecl,
+                &a[..1],
+                |m| Out::U32(s2b::debug_load_all(m, a[0])),
+            );
+            // the Eternal Calm sizes
+            let first = rng.below(0x100);
+            t.g32(s2::CALM_FIRST, first);
+            for tbl in [s2::CALM_MGRP_SIZES, s2::CALM_SCENE_SIZES] {
+                let sizes: Vec<u32> = (0..7)
+                    .map(|_| {
+                        if rng.chance(2) {
+                            0xffff_ffff
+                        } else {
+                            rng.below(0x10000)
+                        }
+                    })
+                    .collect();
+                let at = t.rebase(tbl);
+                let bytes: Vec<u8> = sizes.iter().flat_map(|v| v.to_le_bytes()).collect();
+                t.write(at, &bytes);
+            }
+            t.stub(s2b::CALM_FILE_SIZE, false, 1, 0, rng.word());
+            let map = first.wrapping_add(rng.below(10)).wrapping_sub(1);
+            for (sym, sizes, names) in [
+                (0x0067_aa70u32, s2::CALM_MGRP_SIZES, s2::CALM_MGRP_NAMES),
+                (0x0067_aae0, s2::CALM_SCENE_SIZES, s2::CALM_SCENE_NAMES),
+            ] {
+                let what = none(&format!("{sym:#x} map {map:#x}"));
+                t.check(&what, sym, Conv::Cdecl, &[map], |m| {
+                    Out::U32(s2b::calm_size(m, sizes, names, map))
+                });
+            }
+            // the measuring itself (its stub above put back)
+            t.reset();
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            let size = [
+                0,
+                1,
+                15,
+                16,
+                17,
+                0xffff_fff0,
+                0xffff_ffef,
+                0x7fff_fff5,
+                rng.next(),
+            ][rng.below(9) as usize];
+            t.stubs(&[
+                (s2b::SCE_OPEN, false, 2, 0, f),
+                (s2b::SCE_FILE_SIZE, false, 1, 0, size),
+                (s2b::SCE_CLOSE, false, 1, 0, rng.next()),
+            ]);
+            t.stub_import(s2b::IOB_FUNC_IAT, false, 0, 0, rng.next());
+            t.stub_import(s2b::FPRINTF_IAT, false, 3, 0, rng.next());
+            let name = rng.next();
+            let what = none(&format!("EternalCalm_FileSize f {f:#x} size {size:#x}"));
+            t.check(&what, 0x0067_a9f0, Conv::Cdecl, &[name], |m| {
+                Out::U32(s2b::calm_file_size(m, name))
+            });
+        }
+    });
+}
+
+/// The manager's own methods: `setSaveDataInfo` (each string null or
+/// not), `setSaveDataIconString`, `preDebugSave`, `0x006f1c40` (word 0x1b
+/// or not; the debug save's answer 0 or not), `doLoad`, `0x006f1d10`,
+/// `doSave` (enabled or not), `0x006f2630` (synthetic tables: ids found,
+/// appended), the `std::string` moves `0x006494d0`/`0x00649540` (short
+/// and long), `SaveDataLocRemoveNumTag` (tags at random places, short
+/// strings) and the load/save starts.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the methods
+fn save2_manager_methods_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0102);
+        for case in 0..50 {
+            t.reset();
+            let dialog = t.zeros(0x40);
+            t.g32(s2::MANAGER, dialog);
+            let dbg = t.zeros(0x40);
+            t.g32(s2::SAVE_BUFFER, dbg);
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            t.stub_import(s2b::MEMMOVE_IAT, false, 3, 0, rng.next());
+            t.stubs(&[
+                (s2b::MEMCPY, false, 3, 0, rng.next()),
+                (
+                    s2b::DEBUG_SAVE_INTERNAL,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(2) { 0 } else { rng.next() },
+                ),
+                (s2b::START_LOAD, false, 2, 0, rng.next()),
+                (s2b::START_LOAD_ALL, false, 2, 0, rng.next()),
+                (s2b::START_SAVE, false, 2, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MENU_OPEN, false, 0, 0, rng.next()),
+                (s2b::MENU_CLEAR, false, 0, 0, rng.next()),
+                (s2b::SHOW_POPUP, false, 1, 0, rng.next()),
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            let none = |name: &str| format!("{name} #{case}");
+            let this = t.zeros(0x800);
+            let save = t.zeros(0x40);
+            t.write(
+                save + 0x18,
+                &(if rng.chance(3) {
+                    0x1bu16
+                } else {
+                    rng.next() as u16
+                })
+                .to_le_bytes(),
+            );
+            t.w32(this, if rng.chance(3) { 0 } else { rng.next() });
+            t.w32(this + 0x350, save);
+            t.w32(this + 0x354, rng.next());
+            let s: Vec<u32> = (0..3)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            t.check(
+                &none("setSaveDataInfo"),
+                0x006f_2560,
+                Conv::Thiscall(this),
+                &s,
+                |m| Out::U32(s2b::set_save_data_info(m, this, s[0], s[1], s[2])),
+            );
+            t.check(
+                &none("setIconString"),
+                0x006f_2530,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::set_icon_string(m, this, s[0])),
+            );
+            t.check(
+                &none("preDebugSave"),
+                0x006f_2410,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::pre_debug_save(m, this)),
+            );
+            t.check(
+                &none("0x006f1c40"),
+                0x006f_1c40,
+                Conv::Thiscall(this),
+                &s[..1],
+                |m| Out::U32(s2b::check_debug_save(m, this)),
+            );
+            t.check(
+                &none("doLoad"),
+                0x006f_1ce0,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::do_load(m, this)),
+            );
+            t.check(
+                &none("0x006f1d10"),
+                0x006f_1d10,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::load_all(m, this)),
+            );
+            t.check(
+                &none("doSave"),
+                0x006f_1d70,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(s2b::do_save(m, this)),
+            );
+            // the starts themselves, their callees stubbed again
+            t.reset();
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            t.stub_import(s2b::MEMMOVE_IAT, false, 3, 0, rng.next());
+            t.stubs(&[
+                (s2b::MEMCPY, false, 3, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MENU_OPEN, false, 0, 0, rng.next()),
+                (s2b::MENU_CLEAR, false, 0, 0, rng.next()),
+                (s2b::SHOW_POPUP, false, 1, 0, rng.next()),
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            let (size, buf) = (rng.next(), rng.next());
+            for (sym, state) in [(0x006f_01d0u32, 0xb), (0x006e_feb0, 0x15)] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Cdecl,
+                    &[size, buf],
+                    |m| Out::U32(s2b::start_load(m, state, size, buf)),
+                );
+            }
+            t.check(
+                &none("0x006f07a0"),
+                0x006f_07a0,
+                Conv::Cdecl,
+                &[size, buf],
+                |m| Out::U32(s2b::start_save(m, size, buf)),
+            );
+            // 0x006f2630: a table of up to 8 entries with small ids
+            let n = rng.below(8);
+            let mut table = Vec::new();
+            for _ in 0..n * 8 {
+                table.push(rng.next());
+            }
+            for k in 0..n as usize {
+                let id = rng.below(12);
+                table[k * 8 + 1] = (table[k * 8 + 1] & 0xffff) | (id << 16);
+            }
+            table.extend(std::iter::repeat_n(0, 0x80));
+            let table = t.words(&table);
+            let mgr = t.alloc(&(0..0x500).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let flags: Vec<u8> = (0..200)
+                .map(|i| u8::from((i < 12 || i == 199) && rng.chance(3)) * (1 + rng.below(3) as u8))
+                .collect();
+            t.write(mgr + 0x3bc, &flags);
+            t.w32(mgr + 0x368, table);
+            t.w32(mgr + 0x3a0, if rng.chance(8) { 0xffff_ffff } else { n });
+            t.check(
+                &none("0x006f2630"),
+                0x006f_2630,
+                Conv::Thiscall(mgr),
+                &[],
+                |m| {
+                    s2b::rebuild_table(m, mgr);
+                    Out::None
+                },
+            );
+            // the string moves
+            let long = rng.chance(2);
+            let src = t.words(&[
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                [0, 1, 0xf, rng.next(), 0xffff_ffff][rng.below(5) as usize],
+                if long {
+                    0x10 + rng.below(0x100)
+                } else {
+                    rng.below(0x10)
+                },
+                rng.next(),
+            ]);
+            let dst = t.zeros(0x20);
+            for sym in [0x0064_94d0u32, 0x0064_9540] {
+                let x = rng.next();
+                t.check(
+                    &none(&format!("{sym:#x} long {long}")),
+                    sym,
+                    Conv::Thiscall(dst),
+                    &[src, x],
+                    |m| Out::U32(s2b::string_move(m, dst, src)),
+                );
+            }
+            // SaveDataLocRemoveNumTag
+            // a one-character tag now and then (its NUL matches the end)
+            let second = if rng.chance(4) {
+                0
+            } else {
+                b'0' + rng.below(2) as u8
+            };
+            let tag = t.alloc(&[b'#', second, 0]);
+            t.g32(s2::NUM_TAG, tag);
+            let text: Vec<u8> = (0..rng.below(20))
+                .map(|_| b"#01a"[rng.below(4) as usize])
+                .chain([0])
+                .collect();
+            let text = t.alloc(&text);
+            let out = t.alloc(&(0..0x20).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>());
+            t.check(
+                &none("LocRemoveNumTag"),
+                0x0064_8150,
+                Conv::Cdecl,
+                &[text, out],
+                |m| Out::U32(s2b::loc_remove_num_tag(m, text, out)),
+            );
+        }
+    });
+}
+
+/// The framed ones: `SaveDataManager_debugSave_Internal_6f0650` (the file
+/// opens or not), `SetUpDefaultSaveFolder` (already set; the folder
+/// lookup failing; each directory there, made, or failing) and
+/// `SaveDataManager_initSaveDataSys`: the imports stubbed.
+#[test]
+fn save2_framed_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0103);
+        for case in 0..40 {
+            t.reset();
+            let dialog = t.alloc(&(0..0x40).map(|_| rng.next() as u8 | 1).collect::<Vec<_>>());
+            t.g32(s2::MANAGER, dialog);
+            t.stubs(&[
+                (s2b::WRITE_CRC, false, 1, 0, rng.next()),
+                (s2b::SET_UP_FOLDER, false, 0, 0, rng.next()),
+                (s2b::MEMSET, false, 3, 0, rng.next()),
+                (s2b::STREAM_PREFIX, false, 0, 0, rng.next()),
+                (s2b::NEW_ARRAY, false, 1, 0, rng.next()),
+            ]);
+            t.stub_import(s2b::GET_TICK_COUNT_IAT, false, 0, 0, rng.next());
+            t.stub_import(s2b::WSPRINTFW_IAT, false, 5, 0, rng.next());
+            let f = if rng.chance(3) { 0 } else { rng.next() };
+            t.stub_import(s2b::WFOPEN_IAT, false, 2, 0, f);
+            t.stub_import(s2b::FWRITE_IAT, false, 4, 0, rng.next());
+            t.stub_import(s2b::FCLOSE_IAT, false, 1, 0, rng.next());
+            t.stub_import(s2b::STRNCPY_IAT, false, 3, 0, rng.next());
+            let fmt = t.rebase(s2::PREFIX_FORMAT);
+            let r = rng.next();
+            stub_import_varargs(t, s2b::SPRINTF_IAT, 1, fmt, 3, 5, r);
+            let (size, buf) = (rng.next(), rng.next());
+            t.skip = 4;
+            let what = format!("debugSave_Internal #{case} f {f:#x}");
+            t.check_framed(
+                &what,
+                0x006f_0510,
+                Conv::Cdecl,
+                &[size, buf],
+                s2b::DEBUG_SAVE_FRAME,
+                |m, ebp| Out::U32(s2b::debug_save_internal(m, ebp, size, buf)),
+            );
+            let this = t.zeros(0x400);
+            let what = format!("initSaveDataSys #{case}");
+            t.check_framed(
+                &what,
+                0x006f_1fa0,
+                Conv::Thiscall(this),
+                &[buf, size],
+                s2b::INIT_FRAME,
+                |m, ebp| Out::U32(s2b::init_save_data_sys(m, ebp, this, buf, size)),
+            );
+            // SetUpDefaultSaveFolder (the real one: the stub above is gone)
+            t.reset();
+            t.g32(s2::FOLDER_SET, u32::from(rng.chance(6)));
+            let hr = if rng.chance(5) {
+                0x8000_4005
+            } else {
+                rng.below(2)
+            };
+            t.stub_import(s2b::SH_GET_FOLDER_PATH_IAT, false, 5, 5, hr);
+            let fmt = t.rebase(s2::DIR_FORMAT);
+            let r = rng.next();
+            stub_import_varargs(t, s2b::WSPRINTFW_IAT, 1, fmt, 3, 4, r);
+            let attrs: Vec<u32> = (0..3)
+                .map(|_| [0xffff_ffff, 0x10, 0x30, 0x20, rng.next()][rng.below(5) as usize])
+                .collect();
+            let made: Vec<u32> = (0..3).map(|_| u32::from(!rng.chance(5))).collect();
+            t.stub_import_seq(s2b::GET_FILE_ATTRIBUTES_IAT, 1, 1, &attrs);
+            t.stub_import_seq(s2b::CREATE_DIRECTORY_IAT, 2, 2, &made);
+            // _chkstk leaves its own words at ebp - 8 (the cookie at ebp - 4)
+            t.skip = 8;
+            let what = format!("SetUpDefaultSaveFolder #{case} hr {hr:#x} {attrs:x?} {made:?}");
+            t.check_framed(
+                &what,
+                0x006f_0330,
+                Conv::Cdecl,
+                &[],
+                s2b::FOLDER_FRAME,
+                |m, ebp| {
+                    s2b::set_up_default_save_folder(m, ebp);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// The water-wave shader setters: the parameter lookups found or not (a
+/// sequence per call), the values by the caller's slots (logged as
+/// pointers); `setScrollSpeed` also leaves three lookups in its argument
+/// slots, compared after the call.
+#[test]
+fn save2_water_wave_setters_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0104);
+        for case in 0..60 {
+            t.reset();
+            let seq: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(5) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, s2b::FIND_PARAM, true, 1, 1, &seq);
+            t.stub(s2b::SET_VALUE, true, 2, 2, rng.next());
+            let c = t.words(&[rng.next(), rng.next()]);
+            let none = |name: &str| format!("{name} #{case}");
+            let v = rng.next();
+            let slots = t.frame_ebp(2) + 8;
+            for (sym, name) in [
+                (0x006f_5760u32, s2::BUOYANCY_FIX),
+                (0x006f_57e0, s2::DRAUGHT_OFFSET),
+                (0x006f_5810, s2::FOAM_STRENGTH),
+                (0x006f_5840, s2::MULTI_TEX_BLEND),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Stdcall,
+                    &[c, v],
+                    |m| {
+                        s2b::set_one(m, name, c, slots);
+                        Out::None
+                    },
+                );
+            }
+            let ab: Vec<u32> = (0..2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            for (sym, names) in [
+                (0x006f_5790u32, s2::CIRCLE_WAVE),
+                (0x006f_59a0, s2::SINE_WAVE),
+            ] {
+                t.check(
+                    &none(&format!("{sym:#x}")),
+                    sym,
+                    Conv::Stdcall,
+                    &[c, ab[0], ab[1]],
+                    |m| {
+                        s2b::set_two(m, names, c, ab[0], ab[1]);
+                        Out::None
+                    },
+                );
+            }
+            t.reset();
+            let seq: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(8) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, s2b::FIND_PARAM, true, 1, 1, &seq);
+            t.stub(s2b::SET_VALUE, true, 2, 2, rng.next());
+            let args: Vec<u32> = std::iter::once(c)
+                .chain((0..4).map(|_| rng.next()))
+                .collect();
+            let slots = t.frame_ebp(5) + 8;
+            // the caller's slots as the call leaves them before the body runs
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            t.b.set_call_top(Some(slots - 0x200));
+            t.check(
+                &none("setScrollSpeed"),
+                0x006f_5870,
+                Conv::Stdcall,
+                &args,
+                |m| {
+                    s2b::set_scroll_speed(m, c, slots);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+            let mut x = [0; 20];
+            let mut y = [0; 20];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "setScrollSpeed #{case}: the argument slots");
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_fixup) ----
+
+/// `v` as LEB128, now and then padded with empty continuation bytes (the
+/// decoder's shift past 31 bits included).
+fn leb_bytes(rng: &mut Rng, v: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut x = v;
+    loop {
+        let b = (x & 0x7f) as u8;
+        x >>= 7;
+        if x == 0 {
+            if rng.chance(6) {
+                out.push(b | 0x80);
+                let pad = rng.below(5) as usize;
+                out.extend(std::iter::repeat_n(0x80, pad));
+                out.push(0);
+            } else {
+                out.push(b);
+            }
+            return out;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// The record runs on synthetic streams, both record sizes: bitmasks of
+/// 0..40 bits, except/listed counts with byte indices (`N < 0x100`) and
+/// LEB128 ones (`N` 0x100..0x120, a null cursor now and then: count 0),
+/// indices out of order and out of range, arithmetic progressions; the
+/// callback a recording stub.
+#[test]
+#[allow(clippy::too_many_lines)] // eight runs, one case setup
+fn fixup_runs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0201);
+        for case in 0..40 {
+            for (size, syms) in [
+                (
+                    16u32,
+                    [0x0060_cac0u32, 0x0060_cc20, 0x0060_ce70, 0x0060_d000],
+                ),
+                (28, [0x0060_cb70, 0x0060_cd50, 0x0060_cf40, 0x0060_d080]),
+            ] {
+                for (which, sym) in syms.into_iter().enumerate() {
+                    t.reset();
+                    let big = which != 0 && rng.chance(3);
+                    let n = if big {
+                        0x100 + rng.below(0x20) * u32::from(rng.chance(2))
+                    } else if rng.chance(8) {
+                        0xff
+                    } else {
+                        rng.below(40)
+                    };
+                    let desc = t.words(&[rng.next(), n]);
+                    let r = rng.next();
+                    let cb = t.stub_code(0x7700, false, 4, 0, r);
+                    let tmpl: Vec<u32> = (0..7).map(|_| rng.next()).collect();
+                    let tmpl = t.words(&tmpl);
+                    let mut stream = Vec::new();
+                    match which {
+                        0 => stream.extend((0..n / 8 + 2).map(|_| rng.next() as u8)),
+                        1 | 2 => {
+                            let count = rng.below(6);
+                            stream.extend(leb_bytes(&mut rng, count));
+                            // ascending, one pair out of order now and then
+                            // (the except run's records stay under 2N)
+                            let mut idx: Vec<u32> = (0..count).map(|_| rng.below(n + 3)).collect();
+                            idx.sort_unstable();
+                            if count > 1 && rng.chance(3) {
+                                idx.swap(0, 1);
+                            }
+                            for i in idx {
+                                if big {
+                                    stream.extend(leb_bytes(&mut rng, i));
+                                } else {
+                                    stream.push(i as u8);
+                                }
+                            }
+                        }
+                        _ => {
+                            let start = rng.below(n + 5);
+                            let step = [0, 1, 2, 0xffff_ffff, rng.next()][rng.below(5) as usize];
+                            let count = rng.below(6);
+                            for v in [start, step, count] {
+                                stream.extend(leb_bytes(&mut rng, v));
+                            }
+                        }
+                    }
+                    stream.extend([0; 8]);
+                    let stream = t.alloc(&stream);
+                    let null = which != 0 && big && rng.chance(4);
+                    let cursor = t.words(&[if null { 0 } else { stream }]);
+                    let max = if which == 1 { 2 * n + 16 } else { n.max(8) };
+                    let buf = t.zeros((max * size) as usize);
+                    let out = t.words(&[buf]);
+                    let run = fx::Run {
+                        desc,
+                        cb,
+                        tmpl,
+                        cursor,
+                        out,
+                        size,
+                    };
+                    let what = format!("{sym:#x} #{case} n {n:#x} null {null}");
+                    t.check(
+                        &what,
+                        sym,
+                        Conv::Thiscall(desc),
+                        &[cb, tmpl, cursor, out],
+                        |m| match which {
+                            0 => {
+                                fx::run_bitmask(m, run);
+                                Out::None
+                            }
+                            1 => Out::U32(fx::run_except(m, run)),
+                            2 => Out::U32(fx::run_listed(m, run)),
+                            _ => Out::U32(fx::run_arithmetic(m, run)),
+                        },
+                    );
+                }
+            }
+        }
+    });
+}
+
+/// A run stub over `sym` (thiscall, 4 words, `ret 0x10`): moves the
+/// output cursor (`*arg 3`) on by `advance` bytes, logs, returns `ret`.
+fn stub_run(t: &mut Twins, sym: u32, advance: u32, ret: u32) {
+    let log = t.stub_code(sym, true, 4, 4, ret);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x10]; // mov eax, [esp+0x10]
+    c.extend([0x81, 0x00]);
+    c.extend(advance.to_le_bytes()); // add dword [eax], advance
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log.wrapping_sub(here).to_le_bytes()); // jmp log
+    let at = t.cave_code(&c);
+    t.jump(sym, at);
+}
+
+/// A synthetic fixup stream for `Fixup_UnpackList` (`array` false) or
+/// `Fixup_UnpackArrayList`: `lists` lists for `count` objects with the
+/// runs stubbed to make one record each ([`stub_run`]); returns the
+/// stream and the number of records it makes.
+#[allow(clippy::too_many_lines)] // every list kind's stream
+fn fixup_stream(rng: &mut Rng, array: bool, count: u32, lists: u32, k: u32) -> (Vec<u8>, u32) {
+    let mut s = Vec::new();
+    let mut made = 0;
+    for _ in 0..lists {
+        // a nested list only with objects to fill
+        let kind = loop {
+            let k = rng.below(8);
+            if k != 1 || count > 0 {
+                break k;
+            }
+        };
+        let extra = [0u8, 0x08, 0x10, 0x20, 0x40, 0x78, 0x58, 0x80, 0xf8][rng.below(9) as usize];
+        // bits 0-2 are the kind (the flags drop bits 1 and 2)
+        let b = kind as u8 | extra;
+        s.push(b);
+        let flags = u32::from(b & !6) | 1 | if count == 1 { 2 } else { 0 };
+        let v = rng.next() >> rng.below(32);
+        s.extend(leb_bytes(rng, v));
+        let leb = |rng: &mut Rng, s: &mut Vec<u8>| {
+            let v = rng.below(300);
+            s.extend(leb_bytes(rng, v));
+        };
+        if !array && flags & 0x20 != 0 {
+            leb(rng, &mut s);
+        }
+        match kind {
+            0 | 4 | 6 => made += 1,
+            2 | 3 => {
+                // the array form reads `+8` (unless flag 8) and `+0xc` of
+                // each record the run made
+                if array {
+                    for _ in 0..k {
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                        leb(rng, &mut s);
+                    }
+                }
+                made += k;
+            }
+            5 => {
+                let c = rng.below(4);
+                s.extend(leb_bytes(rng, c));
+                for _ in 0..c {
+                    let reads = if array {
+                        u32::from(flags & 1 == 0)
+                            + u32::from(flags & 2 == 0)
+                            + u32::from(flags & 8 == 0)
+                            + 1
+                    } else {
+                        u32::from(flags & 1 == 0) + u32::from(flags & 2 == 0)
+                    };
+                    for _ in 0..reads {
+                        leb(rng, &mut s);
+                    }
+                }
+                made += c;
+            }
+            1 => {
+                // `count` sub-lists that make a record each, a reported one
+                // between them now and then
+                let mut left = count;
+                while left > 0 {
+                    let bad = rng.chance(6);
+                    // listed and except sub-lists make `k` records, the
+                    // others one: never past `count`
+                    let kind2 = if bad {
+                        [0u8, 1, 5, 7, 0x20][rng.below(5) as usize]
+                    } else if left >= k {
+                        [2u8, 3, 4, 6][rng.below(4) as usize]
+                    } else {
+                        [4u8, 6][rng.below(2) as usize]
+                    };
+                    s.push(kind2);
+                    if array {
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                        leb(rng, &mut s);
+                    } else {
+                        let mut more = true;
+                        if flags & 0x10 == 0 {
+                            let x = if rng.chance(2) { 0 } else { 1 + rng.below(9) };
+                            s.extend(leb_bytes(rng, x));
+                            more = x == 0;
+                        }
+                        if more {
+                            leb(rng, &mut s);
+                            if flags & 0x20 == 0 {
+                                leb(rng, &mut s);
+                            }
+                            if flags & 0x40 == 0 {
+                                leb(rng, &mut s);
+                            }
+                        }
+                        if flags & 8 == 0 {
+                            leb(rng, &mut s);
+                        }
+                    }
+                    if !bad {
+                        left -= if kind2 == 2 || kind2 == 3 { k } else { 1 };
+                    }
+                }
+                made += count;
+            }
+            _ => {}
+        }
+    }
+    s.extend([0; 16]);
+    (s, made)
+}
+
+/// `Fixup_UnpackList` and `Fixup_UnpackArrayList` over synthetic streams
+/// of every list kind and nested kind (the runs stubbed to make one
+/// record each, `Fixup_ReadRecord`, `Fixup_ReadLeb128` the original),
+/// one object or several; framed (the templates and the descriptor the
+/// runs log, compared after the call) with the output cursor in the
+/// caller's `records` slot (compared too). Not reached: the inline
+/// value read's null check (the cursor was just read through) and, in the
+/// array form, a null cursor before a nested list's `+0xc`.
+#[test]
+#[allow(clippy::too_many_lines)] // two unpackers, one stream generator
+fn fixup_unpack_lists_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0202);
+        for case in 0..80 {
+            for array in [false, true] {
+                t.reset();
+                let size = if array { 16 } else { 28 };
+                let count = [0, 1, 2, 3, rng.below(6)][rng.below(5) as usize];
+                let lists = 1 + rng.below(5);
+                let k = 1 + rng.below(2);
+                let (stream, made) = fixup_stream(&mut rng, array, count, lists, k);
+                let stream = t.alloc(&stream);
+                let cursor = t.words(&[stream]);
+                let records = t.zeros(((made + 2) * size) as usize);
+                let stubs: [(u32, u32); 5] = if array {
+                    [
+                        (fx::RUN_ALL16, 0),
+                        (fx::RUN_LISTED16, k),
+                        (fx::RUN_EXCEPT16, count.wrapping_sub(k)),
+                        (fx::RUN_BITMASK16, 0),
+                        (fx::RUN_ARITHMETIC16, 0),
+                    ]
+                } else {
+                    [
+                        (fx::RUN_ALL, 0),
+                        (fx::RUN_LISTED, k),
+                        (fx::RUN_EXCEPT, count.wrapping_sub(k)),
+                        (fx::RUN_BITMASK, 0),
+                        (fx::RUN_ARITHMETIC, 0),
+                    ]
+                };
+                for (j, (sym, ret)) in stubs.into_iter().enumerate() {
+                    // listed and except make `k` records and answer how many
+                    // follow; the others make one
+                    let (made, r) = if j == 1 || j == 2 {
+                        (k, ret)
+                    } else {
+                        (1, rng.next())
+                    };
+                    stub_run(t, sym, made * size, r);
+                }
+                t.stub(fx::READ_RECORD, true, 2, 2, rng.next());
+                t.stub(fx::PRINTF, false, 3, 0, rng.next());
+                let n = made;
+                let args = [cursor, records, n, count];
+                let slots = t.frame_ebp(4) + 8;
+                // the caller's records slot, which the runs advance
+                Mem::write(&mut t.b, slots + 4, records);
+                let (sym, low) = if array {
+                    (0x0060_a340u32, fx::ARRAY_FRAME)
+                } else {
+                    (0x0060_a750, fx::LIST_FRAME)
+                };
+                t.skip = 0x1c;
+                let what = format!("{sym:#x} #{case} count {count} lists {lists} made {made}");
+                t.check_framed(&what, sym, Conv::Cdecl, &args, low, |m, ebp| {
+                    if array {
+                        fx::unpack_array_list(m, ebp, cursor, records, slots + 4, n, count);
+                    } else {
+                        fx::unpack_list(m, ebp, cursor, records, slots + 4, n, count);
+                    }
+                    Out::None
+                });
+                t.skip = 0;
+                let x: u32 = Mem::read(&t.a, slots + 4);
+                let y: u32 = Mem::read(&t.b, slots + 4);
+                assert_eq!(x, y, "{what}: the records slot");
+            }
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_files) ----
+
+/// Code that copies `len` bytes from `src` to the pointer in stack word
+/// `arg` (as the caller pushed it), then jumps to `next` (a stub from
+/// [`Twins::stub_code_writes`] or [`Twins::stub_code`]). Returns its
+/// address.
+fn write_then(t: &mut Twins, arg: u32, src: u32, len: u32, next: u32) -> u32 {
+    let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+    c.extend([0x8b, 0x7c, 0x24, (0x10 + 4 * arg) as u8]); // mov edi, [esp+0x10+4arg]
+    c.push(0xb9);
+    c.extend(len.to_le_bytes()); // mov ecx, len
+    c.push(0xbe);
+    c.extend(src.to_le_bytes()); // mov esi, src
+    c.extend([0xf3, 0xa4]); // rep movsb
+    c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(next.wrapping_sub(here).to_le_bytes()); // jmp next
+    t.cave_code(&c)
+}
+
+/// The member caches `0x0057a200` and `Fixup_FindMember`: hits, misses
+/// (the lookup found or not, moving the cursor and writing the element),
+/// indices inside and outside the class's member table.
+#[test]
+fn files_member_caches_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0301);
+        for case in 0..80 {
+            t.reset();
+            let small = |rng: &mut Rng| rng.below(3);
+            let class = t.words(&[0, 0, 0, 0, rng.below(6)]);
+            let members = if rng.chance(5) { 0 } else { rng.next() & !0x1f };
+            let view = t.words(&[class, 0, 0, 0, 0, 0, members]);
+            let cache: Vec<u32> = (0..9)
+                .map(|k| match k {
+                    0 => view,
+                    1..=3 => small(&mut rng),
+                    _ => rng.next(),
+                })
+                .collect();
+            let cache = t.words(&cache);
+            let cursor = t.words(&[rng.next()]);
+            let moved = t.words(&[rng.next()]);
+            let element = t.words(&[rng.next()]);
+            let elem = t.words(&[rng.next()]);
+            let found = if rng.chance(3) { 0 } else { rng.next() };
+            // the lookups move the cursor (arg 1) and the second writes the
+            // element (arg 3)
+            let next = t.stub_code(fl::FIND_MEMBER, true, 4, 4, found);
+            let at = write_then(t, 1, moved, 4, next);
+            t.jump(fl::FIND_MEMBER, at);
+            let found2 = if rng.chance(3) { 0 } else { rng.next() };
+            let next = t.stub_code(fl::FIND_MEMBER_BY_OFFSET, true, 4, 4, found2);
+            let next = write_then(t, 3, elem, 4, next);
+            let at = write_then(t, 1, moved, 4, next);
+            t.jump(fl::FIND_MEMBER_BY_OFFSET, at);
+            let (a, b, c) = (small(&mut rng), small(&mut rng), small(&mut rng));
+            let what = format!("0x0057a200 #{case} {a} {b} {c}");
+            t.check(
+                &what,
+                0x0057_a200,
+                Conv::Thiscall(cache),
+                &[cursor, a, b, c],
+                |m| Out::U32(fl::cached_find_member(m, cache, cursor, a, b, c)),
+            );
+            let index = [rng.below(8), 0xffff_ffff, rng.next()][rng.below(3) as usize];
+            let what = format!("Fixup_FindMember #{case} index {index:#x} {a} {b}");
+            t.check(
+                &what,
+                0x0057_a280,
+                Conv::Thiscall(cache),
+                &[index, cursor, a, element, b],
+                |m| {
+                    Out::U32(fl::fixup_find_member(
+                        m, cache, index, cursor, a, element, b,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+/// The sort predicates `0x0060ac50` and `0x0060ad00` on records of small
+/// words (ties down to the last field) and top bits set or not; the tree
+/// set destructors `0x0060d460`, `0x0060d550`, `0x0060d5d0` (array owned
+/// or not, set or not), `VFile_VFile` (the record allocation failing or
+/// not) and `0x0061b030` (each record and block there or not).
+#[test]
+fn files_small_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0302);
+        for case in 0..300 {
+            t.reset();
+            let word = |rng: &mut Rng| rng.below(2) | (rng.below(2) << 31);
+            let a: Vec<u32> = (0..7).map(|_| word(&mut rng)).collect();
+            // b a copy of a with two fields changed (late ties), or
+            // anything
+            let mut b = a.clone();
+            for _ in 0..2 {
+                let k = rng.below(7) as usize;
+                b[k] = word(&mut rng);
+            }
+            if rng.chance(3) {
+                b = (0..7).map(|_| word(&mut rng)).collect();
+            }
+            let (a, b) = (t.words(&a), t.words(&b));
+            for (sym, fields) in [
+                (0x0060_ac50u32, &fl::LESS_60AC50[..]),
+                (0x0060_ad00, &fl::LESS_60AD00[..]),
+            ] {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Cdecl, &[a, b], |m| {
+                    Out::U32(fl::record_less(m, fields, a, b))
+                });
+            }
+            t.stubs(&[
+                (fl::TREE_CLEAR, true, 0, 0, rng.next()),
+                (fl::TREE_ORPHAN_ALL, true, 0, 0, rng.next()),
+                (fl::FREE_LIST_RESET, true, 0, 0, rng.next()),
+                (fl::FREE_LIST_DTOR, true, 0, 0, rng.next()),
+                (fl::PHYRE_FREE, false, 1, 0, rng.next()),
+                (fl::DELETE_ARRAY, false, 1, 0, rng.next()),
+                (fl::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let mut w: Vec<u32> = (0..0x20).map(|_| rng.next()).collect();
+            w[3] = match rng.below(3) {
+                0 => rng.below(0x100),
+                1 => 0x4000_0000 | rng.below(0x100),
+                _ => 0x8000_0000 | rng.next(),
+            };
+            w[4] = if rng.chance(4) { 0 } else { rng.next() };
+            let this = t.words(&w);
+            for (k, sym) in [0x0060_d460u32, 0x0060_d550, 0x0060_d5d0]
+                .into_iter()
+                .enumerate()
+            {
+                let what = format!("{sym:#x} #{case}");
+                t.check(&what, sym, Conv::Thiscall(this), &[], |m| {
+                    match k {
+                        0 => fl::tree_dtor(m, this),
+                        1 => fl::pooled_tree_dtor(m, this),
+                        _ => fl::owned_array_dtor(m, this),
+                    }
+                    Out::None
+                });
+            }
+            let rec = if rng.chance(4) {
+                0
+            } else {
+                t.words(&(0..6).map(|_| rng.next() | 1).collect::<Vec<_>>())
+            };
+            let block = rng.next();
+            t.stub(fl::OPERATOR_NEW, false, 1, 0, rec);
+            t.stub(fl::NEW_ARRAY, false, 1, 0, block);
+            let vfile = t.words(&(0..8).map(|_| rng.next()).collect::<Vec<_>>());
+            let what = format!("VFile_VFile #{case}");
+            t.check(&what, 0x0061_a860, Conv::Thiscall(vfile), &[], |m| {
+                Out::U32(fl::vfile_ctor(m, vfile))
+            });
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let r = if rng.chance(4) {
+                    0
+                } else {
+                    let blk = if rng.chance(3) { 0 } else { rng.next() };
+                    t.words(&[rng.next(), blk])
+                };
+                recs.push(r);
+            }
+            let v = t.words(&[0, 0, recs[0], recs[1], recs[2]]);
+            let what = format!("0x0061b030 #{case}");
+            t.check(&what, 0x0061_b030, Conv::Thiscall(v), &[], |m| {
+                fl::vfile_free_buffers(m, v);
+                Out::None
+            });
+        }
+    });
+}
+
+/// `0x0061a690` (the world-matrix controller's constructor, the real
+/// `PMatrix4_toWorldMatrix3x4` on the identity in its frame) and the
+/// controller's `0x0061a770` (the real `PMatrix4_FromMatrix3x4` into its
+/// frame, then the normalised axis): random finite 3x4 matrices, zero
+/// axes (an infinite inverse, NaN products) now and then.
+#[test]
+fn files_world_matrix_controller_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0303);
+        for case in 0..60 {
+            t.reset();
+            let this = t.alloc(&(0..0x80).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let what = format!("0x0061a690 #{case}");
+            t.check_framed(
+                &what,
+                0x0061_a690,
+                Conv::Thiscall(this),
+                &[],
+                fl::MATRIX_FRAME,
+                |m, ebp| Out::U32(fl::controller_ctor(m, ebp, this)),
+            );
+            let zero = rng.chance(6);
+            for k in 0..12u32 {
+                let v = if zero && (8..11).contains(&k) {
+                    0.0f32
+                } else {
+                    f32::from(rng.next() as i16) / 16.0
+                };
+                t.write(this + 4 + 4 * k, &v.to_le_bytes());
+            }
+            let out = t.zeros(12);
+            // the original's float temporary at ebp - 4 has no counterpart
+            t.skip = 4;
+            let what = format!("0x0061a770 #{case} zero {zero}");
+            t.check_framed(
+                &what,
+                0x0061_a770,
+                Conv::Thiscall(this),
+                &[out],
+                fl::AXIS_FRAME,
+                |m, ebp| Out::U32(fl::controller_axis(m, ebp, this, out)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `0x0061b270` (no module, a module without the block, the second
+/// module's string), `0x0061b740` (offsets 0, inside and past the first
+/// block, 64-bit ones; totals around the block size) and
+/// `FileSys_NewReadRequest` (offsets of 0..4 blocks, packed sizes of 0
+/// and others, 64-bit stored offsets), the callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // three functions, one case setup
+fn files_read_requests_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0304);
+        for case in 0..80 {
+            t.reset();
+            let mods: Vec<u32> = (0..4)
+                .map(|k| if k >= rng.below(4) { 0 } else { rng.next() | 1 })
+                .collect();
+            stub_seq(t, fl::RESOURCE_MODULE, true, 1, 1, &mods);
+            let infos: Vec<u32> = (0..4)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            t.stub_import_seq(fl::FIND_RESOURCE_IAT, 3, 3, &infos);
+            let strs: Vec<u32> = (0..4)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, fl::STRING_RESOURCE, false, 3, 0, &strs);
+            let id = [rng.next() & 0xf_ffff, 0xffff0 | rng.below(0x10), rng.next()]
+                [rng.below(3) as usize];
+            let what = format!("0x0061b270 #{case}");
+            t.check(&what, 0x0061_b270, Conv::Cdecl, &[id], |m| {
+                Out::U32(fl::find_string_resource(m, id))
+            });
+            // 0x0061b740
+            t.reset();
+            let recs: Vec<u32> = (0..3).map(|_| t.zeros(0x10)).collect();
+            let mut slot: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            slot[2] = recs[0];
+            slot[3] = recs[1];
+            slot[4] = recs[2];
+            slot[9] = rng.below(5);
+            let slot = t.words(&slot);
+            t.stub(fl::CLAIM_SLOT, true, 1, 1, slot);
+            let size = [0x10000, 0x10, 1, 0x7fff_ffff, 0xffff_ff00][rng.below(5) as usize];
+            let lo = [0, 1, size / 2, size, size + 1, rng.next()][rng.below(6) as usize];
+            let hi = [0, 0, 0, 1, 0xffff_ffff][rng.below(5) as usize];
+            let total = [
+                0,
+                1,
+                size - 1,
+                size,
+                size + 1,
+                size.wrapping_mul(3).wrapping_add(5),
+                rng.next(),
+            ][rng.below(7) as usize];
+            let stream = rng.next();
+            let what =
+                format!("0x0061b740 #{case} lo {lo:#x} hi {hi:#x} size {size:#x} total {total:#x}");
+            t.check(
+                &what,
+                0x0061_b740,
+                Conv::Thiscall(stream),
+                &[lo, hi, size, total],
+                |m| Out::U32(fl::set_up_slot(m, stream, lo, hi, size, total)),
+            );
+            // FileSys_NewReadRequest
+            t.reset();
+            let slot = t.zeros(0x60);
+            t.stub(fl::SET_UP_SLOT, true, 4, 4, slot);
+            let sizes: Vec<u8> = (0..0x20)
+                .flat_map(|_| {
+                    let n = if rng.chance(3) {
+                        0
+                    } else {
+                        rng.below(0x10000) as u16
+                    };
+                    n.to_le_bytes()
+                })
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            let entry = t.words(&[
+                rng.below(8),
+                0,
+                0,
+                0,
+                rng.next(),
+                [0, 1, 0xffff_ffff][rng.below(3) as usize],
+            ]);
+            let req = t.words(&[0, rng.next(), 0, entry, 0, 0, rng.next()]);
+            let lo =
+                rng.below(5) * 0x10000 + [0, 1, 0xffff, rng.below(0x10000)][rng.below(4) as usize];
+            let hi = 0;
+            let (file, length) = (rng.next(), rng.next());
+            let what = format!("FileSys_NewReadRequest #{case} lo {lo:#x}");
+            t.check(
+                &what,
+                0x0061_b7e0,
+                Conv::Thiscall(stream),
+                &[file, length, req, lo, hi, info],
+                |m| {
+                    Out::U32(fl::new_read_request(
+                        m, stream, file, length, req, lo, hi, info,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+/// `0x00573b70` (the Lua vector negation): not userdata, the wrong type,
+/// a vector (signs, zeros, infinities, quiet NaNs), the Lua API stubbed.
+#[test]
+fn files_lua_vector_negate_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0305);
+        for case in 0..60 {
+            t.reset();
+            let comps: Vec<u32> = (0..4)
+                .map(|_| match rng.below(6) {
+                    0 => 0,
+                    1 => 0x8000_0000,
+                    2 => 0x7f80_0000,
+                    3 => 0xffc0_0001,
+                    _ => rng.next() & 0xbfff_ffff,
+                })
+                .collect();
+            let v = t.words(&comps);
+            let ud = t.zeros(0x10);
+            t.stubs(&[
+                (
+                    fl::LUA_TOUSERDATA,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(5) { 0 } else { v },
+                ),
+                (fl::LUA_IS_USERDATA, false, 2, 0, u32::from(!rng.chance(5))),
+                (fl::LUA_GETFIELD, false, 3, 0, rng.next()),
+                (fl::LUA_COMPARE, false, 3, 0, u32::from(!rng.chance(4))),
+                (fl::LUA_SETTOP, false, 2, 0, rng.next()),
+                (fl::LUA_NEWUSERDATA, false, 2, 0, ud),
+                (fl::LUA_SETMETATABLE, false, 2, 0, rng.next()),
+            ]);
+            let lua = rng.next();
+            let what = format!("0x00573b70 #{case}");
+            t.check(&what, 0x0057_3b70, Conv::Cdecl, &[lua], |m| {
+                Out::U32(fl::lua_vector_negate(m, lua))
+            });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_vfs) ----
+
+/// `FileSys_Exists` and `BigFileStream_openFile` (framed: the hash size,
+/// handle and digest the `CryptoAPI` stubs fill): no stream, archives set
+/// or not, the name found in none, the first or a later one;
+/// `BigFileStream_readVFile` (no request, done or not, the slot's last
+/// use or not) and `0x0061d9c0` (a free inline file, none free with the
+/// allocation and construction failing or not), the callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // four functions, one case setup
+fn vfs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0401);
+        for case in 0..60 {
+            t.reset();
+            t.g32(0x00cc_9c48, if rng.chance(6) { 0 } else { rng.next() });
+            let handle = t.words(&[rng.next()]);
+            let r = rng.next();
+            let s = t.stub_code_writes(vf::CRYPT_CREATE_HASH_IAT, false, 5, 5, r, 4, handle, 4);
+            let at = t.rebase(vf::CRYPT_CREATE_HASH_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_HASH_DATA_IAT, false, 4, 4, rng.next());
+            let md5 = t.alloc(&(0..16).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let r = rng.next();
+            let s = t.stub_code_writes(vf::CRYPT_GET_HASH_PARAM_IAT, false, 5, 5, r, 2, md5, 16);
+            let at = t.rebase(vf::CRYPT_GET_HASH_PARAM_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_DESTROY_HASH_IAT, false, 1, 1, rng.next());
+            let hits: Vec<u32> = (0..5)
+                .map(|_| {
+                    if rng.chance(3) {
+                        rng.next() | 1
+                    } else {
+                        rng.next() & !0xff
+                    }
+                })
+                .collect();
+            stub_seq(t, vf::VBF_CONTAINS, true, 1, 1, &hits);
+            let files: Vec<u32> = (0..5)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, vf::GET_NEW_VFILE, true, 1, 1, &files);
+            let mut w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            w[0xf] = rng.below(4);
+            for k in 0..5 {
+                w[4 + k] = if rng.chance(4) { 0 } else { rng.next() };
+            }
+            let this = t.words(&w);
+            let name: Vec<u8> = (0..rng.below(12) + 4)
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let name = t.alloc(&name);
+            t.skip = 4;
+            let what = format!("FileSys_Exists #{case}");
+            t.check_framed(
+                &what,
+                0x0061_be40,
+                Conv::Thiscall(this),
+                &[name],
+                vf::DIGEST_FRAME,
+                |m, ebp| Out::U8(vf::exists(m, ebp, this, name)),
+            );
+            let what = format!("BigFileStream_openFile #{case}");
+            t.check_framed(
+                &what,
+                0x0061_bf10,
+                Conv::Thiscall(this),
+                &[name],
+                vf::DIGEST_FRAME,
+                |m, ebp| Out::U32(vf::open_file(m, ebp, this, name)),
+            );
+            t.skip = 0;
+            // readVFile
+            t.reset();
+            let mut sw: Vec<u32> = (0..0x20).map(|_| rng.next()).collect();
+            sw[0x14] = if rng.chance(2) { 5 } else { rng.below(8) };
+            sw[9] = 1 + rng.below(2);
+            let slot = t.words(&sw);
+            t.stubs(&[
+                (
+                    vf::NEW_READ_REQUEST,
+                    true,
+                    6,
+                    6,
+                    if rng.chance(5) { 0 } else { slot },
+                ),
+                (vf::TASK_READ, false, 3, 3, rng.next()),
+                (vf::TASK_UNCOMPRESS, false, 4, 4, rng.next()),
+                (vf::SLOT_RESET, true, 0, 0, rng.next()),
+            ]);
+            t.stub_import(vf::ENTER_CS_IAT, false, 1, 1, rng.next());
+            t.stub_import(vf::LEAVE_CS_IAT, false, 1, 1, rng.next());
+            t.stub_import(vf::RELEASE_SEMAPHORE_IAT, false, 3, 3, rng.next());
+            let a: Vec<u32> = (0..6).map(|_| rng.next()).collect();
+            let what = format!("BigFileStream_readVFile #{case}");
+            t.check(&what, 0x0061_bfe0, Conv::Thiscall(this), &a, |m| {
+                Out::U32(vf::read_vfile(m, this, a[0], a[1], a[2], a[3], a[4], a[5]))
+            });
+            // 0x0061d9c0
+            let mut inline = vec![0u8; 15 * 0x20];
+            let used = if rng.chance(3) { 15 } else { rng.below(15) };
+            for i in 0..15 {
+                inline[i * 0x20] = if i < used as usize || rng.chance(3) {
+                    1 + rng.below(255) as u8
+                } else {
+                    0
+                };
+            }
+            let inline = t.alloc(&inline);
+            let mut hw: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            hw[0x17] = inline;
+            let handle_obj = t.words(&hw);
+            let p = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            let made = if rng.chance(4) { 0 } else { p };
+            t.stubs(&[
+                (vf::VFILE_ASSIGN, true, 1, 1, rng.next()),
+                (vf::NEW_NOTHROW, false, 2, 0, p),
+                (vf::VFILE_CTOR, true, 0, 0, made),
+                (vf::VBF_STREAM_OPEN, true, 2, 2, rng.next()),
+            ]);
+            let digest = rng.next();
+            let what = format!("0x0061d9c0 #{case} used {used}");
+            t.check(
+                &what,
+                0x0061_d9c0,
+                Conv::Thiscall(handle_obj),
+                &[digest],
+                |m| Out::U32(vf::new_vfile(m, handle_obj, digest)),
+            );
+        }
+    });
+}
+
+/// `BigFileStream_fileTaskRead` (head, body and tail records flagged or
+/// not; bodies of 1..4 blocks; packed sizes of 0 and others) and the slot
+/// constructor `0x0061add0`, the CRT and allocator stubbed.
+#[test]
+fn vfs_task_read_and_slot_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0402);
+        for case in 0..80 {
+            t.reset();
+            t.stub_import(vf::FSEEKI64_IAT, false, 4, 0, rng.next());
+            t.stub_import(vf::FREAD_IAT, false, 4, 0, rng.next());
+            let sizes: Vec<u8> = (0..0x20)
+                .flat_map(|_| {
+                    let n = if rng.chance(3) {
+                        0
+                    } else {
+                        rng.below(0x10000) as u16
+                    };
+                    n.to_le_bytes()
+                })
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let flag = u32::from(rng.chance(2));
+                recs.push(t.words(&[flag, rng.next(), rng.below(0x10000), rng.next()]));
+            }
+            let mut sw: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            sw[1] = rng.below(8);
+            sw[2] = recs[0];
+            sw[3] = recs[1];
+            sw[4] = recs[2];
+            sw[0xe] = rng.below(5) * 0x10000 + rng.below(0x10000);
+            sw[0x10] = info;
+            let slot = t.words(&sw);
+            let what = format!("fileTaskRead #{case} len {:#x}", sw[0xe]);
+            let (a, c) = (rng.next(), rng.next());
+            t.check(&what, 0x0061_b8d0, Conv::Stdcall, &[a, slot, c], |m| {
+                vf::task_read(m, slot);
+                Out::None
+            });
+            // the slot constructor
+            t.reset();
+            let rec = t.words(&[rng.next() | 1, rng.next(), 0, 0]);
+            t.stubs(&[
+                (vf::OPERATOR_NEW, false, 1, 0, rec),
+                (vf::NEW_ARRAY, false, 1, 0, rng.next()),
+                (vf::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let this = t.words(&(0..0x18).map(|_| rng.next()).collect::<Vec<_>>());
+            let what = format!("0x0061add0 #{case}");
+            t.check(&what, 0x0061_add0, Conv::Thiscall(this), &[], |m| {
+                Out::U32(vf::slot_ctor(m, this))
+            });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_input) ----
+
+/// A fake COM object: its vtable's slots are recording stdcall stubs
+/// (`this` the first stack word) `(words with this, ret)`, tagged
+/// `0x5200 + slot`. Returns the object (the vtable pointer first).
+fn com_object(t: &mut Twins, slots: &[(u32, u32)]) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &(n, ret)) in slots.iter().enumerate() {
+        vt.push(t.stub_code(0x5200 + i as u32, false, n, n, ret));
+    }
+    let vt = t.words(&vt);
+    t.words(&[vt, 0, 0, 0])
+}
+
+/// `Input_InitDirectInput` (the create and the enumeration failing or
+/// not), `Input_EnumDevicesCallback` (every device type),
+/// `Input_EnumAxesSetRange` (framed: the range the stub logs a pointer
+/// to; axes or not, `SetProperty` failing or not), `0x00623420` (lists of
+/// 0..5 nodes ending at the head or a null link), `0x00623da0` (the
+/// compare answering 0 or not), `BigFileHandle_BigFileHandle` and
+/// `BigFileStream_registerBigFile` (slots full, the allocation, the
+/// construction or the initialisation failing).
+#[test]
+#[allow(clippy::too_many_lines)] // seven functions, one case setup
+fn input_start_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0501);
+        for case in 0..60 {
+            t.reset();
+            let hr = |rng: &mut Rng| {
+                if rng.chance(3) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            let r = hr(&mut rng);
+            let di = com_object(t, &[(1, 0), (1, 0), (1, 0), (1, 0), (5, r)]);
+            let src = t.words(&[di]);
+            let r = hr(&mut rng);
+            let next = t.stub_code(ip::DIRECT_INPUT8_CREATE, false, 5, 5, r);
+            let at = write_then(t, 3, src, 4, next);
+            t.jump(ip::DIRECT_INPUT8_CREATE, at);
+            t.stub_import(ip::GET_MODULE_HANDLE_IAT, false, 1, 1, rng.next());
+            t.check(
+                &format!("Input_InitDirectInput #{case}"),
+                0x0062_4350,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::init_direct_input(m)),
+            );
+            t.stubs(&[
+                (ip::ADD_MOUSE, false, 1, 0, rng.next()),
+                (ip::ADD_KEYBOARD, false, 1, 0, rng.next()),
+                (ip::ADD_PAD, false, 1, 0, rng.next()),
+            ]);
+            let kind = [
+                0x11u8,
+                0x12,
+                0x13,
+                0x14,
+                0x15,
+                0x16,
+                0x17,
+                0x18,
+                0x19,
+                rng.next() as u8,
+            ][rng.below(10) as usize];
+            let inst = t.zeros(0x40);
+            t.write(inst + 0x24, &[kind]);
+            let ctx = rng.next();
+            t.check(
+                &format!("EnumDevicesCallback #{case} {kind:#x}"),
+                0x0062_3330,
+                Conv::Stdcall,
+                &[inst, ctx],
+                |m| Out::U32(ip::enum_devices_callback(m, inst)),
+            );
+            let r = hr(&mut rng);
+            let dev = com_object(t, &[(1, 0), (1, 0), (1, 0), (1, 0), (1, 0), (1, 0), (3, r)]);
+            let obj = t.zeros(0x40);
+            t.w32(
+                obj + 0x18,
+                [0, 1, 2, 3, 4, rng.next()][rng.below(6) as usize],
+            );
+            t.skip = 4;
+            t.check_framed(
+                &format!("EnumAxesSetRange #{case}"),
+                0x0062_33a0,
+                Conv::Stdcall,
+                &[obj, dev],
+                ip::RANGE_FRAME,
+                |m, ebp| Out::U32(ip::enum_axes_set_range(m, ebp, obj, dev)),
+            );
+            t.skip = 0;
+            // the intrusive list
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(6);
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x10)).collect();
+            let end = if rng.chance(3) { 0 } else { head };
+            let first = nodes.first().map_or(end, |&x| x + 4);
+            t.w32(head, first);
+            for (k, &node) in nodes.iter().enumerate() {
+                let link = nodes.get(k + 1).map_or(end, |&x| x + 4);
+                t.w32(node + 4, link);
+            }
+            let out = t.zeros(0x20);
+            t.check(
+                &format!("0x00623420 #{case} n {n}"),
+                0x0062_3420,
+                Conv::Cdecl,
+                &[out],
+                |m| Out::U32(ip::copy_list(m, out)),
+            );
+            t.stub_import(
+                ip::STRNCMP_IAT,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let prefix: Vec<u8> = (0..rng.below(8))
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let prefix = t.alloc(&prefix);
+            let s = rng.next();
+            t.check(
+                &format!("0x00623da0 #{case}"),
+                0x0062_3da0,
+                Conv::Cdecl,
+                &[s, prefix],
+                |m| Out::U32(ip::after_prefix(m, s, prefix)),
+            );
+            // the archive handles
+            t.reset();
+            t.stub(ip::FREE_LIST_CTOR, true, 4, 4, rng.next());
+            t.stub_import(ip::INIT_CS_IAT, false, 1, 1, rng.next());
+            let this = t.words(&(0..0x18).map(|_| rng.next()).collect::<Vec<_>>());
+            t.check(
+                &format!("BigFileHandle #{case}"),
+                0x0061_d460,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(ip::handle_ctor(m, this)),
+            );
+            t.reset();
+            let p = if rng.chance(5) { 0 } else { rng.next() };
+            let made = if rng.chance(5) { 0 } else { rng.next() };
+            let ok = rng.next() & !(0xff * u32::from(rng.chance(2)));
+            t.stubs(&[
+                (ip::OPERATOR_NEW, false, 1, 0, p),
+                (ip::HANDLE_CTOR, true, 0, 0, made),
+                (ip::HANDLE_INIT, true, 1, 1, ok),
+                (ip::HANDLE_DTOR, true, 0, 0, rng.next()),
+                (ip::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let mut w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            let free = rng.below(6);
+            for k in 0..5 {
+                w[4 + k] = if k as u32 == free { 0 } else { rng.next() | 1 };
+            }
+            let stream = t.words(&w);
+            let path = rng.next();
+            t.check(
+                &format!("registerBigFile #{case} free {free}"),
+                0x0061_c150,
+                Conv::Thiscall(stream),
+                &[path],
+                |m| Out::U8(ip::register_big_file(m, stream, path)),
+            );
+        }
+    });
+}
+
+/// `Steam_Init` (each step's answer), `0x006255d0` (no table, a match at
+/// each place, none), `Input_Shutdown` (0..4 devices, a null link, no
+/// `DirectInput`), `Settings_SetThreadUILanguage` (every language and out of
+/// range), the script key commands (null app/key/state, every key byte)
+/// and `0x00624d70` (the virtual answering 0 or not, `arg` null or not).
+#[test]
+#[allow(clippy::too_many_lines)] // seven functions, one case setup
+fn input_misc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0502);
+        for case in 0..60 {
+            t.reset();
+            let utils = t.object(
+                &[(0, 0); 10]
+                    .iter()
+                    .copied()
+                    .chain([(1, rng.next())])
+                    .collect::<Vec<_>>(),
+            );
+            let user = t.object(&[(0, 0), (0, rng.next() & !(0xff * u32::from(rng.chance(2))))]);
+            let al = |rng: &mut Rng| rng.next() & !(0xff * u32::from(rng.chance(2)));
+            let (a, b) = (al(&mut rng), al(&mut rng));
+            t.stub_import(ip::STEAM_RESTART_IAT, false, 1, 0, a);
+            t.stub_import(ip::STEAM_INIT_IAT, false, 0, 0, b);
+            t.stub_import(ip::STEAM_UTILS_IAT, false, 0, 0, utils);
+            t.stub_import(ip::STEAM_USER_IAT, false, 0, 0, user);
+            t.stub_import(ip::PRINTF_IAT, false, 1, 0, rng.next());
+            t.check(
+                &format!("Steam_Init #{case}"),
+                0x0062_3470,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::steam_init(m)),
+            );
+            let n = rng.below(5);
+            let mut tbl: Vec<u32> = (0..n).flat_map(|k| [0x100 + k, rng.next()]).collect();
+            tbl.extend([0, 0]);
+            let table = if rng.chance(6) { 0 } else { t.words(&tbl) };
+            let hits: Vec<u32> = (0..6).map(|_| u32::from(!rng.chance(3))).collect();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &hits);
+            let (name, def) = (rng.next(), rng.next());
+            t.check(
+                &format!("0x006255d0 #{case}"),
+                0x0062_55d0,
+                Conv::Cdecl,
+                &[table, name, def],
+                |m| Out::U32(ip::find_option(m, table, name, def)),
+            );
+            // the device list: circular through the head
+            t.reset();
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(5);
+            let nodes: Vec<u32> = (0..n)
+                .map(|_| {
+                    let r = rng.next();
+                    t.object(&[(1, r)])
+                })
+                .collect();
+            let null = n > 0 && rng.chance(5);
+            let link = |k: usize| if k < nodes.len() { nodes[k] + 4 } else { head };
+            for k in 0..nodes.len() {
+                t.w32(
+                    nodes[k] + 4,
+                    if null && k + 1 == nodes.len() {
+                        0
+                    } else {
+                        link(k + 1)
+                    },
+                );
+                t.w32(nodes[k] + 8, if k == 0 { head } else { link(k - 1) });
+            }
+            t.w32(head, link(0));
+            t.w32(
+                head + 4,
+                if nodes.is_empty() {
+                    head
+                } else {
+                    link(nodes.len() - 1)
+                },
+            );
+            let di = if rng.chance(3) {
+                0
+            } else {
+                let r = rng.next();
+                let v = t.stub_code(0x5300, false, 1, 1, r);
+                let vt = t.words(&[0, 0, v]);
+                t.words(&[vt])
+            };
+            t.g32(ip::DIRECT_INPUT, di);
+            if !null {
+                t.check(
+                    &format!("Input_Shutdown #{case} n {n}"),
+                    0x0062_5680,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(ip::input_shutdown(m)),
+                );
+            }
+            t.stub_import(ip::SET_THREAD_UI_LANGUAGE_IAT, false, 1, 1, rng.next());
+            let settings = t.words(&[rng.below(10)]);
+            t.g32(ip::SETTINGS, settings);
+            t.check(
+                &format!("SetThreadUILanguage #{case}"),
+                0x0062_cad0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ip::set_thread_ui_language(m)),
+            );
+            let state = if rng.chance(4) { 0 } else { t.zeros(0x120) + 4 };
+            let devices = t.zeros(0x100);
+            t.w32(devices + 0x80, state);
+            let app = t.zeros(0x300);
+            t.w32(app + 0x2b8, devices);
+            let app = if rng.chance(6) { 0 } else { app };
+            let key = if rng.chance(6) {
+                0
+            } else {
+                t.alloc(&[rng.next() as u8, 0])
+            };
+            for (sym, down) in [(0x0062_4810u32, 1u8), (0x0062_4850, 0)] {
+                t.check(
+                    &format!("{sym:#x} #{case}"),
+                    sym,
+                    Conv::Cdecl,
+                    &[app, key],
+                    |m| Out::U32(ip::set_script_key(m, app, key, down)),
+                );
+            }
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let obj = t.object(
+                &[(0, 0); 8]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            t.stub(ip::SCRIPT_624DA0, false, 2, 0, rng.next());
+            let arg = if rng.chance(3) { 0 } else { rng.next() };
+            t.check(
+                &format!("0x00624d70 #{case}"),
+                0x0062_4d70,
+                Conv::Cdecl,
+                &[obj, arg],
+                |m| Out::U32(ip::script_624d70(m, obj, arg)),
+            );
+        }
+    });
+}
+
+/// `Input_AddKeyboard` and `Input_AddMouse` (framed: the device pointer
+/// `CreateDevice` writes; each COM step failing or not, the allocations
+/// failing), the script key press (the vtable answering 0 or not) and
+/// mouse set (framed: the coordinates `sscanf_s` writes).
+#[test]
+#[allow(clippy::too_many_lines)] // four functions, one case setup
+fn input_devices_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0503);
+        for case in 0..60 {
+            for mouse in [false, true] {
+                t.reset();
+                let hr = |rng: &mut Rng| {
+                    if rng.chance(5) {
+                        0x8000_4005
+                    } else {
+                        rng.below(2)
+                    }
+                };
+                let level = [0x8000_4001, 0x8000_4005, 0, 1][rng.below(4) as usize];
+                let mut slots = vec![(1, 0); 15];
+                slots[7] = (1, rng.next());
+                slots[11] = (2, hr(&mut rng));
+                slots[13] = (3, level);
+                let dev = com_object(t, &slots);
+                let src = t.words(&[dev]);
+                let r = hr(&mut rng);
+                let next = t.stub_code(0x5400, false, 4, 4, r);
+                let create = write_then(t, 2, src, 4, next);
+                let vt = t.words(&[0, 0, 0, create]);
+                let di = t.words(&[vt]);
+                t.g32(ip::DIRECT_INPUT, di);
+                t.g32(ip::HWND, rng.next());
+                let a = if rng.chance(5) { 0 } else { t.zeros(0x20) };
+                let b = if rng.chance(5) { 0 } else { rng.next() };
+                if mouse {
+                    let seq = [a, b];
+                    stub_seq(t, ip::PHYRE_MALLOC, false, 1, 0, &seq);
+                } else {
+                    t.stub(ip::PHYRE_MALLOC, false, 1, 0, b);
+                }
+                t.stubs(&[
+                    (ip::KEYBOARD_CTOR, true, 1, 1, rng.next()),
+                    (ip::MOUSE_CTOR, true, 1, 1, rng.next()),
+                ]);
+                let inst = t.zeros(0x30);
+                if mouse && a == 0 {
+                    // the record is used unchecked: both store to 0
+                    continue;
+                }
+                let (sym, low) = if mouse {
+                    (0x0062_4020u32, ip::MOUSE_FRAME)
+                } else {
+                    (0x0062_3fa0, ip::KEYBOARD_FRAME)
+                };
+                // the SEH frame and cookie below ebp have no counterpart
+                t.skip = if mouse { 0xc } else { 0 };
+                let what = format!("{sym:#x} #{case} level {level:#x}");
+                t.check_framed(&what, sym, Conv::Cdecl, &[inst], low, |m, ebp| {
+                    if mouse {
+                        ip::add_mouse(m, ebp, inst);
+                    } else {
+                        ip::add_keyboard(m, ebp, inst);
+                    }
+                    Out::None
+                });
+                t.skip = 0;
+            }
+            t.reset();
+            let state = if rng.chance(4) { 0 } else { t.zeros(0x120) + 4 };
+            let devices = t.zeros(0x100);
+            t.w32(devices + 0x80, state);
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let app = t.object(
+                &[(0, 0); 7]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let big = t.zeros(0x300);
+            let vt: u32 = Mem::read(&t.a, app);
+            t.w32(big, vt);
+            t.w32(big + 0x2b8, devices);
+            let app2 = if rng.chance(6) { 0 } else { big };
+            let key = if rng.chance(6) {
+                0
+            } else {
+                t.alloc(&[rng.next() as u8, 0])
+            };
+            t.check(
+                &format!("0x00624890 #{case}"),
+                0x0062_4890,
+                Conv::Cdecl,
+                &[app2, key],
+                |m| Out::U32(ip::script_key_press(m, app2, key)),
+            );
+            let mouse = t.zeros(0x100);
+            t.w32(big + 0x2b8, mouse);
+            let xy = t.words(&[rng.next(), rng.next()]);
+            let r = rng.next();
+            let next = t.stub_code(ip::SSCANF_S_IAT, false, 4, 0, r);
+            let next = write_then(t, 3, xy + 4, 4, next);
+            let at = write_then(t, 2, xy, 4, next);
+            let slot = t.rebase(ip::SSCANF_S_IAT);
+            t.patch(slot, &at.to_le_bytes());
+            let text = rng.next();
+            t.skip = 0;
+            t.check_framed(
+                &format!("0x00624910 #{case}"),
+                0x0062_4910,
+                Conv::Cdecl,
+                &[big, text],
+                ip::MOUSE_SET_FRAME,
+                |m, ebp| Out::U32(ip::script_mouse_set(m, ebp, big, text)),
+            );
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_assets) ----
+
+/// The asset list reader's copy (framed: the allocator tag the tree copy
+/// gets a pointer to) and destructor (framed: the erase's iterator; the
+/// string short or long, vectors set or not), the callees stubbed.
+#[test]
+fn assets_list_reader_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0601);
+        for case in 0..60 {
+            t.reset();
+            t.stubs(&[
+                (al::COPY_TREE, true, 2, 2, rng.next()),
+                (al::COPY_VECTOR8, true, 1, 1, rng.next()),
+                (al::COPY_VECTOR, true, 1, 1, rng.next()),
+                (al::ASSIGN_SUBSTR, true, 3, 3, rng.next()),
+                (al::OPERATOR_DELETE, false, 1, 0, rng.next()),
+                (al::DESTROY_RANGE, false, 2, 2, rng.next()),
+                (al::TREE_ERASE, true, 3, 3, rng.next()),
+            ]);
+            let this = t.words(&(0..0x12).map(|_| rng.next()).collect::<Vec<_>>());
+            let src = rng.next();
+            t.skip = 0xc;
+            t.check_framed(
+                &format!("copy #{case}"),
+                0x0064_d9e0,
+                Conv::Thiscall(this),
+                &[src],
+                al::COPY_FRAME,
+                |m, ebp| Out::U32(al::copy(m, ebp, this, src)),
+            );
+            t.skip = 0;
+            let mut w: Vec<u32> = (0..0x12).map(|_| rng.next()).collect();
+            w[0] = t.words(&[rng.next(), rng.next(), rng.next()]);
+            for k in [2usize, 5, 8] {
+                if rng.chance(3) {
+                    w[k] = 0;
+                }
+            }
+            w[0x10] = [0, 0xf, 0x10, rng.next()][rng.below(4) as usize];
+            let this = t.words(&w);
+            t.check_framed(
+                &format!("dtor #{case}"),
+                0x0063_4610,
+                Conv::Thiscall(this),
+                &[],
+                al::DTOR_FRAME,
+                |m, ebp| {
+                    al::dtor(m, ebp, this);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+/// `StatsAndAchievements_ctor` (the Steam interfaces there or not, the
+/// user logged on or not), the `steam_api` imports stubbed.
+#[test]
+fn assets_stats_ctor_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0602);
+        for case in 0..60 {
+            t.reset();
+            let r = rng.next();
+            let utils = t.object(
+                &[(0, 0); 9]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let on = rng.next() & !(0xff * u32::from(rng.chance(2)));
+            let user = if rng.chance(4) {
+                0
+            } else {
+                t.object(&[(0, 0), (0, on)])
+            };
+            let r = rng.next();
+            let stats = if rng.chance(4) {
+                0
+            } else {
+                t.object(&[(0, r)])
+            };
+            t.stub_import(al::REGISTER_CALLBACK_IAT, false, 2, 0, rng.next());
+            t.stub_import(al::STEAM_UTILS_IAT, false, 0, 0, utils);
+            t.stub_import(al::STEAM_USER_IAT, false, 0, 0, user);
+            t.stub_import(al::STEAM_USER_STATS_IAT, false, 0, 0, stats);
+            let this = t.words(&(0..0x14).map(|_| rng.next()).collect::<Vec<_>>());
+            t.check(
+                &format!("StatsAndAchievements_ctor #{case}"),
+                0x006f_11a0,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(al::stats_ctor(m, this)),
+            );
+        }
+    });
+}
+
+/// `FileSys_Read`: positions before, inside, at the end of and past the
+/// buffer; reads ending before, inside and past it; past the entry's
+/// size (clipped, or nothing left); 64-bit positions.
+#[test]
+fn assets_file_read_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0603);
+        for case in 0..300 {
+            t.reset();
+            t.stub(al::MEMCPY, false, 3, 0, rng.next());
+            t.stub(al::STREAM_GET, false, 0, 0, rng.next());
+            t.stub(al::READ_VFILE, true, 6, 6, rng.below(0x1000));
+            let hi = if rng.chance(4) { rng.below(3) } else { 0 };
+            let start = rng.below(0x100);
+            let rend = start + rng.below(0x40);
+            let rec = t.words(&[rng.next(), 0, rend, hi, start, hi]);
+            let size_hi = hi + u32::from(rng.chance(6));
+            let entry = t.words(&[0, 0, start + rng.below(0x140), size_hi]);
+            let pos = match rng.below(4) {
+                0 => [start, rend, rend.wrapping_sub(1), start.wrapping_sub(1)]
+                    [rng.below(4) as usize],
+                _ => start.wrapping_add(rng.below(0x60)).wrapping_sub(0x20),
+            };
+            let pos_hi = if rng.chance(8) {
+                hi.wrapping_sub(1)
+            } else {
+                hi
+            };
+            if rng.chance(6) {
+                // at the entry's end: nothing left to read
+                t.w32(entry + 8, pos);
+                t.w32(entry + 0xc, pos_hi);
+            }
+            let vfile = t.words(&[0, 0, rng.next(), entry, pos, pos_hi, rec]);
+            // reads ending at the buffer's start or end now and then
+            let len = match rng.below(4) {
+                0 => rend.wrapping_sub(pos) & 0xff,
+                1 => start.wrapping_sub(pos) & 0xff,
+                _ => rng.below(0x80),
+            };
+            let dst = rng.next();
+            let what = format!(
+                "FileSys_Read #{case} pos {pos_hi:#x}:{pos:#x} len {len:#x} buf {start:#x}..{rend:#x}"
+            );
+            t.check(
+                &what,
+                0x0061_aa90,
+                Conv::Thiscall(vfile),
+                &[dst, len],
+                |m| Out::U32(al::file_read(m, vfile, dst, len)),
+            );
+        }
+    });
+}
+
+/// The script button commands (`buttonRelease`, `0x00623060`): null
+/// app/name, no pad, each of the ten names and an unknown one, the
+/// vtable answering 0 or not.
+#[test]
+fn input_buttons_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0604);
+        for case in 0..80 {
+            t.reset();
+            let k = rng.below(12) as usize;
+            let seq: Vec<u32> = (0..12)
+                .map(|i| u32::from(i != k) * (1 + rng.below(9)))
+                .collect();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &seq);
+            t.stub(ip::PHYRE_PRINTF, false, 3, 0, rng.next());
+            t.stub(
+                ip::BUTTON_FALLBACK,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let pad = if rng.chance(5) {
+                0
+            } else {
+                t.alloc(&[0xa5; 0x30])
+            };
+            let devices = t.zeros(0x40);
+            t.w32(devices + 0x38, pad);
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let obj = t.object(
+                &[(0, 0); 7]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let app = t.zeros(0x300);
+            let vt: u32 = Mem::read(&t.a, obj);
+            t.w32(app, vt);
+            t.w32(app + 0x2b8, devices);
+            let app = if rng.chance(8) { 0 } else { app };
+            let name = if rng.chance(8) { 0 } else { rng.next() };
+            let what = format!("buttonRelease #{case} k {k}");
+            t.check(&what, 0x0062_2ed0, Conv::Cdecl, &[app, name], |m| {
+                Out::U32(ip::button_release(m, app, name))
+            });
+            t.reset();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &seq);
+            t.stub(ip::PHYRE_PRINTF, false, 3, 0, rng.next());
+            t.stub(
+                ip::BUTTON_FALLBACK,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let what = format!("0x00623060 #{case} k {k}");
+            t.check(&what, 0x0062_3060, Conv::Cdecl, &[app, name], |m| {
+                Out::U32(ip::button_press(m, app, name))
+            });
+        }
+    });
+}
+
+/// `Input_AddPadDevice` (framed: the device pointer `CreateDevice`
+/// writes): pads already listed (the GUID equal at the index or not),
+/// `XInput` devices below and at the limit, the allocation failing, the
+/// `DirectInput` path's steps failing or not.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the paths
+fn input_add_pad_device_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0605);
+        for case in 0..80 {
+            t.reset();
+            let instance: Vec<u32> = (0..0x91).map(|_| rng.next()).collect();
+            let guid = [instance[1], instance[2], instance[3], instance[4]];
+            let instance = t.words(&instance);
+            // the device list
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(5) as usize;
+            let mut nodes = Vec::new();
+            for _ in 0..n {
+                let ty = [1u32, 2, 2, 3][rng.below(4) as usize];
+                let v0 = t.stub_code(0x5500, true, 0, 0, 0);
+                let v1 = t.stub_code(0x5501, true, 0, 0, ty);
+                let vt = t.words(&[v0, v1]);
+                let mut w: Vec<u32> = (0..0x50).map(|_| rng.next()).collect();
+                w[0] = vt;
+                if rng.chance(2) {
+                    w[0x4c..0x50].copy_from_slice(&guid);
+                    if rng.chance(3) {
+                        // only the last word differs
+                        w[0x4f] ^= 1;
+                    }
+                }
+                nodes.push(t.words(&w));
+            }
+            for k in 0..n {
+                let link = if k + 1 < n { nodes[k + 1] + 4 } else { head };
+                t.w32(nodes[k] + 4, link);
+            }
+            t.w32(head, if n > 0 { nodes[0] + 4 } else { head });
+            let xinput = rng.chance(2);
+            t.stub(
+                ip::IS_XINPUT,
+                false,
+                1,
+                0,
+                rng.next() & !(0xff * u32::from(!xinput)),
+            );
+            t.g32(ip::XINPUT_COUNT, rng.below(6));
+            // the DirectInput message has no arguments past the format
+            let words = if xinput { 6 } else { 2 };
+            t.stub(ip::PHYRE_PRINTF, false, words, 0, rng.next());
+            let pad = if rng.chance(5) {
+                0
+            } else {
+                t.alloc(&[0x5a; 0x3c4])
+            };
+            t.stub(ip::PHYRE_MALLOC, false, 1, 0, pad);
+            t.stub(ip::PAD_CTOR, true, 1, 1, rng.next());
+            let hr = |rng: &mut Rng| {
+                if rng.chance(6) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            let level = [0x8000_4001, 0x8000_4005, 0, 1][rng.below(4) as usize];
+            let mut slots = vec![(1, 0); 15];
+            slots[4] = (4, hr(&mut rng));
+            slots[7] = (1, rng.next());
+            slots[11] = (2, hr(&mut rng));
+            slots[13] = (3, level);
+            let dev = com_object(t, &slots);
+            let src = t.words(&[dev]);
+            let r = hr(&mut rng);
+            let next = t.stub_code(0x5400, false, 4, 4, r);
+            let create = write_then(t, 2, src, 4, next);
+            let vt = t.words(&[0, 0, 0, create]);
+            let di = t.words(&[vt]);
+            t.g32(ip::DIRECT_INPUT, di);
+            t.g32(ip::HWND, rng.next());
+            t.skip = 0xc;
+            let what = format!("Input_AddPadDevice #{case} n {n} xinput {xinput}");
+            t.check_framed(
+                &what,
+                0x0062_40e0,
+                Conv::Cdecl,
+                &[instance],
+                ip::PAD_FRAME,
+                |m, ebp| {
+                    ip::add_pad_device(m, ebp, instance);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_ui) ----
+
+/// `0x0067ad30` (the graphic UI constructor): the record initialisers
+/// stubbed without a log (2,804 calls; each returns its buffer argument
+/// xor a constant, so the stored words show the buffers passed), the
+/// buffer allocation stubbed to set the buffers and record sizes, the
+/// aligned allocations a sequence (one failing now and then: both fault,
+/// so that case is left out).
+#[test]
+fn ui_ctor_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0701);
+        for case in 0..6 {
+            t.reset();
+            let this = t.alloc(&(0..0x2ec34).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let (b0, b1) = (rng.next(), rng.next());
+            let (s0, s1) = (rng.below(0x400), rng.below(0x400));
+            let mut c = Vec::new();
+            for (off, v) in [(0x5b80u32, b0), (0x5b84, b1), (0x5b94, s0), (0x5b98, s1)] {
+                c.extend([0xc7, 0x81]);
+                c.extend(off.to_le_bytes());
+                c.extend(v.to_le_bytes()); // mov dword [ecx+off], v
+            }
+            c.push(0xc3);
+            let alloc = t.cave_code(&c);
+            t.jump(ui::ALLOC_BUFFERS, alloc);
+            for (sym, k) in [
+                (ui::INIT_SINGLE, 0x5111_1111u32),
+                (ui::INIT_MULTI, 0x2222_2222),
+            ] {
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x35]; // mov eax, [esp+4]; xor eax, k
+                c.extend(k.to_le_bytes());
+                c.extend([0xc2, 0x04, 0x00]); // ret 4
+                let at = t.cave_code(&c);
+                t.jump(sym, at);
+            }
+            let blocks = [
+                t.zeros(0x960),
+                t.zeros(0xc80),
+                t.zeros(0x960),
+                t.zeros(0xc80),
+            ];
+            stub_seq(t, ui::MALLOC_ALIGNED, false, 2, 0, &blocks);
+            t.stub(ui::PHYRE_FREE, false, 1, 0, rng.next());
+            t.stub(ui::MEMSET, false, 3, 0, rng.next());
+            let what = format!("0x0067ad30 #{case}");
+            t.check(&what, 0x0067_ad30, Conv::Thiscall(this), &[], |m| {
+                Out::U32(ui::ctor(m, this))
+            });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_savedata3) ----
+
+/// `SaveDataMachine_ScanFiles` (framed: the time zone, file time and
+/// `SYSTEMTIME`s the stubs write, the path): about one file in eight
+/// there (file 0 or not), `GetFileTime` failing now and then (the local
+/// time then the previous file's, or the zeroed frame's), the save state
+/// or another, the list full or not.
+#[test]
+fn save3_scan_files_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0801);
+        for case in 0..16 {
+            t.reset();
+            t.g32(s2::FOLDER_SET, 1);
+            let full = rng.chance(3);
+            // one file missing: 198 besides file 0, just short of full
+            let gap = if rng.chance(2) {
+                1 + rng.below(199)
+            } else {
+                1000
+            };
+            let files: Vec<u32> = (0..200)
+                .map(|i| {
+                    let there = if full {
+                        (i > 0 && i != gap) || rng.chance(2)
+                    } else {
+                        (i == 0 && rng.chance(2)) || rng.chance(8)
+                    };
+                    if there { 0x100 + i } else { u32::MAX }
+                })
+                .collect();
+            t.stub_import(s3::GET_TIME_ZONE_IAT, false, 1, 1, rng.next());
+            // wsprintfW unlogged (the log holds 1,024 calls): the path
+            // reaches CreateFileW, which logs it
+            // it counts each file number and keeps the last of its other words
+            let numbers = t.zeros(0x100);
+            let last = t.zeros(16);
+            let k = rng.next();
+            let mut c = Vec::new();
+            for (i, off) in [(0u32, 4u8), (1, 8), (2, 0xc), (3, 0x10)] {
+                c.extend([0x8b, 0x4c, 0x24, off]); // mov ecx, [esp+off]
+                c.extend([0x89, 0x0d]);
+                c.extend((last + 4 * i).to_le_bytes()); // mov [last+4i], ecx
+            }
+            c.extend([0x8b, 0x44, 0x24, 0x14]); // mov eax, [esp+0x14]
+            c.extend([0xfe, 0x80]);
+            c.extend(numbers.to_le_bytes()); // inc byte [eax+numbers]
+            c.push(0xb8);
+            c.extend(k.to_le_bytes()); // mov eax, k
+            c.push(0xc3);
+            let ws = t.cave_code(&c);
+            let at = t.rebase(s3::WSPRINTFW_IAT);
+            t.patch(at, &ws.to_le_bytes());
+            t.stub_import_seq(s3::CREATE_FILE_IAT, 7, 7, &files);
+            let times: Vec<u32> = (0..200).map(|_| u32::from(!rng.chance(4))).collect();
+            t.stub_import_seq(s3::GET_FILE_TIME_IAT, 4, 4, &times);
+            t.stub_import(s3::FILE_TIME_TO_SYSTEM_TIME_IAT, false, 2, 2, rng.next());
+            let st: Vec<u8> = [
+                2000 + rng.below(30),
+                1 + rng.below(12),
+                rng.below(7),
+                1 + rng.below(28),
+                rng.below(24),
+                rng.below(60),
+                rng.below(60),
+                rng.below(1000),
+            ]
+            .iter()
+            .flat_map(|&v| (v as u16).to_le_bytes())
+            .collect();
+            let src = t.alloc(&st);
+            let r = rng.next();
+            let s = t.stub_code_writes(s3::TO_LOCAL_TIME_IAT, false, 3, 3, r, 2, src, 16);
+            let at = t.rebase(s3::TO_LOCAL_TIME_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(s3::CLOSE_HANDLE_IAT, false, 1, 1, rng.next());
+            t.g32(sv::STATE, if rng.chance(2) { 1 } else { rng.below(30) });
+            // _chkstk leaves its own words at ebp - 8 (the cookie at ebp - 4)
+            t.skip = 8;
+            let what = format!("ScanFiles #{case} full {full}");
+            t.check_framed(
+                &what,
+                0x006f_0a70,
+                Conv::Cdecl,
+                &[],
+                s3::SCAN_FRAME,
+                |m, ebp| Out::U32(s3::scan_files(m, ebp)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// An `sprintf` stub bound to `slot`: logs the buffer, the format and
+/// the words each of the game's formats takes (`counts`: format address
+/// and its word count after the format; others 1).
+fn stub_sprintf(t: &mut Twins, slot: u32, counts: &[(u32, u32)]) {
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(slot.to_le_bytes()); // mov [eax], tag
+    let word = |c: &mut Vec<u8>, i: u32| {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    };
+    for i in 0..3 {
+        word(&mut c, i);
+    }
+    for &(fmt, n) in counts {
+        let mut rest = Vec::new();
+        for i in 3..2 + n {
+            word(&mut rest, i);
+        }
+        c.extend([0x81, 0x7c, 0x24, 0x08]);
+        c.extend(fmt.to_le_bytes()); // cmp dword [esp+8], fmt
+        c.extend([0x75, rest.len() as u8]); // jne past
+        c.extend(rest);
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+    let addr = t.cave_code(&c);
+    let at = t.rebase(slot);
+    t.patch(at, &addr.to_le_bytes());
+}
+
+/// `SaveDataMachine_ReadHeaders` (framed: the header `fread` fills, the
+/// path): rows from 0 in the save state (full or not) and from later
+/// rows, files that don't open, maps 0 or not, short headers, every
+/// picture case, file 0 in the load states and others; the callees and
+/// imports stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the row texts
+fn save3_read_headers_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0802);
+        for case in 0..60 {
+            t.reset();
+            t.g32(s2::FOLDER_SET, 1);
+            t.g32(
+                sv::STATE,
+                [1, 0xb, 0x15, rng.below(30)][rng.below(4) as usize],
+            );
+            t.g32(sv::FULL, u32::from(rng.chance(3)));
+            let files: Vec<u32> = (0..12)
+                .flat_map(|_| {
+                    [
+                        rng.below(200),
+                        rng.next() >> rng.below(32),
+                        rng.below(90_000),
+                    ]
+                })
+                .collect();
+            let at = t.rebase(sv::FILES);
+            let bytes: Vec<u8> = files.iter().flat_map(|w| w.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            t.stub_import(s3::WSPRINTFW_IAT, false, 5, 0, rng.next());
+            let opens: Vec<u32> = (0..12)
+                .map(|_| {
+                    if rng.chance(4) {
+                        0
+                    } else {
+                        0x7700 + rng.below(0x100)
+                    }
+                })
+                .collect();
+            t.stub_import_seq(s3::WFOPEN_IAT, 2, 0, &opens);
+            let mut hdr: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            if rng.chance(3) {
+                hdr[0x18] = 0;
+                hdr[0x19] = 0;
+            }
+            let src = t.alloc(&hdr);
+            let max = if rng.chance(4) { rng.below(0x40) } else { 0x40 };
+            t.stub_import_fill(s3::FREAD_IAT, src, max, rng.next());
+            t.stub_import(s3::FCLOSE_IAT, false, 1, 0, rng.next());
+            let counts = [(t.rebase(s3::F_DATE), 6), (t.rebase(s3::F_TIME), 4)];
+            stub_sprintf(t, s3::SPRINTF_IAT, &counts);
+            let pic = [0, 1, 999, 1000, 1001, rng.below(3000)][rng.below(6) as usize];
+            t.stubs(&[
+                (s3::NEW_FILE_ROW, false, 0, 0, rng.next()),
+                (s3::FILE_ROW, false, 12, 0, rng.next()),
+                (s3::SAVE_DIC_NAME, false, 2, 0, rng.next()),
+                (s3::TO_UTF8, false, 2, 0, rng.next()),
+                (s3::GET_LOC, false, 2, 0, rng.next()),
+                (s3::FIX_MAPPIC, false, 1, 0, pic),
+                (s3::JAPAN_LOGO, false, 0, 0, u32::from(rng.chance(2))),
+            ]);
+            let first = if rng.chance(2) { 0 } else { rng.below(4) };
+            let end = first + rng.below(8);
+            t.skip = 4;
+            let what = format!("ReadHeaders #{case} {first}..{end} pic {pic}");
+            t.check_framed(
+                &what,
+                0x006f_0c60,
+                Conv::Cdecl,
+                &[first, end],
+                s3::HEADERS_FRAME,
+                |m, ebp| {
+                    s3::read_headers(m, ebp, first, end);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `BigFileHandle_initialize` (framed: the magic, the two digests, the
+/// hash handle and the spills; the header size in the caller's `path`
+/// slot): no path, the open failing, a bad magic, digests differing, and
+/// a synthetic header of 1..4 entries whose sizes end on a block's
+/// stored size or not; the CRT, `CryptoAPI` and archive callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one header builder and the stubs
+fn vfs_initialize_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0901);
+        for case in 0..60 {
+            t.reset();
+            // the header: magic, ?, count, ?, n digests, n records, the
+            // tail word (offset of the size table from the tail), names,
+            // the size table
+            let n = 1 + rng.below(4);
+            let mut words = vec![0u32, 0, n, 0];
+            words.extend((0..4 * n).map(|_| rng.next()));
+            let mut first = 0;
+            let mut recs = Vec::new();
+            for _ in 0..n {
+                let blocks = rng.below(3);
+                let low = match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(0x100) << 8,
+                    _ => rng.below(0x10000),
+                };
+                let size = blocks << 16 | low;
+                recs.push((first, size));
+                words.extend([
+                    first,
+                    rng.next(),
+                    size,
+                    0,
+                    rng.next(),
+                    rng.next(),
+                    rng.below(0x40),
+                    rng.next(),
+                ]);
+                first += blocks + u32::from(low != 0);
+            }
+            words.push(8); // the size table 8 bytes past the tail
+            words.push(rng.next());
+            let mut sizes: Vec<u16> = (0..first + 2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() as u16 })
+                .collect();
+            for &(f, size) in &recs {
+                let blocks = (size >> 16) + u32::from(size & 0xffff != 0);
+                if blocks > 0 && rng.chance(2) {
+                    sizes[(f + blocks - 1) as usize] = size as u16;
+                }
+            }
+            let mut bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            bytes.extend(sizes.iter().flat_map(|s| s.to_le_bytes()));
+            bytes.extend([0; 16]);
+            let size = bytes.len() as u32;
+            let hdr = t.alloc(&bytes);
+            let copy = t.zeros(0x104);
+            let flags = t.zeros(0x200);
+            let vfiles = t.zeros(0x1e4);
+            let seq = [copy, hdr, flags, vfiles];
+            stub_seq(t, vf::NEW_ARRAY, false, 1, 0, &seq);
+            let f = if rng.chance(8) { 0 } else { 0x7700 };
+            t.stub_import(vf::FOPEN_IAT, false, 2, 0, f);
+            // fread: the magic, the size, the stored digest, the header
+            let magic = if rng.chance(8) { 0x1234 } else { vf::MAGIC };
+            let digest: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            let mut other = digest.clone();
+            if rng.chance(5) {
+                other[rng.below(4) as usize] ^= 1;
+            }
+            let reads = t.words(&[magic, size]);
+            let d1 = t.words(&digest);
+            let d2 = t.words(&other);
+            let log = t.stub_code(vf::FREAD_IAT, false, 4, 0, 1);
+            // copies by call number: 4 bytes of `reads`, 4 more, 16 of d1
+            let ctr = t.words(&[0]);
+            let srcs = t.words(&[reads, reads + 4, d1, hdr]);
+            let lens = t.words(&[4, 4, 16, 0]);
+            let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+            c.push(0xa1);
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x8b, 0x34, 0x85]);
+            c.extend(srcs.to_le_bytes()); // mov esi, [srcs + eax*4]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(lens.to_le_bytes()); // mov ecx, [lens + eax*4]
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10]
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let fr = t.cave_code(&c);
+            let at = t.rebase(vf::FREAD_IAT);
+            t.patch(at, &fr.to_le_bytes());
+            t.stub_import(vf::FSEEKI64_IAT, false, 4, 0, 0);
+            t.stub_import(vf::FSEEK_IAT, false, 3, 0, 0);
+            t.stub_import(vf::FCLOSE_IAT, false, 1, 0, 0);
+            t.stub_import(vf::PRINTF_IAT, false, 1, 0, 0);
+            let prov = t.words(&[rng.next()]);
+            let s = t.stub_code_writes(vf::CRYPT_ACQUIRE_IAT, false, 5, 5, 1, 0, prov, 4);
+            let at = t.rebase(vf::CRYPT_ACQUIRE_IAT);
+            t.patch(at, &s.to_le_bytes());
+            let hash = t.words(&[rng.next()]);
+            let s = t.stub_code_writes(vf::CRYPT_CREATE_HASH_IAT, false, 5, 5, 1, 4, hash, 4);
+            let at = t.rebase(vf::CRYPT_CREATE_HASH_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_HASH_DATA_IAT, false, 4, 4, 1);
+            let s = t.stub_code_writes(vf::CRYPT_GET_HASH_PARAM_IAT, false, 5, 5, 1, 2, d2, 16);
+            let at = t.rebase(vf::CRYPT_GET_HASH_PARAM_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_DESTROY_HASH_IAT, false, 1, 1, 1);
+            t.stub_import(vf::CRYPT_RELEASE_IAT, false, 2, 2, 1);
+            t.stubs(&[
+                (vf::TREE_RESET, true, 0, 0, 0),
+                (vf::INSERT_ENTRY, true, 2, 2, rng.next()),
+                (vf::VECTOR_CTOR, false, 5, 5, 0),
+                (vf::VBF_STREAM_OPEN, true, 2, 2, rng.next()),
+            ]);
+            let path = if rng.chance(10) {
+                0
+            } else {
+                t.alloc(b"data/FFX_Data.vbf\0")
+            };
+            let this = t.zeros(0x60);
+            let slots = t.frame_ebp(1) + 8;
+            Mem::write(&mut t.b, slots, path);
+            t.skip = 0xc;
+            let what = format!("BigFileHandle_initialize #{case} n {n} f {f:#x} magic {magic:#x}");
+            t.check_framed(
+                &what,
+                0x0061_dac0,
+                Conv::Thiscall(this),
+                &[path],
+                vf::INIT_FRAME,
+                |m, ebp| Out::U8(vf::initialize(m, ebp, this, path, slots)),
+            );
+            t.skip = 0;
+            let x: u32 = Mem::read(&t.a, slots);
+            let y: u32 = Mem::read(&t.b, slots);
+            assert_eq!(x, y, "{what}: the path slot");
+        }
+    });
+}
+
+/// `BigFileStream_fileTaskUncompress` (framed: the length word the
+/// inflate stub updates): head, body (1..3 blocks) and tail flagged or
+/// not, each block stored compressed or not, the inflate answering 0 or
+/// an error and giving short lengths, the error box path (the `BSTR` in
+/// the caller's third slot).
+#[test]
+#[allow(clippy::too_many_lines)] // one slot builder and the stubs
+fn vfs_task_uncompress_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0902);
+        for case in 0..200 {
+            t.reset();
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let flag = u32::from(rng.chance(2));
+                recs.push(t.words(&[flag, rng.next(), rng.below(0x10000), rng.below(0x100)]));
+            }
+            let sizes: Vec<u8> = (0..16)
+                .flat_map(|_| (rng.next() as u16).to_le_bytes())
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let flags: Vec<u8> = (0..16).map(|_| u8::from(rng.chance(2))).collect();
+            let flags = t.alloc(&flags);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            t.w32(info + 0x3c, flags);
+            let cache = t.words(&[
+                rng.next(),
+                0,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            let head_len: u32 = Mem::read(&t.a, recs[0] + 8);
+            let head = if Mem::read::<u32>(&t.a, recs[0]) & 1 != 0 {
+                head_len
+            } else {
+                0
+            };
+            let body_blocks = 1 + rng.below(3);
+            let tail_len: u32 = Mem::read(&t.a, recs[2] + 8);
+            let mut length = head
+                + (body_blocks << 16) * Mem::read::<u32>(&t.a, recs[1])
+                + tail_len * Mem::read::<u32>(&t.a, recs[2]);
+            if rng.chance(4) {
+                length = length.wrapping_add(1);
+            }
+            let mut w: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            w[1] = rng.below(4);
+            w[2] = recs[0];
+            w[3] = recs[1];
+            w[4] = recs[2];
+            w[5] = cache;
+            w[6] = rng.next();
+            w[0xe] = length;
+            w[0x10] = info;
+            let slot = t.words(&w);
+            // the inflate stub: logs, sets *len from a sequence, answers err
+            let lens: Vec<u32> = (0..8)
+                .map(|_| {
+                    if rng.chance(4) {
+                        rng.below(0x10000)
+                    } else {
+                        0x10000
+                    }
+                })
+                .collect();
+            let errs: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(6) { 0xffff_fffd } else { 0 })
+                .collect();
+            let lens_t = t.words(&lens);
+            let ctr = t.words(&[0]);
+            let next = {
+                let mut c = vec![0x51, 0x52]; // push ecx; push edx
+                c.push(0xa1);
+                c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+                c.extend([0x8b, 0x0c, 0x85]);
+                c.extend(lens_t.to_le_bytes()); // mov ecx, [lens + eax*4]
+                c.extend([0x8b, 0x54, 0x24, 0x10]); // mov edx, [esp+0x10] (&len)
+                c.extend([0x89, 0x0a]); // mov [edx], ecx
+                c.extend([0x5a, 0x59]); // pop edx; pop ecx
+                c
+            };
+            stub_seq(t, vf::UNCOMPRESS, false, 4, 0, &errs);
+            // put the length writer in front of the sequence stub
+            let inflate = {
+                let target = {
+                    let at = t.rebase(vf::UNCOMPRESS);
+                    let rel: u32 = Mem::read(&t.a, at + 1);
+                    at.wrapping_add(5).wrapping_add(rel)
+                };
+                let mut c = next;
+                c.push(0xe9);
+                let here = t.cave_next + c.len() as u32 + 4;
+                c.extend(target.wrapping_sub(here).to_le_bytes());
+                t.cave_code(&c)
+            };
+            t.jump(vf::UNCOMPRESS, inflate);
+            t.stub(vf::MEMCPY, false, 3, 0, rng.next());
+            t.stub_import(vf::SYS_FREE_STRING_IAT, false, 1, 1, 0);
+            let text = if rng.chance(3) {
+                0
+            } else {
+                t.words(&[rng.below(40)])
+            };
+            t.stub(vf::FIND_STRING, false, 1, 0, text);
+            t.stub_import(vf::SYS_ALLOC_STRING_LEN_IAT, false, 2, 2, rng.next());
+            t.stub_import(vf::SHOW_CURSOR_IAT, false, 1, 1, 0);
+            t.stub_import(vf::MESSAGE_BOX_IAT, false, 4, 4, 1);
+            t.stub(vf::RESET_TO_LAUNCHER, false, 0, 0, 0);
+            let args = [rng.next(), slot, rng.next(), rng.next()];
+            let slots = t.frame_ebp(4) + 8;
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            t.skip = 0xc;
+            let what = format!("fileTaskUncompress #{case} length {length:#x}");
+            t.check_framed(
+                &what,
+                0x0061_ba80,
+                Conv::Stdcall,
+                &args,
+                vf::UNCOMPRESS_FRAME,
+                |m, ebp| {
+                    vf::task_uncompress(m, ebp, slot, slots);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            let mut x = [0; 16];
+            let mut y = [0; 16];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "{what}: the argument slots");
+        }
+    });
+}
+
+/// `SaveDataUpdateIcon` (framed: the six point floats, the name and the
+/// number buffers): every map case (the two-sided maps with the player
+/// near either point, the language-less maps with and without a
+/// language, map 7, others), prefixes short and filling all 0x40 bytes;
+/// the CRT and the save manager stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the map cases
+fn save3_update_icon_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0a01);
+        let maps = [
+            0x101u32, 0x11c, 0xf4, 0xf5, 0xf6, 0xf7, 0x81, 0x15c, 0x1f, 0xd8, 0x147, 0x148, 0x149,
+            0x14a, 0x14e, 0x14f, 0x15b, 7, 0x120, 0x30,
+        ];
+        for case in 0..120 {
+            t.reset();
+            let map = maps[rng.below(maps.len() as u32) as usize];
+            let plen = if rng.chance(5) { 0x40 } else { rng.below(0x30) };
+            let prefix: Vec<u8> = (0..plen)
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let prefix = t.alloc(&prefix);
+            let r = rng.next();
+            let s = t.stub_code_writes(s3::STRNCPY_IAT, false, 3, 0, r, 0, prefix, plen.min(0x40));
+            let at = t.rebase(s3::STRNCPY_IAT);
+            t.patch(at, &s.to_le_bytes());
+            let fmt = t.rebase(s3::F_NO_LANGUAGE);
+            let r = rng.next();
+            stub_import_varargs(t, s3::SPRINTF_IAT, 1, fmt, 2, 3, r);
+            let digits: Vec<u8> = (0..=rng.below(4))
+                .map(|_| b'0' + rng.below(10) as u8)
+                .chain([0])
+                .collect();
+            let n = digits.len() as u32;
+            let digits = t.alloc(&digits);
+            let log: u32 = Mem::read(&t.a, t.rebase(s3::SPRINTF_IAT));
+            let w = write_then(t, 0, digits, n, log);
+            let slot = t.rebase(s3::SPRINTF_IAT);
+            t.patch(slot, &w.to_le_bytes());
+            t.stub(s3::MEMSET, false, 3, 0, rng.next());
+            let loc = t.words(&[u32::from(rng.chance(2))]);
+            let buf = t.zeros(0x100);
+            let m = rng.next();
+            t.stubs(&[
+                (s3::LOC_MANAGER, false, 0, 0, loc),
+                (s3::TTY_WRITE, false, 3, 0, rng.next()),
+                (s3::MANAGER, false, 0, 0, m),
+                (s3::REF_BUFFER, true, 0, 0, buf),
+                (s3::SET_ICON_STRING, true, 1, 1, rng.next()),
+            ]);
+            // the player near one of the map's points, or anywhere
+            let pos: Vec<f32> = (0..3).map(|_| f32::from(rng.next() as i16) / 8.0).collect();
+            let pos = if let Some((_, points)) = s3::SIDES.iter().find(|(m, _)| m.contains(&map)) {
+                let rd = |a: u32| f32::from_bits(Mem::read(&t.a, t.rebase(a)));
+                if rng.chance(4) {
+                    pos
+                } else if rng.chance(3) {
+                    // halfway: both distances equal
+                    (0..3)
+                        .map(|i| f32::midpoint(rd(points[2 * i]), rd(points[2 * i + 1])))
+                        .collect()
+                } else {
+                    let k = rng.below(2) as usize;
+                    let rd = |a: u32| f32::from_bits(Mem::read(&t.a, t.rebase(a)));
+                    vec![
+                        rd(points[k]) + 0.5,
+                        rd(points[2 + k]) - 0.25,
+                        rd(points[4 + k]),
+                    ]
+                }
+            } else {
+                pos
+            };
+            let at = t.rebase(s3::PLAYER_POS);
+            let bytes: Vec<u8> = pos.iter().flat_map(|v| v.to_le_bytes()).collect();
+            t.write(at, &bytes);
+            t.skip = 4;
+            let what = format!("SaveDataUpdateIcon #{case} map {map:#x} prefix {plen}");
+            t.check_framed_init(
+                &what,
+                0x0064_8920,
+                Conv::Cdecl,
+                &[map],
+                s3::ICON_FRAME,
+                &[0x77; 0x18],
+                |m, ebp| Out::U32(s3::update_icon(m, ebp, map)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `Input_IsXInputDevice` (framed: the device array, the `VARIANT`, the
+/// ids and interfaces): COM failing, each WMI step failing, 0..3 batches
+/// of 0..4 devices whose ids hold `IG_` or not and scan or not, the
+/// match found or not; the COM objects fakes.
+#[test]
+#[allow(clippy::too_many_lines)] // the fake WMI
+fn input_is_xinput_device_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0b01);
+        for case in 0..300 {
+            t.reset();
+            let want = rng.below(4) << 16 | rng.below(4);
+            let guid = t.words(&[want, rng.next(), rng.next(), rng.next()]);
+            let hr = |rng: &mut Rng| {
+                if rng.chance(8) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            t.stub_import(ip::CO_INITIALIZE_IAT, false, 1, 1, hr(&mut rng));
+            t.stub_import(ip::CO_UNINITIALIZE_IAT, false, 0, 0, 0);
+            t.stub_import(ip::CO_SET_PROXY_BLANKET_IAT, false, 8, 8, 0);
+            t.stub(ip::MEMSET, false, 3, 0, 0);
+            let strs: Vec<u32> = (0..3)
+                .map(|_| {
+                    if rng.chance(10) {
+                        0
+                    } else {
+                        0x9000 + rng.below(0x100)
+                    }
+                })
+                .collect();
+            t.stub_import_seq(ip::SYS_ALLOC_STRING_IAT, 1, 1, &strs);
+            t.stub_import(ip::SYS_FREE_STRING_IAT, false, 1, 1, 0);
+            // the devices: COM objects `{vtable, &VARIANT, hr}` sharing a
+            // vtable whose Get logs, copies the object's VARIANT out and
+            // answers its hr
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x5600u32.to_le_bytes()); // mov [eax], tag
+            for i in 0..6u32 {
+                c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+                c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.extend([0x56, 0x57]); // push esi; push edi
+            c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc] (this)
+            c.extend([0x8b, 0x70, 0x04]); // mov esi, [eax+4]
+            c.extend([0x8b, 0x7c, 0x24, 0x18]); // mov edi, [esp+0x18] (&var)
+            c.extend([0xb9, 0x10, 0, 0, 0]); // mov ecx, 16
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x5f, 0x5e]); // pop edi; pop esi
+            c.extend([0x8b, 0x40, 0x08]); // mov eax, [eax+8]
+            c.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let get = t.cave_code(&c);
+            let release = t.stub_code(0x5601, false, 1, 1, 0);
+            let device_vt = t.words(&[0, 0, release, 0, get]);
+            let batches = rng.below(4);
+            let mut wcs = Vec::new();
+            let mut scans = Vec::new();
+            let mut batch_lists = Vec::new();
+            for _ in 0..batches {
+                let n = if rng.chance(6) { 20 } else { rng.below(5) };
+                let mut list = vec![0u32; 20];
+                for slot in list.iter_mut().take(n as usize) {
+                    let vt = if rng.chance(6) { 3u16 } else { 8 };
+                    let bstr = if rng.chance(6) {
+                        0
+                    } else {
+                        0xa000 + rng.below(0x100)
+                    };
+                    let var: Vec<u8> = vt
+                        .to_le_bytes()
+                        .into_iter()
+                        .chain([0; 6])
+                        .chain(bstr.to_le_bytes())
+                        .chain([0; 4])
+                        .collect();
+                    let var = t.alloc(&var);
+                    let r = hr(&mut rng);
+                    *slot = t.words(&[device_vt, var, r]);
+                    if vt == 8 && bstr != 0 && r < 0x8000_0000 {
+                        let ig = !rng.chance(4);
+                        wcs.push(u32::from(ig) * 0xb000);
+                        if ig {
+                            for _ in 0..2 {
+                                let there = !rng.chance(4);
+                                wcs.push(u32::from(there) * 0xc000);
+                                if there {
+                                    scans.push((
+                                        u32::from(!rng.chance(5)),
+                                        rng.below(4) | (rng.below(2) << 16),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                batch_lists.push((list, n));
+            }
+            wcs.extend([0; 4]);
+            t.stub_import_seq(ip::WCSSTR_IAT, 2, 0, &wcs);
+            // swscanf_s: answers the sequence's count and writes its value
+            let answers: Vec<u32> = scans.iter().map(|s| s.0).chain([0; 4]).collect();
+            let values: Vec<u32> = scans.iter().map(|s| s.1).chain([0; 4]).collect();
+            let values_t = t.words(&values);
+            let ctr = t.words(&[0]);
+            t.stub_import_seq(ip::SWSCANF_S_IAT, 3, 0, &answers);
+            let seq_stub: u32 = Mem::read(&t.a, t.rebase(ip::SWSCANF_S_IAT));
+            let mut c = vec![0x51, 0x52]; // push ecx; push edx
+            c.push(0xa1);
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(values_t.to_le_bytes()); // mov ecx, [values + eax*4]
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.extend([0x8b, 0x54, 0x24, 0x14]); // mov edx, [esp+0x14] (out)
+            c.extend([0x89, 0x0a]); // mov [edx], ecx
+            c.extend([0x5a, 0x59]); // pop edx; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(seq_stub.wrapping_sub(here).to_le_bytes());
+            let sc = t.cave_code(&c);
+            let slot = t.rebase(ip::SWSCANF_S_IAT);
+            t.patch(slot, &sc.to_le_bytes());
+            // the enumerator: Next copies the batches in turn
+            let tables: Vec<u32> = batch_lists.iter().map(|(l, _)| t.words(l)).collect();
+            let counts: Vec<u32> = batch_lists.iter().map(|(_, n)| *n).chain([0]).collect();
+            let empty = t.zeros(0x50);
+            let srcs: Vec<u32> = tables.iter().copied().chain([empty]).collect();
+            let srcs = t.words(&srcs);
+            let counts_t = t.words(&counts);
+            let nctr = t.words(&[0]);
+            let next_log = t.stub_code(0x5602, false, 5, 5, 0);
+            let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+            c.push(0xa1);
+            c.extend(nctr.to_le_bytes()); // mov eax, [nctr]
+            c.extend([0x8b, 0x34, 0x85]);
+            c.extend(srcs.to_le_bytes()); // mov esi, [srcs + eax*4]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(counts_t.to_le_bytes()); // mov ecx, [counts + eax*4]
+            c.extend([0x8b, 0x7c, 0x24, 0x20]); // mov edi, [esp+0x20] (&returned)
+            c.extend([0x89, 0x0f]); // mov [edi], ecx
+            c.extend([0x8b, 0x7c, 0x24, 0x1c]); // mov edi, [esp+0x1c] (array)
+            c.extend([0xb9, 0x14, 0, 0, 0]); // mov ecx, 20
+            c.extend([0xf3, 0xa5]); // rep movsd
+            c.extend([0xff, 0x05]);
+            c.extend(nctr.to_le_bytes()); // inc dword [nctr]
+            c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(next_log.wrapping_sub(here).to_le_bytes());
+            let next = t.cave_code(&c);
+            let erel = t.stub_code(0x5603, false, 1, 1, 0);
+            let evt = t.words(&[0, 0, erel, 0, next]);
+            let enumerator = if rng.chance(10) { 0 } else { t.words(&[evt]) };
+            let ewrite = t.words(&[enumerator]);
+            let r = hr(&mut rng);
+            let cie = t.stub_code_writes(0x5604, false, 5, 5, r, 4, ewrite, 4);
+            let srel = t.stub_code(0x5605, false, 1, 1, 0);
+            let mut svt = vec![0u32; 0x13];
+            svt[2] = srel;
+            svt[0x12] = cie;
+            let svt = t.words(&svt);
+            let services = if rng.chance(10) { 0 } else { t.words(&[svt]) };
+            let swrite = t.words(&[services]);
+            let r = hr(&mut rng);
+            let connect = t.stub_code_writes(0x5606, false, 9, 9, r, 8, swrite, 4);
+            let lrel = t.stub_code(0x5607, false, 1, 1, 0);
+            let lvt = t.words(&[0, 0, lrel, connect]);
+            let locator = if rng.chance(10) { 0 } else { t.words(&[lvt]) };
+            let lwrite = t.words(&[locator]);
+            let r = hr(&mut rng);
+            let cci = t.stub_code_writes(ip::CO_CREATE_INSTANCE_IAT, false, 5, 5, r, 4, lwrite, 4);
+            let at = t.rebase(ip::CO_CREATE_INSTANCE_IAT);
+            t.patch(at, &cci.to_le_bytes());
+            t.skip = 0;
+            let what = format!("Input_IsXInputDevice #{case} batches {batches} want {want:#x}");
+            t.check_framed(
+                &what,
+                0x0062_44f0,
+                Conv::Cdecl,
+                &[guid],
+                ip::XINPUT_FRAME,
+                |m, ebp| Out::U8(ip::is_xinput_device(m, ebp, guid)),
+            );
+        }
+    });
+}
+
+/// `PhyreFIOS_LoadMagicfilePrx` (framed: the string, the conversion
+/// pointer and its buffer): the PRX loading or not, the resource found
+/// or not, the conversion keeping its inline buffer or allocating, the
+/// string's last reference or not; the callees stubbed, the string
+/// manager a fake.
+#[test]
+fn vfs_load_magicfile_prx_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0c01);
+        for case in 0..60 {
+            t.reset();
+            let r = if rng.chance(3) { rng.next() } else { 0 };
+            t.stub(vf::LOADS_PRX, false, 3, 0, r);
+            let free = t.stub_code(0x5700, true, 1, 1, 0);
+            let owner_vt = t.words(&[0, free]);
+            let owner = t.words(&[owner_vt]);
+            let data = t.words(&[owner, 0, 0, 1 + rng.below(2), 0]);
+            let nil = t.stub_code(0x5701, true, 0, 0, data);
+            let mvt = t.words(&[0, 0, 0, nil]);
+            let manager = t.rebase(vf::STRING_MANAGER);
+            t.patch(manager, &mvt.to_le_bytes());
+            let inst = if rng.chance(3) { 0 } else { rng.next() };
+            t.stub(vf::FIND_STRING_INSTANCE, false, 2, 0, inst);
+            t.stub(vf::LOAD_STRING, true, 2, 2, rng.next());
+            // the conversion: keeps its inline buffer, or points elsewhere
+            let ebp = t.frame_ebp(3);
+            let wide = if rng.chance(2) {
+                ebp - 0x104
+            } else {
+                rng.next()
+            };
+            let log = t.stub_code(vf::TO_WIDE, true, 2, 2, rng.next());
+            let mut c = vec![0xc7, 0x01];
+            c.extend(wide.to_le_bytes()); // mov dword [ecx], wide
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let at = if rng.chance(3) { log } else { t.cave_code(&c) };
+            t.jump(vf::TO_WIDE, at);
+            t.stub(vf::STRING_INSERT, true, 2, 2, rng.next());
+            t.stub_import(vf::FREE_IAT, false, 1, 0, 0);
+            t.stub_import(vf::SHOW_CURSOR_IAT, false, 1, 1, 0);
+            t.stub_import(vf::MESSAGE_BOX_IAT, false, 4, 4, 1);
+            t.stub(vf::RESET_TO_LAUNCHER, false, 0, 0, 0);
+            let (name, b, c) = (rng.next(), rng.next(), rng.next());
+            t.skip = 4;
+            let what = format!("LoadMagicfilePrx #{case} r {r:#x} wide {wide:#x}");
+            t.check_framed(
+                &what,
+                0x0067_93e0,
+                Conv::Cdecl,
+                &[name, b, c],
+                vf::PRX_FRAME,
+                |m, ebp| Out::U32(vf::load_magicfile_prx(m, ebp, name, b, c)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `0x006790c0` (the gradient mesh set-up; framed: its five factors; the
+/// caller's `c` slot it uses as scratch): modes 0..4, operands with
+/// zeros, signs, infinities and quiet NaNs.
+#[test]
+fn ui_grad_mesh_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0d01);
+        for case in 0..200 {
+            t.reset();
+            let this = t.alloc(&(0..0x1f0).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let float = |rng: &mut Rng| match rng.below(8) {
+                0 => 0u32,
+                1 => 0x8000_0000,
+                2 => 0x7f80_0000,
+                3 => 0x7fc0_0001,
+                _ => (f32::from(rng.next() as i16) / 64.0).to_bits(),
+            };
+            let (a, c, d) = (float(&mut rng), float(&mut rng), float(&mut rng));
+            let mode = rng.below(5);
+            let args = [a, mode, c, d];
+            let slots = t.frame_ebp(4) + 8;
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            let what = format!("0x006790c0 #{case} mode {mode} {a:#x} {c:#x} {d:#x}");
+            t.check_framed(
+                &what,
+                0x0067_90c0,
+                Conv::Thiscall(this),
+                &args,
+                ui::GRAD_FRAME,
+                |m, ebp| Out::U32(ui::grad_mesh(m, ebp, this, mode, slots)),
+            );
+            let mut x = [0; 16];
+            let mut y = [0; 16];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "{what}: the argument slots");
+        }
+    });
+}
+
+/// `0x00634850` (the graphic object's destructor; framed: `this` and the
+/// scratch word the trees and the erase use): random members (arrays
+/// owned or borrowed, words set or 0, tagged or not), every callee a
+/// recording stub.
+#[test]
+fn ui_graphic_final_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0e01);
+        for case in 0..12 {
+            t.reset();
+            let words: Vec<u32> = (0..0x10d90 / 4)
+                .map(|_| match rng.below(4) {
+                    0 => 0,
+                    1 => 0x8000_0000 | rng.next(),
+                    _ => rng.next(),
+                })
+                .collect();
+            let this = t.words(&words);
+            let head = t.words(&[rng.next(), rng.next(), rng.next()]);
+            t.w32(this + 0x11dc, head);
+            // the checked array owned but empty now and then
+            if rng.chance(2) {
+                t.w32(this + 0x10d84, rng.below(10));
+                t.w32(this + 0x10d88, 0);
+            }
+            t.stubs(&[
+                (ui::PHYRE_FREE_FN, false, 1, 0, 0),
+                (ui::USER_FREE_THUNK, false, 1, 0, 0),
+                (ui::OPERATOR_DELETE, false, 1, 0, 0),
+                (ui::DTOR_636970, true, 0, 0, 0),
+                (ui::FREE_LIST_DTOR, true, 0, 0, 0),
+                (ui::FREE_LIST_RESET, true, 0, 0, 0),
+                (ui::TREE_CLEAR, true, 0, 0, 0),
+                (ui::TREE_ORPHAN_ALL, true, 0, 0, 0),
+                (ui::DTOR_585230, true, 0, 0, 0),
+                (ui::BUFFER_TREE_DTOR, true, 0, 0, 0),
+                (ui::CLUSTER_DTOR, true, 0, 0, 0),
+                (ui::TREE_ERASE, true, 3, 3, 0),
+                (ui::ASSET_LIST_DTOR, true, 0, 0, 0),
+                (ui::VIDEO_DTOR, true, 0, 0, 0),
+                (ui::WORLD_RELEASE, true, 0, 0, 0),
+                (ui::LIST_VECTOR_DTOR, true, 0, 0, rng.next()),
+                (ui::VECTOR_DTOR_ITERATOR, false, 4, 4, 0),
+            ]);
+            t.stub_import(ui::CLOSE_HANDLE_IAT, false, 1, 1, 1);
+            t.skip = 0xc;
+            let what = format!("0x00634850 #{case}");
+            t.check_framed(
+                &what,
+                0x0063_4850,
+                Conv::Thiscall(this),
+                &[],
+                ui::FINAL_FRAME,
+                |m, ebp| Out::U32(ui::graphic_final(m, ebp, this)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_input: the pad update) ----
+
+/// A recording stub over the original at `sym` (`ecx`, `n` words, `pops`)
+/// returning `seq[k]` in `ST0` on its `k`-th call.
+fn stub_float_seq(t: &mut Twins, sym: u32, n: u32, pops: u32, seq: &[u32]) {
+    let log_stub = t.stub_code(sym, true, n, pops, 0);
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let mut c = vec![0xa1];
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0xd9, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // fld dword [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let addr = t.cave_code(&c);
+    t.jump(sym, addr);
+}
+
+/// `Virtuos_InputManager_updateInput` (framed: the axes, the callback's
+/// answer, the loop offsets; the SEH words skipped): the key aliases'
+/// latches, the callback absent, skipping or not, the free camera there,
+/// missing (created) and active or not, the escape menu, the pause and
+/// the controller thread on or off, the Eternal Calm scenes; the keys a
+/// sequence of answers (`al` 0 with high bits set now and then), the
+/// axes zeros, signed zeros, quiet NaNs or values (no signalling NaN: the
+/// emulator's `fld` keeps it signalling, the bridge's `ST0` read quiets
+/// it, and the stick axes are never one).
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the paths
+fn input_update_input_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0f01);
+        for case in 0..240 {
+            t.reset();
+            let app = rng.next();
+            t.stub(ip::GET_APPLICATION, false, 0, 0, app);
+            let dense = [0, 1, 3, 8, 24][rng.below(5) as usize];
+            let answer = |rng: &mut Rng| {
+                if dense > 0 && rng.below(dense) == 0 {
+                    rng.next() | 1
+                } else if rng.chance(3) {
+                    rng.next() & !0xff
+                } else {
+                    0
+                }
+            };
+            let held: Vec<u32> = (0..90).map(|_| answer(&mut rng)).collect();
+            stub_seq(t, ip::KEY_HELD, true, 2, 2, &held);
+            let down: Vec<u32> = (0..24).map(|_| answer(&mut rng)).collect();
+            stub_seq(t, ip::KEY_DOWN, true, 2, 2, &down);
+            let stick = |rng: &mut Rng| match rng.below(8) {
+                0..=3 => 0u32,
+                4 => 0x8000_0000,
+                5 => 0x7fc0_0001,
+                6 => 0xffc0_0000,
+                _ => (f32::from(rng.next() as i16) / 4096.0).to_bits(),
+            };
+            let axes: Vec<u32> = (0..4).map(|_| stick(&mut rng)).collect();
+            stub_float_seq(t, ip::AXIS, 2, 2, &axes);
+            let manager = rng.next();
+            t.stubs(&[
+                (ip::SET_KEY, true, 3, 3, rng.next()),
+                (ip::CLEAR_HOLD_TIMERS, true, 0, 0, rng.next()),
+                (ip::UPDATE_HOLD_TIMERS, true, 0, 0, rng.next()),
+                (ip::PUSH_CONTROLLER_INFO, true, 5, 5, rng.next()),
+                (ip::CONTROLLER_MANAGER, false, 0, 0, manager),
+                (
+                    ip::IS_ETERNAL_CALM,
+                    false,
+                    1,
+                    0,
+                    rng.next() * u32::from(rng.chance(2)),
+                ),
+            ]);
+            // the aliases' latches
+            let aliases = t.rebase(ip::KEY_ALIASES);
+            for k in 0..4 {
+                let latch = [0u8, 1, 1, 2][rng.below(4) as usize];
+                t.patch(aliases + 12 * k + 8, &[latch]);
+            }
+            // the free camera
+            let mut cam = vec![0u8; 0x340];
+            let flags = rng.below(8);
+            cam[0x338] = u8::from(flags & 1 != 0);
+            cam[0x33c] = u8::from(flags & 2 != 0);
+            cam[rng.below(4) as usize] = u8::from(flags & 4 != 0) << rng.below(8);
+            let cam = t.alloc(&cam);
+            if rng.chance(4) {
+                t.g32(ip::FREE_CAMERA, 0);
+                let block = t.alloc(&[0x5a; 0x340]);
+                t.stub(ip::OPERATOR_NEW, false, 1, 0, block);
+                t.stub(ip::FREE_CAMERA_CTOR, true, 0, 0, cam);
+            } else {
+                t.g32(ip::FREE_CAMERA, cam);
+            }
+            let mut menu = vec![0u8; 0x80];
+            menu[0x70] = u8::from(rng.chance(4)) << rng.below(8);
+            let menu = t.alloc(&menu);
+            t.g32(ip::ESC_MENU, menu);
+            t.g32(ip::PAUSE_ENTERED, rng.next() * u32::from(rng.chance(3)));
+            t.g32(
+                ip::ASYNC_CONTROLLER_ON,
+                rng.next() * u32::from(rng.chance(3)),
+            );
+            t.g32(ip::CURRENT_MAP, rng.next());
+            t.g32(ip::FORCED_ENCOUNT, rng.next());
+            // the bindings' bits single bits, so the pause's mask leaves some
+            let mapper: Vec<u32> = (0..0x240 / 4)
+                .map(|k| {
+                    if k % 2 == 1 {
+                        1 << rng.below(32)
+                    } else {
+                        rng.next()
+                    }
+                })
+                .collect();
+            let mapper = t.words(&mapper);
+            let mut words: Vec<u32> = (0..0xb8 / 4).map(|_| rng.next()).collect();
+            words[0xa4 / 4] = mapper;
+            words[0xb4 / 4] = if rng.chance(3) {
+                let skip = [0, 0x100 << rng.below(24), rng.next() | 1][rng.below(3) as usize];
+                let skip = t.words(&[skip]);
+                t.stub_code_writes(0x5600, false, 3, 0, rng.next(), 2, skip, 4)
+            } else {
+                0
+            };
+            let this = t.words(&words);
+            t.skip = 0xc;
+            let what = format!("Virtuos_InputManager_updateInput #{case}");
+            t.check_framed(
+                &what,
+                0x0063_2a30,
+                Conv::Thiscall(this),
+                &[],
+                ip::UPDATE_FRAME,
+                |m, ebp| Out::U32(ip::update_input(m, ebp, this)),
+            );
+            t.skip = 0;
         }
     });
 }
