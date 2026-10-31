@@ -1807,6 +1807,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "o4 more float_ratio_half 0519@2750",
         &o4_more::FLOAT_RATIO_HALF_0519_2750,
     ),
+    (
+        "o4 more2 object_node_edx 0307@b480",
+        &o4_more2::OBJECT_NODE_EDX_0307_B480,
+    ),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

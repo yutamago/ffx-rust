@@ -54,7 +54,7 @@ pub fn object_list_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 /// and the words at `n_set` and `h_empty` the node; else `+0x0` the head
 /// `*h`, the head's `+0x4` the node and `*h_set` the node. Then `+0x8`
 /// the node itself.
-fn push_head(
+pub(crate) fn push_head(
     g: &mut impl crate::Mem,
     node: u32,
     empty: bool,

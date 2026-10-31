@@ -7,6 +7,7 @@ mod magic_l3;
 #[path = "magic/o4.rs"]
 mod o4;
 
+use ffx_magic::{Ret, o4_more2};
 use magic::{Call, Eax, SCRATCH, Twin};
 use o4::{copies, dlls, fill};
 
@@ -89,13 +90,57 @@ fn entries_in_every_copy() {
 }
 
 #[test]
+fn object_node_edx() {
+    const LIST: &[(u16, u32)] = &[(307, 0xb480)];
+    for &(n, rva) in LIST {
+        let Some(mut t) = magic_l3::twin(n) else {
+            return;
+        };
+        let f = t.at(rva);
+        let found = ffx_magic::INTERNAL
+            .iter()
+            .find(|(_, sig)| t.img.matches(f, sig))
+            .map(|(n, _)| *n);
+        assert!(found.is_some_and(|n| n.starts_with("o4 more2 object_node_edx")));
+        for c in 0..2u32 {
+            // three free nodes in the take's pool, the word before them set
+            let take = t.img.rel32_target(f + 0x15);
+            let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+            let (count, free) = (t.img.word(take + 0x04), t.img.word(take + 0x17));
+            for i in 1..=3 {
+                t.write(node(i), &[0x5a; 0x1c]);
+                t.set_u32(node(i), node(if i == 1 { 3 } else { i - 1 }));
+                t.set_u32(node(i) + 4, node(if i == 3 { 1 } else { i + 1 }));
+            }
+            t.set_u32(node(1) - 4, 0x5a5a_5a5a);
+            t.set_u32(free, node(1));
+            t.set_u16(count, 3);
+            fill(&mut t, A, 8, c);
+            t.set_u32(t.img.word(f + 0x1b), c * (P + 0x40));
+            fill(&mut t, P + 0x40, 4, c);
+            t.set_u32(t.img.word(f + 0x33), P + 0x40);
+            let regs = Call {
+                ecx: A,
+                edx: 0x0ed0 + c,
+                ..Call::default()
+            };
+            t.check(f, regs, &[], Eax::Checked, |g, img, fr| {
+                Ret::eax(o4_more2::object_node_edx(g, img, fr.at, fr.ecx, fr.edx))
+            });
+        }
+    }
+}
+
+#[test]
 fn dll_main_writes_only_crt_state() {
-    let lists: Vec<&[(u16, u32)]> = CASES.iter().map(|c| c.1).collect();
+    let mut lists: Vec<&[(u16, u32)]> = CASES.iter().map(|c| c.1).collect();
+    lists.push(&[(307, 0xb480)]);
     for n in dlls(&lists) {
         magic_l3::dll_main(n);
     }
 }
 
 // Mutation testing (M5 magic round 4, tools/mutants.py, a few mutants per
-// code line, survivors rerun after the tests were strengthened): 41
-// mutants, 41 killed.
+// code line, survivors rerun after the tests were strengthened): 57
+// mutants, 56 killed. The survivor is equivalent: `object_node_edx`'s
+// `+0x4` = 0 on the new node, which the pool's take has already done.

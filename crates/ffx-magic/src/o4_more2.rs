@@ -3,8 +3,10 @@
 //! ends in a tail jump. Operands are read from the code (`w(off)` = the
 //! word at `+off`).
 
+use crate::o4_more::push_head;
 use crate::runtime::slot_target;
 use crate::sa_misc::register_parts;
+use crate::sa_pool::take;
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 /// `(a)` (`magic_0673` 0x10001c70, 88 bytes): `a[0xe4]` = the word
@@ -82,6 +84,26 @@ pub fn slot_chain_jump<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     Ret::eax(register_parts(g, img, img.rel32_target(f + 0x55), r))
 }
 
+/// `this` in `ecx`, `v` in `edx` (`magic_0307` 0x1000b480, 89 bytes,
+/// internal): `this[0x10]` and `this[0x14]` = `v`, the halfword
+/// `this[0x18]` 0; a pool node ([`take`], `+0x15`, the owner the
+/// immediate at `+0x06`) with `+0x14` = `this`, byte `+0x18` 1 and `+0x4`
+/// 0, put at the head of the list ([`push_head`]: count word `+0x1b`,
+/// head `+0x33`/`+0x3d`, empty `+0x4c`/`+0x51`). Returns the node.
+pub fn object_node_edx<G: Game>(g: &mut G, img: &Image, f: u32, this: u32, v: u32) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    g.write::<u32>(this.wrapping_add(0x14), v);
+    g.write::<u32>(this.wrapping_add(0x10), v);
+    g.write::<u16>(this.wrapping_add(0x18), 0);
+    let node = take(g, img, img.rel32_target(f + 0x15), w(0x06));
+    let n = g.read::<u32>(w(0x1b));
+    g.write::<u32>(node.wrapping_add(0x14), this);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    push_head(g, node, n == 0, (w(0x33), w(0x3d)), (w(0x4c), w(0x51)));
+    node
+}
+
 /// [`count_fade`] in `magic_0673` (0x10001c70, 88 bytes).
 pub const COUNT_FADE_0673_1C70: Sig = Sig {
     len: 88,
@@ -103,5 +125,13 @@ pub const SLOT_CHAIN_JUMP_0446_4D30: Sig = Sig {
     len: 89,
     hash: 0xd768_4774_c2e0_9d11,
     calls: &[(0x55, Callee::Sig(&crate::sa_misc::REGISTER_PARTS))],
+    imports: &[],
+};
+
+/// [`object_node_edx`] in `magic_0307` (0x1000b480, 89 bytes).
+pub const OBJECT_NODE_EDX_0307_B480: Sig = Sig {
+    len: 89,
+    hash: 0x91db_f3d0_816d_8ea6,
+    calls: &[(0x15, Callee::Sig(&crate::sa_pool::TAKE))],
     imports: &[],
 };
