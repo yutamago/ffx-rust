@@ -232,6 +232,8 @@ pub mod m5v_b;
 pub mod m5v_c;
 pub mod m5v_d;
 pub mod m5v_e;
+pub mod m5v_f;
+pub mod m5v_g;
 pub mod menu;
 pub mod misc;
 pub mod movie;

@@ -36,6 +36,7 @@ use ffx_prender::m5m_a::{self as ma, bridge as a};
 use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::{self as md, bridge as d};
+use ffx_prender::m5m_e::{self as me, bridge as e};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -2646,6 +2647,469 @@ fn mouse_move_get_matches_the_original() {
                 Conv::Cdecl,
                 &[dx, dy],
                 |g| Out::U32(d::mouse_move_get(g, dx, dy)),
+            );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 1 (ffx_prender::m5m_e) ----
+
+/// Zeroes `n` bytes of both stacks below the call top.
+fn r5_zero_stack(t: &mut Twins, n: u32) {
+    let top = call_top(&t.a);
+    let z = vec![0; n as usize];
+    t.a.write(top - n, &z).unwrap();
+    t.b.write(top - n, &z).unwrap();
+}
+
+/// Asserts both oracles hold the same bytes at `at..at + n`.
+fn r5_same(t: &Twins, what: &str, at: u32, n: usize) {
+    let mut x = vec![0; n];
+    let mut y = vec![0; n];
+    Mem::read_bytes(&t.a, at, &mut x);
+    Mem::read_bytes(&t.b, at, &mut y);
+    assert_eq!(x, y, "{what}: the stack at {at:#x}");
+}
+
+/// A recording stub over `sym` that then stores `v` through its
+/// `arg`-th argument (a callee filling an out word).
+fn r5_out_stub(t: &mut Twins, sym: u32, tag: u32, n: u32, ret: Ret, arg: u8, v: u32) {
+    let s = t.stub_code(tag, false, n, 0, ret, false);
+    // the stub ends `ret`: put the store in front of it
+    let mut code = vec![0x51]; // push ecx
+    code.extend([0x8b, 0x4c, 0x24, 4 + 4 + 4 * arg]); // mov ecx, [esp+8+4arg]
+    code.extend([0xc7, 0x01]);
+    code.extend(v.to_le_bytes()); // mov dword [ecx], v
+    code.push(0x59); // pop ecx
+    code.push(0xe9);
+    let at = t.a.alloc_code(&[0; 16]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 16]).unwrap(), at);
+    code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes()); // jmp s
+    t.write(at, &code);
+    t.jump(sym, at);
+}
+
+#[test]
+fn r5_small_rcui_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_e501);
+        for case in 0..24_u32 {
+            let w = t.zeros(0xc00);
+            for off in [0x830_u32, 0x834, 0x838, 0x83c, 0x8c4, 0x8d0, 0x914, 0x918] {
+                t.w32(w + off, rng.next());
+            }
+            t.w32(w + 0x8b0, rng.below(4));
+            t.w32(w + 0x8b4, u32::from(rng.chance(2)));
+            t.w32(w + 0x920, if rng.chance(3) { 0 } else { rng.below(40) });
+            t.global(me::RCUI_WORK.sym, w);
+
+            // the pre-memory window
+            t.stub_sym(me::RCUI_WINDOW_CREATE, 1, false, 9, 0, Ret::Val(rng.next()));
+            t.check("rcuiPreMemWinOpen", 0x0093_64a0, Conv::Cdecl, &[], |o| {
+                Out::U32(e::pre_mem_win_open(o))
+            });
+
+            // its procedure: no system, no map, close, draw, others
+            let sys = if case % 5 == 0 { 0 } else { t.zeros(8) };
+            if sys != 0 && case % 5 != 1 {
+                let map = t.zeros(0x20);
+                let used = match case % 3 {
+                    0 => rng.below(0x1_0000),
+                    1 => 0x8000_0000 | rng.next(),
+                    _ => rng.next(),
+                };
+                t.w32(map + 0x10, used);
+                t.w32(sys, map);
+            }
+            t.global(me::YN_MAP_SYSTEM.sym, sys);
+            for (k, sym) in [
+                me::PRINT_SET_X,
+                me::PRINT_SET_Y,
+                me::GU_PRINTF,
+                me::PERCENT_PRINT,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let n = if sym == me::GU_PRINTF { 2 } else { 1 };
+                t.stub_sym(sym, 2 + k as u32, false, n, 0, Ret::Val(rng.next()));
+            }
+            let msg = match case % 4 {
+                0 => 0x8003,
+                1 | 2 => 0x8011,
+                _ => rng.next(),
+            };
+            let args = [rng.next(), msg, rng.next()];
+            t.check("rcuiPreMemProc", 0x0093_63f0, Conv::Cdecl, &args, |o| {
+                Out::U32(e::pre_mem_proc(o, msg))
+            });
+
+            // the particle kick
+            // (an absolute address: no relocation)
+            let main = if case % 4 == 0 { 0 } else { rng.next() };
+            t.patch(me::RCEF_DEBUG_MAIN, &main.to_le_bytes());
+            t.stub_sym(
+                me::RCEF_GET_CHR_HANDLE,
+                6,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                me::CH_OPTPOS_GET_ELEMENT,
+                7,
+                false,
+                3,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.stub_sym(
+                me::RCEF_MAIN_KICK_PAR,
+                8,
+                false,
+                10,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let force = rng.next();
+            t.check("rcuiParProcKick", 0x0093_6340, Conv::Cdecl, &[force], |o| {
+                e::par_proc_kick(o, force);
+                Out::None
+            });
+
+            // the full path (the real sprintf)
+            for (off, s) in [
+                (0x74_u32, &b"host:/map\0"[..]),
+                (0x274, b"bs\0"),
+                (0x27c, b"bsil00\0"),
+            ] {
+                t.write(w + off, s);
+            }
+            t.stub_sym(me::RCUI_GET_MAP_NO, 9, false, 1, 0, Ret::Val(rng.next()));
+            t.check("rcuiMakeFullPath", 0x0093_7b20, Conv::Cdecl, &[], |o| {
+                Out::U32(e::make_full_path(o))
+            });
+
+            // the window opener and the thunk
+            t.stub_sym(me::GU_WINDOW_CREATE, 10, false, 6, 0, Ret::Val(rng.next()));
+            t.stub_sym(me::GU_MOUSE_SET_WINDOW, 11, false, 1, 0, Ret::Val(11));
+            t.stub_sym(
+                me::GU_WINDOW_CLOSE_TREE,
+                12,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let (x, y) = (rng.next(), rng.next());
+            t.check(
+                "rcuiTreeWindowOpen_0093c1d0",
+                0x0093_c1d0,
+                Conv::Cdecl,
+                &[x, y],
+                |o| Out::U32(e::tree_window_open(o, x, y)),
+            );
+            t.stub_sym(me::ABMAP_CHENG_PANEL, 13, false, 2, 0, Ret::Val(rng.next()));
+            t.check(
+                "abmap_cheng_panel_thunk_00a45860",
+                0x00a4_5860,
+                Conv::Cdecl,
+                &[x, y],
+                |o| Out::U32(e::abmap_cheng_panel_thunk(o, x, y)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5_rcbg_loads_and_saves_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_e502);
+        for case in 0..24_u32 {
+            // the scene loads
+            t.stub_sym(me::SCENE_LOAD_TEXTURE, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(me::SCENE_LOAD_TEXT_SUB, 2, false, 1, 0, Ret::Val(2));
+            t.stub_sym(me::SCENE_CHK_LAYERS, 3, false, 1, 0, Ret::Val(rng.next()));
+            let scene = rng.next();
+            t.check(
+                "rcbgSceneLoadAll_0093aec0",
+                0x0093_aec0,
+                Conv::Cdecl,
+                &[scene],
+                |o| Out::U32(e::scene_load_all(o, scene)),
+            );
+            let map = t.zeros(0x10);
+            let sys = t.words(&[map]);
+            t.global(me::YN_MAP_SYSTEM.sym, sys);
+            t.stub_sym(me::PRE_INIT, 4, false, 0, 0, Ret::Val(4));
+            t.stub_sym(me::RC_ALLOC, 5, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(me::SCENE_INIT, 6, false, 1, 0, Ret::Val(6));
+            t.check("rcbgPreLoadText", 0x0093_ae60, Conv::Cdecl, &[], |o| {
+                Out::U32(e::pre_load_text(o))
+            });
+            t.reset();
+
+            // the FP texture loads: counts -1..3 (the real sprintf)
+            let n = rng.below(5).wrapping_sub(1);
+            t.stub_sym(me::DEL_OBJECTS, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(me::TRX_COUNT, 2, false, 2, 0, Ret::Val(n));
+            t.stub_sym(me::TRX_NEW, 3, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(me::TRX_LOAD, 4, false, 4, 0, Ret::Val(4));
+            t.stub_sym(me::PRE_ADD_OBJECT, 5, false, 1, 0, Ret::Val(rng.next()));
+            let path = t.alloc(b"host:/fp/path\0");
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "rcbgFpTrxTexLoadAll_0093a890",
+                0x0093_a890,
+                Conv::Cdecl,
+                &[path],
+                |o| Out::U32(e::fp_trx_load_all(o, ebp - 0x14, path)),
+            );
+            r5_same(t, "rcbgFpTrxTexLoadAll_0093a890", ebp - 0x14, 0x10);
+
+            // the stage-name path: no id, unknown, the two formats
+            let id = if case % 5 == 0 { 0 } else { rng.next() };
+            let flag = u32::from(rng.chance(2));
+            let known = u32::from(case % 4 != 1);
+            let name = u32::from_le_bytes([b'b', 0xe9, b's', b'l']);
+            r5_out_stub(t, me::RCUI_GET_STAGE_NAME2, 6, 3, Ret::Val(known), 1, name);
+            t.stub_sym(me::FP_TRX_LOAD_ALL, 7, false, 1, 0, Ret::Val(rng.next()));
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x180);
+            t.check(
+                "rcbgFpLoadTextSub",
+                0x0093_a800,
+                Conv::Cdecl,
+                &[id, flag],
+                |o| Out::U32(e::fp_load_text_sub(o, ebp - 0xc, ebp - 0x10c, id, flag)),
+            );
+            r5_same(t, "rcbgFpLoadTextSub", ebp - 0x10c, 0x108);
+            t.reset();
+
+            // the binary save: packs or none
+            let packs = rng.below(3).wrapping_sub(1);
+            r5_out_stub(
+                t,
+                me::SAVE_CHK_PACK_LIST,
+                1,
+                2,
+                Ret::Val(packs),
+                1,
+                rng.next(),
+            );
+            t.stub_sym(me::GUIDE_MAP_SAVE_SUB, 2, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(me::SAVE_BIN_NORMAL, 3, false, 0, 0, Ret::Val(rng.next()));
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x180);
+            t.check("rcbgSaveBin_00938fd0", 0x0093_8fd0, Conv::Cdecl, &[], |o| {
+                Out::U32(e::save_bin(o, ebp - 0x108))
+            });
+            r5_same(t, "rcbgSaveBin_00938fd0", ebp - 0x108, 4);
+            t.reset();
+
+            // the writes
+            let seq: Vec<u32> = (0..12).map(|_| rng.next()).collect();
+            let seq = t.seq(&seq);
+            t.stub_sym(me::SCE_WRITE, 1, false, 3, 0, seq);
+            let tex = t.zeros(0x40);
+            t.w32(tex + 0x30, rng.below(64));
+            t.w32(tex + 0x34, rng.below(64));
+            t.w32(tex + 0x38, rng.next());
+            let fd = rng.next();
+            t.check("rcbgTrxSave", 0x0093_9950, Conv::Cdecl, &[tex, fd], |o| {
+                Out::U32(e::trx_save(o, tex, fd))
+            });
+            t.stub_sym(me::RC_PAD16, 2, false, 1, 0, Ret::Val(rng.below(17)));
+            let tag = t.alloc(b"YNPR");
+            t.stub_sym(me::CHUNK_TAG, 3, false, 1, 0, Ret::Val(tag));
+            let size = rng.next();
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            let junk: Vec<u8> = (0..0x10).map(|_| rng.next() as u8).collect();
+            t.a.write(ebp - 0x14, &junk).unwrap();
+            t.b.write(ebp - 0x14, &junk).unwrap();
+            t.b_top = Some(ebp - 0x80);
+            let slots = first_slot(&t.a, 2);
+            t.b.write(slots, &size.to_le_bytes()).unwrap();
+            t.check(
+                "rcbgSaveChunkHeader_00938f40",
+                0x0093_8f40,
+                Conv::Cdecl,
+                &[size, fd],
+                |o| Out::U32(e::save_chunk_header(o, slots, ebp - 0x14, fd)),
+            );
+            r5_same(t, "rcbgSaveChunkHeader_00938f40 frame", ebp - 0x14, 0x10);
+            r5_same(t, "rcbgSaveChunkHeader_00938f40 slots", slots, 4);
+            let obj = t.zeros(0x140);
+            t.w32(obj + 0x14, rng.next());
+            t.stub_sym(me::MESH_PAST_INDICES, 5, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(me::GET_PTR32, 6, false, 1, 0, Ret::Val(rng.next()));
+            let slots = first_slot(&t.a, 2);
+            t.b.write(slots, &obj.to_le_bytes()).unwrap();
+            t.check(
+                "rcbgSaveMesh_00938e70",
+                0x0093_8e70,
+                Conv::Cdecl,
+                &[obj, fd],
+                |o| Out::U32(e::save_mesh(o, slots, obj, fd)),
+            );
+            r5_same(t, "rcbgSaveMesh_00938e70 slots", slots, 4);
+            t.b_top = None;
+            t.reset();
+
+            // the model by extension: none, each known one, another
+            let ext: &[u8] = match case % 4 {
+                0 => b"model",
+                1 => b"model.a",
+                2 => b"model.b",
+                _ => b"x.y.c",
+            };
+            let mut s = ext.to_vec();
+            s.push(0);
+            let name = t.alloc(&s);
+            let dot = s
+                .iter()
+                .rposition(|&c| c == b'.')
+                .map_or(0, |i| name + i as u32);
+            t.import_sym(me::STRRCHR_SLOT, 1, 2, 0, Ret::Val(dot));
+            let hit = match case % 4 {
+                1 => vec![0, 1],
+                2 => vec![1, 0],
+                _ => vec![1, 1],
+            };
+            let seq = t.seq(&hit);
+            t.stub_sym(me::STRICMP, 2, false, 2, 0, seq);
+            t.stub_sym(
+                me::MODEL_CREATE_FROM_FILE,
+                3,
+                false,
+                2,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let a = rng.next();
+            t.check(
+                "rcbgModelLoadByExt_0093ad60",
+                0x0093_ad60,
+                Conv::Cdecl,
+                &[a, name],
+                |o| Out::U32(e::model_load_by_ext(o, a, name)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5_file_count_and_gauge_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_e503);
+        for case in 0..24_u32 {
+            // the numbered files: names with and without the prefix and
+            // digits (high bytes too)
+            let n = rng.below(6);
+            let names: Vec<u32> = (0..n)
+                .map(|_| {
+                    let mut s = b"ab".to_vec();
+                    for _ in 0..rng.below(4) {
+                        s.push(match rng.below(4) {
+                            0 => b'x',
+                            1 => 0xb5,
+                            _ => b'0' + rng.below(10) as u8,
+                        });
+                    }
+                    s.push(0);
+                    t.alloc(&s)
+                })
+                .collect();
+            let table = if names.is_empty() {
+                t.zeros(4)
+            } else {
+                t.words(&names)
+            };
+            let count = if case % 7 == 0 { 0xffff_ffff } else { n };
+            let mut code = vec![0x51, 0x8b, 0x4c, 0x24, 0x08]; // push ecx; mov ecx, [esp+8]
+            code.extend([0xc7, 0x01]);
+            code.extend(count.to_le_bytes()); // mov dword [ecx], count
+            code.extend([0xc7, 0x41, 0x08]);
+            code.extend(table.to_le_bytes()); // mov dword [ecx+8], names
+            code.push(0x59); // pop ecx
+            let s = t.stub_code(1, false, 2, 0, Ret::Val(1), false);
+            let at = t.a.alloc_code(&[0; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+            code.push(0xe9);
+            code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes());
+            t.write(at, &code);
+            t.jump(me::MAKE_FILE_LIST, at);
+            let hits: Vec<u32> = (0..8).map(|_| u32::from(rng.chance(3))).collect();
+            let seq = t.seq(&hits);
+            t.import_sym(me::STRNCMP_SLOT, 2, 3, 0, seq);
+            let prefix = t.alloc(b"ab\0");
+            let digits = match case % 4 {
+                0 => 0,
+                1 => 0xffff_ffff,
+                _ => rng.below(4),
+            };
+            let pattern = rng.next();
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 3);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "rcbgCountNumberedFiles_0093acb0",
+                0x0093_acb0,
+                Conv::Cdecl,
+                &[pattern, prefix, digits],
+                |o| {
+                    Out::U32(e::count_numbered_files(
+                        o,
+                        ebp - 0x10,
+                        pattern,
+                        prefix,
+                        digits,
+                    ))
+                },
+            );
+            r5_same(t, "rcbgCountNumberedFiles_0093acb0", ebp - 0x10, 12);
+            t.b_top = None;
+            t.reset();
+
+            // the gauge: values below, at and past 100
+            for (k, sym) in [
+                me::PACKET_BEGIN_TAG,
+                me::SET_PRIM,
+                me::SET_RGBAQ,
+                me::SET_XYZF2,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let n = match sym {
+                    me::SET_RGBAQ => 4,
+                    me::SET_XYZF2 => 2,
+                    _ => 1,
+                };
+                t.stub_sym(sym, 1 + k as u32, false, n, 0, Ret::Val(k as u32));
+            }
+            t.stub_sym(me::PACKET_END_TAG, 5, false, 0, 0, Ret::Val(rng.next()));
+            let value = match case % 3 {
+                0 => rng.below(101),
+                1 => 100 + rng.below(3),
+                _ => rng.next(),
+            };
+            let args = [rng.next(), rng.below(600), rng.below(400), value];
+            t.check(
+                "rcuiGaugeDraw_0093c730",
+                0x0093_c730,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(e::gauge_draw(o, args[0], args[1], args[2], args[3])),
             );
             t.reset();
         }

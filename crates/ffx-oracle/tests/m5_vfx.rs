@@ -31,6 +31,8 @@ use ffx_glue_other::m5v_b::{self as mb, bridge as b};
 use ffx_glue_other::m5v_c::{self as mc, bridge as c};
 use ffx_glue_other::m5v_d::{self as md, bridge as d};
 use ffx_glue_other::m5v_e::{self as me, bridge as e};
+use ffx_glue_other::m5v_f::{self as mf, bridge as f};
+use ffx_glue_other::m5v_g::{self as mg, bridge as vg};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -2299,6 +2301,1150 @@ fn bind_flags_and_thunks_match_the_original() {
                     Out::U32(e::jmp_thunk(o, target, &args))
                 });
             }
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 1 (ffx_glue_other::m5v_f) ----
+
+/// A `memset(p, v, n)` stub's work after the log: `rep stosb`.
+fn memset_code() -> Vec<u8> {
+    vec![
+        0x57, // push edi
+        0x8b, 0x7c, 0x24, 0x08, // mov edi, [esp+8]
+        0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp+0xc]
+        0x8b, 0x4c, 0x24, 0x10, // mov ecx, [esp+0x10]
+        0xf3, 0xaa, // rep stosb
+        0x5f, // pop edi
+    ]
+}
+
+/// A synthetic FP table of `n` entries with ids from a small set (0 for
+/// none), in both oracles.
+fn fp_table(t: &mut Twins, rng: &mut Rng, n: u32) -> u32 {
+    let data = t.zeros((0x64 + 0x50 * n + 0x10) as usize);
+    t.write(data + 4, &(n as u16).to_le_bytes());
+    for i in 0..n {
+        let id = if rng.chance(3) {
+            0
+        } else {
+            1 + rng.below(3) as u16
+        };
+        t.write(data + 0x64 + 0x50 * i, &id.to_le_bytes());
+    }
+    data
+}
+
+#[test]
+fn r5v_fp_natives_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0501);
+        for case in 0..16_u32 {
+            // no table, an empty one, and tables of 1..12 entries; the
+            // snapshot's own table first on a snapshot
+            if !(t.snapshot && case == 0) {
+                let data = match case % 8 {
+                    1 => 0,
+                    2 => fp_table(t, &mut rng, 0),
+                    _ => {
+                        let n = 1 + rng.below(12);
+                        fp_table(t, &mut rng, n)
+                    }
+                };
+                t.global(mf::FP_DATA.sym, data);
+            }
+            let runs = t.rebase(mf::FP_RUN);
+            let junk: Vec<u8> = (0..0x80 * 12).map(|_| rng.next() as u8).collect();
+            t.patch(runs, &junk);
+            let env = t.zeros(4);
+            t.global(mf::PPP_ENV_SLOT.sym, env);
+            t.stub_sym(
+                mf::PPP_ALL_FREE_POBJECT,
+                1,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.check(
+                "pppFpFreeAll_007296a0",
+                0x0072_96a0,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::fp_free_all(o);
+                    Out::None
+                },
+            );
+            t.patch(runs, &junk);
+            t.check(
+                "pppFpResetSameIds_00729740",
+                0x0072_9740,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::fp_reset_same_ids(o);
+                    Out::None
+                },
+            );
+            t.patch(runs, &junk);
+            t.check(
+                "pppFpClearFrames_007297e0",
+                0x0072_97e0,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::fp_clear_frames(o);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5v_opus_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0502);
+        for case in 0..12_u32 {
+            // the effect characters' field modes
+            let chr = t.rebase(mf::ET_CHR);
+            let mut recs = vec![0_u8; 0x20 * 0xd0];
+            Mem::read_bytes(&t.b, chr, &mut recs);
+            if !(t.snapshot && case == 0) {
+                for r in recs.chunks_mut(0x20) {
+                    let h = if rng.chance(2) { 0 } else { rng.next() };
+                    r[..4].copy_from_slice(&h.to_le_bytes());
+                    r[0x16] = rng.next() as u8;
+                }
+            }
+            t.patch(chr, &recs);
+            let flags = rng.next() as u16;
+            t.patch(t.rebase(mf::BIND_DEFAULT.sym), &flags.to_le_bytes());
+            let modes: Vec<u32> = (0..0xd0).map(|_| rng.next()).collect();
+            let seq = t.seq(&modes);
+            t.stub_sym(mf::CH_GET_FIELD_MODE, 1, false, 1, 0, seq);
+            t.check(
+                "op_et_chr_field_mode_update_007fb690",
+                0x007f_b690,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::et_chr_field_mode_update(o);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the opus objects' frees
+            let slots = t.rebase(mf::OPUS_SLOTS);
+            let w: Vec<u8> = (0..0x100)
+                .flat_map(|_| {
+                    let v = if rng.chance(3) { rng.next() | 1 } else { 0 };
+                    v.to_le_bytes()
+                })
+                .collect();
+            t.patch(slots, &w);
+            let env = t.zeros(4);
+            t.global(mf::PPP_ENV_SLOT.sym, env);
+            t.stub_sym(
+                mf::PPP_ALL_FREE_POBJECT,
+                1,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.check(
+                "opu_free_all_pobjects_00800970",
+                0x0080_0970,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(f::opu_free_all_pobjects(o)),
+            );
+            t.reset();
+
+            // the battle host run: +0x58 set or not, and set by the run
+            let o = t.zeros(0x60);
+            let before = if case % 2 == 0 { 0 } else { rng.next() | 1 };
+            t.w32(o + 0x58, before);
+            t.w32(o + 0x54, rng.next());
+            t.global(mf::OPUS_BATTLE.sym, o);
+            for g in [mf::OP_LATCH0, mf::OP_LATCH_SRC, mf::OP_EFFECT_RUN_LIMIT] {
+                t.global(g.sym, rng.next());
+            }
+            let after = if case % 4 < 2 { 0 } else { rng.next() };
+            let mut code = vec![0xc7, 0x05];
+            code.extend((o + 0x58).to_le_bytes());
+            code.extend(after.to_le_bytes()); // mov dword [o+0x58], after
+            // the limit the run sees, into o + 0x5c
+            code.push(0xa1);
+            code.extend(t.rebase(mf::OP_EFFECT_RUN_LIMIT.sym).to_le_bytes()); // mov eax, [limit]
+            code.push(0xa3);
+            code.extend((o + 0x5c).to_le_bytes()); // mov [o+0x5c], eax
+            t.stub_sym_x(
+                mf::OPU_MAIN_HOST,
+                1,
+                false,
+                2,
+                0,
+                Ret::Val(rng.next()),
+                &code,
+            );
+            t.check(
+                "opu_run_battle_host_00800a30",
+                0x0080_0a30,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(f::opu_run_battle_host(g)),
+            );
+            t.reset();
+
+            // the back colour: kept or not
+            let kept = u8::from(case % 3 == 0);
+            t.patch(t.rebase(mf::BACK_COLOR_KEPT.sym), &[kept]);
+            t.stub_sym(mf::YI_SET_BACK_COLOR, 1, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mf::YI_GET_BACK_COLOR, 2, false, 1, 0, Ret::Val(rng.next()));
+            t.check(
+                "opus_map_back_color_restore_0080a4b0",
+                0x0080_a4b0,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::back_color_restore(o);
+                    Out::None
+                },
+            );
+            t.patch(t.rebase(mf::BACK_COLOR_KEPT.sym), &[kept]);
+            let v: Vec<u32> = (0..4)
+                .map(|_| match rng.below(3) {
+                    0 => (rng.below(600) as f32 - 300.0 + 0.5).to_bits(),
+                    1 => float_word(&mut rng),
+                    _ => (rng.next() as f32 * 7.0).to_bits(),
+                })
+                .collect();
+            let rgba = t.words(&v);
+            t.zero_frames();
+            // the frame: ebx = top - 12, esp aligned down to 16 below
+            // top - 20, ebp there
+            let ebp = (call_top(&t.a) - 20) & !0xf;
+            let buf = ebp - 0x20;
+            t.b_top = Some(buf - 0x40);
+            t.check(
+                "opus_map_back_color_set_0080a4d0",
+                0x0080_a4d0,
+                Conv::Cdecl,
+                &[rgba],
+                |o| Out::U32(f::back_color_set(o, buf, rgba)),
+            );
+            t.same_stack("opus_map_back_color_set_0080a4d0", buf, 16);
+            t.b_top = None;
+            t.reset();
+
+            // the pad ports: negative ports close 0 and 1 first
+            let work = t.rebase(mf::CONTROLER_WORK);
+            let w: Vec<u8> = (0..4).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.patch(work - 8, &w);
+            let port = match case % 4 {
+                0 => 0xffff_ffff,
+                1 => 0xffff_fffe,
+                _ => rng.below(2),
+            };
+            let slot = if case % 5 == 0 {
+                32 + rng.below(8)
+            } else {
+                rng.below(32)
+            };
+            t.stub_sym(mf::PAD_PORT_CLOSE, 1, false, 2, 0, Ret::Val(rng.next()));
+            t.check(
+                "Pad_PortClose_00888990",
+                0x0088_8990,
+                Conv::Cdecl,
+                &[port, slot],
+                |o| {
+                    f::pad_port_close(o, port, slot);
+                    Out::None
+                },
+            );
+            t.reset();
+        }
+    });
+}
+
+/// A random tree of debug-file nodes (`+0`, `+4` blocks, `+8` subtree,
+/// `+0x20` next), `depth` levels deep.
+fn dbg_tree(t: &mut Twins, rng: &mut Rng, depth: u32) -> u32 {
+    if depth == 0 || rng.chance(3) {
+        return 0;
+    }
+    let mut head = 0;
+    for _ in 0..=rng.below(3) {
+        let n = t.zeros(0x24);
+        let a = if rng.chance(3) { 0 } else { rng.next() | 1 };
+        let b = if rng.chance(3) { 0 } else { rng.next() | 1 };
+        let sub = dbg_tree(t, rng, depth - 1);
+        t.w32(n, a);
+        t.w32(n + 4, b);
+        t.w32(n + 8, sub);
+        t.w32(n + 0x20, head);
+        head = n;
+    }
+    head
+}
+
+#[test]
+fn r5v_debug_file_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0503);
+        for case in 0..16_u32 {
+            // the tree free
+            let tree = dbg_tree(t, &mut rng, 4);
+            t.stub_sym(mf::MS_FREE, 1, false, 1, 0, Ret::Val(rng.next()));
+            t.check(
+                "MsDbgFile_freeTree_007e1b70",
+                0x007e_1b70,
+                Conv::Cdecl,
+                &[tree],
+                |o| {
+                    f::dbg_file_free_tree(o, tree);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the name hashes: upper and lower case, high bytes, empty
+            let n = rng.below(5);
+            let table = t.zeros((0x24 * (n + 1)) as usize);
+            for i in 0..=n {
+                let len = if i == n {
+                    0
+                } else {
+                    rng.below(12) as usize + 1
+                };
+                let mut s: Vec<u8> = (0..len)
+                    .map(|_| match rng.below(4) {
+                        0 => b'A' + rng.below(26) as u8,
+                        1 => b'a' + rng.below(26) as u8,
+                        2 => 0x80 | rng.next() as u8,
+                        _ => 1 + rng.below(0x7f) as u8,
+                    })
+                    .collect();
+                s.push(0);
+                let name = t.alloc(&s);
+                t.w32(table + 0x24 * i, name);
+            }
+            t.check(
+                "MsDbgFile_hashNames_007e2d90",
+                0x007e_2d90,
+                Conv::Cdecl,
+                &[table],
+                |o| Out::U32(f::dbg_file_hash_names(o, table)),
+            );
+            t.reset();
+
+            // the file load: switches off, open failing, short and full reads
+            let name = t.alloc(b"name\0");
+            let buf = t.zeros(0x10);
+            t.patch(t.rebase(mf::OP_DEBUG_MODE.sym), &[u8::from(case % 5 != 1)]);
+            t.patch(t.rebase(mf::OP_DEBUG_FILES.sym), &[u8::from(case % 5 != 2)]);
+            let fd = if case % 4 == 3 { 0 } else { rng.next() | 1 };
+            let size = rng.below(0x100);
+            let read = if case % 2 == 0 {
+                size
+            } else {
+                rng.below(0x100)
+            };
+            t.stub_sym(mf::SCE_OPEN, 1, false, 2, 0, Ret::Val(fd));
+            let seq = t.seq(&[size, 0]);
+            t.stub_sym(mf::SCE_LSEEK, 2, false, 3, 0, seq);
+            t.stub_sym(mf::SCE_READ, 3, false, 3, 0, Ret::Val(read));
+            t.stub_sym(mf::SCE_CLOSE, 4, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mf::DBG_PRINTF, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mf::DEBUG_EXIT_TRACE, 6, false, 1, 0, Ret::Val(6));
+            t.stub_sym(mf::FLUSH_CACHE, 7, false, 1, 0, Ret::Val(7));
+            t.check(
+                "op_debug_file_load_007e5c10",
+                0x007e_5c10,
+                Conv::Cdecl,
+                &[name, buf],
+                |o| Out::U32(f::debug_file_load(o, name, buf)),
+            );
+            t.reset();
+
+            // the file read: open failing (negative), sizes around 16
+            let rec = t.zeros(0x14);
+            let name = t.alloc(b"file\0");
+            let fd = match case % 4 {
+                1 => 0x8000_0000 | rng.next(),
+                3 => 0,
+                _ => rng.below(64),
+            };
+            let size = match case % 3 {
+                0 => rng.below(0x60),
+                1 => [0xffff_fff0, 0xffff_ffd8, 0xffff_fff0 | rng.next()][(case % 9 / 3) as usize],
+                _ => 16 * rng.below(4),
+            };
+            let block = t.alloc(&[0xcc; 0x80]);
+            t.stub_sym(mf::SCE_OPEN, 1, false, 2, 0, Ret::Val(fd));
+            let seq = t.seq(&[size, 0]);
+            t.stub_sym(mf::SCE_LSEEK, 2, false, 3, 0, seq);
+            t.import_sym(mf::MALLOC_SLOT, 3, 1, 0, Ret::Val(block));
+            t.stub_sym(mf::SCE_READ, 4, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mf::SCE_CLOSE, 5, false, 1, 0, Ret::Val(rng.next()));
+            t.check(
+                "op_file_read",
+                0x007e_2ed0,
+                Conv::Cdecl,
+                &[rec, name],
+                |o| Out::U32(f::op_file_read(o, rec, name)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5v_gdraw_callbacks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0504);
+        for case in 0..24_u32 {
+            let state = t.zeros(0x800);
+            for k in (0x6c0..0x6d0).step_by(4) {
+                t.w32(state + k, rng.next());
+            }
+            t.global(mf::GDRAW.sym, state);
+
+            // the unique id
+            let handle = t.zeros(0x40);
+            let id = rng.below(3);
+            t.w32(handle + 0x14, id);
+            let (old, new) = (rng.below(3), rng.next());
+            t.check(
+                "gdraw_SetTextureUniqueID_00a3abc0",
+                0x00a3_abc0,
+                Conv::Stdcall,
+                &[handle, old, new],
+                |o| Out::U32(f::set_texture_unique_id(o, handle, old, new)),
+            );
+
+            // the 3D transform: none or 12 words
+            let m = if case % 3 == 0 {
+                0
+            } else {
+                let w: Vec<u32> = (0..12).map(|_| rng.next()).collect();
+                t.words(&w)
+            };
+            t.check(
+                "gdraw_Set3DTransform_00a3a9b0",
+                0x00a3_a9b0,
+                Conv::Stdcall,
+                &[m],
+                |o| Out::U32(f::set_3d_transform(o, m)),
+            );
+
+            // the three lock checks: states 0..6, ids matching or not
+            for at in [0x00a3_b010_u32, 0x00a3_b050, 0x00a3_b0c0] {
+                let handle = t.zeros(0x40);
+                t.w32(
+                    handle + 0x30,
+                    (rng.below(7) << 28) | (rng.next() & 0x0fff_ffff),
+                );
+                let id = rng.below(2);
+                t.w32(handle + 0x14, rng.below(2));
+                t.stub_sym(mf::GDRAW_RING_MOVE, 1, false, 2, 0, Ret::Val(rng.next()));
+                let stats = rng.next();
+                t.check(
+                    "gdraw_TryLock",
+                    at,
+                    Conv::Stdcall,
+                    &[handle, id, stats],
+                    |o| Out::U32(f::try_lock(o, handle, id)),
+                );
+            }
+
+            // the unlock: a handle in a ring of three, moved to its pool's
+            let nodes: Vec<u32> = (0..4).map(|_| t.zeros(0x40)).collect();
+            let pool = t.zeros(0x80);
+            let head = pool + 0x48;
+            let (h0, p, n) = (nodes[0], nodes[1], nodes[2]);
+            t.w32(h0 + 0x30, (rng.below(4) << 28) | (rng.next() & 0x0fff_ffff));
+            t.w32(h0 + 0x18, pool);
+            t.w32(h0 + 0x1c, p);
+            t.w32(h0 + 0x20, n);
+            t.w32(p + 0x20, h0);
+            t.w32(n + 0x1c, h0);
+            t.w32(head + 0x20, nodes[3]);
+            t.w32(nodes[3] + 0x1c, head);
+            let (a, b) = (rng.next(), rng.next());
+            t.check(
+                "gdraw_Unlock_00a3b100",
+                0x00a3_b100,
+                Conv::Stdcall,
+                &[h0, a, b],
+                |o| Out::U32(f::unlock(o, h0)),
+            );
+
+            // the texture rectangle update: UpdateSubresource's 7 words
+            let method = t.stub_code(2, false, 7, 7, Ret::Val(rng.next()), false);
+            let mut slots = vec![0; 49];
+            slots[48] = method;
+            let ctx = t.object(&slots, 0x10);
+            t.w32(state + 4, ctx);
+            let handle = t.words(&[rng.next()]);
+            let args: Vec<u32> = std::iter::once(handle)
+                .chain((0..8).map(|_| rng.next()))
+                .collect();
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 9);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "gdraw_UpdateTextureRect_00a3b160",
+                0x00a3_b160,
+                Conv::Stdcall,
+                &args,
+                |o| {
+                    Out::U32(f::update_texture_rect(
+                        o,
+                        ebp - 0x1c,
+                        args[0],
+                        args[2],
+                        args[3],
+                        args[4],
+                        args[5],
+                        args[6],
+                        args[7],
+                    ))
+                },
+            );
+            t.same_stack("gdraw_UpdateTextureRect_00a3b160", ebp - 0x1c, 0x18);
+            t.b_top = None;
+
+            // the D3D error report
+            let hr = if case % 2 == 0 {
+                mf::E_OUTOFMEMORY
+            } else {
+                rng.next()
+            };
+            let (what, where_) = (rng.next(), rng.next());
+            // the out-of-memory report passes 4 words, the other 5
+            let words = if hr == mf::E_OUTOFMEMORY { 4 } else { 5 };
+            t.import_sym(mf::SEND_WARNING_SLOT, 3, words, 0, Ret::Val(rng.next()));
+            t.check(
+                "gdraw_reportD3DError_00a3c170",
+                0x00a3_c170,
+                Conv::Cdecl,
+                &[hr, what, where_],
+                |o| Out::U32(f::report_d3d_error(o, hr, what, where_)),
+            );
+            t.reset();
+
+            // the frees: no state; a render target with 0..2 objects
+            t.global(mf::GDRAW.sym, if case % 4 == 0 { 0 } else { state });
+            let code = memset_code();
+            t.stub_sym_x(mf::MEMSET, 1, false, 3, 0, Ret::Val(1), &code);
+            t.stub_sym(mf::GDRAW_FREE_RESOURCES, 2, false, 1, 0, Ret::Val(2));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "gdraw_FreeAll_00a380b0",
+                0x00a3_80b0,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    f::free_all(o, ebp - 0x30);
+                    Out::None
+                },
+            );
+            t.same_stack("gdraw_FreeAll_00a380b0", ebp - 0x30, 0x30);
+            let release = t.stub_code(3, false, 1, 1, Ret::Val(3), false);
+            let rt = t.zeros(8);
+            for k in 0..2 {
+                if rng.chance(2) {
+                    let obj = t.object(&[0, 0, release], 8);
+                    t.w32(rt + 4 * k, obj);
+                }
+            }
+            t.stub_sym(mf::GDRAW_FREE_HANDLE, 4, false, 2, 0, Ret::Val(rng.next()));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "gdraw_FreeRenderTarget_00a37ac0",
+                0x00a3_7ac0,
+                Conv::Stdcall,
+                &[rt],
+                |o| Out::U32(f::free_render_target(o, ebp - 0x30, rt)),
+            );
+            t.same_stack("gdraw_FreeRenderTarget_00a37ac0", ebp - 0x30, 0x30);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 2 (ffx_glue_other::m5v_g) ----
+
+/// Asserts both oracles hold the same bytes at `at..at + n`, naming the
+/// first difference.
+fn r5v_same(t: &Twins, what: &str, at: u32, n: usize) {
+    let mut x = vec![0; n];
+    let mut y = vec![0; n];
+    Mem::read_bytes(&t.a, at, &mut x);
+    Mem::read_bytes(&t.b, at, &mut y);
+    if let Some(k) = (0..n).find(|&k| x[k] != y[k]) {
+        let e = (k + 16).min(n);
+        panic!(
+            "{what}: the stack at {:#x} (+{k:#x}): {:x?} vs {:x?}",
+            at + k as u32,
+            &x[k..e],
+            &y[k..e]
+        );
+    }
+}
+
+/// A `memcpy(dst, src, n)` stub's work after the log: `rep movsb`.
+fn memcpy_code() -> Vec<u8> {
+    vec![
+        0x56, // push esi
+        0x57, // push edi
+        0x8b, 0x7c, 0x24, 0x0c, // mov edi, [esp+0xc]
+        0x8b, 0x74, 0x24, 0x10, // mov esi, [esp+0x10]
+        0x8b, 0x4c, 0x24, 0x14, // mov ecx, [esp+0x14]
+        0xf3, 0xa4, // rep movsb
+        0x5f, // pop edi
+        0x5e, // pop esi
+    ]
+}
+
+/// `mov dword [at], v`.
+fn store_code(at: u32, v: u32) -> Vec<u8> {
+    let mut c = vec![0xc7, 0x05];
+    c.extend(at.to_le_bytes());
+    c.extend(v.to_le_bytes());
+    c
+}
+
+/// Zeroes `n` bytes of both stacks below the call top (large frames).
+fn zero_deep(t: &mut Twins, n: u32) {
+    let top = call_top(&t.a);
+    let z = vec![0; n as usize];
+    t.a.write(top - n, &z).unwrap();
+    t.b.write(top - n, &z).unwrap();
+}
+
+/// A `PArray` of `items` (inline for one).
+fn parray(t: &mut Twins, items: &[u32], flag: u32) -> u32 {
+    let n = items.len() as u32 | flag;
+    match items.len() {
+        0 => t.words(&[n, 0]),
+        1 => t.words(&[n, items[0]]),
+        _ => {
+            let data = t.words(items);
+            t.words(&[n, data])
+        }
+    }
+}
+
+#[test]
+fn r5v_create_mesh_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0601);
+        for case in 0..24_u32 {
+            let scene = t.zeros(0x1_0000);
+            let cluster = if case % 6 == 0 { 0 } else { rng.next() | 1 };
+            t.w32(scene + 0xfa7c, cluster);
+            t.global(mg::SCENE.sym, scene);
+            let m = t.words(&[0, rng.next(), rng.next(), 0]);
+            let mesh0 = t.zeros(0x98);
+            t.w32(mesh0 + 0x94, m);
+            let first = t.words(&[rng.next(), rng.next()]);
+            let others: Vec<u32> = (0..rng.below(2)).map(|_| rng.next()).collect();
+            let items: Vec<u32> = std::iter::once(first).chain(others).collect();
+            let materials = parray(t, &items, 0);
+            let gmesh = t.zeros(0x20);
+            t.w32(gmesh + 0x10, materials);
+            let slot1 = t.method_stub(1, 2, Ret::Val(rng.next()));
+            let slot2 = t.method_stub(2, 1, Ret::Val(rng.next()));
+            let geo = t.object(&[0, slot1, slot2], 0x30);
+            t.w32(geo + 0xc, gmesh);
+            let r = t.zeros(0x14);
+            t.w32(r, mesh0);
+            t.w32(r + 8, geo);
+            t.w32(r + 0x10, rng.next());
+            let finds: Vec<u32> = (0..2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() | 1 })
+                .collect();
+            let seq = t.seq(&finds);
+            t.stub_sym(mg::FIND_PARAM, 3, true, 1, 1, seq);
+            t.stub_sym(mg::SHADOW_MANAGER, 4, false, 0, 0, Ret::Val(rng.next()));
+            t.stub_sym(mg::SHADOW_SAMPLER, 5, true, 0, 0, Ret::Val(rng.next()));
+            let map = t.words(&[rng.next(), u32::from(rng.chance(2))]);
+            t.stub_sym(mg::SHADOW_MAP, 6, true, 0, 0, Ret::Val(map));
+            t.stub_sym(mg::SET_VALUE_DESC, 7, true, 2, 2, Ret::Val(7));
+            // the mesh gone by the end (the last check)
+            let code = if case % 4 == 1 {
+                store_code(geo + 0xc, 0)
+            } else {
+                vec![]
+            };
+            t.stub_sym_x(
+                mg::WRITE_VECTOR_PARAMETER,
+                8,
+                true,
+                2,
+                2,
+                Ret::Val(8),
+                &code,
+            );
+            t.stub_sym(mg::SET_MESH_VISIBLE, 9, true, 2, 2, Ret::Val(9));
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "ChrY0Shadow_createMesh",
+                0x0069_f9d0,
+                Conv::Thiscall(r),
+                &[],
+                |o| Out::U32(vg::create_mesh(o, ebp - 0x1c, r)),
+            );
+            r5v_same(t, "ChrY0Shadow_createMesh", ebp - 0x1c, 0x10);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5v_set_tk_runtime_clut_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0602);
+        for case in 0..32_u32 {
+            let g = t.zeros(0x60);
+            let n = if case % 5 == 0 {
+                None
+            } else {
+                Some(rng.below(4))
+            };
+            let mut finds = vec![];
+            if let Some(n) = n {
+                let elems: Vec<u32> = (0..n)
+                    .map(|_| {
+                        let buf = t.zeros(0x50);
+                        let size = match rng.below(3) {
+                            0 => 0x14,
+                            1 => 0x24,
+                            _ => rng.below(0x50),
+                        };
+                        t.w32(buf, size);
+                        t.words(&[rng.next(), buf])
+                    })
+                    .collect();
+                let list = parray(t, &elems, rng.next() & 0x8000_0000);
+                t.w32(g + 0x14, list);
+                for _ in 0..3 * n {
+                    finds.push(if rng.chance(4) {
+                        0
+                    } else {
+                        let p = t.zeros(0x10);
+                        let off = match rng.below(4) {
+                            0 => 4,
+                            1 => 3,
+                            2 => 0x14,
+                            _ => rng.below(0x40) as u16,
+                        };
+                        // the float4s copy at most 16 bytes, the float 4: more
+                        // copies the original's saved registers
+                        let most = if finds.len() % 3 == 2 { 5 } else { 0x11 };
+                        let size = if rng.chance(3) {
+                            most - 1
+                        } else {
+                            rng.below(most)
+                        };
+                        let size = size as u16 | (rng.next() as u16 & 0xe000);
+                        t.write(p + 8, &off.to_le_bytes());
+                        t.write(p + 0xa, &size.to_le_bytes());
+                        p
+                    });
+                }
+            }
+            t.w32(g + 0x28, rng.next());
+            finds.push(0);
+            let seq = t.seq(&finds);
+            t.stub_sym(mg::FIND_PARAM, 1, true, 1, 1, seq);
+            let code = memcpy_code();
+            t.stub_sym_x(mg::MEMCPY, 2, false, 3, 0, Ret::Val(2), &code);
+            let f = match case % 6 {
+                0 => (300.0 + rng.below(100) as f32).to_bits(),
+                1 => (-300.0 - rng.below(100) as f32).to_bits(),
+                2 => 255.0_f32.to_bits(),
+                3 => (-256.0_f32).to_bits(),
+                _ => float_word(&mut rng),
+            };
+            let args = [rng.next(), rng.next(), f];
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 3);
+            let slots = t.arg_slots(&args);
+            t.check(
+                "VFXDynamicGeometry_setTkRuntimeClutParameters",
+                0x006a_37f0,
+                Conv::Thiscall(g),
+                &args,
+                |o| {
+                    vg::set_tk_runtime_clut(o, slots, ebp - 0x24, g, args[0], args[1], args[2]);
+                    Out::None
+                },
+            );
+            r5v_same(t, "setTkRuntimeClutParameters slots", slots, 12);
+            r5v_same(t, "setTkRuntimeClutParameters frame", ebp - 0x24, 0x24);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5v_resize_segments_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0603);
+        for case in 0..32_u32 {
+            let geo = t.zeros(0xc0);
+            t.w32(geo + 0xb8, rng.next());
+            let old_n = rng.below(4);
+            let old = t.zeros(0x6c * 4);
+            for i in 0..4 {
+                let e = old + 0x6c * i;
+                let count = if rng.chance(2) {
+                    4
+                } else {
+                    rng.below(3) | (rng.next() & 0x8000_0000)
+                };
+                t.w32(e + 0x28, count);
+                let bufs = if rng.chance(4) { 0 } else { t.zeros(0x100) };
+                t.w32(e + 0x2c, bufs);
+                t.w32(e + 0x64, if rng.chance(2) { 0 } else { rng.next() });
+            }
+            let n = if case % 3 == 0 { old_n } else { rng.below(4) };
+            let flag = if rng.chance(4) { 0x8000_0000 } else { 0 };
+            let arr = t.words(&[old_n | flag, old]);
+            let g = t.zeros(0x30);
+            t.w32(g + 4, arr);
+            t.w32(g + 0x24, geo);
+            let mut blocks = vec![];
+            for k in 0..8 {
+                blocks.push(if rng.chance(5) {
+                    0
+                } else if k == 0 {
+                    // fresh entries with stale words (`+0x28`, `+0x64`)
+                    let w: Vec<u32> = (0..0x6c).map(|_| rng.below(6)).collect();
+                    t.words(&w)
+                } else {
+                    t.zeros(0x100)
+                });
+            }
+            let seq = t.seq(&blocks);
+            t.stub_sym(mg::PHYRE_MALLOC, 1, false, 2, 0, seq);
+            t.stub_sym(mg::SEGMENTS_CONSTRUCT, 2, false, 2, 0, Ret::Val(2));
+            t.stub_sym(mg::SEGMENTS_DESTROY, 3, false, 2, 0, Ret::Val(3));
+            t.stub_sym(mg::BUFFER_CTOR, 4, true, 0, 0, Ret::Val(4));
+            t.stub_sym(mg::BUFFER_WAIT_AND_CLEAR, 5, true, 0, 0, Ret::Val(5));
+            t.stub_sym(mg::PHYRE_FREE, 6, false, 1, 0, Ret::Val(6));
+            t.stub_sym(mg::FORMAT_SIZE, 7, false, 1, 0, Ret::Val(7));
+            let bound: Vec<u32> = (0..8)
+                .map(|_| [0, 1, 0x100, 0x201][rng.below(4) as usize])
+                .collect();
+            let seq = t.seq(&bound);
+            t.stub_sym(mg::INDEX_IS_BOUND, 8, true, 0, 0, seq);
+            t.stub_sym(mg::INDEX_RELEASE, 9, true, 0, 0, Ret::Val(9));
+            let args = [n, rng.next(), rng.next()];
+            t.check(
+                "ClassDynamicGeometry_resizeSegments_006a44d0",
+                0x006a_44d0,
+                Conv::Thiscall(g),
+                &args,
+                |o| Out::U32(vg::resize_segments(o, g, n)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn r5v_copy_shader_map_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0604);
+        for case in 0..32_u32 {
+            let src = t.zeros(0x30);
+            // the leftmost walk: a chain down `+0` to the head, or none
+            let k = rng.below(4);
+            let mut nodes = vec![];
+            let mut prev = src;
+            for _ in 0..k {
+                let nd = t.zeros(0x14);
+                t.w32(nd, prev);
+                t.w32(nd + 0x10, rng.next());
+                nodes.push(nd);
+                prev = nd;
+            }
+            // (an empty `+0xc` faults in the original: not a tree)
+            let start = if case % 7 == 1 { src } else { prev };
+            t.w32(src + 0xc, start);
+            // the in-order nodes the successor stub hands out, then the head
+            let order: Vec<u32> = (0..rng.below(4))
+                .map(|_| {
+                    let nd = t.zeros(0x14);
+                    t.w32(nd + 0x10, rng.next());
+                    nd
+                })
+                .chain(std::iter::once(src))
+                .collect();
+            let seq = t.seq(&order);
+            t.stub_sym(mg::TREE_NEXT, 1, true, 1, 1, seq);
+            let count = if case % 5 == 0 { 0 } else { 1 + rng.below(5) };
+            t.stub_sym(mg::TREE_COUNT_NODES, 2, true, 0, 0, Ret::Val(count));
+            let map = t.zeros(0x30);
+            // the free list's items, when the list has any
+            let mut head = 0;
+            for _ in 0..rng.below(5) {
+                let it = t.zeros(0x14);
+                t.w32(it, head);
+                t.w32(it + 0xc, rng.next());
+                head = it;
+            }
+            t.w32(map + 0x18, head);
+            t.w32(map + 0x20, rng.next());
+            t.stub_sym(mg::FREE_LIST_CTOR, 3, true, 4, 4, Ret::Val(3));
+            t.stub_sym(mg::FREE_LIST_ALLOCATE_BLOCK, 4, true, 1, 1, Ret::Val(4));
+            t.stub_sym(mg::SHADER_NODE_COPY, 5, true, 1, 1, Ret::Val(5));
+            let ins: Vec<u32> = (0..8).map(|_| u32::from(rng.chance(3))).collect();
+            let seq = t.seq(&ins);
+            t.stub_sym(mg::SHADER_TREE_INSERT, 6, true, 1, 1, seq);
+            t.stub_sym(mg::TREE_POST_INSERT, 7, true, 1, 1, Ret::Val(7));
+            t.stub_sym(mg::PHYRE_FREE, 8, false, 1, 0, Ret::Val(8));
+            t.stub_sym(mg::FREE_LIST_DEALLOCATE, 9, true, 1, 1, Ret::Val(9));
+            t.check(
+                "VfxShaderManager_copyShaderMap_006bee80",
+                0x006b_ee80,
+                Conv::Thiscall(map),
+                &[src],
+                |o| Out::U32(vg::copy_shader_map(o, map, src)),
+            );
+            t.reset();
+        }
+    });
+}
+
+/// The render-data creates' common stubs.
+fn create_stubs(t: &mut Twins, rng: &mut Rng, sprintf_words: u32) {
+    let code = memset_code();
+    t.stub_sym_x(mg::MEMSET, 1, false, 3, 0, Ret::Val(1), &code);
+    t.import_sym(mg::SPRINTF_SLOT, 2, sprintf_words, 0, Ret::Val(2));
+    t.stub_sym(mg::VFX_CREATE, 3, false, 3, 0, Ret::Val(rng.next()));
+    t.stub_sym(
+        mg::VFX_CREATE_DATA_BUFFER,
+        4,
+        false,
+        7,
+        0,
+        Ret::Val(rng.next()),
+    );
+    t.stub_sym(mg::DBG_PRINTF, 5, false, 2, 0, Ret::Val(5));
+}
+
+#[test]
+fn r5v_render_data_creates_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0605);
+        for case in 0..24_u32 {
+            // the rectangles
+            create_stubs(t, &mut rng, 3);
+            let args = [rng.next(), rng.next(), rng.below(0x100), rng.next()];
+            // (the frame's top 16 bytes: the cookie and `_alloca_probe`'s
+            // pushes, not compared)
+            zero_deep(t, 0x7000);
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - mg::RECTS_FRAME - 0x40);
+            t.check(
+                "createVFXRenderDataBufferRects",
+                0x0071_4c50,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(vg::create_rects(o, ebp, args[0], args[1], args[2], args[3])),
+            );
+            r5v_same(
+                t,
+                "rects",
+                ebp - mg::RECTS_FRAME,
+                (mg::RECTS_FRAME - 0x10) as usize,
+            );
+            t.reset();
+
+            // the guide map: groups of 0..n, one flagged, too many
+            create_stubs(t, &mut rng, 2);
+            let groups = match case % 6 {
+                0 => 0,
+                1 => 31,
+                _ => 1 + rng.below(6),
+            };
+            let mut body = vec![];
+            let mut total = 0_i32;
+            for i in 0..groups {
+                let k = if rng.chance(5) {
+                    0
+                } else {
+                    1 + rng.below(3) as i16
+                };
+                let mut gp = vec![0_u8; 0x10 + 20 * usize::try_from(k.max(0)).unwrap()];
+                gp[1] = u8::from(case % 6 == 2 && i == groups - 1);
+                gp[2..4].copy_from_slice(&k.to_le_bytes());
+                total += i32::from(k);
+                body.extend(gp);
+            }
+            let total = if case % 6 == 3 { total + 2 } else { total };
+            let mut model = vec![0_u8; 0x20];
+            model[4..8].copy_from_slice(&0x20_u32.to_le_bytes());
+            model[0x10..0x12]
+                .copy_from_slice(&(total.max(i32::from(groups > 0)) as i16).to_le_bytes());
+            model.extend(body);
+            model.extend([0_u8; 0x40]);
+            let model = t.alloc(&model);
+            let info = t.zeros(0x48);
+            t.w8(info, rng.next() as u8);
+            t.w8(info + 8, rng.next() as u8);
+            t.w32(info + 0x44, if rng.chance(2) { 0 } else { rng.next() });
+            t.stub_sym(mg::ALPHA_FUNCTION, 6, false, 1, 0, Ret::Val(rng.next()));
+            t.stub_sym(mg::GUILDMAP_CREATE, 7, false, 3, 0, Ret::Val(7));
+            let args = [rng.next(), rng.next(), model, info];
+            zero_deep(t, 0x2400);
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - mg::GUILD_MAP_FRAME - 0x40);
+            t.check(
+                "createGuildMapRenderDataBuffer",
+                0x0071_33e0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(vg::create_guild_map(o, ebp, args[0], args[1], model, info)),
+            );
+            r5v_same(
+                t,
+                "guild map",
+                ebp - mg::GUILD_MAP_FRAME,
+                (mg::GUILD_MAP_FRAME - 0x10) as usize,
+            );
+            t.reset();
+
+            // Shp_OShapeVu1: texture missing, empty counts, both flags
+            create_stubs(t, &mut rng, 3);
+            let shape = t.zeros(0x20);
+            let k = if case % 5 == 0 {
+                0
+            } else {
+                rng.below(40) as i16 - 4
+            };
+            t.write(shape + 2, &k.to_le_bytes());
+            t.w32(shape + 0x10, rng.next());
+            t.w32(shape + 0x14, rng.next());
+            t.global(mg::SHAPE_ENLARGE.sym, 1 + rng.below(3));
+            t.global(mg::SEGMENT_DIVISOR.sym, 1 + rng.below(3));
+            let loaded = u32::from(case % 4 != 1);
+            t.stub_sym(
+                mg::IS_TEXTURE_WITH_BP_LOADED,
+                6,
+                false,
+                7,
+                0,
+                Ret::Val(loaded),
+            );
+            t.import_sym(mg::STRSTR_SLOT, 7, 2, 0, Ret::Val(rng.below(2)));
+            // the empty-count report passes one word, the bp one two: log the
+            // format and, for the bp report, its word
+            let words = if loaded == 0 { 2 } else { 1 };
+            t.stub_sym(mg::DBG_PRINTF, 8, false, words, 0, Ret::Val(8));
+            let args = [rng.next(), rng.next(), shape, rng.next()];
+            zero_deep(t, 0x7000);
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - mg::SHP_VU1_FRAME - 0x40);
+            t.check(
+                "createVFXRenderDataBufferShp_OShapeVu1",
+                0x0071_5810,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(vg::create_shp_vu1(o, ebp, args[0], args[1], shape, args[3])),
+            );
+            r5v_same(
+                t,
+                "shp vu1",
+                ebp - mg::SHP_VU1_FRAME,
+                (mg::SHP_VU1_FRAME - 0x10) as usize,
+            );
+            t.reset();
+
+            // the U16 mesh break: each first letter and another
+            create_stubs(t, &mut rng, 3);
+            let letter = b"mnfcswx"[(case % 7) as usize];
+            let name = t.alloc(&[letter, b'0', b'1', 0]);
+            t.stub_sym(mg::CH_GET_NAME, 6, false, 1, 0, Ret::Val(name));
+            t.stub_sym(mg::UNIFY_FILENAME, 7, false, 3, 0, Ret::Val(7));
+            let model = t.words(&[0, rng.below(0x1000)]);
+            let args = [rng.next(), rng.next(), model, rng.next(), rng.next()];
+            zero_deep(t, 0x800);
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - mg::U16_BREAK_FRAME - 0x40);
+            t.check(
+                "createU16MeshBreakRenderDataBuffer",
+                0x0080_2fb0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(vg::create_u16_mesh_break(
+                        o, ebp, args[0], args[1], model, args[3], args[4],
+                    ))
+                },
+            );
+            r5v_same(
+                t,
+                "u16 break",
+                ebp - mg::U16_BREAK_FRAME,
+                (mg::U16_BREAK_FRAME - 4) as usize,
+            );
+            t.reset();
+
+            // the GT3 mesh break: texture loaded or not
+            create_stubs(t, &mut rng, 3);
+            t.stub_sym(
+                mg::IS_TEXTURE_LOADED,
+                6,
+                false,
+                6,
+                0,
+                Ret::Val(u32::from(case % 3 != 0)),
+            );
+            t.import_sym(mg::PRINTF_SLOT, 7, 2, 0, Ret::Val(7));
+            let model = t.words(&[0, rng.below(0x1000), rng.next(), rng.next()]);
+            let args = [rng.next(), rng.next(), model, rng.next()];
+            zero_deep(t, 0x800);
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - mg::GT3_BREAK_FRAME - 0x40);
+            t.check(
+                "createGT3MeshBreakRenderDataBuffer",
+                0x00a7_3c20,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(vg::create_gt3_mesh_break(
+                        o, ebp, args[0], args[1], model, args[3],
+                    ))
+                },
+            );
+            r5v_same(
+                t,
+                "gt3 break",
+                ebp - mg::GT3_BREAK_FRAME,
+                (mg::GT3_BREAK_FRAME - 4) as usize,
+            );
+            t.b_top = None;
             t.reset();
         }
     });

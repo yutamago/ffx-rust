@@ -12,6 +12,8 @@ use ffx_glue_other::m5v_b::bridge as b;
 use ffx_glue_other::m5v_c::bridge as c;
 use ffx_glue_other::m5v_d::bridge as d;
 use ffx_glue_other::m5v_e::bridge as e;
+use ffx_glue_other::m5v_f::bridge as f;
+use ffx_glue_other::m5v_g::{self as gm, bridge as g};
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -424,5 +426,159 @@ ported! {
     /// `jmp op_et_bindeff_draw_on` (`0x007fbab0`): its `eax`.
     op_et_bindeff_draw_on_thunk @ 0x0092_d870 => extern "C" fn t_92d870(h: u32) -> u32 {
         e::jmp_thunk(&mut mem(), const { ffx_glue_other::m5v_e::target(0x0092_d870) }, &[h])
+    }
+    // ---- round 5 batch 1 (ffx_glue_other::m5v_f) ----
+    /// `pppFpFreeAll_007296a0()` (native 0x8008; its `eax` unread).
+    pppFpFreeAll_007296a0 @ 0x0072_96a0 => extern "C" fn fp_free_all() {
+        f::fp_free_all(&mut mem());
+    }
+    /// `pppFpResetSameIds_00729740()` (native 0x8007; its `eax` unread).
+    pppFpResetSameIds_00729740 @ 0x0072_9740 => extern "C" fn fp_reset_same_ids() {
+        f::fp_reset_same_ids(&mut mem());
+    }
+    /// `pppFpClearFrames_007297e0()` (native 0x805d; its `eax` unread).
+    pppFpClearFrames_007297e0 @ 0x0072_97e0 => extern "C" fn fp_clear_frames() {
+        f::fp_clear_frames(&mut mem());
+    }
+    /// `op_et_chr_field_mode_update_007fb690()` (native 0x0244).
+    op_et_chr_field_mode_update_007fb690 @ 0x007f_b690 => extern "C" fn et_chr_field_mode_update() {
+        f::et_chr_field_mode_update(&mut mem());
+    }
+    /// `opu_free_all_pobjects_00800970()` -> 0.
+    opu_free_all_pobjects_00800970 @ 0x0080_0970 => extern "C" fn opu_free_all_pobjects() -> u32 {
+        f::opu_free_all_pobjects(&mut mem())
+    }
+    /// `opu_run_battle_host_00800a30()` -> 0.
+    opu_run_battle_host_00800a30 @ 0x0080_0a30 => extern "C" fn opu_run_battle_host() -> u32 {
+        f::opu_run_battle_host(&mut mem())
+    }
+    /// `opus_map_back_color_restore_0080a4b0()`.
+    opus_map_back_color_restore_0080a4b0 @ 0x0080_a4b0 => extern "C" fn back_color_restore() {
+        f::back_color_restore(&mut mem());
+    }
+    /// `opus_map_back_color_set_0080a4d0(rgba)` -> `yiSetBackColor`'s
+    /// `eax`: the four integers in this shim's frame.
+    opus_map_back_color_set_0080a4d0 @ 0x0080_a4d0 => extern "C" fn back_color_set(rgba: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        f::back_color_set(&mut mem(), frame.at(), rgba)
+    }
+    /// `Pad_PortClose_00888990(port, slot)`.
+    Pad_PortClose_00888990 @ 0x0088_8990 => extern "C" fn pad_port_close(port: u32, slot: u32) {
+        f::pad_port_close(&mut mem(), port, slot);
+    }
+    /// `MsDbgFile_freeTree_007e1b70(node)`.
+    MsDbgFile_freeTree_007e1b70 @ 0x007e_1b70 => extern "C" fn dbg_file_free_tree(node: u32) {
+        f::dbg_file_free_tree(&mut mem(), node);
+    }
+    /// `MsDbgFile_hashNames_007e2d90(table)` -> the last name pointer.
+    MsDbgFile_hashNames_007e2d90 @ 0x007e_2d90 => extern "C" fn dbg_file_hash_names(table: u32) -> u32 {
+        f::dbg_file_hash_names(&mut mem(), table)
+    }
+    /// `op_file_read(rec, name)` -> `sceClose`'s `eax` or the negative
+    /// descriptor.
+    op_file_read @ 0x007e_2ed0 => extern "C" fn op_file_read(rec: u32, name: u32) -> u32 {
+        f::op_file_read(&mut mem(), rec, name)
+    }
+    /// `op_debug_file_load_007e5c10(name, buf)` -> bytes read or 0.
+    op_debug_file_load_007e5c10 @ 0x007e_5c10 => extern "C" fn debug_file_load(name: u32, buf: u32) -> u32 {
+        f::debug_file_load(&mut mem(), name, buf)
+    }
+    /// `gdraw_SetTextureUniqueID_00a3abc0(handle, old, new)` -> the id after.
+    gdraw_SetTextureUniqueID_00a3abc0 @ 0x00a3_abc0 => extern "stdcall" fn set_texture_unique_id(handle: u32, old: u32, new: u32) -> u32 {
+        f::set_texture_unique_id(&mut mem(), handle, old, new)
+    }
+    /// `gdraw_Set3DTransform_00a3a9b0(m)` -> the `GDraw` state.
+    gdraw_Set3DTransform_00a3a9b0 @ 0x00a3_a9b0 => extern "stdcall" fn set_3d_transform(m: u32) -> u32 {
+        f::set_3d_transform(&mut mem(), m)
+    }
+    /// `gdraw_TryLock_00a3b010(handle, id, stats)` -> 1/0.
+    gdraw_TryLock_00a3b010 @ 0x00a3_b010 => extern "stdcall" fn try_lock_b010(handle: u32, id: u32, _stats: u32) -> u32 {
+        f::try_lock(&mut mem(), handle, id)
+    }
+    /// `gdraw_TryLock_00a3b050(handle, id, stats)` -> 1/0.
+    gdraw_TryLock_00a3b050 @ 0x00a3_b050 => extern "stdcall" fn try_lock_b050(handle: u32, id: u32, _stats: u32) -> u32 {
+        f::try_lock(&mut mem(), handle, id)
+    }
+    /// `gdraw_TryLock_00a3b0c0(handle, id, stats)` -> 1/0.
+    gdraw_TryLock_00a3b0c0 @ 0x00a3_b0c0 => extern "stdcall" fn try_lock_b0c0(handle: u32, id: u32, _stats: u32) -> u32 {
+        f::try_lock(&mut mem(), handle, id)
+    }
+    /// `gdraw_Unlock_00a3b100(handle, _, _)` -> `+0x30`.
+    gdraw_Unlock_00a3b100 @ 0x00a3_b100 => extern "stdcall" fn unlock(handle: u32, _a: u32, _b: u32) -> u32 {
+        f::unlock(&mut mem(), handle)
+    }
+    /// `gdraw_UpdateTextureRect_00a3b160(handle, _, x, y, pitch, w, h,
+    /// data, _)` -> the method's `eax`: the box in this shim's frame.
+    gdraw_UpdateTextureRect_00a3b160 @ 0x00a3_b160 => extern "stdcall" fn update_texture_rect(handle: u32, _a: u32, x: u32, y: u32, pitch: u32, w: u32, h: u32, data: u32, _b: u32) -> u32 {
+        let mut frame = StackFrame::<6>::new();
+        f::update_texture_rect(&mut mem(), frame.at(), handle, x, y, pitch, w, h, data)
+    }
+    /// `gdraw_reportD3DError_00a3c170(hr, what, where)` -> the warning's
+    /// `eax`.
+    gdraw_reportD3DError_00a3c170 @ 0x00a3_c170 => extern "C" fn report_d3d_error(hr: u32, what: u32, where_: u32) -> u32 {
+        f::report_d3d_error(&mut mem(), hr, what, where_)
+    }
+    /// `gdraw_FreeAll_00a380b0()`: the stats in this shim's frame.
+    gdraw_FreeAll_00a380b0 @ 0x00a3_80b0 => extern "C" fn free_all() {
+        let mut frame = StackFrame::<12>::new();
+        f::free_all(&mut mem(), frame.at());
+    }
+    /// `gdraw_FreeRenderTarget_00a37ac0(t)` -> `FUN_00a3b480`'s `eax`: the
+    /// stats in this shim's frame.
+    gdraw_FreeRenderTarget_00a37ac0 @ 0x00a3_7ac0 => extern "stdcall" fn free_render_target(t: u32) -> u32 {
+        let mut frame = StackFrame::<12>::new();
+        f::free_render_target(&mut mem(), frame.at(), t)
+    }
+    // ---- round 5 batch 2 (ffx_glue_other::m5v_g) ----
+    /// `ChrY0Shadow_createMesh(r)` -> the last virtual call's `eax`: the
+    /// sampler record in this shim's frame.
+    ChrY0Shadow_createMesh @ 0x0069_f9d0 => extern "thiscall" fn chr_y0_shadow_create_mesh(this: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        g::create_mesh(&mut mem(), frame.at(), this)
+    }
+    /// `VFXDynamicGeometry_setTkRuntimeClutParameters(g; c0, c1, f)`: the
+    /// floats in this shim's frame; writes its argument slots.
+    VFXDynamicGeometry_setTkRuntimeClutParameters @ 0x006a_37f0 => extern "thiscall" fn set_tk_runtime_clut(this: u32, c0: u32, c1: u32, f: u32; slots: u32) {
+        let mut frame = StackFrame::<9>::new();
+        g::set_tk_runtime_clut(&mut mem(), slots, frame.at(), this, c0, c1, f);
+    }
+    /// `ClassDynamicGeometry_resizeSegments_006a44d0(g; n, _, _)` -> 0 / 0xd.
+    ClassDynamicGeometry_resizeSegments_006a44d0 @ 0x006a_44d0 => extern "thiscall" fn resize_segments(this: u32, n: u32, _b: u32, _c: u32) -> u32 {
+        g::resize_segments(&mut mem(), this, n)
+    }
+    /// `VfxShaderManager_copyShaderMap_006bee80(map; src)` -> `map`.
+    VfxShaderManager_copyShaderMap_006bee80 @ 0x006b_ee80 => extern "thiscall" fn copy_shader_map(this: u32, src: u32) -> u32 {
+        g::copy_shader_map(&mut mem(), this, src)
+    }
+    /// `createVFXRenderDataBufferRects(lo, hi, n, flags)` -> 1: the
+    /// original's 0x68b4-byte frame in this shim's.
+    createVFXRenderDataBufferRects @ 0x0071_4c50 => extern "C" fn create_rects(lo: u32, hi: u32, n: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (gm::RECTS_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + gm::RECTS_FRAME;
+        g::create_rects(&mut mem(), ebp, lo, hi, n, flags)
+    }
+    /// `createGuildMapRenderDataBuffer(lo, hi, model, info)` -> 1 / 0.
+    createGuildMapRenderDataBuffer @ 0x0071_33e0 => extern "C" fn create_guild_map(lo: u32, hi: u32, model: u32, info: u32) -> u32 {
+        let mut frame = StackFrame::<{ (gm::GUILD_MAP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + gm::GUILD_MAP_FRAME;
+        g::create_guild_map(&mut mem(), ebp, lo, hi, model, info)
+    }
+    /// `createVFXRenderDataBufferShp_OShapeVu1(lo, hi, shape, flags)` -> 1 / 0.
+    createVFXRenderDataBufferShp_OShapeVu1 @ 0x0071_5810 => extern "C" fn create_shp_vu1(lo: u32, hi: u32, shape: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (gm::SHP_VU1_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + gm::SHP_VU1_FRAME;
+        g::create_shp_vu1(&mut mem(), ebp, lo, hi, shape, flags)
+    }
+    /// `createU16MeshBreakRenderDataBuffer(lo, hi, model, chr, flags)` -> 1.
+    createU16MeshBreakRenderDataBuffer @ 0x0080_2fb0 => extern "C" fn create_u16_mesh_break(lo: u32, hi: u32, model: u32, chr: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (gm::U16_BREAK_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + gm::U16_BREAK_FRAME;
+        g::create_u16_mesh_break(&mut mem(), ebp, lo, hi, model, chr, flags)
+    }
+    /// `createGT3MeshBreakRenderDataBuffer(lo, hi, model, flags)` -> 1 / 0.
+    createGT3MeshBreakRenderDataBuffer @ 0x00a7_3c20 => extern "C" fn create_gt3_mesh_break(lo: u32, hi: u32, model: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (gm::GT3_BREAK_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + gm::GT3_BREAK_FRAME;
+        g::create_gt3_mesh_break(&mut mem(), ebp, lo, hi, model, flags)
     }
 }
