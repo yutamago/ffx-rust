@@ -80,6 +80,7 @@ pub mod o4_fam2;
 pub mod o4_fam3;
 pub mod o4_fam4;
 pub mod o4_fam5;
+pub mod o4_flags;
 pub mod o4_misc;
 pub mod o4_parts;
 pub mod o4_rcef;
@@ -91,6 +92,7 @@ pub mod o4_single;
 pub mod o4_single3;
 pub mod o4_small;
 pub mod o4_state;
+pub mod o4_static;
 pub mod o4_steps;
 pub mod o4_tiny;
 pub mod o4_tiny2;
@@ -1373,6 +1375,10 @@ ports! {
     "o4 single3 drop_current 0263@6b30" => o4_single3::DROP_CURRENT_0263_6B30, o4_single3::drop_current;
     "o4 single3 object_task_head 0577@b130" => o4_single3::OBJECT_TASK_HEAD_0577_B130, o4_single3::object_task_head;
     "o4 single3 model_node_tail 0577@8d70" => o4_single3::MODEL_NODE_TAIL_0577_8D70, o4_single3::model_node_tail;
+    "o4 static ten_stores 0303@1730" => o4_static::TEN_STORES_0303_1730, o4_static::ten_stores;
+    "o4 static record_two_node 0303@48d0" => o4_static::RECORD_TWO_NODE_0303_48D0, o4_static::record_two_node;
+    "o4 static slot_by_flag_obj 0316@16b0" => o4_static::SLOT_BY_FLAG_OBJ_0316_16B0, o4_static::slot_by_flag_obj;
+    "o4 static shape_local 0380@1a20" => o4_static::SHAPE_LOCAL_0380_1A20, o4_static::shape_local;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1770,6 +1776,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 single3 head_node 0577@ac20",
         &o4_single3::HEAD_NODE_0577_AC20,
+    ),
+    (
+        "o4 flags flag_step_arg 0203@73c0",
+        &o4_flags::FLAG_STEP_ARG_0203_73C0,
+    ),
+    (
+        "o4 flags flag_step_edx 0262@6af0",
+        &o4_flags::FLAG_STEP_EDX_0262_6AF0,
+    ),
+    (
+        "o4 flags object_head_node 0203@7940",
+        &o4_flags::OBJECT_HEAD_NODE_0203_7940,
     ),
 ];
 
