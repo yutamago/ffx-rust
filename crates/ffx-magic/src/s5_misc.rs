@@ -17,7 +17,8 @@ use crate::s4_misc::{
     start_object_at, trail_draw, unlist_free,
 };
 use crate::s4_small::{
-    CAMERA_FACE_ACTOR, ID_LIST, SOUND_RECORD, camera_face_actor, id_list, sound_record,
+    ACTOR_INDEX, CAMERA_FACE_ACTOR, ID_LIST, NAMED_PARTS, SOUND_RECORD, actor_index,
+    camera_face_actor, id_list, named_parts, sound_record,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
@@ -5739,6 +5740,147 @@ pub const CURVE_CARRY: Sig = Sig {
         (0x277, Callee::Sig(&MOTION_SCRIPT)),
         (0x298, Callee::Sig(&GIVE_BACK)),
         (0x2a4, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// An actor's model placed by its effect matrix and a clip plane set
+/// (cdecl `(obj)`; a /GS frame of locals). The actor `idx` whose
+/// character is `obj` ([`actor_index`]; the search is inlined again for
+/// the actor `a` itself: `T[G_MAP[i]]` for `i` from 1); its model number
+/// `u16 a[0]` picks the draw: 0x10fb..0x10fd and 0x1100 by name
+/// ([`named_parts`] with the matrix as the prefix), others by parts
+/// ([`model_parts_draw`] with `R`). With no actor (`idx` -1) it returns
+/// -1. `M` = the matrix `*G_S + 0xc48 + 0xc8 idx` (slot 230), `R = M x
+/// G_K` (slot 231); the points `p = G_A[idx]`, `n = G_B[idx]` (slot 325)
+/// through `M` (slot 229), their `x` and `y` negated (the sign mask), `n`
+/// normalised (slot 232); the plane `(n, -(n . p))` goes to slot 930
+/// `(obj, plane)`, slot 833 `(obj, model, *G_S[0xcbc + 0xc8 idx] K)` and
+/// slot 847 `(obj, CB)`. Returns slot 847's `eax`.
+///
+/// `magic_0434` 0x100044a0 (706 bytes; 2 DLLs).
+pub fn actor_clip_draw<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.arg(g, 0);
+    let e = fr.esp;
+    let ebp = e.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (m, r, a, b, q) = (at(0x74), at(0xb4), at(0x24), at(0x14), at(0x34));
+    let index = Frame {
+        at: img.rel32_target(f + 0x21),
+        esp: e.wrapping_sub(0xd4),
+        ecx: obj,
+        ..*fr
+    };
+    let idx = actor_index(g, img, &index).eax;
+    let n = g.read::<i32>(w(0x27));
+    let mut actor = 0;
+    for i in 1..n.max(1) {
+        let k = u32::from(g.read::<u8>(g.read::<u32>(w(0x4e)).wrapping_add(i.cast_unsigned())));
+        let c = g.read::<u32>(w(0x59).wrapping_add(4 * k));
+        if g.read::<u32>(c.wrapping_add(0x830)) == obj {
+            actor = c;
+            break;
+        }
+    }
+    let model = g.read::<u16>(actor);
+    let by_name = matches!(model, 0x10fb..=0x10fd | 0x1100);
+    if idx == u32::MAX {
+        return Ret::eax(idx);
+    }
+    let s = g.read::<u32>(w(0xc8));
+    let off = idx.wrapping_mul(0xc8);
+    let src = off.wrapping_add(0xc48).wrapping_add(s);
+    let mut st = Pushes::default();
+    st.push_all(&[src, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0xe5), 230), 0);
+    st.push_all(&[w(0xf8), m, r]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x108), 231), 0);
+    if by_name {
+        // push M; call: the callee's frame
+        g.write::<u32>(e.wrapping_sub(0xd4), m);
+        let named = Frame {
+            at: img.rel32_target(f + 0x12a),
+            esp: e.wrapping_sub(0xd8),
+            ecx: obj,
+            edx: actor,
+            ..*fr
+        };
+        named_parts(g, img, &named);
+    } else {
+        model_parts_draw(
+            g,
+            img,
+            img.rel32_target(f + 0x13c),
+            e.wrapping_sub(0xd4),
+            actor,
+            r,
+        );
+    }
+    let i16 = idx << 4;
+    let mut st = Pushes::default();
+    st.push_all(&[w(0x157).wrapping_add(i16), a]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x161), 325), 0);
+    st.push_all(&[w(0x175).wrapping_add(i16), b]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x17f), 325), 0);
+    st.push_all(&[a, m, a]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x198), 229), 0);
+    st.push_all(&[b, m, b]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x1b1), 229), 0);
+    let mask = g.read::<u32>(w(0x1c1));
+    for p in [a, a + 4, b, b + 4] {
+        let x = g.read::<u32>(p) ^ mask;
+        g.write::<u32>(p, x);
+    }
+    st.push_all(&[b, b]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x1f7), 232), 0);
+    let [nx, ny, nz] = [0u32, 4, 8].map(|o| g.read::<f32>(b + o));
+    g.write::<f32>(q + 4, ny);
+    let d = mul(ny, g.read::<f32>(a + 4));
+    g.write::<f32>(q, nx);
+    let d = add(d, mul(nx, g.read::<f32>(a)));
+    let d = add(d, mul(g.read::<f32>(a + 8), nz));
+    g.write::<f32>(q + 8, nz);
+    let mask = g.read::<u32>(w(0x257));
+    g.write::<u32>(q + 0xc, d.to_bits() ^ mask);
+    st.push_all(&[q, obj]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x233), 930), 0);
+    st.pop(13);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let t = mul(
+        g.read::<i32>(off.wrapping_add(s).wrapping_add(0xcbc)) as f32,
+        g.read::<f32>(w(0x281)),
+    );
+    st.set_top(t.to_bits());
+    let model = u32::from(g.read::<u16>(actor));
+    st.push_all(&[model, obj]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x28f), 833), 0);
+    st.push_all(&[w(0x2a2), obj]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let eax = st.call(g, slot_target(g, w(0x29d), 847), 0).eax;
+    Ret::eax(eax)
+}
+
+/// [`actor_clip_draw`] (the `rel32`s: [`actor_index`], [`named_parts`],
+/// [`model_parts_draw`] and `__security_check_cookie`).
+pub const ACTOR_CLIP_DRAW: Sig = Sig {
+    len: 706,
+    hash: 0x0446_a796_3ea3_de3a,
+    calls: &[
+        (0x21, Callee::Sig(&ACTOR_INDEX)),
+        (0x12a, Callee::Sig(&NAMED_PARTS)),
+        (0x13c, Callee::Sig(&MODEL_PARTS_DRAW)),
+        (0x2ba, Callee::Any),
     ],
     imports: &[],
 };

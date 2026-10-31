@@ -2717,3 +2717,56 @@ fn curve_carries() {
         );
     }
 }
+
+#[test]
+fn actor_clip_draws() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x44a0);
+    rec_mem(&mut t, 230, 2, 16, Some(0));
+    rec_mem(&mut t, 231, 3, 16, Some(0));
+    t.stub(325, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x325
+    });
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 232, 2, 4, Some(0));
+    rec_mem(&mut t, 930, 2, 4, None);
+    rec_mem(&mut t, 833, 3, 0, None);
+    rec_mem(&mut t, 847, 2, 0, None);
+    rec_mem(&mut t, 843, 2, 16, None);
+    // named_parts: off (returns its prefix at once)
+    let named = t.img.rel32_target(f + 0x12a);
+    t.set_u32(op(&t, named, 0x15), 0);
+    let map = SCRATCH + 0x700;
+    t.write(map, &[0, 2, 1, 3]);
+    t.set_u32(op(&t, f, 0x4e), map);
+    t.set_u32(op(&t, f, 0x27), 4);
+    let actors = op(&t, f, 0x59);
+    let s = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0xc8), s);
+    t.write(s, &varied(0x1000, 3));
+    t.write(op(&t, f, 0x157), &varied(0x40, 4));
+    t.write(op(&t, f, 0x175), &varied(0x40, 5));
+    for (k, model) in [(1u32, 0x10fcu16), (2, 0x2000), (3, 0x1100)] {
+        let actor = SCRATCH + 0x1000 + 0x1000 * k;
+        t.write(actor, &varied(0x900, k));
+        t.set_u16(actor, model);
+        // the parts draw: no parts, the model drawn whole
+        let d = actor + 0x800;
+        t.set_u32(actor + 0x1c0, d);
+        t.set_u16(d + 6, 0);
+        t.set_u32(actors + 4 * k, actor);
+    }
+    for (k, obj) in [(1u32, 0x0b0b_0001u32), (2, 0x0b0b_0002), (3, 0x0b0b_0003)] {
+        // the actor `map[k]` holds the object
+        let actor = SCRATCH + 0x1000 + 0x1000 * u32::from([0u8, 2, 1, 3][k as usize]);
+        for j in 1..4u32 {
+            t.set_u32(SCRATCH + 0x1000 + 0x1000 * j + 0x830, 0x0c0c_0000 + j);
+        }
+        t.set_u32(actor + 0x830, obj);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
