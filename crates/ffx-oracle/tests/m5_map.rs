@@ -47,6 +47,8 @@ use ffx_prender::m5m_l::{self as ml, bridge as gl};
 use ffx_prender::m5m_m::{self as mm, bridge as gm};
 use ffx_prender::m5m_n::{self as mn, bridge as gn};
 use ffx_prender::m5m_o::{self as mo, bridge as go};
+use ffx_prender::m5m_p::{self as mp, bridge as gp};
+use ffx_prender::m5m_q::{self as mq, bridge as gq};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3934,6 +3936,142 @@ fn r5_scene_load_text_sub_matches_the_original() {
                 |o| Out::U32(go::load_text_sub(o, ebp, scene)),
             );
             r5_same(t, "rcbgSceneLoadTextSub", ebp - 0x198, 0x194);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 12 (ffx_prender::m5m_p) ----
+
+/// A dispatcher over `sym`: calls whose first argument is `first` go to
+/// stub `a`, the others to stub `b`.
+fn r5_dispatch(t: &mut Twins, sym: u32, first: u32, a: u32, b: u32) {
+    let at = t.a.alloc_code(&[0; 24]).unwrap();
+    assert_eq!(t.b.alloc_code(&[0; 24]).unwrap(), at);
+    let mut c = vec![0x81, 0x7c, 0x24, 0x04];
+    c.extend(first.to_le_bytes()); // cmp [esp+4], first
+    c.extend([0x0f, 0x84]);
+    c.extend(a.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // je a
+    c.push(0xe9);
+    c.extend(b.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp b
+    t.write(at, &c);
+    t.jump(sym, at);
+}
+
+#[test]
+fn r5_trx_tex_load_from_file_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_ff01);
+        for case in 0..24_u32 {
+            let trx = t.zeros(0x80);
+            let dir = t.alloc(b"/ffx/map/tex\0");
+            let name = t.alloc(if case % 2 == 0 { b"anm\0" } else { b"w_\0\0" });
+            let digits = 1 + rng.below(3);
+            let n = match case % 5 {
+                0 => 0,
+                1 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(4),
+            };
+            t.stub_sym(mp::COUNT_FILES, 1, false, 3, 0, Ret::Val(n));
+            t.stub_sym(mp::TM2_INIT, 2, false, 1, 0, Ret::Val(2));
+            let loads: Vec<u32> = (0..4)
+                .map(|k| u32::from(k > 0 || case % 3 != 0) & u32::from(!rng.chance(5)))
+                .collect();
+            let loads = t.seq(&loads);
+            t.stub_sym(mp::TM2_LOAD, 3, false, 2, 0, loads);
+            t.stub_sym(mp::TRX_ALLOC_ENTRIES, 4, false, 5, 0, Ret::Val(4));
+            let data = t.seq(&[rng.next(), rng.next(), rng.next(), rng.next()]);
+            let s6 = t.stub_code(5, false, 6, 0, data, false);
+            let dst = t.zeros(0x400);
+            let s2 = t.stub_code(6, false, 2, 0, Ret::Val(dst), false);
+            r5_dispatch(t, mp::TRX_GET_ENTRY_DATA, trx + 0x20, s6, s2);
+            t.stub_sym(mp::TM2_COPY_RECT, 7, false, 6, 0, Ret::Val(7));
+            let w: Vec<u32> = (0..0x100).map(|_| rng.next()).collect();
+            let clut = t.words(&w);
+            t.stub_sym(mp::GET_PTR32, 8, false, 1, 0, Ret::Val(clut));
+            t.stub_sym(mp::TM2_FINI, 9, false, 1, 0, Ret::Val(rng.next()));
+            let p1 = t.stub_code(10, false, 1, 0, Ret::Val(10), false);
+            let p3 = t.stub_code(11, false, 3, 0, Ret::Val(11), false);
+            r5_dispatch(t, mp::RC_PRINT, t.rebase(mp::NOT_FOUND_TEXT), p1, p3);
+            let args = [trx, dir, name, digits];
+            r5_zero_stack(t, 0x600);
+            let ebp = frame_ebp(&t.a, 4);
+            // the TIM2 record's size words and CLUT (as a load leaves them)
+            t.w32(ebp - 0x230, rng.next());
+            t.w32(ebp - 0x22c, rng.next());
+            t.w32(ebp - 0x210, rng.next());
+            t.b_top = Some(ebp - mp::FRAME - 0x40);
+            t.check(
+                "rcbgTrxTexLoadFromFile",
+                0x0093_beb0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gp::tex_load_from_file(o, ebp, trx, dir, name, digits)),
+            );
+            r5_same(t, "rcbgTrxTexLoadFromFile", ebp - 0x25c, 0x258);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 13 (ffx_prender::m5m_q) ----
+
+#[test]
+fn r5_load_anime_rect_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f0a1);
+        for case in 0..24_u32 {
+            let work = t.zeros(0x300);
+            t.write(work + 0x174, b"/ffx/map");
+            let maps: [&[u8]; 3] = [b"bsil00", b"", b"kino03"];
+            t.write(work + 0x27c, maps[(case % 3) as usize]);
+            t.global(mq::RCUI_WORK.sym, work);
+            let i = match case % 4 {
+                0 => 0x19,
+                1 => 0x1a,
+                _ => rng.below(40),
+            };
+            let tm2 = if case % 7 == 3 { 0 } else { rng.next() };
+            t.stub_sym(mq::TM2_NEW, 1, false, 0, 0, Ret::Val(tm2));
+            t.stub_sym(
+                mq::TM2_LOAD,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(case % 5 != 2)),
+            );
+            let rect = t.zeros(0x10);
+            let (x, y, w, hh) = (rect, rect + 4, rect + 8, rect + 12);
+            t.w32(w, rng.below(64));
+            // the bounds: x as the callee leaves it, odd at times
+            r5_out_stub(
+                t,
+                mq::TM2_KEY_BOUNDS,
+                3,
+                5,
+                Ret::Val(rng.next()),
+                1,
+                rng.below(64),
+            );
+            t.stub_sym(mq::TM2_DELETE, 4, false, 1, 0, Ret::Val(rng.next()));
+            let p1 = t.stub_code(5, false, 1, 0, Ret::Val(rng.next()), false);
+            let p3 = t.stub_code(6, false, 3, 0, Ret::Val(rng.next()), false);
+            r5_dispatch(t, mq::RC_PRINT, t.rebase(mq::NOT_FOUND_TEXT), p1, p3);
+            let args = [i, x, y, w, hh];
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - mq::FRAME - 0x40);
+            t.check(
+                "rcbgSceneLoadTextureAnimeRect",
+                0x0093_bbc0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gq::load_anime_rect(o, ebp, i, x, y, w, hh)),
+            );
+            r5_same(t, "rcbgSceneLoadTextureAnimeRect", ebp - 0x11c, 0x118);
             t.b_top = None;
             t.reset();
         }

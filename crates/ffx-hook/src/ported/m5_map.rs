@@ -22,6 +22,8 @@ use ffx_prender::m5m_l::bridge as gl;
 use ffx_prender::m5m_m::bridge as gm;
 use ffx_prender::m5m_n::bridge as gn;
 use ffx_prender::m5m_o::bridge as go;
+use ffx_prender::m5m_p::bridge as gp;
+use ffx_prender::m5m_q::bridge as gq;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -593,5 +595,23 @@ ported! {
         let mut frame = StackFrame::<{ (ffx_prender::m5m_o::FRAME / 4) as usize }>::new();
         let ebp = frame.at() + ffx_prender::m5m_o::FRAME;
         go::load_text_sub(&mut mem(), ebp, scene)
+    }
+    // ---- round 5 batch 12 (ffx_prender::m5m_p) ----
+    /// `rcbgTrxTexLoadFromFile(t, dir, name, digits)` -> `rcdtTm2Fini`'s
+    /// `eax` (the original's 0x25c-byte frame, its TIM2 record, format and
+    /// path, in this shim's).
+    rcbgTrxTexLoadFromFile @ 0x0093_beb0 => extern "C" fn rcbg_trx_tex_load_from_file(t: u32, dir: u32, name: u32, digits: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_p::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_p::FRAME;
+        gp::tex_load_from_file(&mut mem(), ebp, t, dir, name, digits)
+    }
+    // ---- round 5 batch 13 (ffx_prender::m5m_q) ----
+    /// `rcbgSceneLoadTextureAnimeRect(i, x, y, w, h)` -> the last callee's
+    /// `eax` (the original's 0x11c-byte frame, its name and path, in this
+    /// shim's).
+    rcbgSceneLoadTextureAnimeRect @ 0x0093_bbc0 => extern "C" fn rcbg_scene_load_texture_anime_rect(i: u32, x: u32, y: u32, w: u32, hh: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_q::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_q::FRAME;
+        gq::load_anime_rect(&mut mem(), ebp, i, x, y, w, hh)
     }
 }
