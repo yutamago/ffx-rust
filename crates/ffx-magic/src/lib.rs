@@ -1112,6 +1112,9 @@ ports! {
     "parts buffer 0x50000" => s4_small::PARTS_BUFFER_50000, s4_small::parts_buffer;
     "parts buffer 0x100000" => s4_small::PARTS_BUFFER_100000, s4_small::parts_buffer;
     "light once, on" => s4_small::LIGHT_ONCE_ON, s4_small::light_once_on;
+    "static link, slot 845" => s4_small::STATIC_LINK_845, s4_small::static_link_845;
+    "part handles" => s4_small::PART_HANDLES, s4_small::part_handles;
+    "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;
     "thunk: table object" => s4_wrap::JMP_TABLE_OBJECT, s4_wrap::ecx_field_jmp;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;

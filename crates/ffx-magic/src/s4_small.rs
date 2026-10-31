@@ -5002,3 +5002,72 @@ pub const RECORD_TAKE: Sig = Sig {
     calls: &[(0x38, Callee::Sig(&crate::sa_misc::SPRITE_INIT))],
     imports: &[],
 };
+
+/// The DLL's static node (handler table first) put last under the DLL's
+/// list as in [`static_link_last`], its `+0x1c` 0xff, then a tail jump to
+/// slot 845 (no arguments).
+///
+/// `magic_0070` 0x10009650 (135 bytes; 2 DLLs).
+pub fn static_link_845<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = g.read::<u32>(op(img, f, 0x1));
+    g.write::<u32>(op(img, f, 0x7), op(img, f, 0xb));
+    g.write::<u16>(op(img, f, 0x12), 0xff);
+    for (dst, src) in [(0x1a, 0x1e), (0x24, 0x28), (0x2e, 0x32), (0x38, 0x3c)] {
+        g.write::<u32>(op(img, f, dst), op(img, f, src));
+    }
+    g.write::<u32>(op(img, f, 0x41), last);
+    if last == op(img, f, 0x46) {
+        g.write::<u32>(op(img, f, 0x4e), op(img, f, 0x52));
+    } else {
+        g.write::<u32>(last.wrapping_add(4), op(img, f, 0x5b));
+    }
+    let count = op(img, f, 0x67);
+    let c = g.read::<u16>(count).wrapping_add(1);
+    g.write::<u16>(count, c);
+    g.write::<u32>(op(img, f, 0x6d), op(img, f, 0x71));
+    g.write::<u32>(op(img, f, 0x77), 0xff);
+    Ret::jump(slot_target(g, op(img, f, 0x60), 845))
+}
+
+/// [`static_link_845`].
+pub const STATIC_LINK_845: Sig = Sig {
+    len: 135,
+    hash: 0x4f71_0938_8833_a4bc,
+    calls: &[],
+    imports: &[],
+};
+
+/// The DLL's part `P` (operand `+0x6`) set up: slot 718 `(P)`, slots 222
+/// and 221 `(P, 0, 1000, 0x100)`, then slot 719 `(P, 6, 0)` and `(P, 6,
+/// 1)` give two handles (`G_A`, `G_B`), each call seeing the words the
+/// earlier ones left (no arguments). Returns the second handle.
+///
+/// `magic_0183` 0x10001000 (136 bytes; 2 DLLs).
+pub fn part_handles<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = op(img, f, 0x6);
+    let mut words = vec![p];
+    slot_call(g, img, f, (0x1, 718), &words);
+    words.splice(0..0, [p, 0, 1000, 0x100]);
+    slot_call(g, img, f, (0x13, 222), &words);
+    words.splice(0..0, [p, 0, 1000, 0x100]);
+    slot_call(g, img, f, (0x31, 221), &words);
+    words.splice(0..0, [p, 6, 0]);
+    // call width: 12 (the earlier calls' words stay on the stack)
+    let a = slot_call(g, img, f, (0x4f, 719), &words).eax;
+    g.write::<u32>(op(img, f, 0x65), a);
+    words.splice(0..0, [p, 6, 1]);
+    // call width: 15 (the earlier calls' words stay on the stack)
+    let b = slot_call(g, img, f, (0x6a, 719), &words).eax;
+    g.write::<u32>(op(img, f, 0x83), b);
+    Ret::eax(b)
+}
+
+/// [`part_handles`].
+pub const PART_HANDLES: Sig = Sig {
+    len: 136,
+    hash: 0xf2ec_54db_a01d_ba7a,
+    calls: &[],
+    imports: &[],
+};

@@ -1817,3 +1817,25 @@ pub const START_260_PLACED: Sig = Sig {
     calls: &[(0x1f, Callee::Sig(&START_OBJECT_AT))],
     imports: &[],
 };
+
+/// The object `G + 0x1300` (part 0x10) started and placed from the
+/// `magic_0644` block, then raised by `K` (operand `+0x60`; `+0xd4`) and
+/// its `+0xe8` -18.0.
+///
+/// `magic_0644` 0x1000a070 (136 bytes; 5 DLLs).
+pub fn start_1300_raised<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let k = f32::from_bits(g.read::<u32>(img.word(fr.at + 0x60)));
+    start_placed(g, img, fr, (0xb, 0x1300, 0x10, L644), |g, _, o| {
+        let y = add(f32::from_bits(g.read::<u32>(o + 0xd4)), k);
+        g.write::<u32>(o + 0xe8, 0xc190_0000);
+        g.write::<u32>(o + 0xd4, y.to_bits());
+    })
+}
+
+/// [`start_1300_raised`].
+pub const START_1300_RAISED: Sig = Sig {
+    len: 136,
+    hash: 0xcdfa_6bdb_3f51_c6ad,
+    calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};

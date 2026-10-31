@@ -2303,3 +2303,20 @@ fn walk_reset_thunk() {
         t.check_entry(f, call, &[sa::CURSOR, 0x0bad_f00e], Eax::Checked);
     }
 }
+
+#[test]
+fn links_845_and_handles() {
+    let Some(mut t) = twin(70) else { return };
+    recs(&mut t, &[(845, 1)]);
+    let f = t.at(0x9650);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x46) } else { last });
+        t.check_entry(f, Call::default(), &[0x0845_0001], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(183) else { return };
+    recs(&mut t, &[(718, 1), (222, 4), (221, 4), (719, 3)]);
+    t.check_entry(t.at(0x1000), Call::default(), &[], Eax::Checked);
+}

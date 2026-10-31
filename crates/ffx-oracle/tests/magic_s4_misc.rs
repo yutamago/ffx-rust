@@ -2552,3 +2552,31 @@ fn fam446_start_260_placed() {
         t.check(f, c, &[], Eax::Checked, s4_fam446::start_260_placed);
     }
 }
+
+/// `magic_0644`'s raised start of `G + 0x1300`.
+#[test]
+fn fam446_start_1300_raised() {
+    let Some(mut t) = twin(644) else { return };
+    let f = t.at(0xa070);
+    let soa = t.img.rel32_target(f + 0x20);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |_, _| 0x714);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let block = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0xb), block);
+    t.write(block, &vec![0x3c; 0xec00]);
+    for i in 0..4 {
+        set_f(&mut t, block + 0x2e50 + 4 * i, 1.5 * i as f32);
+    }
+    for count in [3u16, 0] {
+        t.set_u16(free, count);
+        let c = Call {
+            ecx: 0x0bad_0ecc,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
+    }
+}
