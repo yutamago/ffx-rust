@@ -78,6 +78,8 @@ pub mod s4_misc;
 pub mod s4_small;
 pub mod s4_summon;
 pub mod s4_wrap;
+// the shared work list's fifth round (shared-5: rows 737 on)
+pub mod s5_misc;
 
 // round 4, the own work list's families (o4_*)
 pub mod o4_ctor;
@@ -1680,6 +1682,84 @@ ports! {
     "o4 more2 count_fade 0673@1c70" => o4_more2::COUNT_FADE_0673_1C70, o4_more2::count_fade;
     "o4 more2 clear_halves_slot 0519@2cf0" => o4_more2::CLEAR_HALVES_SLOT_0519_2CF0, o4_more2::clear_halves_slot;
     "o4 more2 slot_chain_jump 0446@4d30" => o4_more2::SLOT_CHAIN_JUMP_0446_4D30, o4_more2::slot_chain_jump;
+    // shared-5
+    "wot frame" => s5_misc::WOT_FRAME, s5_misc::wot_frame;
+    "facing scale" => s5_misc::FACING_SCALE, s5_misc::facing_scale;
+    "motion towards" => s5_misc::MOTION_TOWARDS, s5_misc::motion_towards;
+    "chara setup (0x3015)" => s5_misc::CHARA_SETUP, s5_misc::chara_setup;
+    "targets start (0xa0)" => s5_misc::TARGETS_START, s5_misc::targets_start;
+    "particles rethrow" => s5_misc::PARTICLES_RETHROW, s5_misc::particles_rethrow;
+    "camera rect task" => s5_misc::CAMERA_RECT_TASK, s5_misc::camera_rect_task;
+    "host start (chara 0x10af)" => s5_misc::HOST_START_CHARA, s5_misc::host_start_chara;
+    "node set-up (0x1ac)" => s5_misc::NODE_SETUP, s5_misc::node_setup;
+    "rising part" => s5_misc::RISING_PART, s5_misc::rising_part;
+    "host start (sound bank)" => s5_misc::HOST_START_BANK, s5_misc::host_start_bank;
+    "host start (523, bit 10)" => s5_misc::HOST_START_523_A, s5_misc::host_start_523_a;
+    "host start (523, bit 11)" => s5_misc::HOST_START_523_B, s5_misc::host_start_523_b;
+    "host start (two streams)" => s5_misc::HOST_START_STREAMS, s5_misc::host_start_streams;
+    "host start (one stream)" => s5_misc::HOST_START_STREAM, s5_misc::host_start_stream;
+    "host start (two data)" => s5_misc::HOST_START_TWO, s5_misc::host_start_two;
+    "face map centre" => s5_misc::FACE_MAP_CENTRE, s5_misc::face_map_centre;
+    "host start (facing the centre)" => s5_misc::HOST_START_FACING, s5_misc::host_start_facing;
+    "four-part task" => s5_misc::FOUR_PART_TASK, s5_misc::four_part_task;
+    "moving part" => s5_misc::MOVING_PART, s5_misc::moving_part;
+    "ppp effect set-up" => s5_misc::PPP_EFFECT_SETUP, s5_misc::ppp_effect_setup;
+    "ppp effect set-up (six buffers)" => s5_misc::PPP_EFFECT_SETUP_6, s5_misc::ppp_effect_setup_6;
+    "packed texture" => s5_misc::PACKED_TEXTURE, s5_misc::packed_texture;
+    "two lights start" => s5_misc::TWO_LIGHTS_START, s5_misc::two_lights_start;
+    "targets mean offset" => s5_misc::TARGETS_MEAN_OFFSET, s5_misc::targets_mean_offset;
+    "three charas 0x10af" => s5_misc::THREE_CHARAS, s5_misc::three_charas;
+    "fading model task" => s5_misc::FADING_MODEL_TASK, s5_misc::fading_model_task;
+    "target measure" => s5_misc::TARGET_MEASURE, s5_misc::target_measure;
+    "weapon swing" => s5_misc::WEAPON_SWING, s5_misc::weapon_swing;
+    "shade reset, colour task" => s5_misc::SHADE_RESET_COLOUR_TASK, s5_misc::shade_reset_colour_task;
+    "effect end, character shown" => s5_misc::EFFECT_END_SHOW, s5_misc::effect_end_show;
+    "screen fade step" => s5_misc::FADE_STEP, s5_misc::fade_step;
+    "summon ppp start" => s5_misc::SUMMON_PPP_START, s5_misc::summon_ppp_start;
+    "images store and load" => s5_misc::IMAGES_STORE_LOAD, s5_misc::images_store_load;
+    "target measure (modes)" => s5_misc::TARGET_MEASURE_MODES, s5_misc::target_measure_modes;
+    "root point part" => s5_misc::ROOT_POINT_PART, s5_misc::root_point_part;
+    "summon ppp start (stream)" => s5_misc::SUMMON_PPP_START_STREAM, s5_misc::summon_ppp_start_stream;
+    "spark pairs" => s5_misc::SPARK_PAIRS, s5_misc::spark_pairs;
+    "summon ppp start (stream 1)" => s5_misc::SUMMON_PPP_START_STREAM_1, s5_misc::summon_ppp_start_stream_1;
+    "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
+    "summon ppp start (big env)" => s5_misc::SUMMON_PPP_START_BIG, s5_misc::summon_ppp_start_big;
+    "summon ppp start (flag)" => s5_misc::SUMMON_PPP_START_FLAG, s5_misc::summon_ppp_start_flag;
+    "three points ease" => s5_misc::THREE_POINTS_EASE, s5_misc::three_points_ease;
+    "arc carry" => s5_misc::ARC_CARRY, s5_misc::arc_carry;
+    "objects around" => s5_misc::OBJECTS_AROUND, s5_misc::objects_around;
+    "task scatter" => s5_misc::TASK_SCATTER, s5_misc::task_scatter;
+    "throw aim" => s5_misc::THROW_AIM, s5_misc::throw_aim;
+    "weapon swing (drop)" => s5_misc::WEAPON_SWING_DROP, s5_misc::weapon_swing_drop;
+    "camera part" => s5_misc::CAMERA_PART, s5_misc::camera_part;
+    "homing trail" => s5_misc::HOMING_TRAIL, s5_misc::homing_trail;
+    "sine rise" => s5_misc::SINE_RISE, s5_misc::sine_rise;
+    "signed axes" => s5_misc::SIGNED_AXES, s5_misc::signed_axes;
+    "shower step" => s5_misc::SHOWER_STEP, s5_misc::shower_step;
+    "sine rise start" => s5_misc::SINE_RISE_START, s5_misc::sine_rise_start;
+    "sparks thrown" => s5_misc::SPARKS_THROWN, s5_misc::sparks_thrown;
+    "targets more, tasks" => s5_misc::TARGETS_MORE_TASKS, s5_misc::targets_more_tasks;
+    "camera tree" => s5_misc::CAMERA_TREE, s5_misc::camera_tree;
+    "models around" => s5_misc::MODELS_AROUND, s5_misc::models_around;
+    "models around start" => s5_misc::MODELS_AROUND_START, s5_misc::models_around_start;
+    "camera behind" => s5_misc::CAMERA_BEHIND, s5_misc::camera_behind;
+    "look part" => s5_misc::LOOK_PART, s5_misc::look_part;
+    "curve carry" => s5_misc::CURVE_CARRY, s5_misc::curve_carry;
+    "actor clip draw" => s5_misc::ACTOR_CLIP_DRAW, s5_misc::actor_clip_draw;
+    "clock light" => s5_misc::CLOCK_LIGHT, s5_misc::clock_light;
+    "objects at targets" => s5_misc::OBJECTS_AT_TARGETS, s5_misc::objects_at_targets;
+    "scene_light" => s5_misc::SCENE_LIGHT, s5_misc::scene_light;
+    "spray_on_cue" => s5_misc::SPRAY_ON_CUE, s5_misc::spray_on_cue;
+    "weapon_bounce" => s5_misc::WEAPON_BOUNCE, s5_misc::weapon_bounce;
+    "scene_two_records" => s5_misc::SCENE_TWO_RECORDS, s5_misc::scene_two_records;
+    "camera_behind_start" => s5_misc::CAMERA_BEHIND_START, s5_misc::camera_behind_start;
+    "camera_records_start" => s5_misc::CAMERA_RECORDS_START, s5_misc::camera_records_start;
+    "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
+    "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
+    "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
+    "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
+    "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
+    "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2242,6 +2322,22 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "o4 more2 object_node_edx 0307@b480",
         &o4_more2::OBJECT_NODE_EDX_0307_B480,
     ),
+    // shared-5 internal
+    ("model draw (772)", &s5_misc::MODEL_DRAW),
+    ("thickness margin", &s5_misc::THICKNESS_MARGIN),
+    ("weapon matrix", &s5_misc::WEAPON_MATRIX),
+    ("angle keys", &s5_misc::ANGLE_KEYS),
+    ("model parts draw", &s5_misc::MODEL_PARTS_DRAW),
+    ("aim task", &s5_misc::AIM_TASK),
+    ("three parts draw", &s5_misc::THREE_PARTS_DRAW),
+    ("aim object", &s5_misc::AIM_OBJECT),
+    ("flight task", &s5_misc::FLIGHT_TASK),
+    ("sprite packet", &s5_misc::SPRITE_PACKET),
+    ("wave table", &s5_misc::WAVE_TABLE),
+    ("thrown effect", &s5_misc::THROWN_EFFECT),
+    ("burst records", &s5_misc::BURST_RECORDS),
+    ("parts vertices", &s5_misc::PARTS_VERTICES),
+    ("thrown effect (far nodes)", &s5_misc::THROWN_EFFECT_FAR),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

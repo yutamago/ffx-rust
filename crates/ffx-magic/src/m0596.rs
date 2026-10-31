@@ -105,6 +105,31 @@ pub const OBJECT_INIT: Sig = Sig {
 /// calls leave on the stack (the start's later calls see them).
 pub fn host_start<G: Game>(g: &mut G, img: &Image, f: u32, arg: u32) -> Vec<u32> {
     let w = |off: u32| img.word(f + off);
+    host_start_head(g, img, f, arg);
+    let s720 = slot_target(g, w(0xb0), 720);
+    let mut stack = vec![0x3400, 0x800];
+    g.call(s720, 0, &stack);
+    let s718 = slot_target(g, w(0xc7), 718);
+    stack.insert(0, w(0xcc));
+    // call width: 11 at most (the earlier calls' words stay on the stack)
+    g.call(s718, 0, &stack);
+    let s222 = slot_target(g, w(0xd9), 222);
+    stack.splice(0..0, [w(0xed), 0, 1000, 1]);
+    // call width: 11 at most (the earlier calls' words stay on the stack)
+    g.call(s222, 0, &stack);
+    let s221 = slot_target(g, w(0xf4), 221);
+    stack.splice(0..0, [w(0x108), 0, 1000, 1]);
+    // call width: 11 at most (the earlier calls' words stay on the stack)
+    g.call(s221, 0, &stack);
+    stack
+}
+
+/// [`host_start`] up to its first slot 720 call (the code through
+/// `+0xaf`, which other starts share): `arg` kept, the object block, the
+/// three registrations, the 1.0 words, slot 790's float, the task ring
+/// and the free pool-A nodes. Leaves nothing on the stack.
+pub fn host_start_head<G: Game>(g: &mut G, img: &Image, f: u32, arg: u32) {
+    let w = |off: u32| img.word(f + off);
     g.write::<u32>(w(0x08), arg);
     host::obj_block_init(g, img, img.rel32_target(f + 0x0d), arg);
     let s556 = slot_target(g, w(0x12), 556);
@@ -132,22 +157,6 @@ pub fn host_start<G: Game>(g: &mut G, img: &Image, f: u32, arg: u32) -> Vec<u32>
     }
     g.write::<u16>(w(0xa3), 0x3ff);
     g.write::<u16>(w(0xab), 0);
-    let s720 = slot_target(g, w(0xb0), 720);
-    let mut stack = vec![0x3400, 0x800];
-    g.call(s720, 0, &stack);
-    let s718 = slot_target(g, w(0xc7), 718);
-    stack.insert(0, w(0xcc));
-    // call width: 11 at most (the earlier calls' words stay on the stack)
-    g.call(s718, 0, &stack);
-    let s222 = slot_target(g, w(0xd9), 222);
-    stack.splice(0..0, [w(0xed), 0, 1000, 1]);
-    // call width: 11 at most (the earlier calls' words stay on the stack)
-    g.call(s222, 0, &stack);
-    let s221 = slot_target(g, w(0xf4), 221);
-    stack.splice(0..0, [w(0x108), 0, 1000, 1]);
-    // call width: 11 at most (the earlier calls' words stay on the stack)
-    g.call(s221, 0, &stack);
-    stack
 }
 
 /// Table `+0x0` (0x10006560, cdecl `(arg)`): the object host's start
