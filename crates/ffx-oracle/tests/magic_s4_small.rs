@@ -4434,3 +4434,43 @@ fn named_parts() {
         t.check(f, c, &[0x0e0e], Eax::Checked, s4_small::named_parts);
     }
 }
+
+#[test]
+fn load_steps_and_frames() {
+    let Some(mut t) = twin(609) else { return };
+    let f = t.at(0xc060);
+    let ans = SCRATCH + 0x90;
+    for (k, s) in [225u32, 313, 549].into_iter().enumerate() {
+        let a = ans + 4 * k as u32;
+        rec(&mut t, s, 1, move |m, _| m.r32(a));
+    }
+    recs(&mut t, &[(226, 2), (673, 0)]);
+    t.set_u32(op(&t, f, 0xa1), SCRATCH + 0x80);
+    let ring = op(&t, f, 0xb7);
+    let empty = |t: &mut Twin| {
+        t.write(ring, &[0; 0x14]);
+        // the first node is the sentinel: an empty ring
+        t.set_u32(ring + 0xc, ring + 4);
+    };
+    for node in [op(&t, f, 0xd6), op(&t, f, 0xf0)] {
+        t.write(node, &[0; 0x20]);
+        t.set_u8(node + 0x1a, 0x77);
+        // no children
+        t.set_u32(node + 0x10, node);
+    }
+    for (state, a) in [
+        (0u32, [1u32, 0, 0]),
+        (0, [0, 1, 0]),
+        (0, [0, 0, 1]),
+        (0, [0, 0, 0]),
+        (3, [0, 0, 0]),
+        (7, [0, 0, 0]),
+    ] {
+        empty(&mut t);
+        t.set_u32(op(&t, f, 0x4), state);
+        for (k, x) in a.into_iter().enumerate() {
+            t.set_u32(ans + 4 * k as u32, x);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

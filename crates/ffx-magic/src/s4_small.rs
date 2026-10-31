@@ -9609,3 +9609,86 @@ pub const NAMED_PARTS: Sig = Sig {
     calls: &[(0xf6, Callee::Any)],
     imports: &[],
 };
+
+/// The effect's loading steps, then its frame (no arguments): in state
+/// 0 slot 225 `(2)` and in state 1 slot 313 `(2)` must answer 0 to move
+/// on (any other answer waits); state 2 needs slot 549 `(2)` at 0, then
+/// slot 226 `(*G_RES, 0)` and state 4. From state 4 on (state 3 waits):
+/// slot 673, `*G_P` = `ITEM`, the pass byte counts up, `G_TIME` = `*G_NOW`,
+/// the ring runs ([`crate::s4_misc::ring_run`]) and the two node groups
+/// are visited at the pass ([`crate::nodes::visit_gated`] with a cursor
+/// on the frame). Returns 0.
+///
+/// `magic_0609` 0x1000c060 (258 bytes; 2 DLLs).
+pub fn load_steps_and_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let mut state = g.read::<u32>(w(0x4));
+    loop {
+        match state {
+            0 | 1 => {
+                let (table, slot) = if state == 0 { (0x28, 225) } else { (0x1b, 313) };
+                if slot_call(g, img, f, (table, slot), &[2]).eax != 0 {
+                    return Ret::eax(0);
+                }
+                state = g.read::<u32>(w(0x42)).wrapping_add(1);
+                g.write::<u32>(w(0x48), state);
+            }
+            2 => {
+                if slot_call(g, img, f, (0x52, 549), &[2]).eax != 0 {
+                    return Ret::eax(0);
+                }
+                let res = g.read::<u32>(w(0x73));
+                slot_call(g, img, f, (0x6d, 226), &[res, 0]);
+                g.write::<u32>(w(0x84), 4);
+                break;
+            }
+            s if s.cast_signed() < 4 => return Ret::eax(0),
+            _ => break,
+        }
+    }
+    slot_call(g, img, f, (0x94, 673), &[]);
+    let p = g.read::<u32>(w(0xa1));
+    let pass = g.read::<u8>(w(0xa7)).wrapping_add(1);
+    g.write::<u8>(w(0xa7), pass);
+    g.write::<u32>(p, w(0xad));
+    let now = g.read::<u32>(w(0xb2));
+    g.write::<u32>(w(0xbc), now);
+    // push ebp; sub esp, 8: the cursor is [ebp - 8]
+    let cursor = fr.esp.wrapping_sub(12);
+    let ring = Frame {
+        at: img.rel32_target(f + 0xc1),
+        esp: cursor.wrapping_sub(4),
+        eax: now,
+        ecx: w(0xb7),
+        ..*fr
+    };
+    crate::s4_misc::ring_run(g, img, &ring);
+    // the first push stays for the second call
+    for (k, (node, call)) in [(0xd6u32, 0xdbu32), (0xf0, 0xf5)].into_iter().enumerate() {
+        let pass = g.read::<u8>(w(if k == 0 { 0xc8 } else { 0xe2 }));
+        g.write::<u8>(cursor + 5, pass);
+        g.write::<u32>(cursor, w(node));
+        let esp = cursor.wrapping_sub(8 + 4 * k as u32);
+        g.write::<u32>(esp + 4, cursor);
+        let visit = Frame {
+            at: img.rel32_target(f + call),
+            esp,
+            ..*fr
+        };
+        crate::nodes::visit_gated(g, img, &visit);
+    }
+    Ret::eax(0)
+}
+
+/// [`load_steps_and_frame`].
+pub const LOAD_STEPS_AND_FRAME: Sig = Sig {
+    len: 258,
+    hash: 0x1b65_a4d5_d5db_92ab,
+    calls: &[
+        (0xc1, Callee::Sig(&crate::s4_misc::RING_RUN)),
+        (0xdb, Callee::Sig(&crate::nodes::GATED)),
+        (0xf5, Callee::Sig(&crate::nodes::GATED)),
+    ],
+    imports: &[],
+};
