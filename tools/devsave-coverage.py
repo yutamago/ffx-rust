@@ -20,7 +20,8 @@ It writes:
 - the spell overlays loaded, and the entry points that ran in each
   (FFX_MAGIC_EMU's unload reports) that an ffx-magic port binds to
   (`magic-sig --bind`, built from this checkout).
-The lists of new functions go next to the summary as TSV files.
+The lists of new functions go next to the summary as TSV files
+(address, name, [hook file,] first save, how many saves reached it).
 """
 import argparse
 import collections
@@ -145,7 +146,13 @@ def main():
     w(f"# Developer-save coverage sweep: {sweep}")
     w("")
     w(f"Coverage before (union of {len(before_files)} files): {len(before)} functions")
-    w(f"Reached in the sweep: {len(union)} functions, {len(union - before)} not reached before")
+    saves_n = len(per)
+    new = union - before
+    everywhere = {h for h in new if len(reached_by[h]) == saves_n}
+    w(f"Reached in the sweep: {len(union)} functions, {len(new)} not reached before: "
+      f"{len(everywhere)} of them in every save (the path every session shares: boot, title, "
+      f"the load, the menu; mostly start-up code the earlier run did not arm), "
+      f"{len(new - everywhere)} in some saves only (the story)")
     w("")
     w("## Saves")
     w("")
@@ -171,7 +178,8 @@ def main():
     w("## Ported functions (ported! lines)")
     w("")
     w(f"{len(ported)} hooked ports; {len(ran_ported)} ran in the sweep (original code), "
-      f"{len(new_ported)} of them with no real run before; "
+      f"{len(new_ported)} of them with no real run before "
+      f"({len(new_ported - everywhere)} in some saves only, {len(new_ported & everywhere)} in every save); "
       f"{len([p for p in ported if p not in union and p not in before])} still never seen running")
     by_file = collections.Counter(ported[p][0] for p in new_ported)
     w("")
@@ -216,10 +224,11 @@ def main():
     out = pathlib.Path(a.out) if a.out else sweep / "summary.md"
     out.write_text(text, encoding="utf-8")
     (out.parent / "new-ported.tsv").write_text(
-        "".join(f"0x{p:08x}\t{ported[p][1]}\t{ported[p][0]}\t{first_save[p]}\n" for p in sorted(new_ported)),
+        "".join(f"0x{p:08x}\t{ported[p][1]}\t{ported[p][0]}\t{first_save[p]}\t{len(reached_by[p])}\n"
+                for p in sorted(new_ported)),
         encoding="utf-8")
     (out.parent / "new-functions.tsv").write_text(
-        "".join(f"0x{h:08x}\t{sym.get(h, '-')}\t{first_save[h]}\t{'ported' if h in ported else ''}\n"
+        "".join(f"0x{h:08x}\t{sym.get(h, '-')}\t{first_save[h]}\t{len(reached_by[h])}\t{'ported' if h in ported else ''}\n"
                 for h in sorted(union - before)), encoding="utf-8")
     (out.parent / "magic-entries.tsv").write_text("".join(r + "\n" for r in magic_rows), encoding="utf-8")
     print(text)
