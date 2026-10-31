@@ -3582,41 +3582,39 @@ pub const MOVE_SETUP: Sig = Sig {
 /// `magic_0070` 0x100096e0 (108 bytes; 2 DLLs).
 pub fn static_leave_846<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
-    let parent = g.read::<u32>(op(img, f, 0x2));
-    if parent != 0 {
-        let c = g
-            .read::<u16>(parent.wrapping_add(0x18))
-            .wrapping_add(0xffff);
-        g.write::<u16>(parent.wrapping_add(0x18), c);
-        let (prev, next) = (
-            g.read::<u32>(op(img, f, 0x15)),
-            g.read::<u32>(op(img, f, 0x1a)),
-        );
-        g.write::<u32>(
-            if prev == parent {
-                parent.wrapping_add(0x10)
-            } else {
-                prev.wrapping_add(8)
-            },
-            next,
-        );
-        let (next, prev) = (
-            g.read::<u32>(op(img, f, 0x2c)),
-            g.read::<u32>(op(img, f, 0x31)),
-        );
-        g.write::<u32>(
-            if next == parent {
-                parent.wrapping_add(0xc)
-            } else {
-                next.wrapping_add(4)
-            },
-            prev,
-        );
-        g.write::<u32>(op(img, f, 0x43), op(img, f, 0x47));
-        g.write::<u32>(op(img, f, 0x4d), op(img, f, 0x51));
-        g.write::<u32>(op(img, f, 0x57), 0);
-    }
+    static_leave(g, img, f, 0);
     Ret::jump(slot_target(g, op(img, f, 0x60), 846))
+}
+
+/// The static node leaving its parent (see [`static_leave_846`]); the
+/// operands sit `shift` bytes later than in `magic_0070`'s copy.
+fn static_leave<G: Game>(g: &mut G, img: &Image, f: u32, shift: u32) {
+    let o = |off: u32| op(img, f, off + shift);
+    let parent = g.read::<u32>(o(0x2));
+    if parent == 0 {
+        return;
+    }
+    let c = g
+        .read::<u16>(parent.wrapping_add(0x18))
+        .wrapping_add(0xffff);
+    g.write::<u16>(parent.wrapping_add(0x18), c);
+    let (prev, next) = (g.read::<u32>(o(0x15)), g.read::<u32>(o(0x1a)));
+    let at = if prev == parent {
+        parent.wrapping_add(0x10)
+    } else {
+        prev.wrapping_add(8)
+    };
+    g.write::<u32>(at, next);
+    let (next, prev) = (g.read::<u32>(o(0x2c)), g.read::<u32>(o(0x31)));
+    let at = if next == parent {
+        parent.wrapping_add(0xc)
+    } else {
+        next.wrapping_add(4)
+    };
+    g.write::<u32>(at, prev);
+    g.write::<u32>(o(0x43), o(0x47));
+    g.write::<u32>(o(0x4d), o(0x51));
+    g.write::<u32>(o(0x57), 0);
 }
 
 /// [`static_leave_846`].
@@ -4099,6 +4097,105 @@ pub fn link_node_942<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const LINK_NODE_942: Sig = Sig {
     len: 119,
     hash: 0x69c9_d6d9_d7b6_579d,
+    calls: &[],
+    imports: &[],
+};
+
+/// The static node leaving its parent ([`static_leave`]), then the model
+/// of the node at operand `+0x69` set up ([`model_setup`], a cursor on
+/// the frame) (no arguments). Returns 0.
+///
+/// `magic_0164` 0x1000bfc0 (120 bytes; 2 DLLs).
+pub fn static_leave_model<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    static_leave(g, img, f, 4);
+    // push ebp; push ecx: the cursor is [ebp - 4]
+    let cursor = fr.esp.wrapping_sub(8);
+    g.write::<u32>(cursor, op(img, f, 0x69));
+    let callee = Frame {
+        at: img.rel32_target(f + 0x6e),
+        esp: cursor.wrapping_sub(4),
+        ecx: cursor,
+        ..*fr
+    };
+    model_setup(g, img, &callee);
+    Ret::eax(0)
+}
+
+/// [`static_leave_model`].
+pub const STATIC_LEAVE_MODEL: Sig = Sig {
+    len: 120,
+    hash: 0xe6e7_d5f5_03d4_7af8,
+    calls: &[(0x6e, Callee::Sig(&MODEL_SETUP))],
+    imports: &[],
+};
+
+/// The DLL's static node (operand `+0x7`, its handler table `+0xb`) set
+/// up fresh and put last under the DLL's list (operands: the parent
+/// `+0x30`, the list's last `*G_LAST` `+0x1`, its first `+0x4e`, count
+/// `+0x62`, last `+0x68`), byte `+0x30` of the node 0 (no arguments).
+/// Returns the old last.
+///
+/// `magic_0201` 0x10006e00 (120 bytes; 3 DLLs).
+pub fn static_link_last<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = g.read::<u32>(op(img, f, 0x1));
+    g.write::<u32>(op(img, f, 0x7), op(img, f, 0xb));
+    g.write::<u16>(op(img, f, 0x12), 0xff);
+    for (dst, src) in [(0x1a, 0x1e), (0x24, 0x28), (0x2e, 0x32), (0x38, 0x3c)] {
+        g.write::<u32>(op(img, f, dst), op(img, f, src));
+    }
+    g.write::<u32>(op(img, f, 0x41), last);
+    if last == op(img, f, 0x46) {
+        g.write::<u32>(op(img, f, 0x4e), op(img, f, 0x52));
+    } else {
+        g.write::<u32>(last.wrapping_add(4), op(img, f, 0x5b));
+    }
+    let count = op(img, f, 0x62);
+    let c = g.read::<u16>(count).wrapping_add(1);
+    g.write::<u16>(count, c);
+    g.write::<u32>(op(img, f, 0x68), op(img, f, 0x6c));
+    g.write::<u8>(op(img, f, 0x72), 0);
+    Ret::eax(last)
+}
+
+/// [`static_link_last`].
+pub const STATIC_LINK_LAST: Sig = Sig {
+    len: 120,
+    hash: 0x52b1_c517_e284_096b,
+    calls: &[],
+    imports: &[],
+};
+
+/// Slot 363 `(*G_A, 2, 1)`; the first time (`G_SET` 0) slot 362 `(c,
+/// *G_A, 2, **G_P)` with `c` the word `G_C`, which `G_SET` keeps; then
+/// `G_X`, `G_Y` 0 and `G_T`, `G_U` 0x1ccc8 (no arguments). Returns the
+/// last slot's `eax`.
+///
+/// `magic_0188` 0x100011a0 (120 bytes; 2 DLLs).
+pub fn light_once<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let a = g.read::<u32>(op(img, f, 0x11));
+    let mut ret = through(slot_call(g, img, f, (0x1, 363), &[a, 2, 1]));
+    if g.read::<u32>(op(img, f, 0x1c)) == 0 {
+        let p = g.read::<u32>(op(img, f, 0x24));
+        let c = g.read::<u32>(op(img, f, 0x2a));
+        let pv = g.read::<u32>(p);
+        let a = g.read::<u32>(op(img, f, 0x39));
+        g.write::<u32>(op(img, f, 0x46), c);
+        ret = through(slot_call(g, img, f, (0x31, 362), &[c, a, 2, pv]));
+    }
+    g.write::<u32>(op(img, f, 0x51), 0);
+    g.write::<u32>(op(img, f, 0x5b), 0);
+    g.write::<u32>(op(img, f, 0x65), 0x1_ccc8);
+    g.write::<u32>(op(img, f, 0x6f), 0x1_ccc8);
+    ret
+}
+
+/// [`light_once`].
+pub const LIGHT_ONCE: Sig = Sig {
+    len: 120,
+    hash: 0x3b1c_c4d3_4d4d_1129,
     calls: &[],
     imports: &[],
 };

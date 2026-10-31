@@ -1575,7 +1575,7 @@ fn moves_and_static_leave() {
     for i in 0..0x1c {
         t.set_u32(m + 4 * i, (0.5f32 * i as f32 - 3.0).to_bits());
     }
-    t.set_u32(m + 0x68, 0xffff_fff6);
+    t.set_u32(m + 0x68, 0xffff_fff7);
     let c = Call {
         eax: 0x00ea_0000,
         ecx: m,
@@ -1816,5 +1816,52 @@ fn colour_tasks_and_fades() {
             Eax::Checked,
             s4_small::link_node_942,
         );
+    }
+}
+
+#[test]
+fn statics_and_lights() {
+    let Some(mut t) = twin(164) else { return };
+    for s in [538, 213, 211] {
+        rec(&mut t, s, 2, move |_, a| s << 16 | a[1] & 0xffff);
+    }
+    rec(&mut t, 547, 1, |_, a| 0x5470_0000 ^ a[0]);
+    recs(&mut t, &[(35, 5), (34, 2), (276, 2), (219, 2)]);
+    let f = t.at(0xbfc0);
+    let parent = SCRATCH + 0x400;
+    let (a, b) = (SCRATCH + 0x500, SCRATCH + 0x600);
+    let node = op(&t, f, 0x69);
+    for (p, prev, next) in [(0u32, a, b), (parent, a, b), (parent, parent, parent)] {
+        t.write(parent, &[0x11; 0x20]);
+        t.write(a, &[0x22; 0x10]);
+        t.write(b, &[0x33; 0x10]);
+        t.write(node, &[0x3c; 0x98]);
+        t.set_u16(node + 0x90, 0x11);
+        t.set_u32(op(&t, f, 0x6), p);
+        t.set_u32(op(&t, f, 0x19), prev);
+        t.set_u32(op(&t, f, 0x1e), next);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(201) else { return };
+    let f = t.at(0x6e00);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x46) } else { last });
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(188) else { return };
+    recs(&mut t, &[(363, 3), (362, 4)]);
+    let f = t.at(0x11a0);
+    let p = SCRATCH + 0x80;
+    t.set_u32(p, 0x0362_0004);
+    t.set_u32(op(&t, f, 0x24), p);
+    t.set_u32(op(&t, f, 0x2a), 0x0362_0001);
+    t.set_u32(op(&t, f, 0x11), 0x0363_0001);
+    for set in [0u32, 5] {
+        t.set_u32(op(&t, f, 0x1c), set);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

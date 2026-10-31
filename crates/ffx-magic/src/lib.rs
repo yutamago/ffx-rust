@@ -1095,6 +1095,9 @@ ports! {
     "records clear 500" => s4_small::RECORDS_CLEAR_500, s4_small::records_clear;
     "records clear 1000" => s4_small::RECORDS_CLEAR_1000, s4_small::records_clear;
     "colour task" => s4_small::COLOUR_TASK, s4_small::colour_task;
+    "static leave, model" => s4_small::STATIC_LEAVE_MODEL, s4_small::static_leave_model;
+    "static link last" => s4_small::STATIC_LINK_LAST, s4_small::static_link_last;
+    "light once" => s4_small::LIGHT_ONCE, s4_small::light_once;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
