@@ -2721,3 +2721,35 @@ fn more_walk_thunks() {
     }
     t.check_entry(t.at(0x1ee0), Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn static_tail_and_ring_entries() {
+    let Some(mut t) = twin(155) else { return };
+    let f = t.at(0x90e0);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x46) } else { last });
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(42) else { return };
+    sa::handler_stubs(&mut t);
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x7c50);
+    let child = SCRATCH + 0x5000;
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x30);
+        let owner = sa::node(0);
+        t.write(child, &[0x41; 0x40]);
+        t.set_u32(child, sa::VTABLE);
+        t.set_u32(owner + 0x38, child);
+        t.set_u32(owner + 0x1c, SCRATCH + 0x6000);
+        t.set_u16(owner + 0x20, 4);
+        t.set_u16(owner + 0x22, 0x10);
+        t.set_u16(owner + 0x24, 1);
+        t.set_u16(owner + 0x26, 1);
+        t.set_u16(owner + 0x2a, 0);
+        t.check_entry(f, Call::default(), &[sa::CURSOR], Eax::Checked);
+    }
+}

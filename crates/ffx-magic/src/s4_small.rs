@@ -5906,3 +5906,67 @@ pub const CAMERA_FLOATS_ON: Sig = Sig {
     calls: &[(0x1d, Callee::Sig(&CAMERA_FLOATS))],
     imports: &[],
 };
+
+/// [`static_link_last`]'s set-up, then the node's `+0x4c..+0x54` 0 and
+/// `+0x58` the code's word (operands `+0x72`, `+0x7c`, `+0x86`, `+0x90`,
+/// imm `+0x94`) (no arguments). Returns the old last.
+///
+/// `magic_0155` 0x100090e0 (153 bytes; 4 DLLs).
+pub fn static_link_tail<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = static_link_table(g, img, f);
+    for o in [0x72, 0x7c, 0x86] {
+        g.write::<u32>(op(img, f, o), 0);
+    }
+    g.write::<u32>(op(img, f, 0x90), op(img, f, 0x94));
+    Ret::eax(last)
+}
+
+/// [`static_link_tail`].
+pub const STATIC_LINK_TAIL: Sig = Sig {
+    len: 153,
+    hash: 0x6fd1_d577_493e_f348,
+    calls: &[],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], cdecl `(cursor)`); when it ran,
+/// the owner's child `+0x38` gets its handler with a cursor in the frame
+/// (the child, the walk's pass byte at `+5`), one ring entry of the
+/// owner's is reserved ([`crate::sa_misc::ring_reserve`], a request
+/// `(owner, 1)` in the frame) and slot 325 `(entry, child + 0x1c)` fills
+/// it (the handler's word still under). Returns slot 325's `eax`, or the
+/// walk's.
+///
+/// `magic_0042` 0x10007c50 (153 bytes; 2 DLLs).
+pub fn walk_ring_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let cursor = fr.arg(g, 0);
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let owner = g.read::<u32>(cursor);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (local, req) = (ebp.wrapping_sub(8), ebp.wrapping_sub(0x1c));
+    let child = g.read::<u32>(owner.wrapping_add(0x38));
+    let pass = g.read::<u8>(cursor + 5);
+    g.write::<u32>(local, child);
+    g.write::<u8>(local + 5, pass);
+    let handler = g.read::<u32>(g.read::<u32>(child).wrapping_add(0x1c));
+    g.call(handler, local, &[local]);
+    g.write::<u32>(req, owner);
+    g.write::<u16>(req + 4, 1);
+    crate::sa_misc::ring_reserve(g, req);
+    let src = g.read::<u32>(owner.wrapping_add(0x38)).wrapping_add(0x1c);
+    let entry = g.read::<u32>(req + 0xc);
+    through(slot_call(g, img, f, (0x80, 325), &[entry, src, local]))
+}
+
+/// [`walk_ring_entry`].
+pub const WALK_RING_ENTRY: Sig = Sig {
+    len: 153,
+    hash: 0x8214_37be_0400_8f91,
+    calls: &[(0x74, Callee::Sig(&crate::sa_misc::RING_RESERVE))],
+    imports: &[],
+};

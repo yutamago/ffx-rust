@@ -116,24 +116,35 @@ pub const START_KIND_A: Sig = Sig {
 ///
 /// `magic_0446` 0x10001530 (153 bytes; 10 DLLs).
 pub fn start_kind_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    start_kind_two(g, img, fr, (0xd10, 0xb))
+    start_kind_two(g, img, fr, (0xd10, 0xb), BLOCK446)
 }
 
-/// [`start_kind_b`] with kind 2's object `G + obj` (part `part`).
-fn start_kind_two<G: Game>(g: &mut G, img: &Image, fr: &Frame, (obj, part): (u32, u32)) -> Ret {
+/// The block words of [`start_kind_two`]: the kind, the clock and the
+/// kept object.
+const BLOCK446: (u32, u32, u32) = (0x5c04, 0xebf0, 0x5bfc);
+
+/// [`start_kind_b`] with kind 2's object `G + obj` (part `part`) and the
+/// block's kind, clock and kept-object words `(kind, clock, keep)`.
+fn start_kind_two<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (obj, part): (u32, u32),
+    (kind_at, clock_at, keep): (u32, u32, u32),
+) -> Ret {
     let w = |o: u32| img.word(fr.at + o);
     let task = fr.arg(g, 0);
-    let (first, clock) = start_kind(g, img, fr.at, task, (0x5c04, 0xebf0));
+    let (first, clock) = start_kind(g, img, fr.at, task, (kind_at, clock_at));
     let block = g.read::<u32>(w(0x15));
-    if g.read::<u32>(block + 0x5c04) != 2 {
-        g.write::<u32>(block + 0x5bfc, first);
+    if g.read::<u32>(block + kind_at) != 2 {
+        g.write::<u32>(block + keep, first);
         return Ret::eax(clock);
     }
     let obj = block + obj;
     let eax = start(g, img, fr.at, 0x77, obj, 0x63, part, (0x14, 0));
     g.write::<u32>(obj + 0x104, w(0x84));
     g.write::<u8>(obj + 0x126, 2);
-    g.write::<u32>(block + 0x5bfc, obj);
+    g.write::<u32>(block + keep, obj);
     Ret::eax(eax)
 }
 
@@ -1852,13 +1863,32 @@ pub const START_1300_RAISED: Sig = Sig {
 ///
 /// `magic_0565` 0x100030d0 (153 bytes; 5 DLLs).
 pub fn start_kind_d<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
-    start_kind_two(g, img, fr, (0xbe0, 0xa))
+    start_kind_two(g, img, fr, (0xbe0, 0xa), BLOCK446)
 }
 
 /// [`start_kind_d`].
 pub const START_KIND_D: Sig = Sig {
     len: 153,
     hash: 0x2d2d_5879_2b7b_55d5,
+    calls: &[
+        (0x39, Callee::Sig(&START_OBJECT_AT)),
+        (0x77, Callee::Sig(&START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
+
+/// [`start_kind_b`] with the `magic_0644` block (kind `+0x5ad4`, clock
+/// `+0xeac0`, kept object `+0x5acc`); kind 2 starts `G + 0xab0` (part 9).
+///
+/// `magic_0644` 0x10007260 (153 bytes; 5 DLLs).
+pub fn start_kind_e<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_kind_two(g, img, fr, (0xab0, 0x9), (0x5ad4, 0xeac0, 0x5acc))
+}
+
+/// [`start_kind_e`].
+pub const START_KIND_E: Sig = Sig {
+    len: 153,
+    hash: 0xb334_0b6a_1073_86cb,
     calls: &[
         (0x39, Callee::Sig(&START_OBJECT_AT)),
         (0x77, Callee::Sig(&START_OBJECT_AT)),

@@ -1135,6 +1135,9 @@ ports! {
     "particles start (b)" => s4_small::PARTICLES_START_B, s4_small::particles_start_b;
     "static link (x)" => s4_small::STATIC_LINK_X, s4_small::static_link_x;
     "camera floats, on" => s4_small::CAMERA_FLOATS_ON, s4_small::camera_floats_on;
+    "static link (tail)" => s4_small::STATIC_LINK_TAIL, s4_small::static_link_tail;
+    "walk, ring entry" => s4_small::WALK_RING_ENTRY, s4_small::walk_ring_entry;
+    "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
     "thunk: walk and ring write" => s4_wrap::JMP_WALK_RING, s4_wrap::ecx_jmp;
