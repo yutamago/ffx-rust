@@ -1178,6 +1178,7 @@ ports! {
     "register resource parts" => s4_small::REGISTER_RESOURCE_PARTS, s4_small::register_resource_parts;
     "three actors shown" => s4_small::THREE_ACTORS_SHOWN, s4_small::three_actors_shown;
     "point turned offset" => s4_small::POINT_TURNED_OFFSET, s4_small::point_turned_offset;
+    "start part with sound" => s4_small::START_PART_WITH_SOUND, s4_small::start_part_with_sound;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1371,6 +1372,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model position", &sa_misc::MODEL_POSITION),
     ("actor slot 256", &sa_script::ACTOR_SLOT256),
     ("records init (0x100)", &sa_misc::RECORDS_INIT_100),
+    ("records init (0x80)", &sa_misc::RECORDS_INIT_80),
     ("ring reserve", &sa_misc::RING_RESERVE),
     ("part matrix", &sa_misc::PART_MATRIX),
     ("fx reset d74c", &sa_misc::FX_RESET_D74C),

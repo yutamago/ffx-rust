@@ -2167,6 +2167,20 @@ pub fn records_init_100<G: Game>(g: &mut G, img: &Image, f: u32, block: u32) -> 
     records_init_n(g, img, f, block, (0x48, 0x50, 0x100))
 }
 
+/// `magic_0053` 0x10002330 (internal, `ecx` = the record block):
+/// [`records_init`] for 0x80 records of 0x74 bytes (`+0x6c` cleared).
+pub fn records_init_80<G: Game>(g: &mut G, img: &Image, f: u32, block: u32) -> u32 {
+    records_init_n(g, img, f, block, (0x6c, 0x74, 0x80))
+}
+
+/// `records_init_80` (221 bytes, 2 overlays).
+pub const RECORDS_INIT_80: Sig = Sig {
+    len: 221,
+    hash: 0x8b9d_8567_38f4_2f5b,
+    calls: &[],
+    imports: &[],
+};
+
 /// `records_init_100` (221 bytes, 6 overlays).
 pub const RECORDS_INIT_100: Sig = Sig {
     len: 221,

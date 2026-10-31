@@ -3991,3 +3991,31 @@ fn host_objects_and_turned_offsets() {
     t.set_u32(op(&t, f, 0x11), b);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn part_with_sound() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x2000);
+    t.set_u32(op(&t, f, 0x11), SCRATCH + 0x200);
+    t.set_u32(op(&t, f, 0x20), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    t.set_u32(SCRATCH + 0x400, 0x1111);
+    rec(&mut t, 941, 1, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..3 {
+            m.w32(a[0] + 4 * i, m.r32(a[1] + 4 * i));
+        }
+        0x325
+    });
+    rec(&mut t, 393, 3, |m, a| m.r32(a[1] + 4) ^ 0x0393_0000);
+    t.set_u32(op(&t, f, 0x98), 2.5f32.to_bits());
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x5a; 0x130]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+}

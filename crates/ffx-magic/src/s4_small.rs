@@ -8646,3 +8646,53 @@ pub const POINT_TURNED_OFFSET: Sig = Sig {
     calls: &[(0xd2, Callee::Any)],
     imports: &[],
 };
+
+/// An object's first part started and a sound played (cdecl `(obj)`):
+/// `*G_P` = `ITEM`, part 0 of slot 941 `(*G_D + 0x10)` started on the
+/// object ([`crate::opu_parts::start_part`], `0x1000`, 1), its motion
+/// words set (`+0x50..` 0, 0, 0, the integer 1; `+0x60..` K, K, K, 1.0
+/// with K = 0x3d91eb85), the vector `V` copied to a local (slot 325),
+/// its `y` raised to `A + B`, and slot 393 `(*G_H, local, 0x100)` plays
+/// the sound there. Each call sees the words the earlier ones left.
+/// Returns 1.
+///
+/// `magic_0188` 0x10002000 (220 bytes; 2 DLLs).
+pub fn start_part_with_sound<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    // push ebp; sub esp, 0x14: the local is [ebp - 0x14]
+    let local = fr.esp.wrapping_sub(0x18);
+    let obj = fr.arg(g, 0);
+    let p = rd(g, 0x11);
+    g.write::<u32>(p, op(img, f, 0x1b));
+    let d = g.read::<u32>(rd(g, 0x20).wrapping_add(0x10));
+    let table = slot_call(g, img, f, (0x28, 941), &[d]).eax;
+    let program = g.read::<u32>(table);
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x42), obj, 0x1000, program, 1);
+    let k = 0x3d91_eb85;
+    for (i, w) in (0u32..).zip([0, 0, 0, 1, k, k, k, 0x3f80_0000]) {
+        g.write::<u32>(obj.wrapping_add(0x50 + 4 * i), w);
+    }
+    let v = op(img, f, 0x4a);
+    // call width: 6 (start_part's words and slot 941's stay on the stack)
+    slot_call(g, img, f, (0x50, 325), &[local, v, program, 1, 0, d]);
+    let fl = |g: &G, o: u32| f32::from_bits(rd(g, o));
+    let y = crate::sb_sse::add(fl(g, 0x98), fl(g, 0xa0));
+    let h = rd(g, 0xb4);
+    g.write::<u32>(local + 4, y.to_bits());
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let words = [h, local, 0x100, local, v, program, 1, 0, d];
+    slot_call(g, img, f, (0xae, 393), &words);
+    Ret::eax(1)
+}
+
+/// [`start_part_with_sound`].
+pub const START_PART_WITH_SOUND: Sig = Sig {
+    len: 220,
+    hash: 0xf808_fd93_c0b7_23df,
+    calls: &[
+        (0x42, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0xd4, Callee::Any),
+    ],
+    imports: &[],
+};
