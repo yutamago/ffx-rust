@@ -7947,3 +7947,96 @@ pub const ACTOR_INDEX_TO_POINT: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`motion_set`] after slot 444 `(1)`, the colour 0.18 (cdecl `(obj)`).
+/// Returns slot 449's `eax`.
+///
+/// `magic_0384` 0x100022f0 (189 bytes; 3 DLLs).
+pub fn motion_set_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let k2 = g.read::<u32>(obj.wrapping_add(0xac)).wrapping_mul(2);
+    let idx = g.read::<u32>(obj.wrapping_add(k2.wrapping_mul(8)).wrapping_add(0x2c));
+    let block = g.read::<u32>(op(img, f, 0x17));
+    let a = g.read::<u32>(block.wrapping_add(idx.wrapping_mul(4)).wrapping_add(0x1a0));
+    let mut words = vec![1];
+    slot_call(g, img, f, (0x23, 444), &words);
+    words.splice(0..0, [obj, a, 6]);
+    slot_call(g, img, f, (0x30, 442), &words);
+    words.splice(0..0, [obj, 0x10]);
+    slot_call(g, img, f, (0x41, 443), &words);
+    let b = g.read::<u32>(op(img, f, 0x5c));
+    for off in [0x130, 0x134, 0x138] {
+        g.write::<u32>(obj.wrapping_add(off), 0x3e38_51ec);
+    }
+    g.write::<u32>(obj.wrapping_add(0x13c), 0);
+    words.splice(0..0, [b, obj, 0, 0]);
+    // call width: 10 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x51, 440), &words);
+    words.splice(0..0, [obj, op(img, f, 0x96)]);
+    // call width: 12 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x91, 450), &words);
+    words.splice(0..0, [obj, op(img, f, 0xa9)]);
+    // call width: 14 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0xa4, 449), &words))
+}
+
+/// [`motion_set_b`].
+pub const MOTION_SET_B: Sig = Sig {
+    len: 189,
+    hash: 0x8e28_ede3_91b6_9223,
+    calls: &[],
+    imports: &[],
+};
+
+/// The block's point on the camera (no arguments; a /GS frame): slot 327
+/// `(m, camera)` (operand `+0x1b`) and slot 229 `(v, m, *G + 0xcb0)` turn
+/// it (the first call's words still under); two of the DLL's boxes take
+/// `(x + K1, y - K2, z - K3)` and `(x + K1, y - K4, z - K3)` (constants
+/// at `+0x57`, `+0x65`, `+0x8f`, `+0x6d`; the boxes at `+0x7a..` and
+/// `+0x97..`). Returns slot 229's `eax`.
+///
+/// `magic_0434` 0x10009730 (189 bytes; 2 DLLs).
+pub fn camera_boxes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, v) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
+    let block = g.read::<u32>(op(img, f, 0x13));
+    let cam = op(img, f, 0x1b);
+    slot_call(g, img, f, (0x21, 327), &[m, cam]);
+    let eax = slot_call(
+        g,
+        img,
+        f,
+        (0x3d, 229),
+        &[v, m, block.wrapping_add(0xcb0), m, cam],
+    )
+    .eax;
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let k = |g: &G, o: u32| fl(g, op(img, f, o));
+    let (x, y, z) = (fl(g, v), fl(g, v + 4), fl(g, v + 8));
+    let xs = add(x, k(g, 0x57));
+    let y1 = sub(y, k(g, 0x65));
+    let y2 = sub(y, k(g, 0x6d));
+    let zs = sub(z, k(g, 0x8f));
+    for (o, val) in [
+        (0x7a, xs),
+        (0x82, y1),
+        (0x97, xs),
+        (0x9f, y2),
+        (0xa8, zs),
+        (0xb0, zs),
+    ] {
+        g.write::<u32>(op(img, f, o), val.to_bits());
+    }
+    Ret::eax(eax)
+}
+
+/// [`camera_boxes`] (the `rel32` is `__security_check_cookie`).
+pub const CAMERA_BOXES: Sig = Sig {
+    len: 189,
+    hash: 0x5518_84eb_5a68_f646,
+    calls: &[(0xb5, Callee::Any)],
+    imports: &[],
+};

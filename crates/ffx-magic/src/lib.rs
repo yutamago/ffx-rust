@@ -1168,6 +1168,8 @@ ports! {
     "actor place and turn" => s4_small::ACTOR_PLACE_TURN, s4_small::actor_place_turn;
     "particles start (f)" => s4_small::PARTICLES_START_F, s4_small::particles_start_f;
     "particles start, sound" => s4_small::PARTICLES_START_SOUND, s4_small::particles_start_sound;
+    "motion set (b)" => s4_small::MOTION_SET_B, s4_small::motion_set_b;
+    "camera boxes" => s4_small::CAMERA_BOXES, s4_small::camera_boxes;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;

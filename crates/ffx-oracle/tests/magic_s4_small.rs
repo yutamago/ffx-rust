@@ -3638,3 +3638,35 @@ fn particle_sounds_and_index_points() {
         t.check(f, c, &[], Eax::Checked, s4_small::actor_index_to_point);
     }
 }
+
+#[test]
+fn motion_sets_b_and_camera_boxes() {
+    let Some(mut t) = twin(384) else { return };
+    let f = t.at(0x22f0);
+    recs(
+        &mut t,
+        &[(444, 1), (442, 3), (443, 2), (440, 4), (450, 2), (449, 2)],
+    );
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x17), block);
+    for i in 0..3 {
+        t.set_u32(block + 0x1a0 + 4 * i, 0x0a00_0000 + i);
+    }
+    let obj = SCRATCH + 0x100;
+    t.write(obj, &[0; 0x140]);
+    t.set_u32(obj + 0xac, 1);
+    t.set_u32(obj + 0x3c, 2);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x9730);
+    recs(&mut t, &[(327, 2)]);
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(a[0] + 4 * i, (1.5f32 + i as f32).to_bits());
+        }
+        0x229
+    });
+    t.set_u32(op(&t, f, 0x13), SCRATCH + 0x1000);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
