@@ -195,6 +195,20 @@ pub const COMMON_PARAMS: [(u32, u32); 15] = [
     (0x00b2_3e5c, 0x3f8c),
 ];
 
+/// `0x005930e0`'s `memset` (cdecl) and the sampler class instances it
+/// passes.
+pub const TABLES_MEMSET: u32 = 0x0094_964c;
+/// See [`TABLES_MEMSET`].
+pub const TABLES_CLASSES: u32 = 0x00b3_3a80;
+/// The words of `0x005930e0`'s frame: the zeroed table.
+pub const TABLES_FRAME_WORDS: u32 = 0x80;
+
+/// `0x0059a390`'s callees: `PMatrix4_RowTimes(out, v)` (thiscall, ret 8),
+/// `PMatrix4_Transpose(out, m)` (cdecl).
+pub const DEPTH_CALLS: [u32; 2] = [0x004c_9c20, 0x004f_93f0];
+/// The words of `0x0059a390`'s frame.
+pub const DEPTH_FRAME_WORDS: u32 = 0x45;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
@@ -203,6 +217,7 @@ pub mod bridge {
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
+    use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -506,5 +521,174 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `0x005b4c00` (thiscall `(m; out, v)`, ret 8 -> `out`): `out` = the
+    /// 4x4 `m` (16 floats, rows) applied to the column `v`: for each of
+    /// `out[2]`, `out[1]`, `out[0]` (in that order) the products
+    /// `f32(v_i m[c + 4i])`, summed as `f32(f32(f32(p1 + p0) + p2) + p3)`;
+    /// `out[3]` = `v[3]`. Every value passes through `float` memory, as
+    /// the original's.
+    pub fn transform_column(h: &mut impl Host, m: u32, out: u32, v: u32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let mut col = [0u32; 16];
+        for (i, w) in col.iter_mut().enumerate() {
+            *w = h.read(m + 4 * i as u32);
+        }
+        let ld = |bits: u32| Reg::load(f32::from_bits(bits));
+        let w = ld(h.read(v + 0xc)).store();
+        let mut r = [0f32; 3];
+        for c in [2usize, 1, 0] {
+            let mut p = [0f32; 4];
+            for (i, pi) in p.iter_mut().enumerate() {
+                let vi = ld(h.read(v + 4 * i as u32)).store();
+                let mi = ld(col[c + 4 * i]).store();
+                *pi = (Reg::load(vi) * Reg::load(mi)).store();
+            }
+            let s = (Reg::load(p[1]) + Reg::load(p[0])).store();
+            let s = (Reg::load(p[2]) + Reg::load(s)).store();
+            r[c] = (Reg::load(p[3]) + Reg::load(s)).store();
+        }
+        h.write(out + 4, r[1].to_bits());
+        h.write(out, r[0].to_bits());
+        h.write(out + 8, r[2].to_bits());
+        h.write(out + 0xc, w.to_bits());
+        out
+    }
+
+    /// `ID3D11DeviceContext` method `slot` (a byte offset into the
+    /// vtable) on `ctx` (COM: stdcall, `ctx` first).
+    fn com(h: &mut impl Host, ctx: u32, slot: u32, args: &[u32]) {
+        let vt: u32 = h.read(ctx);
+        let f: u32 = h.read(vt.wrapping_add(slot));
+        let mut words = vec![ctx];
+        words.extend_from_slice(args);
+        h.call(f, Conv::Stdcall, &words);
+    }
+
+    /// The tables' constant buffer (`+0`, when there is one) updated from
+    /// `+8` (method `+0xc0`, the size `+4` masked as the row and depth
+    /// pitch).
+    fn upload_tables(h: &mut impl Host, this: u32, ctx: u32) {
+        let buffer: u32 = h.read(this);
+        if buffer != 0 {
+            let size = h.read::<u32>(this + 4) & 0x7fff_ffff;
+            let src: u32 = h.read(this + 8);
+            com(h, ctx, 0xc0, &[buffer, 0, 0, src, size, size]);
+        }
+    }
+
+    /// `0x005930e0` (thiscall `(tables; renderer, unused)`, ret 8 -> `al`
+    /// 1): the shader resource tables bound on the renderer's context
+    /// (`[[renderer] + 0x70]`): the constant buffer `+0` (when there is
+    /// one; method `+0xc0` with `+8` and the size `+4` masked twice);
+    /// every stage's 128 resource slots cleared from a zeroed 0x200-byte
+    /// table (`frame`, the original's `ebp - 0x204`: its first word
+    /// stored, the rest `memset`) through methods `+0x20`, `+0x64`,
+    /// `+0x7c`, `+0x10c`, `+0xec`, `+0xfc`, then `+0x84(0, 0, 0)`; with a
+    /// slot index (`+0x18`, not -1) the buffer uploaded again and stored
+    /// at `+0x27c + 4 * index`; the samplers `+0x25c` (8 of them when the
+    /// device's feature level `+0xb4` is 0xb000 or more, else 1, with the
+    /// class instances `0x00b33a80`; the device's `+0x300` cleared), then
+    /// `+0x114([+0x4e0], 0, 0)`, the 8 constant buffers `+0x27c`, the 128
+    /// resources `+0x1c`, the 16 `+0x21c`.
+    pub fn bind_resource_tables(h: &mut impl Host, this: u32, renderer: u32, frame: u32) -> u8 {
+        let device: u32 = h.read(renderer);
+        let ctx: u32 = h.read(device + 0x70);
+        upload_tables(h, this, ctx);
+        h.write(frame, 0u32);
+        h.call_sym(TABLES_MEMSET, Conv::Cdecl, &[frame + 4, 0, 0x1fc]);
+        for slot in [0x20, 0x64, 0x7c, 0x10c, 0xec, 0xfc] {
+            com(h, ctx, slot, &[0, 0x80, frame]);
+        }
+        com(h, ctx, 0x84, &[0, 0, 0]);
+        let index: u32 = h.read(this + 0x18);
+        if index != u32::MAX {
+            let device: u32 = h.read(renderer);
+            let ctx2: u32 = h.read(device + 0x70);
+            upload_tables(h, this, ctx2);
+            let buffer: u32 = h.read(this);
+            h.write(
+                this.wrapping_add(index.wrapping_mul(4)).wrapping_add(0x27c),
+                buffer,
+            );
+        }
+        let level: u32 = h.read(device + 0xb4);
+        let n = if level.cast_signed() >= 0xb000 { 8 } else { 1 };
+        let classes = h.rebase(TABLES_CLASSES);
+        com(h, ctx, 0x110, &[0, n, this + 0x25c, classes]);
+        h.write(device + 0x300, 0u32);
+        let p: u32 = h.read(this + 0x4e0);
+        com(h, ctx, 0x114, &[p, 0, 0]);
+        com(h, ctx, 0x11c, &[0, 8, this + 0x27c]);
+        com(h, ctx, 0x10c, &[0, 0x80, this + 0x1c]);
+        com(h, ctx, 0x118, &[0, 0x10, this + 0x21c]);
+        1
+    }
+
+    /// `0x0059a390` (thiscall `(this; renderer, m, color)`, ret 0xc -> 0):
+    /// the constant buffer `[this + 0x48]` updated (context method
+    /// `+0xc0` on `[renderer + 0x70]`, 0x50 bytes) with the transpose of
+    /// `m` with its depth remapped to 0..1 (each row of `m` times the
+    /// matrix with rows `{1,0,0,0}, {0,1,0,0}, {0,0,0.5,0}, {0,0,0.5,1}`,
+    /// `PMatrix4_RowTimes`; `PMatrix4_Transpose`) followed by `color`.
+    ///
+    /// `frame` is 69 words, the original's `ebp - 0x114`: the transpose's
+    /// output at `+0`, the rows' at `+0x40..+0x7c`, the block at `+0x80`,
+    /// the remap matrix at `+0xd4`.
+    pub fn update_depth_transform(
+        h: &mut impl Host,
+        this: u32,
+        renderer: u32,
+        m: u32,
+        color: u32,
+        frame: u32,
+    ) -> u32 {
+        let remap = frame + 0xd4;
+        let (one, half) = (1.0f32.to_bits(), 0.5f32.to_bits());
+        let init = [
+            one, 0, 0, 0, //
+            0, one, 0, 0, //
+            0, 0, half, 0, //
+            0, 0, half, one,
+        ];
+        for (i, w) in init.into_iter().enumerate() {
+            h.write(remap + 4 * i as u32, w);
+        }
+        let r3 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x50, m + 0x30],
+        );
+        let r2 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x60, m + 0x20],
+        );
+        let r1 = h.call_sym(
+            DEPTH_CALLS[0],
+            Conv::Thiscall(remap),
+            &[frame + 0x70, m + 0x10],
+        );
+        let r0 = h.call_sym(DEPTH_CALLS[0], Conv::Thiscall(remap), &[frame + 0x40, m]);
+        for (row, src) in [r0, r1, r2, r3].into_iter().enumerate() {
+            copy_floats(h, src, remap + 0x10 * row as u32, 4);
+        }
+        let t = h.call_sym(DEPTH_CALLS[1], Conv::Cdecl, &[frame, remap]);
+        let block = frame + 0x80;
+        copy_floats(h, t, block, 16);
+        copy_floats(h, color, block + 0x40, 4);
+        let ctx: u32 = h.read(renderer + 0x70);
+        let buffer: u32 = h.read(this + 0x48);
+        com(h, ctx, 0xc0, &[buffer, 0, 0, block, 0x50, 0x50]);
+        0
+    }
+
+    /// `n` floats from `src` to `dst` through the x87 (`fld`/`fstp`).
+    fn copy_floats(h: &mut impl Host, src: u32, dst: u32, n: u32) {
+        for i in 0..n {
+            let x = ffx_bridge::x87::round_trip(f32::from_bits(h.read(src + 4 * i)));
+            h.write(dst + 4 * i, x.to_bits());
+        }
     }
 }

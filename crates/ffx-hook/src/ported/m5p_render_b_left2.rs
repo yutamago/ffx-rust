@@ -34,4 +34,19 @@ ported! {
     Phyre_PPostProcessing_PDeferredLightingBase_initializeCommonShaders @ 0x00a1_82f0 => extern "thiscall" fn init_common_shaders(this: u32, cluster: u32, effect: u32) -> u32 {
         lb::init_common_shaders(&mut mem(), this, cluster, effect)
     }
+    /// A 4x4 matrix applied to a column `(out, v)`.
+    PMatrix4_transformColumn_005b4c00 @ 0x005b_4c00 => extern "thiscall" fn transform_column(m: u32, out: u32, v: u32) -> u32 {
+        lb::transform_column(&mut mem(), m, out, v)
+    }
+    /// The shader resource tables bound `(renderer, unused)`; `al` 1.
+    PShaderResourceTables_bind_005930e0 @ 0x0059_30e0 => extern "thiscall" fn bind_resource_tables(this: u32, renderer: u32, _unused: u32) -> u8 {
+        let mut f = StackFrame::<{ lf::TABLES_FRAME_WORDS as usize }>::new();
+        lb::bind_resource_tables(&mut mem(), this, renderer, f.at())
+    }
+    /// A constant buffer set to a depth-remapped transposed matrix and a
+    /// color `(renderer, m, color)`.
+    PRendererD3D11_updateDepthTransform_0059a390 @ 0x0059_a390 => extern "thiscall" fn update_depth_transform(this: u32, renderer: u32, m: u32, color: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::DEPTH_FRAME_WORDS as usize }>::new();
+        lb::update_depth_transform(&mut mem(), this, renderer, m, color, f.at())
+    }
 }

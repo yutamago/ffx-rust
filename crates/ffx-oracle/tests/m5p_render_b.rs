@@ -5058,3 +5058,166 @@ fn big_common_shaders_match_the_original() {
         }
     }
 }
+
+/// `0x005b4c00` (a 4x4 matrix applied to a column) against the original:
+/// ordinary values and the special floats (quiet NaNs with payloads,
+/// infinities, denormals) anywhere in the matrix and the vector.
+#[test]
+fn big_transform_column_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    const SPECIAL: [u32; 8] = [
+        0x0000_0000,
+        0x8000_0000,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc0_0000,
+        0xffc1_2345,
+        0x0000_0001,
+        0x7f7f_ffff,
+    ];
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x1357_9bdfu32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        for case in 0..49 {
+            let mut words = [0u32; 20];
+            for w in &mut words {
+                let r = next();
+                *w = if case >= 8 && r.is_multiple_of(9) {
+                    SPECIAL[(r >> 4) as usize % SPECIAL.len()]
+                } else {
+                    (0x3a00_0000 + (r >> 8) % 0x0a00_0000) | (r & 0x8000_0000)
+                };
+            }
+            if case == 48 {
+                // every product -0: the sums keep the sign
+                for w in &mut words[..16] {
+                    *w |= 0x8000_0000;
+                }
+                words[16..20].fill(0);
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let m = t.alloc(&bytes[..64]);
+            let v = t.alloc(&bytes[64..]);
+            let out = t.junk(0x10, 7);
+            let what = format!("{label}: transform column case {case}");
+            t.check(&what, 0x005b_4c00, Conv::Thiscall(m), &[out, v], |g| {
+                Out::U32(l2b::transform_column(g, m, out, v))
+            });
+        }
+        t.reset();
+    }
+}
+
+/// `0x005930e0` (the shader resource tables bound) against the original:
+/// a constant buffer or none, a slot index or -1, feature levels below
+/// and at 0xb000. The context is a COM object of recording stubs; the
+/// zeroed table is compared in the original's frame.
+#[test]
+fn big_resource_tables_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (buffer, index, level) in [
+        (true, 2u32, 0xb000u32),
+        (false, u32::MAX, 0xa100),
+        (true, u32::MAX, 0xafff),
+        (false, 0, 0xc000),
+    ] {
+        for (label, mut t) in Twins::all() {
+            let mut words = vec![1u32; 72];
+            words[0xc0 / 4] = 7;
+            for slot in [
+                0x20, 0x64, 0x7c, 0x10c, 0xec, 0xfc, 0x84, 0x114, 0x11c, 0x118,
+            ] {
+                words[slot / 4] = 4;
+            }
+            words[0x110 / 4] = 5;
+            let ctx = t.com_object(&words, &[]);
+            let device = t.zeros(0x310);
+            t.w32(device + 0x70, ctx);
+            t.w32(device + 0xb4, level);
+            t.w32(device + 0x300, 0x55);
+            let renderer = t.zeros(8);
+            t.w32(renderer, device);
+            let this = t.junk(0x500, 4);
+            t.w32(this, if buffer { 0x0066_0000 } else { 0 });
+            t.w32(this + 4, 0x8000_0040);
+            t.w32(this + 0x18, index);
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: resource tables buffer {buffer} index {index:#x} level {level:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x0059_30e0,
+                Conv::Thiscall(this),
+                &[renderer, 0x77],
+                ebp,
+                0x220,
+                (0x204, 4),
+                |g| Out::U8(l2b::bind_resource_tables(g, this, renderer, ebp - 0x204)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// `0x0059a390` (a depth-remapped transposed matrix and a color uploaded)
+/// against the original: the row products and the transpose run as the
+/// game's code; the 0x50-byte block and the rows are compared in the
+/// original's frame (below its saved `ecx`).
+#[test]
+fn big_depth_transform_matches_the_original() {
+    use ffx_prender::m5p_render_b_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut seed = 0x2468_ace1u32;
+        for case in 0..6u32 {
+            let mut words = [0u32; 20];
+            for w in &mut words {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                *w = (0x3c00_0000 + (seed >> 8) % 0x0600_0000) | (seed & 0x8000_0000);
+            }
+            if case == 5 {
+                words[3] = 0x7fc0_1234;
+                words[17] = 0xff80_0000;
+            }
+            let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            let m = t.alloc(&bytes[..64]);
+            let color = t.alloc(&bytes[64..]);
+            let mut slots = vec![1u32; 49];
+            slots[0xc0 / 4] = 7;
+            let ctx = t.com_object(&slots, &[]);
+            let renderer = t.zeros(0x80);
+            t.w32(renderer + 0x70, ctx);
+            let this = t.zeros(0x50);
+            t.w32(this + 0x48, 0x0077_0000 + case);
+            let ebp = t.ebp_for(3);
+            let what = format!("{label}: depth transform case {case}");
+            t.check_frame(
+                &what,
+                0x0059_a390,
+                Conv::Thiscall(this),
+                &[renderer, m, color],
+                ebp,
+                0x130,
+                (0x114, 0x44),
+                |g| {
+                    Out::U32(l2b::update_depth_transform(
+                        g,
+                        this,
+                        renderer,
+                        m,
+                        color,
+                        ebp - 0x114,
+                    ))
+                },
+            );
+            t.reset();
+        }
+    }
+}
