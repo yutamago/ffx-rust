@@ -6818,3 +6818,358 @@ fn r5b4_pos_distances_match_the_original() {
         }
     });
 }
+
+// ---- round 5, batch 5 (ffx_menu::m5m_n, the battle actor dumps) ----
+
+/// A battle actor of `n` bytes: debug floats throughout, the actor index
+/// `+0xc` and the model pointer `+0` as given.
+fn debug_actor(t: &mut Twins, rng: &mut Rng, n: usize, index: u8, model: u32) -> u32 {
+    let mut a: Vec<u8> = (0..n / 4)
+        .flat_map(|_| debug_float(rng).to_le_bytes())
+        .collect();
+    for k in (0..n).step_by(7) {
+        if rng.chance(3) {
+            a[k] = [0u8, 0xff, 1, 0x80][rng.below(4) as usize];
+        }
+    }
+    for w in a.chunks_mut(4) {
+        let v = no_snan(u32::from_le_bytes([w[0], w[1], w[2], w[3]]));
+        w.copy_from_slice(&v.to_le_bytes());
+    }
+    a[0..4].copy_from_slice(&model.to_le_bytes());
+    a[0xc] = index;
+    t.alloc(&a)
+}
+
+#[test]
+fn r5b5_chr_motion_save_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0501);
+        for k in 0..30u32 {
+            t.reset();
+            t.big_cave();
+            t.skip = 4;
+            let mut fmts = vec![(mn::S_MOTION_TYPE_END, 3)];
+            fmts.extend(mn::MOTION_TYPE_FLAGS.iter().map(|&(_, f)| (f, 3)));
+            fmts.extend(
+                mn::MOTION_LINES
+                    .iter()
+                    .map(|&(f, v)| (f, if matches!(v, mn::Field::F32(_)) { 4 } else { 3 })),
+            );
+            let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, 9);
+            let slot = t.rebase(mn::SPRINTF);
+            t.patch(slot, &s.to_le_bytes());
+            let actor = debug_actor(t, &mut rng, 0x600, 0, 0);
+            let flags = match k % 3 {
+                0 => 0x1_ffff,
+                1 => 0,
+                _ => rng.next(),
+            };
+            t.w32(actor + 0x4ac, flags);
+            let r = rng.word();
+            t.stubs(&[
+                (mn::MS_GET_CHR, false, 1, 0, actor),
+                (mn::MS_ENV_WRITE_TEXT_7DE700, false, 2, 0, r),
+            ]);
+            let (i, writer) = (rng.below(0x20), rng.word());
+            t.check_framed(
+                &format!("motion save #{k}"),
+                0x007d_cf70,
+                Conv::Cdecl,
+                &[i, writer],
+                0x404,
+                |m, ebp| Out::U32(mn::chr_motion_save(m, ebp - 0x404, i, writer)),
+            );
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b5_chr_info_line_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0502);
+        let mut ids: Vec<u32> = mn::INFO_LINES.iter().map(|r| r.0).collect();
+        ids.extend(mn::INFO_BITS.iter().map(|r| r.0));
+        ids.extend([
+            0x51, 0x58, 0x96, 0xc6, 0xcf, 0xd0, 0x90, 0xd3, 0xde, 0xdf, 0xe0, 0xe2, 0xe4, 0xa8,
+            0xad, 0x52, 0x4e, 0xe5, 0x100,
+        ]);
+        for round in 0..12u32 {
+            for &id in &ids {
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                let mut fmts: Vec<(u32, u32)> = mn::INFO_LINES
+                    .iter()
+                    .map(|r| (r.1, r.2.len() as u32 + 3))
+                    .collect();
+                fmts.extend(mn::INFO_BITS.iter().map(|r| (r.1, 8)));
+                fmts.extend([
+                    (0x00b5_6cb4, 7),
+                    (0x00b5_6d44, 7),
+                    (0x00b5_6e0c, 10),
+                    (0x00b5_6e38, 15),
+                    (0x00b5_6eb8, 9),
+                    (0x00b5_6edc, 12),
+                    (0x00b5_6f0c, 11),
+                    (0x00b5_6f2c, 9),
+                    (0x00b5_6f74, 11),
+                    (0x00b5_6f9c, 9),
+                    (0x00b5_6fc0, 8),
+                    (0x00b5_6fe4, 9),
+                    (0x00b5_7008, 9),
+                    (0x00b5_707c, 9),
+                    (0x00b5_7148, 8),
+                    (mn::S_FMT_S, 3),
+                ]);
+                let ret = rng.word();
+                let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, ret);
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                for (k, sym) in [
+                    mn::MS_GET_NEXT_AP,
+                    mn::MS_GET_SAVE_NEXT_AP,
+                    mn::MS_GET_CHR_VIGOR,
+                    mn::CH_EFFECT_GET_EFFECT_LEVEL,
+                    mn::CH_GET_BODY_HIT,
+                    mn::MS_CHECK_BTL_POS,
+                    mn::MS_GET_CHR_MOVE_FRAME_REST,
+                    mn::CH_GET_WAIT_MOTION,
+                    mn::MS_MENU_WEAK_ELEMENT,
+                    mn::MS_EFFECT_CHECK_MOTION,
+                    mn::MS_EFFECT_CHECK_MOTION2,
+                    mn::MS_GET_SUMMONER_NUM,
+                    mn::MS_GET_STATUS_LOOK,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let words = match sym {
+                        mn::MS_GET_NEXT_AP | mn::MS_CHECK_BTL_POS => 3,
+                        mn::MS_GET_SAVE_NEXT_AP
+                        | mn::MS_MENU_WEAK_ELEMENT
+                        | mn::MS_GET_STATUS_LOOK => 2,
+                        _ => 1,
+                    };
+                    let v = if rng.chance(3) { k as u32 } else { rng.word() };
+                    t.stub(sym, false, words, 0, v);
+                }
+                for sym in [
+                    mn::CH_GET_CAM_HEIGHT,
+                    mn::MS_GET_CHR_CAM_WIDTH,
+                    mn::MS_GET_CHR_HEIGHT,
+                    mn::MS_GET_CHR_WIDTH,
+                ] {
+                    let v = f32::from_bits(debug_float(&mut rng));
+                    t.stub_float(sym, if v.is_nan() { 1.5 } else { v });
+                }
+                // the ground through _ftol2_sse: in and out of range
+                let ground = [1e30f32, -3e9, 2.5, -2.5, 77.75, -0.5][(round % 6) as usize];
+                t.stub_float(mn::MS_GET_CHR_GROUND, ground);
+                t.g32(0x0193_ed20, round % 2);
+                let org = if rng.chance(3) {
+                    0
+                } else {
+                    debug_object(t, &mut rng, 0x50)
+                };
+                t.stub(mn::CH_GET_ORG_MATRIX, false, 1, 0, org);
+                // MsGetChrPos: logged, (f, g, h) written
+                let mut c = t.log_words(mn::MS_GET_CHR_POS, 0, 2, 0, false);
+                c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8]
+                for o in [0u8, 4, 8] {
+                    c.extend([0xc7, 0x40, o]);
+                    c.extend(debug_float(&mut rng).to_le_bytes());
+                }
+                c.push(0xc3);
+                let stub = t.cave_code(&c);
+                t.jump(mn::MS_GET_CHR_POS, stub);
+                let model = if round % 2 == 0 {
+                    0
+                } else {
+                    debug_object(t, &mut rng, 0x40)
+                };
+                let index = rng.below(0x12) as u8;
+                let actor = debug_actor(t, &mut rng, 0x1000, index, model);
+                // the status words whose bits the lines show: any bits
+                for o in [0x604u32, 0x606, 0x616, 0x65a] {
+                    let v = rng.next() as u16;
+                    t.write(actor + o, &v.to_le_bytes());
+                }
+                let ap = if rng.chance(3) {
+                    0
+                } else {
+                    t.words(&[rng.next(), rng.next()])
+                };
+                t.w32(actor + 0xf88, ap);
+                let (dst, src) = (t.zeros(0x40), t.alloc(b"label\0"));
+                let mode = round / 2;
+                let args = [mode, dst, src, id, actor];
+                t.check_framed(
+                    &format!("info line {id:#x} round {round}"),
+                    0x007d_bee0,
+                    Conv::Cdecl,
+                    &args,
+                    0x14,
+                    |m, ebp| Out::U32(mn::chr_info_line(m, ebp, mode, dst, src, id, actor)),
+                );
+            }
+        }
+    });
+}
+
+// ---- round 5, batch 6 (ffx_menu::m5m_n, the position editor's table) ----
+
+impl Twins {
+    /// `ms_malloc_007cf970` as a logged bump allocator over a zeroed block
+    /// of `n` bytes (16-byte steps).
+    fn bump_malloc(&mut self, n: usize) {
+        let heap = self.zeros(n);
+        let cur = self.words(&[heap]);
+        let mut c = self.log_words(mn::MS_MALLOC_7CF970, 0, 1, 0, false);
+        c.push(0xa1);
+        c.extend(cur.to_le_bytes()); // mov eax, [cur]
+        c.extend([0x8b, 0x4c, 0x24, 0x04, 0x83, 0xc1, 0x0f, 0x83, 0xe1, 0xf0]); // ecx = (size + 15) & -16
+        c.extend([0x01, 0x0d]);
+        c.extend(cur.to_le_bytes()); // add [cur], ecx
+        c.push(0xc3);
+        let stub = self.cave_code(&c);
+        self.jump(mn::MS_MALLOC_7CF970, stub);
+    }
+}
+
+/// A position file of 0x700 bytes: debug floats, `groups` 0x60-byte
+/// groups from `+4` with small (or negative) counts and offsets into the
+/// points area `0x200..`, sub-groups at `0x600..`; the flag, the counts and
+/// offsets of the header.
+fn pos_file(t: &mut Twins, rng: &mut Rng, flag: u8, groups: u8) -> u32 {
+    let mut f: Vec<u8> = (0..0x700 / 4)
+        .flat_map(|_| debug_float(rng).to_le_bytes())
+        .collect();
+    let count = |rng: &mut Rng| -> u8 { [0u8, 1, 2, 3, 0xff][rng.below(5) as usize] };
+    let off = |rng: &mut Rng| -> u32 { 0x200 + 0x10 * rng.below(0x30) };
+    for g in 0..usize::from(groups) {
+        let s = 4 + 0x60 * g;
+        if flag != 0 {
+            let s = 4 + 0x20 * g;
+            f[s] = count(rng);
+            let o = off(rng);
+            f[s + 0xc..s + 0x10].copy_from_slice(&o.to_le_bytes());
+            continue;
+        }
+        for k in [0usize, 1, 2, 4] {
+            f[s + k] = count(rng);
+        }
+        for k in (0xc..=0x20).step_by(4) {
+            let o = off(rng);
+            f[s + k..s + k + 4].copy_from_slice(&o.to_le_bytes());
+        }
+        let sub = 0x600 + 0x40 * g as u32;
+        f[s + 0x24..s + 0x28].copy_from_slice(&sub.to_le_bytes());
+        for e in 0..3usize {
+            let at = sub as usize + 0x10 * e;
+            let o = off(rng);
+            f[at..at + 4].copy_from_slice(&o.to_le_bytes());
+            f[at + 4] = rng.next() as u8;
+            f[at + 5] = rng.next() as u8;
+            f[at + 6] = count(rng);
+        }
+    }
+    f[0] = flag;
+    f[1] = groups;
+    f[9] = count(rng);
+    let o = off(rng);
+    f[0x2c..0x30].copy_from_slice(&o.to_le_bytes());
+    if flag != 0 {
+        f[4] = count(rng);
+        let o = off(rng);
+        f[0x14..0x18].copy_from_slice(&o.to_le_bytes());
+    }
+    t.alloc(&f)
+}
+
+#[test]
+fn r5b6_btl_pos_from_file_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0601);
+        for k in 0..60u32 {
+            t.reset();
+            t.bump_malloc(0x4000);
+            let table: Vec<u8> = (0..0x40).map(|_| rng.next() as u8).collect();
+            let table = t.alloc(&table);
+            t.g32(mn::BTL_POS_TABLE, table);
+            let flag = [0u8, 1, 0x80][(k % 3) as usize];
+            let groups = (k / 3 % 4) as u8;
+            let file = if k % 20 == 19 {
+                0
+            } else {
+                pos_file(t, &mut rng, flag, groups)
+            };
+            t.check(
+                &format!("pos from file #{k}"),
+                0x007c_9450,
+                Conv::Cdecl,
+                &[file],
+                |m| {
+                    mn::btl_pos_from_file(m, file);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+// ---- round 5, batch 7 (ffx_menu::m5m_n, the battle debug environment file) ----
+
+#[test]
+fn r5b7_env_save_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0701);
+        for k in 0..24u32 {
+            t.reset();
+            t.big_cave();
+            t.skip = 4;
+            let s = t.by_format(mn::SPRINTF, 1, &[(0x00b5_5c3c, 4), (0x00b5_5c44, 4)], 2, 7);
+            let slot = t.rebase(mn::SPRINTF);
+            t.patch(slot, &s.to_le_bytes());
+            let fd = [0xffff_ffffu32, 0, 5, 0x8000_0000][(k % 4) as usize];
+            let heap = if k % 5 == 4 { 0 } else { t.zeros(0x40) };
+            t.stubs(&[
+                (mn::SCE_OPEN, false, 2, 0, fd),
+                (mn::DBG_PRINTF, false, 2, 0, 0x7e),
+                (mn::SCE_WRITE, false, 3, 0, 0x71),
+                (mn::SCE_CLOSE, false, 1, 0, 0x72),
+                (0x007c_5f50, false, 0, 0, rng.word()),
+                (0x0088_7c30, false, 0, 0, rng.below(6)),
+                (0x0088_7c20, false, 0, 0, rng.below(2)),
+                (0x0078_51d0, false, 0, 0, rng.below(2)),
+            ]);
+            t.stub_import(mn::MALLOC, false, 1, 0, heap);
+            t.stub_import(mn::FREE, false, 1, 0, 0x73);
+            // MsEnvWriteText_007ce9f0: logged, the writer's fill (+0xc)
+            // grown (or not) by the line
+            let grow = rng.below(3);
+            let mut c = t.log_words(mn::MS_ENV_WRITE_TEXT_7CE9F0, 0, 2, 0x74, false);
+            c.extend([0x8b, 0x4c, 0x24, 0x04, 0x83, 0x41, 0x0c, grow as u8, 0xc3]); // add dword [ecx+0xc], grow; ret
+            let stub = t.cave_code(&c);
+            t.jump(mn::MS_ENV_WRITE_TEXT_7CE9F0, stub);
+            // the settings: any bytes
+            let at = t.rebase(0x0112_a8e0);
+            let v: Vec<u8> = (0..0x48).map(|_| rng.next() as u8).collect();
+            t.write(at, &v);
+            let at = t.rebase(0x0113_07e8);
+            let v: Vec<u8> = (0..3).map(|_| rng.next() as u8).collect();
+            t.write(at, &v);
+            t.g32(0x0231_13e0, rng.word());
+            let name = t.alloc(b"host0:env.txt\0");
+            t.check_framed(
+                &format!("env save #{k}"),
+                0x007c_d800,
+                Conv::Cdecl,
+                &[name],
+                0x118,
+                |m, ebp| Out::U32(mn::env_save(m, ebp, name)),
+            );
+        }
+    });
+}

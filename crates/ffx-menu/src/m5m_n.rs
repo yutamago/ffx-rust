@@ -2,7 +2,7 @@
 //! debug windows' helpers (`Ms_Gui_CameraProc`, `Ms_Gui_MapDataProc`,
 //! `Ms_Gui_ReferencePos`): their value printers, slider callbacks and
 //! camera glue; `Rng_ClockSeed`; the script's `Native_01ed_DebugHang`;
-//! the RCUI fade rectangle `0x0092cfa0`.
+//! the RCUI fade rectangle `0x0092_cfa0`.
 
 #![allow(
     clippy::too_many_lines,
@@ -255,13 +255,13 @@ pub mod bridge {
     pub const S_NULL: u32 = 0x00b5_69d0;
     pub const S_ACTOR: u32 = 0x00b5_69dc;
     pub const S_YOFS: u32 = 0x00b5_69ec;
-    /// `g_DebugRefActorCount` (`0x0113f86c`, name ours): the second number
+    /// `g_DebugRefActorCount` (`0x0113_f86c`, name ours): the second number
     /// the reference window shows beside each actor.
     pub const REF_ACTOR_COUNT: u32 = 0x0113_f86c;
 
     /// `MsDebugPrintActors_007d9700(obj, _, y)` (name ours): ACT1 and ACT2
     /// (`u16 +0xc`, `+0xe`: `"NULL:%3d"` for 0xffff, else `"%4d:%3d"`, the
-    /// second number `0x0113f86c`), Yofs (`+0x34`); then `+0x30`, `+0x38`,
+    /// second number `0x0113_f86c`), Yofs (`+0x34`); then `+0x30`, `+0x38`,
     /// `+0x3c` zeroed and three dash lines. Returns the last row's `y`.
     pub fn print_actors(h: &mut impl Host, buf: u32, obj: u32, y: u32) -> u32 {
         let mut y = y;
@@ -585,18 +585,18 @@ pub mod bridge {
         h.write(ang, x87::store(x87::div(x87::mul(x87::load(a), deg), pi)));
     }
 
-    /// The camera keeps (`0x30`-byte records from `0x0113ed8c`, current
-    /// `0x0113ed5c`) and the window's shown values.
+    /// The camera keeps (`0x30`-byte records from `0x0113_ed8c`, current
+    /// `0x0113_ed5c`) and the window's shown values.
     pub const KEEP_CUR: u32 = 0x0113_ed5c;
     pub const KEEPS: u32 = 0x0113_ed8c;
 
     /// `MsDebugCameraKeepLoad_007d7130()` (name ours): the current keep's
-    /// angle (`+0xc` to `0x0113ed74`), its two angles in degrees (`+0x10`,
-    /// `+0x14` times 180 / pi to `0x0113ed68`, `0x0113ed6c`), the distance
-    /// (`+0x18` to `0x0113ed70`), `sin(0x0113ed6c * pi / 180) * distance`
-    /// to `0x0113f3ac` (`trig`: the CRT's `_CIsin`), the roll (`+0x20` to
-    /// `0x0113ed64`); then the 0x18c words from `0x0113ed7c` copied to
-    /// `0x0113e668`. Callers drop `eax`.
+    /// angle (`+0xc` to `0x0113_ed74`), its two angles in degrees (`+0x10`,
+    /// `+0x14` times 180 / pi to `0x0113_ed68`, `0x0113_ed6c`), the distance
+    /// (`+0x18` to `0x0113_ed70`), `sin(0x0113_ed6c * pi / 180) * distance`
+    /// to `0x0113_f3ac` (`trig`: the CRT's `_CIsin`), the roll (`+0x20` to
+    /// `0x0113_ed64`); then the 0x18c words from `0x0113_ed7c` copied to
+    /// `0x0113_e668`. Callers drop `eax`.
     pub fn camera_keep_load(h: &mut impl Host, trig: &mut dyn FnMut(Trig, f64) -> u32) {
         let cur = g32(h, KEEP_CUR);
         let k = at(h.rebase(KEEPS), cur.wrapping_mul(0x30));
@@ -634,7 +634,7 @@ pub mod bridge {
     /// (5 `i32`).
     pub const CAMERA_MODES: u32 = 0x00c4_47f0;
     pub const REF_MODES: u32 = 0x00c4_4a10;
-    /// `g_DebugCameraKeepAngleDeg` (`0x0113ed78`).
+    /// `g_DebugCameraKeepAngleDeg` (`0x0113_ed78`).
     pub const KEEP_ANGLE_DEG: u32 = 0x0113_ed78;
 
     /// The next mode of a mode table of `n`: `mode`'s index (`n` when
@@ -661,7 +661,7 @@ pub mod bridge {
         h.read(at(t, 4 * j as u32))
     }
 
-    /// The camera window's saved camera (`0x0113ed18..+0x24`, `0x0113ed50`,
+    /// The camera window's saved camera (`0x0113_ed18..+0x24`, `0x0113_ed50`,
     /// `+0x54`, `+0x58`): the fields `+0x30..+0x3c`, `+0x40..+0x48`.
     const SAVED: [(u32, u32); 7] = [
         (0x30, 0x0113_ed18),
@@ -683,8 +683,8 @@ pub mod bridge {
     /// (`MsVectorRect2Polar` of `obj + 0x30` and `cam[+0x8c]` into `obj +
     /// 0x40`, `+0x44`, `+0x48`; the `mode` slot keeps `obj + 0x48`). Then the next of
     /// [`CAMERA_MODES`] is set (`MsDebugSetCameraMode(1, ..)`); in the new
-    /// mode 8 the keep angle (`0x0113ed78`, degrees) goes to `+0x40`, in 9
-    /// to `+0x50`, both pointing `+8` at `0x0113ed7c`; modes 4-6, 8, 9 get
+    /// mode 8 the keep angle (`0x0113_ed78`, degrees) goes to `+0x40`, in 9
+    /// to `+0x50`, both pointing `+8` at `0x0113_ed7c`; modes 4-6, 8, 9 get
     /// the saved fields back. Returns the new mode.
     pub fn camera_mode_next(
         h: &mut impl Host,
@@ -741,14 +741,14 @@ pub mod bridge {
     }
 
     pub const MS_CAMERA_SET_ATEL_FOCUS: u32 = 0x007b_eeb0;
-    /// `g_DebugRefActor` (`0x0113f864`, name ours).
+    /// `g_DebugRefActor` (`0x0113_f864`, name ours).
     pub const REF_ACTOR: u32 = 0x0113_f864;
 
     /// `MsDebugRefModeNext_007d9b00(mode, step, pick, obj, cam, base,
     /// which)` (name ours): the window's `+0x30..+0x3c` take the camera's
     /// `+0x20..+0x2c`; the next of [`REF_MODES`] is set
     /// (`MsDebugSetCameraMode(0, ..)`), the new mode kept in the `mode`
-    /// slot. In mode 3 the actor (`0x0113f864`, -1 as 0) and the window's
+    /// slot. In mode 3 the actor (`0x0113_f864`, -1 as 0) and the window's
     /// two positions are taken (`MsCameraSetAtelFocus_007beeb0(which, 0, act1, act2, obj +
     /// 0x30)` with `+5` set, then again with `+0x34` the height above
     /// `base`, the `cam` slot holding `base`'s height first); else the
@@ -814,13 +814,13 @@ pub mod bridge {
     pub const ARROW_ANGLE: u32 = 0x00b1_1338;
 
     /// `MsDebugRefDraw_007d34a0(cam)` (name ours): the camera's channel
-    /// (`MsCameraGetNum`) byte `0x01137634` cleared; while the scale
-    /// `0x0113ed48` is below 1 the reference's line from `(0x0113ed28,
-    /// 0x0113ed30)` to `(0x0113f3d4, 0x0113f3dc)` both ways, the same line
+    /// (`MsCameraGetNum`) byte `0x0113_7634` cleared; while the scale
+    /// `0x0113_ed48` is below 1 the reference's line from `(0x0113_ed28,
+    /// 0x0113_ed30)` to `(0x0113_f3d4, 0x0113_f3dc)` both ways, the same line
     /// turned by [`ARROW_ANGLE`] both ways (`_CIcos`, `_CIsin` from `trig`)
-    /// and a circle of `0x0113ed2c` (`MsCameraAddLineFilter_007bf0b0`, `MsCameraRefAddCircleArea_007bf1f0` on
+    /// and a circle of `0x0113_ed2c` (`MsCameraAddLineFilter_007bf0b0`, `MsCameraRefAddCircleArea_007bf1f0` on
     /// `MsCameraGetID`; the `cam` slot is left holding the cosine); else
-    /// (NaN too) the channel's five words `0x011376c0..` (0x20 apart)
+    /// (NaN too) the channel's five words `0x0113_76c0..` (0x20 apart)
     /// cleared. Callers drop `eax`.
     pub fn ref_draw(
         h: &mut impl Host,
@@ -894,7 +894,7 @@ pub mod bridge {
 
     pub const RNG_READ_SYSTEM_CLOCK: u32 = 0x0062_f5b0;
 
-    /// `Rng_ClockSeed()` (`0x00798950`): the PS2 clock bytes
+    /// `Rng_ClockSeed()` (`0x0079_8950`): the PS2 clock bytes
     /// (`Rng_ReadSystemClock` into the 8-byte `clock`, the original's `ebp -
     /// 8`) combined by XOR, plus 1. The reader never writes bytes 0 and 4.
     pub fn clock_seed(h: &mut impl Host, clock: u32) -> u32 {
@@ -911,7 +911,7 @@ pub mod bridge {
     /// The warning `Native_01ed_DebugHang` prints on every turn.
     pub const HANG_WARNING: u32 = 0x00b5_bbb8;
 
-    /// `Native_01ed_DebugHang(worker, _, stack)` (`0x00857f70`): never
+    /// `Native_01ed_DebugHang(worker, _, stack)` (`0x0085_7f70`): never
     /// returns (as the original): forever a warning (`dbgPrintf`), the
     /// stack's top integer popped and 2 and it pushed back. `turns` bounds
     /// the loop for the tests (`None` in the game).
@@ -939,7 +939,7 @@ pub mod bridge {
     pub const RECT_DEPTH: u32 = 0x00b1_0f38;
 
     /// `RcuiDrawScreenRect_0092cfa0()` (name ours; a draw callback stored
-    /// at `0x0092cf7f`): one GS packet over the screen (`g_RcuiWork`'s
+    /// at `0x0092_cf7f`): one GS packet over the screen (`g_RcuiWork`'s
     /// `+0xae4..+0xb04`: the TEX0 fields, the size and its pixel scale) at
     /// depth `Yn_DepthToScreen(0.1)`, through the packet at `ebp - 0x48`
     /// (`rcPacketDataInit`, `OpenAdr`, the 0x90 bytes written at its
@@ -1013,7 +1013,7 @@ pub mod bridge {
 
     // ---- batch 2: the battle position table and the debug camera's state ----
 
-    /// `g_BtlPosTable` (`0x0113e278`, the position file loaded for the
+    /// `g_BtlPosTable` (`0x0113_e278`, the position file loaded for the
     /// debug editor): `+4`/`+0x10` offset and scale, `+0x1c` record count,
     /// `+0x24`/`+0x2c` a float table and its count, `+0x30` the records
     /// (0x74 bytes).
@@ -1118,9 +1118,9 @@ pub mod bridge {
         eax
     }
 
-    /// `g_DebugCamera` (`0x011370c1`, a byte of screen `[0x01139f10]`'s
+    /// `g_DebugCamera` (`0x0113_70c1`, a byte of screen `[0x0113_9f10]`'s
     /// 0x1c0-byte record) and the battle cameras (0xda0 bytes from
-    /// `0x011375f0`, 0x130-byte channels; a side is 0x61c bytes).
+    /// `0x0113_75f0`, 0x130-byte channels; a side is 0x61c bytes).
     pub const DEBUG_CAMERA: u32 = 0x0113_70c1;
     pub const DEBUG_SCREEN: u32 = 0x0113_9f10;
 
@@ -1152,7 +1152,7 @@ pub mod bridge {
     /// channel side (`side & 1`) re-requested in the debug mode
     /// (`MsDebugGetCameraMode(side)`): 1 `MsCameraSetRect`, 2
     /// `Cam_SetPolar`, 3 `MsCameraSetAtelFocus`, 4/5/6 the aim requests, 8/9
-    /// the keep list (`0x0113ed7c`), 10 `MsCameraSetAtelYaw`, 11-13, 15, 16
+    /// the keep list (`0x0113_ed7c`), 10 `MsCameraSetAtelYaw`, 11-13, 15, 16
     /// `MsCameraSetBtl` kinds 0-4; the channel side's `+0x30..` values as
     /// `f32` copies. The `side` slot keeps the camera's id. Returns the
     /// callee's `eax`, or the mode less 1.
@@ -1296,7 +1296,7 @@ pub mod bridge {
         }
     }
 
-    /// `g_BtlDebugCameraKeep` (`0x01139f0c`).
+    /// `g_BtlDebugCameraKeep` (`0x0113_9f0c`).
     pub const DEBUG_CAMERA_KEEP: u32 = 0x0113_9f0c;
 
     /// `MsDebugCameraEditLoad_007d3f40(edit)` (name ours): the debug
@@ -1305,7 +1305,7 @@ pub mod bridge {
     /// copies, the side's kinds and actors (`u16`), the side-1 mode
     /// (`MsDebugGetCameraMode(1)`) as the editor's kind `+0x34` (8: `+0x60`
     /// the angle in degrees; 9: the keep's), the side-0 mode as `+0x6a0`,
-    /// `+0x6cc` = `0x01139f0c` (also the `eax` it returns).
+    /// `+0x6cc` = `0x0113_9f0c` (also the `eax` it returns).
     pub fn camera_edit_load(h: &mut impl Host, edit: u32) -> u32 {
         let (cam, _, num, ch) = debug_channel(h);
         let m1 = cdecl(h, MS_DEBUG_GET_CAMERA_MODE, &[1]);
@@ -1427,8 +1427,8 @@ pub mod bridge {
     pub const S_LEN_LC: u32 = 0x00b5_67a4;
     pub const S_FMT_S: u32 = 0x00b0_e160;
     pub const S_FMT_ACTOR: u32 = 0x00b5_5240;
-    /// The names of the reference targets: below 0 from `0x00c44824`
-    /// downwards, from 0 on (actors without a battle id) at `0x00c44950`.
+    /// The names of the reference targets: below 0 from `0x00c4_4824`
+    /// downwards, from 0 on (actors without a battle id) at `0x00c4_4950`.
     pub const REF_NAMES_NEG: u32 = 0x00c4_4828;
     pub const REF_NAMES: u32 = 0x00c4_4950;
 
@@ -1536,7 +1536,7 @@ pub mod bridge {
     /// yaw, `MsCameraSetBtl` kinds 0-4), `+0x6a8` = `+0x20`, the side-0
     /// values and request by `+0x6a0` (0-4: focus, rect, `MsCameraSetBtl`
     /// kinds 0-2), the reference actor (`SetGlobal0113f864_007d9af0` of
-    /// `i16 +0x6ba`) and `0x01139f0c` = `+0x6cc` (also the `eax` it
+    /// `i16 +0x6ba`) and `0x0113_9f0c` = `+0x6cc` (also the `eax` it
     /// returns).
     pub fn camera_edit_store(h: &mut impl Host, edit: u32, slots: u32) -> u32 {
         let (cam, id, num, ch) = debug_channel(h);
@@ -1816,7 +1816,7 @@ pub mod bridge {
     pub const S_SET_CHR_POLAR2: u32 = 0x00b5_66f0;
     pub const S_CAMERA_SCRIPT: u32 = 0x00b5_671c;
     /// The camera actors' names (indices below 0, downwards from
-    /// `0x00c4486c`).
+    /// `0x00c4_486c`).
     pub const CAMERA_ACTOR_NAMES: u32 = 0x00c4_4870;
     pub const G_CAMERAS: u32 = 0x0113_7540;
     pub const TK_REMOVE: u32 = 0x0088_c740;
@@ -1837,7 +1837,7 @@ pub mod bridge {
     /// `MsDebugOutCamera()`: the debug camera's two sides written out as
     /// camera script (`dbgPrintf`): for each side its keep list as data
     /// (modes 8, 9), the reference filter's lines on side 0 (scale
-    /// `0x0113ed48` below 1), and the side's request as a `Set..` line
+    /// `0x0113_ed48` below 1), and the side's request as a `Set..` line
     /// into the frame's `ebp - 0x304 + 0x100 * side` (the actors' names
     /// into `ebp - 0x404`/`- 0x504`); then the whole script
     /// (`ref%s\ncam%s` with the roll and screen depth), `TkRemove`d and
@@ -2080,19 +2080,19 @@ pub mod bridge {
 
     pub const MS_BTL_GET_POS: u32 = 0x007a_bfe0;
     pub const MS_DEBUG_POS_WINDOWS: u32 = 0x007d_7a40;
-    /// The 0x60 position windows (`0x0113f528`..`0x0113f6a8`).
+    /// The 0x60 position windows (`0x0113_f528`..`0x0113_f6a8`).
     pub const POS_WINDOWS: u32 = 0x0113_f528;
     pub const G_BTL_POS_FILE: u32 = 0x0112_a9b0;
-    /// The position screen's kind (`0x00c449cc`), its picked position per
-    /// kind (`0x0113f6dc..`), the blink flag `0x0113f708`, the screen's
-    /// off flag `0x0113f704`.
+    /// The position screen's kind (`0x00c4_49cc`), its picked position per
+    /// kind (`0x0113_f6dc..`), the blink flag `0x0113_f708`, the screen's
+    /// off flag `0x0113_f704`.
     pub const POS_KIND: u32 = 0x00c4_49cc;
 
     /// The position windows of one kind from slot `slot` on: one window
     /// (`MsDebugWinAlloc_007c8bb0`) per position `MsBtlGetPos(0, 0, group,
     /// kind, i, win)` finds, coloured `rgb` with mark `mark` (`+0x22`),
-    /// halved when it is the picked one (kind `0x00c449cc`, index `pick`,
-    /// blink `0x0113f708`). Returns the next slot.
+    /// halved when it is the picked one (kind `0x00c4_49cc`, index `pick`,
+    /// blink `0x0113_f708`). Returns the next slot.
     fn pos_windows(
         h: &mut impl Host,
         group: u32,
@@ -2145,7 +2145,7 @@ pub mod bridge {
     pub const MS_DEBUG_WIN_ALLOC: u32 = 0x007c_8bb0;
 
     /// `MsDebugPosWindowsAll_007d74e0(group)` (name ours): unless the
-    /// screen is off (`0x0113f704`), the battle position screen's windows:
+    /// screen is off (`0x0113_f704`), the battle position screen's windows:
     /// the group's marks (`MsDebugPosWindows_007d7a40` kind 2), then the
     /// positions of kinds 3 and 6 and, on a map without a position file
     /// flag (`*g_BtlPosFile` 0), kinds 9 and 10's marks and positions of
@@ -2397,5 +2397,933 @@ pub mod bridge {
             eax = dbg(h, S_CHR_POS, &words);
         }
         eax
+    }
+
+    // ---- batch 5: the battle actor dumps ----
+
+    pub const MS_ENV_WRITE_TEXT_7DE700: u32 = 0x007d_e700;
+    pub const S_MOTION_TYPE: u32 = 0x00b5_7424;
+    pub const S_MOTION_TYPE_END: u32 = 0x00b5_7668;
+
+    /// The motion type flags (`+0x4ac`) `MsDebugChrMotionSave_007dcf70`
+    /// names, in its order: (bit, `"%s | motion_type_.."`).
+    pub const MOTION_TYPE_FLAGS: [(u32, u32); 17] = [
+        (1, 0x00b5_7444),
+        (2, 0x00b5_7468),
+        (4, 0x00b5_7488),
+        (8, 0x00b5_74a8),
+        (0x10, 0x00b5_74c8),
+        (0x1000, 0x00b5_74ec),
+        (0x20, 0x00b5_750c),
+        (0x40, 0x00b5_7528),
+        (0x80, 0x00b5_754c),
+        (0x100, 0x00b5_756c),
+        (0x200, 0x00b5_758c),
+        (0x400, 0x00b5_75a8),
+        (0x800, 0x00b5_75c4),
+        (0x2000, 0x00b5_75e0),
+        (0x4000, 0x00b5_7600),
+        (0x8000, 0x00b5_7620),
+        (0x1_0000, 0x00b5_7644),
+    ];
+
+    /// A field a script line shows.
+    #[derive(Debug, Clone, Copy)]
+    pub enum Field {
+        U8(u32),
+        I8(u32),
+        U16(u32),
+        F32(u32),
+    }
+
+    /// `MsDebugChrMotionSave_007dcf70`'s lines after the motion type: (the
+    /// `setstat2`/`setmotiondata2` format, the actor's field).
+    pub const MOTION_LINES: [(u32, Field); 20] = [
+        (0x00b5_7670, Field::U8(0x41d)),
+        (0x00b5_76a0, Field::U8(0x41b)),
+        (0x00b5_76cc, Field::F32(0x4bc)),
+        (0x00b5_7700, Field::F32(0x4c0)),
+        (0x00b5_7730, Field::F32(0x4c4)),
+        (0x00b5_7760, Field::F32(0x4c8)),
+        (0x00b5_7794, Field::F32(0x4d4)),
+        (0x00b5_77c0, Field::F32(0x4d8)),
+        (0x00b5_77f0, Field::F32(0x4cc)),
+        (0x00b5_781c, Field::F32(0x4d0)),
+        (0x00b5_784c, Field::F32(0x4dc)),
+        (0x00b5_7874, Field::U16(0x4b0)),
+        (0x00b5_7894, Field::U16(0x4b2)),
+        (0x00b5_78b8, Field::U8(0x4b9)),
+        (0x00b5_78e0, Field::U8(0x4ba)),
+        (0x00b5_7908, Field::I8(0x4b8)),
+        (0x00b5_792c, Field::U8(0x4bb)),
+        (0x00b5_7950, Field::U8(0x40c)),
+        (0x00b5_797c, Field::U8(0x40d)),
+        (0x00b5_79a8, Field::U8(0x40e)),
+    ];
+
+    /// A field as `sprintf` takes it (an `f32` as a double).
+    fn field_words(h: &impl Host, p: u32, f: Field) -> Vec<u32> {
+        match f {
+            Field::U8(o) => vec![u32::from(h.read::<u8>(at(p, o)))],
+            Field::I8(o) => vec![i32::from(h.read::<i8>(at(p, o))) as u32],
+            Field::U16(o) => vec![u32::from(h.read::<u16>(at(p, o)))],
+            Field::F32(o) => dw(f32_at(h, at(p, o))).to_vec(),
+        }
+    }
+
+    /// `MsDebugChrMotionSave_007dcf70(i, writer)` (name ours): actor `i`'s
+    /// motion settings written as battle script (`MsEnvWriteText_007de700`
+    /// of each line; the line buffer `buf`, the original's `ebp - 0x404`):
+    /// the motion type flags `+0x4ac` as a `|` list, then
+    /// [`MOTION_LINES`]. Returns the last write's `eax`.
+    pub fn chr_motion_save(h: &mut impl Host, buf: u32, i: u32, writer: u32) -> u32 {
+        let c = cdecl(h, MS_GET_CHR, &[i]);
+        let flags: u32 = h.read(at(c, 0x4ac));
+        sprintf(h, buf, S_MOTION_TYPE, &[]);
+        for (bit, fmt) in MOTION_TYPE_FLAGS {
+            if flags & bit != 0 {
+                sprintf(h, buf, fmt, &[buf]);
+            }
+        }
+        sprintf(h, buf, S_MOTION_TYPE_END, &[buf]);
+        let mut eax = cdecl(h, MS_ENV_WRITE_TEXT_7DE700, &[writer, buf]);
+        for (fmt, f) in MOTION_LINES {
+            let w = field_words(h, c, f);
+            // call width: 4 (the buffer, the format, a double)
+            sprintf(h, buf, fmt, &w);
+            eax = cdecl(h, MS_ENV_WRITE_TEXT_7DE700, &[writer, buf]);
+        }
+        eax
+    }
+
+    /// A value a battle info line shows: an actor field, a bit of a `u16`
+    /// field, or a global `i8`.
+    #[derive(Debug, Clone, Copy)]
+    pub enum Info {
+        U8(u32),
+        I8(u32),
+        U16(u32),
+        U32(u32),
+        Bit(u32, u32),
+    }
+
+    use Info::{Bit, I8 as S8, U8 as B8, U16 as W16, U32 as D32};
+
+    /// The battle info window's plain lines: (id, format, values).
+    pub const INFO_LINES: &[(u32, u32, &[Info])] = &[
+        (
+            0x4f,
+            0x00b5_6c78,
+            &[
+                B8(0x65c),
+                B8(0x65d),
+                B8(0x5ac),
+                S8(0x4fc),
+                S8(0x4fd),
+                S8(0x4fe),
+            ],
+        ),
+        (
+            0x50,
+            0x00b5_6c9c,
+            &[D32(0x5d0), D32(0x594), D32(0x5d4), D32(0x598)],
+        ),
+        (
+            0x54,
+            0x00b5_6cd0,
+            &[B8(0x5a8), B8(0x5a9), B8(0x5aa), B8(0x5ab)],
+        ),
+        (
+            0x55,
+            0x00b5_6cec,
+            &[B8(0x5ac), B8(0x5ad), B8(0x5ae), B8(0x5af)],
+        ),
+        (
+            0x56,
+            0x00b5_6d08,
+            &[B8(0x5ba), B8(0x5bb), B8(0x5bc), B8(0x5bd)],
+        ),
+        (
+            0x57,
+            0x00b5_6d24,
+            &[W16(0x5b8), B8(0x592), B8(0x593), B8(0x40c)],
+        ),
+        (
+            0x59,
+            0x00b5_6d68,
+            &[B8(0x5da), B8(0x5db), B8(0x5dc), B8(0x5dd)],
+        ),
+        (
+            0x5a,
+            0x00b5_6d8c,
+            &[
+                B8(0x65e),
+                B8(0x65f),
+                B8(0x660),
+                B8(0x661),
+                B8(0x662),
+                B8(0x663),
+            ],
+        ),
+        (
+            0x5c,
+            0x00b5_6ddc,
+            &[
+                S8(0xdf1),
+                B8(0xde6),
+                B8(0xde7),
+                S8(0xdfb),
+                S8(0xdf2),
+                S8(0x432),
+                S8(0x433),
+                S8(0x508),
+                S8(0x50e),
+            ],
+        ),
+        (
+            0x8f,
+            0x00b5_6db0,
+            &[
+                S8(0xddd),
+                S8(0x4ff),
+                S8(0x504),
+                Bit(0x606, 0),
+                S8(0xdd9),
+                S8(0xdc8),
+                S8(0x10),
+            ],
+        ),
+        (0x99, 0x00b5_6e70, &[B8(0xf2d), B8(0xf2c)]),
+        (0xcd, 0x00b5_6e80, &[B8(0x5c2), B8(0x5c3)]),
+        (
+            0xce,
+            0x00b5_6e90,
+            &[
+                S8(0xdcd),
+                S8(0xdfa),
+                W16(0x400),
+                B8(0x44f),
+                B8(0x63d),
+                B8(0xf5e),
+            ],
+        ),
+        (
+            0xdc,
+            0x00b5_6f4c,
+            &[
+                S8(0x11),
+                S8(0x12),
+                B8(0x14),
+                B8(0x43f),
+                B8(0x441),
+                B8(0x440),
+            ],
+        ),
+        (
+            0x9e,
+            0x00b5_702c,
+            &[B8(0x641), B8(0x642), B8(0x643), B8(0x644), B8(0x645)],
+        ),
+        (
+            0x9f,
+            0x00b5_7054,
+            &[B8(0x646), B8(0x647), B8(0x648), B8(0x649), B8(0x64a)],
+        ),
+        (
+            0xa0,
+            0x00b5_7170,
+            &[B8(0x64b), B8(0x64c), B8(0x64d), B8(0x64e), B8(0x64f)],
+        ),
+        (
+            0xa1,
+            0x00b5_70a8,
+            &[B8(0x650), B8(0x651), B8(0x652), B8(0x653), B8(0x654)],
+        ),
+        (
+            0xa2,
+            0x00b5_70d0,
+            &[B8(0x655), B8(0x656), B8(0x657), B8(0x658), B8(0x659)],
+        ),
+        (
+            0xa9,
+            0x00b5_70a8,
+            &[B8(0x60b), B8(0x60c), B8(0x60d), B8(0x60e), B8(0x60f)],
+        ),
+        (
+            0xaa,
+            0x00b5_70d0,
+            &[B8(0x610), B8(0x611), B8(0x612), B8(0x613), B8(0x614)],
+        ),
+    ];
+
+    /// Lines of five bits of a `u16` status field: (id, format, field,
+    /// first bit).
+    pub const INFO_BITS: [(u32, u32, u32, u32); 7] = [
+        (0xa6, 0x00b5_702c, 0x606, 0),
+        (0xa7, 0x00b5_7054, 0x606, 5),
+        (0xab, 0x00b5_70f8, 0x616, 0),
+        (0xac, 0x00b5_7120, 0x616, 5),
+        (0xa3, 0x00b5_70f8, 0x65a, 0),
+        (0xa4, 0x00b5_7120, 0x65a, 5),
+        (0xa5, 0x00b5_7198, 0x65a, 10),
+    ];
+
+    fn info(h: &impl Host, a: u32, v: Info) -> u32 {
+        match v {
+            Info::U8(o) => u32::from(h.read::<u8>(at(a, o))),
+            Info::I8(o) => i32::from(h.read::<i8>(at(a, o))) as u32,
+            Info::U16(o) => u32::from(h.read::<u16>(at(a, o))),
+            Info::U32(o) => h.read(at(a, o)),
+            Info::Bit(o, b) => (u32::from(h.read::<u16>(at(a, o))) >> b) & 1,
+        }
+    }
+
+    pub const MS_GET_NEXT_AP: u32 = 0x0078_4e90;
+    pub const MS_GET_SAVE_NEXT_AP: u32 = 0x0078_52b0;
+    pub const MS_GET_CHR_VIGOR: u32 = 0x0078_cce0;
+    pub const CH_EFFECT_GET_EFFECT_LEVEL: u32 = 0x0082_a9a0;
+    pub const CH_GET_BODY_HIT: u32 = 0x0082_ab10;
+    pub const MS_CHECK_BTL_POS: u32 = 0x007a_9230;
+    pub const MS_GET_CHR_MOVE_FRAME_REST: u32 = 0x007a_9320;
+    pub const CH_GET_WAIT_MOTION: u32 = 0x0083_92c0;
+    pub const CH_GET_ORG_MATRIX: u32 = 0x0082_ac60;
+    pub const MS_MENU_WEAK_ELEMENT: u32 = 0x007a_9a20;
+    pub const MS_EFFECT_CHECK_MOTION: u32 = 0x0078_7840;
+    pub const MS_EFFECT_CHECK_MOTION2: u32 = 0x0078_78a0;
+    pub const CH_GET_CAM_HEIGHT: u32 = 0x0082_ab30;
+    pub const MS_GET_CHR_CAM_WIDTH: u32 = 0x0079_4a70;
+    pub const MS_GET_CHR_HEIGHT: u32 = 0x0079_50f0;
+    pub const MS_GET_CHR_WIDTH: u32 = 0x0079_5a20;
+    pub const MS_GET_CHR_GROUND: u32 = 0x0079_4fb0;
+    pub const MS_GET_SUMMONER_NUM: u32 = 0x0078_8e10;
+    pub const MS_GET_STATUS_LOOK: u32 = 0x0079_e7c0;
+    /// The battle's `i8` at `0x0112_c9d3` (the info window's `T%1d`).
+    pub const BTL_TURN_FLAG: u32 = 0x0112_c9d3;
+    pub const G_PLY_SAVE_LEVELS: u32 = 0x0113_2097;
+
+    /// `MsDebugChrInfoLine_007dbee0(model, dst, src, id, actor)` (name
+    /// ours): one line of the battle info window: `sprintf(dst, fmt, src,
+    /// values..)` for line `id` ([`INFO_LINES`], [`INFO_BITS`] and the
+    /// lines with callees: AP, attack, effect level, body hit, motion
+    /// frames, wait motion, sizes, position, summoner, damage, action,
+    /// status), else `"%s"` of `src`. `model` picks the AP line's source;
+    /// `ebp` is the original's frame (the position at `ebp - 0x14`).
+    /// Returns `sprintf`'s `eax`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn chr_info_line(
+        h: &mut impl Host,
+        ebp: u32,
+        model: u32,
+        dst: u32,
+        src: u32,
+        id: u32,
+        a: u32,
+    ) -> u32 {
+        let n = u32::from(h.read::<u8>(at(a, 0xc)));
+        let m: u32 = h.read(a);
+        let put = |h: &mut _, fmt: u32, words: &[u32]| -> u32 {
+            let mut w = vec![dst, Mem::rebase(h, fmt), src];
+            w.extend_from_slice(words);
+            // call width: 15 (the body hit line's twelve values)
+            crt_wide(h, SPRINTF, &w)
+        };
+        if let Some(&(_, fmt, vals)) = INFO_LINES.iter().find(|r| r.0 == id) {
+            let w: Vec<u32> = vals.iter().map(|&v| info(h, a, v)).collect();
+            return put(h, fmt, &w);
+        }
+        if let Some(&(_, fmt, o, b)) = INFO_BITS.iter().find(|r| r.0 == id) {
+            let w: Vec<u32> = (b..b + 5).map(|k| info(h, a, Bit(o, k))).collect();
+            return put(h, fmt, &w);
+        }
+        let metre = f64_at(h, METRE);
+        match id {
+            0x51 => {
+                let w = if model == 0 {
+                    let lv = at(h.rebase(G_PLY_SAVE_LEVELS), n.wrapping_mul(0x94));
+                    let (b97, b98) = (
+                        u32::from(h.read::<u8>(lv)),
+                        u32::from(h.read::<u8>(at(lv, 1))),
+                    );
+                    let x = cdecl(h, MS_GET_NEXT_AP, &[n, b97, b98]);
+                    let y = cdecl(h, MS_GET_SAVE_NEXT_AP, &[n, x]);
+                    [y, x, b97, b98]
+                } else {
+                    let p: u32 = h.read(at(a, 0xf88));
+                    if p == 0 {
+                        [0, 0, 0, 0]
+                    } else {
+                        let v = |o| u32::from(Mem::read::<u16>(h, at(p, o)));
+                        [v(2), v(4), 0, 0]
+                    }
+                };
+                put(h, 0x00b5_6cb4, &w)
+            }
+            0x58 => {
+                let vg = cdecl(h, MS_GET_CHR_VIGOR, &[n]);
+                let w = [
+                    info(h, a, B8(0x5d9)),
+                    info(h, a, W16(0x604)),
+                    info(h, a, W16(0x65a)),
+                    vg,
+                ];
+                put(h, 0x00b5_6d44, &w)
+            }
+            0x96 => {
+                let c = if m == 0 {
+                    0
+                } else {
+                    cdecl(h, CH_EFFECT_GET_EFFECT_LEVEL, &[m])
+                };
+                let mut w = vec![info(h, a, S8(0xe0d)), c];
+                for v in [B8(0xe12), B8(0xe13), S8(0x448), B8(0x406), B8(0x40a)] {
+                    w.push(info(h, a, v));
+                }
+                put(h, 0x00b5_6e0c, &w)
+            }
+            0xc6 => {
+                let c = if m == 0 {
+                    0
+                } else {
+                    cdecl(h, CH_GET_BODY_HIT, &[m])
+                };
+                let mut w = vec![c];
+                for v in [
+                    S8(0x2e),
+                    S8(0x2f),
+                    S8(0x30),
+                    S8(0x31),
+                    B8(0x41c),
+                    S8(0x32),
+                    B8(0x43e),
+                    B8(0x426),
+                    S8(0x50e),
+                    S8(0x505),
+                    S8(0x34),
+                ] {
+                    w.push(info(h, a, v));
+                }
+                put(h, 0x00b5_6e38, &w)
+            }
+            0xcf => {
+                let r1 = {
+                    let p = info(h, a, S8(0x34));
+                    cdecl(h, MS_CHECK_BTL_POS, &[n, a, p])
+                };
+                let b = info(h, a, B8(0x42e));
+                let r2 = cdecl(h, MS_GET_CHR_MOVE_FRAME_REST, &[n]);
+                let w = [
+                    info(h, a, B8(0x415)),
+                    info(h, a, W16(0x452)),
+                    info(h, a, W16(0x45a)),
+                    r2,
+                    b,
+                    r1,
+                ];
+                put(h, 0x00b5_6eb8, &w)
+            }
+            0xd0 => {
+                let (wait, org) = if m == 0 {
+                    (0, false)
+                } else {
+                    let w = cdecl(h, CH_GET_WAIT_MOTION, &[m]);
+                    (w, cdecl(h, CH_GET_ORG_MATRIX, &[m]) != 0)
+                };
+                let e = info(h, a, S8(0x434));
+                let weak = cdecl(h, MS_MENU_WEAK_ELEMENT, &[n, e]);
+                let (b425, b429, s3f3) = (
+                    info(h, a, B8(0x425)),
+                    info(h, a, B8(0x429)),
+                    info(h, a, S8(0x3f3)),
+                );
+                let m2 = !cdecl(h, MS_EFFECT_CHECK_MOTION2, &[n]) & 1;
+                let m1 = !cdecl(h, MS_EFFECT_CHECK_MOTION, &[n]) & 1;
+                let w = [wait, m1, m2, s3f3, b429, b425, u32::from(org), weak, e];
+                put(h, 0x00b5_6edc, &w)
+            }
+            0x90 => {
+                let v = if m == 0 {
+                    [0.0; 4]
+                } else {
+                    let ch = h.call_sym_st0_f64(CH_GET_CAM_HEIGHT, Conv::Cdecl, &[m]);
+                    let ch = x87::store(x87::div(x87::mul(ch, f32_at(h, at(a, 0x3a4))), metre));
+                    let cw = h.call_sym_st0_f64(MS_GET_CHR_CAM_WIDTH, Conv::Cdecl, &[n]);
+                    let cw = x87::store(x87::div(cw, metre));
+                    let ht = h.call_sym_st0_f64(MS_GET_CHR_HEIGHT, Conv::Cdecl, &[n]);
+                    let ht = x87::store(x87::div(ht, metre));
+                    let wd = h.call_sym_st0_f64(MS_GET_CHR_WIDTH, Conv::Cdecl, &[n]);
+                    let wd = x87::store(x87::div(wd, metre));
+                    [cw, ch, wd, ht].map(x87::load)
+                };
+                let w: Vec<u32> = v.iter().flat_map(|&x| dw(x)).collect();
+                put(h, 0x00b5_6f0c, &w)
+            }
+            0xd3 => {
+                let p = ebp.wrapping_sub(0x14);
+                cdecl(h, MS_GET_CHR_POS, &[n, p]);
+                let mut flag = 0;
+                if m != 0 {
+                    let org = cdecl(h, CH_GET_ORG_MATRIX, &[m]);
+                    if org != 0 {
+                        flag = 1;
+                        for o in [0u32, 4, 8] {
+                            let v = fcopy(h.read(at(org, 0x30 + o)));
+                            h.write(at(p, o), v);
+                        }
+                    }
+                }
+                let xyz: Vec<u32> = [0u32, 4, 8]
+                    .iter()
+                    .map(|&o| x87::ftol(h, f32_at(h, at(p, o))))
+                    .collect();
+                let g = h.call_sym_st0_f64(MS_GET_CHR_GROUND, Conv::Cdecl, &[n]);
+                let g = x87::ftol(h, g);
+                let w = [flag, info(h, a, S8(0x510)), xyz[0], xyz[1], xyz[2], g];
+                put(h, 0x00b5_6f2c, &w)
+            }
+            0xde => {
+                let (d, b718, b719, w8) = (
+                    f32_at(h, at(a, 0x4ec)),
+                    info(h, a, B8(0x718)),
+                    info(h, a, B8(0x719)),
+                    info(h, a, D32(8)),
+                );
+                let s = cdecl(h, MS_GET_SUMMONER_NUM, &[n]);
+                let d = dw(d);
+                let w = [
+                    info(h, a, B8(0x6d8)),
+                    info(h, a, B8(0x6d9)),
+                    s,
+                    b718,
+                    b719,
+                    d[0],
+                    d[1],
+                    w8,
+                ];
+                put(h, 0x00b5_6f74, &w)
+            }
+            0xdf => {
+                let mut w: Vec<u32> = (0x15..=0x19u32).map(|o| info(h, a, S8(o))).collect();
+                w.push(m);
+                put(h, 0x00b5_6f9c, &w)
+            }
+            0xe0 => {
+                let c = u32::from(h.read::<u8>(at(a, 0x776)) == 0xff)
+                    + u32::from(h.read::<u8>(at(a, 0xa4e)) == 0xff);
+                let w = [
+                    info(h, a, D32(0x6f4)),
+                    c,
+                    info(h, a, B8(0x700)),
+                    info(h, a, B8(0x41e)),
+                    info(h, a, B8(0x3f9)),
+                ];
+                put(h, 0x00b5_6fc0, &w)
+            }
+            0xe2 => {
+                let g = i32::from(h.read::<i8>(h.rebase(BTL_TURN_FLAG))) as u32;
+                let w = [
+                    info(h, a, S8(0xdf0)),
+                    g,
+                    info(h, a, B8(0xe13)),
+                    info(h, a, S8(0x432)),
+                    info(h, a, S8(0x436)),
+                    info(h, a, B8(0x3f8)),
+                ];
+                put(h, 0x00b5_6fe4, &w)
+            }
+            0xe4 => {
+                let s38 = info(h, a, S8(0x38));
+                let look = cdecl(h, MS_GET_STATUS_LOOK, &[n, s38]);
+                let w = [
+                    info(h, a, B8(0x446)),
+                    info(h, a, D32(0x39c)),
+                    info(h, a, B8(0x413)),
+                    info(h, a, B8(0x414)),
+                    look,
+                    s38,
+                ];
+                put(h, 0x00b5_7008, &w)
+            }
+            0xa8 => {
+                let w = [
+                    info(h, a, Bit(0x606, 10)),
+                    info(h, a, Bit(0x606, 11)),
+                    info(h, a, B8(0x5c6)),
+                    info(h, a, B8(0x608)),
+                    info(h, a, B8(0x609)),
+                    info(h, a, B8(0x60a)),
+                ];
+                put(h, 0x00b5_707c, &w)
+            }
+            0xad => {
+                let st = u32::from(h.read::<u16>(at(a, 0x616)));
+                let ds = if st & 0x4000 != 0 {
+                    info(h, a, B8(0x5c8))
+                } else {
+                    0
+                };
+                let b6d4 = h.read::<u8>(at(a, 0x6d4));
+                let level = if b6d4 == 0xff { 0x63 } else { u32::from(b6d4) };
+                let pr = if st & 0x1000 != 0 { level } else { u32::MAX };
+                let ir = if st & 0x2000 != 0 { level } else { u32::MAX };
+                let w = [(st >> 10) & 1, (st >> 11) & 1, pr, ir, ds];
+                put(h, 0x00b5_7148, &w)
+            }
+            _ => put(h, S_FMT_S, &[]),
+        }
+    }
+
+    // ---- batch 6: the position editor's table from a position file ----
+
+    pub const MS_STRUCT_CLEAR: u32 = 0x0079_f230;
+    pub const MS_MALLOC_7CF970: u32 = 0x007c_f970;
+
+    /// A cleared block of `n` bytes from `ms_malloc_007cf970`.
+    fn alloc_clear(h: &mut impl Host, n: u32) -> u32 {
+        let p = cdecl(h, MS_MALLOC_7CF970, &[n]);
+        cdecl(h, MS_STRUCT_CLEAR, &[p, n]);
+        p
+    }
+
+    fn i8_at(h: &impl Host, p: u32) -> i32 {
+        i32::from(h.read::<i8>(p))
+    }
+
+    /// `n` points (3 `f32`, 0x10 apart in the file) from `src`, less
+    /// `origin` (3 `f32`) when given, into a cleared block of `n * 12`
+    /// bytes at the table's `+slot`. The count is re-read from `count`
+    /// after each point.
+    fn pos_points(
+        h: &mut impl Host,
+        rec: u32,
+        slot: u32,
+        count: u32,
+        src: u32,
+        origin: Option<u32>,
+    ) {
+        let n = i8_at(h, count);
+        let p = alloc_clear(h, (n.wrapping_mul(12)) as u32);
+        h.write(at(rec, slot), p);
+        let mut k = 0i32;
+        while k < i8_at(h, count) {
+            let s = at(src, (k as u32).wrapping_mul(0x10));
+            for o in [0u32, 4, 8] {
+                let v = match origin {
+                    Some(org) => x87::store(x87::sub(f32_at(h, at(s, o)), f32_at(h, at(org, o)))),
+                    None => fcopy(h.read(at(s, o))),
+                };
+                let dst: u32 = h.read(at(rec, slot));
+                h.write(at(dst, (k as u32).wrapping_mul(12).wrapping_add(o)), v);
+            }
+            k += 1;
+        }
+    }
+
+    /// `MsBtlPosFromFile_007c9450(file)` (name ours): the position
+    /// editor's table (`g_BtlPosTable`, cleared, scale 1) built from the
+    /// map's position file: the flag (`+0`), the group count (`+1`),
+    /// records of 0x74 bytes. Without the flag (`+0` 0) the file's float
+    /// list (`+9` floats at `+[0x2c]`) and its 0x60-byte groups from `+4`:
+    /// origin `+0x2c`, the two ends `+0x3c`/`+0x4c` and the point lists
+    /// (`+0`, `+2`, `+1` counts, pairs of lists at `+[0xc]`/`+[0x10]`,
+    /// `+[0x1c]`/`+[0x20]`, `+[0x14]`/`+[0x18]`) relative to it, the
+    /// sub-groups (`+4` of 0x14 bytes from `+[0x24]`); with the flag the
+    /// 0x20-byte groups' first list as it is and a second one sized and
+    /// filled from the first group (as the original). Callers drop `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn btl_pos_from_file(h: &mut impl Host, file: u32) {
+        if file == 0 {
+            return;
+        }
+        let tab = g32(h, BTL_POS_TABLE);
+        cdecl(h, MS_STRUCT_CLEAR, &[tab, 0x34]);
+        let t = g32(h, BTL_POS_TABLE);
+        let one = 0x3f80_0000u32;
+        h.write(at(t, 4), 0u32);
+        h.write(t, i8_at(h, file) as u32);
+        h.write(at(t, 8), [0u32, 0, one, one, one]);
+        let groups = i8_at(h, at(file, 1));
+        h.write(at(t, 0x1c), groups as u32);
+        h.write(at(t, 0x20), 0u32);
+        let recs = cdecl(h, MS_MALLOC_7CF970, &[(groups.wrapping_mul(0x74)) as u32]);
+        let t = g32(h, BTL_POS_TABLE);
+        h.write(at(t, 0x30), recs);
+        let n: i32 = h.read(at(t, 0x1c));
+        cdecl(h, MS_STRUCT_CLEAR, &[recs, (n.wrapping_mul(0x74)) as u32]);
+        if h.read::<u8>(file) != 0 {
+            let t = g32(h, BTL_POS_TABLE);
+            if h.read::<i32>(at(t, 0x1c)) <= 0 {
+                return;
+            }
+            let first = at(file, 4);
+            let mut g = 0i32;
+            loop {
+                let t = g32(h, BTL_POS_TABLE);
+                let src = at(first, (g as u32).wrapping_mul(0x20));
+                let rec = at(h.read::<u32>(at(t, 0x30)), (g as u32).wrapping_mul(0x74));
+                h.write(at(rec, 0xc), i8_at(h, src) as u32);
+                if i8_at(h, src) > 0 {
+                    let off: u32 = h.read(at(src, 0xc));
+                    pos_points(h, rec, 0x28, src, at(file, off), None);
+                    // sized by the first group, filled from its +0x14 list
+                    // less the file's +0x30 (as the original)
+                    let off: u32 = h.read(at(file, 0x14));
+                    pos_points(h, rec, 0x2c, first, at(file, off), Some(at(file, 0x30)));
+                }
+                g += 1;
+                let t = g32(h, BTL_POS_TABLE);
+                if g >= h.read::<i32>(at(t, 0x1c)) {
+                    return;
+                }
+            }
+        }
+        let t = g32(h, BTL_POS_TABLE);
+        let nf = i8_at(h, at(file, 9));
+        h.write(at(t, 0x24), nf as u32);
+        if nf > 0 {
+            let p = cdecl(h, MS_MALLOC_7CF970, &[(nf << 2) as u32]);
+            let t = g32(h, BTL_POS_TABLE);
+            h.write(at(t, 0x2c), p);
+            cdecl(
+                h,
+                MS_STRUCT_CLEAR,
+                &[p, (i8_at(h, at(file, 9)) << 2) as u32],
+            );
+            let src = at(file, h.read::<u32>(at(file, 0x2c)));
+            let mut k = 0i32;
+            while k < i8_at(h, at(file, 9)) {
+                let v = fcopy(h.read(at(src, (k as u32) * 4)));
+                let t = g32(h, BTL_POS_TABLE);
+                let dst: u32 = h.read(at(t, 0x2c));
+                h.write(at(dst, (k as u32) * 4), v);
+                k += 1;
+            }
+        }
+        let t = g32(h, BTL_POS_TABLE);
+        if h.read::<i32>(at(t, 0x1c)) <= 0 {
+            return;
+        }
+        let mut g = 0i32;
+        loop {
+            let s = at(file, 4 + (g as u32).wrapping_mul(0x60));
+            let t = g32(h, BTL_POS_TABLE);
+            let rec = at(h.read::<u32>(at(t, 0x30)), (g as u32).wrapping_mul(0x74));
+            let org = at(s, 0x2c);
+            for o in [0u32, 4, 8] {
+                let v = fcopy(h.read(at(org, o)));
+                h.write(at(rec, o), v);
+            }
+            for (from, to) in [(0u32, 0xcu32), (1, 0x54), (2, 0x30), (4, 0x68)] {
+                h.write(at(rec, to), i8_at(h, at(s, from)) as u32);
+            }
+            for o in [0u32, 4, 8] {
+                let v = x87::store(x87::sub(f32_at(h, at(s, 0x3c + o)), f32_at(h, at(org, o))));
+                h.write(at(rec, 0x1c + o), v);
+            }
+            h.write(at(rec, 0x18), i8_at(h, s.wrapping_sub(2)) as u32);
+            if i8_at(h, s) > 0 {
+                for (slot, off) in [(0x28u32, 0xcu32), (0x2c, 0x10)] {
+                    let src = at(file, h.read::<u32>(at(s, off)));
+                    pos_points(h, rec, slot, s, src, Some(org));
+                }
+            }
+            for o in [0u32, 4, 8] {
+                let v = x87::store(x87::sub(f32_at(h, at(s, 0x4c + o)), f32_at(h, at(org, o))));
+                h.write(at(rec, 0x40 + o), v);
+            }
+            h.write(at(rec, 0x3c), i8_at(h, s.wrapping_sub(1)) as u32);
+            if i8_at(h, at(s, 2)) > 0 {
+                for (slot, off) in [(0x4cu32, 0x1cu32), (0x50, 0x20)] {
+                    let src = at(file, h.read::<u32>(at(s, off)));
+                    pos_points(h, rec, slot, at(s, 2), src, Some(org));
+                }
+            }
+            if i8_at(h, at(s, 1)) > 0 {
+                for (slot, off) in [(0x60u32, 0x14u32), (0x64, 0x18)] {
+                    let src = at(file, h.read::<u32>(at(s, off)));
+                    pos_points(h, rec, slot, at(s, 1), src, Some(org));
+                }
+            }
+            let nsub = i8_at(h, at(s, 4));
+            if nsub > 0 {
+                let subs = alloc_clear(h, (nsub.wrapping_mul(0x14)) as u32);
+                h.write(at(rec, 0x70), subs);
+                let mut e = at(file, h.read::<u32>(at(s, 0x24)));
+                let mut k = 0i32;
+                while k < i8_at(h, at(s, 4)) {
+                    let base: u32 = h.read(at(rec, 0x70));
+                    let d = at(base, (k as u32).wrapping_mul(0x14));
+                    for o in 0..3u32 {
+                        h.write(at(d, 4 * o), i8_at(h, at(e, 4 + o)) as u32);
+                    }
+                    if h.read::<i32>(at(d, 8)) > 0 {
+                        let np = i8_at(h, at(e, 6));
+                        let p = cdecl(h, MS_MALLOC_7CF970, &[(np.wrapping_mul(12)) as u32]);
+                        let base: u32 = h.read(at(rec, 0x70));
+                        h.write(
+                            at(base, (k as u32).wrapping_mul(0x14).wrapping_add(0x10)),
+                            p,
+                        );
+                        let np = i8_at(h, at(e, 6));
+                        let base: u32 = h.read(at(rec, 0x70));
+                        let blk: u32 =
+                            h.read(at(base, (k as u32).wrapping_mul(0x14).wrapping_add(0x10)));
+                        cdecl(h, MS_STRUCT_CLEAR, &[blk, (np.wrapping_mul(12)) as u32]);
+                        let mut src = at(file, h.read::<u32>(e));
+                        let mut j = 0i32;
+                        while j < i8_at(h, at(e, 6)) {
+                            for o in [0u32, 4, 8] {
+                                let v = x87::store(x87::sub(
+                                    f32_at(h, at(src, o)),
+                                    f32_at(h, at(org, o)),
+                                ));
+                                let base: u32 = h.read(at(rec, 0x70));
+                                let blk: u32 = h.read(at(
+                                    base,
+                                    (k as u32).wrapping_mul(0x14).wrapping_add(0x10),
+                                ));
+                                h.write(at(blk, (j as u32).wrapping_mul(12).wrapping_add(o)), v);
+                            }
+                            src = at(src, 0x10);
+                            j += 1;
+                        }
+                    }
+                    e = at(e, 0x10);
+                    k += 1;
+                }
+            }
+            g += 1;
+            let t = g32(h, BTL_POS_TABLE);
+            if g >= h.read::<i32>(at(t, 0x1c)) {
+                return;
+            }
+        }
+    }
+
+    // ---- batch 7: the battle debug environment file ----
+
+    /// A value `MsDebugEnvSave` writes: a global (`i8`, `u8`, `u32`) or a
+    /// getter's result.
+    #[derive(Debug, Clone, Copy)]
+    pub enum EnvValue {
+        I8(u32),
+        U8(u32),
+        U32(u32),
+        Call(u32),
+    }
+
+    /// The key table (`.data` `0x00c4_43f0`, 12-byte entries) and the
+    /// writer `MsDebugEnvSave` fills.
+    pub const ENV_KEYS: u32 = 0x00c4_43f0;
+    pub const MS_ENV_FIND_KEY: u32 = 0x007c_f140;
+    pub const MS_ENV_WRITE_TEXT_7CE9F0: u32 = 0x007c_e9f0;
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const SCE_WRITE: u32 = 0x0062_fdc0;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    pub const MALLOC: u32 = 0x00b0_c468;
+    pub const FREE: u32 = 0x00b0_c370;
+    pub const S_ENV_HEADER: u32 = 0x00b5_5c1c;
+    pub const S_ENV_ERROR: u32 = 0x00b5_54f8;
+    pub const S_ENV_WRITTEN: u32 = 0x00b5_54e4;
+
+    /// `MsDebugEnvSave`'s lines in order: (value, key, `"%s\n%d\n"` or
+    /// `"%s\nx%x\n"`).
+    pub const ENV_ROWS: [(EnvValue, u32, u32); 48] = [
+        (EnvValue::I8(0x0112_a8f6), 0x1, 0x00b5_5c3c),
+        (EnvValue::Call(0x007c_5f50), 0x2, 0x00b5_5c44),
+        (EnvValue::I8(0x0112_a905), 0x18, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8e1), 0x3, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8f8), 0x4, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8f9), 0xc, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8f5), 0x5, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8fc), 0x6, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a900), 0xa, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a901), 0xb, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8fa), 0xd, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a8fb), 0xe, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a918), 0x1d, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91c), 0x23, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a914), 0x20, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a902), 0x14, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a903), 0xf, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a922), 0x1a, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a915), 0x1b, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a917), 0x1f, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a908), 0x10, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a909), 0x11, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a90d), 0x21, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a90a), 0x12, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a904), 0x15, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a906), 0x16, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a907), 0x17, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a90b), 0x13, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a90c), 0x19, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a916), 0x1c, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91a), 0x1e, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91b), 0x22, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91d), 0x24, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91e), 0x25, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a91f), 0x26, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a920), 0x27, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a921), 0x28, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a924), 0x29, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a925), 0x2a, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a926), 0x2b, 0x00b5_5c3c),
+        (EnvValue::I8(0x0112_a927), 0x2c, 0x00b5_5c3c),
+        (EnvValue::Call(0x0088_7c30), 0x2d, 0x00b5_5c3c),
+        (EnvValue::U32(0x0231_13e0), 0x2e, 0x00b5_5c3c),
+        (EnvValue::Call(0x0088_7c20), 0x30, 0x00b5_5c3c),
+        (EnvValue::Call(0x0078_51d0), 0x2f, 0x00b5_5c3c),
+        (EnvValue::U8(0x0113_07e8), 0x7, 0x00b5_5c3c),
+        (EnvValue::U8(0x0113_07e9), 0x8, 0x00b5_5c3c),
+        (EnvValue::U8(0x0113_07ea), 0x9, 0x00b5_5c3c),
+    ];
+
+    /// `MsDebugEnvSave(name)`: the battle debug settings written to the
+    /// file `name` (`sceOpen(name, 0x602)`; a 0x1000-byte writer at `ebp -
+    /// 0x118`: buffer `malloc`ed, its line buffer at `ebp - 0x104`): a
+    /// header and per [`ENV_ROWS`] the key's name (`MsEnvFindKey_007cf140`)
+    /// and the value, each appended with `MsEnvWriteText_007ce9f0`; then
+    /// the rest written, the buffer freed and the file closed. Returns -1,
+    /// or 0 (after an error line) when the file doesn't open.
+    pub fn env_save(h: &mut impl Host, ebp: u32, name: u32) -> u32 {
+        let w = ebp.wrapping_sub(0x118);
+        let buf = ebp.wrapping_sub(0x104);
+        let fd = cdecl(h, SCE_OPEN, &[name, 0x602]);
+        h.write(at(w, 8), fd);
+        h.write(at(w, 4), 1u32);
+        h.write(at(w, 0x10), 0x1000u32);
+        let mem = crt(h, MALLOC, &[0x1000]);
+        h.write(w, mem);
+        h.write(at(w, 0xc), 0u32);
+        if (fd as i32) < 0 {
+            dbg(h, S_ENV_ERROR, &[name]);
+            return 0;
+        }
+        sprintf(h, buf, S_ENV_HEADER, &[]);
+        cdecl(h, MS_ENV_WRITE_TEXT_7CE9F0, &[w, buf]);
+        for (v, key, fmt) in ENV_ROWS {
+            let value = match v {
+                EnvValue::I8(s) => i32::from(h.read::<i8>(h.rebase(s))) as u32,
+                EnvValue::U8(s) => u32::from(h.read::<u8>(h.rebase(s))),
+                EnvValue::U32(s) => g32(h, s),
+                EnvValue::Call(f) => cdecl(h, f, &[]),
+            };
+            let keys = h.rebase(ENV_KEYS);
+            let k = cdecl(h, MS_ENV_FIND_KEY, &[keys, key]);
+            sprintf(h, buf, fmt, &[k, value]);
+            cdecl(h, MS_ENV_WRITE_TEXT_7CE9F0, &[w, buf]);
+        }
+        dbg(h, S_ENV_WRITTEN, &[name]);
+        let (fill, fd, mem): (i32, u32, u32) = (h.read(at(w, 0xc)), h.read(at(w, 8)), h.read(w));
+        if fill > 0 && h.read::<u32>(at(w, 4)) != 0 {
+            cdecl(h, SCE_WRITE, &[fd, mem, fill as u32]);
+        }
+        if mem != 0 {
+            crt(h, FREE, &[mem]);
+        }
+        if (fd as i32) > 0 {
+            cdecl(h, SCE_CLOSE, &[fd]);
+        }
+        u32::MAX
     }
 }

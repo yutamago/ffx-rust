@@ -661,4 +661,31 @@ ported! {
         let ebp = fr.at().wrapping_add(0x4c);
         mn::pos_distances(&mut mem(), ebp, group, widths)
     }
+    // ---- round 5 (mbs-static), batch 5 (ffx_menu::m5m_n) ----
+    /// `(model, dst, src, id, actor)`: the position in a frame (the
+    /// original's `ebp - 0x14`).
+    MsDebugChrInfoLine_007dbee0 @ 0x007d_bee0 => extern "C" fn ms_debug_chr_info_line(model: u32, dst: u32, src: u32, id: u32, actor: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x30 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x30);
+        mn::chr_info_line(&mut mem(), ebp, model, dst, src, id, actor)
+    }
+    /// `(i, writer)`: the line buffer in a frame.
+    MsDebugChrMotionSave_007dcf70 @ 0x007d_cf70 => extern "C" fn ms_debug_chr_motion_save(i: u32, writer: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x404 / 4 }>::new();
+        let buf = fr.at();
+        mn::chr_motion_save(&mut mem(), buf, i, writer)
+    }
+    // ---- round 5 (mbs-static), batch 6 (ffx_menu::m5m_n) ----
+    /// `(file)`.
+    MsBtlPosFromFile_007c9450 @ 0x007c_9450 => extern "C" fn ms_btl_pos_from_file(file: u32) {
+        mn::btl_pos_from_file(&mut mem(), file);
+    }
+    // ---- round 5 (mbs-static), batch 7 (ffx_menu::m5m_n) ----
+    /// `(name)`: the writer and the line buffer in a frame (the
+    /// original's `ebp - 0x118..`).
+    MsDebugEnvSave @ 0x007c_d800 => extern "C" fn ms_debug_env_save(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x118 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x118);
+        mn::env_save(&mut mem(), ebp, name)
+    }
 }
