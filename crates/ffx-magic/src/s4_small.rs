@@ -8994,3 +8994,65 @@ pub const LIGHT_OBJECT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A call's word: an immediate or the word at an operand.
+#[derive(Clone, Copy)]
+enum Word {
+    Imm(u32),
+    At(u32),
+}
+
+/// The effect's end (no arguments): slot 694 `(0, 0, 0, 0)`, the motion
+/// `*A` reset (slot 384), states 0x300f off and on (slots 24, 25), the
+/// motions `*B` and `*C` reset, states 0x3010 off and on, slot 211
+/// `(*D, 0)` and `(*E, 0)`, slot 688 `(*F)` and slot 213 `(*F, 0)`. The
+/// first nine calls see the words the earlier ones left, as do the last
+/// three. Returns 0.
+///
+/// `magic_0152` 0x1000c6b0 (237 bytes; 2 DLLs).
+pub fn effect_end_states<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use Word::{At, Imm};
+    // (table operand, slot, words); `None` marks the stack clean-up
+    let calls: [Option<(u32, u32, &[Word])>; 13] = [
+        Some((0x1, 694, &[Imm(0), Imm(0), Imm(0), Imm(0)])),
+        Some((0x16, 384, &[At(0x1c)])),
+        Some((0x29, 24, &[Imm(0x300f), Imm(0)])),
+        Some((0x3a, 25, &[Imm(0x300f), Imm(1)])),
+        Some((0x4b, 384, &[At(0x51)])),
+        Some((0x5e, 384, &[At(0x64)])),
+        Some((0x71, 24, &[Imm(0x3010), Imm(0)])),
+        Some((0x82, 25, &[Imm(0x3010), Imm(1)])),
+        Some((0x93, 211, &[At(0x9b), Imm(0)])),
+        None,
+        Some((0xa8, 211, &[At(0xb9), Imm(0)])),
+        Some((0xc0, 688, &[At(0xc6)])),
+        Some((0xd3, 213, &[At(0xdb), Imm(0)])),
+    ];
+    let f = fr.at;
+    let mut words: Vec<u32> = Vec::new();
+    for call in calls {
+        let Some((table, slot, args)) = call else {
+            words.clear();
+            continue;
+        };
+        let args: Vec<u32> = args
+            .iter()
+            .map(|w| match *w {
+                Imm(x) => x,
+                At(o) => g.read::<u32>(op(img, f, o)),
+            })
+            .collect();
+        words.splice(0..0, args);
+        // call width: up to 17 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (table, slot), &words);
+    }
+    Ret::eax(0)
+}
+
+/// [`effect_end_states`].
+pub const EFFECT_END_STATES: Sig = Sig {
+    len: 237,
+    hash: 0x409e_56b2_5286_d79e,
+    calls: &[],
+    imports: &[],
+};

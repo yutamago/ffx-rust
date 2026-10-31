@@ -1182,6 +1182,7 @@ ports! {
     "count down two objects" => s4_small::COUNT_DOWN_TWO_OBJECTS, s4_small::count_down_two_objects;
     "start part sound at" => s4_small::START_PART_SOUND_AT, s4_small::start_part_sound_at;
     "object model and callbacks" => s4_small::OBJECT_MODEL_AND_CALLBACKS, s4_small::object_model_and_callbacks;
+    "effect end states" => s4_small::EFFECT_END_STATES, s4_small::effect_end_states;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;

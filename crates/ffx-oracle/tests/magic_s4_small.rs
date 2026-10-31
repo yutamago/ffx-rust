@@ -4179,3 +4179,25 @@ fn light_objects() {
         t.check(f, c, &[0x0b0b], Eax::Checked, s4_small::light_object);
     }
 }
+
+#[test]
+fn effect_end_states() {
+    let Some(mut t) = twin(152) else { return };
+    let f = t.at(0xc6b0);
+    recs(
+        &mut t,
+        &[
+            (694, 4),
+            (384, 1),
+            (24, 2),
+            (25, 2),
+            (211, 2),
+            (688, 1),
+            (213, 2),
+        ],
+    );
+    for (i, o) in [0x1c, 0x51, 0x64, 0x9b, 0xb9, 0xc6].into_iter().enumerate() {
+        t.set_u32(op(&t, f, o), 0x0a00_0000 + i as u32);
+    }
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
