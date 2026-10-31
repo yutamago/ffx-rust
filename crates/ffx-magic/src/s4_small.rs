@@ -7599,3 +7599,127 @@ pub const LIGHT_LEVEL: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A summon's model nodes (internal, `ecx` = `[node, parent, a, b]`): a
+/// fresh node under `parent` ([`child_last`]), `+0x4e4` a, `+0x4e0` b,
+/// slot 288 `(b, node + 0x4dc)` gives the targets (their count at
+/// `+0x4dc`); each target's model node (`node + 0x1c + 0x98 i`, its
+/// handler table operand `+0x9a`) is set up
+/// ([`crate::sa_summon::model_node_init`], a record on the frame: the
+/// node, the parent, the target byte, byte 0). Returns the count's
+/// address, or slot 288's answer with no targets.
+///
+/// `magic_0201` 0x10003660 (187 bytes; 3 DLLs).
+pub fn summon_nodes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    child_last(g, n, g.read::<u32>(r + 4));
+    let a = g.read::<u32>(r + 8);
+    g.write::<u32>(n.wrapping_add(0x4e4), a);
+    let b = g.read::<u32>(r + 0xc);
+    let count = n.wrapping_add(0x4dc);
+    g.write::<u32>(n.wrapping_add(0x4e0), b);
+    let list = slot_call(g, img, f, (0x5d, 288), &[b, count]).eax;
+    if g.read::<i32>(count) <= 0 {
+        return Ret::eax(list);
+    }
+    // push ebp; sub esp, 0x1c: the record is [ebp - 0x18]
+    let rec = fr.esp.wrapping_sub(0x1c);
+    let init = img.rel32_target(f + 0x9f);
+    let mut i = 0u32;
+    loop {
+        let node = n.wrapping_add(0x1c + 0x98 * i);
+        let parent = g.read::<u32>(r + 4);
+        let target = u32::from(g.read::<u8>(list.wrapping_add(i)));
+        g.write::<u32>(rec, node);
+        g.write::<u32>(rec + 4, parent);
+        g.write::<u32>(rec + 8, target);
+        g.write::<u8>(rec + 0xc, 0);
+        g.write::<u32>(node, op(img, f, 0x9a));
+        crate::sa_summon::model_node_init(g, img, init, rec);
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(count) {
+            return Ret::eax(count);
+        }
+    }
+}
+
+/// [`summon_nodes`].
+pub const SUMMON_NODES: Sig = Sig {
+    len: 187,
+    hash: 0x09e8_aa5d_fb15_314b,
+    calls: &[(0x9f, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT))],
+    imports: &[],
+};
+
+/// A light node put first in the DLL's light list (internal, `ecx` = the
+/// node; cdecl `(a, -, c)`): its links to itself, the handler table and
+/// callback (operands `+0x10`, `+0x17`), the list's last `*G_LAST`
+/// before it and the list `+0x29`, the list's flag bit 0 cleared and the
+/// node the new last; the DLL's fade (30, 1.0, 5.0 at `+0x47`, `+0x51`,
+/// `+0x5b`) and `c`'s (30, 1.0, 20 at `+0x2c..`); flag bits in two of the
+/// DLL's bytes and `a`'s `+0x34`, `+0x54`; then the node's `+0x1c..+0x2c`
+/// (three of the DLL's blocks, `c`, `a`) and `+0x3c`, `+0x18` 0. Returns
+/// `a`.
+///
+/// `magic_0609` 0x10009bb0 (185 bytes; 2 DLLs).
+pub fn light_link<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let n = fr.ecx;
+    let c = fr.arg(g, 2);
+    let at = |o: u32| n.wrapping_add(o);
+    g.write::<u32>(at(8), n);
+    g.write::<u32>(at(4), n);
+    g.write::<u32>(n, op(img, f, 0x10));
+    g.write::<u32>(at(0x10), op(img, f, 0x17));
+    g.write::<u32>(at(0x14), n);
+    let last = g.read::<u32>(op(img, f, 0x1f));
+    g.write::<u32>(at(8), last);
+    g.write::<u32>(at(4), op(img, f, 0x29));
+    let last = g.read::<u32>(op(img, f, 0x2e));
+    g.write::<u32>(last.wrapping_add(4), n);
+    let flags = op(img, f, 0x37);
+    let v = g.read::<u32>(flags);
+    g.write::<u32>(flags, v & !1);
+    let a = fr.arg(g, 0);
+    g.write::<u32>(op(img, f, 0x41), n);
+    for (o, v) in [
+        (0x47, 0x41f0_0000),
+        (0x51, 0x3f80_0000),
+        (0x5b, 0x40a0_0000),
+    ] {
+        g.write::<u32>(op(img, f, o), v);
+    }
+    for (o, v) in [
+        (0x2c, 0x41f0_0000),
+        (0x30, 0x3f80_0000),
+        (0x34, 0x41a0_0000),
+    ] {
+        g.write::<u32>(c.wrapping_add(o), v);
+    }
+    let or8 = |g: &mut G, at: u32, bits: u8| {
+        let v = g.read::<u8>(at);
+        g.write::<u8>(at, v | bits);
+    };
+    or8(g, op(img, f, 0x7a), 0x18);
+    or8(g, a.wrapping_add(0x34), 0x10);
+    or8(g, op(img, f, 0x85), 1);
+    or8(g, a.wrapping_add(0x54), 1);
+    g.write::<u32>(at(0x1c), op(img, f, 0x91));
+    g.write::<u32>(at(0x20), c);
+    g.write::<u32>(at(0x24), op(img, f, 0x9b));
+    g.write::<u32>(at(0x28), a);
+    g.write::<u32>(at(0x2c), op(img, f, 0xa5));
+    g.write::<u32>(at(0x3c), 0);
+    g.write::<u32>(at(0x18), 0);
+    Ret::eax(a)
+}
+
+/// [`light_link`].
+pub const LIGHT_LINK: Sig = Sig {
+    len: 185,
+    hash: 0x5b47_4ce1_8058_1aa3,
+    calls: &[],
+    imports: &[],
+};

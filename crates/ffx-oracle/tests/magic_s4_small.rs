@@ -3476,3 +3476,51 @@ fn two_children_and_light_levels() {
         t.check(f, Call::this(r), &[], Eax::Checked, s4_small::light_level);
     }
 }
+
+#[test]
+fn summon_nodes_and_light_links() {
+    let Some(mut t) = twin(201) else { return };
+    let f = t.at(0x3660);
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 5, 1]);
+    let count = SCRATCH + 0x94;
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    let (r, n, parent) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x400);
+    for k in [0u32, 2] {
+        t.write(n, &vec![0x66; 0x500]);
+        t.write(parent, &[0; 0x20]);
+        t.set_u32(parent + 0x10, parent);
+        t.set_u32(parent + 0xc, parent);
+        t.set_u32(count, k);
+        for (i, w) in [n, parent, 0xa, 0xb].into_iter().enumerate() {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::summon_nodes);
+    }
+    drop(t);
+    let Some(mut t) = twin(609) else { return };
+    let f = t.at(0x9bb0);
+    let tail = SCRATCH + 0x300;
+    t.write(tail, &[0x77; 0x10]);
+    t.set_u32(op(&t, f, 0x1f), tail);
+    t.set_u32(op(&t, f, 0x2e), tail);
+    let (n, a, c) = (SCRATCH + 0x100, SCRATCH + 0x400, SCRATCH + 0x500);
+    t.write(n, &[0x11; 0x40]);
+    t.write(a, &[0x22; 0x60]);
+    t.write(c, &[0x33; 0x40]);
+    t.check(
+        f,
+        Call::this(n),
+        &[a, 0, c],
+        Eax::Checked,
+        s4_small::light_link,
+    );
+}
