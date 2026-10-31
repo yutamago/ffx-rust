@@ -223,6 +223,13 @@ pub mod m0665;
 pub mod m0666;
 pub mod m0669;
 pub mod m0672;
+pub mod m0680;
+pub mod m0704;
+pub mod m0705;
+pub mod m0706;
+pub mod m0707;
+pub mod m0708;
+pub mod m0709;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -1045,6 +1052,8 @@ ports! {
     "m0666 ring" => m0666::RING, m0666::ring;
     "m0669 frame" => m0669::FRAME, m0669::frame;
     "m0669 draw" => m0669::DRAW, m0669::draw;
+    "m0706 start" => m0706::START, m0706::start;
+    "m0709 start" => m0709::START, m0709::start;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2071,6 +2080,18 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0645 mover", &m0645::MOVER),
     ("m0665 timeline reset", &m0665::TIMELINE_RESET),
     ("m0672 camera reset", &m0672::CAMERA_RESET),
+    ("m0680 task", &m0680::TASK),
+    ("m0704 fade", &m0704::FADE),
+    ("m0704 load", &m0704::LOAD),
+    ("m0705 fade", &m0705::FADE),
+    ("m0705 tint", &m0705::TINT),
+    ("m0705 glow", &m0705::GLOW),
+    ("m0707 start", &m0707::START),
+    ("m0708 fade", &m0708::FADE),
+    ("m0708 rise", &m0708::RISE),
+    ("m0708 bind parts", &m0708::BIND_PARTS),
+    ("m0708 shake", &m0708::SHAKE),
+    ("m0708 place", &m0708::PLACE),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
