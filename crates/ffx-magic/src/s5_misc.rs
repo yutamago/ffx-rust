@@ -7346,3 +7346,126 @@ pub const SPIN_JUMP_LIGHT: Sig = Sig {
     calls: &[(0x38d, Callee::Any)],
     imports: &[(0x2eb, "rand")],
 };
+
+/// Two pool records of a burst at a character (internal: `ecx` = the
+/// character's index in the selection, -1 for `*G_SELF`; `dl` = a byte
+/// for `+0x6b`; `xmm2` = the height; a /GS frame): the character's
+/// position (slot 262, `y` the height, `w` 1), then two records from the
+/// pool ([`pool_take`]; it stops at the first 0), each: `+0x30` slot 719
+/// `(P, 9, n)` (`n` 1, 2), `+0x34 = 1`, halfwords `+0x38 = -1`, `+0x3a =
+/// 0x200`, `+0x0..+0xc` the point with `x`, `y`, `z += frnd(2)`, `+0x10,
+/// +0x14, +0x18` = `frnd(a), frnd(0.1), frnd(a)` (`a` 0.1, then 0.5),
+/// `+0x1c = frnd(pi)`, `+0x20 = +0x10 K`, `+0x24 = 0.01`, `+0x28 = +0x18
+/// K`, `+0x2c = 1.0`, `+0x3c = frnd(0.025) + K2`, `+0x4c` 0x20 then
+/// 0x1b, `+0x50 = 0` and the byte. `frnd` is slot 314 (ST0). Returns its
+/// last `eax` (0 when the pool ran out).
+///
+/// `magic_0434` 0x10008160 (971 bytes; 2 DLLs).
+pub fn burst_records<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let byte = fr.edx as u8;
+    let ch = if fr.ecx == 0xffff_ffff {
+        g.read::<u32>(w(0x20))
+    } else {
+        let sel = g.read::<u32>(w(0x27));
+        let i = u32::from(g.read::<u8>(sel.wrapping_add(fr.ecx)));
+        g.read::<u32>(w(0x32).wrapping_add(4 * i))
+    };
+    let ebp = fr.esp.wrapping_sub(4);
+    let p = ebp.wrapping_sub(0x14);
+    slot_call(g, img, f, (0x44, 262), &[ch, p, p + 4, p + 8]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(p + 4, fr.xmm[2] as u32);
+    let mut eax = 0;
+    // (the 719 table and data, the eight `frnd` tables, the two scales,
+    // the size, `+0x4c`, the program and the `frnd` ranges)
+    for (t719, d, ts, ks, k2, kind, n, a) in [
+        (
+            0x77u32,
+            0x86u32,
+            [0xacu32, 0xf1, 0x116, 0x13c, 0x158, 0x16f, 0x186, 0x1aa],
+            [0x1a5u32, 0x1c3],
+            0x1f1u32,
+            0x20u32,
+            1u32,
+            0x3dcc_cccd_u32,
+        ),
+        (
+            0x21c,
+            0x22b,
+            [0x251, 0x296, 0x2bb, 0x2e1, 0x2fd, 0x314, 0x32b, 0x34f],
+            [0x34a, 0x368],
+            0x396,
+            0x1b,
+            2,
+            0x3f00_0000,
+        ),
+    ] {
+        let r = pool_take(
+            g,
+            img,
+            img.rel32_target(f + if n == 1 { 0x67 } else { 0x20c }),
+        );
+        if r == 0 {
+            return 0;
+        }
+        let v = slot_call(g, img, f, (t719, 719), &[w(d), 9, n]).eax;
+        g.write::<u32>(r + 0x30, v);
+        g.write::<u32>(r + 0x34, 1);
+        g.write::<u16>(r + 0x38, 0xffff);
+        g.write::<u16>(r + 0x3a, 0x200);
+        for i in 0..4 {
+            let x = g.read::<u32>(p + 4 * i);
+            g.write::<u32>(r + 4 * i, x);
+        }
+        let mut frnd = |g: &mut G, t: u32, x: u32| {
+            let out = slot_call(g, img, f, (t, 314), &[x]);
+            eax = out.eax;
+            st0_f32(out)
+        };
+        for (i, o) in [0u32, 4, 8].into_iter().enumerate() {
+            let d = frnd(g, ts[i], 0x4000_0000);
+            let x = add(g.read::<f32>(r + o), d);
+            g.write::<f32>(r + o, x);
+        }
+        for (i, (o, x)) in [
+            (0x10u32, a),
+            (0x14, 0x3dcc_cccd),
+            (0x18, a),
+            (0x1c, 0x4049_0fdb),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let v = frnd(g, ts[3 + i], x);
+            g.write::<f32>(r + o, v);
+        }
+        let x = mul(g.read::<f32>(r + 0x10), k(g, ks[0]));
+        g.write::<u32>(r + 0x24, 0x3c23_d70a);
+        g.write::<f32>(r + 0x20, x);
+        let x = mul(g.read::<f32>(r + 0x18), k(g, ks[1]));
+        g.write::<u32>(r + 0x2c, 0x3f80_0000);
+        g.write::<f32>(r + 0x28, x);
+        let s = add(frnd(g, ts[7], 0x3ccc_cccd), k(g, k2));
+        g.write::<f32>(r + 0x3c, s);
+        g.write::<u32>(r + 0x4c, kind);
+        g.write::<u32>(r + 0x50, 0);
+        g.write::<u8>(r + 0x6b, byte);
+    }
+    eax
+}
+
+/// [`burst_records`] (the `rel32`s: [`pool_take`] twice and
+/// `__security_check_cookie`).
+pub const BURST_RECORDS: Sig = Sig {
+    len: 971,
+    hash: 0x5d3c_d1b3_53a0_0b5c,
+    calls: &[
+        (0x67, Callee::Sig(&POOL_TAKE)),
+        (0x20c, Callee::Sig(&POOL_TAKE)),
+        (0x3c3, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -3386,3 +3386,57 @@ fn spin_jump_lights() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn burst_records_set() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x8160);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32 + (a[0] & 3) as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 719, 3, 0, None);
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.0) / 3.0
+    });
+    t.stub(941, |_, a| 0x0941_0000 ^ a[0]);
+    let take = t.img.rel32_target(f + 0x67);
+    let recs = SCRATCH + 0x2000;
+    t.set_u32(op(&t, take, 0x37), recs);
+    let sel = SCRATCH + 0x700;
+    t.set_u32(op(&t, f, 0x27), sel);
+    t.write(sel, &[3, 1, 0, 2]);
+    let table = op(&t, f, 0x32);
+    for c in 0..4u32 {
+        t.set_u32(table + 4 * c, 0x0cc0_0000 + c);
+    }
+    t.set_u32(op(&t, f, 0x20), 0x0cc0_0010);
+    for (k, (who, n)) in [(0xffff_ffffu32, 4u32), (1, 2), (2, 1), (3, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(op(&t, take, 0x2b), 0);
+        t.set_u32(op(&t, take, 0x08), 0);
+        t.set_u32(op(&t, take, 0x0f), n);
+        for i in 0..n {
+            t.write(recs + 0x74 * i, &varied(0x74, i + n));
+            t.set_u32(recs + 0x74 * i + 0x6c, 0);
+        }
+        let c = Call {
+            ecx: who,
+            edx: 0x1234_5600 + 0x11 * k,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(-2.5 + k as f32)]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::burst_records(g, img, fr))
+        });
+    }
+}
