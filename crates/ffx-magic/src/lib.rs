@@ -2370,6 +2370,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("path step", &s6_misc::PATH_STEP),
     ("node release", &s6_misc::NODE_RELEASE),
     ("parts axes", &s6_misc::PARTS_AXES),
+    ("thrown effect (plain)", &s6_misc::THROWN_EFFECT_PLAIN),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

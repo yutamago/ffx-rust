@@ -2012,3 +2012,130 @@ pub const PARTS_AXES: Sig = Sig {
     calls: &[(0xd9, Callee::Any)],
     imports: &[],
 };
+
+/// [`thrown_effect`](crate::s5_misc::thrown_effect) without the model
+/// switch (internal: `ecx` = the object, `edx` = the user's record,
+/// `xmm2` = a size; an aligned frame): the task node (vtable `VT`,
+/// callback `CB`) appended after `*G_TAIL` (the list `S`, bit 0 of `*G_F`
+/// cleared); the nodes `+0x120` and `+0x14c` on the DLL's list
+/// ([`list_push`]), the first's point `+0x13c` the option point 0x11 of
+/// `rec+0x54` (slot 268, `w` 1.0); `+0x168..+0x170 = 1.0`, `+0x174 = size
+/// K`; the node `+0x178` inserted ([`node_insert`]: `(node, L, Q, +0x120,
+/// Q2, +0x14c)`), the particle `+0x20` ([`particle_node`]: `(p, P,
+/// +0x178, *G_O, Q3, 1)`, `p[0] = VT2`), the effect node `+0x2d8`
+/// ([`effect_node`], vtable `VT3`, `+0x2c |= 1`, `+0x30 = 0`); `+0x13c`,
+/// `+0x140`, `+0x144` moved by `(frnd - K1) K2 - K3` each (slot 307,
+/// ST0); `+0x2d4 = rec`, `+0x2c4`, `+0x2cc`, `+0x2d0` cleared and
+/// `+0x2c8` the size. Returns `rec`.
+///
+/// `magic_0425` 0x10006aa0 (769 bytes; 3 DLLs).
+#[allow(clippy::too_many_lines)] // the original's nodes, one by one
+pub fn thrown_effect_plain<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let (obj, rec) = (fr.ecx, fr.edx);
+    let size = fr.xmm[2] as u32;
+    let top = fr.esp.wrapping_sub(4) & !7;
+    g.write::<u32>(top.wrapping_sub(0x24), size);
+    g.write::<u32>(obj + 8, obj);
+    g.write::<u32>(obj + 4, obj);
+    g.write::<u32>(obj, w(0x1c));
+    g.write::<u32>(obj + 0x10, w(0x23));
+    g.write::<u32>(obj + 0x14, obj);
+    let tail = g.read::<u32>(w(0x2b));
+    g.write::<u32>(obj + 8, tail);
+    g.write::<u32>(obj + 4, w(0x35));
+    let tail = g.read::<u32>(w(0x3a));
+    g.write::<u32>(tail.wrapping_add(4), obj);
+    let fl = g.read::<u32>(w(0x49)) & !1;
+    g.write::<u32>(w(0x49), fl);
+    g.write::<u32>(w(0x50), obj);
+    let first = obj.wrapping_add(0x120);
+    list_push(
+        g,
+        img,
+        f,
+        first,
+        [0x63, 0x6a, 0x6f, 0x77, 0x80, 0x88, 0x94, 0xa5, 0xac],
+    );
+    g.write::<u32>(top.wrapping_sub(0x1c), rec);
+    let pt = obj.wrapping_add(0x13c);
+    let h = g.read::<u32>(rec.wrapping_add(0x54));
+    slot(g, img, f, 0x99, 268, &[h, 0x11, pt]);
+    g.write::<u32>(pt + 0xc, 0x3f80_0000);
+    let second = obj.wrapping_add(0x14c);
+    list_push(
+        g,
+        img,
+        f,
+        second,
+        [0xdc, 0xe3, 0xe8, 0xf0, 0xf5, 0xfd, 0x109, 0x11d, 0x123],
+    );
+    let s = mul(f32::from_bits(size), k(g, 0x117));
+    let group = top.wrapping_sub(0x18);
+    g.write::<u32>(group + 0x14, second);
+    for o in [0x168u32, 0x16c, 0x170] {
+        g.write::<u32>(obj + o, 0x3f80_0000);
+    }
+    g.write::<f32>(obj + 0x174, s);
+    let node = obj.wrapping_add(0x178);
+    for (i, v) in (0u32..).zip([node, w(0x163), w(0x16b), first, w(0x177)]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    let callee = |at: u32| Frame {
+        at,
+        esp: top.wrapping_sub(0x34),
+        ecx: group,
+        ..*fr
+    };
+    node_insert(g, img, &callee(img.rel32_target(f + 0x17c)));
+    let o = g.read::<u32>(w(0x181));
+    let part = obj.wrapping_add(0x20);
+    g.write::<u32>(group, part);
+    g.write::<u32>(part, w(0x18e));
+    for (i, v) in (1u32..).zip([w(0x19a), node, o, w(0x1aa), 1]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    particle_node(g, img, img.rel32_target(f + 0x1b7), group);
+    let en = obj.wrapping_add(0x2d8);
+    for (i, v) in (0u32..).zip([en, w(0x1cd), w(0x1d5), first, w(0x1e1), 0]) {
+        g.write::<u32>(group + 4 * i, v);
+    }
+    effect_node(g, img, img.rel32_target(f + 0x1ee), group);
+    let n = g.read::<u32>(group);
+    g.write::<u32>(n, w(0x1f8));
+    let fl = g.read::<u32>(en + 0x2c) | 1;
+    g.write::<u32>(en + 0x2c, fl);
+    g.write::<u32>(en + 0x30, 0);
+    let moved = |g: &mut G, t: u32, ks: [u32; 3]| {
+        let r = crate::m0018::st0_f32(slot(g, img, f, t, 307, &[]).st0);
+        sub(mul(sub(r, k(g, ks[0])), k(g, ks[1])), k(g, ks[2]))
+    };
+    let d = moved(g, 0x1fd, [0x222, 0x22f, 0x237]);
+    g.write::<f32>(obj + 0x13c, add(d, g.read::<f32>(obj + 0x13c)));
+    let d = moved(g, 0x227, [0x261, 0x26e, 0x276]);
+    g.write::<f32>(obj + 0x140, add(d, g.read::<f32>(obj + 0x140)));
+    let d = moved(g, 0x266, [0x2a0, 0x2c6, 0x2d8]);
+    let rec = g.read::<u32>(top.wrapping_sub(0x1c));
+    g.write::<u32>(obj + 0x2d4, rec);
+    for o in [0x2c4u32, 0x2cc, 0x2d0] {
+        g.write::<u32>(obj + o, 0);
+    }
+    g.write::<f32>(obj + 0x144, add(d, g.read::<f32>(obj + 0x144)));
+    g.write::<u32>(obj + 0x2c8, g.read::<u32>(top.wrapping_sub(0x24)));
+    rec
+}
+
+/// [`thrown_effect_plain`] (the `rel32`s: [`node_insert`],
+/// [`particle_node`] and [`effect_node`]).
+pub const THROWN_EFFECT_PLAIN: Sig = Sig {
+    len: 769,
+    hash: 0xe2d1_9650_e39b_e587,
+    calls: &[
+        (0x17c, Callee::Sig(&INSERT)),
+        (0x1b7, Callee::Sig(&PARTICLE_NODE)),
+        (0x1ee, Callee::Sig(&EFFECT_NODE)),
+    ],
+    imports: &[],
+};

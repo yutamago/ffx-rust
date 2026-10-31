@@ -1462,3 +1462,61 @@ fn parts_axes_turned() {
         });
     }
 }
+
+/// Row 432: `magic_0425`'s thrown effect without the model switch, the
+/// DLL's lists empty and not.
+#[test]
+fn thrown_effects_plain() {
+    let Some(mut t) = twin(425) else { return };
+    let f = t.at(0x6aa0);
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 307, 0, 0, None);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(k % 5) * 0.25
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0]);
+    let pn = t.img.rel32_target(f + 0x1b7);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec_mem(&mut t, 941, 1, 0, None);
+    t.stub(941, move |_, _| table);
+    rec_mem(&mut t, 714, 5, 0, None);
+    rec_mem(&mut t, 325, 2, 4, Some(0));
+    let start = t.img.rel32_target(pn + 0x88);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+    // the size's scale: one that is not 1
+    t.set_u32(op(&t, f, 0x117), 1.5f32.to_bits());
+    let obj = SCRATCH + 0x1000;
+    let rec_ = SCRATCH + 0x600;
+    let (last, sentinel) = (op(&t, f, 0x6f), op(&t, f, 0x63));
+    for (k, listed) in [false, true, false].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(obj, &varied(0x340, k));
+        t.write(rec_, &varied(0x60, k + 1));
+        t.write(SCRATCH + 0x900, &varied(0x80, k + 4));
+        t.set_u32(op(&t, f, 0x181), SCRATCH + 0x900);
+        t.set_u32(op(&t, f, 0x2b), SCRATCH + 0x580);
+        t.set_u32(op(&t, f, 0x49), 0xffff_0003 ^ k);
+        t.write(sentinel - 0x10, &varied(0x2c, k + 9));
+        t.set_u32(sentinel + 0x18, 0);
+        t.set_u32(last, if listed { SCRATCH + 0x500 } else { sentinel });
+        let plist = op(&t, f, 0x19a);
+        t.write(plist, &varied(0x1c, k + 2));
+        t.set_u32(plist + 0x10, if listed { SCRATCH + 0x540 } else { plist });
+        let c = Call {
+            ecx: obj,
+            edx: rec_,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(2.5 + k as f32)]);
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::thrown_effect_plain(g, img, fr))
+        });
+    }
+}
