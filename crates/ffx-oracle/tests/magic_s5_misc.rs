@@ -66,7 +66,7 @@ fn rec_mem(t: &mut Twin, slot: u32, n: usize, words: u32, fill: Option<usize>) {
         m.w32(base, k + 1);
         let row = base + 4 + 0x100 * (k % 8);
         let mut at = row;
-        for &x in &a[..n] {
+        for &x in &a[..n.min(a.len())] {
             m.w32(at, x);
             at += 4;
             if followable(x) {
@@ -89,6 +89,28 @@ fn rec_mem(t: &mut Twin, slot: u32, n: usize, words: u32, fill: Option<usize>) {
     });
 }
 
+/// [`rec`] that also records the word at `lock` (a game lock the
+/// original holds around the call) in the row's last word.
+fn rec_lock(
+    t: &mut Twin,
+    slot: u32,
+    n: usize,
+    lock: u32,
+    ret: impl Fn(&mut dyn StubMem, &[u32]) -> u32 + 'static,
+) {
+    let row = SCRATCH + 0x2_0000 + 0x80 * (slot % 0x400);
+    t.stub(slot, move |m, a| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        for (i, w) in (0u32..).zip(&a[..n]) {
+            m.w32(row + 4 + 4 * i, *w ^ k);
+        }
+        let held = m.r32(lock);
+        m.w32(row + 0x7c, held ^ k);
+        ret(m, a)
+    });
+}
+
 /// Answers of slot 261 (`AtelGetEffectFlag`): the word at `FLAGS + 4 * flag`.
 const FLAGS: u32 = SCRATCH + 0x3000;
 
@@ -96,10 +118,13 @@ const FLAGS: u32 = SCRATCH + 0x3000;
 fn wot_frames() {
     let Some(mut t) = twin(662) else { return };
     let f = t.at(0x16c0);
-    recs(
-        &mut t,
-        &[(723, 1), (724, 2), (377, 4), (381, 2), (376, 1), (214, 3)],
-    );
+    recs(&mut t, &[(723, 1), (724, 2), (381, 2), (376, 1), (214, 3)]);
+    let once = op(&t, f, 0x7d);
+    rec(&mut t, 377, 4, move |m, _| {
+        // the game may count the effect itself: the increment rereads it
+        m.w32(once, 0x0377_0005);
+        0x0377_0001
+    });
     rec(&mut t, 302, 3, |_, _| 0x1234_5678);
     rec(&mut t, 261, 1, |m, a| m.r32(FLAGS + 4 * (a[0] & 0xff)));
     rec(&mut t, 1001, 1, |_, a| a[0]);
@@ -156,6 +181,8 @@ fn facing_scales() {
     rec_mem(&mut t, 231, 3, 16, Some(0));
     rec_mem(&mut t, 282, 0, 0, None);
     let obj = SCRATCH + 0x400;
+    // (no case without a float: Unicorn stores 0 for `fstp` from an empty
+    // x87 stack, where the CPU stores the indefinite the port uses)
     for depth in [2.5f64, 0.1, -3.0, 0.0] {
         t.stub_st0(282, move |_, _| depth);
         t.write(obj, &varied(0x100, depth.to_bits() as u32));
@@ -226,7 +253,10 @@ fn targets_starts() {
     let f = t.at(0x1330);
     recs(&mut t, &[(268, 3), (714, 5), (325, 2)]);
     rec(&mut t, 367, 3, |m, a| {
-        m.w32(a[2], a[1].wrapping_mul(0x0101_0103));
+        // the status local keeps the entry's ecx when the slot leaves it
+        if a[1] & 1 != 0 {
+            m.w32(a[2], a[1].wrapping_mul(0x0101_0103));
+        }
         0x367
     });
     rec(&mut t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
@@ -243,6 +273,9 @@ fn targets_starts() {
             t.set_u32(op(&t, f, o), SCRATCH + 0x780 + o / 4 * 4 % 0x40);
         }
         t.set_u32(op(&t, f, 0x31), ids);
+        for i in 0..4u32 {
+            t.set_u8(ids + i, (i * 3 + 1) as u8);
+        }
         t.set_u32(op(&t, f, 0x5), n);
         let c = Call {
             ecx: 0x0ecc_0ecc,
@@ -299,6 +332,7 @@ fn camera_rect_tasks() {
         (2, 0),
         (0x2710, 0),
         (0x2711, 2),
+        (0x2711, 1),
         (0x2711, 0),
         (0x2711, 0xffff_ffff),
         (0x2712, 0),
@@ -401,9 +435,20 @@ fn rising_parts() {
         &[(325, 2), (258, 1), (231, 3), (230, 2), (713, 1), (714, 5)],
     );
     let answer = SCRATCH + 0x7e0;
-    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    // the run and the free change the game's current part (`*G_P`)
+    rec_lock(&mut t, 712, 2, SCRATCH + 0x7c4, move |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0712_0712);
+        m.r32(answer)
+    });
+    rec(&mut t, 713, 1, |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0713_0713);
+        0x713
+    });
     let table = SCRATCH + 0x700;
-    rec(&mut t, 941, 2, move |_, _| table);
+    rec(&mut t, 941, 2, move |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0941_0941);
+        table
+    });
     let start = t.img.rel32_target(f + 0x111);
     t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f0);
     let obj = SCRATCH + 0x1000;
@@ -416,7 +461,10 @@ fn rising_parts() {
         (0, 1, 0x8000),
     ] {
         t.write(obj, &varied(0x100, ended + fade));
+        t.set_u32(obj + 0x44, (1.5f32 + fade as f32).to_bits());
         t.write(table, &varied(0x40, life.into()));
+        t.write(SCRATCH + 0x7a0, &varied(0x20, fade));
+        t.write(SCRATCH + 0x7c8, &varied(0x18, ended));
         t.set_u16(obj + 0x76, life);
         t.set_u32(answer, ended);
         for o in [0x5cu32, 0x67, 0x73, 0x86] {
@@ -503,6 +551,10 @@ fn host_starts_523() {
             ],
         );
         let table = op(&t, f, 0xe9);
+        // the index is the block's first word (slot 168's answer, a
+        // pointer here): G_T's words there
+        let at = table.wrapping_add(SCRATCH.wrapping_add(0x1000).wrapping_mul(4));
+        t.write(at.wrapping_sub(0x10), &varied(0x30, 7));
         host_runs(&mut t, f, 0x149, move |t, n| {
             t.set_u32(op(t, f, 0xc7), (n << shift) ^ (1 << (shift + 1)));
             t.set_u32(op(t, f, 0xe2), n % 3);
@@ -652,14 +704,22 @@ fn host_starts_facing() {
 fn model_draws() {
     let Some(mut t) = twin(563) else { return };
     let f = t.at(0x2060);
-    recs(
-        &mut t,
-        &[(723, 3), (724, 1), (231, 3), (819, 4), (870, 6), (871, 5)],
-    );
+    recs(&mut t, &[(723, 3), (724, 1), (231, 3)]);
+    for (s, n) in [(819u32, 4usize), (870, 6), (871, 5)] {
+        rec_lock(&mut t, s, n, SCRATCH + 0x7f0, move |m, a| {
+            // the record's model word (`+0x1c`) as the callee sees it
+            let r = a[2];
+            if (STACK_TOP - STACK_LEN..STACK_TOP).contains(&r) {
+                m.r32(r + 0x1c) ^ (s << 16)
+            } else {
+                s << 16
+            }
+        });
+    }
     rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
     let ready = SCRATCH + 0x7e0;
-    rec(&mut t, 773, 2, move |m, _| m.r32(ready));
+    rec_lock(&mut t, 773, 2, SCRATCH + 0x7f0, move |m, _| m.r32(ready));
     let lock = SCRATCH + 0x7f0;
     let b = SCRATCH + 0x4000;
     for r in [0u32, 1, 0x100] {
@@ -714,6 +774,11 @@ fn four_part_tasks() {
             t.set_u32(rec_at + 0x1c + 4 * i, parts + 0x100 * i);
         }
         t.set_u32(parts + 0x400 + 0x30, 2.5f32.to_bits());
+        for part in [2u32, 3] {
+            for o in [0x34u32, 0x54, 0x58] {
+                t.set_u8(parts + 0x100 * part + o, 0x80);
+            }
+        }
         t.set_u32(node + 4, SCRATCH + 0x700);
         t.set_u32(node + 8, SCRATCH + 0x740);
         t.set_u32(rec_at + 0x18, state);
@@ -739,9 +804,20 @@ fn moving_parts() {
         ],
     );
     let answer = SCRATCH + 0x7e0;
-    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    // the run and the free change the game's current part (`*G_P`)
+    rec_lock(&mut t, 712, 2, SCRATCH + 0x7c4, move |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0712_0712);
+        m.r32(answer)
+    });
+    rec(&mut t, 713, 1, |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0713_0713);
+        0x713
+    });
     let table = SCRATCH + 0x700;
-    rec(&mut t, 941, 2, move |_, _| table);
+    rec(&mut t, 941, 2, move |m, _| {
+        m.w32(SCRATCH + 0x7c0, 0x0941_0941);
+        table
+    });
     let start = t.img.rel32_target(f + 0x10a);
     t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f0);
     let obj = SCRATCH + 0x1000;
@@ -752,7 +828,10 @@ fn moving_parts() {
         (5, 2, 0x88),
     ] {
         t.write(obj, &varied(0x100, ended + fade));
+        t.set_u32(obj + 0x44, (1.5f32 + fade as f32).to_bits());
         t.write(table, &varied(0x40, life.into()));
+        t.write(SCRATCH + 0x7a0, &varied(0x20, fade));
+        t.write(SCRATCH + 0x7c8, &varied(0x18, ended));
         t.set_u16(obj + 0x76, life);
         t.set_u32(answer, ended);
         for o in [0x55u32, 0x60, 0x6c, 0x7f] {
@@ -791,14 +870,15 @@ fn thickness_margins() {
 fn ppp_effect_setups() {
     let Some(mut t) = twin(292) else { return };
     let f = t.at(0x1240);
-    recs(&mut t, &[(718, 1), (222, 5), (711, 11), (710, 12)]);
+    recs(&mut t, &[(718, 1), (222, 5), (710, 12)]);
+    rec_lock(&mut t, 711, 11, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
     let data = SCRATCH + 0x800;
     rec(&mut t, 719, 8, move |_, _| data);
     rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
     let lock = SCRATCH + 0x7f0;
     for k in 0..2u32 {
         t.write(data, &varied(0x40, k));
-        t.write(op(&t, f, 0x118), &varied(0x110, k + 5));
+        t.write(op(&t, f, 0x118), &varied(0x120, k + 5));
         t.set_u32(op(&t, f, 0x74), lock);
         t.set_u32(lock, 0x0bad_0000 + k);
         t.set_u32(op(&t, f, 0xa6), 0x0a6a_6a00 + k);
@@ -810,14 +890,15 @@ fn ppp_effect_setups() {
 fn ppp_effect_setups_6() {
     let Some(mut t) = twin(662) else { return };
     let f = t.at(0x14b0);
-    recs(&mut t, &[(718, 1), (711, 7), (710, 11)]);
+    recs(&mut t, &[(718, 1), (710, 11)]);
+    rec_lock(&mut t, 711, 7, SCRATCH + 0x7f0, |_, a| 0x0711_0000 ^ a[0]);
     let data = SCRATCH + 0x800;
     rec(&mut t, 719, 4, move |_, _| data);
     rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
     let lock = SCRATCH + 0x7f0;
     for k in 0..2u32 {
         t.write(data, &varied(0x40, k));
-        t.write(op(&t, f, 0x11e), &varied(0x110, k + 5));
+        t.write(op(&t, f, 0x11e), &varied(0x120, k + 5));
         t.set_u32(op(&t, f, 0x7d), lock);
         t.set_u32(lock, 0x0bad_0000 + k);
         t.check_entry(f, Call::default(), &[0x0662_0000 + k], Eax::Checked);
@@ -1178,7 +1259,7 @@ fn effect_ends_shown() {
     rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
     rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
     t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
-    rec(&mut t, 779, 4, |_, _| 0x779);
+    rec_lock(&mut t, 779, 4, SCRATCH + 0x7f0, |_, _| 0x779);
     rec(&mut t, 574, 0, |_, _| 0x574);
     let s = SCRATCH + 0x4000;
     let lock = SCRATCH + 0x7f0;
@@ -1268,8 +1349,19 @@ fn angle_keys_sampled() {
 
 #[test]
 fn summon_ppp_starts() {
-    let Some(mut t) = twin(342) else { return };
-    let f = t.at(0x71b0);
+    for (dll, rva) in [
+        (342u16, 0x71b0u32),
+        (411, 0x75e0),
+        (272, 0x7130),
+        (71, 0x91f0),
+    ] {
+        summon_ppp_in(dll, rva);
+    }
+}
+
+fn summon_ppp_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let ti = t.img.rel32_target(f + 0x8);
     let statics = t.img.rel32_target(ti + 0xe0);
     let root = op(&t, statics, 0x10d);
@@ -1305,6 +1397,9 @@ fn summon_ppp_starts() {
         t.write(SCRATCH + 0x7a0, &varied(0x10, count));
         t.set_u32(op(&t, f, 0x15a), SCRATCH + 0x7a0);
         t.set_u32(op(&t, f, 0x197), 0xffff_ff0f + count);
+        if dll == 71 {
+            t.set_u32(op(&t, f, 0x1b2), 0x1b2);
+        }
         t.check_entry(f, Call::default(), &[0x0342_0040 + count], Eax::Checked);
     }
 }
@@ -1439,7 +1534,7 @@ fn root_point_parts() {
     rec_mem(&mut t, 325, 2, 4, Some(0));
     rec_mem(&mut t, 230, 2, 16, Some(0));
     let answer = SCRATCH + 0x7e0;
-    t.stub(712, move |m, _| m.r32(answer));
+    rec_lock(&mut t, 712, 2, SCRATCH + 0x7f0, move |m, _| m.r32(answer));
     let obj = SCRATCH + 0x1000;
     let lock = SCRATCH + 0x7f0;
     for (alt, ran) in [(0u32, 0u32), (1, 1), (2, 0)] {
@@ -1458,8 +1553,14 @@ fn root_point_parts() {
 
 #[test]
 fn summon_ppp_starts_stream() {
-    let Some(mut t) = twin(186) else { return };
-    let f = t.at(0x8230);
+    for (dll, rva) in [(186u16, 0x8230u32), (173, 0x7170)] {
+        summon_ppp_stream_in(dll, rva);
+    }
+}
+
+fn summon_ppp_stream_in(dll: u16, rva: u32) {
+    let Some(mut t) = twin(dll) else { return };
+    let f = t.at(rva);
     let ti = t.img.rel32_target(f + 0x8);
     let statics = t.img.rel32_target(ti + 0xe0);
     let root = op(&t, statics, 0x10d);
@@ -1534,5 +1635,190 @@ fn spark_pairs_started() {
             &[],
             Eax::Checked,
         );
+    }
+}
+
+#[test]
+fn three_points_eased() {
+    let Some(mut t) = twin(511) else { return };
+    let f = t.at(0x5200);
+    let s = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x5), s);
+    for counts in [[5u32, 0, 1], [0, 0xffff_fff0, 30], [100, 2, 0]] {
+        t.write(s + 0x1900, &varied(0x980, counts[0]));
+        for i in 0..8u32 {
+            t.set_u32(s + 0x1a70 + 4 * i, (0.5 + i as f32).to_bits());
+            t.set_u32(s + 0x1aa0 + 4 * i, (-2.0 + i as f32 * 0.75).to_bits());
+        }
+        for (i, c) in (0u32..).zip(counts) {
+            t.set_u32(s + 0x2268 + 4 * i, c);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn arc_carries() {
+    let Some(mut t) = twin(52) else { return };
+    let f = t.at(0x1890);
+    rec_mem(&mut t, 262, 4, 0, None);
+    t.stub(262, |m, a| {
+        for (i, v) in [1.5f32, -2.0, 3.25].into_iter().enumerate() {
+            m.w32(a[1 + i], v.to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 333, 1, 0, None);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 328, 3, 16, Some(0));
+    rec_mem(&mut t, 329, 3, 16, Some(0));
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 248, 3, 4, Some(0));
+    for (s, n) in [(255u32, 2usize), (11, 1), (32, 3), (33, 4)] {
+        rec_mem(&mut t, s, n, 4, None);
+    }
+    let place = t.img.rel32_target(f + 0x25);
+    let sel = SCRATCH + 0x700;
+    t.set_u8(sel, 2);
+    t.set_u32(op(&t, f, 0x39), sel);
+    t.set_u32(op(&t, f, 0x61), sel);
+    for i in 0..4 {
+        t.set_u32(op(&t, f, 0x4f) + 4 * i, 0x0dd0_0000 + i);
+    }
+    for (timer, turn) in [(15u32, 0.5f64), (40, -3.0), (65, 2.0), (66, 1.0), (16, 6.0)] {
+        t.stub_st0(333, move |_, _| turn);
+        t.set_u32(op(&t, f, 0x13), timer);
+        t.set_u32(op(&t, place, 0x02), timer & 1);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn objects_started_around() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x2180);
+    rec_mem(&mut t, 262, 4, 0, None);
+    t.stub(262, |m, a| {
+        for (i, v) in [1.5f32, -2.0, 3.25].into_iter().enumerate() {
+            m.w32(a[1 + i], v.to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) - 3.0) / 3.0
+    });
+    let soa = t.img.rel32_target(f + 0xb3);
+    t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
+    t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x300);
+    t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |m, a| {
+        m.w32(SCRATCH + 0x900, a[0]);
+        SCRATCH + 0x400
+    });
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = op(&t, pa, 0x04);
+    let nodes = op(&t, pa, 0x27) - 8;
+    let sel = SCRATCH + 0x700;
+    t.set_u8(sel, 1);
+    t.set_u32(op(&t, f, 0x11), sel);
+    t.set_u32(op(&t, f, 0x1d) + 4, 0x0cc0_0001);
+    let base = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x23), base);
+    for count in [16u16, 3] {
+        for i in 0..16 {
+            t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+            t.set_u32(nodes + 12 * i + 8, 0);
+        }
+        t.set_u16(free, count);
+        t.write(base + 0x11d0, &varied(0x980, u32::from(count)));
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn tasks_scattered() {
+    let Some(mut t) = twin(356) else { return };
+    let f = t.at(0x1580);
+    rec_mem(&mut t, 463, 3, 16, Some(2));
+    rec_mem(&mut t, 488, 1, 0, None);
+    rec_mem(&mut t, 489, 1, 0, None);
+    t.stub_st0(488, |_, a| f64::from(a[0] & 0xf) * 0.5 + 0.25);
+    t.stub_st0(489, |_, a| f64::from(a[0] & 0xf) * -0.75 + 2.0);
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 458, 3, 0, None);
+    rec_mem(&mut t, 450, 2, 0, None);
+    rec_mem(&mut t, 449, 2, 0, None);
+    let task = SCRATCH + 0x1000;
+    let holder = SCRATCH + 0x700;
+    t.set_u32(op(&t, f, 0x11), holder);
+    for m in [0x0463_0001u32, 0x0463_0007] {
+        t.set_u32(holder + 0x1a0, m);
+        t.write(task, &varied(0x140, m));
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+#[test]
+fn throws_aimed() {
+    let Some(mut t) = twin(178) else { return };
+    let f = t.at(0x5e20);
+    let args = SCRATCH + 0x300;
+    let node = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x1400;
+    let to = SCRATCH + 0x1800;
+    let out = SCRATCH + 0x1900;
+    for (k, (target, grav, flag, limit)) in [
+        ([1.0f32, 3.0, 2.0], 1.0f32, 0u32, 0.5f32),
+        ([4.0, -2.0, 1.0], 0.5, 1, 0.0),
+        ([0.0, 50.0, 0.0], 2.0, 0, 0.0),
+        ([2.0, 1.0, 2.0], -0.5, 1, 1.0),
+        ([2.0, 1.0, 2.0], 1.0, 0, 100.0),
+        ([3.0, 0.0, -1.0], 0.25, 1, -1.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(node, &varied(0x80, k));
+        t.write(parent, &varied(0x40, k + 1));
+        for i in 0..3u32 {
+            t.set_u32(parent + 0x1c + 4 * i, (0.5 * i as f32 - 0.25).to_bits());
+        }
+        for (i, v) in (0u32..).zip(target) {
+            t.set_u32(to + 4 * i, v.to_bits());
+        }
+        t.set_u32(
+            parent + 0x10,
+            if k % 2 == 0 { parent } else { SCRATCH + 0x1500 },
+        );
+        let words = [
+            node,
+            parent,
+            to,
+            0x0a0a_0000 + k,
+            grav.to_bits(),
+            flag,
+            limit.to_bits(),
+            out,
+        ];
+        for (i, v) in (0u32..).zip(words) {
+            t.set_u32(args + 4 * i, v);
+        }
+        t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }

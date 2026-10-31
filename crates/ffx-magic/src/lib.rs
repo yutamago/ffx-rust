@@ -1267,6 +1267,15 @@ ports! {
     "root point part" => s5_misc::ROOT_POINT_PART, s5_misc::root_point_part;
     "summon ppp start (stream)" => s5_misc::SUMMON_PPP_START_STREAM, s5_misc::summon_ppp_start_stream;
     "spark pairs" => s5_misc::SPARK_PAIRS, s5_misc::spark_pairs;
+    "summon ppp start (stream 1)" => s5_misc::SUMMON_PPP_START_STREAM_1, s5_misc::summon_ppp_start_stream_1;
+    "summon ppp start (kind 3)" => s5_misc::SUMMON_PPP_START_K3, s5_misc::summon_ppp_start_k3;
+    "summon ppp start (big env)" => s5_misc::SUMMON_PPP_START_BIG, s5_misc::summon_ppp_start_big;
+    "summon ppp start (flag)" => s5_misc::SUMMON_PPP_START_FLAG, s5_misc::summon_ppp_start_flag;
+    "three points ease" => s5_misc::THREE_POINTS_EASE, s5_misc::three_points_ease;
+    "arc carry" => s5_misc::ARC_CARRY, s5_misc::arc_carry;
+    "objects around" => s5_misc::OBJECTS_AROUND, s5_misc::objects_around;
+    "task scatter" => s5_misc::TASK_SCATTER, s5_misc::task_scatter;
+    "throw aim" => s5_misc::THROW_AIM, s5_misc::throw_aim;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
