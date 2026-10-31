@@ -3246,3 +3246,79 @@ fn left2_release_input_map_matches_the_original() {
         t.reset();
     }
 }
+
+/// A circular `{next, prev}` list at `head` with `n` nodes (0x20 bytes);
+/// node `i`'s `+0x18` is `down(i)`.
+fn touch_list(t: &mut Twins, head: u32, n: u32, down: impl Fn(u32) -> u32) -> Vec<u32> {
+    let mut all = vec![head];
+    for i in 0..n {
+        let node = t.zeros(0x20);
+        t.w32(node + 0x18, down(i));
+        all.push(node);
+    }
+    for i in 0..all.len() {
+        t.w32(all[i], all[(i + 1) % all.len()]);
+        t.w32(all[i] + 4, all[(i + all.len() - 1) % all.len()]);
+    }
+    all
+}
+
+#[test]
+fn left2_touch_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::TOUCH_LOCK[0], true, 0, 0, 0x11);
+        t.stub(l2::TOUCH_LOCK[1], true, 0, 0, 0x12);
+        for (active, pending, free) in [
+            (0u32, 0u32, 0u32),
+            (3, 0, 1),
+            (0, 2, 0),
+            (4, 3, 2),
+            (1, 1, 0),
+        ] {
+            let mut words = vec![0u32; 7];
+            words[6] = 0;
+            let dev = t.object(&words, &[]);
+            let this = t.junk(0x190, 9);
+            // the device object: its vtable from `dev`
+            let vt = t.r32(dev);
+            t.w32(this, vt);
+            touch_list(&mut t, this + 0x164, active, |i| i % 3);
+            touch_list(&mut t, this + 0x16c, pending, |i| i + 1);
+            touch_list(&mut t, this + 0x174, free, |_| 0);
+            let what =
+                format!("{label}: touch update active {active} pending {pending} free {free}");
+            t.check(&what, 0x0062_de50, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::touch_update(g, this))
+            });
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_particle_system_ctor_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for flags in [0u32, 0x80, 0xffff_ff7f] {
+            // the sampler's constructor leaves its flags word as given
+            let mut pre = vec![0xc7, 0x41, 0x1c];
+            pre.extend(flags.to_le_bytes()); // mov dword [ecx+0x1c], flags
+            let s = t.stub_code(l2::PARTICLE_CALLS[1], true, 0, 0, 0);
+            let mut c = pre;
+            let at = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), at);
+            c.push(0xe9);
+            c.extend(s.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+            t.write(at, &c);
+            place_code(&mut t, l2::PARTICLE_CALLS[1], at);
+            t.stub(l2::PARTICLE_CALLS[0], true, 0, 0, 0);
+            let this = t.junk(0x3200, 4);
+            let what = format!("{label}: particle system ctor flags {flags:#x}");
+            t.check(&what, 0x009f_c9e0, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::particle_system_ctor(g, this))
+            });
+            t.reset();
+        }
+    }
+}

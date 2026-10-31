@@ -108,9 +108,18 @@ pub const BUTTONS: [(u32, u32); 10] = [
 /// The message for an unknown button name.
 pub const BUTTON_UNKNOWN: u32 = 0x00b4_02b4;
 
+/// The touch device's lock and unlock (`PCriticalSectionSimple`, thiscall
+/// on the device `+0x17c`).
+pub const TOUCH_LOCK: [u32; 2] = [0x0043_1920, 0x0043_1a80];
+/// `PMeshParticleSystemBase`'s constructor's callees: the `+0x14` block's
+/// reset and `PSamplerStateD3D11`'s constructor (thiscall).
+pub const PARTICLE_CALLS: [u32; 2] = [0x009f_c970, 0x0058_3b20];
+/// Its vtable and the float it puts in four words.
+pub const PARTICLE_DATA: [u32; 2] = [0x00b7_51b8, 0x00b4_12c4];
+
 /// The ports over game memory.
 pub mod bridge {
-    use super::{BUTTON_UNKNOWN, BUTTONS, STRICMP_SLOT};
+    use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
     use super::{
         CI_SQRT, Conv, DUMP_ENABLED, DUMP_PATH, DUMP_SLOTS, DUMP_TYPE, G_APPLICATION, G_HWND,
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
@@ -543,5 +552,135 @@ pub mod bridge {
                 unlink_if_owned(h, dev + 0x6c + 0x30 * k, dev);
             }
         }
+    }
+
+    /// `{next, prev}` list node `node` unlinked from its list and put at
+    /// the tail of `list`.
+    fn move_to_tail(h: &mut impl Host, node: u32, list: u32) {
+        let next: u32 = h.read(node);
+        let prev: u32 = h.read(node + 4);
+        h.write(next + 4, prev);
+        h.write(prev, next);
+        h.write(node, node);
+        h.write(node + 4, node);
+        let tail: u32 = h.read(list + 4);
+        h.write(node, list);
+        h.write(node + 4, tail);
+        h.write(tail, node);
+        h.write(list + 4, node);
+    }
+
+    /// The first node of list `head` after `node` (0 at the end).
+    fn after(h: &impl Mem, node: u32, head: u32) -> u32 {
+        let next: u32 = h.read(node);
+        if next == head { 0 } else { next }
+    }
+
+    /// `PInputDeviceTouch::update` (`0x0062de50`, thiscall): under the
+    /// lock (`+0x17c`) the state reset (`+0x158` 0.0, `+0x18`, `+0x15c`,
+    /// `+0xc4` 1.0, `+0x160` 16 bits, `+0xc8`/`+0xcc` 0.0); the touches of
+    /// the active list (`+0x164`) that are no longer down (`+0x18` 0) move
+    /// to the free list (`+0x174`); the active and pending (`+0x16c`)
+    /// lists swap; the device's virtual `+0x18`; every pending touch goes
+    /// back to the active list with `+0x18` cleared. The unlock's `eax`.
+    pub fn touch_update(h: &mut impl Host, this: u32) -> u32 {
+        let lock = this + 0x17c;
+        h.call_sym(TOUCH_LOCK[0], Conv::Thiscall(lock), &[]);
+        h.write(this + 0x158, 0u32);
+        h.write(this + 0x18, 0u32);
+        h.write(this + 0x15c, 0u32);
+        h.write(this + 0xc4, 1.0f32.to_bits());
+        h.write(this + 0x160, 0u16);
+        h.write(this + 0xc8, 0u32);
+        h.write(this + 0xcc, 0u32);
+        let active = this + 0x164;
+        let free = this + 0x174;
+        let pending = this + 0x16c;
+        let first: u32 = h.read(active);
+        let mut node = if first == active { 0 } else { first };
+        while node != 0 {
+            let next = after(h, node, active);
+            if h.read::<u32>(node + 0x18) == 0 {
+                move_to_tail(h, node, free);
+            }
+            node = next;
+        }
+        // swap the two lists' ends
+        let a_first: u32 = h.read(active);
+        let p_first: u32 = h.read(pending);
+        h.write(pending, a_first);
+        h.write(active, p_first);
+        let p_last: u32 = h.read(pending + 4);
+        let a_last: u32 = h.read(active + 4);
+        h.write(pending + 4, a_last);
+        h.write(active + 4, p_last);
+        for (list, was_empty) in [(active, p_first == pending), (pending, a_first == active)] {
+            if was_empty {
+                h.write(list + 4, list);
+                h.write(list, list);
+            } else {
+                let f: u32 = h.read(list);
+                h.write(f + 4, list);
+                let l: u32 = h.read(list + 4);
+                h.write(l, list);
+            }
+        }
+        h.call_virtual(this, 6, &[]);
+        let first: u32 = h.read(pending);
+        let mut node = if first == pending { 0 } else { first };
+        while node != 0 {
+            let next = after(h, node, pending);
+            let n: u32 = h.read(node);
+            let p: u32 = h.read(node + 4);
+            h.write(n + 4, p);
+            h.write(p, n);
+            h.write(node, node);
+            h.write(node + 4, node);
+            h.write(node + 0x18, 0u32);
+            let tail: u32 = h.read(active + 4);
+            h.write(node, active);
+            h.write(node + 4, tail);
+            h.write(tail, node);
+            h.write(active + 4, node);
+            node = next;
+        }
+        h.call_sym(TOUCH_LOCK[1], Conv::Thiscall(lock), &[])
+    }
+
+    /// `PMeshParticleSystemBase`'s constructor (`0x009fc9e0`, thiscall):
+    /// the base words, the vtable, the `+0x14` block (`0x009fc970`), the
+    /// sampler state at `+0x3084` (`0x00583b20`), the words `+0x30a8..
+    /// +0x30c0` 0, four floats of `0x00b412c4` (0.2) at `+0x31c4`, the
+    /// rest 0; the sampler's first five bytes (0, 0, 2, 2, 2) unless its
+    /// flags (`+0x1c` bit 7) say it is fixed. `this`.
+    pub fn particle_system_ctor(h: &mut impl Host, this: u32) -> u32 {
+        h.write(this + 4, 0u32);
+        h.write(this + 8, 0u32);
+        h.write(this + 0xc, 0u32);
+        h.write(this + 0x10, 0x100u16);
+        let vt = h.rebase(PARTICLE_DATA[0]);
+        h.write(this, vt);
+        h.call_sym(PARTICLE_CALLS[0], Conv::Thiscall(this + 0x14), &[]);
+        let sampler = this + 0x3084;
+        h.call_sym(PARTICLE_CALLS[1], Conv::Thiscall(sampler), &[]);
+        let c = f32::from_bits(h.read(h.rebase(PARTICLE_DATA[1])));
+        let c = ffx_bridge::x87::round_trip(c);
+        for off in (0x30a8..=0x30c0).step_by(4) {
+            h.write(this + off, 0u32);
+        }
+        for off in [0x31c4, 0x31c8, 0x31cc, 0x31d0] {
+            h.write(this + off, c.to_bits());
+        }
+        h.write(this + 0x31d8, 0u32);
+        for off in [0x31d4, 0x31dc, 0x31e0, 0x31e4] {
+            h.write(this + off, 0u32);
+        }
+        for (i, v) in [0u8, 0, 2, 2, 2].into_iter().enumerate() {
+            let flags: u32 = h.read(sampler + 0x1c);
+            if flags & 0x80 == 0 {
+                h.write(sampler + i as u32, v);
+            }
+        }
+        this
     }
 }

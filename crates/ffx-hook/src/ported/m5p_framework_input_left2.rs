@@ -52,4 +52,12 @@ ported! {
     Phyre_PFramework_PInputMapper_release_0062d170 @ 0x0062_d170 => extern "thiscall" fn release_input_map(this: u32) {
         lb::release_input_map(&mut mem(), this);
     }
+    /// `PInputDeviceTouch::update()`.
+    Phyre_PFramework_PInputDeviceTouch_update @ 0x0062_de50 => extern "thiscall" fn touch_update(this: u32) -> u32 {
+        lb::touch_update(&mut mem(), this)
+    }
+    /// `PMeshParticleSystemBase`'s constructor.
+    Phyre_PPostProcessing_PMeshParticleSystemBase_ctor_009fc9e0 @ 0x009f_c9e0 => extern "thiscall" fn particle_system_ctor(this: u32) -> u32 {
+        lb::particle_system_ctor(&mut mem(), this)
+    }
 }
