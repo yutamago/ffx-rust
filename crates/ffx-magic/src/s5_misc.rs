@@ -8088,3 +8088,147 @@ pub const SWING_PAIR_START: Sig = Sig {
     ],
     imports: &[(0xef, "rand")],
 };
+
+/// Two camera points set behind the party (cdecl, no arguments; a /GS
+/// frame). With `O = *G_O` and its yaw `O+0x1a68`: for each member `i`
+/// from 1 below `*G_N` (`c = T[*G_SEL[i]]`), its position (slot 262)
+/// less `O+0xca0..` turned by `-yaw` (slots 235, 329, 229) gives a depth
+/// `z` plus its size (slot 251 `(id)` while `*G_X` is 0 and `id < 0x20`,
+/// else slot 17 `(c)` times slot 19 `(c)`; ST0 each); the deepest `d`
+/// (from -100000) is kept. Then `O+0xcb0.. = O+0xca0..` moved by `(0, 0,
+/// d + K)` turned by the yaw (slots 235, 328 with 0 and 329, 229, 248;
+/// `w` 1), `O+0xc70.. =` that moved by `(0, 0, 100)` the same way, and
+/// `O+0xc90.. =` the second point. Returns its last word. Each call sees
+/// the words the earlier ones left on the stack.
+///
+/// `magic_0434` 0x10008f30 (1014 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn camera_behind_party<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let o = g.read::<u32>(w(0x17));
+    let of = |g: &G, x: u32| g.read::<f32>(o.wrapping_add(x));
+    let m = at(0x104);
+    let mut far = f32::from_bits(0xc7c3_5000);
+    let mut s = Pushes::default();
+    s.push(m);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x23), 235), 0);
+    s.set_top(g.read::<u32>(o.wrapping_add(0x1a68)) ^ g.read::<u32>(w(0x47)));
+    s.push_all(&[m, m]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x59), 329), 0);
+    let (pos, v) = (at(0x34), at(0x24));
+    let mut i = 1u32;
+    while i.cast_signed() < g.read::<i32>(w(if i == 1 { 0x6f } else { 0x1d2 })) {
+        let c = chosen(g, img, f, i, (0x86, 0x8d, 0x98));
+        let mut s = Pushes::default();
+        s.push_all(&[pos + 8, pos + 4, pos, c]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0xaa), 262), 0);
+        for (j, x) in [0u32, 4, 8].into_iter().enumerate() {
+            let d = sub(g.read::<f32>(pos + x), of(g, 0xca0 + 4 * j as u32));
+            g.write::<f32>(v + x, d);
+        }
+        g.write::<u32>(pos + 0xc, 0x3f80_0000);
+        g.write::<u32>(v + 0xc, 0x3f80_0000);
+        s.push_all(&[v, m, v]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0xe5), 229), 0);
+        let sel = g.read::<u32>(w(0x118));
+        let id = u32::from(g.read::<u8>(sel.wrapping_add(i)));
+        let size = if g.read::<u32>(w(0x121)) == 0 && id < 0x20 {
+            st0_f32(slot_call(g, img, f, (0x13d, 251), &[id]))
+        } else {
+            let c = g.read::<u32>(w(0x170).wrapping_add(4 * id));
+            let mut s = Pushes::default();
+            s.push(c);
+            // call width: 12 (the most `Pushes::words` holds)
+            let th = st0_f32(s.call(g, slot_target(g, w(0x175), 19), 0));
+            s.push(c);
+            // call width: 12 (the most `Pushes::words` holds)
+            let sc = st0_f32(s.call(g, slot_target(g, w(0x186), 17), 0));
+            mul(sc, th)
+        };
+        let z = add(g.read::<f32>(v + 8), size);
+        g.write::<f32>(v + 8, z);
+        if z > far {
+            far = z;
+        }
+        i += 1;
+    }
+    let yaw = g.read::<u32>(o.wrapping_add(0x1a68));
+    let depth = add(far, g.read::<f32>(w(0x1fb)));
+    for x in [0u32, 4, 8, 0xc] {
+        let y = g.read::<u32>(o.wrapping_add(0xca0 + x));
+        g.write::<u32>(o.wrapping_add(0xcb0 + x), y);
+    }
+    let (d, t) = (at(0x14), at(0x44));
+    g.write::<u32>(d, 0);
+    g.write::<u32>(d + 4, 0);
+    g.write::<f32>(d + 8, depth);
+    g.write::<u32>(d + 0xc, 0x3f80_0000);
+    let mut s = Pushes::default();
+    let mut eax = 0;
+    for (k, (p, mm, tb)) in [
+        (
+            o.wrapping_add(0xcb0),
+            at(0x84),
+            [0x237u32, 0x275, 0x29a, 0x2b6, 0x2ce],
+        ),
+        (
+            o.wrapping_add(0xc70),
+            at(0xc4),
+            [0x323, 0x349, 0x36e, 0x38a, 0x3a2],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if k == 1 {
+            for x in [0u32, 4, 8, 0xc] {
+                let y = g.read::<u32>(o.wrapping_add(0xcb0 + x));
+                g.write::<u32>(o.wrapping_add(0xc70 + x), y);
+            }
+            g.write::<u32>(d + 8, 0x42c8_0000);
+        }
+        s.push(mm);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(tb[0]), 235), 0);
+        if k == 1 {
+            s.pop(9);
+        }
+        s.set_top(0);
+        s.push_all(&[mm, mm]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(tb[1]), 328), 0);
+        s.pop(2);
+        s.set_top(yaw);
+        s.push_all(&[mm, mm]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(tb[2]), 329), 0);
+        s.push_all(&[d, mm, t]);
+        g.write::<u32>(at(8), 0x3f80_0000);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(tb[3]), 229), 0);
+        s.push_all(&[t, p, p]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(tb[4]), 248), 0);
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+    }
+    for x in [0u32, 4, 8, 0xc] {
+        eax = g.read::<u32>(o.wrapping_add(0xc70 + x));
+        g.write::<u32>(o.wrapping_add(0xc90 + x), eax);
+    }
+    Ret::eax(eax)
+}
+
+/// [`camera_behind_party`] (the `rel32`: `__security_check_cookie`).
+pub const CAMERA_BEHIND_PARTY: Sig = Sig {
+    len: 1014,
+    hash: 0x4f7e_1b74_a283_450f,
+    calls: &[(0x3ee, Callee::Any)],
+    imports: &[],
+};

@@ -1305,6 +1305,7 @@ ports! {
     "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
     "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
     "swing_pair_start" => s5_misc::SWING_PAIR_START, s5_misc::swing_pair_start;
+    "camera_behind_party" => s5_misc::CAMERA_BEHIND_PARTY, s5_misc::camera_behind_party;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

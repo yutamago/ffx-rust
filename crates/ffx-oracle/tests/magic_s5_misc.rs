@@ -3936,3 +3936,53 @@ fn swing_pairs_started() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn cameras_behind_party() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x8f30);
+    for (s, n, words, fill) in [
+        (235u32, 1usize, 16u32, Some(0usize)),
+        (328, 3, 16, Some(0)),
+        (329, 3, 16, Some(0)),
+        (229, 3, 4, Some(0)),
+        (248, 3, 4, Some(0)),
+    ] {
+        rec_mem(&mut t, s, n, words, fill);
+    }
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32 + (a[0] & 7) as f32).to_bits());
+        }
+        0x262
+    });
+    for (s, x) in [(251u32, 0.5f64), (19, 1.5), (17, 2.25)] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    let o = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x17), o);
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[5, 3, 0x21, 1, 7, 2, 6, 4]);
+    for x in [0x8du32, 0x118] {
+        t.set_u32(op(&t, f, x), sel);
+    }
+    for x in [0x98u32, 0x170] {
+        let table = op(&t, f, x);
+        for i in 0..0x22u32 {
+            t.set_u32(table + 4 * i, 0x0dd0_0000 + 0x100 * x + i);
+        }
+    }
+    for (k, (n, slow)) in [(4u32, 0u32), (1, 0), (3, 1), (5, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(o + 0xc00, &varied(0x100, k));
+        t.write(o + 0x1a60, &varied(0x10, k + 1));
+        t.set_u32(op(&t, f, 0x6f), n);
+        t.set_u32(op(&t, f, 0x121), slow);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
