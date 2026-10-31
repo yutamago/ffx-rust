@@ -1822,3 +1822,279 @@ fn throws_aimed() {
         t.check_entry(f, Call::this(args), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn weapon_swings_drop() {
+    let Some(mut t) = twin(555) else { return };
+    let f = t.at(0x4240);
+    rec_mem(&mut t, 562, 0, 0, None);
+    rec_mem(&mut t, 219, 2, 0, None);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [277u32, 15, 16, 17] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, _| f64::from(s) / 64.0);
+    }
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, None);
+    }
+    rec_mem(&mut t, 825, 1, 0, None);
+    rec_mem(&mut t, 913, 3, 16, None);
+    rec_mem(&mut t, 713, 1, 0, None);
+    let soa = t.img.rel32_target(f + 0x14e);
+    t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
+    t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x3400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x3400);
+    rec_mem(&mut t, 714, 5, 0, None);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = op(&t, pa, 0x04);
+    let list = op(&t, f, 0x19e);
+    let task = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x1000;
+    let s = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x16), s);
+    t.set_u32(op(&t, f, 0x1ba), SCRATCH + 0x2f0);
+    for (count, total, kind, listed) in [
+        (5u32, 10u32, 0u32, false),
+        (1, 10, 0, false),
+        (0, 7, 0, false),
+        (0, 7, 3, true),
+    ] {
+        t.write(obj, &varied(0x600, count + kind));
+        t.write(task, &varied(0x40, total));
+        t.write(s + 0xebe0, &varied(0x20, count));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.set_u32(task + 0x14, obj);
+        t.set_u32(obj + 0x50c, count);
+        t.set_u32(obj + 0x510, total);
+        t.set_u32(obj + 0x514, kind);
+        t.set_u16(free, 3);
+        let node = SCRATCH + 0x380;
+        t.set_u32(list, if listed { node } else { 0 });
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
+        t.set_u32(node + 8, obj);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+#[test]
+fn aim_tasks() {
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x25d0);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 328, 3, 16, Some(0));
+    rec_mem(&mut t, 329, 3, 16, Some(0));
+    rec_mem(&mut t, 229, 3, 4, None);
+    t.stub(229, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 0x10 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    let take = t.img.rel32_target(f + 0x1c5);
+    let (head, tail) = (op(&t, f, 0x1cb), op(&t, f, 0x1e2));
+    let k = |t: &Twin, o: u32| op(t, f, o);
+    for (i, (a, b, r)) in [
+        ([1.0f32, 2.0, 3.0], [0.0f32, 0.0, 0.0], 2.5f32),
+        ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
+        ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
+        ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        free_ring(&mut t, take, SCRATCH + 0x1000, 3);
+        for (o, v) in [
+            (0x18u32, a[0]),
+            (0x4a, a[1]),
+            (0x28, a[2]),
+            (0x20, b[0]),
+            (0x52, b[1]),
+            (0x30, b[2]),
+        ] {
+            t.set_u32(k(&t, o), v.to_bits());
+        }
+        if i % 2 == 0 {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        } else {
+            t.write(SCRATCH + 0x1400, &varied(0x1c, 3));
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        }
+        let c = Call::default().with_xmm(&[Xmm::f32(9.0), Xmm::f32(r)]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::aim_task(g, img, fr.at, fr.esp, fr.xmm_f32(1)))
+        });
+    }
+}
+
+#[test]
+fn three_parts_drawn() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x1490);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec_mem(&mut t, 723, 1, 16, Some(0));
+    rec_mem(&mut t, 724, 1, 16, Some(0));
+    rec_mem(&mut t, 231, 3, 16, Some(0));
+    rec(&mut t, 867, 17, |_, a| 0x0867_0000 ^ a[16] ^ a[0]);
+    let m0 = SCRATCH + 0x400;
+    for k in 0..2u32 {
+        t.write(m0, &varied(0x40, k));
+        let mut args = vec![m0, 0x0aaa_0000 + k];
+        args.extend((2..12).map(|i| 0x0100_0000 * i + k));
+        args.extend([0x0b0b_0000 + k, 0x40 + k]);
+        let c = Call {
+            ecx: 0x0ecc_0000 + k,
+            edx: 0x0edd_0000 + k,
+            ..Call::default()
+        };
+        t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::three_parts_draw(g, img, fr))
+        });
+    }
+}
+
+#[test]
+fn camera_parts() {
+    let Some(mut t) = twin(662) else { return };
+    let f = t.at(0x1260);
+    rec_mem(&mut t, 724, 1, 16, Some(0));
+    rec_mem(&mut t, 327, 2, 16, Some(0));
+    rec_mem(&mut t, 230, 2, 16, None);
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 325, 2, 4, None);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 231, 3, 16, None);
+    let lock = SCRATCH + 0x7f0;
+    let ptr = SCRATCH + 0x7c0;
+    let answer = SCRATCH + 0x7e0;
+    rec_lock(&mut t, 712, 2, lock, move |m, _| {
+        m.w32(ptr, 0x0712_0712);
+        m.r32(answer)
+    });
+    rec(&mut t, 713, 1, move |m, _| {
+        m.w32(ptr, 0x0713_0713);
+        0x713
+    });
+    let table = SCRATCH + 0x700;
+    rec(&mut t, 941, 2, move |_, _| table);
+    rec(&mut t, 714, 5, |_, _| 0x714);
+    let start = t.img.rel32_target(f + 0x1d5);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+    let obj = SCRATCH + 0x1000;
+    for (ended, n) in [(0u32, 0x320u32), (1, 0x321), (2, 0)] {
+        t.write(obj, &varied(0x100, ended));
+        t.write(table, &varied(0x40, n));
+        t.write(SCRATCH + 0x7a0, &varied(0x20, n));
+        t.set_u32(answer, ended);
+        for o in [0xedu32, 0x109, 0x10f, 0x115, 0x11d, 0x128] {
+            t.set_u32(op(&t, f, o), SCRATCH + 0x4000 + 0x40 * (o % 16));
+        }
+        t.set_u32(op(&t, f, 0x139), n);
+        t.set_u32(op(&t, f, 0x144), SCRATCH + 0x7c8);
+        t.set_u32(SCRATCH + 0x7c8, 0x0bad);
+        t.set_u32(op(&t, f, 0x150), lock);
+        t.set_u32(op(&t, f, 0x155), ptr);
+        t.set_u32(lock, 0x5a5a_0000 + n);
+        t.set_u32(op(&t, f, 0x1b3), SCRATCH + 0x7a0);
+        t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    }
+}
+
+#[test]
+fn homing_trails() {
+    let Some(mut t) = twin(171) else { return };
+    let f = t.at(0x3240);
+    let fv = |m: &dyn StubMem, a: u32| f32::from_bits(m.r32(a));
+    rec(&mut t, 234, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) - fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 248, 3, move |m, a| {
+        for i in 0..3 {
+            let v = fv(m, a[1] + 4 * i) + fv(m, a[2] + 4 * i);
+            m.w32(a[0] + 4 * i, v.to_bits());
+        }
+        0x248
+    });
+    // the callbacks and the trail draw's own slots (one sprite-less trail)
+    for s in [1001u32, 1002] {
+        t.set_u32(TABLE + 4 * s, trap(s));
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    let td = t.img.rel32_target(f + 0x1dc);
+    t.set_u32(op(&t, td, 0x46e), SCRATCH + 0x9000);
+    let table = SCRATCH + 0x8000;
+    rec(&mut t, 941, 1, move |_, _| table);
+    t.write(table, &[0; 0x100]);
+    t.set_u16(table + 6, 1);
+    t.set_u16(table + 0x10, 0x80);
+    t.set_u16(table + 0x12, 0x300);
+    recs(&mut t, &[(235, 1), (723, 1), (724, 1), (229, 3), (713, 1)]);
+    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(&mut t, 773, 4, |_, _| 0);
+    for s in [774u32, 775, 778, 776, 777] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    let unlist = t.img.rel32_target(f + 0x17f);
+    t.set_u32(op(&t, unlist, 0x16), SCRATCH + 0x2f0);
+    let task = SCRATCH + 0x100;
+    let obj = SCRATCH + 0x1000;
+    let owner = SCRATCH + 0x600;
+    let node = SCRATCH + 0x680;
+    // (wait, speed x, radius, flags, callbacks, listed)
+    for (wait, speed, radius, flags, cbs, listed) in [
+        (3u32, 0.0f32, 1.0f32, 0u16, 0u32, false),
+        (0, 0.5, 0.25, 1, 3, false),
+        (0, 0.5, 100.0, 1, 3, true),
+        (0, 0.5, 100.0, 0, 0, false),
+        (0, 0.5, 100.0, 2, 1, true),
+        (0xffff_fffe, 0.5, 0.25, 0, 2, false),
+        (0xffff_fffe, 0.5, 0.25, 1, 0, false),
+        (0, 0.0, 0.0, 3, 3, false),
+    ] {
+        t.write(obj, &varied(0x3a0, wait ^ u32::from(flags)));
+        t.write(obj + 0x130, &[0; 0x230]);
+        t.set_u32(obj + 0x130, 0x0a00);
+        t.set_u32(obj + 0x134, 1);
+        t.set_u16(obj + 0x13a, 0x100);
+        for (i, v) in [1.0f32, 2.0, 3.0, 1.0].into_iter().enumerate() {
+            let i = i as u32;
+            t.set_u32(obj + 0xd0 + 4 * i, v.to_bits());
+            t.set_u32(obj + 0x358 + 4 * i, (v * 1.5).to_bits());
+            t.set_u32(obj + 0x368 + 4 * i, (speed * (i as f32 + 1.0)).to_bits());
+        }
+        t.set_u32(obj + 0x384, radius.to_bits());
+        t.set_u32(obj + 0x388, 0.75f32.to_bits());
+        t.set_u32(obj + 0x38c, wait);
+        t.set_u16(obj + 0x394, flags);
+        t.set_u32(obj + 0x37c, if cbs & 1 != 0 { trap(1001) } else { 0 });
+        t.set_u32(obj + 0x380, if cbs & 2 != 0 { trap(1002) } else { 0 });
+        t.set_u32(obj + 0x378, owner);
+        t.set_u32(owner + 0x30, if listed { node } else { 0 });
+        t.set_u32(node, 0);
+        t.set_u32(node + 4, 0);
+        t.set_u32(node + 8, obj);
+        // the task node at rest for the give-back
+        t.write(task, &varied(0x20, 1));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x140);
+        t.set_u32(SCRATCH + 0x14c, 0);
+        t.set_u32(task + 0x14, obj);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

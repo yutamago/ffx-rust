@@ -1276,6 +1276,9 @@ ports! {
     "objects around" => s5_misc::OBJECTS_AROUND, s5_misc::objects_around;
     "task scatter" => s5_misc::TASK_SCATTER, s5_misc::task_scatter;
     "throw aim" => s5_misc::THROW_AIM, s5_misc::throw_aim;
+    "weapon swing (drop)" => s5_misc::WEAPON_SWING_DROP, s5_misc::weapon_swing_drop;
+    "camera part" => s5_misc::CAMERA_PART, s5_misc::camera_part;
+    "homing trail" => s5_misc::HOMING_TRAIL, s5_misc::homing_trail;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1686,6 +1689,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("weapon matrix", &s5_misc::WEAPON_MATRIX),
     ("angle keys", &s5_misc::ANGLE_KEYS),
     ("model parts draw", &s5_misc::MODEL_PARTS_DRAW),
+    ("aim task", &s5_misc::AIM_TASK),
+    ("three parts draw", &s5_misc::THREE_PARTS_DRAW),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
