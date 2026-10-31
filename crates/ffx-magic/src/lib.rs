@@ -1717,6 +1717,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("flight task", &s5_misc::FLIGHT_TASK),
     ("sprite packet", &s5_misc::SPRITE_PACKET),
     ("wave table", &s5_misc::WAVE_TABLE),
+    ("thrown effect", &s5_misc::THROWN_EFFECT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
