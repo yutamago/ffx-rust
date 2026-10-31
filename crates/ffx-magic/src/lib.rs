@@ -1482,6 +1482,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("particle node (0070)", &s4_summon::PARTICLE_NODE),
     ("start object at", &s4_misc::START_OBJECT_AT),
     ("start object (anim)", &s4_misc::START_OBJECT_ANIM),
+    (
+        "start object (anim, first part)",
+        &s4_misc::START_OBJECT_ANIM_FIRST,
+    ),
     ("start object (owners)", &s4_misc::START_OBJECT_OWNERS),
     ("start object (plain)", &s4_misc::START_OBJECT_PLAIN),
     ("start object (first part)", &s4_misc::START_OBJECT_FIRST),

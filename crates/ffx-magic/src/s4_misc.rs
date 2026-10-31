@@ -169,6 +169,38 @@ pub fn start_object_anim<G: Game>(
     start_object(g, img, f, obj, scale, index, reset, (0x84, 0x99, list))
 }
 
+/// [`start_object_anim`] always with the first part (internal: `edx` =
+/// the object, `xmm3` its scale, the stack `(-, value)`; the first word
+/// is not read). Returns the object.
+///
+/// `magic_0055` 0x10003680 (233 bytes; 2 DLLs).
+pub fn start_object_anim_first<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    scale: f32,
+    value: u32,
+) -> u32 {
+    let reset = |g: &mut G| {
+        anim_reset(g, obj, value);
+    };
+    let list = [0xa0, 0xb3, 0xb9, 0xc2, 0xce, 0xd7, 0xe0];
+    start_object(g, img, f, obj, scale, 0, reset, (0x80, 0x95, list))
+}
+
+/// [`start_object_anim_first`].
+pub const START_OBJECT_ANIM_FIRST: Sig = Sig {
+    len: 233,
+    hash: 0xa31b_497b_2028_8e97,
+    calls: &[
+        (0x80, Callee::Sig(&START_PART)),
+        (0x8d, Callee::Sig(&ANIM_RESET)),
+        (0x95, Callee::Sig(&POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
 /// Starts an effect object (internal: `edx` = the object, `xmm3` its
 /// scale, the stack `(index, owner, a, b)`): [`start_object`] with its
 /// transform reset with three owners ([`reset_transform_3`]: `+0x114` =

@@ -185,10 +185,17 @@ fn start_object_at() {
         (54, 0x1b80, 1),
         (92, 0x27f0, 2),
         (162, 0x96a0, 3),
+        (55, 0x3680, 4),
     ] {
         let Some(mut t) = twin(n) else { return };
         let at = t.at(rva);
-        let (pool_op, tail_op) = [(0x9d, 0xa8), (0x99, 0xa4), (0x9c, 0xa7), (0x96, 0xa1)][kind];
+        let (pool_op, tail_op) = [
+            (0x9d, 0xa8),
+            (0x99, 0xa4),
+            (0x9c, 0xa7),
+            (0x96, 0xa1),
+            (0x95, 0xa0),
+        ][kind];
         t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
         t.set_u32(t.img.word(at + 0x5e), SCRATCH + 0x300);
         t.set_u32(SCRATCH + 0x310, 0x00ab_cdef);
@@ -242,7 +249,9 @@ fn start_object_at() {
             ];
             t.check(at, c, &args, Eax::Checked, |g, img, fr| {
                 let (obj, scale, index) = (fr.edx, fr.xmm_f32(3), fr.arg(g, 0));
-                Ret::eax(if kind == 1 {
+                Ret::eax(if kind == 4 {
+                    s4_misc::start_object_anim_first(g, img, fr.at, obj, scale, fr.arg(g, 1))
+                } else if kind == 1 {
                     s4_misc::start_object_anim(g, img, fr.at, obj, scale, index, fr.arg(g, 1))
                 } else if kind == 3 {
                     s4_misc::start_object_plain(g, img, fr.at, obj, scale, index)
