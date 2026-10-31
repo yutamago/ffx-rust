@@ -116,6 +116,11 @@ pub const START_KIND_A: Sig = Sig {
 ///
 /// `magic_0446` 0x10001530 (153 bytes; 10 DLLs).
 pub fn start_kind_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_kind_two(g, img, fr, (0xd10, 0xb))
+}
+
+/// [`start_kind_b`] with kind 2's object `G + obj` (part `part`).
+fn start_kind_two<G: Game>(g: &mut G, img: &Image, fr: &Frame, (obj, part): (u32, u32)) -> Ret {
     let w = |o: u32| img.word(fr.at + o);
     let task = fr.arg(g, 0);
     let (first, clock) = start_kind(g, img, fr.at, task, (0x5c04, 0xebf0));
@@ -124,8 +129,8 @@ pub fn start_kind_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(block + 0x5bfc, first);
         return Ret::eax(clock);
     }
-    let obj = block + 0xd10;
-    let eax = start(g, img, fr.at, 0x77, obj, 0x63, 0xb, (0x14, 0));
+    let obj = block + obj;
+    let eax = start(g, img, fr.at, 0x77, obj, 0x63, part, (0x14, 0));
     g.write::<u32>(obj + 0x104, w(0x84));
     g.write::<u8>(obj + 0x126, 2);
     g.write::<u32>(block + 0x5bfc, obj);
@@ -1837,5 +1842,26 @@ pub const START_1300_RAISED: Sig = Sig {
     len: 136,
     hash: 0xcdfa_6bdb_3f51_c6ad,
     calls: &[(0x20, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};
+
+/// [`start_kind_b`] in `magic_0565`: kind 2 starts `G + 0xbe0` (part
+/// 0xa, owner 0x14) instead, with its callback (operand `+0x84`) and mode
+/// byte 2; the object kept at `+0x5bfc`. Returns the clock, or that
+/// start's result.
+///
+/// `magic_0565` 0x100030d0 (153 bytes; 5 DLLs).
+pub fn start_kind_d<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_kind_two(g, img, fr, (0xbe0, 0xa))
+}
+
+/// [`start_kind_d`].
+pub const START_KIND_D: Sig = Sig {
+    len: 153,
+    hash: 0x2d2d_5879_2b7b_55d5,
+    calls: &[
+        (0x39, Callee::Sig(&START_OBJECT_AT)),
+        (0x77, Callee::Sig(&START_OBJECT_AT)),
+    ],
     imports: &[],
 };

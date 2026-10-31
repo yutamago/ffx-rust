@@ -5794,3 +5794,90 @@ pub const REGISTER_SQUARE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// An object's particles started (cdecl `(obj)`): `*G_P` = `ITEM`, slot
+/// 941 `(*(*G + 0x10))` gives the program table, the `pppStartPart`
+/// wrapper ([`start_part`], `edx` 0x1000) starts the object's buffer with
+/// the table's first program; then its place `+0x40..+0x4c` (-16, -13,
+/// 259, 1.0), `+0x50..+0x58` 0, `+0x5c` 1, `+0x60..+0x68` 0.0916 and
+/// `+0x6c` 1.0. Returns 1.
+///
+/// `magic_0662` 0x100011c0 (152 bytes; 2 DLLs).
+pub fn particles_start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x4));
+    g.write::<u32>(p, op(img, f, 0xb));
+    let base = g.read::<u32>(op(img, f, 0x10));
+    let x = g.read::<u32>(base.wrapping_add(0x10));
+    let table = slot_call(g, img, f, (0x18, 941), &[x]).eax;
+    let obj = fr.arg(g, 0);
+    let program = g.read::<u32>(table);
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x35), obj, 0x1000, program, 1);
+    let k = 0x3dbb_b0e6;
+    for (off, v) in [
+        (0x40, 0xc180_0000),
+        (0x44, 0xc150_0000),
+        (0x48, 0x4381_8000),
+        (0x4c, 0x3f80_0000),
+        (0x50, 0),
+        (0x54, 0),
+        (0x58, 0),
+        (0x5c, 1),
+        (0x60, k),
+        (0x64, k),
+        (0x68, k),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(obj.wrapping_add(off), v);
+    }
+    Ret::eax(1)
+}
+
+/// [`particles_start_b`].
+pub const PARTICLES_START_B: Sig = Sig {
+    len: 152,
+    hash: 0xda00_802d_ca55_f8c2,
+    calls: &[(0x35, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// The DLL's static node (operands from `+0xa`: its handler table first)
+/// set up fresh and put last under the DLL's list (the list's last
+/// `*G_LAST` `+0x4`), then its `+0x70` a block (operands `+0x78`,
+/// `+0x7c`), `+0x6c` = x, byte `+0x74` 0 and `+0x68` 2 (cdecl `(x)`).
+/// Returns x.
+///
+/// `magic_0609` 0x10009070 (152 bytes; 2 DLLs).
+pub fn static_link_x<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = g.read::<u32>(op(img, f, 0x4));
+    g.write::<u32>(op(img, f, 0xa), op(img, f, 0xe));
+    g.write::<u16>(op(img, f, 0x15), 0xff);
+    for (dst, src) in [(0x1d, 0x21), (0x27, 0x2b), (0x31, 0x35), (0x3b, 0x3f)] {
+        g.write::<u32>(op(img, f, dst), op(img, f, src));
+    }
+    g.write::<u32>(op(img, f, 0x44), last);
+    if last == op(img, f, 0x49) {
+        g.write::<u32>(op(img, f, 0x51), op(img, f, 0x55));
+    } else {
+        g.write::<u32>(last.wrapping_add(4), op(img, f, 0x5e));
+    }
+    let x = fr.arg(g, 0);
+    let count = op(img, f, 0x68);
+    let c = g.read::<u16>(count).wrapping_add(1);
+    g.write::<u16>(count, c);
+    g.write::<u32>(op(img, f, 0x6e), op(img, f, 0x72));
+    g.write::<u32>(op(img, f, 0x78), op(img, f, 0x7c));
+    g.write::<u32>(op(img, f, 0x81), x);
+    g.write::<u8>(op(img, f, 0x87), 0);
+    g.write::<u32>(op(img, f, 0x8e), 2);
+    Ret::eax(x)
+}
+
+/// [`static_link_x`].
+pub const STATIC_LINK_X: Sig = Sig {
+    len: 152,
+    hash: 0xd082_52a2_fbd7_5d05,
+    calls: &[],
+    imports: &[],
+};

@@ -2650,3 +2650,27 @@ fn loads_particles_squares() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn particles_and_static_x() {
+    let Some(mut t) = twin(662) else { return };
+    let f = t.at(0x11c0);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table, 0x0700_0001);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(609) else { return };
+    let f = t.at(0x9070);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x4), if empty { op(&t, f, 0x49) } else { last });
+        t.check_entry(f, Call::default(), &[0x0006_c001], Eax::Checked);
+    }
+}
