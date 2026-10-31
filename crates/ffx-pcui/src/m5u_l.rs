@@ -4454,4 +4454,48 @@ pub mod bridge {
         import(h, IGGY_DRAW_IAT, &[p]);
         import(h, LEAVE_CRITICAL_SECTION_IAT, &[lock]);
     }
+
+    pub const PAGE_LOCK_CTOR: u32 = 0x0094_88a0;
+    pub const PAGE_ARENA_CTOR: u32 = 0x0094_4080;
+    pub const PAGE_BITS_CTOR: u32 = 0x0094_6520;
+    pub const USER_HEAP_INIT: u32 = 0x0094_2a40;
+    pub const PAGE_HASH_CTOR: u32 = 0x0094_5630;
+    pub const PAGE_HEAP_INIT_BUCKETS: u32 = 0x0094_6060;
+    pub const PAGE_MANAGER_ADD_BUCKET: u32 = 0x0094_6b20;
+
+    /// `FUN_009457b0(this; config)` (`thiscall`, `ret 4`) -> `this`: the
+    /// page heap's constructor: the 12-word config copied to `+0`, the
+    /// lock `+0x30`, two arenas (`+0x50` from config words 0/1, `+0x90`
+    /// from 3/4), their bucket tables (`+0xd0`, `+0x4ec`), two locked
+    /// user heaps (locks `+0x908`/`+0x938`, heaps `+0x920`/`+0x950`
+    /// from config words 6..8 and 9..11), the locked hash `+0x968`
+    /// (0x400 entries, 0x1000), the first table's buckets, then the
+    /// second table's 0x10-aligned buckets from `[+8] + 0x10` up to
+    /// `[+0x14]`.
+    pub fn page_heap_ctor(h: &mut impl Host, this: u32, config: u32) -> u32 {
+        let words: [u32; 12] = h.read(config);
+        h.write(this, words);
+        let lock = this + 0x30;
+        method(h, PAGE_LOCK_CTOR, lock, &[]);
+        let (c0, c1) = (word(h, config), word(h, config + 4));
+        method(h, PAGE_ARENA_CTOR, this + 0x50, &[c0, c1, lock]);
+        let (c3, c4) = (word(h, config + 0xc), word(h, config + 0x10));
+        method(h, PAGE_ARENA_CTOR, this + 0x90, &[c3, c4, lock]);
+        method(h, PAGE_BITS_CTOR, this + 0xd0, &[this + 0x50, lock]);
+        method(h, PAGE_BITS_CTOR, this + 0x4ec, &[this + 0x90, lock]);
+        for (cs, heap, at) in [(0x908, 0x920, 0x18), (0x938, 0x950, 0x24)] {
+            let c: [u32; 3] = h.read(config + at);
+            import(h, INIT_CRITICAL_SECTION_IAT, &[this + cs]);
+            method(h, USER_HEAP_INIT, this + heap, &c);
+        }
+        import(h, INIT_CRITICAL_SECTION_IAT, &[this + 0x968]);
+        method(h, PAGE_HASH_CTOR, this + 0x968 + 0x18, &[0x400, 0x1000]);
+        method(h, PAGE_HEAP_INIT_BUCKETS, this, &[]);
+        let mut s = word(h, this + 8).wrapping_add(0x10);
+        while s.cast_signed() <= word(h, this + 0x14).cast_signed() {
+            method(h, PAGE_MANAGER_ADD_BUCKET, this + 0x4ec, &[s, 0x10]);
+            s = s.wrapping_add(0x10);
+        }
+        this
+    }
 }

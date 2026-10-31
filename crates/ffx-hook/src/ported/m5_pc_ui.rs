@@ -1184,4 +1184,9 @@ ported! {
         let mut f = StackFrame::<6>::new();
         ll::iggy_player_tick_draw(&mut mem(), f.at(), this, holder);
     }
+
+    /// `FUN_009457b0(this; config)`: the page heap's constructor.
+    PageHeap_ctor_009457b0 @ 0x0094_57b0 => extern "thiscall" fn page_heap_ctor(this: u32, config: u32) -> u32 {
+        ll::page_heap_ctor(&mut mem(), this, config)
+    }
 }

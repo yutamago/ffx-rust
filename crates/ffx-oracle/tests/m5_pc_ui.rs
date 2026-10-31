@@ -6767,3 +6767,43 @@ fn rp4_iggy_tick_draw_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn rp4_page_heap_ctor_matches_the_original() {
+    // Configs whose second bucket range is empty, one bucket or several
+    // (the parts' constructors and the bucket add stubbed).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_57b0);
+        for _ in 0..60 {
+            let mut cfg: Vec<u32> = (0..12).map(|_| rng.next()).collect();
+            cfg[2] = rng.below(0x80);
+            // the end on a bucket half the time (the last one included)
+            let span = if rng.chance(2) {
+                0x10 * rng.below(6)
+            } else {
+                rng.below(0x80)
+            };
+            cfg[5] = cfg[2].wrapping_add(span).wrapping_sub(0x10);
+            let config = t.words(&cfg);
+            let this = t.zeros(0xa00);
+            t.stub_import(ll::INIT_CRITICAL_SECTION_IAT, false, 1, 1, rng.next());
+            t.stubs(&[
+                (ll::PAGE_LOCK_CTOR, true, 0, 0, rng.next()),
+                (ll::PAGE_ARENA_CTOR, true, 3, 3, rng.next()),
+                (ll::PAGE_BITS_CTOR, true, 2, 2, rng.next()),
+                (ll::USER_HEAP_INIT, true, 3, 3, rng.next()),
+                (ll::PAGE_HASH_CTOR, true, 2, 2, rng.next()),
+                (ll::PAGE_HEAP_INIT_BUCKETS, true, 0, 0, rng.next()),
+                (ll::PAGE_MANAGER_ADD_BUCKET, true, 2, 2, rng.next()),
+            ]);
+            t.check(
+                "FUN_009457b0",
+                0x0094_57b0,
+                Conv::Thiscall(this),
+                &[config],
+                |m| Out::U32(ll::page_heap_ctor(m, this, config)),
+            );
+            t.reset();
+        }
+    });
+}
