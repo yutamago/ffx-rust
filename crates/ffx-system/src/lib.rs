@@ -18,6 +18,7 @@ pub mod fixup;
 pub mod heap;
 pub mod instance;
 pub mod intl;
+pub mod m5a_assets;
 pub mod m5a_files;
 pub mod m5a_fixup;
 pub mod m5a_glue;

@@ -9,6 +9,7 @@
 //! frames are per call.
 
 use super::{StackFrame, mem, ported};
+use ffx_system::m5a_assets::bridge as al;
 use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
@@ -1265,6 +1266,39 @@ ported! {
     ScriptMouse_set_00624910 @ 0x0062_4910 => extern "C" fn script_mouse_set(app: u32, text: u32) -> u32 {
         let mut f = StackFrame::<{ (ip::MOUSE_SET_FRAME / 4) as usize }>::new();
         ip::script_mouse_set(&mut mem(), f.at() + ip::MOUSE_SET_FRAME, app, text)
+    }
+
+    // ---- round 3: the asset list reader, the Steam stats ctor, FileSys_Read ----
+    /// `AssetListReader_copy_0064d9e0(this; src)`: frame `ebp - 0x14`.
+    AssetListReader_copy_0064d9e0 @ 0x0064_d9e0 => extern "thiscall" fn asset_list_copy(this: u32, src: u32) -> u32 {
+        let mut f = StackFrame::<{ (al::COPY_FRAME / 4) as usize }>::new();
+        al::copy(&mut mem(), f.at() + al::COPY_FRAME, this, src)
+    }
+    /// `AssetListReader_dtor_AssetListReader(this)`: frame `ebp - 4`.
+    AssetListReader_dtor_AssetListReader @ 0x0063_4610 => extern "thiscall" fn asset_list_dtor(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        al::dtor(&mut mem(), f.at() + al::DTOR_FRAME, this);
+    }
+    /// `StatsAndAchievements_ctor(this)`.
+    StatsAndAchievements_ctor @ 0x006f_11a0 => extern "thiscall" fn stats_ctor(this: u32) -> u32 {
+        al::stats_ctor(&mut mem(), this)
+    }
+    /// `FileSys_Read(vfile; dst, len)`.
+    FileSys_Read @ 0x0061_aa90 => extern "thiscall" fn file_sys_read(vfile: u32, dst: u32, len: u32) -> u32 {
+        al::file_read(&mut mem(), vfile, dst, len)
+    }
+    /// `PApplicationScriptProxy_buttonRelease(app, name)`.
+    PApplicationScriptProxy_buttonRelease @ 0x0062_2ed0 => extern "C" fn button_release(app: u32, name: u32) -> u32 {
+        ip::button_release(&mut mem(), app, name)
+    }
+    /// `0x00623060(app, name)`: the press command.
+    PApplicationScriptProxy_buttonPress_00623060 @ 0x0062_3060 => extern "C" fn button_press(app: u32, name: u32) -> u32 {
+        ip::button_press(&mut mem(), app, name)
+    }
+    /// `Input_AddPadDevice(instance)`: frame `ebp - 0x10`.
+    Input_AddPadDevice @ 0x0062_40e0 => extern "C" fn add_pad_device(instance: u32) {
+        let mut f = StackFrame::<{ (ip::PAD_FRAME / 4) as usize }>::new();
+        ip::add_pad_device(&mut mem(), f.at() + ip::PAD_FRAME, instance);
     }
 }
 

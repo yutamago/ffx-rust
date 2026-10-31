@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use ffx_bridge::Mem;
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
+use ffx_system::m5a_assets::bridge as al;
 use ffx_system::m5a_files::bridge as fl;
 use ffx_system::m5a_fixup::bridge as fx;
 use ffx_system::m5a_glue::bridge as gl;
@@ -5968,6 +5969,324 @@ fn input_devices_match_the_original() {
                 ip::MOUSE_SET_FRAME,
                 |m, ebp| Out::U32(ip::script_mouse_set(m, ebp, big, text)),
             );
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_assets) ----
+
+/// The asset list reader's copy (framed: the allocator tag the tree copy
+/// gets a pointer to) and destructor (framed: the erase's iterator; the
+/// string short or long, vectors set or not), the callees stubbed.
+#[test]
+fn assets_list_reader_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0601);
+        for case in 0..60 {
+            t.reset();
+            t.stubs(&[
+                (al::COPY_TREE, true, 2, 2, rng.next()),
+                (al::COPY_VECTOR8, true, 1, 1, rng.next()),
+                (al::COPY_VECTOR, true, 1, 1, rng.next()),
+                (al::ASSIGN_SUBSTR, true, 3, 3, rng.next()),
+                (al::OPERATOR_DELETE, false, 1, 0, rng.next()),
+                (al::DESTROY_RANGE, false, 2, 2, rng.next()),
+                (al::TREE_ERASE, true, 3, 3, rng.next()),
+            ]);
+            let this = t.words(&(0..0x12).map(|_| rng.next()).collect::<Vec<_>>());
+            let src = rng.next();
+            t.skip = 0xc;
+            t.check_framed(
+                &format!("copy #{case}"),
+                0x0064_d9e0,
+                Conv::Thiscall(this),
+                &[src],
+                al::COPY_FRAME,
+                |m, ebp| Out::U32(al::copy(m, ebp, this, src)),
+            );
+            t.skip = 0;
+            let mut w: Vec<u32> = (0..0x12).map(|_| rng.next()).collect();
+            w[0] = t.words(&[rng.next(), rng.next(), rng.next()]);
+            for k in [2usize, 5, 8] {
+                if rng.chance(3) {
+                    w[k] = 0;
+                }
+            }
+            w[0x10] = [0, 0xf, 0x10, rng.next()][rng.below(4) as usize];
+            let this = t.words(&w);
+            t.check_framed(
+                &format!("dtor #{case}"),
+                0x0063_4610,
+                Conv::Thiscall(this),
+                &[],
+                al::DTOR_FRAME,
+                |m, ebp| {
+                    al::dtor(m, ebp, this);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+/// `StatsAndAchievements_ctor` (the Steam interfaces there or not, the
+/// user logged on or not), the `steam_api` imports stubbed.
+#[test]
+fn assets_stats_ctor_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0602);
+        for case in 0..60 {
+            t.reset();
+            let r = rng.next();
+            let utils = t.object(
+                &[(0, 0); 9]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let on = rng.next() & !(0xff * u32::from(rng.chance(2)));
+            let user = if rng.chance(4) {
+                0
+            } else {
+                t.object(&[(0, 0), (0, on)])
+            };
+            let r = rng.next();
+            let stats = if rng.chance(4) {
+                0
+            } else {
+                t.object(&[(0, r)])
+            };
+            t.stub_import(al::REGISTER_CALLBACK_IAT, false, 2, 0, rng.next());
+            t.stub_import(al::STEAM_UTILS_IAT, false, 0, 0, utils);
+            t.stub_import(al::STEAM_USER_IAT, false, 0, 0, user);
+            t.stub_import(al::STEAM_USER_STATS_IAT, false, 0, 0, stats);
+            let this = t.words(&(0..0x14).map(|_| rng.next()).collect::<Vec<_>>());
+            t.check(
+                &format!("StatsAndAchievements_ctor #{case}"),
+                0x006f_11a0,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(al::stats_ctor(m, this)),
+            );
+        }
+    });
+}
+
+/// `FileSys_Read`: positions before, inside, at the end of and past the
+/// buffer; reads ending before, inside and past it; past the entry's
+/// size (clipped, or nothing left); 64-bit positions.
+#[test]
+fn assets_file_read_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0603);
+        for case in 0..300 {
+            t.reset();
+            t.stub(al::MEMCPY, false, 3, 0, rng.next());
+            t.stub(al::STREAM_GET, false, 0, 0, rng.next());
+            t.stub(al::READ_VFILE, true, 6, 6, rng.below(0x1000));
+            let hi = if rng.chance(4) { rng.below(3) } else { 0 };
+            let start = rng.below(0x100);
+            let rend = start + rng.below(0x40);
+            let rec = t.words(&[rng.next(), 0, rend, hi, start, hi]);
+            let size_hi = hi + u32::from(rng.chance(6));
+            let entry = t.words(&[0, 0, start + rng.below(0x140), size_hi]);
+            let pos = match rng.below(4) {
+                0 => [start, rend, rend.wrapping_sub(1), start.wrapping_sub(1)]
+                    [rng.below(4) as usize],
+                _ => start.wrapping_add(rng.below(0x60)).wrapping_sub(0x20),
+            };
+            let pos_hi = if rng.chance(8) {
+                hi.wrapping_sub(1)
+            } else {
+                hi
+            };
+            if rng.chance(6) {
+                // at the entry's end: nothing left to read
+                t.w32(entry + 8, pos);
+                t.w32(entry + 0xc, pos_hi);
+            }
+            let vfile = t.words(&[0, 0, rng.next(), entry, pos, pos_hi, rec]);
+            // reads ending at the buffer's start or end now and then
+            let len = match rng.below(4) {
+                0 => rend.wrapping_sub(pos) & 0xff,
+                1 => start.wrapping_sub(pos) & 0xff,
+                _ => rng.below(0x80),
+            };
+            let dst = rng.next();
+            let what = format!(
+                "FileSys_Read #{case} pos {pos_hi:#x}:{pos:#x} len {len:#x} buf {start:#x}..{rend:#x}"
+            );
+            t.check(
+                &what,
+                0x0061_aa90,
+                Conv::Thiscall(vfile),
+                &[dst, len],
+                |m| Out::U32(al::file_read(m, vfile, dst, len)),
+            );
+        }
+    });
+}
+
+/// The script button commands (`buttonRelease`, `0x00623060`): null
+/// app/name, no pad, each of the ten names and an unknown one, the
+/// vtable answering 0 or not.
+#[test]
+fn input_buttons_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0604);
+        for case in 0..80 {
+            t.reset();
+            let k = rng.below(12) as usize;
+            let seq: Vec<u32> = (0..12)
+                .map(|i| u32::from(i != k) * (1 + rng.below(9)))
+                .collect();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &seq);
+            t.stub(ip::PHYRE_PRINTF, false, 3, 0, rng.next());
+            t.stub(
+                ip::BUTTON_FALLBACK,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let pad = if rng.chance(5) {
+                0
+            } else {
+                t.alloc(&[0xa5; 0x30])
+            };
+            let devices = t.zeros(0x40);
+            t.w32(devices + 0x38, pad);
+            let r = if rng.chance(2) { 0 } else { rng.next() };
+            let obj = t.object(
+                &[(0, 0); 7]
+                    .iter()
+                    .copied()
+                    .chain([(0, r)])
+                    .collect::<Vec<_>>(),
+            );
+            let app = t.zeros(0x300);
+            let vt: u32 = Mem::read(&t.a, obj);
+            t.w32(app, vt);
+            t.w32(app + 0x2b8, devices);
+            let app = if rng.chance(8) { 0 } else { app };
+            let name = if rng.chance(8) { 0 } else { rng.next() };
+            let what = format!("buttonRelease #{case} k {k}");
+            t.check(&what, 0x0062_2ed0, Conv::Cdecl, &[app, name], |m| {
+                Out::U32(ip::button_release(m, app, name))
+            });
+            t.reset();
+            t.stub_import_seq(ip::STRICMP_IAT, 2, 0, &seq);
+            t.stub(ip::PHYRE_PRINTF, false, 3, 0, rng.next());
+            t.stub(
+                ip::BUTTON_FALLBACK,
+                false,
+                3,
+                0,
+                if rng.chance(2) { 0 } else { rng.next() },
+            );
+            let what = format!("0x00623060 #{case} k {k}");
+            t.check(&what, 0x0062_3060, Conv::Cdecl, &[app, name], |m| {
+                Out::U32(ip::button_press(m, app, name))
+            });
+        }
+    });
+}
+
+/// `Input_AddPadDevice` (framed: the device pointer `CreateDevice`
+/// writes): pads already listed (the GUID equal at the index or not),
+/// `XInput` devices below and at the limit, the allocation failing, the
+/// `DirectInput` path's steps failing or not.
+#[test]
+#[allow(clippy::too_many_lines)] // one case setup for the paths
+fn input_add_pad_device_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0605);
+        for case in 0..80 {
+            t.reset();
+            let instance: Vec<u32> = (0..0x91).map(|_| rng.next()).collect();
+            let guid = [instance[1], instance[2], instance[3], instance[4]];
+            let instance = t.words(&instance);
+            // the device list
+            let head = t.rebase(ip::LIST_HEAD);
+            let n = rng.below(5) as usize;
+            let mut nodes = Vec::new();
+            for _ in 0..n {
+                let ty = [1u32, 2, 2, 3][rng.below(4) as usize];
+                let v0 = t.stub_code(0x5500, true, 0, 0, 0);
+                let v1 = t.stub_code(0x5501, true, 0, 0, ty);
+                let vt = t.words(&[v0, v1]);
+                let mut w: Vec<u32> = (0..0x50).map(|_| rng.next()).collect();
+                w[0] = vt;
+                if rng.chance(2) {
+                    w[0x4c..0x50].copy_from_slice(&guid);
+                    if rng.chance(3) {
+                        // only the last word differs
+                        w[0x4f] ^= 1;
+                    }
+                }
+                nodes.push(t.words(&w));
+            }
+            for k in 0..n {
+                let link = if k + 1 < n { nodes[k + 1] + 4 } else { head };
+                t.w32(nodes[k] + 4, link);
+            }
+            t.w32(head, if n > 0 { nodes[0] + 4 } else { head });
+            let xinput = rng.chance(2);
+            t.stub(
+                ip::IS_XINPUT,
+                false,
+                1,
+                0,
+                rng.next() & !(0xff * u32::from(!xinput)),
+            );
+            t.g32(ip::XINPUT_COUNT, rng.below(6));
+            // the DirectInput message has no arguments past the format
+            let words = if xinput { 6 } else { 2 };
+            t.stub(ip::PHYRE_PRINTF, false, words, 0, rng.next());
+            let pad = if rng.chance(5) {
+                0
+            } else {
+                t.alloc(&[0x5a; 0x3c4])
+            };
+            t.stub(ip::PHYRE_MALLOC, false, 1, 0, pad);
+            t.stub(ip::PAD_CTOR, true, 1, 1, rng.next());
+            let hr = |rng: &mut Rng| {
+                if rng.chance(6) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            let level = [0x8000_4001, 0x8000_4005, 0, 1][rng.below(4) as usize];
+            let mut slots = vec![(1, 0); 15];
+            slots[4] = (4, hr(&mut rng));
+            slots[7] = (1, rng.next());
+            slots[11] = (2, hr(&mut rng));
+            slots[13] = (3, level);
+            let dev = com_object(t, &slots);
+            let src = t.words(&[dev]);
+            let r = hr(&mut rng);
+            let next = t.stub_code(0x5400, false, 4, 4, r);
+            let create = write_then(t, 2, src, 4, next);
+            let vt = t.words(&[0, 0, 0, create]);
+            let di = t.words(&[vt]);
+            t.g32(ip::DIRECT_INPUT, di);
+            t.g32(ip::HWND, rng.next());
+            t.skip = 0xc;
+            let what = format!("Input_AddPadDevice #{case} n {n} xinput {xinput}");
+            t.check_framed(
+                &what,
+                0x0062_40e0,
+                Conv::Cdecl,
+                &[instance],
+                ip::PAD_FRAME,
+                |m, ebp| {
+                    ip::add_pad_device(m, ebp, instance);
+                    Out::None
+                },
+            );
+            t.skip = 0;
         }
     });
 }

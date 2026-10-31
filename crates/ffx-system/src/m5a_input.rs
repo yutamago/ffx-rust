@@ -498,4 +498,213 @@ pub mod bridge {
         h.write(state.wrapping_add(0xa0), 0u8);
         r
     }
+
+    /// The script pad buttons: each name (a string address) and its
+    /// button byte (the pad state's `+0xd + button`).
+    pub const BUTTONS: [(u32, u32); 10] = [
+        (0x00b4_0290, 0xd),
+        (0x00b2_bf3c, 0xc),
+        (0x00b4_0298, 0xe),
+        (0x00b4_02a4, 0xb),
+        (0x00b8_f9bc, 0x14),
+        (0x00b4_02ac, 0x13),
+        (0x00b8_f8a0, 0x17),
+        (0x00b8_f8a4, 0x19),
+        (0x00b8_f890, 0x1a),
+        (0x00b8_f898, 0x18),
+    ];
+    /// `Phyre_PhyrePrintf` (cdecl) and its "unknown button" message.
+    pub const PHYRE_PRINTF: u32 = 0x0043_52f0;
+    pub const MSG_UNKNOWN_BUTTON: u32 = 0x00b4_02b4;
+    /// `0x0062c730(app, name, 0)` (cdecl), the press command's fallback.
+    pub const BUTTON_FALLBACK: u32 = 0x0062_c730;
+
+    /// The button of `name` (`_stricmp` against [`BUTTONS`] in order).
+    fn button(h: &mut impl Host, name: u32) -> Option<u32> {
+        for (text, button) in BUTTONS {
+            let text = h.rebase(text);
+            if import(h, STRICMP_IAT, Conv::Cdecl, &[name, text]) == 0 {
+                return Some(button);
+            }
+        }
+        None
+    }
+
+    /// An unknown button reported (`Phyre_PhyrePrintf(2, msg, name)`); 5.
+    fn unknown_button(h: &mut impl Host, name: u32) -> u32 {
+        let msg = h.rebase(MSG_UNKNOWN_BUTTON);
+        h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[2, msg, name]);
+        5
+    }
+
+    /// `PApplicationScriptProxy_buttonRelease(app, name)` (cdecl): with
+    /// an application, a name and a pad (`[app + 0x2b8] + 0x38`), the
+    /// named button released (0) or, for an unknown name, 5 reported;
+    /// else 0.
+    pub fn button_release(h: &mut impl Host, app: u32, name: u32) -> u32 {
+        if app == 0 || name == 0 {
+            return 0;
+        }
+        let devices: u32 = h.read(app.wrapping_add(0x2b8));
+        let pad: u32 = h.read(devices.wrapping_add(0x38));
+        if pad == 0 {
+            return 0;
+        }
+        let Some(b) = button(h, name) else {
+            return unknown_button(h, name);
+        };
+        h.write(pad.wrapping_add(b + 0xd), 0u8);
+        0
+    }
+
+    /// `0x00623060(app, name)` (cdecl, the press command): with an
+    /// application and a name: with a pad, the button pressed (1) or, for
+    /// an unknown name, 5 reported; then the application's vtable slot 7
+    /// (its `eax` when not 0), else `0x0062c730(app, name, 0)`'s.
+    pub fn button_press(h: &mut impl Host, app: u32, name: u32) -> u32 {
+        if app == 0 || name == 0 {
+            return 0;
+        }
+        let devices: u32 = h.read(app.wrapping_add(0x2b8));
+        let pad: u32 = h.read(devices.wrapping_add(0x38));
+        if pad != 0 {
+            let Some(b) = button(h, name) else {
+                return unknown_button(h, name);
+            };
+            h.write(pad.wrapping_add(b + 0xd), 1u8);
+        }
+        let r = h.call_virtual(app, 7, &[]);
+        if r != 0 {
+            return r;
+        }
+        h.call_sym(BUTTON_FALLBACK, Conv::Cdecl, &[app, name, 0])
+    }
+
+    /// `Input_IsXInputDevice(&guid)` (cdecl, `al`), `PInputDevicePad_ctor`
+    /// (thiscall, `ret 4`), the two pad vtables, `c_dfDIJoystick2`,
+    /// `g_XInputPadCount`, the two messages, `Input_EnumAxesSetRange`.
+    pub const IS_XINPUT: u32 = 0x0062_44f0;
+    pub const PAD_CTOR: u32 = 0x0062_01a0;
+    pub const XINPUT_PAD_VTABLE: u32 = 0x00b3_ff9c;
+    pub const DI_PAD_VTABLE: u32 = 0x00b3_ff80;
+    pub const DF_JOYSTICK: u32 = 0x00b6_a624;
+    pub const XINPUT_COUNT: u32 = 0x00cc_a30c;
+    pub const MSG_XINPUT_PAD: u32 = 0x00b4_1058;
+    pub const MSG_DI_PAD: u32 = 0x00b4_1078;
+    pub const ENUM_AXES: u32 = 0x0062_33a0;
+    /// The frame of `Input_AddPadDevice`: the device at `ebp - 0x10`.
+    pub const PAD_FRAME: u32 = 0x10;
+
+    /// Whether the pad numbered `index` among the type-2 devices of
+    /// `g_PInputDeviceList` (in list order) has `instance`'s product
+    /// GUID (`+4`, 16 bytes) at its `+0x130`. A device of another index
+    /// is skipped; a mismatch ends the walk.
+    fn pad_known(h: &mut impl Host, index: u32, instance: u32) -> bool {
+        let head = h.rebase(LIST_HEAD);
+        let mut link: u32 = h.read(head);
+        let mut seen = 0u32;
+        while link != head && link != 0 && link != 4 {
+            let node = link.wrapping_sub(4);
+            if h.call_virtual(node, 1, &[]) == 2 {
+                if seen == index {
+                    return (0..4u32).all(|k| {
+                        h.read::<u32>(instance.wrapping_add(4 + 4 * k))
+                            == h.read::<u32>(node.wrapping_add(0x130 + 4 * k))
+                    });
+                }
+                seen = seen.wrapping_add(1);
+            }
+            link = h.read(node.wrapping_add(4));
+        }
+        false
+    }
+
+    /// The device instance (0x244 bytes) copied into the pad at `+0x12c`.
+    fn copy_instance(h: &mut impl Host, pad: u32, instance: u32) {
+        for k in 0..0x91u32 {
+            let w: u32 = h.read(instance.wrapping_add(4 * k));
+            h.write(pad.wrapping_add(0x12c + 4 * k), w);
+        }
+    }
+
+    /// `Input_AddPadDevice(instance)` (cdecl; both callers drop `eax`):
+    /// nothing when one of the first 18 pads already is this device
+    /// ([`pad_known`]). An `XInput` device (`Input_IsXInputDevice(+0x14)`)
+    /// is counted (`g_XInputPadCount`), and while fewer than 4 are,
+    /// reported and given a `PInputDevicePadXInput` (0x3c4 bytes: its
+    /// index `+0x3b0`, `+0x3b4..=+0x3c0` 0, the instance). Any other is
+    /// reported and opened through `DirectInput` (`c_dfDIJoystick2`, the
+    /// cooperative level, the axis ranges by `EnumObjects`, acquired) as
+    /// a `PInputDevicePadDirectInput` (0x3b0 bytes, the instance).
+    pub fn add_pad_device(h: &mut impl Host, ebp: u32, instance: u32) {
+        for index in 0..0x12u32 {
+            if pad_known(h, index, instance) {
+                return;
+            }
+        }
+        if h.call_sym(IS_XINPUT, Conv::Cdecl, &[instance.wrapping_add(0x14)])
+            .to_le_bytes()[0]
+            != 0
+        {
+            let count_at = h.rebase(XINPUT_COUNT);
+            let count: u32 = h.read(count_at);
+            if count < 4 {
+                let msg = h.rebase(MSG_XINPUT_PAD);
+                let g = |k: u32| instance.wrapping_add(4 * k);
+                let guid: [u32; 4] = [h.read(g(1)), h.read(g(2)), h.read(g(3)), h.read(g(4))];
+                h.call_sym(
+                    PHYRE_PRINTF,
+                    Conv::Cdecl,
+                    &[2, msg, guid[0], guid[1], guid[2], guid[3]],
+                );
+                let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x3c4]);
+                if p != 0 {
+                    let index: u32 = h.read(count_at);
+                    h.call_sym(PAD_CTOR, Conv::Thiscall(p), &[0]);
+                    h.write(p.wrapping_add(0x3b0), index);
+                    let vt = h.rebase(XINPUT_PAD_VTABLE);
+                    h.write(p, vt);
+                    for off in [0x3b4u32, 0x3b8, 0x3bc, 0x3c0] {
+                        h.write(p.wrapping_add(off), 0u32);
+                    }
+                    copy_instance(h, p, instance);
+                }
+            }
+            let count: u32 = h.read(count_at);
+            h.write(count_at, count.wrapping_add(1));
+            return;
+        }
+        let msg = h.rebase(MSG_DI_PAD);
+        h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[2, msg]);
+        let slot = ebp.wrapping_sub(PAD_FRAME);
+        let di: u32 = h.read(h.rebase(DIRECT_INPUT));
+        if com(h, di, 0xc, &[instance.wrapping_add(4), slot, 0]).cast_signed() < 0 {
+            return;
+        }
+        let dev: u32 = h.read(slot);
+        let format = h.rebase(DF_JOYSTICK);
+        if com(h, dev, 0x2c, &[format]).cast_signed() < 0 {
+            return;
+        }
+        let dev: u32 = h.read(slot);
+        let hwnd: u32 = h.read(h.rebase(HWND));
+        if com(h, dev, 0x34, &[hwnd, 6]) == 0x8000_4001 {
+            return;
+        }
+        let dev: u32 = h.read(slot);
+        let cb = h.rebase(ENUM_AXES);
+        if com(h, dev, 0x10, &[cb, dev, 0]).cast_signed() < 0 {
+            return;
+        }
+        let dev: u32 = h.read(slot);
+        com(h, dev, 0x1c, &[]);
+        let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x3b0]);
+        if p != 0 {
+            let dev: u32 = h.read(slot);
+            h.call_sym(PAD_CTOR, Conv::Thiscall(p), &[dev]);
+            let vt = h.rebase(DI_PAD_VTABLE);
+            h.write(p, vt);
+            copy_instance(h, p, instance);
+        }
+    }
 }
