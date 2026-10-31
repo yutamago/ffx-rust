@@ -80,9 +80,11 @@ pub mod o4_fam2;
 pub mod o4_fam3;
 pub mod o4_fam4;
 pub mod o4_fam5;
+pub mod o4_misc;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_rcef2;
+pub mod o4_rcef3;
 pub mod o4_setup;
 pub mod o4_single;
 pub mod o4_small;
@@ -1349,6 +1351,12 @@ ports! {
     "o4 setup two_setups 0042@b060" => o4_setup::TWO_SETUPS_0042_B060, o4_setup::two_setups;
     "o4 setup setups_of_block 0262@6350" => o4_setup::SETUPS_OF_BLOCK_0262_6350, o4_setup::setups_of_block;
     "o4 setup setups_of_table 0262@6e50" => o4_setup::SETUPS_OF_TABLE_0262_6E50, o4_setup::setups_of_table;
+    "o4 rcef3 field_slots_seq 0361@2770" => o4_rcef3::FIELD_SLOTS_SEQ_0361_2770, o4_rcef3::field_slots_seq;
+    "o4 rcef3 tasks_or_seq 0382@1790" => o4_rcef3::TASKS_OR_SEQ_0382_1790, o4_rcef3::tasks_or_seq;
+    "o4 rcef3 step_or_flag 0382@1c70" => o4_rcef3::STEP_OR_FLAG_0382_1C70, o4_rcef3::step_or_flag;
+    "o4 rcef3 task_keep_seq_call 0313@19e0" => o4_rcef3::TASK_KEEP_SEQ_CALL_0313_19E0, o4_rcef3::task_keep_seq_call;
+    "o4 misc static_flag_slots 0343@6900" => o4_misc::STATIC_FLAG_SLOTS_0343_6900, o4_misc::static_flag_slots;
+    "o4 misc reset_then_float 0351@2450" => o4_misc::RESET_THEN_FLOAT_0351_2450, o4_misc::reset_then_float;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1734,6 +1742,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 single actor_slot_edx 0298@2250",
         &o4_single::ACTOR_SLOT_EDX_0298_2250,
+    ),
+    (
+        "o4 misc vector_set 0343@69e0",
+        &o4_misc::VECTOR_SET_0343_69E0,
     ),
 ];
 
