@@ -1622,6 +1622,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("key curve", &s4_small::KEY_CURVE),
     ("light object", &s4_small::LIGHT_OBJECT),
     ("sprite node", &s4_small::SPRITE_NODE),
+    ("named parts", &s4_small::NAMED_PARTS),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

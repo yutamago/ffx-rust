@@ -9546,3 +9546,66 @@ pub const ENTRY_HOOK_IN: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The overlay's named parts registered (internal: `ecx` = the owner,
+/// `edx` = the model, cdecl `(prefix)`): when `G_ON` is set, slot 929
+/// first, then for each of the `u16 G_COUNT` records (16 bytes from
+/// operand `+0x53` - 6: the part word, `u16 +6` its index) slot 941
+/// `(part)` gives its name, slot 231 joins `prefix` and it, then the
+/// DLL's suffix, slot 913 `(owner, name, index)` registers it and slot
+/// 278 `(model, index, 0)` shows it. Returns the count, 0 when there are
+/// none, or `prefix` when off.
+///
+/// `magic_0434` 0x10003eb0 (254 bytes; 2 DLLs).
+pub fn named_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let prefix = fr.arg(g, 0);
+    // push ebp; sub esp, 0x8c: the locals hang off ebp = esp - 4
+    let ebp = fr.esp.wrapping_sub(4);
+    let (a, b) = (ebp.wrapping_sub(0x84), ebp.wrapping_sub(0x44));
+    g.write::<u32>(ebp.wrapping_sub(0x88), fr.ecx);
+    g.write::<u32>(ebp.wrapping_sub(0x8c), prefix);
+    if g.read::<u32>(w(0x15)) == 0 {
+        return Ret::eax(prefix);
+    }
+    slot_call(g, img, f, (0x33, 929), &[]);
+    let count = |g: &G| u32::from(g.read::<u16>(w(0x47)));
+    if count(g) == 0 {
+        return Ret::eax(0);
+    }
+    let mut rec = w(0x53);
+    let mut i = 0u32;
+    loop {
+        let part = g.read::<u32>(rec.wrapping_sub(6));
+        let name = slot_call(g, img, f, (0x61, 941), &[part]).eax;
+        slot_call(g, img, f, (0x7f, 231), &[a, prefix, name, part]);
+        let words = [b, a, w(0x8c), a, prefix, name, part];
+        slot_call(g, img, f, (0x9c, 231), &words);
+        let index = u32::from(g.read::<u16>(rec));
+        let mut words = [0; 13];
+        words[..3].copy_from_slice(&[fr.ecx, b, index]);
+        words[3..10].copy_from_slice(&[b, a, w(0x8c), a, prefix, name, part]);
+        // call width: 10 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (0xb1, 913), &words[..10]);
+        let index = u32::from(g.read::<u16>(rec));
+        words.copy_within(0..10, 3);
+        words[..3].copy_from_slice(&[fr.edx, index, 0]);
+        // call width: 13 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (0xca, 278), &words);
+        i += 1;
+        rec = rec.wrapping_add(0x10);
+        let n = count(g);
+        if i.cast_signed() >= n.cast_signed() {
+            return Ret::eax(n);
+        }
+    }
+}
+
+/// [`named_parts`].
+pub const NAMED_PARTS: Sig = Sig {
+    len: 254,
+    hash: 0x30dc_7300_1d3b_ae47,
+    calls: &[(0xf6, Callee::Any)],
+    imports: &[],
+};

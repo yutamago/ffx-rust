@@ -4411,3 +4411,26 @@ fn entry_hooks_in() {
         t.check_entry(f, Call::default(), &[obj, 0x0a0a, kind, id], Eax::Checked);
     }
 }
+
+#[test]
+fn named_parts() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x3eb0);
+    recs(&mut t, &[(929, 0), (231, 3), (913, 3), (278, 3)]);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    let first = t.img.word(f + 0x53) - 6;
+    for i in 0..4u32 {
+        t.set_u32(first + 0x10 * i, 0x0a00 + i);
+        t.set_u16(first + 0x10 * i + 6, 0x30 + i as u16);
+    }
+    for (on, n) in [(0u32, 3u16), (1, 0), (1, 3)] {
+        t.set_u32(op(&t, f, 0x15), on);
+        t.set_u16(op(&t, f, 0x47), n);
+        let c = Call {
+            ecx: 0x0c0c,
+            edx: 0x0d0d,
+            ..Call::default()
+        };
+        t.check(f, c, &[0x0e0e], Eax::Checked, s4_small::named_parts);
+    }
+}
