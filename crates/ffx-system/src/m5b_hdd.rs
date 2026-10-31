@@ -498,6 +498,90 @@ pub const COPY_MSG: [u32; 9] = [
     0x00b5_3aa0,
 ];
 
+/// `CdEnvInit`'s: the once flag `0x01128a85` (`+0x28` cleared first) and
+/// its `movie_err` message and source, `sa_task_init` and its task word,
+/// `CdSetReadFuncs_0076cff0`, the disc layout words `0x02310c74..` and
+/// their `dvd_cd_*` getters, `CdSetC40e19_0076cfa0`, the 0x1800-byte
+/// buffer word, `hdd_head_reset`/`hdd_head_init`, the HDD file flag and
+/// the disc-open check byte; the PC tables' setters and words; the
+/// standby word, `sceCdGetDiskType`, the four `pfs0:` files (name, open
+/// message, word, read message), "hdd err" and the mount message; the
+/// sector base, the FAT/FID override words and getters, the sector
+/// table, the read flag `0x00c40e18`, `CdSetModule_0076c510`,
+/// `dvd_cd_unk7`/`unk8`, `cd_file_sector`; the read buffer, install check
+/// and init, the request state, the read hook word, the semaphore
+/// getters and words, `g_FFXHddMode`, `hdd_mount_flg_get` and the banner.
+pub const CE_ONCE: u32 = 0x0112_8a85;
+pub const CE_ONCE_MSG: u32 = 0x00b5_1fc0;
+pub const CE_SRC: u32 = 0x00b5_1d30;
+pub const CE_TASK_INIT: u32 = 0x0077_a1a0;
+pub const CE_TASK: u32 = 0x0112_8adc;
+pub const CE_SET_READ_FUNCS: u32 = 0x0076_cff0;
+pub const CE_LAYOUT: u32 = 0x0231_0c74;
+pub const CE_LAYOUT_GETTERS: [u32; 7] = [
+    0x0076_d940,
+    0x0076_d740,
+    0x0076_d840,
+    0x0076_d9c0,
+    0x0076_d7c0,
+    0x0076_d8c0,
+    0x0076_d6c0,
+];
+pub const CE_SET_C40E19: u32 = 0x0076_cfa0;
+pub const CE_BUFFER: u32 = 0x0112_8ac8;
+pub const CE_HEAD_RESET: u32 = 0x0077_89e0;
+pub const CE_HEAD_INIT: u32 = 0x0077_89d0;
+pub const CE_HDD_FILES_OPEN: u32 = 0x0112_8a86;
+pub const CE_DISK_OPEN_CHECK: u32 = 0x0112_8aac;
+pub const CE_CHGNAME_INIT: u32 = 0x00a4_3130;
+pub const CE_FAT_INDEX_NAMES: u32 = 0x00a4_2fc0;
+pub const CE_SIZETBL: u32 = 0x00a4_30c0;
+pub const CE_SIZES: u32 = 0x0112_8ae0;
+pub const CE_SIZETBL_EX: u32 = 0x00a4_3100;
+pub const CE_EX_SIZES: u32 = 0x0112_8a90;
+pub const CE_MODULE_SIZETBL: u32 = 0x00a4_3080;
+pub const CE_MODULE_SIZES: u32 = 0x0231_0cd4;
+pub const CE_STANDBY: u32 = 0x0112_8ac4;
+pub const CE_DISK_TYPE: u32 = 0x00a4_47b0;
+pub const CE_HDD_FILES: [(u32, u32, u32, u32); 4] = [
+    (0x00b5_1fd8, 0x00b5_1fe8, 0x0231_0c68, 0x00b5_2014),
+    (0x00b5_2038, 0x00b5_2048, 0x0231_0c6c, 0x00b5_206c),
+    (0x00b5_2090, 0x00b5_20a4, 0x0112_8ae0, 0x00b5_20c8),
+    (0x00b5_20f0, 0x00b5_2104, 0x0231_0cd4, 0x00b5_212c),
+];
+pub const CE_HDD_ERR: u32 = 0x00b5_200c;
+pub const CE_MOUNT_MSG: u32 = 0x00b5_2154;
+pub const CE_SECTOR_BASE: u32 = 0x0112_8ab4;
+pub const CE_FAT_OVERRIDE: u32 = 0x0112_8a98;
+pub const CE_FID_OVERRIDE: u32 = 0x0112_8aa0;
+pub const CE_FAT_SIZE: u32 = 0x0076_d7c0;
+pub const CE_FAT_SECTOR: u32 = 0x0076_d740;
+pub const CE_FID_SIZE: u32 = 0x0076_d8c0;
+pub const CE_FID_SECTOR: u32 = 0x0076_d840;
+pub const CE_SECTOR_TABLE: u32 = 0x0231_0c68;
+pub const CE_READ_FLAG: u32 = 0x00c4_0e18;
+pub const CE_SET_MODULE: u32 = 0x0076_c510;
+pub const CE_UNK7: u32 = 0x0076_da40;
+pub const CE_UNK8: u32 = 0x0076_dac0;
+pub const CE_FILE_SECTOR: u32 = 0x0076_d510;
+pub const CE_ALLOC_READ_BUFFER: u32 = 0x0076_dc70;
+pub const CE_INSTALL: u32 = 0x0112_8ae4;
+pub const CE_INSTALL_CHECK: u32 = 0x0077_91a0;
+pub const CE_INSTALL_COUNT: u32 = 0x0112_8ab8;
+pub const CE_INSTALL_INIT: u32 = 0x0077_92e0;
+pub const CE_REQ_STATE: u32 = 0x0231_0c9c;
+pub const CE_READ_HOOK: u32 = 0x0231_0ca4;
+pub const CE_READ_SEMA: u32 = 0x0064_1150;
+pub const CE_READ_SEMA_CELL: u32 = 0x0231_0c28;
+pub const CE_OLD_SEMA: u32 = 0x0064_1360;
+pub const CE_OLD_SEMA_CELL: u32 = 0x0231_0c24;
+pub const CE_HDD_MODE: u32 = 0x0133_c913;
+pub const CE_MOUNT_FLAG: u32 = 0x0077_9560;
+pub const CE_MSG_HDDMODE: u32 = 0x00b5_2164;
+pub const CE_MSG_MOUNT: u32 = 0x00b5_2174;
+pub const CE_MSG_BAR: u32 = 0x00b5_2184;
+pub const CE_MSG_TITLE: u32 = 0x00b5_2198;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -2989,5 +3073,249 @@ pub mod bridge {
             }
             fresh = true;
         }
+    }
+
+    /// One `pfs0:` file of [`cd_env_init`]'s HDD path: `sceOpen(name, 1)`
+    /// (failing: `yiAssert(1, "hdd err", open_msg)`), its size by
+    /// `sceLseek(fd, 0, 2)`, a 0x40-aligned `user_malloc` stored at
+    /// `cell`, read whole (a short read: `dbgPrintf(read_msg)`), closed.
+    fn cdenv_hdd_file(
+        h: &mut impl Host,
+        name: u32,
+        open_msg: u32,
+        cell: u32,
+        read_msg: u32,
+        first: bool,
+    ) {
+        if first {
+            let at = h.rebase(super::CE_HDD_FILES_OPEN);
+            h.write(at, 1u8);
+        }
+        let fd = cdecl(h, super::SCE_OPEN, &[h.rebase(name), 1]);
+        if fd.cast_signed() < 0 {
+            let err = h.rebase(super::CE_HDD_ERR);
+            cdecl(h, super::YI_ASSERT, &[1, err, h.rebase(open_msg)]);
+        }
+        let size = cdecl(h, super::SCE_LSEEK, &[fd, 0, 2]);
+        cdecl(h, super::MEM_SET_ALIGN, &[0x40]);
+        let buf = cdecl(h, super::USER_MALLOC, &[size]);
+        let cell = h.rebase(cell);
+        h.write(cell, buf);
+        cdecl(h, super::SCE_LSEEK, &[fd, 0, 0]);
+        let buf: u32 = h.read(cell);
+        if cdecl(h, super::SCE_READ, &[fd, buf, size]) != size {
+            cdecl(h, super::DBG_PRINTF, &[h.rebase(read_msg)]);
+        }
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+    }
+
+    /// Waits `TkSyncV(0)` until `sceCdDiskReady(1)` is 2.
+    fn cdenv_wait_ready(h: &mut impl Host) {
+        loop {
+            cdecl(h, super::SYNC_V, &[0]);
+            if cdecl(h, super::DISK_READY, &[1]) == 2 {
+                break;
+            }
+        }
+    }
+
+    /// Waits `TkSyncV(0)` while `cd_CheckDisk_0076d5a0()` is nonzero.
+    fn cdenv_wait_disk(h: &mut impl Host) {
+        while cdecl(h, super::CHECK_DISK, &[]) != 0 {
+            cdecl(h, super::SYNC_V, &[0]);
+        }
+    }
+
+    /// A disc table read by [`cd_env_init`]'s DVD path: `sector` and
+    /// `size` from the override words `cell` / `cell + 4` (0: the
+    /// `dvd_cd_*` getters), a 0x40-aligned buffer of `size` rounded up to
+    /// 2 KB stored at `dest`, read by `CdReadDirect_0076d140` until it
+    /// succeeds, then the disc check.
+    fn cdenv_dvd_table(h: &mut impl Host, cell: u32, getters: [u32; 2], dest: u32) {
+        let mut sector: u32 = h.read(h.rebase(cell));
+        let size = if sector == 0 {
+            let size = cdecl(h, getters[0], &[]);
+            sector = cdecl(h, getters[1], &[]);
+            size
+        } else {
+            h.read(h.rebase(cell).wrapping_add(4))
+        };
+        cdecl(h, super::MEM_SET_ALIGN, &[0x40]);
+        let size = size.wrapping_add(0x7ff);
+        let buf = cdecl(h, super::USER_MALLOC, &[size & 0xffff_f800]);
+        let dest = h.rebase(dest);
+        h.write(dest, buf);
+        let flag = h.rebase(super::CE_READ_FLAG);
+        let mut ok = cdecl(h, super::READ_DIRECT, &[sector, size, buf, flag]);
+        while ok == 0 {
+            cdenv_wait_ready(h);
+            let buf: u32 = h.read(dest);
+            ok = cdecl(h, super::READ_DIRECT, &[sector, size, buf, flag]);
+        }
+        cdenv_wait_disk(h);
+    }
+
+    /// A PS2 file read by [`cd_env_init`]'s DVD path: the file number
+    /// from `getter` (`dvd_cd_unk7` / `unk8`), its size by
+    /// `CDfileSize_CD`, a 0x40-aligned buffer rounded up to 2 KB at
+    /// `dest`, read from `cd_file_sector(getter())` until it succeeds,
+    /// then the disc check.
+    fn cdenv_dvd_file(h: &mut impl Host, getter: u32, dest: u32) {
+        let n = cdecl(h, getter, &[]);
+        let size = cdecl(h, super::FILE_SIZE_CD, &[n]);
+        cdecl(h, super::MEM_SET_ALIGN, &[0x40]);
+        let size = size.wrapping_add(0x7ff);
+        let buf = cdecl(h, super::USER_MALLOC, &[size & 0xffff_f800]);
+        let dest = h.rebase(dest);
+        h.write(dest, buf);
+        let flag = h.rebase(super::CE_READ_FLAG);
+        let n = cdecl(h, getter, &[]);
+        let sector = cdecl(h, super::CE_FILE_SECTOR, &[n]);
+        let mut ok = cdecl(h, super::READ_DIRECT, &[sector, size, buf, flag]);
+        while ok == 0 {
+            cdenv_wait_ready(h);
+            let buf: u32 = h.read(dest);
+            let n = cdecl(h, getter, &[]);
+            let sector = cdecl(h, super::CE_FILE_SECTOR, &[n]);
+            ok = cdecl(h, super::READ_DIRECT, &[sector, size, buf, flag]);
+        }
+        cdenv_wait_disk(h);
+    }
+
+    /// `CdEnvInit(mode)` with its argument slot at `slot`: the PS2 CD
+    /// library's set-up. A second call reports `"sa_file_read_init==0"`
+    /// (`movie_err`, libmscd.c 0x7f4). The read task
+    /// (`sa_task_init(1)`), the read functions for `mode`
+    /// (`CdSetReadFuncs_0076cff0`), the disc layout words `0x02310c74..`
+    /// from the `dvd_cd_*` getters, a 0x1800-byte buffer, the HDD heads.
+    /// Mode 0 (the PC): the file tables by the `pc_*` setters. Otherwise
+    /// the drive is synced (and stood by when `0x01128ac4` is set); on an
+    /// HDD disc type (0x12, 0x13) the four `pfs0:` files are read after
+    /// `hdd_mount` (failing: `yiAssert`), else the disc's FAT and FID
+    /// tables and the size tables (files `dvd_cd_unk7`/`unk8`) with the
+    /// sector base made relative to module 1. Then the read buffer, the
+    /// install check, the request state (`0x02310c9c..`), the read hook
+    /// `[0x02310ca4]`, the semaphores and the banner (`dbgPrintf`; the
+    /// last line by a tail jump that leaves its string in the argument
+    /// slot). Returns the last `dbgPrintf`'s `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn cd_env_init(h: &mut impl Host, slot: u32, mode: u32) -> u32 {
+        h.write(h.rebase(super::CE_ONCE).wrapping_add(0x28), 0u8);
+        if h.read::<u8>(h.rebase(super::CE_ONCE)) != 0 {
+            let (msg, src) = (h.rebase(super::CE_ONCE_MSG), h.rebase(super::CE_SRC));
+            cdecl(h, super::MOVIE_ERR, &[msg, src, 0x7f4]);
+        }
+        h.write(h.rebase(super::CE_ONCE), 1u8);
+        let task = cdecl(h, super::CE_TASK_INIT, &[1]);
+        h.write(h.rebase(super::CE_TASK), task);
+        cdecl(h, super::CE_SET_READ_FUNCS, &[mode]);
+        h.write(h.rebase(super::CE_LAYOUT).wrapping_add(0x1c), 0u32);
+        for (k, &f) in (0u32..).zip(&super::CE_LAYOUT_GETTERS) {
+            let v = cdecl(h, f, &[]);
+            h.write(h.rebase(super::CE_LAYOUT).wrapping_add(4 * k), v);
+        }
+        cdecl(h, super::CE_SET_C40E19, &[0]);
+        cdecl(h, super::MEM_SET_ALIGN, &[0x40]);
+        let buf = cdecl(h, super::USER_MALLOC, &[0x1800]);
+        h.write(h.rebase(super::CE_BUFFER), buf);
+        cdecl(h, super::CE_HEAD_RESET, &[]);
+        h.write(h.rebase(super::CE_HDD_FILES_OPEN), 0u8);
+        h.write(h.rebase(super::CE_DISK_OPEN_CHECK), 0u8);
+        if mode == 0 {
+            cdecl(h, super::CE_CHGNAME_INIT, &[]);
+            cdecl(h, super::CE_FAT_INDEX_NAMES, &[]);
+            let v = cdecl(h, super::CE_SIZETBL, &[]);
+            h.write(h.rebase(super::CE_SIZES), v);
+            let v = cdecl(h, super::CE_SIZETBL_EX, &[]);
+            h.write(h.rebase(super::CE_EX_SIZES), v);
+            let v = cdecl(h, super::CE_MODULE_SIZETBL, &[]);
+            h.write(h.rebase(super::CE_MODULE_SIZES), v);
+            cdecl(h, super::CE_HEAD_INIT, &[]);
+        } else {
+            if h.read::<u32>(h.rebase(super::CE_STANDBY)) != 0 {
+                while cdecl(h, super::CD_SYNC, &[1]) != 0 {
+                    cdecl(h, super::SYNC_V, &[0]);
+                }
+                while cdecl(h, super::CD_STANDBY, &[]) == 0 {
+                    cdecl(h, super::SYNC_V, &[0]);
+                }
+            }
+            while cdecl(h, super::CD_SYNC, &[1]) != 0 {
+                cdecl(h, super::SYNC_V, &[0]);
+            }
+            let kind = cdecl(h, super::CE_DISK_TYPE, &[]);
+            if kind.wrapping_sub(0x12) <= 1 {
+                if cdecl(h, super::HDD_MOUNT, &[]) == 0 {
+                    for (k, &(name, open_msg, cell, read_msg)) in
+                        super::CE_HDD_FILES.iter().enumerate()
+                    {
+                        cdenv_hdd_file(h, name, open_msg, cell, read_msg, k == 0);
+                    }
+                    cdecl(h, super::FLUSH_CACHE, &[0]);
+                    cdecl(h, super::HDD_UNMOUNT, &[]);
+                } else {
+                    let (err, msg) = (h.rebase(super::CE_HDD_ERR), h.rebase(super::CE_MOUNT_MSG));
+                    cdecl(h, super::YI_ASSERT, &[1, err, msg]);
+                }
+            } else {
+                let base_cell = h.rebase(super::CE_SECTOR_BASE);
+                let base: u32 = h.read(base_cell);
+                h.write(base_cell, 0u32);
+                cdenv_dvd_table(
+                    h,
+                    super::CE_FAT_OVERRIDE,
+                    [super::CE_FAT_SIZE, super::CE_FAT_SECTOR],
+                    super::CE_SECTOR_TABLE,
+                );
+                cdenv_dvd_table(
+                    h,
+                    super::CE_FID_OVERRIDE,
+                    [super::CE_FID_SIZE, super::CE_FID_SECTOR],
+                    super::CE_SECTOR_TABLE + 4,
+                );
+                let first = cdecl(h, super::MODULE_FILE_SECTOR, &[1, 0]);
+                h.write(base_cell, base);
+                if base != 0 {
+                    h.write(base_cell, base.wrapping_sub(first));
+                }
+                cdecl(h, super::CE_SET_MODULE, &[1]);
+                cdenv_dvd_file(h, super::CE_UNK7, super::CE_SIZES);
+                cdenv_dvd_file(h, super::CE_UNK8, super::CE_MODULE_SIZES);
+                cdecl(h, super::FLUSH_CACHE, &[0]);
+            }
+            cdecl(h, super::CE_HEAD_INIT, &[]);
+        }
+        cdecl(h, super::CE_ALLOC_READ_BUFFER, &[]);
+        let install: u32 = h.read(h.rebase(super::CE_INSTALL));
+        let count = cdecl(h, super::CE_INSTALL_CHECK, &[install]);
+        h.write(h.rebase(super::CE_INSTALL_COUNT), count);
+        cdecl(h, super::CE_INSTALL_INIT, &[0]);
+        h.write(h.rebase(super::CE_REQ_STATE), u32::MAX);
+        h.write(h.rebase(super::CE_REQ_STATE).wrapping_add(0x14), 0u32);
+        h.write(h.rebase(super::CE_REQ_STATE).wrapping_add(0x18), u32::MAX);
+        let hook: u32 = h.read(h.rebase(super::CE_READ_HOOK));
+        h.call(hook, Conv::Cdecl, &[]);
+        let id = cdecl(h, super::CE_READ_SEMA, &[]);
+        h.write(h.rebase(super::CE_READ_SEMA_CELL), id);
+        let id = cdecl(h, super::CE_OLD_SEMA, &[]);
+        h.write(h.rebase(super::CE_OLD_SEMA_CELL), id);
+        let hdd_mode = i32::from(h.read::<i8>(h.rebase(super::CE_HDD_MODE))).cast_unsigned();
+        cdecl(
+            h,
+            super::DBG_PRINTF,
+            &[h.rebase(super::CE_MSG_HDDMODE), hdd_mode],
+        );
+        let mounted = cdecl(h, super::CE_MOUNT_FLAG, &[]);
+        cdecl(
+            h,
+            super::DBG_PRINTF,
+            &[h.rebase(super::CE_MSG_MOUNT), mounted],
+        );
+        let bar = h.rebase(super::CE_MSG_BAR);
+        for msg in [bar, bar, bar, h.rebase(super::CE_MSG_TITLE), bar, bar] {
+            cdecl(h, super::DBG_PRINTF, &[msg]);
+        }
+        h.write(slot, bar);
+        cdecl(h, super::DBG_PRINTF, &[bar])
     }
 }

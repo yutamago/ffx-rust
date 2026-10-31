@@ -9054,3 +9054,128 @@ fn bg14_noise_blur_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn bg15_cd_env_init_matches_the_original() {
+    use ffx_system::m5b_hdd as ce;
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b615);
+        for case in 0..18u32 {
+            t.reset();
+            // 0..5 the PC, 6..11 an HDD disc, 12..17 a DVD
+            let path = case / 6;
+            let mode = if path == 0 { 0 } else { 1 + rng.below(3) };
+            let r = rng.next();
+            let rt = |k: u32| r.wrapping_add(k);
+            for (k, &(sym, n)) in [
+                (ce::MOVIE_ERR, 3u32),
+                (ce::CE_TASK_INIT, 1),
+                (ce::CE_SET_READ_FUNCS, 1),
+                (ce::CE_SET_C40E19, 1),
+                (ce::MEM_SET_ALIGN, 1),
+                (ce::CE_HEAD_RESET, 0),
+                (ce::CE_HEAD_INIT, 0),
+                (ce::SYNC_V, 1),
+                (ce::DBG_PRINTF, 1),
+                (ce::CE_ALLOC_READ_BUFFER, 0),
+                (ce::CE_INSTALL_CHECK, 1),
+                (ce::CE_INSTALL_INIT, 1),
+                (ce::CE_READ_SEMA, 0),
+                (ce::CE_OLD_SEMA, 0),
+                (ce::CE_MOUNT_FLAG, 0),
+            ]
+            .iter()
+            .enumerate()
+            {
+                t.stub(sym, false, n, 0, rt(k as u32));
+            }
+            for (k, &g) in ce::CE_LAYOUT_GETTERS.iter().enumerate() {
+                t.stub(g, false, 0, 0, rt(0x20 + k as u32) & 0xffff);
+            }
+            let bufs: Vec<u32> = (0..8).map(|_| t.zeros(16)).collect();
+            t.stub_seq(ce::USER_MALLOC, 1, 0, &bufs);
+            let hook = t.stub_code(0x7777, false, 0, 0, 0);
+            t.g32(ce::CE_READ_HOOK, hook);
+            let once = u8::from(case % 6 == 1);
+            let at = t.rebase(ce::CE_ONCE);
+            t.write(at, &[once]);
+            t.g32(ce::CE_STANDBY, u32::from(case % 2 == 1));
+            match path {
+                0 => {
+                    for (k, &sym) in [
+                        ce::CE_CHGNAME_INIT,
+                        ce::CE_FAT_INDEX_NAMES,
+                        ce::CE_SIZETBL,
+                        ce::CE_SIZETBL_EX,
+                        ce::CE_MODULE_SIZETBL,
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        t.stub(sym, false, 0, 0, rt(0x40 + k as u32));
+                    }
+                }
+                1 => {
+                    t.stub_seq(ce::CD_SYNC, 1, 0, &[1, 0, 2, 0, 0, 0]);
+                    t.stub_seq(ce::CD_STANDBY, 0, 0, &[0, 0, 1, 1]);
+                    t.stub(ce::CE_DISK_TYPE, false, 0, 0, 0x12 + (case % 2));
+                    t.stub(ce::HDD_MOUNT, false, 0, 0, u32::from(case == 8));
+                    let fds = [3u32, if case == 9 { 0xffff_ffff } else { 4 }, 5, 6];
+                    t.stub_seq(ce::SCE_OPEN, 2, 0, &fds);
+                    t.stub(ce::YI_ASSERT, false, 3, 0, rt(0x50));
+                    t.stub_seq(
+                        ce::SCE_LSEEK,
+                        3,
+                        0,
+                        &[0x100, 0, 0x200, 0, 0x300, 0, 0x40, 0],
+                    );
+                    let short = u32::from(case == 10);
+                    t.stub_seq(ce::SCE_READ, 3, 0, &[0x100, 0x200 - short, 0x300, 0x40]);
+                    t.stub(ce::SCE_CLOSE, false, 1, 0, rt(0x51));
+                    t.stub(ce::FLUSH_CACHE, false, 1, 0, rt(0x52));
+                    t.stub(ce::HDD_UNMOUNT, false, 0, 0, rt(0x53));
+                }
+                _ => {
+                    t.stub_seq(ce::CD_SYNC, 1, 0, &[0, 0, 0, 0]);
+                    t.stub_seq(ce::CD_STANDBY, 0, 0, &[1, 1]);
+                    t.stub(
+                        ce::CE_DISK_TYPE,
+                        false,
+                        0,
+                        0,
+                        [0u32, 0x14, 0x11][(case % 3) as usize],
+                    );
+                    let ov = if case % 2 == 0 { 0 } else { 0x1234 };
+                    t.g32(ce::CE_FAT_OVERRIDE, ov);
+                    t.g32(ce::CE_FAT_OVERRIDE + 4, ov ^ 0x55);
+                    t.g32(ce::CE_FID_OVERRIDE, ov >> 1);
+                    t.g32(ce::CE_FID_OVERRIDE + 4, ov ^ 0xaa);
+                    t.g32(ce::CE_SECTOR_BASE, if case % 3 == 0 { 0 } else { 0x5000 });
+                    let tries: &[u32] = if case % 2 == 0 {
+                        &[0, 1, 1, 0, 0, 1, 1, 1]
+                    } else {
+                        &[1; 8]
+                    };
+                    t.stub_seq(ce::READ_DIRECT, 4, 0, tries);
+                    t.stub_seq(ce::DISK_READY, 1, 0, &[0, 2, 2, 1, 2, 2, 2, 2, 2]);
+                    t.stub_seq(ce::CHECK_DISK, 0, 0, &[1, 0, 0, 1, 1, 0, 0, 0, 0, 0]);
+                    t.stub(ce::MODULE_FILE_SECTOR, false, 2, 0, 0x100);
+                    t.stub(ce::CE_SET_MODULE, false, 1, 0, rt(0x60));
+                    t.stub(ce::FILE_SIZE_CD, false, 1, 0, 0x1801);
+                    t.stub(ce::CE_UNK7, false, 0, 0, 7);
+                    t.stub(ce::CE_UNK8, false, 0, 0, 8);
+                    t.stub(ce::CE_FILE_SECTOR, false, 1, 0, 0x777);
+                    t.stub(ce::FLUSH_CACHE, false, 1, 0, rt(0x61));
+                }
+            }
+            t.check_fs(
+                &format!("cd env init #{case}"),
+                0x0076_c560,
+                &[mode],
+                0,
+                0,
+                |m, _, slots| Out::U32(hdb::cd_env_init(m, slots, mode)),
+            );
+        }
+    });
+}

@@ -1380,6 +1380,11 @@ ported! {
         let mut f = StackFrame::<0x1f>::new();
         pc::kagra001(&mut mem(), f.at() + 0x7c, lo, hi, holder, part)
     }
+    /// `(mode)`: the PS2 CD library's set-up; its last `dbgPrintf` is a
+    /// tail jump that leaves the string in the argument slot.
+    CdEnvInit @ 0x0076_c560 => extern "C" fn cd_env_init(mode: u32; slots: u32) -> u32 {
+        hd::cd_env_init(&mut mem(), slots, mode)
+    }
     /// `(lo, hi, spread, _, lines, r, g, b, a)`: random noise lines and a
     /// full-screen quad.
     updateVFXRenderData_NoiseBlur @ 0x0071_dbd0 => extern "C" fn noise_blur(lo: u32, hi: u32, spread: u32, p4: u32, lines: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
