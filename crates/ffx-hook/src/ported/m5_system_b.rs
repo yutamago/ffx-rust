@@ -1306,6 +1306,33 @@ ported! {
         let mut f = StackFrame::<0x58>::new();
         hd::walk_install_dir(&mut mem(), f.at() + 0x160, path, count, list)
     }
+
+    // ---- round 3, batch 21: the movie message's draw ----
+    /// `()`: frame `ebp - 4` (written by `Sg_GetDBuffDC`).
+    TODrawMovieMessage @ 0x008a_bf30 => extern "C" fn draw_movie_message() -> u32 {
+        let mut f = StackFrame::<1>::new();
+        mn::draw_movie_message(&mut mem(), f.at() + 4)
+    }
+
+    // ---- round 3, batch 22: the particle shapes' fill job ----
+    /// `(job)`: frame `ebp - 0x1c`.
+    JobSchedule_pppPart_fillBuffer_drawShp_007287b0 @ 0x0072_87b0 => extern "C" fn draw_shp_fill(job: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        pc::draw_shp_fill(&mut mem(), f.at() + 0x1c, job)
+    }
+
+    // ---- round 3, batch 23: the debug overlay's layer texture ----
+    /// `(layer)`: frame `ebp - 0x20`.
+    rcbgDebugDrawLayerTex_0092c960 @ 0x0092_c960 => extern "C" fn debug_layer_tex(layer: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        pc::debug_layer_tex(&mut mem(), f.at() + 0x20, layer)
+    }
+
+    // ---- round 3, batch 24: the module file read request ----
+    /// `(file, buffer, offset, size, callback, opts)`.
+    cd_ModuleFileRead_0076bf70 @ 0x0076_bf70 => extern "C" fn module_file_read(file: u32, buffer: u32, offset: u32, size: u32, callback: u32, opts: u32) -> u32 {
+        hd::module_file_read(&mut mem(), [file, buffer, offset, size, callback, opts])
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

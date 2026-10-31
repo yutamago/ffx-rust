@@ -433,6 +433,28 @@ pub const SG_FRAME: u32 = 0x023c_bbf0;
 pub const CURSOR_X_STEP: u32 = 0x00b5_ef64;
 pub const CURSOR_Y_STEP: u32 = 0x00b5_ee9c;
 
+/// `TODrawMovieMessage`'s: `Sg_GetDBuffDC`, `TODapsDraw`,
+/// `TOTransTexture`, `TOSetPktBuffAdrs`, `TOOpenPktbuff`,
+/// `TOGsFramePacket`, `TOXyoffsetPacket`, `TOMkpFlatRect`,
+/// `TOSetRegFont1612`, `TODrawWindow`, `TODrawMessage`, `TOClosePktbuff`,
+/// `TOMkpMovieMessageImage`; the packet buffer's address and size, the
+/// flag set after the draw.
+pub const SG_DBUFF: u32 = 0x0082_0530;
+pub const DAPS_DRAW: u32 = 0x0089_dc10;
+pub const TRANS_TEXTURE: u32 = 0x008b_1020;
+pub const SET_PKT_BUFF: u32 = 0x0090_47c0;
+pub const OPEN_PKT: u32 = 0x0090_4600;
+pub const FRAME_PKT: u32 = 0x008f_d1f0;
+pub const XYOFFSET: u32 = 0x008f_f020;
+pub const FLAT_RECT: u32 = 0x008f_c6a0;
+pub const SET_REG_FONT1612: u32 = 0x0090_48e0;
+pub const DRAW_WINDOW: u32 = 0x0090_6bf0;
+pub const DRAW_MESSAGE: u32 = 0x008b_5dc0;
+pub const CLOSE_PKT: u32 = 0x008f_3930;
+pub const MKP_MOVIE_IMAGE: u32 = 0x0090_2840;
+pub const PKT_BUFF_ADRS: [u32; 2] = [0x0186_5f14, 0x0186_5f18];
+pub const MOVIE_DRAWN: u32 = 0x025d_09c0;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -3155,5 +3177,91 @@ pub mod bridge {
         let (x, y) = wait_cell_pos(h, win, current, None);
         cdecl(h, super::SET_CUR_POS, &[0, x, y]);
         0
+    }
+    /// `TODrawMovieMessage()` with its frame at `ebp` (`ebp - 4` the
+    /// display buffer's field word `Sg_GetDBuffDC` writes): `TODapsDraw`
+    /// when a display mode is set; with the movie message up
+    /// (`0x01841d40`) and either the save menu's `0x200` bit or the capture
+    /// option 1, and a display mode: `TOTransTexture`, the packet buffer
+    /// (`TOSetPktBuffAdrs(adrs, size, size / 4 * 3)`, `TOOpenPktbuff`),
+    /// mode 6 a full scissor, else a frame packet `(0x108, 8, 0, 0)`, the
+    /// offset `(0x7000, 0x7300)`, a 512x127 scissor and a black 512x128
+    /// rect; the font, window 0 and message 0 drawn, closed and kicked.
+    /// Then (a mode, and a second read not 6) a second packet: the frame from the
+    /// display buffer's field (`+0x60`/`+0x64`, odd fields `+0x190`/
+    /// `+0x194`: `fbp & 0x1ff`, `fbw`, `psm`, the mask), the offset, a
+    /// 640x416 scissor, `TOMkpMovieMessageImage(0x2100, 0, 0x120, 0x280,
+    /// 0x80)`, the field's offset (`u16 +0x78`/`+0x7c`, odd `+0x1a8`/
+    /// `+0x1ac`), closed and kicked. `0x025d09c0` set to 1 after a draw.
+    /// The last call's `eax`.
+    pub fn draw_movie_message(h: &mut impl Host, ebp: u32) -> u32 {
+        let field = ebp.wrapping_sub(4);
+        cdecl(h, super::SG_DBUFF, &[field]);
+        let mut r = cdecl(h, super::DISP_MODE, &[]);
+        if r != 0 {
+            r = cdecl(h, super::DAPS_DRAW, &[]);
+        }
+        if h.read::<u8>(h.rebase(super::CAPTURE_FLAGS[0])) == 0 {
+            return r;
+        }
+        r = cdecl(h, super::SAVE_MENU, &[]);
+        if h.read::<u32>(r) & 0x200 == 0 && global(h, super::CAPTURE_OPTION) != 1 {
+            return r;
+        }
+        r = cdecl(h, super::DISP_MODE, &[]);
+        if r == 0 {
+            return r;
+        }
+        cdecl(h, super::TRANS_TEXTURE, &[]);
+        let dc = cdecl(h, super::SG_DBUFF, &[field]);
+        let [adrs, size] = super::PKT_BUFF_ADRS.map(|s| global(h, s));
+        let quarter = size.cast_signed().wrapping_div(4).cast_unsigned();
+        cdecl(
+            h,
+            super::SET_PKT_BUFF,
+            &[adrs, size, quarter.wrapping_mul(3)],
+        );
+        cdecl(h, super::OPEN_PKT, &[]);
+        if cdecl(h, super::DISP_MODE, &[]) == 6 {
+            cdecl(h, super::PKT_SCISSOR, &[0, 0, 0x200, 0x1a0]);
+        } else {
+            cdecl(h, super::FRAME_PKT, &[0x108, 8, 0, 0]);
+            cdecl(h, super::XYOFFSET, &[0x7000, 0x7300]);
+            cdecl(h, super::PKT_SCISSOR, &[0, 0, 0x200, 0x7f]);
+            cdecl(h, super::FLAT_RECT, &[0, 0, 0x200, 0x80, 0, 0, 0, 0]);
+        }
+        cdecl(h, super::SET_REG_FONT1612, &[]);
+        cdecl(h, super::DRAW_WINDOW, &[0]);
+        cdecl(h, super::DRAW_MESSAGE, &[0]);
+        cdecl(h, super::CLOSE_PKT, &[]);
+        cdecl(h, DRAW_KICK, &[]);
+        let mut mode = cdecl(h, super::DISP_MODE, &[]);
+        if mode != 0 {
+            mode = cdecl(h, super::DISP_MODE, &[]);
+        }
+        if mode != 0 && mode != 6 {
+            cdecl(h, super::OPEN_PKT, &[]);
+            let odd = h.read::<u8>(field) & 1 != 0;
+            let (frame, offset) = if odd { (0x190, 0x1a8) } else { (0x60, 0x78) };
+            let fb: u32 = h.read(dc.wrapping_add(frame));
+            let mask: u32 = h.read(dc.wrapping_add(frame + 4));
+            cdecl(
+                h,
+                super::FRAME_PKT,
+                &[fb & 0x1ff, (fb >> 16) & 0x3f, (fb >> 24) & 0x3f, mask],
+            );
+            cdecl(h, super::XYOFFSET, &[0x7000, 0x7300]);
+            cdecl(h, super::PKT_SCISSOR, &[0, 0, 0x27f, 0x1a0]);
+            cdecl(h, super::MKP_MOVIE_IMAGE, &[0x2100, 0, 0x120, 0x280, 0x80]);
+            let x = u32::from(h.read::<u16>(dc.wrapping_add(offset)));
+            let y = u32::from(h.read::<u16>(dc.wrapping_add(offset + 4)));
+            cdecl(h, super::XYOFFSET, &[x, y]);
+            cdecl(h, super::CLOSE_PKT, &[]);
+            r = cdecl(h, DRAW_KICK, &[]);
+        } else {
+            r = mode;
+        }
+        h.write(h.rebase(super::MOVIE_DRAWN), 1u8);
+        r
     }
 }

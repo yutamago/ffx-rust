@@ -211,6 +211,27 @@ pub const DRAW_LINES: u32 = 0x0092_78d0;
 pub const MARKER_COLOURS: u32 = 0x00c5_e798;
 pub const SIN_TABLE: u32 = 0x00c4_4bf0;
 
+/// `JobSchedule_pppPart_fillBuffer_drawShp_007287b0`'s constants: the
+/// f64s 0.2 (the second y), 255 (alpha), 1/128 (size) and the f32 0.5.
+pub const SHP_Y_DROP: u32 = 0x00b3_eb60;
+pub const SHP_ALPHA_SCALE: u32 = 0x00b1_70c0;
+pub const SHP_SIZE_SCALE: u32 = 0x00b1_70b8;
+pub const SHP_HALF: u32 = 0x00b9_2194;
+
+/// `rcbgDebugDrawLayerTex_0092c960`'s: `Yn_DepthToScreen`,
+/// `rcbgTexGetLog2Size`, `rcbgTrxSetNo`, `rcbgPalSetNo`, the packet data's
+/// init/open/close/draw, the packet address word, the f32 depth 0.1.
+pub const YN_DEPTH_TO_SCREEN: u32 = 0x0092_01a0;
+pub const TEX_LOG2_SIZE: u32 = 0x0092_0050;
+pub const TRX_SET_NO: u32 = 0x0092_d670;
+pub const PAL_SET_NO: u32 = 0x0092_9ab0;
+pub const PKT_DATA_INIT: u32 = 0x0092_7a20;
+pub const PKT_DATA_OPEN: u32 = 0x0092_7a70;
+pub const PKT_DATA_CLOSE: u32 = 0x0092_75b0;
+pub const PKT_DATA_DRAW: u32 = 0x0092_7600;
+pub const PKT_DATA_ADR: u32 = 0x00c4_98dc;
+pub const LAYER_DEPTH: u32 = 0x00b1_0f38;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1144,5 +1165,280 @@ pub mod bridge {
             a += 0x1_0000;
         }
         cdecl(h, super::DRAW_LINES, &[out, pts, 0x21, colour, matrix])
+    }
+    /// The f32 at `a` loaded to the x87 stack.
+    fn shp_load(h: &impl Host, a: u32) -> f64 {
+        ffx_bridge::x87::load(h.read(a))
+    }
+
+    /// The f32 at `a` through `fld`/`fstp`.
+    fn shp_copy(h: &impl Host, a: u32) -> u32 {
+        ffx_bridge::x87::store(shp_load(h, a))
+    }
+
+    /// Zeroes `block`'s index pairs `from..3000` (its pointer `+0x1c`
+    /// read before each store); the last pointer read.
+    fn shp_clear(h: &mut impl Host, block: u32, from: u32) -> u32 {
+        let mut idx = 0u32;
+        for k in from..3000 {
+            idx = h.read(block.wrapping_add(0x1c));
+            h.write(idx.wrapping_add(k * 4), 0u16);
+            idx = h.read(block.wrapping_add(0x1c));
+            h.write(idx.wrapping_add(k * 4 + 2), 0u16);
+        }
+        idx
+    }
+
+    /// `JobSchedule_pppPart_fillBuffer_drawShp_007287b0(job)` with its
+    /// frame at `ebp`: the particles at `job + 0x1c` (`job + 0x20` of
+    /// them, 0x20 bytes each) into up to three vertex blocks (`job + 0x10`,
+    /// 3000 entries each: positions `+0xc` stride 0x18, colours `+0x14`
+    /// stride 0x20, index pairs `+0x1c`). A particle aged 0x20 or more is
+    /// skipped; else its position moves by its velocity (`+0x10..`, x87
+    /// sums), its age goes up, and from age 1 it is written: the position
+    /// twice (the second `y - 0.2`), `0.5` and `u8 +0xe / 255` and the
+    /// size (`age` mirrored at 16, `* 8 / 128`) into the colour, the index
+    /// pair `2n, 2n + 1`. A full block moves on to the next; the third
+    /// full stops. The rest of the block and the later blocks' index
+    /// pairs are zeroed. The frame's words end as the original leaves
+    /// them; `eax` the block after the last plus one, or the last index
+    /// pointer read.
+    #[allow(
+        clippy::many_single_char_names,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation
+    )]
+    pub fn draw_shp_fill(h: &mut impl Host, ebp: u32, job: u32) -> u32 {
+        use ffx_bridge::x87;
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let y_drop = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_Y_DROP)));
+        let alpha_scale = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_ALPHA_SCALE)));
+        let size_scale = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_SIZE_SCALE)));
+        let half: u32 = h.read(h.rebase(super::SHP_HALF));
+        let mut block: u32 = h.read(job.wrapping_add(0x10));
+        let mut part: u32 = h.read(job.wrapping_add(0x1c));
+        let mut left: u32 = h.read(job.wrapping_add(0x20));
+        let mut blk = 0u32;
+        h.write(f(4), blk);
+        let mut n = 0u32;
+        'blocks: loop {
+            let mut slot = job.wrapping_add(0x10).wrapping_add(blk.wrapping_mul(4));
+            let mut count = 0u32;
+            h.write(f(0x10), count);
+            h.write(f(0xc), slot);
+            loop {
+                h.write(f(8), left);
+                if left.cast_signed() <= 0 {
+                    break 'blocks;
+                }
+                let age = h.read::<u16>(part.wrapping_add(0x1c)).cast_signed();
+                if age >= 0x20 {
+                    left = left.wrapping_sub(1);
+                    part = part.wrapping_add(0x20);
+                    continue;
+                }
+                let mirrored = if age >= 0x10 {
+                    0x20 - i32::from(age)
+                } else {
+                    i32::from(age)
+                };
+                let size = mirrored.cast_unsigned() << 3;
+                let x = x87::store(x87::add(
+                    shp_load(h, part.wrapping_add(0x10)),
+                    shp_load(h, part),
+                ));
+                h.write(f(0x14), x);
+                h.write(part, x);
+                let aged = age.wrapping_add(1);
+                h.write(part.wrapping_add(0x1c), aged.cast_unsigned());
+                for o in [4u32, 8] {
+                    let v = x87::store(x87::add(
+                        shp_load(h, part.wrapping_add(0x10 + o)),
+                        shp_load(h, part.wrapping_add(o)),
+                    ));
+                    h.write(part.wrapping_add(o), v);
+                }
+                if aged > 1 {
+                    let mut pos = h
+                        .read::<u32>(block.wrapping_add(0xc))
+                        .wrapping_add(n.wrapping_mul(0x18));
+                    let mut col = h.read::<u32>(block.wrapping_add(0x14)).wrapping_add(n << 5);
+                    if n >= 3000 {
+                        blk = blk.wrapping_add(1);
+                        h.write(f(4), blk);
+                        block = h.read(slot.wrapping_add(4));
+                        n = 0;
+                        col = h.read(block.wrapping_add(0x14));
+                        slot = slot.wrapping_add(4);
+                        h.write(f(0xc), slot);
+                        pos = h.read(block.wrapping_add(0xc));
+                    }
+                    let y = shp_copy(h, part.wrapping_add(4));
+                    let z = shp_copy(h, part.wrapping_add(8));
+                    let x2 = shp_copy(h, part);
+                    let y2 = x87::store(x87::sub(shp_load(h, part.wrapping_add(4)), y_drop));
+                    let z2 = shp_copy(h, part.wrapping_add(8));
+                    put_words(h, pos, &[x, y, z, x2, y2, z2]);
+                    let a = u32::from(h.read::<u8>(part.wrapping_add(0xe)));
+                    h.write(f(0x14), a);
+                    h.write(f(0x1c), f64::from(a).to_bits());
+                    let alpha = x87::store(x87::div(f64::from(a), alpha_scale));
+                    h.write(f(0x18), alpha);
+                    h.write(f(0x14), size);
+                    // `size` is 8..=128 here: the fild's unsigned fix-up
+                    // (+2^32 when negative) never applies
+                    let sized = x87::store(f64::from(size));
+                    h.write(f(0x14), sized);
+                    let scaled = x87::store(x87::mul(x87::load(sized), size_scale));
+                    h.write(f(0x14), scaled);
+                    let idx: u32 = h.read(block.wrapping_add(0x1c));
+                    for o in [0x10u32, 0, 0x14, 4] {
+                        h.write(col.wrapping_add(o), half);
+                    }
+                    h.write(col.wrapping_add(0x18), alpha);
+                    h.write(col.wrapping_add(8), alpha);
+                    h.write(col.wrapping_add(0x1c), scaled);
+                    h.write(col.wrapping_add(0xc), scaled);
+                    h.write(idx.wrapping_add(n * 4), (n * 2) as u16);
+                    let idx: u32 = h.read(block.wrapping_add(0x1c));
+                    h.write(idx.wrapping_add(n * 4 + 2), (n * 2 + 1) as u16);
+                    n += 1;
+                }
+                count = count.wrapping_add(1);
+                h.write(f(0x10), count);
+                if n >= 3000 && blk == 2 {
+                    break 'blocks;
+                }
+                left = left.wrapping_sub(1);
+                part = part.wrapping_add(0x20);
+                if count >= 0x10 {
+                    continue 'blocks;
+                }
+            }
+        }
+        if n < 3000 {
+            shp_clear(h, block, n);
+        }
+        let mut r = blk.wrapping_add(1);
+        let mut b = r;
+        while b.cast_signed() < 3 {
+            let block: u32 = h.read(job.wrapping_add(0x10).wrapping_add(b * 4));
+            r = shp_clear(h, block, 0);
+            b += 1;
+        }
+        r
+    }
+    /// `rcbgDebugDrawLayerTex_0092c960(layer)` with its frame at `ebp`
+    /// (the debug overlay's layer texture): `Yn_DepthToScreen(0.1)` into
+    /// `ebp - 0x18`; without a map (`g_YnMapSystem`'s first word) its
+    /// `eax`. Else the layer `[[map] + 8] + 8 + 0xc0 * layer`:
+    /// `rcbgTexGetLog2Size(w +4, h +8, ebp - 0xc, ebp - 8, ebp - 0x10)`,
+    /// its texture and palette set (`rcbgTrxSetNo(+0xa0, 0)`,
+    /// `rcbgPalSetNo(+0xb0, 0)`), a packet opened at `ebp - 0x20`
+    /// (`[0x00c498dc]`): a GS tag, TEX0 from the log2 sizes and the width
+    /// (64-bit, sign-extended ORs), `+0x38`/`+0x3c`, RGBAQ from the bytes
+    /// `+0x40..`, then PRIM, the scissor from `+0x24`, `+0x28` and the
+    /// size, and a sprite of the size at the screen offset and depth;
+    /// closed and drawn. The draw's `eax`.
+    #[allow(clippy::many_single_char_names, clippy::cast_possible_truncation)]
+    pub fn debug_layer_tex(h: &mut impl Host, ebp: u32, layer: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let sext = |v: u32| {
+            u64::from(v)
+                | if v.cast_signed() < 0 {
+                    0xffff_ffff_0000_0000
+                } else {
+                    0
+                }
+        };
+        let root = h.rebase(super::YN_MAP_SYSTEM);
+        let sys: u32 = h.read(root);
+        let map: u32 = if sys == 0 { 0 } else { h.read(sys) };
+        let tenth =
+            ffx_bridge::x87::round_trip(f32::from_bits(h.read(h.rebase(super::LAYER_DEPTH))));
+        let depth = cdecl(h, super::YN_DEPTH_TO_SCREEN, &[tenth.to_bits()]);
+        h.write(f(0x18), depth);
+        if map == 0 {
+            return depth;
+        }
+        let sys: u32 = h.read(root);
+        let list: u32 = if sys == 0 {
+            0
+        } else {
+            let m: u32 = h.read(sys);
+            if m == 0 { 0 } else { h.read(m.wrapping_add(8)) }
+        };
+        let base: u32 = h.read(list.wrapping_add(8));
+        let lay = layer.wrapping_mul(0xc0).wrapping_add(base);
+        h.write(f(4), lay);
+        let w: u32 = h.read(lay.wrapping_add(4));
+        let ht: u32 = h.read(lay.wrapping_add(8));
+        cdecl(h, super::TEX_LOG2_SIZE, &[w, ht, f(0xc), f(8), f(0x10)]);
+        let trx: u32 = h.read(lay.wrapping_add(0xa0));
+        cdecl(h, super::TRX_SET_NO, &[trx, 0]);
+        cdecl(h, super::PAL_SET_NO, &[lay.wrapping_add(0xb0), 0]);
+        let pkt = f(0x20);
+        cdecl(h, super::PKT_DATA_INIT, &[pkt]);
+        let adr: u32 = h.read(h.rebase(super::PKT_DATA_ADR));
+        cdecl(h, super::PKT_DATA_OPEN, &[pkt, adr]);
+        let p: u32 = h.read(f(0x1c));
+        h.write(p.wrapping_add(8), 0x3fu32);
+        let p2: u32 = h.read(f(0x1c));
+        h.write(p2.wrapping_add(0xc), 0u32);
+        let [lh, lw, tbw] = [8u32, 0xc, 0x10].map(|o| sext(h.read(f(o))));
+        let t = ((lh << 4 | lw) << 12 | tbw) << 14 | 0x2005_c004_0130_3c00;
+        put_words(h, p.wrapping_add(0x10), &[t as u32, (t >> 32) as u32, 6, 0]);
+        let tex1: [u32; 2] = [
+            h.read(lay.wrapping_add(0x38)),
+            h.read(lay.wrapping_add(0x3c)),
+        ];
+        put_words(h, p.wrapping_add(0x20), &[tex1[0], tex1[1], 0x42, 0]);
+        let rgba = u32::from_le_bytes(
+            [0x40u32, 0x41, 0x42, 0x43].map(|o| h.read::<u8>(lay.wrapping_add(o))),
+        );
+        h.write(p.wrapping_add(0x38), 1u32);
+        h.write(p.wrapping_add(0x3c), 0u32);
+        put_words(h, p.wrapping_add(0x30), &[rgba, 0]);
+        let y0: u32 = h.read(lay.wrapping_add(0x28));
+        let y1 = ht.wrapping_sub(1).wrapping_add(y0);
+        let q = p.wrapping_add(0x40);
+        h.write(f(0x14), q);
+        let x0: u32 = h.read(lay.wrapping_add(0x24));
+        let lay2: u32 = h.read(f(4));
+        let x1 = h
+            .read::<u32>(lay2.wrapping_add(4))
+            .wrapping_sub(1)
+            .wrapping_add(x0);
+        let mut s = sext(y1) << 10 | sext(y0);
+        s = s << 10 | sext(x1);
+        s = s << 10 | sext(x0);
+        s = s << 4 | 0xa;
+        h.write(q.wrapping_add(8), 8u32);
+        h.write(q.wrapping_add(0xc), 0u32);
+        h.write(q.wrapping_add(4), (s >> 32) as u32);
+        h.write(q, s as u32);
+        put_words(
+            h,
+            q.wrapping_add(0x10),
+            &[0x60, 0, 0x14, 0, 0x3_0000, 0, 0x47, 0],
+        );
+        let lay3: u32 = h.read(f(4));
+        let sw = h.read::<u32>(lay3.wrapping_add(4)) << 3;
+        let sh = h.read::<u32>(lay3.wrapping_add(8)) << 3;
+        put_words(h, q.wrapping_add(0x30), &[0, 0]);
+        put_words(h, q.wrapping_add(0x40), &[0x6ff8, 0x7378, depth, 0]);
+        put_words(
+            h,
+            q.wrapping_add(0x50),
+            &[sw.wrapping_mul(2), sh.wrapping_mul(2)],
+        );
+        put_words(
+            h,
+            q.wrapping_add(0x60),
+            &[sw.wrapping_add(0x6ff8), sh.wrapping_add(0x7378), depth, 0],
+        );
+        h.write(f(0x1c), q.wrapping_add(0x70));
+        cdecl(h, super::PKT_DATA_CLOSE, &[pkt]);
+        cdecl(h, super::PKT_DATA_DRAW, &[pkt])
     }
 }

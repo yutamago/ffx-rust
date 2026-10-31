@@ -391,6 +391,34 @@ pub const OPEN_DEVICE_MSG: u32 = 0x00b5_3760;
 pub const SUBDIR_FMT: u32 = 0x00b5_377c;
 pub const FILE_FMT: u32 = 0x00b4_0eb0;
 
+/// `cd_ModuleFileRead_0076bf70`'s: `g_CdChannels` (64 requests of 0x38
+/// bytes; a 65th over `g_CdReadId` and what follows), `g_CdReadId`, the
+/// channel names (0x80 bytes each), `movie_err`, `CDfileName_PC`,
+/// `cd_module_file_sector_rel`, `movie_run_check`, `cd_size_from_table`,
+/// `YiAssert`; the texts `"q_cnt != READ_Q_CNT"`, `libmscd.c`, `"HDD FILE"`,
+/// `"DVD FILE"`, `"module = %d"`, `"num = %d"`, `"name = %s"`, the assert's
+/// format and `"movie running ..."`.
+pub const CD_CHANNELS: u32 = 0x0112_7c80;
+pub const CD_READ_ID: u32 = 0x0112_8a80;
+pub const CHANNEL_NAMES: u32 = 0x022f_b6c0;
+pub const MOVIE_ERR: u32 = 0x0076_efa0;
+pub const FILE_NAME_PC: u32 = 0x00a4_2830;
+pub const MODULE_SECTOR_REL: u32 = 0x0076_c250;
+pub const MOVIE_RUN_CHECK: u32 = 0x0076_f060;
+pub const SIZE_FROM_TABLE: u32 = 0x0076_dc20;
+pub const YI_ASSERT: u32 = 0x0090_ae50;
+pub const QUEUE_FULL_MSG: u32 = 0x00b5_1f04;
+pub const LIBMSCD_FILE: u32 = 0x00b5_1d30;
+pub const HDD_FILE_NAME: u32 = 0x00b5_1f18;
+pub const DVD_FILE_NAME: u32 = 0x00b5_1f24;
+pub const MOVIE_RUNNING_MSG: [u32; 5] = [
+    0x00b5_1f30,
+    0x00b5_1f40,
+    0x00b5_1f4c,
+    0x00b5_1f58,
+    0x00b5_1f74,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -2103,5 +2131,116 @@ pub mod bridge {
         cdecl(h, USER_FREE, &[buf]);
         cdecl(h, USER_FREE, &[table]);
         result
+    }
+    /// `cd_ModuleFileRead_0076bf70(file, buffer, offset, size, callback,
+    /// opts)`: a read of the current module's file `file` queued in the
+    /// first free `g_CdChannels` request (both busy bytes `+0x31`, `+0x32`
+    /// clear; none: `movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x645)`
+    /// and request 64 written anyway): `+4` buffer, `+8` file, `+0x28` the
+    /// module, opts' words `+0xc..+0x18` (or 0), `+0x20` callback, the id
+    /// `+0x24` (`g_CdReadId + 1`, 1 past 0xffff). With `0x02310c58` 0:
+    /// the PC name (`CDfileName_PC`, then `SyncV(2)`) and `+0x1c` the
+    /// offset in sectors, or under `g_FFXHddMode` the module sector plus
+    /// it and "HDD FILE"; either name copied to the channel's 0x80 bytes.
+    /// With 1: the sector, "DVD FILE", no copy. `+0` and `+0x2c` the size
+    /// (not with another mode). A running movie is reported and asserted.
+    /// `+0x34` `cd_size_from_table(file)`, `+0x35` and `+0x32` cleared;
+    /// `g_CdReadId` returned. The fields in the original's order (request
+    /// 64 overlaps the id).
+    pub fn module_file_read(h: &mut impl Host, args: [u32; 6]) -> u32 {
+        let [file, buffer, offset, size, callback, opts] = args;
+        let channels = h.rebase(super::CD_CHANNELS);
+        let n = (0..64u32)
+            .find(|&n| {
+                let at = channels.wrapping_add(n * 0x38);
+                h.read::<u8>(at.wrapping_add(0x31)) == 0 && h.read::<u8>(at.wrapping_add(0x32)) == 0
+            })
+            .unwrap_or(64);
+        if n == 64 {
+            let msg = h.rebase(super::QUEUE_FULL_MSG);
+            let lib = h.rebase(super::LIBMSCD_FILE);
+            cdecl(h, super::MOVIE_ERR, &[msg, lib, 0x645]);
+        }
+        let r = channels.wrapping_add(n * 0x38);
+        let at = |o: u32| r.wrapping_add(o);
+        h.write(at(4), buffer);
+        let module = global(h, super::MODULE);
+        h.write(at(0x31), 1u8);
+        h.write(at(8), file);
+        h.write(at(0x28), module);
+        let words: [u32; 4] = if opts == 0 {
+            [0; 4]
+        } else {
+            [0xcu32, 0x10, 0x14, 0x18].map(|o| h.read(opts.wrapping_add(o)))
+        };
+        for (o, w) in [0xcu32, 0x10, 0x14, 0x18].into_iter().zip(words) {
+            h.write(at(o), w);
+        }
+        h.write(at(0x20), callback);
+        let id_at = h.rebase(super::CD_READ_ID);
+        let mut id = h.read::<u32>(id_at).wrapping_add(1);
+        h.write(at(0x30), 0u8);
+        h.write(id_at, id);
+        if id.cast_signed() > 0xffff {
+            id = 1;
+            h.write(id_at, id);
+        }
+        h.write(at(0x24), id);
+        let sectors = offset.cast_signed().wrapping_div(0x800).cast_unsigned();
+        let name = match global(h, super::READ_FUNCS_CD) {
+            0 => {
+                let name = if h.read::<u8>(h.rebase(HDD_MODE)) == 0 {
+                    h.write(at(0), size);
+                    h.write(at(0x2c), size);
+                    h.write(at(0x1c), sectors);
+                    let name = cdecl(h, super::FILE_NAME_PC, &[file]);
+                    cdecl(h, super::SYNC_V, &[2]);
+                    name
+                } else {
+                    h.write(at(0), size);
+                    let sector = cdecl(h, super::MODULE_SECTOR_REL, &[file]);
+                    h.write(at(0x2c), size);
+                    h.write(at(0x1c), sector.wrapping_add(sectors));
+                    h.rebase(super::HDD_FILE_NAME)
+                };
+                let names = h.rebase(super::CHANNEL_NAMES).wrapping_add(n << 7);
+                for i in 0..0x80u32 {
+                    let b: u8 = h.read(name.wrapping_add(i));
+                    h.write(names.wrapping_add(i), b);
+                    if b == 0 {
+                        break;
+                    }
+                }
+                name
+            }
+            1 => {
+                h.write(at(0), size);
+                let sector = cdecl(h, super::MODULE_SECTOR_REL, &[file]);
+                h.write(at(0x2c), size);
+                h.write(at(0x1c), sector.wrapping_add(sectors));
+                h.rebase(super::DVD_FILE_NAME)
+            }
+            _ => 0,
+        };
+        if cdecl(h, super::MOVIE_RUN_CHECK, &[]) != 0 {
+            let [module_fmt, num_fmt, name_fmt, assert_fmt, running] =
+                super::MOVIE_RUNNING_MSG.map(|s| h.rebase(s));
+            let module = global(h, super::MODULE);
+            cdecl(h, DBG_PRINTF, &[module_fmt, module]);
+            cdecl(h, DBG_PRINTF, &[num_fmt, file]);
+            cdecl(h, DBG_PRINTF, &[name_fmt, name]);
+            let module = global(h, super::MODULE);
+            cdecl(
+                h,
+                super::YI_ASSERT,
+                &[1, running, assert_fmt, name, module, file],
+            );
+        }
+        let sized = cdecl(h, super::SIZE_FROM_TABLE, &[file]);
+        h.write(at(0x34), sized.to_le_bytes()[0]);
+        let id: u32 = h.read(id_at);
+        h.write(at(0x35), 0u8);
+        h.write(at(0x32), 0u8);
+        id
     }
 }
