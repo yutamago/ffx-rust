@@ -1189,4 +1189,9 @@ ported! {
     PageHeap_ctor_009457b0 @ 0x0094_57b0 => extern "thiscall" fn page_heap_ctor(this: u32, config: u32) -> u32 {
         ll::page_heap_ctor(&mut mem(), this, config)
     }
+
+    /// `FUN_00945350(this)`: `EnterCriticalSection(this)`.
+    Lock_enter_00945350 @ 0x0094_5350 => extern "thiscall" fn lock_enter(this: u32) -> u32 {
+        ll::lock_enter(&mut mem(), this)
+    }
 }

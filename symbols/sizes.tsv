@@ -441,6 +441,7 @@
 0x0092eb10	5	0	MsEffectSetMotion_thunk
 0x009304d0	5	0	rcefTaskRetSeqCont_thunk
 0x009411f0	5	0	Gu_WindowControlSetText_thunk_009411f0
+0x00945350	8	0	Lock_enter_00945350
 0x009453c0	8	0	LeaveCriticalSection_ecx_009453c0
 0x00947ea0	18	0	PageManager_unlock_00947ea0
 0x009db170	6	0	code_009db170

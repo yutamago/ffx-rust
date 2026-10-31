@@ -4498,4 +4498,10 @@ pub mod bridge {
         }
         this
     }
+
+    /// `FUN_00945350(this)` (`thiscall`) -> `EnterCriticalSection`'s
+    /// `eax`: `this` (a critical section) entered.
+    pub fn lock_enter(h: &mut impl Host, this: u32) -> u32 {
+        import(h, ENTER_CRITICAL_SECTION_IAT, &[this])
+    }
 }

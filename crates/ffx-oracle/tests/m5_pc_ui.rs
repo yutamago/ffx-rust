@@ -6807,3 +6807,22 @@ fn rp4_page_heap_ctor_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn rp4_lock_enter_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_5350);
+        for _ in 0..10 {
+            t.stub_import(ll::ENTER_CRITICAL_SECTION_IAT, false, 1, 1, rng.next());
+            let this = rng.next();
+            t.check(
+                "FUN_00945350",
+                0x0094_5350,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(ll::lock_enter(m, this)),
+            );
+            t.reset();
+        }
+    });
+}
