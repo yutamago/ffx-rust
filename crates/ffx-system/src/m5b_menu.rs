@@ -397,6 +397,19 @@ pub const CHANGE_MACRO2: u32 = 0x008b_5960;
 pub const FONT_INFO: u32 = 0x008b_7240;
 pub const MOVIE_FONT_1612: u32 = 0x008f_d960;
 
+/// `FUN_008ea680`'s: `TOMakePktFont1612Shadow_00906290`,
+/// `TOMakePktFont1612Font_00906270`, `setButtonData`, `resetButtonData`,
+/// `TOAdpButtonIcon_008e9970`, `TOAddPktChangeMacro`, the line step 16.0
+/// (`0x00b313a0`) and the icon width 22.0 (`0x00b5f1c8`).
+pub const FONT1612_SHADOW: u32 = 0x0090_6290;
+pub const FONT1612_FONT: u32 = 0x0090_6270;
+pub const SET_BUTTON_DATA: u32 = 0x008b_1350;
+pub const RESET_BUTTON_DATA: u32 = 0x008b_1330;
+pub const BUTTON_ICON: u32 = 0x008e_9970;
+pub const CHANGE_MACRO: u32 = 0x008e_9b80;
+pub const LINE_STEP: u32 = 0x00b3_13a0;
+pub const ICON_STEP: u32 = 0x00b5_f1c8;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2783,5 +2796,95 @@ pub mod bridge {
                 return eax;
             }
         }
+    }
+    /// `FUN_008ea680(cursor, key, text, x, y, flag, r, g, b, a; slots)`:
+    /// the 16x12 font's text at `g_TOPktCursor` = `cursor`: the glyph
+    /// record cleared, the pen set (`(x, y)` as floats, `f32 x` also kept
+    /// in `cursor`'s argument slot, the colour bytes, flags 0 and
+    /// `flag`); then per character by its class (`0x008df610`): 1, a new
+    /// line (x back, y + 16.0); 2, a control code: `0x10` + 0x50..0x57 a
+    /// macro, `0x0a` the colour nibbles of the pen's flags, `0x0b` a button
+    /// icon (`setButtonData(code, -1)`, `TOAdpButtonIcon(cursor, code,
+    /// ftol x, ftol y)`, x + 22.0), others `resetButtonData()`; 3, a macro
+    /// (`TOAddPktChangeMacro(key, text, pen)`); 4, a glyph (`TOGetFontInfo`,
+    /// shadow and font passes, x plus the scale `+0x1c` and 1). Returns `g_TOPktCursor`.
+    pub fn font_1612_text(h: &mut impl Host, args: [u32; 10], slots: u32) -> u32 {
+        use ffx_bridge::x87;
+        let [cursor, key, text, x, y, flag, r, g, b, a] = args;
+        let record = h.rebase(super::GLYPH_RECORD);
+        cdecl(h, super::CRT_MEMSET, &[record, 0, 0x40]);
+        let pen = h.rebase(super::PEN);
+        for off in [0u32, 0x18, 4, 8, 0xc, 0x10, 0x14] {
+            h.write(pen.wrapping_add(off), 0u32);
+        }
+        let cell = h.rebase(PKT_CURSOR);
+        h.write(cell, cursor);
+        let fx = int_f32(x).to_bits();
+        h.write(slots, fx);
+        for (off, c) in [(0u32, r), (1, g), (2, b), (3, a)] {
+            h.write(pen.wrapping_add(off), c.to_le_bytes()[0]);
+        }
+        h.write(pen.wrapping_add(4), x87::store(x87::load(fx)));
+        h.write(pen.wrapping_add(8), int_f32(y).to_bits());
+        h.write(pen.wrapping_add(0x1a), 0u8);
+        h.write(pen.wrapping_add(0x1b), flag.to_le_bytes()[0]);
+        let px = pen.wrapping_add(4);
+        let py = pen.wrapping_add(8);
+        let flags_at = pen.wrapping_add(0x1b);
+        let mut text = text;
+        while h.read::<u8>(text) != 0 {
+            let c: u8 = h.read(text);
+            let class = cdecl(h, super::CHAR_CLASS, &[u32::from(c)]);
+            match class {
+                1 => {
+                    let line = x87::load(h.read(slots));
+                    h.write(px, x87::store(line));
+                    let v = x87::add(x87::load(h.read(py)), f64_global(h, super::LINE_STEP));
+                    h.write(py, x87::store(v));
+                }
+                2 if !(c == 0x10
+                    && (0x50..=0x57).contains(&h.read::<u8>(text.wrapping_add(1)))) =>
+                {
+                    let code: u8 = h.read(text.wrapping_add(1));
+                    if c == 0xa {
+                        let mut f: u8 = h.read(flags_at);
+                        if code & 0xf != 0 {
+                            f = (f & 0xf0) | ((code & 0xf) - 1);
+                            h.write(flags_at, f);
+                        }
+                        if code & 0xf0 >= 0x40 {
+                            f = (f & 0xf) | ((code & 0xf0) - 0x40);
+                            h.write(flags_at, f);
+                        }
+                    } else if c == 0xb {
+                        let code = u32::from(code);
+                        cdecl(h, super::SET_BUTTON_DATA, &[code, u32::MAX]);
+                        let fy = ftol(h, x87::load(h.read(py)));
+                        let fx = ftol(h, x87::load(h.read(px)));
+                        let cur: u32 = h.read(cell);
+                        let cur = cdecl(h, super::BUTTON_ICON, &[cur, code, fx, fy]);
+                        let v = x87::add(x87::load(h.read(px)), f64_global(h, super::ICON_STEP));
+                        h.write(cell, cur);
+                        h.write(px, x87::store(v));
+                    } else {
+                        cdecl(h, super::RESET_BUTTON_DATA, &[]);
+                    }
+                }
+                2 | 3 => {
+                    cdecl(h, super::CHANGE_MACRO, &[key, text, pen]);
+                }
+                4 => {
+                    cdecl(h, super::FONT_INFO, &[text, record]);
+                    cdecl(h, super::FONT1612_SHADOW, &[pen, record]);
+                    cdecl(h, super::FONT1612_FONT, &[pen, record]);
+                    let sx = x87::load(h.read(record.wrapping_add(0x1c)));
+                    let v = x87::add(x87::add(sx, 1.0), x87::load(h.read(px)));
+                    h.write(px, x87::store(v));
+                }
+                _ => {}
+            }
+            text = cdecl(h, super::NEXT_CHAR, &[text]);
+        }
+        h.read(cell)
     }
 }

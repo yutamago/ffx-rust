@@ -6260,3 +6260,72 @@ fn r3b9_movie_change_macro_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b10_font_1612_text_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1001);
+        for case in 0..6u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_copy_fill(mnc::CRT_MEMSET);
+            // the characters and their classes: a glyph, a new line, the
+            // control codes (macro, colour, icon, other), a macro
+            let text = t.alloc(&[
+                0x41,
+                0x0d,
+                0x10,
+                0x52,
+                0x0a,
+                [0x35, 0x40, 0x7f, 0x00, 0x91, 0x0f][case as usize],
+                0x0b,
+                0x07,
+                0x09,
+                0x12,
+                0x10,
+                0x20,
+                0x42,
+                0,
+            ]);
+            let steps = [1u32, 2, 4, 6, 8, 9, 10, 12, 13];
+            let next: Vec<u32> = steps.iter().map(|k| text + k).collect();
+            t.stub_seq(mnc::NEXT_CHAR, 1, 0, &next);
+            t.stub_seq(
+                mnc::CHAR_CLASS,
+                0,
+                0,
+                &[4, 1, 2, 2, 2, 2, 3, 2, [4, 0][(case & 1) as usize]],
+            );
+            let sx = [1.0f32, 0.75, 12.5][(case % 3) as usize];
+            t.stub_store_into(mnc::FONT_INFO, 1, 0x1c, sx.to_bits(), 2, r);
+            t.stub(mnc::FONT1612_SHADOW, false, 2, 0, r ^ 1);
+            t.stub(mnc::FONT1612_FONT, false, 2, 0, r ^ 2);
+            t.stub(mnc::SET_BUTTON_DATA, false, 2, 0, r ^ 3);
+            t.stub(mnc::RESET_BUTTON_DATA, false, 0, 0, r ^ 4);
+            t.stub(mnc::BUTTON_ICON, false, 4, 0, r ^ 5);
+            t.stub(mnc::CHANGE_MACRO, false, 3, 0, r ^ 6);
+            t.g32(0x0193_ed20, case & 1); // __sse2_available
+            let fl = [0u32, 30, 0xffff_ffe0, 0x7fff_ffff];
+            let args = [
+                rng.next(),
+                rng.next(),
+                text,
+                fl[(case % 4) as usize],
+                fl[((case + 1) % 4) as usize],
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("font 1612 text #{case}"),
+                0x008e_a680,
+                &args,
+                0,
+                0,
+                |m, _, s| Out::U32(mnb::font_1612_text(m, args, s)),
+            );
+        }
+    });
+}

@@ -1237,6 +1237,12 @@ ported! {
     TODrawMovieChangeMacro2 @ 0x008b_5ea0 => extern "C" fn movie_change_macro(win: u32, macro_id: u32, pos: u32; slots: u32) -> u32 {
         mn::movie_change_macro(&mut mem(), win, macro_id, pos, slots)
     }
+
+    /// `(cursor, key, text, x, y, flag, r, g, b, a)`: `f32 x` kept in
+    /// `cursor`'s argument slot.
+    TOAdpFont1612Text_008ea680 @ 0x008e_a680 => extern "C" fn font_1612_text(cursor: u32, key: u32, text: u32, x: u32, y: u32, flag: u32, r: u32, g: u32, b: u32, a: u32; slots: u32) -> u32 {
+        mn::font_1612_text(&mut mem(), [cursor, key, text, x, y, flag, r, g, b, a], slots)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or
