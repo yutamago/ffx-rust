@@ -1269,3 +1269,100 @@ fn paths_stepped() {
         });
     }
 }
+
+/// Row 171: `magic_0188`'s motion script step: the script's end, a
+/// motion started (and one that fails, skipping to the end), the frame
+/// reached by the record's frame and by the motion's, not reached, the
+/// next motion started and the end after a step, with and without the
+/// callback.
+#[test]
+fn motion_scripts_stepped() {
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x3970);
+    let started = SCRATCH + 0x7e0;
+    let frame = SCRATCH + 0x7e4;
+    rec(&mut t, 37, 3, |_, a| 0x0037_0000 ^ a[2]);
+    rec(&mut t, 18, 1, move |m, _| m.r32(started));
+    rec(&mut t, 22, 1, move |m, _| m.r32(frame));
+    rec(&mut t, 30, 1, |_, _| 0x30);
+    t.set_u32(magic::TABLE + 4 * 1001, trap(1001));
+    rec(&mut t, 1001, 1, |_, a| 0x1001_0000 ^ a[0]);
+    let tab = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xb), tab);
+    t.set_u32(op(&t, f, 0x2f), 0x0c40_0001);
+    // (step, playing, slot 18's answer, slot 22's frame word, the records:
+    // motion, frame, callback)
+    let cases: [(u32, u32, u32, u32, [(u32, u32, bool); 4]); 8] = [
+        (
+            1,
+            0,
+            0,
+            0,
+            [(5, 0, true), (0, 0, false), (0, 0, false), (0, 0, false)],
+        ),
+        (
+            0,
+            0,
+            7,
+            0x300,
+            [(5, 4, true), (6, 0, false), (0, 0, false), (0, 0, false)],
+        ),
+        (
+            0,
+            0,
+            u32::MAX,
+            0x300,
+            [(5, 4, true), (6, 0, true), (0, 0, true), (0, 0, false)],
+        ),
+        (
+            0,
+            9,
+            0,
+            0x300,
+            [(5, 4, true), (6, 0, true), (0, 0, false), (0, 0, false)],
+        ),
+        (
+            0,
+            9,
+            0,
+            0x450,
+            [(5, 4, false), (6, 0, true), (0, 0, false), (0, 0, false)],
+        ),
+        (
+            1,
+            4,
+            0x44,
+            0x380,
+            [(5, 4, true), (6, 0, true), (0, 0, false), (0, 0, false)],
+        ),
+        (
+            1,
+            3,
+            0,
+            0x380,
+            [(5, 4, true), (6, 0, false), (7, 0, true), (0, 0, false)],
+        ),
+        (
+            0,
+            9,
+            0x55,
+            0x5ff,
+            [(5, 4, true), (6, 0, true), (0, 0, true), (0, 0, false)],
+        ),
+    ];
+    for (k, (step, playing, answer, fw, recs_)) in (0u32..).zip(cases) {
+        t.set_u32(op(&t, f, 0x2), step);
+        t.set_u32(op(&t, f, 0x1e), playing);
+        t.set_u32(started, answer);
+        t.set_u32(frame, fw);
+        for (i, (m, fr_, cb)) in (0u32..).zip(recs_) {
+            let r = tab + 0x10 * i;
+            t.set_u32(r, m);
+            t.set_u32(r + 4, fr_);
+            t.set_u32(r + 8, if cb { trap(1001) } else { 0 });
+            t.set_u32(r + 0xc, 0x0a00_0000 + 0x10 * k + i);
+        }
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

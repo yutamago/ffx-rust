@@ -1773,6 +1773,7 @@ ports! {
     "actor timed task" => s6_misc::ACTOR_TIMED_TASK, s6_misc::actor_timed_task;
     "thunk: spring walk" => s6_misc::JMP_SPRING_WALK, s6_misc::ecx_jmp;
     "selection groups" => s6_misc::SELECTION_GROUPS, s6_misc::selection_groups;
+    "motion script step" => s6_misc::MOTION_SCRIPT_STEP, s6_misc::motion_script_step;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;

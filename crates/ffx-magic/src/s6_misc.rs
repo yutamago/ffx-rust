@@ -1801,3 +1801,95 @@ pub const PATH_STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A character's motion script step (cdecl, no arguments). The script
+/// `*G_T` has records of four words (motion, frame, callback, its
+/// argument), the step `*G_I`, the character `*G_CH`, the playing motion
+/// `*G_M`. Nothing at the end (motion 0). With no motion playing the
+/// step's is started (slot 37 `(ch, 1, motion)`, slot 18 gives `*G_M`;
+/// -1 skips to the script's end marker). Then the motion's frame (slot
+/// 22, `>> 8`, plus 1) is compared: with the record's frame (when it has
+/// one) or with `*G_M`; when it is reached the script steps on and, unless
+/// at the end, the next motion starts (slot 30, slot 37, slot 18). The
+/// step's callback (if any) runs with its argument. Returns the
+/// callback's `eax`, 0, or the frame compared at the end.
+///
+/// `magic_0188` 0x10003970 (307 bytes; 5 DLLs).
+pub fn motion_script_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let tab = g.read::<u32>(w(0xb));
+    let rec = |i: u32, o: u32| tab.wrapping_add(i.wrapping_mul(0x10)).wrapping_add(o);
+    let i = g.read::<u32>(w(0x2));
+    let motion = g.read::<u32>(rec(i, 0));
+    if motion == 0 {
+        return Ret::eax(0);
+    }
+    let mut i = i;
+    if g.read::<u32>(w(0x1e)) == 0 {
+        let ch = g.read::<u32>(w(0x2f));
+        slot(g, img, f, 0x27, 37, &[ch, 1, motion]);
+        let ch = g.read::<u32>(w(0x42));
+        let m = slot(g, img, f, 0x3c, 18, &[ch]).eax;
+        i = g.read::<u32>(w(0x4d));
+        g.write::<u32>(w(0x55), m);
+        if m == u32::MAX && g.read::<u32>(rec(i, 0)) != 0 {
+            loop {
+                i = i.wrapping_add(1);
+                g.write::<u32>(w(0x6f), i);
+                if g.read::<u32>(rec(i, 0)) == 0 {
+                    break;
+                }
+            }
+        }
+    }
+    let ch = g.read::<u32>(w(0x80));
+    let has_frame = g.read::<u32>(rec(i, 4)) != 0;
+    let r = slot(g, img, f, 0x7a, 22, &[ch]).eax;
+    let at = (r.cast_signed() >> 8).wrapping_add(1).cast_unsigned();
+    let reached = if has_frame {
+        let i = g.read::<u32>(w(0xad));
+        g.read::<u32>(rec(i, 4)) == at
+    } else {
+        g.read::<u32>(w(0xa1)) == at
+    };
+    if reached {
+        let i = g
+            .read::<u32>(if has_frame { w(0xad) } else { w(0x94) })
+            .wrapping_add(1);
+        g.write::<u32>(w(0xc5), i);
+        if g.read::<u32>(rec(i, 0)) == 0 {
+            return Ret::eax(at);
+        }
+        let ch = g.read::<u32>(w(0xd8));
+        slot(g, img, f, 0xd2, 30, &[ch]);
+        let i = g.read::<u32>(w(0xe2));
+        let motion = g.read::<u32>(rec(i, 0));
+        let ch = g.read::<u32>(w(0xf4));
+        slot(g, img, f, 0xec, 37, &[ch, 1, motion]);
+        let ch = g.read::<u32>(w(0x107));
+        let m = slot(g, img, f, 0x101, 18, &[ch]).eax;
+        g.write::<u32>(w(0x11a), m);
+    }
+    let i = g.read::<u32>(if reached {
+        w(0x112)
+    } else if has_frame {
+        w(0xad)
+    } else {
+        w(0x94)
+    });
+    let cb = g.read::<u32>(rec(i, 8));
+    if cb == 0 {
+        return Ret::eax(0);
+    }
+    let arg = g.read::<u32>(rec(i, 0xc));
+    Ret::eax(g.call(cb, i.wrapping_mul(2), &[arg]).eax)
+}
+
+/// [`motion_script_step`].
+pub const MOTION_SCRIPT_STEP: Sig = Sig {
+    len: 307,
+    hash: 0x885e_8550_4943_3b93,
+    calls: &[],
+    imports: &[],
+};
