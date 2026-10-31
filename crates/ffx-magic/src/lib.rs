@@ -1193,6 +1193,7 @@ ports! {
     "camera face actor" => s4_small::CAMERA_FACE_ACTOR, s4_small::camera_face_actor;
     "entry hook in" => s4_small::ENTRY_HOOK_IN, s4_small::entry_hook_in;
     "load steps and frame" => s4_small::LOAD_STEPS_AND_FRAME, s4_small::load_steps_and_frame;
+    "falling parts step" => s4_small::FALLING_PARTS_STEP, s4_small::falling_parts_step;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;

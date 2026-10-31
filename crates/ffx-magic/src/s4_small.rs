@@ -9692,3 +9692,73 @@ pub const LOAD_STEPS_AND_FRAME: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The falling parts stepped (cdecl `(recs)`, records of 0xa0 bytes from
+/// `recs + 8`, each with a count, its part at `+0x18`): for each of the
+/// `*G_N` records with a count, at 0x23 slot 393 `(*G_H, rec + 0x58,
+/// 0x100)` plays its sound, the part drops ([`part_drop_rates`]) and the
+/// count goes down; at 0x14 one more record starts (`*G_N + 1`, at most
+/// `*G_MAX`; slot 239 `(*G_E, rec[-8], 0)`), at 0 the part goes (slot
+/// 713 with `*G_P` = `ITEM`). Returns 1 while any of the `*G_MAX` records
+/// still counts, else 0 with `*G_DONE` set.
+///
+/// `magic_0443` 0x10001470 (260 bytes; 2 DLLs).
+pub fn falling_parts_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let first = fr.arg(g, 0).wrapping_add(8);
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(if i == 0 { 0x8 } else { 0xbe })) {
+        let p = first.wrapping_add(0xa0 * i);
+        let c = g.read::<u32>(p);
+        if c != 0 {
+            if c == 0x23 {
+                let h = rd(g, 0x3f);
+                slot_call(g, img, f, (0x39, 393), &[h, p.wrapping_add(0x58), 0x100]);
+            }
+            let part = p.wrapping_add(0x18);
+            // push ebp, edi, ebx, esi; call
+            let drop = Frame {
+                at: img.rel32_target(f + 0x54),
+                esp: fr.esp.wrapping_sub(0x14),
+                ecx: part,
+                ..*fr
+            };
+            part_drop_rates(g, img, &drop);
+            let c = g.read::<u32>(p).wrapping_sub(1);
+            g.write::<u32>(p, c);
+            if c == 0x14 {
+                let n = rd(g, 0x61).wrapping_add(1).cast_signed();
+                let max = g.read::<i32>(w(0x6d));
+                let n = if n > max { g.read::<i32>(w(0x7a)) } else { n };
+                g.write::<u32>(w(0x85), n.cast_unsigned());
+                let e = rd(g, 0x8b);
+                let x = g.read::<u32>(p.wrapping_sub(8));
+                slot_call(g, img, f, (0x66, 239), &[e, x, 0]);
+            }
+            if g.read::<u32>(p) == 0 {
+                let ptr = rd(g, 0x9a);
+                g.write::<u32>(ptr, w(0xa1));
+                slot_call(g, img, f, (0xa6, 713), &[part]);
+            }
+        }
+        i += 1;
+    }
+    let max = g.read::<i32>(w(0xcc));
+    for j in 0..max.max(0).cast_unsigned() {
+        if g.read::<u32>(first.wrapping_add(0xa0 * j)) != 0 {
+            return Ret::eax(1);
+        }
+    }
+    g.write::<u32>(w(0xf1), 1);
+    Ret::eax(0)
+}
+
+/// [`falling_parts_step`].
+pub const FALLING_PARTS_STEP: Sig = Sig {
+    len: 260,
+    hash: 0x2048_93e8_06e7_accf,
+    calls: &[(0x54, Callee::Sig(&PART_DROP_RATES))],
+    imports: &[],
+};

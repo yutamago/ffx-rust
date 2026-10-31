@@ -4474,3 +4474,37 @@ fn load_steps_and_frames() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn falling_parts_steps() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x1470);
+    recs(
+        &mut t,
+        &[(393, 3), (239, 3), (713, 1), (258, 1), (231, 3), (230, 2)],
+    );
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let drop = t.img.rel32_target(f + 0x54);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, drop, 0x74), lock);
+    t.set_u32(op(&t, drop, 0x67), SCRATCH + 0x88);
+    t.set_u32(op(&t, f, 0x9a), SCRATCH + 0x8c);
+    let recs_at = SCRATCH + 0x1000;
+    for (n, max, counts) in [
+        (0u32, 0u32, [0u32, 0, 0, 0]),
+        (3, 4, [0x23, 0x15, 1, 0]),
+        (2, 2, [0x15, 0, 0, 0]),
+        (4, 4, [0, 5, 0, 0]),
+        (1, 4, [0, 0, 0, 0]),
+    ] {
+        t.write(recs_at, &vec![0x11; 0x300]);
+        for (k, c) in counts.into_iter().enumerate() {
+            t.set_u32(recs_at + 8 + 0xa0 * k as u32, c);
+        }
+        t.set_u32(op(&t, f, 0x8), n);
+        t.set_u32(op(&t, f, 0x6d), max);
+        t.set_u32(lock, 3);
+        t.check_entry(f, Call::default(), &[recs_at], Eax::Checked);
+    }
+}
