@@ -83,6 +83,13 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
   `ffx.sym` names, or `@file`), as the hook's `FFX_HOOK_DISABLE` and
   `FFX_HOOK_ONLY`; with `--ports` the way to bisect a port that breaks
   the boot.
+- `FFX_HOST_WATCH=<names>`: notes each entry into and return from the
+  named ports (`ffx.sym` names, comma list) with the thread, the clock's
+  frame and the host time (`watch 12.345 ms thread 0x1008 frame 210 enter
+  Ch_Cloth_PerCharacter`), the first 20,000; to see which threads run
+  what in which order (the cloth race, below).
+- `FFX_MAGIC_RUST`: which spell overlays run their Rust ports (below,
+  "Overlays"; default every one).
 - `--replay FILE`: plays a replay script at the frame boundary
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
@@ -694,6 +701,49 @@ as absent. Before this, every battle effect that loads an overlay
 (magic, overdrives, summons) waited for `g_MagicFile_Handle` forever.
 The overlays' x87 sites are not marked (their maths goes through
 `_CIatan2` and the `_libm_sse2_*` imports).
+
+**Rust ports** (host-gate, 2026-10-31). The functions `crates/ffx-magic`
+ports run as Rust (`src/library.rs`), as the hook's `FFX_MAGIC_RUST`
+does (`docs/formats/magic.md`, "Porting the overlays"), and Unicorn runs
+only the rest:
+
+- At `LoadLibraryA`, before `DllMain`, every address the game can enter
+  the overlay's code by (its exports, its entry point, and every
+  relocated word of the image that points into its code: the overlay
+  table, stored callbacks, `push offset` operands) is offered to
+  `ffx_magic::bind`. Where a port's code identity matches, the address
+  gets an `int3` and a trap (`Shared::add_trap`) that runs the port with
+  `ffx_magic::Frame` (`esp` at the return address, the registers) on a
+  `ffx_magic::Game` over the arena and `Exec::call`. The range is fresh,
+  so no thread has translated it yet.
+- The port runs 64 KiB below the caller's `esp` (ports keep locals below
+  their entry `esp`, docs/formats/magic.md "Locals"); its calls into the
+  game push below that. `Ret::pops` picks the return stub, a tail jump
+  (`Ret::jump`) resumes at the target with the caller's stack
+  (`Exec::trap_exit`), `xmm0` and ST0 results reach the caller. `rand`,
+  the `_libm_sse2_*_precise` functions (`Exec::call_sse`, `xmm0` in and
+  out) and `_CIatan2` (`call_x87`) go where the DLL's own imports go, so
+  the results are the game's. A call from Rust into a bound address
+  (`DllMain` at the load, `GetProcAddress` results) puts its words on the
+  game stack first, where the port reads them.
+- `FFX_MAGIC_RUST` picks the DLLs as in the hook, but on by default:
+  unset or `1` every DLL, `0` none (all Unicorn), or a comma list of
+  numbers. `ffx_host::library::select_rust` does the same for tests.
+- **Counted per entry**: the traps count Rust calls; a block hook on the
+  overlay's code (each thread's emulator gets it before it next runs)
+  counts the entries without a port that ran in Unicorn. Each overlay's
+  counts are noted at `FreeLibrary` (`overlay calls: magic_0481.dll rust
+  N (k entries bound), unicorn M (j entries)` and a line per entry that
+  ran), the rest and the totals at the harness's `quit` and in the report
+  (`overlay calls in all`); `run-all.sh` keeps each replay's
+  `ffx-rust.log` and prints the totals.
+- `tests/overlay.rs` loads `magic_0604` (fully ported) twice through
+  `FFX.exe`'s own `LoadLibraryA`, once all in Unicorn and once with the
+  ports: `InitMagicPRX` and `GetEffectOverlayTable` called from Rust and
+  from emulated code give the same results and leave the same data but
+  the CRT's own words (the cookie, the attach count, the `onexit` table,
+  which the ported `DllMain` keeps none of), 5 calls in Rust and none in
+  Unicorn on one side, the other way round on the other.
 
 ## Threads
 
