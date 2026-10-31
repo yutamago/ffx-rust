@@ -106,4 +106,8 @@ ported! {
         ffx_bridge::Mem::write(&mut m, slot, at);
         lb::map_erase(&mut m, this, out, slot)
     }
+    /// `PApplication::logKeyboardInput()`.
+    Phyre_PFramework_PApplication_logKeyboardInput @ 0x0062_9e40 => extern "thiscall" fn log_keyboard(this: u32) -> u32 {
+        lb::log_keyboard(&mut mem(), this)
+    }
 }

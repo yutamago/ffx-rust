@@ -3802,3 +3802,114 @@ fn left2_map_erase_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::needless_range_loop)] // the key is also an address offset
+fn left2_log_keyboard_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // sprintf_s logs its first words; the writer logs (data, n)
+        // (7 words: a mapped line has 7, the stack past them is junk)
+        t.stub_import_cdecl(l2::KEY_LOG[1], 7, 0);
+        let buf = t.rebase(l2::KEY_LOG[0]);
+        t.write(buf, b"abcde\0");
+        t.stub(l2::KEY_LOG[2], true, 2, 2, 0);
+        let mapping_type = t.rebase(l2::KEY_LOG[4]);
+        let mut rng = Rng(0x0bad_cafe);
+        for (writer, devices, with_maps) in [
+            (false, 0u32, true),
+            (true, 0x7f, true),
+            (true, 0x15, false),
+            (true, 0x40, true),
+        ] {
+            let this = t.zeros(0x2c0);
+            let w = if writer { t.zeros(0x10) } else { 0 };
+            t.w32(this + 0x29c, w);
+            t.w32(this + 0x34, 0x0055_0000);
+            let input = t.zeros(0xa0);
+            t.w32(this + 0x2b8, input);
+            for i in 0..7u32 {
+                if devices & (1 << i) == 0 {
+                    continue;
+                }
+                // keys change where the table differs from the last state
+                let mut table = vec![0u8; 0x120];
+                let dev = t.zeros(0x220);
+                for key in 0x1c..0x11cusize {
+                    let r = rng.next();
+                    let last = (r & 1) as u8;
+                    table[key] = if r & 0xf0 == 0 { last ^ 1 } else { last };
+                    if r & 0xf00 == 0 {
+                        table[key] = 0x80;
+                    }
+                    if (0x20..0x23).contains(&key) {
+                        table[key] = if key == 0x21 { 0x80 } else { last ^ 1 };
+                    }
+                    t.w8(dev + 0xfc + key as u32, last);
+                }
+                let tab = t.alloc(&table);
+                let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x80]; // mov eax, [esp+4]; movzx eax, byte [eax+tab]
+                c.extend(tab.to_le_bytes());
+                c.extend([0xc2, 0x04, 0x00]);
+                let code = t.a.alloc_code(&c).unwrap();
+                assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+                let vt = t.alloc(&[[0u8; 12].as_slice(), &code.to_le_bytes()].concat());
+                t.w32(dev, vt);
+                t.w32(input + 0x80 + 4 * i, dev);
+            }
+            if with_maps {
+                // two maps, the second with mappings: of the type (keys
+                // 0x20/0x21 and 0x22/0x20), of another type
+                let mut lists = Vec::new();
+                for m in 0..2u32 {
+                    let mut items = Vec::new();
+                    if m == 1 {
+                        for (ty, a, b) in [
+                            (mapping_type, 0x20u32, 0x21u32),
+                            (mapping_type, 0x22, 0x20),
+                            (0x1234, 0x20, 0x20),
+                        ] {
+                            let it = t.zeros(0x20);
+                            t.w32(it + 8, ty);
+                            t.w32(it + 0x18, a);
+                            t.w32(it + 0x1c, b);
+                            items.push(it);
+                        }
+                    }
+                    let arr = t.alloc(
+                        &items
+                            .iter()
+                            .flat_map(|v| v.to_le_bytes())
+                            .collect::<Vec<_>>()
+                            .iter()
+                            .copied()
+                            .chain([0u8; 4])
+                            .collect::<Vec<_>>(),
+                    );
+                    let list = t.zeros(0x10);
+                    t.w32(list + 4, 0x0066_0001 + 2 * m);
+                    t.w32(list + 8, items.len() as u32);
+                    t.w32(list + 0xc, arr);
+                    lists.push(list);
+                }
+                let data = t.alloc(
+                    &lists
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                );
+                let maps = t.zeros(8);
+                t.w32(maps, 2);
+                t.w32(maps + 4, data);
+                t.w32(input, maps);
+            }
+            let what = format!(
+                "{label}: log keyboard writer {writer} devices {devices:#x} maps {with_maps}"
+            );
+            t.check(&what, 0x0062_9e40, Conv::Thiscall(this), &[], |g| {
+                Out::U32(l2b::log_keyboard(g, this))
+            });
+        }
+        t.reset();
+    }
+}

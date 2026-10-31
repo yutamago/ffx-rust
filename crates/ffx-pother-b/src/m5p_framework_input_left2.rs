@@ -210,6 +210,25 @@ pub const MAP_TREE: [u32; 8] = [
     0x00b4_1188,
 ];
 
+/// The key log: its buffer, `sprintf_s`'s import slot, the log writer's
+/// `write(data, n)` (thiscall), the input map's name word (thiscall; its
+/// caller leaves the key state pushed for `sprintf_s`), the key
+/// mapping's type, `PArray::at(i)` (thiscall), the two mapping formats,
+/// their separator, the unmapped key's format and separator.
+pub const KEY_LOG: [u32; 11] = [
+    0x00cc_a0b0,
+    0x00b0_c394,
+    0x009f_06a0,
+    0x009e_cc70,
+    0x00c6_8228,
+    0x009e_cc80,
+    0x00b4_0a04,
+    0x00b4_0a14,
+    0x00b4_031c,
+    0x00b4_0a24,
+    0x00b4_02f0,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -218,7 +237,7 @@ pub mod bridge {
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
-    use super::{DIERR_INPUTLOST, DINPUT_PAD, MAP_TREE, PATH_CALLS, PATH_DATA};
+    use super::{DIERR_INPUTLOST, DINPUT_PAD, KEY_LOG, MAP_TREE, PATH_CALLS, PATH_DATA};
     use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
     use ffx_bridge::x87::Reg;
 
@@ -1408,5 +1427,94 @@ pub mod bridge {
         let next: u32 = h.read(slot);
         h.write(out, next);
         out
+    }
+
+    /// The key log's line: `sprintf_s(buffer, 0xff, format, words...)`,
+    /// then the buffer (to its NUL) through the log writer (`+0x29c`).
+    fn log_line(h: &mut impl Host, this: u32, args: &[u32]) {
+        let buf = h.rebase(KEY_LOG[0]);
+        let sprintf: u32 = h.read(h.rebase(KEY_LOG[1]));
+        let mut words = vec![buf, 0xff];
+        words.extend_from_slice(args);
+        h.call(sprintf, Conv::Cdecl, &words);
+        let mut len = 0u32;
+        while h.read::<u8>(buf.wrapping_add(len)) != 0 {
+            len += 1;
+        }
+        let writer: u32 = h.read(this + 0x29c);
+        h.call_sym(KEY_LOG[2], Conv::Thiscall(writer), &[buf, len]);
+    }
+
+    /// `PApplication::logKeyboardInput` (`0x00629e40`, thiscall): 0x13
+    /// without the log writer (`+0x29c`); else for each of the seven
+    /// devices (`[+0x2b8] + 0x80..`) and each key 0x1c..0x11c whose state
+    /// (`vt[3](key)`, a byte) differs from the device's last (`+0xfc +
+    /// key`): a line per mapping (the input maps `[[+0x2b8]]`, their
+    /// mappings of type `0x00c68228`) that has the key as its first or
+    /// second key, else a line with the device and key numbers. 0.
+    pub fn log_keyboard(h: &mut impl Host, this: u32) -> u32 {
+        if h.read::<u32>(this + 0x29c) == 0 {
+            return 0x13;
+        }
+        let mapping_type = h.rebase(KEY_LOG[4]);
+        for (index, off) in (0x80u32..0x9c).step_by(4).enumerate() {
+            let input: u32 = h.read(this + 0x2b8);
+            let dev: u32 = h.read(input + off);
+            if dev == 0 {
+                continue;
+            }
+            for key in 0x1cu32..0x11c {
+                let state = h.call_virtual(dev, 3, &[key]) & 0xff;
+                if state == u32::from(h.read::<u8>(dev + 0xfc + key)) {
+                    continue;
+                }
+                #[allow(clippy::cast_possible_truncation)] // a byte
+                let signed = i32::from(state as u8 as i8).cast_unsigned();
+                let mut logged = false;
+                let input: u32 = h.read(this + 0x2b8);
+                let first: u32 = h.read(input);
+                let mut j = 0;
+                // the maps' count is read again for every map
+                loop {
+                    if first == 0 {
+                        break;
+                    }
+                    let input: u32 = h.read(this + 0x2b8);
+                    let maps: u32 = h.read(input);
+                    if j >= h.read::<u32>(maps) & 0x7fff_ffff {
+                        break;
+                    }
+                    let list = h.call_sym(KEY_LOG[5], Conv::Thiscall(maps), &[j]);
+                    let mut k = 0;
+                    while k < h.read::<u32>(list + 8) & 0x7fff_ffff {
+                        let items: u32 = h.read(list + 0xc);
+                        let m: u32 = h.read(items + 4 * k);
+                        if h.read::<u32>(m + 8) == mapping_type {
+                            for (field, fmt) in [(0x18, KEY_LOG[6]), (0x1c, KEY_LOG[7])] {
+                                if h.read::<u32>(m + field) == key {
+                                    let r = h.call_sym(KEY_LOG[3], Conv::Thiscall(list), &[]);
+                                    let fmt = h.rebase(fmt);
+                                    let name: u32 = h.read(this + 0x34);
+                                    let sep = h.rebase(KEY_LOG[8]);
+                                    log_line(h, this, &[fmt, name, sep, r, signed]);
+                                    logged = true;
+                                }
+                            }
+                        }
+                        k += 1;
+                    }
+                    j += 1;
+                }
+                if !logged {
+                    let fmt = h.rebase(KEY_LOG[9]);
+                    let name: u32 = h.read(this + 0x34);
+                    let sep = h.rebase(KEY_LOG[10]);
+                    #[allow(clippy::cast_possible_truncation)] // seven devices
+                    let index = index as u32;
+                    log_line(h, this, &[fmt, name, sep, index, key - 0x1c, signed]);
+                }
+            }
+        }
+        0
     }
 }
