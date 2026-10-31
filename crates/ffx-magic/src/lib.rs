@@ -2368,6 +2368,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("spring walk", &s6_misc::SPRING_WALK),
     ("counters step", &s6_misc::COUNTERS_STEP),
     ("path step", &s6_misc::PATH_STEP),
+    ("node release", &s6_misc::NODE_RELEASE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

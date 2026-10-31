@@ -1907,3 +1907,64 @@ pub const MOTION_SCRIPT_STEP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// A model node taken out of its parent's children and its motions
+/// released (internal, `ecx` = a pointer to the node `N`): with a parent
+/// `P = N+0x14` its child count (u16 `+0x18`) drops and the node leaves
+/// the child list (`P+0x10`/`P+0xc` when it was the first/last), closed
+/// on itself and `N+0x14 = 0`. Then for both motion lists (records at
+/// `N+0x24 + 4j`, 0x40 bytes each, count u16 `N+0x2c + 2j`) each record's
+/// handle (`+0x10`, as a 64-bit number) goes to slot 779 with the game
+/// lock held. Returns `N + 0x30`.
+///
+/// `magic_0070` 0x10001f10 (201 bytes, `ecx` = the node's pointer; 4 DLLs).
+pub fn node_release<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let n = g.read::<u32>(fr.ecx);
+    let p = g.read::<u32>(n + 0x14);
+    if p != 0 {
+        let c = g.read::<u16>(p + 0x18).wrapping_add(0xffff);
+        g.write::<u16>(p + 0x18, c);
+        let (prev, next) = (g.read::<u32>(n + 4), g.read::<u32>(n + 8));
+        if prev == p {
+            g.write::<u32>(p + 0x10, next);
+        } else {
+            g.write::<u32>(prev + 8, next);
+        }
+        let (next, prev) = (g.read::<u32>(n + 8), g.read::<u32>(n + 4));
+        if next == p {
+            g.write::<u32>(p + 0xc, prev);
+        } else {
+            g.write::<u32>(next + 4, prev);
+        }
+        g.write::<u32>(n + 8, n);
+        g.write::<u32>(n + 4, n);
+        g.write::<u32>(n + 0x14, 0);
+    }
+    for j in 0..2u32 {
+        let mut lock_at = w(0x6b);
+        let mut rec = g.read::<u32>(n + 0x24 + 4 * j).wrapping_add(0x10);
+        let mut k = 0u32;
+        while k < u32::from(g.read::<u16>(n + 0x2c + 2 * j)) {
+            let lock = g.read::<u32>(lock_at);
+            let saved = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            let hi = (rec.cast_signed() >> 31).cast_unsigned();
+            slot(g, img, f, 0x7c, 779, &[rec, hi]);
+            lock_at = w(0x90);
+            g.write::<u32>(g.read::<u32>(lock_at), saved);
+            k += 1;
+            rec = rec.wrapping_add(0x40);
+        }
+    }
+    n + 0x30
+}
+
+/// [`node_release`].
+pub const NODE_RELEASE: Sig = Sig {
+    len: 201,
+    hash: 0xe261_e5e5_601a_2599,
+    calls: &[],
+    imports: &[],
+};

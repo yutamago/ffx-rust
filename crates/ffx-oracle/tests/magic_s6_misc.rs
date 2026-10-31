@@ -1373,3 +1373,57 @@ fn motion_scripts_stepped() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// Row 304: `magic_0070`'s node release: no parent, the node first,
+/// last, alone and in the middle of its parent's children, motion lists
+/// empty and not; the lock the slot sees.
+#[test]
+fn nodes_released() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x1f10);
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(op(&t, f, 0x6b), lock);
+    rec_lock(&mut t, 779, 2, lock, |m, a| {
+        m.w32(SCRATCH + 0x7f0, 0x0779_0000 ^ a[0]);
+        0x779
+    });
+    let holder = SCRATCH + 0x300;
+    let n = SCRATCH + 0x1000;
+    let p = SCRATCH + 0x1400;
+    let (a, b) = (SCRATCH + 0x1800, SCRATCH + 0x1840);
+    let recs_at = SCRATCH + 0x2000;
+    // (parent, prev, next, the two counts)
+    for (k, (parent, prev, next, c0, c1)) in [
+        (false, a, b, 2u16, 1u16),
+        (true, p, b, 0, 3),
+        (true, a, p, 1, 0),
+        (true, p, p, 2, 2),
+        (true, a, b, 0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.set_u32(holder, n);
+        t.write(n, &varied(0x40, k));
+        t.write(p, &varied(0x20, k + 1));
+        t.write(a, &varied(0x20, k + 2));
+        t.write(b, &varied(0x20, k + 3));
+        t.set_u32(n + 0x14, if parent { p } else { 0 });
+        t.set_u32(n + 4, prev);
+        t.set_u32(n + 8, next);
+        t.set_u32(n + 0x24, recs_at);
+        t.set_u32(n + 0x28, recs_at + 0x400);
+        t.set_u16(n + 0x2c, c0);
+        t.set_u16(n + 0x2e, c1);
+        let c = Call {
+            ecx: holder,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::node_release(g, img, fr))
+        });
+    }
+}
