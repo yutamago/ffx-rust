@@ -151,11 +151,18 @@ const INPUT: u32 = 0x00cc_b170;
 /// # Safety
 /// Called by the game.
 pub unsafe extern "thiscall" fn key_held(devices: *mut c_void, binding: u32, device: u32) -> u32 {
-    // SAFETY: the trampoline runs the original with the same arguments.
-    let held = unsafe {
-        let original: unsafe extern "thiscall" fn(*mut c_void, u32, u32) -> u32 =
-            std::mem::transmute(KEY_HELD_ORIGINAL.load(Ordering::Acquire));
-        original(devices, binding, device)
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let held = if crate::ported::key_held_on() {
+        // the port of Input_KeyHeld (ported/m5_system_a_df.rs) where the
+        // trampoline was: two hooks can't share an address
+        crate::ported::key_held(devices as usize as u32, binding, device)
+    } else {
+        // SAFETY: the trampoline runs the original with the same arguments.
+        unsafe {
+            let original: unsafe extern "thiscall" fn(*mut c_void, u32, u32) -> u32 =
+                std::mem::transmute(KEY_HELD_ORIGINAL.load(Ordering::Acquire));
+            original(devices, binding, device)
+        }
     };
     let buttons = BUTTONS.load(Ordering::Acquire);
     if buttons == 0 || device != 0 || !ENABLED.load(Ordering::Relaxed) {
@@ -356,11 +363,17 @@ pub unsafe extern "C" fn time_now() -> f64 {
     if VIRTUAL.load(Ordering::Acquire) {
         return VIRTUAL_START + skipped;
     }
-    // SAFETY: the trampoline runs the original, which returns in st(0).
-    let now = unsafe {
-        let original: unsafe extern "C" fn() -> f64 =
-            std::mem::transmute(TIME_NOW_ORIGINAL.load(Ordering::Acquire));
-        original()
+    let now = if crate::ported::get_time_on() {
+        // the port of PTimerWin32::GetTime (ported/m5p_framework_input_df.rs)
+        // where the trampoline was
+        crate::ported::get_time()
+    } else {
+        // SAFETY: the trampoline runs the original, which returns in st(0).
+        unsafe {
+            let original: unsafe extern "C" fn() -> f64 =
+                std::mem::transmute(TIME_NOW_ORIGINAL.load(Ordering::Acquire));
+            original()
+        }
     };
     now + skipped
 }
@@ -1821,11 +1834,17 @@ fn note_clock_step(frame: u32) {
 /// # Safety
 /// Called by the game, on the main thread.
 pub unsafe extern "thiscall" fn flip(renderer: *mut c_void) -> u32 {
-    // SAFETY: the trampoline runs the original with the same `this`.
-    let r = unsafe {
-        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
-            std::mem::transmute(FLIP_ORIGINAL.load(Ordering::Acquire));
-        original(renderer)
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let r = if crate::ported::flip_on() {
+        // the port (ported/m5p_render_b_df.rs) where the trampoline was
+        crate::ported::flip(renderer as usize as u32)
+    } else {
+        // SAFETY: the trampoline runs the original with the same `this`.
+        unsafe {
+            let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+                std::mem::transmute(FLIP_ORIGINAL.load(Ordering::Acquire));
+            original(renderer)
+        }
     };
     if r == 0 {
         let n = FLIPS.load(Ordering::Acquire);
@@ -2000,11 +2019,17 @@ pub unsafe extern "thiscall" fn present_flip(renderer: *mut c_void) -> u32 {
         NO_LABEL
     };
     PRESENT_LABEL.store(label, Ordering::Release);
-    // SAFETY: the trampoline runs the original with the same `this`.
-    let r = unsafe {
-        let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
-            std::mem::transmute(PRESENT_FLIP_ORIGINAL.load(Ordering::Acquire));
-        original(renderer)
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    let r = if crate::ported::present_flip_on() {
+        // the port (ported/m5p_render_b_df.rs) where the trampoline was
+        u32::from(crate::ported::present_flip(renderer as usize as u32))
+    } else {
+        // SAFETY: the trampoline runs the original with the same `this`.
+        unsafe {
+            let original: unsafe extern "thiscall" fn(*mut c_void) -> u32 =
+                std::mem::transmute(PRESENT_FLIP_ORIGINAL.load(Ordering::Acquire));
+            original(renderer)
+        }
     };
     PRESENT_LABEL.store(NO_LABEL, Ordering::Release);
     r
@@ -3036,6 +3061,64 @@ unsafe fn install_animate_port(module: usize) {
     log(&format!("  FFXApplication::animate port {r:?}"));
 }
 
+/// `PRenderer::flip`'s port without the harness: the plain replacement at
+/// the address the harness's [`flip`] wrapper takes otherwise.
+///
+/// # Safety
+/// Called by the game, on the main thread.
+unsafe extern "thiscall" fn flip_port(renderer: *mut c_void) -> u32 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    crate::ported::flip(renderer as usize as u32)
+}
+
+/// `Renderer_PresentFlip`'s port without the harness (see [`flip_port`]).
+///
+/// # Safety
+/// Called by the game, on the render thread.
+unsafe extern "thiscall" fn present_flip_port(renderer: *mut c_void) -> u8 {
+    #[allow(clippy::cast_possible_truncation)] // 32-bit process
+    crate::ported::present_flip(renderer as usize as u32)
+}
+
+/// Installs [`flip_port`] and [`present_flip_port`] when the harness is off
+/// and the ports are on.
+///
+/// # Safety
+/// `module` must be the main module, before other threads run game code.
+unsafe fn install_flip_ports(module: usize) {
+    let mut hooks = Vec::new();
+    if crate::ported::flip_on() {
+        hooks.push(crate::Hook {
+            name: crate::ported::FLIP_NAME,
+            address: 0x005b_6af0,
+            // push ebp; mov ebp, esp; sub esp, 8
+            prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x08],
+            replacement: flip_port as *const () as usize,
+            original: None,
+            steal: 0,
+        });
+    }
+    if crate::ported::present_flip_on() {
+        hooks.push(crate::Hook {
+            name: crate::ported::PRESENT_FLIP_NAME,
+            address: 0x0059_3760,
+            // push esi; mov esi, ecx; mov edx, [esi + 0x74]
+            prologue: &[0x56, 0x8b, 0xf1, 0x8b, 0x56, 0x74],
+            replacement: present_flip_port as *const () as usize,
+            original: None,
+            steal: 0,
+        });
+    }
+    if hooks.is_empty() {
+        return;
+    }
+    // SAFETY: forwarded from the caller.
+    let r = unsafe { crate::install(module, &hooks, &[]) };
+    log(&format!(
+        "  PRenderer::flip and Renderer_PresentFlip ports {r:?}"
+    ));
+}
+
 /// Turns the harness on when `FFX_HARNESS` names a port.
 ///
 /// # Safety
@@ -3048,7 +3131,10 @@ pub unsafe fn install(module: usize) {
         .and_then(|p| p.parse::<u16>().ok())
     else {
         // SAFETY: forwarded from the caller.
-        unsafe { install_animate_port(module) };
+        unsafe {
+            install_animate_port(module);
+            install_flip_ports(module);
+        }
         return;
     };
     if ONCE.set(()).is_err() {

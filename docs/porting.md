@@ -216,9 +216,11 @@ chain with this recipe. What it adds:
   The game-update drivers of `tools/harvest.sh` never render.
   `tests/harvested_phyre_render.rs` checks the ports on those calls.
 - **One hook per address.** Where a wrapper already owns an address
-  (`renderWorldCulledSorted`'s capture wrapper in `world.rs`), the wrapper
-  calls the port instead of its trampoline, behind its own
-  `FFX_HOOK_DISABLE` name.
+  (`renderWorldCulledSorted`'s capture wrapper in `world.rs`, the mod
+  wrapper of `openFile`, the harness's clock, key and flip wrappers), the
+  wrapper calls the port instead of its trampoline, behind its own
+  `FFX_HOOK_DISABLE` name (`docs/hooking.md`, "Wrapper-owned
+  addresses").
 - **Gate on the original code.** `FFX_HOOK_ONLY=<names>` or
   `FFX_HOOK_ONLY=@<file>` (`ffx-dinput8`, passed on by
   `tools/run-game.sh`; `docs/hooking.md`) installs only the named replacements,
@@ -226,6 +228,70 @@ chain with this recipe. What it adds:
   captures of the same build run `original`, not older ones: the harness
   changes what a capture sees (`orig3`/`orig4` of 2026-10-24 no longer
   match a fresh original capture of `tools/replays/draw-field.txt`).
+
+## Run-time frames and varargs
+
+`StackFrame::<W>` is a constant size. Some originals size a buffer at run
+time with `_alloca_probe_16` (`0x00949890`; `_alloca_probe_8` and
+`_alloca_probe` alike) and hand it to callees: a string with `.lua`
+added, the UTF-16 copy of a path, the display modes of an output. Others
+hand a callee the address of their own variable arguments (a `va_list`).
+Both are ported without new machinery in the bridges (M5 round
+"design-frames"; the ports in `ffx_prender::m5p_render_b_df`,
+`m5p_scene_df`, `ffx_pother_a::m5p_scripting_df`,
+`ffx_pother_b::m5p_framework_input_df`, `ffx_system::m5a_df`).
+
+- **Split the bridge at the alloca.** The part before it does what the
+  original does up to `call _alloca_probe_16` (its calls included, in
+  order) and returns the size it computes, in the original's arithmetic
+  (`count * 28`, `strlen + 5`, `2 * (len + 1)`, wrapping); `None` where
+  the original skips the alloca. The part after takes the buffer's
+  address. An alloca has no effect a callee can see, so a second alloca
+  (`File_Probe`, `openFile`: the UTF-16 path, then the archive name) can
+  be carved together with the first.
+- **The shim carves the frame:** `super::with_frame(bytes, |at| ...)`
+  (`ported/mod.rs`) runs the closure with `bytes` zeroed bytes, 16-byte
+  aligned (what `_alloca_probe_16` leaves, so at least what the other two
+  do), alive until it returns. Nested calls nest like allocas: the inner
+  frame lies below the outer. In the hook the bytes come from the
+  thread's stack (the smallest of five fixed sizes up to 16 KB, each in
+  its own call; beyond that the heap, which the original's 32 KB threads
+  could not have given anyway); in `ffx-host` from the router's frame on
+  the game thread's stack in the arena (`Router::frame_alloc`, already
+  16-byte aligned), so the originals in Unicorn reach it.
+
+  ```rust
+  match ad::probe_sizes(&mem(), path) {
+      None => ad::file_probe(&mut mem(), path, None),
+      Some((len, wide, narrow)) => with_frame(wide, |w| {
+          with_frame(narrow, |n| ad::file_probe(&mut mem(), path, Some((len, w, n))))
+      }),
+  }
+  ```
+- **Locals at fixed offsets** next to the alloca (the adapter, output and
+  count `Renderer_SetDisplayMode` hands the DXGI calls, the screenshot's
+  writer object) stay a `StackFrame` laid out at the original's `ebp`
+  offsets, as before.
+- **A `va_list`** is a pointer into the caller's argument words: declare
+  the named arguments and take `slots` (`fn shim(a, b; slots: u32)`,
+  `docs/workflow.md`, "Argument slots"); the first variable word is at
+  `slots + 4 * named`. The `va_list` word itself, when the original keeps
+  it in its frame and passes its address, is a `StackFrame::<1>`
+  (`0x0044e9e0`); `Phyre_PAnimationTargetBlenderController_log_00530b20`
+  passes it the same way. An aligned scratch buffer the original rounds
+  up inside its frame (`lea eax, [ebp-0x1c]; neg eax; and eax, 0xf`) is a
+  `with_frame` of its size.
+- **Tests.** The oracle test computes where the original's buffer lies
+  for its call: the arguments are pushed from `stack_range().end - 0x100`,
+  then the return address, so `ebp` is that less `4 * words + 8`; the
+  saved registers and the frame's own `sub esp` give `esp` at the alloca,
+  and the buffer is `(esp - bytes) & !0xf`. It hands the part after the
+  alloca that address in the other oracle, runs the port's calls below it
+  (`Oracle::set_call_top`), and compares the buffer bytes after the call
+  (a UTF-16 string up to its NUL: the rest is never written).
+  `crates/ffx-oracle/tests/m5_design_frames.rs` has the helpers (stubs
+  that write through their arguments and copy into buffers, a second
+  answer for a callee called twice).
 
 ## Choosing what to port
 
