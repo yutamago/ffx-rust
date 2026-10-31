@@ -2876,3 +2876,35 @@ fn opu_news() {
         t.check_entry(f, Call::default(), &[0x0715_0007], Eax::Checked);
     }
 }
+
+#[test]
+fn counted_frames_unlocked_drops() {
+    let Some(mut t) = twin(700) else { return };
+    recs(&mut t, &[(723, 1), (724, 2), (346, 1), (214, 2)]);
+    let f = t.at(0x14d0);
+    for o in [0x1b, 0x2c] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x80 + o);
+    }
+    let part = op(&t, f, 0x5a);
+    for (on, n, alive) in [(0u32, 0u32, 0u16), (1, u32::MAX, 0), (1, 0, 0), (1, 5, 3)] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(op(&t, f, 0xf), n);
+        t.write(part, &[0; 0x20]);
+        t.set_u16(part + 0x1e, alive);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(372) else { return };
+    recs(&mut t, &[(258, 1), (231, 3), (230, 2)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 712, 2, move |m, _| m.r32(answer));
+    let f = t.at(0x10b0);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x4e), lock);
+    t.set_u32(op(&t, f, 0x53), SCRATCH + 0x88);
+    for a in [0u32, 1] {
+        t.set_u32(answer, a);
+        t.set_u32(lock, 3);
+        t.check_entry(f, Call::default(), &[0x0258_0001], Eax::Checked);
+    }
+}

@@ -5615,30 +5615,43 @@ pub const PART_DROP_ARG: Sig = Sig {
 ///
 /// `magic_0702` 0x100014d0 (146 bytes; 2 DLLs).
 pub fn part_frame<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    part_frame_at(g, img, fr, None)
+}
+
+/// [`part_frame`]'s body; with `guard` (the operand of a counter that
+/// must not be negative) the rest of the operands sit 0xd bytes later.
+fn part_frame_at<G: Game>(g: &mut G, img: &Image, fr: &Frame, guard: Option<u32>) -> Ret {
     let f = fr.at;
     let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
     if rd(g, 0x2) == 0 {
         return Ret::eax(0);
     }
-    let a = rd(g, 0x14);
-    let p = rd(g, 0xe);
-    g.write::<u32>(p, op(img, f, 0x1a));
-    let q = rd(g, 0x1f);
-    g.write::<u32>(q, op(img, f, 0x25));
-    slot_call(g, img, f, (0x2a, 723), &[a]);
-    let b = rd(g, 0x3d);
-    let eax = slot_call(g, img, f, (0x37, 724), &[b, a]).eax;
-    let part = op(img, f, 0x4d);
-    crate::sa_misc::part_refresh_b(g, img, img.rel32_target(f + 0x52), part, eax);
-    if g.read::<u16>(op(img, f, 0x59)) == 0 {
-        let c = rd(g, 0x67);
-        // `ecx` still holds the part (the refresh's `this`)
-        let t = slot_target(g, op(img, f, 0x61), 346);
-        g.call(t, part, &[c]);
-        let d = rd(g, 0x7a);
-        slot_call(g, img, f, (0x74, 214), &[d, c]);
+    if let Some(gd) = guard
+        && g.read::<i32>(op(img, f, gd)) < 0
+    {
+        return Ret::eax(0);
     }
-    let n = op(img, f, 0x8b);
+    let sh = if guard.is_some() { 0xd } else { 0 };
+    let o = |off: u32| off + sh;
+    let a = rd(g, o(0x14));
+    let p = rd(g, o(0xe));
+    g.write::<u32>(p, op(img, f, o(0x1a)));
+    let q = rd(g, o(0x1f));
+    g.write::<u32>(q, op(img, f, o(0x25)));
+    slot_call(g, img, f, (o(0x2a), 723), &[a]);
+    let b = rd(g, o(0x3d));
+    let eax = slot_call(g, img, f, (o(0x37), 724), &[b, a]).eax;
+    let part = op(img, f, o(0x4d));
+    crate::sa_misc::part_refresh_b(g, img, img.rel32_target(f + o(0x52)), part, eax);
+    if g.read::<u16>(op(img, f, o(0x59))) == 0 {
+        let c = rd(g, o(0x67));
+        // `ecx` still holds the part (the refresh's `this`)
+        let t = slot_target(g, op(img, f, o(0x61)), 346);
+        g.call(t, part, &[c]);
+        let d = rd(g, o(0x7a));
+        slot_call(g, img, f, (o(0x74), 214), &[d, c]);
+    }
+    let n = op(img, f, o(0x8b));
     let v = g.read::<u32>(n).wrapping_add(1);
     g.write::<u32>(n, v);
     Ret::eax(0)
@@ -6225,5 +6238,58 @@ pub const OPU_NEW: Sig = Sig {
     len: 156,
     hash: 0x6435_4d5d_4816_5e63,
     calls: &[(0x98, Callee::Sig(&crate::opu::SETUP))],
+    imports: &[],
+};
+
+/// [`part_frame`] that also waits while its counter `G_N` (operand
+/// `+0xf`) is negative.
+///
+/// `magic_0700` 0x100014d0 (159 bytes; 2 DLLs).
+pub fn part_frame_counted<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    part_frame_at(g, img, fr, Some(0xf))
+}
+
+/// [`part_frame_counted`].
+pub const PART_FRAME_COUNTED: Sig = Sig {
+    len: 159,
+    hash: 0xf444_f8b2_e39b_60dd,
+    calls: &[(0x5f, Callee::Sig(&crate::sa_misc::PART_REFRESH_B))],
+    imports: &[],
+};
+
+/// [`part_drop_arg`] with one slot 231 `(*G_A, *G_B, *G_C)` and slot 230
+/// `(*G_D, *G_E)`; the lock `**G_LOCK` is set to 1 before it is saved,
+/// and cleared after slot 712 (cdecl `(part)`). Returns 1 when slot 712
+/// answers 0, else 0.
+///
+/// `magic_0372` 0x100010b0 (158 bytes; 2 DLLs).
+pub fn part_drop_unlock<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    let p = fr.arg(g, 0);
+    slot_call(g, img, f, (0x4, 258), &[p]);
+    let (c, b, a) = (rd(g, 0x16), rd(g, 0x21), rd(g, 0x2d));
+    slot_call(g, img, f, (0x1b, 231), &[a, b, c, p]);
+    let (e, d) = (rd(g, 0x35), rd(g, 0x40));
+    slot_call(g, img, f, (0x3a, 230), &[d, e, a, b, c, p]);
+    let lock = rd(g, 0x4e);
+    let ptr = rd(g, 0x53);
+    g.write::<u32>(lock, 1);
+    g.write::<u32>(ptr, op(img, f, 0x5f));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    let r = slot_call(g, img, f, (0x64, 712), &[p, 0x30, d, e, a, b, c, p]).eax;
+    let lock = rd(g, 0x7f);
+    g.write::<u32>(lock, saved);
+    g.write::<u32>(lock, 0);
+    Ret::eax(u32::from(r == 0))
+}
+
+/// [`part_drop_unlock`].
+pub const PART_DROP_UNLOCK: Sig = Sig {
+    len: 158,
+    hash: 0x9d53_72e3_d32e_f95c,
+    calls: &[],
     imports: &[],
 };
