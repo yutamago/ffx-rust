@@ -6803,3 +6803,61 @@ impl Twins {
         self.jump(sym, at);
     }
 }
+
+#[test]
+fn r3b18_wait_win_prepare_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1801);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub_float(mnc::GET_TIME, [10.5f32, 3.0, 7.25][(case % 3) as usize]);
+            t.stub(mnc::DRAW_COMMAND_WINDOW, false, 1, 0, r);
+            // constant remaps, or ones that hand back their argument
+            if case < 6 {
+                t.stub_float(mnc::REMAP_X2, [12.5f32, 33.0, 0.75][(case % 3) as usize]);
+                t.stub_float(mnc::REMAP_Y2, [20.0f32, 7.5, 1.25][(case / 3 % 3) as usize]);
+            } else {
+                for sym in [mnc::REMAP_X2, mnc::REMAP_Y2] {
+                    let at = t.cave_code(&[0xd9, 0x44, 0x24, 0x04, 0xc3]); // fld dword [esp+4]; ret
+                    t.jump(sym, at);
+                }
+            }
+            t.stub(mnc::SET_CUR_POS, false, 3, 0, r ^ 1);
+            t.g32(0x0193_ed20, (case >> 1) & 1); // __sse2_available
+            t.g32(mnc::SG_FRAME, case & 1);
+            let win = t.zeros(0x100);
+            t.write(win + 0xb, &[[0u8, 3, 5, 0xff][(case % 4) as usize]]);
+            let cells: [u16; 5] = [0, 4, 7, 12, 0xffff];
+            for (k, c) in cells.iter().enumerate() {
+                t.write(win + 0xe + 2 * k as u32, &c.to_le_bytes());
+            }
+            for (off, v) in [
+                (0x38u32, 3i16),
+                (0x3a, 3),
+                (0x40, [1i16, 0, 4][(case % 3) as usize]),
+                (0x42, [2i16, -1, 9, 11][(case % 4) as usize]),
+            ] {
+                t.write(win + off, &v.to_le_bytes());
+            }
+            t.put(
+                win + 0x78,
+                &[
+                    [100.5f32, -3.25, 7.0][(case % 3) as usize].to_bits(),
+                    40.0f32.to_bits(),
+                ],
+            );
+            t.put(
+                win + 0xdc,
+                &[[0.0f32, 2.5, -1.0, f32::NAN][(case % 4) as usize].to_bits()],
+            );
+            t.check(
+                &format!("wait win prepare #{case}"),
+                0x008a_6870,
+                Conv::Cdecl,
+                &[win],
+                |m| Out::U32(mnb::wait_win_prepare(m, win)),
+            );
+        }
+    });
+}

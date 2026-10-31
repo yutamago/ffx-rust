@@ -1289,6 +1289,11 @@ ported! {
         let mut f = StackFrame::<0x27>::new();
         mn::alpha_bg(&mut mem(), f.at() + 0x9c, alpha)
     }
+
+    /// `(win)`.
+    TODrawWaitBtlWinPrepare @ 0x008a_6870 => extern "C" fn wait_win_prepare(win: u32) -> u32 {
+        mn::wait_win_prepare(&mut mem(), win)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

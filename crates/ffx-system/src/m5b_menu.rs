@@ -423,6 +423,16 @@ pub const ALPHA_BG_EDGES: [u32; 4] = [0x00b4_3db4, 0x00b5_8cd8, 0x00b6_5898, 0x0
 pub const SCREEN_W: u32 = 0x00b4_1d9c;
 pub const SCREEN_H: u32 = 0x00b4_1d98;
 
+/// `TODrawWaitBtlWinPrepare`'s: `graphicGetTime` (`ST0`),
+/// `TOBtlDrawCommandWindow`, `TOBtlSetCurPos`, `g_SgFrame`, the cursor
+/// floats `0x00b5ef64` (x step) and `0x00b5ee9c` (y step).
+pub const GET_TIME: u32 = 0x0064_1410;
+pub const DRAW_COMMAND_WINDOW: u32 = 0x0089_f370;
+pub const SET_CUR_POS: u32 = 0x0089_99f0;
+pub const SG_FRAME: u32 = 0x023c_bbf0;
+pub const CURSOR_X_STEP: u32 = 0x00b5_ef64;
+pub const CURSOR_Y_STEP: u32 = 0x00b5_ee9c;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -3059,5 +3069,91 @@ pub mod bridge {
             r = cdecl(h, super::DRAW_UI_ELEMENT, &[q, 0, 1, 2, 0]);
         }
         r
+    }
+    /// Whether a wait window shows `cell`: from `i16 +0x40`, `+0x38 *
+    /// +0x3a` cells.
+    fn wait_cell_shown(h: &impl Host, win: u32, cell: i32) -> bool {
+        let first = i32::from(h.read::<i16>(win.wrapping_add(0x40)));
+        let cols = i32::from(h.read::<i16>(win.wrapping_add(0x38)));
+        let rows = i32::from(h.read::<i16>(win.wrapping_add(0x3a)));
+        cell >= first && cell < cols.wrapping_mul(rows).wrapping_add(first)
+    }
+
+    /// A wait window's cell cursor position: `x` = `ftol(remapX(xstep) *
+    /// f32(cell % cols) + ftol(win + 0x78))`, `y` = `ftol(remapY(ystep) *
+    /// f32(cell / cols) + win + 0x7c)` (`cell` less the first shown,
+    /// `i16 +0x40`; `cols` `i16 +0x38`; `idiv`). `ystep` `None` uses
+    /// `f32(row * 0x34 + 5)` remapped instead.
+    fn wait_cell_pos(h: &mut impl Host, win: u32, cell: i32, ystep: Option<u32>) -> (u32, u32) {
+        use ffx_bridge::x87;
+        let left = ftol(h, f32_at(h, win.wrapping_add(0x78))).cast_signed();
+        let cols = i32::from(h.read::<i16>(win.wrapping_add(0x38)));
+        let step_x = float_copy(h, super::CURSOR_X_STEP);
+        let rx = remap(h, super::REMAP_X2, step_x);
+        let col = f64::from(int_f32(cell.wrapping_rem(cols).cast_unsigned()));
+        let x = ftol(h, x87::add(x87::mul(rx, col), f64::from(left)));
+        let first = i32::from(h.read::<i16>(win.wrapping_add(0x40)));
+        let row = cell.wrapping_sub(first).wrapping_div(cols);
+        let (ry, factor) = match ystep {
+            Some(sym) => {
+                let step = float_copy(h, sym);
+                (
+                    remap(h, super::REMAP_Y2, step),
+                    f64::from(int_f32(row.cast_unsigned())),
+                )
+            }
+            None => {
+                let v = int_f32(row.wrapping_mul(0x34).wrapping_add(5).cast_unsigned());
+                (remap(h, super::REMAP_Y2, v.to_bits()), 1.0)
+            }
+        };
+        let y = x87::add(x87::mul(ry, factor), f32_at(h, win.wrapping_add(0x7c)));
+        (x, ftol(h, y))
+    }
+
+    /// `TODrawWaitBtlWinPrepare(win)`: the window's open time (`+0xe0` =
+    /// `graphicGetTime() - +0xdc` when `+0xdc` is above 0, else 0), the
+    /// command window drawn (`TOBtlDrawCommandWindow`), then every 2nd
+    /// frame (`g_SgFrame` bit 0) a cursor at each marked cell (the `i8
+    /// +0xb` halfwords from `+0xe` inside the shown range: from `i16
+    /// +0x40`, `+0x38 * +0x3a` cells) by `TOBtlSetCurPos(0, x - 5, y -
+    /// 2)`; and the current cell's (`i16 +0x42`, when shown) by
+    /// `TOBtlSetCurPos(0, x, y)` with the row's own `y`. Returns 0.
+    pub fn wait_win_prepare(h: &mut impl Host, win: u32) -> u32 {
+        use ffx_bridge::x87;
+        let opened = x87::load(h.read(win.wrapping_add(0xdc)));
+        let open = if 0.0 < opened {
+            x87::sub(
+                h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]),
+                opened,
+            )
+        } else {
+            0.0
+        };
+        h.write(win.wrapping_add(0xe0), x87::store(open));
+        cdecl(h, super::DRAW_COMMAND_WINDOW, &[win]);
+        let mut k = 0i32;
+        while k < i32::from(h.read::<i8>(win.wrapping_add(0xb))) {
+            let at = win.wrapping_add(0xe).wrapping_add(2 * k.cast_unsigned());
+            let cell = i32::from(h.read::<u16>(at));
+            let frame: u8 = h.read(h.rebase(super::SG_FRAME));
+            if wait_cell_shown(h, win, cell) && frame & 1 != 0 {
+                let (x, y) = wait_cell_pos(h, win, cell, Some(super::CURSOR_Y_STEP));
+                cdecl(
+                    h,
+                    super::SET_CUR_POS,
+                    &[0, x.wrapping_sub(5), y.wrapping_sub(2)],
+                );
+            }
+            k += 1;
+        }
+        let current = i32::from(h.read::<i16>(win.wrapping_add(0x42)));
+        let first = i32::from(h.read::<i16>(win.wrapping_add(0x40)));
+        if current < first || !wait_cell_shown(h, win, current) {
+            return 0;
+        }
+        let (x, y) = wait_cell_pos(h, win, current, None);
+        cdecl(h, super::SET_CUR_POS, &[0, x, y]);
+        0
     }
 }
