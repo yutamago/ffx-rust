@@ -688,4 +688,17 @@ ported! {
         let ebp = fr.at().wrapping_add(0x118);
         mn::env_save(&mut mem(), ebp, name)
     }
+    // ---- round 5 (mbs-static), batch 8 (ffx_menu::m5m_n) ----
+    /// `(name)`: the writer in a frame (the original's `ebp - 0x24`).
+    MsBtlPosWriteScr @ 0x007c_b640 => extern "C" fn ms_btl_pos_write_scr(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x24 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x24);
+        mn::pos_write_scr(&mut mem(), ebp, name)
+    }
+    // ---- round 5 (mbs-static), batch 9 (ffx_menu::m5m_n) ----
+    /// `(reader, name)`: writes its two slots when it tail-jumps to
+    /// `MsStructClear`.
+    MsBtlPosParseToken_007cc420 @ 0x007c_c420 => extern "C" fn ms_btl_pos_parse_token(reader: u32, name: u32; slots: u32) {
+        mn::pos_parse_token(&mut mem(), reader, name, slots);
+    }
 }

@@ -3326,4 +3326,528 @@ pub mod bridge {
         }
         u32::MAX
     }
+
+    // ---- batch 8: the position editor's script writer ----
+
+    /// `g_BtlPosHashList` (`0x00c44270`): the position script's keys.
+    pub const POS_KEYS: u32 = 0x00c4_4270;
+    pub const MS_ENV_WRITE_TEXT_7CD680: u32 = 0x007c_d680;
+    /// The position writer's line buffer (`0x0113e390`) and cursors:
+    /// the record `0x0113e27c`, the point `0x0113e280`, the sub-record
+    /// `0x0113e284`.
+    pub const POS_LINE: u32 = 0x0113_e390;
+    pub const POS_CUR_REC: u32 = 0x0113_e27c;
+    pub const POS_CUR_POINT: u32 = 0x0113_e280;
+    pub const POS_CUR_SUB: u32 = 0x0113_e284;
+    /// The parser's file name and line (`0x0113e28c`, `0x0113e288`), its
+    /// error (`0x0113e238`), the focus flag `0x023114f4`.
+    pub const POS_FILE_NAME: u32 = 0x0113_e28c;
+    pub const POS_FILE_LINE: u32 = 0x0113_e288;
+    pub const POS_ERROR: u32 = 0x0113_e238;
+    pub const BTL_POS_FOCUS: u32 = 0x0231_14f4;
+
+    /// One script line: the key's name (`MsEnvFindKey_007cf140`) and
+    /// `vals` `sprintf`ed with `fmt` into the line buffer, appended with
+    /// `MsEnvWriteText_007cd680`.
+    fn pos_line(h: &mut impl Host, w: u32, key: u32, fmt: u32, vals: &[u32]) {
+        let keys = h.rebase(POS_KEYS);
+        let name = cdecl(h, MS_ENV_FIND_KEY, &[keys, key]);
+        let mut a = vec![name];
+        a.extend_from_slice(vals);
+        let buf = h.rebase(POS_LINE);
+        // call width: 11 (the buffer, the format, the name, three doubles
+        // and an integer)
+        sprintf(h, buf, fmt, &a);
+        cdecl(h, MS_ENV_WRITE_TEXT_7CD680, &[w, buf]);
+    }
+
+    /// A bare line (`"\n"`).
+    fn pos_newline(h: &mut impl Host, w: u32) {
+        let buf = h.rebase(POS_LINE);
+        sprintf(h, buf, S_NL, &[]);
+        cdecl(h, MS_ENV_WRITE_TEXT_7CD680, &[w, buf]);
+    }
+
+    /// The doubles of the vector at `p`.
+    fn vec3(h: &impl Host, p: u32) -> Vec<u32> {
+        [0u32, 4, 8]
+            .iter()
+            .flat_map(|&o| dw(f32_at(h, at(p, o))))
+            .collect()
+    }
+
+    /// The `count` points of the list at the record's `+list` (12 bytes
+    /// apart), each through the point cursor as a `key` line.
+    fn pos_point_lines(
+        h: &mut impl Host,
+        w: u32,
+        cursor: u32,
+        count: u32,
+        list: u32,
+        key: u32,
+        fmt: u32,
+    ) {
+        let mut k = 0i32;
+        loop {
+            let r = g32(h, cursor);
+            if k >= h.read::<i32>(at(r, count)) {
+                return;
+            }
+            let p = at(h.read::<u32>(at(r, list)), (k as u32).wrapping_mul(12));
+            set32(h, POS_CUR_POINT, p);
+            let v = vec3(h, p);
+            pos_line(h, w, key, fmt, &v);
+            k += 1;
+        }
+    }
+
+    /// `MsBtlPosWriteScr(name)`: the position editor's table written as
+    /// position script to `name` (`sceOpen(name, 0x602)`; a 0x1000-byte
+    /// writer at `ebp - 0x24`; the lines through the global buffer and
+    /// cursors): per record its points, ends, lists and sub-records (the
+    /// short form for a table with the flag), then the end key; written,
+    /// freed, closed. Returns -1, or 0 after the parser's error lines
+    /// (error 2) when the file doesn't open.
+    #[allow(clippy::too_many_lines)]
+    pub fn pos_write_scr(h: &mut impl Host, ebp: u32, name: u32) -> u32 {
+        const F_KEY: u32 = 0x00b5_56b0;
+        const F_INT1: u32 = 0x00b5_56b8;
+        const F_HEAD: u32 = 0x00b5_56c4;
+        const F_INT2: u32 = 0x00b5_56cc;
+        const F_PT2: u32 = 0x00b5_56d8;
+        const F_END1: u32 = 0x00b5_56e8;
+        const F_VEC1: u32 = 0x00b5_56f0;
+        const F_FLOAT1: u32 = 0x00b5_5700;
+        const F_VEC2: u32 = 0x00b5_570c;
+        const F_VEC2I: u32 = 0x00b5_571c;
+        const F_SUB: u32 = 0x00b5_5730;
+        const F_INT3: u32 = 0x00b5_5738;
+        const F_PT3: u32 = 0x00b5_5744;
+        const F_SUBEND: u32 = 0x00b5_5758;
+        const F_FILEEND: u32 = 0x00b5_5760;
+        let w = ebp.wrapping_sub(0x24);
+        let fd = cdecl(h, SCE_OPEN, &[name, 0x602]);
+        h.write(at(w, 8), fd);
+        h.write(at(w, 4), 1u32);
+        h.write(at(w, 0x10), 0x1000u32);
+        let mem = crt(h, MALLOC, &[0x1000]);
+        h.write(w, mem);
+        h.write(at(w, 0xc), 0u32);
+        if (fd as i32) < 0 {
+            let f = g32(h, POS_FILE_NAME);
+            if f != 0 {
+                dbg(h, 0x00b5_5904, &[f]);
+            }
+            let l = g32(h, POS_FILE_LINE);
+            if l != 0 {
+                dbg(h, 0x00b5_590c, &[l]);
+            }
+            dbg(h, 0x00b5_5938, &[name]);
+            set32(h, POS_ERROR, 2);
+            return 0;
+        }
+        if g32(h, BTL_POS_FOCUS) != 0 {
+            dbg(h, 0x00b5_56a4, &[name]);
+        }
+        pos_line(h, w, 1, F_KEY, &[]);
+        let t = g32(h, BTL_POS_TABLE);
+        let n: u32 = h.read(at(t, 0x1c));
+        pos_line(h, w, 5, F_INT1, &[n]);
+        let t = g32(h, BTL_POS_TABLE);
+        let groups = |h: &_| -> i32 { Mem::read(h, at(g32(h, BTL_POS_TABLE), 0x1c)) };
+        let rec_at = |h: &_, g: i32| -> u32 {
+            at(
+                Mem::read::<u32>(h, at(g32(h, BTL_POS_TABLE), 0x30)),
+                (g as u32).wrapping_mul(0x74),
+            )
+        };
+        if h.read::<u32>(t) != 0 {
+            pos_line(h, w, 0x1a, F_HEAD, &[]);
+            let mut g = 0;
+            while g < groups(h) {
+                let r = rec_at(h, g);
+                set32(h, POS_CUR_REC, r);
+                pos_line(h, w, 6, F_HEAD, &[]);
+                let c: u32 = h.read(at(g32(h, POS_CUR_REC), 0xc));
+                pos_line(h, w, 9, F_INT2, &[c]);
+                pos_point_lines(h, w, POS_CUR_REC, 0xc, 0x28, 0xb, F_PT2);
+                pos_point_lines(h, w, POS_CUR_REC, 0xc, 0x2c, 0x1c, F_PT2);
+                pos_newline(h, w);
+                pos_line(h, w, 7, F_END1, &[]);
+                g += 1;
+            }
+        } else {
+            let v = vec3(h, at(t, 4));
+            pos_line(h, w, 3, F_VEC1, &v);
+            let t = g32(h, BTL_POS_TABLE);
+            let v = vec3(h, at(t, 0x10));
+            pos_line(h, w, 4, F_VEC1, &v);
+            let t = g32(h, BTL_POS_TABLE);
+            let nf: u32 = h.read(at(t, 0x24));
+            pos_line(h, w, 0x18, F_INT1, &[nf]);
+            let mut k = 0i32;
+            loop {
+                let t = g32(h, BTL_POS_TABLE);
+                if k >= h.read::<i32>(at(t, 0x24)) {
+                    break;
+                }
+                let list: u32 = h.read(at(t, 0x2c));
+                let v = dw(f32_at(h, at(list, (k as u32) * 4)));
+                pos_line(h, w, 0x19, F_FLOAT1, &v);
+                k += 1;
+            }
+            let mut g = 0;
+            while g < groups(h) {
+                let r = rec_at(h, g);
+                set32(h, POS_CUR_REC, r);
+                let cur = |h: &_| g32(h, POS_CUR_REC);
+                pos_line(h, w, 6, F_HEAD, &[]);
+                let v = vec3(h, cur(h));
+                pos_line(h, w, 8, F_VEC2, &v);
+                let mut v = vec3(h, at(cur(h), 0x1c));
+                v.push(h.read(at(cur(h), 0x18)));
+                // call width: 11 (three doubles and an integer)
+                pos_line(h, w, 0xa, F_VEC2I, &v);
+                let c: u32 = h.read(at(cur(h), 0xc));
+                pos_line(h, w, 9, F_INT2, &[c]);
+                pos_point_lines(h, w, POS_CUR_REC, 0xc, 0x28, 0xb, F_PT2);
+                pos_point_lines(h, w, POS_CUR_REC, 0xc, 0x2c, 0x1c, F_PT2);
+                pos_newline(h, w);
+                let mut v = vec3(h, at(cur(h), 0x40));
+                v.push(h.read(at(cur(h), 0x3c)));
+                // call width: 11 (three doubles and an integer)
+                pos_line(h, w, 0xd, F_VEC2I, &v);
+                let c: u32 = h.read(at(cur(h), 0x30));
+                pos_line(h, w, 0xc, F_INT2, &[c]);
+                pos_point_lines(h, w, POS_CUR_REC, 0x30, 0x4c, 0xe, F_PT2);
+                pos_point_lines(h, w, POS_CUR_REC, 0x30, 0x50, 0x1d, F_PT2);
+                pos_newline(h, w);
+                let c: u32 = h.read(at(cur(h), 0x54));
+                pos_line(h, w, 0x1b, F_INT2, &[c]);
+                pos_point_lines(h, w, POS_CUR_REC, 0x54, 0x60, 0xf, F_PT2);
+                pos_point_lines(h, w, POS_CUR_REC, 0x54, 0x64, 0x1e, F_PT2);
+                pos_newline(h, w);
+                let c: u32 = h.read(at(cur(h), 0x68));
+                pos_line(h, w, 0x10, F_INT2, &[c]);
+                let mut s = 0i32;
+                while s < h.read::<i32>(at(cur(h), 0x68)) {
+                    let sub = at(
+                        h.read::<u32>(at(cur(h), 0x70)),
+                        (s as u32).wrapping_mul(0x14),
+                    );
+                    set32(h, POS_CUR_SUB, sub);
+                    pos_line(h, w, 0x11, F_SUB, &[]);
+                    for (k, o) in [(0x13u32, 0u32), (0x14, 4), (0x15, 8)] {
+                        let v: u32 = h.read(at(g32(h, POS_CUR_SUB), o));
+                        pos_line(h, w, k, F_INT3, &[v]);
+                    }
+                    pos_point_lines(h, w, POS_CUR_SUB, 8, 0x10, 0x16, F_PT3);
+                    pos_line(h, w, 0x12, F_SUBEND, &[]);
+                    s += 1;
+                }
+                pos_line(h, w, 7, F_END1, &[]);
+                g += 1;
+            }
+        }
+        pos_line(h, w, 2, F_FILEEND, &[]);
+        let (fill, fd, mem): (i32, u32, u32) = (h.read(at(w, 0xc)), h.read(at(w, 8)), h.read(w));
+        if fill > 0 && h.read::<u32>(at(w, 4)) != 0 {
+            cdecl(h, SCE_WRITE, &[fd, mem, fill as u32]);
+        }
+        if mem != 0 {
+            crt(h, FREE, &[mem]);
+        }
+        if (fd as i32) > 0 {
+            cdecl(h, SCE_CLOSE, &[fd]);
+        }
+        u32::MAX
+    }
+
+    // ---- batch 9: the position script parser ----
+
+    pub const MS_KEYWORD_LOOKUP: u32 = 0x007c_eeb0;
+    pub const MS_READ_VEC3: u32 = 0x007c_d170;
+    pub const MS_READ_INT: u32 = 0x007c_d420;
+    pub const MS_READ_FLOAT: u32 = 0x007c_d360;
+    pub const MS_READ_TOKEN: u32 = 0x007c_f180;
+    pub const MS_BTL_POS_CHECK_VERSION: u32 = 0x007c_c1f0;
+    pub const MS_BTL_POS_CHECK_VERSION2: u32 = 0x007c_c250;
+    pub const MS_BTL_POS_ALLOC_POINTS: u32 = 0x007c_d4e0;
+    /// The code `MsBtlPosParseToken_007cc420` tail-jumps to for key 0xc:
+    /// the record's `+0x30` lists allocated (not a function of its own).
+    pub const MS_BTL_POS_ALLOC_SIDE_0X30: u32 = 0x007c_91a0;
+    /// Its key 9 target: the `+0xc` lists (`0x007cc180`).
+    pub const MS_BTL_POS_ALLOC_SIDE_0XC: u32 = 0x007c_c180;
+    /// The parser's state (`0x0113e270`: 0 outside, 1 in the data, 2 in a
+    /// record, 3 in a sub-record), the sub-state `0x0113e274`, the
+    /// table it fills (`0x0113e23c`).
+    pub const POS_STATE: u32 = 0x0113_e270;
+    pub const POS_SUB_STATE: u32 = 0x0113_e274;
+    pub const POS_PARSE_TABLE: u32 = 0x0113_e23c;
+    pub const POS_FILE_NAME_BUF: u32 = 0x0113_e290;
+    pub const S_POS_BAD_STATE: u32 = 0x00b5_59f4;
+
+    /// The parser's error: the file and line when known, `fmt` with the
+    /// token, the error `code` (`0x0113e238`).
+    fn pos_error(h: &mut impl Host, fmt: u32, name: u32, code: u32) {
+        let f = g32(h, POS_FILE_NAME);
+        if f != 0 {
+            dbg(h, 0x00b5_5904, &[f]);
+        }
+        let l = g32(h, POS_FILE_LINE);
+        if l != 0 {
+            dbg(h, 0x00b5_590c, &[l]);
+        }
+        dbg(h, fmt, &[name]);
+        set32(h, POS_ERROR, code);
+    }
+
+    /// The next point of a record list while in state `state`: the count
+    /// `+count`, the index `+index` (raised), the list `+list` of the
+    /// cursor at `cur`; the point (cursor `0x0113e280`) read as three
+    /// floats. Else the state error.
+    #[allow(clippy::too_many_arguments)]
+    fn pos_parse_point(
+        h: &mut impl Host,
+        reader: u32,
+        name: u32,
+        state: u32,
+        cur: u32,
+        index: u32,
+        count: u32,
+        list: u32,
+    ) {
+        let c = g32(h, cur);
+        let i: i32 = h.read(at(c, index));
+        if g32(h, POS_STATE) == state && i < h.read::<i32>(at(c, count)) {
+            let p = at(h.read::<u32>(at(c, list)), (i as u32).wrapping_mul(12));
+            set32(h, POS_CUR_POINT, p);
+            cdecl(h, MS_READ_VEC3, &[reader, name, p, at(p, 4), at(p, 8)]);
+            let c = g32(h, cur);
+            let i: u32 = h.read(at(c, index));
+            h.write(at(c, index), i.wrapping_add(1));
+            return;
+        }
+        pos_error(h, S_POS_BAD_STATE, name, 7);
+    }
+
+    /// `MsStructClear` as the parser tail-jumps to it: its two words in the
+    /// parser's own argument slots.
+    fn pos_tail_clear(h: &mut impl Host, slots: u32, obj: u32, cnt: u32, size: u32, list: u32) {
+        let o = g32(h, obj);
+        let n: i32 = h.read(at(o, cnt));
+        let p = cdecl(h, MS_MALLOC_7CF970, &[(n.wrapping_mul(size as i32)) as u32]);
+        let o = g32(h, obj);
+        h.write(at(o, list), p);
+        let n: i32 = h.read(at(o, cnt));
+        let bytes = (n.wrapping_mul(size as i32)) as u32;
+        h.write(slots, [p, bytes]);
+        cdecl(h, MS_STRUCT_CLEAR, &[p, bytes]);
+    }
+
+    /// `MsBtlPosParseToken_007cc420(reader, name)` (name ours): one token
+    /// of the position script (`MsKeywordLookup_007ceeb0` over
+    /// `g_BtlPosHashList`; unknown: error 8): the data and record
+    /// brackets (state `0x0113e270`), the table's scale and offset, the
+    /// record count and records (allocated), each record's points, ends,
+    /// lists and sub-records, the float list, the file's line and name, the
+    /// flag. Values through `MsReadVec3`/`MsReadInt`/`MsReadFloat`; a
+    /// token in the wrong state is error 7. The tail-jumps to
+    /// `MsStructClear` leave their words in the argument slots. Callers
+    /// drop `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn pos_parse_token(h: &mut impl Host, reader: u32, name: u32, slots: u32) {
+        let keys = h.rebase(POS_KEYS);
+        let key = cdecl(h, MS_KEYWORD_LOOKUP, &[name, keys]);
+        if key == 0 {
+            pos_error(h, 0x00b5_5a18, name, 8);
+        }
+        let t = |h: &_| g32(h, BTL_POS_TABLE);
+        let c = |h: &_| g32(h, POS_CUR_REC);
+        let check = |h: &mut _, v: u32| cdecl(h, MS_BTL_POS_CHECK_VERSION, &[name, v]) != 0;
+        let read_int = |h: &mut _, p: u32| {
+            cdecl(h, MS_READ_INT, &[reader, name, p]);
+        };
+        let read_vec = |h: &mut _, p: u32| {
+            cdecl(h, MS_READ_VEC3, &[reader, name, p, at(p, 4), at(p, 8)]);
+        };
+        match key {
+            1 => {
+                if g32(h, POS_STATE) != 0 {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                } else {
+                    set32(h, POS_STATE, 1);
+                    let p = h.rebase(POS_PARSE_TABLE);
+                    set32(h, BTL_POS_TABLE, p);
+                }
+            }
+            2 => {
+                if g32(h, POS_STATE) == 0 {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                } else {
+                    set32(h, POS_STATE, 0);
+                }
+            }
+            3 | 4 => {
+                if check(h, 1) {
+                    let p = at(t(h), if key == 3 { 4 } else { 0x10 });
+                    read_vec(h, p);
+                }
+            }
+            5 => {
+                if check(h, 1) {
+                    if h.read::<u32>(at(t(h), 0x1c)) != 0 {
+                        pos_error(h, 0x00b5_5994, name, 4);
+                        return;
+                    }
+                    read_int(h, at(t(h), 0x1c));
+                    h.write(at(t(h), 0x20), 0u32);
+                    pos_tail_clear(h, slots, BTL_POS_TABLE, 0x1c, 0x74, 0x30);
+                }
+            }
+            6 => {
+                let tb = t(h);
+                let i: i32 = h.read(at(tb, 0x20));
+                if g32(h, POS_STATE) == 1 && i < h.read::<i32>(at(tb, 0x1c)) {
+                    set32(h, POS_STATE, 2);
+                    let r = at(h.read::<u32>(at(tb, 0x30)), (i as u32).wrapping_mul(0x74));
+                    set32(h, POS_CUR_REC, r);
+                } else {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                }
+            }
+            7 => {
+                if check(h, 2) {
+                    let tb = t(h);
+                    let i: u32 = h.read(at(tb, 0x20));
+                    h.write(at(tb, 0x20), i.wrapping_add(1));
+                    set32(h, POS_STATE, 1);
+                }
+            }
+            8 => {
+                if check(h, 2) {
+                    read_vec(h, c(h));
+                }
+            }
+            9 => {
+                if check(h, 2) {
+                    read_int(h, at(c(h), 0xc));
+                    cdecl(h, MS_BTL_POS_ALLOC_SIDE_0XC, &[]);
+                }
+            }
+            0xa | 0xd => {
+                if check(h, 2) {
+                    let (v, i) = if key == 0xa {
+                        (0x1c, 0x18)
+                    } else {
+                        (0x40, 0x3c)
+                    };
+                    read_vec(h, at(c(h), v));
+                    read_int(h, at(c(h), i));
+                }
+            }
+            0xb => pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x10, 0xc, 0x28),
+            0xc => {
+                if check(h, 2) {
+                    read_int(h, at(c(h), 0x30));
+                    cdecl(h, MS_BTL_POS_ALLOC_SIDE_0X30, &[]);
+                }
+            }
+            0xe => pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x34, 0x30, 0x4c),
+            0xf => {
+                if h.read::<u32>(at(c(h), 0x54)) == 0 {
+                    h.write(at(c(h), 0x54), 1u32);
+                    cdecl(h, MS_BTL_POS_ALLOC_POINTS, &[]);
+                }
+                pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x58, 0x54, 0x60);
+            }
+            0x10 => {
+                if check(h, 2) {
+                    read_int(h, at(c(h), 0x68));
+                    h.write(at(c(h), 0x6c), 0u32);
+                    pos_tail_clear(h, slots, POS_CUR_REC, 0x68, 0x14, 0x70);
+                }
+            }
+            0x11 => {
+                let r = c(h);
+                let i: i32 = h.read(at(r, 0x6c));
+                if g32(h, POS_STATE) == 2 && i < h.read::<i32>(at(r, 0x68)) {
+                    set32(h, POS_STATE, 3);
+                    set32(h, POS_SUB_STATE, 3);
+                    let s = at(h.read::<u32>(at(r, 0x70)), (i as u32).wrapping_mul(0x14));
+                    set32(h, POS_CUR_SUB, s);
+                } else {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                }
+            }
+            0x12..=0x15 => {
+                if cdecl(h, MS_BTL_POS_CHECK_VERSION2, &[name, 3, 3]) != 0 {
+                    let s = g32(h, POS_CUR_SUB);
+                    match key {
+                        0x12 => {
+                            let r = c(h);
+                            let i: u32 = h.read(at(r, 0x6c));
+                            h.write(at(r, 0x6c), i.wrapping_add(1));
+                            set32(h, POS_STATE, 2);
+                            set32(h, POS_SUB_STATE, 0);
+                        }
+                        0x13 => read_int(h, s),
+                        0x14 => read_int(h, at(s, 4)),
+                        _ => {
+                            read_int(h, at(s, 8));
+                            h.write(at(g32(h, POS_CUR_SUB), 0xc), 0u32);
+                            pos_tail_clear(h, slots, POS_CUR_SUB, 8, 12, 0x10);
+                        }
+                    }
+                }
+            }
+            0x16 => pos_parse_point(h, reader, name, 3, POS_CUR_SUB, 0xc, 8, 0x10),
+            0x17 => {
+                let line = h.rebase(POS_FILE_LINE);
+                read_int(h, line);
+                let buf = h.rebase(POS_FILE_NAME_BUF);
+                cdecl(h, MS_READ_TOKEN, &[reader, buf, 0x100]);
+                let l = g32(h, POS_FILE_LINE);
+                set32(h, POS_FILE_LINE, l.wrapping_sub(1));
+                set32(h, POS_FILE_NAME, buf);
+            }
+            0x18 => {
+                if !check(h, 1) {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                    return;
+                }
+                read_int(h, at(t(h), 0x24));
+                h.write(at(t(h), 0x28), 0u32);
+                pos_tail_clear(h, slots, BTL_POS_TABLE, 0x24, 4, 0x2c);
+            }
+            0x19 => {
+                if !check(h, 1) {
+                    pos_error(h, S_POS_BAD_STATE, name, 7);
+                    return;
+                }
+                let tb = t(h);
+                let (n, i): (i32, i32) = (h.read(at(tb, 0x24)), h.read(at(tb, 0x28)));
+                if n <= i {
+                    pos_error(h, 0x00b5_5a34, name, 9);
+                    return;
+                }
+                let p = at(h.read::<u32>(at(tb, 0x2c)), (i as u32).wrapping_mul(4));
+                cdecl(h, MS_READ_FLOAT, &[reader, name, p]);
+                let tb = t(h);
+                let i: u32 = h.read(at(tb, 0x28));
+                h.write(at(tb, 0x28), i.wrapping_add(1));
+            }
+            0x1a => h.write(t(h), 1u32),
+            0x1b => {
+                if check(h, 2) {
+                    read_int(h, at(c(h), 0x54));
+                    cdecl(h, MS_BTL_POS_ALLOC_POINTS, &[]);
+                }
+            }
+            0x1c => pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x14, 0xc, 0x2c),
+            0x1d => pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x38, 0x30, 0x50),
+            0x1e => pos_parse_point(h, reader, name, 2, POS_CUR_REC, 0x5c, 0x54, 0x64),
+            _ => {}
+        }
+    }
 }

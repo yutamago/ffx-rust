@@ -7173,3 +7173,199 @@ fn r5b7_env_save_matches_the_original() {
         }
     });
 }
+
+// ---- round 5, batch 8 (ffx_menu::m5m_n, the position script writer) ----
+
+/// A position table for the writers: `n` records with small counts,
+/// point lists and sub-records, the flag `flag`.
+fn pos_table_full(t: &mut Twins, rng: &mut Rng, n: u32, flag: u32) -> u32 {
+    let small = |rng: &mut Rng| -> u32 { [0u32, 1, 2, 2, 0xffff_ffff][rng.below(5) as usize] };
+    let mut recs = Vec::new();
+    for _ in 0..n.max(1) {
+        let mut r: Vec<u32> = (0..0x74 / 4).map(|_| debug_float(rng)).collect();
+        for c in [0xcusize, 0x30, 0x54, 0x68] {
+            r[c / 4] = small(rng);
+        }
+        r[0x18 / 4] = rng.word();
+        r[0x3c / 4] = rng.word();
+        for l in [0x28usize, 0x2c, 0x4c, 0x50, 0x60, 0x64] {
+            let v: Vec<u32> = (0..6).map(|_| debug_float(rng)).collect();
+            r[l / 4] = t.words(&v);
+        }
+        let mut subs = Vec::new();
+        for _ in 0..2 {
+            let pts: Vec<u32> = (0..6).map(|_| debug_float(rng)).collect();
+            let pts = t.words(&pts);
+            subs.extend([rng.word(), rng.word(), small(rng), 0, pts]);
+        }
+        r[0x70 / 4] = t.words(&subs);
+        recs.extend(r);
+    }
+    let recs = t.words(&recs);
+    let floats: Vec<u32> = (0..3).map(|_| debug_float(rng)).collect();
+    let floats = t.words(&floats);
+    let mut w: Vec<u32> = (0..0x10).map(|_| debug_float(rng)).collect();
+    w[0] = flag;
+    w[0x1c / 4] = n;
+    w[0x24 / 4] = [0u32, 2, 3][rng.below(3) as usize];
+    w[0x2c / 4] = floats;
+    w[0x30 / 4] = recs;
+    t.words(&w)
+}
+
+#[test]
+fn r5b8_pos_write_scr_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0801);
+        for k in 0..90u32 {
+            t.reset();
+            t.big_cave();
+            t.skip = 0x10;
+            let fmts = [
+                (0x00b5_56b0, 3),
+                (0x00b5_56b8, 4),
+                (0x00b5_56c4, 3),
+                (0x00b5_56cc, 4),
+                (0x00b5_56d8, 9),
+                (0x00b5_56e8, 3),
+                (0x00b5_56f0, 9),
+                (0x00b5_5700, 5),
+                (0x00b5_570c, 9),
+                (0x00b5_571c, 10),
+                (0x00b5_5730, 3),
+                (0x00b5_5738, 4),
+                (0x00b5_5744, 9),
+                (0x00b5_5758, 3),
+                (0x00b5_5760, 3),
+            ];
+            let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, 7);
+            let slot = t.rebase(mn::SPRINTF);
+            t.patch(slot, &s.to_le_bytes());
+            let fd = [0xffff_ffffu32, 0, 5][(k % 3) as usize];
+            let heap = t.zeros(0x40);
+            t.stubs(&[
+                (mn::SCE_OPEN, false, 2, 0, fd),
+                (mn::DBG_PRINTF, false, 2, 0, 0x7e),
+                (mn::SCE_WRITE, false, 3, 0, 0x71),
+                (mn::SCE_CLOSE, false, 1, 0, 0x72),
+            ]);
+            t.stub_import(mn::MALLOC, false, 1, 0, heap);
+            t.stub_import(mn::FREE, false, 1, 0, 0x73);
+            let mut c = t.log_words(mn::MS_ENV_WRITE_TEXT_7CD680, 0, 2, 0x74, false);
+            c.extend([0x8b, 0x4c, 0x24, 0x04, 0x83, 0x41, 0x0c, 0x05, 0xc3]); // add dword [ecx+0xc], 5; ret
+            let stub = t.cave_code(&c);
+            t.jump(mn::MS_ENV_WRITE_TEXT_7CD680, stub);
+            let name_g = if rng.chance(2) {
+                0
+            } else {
+                t.alloc(b"pos.txt\0")
+            };
+            let line = rng.below(3);
+            t.g32(mn::POS_FILE_NAME, name_g);
+            t.g32(mn::POS_FILE_LINE, line);
+            t.g32(mn::BTL_POS_FOCUS, rng.below(2));
+            let n = 1 + rng.below(3);
+            let table = pos_table_full(t, &mut rng, n, [0u32, 1][(k / 3 % 2) as usize]);
+            t.g32(mn::BTL_POS_TABLE, table);
+            let name = t.alloc(b"host0:pos.scr\0");
+            t.check_framed(
+                &format!("pos write scr #{k}"),
+                0x007c_b640,
+                Conv::Cdecl,
+                &[name],
+                0x24,
+                |m, ebp| Out::U32(mn::pos_write_scr(m, ebp, name)),
+            );
+        }
+    });
+}
+
+// ---- round 5, batch 9 (ffx_menu::m5m_n, the position script parser) ----
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b9_pos_parse_token_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_0901);
+        for k in 0..1536u32 {
+            let key = k % 0x20;
+            t.reset();
+            t.big_cave();
+            t.bump_malloc(0x8000);
+            t.stub(mn::DBG_PRINTF, false, 2, 0, 0x7e);
+            t.stub(mn::MS_KEYWORD_LOOKUP, false, 2, 0, key);
+            // the readers: logged, values written through their pointers
+            let iv = [0u32, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize];
+            let mut c = t.log_words(mn::MS_READ_INT, 0, 3, 0x91, false);
+            c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00]); // mov eax, [esp+0xc]; mov dword [eax], iv
+            c.extend(iv.to_le_bytes());
+            c.push(0xc3);
+            let stub = t.cave_code(&c);
+            t.jump(mn::MS_READ_INT, stub);
+            let fv = debug_float(&mut rng);
+            let mut c = t.log_words(mn::MS_READ_FLOAT, 0, 3, 0x92, false);
+            c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x00]);
+            c.extend(fv.to_le_bytes());
+            c.push(0xc3);
+            let stub = t.cave_code(&c);
+            t.jump(mn::MS_READ_FLOAT, stub);
+            let mut c = t.log_words(mn::MS_READ_VEC3, 0, 5, 0x93, false);
+            for (arg, o) in [(0xcu8, 0u8), (0x10, 0), (0x14, 0)] {
+                c.extend([0x8b, 0x44, 0x24, arg, 0xc7, 0x40, o]); // mov eax, [esp+arg]; mov dword [eax+o], v
+                c.extend(debug_float(&mut rng).to_le_bytes());
+            }
+            c.push(0xc3);
+            let stub = t.cave_code(&c);
+            t.jump(mn::MS_READ_VEC3, stub);
+            t.stub(mn::MS_READ_TOKEN, false, 3, 0, 0x94);
+            // the parser's state and the table, record and sub-record
+            // every key in every state and sub-state
+            let state = (k / 0x20) % 4;
+            t.g32(mn::POS_STATE, state);
+            t.g32(mn::POS_SUB_STATE, [3u32, 0, 1][((k / 0x80) % 3) as usize]);
+            let n = 1 + rng.below(3);
+            let table = pos_table_full(t, &mut rng, n, 0);
+            if rng.chance(3) {
+                t.w32(table + 0x1c, 0);
+            }
+            t.w32(table + 0x20, rng.below(4));
+            t.w32(table + 0x28, rng.below(4));
+            t.g32(mn::BTL_POS_TABLE, table);
+            let recs = t.r32(table + 0x30);
+            let rec = recs + 0x74 * rng.below(n);
+            for o in [0x10u32, 0x14, 0x34, 0x38, 0x58, 0x5c, 0x6c] {
+                t.w32(rec + o, rng.below(3));
+            }
+            if rng.chance(3) {
+                t.w32(rec + 0x54, 0);
+            }
+            t.g32(mn::POS_CUR_REC, rec);
+            let subs = t.r32(rec + 0x70);
+            let subrec = subs + 0x14 * rng.below(2);
+            t.w32(subrec + 0xc, rng.below(3));
+            t.g32(mn::POS_CUR_SUB, subrec);
+            let name_g = if rng.chance(2) {
+                0
+            } else {
+                t.alloc(b"pos.txt\0")
+            };
+            t.g32(mn::POS_FILE_NAME, name_g);
+            let line = rng.below(3);
+            t.g32(mn::POS_FILE_LINE, line);
+            let (reader, name) = (rng.word(), t.alloc(b"Token\0"));
+            let args = [reader, name];
+            let slots = t.arg_slots(&args);
+            t.check(
+                &format!("parse token {key:#x} state {state} #{k}"),
+                0x007c_c420,
+                Conv::Cdecl,
+                &args,
+                |m| {
+                    mn::pos_parse_token(m, reader, name, slots);
+                    Out::None
+                },
+            );
+            t.same_slots(&format!("parse token {key:#x} #{k}"), slots, 2);
+        }
+    });
+}
