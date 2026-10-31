@@ -53,6 +53,7 @@ fn scrub(t: &mut Twin) {
     let top = STACK_TOP - 0x100;
     t.write(top - 0x3000, &[0; 0x3000]);
 }
+
 /// Whether `a` is in the stack or the scratch area (a pointer a stub may
 /// follow).
 fn followable(a: u32) -> bool {
@@ -3848,5 +3849,90 @@ fn object_three_points_started() {
         }
         scrub(&mut t);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn swing_pairs_started() {
+    let Some(mut t) = twin(349) else { return };
+    let f = t.at(0x50e0);
+    // the objects' starts
+    let soa = t.img.rel32_target(f + 0x5b);
+    t.set_u32(op(&t, soa, 0x04), SCRATCH + 0x200);
+    t.set_u32(op(&t, soa, 0x5e), SCRATCH + 0x280);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x3400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x3400);
+    rec_mem(&mut t, 714, 5, 0, None);
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = op(&t, pa, 0x04);
+    // the actor block's and the actor scale's slots
+    for s in [413u32, 215] {
+        rec_mem(&mut t, s, 1, 0, None);
+    }
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [277u32, 15, 16, 17] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, a| f64::from(s) / 64.0 + f64::from(a[0] & 3));
+    }
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, Some(0));
+    }
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32 + (a[0] & 3) as f32).to_bits());
+        }
+        0x262
+    });
+    rec_mem(&mut t, 12, 1, 0, None);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec_mem(&mut t, 314, 1, 0, None);
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.75);
+    rec_mem(&mut t, 257, 2, 0, None);
+    let b = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0xf), b);
+    let sel = SCRATCH + 0x700;
+    t.write(sel, &[5, 3, 0, 1, 7, 2, 6, 4]);
+    for o in [0xa0u32, 0x23c, 0x26b, 0x310] {
+        t.set_u32(op(&t, f, o), sel);
+    }
+    for (o, x) in [
+        (0x99u32, 0x0cc0_0099u32),
+        (0x235, 0x0cc0_0235),
+        (0x264, 0x0cc0_0264),
+        (0x309, 0x0cc0_0309),
+    ] {
+        t.set_u32(op(&t, f, o), x);
+    }
+    for o in [0xabu32, 0x247, 0x31b] {
+        let table = op(&t, f, o);
+        for i in 0..8u32 {
+            t.set_u32(table + 4 * i, 0x0dd0_0000 + 0x100 * o + i);
+        }
+    }
+    let task = SCRATCH + 0x300;
+    for (k, (delay, a, tg, s)) in [
+        (3i8, 1i8, 0i8, 0i8),
+        (0, 1, 0, 0),
+        (0, -1, 1, 3),
+        (0, 2, 2, 1),
+        (-2, 0, -4, 4),
+        (0, 3, 1, 2),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.set_u16(free, 12);
+        t.write(b + 0x9c0, &varied(0x1300, k));
+        t.write(task, &varied(0x40, k));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x340);
+        t.set_u32(SCRATCH + 0x34c, 0);
+        t.write(task + 0x14, &[delay as u8, a as u8, tg as u8, s as u8]);
+        scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }

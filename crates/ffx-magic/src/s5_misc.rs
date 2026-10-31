@@ -23,9 +23,9 @@ use crate::s4_small::{
     named_parts, sound_record,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
-use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
+use crate::sa_misc::{ACTOR_SCALE, LEAVE, TIMELINE, actor_scale, leave, timeline};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
-use crate::sa_script::{ACTOR_MODE, actor_mode};
+use crate::sa_script::{ACTOR_BLOCK, ACTOR_MODE, actor_block, actor_mode};
 use crate::sb_misc::{NODE_APPEND, POOL_TAKE, node_append, pool_take};
 use crate::sb_misc::{TIMELINE_STOP_GLOBAL, timeline_stop_global};
 use crate::sb_nodes::{EFFECT_NODE, PARTICLE_NODE, effect_node, particle_node};
@@ -7911,4 +7911,180 @@ pub const OBJECT_THREE_POINTS: Sig = Sig {
         (0x3b6, Callee::Any),
     ],
     imports: &[],
+};
+
+/// The character `T[*G_SEL[i]]` (or `*G_SELF` for -1) at operand
+/// offsets `(self_, sel, table)` of `f`'s code.
+fn chosen<G: Game>(
+    g: &G,
+    img: &Image,
+    f: u32,
+    i: u32,
+    (self_, sel, table): (u32, u32, u32),
+) -> u32 {
+    if i == u32::MAX {
+        g.read::<u32>(op(img, f, self_))
+    } else {
+        let s = g.read::<u32>(op(img, f, sel));
+        let k = u32::from(g.read::<u8>(s.wrapping_add(i)));
+        g.read::<u32>(op(img, f, table).wrapping_add(4 * k))
+    }
+}
+
+/// A two-object swing started from a script task (cdecl `(task)`; the
+/// task's bytes `+0x14` a delay, `+0x15` the actor `a`, `+0x16` the
+/// target `b`, `+0x17` the slot `s`, signed). While the delay runs it
+/// counts down and returns it (in `al`). Then with `B = *G_B`: the object
+/// `B + 0x130 (s + 9)` starts ([`start_object_at`]: part 2, owner 2,
+/// scale `K`; `+0xc4 = B+0x1a14`, `+0x104 = CB`, `+0x120 = a`), the point
+/// `P = B + 16 (b + 0x19e)` is the position of the member `b + 3` (slot
+/// 262, `y` slot 12's ST0, `w` 1); a coin `rand & 1` picks the yaw (0, or
+/// `K2` wrapped once); the actor block `BLK + 32 b` is filled
+/// ([`actor_block`] for `a`, with `P2`); the angle `B+0x19b4 + 16 b` is
+/// `frnd(pi/4)` plus the yaw, wrapped once; the matrix `B+0x18f0 + 64
+/// b` is the actor's scale ([`actor_scale`]) turned about z, x and y by
+/// `B+0x19b0 + 16 b..` (slots 330, 328, 329); the actor is shown (slot
+/// 257 `(c, 0)`). The second object `B + 0x130 (s + 0xf)` starts
+/// (part 0, owner 6, the callback `CB1` with `+0x120` the member's map
+/// byte for `s >= 3`, else by the coin `CB2` (`+0x120 = b + 3`) or
+/// `CB3`; scale `(frnd(0.2) + K3) K4`) at the member's position (`y`
+/// slot 12, less `K5`), with its record `B + 0x34 (s + 0x84)` reset
+/// (`+0x20 = VT`, `+0x24 = VT2`) at `+0x110`. The task goes back to its
+/// pool ([`give_back`], whose `eax` it returns). Each call sees the words
+/// the earlier ones left on the stack.
+///
+/// `magic_0349` 0x100050e0 (978 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn swing_pair_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let task = fr.arg(g, 0);
+    let delay = g.read::<i8>(task + 0x14);
+    if delay > 0 {
+        let d = (delay - 1).cast_unsigned();
+        g.write::<u8>(task + 0x14, d);
+        return Ret::eax((fr.eax & 0xffff_ff00) | u32::from(d));
+    }
+    let b = g.read::<u32>(w(0xf));
+    let a = i32::from(g.read::<i8>(task + 0x15)).cast_unsigned();
+    let t = i32::from(g.read::<i8>(task + 0x16)).cast_unsigned();
+    let s = i32::from(g.read::<i8>(task + 0x17));
+    let obj = b.wrapping_add(s.wrapping_add(9).cast_unsigned().wrapping_mul(0x130));
+    start_object_at(g, img, img.rel32_target(f + 0x5b), obj, k(g, 0x2f), 2, 2, 0);
+    let x = g.read::<u32>(b.wrapping_add(0x1a14));
+    g.write::<u32>(obj + 0xc4, x);
+    g.write::<u32>(obj + 0x104, w(0x85));
+    g.write::<u32>(obj + 0x120, a);
+    let p = b.wrapping_add(t.wrapping_add(0x19e) << 4);
+    let member = t.wrapping_add(3);
+    let ch = chosen(g, img, f, member, (0x99, 0xa0, 0xab));
+    let mut st = Pushes::default();
+    st.push_all(&[p + 8, p + 4, p, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0xb4), 262), 0);
+    st.push(ch);
+    // call width: 12 (the most `Pushes::words` holds)
+    let y = st0_f32(st.call(g, slot_target(g, w(0xca), 12), 0));
+    g.write::<f32>(p + 4, y);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let odd = g.rand() & 1;
+    let yaw = if odd == 0 {
+        wrap_once(g, img, f, add(0.0, k(g, 0xf7)), [0xf7, 0xff, 0x126, 0xff])
+    } else {
+        0.0
+    };
+    let top = fr.esp.wrapping_sub(0x2c);
+    // push P2; call with `ecx` = the actor, `edx` = its block
+    g.write::<u32>(top - 4, w(0x144));
+    actor_block(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x14f),
+            esp: top.wrapping_sub(8),
+            ecx: a,
+            edx: (t << 5).wrapping_add(w(0x14a)),
+            ..Frame::default()
+        },
+    );
+    let mut st = Pushes::default();
+    st.push(0x3f49_0fdb);
+    // call width: 12 (the most `Pushes::words` holds)
+    let r = st0_f32(st.call(g, slot_target(g, w(0x154), 314), 0));
+    let ang = wrap_once(g, img, f, add(r, yaw), [0x17a, 0x184, 0x18e, 0x19b]);
+    let angles = b.wrapping_add(0x19b0).wrapping_add(t << 4);
+    g.write::<f32>(angles + 4, ang);
+    let m = b.wrapping_add(0x18f0).wrapping_add(t << 6);
+    actor_scale(g, img, img.rel32_target(f + 0x1c8), a, m);
+    let mut st = Pushes::default();
+    st.push(0);
+    for (tb, slot, o) in [(0x1d7u32, 330u32, 8u32), (0x1f6, 328, 0), (0x216, 329, 4)] {
+        st.set_top(g.read::<u32>(angles + o));
+        st.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        st.call(g, slot_target(g, w(tb), slot), 0);
+        st.pop(2);
+    }
+    let c = chosen(g, img, f, a, (0x235, 0x23c, 0x247));
+    slot_call(g, img, f, (0x24f, 257), &[c, 0]);
+    let mut owner_word = if member == u32::MAX {
+        g.read::<u32>(w(0x264))
+    } else {
+        let sel = g.read::<u32>(w(0x26b));
+        u32::from(g.read::<u8>(sel.wrapping_add(member)))
+    };
+    let cb = if s >= 3 {
+        w(0x29c)
+    } else if odd == 0 {
+        owner_word = member;
+        w(0x287)
+    } else {
+        w(0x293)
+    };
+    let r = st0_f32(slot_call(g, img, f, (0x2a1, 314), &[0x3e4c_cccd]));
+    let scale = mul(add(r, k(g, 0x2c1)), k(g, 0x2d5));
+    let second = b.wrapping_add(s.wrapping_add(0xf).cast_unsigned().wrapping_mul(0x130));
+    start_object_at(g, img, img.rel32_target(f + 0x2e9), second, scale, 0, 6, cb);
+    let x = g.read::<u32>(b.wrapping_add(0x1a14));
+    g.write::<u32>(second + 0xc4, x);
+    let q = second.wrapping_add(0xd0);
+    let ch = chosen(g, img, f, member, (0x309, 0x310, 0x31b));
+    let mut st = Pushes::default();
+    st.push_all(&[q + 8, q + 4, q, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    st.call(g, slot_target(g, w(0x324), 262), 0);
+    st.push(ch);
+    // call width: 12 (the most `Pushes::words` holds)
+    let y = st0_f32(st.call(g, slot_target(g, w(0x337), 12), 0));
+    g.write::<f32>(q + 4, y);
+    g.write::<u32>(second + 0xdc, 0x3f80_0000);
+    let y = sub(g.read::<f32>(second + 0xd4), k(g, 0x35c));
+    g.write::<u32>(second + 0x120, owner_word);
+    let rec = b.wrapping_add(s.wrapping_add(0x84).cast_unsigned().wrapping_mul(0x34));
+    g.write::<f32>(second + 0xd4, y);
+    for o in [0x18u32, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(rec + o, 0);
+    }
+    g.write::<u16>(rec + 0x30, 0);
+    for (o, v) in [(0x20u32, w(0x3a4)), (0x24, w(0x3ab)), (0x28, 0), (0x2c, 0)] {
+        g.write::<u32>(rec + o, v);
+    }
+    g.write::<u32>(second + 0x110, rec);
+    Ret::eax(give_back(g, img, img.rel32_target(f + 0x3c7), task))
+}
+
+/// [`swing_pair_start`] (the `rel32`s: [`start_object_at`] twice,
+/// [`actor_block`], [`actor_scale`] and [`give_back`]).
+pub const SWING_PAIR_START: Sig = Sig {
+    len: 978,
+    hash: 0x6263_4d34_1ce7_a51f,
+    calls: &[
+        (0x5b, Callee::Sig(&START_OBJECT_AT)),
+        (0x14f, Callee::Sig(&ACTOR_BLOCK)),
+        (0x1c8, Callee::Sig(&ACTOR_SCALE)),
+        (0x2e9, Callee::Sig(&START_OBJECT_AT)),
+        (0x3c7, Callee::Sig(&GIVE_BACK)),
+    ],
+    imports: &[(0xef, "rand")],
 };
