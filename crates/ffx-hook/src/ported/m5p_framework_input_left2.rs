@@ -65,4 +65,9 @@ ported! {
         let mut f = StackFrame::<{ lf::DIJOYSTATE2_WORDS as usize }>::new();
         lb::dinput_pad_update(&mut mem(), this, f.at());
     }
+    /// `PInputDevicePadXInput::update()`.
+    PadXInput_Update @ 0x0062_dba0 => extern "thiscall" fn xinput_pad_update(this: u32) {
+        let mut f = StackFrame::<{ lf::XINPUT_FRAME_WORDS as usize }>::new();
+        lb::xinput_pad_update(&mut mem(), this, f.at());
+    }
 }

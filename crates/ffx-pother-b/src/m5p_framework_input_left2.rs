@@ -132,6 +132,44 @@ pub const DIERR_INPUTLOST: u32 = 0x8007_001e;
 /// The words of `DIJOYSTATE2` ([`bridge::dinput_pad_update`]'s frame).
 pub const DIJOYSTATE2_WORDS: u32 = 0x44;
 
+/// The `XInput` pad's update: `XInputGetState` and `XInputSetState` (the
+/// import thunks, stdcall), unused, the connected and disconnected
+/// messages, the vibration scale (a double).
+pub const XINPUT: [u32; 6] = [
+    0x009d_a25a,
+    0x009d_a260,
+    0,
+    0x00b4_1118,
+    0x00b4_1150,
+    0x00b1_70d8,
+];
+/// [`XINPUT_BUTTONS`]' marks for the two triggers (their bytes, not bits).
+pub const XINPUT_LEFT_TRIGGER: u32 = 100;
+/// See [`XINPUT_LEFT_TRIGGER`].
+pub const XINPUT_RIGHT_TRIGGER: u32 = 101;
+/// The `wButtons` bit (or trigger) behind each of the pad's 16 button
+/// bytes (`+0x398..`).
+pub const XINPUT_BUTTONS: [u32; 16] = [
+    14,
+    12,
+    13,
+    15,
+    8,
+    9,
+    XINPUT_LEFT_TRIGGER,
+    XINPUT_RIGHT_TRIGGER,
+    5,
+    4,
+    6,
+    7,
+    0,
+    3,
+    1,
+    2,
+];
+/// The words of [`bridge::xinput_pad_update`]'s frame.
+pub const XINPUT_FRAME_WORDS: u32 = 8;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -141,6 +179,7 @@ pub mod bridge {
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
     use super::{DIERR_INPUTLOST, DINPUT_PAD};
+    use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
     use ffx_bridge::x87::Reg;
 
     fn import(h: &impl Mem, slot: u32) -> u32 {
@@ -771,5 +810,101 @@ pub mod bridge {
             h.write(this + 0x3a4 + d, 1u8);
         }
         h.call_sym(DINPUT_PAD[2], Conv::Thiscall(this), &[]);
+    }
+
+    /// `fistp dword` with the rounding mode set to truncate: in range,
+    /// toward zero; else the integer indefinite.
+    fn fistp_trunc(x: f64) -> u32 {
+        if x.is_nan() || x >= 2_147_483_648.0 || x <= -2_147_483_649.0 {
+            0x8000_0000
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // in range, truncated
+            let v = x as i32;
+            v.cast_unsigned()
+        }
+    }
+
+    /// An axis as the pad keeps it: the stick's signed 16 bits divided by
+    /// 128 (toward zero).
+    fn axis(raw: u16) -> u32 {
+        (i32::from(raw.cast_signed()) / 128).cast_unsigned()
+    }
+
+    /// `PInputDevicePadXInput::update` (`0x0062dba0`, thiscall, a device
+    /// vtable slot): `XInputGetState(pad +0x3b0)` into the `XINPUT_STATE`
+    /// at `frame + 0x10` (zeroed first; the port's frame, the original's
+    /// `ebp - 0x24`); a new packet (`+0x3b4`) updates the pad: on success
+    /// the axes (/128, the Y axes negated) and the 16 buttons, else all
+    /// cleared; a message when the connection changes (`+0x69`). Then the
+    /// vibration `{left, right}` at `frame` from the motors (`+0x58`,
+    /// `+0x59`) times the scale at `0x00b170d8` (truncated) is set, the
+    /// state kept at `+0x3b4..+0x3c0`, and the mappings updated.
+    pub fn xinput_pad_update(h: &mut impl Host, this: u32, frame: u32) {
+        let state = frame + 0x10;
+        for i in 0..4 {
+            h.write(state + 4 * i, 0u32);
+        }
+        let pad: u32 = h.read(this + 0x3b0);
+        let r = h.call_sym(XINPUT[0], Conv::Stdcall, &[pad, state]);
+        let packet: u32 = h.read(state);
+        if packet != h.read::<u32>(this + 0x3b4) {
+            let connected: u8 = h.read(this + 0x69);
+            if r == 0 {
+                if connected == 0 {
+                    xinput_message(h, this, XINPUT[3]);
+                    h.write(this + 0x69, 1u8);
+                }
+                let buttons: u32 = h.read(state + 4);
+                let lx: u16 = h.read(state + 8);
+                let ly: u16 = h.read(state + 0xa);
+                let rx: u16 = h.read(state + 0xc);
+                let ry: u16 = h.read(state + 0xe);
+                h.write(this + 0x370, axis(lx));
+                h.write(this + 0x37c, axis(ly).wrapping_neg());
+                h.write(this + 0x374, axis(rx));
+                h.write(this + 0x380, axis(ry).wrapping_neg());
+                for (i, bit) in XINPUT_BUTTONS.into_iter().enumerate() {
+                    let v = match bit {
+                        XINPUT_LEFT_TRIGGER => u8::from(h.read::<u8>(state + 6) > 0),
+                        XINPUT_RIGHT_TRIGGER => u8::from(h.read::<u8>(state + 7) > 0),
+                        _ => u8::from(buttons >> bit & 1 != 0),
+                    };
+                    h.write(this + 0x398 + i as u32, v);
+                }
+            } else {
+                if connected != 0 {
+                    xinput_message(h, this, XINPUT[4]);
+                    h.write(this + 0x69, 0u8);
+                }
+                for off in [0x370, 0x37c, 0x374, 0x380, 0x398, 0x39c, 0x3a0, 0x3a4] {
+                    h.write(this + off, 0u32);
+                }
+            }
+        }
+        let scale = f64::from_bits(h.read(h.rebase(XINPUT[5])));
+        h.write(frame, 0u32);
+        for (i, motor) in [0x58u32, 0x59].into_iter().enumerate() {
+            let v = f64::from(h.read::<u8>(this + motor));
+            #[allow(clippy::cast_possible_truncation)] // the low word
+            let w = fistp_trunc(v * scale) as u16;
+            h.write(frame + 2 * i as u32, w);
+        }
+        let pad: u32 = h.read(this + 0x3b0);
+        h.call_sym(XINPUT[1], Conv::Stdcall, &[pad, frame]);
+        for i in 0..4 {
+            let v: u32 = h.read(state + 4 * i);
+            h.write(this + 0x3b4 + 4 * i, v);
+        }
+        h.call_sym(DINPUT_PAD[2], Conv::Thiscall(this), &[]);
+    }
+
+    /// The connection message `(2, msg, pad index, pad)`: the original
+    /// pushes the pad number for the index getter, which leaves it on the
+    /// stack as the message's fourth word.
+    fn xinput_message(h: &mut impl Host, this: u32, msg: u32) {
+        let pad: u32 = h.read(this + 0x3b0);
+        let index = h.call_sym(DINPUT_PAD[1], Conv::Thiscall(this), &[]);
+        let msg = h.rebase(msg);
+        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, index, pad]);
     }
 }

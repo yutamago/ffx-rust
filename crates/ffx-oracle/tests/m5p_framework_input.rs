@@ -3427,3 +3427,93 @@ fn left2_dinput_pad_update_matches_the_original() {
         t.reset();
     }
 }
+
+#[test]
+fn left2_xinput_pad_update_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::DINPUT_PAD[1], true, 0, 0, 2);
+        t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+        t.stub(l2::PRINTF, false, 4, 0, 0);
+        // XInputSetState: logs the pad and the vibration word it is handed
+        let pre = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x00, 0x89, 0x44, 0x24, 0x08]; // [esp+8] = *[esp+8]
+        let set = t.stub_code(l2::XINPUT[1], false, 2, 2, 0);
+        let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+        assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+        let mut c = pre;
+        c.push(0xe9);
+        c.extend(set.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+        t.write(at, &c);
+        place_code(&mut t, l2::XINPUT[1], at);
+        let mut rng = Rng(0x1234_5679);
+        // (answer, packet, stored packet, flag, motors)
+        for (k, (answer, packet, stored, flag)) in [
+            (0u32, 7u32, 6u32, 0u8),
+            (0, 7, 6, 1),
+            (0, 7, 7, 1),
+            (0x48f, 0, 7, 1),
+            (0x48f, 0, 7, 0),
+            (0x48f, 0, 0, 1),
+            (0, 9, 8, 1),
+            (0, 10, 8, 0),
+            (0, 11, 8, 2),
+            (0x48f, 0, 7, 2),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            // XInputGetState: writes a state into [esp+8], answers `answer`
+            let mut st = vec![0u8; 16];
+            st[..4].copy_from_slice(&packet.to_le_bytes());
+            for b in &mut st[4..] {
+                *b = rng.next() as u8;
+            }
+            if k == 6 {
+                // the sticks' extremes, triggers 0
+                st[6] = 0;
+                st[7] = 0;
+                st[8..10].copy_from_slice(&0x8000u16.to_le_bytes());
+                st[10..12].copy_from_slice(&0x7fffu16.to_le_bytes());
+                st[12..14].copy_from_slice(&0xff81u16.to_le_bytes());
+                st[14..16].copy_from_slice(&0x007fu16.to_le_bytes());
+            }
+            if k == 7 {
+                st[6] = 0;
+                st[7] = 5;
+            }
+            let src = t.alloc(&st);
+            // a failing call writes nothing
+            let words = if answer == 0 { 4u8 } else { 0 };
+            let mut c = vec![0x56, 0x57]; // push esi; push edi
+            c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10]
+            c.push(0xbe);
+            c.extend(src.to_le_bytes()); // mov esi, src
+            c.extend([0xb9, words, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]); // mov ecx, 4; rep movsd; pop edi; pop esi
+            c.push(0xb8);
+            c.extend(answer.to_le_bytes()); // mov eax, answer
+            c.extend([0xc2, 0x08, 0x00]); // ret 8
+            let get = t.a.alloc_code(&c).unwrap();
+            assert_eq!(t.b.alloc_code(&c).unwrap(), get);
+            place_code(&mut t, l2::XINPUT[0], get);
+            let this = t.junk(0x3d0, k as u8);
+            t.w32(this + 0x3b0, 3);
+            t.w32(this + 0x3b4, stored);
+            t.w8(this + 0x69, flag);
+            t.w8(this + 0x58, (rng.next() & 0xff) as u8);
+            t.w8(this + 0x59, if k == 1 { 0xff } else { 0 });
+            let what = format!("{label}: xinput pad case {k}");
+            t.frame_len = 4;
+            t.check_frame(&what, 0x0062_dba0, Conv::Thiscall(this), &[], 0x2c, |g| {
+                let frame = g.1;
+                l2b::xinput_pad_update(g, this, frame);
+                Out::None
+            });
+            t.reset();
+            // put the SetState stub back after the reset
+            place_code(&mut t, l2::XINPUT[1], at);
+            t.stub(l2::DINPUT_PAD[1], true, 0, 0, 2);
+            t.stub(l2::DINPUT_PAD[2], true, 0, 0, 0);
+            t.stub(l2::PRINTF, false, 4, 0, 0);
+        }
+    }
+}
