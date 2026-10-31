@@ -6557,3 +6557,288 @@ fn save3_read_headers_matches_the_original() {
         }
     });
 }
+
+/// `BigFileHandle_initialize` (framed: the magic, the two digests, the
+/// hash handle and the spills; the header size in the caller's `path`
+/// slot): no path, the open failing, a bad magic, digests differing, and
+/// a synthetic header of 1..4 entries whose sizes end on a block's
+/// stored size or not; the CRT, `CryptoAPI` and archive callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // one header builder and the stubs
+fn vfs_initialize_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0901);
+        for case in 0..60 {
+            t.reset();
+            // the header: magic, ?, count, ?, n digests, n records, the
+            // tail word (offset of the size table from the tail), names,
+            // the size table
+            let n = 1 + rng.below(4);
+            let mut words = vec![0u32, 0, n, 0];
+            words.extend((0..4 * n).map(|_| rng.next()));
+            let mut first = 0;
+            let mut recs = Vec::new();
+            for _ in 0..n {
+                let blocks = rng.below(3);
+                let low = match rng.below(4) {
+                    0 => 0,
+                    1 => rng.below(0x100) << 8,
+                    _ => rng.below(0x10000),
+                };
+                let size = blocks << 16 | low;
+                recs.push((first, size));
+                words.extend([
+                    first,
+                    rng.next(),
+                    size,
+                    0,
+                    rng.next(),
+                    rng.next(),
+                    rng.below(0x40),
+                    rng.next(),
+                ]);
+                first += blocks + u32::from(low != 0);
+            }
+            words.push(8); // the size table 8 bytes past the tail
+            words.push(rng.next());
+            let mut sizes: Vec<u16> = (0..first + 2)
+                .map(|_| if rng.chance(3) { 0 } else { rng.next() as u16 })
+                .collect();
+            for &(f, size) in &recs {
+                let blocks = (size >> 16) + u32::from(size & 0xffff != 0);
+                if blocks > 0 && rng.chance(2) {
+                    sizes[(f + blocks - 1) as usize] = size as u16;
+                }
+            }
+            let mut bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+            bytes.extend(sizes.iter().flat_map(|s| s.to_le_bytes()));
+            bytes.extend([0; 16]);
+            let size = bytes.len() as u32;
+            let hdr = t.alloc(&bytes);
+            let copy = t.zeros(0x104);
+            let flags = t.zeros(0x200);
+            let vfiles = t.zeros(0x1e4);
+            let seq = [copy, hdr, flags, vfiles];
+            stub_seq(t, vf::NEW_ARRAY, false, 1, 0, &seq);
+            let f = if rng.chance(8) { 0 } else { 0x7700 };
+            t.stub_import(vf::FOPEN_IAT, false, 2, 0, f);
+            // fread: the magic, the size, the stored digest, the header
+            let magic = if rng.chance(8) { 0x1234 } else { vf::MAGIC };
+            let digest: Vec<u32> = (0..4).map(|_| rng.next()).collect();
+            let mut other = digest.clone();
+            if rng.chance(5) {
+                other[rng.below(4) as usize] ^= 1;
+            }
+            let reads = t.words(&[magic, size]);
+            let d1 = t.words(&digest);
+            let d2 = t.words(&other);
+            let log = t.stub_code(vf::FREAD_IAT, false, 4, 0, 1);
+            // copies by call number: 4 bytes of `reads`, 4 more, 16 of d1
+            let ctr = t.words(&[0]);
+            let srcs = t.words(&[reads, reads + 4, d1, hdr]);
+            let lens = t.words(&[4, 4, 16, 0]);
+            let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+            c.push(0xa1);
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x8b, 0x34, 0x85]);
+            c.extend(srcs.to_le_bytes()); // mov esi, [srcs + eax*4]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(lens.to_le_bytes()); // mov ecx, [lens + eax*4]
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.extend([0x8b, 0x7c, 0x24, 0x10]); // mov edi, [esp+0x10]
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let fr = t.cave_code(&c);
+            let at = t.rebase(vf::FREAD_IAT);
+            t.patch(at, &fr.to_le_bytes());
+            t.stub_import(vf::FSEEKI64_IAT, false, 4, 0, 0);
+            t.stub_import(vf::FSEEK_IAT, false, 3, 0, 0);
+            t.stub_import(vf::FCLOSE_IAT, false, 1, 0, 0);
+            t.stub_import(vf::PRINTF_IAT, false, 1, 0, 0);
+            let prov = t.words(&[rng.next()]);
+            let s = t.stub_code_writes(vf::CRYPT_ACQUIRE_IAT, false, 5, 5, 1, 0, prov, 4);
+            let at = t.rebase(vf::CRYPT_ACQUIRE_IAT);
+            t.patch(at, &s.to_le_bytes());
+            let hash = t.words(&[rng.next()]);
+            let s = t.stub_code_writes(vf::CRYPT_CREATE_HASH_IAT, false, 5, 5, 1, 4, hash, 4);
+            let at = t.rebase(vf::CRYPT_CREATE_HASH_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_HASH_DATA_IAT, false, 4, 4, 1);
+            let s = t.stub_code_writes(vf::CRYPT_GET_HASH_PARAM_IAT, false, 5, 5, 1, 2, d2, 16);
+            let at = t.rebase(vf::CRYPT_GET_HASH_PARAM_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_DESTROY_HASH_IAT, false, 1, 1, 1);
+            t.stub_import(vf::CRYPT_RELEASE_IAT, false, 2, 2, 1);
+            t.stubs(&[
+                (vf::TREE_RESET, true, 0, 0, 0),
+                (vf::INSERT_ENTRY, true, 2, 2, rng.next()),
+                (vf::VECTOR_CTOR, false, 5, 5, 0),
+                (vf::VBF_STREAM_OPEN, true, 2, 2, rng.next()),
+            ]);
+            let path = if rng.chance(10) {
+                0
+            } else {
+                t.alloc(b"data/FFX_Data.vbf\0")
+            };
+            let this = t.zeros(0x60);
+            let slots = t.frame_ebp(1) + 8;
+            Mem::write(&mut t.b, slots, path);
+            t.skip = 0xc;
+            let what = format!("BigFileHandle_initialize #{case} n {n} f {f:#x} magic {magic:#x}");
+            t.check_framed(
+                &what,
+                0x0061_dac0,
+                Conv::Thiscall(this),
+                &[path],
+                vf::INIT_FRAME,
+                |m, ebp| Out::U8(vf::initialize(m, ebp, this, path, slots)),
+            );
+            t.skip = 0;
+            let x: u32 = Mem::read(&t.a, slots);
+            let y: u32 = Mem::read(&t.b, slots);
+            assert_eq!(x, y, "{what}: the path slot");
+        }
+    });
+}
+
+/// `BigFileStream_fileTaskUncompress` (framed: the length word the
+/// inflate stub updates): head, body (1..3 blocks) and tail flagged or
+/// not, each block stored compressed or not, the inflate answering 0 or
+/// an error and giving short lengths, the error box path (the `BSTR` in
+/// the caller's third slot).
+#[test]
+#[allow(clippy::too_many_lines)] // one slot builder and the stubs
+fn vfs_task_uncompress_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0902);
+        for case in 0..200 {
+            t.reset();
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let flag = u32::from(rng.chance(2));
+                recs.push(t.words(&[flag, rng.next(), rng.below(0x10000), rng.below(0x100)]));
+            }
+            let sizes: Vec<u8> = (0..16)
+                .flat_map(|_| (rng.next() as u16).to_le_bytes())
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let flags: Vec<u8> = (0..16).map(|_| u8::from(rng.chance(2))).collect();
+            let flags = t.alloc(&flags);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            t.w32(info + 0x3c, flags);
+            let cache = t.words(&[
+                rng.next(),
+                0,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            let head_len: u32 = Mem::read(&t.a, recs[0] + 8);
+            let head = if Mem::read::<u32>(&t.a, recs[0]) & 1 != 0 {
+                head_len
+            } else {
+                0
+            };
+            let body_blocks = 1 + rng.below(3);
+            let tail_len: u32 = Mem::read(&t.a, recs[2] + 8);
+            let mut length = head
+                + (body_blocks << 16) * Mem::read::<u32>(&t.a, recs[1])
+                + tail_len * Mem::read::<u32>(&t.a, recs[2]);
+            if rng.chance(4) {
+                length = length.wrapping_add(1);
+            }
+            let mut w: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            w[1] = rng.below(4);
+            w[2] = recs[0];
+            w[3] = recs[1];
+            w[4] = recs[2];
+            w[5] = cache;
+            w[6] = rng.next();
+            w[0xe] = length;
+            w[0x10] = info;
+            let slot = t.words(&w);
+            // the inflate stub: logs, sets *len from a sequence, answers err
+            let lens: Vec<u32> = (0..8)
+                .map(|_| {
+                    if rng.chance(4) {
+                        rng.below(0x10000)
+                    } else {
+                        0x10000
+                    }
+                })
+                .collect();
+            let errs: Vec<u32> = (0..8)
+                .map(|_| if rng.chance(6) { 0xffff_fffd } else { 0 })
+                .collect();
+            let lens_t = t.words(&lens);
+            let ctr = t.words(&[0]);
+            let next = {
+                let mut c = vec![0x51, 0x52]; // push ecx; push edx
+                c.push(0xa1);
+                c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+                c.extend([0x8b, 0x0c, 0x85]);
+                c.extend(lens_t.to_le_bytes()); // mov ecx, [lens + eax*4]
+                c.extend([0x8b, 0x54, 0x24, 0x10]); // mov edx, [esp+0x10] (&len)
+                c.extend([0x89, 0x0a]); // mov [edx], ecx
+                c.extend([0x5a, 0x59]); // pop edx; pop ecx
+                c
+            };
+            stub_seq(t, vf::UNCOMPRESS, false, 4, 0, &errs);
+            // put the length writer in front of the sequence stub
+            let inflate = {
+                let target = {
+                    let at = t.rebase(vf::UNCOMPRESS);
+                    let rel: u32 = Mem::read(&t.a, at + 1);
+                    at.wrapping_add(5).wrapping_add(rel)
+                };
+                let mut c = next;
+                c.push(0xe9);
+                let here = t.cave_next + c.len() as u32 + 4;
+                c.extend(target.wrapping_sub(here).to_le_bytes());
+                t.cave_code(&c)
+            };
+            t.jump(vf::UNCOMPRESS, inflate);
+            t.stub(vf::MEMCPY, false, 3, 0, rng.next());
+            t.stub_import(vf::SYS_FREE_STRING_IAT, false, 1, 1, 0);
+            let text = if rng.chance(3) {
+                0
+            } else {
+                t.words(&[rng.below(40)])
+            };
+            t.stub(vf::FIND_STRING, false, 1, 0, text);
+            t.stub_import(vf::SYS_ALLOC_STRING_LEN_IAT, false, 2, 2, rng.next());
+            t.stub_import(vf::SHOW_CURSOR_IAT, false, 1, 1, 0);
+            t.stub_import(vf::MESSAGE_BOX_IAT, false, 4, 4, 1);
+            t.stub(vf::RESET_TO_LAUNCHER, false, 0, 0, 0);
+            let args = [rng.next(), slot, rng.next(), rng.next()];
+            let slots = t.frame_ebp(4) + 8;
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            t.skip = 0xc;
+            let what = format!("fileTaskUncompress #{case} length {length:#x}");
+            t.check_framed(
+                &what,
+                0x0061_ba80,
+                Conv::Stdcall,
+                &args,
+                vf::UNCOMPRESS_FRAME,
+                |m, ebp| {
+                    vf::task_uncompress(m, ebp, slot, slots);
+                    Out::None
+                },
+            );
+            t.skip = 0;
+            let mut x = [0; 16];
+            let mut y = [0; 16];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "{what}: the argument slots");
+        }
+    });
+}

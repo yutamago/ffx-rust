@@ -1316,6 +1316,18 @@ ported! {
         let mut f = StackFrame::<{ (s3::HEADERS_FRAME / 4) as usize }>::new();
         s3::read_headers(&mut mem(), f.at() + s3::HEADERS_FRAME, first, end);
     }
+    /// `BigFileHandle_initialize(this; path)`: frame `ebp - 0x54`; the
+    /// header size goes to the caller's `path` slot.
+    BigFileHandle_initialize @ 0x0061_dac0 => extern "thiscall" fn big_file_handle_initialize(this: u32, path: u32; slots: u32) -> u8 {
+        let mut f = StackFrame::<{ (vf::INIT_FRAME / 4) as usize }>::new();
+        vf::initialize(&mut mem(), f.at() + vf::INIT_FRAME, this, path, slots)
+    }
+    /// `BigFileStream_fileTaskUncompress(_, slot, _, _)`: frame `ebp -
+    /// 0x10`; the error text goes to the caller's third slot.
+    BigFileStream_fileTaskUncompress @ 0x0061_ba80 => extern "stdcall" fn task_uncompress(_a: u32, slot: u32, _c: u32, _d: u32; slots: u32) {
+        let mut f = StackFrame::<{ (vf::UNCOMPRESS_FRAME / 4) as usize }>::new();
+        vf::task_uncompress(&mut mem(), f.at() + vf::UNCOMPRESS_FRAME, slot, slots);
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's
