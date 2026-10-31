@@ -1382,6 +1382,31 @@ ported! {
     ToDrawLibraWin @ 0x0089_bc80 => extern "C" fn draw_libra_win() -> u32 {
         mn::draw_libra_win(&mut mem())
     }
+    /// `(code, x, y, flags, c0, c1, c2, c3, scale)`: frame `ebp - 0xc8`
+    /// (the glyph record at `ebp - 0x9c`; the cookie at `ebp - 4`).
+    TOAdpCrossFontM_FFX @ 0x008e_c720 => extern "C" fn cross_font_m(code: u32, x: u32, y: u32, flags: u32, c0: u32, c1: u32, c2: u32, c3: u32, scale: u32) -> u32 {
+        let mut f = StackFrame::<0x32>::new();
+        mn::cross_font_m(&mut mem(), f.at() + 0xc8, [code, x, y, flags, c0, c1, c2, c3, scale])
+    }
+    /// `(cursor, text, x, y, flags, c0, c1, c2, c3)`: frame `ebp - 0xbc`
+    /// (the glyph record at `ebp - 0x9c`; the cookie at `ebp - 4`).
+    TOAdpFontM_ASCII @ 0x008e_e240 => extern "C" fn font_m_ascii(cursor: u32, text: u32, x: u32, y: u32, flags: u32, c0: u32, c1: u32, c2: u32, c3: u32) -> u32 {
+        let mut f = StackFrame::<0x2f>::new();
+        mn::font_m_ascii(&mut mem(), f.at() + 0xbc, [cursor, text, x, y, flags, c0, c1, c2, c3])
+    }
+    /// `(w)`: frame `ebp - 0x60` (sizes, temporaries, the digit strings;
+    /// the cookie at `ebp - 4`). While `0x0133d6e0` is 1 the original's
+    /// `eax` is its cookie word, which no caller reads: 0.
+    TODrawWaitBtlWinInputGil @ 0x008a_32b0 => extern "C" fn wait_win_input_gil(w: u32) -> u32 {
+        let mut f = StackFrame::<0x18>::new();
+        mn::wait_win_input_gil(&mut mem(), f.at() + 0x60, w).unwrap_or(0)
+    }
+    /// `(id, part, x, y, w, h, c0, c1)`: frame `ebp - 0xd8` (the edges,
+    /// the uv, the record at `ebp - 0x9c`; the cookie at `ebp - 4`).
+    TOMkpShapePartIndexXYWHC2 @ 0x0090_34b0 => extern "C" fn shape_part_index(id: u32, part: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
+        let mut f = StackFrame::<0x36>::new();
+        mn::shape_part_index(&mut mem(), f.at() + 0xd8, [id, part, x, y, w, h, c0, c1])
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

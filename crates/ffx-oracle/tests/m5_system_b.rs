@@ -8231,3 +8231,334 @@ fn bg4_draw_libra_win_matches_the_original() {
         }
     });
 }
+
+/// A recording stub over `sym` (`n` words, cdecl) that first copies
+/// `len` bytes from its first argument to a growing buffer (what the
+/// callee sees of the record at each call), returning `seq[k]` on the
+/// `k`-th call.
+fn bg_snapshot_stub(t: &mut Twins, sym: u32, n: u32, len: u32, seq: &[u32]) {
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let log_stub = t.stub_code(sym, false, n, 0, 0);
+    let buf = t.zeros(len as usize * 64);
+    let cur = t.words(&[buf]);
+    let mut c = vec![0x56, 0x57, 0x51]; // push esi; push edi; push ecx
+    c.extend([0x8b, 0x74, 0x24, 0x10]); // mov esi, [esp+0x10]
+    c.extend([0x8b, 0x3d]);
+    c.extend(cur.to_le_bytes()); // mov edi, [cur]
+    c.push(0xb9);
+    c.extend(len.to_le_bytes()); // mov ecx, len
+    c.extend([0xf3, 0xa4]); // rep movsb
+    c.extend([0x89, 0x3d]);
+    c.extend(cur.to_le_bytes()); // mov [cur], edi
+    c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+    for _ in 0..n {
+        c.extend([0xff, 0x74, 0x24, (4 * n) as u8]); // push dword [esp+4n]
+    }
+    c.push(0xe8);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // call log_stub
+    c.extend([0x83, 0xc4, (4 * n) as u8]); // add esp, 4n
+    c.push(0xa1);
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    c.push(0xc3);
+    let at = t.cave_code(&c);
+    t.jump(sym, at);
+}
+
+/// A recording `TOGetImageWH(id, &w, &h)` stub writing the f32s `w`
+/// and `h`.
+fn bg_image_wh_stub(t: &mut Twins, w: f32, h: f32) {
+    let log_stub = t.stub_code(mnc::IMAGE_WH, false, 3, 0, 0);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    c.extend([0xc7, 0x00]);
+    c.extend(w.to_bits().to_le_bytes()); // mov dword [eax], w
+    c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc]
+    c.extend([0xc7, 0x00]);
+    c.extend(h.to_bits().to_le_bytes()); // mov dword [eax], h
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let at = t.cave_code(&c);
+    t.jump(mnc::IMAGE_WH, at);
+}
+
+/// The 12x10 font tests' stubs: texture names, the image size, the
+/// scissor (kept per `keep`) and the draw, both copying the record.
+fn bg_glyph_stubs(t: &mut Twins, rng: &mut Rng, keep: &[u32]) {
+    // the cave is graphicFontDraw's body: its entry jump goes over these
+    // first bytes, not over a stub
+    t.cave_code(&[0xcc; 8]);
+    let r = rng.next();
+    // the name's out word counts up: the clear before each call shows
+    let seq_stub = t.cave_next;
+    t.stub_seq(mnc::TEXTURE_NAME, 5, 0, &[r, r ^ 0x55]);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x14]; // mov eax, [esp+0x14]
+    c.extend([0xff, 0x00]); // inc dword [eax]
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(seq_stub.wrapping_sub(here).to_le_bytes()); // jmp seq_stub
+    let at = t.cave_code(&c);
+    t.jump(mnc::TEXTURE_NAME, at);
+    let sizes = [256.0f32, 128.0, 100.0, 3.0, 0.0, 1e-30];
+    let w = sizes[rng.below(6) as usize];
+    let h = sizes[rng.below(6) as usize];
+    bg_image_wh_stub(t, w, h);
+    bg_snapshot_stub(t, mnc::SCISSOR_XYUV, 8, 0x98, keep);
+    bg_snapshot_stub(t, mnc::FONT_DRAW, 5, 0x98, &[r ^ 7, r ^ 9]);
+}
+
+#[test]
+fn bg5_cross_font_m_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b605);
+        for case in 0..24u32 {
+            t.reset();
+            let keep = [u32::from(case % 4 != 0), 1];
+            bg_glyph_stubs(t, &mut rng, &keep);
+            let first = match case % 4 {
+                0 => 0x30,
+                1 => 0x2f,
+                _ => rng.next() as u8,
+            };
+            let code = t.alloc(&[first, rng.next() as u8, 0, 0]);
+            // odd cases: full-mantissa floats, where each rounding shows
+            let small = |rng: &mut Rng| {
+                if case % 2 == 1 {
+                    (f32::from(rng.next() as i16) / 16.0
+                        + f32::from_bits(0x3f80_0000 | (rng.next() & 0x7f_ffff)))
+                    .to_bits()
+                } else {
+                    (f32::from(rng.next() as i16) / 16.0).to_bits()
+                }
+            };
+            let scale = [1.0f32, 0.5, 1.5, -2.0][rng.below(4) as usize].to_bits();
+            let a = [
+                code,
+                small(&mut rng),
+                small(&mut rng),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                if case % 3 == 0 {
+                    small(&mut rng)
+                } else {
+                    scale
+                },
+            ];
+            t.check_fs(
+                &format!("cross font m #{case}"),
+                0x008e_c720,
+                &a,
+                0xc8,
+                4,
+                |m, ebp, _| Out::U32(mnb::cross_font_m(m, ebp, a)),
+            );
+        }
+    });
+}
+
+#[test]
+fn bg6_font_m_ascii_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b606);
+        for case in 0..24u32 {
+            t.reset();
+            let keep = [u32::from(case % 4 != 0), u32::from(case % 3 != 0)];
+            bg_glyph_stubs(t, &mut rng, &keep);
+            // negative glyph numbers too (bytes below 0x20 and above 0x7f)
+            let text = t.alloc(&[rng.next() as u8, 0, 0, 0]);
+            let small =
+                |rng: &mut Rng| i32::from(rng.next() as i16).cast_unsigned() >> (rng.next() % 16);
+            let a = [
+                rng.next(),
+                text,
+                small(&mut rng),
+                small(&mut rng),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("font m ascii #{case}"),
+                0x008e_e240,
+                &a,
+                0xbc,
+                4,
+                |m, ebp, _| Out::U32(mnb::font_m_ascii(m, ebp, a)),
+            );
+        }
+    });
+}
+
+/// A recording `TOGetMessageWH(win, text, &w, &h, a, b)` stub writing
+/// `seq[k]` to `w` and `seq[k] + 1` to `h` on its `k`-th call.
+fn bg_message_wh_stub(t: &mut Twins, seq: &[u32]) {
+    let ctr = t.words(&[0]);
+    let tbl = t.words(seq);
+    let log_stub = t.stub_code(mnc::MESSAGE_WH, false, 6, 0, 0);
+    let mut c = vec![0x51, 0x52]; // push ecx; push edx
+    c.push(0xa1);
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    c.extend([0x8b, 0x4c, 0x24, 0x14]); // mov ecx, [esp+0x14] (&w)
+    c.extend([0x89, 0x01]); // mov [ecx], eax
+    c.extend([0x8b, 0x4c, 0x24, 0x18]); // mov ecx, [esp+0x18] (&h)
+    c.push(0x40); // inc eax
+    c.extend([0x89, 0x01]); // mov [ecx], eax
+    c.extend([0x5a, 0x59]); // pop edx; pop ecx
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let at = t.cave_code(&c);
+    t.jump(mnc::MESSAGE_WH, at);
+}
+
+/// A recording `TOIntToMes(v, out, digits, mode)` stub writing ten bytes
+/// (`v`'s low byte + '0'.. as a pattern) to `out`.
+fn bg_int_to_mes_stub(t: &mut Twins) {
+    let log_stub = t.stub_code(mnc::INT_TO_MES, false, 4, 0, 0);
+    let mut c = vec![0x51]; // push ecx
+    c.extend([0x8b, 0x4c, 0x24, 0x0c]); // mov ecx, [esp+0xc] (out)
+    c.extend([0x8b, 0x44, 0x24, 0x08]); // mov eax, [esp+8] (v)
+    c.extend([0x0d, 0x30, 0x31, 0x32, 0x33]); // or eax, 0x33323130
+    c.extend([0x89, 0x01]); // mov [ecx], eax
+    c.extend([0x89, 0x41, 0x04]); // mov [ecx+4], eax
+    c.extend([0x66, 0x89, 0x41, 0x08]); // mov [ecx+8], ax
+    c.push(0x59); // pop ecx
+    c.push(0xe9);
+    let here = t.cave_next + c.len() as u32 + 4;
+    c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+    let at = t.cave_code(&c);
+    t.jump(mnc::INT_TO_MES, at);
+}
+
+#[test]
+fn bg7_wait_win_input_gil_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b607);
+        for case in 0..16u32 {
+            t.reset();
+            let skip = [1u32, 2][usize::from(case == 1)] * u32::from(case < 2);
+            t.g32(mnc::GIL_SKIP, skip);
+            let r = rng.next();
+            let texts = t.alloc(&[0x41u8; 32]);
+            t.stub_seq(mnc::ROM_BTL_TEXT, 2, 0, &[texts, texts + 16]);
+            let widths = [0.0f32, -5.0, 40.0, 81.5, 120.25, f32::NAN, -0.0];
+            let wa = widths[rng.below(7) as usize].to_bits();
+            let wb = widths[rng.below(7) as usize].to_bits();
+            bg_message_wh_stub(t, &[wa, wb]);
+            bg_remap_stub(t, mnc::REMAP_X2, 0.5);
+            bg_remap_stub(t, mnc::REMAP_Y2, 0.25);
+            t.stub(mnc::NET_WINDOW, false, 5, 0, r ^ 4);
+            t.stub(mnc::MAKE_PKT_SCISSOR, false, 4, 0, r ^ 5);
+            t.stub(mnc::CROSS_BOX, false, 6, 0, r ^ 6);
+            bg_snapshot_stub(t, mnc::BTL_EASY_FONT, 6, 12, &[r ^ 7; 32]);
+            bg_int_to_mes_stub(t);
+            let min = [0u16, 100, 400, 0xff00][rng.below(4) as usize];
+            let at = t.rebase(mnc::GIL_MIN_W);
+            t.write(at, &min.to_le_bytes());
+            let digit = [0u16, 3, 8, 0xffff][rng.below(4) as usize];
+            let at = t.rebase(mnc::GIL_DIGIT);
+            t.write(at, &digit.to_le_bytes());
+            t.g32(mnc::GIL_AMOUNT, rng.next());
+            t.g32(mnc::GIL_LEFT, rng.next());
+            let mut w: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            w[0x68 / 4..0x88 / 4].fill(0);
+            let win = t.words(&w);
+            t.check_fs(
+                &format!("wait win input gil #{case}"),
+                0x008a_32b0,
+                &[win],
+                0x60,
+                4,
+                |m, ebp, _| match mnb::wait_win_input_gil(m, ebp, win) {
+                    Some(v) => Out::U32(v),
+                    None => Out::None,
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn bg8_shape_part_index_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b608);
+        for case in 0..160u32 {
+            t.reset();
+            let id = [5u32, 198, 200, 398, 400, 598, 600, 649][(case % 8) as usize];
+            let count = rng.below(6);
+            let mut lay = count.to_le_bytes().to_vec();
+            for _ in 0..count {
+                let mut e = [0u8; 12];
+                for b in &mut e {
+                    *b = rng.next() as u8;
+                }
+                if rng.chance(3) {
+                    e[0] = 0;
+                }
+                e[8] = u8::from(rng.chance(2));
+                e[9] = u8::from(rng.chance(4));
+                e[10] = u8::from(rng.chance(2));
+                e[11] = u8::from(rng.chance(5));
+                lay.extend(e);
+            }
+            let lay = t.alloc(&lay);
+            let r = rng.next();
+            t.stub(mnc::SHAP_TEXTURE_NAME, false, 1, 0, r);
+            let sizes = [256.0f32, 128.0, 100.0, 3.0];
+            bg_image_wh_stub(
+                t,
+                sizes[rng.below(4) as usize],
+                sizes[rng.below(4) as usize],
+            );
+            t.stub(mnc::SHAPE_INFO, false, 1, 0, lay);
+            t.stub(mnc::LAYOUT_8FA450, false, 1, 0, lay);
+            t.stub(mnc::LAYOUT_8FA790, false, 1, 0, lay);
+            bg_snapshot_stub(t, mnc::SCISSOR_XYUV, 8, 0x40, &[u32::from(!rng.chance(4))]);
+            bg_snapshot_stub(t, mnc::DRAW_UI_ELEMENT, 5, 0x98, &[r ^ 9]);
+            // the scales: 1.0 in the image; others show where they apply
+            let scales = [0x3f80_0000u32, 0x3fc0_0000, 0x3f40_0000];
+            t.g32(mnc::WIDTH_FACTOR, scales[rng.below(3) as usize]);
+            t.g32(mnc::HEIGHT_FACTOR, scales[rng.below(3) as usize]);
+            let pick = |rng: &mut Rng| match rng.below(5) {
+                0 => 0,
+                1 => 0x8000_0000,
+                2 => (f32::from(rng.next() as i16) / 16.0
+                    + f32::from_bits(0x3f80_0000 | (rng.next() & 0x7f_ffff)))
+                .to_bits(),
+                _ => (f32::from(rng.next() as i16) / 16.0).to_bits(),
+            };
+            let a = [
+                id,
+                if count == 0 { 0 } else { rng.below(count + 1) },
+                pick(&mut rng),
+                pick(&mut rng),
+                pick(&mut rng),
+                pick(&mut rng),
+                rng.next(),
+                rng.next(),
+            ];
+            t.check_fs(
+                &format!("shape part index #{case}"),
+                0x0090_34b0,
+                &a,
+                0xd8,
+                4,
+                |m, ebp, _| Out::U32(mnb::shape_part_index(m, ebp, a)),
+            );
+        }
+    });
+}
