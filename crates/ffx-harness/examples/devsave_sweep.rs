@@ -2,7 +2,7 @@
 //! `docs/harness.md`, "Developer saves"):
 //!
 //! ```text
-//! devsave_sweep <n> <report file> [snapshot <windows path>]
+//! devsave_sweep <n> <report file> [snapshot|battle-snapshot <windows path>]
 //! ```
 //!
 //! Boots the game (seed 1, fast mode, virtual clock; `FFX_HOOK_DISABLE`
@@ -10,7 +10,9 @@
 //! save `n` from the title by the developers' loader (`load devsave`),
 //! lets the scene run a fixed number of updates, opens and closes the main
 //! menu and, where it is safe, starts one battle of the save's area and
-//! lets it run. With `snapshot`, it writes a memory snapshot after the
+//! lets it run. With `battle-snapshot`, it writes a memory snapshot 120
+//! updates into that battle instead and stops there (no menu). With
+//! `snapshot`, it writes a memory snapshot after the
 //! scene's updates instead and stops there (no menu, no battle).
 //!
 //! The report is `key<TAB>value` lines: `load`, `map`, `scenario`,
@@ -107,12 +109,52 @@ fn battle_blocked(game: &mut Game) -> Result<Option<String>> {
     Ok(None)
 }
 
+/// The event's area: `.../bjyt0200.ebp` -> `bjyt`.
+fn area_of(script: &str) -> String {
+    script
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(4)
+        .collect()
+}
+
+/// Starts the area's battle as the session does and writes a snapshot 120
+/// updates after it is under way.
+fn battle_snapshot(
+    game: &mut Game,
+    report: &mut String,
+    script: &str,
+    map_no: u16,
+    path: &str,
+) -> Result<()> {
+    let area = area_of(script);
+    if let Some(why) = battle_blocked(game)? {
+        return Err(Error::Harness(format!("no battle: {why}")));
+    }
+    let Some((field, name)) = field_of(game, map_no, &area)? else {
+        return Err(Error::Harness(format!("no battle field for {area}")));
+    };
+    let file = screens::start_battle(game, field, 0, 0)?;
+    game.command("waitfor 0x0112a8e0:1 01 ff 4000")?;
+    game.wait(120)?;
+    let _ = writeln!(report, "battle\tfield {field} {name} {file}");
+    let _ = writeln!(
+        report,
+        "snapshot\t{}",
+        game.command(&format!("snapshot {path}"))?
+    );
+    let _ = writeln!(report, "frame\t{}", game.frame()?);
+    Ok(())
+}
+
 /// The session after the load; writes what happened into `report`.
 fn session(
     game: &mut Game,
     report: &mut String,
     script: &str,
-    snapshot: Option<&str>,
+    snapshot: Option<(&str, bool)>,
 ) -> Result<()> {
     game.wait(SCENE_UPDATES)?;
     let save = game.read(0x0112_ca90, 0xd)?;
@@ -123,7 +165,7 @@ fn session(
         "map_after\t{map} entrance {} map number {map_no}",
         save[0xc]
     );
-    if let Some(path) = snapshot {
+    if let Some((path, false)) = snapshot {
         let _ = writeln!(
             report,
             "snapshot\t{}",
@@ -150,6 +192,9 @@ fn session(
         },
         game.frame()?
     );
+    if let Some((path, true)) = snapshot {
+        return battle_snapshot(game, report, script, map_no, path);
+    }
     // the main menu: triangle opens it, cross closes it
     game.command("press triangle 8 90")?;
     let mask = game.read(0x0184_08ec, 4)?;
@@ -163,14 +208,7 @@ fn session(
         u32_at(&mask, 0),
         u32_at(&game.read(0x0184_08ec, 4)?, 0)
     );
-    // the event's name: `.../bjyt0200.ebp` -> area `bjyt`
-    let area: String = script
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .chars()
-        .take(4)
-        .collect();
+    let area = area_of(script);
     let battle = match (battle_blocked(game)?, field_of(game, map_no, &area)?) {
         (Some(why), _) => format!("skipped: {why}"),
         (None, None) => format!("skipped: map number {map_no} (area {area}) has no battle field"),
@@ -214,10 +252,13 @@ fn main() -> Result<()> {
     let n: u32 = args
         .first()
         .and_then(|a| a.parse().ok())
-        .expect("usage: devsave_sweep <n> <report> [snapshot <windows path>]");
+        .expect("usage: devsave_sweep <n> <report> [snapshot|battle-snapshot <windows path>]");
     let out = std::path::PathBuf::from(args.get(1).expect("report file"));
-    let snapshot = (args.get(2).map(String::as_str) == Some("snapshot"))
-        .then(|| args.get(3).expect("snapshot path").as_str());
+    let snapshot = match args.get(2).map(String::as_str) {
+        Some("snapshot") => Some((args.get(3).expect("snapshot path").as_str(), false)),
+        Some("battle-snapshot") => Some((args.get(3).expect("snapshot path").as_str(), true)),
+        _ => None,
+    };
     let options = Options {
         virtual_clock: true,
         copy_user_data: false,
