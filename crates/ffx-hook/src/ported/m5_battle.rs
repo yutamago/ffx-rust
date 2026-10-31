@@ -9,10 +9,64 @@
 use super::{StackFrame, mem, ported};
 use ffx_battle::m5_battle::bridge as mb;
 use ffx_menu::m5m_m::bridge as mm;
+use ffx_menu::m5m_n::bridge as mn;
 
 /// Calls the game's cdecl code at a run-time address (`mb::Call`).
 fn call<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
+}
+
+/// MSVCR110's `_CIcos`, `_CIsin` or `_CIatan` through the game's import
+/// slot (`0x00b0c3b4`, `0x00b0c3b8`, `0x00b0c450`, behind the thunks
+/// `0x009498c2`, `0x009498c8`, `0x00949d5c`): the x87 value in `ST0`, the
+/// result as `fstp dword` stores it.
+fn crt_trig(t: mn::Trig, x: f64) -> u32 {
+    let slot = match t {
+        mn::Trig::Cos => 0x00b0_c3b4,
+        mn::Trig::Sin => 0x00b0_c3b8,
+        mn::Trig::Atan => 0x00b0_c450,
+    };
+    // the slot holds the CRT's intrinsic: its operand in ST0, its result
+    // left there
+    ffx_bridge::route::x87::<f32>(super::import_slot(slot), &[x]).to_bits()
+}
+
+/// The name `FFX_HOOK_DISABLE` takes to turn [`clock_seed`] off (as does
+/// `replacements`).
+pub(crate) const CLOCK_SEED_NAME: &str = "Rng_ClockSeed_port";
+
+/// Whether `Rng_ClockSeed` runs the port. Its address already holds the
+/// harness's wrapper (`harness::clock_seed`, `FFX_HARNESS_SEED`), which
+/// calls [`clock_seed`] in place of its trampoline when this is on: not a
+/// `ported!` entry, since two hooks cannot share an address.
+pub(crate) fn clock_seed_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| {
+        let off = std::env::var("FFX_HOOK_DISABLE").unwrap_or_default();
+        let only =
+            crate::hook_only().is_none_or(|names| names.iter().any(|n| n == CLOCK_SEED_NAME));
+        only && !off
+            .split(',')
+            .map(str::trim)
+            .any(|n| n == "replacements" || n == CLOCK_SEED_NAME)
+    })
+}
+
+/// `Rng_ClockSeed()` (`0x00798950`), ported (`ffx_menu::m5m_n`): the
+/// clock buffer in a frame (the original's `ebp - 8`, zeroed: the two
+/// bytes the reader never writes read as 0).
+pub(crate) fn clock_seed() -> u32 {
+    let mut fr = StackFrame::<2>::new();
+    let clock = fr.at();
+    mn::clock_seed(&mut mem(), clock)
+}
+
+/// A battle debug window's value printer: `rows` from `y`, the line buffer
+/// in a frame (the original's `ebp - 0x104`).
+fn print(obj: u32, y: u32, rows: &[mn::Row]) -> u32 {
+    let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+    let buf = fr.at();
+    mn::print_rows(&mut mem(), buf, obj, y, rows)
 }
 
 ported! {
@@ -481,5 +535,204 @@ ported! {
         let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
         let buf = fr.at();
         mm::debug_print_dashes(&mut mem(), buf, y)
+    }
+    // ---- round 5 (mbs-static), batch 1 (ffx_menu::m5m_n) ----
+    /// `(_, obj, _, y)`: the line buffer in a frame.
+    MsDebugPrintCamera_007d0c90 @ 0x007d_0c90 => extern "C" fn ms_debug_print_camera(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_CAMERA)
+    }
+    /// `(x, dx, len, ang)`: writes its `x`, `len` and `ang` slots.
+    MsDebugCameraPolar_007d1030 @ 0x007d_1030 => extern "C" fn ms_debug_camera_polar(x: u32, dx: u32, len: u32, ang: u32; slots: u32) {
+        mn::camera_polar(&mut mem(), &mut crt_trig, x, dx, len, ang, slots);
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderPolarXz_007d1300 @ 0x007d_1300 => extern "C" fn ms_debug_slider_polar_xz(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mn::slider(&mut mem(), obj, id, p, slots, &mn::SLIDE_POLAR_XZ, &mn::ROUND_POLAR_XZ)
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugPrintPolarXz_007d14f0 @ 0x007d_14f0 => extern "C" fn ms_debug_print_polar_xz(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_POLAR_XZ)
+    }
+    /// `(obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderPolarXyz_007d1790 @ 0x007d_1790 => extern "C" fn ms_debug_slider_polar_xyz(obj: u32, id: u32, p: u32; slots: u32) -> u32 {
+        mn::slider(&mut mem(), obj, id, p, slots, &mn::SLIDE_POLAR_XYZ, &mn::ROUND_POLAR_XYZ)
+    }
+    /// `(_, _, obj, _, y)`.
+    MsDebugPrintPolarXyz_007d1940 @ 0x007d_1940 => extern "C" fn ms_debug_print_polar_xyz(_a: u32, _b: u32, obj: u32, _d: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_POLAR_XYZ)
+    }
+    /// `(kind, obj, id, p)`: writes the caller's `id` word on 0x33.
+    MsDebugSliderReference_007d1bd0 @ 0x007d_1bd0 => extern "C" fn ms_debug_slider_reference(kind: u32, obj: u32, id: u32, p: u32; slots: u32) {
+        mn::slider_reference(&mut mem(), kind, obj, id, p, slots);
+    }
+    /// `(cam)`: writes its `cam` slot.
+    MsDebugRefDraw_007d34a0 @ 0x007d_34a0 => extern "C" fn ms_debug_ref_draw(cam: u32; slots: u32) {
+        mn::ref_draw(&mut mem(), &mut crt_trig, cam, slots);
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugSplinePrint @ 0x007d_3700 => extern "C" fn ms_debug_spline_print(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_SPLINE)
+    }
+    /// `(mode, step, pick, obj, cam)`: writes its `mode` slot.
+    MsDebugCameraModeNext_007d42f0 @ 0x007d_42f0 => extern "C" fn ms_debug_camera_mode_next(mode: u32, step: u32, pick: u32, obj: u32, cam: u32; slots: u32) -> u32 {
+        mn::camera_mode_next(&mut mem(), mode, step, pick, obj, cam, slots)
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugPrintTheta_007d6530 @ 0x007d_6530 => extern "C" fn ms_debug_print_theta(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_THETA)
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugPrintKeepXz_007d6850 @ 0x007d_6850 => extern "C" fn ms_debug_print_keep_xz(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_KEEP_XZ)
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugPrintCamera3_007d6bb0 @ 0x007d_6bb0 => extern "C" fn ms_debug_print_camera3(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_CAMERA3)
+    }
+    /// `(_, obj, _, y)`.
+    MsDebugPrintXyz_007d6ed0 @ 0x007d_6ed0 => extern "C" fn ms_debug_print_xyz_6ed0(_a: u32, obj: u32, _c: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_XYZ)
+    }
+    /// `()`: the current keep shown.
+    MsDebugCameraKeepLoad_007d7130 @ 0x007d_7130 => extern "C" fn ms_debug_camera_keep_load() {
+        mn::camera_keep_load(&mut mem(), &mut crt_trig);
+    }
+    /// `(obj, _, y)`.
+    MsDebugPrintActors_007d9700 @ 0x007d_9700 => extern "C" fn ms_debug_print_actors(obj: u32, _b: u32, y: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x104 / 4 }>::new();
+        let buf = fr.at();
+        mn::print_actors(&mut mem(), buf, obj, y)
+    }
+    /// `(mode, step, pick, obj, cam, base, which)`: writes its `mode` and
+    /// `cam` slots.
+    MsDebugRefModeNext_007d9b00 @ 0x007d_9b00 => extern "C" fn ms_debug_ref_mode_next(mode: u32, step: u32, pick: u32, obj: u32, cam: u32, base: u32, which: u32; slots: u32) -> u32 {
+        mn::ref_mode_next(&mut mem(), mode, step, pick, obj, cam, base, which, slots)
+    }
+    /// `(obj, _, y)`.
+    MsDebugPrintXyz_007dacd0 @ 0x007d_acd0 => extern "C" fn ms_debug_print_xyz_acd0(obj: u32, _b: u32, y: u32) -> u32 {
+        print(obj, y, &mn::PRINT_XYZ)
+    }
+    /// `()`: the packet in a frame (the original's `ebp - 0x50..`).
+    RcuiDrawScreenRect_0092cfa0 @ 0x0092_cfa0 => extern "C" fn rcui_draw_screen_rect() -> u32 {
+        let mut fr = StackFrame::<{ 0x50 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x50);
+        mn::rcui_draw_screen_rect(&mut mem(), ebp)
+    }
+    // ---- round 5 (mbs-static), batch 2 (ffx_menu::m5m_n) ----
+    /// `(dir, rec, what, i, v)`.
+    MsBtlPosAccess_007c9ca0 @ 0x007c_9ca0 => extern "C" fn ms_btl_pos_access(dir: u32, rec: u32, what: u32, i: u32, v: u32) -> u32 {
+        mn::btl_pos_access(&mut mem(), dir, rec, what, i, v)
+    }
+    /// `(kind, _, obj, id, y)`: the line buffer and the actor count in a
+    /// frame (the original's `ebp - 0x10c..`).
+    MsDebugBtlPrint @ 0x007d_1f50 => extern "C" fn ms_debug_btl_print(kind: u32, _b: u32, obj: u32, id: u32, y: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x10c / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x10c);
+        mn::btl_print(&mut mem(), ebp, kind, obj, id, y)
+    }
+    /// `(side)`: writes its `side` slot.
+    MsDebugCameraApply_007d2fc0 @ 0x007d_2fc0 => extern "C" fn ms_debug_camera_apply(side: u32; slots: u32) -> u32 {
+        mn::camera_apply(&mut mem(), side, slots)
+    }
+    /// `(edit)`: writes its `edit` slot (kinds 4, 5).
+    MsDebugCameraEditStore_007d38c0 @ 0x007d_38c0 => extern "C" fn ms_debug_camera_edit_store(edit: u32; slots: u32) -> u32 {
+        mn::camera_edit_store(&mut mem(), edit, slots)
+    }
+    /// `(edit)`.
+    MsDebugCameraEditLoad_007d3f40 @ 0x007d_3f40 => extern "C" fn ms_debug_camera_edit_load(edit: u32) -> u32 {
+        mn::camera_edit_load(&mut mem(), edit)
+    }
+    // ---- round 5 (mbs-static), batch 3 (ffx_menu::m5m_n) ----
+    /// `()`: the line buffers in a frame (the original's `ebp - 0x504..`).
+    MsDebugOutCamera @ 0x007d_2430 => extern "C" fn ms_debug_out_camera() -> u32 {
+        let mut fr = StackFrame::<{ 0x504 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x504);
+        mn::out_camera(&mut mem(), &mut crt_trig, ebp)
+    }
+    // ---- round 5 (mbs-static), batch 4 (ffx_menu::m5m_n) ----
+    /// `(group)`.
+    MsDebugPosWindowsAll_007d74e0 @ 0x007d_74e0 => extern "C" fn ms_debug_pos_windows_all(group: u32) {
+        mn::pos_windows_all(&mut mem(), group);
+    }
+    /// `(group, widths)`: the vectors in a frame (the original's `ebp -
+    /// 0x4c..`).
+    MsDebugPosDistances_007d7b20 @ 0x007d_7b20 => extern "C" fn ms_debug_pos_distances(group: u32, widths: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x4c / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x4c);
+        mn::pos_distances(&mut mem(), ebp, group, widths)
+    }
+    // ---- round 5 (mbs-static), batch 5 (ffx_menu::m5m_n) ----
+    /// `(model, dst, src, id, actor)`: the position in a frame (the
+    /// original's `ebp - 0x14`).
+    MsDebugChrInfoLine_007dbee0 @ 0x007d_bee0 => extern "C" fn ms_debug_chr_info_line(model: u32, dst: u32, src: u32, id: u32, actor: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x30 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x30);
+        mn::chr_info_line(&mut mem(), ebp, model, dst, src, id, actor)
+    }
+    /// `(i, writer)`: the line buffer in a frame.
+    MsDebugChrMotionSave_007dcf70 @ 0x007d_cf70 => extern "C" fn ms_debug_chr_motion_save(i: u32, writer: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x404 / 4 }>::new();
+        let buf = fr.at();
+        mn::chr_motion_save(&mut mem(), buf, i, writer)
+    }
+    // ---- round 5 (mbs-static), batch 6 (ffx_menu::m5m_n) ----
+    /// `(file)`.
+    MsBtlPosFromFile_007c9450 @ 0x007c_9450 => extern "C" fn ms_btl_pos_from_file(file: u32) {
+        mn::btl_pos_from_file(&mut mem(), file);
+    }
+    // ---- round 5 (mbs-static), batch 7 (ffx_menu::m5m_n) ----
+    /// `(name)`: the writer and the line buffer in a frame (the
+    /// original's `ebp - 0x118..`).
+    MsDebugEnvSave @ 0x007c_d800 => extern "C" fn ms_debug_env_save(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x118 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x118);
+        mn::env_save(&mut mem(), ebp, name)
+    }
+    // ---- round 5 (mbs-static), batch 8 (ffx_menu::m5m_n) ----
+    /// `(name)`: the writer in a frame (the original's `ebp - 0x24`).
+    MsBtlPosWriteScr @ 0x007c_b640 => extern "C" fn ms_btl_pos_write_scr(name: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x24 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x24);
+        mn::pos_write_scr(&mut mem(), ebp, name)
+    }
+    // ---- round 5 (mbs-static), batch 9 (ffx_menu::m5m_n) ----
+    /// `(reader, name)`: writes its two slots when it tail-jumps to
+    /// `MsStructClear`.
+    MsBtlPosParseToken_007cc420 @ 0x007c_c420 => extern "C" fn ms_btl_pos_parse_token(reader: u32, name: u32; slots: u32) {
+        mn::pos_parse_token(&mut mem(), reader, name, slots);
+    }
+    // ---- round 5 (mbs-static), batch 10 (ffx_menu::m5m_n) ----
+    /// `(win, msg, id)`: the window procedure (stored by `0x007c87a0`);
+    /// the buffers in a frame (the original's `ebp - 0x108..`).
+    Ms_Gui_BattleConsoleProc @ 0x007c_6110 => extern "C" fn ms_gui_battle_console_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x108 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x108);
+        mn::console_proc(&mut mem(), ebp, win, msg, id)
+    }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_BattleChr1Proc @ 0x007d_d890 => extern "C" fn ms_gui_battle_chr1_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x108 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x108);
+        mn::chr1_proc(&mut mem(), ebp, win, msg, id)
+    }
+    // ---- round 5 (mbs-static), batch 11 (ffx_menu::m5m_n) ----
+    /// `(win, msg, id)`: the window procedure; the buffer and the polar
+    /// form in a frame (the original's `ebp - 0x120..`).
+    Ms_Gui_InfoProc @ 0x007c_fcd0 => extern "C" fn ms_gui_info_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x120 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x120);
+        mn::info_proc(&mut mem(), ebp, win, msg, id)
+    }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_MapDataProc @ 0x007d_5480 => extern "C" fn ms_gui_map_data_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x114 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x114);
+        mn::map_data_proc(&mut mem(), &mut crt_trig, ebp, win, msg, id)
+    }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_CameraProc @ 0x007d_44a0 => extern "C" fn ms_gui_camera_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x124 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x124);
+        mn::camera_proc(&mut mem(), ebp, win, msg, id)
     }
 }

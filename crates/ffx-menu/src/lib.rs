@@ -37,6 +37,7 @@ pub mod m5m_j;
 pub mod m5m_k;
 pub mod m5m_l;
 pub mod m5m_m;
+pub mod m5m_n;
 pub mod main_loop;
 pub mod math;
 pub mod msg;

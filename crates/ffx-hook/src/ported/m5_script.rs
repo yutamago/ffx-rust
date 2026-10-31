@@ -1258,4 +1258,9 @@ ported! {
     Atel_LoadSourceFile_00879b60 @ 0x0087_9b60 => extern "C" fn atel_load_source_file(a: u32, _x: u32, b: u32, name: u32) -> u32 {
         mm::load_source_file(&mut mem(), a, b, name)
     }
+    // ---- round 5 (mbs-static), batch 1 (ffx_menu::m5m_n) ----
+    /// `(worker, _, stack)`: never returns, as the original.
+    Native_01ed_DebugHang @ 0x0085_7f70 => extern "C" fn native_01ed_debug_hang(worker: u32, _args: u32, stack: u32) {
+        ffx_menu::m5m_n::bridge::debug_hang(&mut mem(), worker, stack, None);
+    }
 }
