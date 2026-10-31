@@ -80,6 +80,16 @@ impl Host for G<'_> {
         ffx_oracle::check_width("Host::call", addr, args.len(), host::max_words(c, false));
         self.0.call(addr, conv(c), args).unwrap().eax
     }
+    fn call_u64(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> u64 {
+        ffx_oracle::check_width(
+            "Host::call_u64",
+            addr,
+            args.len(),
+            host::max_words(c, false),
+        );
+        let r = self.0.call(addr, conv(c), args).unwrap();
+        u64::from(r.edx) << 32 | u64::from(r.eax)
+    }
     fn call_st0(&mut self, addr: u32, c: host::Conv, args: &[u32]) -> f32 {
         ffx_oracle::check_width("Host::call_st0", addr, args.len(), host::max_words(c, true));
         let r = self.0.call(addr, conv(c), args).unwrap();
@@ -119,6 +129,8 @@ pub enum Out {
     None,
     /// `eax`.
     U32(u32),
+    /// `edx:eax`.
+    U64(u64),
 }
 
 /// A stub's result: one value, or the `k`-th of a list on its `k`-th
@@ -440,6 +452,11 @@ impl Twins {
         match out {
             Out::None => {}
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::U64(v) => assert_eq!(
+                u64::from(ra.edx) << 32 | u64::from(ra.eax),
+                v,
+                "{what}: edx:eax"
+            ),
         }
         self.diff(what);
     }
@@ -536,4 +553,41 @@ pub fn printf_stub(t: &mut Twins, sym: u32, fmts: &[(u32, u32)], other: u32, ret
     c.extend([0xff, 0xe0]); // jmp eax
     let at = t.code(&c);
     t.jump(sym, at);
+}
+
+/// `mov ecx, [esp + 4 + 4 * arg]` and `mov dword [ecx + off], v`: writes
+/// `v` through a stub's pointer argument `arg`.
+pub fn store_arg(arg: u32, off: u8, v: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x4c, 0x24, (4 + 4 * arg) as u8];
+    c.extend([0xc7, 0x41, off]);
+    c.extend(v.to_le_bytes());
+    c
+}
+
+/// Writes the `k`-th of `values` (the last one after that) through a
+/// stub's pointer argument `arg` on its `k`-th call.
+pub fn seq_store(t: &mut Twins, arg: u32, values: &[u32]) -> Vec<u8> {
+    let ctr = t.words(&[0]);
+    let tbl = t.words(values);
+    let last = (values.len() - 1) as u32;
+    let mut c = vec![0xa1];
+    c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+    c.extend([0x8b, 0x14, 0x85]);
+    c.extend(tbl.to_le_bytes()); // mov edx, [tbl + eax*4]
+    c.extend([0x83, 0x3d]);
+    c.extend(ctr.to_le_bytes());
+    c.push(last as u8); // cmp dword [ctr], last
+    c.extend([0x73, 0x06]); // jae +6
+    c.extend([0xff, 0x05]);
+    c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+    c.extend([0x8b, 0x4c, 0x24, (4 + 4 * arg) as u8]); // mov ecx, [esp + 4 + 4*arg]
+    c.extend([0x89, 0x11]); // mov [ecx], edx
+    c
+}
+
+/// `mov edx, v`: a stub's `edx` (the high word of a 64-bit result).
+pub fn set_edx(v: u32) -> Vec<u8> {
+    let mut c = vec![0xba];
+    c.extend(v.to_le_bytes());
+    c
 }
