@@ -3817,3 +3817,47 @@ fn left2_matrix_look_at_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_matrix_index_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let l = 0x00d0_0000;
+        let mut keys: Vec<u32> = ["0", "3", "4", "/", "", "x", "00"]
+            .iter()
+            .map(|s| t.cstr(s))
+            .collect();
+        keys.push(0);
+        for &(name, _) in l2::MATRIX_INDEX_METHODS
+            .iter()
+            .chain(l2::MATRIX_INDEX_STATICS.iter())
+        {
+            keys.push(t.rebase(name));
+        }
+        let m = t.alloc(
+            &(0..16u16)
+                .flat_map(|i| (f32::from(i) * 0.5).to_bits().to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for (is_matrix, vector) in [(true, true), (true, false), (false, true)] {
+            for &key in &keys {
+                t.stub(l2::LUA_TOLSTRING, false, 3, 0, key);
+                t.stub(
+                    l2::MATRIX_INDEX[0],
+                    false,
+                    2,
+                    0,
+                    if is_matrix { m } else { 0 },
+                );
+                let v = if vector { t.junk(0x10, 2) } else { 0 };
+                t.stub(l2::MATRIX_INDEX[1], false, 1, 0, v);
+                t.stub(l2::LUA_MORE[4], false, 3, 0, 0);
+                let what = format!(
+                    "{label}: matrix index matrix {is_matrix} vector {vector} key {key:#x}"
+                );
+                t.cdecl(&what, 0x0057_1770, &[l], |g| Some(l2b::matrix_index(g, l)));
+                t.unstub();
+            }
+        }
+    }
+}

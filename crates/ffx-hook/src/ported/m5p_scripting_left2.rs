@@ -81,4 +81,8 @@ ported! {
         let mut f = StackFrame::<30>::new();
         lb::matrix_look_at(&mut mem(), l, f.at())
     }
+    /// The script's matrix `__index` `(L)`.
+    Phyre_PScripting_MatrixIndexHandler_00571770 @ 0x0057_1770 => extern "C" fn matrix_index(l: u32) -> u32 {
+        lb::matrix_index(&mut mem(), l)
+    }
 }
