@@ -151,6 +151,14 @@ run() { # replay, tag, [original]
         > "$dir/$1.out" 2>&1
     echo "$1 $2: exit $?" >> "$dir/$1.out"
     grep '^hook log:' "$dir/$1.out" | head -6
+    if [[ -n "$host" ]]; then
+        # ffx-rust.exe's log (notes, the overlays' Rust/Unicorn calls) from
+        # its slot's folder, before the slot's next game replaces it
+        local slot
+        slot="$(sed -n 's/^replay: slot \([0-9]*\),.*/\1/p' "$dir/$1.out" | head -1)"
+        [[ -n "$slot" ]] && cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.log" "$dir/$1.ffx-rust.log" 2>/dev/null
+        grep -h '^overlay calls in all' "$dir/$1.ffx-rust.log" 2>/dev/null | sed "s/^/$1: /"
+    fi
 }
 # Runs `run` for each replay with these arguments, side by side unless
 # FFX_REPLAY_SERIAL=1.
