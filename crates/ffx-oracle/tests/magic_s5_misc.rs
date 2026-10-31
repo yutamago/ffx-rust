@@ -2098,3 +2098,194 @@ fn homing_trails() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn sine_rises() {
+    let Some(mut t) = twin(193) else { return };
+    let f = t.at(0x19a0);
+    let p = SCRATCH + 0x1000;
+    let tab = SCRATCH + 0x4000;
+    for i in 0..0x1000u32 {
+        t.set_u32(tab + 4 * i, ((i as f32) * 0.001).sin().to_bits());
+    }
+    t.set_u32(op(&t, f, 0x11f), tab);
+    let k = |t: &Twin, o: u32| f32::from_bits(t.u32(op(t, f, o)));
+    let (l1, l2) = (k(&t, 0x117), k(&t, 0x151));
+    for (count, n1, n2, end) in [
+        (0i32, 10i32, 40i32, 60i32),
+        (10, 10, 40, 60),
+        (30, 10, 40, 60),
+        (39, 10, 40, 60),
+        (5, 100, 15, 60),
+        (l1 as i32 + 1, 1000, 2000, 3000),
+        (l2 as i32 + 2, 1000, 2000, l2 as i32 + 50),
+        (-3, 10, 40, 60),
+    ] {
+        t.write(p, &varied(0x200, count.cast_unsigned()));
+        let rec_k = (count & 3).cast_unsigned();
+        t.set_u32(p + 0xac, rec_k);
+        t.set_u32(p + 0x2c + 0x10 * rec_k, count.cast_unsigned());
+        t.set_u32(p + 0x30 + 0x10 * rec_k, 7);
+        t.set_u32(p + 0x34 + 0x10 * rec_k, 0.5f32.to_bits());
+        t.set_u32(p + 0xd4, 1.25f32.to_bits());
+        t.set_u32(op(&t, f, 0x82), n1.cast_unsigned());
+        t.set_u32(op(&t, f, 0xd3), n2.cast_unsigned());
+        t.set_u32(op(&t, f, 0x18a), end.cast_unsigned());
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+    }
+}
+
+#[test]
+fn aim_objects() {
+    let Some(mut t) = twin(171) else { return };
+    let f = t.at(0x3000);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    rec_mem(&mut t, 328, 3, 16, Some(0));
+    rec_mem(&mut t, 329, 3, 16, Some(0));
+    rec_mem(&mut t, 229, 3, 4, None);
+    t.stub(229, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 0x10 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    let take = t.img.rel32_target(f + 0x1ea);
+    let (head, tail) = (op(&t, f, 0x1f0), op(&t, f, 0x203));
+    let obj = SCRATCH + 0x4000;
+    for (i, (a, b, r)) in [
+        ([1.0f32, 2.0, 3.0], [0.0f32, 0.0, 0.0], 2.5f32),
+        ([-1.0, -2.0, 0.5], [0.5, 1.0, 2.0], -1.0),
+        ([0.0, 5.0, -3.0], [0.0, 0.0, 0.0], 0.0),
+        ([4.0, 0.0, 0.0], [-1.0, 0.0, 0.1], 7.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        free_ring(&mut t, take, SCRATCH + 0x1000, 3);
+        t.write(obj, &varied(0x400, i as u32));
+        for (j, (x, y)) in (0u32..).zip(a.into_iter().zip(b)) {
+            t.set_u32(obj + 0x358 + 4 * j, x.to_bits());
+            t.set_u32(obj + 0xd0 + 4 * j, y.to_bits());
+        }
+        if i % 2 == 0 {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        } else {
+            t.write(SCRATCH + 0x1400, &varied(0x1c, 3));
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        }
+        let c = Call::this(obj).with_xmm(&[Xmm::f32(9.0), Xmm::f32(r)]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::aim_object(
+                g,
+                img,
+                fr.at,
+                fr.esp,
+                fr.ecx,
+                fr.xmm_f32(1),
+            ))
+        });
+    }
+}
+
+#[test]
+fn signed_axes_set() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x3bc0);
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    let args = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x1000;
+    let (steps, sizes) = (SCRATCH + 0x400, SCRATCH + 0x440);
+    for (mode, s) in [
+        (0u32, [5i32, -3, 0]),
+        (1, [-1, 7, -0x8000]),
+        (1, [2, 3, 4]),
+        (0, [-0x12345, 0x7fff_ffff, i32::MIN]),
+        (2, [1, 1, 1]),
+        (0xffff_ffff, [1, 1, 1]),
+    ] {
+        t.write(obj, &varied(0x140, mode));
+        for (i, v) in (0u32..).zip(s) {
+            t.set_u32(steps + 4 * i, v.cast_unsigned());
+            t.set_u32(sizes + 4 * i, (1.5 + i as f32).to_bits());
+        }
+        for (i, v) in (0u32..).zip([obj, steps, sizes, mode]) {
+            t.set_u32(args + 4 * i, v);
+        }
+        t.check_entry(f, Call::this(args), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn shower_steps() {
+    let Some(mut t) = twin(411) else { return };
+    let f = t.at(0x6af0);
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    rec_mem(&mut t, 12, 1, 0, None);
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec_mem(&mut t, 239, 3, 0, None);
+    // the particle node's start: its program table and the part start
+    let pn = t.img.rel32_target(f + 0x208);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec_mem(&mut t, 941, 1, 0, None);
+    t.stub(941, move |_, _| table);
+    rec_mem(&mut t, 714, 5, 0, None);
+    rec_mem(&mut t, 325, 2, 4, Some(0));
+    let start = t.img.rel32_target(pn + 0x88);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+    let task = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x1000;
+    let list = op(&t, f, 0xea);
+    let holder = SCRATCH + 0x700;
+    for (mode, clock, b108, b208, parents) in [
+        (0u32, 0.0f32, 0u8, 0u8, false),
+        (0, 50.0, 0, 0, false),
+        (0, f32::NAN, 0, 0, false),
+        (1, 0.0, 4, 0, true),
+        (1, 0.0, 4, 4, true),
+        (1, 0.0, 0xff, 0xfb, false),
+        (1, 0.0, 4, 4, false),
+        (2, 0.0, 0, 0, false),
+        (0x100, 0.0, 0, 0, false),
+    ] {
+        t.write(obj, &varied(0x600, mode));
+        t.write(holder, &varied(0x60, mode + 1));
+        t.write(list, &varied(0x20, mode + 2));
+        t.set_u32(list + 0x10, list);
+        let parts = op(&t, f, 0x1eb);
+        t.write(parts, &varied(0x20, mode + 3));
+        t.set_u32(parts + 0x10, parts);
+        // the particles' owner (its data `+0x10`, vectors from `+0x20`)
+        t.write(SCRATCH + 0x900, &varied(0x80, mode + 4));
+        t.set_u32(op(&t, f, 0x1cf), SCRATCH + 0x900);
+        t.set_u32(task, SCRATCH + 0x380);
+        t.set_u32(task + 4, obj);
+        let node = SCRATCH + 0x380;
+        t.set_u32(node + 4, SCRATCH + 0x3c0);
+        t.set_u32(node + 8, SCRATCH + 0x3e0);
+        t.set_u32(obj + 0x568, clock.to_bits());
+        t.set_u32(obj + 0x574, mode);
+        t.set_u32(obj + 0x578, holder);
+        t.set_u8(obj + 0x108, b108);
+        t.set_u8(obj + 0x208, b208);
+        // the seven nodes' parents (none, or one parent with them as its
+        // only children)
+        let parent = SCRATCH + 0x800;
+        t.write(parent, &[0; 0x20]);
+        for o in [0x220u32, 0x278, 0x2d0, 0x24c, 0x2a4, 0x41c, 0x57c] {
+            let n = obj + o;
+            t.set_u32(n + 0x14, if parents { parent } else { 0 });
+            t.set_u32(n + 4, n);
+            t.set_u32(n + 8, n);
+        }
+        t.set_u16(parent + 0x18, 7);
+        t.set_u32(parent + 0xc, obj + 0x220);
+        t.set_u32(parent + 0x10, obj + 0x57c);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

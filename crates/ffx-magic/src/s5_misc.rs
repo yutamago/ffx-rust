@@ -6,6 +6,7 @@
 use crate::l5_objhost::{LIST_REMOVE, OBJ_BLOCK_INIT, TASKS_INIT, list_remove};
 use crate::m0052::{PLACE, place};
 use crate::m0596::{host_start, host_start_head};
+use crate::nodes::{INSERT, node_insert};
 use crate::ob_model::wrap_once;
 use crate::opu_parts::{START_PART, start_part};
 use crate::pushes::Pushes;
@@ -16,10 +17,12 @@ use crate::s4_misc::{
     unlist_free,
 };
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
-use crate::sa_misc::{TIMELINE, timeline};
+use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
 use crate::sa_script::{ACTOR_MODE, actor_mode};
+use crate::sb_misc::{NODE_APPEND, node_append};
 use crate::sb_misc::{TIMELINE_STOP_GLOBAL, timeline_stop_global};
+use crate::sb_nodes::{PARTICLE_NODE, particle_node};
 use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Out, Ret, Sig, Xmm};
 
@@ -4046,6 +4049,377 @@ pub const HOMING_TRAIL: Sig = Sig {
         (0x1ed, Callee::Any),
         (0x204, Callee::Sig(&GIVE_BACK)),
         (0x212, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A sine-shaped rise stepped (cdecl `(p)`; `k = p+0xac` picks the step
+/// record `p + 0x10 k`: its count `+0x2c`, an integer `r` at `+0x30`, its
+/// last height `+0x34`). `q = r K1 / K2 + K3` scales the base speed `(A, B, C) q`
+/// into `+0xf0..+0xfc` at `t == 0` and `(A', B', C') + (A, B, C) q` at `t ==
+/// *G_N1`; `+0x18c` gets a constant at `t == *G_N2 - 10`. The phase `x = t`
+/// (or `(t - n1) K7 + n1` from `n1` on) picks the height from the sine
+/// table `*G_TAB` in three stretches (below `L1`, below `L2`, up to
+/// `*G_I`; index `(trunc(phase K8 / span) >> 4) & 0xfff`, each scaled);
+/// the record keeps it and `+0xd4` rises by its change (`+0xd8` stored
+/// back, `+0xdc = 0`). The count goes up; at `*G_N2` bit 2 of `p[0]` is
+/// set instead. Returns `2 k`.
+///
+/// `magic_0193` 0x100019a0 (540 bytes; 2 DLLs).
+pub fn sine_rise<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let p = fr.arg(g, 0);
+    let rec = |g: &G| p.wrapping_add(g.read::<u32>(p + 0xac).wrapping_mul(0x10));
+    let t = g.read::<i32>(rec(g).wrapping_add(0x2c));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let r = g.read::<i32>(rec(g).wrapping_add(0x30)) as f32;
+    let q = add(div(mul(r, k(g, 0x3e)), k(g, 0x46)), k(g, 0x4e));
+    let (a, b, c) = (mul(k(g, 0x15), q), mul(k(g, 0x26), q), mul(k(g, 0x36), q));
+    if t == 0 {
+        g.write::<f32>(p + 0xf0, a);
+        g.write::<f32>(p + 0xf4, b);
+        g.write::<f32>(p + 0xf8, c);
+        g.write::<u32>(p + 0xfc, 0);
+    }
+    let n1 = g.read::<i32>(w(0x82));
+    if t == n1 {
+        g.write::<f32>(p + 0xf0, add(k(g, 0x8e), a));
+        g.write::<f32>(p + 0xf4, add(k(g, 0xa2), b));
+        g.write::<u32>(p + 0xfc, 0);
+        g.write::<f32>(p + 0xf8, add(k(g, 0xb6), c));
+    }
+    let n2 = g.read::<i32>(w(0xd3));
+    if t == n2.wrapping_sub(10) {
+        g.write::<u32>(p + 0x18c, 0xbdb8_51ec);
+    }
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let x = if t < n1 {
+        t as f32
+    } else {
+        add(mul(t.wrapping_sub(n1) as f32, k(g, 0x108)), n1 as f32)
+    };
+    let tab = g.read::<u32>(w(0x11f));
+    let sine = |g: &G, phase: f32, span: f32| {
+        let i = (trunc(div(phase, span)).cast_signed() >> 4) & 0xfff;
+        g.read::<f32>(tab.wrapping_add(4 * i.cast_unsigned()))
+    };
+    let l1 = k(g, 0x117);
+    let y = if l1 > x {
+        mul(sine(g, mul(x, k(g, 0x129)), l1), k(g, 0x147))
+    } else {
+        let l2 = k(g, 0x151);
+        if l2 > x {
+            mul(sine(g, mul(sub(x, l1), k(g, 0x162)), l1), k(g, 0x180))
+        } else {
+            #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+            let end = g.read::<i32>(w(0x18a)) as f32;
+            let phase = mul(sub(x, l2), k(g, 0x199));
+            mul(sine(g, phase, sub(end, l2)), k(g, 0x1bb))
+        }
+    };
+    let h = rec(g).wrapping_add(0x34);
+    let old = g.read::<f32>(h);
+    g.write::<f32>(h, y);
+    let z = g.read::<u32>(p + 0xd8);
+    let rise = add(sub(y, old), g.read::<f32>(p + 0xd4));
+    g.write::<u32>(p + 0xd8, z);
+    g.write::<u32>(p + 0xdc, 0);
+    g.write::<f32>(p + 0xd4, rise);
+    let t = t.wrapping_add(1);
+    if t >= g.read::<i32>(w(0xd3)) {
+        let v = g.read::<u32>(p) | 4;
+        g.write::<u32>(p, v);
+        return Ret::eax(g.read::<u32>(p + 0xac).wrapping_mul(2));
+    }
+    g.write::<i32>(rec(g).wrapping_add(0x2c), t);
+    Ret::eax(g.read::<u32>(p + 0xac).wrapping_mul(2))
+}
+
+/// [`sine_rise`].
+pub const SINE_RISE: Sig = Sig {
+    len: 540,
+    hash: 0x3bf7_769e_4433_348b,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`aim_task`] for an object (internal: `ecx` = the object, `xmm1` =
+/// the distance `r`; an aligned /GS frame): `d = obj+0x358 - obj+0xd0`,
+/// the pitch and yaw as there, the offset `obj+0x368 = (0, 0, -r, 0)`
+/// turned by the rotated unit matrix (slots 235, 328, 329, 229), the
+/// angles into `+0xc0` (pitch) and `+0xc4` (yaw), `+0x384 = r`; a task
+/// node ([`take`], callback `CB`) holding the object is appended to the
+/// task list. Returns the node.
+///
+/// `magic_0171` 0x10003000 (562 bytes; 2 DLLs).
+pub fn aim_object<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, obj: u32, r: f32) -> u32 {
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let at = |g: &G, o: u32| g.read::<f32>(obj.wrapping_add(o));
+    // push ebp; and esp, -8; sub esp, 0x68
+    let top = esp.wrapping_sub(4) & !7;
+    let m = top.wrapping_sub(0x48);
+    let v = obj.wrapping_add(0x368);
+    g.write::<u32>(obj + 0x370, r.to_bits() ^ 0x8000_0000);
+    for o in [0x368u32, 0x36c, 0x374] {
+        g.write::<u32>(obj + o, 0);
+    }
+    let dy = sub(at(g, 0x35c), at(g, 0xd4));
+    let dx = sub(at(g, 0x358), at(g, 0xd0));
+    let dz = sub(at(g, 0x360), at(g, 0xd8));
+    let s = add(mul(dz, dz), mul(dx, dx));
+    let h = f64::from(s).sqrt();
+    let pitch = g.atan2(f64::from(dy), h) as f32;
+    let yaw = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let a = wrap_once(
+        g,
+        img,
+        f,
+        sub(k(g, 0x107), yaw),
+        [0x116, 0x126, 0x130, 0x13d],
+    );
+    slot_call(g, img, f, (0x14d, 235), &[m]);
+    slot_call(g, img, f, (0x16f, 328), &[m, m, pitch.to_bits()]);
+    slot_call(g, img, f, (0x190, 329), &[m, m, a.to_bits()]);
+    slot_call(g, img, f, (0x1a6, 229), &[v, m, v]);
+    g.write::<f32>(obj + 0xc0, pitch);
+    g.write::<f32>(obj + 0xc4, a);
+    g.write::<f32>(obj + 0x384, r);
+    let node = take(g, img, img.rel32_target(f + 0x1ea), w(0x1dd));
+    let head = g.read::<u32>(w(0x1f0));
+    g.write::<u32>(node + 0x14, obj);
+    g.write::<u32>(node + 4, 0);
+    if head != 0 {
+        let tail = g.read::<u32>(w(0x203));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail + 4, node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x215), node);
+    }
+    g.write::<u32>(w(0x222), node);
+    g.write::<u32>(node + 8, node);
+    node
+}
+
+/// [`aim_object`] (the `rel32`s: the square root, two `_CIatan2`s,
+/// [`take`] and `__security_check_cookie`).
+pub const AIM_OBJECT: Sig = Sig {
+    len: 562,
+    hash: 0x65a6_912c_60b9_f769,
+    calls: &[
+        (0xb3, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xc6, Callee::Import("_CIatan2")),
+        (0xf5, Callee::Import("_CIatan2")),
+        (0x1ea, Callee::Sig(&TAKE)),
+        (0x22a, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// A part's three axes set from signed steps (`ecx` = `[obj, steps,
+/// sizes, mode]`, a /GS frame). For mode 0 or 1: `obj+0x88 = obj+0x78`,
+/// and per axis `i`: the size `sizes[i]` into `+0x7c + 4i`, the step's
+/// low half into u16 `+0x8c + 2i`; a negative step stores its negated
+/// half, the sign `+0x6c + 4i = -1.0` and (mode 1) scales the size by
+/// `K`; else the sign is 1.0. Then `+0x12c |= 9`, byte `+0x134` = the
+/// mode, and `+0x9c..+0xa4` the difference `obj+0x1c - obj+0x3c` (slot
+/// 234, a local). Returns slot 234's `eax`, or `mode - 1` for another
+/// mode.
+///
+/// `magic_0070` 0x10003bc0 (564 bytes, `ecx` = the arguments; 2 DLLs).
+pub fn signed_axes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let args = fr.ecx;
+    let mode = g.read::<u32>(args + 0xc);
+    let obj = g.read::<u32>(args);
+    if mode > 1 {
+        return Ret::eax(mode.wrapping_sub(1));
+    }
+    let k = g.read::<f32>(w(0x2d));
+    let r = g.read::<u32>(obj + 0x78);
+    g.write::<u32>(obj + 0x88, r);
+    for i in 0..3u32 {
+        let size = g.read::<u32>(g.read::<u32>(args + 8).wrapping_add(4 * i));
+        g.write::<u32>(obj + 0x7c + 4 * i, size);
+        let step_at = g.read::<u32>(args + 4).wrapping_add(4 * i);
+        let half = g.read::<u16>(step_at);
+        g.write::<u16>(obj + 0x8c + 2 * i, half);
+        let step_at = g.read::<u32>(args + 4).wrapping_add(4 * i);
+        if g.read::<i32>(step_at) < 0 {
+            g.write::<u16>(obj + 0x8c + 2 * i, half.wrapping_neg());
+            if mode == 1 {
+                let s = mul(g.read::<f32>(obj + 0x7c + 4 * i), k);
+                g.write::<u32>(obj + 0x6c + 4 * i, 0xbf80_0000);
+                g.write::<f32>(obj + 0x7c + 4 * i, s);
+            } else {
+                g.write::<u32>(obj + 0x6c + 4 * i, 0xbf80_0000);
+            }
+        } else {
+            g.write::<u32>(obj + 0x6c + 4 * i, 0x3f80_0000);
+        }
+    }
+    let flags = g.read::<u32>(obj + 0x12c) | 9;
+    g.write::<u32>(obj + 0x12c, flags);
+    let m = g.read::<u8>(args + 0xc);
+    g.write::<u8>(obj + 0x134, m);
+    let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    let e = slot_call(
+        g,
+        img,
+        f,
+        (0x1ef, 234),
+        &[v, obj.wrapping_add(0x1c), obj.wrapping_add(0x3c)],
+    )
+    .eax;
+    for (o, d) in [(0x9cu32, 0u32), (0xa0, 4), (0xa4, 8)] {
+        let x = g.read::<u32>(v + d);
+        g.write::<u32>(obj + o, x);
+    }
+    Ret::eax(e)
+}
+
+/// [`signed_axes`] (the `rel32`: `__security_check_cookie`).
+pub const SIGNED_AXES: Sig = Sig {
+    len: 564,
+    hash: 0xca98_3d88_ac9b_6f7b,
+    calls: &[(0x22c, Callee::Any)],
+    imports: &[],
+};
+
+/// A shower effect's step (cdecl `(task)`, `task[1]` the object; an
+/// aligned frame whose locals hold the object and a six-word record).
+/// The clock `+0x568` advances by `K`. By the mode `+0x574`:
+/// - 0, once the clock reaches `L`: the node `+0x24c` joins the list `G_X`
+///   ([`node_append`]); the point `p = +0x268` is the holder `+0x578`'s
+///   point 0x11 (slot 268 on its `+0x54`, `w` 1) at the height of slot 12
+///   (ST0) with `+0x23c` in `p.x`; `+0x26c` drops by `K2`, `+0x270 =
+///   +0x244`; the node `+0x2a4` joins `G_X` too, `+0x2c0..+0x2c8 = 1.0`,
+///   `+0x2cc = +0x56c`; the node `+0x41c` goes in front of `G_X`'s
+///   children ([`node_insert`]: the record `(+0x41c, G_X, G_A, +0x24c,
+///   G_B, +0x2a4)`) and the particle node `+0x120` (its vtable `VT`)
+///   starts ([`particle_node`]: `(+0x120, G_C, +0x41c, *G_O, G_D, 1)`);
+///   slot 239 `(*G_E, holder[0x50], 0x20)`; the mode goes up. Returns
+///   slot 239's `eax`.
+/// - 1, once bit 2 of bytes `+0x108` and `+0x208` are both set: the seven
+///   nodes leave their parents ([`leave`]), the task's list node is
+///   unlinked and the mode is 0xff. Returns the node's old `prev`.
+///
+/// Otherwise returns the mode less 0 or 1 (0, or `mode - 1`).
+///
+/// `magic_0411` 0x10006af0 (570 bytes; 2 DLLs).
+pub fn shower_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let obj = g.read::<u32>(task + 4);
+    // push ebp; and esp, -8; sub esp, 0x1c; three pushes
+    let top = fr.esp.wrapping_sub(4) & !7;
+    g.write::<u32>(top.wrapping_sub(0x1c), obj);
+    let x = add(g.read::<f32>(obj + 0x568), g.read::<f32>(w(0x22)));
+    let mode = g.read::<u32>(obj + 0x574);
+    g.write::<f32>(obj + 0x568, x);
+    match mode {
+        0 => {
+            // comiss x, L; jb: below or unordered waits
+            if x.is_nan() || x < g.read::<f32>(w(0xd9)) {
+                return Ret::eax(0);
+            }
+            let append = img.rel32_target(f + 0xf1);
+            let node = obj.wrapping_add(0x24c);
+            node_append(g, img, append, node, w(0xea), 0);
+            let holder = g.read::<u32>(obj + 0x578);
+            let p = obj.wrapping_add(0x268);
+            let h = g.read::<u32>(holder.wrapping_add(0x54));
+            slot_call(g, img, f, (0xfc, 268), &[h, 0x11, p]);
+            g.write::<u32>(p + 0xc, 0x3f80_0000);
+            let h = g.read::<u32>(holder.wrapping_add(0x54));
+            let y = st0_f32(slot_call(g, img, f, (0x115, 12), &[h]));
+            g.write::<f32>(p + 4, y);
+            let px = g.read::<u32>(obj + 0x23c);
+            g.write::<u32>(p, px);
+            let z = sub(g.read::<f32>(obj + 0x26c), g.read::<f32>(w(0x152)));
+            let a = g.read::<u32>(obj + 0x244);
+            g.write::<u32>(obj + 0x270, a);
+            g.write::<f32>(obj + 0x26c, z);
+            let second = obj.wrapping_add(0x2a4);
+            node_append(g, img, img.rel32_target(f + 0x171), second, w(0x142), 0);
+            for o in [0x2c0u32, 0x2c4, 0x2c8] {
+                g.write::<u32>(obj + o, 0x3f80_0000);
+            }
+            let m = g.read::<u32>(obj + 0x56c);
+            g.write::<u32>(obj + 0x2cc, m);
+            let rec = top.wrapping_sub(0x18);
+            let third = obj.wrapping_add(0x41c);
+            for (i, v) in (0u32..).zip([third, w(0x142), w(0x1b9), node, w(0x1c5), second]) {
+                g.write::<u32>(rec + 4 * i, v);
+            }
+            let insert = Frame {
+                at: img.rel32_target(f + 0x1ca),
+                esp: top.wrapping_sub(0x2c),
+                ecx: rec,
+                ..*fr
+            };
+            node_insert(g, img, &insert);
+            let o = g.read::<u32>(w(0x1cf));
+            let part = obj.wrapping_add(0x120);
+            g.write::<u32>(rec, part);
+            g.write::<u32>(part, w(0x1df));
+            for (i, v) in (1u32..).zip([w(0x1eb), third, o, w(0x1fb), 1]) {
+                g.write::<u32>(rec + 4 * i, v);
+            }
+            particle_node(g, img, img.rel32_target(f + 0x208), rec);
+            let holder = g.read::<u32>(obj + 0x578);
+            let hd = g.read::<u32>(holder.wrapping_add(0x50));
+            let e = g.read::<u32>(w(0x21e));
+            let eax = slot_call(g, img, f, (0x218, 239), &[e, hd, 0x20]).eax;
+            bump(g, obj + 0x574);
+            Ret::eax(eax)
+        }
+        1 => {
+            if g.read::<u8>(obj + 0x108) & 4 == 0 || g.read::<u8>(obj + 0x208) & 4 == 0 {
+                return Ret::eax(0);
+            }
+            let mut eax = 0;
+            for o in [0x220u32, 0x278, 0x2d0, 0x24c, 0x2a4, 0x41c, 0x57c] {
+                eax = leave(g, obj.wrapping_add(o), eax);
+            }
+            let node = g.read::<u32>(task);
+            let prev = g.read::<u32>(node + 4);
+            let next = g.read::<u32>(node + 8);
+            g.write::<u32>(prev + 8, next);
+            let next = g.read::<u32>(node + 8);
+            let prev = g.read::<u32>(node + 4);
+            g.write::<u32>(next + 4, prev);
+            g.write::<u32>(node + 8, node);
+            g.write::<u32>(node + 4, node);
+            g.write::<u32>(obj + 0x574, 0xff);
+            Ret::eax(prev)
+        }
+        _ => Ret::eax(mode.wrapping_sub(1)),
+    }
+}
+
+/// [`shower_step`] (the `rel32`s: seven [`leave`]s, two [`node_append`]s,
+/// [`node_insert`] and [`particle_node`]).
+pub const SHOWER_STEP: Sig = Sig {
+    len: 570,
+    hash: 0x54d8_0aea_c4aa_c37c,
+    calls: &[
+        (0x65, Callee::Sig(&LEAVE)),
+        (0x70, Callee::Sig(&LEAVE)),
+        (0x7b, Callee::Sig(&LEAVE)),
+        (0x86, Callee::Sig(&LEAVE)),
+        (0x91, Callee::Sig(&LEAVE)),
+        (0x9c, Callee::Sig(&LEAVE)),
+        (0xa7, Callee::Sig(&LEAVE)),
+        (0xf1, Callee::Sig(&NODE_APPEND)),
+        (0x171, Callee::Sig(&NODE_APPEND)),
+        (0x1ca, Callee::Sig(&INSERT)),
+        (0x208, Callee::Sig(&PARTICLE_NODE)),
     ],
     imports: &[],
 };
