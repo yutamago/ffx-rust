@@ -9762,3 +9762,56 @@ pub const FALLING_PARTS_STEP: Sig = Sig {
     calls: &[(0x54, Callee::Sig(&PART_DROP_RATES))],
     imports: &[],
 };
+
+/// The block's held node given back and its 100 resource triples
+/// released (no arguments; an aligned frame): with `B` the word at
+/// operand `+0xb`, when `B + 0x5ee0` holds a node it goes back to the
+/// pool ([`give_back`]), the word is cleared and each resource `r = B +
+/// 0xa00 + 0xc8 i` drops its ids `i`, `i + 1000` and `i + 2000` (slot 772
+/// `(r, id)` gives the 64-bit id, slot 779 drops it with `**G_LOCK` 1
+/// around the call; each call sees the iteration's earlier words).
+/// Returns the lock's address, or `eax` as it came.
+///
+/// `magic_0165` 0x10004640 (263 bytes; 2 DLLs).
+pub fn release_resource_triples<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let b = g.read::<u32>(w(0xb));
+    let node = g.read::<u32>(b.wrapping_add(0x5ee0));
+    if node == 0 {
+        return Ret::eax(fr.eax);
+    }
+    give_back(g, img, img.rel32_target(f + 0x1f), node);
+    g.write::<u32>(b.wrapping_add(0x5ee0), 0);
+    let mut lock = 0;
+    for i in 0..100u32 {
+        let r = b.wrapping_add(0xa00 + 0xc8 * i);
+        let mut words: Vec<u32> = Vec::new();
+        // (772's table, the lock, 779's table, the lock again, the id)
+        for (t772, l, t779, l2, id) in [
+            (0x41, 0x51, 0x5a, 0x6d, i),
+            (0x81, 0x90, 0x99, 0xac, i + 1000),
+            (0xb4, 0xc3, 0xcc, 0xe3, i + 2000),
+        ] {
+            words.splice(0..0, [r, id]);
+            // call width: up to 12 (the iteration's words stay on the stack)
+            let h = slot_call(g, img, f, (t772, 772), &words);
+            let at = g.read::<u32>(w(l));
+            let saved = g.read::<u32>(at);
+            g.write::<u32>(at, 1);
+            words.splice(0..0, [h.eax, h.edx]);
+            slot_call(g, img, f, (t779, 779), &words);
+            lock = g.read::<u32>(w(l2));
+            g.write::<u32>(lock, saved);
+        }
+    }
+    Ret::eax(lock)
+}
+
+/// [`release_resource_triples`].
+pub const RELEASE_RESOURCE_TRIPLES: Sig = Sig {
+    len: 263,
+    hash: 0xae2d_bea2_0962_0ad6,
+    calls: &[(0x1f, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};

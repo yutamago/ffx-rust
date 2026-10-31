@@ -4508,3 +4508,31 @@ fn falling_parts_steps() {
         t.check_entry(f, Call::default(), &[recs_at], Eax::Checked);
     }
 }
+
+#[test]
+fn release_resource_triples() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x4640);
+    recs(&mut t, &[(779, 4)]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x51), lock);
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0xb), b);
+    let held = SCRATCH + 0x600;
+    for hold in [false, true] {
+        t.set_u32(lock, 7);
+        if hold {
+            pool_node(&mut t, held);
+            t.set_u32(b + 0x5ee0, held);
+        } else {
+            t.set_u32(b + 0x5ee0, 0);
+        }
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
+    }
+}
