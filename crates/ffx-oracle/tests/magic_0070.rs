@@ -650,3 +650,85 @@ fn step_d410() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// 0x1000cee0: the summon's frame before its phase, with and without
+/// children under the root, with the flag set, and with the done bit's
+/// slot calls held back (bit clear, halfword set) or made.
+#[test]
+fn summon_frame_376() {
+    let Some(mut t) = twin() else { return };
+    let f = t.at(0xcee0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let bind = t.img.rel32_target(f + 0x23);
+    t.set_u32(t.img.word(bind + 0x7e), SCRATCH + 0x500);
+    for (k, s) in (0u32..).zip([723u32, 724, 230, 253, 214, 376]) {
+        let row = SCRATCH + 0x3000 + 0x40 * k;
+        t.stub(s, move |m, a| {
+            let c = m.r32(row + 0x3c).wrapping_add(1);
+            m.w32(row + 0x3c, c);
+            // slot 253 takes no word
+            if s != 253 {
+                m.w32(row + 4 * (c % 8), a[0]);
+            }
+            0x0300_0000 + s
+        });
+    }
+    // the children's method +0x20: slot 1000, logging its cursor's node
+    // and emptying the root's list on the last child
+    let first = w(&t, 0x4a);
+    let root = w(&t, 0x52);
+    t.stub(1000, move |m, a| {
+        let k = m.r32(SCRATCH + 0x37fc).wrapping_add(1);
+        m.w32(SCRATCH + 0x37fc, k);
+        m.w32(SCRATCH + 0x3780 + 4 * (k % 16), m.r32(a[0]));
+        if m.r32(m.r32(a[0]) + 8) == root {
+            m.w32(first, root);
+        }
+        0x1000
+    });
+    let vt = SCRATCH + 0x800;
+    t.set_u32(magic::TABLE + 4 * 1000, magic::TRAPS + 16 * 1000);
+    t.set_u32(vt + 0x20, magic::TRAPS + 16 * 1000);
+    t.set_u32(w(&t, 0x18), SCRATCH + 0x400);
+    let kid = |i: u32| SCRATCH + 0x1000 + 0x100 * i;
+    for (phase, flag, kids, a, half) in [
+        (3u32, 0u32, 0u32, 1u32, 0u16),
+        (4, 0, 2, 1, 0),
+        (5, 0, 0, 1, 0),
+        (5, 1, 2, 1, 0),
+        (5, 1, 0, 1, 1),
+        (6, 0, 1, 0, 0),
+        (7, 1, 1, 3, 0),
+    ] {
+        t.set_u32(w(&t, 0x0b), phase);
+        t.set_u32(w(&t, 0x43), flag);
+        // the done bit starts clear except in the phase-6 case
+        t.set_u32(w(&t, 0x88), 0x10 | u32::from(phase == 6));
+        t.set_u32(w(&t, 0xcb), 0x20 | a);
+        t.set_u16(w(&t, 0xdf), half);
+        t.set_u32(w(&t, 0xed), 0x00ed_0000);
+        t.set_u32(w(&t, 0x109), 0x0109_0000);
+        t.set_u8(w(&t, 0x28), 0x41);
+        for i in 0..kids {
+            t.write(kid(i), &[0x22; 0x40]);
+            t.set_u32(kid(i), vt);
+            t.set_u32(kid(i) + 8, if i + 1 == kids { root } else { kid(i + 1) });
+        }
+        t.set_u32(first, if kids == 0 { root } else { kid(0) });
+        // the bone node holds still (its pass is the frame's); the gated
+        // ones move (no children)
+        let bone = w(&t, 0x34);
+        t.set_u32(bone + 0x10, bone);
+        t.set_u8(bone + 0x1a, 0x41);
+        for at in [w(&t, 0xa1), w(&t, 0xc1)] {
+            t.set_u32(at + 0x10, at);
+            t.set_u8(at + 0x1a, 0);
+            t.set_u8(at + 0x1b, 0);
+        }
+        let c = Call {
+            eax: 0x00ea_0000 + phase,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
+    }
+}

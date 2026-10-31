@@ -130,6 +130,8 @@ struct Start {
     early: bool,
     one: u32,
     a: u32,
+    /// The particle record's last word: the immediate at this offset.
+    index: u32,
     tail: PartTail,
 }
 
@@ -194,11 +196,20 @@ type PartRec = ([u32; 3], u32, (u32, u32), u32);
 type FxRec = ([u32; 5], u32, u32, (u32, u32));
 
 /// The particle and effect nodes of [`PartTail`] (records at `rec`, the
-/// pointer global's value `a`). Returns the second effect node.
-fn part_tail<G: Game>(g: &mut G, img: &Image, f: u32, rec: u32, a: u32, o: &PartTail) -> u32 {
+/// pointer global's value `a`, the particle's program `index`). Returns
+/// the second effect node.
+fn part_tail<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    rec: u32,
+    a: u32,
+    index: u32,
+    o: &PartTail,
+) -> u32 {
     let w = |off: u32| img.word(f + off);
     let (words, fifth, vt, call) = o.part;
-    for (k, v) in (0u32..).zip([w(words[0]), w(words[1]), w(words[2]), a, w(fifth), 0]) {
+    for (k, v) in (0u32..).zip([w(words[0]), w(words[1]), w(words[2]), a, w(fifth), index]) {
         g.write::<u32>(rec + 4 * k, v);
     }
     stores(g, img, f, &[vt]);
@@ -238,20 +249,15 @@ const TAIL_0078: PartTail = PartTail {
     ],
 };
 
-/// The start-ups of `magic_0078`/`0079` (0x100064e0, no arguments, a
-/// frame of 0x18 bytes): a node put at the ring's tail (`+0x07`..
-/// `+0x3b`), the root's flag cleared (`+0x41`), a u16 and a word
-/// cleared (`+0x4a`, `+0x64`); the model node (`+0x5e`, vtable `+0x87`)
-/// set up ([`model_node_init`], a record on the frame `[node, parent,
-/// *B, 0]`, the byte `*B` at `+0x51`); slot 268 `(*M, 0x11, X)` and a
-/// 1.0 store (here or after the insert), the two static nodes
-/// ([`two_nodes`]) and `node insert`; the particle node (vtable
-/// `+0x226`, record `[.., .., .., *A, .., 0]`) and two effect nodes with
-/// their vtables and flag words. Returns the second effect node.
-fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
-    let f = fr.at;
+/// The head every start-up of this family shares: a node put at the
+/// ring's tail (`+0x07`..`+0x3b`), the root's flag cleared (`+0x41`), a
+/// u16 and a word cleared (`+0x4a`, `+0x64`); the model node (`+0x5e`,
+/// vtable `+0x87`) set up ([`model_node_init`], a record on the frame
+/// `[node, parent, *B, 0]`, the byte `*B` at `+0x51`). The operands from
+/// `+0x5a` on sit `shift` bytes later (a `push esi` before them).
+fn start_head<G: Game>(g: &mut G, img: &Image, f: u32, ebp: u32, shift: u32) {
     let w = |off: u32| img.word(f + off);
-    let ebp = fr.esp.wrapping_sub(4);
+    let s = |off: u32| off + shift;
     let tail = g.read::<u32>(w(0x07));
     g.write::<u32>(w(0x0c), tail);
     stores(
@@ -265,15 +271,28 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
     g.write::<u32>(w(0x41), v & !1);
     g.write::<u16>(w(0x4a), 0);
     let b = u32::from(g.read::<u8>(w(0x51)));
-    stores(g, img, f, &[(0x5a, 0x5e)]);
-    g.write::<u32>(w(0x64), 0);
+    stores(g, img, f, &[(s(0x5a), s(0x5e))]);
+    g.write::<u32>(w(s(0x64)), 0);
     let rec = ebp.wrapping_sub(0x10);
-    for (k, v) in (0u32..).zip([w(0x6f), w(0x76), b]) {
+    for (k, v) in (0u32..).zip([w(s(0x6f)), w(s(0x76)), b]) {
         g.write::<u32>(rec + 4 * k, v);
     }
     g.write::<u8>(rec + 0xc, 0);
-    stores(g, img, f, &[(0x83, 0x87)]);
-    model_node_init(g, img, img.rel32_target(f + 0x8c), rec);
+    stores(g, img, f, &[(s(0x83), s(0x87))]);
+    model_node_init(g, img, img.rel32_target(f + s(0x8c)), rec);
+}
+
+/// The start-ups of `magic_0078`/`0079`/`0081` (0x100064e0, no
+/// arguments, a frame of 0x18 bytes): [`start_head`]; slot 268 `(*M, 0x11, X)` and a
+/// 1.0 store (here or after the insert), the two static nodes
+/// ([`two_nodes`]) and `node insert`; the particle node (vtable
+/// `+0x226`, record `[.., .., .., *A, .., 0]`) and two effect nodes with
+/// their vtables and flag words. Returns the second effect node.
+fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    start_head(g, img, f, ebp, 0);
     let call_268 = |g: &mut G| {
         let (table, m, x) = o.s268;
         let s = slot_target(g, w(table), 0x430 / 4);
@@ -320,7 +339,7 @@ fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &Start) -> Ret {
     if late {
         g.write::<u32>(w(o.one), 0x3f80_0000);
     }
-    Ret::eax(part_tail(g, img, f, rec, a, &o.tail))
+    Ret::eax(part_tail(g, img, f, rec, a, w(o.index), &o.tail))
 }
 
 /// `magic_0078` 0x100064e0: [`start`], slot 268 after the insert.
@@ -359,6 +378,7 @@ pub fn start_0078<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         early: false,
         one: 0x1f2,
         a: 0x1e6,
+        index: 0x21c,
         tail: TAIL_0078,
     };
     start(g, img, fr, &o)
@@ -401,6 +421,7 @@ pub fn start_0079<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         early: true,
         one: 0xb4,
         a: 0x1f3,
+        index: 0x21c,
         tail: TAIL_0078,
     };
     start(g, img, fr, &o)
@@ -437,6 +458,13 @@ pub const START_0079: Sig = Sig {
 /// `magic_0081` 0x100064e0: [`start`], the static nodes appended one by
 /// one with slot 268 between them ([`Nodes::Each`]).
 pub fn start_0081<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    each_start(g, img, fr, 0)
+}
+
+/// The start-up of `magic_0081` and of `magic_0083`'s family (their
+/// first 714 bytes; in the latter a `lea` before the second effect
+/// node's vtable store moves its last operands by `shift`).
+fn each_start<G: Game>(g: &mut G, img: &Image, fr: &Frame, shift: u32) -> Ret {
     let o = Start {
         nodes: Nodes::Each(
             [
@@ -478,6 +506,7 @@ pub fn start_0081<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         early: false,
         one: 0x124,
         a: 0x1f2,
+        index: 0x21b,
         tail: PartTail {
             part: ([0x1fc, 0x203, 0x20a], 0x214, (0x221, 0x225), 0x22a),
             fx: [
@@ -490,8 +519,8 @@ pub fn start_0081<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 (
                     [0x280, 0x287, 0x28e, 0x295, 0x29c],
                     0x2a8,
-                    0x2b1,
-                    (0x2b7, 0x2be),
+                    0x2b1 + shift,
+                    (0x2b7 + shift, 0x2be + shift),
                 ),
             ],
         },
@@ -510,5 +539,231 @@ pub const START_0081: Sig = Sig {
         (0x25c, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
         (0x2a8, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
     ],
+    imports: &[],
+};
+
+/// `magic_0080` 0x100064e0 (no arguments, a frame of 0x1c bytes and
+/// `esi`): the head of [`start`] (its operands one byte later, after a
+/// `push esi`), the two static nodes ([`two_nodes`]) and `node insert`;
+/// then by slot 390's kind for the byte `*K` (`+0x1cf`) through a byte
+/// table (`+0x1f1`, for `kind - 0x1071` in `0..=0x1b`) into a two-entry
+/// jump table (`+0x1f8`): one entry is the yes path itself, the other
+/// (and any other kind) asks slot 534 `(*K)` first; yes runs slot 268 `(*M, 0x11, X)` (`+0x212`..), `+0x230`
+/// = 1.0 and the particle index 1; the second entry (and a no) runs slot
+/// 268 (`+0x242`..), `+0x265` = 1.0, slot 12 `(*M)`'s float less `C`
+/// (`+0x28a`) into `+0x27a` and the particle index 0. Then the particle
+/// node (record `[.., .., .., *A, .., index]`, `A` at `+0x2a1`) and the
+/// two effect nodes. Returns the second effect node.
+#[allow(clippy::too_many_lines)]
+pub fn start_0080<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let ebp = fr.esp.wrapping_sub(4);
+    start_head(g, img, f, ebp, 1);
+    two_nodes(
+        g,
+        img,
+        f,
+        &TwoNodes {
+            last_r: 0x92,
+            half1: 0x99,
+            st1: [(0xa1, 0xa5), (0xab, 0xaf), (0xb5, 0xb9), (0xbf, 0xc3)],
+            last_w1: 0xc8,
+            sentinel1: 0xcd,
+            first1: (0xd5, 0xd9),
+            next1: 0xe2,
+            count_r: 0xe8,
+            n1: 0xed,
+            vt1: (0xf5, 0xf9),
+            half2: 0x100,
+            st2: [
+                (0x108, 0x10c),
+                (0x112, 0x116),
+                (0x11c, 0x120),
+                (0x126, 0x12a),
+                (0x130, 0x134),
+            ],
+            sentinel2: 0x13a,
+            first2: (0x142, 0x146),
+            next2: (0x14e, 0x152),
+            last_w: (0x15d, 0x161),
+            count_w: 0x167,
+            vt2: (0x16d, 0x171),
+            ones: [0x177, 0x181, 0x18b],
+            imm: (0x195, 0x199),
+        },
+    );
+    let rec = ebp.wrapping_sub(0x18);
+    let words = [0x1a0, 0x1a7, 0x1ae, 0x1b5, 0x1bc, 0x1c3];
+    for (k, &op) in (0u32..).zip(&words) {
+        g.write::<u32>(rec + 4 * k, w(op));
+    }
+    let at = img.rel32_target(f + 0x1c8);
+    crate::nodes::node_insert(
+        g,
+        img,
+        &Frame {
+            at,
+            ecx: rec,
+            ..Frame::default()
+        },
+    );
+    let key = u32::from(g.read::<u8>(w(0x1cf)));
+    let s = slot_target(g, w(0x1d4), 0x618 / 4);
+    let k = g.call(s, 0, &[key]).eax.wrapping_sub(0x1071);
+    // the jump table's targets: +0x211 the yes path itself, +0x1fc the
+    // question (also every kind outside the byte table)
+    let ask = if k <= 0x1b {
+        // the byte table is in .text: read from the image
+        let i = img.word(w(0x1f1).wrapping_add(k)) & 0xff;
+        img.word(w(0x1f8).wrapping_add(4 * i)).wrapping_sub(f) != 0x211
+    } else {
+        true
+    };
+    let yes = !ask || {
+        let s = slot_target(g, w(0x1fd), 0x858 / 4);
+        g.call(s, 0, &[key]).eax != 0
+    };
+    let index = if yes {
+        let s = slot_target(g, w(0x212), 0x430 / 4);
+        let m = g.read::<u32>(w(0x225));
+        g.call(s, 0, &[m, 0x11, w(0x217)]);
+        g.write::<u32>(w(0x230), 0x3f80_0000);
+        1
+    } else {
+        let s = slot_target(g, w(0x242), 0x430 / 4);
+        let m = g.read::<u32>(w(0x255));
+        g.call(s, 0, &[m, 0x11, w(0x247)]);
+        let table = g.read::<u32>(w(0x25c));
+        g.write::<u32>(w(0x265), 0x3f80_0000);
+        let m = g.read::<u32>(w(0x26f));
+        let s = g.read::<u32>(table.wrapping_add(0x30));
+        let v = g.call(s, 0, &[m]).st0.unwrap_or(0.0) as f32;
+        g.write::<u32>(w(0x27a), v.to_bits());
+        let y = sub(g.read::<f32>(w(0x282)), g.read::<f32>(w(0x28a)));
+        g.write::<u32>(w(0x29c), y.to_bits());
+        0
+    };
+    let a = g.read::<u32>(w(0x2a1));
+    let tail = PartTail {
+        part: ([0x2ab, 0x2b2, 0x2b9], 0x2c3, (0x2c9, 0x2cd), 0x2d2),
+        fx: [
+            (
+                [0x2dc, 0x2e3, 0x2ea, 0x2f1, 0x2f8],
+                0x304,
+                0x310,
+                (0x316, 0x31d),
+            ),
+            (
+                [0x328, 0x32f, 0x336, 0x33d, 0x344],
+                0x350,
+                0x35a,
+                (0x360, 0x367),
+            ),
+        ],
+    };
+    Ret::eax(part_tail(g, img, f, rec, a, index, &tail))
+}
+
+/// [`start_0080`] (883 bytes and its two jump tables, 1 overlay).
+pub const START_0080: Sig = Sig {
+    len: 920,
+    hash: 0xc4c1_e3bd_76d0_acd5,
+    calls: &[
+        (0x8d, Callee::Sig(&MODEL_NODE_INIT)),
+        (0x1c8, Callee::Sig(&crate::nodes::INSERT)),
+        (0x2d2, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x304, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x350, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0083` 0x10006860 and its copies in `magic_0086`, `0087`,
+/// `0097` (the particle's program index differs): [`each_start`], then
+/// the colour node ([`colour_node`](crate::s3_misc::colour_node), a group
+/// `[node, parent]` on the frame, the node's vtable `+0x2dd`) and the
+/// camera move set up inline: its flags `+0x2fb` lose bit 0, eight words
+/// get their immediates (`+0x302`.. `+0x378`), and seven differences
+/// `K - p[i]` (`K` at `+0x2ea`) and one `p - q` are stored. Returns the
+/// colour node's `eax`.
+pub fn start_0083<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    each_start(g, img, fr, 3);
+    let ebp = fr.esp.wrapping_sub(4);
+    let grp = ebp.wrapping_sub(8);
+    g.write::<u32>(grp, w(0x2cc));
+    g.write::<u32>(grp + 4, w(0x2d3));
+    stores(g, img, f, &[(0x2d9, 0x2dd)]);
+    let at = img.rel32_target(f + 0x2e2);
+    let eax = crate::s3_misc::colour_node(
+        g,
+        img,
+        &Frame {
+            at,
+            esp: ebp.wrapping_sub(0x1c),
+            ecx: grp,
+            ..Frame::default()
+        },
+    );
+    let k = g.read::<f32>(w(0x2ea));
+    let fl = g.read::<u32>(w(0x2fb));
+    g.write::<u32>(w(0x2fb), fl & !1);
+    // mov dword [addr], imm32: the immediate 4 bytes after the address
+    for at in [
+        0x302, 0x30c, 0x316, 0x333, 0x33d, 0x347, 0x351, 0x36e, 0x378,
+    ] {
+        g.write::<u32>(w(at), w(at + 4));
+    }
+    for (dst, src) in [
+        (0x322, 0x2f5),
+        (0x35d, 0x32d),
+        (0x384, 0x368),
+        (0x397, 0x38f),
+        (0x3aa, 0x3a2),
+        (0x3c5, 0x3b5),
+        (0x3dd, 0x3bd),
+    ] {
+        let d = sub(k, g.read::<f32>(w(src)));
+        g.write::<u32>(w(dst), d.to_bits());
+    }
+    let d = sub(g.read::<f32>(w(0x3cd)), g.read::<f32>(w(0x3d5)));
+    g.write::<u32>(w(0x3e5), d.to_bits());
+    Ret::eax(eax)
+}
+
+const START_0083_CALLS: &[(u32, Callee)] = &[
+    (0x8c, Callee::Sig(&MODEL_NODE_INIT)),
+    (0x1ed, Callee::Sig(&crate::nodes::INSERT)),
+    (0x22a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+    (0x25c, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    (0x2a8, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+    (0x2e2, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+];
+
+/// [`start_0083`] in `magic_0083` (1,005 bytes).
+pub const START_0083: Sig = Sig {
+    len: 1005,
+    hash: 0xdcb0_0ff4_e9a6_11ec,
+    calls: START_0083_CALLS,
+    imports: &[],
+};
+
+/// [`start_0083`] in `magic_0086`, `0087`, `0097` (1,005 bytes).
+pub const START_0086: Sig = Sig {
+    len: 1005,
+    hash: 0x04d2_dad4_6acf_719d,
+    calls: START_0083_CALLS,
+    imports: &[],
+};
+
+/// [`start_0083`] in `magic_0097` (1,005 bytes; its immediates differ).
+pub const START_0097: Sig = Sig {
+    len: 1005,
+    hash: 0xcaae_e8b0_2958_521b,
+    calls: START_0083_CALLS,
     imports: &[],
 };

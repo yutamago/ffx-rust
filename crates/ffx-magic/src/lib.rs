@@ -128,14 +128,20 @@ pub mod m0072;
 pub mod m0074;
 pub mod m0076;
 pub mod m0078;
+pub mod m0082;
 pub mod m0084;
 pub mod m0090;
 pub mod m0093;
 pub mod m0098;
+pub mod m0146;
+pub mod m0149;
+pub mod m0150;
+pub mod m0152;
 pub mod m0153;
 pub mod m0154;
 pub mod m0159;
 pub mod m0163;
+pub mod m0165;
 pub mod m0166;
 pub mod m0170;
 pub mod m0187;
@@ -1707,6 +1713,35 @@ ports! {
     "m0078 start" => m0078::START_0078, m0078::start_0078;
     "m0078 start 0079" => m0078::START_0079, m0078::start_0079;
     "m0078 start 0081" => m0078::START_0081, m0078::start_0081;
+    "m0078 start 0080" => m0078::START_0080, m0078::start_0080;
+    "m0078 start 0083" => m0078::START_0083, m0078::start_0083;
+    "m0078 start 0086" => m0078::START_0086, m0078::start_0083;
+    "m0078 start 0097" => m0078::START_0097, m0078::start_0083;
+    "m0082 camera step" => m0082::CAMERA_STEP, m0082::camera_step;
+    "m0082 camera parts step" => m0082::CAMERA_PARTS_STEP, m0082::camera_parts_step;
+    "m0070 summon frame (376)" => m0070::SUMMON_FRAME_376, m0070::summon_frame_376;
+    "m0098 frame step" => m0098::FRAME_STEP, m0098::frame_step;
+    "m0098 part callback" => m0098::PART_CALLBACK, m0098::part_callback;
+    "m0098 height follow" => m0098::HEIGHT_FOLLOW, m0098::height_follow;
+    "m0098 part draw" => m0098::PART_DRAW, m0098::part_draw;
+    "m0098 tilt" => m0098::TILT, m0098::tilt;
+    "m0098 pair follow" => m0098::PAIR_FOLLOW, m0098::pair_follow;
+    "m0098 fade frame" => m0098::FADE_FRAME, m0098::fade_frame;
+    "m0098 part begin" => m0098::PART_BEGIN, m0098::part_begin;
+    "m0146 sub-node visit" => m0146::SUB_NODE_VISIT, m0146::sub_node_visit;
+    "m0149 countdown step" => m0149::COUNTDOWN_STEP, m0149::countdown_step;
+    "m0150 start-up" => m0150::START_UP, m0150::start_up;
+    "m0150 load frame" => m0150::LOAD_FRAME, m0150::load_frame;
+    "m0150 model start" => m0150::MODEL_START, m0150::model_start;
+    "m0165 look_offset" => m0165::LOOK_OFFSET, m0165::look_offset;
+    "m0165 look_pair" => m0165::LOOK_PAIR, m0165::look_pair;
+    "m0165 copy_point" => m0165::COPY_POINT, m0165::copy_point;
+    "m0165 sound_fade" => m0165::SOUND_FADE, m0165::sound_fade;
+    "m0165 sprite_task" => m0165::SPRITE_TASK, m0165::sprite_task;
+    "m0165 sprite_point_task" => m0165::SPRITE_POINT_TASK, m0165::sprite_point_task;
+    "m0165 look_follow" => m0165::LOOK_FOLLOW, m0165::look_follow;
+    "m0165 objects_off_task" => m0165::OBJECTS_OFF_TASK, m0165::objects_off_task;
+    "m0165 three_tasks" => m0165::THREE_TASKS, m0165::three_tasks;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2271,6 +2306,12 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ),
     // round 5, own rows
     ("m0009 part object", &m0009::PART_OBJECT),
+    ("m0093 part object", &m0093::PART_OBJECT),
+    ("m0098 motion sequence", &m0098::MOTION_SEQUENCE),
+    ("m0098 camera matrix", &m0098::CAMERA_MATRIX),
+    ("m0146 model nodes (pick)", &m0146::MODEL_NODES_PICK),
+    ("m0146 move start", &m0146::MOVE_START),
+    ("m0152 build (287)", &m0152::BUILD_287),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

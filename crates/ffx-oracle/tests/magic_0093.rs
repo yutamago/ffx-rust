@@ -35,3 +35,63 @@ fn reset_state_12() {
         );
     }
 }
+
+/// 0x10001ca0: a part object with no free pool node, as the first node
+/// of an empty list and appended to a list.
+#[test]
+fn part_object() {
+    let Some(mut t) = twin(N) else { return };
+    let at = t.at(0x1ca0);
+    let w = |t: &magic::Twin, off: u32| t.img.word(at + off);
+    let (obj, owner, table) = (SCRATCH + 0x1000, SCRATCH + 0x300, SCRATCH + 0x400);
+    t.set_u32(w(&t, 0x01), SCRATCH + 0x200);
+    t.set_u32(w(&t, 0x5b), owner);
+    t.set_u32(owner + 0x10, 0x00a1_0010);
+    t.set_u32(table, 0x0f00_0000);
+    t.stub(941, move |m, a| {
+        m.w32(SCRATCH + 0x3000, a[0]);
+        table
+    });
+    t.stub(714, |m, a| {
+        for (i, v) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x3010 + 4 * i, *v);
+        }
+        0x714
+    });
+    let alloc = t.img.rel32_target(at + 0x95);
+    let (free, nodes) = (t.img.word(alloc + 0x04), t.img.word(alloc + 0x27) - 8);
+    let tail = SCRATCH + 0x500;
+    for (case, (n_free, has_tail)) in [(0u16, false), (5, false), (5, true)]
+        .into_iter()
+        .enumerate()
+    {
+        t.write(obj, &[0x3c; 0x130]);
+        t.set_u16(free, n_free);
+        t.write(nodes, &[0x5d; 0x30]);
+        for i in 0..4 {
+            t.set_u32(nodes + 12 * i + 8, if i == 1 { 0x77 } else { 0 });
+        }
+        t.set_u32(w(&t, 0xa0), if has_tail { tail } else { 0 });
+        t.write(tail, &[0x55; 0x10]);
+        let scale = [0.5f32, -2.0, 1.0e3][case];
+        let c = Call {
+            edx: obj,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            ffx_magic::Xmm::f32(9.0),
+            ffx_magic::Xmm::f32(8.0),
+            ffx_magic::Xmm::f32(7.0),
+            ffx_magic::Xmm::f32(scale),
+        ]);
+        t.check(at, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(m0093::part_object(
+                g,
+                img,
+                fr.at,
+                fr.edx,
+                fr.xmm_f32(3).to_bits(),
+            ))
+        });
+    }
+}
