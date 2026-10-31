@@ -26,6 +26,7 @@ pub mod m5a_savedata;
 pub mod m5a_savedata2;
 pub mod m5a_settings;
 pub mod m5a_std;
+pub mod m5a_vfs;
 pub mod m5b_async;
 pub mod m5b_hdd;
 pub mod m5b_misc;

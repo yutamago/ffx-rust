@@ -32,6 +32,7 @@ use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
 use ffx_system::m5a_settings::{self as settings, bridge as st};
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_vfs::bridge as vf;
 
 /// `graphicFontDraw`'s body: no test here calls it, so the recording
 /// stubs are written over it.
@@ -5327,6 +5328,200 @@ fn files_lua_vector_negate_matches_the_original() {
             let what = format!("0x00573b70 #{case}");
             t.check(&what, 0x0057_3b70, Conv::Cdecl, &[lua], |m| {
                 Out::U32(fl::lua_vector_negate(m, lua))
+            });
+        }
+    });
+}
+
+// ---- round 3 (ffx_system::m5a_vfs) ----
+
+/// `FileSys_Exists` and `BigFileStream_openFile` (framed: the hash size,
+/// handle and digest the `CryptoAPI` stubs fill): no stream, archives set
+/// or not, the name found in none, the first or a later one;
+/// `BigFileStream_readVFile` (no request, done or not, the slot's last
+/// use or not) and `0x0061d9c0` (a free inline file, none free with the
+/// allocation and construction failing or not), the callees stubbed.
+#[test]
+#[allow(clippy::too_many_lines)] // four functions, one case setup
+fn vfs_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0401);
+        for case in 0..60 {
+            t.reset();
+            t.g32(0x00cc_9c48, if rng.chance(6) { 0 } else { rng.next() });
+            let handle = t.words(&[rng.next()]);
+            let r = rng.next();
+            let s = t.stub_code_writes(vf::CRYPT_CREATE_HASH_IAT, false, 5, 5, r, 4, handle, 4);
+            let at = t.rebase(vf::CRYPT_CREATE_HASH_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_HASH_DATA_IAT, false, 4, 4, rng.next());
+            let md5 = t.alloc(&(0..16).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let r = rng.next();
+            let s = t.stub_code_writes(vf::CRYPT_GET_HASH_PARAM_IAT, false, 5, 5, r, 2, md5, 16);
+            let at = t.rebase(vf::CRYPT_GET_HASH_PARAM_IAT);
+            t.patch(at, &s.to_le_bytes());
+            t.stub_import(vf::CRYPT_DESTROY_HASH_IAT, false, 1, 1, rng.next());
+            let hits: Vec<u32> = (0..5)
+                .map(|_| {
+                    if rng.chance(3) {
+                        rng.next() | 1
+                    } else {
+                        rng.next() & !0xff
+                    }
+                })
+                .collect();
+            stub_seq(t, vf::VBF_CONTAINS, true, 1, 1, &hits);
+            let files: Vec<u32> = (0..5)
+                .map(|_| if rng.chance(2) { 0 } else { rng.next() })
+                .collect();
+            stub_seq(t, vf::GET_NEW_VFILE, true, 1, 1, &files);
+            let mut w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            w[0xf] = rng.below(4);
+            for k in 0..5 {
+                w[4 + k] = if rng.chance(4) { 0 } else { rng.next() };
+            }
+            let this = t.words(&w);
+            let name: Vec<u8> = (0..rng.below(12) + 4)
+                .map(|_| b'a' + rng.below(26) as u8)
+                .chain([0])
+                .collect();
+            let name = t.alloc(&name);
+            t.skip = 4;
+            let what = format!("FileSys_Exists #{case}");
+            t.check_framed(
+                &what,
+                0x0061_be40,
+                Conv::Thiscall(this),
+                &[name],
+                vf::DIGEST_FRAME,
+                |m, ebp| Out::U8(vf::exists(m, ebp, this, name)),
+            );
+            let what = format!("BigFileStream_openFile #{case}");
+            t.check_framed(
+                &what,
+                0x0061_bf10,
+                Conv::Thiscall(this),
+                &[name],
+                vf::DIGEST_FRAME,
+                |m, ebp| Out::U32(vf::open_file(m, ebp, this, name)),
+            );
+            t.skip = 0;
+            // readVFile
+            t.reset();
+            let mut sw: Vec<u32> = (0..0x20).map(|_| rng.next()).collect();
+            sw[0x14] = if rng.chance(2) { 5 } else { rng.below(8) };
+            sw[9] = 1 + rng.below(2);
+            let slot = t.words(&sw);
+            t.stubs(&[
+                (
+                    vf::NEW_READ_REQUEST,
+                    true,
+                    6,
+                    6,
+                    if rng.chance(5) { 0 } else { slot },
+                ),
+                (vf::TASK_READ, false, 3, 3, rng.next()),
+                (vf::TASK_UNCOMPRESS, false, 4, 4, rng.next()),
+                (vf::SLOT_RESET, true, 0, 0, rng.next()),
+            ]);
+            t.stub_import(vf::ENTER_CS_IAT, false, 1, 1, rng.next());
+            t.stub_import(vf::LEAVE_CS_IAT, false, 1, 1, rng.next());
+            t.stub_import(vf::RELEASE_SEMAPHORE_IAT, false, 3, 3, rng.next());
+            let a: Vec<u32> = (0..6).map(|_| rng.next()).collect();
+            let what = format!("BigFileStream_readVFile #{case}");
+            t.check(&what, 0x0061_bfe0, Conv::Thiscall(this), &a, |m| {
+                Out::U32(vf::read_vfile(m, this, a[0], a[1], a[2], a[3], a[4], a[5]))
+            });
+            // 0x0061d9c0
+            let mut inline = vec![0u8; 15 * 0x20];
+            let used = if rng.chance(3) { 15 } else { rng.below(15) };
+            for i in 0..15 {
+                inline[i * 0x20] = if i < used as usize || rng.chance(3) {
+                    1 + rng.below(255) as u8
+                } else {
+                    0
+                };
+            }
+            let inline = t.alloc(&inline);
+            let mut hw: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            hw[0x17] = inline;
+            let handle_obj = t.words(&hw);
+            let p = if rng.chance(4) { 0 } else { t.zeros(0x20) };
+            let made = if rng.chance(4) { 0 } else { p };
+            t.stubs(&[
+                (vf::VFILE_ASSIGN, true, 1, 1, rng.next()),
+                (vf::NEW_NOTHROW, false, 2, 0, p),
+                (vf::VFILE_CTOR, true, 0, 0, made),
+                (vf::VBF_STREAM_OPEN, true, 2, 2, rng.next()),
+            ]);
+            let digest = rng.next();
+            let what = format!("0x0061d9c0 #{case} used {used}");
+            t.check(
+                &what,
+                0x0061_d9c0,
+                Conv::Thiscall(handle_obj),
+                &[digest],
+                |m| Out::U32(vf::new_vfile(m, handle_obj, digest)),
+            );
+        }
+    });
+}
+
+/// `BigFileStream_fileTaskRead` (head, body and tail records flagged or
+/// not; bodies of 1..4 blocks; packed sizes of 0 and others) and the slot
+/// constructor `0x0061add0`, the CRT and allocator stubbed.
+#[test]
+fn vfs_task_read_and_slot_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0402);
+        for case in 0..80 {
+            t.reset();
+            t.stub_import(vf::FSEEKI64_IAT, false, 4, 0, rng.next());
+            t.stub_import(vf::FREAD_IAT, false, 4, 0, rng.next());
+            let sizes: Vec<u8> = (0..0x20)
+                .flat_map(|_| {
+                    let n = if rng.chance(3) {
+                        0
+                    } else {
+                        rng.below(0x10000) as u16
+                    };
+                    n.to_le_bytes()
+                })
+                .collect();
+            let sizes = t.alloc(&sizes);
+            let info = t.zeros(0x40);
+            t.w32(info + 0x38, sizes);
+            let mut recs = Vec::new();
+            for _ in 0..3 {
+                let flag = u32::from(rng.chance(2));
+                recs.push(t.words(&[flag, rng.next(), rng.below(0x10000), rng.next()]));
+            }
+            let mut sw: Vec<u32> = (0..0x18).map(|_| rng.next()).collect();
+            sw[1] = rng.below(8);
+            sw[2] = recs[0];
+            sw[3] = recs[1];
+            sw[4] = recs[2];
+            sw[0xe] = rng.below(5) * 0x10000 + rng.below(0x10000);
+            sw[0x10] = info;
+            let slot = t.words(&sw);
+            let what = format!("fileTaskRead #{case} len {:#x}", sw[0xe]);
+            let (a, c) = (rng.next(), rng.next());
+            t.check(&what, 0x0061_b8d0, Conv::Stdcall, &[a, slot, c], |m| {
+                vf::task_read(m, slot);
+                Out::None
+            });
+            // the slot constructor
+            t.reset();
+            let rec = t.words(&[rng.next() | 1, rng.next(), 0, 0]);
+            t.stubs(&[
+                (vf::OPERATOR_NEW, false, 1, 0, rec),
+                (vf::NEW_ARRAY, false, 1, 0, rng.next()),
+                (vf::OPERATOR_DELETE, false, 1, 0, rng.next()),
+            ]);
+            let this = t.words(&(0..0x18).map(|_| rng.next()).collect::<Vec<_>>());
+            let what = format!("0x0061add0 #{case}");
+            t.check(&what, 0x0061_add0, Conv::Thiscall(this), &[], |m| {
+                Out::U32(vf::slot_ctor(m, this))
             });
         }
     });

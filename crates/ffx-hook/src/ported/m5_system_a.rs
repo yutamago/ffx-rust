@@ -17,6 +17,7 @@ use ffx_system::m5a_savedata::{self as sv, bridge as sa};
 use ffx_system::m5a_savedata2::{self as s2, bridge as s2b};
 use ffx_system::m5a_settings::bridge as st;
 use ffx_system::m5a_std::{self as sd, bridge as sb};
+use ffx_system::m5a_vfs::bridge as vf;
 
 ported! {
     // ---- <system_error>, <ios> and the string streams ----
@@ -1157,6 +1158,34 @@ ported! {
     /// `FileSys_NewReadRequest(this; file, length, req, lo, hi, info)`.
     FileSys_NewReadRequest @ 0x0061_b7e0 => extern "thiscall" fn new_read_request(this: u32, file: u32, length: u32, req: u32, lo: u32, hi: u32, info: u32) -> u32 {
         fl::new_read_request(&mut mem(), this, file, length, req, lo, hi, info)
+    }
+
+    // ---- round 3: the archive name lookups, the synchronous read, the VFile pool ----
+    /// `FileSys_Exists(this; name)`: frame `ebp - 0x1c`.
+    FileSys_Exists @ 0x0061_be40 => extern "thiscall" fn file_sys_exists(this: u32, name: u32) -> u8 {
+        let mut f = StackFrame::<{ (vf::DIGEST_FRAME / 4) as usize }>::new();
+        vf::exists(&mut mem(), f.at() + vf::DIGEST_FRAME, this, name)
+    }
+    /// `BigFileStream_openFile(this; name)`: frame `ebp - 0x1c`.
+    BigFileStream_openFile @ 0x0061_bf10 => extern "thiscall" fn big_file_open(this: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<{ (vf::DIGEST_FRAME / 4) as usize }>::new();
+        vf::open_file(&mut mem(), f.at() + vf::DIGEST_FRAME, this, name)
+    }
+    /// `BigFileStream_readVFile(this; file, length, req, lo, hi, info)`.
+    BigFileStream_readVFile @ 0x0061_bfe0 => extern "thiscall" fn read_vfile(this: u32, file: u32, length: u32, req: u32, lo: u32, hi: u32, info: u32) -> u32 {
+        vf::read_vfile(&mut mem(), this, file, length, req, lo, hi, info)
+    }
+    /// `0x0061d9c0(this; digest)`.
+    BigFileHandle_newVFile_0061d9c0 @ 0x0061_d9c0 => extern "thiscall" fn new_vfile(this: u32, digest: u32) -> u32 {
+        vf::new_vfile(&mut mem(), this, digest)
+    }
+    /// `BigFileStream_fileTaskRead(_, slot, _)` (stdcall).
+    BigFileStream_fileTaskRead @ 0x0061_b8d0 => extern "stdcall" fn task_read(_a: u32, slot: u32, _c: u32) {
+        vf::task_read(&mut mem(), slot);
+    }
+    /// `0x0061add0(this)`: a read slot's constructor.
+    BigFileStream_slotCtor_0061add0 @ 0x0061_add0 => extern "thiscall" fn read_slot_ctor(this: u32) -> u32 {
+        vf::slot_ctor(&mut mem(), this)
     }
 }
 
