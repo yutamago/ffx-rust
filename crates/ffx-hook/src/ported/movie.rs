@@ -146,6 +146,41 @@ fn create_segment(src: mkv::BoxedSource, pos: i64, out: u32) -> i64 {
 #[cfg(not(ffx_host))]
 fn free_segment_block(_: Option<u32>) {}
 
+/// `vpx_codec_get_frame` and `vorbis_synthesis_pcmout`: the decoders'
+/// buffers are the game's memory in the hooked game; in `ffx-host` they
+/// are copied into blocks from the game's `malloc` (the CRT import
+/// `FFX.exe` calls), which the game reads.
+#[cfg(not(ffx_host))]
+fn get_frame(ctx: u32, iter: u32) -> u32 {
+    api::vpx_get_frame(&mut mem(), ctx, iter)
+}
+
+#[cfg(not(ffx_host))]
+fn pcmout(v: u32, pcm: u32) -> u32 {
+    api::vorbis_pcmout(&mut mem(), v, pcm)
+}
+
+#[cfg(ffx_host)]
+fn game_malloc(bytes: u32) -> u32 {
+    // FFX.exe's MSVCR110!malloc import slot (ffx_movie::mkv's IMP_MALLOC)
+    let f = mem().read::<u32>(0x00b0_c468);
+    if f == 0 {
+        0
+    } else {
+        super::call_cdecl(f, &[bytes])
+    }
+}
+
+#[cfg(ffx_host)]
+fn get_frame(ctx: u32, iter: u32) -> u32 {
+    api::vpx_get_frame_in_game(&mut mem(), ctx, iter, &mut game_malloc)
+}
+
+#[cfg(ffx_host)]
+fn pcmout(v: u32, pcm: u32) -> u32 {
+    api::vorbis_pcmout_in_game(&mut mem(), v, pcm, &mut game_malloc)
+}
+
 #[cfg(ffx_host)]
 fn free_segment_block(block: Option<u32>) {
     let m = mem();
@@ -235,7 +270,7 @@ ported! {
     }
     /// `vpx_codec_get_frame(ctx, iter)`.
     vpx_codec_get_frame @ 0x0040_96e0 => extern "C" fn vpx_codec_get_frame(ctx: u32, iter: u32) -> u32 {
-        api::vpx_get_frame(&mut mem(), ctx, iter)
+        get_frame(ctx, iter)
     }
     /// `vpx_codec_destroy(ctx)`.
     vpx_codec_destroy @ 0x0040_9370 => extern "C" fn vpx_codec_destroy(ctx: u32) -> u32 {
@@ -353,7 +388,7 @@ ported! {
     }
     /// `vorbis_synthesis_pcmout(v, pcm)`.
     vorbis_synthesis_pcmout @ 0x00a9_0a10 => extern "C" fn vorbis_synthesis_pcmout(v: u32, pcm: u32) -> u32 {
-        api::vorbis_pcmout(&mut mem(), v, pcm)
+        pcmout(v, pcm)
     }
     /// `vorbis_synthesis_read(v, n)`.
     vorbis_synthesis_read @ 0x00a9_09e0 => extern "C" fn vorbis_synthesis_read(v: u32, n: u32) -> u32 {

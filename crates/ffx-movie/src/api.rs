@@ -93,6 +93,9 @@ struct Vpx {
     user_priv: u32,
     /// The `vpx_image_t` handed out (0x5c bytes).
     img: Box<[u32; 23]>,
+    /// The game block [`vpx_get_frame_in_game`] copies the image and its
+    /// planes into: address and size.
+    game: Option<(u32, u32)>,
 }
 
 static VPX: Mutex<Option<HashMap<u32, Vpx>>> = Mutex::new(None);
@@ -128,6 +131,7 @@ pub fn vpx_dec_init(m: &mut impl Mem, ctx: u32, iface: u32, cfg: u32, flags: u32
                 shown: None,
                 user_priv: 0,
                 img: Box::new([0; 23]),
+                game: None,
             },
         );
     });
@@ -225,6 +229,76 @@ pub fn vpx_get_frame(m: &mut impl Mem, ctx: u32, iter: u32) -> u32 {
     }
 }
 
+/// [`vpx_get_frame`] for a host whose game memory is not its own
+/// (`ffx-host`'s arena): the image and its planes are copied into a block
+/// of game memory, which `alloc(bytes)` gives (the game's allocator; kept
+/// per decoder, a new one when a frame needs more), and the image's
+/// address there is handed out.
+pub fn vpx_get_frame_in_game(
+    m: &mut impl Mem,
+    ctx: u32,
+    iter: u32,
+    alloc: &mut dyn FnMut(u32) -> u32,
+) -> u32 {
+    if iter == 0 || m.read::<u32>(iter) != 0 {
+        return 0;
+    }
+    let img = with_vpx(|t| {
+        let v = t.get_mut(&ctx)?;
+        let f = v.pending.take()?;
+        let (w, h) = (u32::try_from(f.width).ok()?, u32::try_from(f.height).ok()?);
+        let sizes: Vec<u32> = f
+            .planes
+            .iter()
+            .map(|p| u32::try_from(p.len()).unwrap_or(0).next_multiple_of(16))
+            .collect();
+        let need = 0x60 + sizes.iter().sum::<u32>();
+        let block = match v.game {
+            Some((at, size)) if size >= need => at,
+            _ => {
+                let at = alloc(need);
+                if at == 0 {
+                    return None;
+                }
+                v.game = Some((at, need));
+                at
+            }
+        };
+        let mut img = [0u32; 23];
+        img[0] = VPX_IMG_FMT_I420;
+        img[2] = w;
+        img[3] = h;
+        img[4] = 8; // bit_depth
+        img[5] = w; // d_w
+        img[6] = h; // d_h
+        img[7] = 1; // x_chroma_shift
+        img[8] = 1; // y_chroma_shift
+        let mut at = block + 0x60;
+        for (k, p) in f.planes.iter().enumerate() {
+            m.write_bytes(at, p);
+            img[9 + k] = at;
+            at += sizes[k];
+        }
+        img[13] = w;
+        img[14] = w.div_ceil(2);
+        img[15] = w.div_ceil(2);
+        img[17] = 12; // bps
+        img[18] = v.user_priv;
+        for (i, word) in (0u32..).zip(img) {
+            m.write::<u32>(block + 4 * i, word);
+        }
+        v.shown = Some(f);
+        Some(block)
+    });
+    match img {
+        Some(a) => {
+            m.write::<u32>(iter, a);
+            a
+        }
+        None => 0,
+    }
+}
+
 /// `vpx_codec_destroy(ctx)` (`0x00409370`): drops the decoder; 0, or
 /// `VPX_CODEC_INVALID_PARAM` for an unknown context.
 pub fn vpx_destroy(m: &mut impl Mem, ctx: u32) -> u32 {
@@ -241,6 +315,8 @@ struct Vorbis {
     dec: vorbis::Decoder,
     /// `vorbis_dsp_state.pcmret`: the channel pointers `pcmout` hands out.
     pcmret: Vec<u32>,
+    /// The game block [`vorbis_pcmout_in_game`] copies them into.
+    game: Option<(u32, u32)>,
 }
 
 /// The decoders by their `vorbis_info`, and which `vorbis_info` a
@@ -273,6 +349,7 @@ pub fn vorbis_info_init(m: &mut impl Mem, vi: u32) {
             Vorbis {
                 dec: vorbis::Decoder::new(),
                 pcmret: Vec::new(),
+                game: None,
             },
         );
     });
@@ -422,6 +499,62 @@ pub fn vorbis_pcmout(m: &mut impl Mem, v: u32, pcm: u32) -> u32 {
             d.pcmret.push(addr(d.dec.channel(c).as_ptr()));
         }
         Some((u32::try_from(n).unwrap_or(0), addr(d.pcmret.as_ptr())))
+    });
+    let Some((n, ret)) = r else {
+        return 0;
+    };
+    if n != 0 && pcm != 0 {
+        m.write::<u32>(pcm, ret);
+    }
+    n
+}
+
+/// [`vorbis_pcmout`] for a host whose game memory is not its own: the
+/// channel pointers and the samples they point to are copied into a block
+/// of game memory from `alloc(bytes)` (kept per decoder, a new one when
+/// more is needed).
+pub fn vorbis_pcmout_in_game(
+    m: &mut impl Mem,
+    v: u32,
+    pcm: u32,
+    alloc: &mut dyn FnMut(u32) -> u32,
+) -> u32 {
+    let r = with_vorbis(|t| {
+        let d = t.dsp.get(&v).and_then(|vi| t.by_info.get_mut(vi))?;
+        let n = d.dec.pcmout();
+        if n == 0 {
+            return Some((0, 0));
+        }
+        if pcm == 0 {
+            return Some((u32::try_from(n).unwrap_or(0), 0));
+        }
+        let ch = usize::try_from(d.dec.channels).unwrap_or(0);
+        let ptrs = u32::try_from(4 * ch).unwrap_or(0).next_multiple_of(16);
+        let per = u32::try_from(4 * n).unwrap_or(0).next_multiple_of(16);
+        let need = ptrs + per * u32::try_from(ch).unwrap_or(0);
+        let block = match d.game {
+            Some((at, size)) if size >= need => at,
+            _ => {
+                let at = alloc(need);
+                if at == 0 {
+                    return None;
+                }
+                d.game = Some((at, need));
+                at
+            }
+        };
+        for (c, k) in (0..ch).zip(0u32..) {
+            let at = block + ptrs + per * k;
+            let bytes: Vec<u8> = d
+                .dec
+                .channel(c)
+                .iter()
+                .flat_map(|x| x.to_le_bytes())
+                .collect();
+            m.write_bytes(at, &bytes);
+            m.write::<u32>(block + 4 * k, at);
+        }
+        Some((u32::try_from(n).unwrap_or(0), block))
     });
     let Some((n, ret)) = r else {
         return 0;
