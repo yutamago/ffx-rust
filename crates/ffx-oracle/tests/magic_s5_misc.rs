@@ -3351,3 +3351,38 @@ fn thrown_effects() {
         });
     }
 }
+
+#[test]
+fn spin_jump_lights() {
+    let Some(mut t) = twin(168) else { return };
+    let f = t.at(0x3e90);
+    rec_mem(&mut t, 235, 1, 16, Some(0));
+    for s in [277u32, 15, 16, 17] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, a| f64::from(s) / 64.0 + f64::from(a[0] & 3));
+    }
+    for s in [330u32, 328, 329] {
+        rec_mem(&mut t, s, 3, 16, Some(0));
+    }
+    for s in [314u32, 404] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, a| f64::from(f32::from_bits(a[0])) * 0.375);
+    }
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 371, 2, 0, None);
+    let b = SCRATCH + 0x4000;
+    t.set_u32(op(&t, f, 0x13), b);
+    t.set_u32(op(&t, f, 0x74), 0x0cc0_0003);
+    for (k, (count, yaw)) in [(5u32, 0.5f32), (1, 3.1), (0x29, -3.1), (2, f32::NAN)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(b + 0x7f0, &varied(0x140, k));
+        t.write(b + 0x9c0, &varied(0x100, k + 1));
+        t.write(b + 0xa00, &varied(0xc0, k + 2));
+        t.set_u32(b + 0xaa4, yaw.to_bits());
+        t.set_u32(b + 0x3154, count);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

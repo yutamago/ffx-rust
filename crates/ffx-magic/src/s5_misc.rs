@@ -7194,3 +7194,155 @@ pub const THROWN_EFFECT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A spinning model's frame with a light that jumps every 40 frames
+/// (cdecl, no arguments; a /GS frame). With `B = *G_B`: the yaw `B+0xaa4
+/// += K` wrapped once; the matrix `M = B+0x9c0` a unit one (slot 235),
+/// its diagonal `K2 *` the data scale of `*G_CH` (slot 277) times the
+/// character's own scales (slots 15, 16, 17; ST0 each), turned about z, x
+/// and y by `B+0xaa8`, `B+0xaa0`, `B+0xaa4` (slots 330, 328, 329);
+/// `B+0x7f4`, `B+0x924` and `B+0xab4` go up by `K3`. When the counter
+/// `B+0x3154` runs out the light's point is set again: `(0, 0, frnd(10) +
+/// K4)` (slot 404) turned by a random yaw (slot 314 `(pi)`, slots 235,
+/// 329, 229) plus `B+0xab0..` (`y`: `B+0xab4 + K5`, `w` 20) into
+/// `B+0xa40..`, and the counter is 40 again. Then with `t = count / K6`
+/// and `u = K7 - t`, `B+0xa44 = (y - K8) u + (y + K8) t` and the three
+/// floats `B+0xa00..+0xa08 = 0 u u + K9 u t + 0 t t`, and the focus
+/// rolled twice (slot 371 `(0, r)`, `(1, r)`, `r = rand % 0x8000`).
+/// Returns slot 371's `eax`. Each call sees the words the earlier ones
+/// left on the stack.
+///
+/// `magic_0168` 0x10003e90 (917 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn spin_jump_light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let b = g.read::<u32>(w(0x13));
+    let bf = |g: &G, o: u32| g.read::<f32>(b.wrapping_add(o));
+    let yaw = wrap_once(
+        g,
+        img,
+        f,
+        add(bf(g, 0xaa4), k(g, 0x24)),
+        [0x2b, 0x35, 0x3f, 0x4c],
+    );
+    let m = b.wrapping_add(0x9c0);
+    let mut s = Pushes::default();
+    s.push(m);
+    g.write::<f32>(b.wrapping_add(0xaa4), yaw);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x51), 235), 0);
+    s.push(g.read::<u32>(w(0x74)));
+    // call width: 12 (the most `Pushes::words` holds)
+    let sc = mul(
+        st0_f32(s.call(g, slot_target(g, w(0x6e), 277), 0)),
+        k(g, 0x8c),
+    );
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m + o, sc);
+    }
+    let ch = g.read::<u32>(w(0xa5));
+    for (t, slot, o) in [(0x91u32, 15u32, 0u32), (0xbc, 16, 0x14), (0xd8, 17, 0x28)] {
+        s.push(ch);
+        // call width: 12 (the most `Pushes::words` holds)
+        let r = st0_f32(s.call(g, slot_target(g, w(t), slot), 0));
+        let x = mul(g.read::<f32>(m + o), r);
+        g.write::<f32>(m + o, x);
+    }
+    s.pop(4);
+    for (t, slot, a) in [
+        (0xf5u32, 330u32, 0xaa8u32),
+        (0x121, 328, 0xaa0),
+        (0x140, 329, 0xaa4),
+    ] {
+        s.set_top(g.read::<u32>(b.wrapping_add(a)));
+        s.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t), slot), 0);
+        s.pop(2);
+    }
+    let c = k(g, 0x162);
+    for o in [0x7f4u32, 0x924, 0xab4] {
+        let x = add(bf(g, o), c);
+        g.write::<f32>(b.wrapping_add(o), x);
+    }
+    let n = g.read::<u32>(b.wrapping_add(0x3154)).wrapping_sub(1);
+    g.write::<u32>(b.wrapping_add(0x3154), n);
+    let one = if n == 0 {
+        let (mm, v) = (at(0x54), at(0x14));
+        let mut s = Pushes::default();
+        s.push(mm);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x1ba), 235), 0);
+        s.set_top(0x4049_0fdb);
+        // call width: 12 (the most `Pushes::words` holds)
+        let r = st0_f32(s.call(g, slot_target(g, w(0x1c7), 314), 0));
+        s.set_top(r.to_bits());
+        s.push_all(&[mm, mm]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x1ed), 329), 0);
+        s.pop(2);
+        g.write::<u32>(v, 0);
+        g.write::<u32>(v + 4, 0);
+        s.set_top(0x4120_0000);
+        // call width: 12 (the most `Pushes::words` holds)
+        let r = st0_f32(s.call(g, slot_target(g, w(0x1fa), 404), 0));
+        let z = add(r, k(g, 0x22a));
+        s.push_all(&[v, mm, v]);
+        g.write::<f32>(v + 8, z);
+        g.write::<u32>(v + 0xc, 0x3f80_0000);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x23b), 229), 0);
+        let x = add(bf(g, 0xab0), g.read::<f32>(v));
+        g.write::<f32>(b.wrapping_add(0xa40), x);
+        let y = add(bf(g, 0xab4), k(g, 0x282));
+        g.write::<f32>(b.wrapping_add(0xa44), y);
+        let z = add(bf(g, 0xab8), g.read::<f32>(v + 8));
+        g.write::<u32>(b.wrapping_add(0xa4c), 0x41a0_0000);
+        g.write::<f32>(b.wrapping_add(0xa48), z);
+        g.write::<u32>(b.wrapping_add(0x3154), 0x28);
+        k(g, 0x264)
+    } else {
+        k(g, 0x16a)
+    };
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let t = div(g.read::<i32>(b.wrapping_add(0x3154)) as f32, k(g, 0x2ce));
+    let y = bf(g, 0xab4);
+    let lo = sub(y, k(g, 0x2d9));
+    let hi = add(y, k(g, 0x2e1));
+    let u = sub(one, t);
+    g.write::<f32>(b.wrapping_add(0xa44), add(mul(lo, u), mul(hi, t)));
+    let v = add(
+        add(mul(mul(u, u), 0.0), mul(mul(u, t), k(g, 0x30e))),
+        mul(mul(t, t), 0.0),
+    );
+    for o in [0xa08u32, 0xa04, 0xa00] {
+        g.write::<f32>(b.wrapping_add(o), v);
+    }
+    let mut s = Pushes::default();
+    let mut eax = 0;
+    for i in [0u32, 1] {
+        let r = (g.rand().cast_signed() % 0x8000).cast_unsigned();
+        s.push_all(&[r, i]);
+        // call width: 12 (the most `Pushes::words` holds)
+        eax = s
+            .call(
+                g,
+                slot_target(g, w(if i == 0 { 0x354 } else { 0x374 }), 371),
+                0,
+            )
+            .eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`spin_jump_light`] (the `rel32`: `__security_check_cookie`).
+pub const SPIN_JUMP_LIGHT: Sig = Sig {
+    len: 917,
+    hash: 0xf25f_96c7_faaf_4e60,
+    calls: &[(0x38d, Callee::Any)],
+    imports: &[(0x2eb, "rand")],
+};
