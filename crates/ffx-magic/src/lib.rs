@@ -88,6 +88,7 @@ pub mod o4_rcef3;
 pub mod o4_rcef4;
 pub mod o4_setup;
 pub mod o4_single;
+pub mod o4_single3;
 pub mod o4_small;
 pub mod o4_state;
 pub mod o4_steps;
@@ -1365,6 +1366,13 @@ ports! {
     "o4 rcef4 free_three 0185@1500" => o4_rcef4::FREE_THREE_0185_1500, o4_rcef4::free_three;
     "o4 rcef4 countdown_then_done 0163@1cb0" => o4_rcef4::COUNTDOWN_THEN_DONE_0163_1CB0, o4_rcef4::countdown_then_done;
     "o4 rcef4 remove_and_release 0353@2e00" => o4_rcef4::REMOVE_AND_RELEASE_0353_2E00, o4_rcef4::remove_and_release;
+    "o4 single3 slot_seq_call_keep 0194@11c0" => o4_single3::SLOT_SEQ_CALL_KEEP_0194_11C0, o4_single3::slot_seq_call_keep;
+    "o4 single3 place_from_slot 0303@14d0" => o4_single3::PLACE_FROM_SLOT_0303_14D0, o4_single3::place_from_slot;
+    "o4 single3 task_node_tail 0379@6910" => o4_single3::TASK_NODE_TAIL_0379_6910, o4_single3::task_node_tail;
+    "o4 single3 model_flag_step 0263@6be0" => o4_single3::MODEL_FLAG_STEP_0263_6BE0, o4_single3::model_flag_step;
+    "o4 single3 drop_current 0263@6b30" => o4_single3::DROP_CURRENT_0263_6B30, o4_single3::drop_current;
+    "o4 single3 object_task_head 0577@b130" => o4_single3::OBJECT_TASK_HEAD_0577_B130, o4_single3::object_task_head;
+    "o4 single3 model_node_tail 0577@8d70" => o4_single3::MODEL_NODE_TAIL_0577_8D70, o4_single3::model_node_tail;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1754,6 +1762,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 misc vector_set 0343@69e0",
         &o4_misc::VECTOR_SET_0343_69E0,
+    ),
+    (
+        "o4 single3 fade_setup 0577@9170",
+        &o4_single3::FADE_SETUP_0577_9170,
+    ),
+    (
+        "o4 single3 head_node 0577@ac20",
+        &o4_single3::HEAD_NODE_0577_AC20,
     ),
 ];
 
