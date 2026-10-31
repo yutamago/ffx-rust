@@ -52,7 +52,18 @@ for n in "${saves[@]}"; do
         echo "-- $n: paused ($(compgen -G "$pause*" | tr '\n' ' '))"
         while compgen -G "$pause*" > /dev/null; do sleep 10; done
     fi
-    if [[ "${DEVSAVE_ALONE:-1}" == 1 ]]; then
+    # a machine-room check (DEVSAVE_ROOM, default ~/ffx-work/pc2-room.sh,
+    # PC2's: GPU, memory, CPU, exclusive turns) replaces the one-game rule
+    # where it exists: start only when it exits 0
+    room="${DEVSAVE_ROOM:-$HOME/ffx-work/pc2-room.sh}"
+    if [ -x "$room" ] || [ -f "$room" ]; then
+        waited=0
+        until bash "$room" > /dev/null 2>&1; do
+            [ $waited = 0 ] && echo "-- $n: waiting for room ($room)"
+            waited=1
+            sleep 15
+        done
+    elif [[ "${DEVSAVE_ALONE:-1}" == 1 ]]; then
         waited=0
         while [ "$(others)" -gt 0 ]; do
             [ $waited = 0 ] && echo "-- $n: waiting for another game to end"
