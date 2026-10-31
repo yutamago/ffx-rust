@@ -3549,3 +3549,110 @@ fn bursts_tasks() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn parts_vertices_moved() {
+    let Some(mut t) = twin(434) else { return };
+    let f = t.at(0x37d0);
+    t.stub(544, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, (a[0] as f32 + 0.25 * i as f32).to_bits());
+        }
+        0x544
+    });
+    rec_mem(&mut t, 553, 5, 4, None);
+    t.stub(545, |_, _| SCRATCH + 0x4f00);
+    t.write(SCRATCH + 0x4f00, &varied(0x40, 1));
+    rec_mem(&mut t, 230, 2, 16, None);
+    t.stub(230, |m, a| {
+        for i in 0..16 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v);
+        }
+        0x230
+    });
+    rec_mem(&mut t, 941, 1, 0, None);
+    t.stub(941, |_, a| {
+        if a[0] & 0x1000 != 0 {
+            SCRATCH + 0x5000 + (a[0] & 0xf) * 0x40
+        } else {
+            SCRATCH + 0x6000 + (a[0] & 0xf) * 0x400
+        }
+    });
+    rec_mem(&mut t, 231, 3, 16, Some(0));
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 229, 3, 4, None);
+    t.stub(229, move |m, a| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        for i in 0..4 {
+            let v = m.r32(a[2] + 4 * i);
+            let x = f32::from_bits(v & 0x3fff_ffff) * if k % 3 == 0 { -1.0 } else { 1.0 };
+            m.w32(a[0] + 4 * i, (x + k as f32).to_bits());
+        }
+        0x229
+    });
+    let a = SCRATCH + 0x300;
+    let model = SCRATCH + 0x3f0;
+    let (out, lo, hi, col) = (
+        SCRATCH + 0x8000,
+        SCRATCH + 0x7a0,
+        SCRATCH + 0x7b0,
+        SCRATCH + 0xa000,
+    );
+    let entry = STACK_TOP - 0x100;
+    for (k, (parts, id)) in [(2u16, 0x10fbu16), (1, 0x1234), (3, 0x1100), (0, 0x10fc)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        // the frame words the colours read: 0 on both sides
+        t.write(entry - 0x160, &[0; 0x30]);
+        t.write(SCRATCH + 0x5000, &varied(0x400, k));
+        t.write(a, &varied(0x60, k));
+        t.set_u32(a, model);
+        t.set_u16(model, id);
+        t.set_u16(a + 4, parts);
+        for j in 0..u32::from(parts) {
+            let p = a + 0x10 + 16 * j;
+            t.set_u32(p, j + k);
+            t.set_u32(p + 4, 0x1000 + j);
+            let d = SCRATCH + 0x6000 + ((j + k) & 0xf) * 0x400;
+            t.write(d, &varied(0x400, j + 2 * k));
+            let (nv, ns) = (
+                [3i16, 0, 2, 1][(j + k) as usize % 4],
+                [2i16, 1, 0, 3][(j + k) as usize % 4],
+            );
+            t.set_u32(d + 4, 0x40);
+            t.set_u32(d + 8, 0x300);
+            t.set_u16(d + 0x10, ns as u16);
+            t.set_u16(d + 0x12, nv as u16);
+            // the strips: kind 0x10 with 2 triples, another kind with 1
+            let mut e = d + 0x40;
+            for (i, (kind, n)) in [(0x10u8, 2i16), (0x7, 1), (0x10, 0)]
+                .into_iter()
+                .enumerate()
+            {
+                if i as i16 >= ns {
+                    break;
+                }
+                t.set_u8(e + 1, kind);
+                t.set_u16(e + 2, n as u16);
+                e += 0x20 + if kind == 0x10 { 0x1c * n as u32 } else { 0 };
+            }
+        }
+        t.write(col, &varied(0x100, k));
+        let c = Call {
+            ecx: a,
+            edx: SCRATCH + 0x4800,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            c,
+            &[out, lo, hi, 0x5555, col],
+            Eax::Checked,
+            |g, img, fr| Ret::eax(s5_misc::parts_vertices(g, img, fr)),
+        );
+    }
+}

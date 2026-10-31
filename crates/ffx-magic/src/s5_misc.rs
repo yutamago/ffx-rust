@@ -7663,3 +7663,125 @@ pub const BURSTS_TASK: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A model's parts moved into one vertex buffer (internal: `ecx` = the
+/// model `A`, `edx` = a matrix `W`, the stack `(out, lo, hi, _, colours)`;
+/// a /GS frame): the camera scaled ([`scaled_camera`] into a local), slot
+/// 545's matrix copied (slot 230); `lo = (20000, 20000, 20000)`, `hi =
+/// -lo`. For each of the u16 `A+4` parts (`P = A + 0x10 + 16 j`): its
+/// data `D` (slot 941 `(P[0])`), its matrix (slot 941 `(P[1])`, copied
+/// with slot 230) with the translation scaled by `K` unless `*A[0]` is a
+/// model 0x10fb..0x10fd or 0x1100, times `W` (slot 231); each of the
+/// i16 `D+0x12` vertices `D + D[2] + 16 k` transformed into `out` (slot
+/// 229; `out` moves on) and taken into the box `lo`..`hi` (a smaller /
+/// greater coordinate replaces it; unordered keeps it); then the
+/// `D+0x10` strips from `D + D[1]` (each `0x20 + 0x1c n` bytes, `n` the
+/// i16 `+2`): a strip of kind `0x10` (byte `+1`) has its `n` index
+/// triples raised by the vertices so far and `n` colour triples written
+/// (three bytes 0 and 0x80 each, the first three from frame words the
+/// original never writes, read as 0). Returns the vertex count.
+///
+/// `magic_0434` 0x100037d0 (957 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's loops, step by step
+pub fn parts_vertices<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let (a, wm) = (fr.ecx, fr.edx);
+    let (mut out, lo, hi, mut col) = (fr.arg(g, 0), fr.arg(g, 1), fr.arg(g, 2), fr.arg(g, 4));
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    // push ebp; sub esp, 0x148; three pushes and the call
+    scaled_camera(
+        g,
+        img,
+        img.rel32_target(f + 0x4d),
+        at(0x104),
+        fr.esp.wrapping_sub(0x15c),
+    );
+    let r = slot_call(g, img, f, (0x52, 545), &[]).eax;
+    slot_call(g, img, f, (0x67, 230), &[at(0xc4), r]);
+    for i in 0..3 {
+        g.write::<u32>(lo + 4 * i, 0x469c_4000);
+        g.write::<u32>(hi + 4 * i, 0xc69c_4000);
+    }
+    let (pm, m) = (at(0x44), at(0x84));
+    let mut total = 0u32;
+    let mut j = 0u32;
+    while j < u32::from(g.read::<u16>(a + 4)) {
+        let p = a.wrapping_add(0x10 + 16 * j);
+        let mut s = Pushes::default();
+        s.push(g.read::<u32>(p));
+        // call width: 12 (the most `Pushes::words` holds)
+        let d = s.call(g, slot_target(g, w(0xd4), 941), 0).eax;
+        let strips = d.wrapping_add(g.read::<u32>(d + 4));
+        let verts = d.wrapping_add(g.read::<u32>(d + 8));
+        s.push(g.read::<u32>(p + 4));
+        // call width: 12 (the most `Pushes::words` holds)
+        let pmx = s.call(g, slot_target(g, w(0x108), 941), 0).eax;
+        s.push_all(&[pmx, pm]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x11d), 230), 0);
+        let model = g.read::<u16>(g.read::<u32>(a));
+        if !matches!(model, 0x10fb..=0x10fd | 0x1100) {
+            let k = g.read::<f32>(w(0x168));
+            for o in [0x14u32, 0x10, 0xc] {
+                let x = mul(g.read::<f32>(at(o)), k);
+                g.write::<f32>(at(o), x);
+            }
+        }
+        slot_call(g, img, f, (0x1a3, 231), &[m, wm, pm]);
+        let mut k = 0i32;
+        while k < i32::from(g.read::<i16>(d + 0x12)) {
+            let src = verts.wrapping_add(16 * k.cast_unsigned());
+            slot_call(g, img, f, (0x1fb, 229), &[out, m, src]);
+            for i in 0..3 {
+                let v = g.read::<f32>(out + 4 * i);
+                if g.read::<f32>(lo + 4 * i) > v {
+                    g.write::<f32>(lo + 4 * i, v);
+                }
+                if v > g.read::<f32>(hi + 4 * i) {
+                    g.write::<f32>(hi + 4 * i, v);
+                }
+            }
+            k += 1;
+            out = out.wrapping_add(0x10);
+        }
+        let mut rem = i32::from(g.read::<i16>(d + 0x10));
+        let mut e = strips;
+        while rem > 0 {
+            let mut next = e.wrapping_add(0x20);
+            if g.read::<u8>(e + 1) == 0x10 {
+                let mut n = 0i32;
+                while n < i32::from(g.read::<i16>(e + 2)) {
+                    for o in [0u32, 2, 4] {
+                        let x = g.read::<u16>(next + o).wrapping_add(total as u16);
+                        g.write::<u16>(next + o, x);
+                    }
+                    // junk read: the first three bytes of each colour are
+                    // [ebp-0x148], [ebp-0x144], [ebp-0x140], never written;
+                    // 0 (brief 2026-10-24)
+                    for v in 0..3u32 {
+                        g.write::<u32>(col + 4 * v, 0x8000_0000);
+                    }
+                    n += 1;
+                    next = next.wrapping_add(0x1c);
+                    col = col.wrapping_add(0xc);
+                }
+            }
+            rem -= i32::from(g.read::<i16>(e + 2));
+            e = next;
+        }
+        total = total.wrapping_add(i32::from(g.read::<i16>(d + 0x12)).cast_unsigned());
+        j += 1;
+    }
+    total
+}
+
+/// [`parts_vertices`] (the `rel32`s: [`scaled_camera`] and
+/// `__security_check_cookie`).
+pub const PARTS_VERTICES: Sig = Sig {
+    len: 957,
+    hash: 0x844c_a3c8_0baa_4649,
+    calls: &[(0x4d, Callee::Sig(&SCALED_CAMERA)), (0x3b5, Callee::Any)],
+    imports: &[],
+};
