@@ -4021,7 +4021,14 @@ fn host_objects_and_turned_offsets() {
     drop(t);
     let Some(mut t) = twin(430) else { return };
     let f = t.at(0x38e0);
-    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 6), (248, 9)]);
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (248, 9)]);
+    // slot 229 keeps the offset vector it turns
+    rec(&mut t, 229, 6, |m, a| {
+        for i in 0..4 {
+            m.w32(SCRATCH + 0x700 + 4 * i, m.r32(a[2] + 4 * i));
+        }
+        0x229
+    });
     let b = SCRATCH + 0x1000;
     t.write(b, &vec![0x44; 0x1000]);
     t.set_u32(b + 0xeb4, 1.25f32.to_bits());
@@ -4050,8 +4057,14 @@ fn part_with_sound() {
         }
         0x325
     });
-    rec(&mut t, 393, 3, |m, a| m.r32(a[1] + 4) ^ 0x0393_0000);
+    rec(&mut t, 393, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(SCRATCH + 0x700 + 4 * i, m.r32(a[1] + 4 * i));
+        }
+        m.r32(a[1] + 4) ^ 0x0393_0000
+    });
     t.set_u32(op(&t, f, 0x98), 2.5f32.to_bits());
+    t.set_u32(op(&t, f, 0xa0), 0.75f32.to_bits());
     let obj = SCRATCH + 0x1000;
     t.write(obj, &[0x5a; 0x130]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
@@ -4078,7 +4091,7 @@ fn count_down_objects_and_sound_at() {
         (1, 3),
         (0x8000_0001, 0),
     ] {
-        t.write(b, &vec![0x3c; 0x600]);
+        t.write(b, &vec![0xff; 0x600]);
         t.write(task, &[0; 0x60]);
         t.set_u32(task + 0x2c, count);
         t.write(n1, &[0; 0x40]);
@@ -4124,7 +4137,12 @@ fn count_down_objects_and_sound_at() {
         }
         0x714
     });
-    rec(&mut t, 393, 3, |m, a| m.r32(a[1] + 4) ^ 0x0393_0000);
+    rec(&mut t, 393, 3, |m, a| {
+        for i in 0..3 {
+            m.w32(SCRATCH + 0x700 + 4 * i, m.r32(a[1] + 4 * i));
+        }
+        m.r32(a[1] + 4) ^ 0x0393_0000
+    });
     let obj = SCRATCH + 0x1000;
     t.write(obj, &[0x5a; 0x130]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
@@ -4251,7 +4269,10 @@ fn light_block_defaults() {
     let b = SCRATCH + 0x1000;
     for listed in [false, true] {
         pool_ring(&mut t, take);
-        t.write(b, &vec![0x44; 0xf00]);
+        t.write(
+            b,
+            &(0..0xf00u32).map(|i| (i * 7 + 3) as u8).collect::<Vec<_>>(),
+        );
         t.set_u32(op(&t, f, 0x33), b);
         if listed {
             t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
@@ -4272,6 +4293,12 @@ fn sprite_record_setups() {
     recs(&mut t, &[(26, 2), (387, 2), (385, 2), (386, 2)]);
     for h in [0u32, 0x0123_4567] {
         t.set_u32(op(&t, f, 0x1), h);
+        for o in [
+            0x7, 0x85, 0x8a, 0x90, 0x9a, 0xa4, 0xae, 0xb8, 0xc2, 0xcc, 0xd6, 0xe2, 0xe8,
+        ] {
+            t.set_u32(op(&t, f, o), 0x5a5a_5a5a);
+            t.set_u32(op(&t, f, o) + 4, 0x5a5a_5a5a);
+        }
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -4292,7 +4319,7 @@ fn release_and_remove_two() {
     let list = op(&t, f, 0x82);
     let (n1, held) = (SCRATCH + 0x200, SCRATCH + 0x600);
     for (hold, listed) in [(false, 0u32), (true, 3), (false, 2), (true, 1)] {
-        t.write(b, &vec![0x3c; 0x3c00]);
+        t.write(b, &vec![0xff; 0x3c00]);
         t.set_u32(lock, 7);
         if hold {
             pool_node(&mut t, held);
