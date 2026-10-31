@@ -1338,6 +1338,17 @@ ported! {
         let mut f = StackFrame::<{ (ip::XINPUT_FRAME / 4) as usize }>::new();
         ip::is_xinput_device(&mut mem(), f.at() + ip::XINPUT_FRAME, guid)
     }
+    /// `PhyreFIOS_LoadMagicfilePrx(name, b, c)`: frame `ebp - 0x10c`.
+    PhyreFIOS_LoadMagicfilePrx @ 0x0067_93e0 => extern "C" fn load_magicfile_prx(name: u32, b: u32, c: u32) -> u32 {
+        let mut f = StackFrame::<{ (vf::PRX_FRAME / 4) as usize }>::new();
+        vf::load_magicfile_prx(&mut mem(), f.at() + vf::PRX_FRAME, name, b, c)
+    }
+    /// `0x006790c0(this; a, mode, c, d)`: frame `ebp - 0x14`; `c`'s slot
+    /// is scratch for the doubled offset.
+    GradMesh_setup_006790c0 @ 0x0067_90c0 => extern "thiscall" fn grad_mesh_setup(this: u32, _a: u32, mode: u32, _c: u32, _d: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<{ (ui::GRAD_FRAME / 4) as usize }>::new();
+        ui::grad_mesh(&mut mem(), f.at() + ui::GRAD_FRAME, this, mode, slots)
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's

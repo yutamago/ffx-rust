@@ -697,4 +697,74 @@ pub mod bridge {
         h.call_sym(RESET_TO_LAUNCHER, Conv::Cdecl, &[]);
         import(h, SYS_FREE_STRING_IAT, &[text]);
     }
+
+    /// `PhyreFIOS_LoadMagicfilePrx`'s callees: `PhyreFIOS_LoadsPrx`,
+    /// `AtlFindStringResourceInstance_0064f970` (cdecl),
+    /// `CStringW_LoadString_00652310`, the UTF-8 to UTF-16 conversion
+    /// `0x00651800` and the string's `0x00654070` (thiscall, `ret 8`);
+    /// the string manager; `free`; the format; the message id.
+    pub const LOADS_PRX: u32 = 0x006f_9bc0;
+    pub const FIND_STRING_INSTANCE: u32 = 0x0064_f970;
+    pub const LOAD_STRING: u32 = 0x0065_2310;
+    pub const TO_WIDE: u32 = 0x0065_1800;
+    pub const STRING_INSERT: u32 = 0x0065_4070;
+    pub const STRING_MANAGER: u32 = 0x00c6_4bf0;
+    pub const FREE_IAT: u32 = 0x00b0_c370;
+    pub const PRX_FORMAT: u32 = 0x00b4_2498;
+    pub const MSG_PRX: u32 = 0x7833;
+    /// The frame of `PhyreFIOS_LoadMagicfilePrx`: the message string at
+    /// `ebp - 0x10c`, the conversion's pointer at `ebp - 0x108` and its
+    /// inline buffer at `ebp - 0x104`.
+    pub const PRX_FRAME: u32 = 0x10c;
+
+    /// `PhyreFIOS_LoadMagicfilePrx(name, b, c)` (cdecl): the magic file's
+    /// PRX loaded (`PhyreFIOS_LoadsPrx(name, b, c)`); when that fails its
+    /// answer is returned at once. Else the error box: string 0x7833 (an
+    /// empty `CStringW` from the string manager, loaded when the
+    /// resource is found) with the file name (UTF-8 to UTF-16 into the
+    /// frame, freed when it was allocated) put in by `0x00654070`,
+    /// `ShowCursor`, `MessageBoxW`, `ResetToLauncher`, the string
+    /// released (`lock xadd` of -1 on its count; freed through its manager
+    /// at 0). Returns 0.
+    pub fn load_magicfile_prx(h: &mut impl Host, ebp: u32, name: u32, b: u32, c: u32) -> u32 {
+        let r = h.call_sym(LOADS_PRX, Conv::Cdecl, &[name, b, c]);
+        if r != 0 {
+            return r;
+        }
+        let text_at = ebp.wrapping_sub(0x10c);
+        let conv_at = ebp.wrapping_sub(0x108);
+        let inline = ebp.wrapping_sub(0x104);
+        let manager = h.rebase(STRING_MANAGER);
+        let nil = h.call_virtual(manager, 3, &[]);
+        h.write(text_at, nil.wrapping_add(0x10));
+        let inst = h.call_sym(FIND_STRING_INSTANCE, Conv::Cdecl, &[MSG_PRX, 0]);
+        if inst != 0 {
+            h.call_sym(LOAD_STRING, Conv::Thiscall(text_at), &[inst, MSG_PRX]);
+        }
+        h.write(conv_at, inline);
+        h.call_sym(TO_WIDE, Conv::Thiscall(conv_at), &[name, 0xfde9]);
+        let wide: u32 = h.read(conv_at);
+        let fmt = h.rebase(PRX_FORMAT);
+        h.call_sym(STRING_INSERT, Conv::Thiscall(text_at), &[fmt, wide]);
+        let wide: u32 = h.read(conv_at);
+        if wide != inline {
+            cdecl_import(h, FREE_IAT, &[wide]);
+        }
+        import(h, SHOW_CURSOR_IAT, &[1]);
+        let text: u32 = h.read(text_at);
+        let title = h.rebase(ERROR_TITLE);
+        import(h, MESSAGE_BOX_IAT, &[0, text, title, 0x10]);
+        h.call_sym(RESET_TO_LAUNCHER, Conv::Cdecl, &[]);
+        // ~CStringW: `lock xadd` of -1 on the reference count
+        let data = text.wrapping_sub(0x10);
+        let left = h.read::<u32>(data.wrapping_add(0xc)).wrapping_sub(1);
+        h.write(data.wrapping_add(0xc), left);
+        if left.cast_signed() <= 0 {
+            let owner: u32 = h.read(data);
+            let vtable: u32 = h.read(owner);
+            let free: u32 = h.read(vtable.wrapping_add(4));
+            h.call(free, Conv::Thiscall(owner), &[data]);
+        }
+        0
+    }
 }

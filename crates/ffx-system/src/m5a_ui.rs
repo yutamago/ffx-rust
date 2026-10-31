@@ -1,10 +1,11 @@
 //! M5 `system-a` (round 3): the graphic UI object's constructor
 //! (`0x0067ad30`, from `GraphicUi_CreateInstance_0067b6c0`): its record
 //! arrays sized and filled from the buffers `GraphicUi_AllocBuffers`
-//! makes.
+//! makes; and a shadow gradient mesh's vertex set-up (`0x006790c0`).
 
 /// The originals over game memory and the original callees.
 pub mod bridge {
+    use ffx_bridge::x87;
     use ffx_graphic::host::{Conv, Host};
 
     /// `GraphicUi_AllocBuffers_0067b770` (thiscall).
@@ -121,5 +122,90 @@ pub mod bridge {
         h.write(at(0x5844), 0u32);
         h.write(at(0x5b9c), 0u16);
         this
+    }
+
+    /// The three constants `0x006790c0` loads: an `f32` (-1.0, the cloth
+    /// flip), an `f32`, and a double subtracted from the doubled offset.
+    pub const GRAD_K1: u32 = 0x00b9_2340;
+    pub const GRAD_K2: u32 = 0x00b9_2194;
+    pub const GRAD_D: u32 = 0x00b9_2248;
+    /// The frame of `0x006790c0`: its five factors at `ebp - 0x14..-4`.
+    pub const GRAD_FRAME: u32 = 0x14;
+
+    /// `0x006790c0(this; a, mode, c, d)` (thiscall, `ret 0x10`; from
+    /// `ShadowManager_setupGradMeshesB`): a gradient mesh's three vertex
+    /// blocks and index list. By `mode` the offset `q` and the four
+    /// scales `s1..s4` (all rounded to `f32` in the frame): 1: `q = (a -
+    /// c) / (d - c)`, `s1 = c / a`; 2: `s3 = c / a`, `s4 = d / a`; 3: `q =
+    /// -c / (d - c)`, `s1 = s2 = s3 = 0`, `s4 = d / a`; otherwise `q = 0`,
+    /// the scales 1. The positions (`+0x1c`, 24 floats) take the two
+    /// constants and `r = 2q - D` (rounded into the caller's `c` slot,
+    /// `slots + 8`), the second block (`+0x17c`, 16) `q`, the third
+    /// (`+0xfc`, 24) the scales; the 12 indices at `+0x1bc`. Returns
+    /// `this + 0x1c`, as `eax` ends.
+    #[allow(clippy::many_single_char_names)] // the original's operands
+    pub fn grad_mesh(h: &mut impl Host, ebp: u32, this: u32, mode: u32, slots: u32) -> u32 {
+        let at = |off: u32| ebp.wrapping_sub(off);
+        let arg = |k: u32| slots.wrapping_add(4 * k);
+        let a = x87::load(h.read(arg(0)));
+        let c = x87::load(h.read(arg(2)));
+        let d = x87::load(h.read(arg(3)));
+        let (mut q, mut s) = (0.0, [1.0; 4]);
+        match mode {
+            1 => {
+                q = x87::div(x87::sub(a, c), x87::sub(d, c));
+                s[0] = x87::div(c, a);
+            }
+            3 => {
+                q = x87::div(x87::sub(0.0, c), x87::sub(d, c));
+                s = [0.0, 0.0, 0.0, x87::div(d, a)];
+            }
+            2 => {
+                s[2] = x87::div(c, a);
+                s[3] = x87::div(d, a);
+            }
+            _ => {}
+        }
+        // the frame: q at -4, s1 -0x10, s2 -0x14, s3 -8, s4 -0xc
+        h.write(at(4), x87::store(q));
+        for (off, v) in [0x10u32, 0x14, 8, 0xc].into_iter().zip(s) {
+            h.write(at(off), x87::store(v));
+        }
+        let q_bits: u32 = h.read(at(4));
+        let q = x87::load(q_bits);
+        let k1: u32 = h.read(h.rebase(GRAD_K1));
+        let k2: u32 = h.read(h.rebase(GRAD_K2));
+        let dd: f64 = h.read(h.rebase(GRAD_D));
+        let r_bits = x87::store(x87::sub(x87::add(q, q), dd));
+        h.write(slots.wrapping_add(8), r_bits);
+        let (one, zero) = (1f32.to_bits(), 0f32.to_bits());
+        let (k1, k2) = (x87::store(x87::load(k1)), x87::store(x87::load(k2)));
+        let r = x87::store(x87::load(r_bits));
+        let positions = [
+            k1, k1, k2, one, k1, k2, k1, r, k2, one, r, k2, k1, r, k2, one, r, k2, k1, one, k2,
+            one, one, k2,
+        ];
+        let q = q_bits;
+        let second = [
+            zero, zero, one, zero, zero, q, one, q, zero, q, one, q, zero, one, one, one,
+        ];
+        let s: [u32; 4] = [0x10u32, 0x14, 8, 0xc].map(|off| h.read(at(off)));
+        let mut third = Vec::with_capacity(24);
+        for sk in s {
+            third.extend([one, sk, one, one, sk, one]);
+        }
+        for (block, values) in [
+            (0x1cu32, &positions[..]),
+            (0x17c, &second[..]),
+            (0xfc, &third[..]),
+        ] {
+            for (k, v) in (0u32..).zip(values) {
+                h.write(this.wrapping_add(block + 4 * k), *v);
+            }
+        }
+        for (k, v) in (0u32..).zip([0u32, 1, 2, 3, 2, 1, 4, 5, 6, 7, 6, 5]) {
+            h.write(this.wrapping_add(0x1bc + 4 * k), v);
+        }
+        this.wrapping_add(0x1c)
     }
 }

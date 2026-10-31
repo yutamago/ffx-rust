@@ -7132,3 +7132,104 @@ fn input_is_xinput_device_matches_the_original() {
         }
     });
 }
+
+/// `PhyreFIOS_LoadMagicfilePrx` (framed: the string, the conversion
+/// pointer and its buffer): the PRX loading or not, the resource found
+/// or not, the conversion keeping its inline buffer or allocating, the
+/// string's last reference or not; the callees stubbed, the string
+/// manager a fake.
+#[test]
+fn vfs_load_magicfile_prx_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0c01);
+        for case in 0..60 {
+            t.reset();
+            let r = if rng.chance(3) { rng.next() } else { 0 };
+            t.stub(vf::LOADS_PRX, false, 3, 0, r);
+            let free = t.stub_code(0x5700, true, 1, 1, 0);
+            let owner_vt = t.words(&[0, free]);
+            let owner = t.words(&[owner_vt]);
+            let data = t.words(&[owner, 0, 0, 1 + rng.below(2), 0]);
+            let nil = t.stub_code(0x5701, true, 0, 0, data);
+            let mvt = t.words(&[0, 0, 0, nil]);
+            let manager = t.rebase(vf::STRING_MANAGER);
+            t.patch(manager, &mvt.to_le_bytes());
+            let inst = if rng.chance(3) { 0 } else { rng.next() };
+            t.stub(vf::FIND_STRING_INSTANCE, false, 2, 0, inst);
+            t.stub(vf::LOAD_STRING, true, 2, 2, rng.next());
+            // the conversion: keeps its inline buffer, or points elsewhere
+            let ebp = t.frame_ebp(3);
+            let wide = if rng.chance(2) {
+                ebp - 0x104
+            } else {
+                rng.next()
+            };
+            let log = t.stub_code(vf::TO_WIDE, true, 2, 2, rng.next());
+            let mut c = vec![0xc7, 0x01];
+            c.extend(wide.to_le_bytes()); // mov dword [ecx], wide
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes());
+            let at = if rng.chance(3) { log } else { t.cave_code(&c) };
+            t.jump(vf::TO_WIDE, at);
+            t.stub(vf::STRING_INSERT, true, 2, 2, rng.next());
+            t.stub_import(vf::FREE_IAT, false, 1, 0, 0);
+            t.stub_import(vf::SHOW_CURSOR_IAT, false, 1, 1, 0);
+            t.stub_import(vf::MESSAGE_BOX_IAT, false, 4, 4, 1);
+            t.stub(vf::RESET_TO_LAUNCHER, false, 0, 0, 0);
+            let (name, b, c) = (rng.next(), rng.next(), rng.next());
+            t.skip = 4;
+            let what = format!("LoadMagicfilePrx #{case} r {r:#x} wide {wide:#x}");
+            t.check_framed(
+                &what,
+                0x0067_93e0,
+                Conv::Cdecl,
+                &[name, b, c],
+                vf::PRX_FRAME,
+                |m, ebp| Out::U32(vf::load_magicfile_prx(m, ebp, name, b, c)),
+            );
+            t.skip = 0;
+        }
+    });
+}
+
+/// `0x006790c0` (the gradient mesh set-up; framed: its five factors; the
+/// caller's `c` slot it uses as scratch): modes 0..4, operands with
+/// zeros, signs, infinities and quiet NaNs.
+#[test]
+fn ui_grad_mesh_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0d01);
+        for case in 0..200 {
+            t.reset();
+            let this = t.alloc(&(0..0x1f0).map(|_| rng.next() as u8).collect::<Vec<_>>());
+            let float = |rng: &mut Rng| match rng.below(8) {
+                0 => 0u32,
+                1 => 0x8000_0000,
+                2 => 0x7f80_0000,
+                3 => 0x7fc0_0001,
+                _ => (f32::from(rng.next() as i16) / 64.0).to_bits(),
+            };
+            let (a, c, d) = (float(&mut rng), float(&mut rng), float(&mut rng));
+            let mode = rng.below(5);
+            let args = [a, mode, c, d];
+            let slots = t.frame_ebp(4) + 8;
+            let bytes: Vec<u8> = args.iter().flat_map(|w| w.to_le_bytes()).collect();
+            Mem::write_bytes(&mut t.b, slots, &bytes);
+            let what = format!("0x006790c0 #{case} mode {mode} {a:#x} {c:#x} {d:#x}");
+            t.check_framed(
+                &what,
+                0x0067_90c0,
+                Conv::Thiscall(this),
+                &args,
+                ui::GRAD_FRAME,
+                |m, ebp| Out::U32(ui::grad_mesh(m, ebp, this, mode, slots)),
+            );
+            let mut x = [0; 16];
+            let mut y = [0; 16];
+            Mem::read_bytes(&t.a, slots, &mut x);
+            Mem::read_bytes(&t.b, slots, &mut y);
+            assert_eq!(x, y, "{what}: the argument slots");
+        }
+    });
+}
