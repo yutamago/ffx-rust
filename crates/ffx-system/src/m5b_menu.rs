@@ -410,6 +410,13 @@ pub const CHANGE_MACRO: u32 = 0x008e_9b80;
 pub const LINE_STEP: u32 = 0x00b3_13a0;
 pub const ICON_STEP: u32 = 0x00b5_f1c8;
 
+/// `FUN_008ab860`'s: `TOClearMessageSlot_008ab800`, the movie message
+/// flags `0x01841d40..42`, the emulated GS `PMODE` (absolute
+/// `0x12000000`), the image `0x01865f0c`, `TOTransImageHL`.
+pub const CLEAR_MESSAGE_SLOT: u32 = 0x008a_b800;
+pub const GS_PMODE: u32 = 0x1200_0000;
+pub const MOVIE_IMAGE: u32 = 0x0186_5f0c;
+
 /// The originals over game memory.
 #[allow(clippy::many_single_char_names)] // the originals' parameters: x, y, w, colours
 pub mod bridge {
@@ -2886,5 +2893,35 @@ pub mod bridge {
             text = cdecl(h, super::NEXT_CHAR, &[text]);
         }
         h.read(cell)
+    }
+    /// `FUN_008ab860()` with its frame at `ebp` (the movie message's
+    /// end): message slot 0 cleared, the flag `0x01841d40` cleared; with
+    /// `0x01841d41` set, `PMODE` (the 64-bit word at the absolute
+    /// `0x12000000`) set from the frame's never-written words (`ebp - 8`
+    /// masked `0xffff805e` with `0x8042`, `ebp - 4`), the saved image
+    /// restored when `0x01841d42` is 1 (`TOTransImageHL(image, 0x2100,
+    /// 0x1b, 0, 0, 0x200, 0x80)`), `TOSetMessageWindowMode(0)` and both
+    /// flags cleared. The last call's `eax`.
+    /// junk read: [ebp-0x8], [ebp-0x4] never written; 0 (brief 2026-10-24)
+    pub fn movie_message_end(h: &mut impl Host, ebp: u32) -> u32 {
+        let r = cdecl(h, super::CLEAR_MESSAGE_SLOT, &[0]);
+        let [taken, stored, shown] = super::CAPTURE_FLAGS.map(|s| h.rebase(s));
+        let on = h.read::<u8>(stored);
+        h.write(taken, 0u8);
+        if on == 0 {
+            return r;
+        }
+        let lo = h.read::<u32>(ebp.wrapping_sub(8)) & 0xffff_805e | 0x8042;
+        h.write(super::GS_PMODE, lo);
+        let hi: u32 = h.read(ebp.wrapping_sub(4));
+        h.write(super::GS_PMODE + 4, hi);
+        if h.read::<u8>(shown) == 1 {
+            let image = global(h, super::MOVIE_IMAGE);
+            cdecl(h, TRANS_IMAGE_HL, &[image, 0x2100, 0x1b, 0, 0, 0x200, 0x80]);
+        }
+        let r = cdecl(h, super::MESSAGE_WINDOW_MODE, &[0]);
+        h.write(stored, 0u8);
+        h.write(shown, 0u8);
+        r
     }
 }

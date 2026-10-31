@@ -1253,6 +1253,17 @@ ported! {
     FileReadMain @ 0x0076_cfd0 => extern "C" fn file_read_main() -> u32 {
         pc::file_read_main(&mut mem())
     }
+
+    // ---- round 3, batch 13: the movie message's end, the movie disc wait ----
+    /// `()`: frame `ebp - 8` (never written: 0).
+    TOMovieMessageEnd_008ab860 @ 0x008a_b860 => extern "C" fn movie_message_end() -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mn::movie_message_end(&mut mem(), f.at() + 8)
+    }
+    /// `(play, ctx)`: the ioctl's result goes into `ctx`'s argument slot.
+    hdd_MovieDiscWait_00777440 @ 0x0077_7440 => extern "C" fn movie_disc_wait(play: u32, ctx: u32; slots: u32) -> u32 {
+        hd::movie_disc_wait(&mut mem(), play, ctx, slots)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

@@ -348,6 +348,20 @@ pub const EX_MODULES: [u32; 12] = [
     0xe, 0x10, 0x1a, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x28, 0x29,
 ];
 
+/// `FUN_00777440`'s: `sceIoctl`, `movie_wait`, `movie_csc`, `audioStop`,
+/// `TODebugGetPadPrintFlag_thunk_0077da90`, `CdDiscWait_00776f60`, the
+/// pending sector read (`0x0112a4dc` sector, `0x0112a4e4` count,
+/// `0x0112a4f0` buffer, mode `0x0112a4b0`), its four messages.
+pub const SCE_IOCTL: u32 = 0x0062_f8a0;
+pub const MOVIE_WAIT: u32 = 0x0077_daa0;
+pub const MOVIE_CSC: u32 = 0x0077_d5e0;
+pub const AUDIO_STOP: u32 = 0x0077_b170;
+pub const PAD_PRINT_FLAG: u32 = 0x0077_da90;
+pub const DISC_WAIT: u32 = 0x0077_6f60;
+pub const PENDING_SECTOR: [u32; 3] = [0x0112_a4dc, 0x0112_a4e4, 0x0112_a4f0];
+pub const PENDING_MODE: u32 = 0x0112_a4b0;
+pub const MOVIE_READ_MSG: [u32; 4] = [0x00b5_358c, 0x00b5_35b4, 0x00b5_35c4, 0x00b5_3570];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1741,5 +1755,121 @@ pub mod bridge {
         let round = if size.cast_signed() < 0 { 0xf } else { 0 };
         cdecl(h, super::SCE_CLOSE, &[fd]);
         size.wrapping_add(round) & !0xf
+    }
+    /// [`movie_disc_wait`]'s state across its passes (the original's
+    /// registers and locals).
+    #[derive(Debug, Default, Clone, Copy)]
+    pub struct DiscWaitState {
+        /// The passes since the last read (`esi`).
+        pub since_read: u32,
+        /// The waiting message printed (`ebx`).
+        pub logged: bool,
+        /// The passes (`[ebp - 4]`).
+        pub passes: u32,
+        /// The audio stopped (`[ebp - 8]`).
+        pub audio_stopped: bool,
+    }
+
+    /// The pending sector read again (`CdReadSectors_00777080(sector,
+    /// count, buffer, 0x0112a4b0, ctx)`).
+    fn reread(h: &mut impl Host, ctx: u32) {
+        let [s, n, b] = super::PENDING_SECTOR.map(|sym| global(h, sym));
+        let mode = h.rebase(super::PENDING_MODE);
+        cdecl(h, super::READ_SECTORS, &[s, n, b, mode, ctx]);
+    }
+
+    /// The part of a wait pass before `movie_wait`: with a disc error
+    /// (`changed` not -1) the read state cleared, the error byte set and
+    /// printed, `CdDiscWait_00776f60(ctx)`, the read again; the waiting
+    /// message once; the pass counted.
+    pub fn disc_wait_pre(h: &mut impl Host, ctx: u32, changed: u32, st: &mut DiscWaitState) {
+        let [m0, m1, ..] = super::MOVIE_READ_MSG.map(|s| h.rebase(s));
+        if changed != u32::MAX {
+            cdecl(h, super::STATE_CLEAR, &[]);
+            let at = h.rebase(super::DISK_RESULT);
+            h.write(at, 1u8);
+            cdecl(h, DBG_PRINTF, &[m0]);
+            cdecl(h, super::DISC_WAIT, &[ctx]);
+            reread(h, ctx);
+            st.since_read = 0;
+        }
+        if !st.logged {
+            cdecl(h, DBG_PRINTF, &[m1]);
+            st.logged = true;
+        }
+        st.passes = st.passes.wrapping_add(1);
+    }
+
+    /// The rest of a wait pass: `movie_wait()`; with `play` the audio
+    /// stopped once, `movie_csc()`, the pad print flag; after 150 passes
+    /// a message and the read again.
+    pub fn disc_wait_post(h: &mut impl Host, play: u32, ctx: u32, st: &mut DiscWaitState) {
+        cdecl(h, super::MOVIE_WAIT, &[]);
+        if play != 0 {
+            if !st.audio_stopped {
+                st.audio_stopped = true;
+                cdecl(h, super::AUDIO_STOP, &[ctx]);
+            }
+            cdecl(h, super::MOVIE_CSC, &[]);
+            cdecl(h, super::PAD_PRINT_FLAG, &[]);
+        }
+        st.since_read = st.since_read.wrapping_add(1);
+        if st.since_read >= 0x96 {
+            let msg = h.rebase(super::MOVIE_READ_MSG[2]);
+            cdecl(h, DBG_PRINTF, &[msg]);
+            reread(h, ctx);
+            st.since_read = 0;
+        }
+    }
+
+    /// The disc check [`movie_disc_wait`] starts its wait with
+    /// (`0x00777310()`: 0 no error, -1 busy, else an error).
+    pub fn disc_wait_first(h: &mut impl Host) -> u32 {
+        cdecl(h, DISK_CHANGED, &[])
+    }
+
+    /// `FUN_00777440(play, ctx; slots)` (the movie reader's disc wait).
+    /// With the context's flag `+0x5075d`: while the stream's ioctl
+    /// (`sceIoctl([ctx + 0x50544], 1, &ctx's argument slot)`) reports
+    /// data, `movie_wait()` and with `play` the audio stopped once and
+    /// `movie_csc()`. Else, after `0x00777310()` reports no error, the
+    /// passes are logged. Either way the error byte `0x0112a4ec` cleared,
+    /// returns 1. When `0x00777310()` reports an error the original never returns
+    /// (the result is never read again): passes of [`disc_wait_pre`] and
+    /// [`disc_wait_post`] for ever.
+    pub fn movie_disc_wait(h: &mut impl Host, play: u32, ctx: u32, slots: u32) -> u32 {
+        let result = h.rebase(super::DISK_RESULT);
+        if h.read::<u8>(ctx.wrapping_add(0x5_075d)) != 0 {
+            let out = slots.wrapping_add(4);
+            let mut stopped = false;
+            let stream: u32 = h.read(ctx.wrapping_add(0x5_0544));
+            cdecl(h, super::SCE_IOCTL, &[stream, 1, out]);
+            while h.read::<u32>(out) != 0 {
+                cdecl(h, super::MOVIE_WAIT, &[]);
+                if play != 0 {
+                    if !stopped {
+                        stopped = true;
+                        cdecl(h, super::AUDIO_STOP, &[ctx]);
+                    }
+                    cdecl(h, super::MOVIE_CSC, &[]);
+                }
+                let stream: u32 = h.read(ctx.wrapping_add(0x5_0544));
+                cdecl(h, super::SCE_IOCTL, &[stream, 1, out]);
+            }
+            h.write(result, 0u8);
+            return 1;
+        }
+        let changed = disc_wait_first(h);
+        if changed == 0 {
+            h.write(result, 0u8);
+            let msg = h.rebase(super::MOVIE_READ_MSG[3]);
+            cdecl(h, DBG_PRINTF, &[msg, 0]);
+            return 1;
+        }
+        let mut st = DiscWaitState::default();
+        loop {
+            disc_wait_pre(h, ctx, changed, &mut st);
+            disc_wait_post(h, play, ctx, &mut st);
+        }
     }
 }

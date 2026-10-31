@@ -6489,3 +6489,134 @@ fn r3b12_cd_file_sizes_match_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b13_movie_message_end_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1301);
+        t.a.map_zeroed(mnc::GS_PMODE, 0x1000).unwrap();
+        t.b.map_zeroed(mnc::GS_PMODE, 0x1000).unwrap();
+        for case in 0..8u32 {
+            t.reset();
+            let r = rng.next();
+            t.stub(mnc::CLEAR_MESSAGE_SLOT, false, 1, 0, r);
+            t.stub(mnc::TRANS_IMAGE_HL, false, 7, 0, r ^ 1);
+            t.stub(mnc::MESSAGE_WINDOW_MODE, false, 1, 0, r ^ 2);
+            t.g32(mnc::MOVIE_IMAGE, rng.next());
+            t.w32(mnc::GS_PMODE, rng.next());
+            t.w32(mnc::GS_PMODE + 4, rng.next());
+            for (k, sym) in mnc::CAPTURE_FLAGS.into_iter().enumerate() {
+                let v = [0u8, 1, 2][((case >> k) & 1) as usize + usize::from(k == 2 && case == 7)];
+                t.write(t.rebase(sym), &[v]);
+            }
+            // the frame's two never-written words are 0 in both (brief 2026-10-24)
+            t.check_fs(
+                &format!("movie message end #{case}"),
+                0x008a_b860,
+                &[],
+                8,
+                0,
+                |m, ebp, _| Out::U32(mnb::movie_message_end(m, ebp)),
+            );
+        }
+    });
+}
+
+#[test]
+fn r3b13_movie_disc_wait_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1302);
+        for case in 0..12u32 {
+            t.reset();
+            let r = rng.next();
+            let ctx = t.zeros(0x5_0760);
+            let streaming = case < 4;
+            t.write(ctx + 0x5_075d, &[u8::from(streaming)]);
+            t.put(ctx + 0x5_0544, &[rng.next()]);
+            for (k, sym) in [hdc::MOVIE_CSC, hdc::PAD_PRINT_FLAG, hdc::STATE_CLEAR]
+                .into_iter()
+                .enumerate()
+            {
+                t.stub(sym, false, 0, 0, r ^ k as u32);
+            }
+            t.stub(hdc::AUDIO_STOP, false, 1, 0, r ^ 4);
+            t.stub(hdc::DISC_WAIT, false, 1, 0, r ^ 5);
+            t.stub(hdc::READ_SECTORS, false, 5, 0, r ^ 6);
+            t.stub(hdc::DBG_PRINTF, false, 1, 0, r ^ 7);
+            for sym in hdc::PENDING_SECTOR {
+                t.g32(sym, rng.next());
+            }
+            t.write(t.rebase(hdc::DISK_RESULT), &[0x55]);
+            let play = u32::from(case & 1 != 0);
+            if streaming {
+                // the ioctl writes 3, 2, 1, then 0 through its third word
+                let left = t.words(&[[0u32, 2, 3, 1][case as usize]]);
+                let log = t.stub_code(hdc::SCE_IOCTL, false, 3, 0, r ^ 8);
+                let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]; // mov eax, [esp+0xc]; mov ecx, [left]
+                c.extend(left.to_le_bytes());
+                c.extend([0x89, 0x08, 0x85, 0xc9, 0x74, 0x06, 0xff, 0x0d]); // mov [eax], ecx; test; jz +6; dec [left]
+                c.extend(left.to_le_bytes());
+                c.push(0xe9);
+                let here = t.cave_next + c.len() as u32 + 4;
+                c.extend(log.wrapping_sub(here).to_le_bytes());
+                let at = t.cave_code(&c);
+                t.jump(hdc::SCE_IOCTL, at);
+                t.stub(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+                let args = [play, ctx];
+                t.check_fs(
+                    &format!("disc wait stream #{case}"),
+                    0x0077_7440,
+                    &args,
+                    0,
+                    0,
+                    |m, _, s| Out::U32(hdb::movie_disc_wait(m, play, ctx, s)),
+                );
+                continue;
+            }
+            let changed = [0u32, 0xffff_ffff, 5][(case % 3) as usize];
+            t.stub(hdc::DISK_CHANGED, false, 0, 0, changed);
+            if changed == 0 {
+                t.stub(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+                t.check_fs(
+                    &format!("disc wait ok #{case}"),
+                    0x0077_7440,
+                    &[play, ctx],
+                    0,
+                    0,
+                    |m, _, s| Out::U32(hdb::movie_disc_wait(m, play, ctx, s)),
+                );
+                continue;
+            }
+            // the never-ending wait: the original stopped at its k-th
+            // movie_wait (out of the function through its frame), the
+            // bridge's passes run up to the same point
+            let k = [1u32, 2, 151, 152, 300][(case % 5) as usize];
+            let log = t.stub_code(hdc::MOVIE_WAIT, false, 0, 0, r ^ 9);
+            let count = t.words(&[k]);
+            let mut c = vec![0xff, 0x0d];
+            c.extend(count.to_le_bytes());
+            c.extend([0x0f, 0x85]);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(log.wrapping_sub(here).to_le_bytes()); // jnz log
+            // lea esp, [ebp - 0x18]; pop edi; pop esi; pop ebx; mov esp, ebp; pop ebp; ret
+            c.extend([0x8d, 0x65, 0xe8, 0x5f, 0x5e, 0x5b, 0x8b, 0xe5, 0x5d, 0xc3]);
+            let at = t.cave_code(&c);
+            t.jump(hdc::MOVIE_WAIT, at);
+            let at = t.rebase(0x0077_7440);
+            t.a.call(at, Conv::Cdecl, &[play, ctx]).unwrap();
+            {
+                let poison = t.rebase(POISON_AT);
+                let mut g = G(&mut t.b, poison);
+                let changed2 = hdb::disc_wait_first(&mut g);
+                let mut st = hdb::DiscWaitState::default();
+                for _ in 1..k {
+                    hdb::disc_wait_pre(&mut g, ctx, changed2, &mut st);
+                    hdb::disc_wait_post(&mut g, play, ctx, &mut st);
+                }
+                hdb::disc_wait_pre(&mut g, ctx, changed2, &mut st);
+            }
+            t.b.write(count, &0u32.to_le_bytes()).unwrap();
+            t.diff(&format!("disc wait forever #{case} k {k}"));
+        }
+    });
+}
