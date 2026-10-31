@@ -15,6 +15,7 @@ same memory. The release runs no `FFX.exe` code.
 | `src/image.rs` | maps `FFX.exe` into the arena at `0x00400000`; lists sections and imports |
 | `src/table.rs` | `Table`, `Entry`, `Conv`, `Args`, `Ret`: every port under its original address |
 | `src/dll.rs` | loads the player's `MSVCR110.dll` and `MSVCP110.dll` into the arena, relocated (development only) |
+| `src/library.rs` | `LoadLibraryA`, `GetProcAddress`, `FreeLibrary` for the spell overlays (below, "Overlays") |
 | `src/exec.rs` | `Shared` (what every game thread sees) and `Exec` (one game thread): the mixed Rust/Unicorn executor, `Exec::call`, threads, the stats |
 | `src/exec/seh.rs` | structured exceptions: `RaiseException` and faults through the `fs:[0]` chain, `RtlUnwind`, the report of an unhandled one (below, "Exceptions") |
 | `crates/ffx-fpu` | the x87 instructions Unicorn gets wrong, computed as the FPU does (moved out of `ffx-oracle`, which uses it too; below, "x87") |
@@ -219,11 +220,21 @@ the table with the multi-threaded boot, 2026-10-29):
 (`&raw mut x`, `buf.as_mut_ptr()`, a `thread_local!`'s) can't run from
 the table: on x86_64 that address is outside the arena, and even on i686
 Unicorn doesn't map the host stack. `tools/host-ports.py` lists them
-(their bodies, or same-file helpers they name) in
-`crates/ffx-host-ports/src/held.rs`; they stay out of the table and their
-originals run in Unicorn. 306 on 2026-10-29: each becomes portable when its
-local becomes a `StackFrame`. Rerun the tool after merging `ported!`
-lines; check-ported fails while the list is stale.
+(their bodies, or same-file helpers and `macro_rules!` macros they name,
+transitively) in `crates/ffx-host-ports/src/held.rs`; they stay out of the
+table and their originals run in Unicorn. 305 on 2026-10-29: each becomes
+portable when its local becomes a `StackFrame`. Rerun the tool after
+merging `ported!` lines; check-ported fails while the list is stale.
+
+The tool missed one until host-battle (2026-10-29): battle.rs's
+`regist_signal`, which every shim using its `script!` macro reaches
+(`MsSetMotion`, `MsAtelRequestExe` and 105 more), handed
+`AtelRegistSignal2` a Rust array's address. The tool read neither macro
+bodies nor helpers with an array parameter (`[u32; 8]`'s `;` made it take
+the function for a declaration). In ffx-rust.exe that address (the
+host pointer's low 32 bits, an arena offset) held no signal block, so no
+battle script request was ever queued (blocker 7). The
+helper now builds the block in a `StackFrame`, and the tool follows macros.
 
 ## Rust and Unicorn
 
@@ -661,6 +672,29 @@ The DLLs' x87 transcendental instructions run exactly (above, "x87")
 and their C++ exceptions dispatch through the SEH chain (above,
 "Exceptions").
 
+## Overlays
+
+The spell overlays (`magicFiles/FFX/magic_<nnnn>.dll`,
+`docs/formats/magic.md`) are loaded as the game asks for them
+(`src/library.rs`, host-battle 2026-10-29): `LoadLibraryA` of a DLL under
+`magicFiles` (from `PhyreFIOS_LoadsPrx` or the async task
+`MagicDLLAsyncLoad`) reads the player's file from the game folder, maps
+it into the arena and relocates it as `src/dll.rs` does the C runtime,
+binds each import to where `FFX.exe`'s (or a C runtime DLL's) same import
+goes (the IAT slot's value: the same Rust side, so `rand` is the game's
+own sequence, or the same DLL export; else `MSVCR110`'s export), and runs
+its `DllMain(base, DLL_PROCESS_ATTACH, 0)` on the loading thread; its code
+runs in Unicorn like `FFX.exe`'s. `GetProcAddress` finds its exports by
+name (`GetEffectOverlayTable`, `InitMagicPRX`; `onMagicDLLLoaded`),
+`FreeLibrary` runs `DllMain(base, DLL_PROCESS_DETACH, 0)` and forgets it.
+A freed overlay's range is never reused: each thread's Unicorn keeps its
+translations by address and doesn't see the host write new code there.
+Other libraries (`cg.dll`, `psapi.dll`) still get 0, which the game takes
+as absent. Before this, every battle effect that loads an overlay
+(magic, overdrives, summons) waited for `g_MagicFile_Handle` forever.
+The overlays' x87 sites are not marked (their maths goes through
+`_CIatan2` and the `_libm_sse2_*` imports).
+
 ## Threads
 
 Every game thread is a host thread with its own `Exec` (`src/exec.rs`):
@@ -1049,7 +1083,7 @@ compared with PC2's own original recordings (`replay-compare.py`,
 | menu-shop | same (7 ranges) | 8 of 8 (one cursor-glow pixel, allowed) | 998 s |
 | menu-grid | same (6 ranges) | 9 of 9, 0 pixels | 1,128 s |
 | menu-save (after two fixes, below) | same (14 ranges) | 4 of 6; shots 4 and 6 differ in the cursor glow's phase (520 and 574 pixels) | 1,605 s |
-| battle-attack | no battle | none | (timeout) |
+| battle-attack | no battle (fixed in the next round, below) | none | (timeout) |
 
 Not run: battle-magic, battle-overdrive and event-besaid (after the
 battle-attack finding), boot and event-cliff (`realtime`: ffx-rust has only
@@ -1087,7 +1121,7 @@ the virtual clock).
   and no access left the arena. In the first of three runs the main
   thread also stopped advancing at update 197 (one core busy, every flip
   presented); the other two ran on to the `waitfor`'s 4,000-update limit.
-  Not found yet.
+  Found in the next round ("The battle replays on PC2").
 - **Memory**: the layer's draw recording grew to 6-9 GB in the longer
   runs (menu-grid); it is now kept only with `--gfx-out` or
   `FFX_HOST_GFX_RECORD=1` (above, the options). The other runs stayed near
@@ -1096,6 +1130,61 @@ the virtual clock).
   ended from outside (`quit` from a second connection): over WSL's mirrored
   network the open connection gets no reset, and the client waits for its
   reply timeout (`FFX_HARNESS_REPLY_TIMEOUT`).
+
+#### The battle replays on PC2 (2026-10-29/31, host-battle)
+
+The 64-bit build, through the harness on PC2, compared with PC2's own
+original recordings (battle-ifrit with the extra list's; battle-overdrive
+with one original-code run of this round's, PC2 having no recorded
+shots of it):
+
+| Replay | Trace events | Screenshots | Wall |
+|---|---|---|---|
+| battle-attack | same (8 ranges) | 2 of 2, 0 pixels | 509 s |
+| battle-magic | same (10 ranges) | 3 of 3 (one cursor-glow pixel, allowed) | 615 s |
+| battle-overdrive | same (14 ranges) | 9 of 9, 0 pixels | 1,198 s |
+| battle-ifrit | same (10 ranges) | 4 of 4, 0 pixels | (not kept) |
+| event-besaid (three runs) | same (9 ranges) | 4 of 5; shot 4 differs on Tidus's cloth (2,071-2,087 pixels, below) | 435-485 s |
+
+What it took:
+
+- **Blocker 7, the battle that never started.** Traced on PC2 against
+  the hooked original (the same words from the battle request on): the
+  read machine runs alike up to status `0x16`, and the original's
+  monsters `0x14`/`0x15` clear `+0x433` 50 updates later, when their
+  appear motion (`0x31`, set by `MsBtlReadMonsterProcess`) ends. In
+  ffx-rust.exe the battle script workers (ctrl works 2 and 3) never ran a
+  single request: every level of every worker kept its entry program
+  counter and an empty queue. `MsSetMotion`'s port asks the monster's
+  script for the motion through `MsAtelRequestExe`, whose port builds the
+  signal block for `AtelRegistSignal2` in battle.rs's `regist_signal`, a
+  Rust array passed by address. On x86_64 that address is a host pointer
+  truncated to 32 bits, an arena offset holding no signal, so nothing was
+  queued, the appear motion never played and its end never cleared
+  `+0x433`. `regist_signal` (and `cd_call`, `MsCheckRikkuLimit`'s CD
+  block) now build their blocks in a `StackFrame`. The held-shim scan had
+  missed it ("Held shims", above).
+- **The spell overlays.** `LoadLibraryA` answered 0, so every effect that
+  loads a `magic_<nnnn>.dll` (battle-magic's item, the overdrive, the
+  summon) waited for `g_MagicFile_Handle` forever; now the player's DLL
+  runs in the arena ("Overlays", above).
+- **Seeded character jobs.** The cloth and middle-calc jobs draw from
+  `rand()`, whose seed is per thread; the hook's harness seeds each job
+  from the character and the event frame (`docs/harness.md`), ffx-rust's
+  didn't, and event-besaid's shots 2 and 5 differed on Tidus's cloth.
+  `harness.rs` now wraps `Ch_Cloth_PerCharacter` and `Ch_CalcMiddle_Batch`
+  the same way (`stats` counts `seeded_jobs`: about four a frame in
+  event-besaid). Shots 2 and 5 then matched. Shot 4 still differs, in
+  two runs (2,087 and 2,071 pixels, and by 3,271 between the two ffx-rust
+  runs), on Tidus's hood and the mesh on his leg only: the cloth race
+  `docs/harness.md` describes ("Cloth": the cloth jobs run beside the
+  threads that read the vertices; the originals differ there too now and
+  then). Under emulation the race goes the other way in every run. Not a
+  host bug; ordering the cloth jobs against their readers would fix both
+  programs.
+- **The stop at update 197** of the first round's first battle run did
+  not come back: none of this round's runs (eleven with ffx-rust.exe)
+  stopped advancing.
 
 #### The first comparison
 
@@ -1168,7 +1257,8 @@ runs past the third frame (the Unicorn abort).
    processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
    yet; the movie's audio stream is silent.
-7. **Battles in `ffx-rust.exe`** (host-pc2, 2026-10-29). A battle started
+7. Done (host-battle, 2026-10-29/31: a signal block at a host address,
+   and the spell overlays; "The battle replays on PC2"). Was: **Battles in `ffx-rust.exe`** (host-pc2, 2026-10-29). A battle started
    from the field never gets past `g_BtlStatus` `0x16`: monsters `0x14`
    and `0x15` keep `+0x433` set, which `MsBtlReadMonsterProcess`
    (`0x007839b0`) sets with their appear motion (`0x31`) when `+0x43d`
