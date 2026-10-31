@@ -4287,3 +4287,33 @@ fn release_and_remove_two() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn actors_restored() {
+    let Some(mut t) = twin(165) else { return };
+    let f = t.at(0x1ad0);
+    recs(&mut t, &[(8, 2), (256, 5), (530, 2), (249, 2)]);
+    let map = SCRATCH + 0x80;
+    t.write(map, &[3, 0x25, 0x1f, 0x20]);
+    t.set_u32(op(&t, f, 0x31), map);
+    for k in [3u32, 0x1f, 0x20, 0x25] {
+        t.set_u32(op(&t, f, 0x3c) + 4 * k, 0x0a00_0000 + k);
+    }
+    let held = SCRATCH + 0x600;
+    for (n, keep, hold) in [
+        (0u32, 0u32, false),
+        (4, 0, true),
+        (4, 1, false),
+        (0xffff_fffe, 0, true),
+    ] {
+        t.set_u32(op(&t, f, 0x1a), n);
+        t.set_u32(op(&t, f, 0x78), keep);
+        if hold {
+            pool_node(&mut t, held);
+            t.set_u32(op(&t, f, 0xde), held);
+        } else {
+            t.set_u32(op(&t, f, 0xde), 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -9234,3 +9234,56 @@ pub const RELEASE_AND_REMOVE_TWO: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The actors restored at the effect's end (no arguments): slot 8 `(*A,
+/// 1)`, then for each of the `*N` actors `T[map[i]]` slot 256 `(actor,
+/// 1.0, 1.0, 1.0, 1)` resets its colour; with `*G_KEEP` 0 an index below
+/// 0x20 goes to slot 530 `(k, -1)` and the others to slot 249 `(actor,
+/// -1)`, else every actor to slot 249 `(actor, 0x100)`. Last, the held
+/// node `*G_NODE` goes back to the pool ([`give_back`]) and the word is
+/// cleared. Returns the last call's `eax`. (The original also handles
+/// the index -1, meaning `*A`, which the loop never reaches.)
+///
+/// `magic_0165` 0x10001ad0 (247 bytes; 2 DLLs).
+pub fn actors_restored<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let rd = |g: &G, o: u32| g.read::<u32>(w(o));
+    let a = rd(g, 0xd);
+    let mut eax = slot_call(g, img, f, (0x1, 8), &[a, 1]).eax;
+    let actor = |g: &G, map_op: u32, i: u32, t_op: u32| {
+        let k = u32::from(g.read::<u8>(rd(g, map_op).wrapping_add(i)));
+        g.read::<u32>(w(t_op).wrapping_add(4 * k))
+    };
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<i32>(w(0x1a)) {
+        let one = 0x3f80_0000;
+        let x = actor(g, 0x31, i, 0x3c);
+        slot_call(g, img, f, (0x5e, 256), &[x, one, one, one, 1]);
+        let map = rd(g, 0x6c);
+        let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+        let keep = rd(g, 0x78) != 0;
+        eax = if !keep && k < 0x20 {
+            slot_call(g, img, f, (0x95, 530), &[k, u32::MAX]).eax
+        } else {
+            let x = g.read::<u32>(w(0xb9).wrapping_add(4 * k));
+            let mode = if keep { 0x100 } else { u32::MAX };
+            slot_call(g, img, f, (0xc0, 249), &[x, mode]).eax
+        };
+        i += 1;
+    }
+    let node = rd(g, 0xde);
+    if node != 0 {
+        eax = give_back(g, img, img.rel32_target(f + 0xe8), node);
+        g.write::<u32>(w(0xee), 0);
+    }
+    Ret::eax(eax)
+}
+
+/// [`actors_restored`].
+pub const ACTORS_RESTORED: Sig = Sig {
+    len: 247,
+    hash: 0x189d_b0b9_6c8f_b292,
+    calls: &[(0xe8, Callee::Sig(&GIVE_BACK))],
+    imports: &[],
+};
