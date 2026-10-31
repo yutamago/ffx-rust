@@ -1483,4 +1483,1877 @@ pub mod bridge {
         let s = item(h);
         h.call_sym(GU_SELECTOR_MOUSE_FUKKI, Conv::Cdecl, &[s, 0])
     }
+
+    pub const SG_GET_RESOURCE_STR: u32 = 0x0083_fc30;
+    pub const SG_GET_RESOURCE: u32 = 0x0083_fbe0;
+    pub const SG_ADD_BUTTON: u32 = 0x0085_08a0;
+    pub const SG_ADD_STATIC: u32 = 0x0085_08f0;
+    pub const SG_ADD_Y: u32 = 0x0085_0820;
+    pub const SG_GET_Y: u32 = 0x0085_0830;
+    pub const SG_DISP_ENABLE: u32 = 0x0082_0650;
+    pub const CH_CALC_NORMAL: u32 = 0x0083_4060;
+    pub const CH_MOTION_HALF: u32 = 0x0083_9870;
+    pub const CH_ENABLE_TEXTURE: u32 = 0x0083_0320;
+    pub const CHRMENU_LIGHT_TEXTS: u32 = 0x0084_d540;
+    /// The character menu's window (`0x01303768`) and its help text.
+    pub const CHRMENU_WINDOW: u32 = 0x0130_3768;
+    pub const CHRMENU_HELP: u32 = 0x00b5_ae60;
+    /// The character menu's layout: buttons `(id, text)`, the folder name
+    /// static (text 0) and line steps (`id` `u32::MAX`, the step).
+    pub const CHRMENU_LAYOUT: [(u32, u32); 21] = [
+        (0x54, 0x00b5_ade0),
+        (u32::MAX, 0xffff_ffff),
+        (4, 0),
+        (3, 0x00b5_adf0),
+        (2, 0x00b5_ae00),
+        (1, 0x00b5_6a08),
+        (0x40, 0x00b5_ae08),
+        (0x47, 0x00b5_ae10),
+        (u32::MAX, 2),
+        (8, 0x00b5_ae18),
+        (0x4e, 0x00b5_ae20),
+        (0x45, 0x00b5_ae2c),
+        (u32::MAX, 1),
+        (0x11, 0x00b5_ae38),
+        (0x4c, 0x00b5_ae40),
+        (u32::MAX, 2),
+        (0xb, 0x00b5_ae48),
+        (0xe, 0x00b5_ae50),
+        (0x5a, 0x00b5_ae58),
+        (0x69, 0x00b3_c3ec),
+        (0x68, 0x00b5_adc0),
+    ];
+
+    /// `Gui_ChrMenuInit(window, info)` (`cdecl`) -> the layout's height:
+    /// the character menu debug window. The prototype folder name
+    /// (resource 10, the user name when empty) and the data name
+    /// (resource 15) are taken, the buttons laid out (`sg_addButtonS`,
+    /// `sg_AddY` steps, the folder name as a static), the toggles 0xb,
+    /// 0x45, 8, 0x5a, 0x64 enabled and set from the display, normal and
+    /// half motion flags, the light mode (resource 15's flag) read and
+    /// its texts shown, the texture toggle set; `info + 0x7c` gets the
+    /// height, `+0x80` the help text.
+    pub fn gui_chr_menu_init(h: &mut impl Host, window: u32, info: u32) -> u32 {
+        let mut name = h.call_sym(SG_GET_RESOURCE_STR, Conv::Cdecl, &[0xa]);
+        if h.read::<u8>(name) == 0 {
+            name = h.call_sym(USER_NAME, Conv::Cdecl, &[]);
+            h.call_sym(SG_SET_RESOURCE_STR, Conv::Cdecl, &[0xa, name]);
+        }
+        let w_at = h.rebase(CHRMENU_WINDOW);
+        h.write(w_at, window);
+        let off = h.rebase(LIGHT_NAME_OFF);
+        h.write(off, name);
+        let data = h.call_sym(SG_GET_RESOURCE_STR, Conv::Cdecl, &[0xf]);
+        let on = h.rebase(LIGHT_NAME_ON);
+        h.write(on, data);
+        for (id, text) in CHRMENU_LAYOUT {
+            if id == u32::MAX {
+                h.call_sym(SG_ADD_Y, Conv::Cdecl, &[text]);
+            } else if text == 0 {
+                let s = word(h, off);
+                h.call_sym(SG_ADD_STATIC, Conv::Cdecl, &[window, id, s]);
+            } else {
+                let t = h.rebase(text);
+                h.call_sym(SG_ADD_BUTTON, Conv::Cdecl, &[window, id, t]);
+            }
+        }
+        for id in [0xb, 0x45, 8, 0x5a, 0x64] {
+            h.call_sym(GU_BUTTON_SET_TOGGLE, Conv::Cdecl, &[window, id, 1]);
+        }
+        let d = h.call_sym(SG_DISP_ENABLE, Conv::Cdecl, &[]);
+        h.call_sym(
+            GU_BUTTON_SET_TOGGLE_VALUE,
+            Conv::Cdecl,
+            &[window, 0xb, 1u32.wrapping_sub(d)],
+        );
+        let v = h.call_sym(CH_CALC_NORMAL, Conv::Cdecl, &[]);
+        h.call_sym(GU_BUTTON_SET_TOGGLE_VALUE, Conv::Cdecl, &[window, 0x45, v]);
+        let v = h.call_sym(CH_MOTION_HALF, Conv::Cdecl, &[]);
+        h.call_sym(GU_BUTTON_SET_TOGGLE_VALUE, Conv::Cdecl, &[window, 0x64, v]);
+        let mode = h.call_sym(SG_GET_RESOURCE, Conv::Cdecl, &[0xf, 0]);
+        let m = h.rebase(LIGHT_MODE);
+        h.write(m, mode as u8);
+        h.call_sym(CHRMENU_LIGHT_TEXTS, Conv::Cdecl, &[window]);
+        let w = word(h, w_at);
+        if w != 0 {
+            let t = h.call_sym(CH_ENABLE_TEXTURE, Conv::Cdecl, &[]);
+            h.call_sym(
+                GU_BUTTON_SET_TOGGLE_VALUE,
+                Conv::Cdecl,
+                &[w, 8, 1u32.wrapping_sub(t)],
+            );
+        }
+        let y = h.call_sym(SG_GET_Y, Conv::Cdecl, &[]);
+        h.write(info + 0x7c, y);
+        let help = h.rebase(CHRMENU_HELP);
+        h.write(info + 0x80, help);
+        y
+    }
+
+    /// One value of the light editor: the message's step applied when the
+    /// row's down (`row`) or up (`row + 2`) button is the one pressed
+    /// (0x8005: 1, 0x8009: 10, 0x800d: to 0 / 255 unless `as_ten`).
+    fn light_edit_step<H10: Host>(
+        h: &mut H10,
+        at: u32,
+        msg: u32,
+        row: u32,
+        button: u32,
+        as_ten: bool,
+    ) {
+        let msg = if msg == 0x800d && as_ten { 0x8009 } else { msg };
+        // the value stepped down or up
+        let step = |x: u32, up: bool| match (msg, up) {
+            (0x8005, false) => Some(x.wrapping_sub(1)),
+            (0x8005, true) => Some(x.wrapping_add(1)),
+            (0x8009, false) => Some(x.wrapping_sub(10)),
+            (0x8009, true) => Some(x.wrapping_add(10)),
+            (0x800d, false) => Some(0),
+            (0x800d, true) => Some(0xff),
+            _ => None,
+        };
+        for (id, up) in [(row, false), (row.wrapping_add(2), true)] {
+            if id == button
+                && let Some(x) = step(word(h, at), up)
+            {
+                h.write(at, x);
+            }
+        }
+    }
+
+    fn clamp_byte(h: &mut impl Mem, at: u32) {
+        if word(h, at).cast_signed() < 0 {
+            h.write(at, 0_u32);
+        }
+        if word(h, at).cast_signed() > 0xff {
+            h.write(at, 0xff_u32);
+        }
+    }
+
+    /// `ChrMenu_editLight_0084d940(values, _, msg, button)` (`cdecl`) ->
+    /// the last row's `eax` (the angle's quotient by 360, or the wrapped
+    /// angle): the light editor's six rows of buttons (three apart): the
+    /// red, green and blue values (0..255), a row stepping all three, and
+    /// two angles (wrapped to 0..359, the 0x800d reset acting as a
+    /// step of 10 there).
+    pub fn chrmenu_edit_light<H10: Host>(h: &mut H10, values: u32, msg: u32, button: u32) -> u32 {
+        let mut eax = 0_u32;
+        for i in 0..6_u32 {
+            let row = 3 * i;
+            let at = values + 4 * i;
+            light_edit_step(h, at, msg, row, button, i >= 4);
+            match i {
+                0..=2 => clamp_byte(h, at),
+                3 => {
+                    for j in 0..3 {
+                        let at = values + 4 * j;
+                        light_edit_step(h, at, msg, row, button, false);
+                        clamp_byte(h, at);
+                    }
+                }
+                _ => {
+                    let v = word(h, at).cast_signed();
+                    let (q, r) = (v.wrapping_div(360), v.wrapping_rem(360));
+                    h.write(at, r);
+                    eax = q.cast_unsigned();
+                    if r < 0 {
+                        let w = r + 360;
+                        h.write(at, w);
+                        eax = w.cast_unsigned();
+                    }
+                }
+            }
+        }
+        eax
+    }
+
+    pub const LIGHT_APPLY: u32 = 0x0084_ebd0;
+    pub const YI_SET_BACK_COLOR: u32 = 0x0090_a040;
+    pub const CHRMENU_EDIT_LIGHT: u32 = 0x0084_d940;
+    pub const REPORT_RANGE_FAILURE: u32 = 0x0094_9b02;
+    /// The light window's light (`0x01303cc8`), the row labels (pointer
+    /// table `0x00c4df80`), the light flags (`0x01303c18`, 6 bytes) and
+    /// the texts `"on"`, `"off"`, `"0"`, `"rgb"`.
+    pub const LIGHT_WINDOW_LIGHT: u32 = 0x0130_3cc8;
+    pub const LIGHT_ROW_LABELS: u32 = 0x00c4_df80;
+    pub const LIGHT_FLAGS: u32 = 0x0130_3c18;
+    pub const TEXT_ON: u32 = 0x00b4_88d8;
+    pub const TEXT_OFF: u32 = 0x00b4_88dc;
+    pub const TEXT_ZERO: u32 = 0x00b7_c998;
+    pub const TEXT_RGB: u32 = 0x00b5_aed0;
+    /// The light window's on/off button.
+    pub const LIGHT_ON_BUTTON: u32 = 0x4d2;
+
+    /// `LightWindowProc_0084e100(window, msg, button)` (`cdecl`; the frame
+    /// from the original's `ebp - 0x28` at `frame`: a black colour `+0`,
+    /// the number buffer `+0x10`) -> 0: the debug light window. 0x8001
+    /// builds it (an on/off button unless it is the back colour, light
+    /// 4; four rows of arrows around a value, the fourth labelled
+    /// `"rgb"`); 0x8003 clears the light's flag; 0x8005/0x8009/0x800d
+    /// edit the values (`ChrMenu_editLight`) unless on the on/off button;
+    /// 0x8007 on it toggles the light; 0x8011 shows the values and
+    /// applies the light (the back colour, black when off).
+    pub fn light_window_proc<H11: Host>(
+        h: &mut H11,
+        frame: u32,
+        window: u32,
+        msg: u32,
+        button: u32,
+    ) -> u32 {
+        let v = h.call_sym(GU_WINDOW_GET_ARG, Conv::Cdecl, &[window]);
+        let kind = |h: &H11| i32::from(h.read::<i16>(v.wrapping_add(0x18)));
+        match msg {
+            0x8001 => light_window_build(h, window),
+            0x8011 => {
+                let on = h.read::<i8>(v + 0x1a);
+                h.call_sym(
+                    GU_BUTTON_SET_TOGGLE_VALUE,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, i32::from(on).cast_unsigned()],
+                );
+                let t = h.rebase(if h.read::<u8>(v + 0x1a) != 0 {
+                    TEXT_ON
+                } else {
+                    TEXT_OFF
+                });
+                h.call_sym(
+                    GU_CONTROL_SET_TEXT,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, t],
+                );
+                let buf = frame + 0x10;
+                for k in [0_u32, 1, 2] {
+                    let (f, sprintf) = (h.rebase(FMT_D), word(h, h.rebase(SPRINTF)));
+                    let n = word(h, v + 4 * k);
+                    h.call(sprintf, Conv::Cdecl, &[buf, f, n]);
+                    h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, 3 * k + 1, buf]);
+                }
+                if kind(h) != 4 {
+                    h.call_sym(LIGHT_APPLY, Conv::Cdecl, &[v]);
+                } else if h.read::<u8>(v + 0x1a) != 0 {
+                    h.call_sym(YI_SET_BACK_COLOR, Conv::Cdecl, &[v]);
+                } else {
+                    h.write(frame, [0_u32; 4]);
+                    h.call_sym(YI_SET_BACK_COLOR, Conv::Cdecl, &[frame]);
+                }
+            }
+            _ => light_window_edit(h, v, window, msg, button),
+        }
+        0
+    }
+
+    /// The light windows' common messages: 0x8003 clears the light's flag
+    /// (a range failure past kind 5), 0x8005/0x8009/0x800d edit the values
+    /// (`ChrMenu_editLight`) unless on the on/off button, 0x8007 on it
+    /// toggles the light.
+    fn light_window_edit(h: &mut impl Host, v: u32, window: u32, msg: u32, button: u32) {
+        match msg {
+            0x8003 => {
+                let k = i32::from(h.read::<i16>(v.wrapping_add(0x18)));
+                if k.cast_unsigned() >= 6 {
+                    h.call_sym(REPORT_RANGE_FAILURE, Conv::Cdecl, &[]);
+                    return;
+                }
+                let f = h.rebase(LIGHT_FLAGS);
+                h.write(f.wrapping_add(k.cast_unsigned()), 0_u8);
+            }
+            0x8005 | 0x8009 | 0x800d if button != LIGHT_ON_BUTTON => {
+                h.call_sym(CHRMENU_EDIT_LIGHT, Conv::Cdecl, &[v, window, msg, button]);
+            }
+            0x8007 if button == LIGHT_ON_BUTTON => {
+                let b = h.read::<u8>(v + 0x1a).wrapping_sub(1) & 1;
+                h.write(v + 0x1a, b);
+            }
+            _ => {}
+        }
+    }
+
+    /// One row of a light window: its label, the down button `id`, the
+    /// value `id + 1` ("0") and the up button `id + 2`, at `y`.
+    fn light_row(h: &mut impl Host, window: u32, id: u32, label: u32, y: u32) {
+        let (left, zero, right) = (
+            h.rebase(SPEC_LEFT),
+            h.rebase(TEXT_ZERO),
+            h.rebase(SPEC_RIGHT),
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_STATIC,
+            Conv::Cdecl,
+            &[window, u32::MAX, label, 2, y, 10, 9],
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_BUTTON,
+            Conv::Cdecl,
+            &[window, id, left, 0xc, y, 0xe, 9],
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_STATIC,
+            Conv::Cdecl,
+            &[window, id + 1, zero, 0x1b, y, 0x28, 9],
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_BUTTON,
+            Conv::Cdecl,
+            &[window, id + 2, right, 0x48, y, 0xe, 9],
+        );
+    }
+
+    fn light_window_build(h: &mut impl Host, window: u32) {
+        let light = word(h, h.rebase(LIGHT_WINDOW_LIGHT));
+        h.call_sym(GU_WINDOW_SET_ARG, Conv::Cdecl, &[window, light]);
+        let mut y = 0_u32;
+        if h.read::<i16>(light.wrapping_add(0x18)) != 4 {
+            let t = h.rebase(TEXT_ON);
+            h.call_sym(
+                GU_WINDOW_ADD_BUTTON,
+                Conv::Cdecl,
+                &[window, LIGHT_ON_BUTTON, t, 0xc, 0, 0x46, 8],
+            );
+            h.call_sym(
+                GU_BUTTON_SET_TOGGLE,
+                Conv::Cdecl,
+                &[window, LIGHT_ON_BUTTON, 1],
+            );
+            h.call_sym(
+                GU_BUTTON_SET_TOGGLE_VALUE,
+                Conv::Cdecl,
+                &[window, LIGHT_ON_BUTTON, 1],
+            );
+            y = 9;
+        }
+        for k in 0..4_u32 {
+            let id = 3 * k;
+            let label = word(h, h.rebase(LIGHT_ROW_LABELS) + 4 * k);
+            light_row(h, window, id, label, y);
+            if k == 3 {
+                let t = h.rebase(TEXT_RGB);
+                h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, id + 1, t]);
+            }
+            y += 0xb;
+        }
+    }
+
+    use ffx_bridge::x87;
+    pub const GU_PACKET_BEGIN_TAG: u32 = 0x0084_8530;
+    pub const GU_PACKET_END_TAG: u32 = 0x0084_8460;
+    pub const GU_SET_TEST: u32 = 0x0084_85d0;
+    pub const GU_SET_PRIM: u32 = 0x0084_8480;
+    pub const GU_SET_RGBAQ: u32 = 0x0084_84c0;
+    pub const GU_SET_XYZF2: u32 = 0x0084_8680;
+    pub const SG_CAMERA_GET_YAW: u32 = 0x0083_f2d0;
+    pub const ANGLE_WRAP: u32 = 0x0084_eb60;
+    /// `_CIsin`, `_CIcos` (thunks).
+    pub const CI_SIN: u32 = 0x0094_98c8;
+    pub const CI_COS: u32 = 0x0094_98c2;
+    /// The direction light window's row labels (pointer table
+    /// `0x00c4df64`, six) and its rows' bottom (`0x01303ccc`, where the
+    /// gizmo is drawn).
+    pub const DIR_ROW_LABELS: u32 = 0x00c4_df64;
+    pub const DIR_WINDOW_BOTTOM: u32 = 0x0130_3ccc;
+    /// `f64` constants: 20, 40, 45, pi/2 (1.570796), pi (3.141592), 180.
+    pub const C_20: u32 = 0x00b4_9968;
+    pub const C_40: u32 = 0x00b5_af28;
+    pub const C_45: u32 = 0x00b5_af30;
+    pub const C_HALF_PI: u32 = 0x00b5_82e8;
+    pub const C_PI: u32 = 0x00b5_82f0;
+    pub const C_180: u32 = 0x00b4_8378;
+
+    fn qword(h: &impl Mem, sym: u32) -> f64 {
+        f64::from_bits(h.read::<u64>(h.rebase(sym)))
+    }
+
+    /// `_CIsin`/`_CIcos` of an `f32`, stored as `f32` and loaded again.
+    fn trig(h: &mut impl Host, sym: u32, x: u32) -> f64 {
+        let at = h.rebase(sym);
+        x87::load(h.call_intrinsic(at, x87::load(x)).to_bits())
+    }
+
+    /// An `i32` through `fild` and an `f32` store.
+    fn int_f32(n: u32) -> u32 {
+        x87::store(f64::from(n.cast_signed()))
+    }
+
+    /// Degrees (`i32`) to radians as the original rounds it (`f32`).
+    fn radians(h: &impl Mem, deg: u32) -> u32 {
+        x87::store(x87::div(
+            x87::mul(x87::load(int_f32(deg)), qword(h, C_PI)),
+            qword(h, C_180),
+        ))
+    }
+
+    fn xyz(h: &mut impl Host, x: u32, y: u32) {
+        h.call_sym(GU_SET_XYZF2, Conv::Cdecl, &[x, y]);
+    }
+
+    fn rgbaq(h: &mut impl Host, c: [u32; 4]) {
+        h.call_sym(GU_SET_RGBAQ, Conv::Cdecl, &c);
+    }
+
+    /// The gizmo's 80 x 40 frame from `y` down, as two lines per side.
+    fn gizmo_box(h: &mut impl Host, y: u32) {
+        let b = y + 0x28;
+        for (x, y) in [
+            (5, y),
+            (0x55, y),
+            (0x55, y),
+            (0x55, b),
+            (0x55, b),
+            (5, b),
+            (5, b),
+            (5, y),
+        ] {
+            xyz(h, x, y);
+        }
+    }
+
+    /// `FUN_0084dac0(window, msg, button)` (`cdecl`; the number buffer at
+    /// `buf`, the original's `ebp - 0x18`) -> 0: the debug direction
+    /// light window. 0x8001 builds it (the on/off button, six rows of
+    /// arrows around a value, labels from `0x00c4df64`; the rows' bottom
+    /// kept at `0x01303ccc`); 0x8003/0x8005/0x8009/0x800d/0x8007 as the
+    /// light window; 0x8011 applies the light (`FUN_0084ebd0`), shows its
+    /// values (the fourth row none) and draws the gizmo below the rows:
+    /// the camera's yaw (two lines of the yaw and the yaw + pi/2 as 40 x
+    /// 20 ellipses around (45, bottom + 20)), the light's angle `+0x10`
+    /// past the yaw, its elevation `-[+0x14]` in a second box.
+    pub fn dir_light_window_proc(
+        h: &mut impl Host,
+        buf: u32,
+        window: u32,
+        msg: u32,
+        button: u32,
+    ) -> u32 {
+        let v = h.call_sym(GU_WINDOW_GET_ARG, Conv::Cdecl, &[window]);
+        match msg {
+            0x8001 => {
+                let light = word(h, h.rebase(LIGHT_WINDOW_LIGHT));
+                h.call_sym(GU_WINDOW_SET_ARG, Conv::Cdecl, &[window, light]);
+                let t = h.rebase(TEXT_ON);
+                h.call_sym(
+                    GU_WINDOW_ADD_BUTTON,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, t, 0xc, 0, 0x46, 8],
+                );
+                h.call_sym(
+                    GU_BUTTON_SET_TOGGLE,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, 1],
+                );
+                h.call_sym(
+                    GU_BUTTON_SET_TOGGLE_VALUE,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, 1],
+                );
+                let mut y = 9;
+                for k in 0..6_u32 {
+                    let label = word(h, h.rebase(DIR_ROW_LABELS) + 4 * k);
+                    light_row(h, window, 3 * k, label, y);
+                    y += 0xb;
+                }
+                let at = h.rebase(DIR_WINDOW_BOTTOM);
+                h.write(at, y);
+            }
+            0x8011 => dir_light_draw(h, buf, window, v),
+            _ => light_window_edit(h, v, window, msg, button),
+        }
+        0
+    }
+
+    fn dir_light_draw(h: &mut impl Host, buf: u32, window: u32, v: u32) {
+        h.call_sym(LIGHT_APPLY, Conv::Cdecl, &[v]);
+        let on = h.read::<i8>(v + 0x1a);
+        h.call_sym(
+            GU_BUTTON_SET_TOGGLE_VALUE,
+            Conv::Cdecl,
+            &[window, LIGHT_ON_BUTTON, i32::from(on).cast_unsigned()],
+        );
+        let t = h.rebase(if h.read::<u8>(v + 0x1a) != 0 {
+            TEXT_ON
+        } else {
+            TEXT_OFF
+        });
+        h.call_sym(
+            GU_CONTROL_SET_TEXT,
+            Conv::Cdecl,
+            &[window, LIGHT_ON_BUTTON, t],
+        );
+        for k in 0..6_u32 {
+            if k == 3 {
+                let t = h.rebase(TEXT_RGB);
+                h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, 3 * k + 1, t]);
+            } else {
+                let (f, sprintf) = (h.rebase(FMT_D), word(h, h.rebase(SPRINTF)));
+                let n = word(h, v + 4 * k);
+                h.call(sprintf, Conv::Cdecl, &[buf, f, n]);
+                h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, 3 * k + 1, buf]);
+            }
+        }
+        h.call_sym(GU_PACKET_BEGIN_TAG, Conv::Cdecl, &[window]);
+        h.call_sym(GU_SET_TEST, Conv::Cdecl, &[1, 5, 0x7f, 0, 0, 0, 0, 1]);
+        h.call_sym(GU_SET_PRIM, Conv::Cdecl, &[1]);
+        let centre = word(h, h.rebase(DIR_WINDOW_BOTTOM)).wrapping_add(0x14);
+        rgbaq(h, [0, 0, 0xff, 0xff]);
+        let yaw = h
+            .call_sym_st0(SG_CAMERA_GET_YAW, Conv::Cdecl, &[])
+            .to_bits();
+        let (c45, c40, c20) = (qword(h, C_45), qword(h, C_40), qword(h, C_20));
+        let cy = int_f32(centre);
+        // the yaw's line, through the centre
+        let c = trig(h, CI_COS, yaw);
+        let s = trig(h, CI_SIN, yaw);
+        rgbaq(h, [0, 0xff, 0, 0xff]);
+        let (s20, c40y) = (x87::mul(s, c20), x87::mul(c, c40));
+        let y = x87::ftol(h, x87::add(s20, x87::load(cy)));
+        let x = x87::ftol(h, x87::add(c40y, c45));
+        xyz(h, x, y);
+        let y = x87::ftol(h, x87::sub(x87::load(cy), s20));
+        let x = x87::ftol(h, x87::sub(c45, c40y));
+        xyz(h, x, y);
+        // the one a quarter turn on
+        let a = x87::store(x87::add(x87::load(yaw), qword(h, C_HALF_PI)));
+        let w = h.call_sym_st0(ANGLE_WRAP, Conv::Cdecl, &[a]).to_bits();
+        let c = trig(h, CI_COS, w);
+        let s = trig(h, CI_SIN, w);
+        rgbaq(h, [0, 0xff, 0xff, 0xff]);
+        let (s20, c40y) = (x87::mul(s, c20), x87::mul(c, c40));
+        let y = x87::ftol(h, x87::sub(x87::load(cy), s20));
+        let x = x87::ftol(h, x87::sub(c45, c40y));
+        xyz(h, x, y);
+        let y = x87::ftol(h, x87::add(x87::load(cy), s20));
+        let x = x87::ftol(h, x87::add(c40y, c45));
+        xyz(h, x, y);
+        // the light's angle past the yaw, from the centre
+        let r = radians(h, word(h, v + 0x10));
+        let wr = h.call_sym_st0_f64(ANGLE_WRAP, Conv::Cdecl, &[r]);
+        let pi = qword(h, C_PI);
+        let b = x87::store(x87::add(x87::add(wr, x87::load(yaw)), pi));
+        let b = h.call_sym_st0(ANGLE_WRAP, Conv::Cdecl, &[b]).to_bits();
+        rgbaq(h, [0xff, 0, 0, 0xff]);
+        xyz(h, 0x2d, centre);
+        let s = trig(h, CI_SIN, b);
+        let y = x87::ftol(h, x87::sub(x87::load(cy), x87::mul(s, c20)));
+        let c = trig(h, CI_COS, b);
+        let x = x87::ftol(h, x87::sub(c45, x87::mul(c, c40)));
+        xyz(h, x, y);
+        rgbaq(h, [0, 0, 0, 0xff]);
+        let top = word(h, h.rebase(DIR_WINDOW_BOTTOM));
+        gizmo_box(h, top);
+        // the elevation, in a second box
+        let top = word(h, h.rebase(DIR_WINDOW_BOTTOM));
+        let (second, mid) = (top.wrapping_add(0x2c), top.wrapping_add(0x40));
+        rgbaq(h, [0, 0xff, 0, 0xff]);
+        xyz(h, 5, mid);
+        xyz(h, 0x55, mid);
+        let r = radians(h, word(h, v + 0x14).wrapping_neg());
+        let e = h.call_sym_st0(ANGLE_WRAP, Conv::Cdecl, &[r]).to_bits();
+        let c = trig(h, CI_COS, e);
+        let x = x87::ftol(h, x87::add(x87::mul(c, c40), c45));
+        let s = trig(h, CI_SIN, e);
+        let y = x87::ftol(h, x87::add(x87::mul(s, c20), x87::load(int_f32(mid))));
+        rgbaq(h, [0xff, 0, 0, 0xff]);
+        xyz(h, 0x2d, mid);
+        xyz(h, x, y);
+        rgbaq(h, [0, 0, 0, 0xff]);
+        gizmo_box(h, second);
+        h.call_sym(GU_PACKET_END_TAG, Conv::Cdecl, &[]);
+    }
+
+    pub const SG_LIGHT_SET_COLOR: u32 = 0x0083_6310;
+    pub const SG_LIGHT_SET_DIR: u32 = 0x0083_6430;
+    /// The six lights being edited (`0x01303c20`, 0x1c bytes each).
+    pub const EDIT_LIGHTS: u32 = 0x0130_3c20;
+    /// 255 (`f64`).
+    pub const C_255: u32 = 0x00b1_70c0;
+
+    /// `FUN_0084e3c0(group, load)` (`cdecl`; the colour/direction vector
+    /// at `vec`, the original's aligned `ebp - 0x20`) -> the group's end
+    /// in the debug light table: the six edited lights (`0x01303c20`)
+    /// saved into the table's group (0xa8 bytes each) when `load` is 0;
+    /// otherwise loaded from it, each then set as a light of its kind
+    /// (`+0x18`): its colour (r, g, b / 255, or black when `+0x1a` is
+    /// clear; w 0) and direction (`(sin b cos a, sin a, cos b cos a, 0)`
+    /// from the degrees `a` = `+0x14`, `b` = `+0x10`), and the three
+    /// lights after it applied (`FUN_0084ebd0`) and the fourth's back
+    /// colour set (`yiSetBackColor`) - every time, past the six for the
+    /// last ones.
+    pub fn light_group_load_save(h: &mut impl Host, vec: u32, group: u32, load: u32) -> u32 {
+        let mut entry = h
+            .rebase(DEBUG_LIGHT_TABLE)
+            .wrapping_add(group.wrapping_mul(0xa8));
+        let first = h.rebase(EDIT_LIGHTS);
+        for i in 0..6 {
+            let cur = first + 0x1c * i;
+            let (from, to) = if load == 0 {
+                (cur, entry)
+            } else {
+                (entry, cur)
+            };
+            // `rep movsd`, a word at a time (group 7 overlaps the lights)
+            for k in 0..7 {
+                let w = word(h, from + 4 * k);
+                h.write(to + 4 * k, w);
+            }
+            if load != 0 {
+                light_set(h, vec, cur);
+            }
+            entry = entry.wrapping_add(0x1c);
+        }
+        entry
+    }
+
+    fn light_set(h: &mut impl Host, vec: u32, cur: u32) {
+        h.write(vec + 0xc, 0_u32);
+        let col = if h.read::<u8>(cur + 0x1a) != 0 {
+            let c255 = qword(h, C_255);
+            [0, 4, 8].map(|o| x87::store(x87::div(x87::load(int_f32(word(h, cur + o))), c255)))
+        } else {
+            [0; 3]
+        };
+        h.write(vec, col);
+        let kind = i32::from(h.read::<i16>(cur + 0x18)).cast_unsigned();
+        h.call_sym(SG_LIGHT_SET_COLOR, Conv::Cdecl, &[kind, vec]);
+        let r = radians(h, word(h, cur + 0x14));
+        let a = h.call_sym_st0(ANGLE_WRAP, Conv::Cdecl, &[r]).to_bits();
+        let sa = trig(h, CI_SIN, a);
+        h.write(vec + 4, x87::store(sa));
+        let ca = trig(h, CI_COS, a);
+        let r = radians(h, word(h, cur + 0x10));
+        let b = h.call_sym_st0(ANGLE_WRAP, Conv::Cdecl, &[r]).to_bits();
+        let sb = trig(h, CI_SIN, b);
+        h.write(vec, x87::store(x87::mul(sb, ca)));
+        let cb = trig(h, CI_COS, b);
+        h.write(vec + 8, x87::store(x87::mul(cb, ca)));
+        h.call_sym(SG_LIGHT_SET_DIR, Conv::Cdecl, &[kind, vec]);
+        for o in [0x1c, 0x38, 0x54] {
+            h.call_sym(LIGHT_APPLY, Conv::Cdecl, &[cur + o]);
+        }
+        h.call_sym(YI_SET_BACK_COLOR, Conv::Cdecl, &[cur + 0x70]);
+    }
+
+    pub const GU_SPIN_MSG: u32 = 0x0085_1b20;
+    pub const GU_SPIN_ADD: u32 = 0x0085_1c70;
+    pub const GU_CONTROL_SET_TEXTF: u32 = 0x0084_a810;
+    pub const CH_GET_DISABLE_SPEC: u32 = 0x0082_eb80;
+    pub const CH_GET_FOURCE_SPEC: u32 = 0x0082_eb90;
+    pub const CH_GET_PARA_EDIT: u32 = 0x0082_ebe0;
+    pub const CH_SET_DISABLE_SPEC: u32 = 0x0083_00d0;
+    pub const CH_SET_FOURCE_SPEC: u32 = 0x0083_00e0;
+    pub const CH_SET_PARA_EDIT: u32 = 0x0083_00f0;
+    pub const CH_SET_SPEC_SIZE: u32 = 0x0084_30d0;
+    pub const CH_SET_SPEC_COEFFICIENT: u32 = 0x0084_3090;
+    pub const CH_SET_SPEC_COLOR: u32 = 0x0084_30a0;
+    /// The specular window's spin controls (0x30 bytes each): size,
+    /// coefficient, red, green, blue.
+    pub const SPIN_SIZE: u32 = 0x0132_5398;
+    pub const SPIN_COEF: u32 = 0x0132_53c8;
+    pub const SPIN_RED: u32 = 0x0132_52d8;
+    pub const SPIN_GREEN: u32 = 0x0132_5308;
+    pub const SPIN_BLUE: u32 = 0x0132_5338;
+    /// The byte 0x8003 clears (`0x013252cb`).
+    pub const SPEC_WINDOW_FLAG: u32 = 0x0132_52cb;
+    /// `"Specular"`, `"ALLON"`, `"ALLOFF"`, `"EDIT"`, `"COEF"`, `"SIZE"`,
+    /// `"R"`, `"G"`, `"B"`, `"%d.%d"`; 10 (`f64`).
+    pub const TEXT_SPECULAR: u32 = 0x00b5_adc0;
+    pub const TEXT_ALLON: u32 = 0x00b5_b534;
+    pub const TEXT_ALLOFF: u32 = 0x00b5_b53c;
+    pub const TEXT_EDIT: u32 = 0x00b5_54dc;
+    pub const TEXT_COEF: u32 = 0x00b5_b544;
+    pub const TEXT_SIZE: u32 = 0x00b5_b54c;
+    pub const TEXT_R: u32 = 0x00b8_f7e8;
+    pub const TEXT_G: u32 = 0x00b8_f7bc;
+    pub const TEXT_B: u32 = 0x00b8_f7ac;
+    pub const FMT_TENTHS: u32 = 0x00b5_b554;
+    pub const C_10: u32 = 0x00b9_22b0;
+
+    /// A spin control's set-up: its three ids, format (0 or an image
+    /// address, rebased), value, minimum and maximum; the fixed words
+    /// (`+0` 1 (`u16`), `+2` 1 (byte), `+4` 1, `+8` -1, `+0xc` 10, `+0x2c` 0).
+    fn spin_init(
+        h: &mut impl Mem,
+        spin: u32,
+        ids: [u32; 3],
+        fmt: u32,
+        value: u32,
+        min: u32,
+        max: u32,
+    ) {
+        h.write(spin + 0x10, ids);
+        h.write(spin + 0x1c, fmt);
+        h.write(spin + 0x20, value);
+        h.write(spin + 0x28, min);
+        h.write(spin + 0x24, max);
+        h.write(spin, 1_u16);
+        h.write(spin + 2, 1_u8);
+        h.write(spin + 4, [1_u32, u32::MAX, 10]);
+        h.write(spin + 0x2c, 0_u32);
+    }
+
+    /// `FUN_00852a30(window, msg, button)` (`cdecl`) -> 0: the specular
+    /// window. Every message goes to its five spin controls first
+    /// (`Gu_SpinMsg`). 0x8001 builds it (title, the toggles ALLON 6,
+    /// ALLOFF 7, EDIT 8, the spins size 0.1..10 (1.0), coefficient
+    /// 0..10 (2.0) and red, green, blue 0..255 (128)); 0x8003 clears
+    /// `0x013252cb`; 0x8007 toggles "force" (6, clearing "disable"),
+    /// "disable" (7, clearing edit and force) or edit (8, unless
+    /// disabled); 0x8011 shows them, enables the spins only in edit, and
+    /// sets the size, coefficient (both tenths) and colour.
+    pub fn spec_edit_window_proc(h: &mut impl Host, window: u32, msg: u32, button: u32) -> u32 {
+        for spin in [SPIN_SIZE, SPIN_COEF, SPIN_RED, SPIN_GREEN, SPIN_BLUE] {
+            let s = h.rebase(spin);
+            h.call_sym(GU_SPIN_MSG, Conv::Cdecl, &[window, msg, button, s]);
+        }
+        match msg {
+            0x8001 => spec_edit_build(h, window),
+            0x8003 => {
+                let at = h.rebase(SPEC_WINDOW_FLAG);
+                h.write(at, 0_u8);
+            }
+            0x8007 => spec_edit_toggle(h, button),
+            0x8011 => spec_edit_show(h, window),
+            _ => {}
+        }
+        0
+    }
+
+    fn get(h: &mut impl Host, f: u32) -> u32 {
+        h.call_sym(f, Conv::Cdecl, &[])
+    }
+
+    fn spec_edit_toggle(h: &mut impl Host, button: u32) {
+        match button {
+            6 => {
+                let v = 1_u32.wrapping_sub(get(h, CH_GET_FOURCE_SPEC));
+                h.call_sym(CH_SET_FOURCE_SPEC, Conv::Cdecl, &[v]);
+                if get(h, CH_GET_FOURCE_SPEC) != 0 {
+                    h.call_sym(CH_SET_DISABLE_SPEC, Conv::Cdecl, &[0]);
+                }
+            }
+            7 => {
+                let v = 1_u32.wrapping_sub(get(h, CH_GET_DISABLE_SPEC));
+                h.call_sym(CH_SET_DISABLE_SPEC, Conv::Cdecl, &[v]);
+                if get(h, CH_GET_DISABLE_SPEC) != 0 {
+                    h.call_sym(CH_SET_PARA_EDIT, Conv::Cdecl, &[0]);
+                    h.call_sym(CH_SET_FOURCE_SPEC, Conv::Cdecl, &[0]);
+                }
+            }
+            8 if get(h, CH_GET_DISABLE_SPEC) == 0 => {
+                let v = 1_u32.wrapping_sub(get(h, CH_GET_PARA_EDIT));
+                h.call_sym(CH_SET_PARA_EDIT, Conv::Cdecl, &[v]);
+            }
+            _ => {}
+        }
+    }
+
+    fn spec_edit_build(h: &mut impl Host, window: u32) {
+        let t = h.rebase(TEXT_SPECULAR);
+        h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+        for (id, text, x, y) in [
+            (6, TEXT_ALLON, 0, 0),
+            (7, TEXT_ALLOFF, 0x38, 0),
+            (8, TEXT_EDIT, 0x38, 0xa),
+        ] {
+            let t = h.rebase(text);
+            h.call_sym(
+                GU_WINDOW_ADD_BUTTON,
+                Conv::Cdecl,
+                &[window, id, t, x, y, 0x36, 9],
+            );
+        }
+        for id in [6, 7, 8] {
+            h.call_sym(GU_BUTTON_SET_TOGGLE, Conv::Cdecl, &[window, id, 1]);
+        }
+        let fmt = h.rebase(FMT_D);
+        // (spin, ids, format, value, minimum, maximum, y, label)
+        let spins = [
+            (
+                SPIN_COEF,
+                [0xd, 0xe, 0xf],
+                0,
+                0x14,
+                0,
+                0x64,
+                0x14,
+                TEXT_COEF,
+            ),
+            (SPIN_SIZE, [0xa, 0xb, 0xc], 0, 0xa, 1, 0x64, 0x1f, TEXT_SIZE),
+            (
+                SPIN_RED,
+                [0x10, 0x11, 0x12],
+                fmt,
+                0x80,
+                0,
+                0xff,
+                0x2a,
+                TEXT_R,
+            ),
+            (
+                SPIN_GREEN,
+                [0x13, 0x14, 0x15],
+                fmt,
+                0x80,
+                0,
+                0xff,
+                0x35,
+                TEXT_G,
+            ),
+            (
+                SPIN_BLUE,
+                [0x16, 0x17, 0x18],
+                fmt,
+                0x80,
+                0,
+                0xff,
+                0x40,
+                TEXT_B,
+            ),
+        ];
+        for (spin, ids, fmt, value, min, max, y, label) in spins {
+            let s = h.rebase(spin);
+            spin_init(h, s, ids, fmt, value, min, max);
+            let l = h.rebase(label);
+            h.call_sym(
+                GU_SPIN_ADD,
+                Conv::Cdecl,
+                &[window, s, 0, y, 0xa, l, 0x2c, 0x28],
+            );
+        }
+    }
+
+    /// A spin's value in tenths: shown as `"%d.%d"` in its value control
+    /// and handed to `set` as an `f32`.
+    fn spec_tenths(h: &mut impl Host, window: u32, spin: u32, set: u32) {
+        let s = h.rebase(spin);
+        let v = word(h, s + 0x20).cast_signed();
+        let id = word(h, s + 0x18);
+        let f = h.rebase(FMT_TENTHS);
+        let (q, r) = (
+            v.wrapping_div(10).cast_unsigned(),
+            v.wrapping_rem(10).cast_unsigned(),
+        );
+        h.call_sym(GU_CONTROL_SET_TEXTF, Conv::Cdecl, &[window, id, f, q, r]); // call width: 5
+        let x = x87::store(x87::div(
+            x87::load(int_f32(v.cast_unsigned())),
+            qword(h, C_10),
+        ));
+        h.call_sym(set, Conv::Cdecl, &[x]);
+    }
+
+    fn spec_edit_show(h: &mut impl Host, window: u32) {
+        for (id, f) in [
+            (6, CH_GET_FOURCE_SPEC),
+            (7, CH_GET_DISABLE_SPEC),
+            (8, CH_GET_PARA_EDIT),
+        ] {
+            let v = get(h, f);
+            h.call_sym(GU_BUTTON_SET_TOGGLE_VALUE, Conv::Cdecl, &[window, id, v]);
+        }
+        for id in (0xa..0x19).chain([u32::MAX]) {
+            let off = u32::from(get(h, CH_GET_PARA_EDIT) == 0);
+            h.call_sym(GU_CONTROL_SET_DISABLE, Conv::Cdecl, &[window, id, off]);
+        }
+        spec_tenths(h, window, SPIN_SIZE, CH_SET_SPEC_SIZE);
+        spec_tenths(h, window, SPIN_COEF, CH_SET_SPEC_COEFFICIENT);
+        let [r, g, b] = [SPIN_RED, SPIN_GREEN, SPIN_BLUE].map(|s| word(h, h.rebase(s) + 0x20));
+        h.call_sym(CH_SET_SPEC_COLOR, Conv::Cdecl, &[r, g, b, 0x80]);
+    }
+
+    pub const CAPTURE_SELECT: u32 = 0x0132_5914;
+    pub const CAPTURE_GUI: u32 = 0x0132_5915;
+    pub const CAPTURE_MODE: u32 = 0x00c4_fff8;
+    pub const CAPTURE_FILTER: u32 = 0x00c4_fff9;
+    pub const SG_CAPTURE_SET_FILTER: u32 = 0x0083_a650;
+    pub const SG_CAPTURE_SET_GUI: u32 = 0x0083_a660;
+    pub const SG_CAPTURE_SET_MODE: u32 = 0x0083_a670;
+    pub const SG_CAPTURE_SET_SELECT: u32 = 0x0083_a680;
+
+    fn sbyte(h: &impl Mem, sym: u32) -> u32 {
+        i32::from(h.read::<i8>(h.rebase(sym))).cast_unsigned()
+    }
+
+    /// `FUN_00853420(window)` (`cdecl`, tail-jumps on) ->
+    /// `Sg_CaptureSetGui`'s `eax`: the capture window's controls from its
+    /// settings (select 0x4d2, GUI 4, filter 5; controls -2 and 1..5
+    /// enabled only with select on; the mode's radio buttons 1..3), then
+    /// the settings handed to the capture (filter, select, mode, GUI).
+    pub fn capture_window_update(h: &mut impl Host, window: u32) -> u32 {
+        for (id, at) in [
+            (0x4d2, CAPTURE_SELECT),
+            (4, CAPTURE_GUI),
+            (5, CAPTURE_FILTER),
+        ] {
+            let v = sbyte(h, at);
+            h.call_sym(GU_BUTTON_SET_TOGGLE_VALUE, Conv::Cdecl, &[window, id, v]);
+        }
+        let off = u32::from(h.read::<u8>(h.rebase(CAPTURE_SELECT)) == 0);
+        for id in [0xffff_fffe, 1, 2, 3, 4, 5] {
+            h.call_sym(GU_CONTROL_SET_DISABLE, Conv::Cdecl, &[window, id, off]);
+        }
+        for id in 1..4 {
+            let on = u32::from(id == sbyte(h, CAPTURE_MODE).wrapping_add(1));
+            h.call_sym(GU_BUTTON_SET_TOGGLE_VALUE, Conv::Cdecl, &[window, id, on]);
+        }
+        for (f, at) in [
+            (SG_CAPTURE_SET_FILTER, CAPTURE_FILTER),
+            (SG_CAPTURE_SET_SELECT, CAPTURE_SELECT),
+            (SG_CAPTURE_SET_MODE, CAPTURE_MODE),
+        ] {
+            let v = sbyte(h, at);
+            h.call_sym(f, Conv::Cdecl, &[v]);
+        }
+        let v = sbyte(h, CAPTURE_GUI);
+        h.call_sym(SG_CAPTURE_SET_GUI, Conv::Cdecl, &[v])
+    }
+
+    pub const SG_CAPTURE_ENABLE: u32 = 0x0083_a470;
+    pub const GU_BUTTON_GET_TOGGLE_VALUE: u32 = 0x0084_9330;
+    pub const GU_CONTROL_SET_LEFT_TEXT: u32 = 0x0084_a6c0;
+    pub const CAPTURE_WINDOW_UPDATE: u32 = 0x0085_3420;
+    /// The byte 0x8003 clears (`0x01325916`).
+    pub const CAPTURE_WINDOW_FLAG: u32 = 0x0132_5916;
+    /// `"Enable"`, `"DoIt"`, `" "`, `"512x416"`, `"LowReso(^^;"`,
+    /// `"Filter"`, `"with GUI"`, `"Capture"`.
+    pub const TEXT_ENABLE: u32 = 0x00b5_b64c;
+    pub const TEXT_DOIT: u32 = 0x00b5_b654;
+    pub const TEXT_SPACE: u32 = 0x00b2_0b30;
+    pub const TEXT_512: u32 = 0x00b5_b65c;
+    pub const TEXT_LOW_RESO: u32 = 0x00b5_b664;
+    pub const TEXT_FILTER: u32 = 0x00b5_b670;
+    pub const TEXT_WITH_GUI: u32 = 0x00b5_b678;
+    pub const TEXT_CAPTURE: u32 = 0x00b5_b29c;
+    /// The capture window's "do it" button.
+    pub const CAPTURE_DO_IT: u32 = 1000;
+
+    /// `SpriteFrameRegion_Load(window, msg, button)` (`cdecl`; Fahrenheit's
+    /// Switch name, the PC build's capture window procedure) -> 0: 0x8001
+    /// builds it (Enable 0x4d2, `DoIt` 1000, the radio buttons 3, 1 and
+    /// toggles 5, 4 with their labels; title "Capture") and shows the
+    /// settings (`FUN_00853420`); 0x8003 clears `0x01325916`; 0x8006 on
+    /// `DoIt` captures (`Sg_CaptureEnable`); 0x8007 sets select (0x4d2,
+    /// from its toggle), the mode (1: 0, 3: 2), GUI (4, from its toggle)
+    /// or flips the filter (5), and shows them.
+    pub fn capture_window_proc(h: &mut impl Host, window: u32, msg: u32, button: u32) -> u32 {
+        match msg {
+            0x8001 => capture_window_build(h, window),
+            0x8003 => {
+                let at = h.rebase(CAPTURE_WINDOW_FLAG);
+                h.write(at, 0_u8);
+            }
+            0x8006 if button == CAPTURE_DO_IT => {
+                h.call_sym(SG_CAPTURE_ENABLE, Conv::Cdecl, &[]);
+            }
+            0x8007 => {
+                match button {
+                    LIGHT_ON_BUTTON => {
+                        let v = toggled(h, window, LIGHT_ON_BUTTON);
+                        set_byte(h, CAPTURE_SELECT, v);
+                    }
+                    1 => set_byte(h, CAPTURE_MODE, 0),
+                    3 => set_byte(h, CAPTURE_MODE, 2),
+                    4 => {
+                        let v = toggled(h, window, 4);
+                        set_byte(h, CAPTURE_GUI, v);
+                    }
+                    5 => {
+                        let v = h.read::<u8>(h.rebase(CAPTURE_FILTER)).wrapping_sub(1) & 1;
+                        set_byte(h, CAPTURE_FILTER, v);
+                    }
+                    _ => return 0,
+                }
+                h.call_sym(CAPTURE_WINDOW_UPDATE, Conv::Cdecl, &[window]);
+            }
+            _ => {}
+        }
+        0
+    }
+
+    fn set_byte(h: &mut impl Mem, sym: u32, v: u8) {
+        let at = h.rebase(sym);
+        h.write(at, v);
+    }
+
+    /// The toggle's value flipped (`1 - al`).
+    fn toggled(h: &mut impl Host, window: u32, id: u32) -> u8 {
+        let v = h.call_sym(GU_BUTTON_GET_TOGGLE_VALUE, Conv::Cdecl, &[window, id]);
+        1_u8.wrapping_sub(v as u8)
+    }
+
+    fn capture_window_build(h: &mut impl Host, window: u32) {
+        let buttons = [
+            (LIGHT_ON_BUTTON, TEXT_ENABLE, 0, 0, 0x41),
+            (CAPTURE_DO_IT, TEXT_DOIT, 0x46, 0, 0x28),
+            (3, TEXT_SPACE, 0, 0xb, 0xc),
+            (1, TEXT_SPACE, 0, 0x16, 0xc),
+            (5, TEXT_SPACE, 0, 0x21, 0xc),
+            (4, TEXT_SPACE, 0, 0x2c, 0xc),
+        ];
+        for (id, text, x, y, w) in buttons {
+            let t = h.rebase(text);
+            h.call_sym(
+                GU_WINDOW_ADD_BUTTON,
+                Conv::Cdecl,
+                &[window, id, t, x, y, w, 0xa],
+            );
+        }
+        for (text, y, w) in [
+            (TEXT_512, 0xb, 0x64),
+            (TEXT_LOW_RESO, 0x16, 0x64),
+            (TEXT_FILTER, 0x21, 0x5a),
+            (TEXT_WITH_GUI, 0x2c, 0x5a),
+        ] {
+            let t = h.rebase(text);
+            h.call_sym(
+                GU_WINDOW_ADD_STATIC,
+                Conv::Cdecl,
+                &[window, 0xffff_fffe, t, 0xc, y, w, 0xa],
+            );
+        }
+        for id in [LIGHT_ON_BUTTON, 1, 2, 3, 4, 5] {
+            h.call_sym(GU_BUTTON_SET_TOGGLE, Conv::Cdecl, &[window, id, 1]);
+        }
+        h.call_sym(
+            GU_CONTROL_SET_LEFT_TEXT,
+            Conv::Cdecl,
+            &[window, 0xffff_fffe, 1],
+        );
+        let t = h.rebase(TEXT_CAPTURE);
+        h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+        h.call_sym(CAPTURE_WINDOW_UPDATE, Conv::Cdecl, &[window]);
+        let at = h.rebase(CAPTURE_WINDOW_FLAG);
+        h.write(at, 0_u8);
+    }
+
+    pub const CH_CHECK_HANDLE: u32 = 0x0082_61b0;
+    pub const GU_PRINTF: u32 = 0x0084_8880;
+    pub const GU_LOCATE: u32 = 0x0084_8840;
+    pub const GU_PRINT_SET_SIZE_ONLY: u32 = 0x0084_87d0;
+    pub const GU_PRINT_SET_ITALIC: u32 = 0x0084_8760;
+    pub const GU_PRINT_SET_BOLD: u32 = 0x0084_8720;
+    pub const GU_SET_HSCALE: u32 = 0x0084_8b30;
+    pub const GU_LOG_PRINTF: u32 = 0x0085_3e40;
+    pub const GU_LOG_Y: u32 = 0x0132_5920;
+    pub const MOTION_NAME: u32 = 0x0083_71f0;
+    pub const CH_ID_GET_MAP: u32 = 0x0083_d840;
+    pub const CH_ID_GET_MAP_B: u32 = 0x0083_d860;
+    pub const CH_ID_GET_WATER: u32 = 0x0083_d920;
+    pub const CH_ID_GET_ENCOUNT: u32 = 0x0083_d820;
+    pub const CH_ID_GET_DICTIONARY: u32 = 0x0083_d7a0;
+    pub const CH_ID_GET_EFFECT: u32 = 0x0083_d7c0;
+    pub const CH_ID_GET_SOUND: u32 = 0x0083_d900;
+    pub const CH_ID_GET_SHADE: u32 = 0x0083_d880;
+    pub const CH_ID_GET_SHADE0: u32 = 0x0083_d8a0;
+    pub const CH_ID_GET_SHADE1: u32 = 0x0083_d8c0;
+    pub const CH_ID_GET_SHADE2: u32 = 0x0083_d8e0;
+    pub const GU_WINDOW_GET_LEFT: u32 = 0x0084_afb0;
+    pub const GU_WINDOW_GET_X: u32 = 0x0084_afc0;
+    pub const GU_WINDOW_GET_WIDTH: u32 = 0x0084_afa0;
+    pub const GU_SELECTOR_ALLOCATE: u32 = 0x0084_9bb0;
+    pub const GU_SELECTOR_SET_CALLBACK: u32 = 0x0084_9fc0;
+    pub const GU_SELECTOR_OPEN_XYWH: u32 = 0x0084_9dc0;
+    pub const GU_MOUSE_SET_WINDOW: u32 = 0x0084_9b90;
+    pub const GU_CHR_SELECTOR_FILL: u32 = 0x0085_3dc0;
+    /// The character selector's callback (`FUN_00853d40`).
+    pub const CHR_SELECTOR_PICK: u32 = 0x0085_3d40;
+    pub const GU_CHR_SELECTOR: u32 = 0x0132_5918;
+    pub const GU_CHR_SELECTOR_WINDOW: u32 = 0x0132_591c;
+    /// `"CHRINFO"`, `"click here"`, `"CHRINFO:%s\n"`.
+    pub const TEXT_CHRINFO: u32 = 0x00b5_b684;
+    pub const TEXT_CLICK_HERE: u32 = 0x00b5_b68c;
+    pub const FMT_CHRINFO: u32 = 0x00b5_b698;
+    /// The info lines' formats, in order (`0x00b5b6a4` .. `0x00b5b860`).
+    pub const FMT_POS: u32 = 0x00b5_b6a4;
+    pub const FMT_OFFSET: u32 = 0x00b5_b6c0;
+    pub const FMT_ROT: u32 = 0x00b5_b6dc;
+    pub const FMT_HIDE: u32 = 0x00b5_b6f8;
+    /// The hide flags (`+0x180`): bit 0 `" Ev"`, 1 `" Eff"`, 4 `" Btl"`,
+    /// 3 `" Disp"`, 5 `" Z"`, appended in this order.
+    pub const HIDE_FLAGS: [(u8, u32); 5] = [
+        (1, 0x00b5_b704),
+        (2, 0x00b5_b708),
+        (0x10, 0x00b5_b710),
+        (8, 0x00b5_b718),
+        (0x20, 0x00b5_b720),
+    ];
+    pub const FMT_CAMERA: u32 = 0x00b5_b724;
+    pub const FMT_MOTION_NAME: u32 = 0x00b5_b740;
+    pub const FMT_MOTION_ID: u32 = 0x00b5_b74c;
+    pub const FMT_FRAME: u32 = 0x00b5_b758;
+    pub const FMT_SPEED: u32 = 0x00b5_b770;
+    pub const FMT_NEXT_HOKAN: u32 = 0x00b5_b78c;
+    pub const FMT_MAP: u32 = 0x00b5_b79c;
+    pub const FMT_IDS: u32 = 0x00b5_b7c0;
+    pub const FMT_SHADE: u32 = 0x00b5_b7e4;
+    pub const FMT_HIT: u32 = 0x00b5_b808;
+    pub const FMT_SHADE_RGBA: u32 = 0x00b5_b824;
+    pub const FMT_EFFECT_RGB: u32 = 0x00b5_b844;
+    pub const FMT_ID_SHADE: u32 = 0x00b5_b860;
+
+    /// The two words of an `f64` vararg.
+    fn dwords(x: f64) -> [u32; 2] {
+        let b = x.to_bits();
+        [b as u32, (b >> 32) as u32]
+    }
+
+    /// `Gu_LogPrintf(fmt, ...)` with `words`, then the `f32`s at `fields`
+    /// of `chr` as doubles.
+    fn log(h: &mut impl Host, fmt: u32, words: &[u32], chr: u32, fields: &[u32]) {
+        let mut a = vec![h.rebase(fmt)];
+        a.extend_from_slice(words);
+        for &o in fields {
+            a.extend(dwords(x87::load(word(h, chr + o))));
+        }
+        h.call_sym(GU_LOG_PRINTF, Conv::Cdecl, &a); // call width: 9
+    }
+
+    /// An angle in radians (`f32`) to degrees as the original rounds it.
+    fn degrees(h: &impl Mem, rad: u32) -> f64 {
+        let d = x87::div(x87::mul(x87::load(rad), qword(h, C_180)), qword(h, C_PI));
+        x87::load(x87::store(d))
+    }
+
+    fn i16_at(h: &impl Mem, at: u32) -> u32 {
+        i32::from(h.read::<i16>(at)).cast_unsigned()
+    }
+
+    /// `FUN_008537d0(window, msg)` (`cdecl`; the text buffer at `buf`, the
+    /// original's `ebp - 0x104`, 0x100 bytes) -> 0: the character info
+    /// window. Its character (the window's argument) is dropped when
+    /// `Ch_CheckHandle` refuses it. 0x8001 titles it and takes the
+    /// mouse; 0x8006 opens the character selector (`g_GuChrSelector`,
+    /// filled by `0x00853dc0`, picked by `0x00853d40`) beside it; 0x8011
+    /// prints the character's state with `Gu_LogPrintf` (title
+    /// `"CHRINFO:<name>"`; "click here" without one, nothing when its
+    /// byte `+2` is clear).
+    pub fn chr_info_window_proc(h: &mut impl Host, buf: u32, window: u32, msg: u32) -> u32 {
+        let mut chr = h.call_sym(GU_WINDOW_GET_ARG, Conv::Cdecl, &[window]);
+        if h.call_sym(CH_CHECK_HANDLE, Conv::Cdecl, &[chr]) != 0 {
+            chr = 0;
+            h.call_sym(GU_WINDOW_SET_ARG, Conv::Cdecl, &[window, 0]);
+        }
+        match msg {
+            0x8001 => {
+                let t = h.rebase(TEXT_CHRINFO);
+                h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+                h.call_sym(GU_MOUSE_SET_WINDOW, Conv::Cdecl, &[window]);
+            }
+            0x8006 => chr_info_select(h, window),
+            0x8011 => {
+                let t = h.rebase(TEXT_CHRINFO);
+                h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+                if chr == 0 {
+                    let t = h.rebase(TEXT_CLICK_HERE);
+                    h.call_sym(GU_PRINTF, Conv::Cdecl, &[t]);
+                } else if h.read::<u8>(chr + 2) != 0 {
+                    chr_info_print(h, buf, window, chr);
+                }
+            }
+            _ => {}
+        }
+        0
+    }
+
+    fn chr_info_select(h: &mut impl Host, window: u32) {
+        let mut left = h.call_sym(GU_WINDOW_GET_LEFT, Conv::Cdecl, &[window]);
+        let x = h.call_sym(GU_WINDOW_GET_X, Conv::Cdecl, &[window]);
+        if left.cast_signed() > 0x46 {
+            left = left.wrapping_sub(0x46);
+        } else {
+            let w = h.call_sym(GU_WINDOW_GET_WIDTH, Conv::Cdecl, &[window]);
+            left = left.wrapping_add(w);
+        }
+        let sel = h.call_sym(GU_SELECTOR_ALLOCATE, Conv::Cdecl, &[]);
+        let cell = h.rebase(GU_CHR_SELECTOR);
+        h.write(cell, sel);
+        if h.call_sym(GU_CHR_SELECTOR_FILL, Conv::Cdecl, &[]) != 0 {
+            return;
+        }
+        let pick = h.rebase(CHR_SELECTOR_PICK);
+        let sel = word(h, cell);
+        h.call_sym(GU_SELECTOR_SET_CALLBACK, Conv::Cdecl, &[sel, pick]);
+        let sel = word(h, cell);
+        let at = h.rebase(GU_CHR_SELECTOR_WINDOW);
+        h.write(at, window);
+        h.call_sym(
+            GU_SELECTOR_OPEN_XYWH,
+            Conv::Cdecl,
+            &[sel, window, LIGHT_ON_BUTTON, left, x, 0x46, 0x64],
+        );
+    }
+
+    fn log_y_add(h: &mut impl Mem, n: u32) {
+        let at = h.rebase(GU_LOG_Y);
+        let y = word(h, at).wrapping_add(n);
+        h.write(at, y);
+    }
+
+    /// Appends the C string at `text` to the one at `buf`.
+    fn str_append(h: &mut impl Mem, buf: u32, text: u32) {
+        let mut end = buf;
+        while h.read::<u8>(end) != 0 {
+            end += 1;
+        }
+        let mut i = 0;
+        loop {
+            let c: u8 = h.read(text + i);
+            h.write(end + i, c);
+            if c == 0 {
+                break;
+            }
+            i += 1;
+        }
+    }
+
+    #[allow(clippy::too_many_lines)] // one line after another
+    fn chr_info_print(h: &mut impl Host, buf: u32, window: u32, chr: u32) {
+        h.call_sym(GU_PRINT_SET_SIZE_ONLY, Conv::Cdecl, &[0xc0]);
+        h.call_sym(GU_PRINT_SET_ITALIC, Conv::Cdecl, &[1]);
+        h.call_sym(GU_PRINT_SET_BOLD, Conv::Cdecl, &[1]);
+        let sprintf = word(h, h.rebase(SPRINTF));
+        let (f, name) = (h.rebase(FMT_CHRINFO), word(h, chr + 4));
+        let at = h.rebase(GU_LOG_Y);
+        h.write(at, 0_u32);
+        h.call(sprintf, Conv::Cdecl, &[buf, f, name]);
+        h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, buf]);
+        log(h, FMT_POS, &[], chr, &[0xc, 0x10, 0x14]);
+        log(h, FMT_OFFSET, &[], chr, &[0x6c, 0x70, 0x74]);
+        let dir = degrees(h, word(h, chr + 0x168));
+        let rot = degrees(h, word(h, chr + 0x158));
+        let [r0, r1] = dwords(rot);
+        let [d0, d1] = dwords(dir);
+        log(h, FMT_ROT, &[r0, r1, d0, d1], chr, &[0x154]);
+        log_y_add(h, 2);
+        let hide = h.read::<i8>(chr + 0x180);
+        let f = h.rebase(FMT_HIDE);
+        h.call(
+            sprintf,
+            Conv::Cdecl,
+            &[buf, f, i32::from(hide).cast_unsigned()],
+        );
+        for (bit, text) in HIDE_FLAGS {
+            if h.read::<u8>(chr + 0x180) & bit != 0 {
+                let t = h.rebase(text);
+                str_append(h, buf, t);
+            }
+        }
+        h.call_sym(GU_LOG_PRINTF, Conv::Cdecl, &[buf]);
+        let ten = qword(h, C_10);
+        let len = x87::div(x87::load(word(h, chr + 0x174)), ten);
+        let clip = x87::div(x87::load(word(h, chr + 0x178)), ten);
+        let [c0, c1] = dwords(clip);
+        let [l0, l1] = dwords(len);
+        log(h, FMT_CAMERA, &[c0, c1, l0, l1], chr, &[]);
+        let motion = word(h, chr + 0x72c);
+        log_y_add(h, 2);
+        let name = h.call_sym(MOTION_NAME, Conv::Cdecl, &[motion]);
+        if name == 0 {
+            let motion = word(h, chr + 0x72c);
+            log(h, FMT_MOTION_ID, &[motion], chr, &[]);
+        } else {
+            log(h, FMT_MOTION_NAME, &[name], chr, &[]);
+        }
+        let frame = word(h, chr + 0x744);
+        let (from, to) = (word(h, chr + 0x718), word(h, chr + 0x71c));
+        let whole = (frame.cast_signed() >> 8).cast_unsigned();
+        log(h, FMT_FRAME, &[whole, frame & 0xff, from, to], chr, &[]);
+        let speed = [0x754, 0x724, 0x752].map(|o| i16_at(h, chr + o));
+        log(h, FMT_SPEED, &speed, chr, &[]);
+        let next = i16_at(h, chr + 0x73c);
+        log(h, FMT_NEXT_HOKAN, &[next], chr, &[]);
+        log_y_add(h, 2);
+        let map = h.call_sym(CH_ID_GET_MAP, Conv::Cdecl, &[chr]);
+        let map_b = h.call_sym(CH_ID_GET_MAP_B, Conv::Cdecl, &[chr]);
+        let id = word(h, chr + 0x828) & 0x1_ffff;
+        let num = i16_at(h, chr + 0x824);
+        log(h, FMT_MAP, &[num, id, map_b, map], chr, &[]);
+        let mut ids = [
+            CH_ID_GET_WATER,
+            CH_ID_GET_ENCOUNT,
+            CH_ID_GET_DICTIONARY,
+            CH_ID_GET_EFFECT,
+            CH_ID_GET_SOUND,
+        ]
+        .map(|f| h.call_sym(f, Conv::Cdecl, &[chr]));
+        ids.reverse();
+        log(h, FMT_IDS, &ids, chr, &[]);
+        let mut shades = [
+            CH_ID_GET_SHADE2,
+            CH_ID_GET_SHADE1,
+            CH_ID_GET_SHADE0,
+            CH_ID_GET_SHADE,
+        ]
+        .map(|f| h.call_sym(f, Conv::Cdecl, &[chr]));
+        shades.reverse();
+        log(h, FMT_SHADE, &shades, chr, &[0x16c]);
+        log_y_add(h, 3);
+        let bits = word(h, chr + 0x194);
+        log(h, FMT_HIT, &[!(bits >> 8) & 1, (bits >> 30) & 1], chr, &[]);
+        log(h, FMT_SHADE_RGBA, &[], chr, &[0x330, 0x33c, 0x348, 0x354]);
+        log(h, FMT_EFFECT_RGB, &[], chr, &[0xbc, 0xc0, 0xc4]);
+        let bits = word(h, chr + 0x194);
+        log(h, FMT_ID_SHADE, &[(bits >> 0x12) & 1], chr, &[0x36c, 0x360]);
+        h.call_sym(GU_SET_HSCALE, Conv::Cdecl, &[0x200]);
+        h.call_sym(GU_PRINT_SET_SIZE_ONLY, Conv::Cdecl, &[0x100]);
+    }
+
+    pub const GU_PRINT_SET_COLOR: u32 = 0x0084_8740;
+    pub const GU_PRINT_SET_X: u32 = 0x0084_8820;
+    pub const GU_PRINT_SET_XY: u32 = 0x0084_8840;
+    pub const GU_PRINT_SET_Y: u32 = 0x0084_8860;
+    pub const GU_PRINT_GET_WIDTH: u32 = 0x0084_8d60;
+    pub const GU_WRAP_ANGLE: u32 = 0x0085_4200;
+    /// The clock's date and time words (`0x023cbc1c` weekday, `+4` day,
+    /// `+8` month, `+0xc` seconds, `+0x10` minutes, `+0x14` hours) and the
+    /// weekday names (pointer table `0x00c4fffc`).
+    pub const CLOCK_WEEKDAY: u32 = 0x023c_bc1c;
+    pub const CLOCK_DAY: u32 = 0x023c_bc20;
+    pub const CLOCK_MONTH: u32 = 0x023c_bc24;
+    pub const CLOCK_SECOND: u32 = 0x023c_bc28;
+    pub const CLOCK_MINUTE: u32 = 0x023c_bc2c;
+    pub const CLOCK_HOUR: u32 = 0x023c_bc30;
+    pub const WEEKDAY_NAMES: u32 = 0x00c4_fffc;
+    /// `"12"`, `"6"`, `"9"`, `"3"`, `"%d/%d %s"`, `"%02d:%02d:%02d"`.
+    pub const TEXT_12: u32 = 0x00b4_1b34;
+    pub const TEXT_6: u32 = 0x00b8_f810;
+    pub const TEXT_9: u32 = 0x00b8_f818;
+    pub const TEXT_3: u32 = 0x00b7_c99c;
+    pub const FMT_DATE: u32 = 0x00b5_b87c;
+    pub const FMT_TIME: u32 = 0x00b5_b888;
+    /// `f64` constants: 90; the hands' lengths -20/-40 (seconds and
+    /// minutes), -15/-30 (hours).
+    pub const C_90: u32 = 0x00b5_8cd0;
+    pub const C_M20: u32 = 0x00b5_b898;
+    pub const C_M40: u32 = 0x00b5_b8a8;
+    pub const C_M15: u32 = 0x00b5_01c8;
+    pub const C_M30: u32 = 0x00b5_b8a0;
+    /// The clock face's centre.
+    pub const CLOCK_X: u32 = 0x2a;
+    pub const CLOCK_Y: u32 = 0x18;
+
+    fn global(h: &impl Mem, sym: u32) -> u32 {
+        word(h, h.rebase(sym))
+    }
+
+    /// A hand at `deg` degrees from 12 (`(deg - 90)` in radians, rounded
+    /// to `f32` and wrapped), `(dy, dx)` long: its end.
+    fn clock_hand(h: &mut impl Host, deg: u32, dy: u32, dx: u32) -> (u32, u32) {
+        let d = x87::sub(x87::load(int_f32(deg)), qword(h, C_90));
+        let r = x87::store(x87::div(x87::mul(d, qword(h, C_PI)), qword(h, C_180)));
+        let w = h.call_sym_st0(GU_WRAP_ANGLE, Conv::Cdecl, &[r]).to_bits();
+        let (sin, cos) = (h.rebase(CI_SIN), h.rebase(CI_COS));
+        let s = h.call_intrinsic_f64(sin, x87::load(w));
+        let y = CLOCK_Y.wrapping_sub(x87::ftol(h, x87::mul(s, qword(h, dy))));
+        let c = h.call_intrinsic_f64(cos, x87::load(w));
+        let x = CLOCK_X.wrapping_sub(x87::ftol(h, x87::mul(c, qword(h, dx))));
+        (x, y)
+    }
+
+    /// `FUN_00853ec0(window, msg)` (`cdecl`; the text buffer at `buf`, the
+    /// original's `ebp - 0x24`, 0x20 bytes) -> 0: the debug clock window.
+    /// On 0x8011: the face's 12/6/9/3, the date (`"%d/%d %s"`, centred
+    /// on x 42, y 30), the time as the title, and the hands from (42,
+    /// 24): seconds (black, 6 degrees a second), minutes (blue) and hours
+    /// (red), from the seconds of the day `s + 60 (m + 60 h)`.
+    pub fn clock_window_proc(h: &mut impl Host, buf: u32, window: u32, msg: u32) -> u32 {
+        let hour = global(h, CLOCK_HOUR);
+        let minute = global(h, CLOCK_MINUTE).wrapping_add(hour.wrapping_mul(60));
+        let secs = global(h, CLOCK_SECOND).wrapping_add(minute.wrapping_mul(60));
+        if msg != 0x8011 {
+            return 0;
+        }
+        h.call_sym(GU_PRINT_SET_ITALIC, Conv::Cdecl, &[1]);
+        h.call_sym(GU_PRINT_SET_BOLD, Conv::Cdecl, &[1]);
+        h.call_sym(GU_PRINT_SET_COLOR, Conv::Cdecl, &[0, 0, 0x80, 0]);
+        h.call_sym(GU_PRINT_SET_X, Conv::Cdecl, &[0x22]);
+        let face = [
+            (TEXT_12, None),
+            (TEXT_6, Some((0x26, 0x28))),
+            (TEXT_9, Some((0, 0x14))),
+        ];
+        for (text, at) in face {
+            if let Some((x, y)) = at {
+                h.call_sym(GU_PRINT_SET_XY, Conv::Cdecl, &[x, y]);
+            }
+            let t = h.rebase(text);
+            h.call_sym(GU_PRINTF, Conv::Cdecl, &[t]);
+        }
+        h.call_sym(GU_PRINT_SET_X, Conv::Cdecl, &[0x50]);
+        let t = h.rebase(TEXT_3);
+        h.call_sym(GU_PRINTF, Conv::Cdecl, &[t]);
+        h.call_sym(GU_PRINT_SET_COLOR, Conv::Cdecl, &[0, 0x40, 0, 0]);
+        let sprintf = word(h, h.rebase(SPRINTF));
+        let day = word(
+            h,
+            h.rebase(WEEKDAY_NAMES)
+                .wrapping_add(global(h, CLOCK_WEEKDAY).wrapping_mul(4)),
+        );
+        let (month, date) = (global(h, CLOCK_MONTH), global(h, CLOCK_DAY));
+        let f = h.rebase(FMT_DATE);
+        h.call(sprintf, Conv::Cdecl, &[buf, f, month, date, day]);
+        let w = h
+            .call_sym(GU_PRINT_GET_WIDTH, Conv::Cdecl, &[buf])
+            .cast_signed();
+        let x = (CLOCK_X.cast_signed().wrapping_sub(w / 2)).cast_unsigned();
+        h.call_sym(GU_PRINT_SET_X, Conv::Cdecl, &[x]);
+        h.call_sym(GU_PRINT_SET_Y, Conv::Cdecl, &[0x1e]);
+        h.call_sym(GU_PRINTF, Conv::Cdecl, &[buf]);
+        let hms = [CLOCK_HOUR, CLOCK_MINUTE, CLOCK_SECOND].map(|s| global(h, s));
+        let f = h.rebase(FMT_TIME);
+        h.call(sprintf, Conv::Cdecl, &[buf, f, hms[0], hms[1], hms[2]]);
+        h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, buf]);
+        h.call_sym(GU_PACKET_BEGIN_TAG, Conv::Cdecl, &[window]);
+        h.call_sym(GU_SET_TEST, Conv::Cdecl, &[1, 5, 0x7f, 0, 0, 0, 0, 1]);
+        h.call_sym(GU_SET_PRIM, Conv::Cdecl, &[1]);
+        let s = secs.cast_signed();
+        let hands = [
+            (secs.wrapping_mul(6), [0, 0, 0, 0xff], C_M20, C_M40),
+            ((s / 10).cast_unsigned(), [0, 0, 0x80, 0xff], C_M20, C_M40),
+            ((s / 120).cast_unsigned(), [0x80, 0, 0, 0xff], C_M15, C_M30),
+        ];
+        for (deg, colour, dy, dx) in hands {
+            rgbaq(h, colour);
+            xyz(h, CLOCK_X, CLOCK_Y);
+            let (x, y) = clock_hand(h, deg, dy, dx);
+            xyz(h, x, y);
+        }
+        h.call_sym(GU_PACKET_END_TAG, Conv::Cdecl, &[]);
+        0
+    }
+
+    pub const SG_ACC_REQUEST_CURRENT: u32 = 0x0082_bdf0;
+    pub const SG_ACC_GET_ALPHA: u32 = 0x0082_bcc0;
+    pub const SG_ACC_SET_ALPHA: u32 = 0x0082_bd10;
+    pub const SG_GET_BLUR: u32 = 0x0082_cd20;
+    pub const SG_BLUR: u32 = 0x0082_bee0;
+    /// `"AccBuf"`, `"Current"`, `""`, `"0x%x"`, `"Blur"`.
+    pub const TEXT_ACC_BUF: u32 = 0x00b5_b8c0;
+    pub const TEXT_CURRENT: u32 = 0x00b5_b8c8;
+    pub const TEXT_EMPTY: u32 = 0x00b8_fbeb;
+    pub const FMT_HEX: u32 = 0x00b5_b8d0;
+    pub const TEXT_BLUR: u32 = 0x00b5_b3d0;
+
+    /// A value window's step: `get()` down (button 0) or up (2) by 1
+    /// (0x8005) or 10 (0x8009), clamped to `0..=max`.
+    fn value_step(h: &mut impl Host, get: u32, msg: u32, button: u32, max: i32) -> u32 {
+        let step = if msg == 0x8005 { 1 } else { 10 };
+        let mut v = h.call_sym(get, Conv::Cdecl, &[]).cast_signed();
+        match button {
+            0 => v = v.wrapping_sub(step),
+            2 => v = v.wrapping_add(step),
+            _ => {}
+        }
+        v.clamp(0, max).cast_unsigned()
+    }
+
+    /// A value window's row: down 0, the value 1, up 2 at `y`.
+    fn value_row(h: &mut impl Host, window: u32, y: u32) {
+        let (left, empty, right) = (
+            h.rebase(SPEC_LEFT),
+            h.rebase(TEXT_EMPTY),
+            h.rebase(SPEC_RIGHT),
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_BUTTON,
+            Conv::Cdecl,
+            &[window, 0, left, 4, y, 0xe, 9],
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_STATIC,
+            Conv::Cdecl,
+            &[window, 1, empty, 0x11, y, 0x28, 9],
+        );
+        h.call_sym(
+            GU_WINDOW_ADD_BUTTON,
+            Conv::Cdecl,
+            &[window, 2, right, 0x3e, y, 0xe, 9],
+        );
+    }
+
+    /// A value window's 0x8011: `get()` as `"0x%x"` in control 1.
+    fn value_show(h: &mut impl Host, buf: u32, window: u32, get: u32) {
+        let v = h.call_sym(get, Conv::Cdecl, &[]);
+        let (f, sprintf) = (h.rebase(FMT_HEX), word(h, h.rebase(SPRINTF)));
+        h.call(sprintf, Conv::Cdecl, &[buf, f, v]);
+        h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, 1, buf]);
+    }
+
+    /// `FUN_00854270(window, msg, button)` (`cdecl`; the text buffer at
+    /// `buf`, the original's `ebp - 0x18`) -> 0: the `"AccBuf"` window:
+    /// the accumulation buffer's alpha (`Sg_AccGetAlpha`) stepped by
+    /// 1/10 (0x8005/0x8009, buttons 0 and 2) within 0..0x80
+    /// (`Sg_AccSetAlpha(a, 0)`), shown on 0x8011; "Current" (0x4d2) on
+    /// 0x8006 asks for the current frame (`Sg_AccRequestCurrent(0)`).
+    pub fn acc_buf_window_proc(
+        h: &mut impl Host,
+        buf: u32,
+        window: u32,
+        msg: u32,
+        button: u32,
+    ) -> u32 {
+        match msg {
+            0x8001 => {
+                let t = h.rebase(TEXT_ACC_BUF);
+                h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+                let t = h.rebase(TEXT_CURRENT);
+                h.call_sym(
+                    GU_WINDOW_ADD_BUTTON,
+                    Conv::Cdecl,
+                    &[window, LIGHT_ON_BUTTON, t, 4, 2, 0x46, 9],
+                );
+                value_row(h, window, 0xd);
+            }
+            0x8005 | 0x8009 => {
+                let a = value_step(h, SG_ACC_GET_ALPHA, msg, button, 0x80);
+                h.call_sym(SG_ACC_SET_ALPHA, Conv::Cdecl, &[a, 0]);
+            }
+            0x8006 if button == LIGHT_ON_BUTTON => {
+                h.call_sym(SG_ACC_REQUEST_CURRENT, Conv::Cdecl, &[0]);
+            }
+            0x8011 => value_show(h, buf, window, SG_ACC_GET_ALPHA),
+            _ => {}
+        }
+        0
+    }
+
+    /// `FUN_00854420(window, msg, button)` (`cdecl`; the text buffer at
+    /// `buf`, the original's `ebp - 0x18`) -> 0: the `"Blur"` window: the
+    /// blur (`Sg_GetBlur`) stepped by 1/10 (0x8005/0x8009, buttons 0 and
+    /// 2) within 0..0x7f (`Sg_Blur`), shown on 0x8011.
+    pub fn blur_window_proc(
+        h: &mut impl Host,
+        buf: u32,
+        window: u32,
+        msg: u32,
+        button: u32,
+    ) -> u32 {
+        match msg {
+            0x8001 => {
+                let t = h.rebase(TEXT_BLUR);
+                h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+                value_row(h, window, 2);
+            }
+            0x8005 | 0x8009 => {
+                let b = value_step(h, SG_GET_BLUR, msg, button, 0x7f);
+                h.call_sym(SG_BLUR, Conv::Cdecl, &[b]);
+            }
+            0x8011 => value_show(h, buf, window, SG_GET_BLUR),
+            _ => {}
+        }
+        0
+    }
+
+    pub const SG_FLASH: u32 = 0x0082_cca0;
+    /// The flash window's settings: time (`0x0132593c`, 1..600), red,
+    /// green, blue (`0x01325930`.., 0..255).
+    pub const FLASH_TIME: u32 = 0x0132_593c;
+    pub const FLASH_RGB: [u32; 3] = [0x0132_5930, 0x0132_5934, 0x0132_5938];
+    /// `"Flash"`, `"Flash!"`, the row letters `"TRGB"`.
+    pub const TEXT_FLASH: u32 = 0x00b5_b3d8;
+    pub const TEXT_FLASH_NOW: u32 = 0x00b5_b8b0;
+    pub const TEXT_TRGB: u32 = 0x00b5_b8b8;
+
+    /// The flash window's four settings in row order.
+    fn flash_cells(h: &impl Mem) -> [u32; 4] {
+        [FLASH_TIME, FLASH_RGB[0], FLASH_RGB[1], FLASH_RGB[2]].map(|s| h.rebase(s))
+    }
+
+    /// `FUN_00854590(window, msg, button)` (`cdecl`; the text buffer at
+    /// `buf`, the original's `ebp - 0x18`) -> 0: the `"Flash"` window:
+    /// rows T, R, G, B (down 3k, value 3k + 1, up 3k + 2) stepped by 1
+    /// (0x8005, after an unused `Sg_AccGetAlpha`) or 10 (0x8009), time
+    /// kept in 1..600 and the colour in 0..255; "Flash!" (0x4d2) on
+    /// 0x8007 flashes (`Sg_Flash(t, r, g, b)`); 0x8011 shows them.
+    pub fn flash_window_proc(
+        h: &mut impl Host,
+        buf: u32,
+        window: u32,
+        msg: u32,
+        button: u32,
+    ) -> u32 {
+        let cells = flash_cells(h);
+        match msg {
+            0x8001 => flash_window_build(h, buf, window),
+            0x8005 | 0x8009 => {
+                let step = if msg == 0x8005 {
+                    h.call_sym(SG_ACC_GET_ALPHA, Conv::Cdecl, &[]);
+                    1
+                } else {
+                    10
+                };
+                if button < 0xc && button % 3 != 1 {
+                    let at = cells[(button / 3) as usize];
+                    let v = word(h, at);
+                    let v = if button.is_multiple_of(3) {
+                        v.wrapping_sub(step)
+                    } else {
+                        v.wrapping_add(step)
+                    };
+                    h.write(at, v);
+                }
+                for &at in &cells[1..] {
+                    let v = word(h, at).cast_signed().clamp(0, 0xff);
+                    h.write(at, v);
+                }
+                let t = word(h, cells[0]).cast_signed().clamp(1, 0x258);
+                h.write(cells[0], t);
+            }
+            0x8007 if button == LIGHT_ON_BUTTON => {
+                let [t, r, g, b] = cells.map(|at| word(h, at));
+                h.call_sym(SG_FLASH, Conv::Cdecl, &[t, r, g, b]);
+            }
+            0x8011 => {
+                let (f, sprintf) = (h.rebase(FMT_D), word(h, h.rebase(SPRINTF)));
+                for (k, at) in (0_u32..).zip(cells) {
+                    let v = word(h, at);
+                    h.call(sprintf, Conv::Cdecl, &[buf, f, v]);
+                    h.call_sym(GU_CONTROL_SET_TEXT, Conv::Cdecl, &[window, 3 * k + 1, buf]);
+                }
+            }
+            _ => {}
+        }
+        0
+    }
+
+    fn flash_window_build(h: &mut impl Host, buf: u32, window: u32) {
+        let t = h.rebase(TEXT_FLASH);
+        h.call_sym(GU_WINDOW_SET_TITLE, Conv::Cdecl, &[window, t]);
+        let t = h.rebase(TEXT_FLASH_NOW);
+        h.call_sym(
+            GU_WINDOW_ADD_BUTTON,
+            Conv::Cdecl,
+            &[window, LIGHT_ON_BUTTON, t, 4, 2, 0x52, 9],
+        );
+        let (letters, left, empty, right) = (
+            h.rebase(TEXT_TRGB),
+            h.rebase(SPEC_LEFT),
+            h.rebase(TEXT_EMPTY),
+            h.rebase(SPEC_RIGHT),
+        );
+        for k in 0..4_u32 {
+            let (id, y) = (3 * k, 0xd + 0xb * k);
+            let c: u8 = h.read(letters + k);
+            h.write(buf, [c, 0]);
+            h.call_sym(
+                GU_WINDOW_ADD_STATIC,
+                Conv::Cdecl,
+                &[window, u32::MAX, buf, 4, y, 0xa, 9],
+            );
+            h.call_sym(
+                GU_WINDOW_ADD_BUTTON,
+                Conv::Cdecl,
+                &[window, id, left, 0xe, y, 0xe, 9],
+            );
+            h.call_sym(
+                GU_WINDOW_ADD_STATIC,
+                Conv::Cdecl,
+                &[window, id + 1, empty, 0x1b, y, 0x28, 9],
+            );
+            h.call_sym(
+                GU_WINDOW_ADD_BUTTON,
+                Conv::Cdecl,
+                &[window, id + 2, right, 0x48, y, 0xe, 9],
+            );
+        }
+        let [t, r, g, b] = flash_cells(h);
+        for at in [b, g, r] {
+            h.write(at, 0xff_u32);
+        }
+        h.write(t, 0x1e_u32);
+    }
+
+    pub const GU_WINDOW_SET_SIZE: u32 = 0x0084_b720;
+    pub const GU_WINDOW_SET_FLAG2: u32 = 0x0084_b600;
+    /// The help window's text (`g_GuHelpText`, `0x013259a0`) and its
+    /// colour bytes (`0x0132599c`..).
+    pub const GU_HELP_TEXT: u32 = 0x0132_59a0;
+    pub const GU_HELP_COLOUR: u32 = 0x0132_599c;
+    /// The tip window's text (`0x01325958`), its colour record (pointer
+    /// `0x01325998`, r, g, b at `+5`) and the window it hides
+    /// (`0x01325948`).
+    pub const GU_TIP_TEXT: u32 = 0x0132_5958;
+    pub const GU_TIP_RECORD: u32 = 0x0132_5998;
+    pub const GU_TIP_OWNER: u32 = 0x0132_5948;
+
+    /// A text box's 0x8011: sized to `text` (bold, from x 14) and a
+    /// square of `colour` (r, g, b bytes) at (2, 1)-(8, 6).
+    fn text_box(h: &mut impl Host, window: u32, text: u32, colour: u32) {
+        h.call_sym(GU_PRINT_SET_BOLD, Conv::Cdecl, &[1]);
+        let w = h.call_sym(GU_PRINT_GET_WIDTH, Conv::Cdecl, &[text]);
+        h.call_sym(
+            GU_WINDOW_SET_SIZE,
+            Conv::Cdecl,
+            &[window, w.wrapping_add(0x22), 0xa],
+        );
+        h.call_sym(GU_PRINT_SET_X, Conv::Cdecl, &[0xe]);
+        h.call_sym(GU_PRINTF, Conv::Cdecl, &[text]);
+        h.call_sym(GU_PACKET_BEGIN_TAG, Conv::Cdecl, &[window]);
+        h.call_sym(GU_SET_TEST, Conv::Cdecl, &[1, 5, 0x7f, 0, 0, 0, 0, 1]);
+        let [r, g, b]: [u8; 3] = h.read(colour);
+        rgbaq(h, [r.into(), g.into(), b.into(), 0xff]);
+        h.call_sym(GU_SET_PRIM, Conv::Cdecl, &[6]);
+        xyz(h, 2, 1);
+        xyz(h, 8, 6);
+        h.call_sym(GU_PACKET_END_TAG, Conv::Cdecl, &[]);
+    }
+
+    /// `FUN_00855290(window, msg)` (`cdecl`) -> 0: the help window
+    /// (`g_GuHelpText` and its colour, `0x0132599c`) drawn on 0x8011.
+    pub fn help_window_proc(h: &mut impl Host, window: u32, msg: u32) -> u32 {
+        if msg == 0x8011 {
+            let (text, colour) = (h.rebase(GU_HELP_TEXT), h.rebase(GU_HELP_COLOUR));
+            text_box(h, window, text, colour);
+        }
+        0
+    }
+
+    /// `FUN_008554b0(window, msg)` (`cdecl`) -> 0: the tip window: on
+    /// 0x8011 with a text (`0x01325958`), the window `0x01325948` loses
+    /// flag 2 and the text is drawn with the record's colour (`+5`).
+    pub fn tip_window_proc(h: &mut impl Host, window: u32, msg: u32) -> u32 {
+        let record = word(h, h.rebase(GU_TIP_RECORD));
+        let text = h.rebase(GU_TIP_TEXT);
+        if msg == 0x8011 && h.read::<u8>(text) != 0 {
+            let owner = word(h, h.rebase(GU_TIP_OWNER));
+            h.call_sym(GU_WINDOW_SET_FLAG2, Conv::Cdecl, &[owner, 0]);
+            text_box(h, window, text, record.wrapping_add(5));
+        }
+        0
+    }
+
+    pub const SG_MEM_USAGE: u32 = 0x0083_c0f0;
+    pub const GU_WINDOW_GET_CLIENT_W: u32 = 0x0084_aee0;
+    pub const GU_WINDOW_GET_CLIENT_H: u32 = 0x0084_aed0;
+    pub const GU_WINDOW_GET_CLIENT_TOP: u32 = 0x0084_af00;
+    pub const GU_WINDOW_MOUSE_IN: u32 = 0x0084_9490;
+    pub const GU_MOUSE_GET_WINDOW_X: u32 = 0x0084_9ac0;
+    pub const GU_MOUSE_GET_X: u32 = 0x0084_9ae0;
+    pub const GU_MOUSE_GET_Y: u32 = 0x0084_9af0;
+    pub const GU_WINDOW_SET_POS: u32 = 0x0084_b220;
+    pub const GU_WINDOW_CLOSE_TREE: u32 = 0x0084_ab80;
+    pub const GU_DRAW_RECT_STRIP: u32 = 0x0085_4f60;
+    pub const GU_HELP_WINDOW_SHOW: u32 = 0x0085_5360;
+    /// `g_GuHelpWindow`, `g_GuMemGraphOpen`, and where the mouse was
+    /// (`0x013259e0`, `0x013259e4`).
+    pub const GU_HELP_WINDOW: u32 = 0x0132_5950;
+    pub const GU_MEM_GRAPH_OPEN: u32 = 0x0132_5954;
+    pub const GU_HELP_MOUSE: u32 = 0x0132_59e0;
+    /// The memory graph's nine rows (8 bytes: name, r, g, b) and the
+    /// help line's format `"%s %dK[%xh] "`.
+    pub const MEM_GRAPH_ROWS: u32 = 0x00b5_b930;
+    pub const FMT_MEM_ROW: u32 = 0x00b5_b9cc;
+
+    /// `FUN_00855020(window, msg)` (`cdecl`; its frame from the
+    /// original's `ebp - 0x80` at `frame`: the client rectangle `+0`
+    /// (`i16` x, y, w, h), the mouse x `+8`, the hit flag `+0xc`, the
+    /// previous row's end `+0x10`, the height `+0x14`, the nine usage
+    /// words `+0x18`, the help text `+0x3c`) -> 0: the memory graph.
+    /// 0x8003 closes it (`g_GuMemGraphOpen` 0, the help window closed,
+    /// `Sg_SetResource(0x11, 1)`); 0x8011 stacks the nine usages
+    /// (`Sg_MemUsage`) as coloured bands over the client height, the
+    /// band under the mouse described in the help window (opened by
+    /// `0x00855360`, moved to the mouse, closed when no band is hit).
+    pub fn mem_graph_window_proc(h: &mut impl Host, frame: u32, window: u32, msg: u32) -> u32 {
+        match msg {
+            0x8003 => {
+                let open = h.rebase(GU_MEM_GRAPH_OPEN);
+                h.write(open, 0_u32);
+                mem_graph_close_help(h);
+                h.call_sym(SG_SET_RESOURCE, Conv::Cdecl, &[0x11, 1]);
+            }
+            0x8011 => mem_graph_draw(h, frame, window),
+            _ => {}
+        }
+        0
+    }
+
+    fn mem_graph_close_help(h: &mut impl Host) {
+        let cell = h.rebase(GU_HELP_WINDOW);
+        let help = word(h, cell);
+        if help != 0 {
+            h.call_sym(GU_WINDOW_CLOSE_TREE, Conv::Cdecl, &[help]);
+            h.write(cell, 0_u32);
+        }
+    }
+
+    fn mem_graph_draw(h: &mut impl Host, frame: u32, window: u32) {
+        let usage = frame + 0x18;
+        let total = h
+            .call_sym(SG_MEM_USAGE, Conv::Cdecl, &[usage])
+            .cast_signed();
+        let half = total / 2;
+        h.write(frame, 0_u32);
+        let w = h
+            .call_sym(GU_WINDOW_GET_CLIENT_W, Conv::Cdecl, &[window])
+            .wrapping_sub(2);
+        h.write(frame + 4, w as u16);
+        let ch = h
+            .call_sym(GU_WINDOW_GET_CLIENT_H, Conv::Cdecl, &[window])
+            .wrapping_sub(2);
+        h.write(frame + 6, ch as u16);
+        let mouse_x = if h.call_sym(GU_WINDOW_MOUSE_IN, Conv::Cdecl, &[window]) == 0 {
+            u32::MAX
+        } else {
+            let x = h.call_sym(GU_MOUSE_GET_WINDOW_X, Conv::Cdecl, &[window]);
+            let top = h.call_sym(GU_WINDOW_GET_CLIENT_TOP, Conv::Cdecl, &[window]);
+            let mx = x.wrapping_sub(top);
+            let y = h
+                .call_sym(GU_MOUSE_GET_Y, Conv::Cdecl, &[])
+                .wrapping_sub(10);
+            let x = h.call_sym(GU_MOUSE_GET_X, Conv::Cdecl, &[]);
+            let at = h.rebase(GU_HELP_MOUSE);
+            h.write(at, [x, y]);
+            let help = word(h, h.rebase(GU_HELP_WINDOW));
+            if help != 0 {
+                h.call_sym(GU_WINDOW_SET_POS, Conv::Cdecl, &[help, x, y]);
+            }
+            mx
+        };
+        h.write(frame + 8, mouse_x);
+        h.call_sym(GU_PACKET_BEGIN_TAG, Conv::Cdecl, &[window]);
+        h.call_sym(GU_SET_PRIM, Conv::Cdecl, &[6]);
+        let height = i32::from(ch as i16);
+        h.write(frame + 0x14, height);
+        let right = i32::from(w as i16).cast_unsigned();
+        h.write(frame + 0xc, 0_u32);
+        let mut hit = false;
+        let (mut cum, mut prev) = (0_i32, 1_i32);
+        let rows = h.rebase(MEM_GRAPH_ROWS);
+        for i in 0..9 {
+            let row = rows + 8 * i;
+            let [r, g, b]: [u8; 3] = h.read(row + 4);
+            rgbaq(h, [r.into(), g.into(), b.into(), 0xff]);
+            let n = word(h, usage + 4 * i).cast_signed();
+            cum = cum.wrapping_add(n);
+            let y = (cum / 2)
+                .wrapping_mul(height)
+                .wrapping_div(half)
+                .wrapping_add(1);
+            let mx = mouse_x.cast_signed();
+            if mx >= prev && mx < y {
+                let at = h.rebase(GU_HELP_COLOUR);
+                h.write(at, [r, g, b]);
+                let (f, sprintf) = (h.rebase(FMT_MEM_ROW), word(h, h.rebase(SPRINTF)));
+                let name = word(h, row);
+                let text = frame + 0x3c;
+                h.call(
+                    sprintf,
+                    Conv::Cdecl,
+                    &[text, f, name, (n / 1024).cast_unsigned(), n.cast_unsigned()],
+                );
+                h.call_sym(GU_HELP_WINDOW_SHOW, Conv::Cdecl, &[text]);
+                hit = true;
+                h.write(frame + 0xc, 1_u32);
+            }
+            xyz(h, 0, prev.cast_unsigned());
+            xyz(h, right, y.cast_unsigned());
+            prev = y;
+            h.write(frame + 0x10, prev);
+        }
+        if !hit {
+            mem_graph_close_help(h);
+        }
+        h.call_sym(GU_SET_PRIM, Conv::Cdecl, &[2]);
+        rgbaq(h, [0; 4]);
+        h.call_sym(GU_DRAW_RECT_STRIP, Conv::Cdecl, &[frame]);
+        h.call_sym(GU_PACKET_END_TAG, Conv::Cdecl, &[]);
+        h.call_sym(GU_PRINT_SET_SIZE_ONLY, Conv::Cdecl, &[0x100]);
+    }
 }

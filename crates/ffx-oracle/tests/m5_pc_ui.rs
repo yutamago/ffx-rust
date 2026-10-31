@@ -47,6 +47,10 @@ const CAVE_LEN: u32 = 1760;
 /// original so that a callee leaving `eax` alone shows the poison.
 const POISON_AT: u32 = CAVE + CAVE_LEN;
 const POISON: u32 = 0xdead_beef;
+/// After the poison (`+8`): `fld qword [esp+4]; call [esp+0xc]; ret`,
+/// for [`Host::call_intrinsic`] (a C runtime intrinsic with its argument
+/// in `ST0`; the cave function is 1864 bytes long).
+const TRAMPOLINE: [u8; 9] = [0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3];
 
 /// Deterministic xorshift stream.
 struct Rng(u32);
@@ -124,6 +128,22 @@ impl Host for G<'_> {
         let r = self.0.call(addr, conv(c), args).unwrap();
         r.st0_f64().expect("the callee leaves ST0 set")
     }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(self.1 + 8, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f32().expect("the intrinsic's ST0")
+    }
+    fn call_intrinsic_f64(&mut self, addr: u32, x: f64) -> f64 {
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(self.1 + 8, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        r.st0_f64().expect("the intrinsic's ST0")
+    }
     fn call_wide(&mut self, addr: u32, args: &[u32]) -> u32 {
         ffx_oracle::check_width("Host::call_wide", addr, args.len(), host::WIDE_WORDS);
         self.0.call(self.1, Conv::Cdecl, &[]).unwrap();
@@ -188,6 +208,7 @@ impl Twins {
         code.extend(POISON.to_le_bytes());
         code.push(0xc3);
         t.write(at, &code);
+        t.write(at + 8, &TRAMPOLINE);
         t
     }
 
@@ -4983,6 +5004,823 @@ fn rp4_character_menu_windows_match_the_original() {
                 &[sel],
                 0x48,
                 |m, ebp| Out::U32(ll::chrmenu_load_selected(m, ebp - 0x48, sel)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // three functions
+fn rp4_light_windows_match_the_original() {
+    // The character menu set-up (an empty folder resource or not, the
+    // window known or not), the light value editor (every message and
+    // button, values around the limits and the angles' wrap), and the
+    // light window (each message, the back colour light or another, on
+    // and off; sprintf as it is).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_40f1);
+        for case in 0..8 {
+            let empty = t.cstr("");
+            let folder = t.cstr("c001");
+            let res = [if case % 2 == 0 { empty } else { folder }, rng.next()];
+            t.stub_seq(ll::SG_GET_RESOURCE_STR, false, 1, 0, &res);
+            t.stubs(&[
+                (ll::USER_NAME, false, 0, 0, rng.next()),
+                (ll::SG_SET_RESOURCE_STR, false, 2, 0, rng.next()),
+                (ll::SG_ADD_BUTTON, false, 3, 0, rng.next()),
+                (ll::SG_ADD_STATIC, false, 3, 0, rng.next()),
+                (ll::SG_ADD_Y, false, 1, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (ll::SG_DISP_ENABLE, false, 0, 0, rng.below(2)),
+                (ll::CH_CALC_NORMAL, false, 0, 0, rng.below(2)),
+                (ll::CH_MOTION_HALF, false, 0, 0, rng.below(2)),
+                (ll::SG_GET_RESOURCE, false, 2, 0, rng.next()),
+                (ll::CHRMENU_LIGHT_TEXTS, false, 1, 0, rng.next()),
+                (ll::CH_ENABLE_TEXTURE, false, 0, 0, rng.below(2)),
+                (ll::SG_GET_Y, false, 0, 0, rng.next()),
+            ]);
+            let window = if case % 4 == 1 { 0 } else { rng.next() };
+            let info = t.zeros(0x100);
+            t.check(
+                "Gui_ChrMenuInit",
+                0x0084_ca30,
+                Conv::Cdecl,
+                &[window, info],
+                |m| Out::U32(ll::gui_chr_menu_init(m, window, info)),
+            );
+            t.reset();
+        }
+        for case in 0..200 {
+            let vals: Vec<u32> = (0..6)
+                .map(|k| match rng.below(5) {
+                    0 => 0,
+                    1 => 0xff,
+                    2 => {
+                        if k >= 4 {
+                            359
+                        } else {
+                            0x100
+                        }
+                    }
+                    3 => rng.below(10).wrapping_sub(5),
+                    _ => rng.below(400),
+                })
+                .collect();
+            let v = t.words(&vals);
+            let msg = [0x8005, 0x8009, 0x800d, 0x8007][case % 4];
+            let button = rng.below(20);
+            let window = rng.next();
+            t.check(
+                "ChrMenu_editLight_0084d940",
+                0x0084_d940,
+                Conv::Cdecl,
+                &[v, window, msg, button],
+                |m| Out::U32(ll::chrmenu_edit_light(m, v, msg, button)),
+            );
+        }
+        for case in 0..60 {
+            let light = t.zeros(0x20);
+            for k in 0..3 {
+                t.w32(light + 4 * k, rng.below(256));
+            }
+            let kind = if rng.chance(3) {
+                4
+            } else {
+                rng.below(6) as u16
+            }; // past 5 the range check aborts
+            t.write(light + 0x18, &kind.to_le_bytes());
+            t.w8(light + 0x1a, u8::from(rng.chance(2)));
+            t.g32(ll::LIGHT_WINDOW_LIGHT, light);
+            t.stubs(&[
+                (ll::GU_WINDOW_GET_ARG, false, 1, 0, light),
+                (ll::GU_WINDOW_SET_ARG, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::CHRMENU_EDIT_LIGHT, false, 4, 0, rng.next()),
+                (ll::LIGHT_APPLY, false, 1, 0, rng.next()),
+                (ll::YI_SET_BACK_COLOR, false, 1, 0, rng.next()),
+            ]);
+            let msg = [
+                0x8001, 0x8003, 0x8005, 0x8009, 0x800d, 0x8007, 0x8011, 0x8002, 0x9000,
+            ][case % 9];
+            let button = if rng.chance(2) { 0x4d2 } else { rng.below(12) };
+            let window = rng.next();
+            t.skip = 4;
+            // a frame not zero, so the black colour's four words show
+            t.check_framed_init(
+                "LightWindowProc_0084e100",
+                0x0084_e100,
+                Conv::Cdecl,
+                &[window, msg, button],
+                0x28,
+                &[0x5a; 0x24],
+                |m, ebp| Out::U32(ll::light_window_proc(m, ebp - 0x28, window, msg, button)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_dir_light_window_matches_the_original() {
+    // Each message (build, flag, edits, toggle, draw) on and off, the
+    // drawing for camera yaws all round and light angles past a turn
+    // either way (Angle_Wrap and the trig intrinsics as they are; the
+    // camera's yaw from a patched Sg_CameraGetYaw).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_dac0);
+        for case in 0..120 {
+            let light = t.zeros(0x20);
+            for k in 0..3 {
+                t.w32(light + 4 * k, rng.below(256));
+            }
+            for k in 4..6 {
+                t.w32(light + 4 * k, rng.below(1500).wrapping_sub(750));
+            }
+            let kind = rng.below(6) as u16; // past 5 the range check aborts
+            t.write(light + 0x18, &kind.to_le_bytes());
+            t.w8(light + 0x1a, u8::from(rng.chance(2)));
+            t.g32(ll::LIGHT_WINDOW_LIGHT, light);
+            t.g32(ll::DIR_WINDOW_BOTTOM, rng.below(200));
+            let cell = t.zeros(4);
+            let yaw = (f32::from(rng.below(20_000) as u16) / 10_000.0 - 1.0) * 3.5;
+            t.w32(cell, yaw.to_bits());
+            let mut code = vec![0xd9, 0x05];
+            code.extend(cell.to_le_bytes());
+            code.push(0xc3); // fld dword [cell]; ret
+            let at = t.rebase(ll::SG_CAMERA_GET_YAW);
+            t.patch(at, &code);
+            t.stubs(&[
+                (ll::GU_WINDOW_GET_ARG, false, 1, 0, light),
+                (ll::GU_WINDOW_SET_ARG, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::CHRMENU_EDIT_LIGHT, false, 4, 0, rng.next()),
+                (ll::LIGHT_APPLY, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_BEGIN_TAG, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_END_TAG, false, 0, 0, rng.next()),
+                (ll::GU_SET_TEST, false, 8, 0, rng.next()),
+                (ll::GU_SET_PRIM, false, 1, 0, rng.next()),
+                (ll::GU_SET_RGBAQ, false, 4, 0, rng.next()),
+                (ll::GU_SET_XYZF2, false, 2, 0, rng.next()),
+            ]);
+            let msg = if case % 2 == 0 {
+                0x8011
+            } else {
+                [
+                    0x8001, 0x8003, 0x8005, 0x8009, 0x800d, 0x8007, 0x8002, 0x9000,
+                ][case / 2 % 8]
+            };
+            let button = if rng.chance(2) { 0x4d2 } else { rng.below(18) };
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "FUN_0084dac0",
+                0x0084_dac0,
+                Conv::Cdecl,
+                &[window, msg, button],
+                0x18,
+                |m, ebp| {
+                    Out::U32(ll::dir_light_window_proc(
+                        m,
+                        ebp - 0x18,
+                        window,
+                        msg,
+                        button,
+                    ))
+                },
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_light_group_load_save_matches_the_original() {
+    // Saving and loading each group, lights on and off with angles past
+    // a turn either way (the light setters, the apply and the back
+    // colour stubbed; Angle_Wrap and the intrinsics as they are); the
+    // colour/direction vector in the original's aligned frame compared.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_e3c0);
+        for case in 0..40 {
+            let first = t.rebase(ll::EDIT_LIGHTS);
+            let table = t.rebase(ll::DEBUG_LIGHT_TABLE);
+            for at in (0..0xa8 * 8).step_by(4) {
+                let v = rng.below(1500).wrapping_sub(500);
+                t.w32(table + at, v);
+            }
+            for i in 0..6 {
+                let e = table + (case % 8) * 0xa8 + 0x1c * i;
+                t.w8(e + 0x1a, u8::from(rng.chance(2)));
+                let k = rng.below(6) as u16;
+                t.write(e + 0x18, &k.to_le_bytes());
+                for at in (0..0x18).step_by(4) {
+                    let v = rng.next();
+                    t.w32(first + 0x1c * i + at, v);
+                }
+            }
+            // Sg_LightSetColor copying each colour into a buffer (the vector is
+            // overwritten by the direction after it)
+            let colours = t.zeros(0x100);
+            let cursor = t.words(&[colours]);
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15];
+            c.extend(cursor.to_le_bytes());
+            c.extend([0x8b, 0x08, 0x89, 0x0a, 0x8b, 0x48, 0x04, 0x89, 0x4a, 0x04]);
+            c.extend([
+                0x8b, 0x48, 0x08, 0x89, 0x4a, 0x08, 0x83, 0xc2, 0x0c, 0x89, 0x15,
+            ]);
+            c.extend(cursor.to_le_bytes());
+            c.push(0xc3);
+            let set_colour = t.cave_code(&c);
+            t.jump(ll::SG_LIGHT_SET_COLOR, set_colour);
+            t.stubs(&[
+                (ll::SG_LIGHT_SET_DIR, false, 2, 0, rng.next()),
+                (ll::LIGHT_APPLY, false, 1, 0, rng.next()),
+                (ll::YI_SET_BACK_COLOR, false, 1, 0, rng.next()),
+            ]);
+            let (group, load) = (case % 8, u32::from(case % 3 != 0));
+            // the original realigns its frame: ebp = (entry ebp - 8) & -16
+            let std = t.frame_ebp(2);
+            let low = std - ((std - 8) & !0xf) + 0x20;
+            t.skip = low - 0x10;
+            t.check_framed(
+                "FUN_0084e3c0",
+                0x0084_e3c0,
+                Conv::Cdecl,
+                &[group, load],
+                low,
+                |m, ebp| Out::U32(ll::light_group_load_save(m, ebp - low, group, load)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_spec_and_capture_windows_match_the_original() {
+    // The specular window: each message, the toggles from every state
+    // (the getters stubbed by the case), spin values either sign for the
+    // tenths; the capture window with its settings bytes all ways.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2a30);
+        for case in 0..160 {
+            let st = [rng.below(2), rng.below(2), rng.below(2)];
+            for spin in [
+                ll::SPIN_SIZE,
+                ll::SPIN_COEF,
+                ll::SPIN_RED,
+                ll::SPIN_GREEN,
+                ll::SPIN_BLUE,
+            ] {
+                let at = t.rebase(spin);
+                for k in 0..12 {
+                    let v = if rng.chance(2) {
+                        rng.below(300).wrapping_sub(100)
+                    } else {
+                        rng.next()
+                    };
+                    t.w32(at + 4 * k, v);
+                }
+            }
+            t.stubs(&[
+                (ll::GU_SPIN_MSG, false, 4, 0, rng.next()),
+                (ll::GU_SPIN_ADD, false, 8, 0, rng.next()),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_DISABLE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXTF, false, 5, 0, rng.next()),
+                (ll::CH_GET_FOURCE_SPEC, false, 0, 0, st[0]),
+                (ll::CH_GET_DISABLE_SPEC, false, 0, 0, st[1]),
+                (ll::CH_GET_PARA_EDIT, false, 0, 0, st[2]),
+                (ll::CH_SET_FOURCE_SPEC, false, 1, 0, rng.next()),
+                (ll::CH_SET_DISABLE_SPEC, false, 1, 0, rng.next()),
+                (ll::CH_SET_PARA_EDIT, false, 1, 0, rng.next()),
+                (ll::CH_SET_SPEC_SIZE, false, 1, 0, rng.next()),
+                (ll::CH_SET_SPEC_COEFFICIENT, false, 1, 0, rng.next()),
+                (ll::CH_SET_SPEC_COLOR, false, 4, 0, rng.next()),
+            ]);
+            let msg = [
+                0x8001, 0x8003, 0x8007, 0x8011, 0x8007, 0x8005, 0x8000, 0x8012,
+            ][case % 8];
+            let button = rng.below(10);
+            let window = rng.next();
+            t.check(
+                "FUN_00852a30",
+                0x0085_2a30,
+                Conv::Cdecl,
+                &[window, msg, button],
+                |m| Out::U32(ll::spec_edit_window_proc(m, window, msg, button)),
+            );
+            t.reset();
+        }
+        for _ in 0..40 {
+            for at in [
+                ll::CAPTURE_SELECT,
+                ll::CAPTURE_GUI,
+                ll::CAPTURE_MODE,
+                ll::CAPTURE_FILTER,
+            ] {
+                let v = [0, 1, 2, 0xff, 0x80][rng.below(5) as usize];
+                t.w8(t.rebase(at), v);
+            }
+            t.stubs(&[
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_DISABLE, false, 3, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_FILTER, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_SELECT, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_MODE, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_GUI, false, 1, 0, rng.next()),
+            ]);
+            let window = rng.next();
+            t.check("FUN_00853420", 0x0085_3420, Conv::Cdecl, &[window], |m| {
+                Out::U32(ll::capture_window_update(m, window))
+            });
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_capture_window_proc_matches_the_original() {
+    // Each message and button (the toggles read back either way), the
+    // settings bytes all ways; FUN_00853420 as it is (its callees
+    // stubbed).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_3520);
+        for case in 0..120 {
+            for at in [
+                ll::CAPTURE_SELECT,
+                ll::CAPTURE_GUI,
+                ll::CAPTURE_MODE,
+                ll::CAPTURE_FILTER,
+                ll::CAPTURE_WINDOW_FLAG,
+            ] {
+                let v = [0, 1, 2, 0xff][rng.below(4) as usize];
+                t.w8(t.rebase(at), v);
+            }
+            t.stubs(&[
+                (ll::GU_BUTTON_SET_TOGGLE_VALUE, false, 3, 0, rng.next()),
+                (
+                    ll::GU_BUTTON_GET_TOGGLE_VALUE,
+                    false,
+                    2,
+                    0,
+                    [0, 1, 0x100, 0x2ff][rng.below(4) as usize],
+                ),
+                (ll::GU_BUTTON_SET_TOGGLE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_DISABLE, false, 3, 0, rng.next()),
+                (ll::GU_CONTROL_SET_LEFT_TEXT, false, 3, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::SG_CAPTURE_ENABLE, false, 0, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_FILTER, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_SELECT, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_MODE, false, 1, 0, rng.next()),
+                (ll::SG_CAPTURE_SET_GUI, false, 1, 0, rng.next()),
+            ]);
+            let msg = [
+                0x8001, 0x8003, 0x8006, 0x8007, 0x8007, 0x8007, 0x8002, 0x8008, 0x8000,
+            ][case % 9];
+            let button = match rng.below(4) {
+                0 => 0x4d2,
+                1 => 1000,
+                2 => 0x4d3,
+                _ => rng.below(7),
+            };
+            let window = rng.next();
+            t.check(
+                "SpriteFrameRegion_Load",
+                0x0085_3520,
+                Conv::Cdecl,
+                &[window, msg, button],
+                |m| Out::U32(ll::capture_window_proc(m, window, msg, button)),
+            );
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_chr_info_window_matches_the_original() {
+    // Each message; a refused, missing, hidden or shown character with
+    // floats, small and odd words everywhere; Gu_LogPrintf as it is
+    // (vsprintf the game's), its Gu_Printf replaced by a stub appending
+    // each line to a buffer, so the formatted text is compared.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_37d0);
+        for case in 0..90 {
+            let out = t.zeros(0x4000);
+            let cursor = t.words(&[out]);
+            // mov edx, [esp+4]; mov ecx, [cursor]; copy the string with
+            // its NUL; mov [cursor], ecx; ret
+            let mut c = vec![0x8b, 0x54, 0x24, 0x04, 0x8b, 0x0d];
+            c.extend(cursor.to_le_bytes());
+            c.extend([
+                0x8a, 0x02, 0x88, 0x01, 0x42, 0x41, 0x84, 0xc0, 0x75, 0xf6, 0x89, 0x0d,
+            ]);
+            c.extend(cursor.to_le_bytes());
+            c.push(0xc3);
+            let printf = t.cave_code(&c);
+            t.jump(ll::GU_PRINTF, printf);
+            let chr = t.zeros(0x900);
+            for at in (0..0x900).step_by(4) {
+                let v = match rng.below(6) {
+                    0 => 0,
+                    1 => rng.below(0x200),
+                    2 => rng.next(),
+                    _ => ((f32::from(rng.below(20_000) as u16) - 10_000.0) / 7.0).to_bits(),
+                };
+                t.w32(chr + at, v);
+            }
+            let name = t.cstr("chr_name");
+            t.w32(chr + 4, name);
+            t.w8(chr + 2, u8::from(!rng.chance(5)));
+            let motion = if rng.chance(2) { 0 } else { t.cstr("motion%d") };
+            t.stubs(&[
+                (
+                    ll::GU_WINDOW_GET_ARG,
+                    false,
+                    1,
+                    0,
+                    if rng.chance(6) { 0 } else { chr },
+                ),
+                (ll::CH_CHECK_HANDLE, false, 1, 0, u32::from(rng.chance(6))),
+                (ll::GU_WINDOW_SET_ARG, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_MOUSE_SET_WINDOW, false, 1, 0, rng.next()),
+                (ll::GU_LOCATE, false, 2, 0, rng.next()),
+                (ll::GU_PRINT_SET_SIZE_ONLY, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_ITALIC, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_BOLD, false, 1, 0, rng.next()),
+                (ll::GU_SET_HSCALE, false, 1, 0, rng.next()),
+                (ll::MOTION_NAME, false, 1, 0, motion),
+                (ll::CH_ID_GET_MAP, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_MAP_B, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_WATER, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_ENCOUNT, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_DICTIONARY, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_EFFECT, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_SOUND, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_SHADE, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_SHADE0, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_SHADE1, false, 1, 0, rng.next()),
+                (ll::CH_ID_GET_SHADE2, false, 1, 0, rng.next()),
+                (
+                    ll::GU_WINDOW_GET_LEFT,
+                    false,
+                    1,
+                    0,
+                    if rng.chance(3) { 0x46 } else { rng.below(0x90) },
+                ),
+                (ll::GU_WINDOW_GET_X, false, 1, 0, rng.next()),
+                (ll::GU_WINDOW_GET_WIDTH, false, 1, 0, rng.next()),
+                (ll::GU_SELECTOR_ALLOCATE, false, 0, 0, rng.next()),
+                (
+                    ll::GU_CHR_SELECTOR_FILL,
+                    false,
+                    0,
+                    0,
+                    u32::from(rng.chance(3)),
+                ),
+                (ll::GU_SELECTOR_SET_CALLBACK, false, 2, 0, rng.next()),
+                (ll::GU_SELECTOR_OPEN_XYWH, false, 7, 0, rng.next()),
+            ]);
+            let msg = if case % 3 == 0 {
+                [0x8001, 0x8006, 0x8000, 0x8007, 0x8012][case / 3 % 5]
+            } else {
+                0x8011
+            };
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "FUN_008537d0",
+                0x0085_37d0,
+                Conv::Cdecl,
+                &[window, msg],
+                0x104,
+                |m, ebp| Out::U32(ll::chr_info_window_proc(m, ebp - 0x104, window, msg)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_clock_window_matches_the_original() {
+    // Other messages, then times of day all round (and odd words: past a
+    // day, negative), each weekday; sprintf, Gu_WrapAngle and the trig
+    // intrinsics as they are, the drawing and printing stubbed.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_3ec0);
+        for case in 0..150 {
+            let (hh, mm, ss) = if case % 10 == 9 {
+                (
+                    rng.next() % 1000,
+                    rng.next() % 1000,
+                    rng.below(200).wrapping_sub(100),
+                )
+            } else {
+                (rng.below(24), rng.below(60), rng.below(60))
+            };
+            for (sym, v) in [
+                (ll::CLOCK_HOUR, hh),
+                (ll::CLOCK_MINUTE, mm),
+                (ll::CLOCK_SECOND, ss),
+                (ll::CLOCK_WEEKDAY, rng.below(7)),
+                (ll::CLOCK_DAY, rng.below(32)),
+                (ll::CLOCK_MONTH, rng.below(13)),
+            ] {
+                t.g32(sym, v);
+            }
+            t.stubs(&[
+                (ll::GU_PRINT_SET_ITALIC, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_BOLD, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_COLOR, false, 4, 0, rng.next()),
+                (ll::GU_PRINT_SET_X, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_XY, false, 2, 0, rng.next()),
+                (ll::GU_PRINT_SET_Y, false, 1, 0, rng.next()),
+                (
+                    ll::GU_PRINT_GET_WIDTH,
+                    false,
+                    1,
+                    0,
+                    rng.below(200).wrapping_sub(50),
+                ),
+                (ll::GU_PRINTF, false, 1, 0, rng.next()),
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_PACKET_BEGIN_TAG, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_END_TAG, false, 0, 0, rng.next()),
+                (ll::GU_SET_TEST, false, 8, 0, rng.next()),
+                (ll::GU_SET_PRIM, false, 1, 0, rng.next()),
+                (ll::GU_SET_RGBAQ, false, 4, 0, rng.next()),
+                (ll::GU_SET_XYZF2, false, 2, 0, rng.next()),
+            ]);
+            let msg = if case < 5 {
+                0x8001 + case as u32
+            } else {
+                0x8011
+            };
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "FUN_00853ec0",
+                0x0085_3ec0,
+                Conv::Cdecl,
+                &[window, msg],
+                0x24,
+                |m, ebp| Out::U32(ll::clock_window_proc(m, ebp - 0x24, window, msg)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_value_windows_match_the_original() {
+    // The AccBuf and Blur windows: every message, the buttons around
+    // 0..2 and "Current", values near and past both limits (the getters
+    // stubbed; sprintf as it is).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4270);
+        for case in 0..160 {
+            let v = match rng.below(4) {
+                0 => rng.below(12),
+                1 => 0x7a + rng.below(12),
+                2 => rng.next(),
+                _ => rng.below(0x90),
+            };
+            t.stubs(&[
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::SG_ACC_GET_ALPHA, false, 0, 0, v),
+                (ll::SG_ACC_SET_ALPHA, false, 2, 0, rng.next()),
+                (ll::SG_ACC_REQUEST_CURRENT, false, 1, 0, rng.next()),
+                (ll::SG_GET_BLUR, false, 0, 0, v),
+                (ll::SG_BLUR, false, 1, 0, rng.next()),
+            ]);
+            let msg = [
+                0x8001, 0x8005, 0x8006, 0x8009, 0x8011, 0x8003, 0x8007, 0x8012,
+            ][case % 8];
+            let button = if rng.chance(4) { 0x4d2 } else { rng.below(4) };
+            let window = rng.next();
+            let (what, sym) = if case % 16 < 8 {
+                ("FUN_00854270", 0x0085_4270)
+            } else {
+                ("FUN_00854420", 0x0085_4420)
+            };
+            t.skip = 4;
+            t.check_framed(
+                what,
+                sym,
+                Conv::Cdecl,
+                &[window, msg, button],
+                0x18,
+                |m, ebp| {
+                    let buf = ebp - 0x18;
+                    Out::U32(if sym == 0x0085_4270 {
+                        ll::acc_buf_window_proc(m, buf, window, msg, button)
+                    } else {
+                        ll::blur_window_proc(m, buf, window, msg, button)
+                    })
+                },
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_flash_window_matches_the_original() {
+    // Every message and button 0..13 and "Flash!", settings near and past
+    // the limits either side.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_4590);
+        for case in 0..200 {
+            for sym in [
+                ll::FLASH_TIME,
+                ll::FLASH_RGB[0],
+                ll::FLASH_RGB[1],
+                ll::FLASH_RGB[2],
+            ] {
+                let v = match rng.below(5) {
+                    0 => rng.below(14).wrapping_sub(4),
+                    1 => 0xf8 + rng.below(14),
+                    2 => 0x250 + rng.below(16),
+                    3 => rng.next(),
+                    _ => rng.below(0x300),
+                };
+                t.g32(sym, v);
+            }
+            t.stubs(&[
+                (ll::GU_WINDOW_SET_TITLE, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_BUTTON, false, 7, 0, rng.next()),
+                (ll::GU_WINDOW_ADD_STATIC, false, 7, 0, rng.next()),
+                (ll::GU_CONTROL_SET_TEXT, false, 3, 0, rng.next()),
+                (ll::SG_ACC_GET_ALPHA, false, 0, 0, rng.next()),
+                (ll::SG_FLASH, false, 4, 0, rng.next()),
+            ]);
+            let msg = [
+                0x8001, 0x8005, 0x8007, 0x8009, 0x8011, 0x8005, 0x8009, 0x8003,
+            ][case % 8];
+            let button = if rng.chance(5) { 0x4d2 } else { rng.below(14) };
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed(
+                "FUN_00854590",
+                0x0085_4590,
+                Conv::Cdecl,
+                &[window, msg, button],
+                0x18,
+                |m, ebp| Out::U32(ll::flash_window_proc(m, ebp - 0x18, window, msg, button)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_help_windows_match_the_original() {
+    // The help and tip windows: 0x8011 and others, the tip's text empty
+    // or not, colours anything.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_5290);
+        for case in 0..40 {
+            let c = t.rebase(ll::GU_HELP_COLOUR);
+            let v = rng.next();
+            t.w32(c, v);
+            let record = t.words(&[rng.next(), rng.next()]);
+            t.g32(ll::GU_TIP_RECORD, record);
+            t.g32(ll::GU_TIP_OWNER, rng.next());
+            let tip = t.rebase(ll::GU_TIP_TEXT);
+            t.w8(tip, if rng.chance(3) { 0 } else { b'x' });
+            t.stubs(&[
+                (ll::GU_WINDOW_SET_FLAG2, false, 2, 0, rng.next()),
+                (ll::GU_PRINT_SET_BOLD, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_GET_WIDTH, false, 1, 0, rng.next()),
+                (ll::GU_WINDOW_SET_SIZE, false, 3, 0, rng.next()),
+                (ll::GU_PRINT_SET_X, false, 1, 0, rng.next()),
+                (ll::GU_PRINTF, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_BEGIN_TAG, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_END_TAG, false, 0, 0, rng.next()),
+                (ll::GU_SET_TEST, false, 8, 0, rng.next()),
+                (ll::GU_SET_PRIM, false, 1, 0, rng.next()),
+                (ll::GU_SET_RGBAQ, false, 4, 0, rng.next()),
+                (ll::GU_SET_XYZF2, false, 2, 0, rng.next()),
+            ]);
+            let msg = if case % 3 == 0 {
+                0x8001 + rng.below(0x20)
+            } else {
+                0x8011
+            };
+            let window = rng.next();
+            if case % 2 == 0 {
+                t.check(
+                    "FUN_00855290",
+                    0x0085_5290,
+                    Conv::Cdecl,
+                    &[window, msg],
+                    |m| Out::U32(ll::help_window_proc(m, window, msg)),
+                );
+            } else {
+                t.check(
+                    "FUN_008554b0",
+                    0x0085_54b0,
+                    Conv::Cdecl,
+                    &[window, msg],
+                    |m| Out::U32(ll::tip_window_proc(m, window, msg)),
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_mem_graph_window_matches_the_original() {
+    // Closing with and without a help window; drawing with the mouse
+    // outside, over each band or between, a help window or none (the
+    // usage words in the frame as Sg_MemUsage's stub leaves them, its
+    // total never below 2).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_5020);
+        for case in 0..120 {
+            let mut init = vec![0_u8; 0x18];
+            let mut total = 0_u32;
+            for _ in 0..9 {
+                let n = if rng.chance(3) {
+                    rng.next()
+                } else {
+                    rng.below(0x40_0000)
+                };
+                total = total.wrapping_add(n);
+                init.extend(n.to_le_bytes());
+            }
+            let total = if rng.chance(2) {
+                total
+            } else {
+                rng.below(0x100_0000)
+            };
+            let total = if total.cast_signed() / 2 == 0 {
+                2
+            } else {
+                total
+            };
+            let help = if rng.chance(2) { 0 } else { rng.next() };
+            t.g32(ll::GU_HELP_WINDOW, help);
+            t.stubs(&[
+                (ll::SG_MEM_USAGE, false, 1, 0, total),
+                (ll::SG_SET_RESOURCE, false, 2, 0, rng.next()),
+                (ll::GU_WINDOW_GET_CLIENT_W, false, 1, 0, rng.below(0x200)),
+                (ll::GU_WINDOW_GET_CLIENT_H, false, 1, 0, rng.below(0x200)),
+                (ll::GU_WINDOW_MOUSE_IN, false, 1, 0, rng.below(3)),
+                (ll::GU_MOUSE_GET_WINDOW_X, false, 1, 0, rng.below(0x200)),
+                (ll::GU_WINDOW_GET_CLIENT_TOP, false, 1, 0, rng.below(0x20)),
+                (ll::GU_MOUSE_GET_X, false, 0, 0, rng.next()),
+                (ll::GU_MOUSE_GET_Y, false, 0, 0, rng.next()),
+                (ll::GU_WINDOW_SET_POS, false, 3, 0, rng.next()),
+                (ll::GU_WINDOW_CLOSE_TREE, false, 1, 0, rng.next()),
+                (ll::GU_HELP_WINDOW_SHOW, false, 1, 0, rng.next()),
+                (ll::GU_DRAW_RECT_STRIP, false, 1, 0, rng.next()),
+                (ll::GU_PRINT_SET_SIZE_ONLY, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_BEGIN_TAG, false, 1, 0, rng.next()),
+                (ll::GU_PACKET_END_TAG, false, 0, 0, rng.next()),
+                (ll::GU_SET_PRIM, false, 1, 0, rng.next()),
+                (ll::GU_SET_RGBAQ, false, 4, 0, rng.next()),
+                (ll::GU_SET_XYZF2, false, 2, 0, rng.next()),
+            ]);
+            let msg = [0x8011, 0x8011, 0x8011, 0x8003, 0x8001][case % 5];
+            let window = rng.next();
+            t.skip = 4;
+            t.check_framed_init(
+                "FUN_00855020",
+                0x0085_5020,
+                Conv::Cdecl,
+                &[window, msg],
+                0x80,
+                &init,
+                |m, ebp| Out::U32(ll::mem_graph_window_proc(m, ebp - 0x80, window, msg)),
             );
             t.skip = 0;
             t.reset();

@@ -963,4 +963,91 @@ ported! {
         let mut f = StackFrame::<0x11>::new();
         ll::chrmenu_load_selected(&mut mem(), f.at(), sel)
     }
+
+    /// `Gui_ChrMenuInit(window, info)`.
+    Gui_ChrMenuInit @ 0x0084_ca30 => extern "C" fn gui_chr_menu_init(window: u32, info: u32) -> u32 {
+        ll::gui_chr_menu_init(&mut mem(), window, info)
+    }
+    /// `ChrMenu_editLight_0084d940(values, window, msg, button)` (the
+    /// window word is never read).
+    ChrMenu_editLight_0084d940 @ 0x0084_d940 => extern "C" fn chrmenu_edit_light(values: u32, _window: u32, msg: u32, button: u32) -> u32 {
+        ll::chrmenu_edit_light(&mut mem(), values, msg, button)
+    }
+    /// `LightWindowProc_0084e100(window, msg, button)` (the black colour
+    /// and the number buffer).
+    LightWindowProc_0084e100 @ 0x0084_e100 => extern "C" fn light_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        let mut f = StackFrame::<9>::new();
+        ll::light_window_proc(&mut mem(), f.at(), window, msg, button)
+    }
+
+    /// `FUN_0084dac0(window, msg, button)` (the number buffer).
+    DirLightWindowProc_0084dac0 @ 0x0084_dac0 => extern "C" fn dir_light_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ll::dir_light_window_proc(&mut mem(), f.at(), window, msg, button)
+    }
+
+    /// `FUN_0084e3c0(group, load)` (the colour/direction vector).
+    LightGroup_loadSave_0084e3c0 @ 0x0084_e3c0 => extern "C" fn light_group_load_save(group: u32, load: u32) -> u32 {
+        let mut f = StackFrame::<4>::new();
+        ll::light_group_load_save(&mut mem(), f.at(), group, load)
+    }
+
+    /// `FUN_00852a30(window, msg, button)`.
+    SpecEditWindowProc_00852a30 @ 0x0085_2a30 => extern "C" fn spec_edit_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        ll::spec_edit_window_proc(&mut mem(), window, msg, button)
+    }
+    /// `FUN_00853420(window)`.
+    CaptureWindow_update_00853420 @ 0x0085_3420 => extern "C" fn capture_window_update(window: u32) -> u32 {
+        ll::capture_window_update(&mut mem(), window)
+    }
+
+    /// `SpriteFrameRegion_Load(window, msg, button)` (the capture window).
+    SpriteFrameRegion_Load @ 0x0085_3520 => extern "C" fn capture_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        ll::capture_window_proc(&mut mem(), window, msg, button)
+    }
+
+    /// `FUN_008537d0(window, msg)` (the text buffer).
+    ChrInfoWindowProc_008537d0 @ 0x0085_37d0 => extern "C" fn chr_info_window_proc(window: u32, msg: u32) -> u32 {
+        let mut f = StackFrame::<64>::new();
+        ll::chr_info_window_proc(&mut mem(), f.at(), window, msg)
+    }
+
+    /// `FUN_00853ec0(window, msg)` (the text buffer).
+    ClockWindowProc_00853ec0 @ 0x0085_3ec0 => extern "C" fn clock_window_proc(window: u32, msg: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        ll::clock_window_proc(&mut mem(), f.at(), window, msg)
+    }
+
+    /// `FUN_00854270(window, msg, button)` (the text buffer).
+    AccBufWindowProc_00854270 @ 0x0085_4270 => extern "C" fn acc_buf_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ll::acc_buf_window_proc(&mut mem(), f.at(), window, msg, button)
+    }
+    /// `FUN_00854420(window, msg, button)` (the text buffer).
+    BlurWindowProc_00854420 @ 0x0085_4420 => extern "C" fn blur_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ll::blur_window_proc(&mut mem(), f.at(), window, msg, button)
+    }
+
+    /// `FUN_00854590(window, msg, button)` (the text buffer).
+    FlashWindowProc_00854590 @ 0x0085_4590 => extern "C" fn flash_window_proc(window: u32, msg: u32, button: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ll::flash_window_proc(&mut mem(), f.at(), window, msg, button)
+    }
+
+    /// `FUN_00855290(window, msg)`.
+    HelpWindowProc_00855290 @ 0x0085_5290 => extern "C" fn help_window_proc(window: u32, msg: u32) -> u32 {
+        ll::help_window_proc(&mut mem(), window, msg)
+    }
+    /// `FUN_008554b0(window, msg)`.
+    TipWindowProc_008554b0 @ 0x0085_54b0 => extern "C" fn tip_window_proc(window: u32, msg: u32) -> u32 {
+        ll::tip_window_proc(&mut mem(), window, msg)
+    }
+
+    /// `FUN_00855020(window, msg)` (the rectangle, locals, usage words
+    /// and help text).
+    MemGraphWindowProc_00855020 @ 0x0085_5020 => extern "C" fn mem_graph_window_proc(window: u32, msg: u32) -> u32 {
+        let mut f = StackFrame::<31>::new();
+        ll::mem_graph_window_proc(&mut mem(), f.at(), window, msg)
+    }
 }
