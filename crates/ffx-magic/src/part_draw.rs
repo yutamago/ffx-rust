@@ -363,3 +363,35 @@ pub fn draw_plain<G: Game>(g: &mut G, img: &Image, f: u32, p: &Plain, stack: &[u
     g.write::<u32>(lock, 0);
     eax
 }
+
+/// The word stores of a [`start_pair`] part: `(offset, word)` each.
+pub type Stores<'a> = &'a [(u32, u32)];
+
+/// A part of a two-part array started with program `index / 4`
+/// ([`start_part_eax`]: `*G_P = ITEM` `+0x04`/`+0x0b`, `G_O` `+0x10`,
+/// slot 941 `+0x18`, the wrapper's `rel32` at `call`), then its word
+/// stores: `pre`, then `first` for the array's first part (within 0x80
+/// bytes of the array, operand `+0x3d`) or `other`, then `tail`, each in
+/// the original's order. Returns 1 (the overlay table entries of
+/// `magic_0664`, `magic_0666`, ...).
+#[allow(clippy::too_many_arguments)] // the shape's operands
+pub fn start_pair<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &crate::Frame,
+    (call, index): (u32, u32),
+    pre: Stores,
+    first: Stores,
+    other: Stores,
+    tail: Stores,
+) -> crate::Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    start_part_eax(g, img, f, obj, [0x4, 0xb, 0x10, 0x18, call], index, &[]);
+    let is_first = obj.wrapping_sub(img.word(f + 0x3d)) & 0xffff_ff80 == 0;
+    let mid = if is_first { first } else { other };
+    for &(off, v) in pre.iter().chain(mid).chain(tail) {
+        g.write::<u32>(obj + off, v);
+    }
+    crate::Ret::eax(1)
+}

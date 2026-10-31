@@ -214,6 +214,15 @@ pub mod m0610;
 pub mod m0613;
 pub mod m0616;
 pub mod m0617;
+pub mod m0640;
+pub mod m0641;
+pub mod m0645;
+pub mod m0661;
+pub mod m0664;
+pub mod m0665;
+pub mod m0666;
+pub mod m0669;
+pub mod m0672;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -1023,6 +1032,19 @@ ports! {
     "m0616 frame" => m0616::FRAME, m0616::frame;
     "m0616 start up" => m0616::START_UP, m0616::start_up;
     "m0617 frame" => m0617::FRAME, m0617::frame;
+    "m0640 register" => m0640::REGISTER, m0640::register;
+    "m0641 flash parts" => m0641::FLASH_PARTS, m0641::flash_parts;
+    "m0641 glow parts" => m0641::GLOW_PARTS, m0641::glow_parts;
+    "m0645 value task" => m0645::VALUE_TASK, m0645::value_task;
+    "m0661 sound stop" => m0661::SOUND_STOP, m0661::sound_stop;
+    "m0661 glow part" => m0661::GLOW_PART, m0661::glow_part;
+    "m0664 ring part" => m0664::RING_PART, m0664::ring_part;
+    "m0664 frame" => m0664::FRAME, m0664::frame;
+    "m0664 effect frame" => m0664::EFFECT_FRAME, m0664::effect_frame;
+    "m0666 spark" => m0666::SPARK, m0666::spark;
+    "m0666 ring" => m0666::RING, m0666::ring;
+    "m0669 frame" => m0669::FRAME, m0669::frame;
+    "m0669 draw" => m0669::DRAW, m0669::draw;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -2039,6 +2061,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0609 task start", &m0609::TASK_START),
     ("m0610 check targets", &m0610::CHECK_TARGETS),
     ("m0613 task start", &m0613::TASK_START),
+    ("m0613 centre", &m0613::CENTRE),
+    ("m0641 clear pool", &m0641::CLEAR_POOL),
+    ("m0641 take requests", &m0641::TAKE_REQUESTS),
+    ("m0641 step flashes", &m0641::STEP_FLASHES),
+    ("m0641 part defaults", &m0641::PART_DEFAULTS),
+    ("m0645 setup", &m0645::SETUP),
+    ("m0645 value start", &m0645::VALUE_START),
+    ("m0645 mover", &m0645::MOVER),
+    ("m0665 timeline reset", &m0665::TIMELINE_RESET),
+    ("m0672 camera reset", &m0672::CAMERA_RESET),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),

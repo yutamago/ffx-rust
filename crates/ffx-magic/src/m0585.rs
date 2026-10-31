@@ -12,7 +12,7 @@ const ONE: u32 = 0x3f80_0000;
 /// `ops[2]`/`ops[4]`, its sentinel `ops[3]`, the flag word `ops[5]`
 /// (bit 0 cleared), the last word written `ops[6]`. With `own`, `+0x14`
 /// is the task itself.
-fn task_link<G: Game>(g: &mut G, img: &Image, f: u32, t: u32, ops: [u32; 7], own: bool) {
+pub(crate) fn task_link<G: Game>(g: &mut G, img: &Image, f: u32, t: u32, ops: [u32; 7], own: bool) {
     let w = |off: u32| img.word(f + off);
     g.write::<u32>(t + 8, t);
     g.write::<u32>(t + 4, t);

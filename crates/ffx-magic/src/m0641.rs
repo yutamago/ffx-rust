@@ -1,0 +1,267 @@
+//! `magic_0641.dll`'s own functions (besides the runtime and the shared
+//! code).
+
+use crate::sb_sse::sub;
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
+
+/// `1.0f32`'s bits.
+const ONE: u32 = 0x3f80_0000;
+
+/// Clears the effect's pool (0x10002e60, internal, no arguments): the
+/// 0x5c-byte header at operand `+0x11` zeroed (`memset`), its count
+/// `+0x1f` 100, its first `+0x29` the pool `*G_P` (`+0x07`), `+0x2f`,
+/// `+0x39`, `+0x43` 0; then the pool's 100 entries of 0x94 bytes
+/// zeroed. Returns the last entry (`memset`'s `eax`).
+pub fn clear_pool<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
+    let mut p = g.read::<u32>(w(0x7));
+    g.write_bytes(w(0x11), &[0u8; 0x5c]);
+    g.write::<u32>(w(0x1f), 100);
+    g.write::<u32>(w(0x29), p);
+    for op in [0x2f, 0x39, 0x43] {
+        g.write::<u32>(w(op), 0);
+    }
+    let mut last = 0;
+    for _ in 0..100 {
+        g.write_bytes(p, &[0u8; 0x94]);
+        last = p;
+        g.write::<u32>(p, 0);
+        p = p.wrapping_add(0x94);
+    }
+    last
+}
+
+/// [`clear_pool`] (117 bytes, 1 overlay).
+pub const CLEAR_POOL: Sig = Sig {
+    len: 117,
+    hash: 0xf94d_0259_f407_9b6e,
+    calls: &[
+        (0x16, Callee::Import("memset")),
+        (0x59, Callee::Import("memset")),
+    ],
+    imports: &[],
+};
+
+/// Moves the nine request words to the current ones (0x10001490,
+/// internal, no arguments): `CUR[k] = REQ[k]` (the operand pairs
+/// `+0x01`/`+0x06` ... `+0x51`/`+0xa6`), the requests cleared. Returns
+/// the last request word.
+pub fn take_requests<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
+    for (src, dst) in [
+        (0x01, 0x06),
+        (0x0b, 0x10),
+        (0x15, 0x1a),
+        (0x1f, 0x24),
+        (0x29, 0x2e),
+        (0x33, 0x38),
+        (0x3d, 0x42),
+        (0x47, 0x4c),
+    ] {
+        let v = g.read::<u32>(w(src));
+        g.write::<u32>(w(dst), v);
+    }
+    let last = g.read::<u32>(w(0x51));
+    for op in [0x57, 0x61, 0x6b, 0x75, 0x7f, 0x89, 0x93, 0x9d] {
+        g.write::<u32>(w(op), 0);
+    }
+    g.write::<u32>(w(0xa6), last);
+    g.write::<u32>(w(0xac), 0);
+    last
+}
+
+/// [`take_requests`] (181 bytes, 1 overlay).
+pub const TAKE_REQUESTS: Sig = Sig {
+    len: 181,
+    hash: 0x0e2b_e19f_f323_81e6,
+    calls: &[],
+    imports: &[],
+};
+
+/// `lahf` after `ucomiss a, b`: `ZF`, `PF`, `CF` from the compare, bit 1
+/// set.
+fn lahf(a: f32, b: f32) -> u32 {
+    match a.partial_cmp(&b) {
+        None => 0x47,
+        Some(core::cmp::Ordering::Less) => 0x03,
+        Some(core::cmp::Ordering::Equal) => 0x42,
+        Some(core::cmp::Ordering::Greater) => 0x02,
+    }
+}
+
+/// Steps the nine flashes (0x10001550, internal: `ecx` = whether to
+/// start the timers): per flash `k` (the arrays at the operands
+/// `+0x17` request, `+0x22` on, `+0x31` level, `+0x41` current, `+0x4a`
+/// hold, `+0x58` timer on, `+0x62` timer): a request 1 while off turns it
+/// on at level 1.0; no request with current 1 holds it (hold 1.0; with
+/// `ecx`, the timer starts at 24). While the hold is exactly `H`
+/// (`+0x04`) the level drops by `S` (`+0x0c`), clamped to 0..`H`; at 0
+/// the flash goes off (on and hold 0). A running timer counts down and
+/// stops at 0. Returns the last request word with the last compare's
+/// `lahf` byte in bits 8..15.
+pub fn step_flashes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let w = |off: u32| img.word(fr.at + off);
+    let hold_k = g.read::<f32>(w(0x4));
+    let step = g.read::<f32>(w(0xc));
+    let at = |op: u32, k: u32| w(op).wrapping_add(k);
+    let mut eax = 0u32;
+    let mut k = 0u32;
+    while k < 0x24 {
+        let req = g.read::<u32>(at(0x17, k));
+        eax = req;
+        if req == 1 && g.read::<u32>(at(0x22, k)) == 0 {
+            g.write::<u32>(at(0x2b, k), 1);
+            g.write::<u32>(at(0x31, k), ONE);
+        } else if req == 0 && g.read::<u32>(at(0x41, k)) == 1 {
+            g.write::<u32>(at(0x4a, k), ONE);
+            if fr.ecx != 0 {
+                g.write::<u32>(at(0x58, k), 1);
+                g.write::<u32>(at(0x62, k), 0x18);
+            }
+        }
+        let hold = g.read::<f32>(at(0x6e, k));
+        let ah = lahf(hold, hold_k);
+        eax = eax & !0xff00 | ah << 8;
+        if ah == 0x42 {
+            let mut y = sub(g.read::<f32>(at(0x7f, k)), step);
+            g.write::<f32>(at(0x8e, k), y);
+            // comiss 0, y; jbe: below, equal or unordered
+            if 0.0 > y {
+                y = 0.0;
+            } else if y > hold_k {
+                y = hold_k;
+            }
+            let ah = lahf(y, 0.0);
+            g.write::<f32>(at(0xa8, k), y);
+            eax = eax & !0xff00 | ah << 8;
+            if ah == 0x42 {
+                g.write::<u32>(at(0xb4, k), 0);
+                g.write::<u32>(at(0xbe, k), 0);
+            }
+        }
+        if g.read::<u32>(at(0xc8, k)) != 0 {
+            let n = g.read::<u32>(at(0xd1, k)).wrapping_sub(1);
+            g.write::<u32>(at(0xd1, k), n);
+            if n == 0 {
+                g.write::<u32>(at(0xd9, k), 0);
+            }
+        }
+        k += 4;
+    }
+    eax
+}
+
+/// [`step_flashes`] (238 bytes, 1 overlay).
+pub const STEP_FLASHES: Sig = Sig {
+    len: 238,
+    hash: 0x970a_bf91_92a0_291e,
+    calls: &[],
+    imports: &[],
+};
+
+/// Starts a part with its defaults (0x10001640, internal: `ecx` = the
+/// object): [`start_part`](crate::part_draw::start_part_eax) with
+/// program 0 (`*G_P = ITEM` `+0x01`/`+0x08`, `G_O` `+0x0d`, slot 941
+/// `+0x17`); `+0x40..+0x48` 0, `+0x4c` 1.0, `+0x50..+0x58` 0, `+0x5c`
+/// 1, `+0x60..+0x6c` 1.0. Returns the wrapper's `eax`.
+pub fn part_defaults<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let obj = fr.ecx;
+    let (_, eax) =
+        crate::part_draw::start_part_eax(g, img, fr.at, obj, [0x1, 0x8, 0xd, 0x17, 0x31], 0, &[]);
+    for (off, v) in [
+        (0x40, 0),
+        (0x44, 0),
+        (0x48, 0),
+        (0x4c, ONE),
+        (0x50, 0),
+        (0x54, 0),
+        (0x58, 0),
+        (0x5c, 1),
+        (0x60, ONE),
+        (0x64, ONE),
+        (0x68, ONE),
+        (0x6c, ONE),
+    ] {
+        g.write::<u32>(obj + off, v);
+    }
+    eax
+}
+
+/// [`part_defaults`] (142 bytes, 1 overlay).
+pub const PART_DEFAULTS: Sig = Sig {
+    len: 142,
+    hash: 0x926d_f9c0_d265_0a0f,
+    calls: &[(0x31, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// Nine parts of 0x80 bytes from `base` started with program
+/// `index / 4` ([`start_part_eax`](crate::part_draw::start_part_eax):
+/// `*G_P = ITEM` `+0x11`/`+0x17`, `G_O` `+0x1c`, slot 941 `+0x24`, the
+/// wrapper's `rel32` at `call`), each given the defaults of
+/// [`part_defaults`]. Returns the last wrapper's `eax`.
+fn nine_parts<G: Game>(g: &mut G, img: &Image, f: u32, base: u32, index: u32, call: u32) -> u32 {
+    let mut eax = 0;
+    for k in 0..9 {
+        let obj = base + 0x80 * k;
+        eax = crate::part_draw::start_part_eax(
+            g,
+            img,
+            f,
+            obj,
+            [0x11, 0x17, 0x1c, 0x24, call],
+            index,
+            &[],
+        )
+        .1;
+        for (off, v) in [
+            (0x40, 0),
+            (0x44, 0),
+            (0x48, 0),
+            (0x4c, ONE),
+            (0x50, 0),
+            (0x54, 0),
+            (0x58, 0),
+            (0x5c, 1),
+            (0x60, ONE),
+            (0x64, ONE),
+            (0x68, ONE),
+            (0x6c, ONE),
+        ] {
+            g.write::<u32>(obj + off, v);
+        }
+    }
+    eax
+}
+
+/// Starts the nine flash parts (0x10001870, an overlay table entry,
+/// `(base)`): [`nine_parts`] with program 0. Returns the last wrapper's
+/// `eax`.
+pub fn flash_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let base = fr.arg(g, 0);
+    Ret::eax(nine_parts(g, img, fr.at, base, 0, 0x3f))
+}
+
+/// [`flash_parts`] (170 bytes, 1 overlay).
+pub const FLASH_PARTS: Sig = Sig {
+    len: 170,
+    hash: 0x3fcf_ae77_c1df_3b52,
+    calls: &[(0x3f, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// Starts the nine glow parts (0x100019b0, an overlay table entry,
+/// `(base)`): [`nine_parts`] with program 1. Returns the last wrapper's
+/// `eax`.
+pub fn glow_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let base = fr.arg(g, 0);
+    Ret::eax(nine_parts(g, img, fr.at, base, 4, 0x40))
+}
+
+/// [`glow_parts`] (171 bytes, 1 overlay).
+pub const GLOW_PARTS: Sig = Sig {
+    len: 171,
+    hash: 0x0830_272b_5cd9_6a91,
+    calls: &[(0x40, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
