@@ -2395,3 +2395,92 @@ fn targets_more_and_tasks() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn flight_tasks() {
+    let Some(mut t) = twin(200) else { return };
+    let f = t.at(0x2100);
+    rec_mem(&mut t, 217, 2, 4, Some(1));
+    rec_mem(&mut t, 234, 3, 4, Some(0));
+    rec_mem(&mut t, 233, 3, 4, Some(0));
+    t.set_u32(op(&t, f, 0x18), 0x0cc0_0007);
+    let (head, tail) = (op(&t, f, 0x236), op(&t, f, 0x24f));
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    let obj = SCRATCH + 0x2000;
+    let to = SCRATCH + 0x700;
+    for (count, listed, n) in [(3u16, false, 8u32), (1, true, 1), (2, false, 0xffff_fff0)] {
+        for i in 0..3u32 {
+            t.write(node(i), &varied(0x1c, i + n));
+            t.set_u32(node(i), node((i + 2) % 3));
+            t.set_u32(node(i) + 4, node((i + 1) % 3));
+        }
+        t.set_u32(op(&t, f, 0x1cf), node(0));
+        t.set_u16(op(&t, f, 0x158), count);
+        t.write(SCRATCH + 0x1400, &varied(0x1c, 9));
+        let last = if listed { SCRATCH + 0x1400 } else { 0 };
+        t.set_u32(head, last);
+        t.set_u32(tail, last);
+        t.write(obj, &varied(0xc0, n));
+        t.write(to, &varied(0x10, n + 1));
+        let c =
+            Call::this(obj).with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(1.5)]);
+        let args = [to, 2.5f32.to_bits(), (-0.5f32).to_bits(), n];
+        t.check(f, c, &args, Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::flight_task(g, img, fr))
+        });
+    }
+}
+
+#[test]
+fn camera_trees() {
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0x2ab0);
+    recs(&mut t, &[(281, 1), (283, 2)]);
+    rec(&mut t, 287, 3, |_, a| 0x0287_0000 ^ a[2]);
+    let args = SCRATCH + 0x300;
+    let node = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x1400;
+    for (p, last) in [(0u32, 0u32), (parent, parent), (parent, SCRATCH + 0x1500)] {
+        t.write(node, &varied(0x250, last));
+        t.write(parent, &varied(0x20, p));
+        t.set_u32(parent + 0x10, last);
+        t.set_u32(args, node);
+        t.set_u32(args + 4, p);
+        t.check_entry(f, Call::this(args), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn sprite_packets() {
+    let Some(mut t) = twin(42) else { return };
+    let f = t.at(0x10c0);
+    let o = SCRATCH + 0x300;
+    let packet = SCRATCH + 0x1000;
+    let c = SCRATCH + 0x400;
+    // the frame words the junk path reads: 0 on both sides
+    let entry = STACK_TOP - 0x100;
+    for (k, (flag, e, t30)) in [(0u8, 0u32, 3u8), (0, 1, 0xff), (1, 0, 9), (0, 3, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(entry - 0x40, &[0; 0x40]);
+        t.write(o, &varied(0x40, k));
+        t.write(packet, &varied(0x200, k));
+        for (i, v) in (0u32..).zip([0.25f32, 3.5, -7.9, 1.0e10]) {
+            t.set_u32(c + 4 * i, (v * (k as f32 + 1.0)).to_bits());
+        }
+        t.set_u32(o + 8, c);
+        t.set_u32(o + 0xc, 0.75f32.to_bits());
+        t.set_u32(o + 0x10, (-0.5f32).to_bits());
+        t.set_u32(o + 0x1c, e);
+        t.set_u16(o + 0x24, (0x40 + 8 * k) as u16);
+        t.set_u32(o + 0x28, 0.125f32.to_bits());
+        t.set_u32(o + 0x2c, packet);
+        t.set_u8(o + 0x30, t30);
+        t.set_u8(o + 0x31, flag);
+        t.check(f, Call::this(o), &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s5_misc::sprite_packet(g, img, fr.at, fr.ecx))
+        });
+    }
+}

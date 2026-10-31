@@ -1285,6 +1285,7 @@ ports! {
     "sine rise start" => s5_misc::SINE_RISE_START, s5_misc::sine_rise_start;
     "sparks thrown" => s5_misc::SPARKS_THROWN, s5_misc::sparks_thrown;
     "targets more, tasks" => s5_misc::TARGETS_MORE_TASKS, s5_misc::targets_more_tasks;
+    "camera tree" => s5_misc::CAMERA_TREE, s5_misc::camera_tree;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1698,6 +1699,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("aim task", &s5_misc::AIM_TASK),
     ("three parts draw", &s5_misc::THREE_PARTS_DRAW),
     ("aim object", &s5_misc::AIM_OBJECT),
+    ("flight task", &s5_misc::FLIGHT_TASK),
+    ("sprite packet", &s5_misc::SPRITE_PACKET),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

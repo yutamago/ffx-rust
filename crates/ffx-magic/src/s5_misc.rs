@@ -4778,3 +4778,346 @@ pub const TARGETS_MORE_TASKS: Sig = Sig {
     calls: &[(0xde, Callee::Sig(&CAMERA_FACE_ACTOR))],
     imports: &[],
 };
+
+/// A flight from the character to a point set up (internal: `ecx` = the
+/// object, `xmm3` = a scale, the stack `(to, s1, s2, n)`; a /GS frame):
+/// the character `*G_CH`'s position (slot 217, a local) into `+0x20`, the
+/// point into `+0x30`, the way `d = to - pos` (slot 234, a local) into
+/// `+0x80` (`+0x40..+0x48` cleared), `d` scaled by `xmm3`, `s1`, `s2` into
+/// `+0x50`, `+0x60`, `+0x70` (slot 233), their `w` 1.0, `+0xa4 = n`,
+/// `+0xa0` the character, `+0x9c = K / n`, `+0x90..+0x98`, `+0xa8` and u16
+/// `+0xb0` cleared. A task node from the free ring (taken inline,
+/// callback `CB`, kind 1) runs it, appended to the task list. Each call
+/// sees the words the earlier ones left on the stack. Returns the list's
+/// old tail, or 0xffff when the list was empty.
+///
+/// `magic_0200` 0x10002100 (637 bytes; 2 DLLs).
+pub fn flight_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.ecx;
+    let to = fr.arg(g, 0);
+    let ch = g.read::<u32>(w(0x18));
+    let ebp = fr.esp.wrapping_sub(4);
+    let p = ebp.wrapping_sub(0x24);
+    let d = ebp.wrapping_sub(0x14);
+    let mut s = Pushes::default();
+    s.push_all(&[p, ch]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x21), 217), 0);
+    for (o, src) in (0u32..4).map(|i| (0x20 + 4 * i, p + 4 * i)) {
+        let v = g.read::<u32>(src);
+        g.write::<u32>(obj + o, v);
+    }
+    for i in 0..4u32 {
+        let v = g.read::<u32>(to.wrapping_add(4 * i));
+        g.write::<u32>(obj + 0x30 + 4 * i, v);
+    }
+    s.push_all(&[p, to, d]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x7e), 234), 0);
+    for o in [0x48u32, 0x44, 0x40] {
+        g.write::<u32>(obj + o, 0);
+    }
+    for i in 0..4u32 {
+        let v = g.read::<u32>(d + 4 * i);
+        g.write::<u32>(obj + 0x80 + 4 * i, v);
+    }
+    s.pop(4);
+    let scales = [fr.xmm[3] as u32, fr.arg(g, 1), fr.arg(g, 2)];
+    for ((table, o), k) in [(0xe9u32, 0x50u32), (0x10b, 0x60), (0x12d, 0x70)]
+        .into_iter()
+        .zip(scales)
+    {
+        s.set_top(k);
+        s.push_all(&[d, obj.wrapping_add(o)]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(table), 233), 0);
+        s.pop(2);
+    }
+    let n = fr.arg(g, 3);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let step = div(g.read::<f32>(w(0x13d)), n.cast_signed() as f32);
+    g.write::<u32>(obj + 0x4c, 0x3f80_0000);
+    let count = g.read::<u16>(w(0x158));
+    for o in [0x5cu32, 0x6c, 0x7c, 0x8c] {
+        g.write::<u32>(obj + o, 0x3f80_0000);
+    }
+    g.write::<u32>(obj + 0xa4, n);
+    g.write::<u32>(obj + 0xa0, ch);
+    g.write::<u32>(obj + 0x98, 0);
+    g.write::<f32>(obj + 0x9c, step);
+    for o in [0x90u32, 0x94, 0xa8] {
+        g.write::<u32>(obj + o, 0);
+    }
+    g.write::<u16>(obj + 0xb0, 0);
+    let (node, mut eax) = if count == 0 {
+        (0, 0)
+    } else {
+        let node = g.read::<u32>(w(0x1cf));
+        let next = unlink_free(g, node, count);
+        g.write::<u32>(w(if count > 1 { 0x1ec } else { 0x1f4 }), next);
+        reset_task_node(g, node, w(0x225));
+        g.write::<u16>(w(0x230), count - 1);
+        (node, 0xffff)
+    };
+    let head = g.read::<u32>(w(0x236));
+    g.write::<u32>(node.wrapping_add(0x14), obj);
+    g.write::<u8>(node.wrapping_add(0x18), 1);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if head != 0 {
+        let tail = g.read::<u32>(w(0x24f));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        eax = tail;
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x262), node);
+    }
+    g.write::<u32>(w(0x26d), node);
+    g.write::<u32>(node.wrapping_add(8), node);
+    eax
+}
+
+/// [`flight_task`] (the `rel32`: `__security_check_cookie`).
+pub const FLIGHT_TASK: Sig = Sig {
+    len: 637,
+    hash: 0x9c81_8b16_8d7b_8718,
+    calls: &[(0x275, Callee::Any)],
+    imports: &[],
+};
+
+/// `child` made a node with an empty child list (u16 `+0x1a = 0xff`,
+/// `+0xc`/`+0x10` itself, `+0x14 = parent`) and, with a parent, appended
+/// to the parent's children (`+4` the parent, `+8` its old last child,
+/// which points on to it; the parent's u16 `+0x18` counts it).
+fn adopt<G: Game>(g: &mut G, child: u32, parent: u32) {
+    g.write::<u16>(child + 0x1a, 0xff);
+    g.write::<u32>(child + 0x10, child);
+    g.write::<u32>(child + 0xc, child);
+    g.write::<u32>(child + 0x14, parent);
+    if parent == 0 {
+        return;
+    }
+    g.write::<u32>(child + 4, parent);
+    let last = g.read::<u32>(parent + 0x10);
+    g.write::<u32>(child + 8, last);
+    let last = g.read::<u32>(parent + 0x10);
+    if last == parent {
+        g.write::<u32>(parent + 0xc, child);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), child);
+    }
+    let n = g.read::<u16>(parent + 0x18);
+    g.write::<u16>(parent + 0x18, n.wrapping_add(1));
+    g.write::<u32>(parent + 0x10, child);
+}
+
+/// A camera effect's node tree built (`ecx` = `[node, parent]`): the node
+/// joins its parent ([`adopt`]), `+0x228 = 0`, byte `+0x240 = 0`; its
+/// children `+0x178`, `+0x1a4`, `+0x1fc` (vtable `VT1`), `+0x1d0` (`VT2`)
+/// and `+0x2c` (`VT3`) join it, with their words (`+0x194..+0x1a0 = (0,
+/// 0, 0, 1)`, `+0x1c0..+0x1cc = 1.0`, `+0x218..+0x224 = (0, 0, 0, 1)`,
+/// `+0x1ec..+0x1f4 = 0`); the last one's `+0x13c`, `+0x144`, `+0x140` the
+/// first, fourth and second, `+0x128 = G`, byte `+0x148 = 0`. Then the
+/// camera: slot 281 `(1)`, `+0x23c` = slot 287 `(1, 0, 7)`, slot 283
+/// `(cam, 0)` and `(cam, 1)`. Returns the last slot's `eax`.
+///
+/// `magic_0150` 0x10002ab0 (637 bytes, `ecx` = the arguments; 2 DLLs).
+pub fn camera_tree<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let node = g.read::<u32>(fr.ecx);
+    let parent = g.read::<u32>(fr.ecx + 4);
+    adopt(g, node, parent);
+    g.write::<u32>(node + 0x228, 0);
+    g.write::<u8>(node + 0x240, 0);
+    let c1 = node.wrapping_add(0x178);
+    adopt(g, c1, node);
+    g.write::<u32>(c1, w(0x81));
+    for (o, v) in [
+        (0x194u32, 0u32),
+        (0x198, 0),
+        (0x19c, 0),
+        (0x1a0, 0x3f80_0000),
+    ] {
+        g.write::<u32>(node + o, v);
+    }
+    let c2 = node.wrapping_add(0x1a4);
+    adopt(g, c2, node);
+    g.write::<u32>(c2, w(0xe3));
+    for o in [0x1c0u32, 0x1c4, 0x1c8, 0x1cc] {
+        g.write::<u32>(node + o, 0x3f80_0000);
+    }
+    let c3 = node.wrapping_add(0x1fc);
+    adopt(g, c3, node);
+    g.write::<u32>(c3, w(0x145));
+    for (o, v) in [
+        (0x218u32, 0u32),
+        (0x21c, 0),
+        (0x220, 0),
+        (0x224, 0x3f80_0000),
+    ] {
+        g.write::<u32>(node + o, v);
+    }
+    let c4 = node.wrapping_add(0x1d0);
+    g.write::<u32>(c4, w(0x179));
+    adopt(g, c4, node);
+    for o in [0x1ecu32, 0x1f0, 0x1f4] {
+        g.write::<u32>(node + o, 0);
+    }
+    let c5 = node.wrapping_add(0x2c);
+    g.write::<u32>(c5, w(0x1ce));
+    adopt(g, c5, node);
+    g.write::<u32>(c5 + 0x13c, c1);
+    g.write::<u32>(c5 + 0x144, c4);
+    g.write::<u32>(c5 + 0x140, c2);
+    g.write::<u32>(c5 + 0x128, w(0x21d));
+    g.write::<u8>(c5 + 0x148, 0);
+    slot_call(g, img, f, (0x1fe, 281), &[1]);
+    let cam = slot_call(g, img, f, (0x233, 287), &[1, 0, 7]).eax;
+    g.write::<u32>(node + 0x23c, cam);
+    let mut s = Pushes::default();
+    s.push_all(&[0, cam]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x255), 283), 0);
+    let cam = g.read::<u32>(node + 0x23c);
+    s.push_all(&[1, cam]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let e = s.call(g, slot_target(g, w(0x262), 283), 0).eax;
+    Ret::eax(e)
+}
+
+/// [`camera_tree`].
+pub const CAMERA_TREE: Sig = Sig {
+    len: 637,
+    hash: 0x80ea_4cd9_56bb_d8fd,
+    calls: &[],
+    imports: &[],
+};
+
+/// A GS packet of a sprite written (internal: `ecx` = the sprite `o`; the
+/// packet at `p = o+0x2c`, which then moves on by 0x100). With `a, b` =
+/// `o+0xc`, `o+0x10` (when byte `o+0x31` is 0), `k = o+0x28`, `K` a
+/// constant, `n = u16 o+0x24 - 8`, `c` the four words at `*(o+8)`
+/// truncated, `e = o+0x1c & 1` and the byte `t = o+0x30`: the GIF tags
+/// and registers (`+0x10`/`+0x14` the 64-bit `((e | 0x2a80) << 6 | e) <<
+/// 14 | e << 5`, `t + 6`, `t + 0x47`, `t + 0x42`, `t + 0x14`, `t + 8` as
+/// 64-bit words, `+0x30 = o+0x20`, the constants), the texture corners
+/// `(a - k a) K`, `(b - k b) K` at `+0x70`/`+0x74` and `((K1 - a) k + a)
+/// K`, `((K0 - b) k + b) K` at `+0xa0`/`+0xc4`, `+0xe0`/`+0xe4`, `c` at
+/// `+0x80..+0x8c`, `n` at `+0x90`/`+0xd0` and `n + 0x2000` at
+/// `+0xb0`/`+0xf0`. Returns `+0x70`'s bits.
+///
+/// With byte `o+0x31` set, `a` and `b` are the frame words `[ebp - 0x10]`
+/// and `[ebp - 0xc]`, which the original reads before it ever writes
+/// them; the port uses 0 (brief 2026-10-24).
+///
+/// `magic_0042` 0x100010c0 (644 bytes; 2 DLLs).
+pub fn sprite_packet<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) -> u32 {
+    let w = |off: u32| op(img, f, off);
+    let n = u32::from(g.read::<u16>(o + 0x24)).wrapping_sub(8);
+    let p = g.read::<u32>(o + 0x2c);
+    let (a, b) = if g.read::<u8>(o + 0x31) == 0 {
+        (g.read::<f32>(o + 0xc), g.read::<f32>(o + 0x10))
+    } else {
+        // junk read: [ebp-0x10], [ebp-0xc] never written; 0 (brief 2026-10-24)
+        (0.0, 0.0)
+    };
+    let c = g.read::<u32>(o + 8);
+    let q = [0u32, 4, 8, 0xc].map(|d| trunc(g.read::<f32>(c.wrapping_add(d))));
+    let e = g.read::<u32>(o + 0x1c) & 1;
+    let k = g.read::<f32>(o + 0x28);
+    let kk = g.read::<f32>(w(0x57));
+    let v = ((u64::from(e | 0x2a80) << 6) | u64::from(e)) << 14;
+    g.write::<u32>(p.wrapping_add(0x14), (v >> 32) as u32);
+    g.write::<u32>(p.wrapping_add(0x10), v as u32 | (e << 5));
+    let t = u32::from(g.read::<u8>(o + 0x30));
+    let wide = |g: &mut G, off: u32, x: u32| {
+        g.write::<u32>(p.wrapping_add(off), x);
+        g.write::<u32>(
+            p.wrapping_add(off + 4),
+            (x.cast_signed() >> 31).cast_unsigned(),
+        );
+    };
+    wide(g, 0x18, t + 6);
+    g.write::<u32>(p.wrapping_add(0x28), t + 0x47);
+    let ow = g.read::<u32>(o + 0x20);
+    g.write::<u32>(p.wrapping_add(0x30), ow);
+    g.write::<u32>(p.wrapping_add(0x2c), 0);
+    let x0 = mul(k, a);
+    wide(g, 0x38, t + 0x42);
+    let u0 = sub(a, x0);
+    wide(g, 0x48, t + 0x14);
+    for (off, x) in [
+        (0u32, 0u32),
+        (4, 0),
+        (8, 0xeeeee),
+        (0xc, 0),
+        (0x20, 0),
+        (0x24, 0),
+        (0x34, 0),
+        (0x40, 0x61),
+        (0x44, 0),
+        (0x50, 0),
+        (0x54, 0),
+    ] {
+        g.write::<u32>(p.wrapping_add(off), x);
+    }
+    let u0 = mul(u0, kk);
+    wide(g, 0x58, t + 8);
+    g.write::<f32>(p.wrapping_add(0x70), u0);
+    let v0 = mul(sub(b, mul(k, b)), kk);
+    for (off, x) in [(0x60u32, 0u32), (0x64, 0), (0x68, 0x2424_2412), (0x6c, 4)] {
+        g.write::<u32>(p.wrapping_add(off), x);
+    }
+    g.write::<u32>(p.wrapping_add(0x78), 0x3f80_0000);
+    g.write::<f32>(p.wrapping_add(0x74), v0);
+    for (i, x) in (0u32..).zip(q) {
+        g.write::<u32>(p.wrapping_add(0x80 + 4 * i), x);
+    }
+    g.write::<u32>(p.wrapping_add(0x90), n);
+    let y_bits = g.read::<u32>(p.wrapping_add(0x74));
+    let next = g.read::<u32>(o + 0x2c).wrapping_add(0x100);
+    g.write::<u32>(o + 0x2c, next);
+    let u1 = sub(g.read::<f32>(w(0x188)), a);
+    let v1 = sub(g.read::<f32>(w(0x190)), b);
+    g.write::<u32>(p.wrapping_add(0xa4), y_bits);
+    let x_bits = g.read::<u32>(p.wrapping_add(0x70));
+    let u1 = mul(add(mul(u1, k), a), kk);
+    let v1 = mul(add(mul(v1, k), b), kk);
+    let n2 = n.wrapping_add(0x2000);
+    for (off, x) in [
+        (0xd0u32, n),
+        (0x94, 0xffff_fff8),
+        (0x98, 0),
+        (0x9c, 0),
+        (0xa0, u1.to_bits()),
+        (0xb0, n2),
+        (0xb4, 0xffff_fff8),
+        (0xb8, 0),
+        (0xbc, 0),
+        (0xc0, x_bits),
+        (0xc4, v1.to_bits()),
+        (0xd4, 0x19f8),
+        (0xd8, 0),
+        (0xdc, 0),
+        (0xe0, u1.to_bits()),
+        (0xe4, v1.to_bits()),
+        (0xf0, n2),
+        (0xf4, 0x19f8),
+        (0xf8, 0),
+        (0xfc, 0),
+    ] {
+        g.write::<u32>(p.wrapping_add(off), x);
+    }
+    x_bits
+}
+
+/// [`sprite_packet`].
+pub const SPRITE_PACKET: Sig = Sig {
+    len: 644,
+    hash: 0xd7cf_0844_04d7_8697,
+    calls: &[],
+    imports: &[],
+};
