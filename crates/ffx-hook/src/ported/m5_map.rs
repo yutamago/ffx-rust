@@ -12,6 +12,7 @@ use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::bridge as d;
 use ffx_prender::m5m_e::bridge as e;
+use ffx_prender::m5m_f::bridge as f;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -478,5 +479,24 @@ ported! {
     /// `rcuiGaugeDraw_0093c730(window, x, y, value)`.
     rcuiGaugeDraw_0093c730 @ 0x0093_c730 => extern "C" fn gauge_draw(window: u32, x: u32, y: u32, value: u32) -> u32 {
         e::gauge_draw(&mut mem(), window, x, y, value)
+    }
+    // ---- round 5 batch 2 (ffx_prender::m5m_f) ----
+    /// `rcbgFpTrxTexLoadTextGetTrxCnt(path, base)` -> the count: the list,
+    /// command and name in this shim's frame.
+    rcbgFpTrxTexLoadTextGetTrxCnt @ 0x0093_a910 => extern "C" fn trx_count(path: u32, base: u32) -> u32 {
+        let mut frame = StackFrame::<0x4a>::new();
+        f::trx_count(&mut mem(), frame.at(), path, base)
+    }
+    /// `rcbgGuideMapLoadTextSub(id)` -> the load's result: the stage name
+    /// and path in this shim's frame.
+    rcbgGuideMapLoadTextSub @ 0x0093_aa60 => extern "C" fn guide_map_load_text_sub(id: u32) -> u32 {
+        let mut frame = StackFrame::<0x42>::new();
+        let at = frame.at();
+        f::guide_map_load_text_sub(&mut mem(), at + 0x100, at, id)
+    }
+    /// `rcbgTrxSave2_009399f0(t, fd)`: the pad in this shim's frame.
+    rcbgTrxSave2_009399f0 @ 0x0093_99f0 => extern "C" fn trx_save2(t: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        f::trx_save2(&mut mem(), frame.at(), t, fd)
     }
 }

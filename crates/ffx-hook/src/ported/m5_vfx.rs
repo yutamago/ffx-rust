@@ -14,6 +14,9 @@ use ffx_glue_other::m5v_d::bridge as d;
 use ffx_glue_other::m5v_e::bridge as e;
 use ffx_glue_other::m5v_f::bridge as f;
 use ffx_glue_other::m5v_g::{self as gm, bridge as g};
+use ffx_glue_other::m5v_h::bridge as gh;
+use ffx_glue_other::m5v_i::bridge as gi;
+use ffx_glue_other::m5v_j::bridge as gj;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -580,5 +583,98 @@ ported! {
         let mut frame = StackFrame::<{ (gm::GT3_BREAK_FRAME / 4) as usize }>::new();
         let ebp = frame.at() + gm::GT3_BREAK_FRAME;
         g::create_gt3_mesh_break(&mut mem(), ebp, lo, hi, model, flags)
+    }
+    // ---- round 5 batch 3 (ffx_glue_other::m5v_h) ----
+    /// `gdraw_freeHandle_00a3b480(handle, stats)` -> the free-ring head.
+    gdraw_freeHandle_00a3b480 @ 0x00a3_b480 => extern "C" fn gdraw_free_handle(handle: u32, stats: u32) -> u32 {
+        gh::free_handle(&mut mem(), handle, stats)
+    }
+    /// `GDraw_pool_reclaim_00a3b500(pool, stats)` -> 1/0.
+    GDraw_pool_reclaim_00a3b500 @ 0x00a3_b500 => extern "C" fn gdraw_pool_reclaim(pool: u32, stats: u32) -> u32 {
+        gh::pool_reclaim(&mut mem(), pool, stats)
+    }
+    /// `gdraw_unbindTarget_00a3b590()` -> the target: the null buffer and
+    /// stride in this shim's frame.
+    gdraw_unbindTarget_00a3b590 @ 0x00a3_b590 => extern "C" fn gdraw_unbind_target() -> u32 {
+        let mut frame = StackFrame::<2>::new();
+        gh::unbind_target(&mut mem(), frame.at())
+    }
+    /// `gdraw_setViewportForTarget_00a3cd30()` -> the viewport's `eax`.
+    gdraw_setViewportForTarget_00a3cd30 @ 0x00a3_cd30 => extern "C" fn gdraw_set_viewport_for_target() -> u32 {
+        gh::set_viewport_for_target(&mut mem())
+    }
+    /// `gdraw_setTextureUnit_00a3ccb0(unit, texture, wrap, filter)` -> the
+    /// last method's `eax`: a null view in its argument slot.
+    gdraw_setTextureUnit_00a3ccb0 @ 0x00a3_ccb0 => extern "C" fn gdraw_set_texture_unit(unit: u32, texture: u32, wrap: u32, filter: u32; slots: u32) -> u32 {
+        gh::set_texture_unit(&mut mem(), slots + 4, unit, texture, wrap, filter)
+    }
+    /// `gdraw_resetState_00a3c280()` -> the `GDraw` state.
+    gdraw_resetState_00a3c280 @ 0x00a3_c280 => extern "C" fn gdraw_reset_state() -> u32 {
+        gh::reset_state(&mut mem())
+    }
+    /// `gdraw_setProjection_00a3c450(x0, x1, y0, y1)` -> the `GDraw` state;
+    /// writes its argument slots.
+    gdraw_setProjection_00a3c450 @ 0x00a3_c450 => extern "C" fn gdraw_set_projection(x0: u32, x1: u32, y0: u32, y1: u32; slots: u32) -> u32 {
+        gh::set_projection(&mut mem(), slots, x0, x1, y0, y1)
+    }
+    /// `gdraw_bindOutput_00a3c570(stats)` -> `RSSetState`'s `eax`: the
+    /// target in this shim's frame.
+    gdraw_bindOutput_00a3c570 @ 0x00a3_c570 => extern "C" fn gdraw_bind_output(stats: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        gh::bind_output(&mut mem(), frame.at(), stats)
+    }
+    /// `opu_v_u2(host, cmd)` (`ffx_vfx::opus`; parity in `vfx.rs`
+    /// `r53e_opu_v_u2_matches_the_original`): nibbles other than 0 and
+    /// 0x1000 read the never-written frame words `ebp - 8` / `- 0x10` as
+    /// record pointers; the port uses 0 (brief 2026-10-24) and faults on
+    /// the null record where the original reads stale stack, which the
+    /// junk-read rule accepts (brief 2026-10-27).
+    opu_v_u2 @ 0x0081_9c90 => extern "C" fn opu_v_u2(host: u32, cmd: u32) -> u32 {
+        ffx_vfx::opus::bridge::opu_v_u2(&mut mem(), host, cmd, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    // ---- round 5 batch 4 (ffx_glue_other::m5v_i) ----
+    /// `pppCrosshairPacket_00760ce0(x0, y0, x1, y1, w, h)` -> `sceDmaSend`'s
+    /// `eax`.
+    pppCrosshairPacket_00760ce0 @ 0x0076_0ce0 => extern "C" fn crosshair_packet(x0: u32, y0: u32, x1: u32, y1: u32, w: u32, h: u32) -> u32 {
+        gi::crosshair_packet(&mut mem(), x0, y0, x1, y1, w, h)
+    }
+    /// `pppLoadClutBlocks_00762810(src, dbp)`: the load-image record in this
+    /// shim's frame.
+    pppLoadClutBlocks_00762810 @ 0x0076_2810 => extern "C" fn load_clut_blocks(src: u32, dbp: u32) -> u32 {
+        let mut frame = StackFrame::<0x18>::new();
+        gi::load_clut_blocks(&mut mem(), frame.at(), src, dbp)
+    }
+    /// `rpc_send_command_0076b030(rec, text)` -> 0.
+    rpc_send_command_0076b030 @ 0x0076_b030 => extern "C" fn rpc_send_command(rec: u32, text: u32) -> u32 {
+        gi::rpc_send_command(&mut mem(), rec, text)
+    }
+    /// `rpc_read(rec)` -> the receive buffer.
+    rpc_read @ 0x0076_b4f0 => extern "C" fn rpc_read(rec: u32) -> u32 {
+        gi::rpc_read(&mut mem(), rec)
+    }
+    // ---- round 5 batch 5 (ffx_glue_other::m5v_j) ----
+    /// `opu_dbg(host, cmd)` -> the next command.
+    opu_dbg @ 0x0081_5e80 => extern "C" fn opu_dbg(host: u32, cmd: u32) -> u32 {
+        gj::opu_dbg(&mut mem(), host, cmd)
+    }
+    /// `op_et_bind_all_off_007fbc20()`.
+    op_et_bind_all_off_007fbc20 @ 0x007f_bc20 => extern "C" fn bind_all_off() {
+        gj::bind_all_off(&mut mem());
+    }
+    /// `op_et_bind_all_on_007fb940()`.
+    op_et_bind_all_on_007fb940 @ 0x007f_b940 => extern "C" fn bind_all_on() {
+        gj::bind_all_on(&mut mem());
+    }
+    /// `opd_num_end_tag_00a5f2d0(p, end)` -> 0x50.
+    opd_num_end_tag_00a5f2d0 @ 0x00a5_f2d0 => extern "C" fn num_end_tag(p: u32, end: u32) -> u32 {
+        gj::num_end_tag(&mut mem(), p, end)
+    }
+    /// `opd_num_tex_tag_00a5e7b0(p, tbw, pal)` -> 0x40.
+    opd_num_tex_tag_00a5e7b0 @ 0x00a5_e7b0 => extern "C" fn num_tex_tag(p: u32, tbw: u32, pal: u32) -> u32 {
+        gj::num_tex_tag(&mut mem(), p, tbw, pal)
+    }
+    /// `MsDbgFile_charClasses_007e12d0(table, s1, ..., s7)`.
+    MsDbgFile_charClasses_007e12d0 @ 0x007e_12d0 => extern "C" fn char_classes(table: u32, s1: u32, s2: u32, s3: u32, s4: u32, s5: u32, s6: u32, s7: u32) {
+        gj::char_classes(&mut mem(), table, [s1, s2, s3, s4, s5, s6, s7]);
     }
 }

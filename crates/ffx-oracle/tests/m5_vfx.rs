@@ -33,6 +33,9 @@ use ffx_glue_other::m5v_d::{self as md, bridge as d};
 use ffx_glue_other::m5v_e::{self as me, bridge as e};
 use ffx_glue_other::m5v_f::{self as mf, bridge as f};
 use ffx_glue_other::m5v_g::{self as mg, bridge as vg};
+use ffx_glue_other::m5v_h::{self as mh, bridge as gh};
+use ffx_glue_other::m5v_i::{self as mi, bridge as gi};
+use ffx_glue_other::m5v_j::{self as mj, bridge as gj};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -464,7 +467,11 @@ impl Twins {
         if !d.is_empty() && std::env::var_os("M5_LOG").is_some() {
             for (side, o) in [("a", &self.a), ("b", &self.b)] {
                 let n: u32 = Mem::read(o, self.log);
-                for k in 0..n.min(64) {
+                let from: u32 = std::env::var("M5_LOG_FROM")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(0);
+                for k in from..n.min(from + 64) {
                     let e: Vec<u32> = (0..16)
                         .map(|w| Mem::read::<u32>(o, self.log + 4 + 64 * k + 4 * w))
                         .collect();
@@ -3445,6 +3452,531 @@ fn r5v_render_data_creates_match_the_original() {
                 (mg::GT3_BREAK_FRAME - 4) as usize,
             );
             t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 3 (ffx_glue_other::m5v_h) ----
+
+/// A fake immediate context: recording stdcall stubs (`this` and the
+/// arguments logged and popped) at the methods `m5v_h` calls.
+fn gdraw_context(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let mut slots = vec![0; 0x1c0 / 4];
+    for (k, (off, words)) in [
+        (mh::vt::PS_SET_SHADER_RESOURCES, 4),
+        (mh::vt::PS_SET_SAMPLERS, 4),
+        (mh::vt::IA_SET_VERTEX_BUFFERS, 6),
+        (mh::vt::IA_SET_INDEX_BUFFER, 4),
+        (mh::vt::IA_SET_PRIMITIVE_TOPOLOGY, 2),
+        (mh::vt::OM_SET_RENDER_TARGETS, 4),
+        (mh::vt::RS_SET_STATE, 2),
+        (mh::vt::CLEAR_STATE, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        slots[(off / 4) as usize] = t.stub_code(
+            0x20 + k as u32,
+            false,
+            words,
+            words,
+            Ret::Val(rng.next()),
+            false,
+        );
+    }
+    t.object(&slots, 0x10)
+}
+
+/// A `GDraw` state with a context and random words where these read.
+fn gdraw_state(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let s = t.zeros(0xb00);
+    let ctx = gdraw_context(t, rng);
+    t.w32(s + 4, ctx);
+    for off in (0x6c8..0x6fc).step_by(4).chain((0x780..0x7c0).step_by(4)) {
+        t.w32(s + off, rng.next());
+    }
+    t.w32(s + 0x790, rng.below(4));
+    t.w32(s + 0x6f8, u32::from(rng.chance(3)));
+    t.global(mh::GDRAW.sym, s);
+    s
+}
+
+#[test]
+fn r5v_gdraw_targets_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0701);
+        for case in 0..24_u32 {
+            gdraw_state(t, &mut rng);
+
+            // the handle free: a handle in a ring, its pool's free ring
+            let pool = t.zeros(0x80);
+            t.w32(pool, rng.next());
+            let nodes: Vec<u32> = (0..3).map(|_| t.zeros(0x40)).collect();
+            let hd = nodes[0];
+            t.w32(hd + 0x30, rng.next());
+            t.w32(hd + 0x14, rng.next());
+            t.w32(hd + 0x18, pool);
+            t.w32(hd + 0x1c, nodes[1]);
+            t.w32(hd + 0x20, nodes[2]);
+            let first = t.zeros(0x40);
+            t.w32(pool + 0x10 + 0x20, first);
+            let stats = t.words(&(0..12).map(|_| rng.next()).collect::<Vec<_>>());
+            t.stub_sym(mh::RELEASE_TEXTURE_VIEWS, 1, false, 1, 0, Ret::Val(1));
+            t.check(
+                "gdraw_freeHandle_00a3b480",
+                0x00a3_b480,
+                Conv::Cdecl,
+                &[hd, stats],
+                |o| Out::U32(gh::free_handle(o, hd, stats)),
+            );
+            t.reset();
+
+            // the reclaim: empty, a vertex or texture pool, frames on both
+            // sides, the warning given already
+            let pool = t.zeros(0x1b0);
+            let r = t.zeros(0x40);
+            let used = match case % 4 {
+                0 => pool + 0x48,
+                1 => 0,
+                _ => r,
+            };
+            t.w32(pool + 0x64, used);
+            t.w32(pool + 0xc, rng.below(4));
+            t.w32(r + 0x14, if rng.chance(3) { 0 } else { rng.next() });
+            let (lo, hi) = (rng.below(3), rng.below(2));
+            t.w32(pool + 0x1a0, lo);
+            t.w32(pool + 0x1a4, hi);
+            t.w32(r + 0x28, rng.below(3));
+            t.w32(r + 0x2c, rng.below(2));
+            t.import_sym(mh::DISCARD_SLOT, 2, 2, 2, Ret::Val(2));
+            t.import_sym(mh::SEND_WARNING_SLOT, 3, 2, 0, Ret::Val(3));
+            t.stub_sym(mh::FREE_HANDLE, 4, false, 2, 0, Ret::Val(rng.next()));
+            let stats = rng.next();
+            t.check(
+                "GDraw_pool_reclaim_00a3b500",
+                0x00a3_b500,
+                Conv::Cdecl,
+                &[pool, stats],
+                |o| Out::U32(gh::pool_reclaim(o, pool, stats)),
+            );
+            t.reset();
+
+            // the unbind: a stack entry or none
+            let s = gdraw_state(t, &mut rng);
+            let entry = t.words(&[0, 0, rng.next()]);
+            let top = t.words(&[if case % 3 == 0 { 0 } else { entry }]);
+            t.w32(s + 0xaac, top);
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 0);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "gdraw_unbindTarget_00a3b590",
+                0x00a3_b590,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(gh::unbind_target(o, ebp - 8)),
+            );
+            t.same_stack("gdraw_unbindTarget_00a3b590", ebp - 8, 8);
+            t.b_top = None;
+
+            // the viewport: the main target, an entry with or without a size
+            let entry = t.words(&[0, 0, 0, rng.next(), rng.next(), 0, u32::from(rng.chance(2))]);
+            t.w32(s + 0xaac, if case % 2 == 0 { s + 0x9cc } else { entry });
+            t.stub_sym(mh::SET_VIEWPORT, 5, false, 4, 0, Ret::Val(rng.next()));
+            t.check(
+                "gdraw_setViewportForTarget_00a3cd30",
+                0x00a3_cd30,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(gh::set_viewport_for_target(o)),
+            );
+
+            // the texture unit: none or a texture
+            let texture = if case % 3 == 0 { 0 } else { t.zeros(8) };
+            let args = [rng.below(8), texture, rng.below(4), rng.below(4)];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            t.check(
+                "gdraw_setTextureUnit_00a3ccb0",
+                0x00a3_ccb0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(gh::set_texture_unit(
+                        o,
+                        slots + 4,
+                        args[0],
+                        args[1],
+                        args[2],
+                        args[3],
+                    ))
+                },
+            );
+            t.same_stack("gdraw_setTextureUnit_00a3ccb0", slots, 16);
+            t.b_top = None;
+
+            // the state reset
+            t.check(
+                "gdraw_resetState_00a3c280",
+                0x00a3_c280,
+                Conv::Cdecl,
+                &[],
+                |o| Out::U32(gh::reset_state(o)),
+            );
+
+            // the projection: sizes of 0 (infinities, 0/0) and of all signs
+            let pick = |rng: &mut Rng| match rng.below(4) {
+                0 => 0,
+                1 => rng.below(2000),
+                2 => rng.below(2000).wrapping_neg(),
+                _ => rng.next(),
+            };
+            let x0 = pick(&mut rng);
+            let y0 = pick(&mut rng);
+            let x1 = if case % 5 == 0 { x0 } else { pick(&mut rng) };
+            let y1 = if case % 7 == 0 { y0 } else { pick(&mut rng) };
+            let args = [x0, x1, y0, y1];
+            let code = memset_code();
+            t.stub_sym_x(mh::MEMSET, 6, false, 3, 0, Ret::Val(6), &code);
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            t.check(
+                "gdraw_setProjection_00a3c450",
+                0x00a3_c450,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gh::set_projection(o, slots, x0, x1, y0, y1)),
+            );
+            t.same_stack("gdraw_setProjection_00a3c450", slots, 16);
+            t.b_top = None;
+
+            // the output binding: the main target or a stack entry with or
+            // without a depth buffer
+            let main: u32 = t.r32(s + 0x780);
+            let target = if case % 2 == 0 { main } else { rng.next() };
+            t.stub_sym(mh::UNBIND, 7, false, 0, 0, Ret::Val(target));
+            let entry = t.zeros(0x20);
+            t.w8(entry + 0x14, rng.next() as u8);
+            t.w32(s + 0xaac, entry);
+            t.stub_sym(
+                mh::CREATE_DEPTH_BUFFER,
+                8,
+                false,
+                1,
+                0,
+                Ret::Val(rng.next()),
+            );
+            let stats = t.zeros(0x30);
+            t.write(stats, &(rng.next() as u16).to_le_bytes());
+            t.zero_frames();
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x40);
+            t.check(
+                "gdraw_bindOutput_00a3c570",
+                0x00a3_c570,
+                Conv::Cdecl,
+                &[stats],
+                |o| Out::U32(gh::bind_output(o, ebp - 4, stats)),
+            );
+            t.same_stack("gdraw_bindOutput_00a3c570", ebp - 4, 4);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 4 (ffx_glue_other::m5v_i) ----
+
+#[test]
+fn r5v_ppp_packets_and_rpc_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0801);
+        for case in 0..24_u32 {
+            // the crosshair: either packet, path 1 busy a few times
+            t.patch(
+                t.rebase(mi::CROSSHAIR_FLIP.sym),
+                &(rng.next() as u16).to_le_bytes(),
+            );
+            let words: Vec<u8> = (0..4).flat_map(|_| rng.next().to_le_bytes()).collect();
+            t.patch(t.rebase(mi::CROSSHAIR_WORDS), &words);
+            let mut busy: Vec<u32> = (0..rng.below(3)).map(|_| 0x10 | rng.next()).collect();
+            busy.push(rng.next() & !0x10);
+            let seq = t.seq(&busy);
+            t.stub_sym(mi::GS_SYNC_PATH, 1, false, 2, 0, seq);
+            t.stub_sym(mi::DMA_SYNC, 2, false, 3, 0, Ret::Val(2));
+            t.stub_sym(mi::DMA_SEND, 3, false, 2, 0, Ret::Val(rng.next()));
+            let args: Vec<u32> = (0..6).map(|_| rng.next()).collect();
+            t.check(
+                "pppCrosshairPacket_00760ce0",
+                0x0076_0ce0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(gi::crosshair_packet(
+                        o, args[0], args[1], args[2], args[3], args[4], args[5],
+                    ))
+                },
+            );
+            t.reset();
+
+            // the CLUT blocks (16-aligned frame: ebx = top - 16, ebp the
+            // aligned esp)
+            t.stub_sym(mi::GS_SYNC_PATH, 1, false, 2, 0, Ret::Val(rng.next()));
+            t.stub_sym(mi::SET_DEF_LOAD_IMAGE, 2, false, 8, 0, Ret::Val(2));
+            t.stub_sym(mi::FLUSH_CACHE, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(mi::EXEC_LOAD_IMAGE, 4, false, 2, 0, Ret::Val(4));
+            let (src, dbp) = (rng.next(), rng.next());
+            t.zero_frames();
+            let ebp = (call_top(&t.a) - 24) & !0xf;
+            t.b_top = Some(ebp - 0x100);
+            t.check(
+                "pppLoadClutBlocks_00762810",
+                0x0076_2810,
+                Conv::Cdecl,
+                &[src, dbp],
+                |o| Out::U32(gi::load_clut_blocks(o, ebp - 0x60, src, dbp)),
+            );
+            t.b_top = None;
+            t.reset();
+
+            // the RPC command
+            let rec = t.zeros(0x48);
+            t.w32(rec + 4, rng.next());
+            let len = rng.below(20) as usize;
+            let mut text: Vec<u8> = (0..len).map(|_| 1 + rng.below(0xff) as u8).collect();
+            text.push(0);
+            let text = t.alloc(&text);
+            t.stub_sym(mi::SIF_CALL_RPC, 1, false, 9, 0, Ret::Val(1));
+            t.check(
+                "rpc_send_command_0076b030",
+                0x0076_b030,
+                Conv::Cdecl,
+                &[rec, text],
+                |o| Out::U32(gi::rpc_send_command(o, rec, text)),
+            );
+            t.reset();
+
+            // the RPC read: empty, error, end, direct, chunked (to a buffer
+            // or none), checksum right or wrong
+            let rec = t.zeros(0x48);
+            let e = t.zeros(0x1000);
+            let word = match case % 6 {
+                0 => 0,
+                _ => 0x108 + 8 * rng.below(0x40),
+            };
+            // a size the first chunk uses up exactly at times
+            let size = if case % 4 == 3 {
+                word - 8
+            } else {
+                4 * rng.below(0x180) + rng.below(4)
+            };
+            t.write(e, &(word as u16).to_le_bytes());
+            let kind = match case % 6 {
+                1 => 0xffff_ffff,
+                2 => 0x80,
+                _ => rng.next(),
+            };
+            t.w32(e + 8, kind);
+            t.w32(e + 0xc, rng.next());
+            t.w32(e + 0x10, size);
+            for k in (0x18..0x1000).step_by(4) {
+                t.w32(e + k, rng.below(16));
+            }
+            let sum = if rng.chance(2) {
+                0
+            } else {
+                (0..size / 4).fold(0_u32, |s, k| s.wrapping_add(t.r32(e + 0x18 + 4 * k)))
+            };
+            t.w32(e + 0x14, sum);
+            t.w32(rec + 0x10, rng.next());
+            t.w32(rec + 0x14, e);
+            let dst = if case % 4 == 0 { 0 } else { t.zeros(0x1000) };
+            t.w32(rec + 0x18, dst);
+            let old = t.zeros(0x1000);
+            t.w32(rec + 0x1c, old);
+            let start = t.stub_code(2, false, 1, 0, Ret::Val(u32::from(case % 3 != 0)), false);
+            let done = t.stub_code(3, false, 1, 0, Ret::Val(3), false);
+            let failed = t.stub_code(4, false, 1, 0, Ret::Val(4), false);
+            t.w32(rec + 0x3c, start);
+            t.w32(rec + 0x40, done);
+            t.w32(rec + 0x44, failed);
+            t.stub_sym(mi::SIF_CALL_RPC, 1, false, 9, 0, Ret::Val(1));
+            t.stub_sym(mi::SIF_INIT_RPC, 5, false, 1, 0, Ret::Val(5));
+            t.stub_sym(mi::DEBUG_EXIT_TRACE, 6, false, 1, 0, Ret::Val(6));
+            t.stub_sym(mi::SCE_PRINTF, 7, false, 1, 0, Ret::Val(7));
+            t.stub_sym(mi::RPC_SEND_COMMAND, 8, false, 2, 0, Ret::Val(8));
+            t.check("rpc_read", 0x0076_b4f0, Conv::Cdecl, &[rec], |o| {
+                Out::U32(gi::rpc_read(o, rec))
+            });
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 5 (ffx_glue_other::m5v_j) ----
+
+#[test]
+fn r5v_effect_debug_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_0901);
+        for case in 0..32_u32 {
+            // the opus debug command: kinds 0..5 and others
+            let unit = t.zeros(0xa0);
+            for k in 0..3 {
+                t.w32(unit + 0x90 + 4 * k, float_word(&mut rng));
+            }
+            let host = t.zeros(0x3c0);
+            t.w32(host + 0x220, unit);
+            t.write(host + 0x212, &(rng.below(2) as u16).to_le_bytes());
+            let cmd = t.zeros(8);
+            let kind = if case % 8 == 7 {
+                rng.next() as i16
+            } else {
+                (case % 8) as i16 - 1
+            };
+            t.write(cmd + 2, &kind.to_le_bytes());
+            t.write(cmd + 4, &(rng.next() as u16).to_le_bytes());
+            t.check("opu_dbg", 0x0081_5e80, Conv::Cdecl, &[host, cmd], |o| {
+                Out::U32(gj::opu_dbg(o, host, cmd))
+            });
+            t.reset();
+
+            // the bind keys: records with handles (some repeated), bound or
+            // not, characters and monsters or not
+            let chr = t.rebase(mj::ET_CHR);
+            let mut recs = vec![0_u8; 0x20 * 0xf0];
+            Mem::read_bytes(&t.b, chr, &mut recs);
+            if !(t.snapshot && case < 2) {
+                let handles: Vec<u32> = (0..6).map(|_| rng.next() | 1).collect();
+                for r in recs.chunks_mut(0x20) {
+                    let hd = if rng.chance(3) {
+                        0
+                    } else {
+                        handles[rng.below(6) as usize]
+                    };
+                    r[..4].copy_from_slice(&hd.to_le_bytes());
+                    let who = if rng.chance(4) { 0 } else { rng.next() };
+                    r[8..12].copy_from_slice(&who.to_le_bytes());
+                    r[0xc] = rng.next() as u8;
+                    r[0xd] = rng.next() as u8;
+                }
+            }
+            t.patch(chr, &recs);
+            t.patch(t.rebase(mj::OP_ET_BIND_OFF.sym), &[u8::from(case % 3 != 0)]);
+            t.stub_sym(
+                mj::OPU_UNIT_FREE_BY_ID,
+                1,
+                false,
+                2,
+                0,
+                Ret::Val(rng.next()),
+            );
+            t.check(
+                "op_et_bind_all_off_007fbc20",
+                0x007f_bc20,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    gj::bind_all_off(o);
+                    Out::None
+                },
+            );
+            t.patch(t.rebase(mj::OP_ET_BIND_OFF.sym), &[u8::from(case % 3 != 0)]);
+            // the bind bits as they were (the off key cleared them)
+            t.patch(chr, &recs);
+            let monsters: Vec<u32> = (0..0x100)
+                .map(|_| {
+                    if rng.chance(3) {
+                        0xffff_ffff
+                    } else {
+                        rng.below(8)
+                    }
+                })
+                .collect();
+            let seq = t.seq(&monsters);
+            t.stub_sym(mj::OPUS_GET_MONSTER_INDEX, 2, false, 1, 0, seq);
+            t.stub_sym(mj::OP_ET_EFF, 3, false, 4, 0, Ret::Val(1));
+            t.check(
+                "op_et_bind_all_on_007fb940",
+                0x007f_b940,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    gj::bind_all_on(o);
+                    Out::None
+                },
+            );
+            t.reset();
+
+            // the number printer's tags
+            let p = t.zeros(0x60);
+            let end = p.wrapping_add(rng.below(0x200)).wrapping_sub(0x20);
+            t.check(
+                "opd_num_end_tag_00a5f2d0",
+                0x00a5_f2d0,
+                Conv::Cdecl,
+                &[p, end],
+                |o| Out::U32(gj::num_end_tag(o, p, end)),
+            );
+            let pal_byte = if case % 3 == 0 { 0 } else { rng.next() as u8 };
+            t.patch(t.rebase(mj::OPD_NUM_PAL.sym), &[pal_byte]);
+            t.patch(t.rebase(mj::OPD_NUM_FRAMES.sym), &rng.next().to_le_bytes());
+            t.patch(
+                t.rebase(mj::OPD_NUM_TBP.sym),
+                &(rng.next() as u16).to_le_bytes(),
+            );
+            t.patch(
+                t.rebase(mj::OPD_NUM_CBP.sym),
+                &(rng.next() as u16).to_le_bytes(),
+            );
+            let pal = if case % 2 == 0 {
+                0xffff_ffff
+            } else {
+                rng.next()
+            };
+            let tbw = rng.word();
+            t.check(
+                "opd_num_tex_tag_00a5e7b0",
+                0x00a5_e7b0,
+                Conv::Cdecl,
+                &[p, tbw, pal],
+                |o| Out::U32(gj::num_tex_tag(o, p, tbw, pal)),
+            );
+            t.reset();
+
+            // the character classes: plain and high characters
+            let block = t.zeros(0x200);
+            let table = block + 0x100;
+            let strings: Vec<u32> = (0..7)
+                .map(|_| {
+                    let mut s: Vec<u8> = (0..rng.below(6))
+                        .map(|_| 1 + rng.below(0xff) as u8)
+                        .collect();
+                    s.push(0);
+                    t.alloc(&s)
+                })
+                .collect();
+            let args: Vec<u32> = std::iter::once(table)
+                .chain(strings.iter().copied())
+                .collect();
+            t.check(
+                "MsDbgFile_charClasses_007e12d0",
+                0x007e_12d0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    gj::char_classes(
+                        o,
+                        table,
+                        [
+                            strings[0], strings[1], strings[2], strings[3], strings[4], strings[5],
+                            strings[6],
+                        ],
+                    );
+                    Out::None
+                },
+            );
             t.reset();
         }
     });

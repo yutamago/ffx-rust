@@ -37,6 +37,7 @@ use ffx_prender::m5m_b::{self as mb, bridge as b};
 use ffx_prender::m5m_c::{self as mc, bridge as c};
 use ffx_prender::m5m_d::{self as md, bridge as d};
 use ffx_prender::m5m_e::{self as me, bridge as e};
+use ffx_prender::m5m_f::{self as mf, bridge as f};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3111,6 +3112,146 @@ fn r5_file_count_and_gauge_match_the_original() {
                 &args,
                 |o| Out::U32(e::gauge_draw(o, args[0], args[1], args[2], args[3])),
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 2 (ffx_prender::m5m_f) ----
+
+#[test]
+fn r5_rcbg_texts_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f501);
+        for case in 0..16_u32 {
+            // the FP texture count: names base0_00.tm2.. present in a row
+            // or with gaps, no reply, an empty list
+            let reply = t.zeros(0x1_0000);
+            t.global(mf::PRIM_2D_PACKET.sym, reply);
+            // (the name buffer is 16 bytes: a short base, as the game's "tex")
+            let base = t.alloc(b"tx\0");
+            let path = t.alloc(b"host:/fp\0");
+            let present: Vec<u32> = (0..rng.below(6)).filter(|_| !rng.chance(4)).collect();
+            let names: Vec<u32> = present
+                .iter()
+                .map(|k| {
+                    let s = format!("tx{k}_00.tm2\0");
+                    t.alloc(s.as_bytes())
+                })
+                .collect();
+            let table = if names.is_empty() {
+                t.zeros(4)
+            } else {
+                t.words(&names)
+            };
+            let n = names.len() as u32;
+            let mut code = vec![0x51, 0x8b, 0x4c, 0x24, 0x08]; // push ecx; mov ecx, [esp+8]
+            code.extend([0xc7, 0x01]);
+            code.extend(n.to_le_bytes()); // mov dword [ecx], n
+            code.extend([0xc7, 0x41, 0x08]);
+            code.extend(table.to_le_bytes()); // mov dword [ecx+8], names
+            code.push(0x59); // pop ecx
+            let s = t.stub_code(1, false, 2, 0, Ret::Val(1), false);
+            let at = t.a.alloc_code(&[0; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 32]).unwrap(), at);
+            code.push(0xe9);
+            code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes());
+            t.write(at, &code);
+            t.jump(mf::MAKE_FILE_LIST, at);
+            let answer = if case % 4 == 0 {
+                0xffff_ffff
+            } else {
+                rng.below(3)
+            };
+            t.stub_sym(mf::SYSTEM_ON_HOST, 2, false, 2, 0, Ret::Val(answer));
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x180);
+            t.check(
+                "rcbgFpTrxTexLoadTextGetTrxCnt",
+                0x0093_a910,
+                Conv::Cdecl,
+                &[path, base],
+                |o| Out::U32(f::trx_count(o, ebp - 0x128, path, base)),
+            );
+            r5_same(t, "rcbgFpTrxTexLoadTextGetTrxCnt", ebp - 0x128, 0x124);
+            t.b_top = None;
+            t.reset();
+
+            // the guide-map model: no id, no stage, the load failing, no
+            // map, loaded (vertex words cleared)
+            let id = if case % 6 == 0 { 0 } else { rng.next() };
+            let known = u32::from(case % 6 != 1);
+            let stage = u32::from_le_bytes([b'b', b's', 0xe9, b'l']);
+            r5_out_stub(t, mf::GET_STAGE_NAME, 1, 2, Ret::Val(known), 1, stage);
+            let model = if case % 5 == 2 { 0 } else { t.zeros(0xb0) };
+            if model != 0 {
+                for k in (0x80..0xb0).step_by(4) {
+                    t.w32(model + k, rng.next());
+                }
+                let mesh = t.zeros(0x80);
+                t.w32(mesh + 8, 0x20);
+                t.write(mesh + 0x12, &(rng.below(8) as i16 - 1).to_le_bytes());
+                for k in (0x20..0x80).step_by(4) {
+                    t.w32(mesh + k, rng.next());
+                }
+                t.w32(model + 0x14, mesh);
+                t.w32(model + 0x10, rng.next());
+            }
+            t.stub_sym(mf::MODEL_NEW, 2, false, 0, 0, Ret::Val(model));
+            let loaded = if case % 3 == 0 || model == 0 {
+                0
+            } else {
+                rng.next()
+            };
+            t.stub_sym(mf::MODEL_LOAD_BY_EXT, 3, false, 2, 0, Ret::Val(loaded));
+            t.stub_sym(mf::MODEL_DELETE, 4, false, 1, 0, Ret::Val(4));
+            let guide = t.zeros(0x20);
+            let map = t.words(&[0, 0, guide]);
+            let sys = match case % 4 {
+                0 => 0,
+                1 => t.words(&[0]),
+                _ => t.words(&[map]),
+            };
+            t.global(mf::YN_MAP_SYSTEM.sym, sys);
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - 0x180);
+            t.check(
+                "rcbgGuideMapLoadTextSub",
+                0x0093_aa60,
+                Conv::Cdecl,
+                &[id],
+                |o| Out::U32(f::guide_map_load_text_sub(o, ebp - 0xc, ebp - 0x10c, id)),
+            );
+            r5_same(t, "rcbgGuideMapLoadTextSub", ebp - 0x10c, 0x108);
+            t.b_top = None;
+            t.reset();
+
+            // the image save
+            let seq: Vec<u32> = (0..16).map(|_| rng.next()).collect();
+            let seq = t.seq(&seq);
+            t.stub_sym(mf::SCE_WRITE, 1, false, 3, 0, seq);
+            let tex = t.zeros(0xa0);
+            for k in (0..0xa0).step_by(4) {
+                t.w32(tex + k, rng.next());
+            }
+            for off in [0x50, 0x54, 0x90, 0x94] {
+                t.w32(tex + off, rng.below(64));
+            }
+            let fd = rng.next();
+            r5_zero_stack(t, 0x400);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - 0x80);
+            t.check(
+                "rcbgTrxSave2_009399f0",
+                0x0093_99f0,
+                Conv::Cdecl,
+                &[tex, fd],
+                |o| Out::U32(f::trx_save2(o, ebp - 0x14, tex, fd)),
+            );
+            r5_same(t, "rcbgTrxSave2_009399f0", ebp - 0x14, 0x10);
+            t.b_top = None;
             t.reset();
         }
     });
