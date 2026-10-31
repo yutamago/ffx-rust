@@ -220,16 +220,29 @@ pub const TEXTURE_FRAME_WORDS: u32 = 21;
 /// (doubles), 16.0 (`float`).
 pub const PROFILE_CONSTS: [u32; 4] = [0x00b9_2308, 0x00b9_22c8, 0x00b9_21f0, 0x00b9_231c];
 
+/// `0x00a191f0`'s callees and data: `initializeGeometry(cluster)`
+/// (thiscall, ret 4), the buffers' resize `(w, h)` (thiscall, ret 8),
+/// the 128 x 128 target's format record, `makeRenderTarget` (cdecl, 7
+/// words), `0x00a19cf0` (thiscall), `GetRenderStateCache` (cdecl).
+pub const TAKE_TARGETS: [u32; 6] = [
+    0x00a1_9cb0,
+    0x00a1_0590,
+    0x00ca_310c,
+    0x00a0_6a30,
+    0x00a1_9cf0,
+    0x004f_d8b0,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
-    use super::PROFILE_CONSTS;
     use super::{COMMON_CALLS, COMMON_PARAMS};
     use super::{
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
     };
     use super::{DEPTH_CALLS, TABLES_CLASSES, TABLES_MEMSET, TEXTURE_PARAMS};
+    use super::{PROFILE_CONSTS, TAKE_TARGETS};
 
     /// `PDeferredLightingNVN::initializeShaders(a, effect)` (`0x00a1a4f0`,
     /// thiscall, `ret 8`): 0x15 without the buffers at `+0x3ee0` and
@@ -917,5 +930,118 @@ pub mod bridge {
             }
             i += 1;
         }
+    }
+
+    /// A render target handle's object (`+0`, none when the byte `+4` is
+    /// set).
+    fn target_object(h: &impl ffx_bridge::Mem, t: u32) -> u32 {
+        if h.read::<u8>(t + 4) == 0 {
+            h.read(t)
+        } else {
+            0
+        }
+    }
+
+    /// Whether the handle `t` is there, of size `w` x `h` (its object's
+    /// `+0x1c`, `+0x20`) and, when `format` is given, of that format
+    /// (the byte `+5`).
+    fn target_matches(
+        h: &impl ffx_bridge::Mem,
+        t: u32,
+        w: u32,
+        ht: u32,
+        format: Option<u8>,
+    ) -> bool {
+        if t == 0 {
+            return false;
+        }
+        if format.is_some_and(|f| h.read::<u8>(t + 5) != f) {
+            return false;
+        }
+        let o = target_object(h, t);
+        h.read::<u32>(o.wrapping_add(0x1c)) == w && {
+            let o = target_object(h, t);
+            h.read::<u32>(o.wrapping_add(0x20)) == ht
+        }
+    }
+
+    /// `0x00a191f0` (thiscall `(this; cluster, targets)`, ret 8): the
+    /// deferred lighting's targets taken: 0x16 when it has them already
+    /// (`+0x3ed4`); 5 unless the six handles (`targets[0..6]`) are there
+    /// and share the size of the sixth, the sixth's format (byte `+5`) is
+    /// 0 or 2, the fourth and third have that format and the fifth format
+    /// 0. Then they are kept (`+0x3fb0..+0x3fc4`, state 3), the geometry
+    /// initialised (`initializeGeometry(cluster)`), the buffers resized
+    /// (`0x00a10590(w, h)`), a 128 x 128 target made
+    /// (`makeRenderTarget(cluster, 0x80, 0x80, 0x00ca310c, 0, 0, &err)`
+    /// into `+0x4030`; `err` is the original's argument slot, `out` here),
+    /// `0x00a19cf0`; each error returned (no target: `err`). Last the two
+    /// feature flags (`+0x402c`, `+0x3f90`) kept only when the render
+    /// state cache's level (`+0xb4`) is 0xb000 or more. 0.
+    pub fn take_targets(h: &mut impl Host, this: u32, cluster: u32, targets: u32, out: u32) -> u32 {
+        if h.read::<u32>(this + 0x3ed4) != 0 {
+            return 0x16;
+        }
+        let last: u32 = h.read(targets + 0x14);
+        if last == 0 {
+            return 5;
+        }
+        let format: u8 = h.read(last + 5);
+        let o = target_object(h, last);
+        let w: u32 = h.read(o.wrapping_add(0x1c));
+        let o = target_object(h, last);
+        let ht: u32 = h.read(o.wrapping_add(0x20));
+        if format != 0 && format != 2 {
+            return 5;
+        }
+        for (i, f) in [
+            (0, None),
+            (1, None),
+            (3, Some(format)),
+            (2, Some(format)),
+            (4, Some(0)),
+        ] {
+            let t: u32 = h.read(targets + 4 * i);
+            if !target_matches(h, t, w, ht, f) {
+                return 5;
+            }
+        }
+        for i in 0..6 {
+            let t: u32 = h.read(targets + 4 * i);
+            h.write(this + 0x3fb0 + 4 * i, t);
+        }
+        h.write(this + 0x3ed4, 3u32);
+        let r = h.call_sym(TAKE_TARGETS[0], Conv::Thiscall(this), &[cluster]);
+        if r != 0 {
+            return r;
+        }
+        let r = h.call_sym(TAKE_TARGETS[1], Conv::Thiscall(this), &[w, ht]);
+        if r != 0 {
+            return r;
+        }
+        h.write(out, 0u32);
+        let format = h.rebase(TAKE_TARGETS[2]);
+        let target = h.call_sym(
+            TAKE_TARGETS[3],
+            Conv::Cdecl,
+            &[cluster, 0x80, 0x80, format, 0, 0, out],
+        );
+        h.write(this + 0x4030, target);
+        let err: u32 = h.read(out);
+        if target == 0 || err != 0 {
+            return err;
+        }
+        let r = h.call_sym(TAKE_TARGETS[4], Conv::Thiscall(this), &[]);
+        if r != 0 {
+            return r;
+        }
+        for flag in [0x402c, 0x3f90] {
+            let cache = h.call_sym(TAKE_TARGETS[5], Conv::Cdecl, &[]);
+            let level: u32 = h.read(cache + 0xb4);
+            let keep = u8::from(level.cast_signed() >= 0xb000);
+            let f: u8 = h.read(this + flag);
+            h.write(this + flag, f & keep);
+        }
+        0
     }
 }

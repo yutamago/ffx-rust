@@ -59,4 +59,10 @@ ported! {
     HeightProfiles_raise_00a965d0 @ 0x00a9_65d0 => extern "fastcall-caller-pops" fn raise_profiles(this: u32, tables: u32, values: u32, floors: u32, out: u32, bias: u32) {
         lb::raise_profiles(&mut mem(), this, tables, values, floors, out, bias);
     }
+    /// The deferred lighting's targets taken `(cluster, targets)`; the
+    /// maker's error word (the original's argument slot) in a frame word.
+    Phyre_PPostProcessing_PDeferredLighting_setTargets_00a191f0 @ 0x00a1_91f0 => extern "thiscall" fn take_targets(this: u32, cluster: u32, targets: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::take_targets(&mut mem(), this, cluster, targets, f.at())
+    }
 }

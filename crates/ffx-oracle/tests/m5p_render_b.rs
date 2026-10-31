@@ -5500,3 +5500,113 @@ fn big_raise_profiles_edges_match_the_original() {
         t.reset();
     }
 }
+
+/// `0x00a191f0` (the deferred lighting's targets taken) against the
+/// original: already taken; each handle missing, of another size or
+/// format; formats 0 and 2 and an unsupported one; each later step
+/// failing, the target maker failing with and without an error word;
+/// the feature levels on both sides of 0xb000. The error word the maker
+/// writes is the original's argument slot, which the port gets as its
+/// `out` (the same address here).
+#[test]
+#[allow(clippy::type_complexity)] // one row per case
+fn big_take_targets_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (taken, the handle changed (9 none), how: 0 missing, 1 width,
+    // 2 height, 3 format; the sixth's format; the step errors
+    // [geometry, resize, maker target, maker error, 0x00a19cf0]; level)
+    let cases: [(bool, u32, u32, u8, [u32; 5], u32); 17] = [
+        (true, 9, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 2, [0, 0, 1, 0, 0], 0xafff),
+        (false, 9, 0, 1, [0, 0, 1, 0, 0], 0xb000),
+        (false, 5, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 0, 0, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 1, 1, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 3, 2, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 2, 3, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 3, 3, 0, [0, 0, 1, 0, 0], 0xb000),
+        (false, 4, 3, 2, [0, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [7, 0, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 8, 1, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 0, 0xd, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 0, 0, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0xd, 0], 0xb000),
+        (false, 9, 0, 0, [0, 0, 1, 0, 9], 0xc000),
+    ];
+    for (taken, which, how, format, errs, level) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::TAKE_TARGETS;
+            t.stub(c[0], true, 1, 1, errs[0]);
+            t.stub(c[1], true, 2, 2, errs[1]);
+            t.stub(c[4], true, 0, 0, errs[4]);
+            let cache = t.zeros(0xc0);
+            t.w32(cache + 0xb4, level);
+            t.stub(c[5], false, 0, 0, cache);
+            // the maker: stores the error through its seventh word, logs
+            // six, answers the target
+            let target = if errs[2] != 0 { 0x0088_0000 } else { 0 };
+            let logger = t.stub_code(c[3], false, 6, 0, target);
+            let code = t.a.alloc_code(&[0xcc; 0x20]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 0x20]).unwrap(), code);
+            let mut k = vec![0x8b, 0x44, 0x24, 0x1c, 0xc7, 0x00]; // mov eax, [esp+0x1c]; mov dword [eax], err
+            k.extend(errs[3].to_le_bytes());
+            k.push(0xe9);
+            k.extend(logger.wrapping_sub(code + 15).to_le_bytes()); // jmp logger
+            t.write(code, &k);
+            let at = t.rebase(c[3]);
+            let mut j = vec![0xe9];
+            j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+            let old = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(old);
+            t.write(at, &j);
+
+            let this = t.zeros(0x4040);
+            t.w32(this + 0x3ed4, u32::from(taken));
+            t.w8(this + 0x402c, 0xff);
+            t.w8(this + 0x3f90, 0x01);
+            let mut handles = Vec::new();
+            for i in 0..6u32 {
+                if i == which && how == 0 {
+                    handles.push(0);
+                    continue;
+                }
+                let obj = t.zeros(0x24);
+                let w = if i == which && how == 1 { 0x101 } else { 0x100 };
+                let ht = if i == which && how == 2 { 0x81 } else { 0x80 };
+                t.w32(obj + 0x1c, w);
+                t.w32(obj + 0x20, ht);
+                let hnd = t.zeros(8);
+                t.w32(hnd, obj);
+                let f = match i {
+                    2 | 3 | 5 => format,
+                    _ => 0,
+                };
+                let f = if i == which && how == 3 { f ^ 2 } else { f };
+                t.w8(hnd + 5, f);
+                handles.push(hnd);
+            }
+            let targets = t.alloc(
+                &handles
+                    .iter()
+                    .flat_map(|v| v.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            let ebp = t.ebp_for(2);
+            let what = format!(
+                "{label}: take targets taken {taken} which {which} how {how} format {format} errs {errs:?} level {level:#x}"
+            );
+            t.check_frame(
+                &what,
+                0x00a1_91f0,
+                Conv::Thiscall(this),
+                &[0x0055_0000, targets],
+                ebp,
+                0x20,
+                (0, 0),
+                |g| Out::U32(l2b::take_targets(g, this, 0x0055_0000, targets, ebp + 0xc)),
+            );
+            t.reset();
+        }
+    }
+}
