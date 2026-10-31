@@ -1174,6 +1174,7 @@ ports! {
     "camera boxes" => s4_small::CAMERA_BOXES, s4_small::camera_boxes;
     "clock mode task" => s4_small::CLOCK_MODE_TASK, s4_small::clock_mode_task;
     "white and count" => s4_small::WHITE_AND_COUNT, s4_small::white_and_count;
+    "effect frame (sound)" => s4_small::EFFECT_FRAME_SOUND, s4_small::effect_frame_sound;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1595,6 +1596,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("scale task (argument)", &s4_small::SCALE_TASK_ARG),
     ("move ends", &s4_small::MOVE_ENDS),
     ("pulse colour", &s4_small::PULSE_COLOUR),
+    ("summon nodes (b)", &s4_small::SUMMON_NODES_B),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

@@ -8340,3 +8340,111 @@ pub const WHITE_AND_COUNT: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`summon_nodes`] with the summon's own record (internal, `ecx` =
+/// `[node, parent, a, b, mode]`): `+0x2624` b, byte `+0x262c` the mode,
+/// `+0x2628` a, slot 412 `(a, node + 0x261c, 1)` gives the targets (their
+/// count at `+0x261c`, the list kept at `+0x2620`), each target's model
+/// node set up as there (its table operand `+0xb2`). Returns the last
+/// set-up's result, or the list.
+///
+/// `magic_0332` 0x10005db0 (209 bytes; 2 DLLs).
+pub fn summon_nodes_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    child_last(g, n, g.read::<u32>(r + 4));
+    let at = |o: u32| n.wrapping_add(o);
+    let b = g.read::<u32>(r + 0xc);
+    let a = g.read::<u32>(r + 8);
+    g.write::<u32>(at(0x2624), b);
+    let mode = g.read::<u8>(r + 0x10);
+    g.write::<u8>(at(0x262c), mode);
+    let count = at(0x261c);
+    g.write::<u32>(at(0x2628), a);
+    let list = slot_call(g, img, f, (0x5b, 412), &[a, count, 1]).eax;
+    g.write::<u32>(at(0x2620), list);
+    if g.read::<i32>(count) <= 0 {
+        return Ret::eax(list);
+    }
+    // push ebp; sub esp, 0x14: the record is [ebp - 0x14]
+    let rec = fr.esp.wrapping_sub(0x18);
+    let init = img.rel32_target(f + 0xb7);
+    let mut i = 0u32;
+    loop {
+        let node = at(0x1c + 0x98 * i);
+        let parent = g.read::<u32>(r + 4);
+        let list = g.read::<u32>(at(0x2620));
+        let target = u32::from(g.read::<u8>(list.wrapping_add(i)));
+        g.write::<u32>(rec + 4, parent);
+        g.write::<u32>(rec, node);
+        g.write::<u32>(rec + 8, target);
+        g.write::<u8>(rec + 0xc, 0);
+        g.write::<u32>(node, op(img, f, 0xb2));
+        let eax = crate::sa_summon::model_node_init(g, img, init, rec);
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(count) {
+            return Ret::eax(eax);
+        }
+    }
+}
+
+/// [`summon_nodes_b`].
+pub const SUMMON_NODES_B: Sig = Sig {
+    len: 209,
+    hash: 0x2dd6_ad92_067f_5a5d,
+    calls: &[(0xb7, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT))],
+    imports: &[],
+};
+
+/// One frame of the effect while `G_ON` is set (else 0): `*G_A` 0, or 1
+/// when slot 253 answers 0; `*G_P` = `ITEM`, the screen and camera
+/// matrices (slots 723, 724), `*G_Q` = `G_R`; the timeline runs
+/// ([`crate::sb_misc::timeline_run`], operand `+0x75`); over, slot 214
+/// `(*G_E)`; live, in state 5 slot 393 `(*G_H, sound, 0x100)` and
+/// `G_FRAMES` counts up (no arguments). Returns 1.
+///
+/// `magic_0443` 0x10002280 (211 bytes; 2 DLLs).
+pub fn effect_frame_sound<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    let a = rd(g, 0xd);
+    g.write::<u32>(a, 0);
+    if slot_call(g, img, f, (0x18, 253), &[]).eax == 0 {
+        let a = rd(g, 0x29);
+        g.write::<u32>(a, 1);
+    }
+    let p = rd(g, 0x34);
+    let m = rd(g, 0x3a);
+    g.write::<u32>(p, op(img, f, 0x40));
+    slot_call(g, img, f, (0x45, 723), &[m]);
+    let n = rd(g, 0x58);
+    slot_call(g, img, f, (0x52, 724), &[n, m]);
+    let q = rd(g, 0x66);
+    let r = rd(g, 0x6b);
+    g.write::<u32>(q, r);
+    if crate::sb_misc::timeline_run(g, img, img.rel32_target(f + 0x7a), op(img, f, 0x75)) == 0 {
+        let e = rd(g, 0x89);
+        slot_call(g, img, f, (0x83, 214), &[e]);
+        return Ret::eax(1);
+    }
+    if rd(g, 0xa0) == 5 {
+        let h = rd(g, 0xbe);
+        slot_call(g, img, f, (0xa8, 393), &[h, op(img, f, 0xb8), 0x100]);
+    }
+    let at = op(img, f, 0xc9);
+    let v = g.read::<u32>(at).wrapping_add(1);
+    g.write::<u32>(at, v);
+    Ret::eax(1)
+}
+
+/// [`effect_frame_sound`].
+pub const EFFECT_FRAME_SOUND: Sig = Sig {
+    len: 211,
+    hash: 0x5ced_bd47_a0c9_5416,
+    calls: &[(0x7a, Callee::Sig(&crate::sb_misc::TIMELINE_RUN))],
+    imports: &[],
+};

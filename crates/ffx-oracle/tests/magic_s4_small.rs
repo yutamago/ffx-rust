@@ -3848,3 +3848,62 @@ fn clock_modes_and_whites() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+#[test]
+fn summon_nodes_b_and_sound_frames() {
+    let Some(mut t) = twin(332) else { return };
+    let f = t.at(0x5db0);
+    let list = SCRATCH + 0x300;
+    t.write(list, &[2, 5, 1]);
+    let count = SCRATCH + 0x94;
+    rec(&mut t, 412, 3, move |m, a| {
+        m.w32(a[1], m.r32(count));
+        list
+    });
+    for s in [413u32, 215, 14] {
+        rec(&mut t, s, 1, move |_, _| s);
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, _| 0.5);
+    let (r, n, parent) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x400);
+    for k in [0u32, 2] {
+        t.write(n, &vec![0x66; 0x2640]);
+        t.write(parent, &[0; 0x20]);
+        t.set_u32(parent + 0x10, parent);
+        t.set_u32(parent + 0xc, parent);
+        t.set_u32(count, k);
+        for (i, w) in [n, parent, 0xa, 0xb, 0x0303].into_iter().enumerate() {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(
+            f,
+            Call::this(r),
+            &[],
+            Eax::Checked,
+            s4_small::summon_nodes_b,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x2280);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 253, 0, move |m, _| m.r32(answer));
+    recs(&mut t, &[(723, 1), (724, 2), (214, 1), (393, 3)]);
+    for o in [0xd, 0x29, 0x34, 0x66] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x100 + o);
+    }
+    let tl = op(&t, f, 0x75);
+    for (on, busy, live, state) in [
+        (0u32, 0u32, 0u32, 0u32),
+        (1, 0, 0, 5),
+        (1, 1, 1, 5),
+        (1, 0, 1, 4),
+    ] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(answer, busy);
+        t.write(tl, &[0; 0x10]);
+        t.set_u32(tl + 8, live);
+        t.set_u32(op(&t, f, 0xa0), state);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
