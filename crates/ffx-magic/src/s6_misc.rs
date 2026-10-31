@@ -2318,3 +2318,49 @@ pub const PARTS_RING: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// [`parts_axes`] for live parts only, each then handed on (internal:
+/// `ecx` = the parts' base, `edx` = the count; a /GS frame): a part
+/// whose word `p[-0xac]` is 0xff is passed over; the others get their
+/// axes as there and slot 211 `(p[-0xa8], p-0x20)`. Returns slot 211's
+/// `eax` (the frame's cookie word `*G_COOKIE ^ ebp` when no part runs).
+///
+/// `magic_0515` 0x100027e0 (265 bytes, `ecx`/`edx`; 4 DLLs).
+pub fn live_parts_axes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let mut eax = g.read::<u32>(op(img, f, 0x7)) ^ ebp;
+    let m = ebp.wrapping_sub(0x44);
+    let mut p = fr.ecx.wrapping_add(0xac);
+    for _ in 0..fr.edx {
+        if g.read::<u32>(p.wrapping_sub(0xac)) != 0xff {
+            let a = i32::from(g.read::<i16>(p.wrapping_sub(0x96)));
+            let angle = 0xffff_c000u32.wrapping_sub(a.cast_unsigned());
+            slot(g, img, f, 0x48, 247, &[m, angle]);
+            let s = g.read::<u32>(p.wrapping_sub(0x84));
+            for (t, out, row) in [
+                (0x69u32, 0x20u32, 0u32),
+                (0x94, 0x10, 0x10),
+                (0xb2, 0, 0x20),
+            ] {
+                slot(g, img, f, t, 233, &[p.wrapping_sub(out), m + row, s]);
+            }
+            for o in [0u32, 4, 8, 0xc] {
+                let x = g.read::<u32>(p.wrapping_sub(0x70).wrapping_add(o));
+                g.write::<u32>(p.wrapping_add(0x10 + o), x);
+            }
+            let h = g.read::<u32>(p.wrapping_sub(0xa8));
+            eax = slot(g, img, f, 0xc5, 211, &[h, p.wrapping_sub(0x20)]).eax;
+        }
+        p = p.wrapping_add(0xcc);
+    }
+    eax
+}
+
+/// [`live_parts_axes`] (the `rel32`: `__security_check_cookie`).
+pub const LIVE_PARTS_AXES: Sig = Sig {
+    len: 265,
+    hash: 0xd56a_a09c_96d0_dc80,
+    calls: &[(0x101, Callee::Any)],
+    imports: &[],
+};

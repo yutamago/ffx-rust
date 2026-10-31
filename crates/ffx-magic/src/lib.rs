@@ -2374,6 +2374,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("start object (reset state)", &s6_misc::START_OBJECT_RESET),
     ("sparks on a model", &s6_misc::SPARKS_ON_MODEL),
     ("parts ring", &s6_misc::PARTS_RING),
+    ("live parts axes", &s6_misc::LIVE_PARTS_AXES),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

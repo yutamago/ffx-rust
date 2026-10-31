@@ -1656,3 +1656,40 @@ fn parts_rings() {
         });
     }
 }
+
+/// Row 313: `magic_0515`'s live parts' axes: no parts, all dead, a mix.
+#[test]
+fn live_parts_axes_turned() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x27e0);
+    rec_mem(&mut t, 247, 2, 12, Some(0));
+    t.stub(233, |m, a| {
+        for i in 0..4 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x0233_0000 ^ a[0]
+    });
+    rec_mem(&mut t, 211, 2, 4, None);
+    let base = SCRATCH + 0x1000;
+    for (k, (n, live)) in [(0u32, 0u32), (2, 0), (4, 0b1011)].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(base, &varied(0x400, k));
+        for i in 0..n {
+            let p = base + 0xac + 0xcc * i;
+            t.set_u32(p - 0xac, if live >> i & 1 != 0 { i } else { 0xff });
+            t.set_u32(p - 0xa8, 0x0a80_0000 + i);
+            t.set_u16(p - 0x96, (0x1234 * (i + 1) + k) as u16);
+            t.set_u32(p - 0x84, (1.5 + i as f32).to_bits());
+        }
+        let c = Call {
+            ecx: base,
+            edx: n,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::live_parts_axes(g, img, fr))
+        });
+    }
+}
