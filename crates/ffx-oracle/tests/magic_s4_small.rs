@@ -4536,3 +4536,44 @@ fn release_resource_triples() {
         t.check_entry(f, c, &[], Eax::Checked);
     }
 }
+
+#[test]
+fn owners_30_and_data_pointers() {
+    let Some(mut t) = twin(444) else { return };
+    let f = t.at(0x1d80);
+    let obj = SCRATCH + 0x100;
+    t.write(obj, &[0x5a; 0x130]);
+    let c = Call {
+        ecx: obj,
+        edx: 0x0edd,
+        ..Call::default()
+    };
+    t.check(
+        f,
+        c,
+        &[0xdead, 0x0b0b],
+        Eax::Checked,
+        s4_small::reset_owners_30,
+    );
+    drop(t);
+    let Some(mut t) = twin(124) else { return };
+    let f = t.at(0x1690);
+    let api_table = t.u32(t.img.word(f + 0x4));
+    let block = SCRATCH + 0x200;
+    t.set_u32(api_table + 0xbb4, block);
+    let offs = SCRATCH + 0x100;
+    for last in [0u16, 0x30] {
+        t.write(block, &[0x44; 0x40]);
+        for k in 0..13u32 {
+            let v = if k == 12 {
+                last
+            } else if k % 3 == 1 {
+                0
+            } else {
+                0x10 * k as u16 + 1
+            };
+            t.set_u16(offs + 4 + 2 * k, v);
+        }
+        t.check_entry(f, Call::default(), &[SCRATCH + 0x1000, offs], Eax::Checked);
+    }
+}

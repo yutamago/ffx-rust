@@ -1195,6 +1195,7 @@ ports! {
     "load steps and frame" => s4_small::LOAD_STEPS_AND_FRAME, s4_small::load_steps_and_frame;
     "falling parts step" => s4_small::FALLING_PARTS_STEP, s4_small::falling_parts_step;
     "release resource triples" => s4_small::RELEASE_RESOURCE_TRIPLES, s4_small::release_resource_triples;
+    "data pointers" => s4_small::DATA_POINTERS, s4_small::data_pointers;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1627,6 +1628,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("light object", &s4_small::LIGHT_OBJECT),
     ("sprite node", &s4_small::SPRITE_NODE),
     ("named parts", &s4_small::NAMED_PARTS),
+    ("reset owners (30)", &s4_small::RESET_OWNERS_30),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

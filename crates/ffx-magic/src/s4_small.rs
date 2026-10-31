@@ -9815,3 +9815,84 @@ pub const RELEASE_RESOURCE_TRIPLES: Sig = Sig {
     calls: &[(0x1f, Callee::Sig(&GIVE_BACK))],
     imports: &[],
 };
+
+/// An object's animation and model words reset with a 30-frame count
+/// (internal, `ecx` = the object, `edx` the owner, cdecl `(-, owner_b)`):
+/// `+0x100` = `owner_b`, `+0x114` = `edx`, `+0x11c` = 30, the rest of
+/// `+0x104..+0x120` 0, byte `+0x126` 0, `u16 +0x124` 0x8000, `+0xc0..`
+/// 0, 0, 0, 0, `+0xd0..` 0, 0, 0, 1.0, `+0xe0..` 0, 0, 0, 1.0 and
+/// `+0xf0..+0xfc` 1.0. Returns 0x8000.
+///
+/// `magic_0444` 0x10001d80 (269 bytes; 2 DLLs).
+pub fn reset_owners_30<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let obj = fr.ecx;
+    let at = |o: u32| obj.wrapping_add(o);
+    let owner_b = fr.arg(g, 1);
+    g.write::<u32>(at(0x100), owner_b);
+    g.write::<u32>(at(0x114), fr.edx);
+    g.write::<u32>(at(0x11c), 0x1e);
+    for o in [0x104, 0x108, 0x10c, 0x110, 0x118, 0x120] {
+        g.write::<u32>(at(o), 0);
+    }
+    g.write::<u8>(at(0x126), 0);
+    g.write::<u16>(at(0x124), 0x8000);
+    for (o, v) in [
+        (0xcc, 0),
+        (0xc8, 0),
+        (0xc4, 0),
+        (0xc0, 0),
+        (0xd8, 0),
+        (0xd4, 0),
+        (0xd0, 0),
+        (0xdc, 0x3f80_0000),
+        (0xe8, 0),
+        (0xe4, 0),
+        (0xe0, 0),
+        (0xec, 0x3f80_0000),
+        (0xfc, 0x3f80_0000),
+        (0xf8, 0x3f80_0000),
+        (0xf4, 0x3f80_0000),
+        (0xf0, 0x3f80_0000),
+    ] {
+        g.write::<u32>(at(o), v);
+    }
+    Ret::eax(0x8000)
+}
+
+/// [`reset_owners_30`].
+pub const RESET_OWNERS_30: Sig = Sig {
+    len: 269,
+    hash: 0x5760_dc7a_fed8_1ac7,
+    calls: &[],
+    imports: &[],
+};
+
+/// The overlay's handler giving the game its 13 data pointers (cdecl
+/// `(base, offsets)`; [`entry_hook_in`] installs it): each non-zero `u16`
+/// offset `offsets + 4 + 2k` puts `base + 0xa0 + offset` into word `k + 2`
+/// of the game's block `T[0xbb4]`. Returns the last pointer, or 0 when
+/// the last offset is 0.
+///
+/// `magic_0124` 0x10001690 (271 bytes; 2 DLLs).
+pub fn data_pointers<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let t = g.read::<u32>(op(img, fr.at, 0x4));
+    let block = g.read::<u32>(t.wrapping_add(0xbb4));
+    let (base, offsets) = (fr.arg(g, 0), fr.arg(g, 1));
+    let mut eax = 0;
+    for k in 0..13u32 {
+        eax = u32::from(g.read::<u16>(offsets.wrapping_add(4 + 2 * k)));
+        if eax != 0 {
+            eax = eax.wrapping_add(0xa0).wrapping_add(base);
+            g.write::<u32>(block.wrapping_add(8 + 4 * k), eax);
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`data_pointers`].
+pub const DATA_POINTERS: Sig = Sig {
+    len: 271,
+    hash: 0x1a49_5b99_813b_f201,
+    calls: &[],
+    imports: &[],
+};
