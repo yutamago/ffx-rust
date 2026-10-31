@@ -25,6 +25,7 @@ use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_pload::m5p_registry_load_a_convert as cv;
 use ffx_pload::m5p_registry_load_a_desc::{self as dc, bridge as dcb};
+use ffx_pload::m5p_registry_load_a_left::{self as lf, bridge as lb};
 use ffx_pload::m5p_registry_load_a_misc::{self as ms, bridge as msb};
 use ffx_pload::m5p_registry_load_a_ptype::{self as pt, Kind, bridge as ptb};
 
@@ -105,6 +106,8 @@ enum Out {
     U32(u32),
     /// `edx:eax`.
     U64(u64),
+    /// `al` (the rest of `eax` is the caller's).
+    Al(u8),
 }
 
 struct Twins {
@@ -343,6 +346,47 @@ impl Twins {
                 v,
                 "{what}: edx:eax"
             ),
+            Out::Al(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+        }
+        self.diff(what);
+    }
+
+    /// [`Twins::check`] for a port whose callees see the original's frame
+    /// by address: the port gets a frame at the original's address
+    /// (`below` bytes under where the call pushes from) and its own calls
+    /// run under it; the first `frame_len` bytes of both frames compared.
+    #[allow(clippy::too_many_arguments)]
+    fn check_frame(
+        &mut self,
+        what: &str,
+        sym: u32,
+        conv: Conv,
+        args: &[u32],
+        below: u32,
+        frame_len: usize,
+        port: impl FnOnce(&mut G, u32) -> Out,
+    ) {
+        let addr = self.rebase(sym);
+        let ra = self
+            .a
+            .call(addr, conv, args)
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        let top = self.b.stack_range().end - 0x100;
+        assert_eq!(top, self.a.stack_range().end - 0x100);
+        self.b.set_call_top(Some(top - 0x400));
+        let frame = top - below;
+        let out = port(&mut G(&mut self.b), frame);
+        self.b.set_call_top(None);
+        assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
+        match out {
+            Out::None | Out::U64(_) => {}
+            Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
+            Out::Al(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+        }
+        if frame_len != 0 {
+            let fa = Oracle::read(&mut self.a, frame, frame_len).unwrap();
+            let fb = Oracle::read(&mut self.b, frame, frame_len).unwrap();
+            assert_eq!(fa, fb, "{what}: the frame the callees saw");
         }
         self.diff(what);
     }
@@ -1355,6 +1399,948 @@ fn desc_late_helpers_match_the_original() {
                 Conv::Cdecl,
                 &[x, outs, outs + 4, 0x0044_4440],
                 |g| Out::U32(dcb::asset_import_fixup(g, x, outs, outs + 4, 0x0044_4440)),
+            );
+            t.reset();
+        }
+    }
+}
+
+// ---- round left2: the list's leftovers (ffx_pload::m5p_registry_load_a_left) ----
+
+/// An object of `size` bytes (zero after its vtable pointer) whose vtable
+/// holds recording stubs, as [`Twins::object`].
+fn vobj(t: &mut Twins, words: &[u32], rets: &[u32], size: usize) -> u32 {
+    let mut vt = Vec::new();
+    for (i, &n) in words.iter().enumerate() {
+        let r = rets.get(i).copied().unwrap_or(0x1000 + i as u32);
+        let s = t.stub_code(0x7000 + i as u32, true, n, n, r);
+        vt.extend(s.to_le_bytes());
+    }
+    let vt = t.alloc(&vt);
+    let obj = t.zeros(size);
+    t.w32(obj, vt);
+    obj
+}
+
+/// A member's type: slots 1 (0 words), 4 (`count`), 7 (`elements`), 8
+/// (3 words); `kind` at `+0x30`, `base` at `+0x88`.
+fn member_type(t: &mut Twins, kind: u32, count: u32, elements: u32, base: u32) -> u32 {
+    let ty = vobj(
+        t,
+        &[0, 0, 0, 0, 1, 0, 0, 1, 3],
+        &[0, 0x1001, 0, 0, count, 0, 0, elements, 0x1008],
+        0xa0,
+    );
+    t.w32(ty + 0x30, kind);
+    t.w32(ty + 0x88, base);
+    ty
+}
+
+/// A member: `vt[1]` returns `ty`; flags `+0x14`, default holder `+0x18`
+/// (whose `vt[1]` returns `has`), offset `+0x24`, descriptor `+0xc` with
+/// base `+0x88`.
+fn member(t: &mut Twins, ty: u32, flags: u32, has: u32, off: u32) -> u32 {
+    let m = vobj(t, &[0, 0], &[0, ty], 0x40);
+    let holder = vobj(t, &[0, 0], &[0, has], 0x10);
+    let desc = t.zeros(0x90);
+    t.w32(desc + 0x88, 0x10);
+    t.w32(m + 0xc, desc);
+    t.w32(m + 0x14, flags);
+    t.w32(m + 0x18, holder);
+    t.w32(m + 0x24, off);
+    m
+}
+
+/// Links `members` into `desc`'s list (`+0x44` next, `+0x48` prev; a
+/// member's node at `+4`), circular through the head.
+fn link_members(t: &mut Twins, desc: u32, members: &[u32]) {
+    let head = desc + 0x44;
+    let nodes: Vec<u32> = members.iter().map(|m| m + 4).collect();
+    let mut all = vec![head];
+    all.extend(&nodes);
+    for i in 0..all.len() {
+        let next = all[(i + 1) % all.len()];
+        let prev = all[(i + all.len() - 1) % all.len()];
+        t.w32(all[i], next);
+        t.w32(all[i] + 4, prev);
+    }
+}
+
+#[test]
+fn left2_swap_visitors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::DYNAMIC_TYPE, true, 1, 1, 0xd7d7);
+        t.stub(lf::FOR_EACH_ELEMENT, true, 3, 3, 1);
+        // the per-member step: kinds, flags, counts, no type
+        for kind in 0..=4u32 {
+            for typed in [true, false] {
+                for flags in [0u32, 2, 0x40, 0x42, 0xffff_ffbd] {
+                    for count in [1u32, 3] {
+                        for flag in [0u8, 1, 0xff] {
+                            if !typed && (kind != 0 || count != 1) {
+                                continue;
+                            }
+                            let ty = if typed {
+                                member_type(&mut t, kind, count, 0x00e1_e000, 0)
+                            } else {
+                                0
+                            };
+                            let m = member(&mut t, ty, flags, 0, 0x30);
+                            let v = t.junk(0x10, 7);
+                            t.w32(v + 8, 0x0050_0000);
+                            t.w8(v + 0xc, flag);
+                            let what = format!(
+                                "{label}: swap member kind {kind} typed {typed} flags {flags:#x} count {count} flag {flag}"
+                            );
+                            t.check(&what, lf::SWAP_MEMBER, Conv::Thiscall(v), &[m], |g| {
+                                lb::swap_member_at(g, v, m);
+                                Out::None
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        t.reset();
+        // the walkers: a chain with members, an empty parent, a 0 link
+        t.stub(lf::SWAP_MEMBER, true, 1, 1, 0x5a5a);
+        let d3 = t.zeros(0x100);
+        let m3 = t.zeros(0x30);
+        link_members(&mut t, d3, &[m3]);
+        let d2 = t.zeros(0x100);
+        link_members(&mut t, d2, &[]);
+        t.w32(d2 + 0x40, d3);
+        let d1 = t.zeros(0x100);
+        let ms: Vec<u32> = (0..3).map(|_| t.zeros(0x30)).collect();
+        link_members(&mut t, d1, &ms);
+        t.w32(d1 + 0x40, d2);
+        let empty = t.zeros(0x100);
+        link_members(&mut t, empty, &[]);
+        let cut = t.zeros(0x100);
+        let mc: Vec<u32> = (0..3).map(|_| t.zeros(0x30)).collect();
+        link_members(&mut t, cut, &mc);
+        t.w32(mc[1] + 4, 0);
+        t.w32(mc[1] + 8, 0);
+        let nolist = t.zeros(0x100);
+        let visitor = t.junk(0x10, 9);
+        for (desc, visits) in [
+            (d1, true),
+            (d2, true),
+            (cut, true),
+            (empty, false),
+            (nolist, false),
+            (0, false),
+        ] {
+            for (i, f) in lf::SWAP_WALKERS.into_iter().enumerate() {
+                let what = format!("{label}: swap walker {f:#x} desc {desc:#x}");
+                t.check(&what, f, Conv::Thiscall(desc), &[visitor], |g| {
+                    let eax = lb::swap_walk(g, desc, visitor, i == 1, 0);
+                    if visits { Out::U32(eax) } else { Out::None }
+                });
+            }
+        }
+        t.reset();
+        // swapEndiannessOfObject: the visitor in the frame (logged by the
+        // member stub), either walker; without members the eax is the
+        // visitor's address
+        t.stub(lf::SWAP_MEMBER, true, 1, 1, 0x5a5a);
+        t.w32(d1 + 0x1c, 0x1234_5678);
+        for d in [empty, d1, cut, nolist] {
+            for object in [0u32, 0x0060_0000] {
+                for flag in [0u32, 1, 0xff, 0x100, 0xffff_ff00] {
+                    let what =
+                        format!("{label}: swapEndiannessOfObject {d:#x} {object:#x} {flag:#x}");
+                    t.check_frame(
+                        &what,
+                        0x0043_d6a0,
+                        Conv::Thiscall(d),
+                        &[object, flag],
+                        0x20,
+                        13,
+                        |g, fr| Out::U32(lb::swap_object(g, d, object, flag, fr)),
+                    );
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_copy_visitors_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::STORED_SIZE, true, 0, 0, 6);
+        t.stub(lf::MEMCPY, false, 3, 0, 0x3c3c);
+        // the per-member step
+        for kind in 0..=4u32 {
+            for typed in [true, false] {
+                for flags in [0u32, 2, 0xffff_ffff] {
+                    for has in [0u32, 1] {
+                        for to in [0u32, 0x0070_0000] {
+                            if !typed && kind != 0 {
+                                continue;
+                            }
+                            let ty = if typed {
+                                member_type(&mut t, kind, 5, 0x00e2_e000, 0)
+                            } else {
+                                0
+                            };
+                            let m = member(&mut t, ty, flags, has, 0x48);
+                            let v = t.junk(0x14, 3);
+                            t.w32(v + 8, 0x0080_0000);
+                            t.w32(v + 0xc, to);
+                            let what = format!(
+                                "{label}: copy member kind {kind} typed {typed} flags {flags:#x} has {has} to {to:#x}"
+                            );
+                            t.check(&what, lf::COPY_MEMBER, Conv::Thiscall(v), &[m], |g| {
+                                lb::copy_member_at(g, v, m);
+                                Out::None
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        // the walker: members of each kind, nested classes walked
+        // `count` times, a pointer member's nested target 0
+        let inner_ty = member_type(&mut t, 0, 1, 0, 0);
+        let inner = t.zeros(0x100);
+        t.w32(inner + 0x88, 0x20);
+        let im: Vec<u32> = (0..2)
+            .map(|i| member(&mut t, inner_ty, 2 + 0x40 * i, 1, 8 + 4 * i))
+            .collect();
+        link_members(&mut t, inner, &im);
+        for with_class in [true, false] {
+            let dynamic = vobj(
+                &mut t,
+                &[0, 0],
+                &[0, if with_class { inner } else { 0 }],
+                0x20,
+            );
+            t.stub(lf::DYNAMIC_TYPE, true, 1, 1, dynamic);
+            let parent = t.zeros(0x100);
+            let pm = member(&mut t, inner_ty, 0, 0, 0x10);
+            link_members(&mut t, parent, &[pm]);
+            let desc = t.zeros(0x100);
+            t.w32(desc + 0x40, parent);
+            let mut ms = Vec::new();
+            for (kind, flags, count) in [
+                (0u32, 0u32, 1u32),
+                (1, 0, 3),
+                (1, 0, 0),
+                (2, 0, 1),
+                (2, 0x40, 1),
+                (2, 0x40, 2),
+                (3, 0, 1),
+                (4, 0x40, 1),
+                (0, 2, 1),
+            ] {
+                let ty = member_type(&mut t, kind, count, 0x00e3_e000, 0);
+                ms.push(member(&mut t, ty, flags, 0, 0x20 + 4 * kind));
+            }
+            link_members(&mut t, desc, &ms);
+            for (from, to, pointer) in [
+                (0x0090_0000u32, 0x00a0_0000u32, 0u8),
+                (0x0090_0000, 0, 1),
+                (0x0090_0000, 0x00a0_0000, 1),
+            ] {
+                let v = t.zeros(0x14);
+                t.w32(v + 8, from);
+                t.w32(v + 0xc, to);
+                t.w8(v + 0x10, pointer);
+                let what = format!(
+                    "{label}: copy walker class {with_class} from {from:#x} to {to:#x} pointer {pointer}"
+                );
+                t.check(&what, lf::COPY_WALKER, Conv::Thiscall(desc), &[v], |g| {
+                    Out::U32(lb::copy_walk_at(g, desc, v))
+                });
+            }
+            let v = t.zeros(0x14);
+            let what = format!("{label}: copy walker no descriptor");
+            t.check(&what, lf::COPY_WALKER, Conv::Thiscall(0), &[v], |g| {
+                Out::U32(lb::copy_walk_at(g, 0, v))
+            });
+            for (a, b) in [(0x00b0_0000u32, 0x00c0_0000u32), (0, 0x00c0_0000)] {
+                for d in [desc, 0] {
+                    let what =
+                        format!("{label}: copy object {d:#x} {a:#x} {b:#x} class {with_class}");
+                    t.check(&what, 0x0043_ca50, Conv::Thiscall(d), &[a, b], |g| {
+                        Out::U32(lb::copy_object(g, d, a, b))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_lookups_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        let strs: [&[u8]; 5] = [b"alpha\0", b"beta\0", b"al\0", b"\0", b"alphabet\0"];
+        let names: Vec<u32> = strs.iter().map(|s| t.alloc(s)).collect();
+        // the named-entry lists of a descriptor and its parent
+        for &(f, off) in &lf::NAMED_LISTS {
+            let parent = t.zeros(0x100);
+            let desc = t.zeros(0x100);
+            t.w32(desc + 0x40, parent);
+            for (d, ns) in [(desc, [names[0], 0]), (parent, [names[2], names[1]])] {
+                let head = d + off;
+                let e1 = t.zeros(0x10);
+                let e2 = t.zeros(0x10);
+                t.w32(e1 + 0xc, ns[0]);
+                t.w32(e2 + 0xc, ns[1]);
+                t.w32(head, e1);
+                t.w32(e1, e2);
+                t.w32(e2, head);
+            }
+            let other = t.zeros(0x100);
+            t.w32(other + off, other + off);
+            for d in [desc, parent, other, 0] {
+                for name in [names[0], names[1], names[2], names[3], names[4], 0] {
+                    let what = format!("{label}: named list {f:#x} desc {d:#x} name {name:#x}");
+                    t.check(&what, f, Conv::Thiscall(d), &[name], |g| {
+                        Out::U32(lb::find_named(g, off, d, name))
+                    });
+                }
+            }
+        }
+        // the name/value table
+        let pairs = t.zeros(0x20);
+        for (i, n) in [names[2], names[0], names[1]].into_iter().enumerate() {
+            t.w32(pairs + 8 * i as u32, n);
+            t.w32(pairs + 8 * i as u32 + 4, 0x100 + i as u32);
+        }
+        for count in [0u32, 1, 3] {
+            let table = t.zeros(0x10);
+            t.w32(table + 8, pairs);
+            t.w32(table + 0xc, count);
+            for name in [names[0], names[1], names[4], 0] {
+                let out = t.junk(4, 5);
+                let what = format!("{label}: name/value count {count} name {name:#x}");
+                t.check(
+                    &what,
+                    0x0057_09f0,
+                    Conv::Thiscall(table),
+                    &[name, out],
+                    |g| Out::Al(lb::find_pair(g, table, name, out)),
+                );
+            }
+        }
+        // the namespace copy: own list, a child's, a link of 0
+        let child = t.zeros(0x40);
+        let ns = t.zeros(0x40);
+        let d1 = t.zeros(0x40);
+        let d2 = t.zeros(0x40);
+        let d3 = t.zeros(0x40);
+        t.w32(d1 + 0x18, names[0]);
+        t.w32(d2 + 0x18, 0);
+        t.w32(d3 + 0x18, names[1]);
+        t.w32(ns + 8, d1 + 0x2c);
+        t.w32(d1 + 0x2c, d2 + 0x2c);
+        t.w32(d2 + 0x2c, ns + 8);
+        t.w32(child + 8, d3 + 0x2c);
+        t.w32(d3 + 0x2c, 0);
+        t.w32(child + 0x14, child + 0x14);
+        t.w32(ns + 0x14, child);
+        t.w32(child, ns + 0x14);
+        let odd = t.zeros(0x40);
+        t.w32(odd + 8, 0x2c);
+        t.w32(odd + 0x14, odd + 0x14);
+        for name in [names[0], names[1], names[2], 0] {
+            for n in [ns, child, odd] {
+                let what = format!("{label}: namespace copy {n:#x} name {name:#x}");
+                t.check(&what, 0x0043_ea30, Conv::Thiscall(n), &[name], |g| {
+                    Out::U32(lb::namespace_find(g, n, name))
+                });
+            }
+        }
+    }
+}
+
+/// A code stub (cdecl) that returns `[cell]` and adds `step` to it.
+fn counter_stub(t: &mut Twins, sym: u32, cell: u32, step: u8) {
+    let at = t.rebase(sym);
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.extend([0x83, 0x05]);
+    c.extend(cell.to_le_bytes());
+    c.push(step); // add dword [cell], step
+    c.push(0xc3);
+    let code = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut t.a, at, 5).unwrap();
+    t.saved.entry(at).or_insert(old);
+    t.write(at, &j);
+}
+
+#[test]
+fn left2_small_helpers_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the PhyreObject push: the stack grows or not, a userdata or none
+        for step in [0u8, 1] {
+            for ud in [true, false] {
+                let cell = t.zeros(4);
+                t.w32(cell, 5);
+                counter_stub(&mut t, lf::LUA[0], cell, step);
+                let block = if ud { t.junk(8, 2) } else { 0 };
+                t.stub(lf::LUA[1], false, 2, 0, 1);
+                t.stub(lf::LUA[2], false, 2, 0, block);
+                t.stub(lf::LUA[3], false, 3, 0, 0);
+                t.stub(lf::LUA[4], false, 2, 0, 0);
+                t.stub(lf::LUA[5], false, 2, 0, 0);
+                for object in [0u32, 0x0012_0000] {
+                    let what =
+                        format!("{label}: push PhyreObject step {step} ud {ud} object {object:#x}");
+                    t.check(
+                        &what,
+                        0x0043_5940,
+                        Conv::Cdecl,
+                        &[0x00d0_0000, 3, object],
+                        |g| Out::U32(lb::push_scripted(g, 0x00d0_0000, 3, object)),
+                    );
+                }
+                t.reset();
+            }
+        }
+        // the static list object: built, then cached
+        t.stub(lf::ATEXIT, false, 1, 0, 0);
+        let guard = t.rebase(lf::STATIC_LIST[0]);
+        for g0 in [0u32, 2, 1, 3] {
+            t.w32(guard, g0);
+            let what = format!("{label}: static list guard {g0:#x}");
+            t.check(&what, 0x0043_f090, Conv::Cdecl, &[], |g| {
+                Out::U32(lb::static_list(g))
+            });
+        }
+        t.reset();
+        // the node release and the cluster's deleting destructor
+        t.stub(lf::NODE_RELEASE[0], true, 0, 0, 0x11);
+        t.stub(lf::NODE_RELEASE[1], true, 0, 0, 0x12);
+        t.stub(lf::NODE_RELEASE[2], true, 1, 1, 0x13);
+        let pool = t.zeros(0x20);
+        let node = t.zeros(0x40);
+        t.check(
+            &format!("{label}: node release"),
+            0x0043_f3c0,
+            Conv::Thiscall(pool),
+            &[node],
+            |g| Out::U32(lb::release_node(g, pool, node)),
+        );
+        for c in lf::CLUSTER_DTOR {
+            t.stub(c, true, 1, 1, 0x21);
+        }
+        t.stub(lf::CLUSTER_DTOR[0], true, 0, 0, 0x20);
+        t.stub(lf::CLUSTER_DTOR[2], true, 0, 0, 0x22);
+        t.stub(lf::FREE, false, 1, 0, 0x23);
+        for world in [0u32, 0x0034_0000] {
+            for flags in [0u32, 1, 0xffff_fffe] {
+                let this = t.junk(0x60, 4);
+                t.w32(this + 0x40, world);
+                let what = format!("{label}: cluster delete world {world:#x} flags {flags:#x}");
+                t.check(&what, 0x0043_fed0, Conv::Thiscall(this), &[flags], |g| {
+                    Out::U32(lb::delete_cluster(g, this, flags))
+                });
+            }
+        }
+        t.reset();
+        // createInternal: abstract, no list, a list
+        t.stub(lf::PRINTF, false, 3, 0, 0);
+        t.stub(lf::CREATE_INTERNAL[1], true, 1, 1, 0x31);
+        let list = t.zeros(0x40);
+        t.w32(list + 0x30, 0x0045_6780);
+        for (flags, got) in [
+            (8u32, list),
+            (0xffff_ffff, list),
+            (0, 0),
+            (0xffff_fff7, list),
+        ] {
+            t.stub(lf::CREATE_INTERNAL[0], true, 4, 4, got);
+            let desc = t.zeros(0xa0);
+            t.w32(desc + 0x90, flags);
+            t.w32(desc + 0x18, 0x00b0_f248);
+            t.w32(desc + 0x1c, 0x44);
+            let out = t.junk(8, 6);
+            let cluster = t.zeros(0x10);
+            let what = format!("{label}: createInternal flags {flags:#x} list {got:#x}");
+            t.check(
+                &what,
+                0x0044_1120,
+                Conv::Thiscall(cluster),
+                &[out, desc],
+                |g| Out::U32(lb::create_internal(g, cluster, out, desc)),
+            );
+        }
+        t.reset();
+        // deleteInstancesOfType: matches at the head, in the middle, none
+        t.stub(lf::NODE_RELEASE[0], true, 0, 0, 0x11);
+        t.stub(lf::NODE_RELEASE[1], true, 0, 0, 0x12);
+        t.stub(lf::NODE_RELEASE[2], true, 1, 1, 0x13);
+        t.stub(lf::REMOVE_INSTANCE_LIST, true, 1, 1, 0x14);
+        for world in [0u32, 0x0034_0000] {
+            for pattern in [[1u32, 2, 1, 1], [2, 2, 2, 2], [1, 1, 1, 1], [2, 1, 2, 1]] {
+                let cluster = t.zeros(0x60);
+                t.w32(cluster + 0x40, world);
+                let head = cluster + 0x1c;
+                let lists: Vec<u32> = pattern
+                    .iter()
+                    .map(|&d| {
+                        let l = t.zeros(0x40);
+                        t.w32(l + 0x2c, d);
+                        l
+                    })
+                    .collect();
+                let mut all = vec![head];
+                all.extend(&lists);
+                for i in 0..all.len() {
+                    t.w32(all[i], all[(i + 1) % all.len()]);
+                    t.w32(all[i] + 4, all[(i + all.len() - 1) % all.len()]);
+                }
+                let what = format!("{label}: deleteInstancesOfType world {world:#x} {pattern:?}");
+                t.check(&what, 0x0044_1180, Conv::Thiscall(cluster), &[1], |g| {
+                    lb::delete_instances_of_type(g, cluster, 1);
+                    Out::None
+                });
+            }
+            let cluster = t.zeros(0x60);
+            t.w32(cluster + 0x1c, cluster + 0x1c);
+            t.check(
+                &format!("{label}: deleteInstancesOfType empty"),
+                0x0044_1180,
+                Conv::Thiscall(cluster),
+                &[1],
+                |g| {
+                    lb::delete_instances_of_type(g, cluster, 1);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+        // PArray<PUInt8>::operator=
+        let src_bytes = t.alloc(b"0123456789abcdef");
+        for n in [0u32, 1, 16, 0x8000_0005] {
+            for block in [true, false] {
+                for (head, old) in [(3u32, 0x0055_0000u32), (0x8000_0003, 0x0055_0000), (3, 0)] {
+                    let b = if block { t.junk(0x20, 8) } else { 0 };
+                    t.stub(lf::MALLOC_ALIGNED, false, 2, 0, b);
+                    t.stub(lf::FREE, false, 1, 0, 0x23);
+                    let src = t.zeros(8);
+                    t.w32(src, n);
+                    t.w32(src + 4, src_bytes);
+                    let this = t.zeros(8);
+                    t.w32(this, head);
+                    t.w32(this + 4, old);
+                    let what = format!(
+                        "{label}: PArray<u8> assign n {n:#x} block {block} head {head:#x} old {old:#x}"
+                    );
+                    t.check(&what, 0x0044_79f0, Conv::Thiscall(this), &[src], |g| {
+                        Out::U32(lb::assign_bytes(g, this, src))
+                    });
+                }
+            }
+        }
+        // same block: old == new
+        let b = t.junk(0x20, 8);
+        t.stub(lf::MALLOC_ALIGNED, false, 2, 0, b);
+        let src = t.zeros(8);
+        t.w32(src, 4);
+        t.w32(src + 4, src_bytes);
+        let this = t.zeros(8);
+        t.w32(this, 4);
+        t.w32(this + 4, b);
+        t.check(
+            &format!("{label}: PArray<u8> assign same block"),
+            0x0044_79f0,
+            Conv::Thiscall(this),
+            &[src],
+            |g| Out::U32(lb::assign_bytes(g, this, src)),
+        );
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_swap_static_copies_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        t.stub(lf::ATEXIT, false, 1, 0, 0);
+        t.stub(0x0043_d6a0, true, 2, 2, 0x5151);
+        for &(f, l) in &lf::SWAP_STATIC {
+            t.stub(l.ctor, true, 0, 0, 0x99);
+            let guard = t.rebase(l.guard);
+            for g0 in [0u32, 1, 2, 0xffff_fffe] {
+                t.w32(guard, g0);
+                let flags = t.rebase(l.flags);
+                t.w32(flags, 0xffff_ffff);
+                for p in [0u32, 0x0042_4240] {
+                    let what =
+                        format!("{label}: swapEndiannessStatic {f:#x} guard {g0:#x} p {p:#x}");
+                    t.check(&what, f, Conv::Cdecl, &[p], |g| {
+                        Out::U32(ffx_pload::m5p_tmpl_fortype::bridge::swap_lazy(g, &l, p))
+                    });
+                }
+            }
+        }
+        t.reset();
+    }
+}
+
+#[test]
+fn left2_dynamic_descriptor_matches_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the write-mask merge: no source, no buffer, no mask; the back
+        // pointer when PClassDescriptorDynamic's descriptor is in the chain
+        let dynamic_desc = t.rebase(lf::MASK_GETTER[1]);
+        let src = t.junk(0x20, 0x31);
+        for (has_src, has_buf, has_mask, chain) in [
+            (false, true, true, 0u8),
+            (true, false, true, 0),
+            (true, true, false, 1),
+            (true, true, true, 0),
+            (true, true, true, 1),
+            (true, true, true, 2),
+        ] {
+            let mask = if has_mask { t.junk(0x20, 0x5c) } else { 0 };
+            t.stub(lf::MASK_GETTER[0], true, 0, 0, mask);
+            let this = t.zeros(0xc0);
+            let buf = if has_buf { t.junk(0x20, 0x77) } else { 0 };
+            let table = t.zeros(0x40);
+            t.w32(this + 0x64, buf);
+            t.w32(this + 0x1c, 0x13);
+            t.w32(this + 0x8c, table.wrapping_sub(buf));
+            match chain {
+                1 => t.w32(this + 0x40, dynamic_desc),
+                2 => {
+                    let p = t.zeros(0x50);
+                    t.w32(this + 0x40, p);
+                    t.w32(p + 0x40, dynamic_desc);
+                }
+                _ => {}
+            }
+            let s = if has_src { src } else { 0 };
+            let what = format!(
+                "{label}: merge buffer src {has_src} buf {has_buf} mask {has_mask} chain {chain}"
+            );
+            t.check(&what, 0x0044_94a0, Conv::Thiscall(this), &[s], |g| {
+                lb::merge_buffer(g, this, s);
+                Out::None
+            });
+        }
+        t.reset();
+        // the script read: no parent, out or none, an object or none
+        t.stub(lf::MEMCPY, false, 3, 0, 0x3c3c);
+        for got in [0u32, 0x0066_0000] {
+            t.stub(lf::OBJECT_GET, false, 1, 0, got);
+            for (parent, out) in [(false, 0x0077_0000u32), (true, 0x0077_0000), (true, 0)] {
+                let this = t.zeros(0xa0);
+                if parent {
+                    let p = vobj(&mut t, &[0, 0, 0, 2], &[], 0x40);
+                    t.w32(p + 0x1c, 0x18);
+                    t.w32(this + 0x40, p);
+                }
+                t.w32(this + 0x84, 0x10);
+                t.w32(this + 0x88, 0x08);
+                t.w32(this + 0x98, 0x30);
+                let what =
+                    format!("{label}: script read parent {parent} out {out:#x} obj {got:#x}");
+                t.check(
+                    &what,
+                    0x0044_98f0,
+                    Conv::Thiscall(this),
+                    &[0x00d0_0000, out],
+                    |g| {
+                        lb::read_script_value(g, this, 0x00d0_0000, out);
+                        Out::None
+                    },
+                );
+            }
+        }
+        t.reset();
+        // addMember: default instance, external, kinds; addMember's answer
+        for (default, flags, kind, typed, ok, parent) in [
+            (1u32, 0u32, 0u32, true, 0u32, false),
+            (0, 2, 0, true, 0, false),
+            (0, 0, 0, true, 0, true),
+            (0, 0, 2, true, 0, false),
+            (0, 0x40, 2, true, 0, true),
+            (0, 0, 1, false, 0, false),
+            (0, 0, 0, true, 5, false),
+            (0, 0x42, 3, true, 0x12, true),
+        ] {
+            t.stub(lf::ADD_DYNAMIC[0], false, 1, 0, 0x100 | default);
+            t.stub(lf::ADD_DYNAMIC[1], true, 2, 2, ok);
+            t.stub(lf::ADD_DYNAMIC[2], true, 0, 0, 0x2e);
+            let this = t.zeros(0xc0);
+            t.w32(this + 0x98, 0x13);
+            t.w32(this + 0x20, 4);
+            t.w32(this + 0x94, 0xffff_0003);
+            if parent {
+                let p = t.zeros(0x40);
+                t.w32(p + 0x1c, 0x0c);
+                t.w32(this + 0x40, p);
+            }
+            let holder = vobj(&mut t, &[0, 0], &[], 0x30);
+            t.w32(holder + 0x1c, 0x0a);
+            t.w32(holder + 0x20, 8);
+            let ty = if typed {
+                member_type(&mut t, kind, 1, 0, 0)
+            } else {
+                0
+            };
+            let m = member(&mut t, ty, flags, 0, 0);
+            t.w32(m + 0x18, holder);
+            let what = format!(
+                "{label}: dynamic addMember default {default} flags {flags:#x} kind {kind} ok {ok:#x}"
+            );
+            t.check(&what, 0x0044_9b90, Conv::Thiscall(this), &[m], |g| {
+                Out::U32(lb::add_member(g, this, m))
+            });
+            t.reset();
+        }
+        // reset: counts equal and not 0, or not; a parent or none
+        t.stub(lf::UPDATE_BASE_OFFSETS, true, 0, 0, 0x6e);
+        for (a, b, parent) in [
+            (3u16, 3u16, true),
+            (0, 0, true),
+            (2, 3, false),
+            (2, 3, true),
+        ] {
+            let this = t.junk(0xc0, 0x21);
+            t.write(this + 0x94, &a.to_le_bytes());
+            t.write(this + 0x96, &b.to_le_bytes());
+            t.w32(this + 0x40, 0);
+            if parent {
+                let p = t.junk(0x40, 0x22);
+                t.w32(this + 0x40, p);
+            }
+            let what = format!("{label}: dynamic reset {a} {b} parent {parent}");
+            t.check(&what, 0x0044_9c80, Conv::Thiscall(this), &[], |g| {
+                Out::U32(lb::reset(g, this))
+            });
+        }
+        t.reset();
+        // removeMember: members placed again, external and typed
+        t.stub(lf::UNLINK, true, 1, 1, 0x1d);
+        for parent in [false, true] {
+            let this = t.zeros(0xc0);
+            t.w32(this + 0x94, 0x0001_0001);
+            t.w32(this + 0x20, 2);
+            if parent {
+                let p = t.zeros(0x40);
+                t.w32(p + 0x1c, 0x0e);
+                t.w32(this + 0x40, p);
+            }
+            let mut ms = Vec::new();
+            for (flags, size, align) in [(0u32, 3u32, 1u32), (2, 0, 0), (0, 0x10, 8), (0x40, 1, 2)]
+            {
+                let holder = vobj(&mut t, &[0, 0], &[], 0x30);
+                t.w32(holder + 0x1c, size);
+                t.w32(holder + 0x20, align);
+                let m = member(&mut t, 0, flags, 0, 0x55);
+                t.w32(m + 0x18, holder);
+                ms.push(m);
+            }
+            link_members(&mut t, this, &ms);
+            let what = format!("{label}: dynamic removeMember parent {parent}");
+            t.check(
+                &what,
+                0x0044_9d50,
+                Conv::Thiscall(this),
+                &[0x0012_3400],
+                |g| {
+                    lb::remove_member(g, this, 0x0012_3400);
+                    Out::None
+                },
+            );
+        }
+        t.reset();
+        // the new member's place and addMember(name, ...)
+        for (flags, sizer, class, parent) in [
+            (2u32, false, false, false),
+            (2, true, false, true),
+            (0, false, true, true),
+            (0, true, true, true),
+            (0, true, false, false),
+            (0xffff_fffd, true, true, false),
+        ] {
+            let this = t.zeros(0xc0);
+            t.w32(this + 0x98, 0x0b);
+            t.w32(this + 0x20, 4);
+            if parent {
+                let p = t.zeros(0x40);
+                t.w32(p + 0x1c, 0x06);
+                t.w32(this + 0x40, p);
+            }
+            let c = if class { t.zeros(0xa0) } else { 0 };
+            let ty = vobj(&mut t, &[0, 0], &[0, c], 0x30);
+            t.w32(ty + 0x1c, 0x0a);
+            t.w32(ty + 0x20, 8);
+            let s = if sizer {
+                vobj(&mut t, &[0, 0, 1, 1], &[0, 16, 0x24, 4], 0x10)
+            } else {
+                0
+            };
+            let what = format!(
+                "{label}: dynamic place flags {flags:#x} sizer {sizer} class {class} parent {parent}"
+            );
+            t.check(
+                &what,
+                0x0044_9960,
+                Conv::Thiscall(this),
+                &[ty, flags, s],
+                |g| Out::U32(lb::place_new(g, this, ty, flags, s)),
+            );
+        }
+        let name = t.alloc(b"member\0");
+        for (n, exists, class, derives, cflags, flags, block) in [
+            (0u32, 0u32, false, 0u32, 0u32, 0u32, true),
+            (name, 1, false, 0, 0, 0, true),
+            (name, 0, true, 0x101, 0, 0, true),
+            (name, 0, true, 0x100, 2, 0, true),
+            (name, 0, true, 0x100, 0, 0, true),
+            (name, 0, true, 0x101, 2, 2, true),
+            (name, 0, true, 0, 0, 0, false),
+            (name, 0, false, 0, 0, 0x41, true),
+        ] {
+            t.stub(lf::ADD_MEMBER_NAMED[0], true, 1, 1, exists);
+            t.stub(lf::ADD_MEMBER_NAMED[1], true, 1, 1, derives);
+            t.stub(lf::ADD_MEMBER_NAMED[2], true, 3, 3, 0x2c);
+            let p = if block { t.zeros(0x30) } else { 0 };
+            t.stub(lf::MALLOC, false, 1, 0, p);
+            t.stub(lf::ADD_MEMBER_NAMED[3], true, 6, 6, 0xc7);
+            let c = if class { t.zeros(0xa0) } else { 0 };
+            if class {
+                t.w32(c + 0x90, cflags);
+            }
+            let ty = vobj(&mut t, &[0, 0], &[0, c], 0x30);
+            let this = t.zeros(0xc0);
+            let what = format!(
+                "{label}: dynamic addMember(name) name {n:#x} exists {exists} class {class} derives {derives:#x} cflags {cflags} flags {flags:#x} block {block}"
+            );
+            t.check(
+                &what,
+                0x0044_9250,
+                Conv::Thiscall(this),
+                &[n, ty, flags, 0x5150],
+                |g| Out::U32(lb::add_named_member(g, this, n, ty, flags, 0x5150)),
+            );
+            t.reset();
+        }
+    }
+}
+
+/// A code stub (thiscall, no words) that writes `words` (offset, value)
+/// into the object in `ecx`.
+fn writer_stub(t: &mut Twins, sym: u32, words: &[(u8, u32)]) {
+    let at = t.rebase(sym);
+    let mut c = Vec::new();
+    for &(off, v) in words {
+        c.extend([0xc7, 0x41, off]);
+        c.extend(v.to_le_bytes()); // mov dword [ecx+off], v
+    }
+    c.push(0xc3);
+    let code = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), code);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut t.a, at, 5).unwrap();
+    t.saved.entry(at).or_insert(old);
+    t.write(at, &j);
+}
+
+#[test]
+fn left2_frame_users_match_the_original() {
+    for (label, mut t) in Twins::all() {
+        // the registry lookup: its key in the frame
+        t.stub(lf::REGISTRY_FIND[0], true, 0, 0, 0x10);
+        t.stub(lf::REGISTRY_FIND[1], true, 0, 0, 0x11);
+        t.stub(lf::REGISTRY_FIND[2], false, 1, 0, 0x0061_0000);
+        t.stub(lf::REGISTRY_FIND[3], false, 2, 0, 0xa5a5_1234);
+        t.stub(lf::REGISTRY_FIND[4], true, 1, 1, 0xf00d);
+        for name in [0u32, 0x0062_0000] {
+            let what = format!("{label}: registry find {name:#x}");
+            t.check_frame(
+                &what,
+                0x0045_d280,
+                Conv::Cdecl,
+                &[name],
+                0x14,
+                8,
+                |g, fr| Out::U32(lb::registry_find(g, name, fr)),
+            );
+        }
+        t.reset();
+        // the instance push: no class, no instance, lists with a cursor
+        // whose block ends inside the count
+        let blocks = t.zeros(0x40);
+        let end2 = t.zeros(8);
+        t.w32(blocks + 8, end2);
+        // `left`: what the cursor's seek leaves (0: an empty list, the
+        // cursor as the original filled it)
+        for (has_class, count, lists, left) in [
+            (false, 1u32, 1usize, 1u32),
+            (true, 0, 1, 1),
+            (true, 2, 0, 1),
+            (true, 2, 1, 2),
+            (true, 2, 1, 0),
+            (true, 5, 2, 5),
+        ] {
+            t.stub(lf::PUSH_INSTANCES[0], false, 0, 0, 0x0063_0000);
+            t.stub(
+                lf::PUSH_INSTANCES[1],
+                true,
+                1,
+                1,
+                if has_class { 0x0064_0000 } else { 0 },
+            );
+            t.stub(lf::PUSH_INSTANCES[2], true, 1, 1, count);
+            t.stub(lf::PUSH_INSTANCES[5], false, 3, 0, 0x77);
+            let node = t.zeros(0x40);
+            t.w32(node + 0x2c, 0x0065_0000);
+            if left == 0 {
+                writer_stub(&mut t, lf::PUSH_INSTANCES[3], &[(0xc, 0)]);
+            } else {
+                writer_stub(
+                    &mut t,
+                    lf::PUSH_INSTANCES[3],
+                    &[
+                        (0, blocks),
+                        (4, blocks + 8),
+                        (8, 4),
+                        (0xc, left),
+                        (0x10, 0x100),
+                        (0x18, node),
+                    ],
+                );
+            }
+            writer_stub(&mut t, lf::PUSH_INSTANCES[4], &[(0xc, 0)]);
+            let world = t.zeros(0x10);
+            let mut all = vec![world];
+            for _ in 0..lists {
+                let l = t.zeros(0x80);
+                t.w32(l + 0x1c, l + 0x1c);
+                all.push(l + 0x48);
+            }
+            for i in 0..all.len() {
+                t.w32(all[i], all[(i + 1) % all.len()]);
+            }
+            let what = format!(
+                "{label}: push instances class {has_class} count {count} lists {lists} left {left}"
+            );
+            t.check_frame(
+                &what,
+                0x0044_2370,
+                Conv::Cdecl,
+                &[world, 0x00d0_0000, 0x0066_0000],
+                0x40,
+                // the cursor is only written for a class with instances
+                if has_class && count != 0 && lists != 0 {
+                    0x20
+                } else {
+                    0
+                },
+                |g, fr| Out::U32(lb::push_instances(g, world, 0x00d0_0000, 0x0066_0000, fr)),
             );
             t.reset();
         }

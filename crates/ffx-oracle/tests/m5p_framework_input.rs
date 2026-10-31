@@ -40,8 +40,17 @@ impl Rng {
 }
 
 /// The bridge's view of an oracle: its memory, its emulator for the
-/// original callees, and where its scratch is.
-struct G<'a>(&'a mut Oracle, u32);
+/// original callees, where its scratch is, and the intrinsic trampoline
+/// ([`TRAMPOLINE_CODE`]).
+struct G<'a>(&'a mut Oracle, u32, u32);
+
+/// `fld qword [esp+4]; call [esp+0xc]; ret`, and at `+16` `fstp st0;
+/// ret`, for `Host::call_intrinsic` (a CRT intrinsic with its argument in
+/// `ST0`).
+const TRAMPOLINE_CODE: [u8; 19] = [
+    0xdd, 0x44, 0x24, 0x04, 0xff, 0x54, 0x24, 0x0c, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+    0xdd, 0xd8, 0xc3,
+];
 
 impl Mem for G<'_> {
     fn read_bytes(&self, addr: u32, out: &mut [u8]) {
@@ -71,6 +80,19 @@ impl Host for G<'_> {
     }
     fn scratch(&mut self) -> u32 {
         self.1
+    }
+    fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
+        let at = self.2;
+        let b = x.to_bits();
+        let r = self
+            .0
+            .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
+            .unwrap_or_else(|e| panic!("intrinsic {addr:#x}: {e}"));
+        let Some(v) = r.st0_f32() else {
+            panic!("intrinsic {addr:#x}: no float in ST0");
+        };
+        self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
+        v
     }
     fn call_st0_f64(&mut self, addr: u32, conv: host::Conv, args: &[u32]) -> f64 {
         let conv = match conv {
@@ -135,6 +157,8 @@ struct Twins {
     /// the call (where the original's frame word and the port's scratch
     /// both hold what the callee was handed).
     frame_len: u32,
+    /// The intrinsic trampoline, at the same address in both.
+    tramp: u32,
 }
 
 impl Twins {
@@ -149,8 +173,11 @@ impl Twins {
             log: 0,
             saved: HashMap::new(),
             frame_len: 0,
+            tramp: 0,
         };
         t.log = t.zeros(0x10000);
+        t.tramp = t.a.alloc_code(&TRAMPOLINE_CODE).unwrap();
+        assert_eq!(t.b.alloc_code(&TRAMPOLINE_CODE).unwrap(), t.tramp);
         t
     }
 
@@ -361,12 +388,14 @@ impl Twins {
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let top = self.b.stack_range().end - 0x100;
         self.b.set_call_top(Some(top - 0x400));
-        let out = port(&mut G(&mut self.b, top - below));
+        let tramp = self.tramp;
+        let out = port(&mut G(&mut self.b, top - below, tramp));
         self.b.set_call_top(None);
         assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
         match out {
             Out::U32(v) => assert_eq!(ra.eax, v, "{what}: eax"),
             Out::Al(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
+            Out::None => {}
             _ => unreachable!(),
         }
         if self.frame_len != 0 {
@@ -393,7 +422,8 @@ impl Twins {
             .call(addr, conv, args)
             .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
         let scratch = self.b.stack_range().start + 0x100;
-        let out = port(&mut G(&mut self.b, scratch));
+        let tramp = self.tramp;
+        let out = port(&mut G(&mut self.b, scratch, tramp));
         if !matches!(out, Out::F32(_)) {
             assert!(ra.st0_raw.is_none(), "{what}: the original leaves ST0 set");
         }
@@ -2770,5 +2800,142 @@ fn frames_match_the_original() {
         t.write(count_at, &saved[0]);
         t.write(next_at, &saved[1]);
         t.write(recs_at, &saved[2]);
+    }
+}
+
+// ---- round left2 (ffx_pother_b::m5p_framework_input_left2) ----
+
+/// `0x0062a0d0`: lengths of every size, a zero vector (0/0), infinities,
+/// quiet NaNs; `_CIsqrt` runs as it is (through the trampoline).
+#[test]
+fn left2_normalize2_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    let vals: [f32; 12] = [
+        3.0,
+        -4.0,
+        0.0,
+        -0.0,
+        1.0e-20,
+        5.0e30,
+        1.234_567_9,
+        -7.654_321e-3,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::from_bits(0x7fc0_1234),
+        f32::from_bits(0x0000_0003),
+    ];
+    for (label, mut t) in Twins::all() {
+        let v = t.zeros(8);
+        let out = t.junk(8, 1);
+        for &x in &vals {
+            for &y in &vals {
+                t.w32(v, x.to_bits());
+                t.w32(v + 4, y.to_bits());
+                let what = format!("{label}: normalize2 {x:e} {y:e}");
+                t.check(&what, 0x0062_a0d0, Conv::Cdecl, &[out, v], |g| {
+                    Out::U32(l2b::normalize2(g, out, v))
+                });
+            }
+        }
+    }
+}
+
+/// The crash-dump filter: dumps off and on; the exception information
+/// compared in the frame.
+#[test]
+fn left2_crash_filter_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub_import(l2::DUMP_SLOTS[0], 0, 0x1d1d);
+        t.stub_import(l2::DUMP_SLOTS[1], 7, 0x44);
+        t.stub_import(l2::DUMP_SLOTS[2], 0, 0xffff_ffff);
+        t.stub_import(l2::DUMP_SLOTS[3], 1, 0x99);
+        t.stub_import(l2::DUMP_SLOTS[4], 1, 1);
+        t.stub(l2::MINI_DUMP_WRITE_DUMP, false, 7, 7, 1);
+        let enabled = t.rebase(l2::DUMP_ENABLED);
+        for on in [0u32, 1, 0x100] {
+            t.w32(enabled, on);
+            for ptrs in [0u32, 0x0012_3450] {
+                let what = format!("{label}: crash filter on {on:#x} pointers {ptrs:#x}");
+                t.frame_len = 12;
+                t.check_frame(&what, 0x0062_68e0, Conv::Stdcall, &[ptrs], 0x18, |g| {
+                    let info = g.1;
+                    Out::U32(l2b::crash_filter(g, ptrs, info))
+                });
+            }
+        }
+        t.reset();
+    }
+}
+
+/// `applyScreenMode` (and the jump to it): modes 0-3, sizes of either
+/// sign, the icon loaded or not; the `DEVMODEW` and the `RECT` compared in
+/// the frame.
+#[test]
+fn left2_apply_screen_mode_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for (slot, n, ret) in [
+            (l2::SCREEN_SLOTS[0], 2u32, 0u32),
+            (l2::SCREEN_SLOTS[1], 2, 0x14cf_0000),
+            (l2::SCREEN_SLOTS[2], 3, 0x10cf_0000),
+            (l2::SCREEN_SLOTS[3], 2, 1),
+            (l2::SCREEN_SLOTS[4], 3, 1),
+            (l2::SCREEN_SLOTS[5], 7, 1),
+            (l2::SCREEN_SLOTS[6], 1, 0x0040_0000),
+            (l2::SCREEN_SLOTS[7], 2, 0x0bad_1c0e),
+            (l2::SCREEN_SLOTS[8], 4, 0x5e),
+        ] {
+            t.stub_import(slot, n, ret);
+        }
+        // AdjustWindowRect as the real one: the frame around the client
+        // rectangle (left and top negative)
+        let mut adjust = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp+4]
+        adjust.extend([0xc7, 0x00]);
+        adjust.extend((-8i32).to_le_bytes()); // mov dword [eax], -8
+        adjust.extend([0xc7, 0x40, 0x04]);
+        adjust.extend((-31i32).to_le_bytes()); // mov dword [eax+4], -31
+        adjust.extend([0x83, 0x40, 0x08, 0x08]); // add dword [eax+8], 8
+        adjust.extend([0x83, 0x40, 0x0c, 0x08]); // add dword [eax+0xc], 8
+        adjust.extend([0xb8, 1, 0, 0, 0, 0xc2, 0x0c, 0x00]); // mov eax, 1; ret 0xc
+        let code = t.a.alloc_code(&adjust).unwrap();
+        assert_eq!(t.b.alloc_code(&adjust).unwrap(), code);
+        let slot = t.rebase(l2::SCREEN_SLOTS[4]);
+        t.w32(slot, code);
+        let settings = t.zeros(0x10);
+        let cell = t.rebase(l2::G_SCREEN_SETTINGS);
+        t.w32(cell, settings);
+        let hwnd = t.rebase(l2::G_HWND);
+        t.w32(hwnd, 0x0001_0203);
+        let app = t.zeros(0x400);
+        t.write(app + 0x39c, &0x8765u16.to_le_bytes());
+        let app_cell = t.rebase(l2::G_APPLICATION);
+        t.w32(app_cell, app);
+        let icon = t.rebase(l2::G_ICON);
+        for mode in 0..4u32 {
+            for (w, hgt) in [(1280u16, 720u16), (0xfff0, 0x8000)] {
+                for icon0 in [0u32, 0x0777_0000] {
+                    if mode != 0 && icon0 != 0 {
+                        continue;
+                    }
+                    for f in [0x0062_bf00u32, 0x0062_bef0] {
+                        t.write(settings + 4, &hgt.to_le_bytes());
+                        t.write(settings + 6, &w.to_le_bytes());
+                        t.w32(settings + 8, mode);
+                        t.w32(icon, icon0);
+                        let what = format!(
+                            "{label}: screen mode {f:#x} mode {mode} {w:#x}x{hgt:#x} icon {icon0:#x}"
+                        );
+                        t.frame_len = if mode < 3 { 0xac } else { 0x9c };
+                        t.check_frame(&what, f, Conv::Cdecl, &[], 0xb8, |g| {
+                            let frame = g.1;
+                            l2b::apply_screen_mode(g, frame);
+                            Out::None
+                        });
+                    }
+                }
+            }
+        }
+        t.reset();
     }
 }
