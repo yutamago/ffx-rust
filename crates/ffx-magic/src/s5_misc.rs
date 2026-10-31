@@ -13,8 +13,8 @@ use crate::pushes::Pushes;
 use crate::runtime::{slot_of_thunk, slot_target};
 use crate::s4_fam446::{START_CHILD_B, start_child_b};
 use crate::s4_misc::{
-    SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, scale_task, start_object_at, trail_draw,
-    unlist_free,
+    MOTION_SCRIPT, SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, motion_script, scale_task,
+    start_object_at, trail_draw, unlist_free,
 };
 use crate::s4_small::{
     CAMERA_FACE_ACTOR, ID_LIST, SOUND_RECORD, camera_face_actor, id_list, sound_record,
@@ -5633,6 +5633,112 @@ pub const WAVE_TABLE: Sig = Sig {
         (0x1ab, Callee::Import("_libm_sse2_sin_precise")),
         (0x1ed, Callee::Import("_libm_sse2_sin_precise")),
         (0x1ff, Callee::Import("_libm_sse2_sin_precise")),
+    ],
+    imports: &[],
+};
+
+/// A character carried along a quartic curve (cdecl `(task)`, `task[5]`
+/// the state `s`; a /GS frame). While the wait `+0xa8` runs it counts
+/// down (running the motion script first when bit 0 of `+0xb0` is set;
+/// returns its `eax`, else the frame's cookie word). Otherwise the steps `+0xa4`
+/// count down to 0; while some are left, `t = +0x98 += +0x9c`, `u = K -
+/// t`, and the point is `u^4 P0 + K4 u^3 t P1 + K4 u^2 t^2 P2 + K4 u t^3
+/// P3 + t^4 P4` (`P0..P4` at `+0x40..+0x80`, each axis in the original's
+/// order of products) plus `+0x20` (slot 248, a local; its `w` word is
+/// never written on this path: the port leaves it alone); at the end the
+/// point is `+0x30`. The character `+0xa0` is placed there (slot 255);
+/// with steps not below 0 the callback `+0x90` runs, and at 0 the
+/// callback `+0x94` too and the steps go to -1. Then the motion script
+/// ([`motion_script`]); when it answers 1 with no steps left, bit 15 of
+/// u16 `+0xb0` is set and the task's node goes back to its pool
+/// ([`give_back`], whose `eax` it returns), else the script's `eax`.
+///
+/// `magic_0354` 0x10001b00 (684 bytes; 2 DLLs).
+pub fn curve_carry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let task = fr.arg(g, 0);
+    let s = g.read::<u32>(task + 0x14);
+    let script = img.rel32_target(f + 0x2d);
+    if g.read::<i32>(s + 0xa8) > 0 {
+        // the frame's cookie word (`cookie ^ ebp`) unless the script runs
+        let mut eax = g.read::<u32>(w(0x7)) ^ fr.esp.wrapping_sub(4);
+        if g.read::<u8>(s + 0xb0) & 1 != 0 {
+            eax = motion_script(g, img, script, s);
+        }
+        let n = g.read::<u32>(s + 0xa8);
+        g.write::<u32>(s + 0xa8, n.wrapping_sub(1));
+        return Ret::eax(eax);
+    }
+    let m = g.read::<i32>(s + 0xa4);
+    if m > 0 {
+        g.write::<i32>(s + 0xa4, m - 1);
+    }
+    let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+    if g.read::<i32>(s + 0xa4) > 0 {
+        let r = |g: &G, o: u32| g.read::<f32>(s + o);
+        let t = add(r(g, 0x9c), r(g, 0x98));
+        let k4 = g.read::<f32>(w(0x81));
+        let u = sub(g.read::<f32>(w(0x79)), t);
+        g.write::<f32>(s + 0x98, t);
+        let tt = mul(t, t);
+        let ut = mul(u, t);
+        let uu = mul(u, u);
+        // per axis, the original's order of products and sums
+        for o in [0u32, 4, 8] {
+            let p = |g: &G, k: u32| r(g, 0x40 + 0x10 * k + o);
+            let x = add(
+                mul(mul(mul(ut, uu), k4), p(g, 1)),
+                mul(mul(uu, uu), p(g, 0)),
+            );
+            let x = add(x, mul(mul(mul(tt, uu), k4), p(g, 2)));
+            let x = add(x, mul(mul(mul(tt, ut), k4), p(g, 3)));
+            let x = add(x, mul(mul(tt, tt), p(g, 4)));
+            g.write::<f32>(v + o, x);
+        }
+        slot_call(g, img, f, (0x1e0, 248), &[v, s.wrapping_add(0x20), v]);
+    } else {
+        for o in [0u32, 4, 8, 0xc] {
+            let x = g.read::<u32>(s + 0x30 + o);
+            g.write::<u32>(v + o, x);
+        }
+    }
+    let ch = g.read::<u32>(s + 0xa0);
+    slot_call(g, img, f, (0x227, 255), &[ch, v]);
+    if g.read::<i32>(s + 0xa4) >= 0 {
+        let cb = g.read::<u32>(s + 0x90);
+        if cb != 0 {
+            g.call(cb, 0, &[s]);
+        }
+        if g.read::<u32>(s + 0xa4) == 0 {
+            let cb = g.read::<u32>(s + 0x94);
+            if cb != 0 {
+                g.call(cb, 0, &[s]);
+            }
+            let n = g.read::<u32>(s + 0xa4);
+            g.write::<u32>(s + 0xa4, n.wrapping_sub(1));
+        }
+    }
+    let r = motion_script(g, img, img.rel32_target(f + 0x277), s);
+    if g.read::<i32>(s + 0xa4) <= 0 && r == 1 {
+        let flags = g.read::<u16>(s + 0xb0) | 0x8000;
+        g.write::<u16>(s + 0xb0, flags);
+        return Ret::eax(give_back(g, img, img.rel32_target(f + 0x298), task));
+    }
+    Ret::eax(r)
+}
+
+/// [`curve_carry`] (the `rel32`s: two [`motion_script`]s, [`give_back`]
+/// and two `__security_check_cookie`s).
+pub const CURVE_CARRY: Sig = Sig {
+    len: 684,
+    hash: 0xee84_b6cf_c1bd_a4d0,
+    calls: &[
+        (0x2d, Callee::Sig(&MOTION_SCRIPT)),
+        (0x3f, Callee::Any),
+        (0x277, Callee::Sig(&MOTION_SCRIPT)),
+        (0x298, Callee::Sig(&GIVE_BACK)),
+        (0x2a4, Callee::Any),
     ],
     imports: &[],
 };

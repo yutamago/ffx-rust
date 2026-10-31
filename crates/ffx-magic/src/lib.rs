@@ -1290,6 +1290,7 @@ ports! {
     "models around start" => s5_misc::MODELS_AROUND_START, s5_misc::models_around_start;
     "camera behind" => s5_misc::CAMERA_BEHIND, s5_misc::camera_behind;
     "look part" => s5_misc::LOOK_PART, s5_misc::look_part;
+    "curve carry" => s5_misc::CURVE_CARRY, s5_misc::curve_carry;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

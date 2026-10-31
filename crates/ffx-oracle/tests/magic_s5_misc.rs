@@ -2648,3 +2648,72 @@ fn wave_tables() {
         });
     }
 }
+
+#[test]
+fn curve_carries() {
+    let Some(mut t) = twin(354) else { return };
+    let f = t.at(0x1b00);
+    rec_mem(&mut t, 248, 3, 4, Some(0));
+    rec_mem(&mut t, 255, 2, 4, None);
+    for s in [1001u32, 1002] {
+        t.set_u32(TABLE + 4 * s, trap(s));
+        rec(&mut t, s, 1, move |m, a| {
+            // the callbacks may move the steps on
+            let n = m.r32(a[0] + 0xa4);
+            if s == 1001 && n == 3 {
+                m.w32(a[0] + 0xa4, 0);
+            }
+            s << 16
+        });
+    }
+    let task = SCRATCH + 0x100;
+    let st = SCRATCH + 0x1000;
+    let entry = STACK_TOP - 0x100;
+    for (wait, steps, flags, cbs, state) in [
+        (2u32, 0u32, 1u16, 0u32, 0u32),
+        (2, 0, 0, 0, 0),
+        (0, 5, 0, 3, 1),
+        (0, 4, 0, 1, 1),
+        (0, 1, 0, 3, 1),
+        (0, 0, 0, 2, 1),
+        (0, 0xffff_fffe, 0, 3, 0),
+        (0, 0, 0, 0, 0),
+    ] {
+        t.write(entry - 0x40, &[0; 0x40]);
+        t.write(st, &varied(0xc0, wait + steps));
+        for i in 0..20u32 {
+            t.set_u32(st + 0x40 + 4 * i, (i as f32 * 0.25 - 1.0).to_bits());
+        }
+        t.set_u32(st + 0x98, 0.25f32.to_bits());
+        t.set_u32(st + 0x9c, 0.125f32.to_bits());
+        t.set_u32(st + 0xa8, wait);
+        t.set_u32(st + 0xa4, steps);
+        t.set_u16(st + 0xb0, flags);
+        t.set_u32(st + 0x90, if cbs & 1 != 0 { trap(1001) } else { 0 });
+        t.set_u32(st + 0x94, if cbs & 2 != 0 { trap(1002) } else { 0 });
+        // the motion script's state: done (1) or running
+        t.set_u32(st + 0x14, state);
+        t.write(task, &varied(0x20, 1));
+        t.set_u32(task, 0);
+        t.set_u32(task + 4, 0);
+        t.set_u32(task + 8, SCRATCH + 0x140);
+        t.set_u32(SCRATCH + 0x14c, 0);
+        t.set_u32(task + 0x14, st);
+        // waiting without the script: `eax` is the frame's cookie word,
+        // and the port's cookie is not the CRT's
+        let eax = if wait > 0 && flags & 1 == 0 {
+            Eax::Junk
+        } else {
+            Eax::Checked
+        };
+        t.check_entry(
+            f,
+            Call {
+                eax: 0x0eaa_0000,
+                ..Call::default()
+            },
+            &[task],
+            eax,
+        );
+    }
+}
