@@ -2090,3 +2090,25 @@ fn actors_leaves_waits() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn camera_points() {
+    let Some(mut t) = twin(563) else { return };
+    rec(&mut t, 327, 2, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, 0x3f80_0000 + i);
+        }
+        0x327
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x4000_0000 + i);
+        }
+        0x229
+    });
+    for rva in [0x56f0u32, 0x5770] {
+        let f = t.at(rva);
+        t.set_u32(op(&t, f, 0x13), SCRATCH + 0x1000);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

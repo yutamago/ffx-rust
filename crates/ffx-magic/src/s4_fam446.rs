@@ -1777,3 +1777,43 @@ pub const LOAD_STEP_C: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_C))],
     imports: &[],
 };
+
+/// The `magic_0644` block's object `G + 0x260` (part 2) started, then
+/// placed at the part slot 219 `(*G_P, 0)` gives (slot 237 `(part, 0, 0,
+/// obj + 0xd0)`, each call seeing the words the earlier ones left; `w`
+/// 1.0), its `+0xc0` 0.0314, `+0xc4` the block's clock `+0xeac0` and
+/// `+0xe4` 4.0 (internal, `ecx` a stack word the start does not read).
+/// Returns the clock.
+///
+/// `magic_0644` 0x1000a100 (127 bytes; 5 DLLs).
+pub fn start_260_placed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let block = g.read::<u32>(w(0xd));
+    let obj = block + 0x260;
+    start(g, img, f, 0x1f, obj, 0x4, 2, (0, 0));
+    let x = g.read::<u32>(w(0x2c));
+    let mut s = Pushes::default();
+    // the pushes in order: the start's four words, then slot 219's
+    s.push_all(&[0, fr.ecx, 0, 2]);
+    s.push_all(&[0, x]);
+    // call width: 12 (Pushes caps the words at 12)
+    let part = s.call(g, slot_target(g, w(0x24), 219), 0).eax;
+    s.push_all(&[obj + 0xd0, 0, 0, part]);
+    // call width: 12 (Pushes caps the words at 12)
+    s.call(g, slot_target(g, w(0x45), 237), 0);
+    g.write::<u32>(obj + 0xdc, 0x3f80_0000);
+    g.write::<u32>(obj + 0xc0, 0x3d00_adfd);
+    let clock = g.read::<u32>(block + 0xeac0);
+    g.write::<u32>(obj + 0xc4, clock);
+    g.write::<u32>(obj + 0xe4, 0x4080_0000);
+    Ret::eax(clock)
+}
+
+/// [`start_260_placed`].
+pub const START_260_PLACED: Sig = Sig {
+    len: 127,
+    hash: 0xb33a_19d3_be74_9b9e,
+    calls: &[(0x1f, Callee::Sig(&START_OBJECT_AT))],
+    imports: &[],
+};

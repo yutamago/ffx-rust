@@ -4649,3 +4649,51 @@ pub const WAIT_THEN_STEP: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The camera point: slot 327 `(m, src)` fills a frame matrix from the
+/// DLL's camera (operand `+0x1b`), slot 229 `(v, m, block + 0x2b30)`
+/// turns the block's point into a vector (the first call's words stay
+/// under), and `G_X`, `G_Z` take its `x`, `z` with `G_Y` the code's
+/// height (operands `+0x58`, `+0x71`, `+0x65`/`+0x69`) (no arguments; a
+/// /GS frame). Returns slot 229's `eax`.
+///
+/// `magic_0563` 0x100056f0 (height -50) and 0x10005770 (-10) (127
+/// bytes; 2 DLLs each).
+pub fn camera_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, v) = (ebp.wrapping_sub(0x54), ebp.wrapping_sub(0x14));
+    let block = g.read::<u32>(op(img, f, 0x13));
+    let src = op(img, f, 0x1b);
+    slot_call(g, img, f, (0x21, 327), &[m, src]);
+    let eax = slot_call(
+        g,
+        img,
+        f,
+        (0x3d, 229),
+        &[v, m, block.wrapping_add(0x2b30), m, src],
+    )
+    .eax;
+    let x = g.read::<u32>(v);
+    g.write::<u32>(op(img, f, 0x58), x);
+    g.write::<u32>(op(img, f, 0x65), op(img, f, 0x69));
+    let z = g.read::<u32>(v.wrapping_add(8));
+    g.write::<u32>(op(img, f, 0x71), z);
+    Ret::eax(eax)
+}
+
+/// [`camera_point`] with -50 (the `rel32` is `__security_check_cookie`).
+pub const CAMERA_POINT_50: Sig = Sig {
+    len: 127,
+    hash: 0x32a7_cd20_b48b_bfa8,
+    calls: &[(0x77, Callee::Any)],
+    imports: &[],
+};
+
+/// [`camera_point`] with -10.
+pub const CAMERA_POINT_10: Sig = Sig {
+    len: 127,
+    hash: 0x45d5_6546_efc4_d1ad,
+    calls: &[(0x77, Callee::Any)],
+    imports: &[],
+};

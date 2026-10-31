@@ -2515,3 +2515,40 @@ fn fam446_load_steps_565_644() {
         }
     }
 }
+
+/// `magic_0644`'s object `G + 0x260` started and placed at a part.
+#[test]
+fn fam446_start_260_placed() {
+    let Some(mut t) = twin(644) else { return };
+    let f = t.at(0xa100);
+    let soa = t.img.rel32_target(f + 0x1f);
+    t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+    t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+    t.stub(941, |_, _| SCRATCH + 0x400);
+    t.stub(714, |_, _| 0x714);
+    rec(&mut t, 219, 2, |_, a| 0x2190_0000 ^ a[0]);
+    rec(&mut t, 237, 4, |m, a| {
+        m.w32(a[3], 0x3f00_0000);
+        0x237
+    });
+    let pa = t.img.rel32_target(soa + 0x9d);
+    let free = t.img.word(pa + 0x04);
+    let nodes = t.img.word(pa + 0x27) - 8;
+    for i in 0..8 {
+        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+        t.set_u32(nodes + 12 * i + 8, 0);
+    }
+    let block = SCRATCH + 0x1_0000;
+    t.set_u32(t.img.word(f + 0xd), block);
+    t.write(block, &vec![0x3c; 0xec00]);
+    t.set_u32(t.img.word(f + 0x2c), 0x0e5e_0001);
+    for count in [3u16, 0] {
+        t.set_u16(free, count);
+        let c = Call {
+            ecx: 0x0bad_0ecc,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_fam446::start_260_placed);
+    }
+}
