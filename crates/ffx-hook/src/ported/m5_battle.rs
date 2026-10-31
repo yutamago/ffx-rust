@@ -729,4 +729,10 @@ ported! {
         let ebp = fr.at().wrapping_add(0x114);
         mn::map_data_proc(&mut mem(), &mut crt_trig, ebp, win, msg, id)
     }
+    /// `(win, msg, id)`: the window procedure; the buffer in a frame.
+    Ms_Gui_CameraProc @ 0x007d_44a0 => extern "C" fn ms_gui_camera_proc(win: u32, msg: u32, id: u32) -> u32 {
+        let mut fr = StackFrame::<{ 0x124 / 4 }>::new();
+        let ebp = fr.at().wrapping_add(0x124);
+        mn::camera_proc(&mut mem(), ebp, win, msg, id)
+    }
 }

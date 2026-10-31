@@ -5222,4 +5222,473 @@ pub mod bridge {
         );
         cdecl(h, MS_DEBUG_CAMERA_APPLY, &[1]);
     }
+
+    pub const SG_SET_SCREEN_DEPTH: u32 = 0x0083_f7f0;
+    pub const SG_GET_USER_NAME: u32 = 0x0082_0610;
+    pub const CP_USER_MALLOC: u32 = 0x0068_7020;
+    pub const CP_USER_FREE: u32 = 0x0068_7010;
+    pub const CP_MEMSET: u32 = 0x0094_964c;
+    pub const CP_WINDOW_GET_ARG: u32 = 0x0084_aec0;
+    pub const CP_WINDOW_SET_ARG: u32 = 0x0084_b560;
+    pub const CP_WINDOW_CREATE: u32 = 0x0084_a920;
+    pub const GU_SELECTOR_ALLOCATE: u32 = 0x0084_9bb0;
+    pub const GU_SELECTOR_RESET_NB_ITEM: u32 = 0x0084_9f40;
+    pub const GU_SELECTOR_SET_ITEM: u32 = 0x0084_9fd0;
+    pub const GU_SELECTOR_OPEN: u32 = 0x0084_9d60;
+    pub const GU_SELECTOR_GET_ITEM_NAME: u32 = 0x0084_9d30;
+    pub const GU_MAKE_FILE_LIST: u32 = 0x0084_98e0;
+    pub const MS_SET_TABLE_ENTRY: u32 = 0x007c_8930;
+    pub const MS_DEBUG_SCENE_PATH: u32 = 0x007d_70d0;
+    pub const MS_DEBUG_CAMERA_MODE_NEXT: u32 = 0x007d_42f0;
+    pub const MS_DEBUG_FIND_NAME: u32 = 0x007d_2f10;
+    pub const MS_DEBUG_PATH_AFTER_BASE: u32 = 0x007d_12a0;
+    pub const MS_DEBUG_CAMERA_EDIT_LOAD: u32 = 0x007d_3f40;
+    pub const MS_DEBUG_CAMERA_EDIT_STORE: u32 = 0x007d_38c0;
+    pub const MS_DEBUG_PRINT_RULES: u32 = 0x007d_10c0;
+    pub const MS_DEBUG_SPLINE_PRINT: u32 = 0x007d_3700;
+    pub const MS_CHECK_FILE: u32 = 0x007c_8a80;
+    pub const MS_FILE_IN: u32 = 0x007c_8b00;
+    pub const MS_FILE_OUT: u32 = 0x007c_8b50;
+    pub const ATEL_GET_NOW_CTRL_TOP_ID: u32 = 0x0086_c1a0;
+    pub const MS_GUI_CAMERA_PROC: u32 = 0x007d_44a0;
+    /// The camera window's edit block (`0x6f4` bytes), file path
+    /// (`.data`), directory, scene name, "reopen the file list" flag and
+    /// last mode.
+    pub const CAMERA_EDIT: u32 = 0x0113_ed18;
+    pub const CAMERA_PATH: u32 = 0x00c4_46a0;
+    pub const CAMERA_DIR: u32 = 0x0113_e4e8;
+    pub const CAMERA_SCENE: u32 = 0x0113_f410;
+    pub const CAMERA_RELIST: u32 = 0x0113_e4e0;
+    pub const CAMERA_LAST_MODE: u32 = 0x0113_e4e4;
+    /// The camera mode names (`0x00c44640`), the selector's mode order
+    /// (13 words), the keep names, the scene names (23).
+    pub const MODE_NAMES: u32 = 0x00c4_4640;
+    pub const MODE_ORDER: u32 = 0x00c4_47f0;
+    pub const KEEP_NAMES: u32 = 0x00c4_4264;
+    pub const SCENE_NAMES: u32 = 0x00c4_48f0;
+
+    /// The mode's slider (`(obj, id, step)`; the reference kinds
+    /// `(mode, obj, id, step)`) and printer (`(cam, obj, camera id, 1)`
+    /// after the leading word, if any).
+    fn camera_mode_fns(mode: u32) -> Option<(u32, u32, Option<u32>)> {
+        Some(match mode {
+            1 => (0x007d_6dc0, 0x007d_6ed0, None),
+            2 => (0x007d_6a50, 0x007d_6bb0, None),
+            4 => (0x007d_1300, 0x007d_14f0, None),
+            5 => (0x007d_1790, 0x007d_1940, Some(0)),
+            6 => (0x007d_1790, 0x007d_1940, Some(1)),
+            8 => (0x007d_6470, 0x007d_6530, None),
+            9 => (0x007d_66d0, 0x007d_6850, None),
+            10 => (0x007d_0af0, 0x007d_0c90, None),
+            0xb..=0xd | 0xf | 0x10 => (0x007d_1bd0, 0x007d_1f50, Some(mode)),
+            _ => return None,
+        })
+    }
+
+    /// `Gu_SelectorResetNbItem(sel, n)`, the items `(i, name(i))`, then
+    /// `Gu_SelectorOpen(sel, win, tag)`.
+    fn camera_selector<H: Host>(
+        h: &mut H,
+        sel: u32,
+        win: u32,
+        tag: u32,
+        n: u32,
+        name: impl Fn(&H, u32) -> u32,
+    ) {
+        cdecl(h, GU_SELECTOR_RESET_NB_ITEM, &[sel, n]);
+        let mut i = 0u32;
+        while i.cast_signed() < n.cast_signed() {
+            let l = name(h, i);
+            cdecl(h, GU_SELECTOR_SET_ITEM, &[sel, i, l, i]);
+            i += 1;
+        }
+        cdecl(h, GU_SELECTOR_OPEN, &[sel, win, tag]);
+    }
+
+    /// What [`camera_button`] and [`camera_pick`] work on.
+    struct CameraCtx {
+        win: u32,
+        msg: u32,
+        arg: u32,
+        obj: u32,
+        rec: u32,
+        keep: u32,
+        roll: u32,
+        depth: u32,
+    }
+
+    /// `Ms_Gui_CameraProc` (`0x007d44a0`, cdecl `(win, msg, id)` -> 0): the
+    /// battle "Camera" window. Every message first reads the debug camera's
+    /// id and number, the keep mode (`MsDebugCameraKeep_007c8c50(0)`), the
+    /// camera mode (`MsDebugGetCameraMode(1)`) and the window's argument.
+    /// `0x8001` keeps the screen depth (`0x0113f3b0`, `Sg_SetScreenDepth`),
+    /// copies the user name to the scene name, allocates the argument
+    /// (`0x94` bytes, cleared, a selector at `+4`) and adds 26 buttons;
+    /// `0x8003` frees it; `0x8005`/`0x8009`/`0x800d` (steps 1/10/100, by
+    /// auto-repeat) run the mode's slider, then the button
+    /// ([`camera_button`]); `0x8011` refreshes the texts, prints the mode's
+    /// values, ROLL, SCRDP and the file, and reopens the file list by calling
+    /// itself (`0x8005`, `0x34`) when a directory was picked; `0x8012`
+    /// takes a selector's pick ([`camera_pick`]). Every message ends by
+    /// opening the "Camera Point Data" window (`Ms_Gui_MapDataProc`) when
+    /// the mode turned 8 or 9, and keeps the mode in `0x0113e4e4`. `buf` is
+    /// `ebp - 0x104`.
+    #[allow(clippy::too_many_lines)]
+    pub fn camera_proc(h: &mut impl Host, ebp: u32, win: u32, msg: u32, id: u32) -> u32 {
+        const LT: u32 = 0x00b5_5220;
+        const GT: u32 = 0x00b4_8250;
+        let buf = ebp.wrapping_sub(0x104);
+        let screen = g32(h, DEBUG_SCREEN);
+        let cam = u32::from(h.read::<u8>(at(h.rebase(DEBUG_CAMERA), screen.wrapping_mul(0x1c0))));
+        let cid = cdecl(h, MS_CAMERA_GET_ID, &[cam]);
+        let c = cam.wrapping_mul(0xda0);
+        let num = cdecl(h, MS_CAMERA_GET_NUM, &[cam]);
+        let rec = at(h.rebase(0x0113_7b8c), c);
+        let obj = at(rec, num.wrapping_mul(0x130).wrapping_add(0xc0));
+        let keep = cdecl(h, MS_DEBUG_CAMERA_KEEP, &[0]);
+        let mut mode = cdecl(h, MS_DEBUG_GET_CAMERA_MODE, &[1]);
+        let arg = cdecl(h, CP_WINDOW_GET_ARG, &[win]);
+        let roll = at(h.rebase(0x0113_81f8), at(c, num.wrapping_mul(0x30)));
+        let depth = at(roll, 8);
+        let reps = [0x0113_e5e8u32, 0x0113_e5fc, 0x0113_e610];
+        let x = CameraCtx {
+            win,
+            msg,
+            arg,
+            obj,
+            rec,
+            keep,
+            roll,
+            depth,
+        };
+        match msg {
+            0x8001 => {
+                let v = fcopy(g32(h, 0x0113_701c));
+                set32(h, 0x0113_f3b0, v);
+                cdecl(h, SG_SET_SCREEN_DEPTH, &[v]);
+                set32(h, CAMERA_RELIST, 0);
+                let scene = h.rebase(CAMERA_SCENE);
+                h.write(scene, 0u8);
+                let name = cdecl(h, SG_GET_USER_NAME, &[]);
+                if name != 0 {
+                    cdecl(h, MS_STR_COPY_7CF6C0, &[name, scene, 0x100]);
+                }
+                let a = cdecl(h, CP_USER_MALLOC, &[0x94]);
+                cdecl(h, CP_MEMSET, &[a, 0, 0x94]);
+                cdecl(h, CP_WINDOW_SET_ARG, &[win, a]);
+                let sel = cdecl(h, GU_SELECTOR_ALLOCATE, &[0x78, 0x28, 0x5a, 100]);
+                h.write(at(a, 4), sel);
+                let t = s(h, 0x00b5_62f8);
+                cdecl(h, GU_WINDOW_SET_TITLE, &[win, t]);
+                let mode_name = table_word(h, MODE_NAMES, mode);
+                let keep_name = table_word(h, KEEP_NAMES, keep);
+                let mut rows: Vec<(u32, u32, [u32; 4])> = vec![
+                    (0x36, s(h, 0x00b5_6300), [0, 0, 0x44, 8]),
+                    (3, mode_name, [0x48, 0, 0x34, 8]),
+                    (0x33, s(h, 0x00b5_6308), [0x80, 0, 0x34, 8]),
+                ];
+                for (k, y) in [
+                    (0x27u32, 0xau32),
+                    (0x29, 0x14),
+                    (0x2b, 0x1e),
+                    (0x2d, 0x28),
+                    (0x2f, 0x32),
+                    (0x31, 0x3c),
+                    (0x25, 0x46),
+                    (0x21, 0x50),
+                ] {
+                    rows.push((k, s(h, LT), [0x30, y, 0x12, 8]));
+                    rows.push((k + 1, s(h, GT), [0x44, y, 0x12, 8]));
+                }
+                rows.extend([
+                    (0x34, s(h, 0x00b5_630c), [4, 100, 0x34, 8]),
+                    (0x1e, s(h, 0x00b5_6314), [0x3c, 100, 0x18, 8]),
+                    (0x1f, s(h, 0x00b5_6318), [0x58, 100, 0x18, 8]),
+                    (0x1d, scene, [0x78, 100, 0x3c, 8]),
+                    (0x19, s(h, 0x00b5_631c), [4, 0x6e, 0x34, 8]),
+                    (6, keep_name, [0x48, 0x6e, 0x34, 8]),
+                    (5, s(h, 0x00b5_5e14), [0x80, 0x6e, 0x34, 8]),
+                ]);
+                for (bid, l, rect) in rows {
+                    button(h, win, bid, l, rect);
+                }
+                for r in reps {
+                    let r = h.rebase(r);
+                    cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 1]);
+                }
+                cdecl(h, MS_SET_TABLE_ENTRY, &[2, 1]);
+                cdecl(h, MS_DEBUG_SCENE_PATH, &[]);
+                set32(h, CAMERA_LAST_MODE, u32::MAX);
+                set32(h, 0x0113_e660, u32::MAX);
+            }
+            0x8003 => {
+                cdecl(h, CP_USER_FREE, &[arg]);
+                set32(h, 0x0113_9ee8, 0);
+            }
+            0x8006 | 0x800a | 0x800e => {
+                let r = match msg {
+                    0x8006 => reps[0],
+                    0x800e => reps[1],
+                    _ => reps[2],
+                };
+                let r = h.rebase(r);
+                cdecl(h, MS_AUTO_REPEAT_INIT, &[r, 0xf, 1]);
+            }
+            0x8005 | 0x8009 | 0x800d => {
+                let (rep, step) = match msg {
+                    0x8005 => (reps[0], 1i32),
+                    0x800d => (reps[1], 100),
+                    _ => (reps[2], 10),
+                };
+                let r = h.rebase(rep);
+                if cdecl(h, MS_AUTO_REPEAT_CHECK, &[r, id]) != 0 {
+                    let step = f64::from(step);
+                    if let Some((slider, _, _)) = camera_mode_fns(mode) {
+                        let st = x87::store(step);
+                        if mode >= 0xb {
+                            cdecl(h, slider, &[mode, obj, id, st]);
+                        } else {
+                            cdecl(h, slider, &[obj, id, st]);
+                        }
+                    }
+                    camera_button(h, &x, id, step, &mut mode);
+                }
+            }
+            0x8011 => camera_paint(h, &x, buf, mode, cid),
+            0x8012 => camera_pick(h, &x, id, &mut mode),
+            _ => {}
+        }
+        if g32(h, 0x0113_9eec) == 0 && g32(h, CAMERA_LAST_MODE) != mode && (mode == 8 || mode == 9)
+        {
+            set32(h, 0x0113_9eec, 1);
+            cdecl(h, MS_DEBUG_CAMERA_KEEP_LOAD, &[]);
+            let p = h.rebase(0x007d_5480);
+            cdecl(h, CP_WINDOW_CREATE, &[0x50, 0x8a, 0x14e, 0x49, 7, p]);
+        }
+        set32(h, CAMERA_LAST_MODE, mode);
+        0
+    }
+
+    /// The camera window's `0x8011`: the button texts, the mode's printer,
+    /// ROLL (degrees), SCRDP, the file past its base; a directory picked
+    /// reopens the file list (`Ms_Gui_CameraProc(win, 0x8005, 0x34)`).
+    fn camera_paint(h: &mut impl Host, x: &CameraCtx, buf: u32, mode: u32, cid: u32) {
+        let win = x.win;
+        cdecl(h, MS_DEBUG_CAMERA_COPY, &[]);
+        let l = table_word(h, MODE_NAMES, mode);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 3, l]);
+        let l = table_word(h, KEEP_NAMES, x.keep);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 6, l]);
+        let scene = h.rebase(CAMERA_SCENE);
+        cdecl(h, MS_STR_COPY_7CF6C0, &[scene, buf, 7]);
+        cdecl(h, GU_WINDOW_SET_BUTTON_TEXT, &[win, 0x1d, buf]);
+        let (rec, obj) = (x.rec, x.obj);
+        let y = match camera_mode_fns(mode) {
+            Some((_, printer, Some(k))) => cdecl(h, printer, &[k, rec, obj, cid, 1]),
+            Some((_, printer, None)) => cdecl(h, printer, &[rec, obj, cid, 1]),
+            None if mode == 0xe => cdecl(h, MS_DEBUG_SPLINE_PRINT, &[rec, obj, cid, 1]),
+            None => cdecl(h, MS_DEBUG_PRINT_RULES, &[1]),
+        };
+        let y = y.wrapping_add(10);
+        print_xy(h, 0, y);
+        sprintf(h, buf, 0x00b5_632c, &[]);
+        gu_printf(h, FMT_LINE, buf);
+        print_xy(h, 0x5c, y);
+        let r = deg(h, f32_at(h, x.roll));
+        sprintf(h, buf, FMT_VALUE, &dw(r));
+        gu_printf(h, FMT_LINE, buf);
+        let y = y.wrapping_add(10);
+        print_xy(h, 0, y);
+        sprintf(h, buf, 0x00b5_633c, &[]);
+        gu_printf(h, FMT_LINE, buf);
+        print_xy(h, 0x5c, y);
+        sprintf(h, buf, 0x00b5_5f78, &dw(f32_at(h, x.depth)));
+        gu_printf(h, FMT_LINE, buf);
+        print_xy(h, 0, y.wrapping_add(10));
+        let (path, base) = (h.rebase(CAMERA_PATH), h.rebase(0x00c4_47c8));
+        let rest = cdecl(h, MS_DEBUG_PATH_AFTER_BASE, &[path, base]);
+        sprintf(h, buf, 0x00b5_6344, &[rest]);
+        gu_printf(h, FMT_LINE, buf);
+        cdecl(h, MS_DEBUG_CAMERA_APPLY, &[1]);
+        if g32(h, CAMERA_RELIST) != 0 {
+            set32(h, 0x0113_e5e8, u32::MAX);
+            cdecl(h, MS_GUI_CAMERA_PROC, &[win, 0x8005, 0x34]);
+            set32(h, CAMERA_RELIST, 0);
+        }
+    }
+
+    /// The camera window's button `id` after the slider (`step` 1/10/100):
+    /// `3` the next mode (down for `0x8009`/`0x800d`), `5` OUT, `6` the keep
+    /// mode, `0x19` set from the camera, `0x1d`/`0x34`/`0x36` the
+    /// selectors, `0x1e`/`0x1f` save/load, `0x21`/`0x22` the screen depth,
+    /// `0x25`/`0x26` the roll by `step` tenths of a degree, `0x33` "fit".
+    #[allow(clippy::too_many_lines)]
+    fn camera_button(h: &mut impl Host, x: &CameraCtx, id: u32, step: f64, mode: &mut u32) {
+        let (obj, rec) = (x.obj, x.rec);
+        let keep_step = |h: &mut _, up: bool| {
+            cdecl(h, MS_DEBUG_CAMERA_KEEP, &[if up { 1 } else { u32::MAX }]);
+        };
+        let tenth_rad = |h: &_| {
+            let t = x87::mul(x87::mul(step, f64_at(h, 0x00b5_51e0)), f64_at(h, PI_F64));
+            x87::div(t, f64_at(h, DEG_180))
+        };
+        match id {
+            3 => {
+                let d = if x.msg == 0x8005 { 1 } else { u32::MAX };
+                *mode = cdecl(h, MS_DEBUG_CAMERA_MODE_NEXT, &[*mode, d, 0, obj, rec]);
+            }
+            5 => {
+                cdecl(h, MS_DEBUG_OUT_CAMERA, &[]);
+            }
+            6 => keep_step(h, x.msg == 0x8005),
+            0x19 => {
+                let o = |k: u32| at(obj, k);
+                for k in 0..4u32 {
+                    let v = fcopy(h.read(at(rec, 0x20 + 4 * k)));
+                    h.write(o(0x30 + 4 * k), v);
+                }
+                let w: u32 = h.read(at(rec, 0x8c));
+                cdecl(
+                    h,
+                    MS_VECTOR_RECT2_POLAR,
+                    &[o(0x30), w, o(0x40), o(0x44), o(0x48)],
+                );
+                if *mode == 6 {
+                    h.write(o(0x48), 0u32);
+                }
+                for (sym, k) in [0x0113_ed18u32, 0x0113_ed1c, 0x0113_ed20, 0x0113_ed24]
+                    .into_iter()
+                    .zip(0u32..)
+                {
+                    let v = fcopy(h.read(o(0x30 + 4 * k)));
+                    set32(h, sym, v);
+                }
+                for (sym, k) in [0x0113_ed50u32, 0x0113_ed54, 0x0113_ed58]
+                    .into_iter()
+                    .zip(0u32..)
+                {
+                    let v = fcopy(h.read(o(0x40 + 4 * k)));
+                    set32(h, sym, v);
+                }
+            }
+            0x1d => {
+                let sel: u32 = h.read(at(x.arg, 4));
+                camera_selector(h, sel, x.win, 0x1d, 0x17, |m, i| {
+                    m.read(at(m.rebase(SCENE_NAMES), 4 * i))
+                });
+            }
+            0x1e => {
+                let e = h.rebase(CAMERA_EDIT);
+                cdecl(h, MS_DEBUG_CAMERA_EDIT_LOAD, &[e]);
+                let p = h.rebase(CAMERA_PATH);
+                cdecl(h, MS_FILE_OUT, &[p, e, 0x6f4]);
+            }
+            0x1f => {
+                let p = h.rebase(CAMERA_PATH);
+                if cdecl(h, MS_CHECK_FILE, &[p]).cast_signed() >= 0 {
+                    let e = h.rebase(CAMERA_EDIT);
+                    cdecl(h, MS_STRUCT_CLEAR, &[e, 0x6f4]);
+                    let top = cdecl(h, ATEL_GET_NOW_CTRL_TOP_ID, &[]);
+                    let a = h.rebase(0x0113_f3cc);
+                    h.write(a, top as u16);
+                    cdecl(h, MS_FILE_IN, &[p, e, 0x6f4]);
+                    cdecl(h, MS_DEBUG_CAMERA_EDIT_STORE, &[e]);
+                    match x.keep {
+                        0 => keep_step(h, false),
+                        1 => keep_step(h, true),
+                        _ => {}
+                    }
+                }
+            }
+            0x21 => {
+                let v = x87::store(x87::sub(f32_at(h, x.depth), step));
+                h.write(x.depth, v);
+            }
+            0x22 => {
+                let v = x87::store(x87::add(step, f32_at(h, x.depth)));
+                h.write(x.depth, v);
+            }
+            0x25 => {
+                let v = x87::store(x87::sub(f32_at(h, x.roll), tenth_rad(h)));
+                h.write(x.roll, v);
+            }
+            0x26 => {
+                let v = x87::store(x87::add(tenth_rad(h), f32_at(h, x.roll)));
+                h.write(x.roll, v);
+            }
+            0x33 => {
+                let (pi, d180) = (f64_at(h, PI_F64), f64_at(h, DEG_180));
+                let (_, f) = trunc_f32(h, deg(h, f32_at(h, x.roll)));
+                let v = x87::store(x87::div(x87::mul(pi, x87::load(f)), d180));
+                h.write(x.roll, v);
+                let (_, f) = trunc_f32(h, f32_at(h, x.depth));
+                h.write(x.depth, f);
+            }
+            0x34 => {
+                let (sel, list) = (h.read::<u32>(at(x.arg, 4)), at(x.arg, 8));
+                let dir = h.rebase(CAMERA_DIR);
+                cdecl(h, GU_MAKE_FILE_LIST, &[list, dir]);
+                let n: u32 = h.read(list);
+                let names: u32 = h.read(at(x.arg, 0x10));
+                camera_selector(h, sel, x.win, 0x34, n, |m, i| m.read(at(names, 4 * i)));
+            }
+            0x36 => {
+                let sel: u32 = h.read(at(x.arg, 4));
+                camera_selector(h, sel, x.win, 0x36, 0xd, |m, i| {
+                    let k: u32 = m.read(at(m.rebase(MODE_ORDER), 4 * i));
+                    m.read(at(m.rebase(MODE_NAMES), k.wrapping_mul(4)))
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// The camera window's `0x8012`: the pick of selector `id` (the scene
+    /// name `0x1d`; a file `0x34`, a directory instead appended to
+    /// `0x0113e4e8` with the list reopened at the next paint; a mode
+    /// `0x36`).
+    fn camera_pick(h: &mut impl Host, x: &CameraCtx, id: u32, mode: &mut u32) {
+        let sel: u32 = h.read(at(x.arg, 4));
+        match id {
+            0x1d => {
+                let name = cdecl(h, GU_SELECTOR_GET_ITEM_NAME, &[sel]);
+                let scene = h.rebase(CAMERA_SCENE);
+                cdecl(h, MS_STR_COPY_7CF6C0, &[name, scene, 0x100]);
+                cdecl(h, MS_DEBUG_SCENE_PATH, &[]);
+            }
+            0x34 => {
+                let name = cdecl(h, GU_SELECTOR_GET_ITEM_NAME, &[sel]);
+                let mut i = 0u32;
+                loop {
+                    let b: u8 = h.read(at(name, i));
+                    h.write(at(x.arg, 0x14u32.wrapping_add(i)), b);
+                    i = i.wrapping_add(1);
+                    if b == 0 {
+                        break;
+                    }
+                }
+                let (path, dir) = (h.rebase(CAMERA_PATH), h.rebase(CAMERA_DIR));
+                sprintf(h, path, 0x00b5_6320, &[dir, name]);
+                if cdecl(h, MS_CHECK_FILE, &[path]).cast_signed() >= 0 {
+                    cdecl(h, MS_DEBUG_SCENE_PATH, &[]);
+                } else {
+                    sprintf(h, dir, 0x00b5_377c, &[dir, name]);
+                    set32(h, CAMERA_RELIST, 1);
+                }
+            }
+            0x36 => {
+                // the call also pushes the name table, a word the callee
+                // does not read; it stays as `MsDebugFindName`'s list
+                let name = cdecl(h, GU_SELECTOR_GET_ITEM_NAME, &[sel]);
+                let list = h.rebase(MODE_NAMES);
+                let k = cdecl(h, MS_DEBUG_FIND_NAME, &[name, list]);
+                let order = h.rebase(MODE_ORDER);
+                if let Some(i) = (0..0xdu32).find(|&i| h.read::<u32>(at(order, 4 * i)) == k) {
+                    let (obj, rec) = (x.obj, x.rec);
+                    *mode = cdecl(h, MS_DEBUG_CAMERA_MODE_NEXT, &[*mode, 0, i, obj, rec]);
+                }
+            }
+            _ => {}
+        }
+    }
 }

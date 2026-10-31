@@ -7781,3 +7781,169 @@ fn r5b11_map_data_proc_matches_the_original() {
         }
     });
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r5b12_camera_proc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x7e5b_1201);
+        let mut cases: Vec<(u32, u32)> =
+            [0x8001u32, 0x8003, 0x8006, 0x800a, 0x800e, 0x8011, 0x8002]
+                .iter()
+                .map(|&m| (m, 0))
+                .collect();
+        for id in [0x1du32, 0x34, 0x36, 5] {
+            cases.push((0x8012, id));
+        }
+        // every mode's printer; every pick in the mode order
+        cases.extend([(0x8011, 0); 18]);
+        cases.extend([(0x8012, 0x36); 13]);
+        let ids = [
+            3u32, 5, 6, 0x19, 0x1d, 0x1e, 0x1f, 0x21, 0x22, 0x25, 0x26, 0x33, 0x34, 0x36, 0x27, 7,
+        ];
+        for &id in &ids {
+            for m in [0x8005u32, 0x8009, 0x800d] {
+                cases.push((m, id));
+            }
+        }
+        let sliders = [
+            0x007d_6dc0u32,
+            0x007d_6a50,
+            0x007d_1300,
+            0x007d_1790,
+            0x007d_6470,
+            0x007d_66d0,
+            0x007d_0af0,
+        ];
+        let printers = [
+            0x007d_6ed0u32,
+            0x007d_6bb0,
+            0x007d_14f0,
+            0x007d_6530,
+            0x007d_6850,
+            0x007d_0c90,
+            mn::MS_DEBUG_SPLINE_PRINT,
+        ];
+        for round in 0..3u32 {
+            for (ci, &(msg, id)) in cases.iter().enumerate() {
+                let mode = (ci as u32 * 7 + round * 5) % 0x12;
+                t.reset();
+                t.big_cave();
+                t.skip = 4;
+                let fmts = [
+                    (0x00b5_6334u32, 4u32),
+                    (0x00b5_5f78, 4),
+                    (0x00b5_6344, 3),
+                    (0x00b5_6320, 4),
+                    (0x00b5_377c, 4),
+                ];
+                let s = t.by_format(mn::SPRINTF, 1, &fmts, 2, 7);
+                let slot = t.rebase(mn::SPRINTF);
+                t.patch(slot, &s.to_le_bytes());
+                debug_cameras(t, &mut rng);
+                let name = cstr(t, ["ab", "", "scene_x1"][(ci + round as usize) % 3]);
+                let names = t.words(&[name, name, name, name]);
+                let mut arg = vec![0u32; 0x25];
+                arg[1] = 0x5e1;
+                arg[2] = [0u32, 1, 3, u32::MAX][(ci + round as usize) % 4];
+                arg[4] = names;
+                let arg = t.words(&arg);
+                let block = t.words(&[0u32; 0x25]);
+                t.g32(mn::CAMERA_RELIST, rng.below(3));
+                t.g32(0x0113_9eec, [0, 0, 1, 2][rng.below(4) as usize]);
+                let prev_mode = if rng.chance(3) { mode } else { rng.below(0x12) };
+                t.g32(mn::CAMERA_LAST_MODE, prev_mode);
+                t.g32(0x0193_ed20, round % 2);
+                for sym in [0x0113_701cu32, 0x0113_f3b0] {
+                    t.g32(sym, debug_float(&mut rng));
+                }
+                let user = if rng.chance(2) { 0 } else { name };
+                let order: u32 = Mem::read(
+                    &t.a,
+                    t.rebase(mn::MODE_ORDER) + 4 * ((ci as u32 + round) % 0xd),
+                );
+                let found = if rng.chance(4) { 0x77 } else { order };
+                let next = [8u32, 9, 1, 0xe][rng.below(4) as usize];
+                let mut list = vec![
+                    (mn::MS_CAMERA_GET_ID, false, 1, 0, rng.word()),
+                    (mn::MS_CAMERA_GET_NUM, false, 1, 0, rng.below(4)),
+                    (mn::MS_DEBUG_CAMERA_KEEP, false, 1, 0, rng.below(3)),
+                    (mn::MS_DEBUG_GET_CAMERA_MODE, false, 1, 0, mode),
+                    (mn::CP_WINDOW_GET_ARG, false, 1, 0, arg),
+                    (mn::SG_SET_SCREEN_DEPTH, false, 1, 0, 0x201),
+                    (mn::SG_GET_USER_NAME, false, 0, 0, user),
+                    (mn::MS_STR_COPY_7CF6C0, false, 3, 0, 0x202),
+                    (mn::CP_USER_MALLOC, false, 1, 0, block),
+                    (mn::CP_MEMSET, false, 3, 0, 0x203),
+                    (mn::CP_WINDOW_SET_ARG, false, 2, 0, 0x204),
+                    (mn::GU_SELECTOR_ALLOCATE, false, 4, 0, 0x5e2),
+                    (mn::GU_WINDOW_SET_TITLE, false, 2, 0, 0x205),
+                    (mn::GU_WINDOW_ADD_BUTTON, false, 7, 0, 0x206),
+                    (mn::MS_AUTO_REPEAT_INIT, false, 3, 0, 0x207),
+                    (mn::MS_SET_TABLE_ENTRY, false, 2, 0, 0x208),
+                    (mn::MS_DEBUG_SCENE_PATH, false, 0, 0, 0x209),
+                    (mn::CP_USER_FREE, false, 1, 0, 0x20a),
+                    (
+                        mn::MS_AUTO_REPEAT_CHECK,
+                        false,
+                        2,
+                        0,
+                        u32::from(round != 2 || ci % 2 == 0),
+                    ),
+                    (0x007d_1bd0, false, 4, 0, 0x20b),
+                    (0x007d_1940, false, 5, 0, 0x30),
+                    (0x007d_1f50, false, 5, 0, 0x40),
+                    (mn::MS_DEBUG_PRINT_RULES, false, 1, 0, 0x50),
+                    (mn::MS_DEBUG_CAMERA_MODE_NEXT, false, 5, 0, next),
+                    (mn::MS_DEBUG_OUT_CAMERA, false, 0, 0, 0x20c),
+                    (mn::MS_VECTOR_RECT2_POLAR, false, 5, 0, 0x20d),
+                    (mn::GU_SELECTOR_RESET_NB_ITEM, false, 2, 0, 0x20e),
+                    (mn::GU_SELECTOR_SET_ITEM, false, 4, 0, 0x20f),
+                    (mn::GU_SELECTOR_OPEN, false, 3, 0, 0x210),
+                    (mn::GU_SELECTOR_GET_ITEM_NAME, false, 1, 0, name),
+                    (mn::GU_MAKE_FILE_LIST, false, 2, 0, 0x211),
+                    (mn::MS_DEBUG_CAMERA_EDIT_LOAD, false, 1, 0, 0x212),
+                    (mn::MS_DEBUG_CAMERA_EDIT_STORE, false, 1, 0, 0x213),
+                    (mn::MS_FILE_OUT, false, 3, 0, 0x214),
+                    (mn::MS_FILE_IN, false, 3, 0, 0x215),
+                    (
+                        mn::MS_CHECK_FILE,
+                        false,
+                        1,
+                        0,
+                        [0u32, u32::MAX, 1][(ci + round as usize) % 3],
+                    ),
+                    (mn::MS_STRUCT_CLEAR, false, 2, 0, 0x216),
+                    (mn::ATEL_GET_NOW_CTRL_TOP_ID, false, 0, 0, rng.word()),
+                    (mn::MS_DEBUG_FIND_NAME, false, 2, 0, found),
+                    (mn::MS_DEBUG_CAMERA_COPY, false, 0, 0, 0x217),
+                    (mn::GU_WINDOW_SET_BUTTON_TEXT, false, 3, 0, 0x218),
+                    (mn::GU_PRINT_SET_X, false, 1, 0, 0x219),
+                    (mn::GU_PRINT_SET_Y, false, 1, 0, 0x21a),
+                    (mn::GU_PRINTF, false, 2, 0, 0x21b),
+                    (mn::MS_DEBUG_PATH_AFTER_BASE, false, 2, 0, name),
+                    (mn::MS_DEBUG_CAMERA_APPLY, false, 1, 0, 0x21c),
+                    (mn::MS_DEBUG_CAMERA_KEEP_LOAD, false, 0, 0, 0x21d),
+                    (mn::CP_WINDOW_CREATE, false, 6, 0, 0x21e),
+                ];
+                for (k, &f) in sliders.iter().enumerate() {
+                    list.push((f, false, 3, 0, 0x220 + k as u32));
+                }
+                for (k, &f) in printers.iter().enumerate() {
+                    list.push((f, false, 4, 0, 0x10 * k as u32));
+                }
+                t.stubs(&list);
+                let win = rng.word();
+                let args = [win, msg, id];
+                t.check_framed(
+                    &format!("camera proc {msg:#x} {id:#x} mode {mode} #{round}"),
+                    0x007d_44a0,
+                    Conv::Cdecl,
+                    &args,
+                    0x104,
+                    |mm, ebp| Out::U32(mn::camera_proc(mm, ebp, win, msg, id)),
+                );
+            }
+        }
+    });
+}
