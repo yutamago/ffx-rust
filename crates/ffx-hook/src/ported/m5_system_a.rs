@@ -1349,6 +1349,11 @@ ported! {
         let mut f = StackFrame::<{ (ui::GRAD_FRAME / 4) as usize }>::new();
         ui::grad_mesh(&mut mem(), f.at() + ui::GRAD_FRAME, this, mode, slots)
     }
+    /// `0x00634850(this)`: frame `ebp - 0x14`.
+    Graphic_dtor_00634850 @ 0x0063_4850 => extern "thiscall" fn graphic_final(this: u32) -> u32 {
+        let mut f = StackFrame::<{ (ui::FINAL_FRAME / 4) as usize }>::new();
+        ui::graphic_final(&mut mem(), f.at() + ui::FINAL_FRAME, this)
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's

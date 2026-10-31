@@ -7233,3 +7233,63 @@ fn ui_grad_mesh_matches_the_original() {
         }
     });
 }
+
+/// `0x00634850` (the graphic object's destructor; framed: `this` and the
+/// scratch word the trees and the erase use): random members (arrays
+/// owned or borrowed, words set or 0, tagged or not), every callee a
+/// recording stub.
+#[test]
+fn ui_graphic_final_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0e01);
+        for case in 0..12 {
+            t.reset();
+            let words: Vec<u32> = (0..0x10d90 / 4)
+                .map(|_| match rng.below(4) {
+                    0 => 0,
+                    1 => 0x8000_0000 | rng.next(),
+                    _ => rng.next(),
+                })
+                .collect();
+            let this = t.words(&words);
+            let head = t.words(&[rng.next(), rng.next(), rng.next()]);
+            t.w32(this + 0x11dc, head);
+            // the checked array owned but empty now and then
+            if rng.chance(2) {
+                t.w32(this + 0x10d84, rng.below(10));
+                t.w32(this + 0x10d88, 0);
+            }
+            t.stubs(&[
+                (ui::PHYRE_FREE_FN, false, 1, 0, 0),
+                (ui::USER_FREE_THUNK, false, 1, 0, 0),
+                (ui::OPERATOR_DELETE, false, 1, 0, 0),
+                (ui::DTOR_636970, true, 0, 0, 0),
+                (ui::FREE_LIST_DTOR, true, 0, 0, 0),
+                (ui::FREE_LIST_RESET, true, 0, 0, 0),
+                (ui::TREE_CLEAR, true, 0, 0, 0),
+                (ui::TREE_ORPHAN_ALL, true, 0, 0, 0),
+                (ui::DTOR_585230, true, 0, 0, 0),
+                (ui::BUFFER_TREE_DTOR, true, 0, 0, 0),
+                (ui::CLUSTER_DTOR, true, 0, 0, 0),
+                (ui::TREE_ERASE, true, 3, 3, 0),
+                (ui::ASSET_LIST_DTOR, true, 0, 0, 0),
+                (ui::VIDEO_DTOR, true, 0, 0, 0),
+                (ui::WORLD_RELEASE, true, 0, 0, 0),
+                (ui::LIST_VECTOR_DTOR, true, 0, 0, rng.next()),
+                (ui::VECTOR_DTOR_ITERATOR, false, 4, 4, 0),
+            ]);
+            t.stub_import(ui::CLOSE_HANDLE_IAT, false, 1, 1, 1);
+            t.skip = 0xc;
+            let what = format!("0x00634850 #{case}");
+            t.check_framed(
+                &what,
+                0x0063_4850,
+                Conv::Thiscall(this),
+                &[],
+                ui::FINAL_FRAME,
+                |m, ebp| Out::U32(ui::graphic_final(m, ebp, this)),
+            );
+            t.skip = 0;
+        }
+    });
+}

@@ -1,7 +1,8 @@
 //! M5 `system-a` (round 3): the graphic UI object's constructor
 //! (`0x0067ad30`, from `GraphicUi_CreateInstance_0067b6c0`): its record
 //! arrays sized and filled from the buffers `GraphicUi_AllocBuffers`
-//! makes; and a shadow gradient mesh's vertex set-up (`0x006790c0`).
+//! makes; a shadow gradient mesh's vertex set-up (`0x006790c0`); and
+//! the graphic object's destructor (`0x00634850`).
 
 /// The originals over game memory and the original callees.
 pub mod bridge {
@@ -207,5 +208,309 @@ pub mod bridge {
             h.write(this.wrapping_add(0x1bc + 4 * k), v);
         }
         this.wrapping_add(0x1c)
+    }
+
+    /// The graphic object's destructor's callees: `Phyre_PhyreFree`,
+    /// `user_free_thunk`, `operator delete` (cdecl); member destructors
+    /// (thiscall): `0x00636970`, `Phyre_PFreeList_dtor_PFreeList`,
+    /// `Phyre_PFreeList_reset`, `Phyre_PRedBlackTree_clear`,
+    /// `Phyre_PRedBlackTree_orphanAllContents`, `0x00585230`,
+    /// `BufferTree_dtor_00633fe0`, `Phyre_PCluster_dtor_PCluster`,
+    /// `0x006370d0` (a tree's erase, `ret 0xc`), `AssetListReader_dtor`,
+    /// `PVideoPlaybackWin32_dtor_00a26f30`, `Phyre_PWorld_releaseEntries`,
+    /// `ListVector_dtor_00634220`; `eh_vector_destructor_iterator`
+    /// (stdcall, 4 words); `CloseHandle` (stdcall); the base vtable the
+    /// six texture holders get back (`0x00b10f5c`) and `0x004be960`, an
+    /// element destructor.
+    pub const DTOR_636970: u32 = 0x0063_6970;
+    pub const FREE_LIST_DTOR: u32 = 0x0049_c5b0;
+    pub const FREE_LIST_RESET: u32 = 0x0049_cc10;
+    pub const TREE_CLEAR: u32 = 0x0057_4760;
+    pub const TREE_ORPHAN_ALL: u32 = 0x0057_4970;
+    pub const DTOR_585230: u32 = 0x0058_5230;
+    pub const BUFFER_TREE_DTOR: u32 = 0x0063_3fe0;
+    pub const CLUSTER_DTOR: u32 = 0x0043_fa30;
+    pub const TREE_ERASE: u32 = 0x0063_70d0;
+    pub const ASSET_LIST_DTOR: u32 = 0x0063_4610;
+    pub const VIDEO_DTOR: u32 = 0x00a2_6f30;
+    pub const WORLD_RELEASE: u32 = 0x0044_2a80;
+    pub const LIST_VECTOR_DTOR: u32 = 0x0063_4220;
+    pub const VECTOR_DTOR_ITERATOR: u32 = 0x0094_96d2;
+    pub const CLOSE_HANDLE_IAT: u32 = 0x00b0_c0dc;
+    pub const HOLDER_VTABLE: u32 = 0x00b1_0f5c;
+    pub const ELEMENT_DTOR_4BE960: u32 = 0x004b_e960;
+    pub const PHYRE_FREE_FN: u32 = 0x0042_fb20;
+    pub const USER_FREE_THUNK: u32 = 0x0068_7010;
+    pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+    /// The frame of `0x00634850`: `this` at `ebp - 0x10`, the scratch
+    /// word at `ebp - 0x14` (the trees' addresses and the erase's
+    /// iterator).
+    pub const FINAL_FRAME: u32 = 0x14;
+
+    /// One step of the graphic object's member-wise destructor.
+    #[derive(Debug, Clone, Copy)]
+    enum Step {
+        /// A `PArray` (`+0` the count, its top bit set for a borrowed
+        /// block; `+4` the block): freed (`Phyre_PhyreFree`) when owned
+        /// and, with `check`, set; both words cleared.
+        Array { at: u32, check: bool },
+        /// A tree with a pooled allocator (the `0x00636970` set or, with
+        /// `orphan`, the orphaning one), its address in the frame.
+        Pooled { at: u32, orphan: bool },
+        /// `user_free_thunk` of the word when set.
+        UserFree(u32),
+        /// `Phyre_PhyreFree` of a tagged word (bit 0 set: inline).
+        Tagged(u32),
+        /// A member destructor (thiscall).
+        Dtor(u32, u32),
+        /// `eh_vector_destructor_iterator(at, size, count, dtor)`.
+        Elements {
+            at: u32,
+            size: u32,
+            count: u32,
+            dtor: u32,
+        },
+        /// `CloseHandle` of the word.
+        Close(u32),
+        /// A vector freed when set (`operator delete`), its words cleared.
+        Vector(u32),
+        /// A `std` tree erased (`0x006370d0`, iterator in the frame) and
+        /// its head deleted.
+        Tree(u32),
+        /// A texture holder (`at`: its vtable back to the base) and its
+        /// tagged name word.
+        Holder(u32, u32),
+    }
+
+    /// `0x00634850`'s steps, in its order.
+    const FINAL_STEPS: &[Step] = &[
+        Step::Array {
+            at: 0x10d84,
+            check: true,
+        },
+        Step::Pooled {
+            at: 0x10d54,
+            orphan: false,
+        },
+        Step::UserFree(0xfbf8),
+        Step::UserFree(0xfbe0),
+        Step::UserFree(0xfbc4),
+        Step::UserFree(0xfbb0),
+        Step::UserFree(0xfb9c),
+        Step::UserFree(0xfb88),
+        Step::UserFree(0xfb5c),
+        Step::UserFree(0xfb50),
+        Step::Close(0xfb3c),
+        Step::UserFree(0xfb38),
+        Step::UserFree(0xfb2c),
+        Step::UserFree(0xfb20),
+        Step::Vector(0xfb08),
+        Step::Tagged(0xfb00),
+        Step::Tagged(0xfafc),
+        Step::Tagged(0xfaf0),
+        Step::Dtor(DTOR_585230, 0xfacc),
+        Step::Dtor(DTOR_585230, 0xfaa8),
+        Step::Tagged(0xfa6c),
+        Step::Dtor(BUFFER_TREE_DTOR, 0xf9d4),
+        Step::Dtor(CLUSTER_DTOR, 0xf96c),
+        Step::Array {
+            at: 0x38c4,
+            check: false,
+        },
+        Step::Array {
+            at: 0x38bc,
+            check: false,
+        },
+        Step::Array {
+            at: 0x38b4,
+            check: false,
+        },
+        Step::Array {
+            at: 0x38ac,
+            check: false,
+        },
+        Step::Array {
+            at: 0x38a4,
+            check: false,
+        },
+        Step::Array {
+            at: 0x3898,
+            check: false,
+        },
+        Step::Array {
+            at: 0x3890,
+            check: false,
+        },
+        Step::Array {
+            at: 0x3884,
+            check: false,
+        },
+        Step::UserFree(0x3880),
+        Step::UserFree(0x3874),
+        Step::UserFree(0x3868),
+        Step::UserFree(0x385c),
+        Step::Elements {
+            at: 0x3314,
+            size: 0x50,
+            count: 0x10,
+            dtor: CLUSTER_DTOR,
+        },
+        Step::Elements {
+            at: 0x2e14,
+            size: 0x50,
+            count: 0x10,
+            dtor: CLUSTER_DTOR,
+        },
+        Step::Elements {
+            at: 0x2914,
+            size: 0x50,
+            count: 0x10,
+            dtor: CLUSTER_DTOR,
+        },
+        Step::Dtor(CLUSTER_DTOR, 0x28c4),
+        Step::Dtor(CLUSTER_DTOR, 0x2874),
+        Step::Elements {
+            at: 0x1374,
+            size: 0x50,
+            count: 0x40,
+            dtor: CLUSTER_DTOR,
+        },
+        Step::Dtor(CLUSTER_DTOR, 0x1324),
+        Step::Dtor(CLUSTER_DTOR, 0x12d4),
+        Step::Dtor(CLUSTER_DTOR, 0x1284),
+        Step::Dtor(CLUSTER_DTOR, 0x1234),
+        Step::Dtor(CLUSTER_DTOR, 0x11e4),
+        Step::Tree(0x11dc),
+        Step::UserFree(0x11d0),
+        Step::Pooled {
+            at: 0x1198,
+            orphan: true,
+        },
+        Step::UserFree(0x1190),
+        Step::Dtor(ASSET_LIST_DTOR, 0x1144),
+        Step::UserFree(0x1140),
+        Step::UserFree(0x1134),
+        Step::Dtor(ASSET_LIST_DTOR, 0x10e4),
+        Step::UserFree(0x10e0),
+        Step::Dtor(VIDEO_DTOR, 0xde8),
+        Step::Holder(0xbdc, 0xcac),
+        Step::Holder(0xa84, 0xb54),
+        Step::Elements {
+            at: 0x964,
+            size: 0x24,
+            count: 8,
+            dtor: ELEMENT_DTOR_4BE960,
+        },
+        Step::Dtor(DTOR_585230, 0x940),
+        Step::Holder(0x7e4, 0x8b4),
+        Step::Holder(0x658, 0x728),
+        Step::Holder(0x4fc, 0x5cc),
+        Step::Holder(0x398, 0x468),
+        Step::Holder(0x23c, 0x30c),
+        Step::Holder(0xe0, 0x1b0),
+        Step::Dtor(WORLD_RELEASE, 0xbc),
+        Step::Dtor(WORLD_RELEASE, 0xac),
+        Step::Dtor(WORLD_RELEASE, 0x9c),
+        Step::Dtor(WORLD_RELEASE, 0x8c),
+        Step::Dtor(WORLD_RELEASE, 0x7c),
+        Step::UserFree(0x60),
+        Step::UserFree(0x54),
+        Step::UserFree(0x48),
+        Step::UserFree(0x3c),
+        Step::UserFree(0x30),
+    ];
+
+    fn tagged_free(h: &mut impl Host, at: u32) {
+        let w: u32 = h.read(at);
+        if w & 1 == 0 {
+            h.call_sym(PHYRE_FREE_FN, Conv::Cdecl, &[w]);
+        }
+    }
+
+    /// `0x00634850(this)` (thiscall; from `graphicFinalize`): the graphic
+    /// object's members destroyed in reverse order ([`FINAL_STEPS`]), the
+    /// last the list vector at `+4` (`ListVector_dtor_00634220`), whose
+    /// `eax` it returns.
+    pub fn graphic_final(h: &mut impl Host, ebp: u32, this: u32) -> u32 {
+        let scratch = ebp.wrapping_sub(0x14);
+        h.write(ebp.wrapping_sub(0x10), this);
+        let at = |off: u32| this.wrapping_add(off);
+        for &step in FINAL_STEPS {
+            match step {
+                Step::Array { at: off, check } => {
+                    let count: u32 = h.read(at(off));
+                    let block: u32 = h.read(at(off + 4));
+                    if count >> 31 == 0 && (!check || block != 0) {
+                        h.call_sym(PHYRE_FREE_FN, Conv::Cdecl, &[block]);
+                    }
+                    h.write(at(off + 4), 0u32);
+                    h.write(at(off), 0u32);
+                }
+                Step::Pooled { at: off, orphan } => {
+                    let tree = at(off);
+                    h.write(scratch, tree);
+                    let pool = tree.wrapping_add(0x18);
+                    if orphan {
+                        h.call_sym(TREE_ORPHAN_ALL, Conv::Thiscall(tree), &[]);
+                        h.call_sym(FREE_LIST_RESET, Conv::Thiscall(pool), &[]);
+                    } else {
+                        h.call_sym(DTOR_636970, Conv::Thiscall(tree), &[]);
+                    }
+                    h.call_sym(FREE_LIST_DTOR, Conv::Thiscall(pool), &[]);
+                    h.call_sym(TREE_CLEAR, Conv::Thiscall(tree), &[]);
+                    h.call_sym(TREE_CLEAR, Conv::Thiscall(tree), &[]);
+                }
+                Step::UserFree(off) => {
+                    let p: u32 = h.read(at(off));
+                    if p != 0 {
+                        h.call_sym(USER_FREE_THUNK, Conv::Cdecl, &[p]);
+                    }
+                }
+                Step::Tagged(off) => tagged_free(h, at(off)),
+                Step::Dtor(f, off) => {
+                    h.call_sym(f, Conv::Thiscall(at(off)), &[]);
+                }
+                Step::Elements {
+                    at: off,
+                    size,
+                    count,
+                    dtor,
+                } => {
+                    let dtor = h.rebase(dtor);
+                    h.call_sym(
+                        VECTOR_DTOR_ITERATOR,
+                        Conv::Stdcall,
+                        &[at(off), size, count, dtor],
+                    );
+                }
+                Step::Close(off) => {
+                    let handle: u32 = h.read(at(off));
+                    let close: u32 = h.read(h.rebase(CLOSE_HANDLE_IAT));
+                    h.call(close, Conv::Stdcall, &[handle]);
+                }
+                Step::Vector(off) => {
+                    let first: u32 = h.read(at(off));
+                    if first != 0 {
+                        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[first]);
+                        for k in 0..3 {
+                            h.write(at(off + 4 * k), 0u32);
+                        }
+                    }
+                }
+                Step::Tree(off) => {
+                    let head: u32 = h.read(at(off));
+                    let left: u32 = h.read(head);
+                    h.call_sym(TREE_ERASE, Conv::Thiscall(at(off)), &[scratch, left, head]);
+                    let head: u32 = h.read(at(off));
+                    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[head]);
+                }
+                Step::Holder(vt, name) => {
+                    let base = h.rebase(HOLDER_VTABLE);
+                    h.write(at(vt), base);
+                    tagged_free(h, at(name));
+                }
+            }
+        }
+        h.call_sym(LIST_VECTOR_DTOR, Conv::Thiscall(at(4)), &[])
     }
 }
