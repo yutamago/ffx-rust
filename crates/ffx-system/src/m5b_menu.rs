@@ -397,6 +397,228 @@ pub const CHANGE_MACRO2: u32 = 0x008b_5960;
 pub const FONT_INFO: u32 = 0x008b_7240;
 pub const MOVIE_FONT_1612: u32 = 0x008f_d960;
 
+/// `TODrawMovieMessageWaitNamesp`'s: `TOConvAlbhedWord`,
+/// `TOFirstInitMessageNormal`, `TOSetDrawInfo`,
+/// `TOGetChangeMacroWordCount`, `TODrawMovieChangeMacro2` (all cdecl) and
+/// the pen's colour word `0x025d09bc` handed to `TODrawChangeMacro2`.
+pub const CONV_ALBHED: u32 = 0x0090_6780;
+pub const FIRST_INIT_NORMAL: u32 = 0x008d_f520;
+pub const SET_DRAW_INFO: u32 = 0x008d_f8f0;
+pub const MACRO_WORD_COUNT: u32 = 0x008b_6b00;
+pub const MOVIE_CHANGE_MACRO2: u32 = 0x008b_5ea0;
+pub const PEN_COLOUR: u32 = 0x025d_09bc;
+
+/// `ToDrawLibraWin`'s: `TOMkpRotateShapeXYWHUVC2`, `TOMkpShapeXYWHUVC2`,
+/// `TODrawBtlNetWindowXYWHType` (cdecl), the window's slide count
+/// `0x0133f702` (i16) and its f32 constants: the two rings (x, w, u0,
+/// v0, u1, v1), the two bars (y, w, h, u0, v0, u1, v1), the window (h,
+/// y, w per language).
+pub const ROTATE_SHAPE: u32 = 0x0090_2ef0;
+pub const SHAPE_XYWHUV_C2: u32 = 0x0090_3ee0;
+pub const NET_WINDOW: u32 = 0x008f_41b0;
+pub const LIBRA_SLIDE: u32 = 0x0133_f702;
+pub const LIBRA_RINGS: [[u32; 6]; 2] = [
+    [
+        0x00b5_ef88,
+        0x00b5_eec0,
+        1,
+        0x00b5_eea0,
+        0x00b5_eee4,
+        0x00b5_ef00,
+    ],
+    [
+        0x00b5_ef8c,
+        0x00b5_eea4,
+        0x00b5_f038,
+        1,
+        0x00b5_f03c,
+        0x00b5_eecc,
+    ],
+];
+pub const LIBRA_BARS: [[u32; 7]; 2] = [
+    [
+        0x00b5_ef74,
+        0x00b5_ef80,
+        0x00b5_eefc,
+        0,
+        0x00b5_ee04,
+        0x00b5_edb8,
+        0x00b5_ee14,
+    ],
+    [
+        0x00b5_ef98,
+        0x00b5_ef04,
+        0x00b5_4f90,
+        0x00b5_ed64,
+        0x00b5_edf4,
+        0x00b5_ed88,
+        0x00b5_edfc,
+    ],
+];
+pub const LIBRA_WIN_H: u32 = 0x00b5_ef68;
+pub const LIBRA_WIN_Y: u32 = 0x00b5_efac;
+pub const LIBRA_WIN_W: [u32; 2] = [0x00b5_effc, 0x00b1_f2cc];
+
+/// The 12x10 fonts' (`TOAdpCrossFontM_FFX`, `TOAdpFontM_ASCII`):
+/// `TOGetTextureName`, `BeginScissor_XYUV`, `graphicFontDraw` (cdecl), the
+/// f64 cell size 10.0 and 12.0.
+pub const TEXTURE_NAME: u32 = 0x008a_cf50;
+pub const SCISSOR_XYUV: u32 = 0x008e_5a20;
+pub const FONT_DRAW: u32 = 0x0064_0660;
+pub const GLYPH_W: u32 = 0x00b9_22b0;
+pub const GLYPH_H: u32 = 0x00b4_b468;
+
+/// `TODrawWaitBtlWinInputGil`'s: the skip word `0x0133d6e0`,
+/// `MsGetRomBtlText`, `TOMakePktScissor`, `TODrawCrossBoxXYWHC2`,
+/// `TOIntToMes` (cdecl), the cursor digit, the amount and the gil left;
+/// the f64s 54 (label gap), 10, 2, 32 (row), 6 (digit step), 18 (line)
+/// and the f32s 154, 835 (origin), 30, 20 (padding), 0.78 (alpha), 6 and
+/// 16 (cursor box), the window's least width (i16 `0x023cc090`).
+pub const GIL_SKIP: u32 = 0x0133_d6e0;
+pub const ROM_BTL_TEXT: u32 = 0x0078_f8f0;
+pub const MAKE_PKT_SCISSOR: u32 = 0x008f_dee0;
+pub const CROSS_BOX: u32 = 0x008f_4b20;
+pub const INT_TO_MES: u32 = 0x008b_8290;
+pub const GIL_DIGIT: u32 = 0x0134_0458;
+pub const GIL_AMOUNT: u32 = 0x0134_0464;
+pub const GIL_LEFT: u32 = 0x0134_0468;
+pub const GIL_LABEL_GAP: u32 = 0x00b5_f1f8;
+pub const GIL_TEN: u32 = 0x00b9_22b0;
+pub const GIL_TWO: u32 = 0x00b9_2270;
+pub const GIL_ROW: u32 = 0x00b4_12f8;
+pub const GIL_STEP: u32 = 0x00b3_eb88;
+pub const GIL_LINE: u32 = 0x00b5_87d8;
+pub const GIL_X: u32 = 0x00b5_f344;
+pub const GIL_Y: u32 = 0x00b5_f400;
+pub const GIL_PAD_X: u32 = 0x00b4_1d80;
+pub const GIL_PAD_Y: u32 = 0x00b4_ae10;
+pub const GIL_ALPHA: u32 = 0x00b5_ee10;
+pub const GIL_BOX_W: u32 = 0x00b9_2308;
+pub const GIL_BOX_H: u32 = 0x00b9_231c;
+pub const GIL_MIN_W: u32 = 0x023c_c090;
+
+/// `TOMkpShapePartIndexXYWHC2`'s: `TOCopyWindowLayout_008fa450` and
+/// `_008fa790` (cdecl), `g_TOScaleY` and the f32 0.01 put in for a zero u.
+pub const LAYOUT_8FA450: u32 = 0x008f_a450;
+pub const LAYOUT_8FA790: u32 = 0x008f_a790;
+pub const HEIGHT_FACTOR: u32 = 0x00c5_d77c;
+pub const UV_FLOOR: u32 = 0x00b1_f2b0;
+
+/// `TOMkpPadButtonData`'s: `DrawCrossButtonIcon`,
+/// `TOGetSystemConfirmButtonAssign`, `graphicResetButtonIconScale`
+/// (cdecl) and the f32 sizes 54 (the buttons), 64 x 40 (the shoulder
+/// buttons) and their drop 7.
+pub const CROSS_BUTTON_ICON: u32 = 0x008e_6030;
+pub const CONFIRM_ASSIGN: u32 = 0x008a_cf30;
+pub const RESET_ICON_SCALE: u32 = 0x0064_2c60;
+pub const PAD_ICON: u32 = 0x00b5_eea4;
+pub const PAD_SMALL_W: u32 = 0x00b5_83dc;
+pub const PAD_SMALL_H: u32 = 0x00b4_3db4;
+pub const PAD_SMALL_DY: u32 = 0x00b5_f2e8;
+
+/// `TODrawWaitBtlWinChange`'s: `TOBtlDrawChangePrim` (cdecl), the member
+/// count `0x0134080c`; the f64s 0.2 (the opening), 27, 201 and 153 (the
+/// opening ring), 240 (the first row), 128 (alpha), 132 (the bars' slide)
+/// and the bars' offsets -25 / +38; the f32 window 180 / 344 x 116; the
+/// rings `[x, y, size, u0, v0, u1, v1]` and bars `[y, w, h, v0, u1, v1]`
+/// (1 stands for `fld1`).
+pub const CHANGE_PRIM: u32 = 0x0089_f0e0;
+pub const CHANGE_COUNT: u32 = 0x0134_080c;
+pub const CHANGE_LEAD: u32 = 0x00b3_eb60;
+pub const CHANGE_SLIDE: u32 = 0x00b5_f1d0;
+pub const CHANGE_RING_Y: u32 = 0x00b5_f248;
+pub const CHANGE_RING_X: u32 = 0x00b5_f228;
+pub const CHANGE_ROW0: u32 = 0x00b5_f258;
+pub const CHANGE_ALPHA: u32 = 0x00b4_c170;
+pub const CHANGE_BAR: u32 = 0x00b5_f218;
+pub const CHANGE_BAR_X: [u32; 2] = [0x00b5_4c88, 0x00b5_f1d8];
+pub const CHANGE_WIN_X: u32 = 0x00b5_a480;
+pub const CHANGE_WIN_W: u32 = 0x00b5_f398;
+pub const CHANGE_WIN_H: u32 = 0x00b5_f330;
+pub const CHANGE_RINGS: [[u32; 7]; 2] = [
+    [
+        0x00b5_eef4,
+        0x00b5_f35c,
+        0x00b5_eec0,
+        1,
+        0x00b5_eea0,
+        0x00b5_eee4,
+        0x00b5_ef00,
+    ],
+    [
+        0x00b5_f344,
+        0x00b5_f364,
+        0x00b5_eea4,
+        0x00b5_f038,
+        1,
+        0x00b5_f03c,
+        0x00b5_eecc,
+    ],
+];
+pub const CHANGE_BARS: [[u32; 6]; 2] = [
+    [
+        0x00b5_f344,
+        0x00b5_ef80,
+        0x00b5_eefc,
+        0x00b5_ee04,
+        0x00b5_edb8,
+        0x00b5_ee14,
+    ],
+    [
+        0x00b5_f36c,
+        0x00b5_f350,
+        0x00b5_ee78,
+        0x00b4_1cac,
+        0x00b5_f0ac,
+        0x00b5_f10c,
+    ],
+];
+
+/// `TODrawWaitBtlWinWeapon`'s: `DrawWaterWaveShapeC2`,
+/// `TOBtlDrawWeaponAbilityWindow` (cdecl), the CRT `_CIcos`; the pulse
+/// (f64 5, 96), the cursor plate (f32 h 50, u0 1619, v0 105, u1 1920, v1
+/// 156; f64 row 835), the bars (f64 574, 0.1, 420, -420 and the f32
+/// -420; shadow f32 u1 438, w 480, f64 dx 30; bar f64 v step 53, v1 315,
+/// v0 270, row 838, f32 u1 1788, u0 1553, h 44, w 234), the waves (f32
+/// gate 0.3, h 3, w 210, x 364; f64 20, 210, 50, row 880) and the
+/// cursor step f32 420.
+pub const WATER_WAVE: u32 = 0x008e_7d30;
+pub const ABILITY_WINDOW: u32 = 0x008f_34c0;
+pub const CI_COS: u32 = 0x0094_98c2;
+pub const WPN_PULSE: u32 = 0x00b4_1d20;
+pub const WPN_PULSE_BASE: u32 = 0x00b5_ee40;
+pub const WPN_PLATE_H: u32 = 0x00b1_f2c8;
+pub const WPN_PLATE_U0: u32 = 0x00b5_f43c;
+pub const WPN_PLATE_V0: u32 = 0x00b5_f324;
+pub const WPN_PLATE_U1: u32 = 0x00b4_a1ac;
+pub const WPN_PLATE_V1: u32 = 0x00b5_f34c;
+pub const WPN_ROW0: u32 = 0x00b5_f2b8;
+pub const WPN_SPEED: u32 = 0x00b5_f290;
+pub const WPN_TENTH: u32 = 0x00b9_21f0;
+pub const WPN_FROM: u32 = 0x00b5_f280;
+pub const WPN_LOW: u32 = 0x00b5_f460;
+pub const WPN_LOW32: u32 = 0x00b5_f468;
+pub const WPN_SHADOW_U1: u32 = 0x00b5_f3c0;
+pub const WPN_SHADOW_W: u32 = 0x00b5_f3c8;
+pub const WPN_SHADOW_DX: u32 = 0x00b9_22c8;
+pub const WPN_V_STEP: u32 = 0x00b5_f1f0;
+pub const WPN_V1: u32 = 0x00b5_f278;
+pub const WPN_V0: u32 = 0x00b5_f260;
+pub const WPN_BAR_U1: u32 = 0x00b5_f44c;
+pub const WPN_BAR_U0: u32 = 0x00b5_f438;
+pub const WPN_BAR_H: u32 = 0x00b5_f300;
+pub const WPN_BAR_W: u32 = 0x00b5_f370;
+pub const WPN_BAR_Y: u32 = 0x00b5_f2c0;
+pub const WPN_WAVES: u32 = 0x00b3_eb44;
+pub const WPN_WAVE_20: u32 = 0x00b4_9968;
+pub const WPN_WAVE_210: u32 = 0x00b4_9970;
+pub const WPN_WAVE_50: u32 = 0x00b1_f2c0;
+pub const WPN_WAVE_ROW2: u32 = 0x00b5_f2d0;
+pub const WPN_WAVE_H: u32 = 0x00b3_eb94;
+pub const WPN_WAVE_W: u32 = 0x00b5_ef1c;
+pub const WPN_WAVE_X2: u32 = 0x00b5_f3ac;
+pub const WPN_CURSOR_W: u32 = 0x00b5_ef64;
+
 /// `FUN_008ea680`'s: `TOMakePktFont1612Shadow_00906290`,
 /// `TOMakePktFont1612Font_00906270`, `setButtonData`, `resetButtonData`,
 /// `TOAdpButtonIcon_008e9970`, `TOAddPktChangeMacro`, the line step 16.0
@@ -3362,5 +3584,1365 @@ pub mod bridge {
         uv(h, 0xf2, 0x35);
         at(h, x3, y2);
         h.read(h.rebase(PKT_CURSOR))
+    }
+
+    /// `TODrawMovieMessageWaitNamesp(win)` with its frame at `ebp` (an
+    /// aligned frame: the Al Bhed word at `ebp - 0x6c`, the saved x
+    /// `ebp - 0x68`, the line count `ebp - 0x64`, `TOGetFontInfo`'s out
+    /// `ebp - 0x60`, the pen `ebp - 0x20`, 7 words): a movie message
+    /// window's text pass. The cursor `+0x8c` starts at `+0x94`, the pen
+    /// from `+0xb8` with `+0x58`, `+0x48..+0x54` and the colour byte
+    /// `+0x1a`; the x `ftol(+0x48)` is kept. Codes by `TOGetGroup` until
+    /// `+0x9c` reaches `+0xa0` (each followed by `TOSkipCode`): 1 a line
+    /// break (the first line: `TODrawChangeMacro2(win, 0x025d09bc, pen)`
+    /// for kind `+0x22` 1 with `+0x24 > 0`, the x taken from the pen;
+    /// later lines: the pen back at the x, 16.0 lower;
+    /// `TOFirstInitMessageNormal(win, cursor + 1, pen)` for `+0xe` 1); 2
+    /// `TOSetDrawInfo(code, win, pen)`, a tab (9) checked against the
+    /// reveal edge `+0xa4` (above 0xbf it counts, at the edge it draws and
+    /// moves `+0xa0`); 3 a macro (`TOGetChangeMacroWordCount` added to
+    /// `+0x9c` on a first line of kind 0, else `TODrawMovieChangeMacro2`,
+    /// the Al Bhed colour 0x56 after the first line of a `+0x10` 0x4000
+    /// window); 4 a glyph (`+0x9c` up, `+0xa0` up to `+0xa8` while `+0xb4`
+    /// and `+0xac` are clear; drawn by `TOGetFontInfo` and
+    /// `TOMakePktMovieFont1612`: on the first line only for kind 1, in Al
+    /// Bhed windows the colour cleared; later lines of Al Bhed windows
+    /// through `TOConvAlbhedWord`, colour 0x60 for 0/1, 0x56 for 2). Then
+    /// `+0xa4 = +0xa0` and the pen back to `+0xd4`. Returns 0.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn movie_message_wait_namesp(h: &mut impl Host, ebp: u32, win: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let w = |o: u32| win.wrapping_add(o);
+        let pen = f(0x20);
+        let (alb, info) = (f(0x6c), f(0x60));
+        let start: u32 = h.read(w(0x94));
+        h.write(w(0x8c), start);
+        for k in 0..7u32 {
+            let v: u32 = h.read(w(0xb8 + 4 * k));
+            h.write(pen.wrapping_add(4 * k), v);
+        }
+        let mut lines = 0u32;
+        h.write(f(0x64), lines);
+        for (to, from) in [
+            (4u32, 0x48u32),
+            (8, 0x4c),
+            (0xc, 0x50),
+            (0x10, 0x54),
+            (0, 0x58),
+        ] {
+            let v: u32 = h.read(w(from));
+            h.write(pen.wrapping_add(to), v);
+        }
+        let colour: u8 = h.read(w(0x1a));
+        h.write(pen.wrapping_add(0x1a), colour);
+        let x0: u32 = h.read(w(0x48));
+        let mut x = ftol(h, ffx_bridge::x87::load(x0)) & 0xffff;
+        h.write(f(0x68), x);
+        h.write(w(0x9c), 0u32);
+        if h.read::<u32>(w(0xa0)).cast_signed() > 0 {
+            loop {
+                let code: u32 = h.read(w(0x8c));
+                let c = u32::from(h.read::<u8>(code));
+                match cdecl(h, super::CHAR_CLASS, &[c]) {
+                    1 => {
+                        if lines == 0 {
+                            if h.read::<u16>(w(0x22)) == 1 && h.read::<i16>(w(0x24)) > 0 {
+                                let colour = h.rebase(super::PEN_COLOUR);
+                                cdecl(h, super::CHANGE_MACRO2, &[win, colour, pen]);
+                            }
+                            let px: u32 = h.read(pen.wrapping_add(4));
+                            x = ftol(h, ffx_bridge::x87::load(px)) & 0xffff;
+                            h.write(f(0x68), x);
+                        } else {
+                            let back = (x as u16).cast_signed();
+                            h.write(f(0x64), i32::from(back));
+                            h.write(pen.wrapping_add(4), f32::from(back).to_bits());
+                            let step = f64::from_bits(h.read::<u64>(h.rebase(super::LINE_STEP)));
+                            let y = ffx_bridge::x87::load(h.read(pen.wrapping_add(8)));
+                            h.write(
+                                pen.wrapping_add(8),
+                                ffx_bridge::x87::store(ffx_bridge::x87::add(y, step)),
+                            );
+                        }
+                        lines += 1;
+                        h.write(f(0x64), lines);
+                        if h.read::<u16>(w(0xe)) == 1 {
+                            let next = h.read::<u32>(w(0x8c)).wrapping_add(1);
+                            cdecl(h, super::FIRST_INIT_NORMAL, &[win, next, pen]);
+                        }
+                    }
+                    2 => {
+                        let done: i32 = h.read(w(0x9c));
+                        let edge: i32 = h.read(w(0xa4));
+                        if h.read::<u8>(code) != 9 {
+                            cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                        } else if h.read::<u8>(code.wrapping_add(1)) > 0xbf {
+                            if done < edge {
+                                h.write(w(0x9c), done.wrapping_add(1));
+                            } else {
+                                cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                                let done = h.read::<i32>(w(0x9c)).wrapping_add(1);
+                                h.write(w(0x9c), done);
+                                let done: u32 = h.read(w(0x9c));
+                                h.write(w(0xa0), done);
+                            }
+                        } else if done >= edge {
+                            cdecl(h, super::SET_DRAW_INFO, &[code, win, pen]);
+                        }
+                    }
+                    3 => {
+                        if lines == 0 && h.read::<u16>(w(0x22)) == 0 {
+                            let kind = i32::from(h.read::<i16>(w(4))).cast_unsigned();
+                            let n = cdecl(h, super::MACRO_WORD_COUNT, &[kind, code]);
+                            let done = h.read::<u32>(w(0x9c)).wrapping_add(n);
+                            h.write(w(0x9c), done);
+                        } else {
+                            if h.read::<u16>(w(0x10)) == 0x4000 && lines.cast_signed() > 0 {
+                                h.write(pen.wrapping_add(0x1b), 0x56u8);
+                            }
+                            cdecl(h, super::MOVIE_CHANGE_MACRO2, &[win, code, pen]);
+                        }
+                    }
+                    4 => {
+                        let done = h.read::<u32>(w(0x9c)).wrapping_add(1);
+                        h.write(w(0x9c), done);
+                        if h.read::<u32>(w(0xb4)) == 0 && h.read::<u32>(w(0xac)) == 0 {
+                            let shown: i32 = h.read(w(0xa0));
+                            if shown < h.read::<i32>(w(0xa8)) {
+                                h.write(w(0xa0), shown.wrapping_add(1));
+                            }
+                        }
+                        let src = if lines == 0 {
+                            if h.read::<u16>(w(0x22)) == 1 {
+                                let keep: u8 = if h.read::<u16>(w(0x10)) == 0x4000 {
+                                    0
+                                } else {
+                                    0xff
+                                };
+                                let c: u8 = h.read(pen.wrapping_add(0x1b));
+                                h.write(pen.wrapping_add(0x1b), c & keep);
+                                Some(code)
+                            } else {
+                                None
+                            }
+                        } else if h.read::<u16>(w(0x10)) == 0x4000 {
+                            match cdecl(h, super::CONV_ALBHED, &[code, alb]) {
+                                0 | 1 => h.write(pen.wrapping_add(0x1b), 0x60u8),
+                                2 => h.write(pen.wrapping_add(0x1b), 0x56u8),
+                                _ => {}
+                            }
+                            Some(alb)
+                        } else {
+                            Some(code)
+                        };
+                        if let Some(src) = src {
+                            cdecl(h, super::FONT_INFO, &[src, info]);
+                            cdecl(h, super::MOVIE_FONT_1612, &[pen, info]);
+                        }
+                    }
+                    _ => {}
+                }
+                let cursor: u32 = h.read(w(0x8c));
+                let next = cdecl(h, super::NEXT_CHAR, &[cursor]);
+                h.write(w(0x8c), next);
+                if h.read::<i32>(w(0x9c)) >= h.read::<i32>(w(0xa0)) {
+                    break;
+                }
+            }
+        }
+        let shown: u32 = h.read(w(0xa0));
+        h.write(w(0xa4), shown);
+        for k in 0..7u32 {
+            let v: u32 = h.read(pen.wrapping_add(4 * k));
+            h.write(w(0xd4 + 4 * k), v);
+        }
+        0
+    }
+
+    /// `graphicUiRemapX2`/`Y2` (`f`) of the f32 bits `c`, stored as an
+    /// f32 (`fstp dword`): its bits.
+    fn remap_f32(h: &mut impl Host, f: u32, c: u32) -> u32 {
+        h.call_sym_st0(f, Conv::Cdecl, &[c]).to_bits()
+    }
+
+    /// An f32 constant of the image: its bits at `sym`, or 0.0 for the
+    /// table entry 0 (`fldz`) and 1.0 for 1 (`fld1`).
+    fn libra_const(h: &impl Host, sym: u32) -> u32 {
+        match sym {
+            0 => 0,
+            1 => 0x3f80_0000,
+            _ => h.read(h.rebase(sym)),
+        }
+    }
+
+    /// `ToDrawLibraWin()`: the Scan window. Its left edge `base` is 0x1c6
+    /// (0x18a when `TOGetFFXLangJmp` is nonzero) less 0x50 per slide step
+    /// left (i16 `0x0133f702`). Two rings turning with `graphicGetTime`
+    /// (the second backwards) by `TOMkpRotateShapeXYWHUVC2(-1, base +
+    /// 0x28 / + 0x2f, ...)`, two bars by `TOMkpShapeXYWHUVC2(400, ...)` at
+    /// `base` and `base + 0x41` (each coordinate through
+    /// `graphicUiRemapX2`/`Y2`: h, w, y, x in that order), the window by
+    /// `TODrawBtlNetWindowXYWHType(x, y, w, h, 0)` at `base + 0x47` (w
+    /// 880 or 1000 by the language). Then a slide step is used up:
+    /// returns 0 while one was left, else 1.
+    #[allow(clippy::cast_precision_loss)]
+    pub fn draw_libra_win(h: &mut impl Host) -> u32 {
+        use ffx_bridge::x87;
+        const GREY: u32 = 0x8080_8080;
+        let lang = cdecl(h, GET_FFX_LANG_JMP, &[]);
+        let slide = i32::from(h.read::<i16>(h.rebase(super::LIBRA_SLIDE)));
+        let base =
+            (if lang == 0 { 0x1c6i32 } else { 0x18a }).wrapping_sub(slide.wrapping_mul(0x50));
+        let at = |d: i32| x87::store(f64::from(base.wrapping_add(d)));
+        for (ring, d) in [(0usize, 0x28i32), (1, 0x2f)] {
+            let t = h.call_sym_st0(super::GET_TIME, Conv::Cdecl, &[]);
+            let angle = if ring == 0 { t } else { -t };
+            let c = super::LIBRA_RINGS[ring];
+            let w = libra_const(h, c[1]);
+            let args = [
+                u32::MAX,
+                at(d),
+                libra_const(h, c[0]),
+                w,
+                w,
+                libra_const(h, c[2]),
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                GREY,
+                GREY,
+                angle.to_bits(),
+            ];
+            cdecl(h, super::ROTATE_SHAPE, &args);
+        }
+        for (bar, d) in [(0usize, 0i32), (1, 0x41)] {
+            let c = super::LIBRA_BARS[bar];
+            let uv = [
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                libra_const(h, c[6]),
+            ];
+            let ht = libra_const(h, c[2]);
+            let ht = remap_f32(h, super::REMAP_Y2, ht);
+            let w = libra_const(h, c[1]);
+            let w = remap_f32(h, super::REMAP_X2, w);
+            let y = libra_const(h, c[0]);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = remap_f32(h, super::REMAP_X2, at(d));
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[400, x, y, w, ht, uv[0], uv[1], uv[2], uv[3], GREY, GREY],
+            );
+        }
+        let lang = cdecl(h, GET_FFX_LANG_JMP, &[]);
+        let ht = libra_const(h, super::LIBRA_WIN_H);
+        let ht = remap_f32(h, super::REMAP_Y2, ht);
+        let w = libra_const(h, super::LIBRA_WIN_W[usize::from(lang != 0)]);
+        let w = remap_f32(h, super::REMAP_X2, w);
+        let y = libra_const(h, super::LIBRA_WIN_Y);
+        let y = remap_f32(h, super::REMAP_Y2, y);
+        let x = remap_f32(h, super::REMAP_X2, at(0x47));
+        cdecl(h, super::NET_WINDOW, &[x, y, w, ht, 0]);
+        let cell = h.rebase(super::LIBRA_SLIDE);
+        let left: u16 = h.read(cell);
+        if left == 0 {
+            return 1;
+        }
+        h.write(cell, left.wrapping_sub(1));
+        0
+    }
+
+    /// Words `ebp - o` of a frame.
+    fn fw(ebp: u32, o: u32) -> u32 {
+        ebp.wrapping_sub(o)
+    }
+
+    /// `x87` of `f32 bits a / f32 bits b`, stored as an f32.
+    fn fdiv32(a: u32, b: u32) -> u32 {
+        use ffx_bridge::x87;
+        x87::store(x87::div(x87::load(a), x87::load(b)))
+    }
+
+    /// An int through `fild`/`fstp dword`: its f32 bits.
+    fn int_to_f32(v: u32) -> u32 {
+        ffx_bridge::x87::store(f64::from(v.cast_signed()))
+    }
+
+    /// The glyph record at `ebp - 0x9c` both 12x10 fonts hand to
+    /// `graphicFontDraw`: the colour words twice (`- 0x8c..` and
+    /// `- 0x6c..`, the second set written `c0, c1, c2, c3` order as given).
+    fn glyph_colours(h: &mut impl Host, ebp: u32, c: [u32; 4]) {
+        for (k, &v) in (0u32..).zip(&c) {
+            h.write(fw(ebp, 0x8c - 4 * k), v);
+            h.write(fw(ebp, 0x6c - 4 * k), v);
+        }
+    }
+
+    /// The scissor over the glyph record at `ebp - 0x9c`
+    /// (`BeginScissor_XYUV(&x0, &y0, &x1, &y1, &u0, &v0, &u1, &v1)`).
+    fn glyph_scissor(h: &mut impl Host, ebp: u32) -> u32 {
+        let p = [0x9cu32, 0x98, 0x7c, 0x78, 0x94, 0x90, 0x74, 0x70].map(|o| fw(ebp, o));
+        cdecl(h, super::SCISSOR_XYUV, &p)
+    }
+
+    /// `graphicFontDraw(ebp - 0x9c, name, 0.0, 0.0, 0)`.
+    fn cell_draw(h: &mut impl Host, ebp: u32, name: u32) -> u32 {
+        cdecl(h, super::FONT_DRAW, &[fw(ebp, 0x9c), name, 0, 0, 0])
+    }
+
+    /// The 12x10 font texture `0x3d80`'s name for page `page`
+    /// (`TOGetTextureName(0x3d80, page, 0, shadow, ebp - 0xc)` with the
+    /// out words `ebp - 0xc`, `- 8` cleared first) and its size into
+    /// `ebp - w` / `ebp - h` (`TOGetImageWH`).
+    fn glyph_texture(h: &mut impl Host, ebp: u32, page: u32, shadow: u32, w: u32, ht: u32) -> u32 {
+        h.write(fw(ebp, 0xc), 0u32);
+        h.write(fw(ebp, 8), 0u32);
+        let name = cdecl(
+            h,
+            super::TEXTURE_NAME,
+            &[0x3d80, page, 0, shadow, fw(ebp, 0xc)],
+        );
+        cdecl(h, super::IMAGE_WH, &[0x3d80, fw(ebp, w), fw(ebp, ht)]);
+        name
+    }
+
+    /// The page byte: `((flags >> s) & 0xf) * 2 + odd` in 8 bits.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn glyph_page(flags: u32, s: u32, odd: u8) -> u32 {
+        u32::from(
+            (((flags.cast_signed() >> s) as u8) & 0xf)
+                .wrapping_mul(2)
+                .wrapping_add(odd),
+        )
+    }
+
+    /// `TOAdpCrossFontM_FFX(code, x, y, flags, c0, c1, c2, c3, scale)`
+    /// with its frame at `ebp` (`x`, `y`, `scale` f32 bits): a cross-menu
+    /// glyph of the 12x10 font `0x3d80`. The glyph `i` (`code[0] - 0x30`,
+    /// or `code[1] + 0xa0` below 0x30) sits at column `(i % 24) / 2` (10
+    /// px), row `i / 24` (12 px), page bit `i & 1`. First the shadow
+    /// (page `(flags >> 4 & 0xf) * 2 + bit`, shadow name) at `(x + 1, y +
+    /// 1)` to `(x + 10 scale + 1, y + 12 scale + 1)`, clipped by
+    /// `BeginScissor_XYUV`; when it shows, drawn, then the glyph (page
+    /// `(flags & 0xf) * 2 + bit`) at `(x, y)` to `(x + 10 scale, y + 12
+    /// scale)` (the far corner's f64 sums kept from the first pass), not
+    /// clipped again. The record's uv from the pixel corners over the
+    /// image size, re-read for the second pass. Returns the second draw's
+    /// `eax`, or 0 when the shadow is clipped away.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn cross_font_m(h: &mut impl Host, ebp: u32, a: [u32; 9]) -> u32 {
+        use ffx_bridge::x87;
+        let [code, x, y, flags, c0, c1, c2, c3, scale] = a;
+        let first: u8 = h.read(code);
+        let i: i32 = if first < 0x30 {
+            i32::from(h.read::<u8>(code.wrapping_add(1))) + 0xa0
+        } else {
+            i32::from(first) - 0x30
+        };
+        let odd = (i as u8) & 1;
+        let u_px = (i % 24 / 2) * 10;
+        let v_px = i / 24 * 12;
+        h.write(fw(ebp, 0xa0), u_px);
+        h.write(fw(ebp, 0xa4), v_px);
+        let name = glyph_texture(h, ebp, glyph_page(flags, 4, odd), 1, 0xa8, 0xac);
+        h.write(fw(ebp, 0xb8), name);
+        let (xf, yf) = (x87::load(x), x87::load(y));
+        h.write(fw(ebp, 0x14), 0u32);
+        h.write(fw(ebp, 0x9c), x87::store(x87::add(xf, 1.0)));
+        h.write(fw(ebp, 0x98), x87::store(x87::add(yf, 1.0)));
+        let u0 = int_to_f32(u_px.cast_unsigned());
+        h.write(fw(ebp, 0xa0), u0);
+        h.write(fw(ebp, 0xb0), u0);
+        let w: u32 = h.read(fw(ebp, 0xa8));
+        h.write(fw(ebp, 0x94), fdiv32(u0, w));
+        let v0 = int_to_f32(v_px.cast_unsigned());
+        h.write(fw(ebp, 0xa0), v0);
+        h.write(fw(ebp, 0xb4), v0);
+        let ht: u32 = h.read(fw(ebp, 0xac));
+        h.write(fw(ebp, 0x90), fdiv32(v0, ht));
+        h.write(fw(ebp, 0x8c), c0);
+        h.write(fw(ebp, 0x88), c1);
+        h.write(fw(ebp, 0x84), c2);
+        h.write(fw(ebp, 0x80), c3);
+        let s = x87::load(scale);
+        let ten = f64::from_bits(h.read::<u64>(h.rebase(super::GLYPH_W)));
+        let twelve = f64::from_bits(h.read::<u64>(h.rebase(super::GLYPH_H)));
+        let x1 = x87::add(xf, x87::mul(ten, s));
+        h.write(fw(ebp, 0xc8), x1.to_bits());
+        h.write(fw(ebp, 0x7c), x87::store(x87::add(x1, 1.0)));
+        let y1 = x87::add(yf, x87::mul(s, twelve));
+        h.write(fw(ebp, 0xc0), y1.to_bits());
+        h.write(fw(ebp, 0x78), x87::store(x87::add(y1, 1.0)));
+        let u1 = int_to_f32(u_px.wrapping_add(10).cast_unsigned());
+        h.write(fw(ebp, 0xa0), u1);
+        h.write(fw(ebp, 0xa4), u1);
+        h.write(fw(ebp, 0x74), fdiv32(u1, w));
+        let v1 = int_to_f32(v_px.wrapping_add(12).cast_unsigned());
+        h.write(fw(ebp, 0xa0), v1);
+        h.write(fw(ebp, 0x60), c3);
+        h.write(fw(ebp, 0x6c), c0);
+        h.write(fw(ebp, 0x68), c1);
+        h.write(fw(ebp, 0x64), c2);
+        h.write(fw(ebp, 0x70), fdiv32(v1, ht));
+        let shown = glyph_scissor(h, ebp);
+        if shown == 0 {
+            return 0;
+        }
+        cell_draw(h, ebp, name);
+        let name = glyph_texture(h, ebp, glyph_page(flags, 0, odd), 0, 0xa8, 0xac);
+        h.write(fw(ebp, 0x9c), x87::store(xf));
+        h.write(fw(ebp, 0x98), x87::store(yf));
+        h.write(fw(ebp, 0x14), 0u32);
+        glyph_colours(h, ebp, [c0, c1, c2, c3]);
+        let w: u32 = h.read(fw(ebp, 0xa8));
+        h.write(fw(ebp, 0x94), fdiv32(u0, w));
+        let ht: u32 = h.read(fw(ebp, 0xac));
+        h.write(fw(ebp, 0x90), fdiv32(v0, ht));
+        h.write(fw(ebp, 0x7c), x87::store(x1));
+        h.write(fw(ebp, 0x78), x87::store(y1));
+        h.write(fw(ebp, 0x74), fdiv32(u1, w));
+        h.write(fw(ebp, 0x70), fdiv32(v1, ht));
+        cell_draw(h, ebp, name)
+    }
+
+    /// `TOAdpFontM_ASCII(cursor, text, x, y, flags, c0, c1, c2, c3)` with
+    /// its frame at `ebp` (`x`, `y` ints): an ASCII glyph of the 12x10
+    /// font `0x3d80`. The glyph `i = (i8) text[0] - 0x20` (signed: C
+    /// division and remainder) sits at column `(i % 24) / 2` (10 px), row
+    /// `i / 24 + 12` (12 px), page bit `i & 1`. The shadow (page bits 4..7
+    /// of `flags` times 2 plus the bit, shadow name) at `(x + 1, y + 1)`
+    /// to `(x + 11, y + 13)`; when `BeginScissor_XYUV` keeps it, drawn, then the
+    /// glyph (page `(flags & 0xf) * 2 + bit`) at `(x, y)` to `(x + 10, y +
+    /// 12)`, clipped again and drawn when kept. The record's uv from the
+    /// pixel corners over the image size, re-read for the second pass.
+    /// Returns `cursor`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    pub fn font_m_ascii(h: &mut impl Host, ebp: u32, a: [u32; 9]) -> u32 {
+        let [cursor, text, x, y, flags, c0, c1, c2, c3] = a;
+        let i = i32::from(h.read::<i8>(text)) - 0x20;
+        // `and bl, 1`: the upper bytes of i stay in the saved word
+        let odd_word = (i.cast_unsigned() & !0xff) | (i.cast_unsigned() & 1);
+        let odd = (i as u8) & 1;
+        let u_px = (i % 24 / 2) * 10;
+        let v_px = (i / 24 * 3 + 0x24) * 4;
+        h.write(fw(ebp, 0xb8), odd_word);
+        h.write(fw(ebp, 0xb4), u_px);
+        h.write(fw(ebp, 0xa8), v_px);
+        let name = glyph_texture(h, ebp, glyph_page(flags, 4, odd), 1, 0xb0, 0xac);
+        h.write(fw(ebp, 0xa4), name);
+        h.write(fw(ebp, 0xa0), x.wrapping_add(1));
+        h.write(fw(ebp, 0x9c), int_to_f32(x.wrapping_add(1)));
+        h.write(fw(ebp, 0xa0), y.wrapping_add(1));
+        h.write(fw(ebp, 0x14), 0u32);
+        h.write(fw(ebp, 0x98), int_to_f32(y.wrapping_add(1)));
+        let u0 = int_to_f32(u_px.cast_unsigned());
+        h.write(fw(ebp, 0xa0), u0);
+        h.write(fw(ebp, 0xbc), u0);
+        let w: u32 = h.read(fw(ebp, 0xb0));
+        h.write(fw(ebp, 0x94), fdiv32(u0, w));
+        let v0 = int_to_f32(v_px.cast_unsigned());
+        h.write(fw(ebp, 0xa0), v0);
+        h.write(fw(ebp, 0x8c), c0);
+        h.write(fw(ebp, 0xa8), v0);
+        h.write(fw(ebp, 0x88), c1);
+        let ht: u32 = h.read(fw(ebp, 0xac));
+        h.write(fw(ebp, 0x90), fdiv32(v0, ht));
+        h.write(fw(ebp, 0x80), c3);
+        h.write(fw(ebp, 0xa0), x.wrapping_add(0xb));
+        h.write(fw(ebp, 0xa0), y.wrapping_add(0xd));
+        h.write(fw(ebp, 0x7c), int_to_f32(x.wrapping_add(0xb)));
+        h.write(fw(ebp, 0xa0), u_px.wrapping_add(10));
+        h.write(fw(ebp, 0x84), c2);
+        h.write(fw(ebp, 0x78), int_to_f32(y.wrapping_add(0xd)));
+        let u1 = int_to_f32(u_px.wrapping_add(10).cast_unsigned());
+        h.write(fw(ebp, 0xa0), u1);
+        h.write(fw(ebp, 0xa0), v_px.wrapping_add(0xc));
+        h.write(fw(ebp, 0xb4), u1);
+        h.write(fw(ebp, 0x74), fdiv32(u1, w));
+        let v1 = int_to_f32(v_px.wrapping_add(0xc).cast_unsigned());
+        h.write(fw(ebp, 0xa0), v1);
+        h.write(fw(ebp, 0x60), c3);
+        h.write(fw(ebp, 0xa0), v1);
+        h.write(fw(ebp, 0x6c), c0);
+        h.write(fw(ebp, 0x68), c1);
+        h.write(fw(ebp, 0x64), c2);
+        h.write(fw(ebp, 0x70), fdiv32(v1, ht));
+        if glyph_scissor(h, ebp) == 0 {
+            return cursor;
+        }
+        cell_draw(h, ebp, name);
+        let name = glyph_texture(h, ebp, glyph_page(flags, 0, odd), 0, 0xb0, 0xac);
+        h.write(fw(ebp, 0xa4), x.wrapping_add(10));
+        h.write(fw(ebp, 0x9c), int_to_f32(x));
+        h.write(fw(ebp, 0x98), int_to_f32(y));
+        h.write(fw(ebp, 0x14), 0u32);
+        glyph_colours(h, ebp, [c0, c1, c2, c3]);
+        let w: u32 = h.read(fw(ebp, 0xb0));
+        h.write(fw(ebp, 0x94), fdiv32(u0, w));
+        let ht: u32 = h.read(fw(ebp, 0xac));
+        h.write(fw(ebp, 0x90), fdiv32(v0, ht));
+        h.write(fw(ebp, 0x7c), int_to_f32(x.wrapping_add(10)));
+        h.write(fw(ebp, 0xa4), y.wrapping_add(0xc));
+        h.write(fw(ebp, 0x78), int_to_f32(y.wrapping_add(0xc)));
+        h.write(fw(ebp, 0x74), fdiv32(u1, w));
+        h.write(fw(ebp, 0x70), fdiv32(v1, ht));
+        if glyph_scissor(h, ebp) != 0 {
+            cell_draw(h, ebp, name);
+        }
+        cursor
+    }
+
+    /// `TODrawWaitBtlWinInputGil(w)` with its frame at `ebp` (the text
+    /// size out words `ebp - 0x58`/`- 0x5c`, the widest `- 0x54`, the x
+    /// `- 0x48`, temporaries `- 0x50` (f64) and `- 0x4c`, the second
+    /// row's y `- 0x60`, the two digit strings `- 0x44` and `- 0x24`):
+    /// the gil entry window (Bribe / Mix amounts). `None` while
+    /// `0x0133d6e0` is 1 (the original returns its cookie word in `eax`).
+    /// Else the two labels (`MsGetRomBtlText(0x3014 / 0x3015, 0)` into
+    /// `+0xb4` / `+0xb8`), measured by `TOGetMessageWH`; the widest (only
+    /// a positive first width counts) plus 64 is the label column. `+0x40`
+    /// and `+0x3c` cleared, `+0x44 = +0x24`. The window `+0x68..+0x74`
+    /// from `X2(154)`, `Y2(835)`, the label column plus `2 X2(30)` and
+    /// `Y2(835) + 32 + 2 Y2(20)` (the remap results unrounded), widened
+    /// to the i16 `0x023cc090`; the text origin `+0x78 = X2(30) + x`,
+    /// `+0x7c = Y2(20) + y`, the digits' right edge `+0x80`, 32 below the
+    /// text `+0x84`. Drawn: `TODrawBtlNetWindowXYWHType`, `TOMakePktScissor` of
+    /// the window's ftols, the first label, the cursor box
+    /// (`TODrawCrossBoxXYWHC2(right - 6 - 6 g_BtlGilDigit, y, 6, 16)`), the
+    /// second label 16 lower, and the nine digits of `g_BtlGilAmount` and
+    /// `g_BtlGilLeft` (`TOIntToMes(v, buf, 9, 0)`) one by one from the
+    /// right, 6 apart, each string cut after its glyph. `Some(0)`.
+    #[allow(clippy::too_many_lines)]
+    pub fn wait_win_input_gil(h: &mut impl Host, ebp: u32, w: u32) -> Option<u32> {
+        use ffx_bridge::x87::{self, load, store};
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let at = |o: u32| w.wrapping_add(o);
+        h.write(f(0x58), 0u32);
+        h.write(f(0x54), 0u32);
+        if h.read::<u32>(h.rebase(super::GIL_SKIP)) == 1 {
+            return None;
+        }
+        let mut widest = 0.0f64;
+        for (id, slot) in [(0x3014u32, 0xb4u32), (0x3015, 0xb8)] {
+            let text = cdecl(h, super::ROM_BTL_TEXT, &[id, 0]);
+            h.write(at(slot), text);
+            cdecl(h, super::MESSAGE_WH, &[0, text, f(0x58), f(0x5c), 0, 0]);
+            let wd = load(h.read(f(0x58)));
+            if wd > widest {
+                h.write(f(0x54), store(wd));
+                widest = load(store(wd));
+            }
+        }
+        let c54 = gil_f64(h, super::GIL_LABEL_GAP);
+        let c10 = gil_f64(h, super::GIL_TEN);
+        let column = store(x87::add(x87::add(widest, c54), c10));
+        h.write(at(0x40), 0u16);
+        h.write(at(0x3c), 0u16);
+        let n24: u16 = h.read(at(0x24));
+        h.write(at(0x44), n24);
+        h.write(f(0x48), column);
+        let x154 = gil_const(h, super::GIL_X);
+        let y835 = gil_const(h, super::GIL_Y);
+        let c30 = gil_const(h, super::GIL_PAD_X);
+        let c20 = gil_const(h, super::GIL_PAD_Y);
+        let two = gil_f64(h, super::GIL_TWO);
+        let c32 = gil_f64(h, super::GIL_ROW);
+        let x0 = remap(h, super::REMAP_X2, x154);
+        h.write(at(0x68), store(x0));
+        let y0 = remap(h, super::REMAP_Y2, y835);
+        h.write(at(0x6c), store(y0));
+        let t = x87::add(remap(h, super::REMAP_X2, x154), load(column));
+        h.write(f(0x50), t.to_bits());
+        let pad = remap(h, super::REMAP_X2, c30);
+        h.write(at(0x70), store(x87::add(x87::mul(pad, two), t)));
+        let t = x87::add(remap(h, super::REMAP_Y2, y835), c32);
+        h.write(f(0x50), t.to_bits());
+        let pad = remap(h, super::REMAP_Y2, c20);
+        h.write(at(0x74), store(x87::add(x87::mul(pad, two), t)));
+        let min = i32::from(h.read::<i16>(h.rebase(super::GIL_MIN_W)));
+        h.write(f(0x4c), min);
+        let minf = f64::from(min);
+        h.write(f(0x50), minf.to_bits());
+        let d = x87::sub(load(h.read(at(0x70))), load(h.read(at(0x68))));
+        if d < minf {
+            let x68 = load(h.read(at(0x68)));
+            h.write(at(0x70), store(x87::add(minf, x68)));
+        }
+        let pad = remap(h, super::REMAP_X2, c30);
+        let x68 = load(h.read(at(0x68)));
+        h.write(at(0x78), store(x87::add(pad, x68)));
+        let pad = remap(h, super::REMAP_Y2, c20);
+        let y6c = load(h.read(at(0x6c)));
+        let ty = store(x87::add(pad, y6c));
+        h.write(f(0x4c), ty);
+        h.write(at(0x7c), ty);
+        let x78 = load(h.read(at(0x78)));
+        h.write(at(0x80), store(x87::add(load(column), x78)));
+        h.write(at(0x84), store(x87::add(load(ty), c32)));
+        let hgt = store(x87::sub(load(h.read(at(0x74))), load(h.read(at(0x6c)))));
+        h.write(f(0x4c), hgt);
+        let wid = store(x87::sub(load(h.read(at(0x70))), load(h.read(at(0x68)))));
+        h.write(f(0x4c), wid);
+        let wy = store(load(h.read(at(0x6c))));
+        let wx = store(load(h.read(at(0x68))));
+        cdecl(h, super::NET_WINDOW, &[wx, wy, wid, hgt, 0]);
+        let sc = [0x68u32, 0x6c, 0x70, 0x74].map(|o| {
+            let v: u32 = h.read(at(o));
+            ftol(h, load(v))
+        });
+        cdecl(h, super::MAKE_PKT_SCISSOR, &sc);
+        let mut x = store(load(h.read(at(0x80))));
+        h.write(f(0x48), x);
+        let y = store(load(h.read(at(0x7c))));
+        h.write(f(0x54), y);
+        let alpha = gil_const(h, super::GIL_ALPHA);
+        let text: u32 = h.read(at(0xb4));
+        let tx = store(load(h.read(at(0x78))));
+        cdecl(
+            h,
+            super::BTL_EASY_FONT,
+            &[text, tx, y, 0, alpha, 0x3f80_0000],
+        );
+        let six = gil_f64(h, super::GIL_STEP);
+        let digit = i32::from(h.read::<i16>(h.rebase(super::GIL_DIGIT)));
+        h.write(f(0x4c), digit);
+        h.write(f(0x50), f64::from(digit).to_bits());
+        let bx = store(x87::sub(
+            x87::sub(load(x), six),
+            x87::mul(six, f64::from(digit)),
+        ));
+        h.write(f(0x4c), bx);
+        let box_w = gil_const(h, super::GIL_BOX_W);
+        let box_h = gil_const(h, super::GIL_BOX_H);
+        cdecl(
+            h,
+            super::CROSS_BOX,
+            &[bx, y, box_w, box_h, 0x8000_8080, 0x8000_8080],
+        );
+        let c18 = gil_f64(h, super::GIL_LINE);
+        let y2 = store(x87::sub(x87::add(load(y), c18), two));
+        h.write(f(0x60), y2);
+        let text: u32 = h.read(at(0xb8));
+        let tx = store(load(h.read(at(0x78))));
+        cdecl(
+            h,
+            super::BTL_EASY_FONT,
+            &[text, tx, y2, 0, alpha, 0x3f80_0000],
+        );
+        let amount: u32 = h.read(h.rebase(super::GIL_AMOUNT));
+        cdecl(h, super::INT_TO_MES, &[amount, f(0x44), 9, 0]);
+        let left: u32 = h.read(h.rebase(super::GIL_LEFT));
+        cdecl(h, super::INT_TO_MES, &[left, f(0x24), 9, 0]);
+        for k in 0..9u32 {
+            h.write(f(0x4c), 9 - k);
+            x = store(x87::sub(load(x), six));
+            h.write(f(0x48), x);
+            let a = f(0x3c).wrapping_sub(k);
+            cdecl(h, super::BTL_EASY_FONT, &[a, x, y, 0, alpha, 0x3f80_0000]);
+            let b = f(0x1c).wrapping_sub(k);
+            cdecl(h, super::BTL_EASY_FONT, &[b, x, y2, 0, alpha, 0x3f80_0000]);
+            h.write(f(0x4c), 8 - k);
+            h.write(a, 0u8);
+            h.write(b, 0u8);
+        }
+        Some(0)
+    }
+
+    /// The f64 constant at `sym`.
+    fn gil_f64(h: &impl Host, sym: u32) -> f64 {
+        f64::from_bits(h.read::<u64>(h.rebase(sym)))
+    }
+
+    /// The f32 constant at `sym` through `fld`/`fstp`: its bits.
+    fn gil_const(h: &impl Host, sym: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(h.read(h.rebase(sym))))
+    }
+
+    /// `TOMkpShapePartIndexXYWHC2(id, part, x, y, w, h, c0, c1)` with its
+    /// frame at `ebp` (`x`, `y`, `w`, `h` f32 bits): part `part` of the
+    /// shape layout `id`. The layout (`TOCopyWindowLayout_008fa7d0(id)`
+    /// on texture 0x3e00 for 0..198 and, less 200, 200..398;
+    /// `_008fa450(id - 400)` on 0x3f00 for 400..598; `_008fa790(id -
+    /// 600)` on 0x3dc0 for 600..649; each with `TOGetShapTextureName` and
+    /// `TOGetImageWH` into `ebp - 0xc4`/`- 0xc8`) is a count and 12-byte
+    /// parts: u8 u, v (`+0`, `+1`), i8 offsets (`+2`, `+3`), u16 width and
+    /// height (`+4`, `+6`), i16 flips (`+8`, `+0xa`: 1 swaps the edges).
+    /// Other ids read a never-written frame word for the layout and the
+    /// texture name (see the junk read below).
+    ///
+    /// A zero `w` (`h`) takes the part's own size times `g_TOScaleX`
+    /// (`Y`) and its offset, else `w * g_TOScaleX` from `x` with the uv
+    /// edge one texel in. Clipped by `BeginScissor_XYUV`, the uv over the
+    /// image size (0.01 for a zero u), drawn by
+    /// `graphicDrawUIElement(ebp - 0x9c, name, 1, 0, 0)` with the colour bytes of `c0`, `c1`.
+    /// Returns `eax`: the layout when `part` is past the count, 0 when
+    /// clipped, else the draw's.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn shape_part_index<H: Host>(h: &mut H, ebp: u32, a: [u32; 8]) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        let [id, part, x, y, w, ht, c0, c1] = a;
+        let f = |o: u32| ebp.wrapping_sub(o);
+        h.write(f(0xc), 0u32);
+        h.write(f(8), 0u32);
+        let ranges: [(u32, u32, u32, u32); 4] = [
+            (0, 0xc6, 0x3e00, super::SHAPE_INFO),
+            (200, 0xc6, 0x3e00, super::SHAPE_INFO),
+            (400, 0xc6, 0x3f00, super::LAYOUT_8FA450),
+            (600, 0x31, 0x3dc0, super::LAYOUT_8FA790),
+        ];
+        // junk read: [ebp-0xa0] never written; 0 (brief 2026-10-24): the
+        // layout and the texture name of ids 199, 399, 599 and 650 up (the
+        // port then reads the count at address 0)
+        let mut layout = 0u32;
+        let mut name = 0u32;
+        h.write(f(0xb4), name);
+        for (base, span, tex, copy) in ranges {
+            let n = id.wrapping_sub(base);
+            if n > span {
+                continue;
+            }
+            name = cdecl(h, super::SHAP_TEXTURE_NAME, &[tex]);
+            h.write(f(0xb4), name);
+            cdecl(h, super::IMAGE_WH, &[tex, f(0xc4), f(0xc8)]);
+            layout = cdecl(h, copy, &[n]);
+        }
+        let sx = load(h.read(h.rebase(super::WIDTH_FACTOR)));
+        let sy = load(h.read(h.rebase(super::HEIGHT_FACTOR)));
+        let (xf, yf, wf, hf) = (load(x), load(y), load(w), load(ht));
+        let sw = store(x87::mul(sx, wf));
+        h.write(f(0xa8), sw);
+        let sh = store(x87::mul(sy, hf));
+        h.write(f(0xac), sh);
+        let count: u32 = h.read(layout);
+        if part >= count {
+            return layout;
+        }
+        let e = layout.wrapping_add(4).wrapping_add(part.wrapping_mul(12));
+        let flip_x = h.read::<u16>(e.wrapping_add(8)) == 1;
+        let flip_y = h.read::<u16>(e.wrapping_add(0xa)) == 1;
+        // the x edges ([ebp-0xc0], [ebp-0xb0]) and the y edges ([ebp-0xb8],
+        // [ebp-0xbc]): with the part's size from its offset, or the given
+        // size from the given corner
+        let (x0, x1) = if wf == 0.0 {
+            let pw = f64::from(h.read::<u16>(e.wrapping_add(4)));
+            let pw = store(x87::mul(pw, sx));
+            h.write(f(0xa8), pw);
+            let dx = f64::from(h.read::<i8>(e.wrapping_add(2)));
+            frame_f64(h, f(0xa4), dx);
+            let edge = x87::add(xf, dx);
+            if flip_x {
+                (store(x87::add(load(pw), edge)), store(edge))
+            } else {
+                (store(edge), store(x87::add(edge, load(pw))))
+            }
+        } else if flip_x {
+            (store(x87::add(load(sw), xf)), store(xf))
+        } else {
+            (store(xf), store(x87::add(load(sw), xf)))
+        };
+        h.write(f(0xc0), x0);
+        h.write(f(0xb0), x1);
+        let (y0, y1) = if hf == 0.0 {
+            let ph = f64::from(h.read::<u16>(e.wrapping_add(6)));
+            let ph = store(x87::mul(ph, sy));
+            h.write(f(0xac), ph);
+            let dy = f64::from(h.read::<i8>(e.wrapping_add(3)));
+            frame_f64(h, f(0xa4), dy);
+            let edge = x87::add(yf, dy);
+            if flip_y {
+                (store(x87::add(load(ph), edge)), store(edge))
+            } else {
+                (store(edge), store(x87::add(edge, load(ph))))
+            }
+        } else if flip_y {
+            (store(x87::add(load(sh), yf)), store(yf))
+        } else {
+            (store(yf), store(x87::add(load(sh), yf)))
+        };
+        h.write(f(0xb8), y0);
+        h.write(f(0xbc), y1);
+        let u = u32::from(h.read::<u8>(e));
+        let v = u32::from(h.read::<u8>(e.wrapping_add(1)));
+        h.write(f(0xd8), int_to_f32(u));
+        h.write(f(0xd4), int_to_f32(v));
+        let pw = u32::from(h.read::<u16>(e.wrapping_add(4)));
+        let u1 = if wf == 0.0 {
+            pw.wrapping_add(u)
+        } else {
+            pw.wrapping_sub(1).wrapping_add(u)
+        };
+        h.write(f(0xa0), u1);
+        h.write(f(0xd0), int_to_f32(u1));
+        let ph = u32::from(h.read::<u16>(e.wrapping_add(6)));
+        let v1 = if hf == 0.0 {
+            ph.wrapping_add(v)
+        } else {
+            ph.wrapping_sub(1).wrapping_add(v)
+        };
+        h.write(f(0xa0), v1);
+        h.write(f(0xcc), int_to_f32(v1));
+        let p = [0xc0u32, 0xb8, 0xb0, 0xbc, 0xd8, 0xd4, 0xd0, 0xcc].map(f);
+        if cdecl(h, super::SCISSOR_XYUV, &p) == 0 {
+            return 0;
+        }
+        let rd = |h: &H, o: u32| -> u32 { h.read(ebp.wrapping_sub(o)) };
+        let x0 = rd(&*h, 0xc0);
+        h.write(f(0x9c), store(load(x0)));
+        let y0 = rd(&*h, 0xb8);
+        h.write(f(0x98), store(load(y0)));
+        for (k, c) in (0u32..).zip([c0, c1]) {
+            let at = if k == 0 { 0x8c } else { 0x6c };
+            for b in 0..4u32 {
+                h.write(f(at - 4 * b), (c >> (8 * b)) & 0xff);
+            }
+        }
+        h.write(f(0x14), 0u32);
+        let (iw, ih) = (rd(&*h, 0xc4), rd(&*h, 0xc8));
+        let u0 = fdiv32(rd(&*h, 0xd8), iw);
+        h.write(f(0x94), u0);
+        h.write(f(0x90), fdiv32(rd(&*h, 0xd4), ih));
+        let x1 = rd(&*h, 0xb0);
+        h.write(f(0x7c), store(load(x1)));
+        let y1 = rd(&*h, 0xbc);
+        h.write(f(0x78), store(load(y1)));
+        let u1 = fdiv32(rd(&*h, 0xd0), iw);
+        h.write(f(0x74), u1);
+        h.write(f(0x70), fdiv32(rd(&*h, 0xcc), ih));
+        let tiny = gil_const(h, super::UV_FLOOR);
+        if load(u0) == 0.0 {
+            h.write(f(0x94), tiny);
+        }
+        if load(u1) == 0.0 {
+            h.write(f(0x74), tiny);
+        }
+        let name = rd(&*h, 0xb4);
+        cdecl(h, super::DRAW_UI_ELEMENT, &[f(0x9c), name, 1, 0, 0])
+    }
+
+    /// An f64 stored at `at` (`fstp qword`).
+    fn frame_f64(h: &mut impl Host, at: u32, v: f64) {
+        h.write(at, v.to_bits());
+    }
+
+    /// One `DrawCrossButtonIcon(id, f32 x, f32 y, w, h)` of
+    /// [`pad_button_data`]: `w`, `h` remapped from the f32 constants at
+    /// `w_sym`, `h_sym` (`h` first); with `dy_sym`, `y` moves down by
+    /// `graphicUiRemapY2(dy)` (unrounded, summed with `f32 y`). The
+    /// argument slot keeps `f32 y` (or the moved y), then `f32 x`.
+    fn pad_icon(h: &mut impl Host, slot: u32, id: u32, xy: [u32; 2], sizes: [u32; 3]) {
+        use ffx_bridge::x87::{add, load, store};
+        let [w_sym, h_sym, dy_sym] = sizes;
+        let ht = gil_const(h, h_sym);
+        let ht = remap_f32(h, super::REMAP_Y2, ht);
+        let w = gil_const(h, w_sym);
+        let w = remap_f32(h, super::REMAP_X2, w);
+        let yf = int_to_f32(xy[1]);
+        h.write(slot, yf);
+        let y = if dy_sym == 0 {
+            yf
+        } else {
+            let dy = gil_const(h, dy_sym);
+            let dy = remap(h, super::REMAP_Y2, dy);
+            let y = store(add(dy, load(yf)));
+            h.write(slot, y);
+            y
+        };
+        let x = int_to_f32(xy[0]);
+        h.write(slot, x);
+        cdecl(h, super::CROSS_BUTTON_ICON, &[id, x, y, w, ht]);
+    }
+
+    /// `TOMkpPadButtonData(flags, x, y)` with its argument slots at
+    /// `slots` (the first keeps float temporaries): the pad buttons in
+    /// `flags` as cross-menu icons at `(x, y)` (ints). 54x54 icons
+    /// (`graphicUiRemapX2`/`Y2(54)`): 0x1000/0x2000/0x4000/0x8000 the
+    /// d-pad (0x259, 0x25b, 0x25d, 0x25f), 0x10 0x260, 0x20 and 0x40
+    /// confirm and cancel (0x262 / 0x261, swapped unless
+    /// `TOGetSystemConfirmButtonAssign` is 1), 0x80 0x263; 64x40 icons 7
+    /// lower (`Y2(7)`): 4, 8, 1, 2 (0x264..0x267); shapes
+    /// `TOMkpShapeXY(0x268 / 0x269, x, y)` for 0x800 / 0x100. Then a tail
+    /// jump to `graphicResetButtonIconScale`: its `eax`.
+    pub fn pad_button_data(h: &mut impl Host, slots: u32, flags: u32, x: u32, y: u32) -> u32 {
+        let big = [super::PAD_ICON, super::PAD_ICON, 0];
+        let small = [super::PAD_SMALL_W, super::PAD_SMALL_H, super::PAD_SMALL_DY];
+        for (bit, id) in [
+            (0x1000u32, 0x259u32),
+            (0x2000, 0x25b),
+            (0x4000, 0x25d),
+            (0x8000, 0x25f),
+            (0x10, 0x260),
+        ] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], big);
+            }
+        }
+        let (confirm, cancel) = if cdecl(h, super::CONFIRM_ASSIGN, &[]) == 1 {
+            (0x262, 0x261)
+        } else {
+            (0x261, 0x262)
+        };
+        for (bit, id) in [(0x20u32, confirm), (0x40, cancel), (0x80, 0x263)] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], big);
+            }
+        }
+        for (bit, id) in [(4u32, 0x264u32), (8, 0x265), (1, 0x266), (2, 0x267)] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], small);
+            }
+        }
+        for (bit, id) in [(0x800u32, 0x268u32), (0x100, 0x269)] {
+            if flags & bit != 0 {
+                cdecl(h, super::MKP_SHAPE_XY, &[id, x, y]);
+            }
+        }
+        cdecl(h, super::RESET_ICON_SCALE, &[])
+    }
+
+    /// `(e - lead) / lead` clamped to `0..=1` as the change window's
+    /// timers do (a NaN passes through), stored as an f32.
+    fn change_ratio(q: u32) -> u32 {
+        use ffx_bridge::x87::load;
+        let v = load(q);
+        if v < 0.0 {
+            0
+        } else if v > 1.0 {
+            0x3f80_0000
+        } else {
+            q
+        }
+    }
+
+    /// `TODrawWaitBtlWinChange(w)` with its argument slot at `slot` (float
+    /// temporaries; the control word goes into its upper half): the
+    /// party-change window. The open time `+0xe0` (`graphicGetTime() -
+    /// +0xdc` while `+0xdc > 0`, else 0). Within the first 0.2 s (f64
+    /// `0x00b3eb60`) only the opening ring: `TOMkpShapeXYWHUVC2(-1, X2(F +
+    /// 153), Y2(F + 201), X2(54 p), Y2(54 p), 1759, 1.0, 1835, 77, grey
+    /// x2)` with `p = t / 0.2` clamped, `F = (1 - p) * 27`. Later, `p =
+    /// (t - 0.2) / 0.2` clamped: one 344 x 116 window per member of the
+    /// i16 list `[+0x20]` (count `0x0134080c`) at `(180, 240 + p * 114 k)`
+    /// kind 4, `TOBtlDrawChangePrim(member, ftol X2(180), ftol Y2(y))`,
+    /// the window again kind 3 for the cursor `+0x42` else 2; the two
+    /// rings turning with `graphicGetTime`; the two bars sliding in with
+    /// `p` (`X2(132 p - 25)` and `X2(132 p + 38)`) in the colour
+    /// `trunc(128 p) << 24 | 0x808080`. Returns 0.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn wait_win_change(h: &mut impl Host, slot: u32, w: u32) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        const GREY: u32 = 0x8080_8080;
+        let start: u32 = h.read(w.wrapping_add(0xdc));
+        let e = if 0.0 < load(start) {
+            let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+            let start: u32 = h.read(w.wrapping_add(0xdc));
+            store(x87::sub(t, load(start)))
+        } else {
+            0
+        };
+        h.write(w.wrapping_add(0xe0), e);
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        h.write(slot, e);
+        let lead = gil_f64(h, super::CHANGE_LEAD);
+        if lead > load(e) {
+            let q = store(x87::div(load(e), lead));
+            h.write(slot, q);
+            let p = change_ratio(q);
+            h.write(slot, p);
+            let s54 = store(x87::mul(gil_f64(h, super::GIL_LABEL_GAP), load(p)));
+            h.write(slot, s54);
+            let far = x87::mul(x87::sub(1.0, load(p)), gil_f64(h, super::CHANGE_SLIDE));
+            let ht = remap_f32(h, super::REMAP_Y2, s54);
+            let wd = remap_f32(h, super::REMAP_X2, s54);
+            let y = store(x87::add(far, gil_f64(h, super::CHANGE_RING_Y)));
+            h.write(slot, y);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = store(x87::add(far, gil_f64(h, super::CHANGE_RING_X)));
+            h.write(slot, x);
+            let x = remap_f32(h, super::REMAP_X2, x);
+            let uv = [0x00b5_f038u32, 1, 0x00b5_f03c, 0x00b5_eecc].map(|s| libra_const(h, s));
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    uv[0],
+                    uv[1],
+                    uv[2],
+                    uv[3],
+                    GREY,
+                    GREY,
+                ],
+            );
+            return 0;
+        }
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        let q = store(x87::div(x87::sub(load(e), lead), lead));
+        h.write(slot, q);
+        let p = change_ratio(q);
+        h.write(slot, p);
+        let count = h.read::<i32>(h.rebase(super::CHANGE_COUNT));
+        let mut k = 0i32;
+        let mut step = 0i32;
+        let base = gil_f64(h, super::CHANGE_ROW0);
+        while k < count {
+            let i = int_to_f32(step.cast_unsigned());
+            let y = store(x87::add(base, x87::mul(load(p), load(i))));
+            for pass in 0..2 {
+                let kind = if pass == 0 {
+                    4
+                } else if k == i32::from(h.read::<i16>(w.wrapping_add(0x42))) {
+                    3
+                } else {
+                    2
+                };
+                let ht = gil_const(h, super::CHANGE_WIN_H);
+                let ht = remap_f32(h, super::REMAP_Y2, ht);
+                let wd = gil_const(h, super::CHANGE_WIN_W);
+                let wd = remap_f32(h, super::REMAP_X2, wd);
+                let yy = remap_f32(h, super::REMAP_Y2, y);
+                let xx = gil_const(h, super::CHANGE_WIN_X);
+                let xx = remap_f32(h, super::REMAP_X2, xx);
+                cdecl(h, super::NET_WINDOW, &[xx, yy, wd, ht, kind]);
+                if pass == 0 {
+                    let ya = remap(h, super::REMAP_Y2, y);
+                    let ya = ftol(h, ya);
+                    let xx = gil_const(h, super::CHANGE_WIN_X);
+                    let xa = remap(h, super::REMAP_X2, xx);
+                    let xa = ftol(h, xa);
+                    let members: u32 = h.read(w.wrapping_add(0x20));
+                    let member =
+                        h.read::<i16>(members.wrapping_add(k.cast_unsigned().wrapping_mul(2)));
+                    cdecl(
+                        h,
+                        super::CHANGE_PRIM,
+                        &[i32::from(member).cast_unsigned(), xa, ya],
+                    );
+                }
+            }
+            k += 1;
+            step = step.wrapping_add(0x72);
+        }
+        for ring in 0..2usize {
+            let t = h.call_sym_st0(super::GET_TIME, Conv::Cdecl, &[]);
+            let angle = if ring == 0 { t } else { -t };
+            let c = super::CHANGE_RINGS[ring];
+            let rw = libra_const(h, c[2]);
+            let args = [
+                u32::MAX,
+                libra_const(h, c[0]),
+                libra_const(h, c[1]),
+                rw,
+                rw,
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                libra_const(h, c[6]),
+                GREY,
+                GREY,
+                angle.to_bits(),
+            ];
+            cdecl(h, super::ROTATE_SHAPE, &args);
+        }
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        let q = store(x87::div(x87::sub(load(e), lead), lead));
+        h.write(slot, q);
+        let p = change_ratio(q);
+        h.write(slot, p);
+        let scaled = x87::mul(gil_f64(h, super::CHANGE_ALPHA), load(p));
+        // fistp under round-to-zero: an out-of-range value (NaN included)
+        // gives the integer indefinite, whose low word is 0
+        let a = fistp_trunc_low(scaled);
+        let colour = (a << 24).wrapping_add(0x0080_8080);
+        let slide = x87::mul(load(p), gil_f64(h, super::CHANGE_BAR));
+        for bar in 0..2usize {
+            let c = super::CHANGE_BARS[bar];
+            let uv = [
+                0u32,
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+            ];
+            let ht = libra_const(h, c[2]);
+            let ht = remap_f32(h, super::REMAP_Y2, ht);
+            let wd = libra_const(h, c[1]);
+            let wd = remap_f32(h, super::REMAP_X2, wd);
+            let y = libra_const(h, c[0]);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let d = gil_f64(h, super::CHANGE_BAR_X[bar]);
+            let x = store(if bar == 0 {
+                x87::sub(slide, d)
+            } else {
+                x87::add(slide, d)
+            });
+            h.write(slot, x);
+            let x = remap_f32(h, super::REMAP_X2, x);
+            let id = if bar == 0 { 400 } else { 0x1ac };
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[id, x, y, wd, ht, uv[0], uv[1], uv[2], uv[3], colour, colour],
+            );
+        }
+        0
+    }
+
+    /// `fistp` under round-to-zero of `v`, low word (the integer
+    /// indefinite's low word, 0, for NaN and out-of-range values).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn fistp_trunc_low(v: f64) -> u32 {
+        if v.abs() < 9.223_372_036_854_776e18 {
+            v.trunc() as i64 as u32
+        } else {
+            0
+        }
+    }
+
+    /// `TODrawWaitBtlWinWeapon(w)` with its argument slot at `slot` (the
+    /// ability window's x goes there): the weapon-change wait window. The
+    /// open time `+0xe0` as in [`wait_win_change`]. A pulsing cursor plate
+    /// (alpha `trunc(cos(5 graphicGetTime()) * 32 + 96)`) at `X2(154)`,
+    /// `Y2(row * 52 + 835)` (row = (`+0x42 - +0x40`) / `+0x38`), width
+    /// `f32 +0x62` unremapped. Three bars sliding in one after the other
+    /// (x = `t * 574 / 0.1 - 420` clamped to -420..154, `t` 0.1 less per
+    /// bar) with their shadows. From 0.3 s the water waves (four
+    /// `DrawWaterWaveShapeC2` per row). Then `TOBtlDrawCommandWindow(w)`,
+    /// `TOBtlSetCurPos(0, ftol(X2(420) * col + ftol(+0x78)), ftol(Y2(row *
+    /// 52 + 5) + +0x7c))` and, unless the cursor's entry of the u16 list
+    /// `[+0x20]` is 0xff, `TOBtlDrawWeaponAbilityWindow(entry, X2(30) +
+    /// +0x70, +0x6c)`. Returns 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn wait_win_weapon(h: &mut impl Host, slot: u32, w: u32) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        let at = |o: u32| w.wrapping_add(o);
+        let start: u32 = h.read(at(0xdc));
+        let e = if 0.0 < load(start) {
+            let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+            let start: u32 = h.read(at(0xdc));
+            store(x87::sub(t, load(start)))
+        } else {
+            0
+        };
+        h.write(at(0xe0), e);
+        let mut left = store(load(h.read(at(0xe0))));
+        // the cursor plate
+        let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+        let arg = x87::mul(t, gil_f64(h, super::WPN_PULSE));
+        let cos = h.call_intrinsic(h.rebase(super::CI_COS), arg);
+        let pulse = x87::add(
+            x87::mul(f64::from(cos), gil_f64(h, super::GIL_ROW)),
+            gil_f64(h, super::WPN_PULSE_BASE),
+        );
+        let alpha = (fistp_trunc_low(pulse) << 24).wrapping_add(0x0080_8080);
+        let plate = [
+            super::WPN_PLATE_H,
+            super::WPN_PLATE_U0,
+            super::WPN_PLATE_V0,
+            super::WPN_PLATE_U1,
+            super::WPN_PLATE_V1,
+        ]
+        .map(|s| gil_const(h, s));
+        let ht = remap_f32(h, super::REMAP_Y2, plate[0]);
+        let width = int_to_f32(i32::from(h.read::<i16>(at(0x62))).cast_unsigned());
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let first = i32::from(h.read::<i16>(at(0x40)));
+        let columns = i32::from(h.read::<i16>(at(0x38)));
+        let row = cursor
+            .wrapping_sub(first)
+            .checked_div(columns)
+            .unwrap_or(0)
+            .wrapping_mul(0x34);
+        let c835 = gil_f64(h, super::WPN_ROW0);
+        let y = store(x87::add(load(int_to_f32(row.cast_unsigned())), c835));
+        let y = remap_f32(h, super::REMAP_Y2, y);
+        let x154 = gil_const(h, super::GIL_X);
+        let x = remap_f32(h, super::REMAP_X2, x154);
+        cdecl(
+            h,
+            super::SHAPE_XYWHUV_C2,
+            &[
+                u32::MAX,
+                x,
+                y,
+                width,
+                ht,
+                plate[1],
+                plate[2],
+                plate[3],
+                plate[4],
+                alpha,
+                alpha,
+            ],
+        );
+        // the three sliding bars and their shadows
+        let speed = gil_f64(h, super::WPN_SPEED);
+        let tenth = gil_f64(h, super::WPN_TENTH);
+        let from = gil_f64(h, super::WPN_FROM);
+        let low = gil_f64(h, super::WPN_LOW);
+        for k in 0..3u32 {
+            let row = int_to_f32(k * 0x34);
+            let raw = x87::sub(x87::div(x87::mul(speed, load(left)), tenth), from);
+            let mut bx = store(raw);
+            if load(bx) < low {
+                bx = gil_const(h, super::WPN_LOW32);
+            } else {
+                let hi = gil_const(h, super::GIL_X);
+                if load(hi) < load(bx) {
+                    bx = hi;
+                }
+            }
+            left = store(x87::sub(load(left), tenth));
+            let fifty = gil_const(h, super::WPN_PLATE_H);
+            let u1 = gil_const(h, super::WPN_SHADOW_U1);
+            let ht = remap_f32(h, super::REMAP_Y2, fifty);
+            let wd = gil_const(h, super::WPN_SHADOW_W);
+            let wd = remap_f32(h, super::REMAP_X2, wd);
+            let y = store(x87::add(load(row), c835));
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = store(x87::sub(load(bx), gil_f64(h, super::WPN_SHADOW_DX)));
+            let x = remap_f32(h, super::REMAP_X2, x);
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    0,
+                    0,
+                    u1,
+                    fifty,
+                    0x6080_8080,
+                    0x6080_8080,
+                ],
+            );
+            let kf = x87::mul(load(int_to_f32(k)), gil_f64(h, super::WPN_V_STEP));
+            let v1 = store(x87::add(kf, gil_f64(h, super::WPN_V1)));
+            let u1 = gil_const(h, super::WPN_BAR_U1);
+            let v0 = store(x87::add(kf, gil_f64(h, super::WPN_V0)));
+            let u0 = gil_const(h, super::WPN_BAR_U0);
+            let bh = gil_const(h, super::WPN_BAR_H);
+            let ht = remap_f32(h, super::REMAP_Y2, bh);
+            let bw = gil_const(h, super::WPN_BAR_W);
+            let wd = remap_f32(h, super::REMAP_X2, bw);
+            let y = store(x87::add(load(row), gil_f64(h, super::WPN_BAR_Y)));
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = remap_f32(h, super::REMAP_X2, bx);
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    0x4080_8080,
+                    0x4080_8080,
+                ],
+            );
+        }
+        // the water waves, from 0.3 s
+        let gate = load(gil_const(h, super::WPN_WAVES));
+        let opened = load(h.read(at(0xe0)));
+        if gate <= opened {
+            for k in 0..3u32 {
+                let n = load(int_to_f32(k + 1));
+                let short = store(x87::mul(gil_f64(h, super::WPN_WAVE_20), n));
+                let zero = x87::mul(0.0, load(int_to_f32(k)));
+                let row = int_to_f32(k * 0x34);
+                let y1 = store(x87::add(load(row), c835));
+                let shifted = store(x87::add(zero, gil_f64(h, super::WPN_WAVE_210)));
+                let long = store(x87::mul(n, gil_f64(h, super::WPN_WAVE_50)));
+                let y2 = store(x87::add(load(row), gil_f64(h, super::WPN_WAVE_ROW2)));
+                let zero = store(zero);
+                for (len, y, a, left_side) in [
+                    (short, y1, zero, true),
+                    (short, y1, shifted, false),
+                    (long, y2, zero, true),
+                    (long, y2, shifted, false),
+                ] {
+                    let c40 = gil_const(h, super::PAD_SMALL_H);
+                    let c3 = gil_const(h, super::WPN_WAVE_H);
+                    let c210 = gil_const(h, super::WPN_WAVE_W);
+                    let ht = remap_f32(h, super::REMAP_Y2, c3);
+                    let wd = remap_f32(h, super::REMAP_X2, c210);
+                    let yy = remap_f32(h, super::REMAP_Y2, y);
+                    let xs = gil_const(
+                        h,
+                        if left_side {
+                            super::GIL_X
+                        } else {
+                            super::WPN_WAVE_X2
+                        },
+                    );
+                    let xx = remap_f32(h, super::REMAP_X2, xs);
+                    let (ca, cb) = if left_side {
+                        (0x0080_8080, 0x4080_8080)
+                    } else {
+                        (0x4080_8080, 0x0080_8080)
+                    };
+                    cdecl(
+                        h,
+                        super::WATER_WAVE,
+                        &[xx, yy, wd, ht, a, len, c210, c3, c40, c40, ca, cb],
+                    );
+                }
+            }
+        }
+        // the cursor and the ability window
+        cdecl(h, super::DRAW_COMMAND_WINDOW, &[w]);
+        let x78: u32 = h.read(at(0x78));
+        let base = ftol(h, load(x78));
+        let c420 = gil_const(h, super::WPN_CURSOR_W);
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let columns = i32::from(h.read::<i16>(at(0x38)));
+        let step = remap(h, super::REMAP_X2, c420);
+        let col = int_to_f32(cursor.checked_rem(columns).unwrap_or(0).cast_unsigned());
+        let cx = x87::add(x87::mul(step, load(col)), f64::from(base.cast_signed()));
+        let cx = ftol(h, cx);
+        let first = i32::from(h.read::<i16>(at(0x40)));
+        let ry = cursor
+            .wrapping_sub(first)
+            .checked_div(columns)
+            .unwrap_or(0)
+            .wrapping_mul(0x34)
+            .wrapping_add(5);
+        let ry = int_to_f32(ry.cast_unsigned());
+        let cy = remap(h, super::REMAP_Y2, ry);
+        let y7c: u32 = h.read(at(0x7c));
+        let cy = ftol(h, x87::add(cy, load(y7c)));
+        cdecl(h, super::SET_CUR_POS, &[0, cx, cy]);
+        let list: u32 = h.read(at(0x20));
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let entry = list.wrapping_add(cursor.cast_unsigned().wrapping_mul(2));
+        if h.read::<u16>(entry) != 0xff {
+            let y6c = store(load(h.read(at(0x6c))));
+            let c30 = gil_const(h, super::GIL_PAD_X);
+            let ax = remap(h, super::REMAP_X2, c30);
+            let ax = store(x87::add(ax, load(h.read(at(0x70)))));
+            h.write(slot, ax);
+            let list: u32 = h.read(at(0x20));
+            let cursor = i32::from(h.read::<i16>(at(0x42)));
+            let id =
+                i32::from(h.read::<i16>(list.wrapping_add(cursor.cast_unsigned().wrapping_mul(2))));
+            cdecl(
+                h,
+                super::ABILITY_WINDOW,
+                &[id.cast_unsigned(), store(load(ax)), y6c],
+            );
+        }
+        0
     }
 }
