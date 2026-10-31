@@ -162,6 +162,19 @@ pub fn start_part<G: Game>(
     index: u32,
     below: &[u32],
 ) -> Vec<u32> {
+    start_part_eax(g, img, f, obj, ops, index, below).0
+}
+
+/// [`start_part`], also giving the wrapper's `eax` (the lock pointer).
+pub fn start_part_eax<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    obj: u32,
+    ops: [u32; 5],
+    index: u32,
+    below: &[u32],
+) -> (Vec<u32>, u32) {
     let w = |off: u32| img.word(f + off);
     let [gp, item, go, t941, call] = ops;
     let p = g.read::<u32>(w(gp));
@@ -174,9 +187,9 @@ pub fn start_part<G: Game>(
     let table = g.call(t, 0, &stack).eax;
     let program = g.read::<u32>(table.wrapping_add(index));
     let wrapper = img.rel32_target(f + call);
-    crate::opu_parts::start_part(g, img, wrapper, obj, 0x1000, program, 1);
+    let eax = crate::opu_parts::start_part(g, img, wrapper, obj, 0x1000, program, 1);
     stack.splice(0..0, [program, 1, 0]);
-    stack
+    (stack, eax)
 }
 
 /// The operands of a [`draw_restart`] copy, in its code's order.
@@ -247,4 +260,106 @@ pub fn draw_restart<G: Game>(g: &mut G, img: &Image, f: u32, obj: u32, o: &DrawO
     start_part(g, img, f, obj, o.start, o.index, &[obj]);
     let lock = g.read::<u32>(w(o.lock3));
     g.write::<u32>(lock, 0);
+}
+
+/// The particle effects' common start-up head in the layout most own
+/// start-ups share (`magic_0484` 0x10001520, `magic_0490` 0x10001130,
+/// `magic_0496`, `magic_0497`, `magic_0498`, ...; operand offsets fixed):
+/// slot 803 `(0x1000000, 0x10)` the buffer (globals `+0x19`, and `+0x23`
+/// half a MiB on), the stack argument to `+0x2b`; the name (`+0x35`) to
+/// `+0x41` and slot 718, slot 222 `(name, 0, 1000, 0x2000)`, slot 719
+/// `(name, 8, 0)` the data `d` (`+0x8c`); slot 711 `(d, PARTS, 0)` with
+/// the game flag `*G_LOCK` 1; slot 710 `(ITEM, d, buf, 0x80000)`; three
+/// slot 941 `(d[5 + k])` the program tables (`+0xec`, `+0x106`,
+/// `+0x12c`); the 0x110-byte block at `+0x127` cleared (`memset`).
+/// Every call passes the words on the original's stack. Returns the
+/// words left on it (memset's three, 941's three).
+pub fn start_up_head<G: Game>(g: &mut G, img: &Image, fr: &crate::Frame) -> Vec<u32> {
+    let f = fr.at;
+    let w = |off: u32| img.word(f + off);
+    let t = slot_target(g, w(0x4), 803);
+    let mut stack = vec![0x0100_0000, 0x10];
+    let buf = g.call(t, 0, &stack).eax;
+    g.write::<u32>(w(0x19), buf);
+    g.write::<u32>(w(0x23), buf.wrapping_add(0x8_0000));
+    let arg = fr.arg(g, 0);
+    g.write::<u32>(w(0x2b), arg);
+    let t = slot_target(g, w(0x30), 718);
+    stack.insert(0, w(0x35));
+    g.write::<u32>(w(0x41), w(0x45));
+    // call width: 17
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x4c), 222);
+    let name = g.read::<u32>(w(0x64));
+    stack.splice(0..0, [name, 0, 0x3e8, 0x2000]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    let t = slot_target(g, w(0x6b), 719);
+    let name = g.read::<u32>(w(0x7b));
+    stack.splice(0..0, [name, 8, 0]);
+    // call width: 17
+    let d = g.call(t, 0, &stack).eax;
+    let lock = g.read::<u32>(w(0x83));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(w(0x8c), d);
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(0x97), 711);
+    stack.splice(0..0, [d, w(0x91), 0]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    let lock = g.read::<u32>(w(0xaa));
+    let b = g.read::<u32>(w(0xb5));
+    g.write::<u32>(lock, saved);
+    let d = g.read::<u32>(w(0xbd));
+    let t = slot_target(g, w(0xc2), 710);
+    stack.splice(0..0, [w(0xc7), d, b, 0x8_0000]);
+    // call width: 17
+    g.call(t, 0, &stack);
+    // add esp, 0x44
+    let mut stack = Vec::new();
+    for (k, (dop, tab, dst)) in (0u32..).zip([
+        (0xd4u32, 0xdfu32, 0xecu32),
+        (0xf1, 0xf9, 0x106),
+        (0x10b, 0x113, 0x12c),
+    ]) {
+        let d = g.read::<u32>(w(dop));
+        stack.insert(0, g.read::<u32>(d.wrapping_add(0x14 + 4 * k)));
+        let t = slot_target(g, w(tab), 941);
+        // call width: 17
+        let r = g.call(t, 0, &stack).eax;
+        g.write::<u32>(w(dst), r);
+    }
+    g.write_bytes(w(0x127), &[0u8; 0x110]);
+    stack.splice(0..0, [w(0x127), 0, 0x110]);
+    stack
+}
+
+/// The operands of a draw that leaves the flag 0: `G_P`, the item, the
+/// flag pointer's global, the part, slot 712's table, the flag pointer's
+/// global read after the call.
+pub struct Plain {
+    pub gp: u32,
+    pub item: u32,
+    pub lock: u32,
+    pub part: u32,
+    pub t712: u32,
+    pub lock2: u32,
+}
+
+/// `*G_P = ITEM`, slot 712 `(part, 0x30)` with `*G_LOCK` 1, the flag 0
+/// after. Returns slot 712's `eax`.
+pub fn draw_plain<G: Game>(g: &mut G, img: &Image, f: u32, p: &Plain, stack: &[u32]) -> u32 {
+    let w = |off: u32| img.word(f + off);
+    let gp = g.read::<u32>(w(p.gp));
+    g.write::<u32>(gp, w(p.item));
+    let lock = g.read::<u32>(w(p.lock));
+    g.write::<u32>(lock, 1);
+    let t = slot_target(g, w(p.t712), 712);
+    let mut args = vec![w(p.part), 0x30];
+    args.extend(stack);
+    // call width: 14
+    let eax = g.call(t, 0, &args).eax;
+    let lock = g.read::<u32>(w(p.lock2));
+    g.write::<u32>(lock, 0);
+    eax
 }
