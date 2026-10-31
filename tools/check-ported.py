@@ -36,6 +36,10 @@ bad = 0
 seen = {}
 game = os.environ.get("FFX_GAME_DIR")
 exe = pathlib.Path(game).expanduser() / "FFX.exe" if game else None
+if exe is None:
+    # without FFX.exe the jmp thunks can't be followed, so every port of one reads as
+    # "not a function start" (346 false problems on 2026-11-01)
+    sys.exit("check-ported: FFX_GAME_DIR is not set; it needs FFX.exe to follow jmp thunks")
 SHIM = re.compile(r'^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern "([\w-]+)" fn \w+\(([^)]*)\)', re.M)
 
 
