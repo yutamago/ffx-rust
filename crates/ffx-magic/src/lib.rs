@@ -143,10 +143,21 @@ pub mod m0159;
 pub mod m0163;
 pub mod m0165;
 pub mod m0166;
+pub mod m0168;
 pub mod m0170;
+pub mod m0171;
+pub mod m0176;
+pub mod m0183;
+pub mod m0184;
+pub mod m0186;
 pub mod m0187;
+pub mod m0191;
+pub mod m0193;
 pub mod m0194;
+pub mod m0195;
 pub mod m0196;
+pub mod m0198;
+pub mod m0201;
 pub mod m0219;
 pub mod m0390;
 pub mod m0393;
@@ -1742,6 +1753,20 @@ ports! {
     "m0165 look_follow" => m0165::LOOK_FOLLOW, m0165::look_follow;
     "m0165 objects_off_task" => m0165::OBJECTS_OFF_TASK, m0165::objects_off_task;
     "m0165 three_tasks" => m0165::THREE_TASKS, m0165::three_tasks;
+    "m0168 camera_frame" => m0168::CAMERA_FRAME, m0168::camera_frame;
+    "m0176 part_colour" => m0176::PART_COLOUR, m0176::part_colour;
+    "m0184 release_four" => m0184::RELEASE_FOUR, m0184::release_four;
+    "m0186 int_motion" => m0186::INT_MOTION, m0186::int_motion;
+    "m0191 object_setup" => m0191::OBJECT_SETUP, m0191::object_setup;
+    "m0193 spawn_three" => m0193::SPAWN_THREE, m0193::spawn_three;
+    "m0187 object_setup" => m0187::OBJECT_SETUP, m0187::object_setup;
+    "m0195 count_step" => m0195::COUNT_STEP, m0195::count_step;
+    "m0194 object_start" => m0194::OBJECT_START, m0194::object_start;
+    "m0195 flag_step" => m0195::FLAG_STEP, m0195::flag_step;
+    "m0195 next_step" => m0195::NEXT_STEP, m0195::next_step;
+    "m0195 object_start" => m0195::OBJECT_START, m0195::object_start;
+    "m0198 load" => m0198::LOAD, m0198::load;
+    "m0201 matrix_visit" => m0201::MATRIX_VISIT, m0201::matrix_visit;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -2312,6 +2337,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0146 model nodes (pick)", &m0146::MODEL_NODES_PICK),
     ("m0146 move start", &m0146::MOVE_START),
     ("m0152 build (287)", &m0152::BUILD_287),
+    ("m0171 actor block", &m0171::ACTOR_BLOCK),
+    ("m0171 aim", &m0171::AIM),
+    ("m0183 camera point", &m0183::CAMERA_POINT),
+    ("m0186 node cleared", &m0186::NODE_CLEARED),
+    ("m0186 node abc", &m0186::NODE_ABC),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

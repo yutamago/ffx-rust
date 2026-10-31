@@ -67,3 +67,25 @@ fn wrapper_passes_its_callbacks_and_the_argument() {
     t.set_u32(ctx, SCRATCH + 0x3000);
     t.check_entry(t.at(0x16d0), entry, &[obj], Eax::Checked);
 }
+
+/// 0x10001280: the object start (own row).
+#[test]
+fn object_start_own() {
+    let Some(mut t) = Twin::load(N) else { return };
+    t.init();
+    let at = t.at(0x1280);
+    let ctx = SCRATCH + 0x800;
+    t.set_u32(t.img.word(at + 0x04), ctx);
+    t.set_u32(ctx + 0x198, 0x0198_0000);
+    for (k, (s, n)) in (0u32..).zip([(441u32, 3usize), (440, 4), (450, 2), (449, 2)]) {
+        t.stub(s, move |m: &mut dyn StubMem, a: &[u32]| {
+            for (i, v) in (0u32..).zip(&a[..n]) {
+                m.w32(SCRATCH + 0x3000 + 0x40 * k + 4 * i, *v);
+            }
+            0x0100_0000 + s
+        });
+    }
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x22; 0x140]);
+    t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+}

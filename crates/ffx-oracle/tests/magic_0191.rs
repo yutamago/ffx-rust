@@ -3,6 +3,7 @@
 //! 0x1420 port). Needs `FFX_GAME_DIR`.
 
 mod magic;
+mod magic_owna;
 
 use magic::{Call, Eax, SCRATCH, StubMem, Twin};
 
@@ -48,4 +49,30 @@ fn copies_of_the_bound_ports() {
     let ctx_global = t.img.word(t.at(0x1ca0) + 0x39);
     t.set_u32(ctx_global, SCRATCH + 0x3000);
     t.check_entry(t.at(0x1ca0), entry, &[obj], Eax::Checked);
+}
+
+/// 0x100011b0: an object set up with two list positions.
+#[test]
+fn object_setup() {
+    let Some(mut t) = magic_owna::twin(N) else {
+        return;
+    };
+    let at = t.at(0x11b0);
+    let w = |t: &Twin, off: u32| t.img.word(at + off);
+    let o = SCRATCH + 0x400;
+    magic_owna::rec(&mut t, 434, 2, move |_, _| o);
+    magic_owna::rec(&mut t, 450, 2, |_, a| a[1] ^ 0x450);
+    magic_owna::rec(&mut t, 449, 2, |_, a| a[1] ^ 0x449);
+    let a = SCRATCH + 0x800;
+    t.set_u32(w(&t, 0x16), a);
+    t.set_u32(a + 0x198, 0x0198_0000);
+    t.set_u32(w(&t, 0x3c), 0x003c_0000);
+    let obj = SCRATCH + 0x1000;
+    for (i, j) in [(0u32, 1u32), (2, 0)] {
+        t.write(o, &[0x11; 0x100]);
+        t.set_u32(o + 0xac, i);
+        t.write(obj, &[0x22; 0x100]);
+        t.set_u32(obj + 0xac, j);
+        t.check_entry(at, Call::default(), &[obj], Eax::Checked);
+    }
 }

@@ -22,7 +22,7 @@ fn f32_at(g: &impl Mem, addr: u32) -> f32 {
 ///
 /// Returns the `eax` the walk leaves: `eax_in` (the caller's) or the last
 /// handler's, with the low byte the last pass byte loaded.
-fn walk<G: Game>(g: &mut G, this: u32, eax_in: u32) -> u32 {
+pub(crate) fn walk<G: Game>(g: &mut G, this: u32, eax_in: u32) -> u32 {
     let node = g.read::<u32>(this);
     let pass = g.read::<u8>(node + 0x1a);
     if pass == g.read::<u8>(this + 5) {
