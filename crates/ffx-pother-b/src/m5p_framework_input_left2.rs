@@ -195,6 +195,21 @@ pub const PATH_FRAME_WORDS: u32 = 31;
 /// The words of [`bridge::path_transform`]'s frame.
 pub const PATH_TRANSFORM_WORDS: u32 = 28;
 
+/// The application map's `erase`: the iterator's `++` (thiscall on the
+/// iterator), `_Min`, `_Max` (cdecl), the left and right rotations
+/// (thiscall on the tree, `(node)`), `operator delete` (cdecl),
+/// `_Xout_of_range`'s import slot and its message.
+pub const MAP_TREE: [u32; 8] = [
+    0x0062_14b0,
+    0x0062_5ae0,
+    0x0062_5ac0,
+    0x0062_5a60,
+    0x0062_5b60,
+    0x0063_0390,
+    0x00b0_c25c,
+    0x00b4_1188,
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -203,7 +218,7 @@ pub mod bridge {
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
-    use super::{DIERR_INPUTLOST, DINPUT_PAD, PATH_CALLS, PATH_DATA};
+    use super::{DIERR_INPUTLOST, DINPUT_PAD, MAP_TREE, PATH_CALLS, PATH_DATA};
     use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
     use ffx_bridge::x87::Reg;
 
@@ -1206,6 +1221,192 @@ pub mod bridge {
             }
             h.write(at + 0xc, w);
         }
+        out
+    }
+
+    /// A red-black tree node's fields (`{left, parent, right, colour +0xc
+    /// (1 black), nil +0xd}`).
+    fn rb_left(h: &impl Mem, n: u32) -> u32 {
+        h.read(n)
+    }
+    fn rb_parent(h: &impl Mem, n: u32) -> u32 {
+        h.read(n.wrapping_add(4))
+    }
+    fn rb_right(h: &impl Mem, n: u32) -> u32 {
+        h.read(n.wrapping_add(8))
+    }
+    fn rb_black(h: &impl Mem, n: u32) -> bool {
+        h.read::<u8>(n.wrapping_add(0xc)) == 1
+    }
+    fn rb_paint(h: &mut impl Host, n: u32, c: u8) {
+        h.write(n.wrapping_add(0xc), c);
+    }
+    fn rb_nil(h: &impl Mem, n: u32) -> bool {
+        h.read::<u8>(n.wrapping_add(0xd)) != 0
+    }
+
+    /// A child of `n`: the right one for `right`, else the left.
+    fn rb_child(h: &impl Mem, n: u32, right: bool) -> u32 {
+        if right { rb_right(h, n) } else { rb_left(h, n) }
+    }
+
+    /// The red-black fix-up after a black node left: `x` (its child) and
+    /// its parent, through the original rotations; `x` black at the end.
+    fn rb_fix_up(h: &mut impl Host, this: u32, mut x: u32, mut parent: u32) {
+        let root = rb_parent(h, h.read(this));
+        if x != root {
+            while rb_black(h, x) {
+                // `x` a left child: the sibling is on the right (`far`)
+                let far = x == rb_left(h, parent);
+                let (rot_near, rot_far) = if far {
+                    (MAP_TREE[3], MAP_TREE[4])
+                } else {
+                    (MAP_TREE[4], MAP_TREE[3])
+                };
+                let mut w = rb_child(h, parent, far);
+                if !rb_black(h, w) {
+                    rb_paint(h, w, 1);
+                    rb_paint(h, parent, 0);
+                    h.call_sym(rot_near, Conv::Thiscall(this), &[parent]);
+                    w = rb_child(h, parent, far);
+                }
+                if !rb_nil(h, w) {
+                    if !(rb_black(h, rb_left(h, w)) && rb_black(h, rb_right(h, w))) {
+                        if rb_black(h, rb_child(h, w, far)) {
+                            let n = rb_child(h, w, !far);
+                            rb_paint(h, n, 1);
+                            rb_paint(h, w, 0);
+                            h.call_sym(rot_far, Conv::Thiscall(this), &[w]);
+                            w = rb_child(h, parent, far);
+                        }
+                        let c: u8 = h.read(parent + 0xc);
+                        h.write(w + 0xc, c);
+                        rb_paint(h, parent, 1);
+                        let f = rb_child(h, w, far);
+                        rb_paint(h, f, 1);
+                        h.call_sym(rot_near, Conv::Thiscall(this), &[parent]);
+                        break;
+                    }
+                    rb_paint(h, w, 0);
+                }
+                x = parent;
+                parent = rb_parent(h, parent);
+                if x == rb_parent(h, h.read(this)) {
+                    break;
+                }
+            }
+        }
+        rb_paint(h, x, 1);
+    }
+
+    /// `std::_Tree::erase(where)` of the application's map (`0x006271d0`,
+    /// thiscall `(&out, where)`, `ret 8`): `_Xout_of_range` for the head
+    /// (it does not return in the game); the iterator in `slot` (the
+    /// original's own argument word; a word of the port's frame) advanced
+    /// (`0x006214b0`); the node unlinked, its successor moved into its
+    /// place when it has two children (colours swapped); the head's
+    /// extremes kept (`_Min`/`_Max`); the red-black fix-up through the
+    /// original rotations; `operator delete`, the size counted down (not
+    /// below 0); `*out` = the successor. `out`.
+    pub fn map_erase(h: &mut impl Host, this: u32, out: u32, slot: u32) -> u32 {
+        let node: u32 = h.read(slot);
+        if rb_nil(h, node) {
+            let f: u32 = h.read(h.rebase(MAP_TREE[6]));
+            let msg = h.rebase(MAP_TREE[7]);
+            h.call(f, Conv::Cdecl, &[msg]);
+        }
+        h.call_sym(MAP_TREE[0], Conv::Thiscall(slot), &[]);
+        let left = rb_left(h, node);
+        let child;
+        let parent;
+        if rb_nil(h, left) || rb_nil(h, rb_right(h, node)) || {
+            let succ: u32 = h.read(slot);
+            succ == node
+        } {
+            child = if rb_nil(h, left) {
+                rb_right(h, node)
+            } else if rb_nil(h, rb_right(h, node)) {
+                left
+            } else {
+                rb_right(h, h.read(slot))
+            };
+            parent = rb_parent(h, node);
+            if !rb_nil(h, child) {
+                h.write(child + 4, parent);
+            }
+            let head: u32 = h.read(this);
+            if rb_parent(h, head) == node {
+                h.write(head + 4, child);
+            } else if rb_left(h, parent) == node {
+                h.write(parent, child);
+            } else {
+                h.write(parent + 8, child);
+            }
+            let head: u32 = h.read(this);
+            if rb_left(h, head) == node {
+                let v = if rb_nil(h, child) {
+                    parent
+                } else {
+                    h.call_sym(MAP_TREE[1], Conv::Cdecl, &[child])
+                };
+                let head: u32 = h.read(this);
+                h.write(head, v);
+            }
+            let head: u32 = h.read(this);
+            if rb_right(h, head) == node {
+                let v = if rb_nil(h, child) {
+                    parent
+                } else {
+                    h.call_sym(MAP_TREE[2], Conv::Cdecl, &[child])
+                };
+                let head: u32 = h.read(this);
+                h.write(head + 8, v);
+            }
+        } else {
+            let succ: u32 = h.read(slot);
+            child = rb_right(h, succ);
+            h.write(left + 4, succ);
+            h.write(succ, left);
+            if succ == rb_right(h, node) {
+                parent = succ;
+            } else {
+                parent = rb_parent(h, succ);
+                if !rb_nil(h, child) {
+                    h.write(child + 4, parent);
+                }
+                h.write(parent, child);
+                let r = rb_right(h, node);
+                h.write(succ + 8, r);
+                h.write(r + 4, succ);
+            }
+            let head: u32 = h.read(this);
+            if rb_parent(h, head) == node {
+                h.write(head + 4, succ);
+            } else {
+                let p = rb_parent(h, node);
+                if rb_left(h, p) == node {
+                    h.write(p, succ);
+                } else {
+                    h.write(p + 8, succ);
+                }
+            }
+            let p = rb_parent(h, node);
+            h.write(succ + 4, p);
+            let a: u8 = h.read(node + 0xc);
+            let b: u8 = h.read(succ + 0xc);
+            h.write(succ + 0xc, a);
+            h.write(node + 0xc, b);
+        }
+        if rb_black(h, node) {
+            rb_fix_up(h, this, child, parent);
+        }
+        h.call_sym(MAP_TREE[5], Conv::Cdecl, &[node]);
+        let size: u32 = h.read(this + 4);
+        if size != 0 {
+            h.write(this + 4, size - 1);
+        }
+        let next: u32 = h.read(slot);
+        h.write(out, next);
         out
     }
 }

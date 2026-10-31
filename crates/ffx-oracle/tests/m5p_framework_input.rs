@@ -3711,3 +3711,94 @@ fn left2_path_frame_matches_the_original() {
         }
     }
 }
+
+/// The subtree of `nodes[range]` under `links.0` (leaves pointing at the
+/// head `links.1`); its root.
+fn rb_build(
+    t: &mut Twins,
+    nodes: &[u32],
+    range: (usize, usize),
+    links: (u32, u32),
+    level: u32,
+    red: &[u32],
+) -> u32 {
+    let (lo, hi) = range;
+    let (parent, head) = links;
+    if lo >= hi {
+        return head;
+    }
+    let mid = usize::midpoint(lo, hi);
+    let node = nodes[mid];
+    t.w32(node + 4, parent);
+    t.w8(node + 0xc, u8::from(!red.contains(&level)));
+    let l = rb_build(t, nodes, (lo, mid), (node, head), level + 1, red);
+    let r = rb_build(t, nodes, (mid + 1, hi), (node, head), level + 1, red);
+    t.w32(node, l);
+    t.w32(node + 8, r);
+    node
+}
+
+/// A perfect red-black tree of `2^depth - 1` nodes in MSVC's layout
+/// (`{left, parent, right, colour, nil}`, the head's parent the root, its
+/// left the minimum, its right the maximum); levels in `red` are red.
+/// Returns the tree object `{head, size}` and the nodes in order.
+fn rb_tree(t: &mut Twins, depth: u32, red: &[u32]) -> (u32, Vec<u32>) {
+    let head = t.zeros(0x20);
+    t.w8(head + 0xc, 1);
+    t.w8(head + 0xd, 1);
+    let n = (1u32 << depth) - 1;
+    let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x20)).collect();
+    let root = rb_build(t, &nodes, (0, n as usize), (head, head), 0, red);
+    t.w32(head + 4, root);
+    t.w32(head, nodes[0]);
+    t.w32(head + 8, nodes[n as usize - 1]);
+    let this = t.zeros(8);
+    t.w32(this, head);
+    t.w32(this + 4, n);
+    (this, nodes)
+}
+
+#[test]
+fn left2_map_erase_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x1357_2468);
+        for (depth, red) in [
+            (5u32, vec![]),
+            (5, vec![1, 3]),
+            (4, vec![2]),
+            (5, vec![4]),
+            (3, vec![1]),
+            (6, vec![]),
+            (6, vec![]),
+            (6, vec![2, 4]),
+            (7, vec![5]),
+        ] {
+            let (this, nodes) = rb_tree(&mut t, depth, &red);
+            t.stub(l2::MAP_TREE[5], false, 1, 0, 0);
+            let mut order = nodes.clone();
+            for i in (1..order.len()).rev() {
+                let j = (rng.next() as usize) % (i + 1);
+                order.swap(i, j);
+            }
+            for (k, &node) in order.iter().enumerate() {
+                let out = t.junk(4, 9);
+                let what = format!("{label}: map erase depth {depth} red {red:?} step {k}");
+                // the iterator: the original's own argument word, the
+                // port's scratch word (no callee logs its address)
+                t.check(
+                    &what,
+                    0x0062_71d0,
+                    Conv::Thiscall(this),
+                    &[out, node],
+                    |g| {
+                        let slot = g.1;
+                        ffx_bridge::Mem::write(g, slot, node);
+                        Out::U32(l2b::map_erase(g, this, out, slot))
+                    },
+                );
+            }
+            t.reset();
+        }
+    }
+}

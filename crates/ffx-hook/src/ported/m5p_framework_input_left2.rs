@@ -96,4 +96,14 @@ ported! {
         let mut f = StackFrame::<{ lf::PATH_FRAME_WORDS as usize }>::new();
         lb::path_frame(&mut mem(), this, t, out, f.at())
     }
+    /// The application map's `erase(&out, where)`: the iterator advanced
+    /// in a frame word (the original advances its own argument slot,
+    /// which its callers never read: `ret 8`).
+    Phyre_PFramework_StdMap_erase_006271d0 @ 0x0062_71d0 => extern "thiscall" fn map_erase(this: u32, out: u32, at: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        let slot = f.at();
+        let mut m = mem();
+        ffx_bridge::Mem::write(&mut m, slot, at);
+        lb::map_erase(&mut m, this, out, slot)
+    }
 }
