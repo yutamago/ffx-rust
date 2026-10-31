@@ -2755,3 +2755,319 @@ fn abmap_node_spheres_match_the_original() {
         }
     });
 }
+
+/// `lock cmpxchg` as `InterlockedCompareExchange(p, new, old)` (stdcall,
+/// not logged: the original takes its lock with an inline `xchg`).
+fn cas_code(t: &mut Twins) -> u32 {
+    t.code(&[
+        0x8b, 0x4c, 0x24, 0x04, // mov ecx, [esp + 4]
+        0x8b, 0x54, 0x24, 0x08, // mov edx, [esp + 8]
+        0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp + 0xc]
+        0xf0, 0x0f, 0xb1, 0x11, // lock cmpxchg [ecx], edx
+        0xc2, 0x0c, 0x00, // ret 0xc
+    ])
+}
+
+#[test]
+fn dlmalloc_mspace_malloc_matches_the_original() {
+    let mut rng = Rng(0x006e_c5c0);
+    Twins::each(|t| {
+        for k in 0..300 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let arena = t.zeros(0x10000);
+            let chunk = |n: u32| arena + 0x400 * n;
+            // the lock
+            let cas = cas_code(t);
+            let slot = t.rebase(lib::INTERLOCKED_COMPARE_EXCHANGE);
+            t.patch(slot, &cas.to_le_bytes());
+            t.stub_import(lib::GET_CURRENT_THREAD_ID, 0, 0, 0x1234);
+            let release = m5_main3_common::set_word(m + 0x1bc, 0);
+            let sleep = t.stub_code(lib::SLEEP_EX, false, 2, 2, &Ret::Fixed(0), &release);
+            let s = t.rebase(lib::SLEEP_EX);
+            t.patch(s, &sleep.to_le_bytes());
+            t.w32(m + 0x1b8, rng.pick(&[0, 2, 2, 3]));
+            match rng.below(4) {
+                0 => t.w32(m + 0x1bc, 0),
+                1 => {
+                    t.w32(m + 0x1bc, 1);
+                    t.w32(m + 0x1c0, 2);
+                    t.w32(m + 0x1c4, 0x1234);
+                }
+                2 => {
+                    // another thread's: released by the 64th try's sleep
+                    t.w32(m + 0x1bc, 1);
+                    t.w32(m + 0x1c0, 1);
+                    t.w32(m + 0x1c4, 0x99);
+                }
+                _ => {}
+            }
+            // small bins
+            let mut map = 0u32;
+            for i in 2..32u32 {
+                if k % 3 == 0 || !rng.chance(4) {
+                    continue;
+                }
+                map |= 1 << i;
+                let b = m + 0x28 + 8 * i;
+                let p = chunk(i);
+                t.w32(p + 4, (i << 3) | 1);
+                let second = rng.chance(3);
+                if second {
+                    let q = p + 0x200;
+                    t.w32(q + 4, (i << 3) | 1);
+                    t.w32(p + 8, q);
+                    t.w32(p + 0xc, b);
+                    t.w32(q + 8, b);
+                    t.w32(q + 0xc, p);
+                    t.w32(b + 0xc, q);
+                } else {
+                    t.w32(p + 8, b);
+                    t.w32(p + 0xc, b);
+                    t.w32(b + 0xc, p);
+                }
+                t.w32(b + 8, p);
+            }
+            t.w32(m, map);
+            t.w32(m + 4, rng.pick(&[0, 0, 4]));
+            t.w32(m + 0x10, rng.pick(&[0, 0, 0, m + 0x100]));
+            let dvs = rng.pick(&[0u32, 0x18, 0x40, 0x100]);
+            t.w32(m + 8, dvs);
+            t.w32(m + 0x14, if dvs == 0 { 0 } else { chunk(0) + 8 });
+            t.w32(chunk(0) + 0xc, dvs | 1);
+            t.w32(m + 0xc, rng.pick(&[0u32, 0x78, 0x80, 0x80, 0x1000]));
+            t.w32(m + 0x18, chunk(33));
+            let block = |t: &mut Twins, n: u32, head: u32| {
+                t.w32(chunk(n) + 4, head);
+                chunk(n) + 8
+            };
+            let small = block(t, 34, 0x81);
+            let large = block(t, 35, 0x203);
+            let sys = block(t, 36, rng.pick(&[0x400, 0x401]));
+            t.stub(lib::TMALLOC_SMALL, false, 2, 0, rng.pick(&[0, small]));
+            t.stub(lib::TMALLOC_LARGE, false, 2, 0, rng.pick(&[0, large]));
+            t.stub(lib::SYS_ALLOC, false, 2, 0, sys);
+            t.stub(lib::MEMSET, false, 3, 0, 0x55);
+            let bytes = rng.pick(&[
+                0u32,
+                1,
+                0xa,
+                0xb,
+                0x10,
+                0x30,
+                0x70,
+                0x75,
+                0xe0,
+                0xf4,
+                0xf5,
+                0x200,
+                0xffff_ffc0,
+            ]);
+            let what = format!("mspace_malloc {k}");
+            let ebp = t.frame_ebp(2);
+            t.check(
+                &what,
+                lib::MSPACE_MALLOC_SYM,
+                Conv::Cdecl,
+                &[m, bytes],
+                |mm| Out::U32(lib::mspace_malloc(mm, m, bytes, ebp + 8)),
+            );
+        }
+    });
+}
+
+/// The lock's imports for a heap at `m` (as in the malloc test).
+fn dl_lock_stubs(t: &mut Twins, rng: &mut Rng, m: u32) {
+    let cas = cas_code(t);
+    let slot = t.rebase(lib::INTERLOCKED_COMPARE_EXCHANGE);
+    t.patch(slot, &cas.to_le_bytes());
+    t.stub_import(lib::GET_CURRENT_THREAD_ID, 0, 0, 0x1234);
+    let release = m5_main3_common::set_word(m + 0x1bc, 0);
+    let sleep = t.stub_code(lib::SLEEP_EX, false, 2, 2, &Ret::Fixed(0), &release);
+    let s = t.rebase(lib::SLEEP_EX);
+    t.patch(s, &sleep.to_le_bytes());
+    t.w32(m + 0x1b8, rng.pick(&[0, 2, 2]));
+    match rng.below(3) {
+        0 => {
+            t.w32(m + 0x1bc, 1);
+            t.w32(m + 0x1c0, 1);
+            t.w32(m + 0x1c4, 0x1234);
+        }
+        1 => {
+            t.w32(m + 0x1bc, 1);
+            t.w32(m + 0x1c0, 1);
+            t.w32(m + 0x1c4, 0x99);
+        }
+        _ => {}
+    }
+}
+
+/// dlmalloc's tree bin index of a large size.
+fn dl_tree_index(size: u32) -> u32 {
+    let x = size >> 8;
+    if x == 0 {
+        0
+    } else if x > 0xffff {
+        31
+    } else {
+        let k = x.ilog2();
+        ((size >> (k + 7)) & 1) + k * 2
+    }
+}
+
+/// Free chunk `x` (size `size`) put alone in its bin.
+fn dl_bin(t: &mut Twins, m: u32, x: u32, size: u32) {
+    if size >> 3 < 0x20 {
+        let i = size >> 3;
+        let b = m + 0x28 + 8 * i;
+        let map: u32 = ffx_bridge::Mem::read(&t.a, m);
+        if map & 1 << i == 0 {
+            t.w32(x + 8, b);
+            t.w32(x + 0xc, b);
+            t.w32(b + 8, x);
+            t.w32(b + 0xc, x);
+        } else {
+            // in front of the list already there
+            let old: u32 = ffx_bridge::Mem::read(&t.a, b + 8);
+            t.w32(x + 8, old);
+            t.w32(x + 0xc, b);
+            t.w32(old + 0xc, x);
+            t.w32(b + 8, x);
+        }
+        t.w32(m, map | 1 << i);
+    } else {
+        let i = dl_tree_index(size);
+        let head = m + 0x130 + 4 * i;
+        t.w32(head, x);
+        t.w32(x + 0x18, head);
+        t.w32(x + 8, x);
+        t.w32(x + 0xc, x);
+        t.w32(x + 0x10, 0);
+        t.w32(x + 0x14, 0);
+        t.w32(x + 0x1c, i);
+        let map: u32 = ffx_bridge::Mem::read(&t.a, m + 4);
+        t.w32(m + 4, map | 1 << i);
+    }
+}
+
+#[test]
+fn dlmalloc_mspace_free_matches_the_original() {
+    let mut rng = Rng(0x006e_bee0);
+    Twins::each(|t| {
+        for k in 0..400 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let arena = t.zeros(0x6000) + 0x10;
+            dl_lock_stubs(t, &mut rng, m);
+            t.stub(lib::MEMSET, false, 3, 0, 0x55);
+            t.stub(lib::SYS_TRIM, false, 2, 0, 0x56);
+            t.stub(lib::RELEASE_UNUSED, false, 1, 0, 0x57);
+            t.stub(lib::TMALLOC_SMALL, false, 2, 0, 0);
+            // other chunks already in the bins (the inserts walk them)
+            let sizes = [0x20u32, 0x80, 0x100, 0x180, 0x400, 0x408];
+            for n in 0..rng.below(4) {
+                let x = arena + 0x4000 + 0x400 * n;
+                let size = rng.pick(&sizes);
+                // bit 2 is not part of the size
+                t.w32(x + 4, size | 1 | rng.pick(&[0, 4]));
+                dl_bin(t, m, x, size);
+            }
+            // A (before), P (freed), N (after)
+            let prev = rng.pick(&[0x20u32, 0x100, 0x300]);
+            let psize = if k % 37 == 5 { 0 } else { rng.pick(&sizes) };
+            let nsize = rng.pick(&[0x20u32, 0x100, 0x300]);
+            let a = arena + 0x400;
+            let p = a + prev;
+            let n = p + psize;
+            let prev_free = rng.chance(2);
+            let mmapped = rng.chance(10);
+            let bits = if mmapped {
+                0
+            } else if rng.chance(20) {
+                1
+            } else if prev_free {
+                2
+            } else {
+                3
+            };
+            t.w32(p + 4, psize | bits);
+            t.w32(p, prev);
+            t.w32(a + 4, prev | 1);
+            let dv_pick = rng.below(4);
+            if prev_free && !mmapped {
+                if dv_pick == 0 {
+                    t.w32(m + 0x14, a);
+                    t.w32(m + 8, prev);
+                } else {
+                    dl_bin(t, m, a, prev);
+                }
+            }
+            let next_free = rng.chance(2);
+            let nbits = rng.pick(&[1u32, 1, 1, 0]) | if next_free { 0 } else { 2 };
+            t.w32(n + 4, nsize | nbits);
+            t.w32(n + nsize + 4, 0x11);
+            match rng.below(4) {
+                0 => {
+                    t.w32(m + 0x18, n);
+                    t.w32(m + 0xc, nsize);
+                }
+                1 if next_free && dv_pick != 0 => {
+                    t.w32(m + 0x14, n);
+                    t.w32(m + 8, nsize);
+                }
+                _ => {
+                    if next_free {
+                        dl_bin(t, m, n, nsize);
+                    }
+                    t.w32(m + 0x18, arena + 0x3000);
+                    t.w32(m + 0xc, 0x100);
+                }
+            }
+            let trim = rng.pick(&[0, 0x200, 0x10_0000, nsize + psize, nsize + psize + prev]);
+            t.w32(m + 0x1c, trim);
+            t.w32(m + 0x20, rng.pick(&[1, 5]));
+            t.w32(m + 0x1b0, 0x10_0000);
+            t.w32(m + 0x10, rng.pick(&[0, 0, 0, arena, arena + 0x500]));
+            // a mapped chunk's regions
+            let total = prev + 0x10 + psize;
+            let base = p - prev;
+            let mut info = Vec::new();
+            for (off, v) in [
+                (0u8, base),
+                (4, base),
+                (0xc, rng.pick(&[total, total, total + 8, total - 8])),
+                (0x10, rng.pick(&[0x1000, 0x1000, 0x2000])),
+            ] {
+                info.extend(store_arg(1, off, v));
+            }
+            let q = t.stub_code(
+                lib::VIRTUAL_QUERY,
+                false,
+                3,
+                3,
+                &Ret::Fixed(rng.pick(&[1, 1, 0])),
+                &info,
+            );
+            let qs = t.rebase(lib::VIRTUAL_QUERY);
+            t.patch(qs, &q.to_le_bytes());
+            t.stub_import(lib::VIRTUAL_FREE, 3, 3, rng.pick(&[1, 1, 0]));
+            let mem = if k % 50 == 0 { 0 } else { p + 8 };
+            let what = format!("mspace_free {k}");
+            let ebp = t.frame_ebp(2);
+            // the original's own locals (ebp - 0xc .. - 1) are not compared
+            t.skip = 0xc;
+            t.check_framed(
+                &what,
+                lib::MSPACE_FREE_SYM,
+                Conv::Cdecl,
+                &[m, mem],
+                0x28,
+                |mm, ebp2| {
+                    lib::mspace_free(mm, m, mem, ebp + 0xc, ebp2 - 0x28);
+                    Out::None
+                },
+            );
+            t.skip = 4;
+        }
+    });
+}

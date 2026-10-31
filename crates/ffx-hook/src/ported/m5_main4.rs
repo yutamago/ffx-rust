@@ -278,6 +278,20 @@ ported! {
         misc::point_orbit(&mut mem(), f.at())
     }
 
+    // ---- batch 4 ----
+    /// `(m, bytes)` -> the block; the spin counter and then the block go
+    /// through the caller's `m` slot, as in the original.
+    dlmalloc_mspace_malloc_006ec5c0 @ 0x006e_c5c0 => extern "C" fn mspace_malloc_006ec5c0(m: u32, bytes: u32; slots: u32) -> u32 {
+        lib::mspace_malloc(&mut mem(), m, bytes, slots)
+    }
+
+    /// `mspace_free(m, mem)`: the spin counter goes through the caller's
+    /// `mem` slot; the region query in a frame.
+    mspace_free @ 0x006e_bee0 => extern "C" fn mspace_free(m: u32, block: u32; slots: u32) {
+        let mut f = StackFrame::<7>::new();
+        lib::mspace_free(&mut mem(), m, block, slots + 4, f.at());
+    }
+
     // ---- batch 3 ----
     /// `WMainProc(window, msg, id)` -> 0.
     WMainProc @ 0x0084_f550 => extern "C" fn wmain_proc(window: u32, msg: u32, id: u32) -> u32 {
