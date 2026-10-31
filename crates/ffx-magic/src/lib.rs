@@ -1103,6 +1103,8 @@ ports! {
     "static link (word)" => s4_small::STATIC_LINK_WORD, s4_small::static_link_word;
     "static link last (word)" => s4_small::STATIC_LINK_LAST_WORD, s4_small::static_link_last_word;
     "place at bone 0x10" => s4_small::PLACE_BONE_10, s4_small::place_bone_10;
+    "actors slot 530" => s4_small::ACTORS_530, s4_small::actors_530;
+    "wait, then step" => s4_small::WAIT_THEN_STEP, s4_small::wait_then_step;
     "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
     "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
     "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
@@ -1480,6 +1482,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("static link (xmm2)", &s4_small::STATIC_LINK_XMM),
     ("face point", &s4_small::FACE_POINT),
     ("table object", &s4_small::TABLE_OBJECT),
+    ("leave and register", &s4_small::LEAVE_REGISTER),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

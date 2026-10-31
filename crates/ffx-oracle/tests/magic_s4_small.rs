@@ -2016,3 +2016,77 @@ fn places_tables_links() {
         t.check(f, Call::this(i), &[], Eax::Checked, s4_small::table_object);
     }
 }
+
+#[test]
+fn actors_leaves_waits() {
+    let Some(mut t) = twin(165) else { return };
+    recs(&mut t, &[(530, 2), (249, 2)]);
+    let f = t.at(0x3670);
+    let map = SCRATCH + 0x300;
+    t.write(map, &[3, 0x20, 0x21, 1]);
+    t.set_u32(op(&t, f, 0x12), map);
+    for k in 0..0x22 {
+        t.set_u32(op(&t, f, 0x5c) + 4 * k, 0x0249_0000 + k);
+    }
+    for (n, done) in [(0u32, 0u32), (4, 0), (4, 1)] {
+        t.set_u32(op(&t, f, 0x5), n);
+        t.set_u32(op(&t, f, 0x1b), done);
+        let c = Call {
+            eax: 0x00ea_0000,
+            ..Call::default()
+        };
+        t.check_entry(f, c, &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(70) else { return };
+    rec(&mut t, 771, 1, |_, a| 0x0771_0000 ^ a[0]);
+    t.stub_edx(771, |_, a| 0x0edd_0000 ^ a[0]);
+    recs(&mut t, &[(779, 2)]);
+    let f = t.at(0x8850);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x54), lock);
+    let (cur, node, parent) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x300);
+    for p in [0u32, parent] {
+        t.write(node, &[0; 0x20]);
+        t.write(parent, &[0; 0x20]);
+        t.set_u16(parent + 0x18, 1);
+        t.set_u32(parent + 0x10, node);
+        t.set_u32(parent + 0xc, node);
+        t.set_u32(node + 4, parent);
+        t.set_u32(node + 8, parent);
+        t.set_u32(node + 0x14, p);
+        t.set_u32(cur, node);
+        t.set_u32(lock, 6);
+        t.check(
+            f,
+            Call::this(cur),
+            &[],
+            Eax::Checked,
+            s4_small::leave_register,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(166) else { return };
+    let f = t.at(0x14f0);
+    let ms = t.img.rel32_target(f + 0x53);
+    let ro = t.img.rel32_target(f + 0x5a);
+    recs(&mut t, &[(723, 1), (724, 2), (235, 3), (296, 2), (257, 2)]);
+    let task = SCRATCH + 0x100;
+    for (w, done, n, mdone) in [
+        (0u32, 0u32, 3u32, 1u32),
+        (2, 0, 3, 1),
+        (1, 0, 3, 1),
+        (1, 0, 0x20, 0),
+        (1, 1, 3, 1),
+    ] {
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, SCRATCH + 0x200);
+        t.set_u32(op(&t, f, 0x4), w);
+        t.set_u32(op(&t, f, 0x18), done);
+        t.set_u32(op(&t, f, 0x20), n);
+        t.set_u32(t.img.word(ms + 0x02), mdone);
+        t.set_u16(t.img.word(ms + 0x11), 5);
+        objects(&mut t, ro, false);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

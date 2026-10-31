@@ -997,10 +997,27 @@ fn step_done<G: Game>(
     first: fn(&mut G, &Image, u32) -> u32,
     (guard, next): (Option<u32>, u32),
 ) -> Ret {
+    step_done_at(g, img, fr, first, (0x5, 0xc), (guard, next))
+}
+
+/// [`step_done`] with its two `rel32`s at `rels`.
+fn step_done_at<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    first: fn(&mut G, &Image, u32) -> u32,
+    rels: (u32, u32),
+    (guard, next): (Option<u32>, u32),
+) -> Ret {
     let f = fr.at;
-    let a = first(g, img, img.rel32_target(f + 0x5));
+    let a = first(g, img, img.rel32_target(f + rels.0));
     // push ebp; push esi; call: the run's return address
-    let b = run_objects(g, img, img.rel32_target(f + 0xc), fr.esp.wrapping_sub(12));
+    let b = run_objects(
+        g,
+        img,
+        img.rel32_target(f + rels.1),
+        fr.esp.wrapping_sub(12),
+    );
     if b != 1 || a != 1 {
         return Ret::eax(b);
     }
@@ -4522,5 +4539,113 @@ pub const TABLE_OBJECT: Sig = Sig {
     len: 124,
     hash: 0x4eeb_7418_d326_1128,
     calls: &[(0x2f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};
+
+/// For each of the `G_N` actors `i` (`k` the byte `G_MAP[i]`; the index
+/// helper's -1 case cannot come up): while `G_DONE` is 0 and `k` is below
+/// 32, slot 530 `(k, -1)`; else slot 249 `(T[k], -1)`, or `(T[k], 0x100)`
+/// once done (`T` operand `+0x5c`) (no arguments). Returns the last
+/// slot's `eax`, or `eax` as it came.
+///
+/// `magic_0165` 0x10003670 (125 bytes; 2 DLLs).
+pub fn actors_530<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut ret = Ret::eax(fr.eax);
+    if g.read::<i32>(op(img, f, 0x5)) <= 0 {
+        return ret;
+    }
+    let mut i = 0u32;
+    loop {
+        let map = g.read::<u32>(op(img, f, 0x12));
+        let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+        let done = g.read::<u32>(op(img, f, 0x1b)) != 0;
+        ret = if !done && k < 0x20 {
+            through(slot_call(g, img, f, (0x38, 530), &[k, u32::MAX]))
+        } else {
+            let x = g.read::<u32>(op(img, f, 0x5c).wrapping_add(4 * k));
+            let y = if done { 0x100 } else { u32::MAX };
+            through(slot_call(g, img, f, (0x63, 249), &[x, y]))
+        };
+        i += 1;
+        if i.cast_signed() >= g.read::<i32>(op(img, f, 0x75)) {
+            return ret;
+        }
+    }
+}
+
+/// [`actors_530`].
+pub const ACTORS_530: Sig = Sig {
+    len: 125,
+    hash: 0xd840_ba6b_7c18_8b24,
+    calls: &[],
+    imports: &[],
+};
+
+/// The cursor's node leaves its parent ([`crate::nodes::leave_parent`]),
+/// then slot 771 `(node)` gives its 64-bit handle and slot 779 registers
+/// it with `**G_LOCK` 1 around the call (internal, `ecx` = the cursor).
+/// Returns the lock's address.
+///
+/// `magic_0070` 0x10008850 (126 bytes; 2 DLLs).
+pub fn leave_register<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let node = g.read::<u32>(fr.ecx);
+    let parent = g.read::<u32>(node.wrapping_add(0x14));
+    if parent != 0 {
+        crate::nodes::leave_parent(g, node, parent);
+    }
+    let h = slot_call(g, img, f, (0x45, 771), &[node]);
+    let lock = g.read::<u32>(op(img, f, 0x54));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    slot_call(g, img, f, (0x60, 779), &[h.eax, h.edx]);
+    let lock = g.read::<u32>(op(img, f, 0x73));
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`leave_register`].
+pub const LEAVE_REGISTER: Sig = Sig {
+    len: 126,
+    hash: 0x0ea9_049d_7b9c_56c6,
+    calls: &[],
+    imports: &[],
+};
+
+/// A wait `G_W` counted down; when it runs out, [`count_or_257`]'s
+/// choice (slot 296 `(n, 0)` or slot 257 `(*G_PART, 1)`); then the motion
+/// and the objects as in [`step_done`] (`rel32`s at `+0x53`, `+0x5a`;
+/// the next function operand `+0x77`) (cdecl `(task)`). Returns the
+/// record, or the objects' result.
+///
+/// `magic_0166` 0x100014f0 (126 bytes; 2 DLLs).
+pub fn wait_then_step<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = g.read::<i32>(op(img, f, 0x4));
+    if w > 0 {
+        g.write::<i32>(op(img, f, 0x4), w - 1);
+        if w - 1 <= 0 {
+            let n = g.read::<u32>(op(img, f, 0x20));
+            if g.read::<u32>(op(img, f, 0x18)) == 0 && n.cast_signed() < 0x20 {
+                slot_call(g, img, f, (0x2d, 296), &[n, 0]);
+            } else {
+                let part = g.read::<u32>(op(img, f, 0x42));
+                slot_call(g, img, f, (0x3a, 257), &[part, 1]);
+            }
+        }
+    }
+    let first = crate::s3_motion::motion_step;
+    step_done_at(g, img, fr, first, (0x53, 0x5a), (None, 0x77))
+}
+
+/// [`wait_then_step`].
+pub const WAIT_THEN_STEP: Sig = Sig {
+    len: 126,
+    hash: 0xf56a_9fc9_5bed_ae5d,
+    calls: &[
+        (0x53, Callee::Sig(&crate::s3_motion::MOTION_STEP)),
+        (0x5a, Callee::Sig(&RUN_OBJECTS)),
+    ],
     imports: &[],
 };
