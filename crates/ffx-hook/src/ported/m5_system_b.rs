@@ -1367,6 +1367,13 @@ ported! {
     JobSchedule_pppPart_fillBuffer_md0_ref_0279 @ 0x0072_82d0 => extern "C" fn md0_ref_fill(job: u32) -> u32 {
         pc::md0_ref_fill(&mut mem(), job)
     }
+    /// `(model, matrix, uvs, alpha, _, a2, _, uv_matrix, mode)`: frame
+    /// `ebp - 0xac` (the transform's in and out vectors); mode 1 moves
+    /// `uvs` on in its argument slot.
+    updateVFXRenderData_FakeEnvModel @ 0x0071_cf90 => extern "C" fn fake_env_model(model: u32, matrix: u32, uvs: u32, alpha: u32, p5: u32, a2: u32, p7: u32, uv_matrix: u32, mode: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<0x2b>::new();
+        pc::fake_env_model(&mut mem(), f.at() + 0xac, slots, [model, matrix, uvs, alpha, p5, a2, p7, uv_matrix, mode])
+    }
     /// `(job)`: a shape model's triangles into the effect vertex block;
     /// the triangle pointer goes into the argument slot.
     JobSchedule_pppPart_fillBuffer_drawShp @ 0x0071_ee80 => extern "C" fn shp_model_fill(job: u32; slots: u32) -> u32 {
@@ -1406,6 +1413,22 @@ ported! {
     TOMkpShapePartIndexXYWHC2 @ 0x0090_34b0 => extern "C" fn shape_part_index(id: u32, part: u32, x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) -> u32 {
         let mut f = StackFrame::<0x36>::new();
         mn::shape_part_index(&mut mem(), f.at() + 0xd8, [id, part, x, y, w, h, c0, c1])
+    }
+    /// `(flags, x, y)`: the pad buttons as icons; float temporaries in
+    /// the first argument slot; a tail jump to
+    /// `graphicResetButtonIconScale`.
+    TOMkpPadButtonData @ 0x0090_29b0 => extern "C" fn pad_button_data(flags: u32, x: u32, y: u32; slots: u32) -> u32 {
+        mn::pad_button_data(&mut mem(), slots, flags, x, y)
+    }
+    /// `(w)`: the party-change window; float temporaries (and the control
+    /// word) in the argument slot.
+    TODrawWaitBtlWinChange @ 0x008a_2da0 => extern "C" fn wait_win_change(w: u32; slots: u32) -> u32 {
+        mn::wait_win_change(&mut mem(), slots, w)
+    }
+    /// `(w)`: the weapon-change wait window; the ability window's x in
+    /// the argument slot.
+    TODrawWaitBtlWinWeapon @ 0x008a_7dc0 => extern "C" fn wait_win_weapon(w: u32; slots: u32) -> u32 {
+        mn::wait_win_weapon(&mut mem(), slots, w)
     }
 }
 

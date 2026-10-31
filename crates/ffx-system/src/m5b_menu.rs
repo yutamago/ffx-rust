@@ -504,6 +504,121 @@ pub const LAYOUT_8FA790: u32 = 0x008f_a790;
 pub const HEIGHT_FACTOR: u32 = 0x00c5_d77c;
 pub const UV_FLOOR: u32 = 0x00b1_f2b0;
 
+/// `TOMkpPadButtonData`'s: `DrawCrossButtonIcon`,
+/// `TOGetSystemConfirmButtonAssign`, `graphicResetButtonIconScale`
+/// (cdecl) and the f32 sizes 54 (the buttons), 64 x 40 (the shoulder
+/// buttons) and their drop 7.
+pub const CROSS_BUTTON_ICON: u32 = 0x008e_6030;
+pub const CONFIRM_ASSIGN: u32 = 0x008a_cf30;
+pub const RESET_ICON_SCALE: u32 = 0x0064_2c60;
+pub const PAD_ICON: u32 = 0x00b5_eea4;
+pub const PAD_SMALL_W: u32 = 0x00b5_83dc;
+pub const PAD_SMALL_H: u32 = 0x00b4_3db4;
+pub const PAD_SMALL_DY: u32 = 0x00b5_f2e8;
+
+/// `TODrawWaitBtlWinChange`'s: `TOBtlDrawChangePrim` (cdecl), the member
+/// count `0x0134080c`; the f64s 0.2 (the opening), 27, 201 and 153 (the
+/// opening ring), 240 (the first row), 128 (alpha), 132 (the bars' slide)
+/// and the bars' offsets -25 / +38; the f32 window 180 / 344 x 116; the
+/// rings `[x, y, size, u0, v0, u1, v1]` and bars `[y, w, h, v0, u1, v1]`
+/// (1 stands for `fld1`).
+pub const CHANGE_PRIM: u32 = 0x0089_f0e0;
+pub const CHANGE_COUNT: u32 = 0x0134_080c;
+pub const CHANGE_LEAD: u32 = 0x00b3_eb60;
+pub const CHANGE_SLIDE: u32 = 0x00b5_f1d0;
+pub const CHANGE_RING_Y: u32 = 0x00b5_f248;
+pub const CHANGE_RING_X: u32 = 0x00b5_f228;
+pub const CHANGE_ROW0: u32 = 0x00b5_f258;
+pub const CHANGE_ALPHA: u32 = 0x00b4_c170;
+pub const CHANGE_BAR: u32 = 0x00b5_f218;
+pub const CHANGE_BAR_X: [u32; 2] = [0x00b5_4c88, 0x00b5_f1d8];
+pub const CHANGE_WIN_X: u32 = 0x00b5_a480;
+pub const CHANGE_WIN_W: u32 = 0x00b5_f398;
+pub const CHANGE_WIN_H: u32 = 0x00b5_f330;
+pub const CHANGE_RINGS: [[u32; 7]; 2] = [
+    [
+        0x00b5_eef4,
+        0x00b5_f35c,
+        0x00b5_eec0,
+        1,
+        0x00b5_eea0,
+        0x00b5_eee4,
+        0x00b5_ef00,
+    ],
+    [
+        0x00b5_f344,
+        0x00b5_f364,
+        0x00b5_eea4,
+        0x00b5_f038,
+        1,
+        0x00b5_f03c,
+        0x00b5_eecc,
+    ],
+];
+pub const CHANGE_BARS: [[u32; 6]; 2] = [
+    [
+        0x00b5_f344,
+        0x00b5_ef80,
+        0x00b5_eefc,
+        0x00b5_ee04,
+        0x00b5_edb8,
+        0x00b5_ee14,
+    ],
+    [
+        0x00b5_f36c,
+        0x00b5_f350,
+        0x00b5_ee78,
+        0x00b4_1cac,
+        0x00b5_f0ac,
+        0x00b5_f10c,
+    ],
+];
+
+/// `TODrawWaitBtlWinWeapon`'s: `DrawWaterWaveShapeC2`,
+/// `TOBtlDrawWeaponAbilityWindow` (cdecl), the CRT `_CIcos`; the pulse
+/// (f64 5, 96), the cursor plate (f32 h 50, u0 1619, v0 105, u1 1920, v1
+/// 156; f64 row 835), the bars (f64 574, 0.1, 420, -420 and the f32
+/// -420; shadow f32 u1 438, w 480, f64 dx 30; bar f64 v step 53, v1 315,
+/// v0 270, row 838, f32 u1 1788, u0 1553, h 44, w 234), the waves (f32
+/// gate 0.3, h 3, w 210, x 364; f64 20, 210, 50, row 880) and the
+/// cursor step f32 420.
+pub const WATER_WAVE: u32 = 0x008e_7d30;
+pub const ABILITY_WINDOW: u32 = 0x008f_34c0;
+pub const CI_COS: u32 = 0x0094_98c2;
+pub const WPN_PULSE: u32 = 0x00b4_1d20;
+pub const WPN_PULSE_BASE: u32 = 0x00b5_ee40;
+pub const WPN_PLATE_H: u32 = 0x00b1_f2c8;
+pub const WPN_PLATE_U0: u32 = 0x00b5_f43c;
+pub const WPN_PLATE_V0: u32 = 0x00b5_f324;
+pub const WPN_PLATE_U1: u32 = 0x00b4_a1ac;
+pub const WPN_PLATE_V1: u32 = 0x00b5_f34c;
+pub const WPN_ROW0: u32 = 0x00b5_f2b8;
+pub const WPN_SPEED: u32 = 0x00b5_f290;
+pub const WPN_TENTH: u32 = 0x00b9_21f0;
+pub const WPN_FROM: u32 = 0x00b5_f280;
+pub const WPN_LOW: u32 = 0x00b5_f460;
+pub const WPN_LOW32: u32 = 0x00b5_f468;
+pub const WPN_SHADOW_U1: u32 = 0x00b5_f3c0;
+pub const WPN_SHADOW_W: u32 = 0x00b5_f3c8;
+pub const WPN_SHADOW_DX: u32 = 0x00b9_22c8;
+pub const WPN_V_STEP: u32 = 0x00b5_f1f0;
+pub const WPN_V1: u32 = 0x00b5_f278;
+pub const WPN_V0: u32 = 0x00b5_f260;
+pub const WPN_BAR_U1: u32 = 0x00b5_f44c;
+pub const WPN_BAR_U0: u32 = 0x00b5_f438;
+pub const WPN_BAR_H: u32 = 0x00b5_f300;
+pub const WPN_BAR_W: u32 = 0x00b5_f370;
+pub const WPN_BAR_Y: u32 = 0x00b5_f2c0;
+pub const WPN_WAVES: u32 = 0x00b3_eb44;
+pub const WPN_WAVE_20: u32 = 0x00b4_9968;
+pub const WPN_WAVE_210: u32 = 0x00b4_9970;
+pub const WPN_WAVE_50: u32 = 0x00b1_f2c0;
+pub const WPN_WAVE_ROW2: u32 = 0x00b5_f2d0;
+pub const WPN_WAVE_H: u32 = 0x00b3_eb94;
+pub const WPN_WAVE_W: u32 = 0x00b5_ef1c;
+pub const WPN_WAVE_X2: u32 = 0x00b5_f3ac;
+pub const WPN_CURSOR_W: u32 = 0x00b5_ef64;
+
 /// `FUN_008ea680`'s: `TOMakePktFont1612Shadow_00906290`,
 /// `TOMakePktFont1612Font_00906270`, `setButtonData`, `resetButtonData`,
 /// `TOAdpButtonIcon_008e9970`, `TOAddPktChangeMacro`, the line step 16.0
@@ -4309,5 +4424,525 @@ pub mod bridge {
     /// An f64 stored at `at` (`fstp qword`).
     fn frame_f64(h: &mut impl Host, at: u32, v: f64) {
         h.write(at, v.to_bits());
+    }
+
+    /// One `DrawCrossButtonIcon(id, f32 x, f32 y, w, h)` of
+    /// [`pad_button_data`]: `w`, `h` remapped from the f32 constants at
+    /// `w_sym`, `h_sym` (`h` first); with `dy_sym`, `y` moves down by
+    /// `graphicUiRemapY2(dy)` (unrounded, summed with `f32 y`). The
+    /// argument slot keeps `f32 y` (or the moved y), then `f32 x`.
+    fn pad_icon(h: &mut impl Host, slot: u32, id: u32, xy: [u32; 2], sizes: [u32; 3]) {
+        use ffx_bridge::x87::{add, load, store};
+        let [w_sym, h_sym, dy_sym] = sizes;
+        let ht = gil_const(h, h_sym);
+        let ht = remap_f32(h, super::REMAP_Y2, ht);
+        let w = gil_const(h, w_sym);
+        let w = remap_f32(h, super::REMAP_X2, w);
+        let yf = int_to_f32(xy[1]);
+        h.write(slot, yf);
+        let y = if dy_sym == 0 {
+            yf
+        } else {
+            let dy = gil_const(h, dy_sym);
+            let dy = remap(h, super::REMAP_Y2, dy);
+            let y = store(add(dy, load(yf)));
+            h.write(slot, y);
+            y
+        };
+        let x = int_to_f32(xy[0]);
+        h.write(slot, x);
+        cdecl(h, super::CROSS_BUTTON_ICON, &[id, x, y, w, ht]);
+    }
+
+    /// `TOMkpPadButtonData(flags, x, y)` with its argument slots at
+    /// `slots` (the first keeps float temporaries): the pad buttons in
+    /// `flags` as cross-menu icons at `(x, y)` (ints). 54x54 icons
+    /// (`graphicUiRemapX2`/`Y2(54)`): 0x1000/0x2000/0x4000/0x8000 the
+    /// d-pad (0x259, 0x25b, 0x25d, 0x25f), 0x10 0x260, 0x20 and 0x40
+    /// confirm and cancel (0x262 / 0x261, swapped unless
+    /// `TOGetSystemConfirmButtonAssign` is 1), 0x80 0x263; 64x40 icons 7
+    /// lower (`Y2(7)`): 4, 8, 1, 2 (0x264..0x267); shapes
+    /// `TOMkpShapeXY(0x268 / 0x269, x, y)` for 0x800 / 0x100. Then a tail
+    /// jump to `graphicResetButtonIconScale`: its `eax`.
+    pub fn pad_button_data(h: &mut impl Host, slots: u32, flags: u32, x: u32, y: u32) -> u32 {
+        let big = [super::PAD_ICON, super::PAD_ICON, 0];
+        let small = [super::PAD_SMALL_W, super::PAD_SMALL_H, super::PAD_SMALL_DY];
+        for (bit, id) in [
+            (0x1000u32, 0x259u32),
+            (0x2000, 0x25b),
+            (0x4000, 0x25d),
+            (0x8000, 0x25f),
+            (0x10, 0x260),
+        ] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], big);
+            }
+        }
+        let (confirm, cancel) = if cdecl(h, super::CONFIRM_ASSIGN, &[]) == 1 {
+            (0x262, 0x261)
+        } else {
+            (0x261, 0x262)
+        };
+        for (bit, id) in [(0x20u32, confirm), (0x40, cancel), (0x80, 0x263)] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], big);
+            }
+        }
+        for (bit, id) in [(4u32, 0x264u32), (8, 0x265), (1, 0x266), (2, 0x267)] {
+            if flags & bit != 0 {
+                pad_icon(h, slots, id, [x, y], small);
+            }
+        }
+        for (bit, id) in [(0x800u32, 0x268u32), (0x100, 0x269)] {
+            if flags & bit != 0 {
+                cdecl(h, super::MKP_SHAPE_XY, &[id, x, y]);
+            }
+        }
+        cdecl(h, super::RESET_ICON_SCALE, &[])
+    }
+
+    /// `(e - lead) / lead` clamped to `0..=1` as the change window's
+    /// timers do (a NaN passes through), stored as an f32.
+    fn change_ratio(q: u32) -> u32 {
+        use ffx_bridge::x87::load;
+        let v = load(q);
+        if v < 0.0 {
+            0
+        } else if v > 1.0 {
+            0x3f80_0000
+        } else {
+            q
+        }
+    }
+
+    /// `TODrawWaitBtlWinChange(w)` with its argument slot at `slot` (float
+    /// temporaries; the control word goes into its upper half): the
+    /// party-change window. The open time `+0xe0` (`graphicGetTime() -
+    /// +0xdc` while `+0xdc > 0`, else 0). Within the first 0.2 s (f64
+    /// `0x00b3eb60`) only the opening ring: `TOMkpShapeXYWHUVC2(-1, X2(F +
+    /// 153), Y2(F + 201), X2(54 p), Y2(54 p), 1759, 1.0, 1835, 77, grey
+    /// x2)` with `p = t / 0.2` clamped, `F = (1 - p) * 27`. Later, `p =
+    /// (t - 0.2) / 0.2` clamped: one 344 x 116 window per member of the
+    /// i16 list `[+0x20]` (count `0x0134080c`) at `(180, 240 + p * 114 k)`
+    /// kind 4, `TOBtlDrawChangePrim(member, ftol X2(180), ftol Y2(y))`,
+    /// the window again kind 3 for the cursor `+0x42` else 2; the two
+    /// rings turning with `graphicGetTime`; the two bars sliding in with
+    /// `p` (`X2(132 p - 25)` and `X2(132 p + 38)`) in the colour
+    /// `trunc(128 p) << 24 | 0x808080`. Returns 0.
+    #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+    pub fn wait_win_change(h: &mut impl Host, slot: u32, w: u32) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        const GREY: u32 = 0x8080_8080;
+        let start: u32 = h.read(w.wrapping_add(0xdc));
+        let e = if 0.0 < load(start) {
+            let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+            let start: u32 = h.read(w.wrapping_add(0xdc));
+            store(x87::sub(t, load(start)))
+        } else {
+            0
+        };
+        h.write(w.wrapping_add(0xe0), e);
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        h.write(slot, e);
+        let lead = gil_f64(h, super::CHANGE_LEAD);
+        if lead > load(e) {
+            let q = store(x87::div(load(e), lead));
+            h.write(slot, q);
+            let p = change_ratio(q);
+            h.write(slot, p);
+            let s54 = store(x87::mul(gil_f64(h, super::GIL_LABEL_GAP), load(p)));
+            h.write(slot, s54);
+            let far = x87::mul(x87::sub(1.0, load(p)), gil_f64(h, super::CHANGE_SLIDE));
+            let ht = remap_f32(h, super::REMAP_Y2, s54);
+            let wd = remap_f32(h, super::REMAP_X2, s54);
+            let y = store(x87::add(far, gil_f64(h, super::CHANGE_RING_Y)));
+            h.write(slot, y);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = store(x87::add(far, gil_f64(h, super::CHANGE_RING_X)));
+            h.write(slot, x);
+            let x = remap_f32(h, super::REMAP_X2, x);
+            let uv = [0x00b5_f038u32, 1, 0x00b5_f03c, 0x00b5_eecc].map(|s| libra_const(h, s));
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    uv[0],
+                    uv[1],
+                    uv[2],
+                    uv[3],
+                    GREY,
+                    GREY,
+                ],
+            );
+            return 0;
+        }
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        let q = store(x87::div(x87::sub(load(e), lead), lead));
+        h.write(slot, q);
+        let p = change_ratio(q);
+        h.write(slot, p);
+        let count = h.read::<i32>(h.rebase(super::CHANGE_COUNT));
+        let mut k = 0i32;
+        let mut step = 0i32;
+        let base = gil_f64(h, super::CHANGE_ROW0);
+        while k < count {
+            let i = int_to_f32(step.cast_unsigned());
+            let y = store(x87::add(base, x87::mul(load(p), load(i))));
+            for pass in 0..2 {
+                let kind = if pass == 0 {
+                    4
+                } else if k == i32::from(h.read::<i16>(w.wrapping_add(0x42))) {
+                    3
+                } else {
+                    2
+                };
+                let ht = gil_const(h, super::CHANGE_WIN_H);
+                let ht = remap_f32(h, super::REMAP_Y2, ht);
+                let wd = gil_const(h, super::CHANGE_WIN_W);
+                let wd = remap_f32(h, super::REMAP_X2, wd);
+                let yy = remap_f32(h, super::REMAP_Y2, y);
+                let xx = gil_const(h, super::CHANGE_WIN_X);
+                let xx = remap_f32(h, super::REMAP_X2, xx);
+                cdecl(h, super::NET_WINDOW, &[xx, yy, wd, ht, kind]);
+                if pass == 0 {
+                    let ya = remap(h, super::REMAP_Y2, y);
+                    let ya = ftol(h, ya);
+                    let xx = gil_const(h, super::CHANGE_WIN_X);
+                    let xa = remap(h, super::REMAP_X2, xx);
+                    let xa = ftol(h, xa);
+                    let members: u32 = h.read(w.wrapping_add(0x20));
+                    let member =
+                        h.read::<i16>(members.wrapping_add(k.cast_unsigned().wrapping_mul(2)));
+                    cdecl(
+                        h,
+                        super::CHANGE_PRIM,
+                        &[i32::from(member).cast_unsigned(), xa, ya],
+                    );
+                }
+            }
+            k += 1;
+            step = step.wrapping_add(0x72);
+        }
+        for ring in 0..2usize {
+            let t = h.call_sym_st0(super::GET_TIME, Conv::Cdecl, &[]);
+            let angle = if ring == 0 { t } else { -t };
+            let c = super::CHANGE_RINGS[ring];
+            let rw = libra_const(h, c[2]);
+            let args = [
+                u32::MAX,
+                libra_const(h, c[0]),
+                libra_const(h, c[1]),
+                rw,
+                rw,
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+                libra_const(h, c[6]),
+                GREY,
+                GREY,
+                angle.to_bits(),
+            ];
+            cdecl(h, super::ROTATE_SHAPE, &args);
+        }
+        let e: u32 = h.read(w.wrapping_add(0xe0));
+        let q = store(x87::div(x87::sub(load(e), lead), lead));
+        h.write(slot, q);
+        let p = change_ratio(q);
+        h.write(slot, p);
+        let scaled = x87::mul(gil_f64(h, super::CHANGE_ALPHA), load(p));
+        // fistp under round-to-zero: an out-of-range value (NaN included)
+        // gives the integer indefinite, whose low word is 0
+        let a = fistp_trunc_low(scaled);
+        let colour = (a << 24).wrapping_add(0x0080_8080);
+        let slide = x87::mul(load(p), gil_f64(h, super::CHANGE_BAR));
+        for bar in 0..2usize {
+            let c = super::CHANGE_BARS[bar];
+            let uv = [
+                0u32,
+                libra_const(h, c[3]),
+                libra_const(h, c[4]),
+                libra_const(h, c[5]),
+            ];
+            let ht = libra_const(h, c[2]);
+            let ht = remap_f32(h, super::REMAP_Y2, ht);
+            let wd = libra_const(h, c[1]);
+            let wd = remap_f32(h, super::REMAP_X2, wd);
+            let y = libra_const(h, c[0]);
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let d = gil_f64(h, super::CHANGE_BAR_X[bar]);
+            let x = store(if bar == 0 {
+                x87::sub(slide, d)
+            } else {
+                x87::add(slide, d)
+            });
+            h.write(slot, x);
+            let x = remap_f32(h, super::REMAP_X2, x);
+            let id = if bar == 0 { 400 } else { 0x1ac };
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[id, x, y, wd, ht, uv[0], uv[1], uv[2], uv[3], colour, colour],
+            );
+        }
+        0
+    }
+
+    /// `fistp` under round-to-zero of `v`, low word (the integer
+    /// indefinite's low word, 0, for NaN and out-of-range values).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn fistp_trunc_low(v: f64) -> u32 {
+        if v.abs() < 9.223_372_036_854_776e18 {
+            v.trunc() as i64 as u32
+        } else {
+            0
+        }
+    }
+
+    /// `TODrawWaitBtlWinWeapon(w)` with its argument slot at `slot` (the
+    /// ability window's x goes there): the weapon-change wait window. The
+    /// open time `+0xe0` as in [`wait_win_change`]. A pulsing cursor plate
+    /// (alpha `trunc(cos(5 graphicGetTime()) * 32 + 96)`) at `X2(154)`,
+    /// `Y2(row * 52 + 835)` (row = (`+0x42 - +0x40`) / `+0x38`), width
+    /// `f32 +0x62` unremapped. Three bars sliding in one after the other
+    /// (x = `t * 574 / 0.1 - 420` clamped to -420..154, `t` 0.1 less per
+    /// bar) with their shadows. From 0.3 s the water waves (four
+    /// `DrawWaterWaveShapeC2` per row). Then `TOBtlDrawCommandWindow(w)`,
+    /// `TOBtlSetCurPos(0, ftol(X2(420) * col + ftol(+0x78)), ftol(Y2(row *
+    /// 52 + 5) + +0x7c))` and, unless the cursor's entry of the u16 list
+    /// `[+0x20]` is 0xff, `TOBtlDrawWeaponAbilityWindow(entry, X2(30) +
+    /// +0x70, +0x6c)`. Returns 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn wait_win_weapon(h: &mut impl Host, slot: u32, w: u32) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        let at = |o: u32| w.wrapping_add(o);
+        let start: u32 = h.read(at(0xdc));
+        let e = if 0.0 < load(start) {
+            let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+            let start: u32 = h.read(at(0xdc));
+            store(x87::sub(t, load(start)))
+        } else {
+            0
+        };
+        h.write(at(0xe0), e);
+        let mut left = store(load(h.read(at(0xe0))));
+        // the cursor plate
+        let t = h.call_sym_st0_f64(super::GET_TIME, Conv::Cdecl, &[]);
+        let arg = x87::mul(t, gil_f64(h, super::WPN_PULSE));
+        let cos = h.call_intrinsic(h.rebase(super::CI_COS), arg);
+        let pulse = x87::add(
+            x87::mul(f64::from(cos), gil_f64(h, super::GIL_ROW)),
+            gil_f64(h, super::WPN_PULSE_BASE),
+        );
+        let alpha = (fistp_trunc_low(pulse) << 24).wrapping_add(0x0080_8080);
+        let plate = [
+            super::WPN_PLATE_H,
+            super::WPN_PLATE_U0,
+            super::WPN_PLATE_V0,
+            super::WPN_PLATE_U1,
+            super::WPN_PLATE_V1,
+        ]
+        .map(|s| gil_const(h, s));
+        let ht = remap_f32(h, super::REMAP_Y2, plate[0]);
+        let width = int_to_f32(i32::from(h.read::<i16>(at(0x62))).cast_unsigned());
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let first = i32::from(h.read::<i16>(at(0x40)));
+        let columns = i32::from(h.read::<i16>(at(0x38)));
+        let row = cursor
+            .wrapping_sub(first)
+            .checked_div(columns)
+            .unwrap_or(0)
+            .wrapping_mul(0x34);
+        let c835 = gil_f64(h, super::WPN_ROW0);
+        let y = store(x87::add(load(int_to_f32(row.cast_unsigned())), c835));
+        let y = remap_f32(h, super::REMAP_Y2, y);
+        let x154 = gil_const(h, super::GIL_X);
+        let x = remap_f32(h, super::REMAP_X2, x154);
+        cdecl(
+            h,
+            super::SHAPE_XYWHUV_C2,
+            &[
+                u32::MAX,
+                x,
+                y,
+                width,
+                ht,
+                plate[1],
+                plate[2],
+                plate[3],
+                plate[4],
+                alpha,
+                alpha,
+            ],
+        );
+        // the three sliding bars and their shadows
+        let speed = gil_f64(h, super::WPN_SPEED);
+        let tenth = gil_f64(h, super::WPN_TENTH);
+        let from = gil_f64(h, super::WPN_FROM);
+        let low = gil_f64(h, super::WPN_LOW);
+        for k in 0..3u32 {
+            let row = int_to_f32(k * 0x34);
+            let raw = x87::sub(x87::div(x87::mul(speed, load(left)), tenth), from);
+            let mut bx = store(raw);
+            if load(bx) < low {
+                bx = gil_const(h, super::WPN_LOW32);
+            } else {
+                let hi = gil_const(h, super::GIL_X);
+                if load(hi) < load(bx) {
+                    bx = hi;
+                }
+            }
+            left = store(x87::sub(load(left), tenth));
+            let fifty = gil_const(h, super::WPN_PLATE_H);
+            let u1 = gil_const(h, super::WPN_SHADOW_U1);
+            let ht = remap_f32(h, super::REMAP_Y2, fifty);
+            let wd = gil_const(h, super::WPN_SHADOW_W);
+            let wd = remap_f32(h, super::REMAP_X2, wd);
+            let y = store(x87::add(load(row), c835));
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = store(x87::sub(load(bx), gil_f64(h, super::WPN_SHADOW_DX)));
+            let x = remap_f32(h, super::REMAP_X2, x);
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    0,
+                    0,
+                    u1,
+                    fifty,
+                    0x6080_8080,
+                    0x6080_8080,
+                ],
+            );
+            let kf = x87::mul(load(int_to_f32(k)), gil_f64(h, super::WPN_V_STEP));
+            let v1 = store(x87::add(kf, gil_f64(h, super::WPN_V1)));
+            let u1 = gil_const(h, super::WPN_BAR_U1);
+            let v0 = store(x87::add(kf, gil_f64(h, super::WPN_V0)));
+            let u0 = gil_const(h, super::WPN_BAR_U0);
+            let bh = gil_const(h, super::WPN_BAR_H);
+            let ht = remap_f32(h, super::REMAP_Y2, bh);
+            let bw = gil_const(h, super::WPN_BAR_W);
+            let wd = remap_f32(h, super::REMAP_X2, bw);
+            let y = store(x87::add(load(row), gil_f64(h, super::WPN_BAR_Y)));
+            let y = remap_f32(h, super::REMAP_Y2, y);
+            let x = remap_f32(h, super::REMAP_X2, bx);
+            cdecl(
+                h,
+                super::SHAPE_XYWHUV_C2,
+                &[
+                    u32::MAX,
+                    x,
+                    y,
+                    wd,
+                    ht,
+                    u0,
+                    v0,
+                    u1,
+                    v1,
+                    0x4080_8080,
+                    0x4080_8080,
+                ],
+            );
+        }
+        // the water waves, from 0.3 s
+        let gate = load(gil_const(h, super::WPN_WAVES));
+        let opened = load(h.read(at(0xe0)));
+        if gate <= opened {
+            for k in 0..3u32 {
+                let n = load(int_to_f32(k + 1));
+                let short = store(x87::mul(gil_f64(h, super::WPN_WAVE_20), n));
+                let zero = x87::mul(0.0, load(int_to_f32(k)));
+                let row = int_to_f32(k * 0x34);
+                let y1 = store(x87::add(load(row), c835));
+                let shifted = store(x87::add(zero, gil_f64(h, super::WPN_WAVE_210)));
+                let long = store(x87::mul(n, gil_f64(h, super::WPN_WAVE_50)));
+                let y2 = store(x87::add(load(row), gil_f64(h, super::WPN_WAVE_ROW2)));
+                let zero = store(zero);
+                for (len, y, a, left_side) in [
+                    (short, y1, zero, true),
+                    (short, y1, shifted, false),
+                    (long, y2, zero, true),
+                    (long, y2, shifted, false),
+                ] {
+                    let c40 = gil_const(h, super::PAD_SMALL_H);
+                    let c3 = gil_const(h, super::WPN_WAVE_H);
+                    let c210 = gil_const(h, super::WPN_WAVE_W);
+                    let ht = remap_f32(h, super::REMAP_Y2, c3);
+                    let wd = remap_f32(h, super::REMAP_X2, c210);
+                    let yy = remap_f32(h, super::REMAP_Y2, y);
+                    let xs = gil_const(
+                        h,
+                        if left_side {
+                            super::GIL_X
+                        } else {
+                            super::WPN_WAVE_X2
+                        },
+                    );
+                    let xx = remap_f32(h, super::REMAP_X2, xs);
+                    let (ca, cb) = if left_side {
+                        (0x0080_8080, 0x4080_8080)
+                    } else {
+                        (0x4080_8080, 0x0080_8080)
+                    };
+                    cdecl(
+                        h,
+                        super::WATER_WAVE,
+                        &[xx, yy, wd, ht, a, len, c210, c3, c40, c40, ca, cb],
+                    );
+                }
+            }
+        }
+        // the cursor and the ability window
+        cdecl(h, super::DRAW_COMMAND_WINDOW, &[w]);
+        let x78: u32 = h.read(at(0x78));
+        let base = ftol(h, load(x78));
+        let c420 = gil_const(h, super::WPN_CURSOR_W);
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let columns = i32::from(h.read::<i16>(at(0x38)));
+        let step = remap(h, super::REMAP_X2, c420);
+        let col = int_to_f32(cursor.checked_rem(columns).unwrap_or(0).cast_unsigned());
+        let cx = x87::add(x87::mul(step, load(col)), f64::from(base.cast_signed()));
+        let cx = ftol(h, cx);
+        let first = i32::from(h.read::<i16>(at(0x40)));
+        let ry = cursor
+            .wrapping_sub(first)
+            .checked_div(columns)
+            .unwrap_or(0)
+            .wrapping_mul(0x34)
+            .wrapping_add(5);
+        let ry = int_to_f32(ry.cast_unsigned());
+        let cy = remap(h, super::REMAP_Y2, ry);
+        let y7c: u32 = h.read(at(0x7c));
+        let cy = ftol(h, x87::add(cy, load(y7c)));
+        cdecl(h, super::SET_CUR_POS, &[0, cx, cy]);
+        let list: u32 = h.read(at(0x20));
+        let cursor = i32::from(h.read::<i16>(at(0x42)));
+        let entry = list.wrapping_add(cursor.cast_unsigned().wrapping_mul(2));
+        if h.read::<u16>(entry) != 0xff {
+            let y6c = store(load(h.read(at(0x6c))));
+            let c30 = gil_const(h, super::GIL_PAD_X);
+            let ax = remap(h, super::REMAP_X2, c30);
+            let ax = store(x87::add(ax, load(h.read(at(0x70)))));
+            h.write(slot, ax);
+            let list: u32 = h.read(at(0x20));
+            let cursor = i32::from(h.read::<i16>(at(0x42)));
+            let id =
+                i32::from(h.read::<i16>(list.wrapping_add(cursor.cast_unsigned().wrapping_mul(2))));
+            cdecl(
+                h,
+                super::ABILITY_WINDOW,
+                &[id.cast_unsigned(), store(load(ax)), y6c],
+            );
+        }
+        0
     }
 }
