@@ -3177,3 +3177,43 @@ fn actors_motions_spins() {
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
 }
+
+#[test]
+fn static_moves_light_nodes() {
+    let Some(mut t) = twin(609) else { return };
+    let f = t.at(0x9170);
+    let m = op(&t, f, 0x4) - 0x2c;
+    for i in 0..0x1c {
+        t.set_u32(m + 4 * i, (0.5f32 * i as f32 - 3.0).to_bits());
+    }
+    t.set_u32(m + 0x68, 0xffff_fff6);
+    let c = Call::default().with_xmm(&[
+        Xmm::F32(0),
+        Xmm::F32(0),
+        Xmm::F32(1.25f32.to_bits()),
+        Xmm::F32(f32::NAN.to_bits()),
+    ]);
+    t.check(f, c, &[], Eax::Checked, s4_small::move_setup_static);
+    drop(t);
+    let Some(mut t) = twin(578) else { return };
+    recs(&mut t, &[(235, 1)]);
+    let f = t.at(0x3020);
+    let (r, n, parent, kid) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x400,
+        SCRATCH + 0x500,
+    );
+    for (p, kids) in [(0u32, false), (parent, false), (parent, true)] {
+        t.write(n, &[0x66; 0xb0]);
+        t.write(parent, &[0; 0x20]);
+        t.write(kid, &[0x77; 0x10]);
+        let l = if kids { kid } else { parent };
+        t.set_u32(parent + 0x10, l);
+        t.set_u32(parent + 0xc, l);
+        for (i, w) in [n, p, 0xa, 0xb, 0xc].into_iter().enumerate() {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::light_node);
+    }
+}

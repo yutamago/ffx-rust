@@ -3561,7 +3561,13 @@ pub const HANDLE_3016: Sig = Sig {
 ///
 /// `magic_0070` 0x10009310 (108 bytes; 3 DLLs).
 pub fn move_setup<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
-    let m = fr.ecx;
+    let d = move_setup_at(g, fr, fr.ecx);
+    Ret::xmm0(crate::Xmm::F32(d.to_bits()), fr.eax)
+}
+
+/// [`move_setup`] on the move at `m` (`xmm2`, `xmm3` from `fr`). Returns
+/// the last delta.
+fn move_setup_at<G: Game>(g: &mut G, fr: &Frame, m: u32) -> f32 {
     let at = |o: u32| m.wrapping_add(o);
     let fl = |g: &G, o: u32| f32::from_bits(g.read::<u32>(m.wrapping_add(o)));
     let flags = g.read::<u32>(at(0x68));
@@ -3578,7 +3584,7 @@ pub fn move_setup<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(at(0x58), 0);
     g.write::<u32>(at(0x50), 0);
     g.write::<u32>(at(0x64), d.to_bits());
-    Ret::xmm0(crate::Xmm::F32(d.to_bits()), fr.eax)
+    d
 }
 
 /// [`move_setup`].
@@ -6896,5 +6902,90 @@ pub const SPIN_AND_RUN: Sig = Sig {
     len: 171,
     hash: 0xc210_5365_7083_8e0a,
     calls: &[(0x83, Callee::Sig(&RUN_OBJECTS))],
+    imports: &[],
+};
+
+/// [`move_setup`] on the DLL's static move (the node whose `+0x2c` is
+/// operand `+0x4`; internal, `xmm2`, `xmm3`). Returns the new flags, the
+/// last delta in `xmm0`.
+///
+/// `magic_0609` 0x10009170 (173 bytes; 2 DLLs).
+pub fn move_setup_static<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let m = op(img, fr.at, 0x4).wrapping_sub(0x2c);
+    let d = move_setup_at(g, fr, m);
+    let flags = g.read::<u32>(m.wrapping_add(0x68));
+    Ret::xmm0(crate::Xmm::F32(d.to_bits()), flags)
+}
+
+/// [`move_setup_static`].
+pub const MOVE_SETUP_STATIC: Sig = Sig {
+    len: 173,
+    hash: 0x410f_fc90_ab46_e33e,
+    calls: &[],
+    imports: &[],
+};
+
+/// A fresh node `n` put last under `parent` (when not 0: `+0x4` the
+/// parent, `+0x8` its old last child, which links to it, or the parent's
+/// first when it had none; the parent's count up and its last `n`).
+fn child_last<G: Game>(g: &mut G, n: u32, parent: u32) {
+    g.write::<u16>(n.wrapping_add(0x1a), 0xff);
+    g.write::<u32>(n.wrapping_add(0x10), n);
+    g.write::<u32>(n.wrapping_add(0xc), n);
+    g.write::<u32>(n.wrapping_add(0x14), parent);
+    if parent == 0 {
+        return;
+    }
+    g.write::<u32>(n.wrapping_add(4), parent);
+    let last = g.read::<u32>(parent.wrapping_add(0x10));
+    g.write::<u32>(n.wrapping_add(8), last);
+    let last = g.read::<u32>(parent.wrapping_add(0x10));
+    if last == parent {
+        g.write::<u32>(parent.wrapping_add(0xc), n);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), n);
+    }
+    let c = g.read::<u16>(parent.wrapping_add(0x18)).wrapping_add(1);
+    g.write::<u16>(parent.wrapping_add(0x18), c);
+    g.write::<u32>(parent.wrapping_add(0x10), n);
+}
+
+/// A light node set up from a record (internal, `ecx` = `[node, parent,
+/// a, b, c]`): a fresh node under `parent` ([`child_last`]), slot 235
+/// `(node + 0x1c)`, `+0x70` c, `+0x68` a, `+0x6c` b, `+0x74` 0, `+0xa4`
+/// 2, `u16 +0xaa` 1, `+0x78` grey, `+0x7c` 20000.0 and `+0x80`, `+0x98`,
+/// `+0x9c` 0. Returns 1.
+///
+/// `magic_0578` 0x10003020 (173 bytes; 2 DLLs).
+pub fn light_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    let parent = g.read::<u32>(r + 4);
+    child_last(g, n, parent);
+    slot_call(g, img, fr.at, (0x40, 235), &[n.wrapping_add(0x1c)]);
+    for (dst, src) in [(0x70, 0x10), (0x68, 0x8), (0x6c, 0xc)] {
+        let x = g.read::<u32>(r + src);
+        g.write::<u32>(n.wrapping_add(dst), x);
+    }
+    g.write::<u32>(n.wrapping_add(0x74), 0);
+    g.write::<u32>(n.wrapping_add(0xa4), 2);
+    g.write::<u16>(n.wrapping_add(0xaa), 1);
+    for (off, v) in [
+        (0x78, 0x8080_8080),
+        (0x7c, 0x469c_4000),
+        (0x80, 0),
+        (0x98, 0),
+        (0x9c, 0),
+    ] {
+        g.write::<u32>(n.wrapping_add(off), v);
+    }
+    Ret::eax(1)
+}
+
+/// [`light_node`].
+pub const LIGHT_NODE: Sig = Sig {
+    len: 173,
+    hash: 0x8dfb_d24e_369a_31f6,
+    calls: &[],
     imports: &[],
 };
