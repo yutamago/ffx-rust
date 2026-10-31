@@ -2950,3 +2950,69 @@ fn static_args_and_level_colours() {
         );
     }
 }
+
+#[test]
+fn particles_steps_points() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x1c20);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table, 0x0700_0001);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x3f00_0000 + i);
+        }
+        0x325
+    });
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(262) else { return };
+    sa::handler_stubs(&mut t);
+    let f = t.at(0x45a0);
+    for &(c, p, cp) in sa::RINGS {
+        sa::ring(&mut t, c, p, cp, 0x30);
+        let o = sa::node(0);
+        for i in 0..3 {
+            t.set_u32(o + 0x38 + 4 * i, [7u32, 0xffff_fff0, 0x100][i as usize]);
+            t.set_u32(o + 0x2c + 4 * i, 0x1000 * (i + 1));
+        }
+        t.set_u32(o + 0x44, 1.75f32.to_bits());
+        t.check(
+            f,
+            Call::this(sa::CURSOR),
+            &[],
+            Eax::Checked,
+            s4_small::walk_scale_steps,
+        );
+    }
+    drop(t);
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x43b0);
+    recs(&mut t, &[(255, 2), (32, 3), (33, 4)]);
+    let answer = SCRATCH + 0x90;
+    rec(&mut t, 11, 1, move |m, _| m.r32(answer));
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x9), p);
+    for k in 0..0x21 {
+        t.set_u32(op(&t, f, 0x37) + 4 * k, 0x0a00_0000 + k);
+    }
+    let v = SCRATCH + 0x300;
+    for i in 0..3 {
+        t.set_u32(v + 4 * i, (1.5f32 + i as f32).to_bits());
+    }
+    for (done, k, ground) in [(0u32, 3u8, 0u32), (0, 0x20, 0), (1, 3, 1), (1, 3, 0)] {
+        t.set_u32(op(&t, f, 0x2), done);
+        t.set_u8(p + 2, k);
+        t.set_u32(answer, ground);
+        let c = Call {
+            edx: v,
+            ..Call::default()
+        };
+        t.check(f, c, &[], Eax::Checked, s4_small::actor_to_point);
+    }
+}

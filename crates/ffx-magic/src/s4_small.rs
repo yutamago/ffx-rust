@@ -5837,6 +5837,23 @@ fn particles_placed<G: Game>(
     place: [u32; 4],
     k: u32,
 ) -> Ret {
+    let obj = particles_begin(g, img, fr, (prog, call)).0;
+    for (i, v) in (0u32..).zip(place) {
+        g.write::<u32>(obj.wrapping_add(0x40 + 4 * i), v);
+    }
+    particles_rates(g, obj, k);
+    Ret::eax(1)
+}
+
+/// The start of [`particles_placed`]: `*G_P` = `ITEM`, the program table
+/// (slot 941), the `pppStartPart` wrapper. Returns the object and the
+/// slot's argument and the program.
+fn particles_begin<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (prog, call): (u32, u32),
+) -> (u32, u32, u32) {
     let f = fr.at;
     let p = g.read::<u32>(op(img, f, 0x4));
     g.write::<u32>(p, op(img, f, 0xb));
@@ -5846,9 +5863,12 @@ fn particles_placed<G: Game>(
     let obj = fr.arg(g, 0);
     let program = g.read::<u32>(table.wrapping_add(prog));
     crate::opu_parts::start_part(g, img, img.rel32_target(f + call), obj, 0x1000, program, 1);
-    for (i, v) in (0u32..).zip(place) {
-        g.write::<u32>(obj.wrapping_add(0x40 + 4 * i), v);
-    }
+    (obj, x, program)
+}
+
+/// The end of [`particles_placed`]: `+0x50..+0x58` 0, `+0x5c` 1,
+/// `+0x60..+0x68` the rate `k` and `+0x6c` 1.0.
+fn particles_rates<G: Game>(g: &mut G, obj: u32, k: u32) {
     for (off, v) in [
         (0x50, 0),
         (0x54, 0),
@@ -5861,7 +5881,6 @@ fn particles_placed<G: Game>(
     ] {
         g.write::<u32>(obj.wrapping_add(off), v);
     }
-    Ret::eax(1)
 }
 
 /// [`particles_start_b`].
@@ -6361,6 +6380,106 @@ pub fn level_colour<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
 pub const LEVEL_COLOUR: Sig = Sig {
     len: 158,
     hash: 0xb34a_0433_d43a_874f,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`particles_placed`] with the table's first program, the place copied
+/// from the DLL's vector (slot 325 `(obj + 0x40, V)`, operand `+0x3d`;
+/// the wrapper's words still under) and raised by `K` (operand `+0x58`),
+/// rates 0.0428.
+///
+/// `magic_0443` 0x10001c20 (164 bytes; 2 DLLs).
+pub fn particles_start_d<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (obj, x, program) = particles_begin(g, img, fr, (0, 0x35));
+    let v = op(img, f, 0x3d);
+    let words = [obj.wrapping_add(0x40), v, program, 1, 0, x];
+    slot_call(g, img, f, (0x43, 325), &words);
+    let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+    let y = crate::sb_sse::add(fl(g, obj.wrapping_add(0x44)), fl(g, op(img, f, 0x58)));
+    for off in [0x50, 0x54, 0x58] {
+        g.write::<u32>(obj.wrapping_add(off), 0);
+    }
+    g.write::<u32>(obj.wrapping_add(0x44), y.to_bits());
+    particles_rates(g, obj, 0x3d2f_1aa0);
+    Ret::eax(1)
+}
+
+/// [`particles_start_d`].
+pub const PARTICLES_START_D: Sig = Sig {
+    len: 164,
+    hash: 0xebe5_8b53_2d59_b4bc,
+    calls: &[(0x35, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// The node walk ([`crate::nodes::walk`], `ecx` = the cursor); when it
+/// ran, the owner's three steps `+0x38..+0x40` (integers) scale by its
+/// rate `+0x44` (truncated) and its place `+0x1c..+0x24` becomes the base
+/// `+0x2c..+0x34` plus them (internal, `ecx` = the cursor). Returns the
+/// last sum, or the walk's `eax`.
+///
+/// `magic_0262` 0x100045a0 (164 bytes; 2 DLLs).
+pub fn walk_scale_steps<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{cvt, mul};
+    let cursor = fr.ecx;
+    let (eax, _) = crate::nodes::walk(g, cursor, cursor, fr.eax);
+    if g.read::<u8>(cursor + 4) & 1 == 0 {
+        return Ret::eax(eax);
+    }
+    let o = g.read::<u32>(cursor);
+    let at = |off: u32| o.wrapping_add(off);
+    let rate = f32::from_bits(g.read::<u32>(at(0x44)));
+    let mut sum = 0;
+    for i in 0..3 {
+        let step = trunc(mul(cvt(g.read::<u32>(at(0x38 + 4 * i))), rate));
+        sum = g.read::<u32>(at(0x2c + 4 * i)).wrapping_add(step);
+        g.write::<u32>(at(0x1c + 4 * i), sum);
+        g.write::<u32>(at(0x38 + 4 * i), step);
+    }
+    Ret::eax(sum)
+}
+
+/// [`walk_scale_steps`].
+pub const WALK_SCALE_STEPS: Sig = Sig {
+    len: 164,
+    hash: 0x4fd0_8fa4_113e_5a2b,
+    calls: &[],
+    imports: &[],
+};
+
+/// An actor placed at a point (internal, `edx` = the point): while
+/// `G_DONE` is 0 and the actor `k` (the byte `*G + 2`) is below 32, slot
+/// 255 `(k, v)`; else for `A = T[k]` (operand `+0x37`) slot 11 `(A)` says
+/// whether it is on the ground: slot 32 `(A, x, z)` when it is, else
+/// slot 33 `(A, x, y, z)`. Returns the slot's `eax`.
+///
+/// `magic_0393` 0x100043b0 (164 bytes; 2 DLLs).
+pub fn actor_to_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let v = fr.edx;
+    let p = g.read::<u32>(op(img, f, 0x9));
+    let k = u32::from(g.read::<u8>(p.wrapping_add(2)));
+    if g.read::<u32>(op(img, f, 0x2)) == 0 && k < 0x20 {
+        return through(slot_call(g, img, f, (0x1e, 255), &[k, v]));
+    }
+    let a = g.read::<u32>(op(img, f, 0x37).wrapping_add(4 * k));
+    let ground = slot_call(g, img, f, (0x3c, 11), &[a]).eax;
+    let c = |g: &G, i: u32| g.read::<u32>(v.wrapping_add(4 * i));
+    if ground == 0 {
+        let words = [a, c(g, 0), c(g, 1), c(g, 2)];
+        through(slot_call(g, img, f, (0x51, 33), &words))
+    } else {
+        let words = [a, c(g, 0), c(g, 2)];
+        through(slot_call(g, img, f, (0x51, 32), &words))
+    }
+}
+
+/// [`actor_to_point`].
+pub const ACTOR_TO_POINT: Sig = Sig {
+    len: 164,
+    hash: 0x0f2a_415f_fc2a_26b0,
     calls: &[],
     imports: &[],
 };
