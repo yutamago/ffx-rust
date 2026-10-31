@@ -4528,6 +4528,8 @@ fn load_steps_and_frames() {
         rec(&mut t, s, 1, move |m, _| m.r32(a));
     }
     recs(&mut t, &[(226, 2), (673, 0)]);
+    t.set_u32(op(&t, f, 0x73), 0x0a0a_0073);
+    t.set_u32(op(&t, f, 0xb2), 0x0a0a_00b2);
     t.set_u32(op(&t, f, 0xa1), SCRATCH + 0x80);
     let ring = op(&t, f, 0xb7);
     let empty = |t: &mut Twin| {
@@ -4547,6 +4549,7 @@ fn load_steps_and_frames() {
         (0, [0, 0, 1]),
         (0, [0, 0, 0]),
         (3, [0, 0, 0]),
+        (4, [0, 0, 0]),
         (7, [0, 0, 0]),
     ] {
         empty(&mut t);
