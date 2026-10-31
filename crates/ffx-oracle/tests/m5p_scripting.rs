@@ -3687,3 +3687,44 @@ fn left2_ring_allocate_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_set_clip_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        for (k, (set_target, range_err)) in [(0u32, 0u32), (0x11, 0), (0, 7), (0, 0)]
+            .into_iter()
+            .enumerate()
+        {
+            // the time controller: vt[4] answers its speed plus its offset
+            // (the controller's +0xc and +0x10: the object's +0x30, +0x34)
+            let c = vec![0xd9, 0x41, 0x0c, 0xd8, 0x41, 0x10, 0xc3]; // fld [ecx+0xc]; fadd [ecx+0x10]; ret
+            let off = t.rebase(l2::CLIP_DATA[0]);
+            t.w32(off, 0.375f32.to_bits());
+            let f = t.code(&c);
+            let vt = t.alloc(&[[0u8; 16].as_slice(), &f.to_le_bytes()].concat());
+            let this = t.junk(0x60, k as u8);
+            t.w32(this + 0x24, vt);
+            t.w32(this + 8, 1.25f32.to_bits());
+            t.stub(l2::CLIP_DATA[1], true, 1, 1, set_target);
+            // the time range: start 1.5, end 4.25 through the pointers
+            let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00];
+            c.extend(1.5f32.to_bits().to_le_bytes());
+            c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]);
+            c.extend(4.25f32.to_bits().to_le_bytes());
+            c.push(0xb8);
+            c.extend(range_err.to_le_bytes());
+            c.extend([0xc2, 0x08, 0x00]);
+            let code = t.code(&c);
+            t.place(l2::CLIP_DATA[2], code);
+            t.stub(l2::CLIP_DATA[3], true, 1, 1, 0x33);
+            let clip = 0x0077_0000 + k as u32;
+            let what = format!("{label}: set clip case {k}");
+            t.this(&what, 0x0054_3150, this, &[clip], |g| {
+                let range = ffx_graphic::host::Host::scratch(g);
+                Some(l2b::set_clip(g, this, clip, range))
+            });
+            t.unstub();
+        }
+    }
+}

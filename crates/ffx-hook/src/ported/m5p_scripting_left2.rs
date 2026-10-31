@@ -66,4 +66,9 @@ ported! {
     Phyre_PRingBuffer_Phyre_PScripting_PAsyncProcessBufferBlock__allocateBlock @ 0x005c_e6e0 => extern "thiscall" fn ring_allocate(ring: u32, size: u32) -> u32 {
         lb::ring_allocate(&mut mem(), ring, size)
     }
+    /// The animation utility's clip switch `(clip)`.
+    Phyre_PAnimation_PUtilityAnimation_setClip_00543150 @ 0x0054_3150 => extern "thiscall" fn set_clip(this: u32, clip: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        lb::set_clip(&mut mem(), this, clip, f.at())
+    }
 }

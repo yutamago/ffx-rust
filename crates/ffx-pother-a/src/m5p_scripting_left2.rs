@@ -288,8 +288,14 @@ pub const RING_MESSAGES: [u32; 6] = [
 /// (on purpose, a write to address 0).
 pub const RING_MAX_WAITS: u32 = 10_000;
 
+/// `0x00543150`'s data and callees: the offset it negates, the
+/// controller's `setTarget`, the clip's time range, `setTimeController`
+/// (thiscall).
+pub const CLIP_DATA: [u32; 4] = [0x00ca_b918, 0x0052_6590, 0x0051_6a20, 0x0052_65f0];
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::CLIP_DATA;
     use super::{
         CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
         Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
@@ -1298,5 +1304,55 @@ pub mod bridge {
         let msg = h.rebase(RING_MESSAGES[5]);
         h.call_sym(PRINTF, Conv::Cdecl, &[2, msg]);
         h.write(0, 0u32);
+    }
+
+    /// `0x00543150` (thiscall `(clip)`, `ret 4`, the animation utility's
+    /// clip switch): the time controller (`+0x24`) asked for its time
+    /// (`vt[4]`, a float) at speed 1 and offset `-[0x00cab918]`, then at
+    /// the old speed (`+8`), the offset (`+0x34`) moved by the difference;
+    /// the clip set (`+0`, `0x00526590` on `+0x38`); its time range
+    /// (`0x00516a20` into `range`: end, start; the original's frame) as
+    /// start `+0x1c` and length `+0x20`; the time controller handed over
+    /// (`0x005265f0`). The first callee error, else the last `eax`.
+    pub fn set_clip(h: &mut impl Host, this: u32, clip: u32, range: u32) -> u32 {
+        let c = f32::from_bits(h.read(h.rebase(CLIP_DATA[0])));
+        let neg = (-ffx_bridge::x87::Reg::load(c)).store();
+        let speed = ffx_bridge::x87::round_trip(f32::from_bits(h.read(this + 8)));
+        h.write(this + 0x30, 1.0f32.to_bits());
+        h.write(this + 0x34, neg.to_bits());
+        let tc = this + 0x24;
+        let vt: u32 = h.read(tc);
+        let f: u32 = h.read(vt + 0x10);
+        let a = h.call_st0(f, Conv::Thiscall(tc), &[]);
+        h.write(this + 0x30, speed.to_bits());
+        let vt: u32 = h.read(tc);
+        let f: u32 = h.read(vt + 0x10);
+        let b = h.call_st0(f, Conv::Thiscall(tc), &[]);
+        let off = f32::from_bits(h.read(this + 0x34));
+        let off = ffx_bridge::x87::Reg::load(a)
+            .sub_m32(b)
+            .add_m32(off)
+            .store();
+        h.write(this, clip);
+        h.write(this + 0x34, off.to_bits());
+        let r = h.call_sym(CLIP_DATA[1], Conv::Thiscall(this + 0x38), &[clip]);
+        if r != 0 {
+            return r;
+        }
+        let r = h.call_sym(CLIP_DATA[2], Conv::Thiscall(clip), &[range + 4, range]);
+        if r != 0 {
+            return r;
+        }
+        let start = f32::from_bits(h.read(range + 4));
+        let end = f32::from_bits(h.read(range));
+        h.write(this + 0x1c, ffx_bridge::x87::round_trip(start).to_bits());
+        h.write(
+            this + 0x20,
+            ffx_bridge::x87::Reg::load(start)
+                .subr_m32(end)
+                .store()
+                .to_bits(),
+        );
+        h.call_sym(CLIP_DATA[3], Conv::Thiscall(this + 0x38), &[this + 0xc])
     }
 }
