@@ -41,6 +41,35 @@ impl Source for GameReader {
         self.len
     }
 
+    /// In `ffx-host` the reader writes game memory, which a Rust buffer is
+    /// not (on `x86_64` its address is a host pointer cut to 32 bits: the
+    /// reads went nowhere, the segment never parsed and `PVideoPlaybackWin32_open`
+    /// faulted in `Segment::GetTracks` on event-arrival's texture movie,
+    /// host-gate 2026-10-31): the reads go through a frame on the game
+    /// stack, [`READ_CHUNK`] bytes at a time, and are copied out.
+    #[cfg(ffx_host)]
+    fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), WebmError> {
+        let m = mem();
+        let read = m.read::<u32>(m.read::<u32>(self.reader));
+        let mut frame = super::StackFrame::<{ READ_CHUNK / 4 }>::new();
+        let at = frame.at();
+        if at == 0 {
+            return Err(WebmError::Io("IMkvReader::Read: no frame".into()));
+        }
+        let mut p = pos;
+        for chunk in buf.chunks_mut(READ_CHUNK) {
+            #[allow(clippy::cast_possible_truncation)] // halves of the i64; a chunk fits
+            let (lo, hi, len) = (p as u32, (p >> 32) as u32, chunk.len() as u32);
+            match call_thiscall(read, self.reader, &[lo, hi, len, at]) {
+                0 => m.read_bytes(at, chunk),
+                r => return Err(WebmError::Io(format!("IMkvReader::Read {r}"))),
+            }
+            p += u64::from(len);
+        }
+        Ok(())
+    }
+
+    #[cfg(not(ffx_host))]
     fn read_at(&mut self, pos: u64, buf: &mut [u8]) -> Result<(), WebmError> {
         if buf.is_empty() {
             return Ok(());
@@ -60,6 +89,10 @@ impl Source for GameReader {
         }
     }
 }
+
+/// Bytes per `IMkvReader::Read` in `ffx-host` (`GameReader::read_at`).
+#[cfg(ffx_host)]
+const READ_CHUNK: usize = 0x4000;
 
 /// The player's `CDataFrameQueue`s and its done event, through the
 /// original functions.
