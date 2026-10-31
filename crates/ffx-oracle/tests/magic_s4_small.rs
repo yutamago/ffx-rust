@@ -4344,3 +4344,40 @@ fn command_blocks_and_spin_records() {
     }
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn camera_faces_and_sprite_nodes() {
+    let Some(mut t) = twin(349) else { return };
+    let f = t.at(0x47a0);
+    let turn = SCRATCH + 0x90;
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, move |m, _| f64::from(f32::from_bits(m.r32(turn))));
+    rec(&mut t, 262, 4, |_, _| 0x262);
+    rec(&mut t, 12, 1, |_, _| 0x12);
+    t.stub_st0(12, |_, _| 1.0e40);
+    let b = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xe), b);
+    for x in [0.5f32, 9.0, -9.0, f32::NAN] {
+        t.write(b, &vec![0x11; 0x1c10]);
+        t.set_u32(turn, x.to_bits());
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(150) else { return };
+    let f = t.at(0x4b80);
+    rec(&mut t, 312, 4, |_, a| 0x0312_0000 ^ a[0]);
+    let (r, n, parent) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x400);
+    for (p, glow) in [(0u32, 0u32), (parent, 5)] {
+        t.write(n, &vec![0x66; 0x950]);
+        t.write(parent, &[0; 0x20]);
+        t.set_u32(parent + 0x10, parent);
+        t.set_u32(parent + 0xc, parent);
+        for (i, w) in [n, p, 0xa, 0xb, 0xc, 0xd, 0xe, glow]
+            .into_iter()
+            .enumerate()
+        {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::sprite_node);
+    }
+}

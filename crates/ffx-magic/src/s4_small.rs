@@ -9382,3 +9382,106 @@ pub const SPIN_RECORDS_MOVE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The effect's camera turned to face an actor (no arguments): with `B`
+/// the word at operand `+0xe`, `B + 0x1a10` 0; the heading `K - slot 333
+/// (*A)` (wrapped by `T` above `HI` or below `LO`) at `+0x1a14` with
+/// `+0x1a18`, `+0x1a1c` 0; slot 262 `(*A, p, p + 4, p + 8)` fills the
+/// point `p = B + 0x1a20`, slot 12 `(*A)` gives its `y` and `w` is 1.0;
+/// `B + 0x1c08` 0 and four flags in the DLL set. Returns `B`.
+///
+/// `magic_0349` 0x100047a0 (252 bytes; 2 DLLs).
+pub fn camera_face_actor<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::sub;
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(w(o)));
+    // push ebp; sub esp, 8: [ebp - 8] holds B, [ebp - 4] the turn
+    let ebp = fr.esp.wrapping_sub(4);
+    let b = g.read::<u32>(w(0xe));
+    g.write::<u32>(b.wrapping_add(0x1a10), 0);
+    let a = g.read::<u32>(w(0x26));
+    g.write::<u32>(ebp.wrapping_sub(8), b);
+    let turn = st0_f32(slot_call(g, img, f, (0x7, 333), &[a]));
+    g.write::<u32>(ebp.wrapping_sub(4), turn);
+    let x = sub(k(g, 0x36), f32::from_bits(turn));
+    let x = crate::m0018::wrap(x, k(g, 0x45), k(g, 0x59), k(g, 0x4f));
+    g.write::<u32>(b.wrapping_add(0x1a14), x.to_bits());
+    g.write::<u32>(b.wrapping_add(0x1a18), 0);
+    g.write::<u32>(b.wrapping_add(0x1a1c), 0);
+    let a = g.read::<u32>(w(0x88));
+    let p = b.wrapping_add(0x1a20);
+    let words = [a, p, p.wrapping_add(4), p.wrapping_add(8)];
+    slot_call(g, img, f, (0x97, 262), &words);
+    // call width: 5 (slot 262's words stay on the stack)
+    let y = st0_f32(slot_call(
+        g,
+        img,
+        f,
+        (0xaa, 12),
+        &[a, a, p, p.wrapping_add(4), p.wrapping_add(8)],
+    ));
+    g.write::<u32>(p.wrapping_add(4), y);
+    g.write::<u32>(p.wrapping_add(0xc), 0x3f80_0000);
+    g.write::<u32>(b.wrapping_add(0x1c08), 0);
+    for o in [0xd1, 0xdb, 0xe5, 0xef] {
+        g.write::<u32>(w(o), 1);
+    }
+    Ret::eax(b)
+}
+
+/// [`camera_face_actor`].
+pub const CAMERA_FACE_ACTOR: Sig = Sig {
+    len: 252,
+    hash: 0x0412_cf9a_7c8c_8c35,
+    calls: &[],
+    imports: &[],
+};
+
+/// A sprite node set up from a record (internal, `ecx` = `[node, parent,
+/// a, b, c, d, e, glow]`): the node put last under `parent`
+/// ([`child_last`]), `+0x91c..` the five words `a..e`, `u16 +0x938` 0,
+/// `+0x930`, `+0x934` 1.0, two callbacks registered (slot 312 `(cb, node,
+/// 0, 0)` each, kept at `+0x93c` and `+0x940`), `+0x944` the glow flag
+/// and the colours `+0x948`, `+0x94c` by it. Returns the glow flag.
+///
+/// `magic_0150` 0x10004b80 (253 bytes; 2 DLLs).
+pub fn sprite_node<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    child_last(g, n, g.read::<u32>(r + 4));
+    let at = |o: u32| n.wrapping_add(o);
+    for i in 0..5 {
+        let x = g.read::<u32>(r + 8 + 4 * i);
+        g.write::<u32>(at(0x91c + 4 * i), x);
+    }
+    g.write::<u16>(at(0x938), 0);
+    g.write::<u32>(at(0x930), 0x3f80_0000);
+    g.write::<u32>(at(0x934), 0x3f80_0000);
+    let cb = op(img, f, 0x96);
+    let h = slot_call(g, img, f, (0x6b, 312), &[cb, n, 0, 0]).eax;
+    g.write::<u32>(at(0x93c), h);
+    let cb2 = op(img, f, 0xb3);
+    // call width: 8 (the first call's words stay on the stack)
+    let h = slot_call(g, img, f, (0xa5, 312), &[cb2, n, 0, 0, cb, n, 0, 0]).eax;
+    g.write::<u32>(at(0x940), h);
+    let glow = g.read::<u32>(r + 0x1c);
+    g.write::<u32>(at(0x944), glow);
+    let (c1, c2) = if glow == 0 {
+        (0x28, 0x32)
+    } else {
+        (0x0080_80f0, 0x0020_2020)
+    };
+    g.write::<u32>(at(0x948), c1);
+    g.write::<u32>(at(0x94c), c2);
+    Ret::eax(glow)
+}
+
+/// [`sprite_node`].
+pub const SPRITE_NODE: Sig = Sig {
+    len: 253,
+    hash: 0xbdb3_61d1_355a_aba7,
+    calls: &[],
+    imports: &[],
+};

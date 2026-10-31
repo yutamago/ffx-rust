@@ -1189,6 +1189,7 @@ ports! {
     "actors restored" => s4_small::ACTORS_RESTORED, s4_small::actors_restored;
     "command block reset" => s4_small::COMMAND_BLOCK_RESET, s4_small::command_block_reset;
     "spin records move" => s4_small::SPIN_RECORDS_MOVE, s4_small::spin_records_move;
+    "camera face actor" => s4_small::CAMERA_FACE_ACTOR, s4_small::camera_face_actor;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1619,6 +1620,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("start host object", &s4_small::START_HOST_OBJECT),
     ("key curve", &s4_small::KEY_CURVE),
     ("light object", &s4_small::LIGHT_OBJECT),
+    ("sprite node", &s4_small::SPRITE_NODE),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
