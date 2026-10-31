@@ -2770,3 +2770,58 @@ fn actor_clip_draws() {
         t.check_entry(f, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+#[test]
+fn clock_lights() {
+    let Some(mut t) = twin(52) else { return };
+    let f = t.at(0x15c0);
+    rec_mem(&mut t, 210, 2, 16, Some(1));
+    rec_mem(&mut t, 13, 2, 16, Some(1));
+    // (the camera's rows are filled, not read: they start as frame junk)
+    t.stub(544, |m, a| {
+        for i in 0..4 {
+            m.w32(a[1] + 4 * i, (a[0] as f32 + 0.25 * i as f32).to_bits());
+        }
+        0x544
+    });
+    rec_mem(&mut t, 553, 5, 4, None);
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3 {
+            m.w32(a[1 + i], (1.5f32 + i as f32).to_bits());
+        }
+        0x262
+    });
+    for (s, x) in [(364u32, 2.5f64), (16, 0.75)] {
+        rec_mem(&mut t, s, 1, 0, None);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec_mem(&mut t, 268, 3, 4, Some(2));
+    rec_mem(&mut t, 825, 1, 0, None);
+    let lock = SCRATCH + 0x7f0;
+    rec_lock(&mut t, 818, 5, lock, |_, _| 0x818);
+    t.stub(818, move |m, a| {
+        // the four records the light reads
+        for (k, &p) in a[1..5].iter().enumerate() {
+            // (the last is the point's `z`: two words before the cookie)
+            for i in 0..if k == 3 { 2 } else { 4 } {
+                let v = m.r32(p + 4 * i);
+                m.w32(SCRATCH + 0x3000 + 0x10 * k as u32 + 4 * i, v);
+            }
+        }
+        let l = m.r32(lock);
+        m.w32(SCRATCH + 0x3040, l);
+        0x818
+    });
+    let sel = SCRATCH + 0x700;
+    t.set_u8(sel, 1);
+    for o in [0x1bu32, 0x3e, 0xba, 0xed, 0x162, 0x23d] {
+        t.set_u32(op(&t, f, o), sel);
+    }
+    t.set_u32(op(&t, f, 0x25) + 4, 0x0cc0_0001);
+    t.set_u32(op(&t, f, 0x284), lock);
+    for n in [0u32, 20, 50, 51, 90] {
+        t.set_u32(op(&t, f, 0x65), n);
+        t.set_u32(lock, 0x5a5a_0000 + n);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

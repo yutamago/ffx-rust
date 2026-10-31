@@ -4,7 +4,7 @@
 //! "`G`" is a global of the DLL (an operand of the code).
 
 use crate::l5_objhost::{LIST_REMOVE, OBJ_BLOCK_INIT, TASKS_INIT, list_remove};
-use crate::m0052::{PLACE, place};
+use crate::m0052::{PLACE, SCALED_CAMERA, place, scaled_camera};
 use crate::m0596::{host_start, host_start_head};
 use crate::nodes::{INSERT, node_insert};
 use crate::ob_model::wrap_once;
@@ -5882,5 +5882,145 @@ pub const ACTOR_CLIP_DRAW: Sig = Sig {
         (0x13c, Callee::Sig(&MODEL_PARTS_DRAW)),
         (0x2ba, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// A light set up at the character from the effect's clock (cdecl, no
+/// arguments; a /GS frame of locals). With the character `ch =
+/// G_CHRS[*G_SEL]` (read again at each use): its root and light matrices
+/// (slots 210, 13; locals), the scaled camera ([`scaled_camera`], a
+/// local); the clock `n = *G_T` gives `a = n / D` (`a = 1` and `b = (1 -
+/// x) + x K2`, `x = (n - 50) / D`, past 50; else `b = 1`). The point `p`:
+/// slot 262 fills it, `y` = slot 268's point 6 `y` less `K3` times the
+/// height (slot 364 times slot 16, ST0 each), then `p.x = h` and `p.z = h
+/// K4` with `h` the same product again; the colour `(1, 1, 1, 1)`, the
+/// level `-((h + K5) a + (1 - a) K6 + p.y)` and the light colour `(b K7
+/// + 1 - b, b K7 + 1 - b, b K8 + 1 - b)` go to slot 818 `(slot 825 (ch),
+/// colour, light, &level, p)` with the lock `*G_L` held at 1. Each call
+/// sees the words the earlier ones left on the stack. Returns the lock's
+/// address.
+///
+/// `magic_0052` 0x100015c0 (715 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's sequence of slots and floats
+pub fn clock_light<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let ch = |g: &G, sel: u32, table: u32| {
+        let i = u32::from(g.read::<u8>(g.read::<u32>(w(sel))));
+        g.read::<u32>(w(table).wrapping_add(4 * i))
+    };
+    let e = fr.esp;
+    let ebp = e.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (rm, lm, cam, p, o, colour, light, level) = (
+        at(0xc4),
+        at(0x104),
+        at(0x84),
+        at(0x14),
+        at(0x44),
+        at(0x34),
+        at(0x24),
+        at(0x118),
+    );
+    let mut s = Pushes::default();
+    let c = ch(g, 0x1b, 0x25);
+    s.push_all(&[rm, c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x2a), 210), 0);
+    let c = ch(g, 0x3e, 0x48);
+    s.push_all(&[lm, c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x4d), 13), 0);
+    scaled_camera(
+        g,
+        img,
+        img.rel32_target(f + 0x60),
+        cam,
+        e.wrapping_sub(0x120),
+    );
+    let one = k(g, 0x6d);
+    let n = g.read::<i32>(w(0x65));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps: rounded as the original rounds
+    let (a, b) = if n > 0x32 {
+        let x = div((n - 0x32) as f32, k(g, 0x8c));
+        (one, add(sub(one, x), mul(x, k(g, 0x98))))
+    } else {
+        (div(n as f32, k(g, 0xad)), one)
+    };
+    // the frame's floats as the original keeps them (slot 818 is handed
+    // `level`, the first of them)
+    g.write::<f32>(at(0x114), a);
+    g.write::<f32>(at(0x110), b);
+    let mut s = Pushes::default();
+    // edi: the character for slots 262 and 268
+    let edi = ch(g, 0xba, 0xc6);
+    s.push_all(&[p + 8, p + 4, p, edi]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0xd7), 262), 0);
+    let height = |g: &mut G, s: &mut Pushes, c: u32, (t364, t16): (u32, u32)| {
+        s.push(c);
+        // call width: 12 (the most `Pushes::words` holds)
+        let fix = st0_f32(s.call(g, slot_target(g, w(t364), 364), 0));
+        s.push(c);
+        // call width: 12 (the most `Pushes::words` holds)
+        let sy = st0_f32(s.call(g, slot_target(g, w(t16), 16), 0));
+        (fix, sy)
+    };
+    let c = ch(g, 0xed, 0xf7);
+    let (fix, sy) = height(g, &mut s, c, (0xfc, 0x110));
+    let hh = mul(sy, fix);
+    g.write::<f32>(at(0x10c), sy);
+    g.write::<f32>(at(0x108), hh);
+    s.push_all(&[o, 6, edi]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x135), 268), 0);
+    let y = sub(g.read::<f32>(o + 4), mul(hh, k(g, 0x158)));
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<f32>(p + 4, y);
+    let c = ch(g, 0x162, 0x17c);
+    let (fix, sy) = height(g, &mut s, c, (0x181, 0x195));
+    let h = mul(sy, fix);
+    g.write::<f32>(at(0x10c), fix);
+    g.write::<f32>(at(0x108), sy);
+    g.write::<u32>(colour, 0x3f80_0000);
+    g.write::<f32>(p + 8, mul(h, k(g, 0x1cb)));
+    g.write::<f32>(p, h);
+    let one2 = k(g, 0x1b9);
+    let lv = mul(add(h, k(g, 0x1d8)), a);
+    for o in [4u32, 8, 0xc] {
+        g.write::<u32>(colour + o, 0x3f80_0000);
+    }
+    g.write::<u32>(light + 0xc, 0x3f80_0000);
+    let lv = add(lv, mul(sub(one2, a), k(g, 0x206)));
+    let lv = add(lv, g.read::<f32>(p + 4));
+    g.write::<u32>(level, lv.to_bits() ^ g.read::<u32>(w(0x224)));
+    let rest = sub(one2, b);
+    let lx = add(mul(b, k(g, 0x248)), rest);
+    let lz = add(mul(b, k(g, 0x250)), rest);
+    g.write::<f32>(light, lx);
+    g.write::<f32>(light + 4, lx);
+    g.write::<f32>(light + 8, lz);
+    let c = ch(g, 0x23d, 0x271);
+    s.push(c);
+    // call width: 12 (the most `Pushes::words` holds)
+    let r825 = s.call(g, slot_target(g, w(0x276), 825), 0).eax;
+    let lock = g.read::<u32>(w(0x284));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    s.push_all(&[p + 8, level, light, colour, r825]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x2a5), 818), 0);
+    let lock = g.read::<u32>(w(0x2b2));
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`clock_light`] (the `rel32`s: [`scaled_camera`] and
+/// `__security_check_cookie`).
+pub const CLOCK_LIGHT: Sig = Sig {
+    len: 715,
+    hash: 0xd431_c96c_8ece_52ff,
+    calls: &[(0x60, Callee::Sig(&SCALED_CAMERA)), (0x2c3, Callee::Any)],
     imports: &[],
 };

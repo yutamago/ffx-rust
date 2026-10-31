@@ -1292,6 +1292,7 @@ ports! {
     "look part" => s5_misc::LOOK_PART, s5_misc::look_part;
     "curve carry" => s5_misc::CURVE_CARRY, s5_misc::curve_carry;
     "actor clip draw" => s5_misc::ACTOR_CLIP_DRAW, s5_misc::actor_clip_draw;
+    "clock light" => s5_misc::CLOCK_LIGHT, s5_misc::clock_light;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
