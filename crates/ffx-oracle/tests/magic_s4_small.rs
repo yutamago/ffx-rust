@@ -3459,9 +3459,9 @@ fn guarded_drops_and_resets() {
     for (done, one) in [(0u32, false), (1, true), (1, false)] {
         t.write(task, &[0; 0x20]);
         t.set_u32(task + 8, SCRATCH + 0x200);
+        t.write(first, &vec![0x5a; (end - first) as usize]);
         t.set_u32(t.img.word(ms + 0x02), done);
         t.set_u16(t.img.word(ms + 0x11), 5);
-        t.write(first, &vec![0x5a; (end - first) as usize]);
         objects(&mut t, ro, one);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
     }
@@ -4581,10 +4581,15 @@ fn falling_parts_steps() {
         (0u32, 0u32, [0u32, 0, 0, 0]),
         (3, 4, [0x23, 0x15, 1, 0]),
         (2, 2, [0x15, 0, 0, 0]),
+        (2, 4, [0x15, 0, 0, 0]),
         (4, 4, [0, 5, 0, 0]),
         (1, 4, [0, 0, 0, 0]),
     ] {
-        t.write(recs_at, &vec![0x11; 0x300]);
+        // a different byte everywhere: the record's words are told apart
+        t.write(
+            recs_at,
+            &(0..0x300u32).map(|i| (i * 5 + 1) as u8).collect::<Vec<_>>(),
+        );
         for (k, c) in counts.into_iter().enumerate() {
             t.set_u32(recs_at + 8 + 0xa0 * k as u32, c);
         }
