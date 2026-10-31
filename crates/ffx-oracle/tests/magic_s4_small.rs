@@ -1909,3 +1909,55 @@ fn defaults_rings_links() {
         t.check(f, c, &[], Eax::Checked, s4_small::static_link_xmm);
     }
 }
+
+#[test]
+fn actors_faces_statics() {
+    let Some(mut t) = twin(393) else { return };
+    rec(&mut t, 217, 2, |m, a| {
+        m.w32(a[1], 0x3f00_0000);
+        0x217
+    });
+    recs(&mut t, &[(255, 4), (211, 2)]);
+    let f = t.at(0x2b70);
+    let p = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x18), p);
+    for i in 0..0x21 {
+        t.set_u32(op(&t, f, 0x25) + 4 * i, 0x0211_0000 + i);
+    }
+    for (done, k) in [(0u32, 3u8), (0, 0x20), (1, 3)] {
+        t.set_u32(op(&t, f, 0x12), done);
+        t.set_u8(p + 1, k);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(201) else { return };
+    rec(&mut t, 217, 2, |m, a| {
+        m.w32(a[1], 0x3f00_0000);
+        m.w32(a[1] + 8, 0xbf80_0000);
+        0x217
+    });
+    recs(&mut t, &[(234, 3), (666, 2)]);
+    let f = t.at(0x6cb0);
+    let obj = SCRATCH + 0x100;
+    for flags in [0u8, 1] {
+        t.write(obj, &[0; 0x100]);
+        t.set_u32(obj + 0x50, 0x0050_0001);
+        t.set_u8(obj + 0x90, flags);
+        let c = Call {
+            ecx: obj,
+            edx: SCRATCH + 0x400,
+            ..Call::default()
+        };
+        let eax = if flags == 0 { Eax::Checked } else { Eax::Junk };
+        t.check(f, c, &[], eax, s4_small::face_point);
+    }
+    drop(t);
+    let Some(mut t) = twin(155) else { return };
+    let f = t.at(0x8ff0);
+    let last = SCRATCH + 0x300;
+    for empty in [true, false] {
+        t.write(last, &[0x77; 0x10]);
+        t.set_u32(op(&t, f, 0x1), if empty { op(&t, f, 0x3c) } else { last });
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

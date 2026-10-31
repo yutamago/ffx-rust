@@ -4302,6 +4302,15 @@ pub const RING_WRITE: Sig = Sig {
 /// `magic_0262` 0x10006f50 (121 bytes; 2 DLLs).
 pub fn static_link_xmm<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let f = fr.at;
+    let last = static_link_fresh(g, img, f);
+    g.write::<u32>(op(img, f, 0x6a), fr.xmm_f32(2).to_bits());
+    g.write::<u32>(op(img, f, 0x70), op(img, f, 0x74));
+    Ret::eax(last)
+}
+
+/// The fresh static node put last under the DLL's list, the common part
+/// of [`static_link_xmm`] and [`static_link_word`]. Returns the old last.
+fn static_link_fresh<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     let last = g.read::<u32>(op(img, f, 0x1));
     g.write::<u16>(op(img, f, 0x8), 0xff);
     for (dst, src) in [(0x10, 0x14), (0x1a, 0x1e), (0x24, 0x28), (0x2e, 0x32)] {
@@ -4317,15 +4326,98 @@ pub fn static_link_xmm<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let c = g.read::<u16>(count).wrapping_add(1);
     g.write::<u16>(count, c);
     g.write::<u32>(op(img, f, 0x5e), op(img, f, 0x62));
-    g.write::<u32>(op(img, f, 0x6a), fr.xmm_f32(2).to_bits());
-    g.write::<u32>(op(img, f, 0x70), op(img, f, 0x74));
-    Ret::eax(last)
+    last
 }
 
 /// [`static_link_xmm`].
 pub const STATIC_LINK_XMM: Sig = Sig {
     len: 121,
     hash: 0x2f8b_3236_a61a_9dc8,
+    calls: &[],
+    imports: &[],
+};
+
+/// While `G_DONE` is 0 and the actor `k` (the byte `*G + 1`) is below 32:
+/// slot 217 `(k, v)` reads its position into a frame vector and slot 255
+/// `(k, v)` takes it (the first call's words stay under the second's);
+/// then slot 211 `(T[k], 0)` (`T` operand `+0x25`) (no arguments; a /GS
+/// frame). Returns slot 211's `eax`.
+///
+/// `magic_0393` 0x10002b70 (122 bytes; 2 DLLs).
+pub fn actor_place_211<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let v = fr.esp.wrapping_sub(0x18);
+    let p = g.read::<u32>(op(img, f, 0x18));
+    let k = u32::from(g.read::<u8>(p.wrapping_add(1)));
+    let actor = g.read::<u32>(op(img, f, 0x25).wrapping_add(4 * k));
+    if g.read::<u32>(op(img, f, 0x12)) == 0 && k < 0x20 {
+        slot_call(g, img, f, (0x35, 217), &[k, v]);
+        slot_call(g, img, f, (0x47, 255), &[k, v, k, v]);
+    }
+    through(slot_call(g, img, f, (0x58, 211), &[actor, 0]))
+}
+
+/// [`actor_place_211`] (the `rel32` is `__security_check_cookie`).
+pub const ACTOR_PLACE_211: Sig = Sig {
+    len: 122,
+    hash: 0x7048_2c69_240c_76bd,
+    calls: &[(0x72, Callee::Any)],
+    imports: &[],
+};
+
+/// Unless the object is flagged (bit 0 of `+0x90`): slot 217 `(m, v)`
+/// reads the model `+0x50`'s position into a frame vector, slot 234 `(v,
+/// edx, v)` takes `edx` from it (the first call's words stay under), and
+/// slot 666 `(m, angle)` turns the model to the vector's angle
+/// ([`crate::m0153::vector_angle`] on `+0x0`/`+0x8`) (internal, `ecx` =
+/// obj, `edx`; a /GS frame). Returns slot 666's `eax`; a flagged object
+/// returns the cookie's junk, 0 here.
+///
+/// `magic_0201` 0x10006cb0 (122 bytes; 2 DLLs).
+pub fn face_point<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.ecx;
+    if g.read::<u8>(obj.wrapping_add(0x90)) & 1 != 0 {
+        // eax holds the frame cookie (`cookie ^ ebp`): junk, 0 here
+        return Ret::eax(0);
+    }
+    let v = fr.esp.wrapping_sub(0x18);
+    let m = g.read::<u32>(obj.wrapping_add(0x50));
+    slot_call(g, img, f, (0x24, 217), &[m, v]);
+    slot_call(g, img, f, (0x3a, 234), &[v, fr.edx, v, m, v]);
+    let angle = crate::m0153::vector_angle(g, img, img.rel32_target(f + 0x4d), v, false);
+    let m = g.read::<u32>(obj.wrapping_add(0x50));
+    through(slot_call(g, img, f, (0x52, 666), &[m, angle.to_bits()]))
+}
+
+/// [`face_point`] (the `rel32` at `+0x72` is `__security_check_cookie`).
+pub const FACE_POINT: Sig = Sig {
+    len: 122,
+    hash: 0xea1c_ebd1_2e6b_a1d7,
+    calls: &[
+        (0x4d, Callee::Sig(&crate::m0153::VECTOR_ANGLE_XZ)),
+        (0x72, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`static_link_xmm`]'s set-up with `+0x2c` of the node the code's word
+/// (operand `+0x68`, imm `+0x6c`) instead of `xmm2`, then its handler
+/// table (`+0x72`, imm `+0x76`) (no arguments). Returns the old last.
+///
+/// `magic_0155` 0x10008ff0 (123 bytes; 4 DLLs).
+pub fn static_link_word<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let last = static_link_fresh(g, img, f);
+    g.write::<u32>(op(img, f, 0x68), op(img, f, 0x6c));
+    g.write::<u32>(op(img, f, 0x72), op(img, f, 0x76));
+    Ret::eax(last)
+}
+
+/// [`static_link_word`].
+pub const STATIC_LINK_WORD: Sig = Sig {
+    len: 123,
+    hash: 0x39fc_a7d9_582c_2460,
     calls: &[],
     imports: &[],
 };
