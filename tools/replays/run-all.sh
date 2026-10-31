@@ -111,21 +111,43 @@ if [ -n "$extra" ]; then
     eye=(iggy-menus)  # Flash fades follow the wall clock: 21,746 px in one of three original runs
 fi
 
+# ffx-rust.exe instead of FFX.exe with the hook (FFX_HARNESS_EXE=rust,
+# docs/harness.md "Two processes"; FFX_HOST_TARGET picks i686 or x86_64):
+# the Rust runs only, against the same recordings, which only the original
+# code makes.
+host=""
+if [[ "${FFX_HARNESS_EXE:-}" == rust ]]; then
+    host=1
+    for a in "$@"; do
+        [[ "$a" == --record ]] && { echo "--record runs the original code: unset FFX_HARNESS_EXE" >&2; exit 2; }
+    done
+fi
+
 # Build once, not three times side by side.
-tools/build-hook.sh >/dev/null || exit 1
+if [[ -n "$host" ]]; then
+    tools/build-host.sh >/dev/null || exit 1
+    export FFX_NO_BUILD=1  # run-game.sh installs the build above
+else
+    tools/build-hook.sh >/dev/null || exit 1
+fi
 cargo build -q --release -p ffx-harness --example replay || exit 1
 replay="$repo/target/release/examples/replay"
 
 # Each replay gets 900 s from its game's start (FFX_REPLAY_TIMEOUT, counted
 # by the replay itself once it holds a game slot); the outer `timeout` only
 # bounds the wait for a slot as well (4 h), so a queue doesn't kill replays.
+# ffx-rust.exe's emulated updates are slower: 3,600 s there, and a command's
+# reply may take as long (FFX_HARNESS_REPLY_TIMEOUT). Either can be set.
+replay_timeout="${FFX_REPLAY_TIMEOUT:-${host:+3600}}"
+replay_timeout="${replay_timeout:-900}"
+[[ -n "$host" ]] && export FFX_HARNESS_REPLY_TIMEOUT="${FFX_HARNESS_REPLY_TIMEOUT:-3600}"
 run() { # replay, tag, [original]
     local dir="$runs/$2"
     mkdir -p "$dir"
     ${audio:+env FFX_AUDIO_WAV="$dir/$1-$2.wav"} \
     ${hits:+env FFX_HOOK_HITS="$hits/$1-$2.hits"} \
     ${iggy:+env FFX_IGGY_LOG="$iggy/$1-$2.iggy"} \
-        env FFX_REPLAY_TIMEOUT=900 timeout 14400 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
+        env FFX_REPLAY_TIMEOUT="$replay_timeout" timeout 14400 "$replay" "tools/replays/$1.txt" "$win\\runs\\$id\\$2\\$1-$2.trace" ${3:-} \
         > "$dir/$1.out" 2>&1
     echo "$1 $2: exit $?" >> "$dir/$1.out"
     grep '^hook log:' "$dir/$1.out" | head -6
