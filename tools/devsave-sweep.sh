@@ -36,8 +36,22 @@ export FFX_MAGIC_EMU=1
 cargo build -q --release -p ffx-harness --example devsave_sweep || exit 2
 saves=("$@")
 [ ${#saves[@]} -eq 0 ] && saves=($(seq 1 110))
+# Alone (DEVSAVE_ALONE=1, the default): a machine shared with other agents'
+# games runs one game at a time, so each save waits until no FFX.exe or
+# ffx-rust.exe runs (tasklist.exe), whoever started it.
+others() {
+    tasklist.exe /NH /FO CSV 2>/dev/null | tr -d '\r' | grep -i -E '^"(FFX|ffx-rust)\.exe"' | wc -l
+}
 for n in "${saves[@]}"; do
     if grep -q '^end' "$out/$n.txt" 2>/dev/null; then continue; fi
+    if [[ "${DEVSAVE_ALONE:-1}" == 1 ]]; then
+        waited=0
+        while [ "$(others)" -gt 0 ]; do
+            [ $waited = 0 ] && echo "-- $n: waiting for another game to end"
+            waited=1
+            sleep 15
+        done
+    fi
     h=$(cat "$lin/cand.txt.hits" 2>/dev/null | wc -l)
     start=$(date +%s)
     timeout 1200 target/release/examples/devsave_sweep "$n" "$out/$n.txt" > "$out/$n.out" 2>&1
