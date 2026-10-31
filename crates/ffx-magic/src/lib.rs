@@ -158,12 +158,17 @@ pub mod m0195;
 pub mod m0196;
 pub mod m0198;
 pub mod m0201;
+pub mod m0203;
 pub mod m0219;
+pub mod m0263;
+pub mod m0351;
+pub mod m0385;
 pub mod m0390;
 pub mod m0393;
 pub mod m0394;
 pub mod m0395;
 pub mod m0396;
+pub mod m0397;
 pub mod m0481;
 pub mod m0596;
 pub mod m0604;
@@ -1767,6 +1772,14 @@ ports! {
     "m0195 object_start" => m0195::OBJECT_START, m0195::object_start;
     "m0198 load" => m0198::LOAD, m0198::load;
     "m0201 matrix_visit" => m0201::MATRIX_VISIT, m0201::matrix_visit;
+    "m0191 chain_next" => m0191::CHAIN_NEXT, m0191::chain_next;
+    "m0191 chain_setup" => m0191::CHAIN_SETUP, m0191::chain_setup;
+    "m0203 node_setup" => m0203::NODE_SETUP, m0203::node_setup;
+    "m0203 task_release" => m0203::TASK_RELEASE, m0203::task_release;
+    "m0263 node_setup" => m0263::NODE_SETUP, m0263::node_setup;
+    "m0351 sounds_3" => m0351::SOUNDS_3, m0351::sounds_3;
+    "m0385 step_ready" => m0385::STEP_READY, m0385::step_ready;
+    "m0397 script_end" => m0397::SCRIPT_END, m0397::script_end;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

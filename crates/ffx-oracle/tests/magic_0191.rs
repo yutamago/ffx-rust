@@ -76,3 +76,58 @@ fn object_setup() {
         t.check_entry(at, Call::default(), &[obj], Eax::Checked);
     }
 }
+
+/// 0x10001000, 0x100010b0, 0x10001110, 0x10001160, 0x10001240 (below the
+/// count, at it), 0x100012f0, 0x10001350: the object state chain.
+#[test]
+fn object_chain() {
+    let Some(mut t) = magic_owna::twin(N) else {
+        return;
+    };
+    for (s, n) in [
+        (454u32, 1usize),
+        (450, 2),
+        (449, 2),
+        (460, 4),
+        (451, 2),
+        (447, 2),
+        (434, 2),
+        (461, 2),
+        (459, 3),
+        (455, 1),
+        (432, 1),
+        (441, 3),
+        (443, 2),
+        (440, 4),
+    ] {
+        magic_owna::rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    let start = t.at(0x1000);
+    let e = magic::SCRATCH + 0x2000;
+    let c = t.img.word(start + 0x0a);
+    t.set_u32(t.img.word(start + 0x04), e);
+    t.write(e + 0x180, &[0x33; 0x80]);
+    t.set_u32(e + 0x198, 0x0198_0000);
+    t.set_u32(e + 0x19c, 3);
+    for i in 0..4 {
+        t.set_u32(e + 0x1a0 + 4 * i, 0x01a0_0000 + i);
+    }
+    let obj = magic::SCRATCH + 0x100;
+    for (at, count) in [
+        (0x1000, 0u32),
+        (0x10b0, 2),
+        (0x1110, 0),
+        (0x1160, 0),
+        (0x1240, 0),
+        (0x1240, 2),
+        (0x1240, 7),
+        (0x12f0, 0),
+        (0x1350, 0),
+    ] {
+        t.write(obj, &[0x4d; 0x140]);
+        t.set_u32(obj + 0xac, 3);
+        t.set_u32(c, count);
+        let at = t.at(at);
+        t.check_entry(at, magic::Call::default(), &[obj], magic::Eax::Checked);
+    }
+}
