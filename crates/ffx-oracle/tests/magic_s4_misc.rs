@@ -357,73 +357,75 @@ fn shake_task() {
 #[test]
 #[allow(clippy::too_many_lines)] // one set-up per callee
 fn follow_task() {
-    let Some(mut t) = twin(52) else { return };
-    let f = t.at(0x2730);
-    let w = |t: &Twin, o: u32| t.img.word(f + o);
-    let map = SCRATCH + 0x5000;
-    let chrs = w(&t, 0x4a);
-    t.write(map, &[2, 0, 1, 3]);
-    t.set_u32(w(&t, 0x3f), map);
-    t.set_u32(w(&t, 0x38), 0x0c0c_0001);
-    for i in 0..4 {
-        t.set_u32(chrs + 4 * i, 0x0c0c_0100 + i);
-    }
-    let angle = t.img.rel32_target(f + 0x83);
-    t.set_u32(t.img.word(angle + 0x11), map);
-    let mean = t.img.rel32_target(f + 0x29);
-    t.set_u32(t.img.word(mean + 0x4d), map);
-    let mean_n = t.img.word(mean + 0x11);
-    rec(&mut t, 262, 4, |m, a| {
-        for i in 1..4usize {
-            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32;
-            m.w32(a[i], v.to_bits());
+    for (n, rva) in [(52u16, 0x2730u32), (55, 0x2ef0), (303, 0x4a80)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let w = |t: &Twin, o: u32| t.img.word(f + o);
+        let map = SCRATCH + 0x5000;
+        let chrs = w(&t, 0x4a);
+        t.write(map, &[2, 0, 1, 3]);
+        t.set_u32(w(&t, 0x3f), map);
+        t.set_u32(w(&t, 0x38), 0x0c0c_0001);
+        for i in 0..4 {
+            t.set_u32(chrs + 4 * i, 0x0c0c_0100 + i);
         }
-        0x262
-    });
-    rec(&mut t, 333, 1, |_, _| 0x333);
-    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25);
-    for s in [235u32, 328, 329, 229, 248] {
-        rec(&mut t, s, 1, move |m, a| {
-            m.w32(a[0], m.r32(a[0]) ^ s);
-            s
-        });
-    }
-    let (task, st) = (SCRATCH + 0x1000, SCRATCH + 0x2000);
-    let cmds = SCRATCH + 0x3000;
-    t.set_u32(cmds, 3);
-    t.set_u32(cmds + 4, 9);
-    t.set_u32(cmds + 12, 5);
-    for (mode, target, flags, cmd, count) in [
-        (0u32, 0u32, 0u16, 0u32, 0u32),
-        (7, 0, 0, 0, 0),
-        (1, 0xffff_ffff, 0, 0, 0),
-        (1, 2, 1, 1, 0),
-        (1, 1, 0x4001, 1, 0),
-        (1, 3, 0x4001, 1, 2),
-        (2, 0, 0x8000, 0, 0),
-        (2, 0, 0, 1, 3),
-        (2, 0, 0x4000, 1, 1),
-    ] {
-        for n in [1u32, 3] {
-            rest_node(&mut t, task);
-            t.set_u32(task + 0x14, st);
-            t.write(st, &[0x22; 0x50]);
-            for i in 0..4 {
-                set_f(&mut t, st + 4 * i, 1.5 * i as f32 - 2.0);
+        let angle = t.img.rel32_target(f + 0x83);
+        t.set_u32(t.img.word(angle + 0x11), map);
+        let mean = t.img.rel32_target(f + 0x29);
+        t.set_u32(t.img.word(mean + 0x4d), map);
+        let mean_n = t.img.word(mean + 0x11);
+        rec(&mut t, 262, 4, |m, a| {
+            for i in 1..4usize {
+                let v = (a[0] & 0xff) as f32 * 0.5 + i as f32;
+                m.w32(a[i], v.to_bits());
             }
-            // the script object at +0x10: its list empty (no current
-            // node; `count` items), the commands, the index, no wait
-            t.write(st + 0x20, &[0; 0x10]);
-            t.set_u32(st + 0x2c, count);
-            t.set_u32(st + 0x34, cmds);
-            t.set_u32(st + 0x38, cmd);
-            t.set_u32(st + 0x3c, 0);
-            t.set_u16(st + 0x40, flags);
-            t.set_u32(st + 0x44, mode);
-            t.set_u32(st + 0x48, target);
-            t.set_u16(st + 0x4c, if n == 3 { 0x8123 } else { 0x0123 });
-            t.set_u32(mean_n, n);
-            t.check_entry(f, Call::default(), &[task], Eax::Checked);
+            0x262
+        });
+        rec(&mut t, 333, 1, |_, _| 0x333);
+        t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25);
+        for s in [235u32, 328, 329, 229, 248] {
+            rec(&mut t, s, 1, move |m, a| {
+                m.w32(a[0], m.r32(a[0]) ^ s);
+                s
+            });
+        }
+        let (task, st) = (SCRATCH + 0x1000, SCRATCH + 0x2000);
+        let cmds = SCRATCH + 0x3000;
+        t.set_u32(cmds, 3);
+        t.set_u32(cmds + 4, 9);
+        t.set_u32(cmds + 12, 5);
+        for (mode, target, flags, cmd, count) in [
+            (0u32, 0u32, 0u16, 0u32, 0u32),
+            (7, 0, 0, 0, 0),
+            (1, 0xffff_ffff, 0, 0, 0),
+            (1, 2, 1, 1, 0),
+            (1, 1, 0x4001, 1, 0),
+            (1, 3, 0x4001, 1, 2),
+            (2, 0, 0x8000, 0, 0),
+            (2, 0, 0, 1, 3),
+            (2, 0, 0x4000, 1, 1),
+        ] {
+            for n in [1u32, 3] {
+                rest_node(&mut t, task);
+                t.set_u32(task + 0x14, st);
+                t.write(st, &[0x22; 0x50]);
+                for i in 0..4 {
+                    set_f(&mut t, st + 4 * i, 1.5 * i as f32 - 2.0);
+                }
+                // the script object at +0x10: its list empty (no current
+                // node; `count` items), the commands, the index, no wait
+                t.write(st + 0x20, &[0; 0x10]);
+                t.set_u32(st + 0x2c, count);
+                t.set_u32(st + 0x34, cmds);
+                t.set_u32(st + 0x38, cmd);
+                t.set_u32(st + 0x3c, 0);
+                t.set_u16(st + 0x40, flags);
+                t.set_u32(st + 0x44, mode);
+                t.set_u32(st + 0x48, target);
+                t.set_u16(st + 0x4c, if n == 3 { 0x8123 } else { 0x0123 });
+                t.set_u32(mean_n, n);
+                t.check_entry(f, Call::default(), &[task], Eax::Checked);
+            }
         }
     }
 }

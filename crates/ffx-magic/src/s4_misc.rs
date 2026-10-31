@@ -690,6 +690,35 @@ pub const SHAKE_TASK: Sig = Sig {
 ///
 /// `magic_0052` 0x10002730 (258 bytes; 26 DLLs).
 pub fn follow_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    follow_task_at(g, img, fr, false)
+}
+
+/// [`follow_task`] whose offset is turned by
+/// [`crate::s4_small::turn_point`] (the same steps in a frame of its own)
+/// instead of [`rotate_offset`].
+///
+/// `magic_0055` 0x10002ef0 and `magic_0303` 0x10004a80 (258 bytes).
+pub fn follow_task_turned<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    follow_task_at(g, img, fr, true)
+}
+
+/// [`follow_task_turned`].
+pub const FOLLOW_TASK_TURNED: Sig = Sig {
+    len: 258,
+    hash: 0x0715_19c5_1314_f28a,
+    calls: &[
+        (0x29, Callee::Sig(&MEAN_POSITION)),
+        (0x83, Callee::Sig(&TARGET_ANGLE)),
+        (0x9b, Callee::Sig(&crate::s4_small::TURN_POINT)),
+        (0xce, Callee::Sig(&OBJ_SCRIPT)),
+        (0xee, Callee::Sig(&GIVE_BACK)),
+        (0xfa, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`follow_task`]; `turned` picks the turning callee.
+fn follow_task_at<G: Game>(g: &mut G, img: &Image, fr: &Frame, turned: bool) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let ebp = fr.esp.wrapping_sub(4);
@@ -719,7 +748,19 @@ pub fn follow_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 // sub esp, 0x24; push esi; push edi; push s; call
                 let esp = ebp.wrapping_sub(0x34);
                 g.write::<u32>(esp + 4, s);
-                rotate_offset(g, img, img.rel32_target(f + 0x9b), esp, angles, pos);
+                let at = img.rel32_target(f + 0x9b);
+                if turned {
+                    let turn = Frame {
+                        at,
+                        esp,
+                        ecx: angles,
+                        edx: pos,
+                        ..*fr
+                    };
+                    crate::s4_small::turn_point(g, img, &turn);
+                } else {
+                    rotate_offset(g, img, at, esp, angles, pos);
+                }
             }
             true
         }

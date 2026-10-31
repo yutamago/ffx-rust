@@ -957,6 +957,7 @@ ports! {
     "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
     "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
     "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
+    "follow task (turned)" => s4_misc::FOLLOW_TASK_TURNED, s4_misc::follow_task_turned;
     "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
     "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
     "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
