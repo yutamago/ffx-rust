@@ -8535,3 +8535,114 @@ pub const THREE_ACTORS_SHOWN: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Starts an effect object for a host (internal: `ecx` = the host, `edx`
+/// = the object, `xmm3` its scale, the stack `(index, motion)`): the
+/// model words cleared (scale `+0x60..+0x6c`), `*G_HOST` = the host
+/// (operand `+0x4`), the part `list[index]` of slot 941 `(host[0x2c] +
+/// 0x10)` started on it ([`crate::opu_parts::start_part`], `0x1000`, 1),
+/// its animation reset with `motion` ([`crate::sb_misc::anim_reset`]),
+/// then a pool node ([`crate::l5_objhost::pool_alloc`]) holding it
+/// appended to the host's list (head `+0x30`, tail `+0x34`, count
+/// `+0x3c`). Returns the object.
+///
+/// `magic_0304` 0x10007cd0 (217 bytes; 2 DLLs).
+pub fn start_host_object<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let (host, obj) = (fr.ecx, fr.edx);
+    let scale = fr.xmm_f32(3).to_bits();
+    for o in [0x48u32, 0x44, 0x40] {
+        g.write::<u32>(obj.wrapping_add(o), 0);
+    }
+    g.write::<u32>(obj.wrapping_add(0x4c), 0x3f80_0000);
+    for o in [0x5cu32, 0x58, 0x54, 0x50, 0x6c, 0x68, 0x64, 0x60] {
+        let v = if o >= 0x60 { scale } else { 0 };
+        g.write::<u32>(obj.wrapping_add(o), v);
+    }
+    let p = g.read::<u32>(op(img, f, 0x4));
+    g.write::<u32>(p, host);
+    let d = g.read::<u32>(g.read::<u32>(host.wrapping_add(0x2c)).wrapping_add(0x10));
+    let table = slot_call(g, img, f, (0x63, 941), &[d]).eax;
+    let index = fr.arg(g, 0);
+    let program = g.read::<u32>(table.wrapping_add(index.wrapping_mul(4)));
+    let start = img.rel32_target(f + 0x81);
+    crate::opu_parts::start_part(g, img, start, obj, 0x1000, program, 1);
+    crate::sb_misc::anim_reset(g, obj, fr.arg(g, 1));
+    let node = crate::l5_objhost::pool_alloc(g, img, img.rel32_target(f + 0x96));
+    if node == 0 {
+        return Ret::eax(obj);
+    }
+    g.write::<u32>(node + 4, 0);
+    let tail = g.read::<u32>(host.wrapping_add(0x34));
+    g.write::<u32>(node, tail);
+    if tail == 0 {
+        g.write::<u32>(host.wrapping_add(0x30), node);
+    } else {
+        g.write::<u32>(tail + 4, node);
+    }
+    g.write::<u32>(host.wrapping_add(0x34), node);
+    g.write::<u32>(node + 8, obj);
+    let n = g.read::<u32>(host.wrapping_add(0x3c));
+    g.write::<u32>(host.wrapping_add(0x3c), n.wrapping_add(1));
+    Ret::eax(obj)
+}
+
+/// [`start_host_object`].
+pub const START_HOST_OBJECT: Sig = Sig {
+    len: 217,
+    hash: 0xa5e8_d949_8f83_5629,
+    calls: &[
+        (0x81, Callee::Sig(&crate::opu_parts::START_PART)),
+        (0x8e, Callee::Sig(&crate::sb_misc::ANIM_RESET)),
+        (0x96, Callee::Sig(&crate::l5_objhost::POOL_ALLOC)),
+    ],
+    imports: &[],
+};
+
+/// A point moved by a turned offset (no arguments): with `B` the word at
+/// operand `+0x11`, the matrix `M` (a local) set to the identity (slot
+/// 235), turned by 0 (slot 328) and by the angle `B + 0xeb4` (slot 329);
+/// the offset (-20, 0, -10, 1) through `M` (slot 229) is added to the
+/// point `B + 0xc74` (slot 248) and its `w` set to 1. Each call sees the
+/// words the earlier ones left. Returns slot 248's `eax`.
+///
+/// `magic_0430` 0x100038e0 (218 bytes; 2 DLLs).
+pub fn point_turned_offset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    // push ebp; sub esp, 0x68: the locals hang off ebp = esp - 4
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, v, out, saved) = (
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x68),
+    );
+    let b = g.read::<u32>(op(img, f, 0x11));
+    let point = b.wrapping_add(0xc74);
+    let angle = g.read::<u32>(b.wrapping_add(0xeb4));
+    g.write::<u32>(saved, angle);
+    for (i, w) in (0u32..).zip([0xc1a0_0000, 0, 0xc120_0000, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, w);
+    }
+    slot_call(g, img, f, (0x29, 235), &[m]);
+    // the identity's word is overwritten with the 0.0 turn
+    slot_call(g, img, f, (0x63, 328), &[m, m, 0]);
+    let angle = g.read::<u32>(saved);
+    slot_call(g, img, f, (0x82, 329), &[m, m, angle]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 6 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x9b, 229), &[out, m, v, m, m, angle]);
+    // call width: 9 (the earlier calls' words stay on the stack)
+    let words = [point, point, out, out, m, v, m, m, angle];
+    let r = slot_call(g, img, f, (0xb3, 248), &words);
+    g.write::<u32>(point + 0xc, 0x3f80_0000);
+    through(r)
+}
+
+/// [`point_turned_offset`].
+pub const POINT_TURNED_OFFSET: Sig = Sig {
+    len: 218,
+    hash: 0x015c_88c9_6d1c_3e4c,
+    calls: &[(0xd2, Callee::Any)],
+    imports: &[],
+};

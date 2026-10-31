@@ -3933,3 +3933,61 @@ fn resource_parts_and_actors_shown() {
     }
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn host_objects_and_turned_offsets() {
+    let Some(mut t) = twin(304) else { return };
+    let at = t.at(0x7cd0);
+    t.set_u32(t.img.word(at + 0x04), SCRATCH + 0x200);
+    for i in 0..8 {
+        t.set_u32(SCRATCH + 0x400 + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, |_, _| SCRATCH + 0x400);
+    t.stub(714, |m, a| {
+        for (i, w) in (0u32..).zip(&a[..5]) {
+            m.w32(SCRATCH + 0x910 + 4 * i, *w);
+        }
+        0x714
+    });
+    let pa = t.img.rel32_target(at + 0x96);
+    let free = t.img.word(pa + 0x04);
+    let nodes = t.img.word(pa + 0x27) - 8;
+    for i in 0..8 {
+        t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+        t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+        t.set_u32(nodes + 12 * i + 8, 0);
+    }
+    let (host, obj, d) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x300);
+    for (k, (count, scale, tl)) in [
+        (3u16, 0.5f32, 0u32),
+        (2, -2.0, SCRATCH + 0x600),
+        (0, 1.0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        t.write(obj, &[0x5a; 0x130]);
+        t.write(host, &[0x33; 0x40]);
+        t.set_u32(host + 0x2c, d);
+        t.set_u32(d + 0x10, 0x00d0_0010);
+        t.set_u32(host + 0x34, tl);
+        t.set_u16(free, count);
+        let c = Call {
+            ecx: host,
+            edx: obj,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(0.0), Xmm::f32(scale)]);
+        let args = [k as u32 * 2 + 1, 0x0a00 + k as u32];
+        t.check(at, c, &args, Eax::Checked, s4_small::start_host_object);
+    }
+    drop(t);
+    let Some(mut t) = twin(430) else { return };
+    let f = t.at(0x38e0);
+    recs(&mut t, &[(235, 1), (328, 3), (329, 3), (229, 6), (248, 9)]);
+    let b = SCRATCH + 0x1000;
+    t.write(b, &vec![0x44; 0x1000]);
+    t.set_u32(b + 0xeb4, 1.25f32.to_bits());
+    t.set_u32(op(&t, f, 0x11), b);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}

@@ -1177,6 +1177,7 @@ ports! {
     "effect frame (sound)" => s4_small::EFFECT_FRAME_SOUND, s4_small::effect_frame_sound;
     "register resource parts" => s4_small::REGISTER_RESOURCE_PARTS, s4_small::register_resource_parts;
     "three actors shown" => s4_small::THREE_ACTORS_SHOWN, s4_small::three_actors_shown;
+    "point turned offset" => s4_small::POINT_TURNED_OFFSET, s4_small::point_turned_offset;
     "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
     "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
@@ -1599,6 +1600,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("move ends", &s4_small::MOVE_ENDS),
     ("pulse colour", &s4_small::PULSE_COLOUR),
     ("summon nodes (b)", &s4_small::SUMMON_NODES_B),
+    ("start host object", &s4_small::START_HOST_OBJECT),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
