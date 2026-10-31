@@ -2601,7 +2601,7 @@ fn summon_ppp_head<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Pushes {
     // call width: 12 (the most `Pushes::words` holds)
     s.call(g, slot_target(g, w(0xd), 718), 0);
     // push imm8 at +0xc1: the part data's kind (0 or 3 so far)
-    let kind = u32::from(img.word(f + 0xc2) as u8);
+    let kind = i32::from(img.word(f + 0xc2) as i8).cast_unsigned();
     s.push_all(&[kind, 8, w(0xcc)]);
     // call width: 12 (the most `Pushes::words` holds)
     let d = s.call(g, slot_target(g, w(0xbd), 719), 0).eax;
@@ -3025,7 +3025,7 @@ pub fn summon_ppp_start_stream<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> R
     let w = |o: u32| op(img, f, o);
     summon_ppp_head(g, img, fr);
     // push imm8 at +0x167: the stream (sign-extended; 1 or 2 so far)
-    let stream = u32::from(img.word(f + 0x168) as u8 as i8 as u8);
+    let stream = i32::from(img.word(f + 0x168) as i8).cast_unsigned();
     let mut s = Pushes::default();
     s.push_all(&[stream, 6, w(0x16c)]);
     // call width: 12 (the most `Pushes::words` holds)
@@ -3848,9 +3848,9 @@ pub const THREE_PARTS_DRAW: Sig = Sig {
 /// 800`; then `*G_P = ITEM` and the part run (slot 712 `(obj, 0x30)`)
 /// with the lock `*G_L` at 1 (the original saves and restores the 1 it
 /// has just stored). When it ends, the part's objects are freed (slot
-/// 713) and it starts again with the first program of slot 941 `(*G_E
-/// + 0x10)` ([`start_part`], `0x1000`, 1). The lock is 0 at the end.
-/// Returns 1.
+/// 713) and it starts again with the first program of slot 941
+/// `(*G_E + 0x10)` ([`start_part`], `0x1000`, 1). The lock is 0 at the
+/// end. Returns 1.
 ///
 /// `magic_0662` 0x10001260 (533 bytes; 2 DLLs).
 pub fn camera_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {

@@ -1804,7 +1804,11 @@ fn throws_aimed() {
         }
         t.set_u32(
             parent + 0x10,
-            if k % 2 == 0 { parent } else { SCRATCH + 0x1500 },
+            if k.is_multiple_of(2) {
+                parent
+            } else {
+                SCRATCH + 0x1500
+            },
         );
         let words = [
             node,
