@@ -3210,3 +3210,72 @@ fn camera_records_started() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn timed_sparks_fired() {
+    let Some(mut t) = twin(76) else { return };
+    let f = t.at(0x6470);
+    rec_mem(&mut t, 239, 3, 0, None);
+    let calls = SCRATCH + 0x7e0;
+    rec_mem(&mut t, 307, 0, 0, None);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(calls);
+        m.w32(calls, k + 1);
+        f64::from(k % 5) * 0.25
+    });
+    rec_mem(&mut t, 325, 2, 4, None);
+    t.stub(325, |m, a| {
+        for i in 0..4 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, v ^ 0x10);
+        }
+        0x325
+    });
+    let pn = t.img.rel32_target(f + 0x34f);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec_mem(&mut t, 941, 1, 0, None);
+    t.stub(941, move |_, _| table);
+    rec_mem(&mut t, 714, 5, 0, None);
+    let start = t.img.rel32_target(pn + 0x88);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x2f0);
+    let task = SCRATCH + 0x300;
+    let obj = SCRATCH + 0x1000;
+    let step = f32::from_bits(t.u32(op(&t, f, 0x1d)));
+    let limits = op(&t, f, 0x33);
+    let (last, sentinel) = (op(&t, f, 0x85), op(&t, f, 0x92));
+    let parent = op(&t, f, 0x29e);
+    for (i, d, listed) in [
+        (0u32, -1.0f32, false),
+        (0, f32::NAN, false),
+        (0, 0.0, false),
+        (1, 0.5, true),
+        (2, 1.0, true),
+        (3, 0.0, false),
+        (3, 2.0, true),
+    ] {
+        t.write(obj, &varied(0xb00, i));
+        t.write(SCRATCH + 0x900, &varied(0x80, i + 4));
+        t.set_u32(op(&t, f, 0x320), SCRATCH + 0x900);
+        t.set_u32(op(&t, f, 0x53), 0x0dd0_0000 + i);
+        t.set_u32(task, SCRATCH + 0x380);
+        t.set_u32(task + 4, obj);
+        let node = SCRATCH + 0x380;
+        t.set_u32(node + 4, SCRATCH + 0x3c0);
+        t.set_u32(node + 8, SCRATCH + 0x3e0);
+        let limit = f32::from_bits(t.u32(limits + 4 * i));
+        t.set_u32(obj + 0xadc, (limit - step + d).to_bits());
+        t.set_u32(obj + 0xae0, i);
+        // the nodes' parent is the list's sentinel: no children yet
+        t.write(parent, &varied(0x1c, i + 9));
+        t.set_u32(parent + 0x18, 0);
+        t.set_u32(last, if listed { SCRATCH + 0x500 } else { sentinel });
+        // the particles' list: empty, or one node in it
+        let plist = op(&t, f, 0x330);
+        t.write(plist, &varied(0x1c, i + 2));
+        t.set_u32(plist + 0x10, if listed { SCRATCH + 0x540 } else { plist });
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

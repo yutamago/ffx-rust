@@ -6872,3 +6872,173 @@ pub const CAMERA_RECORDS_START: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `node` appended to the DLL's list with the sentinel `l` (the operands
+/// in `f`'s code: the sentinel immediates `ls`, `ls2`, `lcmp`, the last
+/// node `last`, `last2`, its store `last_store`, the first node's store
+/// `first`, the u16 count `count`, the vtable `vt`): halfword `+0x1a =
+/// 0xff`, `+0xc` and `+0x10` itself, `+0x14` and `+0x4` the sentinel,
+/// `+0x8` the old last (whose `+4` it becomes, or the list's first when
+/// the list was empty), the count up, `node[0] = VT`.
+fn list_push<G: Game>(g: &mut G, img: &Image, f: u32, node: u32, ops: [u32; 9]) {
+    let w = |o: u32| op(img, f, o);
+    let [ls, ls2, last, last2, lcmp, first, count, last_store, vt] = ops;
+    g.write::<u16>(node + 0x1a, 0xff);
+    g.write::<u32>(node + 0x10, node);
+    g.write::<u32>(node + 0xc, node);
+    g.write::<u32>(node + 0x14, w(ls));
+    g.write::<u32>(node + 4, w(ls2));
+    let old = g.read::<u32>(w(last));
+    g.write::<u32>(node + 8, old);
+    let old = g.read::<u32>(w(last2));
+    if old == w(lcmp) {
+        g.write::<u32>(w(first), node);
+    } else {
+        g.write::<u32>(old.wrapping_add(4), node);
+    }
+    let n = g.read::<u16>(w(count)).wrapping_add(1);
+    g.write::<u16>(w(count), n);
+    g.write::<u32>(w(last_store), node);
+    g.write::<u32>(node, w(vt));
+}
+
+/// One of four sparks fired on a timer (cdecl `(task)`, `task[1]` the
+/// object; an aligned frame): the clock `+0xadc += K`; while it is below
+/// `T[i]` (`i = +0xae0`; unordered waits too) it returns `i`. Else: from
+/// the third on the target `*G_D` is hit (slot 239 `(d, -5, 0)`); the
+/// records `A = (i + 0x18) * 0x2c` and `B = (i + 0x1d) * 0x2c` into the
+/// object go on the DLL's list; the point `+0x43c + 0x2c i` is the
+/// start `+0x4ec` (slot 325) moved by `(frnd - K1) K2 - K3`, `K4 - (frnd
+/// - K1) K5`, `(frnd - K1) K2 - K3` (slot 307, ST0), `w` 1.0; `+0x518 +
+/// 0x2c i..` three 1.0, `+0x524 + 0x2c i = (frnd - K1) K6 + K7`; the node
+/// `+0x5ac + 0x14c i` inserted ([`node_insert`]: the group `(node, L,
+/// L2, A, L3, B)`) and the particle `+0x20 + 0x100 i` set up
+/// ([`particle_node`]: `(p, P, node, *G_O, Q, 0)`, `p[0] = VT`). Then `i`
+/// goes up; it returns [`particle_node`]'s `eax` until the fourth, after
+/// which the task's node leaves its ring (`node[1]` returned).
+///
+/// `magic_0076` 0x10006470 (898 bytes; 2 DLLs).
+#[allow(clippy::too_many_lines)] // the original's records, one by one
+pub fn timed_sparks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let task = fr.arg(g, 0);
+    let obj = g.read::<u32>(task + 4);
+    let idx = |g: &G| g.read::<u32>(obj + 0xae0);
+    let clock = add(g.read::<f32>(obj + 0xadc), k(g, 0x1d));
+    let i = idx(g);
+    g.write::<f32>(obj + 0xadc, clock);
+    // comiss; jb: below or unordered waits
+    let limit = g.read::<f32>(w(0x33).wrapping_add(4 * i));
+    if clock.is_nan() || clock < limit {
+        return Ret::eax(i);
+    }
+    if i.cast_signed() >= 2 {
+        let d = g.read::<u32>(w(0x53));
+        slot_call(g, img, f, (0x43, 239), &[d, 0xffff_fffb, 0]);
+    }
+    let rec = |g: &G, base: u32| obj.wrapping_add(idx(g).wrapping_add(base).wrapping_mul(0x2c));
+    let a = rec(g, 0x18);
+    list_push(
+        g,
+        img,
+        f,
+        a,
+        [0x79, 0x80, 0x85, 0x8d, 0x92, 0x9a, 0xa6, 0xac, 0xb9],
+    );
+    let p = |g: &G| {
+        obj.wrapping_add(idx(g).wrapping_mul(0x2c))
+            .wrapping_add(0x43c)
+    };
+    let dst = p(g);
+    slot_call(g, img, f, (0xcf, 325), &[dst, obj.wrapping_add(0x4ec)]);
+    let frnd = |g: &mut G, t: u32| st0_f32(slot_call(g, img, f, (t, 307), &[]));
+    let r = frnd(g, 0xdc);
+    let x = sub(mul(sub(r, k(g, 0xf9)), k(g, 0x10a)), k(g, 0x112));
+    let at = p(g);
+    let x = add(x, g.read::<f32>(at));
+    g.write::<f32>(at, x);
+    let r = frnd(g, 0x129);
+    let y = sub(k(g, 0x151), mul(sub(r, k(g, 0x143)), k(g, 0x15c)));
+    let at = p(g) + 4;
+    let y = add(y, g.read::<f32>(at));
+    g.write::<f32>(at, y);
+    let r = frnd(g, 0x177);
+    let z = sub(mul(sub(r, k(g, 0x19a)), k(g, 0x1a2)), k(g, 0x1aa));
+    let at = p(g) + 8;
+    let z = add(z, g.read::<f32>(at));
+    g.write::<f32>(at, z);
+    let at = p(g) + 0xc;
+    g.write::<u32>(at, 0x3f80_0000);
+    let b = rec(g, 0x1d);
+    list_push(
+        g,
+        img,
+        f,
+        b,
+        [
+            0x1f1, 0x1f8, 0x1fd, 0x205, 0x20a, 0x212, 0x21e, 0x224, 0x22a,
+        ],
+    );
+    for o in [0x518u32, 0x51c, 0x520] {
+        let at = p(g) - 0x43c + o;
+        g.write::<u32>(at, 0x3f80_0000);
+    }
+    let r = frnd(g, 0x26b);
+    let v = add(mul(sub(r, k(g, 0x285)), k(g, 0x296)), k(g, 0x2ae));
+    let at = p(g) - 0x43c + 0x524;
+    g.write::<f32>(at, v);
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let group = top.wrapping_sub(0x18);
+    let i = idx(g);
+    let node = obj.wrapping_add(i.wrapping_mul(0x14c)).wrapping_add(0x5ac);
+    let a = obj.wrapping_add(i.wrapping_add(0x18).wrapping_mul(0x2c));
+    let b = obj.wrapping_add(i.wrapping_add(0x1d).wrapping_mul(0x2c));
+    for (j, v) in (0u32..).zip([node, w(0x29e), w(0x2a6), a, w(0x2b6), b]) {
+        g.write::<u32>(group + 4 * j, v);
+    }
+    node_insert(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x2f9),
+            esp: top.wrapping_sub(0x2c),
+            ecx: group,
+            ..*fr
+        },
+    );
+    let i = idx(g);
+    let part = obj.wrapping_add(0x20).wrapping_add(i << 8);
+    let node = obj.wrapping_add(0x5ac).wrapping_add(i.wrapping_mul(0x14c));
+    let o = g.read::<u32>(w(0x320));
+    for (j, v) in (0u32..).zip([part, w(0x330), node, o, w(0x33c), 0]) {
+        g.write::<u32>(group + 4 * j, v);
+    }
+    g.write::<u32>(part, w(0x34a));
+    let eax = particle_node(g, img, img.rel32_target(f + 0x34f), group);
+    let i = idx(g).wrapping_add(1);
+    g.write::<u32>(obj + 0xae0, i);
+    if i.cast_signed() < 4 {
+        return Ret::eax(eax);
+    }
+    let n = g.read::<u32>(task);
+    let (prev, next) = (g.read::<u32>(n + 4), g.read::<u32>(n + 8));
+    g.write::<u32>(prev.wrapping_add(8), next);
+    let (prev, next) = (g.read::<u32>(n + 4), g.read::<u32>(n + 8));
+    g.write::<u32>(next.wrapping_add(4), prev);
+    g.write::<u32>(n + 8, n);
+    g.write::<u32>(n + 4, n);
+    Ret::eax(prev)
+}
+
+/// [`timed_sparks`] (the `rel32`s: [`node_insert`] and [`particle_node`]).
+pub const TIMED_SPARKS: Sig = Sig {
+    len: 898,
+    hash: 0x9c58_3b29_6438_579f,
+    calls: &[
+        (0x2f9, Callee::Sig(&INSERT)),
+        (0x34f, Callee::Sig(&PARTICLE_NODE)),
+    ],
+    imports: &[],
+};
