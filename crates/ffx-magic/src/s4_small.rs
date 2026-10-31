@@ -8448,3 +8448,90 @@ pub const EFFECT_FRAME_SOUND: Sig = Sig {
     calls: &[(0x7a, Callee::Sig(&crate::sb_misc::TIMELINE_RUN))],
     imports: &[],
 };
+
+/// The DLL's part handles checked and registered (no arguments; an
+/// aligned frame): for each of 20 parts `i` of the DLL's resource `P`
+/// (operand `+0x1f`), slot 719 `(P, 4, i)`, then three times slot 719
+/// gives the handle `h`, slot 772 `(h, j)` its 64-bit id, slot 773 asks
+/// whether it is new (with `**G_LOCK` 1 around the call) and, when it
+/// is, slot 779 registers it (again with the lock). Returns the last
+/// slot 773's answer, or the lock's address after a registration.
+///
+/// `magic_0162` 0x10001c40 (213 bytes; 2 DLLs).
+pub fn register_resource_parts<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    let mut eax = 0;
+    for i in 0..0x14u32 {
+        slot_call(g, img, f, (0x11, 719), &[op(img, f, 0x1f), 4, i]);
+        for j in 0..3u32 {
+            let h = slot_call(g, img, f, (0x31, 719), &[op(img, f, 0x3f), 4, i]).eax;
+            let id = slot_call(g, img, f, (0x4b, 772), &[h, j]);
+            let lock = rd(g, 0x59);
+            let saved = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            eax = slot_call(g, img, f, (0x6b, 773), &[id.eax, id.edx, h, j]).eax;
+            let lock = rd(g, 0x83);
+            g.write::<u32>(lock, saved);
+            if eax != 0 {
+                g.write::<u32>(lock, 1);
+                slot_call(g, img, f, (0x95, 779), &[id.eax, id.edx]);
+                let lock = rd(g, 0xad);
+                g.write::<u32>(lock, saved);
+                eax = lock;
+            }
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`register_resource_parts`].
+pub const REGISTER_RESOURCE_PARTS: Sig = Sig {
+    len: 213,
+    hash: 0x8d51_feeb_ac02_e6a5,
+    calls: &[],
+    imports: &[],
+};
+
+/// The first three actors (`T[G_MAP[0..3]]`) shown (slot 257 `(A, 1)`)
+/// and their motions reset (slot 384 `(A)`), then the state 0x10af set
+/// (slots 25 `(0x10af, 1)` and 24 `(0x10af, 0)`), each call seeing the
+/// words the earlier ones left (no arguments). Returns slot 24's `eax`.
+///
+/// `magic_0349` 0x100048a0 (216 bytes; 2 DLLs).
+pub fn three_actors_shown<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let actor = |g: &G, map_op: u32, i: u32, t_op: u32| {
+        let map = g.read::<u32>(op(img, f, map_op));
+        let k = u32::from(g.read::<u8>(map.wrapping_add(i)));
+        g.read::<u32>(op(img, f, t_op).wrapping_add(4 * k))
+    };
+    let mut words: Vec<u32> = Vec::new();
+    for (i, (m, t, s)) in (0u32..).zip([(0x1, 0xd, 0x12), (0x1f, 0x2c, 0x31), (0x3e, 0x4b, 0x50)]) {
+        let a = actor(g, m, i, t);
+        words.splice(0..0, [a, 1]);
+        // call width: 2..6 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (s, 257), &words);
+    }
+    for (i, (m, t, s)) in (0u32..).zip([(0x5d, 0x67, 0x6c), (0x79, 0x84, 0x89), (0x96, 0xa1, 0xa6)])
+    {
+        let a = actor(g, m, i, t);
+        words.insert(0, a);
+        // call width: 7..9 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (s, 384), &words);
+    }
+    words.splice(0..0, [0x10af, 1]);
+    // call width: 11 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0xb3, 25), &words);
+    words.splice(0..0, [0x10af, 0]);
+    // call width: 13 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0xc4, 24), &words))
+}
+
+/// [`three_actors_shown`].
+pub const THREE_ACTORS_SHOWN: Sig = Sig {
+    len: 216,
+    hash: 0x1754_af40_27f1_53e9,
+    calls: &[],
+    imports: &[],
+};

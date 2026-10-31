@@ -3907,3 +3907,29 @@ fn summon_nodes_b_and_sound_frames() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn resource_parts_and_actors_shown() {
+    let Some(mut t) = twin(162) else { return };
+    let f = t.at(0x1c40);
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[2]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1] ^ (a[0] << 4));
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(&mut t, 773, 4, |_, a| (a[3] ^ a[2]) & 1);
+    recs(&mut t, &[(779, 2)]);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x59), lock);
+    t.set_u32(lock, 7);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(349) else { return };
+    let f = t.at(0x48a0);
+    recs(&mut t, &[(257, 2), (384, 1), (25, 2), (24, 2)]);
+    let map = SCRATCH + 0x80;
+    t.write(map, &[2, 0, 1]);
+    t.set_u32(op(&t, f, 0x1), map);
+    for k in 0..3 {
+        t.set_u32(op(&t, f, 0xd) + 4 * k, 0x0a00_0000 + k);
+    }
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+}
