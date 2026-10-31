@@ -82,6 +82,7 @@ pub mod o4_fam4;
 pub mod o4_fam5;
 pub mod o4_flags;
 pub mod o4_misc;
+pub mod o4_more;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_rcef2;
@@ -1379,6 +1380,11 @@ ports! {
     "o4 static record_two_node 0303@48d0" => o4_static::RECORD_TWO_NODE_0303_48D0, o4_static::record_two_node;
     "o4 static slot_by_flag_obj 0316@16b0" => o4_static::SLOT_BY_FLAG_OBJ_0316_16B0, o4_static::slot_by_flag_obj;
     "o4 static shape_local 0380@1a20" => o4_static::SHAPE_LOCAL_0380_1A20, o4_static::shape_local;
+    "o4 more slot_pair_loop 0165@5490" => o4_more::SLOT_PAIR_LOOP_0165_5490, o4_more::slot_pair_loop;
+    "o4 more object_list_node 0165@2ff0" => o4_more::OBJECT_LIST_NODE_0165_2FF0, o4_more::object_list_node;
+    "o4 more reset_record_handle 0297@8020" => o4_more::RESET_RECORD_HANDLE_0297_8020, o4_more::reset_record_handle;
+    "o4 more arg_list_node 0270@1b80" => o4_more::ARG_LIST_NODE_0270_1B80, o4_more::arg_list_node;
+    "o4 more slot_each_flag 0301@22d0" => o4_more::SLOT_EACH_FLAG_0301_22D0, o4_more::slot_each_flag;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1788,6 +1794,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 flags object_head_node 0203@7940",
         &o4_flags::OBJECT_HEAD_NODE_0203_7940,
+    ),
+    (
+        "o4 more float_ratio_half 0519@2750",
+        &o4_more::FLOAT_RATIO_HALF_0519_2750,
     ),
 ];
 
