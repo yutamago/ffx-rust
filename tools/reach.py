@@ -1017,7 +1017,7 @@ def main():
              f"edges. Reachable means reachable from some root; `strict` drops the addresses taken only in "
              f"unreachable code and ties EH funclets to the function that installs their handler (SafeSEH and "
              f"FuncInfo entries are no roots there). Hooked = replaced by a Rust function (`ported!` or a hand "
-             f"hook without a trampoline); wrapped hooks count as not hooked.")
+             f"hook without a trampoline); wrapped hooks count as not hooked, except a wrapper that calls a port (progress.wrapper_ports).")
     L.append("")
     L.append("## Per module")
     L.append("")
