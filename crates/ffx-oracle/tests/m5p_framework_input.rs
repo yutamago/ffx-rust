@@ -2939,3 +2939,199 @@ fn left2_apply_screen_mode_matches_the_original() {
         t.reset();
     }
 }
+
+/// Code answering `values` in turn (then the last one again), popping
+/// `pops` words; nothing logged.
+fn seq_code(t: &mut Twins, pops: u16, values: &[u32]) -> u32 {
+    let mut v = values.to_vec();
+    v.push(*values.last().unwrap());
+    let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+    let tab = t.alloc(&bytes);
+    let cell = t.zeros(4);
+    let last = values.len() as u32;
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes()); // mov eax, [cell]
+    c.push(0x3d);
+    c.extend(last.to_le_bytes()); // cmp eax, last
+    c.extend([0x74, 0x06]); // je +6
+    c.extend([0xff, 0x05]);
+    c.extend(cell.to_le_bytes()); // inc dword [cell]
+    c.extend([0x8b, 0x04, 0x85]);
+    c.extend(tab.to_le_bytes()); // mov eax, [eax*4 + tab]
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend((pops * 4).to_le_bytes());
+    }
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    at
+}
+
+/// A `jmp` at `sym` to `code`.
+fn place_code(t: &mut Twins, sym: u32, code: u32) {
+    let at = t.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+    let old = Oracle::read(&mut t.a, at, 5).unwrap();
+    t.saved.entry(at).or_insert(old);
+    t.write(at, &j);
+}
+
+#[test]
+fn left2_read_all_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // the known size: (size, pos, terminate, head, old data, block)
+        for (size, pos, nul, head, old, block) in [
+            (0x30u32, 0x10u32, 1u32, 0u32, 0u32, true),
+            (0x30, 0x10, 0x101, 0x21, 0x0055_0000, true),
+            (0x30, 0x10, 0, 0x40, 0x0055_0000, true),
+            (0x30, 0x10, 1, 0x8000_0002, 0x0055_0000, true),
+            (0x30, 0x10, 1, 3, 0x0055_0000, true),
+            (0x30, 0x10, 1, 3, 0x0055_0000, false),
+            (0x10, 0x10, 0, 3, 0x0055_0000, true),
+            (0x10, 0x10, 0, 0x8000_0003, 0x0055_0000, true),
+        ] {
+            let b = if block { t.junk(0x80, 4) } else { 0 };
+            t.stub(l2::READ_CALLS[0], false, 2, 0, b);
+            t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+            let stream = t.object(&[0, 0, 0, 0, 0, 2], &[0, 0, 0, 0, 0, 0x18]);
+            t.w32(stream + 0x10, size);
+            t.w32(stream + 0xc, pos);
+            let array = t.zeros(8);
+            t.w32(array, head);
+            let old_block = if old != 0 { t.junk(0x80, 5) } else { 0 };
+            t.w32(array + 4, old_block);
+            let what = format!(
+                "{label}: readAll size {size:#x} pos {pos:#x} nul {nul:#x} head {head:#x} block {block}"
+            );
+            // the known size uses the list word for its own count
+            t.frame_len = 0;
+            t.check_frame(
+                &what,
+                0x0057_dd60,
+                Conv::Thiscall(stream),
+                &[array, nul],
+                0x18,
+                |g| {
+                    let list = g.1;
+                    Out::U32(l2b::read_all(g, stream, array, nul, list))
+                },
+            );
+            t.reset();
+        }
+        // the unknown size: chunks, a failed chunk, the resize's error
+        for (size, chunks, reads, resize, head, nul) in [
+            (u32::MAX, 3usize, &[0x10u32, 0x20, 0][..], 0u32, 0u32, 1u32),
+            (0x10, 3, &[0x10, 0][..], 0, 0x40, 0),
+            (u32::MAX, 3, &[0][..], 0, 0, 1),
+            (u32::MAX, 1, &[0x10, 0x20, 0][..], 0, 0, 1),
+            (u32::MAX, 3, &[0x10, 0x20, 0][..], 7, 0, 1),
+            (u32::MAX, 3, &[0x10, 0][..], 0, 0x8000_0000, 0),
+        ] {
+            let mut blocks: Vec<u32> = (0..chunks).map(|_| t.junk(0x808, 6)).collect();
+            blocks.push(0);
+            let malloc = seq_code(&mut t, 0, &blocks);
+            place_code(&mut t, l2::READ_CALLS[2], malloc);
+            t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+            t.stub(l2::READ_CALLS[3], true, 1, 1, resize);
+            t.stub(l2::READ_CALLS[4], false, 1, 0, 0);
+            t.stub(l2::MEMCPY, false, 3, 0, 0);
+            let read = seq_code(&mut t, 2, reads);
+            let vt = t.alloc(&[[0u8; 20].as_slice(), &read.to_le_bytes()].concat());
+            let stream = t.zeros(0x20);
+            t.w32(stream, vt);
+            // the position (+0xc) one less than the size: -1 remaining
+            t.w32(stream + 0x10, size);
+            t.w32(
+                stream + 0xc,
+                if size == u32::MAX {
+                    0
+                } else {
+                    size.wrapping_add(1)
+                },
+            );
+            let data = t.junk(0x80, 7);
+            let array = t.zeros(8);
+            t.w32(array, head);
+            t.w32(array + 4, data);
+            let what = format!(
+                "{label}: readAll chunks {chunks} reads {reads:?} resize {resize} head {head:#x}"
+            );
+            t.frame_len = 4;
+            t.check_frame(
+                &what,
+                0x0057_dd60,
+                Conv::Thiscall(stream),
+                &[array, nul],
+                0x18,
+                |g| {
+                    let list = g.1;
+                    Out::U32(l2b::read_all(g, stream, array, nul, list))
+                },
+            );
+            t.reset();
+        }
+    }
+}
+
+#[test]
+fn left2_read_value_file_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // texts 4 and 5 run with a logging sscanf (the lines it is handed)
+        let texts: [&[u8]; 6] = [
+            b"12\n34\n\0",
+            b"\n7\0",
+            b"5\0",
+            b"\0",
+            b"\n\n5\n\0",
+            b"5\n\n\n1\0",
+        ];
+        for open in [0u32, 1] {
+            for result in [0u32, 4] {
+                for (k, text) in texts.iter().enumerate() {
+                    if open == 0 && k > 0 {
+                        continue;
+                    }
+                    let data = t.alloc(text);
+                    let len = (text.len() - 1) as u32;
+                    let head = if k == 2 { 0x8000_0000 | len } else { len };
+                    t.stub(l2::VALUE_FILE[0], true, 1, 1, 0);
+                    t.stub(l2::VALUE_FILE[1], true, 0, 0, open);
+                    // readAll: the array filled, `result` returned
+                    let mut pre = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov dword [eax], head
+                    pre.extend(head.to_le_bytes());
+                    pre.extend([0xc7, 0x40, 0x04]); // mov dword [eax+4], data
+                    pre.extend(data.to_le_bytes());
+                    let mut c = pre;
+                    let log_part = t.stub_code(l2::VALUE_FILE[2], true, 2, 2, result);
+                    c.push(0xe9);
+                    let at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+                    assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), at);
+                    c.extend(log_part.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes()); // jmp log_part
+                    t.write(at, &c);
+                    place_code(&mut t, l2::VALUE_FILE[2], at);
+                    t.stub(l2::VALUE_FILE[3], true, 0, 0, 0);
+                    t.stub(l2::VALUE_FILE[4], true, 0, 0, 0);
+                    t.stub(l2::READ_CALLS[1], false, 1, 0, 0);
+                    t.stub(l2::PRINTF, false, 3, 0, 0);
+                    if k >= 4 {
+                        t.stub_import_cdecl(l2::VALUE_FILE[6], 2, 1);
+                    }
+                    let path = t.alloc(b"value.txt\0");
+                    let what = format!("{label}: value file open {open} result {result} text {k}");
+                    // the array and the value (the array only once open)
+                    t.frame_len = if open != 0 { 12 } else { 0 };
+                    t.check_frame(&what, 0x0062_85b0, Conv::Cdecl, &[path], 0x24, |g| {
+                        let frame = g.1 - 0x1c;
+                        Out::U32(l2b::read_value_file(g, path, frame))
+                    });
+                    t.reset();
+                }
+            }
+        }
+    }
+}

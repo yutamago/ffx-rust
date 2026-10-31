@@ -30,4 +30,14 @@ ported! {
         let mut f = StackFrame::<{ lf::SCREEN_FRAME_WORDS as usize }>::new();
         lb::apply_screen_mode(&mut mem(), f.at());
     }
+    /// `PStream::readAll(array, terminate)`.
+    Phyre_PSerialization_PStream_readAll_0057dd60 @ 0x0057_dd60 => extern "thiscall" fn read_all(stream: u32, array: u32, terminate: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        lb::read_all(&mut mem(), stream, array, terminate, f.at())
+    }
+    /// The one-value file read `(path)`.
+    Phyre_PFramework_readValueFile_006285b0 @ 0x0062_85b0 => extern "C" fn read_value_file(path: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::VALUE_FRAME_WORDS as usize }>::new();
+        lb::read_value_file(&mut mem(), path, f.at())
+    }
 }

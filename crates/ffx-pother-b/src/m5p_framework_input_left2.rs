@@ -57,11 +57,44 @@ pub const G_APPLICATION: u32 = 0x00cc_9cd8;
 /// (0x9c bytes) then the `RECT`.
 pub const SCREEN_FRAME_WORDS: u32 = 0x2b;
 
+/// `readAll`'s callees: `PhyreMalloc(size, align)`, `PhyreFree`,
+/// `PhyreMalloc(size)` (cdecl), `PArray<PUInt8>::resize(n)` (thiscall),
+/// the chunk list's release `(&list)` (cdecl).
+pub const READ_CALLS: [u32; 5] = [
+    0x0042_fb80,
+    0x0042_fb20,
+    0x0042_fb40,
+    0x0044_a010,
+    0x0057_dcb0,
+];
+/// `memcpy` (cdecl).
+pub const MEMCPY: u32 = 0x0094_9256;
+/// `0x006285b0`'s callees and data: the `PStreamReaderFile` constructor
+/// `(path)`, `isOpen`, `readAll(&array, terminate)`, the file's close (on
+/// the stream `+0x14`), the destructor (all thiscall); the message for a
+/// file that does not open, `sscanf`'s import slot, its format.
+pub const VALUE_FILE: [u32; 8] = [
+    0x0057_66d0,
+    0x0057_6980,
+    0x0057_dd60,
+    0x0060_7d80,
+    0x0057_67c0,
+    0x00b4_03c8,
+    0x00b0_c418,
+    0x00b4_03dc,
+];
+/// `Phyre_PhyrePrintf(level, format, ...)` (cdecl).
+pub const PRINTF: u32 = 0x0043_52f0;
+/// The words of [`bridge::read_value_file`]'s frame (the stream, the
+/// array, the value).
+pub const VALUE_FRAME_WORDS: u32 = 10;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{
         CI_SQRT, Conv, DUMP_ENABLED, DUMP_PATH, DUMP_SLOTS, DUMP_TYPE, G_APPLICATION, G_HWND,
-        G_ICON, G_SCREEN_SETTINGS, Host, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, SCREEN_SLOTS,
+        G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
+        READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
     use ffx_bridge::x87::Reg;
 
@@ -207,5 +240,183 @@ pub mod bridge {
         let hwnd: u32 = h.read(hwnd_cell);
         let f = import(h, SCREEN_SLOTS[8]);
         h.call(f, Conv::Stdcall, &[hwnd, 0x80, 1, icon]);
+    }
+
+    /// `PStream::readAll(array, terminate)` (`0x0057dd60`, thiscall on the
+    /// stream, `ret 8`): the stream's remaining bytes into a
+    /// `PArray<PUInt8>` (count `+0`, bit 31 external; data `+4`), a NUL
+    /// after them for `terminate`. A stream of known size (`+0x10` less
+    /// the position `+0xc`) reads once into the array (grown to fit with
+    /// `PhyreMalloc(n, 1)`); one of unknown size reads 0x800-byte chunks
+    /// into a list of 0x808-byte blocks (`PhyreMalloc`) and copies them
+    /// over after the array's resize (`0x0044a010`). The array's count
+    /// becomes at most what was read (an emptied owned array loses its
+    /// block). 0; 0xd when an allocation fails; the resize's error (the
+    /// chunk list freed by `0x0057dcb0` through `list`, a word of the
+    /// port's frame; the original's).
+    pub fn read_all(h: &mut impl Host, stream: u32, array: u32, terminate: u32, list: u32) -> u32 {
+        let nul = terminate & 0xff;
+        let size: u32 = h.read(stream + 0x10);
+        let pos: u32 = h.read(stream + 0xc);
+        let total;
+        if size != u32::MAX && size.wrapping_sub(pos) != u32::MAX {
+            let rem = size.wrapping_sub(pos);
+            let need = nul.wrapping_add(rem);
+            let head: u32 = h.read(array);
+            if head & 0x7fff_ffff < need && need != head {
+                let mut block = 0;
+                if need != 0 {
+                    block = h.call_sym(READ_CALLS[0], Conv::Cdecl, &[need, 1]);
+                    if block == 0 {
+                        return 0xd;
+                    }
+                }
+                let old: u32 = h.read(array + 4);
+                let head: u32 = h.read(array);
+                if old != block && head & 0x8000_0000 == 0 && old != 0 {
+                    h.call_sym(READ_CALLS[1], Conv::Cdecl, &[old]);
+                }
+                h.write(array + 4, block);
+                h.write(array, need);
+            }
+            let data: u32 = h.read(array + 4);
+            let n = h.call_virtual(stream, 5, &[data, rem]);
+            let p: u32 = h.read(stream + 0xc);
+            h.write(stream + 0xc, p.wrapping_add(n));
+            total = nul.wrapping_add(n);
+            if nul != 0 {
+                h.write(data.wrapping_add(rem), 0u8);
+            }
+        } else {
+            let mut count = 0u32;
+            h.write(list, 0u32);
+            loop {
+                let chunk = h.call_sym(READ_CALLS[2], Conv::Cdecl, &[0x808]);
+                if chunk == 0 {
+                    let mut b: u32 = h.read(list);
+                    while b != 0 {
+                        let next: u32 = h.read(b);
+                        h.call_sym(READ_CALLS[1], Conv::Cdecl, &[b]);
+                        b = next;
+                    }
+                    return 0xd;
+                }
+                h.write(chunk, 0u32);
+                let n = h.call_virtual(stream, 5, &[chunk + 4, 0x800]);
+                let p: u32 = h.read(stream + 0xc);
+                h.write(stream + 0xc, p.wrapping_add(n));
+                h.write(chunk + 0x804, n);
+                if n == 0 {
+                    h.call_sym(READ_CALLS[1], Conv::Cdecl, &[chunk]);
+                    break;
+                }
+                let mut at = list;
+                if h.read::<u32>(list) != 0 {
+                    loop {
+                        at = h.read(at);
+                        if h.read::<u32>(at) == 0 {
+                            break;
+                        }
+                    }
+                }
+                h.write(at, chunk);
+                count = count.wrapping_add(n);
+                h.write(chunk, 0u32);
+            }
+            total = nul.wrapping_add(count);
+            if h.read::<u32>(array) & 0x7fff_ffff < total {
+                let r = h.call_sym(READ_CALLS[3], Conv::Thiscall(array), &[total]);
+                if r != 0 {
+                    h.call_sym(READ_CALLS[4], Conv::Cdecl, &[list]);
+                    return r;
+                }
+            }
+            let mut dst: u32 = h.read(array + 4);
+            let mut b: u32 = h.read(list);
+            while b != 0 {
+                let next: u32 = h.read(b);
+                let n: u32 = h.read(b + 0x804);
+                h.call_sym(MEMCPY, Conv::Cdecl, &[dst, b + 4, n]);
+                dst = dst.wrapping_add(n);
+                h.call_sym(READ_CALLS[1], Conv::Cdecl, &[b]);
+                b = next;
+            }
+            if nul != 0 {
+                h.write(dst, 0u8);
+            }
+        }
+        let head: u32 = h.read(array);
+        let len = (head & 0x7fff_ffff).min(total);
+        let head = (head & 0x8000_0000) | len;
+        h.write(array, head);
+        if head == 0 {
+            let data: u32 = h.read(array + 4);
+            h.call_sym(READ_CALLS[1], Conv::Cdecl, &[data]);
+            h.write(array + 4, 0u32);
+        }
+        0
+    }
+
+    /// `0x006285b0` (cdecl `(path)`): the file read whole (a
+    /// `PStreamReaderFile` on `frame`, its array at `frame + 0x1c`, the
+    /// scanned value at `frame + 0x24`: the original's frame at `ebp -
+    /// 0x34`), each line scanned with `sscanf(line, 0x00b403dc, &value)`;
+    /// the last value (0 when the read failed), 0x13 with a message when
+    /// the file does not open. The stream closed and destroyed, the
+    /// array's block freed unless external.
+    pub fn read_value_file(h: &mut impl Host, path: u32, frame: u32) -> u32 {
+        let stream = frame;
+        let array = frame + 0x1c;
+        let value = frame + 0x24;
+        h.call_sym(VALUE_FILE[0], Conv::Thiscall(stream), &[path]);
+        h.write(value, 0u32);
+        let result;
+        let is_open = h.call_sym(VALUE_FILE[1], Conv::Thiscall(stream), &[]) & 0xff;
+        if is_open == 0 {
+            let msg = h.rebase(VALUE_FILE[5]);
+            h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, path]);
+            result = 0x13;
+        } else {
+            h.write(array, 0u32);
+            h.write(array + 4, 0u32);
+            let r = h.call_sym(VALUE_FILE[2], Conv::Thiscall(stream), &[array, 1]);
+            h.call_sym(VALUE_FILE[3], Conv::Thiscall(stream + 0x14), &[]);
+            let data: u32 = h.read(array + 4);
+            if r == 0 {
+                let len = h.read::<u32>(array) & 0x7fff_ffff;
+                let end = data.wrapping_add(len);
+                let mut p = data;
+                if p < end {
+                    let sscanf: u32 = h.read(h.rebase(VALUE_FILE[6]));
+                    let fmt = h.rebase(VALUE_FILE[7]);
+                    loop {
+                        let line = p;
+                        if h.read::<u8>(p) != b'\n' {
+                            while p < end {
+                                p = p.wrapping_add(1);
+                                if h.read::<u8>(p) == b'\n' {
+                                    break;
+                                }
+                            }
+                        }
+                        h.call(sscanf, Conv::Cdecl, &[line, fmt, value]);
+                        p = p.wrapping_add(1);
+                        if p >= end {
+                            break;
+                        }
+                    }
+                }
+            }
+            result = h.read(value);
+            let head: u32 = h.read(array);
+            let data: u32 = h.read(array + 4);
+            if head & 0x8000_0000 == 0 && data != 0 {
+                h.call_sym(READ_CALLS[1], Conv::Cdecl, &[data]);
+            }
+            h.write(array + 4, 0u32);
+            h.write(array, 0u32);
+        }
+        h.call_sym(VALUE_FILE[4], Conv::Thiscall(stream), &[]);
+        result
     }
 }
