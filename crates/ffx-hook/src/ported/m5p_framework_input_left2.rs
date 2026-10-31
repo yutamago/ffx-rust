@@ -81,4 +81,14 @@ ported! {
     Phyre_PGameplay_PPath_getPoint_0054b080 @ 0x0054_b080 => extern "thiscall" fn path_point(this: u32, out: u32, index: u32) -> u32 {
         lb::path_point(&mut mem(), this, out, index)
     }
+    /// A gameplay path's rotation `(out, t)`.
+    Phyre_PGameplay_PPath_getRotation_0054b550 @ 0x0054_b550 => extern "thiscall" fn path_rotation(this: u32, out: u32, t: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::PATH_ROTATION_WORDS as usize }>::new();
+        lb::path_rotation(&mut mem(), this, out, t, f.at())
+    }
+    /// A gameplay path's transform `(out, t)`.
+    Phyre_PGameplay_PPath_getTransform_0054b690 @ 0x0054_b690 => extern "thiscall" fn path_transform(this: u32, out: u32, t: u32) -> u32 {
+        let mut f = StackFrame::<{ lf::PATH_TRANSFORM_WORDS as usize }>::new();
+        lb::path_transform(&mut mem(), this, out, t, f.at())
+    }
 }

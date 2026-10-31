@@ -3579,3 +3579,74 @@ fn left2_path_point_matches_the_original() {
         t.reset();
     }
 }
+
+/// A gameplay path with `n` keys (28 bytes, a unit-ish quaternion at
+/// `+0xc`), its length and a 3x4 matrix.
+#[allow(clippy::cast_precision_loss)] // small test values
+fn gameplay_path(t: &mut Twins, n: u32, length: f32, seed: u32) -> u32 {
+    let mut rng = Rng(seed);
+    let keys = t.zeros(28 * n as usize + 56);
+    for k in 0..n + 2 {
+        let a = (rng.next() % 1000) as f32 / 500.0 - 1.0;
+        let b = (rng.next() % 1000) as f32 / 500.0 - 1.0;
+        let q = [a * 0.5, b * 0.5, 0.25, 0.75];
+        for (i, v) in q.iter().enumerate() {
+            t.w32(keys + 28 * k + 0xc + 4 * i as u32, v.to_bits());
+        }
+    }
+    let m = t.zeros(0x30);
+    for i in 0..12u32 {
+        t.w32(m + 4 * i, ((i as f32) * 0.37 - 1.1).to_bits());
+    }
+    let this = t.zeros(0x30);
+    t.w32(this + 0x14, m);
+    t.w32(this + 0x20, length.to_bits());
+    t.w32(this + 0x24, n);
+    t.w32(this + 0x28, keys);
+    this
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)] // small test values
+fn left2_path_rotation_and_transform_match_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        for (n, length) in [(0u32, 2.0f32), (1, 2.0), (4, 2.0), (4, 3.5), (6, 1.0)] {
+            let this = gameplay_path(&mut t, n, length, 0x55 + n);
+            for tv in [0.0f32, 0.4, 1.0, 1.99, 2.0, 0.123_456, 3.0, -1.0] {
+                // past the keys only where the extra keys are there
+                if n > 0 && tv / length * n as f32 > n as f32 + 0.9 {
+                    continue;
+                }
+                let out = t.junk(0x30, 7);
+                let what = format!("{label}: path rotation n {n} length {length} t {tv}");
+                t.frame_len = if n == 0 { 0 } else { 0x30 };
+                t.check_frame(
+                    &what,
+                    0x0054_b550,
+                    Conv::Thiscall(this),
+                    &[out, tv.to_bits()],
+                    0x48,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_rotation(g, this, out, tv.to_bits(), frame))
+                    },
+                );
+                let what = format!("{label}: path transform n {n} length {length} t {tv}");
+                t.frame_len = 0x40;
+                t.check_frame(
+                    &what,
+                    0x0054_b690,
+                    Conv::Thiscall(this),
+                    &[out, tv.to_bits()],
+                    0x80,
+                    |g| {
+                        let frame = g.1;
+                        Out::U32(l2b::path_transform(g, this, out, tv.to_bits(), frame))
+                    },
+                );
+            }
+        }
+        t.reset();
+    }
+}

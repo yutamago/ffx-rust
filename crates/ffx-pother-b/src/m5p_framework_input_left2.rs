@@ -170,6 +170,25 @@ pub const XINPUT_BUTTONS: [u32; 16] = [
 /// The words of [`bridge::xinput_pad_update`]'s frame.
 pub const XINPUT_FRAME_WORDS: u32 = 8;
 
+/// The gameplay path's floats: 2^32 (`fild` of a negative count) and the
+/// slerp threshold.
+pub const PATH_DATA: [u32; 2] = [0x00b1_1f14, 0x00b2_6080];
+/// The gameplay path's callees: the quaternion slerp (cdecl, 5 words),
+/// `Matrix3` from a quaternion (thiscall), the 4x4 of a 3x4 (thiscall),
+/// the path's rotation `0x0054b550` (thiscall), the 3x3 product
+/// (thiscall).
+pub const PATH_CALLS: [u32; 5] = [
+    0x0050_ed70,
+    0x0053_0c30,
+    0x0045_1080,
+    0x0054_b550,
+    0x0054_7870,
+];
+/// The words of [`bridge::path_rotation`]'s frame.
+pub const PATH_ROTATION_WORDS: u32 = 12;
+/// The words of [`bridge::path_transform`]'s frame.
+pub const PATH_TRANSFORM_WORDS: u32 = 28;
+
 /// The ports over game memory.
 pub mod bridge {
     use super::{BUTTON_UNKNOWN, BUTTONS, PARTICLE_CALLS, PARTICLE_DATA, STRICMP_SLOT, TOUCH_LOCK};
@@ -178,7 +197,7 @@ pub mod bridge {
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
         READ_CALLS, SCREEN_SLOTS, VALUE_FILE,
     };
-    use super::{DIERR_INPUTLOST, DINPUT_PAD};
+    use super::{DIERR_INPUTLOST, DINPUT_PAD, PATH_CALLS, PATH_DATA};
     use super::{XINPUT, XINPUT_BUTTONS, XINPUT_LEFT_TRIGGER, XINPUT_RIGHT_TRIGGER};
     use ffx_bridge::x87::Reg;
 
@@ -971,6 +990,118 @@ pub mod bridge {
             let last = pts.wrapping_add(count.wrapping_sub(1).wrapping_mul(16));
             extrapolate(h, last, last.wrapping_sub(16), out, false);
         }
+        out
+    }
+
+    /// `fistp qword` with the rounding mode set to truncate: the low word
+    /// of the 64-bit integer (the integer indefinite's, 0, out of range).
+    fn fistp64_trunc_low(x: f64) -> u32 {
+        let limit = 2f64.powi(63);
+        if x.is_nan() || x >= limit || x < -limit {
+            0
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // in range; the low word
+            let v = x as i64 as u32;
+            v
+        }
+    }
+
+    /// `fild dword` of `v`, plus 2^32 when it is negative (an unsigned
+    /// count), stored as a float.
+    fn unsigned_to_f32(h: &impl Mem, v: u32) -> f32 {
+        let mut r = Reg::constant(f64::from(v.cast_signed()));
+        if v.cast_signed() < 0 {
+            r = r.add_m32(f32::from_bits(h.read(h.rebase(PATH_DATA[0]))));
+        }
+        r.store()
+    }
+
+    /// A gameplay path's rotation at time `t` (`0x0054b550`, thiscall
+    /// `(out, t)`, `ret 8`): the identity 3x3 (rows of 16 bytes) without
+    /// keys; else the keys (`+0x28`, 28 bytes each, the quaternion at
+    /// `+0xc`) either side of `t / length (+0x20) x count` (the next one
+    /// clamped to the last) copied to `frame + 0x10` and `+0x20`, slerped
+    /// (`0x0050ed70`, the fraction and the threshold at `0x00b26080`)
+    /// into `frame` and turned into a matrix (`0x00530c30`). `frame` is
+    /// 12 words (the original's `ebp - 0x38`). `out`.
+    pub fn path_rotation(h: &mut impl Host, this: u32, out: u32, t: u32, frame: u32) -> u32 {
+        let count = h.read::<u32>(this + 0x24) & 0x7fff_ffff;
+        let length = ffx_bridge::x87::round_trip(f32::from_bits(h.read(this + 0x20)));
+        if count == 0 {
+            let one = 1.0f32.to_bits();
+            for (off, v) in [
+                (0, one),
+                (4, 0),
+                (8, 0),
+                (0x10, 0),
+                (0x18, 0),
+                (0x14, one),
+                (0x20, 0),
+                (0x24, 0),
+                (0x28, one),
+            ] {
+                h.write(out + off, v);
+            }
+            return out;
+        }
+        let x = Reg::load(f32::from_bits(t)).div_m32(length).store();
+        let c = unsigned_to_f32(h, count);
+        let v = Reg::load(x).mul_m32(c).store();
+        let index = fistp64_trunc_low(f64::from(v));
+        let next = if index.wrapping_add(1) >= count {
+            index
+        } else {
+            index + 1
+        };
+        let keys: u32 = h.read(this + 0x28);
+        for (k, dst) in [(index, frame + 0x10), (next, frame + 0x20)] {
+            let src = keys.wrapping_add(k.wrapping_mul(28)).wrapping_add(0xc);
+            for i in 0..4 {
+                let w: u32 = h.read(src + 4 * i);
+                h.write(dst + 4 * i, w);
+            }
+        }
+        let threshold = ffx_bridge::x87::round_trip(f32::from_bits(h.read(h.rebase(PATH_DATA[1]))));
+        let fi = unsigned_to_f32(h, index);
+        let frac = Reg::load(v).sub_m32(fi).store();
+        h.call_sym(
+            PATH_CALLS[0],
+            Conv::Cdecl,
+            &[
+                frame,
+                frac.to_bits(),
+                frame + 0x10,
+                frame + 0x20,
+                threshold.to_bits(),
+            ],
+        );
+        h.call_sym(PATH_CALLS[1], Conv::Thiscall(out), &[frame]);
+        out
+    }
+
+    /// A gameplay path's transform at time `t` (`0x0054b690`, thiscall
+    /// `(out, t)`, `ret 8`): the path's matrix (`[+0x14]`, a 3x4) as a 4x4
+    /// in `frame` (`0x00451080`; 28 words, the original's `ebp - 0x70`),
+    /// its 3x3 copied to `frame + 0x40`, the rotation at `t` into `frame +
+    /// 0x10` ([`path_rotation`] through the original's address), the
+    /// product into `out` (`0x00547870`). `out`.
+    pub fn path_transform(h: &mut impl Host, this: u32, out: u32, t: u32, frame: u32) -> u32 {
+        let m: u32 = h.read(this + 0x14);
+        h.call_sym(PATH_CALLS[2], Conv::Thiscall(frame), &[m]);
+        for row in 0..3 {
+            for col in 0..3 {
+                let v = f32::from_bits(h.read(frame + 0x10 * row + 4 * col));
+                let v = ffx_bridge::x87::round_trip(v);
+                h.write(frame + 0x40 + 0x10 * row + 4 * col, v.to_bits());
+            }
+        }
+        let t = ffx_bridge::x87::round_trip(f32::from_bits(t));
+        let r = h.call_sym(
+            PATH_CALLS[3],
+            Conv::Thiscall(this),
+            &[frame + 0x10, t.to_bits()],
+        );
+        h.call_sym(PATH_CALLS[4], Conv::Thiscall(frame + 0x40), &[out, r]);
         out
     }
 }
