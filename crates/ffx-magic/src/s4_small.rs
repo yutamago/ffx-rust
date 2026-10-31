@@ -4130,6 +4130,12 @@ pub const LINK_NODE_942: Sig = Sig {
 ///
 /// `magic_0164` 0x1000bfc0 (120 bytes; 2 DLLs).
 pub fn static_leave_model<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    static_leave_setup(g, img, fr);
+    Ret::eax(0)
+}
+
+/// [`static_leave_model`] up to its return.
+fn static_leave_setup<G: Game>(g: &mut G, img: &Image, fr: &Frame) {
     let f = fr.at;
     static_leave(g, img, f, 4);
     // push ebp; push ecx: the cursor is [ebp - 4]
@@ -4142,7 +4148,6 @@ pub fn static_leave_model<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         ..*fr
     };
     model_setup(g, img, &callee);
-    Ret::eax(0)
 }
 
 /// [`static_leave_model`].
@@ -5804,6 +5809,21 @@ pub const REGISTER_SQUARE: Sig = Sig {
 ///
 /// `magic_0662` 0x100011c0 (152 bytes; 2 DLLs).
 pub fn particles_start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let place = [0xc180_0000, 0xc150_0000, 0x4381_8000, 0x3f80_0000];
+    particles_placed(g, img, fr, (0, 0x35), place, 0x3dbb_b0e6)
+}
+
+/// [`particles_start_b`]'s shape: the program at `+prog` of the table,
+/// the wrapper's `rel32` at `call`, the object's place and its three
+/// rates `k`.
+fn particles_placed<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    (prog, call): (u32, u32),
+    place: [u32; 4],
+    k: u32,
+) -> Ret {
     let f = fr.at;
     let p = g.read::<u32>(op(img, f, 0x4));
     g.write::<u32>(p, op(img, f, 0xb));
@@ -5811,14 +5831,12 @@ pub fn particles_start_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let x = g.read::<u32>(base.wrapping_add(0x10));
     let table = slot_call(g, img, f, (0x18, 941), &[x]).eax;
     let obj = fr.arg(g, 0);
-    let program = g.read::<u32>(table);
-    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x35), obj, 0x1000, program, 1);
-    let k = 0x3dbb_b0e6;
+    let program = g.read::<u32>(table.wrapping_add(prog));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + call), obj, 0x1000, program, 1);
+    for (i, v) in (0u32..).zip(place) {
+        g.write::<u32>(obj.wrapping_add(0x40 + 4 * i), v);
+    }
     for (off, v) in [
-        (0x40, 0xc180_0000),
-        (0x44, 0xc150_0000),
-        (0x48, 0x4381_8000),
-        (0x4c, 0x3f80_0000),
         (0x50, 0),
         (0x54, 0),
         (0x58, 0),
@@ -5968,5 +5986,109 @@ pub const WALK_RING_ENTRY: Sig = Sig {
     len: 153,
     hash: 0x8214_37be_0400_8f91,
     calls: &[(0x74, Callee::Sig(&crate::sa_misc::RING_RESERVE))],
+    imports: &[],
+};
+
+/// [`particles_placed`] with the table's `+0x14` program, the place
+/// `(0, 0, 0, 1.0)` and rates 0.06.
+///
+/// `magic_0664` 0x10001640 (153 bytes; 3 DLLs).
+pub fn particles_start_c<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    particles_placed(
+        g,
+        img,
+        fr,
+        (0x14, 0x36),
+        [0, 0, 0, 0x3f80_0000],
+        0x3d75_c28f,
+    )
+}
+
+/// [`particles_start_c`].
+pub const PARTICLES_START_C: Sig = Sig {
+    len: 153,
+    hash: 0x95e2_ba5b_014a_ed3d,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// [`static_leave_model`], then slot 560 `(slot 557's answer | 4)` (no
+/// arguments). Returns 0.
+///
+/// `magic_0155` 0x1000c260 (153 bytes; 2 DLLs).
+pub fn static_leave_model_flag<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    static_leave_setup(g, img, fr);
+    let x = slot_call(g, img, f, (0x73, 557), &[]).eax;
+    slot_call(g, img, f, (0x84, 560), &[x | 4]);
+    Ret::eax(0)
+}
+
+/// [`static_leave_model_flag`].
+pub const STATIC_LEAVE_MODEL_FLAG: Sig = Sig {
+    len: 153,
+    hash: 0xe6c0_5173_724d_9d56,
+    calls: &[(0x6e, Callee::Sig(&MODEL_SETUP))],
+    imports: &[],
+};
+
+/// A node set up from a record (internal, `ecx` = `[node, parent, -, -, a,
+/// b]`; the record's `+0x8` becomes `node + 0x6c` and `+0xc` 0x400100): a
+/// fresh node put last under `parent` (when not 0), its `+0x20` `node +
+/// 0x6c`, `+0x1c` 0x400100, `+0x30..+0x35` 0, slot 325 `(node + 0x48,
+/// b)` and `(node + 0x38, a)` (the first call's words stay under), `+0x60`
+/// and `+0x68` 0. Returns slot 325's `eax`.
+///
+/// `magic_0070` 0x10001840 (153 bytes; 2 DLLs).
+pub fn node_from_args<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    let parent = g.read::<u32>(r + 4);
+    let tail = n.wrapping_add(0x6c);
+    g.write::<u32>(r + 8, tail);
+    g.write::<u32>(r + 0xc, 0x40_0100);
+    g.write::<u16>(n.wrapping_add(0x1a), 0xff);
+    g.write::<u32>(n.wrapping_add(0x10), n);
+    g.write::<u32>(n.wrapping_add(0xc), n);
+    g.write::<u32>(n.wrapping_add(0x14), parent);
+    if parent != 0 {
+        g.write::<u32>(n.wrapping_add(4), parent);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        g.write::<u32>(n.wrapping_add(8), last);
+        let last = g.read::<u32>(parent.wrapping_add(0x10));
+        if last == parent {
+            g.write::<u32>(parent.wrapping_add(0xc), n);
+        } else {
+            g.write::<u32>(last.wrapping_add(4), n);
+        }
+        let c = g.read::<u16>(parent.wrapping_add(0x18)).wrapping_add(1);
+        g.write::<u16>(parent.wrapping_add(0x18), c);
+        g.write::<u32>(parent.wrapping_add(0x10), n);
+    }
+    let b = g.read::<u32>(r + 0x14);
+    g.write::<u32>(n.wrapping_add(0x20), tail);
+    g.write::<u32>(n.wrapping_add(0x1c), 0x40_0100);
+    g.write::<u32>(n.wrapping_add(0x32), 0);
+    g.write::<u16>(n.wrapping_add(0x30), 0);
+    slot_call(g, img, f, (0x64, 325), &[n.wrapping_add(0x48), b]);
+    let a = g.read::<u32>(r + 0x10);
+    let out = slot_call(
+        g,
+        img,
+        f,
+        (0x78, 325),
+        &[n.wrapping_add(0x38), a, n.wrapping_add(0x48), b],
+    );
+    g.write::<u32>(n.wrapping_add(0x60), 0);
+    g.write::<u32>(n.wrapping_add(0x68), 0);
+    through(out)
+}
+
+/// [`node_from_args`].
+pub const NODE_FROM_ARGS: Sig = Sig {
+    len: 153,
+    hash: 0xe5ef_7c74_2185_ffd2,
+    calls: &[],
     imports: &[],
 };

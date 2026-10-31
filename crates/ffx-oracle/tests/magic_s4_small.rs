@@ -2753,3 +2753,63 @@ fn static_tail_and_ring_entries() {
         t.check_entry(f, Call::default(), &[sa::CURSOR], Eax::Checked);
     }
 }
+
+#[test]
+fn particles_leaves_nodes() {
+    let Some(mut t) = twin(664) else { return };
+    let f = t.at(0x1640);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table + 0x14, 0x0700_0014);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(155) else { return };
+    for s in [538, 213, 211] {
+        rec(&mut t, s, 2, move |_, a| s << 16 | a[1] & 0xffff);
+    }
+    rec(&mut t, 547, 1, |_, a| 0x5470_0000 ^ a[0]);
+    recs(&mut t, &[(35, 5), (34, 2), (276, 2), (219, 2), (560, 1)]);
+    rec(&mut t, 557, 0, |_, _| 0x5570);
+    let f = t.at(0xc260);
+    let node = op(&t, f, 0x69);
+    t.write(node, &[0x3c; 0x98]);
+    t.set_u16(node + 0x90, 0x11);
+    t.set_u32(op(&t, f, 0x6), 0);
+    t.check_entry(f, Call::default(), &[], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(70) else { return };
+    recs(&mut t, &[(325, 2)]);
+    let f = t.at(0x1840);
+    let (r, n, parent, kid) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x400,
+        SCRATCH + 0x500,
+    );
+    for (p, kids) in [(0u32, false), (parent, false), (parent, true)] {
+        t.write(n, &[0x66; 0x80]);
+        t.write(parent, &[0; 0x20]);
+        t.write(kid, &[0x77; 0x10]);
+        let l = if kids { kid } else { parent };
+        t.set_u32(parent + 0x10, l);
+        t.set_u32(parent + 0xc, l);
+        for (i, w) in [n, p, 0x55, 0x66, 0x0a0a_0010, 0x0b0b_0014]
+            .into_iter()
+            .enumerate()
+        {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(
+            f,
+            Call::this(r),
+            &[],
+            Eax::Checked,
+            s4_small::node_from_args,
+        );
+    }
+}
