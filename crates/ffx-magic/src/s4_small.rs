@@ -7723,3 +7723,108 @@ pub const LIGHT_LINK: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The actor placed at the block's point ([`actor_to_point`], the point
+/// `*G + 0x1c10`) and turned: its angle `*G + 0x1ee0` plus `K` folded
+/// into range (above `HI` minus the turn, below `LO` plus it), then `K2`
+/// minus that folded again, through slot 634 `(T[k], angle)` (`k` the
+/// byte `*G_A + 2`, `T` operand `+0x81`; no arguments). Returns slot
+/// 634's `eax`.
+///
+/// `magic_0393` 0x10002bf0 (150 bytes; 2 DLLs).
+pub fn actor_place_turn<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, sub};
+    let f = fr.at;
+    let block = g.read::<u32>(op(img, f, 0x3));
+    let callee = Frame {
+        at: img.rel32_target(f + 0xe),
+        esp: fr.esp.wrapping_sub(8),
+        edx: block.wrapping_add(0x1c10),
+        ..*fr
+    };
+    actor_to_point(g, img, &callee);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(op(img, f, o)));
+    let (hi, turn, lo) = (k(g, 0x26), k(g, 0x2e), k(g, 0x36));
+    let fold = |a: f32| {
+        if a > hi {
+            sub(a, turn)
+        } else if lo > a {
+            add(a, turn)
+        } else {
+            a
+        }
+    };
+    let a = fold(add(
+        f32::from_bits(g.read::<u32>(block.wrapping_add(0x1ee0))),
+        k(g, 0x1e),
+    ));
+    let b = fold(sub(k(g, 0x53), a));
+    let p = g.read::<u32>(op(img, f, 0x70));
+    let idx = u32::from(g.read::<u8>(p.wrapping_add(2)));
+    let actor = g.read::<u32>(op(img, f, 0x81).wrapping_add(4 * idx));
+    through(slot_call(g, img, f, (0x86, 634), &[actor, b.to_bits()]))
+}
+
+/// [`actor_place_turn`].
+pub const ACTOR_PLACE_TURN: Sig = Sig {
+    len: 150,
+    hash: 0x2974_58fb_735b_d2f5,
+    calls: &[(0xe, Callee::Sig(&ACTOR_TO_POINT))],
+    imports: &[],
+};
+
+/// One frame of the effect while `G_ON` is set (else 0): `*G_P` =
+/// `ITEM`, the screen and camera matrices (slots 723, 724), `*G_Q` =
+/// `G_R`; one of two timelines (by `G_WHICH`, operands `+0x55`/`+0x5c`)
+/// runs ([`crate::sb_misc::timeline_run`]); while it is live `G_FRAMES`
+/// counts up, else the timeline (operands `+0x6a`/`+0x77`) is stopped
+/// ([`crate::sb_misc::timeline_stop`]) and slot 214 `(*G_E)` runs (no
+/// arguments). Returns 1.
+///
+/// `magic_0530` 0x10001aa0 (168 bytes; 2 DLLs).
+pub fn effect_frame_two_timelines<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    let p = rd(g, 0xd);
+    let a = rd(g, 0x13);
+    g.write::<u32>(p, op(img, f, 0x19));
+    slot_call(g, img, f, (0x1e, 723), &[a]);
+    let b = rd(g, 0x31);
+    slot_call(g, img, f, (0x2b, 724), &[b, a]);
+    let q = rd(g, 0x3f);
+    let r = rd(g, 0x44);
+    g.write::<u32>(q, r);
+    let which = |g: &G, flag: u32, (no, yes): (u32, u32)| {
+        if rd(g, flag) == 0 {
+            op(img, f, no)
+        } else {
+            op(img, f, yes)
+        }
+    };
+    let tl = which(g, 0x4d, (0x55, 0x5c));
+    if crate::sb_misc::timeline_run(g, img, img.rel32_target(f + 0x61), tl) != 0 {
+        let n = op(img, f, 0x9e);
+        let v = g.read::<u32>(n).wrapping_add(1);
+        g.write::<u32>(n, v);
+        return Ret::eax(1);
+    }
+    let tl = which(g, 0x70, (0x6a, 0x77));
+    crate::sb_misc::timeline_stop(g, tl);
+    let e = rd(g, 0x87);
+    slot_call(g, img, f, (0x81, 214), &[e]);
+    Ret::eax(1)
+}
+
+/// [`effect_frame_two_timelines`].
+pub const EFFECT_FRAME_TWO_TIMELINES: Sig = Sig {
+    len: 168,
+    hash: 0xfb0c_71e4_c8c7_526f,
+    calls: &[
+        (0x61, Callee::Sig(&crate::sb_misc::TIMELINE_RUN)),
+        (0x7c, Callee::Sig(&crate::sb_misc::TIMELINE_STOP)),
+    ],
+    imports: &[],
+};

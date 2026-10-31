@@ -3524,3 +3524,41 @@ fn summon_nodes_and_light_links() {
         s4_small::light_link,
     );
 }
+
+#[test]
+fn place_turns_and_two_timelines() {
+    let Some(mut t) = twin(393) else { return };
+    let f = t.at(0x2bf0);
+    let atp = t.img.rel32_target(f + 0xe);
+    recs(&mut t, &[(255, 2), (32, 3), (33, 4), (11, 1), (634, 2)]);
+    let block = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0x3), block);
+    let p = SCRATCH + 0x80;
+    t.set_u32(t.img.word(atp + 0x9), p);
+    t.set_u32(op(&t, f, 0x70), p);
+    t.set_u8(p + 2, 1);
+    for k in 0..4 {
+        t.set_u32(op(&t, f, 0x81) + 4 * k, 0x0a00_0000 + k);
+    }
+    for ang in [0.0f32, 3.0, -3.0, 100.0, f32::NAN] {
+        t.set_u32(block + 0x1ee0, ang.to_bits());
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(530) else { return };
+    let f = t.at(0x1aa0);
+    recs(&mut t, &[(723, 1), (724, 2), (214, 1)]);
+    for o in [0xd, 0x3f] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x100 + o);
+    }
+    for (on, which, live) in [(0u32, 0u32, 0u32), (1, 0, 0), (1, 1, 0), (1, 0, 1)] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(op(&t, f, 0x4d), which);
+        for o in [0x55, 0x5c] {
+            let tl = op(&t, f, o);
+            t.write(tl, &[0; 0x10]);
+            t.set_u32(tl + 8, live);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
