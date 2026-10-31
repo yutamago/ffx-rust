@@ -1289,7 +1289,12 @@ The extra list (each replay after the fixes it needed):
 | battle-ifrit | same (10 ranges) | 4 of 4, 0 pixels | magic_0596: 28,402 / 1,393 |
 | movie-fmv (after the movie fixes) | same (3 ranges) | 4 of 4, 0 pixels | - |
 | iggy-menus | same (4 ranges) | (by eye: `eye` list) | - |
-[settings here]
+| settings-hdao | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-msaa (after `ResolveSubresource`, below) | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-fxaa | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-smaa | same (4 ranges) | 2 of 2, 0 pixels | - |
+| settings-shadow | same (5 ranges) | 4 of 4, 0 pixels | - |
+| settings-texhigh | same (4 ranges) | 2 of 2, 0 pixels | - |
 
 Rust / Unicorn counts the calls of the overlay's entries (exports and
 addresses its relocations point to) that ran in each; a jump-table
@@ -1330,6 +1335,11 @@ What it found and what was fixed:
   `api::vorbis_pcmout_in_game`, one block per decoder, a new one when a
   frame needs more). With that **movie-fmv passes**: its 3 ranges with
   the original's events, 4 of 4 shots with 0 pixels.
+- **MSAA**: settings-msaa drew black frames (every pixel off): the
+  layer had no `ID3D11DeviceContext::ResolveSubresource`, so the
+  multisampled scene never reached the plain target. It is an `Op` now
+  (`Op::Resolve`, forwarded by the real device, a texture copy in the
+  recorded stream); both shots then match with 0 pixels.
 - **The cloth race**: below; with `FFX_HARNESS_CLOTH_ORDER=1`
   event-besaid-4 matches the originals.
 - **Still different: the updates before the first trace event.** In
