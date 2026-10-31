@@ -189,6 +189,17 @@ pub mod m0531;
 pub mod m0534;
 pub mod m0536;
 pub mod m0537;
+pub mod m0539;
+pub mod m0540;
+pub mod m0561;
+pub mod m0564;
+pub mod m0573;
+pub mod m0577;
+pub mod m0582;
+pub mod m0585;
+pub mod m0587;
+pub mod m0588;
+pub mod m0589;
 pub mod m0596;
 pub mod m0604;
 
@@ -967,6 +978,28 @@ ports! {
     "m0536 start" => m0536::START, m0536::start;
     "m0536 frame" => m0536::FRAME, m0536::frame;
     "m0537 frame" => m0537::FRAME, m0537::frame;
+    "m0539 frame obj" => m0539::FRAME_OBJ, m0539::frame_obj;
+    "m0539 frame" => m0539::FRAME, m0539::frame;
+    "m0540 e10a0" => m0540::E10A0, m0540::e10a0;
+    "m0540 e1170" => m0540::E1170, m0540::e1170;
+    "m0540 e1250" => m0540::E1250, m0540::e1250;
+    "m0540 e12c0" => m0540::E12C0, m0540::e12c0;
+    "m0540 frame" => m0540::FRAME, m0540::frame;
+    "m0561 frame" => m0561::FRAME, m0561::frame;
+    "m0573 task" => m0573::TASK, m0573::task;
+    "m0577 end" => m0577::END, m0577::end;
+    "m0577 task" => m0577::TASK, m0577::task;
+    "m0582 start" => m0582::START, m0582::start;
+    "m0585 sound" => m0585::SOUND, m0585::sound;
+    "m0585 two sounds" => m0585::TWO_SOUNDS, m0585::two_sounds;
+    "m0587 glow start" => m0587::GLOW_START, m0587::glow_start;
+    "m0587 glow colour" => m0587::GLOW_COLOUR, m0587::glow_colour;
+    "m0587 glow turn" => m0587::GLOW_TURN, m0587::glow_turn;
+    "m0588 sound" => m0588::SOUND, m0588::sound;
+    "m0588 part start" => m0588::PART_START, m0588::part_start;
+    "m0588 colours" => m0588::COLOURS, m0588::colours;
+    "m0589 flash" => m0589::FLASH, m0589::flash;
+    "m0589 two parts" => m0589::TWO_PARTS, m0589::two_parts;
     // end of magic r5 own (0450 and up) entries
     "m0430 task step (no pause)" => ob_summon::STEP_PLAIN_0430, ob_summon::step_plain;
     "m0431 task step (no pause)" => ob_summon::STEP_PLAIN_0431, ob_summon::step_plain;
@@ -1957,6 +1990,24 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0519 fade", &m0519::FADE),
     ("m0537 start", &m0537::START),
     ("m0537 draw", &m0537::DRAW),
+    ("m0564 hide", &m0564::HIDE),
+    ("m0573 show", &m0573::SHOW),
+    ("m0573 add node", &m0573::ADD_NODE),
+    ("m0573 init", &m0573::INIT),
+    ("m0577 colour", &m0577::COLOUR),
+    ("m0577 flash off", &m0577::FLASH_OFF),
+    ("m0577 glow off", &m0577::GLOW_OFF),
+    ("m0577 move start", &m0577::MOVE_START),
+    ("m0577 draw detached", &m0577::DRAW_DETACHED),
+    ("m0577 place", &m0577::PLACE),
+    ("m0577 halve", &m0577::HALVE),
+    ("m0577 centre", &m0577::CENTRE),
+    ("m0585 setup", &m0585::SETUP),
+    ("m0585 sound start", &m0585::SOUND_START),
+    ("m0585 two sounds start", &m0585::TWO_SOUNDS_START),
+    ("m0585 glow clear", &m0585::GLOW_CLEAR),
+    ("m0587 camera reset", &m0587::CAMERA_RESET),
+    ("m0587 load groups", &m0587::LOAD_GROUPS),
     // end of magic r5 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),

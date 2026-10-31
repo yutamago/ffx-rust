@@ -81,3 +81,42 @@ pub fn pop_pool(t: &mut Twin, pop: u32, nodes: u32, n: u32) {
     t.set_u16(t.img.word(pop + 0x04), u16::try_from(n).unwrap());
     t.set_u32(t.img.word(pop + 0x13), nodes);
 }
+
+/// A model of [`models`]: its parts `(kind, byte, entries)`, or none.
+pub type Model<'a> = Option<&'a [(u32, u8, i16)]>;
+
+/// A model table: `n` models (0 = none) at `models`, each with its
+/// parts `(kind, byte, entries)`.
+pub fn models(t: &mut Twin, g_at: u32, models: &[Model]) {
+    let owner = SCRATCH + 0x100;
+    let table = SCRATCH + 0x180;
+    let fill: Vec<u8> = (0..0x2000u32)
+        .map(|i| u8::try_from((i * 37 + 5) & 0xff).unwrap())
+        .collect();
+    t.write(SCRATCH + 0x2000, &fill);
+    t.write(owner, &[0; 0x40]);
+    t.set_u32(g_at, owner);
+    t.set_u32(owner + 0x18, table);
+    t.set_u16(owner + 0xa, u16::try_from(models.len()).unwrap());
+    for (i, m) in (0u32..).zip(models) {
+        let Some(parts) = m else {
+            t.set_u32(table + 4 * i, 0);
+            continue;
+        };
+        let model = SCRATCH + 0x2000 + 0x400 * i;
+        t.set_u32(table + 4 * i, model);
+        t.set_u16(model + 6, u16::try_from(parts.len()).unwrap());
+        for (j, &(kind, byte, n)) in (0u32..).zip(parts.iter()) {
+            let off = 0x80 + 0x100 * j;
+            t.set_u16(model + 0x10 + 8 * j, u16::try_from(off).unwrap());
+            let part = model + off;
+            t.set_u32(part + 0x10, kind);
+            t.set_u16(part + 2, n.cast_unsigned());
+            t.set_u32(part + 4, 0x20);
+            t.set_u8(part, byte);
+            for k in 0..4 {
+                t.set_u8(part + 0x24 + 8 * k, if k == 2 { 0x47 } else { byte });
+            }
+        }
+    }
+}
