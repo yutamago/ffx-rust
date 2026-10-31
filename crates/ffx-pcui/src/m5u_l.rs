@@ -3356,4 +3356,366 @@ pub mod bridge {
         h.call_sym(GU_PACKET_END_TAG, Conv::Cdecl, &[]);
         h.call_sym(GU_PRINT_SET_SIZE_ONLY, Conv::Cdecl, &[0x100]);
     }
+
+    /// The debug name lists: the current one (`0x025d5f90`), and per
+    /// list the 12-byte entries (`0x025d5f44[]`, flag bit 1 = picked),
+    /// their counts (`0x025d5f4c[]`) and the 16-byte points
+    /// (`0x025d5f54[]`, x, y, z).
+    pub const NAME_LIST: u32 = 0x025d_5f90;
+    pub const NAME_LIST_ENTRIES: u32 = 0x025d_5f44;
+    pub const NAME_LIST_COUNTS: u32 = 0x025d_5f4c;
+    pub const NAME_LIST_POINTS: u32 = 0x025d_5f54;
+    pub const NAME_LIST_CLEAR: u32 = 0x0094_2320;
+    /// The debug camera handle (`0x025d5ee0`).
+    pub const DEBUG_CAMERA: u32 = 0x025d_5ee0;
+    pub const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+    pub const RCUI_PROJECT_TO_INT: u32 = 0x0093_d710;
+    /// The debug view matrix (`0x0193c338`, 16 `f32`, row-major).
+    pub const DEBUG_VIEW_MATRIX: u32 = 0x0193_c338;
+    /// 0.5 and 400 (`f64`).
+    pub const C_HALF: u32 = 0x00b9_2220;
+    pub const C_400: u32 = 0x00b6_91c8;
+
+    /// The current list's cell of the per-list array `sym`.
+    fn list_cell(h: &impl Mem, sym: u32) -> u32 {
+        let l = word(h, h.rebase(NAME_LIST));
+        h.rebase(sym).wrapping_add(l.wrapping_mul(4))
+    }
+
+    /// `FUN_009401c0()` (`cdecl`; its locals from the original's
+    /// `ebp - 0x10` at `frame`: the two picked indices, the points, the
+    /// entries) -> the picked count (fewer than two), else
+    /// `Sg_NameListClear`'s `eax`: a point between the first two picked
+    /// ones: the entries and points from the second on moved up one,
+    /// the second's point the midpoint, the count one more.
+    pub fn name_list_split(h: &mut impl Host, frame: u32) -> u32 {
+        let entries = word(h, list_cell(h, NAME_LIST_ENTRIES));
+        let points = word(h, list_cell(h, NAME_LIST_POINTS));
+        let n = word(h, list_cell(h, NAME_LIST_COUNTS)).cast_signed();
+        h.write(frame + 0xc, entries);
+        h.write(frame + 8, points);
+        let mut found = 0_u32;
+        let mut i = 0_i32;
+        while i < n {
+            if h.read::<u8>(entries.wrapping_add(i.cast_unsigned().wrapping_mul(0xc))) & 2 != 0 {
+                h.write(frame + 4 * found, i);
+                found += 1;
+                if found == 2 {
+                    break;
+                }
+            }
+            i += 1;
+        }
+        if found != 2 {
+            return found;
+        }
+        let [a, b]: [u32; 2] = h.read(frame);
+        let mut k = n.cast_unsigned();
+        while k.cast_signed() > b.cast_signed() {
+            let e = entries.wrapping_add(k.wrapping_mul(0xc));
+            let src: [u32; 3] = h.read(e.wrapping_sub(0xc));
+            h.write(e, src);
+            let p = points.wrapping_add(k.wrapping_mul(0x10));
+            let src: [u32; 4] = h.read(p.wrapping_sub(0x10));
+            h.write(p, src);
+            k = k.wrapping_sub(1);
+        }
+        let half = qword(h, C_HALF);
+        let pa = points.wrapping_add(a.wrapping_mul(0x10));
+        let pb = points.wrapping_add(b.wrapping_mul(0x10));
+        for o in [0, 4, 8] {
+            let s = x87::add(x87::load(word(h, pb + o)), x87::load(word(h, pa + o)));
+            h.write(pb + o, x87::store(x87::mul(s, half)));
+        }
+        let count = list_cell(h, NAME_LIST_COUNTS);
+        let c = word(h, count).wrapping_add(1);
+        h.write(count, c);
+        h.call_sym(NAME_LIST_CLEAR, Conv::Cdecl, &[])
+    }
+
+    /// `FUN_00940580()` (`cdecl`; its locals from the original's
+    /// `ebp - 0x34` at `frame`: the sums, the count, the two positions
+    /// `+0x10` and `+0x20`) -> the last `MsCameraSetRect`'s `eax`: the
+    /// debug camera aimed at the current list's centroid, from 400
+    /// above it (`f32` sums, each divided by the count).
+    pub fn name_list_view_centre(h: &mut impl Host, frame: u32) -> u32 {
+        let n = word(h, list_cell(h, NAME_LIST_COUNTS));
+        let mut p = word(h, list_cell(h, NAME_LIST_POINTS));
+        let mut s = [0_u32; 3]; // x, y, z
+        let mut i = n.cast_signed();
+        while i > 0 {
+            for (k, sum) in s.iter_mut().enumerate() {
+                let v = word(h, p + 4 * k as u32);
+                *sum = x87::store(x87::add(x87::load(v), x87::load(*sum)));
+            }
+            p = p.wrapping_add(0x10);
+            i -= 1;
+        }
+        let nf = x87::store(x87::load(int_f32(n)));
+        let [x, y, z] = s.map(|v| x87::store(x87::div(x87::load(v), x87::load(nf))));
+        let above = x87::store(x87::add(x87::load(y), qword(h, C_400)));
+        // (sx, n, sz, sy) as the original leaves them, then the two
+        // positions with an unused word between
+        h.write(frame, [x, nf, z, y, x, y, z]);
+        h.write(frame + 0x20, [x, above, z]);
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_RECT, Conv::Cdecl, &[cam, 0, frame + 0x10]);
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_RECT, Conv::Cdecl, &[cam, 1, frame + 0x20])
+    }
+
+    /// `FUN_0093fd60(v, out)` (`cdecl`; the matrix at `m`, the original's
+    /// `ebp - 0x44`) -> the projection's `1/w` truncated: `v` projected
+    /// to integers (`rcuiProjectToInt(out, m, v, 1)`) through the debug
+    /// view matrix (`0x0193c338`, transposed into `m`), then moved by
+    /// (-0x700, -0x730).
+    pub fn debug_project(h: &mut impl Host, m: u32, v: u32, out: u32) -> u32 {
+        let g = h.rebase(DEBUG_VIEW_MATRIX);
+        for k in 0..16_u32 {
+            let x = word(h, g + 4 * k);
+            h.write(m + 4 * ((k % 4) * 4 + k / 4), x87::store(x87::load(x)));
+        }
+        let w = h.call_sym_st0_f64(RCUI_PROJECT_TO_INT, Conv::Cdecl, &[out, m, v, 1]);
+        let r = x87::ftol(h, w);
+        let x = word(h, out).wrapping_add(0xffff_f900);
+        h.write(out, x);
+        let y = word(h, out + 4).wrapping_add(0xffff_f8d0);
+        h.write(out + 4, y);
+        r
+    }
+
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const SCE_LSEEK: u32 = 0x0062_f8e0;
+    pub const SCE_READ: u32 = 0x0062_fc00;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    /// The name list file's path (`0x025d60a0`, empty: none) and the
+    /// messages `"file open err !!! [%s]\n"`, `"file err !!! [%s]\n"`,
+    /// `"%s load\n"`.
+    pub const NAME_LIST_PATH: u32 = 0x025d_60a0;
+    pub const MSG_OPEN_ERR: u32 = 0x00b6_918c;
+    pub const MSG_FILE_ERR: u32 = 0x00b6_91a4;
+    pub const MSG_LOADED: u32 = 0x00b6_91b8;
+
+    /// `FUN_009410e0()` (`cdecl`) -> the entries' pointer (nothing done),
+    /// else `Sg_NameListClear`'s `eax`: with more than five entries and
+    /// at least five not picked, the picked ones (flag bit 1) dropped
+    /// from the current list, entries and points moved down.
+    pub fn name_list_drop_picked(h: &mut impl Host) -> u32 {
+        let entries = word(h, list_cell(h, NAME_LIST_ENTRIES));
+        let points = word(h, list_cell(h, NAME_LIST_POINTS));
+        let n = word(h, list_cell(h, NAME_LIST_COUNTS)).cast_signed();
+        if n <= 5 {
+            return entries;
+        }
+        let mut picked = 0_i32;
+        for i in 0..n {
+            if h.read::<u8>(entries.wrapping_add(i.cast_unsigned().wrapping_mul(0xc))) & 2 != 0 {
+                picked += 1;
+            }
+        }
+        if n.wrapping_sub(picked) < 5 {
+            return entries;
+        }
+        let (mut de, mut dp) = (entries, points);
+        for i in 0..n.cast_unsigned() {
+            let e = entries.wrapping_add(i.wrapping_mul(0xc));
+            if h.read::<u8>(e) & 2 != 0 {
+                continue;
+            }
+            let p = points.wrapping_add(i.wrapping_mul(0x10));
+            let ev: [u32; 3] = h.read(e);
+            let pv: [u32; 4] = h.read(p);
+            h.write(de, ev);
+            h.write(dp, pv);
+            de = de.wrapping_add(0xc);
+            dp = dp.wrapping_add(0x10);
+        }
+        let count = list_cell(h, NAME_LIST_COUNTS);
+        let c = word(h, count).wrapping_sub(picked.cast_unsigned());
+        h.write(count, c);
+        h.call_sym(NAME_LIST_CLEAR, Conv::Cdecl, &[])
+    }
+
+    /// `FUN_00941460()` (`cdecl`; its locals from the original's
+    /// `ebp - 0x10` at `frame`: the index, the entry cursor, a scratch
+    /// word, the count): with a path (`0x025d60a0`) and the current
+    /// list's arrays, the list read from the file: the count, three
+    /// unused words, then per point x, y, z and an angle in radians,
+    /// each entry `(1, 0, degrees)`; errors and success logged.
+    pub fn name_list_load(h: &mut impl Host, frame: u32) {
+        let path = h.rebase(NAME_LIST_PATH);
+        if h.read::<u8>(path) == 0 {
+            return;
+        }
+        let entries = word(h, list_cell(h, NAME_LIST_ENTRIES));
+        if entries == 0 {
+            return;
+        }
+        let points = word(h, list_cell(h, NAME_LIST_POINTS));
+        if points == 0 {
+            return;
+        }
+        let fd = h.call_sym(SCE_OPEN, Conv::Cdecl, &[path, 1]);
+        if fd.cast_signed() < 0 {
+            let m = h.rebase(MSG_OPEN_ERR);
+            h.call_sym(DBG_PRINTF, Conv::Cdecl, &[m, path]);
+            return;
+        }
+        h.call_sym(SCE_LSEEK, Conv::Cdecl, &[fd, 0, 0]);
+        h.call_sym(SCE_READ, Conv::Cdecl, &[fd, frame + 0xc, 4]);
+        let n = word(h, frame + 0xc);
+        if n.cast_signed() <= 0 {
+            let m = h.rebase(MSG_FILE_ERR);
+            h.call_sym(DBG_PRINTF, Conv::Cdecl, &[m, path]);
+            return;
+        }
+        let count = list_cell(h, NAME_LIST_COUNTS);
+        h.write(count, n);
+        for _ in 0..3 {
+            h.call_sym(SCE_READ, Conv::Cdecl, &[fd, frame + 8, 4]);
+        }
+        let (c180, pi) = (qword(h, C_180), qword(h, C_PI));
+        h.write(frame, 0_u32);
+        let mut i = 0_u32;
+        let mut cursor = entries.wrapping_add(8);
+        h.write(frame + 4, cursor);
+        loop {
+            let e = entries.wrapping_add(i.wrapping_mul(0xc));
+            h.write(e, [1_u32, 0]);
+            let p = points.wrapping_add(i.wrapping_mul(0x10));
+            for k in 0..4 {
+                h.call_sym(SCE_READ, Conv::Cdecl, &[fd, p + 4 * k, 4]);
+            }
+            let deg = x87::div(x87::mul(x87::load(word(h, p + 0xc)), c180), pi);
+            let d = x87::ftol(h, deg);
+            h.write(cursor, d);
+            cursor = cursor.wrapping_add(0xc);
+            i += 1;
+            h.write(frame + 4, cursor);
+            h.write(frame, i);
+            if i.cast_signed() >= word(h, frame + 0xc).cast_signed() {
+                break;
+            }
+        }
+        h.call_sym(SCE_CLOSE, Conv::Cdecl, &[fd]);
+        let m = h.rebase(MSG_LOADED);
+        h.call_sym(DBG_PRINTF, Conv::Cdecl, &[m, path]);
+    }
+
+    /// `KERNEL32!InitializeCriticalSection`, `EnterCriticalSection`,
+    /// `LeaveCriticalSection`, `CreateEventA` (import slots).
+    pub const INIT_CRITICAL_SECTION_IAT: u32 = 0x00b0_c150;
+    pub const ENTER_CRITICAL_SECTION_IAT: u32 = 0x00b0_c154;
+    pub const LEAVE_CRITICAL_SECTION_IAT: u32 = 0x00b0_c158;
+    pub const CREATE_EVENT_IAT: u32 = 0x00b0_c0fc;
+    /// The page manager's "built" byte (`0x00c613ac`).
+    pub const PAGE_MANAGER_BUILT: u32 = 0x00c6_13ac;
+    /// `FUN_00943a50(this = arena; size)` (`ret 4`): an allocation.
+    pub const ARENA_ALLOC: u32 = 0x0094_3a50;
+    pub const PAGE_BUCKET_INIT: u32 = 0x0094_8900;
+    pub const CRT_MEMSET: u32 = 0x0094_964c;
+
+    fn import(h: &mut impl Host, iat: u32, args: &[u32]) -> u32 {
+        let f = word(h, h.rebase(iat));
+        h.call(f, Conv::Stdcall, args)
+    }
+
+    /// An allocation of `size` from the arena at `cs + 0x18`, under the
+    /// lock `cs`.
+    fn locked_alloc(h: &mut impl Host, cs: u32, size: u32) -> u32 {
+        import(h, ENTER_CRITICAL_SECTION_IAT, &[cs]);
+        let p = method(h, ARENA_ALLOC, cs.wrapping_add(0x18), &[size]);
+        import(h, LEAVE_CRITICAL_SECTION_IAT, &[cs]);
+        p
+    }
+
+    /// `FUN_00946f50(this)` (`thiscall`) -> `this`: the page manager's
+    /// constructor: its lock (`+0x1c0c`), counters (`+0x1c30` 0x1000),
+    /// an event (`+0x1c74`, `CreateEventA(0, 0, 0, 0)`), the list head
+    /// `+0x1c58` (empty, pointing at itself) and 256 0x1c-byte buckets
+    /// from `+0` (each `+0xc`/`+0x10` pointing at itself); marks
+    /// `0x00c613ac`.
+    pub fn page_manager_ctor(h: &mut impl Host, this: u32) -> u32 {
+        h.write(this + 0x1c00, [0_u32; 3]);
+        import(h, INIT_CRITICAL_SECTION_IAT, &[this + 0x1c0c]);
+        h.write(
+            this + 0x1c24,
+            [0_u32, 0, 0, 0x1000, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        h.write(this + 0x1c6c, [0_u32; 2]);
+        let ev = import(h, CREATE_EVENT_IAT, &[0, 0, 0, 0]);
+        h.write(this + 0x1c74, ev);
+        let at = h.rebase(PAGE_MANAGER_BUILT);
+        h.write(at, 1_u8);
+        let head = this + 0x1c58;
+        h.write(head, [0_u32, 0, head, head, 0]);
+        for i in 0..0x100 {
+            let b = this + 0x1c * i;
+            h.write(b, [0_u32, 0, 0, b, b, 0, 0]);
+        }
+        this
+    }
+
+    /// `FUN_00946b20(this; index, arg)` (`thiscall`, `ret 8`): a page
+    /// bucket (0x30 bytes from the arena of the lock `+0x404`,
+    /// `PageBucket_init(index, arg, [this])`, its lock `+0x18`) in slot
+    /// `index / 4` (`+4`), marked in the bitmap `+0x40c`, counted
+    /// `+0x414`, and copied down into the free slots below it up to the
+    /// first marked one.
+    pub fn page_bucket_add(h: &mut impl Host, this: u32, index: u32, arg: u32) {
+        let q = index.cast_signed() / 4;
+        let cs = word(h, this + 0x404);
+        let obj = locked_alloc(h, cs, 0x30);
+        if obj != 0 {
+            let heap = word(h, this);
+            method(h, PAGE_BUCKET_INIT, obj, &[index, arg, heap]);
+            import(h, INIT_CRITICAL_SECTION_IAT, &[obj + 0x18]);
+        }
+        let qu = q.cast_unsigned();
+        h.write(this.wrapping_add(4).wrapping_add(qu.wrapping_mul(4)), obj);
+        let bits = word(h, this + 0x40c);
+        let cell = bits.wrapping_add(((q / 32).cast_unsigned()).wrapping_mul(4));
+        let v = word(h, cell) | 1_u32.rotate_left(qu & 0x1f);
+        h.write(cell, v);
+        let n = word(h, this + 0x414).wrapping_add(1);
+        h.write(this + 0x414, n);
+        let mut i = q - 1;
+        let mut mask = 1_u32.rotate_left(i.cast_unsigned() & 0x1f);
+        while i >= 0 {
+            let bits = word(h, this + 0x40c);
+            let iu = i.cast_unsigned();
+            if word(h, bits.wrapping_add((iu >> 5).wrapping_mul(4))) & mask != 0 {
+                break;
+            }
+            mask = mask.rotate_right(1);
+            h.write(this.wrapping_add(4).wrapping_add(iu.wrapping_mul(4)), obj);
+            i -= 1;
+        }
+    }
+
+    /// `FUN_00948750(this; bits, cs)` (`thiscall`, `ret 8`) -> `this`: a
+    /// bitmap of `bits` bits (`+0`), its words (`+4`) from the arena of
+    /// the lock `cs` (`+0x10`), cleared, the bits past the end of the
+    /// last word set.
+    pub fn bitmap_init(h: &mut impl Host, this: u32, bits: u32, cs: u32) -> u32 {
+        h.write(this, bits);
+        let bytes = ((bits.wrapping_add(0x1f) & !0x1f).cast_signed() / 8).cast_unsigned();
+        h.write(this + 8, [0_u32, 0, cs]);
+        let p = locked_alloc(h, cs, bytes);
+        h.write(this + 4, p);
+        h.call_sym(CRT_MEMSET, Conv::Cdecl, &[p, 0, bytes]);
+        let r = bits & 0x1f;
+        if r != 0 {
+            let last = word(h, this + 4)
+                .wrapping_add((bytes >> 2).wrapping_mul(4))
+                .wrapping_sub(4);
+            let mut mask = 1_u32.rotate_left(r);
+            for _ in 0..(32 - r) {
+                let v = word(h, last) | mask;
+                h.write(last, v);
+                mask = mask.rotate_left(1);
+            }
+        }
+        this
+    }
 }

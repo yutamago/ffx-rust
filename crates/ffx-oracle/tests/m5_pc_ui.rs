@@ -5827,3 +5827,269 @@ fn rp4_mem_graph_window_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn rp4_name_list_debug_matches_the_original() {
+    // The split (no, one, two or more picked entries, anywhere; counts
+    // 0..12 and negative), the centroid view (counts 0..12) and the
+    // debug projection (rcuiProjectToInt as it is, its matrix from the
+    // global).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_01c0);
+        let float = |rng: &mut Rng| match rng.below(6) {
+            0 => rng.next(),
+            _ => (f32::from(rng.below(20_000) as u16) / 3.0 - 3000.0).to_bits(),
+        };
+        for case in 0..150 {
+            let list = rng.below(2);
+            t.g32(ll::NAME_LIST, list);
+            let n = if rng.chance(8) {
+                rng.below(4).wrapping_sub(3)
+            } else {
+                rng.below(12)
+            };
+            let entries = t.zeros(0xc * 14);
+            let points = t.zeros(0x10 * 14);
+            for i in 0..13 {
+                let e = entries + 0xc * i;
+                for k in 0..3 {
+                    let v = if k == 0 && rng.chance(4) {
+                        2 | rng.below(256)
+                    } else {
+                        rng.next() & !2
+                    };
+                    t.w32(e + 4 * k, v);
+                }
+                for k in 0..4 {
+                    let v = float(&mut rng);
+                    t.w32(points + 0x10 * i + 4 * k, v);
+                }
+            }
+            t.g32(ll::NAME_LIST_ENTRIES + 4 * list, entries);
+            t.g32(ll::NAME_LIST_POINTS + 4 * list, points);
+            t.g32(ll::NAME_LIST_COUNTS + 4 * list, n);
+            t.g32(ll::DEBUG_CAMERA, rng.next());
+            t.stubs(&[
+                (ll::NAME_LIST_CLEAR, false, 0, 0, rng.next()),
+                (ll::MS_CAMERA_SET_RECT, false, 3, 0, rng.next()),
+            ]);
+            if case % 2 == 0 {
+                t.check_framed(
+                    "FUN_009401c0",
+                    0x0094_01c0,
+                    Conv::Cdecl,
+                    &[],
+                    0x10,
+                    |m, ebp| Out::U32(ll::name_list_split(m, ebp - 0x10)),
+                );
+            } else if n.cast_signed() >= 0 {
+                t.skip = 4;
+                t.check_framed(
+                    "FUN_00940580",
+                    0x0094_0580,
+                    Conv::Cdecl,
+                    &[],
+                    0x34,
+                    |m, ebp| Out::U32(ll::name_list_view_centre(m, ebp - 0x34)),
+                );
+                t.skip = 0;
+            }
+            t.reset();
+        }
+        for _ in 0..60 {
+            let g = t.rebase(ll::DEBUG_VIEW_MATRIX);
+            for k in 0..16 {
+                let v = (f32::from(rng.below(2000) as u16) / 1000.0 - 1.0).to_bits();
+                t.w32(g + 4 * k, v);
+            }
+            let v = t.zeros(0x10);
+            for k in 0..4 {
+                let x = (f32::from(rng.below(20_000) as u16) / 7.0 - 1400.0).to_bits();
+                t.w32(v + 4 * k, x);
+            }
+            let out = t.zeros(0x10);
+            t.skip = 4;
+            t.check_framed(
+                "FUN_0093fd60",
+                0x0093_fd60,
+                Conv::Cdecl,
+                &[v, out],
+                0x44,
+                |m, ebp| Out::U32(ll::debug_project(m, ebp - 0x44, v, out)),
+            );
+            t.skip = 0;
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_name_list_files_match_the_original() {
+    // Dropping the picked entries (counts around the five limit, few
+    // and many picked) and loading a list (no path, no arrays, open and
+    // count failures, counts 1..12; sceRead stubbed, so the count comes
+    // from the frame and the points stay as they are).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_10e0);
+        for case in 0..160 {
+            let list = rng.below(2);
+            t.g32(ll::NAME_LIST, list);
+            // around the drop's limits (more than 5, at least 5 kept) half
+            // the time
+            let n = if rng.chance(8) {
+                rng.below(4).wrapping_sub(3)
+            } else if rng.chance(2) {
+                5 + rng.below(4)
+            } else {
+                rng.below(14)
+            };
+            let entries = t.zeros(0xc * 15);
+            let points = t.zeros(0x10 * 15);
+            for i in 0..14 {
+                for k in 0..3 {
+                    let v = if k == 0 && rng.chance(4) {
+                        2 | rng.below(256)
+                    } else {
+                        rng.next() & !2
+                    };
+                    t.w32(entries + 0xc * i + 4 * k, v);
+                }
+                for k in 0..4 {
+                    let v = match rng.below(5) {
+                        0 => rng.next(),
+                        _ => (f32::from(rng.below(20_000) as u16) / 1000.0 - 10.0).to_bits(),
+                    };
+                    t.w32(points + 0x10 * i + 4 * k, v);
+                }
+            }
+            // the drop reads the arrays unchecked
+            let none = case % 2 == 1 && rng.chance(10);
+            t.g32(
+                ll::NAME_LIST_ENTRIES + 4 * list,
+                if none { 0 } else { entries },
+            );
+            t.g32(
+                ll::NAME_LIST_POINTS + 4 * list,
+                if case % 2 == 1 && rng.chance(10) {
+                    0
+                } else {
+                    points
+                },
+            );
+            t.g32(ll::NAME_LIST_COUNTS + 4 * list, n);
+            let path = t.rebase(ll::NAME_LIST_PATH);
+            t.w8(path, if rng.chance(8) { 0 } else { b'p' });
+            t.stubs(&[
+                (ll::NAME_LIST_CLEAR, false, 0, 0, rng.next()),
+                (
+                    ll::SCE_OPEN,
+                    false,
+                    2,
+                    0,
+                    if rng.chance(6) {
+                        u32::MAX
+                    } else {
+                        rng.below(8)
+                    },
+                ),
+                (ll::SCE_LSEEK, false, 3, 0, rng.next()),
+                (ll::SCE_READ, false, 3, 0, rng.next()),
+                (ll::SCE_CLOSE, false, 1, 0, rng.next()),
+                (ll::DBG_PRINTF, false, 2, 0, rng.next()),
+            ]);
+            if case % 2 == 0 {
+                t.check("FUN_009410e0", 0x0094_10e0, Conv::Cdecl, &[], |m| {
+                    Out::U32(ll::name_list_drop_picked(m))
+                });
+            } else {
+                let mut init = vec![0_u8; 0xc];
+                init.extend(n.to_le_bytes());
+                t.check_framed_init(
+                    "FUN_00941460",
+                    0x0094_1460,
+                    Conv::Cdecl,
+                    &[],
+                    0x10,
+                    &init,
+                    |m, ebp| {
+                        ll::name_list_load(m, ebp - 0x10);
+                        Out::None
+                    },
+                );
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_page_manager_matches_the_original() {
+    // The constructor; adding buckets at indices all over a bitmap with
+    // marks below them or none, the allocation failing or not; bitmaps
+    // of 0..100 bits (the KERNEL32 imports, the arena and the bucket
+    // init stubbed; memset the game's).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_6f50);
+        for case in 0..90 {
+            let block = t.zeros(0x2200);
+            t.stub_import(ll::INIT_CRITICAL_SECTION_IAT, false, 1, 1, rng.next());
+            t.stub_import(ll::ENTER_CRITICAL_SECTION_IAT, false, 1, 1, rng.next());
+            t.stub_import(ll::LEAVE_CRITICAL_SECTION_IAT, false, 1, 1, rng.next());
+            t.stub_import(ll::CREATE_EVENT_IAT, false, 4, 4, rng.next());
+            let mem = t.zeros(0x100);
+            // the bitmap clears its words unchecked
+            let alloc = if case % 3 == 1 && rng.chance(5) {
+                0
+            } else {
+                mem
+            };
+            t.stubs(&[
+                (ll::ARENA_ALLOC, true, 1, 1, alloc),
+                (ll::PAGE_BUCKET_INIT, true, 3, 3, rng.next()),
+            ]);
+            match case % 3 {
+                0 => t.check(
+                    "FUN_00946f50",
+                    0x0094_6f50,
+                    Conv::Thiscall(block),
+                    &[],
+                    |m| Out::U32(ll::page_manager_ctor(m, block)),
+                ),
+                1 => {
+                    let bits = t.zeros(0x40);
+                    for k in 0..4 {
+                        let v = if rng.chance(2) { 0 } else { rng.next() };
+                        t.w32(bits + 4 * k, v);
+                    }
+                    t.w32(block + 0x40c, bits);
+                    t.w32(block + 0x404, rng.next());
+                    t.w32(block, rng.next());
+                    let index = rng.below(0x200);
+                    let arg = rng.next();
+                    t.check(
+                        "FUN_00946b20",
+                        0x0094_6b20,
+                        Conv::Thiscall(block),
+                        &[index, arg],
+                        |m| {
+                            ll::page_bucket_add(m, block, index, arg);
+                            Out::None
+                        },
+                    );
+                }
+                _ => {
+                    let nbits = rng.below(100);
+                    let cs = rng.next();
+                    t.check(
+                        "FUN_00948750",
+                        0x0094_8750,
+                        Conv::Thiscall(block),
+                        &[nbits, cs],
+                        |m| Out::U32(ll::bitmap_init(m, block, nbits, cs)),
+                    );
+                }
+            }
+            t.reset();
+        }
+    });
+}

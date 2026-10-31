@@ -1050,4 +1050,43 @@ ported! {
         let mut f = StackFrame::<31>::new();
         ll::mem_graph_window_proc(&mut mem(), f.at(), window, msg)
     }
+
+    /// `FUN_009401c0()` (the picked indices and the list pointers).
+    NameList_split_009401c0 @ 0x0094_01c0 => extern "C" fn name_list_split() -> u32 {
+        let mut f = StackFrame::<4>::new();
+        ll::name_list_split(&mut mem(), f.at())
+    }
+    /// `FUN_00940580()` (the sums and the two positions).
+    NameList_viewCentre_00940580 @ 0x0094_0580 => extern "C" fn name_list_view_centre() -> u32 {
+        let mut f = StackFrame::<12>::new();
+        ll::name_list_view_centre(&mut mem(), f.at())
+    }
+    /// `FUN_0093fd60(v, out)` (the matrix).
+    DebugView_project_0093fd60 @ 0x0093_fd60 => extern "C" fn debug_project(v: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        ll::debug_project(&mut mem(), f.at(), v, out)
+    }
+
+    /// `FUN_009410e0()`.
+    NameList_dropPicked_009410e0 @ 0x0094_10e0 => extern "C" fn name_list_drop_picked() -> u32 {
+        ll::name_list_drop_picked(&mut mem())
+    }
+    /// `FUN_00941460()` (the index, cursor, scratch and count).
+    NameList_load_00941460 @ 0x0094_1460 => extern "C" fn name_list_load() {
+        let mut f = StackFrame::<4>::new();
+        ll::name_list_load(&mut mem(), f.at());
+    }
+
+    /// `FUN_00946f50(this)`: the page manager's constructor.
+    PageManager_ctor_00946f50 @ 0x0094_6f50 => extern "thiscall" fn page_manager_ctor(this: u32) -> u32 {
+        ll::page_manager_ctor(&mut mem(), this)
+    }
+    /// `FUN_00946b20(this; index, arg)`.
+    PageManager_addBucket_00946b20 @ 0x0094_6b20 => extern "thiscall" fn page_bucket_add(this: u32, index: u32, arg: u32) {
+        ll::page_bucket_add(&mut mem(), this, index, arg);
+    }
+    /// `FUN_00948750(this; bits, cs)`.
+    Bitmap_init_00948750 @ 0x0094_8750 => extern "thiscall" fn bitmap_init(this: u32, bits: u32, cs: u32) -> u32 {
+        ll::bitmap_init(&mut mem(), this, bits, cs)
+    }
 }
