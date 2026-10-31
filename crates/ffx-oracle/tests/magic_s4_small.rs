@@ -4238,3 +4238,52 @@ fn sprite_record_setups() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn release_and_remove_two() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x4ff0);
+    recs(&mut t, &[(713, 1), (779, 4)]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x49), lock);
+    t.set_u32(op(&t, f, 0x31), SCRATCH + 0x8000);
+    t.set_u32(op(&t, f, 0x95), SCRATCH + 0x84);
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0xa), b);
+    let list = op(&t, f, 0x82);
+    let (n1, held) = (SCRATCH + 0x200, SCRATCH + 0x600);
+    for (hold, listed) in [(false, 0u32), (true, 3), (false, 2), (true, 1)] {
+        t.write(b, &vec![0x3c; 0x3c00]);
+        t.set_u32(lock, 7);
+        if hold {
+            pool_node(&mut t, held);
+            t.set_u32(b + 0x3ba0, held);
+        } else {
+            t.set_u32(b + 0x3ba0, 0);
+        }
+        t.write(n1, &[0; 0x40]);
+        t.write(list, &[0; 0x10]);
+        let objs: Vec<u32> = [0x5f0, 0x980]
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| listed >> i & 1 != 0)
+            .map(|(_, o)| b + o)
+            .collect();
+        for (i, o) in objs.iter().enumerate() {
+            let node = n1 + 0x10 * i as u32;
+            t.set_u32(node + 8, *o);
+            if i > 0 {
+                t.set_u32(node - 0x10 + 4, node);
+                t.set_u32(node, node - 0x10);
+            }
+        }
+        if !objs.is_empty() {
+            t.set_u32(list, n1);
+            t.set_u32(list + 4, n1 + 0x10 * (objs.len() as u32 - 1));
+            t.set_u32(list + 0xc, objs.len() as u32);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

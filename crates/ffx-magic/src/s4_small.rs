@@ -9173,3 +9173,64 @@ pub const SPRITE_RECORD_SETUP: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// The block's held node given back and its two objects removed (no
+/// arguments; an aligned frame): with `B` the word at operand `+0xa`,
+/// when `B + 0x3ba0` holds a node it goes back to the pool
+/// ([`give_back`]), the word is cleared and the 18 resources `R + 0x220
+/// .. R + 0x440` (step 0x20, `R` the word at operand `+0x31`) are
+/// released (slot 772 `(r, 0)` gives the id, slot 779 drops it with
+/// `**G_LOCK` 1 around the call); then the objects `B + 0x5f0` and `B +
+/// 0x980` leave the list as in [`count_down_two_objects`]. Returns the
+/// last slot 713's `eax` or [`list_remove`]'s 0.
+///
+/// `magic_0563` 0x10004ff0 (247 bytes; 2 DLLs).
+pub fn release_and_remove_two<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let b = g.read::<u32>(w(0xa));
+    let node = g.read::<u32>(b.wrapping_add(0x3ba0));
+    if node != 0 {
+        give_back(g, img, img.rel32_target(f + 0x1b), node);
+        g.write::<u32>(b.wrapping_add(0x3ba0), 0);
+        for d in (0x220u32..0x460).step_by(0x20) {
+            let r = g.read::<u32>(w(0x31)).wrapping_add(d);
+            let id = slot_call(g, img, f, (0x3b, 772), &[r, 0]);
+            let lock = g.read::<u32>(w(0x49));
+            let saved = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            slot_call(g, img, f, (0x52, 779), &[id.eax, id.edx, r, 0]);
+            let lock = g.read::<u32>(w(0x65));
+            g.write::<u32>(lock, saved);
+        }
+    }
+    let mut eax = 0;
+    // (object, call, list, G_P, ITEM, table)
+    for (obj, call, list, p, item, table) in [
+        (0x5f0u32, 0x87u32, 0x82u32, 0x95u32, 0x9cu32, 0xa1u32),
+        (0x980, 0xc5, 0xc0, 0xce, 0xd5, 0xda),
+    ] {
+        let obj = b.wrapping_add(obj);
+        eax = list_remove(g, img, img.rel32_target(f + call), w(list), obj);
+        if eax != 0 {
+            let p = g.read::<u32>(w(p));
+            g.write::<u32>(p, w(item));
+            eax = slot_call(g, img, f, (table, 713), &[obj]).eax;
+            let fl = g.read::<u16>(obj.wrapping_add(0x124)) & 0x7fff;
+            g.write::<u16>(obj.wrapping_add(0x124), fl);
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`release_and_remove_two`].
+pub const RELEASE_AND_REMOVE_TWO: Sig = Sig {
+    len: 247,
+    hash: 0x37ba_9dd2_fa2b_263a,
+    calls: &[
+        (0x1b, Callee::Sig(&GIVE_BACK)),
+        (0x87, Callee::Sig(&LIST_REMOVE)),
+        (0xc5, Callee::Sig(&LIST_REMOVE)),
+    ],
+    imports: &[],
+};
