@@ -1374,6 +1374,12 @@ ported! {
         let mut f = StackFrame::<0x2b>::new();
         pc::fake_env_model(&mut mem(), f.at() + 0xac, slots, [model, matrix, uvs, alpha, p5, a2, p7, uv_matrix, mode])
     }
+    /// `(lo, hi, holder, part)`: frame `ebp - 0x7c` (the colour scale
+    /// vector at `ebp - 0x14`).
+    updateVFXRenderData_KaGra001 @ 0x0071_d520 => extern "C" fn kagra001(lo: u32, hi: u32, holder: u32, part: u32) -> u32 {
+        let mut f = StackFrame::<0x1f>::new();
+        pc::kagra001(&mut mem(), f.at() + 0x7c, lo, hi, holder, part)
+    }
     /// `(job)`: a shape model's triangles into the effect vertex block;
     /// the triangle pointer goes into the argument slot.
     JobSchedule_pppPart_fillBuffer_drawShp @ 0x0071_ee80 => extern "C" fn shp_model_fill(job: u32; slots: u32) -> u32 {

@@ -8881,3 +8881,114 @@ fn bg12_fake_env_model_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn bg13_kagra001_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_b613);
+        for case in 0..16u32 {
+            t.reset();
+            let groups: &[(u8, i16)] = match case % 4 {
+                0 => &[(3, 2)],
+                1 => &[(3, 1), (3, 3)],
+                2 => &[(3, 2), (5, 0), (3, 1)],
+                _ => &[(3, 0), (3, 2)],
+            };
+            let total: i16 = groups.iter().map(|g| g.1).sum();
+            let tris: usize = groups.iter().map(|g| g.1.max(0) as usize).sum();
+            let positions: Vec<u8> = (0..64 * 6).map(|_| rng.next() as u8).collect();
+            let mut body = Vec::new();
+            for (gi, &(kind, n)) in groups.iter().enumerate() {
+                let mut head = [0u8; 0x10];
+                for b in &mut head {
+                    *b = rng.next() as u8;
+                }
+                head[1] = kind;
+                head[2..4].copy_from_slice(&n.to_le_bytes());
+                if gi == 0 {
+                    // TEX0: width and height exponents in bits 26..29, 30..33
+                    let tex = (u64::from(rng.below(11)) << 26) | (u64::from(rng.below(11)) << 30);
+                    head[8..16].copy_from_slice(&tex.to_le_bytes());
+                }
+                body.extend(head);
+                if kind == 3 {
+                    for _ in 0..n.max(0) {
+                        let mut tri = [0u8; 0x28];
+                        for b in &mut tri {
+                            *b = rng.next() as u8;
+                        }
+                        for v in 0..3 {
+                            let i = rng.below(64) as u16;
+                            tri[0xc + 2 * v..0xe + 2 * v].copy_from_slice(&i.to_le_bytes());
+                        }
+                        body.extend(tri);
+                    }
+                }
+            }
+            let mut m = vec![0u8; 0x20];
+            let pos_at = 0x20 + body.len() as u32;
+            m[4..8].copy_from_slice(&0x20u32.to_le_bytes());
+            m[8..12].copy_from_slice(&pos_at.to_le_bytes());
+            m[0x10..0x12].copy_from_slice(&total.to_le_bytes());
+            m.extend(body);
+            m.extend(positions);
+            m.extend([0u8; 0x40]);
+            let model = t.alloc(&m);
+            let n = tris.max(1) * 3;
+            let mut table = Vec::new();
+            for _ in 0..groups.len() {
+                let mut e = [0u32; 27];
+                e[3] = t.zeros(n * 12);
+                e[5] = t.zeros(n * 16);
+                e[6] = t.zeros(n * 8);
+                e[7] = t.zeros(n * 2);
+                table.extend(e);
+            }
+            let table = t.words(&table);
+            let mut rd: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            rd[0x94 / 4] = table;
+            let rd = t.words(&rd);
+            t.stub(
+                pcs::RENDER_DATA_BY_INSTANCE,
+                false,
+                2,
+                0,
+                if case == 15 { 0 } else { rd },
+            );
+            t.stub(pcs::GET_PTR32, false, 1, 0, model);
+            t.stub_seq(
+                pcs::BUFFER_FOR_SEGMENT,
+                4,
+                0,
+                &[1, u32::from(case != 13), 1, 1],
+            );
+            t.stub(pcs::VFX_SET_VISIBLE, false, 3, 0, rng.next());
+            let alpha = [256.0f32, 512.0][(case % 2) as usize];
+            t.g32(pcs::ALPHA_SCALE, alpha.to_bits());
+            let holder = t.words(&[0, 0, 0, 0, 0, 0, 0, rng.next()]);
+            let part = if case % 3 == 2 {
+                0
+            } else {
+                let m1 = bg_matrix(t, &mut rng);
+                let m2 = if case % 2 == 0 {
+                    bg_matrix(t, &mut rng)
+                } else {
+                    0
+                };
+                let mut p: Vec<u32> = (0..0x14).map(|_| rng.next()).collect();
+                p[0x20 / 4] = m1;
+                p[0x44 / 4] = m2;
+                t.words(&p)
+            };
+            let (lo, hi) = (rng.next(), rng.next());
+            t.check_fs(
+                &format!("kagra001 #{case}"),
+                0x0071_d520,
+                &[lo, hi, holder, part],
+                0,
+                0,
+                |m, ebp, _| Out::U32(pcb::kagra001(m, ebp, lo, hi, holder, part)),
+            );
+        }
+    });
+}

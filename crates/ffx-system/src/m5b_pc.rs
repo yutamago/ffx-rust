@@ -251,6 +251,16 @@ pub const FAKE_DROP: u32 = 0x00b5_01b0;
 pub const FAKE_COLOUR_SCALE: u32 = 0x00b5_0198;
 pub const FAKE_ALPHA_FULL: u32 = 0x00b5_01bc;
 
+/// `updateVFXRenderData_KaGra001`'s: `get_ptr32_func`, `FFXVu0MulVector`
+/// (cdecl), `g_AlphaScale`, `g_AlphaScaleInv`, `g_VfxColorScale` and the
+/// f32 2^32 (`fild`'s unsigned fix-up).
+pub const GET_PTR32: u32 = 0x00a4_4650;
+pub const MUL_VECTOR: u32 = 0x006e_d5d0;
+pub const ALPHA_SCALE: u32 = 0x00c3_a4d0;
+pub const ALPHA_SCALE_INV: u32 = 0x00c3_a494;
+pub const VFX_COLOR_SCALE: u32 = 0x00c3_a488;
+pub const TWO_POW_32: u32 = 0x00b1_1f14;
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -1934,5 +1944,222 @@ pub mod bridge {
     /// An int through `fild`/`fstp dword`: its f32 bits.
     fn fake_f32(v: u32) -> u32 {
         ffx_bridge::x87::store(f64::from(v.cast_signed()))
+    }
+
+    /// The low word of an unsigned u32 through `fild` and the 2^32
+    /// fix-up, stored as an f32.
+    fn kagra_u32_f32(h: &impl Host, v: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        let x = f64::from(v.cast_signed());
+        if v.cast_signed() < 0 {
+            store(add(x, load(h.read(h.rebase(super::TWO_POW_32)))))
+        } else {
+            store(x)
+        }
+    }
+
+    /// `updateVFXRenderData_KaGra001(lo, hi, holder, part)` with its frame
+    /// at `ebp` (the colour scale vector at `ebp - 0x14`): the
+    /// `KaGra001` effect's render data (`graphicVFXGetRenderDataByInstance
+    /// (lo, hi)`; none: 0). The model is `get_ptr32_func(holder + 0x1c)`;
+    /// `g_AlphaScaleInv = 1/128 / g_AlphaScale`. With a part: the colour
+    /// scale is its bytes `+0x18..+0x1b` times `g_VfxColorScale`
+    /// (`FFXVu0MulVector`), the uv offsets `(u32 +0x10 % (w << 16)) >> 4
+    /// / w` (and `+0x14` with h) for the first group's TEX0 sizes (`w = 1
+    /// << bits 26..29`, `h = 1 << bits 30..33`). Each group of kind 3 (at
+    /// most 30 segments; more: 0) gets a segment of `3 n` vertices
+    /// (`graphicDynGeoMemManagerGetBufferForSegment`; none: 0), its
+    /// 0x28-byte triangles: three i16 positions (u16 `+0xc..+0x10`, 6
+    /// bytes, as floats, into the bounds), three colours (bytes `+0..+2`
+    /// with 128, `+4..+7`, `+8..+0xb`; each times the scale), the uvs
+    /// (u16 `+0x14..+0x1e` plus the offsets, in 1/4096, v as `1 - v`) and
+    /// the indices `n + 1, n, n + 2`. Other kinds take the next 0x10 bytes
+    /// as the next group. With a part the render data takes its
+    /// matrices (`+0x20` and, when set, `+0x44` into `+0x40`, then `+0x80`
+    /// is 1) times `g_pppFillMatrix`, `+0xb0` its first word and the
+    /// bounds.
+    /// Then `graphicVFXSetVisible(lo, hi, 1)`. Returns 1.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation
+    )]
+    pub fn kagra001(h: &mut impl Host, ebp: u32, lo: u32, hi: u32, holder: u32, part: u32) -> u32 {
+        use ffx_bridge::x87::{self, load, store};
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let one = 0x3f80_0000u32;
+        for o in [0x14u32, 0x10, 0xc, 8] {
+            h.write(f(o), one);
+        }
+        let top = store(load(h.read(h.rebase(super::FLT_MAX))));
+        let bottom = store(load(h.read(h.rebase(super::FLT_MIN))));
+        let mut bounds = [top, top, top, bottom, bottom, bottom];
+        let rd = cdecl(h, super::RENDER_DATA_BY_INSTANCE, &[lo, hi]);
+        if rd == 0 {
+            return 0;
+        }
+        let holder_word: u32 = h.read(holder.wrapping_add(0x1c));
+        let model = cdecl(h, super::GET_PTR32, &[holder_word]);
+        let scale = load(h.read(h.rebase(super::ALPHA_SCALE)));
+        let eighth = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_SIZE_SCALE)));
+        let mut left = i32::from(h.read::<i16>(model.wrapping_add(0x10)));
+        let mut group = model.wrapping_add(h.read::<u32>(model.wrapping_add(4)));
+        let pos = model.wrapping_add(h.read::<u32>(model.wrapping_add(8)));
+        let tex = u64::from(h.read::<u32>(group.wrapping_add(8)))
+            | u64::from(h.read::<u32>(group.wrapping_add(0xc))) << 32;
+        let mut tri = group.wrapping_add(0x10);
+        let w = 1u32 << ((tex >> 26) & 0xf);
+        let ht = 1u32 << ((tex >> 30) & 0xf);
+        h.write(
+            h.rebase(super::ALPHA_SCALE_INV),
+            store(x87::div(eighth, scale)),
+        );
+        let (mut uo, mut vo) = (0u32, 0u32);
+        if part != 0 {
+            for (k, o) in [0x18u32, 0x19, 0x1a, 0x1b].into_iter().enumerate() {
+                let byte = f64::from(h.read::<u8>(part.wrapping_add(o)));
+                let at = f(0x14 - 4 * k as u32);
+                let c = store(x87::mul(byte, load(h.read(at))));
+                h.write(at, c);
+            }
+            let cs = h.rebase(super::VFX_COLOR_SCALE);
+            cdecl(h, super::MUL_VECTOR, &[f(0x14), cs, f(0x14)]);
+            let off = |v: u32, size: u32| -> u32 { v.checked_rem(size << 16).unwrap_or(0) >> 4 };
+            let u: u32 = h.read(part.wrapping_add(0x10));
+            uo = kagra_u32_f32(h, off(u, w).checked_div(w).unwrap_or(0));
+            let v: u32 = h.read(part.wrapping_add(0x14));
+            vo = kagra_u32_f32(h, off(v, ht).checked_div(ht).unwrap_or(0));
+        }
+        let q = f64::from_bits(h.read::<u64>(h.rebase(super::SHP_UV_SCALE)));
+        let full = store(load(h.read(h.rebase(super::FAKE_ALPHA_FULL))));
+        let mut seg = 0u32;
+        let mut off = 0u32;
+        while left > 0 {
+            if off.wrapping_add(0x6c).cast_signed() >= 0xca8 {
+                return 0;
+            }
+            if h.read::<u8>(group.wrapping_add(1)) == 3 {
+                let n3 = i32::from(h.read::<i16>(group.wrapping_add(2)))
+                    .wrapping_mul(3)
+                    .cast_unsigned();
+                if cdecl(h, super::BUFFER_FOR_SEGMENT, &[rd, seg, n3, n3]) == 0 {
+                    return 0;
+                }
+                let mut k = 0i32;
+                let mut n = 0u32;
+                while k < i32::from(h.read::<i16>(group.wrapping_add(2))) {
+                    let kk = k.cast_unsigned();
+                    let tbl: u32 = h.read(rd.wrapping_add(0x94));
+                    let pout = h
+                        .read::<u32>(tbl.wrapping_add(off).wrapping_add(0xc))
+                        .wrapping_add(kk.wrapping_mul(0x24));
+                    for v in 0..3u32 {
+                        let p = pos.wrapping_add(
+                            u32::from(h.read::<u16>(tri.wrapping_add(0xc + 2 * v))).wrapping_mul(6),
+                        );
+                        for c in 0..3u32 {
+                            let i = i32::from(h.read::<i16>(p.wrapping_add(2 * c)));
+                            let x = store(f64::from(i));
+                            h.write(pout.wrapping_add(12 * v + 4 * c), store(load(x)));
+                        }
+                    }
+                    for v in 0..3u32 {
+                        let at = pout.wrapping_add(12 * v);
+                        let xyz = [0u32, 4, 8].map(|o| load(h.read(at.wrapping_add(o))));
+                        for (axis, &val) in xyz.iter().enumerate() {
+                            if val < load(bounds[axis]) {
+                                bounds[axis] = store(val);
+                            }
+                        }
+                        for (axis, &val) in xyz.iter().enumerate() {
+                            if val > load(bounds[3 + axis]) {
+                                bounds[3 + axis] = store(val);
+                            }
+                        }
+                    }
+                    let tbl: u32 = h.read(rd.wrapping_add(0x94));
+                    let cout = h
+                        .read::<u32>(tbl.wrapping_add(off).wrapping_add(0x14))
+                        .wrapping_add(kk.wrapping_mul(0x30));
+                    for (o, b) in [(0u32, 0u32), (4, 1), (8, 2)] {
+                        let v = f64::from(h.read::<u8>(tri.wrapping_add(b)));
+                        h.write(cout.wrapping_add(o), store(v));
+                    }
+                    h.write(cout.wrapping_add(0xc), full);
+                    for (o, b) in [(0x10u32, 4u32), (0x14, 5), (0x18, 6), (0x1c, 7)] {
+                        let v = f64::from(h.read::<u8>(tri.wrapping_add(b)));
+                        h.write(cout.wrapping_add(o), store(v));
+                    }
+                    h.write(cout.wrapping_add(0xc), full);
+                    for (o, b) in [(0x20u32, 8u32), (0x24, 9), (0x28, 0xa), (0x2c, 0xb)] {
+                        let v = f64::from(h.read::<u8>(tri.wrapping_add(b)));
+                        h.write(cout.wrapping_add(o), store(v));
+                    }
+                    h.write(cout.wrapping_add(0xc), full);
+                    for o in [0u32, 0x10, 0x20] {
+                        let c = cout.wrapping_add(o);
+                        cdecl(h, super::MUL_VECTOR, &[c, f(0x14), c]);
+                    }
+                    let tbl: u32 = h.read(rd.wrapping_add(0x94));
+                    let uv = h
+                        .read::<u32>(tbl.wrapping_add(off).wrapping_add(0x18))
+                        .wrapping_add(kk.wrapping_mul(0x18));
+                    for j in 0..3u32 {
+                        let u = f64::from(h.read::<u16>(tri.wrapping_add(0x14 + 4 * j)));
+                        let us = store(x87::mul(x87::add(u, load(uo)), q));
+                        h.write(uv.wrapping_add(8 * j), us);
+                        let v = f64::from(h.read::<u16>(tri.wrapping_add(0x16 + 4 * j)));
+                        let vs = x87::mul(x87::add(v, load(vo)), q);
+                        h.write(uv.wrapping_add(8 * j + 4), store(x87::sub(1.0, vs)));
+                    }
+                    let tbl: u32 = h.read(rd.wrapping_add(0x94));
+                    let idx: u32 = h.read(tbl.wrapping_add(off).wrapping_add(0x1c));
+                    let at = idx.wrapping_add(n.wrapping_mul(2));
+                    h.write(at.wrapping_add(2), n.wrapping_add(1) as u16);
+                    h.write(at, n as u16);
+                    h.write(at.wrapping_add(4), n.wrapping_add(2) as u16);
+                    n = n.wrapping_add(3);
+                    tri = tri.wrapping_add(0x28);
+                    k += 1;
+                }
+            }
+            left = left.wrapping_sub(i32::from(h.read::<i16>(group.wrapping_add(2))));
+            group = tri;
+            tri = tri.wrapping_add(0x10);
+            seg = seg.wrapping_add(1);
+            off = off.wrapping_add(0x6c);
+        }
+        if part != 0 {
+            let first: u32 = h.read(part);
+            h.write(rd.wrapping_add(0xb0), first);
+            let m: u32 = h.read(part.wrapping_add(0x20));
+            for k in 0..16u32 {
+                let v: u32 = h.read(m.wrapping_add(4 * k));
+                h.write(rd.wrapping_add(4 * k), v);
+            }
+            let fill_matrix = h.rebase(super::PPP_FILL_MATRIX);
+            cdecl(h, super::MUL_MATRIX, &[rd, fill_matrix, rd]);
+            for o in [0xcu32, 0x1c, 0x2c] {
+                h.write(rd.wrapping_add(o), 0u32);
+            }
+            h.write(rd.wrapping_add(0x3c), one);
+            let m2: u32 = h.read(part.wrapping_add(0x44));
+            if m2 == 0 {
+                h.write(rd.wrapping_add(0x80), 0u32);
+            } else {
+                let dst = rd.wrapping_add(0x40);
+                for k in 0..16u32 {
+                    let v: u32 = h.read(m2.wrapping_add(4 * k));
+                    h.write(dst.wrapping_add(4 * k), v);
+                }
+                cdecl(h, super::MUL_MATRIX, &[dst, fill_matrix, dst]);
+                h.write(rd.wrapping_add(0x80), 1u32);
+            }
+            for (k, &b) in (0u32..).zip(&bounds) {
+                h.write(rd.wrapping_add(0x98 + 4 * k), store(load(b)));
+            }
+        }
+        cdecl(h, super::VFX_SET_VISIBLE, &[lo, hi, 1]);
+        1
     }
 }
