@@ -46,8 +46,8 @@ pub fn main_init_create_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
     let var = img.word(f + 0x39);
     let v1 = g.read::<u32>(var);
     let slot436 = slot_target(g, table, 436);
-    // mov eax, 0x10185b80; sub eax, 0x180000
-    let slot436_arg5 = img.word(f + 0x10).wrapping_sub(0x0018_0000);
+    // mov eax, 0x10185b80; sub eax, 0x180000 (the immediate at +0x15)
+    let slot436_arg5 = img.word(f + 0x10).wrapping_sub(img.word(f + 0x15));
     g.call(
         slot436,
         fr.ecx,
@@ -56,9 +56,10 @@ pub fn main_init_create_task<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret
             arg,
             img.word(f + 0x30),
             img.word(f + 0x2b),
-            0x0008_0000,
+            // push 0x80000; push eax; push imm8
+            img.word(f + 0x20),
             slot436_arg5,
-            1,
+            crate::o4_parts::disp8(img, f + 0x0e),
             img.word(f + 9),
             img.word(f + 4),
         ],

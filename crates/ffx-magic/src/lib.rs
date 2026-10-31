@@ -75,6 +75,8 @@ pub mod s3_wrap;
 
 // round 4, the own work list's families (o4_*)
 pub mod o4_effect;
+pub mod o4_fam2;
+pub mod o4_fam3;
 pub mod o4_parts;
 pub mod o4_rcef;
 pub mod o4_small;
@@ -628,6 +630,9 @@ macro_rules! ports {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
 
+        // the pairwise check outgrew the const evaluator's step budget
+        // (about 1,000 signatures); it is quadratic, not stuck
+        #[allow(long_running_const_eval)]
         const _: () = assert!(
             first_overlap(PORTS, INTERNAL).is_none(),
             "two ports (PORTS or INTERNAL) with the same code identity: \
@@ -1233,6 +1238,42 @@ ports! {
     "o4 tiny slot9_seq_wait 0360@1300" => o4_tiny5::SLOT9_SEQ_WAIT_0360_1300, o4_tiny5::slot9_seq_wait;
     "o4 tiny task_field_cb 0195@1270" => o4_tiny5::TASK_FIELD_CB_0195_1270, o4_tiny5::task_field_cb;
     "o4 tiny pair_seq_call 0378@1120" => o4_tiny5::PAIR_SEQ_CALL_0378_1120, o4_tiny5::pair_seq_call;
+    "o4 fam2 slot_by_flag 0252@1340" => o4_fam2::SLOT_BY_FLAG_0252_1340, o4_fam2::slot_by_flag;
+    "o4 fam2 slot_by_flag 0303@1420" => o4_fam2::SLOT_BY_FLAG_0303_1420, o4_fam2::slot_by_flag;
+    "o4 fam2 slot_by_flag 0318@1540" => o4_fam2::SLOT_BY_FLAG_0318_1540, o4_fam2::slot_by_flag;
+    "o4 fam2 seq_keep_447_32 0416@1d20" => o4_fam2::SEQ_KEEP_447_32_0416_1D20, o4_fam2::seq_keep_447_32;
+    "o4 fam2 seq_keep_447_32 0510@1430" => o4_fam2::SEQ_KEEP_447_32_0510_1430, o4_fam2::seq_keep_447_32;
+    "o4 fam2 seq_keep_447_32 0525@13b0" => o4_fam2::SEQ_KEEP_447_32_0525_13B0, o4_fam2::seq_keep_447_32;
+    "o4 fam2 byte_list_slot 0397@63f0" => o4_fam2::BYTE_LIST_SLOT_0397_63F0, o4_fam2::byte_list_slot;
+    "o4 fam2 byte_list_slot 0397@6450" => o4_fam2::BYTE_LIST_SLOT_0397_6450, o4_fam2::byte_list_slot;
+    "o4 fam2 task_list_seq_wait 0313@1920" => o4_fam2::TASK_LIST_SEQ_WAIT_0313_1920, o4_fam2::task_list_seq_wait;
+    "o4 fam2 task_list_seq_wait 0313@1980" => o4_fam2::TASK_LIST_SEQ_WAIT_0313_1980, o4_fam2::task_list_seq_wait;
+    "o4 fam2 ptr_stores8 0307@2990" => o4_fam2::PTR_STORES8_0307_2990, o4_fam2::ptr_stores8;
+    "o4 fam2 ptr_stores8 0563@2490" => o4_fam2::PTR_STORES8_0563_2490, o4_fam2::ptr_stores8;
+    "o4 fam2 slot_task_seq_wait 0382@10a0" => o4_fam2::SLOT_TASK_SEQ_WAIT_0382_10A0, o4_fam2::slot_task_seq_wait;
+    "o4 fam2 slot_task_seq_wait 0522@1090" => o4_fam2::SLOT_TASK_SEQ_WAIT_0522_1090, o4_fam2::slot_task_seq_wait;
+    "o4 fam2 store_node 0353@2390" => o4_fam2::STORE_NODE_0353_2390, o4_fam2::store_node;
+    "o4 fam2 store_node 0672@1cf0" => o4_fam2::STORE_NODE_0672_1CF0, o4_fam2::store_node;
+    "o4 fam2 field_slot_flag8 0356@1840" => o4_fam2::FIELD_SLOT_FLAG8_0356_1840, o4_fam2::field_slot_flag8;
+    "o4 fam2 field_slot_flag8 0529@1620" => o4_fam2::FIELD_SLOT_FLAG8_0529_1620, o4_fam2::field_slot_flag8;
+    "o4 fam2 scale_actors 0165@33a0" => o4_fam2::SCALE_ACTORS_0165_33A0, o4_fam2::scale_actors;
+    "o4 fam2 scale_actors 0606@7810" => o4_fam2::SCALE_ACTORS_0606_7810, o4_fam2::scale_actors;
+    "o4 fam2 main init 0195@19e0" => o4_fam2::MAIN_INIT_0195_19E0, rcef::main_init_create_task;
+    "o4 fam2 main init 0507@10d0" => o4_fam2::MAIN_INIT_0507_10D0, rcef::main_init_create_task;
+    "o4 fam3 part_vectors 0370@1550" => o4_fam3::PART_VECTORS_0370_1550, o4_fam3::part_vectors;
+    "o4 fam3 part_vectors 0370@18c0" => o4_fam3::PART_VECTORS_0370_18C0, o4_fam3::part_vectors;
+    "o4 fam3 static_node 0267@37f0" => o4_fam3::STATIC_NODE_0267_37F0, o4_fam3::static_node;
+    "o4 fam3 static_node 0311@24c0" => o4_fam3::STATIC_NODE_0311_24C0, o4_fam3::static_node;
+    "o4 fam3 sub_stores8 0307@2a30" => o4_fam3::SUB_STORES8_0307_2A30, o4_fam3::sub_stores8;
+    "o4 fam3 sub_stores8 0563@2530" => o4_fam3::SUB_STORES8_0563_2530, o4_fam3::sub_stores8;
+    "o4 fam3 slot_list 0519@2a50" => o4_fam3::SLOT_LIST_0519_2A50, o4_fam3::slot_list;
+    "o4 fam3 slot_list 0519@2ac0" => o4_fam3::SLOT_LIST_0519_2AC0, o4_fam3::slot_list;
+    "o4 fam3 two_tasks_seq_wait 0194@10f0" => o4_fam3::TWO_TASKS_SEQ_WAIT_0194_10F0, o4_fam3::two_tasks_seq_wait;
+    "o4 fam3 two_tasks_seq_wait 0300@10a0" => o4_fam3::TWO_TASKS_SEQ_WAIT_0300_10A0, o4_fam3::two_tasks_seq_wait;
+    "o4 fam3 vector_globals 0165@4750" => o4_fam3::VECTOR_GLOBALS_0165_4750, o4_fam3::vector_globals;
+    "o4 fam3 vector_globals 0563@5670" => o4_fam3::VECTOR_GLOBALS_0563_5670, o4_fam3::vector_globals;
+    "o4 fam3 release_and_reset 0162@3900" => o4_fam3::RELEASE_AND_RESET_0162_3900, o4_fam3::release_and_reset;
+    "o4 fam3 release_and_reset 0586@3510" => o4_fam3::RELEASE_AND_RESET_0586_3510, o4_fam3::release_and_reset;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1562,6 +1603,38 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     (
         "o4 state reset (edx) 0419@37c0",
         &o4_state::RESET_STATE_EDX_0419_37C0,
+    ),
+    (
+        "o4 fam2 register_loop 0171@2500",
+        &o4_fam2::REGISTER_LOOP_0171_2500,
+    ),
+    (
+        "o4 fam2 register_loop 0180@1870",
+        &o4_fam2::REGISTER_LOOP_0180_1870,
+    ),
+    (
+        "o4 fam2 register_loop 0392@4830",
+        &o4_fam2::REGISTER_LOOP_0392_4830,
+    ),
+    (
+        "o4 fam2 flag_slots 0202@6d90",
+        &o4_fam2::FLAG_SLOTS_0202_6D90,
+    ),
+    (
+        "o4 fam2 flag_slots 0317@6a40",
+        &o4_fam2::FLAG_SLOTS_0317_6A40,
+    ),
+    (
+        "o4 fam2 flag_slots 0597@8e80",
+        &o4_fam2::FLAG_SLOTS_0597_8E80,
+    ),
+    (
+        "o4 fam3 record_copy 0480@2880",
+        &o4_fam3::RECORD_COPY_0480_2880,
+    ),
+    (
+        "o4 fam3 record_copy 0480@2910",
+        &o4_fam3::RECORD_COPY_0480_2910,
     ),
 ];
 
