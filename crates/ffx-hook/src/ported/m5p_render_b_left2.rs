@@ -30,4 +30,8 @@ ported! {
         let mut f = StackFrame::<8>::new();
         lb::load_light_cluster(&mut mem(), f.at());
     }
+    /// `PDeferredLightingBase::initializeCommonShaders(cluster, effect)`.
+    Phyre_PPostProcessing_PDeferredLightingBase_initializeCommonShaders @ 0x00a1_82f0 => extern "thiscall" fn init_common_shaders(this: u32, cluster: u32, effect: u32) -> u32 {
+        lb::init_common_shaders(&mut mem(), this, cluster, effect)
+    }
 }

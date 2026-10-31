@@ -169,9 +169,36 @@ pub const LIGHT_CLUSTER: [u32; 8] = [
     0x00ce_63d4,
 ];
 
+/// `PDeferredLightingBase::initializeCommonShaders`'s callees beyond
+/// [`SAMPLER_CALLS`]: `PCluster::deleteObject(obj)` (thiscall on the
+/// cluster, ret 4), the word array's `set(i, v)` (thiscall, ret 8),
+/// `PParameterBuffer::setValueDesc(desc, sampler)` (thiscall on the
+/// material's buffer, ret 8); the second sampler's name.
+pub const COMMON_CALLS: [u32; 4] = [0x0044_1240, 0x0048_c540, 0x0056_e600, 0x00b7_62e4];
+/// The parameters `initializeCommonShaders` looks up, in its order:
+/// the name and the field that takes it.
+pub const COMMON_PARAMS: [(u32, u32); 15] = [
+    (0x00b7_61a4, 0x3f54),
+    (0x00b7_61b8, 0x3f58),
+    (0x00b7_61c4, 0x3f5c),
+    (0x00b7_61dc, 0x3f60),
+    (0x00b7_61ec, 0x3f64),
+    (0x00b7_6204, 0x3f84),
+    (0x00b7_6210, 0x3f7c),
+    (0x00b7_6224, 0x3f80),
+    (0x00b7_6238, 0x3f68),
+    (0x00b7_6254, 0x3f6c),
+    (0x00b7_6270, 0x3f70),
+    (0x00b7_628c, 0x3f74),
+    (0x00b7_62a8, 0x3f78),
+    (0x00b7_62c0, 0x3f88),
+    (0x00b2_3e5c, 0x3f8c),
+];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::LIGHT_CLUSTER;
+    use super::{COMMON_CALLS, COMMON_PARAMS};
     use super::{
         Conv, FIND_PARAM, Host, INIT_COMMON, NOT_READY, NVN_PARAMS, SAMPLER_CALLS, SAMPLER_DATA,
         SamplerShaders,
@@ -385,5 +412,99 @@ pub mod bridge {
             let at = h.rebase(LIGHT_CLUSTER[7]);
             h.write(at, v);
         }
+    }
+
+    /// `PDeferredLightingBase::initializeCommonShaders(cluster, effect)`
+    /// (`0x00a182f0`, thiscall, `ret 8`): 0x15 unless the three targets
+    /// `+0x3edc`, `+0x3ee0`, `+0x3ee4` are there; the old material
+    /// (`+0x3ed8`) deleted from the cluster; a new one from the effect
+    /// (its buffer's block copied from the previous one `[+8] + 4` when
+    /// their sizes match); a one-element instance array from the cluster
+    /// holding the material, kept in each target's `+0x10`; the fifteen
+    /// parameters ([`COMMON_PARAMS`]); the three sampler states
+    /// (`+0x3ee8`, `+0x3f0c`, `+0x3f30`) registered (their error
+    /// returned); the point-clamp and shadow-map samplers bound to the
+    /// first two when the material has them (their error returned). 0.
+    pub fn init_common_shaders(h: &mut impl Host, this: u32, cluster: u32, effect: u32) -> u32 {
+        for target in [0x3edc, 0x3ee0, 0x3ee4] {
+            if h.read::<u32>(this + target) == 0 {
+                return NOT_READY;
+            }
+        }
+        let old: u32 = h.read(this + 0x3ed8);
+        if old != 0 {
+            h.call_sym(COMMON_CALLS[0], Conv::Thiscall(cluster), &[old]);
+        }
+        let material = h.call_sym(SAMPLER_CALLS[0], Conv::Thiscall(effect), &[cluster, 0, 0]);
+        h.write(this + 0x3ed8, material);
+        let prev: u32 = h.read(this + 8);
+        if prev != 0 {
+            let dst: u32 = h.read(material + 4);
+            let src: u32 = h.read(prev + 4);
+            let a: u32 = h.read(dst + 8);
+            let b: u32 = h.read(src + 8);
+            if a & 0x7fff_ffff == b & 0x7fff_ffff {
+                let n: u32 = h.read(src);
+                h.call_sym(SAMPLER_CALLS[1], Conv::Cdecl, &[dst, src, n]);
+            }
+        }
+        let class = h.rebase(SAMPLER_DATA[0]);
+        let arr = h.call_sym(SAMPLER_CALLS[2], Conv::Thiscall(cluster), &[1, class, 0]);
+        let head: u32 = h.read(arr);
+        if head != 1 {
+            let count = head & 0x7fff_ffff;
+            let slot = arr.wrapping_add(4);
+            let data = match count {
+                0 => 0,
+                1 => slot,
+                _ => h.read(slot),
+            };
+            if slot != 0 {
+                h.write(slot, 0u32);
+                if data != slot && head & 0x8000_0000 == 0 {
+                    h.call_sym(SAMPLER_CALLS[3], Conv::Cdecl, &[data]);
+                }
+                h.write(arr, 1u32);
+            }
+        }
+        let material: u32 = h.read(this + 0x3ed8);
+        h.call_sym(COMMON_CALLS[1], Conv::Thiscall(arr), &[0, material]);
+        for target in [0x3edc, 0x3ee0, 0x3ee4] {
+            let t: u32 = h.read(this + target);
+            h.write(t + 0x10, arr);
+        }
+        for (name, field) in COMMON_PARAMS {
+            let n = h.rebase(name);
+            let p = h.call_sym(FIND_PARAM, Conv::Thiscall(effect), &[n]);
+            h.write(this + field, p);
+        }
+        for sampler in [0x3ee8, 0x3f0c, 0x3f30] {
+            let r = h.call_sym(SAMPLER_CALLS[4], Conv::Thiscall(this + sampler), &[]);
+            if r != 0 {
+                return r;
+            }
+        }
+        let names = [SAMPLER_DATA[1], COMMON_CALLS[3]];
+        let mut found = [0u32; 2];
+        for (f, name) in found.iter_mut().zip(names) {
+            let n = h.rebase(name);
+            *f = h.call_sym(FIND_PARAM, Conv::Thiscall(effect), &[n]);
+        }
+        for (desc, sampler) in found.into_iter().zip([0x3ee8, 0x3f0c]) {
+            if desc == 0 {
+                continue;
+            }
+            let material: u32 = h.read(this + 0x3ed8);
+            let buffer: u32 = h.read(material + 4);
+            let r = h.call_sym(
+                COMMON_CALLS[2],
+                Conv::Thiscall(buffer),
+                &[desc, this + sampler],
+            );
+            if r != 0 {
+                return r;
+            }
+        }
+        0
     }
 }

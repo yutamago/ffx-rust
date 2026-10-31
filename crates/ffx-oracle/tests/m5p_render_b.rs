@@ -4937,3 +4937,124 @@ fn left2_light_cluster_matches_the_original() {
         }
     }
 }
+
+/// `PDeferredLightingBase::initializeCommonShaders` against the
+/// original: a target missing; the old material there or not; the
+/// previous block copied (sizes match) or not, or no previous; the
+/// instance array's heads (already one, empty, one inline, owned and
+/// borrowed data); each sampler registration failing; each sampler
+/// parameter missing; a binding failing.
+#[test]
+#[allow(clippy::type_complexity)] // one row per case, columns named above
+fn big_common_shaders_match_the_original() {
+    use ffx_prender::m5p_render_b_left2::{self as l2, bridge as l2b};
+    // (the missing target, old material, previous: 0 none 1 same size
+    // 2 other, the array head, registration errors, the sampler name the
+    // lookup answers 0 for (0: none, 1: first, 2: second), bind error)
+    let cases: [(u32, bool, u32, u32, [u32; 3], u32, u32); 12] = [
+        (0, true, 1, 1, [0; 3], 0, 0),
+        (1, true, 1, 1, [0; 3], 0, 0),
+        (2, true, 1, 1, [0; 3], 0, 0),
+        (9, true, 1, 1, [0; 3], 0, 0),
+        (9, false, 2, 0, [0; 3], 1, 0),
+        (9, true, 0, 0x8000_0001, [0; 3], 2, 0),
+        (9, false, 1, 2, [0; 3], 0, 3),
+        (9, true, 2, 0x8000_0002, [0; 3], 0, 0),
+        (9, true, 1, 3, [7, 0, 0], 0, 0),
+        (9, true, 1, 1, [0, 8, 0], 0, 0),
+        (9, true, 1, 1, [0, 0, 9], 0, 0),
+        (9, true, 1, 1, [0; 3], 2, 3),
+    ];
+    for (missing, old, prev, head, regs, absent, bind) in cases {
+        for (label, mut t) in Twins::all() {
+            let c = l2::SAMPLER_CALLS;
+            let k = l2::COMMON_CALLS;
+            // the lookup: logs this and the name, answers name ^ key
+            let key = match absent {
+                1 => t.rebase(l2::SAMPLER_DATA[1]),
+                2 => t.rebase(k[3]),
+                _ => 0x5a5a_0000,
+            };
+            let at = t.rebase(l2::FIND_PARAM);
+            let log_stub = t.stub_code(l2::FIND_PARAM, true, 1, 0, 0);
+            let code_at = t.a.alloc_code(&[0xcc; 32]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 32]).unwrap(), code_at);
+            let mut code = vec![0xff, 0x74, 0x24, 0x04]; // push dword [esp+4]
+            code.push(0xe8);
+            code.extend(log_stub.wrapping_sub(code_at + 9).to_le_bytes()); // call log_stub
+            code.extend([0x83, 0xc4, 0x04]); // add esp, 4
+            code.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+            code.push(0x35);
+            code.extend(key.to_le_bytes()); // xor eax, key
+            code.extend([0xc2, 0x04, 0x00]); // ret 4
+            t.write(code_at, &code);
+            let mut j = vec![0xe9];
+            j.extend(code_at.wrapping_sub(at + 5).to_le_bytes());
+            let saved = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(saved);
+            t.write(at, &j);
+            // the registration: logs this, answers [this + 4]
+            let at = t.rebase(c[4]);
+            let log_reg = t.stub_code(c[4], true, 0, 0, 0);
+            let code_at = t.a.alloc_code(&[0xcc; 16]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0xcc; 16]).unwrap(), code_at);
+            let mut code = vec![0xe8];
+            code.extend(log_reg.wrapping_sub(code_at + 5).to_le_bytes()); // call log_reg
+            code.extend([0x8b, 0x41, 0x04, 0xc3]); // mov eax, [ecx+4]; ret
+            t.write(code_at, &code);
+            let mut j = vec![0xe9];
+            j.extend(code_at.wrapping_sub(at + 5).to_le_bytes());
+            let saved = Oracle::read(&mut t.a, at, 5).unwrap();
+            t.saved.entry(at).or_insert(saved);
+            t.write(at, &j);
+
+            let this = t.zeros(0x3fa0);
+            for (i, off) in [0x3edc, 0x3ee0, 0x3ee4].into_iter().enumerate() {
+                if i as u32 != missing {
+                    let target = t.zeros(0x20);
+                    t.w32(this + off, target);
+                }
+            }
+            for (i, off) in [0x3ee8u32, 0x3f0c, 0x3f30].into_iter().enumerate() {
+                t.w32(this + off + 4, regs[i]);
+            }
+            if old {
+                t.w32(this + 0x3ed8, 0x0051_0000);
+            }
+            let dst = t.junk(0x20, 1);
+            t.w32(dst + 8, 0x10);
+            let material = t.zeros(8);
+            t.w32(material + 4, dst);
+            if prev != 0 {
+                let src = t.junk(0x20, 2);
+                t.w32(src, 0x18);
+                t.w32(src + 8, if prev == 1 { 0x8000_0010 } else { 0x11 });
+                let p = t.zeros(8);
+                t.w32(p + 4, src);
+                t.w32(this + 8, p);
+            }
+            let arr = t.zeros(0x10);
+            t.w32(arr, head);
+            let data = t.zeros(8);
+            t.w32(arr + 4, data);
+            t.stub(k[0], true, 1, 1, 0);
+            t.stub(c[0], true, 3, 3, material);
+            t.stub(c[1], false, 3, 0, 0);
+            t.stub(c[2], true, 3, 3, arr);
+            t.stub(c[3], false, 1, 0, 0);
+            t.stub(k[1], true, 2, 2, 0);
+            t.stub(k[2], true, 2, 2, bind);
+            let what = format!(
+                "{label}: common shaders missing {missing} old {old} prev {prev} head {head:#x} regs {regs:?} absent {absent} bind {bind}"
+            );
+            t.check(
+                &what,
+                0x00a1_82f0,
+                Conv::Thiscall(this),
+                &[0x0012_0000, 0x0034_0000],
+                |g| Out::U32(l2b::init_common_shaders(g, this, 0x0012_0000, 0x0034_0000)),
+            );
+            t.reset();
+        }
+    }
+}

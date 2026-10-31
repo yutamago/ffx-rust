@@ -3974,3 +3974,115 @@ fn left2_vector_index_matches_the_original() {
         }
     }
 }
+
+/// The occluder's plane `0x00a30eb0` against the original (its
+/// `_CIsqrt` the real intrinsic): ordinary vectors, parallel ones (a zero
+/// normal: 1/0), and the special floats in every component.
+#[test]
+fn big_occluder_plane_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        let mut rng = Rng(0x00c0_ffee);
+        let mut cases: Vec<[u32; 12]> = vec![
+            [
+                0x3f80_0000,
+                0,
+                0,
+                0,
+                0x3f80_0000,
+                0,
+                0x4000_0000,
+                0x4040_0000,
+                0x4080_0000,
+                0,
+                0,
+                0,
+            ],
+            [
+                0x3f80_0000,
+                0x4000_0000,
+                0x4040_0000,
+                0,
+                0x4000_0000,
+                0x4080_0000,
+                0x40c0_0000,
+                0,
+                0xbf80_0000,
+                0x3f00_0000,
+                0x4120_0000,
+                0,
+            ],
+        ];
+        for _ in 0..40 {
+            let mut c = [0u32; 12];
+            for w in &mut c {
+                let r = rng.next();
+                *w = if r.is_multiple_of(8) {
+                    FLOATS[(r >> 3) as usize % FLOATS.len()]
+                } else {
+                    // moderate magnitudes with full mantissas
+                    (0x3c00_0000 + (r >> 8) % 0x0800_0000) | (r & 0x8000_0000)
+                };
+            }
+            cases.push(c);
+        }
+        for (n, c) in cases.iter().enumerate() {
+            let bytes = |w: &[u32]| w.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<_>>();
+            let a = t.alloc(&bytes(&c[0..3]));
+            let b = t.alloc(&bytes(&c[4..7]));
+            let p = t.alloc(&bytes(&c[8..11]));
+            let out = t.junk(0x10, 3);
+            let what = format!("{label}: occluder plane case {n}");
+            t.cdecl(&what, 0x00a3_0eb0, &[out, a, b, p], |g| {
+                Some(l2b::occluder_plane(g, out, a, b, p))
+            });
+        }
+    }
+}
+
+/// The occluder's edge quad `0x00a30600` against the original: no
+/// buffer, room for the four slots or not (the end exactly at the next
+/// index, one past it), the index somewhere in the buffer; the
+/// compare-exchange a real `lock cmpxchg`.
+#[test]
+fn big_occluder_quad_matches_the_original() {
+    use ffx_pother_a::m5p_scripting_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        // InterlockedCompareExchange(p, new, cmp), stdcall
+        let cx = t.code(&[
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ]);
+        let slot = t.rebase(l2::OCCLUDER_QUAD[0]);
+        let old = ffx_oracle::Oracle::read(&mut t.a, slot, 4).unwrap();
+        t.saved.entry(slot).or_insert(old);
+        t.w32(slot, cx);
+        let vecs = [
+            [0x3f80_0000u32, 0xc000_0000, 0x4049_0fdb],
+            [0x3eaa_aaab, 0x7f7f_ffff, 0x0000_0001],
+            [FLOATS[8], FLOATS[9], 0xbf00_0000],
+            [0x4120_0000, 0x7f7f_ffff, 0x7f80_0000],
+        ];
+        let bytes = |w: &[u32]| w.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<_>>();
+        let v: Vec<u32> = vecs.iter().map(|w| t.alloc(&bytes(w))).collect();
+        for (buffer, cur, end) in [
+            (true, 0u32, 16u32),
+            (true, 8, 16),
+            (true, 12, 16),
+            (true, 12, 17),
+            (true, 3, 8),
+            (false, 0, 16),
+        ] {
+            for (a, b, d) in [(0, 1, 2), (2, 3, 0), (3, 2, 1), (1, 3, 0)] {
+                let buf = if buffer { t.junk(0x110, 5) } else { 0 };
+                let list = t.alloc(&bytes(&[buf, cur, end]));
+                let what = format!("{label}: occluder quad {buffer} {cur} {end} {a}{b}{d}");
+                t.this(&what, 0x00a3_0600, list, &[v[a], v[b], v[d]], |g| {
+                    l2b::occluder_quad(g, list, v[a], v[b], v[d]);
+                    None
+                });
+            }
+        }
+        t.unstub();
+    }
+}

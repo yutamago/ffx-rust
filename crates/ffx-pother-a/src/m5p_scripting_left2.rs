@@ -351,11 +351,16 @@ pub const VECTOR_INDEX_METHODS: [(u32, u32); 9] = [
     (0x00b3_089c, 0x0057_3860),
 ];
 
+/// The occluder quad's `InterlockedCompareExchange` import slot (stdcall)
+/// and the double 0.5 it scales the midpoint by.
+pub const OCCLUDER_QUAD: [u32; 2] = [0x00b0_c12c, 0x00b9_2220];
+
 /// The ports over game memory.
 pub mod bridge {
     use super::CLIP_DATA;
     use super::MATRIX_MUL;
     use super::MATRIX_NEW;
+    use super::OCCLUDER_QUAD;
     use super::{
         CALL_ERROR, CALLER_POOL, CLASS_DESCRIPTOR, CLOTH_INSTANCE, COPY_USERDATA, COPY_VALUES,
         Conv, ERROR_AT, ERROR_NAMES, FIND_MEMBER, FREE, GLOBAL_NAMESPACE, Host, INDEX_CALLS,
@@ -1710,5 +1715,98 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// A float of game memory in an x87 register.
+    fn reg(h: &impl Mem, at: u32) -> ffx_bridge::x87::Reg {
+        ffx_bridge::x87::Reg::load(f32::from_bits(h.read(at)))
+    }
+
+    /// The occluder's plane through a point (`0x00a30eb0`, cdecl `(out, a,
+    /// b, p)` -> `out`): the normal `a x b` (each component `f32(x*y -
+    /// z*w)`), its squared length summed in `float`s, `_CIsqrt` (the
+    /// correctly rounded double square root, as the x87's `fsqrt` at 53
+    /// bits; the parity test runs the real intrinsic), `inv = f32(1 /
+    /// len)`; `out` = the normal times `inv` (each rounded), and `out[3]` =
+    /// the dot product with `p` (`f32(p0 n0)`, then `+ p1 n1`, `+ p2 n2`,
+    /// each rounded). The original keeps its sums in its own argument
+    /// slot (`b`'s), which its callers never read again.
+    pub fn occluder_plane(h: &mut impl Host, out: u32, a: u32, b: u32, p: u32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let (a0, a1, a2) = (reg(h, a), reg(h, a + 4), reg(h, a + 8));
+        let (b0, b1, b2) = (reg(h, b), reg(h, b + 4), reg(h, b + 8));
+        let n0 = Reg::load((a1 * b2 - a2 * b1).store());
+        let n1 = Reg::load((a2 * b0 - a0 * b2).store());
+        let n2 = Reg::load((b1 * a0 - b0 * a1).store());
+        let s = (n0 * n0).store();
+        let s = (Reg::load(s) + n1 * n1).store();
+        let s = (Reg::load(s) + n2 * n2).store();
+        let len = Reg::load(s).sqrt().store();
+        let inv = Reg::load((Reg::ONE / Reg::load(len)).store());
+        let q0 = (n0 * inv).store();
+        let q1 = (n1 * inv).store();
+        let q2 = (inv * n2).store();
+        let (p0, p1, p2) = (reg(h, p), reg(h, p + 4), reg(h, p + 8));
+        let d = (p0 * Reg::load(q0)).store();
+        let d = (p1 * Reg::load(q1) + Reg::load(d)).store();
+        let d = (p2 * Reg::load(q2) + Reg::load(d)).store();
+        h.write(out, q0.to_bits());
+        h.write(out + 4, q1.to_bits());
+        h.write(out + 8, q2.to_bits());
+        h.write(out + 0xc, d.to_bits());
+        out
+    }
+
+    /// The occluder's edge quad (`0x00a30600`, thiscall `(list; a, b,
+    /// d)`, ret 0xc): with a buffer (`+0`), four 16-byte slots reserved at
+    /// the index `+4` (`InterlockedCompareExchange`, retried until it takes;
+    /// nothing when they would reach the end `+8`), filled with `a`, `b`,
+    /// their midpoint `f32(f32(a + b) * 0.5)` (the double at
+    /// `0x00b92220`) and the midpoint plus `d`, each with `w` 1.0.
+    pub fn occluder_quad(h: &mut impl Host, list: u32, a: u32, b: u32, d: u32) {
+        use ffx_bridge::x87::Reg;
+        if h.read::<u32>(list) == 0 {
+            return;
+        }
+        let cur = loop {
+            let cur: u32 = h.read(list + 4);
+            let next = cur.wrapping_add(4);
+            if next >= h.read::<u32>(list + 8) {
+                return;
+            }
+            let f: u32 = h.read(h.rebase(OCCLUDER_QUAD[0]));
+            if h.call(f, Conv::Stdcall, &[list + 4, next, cur]) == cur {
+                break cur;
+            }
+        };
+        let rec = (cur << 4).wrapping_add(h.read(list));
+        let one = 1.0f32.to_bits();
+        for (i, v) in [a, b].into_iter().enumerate() {
+            let at = rec + 0x10 * i as u32;
+            for k in 0..3 {
+                let x = reg(h, v + 4 * k).store();
+                h.write(at + 4 * k, x.to_bits());
+            }
+            h.write(at + 0xc, one);
+        }
+        let half = Reg::constant(f64::from_bits(h.read(h.rebase(OCCLUDER_QUAD[1]))));
+        let m: [Reg; 3] = core::array::from_fn(|k| {
+            Reg::load((reg(h, a + 4 * k as u32) + reg(h, b + 4 * k as u32)).store())
+        });
+        let c = [
+            Reg::load((m[0] * half).store()),
+            Reg::load((m[1] * half).store()),
+            Reg::load((half * m[2]).store()),
+        ];
+        for (k, ck) in c.iter().enumerate() {
+            h.write(rec + 0x20 + 4 * k as u32, ck.store().to_bits());
+        }
+        h.write(rec + 0x2c, one);
+        for (k, ck) in c.into_iter().enumerate() {
+            let k = k as u32;
+            let e = (ck + reg(h, d + 4 * k)).store();
+            h.write(rec + 0x30 + 4 * k, e.to_bits());
+        }
+        h.write(rec + 0x3c, one);
     }
 }
