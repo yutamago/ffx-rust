@@ -3110,20 +3110,54 @@ fn particles_e_and_camera_places() {
 
 #[test]
 fn trail_steps() {
-    for (n, rva, count_at, points, flag_at) in [
-        (180u16, 0x2a20u32, 0x248u32, 0x24u32, 0x284u32),
-        (18, 0x3630, 0x354, 0x130, 0x394),
+    for (n, rva, count_at, points, flag_at, sh) in [
+        (180u16, 0x2a20u32, 0x248u32, 0x24u32, 0x284u32, 0u32),
+        (18, 0x3630, 0x354, 0x130, 0x394, 3),
     ] {
         let Some(mut t) = twin(n) else { return };
         let f = t.at(rva);
-        recs(&mut t, &[(235, 1)]);
+        // the trail draw's own stubs (see magic_s4_misc's trail_draw)
+        let td = t.img.rel32_target(f + 0x70 + sh);
+        let lock = SCRATCH + 0x9000;
+        t.set_u32(t.img.word(td + 0x46e), lock);
+        let table = SCRATCH + 0x8000;
+        rec(&mut t, 941, 1, move |_, _| table);
+        t.write(table, &[0; 0x100]);
+        t.set_u16(table + 6, 1);
+        t.set_u16(table + 0x10, 0x80);
+        t.set_u16(table + 0x12, 0x300);
+        recs(
+            &mut t,
+            &[(235, 1), (723, 1), (724, 1), (234, 3), (248, 3), (229, 3)],
+        );
+        rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+        t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+        rec(&mut t, 773, 4, |_, _| 0);
+        for s in [774u32, 775, 778, 776, 777] {
+            rec(&mut t, s, 1, move |_, _| s);
+        }
         let (task, trail) = (SCRATCH + 0x100, SCRATCH + 0x1000);
-        for count in [0u32, 0xffff_ffff, 40] {
+        for count in [0u32, 0xffff_ffff, 3, 40] {
             t.write(trail, &[0; 0x400]);
-            t.set_u32(trail + count_at, count);
             t.set_u16(trail + flag_at, 0x0101);
-            // no sprites: the draw ends at once
-            t.set_u32(trail + points + 0x224, 0);
+            let p = trail + points;
+            for k in 0..32u32 {
+                for i in 0..3 {
+                    t.set_u32(
+                        p + 0xc + 16 * k + 4 * i,
+                        (k as f32 * 0.5 + i as f32).to_bits(),
+                    );
+                }
+                t.set_u32(p + 0xc + 16 * k + 0xc, 0x3f80_0000);
+            }
+            t.write(p + 0x20c, &[10, 200, 0, 0x80, 250, 3, 128, 0x40]);
+            t.set_u32(p + 0x214, 1.5f32.to_bits());
+            t.set_u32(p + 0x218, 0.25f32.to_bits());
+            t.set_u32(p + 0x21c, 0.75f32.to_bits());
+            t.set_u32(p + 0x220, 5);
+            t.set_u32(trail + 0x24c + (count_at - 0x248), 0x3f00_0000);
+            // the step count is the trail's sprite count (`points + 0x224`)
+            t.set_u32(trail + count_at, count);
             t.write(task, &[0; 0x20]);
             t.write(task + 0x100, &[0; 0x20]);
             t.set_u32(task + 8, task + 0x100);
@@ -3144,7 +3178,6 @@ fn actors_motions_spins() {
     for o in [0x14, 0x6a] {
         t.set_u32(op(&t, f, o), block);
     }
-    t.set_u32(op(&t, f, 0x4e), 0x0434_0001);
     for i in 0..3 {
         t.set_u32(block + 0x1a0 + 4 * i, 0x0a00_0000 + i);
     }
