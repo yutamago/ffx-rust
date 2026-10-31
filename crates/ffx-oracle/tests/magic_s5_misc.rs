@@ -3656,3 +3656,52 @@ fn parts_vertices_moved() {
         );
     }
 }
+
+#[test]
+fn object_three_points_started() {
+    let Some(mut t) = twin(511) else { return };
+    let f = t.at(0x49c0);
+    for (s, n, words) in [
+        (235u32, 1usize, 16u32),
+        (328, 3, 16),
+        (329, 3, 16),
+        (229, 3, 4),
+        (248, 3, 4),
+    ] {
+        rec_mem(&mut t, s, n, words, Some(0));
+    }
+    let start = t.img.rel32_target(f + 0x2d);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x200);
+    t.set_u32(op(&t, start, 0x5e), SCRATCH + 0x280);
+    for i in 0..0x30 {
+        t.set_u32(SCRATCH + 0x3400 + 4 * i, 0x1111 * (i + 1));
+    }
+    t.stub(941, |_, _| SCRATCH + 0x3400);
+    rec_mem(&mut t, 714, 5, 0, None);
+    let pa = t.img.rel32_target(start + 0x99);
+    let free = op(&t, pa, 0x04);
+    let nodes = op(&t, pa, 0x27) - 8;
+    let take = t.img.rel32_target(f + 0xe6);
+    let b = SCRATCH + 0x1_0000;
+    t.set_u32(op(&t, f, 0x1f), b);
+    let (head, tail) = (op(&t, f, 0xec), op(&t, f, 0xff));
+    for k in 0..3u32 {
+        for i in 0..16 {
+            t.set_u32(nodes + 12 * i, 0x0dd0_0000 + i);
+            t.set_u32(nodes + 12 * i + 4, 0x0ee0_0000 + i);
+            t.set_u32(nodes + 12 * i + 8, 0);
+        }
+        t.set_u16(free, 12);
+        t.write(b, &varied(0x2300, k));
+        free_ring(&mut t, take, SCRATCH + 0x1000, 3 + k);
+        if k == 1 {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        } else {
+            t.write(SCRATCH + 0x1400, &varied(0x1c, k));
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

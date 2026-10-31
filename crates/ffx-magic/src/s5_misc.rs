@@ -7785,3 +7785,130 @@ pub const PARTS_VERTICES: Sig = Sig {
     calls: &[(0x4d, Callee::Sig(&SCALED_CAMERA)), (0x3b5, Callee::Any)],
     imports: &[],
 };
+
+/// An effect object started with three points around it (cdecl, no
+/// arguments; a /GS frame). With `B = *G_B`: the object started
+/// ([`start_object_anim`]: part 0, value 0, scale `K`); `B+0xd0.. =
+/// B+0x1a60..` with `y -= K2`, `B+0xc4 = B+0x2258`; the record `R =
+/// B+0x1b70` (bytes `+0x80..+0x84 = ff ff ff 80 00`, `+0x85..+0x88` and
+/// `+0x88`, `+0x94` cleared, `+0x8c = +0x90 = 0x2d`, halfword `+0x98 =
+/// 0x48`) gets a node from the pool ([`take`], owner `CB`, `+0x14 = R`)
+/// linked after `*G_TAIL` (or as the head) and made the tail. Then the
+/// points `B+0x19b0`, `+0x19d0`, `+0x19f0` start at `B+0x1a60..` and are
+/// moved by the offsets `(-8.5, 0, -0.8)`, `(0, 0, 13)`, `(8.5, 0,
+/// -0.8)` turned by the yaw `B+0x2258` (slots 235, 328 with 0 and 329,
+/// then 229 and 248), `w` 1. Returns the last slot 248's `eax`. Each call
+/// sees the words the earlier ones left on the stack.
+///
+/// `magic_0511` 0x100049c0 (958 bytes; 2 DLLs).
+pub fn object_three_points<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let b = g.read::<u32>(w(0x1f));
+    let scale = g.read::<f32>(w(0x17));
+    start_object_anim(g, img, img.rel32_target(f + 0x2d), b, scale, 0, 0);
+    let copy = |g: &mut G, to: u32| {
+        for i in 0..4 {
+            let x = g.read::<u32>(b.wrapping_add(0x1a60 + 4 * i));
+            g.write::<u32>(b.wrapping_add(to + 4 * i), x);
+        }
+    };
+    copy(g, 0xd0);
+    let y = sub(g.read::<f32>(b.wrapping_add(0xd4)), g.read::<f32>(w(0x73)));
+    let yaw = g.read::<u32>(b.wrapping_add(0x2258));
+    g.write::<u32>(b.wrapping_add(0xc4), yaw);
+    g.write::<f32>(b.wrapping_add(0xd4), y);
+    let r = b.wrapping_add(0x1b70);
+    g.write::<u32>(r + 0x81, 0x0080_ffff);
+    g.write::<u8>(r + 0x80, 0xff);
+    g.write::<u16>(r + 0x86, 0);
+    g.write::<u8>(r + 0x85, 0);
+    for (o, x) in [(0x88u32, 0u32), (0x90, 0x2d), (0x8c, 0x2d), (0x94, 0)] {
+        g.write::<u32>(r + o, x);
+    }
+    g.write::<u16>(r + 0x98, 0x48);
+    let node = take(g, img, img.rel32_target(f + 0xe6), w(0x87));
+    g.write::<u32>(node + 0x14, r);
+    g.write::<u32>(node + 4, 0);
+    let tail = g.read::<u32>(w(0xff));
+    link_after(g, (w(0xec), w(0x111)), node, tail);
+    g.write::<u32>(w(0x121), node);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let a = g.read::<u32>(b.wrapping_add(0x2258));
+    g.write::<u32>(at(0xa8), a);
+    let (d, v) = (at(0x14), at(0x24));
+    g.write::<u32>(d + 4, 0);
+    g.write::<u32>(d + 0xc, 0x3f80_0000);
+    let mut s = Pushes::default();
+    let mut eax = 0;
+    // (the point, its offset's x and z, the matrix, the five tables)
+    for (i, (pt, x, z, m, t)) in [
+        (
+            0x19b0u32,
+            0xc108_0000_u32,
+            0xbf4c_cccd_u32,
+            at(0x64),
+            [0x160u32, 0x19d, 0x1bf, 0x1d8, 0x1f0],
+        ),
+        (
+            0x19d0,
+            0,
+            0x4150_0000,
+            at(0xa4),
+            [0x243, 0x270, 0x295, 0x2b1, 0x2c9],
+        ),
+        (
+            0x19f0,
+            0x4108_0000,
+            0xbf4c_cccd,
+            at(0x64),
+            [0x319, 0x343, 0x365, 0x37e, 0x396],
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        copy(g, pt);
+        let p = b.wrapping_add(pt);
+        g.write::<u32>(d, x);
+        g.write::<u32>(d + 8, z);
+        s.push(m);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t[0]), 235), 0);
+        if i > 0 {
+            s.pop(9);
+        }
+        s.set_top(0);
+        s.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t[1]), 328), 0);
+        s.pop(2);
+        s.set_top(g.read::<u32>(at(0xa8)));
+        s.push_all(&[m, m]);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t[2]), 329), 0);
+        s.push_all(&[d, m, v]);
+        g.write::<u32>(d + 0xc, 0x3f80_0000);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(t[3]), 229), 0);
+        s.push_all(&[v, p, p]);
+        // call width: 12 (the most `Pushes::words` holds)
+        eax = s.call(g, slot_target(g, w(t[4]), 248), 0).eax;
+        g.write::<u32>(p + 0xc, 0x3f80_0000);
+    }
+    Ret::eax(eax)
+}
+
+/// [`object_three_points`] (the `rel32`s: [`start_object_anim`], [`take`]
+/// and `__security_check_cookie`).
+pub const OBJECT_THREE_POINTS: Sig = Sig {
+    len: 958,
+    hash: 0x2f09_98a5_b25a_cccc,
+    calls: &[
+        (0x2d, Callee::Sig(&START_OBJECT_ANIM)),
+        (0xe6, Callee::Sig(&TAKE)),
+        (0x3b6, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -1303,6 +1303,7 @@ ports! {
     "timed_sparks" => s5_misc::TIMED_SPARKS, s5_misc::timed_sparks;
     "spin_jump_light" => s5_misc::SPIN_JUMP_LIGHT, s5_misc::spin_jump_light;
     "bursts_task" => s5_misc::BURSTS_TASK, s5_misc::bursts_task;
+    "object_three_points" => s5_misc::OBJECT_THREE_POINTS, s5_misc::object_three_points;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
