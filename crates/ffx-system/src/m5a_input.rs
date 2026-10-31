@@ -707,4 +707,214 @@ pub mod bridge {
             copy_instance(h, p, instance);
         }
     }
+
+    /// `Input_IsXInputDevice`'s imports: `CoInitialize`, `CoCreateInstance`,
+    /// `CoSetProxyBlanket`, `CoUninitialize` (ole32), `SysAllocString`,
+    /// `SysFreeString` (oleaut32; stdcall); `wcsstr`, `swscanf_s` (cdecl).
+    pub const CO_INITIALIZE_IAT: u32 = 0x00b0_c884;
+    pub const CO_CREATE_INSTANCE_IAT: u32 = 0x00b0_c888;
+    pub const CO_SET_PROXY_BLANKET_IAT: u32 = 0x00b0_c88c;
+    pub const CO_UNINITIALIZE_IAT: u32 = 0x00b0_c890;
+    pub const SYS_ALLOC_STRING_IAT: u32 = 0x00b0_c618;
+    pub const SYS_FREE_STRING_IAT: u32 = 0x00b0_c61c;
+    pub const WCSSTR_IAT: u32 = 0x00b0_c404;
+    pub const SWSCANF_S_IAT: u32 = 0x00b0_c41c;
+    /// `crt_memset_thunk` (cdecl).
+    pub const MEMSET: u32 = 0x0094_964c;
+    /// `CLSID_WbemLocator`, `IID_IWbemLocator`; the WMI strings
+    /// (`ROOT\CIMV2`, `Win32_PNPEntity`, `DeviceID`, `IG_`, `VID_`,
+    /// `VID_%4X`, `PID_`, `PID_%4X`; UTF-16).
+    pub const CLSID_WBEM_LOCATOR: u32 = 0x00b3_fbd4;
+    pub const IID_WBEM_LOCATOR: u32 = 0x00b3_fbe4;
+    pub const W_NAMESPACE: u32 = 0x00b4_0fc4;
+    pub const W_CLASS: u32 = 0x00b4_0fe4;
+    pub const W_DEVICE_ID: u32 = 0x00b4_1004;
+    pub const W_IG: u32 = 0x00b4_1018;
+    pub const W_VID: u32 = 0x00b4_1020;
+    pub const W_VID_FORMAT: u32 = 0x00b4_102c;
+    pub const W_PID: u32 = 0x00b4_103c;
+    pub const W_PID_FORMAT: u32 = 0x00b4_1048;
+    /// The frame `Input_IsXInputDevice` needs: the 20 device objects at
+    /// `ebp - 0x88`, the `VARIANT` at `ebp - 0x38`, the strings, ids and
+    /// interfaces up to `ebp - 0xc`, the two flags at `ebp - 2` and `- 1`.
+    pub const XINPUT_FRAME: u32 = 0x88;
+
+    fn stdcall(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        import(h, slot, Conv::Stdcall, args)
+    }
+
+    /// Releases the interface in frame word `slot` when set and clears it.
+    fn release_slot(h: &mut impl Host, slot: u32) {
+        let p: u32 = h.read(slot);
+        if p != 0 {
+            com(h, p, 8, &[]);
+            h.write(slot, 0u32);
+        }
+    }
+
+    /// The id (`VID_` / `PID_` and its `%4X`) in the device id string, 0
+    /// when it isn't there or doesn't scan (the original keeps the word
+    /// only when `swscanf_s` gives 1).
+    fn scan_id(h: &mut impl Host, id: u32, key: u32, format: u32, out: u32) -> Option<u32> {
+        let key = h.rebase(key);
+        let p = import(h, WCSSTR_IAT, Conv::Cdecl, &[id, key]);
+        if p == 0 {
+            return None;
+        }
+        let format = h.rebase(format);
+        let n = import(h, SWSCANF_S_IAT, Conv::Cdecl, &[p, format, out]);
+        let v: u32 = h.read(out);
+        Some(if n == 1 { v } else { 0 })
+    }
+
+    /// `Input_IsXInputDevice(&guid)` (cdecl) -> `al`: whether WMI lists a
+    /// `Win32_PNPEntity` whose `DeviceID` holds `IG_` (an `XInput` device)
+    /// with the vendor and product ids of `guid`'s first word (`PID << 16
+    /// | VID`): COM initialised, the locator created and connected to
+    /// `ROOT\CIMV2`, the blanket set, the entities enumerated 20 at a time
+    /// (the matching one left unreleased, as the original does); then
+    /// everything released and freed, and COM uninitialised when its
+    /// initialisation succeeded.
+    ///
+    /// junk read: the `VARIANT` at `ebp - 0x38` is read after a `Get` that
+    /// succeeds; one that doesn't write it leaves the frame's bytes (0 in
+    /// the port's zeroed frame, brief 2026-10-24).
+    #[allow(clippy::too_many_lines)] // the WMI query, then its cleanup
+    pub fn is_xinput_device(h: &mut impl Host, ebp: u32, guid: u32) -> u8 {
+        let at = |off: u32| ebp.wrapping_sub(off);
+        let devices = at(0x88);
+        let (locator, enumerator, services) = (at(0xc), at(8), at(0x10));
+        h.write(locator, 0u32);
+        h.write(enumerator, 0u32);
+        h.write(devices, 0u32);
+        h.call_sym(MEMSET, Conv::Cdecl, &[at(0x84), 0, 0x4c]);
+        h.write(services, 0u32);
+        h.write(at(0x1c), 0u32);
+        h.write(at(0x14), 0u32);
+        h.write(at(1), 0u8);
+        let init = stdcall(h, CO_INITIALIZE_IAT, &[0]).cast_signed() >= 0;
+        h.write(at(2), u8::from(init));
+        let (clsid, iid) = (h.rebase(CLSID_WBEM_LOCATOR), h.rebase(IID_WBEM_LOCATOR));
+        let hr = stdcall(h, CO_CREATE_INSTANCE_IAT, &[clsid, 0, 1, iid, locator]);
+        let mut found = 0u8;
+        if hr.cast_signed() >= 0 && h.read::<u32>(locator) != 0 {
+            let s = h.rebase(W_NAMESPACE);
+            let namespace = stdcall(h, SYS_ALLOC_STRING_IAT, &[s]);
+            h.write(at(0x28), namespace);
+            if namespace != 0 {
+                let class = query(h, ebp, guid);
+                let namespace: u32 = h.read(at(0x28));
+                stdcall(h, SYS_FREE_STRING_IAT, &[namespace]);
+                let device_id: u32 = h.read(at(0x1c));
+                if device_id != 0 {
+                    stdcall(h, SYS_FREE_STRING_IAT, &[device_id]);
+                }
+                if class != 0 {
+                    stdcall(h, SYS_FREE_STRING_IAT, &[class]);
+                }
+                found = h.read(at(1));
+            }
+        }
+        for k in 0..20u32 {
+            release_slot(h, devices.wrapping_add(4 * k));
+        }
+        release_slot(h, enumerator);
+        release_slot(h, locator);
+        release_slot(h, services);
+        if init {
+            stdcall(h, CO_UNINITIALIZE_IAT, &[]);
+        }
+        found
+    }
+
+    /// The query part of [`is_xinput_device`]; returns the class name
+    /// string (to be freed), 0 when that allocation failed.
+    fn query(h: &mut impl Host, ebp: u32, guid: u32) -> u32 {
+        let at = |off: u32| ebp.wrapping_sub(off);
+        let devices = at(0x88);
+        let s = h.rebase(W_CLASS);
+        let class = stdcall(h, SYS_ALLOC_STRING_IAT, &[s]);
+        h.write(at(0x20), class);
+        if class == 0 {
+            return 0;
+        }
+        let s = h.rebase(W_DEVICE_ID);
+        let device_id = stdcall(h, SYS_ALLOC_STRING_IAT, &[s]);
+        h.write(at(0x1c), device_id);
+        if device_id == 0 {
+            return class;
+        }
+        let locator: u32 = h.read(at(0xc));
+        let namespace: u32 = h.read(at(0x28));
+        // `IWbemLocator::ConnectServer` takes nine stack words, past the
+        // stdcall path's eight: the thiscall path pushes them all (the
+        // callee pops them alike) with `ecx` = the locator, as the
+        // original leaves it
+        let vt: u32 = h.read(locator);
+        let connect: u32 = h.read(vt.wrapping_add(0xc));
+        let hr = h.call(
+            connect,
+            Conv::Thiscall(locator),
+            &[locator, namespace, 0, 0, 0, 0, 0, 0, at(0x10)],
+        );
+        let services: u32 = h.read(at(0x10));
+        if hr.cast_signed() < 0 || services == 0 {
+            return class;
+        }
+        stdcall(
+            h,
+            CO_SET_PROXY_BLANKET_IAT,
+            &[services, 0xa, 0, 0, 3, 3, 0, 0],
+        );
+        let services: u32 = h.read(at(0x10));
+        let hr = com(h, services, 0x48, &[class, 0, 0, at(8)]);
+        if hr.cast_signed() < 0 || h.read::<u32>(at(8)) == 0 {
+            return class;
+        }
+        let enumerator: u32 = h.read(at(8));
+        if com(h, enumerator, 0x10, &[10000, 20, devices, at(0x14)]).cast_signed() < 0 {
+            return class;
+        }
+        let want: u32 = h.read(guid);
+        loop {
+            let returned: u32 = h.read(at(0x14));
+            if returned == 0 {
+                return h.read(at(0x20));
+            }
+            let mut i = 0u32;
+            while i < h.read::<u32>(at(0x14)) {
+                let device: u32 = h.read(devices.wrapping_add(4 * i));
+                let id_name: u32 = h.read(at(0x1c));
+                let hr = com(h, device, 0x10, &[id_name, 0, at(0x38), 0, 0]);
+                let id: u32 = h.read(at(0x30));
+                if hr.cast_signed() >= 0 && h.read::<u16>(at(0x38)) == 8 && id != 0 {
+                    let ig = h.rebase(W_IG);
+                    if import(h, WCSSTR_IAT, Conv::Cdecl, &[id, ig]) != 0 {
+                        h.write(at(0x24), 0u32);
+                        h.write(at(0x18), 0u32);
+                        let id: u32 = h.read(at(0x30));
+                        if let Some(v) = scan_id(h, id, W_VID, W_VID_FORMAT, at(0x18)) {
+                            h.write(at(0x18), v);
+                        }
+                        let id: u32 = h.read(at(0x30));
+                        let pid = match scan_id(h, id, W_PID, W_PID_FORMAT, at(0x24)) {
+                            Some(v) => v,
+                            None => h.read(at(0x24)),
+                        };
+                        let vid = u32::from(h.read::<u16>(at(0x18)));
+                        if (pid & 0xffff) << 16 | vid == want {
+                            h.write(at(1), 1u8);
+                            return h.read(at(0x20));
+                        }
+                    }
+                }
+                release_slot(h, devices.wrapping_add(4 * i));
+                i += 1;
+            }
+            let enumerator: u32 = h.read(at(8));
+            if com(h, enumerator, 0x10, &[10000, 20, devices, at(0x14)]).cast_signed() < 0 {
+                return h.read(at(0x20));
+            }
+        }
+    }
 }

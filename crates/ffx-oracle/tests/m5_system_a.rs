@@ -6935,3 +6935,200 @@ fn save3_update_icon_matches_the_original() {
         }
     });
 }
+
+/// `Input_IsXInputDevice` (framed: the device array, the `VARIANT`, the
+/// ids and interfaces): COM failing, each WMI step failing, 0..3 batches
+/// of 0..4 devices whose ids hold `IG_` or not and scan or not, the
+/// match found or not; the COM objects fakes.
+#[test]
+#[allow(clippy::too_many_lines)] // the fake WMI
+fn input_is_xinput_device_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5a30_0b01);
+        for case in 0..300 {
+            t.reset();
+            let want = rng.below(4) << 16 | rng.below(4);
+            let guid = t.words(&[want, rng.next(), rng.next(), rng.next()]);
+            let hr = |rng: &mut Rng| {
+                if rng.chance(8) {
+                    0x8000_4005
+                } else {
+                    rng.below(2)
+                }
+            };
+            t.stub_import(ip::CO_INITIALIZE_IAT, false, 1, 1, hr(&mut rng));
+            t.stub_import(ip::CO_UNINITIALIZE_IAT, false, 0, 0, 0);
+            t.stub_import(ip::CO_SET_PROXY_BLANKET_IAT, false, 8, 8, 0);
+            t.stub(ip::MEMSET, false, 3, 0, 0);
+            let strs: Vec<u32> = (0..3)
+                .map(|_| {
+                    if rng.chance(10) {
+                        0
+                    } else {
+                        0x9000 + rng.below(0x100)
+                    }
+                })
+                .collect();
+            t.stub_import_seq(ip::SYS_ALLOC_STRING_IAT, 1, 1, &strs);
+            t.stub_import(ip::SYS_FREE_STRING_IAT, false, 1, 1, 0);
+            // the devices: COM objects `{vtable, &VARIANT, hr}` sharing a
+            // vtable whose Get logs, copies the object's VARIANT out and
+            // answers its hr
+            let log = t.log;
+            let mut c = vec![0xa1];
+            c.extend(log.to_le_bytes()); // mov eax, [log]
+            c.extend([0xc1, 0xe0, 0x06]); // shl eax, 6
+            c.push(0x05);
+            c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+            c.extend([0xc7, 0x00]);
+            c.extend(0x5600u32.to_le_bytes()); // mov [eax], tag
+            for i in 0..6u32 {
+                c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+                c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+            }
+            c.extend([0xff, 0x05]);
+            c.extend(log.to_le_bytes()); // inc dword [log]
+            c.extend([0x56, 0x57]); // push esi; push edi
+            c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp+0xc] (this)
+            c.extend([0x8b, 0x70, 0x04]); // mov esi, [eax+4]
+            c.extend([0x8b, 0x7c, 0x24, 0x18]); // mov edi, [esp+0x18] (&var)
+            c.extend([0xb9, 0x10, 0, 0, 0]); // mov ecx, 16
+            c.extend([0xf3, 0xa4]); // rep movsb
+            c.extend([0x5f, 0x5e]); // pop edi; pop esi
+            c.extend([0x8b, 0x40, 0x08]); // mov eax, [eax+8]
+            c.extend([0xc2, 0x18, 0x00]); // ret 0x18
+            let get = t.cave_code(&c);
+            let release = t.stub_code(0x5601, false, 1, 1, 0);
+            let device_vt = t.words(&[0, 0, release, 0, get]);
+            let batches = rng.below(4);
+            let mut wcs = Vec::new();
+            let mut scans = Vec::new();
+            let mut batch_lists = Vec::new();
+            for _ in 0..batches {
+                let n = if rng.chance(6) { 20 } else { rng.below(5) };
+                let mut list = vec![0u32; 20];
+                for slot in list.iter_mut().take(n as usize) {
+                    let vt = if rng.chance(6) { 3u16 } else { 8 };
+                    let bstr = if rng.chance(6) {
+                        0
+                    } else {
+                        0xa000 + rng.below(0x100)
+                    };
+                    let var: Vec<u8> = vt
+                        .to_le_bytes()
+                        .into_iter()
+                        .chain([0; 6])
+                        .chain(bstr.to_le_bytes())
+                        .chain([0; 4])
+                        .collect();
+                    let var = t.alloc(&var);
+                    let r = hr(&mut rng);
+                    *slot = t.words(&[device_vt, var, r]);
+                    if vt == 8 && bstr != 0 && r < 0x8000_0000 {
+                        let ig = !rng.chance(4);
+                        wcs.push(u32::from(ig) * 0xb000);
+                        if ig {
+                            for _ in 0..2 {
+                                let there = !rng.chance(4);
+                                wcs.push(u32::from(there) * 0xc000);
+                                if there {
+                                    scans.push((
+                                        u32::from(!rng.chance(5)),
+                                        rng.below(4) | (rng.below(2) << 16),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                batch_lists.push((list, n));
+            }
+            wcs.extend([0; 4]);
+            t.stub_import_seq(ip::WCSSTR_IAT, 2, 0, &wcs);
+            // swscanf_s: answers the sequence's count and writes its value
+            let answers: Vec<u32> = scans.iter().map(|s| s.0).chain([0; 4]).collect();
+            let values: Vec<u32> = scans.iter().map(|s| s.1).chain([0; 4]).collect();
+            let values_t = t.words(&values);
+            let ctr = t.words(&[0]);
+            t.stub_import_seq(ip::SWSCANF_S_IAT, 3, 0, &answers);
+            let seq_stub: u32 = Mem::read(&t.a, t.rebase(ip::SWSCANF_S_IAT));
+            let mut c = vec![0x51, 0x52]; // push ecx; push edx
+            c.push(0xa1);
+            c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(values_t.to_le_bytes()); // mov ecx, [values + eax*4]
+            c.extend([0xff, 0x05]);
+            c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+            c.extend([0x8b, 0x54, 0x24, 0x14]); // mov edx, [esp+0x14] (out)
+            c.extend([0x89, 0x0a]); // mov [edx], ecx
+            c.extend([0x5a, 0x59]); // pop edx; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(seq_stub.wrapping_sub(here).to_le_bytes());
+            let sc = t.cave_code(&c);
+            let slot = t.rebase(ip::SWSCANF_S_IAT);
+            t.patch(slot, &sc.to_le_bytes());
+            // the enumerator: Next copies the batches in turn
+            let tables: Vec<u32> = batch_lists.iter().map(|(l, _)| t.words(l)).collect();
+            let counts: Vec<u32> = batch_lists.iter().map(|(_, n)| *n).chain([0]).collect();
+            let empty = t.zeros(0x50);
+            let srcs: Vec<u32> = tables.iter().copied().chain([empty]).collect();
+            let srcs = t.words(&srcs);
+            let counts_t = t.words(&counts);
+            let nctr = t.words(&[0]);
+            let next_log = t.stub_code(0x5602, false, 5, 5, 0);
+            let mut c = vec![0x51, 0x56, 0x57]; // push ecx; push esi; push edi
+            c.push(0xa1);
+            c.extend(nctr.to_le_bytes()); // mov eax, [nctr]
+            c.extend([0x8b, 0x34, 0x85]);
+            c.extend(srcs.to_le_bytes()); // mov esi, [srcs + eax*4]
+            c.extend([0x8b, 0x0c, 0x85]);
+            c.extend(counts_t.to_le_bytes()); // mov ecx, [counts + eax*4]
+            c.extend([0x8b, 0x7c, 0x24, 0x20]); // mov edi, [esp+0x20] (&returned)
+            c.extend([0x89, 0x0f]); // mov [edi], ecx
+            c.extend([0x8b, 0x7c, 0x24, 0x1c]); // mov edi, [esp+0x1c] (array)
+            c.extend([0xb9, 0x14, 0, 0, 0]); // mov ecx, 20
+            c.extend([0xf3, 0xa5]); // rep movsd
+            c.extend([0xff, 0x05]);
+            c.extend(nctr.to_le_bytes()); // inc dword [nctr]
+            c.extend([0x5f, 0x5e, 0x59]); // pop edi; pop esi; pop ecx
+            c.push(0xe9);
+            let here = t.cave_next + c.len() as u32 + 4;
+            c.extend(next_log.wrapping_sub(here).to_le_bytes());
+            let next = t.cave_code(&c);
+            let erel = t.stub_code(0x5603, false, 1, 1, 0);
+            let evt = t.words(&[0, 0, erel, 0, next]);
+            let enumerator = if rng.chance(10) { 0 } else { t.words(&[evt]) };
+            let ewrite = t.words(&[enumerator]);
+            let r = hr(&mut rng);
+            let cie = t.stub_code_writes(0x5604, false, 5, 5, r, 4, ewrite, 4);
+            let srel = t.stub_code(0x5605, false, 1, 1, 0);
+            let mut svt = vec![0u32; 0x13];
+            svt[2] = srel;
+            svt[0x12] = cie;
+            let svt = t.words(&svt);
+            let services = if rng.chance(10) { 0 } else { t.words(&[svt]) };
+            let swrite = t.words(&[services]);
+            let r = hr(&mut rng);
+            let connect = t.stub_code_writes(0x5606, false, 9, 9, r, 8, swrite, 4);
+            let lrel = t.stub_code(0x5607, false, 1, 1, 0);
+            let lvt = t.words(&[0, 0, lrel, connect]);
+            let locator = if rng.chance(10) { 0 } else { t.words(&[lvt]) };
+            let lwrite = t.words(&[locator]);
+            let r = hr(&mut rng);
+            let cci = t.stub_code_writes(ip::CO_CREATE_INSTANCE_IAT, false, 5, 5, r, 4, lwrite, 4);
+            let at = t.rebase(ip::CO_CREATE_INSTANCE_IAT);
+            t.patch(at, &cci.to_le_bytes());
+            t.skip = 0;
+            let what = format!("Input_IsXInputDevice #{case} batches {batches} want {want:#x}");
+            t.check_framed(
+                &what,
+                0x0062_44f0,
+                Conv::Cdecl,
+                &[guid],
+                ip::XINPUT_FRAME,
+                |m, ebp| Out::U8(ip::is_xinput_device(m, ebp, guid)),
+            );
+        }
+    });
+}

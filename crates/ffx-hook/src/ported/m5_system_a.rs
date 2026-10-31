@@ -1333,6 +1333,11 @@ ported! {
         let mut f = StackFrame::<{ (s3::ICON_FRAME / 4) as usize }>::new();
         s3::update_icon(&mut mem(), f.at() + s3::ICON_FRAME, map)
     }
+    /// `Input_IsXInputDevice(&guid)`: frame `ebp - 0x88`.
+    Input_IsXInputDevice @ 0x0062_44f0 => extern "C" fn is_xinput_device(guid: u32) -> u8 {
+        let mut f = StackFrame::<{ (ip::XINPUT_FRAME / 4) as usize }>::new();
+        ip::is_xinput_device(&mut mem(), f.at() + ip::XINPUT_FRAME, guid)
+    }
 }
 
 /// `n` zero bytes in `store` (replacing what it held), for an original's
