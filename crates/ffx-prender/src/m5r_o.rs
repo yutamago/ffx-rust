@@ -138,7 +138,7 @@ pub mod bridge {
 
     /// Each material of the meshes of `list` (`count`, `data`): `f(h,
     /// material)` for the entries of each mesh's material array (`+0x10`).
-    fn each_mesh_material<H: Host>(
+    pub(crate) fn each_mesh_material<H: Host>(
         h: &mut H,
         count: u32,
         data: u32,
@@ -158,7 +158,7 @@ pub mod bridge {
 
     /// Every material's `SpecularMapSampler` of a sampler type reset to
     /// `{0x42, 0, 0, 0}` (the mesh list's data read once).
-    fn reset_specular_samplers(h: &mut impl Host, inst: u32) {
+    pub(crate) fn reset_specular_samplers(h: &mut impl Host, inst: u32) {
         let mut value = [0_u8; 16];
         value[0] = 0x42;
         let data = word(h, inst + 4);
@@ -177,14 +177,14 @@ pub mod bridge {
     }
 
     /// `ShaderParams_FindByName(params; name)` for an `.rdata` name.
-    fn find(h: &mut impl Host, params: u32, name: u32) -> u32 {
+    pub(crate) fn find(h: &mut impl Host, params: u32, name: u32) -> u32 {
         let s = h.rebase(name);
         h.call_sym(FIND_PARAM, Conv::Thiscall(params), &[s])
     }
 
     /// The named cluster's first texture through the iterator at `iter`
     /// (`+0` plus `+0x10`), or `None` without a cluster or a texture.
-    fn cluster_texture(h: &mut impl Host, iter: u32, name: u32) -> Option<u32> {
+    pub(crate) fn cluster_texture(h: &mut impl Host, iter: u32, name: u32) -> Option<u32> {
         let cm = h.call_sym(CLUSTER_MANAGER, Conv::Cdecl, &[]);
         let cluster = h.call_sym(CLUSTER_BY_NAME, Conv::Thiscall(cm), &[name]);
         if cluster == 0 {
@@ -199,7 +199,7 @@ pub mod bridge {
 
     /// The `{0x47, 0, linear sampler, 0}` sampler state into `p` (the
     /// buffer read before the sampler is asked for).
-    fn write_sampler_state(h: &mut impl Host, mat: u32, p: u32) {
+    pub(crate) fn write_sampler_state(h: &mut impl Host, mat: u32, p: u32) {
         let buffer = word(h, mat.wrapping_add(4));
         let scene = SCENE.get(h);
         let s = h.call_sym(LINEAR_SAMPLER, Conv::Thiscall(scene), &[1]);

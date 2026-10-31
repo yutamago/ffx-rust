@@ -23,6 +23,8 @@ use ffx_prender::m5r_m::bridge as m;
 use ffx_prender::m5r_n::bridge as n;
 use ffx_prender::m5r_o::bridge as o;
 use ffx_prender::m5r_p::bridge as p;
+use ffx_prender::m5r_q::bridge as q;
+use ffx_prender::m5r_r::bridge as r;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5r_a) ----
@@ -1481,5 +1483,226 @@ ported! {
     /// `RadialLine_update_006f8f00(this; hold, color, a, b)`.
     RadialLine_update_006f8f00 @ 0x006f_8f00 => extern "thiscall" fn radial_update(this: u32, hold: u32, color: u32, a: u32, b: u32) {
         p::radial_update(&mut mem(), this, hold as u8, color, a, b);
+    }
+    // ---- round 6 batch 1 (ffx_prender::m5r_q) ----
+    /// `PhyreScene_setWaveStrength(this)` (the key and float frame).
+    PhyreScene_setWaveStrength @ 0x0066_e850 => extern "thiscall" fn scene_set_wave_strength(this: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        q::set_wave_strength(&mut mem(), f.at(), this)
+    }
+    /// `PhyreScene_RenderCloudUI(this)`.
+    PhyreScene_RenderCloudUI @ 0x0065_3060 => extern "thiscall" fn render_cloud_ui(this: u32) -> u32 {
+        q::render_cloud_ui(&mut mem(), this)
+    }
+    /// `CStringW_Replace_00654070(this; old, new)`.
+    CStringW_Replace_00654070 @ 0x0065_4070 => extern "thiscall" fn string_replace(this: u32, old: u32, new: u32) -> u32 {
+        q::string_replace(&mut mem(), this, old, new)
+    }
+    /// `PhyreScene_collectClusterTextures_0065da80(this; name, out)` (the
+    /// iterator, cluster vector and key frame).
+    PhyreScene_collectClusterTextures_0065da80 @ 0x0065_da80 => extern "thiscall" fn collect_textures(this: u32, name: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<0x18>::new();
+        q::collect_textures(&mut mem(), f.at(), this, name, out)
+    }
+    /// `ShadowDynamicMesh_assign_00678310(this; src)`.
+    ShadowDynamicMesh_assign_00678310 @ 0x0067_8310 => extern "thiscall" fn shadow_assign(this: u32, src: u32) -> u32 {
+        q::shadow_assign(&mut mem(), this, src)
+    }
+    /// `GradMesh_setGradient_00678e60(this; a, mode, b, c)`.
+    GradMesh_setGradient_00678e60 @ 0x0067_8e60 => extern "thiscall" fn grad_setup(this: u32, a: u32, mode: u32, b: u32, c: u32) {
+        q::grad_setup(&mut mem(), this, a, mode, b, c);
+    }
+    /// `AbmapManager_CheckWordVertex(this; x, y, z)`.
+    AbmapManager_CheckWordVertex @ 0x0068_43a0 => extern "thiscall" fn check_word_vertex(this: u32, x: u32, y: u32, z: u32) {
+        q::check_word_vertex(&mut mem(), this, x, y, z);
+    }
+    /// `PostProcessTweakUtil_initWithSceneContext(this; context)` (the
+    /// line buffer).
+    PostProcessTweakUtil_initWithSceneContext @ 0x0069_38d0 => extern "thiscall" fn tweak_init(this: u32, context: u32) {
+        let mut f = StackFrame::<0x10>::new();
+        q::tweak_init(&mut mem(), f.at(), this, context);
+    }
+
+    /// `TextUtil_rebuildMutableString(this)`.
+    TextUtil_rebuildMutableString @ 0x006f_6420 => extern "thiscall" fn text_rebuild(this: u32) {
+        q::text_rebuild(&mut mem(), this);
+    }
+    /// `TextUtil_render(this; renderer)`.
+    TextUtil_render @ 0x006f_65b0 => extern "thiscall" fn text_render(this: u32, renderer: u32) -> u32 {
+        q::text_render(&mut mem(), this, renderer)
+    }
+    /// `PostProcessTweakUtil_render(this; renderer, fps)` (the title buffer).
+    PostProcessTweakUtil_render @ 0x0069_53a0 => extern "thiscall" fn tweak_render(this: u32, renderer: u32, fps: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        q::tweak_render(&mut mem(), f.at(), this, renderer, fps)
+    }
+    /// `PostProcessManager_renderDebug4By3Frame(this; renderer)`.
+    PostProcessManager_renderDebug4By3Frame @ 0x0069_56d0 => extern "thiscall" fn debug_4by3(this: u32, renderer: u32) -> u32 {
+        q::debug_4by3(&mut mem(), this, renderer)
+    }
+
+    /// `PostProcessManager_renderFocusFrame(this; renderer, unused)` (the
+    /// surfaces, parameter vectors and the focus depth cell; the second
+    /// word is never read).
+    PostProcessManager_renderFocusFrame @ 0x0069_5790 => extern "thiscall" fn focus_frame(this: u32, renderer: u32, _unused: u32) -> u32 {
+        let mut f = StackFrame::<0x17>::new();
+        q::focus_frame(&mut mem(), f.at(), this, renderer)
+    }
+    /// `PostProcessManager_resolveDepth(this; renderer, texture, target)`
+    /// (the surface and parameter vector).
+    PostProcessManager_resolveDepth @ 0x0069_8110 => extern "thiscall" fn resolve_depth(this: u32, renderer: u32, texture: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        q::resolve_depth(&mut mem(), f.at(), this, renderer, texture, target)
+    }
+
+    /// `CharacterCloth_addInstance_006a1320(this; desc)` (the pushed
+    /// pointer's cell).
+    CharacterCloth_addInstance_006a1320 @ 0x006a_1320 => extern "thiscall" fn cloth_add_instance(this: u32, desc: u32) -> u32 {
+        let mut f = StackFrame::<1>::new();
+        q::cloth_add_instance(&mut mem(), f.at(), this, desc)
+    }
+    /// `DebugTweakUtil_ctor_006b52a0(this)`.
+    DebugTweakUtil_ctor_006b52a0 @ 0x006b_52a0 => extern "thiscall" fn debug_tweak_ctor(this: u32) -> u32 {
+        q::debug_tweak_ctor(&mut mem(), this)
+    }
+    /// `DebugTextTweakUtil_ctor_006b5440(this)`.
+    DebugTextTweakUtil_ctor_006b5440 @ 0x006b_5440 => extern "thiscall" fn debug_text_tweak_ctor(this: u32) -> u32 {
+        q::debug_text_tweak_ctor(&mut mem(), this)
+    }
+
+    // ---- round 6 batch 2 (ffx_prender::m5r_q) ----
+    /// `ViewerManager_DrawTexAnimInfo_006bc210(this; time)` (the pairs and
+    /// name buffers).
+    ViewerManager_DrawTexAnimInfo_006bc210 @ 0x006b_c210 => extern "thiscall" fn draw_texanim_info(this: u32, time: u32) {
+        let mut f = StackFrame::<0x84>::new();
+        q::draw_texanim_info(&mut mem(), f.at(), this, time);
+    }
+    /// `AutoTestManager_pushCommand_006bd160(vector; s)`.
+    AutoTestManager_pushCommand_006bd160 @ 0x006b_d160 => extern "thiscall" fn autotest_push_command(v: u32, s: u32) {
+        q::push_command(&mut mem(), v, s);
+    }
+    /// `AutoTestManager_queueCommand_006bccb0(this; text)` (the string).
+    AutoTestManager_queueCommand_006bccb0 @ 0x006b_ccb0 => extern "thiscall" fn autotest_queue_command(this: u32, text: u32) {
+        let mut f = StackFrame::<6>::new();
+        q::queue_command(&mut mem(), f.at(), this, text);
+    }
+    /// `AutoTestManager_execute_006bce00(this; command)` (the argument
+    /// buffer).
+    AutoTestManager_execute_006bce00 @ 0x006b_ce00 => extern "thiscall" fn autotest_execute(this: u32, command: u32) -> u8 {
+        let mut f = StackFrame::<0x40>::new();
+        q::autotest_execute(&mut mem(), f.at(), this, command)
+    }
+
+    /// `SpecularMapParamsManager_setCorrespondParams_006c5ec0(inst, rec)`
+    /// (the vector, iterator, values and list copy).
+    SpecularMapParamsManager_setCorrespondParams_006c5ec0 @ 0x006c_5ec0 => extern "stdcall" fn set_correspond_params(inst: u32, rec: u32) {
+        let mut f = StackFrame::<0x1e>::new();
+        q::set_correspond_params(&mut mem(), f.at(), inst, rec);
+    }
+    /// `SpecularMapParamsManager_renderCorrespondSpecular(this; only, renderer)`.
+    SpecularMapParamsManager_renderCorrespondSpecular @ 0x006c_59c0 => extern "thiscall" fn render_correspond(this: u32, only: u32, renderer: u32) {
+        q::render_correspond(&mut mem(), this, only, renderer);
+    }
+
+    // ---- round 6 batch 2 (ffx_prender::m5r_r) ----
+    /// `SpecularMapParamsManager_UpdateParams_006c6c30(inst, name, u0, u1,
+    /// float1, mat1, v0, v1, v3, v2)` (the vector, iterator, values and
+    /// list copy).
+    SpecularMapParamsManager_UpdateParams_006c6c30 @ 0x006c_6c30 => extern "stdcall" fn update_params(inst: u32, name: u32, u0: u32, u1: u32, float1: u32, mat1: u32, v0: u32, v1: u32, v3: u32, v2: u32) {
+        let mut f = StackFrame::<0x20>::new();
+        r::update_params(&mut mem(), f.at(), inst, name, [u0, u1], float1, mat1, [v0, v1, v2, v3]);
+    }
+    /// `FloatSort_partition_006c7900(out, first, last, pred)`.
+    FloatSort_partition_006c7900 @ 0x006c_7900 => extern "C" fn float_partition(out: u32, first: u32, last: u32, pred: u32) -> u32 {
+        r::float_partition(&mut mem(), out, first, last, pred)
+    }
+    /// `ShadowManager_medianCharacterCenter_006c8480(this; out_x, out_z)`
+    /// (the matrices and the two float arrays).
+    ShadowManager_medianCharacterCenter_006c8480 @ 0x006c_8480 => extern "thiscall" fn median_center(this: u32, out_x: u32, out_z: u32) {
+        let mut f = StackFrame::<0xca>::new();
+        r::median_center(&mut mem(), f.at(), this, out_x, out_z);
+    }
+
+    /// `MemoryDebug_mapInsert_006ddd60(map; key, value)`.
+    MemoryDebug_mapInsert_006ddd60 @ 0x006d_dd60 => extern "thiscall" fn memdebug_map_insert(map: u32, key: u32, value: u32) -> u32 {
+        r::map_insert(&mut mem(), map, key, value)
+    }
+    /// `MemoryDebug_addRecord_006dd230(rec, map)` (the key cell, value and
+    /// line buffers).
+    MemoryDebug_addRecord_006dd230 @ 0x006d_d230 => extern "C" fn memdebug_add_record(rec: u32, map: u32) {
+        let mut f = StackFrame::<0xe4>::new();
+        r::add_record(&mut mem(), f.at(), rec, map);
+    }
+    /// `MemoryDebug_dumpVram_006dd3b0(this; time_lo, time_hi, name)` (the
+    /// file name).
+    MemoryDebug_dumpVram_006dd3b0 @ 0x006d_d3b0 => extern "thiscall" fn memdebug_dump_vram(this: u32, lo: u32, hi: u32, name: u32) -> u32 {
+        let mut f = StackFrame::<0x40>::new();
+        r::dump_vram(&mut mem(), f.at(), this, lo, hi, name)
+    }
+    /// `MemoryDebug_dumpName_006dd5a0(this; path, suffix, out, size)` (the
+    /// token array).
+    MemoryDebug_dumpName_006dd5a0 @ 0x006d_d5a0 => extern "thiscall" fn memdebug_dump_name(this: u32, path: u32, suffix: u32, out: u32, size: u32) {
+        let mut f = StackFrame::<2>::new();
+        r::dump_name(&mut mem(), f.at(), this, path, suffix, out, size);
+    }
+    /// `FrameTime_average_006e53c0()`.
+    FrameTime_average_006e53c0 @ 0x006e_53c0 => extern "C" fn frame_time_average() {
+        r::frame_time_average(&mut mem());
+    }
+
+    /// `RadialLine_initColors_006f7e60(this)`.
+    RadialLine_initColors_006f7e60 @ 0x006f_7e60 => extern "thiscall" fn radial_init_colors(this: u32) {
+        r::radial_init_colors(&mut mem(), this);
+    }
+    /// `RadialLine_initWidths_006f8110(this)`.
+    RadialLine_initWidths_006f8110 @ 0x006f_8110 => extern "thiscall" fn radial_init_widths(this: u32) {
+        r::radial_init_widths(&mut mem(), this);
+    }
+    /// `RadialLine_initUvsA_006f81c0(this)` (the uv array at `+0x5c`).
+    RadialLine_initUvsA_006f81c0 @ 0x006f_81c0 => extern "thiscall" fn radial_init_uvs_a(this: u32) {
+        r::radial_init_uvs(&mut mem(), this, 0x5c);
+    }
+    /// `RadialLine_initUvsB_006f83b0(this)` (the uv array at `+0x58`).
+    RadialLine_initUvsB_006f83b0 @ 0x006f_83b0 => extern "thiscall" fn radial_init_uvs_b(this: u32) {
+        r::radial_init_uvs(&mut mem(), this, 0x58);
+    }
+    /// `RadialLine_initPositions_006f85a0(this)`.
+    RadialLine_initPositions_006f85a0 @ 0x006f_85a0 => extern "thiscall" fn radial_init_positions(this: u32) {
+        r::radial_init_positions(&mut mem(), this);
+    }
+    /// `RadialLine_render_006f8850(this; target)` (the render surface).
+    RadialLine_render_006f8850 @ 0x006f_8850 => extern "thiscall" fn radial_render(this: u32, target: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        r::radial_render(&mut mem(), f.at(), this, target)
+    }
+
+    /// `updateVFXRenderDataRects(a, b, rects)`.
+    updateVFXRenderDataRects @ 0x0071_a330 => extern "C" fn update_vfx_rects(a: u32, b: u32, rects: u32) -> u32 {
+        r::update_vfx_rects(&mut mem(), a, b, rects)
+    }
+    /// `IpuLoadMacroblock_0077e210(mb, x, y)`.
+    IpuLoadMacroblock_0077e210 @ 0x0077_e210 => extern "C" fn ipu_load_macroblock(mb: u32, x: u32, y: u32) {
+        r::ipu_load_macroblock(&mut mem(), mb, x, y);
+    }
+    /// `IpuInitBlockPointers_0077ea40()`.
+    IpuInitBlockPointers_0077ea40 @ 0x0077_ea40 => extern "C" fn ipu_init_block_pointers() -> u32 {
+        r::ipu_init_block_pointers(&mut mem())
+    }
+
+    /// `IpuBuildUploadChain_0077ec20(q, src, x, y, w, h, bw, base, step,
+    /// half, rgb)`.
+    IpuBuildUploadChain_0077ec20 @ 0x0077_ec20 => extern "C" fn ipu_build_upload_chain(q: u32, src: u32, x: u32, y: u32, w: u32, hgt: u32, bw: u32, base: u32, step: u32, half: u32, rgb: u32) -> u32 {
+        r::ipu_build_upload_chain(&mut mem(), q, src, x, y, w, hgt, bw, base, step, half, rgb)
+    }
+    /// `graphicDrawUIElementAfterSet(tex0_lo, tex0_hi, a, b)` (the file
+    /// name and path buffers).
+    graphicDrawUIElementAfterSet @ 0x0090_6420 => extern "C" fn draw_ui_element_after_set(lo: u32, hi: u32, a: u32, b: u32) {
+        let mut f = StackFrame::<0x80>::new();
+        r::draw_ui_element_after_set(&mut mem(), f.at(), lo, hi, a, b);
+    }
+
+    /// `MovieDecoder_runCommand_0077e460()`.
+    MovieDecoder_runCommand_0077e460 @ 0x0077_e460 => extern "C" fn movie_run_command() -> u32 {
+        r::movie_run_command(&mut mem())
     }
 }

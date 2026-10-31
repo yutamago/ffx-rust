@@ -114,6 +114,15 @@ pub trait Host: Mem {
         f32::NAN
     }
 
+    /// [`Host::call_intrinsic`] for a caller that goes on computing with
+    /// `ST0`: the result as it is (a double; the SSE2 path's `fld qword`).
+    ///
+    /// The default returns NaN, as [`Host::call_intrinsic`]'s does.
+    fn call_intrinsic_f64(&mut self, addr: u32, x: f64) -> f64 {
+        let _ = (addr, x);
+        f64::NAN
+    }
+
     /// Calls a two-operand CRT intrinsic (`_CIpow` through the game's
     /// import thunk at `addr`) with `x` in `ST1` and `y` in `ST0` (each
     /// loaded as `fld qword`); returns its `ST0` result as the caller's
@@ -210,6 +219,10 @@ impl Host for ffx_bridge::RawMem {
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         // the intrinsic takes its argument in ST0 and leaves its result
         // there, stored as `fstp m32`
+        route::x87(addr, &[x])
+    }
+
+    fn call_intrinsic_f64(&mut self, addr: u32, x: f64) -> f64 {
         route::x87(addr, &[x])
     }
 
