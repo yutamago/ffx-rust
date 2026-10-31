@@ -1435,3 +1435,113 @@ pub const TARGETS_MEAN_OFFSET_OF: Sig = Sig {
     calls: &[(0x158, Callee::Any)],
     imports: &[],
 };
+
+/// A spring node's walk step (internal, `ecx` = the walk cursor `C`:
+/// `+0` the node, `+4` the "moved" byte, `+5` the pass byte; a /GS
+/// frame). A node not yet in this pass walks its children first (each
+/// child's method `+0x1c` with `C` pointing at it, the next child read
+/// before the call), then takes the pass and sets "moved". When moved:
+/// the node `o`'s parent `P = o+0x3c` walks with a local cursor (its
+/// method `+0x1c`, the pass byte kept), then `o+0x48 += o+0x4c`, `o+0x44
+/// += o+0x48`, `o+0x50 += K`, `o+0x40 = o+0x44² o+0x50` (1.0 from `K`
+/// on), the offset `P+0x1c - o+0x2c` (slot 234, a local) scaled by
+/// `o+0x40` (slot 233) and `o+0x1c.. = o+0x2c.. + it`. Returns slot
+/// 233's `eax`, or the frame's cookie word with the node's pass byte in
+/// `al` when the node was already in the pass.
+///
+/// `magic_0070` 0x10005ac0 (319 bytes, `ecx` = the cursor; 5 DLLs).
+pub fn spring_walk<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let c = fr.ecx;
+    let n = g.read::<u32>(c);
+    let pass = g.read::<u8>(c + 5);
+    let mine = g.read::<u8>(n + 0x1a);
+    // eax: the frame's cookie (`*G_COOKIE ^ ebp`) with the byte in `al`
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = g.read::<u32>(op(img, f, 0x7)) ^ ebp;
+    let eax = (cookie & !0xff) | u32::from(mine);
+    if mine == pass {
+        g.write::<u8>(c + 4, 0);
+    } else {
+        let mut e = g.read::<u32>(n + 0x10);
+        while e != n {
+            g.write::<u32>(c, e);
+            let next = g.read::<u32>(e + 8);
+            let m = g.read::<u32>(g.read::<u32>(g.read::<u32>(c)).wrapping_add(0x1c));
+            g.call(m, c, &[c]);
+            e = next;
+        }
+        let pass = g.read::<u8>(c + 5);
+        g.write::<u32>(c, n);
+        g.write::<u8>(n + 0x1a, pass);
+        g.write::<u8>(c + 4, 1);
+    }
+    if g.read::<u8>(c + 4) & 1 == 0 {
+        return eax;
+    }
+    let o = g.read::<u32>(c);
+    let pass = g.read::<u8>(c + 5);
+    let (local, v) = (ebp.wrapping_sub(0x1c), ebp.wrapping_sub(0x14));
+    let parent = g.read::<u32>(o + 0x3c);
+    g.write::<u32>(local, parent);
+    g.write::<u8>(local + 5, pass);
+    let m = g.read::<u32>(g.read::<u32>(parent).wrapping_add(0x1c));
+    g.call(m, local, &[local]);
+    let k = g.read::<f32>(op(img, f, 0x8d));
+    let x0 = add(g.read::<f32>(o + 0x4c), g.read::<f32>(o + 0x48));
+    let x2 = add(g.read::<f32>(o + 0x50), k);
+    let x1 = add(g.read::<f32>(o + 0x44), x0);
+    g.write::<f32>(o + 0x48, x0);
+    g.write::<f32>(o + 0x50, x2);
+    g.write::<f32>(o + 0x44, x1);
+    let s = mul(mul(x1, x1), x2);
+    g.write::<f32>(o + 0x40, s);
+    // comiss s, K; jb: kept below `K` or unordered
+    if !(s < g.read::<f32>(op(img, f, 0xb2)) || s.is_nan()) {
+        g.write::<u32>(o + 0x40, 0x3f80_0000);
+    }
+    let base = o.wrapping_add(0x2c);
+    let to = g.read::<u32>(o + 0x3c).wrapping_add(0x1c);
+    slot(g, img, f, 0xd4, 234, &[v, to, base]);
+    let scale = g.read::<u32>(o + 0x40);
+    let eax = slot(g, img, f, 0xf3, 233, &[v, v, scale]).eax;
+    for i in 0..3u32 {
+        let x = add(g.read::<f32>(base + 4 * i), g.read::<f32>(v + 4 * i));
+        g.write::<f32>(o + 0x1c + 4 * i, x);
+    }
+    eax
+}
+
+/// [`spring_walk`] (the `rel32`: `__security_check_cookie`).
+pub const SPRING_WALK: Sig = Sig {
+    len: 319,
+    hash: 0x17cc_493a_ae93_ba16,
+    calls: &[(0x137, Callee::Any)],
+    imports: &[],
+};
+
+/// The 12-byte register thunk ([`crate::s3_wrap`]'s shape: `ecx` = the
+/// first stack word, then a jump to the handler with the caller's stack)
+/// over this list's handlers: [`spring_walk`]. A target that is none of
+/// them cannot bind (the thunk's `Sig` names its callee).
+pub fn ecx_jmp<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let ecx = fr.arg(g, 0);
+    let target = img.rel32_target(fr.at + 8);
+    let fr = Frame {
+        at: target,
+        ecx,
+        ..*fr
+    };
+    if img.matches(target, &SPRING_WALK) {
+        return Ret::eax(spring_walk(g, img, &fr));
+    }
+    Ret::eax(fr.eax)
+}
+
+/// `magic_0070` 0x10005c00 (5 DLLs) over [`spring_walk`].
+pub const JMP_SPRING_WALK: Sig = Sig {
+    len: 12,
+    hash: crate::s3_wrap::ECX_JMP_HASH,
+    calls: &[(8, Callee::Sig(&SPRING_WALK))],
+    imports: &[],
+};

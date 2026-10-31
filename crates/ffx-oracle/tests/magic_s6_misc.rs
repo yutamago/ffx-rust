@@ -1000,3 +1000,101 @@ fn targets_mean_offsets_of() {
         });
     }
 }
+
+/// The trap of table word `s` (a callback the harness answers as slot `s`).
+fn trap(s: u32) -> u32 {
+    magic::TRAPS + 16 * s
+}
+
+/// Rows 114 and 115: `magic_0070`'s spring walk (and its thunk): a node already in the pass, one
+/// with no children and ones with three and two (their methods logging
+/// the cursor), the spring's scale below and from its bound.
+#[test]
+fn spring_walks() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x5ac0);
+    let thunk = t.at(0x5c00);
+    // the children's and the parent's method: a table word answered as
+    // slot 1000
+    t.set_u32(magic::TABLE + 4 * 1000, trap(1000));
+    let log = SCRATCH + 0x6000;
+    t.stub(1000, move |m, a| {
+        let k = m.r32(log);
+        m.w32(log, k + 1);
+        let row = log + 4 + 0x10 * (k % 0x20);
+        m.w32(row, a[0]);
+        m.w32(row + 4, m.r32(a[0]));
+        m.w32(row + 8, m.r32(a[0] + 4));
+        // a child's walk marks its cursor moved
+        m.w32(a[0] + 4, m.r32(a[0] + 4) ^ 0x0100);
+        0x1000 + k
+    });
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) - f32::from_bits(m.r32(a[2] + 4 * i));
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x234
+    });
+    rec(&mut t, 233, 3, |m, a| {
+        for i in 0..3 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x233
+    });
+    let vt = SCRATCH + 0x700;
+    t.set_u32(vt + 0x1c, trap(1000));
+    let c = SCRATCH + 0x300;
+    let n = SCRATCH + 0x1000;
+    let parent = SCRATCH + 0x1400;
+    let child = |i: u32| SCRATCH + 0x1800 + 0x40 * i;
+    for o in [0x8du32, 0xb2] {
+        t.set_u32(op(&t, f, o), 0.25f32.to_bits());
+    }
+    for (k, (children, same, s44)) in [
+        (0u32, true, 1.0f32),
+        (0, false, 0.5),
+        (3, false, 2.0),
+        (2, false, 0.1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(c, &varied(8, k));
+        t.set_u32(c, n);
+        t.set_u8(c + 5, 7);
+        t.write(n, &varied(0x60, k));
+        t.set_u8(n + 0x1a, if same { 7 } else { 3 });
+        t.set_u32(n + 0x10, if children == 0 { n } else { child(0) });
+        for i in 0..children {
+            t.write(child(i), &varied(0x20, i));
+            t.set_u32(child(i), vt);
+            t.set_u32(
+                child(i) + 8,
+                if i + 1 == children { n } else { child(i + 1) },
+            );
+        }
+        t.set_u32(n + 0x3c, parent);
+        t.write(parent, &varied(0x40, k + 1));
+        t.set_u32(parent, vt);
+        for (o, v) in [(0x44u32, s44), (0x48, 0.5), (0x4c, 0.25), (0x50, 1.5)] {
+            t.set_u32(n + o, (v + 0.125 * k as f32).to_bits());
+        }
+        for i in 0..4u32 {
+            t.set_u32(n + 0x2c + 4 * i, (1.0 + i as f32).to_bits());
+            t.set_u32(parent + 0x1c + 4 * i, (3.0 - 2.0 * i as f32).to_bits());
+        }
+        let call = Call {
+            ecx: c,
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        // and through row 115, the register thunk over it
+        t.check_thunked(f, thunk, false, call, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::spring_walk(g, img, fr))
+        });
+    }
+}

@@ -1771,6 +1771,7 @@ ports! {
     "objects freed" => s6_misc::OBJECTS_FREED, s6_misc::objects_freed;
     "countdown tint" => s6_misc::COUNTDOWN_TINT, s6_misc::countdown_tint;
     "actor timed task" => s6_misc::ACTOR_TIMED_TASK, s6_misc::actor_timed_task;
+    "thunk: spring walk" => s6_misc::JMP_SPRING_WALK, s6_misc::ecx_jmp;
     "weapon_bounce (part matrix)" => s5_misc::WEAPON_BOUNCE_P, s5_misc::weapon_bounce;
     "weapon swing (drop, part matrix)" => s5_misc::WEAPON_SWING_DROP_P, s5_misc::weapon_swing_drop;
     "weapon swing (part matrix)" => s5_misc::WEAPON_SWING_P, s5_misc::weapon_swing;
@@ -2360,6 +2361,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
         "targets mean offset (edx)",
         &s6_misc::TARGETS_MEAN_OFFSET_OF,
     ),
+    ("spring walk", &s6_misc::SPRING_WALK),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
