@@ -4084,4 +4084,198 @@ pub mod bridge {
         }
         h.write(this + 4, [0_u32, 0]);
     }
+
+    pub const PHYRE_MALLOC: u32 = 0x0042_fb40;
+    pub const PHYRE_PRINTF: u32 = 0x0043_52f0;
+    pub const PAIR_CLEAR: u32 = 0x00a3_4a30;
+    pub const IGGY_RENDER_SETUP: u32 = 0x00a3_ba50;
+    /// The `GDraw` context's destructor (`0x00a34ab0`, a bare `ret`).
+    pub const GDRAW_CONTEXT_DTOR: u32 = 0x00a3_4ab0;
+    /// `g_GDrawContextRefs` (`0x01a858c8`).
+    pub const GDRAW_CONTEXT_REFS: u32 = 0x01a8_58c8;
+    /// Iggy imports: `IggyPlayerDispatchEventRS`,
+    /// `IggyPlayerCreateFromMemory`, `IggyPlayerInitializeAndTickRS`,
+    /// `IggyPlayerPlay`, `IggyPlayerProperties` (stdcall slots).
+    pub const IGGY_DISPATCH_EVENT_IAT: u32 = 0x00b0_c85c;
+    pub const IGGY_CREATE_FROM_MEMORY_IAT: u32 = 0x00b0_c7dc;
+    pub const IGGY_INIT_AND_TICK_IAT: u32 = 0x00b0_c7e4;
+    pub const IGGY_PLAY_IAT: u32 = 0x00b0_c7f0;
+    pub const IGGY_PROPERTIES_IAT: u32 = 0x00b0_c7e0;
+    /// The movie's width, height and frame rate lines.
+    pub const MSG_MOVIE_WIDTH: u32 = 0x00b7_a980;
+    pub const MSG_MOVIE_HEIGHT: u32 = 0x00b7_a9a0;
+    pub const MSG_MOVIE_FPS: u32 = 0x00b7_a9c0;
+
+    fn refs_inc(h: &mut impl Host) {
+        let at = h.rebase(GDRAW_CONTEXT_REFS);
+        let n = word(h, at).wrapping_add(1);
+        h.write(at, n);
+    }
+
+    /// `FUN_00a3d5f0(renderer, audio, arg)` (`cdecl`) -> 0, 13 (no
+    /// memory) or the set-up's error: the shared `GDraw` context, made on
+    /// first use (8 bytes, `Pair_Clear`, `IggyGDraw_renderSetup`; freed
+    /// again when that fails), its reference count raised.
+    pub fn gdraw_context_acquire(h: &mut impl Host, renderer: u32, audio: u32, arg: u32) -> u32 {
+        let cell = h.rebase(GDRAW_CONTEXT);
+        if word(h, cell) == 0 {
+            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[8]);
+            let obj = if p == 0 {
+                0
+            } else {
+                method(h, PAIR_CLEAR, p, &[])
+            };
+            if obj == 0 {
+                return 13;
+            }
+            let r = method(h, IGGY_RENDER_SETUP, obj, &[renderer, audio, arg]);
+            if r != 0 {
+                method(h, GDRAW_CONTEXT_DTOR, obj, &[]);
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[obj]);
+                return r;
+            }
+            h.write(cell, obj);
+        }
+        refs_inc(h);
+        0
+    }
+
+    /// `FUN_00a3d7f0(this; list)` (`thiscall`, `ret 4`; the event result
+    /// at `out`, the original's `ebp - 0x10`) -> the last dispatch's
+    /// `eax`, else `list`: each of the list's events (`[list + 4]`:
+    /// count `+8`, 0x18-byte events from `+0xc`) dispatched to the
+    /// player `[this]` (`IggyPlayerDispatchEventRS`).
+    pub fn iggy_dispatch_events(h: &mut impl Host, out: u32, this: u32, list: u32) -> u32 {
+        let events = word(h, list + 4);
+        let mut r = list;
+        if events != 0 && word(h, this) != 0 {
+            let mut i = 0_u32;
+            while i < word(h, events + 8) {
+                let player = word(h, this);
+                let e = events.wrapping_add(0xc).wrapping_add(i.wrapping_mul(0x18));
+                r = import(h, IGGY_DISPATCH_EVENT_IAT, &[player, e, out]);
+                i += 1;
+            }
+        }
+        r
+    }
+
+    /// `FUN_00a3d900(this; a, b, c, d, data, size, _)` (`thiscall`, `ret
+    /// 0x1c`) -> 0, 5 (no data) or 9 (no player): an Iggy player made
+    /// from the movie in memory (`[this]`), initialised, playing, its
+    /// width, height and frame rate printed; `+0xc` = c, `+0x10` = d,
+    /// `+0x14` = a, `+0x18` = b.
+    pub fn iggy_player_create(h: &mut impl Host, this: u32, args: [u32; 6]) -> u32 {
+        let [a, b, c, d, data, size] = args;
+        if data == 0 {
+            return 5;
+        }
+        let p = import(h, IGGY_CREATE_FROM_MEMORY_IAT, &[data, size, 0]);
+        h.write(this, p);
+        if p == 0 {
+            return 9;
+        }
+        import(h, IGGY_INIT_AND_TICK_IAT, &[p]);
+        let p = word(h, this);
+        import(h, IGGY_PLAY_IAT, &[p]);
+        let p = word(h, this);
+        let props = import(h, IGGY_PROPERTIES_IAT, &[p]);
+        if props != 0 {
+            for (m, o) in [(MSG_MOVIE_WIDTH, 0), (MSG_MOVIE_HEIGHT, 4)] {
+                let (m, v) = (h.rebase(m), word(h, props + o));
+                h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[2, m, v]);
+            }
+            let m = h.rebase(MSG_MOVIE_FPS);
+            let [lo, hi] = dwords(x87::load(word(h, props + 0xc)));
+            h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[2, m, lo, hi]); // call width: 4
+        }
+        h.write(this + 0xc, [c, d, a, b]);
+        0
+    }
+
+    pub const MS_CAMERA_SET_SPLINE: u32 = 0x007b_fca0;
+    pub const MS_CAMERA_SET_ROLL: u32 = 0x007b_fa80;
+    pub const TK_CALC_SPLINE: u32 = 0x0088_a4a0;
+    pub const TK_CALC_SPLINE_TANGENT: u32 = 0x0088_b3b0;
+    pub const TK_CALC_SPLINE3: u32 = 0x0088_a4d0;
+    pub const TK_CALC_SPLINE3_TANGENT: u32 = 0x0088_aba0;
+    /// The debug camera path's position (`0x0193c380`, `f32` 0..1), its
+    /// step (`0x0193c384`) and its spline kind byte (`0x025d5f31`).
+    pub const PATH_T: u32 = 0x0193_c380;
+    pub const PATH_STEP: u32 = 0x0193_c384;
+    pub const PATH_SPLINE3: u32 = 0x025d_5f31;
+
+    /// The path position stepped on and stopped at 1 (a NaN kept).
+    fn path_advance(h: &mut impl Mem) -> u32 {
+        let (at, step) = (h.rebase(PATH_T), h.rebase(PATH_STEP));
+        let t = x87::store(x87::add(x87::load(word(h, at)), x87::load(word(h, step))));
+        h.write(at, t);
+        let x = x87::load(t);
+        if x < 1.0 || x.is_nan() {
+            t
+        } else {
+            let one = 1.0_f32.to_bits();
+            h.write(at, one);
+            one
+        }
+    }
+
+    /// `FUN_009402c0()` (`cdecl`) -> `MsCameraSetSpline`'s `eax`: the
+    /// path stepped, the current list's points headed by their count
+    /// (`points - 0x10`: count, 0, 0, 0) handed to the debug camera's
+    /// spline (`MsCameraSetSpline(camera, 1, head, t, 0.0, 0)`).
+    pub fn camera_path_spline(h: &mut impl Host) -> u32 {
+        let t = path_advance(h);
+        let n = word(h, list_cell(h, NAME_LIST_COUNTS));
+        let head = word(h, list_cell(h, NAME_LIST_POINTS)).wrapping_sub(0x10);
+        h.write(head, [n, 0, 0, 0]);
+        let head = word(h, list_cell(h, NAME_LIST_POINTS)).wrapping_sub(0x10);
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_SPLINE, Conv::Cdecl, &[cam, 1, head, t, 0, 0])
+    }
+
+    /// `FUN_00940380()` / `FUN_00940480()` (`cdecl`; the position and
+    /// the aim at `frame`, the original's `ebp - 0x24`) -> the last
+    /// `MsCameraSetRect`'s `eax`: the path stepped and evaluated along
+    /// the current list (`TkMtCalcSpline`/`Tangent`, or the `3` pair
+    /// when `cubic`; the kind byte `0x025d5f31` set to match), the
+    /// debug camera placed there (roll = the position's fourth float)
+    /// looking along the tangent.
+    pub fn camera_path_follow(h: &mut impl Host, frame: u32, cubic: bool) -> u32 {
+        let t = path_advance(h);
+        let kind = h.rebase(PATH_SPLINE3);
+        h.write(kind, u8::from(cubic));
+        let (spline, tangent) = if cubic {
+            (TK_CALC_SPLINE3, TK_CALC_SPLINE3_TANGENT)
+        } else {
+            (TK_CALC_SPLINE, TK_CALC_SPLINE_TANGENT)
+        };
+        let (pts, n) = (
+            word(h, list_cell(h, NAME_LIST_POINTS)),
+            word(h, list_cell(h, NAME_LIST_COUNTS)),
+        );
+        h.call_sym(spline, Conv::Cdecl, &[frame, pts, n, t]);
+        let t = word(h, h.rebase(PATH_T));
+        let (pts, n) = (
+            word(h, list_cell(h, NAME_LIST_POINTS)),
+            word(h, list_cell(h, NAME_LIST_COUNTS)),
+        );
+        let aim = frame + 0x10;
+        h.call_sym(tangent, Conv::Cdecl, &[aim, pts, n, t]);
+        for k in 0..3 {
+            let s = x87::add(
+                x87::load(word(h, aim + 4 * k)),
+                x87::load(word(h, frame + 4 * k)),
+            );
+            h.write(aim + 4 * k, x87::store(s));
+        }
+        h.write(aim + 0xc, 1.0_f32.to_bits());
+        let roll = x87::store(x87::load(word(h, frame + 0xc)));
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_ROLL, Conv::Cdecl, &[cam, roll]);
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_RECT, Conv::Cdecl, &[cam, 0, aim]);
+        let cam = word(h, h.rebase(DEBUG_CAMERA));
+        h.call_sym(MS_CAMERA_SET_RECT, Conv::Cdecl, &[cam, 1, frame])
+    }
 }

@@ -1138,4 +1138,33 @@ ported! {
     GDrawRecord_release_00a3d410 @ 0x00a3_d410 => extern "thiscall" fn gdraw_record_release(this: u32) {
         ll::gdraw_record_release(&mut mem(), this);
     }
+
+    /// `FUN_00a3d5f0(renderer, audio, arg)`.
+    GDrawContext_acquire_00a3d5f0 @ 0x00a3_d5f0 => extern "C" fn gdraw_context_acquire(renderer: u32, audio: u32, arg: u32) -> u32 {
+        ll::gdraw_context_acquire(&mut mem(), renderer, audio, arg)
+    }
+    /// `FUN_00a3d7f0(this; list)` (the event result).
+    Iggy_dispatchEvents_00a3d7f0 @ 0x00a3_d7f0 => extern "thiscall" fn iggy_dispatch_events(this: u32, list: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        ll::iggy_dispatch_events(&mut mem(), f.at(), this, list)
+    }
+    /// `FUN_00a3d900(this; a, b, c, d, data, size, _)`.
+    IggyPlayer_create_00a3d900 @ 0x00a3_d900 => extern "thiscall" fn iggy_player_create(this: u32, a: u32, b: u32, c: u32, d: u32, data: u32, size: u32, _unused: u32) -> u32 {
+        ll::iggy_player_create(&mut mem(), this, [a, b, c, d, data, size])
+    }
+
+    /// `FUN_009402c0()`.
+    CameraPath_spline_009402c0 @ 0x0094_02c0 => extern "C" fn camera_path_spline() -> u32 {
+        ll::camera_path_spline(&mut mem())
+    }
+    /// `FUN_00940380()` (the position and the aim).
+    CameraPath_follow_00940380 @ 0x0094_0380 => extern "C" fn camera_path_follow() -> u32 {
+        let mut f = StackFrame::<8>::new();
+        ll::camera_path_follow(&mut mem(), f.at(), false)
+    }
+    /// `FUN_00940480()` (the position and the aim).
+    CameraPath_follow3_00940480 @ 0x0094_0480 => extern "C" fn camera_path_follow3() -> u32 {
+        let mut f = StackFrame::<8>::new();
+        ll::camera_path_follow(&mut mem(), f.at(), true)
+    }
 }

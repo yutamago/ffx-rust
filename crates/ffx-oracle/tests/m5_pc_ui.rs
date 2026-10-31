@@ -6404,3 +6404,176 @@ fn rp4_gdraw_records_match_the_original() {
         }
     });
 }
+
+#[test]
+fn rp4_iggy_players_match_the_original() {
+    // The GDraw context (present, made, out of memory, set-up failing),
+    // event dispatch (no list, no player, 0..5 events) and player
+    // creation (no data, no player, properties or none); the Iggy and
+    // Phyre calls stubbed.
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_d5f0);
+        for case in 0..150 {
+            match case % 3 {
+                0 => {
+                    let ctx = if rng.chance(3) { rng.next() } else { 0 };
+                    t.g32(ll::GDRAW_CONTEXT, ctx);
+                    t.g32(ll::GDRAW_CONTEXT_REFS, rng.below(5));
+                    let mem = t.zeros(8);
+                    t.stubs(&[
+                        (
+                            ll::PHYRE_MALLOC,
+                            false,
+                            1,
+                            0,
+                            if rng.chance(5) { 0 } else { mem },
+                        ),
+                        (
+                            ll::PAIR_CLEAR,
+                            true,
+                            0,
+                            0,
+                            if rng.chance(6) { 0 } else { mem },
+                        ),
+                        (
+                            ll::IGGY_RENDER_SETUP,
+                            true,
+                            3,
+                            3,
+                            if rng.chance(3) { rng.next() } else { 0 },
+                        ),
+                        (ll::GDRAW_CONTEXT_DTOR, true, 0, 0, rng.next()),
+                        (ll::PHYRE_FREE, false, 1, 0, rng.next()),
+                    ]);
+                    let a = [rng.next(), rng.next(), rng.next()];
+                    t.check("FUN_00a3d5f0", 0x00a3_d5f0, Conv::Cdecl, &a, |m| {
+                        Out::U32(ll::gdraw_context_acquire(m, a[0], a[1], a[2]))
+                    });
+                }
+                1 => {
+                    let n = rng.below(6);
+                    let events = t.zeros(0xc + 0x18 * 6);
+                    t.w32(events + 8, n);
+                    let list = t.words(&[0, if rng.chance(5) { 0 } else { events }]);
+                    let this = t.words(&[if rng.chance(5) { 0 } else { rng.next() }]);
+                    t.stub_import(ll::IGGY_DISPATCH_EVENT_IAT, false, 3, 3, rng.next());
+                    t.skip = 4;
+                    t.check_framed(
+                        "FUN_00a3d7f0",
+                        0x00a3_d7f0,
+                        Conv::Thiscall(this),
+                        &[list],
+                        0x10,
+                        |m, ebp| Out::U32(ll::iggy_dispatch_events(m, ebp - 0x10, this, list)),
+                    );
+                    t.skip = 0;
+                }
+                _ => {
+                    // the rates with low bits set, so the logged low word
+                    // of the double tells them apart
+                    let props = t.words(&[
+                        rng.below(2000),
+                        rng.below(2000),
+                        rng.next() & 0x3fff_ffff,
+                        rng.next() & 0x3fff_ffff,
+                    ]);
+                    t.stub_import(
+                        ll::IGGY_CREATE_FROM_MEMORY_IAT,
+                        false,
+                        3,
+                        3,
+                        if rng.chance(5) { 0 } else { rng.next() },
+                    );
+                    t.stub_import(ll::IGGY_INIT_AND_TICK_IAT, false, 1, 1, rng.next());
+                    t.stub_import(ll::IGGY_PLAY_IAT, false, 1, 1, rng.next());
+                    t.stub_import(
+                        ll::IGGY_PROPERTIES_IAT,
+                        false,
+                        1,
+                        1,
+                        if rng.chance(4) { 0 } else { props },
+                    );
+                    t.stub(ll::PHYRE_PRINTF, false, 3, 0, rng.next());
+                    let this = t.zeros(0x20);
+                    let mut a: Vec<u32> = (0..7).map(|_| rng.next()).collect();
+                    if rng.chance(5) {
+                        a[4] = 0;
+                    }
+                    t.check("FUN_00a3d900", 0x00a3_d900, Conv::Thiscall(this), &a, |m| {
+                        Out::U32(ll::iggy_player_create(
+                            m,
+                            this,
+                            [a[0], a[1], a[2], a[3], a[4], a[5]],
+                        ))
+                    });
+                }
+            }
+            t.reset();
+        }
+    });
+}
+
+#[test]
+fn rp4_camera_paths_match_the_original() {
+    // The path position below, at and past 1 (and NaN), the spline
+    // hand-off and both followers (the spline functions stubbed, so the
+    // position and tangent come from the frame).
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_02c0);
+        for case in 0..150 {
+            let tv = match rng.below(5) {
+                0 => 1.0_f32.to_bits(),
+                1 => f32::NAN.to_bits(),
+                _ => (f32::from(rng.below(1200) as u16) / 1000.0).to_bits(),
+            };
+            t.g32(ll::PATH_T, tv);
+            t.g32(
+                ll::PATH_STEP,
+                (f32::from(rng.below(100) as u16) / 1000.0).to_bits(),
+            );
+            let list = rng.below(2);
+            t.g32(ll::NAME_LIST, list);
+            let points = t.zeros(0x100) + 0x10;
+            t.g32(ll::NAME_LIST_POINTS + 4 * list, points);
+            t.g32(ll::NAME_LIST_COUNTS + 4 * list, rng.below(12));
+            t.g32(ll::DEBUG_CAMERA, rng.next());
+            t.stubs(&[
+                (ll::MS_CAMERA_SET_SPLINE, false, 6, 0, rng.next()),
+                (ll::MS_CAMERA_SET_ROLL, false, 2, 0, rng.next()),
+                (ll::MS_CAMERA_SET_RECT, false, 3, 0, rng.next()),
+                (ll::TK_CALC_SPLINE, false, 4, 0, rng.next()),
+                (ll::TK_CALC_SPLINE_TANGENT, false, 4, 0, rng.next()),
+                (ll::TK_CALC_SPLINE3, false, 4, 0, rng.next()),
+                (ll::TK_CALC_SPLINE3_TANGENT, false, 4, 0, rng.next()),
+            ]);
+            let init: Vec<u8> = (0..8)
+                .flat_map(|_| {
+                    (f32::from(rng.below(2000) as u16) - 1000.0)
+                        .to_bits()
+                        .to_le_bytes()
+                })
+                .collect();
+            match case % 3 {
+                0 => t.check("FUN_009402c0", 0x0094_02c0, Conv::Cdecl, &[], |m| {
+                    Out::U32(ll::camera_path_spline(m))
+                }),
+                k => {
+                    let cubic = k == 2;
+                    let sym = if cubic { 0x0094_0480 } else { 0x0094_0380 };
+                    t.skip = 4;
+                    t.check_framed_init(
+                        "FUN_00940380/480",
+                        sym,
+                        Conv::Cdecl,
+                        &[],
+                        0x24,
+                        &init,
+                        |m, ebp| Out::U32(ll::camera_path_follow(m, ebp - 0x24, cubic)),
+                    );
+                    t.skip = 0;
+                }
+            }
+            t.reset();
+        }
+    });
+}
