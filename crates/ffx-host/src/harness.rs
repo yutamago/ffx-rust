@@ -31,7 +31,7 @@
 //! |---|---|
 //! | `ping`, `stats`, `frame` | the clock's frame; `stats` also counts presents, flips queued and run |
 //! | `wait`, `press`, `key`, `waitfor`, `shotwhen`, `holdfor`, `lockstep`, `call`, `callnext`, `pin`, `loadsave`, `trace`, `events` | as the hook's, at the clock's boundary |
-//! | `read`, `readp`, `readabs`, `write`, `writep` | arena memory (on i686 a game address is the process address) |
+//! | `read`, `readp`, `readabs`, `write`, `writep` | arena memory (a game address is an offset into the arena) |
 //! | `keys`, `key` | the `DirectInput` keyboard's state (`GetDeviceState`) |
 //! | `pad`, `press` | the buttons the clock's `Input_KeyHeld` wrapper answers for |
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |

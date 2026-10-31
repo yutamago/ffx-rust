@@ -2,8 +2,8 @@
 //! every call forwarded with the game's arguments marshalled out of the
 //! arena (descriptions copied into the API's structures, contents as
 //! byte slices, objects mapped from their game handles to the real
-//! interfaces). Nothing here hands a host pointer to the game, so it
-//! builds the same for i686 (stage 3) and `x86_64` (stage 4).
+//! interfaces). Nothing here hands a host pointer to the game (the
+//! arena's addresses are not the process's).
 //!
 //! On Windows the window is real (`crate::win_forward`): the device is
 //! made with its swap chain on the game's window
@@ -59,7 +59,7 @@ fn hr(e: &windows::core::Error) -> u32 {
 }
 
 /// Reads a D3D11 description from its bytes (`T` is a plain `repr(C)`
-/// structure of 32-bit fields: the same layout on i686 and `x86_64`).
+/// structure of 32-bit fields: the same layout in the game and here).
 fn read<T: Copy>(b: &[u8]) -> Option<T> {
     (b.len() >= std::mem::size_of::<T>())
         // SAFETY: `b` holds at least `size_of::<T>()` bytes and `T` is

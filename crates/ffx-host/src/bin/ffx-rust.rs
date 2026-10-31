@@ -28,25 +28,6 @@ use std::time::{Duration, Instant};
 
 #[allow(clippy::too_many_lines)] // the argument loop and the report
 fn main() -> ExitCode {
-    // i686 Windows: FFX.exe's range before anything else allocates
-    if let Err(e) = ffx_host::arena::reserve_image_range() {
-        // the stack or a heap got there first: run in a child whose range
-        // is reserved before it starts (crate::relaunch)
-        #[cfg(all(windows, target_pointer_width = "32"))]
-        if !ffx_host::relaunch::is_child() {
-            return match ffx_host::relaunch::run_child() {
-                Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
-                Err(e) => {
-                    eprintln!("arena: {e}");
-                    ExitCode::FAILURE
-                }
-            };
-        }
-        eprintln!("arena: {e}");
-        return ExitCode::FAILURE;
-    }
-    #[cfg(all(windows, target_pointer_width = "32"))]
-    ffx_host::relaunch::report_crashes();
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym = PathBuf::from("symbols/ffx.sym");

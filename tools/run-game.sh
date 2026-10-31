@@ -39,7 +39,7 @@
 #               folder (an instance's own file), its report in ffx-rust.log
 #               there; the harness options mean the same (docs/harness.md,
 #               "Two processes"). Only with --background.
-#               FFX_HOST_TARGET=x86_64-pc-windows-msvc: the 64-bit build (stage 4);
+#               (the 64-bit build, x86_64-pc-windows-msvc, the only one);
 #               FFX_HOST_GFX_RECORD=1 keeps the draw recording (gfxcapture),
 #               FFX_HOST_NOTES=1, FFX_HOST_TRACE=n, FFX_HOST_WATCH, FFX_HOST_DISABLE and FFX_HOST_ONLY reach it (docs/host.md)
 # FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
@@ -178,7 +178,7 @@ if [[ -n "${rust:-}" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 ]] || "$repo/tools/build-host.sh" >/dev/null
     # rm first: never write through a hard link into the game folder.
     rm -f "$game/ffx-rust.exe"
-    install -m 755 "$repo/target/${FFX_HOST_TARGET:-i686-pc-windows-msvc}/release/ffx-rust.exe" "$game/ffx-rust.exe"
+    install -m 755 "$repo/target/x86_64-pc-windows-msvc/release/ffx-rust.exe" "$game/ffx-rust.exe"
 elif [[ $hooks == 0 ]]; then
     rm -f "$game/DINPUT8.dll"
 else
@@ -271,8 +271,8 @@ fi
 
 cd "$game"
 if [[ -n "${rust:-}" ]]; then
-    # ffx-rust.exe restarts itself with bottom-up ASLR off (crates/ffx-host
-    # relaunch.rs), so --fixed-addresses needs no launcher here.
+    # ffx-rust.exe's game addresses are its arena's (docs/host.md, "The
+    # arena"), the same in every run, so --fixed-addresses needs no launcher.
     rm -f "$game/ffx-rust.log"
     ./ffx-rust.exe > "$game/ffx-rust.log" 2>&1 &
     echo "ffx-rust.exe started (language $lang, pid $!, report in $game/ffx-rust.log)"

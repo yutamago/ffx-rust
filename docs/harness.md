@@ -2035,11 +2035,11 @@ the two runs as they compare two `FFX.exe` runs.
 ```bash
 FFX_HARNESS_EXE=rust target/release/examples/replay <script> <trace>   # Options::rust
 tools/run-game.sh --instance N --harness P --background --rust          # what Game::launch runs
-FFX_HARNESS_EXE=rust FFX_HOST_TARGET=x86_64-pc-windows-msvc FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh [--extra]
+FFX_HARNESS_EXE=rust FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh [--extra]
 ```
 
 `run-all.sh` with `FFX_HARNESS_EXE=rust` builds `ffx-rust.exe` once
-(`tools/build-host.sh`, for `FFX_HOST_TARGET`) instead of the hook, gives
+(`tools/build-host.sh`, x86_64: the only build since 2026-10-31) instead of the hook, gives
 each replay 3,600 s and each reply as long (`FFX_REPLAY_TIMEOUT`,
 `FFX_HARNESS_REPLY_TIMEOUT` override them), keeps each run's
 `ffx-rust.log` beside its output (`<replay>.ffx-rust.log`) and prints its
@@ -2131,8 +2131,7 @@ records).
   holds the frames from the first `Present` on; a script waits for it with
   `gfxcapture result`.
 - **How far it gets (2026-10-29, host-pc2).** The 64-bit build
-  (`FFX_HOST_TARGET=x86_64-pc-windows-msvc`, which `tools/run-game.sh
-  --rust` installs then) plays field-walk on PC2 with the same trace
+  (x86_64, which `tools/run-game.sh --rust` installs) plays field-walk on PC2 with the same trace
   events as PC2's original recordings and screenshots within the limits
   (0.0 and 0.1), 226 s from launch (`docs/host.md`, "The 64-bit build on
   PC2"); since host-battle (2026-10-31) also the battle replays
@@ -2141,12 +2140,9 @@ records).
   The whole suite (2026-10-31, host-gate): every replay of the main and
   extra lists with the original's trace events, after the movie ports'
   host-pointer fixes (`docs/host.md`, "The stage 3 gate on PC2"). The i686
-  build still ends a few seconds past its third frame in an abort inside
-  Unicorn's 32-bit translator.
-- **Ending it.** `quit` ends the process (`TerminateProcess`). On i686
-  `ffx-rust.exe` runs the game in a child process of itself
-  (`docs/host.md`, "The arena"), in a job that ends with the parent, so
-  ending either ends the game.
+  build, which ended a few seconds past its third frame in an abort inside
+  Unicorn's 32-bit translator, was dropped on 2026-10-31.
+- **Ending it.** `quit` ends the process (`TerminateProcess`).
 
 ## Tests
 

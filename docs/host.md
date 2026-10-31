@@ -37,7 +37,6 @@ same memory. The release runs no `FFX.exe` code.
 | `src/win_forward.rs` | Windows: the window, message, cursor and timer imports forwarded to the real API (below, "Windows") |
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
 | `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
-| `src/relaunch.rs` | i686 Windows: the game in a child process whose `FFX.exe` range was reserved before it ran (below, "The arena") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
 | `tests/table.rs` | the `ported!` lists in the table: entries, parity with Unicorn, the boot |
@@ -53,7 +52,7 @@ cargo run --release -p ffx-host --bin ffx-rust -- --game-dir ~/steam-games/FFX-X
 python3 -I tools/host-com-methods.py && cargo fmt -p ffx-host   # regenerates src/com_methods.rs
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-host
 FFX_HOST_TRACE=200 ffx-rust ...   # the last 200 basic blocks of a thread that failed
-tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn needs cmake and ninja, below)
+tools/build-host.sh        # x86_64-pc-windows-msvc, through cargo xwin (Unicorn needs cmake, ninja and ml64, below)
 ```
 
 - `--documents DIR`: the folder the game sees as `C:\FFXDocuments`
@@ -104,11 +103,20 @@ tools/build-host.sh        # i686-pc-windows-msvc, through cargo xwin (Unicorn n
 Every game address is a `u32` offset from `Arena::base`. The bridges'
 `Mem` reads and writes through it, so a port runs unchanged on any target.
 
-| | x86_64 (stage 4) | i686 (stage 3) |
-|---|---|---|
-| base | one 4 GB reservation (`mmap PROT_NONE` / `VirtualAlloc MEM_RESERVE`) | 0: the process's own address space |
-| a region | committed inside the reservation (`mprotect` / `MEM_COMMIT`) | `VirtualAlloc` at its game address; refused if the address is taken |
-| game address = host pointer | no: `base + addr` | yes |
+The host is 64-bit only (x86_64 Windows, and 64-bit Linux for the
+tests; the crate refuses other targets). The arena:
+
+| | |
+|---|---|
+| base | one 4 GB reservation (`mmap PROT_NONE` / `VirtualAlloc MEM_RESERVE`) |
+| a region | committed inside the reservation (`mprotect` / `MEM_COMMIT`) |
+| game address = host pointer | no: `base + addr` |
+
+Until 2026-10-31 there was an i686 build too (stage 3's stepping stone),
+whose arena was the process's own address space (base 0, game address =
+host pointer); it never got past Unicorn's 32-bit translator (below, "The
+i686 build") and was dropped with what only it needed (the child process
+that reserved `FFX.exe`'s range, `src/relaunch.rs`; the `/BASE` link).
 
 Regions (`Arena::regions`):
 
@@ -123,23 +131,6 @@ Regions are 64 KB aligned, Windows' allocation granularity. Pages outside
 every region stay unmapped: Unicorn reports an access there as
 `BadAccess`, and `ArenaMem` reads zeros, drops the write and counts it
 (the report lists the first ones).
-
-On i686 `ffx-rust.exe` must leave `0x00400000`–`0x0277d000` free. It
-links at `/BASE:0x70000000`, and `main` reserves the range first thing
-(`arena::reserve_image_range`; the image's regions are then committed
-inside that reservation). That is not enough: Windows creates the main
-thread's stack and the first heaps at the lowest free addresses before
-any of the program's code runs, and on the first launch the stack's 1 MB
-reservation sat at `0x00400000` (`VirtualQuery`: `MEM_RESERVE`,
-`MEM_PRIVATE`, allocation base `0x00400000`). So when the reservation
-fails, `ffx-rust.exe` starts itself again (`src/relaunch.rs`): suspended,
-with bottom-up ASLR off (as `ffx-launch` does for `FFX.exe`), reserves the
-range in the child with `VirtualAllocEx` while nothing in it has run,
-resumes it with `FFX_HOST_IMAGE_RESERVED=1` (the child adopts the
-reservation after checking it with `VirtualQuery`), waits for it and
-exits with its code. The child is in a job that ends it when the parent
-goes. A child whose range is taken anyway would be ended and another
-started (8 tries); every launch so far got it on the first.
 
 The release maps only the data sections (`.rdata`, `.data`, `.rodata`,
 `_RDATA`, `.rsrc`). This build maps `.text` too, read as data, for Unicorn.
@@ -809,8 +800,7 @@ thread waits on both thread handles: the count is exactly 6,000.
   kept by class. `CreateWindowExA` makes the real window with the game's
   strings, styles and size, then gives the game's procedure its
   `WM_CREATE` with a `CREATESTRUCTA` in the arena, as Windows would have
-  during the call. The game holds the real `HWND` (32 bits on i686; the
-  handle table maps it at stage 4).
+  during the call. The game holds the real `HWND` (a 32-bit value).
 - **Messages.** `PeekMessageA/W` peek the real queue into the game's
   `MSG`; `DispatchMessageA/W` of a message for the game's window calls
   the game's procedure through `Exec::call` (emulated or ported), other
@@ -835,12 +825,6 @@ thread waits on both thread handles: the count is exactly 6,000.
   the 1 ms granularity the game asks for (its threads poll with
   `Sleep(1)`: 7,755 calls on the way to the third frame), not Windows'
   default 15.6 ms.
-- **Memory.** On i686 a region (`VirtualAlloc`, a thread's stack) goes
-  into the first free gap of the process's own address space, which the
-  GPU driver fills with reservations of hundreds of MB. Probing those 64 KB
-  at a time made each of the boot's 765 `VirtualAlloc`s take tens of ms:
-  190 s to the third `Present`. `Arena::map_anywhere` now jumps past what
-  `VirtualQuery` says holds a refused address: 27 s (Linux: 7 s).
 - **Input.** `DirectInput` stays the layer's (no devices: the real
   keyboard, mouse and pads never reach the game); the harness's `keys`
   fill the keyboard's `GetDeviceState`. XInput is never called (the game
@@ -910,19 +894,19 @@ unhandled report (above, "Exceptions").
 ## Building for Windows
 
 `tools/build-host.sh` (`build`, or `clippy` with cargo's arguments after
-it) builds `ffx-rust.exe` for i686 through cargo xwin, like the hook.
+it) builds `ffx-rust.exe` for x86_64 (`x86_64-pc-windows-msvc`, the only
+target since 2026-10-31; `FFX_HOST_TARGET` set to anything else is
+refused) through cargo xwin, like the hook.
 Unicorn's C build needs cmake, ninja and `llvm-lib`, and cargo-xwin's
 cmake toolchain file sets `CMAKE_MSVC_RUNTIME_LIBRARY`, which unicorn's
 `CMakeLists.txt` refuses next to the `-MT` that `cc` passes. The script
 supplies cmake and ninja through `uvx` when they are missing, links the
-versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_i686-pc-windows-msvc`
+versioned `llvm-lib-<n>`, and points `CMAKE_TOOLCHAIN_FILE_<target>`
 at a copy of the toolchain file without that line (all under
-`target/host-shims`). `build.rs` links the program at `/BASE:0x70000000`
-with `/LARGEADDRESSAWARE`, so the image range is free and the arena can
-use the upper 2 GB. `FFX_HOST_TARGET=x86_64-pc-windows-msvc` builds the
-64-bit program instead (the arena with a base, stage 4); Unicorn's
-`setjmp` wrapper is MASM there, assembled by LLVM's `llvm-ml64` under the
-name `ml64`.
+`target/host-shims`). Unicorn's `setjmp` wrapper is MASM, assembled by
+LLVM's `llvm-ml64` under the name `ml64`. The hook (`dinput8.dll`) stays
+32-bit (`tools/build-hook.sh`), and so does its 32-bit clippy
+(`-p ffx-hook`); `ffx-host` is no longer in it.
 
 ## Status (2026-10-29, the device round)
 
@@ -1491,11 +1475,16 @@ Not chased further, for these reasons:
   child process with the image range reserved) exists only for it, and
   `docs/harness.md` describes both.
 
-Proposal (the coordinator decides): keep i686 compiling (it is the hook's
-target, and the 32-bit clippy covers `ffx-host` too) but drop it from the
-host gate's runs and from `tools/run-game.sh --rust`'s default
-(`FFX_HOST_TARGET` defaulting to x86_64), and remove `relaunch.rs` when
-the i686 build is dropped entirely.
+Proposal: drop it from the host gate's runs and from `tools/run-game.sh
+--rust`'s default, and remove `relaunch.rs` when the i686 build is dropped
+entirely.
+
+**Decided (the user, 2026-10-31): dropped entirely** (host-phase).
+`tools/build-host.sh` builds x86_64 only, `tools/run-game.sh --rust` and
+`run-all.sh` run that build, `src/relaunch.rs`, `build.rs` (the `/BASE`
+and `/LARGEADDRESSAWARE` link for i686) and the arena's 32-bit back end are
+gone, and `ffx-host` refuses a target that is not 64-bit. The 32-bit
+clippy covers `ffx-hook` (the hook stays 32-bit), not `ffx-host`.
 
 #### The first comparison
 
@@ -1561,10 +1550,8 @@ runs past the third frame (the Unicorn abort).
    "Status on Windows"). (a) Settled for stage 4 (2026-10-29, host-pc2):
    the 64-bit build runs on PC2 and on the main machine once our handler
    commits Unicorn's translation buffers ("The 64-bit build on PC2"); the
-   i686 abort in Unicorn's 32-bit TCG backend (`tcg_reg_alloc`) a few
-   seconds past the third frame is still there and only matters if
-   stage 3 needs i686 runs (the stage 3 gate ran on x86_64; the case for
-   dropping the i686 runs: "The i686 build", host-gate). (b) Done (host-pc2): the harness's frame
+   i686 build, which aborted in Unicorn's 32-bit TCG backend
+   (`tcg_reg_alloc`), was dropped on 2026-10-31 ("The i686 build"). (b) Done (host-pc2): the harness's frame
    commands run on the clock's boundary (`docs/harness.md`, "Two
    processes"), and field-walk passes. Left: (c) FMOD's device output
    (WASAPI) is the hook's `rust_audio_out.rs`, not shared with `ffx-host`
