@@ -86,6 +86,10 @@ static JOB_EVENTS: AtomicU32 = AtomicU32::new(0);
 static SEEDED_JOBS: AtomicU32 = AtomicU32::new(0);
 static FLIPS: AtomicU32 = AtomicU32::new(0);
 static FLIPS_RUN: AtomicU32 = AtomicU32::new(0);
+/// Flips whose `Renderer_PresentFlip` returned ([`after_present_flip`]).
+static FLIPS_DONE: AtomicU32 = AtomicU32::new(0);
+/// Times a cloth job waited for the render thread ([`cloth_order`]).
+static CLOTH_WAITS: AtomicU32 = AtomicU32::new(0);
 static FLIP_LABELS: [AtomicU32; 64] = [const { AtomicU32::new(NO_LABEL) }; 64];
 /// The update the render thread's current flip shows.
 static PRESENT_LABEL: AtomicU32 = AtomicU32::new(NO_LABEL);
@@ -291,6 +295,7 @@ fn seeded_job(e: &mut Exec, kind: u32, first: u32, f: u32, args: &Args) -> Ret {
 /// `Ch_Cloth_PerCharacter(chars, count)` (`0x0082e390`, cdecl): `count`
 /// character pointers at `chars`, seeded (kind 1).
 fn cloth_job(e: &mut Exec, args: &Args) -> Ret {
+    cloth_order(e);
     let (chars, count) = (crate::imports::a(args, 0), crate::imports::a(args, 1));
     let first = if chars != 0 && count != 0 {
         e.mem().read::<u32>(chars)
@@ -298,6 +303,38 @@ fn cloth_job(e: &mut Exec, args: &Args) -> Ret {
         0
     };
     seeded_job(e, 1, first, 0x0082_e390, args)
+}
+
+/// `FFX_HARNESS_CLOTH_ORDER=1` (an experiment, docs/host.md "The cloth
+/// race"): in lockstep, a cloth job waits until the render thread has
+/// presented every flip queued before it, so that the previous update's
+/// draw has read the cloth vertices (`ClothInstancingDynamicMesh_submit`
+/// copies them) before this update's cloth step writes them. At most 2 s
+/// of host time, then it goes on and notes it.
+fn cloth_order(e: &Exec) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var("FFX_HARNESS_CLOTH_ORDER").is_ok_and(|v| v == "1"))
+        || !enabled()
+        || !LOCKSTEP.load(Ordering::Acquire)
+    {
+        return;
+    }
+    let want = FLIPS.load(Ordering::Acquire);
+    if FLIPS_DONE.load(Ordering::Acquire) >= want {
+        return;
+    }
+    CLOTH_WAITS.fetch_add(1, Ordering::Relaxed);
+    let start = Instant::now();
+    while FLIPS_DONE.load(Ordering::Acquire) < want && !e.shared().overdue() {
+        if start.elapsed() > Duration::from_secs(2) {
+            crate::log::note(&format!(
+                "harness: cloth job at frame {}: flip {want} not presented after 2 s",
+                e.shared().clock.frame()
+            ));
+            return;
+        }
+        std::thread::sleep(Duration::from_micros(200));
+    }
 }
 
 /// `Ch_CalcMiddle_Batch(chars, &pass, &count)` (`0x00833530`, cdecl):
@@ -611,6 +648,7 @@ pub fn before_present_flip(shared: &Shared) {
 /// After `Renderer_PresentFlip`'s original.
 pub fn after_present_flip() {
     PRESENT_LABEL.store(NO_LABEL, Ordering::Release);
+    FLIPS_DONE.fetch_add(1, Ordering::AcqRel);
 }
 
 fn has_shots(label: u32) -> bool {
@@ -1055,13 +1093,14 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         "ping" => Ok("ok pong".into()),
         "frame" => Ok(format!("ok {}", now())),
         "stats" => Ok(format!(
-            "ok frame {} pad_reads 0 key_polls {} presents {} flips {} flips_run {} seeded_jobs {}",
+            "ok frame {} pad_reads 0 key_polls {} presents {} flips {} flips_run {} seeded_jobs {} cloth_waits {}",
             now(),
             KEY_POLLS.load(Ordering::Relaxed),
             presents(),
             FLIPS.load(Ordering::Relaxed),
             FLIPS_RUN.load(Ordering::Relaxed),
             SEEDED_JOBS.load(Ordering::Relaxed),
+            CLOTH_WAITS.load(Ordering::Relaxed),
         )),
         "wait" => {
             let until = now() + parse(arg(1)?)?;
@@ -1319,6 +1358,11 @@ fn quit() {
     for line in crate::library::summary() {
         eprintln!("{line}");
     }
+    eprintln!(
+        "harness: {} seeded jobs, {} cloth waits",
+        SEEDED_JOBS.load(Ordering::Relaxed),
+        CLOTH_WAITS.load(Ordering::Relaxed)
+    );
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
