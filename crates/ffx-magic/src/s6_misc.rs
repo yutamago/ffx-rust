@@ -4,10 +4,12 @@
 //! "`G`" is a global of the DLL (an operand of the code).
 
 use crate::l5_objhost::{LIST_CUR, LIST_REMOVE, POOL_ALLOC, list_cur, list_remove};
+use crate::m0032::{RESET_STATE, reset_state};
 use crate::nodes::{INSERT, node_insert};
 use crate::opu_parts::{START_PART, start_part};
 use crate::s3_misc::{COLOUR_NODE, colour_node};
 use crate::s3_summon::{MODEL_NODES, model_nodes};
+use crate::s4_misc::append_object;
 use crate::s4_misc::{
     SCREEN_PLACE, START_OBJECT_ANIM, screen_place, start_object, start_object_anim,
 };
@@ -2136,6 +2138,56 @@ pub const THROWN_EFFECT_PLAIN: Sig = Sig {
         (0x17c, Callee::Sig(&INSERT)),
         (0x1b7, Callee::Sig(&PARTICLE_NODE)),
         (0x1ee, Callee::Sig(&EFFECT_NODE)),
+    ],
+    imports: &[],
+};
+
+/// Starts an effect object with its first part and a reset state block
+/// (internal: `edx` = the object, `xmm3` its scale): the model words
+/// (scale `+0x60..+0x6c`), `*G_P = ITEM`, the first program of slot 941
+/// `(*G_D + 0x10)` started on it ([`start_part`], 0x1000, 1), its state
+/// block reset ([`reset_state`] with the callback immediate `CB`, `+0x11c
+/// = 0x14`), then a pool node holding it appended to the object list
+/// ([`append_object`]). Returns the object.
+///
+/// `magic_0032` 0x10001b30 (231 bytes; 6 DLLs).
+pub fn start_object_reset<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let obj = fr.edx;
+    let scale = fr.xmm[3] as u32;
+    let p = g.read::<u32>(w(0x1));
+    for o in [0x48u32, 0x44, 0x40] {
+        g.write::<u32>(obj + o, 0);
+    }
+    g.write::<u32>(obj + 0x4c, 0x3f80_0000);
+    for o in [0x5cu32, 0x58, 0x54, 0x50] {
+        g.write::<u32>(obj + o, 0);
+    }
+    for o in [0x6cu32, 0x68, 0x64, 0x60] {
+        g.write::<u32>(obj + o, scale);
+    }
+    g.write::<u32>(p, w(0x56));
+    let d = g.read::<u32>(g.read::<u32>(w(0x5b)).wrapping_add(0x10));
+    let table = slot(g, img, f, 0x63, 941, &[d]).eax;
+    let program = g.read::<u32>(table);
+    start_part(g, img, img.rel32_target(f + 0x7d), obj, 0x1000, program, 1);
+    reset_state(g, obj, w(0x85), 0, 0x14);
+    let list = [0xa0, 0xb3, 0xb9, 0xc2, 0xcd, 0xd6, 0xdf];
+    append_object(g, img, f, img.rel32_target(f + 0x95), obj, list);
+    obj
+}
+
+/// [`start_object_reset`] (the `rel32`s: [`start_part`],
+/// [`reset_state`] and the pool's take,
+/// [`pool_alloc`](crate::l5_objhost::pool_alloc)).
+pub const START_OBJECT_RESET: Sig = Sig {
+    len: 231,
+    hash: 0xa281_110d_314d_b0b4,
+    calls: &[
+        (0x7d, Callee::Sig(&START_PART)),
+        (0x8d, Callee::Sig(&RESET_STATE)),
+        (0x95, Callee::Sig(&POOL_ALLOC)),
     ],
     imports: &[],
 };

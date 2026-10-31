@@ -1520,3 +1520,51 @@ fn thrown_effects_plain() {
         });
     }
 }
+
+/// Row 105: `magic_0032`'s object start with the reset state block: the
+/// object list empty and not, the pool empty.
+#[test]
+fn objects_started_reset() {
+    let Some(mut t) = twin(32) else { return };
+    let f = t.at(0x1b30);
+    let table = SCRATCH + 0x3400;
+    for i in 0..0x10 {
+        t.set_u32(table + 4 * i, 0x1111 * (i + 1));
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    rec(&mut t, 714, 5, |_, a| 0x0714_0000 ^ a[2]);
+    let start = t.img.rel32_target(f + 0x7d);
+    t.set_u32(op(&t, start, 0x04), SCRATCH + 0x7f8);
+    t.set_u32(op(&t, f, 0x1), SCRATCH + 0x2f0);
+    t.set_u32(op(&t, f, 0x5b), SCRATCH + 0x280);
+    let pa = t.img.rel32_target(f + 0x95);
+    let free = op(&t, pa, 0x04);
+    let tail = op(&t, f, 0xa0);
+    let obj = SCRATCH + 0x1000;
+    for (k, (nodes, listed)) in [(5u16, false), (2, true), (0, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        t.write(obj, &varied(0x140, k));
+        t.set_u32(SCRATCH + 0x2f0, 0x02f0_0000 + k);
+        t.set_u16(free, nodes);
+        t.write(SCRATCH + 0x1400, &varied(0x10, k));
+        t.set_u32(tail, if listed { SCRATCH + 0x1400 } else { 0 });
+        let c = Call {
+            edx: obj,
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            Xmm::f32(9.0),
+            Xmm::f32(8.0),
+            Xmm::f32(7.0),
+            Xmm::f32(1.25 + k as f32),
+        ]);
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::start_object_reset(g, img, fr))
+        });
+    }
+}
