@@ -6391,18 +6391,31 @@ pub const LEVEL_COLOUR: Sig = Sig {
 ///
 /// `magic_0443` 0x10001c20 (164 bytes; 2 DLLs).
 pub fn particles_start_d<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    particles_raised(g, img, fr, (0, 0x35), (0x3d, 0x43, 0x58), 0x3d2f_1aa0)
+}
+
+/// [`particles_start_d`]'s shape: the program `+prog` of the table, the
+/// wrapper's `rel32` at `call`, the vector, slot table and height
+/// operands `(v, table, k)`, the rates.
+fn particles_raised<G: Game>(
+    g: &mut G,
+    img: &Image,
+    fr: &Frame,
+    rels: (u32, u32),
+    (v, table, k): (u32, u32, u32),
+    rate: u32,
+) -> Ret {
     let f = fr.at;
-    let (obj, x, program) = particles_begin(g, img, fr, (0, 0x35));
-    let v = op(img, f, 0x3d);
-    let words = [obj.wrapping_add(0x40), v, program, 1, 0, x];
-    slot_call(g, img, f, (0x43, 325), &words);
+    let (obj, x, program) = particles_begin(g, img, fr, rels);
+    let words = [obj.wrapping_add(0x40), op(img, f, v), program, 1, 0, x];
+    slot_call(g, img, f, (table, 325), &words);
     let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
-    let y = crate::sb_sse::add(fl(g, obj.wrapping_add(0x44)), fl(g, op(img, f, 0x58)));
+    let y = crate::sb_sse::add(fl(g, obj.wrapping_add(0x44)), fl(g, op(img, f, k)));
     for off in [0x50, 0x54, 0x58] {
         g.write::<u32>(obj.wrapping_add(off), 0);
     }
     g.write::<u32>(obj.wrapping_add(0x44), y.to_bits());
-    particles_rates(g, obj, 0x3d2f_1aa0);
+    particles_rates(g, obj, rate);
     Ret::eax(1)
 }
 
@@ -6613,5 +6626,58 @@ pub const COLOUR_STATE_TASK: Sig = Sig {
     len: 165,
     hash: 0x32c0_d319_2a31_876f,
     calls: &[(0x65, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`particles_start_d`] with the table's `+0x8` program and rates 0.0375.
+///
+/// `magic_0443` 0x10001580 (165 bytes; 2 DLLs).
+pub fn particles_start_e<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    particles_raised(g, img, fr, (8, 0x36), (0x3e, 0x44, 0x59), 0x3d19_999a)
+}
+
+/// [`particles_start_e`].
+pub const PARTICLES_START_E: Sig = Sig {
+    len: 165,
+    hash: 0x762a_d8b2_3ec3_e021,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// An object's place from the camera (cdecl `(obj)`; a /GS frame): the
+/// screen and camera matrices into the frame (slots 723, 724), slot 327
+/// `(obj + 0x80, camera)`, slot 229 `(obj + 0xd0, obj + 0x80, v)` with
+/// the frame vector `(0, 0, 5.0, 1.0)`, each call seeing the words the
+/// earlier ones left; then `+0xdc` 1.0. Returns slot 229's `eax`.
+///
+/// `magic_0434` 0x100068f0 (167 bytes; 2 DLLs).
+pub fn camera_place<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (screen, cam, v) = (
+        ebp.wrapping_sub(0x94),
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0x14),
+    );
+    slot_call(g, img, f, (0x20, 723), &[screen]);
+    slot_call(g, img, f, (0x31, 724), &[cam, screen]);
+    let m = obj.wrapping_add(0x80);
+    slot_call(g, img, f, (0x42, 327), &[m, cam, cam, screen]);
+    for (i, x) in (0u32..).zip([0, 0, 0x40a0_0000, 0x3f80_0000]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    let words = [obj.wrapping_add(0xd0), m, v, m, cam, cam, screen];
+    // call width: 7 (the earlier calls' words stay on the stack)
+    let out = slot_call(g, img, f, (0x62, 229), &words);
+    g.write::<u32>(obj.wrapping_add(0xdc), 0x3f80_0000);
+    through(out)
+}
+
+/// [`camera_place`] (the `rel32` is `__security_check_cookie`).
+pub const CAMERA_PLACE: Sig = Sig {
+    len: 167,
+    hash: 0x3bef_485b_c748_ea99,
+    calls: &[(0x9f, Callee::Any)],
     imports: &[],
 };

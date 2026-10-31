@@ -3073,3 +3073,31 @@ fn timeline_frames_drops_states() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn particles_e_and_camera_places() {
+    let Some(mut t) = twin(443) else { return };
+    let f = t.at(0x1580);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table + 8, 0x0700_0008);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5)]);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x3f00_0000 + i);
+        }
+        0x325
+    });
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    t.set_u32(op(&t, f, 0x10), SCRATCH + 0x200);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(434) else { return };
+    recs(&mut t, &[(723, 1), (724, 2), (327, 2), (229, 3)]);
+    let f = t.at(0x68f0);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+}
