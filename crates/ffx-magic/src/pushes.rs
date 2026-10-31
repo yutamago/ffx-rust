@@ -27,6 +27,26 @@ impl Pushes {
         self.0.insert(0, word);
     }
 
+    /// Pushes `words` in their order (the last one ends on top).
+    pub fn push_all(&mut self, words: &[u32]) {
+        for &w in words {
+            self.push(w);
+        }
+    }
+
+    /// `add esp, 4 * n`: the `n` most recent words are gone.
+    pub fn pop(&mut self, n: usize) {
+        self.0.drain(..n.min(self.0.len()));
+    }
+
+    /// `mov [esp], word` (`movss [esp], xmm0`): the most recent word
+    /// replaced, the next call's last argument written over an old one.
+    pub fn set_top(&mut self, word: u32) {
+        if let Some(w) = self.0.first_mut() {
+            *w = word;
+        }
+    }
+
     /// The words a call sees, most recent first (at most [`CALL_WORDS`]).
     #[must_use]
     pub fn words(&self) -> &[u32] {

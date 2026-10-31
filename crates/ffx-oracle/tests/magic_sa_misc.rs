@@ -2231,3 +2231,29 @@ fn turn_matrix_and_static_node() {
         });
     }
 }
+
+#[test]
+fn records_init_80_takes() {
+    let Some(mut t) = sa::twin(53) else { return };
+    let f = t.at(0x2330);
+    let w = |t: &Twin, off: u32| t.img.word(f + off);
+    let (count, free, head, tail) = (w(&t, 0x20), w(&t, 0x3e), w(&t, 0xa6), w(&t, 0xb7));
+    let block = SCRATCH + 0x1_0000;
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    for (n, empty) in [(1u32, true), (2, false), (3, false)] {
+        t.write(block, &vec![0x77; 0x80 * 0x74]);
+        for i in 1..=n {
+            let next = if i == n { 1 } else { i + 1 };
+            let prev = if i == 1 { n } else { i - 1 };
+            t.set_u32(node(i), node(prev));
+            t.set_u32(node(i) + 4, node(next));
+        }
+        t.set_u32(free, node(1));
+        t.set_u16(count, n as u16);
+        t.set_u32(head, if empty { 0 } else { node(9) });
+        t.set_u32(tail, node(9));
+        t.check(f, Call::this(block), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::Ret::eax(ffx_magic::sa_misc::records_init_80(g, img, fr.at, fr.ecx))
+        });
+    }
+}

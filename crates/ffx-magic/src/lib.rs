@@ -72,6 +72,12 @@ pub mod s3_nodes;
 pub mod s3_summon;
 pub mod s3_vm;
 pub mod s3_wrap;
+// the shared work list's fourth round (shared-4)
+pub mod s4_fam446;
+pub mod s4_misc;
+pub mod s4_small;
+pub mod s4_summon;
+pub mod s4_wrap;
 
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
@@ -615,6 +621,9 @@ macro_rules! ports {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
 
+        // the pairwise check grows with the square of the ports and now
+        // runs longer than the lint's limit (it does finish)
+        #[allow(long_running_const_eval)]
         const _: () = assert!(
             first_overlap(PORTS, INTERNAL).is_none(),
             "two ports (PORTS or INTERNAL) with the same code identity: \
@@ -934,6 +943,289 @@ ports! {
     "colour fade" => s3_misc::COLOUR_FADE, s3_misc::colour_fade;
     "colour step" => s3_misc::COLOUR_STEP, s3_misc::colour_step;
     "value step" => s3_misc::VALUE_STEP, s3_misc::value_step;
+    // shared-4 list
+    "thunk: leave and reset" => s4_wrap::JMP_LEAVE_AND_RESET, s4_wrap::ecx_jmp;
+    "thunk: element bone" => s4_wrap::JMP_ELEM_BONE, s4_wrap::ecx_jmp;
+    "thunk: colour node fade" => s4_wrap::JMP_COLOUR_NODE_FADE, s4_wrap::ecx_jmp;
+    "thunk: motion state" => s4_wrap::JMP_MOTION_STATE, s4_wrap::ecx_jmp;
+    "thunk: step node" => s4_wrap::JMP_STEP_NODE, s4_wrap::ecx_jmp;
+    "thunk: nodes reset" => s4_wrap::JMP_NODES_RESET, s4_wrap::ecx_jmp;
+    "thunk: particle node" => s4_wrap::JMP_PARTICLE_NODE, s4_wrap::ecx_jmp;
+    "summon start (targets)" => s4_summon::SUMMON_START, s4_summon::summon_start;
+    "summon start (targets, b)" => s4_summon::SUMMON_START_B, s4_summon::summon_start_b;
+    "summon frame (0042)" => s4_summon::SUMMON_FRAME_B, s4_summon::summon_frame_b;
+    "sprites run" => s4_misc::SPRITES_RUN, s4_misc::sprites_run;
+    "shake task" => s4_misc::SHAKE_TASK, s4_misc::shake_task;
+    "follow task" => s4_misc::FOLLOW_TASK, s4_misc::follow_task;
+    "follow task (turned)" => s4_misc::FOLLOW_TASK_TURNED, s4_misc::follow_task_turned;
+    "sprites run (0171)" => s4_misc::SPRITES_RUN_B, s4_misc::sprites_run_b;
+    "frame step (timeline)" => s4_misc::FRAME_STEP, s4_misc::frame_step;
+    "timed task" => s4_misc::TIMED_TASK, s4_misc::timed_task;
+    "task motion" => s4_misc::TASK_MOTION, s4_misc::task_motion;
+    "register callback" => s4_misc::REGISTER_CALLBACK, s4_misc::register_callback;
+    "register key" => s4_misc::REGISTER_KEY, s4_misc::register_key;
+    "state listed" => s4_misc::STATE_LISTED, s4_misc::state_listed;
+    "free part item" => s4_misc::FREE_PART_ITEM, s4_misc::free_part_item;
+    "count done (a)" => s4_misc::COUNT_DONE_A, s4_misc::count_done_a;
+    "count done (b)" => s4_misc::COUNT_DONE_B, s4_misc::count_done_b;
+    "grid frame" => s4_misc::GRID_FRAME, s4_misc::grid_frame;
+    "free block object" => s4_misc::FREE_BLOCK_OBJECT, s4_misc::free_block_object;
+    "objects end (a)" => s4_misc::OBJECTS_END_A, s4_misc::objects_end_a;
+    "objects end (b)" => s4_misc::OBJECTS_END_B, s4_misc::objects_end_b;
+    "counter set-up" => s4_misc::COUNTER_SETUP, s4_misc::counter_setup;
+    "part start (0700)" => s4_misc::PART_START, s4_misc::part_start;
+    "effect frame" => s4_misc::EFFECT_FRAME, s4_misc::effect_frame;
+    "models slot 276" => s4_misc::MODELS_276, s4_misc::models_276;
+    "repeat slot 310" => s4_misc::REPEAT_310, s4_misc::repeat_310;
+    "range stop" => s4_misc::RANGE_STOP, s4_misc::range_stop;
+    "hook object" => s4_misc::HOOK_OBJECT, s4_misc::hook_object;
+    "view matrix" => s4_misc::VIEW_MATRIX, s4_misc::view_matrix;
+    "part block start" => s4_misc::PART_BLOCK_START, s4_misc::part_block_start;
+    "0446 start kind" => s4_fam446::START_KIND_A, s4_fam446::start_kind_a;
+    "0446 start kind (2)" => s4_fam446::START_KIND_B, s4_fam446::start_kind_b;
+    "0446 start 0x1430" => s4_fam446::START_1430, s4_fam446::start_1430;
+    "0446 start 0x1300" => s4_fam446::START_1300, s4_fam446::start_1300;
+    "0446 start 0x1430 low" => s4_fam446::START_1430_LOW, s4_fam446::start_1430_low;
+    "0446 start 0x720" => s4_fam446::START_720, s4_fam446::start_720;
+    "0446 start 0x260" => s4_fam446::START_260, s4_fam446::start_260;
+    "0644 start kind" => s4_fam446::START_KIND_C, s4_fam446::start_kind_c;
+    "0565 start 0x1300" => s4_fam446::START_1300_B, s4_fam446::start_1300_b;
+    "0644 start 0x1300" => s4_fam446::START_1300_C, s4_fam446::start_1300_c;
+    "0565 start 0xf70" => s4_fam446::START_F70, s4_fam446::start_f70;
+    "0565 start 0x1300 low" => s4_fam446::START_1300_LOW, s4_fam446::start_1300_low;
+    "0644 start 0x11d0" => s4_fam446::START_11D0, s4_fam446::start_11d0;
+    "0565 start-up" => s4_fam446::START_UP_B, s4_fam446::start_up_b;
+    "0644 start-up" => s4_fam446::START_UP_C, s4_fam446::start_up_c;
+    "0565 load step" => s4_fam446::LOAD_STEP_B, s4_fam446::load_step_b;
+    "0644 load step" => s4_fam446::LOAD_STEP_C, s4_fam446::load_step_c;
+    "word clear" => s4_small::WORD_CLEAR, s4_small::word_clear;
+    "call slot 574" => s4_small::CALL_574, s4_small::call_574;
+    "store 1.0, return 1" => s4_small::STORE_ONE_F, s4_small::store_one;
+    "store 0, return 1" => s4_small::STORE_ONE_0, s4_small::store_one;
+    "done after slot 432" => s4_small::DONE_432, s4_small::done_432;
+    "done after slot 434" => s4_small::DONE_434, s4_small::done_434;
+    "done after slot 213" => s4_small::DONE_213, s4_small::done_213;
+    "call slot 941" => s4_small::CALL_941, s4_small::call_941;
+    "call slot 579" => s4_small::CALL_579, s4_small::call_579;
+    "call slot 579 (callback)" => s4_small::CALL_579_WITH, s4_small::call_579_with;
+    "call slot 239 (back)" => s4_small::CALL_239_BACK, s4_small::call_239_back;
+    "call slot 239 (object)" => s4_small::CALL_239_OBJ, s4_small::call_239_obj;
+    "call slot 239 when idle" => s4_small::CALL_239_IDLE, s4_small::call_239_idle;
+    "call slot 450" => s4_small::CALL_450, s4_small::call_450;
+    "give back +0xeac" => s4_small::GIVE_BACK_EAC, s4_small::give_back_eac;
+    "call slot 231" => s4_small::CALL_231, s4_small::call_231;
+    "state 0x3016" => s4_small::STATE_3016, s4_small::state_3016;
+    "call slot 632" => s4_small::CALL_632, s4_small::call_632;
+    "set handler" => s4_small::SET_HANDLER, s4_small::set_handler;
+    "first free record" => s4_small::FIRST_FREE, s4_small::first_free;
+    "two models" => s4_small::TWO_MODELS, s4_small::two_models;
+    "part slot 276" => s4_small::PART_276, s4_small::part_276;
+    "release +0x1ee4" => s4_small::RELEASE_1EE4, s4_small::release_1ee4;
+    "finish and give back" => s4_small::FINISH_GIVE_BACK, s4_small::finish_give_back;
+    "slot 371 twice" => s4_small::CALL_371_TWICE, s4_small::call_371_twice;
+    "call slot 211, flag" => s4_small::CALL_211_FLAG, s4_small::call_211_flag;
+    "reset, then slot 575" => s4_small::RESET_THEN_575, s4_small::reset_then_575;
+    "callback and 15" => s4_small::CALLBACK_AND_15, s4_small::callback_and_count;
+    "callback and 30" => s4_small::CALLBACK_AND_30, s4_small::callback_and_count;
+    "callback and 10" => s4_small::CALLBACK_AND_10, s4_small::callback_and_10;
+    "ready and callback" => s4_small::READY_CALLBACK, s4_small::ready_callback;
+    "callback slot 461" => s4_small::CALLBACK_461, s4_small::callback_461;
+    "take +0x1ee4" => s4_small::TAKE_1EE4, s4_small::take_1ee4;
+    "run, then slot 214" => s4_small::RUN_THEN_214, s4_small::run_then_214;
+    "script step done" => s4_small::SCRIPT_STEP_DONE, s4_small::script_step_done;
+    "motion step done" => s4_small::MOTION_STEP_DONE, s4_small::motion_step_done;
+    "part slot 257" => s4_small::PART_257, s4_small::part_257;
+    "free slot 713" => s4_small::FREE_713, s4_small::free_713;
+    "place at bone 0x99" => s4_small::PLACE_BONE_99, s4_small::place_bone_99;
+    "place at own bone" => s4_small::PLACE_BONE_OWN, s4_small::place_bone_own;
+    "call slot 388" => s4_small::CALL_388, s4_small::call_388;
+    "check slot 411" => s4_small::CHECK_411, s4_small::check_411;
+    "ranges off" => s4_small::RANGES_OFF, s4_small::ranges_off;
+    "place from block" => s4_small::PLACE_FROM_BLOCK, s4_small::place_from_block;
+    "count or slot 257" => s4_small::COUNT_OR_257, s4_small::count_or_257;
+    "records slot 296" => s4_small::RECORDS_296_OFF, s4_small::records_296_off;
+    "records slot 296 (with)" => s4_small::RECORDS_296_WITH, s4_small::records_296_with;
+    "clear and count 18" => s4_small::CLEAR_COUNT_18, s4_small::clear_count_18;
+    "clear and two callbacks" => s4_small::CLEAR_TWO_CALLBACKS, s4_small::clear_two_callbacks;
+    "states 0x3011, 0x3013" => s4_small::STATES_3011_3013, s4_small::states_3011_3013;
+    "place by slot 268" => s4_small::PLACE_268, s4_small::place_268;
+    "place by slot 237 (table)" => s4_small::PLACE_237_TABLE, s4_small::place_237_table;
+    "scale product" => s4_small::SCALE_PRODUCT, s4_small::scale_product;
+    "unlist block object" => s4_small::UNLIST_BLOCK_OBJECT, s4_small::unlist_block_object;
+    "three callbacks (2)" => s4_small::THREE_CALLBACKS_2, s4_small::three_callbacks;
+    "three callbacks (5)" => s4_small::THREE_CALLBACKS_5, s4_small::three_callbacks;
+    "fade down" => s4_small::FADE_DOWN, s4_small::fade_down;
+    "motion step, register" => s4_small::MOTION_STEP_REGISTER, s4_small::motion_step_register;
+    "records from table" => s4_small::RECORDS_FROM_TABLE, s4_small::records_from_table;
+    "three with slot 440" => s4_small::THREE_440, s4_small::three_440;
+    "two callbacks, entry" => s4_small::TWO_CALLBACKS_ENTRY, s4_small::two_callbacks_entry;
+    "callback and 90" => s4_small::CALLBACK_451_90, s4_small::callback_451_90;
+    "three with slot 448" => s4_small::THREE_448, s4_small::three_448;
+    "fade 541 or 38" => s4_small::FADE_541_OR_38, s4_small::fade_541_or_38;
+    "scales task" => s4_small::SCALES_TASK, s4_small::scales_task;
+    "level down" => s4_small::LEVEL_DOWN, s4_small::level_down;
+    "release slot 804" => s4_small::RELEASE_804, s4_small::release_804;
+    "states 0x4029" => s4_small::STATES_4029, s4_small::states_4029;
+    "drift and 6" => s4_small::DRIFT_AND_6, s4_small::drift_and_count;
+    "drift and 12" => s4_small::DRIFT_AND_12, s4_small::drift_and_count;
+    "run, draw, register" => s4_small::RUN_DRAW_REGISTER, s4_small::run_draw_register;
+    "motion entry 0xb4" => s4_small::MOTION_ENTRY_B4, s4_small::motion_entry;
+    "motion entry 0xba" => s4_small::MOTION_ENTRY_BA, s4_small::motion_entry;
+    "motion entry 0xc2" => s4_small::MOTION_ENTRY_C2, s4_small::motion_entry;
+    "motion entry 0xc0" => s4_small::MOTION_ENTRY_C0, s4_small::motion_entry;
+    "motion entry 0xb3" => s4_small::MOTION_ENTRY_B3, s4_small::motion_entry;
+    "records start" => s4_small::RECORDS_START, s4_small::records_start;
+    "motion pair" => s4_small::MOTION_PAIR, s4_small::motion_pair;
+    "drift by count" => s4_small::DRIFT_BY_COUNT, s4_small::drift_by_count;
+    "entry by slot 434" => s4_small::ENTRY_434, s4_small::entry_434;
+    "ranges, four" => s4_small::RANGES_FOUR, s4_small::ranges_four;
+    "chain to slot 461" => s4_small::CHAIN_461, s4_small::chain_461;
+    "speeds and count" => s4_small::SPEEDS_COUNT, s4_small::speeds_count;
+    "register all" => s4_small::REGISTER_ALL, s4_small::register_all;
+    "object done" => s4_small::OBJECT_DONE, s4_small::object_done;
+    "run once, motion" => s4_small::RUN_ONCE_MOTION, s4_small::run_once_motion;
+    "states 0x301a..0x301c" => s4_small::STATES_301A, s4_small::states_301a;
+    "block task" => s4_small::BLOCK_TASK, s4_small::block_task;
+    "counted task 24" => s4_small::COUNTED_TASK_24, s4_small::counted_task;
+    "counted task 16" => s4_small::COUNTED_TASK_16, s4_small::counted_task;
+    "counted task 20" => s4_small::COUNTED_TASK_20, s4_small::counted_task;
+    "static node link (b)" => s4_small::STATIC_NODE_LINK_B, s4_small::static_node_link_b;
+    "sparkle reset" => s4_small::SPARKLE_RESET, s4_small::sparkle_reset;
+    "handle 0x3016" => s4_small::HANDLE_3016, s4_small::handle_3016;
+    "static leave, slot 846" => s4_small::STATIC_LEAVE_846, s4_small::static_leave_846;
+    "model ranges" => s4_small::MODEL_RANGES, s4_small::model_ranges;
+    "colour one" => s4_small::COLOUR_ONE, s4_small::colour_one;
+    "static node link (c)" => s4_small::STATIC_NODE_LINK_C, s4_small::static_node_link_c;
+    "records clear 500" => s4_small::RECORDS_CLEAR_500, s4_small::records_clear;
+    "records clear 1000" => s4_small::RECORDS_CLEAR_1000, s4_small::records_clear;
+    "colour task" => s4_small::COLOUR_TASK, s4_small::colour_task;
+    "static leave, model" => s4_small::STATIC_LEAVE_MODEL, s4_small::static_leave_model;
+    "static link last" => s4_small::STATIC_LINK_LAST, s4_small::static_link_last;
+    "light once" => s4_small::LIGHT_ONCE, s4_small::light_once;
+    "block defaults" => s4_small::BLOCK_DEFAULTS, s4_small::block_defaults;
+    "actor place, slot 211" => s4_small::ACTOR_PLACE_211, s4_small::actor_place_211;
+    "static link (word)" => s4_small::STATIC_LINK_WORD, s4_small::static_link_word;
+    "static link last (word)" => s4_small::STATIC_LINK_LAST_WORD, s4_small::static_link_last_word;
+    "place at bone 0x10" => s4_small::PLACE_BONE_10, s4_small::place_bone_10;
+    "actors slot 530" => s4_small::ACTORS_530, s4_small::actors_530;
+    "wait, then step" => s4_small::WAIT_THEN_STEP, s4_small::wait_then_step;
+    "camera point (-50)" => s4_small::CAMERA_POINT_50, s4_small::camera_point;
+    "camera point (-10)" => s4_small::CAMERA_POINT_10, s4_small::camera_point;
+    "load steps" => s4_small::LOAD_STEPS, s4_small::load_steps;
+    "parts buffer 0x80000" => s4_small::PARTS_BUFFER_80000, s4_small::parts_buffer;
+    "parts buffer 0x50000" => s4_small::PARTS_BUFFER_50000, s4_small::parts_buffer;
+    "parts buffer 0x100000" => s4_small::PARTS_BUFFER_100000, s4_small::parts_buffer;
+    "light once, on" => s4_small::LIGHT_ONCE_ON, s4_small::light_once_on;
+    "static link, slot 845" => s4_small::STATIC_LINK_845, s4_small::static_link_845;
+    "part handles" => s4_small::PART_HANDLES, s4_small::part_handles;
+    "handles 0x3011, 0x3013" => s4_small::HANDLES_3011_3013, s4_small::handles_3011_3013;
+    "clock done" => s4_small::CLOCK_DONE, s4_small::clock_done;
+    "camera floats" => s4_small::CAMERA_FLOATS, s4_small::camera_floats;
+    "part drop (fixed)" => s4_small::PART_DROP_FIXED, s4_small::part_drop_fixed;
+    "reset and scale" => s4_small::RESET_AND_SCALE, s4_small::reset_and_scale;
+    "reset and scale (165)" => s4_small::RESET_AND_SCALE_165, s4_small::reset_and_scale;
+    "reset and scale (511)" => s4_small::RESET_AND_SCALE_511, s4_small::reset_and_scale;
+    "reset and scale (563)" => s4_small::RESET_AND_SCALE_563, s4_small::reset_and_scale;
+    "reset and scale (430)" => s4_small::RESET_AND_SCALE_430, s4_small::reset_and_scale;
+    "colour one, give back" => s4_small::COLOUR_ONE_GIVE_BACK, s4_small::colour_one_give_back;
+    "part drop (argument)" => s4_small::PART_DROP_ARG, s4_small::part_drop_arg;
+    "part frame" => s4_small::PART_FRAME, s4_small::part_frame;
+    "load steps (b)" => s4_small::LOAD_STEPS_B, s4_small::load_steps_b;
+    "particles start" => s4_small::PARTICLES_START, s4_small::particles_start;
+    "register square" => s4_small::REGISTER_SQUARE, s4_small::register_square;
+    "particles start (b)" => s4_small::PARTICLES_START_B, s4_small::particles_start_b;
+    "static link (x)" => s4_small::STATIC_LINK_X, s4_small::static_link_x;
+    "camera floats, on" => s4_small::CAMERA_FLOATS_ON, s4_small::camera_floats_on;
+    "static link (tail)" => s4_small::STATIC_LINK_TAIL, s4_small::static_link_tail;
+    "walk, ring entry" => s4_small::WALK_RING_ENTRY, s4_small::walk_ring_entry;
+    "particles start (c)" => s4_small::PARTICLES_START_C, s4_small::particles_start_c;
+    "static leave, model, flag" => s4_small::STATIC_LEAVE_MODEL_FLAG, s4_small::static_leave_model_flag;
+    "particle fall" => s4_small::PARTICLE_FALL, s4_small::particle_fall;
+    "opu new" => s4_small::OPU_NEW, s4_small::opu_new;
+    "part frame (counted)" => s4_small::PART_FRAME_COUNTED, s4_small::part_frame_counted;
+    "0644 mode set-up" => s4_fam446::MODE_SETUP_644, s4_fam446::mode_setup;
+    "0565 mode set-up" => s4_fam446::MODE_SETUP_565, s4_fam446::mode_setup;
+    "0565 mode object" => s4_fam446::MODE_OBJECT_565, s4_fam446::mode_object_565;
+    "0644 mode object" => s4_fam446::MODE_OBJECT_644, s4_fam446::mode_object_644;
+    "0644 start pair" => s4_fam446::START_PAIR_644, s4_fam446::start_pair_644;
+    "0565 start pair" => s4_fam446::START_PAIR_565, s4_fam446::start_pair_565;
+    "part drop (unlock)" => s4_small::PART_DROP_UNLOCK, s4_small::part_drop_unlock;
+    "static node (arguments)" => s4_small::STATIC_NODE_ARGS, s4_small::static_node_args;
+    "particles start (d)" => s4_small::PARTICLES_START_D, s4_small::particles_start_d;
+    "effect frame (timeline)" => s4_small::EFFECT_FRAME_TIMELINE, s4_small::effect_frame_timeline;
+    "colour state task" => s4_small::COLOUR_STATE_TASK, s4_small::colour_state_task;
+    "particles start (e)" => s4_small::PARTICLES_START_E, s4_small::particles_start_e;
+    "camera place" => s4_small::CAMERA_PLACE, s4_small::camera_place;
+    "trail step (short)" => s4_small::TRAIL_STEP_SHORT, s4_small::trail_step_short;
+    "trail step (long)" => s4_small::TRAIL_STEP_LONG, s4_small::trail_step_long;
+    "actors and records" => s4_small::ACTORS_RECORDS, s4_small::actors_records;
+    "motion set" => s4_small::MOTION_SET, s4_small::motion_set;
+    "spin and run" => s4_small::SPIN_AND_RUN, s4_small::spin_and_run;
+    "sound record" => s4_small::SOUND_RECORD, s4_small::sound_record;
+    "effect frame (slot 261)" => s4_small::EFFECT_FRAME_261, s4_small::effect_frame_261;
+    "colour and scale task" => s4_small::COLOUR_AND_SCALE_TASK, s4_small::colour_and_scale_task;
+    "light copy" => s4_small::LIGHT_COPY, s4_small::light_copy;
+    "actors and entries" => s4_small::ACTORS_ENTRIES, s4_small::actors_entries;
+    "part drop (guarded)" => s4_small::PART_DROP_GUARDED, s4_small::part_drop_guarded;
+    "walk, two children" => s4_small::WALK_TWO_CHILDREN, s4_small::walk_two_children;
+    "actor place and turn" => s4_small::ACTOR_PLACE_TURN, s4_small::actor_place_turn;
+    "particles start (f)" => s4_small::PARTICLES_START_F, s4_small::particles_start_f;
+    "particles start, sound" => s4_small::PARTICLES_START_SOUND, s4_small::particles_start_sound;
+    "motion set (b)" => s4_small::MOTION_SET_B, s4_small::motion_set_b;
+    "camera boxes" => s4_small::CAMERA_BOXES, s4_small::camera_boxes;
+    "clock mode task" => s4_small::CLOCK_MODE_TASK, s4_small::clock_mode_task;
+    "white and count" => s4_small::WHITE_AND_COUNT, s4_small::white_and_count;
+    "effect frame (sound)" => s4_small::EFFECT_FRAME_SOUND, s4_small::effect_frame_sound;
+    "register resource parts" => s4_small::REGISTER_RESOURCE_PARTS, s4_small::register_resource_parts;
+    "three actors shown" => s4_small::THREE_ACTORS_SHOWN, s4_small::three_actors_shown;
+    "point turned offset" => s4_small::POINT_TURNED_OFFSET, s4_small::point_turned_offset;
+    "start part with sound" => s4_small::START_PART_WITH_SOUND, s4_small::start_part_with_sound;
+    "count down two objects" => s4_small::COUNT_DOWN_TWO_OBJECTS, s4_small::count_down_two_objects;
+    "start part sound at" => s4_small::START_PART_SOUND_AT, s4_small::start_part_sound_at;
+    "object model and callbacks" => s4_small::OBJECT_MODEL_AND_CALLBACKS, s4_small::object_model_and_callbacks;
+    "effect end states" => s4_small::EFFECT_END_STATES, s4_small::effect_end_states;
+    "light block defaults" => s4_small::LIGHT_BLOCK_DEFAULTS, s4_small::light_block_defaults;
+    "sprite record setup" => s4_small::SPRITE_RECORD_SETUP, s4_small::sprite_record_setup;
+    "release and remove two" => s4_small::RELEASE_AND_REMOVE_TWO, s4_small::release_and_remove_two;
+    "actors restored" => s4_small::ACTORS_RESTORED, s4_small::actors_restored;
+    "command block reset" => s4_small::COMMAND_BLOCK_RESET, s4_small::command_block_reset;
+    "spin records move" => s4_small::SPIN_RECORDS_MOVE, s4_small::spin_records_move;
+    "camera face actor" => s4_small::CAMERA_FACE_ACTOR, s4_small::camera_face_actor;
+    "entry hook in" => s4_small::ENTRY_HOOK_IN, s4_small::entry_hook_in;
+    "load steps and frame" => s4_small::LOAD_STEPS_AND_FRAME, s4_small::load_steps_and_frame;
+    "falling parts step" => s4_small::FALLING_PARTS_STEP, s4_small::falling_parts_step;
+    "release resource triples" => s4_small::RELEASE_RESOURCE_TRIPLES, s4_small::release_resource_triples;
+    "data pointers" => s4_small::DATA_POINTERS, s4_small::data_pointers;
+    "effect frame (two timelines)" => s4_small::EFFECT_FRAME_TWO_TIMELINES, s4_small::effect_frame_two_timelines;
+    "step done, reset" => s4_small::STEP_DONE_RESET, s4_small::step_done_reset;
+    "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
+    "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
+    "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
+    "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
+    "thunk: walk and ring write" => s4_wrap::JMP_WALK_RING, s4_wrap::ecx_jmp;
+    "0565 start kind" => s4_fam446::START_KIND_D, s4_fam446::start_kind_d;
+    "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
+    "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
+    "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;
+    "thunk: table object" => s4_wrap::JMP_TABLE_OBJECT, s4_wrap::ecx_field_jmp;
+    "thunk: walk, then slot 275" => s4_wrap::JMP_WALK_275, s4_wrap::ecx_jmp;
+    "0446 start child" => s4_fam446::START_CHILD_A, s4_fam446::start_child_a;
+    "0446 start child (scaled)" => s4_fam446::START_CHILD_B, s4_fam446::start_child_b;
+    "0446 start child (slot 641)" => s4_fam446::START_CHILD_C, s4_fam446::start_child_c;
+    "0446 start-up" => s4_fam446::START_UP, s4_fam446::start_up;
+    "0446 mode set-up" => s4_fam446::MODE_SETUP, s4_fam446::mode_setup;
+    "0446 load step" => s4_fam446::LOAD_STEP, s4_fam446::load_step;
+    "0565 record reset" => s4_fam446::RECORD_RESET, s4_fam446::record_reset;
+    "0565 host start" => s4_fam446::HOST_START_565, s4_fam446::host_start_565;
+    "0565 screen bars" => s4_fam446::SCREEN_BARS, s4_fam446::screen_bars;
+    "0543 objects task" => s4_fam446::OBJECTS_TASK, s4_fam446::objects_task;
+    "0543 show caster" => s4_fam446::SHOW_CASTER, s4_fam446::show_caster;
+    "0543 counter reset" => s4_fam446::COUNTER_RESET, s4_fam446::counter_reset;
+    "effect node record (a)" => s4_fam446::EFFECT_NODE_A, s4_fam446::effect_node_a;
+    "effect node record (b)" => s4_fam446::EFFECT_NODE_B, s4_fam446::effect_node_b;
+    "0446 mode object" => s4_fam446::MODE_OBJECT, s4_fam446::mode_object;
+    "0446 start child, sound" => s4_fam446::START_CHILD_SOUND_A, s4_fam446::start_child_sound_a;
+    "0446 start child (scaled), sound" => s4_fam446::START_CHILD_SOUND_B, s4_fam446::start_child_sound_b;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1097,12 +1389,14 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("model position", &sa_misc::MODEL_POSITION),
     ("actor slot 256", &sa_script::ACTOR_SLOT256),
     ("records init (0x100)", &sa_misc::RECORDS_INIT_100),
+    ("records init (0x80)", &sa_misc::RECORDS_INIT_80),
     ("ring reserve", &sa_misc::RING_RESERVE),
     ("part matrix", &sa_misc::PART_MATRIX),
     ("fx reset d74c", &sa_misc::FX_RESET_D74C),
     ("static child", &sa_misc::STATIC_CHILD),
     ("reels match", &sa_misc::REELS_MATCH),
     ("camera target (b)", &sa_misc::CAMERA_TARGET_B),
+    ("camera target (c)", &sa_misc::CAMERA_TARGET_C), // shared-4 list
     ("register grid", &sa_misc::REGISTER_GRID),
     ("place me", &sa_misc::PLACE_ME),
     ("kind records", &sa_misc::KIND_RECORDS),
@@ -1194,6 +1488,148 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("key step", &s3_misc::KEY_STEP),
     ("key step (curved)", &s3_misc::KEY_STEP_CURVED),
     ("task start", &s3_misc::TASK_START),
+    // shared-4 list
+    ("element bone", &s4_summon::ELEM_BONE),
+    ("colour node fade", &s4_summon::COLOUR_NODE_FADE),
+    ("motion state", &s4_summon::MOTION_STATE),
+    ("step node", &s4_summon::STEP_NODE),
+    ("particle node (0070)", &s4_summon::PARTICLE_NODE),
+    ("start object at", &s4_misc::START_OBJECT_AT),
+    ("start object (anim)", &s4_misc::START_OBJECT_ANIM),
+    (
+        "start object (anim, first part)",
+        &s4_misc::START_OBJECT_ANIM_FIRST,
+    ),
+    ("start object (owners)", &s4_misc::START_OBJECT_OWNERS),
+    ("start object (plain)", &s4_misc::START_OBJECT_PLAIN),
+    ("start object (first part)", &s4_misc::START_OBJECT_FIRST),
+    ("sparks (0446)", &s4_fam446::SPARKS_A),
+    ("sparks (0565)", &s4_fam446::SPARKS_B),
+    ("sparks (0446, c)", &s4_fam446::SPARKS_C),
+    ("sparks (0446, d)", &s4_fam446::SPARKS_D),
+    ("glyph quad", &s4_fam446::GLYPH_QUAD),
+    ("actor point", &s4_misc::ACTOR_POINT),
+    ("screen place", &s4_misc::SCREEN_PLACE),
+    ("scale task", &s4_misc::SCALE_TASK),
+    ("float of slot 307", &s4_misc::FLOAT_307),
+    ("unlist and free", &s4_misc::UNLIST_FREE),
+    ("sprite take", &s4_misc::SPRITE_TAKE),
+    ("part toggle", &s4_misc::PART_TOGGLE),
+    ("nodes reset", &s4_misc::NODES_RESET),
+    ("call slot 220", &s4_misc::CALL_220),
+    ("call slot 239", &s4_misc::CALL_239),
+    ("free record", &s4_misc::FREE_RECORD),
+    ("model node with", &s4_misc::MODEL_NODE_WITH),
+    ("records clear", &s4_misc::RECORDS_CLEAR),
+    ("float of slot 664", &s4_misc::FLOAT_664),
+    ("actors slot 296", &s4_misc::ACTORS_296),
+    ("ring run", &s4_misc::RING_RUN),
+    ("register 0x80", &s4_misc::REGISTER_80),
+    ("fade set", &s4_misc::FADE_SET),
+    ("register parts (b)", &s4_misc::REGISTER_PARTS_B),
+    ("models slot 295", &s4_misc::MODELS_295),
+    ("static node", &s4_misc::STATIC_NODE),
+    ("state task", &s4_misc::STATE_TASK),
+    ("motion script", &s4_misc::MOTION_SCRIPT),
+    ("trail draw", &s4_misc::TRAIL_DRAW),
+    ("targets init", &s4_summon::TARGETS_INIT),
+    ("targets init (b)", &s4_summon::TARGETS_INIT_B),
+    ("targets init (c)", &s4_summon::TARGETS_INIT_C),
+    ("target nodes", &s4_summon::TARGET_NODES),
+    ("angle step", &s4_misc::ANGLE_STEP),
+    ("angle step (curved)", &s4_misc::ANGLE_STEP_CURVED),
+    ("call slot 296 (this)", &s4_small::CALL_296),
+    ("call slot 276 (this + 4)", &s4_small::CALL_276),
+    ("call slot 37 (this)", &s4_small::CALL_37),
+    ("call slot 239 (edx)", &s4_small::CALL_239_EDX),
+    ("bone with rate", &s4_small::BONE_RATE),
+    ("call slot 237 (model)", &s4_small::CALL_237),
+    ("call slot 250 (xmm)", &s4_small::CALL_250),
+    ("locked slot 878", &s4_small::LOCKED_878),
+    ("call slot 213 when idle", &s4_small::CALL_213_IDLE),
+    ("handle for slot 393", &s4_small::HANDLE_393),
+    ("attach slot 211", &s4_small::ATTACH_211),
+    ("locked slot 712", &s4_small::LOCKED_712),
+    ("frames to time", &s4_small::FRAMES_TIME),
+    ("big node", &s4_small::BIG_NODE),
+    ("particle node from", &s4_small::PARTICLE_FROM),
+    ("record reset", &s4_small::RECORD_RESET),
+    ("each slot 542", &s4_small::EACH_542),
+    ("light set", &s4_small::LIGHT_SET),
+    ("light on", &s4_small::LIGHT_ON),
+    ("actor index", &s4_small::ACTOR_INDEX),
+    ("fade 541 or 38 (xmm1)", &s4_small::FADE_541_OR_38_BY),
+    ("link node", &s4_small::LINK_NODE),
+    ("link node, x", &s4_small::LINK_NODE_X),
+    ("link node, +0x38", &s4_small::LINK_NODE_38),
+    ("link node, x y", &s4_small::LINK_NODE_XY),
+    ("records clear 100", &s4_small::RECORDS_CLEAR_100),
+    ("register 320", &s4_small::REGISTER_320),
+    ("link node, +0x38 and 1.0", &s4_small::LINK_NODE_38_ONE),
+    ("link node, x and 0xff", &s4_small::LINK_NODE_X_FF),
+    ("link node, +0x2c", &s4_small::LINK_NODE_2C),
+    ("walk, then slot 275", &s4_small::WALK_275),
+    ("link node, grey", &s4_small::LINK_NODE_GREY),
+    ("link node, blocks", &s4_small::LINK_NODE_BLOCKS),
+    ("model place", &s4_small::MODEL_PLACE),
+    ("static node link", &s4_small::STATIC_NODE_LINK),
+    ("two vectors", &s4_small::TWO_VECTORS),
+    ("state reset", &s4_small::STATE_RESET),
+    ("child node", &s4_small::CHILD_NODE),
+    ("move set-up", &s4_small::MOVE_SETUP),
+    ("link node, a d", &s4_small::LINK_NODE_AD),
+    ("track key", &s4_small::TRACK_KEY),
+    ("static child (0513)", &s4_small::STATIC_CHILD),
+    ("strip window", &s4_small::STRIP_WINDOW),
+    ("fader task", &s4_small::FADER_TASK),
+    ("fader task 40", &s4_small::FADER_TASK_40),
+    ("fader task 50", &s4_small::FADER_TASK_50),
+    ("int fade", &s4_small::INT_FADE),
+    ("link node, slot 942", &s4_small::LINK_NODE_942),
+    ("ring write", &s4_small::RING_WRITE),
+    ("static link (xmm2)", &s4_small::STATIC_LINK_XMM),
+    ("face point", &s4_small::FACE_POINT),
+    ("table object", &s4_small::TABLE_OBJECT),
+    ("leave and register", &s4_small::LEAVE_REGISTER),
+    ("0644 start 0x260, placed", &s4_fam446::START_260_PLACED),
+    ("part drop", &s4_small::PART_DROP),
+    ("walk and reset", &s4_small::WALK_RESET),
+    ("walk and ring write", &s4_small::WALK_RING),
+    ("record take", &s4_small::RECORD_TAKE),
+    ("walk and track", &s4_small::WALK_TRACK),
+    ("id list", &s4_small::ID_LIST),
+    ("actor scale by index", &s4_small::ACTOR_SCALE_BY),
+    ("colour from words", &s4_small::COLOUR_FROM_WORDS),
+    ("walk, child place", &s4_small::WALK_CHILD_PLACE),
+    ("node from arguments", &s4_small::NODE_FROM_ARGS),
+    ("heading to a point", &s4_small::HEADING_TO),
+    ("level colour", &s4_small::LEVEL_COLOUR),
+    ("walk, scale steps", &s4_small::WALK_SCALE_STEPS),
+    ("actor to a point", &s4_small::ACTOR_TO_POINT),
+    ("part drop (rates)", &s4_small::PART_DROP_RATES),
+    ("move set-up (static)", &s4_small::MOVE_SETUP_STATIC),
+    ("light node", &s4_small::LIGHT_NODE),
+    ("turn a point", &s4_small::TURN_POINT),
+    ("node copy", &s4_small::NODE_COPY),
+    ("scale task (edx)", &s4_small::SCALE_TASK_EDX),
+    ("light level", &s4_small::LIGHT_LEVEL),
+    ("summon nodes", &s4_small::SUMMON_NODES),
+    ("light link", &s4_small::LIGHT_LINK),
+    ("actor index to a point", &s4_small::ACTOR_INDEX_TO_POINT),
+    ("scale task 30", &s4_small::SCALE_TASK_30),
+    ("scale task 20", &s4_small::SCALE_TASK_20),
+    ("scale task 1", &s4_small::SCALE_TASK_1),
+    ("scale task (argument)", &s4_small::SCALE_TASK_ARG),
+    ("move ends", &s4_small::MOVE_ENDS),
+    ("pulse colour", &s4_small::PULSE_COLOUR),
+    ("summon nodes (b)", &s4_small::SUMMON_NODES_B),
+    ("start host object", &s4_small::START_HOST_OBJECT),
+    ("key curve", &s4_small::KEY_CURVE),
+    ("light object", &s4_small::LIGHT_OBJECT),
+    ("sprite node", &s4_small::SPRITE_NODE),
+    ("named parts", &s4_small::NAMED_PARTS),
+    ("reset owners (30)", &s4_small::RESET_OWNERS_30),
+    ("reset owners (3)", &s4_small::RESET_OWNERS_3),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
