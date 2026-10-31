@@ -5646,3 +5646,151 @@ pub const PART_FRAME: Sig = Sig {
     calls: &[(0x52, Callee::Sig(&crate::sa_misc::PART_REFRESH_B))],
     imports: &[],
 };
+
+/// A load, step by step, once slot 253 answers non-zero (else 0 is
+/// returned): until `G_A` counts, slot 225 `(0x2000)` must answer 0 (else
+/// 1 is returned); the resource `*R` asked for once (slot 226 `(*R, 1)`,
+/// `G_ASKED` 1); until `G_B` counts, slot 227 `(*R)` answering 1 or more
+/// makes it count, else 1 is returned (no arguments). Returns the last
+/// slot's `eax` otherwise.
+///
+/// `magic_0098` 0x100032a0 (150 bytes; 2 DLLs).
+pub fn load_steps_b<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut eax = slot_call(g, img, f, (0x1, 253), &[]).eax;
+    if eax == 0 {
+        return Ret::eax(0);
+    }
+    let bump = |g: &mut G, o: u32| {
+        let a = op(img, f, o);
+        let x = g.read::<u32>(a).wrapping_add(1);
+        g.write::<u32>(a, x);
+    };
+    if g.read::<u32>(op(img, f, 0x14)) == 0 {
+        eax = slot_call(g, img, f, (0x1c, 225), &[0x2000]).eax;
+        if eax != 0 {
+            return Ret::eax(1);
+        }
+        bump(g, 0x36);
+    }
+    if g.read::<u32>(op(img, f, 0x3c)) == 0 {
+        let r = g.read::<u32>(op(img, f, 0x4c));
+        g.write::<u32>(op(img, f, 0x58), 1);
+        eax = slot_call(g, img, f, (0x44, 226), &[r, 1]).eax;
+    }
+    if g.read::<u32>(op(img, f, 0x67)) != 0 {
+        return Ret::eax(eax);
+    }
+    let r = g.read::<u32>(op(img, f, 0x75));
+    eax = slot_call(g, img, f, (0x6f, 227), &[r]).eax;
+    if eax.cast_signed() < 1 {
+        return Ret::eax(1);
+    }
+    bump(g, 0x8b);
+    Ret::eax(eax)
+}
+
+/// [`load_steps_b`].
+pub const LOAD_STEPS_B: Sig = Sig {
+    len: 150,
+    hash: 0x1f07_1dc2_6341_4ae3,
+    calls: &[],
+    imports: &[],
+};
+
+/// An object's particles started (cdecl `(obj)`): `*G_P` = `ITEM`, slot
+/// 941 `(*(*G + 0x10))` gives the program table, the `pppStartPart`
+/// wrapper ([`start_part`], `edx` 0x1000) starts the object's buffer with
+/// its `+0x4` program, slot 268 `(*G_A, 0x10, obj + 0x40)` places it
+/// (each call seeing the words the earlier ones left); then `+0x50`,
+/// `+0x54`, `+0x58` 0, `+0x5c` 1, `+0x60..+0x68` 0.05 and `+0x6c` 1.0.
+/// Returns 1.
+///
+/// `magic_0188` 0x10001e70 (150 bytes; 2 DLLs).
+pub fn particles_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let p = g.read::<u32>(op(img, f, 0x4));
+    g.write::<u32>(p, op(img, f, 0xb));
+    let base = g.read::<u32>(op(img, f, 0x10));
+    let x = g.read::<u32>(base.wrapping_add(0x10));
+    let table = slot_call(g, img, f, (0x18, 941), &[x]).eax;
+    let obj = fr.arg(g, 0);
+    let program = g.read::<u32>(table.wrapping_add(4));
+    crate::opu_parts::start_part(g, img, img.rel32_target(f + 0x36), obj, 0x1000, program, 1);
+    let a = g.read::<u32>(op(img, f, 0x47));
+    slot_call(
+        g,
+        img,
+        f,
+        (0x3f, 268),
+        &[a, 0x10, obj.wrapping_add(0x40), program, 1, 0, x],
+    );
+    for (off, v) in [
+        (0x50, 0),
+        (0x54, 0),
+        (0x58, 0),
+        (0x5c, 1),
+        (0x60, 0x3d4c_cccd),
+        (0x64, 0x3d4c_cccd),
+        (0x68, 0x3d4c_cccd),
+        (0x6c, 0x3f80_0000),
+    ] {
+        g.write::<u32>(obj.wrapping_add(off), v);
+    }
+    Ret::eax(1)
+}
+
+/// [`particles_start`].
+pub const PARTICLES_START: Sig = Sig {
+    len: 150,
+    hash: 0x277c_b2a4_a64f_758f,
+    calls: &[(0x36, Callee::Sig(&crate::opu_parts::START_PART))],
+    imports: &[],
+};
+
+/// `N x N` part handles registered (`N` = `G_N`, read again after every
+/// inner step): for record `k` (0x50 bytes from `*G_R`) and index `j`,
+/// slot 941 maps the record's first word, slot 772 turns it and `j` into
+/// a 64-bit handle and slot 779 registers it with `**G_LOCK` 1 around the
+/// call (no arguments). Returns the last `N` read, or `N` with none.
+///
+/// `magic_0180` 0x10002530 (151 bytes; 2 DLLs).
+pub fn register_square<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let mut n = g.read::<i32>(op(img, f, 0x5));
+    let mut rec = g.read::<u32>(op(img, f, 0xc));
+    let mut k = 0i32;
+    while k < n {
+        let mut j = 0i32;
+        while j < n {
+            let x = g.read::<u32>(rec);
+            let r = slot_call(g, img, f, (0x31, 941), &[x]).eax;
+            let h = slot_call(g, img, f, (0x45, 772), &[r, j.cast_unsigned()]);
+            let lock = g.read::<u32>(op(img, f, 0x53));
+            let saved = g.read::<u32>(lock);
+            g.write::<u32>(lock, 1);
+            slot_call(
+                g,
+                img,
+                f,
+                (0x5c, 779),
+                &[h.eax, h.edx, r, j.cast_unsigned()],
+            );
+            let lock = g.read::<u32>(op(img, f, 0x6f));
+            g.write::<u32>(lock, saved);
+            n = g.read::<i32>(op(img, f, 0x77));
+            j += 1;
+        }
+        k += 1;
+        rec = rec.wrapping_add(0x50);
+    }
+    Ret::eax(n.cast_unsigned())
+}
+
+/// [`register_square`].
+pub const REGISTER_SQUARE: Sig = Sig {
+    len: 151,
+    hash: 0xa064_045c_45c2_4df7,
+    calls: &[],
+    imports: &[],
+};

@@ -621,6 +621,9 @@ macro_rules! ports {
         /// The ports, in [`bind`]'s order: `(name, signature)`.
         pub const PORTS: &[(&str, &Sig)] = &[$(($name, &$sig)),*];
 
+        // the pairwise check grows with the square of the ports and now
+        // runs longer than the lint's limit (it does finish)
+        #[allow(long_running_const_eval)]
         const _: () = assert!(
             first_overlap(PORTS, INTERNAL).is_none(),
             "two ports (PORTS or INTERNAL) with the same code identity: \
@@ -1126,6 +1129,9 @@ ports! {
     "colour one, give back" => s4_small::COLOUR_ONE_GIVE_BACK, s4_small::colour_one_give_back;
     "part drop (argument)" => s4_small::PART_DROP_ARG, s4_small::part_drop_arg;
     "part frame" => s4_small::PART_FRAME, s4_small::part_frame;
+    "load steps (b)" => s4_small::LOAD_STEPS_B, s4_small::load_steps_b;
+    "particles start" => s4_small::PARTICLES_START, s4_small::particles_start;
+    "register square" => s4_small::REGISTER_SQUARE, s4_small::register_square;
     "model reset, release" => s4_small::MODEL_RESET_RELEASE, s4_small::model_reset_release;
     "0644 start 0x1300 raised" => s4_fam446::START_1300_RAISED, s4_fam446::start_1300_raised;
     "thunk: walk and reset" => s4_wrap::JMP_WALK_RESET, s4_wrap::ecx_jmp;

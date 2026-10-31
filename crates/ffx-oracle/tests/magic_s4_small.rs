@@ -2591,3 +2591,62 @@ fn drops_frames_colours() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+#[test]
+fn loads_particles_squares() {
+    let Some(mut t) = twin(98) else { return };
+    let f = t.at(0x32a0);
+    let answers = SCRATCH + 0x80;
+    rec(&mut t, 253, 0, move |m, _| m.r32(answers + 8));
+    rec(&mut t, 225, 1, move |m, _| m.r32(answers));
+    rec(&mut t, 227, 1, move |m, _| m.r32(answers + 4));
+    recs(&mut t, &[(226, 2)]);
+    t.set_u32(op(&t, f, 0x4c), 0x0e5e_0001);
+    for (ready, a, busy, asked, b, there) in [
+        (0u32, 0u32, 0u32, 0u32, 0u32, 0u32),
+        (1, 0, 1, 0, 0, 0),
+        (1, 0, 0, 0, 0, 0),
+        (1, 1, 0, 1, 0, 2),
+        (1, 1, 0, 1, 2, 1),
+        (1, 1, 0, 0, 3, 1),
+    ] {
+        t.set_u32(answers + 8, ready);
+        t.set_u32(op(&t, f, 0x14), a);
+        t.set_u32(op(&t, f, 0x3c), asked);
+        t.set_u32(op(&t, f, 0x67), b);
+        t.set_u32(answers, busy);
+        t.set_u32(answers + 4, there);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(188) else { return };
+    let f = t.at(0x1e70);
+    let table = SCRATCH + 0x400;
+    t.set_u32(table + 4, 0x0700_0001);
+    rec(&mut t, 941, 1, move |_, _| table);
+    recs(&mut t, &[(714, 5), (268, 3)]);
+    t.set_u32(op(&t, f, 0x4), SCRATCH + 0x80);
+    let base = SCRATCH + 0x200;
+    t.set_u32(op(&t, f, 0x10), base);
+    let obj = SCRATCH + 0x1000;
+    t.write(obj, &[0x33; 0x100]);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(180) else { return };
+    let f = t.at(0x2530);
+    rec(&mut t, 941, 1, |_, a| 0x0941_0000 ^ a[0]);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    recs(&mut t, &[(779, 4)]);
+    let lock = SCRATCH + 0x80;
+    t.set_u32(op(&t, f, 0x53), lock);
+    let recs_at = SCRATCH + 0x1000;
+    t.set_u32(op(&t, f, 0xc), recs_at);
+    for i in 0..3 {
+        t.set_u32(recs_at + 0x50 * i, 0x0100_0000 + i);
+    }
+    for n in [0u32, 2, 3] {
+        t.set_u32(op(&t, f, 0x5), n);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
