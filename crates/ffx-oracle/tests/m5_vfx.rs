@@ -44,6 +44,11 @@ use ffx_glue_other::m5v_o::{self as mo, bridge as go};
 use ffx_glue_other::m5v_p::{self as mp, bridge as gp};
 use ffx_glue_other::m5v_q::{self as mq, bridge as gq};
 use ffx_glue_other::m5v_r::{self as mr, bridge as gr};
+use ffx_glue_other::m5v_s::{self as ms, bridge as gs};
+use ffx_glue_other::m5v_t::{self as mt, bridge as gt};
+use ffx_glue_other::m5v_u::{self as mu, bridge as gu};
+use ffx_glue_other::m5v_v::{self as mv, bridge as gv};
+use ffx_glue_other::m5v_w::{self as mw, bridge as gw};
 use ffx_graphic::host::{self, Host};
 use ffx_oracle::{Conv, Oracle, Pages};
 
@@ -5031,6 +5036,479 @@ fn r5v_opd_load_font_matches_the_original() {
                 &[],
                 |o| Out::U32(gr::load_font(o)),
             );
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 14 (ffx_glue_other::m5v_s) ----
+
+#[test]
+fn r5v_kagra_render_data_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1201);
+        for case in 0..24_u32 {
+            let groups = match case % 6 {
+                0 => 0,
+                1 => 31,
+                _ => 1 + rng.below(5),
+            };
+            let mut body = vec![];
+            let mut total = 0_i32;
+            for i in 0..groups {
+                let k = if rng.chance(5) {
+                    0
+                } else {
+                    1 + rng.below(3) as i16
+                };
+                let mut g = vec![0_u8; 0x10 + 32 * usize::try_from(k.max(0)).unwrap()];
+                g[1] = if case % 6 == 2 && i == groups - 1 {
+                    2
+                } else {
+                    3
+                };
+                g[2..4].copy_from_slice(&k.to_le_bytes());
+                g[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                g[12..16].copy_from_slice(&rng.next().to_le_bytes());
+                total += i32::from(k);
+                body.extend(g);
+            }
+            let mut model = vec![0_u8; 0x20];
+            model[4..8].copy_from_slice(&0x20_u32.to_le_bytes());
+            let count = if groups > 0 { total.max(1) } else { 0 };
+            model[0x10..0x12].copy_from_slice(&(count as i16).to_le_bytes());
+            model.extend(body);
+            model.extend([0_u8; 0x400]);
+            let model = t.alloc(&model);
+            let obj = t.zeros(0x20);
+            t.w32(obj + 0x1c, rng.next());
+            t.stub_sym(ms::GET_PTR32, 1, false, 1, 0, Ret::Val(model));
+            let code = memset_code();
+            t.stub_sym_x(ms::MEMSET, 2, false, 3, 0, Ret::Val(2), &code);
+            t.import_sym(ms::SPRINTF_SLOT, 3, 6, 0, Ret::Val(3));
+            // the loaded texture's name into the second argument
+            let loaded = u32::from(case % 7 != 4);
+            let mut code = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp+8]
+            code.extend([0xc7, 0x01]);
+            code.extend(u32::from_le_bytes(*b"tex_").to_le_bytes());
+            code.extend([0xc7, 0x41, 0x04]);
+            code.extend(u32::from_le_bytes([b'0' + (case % 10) as u8, b'1', 0, 0]).to_le_bytes());
+            t.stub_sym_x(
+                ms::IS_TEXTURE_LOADED,
+                4,
+                false,
+                6,
+                0,
+                Ret::Val(loaded),
+                &code,
+            );
+            t.stub_sym(ms::DBG_PRINTF, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(ms::VFX_CREATE, 6, false, 3, 0, Ret::Val(6));
+            t.stub_sym(ms::VFX_CREATE_DATA_BUFFER, 7, false, 7, 0, Ret::Val(7));
+            let args = [rng.next(), rng.next(), obj, rng.next(), rng.next()];
+            zero_deep(t, 0x2800);
+            let ebp = frame_ebp(&t.a, 5);
+            t.b_top = Some(ebp - ms::FRAME - 0x40);
+            t.check(
+                "KaGra001_createRenderData_00715dc0",
+                0x0071_5dc0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(gs::create_render_data(
+                        o, ebp, args[0], args[1], obj, args[4],
+                    ))
+                },
+            );
+            // what the callees see: the counts, names and the texture name
+            for (at, n) in [
+                (0x215c_u32, 0x78),
+                (0x20e4, 0x78),
+                (0x206c, 0x78),
+                (0x1ff4, 0x1e00),
+            ] {
+                r5v_same(t, "KaGra001_createRenderData_00715dc0", ebp - at, n);
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 15 (ffx_glue_other::m5v_t) ----
+
+#[test]
+fn r5v_fake_env_render_data_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1501);
+        for case in 0..30_u32 {
+            let mode = match case % 5 {
+                0 | 4 => 0,
+                1 => 1,
+                2 => 2 + rng.below(100),
+                _ => 0x8000_0000 | rng.next(),
+            };
+            let groups = if case % 6 == 5 { 0 } else { 1 + rng.below(5) };
+            let mut body = vec![];
+            let mut total = 0_i32;
+            for i in 0..groups {
+                let last = i == groups - 1;
+                // a group of another kind keeps the walk where it is: only
+                // last, with k > 0
+                let other = last && case % 3 == 2;
+                let k = if !other && rng.chance(5) {
+                    0
+                } else {
+                    1 + rng.below(3) as i16
+                };
+                let k = if last && total + i32::from(k) == 0 {
+                    1
+                } else {
+                    k
+                };
+                let mut g = vec![0_u8; 0x10 + 0x28 * usize::try_from(k).unwrap_or(0)];
+                g[1] = if other { 2 } else { 3 };
+                g[2..4].copy_from_slice(&k.to_le_bytes());
+                g[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                g[12..16].copy_from_slice(&rng.next().to_le_bytes());
+                total += i32::from(k);
+                body.extend(g);
+            }
+            let mut model = vec![0_u8; 0x20];
+            model[4..8].copy_from_slice(&0x20_u32.to_le_bytes());
+            model[0x10..0x12].copy_from_slice(&(total as i16).to_le_bytes());
+            model.extend(body);
+            model.extend([0_u8; 0x400]);
+            let model = t.alloc(&model);
+            let code = memset_code();
+            t.stub_sym_x(mt::MEMSET, 2, false, 3, 0, Ret::Val(2), &code);
+            t.import_sym(mt::SPRINTF_SLOT, 3, 6, 0, Ret::Val(3));
+            // the loaded texture's name into the second argument
+            let loaded = u32::from(case % 7 != 4);
+            let mut code = vec![0x8b, 0x4c, 0x24, 0x08]; // mov ecx, [esp+8]
+            code.extend([0xc7, 0x01]);
+            code.extend(u32::from_le_bytes(*b"tex_").to_le_bytes());
+            code.extend([0xc7, 0x41, 0x04]);
+            code.extend(u32::from_le_bytes([b'0' + (case % 10) as u8, b'1', 0, 0]).to_le_bytes());
+            t.stub_sym_x(
+                mt::IS_TEXTURE_LOADED,
+                4,
+                false,
+                6,
+                0,
+                Ret::Val(loaded),
+                &code,
+            );
+            t.stub_sym(mt::DBG_PRINTF, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mt::VFX_CREATE, 6, false, 3, 0, Ret::Val(6));
+            t.stub_sym(mt::VFX_CREATE_DATA_BUFFER, 7, false, 7, 0, Ret::Val(7));
+            let mut args = [0_u32; 9];
+            for a in &mut args {
+                *a = rng.next();
+            }
+            args[0] = model;
+            args[8] = mode;
+            zero_deep(t, 0x2400);
+            let ebp = frame_ebp(&t.a, 9);
+            // junk under the names (each copy brings its own NUL)
+            t.write(ebp - 0x1f04, &[0xaa; 0x1e00]);
+            t.b_top = Some(ebp - mt::FRAME - 0x40);
+            t.check(
+                "FakeEnvModel_createRenderData_00715af0",
+                0x0071_5af0,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gt::create_render_data(o, ebp, model, mode)),
+            );
+            // what the callees see: the counts, names and the texture name
+            // (its last 0x10 bytes are where `_alloca_probe` saves registers)
+            for (at, n) in [
+                (0x206c_u32, 0x78),
+                (0x1ff4, 0xf0),
+                (0x1f04, 0x1e00),
+                (0x104, 0xf0),
+            ] {
+                r5v_same(t, "FakeEnvModel_createRenderData_00715af0", ebp - at, n);
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 16 (ffx_glue_other::m5v_u) ----
+
+#[test]
+fn r5v_packet_start_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1601);
+        for case in 0..24_u32 {
+            for g in [
+                mu::PACKET_STATE.sym,
+                mu::PACKET_COUNT_LO.sym,
+                mu::PACKET_COUNT_HI.sym,
+                mu::PACKET_POS.sym,
+            ] {
+                t.global(g, rng.next());
+            }
+            t.global(
+                mu::READ_BACK.sym,
+                if case % 4 == 0 { 0 } else { rng.next() | 1 },
+            );
+            t.global(
+                mu::BUFFER_SWITCH.sym,
+                if case % 3 == 0 { 0 } else { rng.next() | 1 },
+            );
+            let xy = |rng: &mut Rng| match rng.below(3) {
+                0 => rng.next(),
+                1 => rng.below(2000).wrapping_sub(1000),
+                _ => rng.below(0x200),
+            };
+            t.global(mu::CROSSHAIR_X.sym, xy(&mut rng));
+            t.global(mu::CROSSHAIR_Y.sym, xy(&mut rng));
+            t.global(mu::PIXELS, rng.next());
+            for b in [mu::BUFFER_OFF, mu::BUFFER_ON] {
+                let at = t.rebase(b);
+                let w: Vec<u8> = (0..4).flat_map(|_| rng.next().to_le_bytes()).collect();
+                t.patch(at, &w);
+            }
+            t.stub_sym(mu::GS_SYNC_PATH, 1, false, 2, 0, Ret::Val(1));
+            t.stub_sym(mu::SET_DEF_STORE_IMAGE, 2, false, 8, 0, Ret::Val(2));
+            t.stub_sym(mu::FLUSH_CACHE, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(mu::EXEC_STORE_IMAGE, 4, false, 2, 0, Ret::Val(4));
+            t.stub_sym(mu::SCREEN_TO_WORLD, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(mu::PPP_SEND_PACKET, 6, false, 4, 0, Ret::Val(6));
+            t.stub_sym(mu::PPP_CLEAR_WAIT, 7, false, 0, 0, Ret::Val(7));
+            t.zero_frames();
+            // the frame: ebx = top - 8, esp aligned down to 16 below
+            // top - 16, ebp there
+            let ebp = (call_top(&t.a) - 16) & !0xf;
+            t.b_top = Some(ebp - mu::FRAME - 0x40);
+            t.check(
+                "pppPacketStart_00760f30",
+                0x0076_0f30,
+                Conv::Cdecl,
+                &[],
+                |o| {
+                    gu::packet_start(o, ebp);
+                    Out::None
+                },
+            );
+            // what the callees see: the store record and the screen point
+            for (at, n) in [(0x94_u32, 0x10), (0x80, 0x6c), (0x14, 0x10)] {
+                r5v_same(t, "pppPacketStart_00760f30", ebp - at, n);
+            }
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 17 (ffx_glue_other::m5v_v) ----
+
+#[test]
+fn r5v_gdraw_filter_quad_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1701);
+        for case in 0..24_u32 {
+            // the device context: the five methods (stdcall, context first)
+            let mut slots = vec![0; 0x50 / 4];
+            for (k, (off, words)) in [
+                (mv::vt::PS_SET_SHADER_RESOURCES, 4),
+                (mv::vt::PS_SET_SHADER, 4),
+                (mv::vt::PS_SET_SAMPLERS, 4),
+                (mv::vt::UNMAP, 3),
+                (mv::vt::PS_SET_CONSTANT_BUFFERS, 4),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                slots[(off / 4) as usize] = t.stub_code(
+                    0x20 + k as u32,
+                    false,
+                    words,
+                    words,
+                    Ret::Val(rng.next()),
+                    false,
+                );
+            }
+            let ctx = t.object(&slots, 0x10);
+            let state = t.zeros(0xb00);
+            t.w32(state + 4, ctx);
+            for off in (0x204..0x284)
+                .step_by(4)
+                .chain([0x7b4, 0x994, 0xac0, 0xac4])
+            {
+                t.w32(state + off, rng.next());
+            }
+            t.global(mv::GDRAW.sym, state);
+            let dst = t.zeros(0x80);
+            t.stub_sym(mv::MAP_BUFFER, 1, false, 1, 0, Ret::Val(dst));
+            let code = memcpy_code();
+            t.stub_sym_x(mv::MEMCPY, 2, false, 3, 0, Ret::Val(2), &code);
+            t.stub_sym(mv::DRAW_QUAD, 3, false, 6, 0, Ret::Val(rng.next()));
+            let filter = t.zeros(0x40);
+            if case % 3 != 0 {
+                let input = t.zeros(0x40);
+                t.w32(filter + 0x1c, input);
+            }
+            let n = rng.below(5);
+            let w: Vec<u32> = (0..20).map(|_| rng.next()).collect();
+            let constants = t.words(&w);
+            let head = t.words(&w[..4]);
+            let r: Vec<u32> = (0..4)
+                .map(|_| match rng.below(3) {
+                    0 => rng.next(),
+                    1 => rng.below(4000).wrapping_sub(2000),
+                    _ => (1 << 24) + rng.below(64),
+                })
+                .collect();
+            let rect = t.words(&r);
+            let args = [
+                filter,
+                n,
+                constants,
+                rect,
+                rng.next(),
+                rng.next(),
+                head,
+                rng.next(),
+            ];
+            let slots = t.arg_slots(&args);
+            t.check(
+                "gdraw_filterQuad_00a38aa0",
+                0x00a3_8aa0,
+                Conv::Cdecl,
+                &args,
+                |o| {
+                    Out::U32(gv::filter_quad(
+                        o, slots, filter, n, constants, rect, args[4], head, args[7],
+                    ))
+                },
+            );
+            t.same_stack("gdraw_filterQuad_00a38aa0", slots, 0x20);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 18 (ffx_glue_other::m5v_w) ----
+
+#[test]
+fn r5v_gdraw_draw_indexed_triangles_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_1801);
+        for case in 0..36_u32 {
+            // the device context: the six methods (stdcall, context first)
+            let mut slots = vec![0; 0x50 / 4];
+            for (k, (off, words)) in [
+                (mw::vt::VS_SET_SHADER, 4),
+                (mw::vt::DRAW_INDEXED, 4),
+                (mw::vt::UNMAP, 3),
+                (mw::vt::IA_SET_INPUT_LAYOUT, 2),
+                (mw::vt::IA_SET_VERTEX_BUFFERS, 6),
+                (mw::vt::IA_SET_INDEX_BUFFER, 4),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                slots[(off / 4) as usize] = t.stub_code(
+                    0x20 + k as u32,
+                    false,
+                    words,
+                    words,
+                    Ret::Val(rng.next()),
+                    false,
+                );
+            }
+            let ctx = t.object(&slots, 0x10);
+            let state = t.zeros(0xb00);
+            t.w32(state + 4, ctx);
+            for off in (0x260..0x290)
+                .step_by(4)
+                .chain([0x7a0, 0x998, 0x9a0, 0x9a8, 0xac0, 0xac4])
+            {
+                t.w32(state + off, rng.next());
+            }
+            let chunk = match case % 4 {
+                0 => 0,
+                1 => 4,
+                _ => 4 + rng.below(12),
+            };
+            t.w32(state + 0x9c0, chunk);
+            t.global(mw::GDRAW.sym, state);
+            let proceed = u32::from(case % 9 != 4);
+            t.stub_sym(mw::SET_RENDER_STATE, 1, false, 4, 0, Ret::Val(proceed));
+            let locks: Vec<u32> = (0..16)
+                .map(|_| if rng.chance(5) { 0 } else { t.zeros(0x400) })
+                .collect();
+            let seq = t.seq(&locks);
+            t.stub_sym(mw::LOCK_DYNAMIC, 2, false, 2, 0, seq);
+            let code = memcpy_code();
+            t.stub_sym_x(mw::MEMCPY, 3, false, 3, 0, Ret::Val(3), &code);
+            t.stub_sym(mw::UNLOCK, 4, false, 1, 0, Ret::Val(rng.next()));
+            let verts: Vec<u8> = (0..0x100).flat_map(|_| rng.next().to_le_bytes()).collect();
+            let verts = t.alloc(&verts);
+            let indices = if case % 3 == 0 {
+                0
+            } else {
+                let w: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+                t.words(&w)
+            };
+            let nverts = match rng.below(4) {
+                0 => 0,
+                1 => rng.below(4),
+                _ => 4 + rng.below(36),
+            };
+            let p = t.words(&[verts, indices, nverts, rng.below(0x20), rng.below(3)]);
+            let r = t.zeros(0x30);
+            t.w8(
+                r + 4,
+                if rng.chance(2) {
+                    0x10
+                } else {
+                    rng.next() as u8 & !0x10
+                },
+            );
+            for off in [0x1c, 0x20] {
+                if rng.chance(2) {
+                    let o = t.zeros(0x40);
+                    t.w32(r + off, o);
+                }
+            }
+            let buffers = if case % 5 == 1 {
+                t.words(&[rng.next(), rng.next(), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            } else {
+                0
+            };
+            let stats = t.words(&[
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ]);
+            let args = [r, p, buffers, stats];
+            t.zero_frames();
+            let slots = t.arg_slots(&args);
+            let ebp = slots - 8;
+            t.b_top = Some(ebp - mw::FRAME - 0x40);
+            t.check(
+                "gdraw_DrawIndexedTriangles_00a387e0",
+                0x00a3_87e0,
+                Conv::Stdcall,
+                &args,
+                |o| {
+                    Out::U32(gw::draw_indexed_triangles(
+                        o, ebp, slots, r, p, buffers, stats,
+                    ))
+                },
+            );
+            t.same_stack("gdraw_DrawIndexedTriangles_00a387e0", ebp - mw::FRAME, 0x10);
+            t.same_stack("gdraw_DrawIndexedTriangles_00a387e0", slots, 0x10);
+            t.b_top = None;
             t.reset();
         }
     });

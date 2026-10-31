@@ -41,6 +41,9 @@ use ffx_prender::m5m_f::{self as mf, bridge as f};
 use ffx_prender::m5m_g::{self as mg, bridge as g};
 use ffx_prender::m5m_h::{self as mh, bridge as h};
 use ffx_prender::m5m_i::{self as mi, bridge as gi};
+use ffx_prender::m5m_j::{self as mj, bridge as gj};
+use ffx_prender::m5m_k::{self as mk, bridge as gk};
+use ffx_prender::m5m_l::{self as ml, bridge as gl};
 
 /// The body of `FUN_006cbf20` (unreachable: `tools/reach.py --why`): the
 /// recording stubs are written over it.
@@ -3476,6 +3479,279 @@ fn r5_guide_map_conv_sub_matches_the_original() {
                 |o| Out::U32(gi::guide_map_conv_sub(o, ebp - 0xc, ebp - 0x10c, id, sub)),
             );
             r5_same(t, "rcbgGuideMapConvSub", ebp - 0x10c, 0x108);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 6 (ffx_prender::m5m_j) ----
+
+#[test]
+fn r5_num_window_create_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_f901);
+        for case in 0..32_u32 {
+            let w: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            let win = t.words(&w);
+            let v = match case % 4 {
+                0 => (rng.below(200_000) as f32 / 100.0).to_bits(),
+                1 => (-(rng.below(5000) as f32) / 7.0).to_bits(),
+                2 => 0x7fc0_0000 | rng.below(16),
+                _ => rng.next() & 0x7f7f_ffff,
+            };
+            let value = t.words(&[v]);
+            t.stub_sym(mj::WINDOW_CREATE, 1, false, 9, 0, Ret::Val(rng.next()));
+            t.stub_sym(mj::WINDOW_SET_ARG, 2, false, 2, 0, Ret::Val(rng.next()));
+            // `modf`: the whole part through the third argument, the
+            // fraction in ST0 (any, so the clamps and conversions all run)
+            let fraction: f64 = match rng.below(5) {
+                0 => 0.995,
+                1 => -0.5,
+                2 => 0.0,
+                3 => 2.5,
+                _ => f64::from(rng.below(2000)) / 1999.0,
+            };
+            let whole: f64 = match rng.below(6) {
+                0 => -f64::from(rng.below(50)),
+                1 => 999.0,
+                2 => 1000.0,
+                3 => 1.0e12,
+                4 => f64::NAN,
+                _ => f64::from(rng.below(1500)),
+            };
+            let cell = t.alloc(&fraction.to_le_bytes());
+            let s = t.stub_code(3, false, 3, 0, Ret::Val(0), false);
+            let wb = whole.to_bits();
+            let mut code = vec![0x51, 0x8b, 0x4c, 0x24, 0x10]; // push ecx; mov ecx, [esp+0x10]
+            code.extend([0xc7, 0x01]);
+            code.extend(((wb & 0xffff_ffff) as u32).to_le_bytes()); // mov dword [ecx], lo
+            code.extend([0xc7, 0x41, 0x04]);
+            code.extend(((wb >> 32) as u32).to_le_bytes()); // mov dword [ecx+4], hi
+            code.push(0x59); // pop ecx
+            code.extend([0xdd, 0x05]);
+            code.extend(cell.to_le_bytes()); // fld qword [cell]
+            code.push(0xe9);
+            let at = t.a.alloc_code(&[0; 40]).unwrap();
+            assert_eq!(t.b.alloc_code(&[0; 40]).unwrap(), at);
+            code.extend(s.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes()); // jmp s
+            t.write(at, &code);
+            t.patch(t.rebase(mj::MODF_SLOT), &at.to_le_bytes());
+            let args = [win, value, rng.next(), rng.next()];
+            r5_zero_stack(t, 0x200);
+            let ebp = frame_ebp(&t.a, 4);
+            t.b_top = Some(ebp - mj::FRAME - 0x40);
+            t.check(
+                "rcuiNumWindowCreate_0093c670",
+                0x0093_c670,
+                Conv::Cdecl,
+                &args,
+                |o| Out::U32(gj::num_window_create(o, ebp, win, value, args[2], args[3])),
+            );
+            r5_same(t, "rcuiNumWindowCreate_0093c670", ebp - 8, 8);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 7 (ffx_prender::m5m_k) ----
+
+#[test]
+fn r5_guide_save_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_fa01);
+        for case in 0..24_u32 {
+            t.stub_sym(mk::SCE_WRITE, 1, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mk::TRX_SAVE, 2, false, 2, 0, Ret::Val(rng.next()));
+
+            // one map: no transfers, a multiple of 4, or a tail to pad
+            let image = t.zeros(0x40);
+            t.w32(image + 0x30, rng.below(64));
+            t.w32(image + 0x34, rng.below(64));
+            t.w32(image + 0x38, rng.next());
+            let m = t.zeros(0xc0);
+            let n = match case % 4 {
+                0 => 0,
+                1 => 4 * (1 + rng.below(3)),
+                2 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(15),
+            };
+            t.w32(m + 0x98, n);
+            t.w32(m + 0x9c, rng.next());
+            t.w32(m + 0xa0, rng.next());
+            t.w32(m + 0xbc, image);
+            let fd = rng.next();
+            r5_zero_stack(t, 0x200);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - mk::MAP_FRAME - 0x40);
+            t.check(
+                "rcuiGuideSaveMap_00938d20",
+                0x0093_8d20,
+                Conv::Cdecl,
+                &[m, fd],
+                |o| Out::U32(gk::save_map(o, ebp, m, fd)),
+            );
+            r5_same(t, "rcuiGuideSaveMap_00938d20", ebp - 0x14, 0x10);
+            t.b_top = None;
+            t.reset();
+
+            // the guide: its maps through the map save (stubbed), the
+            // padding in its header
+            t.stub_sym(mk::SCE_WRITE, 1, false, 3, 0, Ret::Val(rng.next()));
+            t.stub_sym(mk::SAVE_MAP, 3, false, 2, 0, Ret::Val(rng.next()));
+            let size = match rng.below(3) {
+                // negative: the units round toward zero (no pad, so the
+                // header keeps them)
+                _ if case % 6 == 0 => 0x8000_0003,
+                0 => 0x7fff_fff0 | rng.below(16),
+                1 => 16 * rng.below(100),
+                _ => rng.below(0x10000),
+            };
+            t.stub_sym(mk::GUIDE_SAVE_SIZE, 4, false, 1, 0, Ret::Val(size));
+            let pad = match case % 5 {
+                _ if case % 6 == 0 => 0,
+                0 => 0,
+                _ => 1 + rng.below(16),
+            };
+            t.stub_sym(mk::PAD16, 5, false, 1, 0, Ret::Val(pad));
+            let tag = t.words(&[rng.next()]);
+            t.stub_sym(mk::CHUNK_TAG, 6, false, 1, 0, Ret::Val(tag));
+            let g = t.zeros(0xb0);
+            let maps = match case % 3 {
+                0 => 0,
+                1 => 0x8000_0000 | rng.next(),
+                _ => 1 + rng.below(4),
+            };
+            t.w32(g + 4, maps);
+            t.w32(g + 8, rng.next());
+            let fd = rng.next();
+            r5_zero_stack(t, 0x200);
+            let ebp = frame_ebp(&t.a, 2);
+            t.b_top = Some(ebp - mk::SAVE_FRAME - 0x40);
+            t.check(
+                "rcuiGuideSave_009397f0",
+                0x0093_97f0,
+                Conv::Cdecl,
+                &[g, fd],
+                |o| Out::U32(gk::save(o, ebp, g, fd)),
+            );
+            r5_same(t, "rcuiGuideSave_009397f0", ebp - 0x30, 0x2c);
+            t.b_top = None;
+            t.reset();
+        }
+    });
+}
+
+// ---- round 5 batch 8 (ffx_prender::m5m_l) ----
+
+/// Machine code at a fresh address in both oracles, jumped to from `sym`.
+fn r5_code(t: &mut Twins, sym: u32, code: &[u8]) {
+    let at = t.a.alloc_code(&vec![0; code.len()]).unwrap();
+    assert_eq!(t.b.alloc_code(&vec![0; code.len()]).unwrap(), at);
+    t.write(at, code);
+    t.jump(sym, at);
+}
+
+#[test]
+fn r5_map_id_from_csv_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_fb01);
+        for case in 0..24_u32 {
+            // the table: 16-byte lines (text at +0, the line's int at +8),
+            // header lines first, then ids and names
+            // two names that differ in the sixth character only
+            let names: [&[u8; 6]; 5] = [b"bsil00", b"lmyt01", b"kino03", b"nagi00", b"bsil01"];
+            let headers = rng.below(3);
+            let rows = rng.below(5);
+            let mut lines = vec![];
+            for _ in 0..headers {
+                let mut l = *b"map,id\0\0\0\0\0\0\0\0\0\0";
+                l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                lines.push(l);
+            }
+            for _ in 0..rows {
+                let mut l = [0_u8; 16];
+                l[0] = b'0' + rng.below(10) as u8;
+                l[1..6].copy_from_slice(&names[rng.below(5) as usize][1..]);
+                if rng.chance(2) {
+                    l[..6].copy_from_slice(names[rng.below(5) as usize]);
+                    l[0] = b'1';
+                }
+                l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                lines.push(l);
+            }
+            if case % 3 == 0 {
+                // a near miss (the sixth character) before the match
+                for text in [b"1sil01", b"1sil00"] {
+                    let mut l = [0_u8; 16];
+                    l[..6].copy_from_slice(text);
+                    l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+                    lines.push(l);
+                }
+            }
+            // a digit line to stop the skip, at the end at least
+            let mut l = *b"9xxxxx\0\0\0\0\0\0\0\0\0\0";
+            l[8..12].copy_from_slice(&rng.next().to_le_bytes());
+            lines.push(l);
+            let bytes: Vec<u8> = lines.iter().flatten().copied().collect();
+            let table = t.alloc(&bytes);
+            let end = table + 16 * lines.len() as u32 - 16 * u32::from(case % 4 == 1);
+            let mut name = names[rng.below(5) as usize].to_vec();
+            name[0] = if rng.chance(2) { b'1' } else { b'b' };
+            if case % 3 == 0 {
+                name[..6].copy_from_slice(b"1sil00");
+            }
+            name.extend(b"_x\0");
+            let name = t.alloc(&name);
+
+            t.stub_sym(ml::CHUNK_INIT, 1, false, 1, 0, Ret::Val(1));
+            t.stub_sym(
+                ml::CHUNK_LOAD,
+                2,
+                false,
+                2,
+                0,
+                Ret::Val(u32::from(case % 5 != 0)),
+            );
+            t.stub_sym(ml::CHUNK_FINI, 3, false, 1, 0, Ret::Val(3));
+            t.stub_sym(ml::PARSE_INIT, 4, false, 1, 0, Ret::Val(4));
+            t.stub_sym(ml::PARSE_SET_MODE, 5, false, 2, 0, Ret::Val(5));
+            t.stub_sym(ml::PARSE_ADD_SEPARATORS, 6, false, 2, 0, Ret::Val(6));
+            t.stub_sym(ml::PARSE_FINI, 7, false, 1, 0, Ret::Val(7));
+            // the set puts the cursor on the table, a line is 16 bytes, the
+            // end is `end`, the int the line's +8
+            let mut set = vec![0x8b, 0x4c, 0x24, 0x04, 0xc7, 0x41, 0x04]; // mov ecx, [esp+4]; mov dword [ecx+4], table
+            set.extend(table.to_le_bytes());
+            set.push(0xc3);
+            r5_code(t, ml::PARSE_SET, &set);
+            r5_code(
+                t,
+                ml::PARSE_ADVANCE_LINE,
+                &[0x8b, 0x4c, 0x24, 0x04, 0x83, 0x41, 0x04, 0x10, 0xc3],
+            );
+            let mut is_end = vec![0x8b, 0x4c, 0x24, 0x04, 0x31, 0xc0, 0x81, 0x79, 0x04];
+            is_end.extend(end.to_le_bytes());
+            is_end.extend([0x0f, 0x93, 0xc0, 0xc3]); // setae al; ret
+            r5_code(t, ml::PARSE_IS_END, &is_end);
+            r5_code(
+                t,
+                ml::PARSE_GET_INT,
+                &[
+                    0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x41, 0x04, 0x8b, 0x40, 0x08, 0xc3,
+                ],
+            );
+            r5_zero_stack(t, 0x300);
+            let ebp = frame_ebp(&t.a, 1);
+            t.b_top = Some(ebp - ml::FRAME - 0x40);
+            t.check(
+                "rcuiMapIdFromCsv_009377e0",
+                0x0093_77e0,
+                Conv::Cdecl,
+                &[name],
+                |o| Out::U32(gl::map_id_from_csv(o, ebp, name)),
+            );
+            r5_same(t, "rcuiMapIdFromCsv_009377e0", ebp - 0x90, 8);
             t.b_top = None;
             t.reset();
         }

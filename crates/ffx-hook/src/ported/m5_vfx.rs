@@ -25,6 +25,11 @@ use ffx_glue_other::m5v_o::bridge as go;
 use ffx_glue_other::m5v_p::bridge as gp;
 use ffx_glue_other::m5v_q::bridge as gq;
 use ffx_glue_other::m5v_r::bridge as gr;
+use ffx_glue_other::m5v_s::bridge as gs;
+use ffx_glue_other::m5v_t::bridge as gt;
+use ffx_glue_other::m5v_u::bridge as gu;
+use ffx_glue_other::m5v_v::bridge as gv;
+use ffx_glue_other::m5v_w::bridge as gw;
 
 ported! {
     // ---- batch 1 (ffx_glue_other::m5v_a) ----
@@ -784,5 +789,44 @@ ported! {
     /// `opd_num_load_font_00a5e4a0()` -> `sceDmaSendN`'s `eax`.
     opd_num_load_font_00a5e4a0 @ 0x00a5_e4a0 => extern "C" fn opd_num_load_font() -> u32 {
         gr::load_font(&mut mem())
+    }
+    // ---- round 5 batch 14 (ffx_glue_other::m5v_s) ----
+    /// `KaGra001_createRenderData_00715dc0(lo, hi, obj, _, flags)` -> 1 / 0:
+    /// the original's 0x2364-byte frame in this shim's.
+    KaGra001_createRenderData_00715dc0 @ 0x0071_5dc0 => extern "C" fn kagra_create_render_data(lo: u32, hi: u32, obj: u32, _unused: u32, flags: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_s::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::m5v_s::FRAME;
+        gs::create_render_data(&mut mem(), ebp, lo, hi, obj, flags)
+    }
+    // ---- round 5 batch 15 (ffx_glue_other::m5v_t) ----
+    /// `FakeEnvModel_createRenderData_00715af0(model, _ x7, mode)` -> 1 / 0:
+    /// the original's 0x2094-byte frame in this shim's.
+    FakeEnvModel_createRenderData_00715af0 @ 0x0071_5af0 => extern "C" fn fake_env_create_render_data(model: u32, _a1: u32, _a2: u32, _a3: u32, _a4: u32, _a5: u32, _a6: u32, _a7: u32, mode: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_t::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::m5v_t::FRAME;
+        gt::create_render_data(&mut mem(), ebp, model, mode)
+    }
+    // ---- round 5 batch 16 (ffx_glue_other::m5v_u) ----
+    /// `pppPacketStart_00760f30()`: the original's 0x9c-byte frame in this
+    /// shim's.
+    pppPacketStart_00760f30 @ 0x0076_0f30 => extern "C" fn ppp_packet_start() {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_u::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::m5v_u::FRAME;
+        gu::packet_start(&mut mem(), ebp);
+    }
+    // ---- round 5 batch 17 (ffx_glue_other::m5v_v) ----
+    /// `gdraw_filterQuad_00a38aa0(filter, n, constants, rect, colour, _,
+    /// head, stats)` -> `eax` (writes its argument slots).
+    gdraw_filterQuad_00a38aa0 @ 0x00a3_8aa0 => extern "C" fn gdraw_filter_quad(filter: u32, n: u32, constants: u32, rect: u32, colour: u32, _unused: u32, head: u32, stats: u32; slots: u32) -> u32 {
+        gv::filter_quad(&mut mem(), slots, filter, n, constants, rect, colour, head, stats)
+    }
+    // ---- round 5 batch 18 (ffx_glue_other::m5v_w) ----
+    /// `gdraw_DrawIndexedTriangles_00a387e0(r, p, buffers, stats)` -> `eax`
+    /// (stdcall; writes its `p` slot and the original's 0x10-byte frame in
+    /// this shim's).
+    gdraw_DrawIndexedTriangles_00a387e0 @ 0x00a3_87e0 => extern "stdcall" fn gdraw_draw_indexed_triangles(r: u32, p: u32, buffers: u32, stats: u32; slots: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_glue_other::m5v_w::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_glue_other::m5v_w::FRAME;
+        gw::draw_indexed_triangles(&mut mem(), ebp, slots, r, p, buffers, stats)
     }
 }

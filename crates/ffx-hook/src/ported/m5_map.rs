@@ -16,6 +16,9 @@ use ffx_prender::m5m_f::bridge as f;
 use ffx_prender::m5m_g::bridge as g;
 use ffx_prender::m5m_h::bridge as h;
 use ffx_prender::m5m_i::bridge as gi;
+use ffx_prender::m5m_j::bridge as gj;
+use ffx_prender::m5m_k::bridge as gk;
+use ffx_prender::m5m_l::bridge as gl;
 
 ported! {
     // ---- batch 1 (ffx_prender::m5m_a) ----
@@ -528,5 +531,37 @@ ported! {
         let mut frame = StackFrame::<0x42>::new();
         let at = frame.at();
         gi::guide_map_conv_sub(&mut mem(), at + 0x100, at, id, sub)
+    }
+    // ---- round 5 batch 6 (ffx_prender::m5m_j) ----
+    /// `rcuiNumWindowCreate_0093c670(win, value, title, parent)` -> the
+    /// whole part: the original's 8-byte frame (`modf`'s whole part) in
+    /// this shim's.
+    rcuiNumWindowCreate_0093c670 @ 0x0093_c670 => extern "C" fn rcui_num_window_create(win: u32, value: u32, title: u32, parent: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_j::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_j::FRAME;
+        gj::num_window_create(&mut mem(), ebp, win, value, title, parent)
+    }
+    // ---- round 5 batch 7 (ffx_prender::m5m_k) ----
+    /// `rcuiGuideSaveMap_00938d20(m, fd)` -> the last `sceWrite`'s `eax`
+    /// (the original's 0x14-byte frame in this shim's).
+    rcuiGuideSaveMap_00938d20 @ 0x0093_8d20 => extern "C" fn rcui_guide_save_map(m: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_k::MAP_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_k::MAP_FRAME;
+        gk::save_map(&mut mem(), ebp, m, fd)
+    }
+    /// `rcuiGuideSave_009397f0(g, fd)` -> the last `sceWrite`'s `eax` (the
+    /// original's 0x30-byte frame in this shim's).
+    rcuiGuideSave_009397f0 @ 0x0093_97f0 => extern "C" fn rcui_guide_save(g: u32, fd: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_k::SAVE_FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_k::SAVE_FRAME;
+        gk::save(&mut mem(), ebp, g, fd)
+    }
+    // ---- round 5 batch 8 (ffx_prender::m5m_l) ----
+    /// `rcuiMapIdFromCsv_009377e0(name)` -> the id or -1 (the original's
+    /// 0x98-byte frame, its chunk and parser, in this shim's).
+    rcuiMapIdFromCsv_009377e0 @ 0x0093_77e0 => extern "C" fn rcui_map_id_from_csv(name: u32) -> u32 {
+        let mut frame = StackFrame::<{ (ffx_prender::m5m_l::FRAME / 4) as usize }>::new();
+        let ebp = frame.at() + ffx_prender::m5m_l::FRAME;
+        gl::map_id_from_csv(&mut mem(), ebp, name)
     }
 }
