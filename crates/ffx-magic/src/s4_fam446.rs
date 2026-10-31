@@ -1922,3 +1922,64 @@ pub const START_KIND_E: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// Two objects started (no arguments; `ecx` a stack word the starts do
+/// not read): the first (`G` plus the displacement at `+0x15`, part the
+/// byte at `+0x1c`) placed from the block (`layout`), its `+0xe8` the
+/// code's float (`+0x7e`); the second (`G` plus `+0x6e`, part `+0x6b`,
+/// scale `+0x2e`) its `+0xc4` the clock and `+0x104` the callback
+/// (operand `+0x9c`). Returns the clock.
+fn start_pair<G: Game>(g: &mut G, img: &Image, fr: &Frame, layout: (u32, u32)) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let byte = |o: u32| w(o) & 0xff;
+    let block = g.read::<u32>(w(0xc));
+    let first = block + w(0x15);
+    start(g, img, f, 0x20, first, 0x4, byte(0x1c), (0, 0));
+    place(g, block, first, layout);
+    g.write::<u32>(first + 0xe8, w(0x7e));
+    let second = block + w(0x6e);
+    start(g, img, f, 0x83, second, 0x2e, byte(0x6b), (0, 0));
+    let clock2 = g.read::<u32>(block + layout.1);
+    g.write::<u32>(second + 0xc4, clock2);
+    g.write::<u32>(second + 0x104, w(0x9c));
+    Ret::eax(clock2)
+}
+
+/// [`start_pair`] in `magic_0644`: `G + 0x5f0` (part 5, `+0xe8` -5.0)
+/// and `G + 0x2600` (part 0x20).
+///
+/// `magic_0644` 0x10009fc0 (163 bytes; 5 DLLs).
+pub fn start_pair_644<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_pair(g, img, fr, L644)
+}
+
+/// [`start_pair_644`].
+pub const START_PAIR_644: Sig = Sig {
+    len: 163,
+    hash: 0x288f_db15_3d19_61d0,
+    calls: &[
+        (0x20, Callee::Sig(&START_OBJECT_AT)),
+        (0x83, Callee::Sig(&START_OBJECT_AT)),
+    ],
+    imports: &[],
+};
+
+/// [`start_pair`] in `magic_0565`: the second object `G + 0x2730` (part
+/// 0x21).
+///
+/// `magic_0565` 0x10006190 (163 bytes; 5 DLLs).
+pub fn start_pair_565<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    start_pair(g, img, fr, L446)
+}
+
+/// [`start_pair_565`].
+pub const START_PAIR_565: Sig = Sig {
+    len: 163,
+    hash: 0xa640_b241_7371_c5a2,
+    calls: &[
+        (0x20, Callee::Sig(&START_OBJECT_AT)),
+        (0x83, Callee::Sig(&START_OBJECT_AT)),
+    ],
+    imports: &[],
+};

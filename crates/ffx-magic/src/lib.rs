@@ -1144,6 +1144,8 @@ ports! {
     "part frame (counted)" => s4_small::PART_FRAME_COUNTED, s4_small::part_frame_counted;
     "0644 mode set-up" => s4_fam446::MODE_SETUP_644, s4_fam446::mode_setup;
     "0565 mode set-up" => s4_fam446::MODE_SETUP_565, s4_fam446::mode_setup;
+    "0644 start pair" => s4_fam446::START_PAIR_644, s4_fam446::start_pair_644;
+    "0565 start pair" => s4_fam446::START_PAIR_565, s4_fam446::start_pair_565;
     "part drop (unlock)" => s4_small::PART_DROP_UNLOCK, s4_small::part_drop_unlock;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;

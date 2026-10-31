@@ -2673,3 +2673,30 @@ fn fam446_mode_setups_565_644() {
         }
     }
 }
+
+/// The two-object starts of `magic_0565` and `magic_0644`.
+#[test]
+fn fam446_start_pairs() {
+    for (n, rva) in [(565u16, 0x6190u32), (644, 0x9fc0)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let soa = t.img.rel32_target(f + 0x20);
+        t.set_u32(t.img.word(soa + 0x04), SCRATCH + 0x200);
+        t.set_u32(t.img.word(soa + 0x5e), SCRATCH + 0x300);
+        t.stub(941, |_, _| SCRATCH + 0x400);
+        t.stub(714, |_, _| 0x714);
+        let pa = t.img.rel32_target(soa + 0x9d);
+        let free = t.img.word(pa + 0x04);
+        let block = SCRATCH + 0x1_0000;
+        t.set_u32(t.img.word(f + 0xc), block);
+        for count in [3u16, 1, 0] {
+            t.write(block, &vec![0x3c; 0xec00]);
+            t.set_u16(free, count);
+            let c = Call {
+                ecx: 0x0bad_0ecc,
+                ..Call::default()
+            };
+            t.check_entry(f, c, &[], Eax::Checked);
+        }
+    }
+}
