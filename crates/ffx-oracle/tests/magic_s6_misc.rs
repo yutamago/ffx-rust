@@ -1427,3 +1427,38 @@ fn nodes_released() {
         });
     }
 }
+
+/// Row 306: `magic_0515`'s parts' axes for no parts (the cookie word in
+/// `eax`), one and three parts.
+#[test]
+fn parts_axes_turned() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x26f0);
+    rec_mem(&mut t, 247, 2, 12, Some(0));
+    t.stub(233, |m, a| {
+        for i in 0..4 {
+            let x = f32::from_bits(m.r32(a[1] + 4 * i)) * f32::from_bits(a[2]);
+            m.w32(a[0] + 4 * i, x.to_bits());
+        }
+        0x0233_0000 ^ a[0]
+    });
+    let base = SCRATCH + 0x1000;
+    for (k, n) in [0u32, 1, 3].into_iter().enumerate() {
+        let k = k as u32;
+        t.write(base, &varied(0x400, k));
+        for i in 0..n {
+            let p = base + 0xac + 0xcc * i;
+            t.set_u16(p - 0x96, (0x1234 * (i + 1) + k) as u16);
+            t.set_u32(p - 0x84, (1.5 + i as f32).to_bits());
+        }
+        let c = Call {
+            ecx: base,
+            edx: n,
+            ..Call::default()
+        };
+        scrub(&mut t);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            Ret::eax(s6_misc::parts_axes(g, img, fr))
+        });
+    }
+}

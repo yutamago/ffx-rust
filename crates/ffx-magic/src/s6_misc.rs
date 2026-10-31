@@ -1968,3 +1968,47 @@ pub const NODE_RELEASE: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// Parts' three axes turned (internal: `ecx` = the parts' base, `edx` =
+/// the count; a /GS frame): for each part `p` (0xcc bytes from `+0xac`)
+/// a rotation matrix `M` (a local) of the angle `-0x4000 - p[-0x96]`
+/// (an `i16`; slot 247), then its three rows, scaled by `p[-0x84]`, into
+/// `p-0x20`, `p-0x10` and `p` (slot 233 each), and `p+0x10..+0x1c` a
+/// copy of `p-0x70..`. Returns slot 233's `eax` (the frame's cookie
+/// word `*G_COOKIE ^ ebp` for no parts).
+///
+/// `magic_0515` 0x100026f0 (225 bytes, `ecx`/`edx`; 4 DLLs).
+pub fn parts_axes<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
+    let f = fr.at;
+    let ebp = fr.esp.wrapping_sub(4);
+    let mut eax = g.read::<u32>(op(img, f, 0x7)) ^ ebp;
+    let m = ebp.wrapping_sub(0x44);
+    let mut p = fr.ecx.wrapping_add(0xac);
+    for _ in 0..fr.edx {
+        let a = i32::from(g.read::<i16>(p.wrapping_sub(0x96)));
+        let angle = 0xffff_c000u32.wrapping_sub(a.cast_unsigned());
+        slot(g, img, f, 0x36, 247, &[m, angle]);
+        let s = g.read::<u32>(p.wrapping_sub(0x84));
+        for (t, out, row) in [
+            (0x5bu32, 0x20u32, 0u32),
+            (0x82, 0x10, 0x10),
+            (0xa0, 0, 0x20),
+        ] {
+            eax = slot(g, img, f, t, 233, &[p.wrapping_sub(out), m + row, s]).eax;
+        }
+        for o in [0u32, 4, 8, 0xc] {
+            let x = g.read::<u32>(p.wrapping_sub(0x70).wrapping_add(o));
+            g.write::<u32>(p.wrapping_add(0x10 + o), x);
+        }
+        p = p.wrapping_add(0xcc);
+    }
+    eax
+}
+
+/// [`parts_axes`] (the `rel32`: `__security_check_cookie`).
+pub const PARTS_AXES: Sig = Sig {
+    len: 225,
+    hash: 0xeae1_2499_7413_c9bc,
+    calls: &[(0xd9, Callee::Any)],
+    imports: &[],
+};
