@@ -7653,3 +7653,210 @@ fn r3b27_window1612_frame_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn r3b28_copy_dvd_files_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x5eed_2801);
+        // the buffers, made once (the oracle's heap is not reset)
+        let pattern: Vec<u8> = (0..0x10_0100u32)
+            .map(|i| (i * 13 + (i >> 8)) as u8)
+            .collect();
+        let good = t.alloc(&pattern);
+        // read back wrong: early in the bytes, or only in a 0x20 tail's last
+        let mut other = pattern.clone();
+        other[0x18] ^= 0x41;
+        let bad = t.alloc(&other);
+        let mut other = pattern.clone();
+        other[0x1f] ^= 0x41;
+        let bad_last = t.alloc(&other);
+        let back = t.zeros(0x10_0100);
+        let header = t.alloc(&pattern[..0x20]);
+        let mut wrong = pattern[..0x20].to_vec();
+        wrong[0x1c] ^= 1;
+        let wrong = t.alloc(&wrong);
+        let name = t.alloc(b"pfs0:/ffx/master/x.bin\0");
+        let code = t.alloc(b"BASLUS-20312\0");
+        let text = t.alloc(b"hdd0:BASLUS-20312,ffxpassf\0");
+        for case in 0..17u32 {
+            t.reset();
+            let r = rng.next();
+            // heads: a small file and one of a chunk and a tail (12: the big
+            // one first; 14: a file of exactly a chunk)
+            let sizes = match case {
+                12 => [0x10_0020, 0x30],
+                14 => [0x30, 0x10_0000],
+                _ => [0x30, 0x10_0020],
+            };
+            let heads = [
+                rng.next() & 0xffff,
+                sizes[0],
+                0,
+                rng.next() & 0xffff,
+                sizes[1],
+                0,
+            ];
+            t.write(
+                t.rebase(hdc::HEADS),
+                &heads
+                    .iter()
+                    .flat_map(|w| w.to_le_bytes())
+                    .collect::<Vec<_>>(),
+            );
+            t.g32(hdc::HEAD_COUNT, if case == 11 { 0 } else { 2 });
+            t.g32(hdc::TOTAL, r & 0xfff);
+            // the done count: below, at (0x100030: the second file's first
+            // chunk) and above the sums
+            t.g32(
+                hdc::DONE,
+                [0x10_0030u32, 0x10_0000, 0x7fff_ffff][(case % 3) as usize],
+            );
+            t.g32(hdc::BUFFERS[0], good);
+            t.g32(hdc::BUFFERS[1], back);
+            t.stub(hdc::PARTITION_NAME, false, 1, 0, code);
+            t.fill_import(hdc::SPRINTF_IAT, 4, 0, None, 26, text, r ^ 1);
+            t.stub(hdc::RMODE_GET, false, 1, 0, u32::from(case != 10));
+            let one: Vec<u32> = [0usize, 3, 6, 8]
+                .iter()
+                .map(|&k| t.rebase(hdc::COPY_MSG[k]))
+                .collect();
+            let four = t.rebase(hdc::COPY_MSG[4]);
+            t.stub_by_counts(hdc::DBG_PRINTF, &one, four, r ^ 2);
+            // the conf header per wait: wrong at the first (1), none (3),
+            // wrong at the second file's attempt (15; 16: then the open fails)
+            let mut headers = vec![header; 64];
+            match case {
+                1 => headers[0] = wrong,
+                3 => headers[0] = 0,
+                15 | 16 => headers[2] = wrong,
+                _ => {}
+            }
+            let header_at = t.rebase(hdc::DISK_HEADER);
+            t.stub_store_seq0(hdc::WAIT_SEMA_BG, header_at, &headers, r ^ 3);
+            t.stub(hdc::HDD_NAME, false, 1, 0, name);
+            t.stub_seq(
+                hdc::SCE_OPEN,
+                3,
+                0,
+                &[
+                    if case == 2 { 0xffff_fffe } else { 9 },
+                    if case == 16 { 0xffff_fffe } else { 9 },
+                    9,
+                    9,
+                    9,
+                    9,
+                    9,
+                    9,
+                ],
+            );
+            // writes: negative ones in 8 (once), 9 and 12 (always)
+            let mut writes = vec![0x40u32; 48];
+            match case {
+                8 => writes[0] = 0xffff_fffb,
+                9 | 12 => writes.iter_mut().for_each(|w| *w = 0xffff_fffb),
+                _ => {}
+            }
+            t.stub_seq(hdc::SCE_WRITE, 3, 0, &writes);
+            // seeks: a failing one in 7
+            let mut seeks = vec![0u32; 64];
+            if case == 7 {
+                seeks[1] = 0xffff_ffff;
+            }
+            t.stub_seq(hdc::SCE_LSEEK, 3, 0, &seeks);
+            // the reads back: the wrong bytes for the first few (4: twice in
+            // the chunk; 5: five times, past the retries; 6: the tail once,
+            // in its last byte; 13: the tail four times); 14: the first
+            // reads nothing (0 = no copy, 0 returned)
+            let bads = match case {
+                4 => vec![1usize, 2],
+                5 => vec![1, 2, 3, 4, 5],
+                6 => vec![2],
+                13 => vec![2, 3, 4, 5],
+                _ => vec![],
+            };
+            let srcs: Vec<u32> = (0..64)
+                .map(|k| match (case, k) {
+                    (14, 0) => 0,
+                    (6, _) if bads.contains(&k) => bad_last,
+                    _ if bads.contains(&k) => bad,
+                    _ => good,
+                })
+                .collect();
+            t.stub_read_from(hdc::SCE_READ, &srcs);
+            t.stub(hdc::SCE_CLOSE, false, 1, 0, r ^ 4);
+            t.stub(hdc::NOP_FC60, false, 2, 0, 0);
+            let removes = match case {
+                9 => [0, 1, 1, 1],
+                13 => [1, 1, 1, 1],
+                _ => [0, 0, 1, 1],
+            };
+            t.stub_seq(hdc::SCE_REMOVE, 1, 0, &removes);
+            t.check_fs(
+                &format!("copy dvd files #{case}"),
+                0x0077_7980,
+                &[],
+                0x6c,
+                4,
+                |m, ebp, _| Out::U32(hdb::copy_dvd_files(m, ebp)),
+            );
+        }
+    });
+}
+
+impl Twins {
+    /// A recording stub over `sym` (no words) that first stores
+    /// `values[k]` at `at` on its `k`-th call; returns `ret`.
+    fn stub_store_seq0(&mut self, sym: u32, at: u32, values: &[u32], ret: u32) {
+        let log_stub = self.stub_code(sym, false, 0, 0, ret);
+        let ctr = self.words(&[0]);
+        let tbl = self.words(values);
+        let mut c = vec![0xa1];
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x04, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov eax, [tbl + eax*4]
+        c.push(0xa3);
+        c.extend(at.to_le_bytes()); // mov [at], eax
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.push(0xe9);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // jmp log_stub
+        let addr = self.cave_code(&c);
+        self.jump(sym, addr);
+    }
+}
+
+impl Twins {
+    /// A `sceRead(fd, buf, n)` stub over `sym`: logs the three words,
+    /// copies `n` bytes from `srcs[k]` on its `k`-th call and returns `n`
+    /// (a 0 source: nothing copied, 0 returned).
+    fn stub_read_from(&mut self, sym: u32, srcs: &[u32]) {
+        let log_stub = self.stub_code(sym, false, 3, 0, 0);
+        let ctr = self.words(&[0]);
+        let tbl = self.words(srcs);
+        let mut c = Vec::new();
+        for _ in 0..3 {
+            c.extend([0xff, 0x74, 0x24, 0x0c]); // push dword [esp+0xc]
+        }
+        c.push(0xe8);
+        let here = self.cave_next + c.len() as u32 + 4;
+        c.extend(log_stub.wrapping_sub(here).to_le_bytes()); // call log_stub
+        c.extend([0x83, 0xc4, 0x0c]); // add esp, 0xc
+        c.extend([0x56, 0x57, 0x51]); // push esi; push edi; push ecx
+        c.push(0xa1);
+        c.extend(ctr.to_le_bytes()); // mov eax, [ctr]
+        c.extend([0x8b, 0x34, 0x85]);
+        c.extend(tbl.to_le_bytes()); // mov esi, [tbl + eax*4]
+        c.extend([0xff, 0x05]);
+        c.extend(ctr.to_le_bytes()); // inc dword [ctr]
+        c.extend([0x85, 0xf6, 0x74, 0x12]); // test esi, esi; jz none
+        c.extend([0x8b, 0x7c, 0x24, 0x14]); // mov edi, [esp+0x14]
+        c.extend([0x8b, 0x4c, 0x24, 0x18]); // mov ecx, [esp+0x18]
+        c.extend([0xf3, 0xa4]); // rep movsb
+        c.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc3]); // mov eax, [esp+0xc]; ret
+        c.extend([0x59, 0x5f, 0x5e, 0x31, 0xc0, 0xc3]); // none: pops; xor eax, eax; ret
+        let at = self.cave_code(&c);
+        self.jump(sym, at);
+    }
+}

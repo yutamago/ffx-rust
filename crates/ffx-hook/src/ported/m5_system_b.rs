@@ -1354,6 +1354,13 @@ ported! {
     TOMkpWindow1612Frame_008eadf0 @ 0x008e_adf0 => extern "C" fn window1612_frame(packet: u32, x: u32, y: u32, w: u32, h: u32; slots: u32) -> u32 {
         mn::window1612_frame(&mut mem(), [packet, x, y, w, h], slots)
     }
+
+    // ---- round 3, batch 28: the installer's copy of the disc's files ----
+    /// `()`: frame `ebp - 0x6c` (the cookie at `ebp - 4`).
+    hdd_CopyDvdFiles_00777980 @ 0x0077_7980 => extern "C" fn copy_dvd_files() -> u32 {
+        let mut f = StackFrame::<0x1b>::new();
+        hd::copy_dvd_files(&mut mem(), f.at() + 0x6c)
+    }
 }
 
 /// The name that turns [`loader_thread_main`] off (`FFX_HOOK_DISABLE`) or

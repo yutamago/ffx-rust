@@ -478,6 +478,26 @@ pub const CHECK_MSG: [u32; 6] = [
     0x00b5_3df8,
 ];
 
+/// `hdd_CopyDvdFiles_00777980`'s: `TkWaitSemaBGThread`, `sceWrite`, the
+/// progress words (sector, size) the background thread reads, and its
+/// texts `"hdd_file_cnt=%d"`, "dvd file copy", "system conf ffx", "make
+/// %s", "sector=%d size=0x%x%x", "veryfy err", "w err=%d", "system conf
+/// not ffx", "Can't open file %s".
+pub const WAIT_SEMA_BG: u32 = 0x0088_8880;
+pub const SCE_WRITE: u32 = 0x0062_fdc0;
+pub const COPY_PROGRESS: [u32; 2] = [0x0112_a800, 0x0112_a804];
+pub const COPY_MSG: [u32; 9] = [
+    0x00b5_3a70,
+    0x00b5_3a84,
+    0x00b5_1e34,
+    0x00b5_3a94,
+    0x00b5_3ab4,
+    0x00b5_3acc,
+    0x00b5_3ae0,
+    0x00b5_1e48,
+    0x00b5_3aa0,
+];
+
 /// The originals over game memory.
 pub mod bridge {
     use super::{
@@ -2688,5 +2708,286 @@ pub mod bridge {
         cdecl(h, USER_FREE, &[res]);
         h.write(results, 0u32);
         0
+    }
+    /// What one attempt at a file of `hdd_CopyDvdFiles_00777980` leads to.
+    enum CopyStep {
+        /// The next head (`0x00777e20`).
+        Next,
+        /// The head again from its size and `hdd_rmode_get` (`0x00777e07`).
+        Again(u32),
+        /// The function's result.
+        Done(u32),
+    }
+
+    /// The size word of head `i`.
+    fn head_size(h: &impl Host, i: u32) -> u32 {
+        h.read(h.rebase(HEADS).wrapping_add(12 * i + 4))
+    }
+
+    /// Too many verify errors (`0x00777dd6`): the file closed and removed
+    /// (failing: 1), else the head again.
+    fn copy_give_up(h: &mut impl Host, ebp: u32, fd: u32) -> CopyStep {
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        let name: u32 = h.read(ebp.wrapping_sub(0x6c));
+        if cdecl(h, super::SCE_REMOVE, &[name]) != 0 {
+            return CopyStep::Done(1);
+        }
+        CopyStep::Again(h.read(ebp.wrapping_sub(0x48)))
+    }
+
+    /// `hdd_CopyDvdFiles_00777980`'s attempt at head `k` (`0x00777a42`):
+    /// the background thread waited on (state 2), the disc's system conf
+    /// (`0x0112a064`, none: 0) compared with the first buffer's 32 bytes
+    /// (different: "not ffx", back to head 0), the file made
+    /// (`get_hdd_name`, `sceOpen(name, 0x603, 0x1ff)`; failing: 0), its
+    /// size logged, the copied heads before it summed (`ebp - 0x54`); then
+    /// 1 MiB chunks and the rest: the progress words set (state 1, the
+    /// done count `0x0112a7ac` raised to the sum), written, read back and
+    /// compared, a difference rewinding and retrying (more than 3: the
+    /// file closed and removed, again). The end (`0x00777d4e`): closed,
+    /// `0x0062fc60(name buffer, 0)`; a negative result prints "w err",
+    /// counts (3: 1) and removes the file (failing: 1) to try again.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    fn copy_attempt(h: &mut impl Host, ebp: u32, k: u32, m: &[u32; 9]) -> CopyStep {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let heads = h.rebase(HEADS);
+        let state = h.rebase(BYTE_7FC);
+        h.write(state, 2u8);
+        cdecl(h, super::WAIT_SEMA_BG, &[]);
+        let header: u32 = h.read(h.rebase(super::DISK_HEADER));
+        if header == 0 {
+            return CopyStep::Done(0);
+        }
+        let first: u32 = h.read(h.rebase(BUFFERS[0]));
+        if !same_bytes(h, first, header, 0x20) {
+            cdecl(h, DBG_PRINTF, &[m[7]]);
+            h.write(f(0x48), 0u32);
+            h.write(f(0x64), 0u32);
+            return CopyStep::Again(0);
+        }
+        cdecl(h, DBG_PRINTF, &[m[2]]);
+        let name = cdecl(h, super::HDD_NAME, &[k]);
+        h.write(f(0x6c), name);
+        cdecl(h, DBG_PRINTF, &[m[3], name]);
+        let fd = cdecl(h, super::SCE_OPEN, &[name, 0x603, 0x1ff]);
+        if fd.cast_signed() < 0 {
+            cdecl(h, DBG_PRINTF, &[m[8], name]);
+            return CopyStep::Done(0);
+        }
+        let sector: u32 = h.read(heads.wrapping_add(12 * k));
+        h.write(f(0x4c), sector);
+        let size: u32 = h.read(f(0x50));
+        let sign = if size.cast_signed() < 0 { u32::MAX } else { 0 };
+        cdecl(h, DBG_PRINTF, &[m[4], sector, sign, size]);
+        let mut acc = 0u32;
+        h.write(f(0x58), 0u32);
+        h.write(f(0x54), acc);
+        for i in 0..k.cast_signed().max(0).cast_unsigned() {
+            if head_size(h, i) != 0 && cdecl(h, RMODE_GET, &[i]) != 0 {
+                acc = acc.wrapping_add(head_size(h, i));
+                h.write(f(0x54), acc);
+            }
+        }
+        let mut size: u32 = h.read(f(0x50));
+        let mut sector: u32 = h.read(f(0x4c));
+        let done_at = h.rebase(DONE);
+        let [progress_sector, progress_size] = super::COPY_PROGRESS.map(|s| h.rebase(s));
+        let back_mb = 0x10_0000u32.wrapping_neg();
+        let r = 'end: {
+            if size.cast_signed() > 0x10_0000 {
+                loop {
+                    acc = acc.wrapping_add(0x10_0000);
+                    h.write(f(0x54), acc);
+                    let done: u32 = h.read(done_at);
+                    if acc.cast_signed() > done.cast_signed() {
+                        h.write(done_at, done.wrapping_add(0x10_0000));
+                    }
+                    h.write(progress_sector, sector);
+                    h.write(progress_size, 0x10_0000u32);
+                    h.write(state, 1u8);
+                    cdecl(h, super::WAIT_SEMA_BG, &[]);
+                    loop {
+                        let a: u32 = h.read(f(0x60));
+                        let r = cdecl(h, super::SCE_WRITE, &[fd, a, 0x10_0000]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let r = cdecl(h, super::SCE_LSEEK, &[fd, back_mb, 1]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let b: u32 = h.read(f(0x5c));
+                        let r = cdecl(h, SCE_READ, &[fd, b, 0x10_0000]);
+                        if r != 0x10_0000 {
+                            break 'end r;
+                        }
+                        if same_bytes(h, a, b, 0x10_0000) {
+                            break;
+                        }
+                        cdecl(h, DBG_PRINTF, &[m[5]]);
+                        let r = cdecl(h, super::SCE_LSEEK, &[fd, back_mb, 1]);
+                        if r.cast_signed() < 0 {
+                            break 'end r;
+                        }
+                        let tries = h.read::<u32>(f(0x58)).wrapping_add(1);
+                        h.write(f(0x58), tries);
+                        if tries.cast_signed() > 3 {
+                            return copy_give_up(h, ebp, fd);
+                        }
+                    }
+                    size = h.read::<u32>(f(0x50)).wrapping_sub(0x10_0000);
+                    sector = h.read::<u32>(f(0x4c)).wrapping_add(0x200);
+                    h.write(f(0x50), size);
+                    h.write(f(0x4c), sector);
+                    if size.cast_signed() <= 0 {
+                        break 'end 0x10_0000;
+                    }
+                    acc = h.read(f(0x54));
+                    if size.cast_signed() <= 0x10_0000 {
+                        break;
+                    }
+                }
+            }
+            let sum = h.read::<u32>(f(0x54)).wrapping_add(size);
+            let done: u32 = h.read(done_at);
+            if sum.cast_signed() > done.cast_signed() {
+                h.write(done_at, done.wrapping_add(size));
+            }
+            h.write(progress_sector, sector);
+            h.write(progress_size, size);
+            h.write(state, 1u8);
+            cdecl(h, super::WAIT_SEMA_BG, &[]);
+            let a: u32 = h.read(f(0x60));
+            let r = cdecl(h, super::SCE_WRITE, &[fd, a, size]);
+            if r.cast_signed() < 0 {
+                break 'end r;
+            }
+            let mut back = size.wrapping_neg();
+            h.write(f(0x4c), back);
+            loop {
+                let r = cdecl(h, super::SCE_LSEEK, &[fd, back, 1]);
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+                let b: u32 = h.read(f(0x5c));
+                let r = cdecl(h, SCE_READ, &[fd, b, size]);
+                if r != size {
+                    break 'end r;
+                }
+                let a: u32 = h.read(f(0x60));
+                if same_bytes(h, a, b, size) {
+                    break 'end r;
+                }
+                cdecl(h, DBG_PRINTF, &[m[5]]);
+                let back_now: u32 = h.read(f(0x4c));
+                let r = cdecl(h, super::SCE_LSEEK, &[fd, back_now, 1]);
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+                let tries = h.read::<u32>(f(0x58)).wrapping_add(1);
+                h.write(f(0x58), tries);
+                if tries.cast_signed() > 3 {
+                    return copy_give_up(h, ebp, fd);
+                }
+                size = h.read(f(0x50));
+                let a: u32 = h.read(f(0x60));
+                let r = cdecl(h, super::SCE_WRITE, &[fd, a, size]);
+                back = h.read(f(0x4c));
+                if r.cast_signed() < 0 {
+                    break 'end r;
+                }
+            }
+        };
+        cdecl(h, super::SCE_CLOSE, &[fd]);
+        cdecl(h, super::NOP_FC60, &[f(0x44), 0]);
+        if r.cast_signed() >= 0 {
+            return CopyStep::Next;
+        }
+        cdecl(h, DBG_PRINTF, &[m[6], r]);
+        let fails = h.read::<u32>(f(0x64)).wrapping_add(1);
+        h.write(f(0x64), fails);
+        if fails.cast_signed() >= 3 {
+            return CopyStep::Done(1);
+        }
+        let name: u32 = h.read(f(0x6c));
+        if cdecl(h, super::SCE_REMOVE, &[name]) != 0 {
+            return CopyStep::Done(1);
+        }
+        CopyStep::Again(h.read(f(0x48)))
+    }
+
+    /// `hdd_CopyDvdFiles_00777980()` with its frame at `ebp` (name buffer
+    /// `ebp - 0x44`, the cookie at `ebp - 4`): the installer's copy of the
+    /// disc's files to the HDD. The device name (`"hdd0:%s,%s"`, the
+    /// product code and the word its call left on the stack); the copied
+    /// heads' sizes added to `0x0112a524`; `"hdd_file_cnt"`, the two buffers
+    /// (`ebp - 0x60`, `ebp - 0x5c`), "dvd file copy"; each head with a size
+    /// and `hdd_rmode_get` set attempted (see `copy_attempt`); 0 at the
+    /// end.
+    #[allow(clippy::many_single_char_names)]
+    pub fn copy_dvd_files(h: &mut impl Host, ebp: u32) -> u32 {
+        let f = |o: u32| ebp.wrapping_sub(o);
+        let m = super::COPY_MSG.map(|s| h.rebase(s));
+        let dev = h.rebase(super::MOUNT_DEVICE);
+        let code = cdecl(h, super::PARTITION_NAME, &[dev]);
+        let fmt = h.rebase(super::INIT_SUB_MSG[17]);
+        let sprintf: u32 = h.read(h.rebase(super::SPRINTF_IAT));
+        h.call(sprintf, Conv::Cdecl, &[f(0x44), fmt, code, dev]);
+        let n: u32 = h.read(h.rebase(HEAD_COUNT));
+        h.write(f(0x68), n);
+        if n.cast_signed() > 0 {
+            let total_at = h.rebase(TOTAL);
+            let mut total: u32 = h.read(total_at);
+            for i in 0..n {
+                if cdecl(h, RMODE_GET, &[i]) != 0 {
+                    total = total.wrapping_add(head_size(h, i));
+                }
+            }
+            h.write(total_at, total);
+        }
+        cdecl(h, DBG_PRINTF, &[m[0], n]);
+        let [a, b] = BUFFERS.map(|s| h.rebase(s));
+        let a: u32 = h.read(a);
+        h.write(f(0x60), a);
+        let b: u32 = h.read(b);
+        h.write(f(0x5c), b);
+        cdecl(h, DBG_PRINTF, &[m[1]]);
+        let mut k = 0u32;
+        h.write(f(0x48), k);
+        if n.cast_signed() <= 0 {
+            return 0;
+        }
+        let mut fresh = true;
+        loop {
+            let attempt = if fresh {
+                h.write(f(0x64), 0u32);
+                let size = head_size(h, k);
+                h.write(f(0x50), size);
+                size != 0 && cdecl(h, RMODE_GET, &[k]) != 0
+            } else {
+                cdecl(h, RMODE_GET, &[k]) != 0
+            };
+            if attempt {
+                match copy_attempt(h, ebp, k, &m) {
+                    CopyStep::Next => {}
+                    CopyStep::Done(r) => return r,
+                    CopyStep::Again(again) => {
+                        k = again;
+                        let size = head_size(h, k);
+                        h.write(f(0x50), size);
+                        if size != 0 {
+                            fresh = false;
+                            continue;
+                        }
+                    }
+                }
+            }
+            k = k.wrapping_add(1);
+            h.write(f(0x48), k);
+            if k.cast_signed() >= n.cast_signed() {
+                return 0;
+            }
+            fresh = true;
+        }
     }
 }
