@@ -4092,3 +4092,53 @@ fn count_down_objects_and_sound_at() {
     t.write(obj, &[0x5a; 0x130]);
     t.check_entry(f, Call::default(), &[obj], Eax::Checked);
 }
+
+#[test]
+fn object_models_and_key_curves() {
+    let Some(mut t) = twin(191) else { return };
+    let f = t.at(0x1bb0);
+    recs(
+        &mut t,
+        &[(446, 2), (442, 3), (443, 2), (440, 4), (450, 2), (449, 2)],
+    );
+    let base = SCRATCH + 0x1000;
+    for i in 0..8 {
+        t.set_u32(base + 0x1a0 + 4 * i, 0x0a00_0000 + i);
+    }
+    t.set_u32(op(&t, f, 0x17), base);
+    t.set_u32(op(&t, f, 0x5d), base + 4);
+    let obj = SCRATCH + 0x100;
+    t.write(obj, &[0x22; 0x140]);
+    t.set_u32(obj + 0xac, 2);
+    t.set_u32(obj + 0x2c + 0x20, 5);
+    t.check_entry(f, Call::default(), &[obj], Eax::Checked);
+    drop(t);
+    let Some(mut t) = twin(55) else { return };
+    let f = t.at(0x3000);
+    let keys = SCRATCH + 0x100;
+    for i in 0..10u32 {
+        t.set_u32(keys - 0x20 + 16 * i, (1.5f32 * i as f32 - 3.0).to_bits());
+    }
+    for x in [
+        0.0f32,
+        0.25,
+        0.5,
+        1.25,
+        1.75,
+        3.5,
+        4.75,
+        5.0,
+        5.2,
+        5.9,
+        -0.5,
+        -1.5,
+        f32::NAN,
+    ] {
+        let c = Call {
+            ecx: keys,
+            ..Call::default()
+        }
+        .with_xmm(&[Xmm::f32(x)]);
+        t.check(f, c, &[], Eax::Checked, s4_small::key_curve);
+    }
+}

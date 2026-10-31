@@ -8797,3 +8797,126 @@ pub const START_PART_SOUND_AT: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// An object given its model and sprite set (cdecl `(obj)`): with `G` the
+/// word at operand `+0x17` and `k` the word `obj + 0x2c + 16 *
+/// obj[0xac]`, the model `m = G[0x1a0 + 4k]`; slot 446 `(m, 0)`, slot
+/// 442 `(obj, m, 6)`, slot 443 `(obj, 0x10)`, the position `+0xd0` (0, 0,
+/// -4, 0) and colour `+0x130` (0.3, 0.3, 0.3, 0), slot 440 `(G, obj, 0,
+/// 2)`, then slots 450 and 449 give it its two callbacks. Each call sees
+/// the words the earlier ones left. Returns slot 449's `eax`.
+///
+/// `magic_0191` 0x10001bb0 (230 bytes; 2 DLLs).
+pub fn object_model_and_callbacks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let obj = fr.arg(g, 0);
+    let at = |o: u32| obj.wrapping_add(o);
+    let which = g.read::<u32>(at(0xac));
+    let k = g.read::<u32>(at(0x2c).wrapping_add(which.wrapping_mul(16)));
+    let base = g.read::<u32>(op(img, f, 0x17));
+    let m = g.read::<u32>(base.wrapping_add(0x1a0).wrapping_add(k.wrapping_mul(4)));
+    let mut words = vec![m, 0];
+    slot_call(g, img, f, (0x23, 446), &words);
+    words.splice(0..0, [obj, m, 6]);
+    slot_call(g, img, f, (0x31, 442), &words);
+    words.splice(0..0, [obj, 0x10]);
+    // call width: 7 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x42, 443), &words);
+    let base = g.read::<u32>(op(img, f, 0x5d));
+    words.splice(0..0, [base, obj, 0, 2]);
+    let place = [0, 0, 0xc080_0000, 0];
+    let colour = [0x3e99_999a, 0x3e99_999a, 0x3e99_999a, 0];
+    for (i, (p, c)) in (0u32..).zip(place.into_iter().zip(colour)) {
+        g.write::<u32>(at(0xd0 + 4 * i), p);
+        g.write::<u32>(at(0x130 + 4 * i), c);
+    }
+    // call width: 11 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0x52, 440), &words);
+    words.splice(0..0, [obj, op(img, f, 0xbf)]);
+    // call width: 13 (the earlier calls' words stay on the stack)
+    slot_call(g, img, f, (0xba, 450), &words);
+    words.splice(0..0, [obj, op(img, f, 0xd2)]);
+    // call width: 15 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0xcd, 449), &words))
+}
+
+/// [`object_model_and_callbacks`].
+pub const OBJECT_MODEL_AND_CALLBACKS: Sig = Sig {
+    len: 230,
+    hash: 0xf5fc_3a99_5393_f9fd,
+    calls: &[],
+    imports: &[],
+};
+
+/// A value on a curve of six keys (internal, `ecx` = the keys, 16 bytes
+/// apart; `xmm0` = the time `t`): key `i = trunc(t)` and the next (key 5
+/// is the last), `frac = t - i`. Before the half (`frac < H`, operand
+/// `+0x28`) the start is pulled toward the previous key's mean with the
+/// next, after it the end toward the mean of the start and the key after
+/// the next (key 5 at most); then the two are blended by `frac` (exactly
+/// the start at `frac == 0`). Returns the value in `xmm0` (`eax` keeps
+/// the key index doubled with `lahf`'s flags in `ah`).
+///
+/// `magic_0055` 0x10003000 (231 bytes; 2 DLLs).
+pub fn key_curve<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{add, cvt, div, mul, sub};
+    let f = fr.at;
+    let keys = fr.ecx;
+    let key = |g: &G, i: u32| f32::from_bits(g.read::<u32>(keys.wrapping_add(i.wrapping_mul(16))));
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(op(img, f, o)));
+    let t = fr.xmm_f32(0);
+    let i = crate::s4_summon::trunc(t);
+    let mut start = key(g, i);
+    let mut eax = i.wrapping_mul(2);
+    let mut end = if i == 5 {
+        start
+    } else {
+        eax = i.wrapping_add(1).wrapping_mul(2);
+        key(g, i.wrapping_add(1))
+    };
+    let half = k(g, 0x28);
+    let frac = sub(t, cvt(i));
+    // comiss H, frac; jbe: from the half on (NaN included)
+    if half > frac {
+        if i != 0 {
+            eax = i.wrapping_sub(1).wrapping_mul(2);
+            let pull = mul(add(key(g, i.wrapping_sub(1)), end), half);
+            let span = div(k(g, 0x44), sub(half, frac));
+            start = add(div(sub(pull, start), span), start);
+        }
+    } else {
+        let j = if i.cast_signed() >= 4 {
+            5
+        } else {
+            i.wrapping_add(2)
+        };
+        let span = div(k(g, 0x86), sub(frac, k(g, 0x91)));
+        let pull = mul(add(key(g, j), start), half);
+        end = add(end, div(sub(pull, end), span));
+    }
+    // ucomiss frac, 0.0; lahf: ah = ZF, PF, CF and bit 1
+    let ah: u32 = if frac.is_nan() {
+        0x47
+    } else if frac == 0.0 {
+        0x42
+    } else if frac < 0.0 {
+        0x03
+    } else {
+        0x02
+    };
+    let eax = (eax & !0xff00) | (ah << 8);
+    let v = if ah == 0x42 {
+        add(0.0, start)
+    } else {
+        add(div(sub(end, start), div(k(g, 0xc4), frac)), start)
+    };
+    Ret::xmm0(crate::Xmm::f32(v), eax)
+}
+
+/// [`key_curve`].
+pub const KEY_CURVE: Sig = Sig {
+    len: 231,
+    hash: 0xa53b_50d7_d70a_025e,
+    calls: &[],
+    imports: &[],
+};
