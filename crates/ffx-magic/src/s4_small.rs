@@ -6092,3 +6092,91 @@ pub const NODE_FROM_ARGS: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// One step of a falling particle (cdecl `(p)`): its time `+0x34` steps
+/// by `+0x38`; below `K` (operand `+0x20`, an `f64`) it stops (`+0x28` 0);
+/// else `+0x38` grows by `+0x3c`, the place `+0x0..+0x8` moves by the
+/// speed `+0x10..+0x18` and the speed by `+0x1c..+0x24`. Returns `p`.
+///
+/// `magic_0515` 0x10003980 (155 bytes; 4 DLLs).
+pub fn particle_fall<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::add;
+    let p = fr.arg(g, 0);
+    let fl = |g: &G, o: u32| f32::from_bits(g.read::<u32>(p.wrapping_add(o)));
+    let set = |g: &mut G, o: u32, x: f32| g.write::<u32>(p.wrapping_add(o), x.to_bits());
+    let step = fl(g, 0x38);
+    let t = add(fl(g, 0x34), step);
+    set(g, 0x34, t);
+    let ka = img.word(fr.at + 0x20);
+    let k = f64::from_bits(u64::from(g.read::<u32>(ka)) | (u64::from(g.read::<u32>(ka + 4)) << 32));
+    // comisd K, t; jbe: K above t stops it (unordered goes on)
+    if k > f64::from(t) {
+        g.write::<u32>(p.wrapping_add(0x28), 0);
+        return Ret::eax(p);
+    }
+    set(g, 0x38, add(fl(g, 0x3c), step));
+    for i in 0..3 {
+        set(g, 4 * i, add(fl(g, 4 * i), fl(g, 0x10 + 4 * i)));
+    }
+    for i in 0..3 {
+        set(
+            g,
+            0x10 + 4 * i,
+            add(fl(g, 0x1c + 4 * i), fl(g, 0x10 + 4 * i)),
+        );
+    }
+    Ret::eax(p)
+}
+
+/// [`particle_fall`].
+pub const PARTICLE_FALL: Sig = Sig {
+    len: 155,
+    hash: 0x62b4_cae0_b3a9_b5c7,
+    calls: &[],
+    imports: &[],
+};
+
+/// A heading from a point (internal, `ecx` = `[obj, out, v]`; a /GS
+/// frame): `out + 0x8` and `out + 0x0` 0; unless the object is flagged
+/// (bit 0 of `+0x90`), slot 217 `(m, w)` reads the model `+0x50`'s
+/// position into a frame vector, slot 234 `(w, v, w)` takes `v` from it
+/// (the first call's words stay under), and `out + 0x4` =
+/// `(K1 - angle) * K2 / K3` truncated (the angle [`crate::m0153::vector_angle`] on
+/// `+0x0`/`+0x8`; constants at `+0x69`, `+0x78`, `+0x80`). Returns `out`.
+///
+/// `magic_0202` 0x10002970 (154 bytes; 3 DLLs).
+pub fn heading_to<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{div, mul, sub};
+    let f = fr.at;
+    let r = fr.ecx;
+    let obj = g.read::<u32>(r);
+    let out = g.read::<u32>(r + 4);
+    g.write::<u32>(out.wrapping_add(8), 0);
+    let out = g.read::<u32>(r + 4);
+    g.write::<u32>(out, 0);
+    if g.read::<u8>(obj.wrapping_add(0x90)) & 1 != 0 {
+        return Ret::eax(out);
+    }
+    let w = fr.esp.wrapping_sub(0x18);
+    let m = g.read::<u32>(obj.wrapping_add(0x50));
+    slot_call(g, img, f, (0x36, 217), &[m, w]);
+    let v = g.read::<u32>(r + 8);
+    slot_call(g, img, f, (0x4e, 234), &[w, v, w, m, w]);
+    let angle = crate::m0153::vector_angle(g, img, img.rel32_target(f + 0x61), w, false);
+    let k = |g: &G, o: u32| f32::from_bits(g.read::<u32>(op(img, f, o)));
+    let x = div(mul(sub(k(g, 0x69), angle), k(g, 0x78)), k(g, 0x80));
+    let out = g.read::<u32>(r + 4);
+    g.write::<u32>(out.wrapping_add(4), trunc(x));
+    Ret::eax(out)
+}
+
+/// [`heading_to`] (the `rel32` at `+0x92` is `__security_check_cookie`).
+pub const HEADING_TO: Sig = Sig {
+    len: 154,
+    hash: 0x08ab_dae8_8821_9a9a,
+    calls: &[
+        (0x61, Callee::Sig(&crate::m0153::VECTOR_ANGLE_XZ)),
+        (0x92, Callee::Any),
+    ],
+    imports: &[],
+};

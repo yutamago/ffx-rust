@@ -2813,3 +2813,43 @@ fn particles_leaves_nodes() {
         );
     }
 }
+
+#[test]
+fn falls_and_headings() {
+    let Some(mut t) = twin(515) else { return };
+    let f = t.at(0x3980);
+    let p = SCRATCH + 0x100;
+    for (time, step) in [
+        (0.0f32, 0.5f32),
+        (-50.0, 0.1),
+        (5.0, -20.0),
+        (f32::NAN, 1.0),
+    ] {
+        for i in 0..0x10 {
+            t.set_u32(p + 4 * i, (0.25 * i as f32 - 1.0).to_bits());
+        }
+        t.set_u32(p + 0x34, time.to_bits());
+        t.set_u32(p + 0x38, step.to_bits());
+        t.check_entry(f, Call::default(), &[p], Eax::Checked);
+    }
+    drop(t);
+    let Some(mut t) = twin(202) else { return };
+    rec(&mut t, 217, 2, |m, a| {
+        m.w32(a[1], 0x3f00_0000);
+        m.w32(a[1] + 8, 0xbf80_0000);
+        0x217
+    });
+    recs(&mut t, &[(234, 3)]);
+    let f = t.at(0x2970);
+    let (r, obj, out) = (SCRATCH + 0x100, SCRATCH + 0x200, SCRATCH + 0x400);
+    for flags in [0u8, 1] {
+        t.write(obj, &[0; 0x100]);
+        t.set_u32(obj + 0x50, 0x0050_0001);
+        t.set_u8(obj + 0x90, flags);
+        t.write(out, &[0x55; 0x10]);
+        t.set_u32(r, obj);
+        t.set_u32(r + 4, out);
+        t.set_u32(r + 8, SCRATCH + 0x500);
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::heading_to);
+    }
+}

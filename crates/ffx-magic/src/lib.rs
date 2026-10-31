@@ -1139,6 +1139,7 @@ ports! {
     "walk, ring entry" => s4_small::WALK_RING_ENTRY, s4_small::walk_ring_entry;
     "particles start (c)" => s4_small::PARTICLES_START_C, s4_small::particles_start_c;
     "static leave, model, flag" => s4_small::STATIC_LEAVE_MODEL_FLAG, s4_small::static_leave_model_flag;
+    "particle fall" => s4_small::PARTICLE_FALL, s4_small::particle_fall;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
     "thunk: walk, child place" => s4_wrap::JMP_WALK_CHILD_PLACE, s4_wrap::ecx_jmp;
@@ -1537,6 +1538,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("colour from words", &s4_small::COLOUR_FROM_WORDS),
     ("walk, child place", &s4_small::WALK_CHILD_PLACE),
     ("node from arguments", &s4_small::NODE_FROM_ARGS),
+    ("heading to a point", &s4_small::HEADING_TO),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
