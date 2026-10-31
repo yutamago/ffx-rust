@@ -79,6 +79,36 @@ pub mod s4_small;
 pub mod s4_summon;
 pub mod s4_wrap;
 
+// round 4, the own work list's families (o4_*)
+pub mod o4_ctor;
+pub mod o4_effect;
+pub mod o4_fam2;
+pub mod o4_fam3;
+pub mod o4_fam4;
+pub mod o4_fam5;
+pub mod o4_flags;
+pub mod o4_list;
+pub mod o4_misc;
+pub mod o4_more;
+pub mod o4_more2;
+pub mod o4_parts;
+pub mod o4_rcef;
+pub mod o4_rcef2;
+pub mod o4_rcef3;
+pub mod o4_rcef4;
+pub mod o4_setup;
+pub mod o4_single;
+pub mod o4_single3;
+pub mod o4_small;
+pub mod o4_state;
+pub mod o4_static;
+pub mod o4_steps;
+pub mod o4_tiny;
+pub mod o4_tiny2;
+pub mod o4_tiny3;
+pub mod o4_tiny4;
+pub mod o4_tiny5;
+
 // named after the DLL they were ported from (some bind in many)
 pub mod m0003;
 pub mod m0009;
@@ -1226,6 +1256,430 @@ ports! {
     "0446 mode object" => s4_fam446::MODE_OBJECT, s4_fam446::mode_object;
     "0446 start child, sound" => s4_fam446::START_CHILD_SOUND_A, s4_fam446::start_child_sound_a;
     "0446 start child (scaled), sound" => s4_fam446::START_CHILD_SOUND_B, s4_fam446::start_child_sound_b;
+    // round 4, own list
+    "o4 part stores (d8, ret 1) 0206@18a0" => o4_parts::STORES_D8_RET1_0206_18A0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0255@1190" => o4_parts::STORES_D8_RET1_0255_1190, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0371@1000" => o4_parts::STORES_D8_RET1_0371_1000, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0376@1000" => o4_parts::STORES_D8_RET1_0376_1000, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0376@13e0" => o4_parts::STORES_D8_RET1_0376_13E0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0376@1a00" => o4_parts::STORES_D8_RET1_0376_1A00, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0488@12b0" => o4_parts::STORES_D8_RET1_0488_12B0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0489@18e0" => o4_parts::STORES_D8_RET1_0489_18E0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0496@1270" => o4_parts::STORES_D8_RET1_0496_1270, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0664@1250" => o4_parts::STORES_D8_RET1_0664_1250, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0664@1bc0" => o4_parts::STORES_D8_RET1_0664_1BC0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0664@1d80" => o4_parts::STORES_D8_RET1_0664_1D80, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0665@1250" => o4_parts::STORES_D8_RET1_0665_1250, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0665@13b0" => o4_parts::STORES_D8_RET1_0665_13B0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0665@18d0" => o4_parts::STORES_D8_RET1_0665_18D0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0665@1a70" => o4_parts::STORES_D8_RET1_0665_1A70, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0666@1670" => o4_parts::STORES_D8_RET1_0666_1670, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0666@1860" => o4_parts::STORES_D8_RET1_0666_1860, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0666@2500" => o4_parts::STORES_D8_RET1_0666_2500, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0666@26d0" => o4_parts::STORES_D8_RET1_0666_26D0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0669@1810" => o4_parts::STORES_D8_RET1_0669_1810, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8, ret 1) 0669@19f0" => o4_parts::STORES_D8_RET1_0669_19F0, o4_parts::stores_d8_ret1;
+    "o4 part stores (d8) 0375@1000" => o4_parts::STORES_D8_0375_1000, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@17d0" => o4_parts::STORES_D8_0375_17D0, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1900" => o4_parts::STORES_D8_0375_1900, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1a80" => o4_parts::STORES_D8_0375_1A80, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1b20" => o4_parts::STORES_D8_0375_1B20, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1dd0" => o4_parts::STORES_D8_0375_1DD0, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1e70" => o4_parts::STORES_D8_0375_1E70, o4_parts::stores_d8;
+    "o4 part stores (d8) 0375@1f10" => o4_parts::STORES_D8_0375_1F10, o4_parts::stores_d8;
+    "o4 part stores (d8) 0376@1ff0" => o4_parts::STORES_D8_0376_1FF0, o4_parts::stores_d8;
+    "o4 part stores (d8) 0376@21f0" => o4_parts::STORES_D8_0376_21F0, o4_parts::stores_d8;
+    "o4 part stores (d8) 0487@1000" => o4_parts::STORES_D8_0487_1000, o4_parts::stores_d8;
+    "o4 part stores (d8) 0498@1000" => o4_parts::STORES_D8_0498_1000, o4_parts::stores_d8;
+    "o4 part stores (entry 0, ret 1) 0206@1650" => o4_parts::STORES_0_RET1_0206_1650, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0, ret 1) 0255@1000" => o4_parts::STORES_0_RET1_0255_1000, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0, ret 1) 0376@2290" => o4_parts::STORES_0_RET1_0376_2290, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0, ret 1) 0497@1190" => o4_parts::STORES_0_RET1_0497_1190, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0, ret 1) 0658@1000" => o4_parts::STORES_0_RET1_0658_1000, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0, ret 1) 0669@1b90" => o4_parts::STORES_0_RET1_0669_1B90, o4_parts::stores_0_ret1;
+    "o4 part stores (entry 0) 0372@1180" => o4_parts::STORES_0_0372_1180, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0498@1160" => o4_parts::STORES_0_0498_1160, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0536@1200" => o4_parts::STORES_0_0536_1200, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0539@1000" => o4_parts::STORES_0_0539_1000, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0561@1000" => o4_parts::STORES_0_0561_1000, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0616@1000" => o4_parts::STORES_0_0616_1000, o4_parts::stores_0;
+    "o4 part stores (entry 0) 0617@1000" => o4_parts::STORES_0_0617_1000, o4_parts::stores_0;
+    "o4 seq wait (447) 0191@1110" => o4_rcef::SEQ_WAIT_447_0191_1110, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0357@10a0" => o4_rcef::SEQ_WAIT_447_0357_10A0, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0360@1110" => o4_rcef::SEQ_WAIT_447_0360_1110, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0360@1210" => o4_rcef::SEQ_WAIT_447_0360_1210, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0361@1210" => o4_rcef::SEQ_WAIT_447_0361_1210, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0361@1490" => o4_rcef::SEQ_WAIT_447_0361_1490, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0384@12a0" => o4_rcef::SEQ_WAIT_447_0384_12A0, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0384@13b0" => o4_rcef::SEQ_WAIT_447_0384_13B0, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0421@12b0" => o4_rcef::SEQ_WAIT_447_0421_12B0, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0522@1780" => o4_rcef::SEQ_WAIT_447_0522_1780, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0525@1410" => o4_rcef::SEQ_WAIT_447_0525_1410, o4_rcef::seq_wait_447;
+    "o4 seq wait (447) 0535@12a0" => o4_rcef::SEQ_WAIT_447_0535_12A0, o4_rcef::seq_wait_447;
+    "o4 create task wait 0191@1160" => o4_rcef::CREATE_TASK_WAIT_0191_1160, rcef::create_task_wait;
+    "o4 create task wait 0300@1120" => o4_rcef::CREATE_TASK_WAIT_0300_1120, rcef::create_task_wait;
+    "o4 create task wait 0301@1a30" => o4_rcef::CREATE_TASK_WAIT_0301_1A30, rcef::create_task_wait;
+    "o4 create task wait 0378@1080" => o4_rcef::CREATE_TASK_WAIT_0378_1080, rcef::create_task_wait;
+    "o4 create task wait 0416@10a0" => o4_rcef::CREATE_TASK_WAIT_0416_10A0, rcef::create_task_wait;
+    "o4 create task wait 0521@1090" => o4_rcef::CREATE_TASK_WAIT_0521_1090, rcef::create_task_wait;
+    "o4 create task wait 0522@11b0" => o4_rcef::CREATE_TASK_WAIT_0522_11B0, rcef::create_task_wait;
+    "o4 start turned 0596@7060" => o4_effect::START_TURNED_0596_7060, o4_effect::start_turned;
+    "o4 start turned 0162@29f0" => o4_effect::START_TURNED_0162_29F0, o4_effect::start_turned;
+    "o4 start turned 0304@1c10" => o4_effect::START_TURNED_0304_1C10, o4_effect::start_turned;
+    "o4 start turned 0307@2430" => o4_effect::START_TURNED_0307_2430, o4_effect::start_turned;
+    "o4 start turned 0568@1860" => o4_effect::START_TURNED_0568_1860, o4_effect::start_turned;
+    "o4 start turned 0586@2750" => o4_effect::START_TURNED_0586_2750, o4_effect::start_turned;
+    "o4 start turned 0587@1890" => o4_effect::START_TURNED_0587_1890, o4_effect::start_turned;
+    "o4 start turned 0588@1b70" => o4_effect::START_TURNED_0588_1B70, o4_effect::start_turned;
+    "o4 start turned 0589@1e00" => o4_effect::START_TURNED_0589_1E00, o4_effect::start_turned;
+    "o4 start turned 0598@7470" => o4_effect::START_TURNED_0598_7470, o4_effect::start_turned;
+    "o4 start turned 0605@7db0" => o4_effect::START_TURNED_0605_7DB0, o4_effect::start_turned;
+    "o4 attach set par 0357@18e0" => o4_rcef::ATTACH_SET_PAR_0357_18E0, o4_rcef::attach_set_par;
+    "o4 attach set par 0359@1820" => o4_rcef::ATTACH_SET_PAR_0359_1820, o4_rcef::attach_set_par;
+    "o4 attach set par 0361@1be0" => o4_rcef::ATTACH_SET_PAR_0361_1BE0, o4_rcef::attach_set_par;
+    "o4 attach set par 0416@1710" => o4_rcef::ATTACH_SET_PAR_0416_1710, o4_rcef::attach_set_par;
+    "o4 attach set par 0521@1200" => o4_rcef::ATTACH_SET_PAR_0521_1200, o4_rcef::attach_set_par;
+    "o4 attach set par 0521@12d0" => o4_rcef::ATTACH_SET_PAR_0521_12D0, o4_rcef::attach_set_par;
+    "o4 attach set par 0522@1290" => o4_rcef::ATTACH_SET_PAR_0522_1290, o4_rcef::attach_set_par;
+    "o4 attach set par 0526@1380" => o4_rcef::ATTACH_SET_PAR_0526_1380, o4_rcef::attach_set_par;
+    "o4 task step (no pause) 0162@2190" => o4_steps::STEP_PLAIN_0162_2190, ob_summon::step_plain;
+    "o4 task step (no pause) 0348@65c0" => o4_steps::STEP_PLAIN_0348_65C0, ob_summon::step_plain;
+    "o4 task step (no pause) 0350@5a10" => o4_steps::STEP_PLAIN_0350_5A10, ob_summon::step_plain;
+    "o4 task step (no pause) 0352@4c90" => o4_steps::STEP_PLAIN_0352_4C90, ob_summon::step_plain;
+    "o4 task step (no pause) 0353@1940" => o4_steps::STEP_PLAIN_0353_1940, ob_summon::step_plain;
+    "o4 task step (no pause) 0392@1460" => o4_steps::STEP_PLAIN_0392_1460, ob_summon::step_plain;
+    "o4 step then register 0165@1760" => o4_steps::STEP_THEN_REGISTER_0165_1760, o4_steps::step_then_register;
+    "o4 step then register 0307@15a0" => o4_steps::STEP_THEN_REGISTER_0307_15A0, o4_steps::step_then_register;
+    "o4 step then register 0605@6ef0" => o4_steps::STEP_THEN_REGISTER_0605_6EF0, o4_steps::step_then_register;
+    "o4 step then register 0612@7390" => o4_steps::STEP_THEN_REGISTER_0612_7390, o4_steps::step_then_register;
+    "o4 step then register 0688@3a90" => o4_steps::STEP_THEN_REGISTER_0688_3A90, o4_steps::step_then_register;
+    "o4 release node 0162@4120" => o4_steps::RELEASE_NODE_0162_4120, o4_steps::release_node;
+    "o4 release node 0165@3050" => o4_steps::RELEASE_NODE_0165_3050, o4_steps::release_node;
+    "o4 release node 0430@3190" => o4_steps::RELEASE_NODE_0430_3190, o4_steps::release_node;
+    "o4 release node 0431@4360" => o4_steps::RELEASE_NODE_0431_4360, o4_steps::release_node;
+    "o4 release node 0586@3d30" => o4_steps::RELEASE_NODE_0586_3D30, o4_steps::release_node;
+    "o4 release node 0587@3af0" => o4_steps::RELEASE_NODE_0587_3AF0, o4_steps::release_node;
+    "o4 release node 0588@2580" => o4_steps::RELEASE_NODE_0588_2580, o4_steps::release_node;
+    "o4 sub const 0168@33a0" => o4_steps::SUB_CONST_0168_33A0, o4_steps::sub_const;
+    "o4 sub const 0430@3860" => o4_steps::SUB_CONST_0430_3860, o4_steps::sub_const;
+    "o4 sub const 0568@2820" => o4_steps::SUB_CONST_0568_2820, o4_steps::sub_const;
+    "o4 sub const 0568@2dc0" => o4_steps::SUB_CONST_0568_2DC0, o4_steps::sub_const;
+    "o4 sub const 0587@2ec0" => o4_steps::SUB_CONST_0587_2EC0, o4_steps::sub_const;
+    "o4 pool node 0350@6280" => o4_steps::POOL_NODE_0350_6280, o4_steps::pool_node;
+    "o4 pool node 0353@2180" => o4_steps::POOL_NODE_0353_2180, o4_steps::pool_node;
+    "o4 pool node 0434@7a50" => o4_steps::POOL_NODE_0434_7A50, o4_steps::pool_node;
+    "o4 pool node 0610@b980" => o4_steps::POOL_NODE_0610_B980, o4_steps::pool_node;
+    "o4 pool node 0672@1860" => o4_steps::POOL_NODE_0672_1860, o4_steps::pool_node;
+    "o4 store imm 0168@3400" => o4_small::STORE_IMM_0168_3400, o4_small::store_imm;
+    "o4 store imm 0673@2030" => o4_small::STORE_IMM_0673_2030, o4_small::store_imm;
+    "o4 store imm 0673@2060" => o4_small::STORE_IMM_0673_2060, o4_small::store_imm;
+    "o4 store imm 0673@2070" => o4_small::STORE_IMM_0673_2070, o4_small::store_imm;
+    "o4 slot imm 0303@14b0" => o4_small::SLOT_IMM_0303_14B0, o4_small::slot_imm;
+    "o4 slot imm 0473@20c0" => o4_small::SLOT_IMM_0473_20C0, o4_small::slot_imm;
+    "o4 slot imm 0511@2b20" => o4_small::SLOT_IMM_0511_2B20, o4_small::slot_imm;
+    "o4 slot imm, 1 0443@1c00" => o4_small::SLOT_IMM_RET1_0443_1C00, o4_small::slot_imm_ret1;
+    "o4 slot imm, 1 0540@1030" => o4_small::SLOT_IMM_RET1_0540_1030, o4_small::slot_imm_ret1;
+    "o4 slot imm, 1 0540@1060" => o4_small::SLOT_IMM_RET1_0540_1060, o4_small::slot_imm_ret1;
+    "o4 copy twice 0162@39c0" => o4_small::COPY_TWICE_0162_39C0, o4_small::copy_twice;
+    "o4 copy twice 0304@3790" => o4_small::COPY_TWICE_0304_3790, o4_small::copy_twice;
+    "o4 copy twice 0586@35d0" => o4_small::COPY_TWICE_0586_35D0, o4_small::copy_twice;
+    "o4 slot 237, scale 0276@32f0" => o4_small::SLOT237_SCALE_0276_32F0, o4_small::slot237_scale;
+    "o4 slot 237, scale 0305@1cb0" => o4_small::SLOT237_SCALE_0305_1CB0, o4_small::slot237_scale;
+    "o4 slot 237, scale 0417@48e0" => o4_small::SLOT237_SCALE_0417_48E0, o4_small::slot237_scale;
+    "o4 slots 719, 306 0417@4920" => o4_small::SLOT719_306_0417_4920, o4_small::slot719_306;
+    "o4 slots 719, 306 0419@1d10" => o4_small::SLOT719_306_0419_1D10, o4_small::slot719_306;
+    "o4 slots 719, 306 0432@20d0" => o4_small::SLOT719_306_0432_20D0, o4_small::slot719_306;
+    "o4 slots 719, 306 0572@1630" => o4_small::SLOT719_306_0572_1630, o4_small::slot719_306;
+    "o4 slot, seq, wait 0378@1040" => o4_small::SLOT_SEQ_WAIT_0378_1040, o4_small::slot_seq_wait;
+    "o4 slot, seq, wait 0521@1130" => o4_small::SLOT_SEQ_WAIT_0521_1130, o4_small::slot_seq_wait;
+    "o4 slot, seq, wait 0525@1150" => o4_small::SLOT_SEQ_WAIT_0525_1150, o4_small::slot_seq_wait;
+    "o4 seq keep (447) 0193@1c70" => o4_small::SEQ_KEEP_447_0193_1C70, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0300@1280" => o4_small::SEQ_KEEP_447_0300_1280, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0525@15a0" => o4_small::SEQ_KEEP_447_0525_15A0, o4_small::seq_keep_447;
+    "o4 seq keep (447) 0529@15c0" => o4_small::SEQ_KEEP_447_0529_15C0, o4_small::seq_keep_447;
+    "o4 record node 0596@3900" => o4_small::RECORD_NODE_0596_3900, o4_small::record_node;
+    "o4 record node 0348@29a0" => o4_small::RECORD_NODE_0348_29A0, o4_small::record_node;
+    "o4 record node 0353@4a00" => o4_small::RECORD_NODE_0353_4A00, o4_small::record_node;
+    "o4 record node 0612@3e60" => o4_small::RECORD_NODE_0612_3E60, o4_small::record_node;
+    "o4 static record node 0163@2410" => o4_small::STATIC_RECORD_NODE_0163_2410, o4_small::static_record_node;
+    "o4 static record node 0253@48d0" => o4_small::STATIC_RECORD_NODE_0253_48D0, o4_small::static_record_node;
+    "o4 static record node 0298@2850" => o4_small::STATIC_RECORD_NODE_0298_2850, o4_small::static_record_node;
+    "o4 static record node 0508@2b80" => o4_small::STATIC_RECORD_NODE_0508_2B80, o4_small::static_record_node;
+    "o4 part and vectors 0477@11c0" => o4_small::PART_AND_VECTORS_0477_11C0, o4_small::part_and_vectors;
+    "o4 part and vectors 0477@13a0" => o4_small::PART_AND_VECTORS_0477_13A0, o4_small::part_and_vectors;
+    "o4 part and vectors 0486@11c0" => o4_small::PART_AND_VECTORS_0486_11C0, o4_small::part_and_vectors;
+    "o4 part and vectors 0486@1360" => o4_small::PART_AND_VECTORS_0486_1360, o4_small::part_and_vectors;
+    "o4 attach plain 8 0300@1300" => o4_rcef::ATTACH_PLAIN8_0300_1300, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0301@1de0" => o4_rcef::ATTACH_PLAIN8_0301_1DE0, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0510@15c0" => o4_rcef::ATTACH_PLAIN8_0510_15C0, o4_rcef::attach_plain8;
+    "o4 attach plain 8 0529@1270" => o4_rcef::ATTACH_PLAIN8_0529_1270, o4_rcef::attach_plain8;
+    "o4 attach plain 12 0301@1d00" => o4_rcef::ATTACH_PLAIN12_0301_1D00, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0360@1400" => o4_rcef::ATTACH_PLAIN12_0360_1400, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0360@14e0" => o4_rcef::ATTACH_PLAIN12_0360_14E0, o4_rcef::attach_plain12;
+    "o4 attach plain 12 0510@14e0" => o4_rcef::ATTACH_PLAIN12_0510_14E0, o4_rcef::attach_plain12;
+    "o4 fade start 0596@70f0" => o4_small::FADE_START_0596_70F0, o4_small::fade_start;
+    "o4 fade start 0602@8460" => o4_small::FADE_START_0602_8460, o4_small::fade_start;
+    "o4 fade start 0606@77b0" => o4_small::FADE_START_0606_77B0, o4_small::fade_start;
+    "o4 tiny set_bit_global 0307@5220" => o4_tiny::SET_BIT_GLOBAL_0307_5220, o4_tiny::set_bit_global;
+    "o4 tiny copy_global 0269@1740" => o4_tiny::COPY_GLOBAL_0269_1740, o4_tiny::copy_global;
+    "o4 tiny set_one_ret0 0671@1330" => o4_tiny::SET_ONE_RET0_0671_1330, o4_tiny::set_one_ret0;
+    "o4 tiny set_bit_field 0563@50f0" => o4_tiny::SET_BIT_FIELD_0563_50F0, o4_tiny::set_bit_field;
+    "o4 tiny clear_bit_field 0563@5100" => o4_tiny::CLEAR_BIT_FIELD_0563_5100, o4_tiny::clear_bit_field;
+    "o4 tiny is_zero_field 0434@95c0" => o4_tiny::IS_ZERO_FIELD_0434_95C0, o4_tiny::is_zero_field;
+    "o4 tiny is_zero_field 0610@d490" => o4_tiny::IS_ZERO_FIELD_0610_D490, o4_tiny::is_zero_field;
+    "o4 tiny slot_ecx 0577@eca0" => o4_tiny::SLOT_ECX_0577_ECA0, o4_tiny::slot_ecx;
+    "o4 tiny slot_imm8 0577@ec80" => o4_tiny::SLOT_IMM8_0577_EC80, o4_tiny::slot_imm8;
+    "o4 tiny slot_imm8x3 0519@4e40" => o4_tiny::SLOT_IMM8X3_0519_4E40, o4_tiny::slot_imm8x3;
+    "o4 tiny copy_to_arg 0673@1b40" => o4_tiny::COPY_TO_ARG_0673_1B40, o4_tiny::copy_to_arg;
+    "o4 tiny two_stores 0350@6300" => o4_tiny::TWO_STORES_0350_6300, o4_tiny::two_stores;
+    "o4 tiny slot_7_0_arg 0150@eaf0" => o4_tiny::SLOT_7_0_ARG_0150_EAF0, o4_tiny::slot_7_0_arg;
+    "o4 tiny set_callback 0353@2440" => o4_tiny::SET_CALLBACK_0353_2440, o4_tiny::set_callback;
+    "o4 tiny slot_then_flag 0195@19c0" => o4_tiny::SLOT_THEN_FLAG_0195_19C0, o4_tiny::slot_then_flag;
+    "o4 tiny slot_two_globals 0483@2650" => o4_tiny::SLOT_TWO_GLOBALS_0483_2650, o4_tiny::slot_two_globals;
+    "o4 tiny add_const 0568@2de0" => o4_tiny::ADD_CONST_0568_2DE0, o4_tiny::add_const;
+    "o4 tiny add_const 0673@2040" => o4_tiny::ADD_CONST_0673_2040, o4_tiny::add_const;
+    "o4 tiny script_then_end 0671@1310" => o4_tiny::SCRIPT_THEN_END_0671_1310, o4_tiny::script_then_end;
+    "o4 tiny slot_float 0263@8980" => o4_tiny::SLOT_FLOAT_0263_8980, o4_tiny::slot_float;
+    "o4 tiny slot237_edx 0483@26a0" => o4_tiny::SLOT237_EDX_0483_26A0, o4_tiny::slot237_edx;
+    "o4 tiny slot_keep_nonzero 0661@15b0" => o4_tiny::SLOT_KEEP_NONZERO_0661_15B0, o4_tiny::slot_keep_nonzero;
+    "o4 tiny slot237_arg 0343@6970" => o4_tiny::SLOT237_ARG_0343_6970, o4_tiny::slot237_arg;
+    "o4 tiny slot_then_store_ret1 0443@1ab0" => o4_tiny::SLOT_THEN_STORE_RET1_0443_1AB0, o4_tiny::slot_then_store_ret1;
+    "o4 tiny slot_then_clear 0499@13c0" => o4_tiny::SLOT_THEN_CLEAR_0499_13C0, o4_tiny::slot_then_clear;
+    "o4 tiny set_bits_indexed 0165@36f0" => o4_tiny::SET_BITS_INDEXED_0165_36F0, o4_tiny::set_bits_indexed;
+    "o4 tiny clear_bits_indexed 0165@3720" => o4_tiny::CLEAR_BITS_INDEXED_0165_3720, o4_tiny::clear_bits_indexed;
+    "o4 tiny slot_obj_word 0540@1000" => o4_tiny::SLOT_OBJ_WORD_0540_1000, o4_tiny::slot_obj_word;
+    "o4 tiny set_four 0263@6f40" => o4_tiny::SET_FOUR_0263_6F40, o4_tiny::set_four;
+    "o4 tiny add_const_twice 0162@3990" => o4_tiny::ADD_CONST_TWICE_0162_3990, o4_tiny::add_const_twice;
+    "o4 tiny add_const_twice 0586@35a0" => o4_tiny::ADD_CONST_TWICE_0586_35A0, o4_tiny::add_const_twice;
+    "o4 tiny sub_const_twice 0304@2df0" => o4_tiny::SUB_CONST_TWICE_0304_2DF0, o4_tiny::sub_const_twice;
+    "o4 tiny field_slot_then_flag 0525@1750" => o4_tiny::FIELD_SLOT_THEN_FLAG_0525_1750, o4_tiny::field_slot_then_flag;
+    "o4 tiny script_then_give_back 0638@3170" => o4_tiny::SCRIPT_THEN_GIVE_BACK_0638_3170, o4_tiny::script_then_give_back;
+    "o4 tiny script_then_give_back 0689@3170" => o4_tiny::SCRIPT_THEN_GIVE_BACK_0689_3170, o4_tiny::script_then_give_back;
+    "o4 tiny slot_keep_store_ret1 0661@1500" => o4_tiny::SLOT_KEEP_STORE_RET1_0661_1500, o4_tiny::slot_keep_store_ret1;
+    "o4 tiny handle_release 0391@31a0" => o4_tiny2::HANDLE_RELEASE_0391_31A0, o4_tiny2::handle_release;
+    "o4 tiny handle_start 0391@1680" => o4_tiny2::HANDLE_START_0391_1680, o4_tiny2::handle_start;
+    "o4 tiny handle_start 0392@1e10" => o4_tiny2::HANDLE_START_0392_1E10, o4_tiny2::handle_start;
+    "o4 tiny code_slot 0275@4160" => o4_tiny2::CODE_SLOT_0275_4160, o4_tiny2::code_slot;
+    "o4 tiny fade_at 0511@2af0" => o4_tiny2::FADE_AT_0511_2AF0, o4_tiny2::fade_at;
+    "o4 tiny slot_pair_k 0186@5360" => o4_tiny2::SLOT_PAIR_K_0186_5360, o4_tiny2::slot_pair_k;
+    "o4 tiny slot_field_flag 0416@1d80" => o4_tiny2::SLOT_FIELD_FLAG_0416_1D80, o4_tiny2::slot_field_flag;
+    "o4 tiny slot_field_flag 0521@1400" => o4_tiny2::SLOT_FIELD_FLAG_0521_1400, o4_tiny2::slot_field_flag;
+    "o4 tiny slot_then_cb 0193@14a0" => o4_tiny2::SLOT_THEN_CB_0193_14A0, o4_tiny2::slot_then_cb;
+    "o4 tiny byte_slot_chain 0304@37b0" => o4_tiny2::BYTE_SLOT_CHAIN_0304_37B0, o4_tiny2::byte_slot_chain;
+    "o4 tiny byte_slot_chain 0304@37e0" => o4_tiny2::BYTE_SLOT_CHAIN_0304_37E0, o4_tiny2::byte_slot_chain;
+    "o4 tiny slot3_then_store 0669@1000" => o4_tiny2::SLOT3_THEN_STORE_0669_1000, o4_tiny2::slot3_then_store;
+    "o4 tiny seq_wait 0525@1190" => o4_tiny2::SEQ_WAIT_0525_1190, o4_tiny2::seq_wait;
+    "o4 tiny done_when_flag 0101@31a0" => o4_tiny2::DONE_WHEN_FLAG_0101_31A0, o4_tiny2::done_when_flag;
+    "o4 tiny store_then_slot4 0661@1670" => o4_tiny2::STORE_THEN_SLOT4_0661_1670, o4_tiny2::store_then_slot4;
+    "o4 tiny count_down 0661@16b0" => o4_tiny2::COUNT_DOWN_0661_16B0, o4_tiny2::count_down;
+    "o4 tiny script_motion_give_back 0672@1480" => o4_tiny2::SCRIPT_MOTION_GIVE_BACK_0672_1480, o4_tiny2::script_motion_give_back;
+    "o4 tiny sub_chain 0168@33c0" => o4_tiny2::SUB_CHAIN_0168_33C0, o4_tiny2::sub_chain;
+    "o4 tiny sub_chain 0587@2ee0" => o4_tiny2::SUB_CHAIN_0587_2EE0, o4_tiny2::sub_chain;
+    "o4 tiny add_chain 0563@24f0" => o4_tiny2::ADD_CHAIN_0563_24F0, o4_tiny2::add_chain;
+    "o4 tiny add_chain_stored 0307@29f0" => o4_tiny2::ADD_CHAIN_STORED_0307_29F0, o4_tiny2::add_chain_stored;
+    "o4 tiny done_field 0473@17c0" => o4_tiny3::DONE_FIELD_0473_17C0, o4_tiny3::done_field;
+    "o4 tiny done_field_register 0446@4ba0" => o4_tiny3::DONE_FIELD_REGISTER_0446_4BA0, o4_tiny3::done_field_register;
+    "o4 tiny end_when_idle 0391@1380" => o4_tiny3::END_WHEN_IDLE_0391_1380, o4_tiny3::end_when_idle;
+    "o4 tiny end_when_idle 0448@4c80" => o4_tiny3::END_WHEN_IDLE_0448_4C80, o4_tiny3::end_when_idle;
+    "o4 tiny end_register 0606@69e0" => o4_tiny3::END_REGISTER_0606_69E0, o4_tiny3::end_register;
+    "o4 tiny done_count_flag 0100@1680" => o4_tiny3::DONE_COUNT_FLAG_0100_1680, o4_tiny3::done_count_flag;
+    "o4 tiny done_motion_word 0246@17d0" => o4_tiny3::DONE_MOTION_WORD_0246_17D0, o4_tiny3::done_motion_word;
+    "o4 tiny done_motion_field 0275@3a00" => o4_tiny3::DONE_MOTION_FIELD_0275_3A00, o4_tiny3::done_motion_field;
+    "o4 tiny done_then_grid 0243@1840" => o4_tiny3::DONE_THEN_GRID_0243_1840, o4_tiny3::done_then_grid;
+    "o4 tiny script_motion_release 0432@1310" => o4_tiny3::SCRIPT_MOTION_RELEASE_0432_1310, o4_tiny3::script_motion_release;
+    "o4 tiny slot237_scale32 0165@2ed0" => o4_tiny3::SLOT237_SCALE32_0165_2ED0, o4_tiny3::slot237_scale32;
+    "o4 tiny slot237_scale32 0590@1640" => o4_tiny3::SLOT237_SCALE32_0590_1640, o4_tiny3::slot237_scale32;
+    "o4 tiny task_then_cb 0526@1100" => o4_tiny3::TASK_THEN_CB_0526_1100, o4_tiny3::task_then_cb;
+    "o4 tiny two_tasks_flag 0301@1cc0" => o4_tiny3::TWO_TASKS_FLAG_0301_1CC0, o4_tiny3::two_tasks_flag;
+    "o4 tiny clear_bit_four 0307@5230" => o4_tiny3::CLEAR_BIT_FOUR_0307_5230, o4_tiny3::clear_bit_four;
+    "o4 tiny six_stores 0303@1660" => o4_tiny3::SIX_STORES_0303_1660, o4_tiny3::six_stores;
+    "o4 tiny six_stores 0303@16a0" => o4_tiny3::SIX_STORES_0303_16A0, o4_tiny3::six_stores;
+    "o4 tiny record_six 0253@18a0" => o4_tiny3::RECORD_SIX_0253_18A0, o4_tiny3::record_six;
+    "o4 tiny grow_after 0307@4da0" => o4_tiny3::GROW_AFTER_0307_4DA0, o4_tiny3::grow_after;
+    "o4 tiny sub_two 0304@2ef0" => o4_tiny3::SUB_TWO_0304_2EF0, o4_tiny3::sub_two;
+    "o4 tiny add_two 0304@3500" => o4_tiny3::ADD_TWO_0304_3500, o4_tiny3::add_two;
+    "o4 tiny sub_copy 0304@34c0" => o4_tiny3::SUB_COPY_0304_34C0, o4_tiny3::sub_copy;
+    "o4 tiny slot_keep_two 0430@28c0" => o4_tiny3::SLOT_KEEP_TWO_0430_28C0, o4_tiny3::slot_keep_two;
+    "o4 tiny slot_keep_two 0588@2090" => o4_tiny3::SLOT_KEEP_TWO_0588_2090, o4_tiny3::slot_keep_two;
+    "o4 tiny three_slots 0416@1530" => o4_tiny3::THREE_SLOTS_0416_1530, o4_tiny3::three_slots;
+    "o4 tiny count_then_task 0360@18f0" => o4_tiny3::COUNT_THEN_TASK_0360_18F0, o4_tiny3::count_then_task;
+    "o4 tiny free_part_of 0537@1260" => o4_tiny3::FREE_PART_OF_0537_1260, o4_tiny3::free_part_of;
+    "o4 tiny free_parts 0641@1970" => o4_tiny3::FREE_PARTS_0641_1970, o4_tiny3::free_parts;
+    "o4 tiny float_product 0253@2bf0" => o4_tiny3::FLOAT_PRODUCT_0253_2BF0, o4_tiny3::float_product;
+    "o4 tiny index_slot 0351@2730" => o4_tiny4::INDEX_SLOT_0351_2730, o4_tiny4::index_slot;
+    "o4 tiny slot_three_words 0708@1830" => o4_tiny4::SLOT_THREE_WORDS_0708_1830, o4_tiny4::slot_three_words;
+    "o4 tiny slot_by_count 0197@1500" => o4_tiny4::SLOT_BY_COUNT_0197_1500, o4_tiny4::slot_by_count;
+    "o4 tiny record_float 0273@7690" => o4_tiny4::RECORD_FLOAT_0273_7690, o4_tiny4::record_float;
+    "o4 tiny slots_g_g_none 0497@1150" => o4_tiny4::SLOTS_G_G_NONE_0497_1150, o4_tiny4::slots_g_g_none;
+    "o4 tiny three_slots_m 0514@3180" => o4_tiny4::THREE_SLOTS_M_0514_3180, o4_tiny4::three_slots_m;
+    "o4 tiny add_and_stores 0303@16e0" => o4_tiny4::ADD_AND_STORES_0303_16E0, o4_tiny4::add_and_stores;
+    "o4 tiny slot_seq_call 0361@17a0" => o4_tiny4::SLOT_SEQ_CALL_0361_17A0, o4_tiny4::slot_seq_call;
+    "o4 tiny field_slots_seq 0191@12f0" => o4_tiny4::FIELD_SLOTS_SEQ_0191_12F0, o4_tiny4::field_slots_seq;
+    "o4 tiny slot237_obj 0348@6df0" => o4_tiny4::SLOT237_OBJ_0348_6DF0, o4_tiny4::slot237_obj;
+    "o4 tiny done_two_fields_register 0205@15c0" => o4_tiny4::DONE_TWO_FIELDS_REGISTER_0205_15C0, o4_tiny4::done_two_fields_register;
+    "o4 tiny push_task 0146@7170" => o4_tiny4::PUSH_TASK_0146_7170, o4_tiny4::push_task;
+    "o4 tiny task_while_count 0359@1530" => o4_tiny4::TASK_WHILE_COUNT_0359_1530, o4_tiny4::task_while_count;
+    "o4 tiny slot_task_cb 0528@10d0" => o4_tiny4::SLOT_TASK_CB_0528_10D0, o4_tiny4::slot_task_cb;
+    "o4 tiny done_all_grid 0270@1410" => o4_tiny4::DONE_ALL_GRID_0270_1410, o4_tiny4::done_all_grid;
+    "o4 tiny set_two_seq_call 0359@1000" => o4_tiny4::SET_TWO_SEQ_CALL_0359_1000, o4_tiny4::set_two_seq_call;
+    "o4 tiny set_two_seq_call 0360@1000" => o4_tiny4::SET_TWO_SEQ_CALL_0360_1000, o4_tiny4::set_two_seq_call;
+    "o4 tiny byte_slot_part 0430@2450" => o4_tiny4::BYTE_SLOT_PART_0430_2450, o4_tiny4::byte_slot_part;
+    "o4 tiny vectors_then_float 0388@6810" => o4_tiny4::VECTORS_THEN_FLOAT_0388_6810, o4_tiny4::vectors_then_float;
+    "o4 tiny seq_wait_short 0194@10a0" => o4_tiny5::SEQ_WAIT_SHORT_0194_10A0, o4_tiny5::seq_wait_short;
+    "o4 tiny seq_wait_short 0525@1600" => o4_tiny5::SEQ_WAIT_SHORT_0525_1600, o4_tiny5::seq_wait_short;
+    "o4 tiny slot3_seq_wait 0356@17a0" => o4_tiny5::SLOT3_SEQ_WAIT_0356_17A0, o4_tiny5::slot3_seq_wait;
+    "o4 tiny seven_stores 0380@1b10" => o4_tiny5::SEVEN_STORES_0380_1B10, o4_tiny5::seven_stores;
+    "o4 tiny task_seq_call 0521@1170" => o4_tiny5::TASK_SEQ_CALL_0521_1170, o4_tiny5::task_seq_call;
+    "o4 tiny two_slots_seq 0529@1210" => o4_tiny5::TWO_SLOTS_SEQ_0529_1210, o4_tiny5::two_slots_seq;
+    "o4 tiny done_slot_h 0252@1540" => o4_tiny5::DONE_SLOT_H_0252_1540, o4_tiny5::done_slot_h;
+    "o4 tiny done_count_bit 0492@31b0" => o4_tiny5::DONE_COUNT_BIT_0492_31B0, o4_tiny5::done_count_bit;
+    "o4 tiny three_slots_obj 0514@3520" => o4_tiny5::THREE_SLOTS_OBJ_0514_3520, o4_tiny5::three_slots_obj;
+    "o4 tiny task_keep_seq_wait 0382@1170" => o4_tiny5::TASK_KEEP_SEQ_WAIT_0382_1170, o4_tiny5::task_keep_seq_wait;
+    "o4 tiny field_seq_call 0522@1200" => o4_tiny5::FIELD_SEQ_CALL_0522_1200, o4_tiny5::field_seq_call;
+    "o4 tiny two_tasks_seq 0195@1300" => o4_tiny5::TWO_TASKS_SEQ_0195_1300, o4_tiny5::two_tasks_seq;
+    "o4 tiny slot9_seq_wait 0360@1300" => o4_tiny5::SLOT9_SEQ_WAIT_0360_1300, o4_tiny5::slot9_seq_wait;
+    "o4 tiny task_field_cb 0195@1270" => o4_tiny5::TASK_FIELD_CB_0195_1270, o4_tiny5::task_field_cb;
+    "o4 tiny pair_seq_call 0378@1120" => o4_tiny5::PAIR_SEQ_CALL_0378_1120, o4_tiny5::pair_seq_call;
+    "o4 fam2 slot_by_flag 0252@1340" => o4_fam2::SLOT_BY_FLAG_0252_1340, o4_fam2::slot_by_flag;
+    "o4 fam2 slot_by_flag 0303@1420" => o4_fam2::SLOT_BY_FLAG_0303_1420, o4_fam2::slot_by_flag;
+    "o4 fam2 slot_by_flag 0318@1540" => o4_fam2::SLOT_BY_FLAG_0318_1540, o4_fam2::slot_by_flag;
+    "o4 fam2 seq_keep_447_32 0416@1d20" => o4_fam2::SEQ_KEEP_447_32_0416_1D20, o4_fam2::seq_keep_447_32;
+    "o4 fam2 seq_keep_447_32 0510@1430" => o4_fam2::SEQ_KEEP_447_32_0510_1430, o4_fam2::seq_keep_447_32;
+    "o4 fam2 seq_keep_447_32 0525@13b0" => o4_fam2::SEQ_KEEP_447_32_0525_13B0, o4_fam2::seq_keep_447_32;
+    "o4 fam2 byte_list_slot 0397@63f0" => o4_fam2::BYTE_LIST_SLOT_0397_63F0, o4_fam2::byte_list_slot;
+    "o4 fam2 byte_list_slot 0397@6450" => o4_fam2::BYTE_LIST_SLOT_0397_6450, o4_fam2::byte_list_slot;
+    "o4 fam2 task_list_seq_wait 0313@1920" => o4_fam2::TASK_LIST_SEQ_WAIT_0313_1920, o4_fam2::task_list_seq_wait;
+    "o4 fam2 task_list_seq_wait 0313@1980" => o4_fam2::TASK_LIST_SEQ_WAIT_0313_1980, o4_fam2::task_list_seq_wait;
+    "o4 fam2 ptr_stores8 0307@2990" => o4_fam2::PTR_STORES8_0307_2990, o4_fam2::ptr_stores8;
+    "o4 fam2 ptr_stores8 0563@2490" => o4_fam2::PTR_STORES8_0563_2490, o4_fam2::ptr_stores8;
+    "o4 fam2 slot_task_seq_wait 0382@10a0" => o4_fam2::SLOT_TASK_SEQ_WAIT_0382_10A0, o4_fam2::slot_task_seq_wait;
+    "o4 fam2 slot_task_seq_wait 0522@1090" => o4_fam2::SLOT_TASK_SEQ_WAIT_0522_1090, o4_fam2::slot_task_seq_wait;
+    "o4 fam2 store_node 0353@2390" => o4_fam2::STORE_NODE_0353_2390, o4_fam2::store_node;
+    "o4 fam2 store_node 0672@1cf0" => o4_fam2::STORE_NODE_0672_1CF0, o4_fam2::store_node;
+    "o4 fam2 field_slot_flag8 0356@1840" => o4_fam2::FIELD_SLOT_FLAG8_0356_1840, o4_fam2::field_slot_flag8;
+    "o4 fam2 field_slot_flag8 0529@1620" => o4_fam2::FIELD_SLOT_FLAG8_0529_1620, o4_fam2::field_slot_flag8;
+    "o4 fam2 scale_actors 0165@33a0" => o4_fam2::SCALE_ACTORS_0165_33A0, o4_fam2::scale_actors;
+    "o4 fam2 scale_actors 0606@7810" => o4_fam2::SCALE_ACTORS_0606_7810, o4_fam2::scale_actors;
+    "o4 fam2 main init 0195@19e0" => o4_fam2::MAIN_INIT_0195_19E0, rcef::main_init_create_task;
+    "o4 fam2 main init 0507@10d0" => o4_fam2::MAIN_INIT_0507_10D0, rcef::main_init_create_task;
+    "o4 fam3 part_vectors 0370@1550" => o4_fam3::PART_VECTORS_0370_1550, o4_fam3::part_vectors;
+    "o4 fam3 part_vectors 0370@18c0" => o4_fam3::PART_VECTORS_0370_18C0, o4_fam3::part_vectors;
+    "o4 fam3 static_node 0267@37f0" => o4_fam3::STATIC_NODE_0267_37F0, o4_fam3::static_node;
+    "o4 fam3 static_node 0311@24c0" => o4_fam3::STATIC_NODE_0311_24C0, o4_fam3::static_node;
+    "o4 fam3 sub_stores8 0307@2a30" => o4_fam3::SUB_STORES8_0307_2A30, o4_fam3::sub_stores8;
+    "o4 fam3 sub_stores8 0563@2530" => o4_fam3::SUB_STORES8_0563_2530, o4_fam3::sub_stores8;
+    "o4 fam3 slot_list 0519@2a50" => o4_fam3::SLOT_LIST_0519_2A50, o4_fam3::slot_list;
+    "o4 fam3 slot_list 0519@2ac0" => o4_fam3::SLOT_LIST_0519_2AC0, o4_fam3::slot_list;
+    "o4 fam3 two_tasks_seq_wait 0194@10f0" => o4_fam3::TWO_TASKS_SEQ_WAIT_0194_10F0, o4_fam3::two_tasks_seq_wait;
+    "o4 fam3 two_tasks_seq_wait 0300@10a0" => o4_fam3::TWO_TASKS_SEQ_WAIT_0300_10A0, o4_fam3::two_tasks_seq_wait;
+    "o4 fam3 vector_globals 0165@4750" => o4_fam3::VECTOR_GLOBALS_0165_4750, o4_fam3::vector_globals;
+    "o4 fam3 vector_globals 0563@5670" => o4_fam3::VECTOR_GLOBALS_0563_5670, o4_fam3::vector_globals;
+    "o4 fam3 release_and_reset 0162@3900" => o4_fam3::RELEASE_AND_RESET_0162_3900, o4_fam3::release_and_reset;
+    "o4 fam3 release_and_reset 0586@3510" => o4_fam3::RELEASE_AND_RESET_0586_3510, o4_fam3::release_and_reset;
+    "o4 fam4 effect_record 0307@24c0" => o4_fam4::EFFECT_RECORD_0307_24C0, o4_fam4::effect_record;
+    "o4 fam4 effect_record 0605@7e40" => o4_fam4::EFFECT_RECORD_0605_7E40, o4_fam4::effect_record;
+    "o4 fam4 deal_then_slots 0391@2a20" => o4_fam4::DEAL_THEN_SLOTS_0391_2A20, o4_fam4::deal_then_slots;
+    "o4 fam4 deal_then_slots 0448@6440" => o4_fam4::DEAL_THEN_SLOTS_0448_6440, o4_fam4::deal_then_slots;
+    "o4 fam4 record_at_node 0673@1f10" => o4_fam4::RECORD_AT_NODE_0673_1F10, o4_fam4::record_at_node;
+    "o4 fam4 record_at_node 0673@1fa0" => o4_fam4::RECORD_AT_NODE_0673_1FA0, o4_fam4::record_at_node;
+    "o4 fam4 attach_par_seq 0312@15b0" => o4_fam4::ATTACH_PAR_SEQ_0312_15B0, o4_fam4::attach_par_seq;
+    "o4 fam4 attach_par_seq 0378@1250" => o4_fam4::ATTACH_PAR_SEQ_0378_1250, o4_fam4::attach_par_seq;
+    "o4 fam4 copy_then_rect 0511@2f70" => o4_fam4::COPY_THEN_RECT_0511_2F70, o4_fam4::copy_then_rect;
+    "o4 fam4 copy_then_rect 0589@2b50" => o4_fam4::COPY_THEN_RECT_0589_2B50, o4_fam4::copy_then_rect;
+    "o4 fam4 packet 0267@2f80" => o4_fam4::PACKET_0267_2F80, o4_fam4::packet;
+    "o4 fam4 packet 0431@1430" => o4_fam4::PACKET_0431_1430, o4_fam4::packet;
+    "o4 fam4 mixed_record_node 0473@2010" => o4_fam4::MIXED_RECORD_NODE_0473_2010, o4_fam4::mixed_record_node;
+    "o4 fam4 mixed_record_node 0673@1850" => o4_fam4::MIXED_RECORD_NODE_0673_1850, o4_fam4::mixed_record_node;
+    "o4 fam4 three_tasks_keep 0313@1240" => o4_fam4::THREE_TASKS_KEEP_0313_1240, o4_fam4::three_tasks_keep;
+    "o4 fam4 three_tasks_keep 0361@1330" => o4_fam4::THREE_TASKS_KEEP_0361_1330, o4_fam4::three_tasks_keep;
+    "o4 fam4 slot_attach_mode_par 0194@1620" => o4_fam4::SLOT_ATTACH_MODE_PAR_0194_1620, o4_fam4::slot_attach_mode_par;
+    "o4 fam4 slot_attach_mode_par 0359@1420" => o4_fam4::SLOT_ATTACH_MODE_PAR_0359_1420, o4_fam4::slot_attach_mode_par;
+    "o4 fam5 attach_mode_wait 0313@1340" => o4_fam5::ATTACH_MODE_WAIT_0313_1340, o4_fam5::attach_mode_wait;
+    "o4 fam5 attach_mode_wait 0313@1630" => o4_fam5::ATTACH_MODE_WAIT_0313_1630, o4_fam5::attach_mode_wait;
+    "o4 fam5 part_shape 0665@1810" => o4_fam5::PART_SHAPE_0665_1810, o4_fam5::part_shape;
+    "o4 fam5 part_shape 0666@17a0" => o4_fam5::PART_SHAPE_0666_17A0, o4_fam5::part_shape;
+    "o4 fam5 clear_three 0162@47e0" => o4_fam5::CLEAR_THREE_0162_47E0, o4_fam5::clear_three;
+    "o4 fam5 clear_three 0598@7e30" => o4_fam5::CLEAR_THREE_0598_7E30, o4_fam5::clear_three;
+    "o4 fam5 part_scale_by_index 0664@1420" => o4_fam5::PART_SCALE_BY_INDEX_0664_1420, o4_fam5::part_scale_by_index;
+    "o4 fam5 part_scale_by_index 0665@1610" => o4_fam5::PART_SCALE_BY_INDEX_0665_1610, o4_fam5::part_scale_by_index;
+    "o4 fam5 attach_mode32_par_wait 0421@14d0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0421_14D0, o4_fam5::attach_mode32_par_wait;
+    "o4 fam5 attach_mode32_par_wait 0535@14b0" => o4_fam5::ATTACH_MODE32_PAR_WAIT_0535_14B0, o4_fam5::attach_mode32_par_wait;
+    "o4 fam5 part_free_pair 0661@18d0" => o4_fam5::PART_FREE_PAIR_0661_18D0, o4_fam5::part_free_pair;
+    "o4 fam5 part_free_pair 0661@1990" => o4_fam5::PART_FREE_PAIR_0661_1990, o4_fam5::part_free_pair;
+    "o4 fam5 part_free_pair 0661@1b60" => o4_fam5::PART_FREE_PAIR_0661_1B60, o4_fam5::part_free_pair;
+    "o4 single record_actor_slot 0270@1c70" => o4_single::RECORD_ACTOR_SLOT_0270_1C70, o4_single::record_actor_slot;
+    "o4 single tail_free 0203@45f0" => o4_single::TAIL_FREE_0203_45F0, o4_single::tail_free;
+    "o4 single free_by_index 0351@1bf0" => o4_single::FREE_BY_INDEX_0351_1BF0, o4_single::free_by_index;
+    "o4 single find_same_id 0275@4310" => o4_single::FIND_SAME_ID_0275_4310, o4_single::find_same_id;
+    "o4 single flag_pick_slot 0601@8070" => o4_single::FLAG_PICK_SLOT_0601_8070, o4_single::flag_pick_slot;
+    "o4 single model_slots 0263@6b90" => o4_single::MODEL_SLOTS_0263_6B90, o4_single::model_slots;
+    "o4 single display_list 0598@77a0" => o4_single::DISPLAY_LIST_0598_77A0, o4_single::display_list;
+    "o4 single colour_then_run 0671@1340" => o4_single::COLOUR_THEN_RUN_0671_1340, o4_single::colour_then_run;
+    "o4 single set_then_timeline 0540@1080" => o4_single::SET_THEN_TIMELINE_0540_1080, o4_single::set_then_timeline;
+    "o4 ctor effect_ctor_arg 0159@6700" => o4_ctor::EFFECT_CTOR_ARG_0159_6700, o4_ctor::effect_ctor_arg;
+    "o4 ctor effect_ctor_arg2 0202@6f10" => o4_ctor::EFFECT_CTOR_ARG2_0202_6F10, o4_ctor::effect_ctor_arg2;
+    "o4 ctor effect_ctor_this 0388@6d70" => o4_ctor::EFFECT_CTOR_THIS_0388_6D70, o4_ctor::effect_ctor_this;
+    "o4 ctor big_ctor_this 0597@8f40" => o4_ctor::BIG_CTOR_THIS_0597_8F40, o4_ctor::big_ctor_this;
+    "o4 ctor big_table_ctor 0262@6c10" => o4_ctor::BIG_TABLE_CTOR_0262_6C10, o4_ctor::big_table_ctor;
+    "o4 ctor colour_ctor 0070@97b0" => o4_ctor::COLOUR_CTOR_0070_97B0, o4_ctor::colour_ctor;
+    "o4 ctor vec_ctor 0071@7530" => o4_ctor::VEC_CTOR_0071_7530, o4_ctor::vec_ctor;
+    "o4 single seq_wait_table 0195@12c0" => o4_single::SEQ_WAIT_TABLE_0195_12C0, o4_single::seq_wait_table;
+    "o4 single copy_seq_wait 0382@1120" => o4_single::COPY_SEQ_WAIT_0382_1120, o4_single::copy_seq_wait;
+    "o4 single seq_call_then_jump 0415@1000" => o4_single::SEQ_CALL_THEN_JUMP_0415_1000, o4_single::seq_call_then_jump;
+    "o4 single slot_chain_306 0397@5870" => o4_single::SLOT_CHAIN_306_0397_5870, o4_single::slot_chain_306;
+    "o4 single remove_and_free 0397@6390" => o4_single::REMOVE_AND_FREE_0397_6390, o4_single::remove_and_free;
+    "o4 rcef2 clear_slot_seq_call 0191@1000" => o4_rcef2::CLEAR_SLOT_SEQ_CALL_0191_1000, o4_rcef2::clear_slot_seq_call;
+    "o4 rcef2 indexed_slot_seq_wait 0191@10b0" => o4_rcef2::INDEXED_SLOT_SEQ_WAIT_0191_10B0, o4_rcef2::indexed_slot_seq_wait;
+    "o4 rcef2 two_tasks_seq_wait8 0300@1170" => o4_rcef2::TWO_TASKS_SEQ_WAIT8_0300_1170, o4_rcef2::two_tasks_seq_wait8;
+    "o4 rcef2 slots_seq_call 0300@11d0" => o4_rcef2::SLOTS_SEQ_CALL_0300_11D0, o4_rcef2::slots_seq_call;
+    "o4 rcef2 pair_slot_seq_wait 0301@1740" => o4_rcef2::PAIR_SLOT_SEQ_WAIT_0301_1740, o4_rcef2::pair_slot_seq_wait;
+    "o4 rcef2 field_task_seq_wait 0301@17a0" => o4_rcef2::FIELD_TASK_SEQ_WAIT_0301_17A0, o4_rcef2::field_task_seq_wait;
+    "o4 rcef2 task_seq_keep 0359@1160" => o4_rcef2::TASK_SEQ_KEEP_0359_1160, o4_rcef2::task_seq_keep;
+    "o4 rcef2 tasks_while_count 0359@14d0" => o4_rcef2::TASKS_WHILE_COUNT_0359_14D0, o4_rcef2::tasks_while_count;
+    "o4 rcef2 keep_task_seq_wait 0361@1260" => o4_rcef2::KEEP_TASK_SEQ_WAIT_0361_1260, o4_rcef2::keep_task_seq_wait;
+    "o4 rcef2 slot_seq_keep 0361@12d0" => o4_rcef2::SLOT_SEQ_KEEP_0361_12D0, o4_rcef2::slot_seq_keep;
+    "o4 rcef2 pair_field_seq_wait 0526@1090" => o4_rcef2::PAIR_FIELD_SEQ_WAIT_0526_1090, o4_rcef2::pair_field_seq_wait;
+    "o4 rcef2 indexed_field_seq_wait 0526@11c0" => o4_rcef2::INDEXED_FIELD_SEQ_WAIT_0526_11C0, o4_rcef2::indexed_field_seq_wait;
+    "o4 rcef2 task_count_cb 0526@1270" => o4_rcef2::TASK_COUNT_CB_0526_1270, o4_rcef2::task_count_cb;
+    "o4 rcef2 effect_slots_seq 0529@1650" => o4_rcef2::EFFECT_SLOTS_SEQ_0529_1650, o4_rcef2::effect_slots_seq;
+    "o4 setup two_setups 0042@b060" => o4_setup::TWO_SETUPS_0042_B060, o4_setup::two_setups;
+    "o4 setup setups_of_block 0262@6350" => o4_setup::SETUPS_OF_BLOCK_0262_6350, o4_setup::setups_of_block;
+    "o4 setup setups_of_table 0262@6e50" => o4_setup::SETUPS_OF_TABLE_0262_6E50, o4_setup::setups_of_table;
+    "o4 rcef3 field_slots_seq 0361@2770" => o4_rcef3::FIELD_SLOTS_SEQ_0361_2770, o4_rcef3::field_slots_seq;
+    "o4 rcef3 tasks_or_seq 0382@1790" => o4_rcef3::TASKS_OR_SEQ_0382_1790, o4_rcef3::tasks_or_seq;
+    "o4 rcef3 step_or_flag 0382@1c70" => o4_rcef3::STEP_OR_FLAG_0382_1C70, o4_rcef3::step_or_flag;
+    "o4 rcef3 task_keep_seq_call 0313@19e0" => o4_rcef3::TASK_KEEP_SEQ_CALL_0313_19E0, o4_rcef3::task_keep_seq_call;
+    "o4 misc static_flag_slots 0343@6900" => o4_misc::STATIC_FLAG_SLOTS_0343_6900, o4_misc::static_flag_slots;
+    "o4 misc reset_then_float 0351@2450" => o4_misc::RESET_THEN_FLOAT_0351_2450, o4_misc::reset_then_float;
+    "o4 rcef4 effect_task_seq_wait 0360@10a0" => o4_rcef4::EFFECT_TASK_SEQ_WAIT_0360_10A0, o4_rcef4::effect_task_seq_wait;
+    "o4 rcef4 effect_keep_seq_call 0525@1000" => o4_rcef4::EFFECT_KEEP_SEQ_CALL_0525_1000, o4_rcef4::effect_keep_seq_call;
+    "o4 rcef4 seq_by_count 0534@1040" => o4_rcef4::SEQ_BY_COUNT_0534_1040, o4_rcef4::seq_by_count;
+    "o4 rcef4 step_capped 0536@11a0" => o4_rcef4::STEP_CAPPED_0536_11A0, o4_rcef4::step_capped;
+    "o4 rcef4 free_three 0185@1500" => o4_rcef4::FREE_THREE_0185_1500, o4_rcef4::free_three;
+    "o4 rcef4 countdown_then_done 0163@1cb0" => o4_rcef4::COUNTDOWN_THEN_DONE_0163_1CB0, o4_rcef4::countdown_then_done;
+    "o4 rcef4 remove_and_release 0353@2e00" => o4_rcef4::REMOVE_AND_RELEASE_0353_2E00, o4_rcef4::remove_and_release;
+    "o4 single3 slot_seq_call_keep 0194@11c0" => o4_single3::SLOT_SEQ_CALL_KEEP_0194_11C0, o4_single3::slot_seq_call_keep;
+    "o4 single3 place_from_slot 0303@14d0" => o4_single3::PLACE_FROM_SLOT_0303_14D0, o4_single3::place_from_slot;
+    "o4 single3 task_node_tail 0379@6910" => o4_single3::TASK_NODE_TAIL_0379_6910, o4_single3::task_node_tail;
+    "o4 single3 model_flag_step 0263@6be0" => o4_single3::MODEL_FLAG_STEP_0263_6BE0, o4_single3::model_flag_step;
+    "o4 single3 drop_current 0263@6b30" => o4_single3::DROP_CURRENT_0263_6B30, o4_single3::drop_current;
+    "o4 single3 object_task_head 0577@b130" => o4_single3::OBJECT_TASK_HEAD_0577_B130, o4_single3::object_task_head;
+    "o4 single3 model_node_tail 0577@8d70" => o4_single3::MODEL_NODE_TAIL_0577_8D70, o4_single3::model_node_tail;
+    "o4 static ten_stores 0303@1730" => o4_static::TEN_STORES_0303_1730, o4_static::ten_stores;
+    "o4 static record_two_node 0303@48d0" => o4_static::RECORD_TWO_NODE_0303_48D0, o4_static::record_two_node;
+    "o4 static slot_by_flag_obj 0316@16b0" => o4_static::SLOT_BY_FLAG_OBJ_0316_16B0, o4_static::slot_by_flag_obj;
+    "o4 static shape_local 0380@1a20" => o4_static::SHAPE_LOCAL_0380_1A20, o4_static::shape_local;
+    "o4 more slot_pair_loop 0165@5490" => o4_more::SLOT_PAIR_LOOP_0165_5490, o4_more::slot_pair_loop;
+    "o4 more object_list_node 0165@2ff0" => o4_more::OBJECT_LIST_NODE_0165_2FF0, o4_more::object_list_node;
+    "o4 more reset_record_handle 0297@8020" => o4_more::RESET_RECORD_HANDLE_0297_8020, o4_more::reset_record_handle;
+    "o4 more arg_list_node 0270@1b80" => o4_more::ARG_LIST_NODE_0270_1B80, o4_more::arg_list_node;
+    "o4 more slot_each_flag 0301@22d0" => o4_more::SLOT_EACH_FLAG_0301_22D0, o4_more::slot_each_flag;
+    "o4 list timer_unlink 0513@6d50" => o4_list::TIMER_UNLINK_0513_6D50, o4_list::timer_unlink;
+    "o4 list table_reset 0523@21b0" => o4_list::TABLE_RESET_0523_21B0, o4_list::table_reset;
+    "o4 list this_flag_step 0273@7390" => o4_list::THIS_FLAG_STEP_0273_7390, o4_list::this_flag_step;
+    "o4 more2 count_fade 0673@1c70" => o4_more2::COUNT_FADE_0673_1C70, o4_more2::count_fade;
+    "o4 more2 clear_halves_slot 0519@2cf0" => o4_more2::CLEAR_HALVES_SLOT_0519_2CF0, o4_more2::clear_halves_slot;
+    "o4 more2 slot_chain_jump 0446@4d30" => o4_more2::SLOT_CHAIN_JUMP_0446_4D30, o4_more2::slot_chain_jump;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -1318,6 +1772,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0481 free record", &m0481::FREE_RECORD),
     ("m0481 draw records", &m0481::DRAW_RECORDS),
     ("m0481 facing", &m0481::FACING),
+    ("m0481 spawn", &m0481::SPAWN),
+    ("m0596 place object", &m0596::PLACE_OBJECT),
     ("m0596 part init", &m0596::PART_INIT),
     ("m0596 object init", &m0596::OBJECT_INIT),
     ("m0596 place pair", &m0596::PLACE_PAIR),
@@ -1630,6 +2086,162 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("named parts", &s4_small::NAMED_PARTS),
     ("reset owners (30)", &s4_small::RESET_OWNERS_30),
     ("reset owners (3)", &s4_small::RESET_OWNERS_3),
+    (
+        "o4 state reset (arg) 0182@1a50",
+        &o4_state::RESET_STATE_ARG_0182_1A50,
+    ),
+    (
+        "o4 state reset (arg) 0197@19b0",
+        &o4_state::RESET_STATE_ARG_0197_19B0,
+    ),
+    (
+        "o4 state reset (arg) 0199@2b20",
+        &o4_state::RESET_STATE_ARG_0199_2B20,
+    ),
+    (
+        "o4 state reset (arg) 0252@1ee0",
+        &o4_state::RESET_STATE_ARG_0252_1EE0,
+    ),
+    (
+        "o4 state reset (arg) 0266@3900",
+        &o4_state::RESET_STATE_ARG_0266_3900,
+    ),
+    (
+        "o4 state reset (arg) 0311@2b40",
+        &o4_state::RESET_STATE_ARG_0311_2B40,
+    ),
+    (
+        "o4 state reset (arg) 0365@1560",
+        &o4_state::RESET_STATE_ARG_0365_1560,
+    ),
+    (
+        "o4 state reset (arg) 0447@3200",
+        &o4_state::RESET_STATE_ARG_0447_3200,
+    ),
+    (
+        "o4 state reset (arg) 0475@26c0",
+        &o4_state::RESET_STATE_ARG_0475_26C0,
+    ),
+    (
+        "o4 state reset (bare) 0245@23f0",
+        &o4_state::RESET_STATE_BARE_0245_23F0,
+    ),
+    (
+        "o4 state reset (bare) 0298@2ce0",
+        &o4_state::RESET_STATE_BARE_0298_2CE0,
+    ),
+    (
+        "o4 state reset (bare) 0308@1ec0",
+        &o4_state::RESET_STATE_BARE_0308_1EC0,
+    ),
+    (
+        "o4 state reset (bare) 0435@2790",
+        &o4_state::RESET_STATE_BARE_0435_2790,
+    ),
+    (
+        "o4 state reset (bare) 0671@2b50",
+        &o4_state::RESET_STATE_BARE_0671_2B50,
+    ),
+    (
+        "o4 state reset (edx) 0108@1af0",
+        &o4_state::RESET_STATE_EDX_0108_1AF0,
+    ),
+    (
+        "o4 state reset (edx) 0221@1af0",
+        &o4_state::RESET_STATE_EDX_0221_1AF0,
+    ),
+    (
+        "o4 state reset (edx) 0419@37c0",
+        &o4_state::RESET_STATE_EDX_0419_37C0,
+    ),
+    (
+        "o4 fam2 register_loop 0171@2500",
+        &o4_fam2::REGISTER_LOOP_0171_2500,
+    ),
+    (
+        "o4 fam2 register_loop 0180@1870",
+        &o4_fam2::REGISTER_LOOP_0180_1870,
+    ),
+    (
+        "o4 fam2 register_loop 0392@4830",
+        &o4_fam2::REGISTER_LOOP_0392_4830,
+    ),
+    (
+        "o4 fam2 flag_slots 0202@6d90",
+        &o4_fam2::FLAG_SLOTS_0202_6D90,
+    ),
+    (
+        "o4 fam2 flag_slots 0317@6a40",
+        &o4_fam2::FLAG_SLOTS_0317_6A40,
+    ),
+    (
+        "o4 fam2 flag_slots 0597@8e80",
+        &o4_fam2::FLAG_SLOTS_0597_8E80,
+    ),
+    (
+        "o4 fam3 record_copy 0480@2880",
+        &o4_fam3::RECORD_COPY_0480_2880,
+    ),
+    (
+        "o4 fam3 record_copy 0480@2910",
+        &o4_fam3::RECORD_COPY_0480_2910,
+    ),
+    (
+        "o4 fam4 mesh_flags 0391@3e40",
+        &o4_fam4::MESH_FLAGS_0391_3E40,
+    ),
+    (
+        "o4 fam4 mesh_flags 0392@4070",
+        &o4_fam4::MESH_FLAGS_0392_4070,
+    ),
+    (
+        "o4 fam5 fade_record 0269@3210",
+        &o4_fam5::FADE_RECORD_0269_3210,
+    ),
+    (
+        "o4 fam5 fade_record 0325@2250",
+        &o4_fam5::FADE_RECORD_0325_2250,
+    ),
+    (
+        "o4 single actor_slot 0171@29c0",
+        &o4_single::ACTOR_SLOT_0171_29C0,
+    ),
+    (
+        "o4 single actor_slot_edx 0298@2250",
+        &o4_single::ACTOR_SLOT_EDX_0298_2250,
+    ),
+    (
+        "o4 misc vector_set 0343@69e0",
+        &o4_misc::VECTOR_SET_0343_69E0,
+    ),
+    (
+        "o4 single3 fade_setup 0577@9170",
+        &o4_single3::FADE_SETUP_0577_9170,
+    ),
+    (
+        "o4 single3 head_node 0577@ac20",
+        &o4_single3::HEAD_NODE_0577_AC20,
+    ),
+    (
+        "o4 flags flag_step_arg 0203@73c0",
+        &o4_flags::FLAG_STEP_ARG_0203_73C0,
+    ),
+    (
+        "o4 flags flag_step_edx 0262@6af0",
+        &o4_flags::FLAG_STEP_EDX_0262_6AF0,
+    ),
+    (
+        "o4 flags object_head_node 0203@7940",
+        &o4_flags::OBJECT_HEAD_NODE_0203_7940,
+    ),
+    (
+        "o4 more float_ratio_half 0519@2750",
+        &o4_more::FLOAT_RATIO_HALF_0519_2750,
+    ),
+    (
+        "o4 more2 object_node_edx 0307@b480",
+        &o4_more2::OBJECT_NODE_EDX_0307_B480,
+    ),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

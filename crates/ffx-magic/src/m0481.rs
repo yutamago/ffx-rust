@@ -297,3 +297,81 @@ pub const FACING: Sig = Sig {
     calls: &[(0x11c, Callee::Any)],
     imports: &[],
 };
+
+/// Spawns `n` records (0x10001070, internal: `edx` = `n`, `xmm2` = `a`,
+/// `xmm3` = `b`, `esp` at the return address). `k` = slot 263 with
+/// `(*G_KIND)` (operand `+0x0e`), once. Then for each record taken
+/// ([`free_record`], the `rel32` at `+0x32`; none left ends the loop):
+/// halfword `+0x24` 0, `+0x26` = 0x80000, and five draws of slot 241
+/// with `(&r)`, a float into the local `r` at `ebp - 4`. The shape: slot
+/// 237 with `(*G_KIND, trunc(k * r), 0, rec)`; `+0xc` = 1.0; `+0x20` =
+/// `(r + C1) * C2` (operands `+0xa2`, `+0xb3`); `+0x10` = `(r + a) * b`;
+/// `+0x18` = `(r - D1) * D2` and `+0x14` = `(r + D1) * D3` in double
+/// precision (`+0xf8`, `+0x106`, `+0x132`). Each call sees the loop
+/// body's earlier words on the stack after its own. Returns the last
+/// call's `eax`, or 0 when the loop ends for want of a record.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn<G: Game>(g: &mut G, img: &Image, f: u32, esp: u32, n: u32, a: f32, b: f32) -> u32 {
+    use crate::sb_sse::{add, cvt, mul};
+    let w = |off: u32| img.word(f + off);
+    let f32_at = |g: &G, at: u32| f32::from_bits(g.read::<u32>(at));
+    let f64_at = |g: &G, at: u32| f64::from_bits(g.read::<u64>(at));
+    // the frame: ebp = esp - 4; r at ebp - 4
+    let r_at = esp.wrapping_sub(8);
+    let kind = g.read::<u32>(w(0x0e));
+    let s263 = slot_target(g, w(0x07), 263);
+    let k = g.call(s263, 0, &[kind]).eax;
+    let mut left = n;
+    loop {
+        left = left.wrapping_sub(1);
+        let rec = free_record(g, img, img.rel32_target(f + 0x32));
+        if rec == 0 {
+            return 0;
+        }
+        g.write::<u16>(rec + 0x24, 0);
+        g.write::<u32>(rec + 0x26, 0x0008_0000);
+        let s241 = slot_target(g, w(0x4b), 241);
+        g.call(s241, 0, &[r_at]);
+        // cvtdq2ps, mulss, cvttss2si
+        let x = mul(cvt(k), f32_at(g, r_at));
+        let shape = ffx_bridge::x87::cvttsd2si(f64::from(x));
+        let s237 = slot_target(g, w(0x74), 237);
+        g.call(s237, 0, &[kind, shape, 0, rec, r_at]);
+        g.write::<u32>(rec + 0xc, 0x3f80_0000);
+        let s241 = slot_target(g, w(0x86), 241);
+        g.call(s241, 0, &[r_at, kind, shape, 0, rec, r_at]);
+        let scale = mul(add(f32_at(g, r_at), f32_at(g, w(0xa2))), f32_at(g, w(0xb3)));
+        g.write::<u32>(rec + 0x20, scale.to_bits());
+        let s241 = slot_target(g, w(0xab), 241);
+        g.call(s241, 0, &[r_at, r_at, kind, shape, 0, rec, r_at]);
+        let vx = mul(add(f32_at(g, r_at), a), b);
+        g.write::<u32>(rec + 0x10, vx.to_bits());
+        let s241 = slot_target(g, w(0xd3), 241);
+        g.call(s241, 0, &[r_at, r_at, r_at, kind, shape, 0, rec, r_at]);
+        // cvtps2pd, subsd, mulsd, cvtpd2ps
+        let d1 = f64_at(g, w(0xf8));
+        let vz = (f64::from(f32_at(g, r_at)) - d1) * f64_at(g, w(0x106));
+        g.write::<u32>(rec + 0x18, (vz as f32).to_bits());
+        let s241 = slot_target(g, w(0xfe), 241);
+        let eax = g
+            .call(
+                s241,
+                0,
+                &[r_at, r_at, r_at, r_at, kind, shape, 0, rec, r_at],
+            )
+            .eax;
+        let vy = (f64::from(f32_at(g, r_at)) + f64_at(g, w(0x12a))) * f64_at(g, w(0x132));
+        g.write::<u32>(rec + 0x14, (vy as f32).to_bits());
+        if left == 0 {
+            return eax;
+        }
+    }
+}
+
+/// [`spawn`] (334 bytes, 1 overlay).
+pub const SPAWN: Sig = Sig {
+    len: 334,
+    hash: 0xeea7_f273_b1fa_d94a,
+    calls: &[(0x32, Callee::Sig(&FREE_RECORD))],
+    imports: &[],
+};

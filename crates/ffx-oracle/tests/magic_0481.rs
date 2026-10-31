@@ -205,3 +205,50 @@ fn facing() {
         });
     }
 }
+
+#[test]
+fn spawn() {
+    let Some(mut t) = magic_l3::twin(N) else {
+        return;
+    };
+    let f = t.at(0x1070);
+    let base = records(&t);
+    t.set_u32(t.img.word(f + 0x0e), 0x0263_0000);
+    rec(&mut t, 263, 1, |m, _| m.r32(SCRATCH + 0x600));
+    rec(&mut t, 237, 5, |_, a| a[1] ^ 0x237);
+    // the random draws: a sequence of floats from a counter
+    rec(&mut t, 241, 1, |m, a| {
+        let i = m.r32(SCRATCH + 0x604);
+        m.w32(SCRATCH + 0x604, i + 1);
+        let v = [0.25f32, 0.0, 0.999, 0.5, 0.125, 0.75, 0.3][(i % 7) as usize];
+        m.w32(a[0], v.to_bits());
+        0x2410 + i
+    });
+    // free records: all, two (the third spawn finds none), none
+    for (n, free, k) in [(3u32, 128u32, 5u32), (3, 2, 7), (1, 0, 3), (4, 128, 0)] {
+        for i in 0..128 {
+            let c = if i < 128 - free { 9 } else { 0 };
+            t.set_u16(base + 0x30 * i + 0x28, c);
+            t.set_u16(base + 0x30 * i + 0x24, 0x1234);
+        }
+        t.set_u32(SCRATCH + 0x600, k);
+        t.set_u32(SCRATCH + 0x604, n);
+        let c = Call {
+            edx: n,
+            ..Call::default()
+        }
+        .with_xmm(&[
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(0.0),
+            ffx_magic::Xmm::f32(-1.5),
+            ffx_magic::Xmm::f32(2.25),
+        ]);
+        t.check(f, c, &[], Eax::Checked, |g, img, fr| {
+            let (a, b) = (fr.xmm_f32(2), fr.xmm_f32(3));
+            Ret::eax(m0481::spawn(g, img, fr.at, fr.esp, fr.edx, a, b))
+        });
+    }
+}
+
+// Mutation testing of `spawn` (M5 magic round 4, tools/mutants.py): 15
+// mutants, all killed.
