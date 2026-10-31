@@ -40,4 +40,16 @@ ported! {
         let mut f = StackFrame::<{ lf::VALUE_FRAME_WORDS as usize }>::new();
         lb::read_value_file(&mut mem(), path, f.at())
     }
+    /// `PApplicationScriptProxy::buttonPress(app, name)`.
+    PApplicationScriptProxy_buttonPress @ 0x0062_2d40 => extern "C" fn button_press(app: u32, name: u32) -> u32 {
+        lb::button_press(&mut mem(), app, name)
+    }
+    /// The script's pad button set `(app, name, value)`.
+    Phyre_PFramework_PApplicationScriptProxy_buttonSet_0062c730 @ 0x0062_c730 => extern "C" fn button_set(app: u32, name: u32, value: u32) -> u32 {
+        lb::button_set(&mut mem(), app, name, value)
+    }
+    /// The input map's release on exit.
+    Phyre_PFramework_PInputMapper_release_0062d170 @ 0x0062_d170 => extern "thiscall" fn release_input_map(this: u32) {
+        lb::release_input_map(&mut mem(), this);
+    }
 }

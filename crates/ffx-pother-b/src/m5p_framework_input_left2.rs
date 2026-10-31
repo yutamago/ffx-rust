@@ -89,8 +89,28 @@ pub const PRINTF: u32 = 0x0043_52f0;
 /// array, the value).
 pub const VALUE_FRAME_WORDS: u32 = 10;
 
+/// `_stricmp`'s import slot (cdecl).
+pub const STRICMP_SLOT: u32 = 0x00b0_c398;
+/// The script's pad button names and their bytes in a pad's state block
+/// (`+0xd + index`), in the order `0x00622d40`/`0x0062c730` compare them.
+pub const BUTTONS: [(u32, u32); 10] = [
+    (0x00b4_0290, 0xd),
+    (0x00b2_bf3c, 0xc),
+    (0x00b4_0298, 0xe),
+    (0x00b4_02a4, 0xb),
+    (0x00b8_f9bc, 0x14),
+    (0x00b4_02ac, 0x13),
+    (0x00b8_f8a0, 0x17),
+    (0x00b8_f8a4, 0x19),
+    (0x00b8_f890, 0x1a),
+    (0x00b8_f898, 0x18),
+];
+/// The message for an unknown button name.
+pub const BUTTON_UNKNOWN: u32 = 0x00b4_02b4;
+
 /// The ports over game memory.
 pub mod bridge {
+    use super::{BUTTON_UNKNOWN, BUTTONS, STRICMP_SLOT};
     use super::{
         CI_SQRT, Conv, DUMP_ENABLED, DUMP_PATH, DUMP_SLOTS, DUMP_TYPE, G_APPLICATION, G_HWND,
         G_ICON, G_SCREEN_SETTINGS, Host, MEMCPY, MEMSET, MINI_DUMP_WRITE_DUMP, Mem, PRINTF,
@@ -418,5 +438,110 @@ pub mod bridge {
         }
         h.call_sym(VALUE_FILE[4], Conv::Thiscall(stream), &[]);
         result
+    }
+
+    /// The pad button names the script commands know (case-insensitive),
+    /// with each button's byte in the pad's state block (`+0xd + index`).
+    fn button_index(h: &mut impl Host, name: u32) -> Option<u32> {
+        let stricmp: u32 = h.read(h.rebase(STRICMP_SLOT));
+        for (s, index) in BUTTONS {
+            let s = h.rebase(s);
+            if h.call(stricmp, Conv::Cdecl, &[name, s]) == 0 {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// The first pad of the application (`[[app + 0x2b8] + 0x38]`), 0 for
+    /// none.
+    fn first_pad(h: &mut impl Host, app: u32) -> u32 {
+        let input: u32 = h.read(app + 0x2b8);
+        h.read(input + 0x38)
+    }
+
+    /// `PApplicationScriptProxy::buttonPress(app, name)` (`0x00622d40`,
+    /// cdecl): the named button of the first pad set to 1; 0, or 5 with a
+    /// message for an unknown name; 0 without an application, a name or
+    /// a pad.
+    pub fn button_press(h: &mut impl Host, app: u32, name: u32) -> u32 {
+        if app == 0 || name == 0 {
+            return 0;
+        }
+        let pad = first_pad(h, app);
+        if pad == 0 {
+            return 0;
+        }
+        set_button(h, pad, name, 1)
+    }
+
+    /// `0x0062c730` (cdecl `(app, name, value byte)`): the named button
+    /// of the first pad set to `value`; as [`button_press`], but the name
+    /// is not checked for 0.
+    pub fn button_set(h: &mut impl Host, app: u32, name: u32, value: u32) -> u32 {
+        if app == 0 {
+            return 0;
+        }
+        let pad = first_pad(h, app);
+        if pad == 0 {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // the value is a byte
+        set_button(h, pad, name, value as u8)
+    }
+
+    fn set_button(h: &mut impl Host, pad: u32, name: u32, value: u8) -> u32 {
+        if let Some(index) = button_index(h, name) {
+            h.write(pad + 0xd + index, value);
+            return 0;
+        }
+        let msg = h.rebase(BUTTON_UNKNOWN);
+        h.call_sym(PRINTF, Conv::Cdecl, &[2, msg, name]);
+        5
+    }
+
+    /// An intrusive list node `{next, prev, owner +8, .. +0x28, +0x2c}`
+    /// unlinked and emptied when its owner is `owner`.
+    fn unlink_if_owned(h: &mut impl Host, node: u32, owner: u32) {
+        if h.read::<u32>(node + 8) != owner {
+            return;
+        }
+        let next: u32 = h.read(node);
+        let prev: u32 = h.read(node + 4);
+        h.write(next + 4, prev);
+        h.write(prev, next);
+        h.write(node, node);
+        h.write(node + 4, node);
+        h.write(node + 8, 0u32);
+        h.write(node + 0x28, 0u32);
+        h.write(node + 0x2c, 0u32);
+    }
+
+    /// The input map's release (`0x0062d170`, thiscall, from
+    /// `PApplication::onExit`): when a mapping is set (`+0x9c`) its five
+    /// nodes (`+0x18` step `0x30`) that belong to it are unlinked and
+    /// `+4..+0x14` cleared; then for each of the 18 devices (`+0x38`) its
+    /// four nodes (`+0x6c` step `0x30`) that belong to the device.
+    pub fn release_input_map(h: &mut impl Host, this: u32) {
+        let map: u32 = h.read(this + 0x9c);
+        if map != 0 {
+            let base = map + 0x18;
+            for k in 0..5 {
+                let owner: u32 = h.read(this + 0x9c);
+                unlink_if_owned(h, base + 0x30 * k, owner);
+            }
+            for off in [0x14, 0x10, 0xc, 8, 4] {
+                h.write(this + off, 0u32);
+            }
+        }
+        for i in 0..18 {
+            let dev: u32 = h.read(this + 0x38 + 4 * i);
+            if dev == 0 {
+                continue;
+            }
+            for k in 0..4 {
+                unlink_if_owned(h, dev + 0x6c + 0x30 * k, dev);
+            }
+        }
     }
 }

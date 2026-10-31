@@ -3135,3 +3135,114 @@ fn left2_read_value_file_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn left2_buttons_match_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::{self as l2, bridge as l2b};
+    for (label, mut t) in Twins::all() {
+        t.stub(l2::PRINTF, false, 3, 0, 0);
+        // every name (as stored and in another case), an unknown one
+        let mut names: Vec<u32> = Vec::new();
+        for &(s, _) in &l2::BUTTONS {
+            let at = t.rebase(s);
+            let mut bytes = Oracle::read(&mut t.a, at, 32).unwrap();
+            let n = bytes.iter().position(|&b| b == 0).unwrap();
+            bytes.truncate(n + 1);
+            names.push(t.alloc(&bytes));
+            let upper: Vec<u8> = bytes.iter().map(u8::to_ascii_uppercase).collect();
+            names.push(t.alloc(&upper));
+        }
+        names.push(t.alloc(b"Nothing\0"));
+        for pad_set in [true, false] {
+            let pad = t.zeros(0x40);
+            let input = t.zeros(0x40);
+            t.w32(input + 0x38, if pad_set { pad } else { 0 });
+            let app = t.zeros(0x2c0);
+            t.w32(app + 0x2b8, input);
+            for &name in &names {
+                let what = format!("{label}: buttonPress pad {pad_set} name {name:#x}");
+                t.check(&what, 0x0062_2d40, Conv::Cdecl, &[app, name], |g| {
+                    Out::U32(l2b::button_press(g, app, name))
+                });
+                for value in [0u32, 0x1234_5602] {
+                    let what =
+                        format!("{label}: buttonSet pad {pad_set} name {name:#x} {value:#x}");
+                    t.check(&what, 0x0062_c730, Conv::Cdecl, &[app, name, value], |g| {
+                        Out::U32(l2b::button_set(g, app, name, value))
+                    });
+                }
+            }
+            t.check(
+                &format!("{label}: buttonPress no name"),
+                0x0062_2d40,
+                Conv::Cdecl,
+                &[app, 0],
+                |g| Out::U32(l2b::button_press(g, app, 0)),
+            );
+        }
+        for f in [0x0062_2d40u32, 0x0062_c730] {
+            t.check(
+                &format!("{label}: {f:#x} no app"),
+                f,
+                Conv::Cdecl,
+                &[0, names[0], 1],
+                |g| {
+                    Out::U32(if f == 0x0062_2d40 {
+                        l2b::button_press(g, 0, names[0])
+                    } else {
+                        l2b::button_set(g, 0, names[0], 1)
+                    })
+                },
+            );
+        }
+        t.reset();
+    }
+}
+
+/// A node at `node` owned by `owner` (or not) in a ring with two others.
+fn owned_node(t: &mut Twins, node: u32, owner: u32) {
+    let a = t.junk(0x30, 1);
+    let b = t.junk(0x30, 2);
+    t.w32(node, a);
+    t.w32(node + 4, b);
+    t.w32(a + 4, node);
+    t.w32(b, node);
+    t.w32(node + 8, owner);
+    t.w32(node + 0x28, 0x1111);
+    t.w32(node + 0x2c, 0x2222);
+}
+
+#[test]
+fn left2_release_input_map_matches_the_original() {
+    use ffx_pother_b::m5p_framework_input_left2::bridge as l2b;
+    for (label, mut t) in Twins::all() {
+        for with_map in [true, false] {
+            let this = t.junk(0xa0, 3);
+            let map = t.zeros(0x120);
+            for k in 0..5 {
+                owned_node(
+                    &mut t,
+                    map + 0x18 + 0x30 * k,
+                    if k % 2 == 0 { map } else { 0x55 },
+                );
+            }
+            t.w32(this + 0x9c, if with_map { map } else { 0 });
+            for i in 0..18u32 {
+                let dev = if i % 3 == 1 { 0 } else { t.zeros(0x150) };
+                t.w32(this + 0x38 + 4 * i, dev);
+                if dev != 0 {
+                    for k in 0..4 {
+                        let owner = if (i + k) % 2 == 0 { dev } else { 0x66 };
+                        owned_node(&mut t, dev + 0x6c + 0x30 * k, owner);
+                    }
+                }
+            }
+            let what = format!("{label}: input map release map {with_map}");
+            t.check(&what, 0x0062_d170, Conv::Thiscall(this), &[], |g| {
+                l2b::release_input_map(g, this);
+                Out::None
+            });
+        }
+        t.reset();
+    }
+}
