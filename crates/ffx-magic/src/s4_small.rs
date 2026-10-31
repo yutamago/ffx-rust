@@ -7106,3 +7106,89 @@ pub const MEAN_ON_SCREEN: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A node copied from a model node (internal, `ecx` = `[node, parent,
+/// src]`): a fresh node under `parent` ([`child_last`]), its three
+/// matrices `+0x5c`, `+0x9c`, `+0xdc` from the source's (slot 230) and
+/// its place `+0x12c` (slot 325), each call seeing the words the earlier
+/// ones left. Returns slot 325's `eax`.
+///
+/// `magic_0186` 0x10003ad0 (176 bytes; 2 DLLs).
+pub fn node_copy<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let r = fr.ecx;
+    let n = g.read::<u32>(r);
+    let parent = g.read::<u32>(r + 4);
+    child_last(g, n, parent);
+    let mut words = Vec::new();
+    for (off, table) in [(0x5c, 0x47), (0x9c, 0x64), (0xdc, 0x81)] {
+        let src = g.read::<u32>(r + 8).wrapping_add(off);
+        words.splice(0..0, [n.wrapping_add(off), src]);
+        // call width: 2..6 (the earlier calls' words stay on the stack)
+        slot_call(g, img, f, (table, 230), &words);
+    }
+    let src = g.read::<u32>(r + 8).wrapping_add(0x12c);
+    words.splice(0..0, [n.wrapping_add(0x12c), src]);
+    // call width: 8 (the earlier calls' words stay on the stack)
+    through(slot_call(g, img, f, (0x9e, 325), &words))
+}
+
+/// [`node_copy`].
+pub const NODE_COPY: Sig = Sig {
+    len: 176,
+    hash: 0xf3c8_3f46_37d5_aaab,
+    calls: &[],
+    imports: &[],
+};
+
+/// One frame of the effect while `G_ON` is set (else 0): `*G_P` =
+/// `ITEM`, the screen and camera matrices (slots 723, 724), `*G_Q` =
+/// `G_R` and `G_S` = `G_T`; the timeline runs
+/// ([`crate::sa_misc::timeline`]) while slot 261 `(0)` answers non-zero;
+/// when slot 261 `(1)` does, it is stopped
+/// ([`crate::sb_misc::timeline_stop_global`]) and slot 214 `(*G_E)`
+/// runs, else `G_FRAMES` counts up (no arguments). Returns 1.
+///
+/// `magic_0206` 0x10001bc0 (178 bytes; 3 DLLs).
+pub fn effect_frame_261<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let rd = |g: &G, o: u32| g.read::<u32>(op(img, f, o));
+    if rd(g, 0x2) == 0 {
+        return Ret::eax(0);
+    }
+    let p = rd(g, 0xd);
+    let a = rd(g, 0x13);
+    g.write::<u32>(p, op(img, f, 0x19));
+    slot_call(g, img, f, (0x1e, 723), &[a]);
+    let b = rd(g, 0x31);
+    slot_call(g, img, f, (0x2b, 724), &[b, a]);
+    let q = rd(g, 0x3f);
+    let r = rd(g, 0x44);
+    g.write::<u32>(q, r);
+    let t = rd(g, 0x4b);
+    g.write::<u32>(op(img, f, 0x50), t);
+    if slot_call(g, img, f, (0x55, 261), &[0, b, a]).eax != 0 {
+        crate::sa_misc::timeline(g, img, img.rel32_target(f + 0x6b));
+    }
+    if slot_call(g, img, f, (0x70, 261), &[1]).eax == 0 {
+        let n = op(img, f, 0xa8);
+        let v = g.read::<u32>(n).wrapping_add(1);
+        g.write::<u32>(n, v);
+        return Ret::eax(1);
+    }
+    crate::sb_misc::timeline_stop_global(g, img, img.rel32_target(f + 0x86));
+    let e = rd(g, 0x91);
+    slot_call(g, img, f, (0x8b, 214), &[e]);
+    Ret::eax(1)
+}
+
+/// [`effect_frame_261`].
+pub const EFFECT_FRAME_261: Sig = Sig {
+    len: 178,
+    hash: 0x8f03_2878_e367_46b0,
+    calls: &[
+        (0x6b, Callee::Sig(&crate::sa_misc::TIMELINE)),
+        (0x86, Callee::Sig(&crate::sb_misc::TIMELINE_STOP_GLOBAL)),
+    ],
+    imports: &[],
+};

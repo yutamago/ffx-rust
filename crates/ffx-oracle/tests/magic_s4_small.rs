@@ -3257,3 +3257,41 @@ fn sounds_and_means() {
     });
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn node_copies_and_frames_261() {
+    let Some(mut t) = twin(186) else { return };
+    recs(&mut t, &[(230, 2), (325, 2)]);
+    let f = t.at(0x3ad0);
+    let (r, n, parent, src) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x400,
+        SCRATCH + 0x800,
+    );
+    for p in [0u32, parent] {
+        t.write(n, &[0x66; 0x140]);
+        t.write(parent, &[0; 0x20]);
+        t.set_u32(parent + 0x10, parent);
+        t.set_u32(parent + 0xc, parent);
+        t.set_u32(r, n);
+        t.set_u32(r + 4, p);
+        t.set_u32(r + 8, src);
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::node_copy);
+    }
+    drop(t);
+    let Some(mut t) = twin(206) else { return };
+    let f = t.at(0x1bc0);
+    let answers = SCRATCH + 0x90;
+    rec(&mut t, 261, 1, move |m, a| m.r32(answers + 4 * (a[0] & 1)));
+    recs(&mut t, &[(723, 1), (724, 2), (214, 1)]);
+    for o in [0xd, 0x3f] {
+        t.set_u32(op(&t, f, o), SCRATCH + 0x100 + o);
+    }
+    for (on, run, stop) in [(0u32, 0u32, 0u32), (1, 0, 0), (1, 1, 0), (1, 0, 1)] {
+        t.set_u32(op(&t, f, 0x2), on);
+        t.set_u32(answers, run);
+        t.set_u32(answers + 4, stop);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

@@ -1159,6 +1159,7 @@ ports! {
     "motion set" => s4_small::MOTION_SET, s4_small::motion_set;
     "spin and run" => s4_small::SPIN_AND_RUN, s4_small::spin_and_run;
     "sound record" => s4_small::SOUND_RECORD, s4_small::sound_record;
+    "effect frame (slot 261)" => s4_small::EFFECT_FRAME_261, s4_small::effect_frame_261;
     "mean on screen" => s4_small::MEAN_ON_SCREEN, s4_small::mean_on_screen;
     "0644 start kind (b)" => s4_fam446::START_KIND_E, s4_fam446::start_kind_e;
     "thunk: walk and track" => s4_wrap::JMP_WALK_TRACK, s4_wrap::ecx_jmp;
@@ -1566,6 +1567,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("move set-up (static)", &s4_small::MOVE_SETUP_STATIC),
     ("light node", &s4_small::LIGHT_NODE),
     ("turn a point", &s4_small::TURN_POINT),
+    ("node copy", &s4_small::NODE_COPY),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
