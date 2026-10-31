@@ -6800,3 +6800,75 @@ pub const CAMERA_BEHIND_START: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// A camera effect's start (cdecl, no arguments): the effect camera `c`
+/// (slot 287 `(0, 0, 7)`, kept in `G_CAM`) reset twice (slot 283 `(c, 0)`,
+/// `(c, 1)`), the camera paused (slot 281 `(1)`) while `*G_P` is 0; three
+/// camera records reset (each: u16 and byte 0, seventeen words, the
+/// second and third 1.0, the last 1024.0, the rest 0; the operands of
+/// each record 0xba bytes on), `*G_X = 0`, and a task node from the free
+/// ring (taken inline, callback `CB`, kind 1) appended to the task list
+/// and made the current one. Returns the list's old tail, or 0xffff when
+/// the list was empty.
+///
+/// `magic_0253` 0x10001bc0 (854 bytes; 2 DLLs).
+pub fn camera_records_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let mut s = Pushes::default();
+    s.push_all(&[7, 0, 0]);
+    // call width: 12 (the most `Pushes::words` holds)
+    let c = s.call(g, slot_target(g, w(0x1), 287), 0).eax;
+    g.write::<u32>(w(0x14), c);
+    s.push_all(&[0, c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x1c), 283), 0);
+    let c = g.read::<u32>(w(0x31));
+    s.push_all(&[1, c]);
+    // call width: 12 (the most `Pushes::words` holds)
+    s.call(g, slot_target(g, w(0x29), 283), 0);
+    if g.read::<u32>(w(0x42)) == 0 {
+        slot_call(g, img, f, (0x4a, 281), &[1]);
+    }
+    for r in [0u32, 0xba, 0x174] {
+        g.write::<u16>(w(0x66 + r), 0);
+        g.write::<u8>(w(0x6e + r), 0);
+        for i in 0..17 {
+            let v = match i {
+                1 | 2 => 0x3f80_0000,
+                16 => 0x4480_0000,
+                _ => 0,
+            };
+            g.write::<u32>(w(0x75 + r + 0xa * i), v);
+        }
+    }
+    g.write::<u32>(w(0x293), 0);
+    let node = inline_take(g, img, f, [0x5f, 0x2a6, 0x2c3, 0x2cb, 0x2fc, 0x307]);
+    g.write::<u8>(node + 0x18, 1);
+    g.write::<u32>(node + 4, 0);
+    let eax = if g.read::<u32>(w(0x30d)) == 0 {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x342), node);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(w(0x34b), node);
+        g.write::<u32>(w(0x351), node);
+        0xffff
+    } else {
+        let tail = g.read::<u32>(w(0x321));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail + 4, node);
+        g.write::<u32>(node + 8, node);
+        g.write::<u32>(w(0x32f), node);
+        g.write::<u32>(w(0x335), node);
+        tail
+    };
+    Ret::eax(eax)
+}
+
+/// [`camera_records_start`].
+pub const CAMERA_RECORDS_START: Sig = Sig {
+    len: 854,
+    hash: 0x2b94_0246_d64f_db66,
+    calls: &[],
+    imports: &[],
+};

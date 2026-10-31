@@ -3175,3 +3175,38 @@ fn camera_behind_starts() {
         t.check_entry(f, Call::default(), &[0x0188_0000 + k], Eax::Checked);
     }
 }
+
+#[test]
+fn camera_records_started() {
+    let Some(mut t) = twin(253) else { return };
+    let f = t.at(0x1bc0);
+    rec(&mut t, 287, 3, |_, a| 0x0287_0000 ^ a[2]);
+    recs(&mut t, &[(283, 2), (281, 1)]);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    let (head, tail) = (op(&t, f, 0x30d), op(&t, f, 0x321));
+    for (k, (n, listed, paused)) in [(3u32, false, 0u32), (1, true, 1), (2, true, 0)]
+        .into_iter()
+        .enumerate()
+    {
+        let k = k as u32;
+        for i in 1..=n {
+            t.write(node(i), &varied(0x1c, i + k));
+            t.set_u32(node(i), node(if i == 1 { n } else { i - 1 }));
+            t.set_u32(node(i) + 4, node(if i == n { 1 } else { i + 1 }));
+        }
+        t.set_u32(op(&t, f, 0x2a6), node(1));
+        t.set_u16(op(&t, f, 0x5f), n as u16);
+        t.write(op(&t, f, 0x66) - 0x10, &varied(0x2a0, k));
+        t.set_u32(op(&t, f, 0x293), 0x1234 + k);
+        t.set_u32(op(&t, f, 0x42), paused);
+        if listed {
+            t.write(SCRATCH + 0x1400, &varied(0x1c, k));
+            t.set_u32(head, SCRATCH + 0x1400);
+            t.set_u32(tail, SCRATCH + 0x1400);
+        } else {
+            t.set_u32(head, 0);
+            t.set_u32(tail, 0);
+        }
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
