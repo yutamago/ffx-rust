@@ -1591,6 +1591,8 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("scale task 20", &s4_small::SCALE_TASK_20),
     ("scale task 1", &s4_small::SCALE_TASK_1),
     ("scale task (argument)", &s4_small::SCALE_TASK_ARG),
+    ("move ends", &s4_small::MOVE_ENDS),
+    ("pulse colour", &s4_small::PULSE_COLOUR),
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

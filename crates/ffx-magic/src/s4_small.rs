@@ -8146,3 +8146,91 @@ pub const SCALE_TASK_ARG: Sig = Sig {
     calls: &[(0x7d, Callee::Sig(&TAKE))],
     imports: &[],
 };
+
+/// A move's ends set (internal, `ecx` = `[obj, from, to, mode]`): mode 0
+/// first gives the object `w`s 1.0 at `+0xdc..+0xe4` and the target `to`
+/// at `+0xec..+0xf4`; modes 0 and 1 then take `from` at `+0xbc..+0xc4`,
+/// the way left `+0xac.. - from` at `+0xcc..` and the mode byte at
+/// `+0x137`. Returns `from` with the mode in its low byte, or `mode - 1`
+/// for other modes.
+///
+/// `magic_0070` 0x10003e00 (196 bytes; 3 DLLs).
+pub fn move_ends<G: Game>(g: &mut G, _img: &Image, fr: &Frame) -> Ret {
+    let r = fr.ecx;
+    let mode = g.read::<u32>(r + 0xc);
+    let obj = g.read::<u32>(r);
+    let at = |o: u32| obj.wrapping_add(o);
+    if mode > 1 {
+        return Ret::eax(mode.wrapping_sub(1));
+    }
+    if mode == 0 {
+        for i in 0..3 {
+            g.write::<u32>(at(0xdc + 4 * i), 0x3f80_0000);
+            let to = g.read::<u32>(r + 8);
+            let x = g.read::<u32>(to.wrapping_add(4 * i));
+            g.write::<u32>(at(0xec + 4 * i), x);
+        }
+    }
+    let mut from = 0;
+    for i in 0..3 {
+        from = g.read::<u32>(r + 4);
+        let fl = |g: &G, a: u32| f32::from_bits(g.read::<u32>(a));
+        let v = fl(g, from.wrapping_add(4 * i));
+        let left = crate::sb_sse::sub(fl(g, at(0xac + 4 * i)), v);
+        g.write::<u32>(at(0xbc + 4 * i), v.to_bits());
+        g.write::<u32>(at(0xcc + 4 * i), left.to_bits());
+    }
+    let m = g.read::<u8>(r + 0xc);
+    g.write::<u8>(at(0x137), m);
+    Ret::eax((from & !0xff) | u32::from(m))
+}
+
+/// [`move_ends`].
+pub const MOVE_ENDS: Sig = Sig {
+    len: 196,
+    hash: 0xcaf8_2276_a48c_21ea,
+    calls: &[],
+    imports: &[],
+};
+
+/// [`level_colour`] with a rise and a fall (internal, `ecx` = the step,
+/// `dl` = red; cdecl `(g, b, x)`): from step 19 on nothing happens; the
+/// alpha is `step * 128 / 4` up to step 4, else `(19 - step) * 128 / 15`
+/// (signed); slot 776 `(x)` gives a handle and slot 915 `(red K, g K, b
+/// K, alpha K, h)` sets the colour. Returns slot 915's `eax`, or the
+/// step.
+///
+/// `magic_0515` 0x100023c0 (202 bytes; 4 DLLs).
+pub fn pulse_colour<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::sb_sse::{cvt, mul};
+    let f = fr.at;
+    let step = fr.ecx.cast_signed();
+    if step >= 0x13 {
+        return Ret::eax(fr.ecx);
+    }
+    let alpha = if step <= 4 {
+        step.wrapping_shl(7) / 4
+    } else {
+        (0x13 - step).wrapping_shl(7) / 15
+    };
+    let x = fr.arg(g, 2);
+    let h = slot_call(g, img, f, (0x45, 776), &[x]).eax;
+    let k = f32::from_bits(g.read::<u32>(op(img, f, 0x58)));
+    let ch = |v: u32| mul(cvt(v & 0xff), k).to_bits();
+    let words = [
+        ch(fr.edx),
+        ch(fr.arg(g, 0)),
+        ch(fr.arg(g, 1)),
+        ch(alpha.cast_unsigned()),
+        h,
+    ];
+    through(slot_call(g, img, f, (0xaa, 915), &words))
+}
+
+/// [`pulse_colour`].
+pub const PULSE_COLOUR: Sig = Sig {
+    len: 202,
+    hash: 0xeb7e_4496_5120_fe6c,
+    calls: &[],
+    imports: &[],
+};

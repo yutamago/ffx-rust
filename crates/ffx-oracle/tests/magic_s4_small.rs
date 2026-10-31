@@ -3756,3 +3756,47 @@ fn argument_scale_tasks() {
         t.check(f, c, &[0x0028_0028], Eax::Checked, s4_small::scale_task_arg);
     }
 }
+
+#[test]
+fn move_ends_and_pulses() {
+    let Some(mut t) = twin(70) else { return };
+    let f = t.at(0x3e00);
+    let (r, obj, from, to) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x400,
+        SCRATCH + 0x500,
+    );
+    for i in 0..3 {
+        t.set_u32(from + 4 * i, (1.5f32 + i as f32).to_bits());
+        t.set_u32(to + 4 * i, (-2.0f32 * i as f32).to_bits());
+    }
+    for mode in [0u32, 1, 2, 0x0105] {
+        t.write(obj, &[0x11; 0x140]);
+        for i in 0..3 {
+            t.set_u32(obj + 0xac + 4 * i, (10.0f32 + i as f32).to_bits());
+        }
+        for (i, w) in [obj, from, to, mode].into_iter().enumerate() {
+            t.set_u32(r + 4 * i as u32, w);
+        }
+        t.check(f, Call::this(r), &[], Eax::Checked, s4_small::move_ends);
+    }
+    drop(t);
+    let Some(mut t) = twin(515) else { return };
+    recs(&mut t, &[(776, 1), (915, 5)]);
+    let f = t.at(0x23c0);
+    for step in [0u32, 3, 4, 5, 18, 19, 0xffff_fffb] {
+        let c = Call {
+            ecx: step,
+            edx: 0x1ff,
+            ..Call::default()
+        };
+        t.check(
+            f,
+            c,
+            &[0x80, 0x7, 0x0776_0001],
+            Eax::Checked,
+            s4_small::pulse_colour,
+        );
+    }
+}
