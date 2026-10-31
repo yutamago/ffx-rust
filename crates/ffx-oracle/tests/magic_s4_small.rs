@@ -3670,3 +3670,31 @@ fn motion_sets_b_and_camera_boxes() {
     t.set_u32(op(&t, f, 0x13), SCRATCH + 0x1000);
     t.check_entry(f, Call::default(), &[], Eax::Checked);
 }
+
+#[test]
+fn fixed_scale_tasks() {
+    for (n, rva) in [(307u16, 0xb740u32), (168, 0x78e0)] {
+        let Some(mut t) = twin(n) else { return };
+        let f = t.at(rva);
+        let take = t.img.rel32_target(f + 0x7b);
+        let s = SCRATCH + 0x100;
+        for (listed, a, b) in [(false, 0.5f32, -1.0f32), (true, 0.0, f32::NAN)] {
+            pool_ring(&mut t, take);
+            t.write(s, &[0x44; 0x40]);
+            if listed {
+                t.write(SCRATCH + 0x5000, &[0x22; 0x1c]);
+                t.set_u32(op(&t, f, 0x81), SCRATCH + 0x5000);
+                t.set_u32(op(&t, f, 0x99), SCRATCH + 0x5000);
+            } else {
+                t.set_u32(op(&t, f, 0x81), 0);
+            }
+            let c = Call {
+                ecx: s,
+                edx: 0x0bad_0edd,
+                ..Call::default()
+            }
+            .with_xmm(&[Xmm::F32(0), Xmm::F32(a.to_bits()), Xmm::F32(b.to_bits())]);
+            t.check(f, c, &[], Eax::Checked, s4_small::scale_task_fixed);
+        }
+    }
+}

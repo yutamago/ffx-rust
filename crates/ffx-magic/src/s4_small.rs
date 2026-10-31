@@ -7358,8 +7358,15 @@ pub const ACTORS_ENTRIES: Sig = Sig {
 ///
 /// `magic_0348` 0x10002c00 (183 bytes; 2 DLLs).
 pub fn scale_task_edx<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    scale_task_with(g, img, fr, None)
+}
+
+/// [`scale_task_edx`] with the count `edx`, or the code's (operand
+/// `+0x6f`; 8 bytes more of code from there on).
+fn scale_task_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, imm: Option<u32>) -> Ret {
     let f = fr.at;
     let s = fr.ecx;
+    let sh = if imm.is_some() { 8 } else { 0 };
     let k = f32::from_bits(g.read::<u32>(op(img, f, 0x4)));
     // comiss 0, x; jb: kept when above 0 (or unordered)
     let keep = |x: f32| if 0.0 < x || x.is_nan() { x } else { k };
@@ -7376,22 +7383,24 @@ pub fn scale_task_edx<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(s + 0x1c, 0x3f80_0000);
     g.write::<u32>(s + 0x28, 0);
     g.write::<u32>(s + 0x34, 0);
-    g.write::<u32>(s + 0x30, fr.edx);
-    g.write::<u32>(s + 0x2c, fr.edx);
-    let node = take(g, img, img.rel32_target(f + 0x73), op(img, f, 0x1f));
-    let empty = g.read::<u32>(op(img, f, 0x79)) == 0;
+    let count = imm.map_or(fr.edx, |o| op(img, f, o));
+    g.write::<u32>(s + 0x30, count);
+    g.write::<u32>(s + 0x2c, count);
+    let o = |off: u32| off + sh;
+    let node = take(g, img, img.rel32_target(f + o(0x73)), op(img, f, 0x1f));
+    let empty = g.read::<u32>(op(img, f, o(0x79))) == 0;
     g.write::<u32>(node.wrapping_add(0x14), s);
     g.write::<u8>(node.wrapping_add(0x18), 1);
     g.write::<u32>(node.wrapping_add(4), 0);
     if empty {
         g.write::<u32>(node, 0);
-        g.write::<u32>(op(img, f, 0xaa), node);
-        g.write::<u32>(op(img, f, 0xaf), node);
+        g.write::<u32>(op(img, f, o(0xaa)), node);
+        g.write::<u32>(op(img, f, o(0xaf)), node);
     } else {
-        let tail = g.read::<u32>(op(img, f, 0x91));
+        let tail = g.read::<u32>(op(img, f, o(0x91)));
         g.write::<u32>(node, tail);
         g.write::<u32>(tail.wrapping_add(4), node);
-        g.write::<u32>(op(img, f, 0x9b), node);
+        g.write::<u32>(op(img, f, o(0x9b)), node);
     }
     g.write::<u32>(node.wrapping_add(8), node);
     Ret::eax(node)
@@ -8038,5 +8047,31 @@ pub const CAMERA_BOXES: Sig = Sig {
     len: 189,
     hash: 0x5518_84eb_5a68_f646,
     calls: &[(0xb5, Callee::Any)],
+    imports: &[],
+};
+
+/// [`scale_task_edx`] with the code's count (30 in `magic_0307`, 20 in
+/// `magic_0168`; internal, `ecx` = the state, `xmm1`, `xmm2`). Returns the
+/// node.
+///
+/// `magic_0307` 0x1000b740 and `magic_0168` 0x100078e0 (191 bytes; 2-3
+/// DLLs each).
+pub fn scale_task_fixed<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    scale_task_with(g, img, fr, Some(0x6f))
+}
+
+/// [`scale_task_fixed`] with 30.
+pub const SCALE_TASK_30: Sig = Sig {
+    len: 191,
+    hash: 0x3bff_b17e_c41b_28ad,
+    calls: &[(0x7b, Callee::Sig(&TAKE))],
+    imports: &[],
+};
+
+/// [`scale_task_fixed`] with 20.
+pub const SCALE_TASK_20: Sig = Sig {
+    len: 191,
+    hash: 0xf6ec_8a7b_91ca_6255,
+    calls: &[(0x7b, Callee::Sig(&TAKE))],
     imports: &[],
 };
