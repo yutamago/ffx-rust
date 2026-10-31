@@ -1286,6 +1286,8 @@ ports! {
     "sparks thrown" => s5_misc::SPARKS_THROWN, s5_misc::sparks_thrown;
     "targets more, tasks" => s5_misc::TARGETS_MORE_TASKS, s5_misc::targets_more_tasks;
     "camera tree" => s5_misc::CAMERA_TREE, s5_misc::camera_tree;
+    "models around" => s5_misc::MODELS_AROUND, s5_misc::models_around;
+    "models around start" => s5_misc::MODELS_AROUND_START, s5_misc::models_around_start;
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:

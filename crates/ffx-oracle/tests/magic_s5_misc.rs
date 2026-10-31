@@ -2484,3 +2484,74 @@ fn sprite_packets() {
         });
     }
 }
+
+#[test]
+fn models_drawn_around() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x21b0);
+    for (s, n) in [(235u32, 1usize), (330, 3), (328, 3), (329, 3), (231, 3)] {
+        rec_mem(&mut t, s, n, 16, Some(0));
+    }
+    rec_mem(&mut t, 229, 3, 4, Some(0));
+    rec_mem(&mut t, 723, 3, 16, Some(0));
+    rec_mem(&mut t, 724, 1, 16, Some(0));
+    rec_mem(&mut t, 562, 0, 0, None);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[0]);
+    let lock = SCRATCH + 0x7f0;
+    rec_lock(&mut t, 773, 2, lock, |_, a| a[0] & 1);
+    for (s, n) in [(819u32, 4usize), (870, 6), (871, 5)] {
+        rec_lock(&mut t, s, n, lock, move |_, _| s << 16);
+    }
+    let b = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x1e), b);
+    let draw = t.img.rel32_target(f + 0x251);
+    t.set_u32(op(&t, draw, 0x8f), lock);
+    let table = SCRATCH + 0x400;
+    t.set_u32(op(&t, f, 0x36), table);
+    for k in 0..2u32 {
+        t.write(b + 0x2e00, &varied(0xd80, k));
+        for i in 0..32u32 {
+            t.set_u32(b + 0x2ec0 + 4 * i, ((i % 7) as f32 * 0.5 - 1.0).to_bits());
+        }
+        t.write(table + 0x200, &varied(0x300, k + 1));
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+#[test]
+fn models_around_starts() {
+    let Some(mut t) = twin(563) else { return };
+    let f = t.at(0x4d60);
+    let b = SCRATCH + 0x8000;
+    t.set_u32(op(&t, f, 0x5), b);
+    let (head, tail) = (op(&t, f, 0x1c3), op(&t, f, 0x1d2));
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    // (two nodes at least: with one, the original writes through 0)
+    for (k, (angle, count, listed)) in [
+        (0.5f32, 3u16, false),
+        (4.0, 2, true),
+        (-4.0, 2, false),
+        (9.0, 4, true),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        t.write(b + 0x2b00, &varied(0x1100, k));
+        t.set_u32(b + 0x2b04, angle.to_bits());
+        for i in 0..4u32 {
+            t.write(node(i), &varied(0x1c, i + k));
+            t.set_u32(node(i), node((i + 3) % 4));
+            t.set_u32(node(i) + 4, node((i + 1) % 4));
+        }
+        t.set_u32(op(&t, f, 0x163), node(0));
+        t.set_u16(op(&t, f, 0x148), count);
+        t.write(SCRATCH + 0x1400, &varied(0x1c, 9));
+        let last = if listed { SCRATCH + 0x1400 } else { 0 };
+        t.set_u32(head, last);
+        t.set_u32(tail, last);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

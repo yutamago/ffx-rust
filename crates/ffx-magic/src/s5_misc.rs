@@ -16,7 +16,7 @@ use crate::s4_misc::{
     SCALE_TASK, START_OBJECT_AT, TRAIL_DRAW, UNLIST_FREE, scale_task, start_object_at, trail_draw,
     unlist_free,
 };
-use crate::s4_small::{CAMERA_FACE_ACTOR, camera_face_actor};
+use crate::s4_small::{CAMERA_FACE_ACTOR, SOUND_RECORD, camera_face_actor, sound_record};
 use crate::s4_summon::{TARGETS_INIT, targets_init, trunc};
 use crate::sa_misc::{LEAVE, TIMELINE, leave, timeline};
 use crate::sa_pool::{GIVE_BACK, TAKE, give_back, take};
@@ -5118,6 +5118,185 @@ pub fn sprite_packet<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) -> u32 {
 pub const SPRITE_PACKET: Sig = Sig {
     len: 644,
     hash: 0xd7cf_0844_04d7_8697,
+    calls: &[],
+    imports: &[],
+};
+
+/// Eighteen models drawn around a point (cdecl, no arguments; an aligned
+/// /GS frame with the matrix `M` as a local): the sound record
+/// ([`sound_record`]), then for the records `r = *G_S + 0x2ed4 + 0x60 k`:
+/// `M` a unit matrix turned by `r[1]` about z, `r[-1]` about x, `r[0]`
+/// about y (slots 235, 330, 328, 329) and multiplied by `*G_S + 0x35a0`
+/// (slot 231); the point `r - 0x14` through `M` (`v2`, a local) and
+/// through `*G_S + 0x35a0` (`v1`, `M`'s last row; slot 229 each); `M`'s
+/// last row becomes `(v1 - v2) K + *G_S+0x3620 + r+0x1c` (per axis, in
+/// the original's order), its three rows scaled by `K`, and the model
+/// `T[0x220 + 0x20 k + 0x1c]` (`T = *G_T`) is drawn with it
+/// ([`model_draw`]). Returns 0x460.
+///
+/// `magic_0563` 0x100021b0 (644 bytes; 2 DLLs).
+pub fn models_around<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    // push ebp; and esp, -8; sub esp, 0x64; three pushes
+    let top = fr.esp.wrapping_sub(4) & !7;
+    let call_esp = top.wrapping_sub(0x74);
+    let sound = Frame {
+        at: img.rel32_target(f + 0x18),
+        esp: call_esp,
+        ..*fr
+    };
+    sound_record(g, img, &sound);
+    let b = g.read::<u32>(w(0x1e));
+    let m = top.wrapping_sub(0x58);
+    let v1 = top.wrapping_sub(0x28);
+    let v2 = top.wrapping_sub(0x14);
+    let k = g.read::<f32>(w(0x12c));
+    let base = b.wrapping_add(0x35a0);
+    let mut i = 0x220u32;
+    let mut r = b.wrapping_add(0x2ed4);
+    while i < 0x460 {
+        let t = g.read::<u32>(w(0x36));
+        let mut s = Pushes::default();
+        s.push(m);
+        // call width: 12 (the most `Pushes::words` holds)
+        s.call(g, slot_target(g, w(0x40), 235), 0);
+        for (table, slot, a) in [
+            (0x5du32, 330u32, 4u32),
+            (0x7d, 328, 0xffff_fffc),
+            (0x9c, 329, 0),
+        ] {
+            s.set_top(g.read::<u32>(r.wrapping_add(a)));
+            s.push_all(&[m, m]);
+            // call width: 12 (the most `Pushes::words` holds)
+            s.call(g, slot_target(g, w(table), slot), 0);
+            s.pop(2);
+        }
+        slot_call(g, img, f, (0xbd, 231), &[m, base, m]);
+        let src = r.wrapping_sub(0x14);
+        slot_call(g, img, f, (0xdb, 229), &[v2, m, src]);
+        slot_call(g, img, f, (0xf8, 229), &[v1, base, src]);
+        let d = [0u32, 4, 8].map(|o| mul(sub(g.read::<f32>(v1 + o), g.read::<f32>(v2 + o)), k));
+        for (o, x) in [0u32, 4, 8].into_iter().zip(d) {
+            g.write::<f32>(v1 + o, x);
+        }
+        let at = |g: &G, a: u32| g.read::<f32>(a);
+        let x = add(d[0], at(g, b.wrapping_add(0x3620)));
+        g.write::<f32>(v1, x);
+        let y = add(at(g, b.wrapping_add(0x3624)), d[1]);
+        g.write::<f32>(v1 + 4, y);
+        let z = add(at(g, b.wrapping_add(0x3628)), d[2]);
+        g.write::<f32>(v1 + 8, z);
+        g.write::<f32>(v1, add(at(g, r.wrapping_add(0x1c)), x));
+        g.write::<f32>(v1 + 4, add(at(g, r.wrapping_add(0x20)), y));
+        g.write::<f32>(v1 + 8, add(at(g, r.wrapping_add(0x24)), z));
+        for o in [0u32, 4, 8, 0x10, 0x14, 0x18, 0x20, 0x24, 0x28] {
+            let x = mul(at(g, m + o), k);
+            g.write::<f32>(m + o, x);
+        }
+        let model = g.read::<u32>(t.wrapping_add(i).wrapping_add(0x1c));
+        model_draw(g, img, img.rel32_target(f + 0x251), call_esp, model, m);
+        i += 0x20;
+        r = r.wrapping_add(0x60);
+    }
+    Ret::eax(i)
+}
+
+/// [`models_around`] (the `rel32`s: [`sound_record`], [`model_draw`] and
+/// `__security_check_cookie`).
+pub const MODELS_AROUND: Sig = Sig {
+    len: 644,
+    hash: 0x0f37_1fab_5a9a_58d0,
+    calls: &[
+        (0x18, Callee::Sig(&SOUND_RECORD)),
+        (0x251, Callee::Sig(&MODEL_DRAW)),
+        (0x27c, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`models_around`]'s start (cdecl, no arguments): with `B = *G_S`,
+/// `B+0x3630 = 0`, the angle `B+0x2b04 - K` wrapped once into `B+0x3634`,
+/// `B+0x3638..+0x364c` cleared, `B+0x3660 = 0x5b`, the 18 records' words
+/// `B+0x2ed0 + 0x60 k .. +0x4c` cleared, `B+0x3664 = 0`; then two task
+/// nodes from the free ring (taken inline, callbacks `CB1`, `CB2`): the
+/// first appended to the task list and kept at `B+0x3ba0`, the second
+/// (its `+0x14` 0) after it as the list's tail. Returns 0.
+///
+/// `magic_0563` 0x10004d60 (653 bytes; 2 DLLs).
+pub fn models_around_start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| op(img, f, o);
+    let b = g.read::<u32>(w(0x5));
+    g.write::<u32>(b.wrapping_add(0x3630), 0);
+    let a = sub(
+        g.read::<f32>(b.wrapping_add(0x2b04)),
+        g.read::<f32>(w(0x1f)),
+    );
+    let a = wrap_once(g, img, f, a, [0x26, 0x30, 0x3a, 0x47]);
+    g.write::<f32>(b.wrapping_add(0x3634), a);
+    for o in (0x3638u32..0x3650).step_by(4) {
+        g.write::<u32>(b.wrapping_add(o), 0);
+    }
+    g.write::<u32>(b.wrapping_add(0x3660), 0x5b);
+    for k in 0..0x12u32 {
+        let r = b.wrapping_add(0x2ed4 + 0x60 * k);
+        for o in (0u32..0x50).step_by(4) {
+            g.write::<u32>(r.wrapping_sub(4).wrapping_add(o), 0);
+        }
+    }
+    let mut n = g.read::<u16>(w(0x148));
+    g.write::<u32>(b.wrapping_add(0x3664), 0);
+    let (first, next) = if n == 0 {
+        (0, g.read::<u32>(w(0x159)))
+    } else {
+        let node = g.read::<u32>(w(0x163));
+        let next = unlink_free(g, node, n);
+        n -= 1;
+        g.write::<u32>(w(0x18d), next);
+        reset_task_node(g, node, w(0x1b2));
+        g.write::<u16>(w(0x1bd), n);
+        (node, next)
+    };
+    let head = g.read::<u32>(w(0x1c3));
+    g.write::<u32>(first.wrapping_add(4), 0);
+    if head != 0 {
+        let tail = g.read::<u32>(w(0x1d2));
+        g.write::<u32>(first, tail);
+        g.write::<u32>(tail.wrapping_add(4), first);
+    } else {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0x1e5), first);
+    }
+    g.write::<u32>(first.wrapping_add(8), first);
+    g.write::<u32>(b.wrapping_add(0x3ba0), first);
+    let second = if n == 0 {
+        0
+    } else {
+        let next2 = unlink_free(g, next, n);
+        g.write::<u32>(w(if n > 1 { 0x214 } else { 0x21c }), next2);
+        reset_task_node(g, next, w(0x24d));
+        g.write::<u16>(w(0x258), n - 1);
+        next
+    };
+    g.write::<u32>(second.wrapping_add(0x14), 0);
+    g.write::<u32>(second.wrapping_add(4), 0);
+    g.write::<u32>(w(0x266), second);
+    if g.read::<u32>(w(0x26c)) != 0 {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+    } else {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x284), second);
+    }
+    g.write::<u32>(second.wrapping_add(8), second);
+    Ret::eax(0)
+}
+
+/// [`models_around_start`].
+pub const MODELS_AROUND_START: Sig = Sig {
+    len: 653,
+    hash: 0xe065_11e8_fbf0_5423,
     calls: &[],
     imports: &[],
 };
