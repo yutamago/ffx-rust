@@ -3459,7 +3459,9 @@ fn guarded_drops_and_resets() {
     for (done, one) in [(0u32, false), (1, true), (1, false)] {
         t.write(task, &[0; 0x20]);
         t.set_u32(task + 8, SCRATCH + 0x200);
-        t.write(first, &vec![0x5a; (end - first) as usize]);
+        // a different byte everywhere: the cleared bit 0 shows
+        let seed: Vec<u8> = (0..end - first).map(|i| (i * 13 + 0x81) as u8).collect();
+        t.write(first, &seed);
         t.set_u32(t.img.word(ms + 0x02), done);
         t.set_u16(t.img.word(ms + 0x11), 5);
         objects(&mut t, ro, one);
@@ -4091,7 +4093,13 @@ fn count_down_objects_and_sound_at() {
         (1, 3),
         (0x8000_0001, 0),
     ] {
-        t.write(b, &vec![0xff; 0x600]);
+        // a different byte everywhere, high bits set
+        t.write(
+            b,
+            &(0..0x600u32)
+                .map(|i| (i * 13 + 0x81) as u8)
+                .collect::<Vec<_>>(),
+        );
         t.write(task, &[0; 0x60]);
         t.set_u32(task + 0x2c, count);
         t.write(n1, &[0; 0x40]);
@@ -4319,7 +4327,12 @@ fn release_and_remove_two() {
     let list = op(&t, f, 0x82);
     let (n1, held) = (SCRATCH + 0x200, SCRATCH + 0x600);
     for (hold, listed) in [(false, 0u32), (true, 3), (false, 2), (true, 1)] {
-        t.write(b, &vec![0xff; 0x3c00]);
+        t.write(
+            b,
+            &(0..0x3c00u32)
+                .map(|i| (i * 13 + 0x81) as u8)
+                .collect::<Vec<_>>(),
+        );
         t.set_u32(lock, 7);
         if hold {
             pool_node(&mut t, held);
