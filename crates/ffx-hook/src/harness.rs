@@ -74,6 +74,7 @@
 //! | `shot <windows path>` | `ok <w> <h> update <n>`: saves the back buffer as a 32-bit BMP, the image of update `n` (in lockstep the one the main thread is held after; see `docs/harness.md`, "Frames") |
 //! | `shotwhen <range> <value hex> <mask hex> <frames> <windows path>` | `ok <w> <h> update <n>`: as `waitfor`, then the image of exactly the update `n` after which the bytes first matched, in real time too (`docs/harness.md`, boot) |
 //! | `loadsave <slot\|windows path> [lockstep]` | `ok <file> map <n> entrance <n> …`: starts the game from that save file without the title menu ([`crate::loadsave`]); with `lockstep`, lockstep holds the main thread at the boundary the load was made at, so the map's load runs in lockstep from its first update (`docs/harness.md`, "Lockstep from the load") |
+//! | `devsave <n> [lockstep]` | `ok developer save <n> map <n> entrance <n> scenario <n> …`: loads developer save `n` (1..110, in the archive) as the developers' `TkDebugLoadViewerSave` does, from the title or the field ([`crate::devsave`]); `lockstep` as for `loadsave` |
 //! | `events` | `ok <n>` then `n` lines: files opened since the last call |
 //! | `gfxcapture <windows dir> [hash] [frames N] [now] [async]` | `ok <n> draws`: the next frame's D3D11 calls (`gfx`, needs `FFX_GFX=1`); `now` in lockstep holds exactly the updates after the boundary the main thread is held at, and fails if a frame shows another (`docs/renderer.md`, "Reference captures") |
 //! | `gfxreplay <capture.ffxgfx> [out dir]` | the capture's scene drawn by `ffx-draw` in place of the game's in the next frame, compared with the capture (`gfx::replay`, `docs/draw.md`) |
@@ -1016,6 +1017,9 @@ enum Job {
     /// hold the main thread in lockstep at this boundary once the load is
     /// made (`loadsave <save> lockstep`).
     LoadSave(String, bool),
+    /// Load developer save `.0` (`devsave`, [`crate::devsave`]); `.1` as
+    /// for `LoadSave`.
+    DevSave(i32, bool),
     /// Until the bytes at the range equal the value (under the mask), or
     /// the frame limit passes: `(range, value, mask, limit frame)`.
     WaitFor(TraceRange, Vec<u8>, Vec<u8>, u32),
@@ -1470,7 +1474,8 @@ fn run_main_jobs(frame: u32) {
                     | Job::Snapshot(_)
                     | Job::FpuControl
                     | Job::Pin
-                    | Job::LoadSave(..) => true,
+                    | Job::LoadSave(..)
+                    | Job::DevSave(..) => true,
                     Job::WaitFor(ref r, ref value, ref mask, limit) => {
                         frame >= limit || range_matches(r, value, mask)
                     }
@@ -1574,6 +1579,17 @@ fn run_main_jobs(frame: u32) {
                 // the reply came back, and what the map's start-up ran free
                 // moved later state (docs/harness.md, "Lockstep from the
                 // load").
+                if lockstep && r.is_ok() {
+                    LOCKSTEP_REQUEST.store(false, Ordering::Release);
+                    ALLOWED.store(frame, Ordering::Release);
+                    LOCKSTEP.store(true, Ordering::Release);
+                }
+                let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
+            }
+            Job::DevSave(n, lockstep) => {
+                let r = crate::devsave::load(n);
+                log(&format!("devsave {n} at frame {frame}: {r:?}"));
+                // as for loadsave: the map's load in lockstep from here
                 if lockstep && r.is_ok() {
                     LOCKSTEP_REQUEST.store(false, Ordering::Release);
                     ALLOWED.store(frame, Ordering::Release);
@@ -2853,6 +2869,12 @@ fn command(line: &str) -> Result<String, String> {
             let spec = &words[1..words.len() - usize::from(lockstep)];
             on_game_thread(Job::LoadSave(spec.join(" "), lockstep))
         }
+        "devsave" => {
+            let n = arg(1)?
+                .parse::<i32>()
+                .map_err(|e| format!("developer save number: {e}"))?;
+            on_game_thread(Job::DevSave(n, words.get(2) == Some(&"lockstep")))
+        }
         "threads" => list_threads(),
         "iggyplayers" => iggy_players(),
         "stacks" => thread_stacks(),
@@ -3382,5 +3404,7 @@ pub unsafe fn install(module: usize) {
             }
         }
     }
+    // SAFETY: forwarded from the caller (start-up).
+    unsafe { crate::devsave::install(module) };
     std::thread::spawn(move || serve(port));
 }

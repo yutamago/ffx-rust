@@ -176,7 +176,37 @@ pub fn load_save_direct_lockstep(game: &mut Game, save: &str) -> Result<String> 
     load_direct(game, save, true)
 }
 
+/// Developer save `n` (1..110, `savesforviewer/<n>` in the archive), loaded
+/// from the title proper as [`load_save_direct`] loads a save file, by the
+/// harness's `devsave` command: the developers' own loader
+/// (`TkDebugLoadViewerSave`, `docs/harness.md`, "Developer saves"). No save
+/// file is read or written. With `lockstep`, as
+/// [`load_save_direct_lockstep`]. Returns the event script the save starts
+/// in (replay line `load devsave N [script] [lockstep]`).
+///
+/// # Errors
+/// Fails when the save does not load or its event does not open.
+pub fn load_dev_save(game: &mut Game, n: u32, lockstep: bool) -> Result<String> {
+    let command = if lockstep {
+        format!("devsave {n} lockstep")
+    } else {
+        format!("devsave {n}")
+    };
+    from_title(game, &command, lockstep)
+}
+
 fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
+    let command = if lockstep {
+        format!("loadsave {save} lockstep")
+    } else {
+        format!("loadsave {save}")
+    };
+    from_title(game, &command, lockstep)
+}
+
+/// Taps Start until the title proper runs, then sends `command` (a
+/// `loadsave` or `devsave`) and waits for the event it starts.
+fn from_title(game: &mut Game, command: &str, lockstep: bool) -> Result<String> {
     if !game.opened().iter().any(|e| e.contains("memochek.ebp")) {
         game.wait_for_open("memochek.ebp", 2, 3000)?;
     }
@@ -195,13 +225,8 @@ fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
     // The title's own files (test20.ebp again) must not count as the save's.
     game.events()?;
     let mut tries = 0;
-    let command = if lockstep {
-        format!("loadsave {save} lockstep")
-    } else {
-        format!("loadsave {save}")
-    };
     let reply = loop {
-        match game.command(&command) {
+        match game.command(command) {
             Ok(r) => break r,
             // The save data manager is made a little after the first event.
             Err(Error::Harness(e)) if e.contains("no save data manager") && tries < 100 => {
@@ -216,7 +241,7 @@ fn load_direct(game: &mut Game, save: &str, lockstep: bool) -> Result<String> {
     let opened = game.wait_for_open(".ebp", if lockstep { 1 } else { 5 }, 1200)?;
     if opened.contains("test20.ebp") {
         return Err(Error::Harness(format!(
-            "loadsave {save} ({reply}): the title event opened again"
+            "{command} ({reply}): the title event opened again"
         )));
     }
     Ok(opened)
