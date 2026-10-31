@@ -21,7 +21,11 @@
 //!
 //! The other accessors are hooked onto the same fields. The objects live
 //! here (one 4 KiB block per segment) until `Segment` is deleted; their
-//! addresses are meaningful only in the 32-bit game process.
+//! addresses are meaningful only in the 32-bit game process. A host whose
+//! game memory is not its own (`ffx-host`'s arena) gives each segment a
+//! block of game memory instead ([`create_instance_at`], [`GAME_BLOCK`]
+//! bytes): the objects and the codec private data are laid out there,
+//! copied in by [`sync`].
 
 #![allow(clippy::must_use_candidate)] // C-API returns the player may ignore
 
@@ -52,9 +56,14 @@ const TRACK0: usize = 0x300;
 const TRACK_SIZE: usize = 0xc0;
 const MAX_TRACKS: usize = 8;
 const BLOCK: usize = 0x1000;
+/// The size of a segment's block in game memory ([`create_instance_at`]):
+/// the objects, then the tracks' codec private data from `0x1000` on.
+pub const GAME_BLOCK: u32 = 0x1_0000;
 
 struct Segment {
-    block: Box<[u8; BLOCK]>,
+    block: Vec<u8>,
+    /// The block's game address, when the host gave one.
+    game: Option<u32>,
     src: Option<BoxedSource>,
     movie: Option<Movie<BoxedSource>>,
     /// The tracks' codec private data, with 8 spare zero bytes (the
@@ -83,7 +92,7 @@ fn addr<T>(p: *const T) -> u32 {
 
 impl Segment {
     fn base(&self) -> u32 {
-        addr(self.block.as_ptr())
+        self.game.unwrap_or_else(|| addr(self.block.as_ptr()))
     }
 
     fn put<const N: usize>(&mut self, at: usize, bytes: [u8; N]) {
@@ -108,6 +117,8 @@ impl Segment {
         self.put(TRACKS + 0x2c, o(ARRAY + 4 * tracks.len()).to_le_bytes());
         self.private.clear();
         self.tracks.clear();
+        // codec private data in the game block, after the objects
+        let mut next = BLOCK;
         for (i, t) in tracks.iter().enumerate() {
             let at = TRACK0 + i * TRACK_SIZE;
             self.put(ARRAY + 4 * i, o(at).to_le_bytes());
@@ -118,6 +129,16 @@ impl Segment {
             private.extend([0; 8]);
             let p = if t.codec_private.is_empty() {
                 0
+            } else if self.game.is_some() {
+                let end = next + private.len();
+                if end > self.block.len() {
+                    0
+                } else {
+                    self.block[next..end].copy_from_slice(&private);
+                    let at = o(next);
+                    next = end.next_multiple_of(16);
+                    at
+                }
             } else {
                 addr(private.as_ptr())
             };
@@ -160,6 +181,23 @@ pub fn reset_allocator(m: &mut impl Mem) {
 /// headers are read by [`load`]. The player passes position 0; another
 /// start is not supported (-2, `E_FILE_FORMAT_INVALID`, `*out` 0).
 pub fn create_instance(m: &mut impl Mem, src: BoxedSource, pos: i64, out: u32) -> i64 {
+    create(m, src, pos, out, None)
+}
+
+/// [`create_instance`] with the segment's objects in game memory at
+/// `game` ([`GAME_BLOCK`] bytes the host allocated; [`sync`] fills them,
+/// [`delete`] gives the address back to free).
+pub fn create_instance_at(
+    m: &mut impl Mem,
+    src: BoxedSource,
+    pos: i64,
+    out: u32,
+    game: u32,
+) -> i64 {
+    create(m, src, pos, out, Some(game))
+}
+
+fn create(m: &mut impl Mem, src: BoxedSource, pos: i64, out: u32, game: Option<u32>) -> i64 {
     if pos != 0 {
         if out != 0 {
             m.write::<u32>(out, 0);
@@ -167,7 +205,15 @@ pub fn create_instance(m: &mut impl Mem, src: BoxedSource, pos: i64, out: u32) -
         return -2;
     }
     let seg = Segment {
-        block: Box::new([0; BLOCK]),
+        block: vec![
+            0;
+            if game.is_some() {
+                GAME_BLOCK as usize
+            } else {
+                BLOCK
+            }
+        ],
+        game,
         src: Some(src),
         movie: None,
         private: Vec::new(),
@@ -205,9 +251,21 @@ pub fn load(seg: u32) -> i64 {
     }
 }
 
-/// `Segment::~Segment` + free (`0x0041fd10`, `delete segment`).
-pub fn delete(seg: u32) {
-    segments(|t| t.remove(&seg));
+/// Copies the segment's objects into its game block ([`create_instance_at`];
+/// nothing for a segment without one). After [`load`].
+pub fn sync(m: &mut impl Mem, seg: u32) {
+    if let Some(s) = find(seg) {
+        let s = lock(&s);
+        if let Some(at) = s.game {
+            m.write_bytes(at, &s.block);
+        }
+    }
+}
+
+/// `Segment::~Segment` + free (`0x0041fd10`, `delete segment`); the game
+/// block to free, if the host gave one.
+pub fn delete(seg: u32) -> Option<u32> {
+    segments(|t| t.remove(&seg)).and_then(|s| lock(&s).game)
 }
 
 /// `Segment::GetDuration()` (`0x00425200`): the duration times the

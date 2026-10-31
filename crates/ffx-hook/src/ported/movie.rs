@@ -116,6 +116,47 @@ impl mkv::Queues for PlayerQueues {
     }
 }
 
+/// `Segment::CreateInstance`: in the hooked game the segment's objects
+/// live in Rust memory, which is the game's; in `ffx-host` (whose arena is
+/// not the host's memory) in a block from `mkvparser`'s allocator (the
+/// game's `malloc` that `SetAllocator` stored), freed with the segment.
+#[cfg(not(ffx_host))]
+fn create_segment(src: mkv::BoxedSource, pos: i64, out: u32) -> i64 {
+    mkv::create_instance(&mut mem(), src, pos, out)
+}
+
+#[cfg(ffx_host)]
+fn create_segment(src: mkv::BoxedSource, pos: i64, out: u32) -> i64 {
+    let mut m = mem();
+    let malloc = m.read::<u32>(m.rebase(mkv::MKV_MALLOC));
+    let block = if malloc == 0 {
+        0
+    } else {
+        super::call_cdecl(malloc, &[mkv::GAME_BLOCK])
+    };
+    if block == 0 {
+        if out != 0 {
+            m.write::<u32>(out, 0);
+        }
+        return -1;
+    }
+    mkv::create_instance_at(&mut m, src, pos, out, block)
+}
+
+#[cfg(not(ffx_host))]
+fn free_segment_block(_: Option<u32>) {}
+
+#[cfg(ffx_host)]
+fn free_segment_block(block: Option<u32>) {
+    let m = mem();
+    let free = m.read::<u32>(m.rebase(mkv::MKV_FREE));
+    if let Some(b) = block
+        && free != 0
+    {
+        super::call_cdecl(free, &[b]);
+    }
+}
+
 fn rebased(sym: u32) -> u32 {
     u32::try_from(crate::rebase(sym)).unwrap_or(0)
 }
@@ -224,15 +265,17 @@ ported! {
         reader: u32, pos_lo: u32, pos_hi: u32, out: u32
     ) -> u64 {
         let pos = (u64::from(pos_hi) << 32 | u64::from(pos_lo)).cast_signed();
-        mkv::create_instance(&mut mem(), Box::new(GameReader::new(reader)), pos, out).cast_unsigned()
+        create_segment(Box::new(GameReader::new(reader)), pos, out).cast_unsigned()
     }
     /// `Segment::Load()`.
     mkvparser_Segment_Load @ 0x0042_1450 => extern "thiscall" fn mkvparser_segment_load(seg: u32) -> u64 {
-        mkv::load(seg).cast_unsigned()
+        let r = mkv::load(seg);
+        mkv::sync(&mut mem(), seg);
+        r.cast_unsigned()
     }
     /// `delete segment`.
     mkvparser_Segment_delete @ 0x0041_fd10 => extern "C" fn mkvparser_segment_delete(seg: u32) {
-        mkv::delete(seg);
+        free_segment_block(mkv::delete(seg));
     }
     /// `Segment::GetDuration()`.
     mkvparser_Segment_GetDuration @ 0x0042_5200 => extern "thiscall" fn mkvparser_segment_get_duration(seg: u32) -> u64 {
