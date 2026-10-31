@@ -44,6 +44,13 @@ others() {
 }
 for n in "${saves[@]}"; do
     if grep -q '^end' "$out/$n.txt" 2>/dev/null; then continue; fi
+    # turn-taking: another agent creates the pause file when it wants the
+    # machine's game slot; the sweep waits between saves until it is gone
+    pause="${DEVSAVE_PAUSE_FILE:-$HOME/ffx-work/devsaves.pause}"
+    if [ -e "$pause" ]; then
+        echo "-- $n: paused ($pause)"
+        while [ -e "$pause" ]; do sleep 10; done
+    fi
     if [[ "${DEVSAVE_ALONE:-1}" == 1 ]]; then
         waited=0
         while [ "$(others)" -gt 0 ]; do
